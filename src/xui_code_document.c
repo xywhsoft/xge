@@ -951,7 +951,7 @@ XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char*
 	iRet = xrtFileWriteText(sPath,
 		xuiXrtText(xuiCodeDocumentGetText(pDocument), (size_t)pDocument->iLength),
 		(xencoding)iCharset, XUTF_STRICT, false);
-	if ( iRet == 0 && pDocument->iLength > 0 ) {
+	if ( iRet == 0 ) {
 		__xuiCodeDocumentSetError(pDocument, "file write failed");
 		return XUI_ERROR_RESOURCE_FAILED;
 	}

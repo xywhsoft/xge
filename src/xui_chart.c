@@ -2458,10 +2458,16 @@ XUI_API int xuiChartSetSeriesData(xui_widget pWidget, int iSeries, const xui_cha
 {
 	xui_chart_data_t* pData;
 	xui_chart_point_t* pNew;
+	int i;
 
 	if ( (iCount < 0) || ((iCount > 0) && (pPoints == NULL)) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( !isfinite(pPoints[i].x) || !isfinite(pPoints[i].y) || !isfinite(pPoints[i].value) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	}
 	pNew = NULL;
 	if ( iCount > 0 ) {
 		pNew = (xui_chart_point_t*)xrtMalloc(sizeof(xui_chart_point_t) * (size_t)iCount);

@@ -174,7 +174,9 @@ struct xui_context_t {
 	int iPointerStateCount;
 	uint64_t iInputPointerId;
 	int iInputPointerType;
-	int iInputDispatchDepth;
+	xui_widget pDeferredDestroyHead;
+	int iDestroyFlushDepth;
+	int iWidgetCallbackDepth;
 	xui_rect_i_t arrInlineDamage[XUI_CONTEXT_DAMAGE_INLINE];
 	xui_rect_i_t* pDamage;
 	int iDamageCount;
@@ -270,6 +272,7 @@ struct xui_widget_t {
 	xui_widget pLastChild;
 	xui_widget pPrevSibling;
 	xui_widget pNextSibling;
+	xui_widget pDeferredDestroyNext;
 	int iChildCount;
 	xui_rect_t tRect;
 	xui_layout_t tLayout;
@@ -286,6 +289,7 @@ struct xui_widget_t {
 	int iImeMode;
 	int bMeasureValid;
 	int bArrangeValid;
+	int bDestroyPending;
 	uint32_t iDirtyFlags;
 	uint32_t iSubtreeDirtyFlags;
 	uint32_t iInputState;
@@ -379,6 +383,7 @@ void xuiInternalContextBumpGeneration(xui_context pContext);
 void xuiInternalReportError(xui_context pContext, xui_widget pWidget, int iCode, int iStage,
 	int bRecoverable, const char* sOperation, const char* sMessage);
 void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget);
+void xuiInternalWidgetDestroyFlush(xui_context pContext);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);
 void xuiInternalContextDestroyResources(xui_context pContext);

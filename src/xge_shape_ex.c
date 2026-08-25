@@ -24,6 +24,7 @@
 #define XGE_SHAPE_EX_HALF_OPEN_THRESHOLD (1.0f / 256.0f)
 #define XGE_SHAPE_EX_HALF_OPEN_BIAS (1.0f / 128.0f)
 #define XGE_SHAPE_EX_STROKE_UNION_DOT -0.98f
+#define XGE_SHAPE_EX_FILL_POINT_LIMIT 8192
 
 typedef struct xge_shape_ex_transform_state_t {
 	float fTranslateX;
@@ -2957,6 +2958,9 @@ static int __xgeShapeExTriangulateContour(const xge_vec2_t* pPoints, int iCount,
 	if ( (pPoints == NULL) || (iCount < 3) || (ppVertices == NULL) || (pVertexCount == NULL) || (ppIndices == NULL) || (pIndexCount == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( iCount > XGE_SHAPE_EX_FILL_POINT_LIMIT ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
 	while ( (iCount > 2) &&
 	        (fabsf(pPoints[iCount - 1].fX - pPoints[0].fX) <= XGE_SHAPE_EX_EPSILON) &&
 	        (fabsf(pPoints[iCount - 1].fY - pPoints[0].fY) <= XGE_SHAPE_EX_EPSILON) ) {
@@ -4990,6 +4994,9 @@ static int __xgeShapeExDrawFill(xge_shape_ex pShape, const xge_shape_ex_flat_pat
 
 	if ( (pFlat == NULL) || !__xgeShapeExFillVisible(pShape, iColor) ) {
 		return XGE_OK;
+	}
+	if ( pFlat->iPointCount > XGE_SHAPE_EX_FILL_POINT_LIMIT ) {
+		return XGE_ERROR_UNSUPPORTED;
 	}
 	tBounds = __xgeShapeExFlatBounds(pFlat);
 	bHasIntersectingEdges = __xgeShapeExFlatHasIntersectingEdges(pFlat);

@@ -706,7 +706,9 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			}
 		} else if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
 			(void)__xuiAccordionSetActive(pWidget, pData, -1);
-			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), xuiGetPointerCapture(xuiWidgetGetContext(pWidget)));
+			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
+				(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;

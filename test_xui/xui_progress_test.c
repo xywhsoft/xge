@@ -160,6 +160,8 @@ int main(void)
 
 	iRet = xuiProgressSetTextTemplate(pProgress, "Loading");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Loading") == 0, "static text");
+	iRet = xuiProgressSetTextTemplate(pProgress, "Progress %s");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Progress %s") == 0, "unsafe format literal");
 	iRet = xuiProgressSetTextTemplate(pProgress, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiProgressGetTextTemplate(pProgress) == NULL && xuiProgressGetDisplayText(pProgress) == NULL, "clear text");
 

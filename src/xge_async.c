@@ -124,7 +124,11 @@ int xgeAsyncRequestCancel(xge_async_request pRequest)
 
 int xgeAsyncThreadingSet(int bEnabled)
 {
-	g_xge.bAsyncThreadingEnabled = bEnabled ? 1 : 0;
+	if ( bEnabled != 0 ) {
+		g_xge.bAsyncThreadingEnabled = 0;
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	g_xge.bAsyncThreadingEnabled = 0;
 	return XGE_OK;
 }
 

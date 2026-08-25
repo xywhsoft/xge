@@ -9,9 +9,14 @@
 #define XUI_RENDER_SUBTREE_DIRTY_FLAGS \
 	(XUI_RENDER_CACHE_DIRTY_FLAGS | XUI_WIDGET_DIRTY_RENDER)
 
-static int __xuiWidgetValid(xui_widget pWidget)
+static int __xuiWidgetMemoryValid(xui_widget pWidget)
 {
 	return (pWidget != NULL) && (pWidget->iMagic == XUI_WIDGET_MAGIC);
+}
+
+static int __xuiWidgetValid(xui_widget pWidget)
+{
+	return __xuiWidgetMemoryValid(pWidget) && !pWidget->bDestroyPending;
 }
 
 int xuiInternalWidgetIsValid(xui_widget pWidget)
@@ -3104,31 +3109,61 @@ void xuiInternalDragAdornerHide(xui_context pContext, xui_widget pOwner)
 	}
 }
 
-XUI_API void xuiWidgetDestroy(xui_widget pWidget)
+static void __xuiWidgetMarkDestroyPending(xui_widget pWidget)
+{
+	xui_widget pChild;
+
+	if ( !__xuiWidgetMemoryValid(pWidget) || pWidget->bDestroyPending ) return;
+	pWidget->bDestroyPending = 1;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		__xuiWidgetMarkDestroyPending(pChild);
+	}
+	return;
+}
+
+static void __xuiWidgetDestroyQueue(xui_context pContext, xui_widget pWidget)
+{
+	pWidget->pDeferredDestroyNext = pContext->pDeferredDestroyHead;
+	pContext->pDeferredDestroyHead = pWidget;
+}
+
+static int __xuiWidgetHasPendingAncestor(xui_widget pWidget)
+{
+	xui_widget pScan;
+
+	for ( pScan = pWidget != NULL ? pWidget->pParent : NULL;
+		__xuiWidgetMemoryValid(pScan); pScan = pScan->pParent ) {
+		if ( pScan->bDestroyPending ) return 1;
+	}
+	return 0;
+}
+
+static int __xuiWidgetIsDescendantOf(xui_widget pWidget, xui_widget pAncestor)
+{
+	xui_widget pScan;
+
+	for ( pScan = pWidget; __xuiWidgetMemoryValid(pScan); pScan = pScan->pParent ) {
+		if ( pScan == pAncestor ) return 1;
+	}
+	return 0;
+}
+
+static void __xuiWidgetDestroyNow(xui_widget pWidget)
 {
 	xui_widget pChild;
 	xui_context pContext;
 
-	if ( !__xuiWidgetValid(pWidget) ) {
-		return;
-	}
+	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
 	pContext = pWidget->pContext;
 	while ( (pChild = pWidget->pFirstChild) != NULL ) {
-		xuiWidgetDestroy(pChild);
-	}
-	if ( pWidget->pParent != NULL ) {
-		(void)xuiWidgetRemoveFromParent(pWidget);
-	} else if ( (pContext != NULL) && (pContext->pRoot == pWidget) ) {
-		xuiInternalContextDetachWidget(pContext, pWidget);
-		pContext->pRoot = NULL;
-		(void)xuiInternalContextInvalidateAll(pContext);
-	} else if ( (pContext != NULL) && (pContext->pOverlayRoot == pWidget) ) {
-		xuiInternalContextDetachWidget(pContext, pWidget);
-		pContext->pOverlayRoot = NULL;
-		(void)xuiInternalContextInvalidateAll(pContext);
-	}
-	if ( pContext != NULL ) {
-		xuiInternalContextDetachWidget(pContext, pWidget);
+		pWidget->pFirstChild = pChild->pNextSibling;
+		if ( pWidget->pFirstChild != NULL ) pWidget->pFirstChild->pPrevSibling = NULL;
+		else pWidget->pLastChild = NULL;
+		if ( pWidget->iChildCount > 0 ) pWidget->iChildCount--;
+		pChild->pParent = NULL;
+		pChild->pPrevSibling = NULL;
+		pChild->pNextSibling = NULL;
+		__xuiWidgetDestroyNow(pChild);
 	}
 	__xuiWidgetEndActiveUpdate(pWidget);
 	__xuiWidgetTypeDestroyChain(pWidget, pWidget->pType);
@@ -3146,6 +3181,64 @@ XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 	xuiInternalLayoutDestroyWidget(pWidget);
 	pWidget->iMagic = 0;
 	xrtFree(pWidget);
+}
+
+void xuiInternalWidgetDestroyFlush(xui_context pContext)
+{
+	xui_widget pWidget;
+	xui_widget* ppPending;
+	xui_widget pPending;
+
+	if ( !xuiInternalContextIsValid(pContext) || pContext->iDestroyFlushDepth > 0 ||
+		pContext->iWidgetCallbackDepth > 0 ) return;
+	pContext->iDestroyFlushDepth++;
+	while ( (pWidget = pContext->pDeferredDestroyHead) != NULL ) {
+		pContext->pDeferredDestroyHead = pWidget->pDeferredDestroyNext;
+		pWidget->pDeferredDestroyNext = NULL;
+		if ( !__xuiWidgetMemoryValid(pWidget) || !pWidget->bDestroyPending ||
+			 __xuiWidgetHasPendingAncestor(pWidget) ) continue;
+		ppPending = &pContext->pDeferredDestroyHead;
+		while ( (pPending = *ppPending) != NULL ) {
+			if ( __xuiWidgetIsDescendantOf(pPending, pWidget) ) {
+				*ppPending = pPending->pDeferredDestroyNext;
+				pPending->pDeferredDestroyNext = NULL;
+			} else {
+				ppPending = &pPending->pDeferredDestroyNext;
+			}
+		}
+		__xuiWidgetDestroyNow(pWidget);
+	}
+	pContext->iDestroyFlushDepth--;
+}
+
+XUI_API void xuiWidgetDestroy(xui_widget pWidget)
+{
+	xui_context pContext;
+
+	if ( !__xuiWidgetValid(pWidget) ) return;
+	pContext = pWidget->pContext;
+	if ( !xuiInternalContextIsValid(pContext) ) {
+		__xuiWidgetDestroyNow(pWidget);
+		return;
+	}
+	if ( pWidget->pParent != NULL ) {
+		(void)xuiWidgetRemoveFromParent(pWidget);
+	} else if ( pContext->pRoot == pWidget ) {
+		xuiInternalContextDetachWidget(pContext, pWidget);
+		pContext->pRoot = NULL;
+		(void)xuiInternalContextInvalidateAll(pContext);
+	} else if ( pContext->pOverlayRoot == pWidget ) {
+		xuiInternalContextDetachWidget(pContext, pWidget);
+		pContext->pOverlayRoot = NULL;
+		(void)xuiInternalContextInvalidateAll(pContext);
+	} else {
+		xuiInternalContextDetachWidget(pContext, pWidget);
+	}
+	__xuiWidgetMarkDestroyPending(pWidget);
+	__xuiWidgetDestroyQueue(pContext, pWidget);
+	if ( pContext->iWidgetCallbackDepth == 0 ) {
+		xuiInternalWidgetDestroyFlush(pContext);
+	}
 }
 
 XUI_API xui_context xuiWidgetGetContext(xui_widget pWidget)
@@ -5182,13 +5275,15 @@ static void __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
 		return;
 	}
 	if ( pWidget->onUpdate != NULL ) {
+		pWidget->pContext->iWidgetCallbackDepth++;
 		iRet = pWidget->onUpdate(pWidget, fDelta, pWidget->pUpdateUser);
+		pWidget->pContext->iWidgetCallbackDepth--;
 		if ( iRet != XUI_OK ) {
 			xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_UPDATE, 1,
 				"widget.update", "The widget update failed and the remaining update tree continued.");
 		}
 	}
-	if ( !pWidget->bVisible ) {
+	if ( !__xuiWidgetValid(pWidget) || !pWidget->bVisible ) {
 		return;
 	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pNext ) {
@@ -5341,6 +5436,7 @@ XUI_API int xuiUpdate(xui_context pContext, float fDelta)
 	}
 	__xuiWidgetUpdateTree(pContext->pRoot, fDelta);
 	__xuiWidgetUpdateTree(pContext->pOverlayRoot, fDelta);
+	xuiInternalWidgetDestroyFlush(pContext);
 	return XUI_OK;
 }
 

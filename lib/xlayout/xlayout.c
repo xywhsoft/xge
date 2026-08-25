@@ -735,19 +735,23 @@ static void xl_compute_tracks(
 	}
 }
 
-static void xl_track_dimensions(const xlayout_node_internal_t* node, uint32_t* columns, uint32_t* rows)
+static bool xl_track_dimensions(const xlayout_node_internal_t* node, uint32_t* columns, uint32_t* rows)
 {
 	xlayout_node_internal_t* child;
 	*columns = node->column_count;
 	*rows = node->row_count;
 	for ( child = node->first_child; child != NULL; child = child->next ) {
-		uint32_t column_end = child->style.item.column + (child->style.item.column_span ? child->style.item.column_span : 1u);
-		uint32_t row_end = child->style.item.row + (child->style.item.row_span ? child->style.item.row_span : 1u);
-		*columns = *columns < column_end ? column_end : *columns;
-		*rows = *rows < row_end ? row_end : *rows;
+		uint64_t column_end = (uint64_t)child->style.item.column +
+			(uint64_t)(child->style.item.column_span ? child->style.item.column_span : 1u);
+		uint64_t row_end = (uint64_t)child->style.item.row +
+			(uint64_t)(child->style.item.row_span ? child->style.item.row_span : 1u);
+		if ( column_end > UINT32_MAX || row_end > UINT32_MAX ) return false;
+		*columns = *columns < (uint32_t)column_end ? (uint32_t)column_end : *columns;
+		*rows = *rows < (uint32_t)row_end ? (uint32_t)row_end : *rows;
 	}
 	*columns = *columns ? *columns : 1u;
 	*rows = *rows ? *rows : 1u;
+	return true;
 }
 
 static bool xl_measure_track(
@@ -775,9 +779,10 @@ static bool xl_measure_track(
 			return false;
 		}
 	}
-	xl_track_dimensions(node, &columns, &rows);
+	if ( !xl_track_dimensions(node, &columns, &rows) ) return false;
 	scalar_mark = context->scalar_count;
-	if ( !xl_reserve_scalars(context, scalar_mark + columns + rows) ) {
+	if ( (uint64_t)scalar_mark + columns + rows > UINT32_MAX ||
+		 !xl_reserve_scalars(context, scalar_mark + columns + rows) ) {
 		return false;
 	}
 	context->scalar_count = scalar_mark + columns + rows;
@@ -1351,7 +1356,8 @@ static bool xl_arrange_track(xlayout_context_t* context, xlayout_node_internal_t
 	float* row_offsets;
 	xlayout_node_internal_t* child;
 	uint32_t index;
-	xl_track_dimensions(node, &columns, &rows);
+	if ( !xl_track_dimensions(node, &columns, &rows) ||
+		 (uint64_t)scalar_mark + ((uint64_t)columns + rows) * 2u > UINT32_MAX ) return false;
 	if ( !xl_reserve_scalars(context, scalar_mark + (columns + rows) * 2u) ) return false;
 	context->scalar_count = scalar_mark + (columns + rows) * 2u;
 	column_sizes = &context->scalars[scalar_mark];
@@ -2026,6 +2032,7 @@ static bool xl_set_tracks(xlayout_context_t* context, xlayout_node_t handle, con
 	current_count = columns ? node->column_count : node->row_count;
 	if ( current_count == count && (count == 0u || memcmp(current, tracks, sizeof(*tracks) * count) == 0) ) return true;
 	if ( count != 0u ) {
+		if ( (size_t)count > SIZE_MAX / sizeof(*copy) ) return false;
 		copy = (xlayout_track_t*)xrtMalloc(sizeof(*copy) * count);
 		if ( copy == NULL ) return false;
 		memcpy(copy, tracks, sizeof(*copy) * count);

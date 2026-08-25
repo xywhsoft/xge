@@ -1007,7 +1007,6 @@ void xuiInternalContextDestroyInput(xui_context pContext)
 	pContext->iPointerStateCount = 0;
 	pContext->iInputPointerId = XUI_POINTER_ID_MOUSE;
 	pContext->iInputPointerType = XUI_POINTER_TYPE_MOUSE;
-	pContext->iInputDispatchDepth = 0;
 	if ( pContext->sActiveTooltipText != NULL ) {
 		xrtFree(pContext->sActiveTooltipText);
 		pContext->sActiveTooltipText = NULL;
@@ -1432,6 +1431,7 @@ XUI_API void xuiDestroy(xui_context pContext)
 		xuiWidgetDestroy(pContext->pOverlayRoot);
 		pContext->pOverlayRoot = NULL;
 	}
+	xuiInternalWidgetDestroyFlush(pContext);
 	if ( pContext->pDamage != pContext->arrInlineDamage ) {
 		xrtFree(pContext->pDamage);
 	}

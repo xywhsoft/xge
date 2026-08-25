@@ -11,6 +11,7 @@ typedef struct xui_combobox_data_t {
 	xui_widget pInput;
 	xui_font pFont;
 	xui_combobox_item_t arrItems[XUI_COMBOBOX_ITEM_CAPACITY];
+	char* arrItemTextStorage[XUI_COMBOBOX_ITEM_CAPACITY];
 	xui_menu_item_t arrMenuItems[XUI_COMBOBOX_ITEM_CAPACITY];
 	xui_combobox_select_proc onSelect;
 	void* pSelectUser;
@@ -118,6 +119,28 @@ static int __xuiComboBoxClampCount(int iCount)
 	if ( iCount < 0 ) return 0;
 	if ( iCount > XUI_COMBOBOX_ITEM_CAPACITY ) return XUI_COMBOBOX_ITEM_CAPACITY;
 	return iCount;
+}
+
+static char* __xuiComboBoxCopyText(const char* sText)
+{
+	char* sCopy;
+	size_t iLength;
+
+	if ( sText == NULL ) return NULL;
+	iLength = strlen(sText) + 1u;
+	sCopy = (char*)xrtMalloc(iLength);
+	if ( sCopy != NULL ) memcpy(sCopy, sText, iLength);
+	return sCopy;
+}
+
+static void __xuiComboBoxClearItemTexts(xui_combobox_data_t* pData)
+{
+	int i;
+
+	for ( i = 0; i < XUI_COMBOBOX_ITEM_CAPACITY; i++ ) {
+		xrtFree(pData->arrItemTextStorage[i]);
+		pData->arrItemTextStorage[i] = NULL;
+	}
 }
 
 static int __xuiComboBoxStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
@@ -611,6 +634,8 @@ static int __xuiComboBoxRefreshMenu(xui_widget pWidget, xui_combobox_data_t* pDa
 
 static int __xuiComboBoxSetItemsInternal(xui_widget pWidget, xui_combobox_data_t* pData, const char** arrItems, const xui_combobox_item_t* arrItemData, const int* arrEnabled, int iCount)
 {
+	xui_combobox_item_t arrNewItems[XUI_COMBOBOX_ITEM_CAPACITY];
+	char* arrNewTexts[XUI_COMBOBOX_ITEM_CAPACITY];
 	int i;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (iCount < 0) ||
@@ -618,22 +643,32 @@ static int __xuiComboBoxSetItemsInternal(xui_widget pWidget, xui_combobox_data_t
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iCount = __xuiComboBoxClampCount(iCount);
-	memset(pData->arrItems, 0, sizeof(pData->arrItems));
+	memset(arrNewItems, 0, sizeof(arrNewItems));
+	memset(arrNewTexts, 0, sizeof(arrNewTexts));
 	for ( i = 0; i < iCount; i++ ) {
 		if ( arrItemData != NULL ) {
-			pData->arrItems[i] = arrItemData[i];
-			if ( pData->arrItems[i].bSeparator ) {
-				pData->arrItems[i].bEnabled = 0;
+			arrNewItems[i] = arrItemData[i];
+			if ( arrNewItems[i].bSeparator ) {
+				arrNewItems[i].bEnabled = 0;
 			}
 		} else {
-			pData->arrItems[i].sText = arrItems[i];
-			pData->arrItems[i].iValue = i;
-			pData->arrItems[i].bEnabled = 1;
+			arrNewItems[i].sText = arrItems[i];
+			arrNewItems[i].iValue = i;
+			arrNewItems[i].bEnabled = 1;
 		}
+		arrNewTexts[i] = __xuiComboBoxCopyText(arrNewItems[i].sText);
+		if ( arrNewItems[i].sText != NULL && arrNewTexts[i] == NULL ) {
+			while ( i-- > 0 ) xrtFree(arrNewTexts[i]);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		arrNewItems[i].sText = arrNewTexts[i];
 		if ( arrEnabled != NULL && !arrEnabled[i] ) {
-			pData->arrItems[i].bEnabled = 0;
+			arrNewItems[i].bEnabled = 0;
 		}
 	}
+	__xuiComboBoxClearItemTexts(pData);
+	memcpy(pData->arrItems, arrNewItems, sizeof(arrNewItems));
+	memcpy(pData->arrItemTextStorage, arrNewTexts, sizeof(arrNewTexts));
 	pData->iItemCount = iCount;
 	if ( !__xuiComboBoxItemEnabled(pData, pData->iSelected) ) {
 		pData->iSelected = -1;
@@ -1256,6 +1291,7 @@ static void __xuiComboBoxDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	(void)pUser;
 	pData = (xui_combobox_data_t*)pTypeData;
 	if ( pData != NULL ) {
+		__xuiComboBoxClearItemTexts(pData);
 		memset(pData, 0, sizeof(*pData));
 	}
 }

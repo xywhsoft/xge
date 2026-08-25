@@ -92,6 +92,7 @@ void xgeUnit(void)
 	__xgeRenderThreadJoin();
 	__xgeRenderCommandUnit();
 	__xgeShapeAutoBatchReset();
+	__xgeBuiltinRenderersReset();
 	__xgeTextureUploadQueueFree();
 	__xgeEmojiGlobalClear();
 	xgeSvgCacheClear();
@@ -387,7 +388,7 @@ int xgePlatformCapsGet(xge_platform_caps_t* pCaps)
 	__xgePlatformCapsCopy(pCaps->sGraphicsName, (int)sizeof(pCaps->sGraphicsName), tGraphics.sName);
 	pCaps->bRenderTarget = 1;
 	pCaps->bResourceProvider = 1;
-	pCaps->bThreadSafeSubmit = 1;
+	pCaps->bThreadSafeSubmit = 0;
 	pCaps->bAudio = 1;
 	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_SOKOL ) {
 		__xgePlatformCapsSokolTarget(pCaps);
@@ -790,14 +791,21 @@ int xgeSceneSet(xge_scene pScene)
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
+	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
+	g_xge.iSceneTransitionDepth++;
 	__xgeSceneClear();
 	if ( pScene == NULL ) {
+		g_xge.iSceneTransitionDepth--;
 		return XGE_OK;
 	}
 	g_xge.fSceneAccumulator = 0.0f;
 	g_xge.arrSceneStack[0] = pScene;
 	g_xge.iSceneStackCount = 1;
-	return __xgeSceneEnter(pScene);
+	{
+		int iRet = __xgeSceneEnter(pScene);
+		g_xge.iSceneTransitionDepth--;
+		return iRet;
+	}
 }
 
 int xgeScenePush(xge_scene pScene)
@@ -811,12 +819,15 @@ int xgeScenePush(xge_scene pScene)
 	if ( pScene == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
 	if ( g_xge.iSceneStackCount >= XGE_SCENE_STACK_MAX ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
+	g_xge.iSceneTransitionDepth++;
 	pCurrent = xgeSceneCurrent();
 	iRet = __xgeScenePause(pCurrent);
 	if ( iRet != XGE_OK ) {
+		g_xge.iSceneTransitionDepth--;
 		return iRet;
 	}
 	g_xge.fSceneAccumulator = 0.0f;
@@ -826,8 +837,10 @@ int xgeScenePush(xge_scene pScene)
 		g_xge.iSceneStackCount--;
 		g_xge.arrSceneStack[g_xge.iSceneStackCount] = NULL;
 		(void)__xgeSceneResume(pCurrent);
+		g_xge.iSceneTransitionDepth--;
 		return iRet;
 	}
+	g_xge.iSceneTransitionDepth--;
 	return XGE_OK;
 }
 
@@ -842,19 +855,25 @@ int xgeScenePop(void)
 	if ( g_xge.iSceneStackCount <= 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
+	g_xge.iSceneTransitionDepth++;
 	pScene = g_xge.arrSceneStack[g_xge.iSceneStackCount - 1];
 	g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = NULL;
 	g_xge.iSceneStackCount--;
 	iRet = __xgeSceneLeave(pScene);
 	if ( iRet != XGE_OK ) {
+		g_xge.iSceneTransitionDepth--;
 		return iRet;
 	}
 	iRet = __xgeSceneFree(pScene);
 	if ( iRet != XGE_OK ) {
+		g_xge.iSceneTransitionDepth--;
 		return iRet;
 	}
 	g_xge.fSceneAccumulator = 0.0f;
-	return __xgeSceneResume(xgeSceneCurrent());
+	iRet = __xgeSceneResume(xgeSceneCurrent());
+	g_xge.iSceneTransitionDepth--;
+	return iRet;
 }
 
 int xgeSceneReplace(xge_scene pScene)
@@ -868,21 +887,30 @@ int xgeSceneReplace(xge_scene pScene)
 	if ( pScene == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
 	if ( g_xge.iSceneStackCount <= 0 ) {
 		return xgeScenePush(pScene);
 	}
+	g_xge.iSceneTransitionDepth++;
 	pOld = g_xge.arrSceneStack[g_xge.iSceneStackCount - 1];
+	g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = NULL;
 	iRet = __xgeSceneLeave(pOld);
 	if ( iRet != XGE_OK ) {
+		g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = pOld;
+		g_xge.iSceneTransitionDepth--;
 		return iRet;
 	}
 	iRet = __xgeSceneFree(pOld);
 	if ( iRet != XGE_OK ) {
+		g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = pOld;
+		g_xge.iSceneTransitionDepth--;
 		return iRet;
 	}
 	g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = pScene;
 	g_xge.fSceneAccumulator = 0.0f;
-	return __xgeSceneEnter(pScene);
+	iRet = __xgeSceneEnter(pScene);
+	g_xge.iSceneTransitionDepth--;
+	return iRet;
 }
 
 xge_scene xgeSceneCurrent(void)
@@ -1168,42 +1196,8 @@ int xgeRenderThreadGet(void)
 	return g_xge.bRenderThreadEnabled;
 }
 
-static int __xgeRenderThreadEGLDescValidate(const xge_egl_desc_t* pDesc)
-{
-	xge_egl_caps_t tCaps;
-
-	if ( pDesc == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pDesc->iWidth <= 0) || (pDesc->iHeight <= 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pDesc->bPBuffer == 0) && (pDesc->bSurfaceless == 0) && (pDesc->pNativeWindow == NULL) ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	memset(&tCaps, 0, sizeof(tCaps));
-	(void)xgeEGLCapsGet(&tCaps);
-	if ( tCaps.bCompiled == 0 ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	if ( (pDesc->bPBuffer != 0) && (tCaps.bPBuffer == 0) ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	if ( (pDesc->bSurfaceless != 0) && (tCaps.bSurfaceless == 0) ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	if ( (pDesc->pNativeWindow != NULL) && (tCaps.bNativeWindow == 0) ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	return XGE_OK;
-}
-
 int xgeRenderThreadEGLSet(const xge_egl_desc_t* pDesc)
 {
-	xge_platform_backend_t tPlatform;
-	xge_graphics_backend_t tGraphics;
-	int iRet;
-
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
@@ -1217,26 +1211,8 @@ int xgeRenderThreadEGLSet(const xge_egl_desc_t* pDesc)
 		g_xge.bRenderThreadOwnsGLContext = 0;
 		return XGE_OK;
 	}
-	if ( g_xge.bSokolRunning != 0 ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	iRet = __xgeRenderThreadEGLDescValidate(pDesc);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	g_xge.tRenderThreadEGLDesc = *pDesc;
-	memset(&g_xge.tRenderThreadLastEGL, 0, sizeof(g_xge.tRenderThreadLastEGL));
-	g_xge.bRenderThreadEGLConfigured = 1;
-	g_xge.bRenderThreadOwnsGLContext = 0;
-	memset(&tPlatform, 0, sizeof(tPlatform));
-	tPlatform.iType = XGE_PLATFORM_BACKEND_EGL;
-	tPlatform.sName = pDesc->bBoardLinux ? "egl-board-linux-render-thread" : "egl-render-thread";
-	xgePlatformBackendSet(&tPlatform);
-	memset(&tGraphics, 0, sizeof(tGraphics));
-	tGraphics.iType = XGE_GPU_BACKEND_GLES30;
-	tGraphics.sName = "gles30";
-	xgeGraphicsBackendSet(&tGraphics);
-	return XGE_OK;
+	/* A render-thread EGL context must persist and share GPU objects with the producer. */
+	return XGE_ERROR_UNSUPPORTED;
 }
 
 int xgeRenderThreadCapsGet(xge_render_thread_caps_t* pCaps)
@@ -1277,6 +1253,8 @@ void xgeClear(uint32_t iColor)
 	float fA;
 	xge_rect_t tRect;
 
+	/* Direct GL state must not pass queued draws in call order. */
+	(void)xgeFlush();
 	g_xge.iClearColor = iColor;
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;

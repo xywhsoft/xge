@@ -1,6 +1,8 @@
 #define XGE_SVG_MAGIC 0x58475356u
 #define XGE_SVG_ATTR_MAX 4096
 #define XGE_SVG_STACK_MAX 128
+#define XGE_SVG_EMBED_DEPTH_MAX 8
+#define XGE_SVG_TEXT_NESTING_MAX 32
 #define XGE_SVG_DASH_MAX 32
 #define XGE_SVG_ID_MAX 128
 #define XGE_SVG_STYLE_SELECTOR_TAG 0
@@ -539,6 +541,7 @@ struct xge_svg_t {
 	int iElementNodeCount;
 	int iElementNodeCapacity;
 	int iCurrentElementNode;
+	int iLoadDepth;
 	int arrLastChildByDepth[XGE_SVG_STACK_MAX];
 	xge_svg_element_stack_item_t arrElementStack[XGE_SVG_STACK_MAX];
 	int iElementStackTop;
@@ -12537,7 +12540,7 @@ static int __xgeSvgElementRangeEnd(const char* pTag, const char* pTagEnd, const 
 	}
 }
 
-static int __xgeSvgParseTextChildrenPass(xge_svg pSvg, const char* pTextStart, const char* pTextEnd, const xge_svg_style_t* pTextStyle, float fTextX, float fTextY, float fAnchorAdvance, int iTargetDef, int iMainIdDefIndex, int iExtraMainIdDefIndex, int bUseRunBearingAdvance, int bEmit, float* pTotalAdvance, int* pRunCount)
+static int __xgeSvgParseTextChildrenPass(xge_svg pSvg, const char* pTextStart, const char* pTextEnd, const xge_svg_style_t* pTextStyle, float fTextX, float fTextY, float fAnchorAdvance, int iTargetDef, int iMainIdDefIndex, int iExtraMainIdDefIndex, int bUseRunBearingAdvance, int bEmit, int iDepth, float* pTotalAdvance, int* pRunCount)
 {
 	const char* p;
 	float fCursorX;
@@ -12623,7 +12626,8 @@ static int __xgeSvgParseTextChildrenPass(xge_svg pSvg, const char* pTextStart, c
 					}
 				}
 				if ( pTSpanTextEnd > pTSpanTextStart ) {
-					iRet = __xgeSvgParseTextChildrenPass(pSvg, pTSpanTextStart, pTSpanTextEnd, &tSpanStyle, fRunX, fRunY, fAnchorAdvance, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, bSeparateSpanRun, bEmit, &fAdvance, &iSpanRunCount);
+					if ( iDepth >= XGE_SVG_TEXT_NESTING_MAX ) return XGE_ERROR_UNSUPPORTED;
+					iRet = __xgeSvgParseTextChildrenPass(pSvg, pTSpanTextStart, pTSpanTextEnd, &tSpanStyle, fRunX, fRunY, fAnchorAdvance, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, bSeparateSpanRun, bEmit, iDepth + 1, &fAdvance, &iSpanRunCount);
 					if ( iRet != XGE_OK ) {
 						return iRet;
 					}
@@ -12655,7 +12659,8 @@ static int __xgeSvgParseTextChildrenPass(xge_svg pSvg, const char* pTextStart, c
 					}
 				}
 				if ( pPathTextEnd > pPathTextStart ) {
-					iRet = __xgeSvgParseTextChildrenPass(pSvg, pPathTextStart, pPathTextEnd, pTextStyle, fCursorX, fCursorY, fAnchorAdvance, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, bUseRunBearingAdvance, bEmit, &fPathAdvance, &iPathRunCount);
+					if ( iDepth >= XGE_SVG_TEXT_NESTING_MAX ) return XGE_ERROR_UNSUPPORTED;
+					iRet = __xgeSvgParseTextChildrenPass(pSvg, pPathTextStart, pPathTextEnd, pTextStyle, fCursorX, fCursorY, fAnchorAdvance, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, bUseRunBearingAdvance, bEmit, iDepth + 1, &fPathAdvance, &iPathRunCount);
 					if ( iRet != XGE_OK ) {
 						return iRet;
 					}
@@ -12686,12 +12691,12 @@ static int __xgeSvgParseTextChildren(xge_svg pSvg, const char* pTextStart, const
 	int iRunCount;
 	int iRet;
 
-	iRet = __xgeSvgParseTextChildrenPass(pSvg, pTextStart, pTextEnd, pTextStyle, fTextX, fTextY, 0.0f, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, 1, 0, &fTotalAdvance, &iRunCount);
+	iRet = __xgeSvgParseTextChildrenPass(pSvg, pTextStart, pTextEnd, pTextStyle, fTextX, fTextY, 0.0f, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, 1, 0, 0, &fTotalAdvance, &iRunCount);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
 	fAnchorAdvance = (iRunCount > 1) ? fTotalAdvance : 0.0f;
-	return __xgeSvgParseTextChildrenPass(pSvg, pTextStart, pTextEnd, pTextStyle, fTextX, fTextY, fAnchorAdvance, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, 1, 1, NULL, NULL);
+	return __xgeSvgParseTextChildrenPass(pSvg, pTextStart, pTextEnd, pTextStyle, fTextX, fTextY, fAnchorAdvance, iTargetDef, iMainIdDefIndex, iExtraMainIdDefIndex, 1, 1, 0, NULL, NULL);
 }
 
 static int __xgeSvgParseText(xge_svg pSvg, const char* pTag, const char* pTagEnd, const char* pTextStart, const char* pTextEnd, const xge_svg_style_t* pParentStyle, int bInDefs, int iCurrentDef, int iGroupMainIdDefIndex)
@@ -13252,8 +13257,13 @@ static int __xgeSvgAddHrefImage(xge_svg pSvg, const xge_svg_style_t* pStyle, con
 		return iRet;
 	}
 	pChildSvg = NULL;
+	if ( pSvg->iLoadDepth >= XGE_SVG_EMBED_DEPTH_MAX ) {
+		xrtFree(sSvgText);
+		return XGE_ERROR_UNSUPPORTED;
+	}
 	iRet = xgeSvgCreate(&pChildSvg);
 	if ( iRet == XGE_OK ) {
+		pChildSvg->iLoadDepth = pSvg->iLoadDepth + 1;
 		iRet = __xgeSvgLoadMemoryEx(pChildSvg, sSvgText, iSize, pSvg->sBaseDir);
 	}
 	if ( iRet == XGE_OK ) {
@@ -13367,8 +13377,13 @@ static int __xgeSvgParseImage(xge_svg pSvg, const char* pTag, const char* pTagEn
 		return iRet;
 	}
 	pChildSvg = NULL;
+	if ( pSvg->iLoadDepth >= XGE_SVG_EMBED_DEPTH_MAX ) {
+		xrtFree(sSvgText);
+		return XGE_ERROR_UNSUPPORTED;
+	}
 	iRet = xgeSvgCreate(&pChildSvg);
 	if ( iRet == XGE_OK ) {
+		pChildSvg->iLoadDepth = pSvg->iLoadDepth + 1;
 		iRet = __xgeSvgLoadMemoryEx(pChildSvg, sSvgText, iSize, pSvg->sBaseDir);
 	}
 	if ( iRet == XGE_OK ) {

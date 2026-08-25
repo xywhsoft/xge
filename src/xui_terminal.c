@@ -9,6 +9,8 @@
 
 #include "xui_internal.h"
 
+#include <limits.h>
+
 #include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -1158,7 +1160,11 @@ static void __xuiTerminalCsiAppendDigit(xui_terminal_parser_t* pParser, int iDig
 	if ( !pParser->bParamActive || pParser->arrParams[pParser->iCurrentParam] < 0 ) {
 		pParser->arrParams[pParser->iCurrentParam] = 0;
 	}
-	pParser->arrParams[pParser->iCurrentParam] = pParser->arrParams[pParser->iCurrentParam] * 10 + iDigit;
+	if ( pParser->arrParams[pParser->iCurrentParam] > (INT_MAX - iDigit) / 10 ) {
+		pParser->arrParams[pParser->iCurrentParam] = INT_MAX;
+	} else {
+		pParser->arrParams[pParser->iCurrentParam] = pParser->arrParams[pParser->iCurrentParam] * 10 + iDigit;
+	}
 	pParser->bParamActive = 1;
 }
 
@@ -2577,6 +2583,29 @@ static int __xuiTerminalPointerDoubleClick(xui_widget pWidget, xui_terminal_data
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
+static int __xuiTerminalLinkSchemeAllowed(const char* sUrl)
+{
+	static const char* const arrSchemes[] = { "http:", "https:", "mailto:" };
+	int i;
+	int j;
+	unsigned char c;
+
+	if ( sUrl == NULL || sUrl[0] == '\0' ) return 0;
+	for ( i = 0; sUrl[i] != '\0'; i++ ) {
+		c = (unsigned char)sUrl[i];
+		if ( c <= 0x20u || c == 0x7fu ) return 0;
+	}
+	for ( i = 0; i < (int)(sizeof(arrSchemes) / sizeof(arrSchemes[0])); i++ ) {
+		for ( j = 0; arrSchemes[i][j] != '\0'; j++ ) {
+			c = (unsigned char)sUrl[j];
+			if ( c >= 'A' && c <= 'Z' ) c = (unsigned char)(c + ('a' - 'A'));
+			if ( c != (unsigned char)arrSchemes[i][j] ) break;
+		}
+		if ( arrSchemes[i][j] == '\0' ) return 1;
+	}
+	return 0;
+}
+
 static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pData, const xui_event_t* pEvent)
 {
 	char* sUrl;
@@ -2601,7 +2630,9 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 	     sUrl != NULL ) {
 		(void)iStartColumn;
 		(void)iLength;
-		pData->onLink(pWidget, sUrl, pData->pLinkUser);
+		if ( __xuiTerminalLinkSchemeAllowed(sUrl) ) {
+			pData->onLink(pWidget, sUrl, pData->pLinkUser);
+		}
 		xrtFree(sUrl);
 		return XUI_EVENT_DISPATCH_STOP;
 	}

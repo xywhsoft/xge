@@ -964,7 +964,9 @@ static int __xuiTabsEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		} else if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
 			pData->iActiveIndex = -1;
 			pData->iCloseActiveIndex = -1;
-			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), xuiGetPointerCapture(xuiWidgetGetContext(pWidget)));
+			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
+				(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+			}
 			(void)__xuiTabsInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			return XUI_EVENT_DISPATCH_STOP;
 		}

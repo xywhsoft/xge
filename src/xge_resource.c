@@ -1,3 +1,29 @@
+typedef struct xge_resource_free_snapshot_t {
+	void (*free)(void* pData, void* pUser);
+	void* pUser;
+	xge_xpack_provider_t tXPack;
+	int bXPack;
+} xge_resource_free_snapshot_t;
+
+static void __xgeResourceFreeSnapshot(void* pData, void* pUser)
+{
+	xge_resource_free_snapshot_t* pSnapshot = (xge_resource_free_snapshot_t*)pUser;
+
+	if ( pSnapshot == NULL ) {
+		xrtFree(pData);
+		return;
+	}
+	if ( pSnapshot->bXPack ) {
+		if ( pSnapshot->tXPack.free != NULL ) pSnapshot->tXPack.free(pData, pSnapshot->tXPack.pUser);
+		else xrtFree(pData);
+	} else if ( pSnapshot->free != NULL ) {
+		pSnapshot->free(pData, pSnapshot->pUser);
+	} else {
+		xrtFree(pData);
+	}
+	xrtFree(pSnapshot);
+}
+
 static char* __xgeResourceXPackMakePath(const char* sRoot, const char* sPath)
 {
 	char* sFull;
@@ -35,6 +61,22 @@ static char* __xgeResourceXPackMakePath(const char* sRoot, const char* sPath)
 	return sFull;
 }
 
+static int __xgeResourceXPackPathSafe(const char* sPath)
+{
+	const char* sSegment;
+	const char* sCursor;
+
+	if ( sPath == NULL ) return 0;
+	for ( sCursor = sPath; ; ) {
+		while ( *sCursor == '/' || *sCursor == '\\' ) sCursor++;
+		sSegment = sCursor;
+		while ( *sCursor != '\0' && *sCursor != '/' && *sCursor != '\\' ) sCursor++;
+		if ( (sCursor - sSegment) == 2 && sSegment[0] == '.' && sSegment[1] == '.' ) return 0;
+		if ( *sCursor == '\0' ) break;
+	}
+	return 1;
+}
+
 static int __xgeResourceXPackLoad(const char* sURI, void** ppData, int* pSize, void* pUser)
 {
 	xge_xpack_provider_t* pProvider;
@@ -55,6 +97,9 @@ static int __xgeResourceXPackLoad(const char* sURI, void** ppData, int* pSize, v
 	sPath = sURI;
 	if ( iSchemeLen > 0 ) {
 		sPath += iSchemeLen + 3;
+	}
+	if ( !__xgeResourceXPackPathSafe(sPath) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	sPackPath = __xgeResourceXPackMakePath(pProvider->sRoot, sPath);
 	if ( sPackPath == NULL ) {
@@ -110,6 +155,7 @@ int xgeResourceProviderAdd(const xge_resource_provider_t* pProvider)
 void xgeResourceProviderClear(void)
 {
 	memset(g_xge.arrResourceProviders, 0, sizeof(g_xge.arrResourceProviders));
+	memset(g_xge.arrXPackProviders, 0, sizeof(g_xge.arrXPackProviders));
 	g_xge.iResourceProviderCount = 0;
 	g_xge.iXPackProviderCount = 0;
 }
@@ -157,14 +203,31 @@ int xgeResourceLoad(const char* sURI, xge_resource_t* pResource)
 	if ( iSchemeLen > 0 ) {
 		iProvider = __xgeResourceFindProvider(sURI, iSchemeLen);
 		if ( iProvider >= 0 ) {
-			iRet = g_xge.arrResourceProviders[iProvider].load(sURI, &pResource->pData, &pResource->iSize, g_xge.arrResourceProviders[iProvider].pUser);
+			xge_resource_provider_t* pProvider = &g_xge.arrResourceProviders[iProvider];
+			xge_resource_free_snapshot_t* pSnapshot;
+
+			iRet = pProvider->load(sURI, &pResource->pData, &pResource->iSize, pProvider->pUser);
 			if ( iRet != XGE_OK ) {
 				memset(pResource, 0, sizeof(*pResource));
 				return iRet;
 			}
+			pSnapshot = (xge_resource_free_snapshot_t*)xrtCalloc(1, sizeof(*pSnapshot));
+			if ( pSnapshot == NULL ) {
+				if ( pProvider->free != NULL ) pProvider->free(pResource->pData, pProvider->pUser);
+				else xrtFree(pResource->pData);
+				memset(pResource, 0, sizeof(*pResource));
+				return XGE_ERROR_OUT_OF_MEMORY;
+			}
+			if ( pProvider->load == __xgeResourceXPackLoad ) {
+				pSnapshot->bXPack = 1;
+				pSnapshot->tXPack = *(xge_xpack_provider_t*)pProvider->pUser;
+			} else {
+				pSnapshot->free = pProvider->free;
+				pSnapshot->pUser = pProvider->pUser;
+			}
 			pResource->iProvider = iProvider + 1;
-			pResource->free = g_xge.arrResourceProviders[iProvider].free;
-			pResource->pUser = g_xge.arrResourceProviders[iProvider].pUser;
+			pResource->free = __xgeResourceFreeSnapshot;
+			pResource->pUser = pSnapshot;
 			return XGE_OK;
 		}
 		if ( __xgeSchemeEqual(sURI, iSchemeLen, "res") ) {

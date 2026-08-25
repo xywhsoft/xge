@@ -452,7 +452,7 @@ void xgeViewportSet(xge_rect_t tRect)
 	GLsizei iW;
 	GLsizei iH;
 
-	(void)__xgeShapeAutoBatchFlush();
+	(void)xgeFlush();
 	if ( tRect.fW < 0.0f ) {
 		tRect.fW = 0.0f;
 	}
@@ -489,7 +489,7 @@ void xgeViewportClear(void)
 {
 	xge_rect_t tRect;
 
-	(void)__xgeShapeAutoBatchFlush();
+	(void)xgeFlush();
 	g_xge.bViewportEnabled = 0;
 	memset(&g_xge.tViewportRect, 0, sizeof(g_xge.tViewportRect));
 	tRect = xgeViewportGet();
@@ -574,6 +574,7 @@ void xgeClipSet(xge_rect_t tRect)
 	float fBottom;
 	float fScissorBottom;
 
+	(void)xgeFlush();
 	if ( tRect.fW < 0.0f ) {
 		tRect.fW = 0.0f;
 	}
@@ -651,6 +652,7 @@ xge_rect_i_t xgeClipGetPixels(void)
 
 void xgeClipClear(void)
 {
+	(void)xgeFlush();
 	g_xge.bClipEnabled = 0;
 	memset(&g_xge.tClipRect, 0, sizeof(g_xge.tClipRect));
 	if ( (g_xge.bSokolRunning == 0) || (glDisable == NULL) ) {

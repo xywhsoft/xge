@@ -622,7 +622,7 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 	xui_widget_event_proc onHandler;
 	void* pHandlerUser;
 
-	if ( pWidget == NULL ) {
+	if ( !xuiInternalWidgetIsValid(pWidget) ) {
 		return XUI_OK;
 	}
 	pEvent->pCurrentTarget = pWidget;
@@ -636,6 +636,9 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 			}
 			if ( (iRet & XUI_EVENT_DISPATCH_STOP) != 0 ) {
 				pEvent->iFlags |= XUI_EVENT_DISPATCH_STOP;
+				return XUI_OK;
+			}
+			if ( !xuiInternalWidgetIsValid(pWidget) ) {
 				return XUI_OK;
 			}
 		}
@@ -1957,13 +1960,14 @@ static int __xuiInputDispatchEventWithFlags(xui_context pContext, const xui_even
 	}
 	pPointerState = NULL;
 	bPointerEvent = __xuiInputEventUsesPointerState(&tEvent);
+	pContext->iWidgetCallbackDepth++;
 	if ( bPointerEvent ) {
 		pPointerState = __xuiInputPointerStateFind(pContext, tEvent.iPointerId, tEvent.iPointerType, 1);
 		if ( pPointerState == NULL ) {
+			pContext->iWidgetCallbackDepth--;
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 		__xuiInputPointerStateLoad(pContext, pPointerState);
-		pContext->iInputDispatchDepth++;
 	}
 	iCount = 0;
 	for ( pScan = pTarget; pScan != NULL; pScan = pScan->pParent ) {
@@ -1971,9 +1975,10 @@ static int __xuiInputDispatchEventWithFlags(xui_context pContext, const xui_even
 	}
 	if ( iCount <= 0 ) {
 		if ( bPointerEvent ) {
-			pContext->iInputDispatchDepth--;
 			__xuiInputPointerStateStore(pContext, pPointerState);
 		}
+		pContext->iWidgetCallbackDepth--;
+		xuiInternalWidgetDestroyFlush(pContext);
 		return XUI_OK;
 	}
 	pPath = arrInlinePath;
@@ -1981,9 +1986,10 @@ static int __xuiInputDispatchEventWithFlags(xui_context pContext, const xui_even
 		pPath = (xui_widget*)xrtMalloc(sizeof(*pPath) * (size_t)iCount);
 		if ( pPath == NULL ) {
 			if ( bPointerEvent ) {
-				pContext->iInputDispatchDepth--;
 				__xuiInputPointerStateStore(pContext, pPointerState);
 			}
+			pContext->iWidgetCallbackDepth--;
+			xuiInternalWidgetDestroyFlush(pContext);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 	}
@@ -1993,12 +1999,13 @@ static int __xuiInputDispatchEventWithFlags(xui_context pContext, const xui_even
 	}
 	iRet = __xuiInputDispatchPath(&tEvent, pPath, iCount, pFlags);
 	if ( bPointerEvent ) {
-		pContext->iInputDispatchDepth--;
 		__xuiInputPointerStateStore(pContext, pPointerState);
 	}
 	if ( pPath != arrInlinePath ) {
 		xrtFree(pPath);
 	}
+	pContext->iWidgetCallbackDepth--;
+	xuiInternalWidgetDestroyFlush(pContext);
 	return iRet;
 }
 
@@ -2010,6 +2017,7 @@ XUI_API int xuiDispatchEvent(xui_context pContext, const xui_event_t* pEvent)
 	if ( iRet == XUI_OK && pEvent != NULL && pEvent->iType == XUI_EVENT_IME_COMPOSITION ) {
 		iRet = xuiInternalInputRefreshImePosition(pContext);
 	}
+	xuiInternalWidgetDestroyFlush(pContext);
 	return iRet;
 }
 

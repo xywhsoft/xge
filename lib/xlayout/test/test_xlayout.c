@@ -616,6 +616,26 @@ static void test_track_shrink(void)
 	xLayoutContextDestroy(context);
 }
 
+static void test_track_dimension_overflow_rejected(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t data = { 1.0f, 1.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t child = make_leaf(context, &data);
+	xlayout_style_t root_style = xLayoutStyleDefault();
+	xlayout_style_t child_style = xLayoutStyleDefault();
+
+	root_style.container.format = XLAYOUT_FORMAT_TRACK;
+	child_style.item.column = UINT32_MAX - 1u;
+	child_style.item.column_span = 1u;
+	expect_true(xLayoutNodeSetStyle(context, root, &root_style), "overflow track root style set");
+	expect_true(xLayoutNodeSetStyle(context, child, &child_style), "overflow track child style set");
+	expect_true(xLayoutNodeAppend(context, root, child), "overflow track child appended");
+	expect_true(!xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 20 }),
+		"overflow track dimensions are rejected before allocation");
+	xLayoutContextDestroy(context);
+}
+
 static void test_flow_fragments(void)
 {
 	xlayout_context_t* context = xLayoutContextCreate(NULL);
@@ -788,6 +808,7 @@ int main(void)
 	test_percent_track();
 	test_cross_track();
 	test_track_shrink();
+	test_track_dimension_overflow_rejected();
 	test_flow_fragments();
 	test_flow_fragment_margins();
 	test_absolute_and_baseline();

@@ -1,5 +1,6 @@
 #include "xui_internal.h"
 
+#include <stdio.h>
 #include <string.h>
 
 typedef struct xui_progress_data_t {
@@ -140,6 +141,93 @@ static char* __xuiProgressCopyText(const char* sText)
 	return sCopy;
 }
 
+static int __xuiProgressAppend(char** psText, size_t* pLength, size_t* pCapacity, const char* sText, size_t iTextLength)
+{
+	char* sNew;
+	size_t iNeed;
+	size_t iCapacity;
+
+	if ( iTextLength == 0u ) return XUI_OK;
+	iNeed = *pLength + iTextLength + 1u;
+	if ( iNeed > *pCapacity ) {
+		iCapacity = *pCapacity > 0u ? *pCapacity : 64u;
+		while ( iCapacity < iNeed ) iCapacity *= 2u;
+		sNew = (char*)xrtRealloc(*psText, iCapacity);
+		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		*psText = sNew;
+		*pCapacity = iCapacity;
+	}
+	memcpy(*psText + *pLength, sText, iTextLength);
+	*pLength += iTextLength;
+	(*psText)[*pLength] = '\0';
+	return XUI_OK;
+}
+
+static char* __xuiProgressFormatTemplate(const char* sTemplate, double fPercent)
+{
+	char* sResult = NULL;
+	char sFormat[24];
+	char sNumber[128];
+	size_t iLength = 0u;
+	size_t iCapacity = 0u;
+	int iRet;
+	int i;
+	int iWidth;
+	int iPrecision;
+
+	for ( i = 0; sTemplate[i] != '\0'; ) {
+		if ( sTemplate[i] != '%' ) {
+			iRet = __xuiProgressAppend(&sResult, &iLength, &iCapacity, sTemplate + i, 1u);
+			if ( iRet != XUI_OK ) goto fail;
+			i++;
+			continue;
+		}
+		if ( sTemplate[i + 1] == '%' ) {
+			iRet = __xuiProgressAppend(&sResult, &iLength, &iCapacity, "%", 1u);
+			if ( iRet != XUI_OK ) goto fail;
+			i += 2;
+			continue;
+		}
+		i++;
+		iWidth = 0;
+		while ( sTemplate[i] >= '0' && sTemplate[i] <= '9' ) {
+			if ( iWidth < 64 ) iWidth = iWidth * 10 + (sTemplate[i] - '0');
+			if ( iWidth > 64 ) iWidth = 64;
+			i++;
+		}
+		iPrecision = -1;
+		if ( sTemplate[i] == '.' ) {
+			i++;
+			iPrecision = 0;
+			while ( sTemplate[i] >= '0' && sTemplate[i] <= '9' ) {
+				if ( iPrecision < 12 ) iPrecision = iPrecision * 10 + (sTemplate[i] - '0');
+				if ( iPrecision > 12 ) iPrecision = 12;
+				i++;
+		}
+		}
+		if ( sTemplate[i] == 'f' || sTemplate[i] == 'F' || sTemplate[i] == 'g' ||
+			 sTemplate[i] == 'G' || sTemplate[i] == 'e' || sTemplate[i] == 'E' ) {
+			if ( iPrecision >= 0 ) {
+				snprintf(sFormat, sizeof(sFormat), "%%%d.%d%c", iWidth, iPrecision, sTemplate[i]);
+			} else {
+				snprintf(sFormat, sizeof(sFormat), "%%%d%c", iWidth, sTemplate[i]);
+			}
+			i++;
+			if ( snprintf(sNumber, sizeof(sNumber), sFormat, fPercent) < 0 ) goto fail;
+			iRet = __xuiProgressAppend(&sResult, &iLength, &iCapacity, sNumber, strlen(sNumber));
+			if ( iRet != XUI_OK ) goto fail;
+			continue;
+		}
+		iRet = __xuiProgressAppend(&sResult, &iLength, &iCapacity, "%", 1u);
+		if ( iRet != XUI_OK ) goto fail;
+	}
+	if ( sResult == NULL ) sResult = __xuiProgressCopyText("");
+	return sResult;
+fail:
+	if ( sResult != NULL ) xrtFree(sResult);
+	return NULL;
+}
+
 static int __xuiProgressSetDisplayText(xui_progress_data_t* pData)
 {
 	char* sNew;
@@ -157,7 +245,7 @@ static int __xuiProgressSetDisplayText(xui_progress_data_t* pData)
 	}
 	if ( pData->bTemplateString ) {
 		fPercent = (double)__xuiProgressRateData(pData) * 100.0;
-		sNew = (char*)xrtFormat(pData->sTextTemplate, fPercent);
+		sNew = __xuiProgressFormatTemplate(pData->sTextTemplate, fPercent);
 	} else {
 		sNew = __xuiProgressCopyText(pData->sTextTemplate);
 	}

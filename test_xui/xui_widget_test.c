@@ -38,6 +38,14 @@ static int __xuiTestCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	return XUI_OK;
 }
 
+static int __xuiTestDestroyRootOnEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pEvent;
+	xuiWidgetDestroy((xui_widget)pUser);
+	return XUI_OK;
+}
+
 int main(void)
 {
 	xge_desc_t tXgeDesc;
@@ -232,6 +240,21 @@ int main(void)
 	iRet = xuiRender(pCacheContext, pCacheTarget, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize second render failed");
 	XUI_TEST_CHECK(iCacheRenderCount > iCacheRenderBefore, "cache size change should rebuild cache");
+	{
+		xui_event_t tEvent;
+
+		iRet = xuiWidgetSetEventHandler(pCacheWidget, XUI_EVENT_POINTER_DOWN, __xuiTestDestroyRootOnEvent, pCacheRoot);
+		XUI_TEST_CHECK(iRet == XUI_OK, "set reentrant destroy handler failed");
+		memset(&tEvent, 0, sizeof(tEvent));
+		tEvent.iSize = sizeof(tEvent);
+		tEvent.iType = XUI_EVENT_POINTER_DOWN;
+		tEvent.pTarget = pCacheWidget;
+		iRet = xuiDispatchEvent(pCacheContext, &tEvent);
+		XUI_TEST_CHECK(iRet == XUI_OK, "reentrant destroy dispatch failed");
+		XUI_TEST_CHECK(xuiGetRootWidget(pCacheContext) == NULL, "destroyed root remained attached after dispatch");
+		pCacheRoot = NULL;
+		pCacheWidget = NULL;
+	}
 
 cleanup:
 	if ( pDraw != NULL ) {

@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -174,6 +175,10 @@ int main(void)
 	}
 	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "line data");
+	arrLine[0].y = NAN;
+	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite chart data rejected");
+	arrLine[0].y = 3.0;
 	iRet = xuiChartSetSeriesVisible(pChart, iPie, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiChartGetSeriesVisible(pChart, iPie), "hide pie");
 	iRet = xuiChartSetSeriesSymbol(pChart, iLine, XUI_CHART_SYMBOL_DIAMOND);

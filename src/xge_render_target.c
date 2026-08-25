@@ -149,6 +149,7 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	int iRow;
 	int iCopyStride;
 	int iSize;
+	int iRet;
 
 	if ( (pTarget == NULL) || (pPixels == NULL) || (pTarget->iWidth <= 0) || (pTarget->iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -167,6 +168,10 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	}
 	if ( glReadPixels == NULL ) {
 		return XGE_ERROR_UNSUPPORTED;
+	}
+	iRet = xgeFlush();
+	if ( iRet != XGE_OK ) {
+		return iRet;
 	}
 	if ( __xgeRenderTargetEnsureFramebuffer(pTarget) != XGE_OK ) {
 		return XGE_ERROR_GPU_FAILED;

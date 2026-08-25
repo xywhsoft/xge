@@ -209,6 +209,7 @@ typedef struct xge_context_t {
 	int bAsyncThreadingEnabled;
 	int iSceneUpdateMode;
 	int iSceneMaxUpdates;
+	int iSceneTransitionDepth;
 	float fSceneFixedStep;
 	float fSceneAccumulator;
 	xge_texture_t tFallbackTexture;
@@ -347,6 +348,13 @@ typedef struct xge_shape_renderer_t {
 } xge_shape_renderer_t;
 
 static xge_shape_renderer_t g_xgeShapeRenderer;
+
+static void __xgeBuiltinRenderersReset(void)
+{
+	memset(&g_xgeTextureRenderer, 0, sizeof(g_xgeTextureRenderer));
+	memset(&g_xgeQuad3DRenderer, 0, sizeof(g_xgeQuad3DRenderer));
+	memset(&g_xgeShapeRenderer, 0, sizeof(g_xgeShapeRenderer));
+}
 
 // Sokol 分配函数接入 xrt
 static void* __xgeSokolAlloc(size_t iSize, void* pUser)
@@ -1582,6 +1590,7 @@ static void __xgeSokolCleanup(void)
 		__xgeImeUninstallWin32();
 	#endif
 	__xgeShapeExRendererUnit();
+	__xgeBuiltinRenderersReset();
 	g_xge.bSokolRunning = 0;
 	__xgePlatformRuntimeUpdate();
 }
