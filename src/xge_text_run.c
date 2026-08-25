@@ -327,7 +327,29 @@ static void __xgeGlyphRunPrepareAtlas(const xge_glyph_run_t* pRun)
 	}
 }
 
-void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags)
+static uint32_t __xgeGlyphRunSpanColor(const xge_glyph_position_t* pPosition,
+	uint32_t iColor, const xge_text_paint_span_t* pSpans, int iSpanCount)
+{
+	uint32_t iClusterEnd;
+	int i;
+
+	if ( pPosition == NULL || pSpans == NULL || iSpanCount <= 0 ) return iColor;
+	iClusterEnd = pPosition->iClusterEnd;
+	if ( iClusterEnd <= pPosition->iCluster ) iClusterEnd = pPosition->iCluster + 1u;
+	for ( i = 0; i < iSpanCount; i++ ) {
+		const xge_text_paint_span_t* pSpan = &pSpans[i];
+		int iStart = pSpan->iStart;
+		int iEnd = pSpan->iEnd;
+		if ( iEnd <= 0 || iEnd <= iStart ) continue;
+		if ( iStart < 0 ) iStart = 0;
+		if ( (uint32_t)iEnd <= pPosition->iCluster || (uint32_t)iStart >= iClusterEnd ) continue;
+		iColor = pSpan->iColor;
+	}
+	return iColor;
+}
+
+static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float fY,
+	uint32_t iColor, uint32_t iFlags, const xge_text_paint_span_t* pSpans, int iSpanCount)
 {
 	const xge_glyph_position_t* pPosition;
 	xge_glyph_atlas_page_t* pPages;
@@ -391,12 +413,23 @@ void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t i
 				((pPosition->iItemKind == XGE_TEXT_ITEM_GLYPH) ? pPosition->fOffsetY : 0.0f);
 			tDraw.tDst.fW = (float)tGlyph.iWidth;
 			tDraw.tDst.fH = (float)tGlyph.iHeight;
-			tDraw.iColor = iColor;
+			tDraw.iColor = __xgeGlyphRunSpanColor(pPosition, iColor, pSpans, iSpanCount);
 			tDraw.iFlags = iFlags;
 			xgeDrawEx(&tDraw);
 		}
 		fPenX += pPosition->fAdvanceX;
 	}
+}
+
+void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags)
+{
+	__xgeGlyphRunDrawSpans(pRun, fX, fY, iColor, iFlags, NULL, 0);
+}
+
+void xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor,
+	uint32_t iFlags, const xge_text_paint_span_t* pSpans, int iSpanCount)
+{
+	__xgeGlyphRunDrawSpans(pRun, fX, fY, iColor, iFlags, pSpans, iSpanCount);
 }
 
 static void __xgeGlyphRunDecorationLine(float fX0, float fX1, float fY, const xge_text_decoration_t* pDecoration, float fDefaultThickness)
@@ -535,6 +568,7 @@ void xgeGlyphRunFree(xge_glyph_run_t* pRun) { if ( pRun != NULL ) memset(pRun, 0
 xge_vec2_t xgeGlyphRunMeasure(const xge_glyph_run_t* pRun) { xge_vec2_t t = {0.0f, 0.0f}; (void)pRun; return t; }
 int xgeGlyphRunHitTest(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t* pCluster, int* pTrailing) { (void)pRun; (void)fX; (void)fY; (void)pCluster; (void)pTrailing; return XGE_ERROR_UNSUPPORTED; }
 void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags) { (void)pRun; (void)fX; (void)fY; (void)iColor; (void)iFlags; }
+void xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags, const xge_text_paint_span_t* pSpans, int iSpanCount) { (void)pRun; (void)fX; (void)fY; (void)iColor; (void)iFlags; (void)pSpans; (void)iSpanCount; }
 void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags, const xge_text_decoration_t* pDecorations, int iDecorationCount) { (void)pRun; (void)fX; (void)fY; (void)iColor; (void)iFlags; (void)pDecorations; (void)iDecorationCount; }
 
 #endif

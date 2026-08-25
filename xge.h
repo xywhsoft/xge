@@ -1310,6 +1310,13 @@ typedef struct xge_glyph_run_t {
 	void* pBackend;
 } xge_glyph_run_t;
 
+typedef struct xge_text_paint_span_t {
+	uint32_t iSize;
+	int iStart;
+	int iEnd;
+	uint32_t iColor;
+} xge_text_paint_span_t;
+
 typedef struct xge_text_shape_desc_t {
 	uint32_t iSize;
 	xge_font pFont;
@@ -1721,6 +1728,7 @@ XGE_API void xgeGlyphRunFree(xge_glyph_run_t* pRun);
 XGE_API xge_vec2_t xgeGlyphRunMeasure(const xge_glyph_run_t* pRun);
 XGE_API int xgeGlyphRunHitTest(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t* pCluster, int* pTrailing);
 XGE_API void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags);
+XGE_API void xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags, const xge_text_paint_span_t* pSpans, int iSpanCount);
 XGE_API void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags, const xge_text_decoration_t* pDecorations, int iDecorationCount);
 XGE_API int xgeFontGlyphOutlineAppendShapeEx(xge_font pFont, int iGlyph, xge_shape_ex pShape, float fPenX, float fBaselineY);
 XGE_API int xgeGlyphRunAppendShapeEx(const xge_glyph_run_t* pRun, xge_shape_ex pShape, float fX, float fY);

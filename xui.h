@@ -1665,6 +1665,13 @@ typedef struct xui_text_shape_t {
 	float fLineHeight;
 } xui_text_shape_t;
 
+typedef struct xui_text_paint_span_t {
+	uint32_t iSize;
+	int iStart;
+	int iEnd;
+	uint32_t iColor;
+} xui_text_paint_span_t;
+
 typedef struct xui_text_layout_desc_t {
 	uint32_t iSize;
 	const char* sText;
@@ -5403,6 +5410,9 @@ typedef int (*xui_draw_rect_stroke_proc)(xui_proxy pProxy, xui_draw_context pDra
 typedef int (*xui_draw_circle_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, uint32_t iColor);
 typedef int (*xui_draw_circle_stroke_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, float fWidth, uint32_t iColor);
 typedef int (*xui_draw_text_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
+typedef int (*xui_draw_text_spans_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont,
+	const char* sText, int iTextSize, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags,
+	const xui_text_paint_span_t* pSpans, int iSpanCount);
 typedef int (*xui_draw_clip_get_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip);
 typedef int (*xui_draw_clip_set_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect);
 typedef int (*xui_draw_clip_clear_proc)(xui_proxy pProxy, xui_draw_context pDraw);
@@ -5471,6 +5481,7 @@ struct xui_proxy_t {
 	xui_draw_circle_fill_proc drawCircleFill;
 	xui_draw_circle_stroke_proc drawCircleStroke;
 	xui_draw_text_proc drawText;
+	xui_draw_text_spans_proc drawTextSpans;
 	xui_draw_clip_get_proc drawClipGet;
 	xui_draw_clip_set_proc drawClipSet;
 	xui_draw_clip_clear_proc drawClipClear;

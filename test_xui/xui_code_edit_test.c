@@ -751,6 +751,38 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "unicode render");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\nbeta") == 0, "unicode backspace deletes character");
+	iRet = xuiCodeEditSetText(pCodeEdit, "A\xE4\xBD\xA0\xF0\x9F\x99\x82" "B");
+	XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test text");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test layout");
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test render");
+	iRet = xuiCodeEditGetOffsetRect(pCodeEdit, 1, &tRangeRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test first cluster rect");
+	{
+		xui_rect_t tNextRect;
+		float fMidpoint;
+		iRet = xuiCodeEditGetOffsetRect(pCodeEdit, 4, &tNextRect);
+		XUI_TEST_CHECK(iRet == XUI_OK && tNextRect.fX > tRangeRect.fX, "shaped hit-test CJK boundary rect");
+		fMidpoint = (tRangeRect.fX + tNextRect.fX) * 0.5f;
+		iRet = __xuiCodeEditPointerDown(pContext, fMidpoint - 1.0f, tRangeRect.fY + 4.0f);
+		if ( iRet == XUI_OK ) iRet = __xuiCodeEditPointerUp(pContext, fMidpoint - 1.0f, tRangeRect.fY + 4.0f);
+		XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test leading click");
+		iRet = xuiCodeSelectionGetState(xuiCodeEditGetSelection(pCodeEdit), &tSelection);
+		XUI_TEST_CHECK(iRet == XUI_OK && tSelection.iCaretOffset == 1, "shaped hit-test leading cluster boundary");
+		iRet = __xuiCodeEditPointerDown(pContext, fMidpoint + 1.0f, tRangeRect.fY + 4.0f);
+		if ( iRet == XUI_OK ) iRet = __xuiCodeEditPointerUp(pContext, fMidpoint + 1.0f, tRangeRect.fY + 4.0f);
+		XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test trailing click");
+		iRet = xuiCodeSelectionGetState(xuiCodeEditGetSelection(pCodeEdit), &tSelection);
+		XUI_TEST_CHECK(iRet == XUI_OK && tSelection.iCaretOffset == 4, "shaped hit-test trailing cluster boundary");
+		iRet = xuiCodeEditSetText(pCodeEdit, "\tA");
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditSetTabColumns(pCodeEdit, 8) == XUI_OK, "tab layout cache invalidation setup");
+		iRet = xuiCodeEditGetOffsetRect(pCodeEdit, 1, &tNextRect);
+		XUI_TEST_CHECK(iRet == XUI_OK && tNextRect.fX > tRangeRect.fX, "tab layout cache invalidated");
+		(void)xuiCodeEditSetTabColumns(pCodeEdit, 4);
+	}
+	iRet = xuiCodeEditSetText(pCodeEdit, "alpha\nbeta");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore text after shaped hit-test");
 	iRet = xuiCodeEditSetText(pCodeEdit, "12345");
 	XUI_TEST_CHECK(iRet == XUI_OK, "explicit IME range seed text");
 	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit),

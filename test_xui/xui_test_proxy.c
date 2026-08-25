@@ -786,6 +786,16 @@ static int __xuiTestTextMeasure(xui_proxy pProxy, xui_font pFont, const char* sT
 	return XUI_OK;
 }
 
+static int __xuiTestDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont,
+	const char* sText, int iTextSize, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags,
+	const xui_text_paint_span_t* pSpans, int iSpanCount)
+{
+	(void)iTextSize;
+	if ( iSpanCount < 0 || (iSpanCount > 0 && pSpans == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iSpanCount > 0 ) iColor = pSpans[iSpanCount - 1].iColor;
+	return __xuiTestDrawText(pProxy, pDraw, pFont, sText, tRect, iColor, iFlags);
+}
+
 static int __xuiTestFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_font pSource, float fSize)
 {
 	if ( !__xuiTestFontValid(pSource) || fSize <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -920,6 +930,7 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.drawCircleFill = __xuiTestDrawCircleFill;
 	pState->tProxy.drawCircleStroke = __xuiTestDrawCircleStroke;
 	pState->tProxy.drawText = __xuiTestDrawText;
+	pState->tProxy.drawTextSpans = __xuiTestDrawTextSpans;
 	pState->tProxy.textShape = __xuiTestTextShape;
 }
 
