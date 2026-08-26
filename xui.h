@@ -5287,6 +5287,7 @@ typedef struct xui_interaction_policy_t {
 	int iDragHeight;
 	int iWheelScrollLines;
 	float fTooltipInitialDelay;
+	/* Seconds between caret visibility toggles; zero keeps the caret visible. */
 	float fCaretBlinkSeconds;
 } xui_interaction_policy_t;
 

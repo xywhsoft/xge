@@ -1401,7 +1401,7 @@ int xuiInternalCaretBlinkVisible(xui_context pContext)
 
 void xuiInternalCaretBlinkUpdate(xui_context pContext, float fDelta)
 {
-	float fHalfPeriod;
+	float fInterval;
 	int bOldVisible;
 
 	if ( !__xuiContextValid(pContext) ) return;
@@ -1410,12 +1410,13 @@ void xuiInternalCaretBlinkUpdate(xui_context pContext, float fDelta)
 		return;
 	}
 	if ( fDelta <= 0.0f ) return;
-	fHalfPeriod = pContext->tInteractionPolicy.fCaretBlinkSeconds * 0.5f;
-	if ( fHalfPeriod < 0.05f ) fHalfPeriod = 0.05f;
+	/* Windows reports the interval between visible-state toggles, not a full cycle. */
+	fInterval = pContext->tInteractionPolicy.fCaretBlinkSeconds;
+	if ( fInterval < 0.05f ) fInterval = 0.05f;
 	bOldVisible = pContext->bCaretBlinkVisible;
 	pContext->fCaretBlinkElapsed += fDelta;
-	while ( pContext->fCaretBlinkElapsed >= fHalfPeriod ) {
-		pContext->fCaretBlinkElapsed -= fHalfPeriod;
+	while ( pContext->fCaretBlinkElapsed >= fInterval ) {
+		pContext->fCaretBlinkElapsed -= fInterval;
 		pContext->bCaretBlinkVisible = !pContext->bCaretBlinkVisible;
 	}
 	if ( bOldVisible != pContext->bCaretBlinkVisible ) {

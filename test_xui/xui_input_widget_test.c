@@ -206,6 +206,10 @@ static int __xuiInputWidgetClickMenuItem(xui_context pContext, xui_widget pMenu,
 	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
 	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
 }
 

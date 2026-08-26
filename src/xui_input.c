@@ -1406,7 +1406,6 @@ XUI_API int xuiInputPointerMoveEx(xui_context pContext, uint64_t iPointerId, int
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	xuiInternalCaretBlinkReset(pContext);
 	pState = __xuiInputPointerStateFind(pContext, iPointerId, iPointerType, 1);
 	if ( pState == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
