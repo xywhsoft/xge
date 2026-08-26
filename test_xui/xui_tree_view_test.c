@@ -28,6 +28,10 @@ static void __xuiTreeViewSelected(xui_widget pWidget, int iNodeId, void* pUser)
 typedef struct xui_tree_view_event_state_t {
 	int iDoubleClickCount;
 	int iContextMenuCount;
+	int iContextNode;
+	int iContextVisible;
+	float fContextX;
+	float fContextY;
 } xui_tree_view_event_state_t;
 
 static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -36,8 +40,20 @@ static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	(void)pWidget;
 	if ( (pState == NULL) || (pEvent == NULL) ) return XUI_OK;
 	if ( pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK ) pState->iDoubleClickCount++;
-	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) pState->iContextMenuCount++;
 	return XUI_OK;
+}
+
+static int __xuiTreeViewContext(xui_widget pWidget, int iNodeId, int iVisibleIndex, float fX, float fY, void* pUser)
+{
+	xui_tree_view_event_state_t* pState = (xui_tree_view_event_state_t*)pUser;
+	(void)pWidget;
+	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState->iContextMenuCount++;
+	pState->iContextNode = iNodeId;
+	pState->iContextVisible = iVisibleIndex;
+	pState->fContextX = fX;
+	pState->fContextY = fY;
+	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static int __xuiTreeViewRenderItem(xui_widget pWidget, int iNodeId, int iVisible, const xui_tree_view_node_t* pNode, xui_draw_context pDraw, xui_rect_t tRect, int iState, void* pUser)
@@ -155,6 +171,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
 	iRet = xuiWidgetSetEventCallback(pTree, __xuiTreeViewEvent, &tEventState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "event callback");
+	iRet = xuiTreeViewSetContextMenu(pTree, __xuiTreeViewContext, &tEventState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 	iRet = xuiTreeViewSetItemRenderer(pTree, __xuiTreeViewRenderItem, &iRenderCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "renderer callback");
 	iRet = xuiTreeViewSetColors(pTree,
@@ -281,7 +299,14 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, tTreeWorld.fX + tItem.fX + 72.0f, tTreeWorld.fY + tItem.fY + 10.0f, XUI_POINTER_BUTTON_RIGHT, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 70, "right click selects");
-	XUI_TEST_CHECK(tEventState.iContextMenuCount >= 1, "right click notifies");
+	XUI_TEST_CHECK(tEventState.iContextMenuCount == 1 && tEventState.iContextNode == 70,
+		"right click semantic callback");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_CONTEXT_MENU, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEventState.iContextMenuCount == 2 &&
+		tEventState.iContextNode == 70 && tEventState.iContextVisible >= 0 &&
+		tEventState.fContextX >= tTreeWorld.fX && tEventState.fContextY >= tTreeWorld.fY,
+		"menu key selected node anchor");
 
 	tItem = xuiTreeViewGetItemRect(pTree, xuiTreeViewGetVisibleIndexOfId(pTree, 50));
 	iRet = __xuiTreeViewClick(pContext, tTreeWorld.fX + tItem.fX + 84.0f, tTreeWorld.fY + tItem.fY + 10.0f);

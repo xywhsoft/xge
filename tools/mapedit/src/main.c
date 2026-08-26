@@ -7021,19 +7021,23 @@ static int mapedit_material_list_event(xui_widget pWidget, const xui_event_t* pE
 		if ( index >= 0 ) (void)mapedit_material_open_view(pApp, index);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
-		if ( index >= 0 ) {
-			pApp->iMaterialContextIndex = index;
-			(void)mapedit_material_select_for_action(pApp, index);
-		} else {
-			pApp->iMaterialContextIndex = pApp->tMaterialCategoryFiles.iSelected;
-		}
-		if ( pApp->iMaterialContextIndex >= 0 && pApp->pMaterialContextMenu != NULL ) {
-			(void)xuiMenuOpenAt(pApp->pMaterialContextMenu, pWidget, pEvent->fX, pEvent->fY);
-		}
-		return XUI_EVENT_DISPATCH_STOP;
-	}
 	return XUI_OK;
+}
+
+static int mapedit_material_list_context(xui_widget pWidget, int iIndex, float fX, float fY, void* pUser)
+{
+	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
+	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iIndex >= 0 ) {
+		pApp->iMaterialContextIndex = iIndex;
+		(void)mapedit_material_select_for_action(pApp, iIndex);
+	} else {
+		pApp->iMaterialContextIndex = pApp->tMaterialCategoryFiles.iSelected;
+	}
+	if ( pApp->iMaterialContextIndex >= 0 && pApp->pMaterialContextMenu != NULL ) {
+		(void)xuiMenuOpenAt(pApp->pMaterialContextMenu, pWidget, fX, fY);
+	}
+	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static void mapedit_material_context_select(xui_widget pWidget, int iIndex, int iValue, void* pUser)
@@ -7686,7 +7690,7 @@ static int mapedit_create_material_manager_panel(mapedit_app_t* pApp, xui_widget
 		return XUI_ERROR;
 	}
 	(void)xuiWidgetSetEventHandler(pList, XUI_EVENT_POINTER_DOUBLE_CLICK, mapedit_material_list_event, pApp);
-	(void)xuiWidgetSetEventHandler(pList, XUI_EVENT_CONTEXT_MENU, mapedit_material_list_event, pApp);
+	(void)xuiListViewSetContextMenu(pList, mapedit_material_list_context, pApp);
 	(void)xuiWidgetSetEventInterest(pList, XUI_EVENT_MASK_DOUBLE_CLICK | XUI_EVENT_MASK_CONTEXT_MENU, 1);
 	(void)xuiWidgetSetTooltipResolver(pList, mapedit_material_tooltip_resolve, pApp);
 	mapedit_widget_fixed_height(pApp->pMaterialCreateButton, 30.0f);

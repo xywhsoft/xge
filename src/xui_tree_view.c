@@ -21,6 +21,8 @@ typedef struct xui_tree_view_data_t {
 	xui_font pFont;
 	xui_tree_view_select_proc onSelect;
 	void* pSelectUser;
+	xui_tree_view_context_proc onContext;
+	void* pContextUser;
 	xui_tree_view_count_proc onCount;
 	xui_tree_view_node_proc onNode;
 	void* pAdapterUser;
@@ -983,14 +985,42 @@ static int __xuiTreeViewContextMenu(xui_widget pWidget, xui_tree_view_data_t* pD
 {
 	int iVisible;
 	int iNode;
+	int iRet;
+	float fX;
+	float fY;
+	xui_rect_t tAnchor;
+	xui_rect_t tWorld;
 
 	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
-	iVisible = __xuiTreeViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
-	if ( iVisible < 0 ) return XUI_OK;
-	iNode = pData->arrVisible[iVisible];
-	if ( !__xuiTreeViewNodeEnabledData(pData, iNode) ) return XUI_OK;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+		iVisible = pData->iFocusVisible;
+		if ( iVisible < 0 ) iVisible = __xuiTreeViewVisibleIndexData(pData, pData->iSelectedId);
+		tAnchor = (iVisible >= 0) ? xuiTreeViewGetItemRect(pWidget, iVisible) : tWorld;
+		if ( iVisible >= 0 ) {
+			tAnchor.fX += tWorld.fX;
+			tAnchor.fY += tWorld.fY;
+		}
+	} else {
+		iVisible = __xuiTreeViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
+		tAnchor = tWorld;
+	}
+	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+	iNode = (iVisible >= 0 && iVisible < pData->iVisibleCount) ? pData->arrVisible[iVisible] : -1;
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
-	return __xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
+	if ( iNode >= 0 && __xuiTreeViewNodeEnabledData(pData, iNode) ) {
+		iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
+		if ( iRet != XUI_OK ) return iRet;
+	} else {
+		iVisible = -1;
+		iNode = -1;
+	}
+	if ( pData->onContext != NULL ) {
+		return pData->onContext(pWidget,
+			iNode >= 0 ? pData->arrNodes[iNode].iId : -1,
+			iVisible, fX, fY, pData->pContextUser);
+	}
+	return XUI_OK;
 }
 
 static int __xuiTreeViewVisibleRows(xui_widget pWidget, xui_tree_view_data_t* pData)
@@ -1814,6 +1844,15 @@ XUI_API int xuiTreeViewSetSelect(xui_widget pWidget, xui_tree_view_select_proc o
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiTreeViewSetContextMenu(xui_widget pWidget, xui_tree_view_context_proc onContext, void* pUser)
+{
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

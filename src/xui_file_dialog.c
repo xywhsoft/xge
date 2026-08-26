@@ -52,6 +52,8 @@ struct xui_file_dialog_t {
 	void* pPathInputBlurUser;
 	xui_file_dialog_result_proc onResult;
 	void* pResultUser;
+	xui_file_dialog_context_proc onContext;
+	void* pContextUser;
 	char* sCurrentDir;
 	char* sFileName;
 	char* sFilter;
@@ -1215,6 +1217,28 @@ static void __xuiFileDialogFileSelect(xui_widget pWidget, int iIndex, void* pUse
 	}
 }
 
+static int __xuiFileDialogListContext(xui_widget pWidget, int iIndex, float fX, float fY, void* pUser)
+{
+	xui_file_dialog pDialog = (xui_file_dialog)pUser;
+	const char* sPath = "";
+	int bDirectory = 0;
+
+	if ( !__xuiFileDialogValid(pDialog) || pDialog->onContext == NULL ) return XUI_OK;
+	if ( pWidget == pDialog->pRootList ) {
+		if ( iIndex >= 0 && iIndex < pDialog->iRootCount ) {
+			sPath = pDialog->arrRootItems[iIndex];
+			bDirectory = 1;
+		}
+	} else if ( iIndex >= 0 && iIndex < pDialog->iEntryCount ) {
+		pDialog->iSelectedEntry = iIndex;
+		sPath = pDialog->arrEntries[iIndex].sPath;
+		bDirectory = pDialog->arrEntries[iIndex].bDir;
+		(void)__xuiFileDialogSetNameText(pDialog, pDialog->arrEntries[iIndex].sName);
+	}
+	return pDialog->onContext(pDialog, iIndex, sPath, bDirectory,
+		fX, fY, pDialog->pContextUser);
+}
+
 static void __xuiFileDialogPathChange(xui_widget pWidget, const char* sText, void* pUser)
 {
 	(void)sText;
@@ -1722,6 +1746,8 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	(void)xuiComboBoxSetSelect(pDialog->pFilterCombo, __xuiFileDialogFilterSelect, pDialog);
 	(void)xuiListViewSetSelect(pDialog->pRootList, __xuiFileDialogRootSelect, pDialog);
 	(void)xuiListViewSetSelect(pDialog->pFileList, __xuiFileDialogFileSelect, pDialog);
+	(void)xuiListViewSetContextMenu(pDialog->pRootList, __xuiFileDialogListContext, pDialog);
+	(void)xuiListViewSetContextMenu(pDialog->pFileList, __xuiFileDialogListContext, pDialog);
 	(void)xuiListViewSetItemRenderer(pDialog->pFileList, __xuiFileDialogDrawFileItem, pDialog);
 	(void)xuiListViewSetNotifyRepeatSelect(pDialog->pFileList, 1);
 	(void)xuiWindowAddChild(pDialog->pWindow, pDialog->pPathRow);
@@ -1866,6 +1892,14 @@ XUI_API int xuiFileDialogSetResult(xui_file_dialog pDialog, xui_file_dialog_resu
 	}
 	pDialog->onResult = onResult;
 	pDialog->pResultUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiFileDialogSetContextMenu(xui_file_dialog pDialog, xui_file_dialog_context_proc onContext, void* pUser)
+{
+	if ( !__xuiFileDialogValid(pDialog) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pDialog->onContext = onContext;
+	pDialog->pContextUser = pUser;
 	return XUI_OK;
 }
 

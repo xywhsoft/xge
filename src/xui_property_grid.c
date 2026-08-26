@@ -39,6 +39,8 @@ typedef struct xui_property_grid_data_t {
 	void* pActionUser;
 	xui_property_grid_render_proc onRender;
 	void* pRenderUser;
+	xui_property_grid_context_proc onContext;
+	void* pContextUser;
 	int iSelectCount;
 	int iToggleCount;
 } xui_property_grid_data_t;
@@ -1079,6 +1081,28 @@ static int __xuiPropertyGridPrepare(xui_widget pWidget, void* pUser)
 	return xuiWidgetSetTableRow(pWidget, 1, &tTrack);
 }
 
+static int __xuiPropertyGridContextProc(xui_widget pWidget, int iPart, int iRow, int iColumn,
+	float fX, float fY, void* pUser)
+{
+	xui_property_grid_data_t* pData = (xui_property_grid_data_t*)pUser;
+	int iCategory = -1;
+	int iProperty = -1;
+	int iTargetPart = iPart;
+	(void)pWidget;
+	if ( pData == NULL || pData->onContext == NULL ) return XUI_OK;
+	if ( iPart == XUI_CONTEXT_TARGET_ITEM ) {
+		iCategory = __xuiPropertyGridVisibleRowCategory(pData, iRow);
+		iProperty = __xuiPropertyGridVisibleRowProperty(pData, iRow);
+		if ( iCategory >= 0 ) {
+			iTargetPart = XUI_CONTEXT_TARGET_HEADER;
+		} else if ( iProperty >= 0 ) {
+			iTargetPart = (iColumn == 1) ? XUI_CONTEXT_TARGET_VALUE : XUI_CONTEXT_TARGET_ITEM;
+		}
+	}
+	return pData->onContext(pData->pWidget, iTargetPart, iCategory, iProperty,
+		fX, fY, pData->pContextUser);
+}
+
 static int __xuiPropertyGridLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
 {
 	xui_property_grid_data_t* pData;
@@ -1221,6 +1245,7 @@ static int __xuiPropertyGridInit(xui_widget pWidget, void* pTypeData, const void
 	(void)xuiWidgetSetAlign(pData->pTableGrid, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	(void)xuiWidgetSetTableCell(pData->pTableGrid, 0, 0, 1, 1);
 	pData->pTableView = xuiTableGridGetTableView(pData->pTableGrid);
+	(void)xuiTableGridSetContextMenu(pData->pTableGrid, __xuiPropertyGridContextProc, pData);
 	if ( pData->pTableView == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	(void)xuiTableViewSetSelect(pData->pTableView, __xuiPropertyGridSelectProc, pData);
 	(void)xuiTableViewSetMergeProvider(pData->pTableView, __xuiPropertyGridMergeProc, pData);
@@ -1860,6 +1885,15 @@ XUI_API int xuiPropertyGridSetGlobalRenderer(xui_widget pWidget, xui_property_gr
 	pData->onRender = onRender;
 	pData->pRenderUser = pUser;
 	if ( pData->pTableView != NULL ) (void)xuiTableViewRefresh(pData->pTableView);
+	return XUI_OK;
+}
+
+XUI_API int xuiPropertyGridSetContextMenu(xui_widget pWidget, xui_property_grid_context_proc onContext, void* pUser)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

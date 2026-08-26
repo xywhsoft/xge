@@ -1552,9 +1552,51 @@ static void __xuiTimeLineMenuSelect(xui_widget pMenu, int iIndex, int iValue, vo
 static int __xuiTimeLineContextMenu(xui_widget pWidget, xui_timeline_view_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_timeline_hit_t tHit;
+	xui_rect_t tWorld;
+	float fOffsetX;
+	float fOffsetY;
+	float fX;
+	float fY;
+	int iLayer;
+	int iFrame;
 	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) return XUI_OK;
-	(void)__xuiTimeLineHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
-	if ( __xuiTimeLineOpenContextMenuAt(pWidget, pData, &tHit, pEvent->fX, pEvent->fY) != XUI_OK ) return XUI_OK;
+	memset(&tHit, 0, sizeof(tHit));
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU && pData->iLayerCount > 0 ) {
+		iLayer = __xuiTimeLineClampInt((pData->iActiveLayer >= 0) ? pData->iActiveLayer : 0, 0, pData->iLayerCount - 1);
+		iFrame = __xuiTimeLineClampInt(pData->iCurrentFrame, 0, pData->iTotalFrames - 1);
+		__xuiTimeLineScrollOffset(pData, &fOffsetX, &fOffsetY);
+		tHit.iType = XUI_TIMELINE_HIT_FRAME;
+		tHit.iLayer = iLayer;
+		tHit.iLayerId = pData->arrLayers[iLayer].iId;
+		tHit.iFrame = iFrame;
+		tHit.iSpanId = -1;
+		tHit.tRect = (xui_rect_t){
+			pData->fLayerHeaderWidth + iFrame * pData->fFrameWidth - fOffsetX,
+			pData->fRulerHeight + __xuiTimeLineLayerTop(pData, iLayer) - fOffsetY,
+			pData->fFrameWidth,
+			__xuiTimeLineLayerHeight(pData, iLayer)
+		};
+		fX = tWorld.fX + tHit.tRect.fX;
+		fY = tWorld.fY + tHit.tRect.fY + tHit.tRect.fH;
+	} else {
+		(void)__xuiTimeLineHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
+		fX = pEvent->fX;
+		fY = pEvent->fY;
+		if ( tHit.iLayer >= 0 && tHit.iLayer < pData->iLayerCount ) {
+			(void)__xuiTimeLineSetActiveLayer(pWidget, pData, tHit.iLayer);
+		}
+		if ( tHit.iFrame >= 0 && tHit.iFrame < pData->iTotalFrames ) {
+			(void)__xuiTimeLineSetCurrentFrameInternal(pWidget, pData, tHit.iFrame);
+			if ( __xuiTimeLineFindSelection(pData, tHit.iLayer, tHit.iFrame) < 0 ) {
+				if ( __xuiTimeLineClearSelectionRaw(pData) |
+				     __xuiTimeLineSelectRangeRaw(pData, tHit.iLayer, tHit.iFrame, tHit.iLayer, tHit.iFrame, 1) ) {
+					(void)__xuiTimeLineSelectionNotify(pWidget, pData);
+				}
+			}
+		}
+	}
+	if ( __xuiTimeLineOpenContextMenuAt(pWidget, pData, &tHit, fX, fY) != XUI_OK ) return XUI_OK;
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
@@ -1608,8 +1650,8 @@ static int __xuiTimeLineKeyDown(xui_widget pWidget, xui_timeline_view_data_t* pD
 			};
 			tWorld = xuiWidgetGetWorldRect(pWidget);
 			(void)__xuiTimeLineOpenContextMenuAt(pWidget, pData, &tHit,
-				tWorld.fX + tHit.tRect.fX + tHit.tRect.fW * 0.5f,
-				tWorld.fY + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
+				tWorld.fX + tHit.tRect.fX,
+				tWorld.fY + tHit.tRect.fY + tHit.tRect.fH);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		return XUI_OK;

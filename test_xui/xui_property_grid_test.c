@@ -20,9 +20,29 @@ typedef struct property_grid_test_data_t {
 	int iChangeCount;
 	int iActionCount;
 	int iRenderCount;
+	int iContextCount;
+	int iContextPart;
+	int iContextCategory;
+	int iContextProperty;
 	char sLastId[64];
 	char sLastValue[128];
 } property_grid_test_data_t;
+
+static int __xuiPropertyGridContext(xui_widget pWidget, int iPart, int iCategory, int iProperty,
+	float fX, float fY, void* pUser)
+{
+	property_grid_test_data_t* pData = (property_grid_test_data_t*)pUser;
+	(void)pWidget;
+	(void)fX;
+	(void)fY;
+	if ( pData != NULL ) {
+		pData->iContextCount++;
+		pData->iContextPart = iPart;
+		pData->iContextCategory = iCategory;
+		pData->iContextProperty = iProperty;
+	}
+	return XUI_EVENT_DISPATCH_STOP;
+}
 
 static int __xuiPropertyGridTestRender(xui_context pContext, xui_surface pTarget)
 {
@@ -53,6 +73,17 @@ static int __xuiPropertyGridClick(xui_context pContext, float fX, float fY)
 	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
+}
+
+static int __xuiPropertyGridContextClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	return iRet;
 }
@@ -344,6 +375,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "action callback");
 	iRet = xuiPropertyGridSetGlobalRenderer(pGrid, __xuiPropertyGridCustomRender, &tData);
 	XUI_TEST_CHECK(iRet == XUI_OK, "renderer callback");
+	iRet = xuiPropertyGridSetContextMenu(pGrid, __xuiPropertyGridContext, &tData);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 
 	iAppearance = xuiPropertyGridAddCategory(pGrid, "appearance", "Appearance", 1);
 	iBehavior = xuiPropertyGridAddCategory(pGrid, "behavior", "Behavior", 1);
@@ -471,6 +504,14 @@ int main(void)
 
 	XUI_TEST_CHECK(xuiTableViewGetCellRect(pTableView, 0, 0, &tCell) == XUI_OK && tCell.fW > 100.0f, "category cell rect");
 	tWorld = xuiWidgetGetWorldRect(pTableView);
+	iRet = __xuiPropertyGridContextClick(pContext,
+		tWorld.fX + tCell.fX + 8.0f,
+		tWorld.fY + tCell.fY + tCell.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextCount == 1,
+		"category context callback");
+	XUI_TEST_CHECK(tData.iContextPart == XUI_CONTEXT_TARGET_HEADER &&
+		tData.iContextCategory == iAppearance && tData.iContextProperty == -1,
+		"category context semantics");
 	iRet = __xuiPropertyGridClick(pContext, tWorld.fX + tCell.fX + 8.0f, tWorld.fY + tCell.fY + tCell.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "category click");
 	XUI_TEST_CHECK(xuiPropertyGridGetCategoryExpanded(pGrid, iAppearance) == 0 && xuiPropertyGridGetToggleCount(pGrid) == 1, "category collapsed");

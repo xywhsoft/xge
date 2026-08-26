@@ -16,8 +16,12 @@
 typedef struct xui_tabs_test_events_t {
 	int iSelectCount;
 	int iCloseCount;
+	int iContextCount;
 	int iLastSelect;
 	int iLastClose;
+	int iLastContext;
+	float fContextX;
+	float fContextY;
 } xui_tabs_test_events_t;
 
 static int __xuiTabsNear(float fA, float fB)
@@ -51,6 +55,19 @@ static void __xuiTabsOnClose(xui_widget pWidget, int iIndex, void* pUser)
 		pEvents->iCloseCount++;
 		pEvents->iLastClose = iIndex;
 	}
+}
+
+static int __xuiTabsOnContext(xui_widget pWidget, int iIndex, float fX, float fY, void* pUser)
+{
+	xui_tabs_test_events_t* pEvents = (xui_tabs_test_events_t*)pUser;
+	(void)pWidget;
+	if ( pEvents != NULL ) {
+		pEvents->iContextCount++;
+		pEvents->iLastContext = iIndex;
+		pEvents->fContextX = fX;
+		pEvents->fContextY = fY;
+	}
+	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static int __xuiTabsRender(xui_context pContext, xui_surface pTarget)
@@ -87,6 +104,17 @@ static int __xuiTabsDispatchClick(xui_context pContext, float fX, float fY)
 	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiTabsDispatchContext(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
 }
 
 int main(void)
@@ -133,6 +161,7 @@ int main(void)
 	memset(&tEvents, 0, sizeof(tEvents));
 	tEvents.iLastSelect = -1;
 	tEvents.iLastClose = -1;
+	tEvents.iLastContext = -1;
 	memset(arrIcons, 0, sizeof(arrIcons));
 	memset(arrIconSrc, 0, sizeof(arrIconSrc));
 	xuiTestProxyInit(&tState);
@@ -169,6 +198,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
 	iRet = xuiTabsSetClose(pTabs, __xuiTabsOnClose, 1, &tEvents);
 	XUI_TEST_CHECK(iRet == XUI_OK, "close callback");
+	iRet = xuiTabsSetContextMenu(pTabs, __xuiTabsOnContext, &tEvents);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 640, 360, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -259,6 +290,17 @@ int main(void)
 	tTab = xuiTabsGetTabRect(pTabs, 0);
 	XUI_TEST_CHECK(__xuiTabsNear(tTabBar.fW, 32.0f), "left tabbar width");
 	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 92.0f) && __xuiTabsNear(tTab.fW, 32.0f), "left tab size");
+
+	tWorld = xuiWidgetGetWorldRect(pTabs);
+	tTab = xuiTabsGetTabRect(pTabs, 0);
+	iRet = __xuiTabsDispatchContext(pContext,
+		tWorld.fX + tTab.fX + tTab.fW * 0.5f,
+		tWorld.fY + tTab.fY + tTab.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iContextCount == 1 && tEvents.iLastContext == 0,
+		"context identifies tab");
+	XUI_TEST_CHECK(xuiTabsGetSelected(pTabs) == 0, "context selects tab");
+	XUI_TEST_CHECK(tEvents.fContextX >= tWorld.fX && tEvents.fContextY >= tWorld.fY,
+		"context uses world anchor");
 
 cleanup:
 	if ( pIcon != NULL ) {

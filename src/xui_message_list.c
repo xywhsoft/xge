@@ -1005,7 +1005,23 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			(void)__xuiMessageNotify(pWidget, pData, pEvent->iType == XUI_EVENT_POINTER_CLICK ? XUI_MESSAGE_EVENT_CLICK : XUI_MESSAGE_EVENT_DOUBLE_CLICK, iIndex, pEvent);
 		}
 	} else if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
-		iIndex = __xuiMessageGetIndexAtData(pWidget, pData, pEvent->fX, pEvent->fY);
+		float fMenuX = pEvent->fX;
+		float fMenuY = pEvent->fY;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			tWorld = xuiWidgetGetWorldRect(pWidget);
+			tContent = xuiWidgetGetContentRect(pWidget);
+			iIndex = pData->iSelected;
+			if ( iIndex >= 0 && iIndex < pData->iNodeCount ) {
+				xui_rect_t tNode = pData->arrNodes[iIndex].tNodeRect;
+				fMenuX = tWorld.fX + tContent.fX + tNode.fX;
+				fMenuY = tWorld.fY + tContent.fY + tNode.fY - pData->fScrollY + tNode.fH;
+			} else {
+				fMenuX = tWorld.fX + tContent.fX;
+				fMenuY = tWorld.fY + tContent.fY;
+			}
+		} else {
+			iIndex = __xuiMessageGetIndexAtData(pWidget, pData, pEvent->fX, pEvent->fY);
+		}
 		if ( iIndex >= 0 ) {
 			pNode = &pData->arrNodes[iIndex];
 			pData->iSelected = iIndex;
@@ -1013,9 +1029,12 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 				__xuiMessageSetTextSelection(pData, iIndex, 0, iIndex, (int)strlen(__xuiMessageText(pNode->sText)));
 			}
 			(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_CONTEXT_MENU, iIndex, pEvent);
-			(void)__xuiMessageOpenContextMenu(pWidget, pData, pEvent->fX, pEvent->fY);
+			(void)__xuiMessageOpenContextMenu(pWidget, pData, fMenuX, fMenuY);
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
+		(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_CONTEXT_MENU, -1, pEvent);
+		(void)__xuiMessageOpenContextMenu(pWidget, pData, fMenuX, fMenuY);
+		return XUI_EVENT_DISPATCH_STOP;
 	} else if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL ) {
 		tContent = xuiWidgetGetContentRect(pWidget);
 		fMaxScroll = __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH);

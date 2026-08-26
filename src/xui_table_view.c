@@ -30,6 +30,8 @@ typedef struct xui_table_view_data_t {
 	void* pColumnResizeUser;
 	xui_table_view_hover_proc onHover;
 	void* pHoverUser;
+	xui_table_view_context_proc onContext;
+	void* pContextUser;
 	xui_table_view_merge_proc onMerge;
 	void* pMergeUser;
 	xui_table_view_header_renderer_proc onHeaderRender;
@@ -1475,6 +1477,59 @@ static int __xuiTableViewPointerUp(xui_widget pWidget, xui_table_view_data_t* pD
 	return XUI_OK;
 }
 
+static int __xuiTableViewContextMenu(xui_widget pWidget, xui_table_view_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_rect_t tAnchor;
+	xui_rect_t tLocal;
+	xui_rect_t tWorld;
+	float fX;
+	float fY;
+	int iPart = XUI_CONTEXT_TARGET_BACKGROUND;
+	int iRow = -1;
+	int iColumn = -1;
+	int iAnchorColumn;
+	int iRet;
+
+	if ( pEvent == NULL || pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tAnchor = tWorld;
+	if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+		iRow = pData->iSelectedRow;
+		iColumn = pData->iSelectedColumn;
+		if ( iRow >= 0 ) {
+			iPart = XUI_CONTEXT_TARGET_ITEM;
+			iAnchorColumn = (iColumn >= 0) ? iColumn : __xuiTableViewFirstVisibleColumn(pData);
+			if ( iAnchorColumn >= 0 && xuiTableViewGetCellRect(pWidget, iRow, iAnchorColumn, &tLocal) == XUI_OK ) {
+				tAnchor = tLocal;
+				tAnchor.fX += tWorld.fX;
+				tAnchor.fY += tWorld.fY;
+			}
+		}
+	} else {
+		iColumn = __xuiTableViewHeaderColumnAtWorld(pWidget, pData, pEvent->fX, pEvent->fY);
+		if ( iColumn >= 0 ) {
+			iPart = XUI_CONTEXT_TARGET_HEADER;
+			iRow = -1;
+		} else if ( __xuiTableViewHitCellWorld(pWidget, pData, pEvent->fX, pEvent->fY, &iRow, &iColumn) ) {
+			iPart = XUI_CONTEXT_TARGET_ITEM;
+		}
+	}
+	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iPart == XUI_CONTEXT_TARGET_ITEM ) {
+		(void)__xuiTableViewSetHover(pWidget, pData, iRow, iColumn);
+		if ( pData->iSelectedRow != iRow ||
+		     (pData->iSelectionMode == XUI_TABLE_VIEW_SELECTION_CELL && pData->iSelectedColumn != iColumn) ) {
+			iRet = __xuiTableViewSelect(pWidget, pData, iRow, iColumn, 1);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	if ( pData->onContext != NULL ) {
+		return pData->onContext(pWidget, iPart, iRow, iColumn, fX, fY, pData->pContextUser);
+	}
+	return XUI_OK;
+}
+
 static int __xuiTableViewVisibleRows(xui_widget pWidget, xui_table_view_data_t* pData)
 {
 	xui_rect_t tViewport;
@@ -1607,6 +1662,8 @@ static int __xuiTableViewEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		return __xuiTableViewPointerDown(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_UP:
 		return __xuiTableViewPointerUp(pWidget, pData, pEvent);
+	case XUI_EVENT_CONTEXT_MENU:
+		return __xuiTableViewContextMenu(pWidget, pData, pEvent);
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiTableViewKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_WHEEL:
@@ -2046,6 +2103,7 @@ static int __xuiTableViewInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_LEAVE, __xuiTableViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiTableViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiTableViewEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiTableViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_WHEEL, __xuiTableViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiTableViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiTableViewEvent, NULL);
@@ -2427,6 +2485,15 @@ XUI_API int xuiTableViewSetHover(xui_widget pWidget, xui_table_view_hover_proc o
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onHover = onHover;
 	pData->pHoverUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiTableViewSetContextMenu(xui_widget pWidget, xui_table_view_context_proc onContext, void* pUser)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

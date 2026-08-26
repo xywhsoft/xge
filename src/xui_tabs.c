@@ -20,8 +20,10 @@ typedef struct xui_tabs_page_t {
 typedef struct xui_tabs_data_t {
 	xui_tabs_select_proc onSelect;
 	xui_tabs_close_proc onClose;
+	xui_tabs_context_proc onContext;
 	void* pSelectUser;
 	void* pCloseUser;
+	void* pContextUser;
 	xui_widget pTabBar;
 	xui_widget pClient;
 	xui_widget pOverflowMenu;
@@ -948,6 +950,11 @@ static int __xuiTabsEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 {
 	xui_tabs_data_t* pData;
 	int iNext;
+	int iIndex;
+	float fX;
+	float fY;
+	xui_rect_t tAnchor;
+	xui_rect_t tWorld;
 
 	(void)pUser;
 	pData = __xuiTabsGetData(pWidget);
@@ -955,6 +962,39 @@ static int __xuiTabsEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	switch ( pEvent->iType ) {
+	case XUI_EVENT_CONTEXT_MENU:
+		if ( !xuiWidgetGetEnabled(pWidget) || pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+		iIndex = -1;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			iIndex = pData->iSelected;
+		} else {
+			iIndex = __xuiTabsButtonIndex(pData, pEvent->pTarget);
+			if ( iIndex < 0 ) {
+				tWorld = xuiWidgetGetWorldRect(pWidget);
+				for ( iNext = 0; iNext < pData->iPageCount; iNext++ ) {
+					xui_rect_t tTab = pData->arrPages[iNext].tTabRect;
+					tTab.fX += tWorld.fX;
+					tTab.fY += tWorld.fY;
+					if ( __xuiTabsRectContains(tTab, pEvent->fX, pEvent->fY) ) { iIndex = iNext; break; }
+				}
+			}
+		}
+		tWorld = xuiWidgetGetWorldRect(pWidget);
+		tAnchor = tWorld;
+		if ( iIndex >= 0 && iIndex < pData->iPageCount ) {
+			tAnchor = pData->arrPages[iIndex].tTabRect;
+			tAnchor.fX += tWorld.fX;
+			tAnchor.fY += tWorld.fY;
+			if ( __xuiTabsItemEnabled(pData, iIndex) ) {
+				(void)__xuiTabsSelectInternal(pWidget, pData, iIndex, 1);
+			}
+		} else {
+			iIndex = -1;
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		if ( pData->onContext != NULL ) return pData->onContext(pWidget, iIndex, fX, fY, pData->pContextUser);
+		return XUI_OK;
 	case XUI_EVENT_KEY_DOWN:
 		if ( !xuiWidgetGetEnabled(pWidget) ) {
 			return XUI_OK;
@@ -1793,6 +1833,7 @@ static int __xuiTabsInit(xui_widget pWidget, void* pTypeData, const void* pCreat
 		(void)xuiTabsSetIcons(pWidget, pDesc->arrIcons, pDesc->arrIconSrc, pDesc->iItemCount);
 	}
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiTabsEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiTabsEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiTabsEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiTabsEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiTabsEvent, NULL);
@@ -2244,6 +2285,15 @@ XUI_API int xuiTabsGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t
 	if ( pDisabled != NULL ) *pDisabled = pData->iDisabledColor;
 	if ( pText != NULL ) *pText = pData->iTextColor;
 	if ( pActiveText != NULL ) *pActiveText = pData->iActiveTextColor;
+	return XUI_OK;
+}
+
+XUI_API int xuiTabsSetContextMenu(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser)
+{
+	xui_tabs_data_t* pData = __xuiTabsGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

@@ -143,6 +143,8 @@ struct xui_dock_panel_data_t {
 	void* pActiveUser;
 	xui_dock_window_close_proc onClose;
 	void* pCloseUser;
+	xui_dock_context_proc onContext;
+	void* pContextUser;
 	xui_widget pOptionMenu;
 	xui_widget pOverflowMenu;
 	char* arrMenuTitle[XUI_DOCK_PANEL_MENU_TITLE_COUNT];
@@ -4019,7 +4021,8 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	      pEvent->iType == XUI_EVENT_POINTER_MOVE ||
 	      pEvent->iType == XUI_EVENT_POINTER_UP ||
 	      pEvent->iType == XUI_EVENT_POINTER_WHEEL ||
-	      pEvent->iType == XUI_EVENT_POINTER_LEAVE) &&
+	      pEvent->iType == XUI_EVENT_POINTER_LEAVE ||
+	      pEvent->iType == XUI_EVENT_CONTEXT_MENU) &&
 	     (pEvent->pTarget != pWidget) &&
 	     (xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) != pWidget) &&
 	     __xuiDockPointerTargetIsFloatingHost(pData, pEvent->pTarget) ) {
@@ -4031,6 +4034,60 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	left = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	middle = (pEvent->iButton == XUI_POINTER_BUTTON_MIDDLE);
 	switch ( pEvent->iType ) {
+	case XUI_EVENT_CONTEXT_MENU:
+	{
+		xui_rect_t tAnchor = world;
+		float fMenuX;
+		float fMenuY;
+		int iRet;
+		memset(&hit, 0, sizeof(hit));
+		hit.iSize = sizeof(hit);
+		hit.iType = XUI_DOCK_PANEL_HIT_NONE;
+		hit.iWindow = -1;
+		hit.iPane = -1;
+		hit.iNode = -1;
+		hit.iRegion = -1;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			int iPane = pData->iHoverPane;
+			int i;
+			if ( __xuiDockPaneAt(pData, iPane) == NULL ) {
+				for ( i = 0; i < XUI_DOCK_PANEL_PANE_CAPACITY; i++ ) {
+					if ( pData->arrPanes[i].bUsed && __xuiDockPaneActiveWindow(&pData->arrPanes[i]) >= 0 ) { iPane = i; break; }
+				}
+			}
+			if ( __xuiDockPaneAt(pData, iPane) != NULL ) {
+				xui_dock_pane_slot_t* pPane = __xuiDockPaneAt(pData, iPane);
+				hit.iType = (pPane->iWindowCount > 1) ? XUI_DOCK_PANEL_HIT_PANE_TAB : XUI_DOCK_PANEL_HIT_PANE_CAPTION;
+				hit.iPane = iPane;
+				hit.iWindow = __xuiDockPaneActiveWindow(pPane);
+				hit.iRegion = pPane->iRegion;
+				hit.tRect = (hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB && hit.iWindow >= 0) ?
+					pData->arrWindows[hit.iWindow].tTabRect : pPane->tCaptionRect;
+			}
+		} else {
+			(void)__xuiDockHitLocal(pData, lx, ly, &hit);
+		}
+		if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB && hit.iPane >= 0 && hit.iWindow >= 0 ) {
+			xui_dock_pane_slot_t* pPane = __xuiDockPaneAt(pData, hit.iPane);
+			int iIndex = __xuiDockPaneIndexOfWindow(pPane, hit.iWindow);
+			if ( iIndex >= 0 ) (void)__xuiDockPaneSetActiveIndex(pWidget, pData, pPane, iIndex);
+		}
+		if ( hit.tRect.fW > 0 && hit.tRect.fH > 0 ) {
+			tAnchor = hit.tRect;
+			tAnchor.fX += world.fX;
+			tAnchor.fY += world.fY;
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fMenuX, &fMenuY);
+		if ( pData->onContext != NULL ) {
+			iRet = pData->onContext(pWidget, &hit, fMenuX, fMenuY, pData->pContextUser);
+			if ( (iRet & XUI_EVENT_DISPATCH_STOP) != 0 || iRet != XUI_OK ) return iRet;
+		}
+		if ( hit.iPane >= 0 && (hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB || hit.iType == XUI_DOCK_PANEL_HIT_PANE_CAPTION) ) {
+			(void)__xuiDockOpenPaneMenu(pWidget, pData, hit.iPane);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		return XUI_OK;
+	}
 	case XUI_EVENT_POINTER_DOWN:
 		if ( !left && !middle ) break;
 		if ( __xuiDockHitLocal(pData, lx, ly, &hit) ) {
@@ -4344,6 +4401,33 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 	resizeSide = __xuiDockFloatResizeSide(pData, __xuiDockRect(0.0f, 0.0f, world.fW, world.fH), lx, ly);
 	left = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	switch ( pEvent->iType ) {
+	case XUI_EVENT_CONTEXT_MENU:
+		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE &&
+		     (pEvent->iKey == XUI_KEY_CONTEXT_MENU || __xuiDockRectContains(title, lx, ly)) ) {
+			xui_dock_hit_t tHit;
+			float fMenuX;
+			float fMenuY;
+			int iRet;
+			memset(&tHit, 0, sizeof(tHit));
+			tHit.iSize = sizeof(tHit);
+			tHit.iType = XUI_DOCK_PANEL_HIT_FLOAT_TITLE;
+			tHit.iWindow = w->iWindow;
+			tHit.iPane = -1;
+			tHit.iNode = -1;
+			tHit.iRegion = -1;
+			tHit.tRect = w->tFloatRect;
+			title.fX += world.fX;
+			title.fY += world.fY;
+			xuiInternalContextMenuPoint(pEvent, title, &fMenuX, &fMenuY);
+			(void)__xuiDockFloatOrderBringToFront(pData, w->iWindow);
+			(void)__xuiDockRequestFocusWindow(w->pPanelWidget, pData, w->iWindow);
+			if ( pData->onContext != NULL ) {
+				iRet = pData->onContext(w->pPanelWidget, &tHit, fMenuX, fMenuY, pData->pContextUser);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
 	case XUI_EVENT_POINTER_DOWN:
 		if ( left ) {
 			(void)__xuiDockFloatOrderBringToFront(pData, w->iWindow);
@@ -4885,6 +4969,7 @@ static int __xuiDockPanelInitEvents(xui_widget pWidget)
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiDockPanelEvent, NULL);
+	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiDockPanelEvent, NULL);
@@ -5213,6 +5298,7 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 	(void)xuiWidgetSetEventHandler(host, XUI_EVENT_POINTER_MOVE, __xuiDockHostEvent, w);
 	(void)xuiWidgetSetEventHandler(host, XUI_EVENT_POINTER_UP, __xuiDockHostEvent, w);
 	(void)xuiWidgetSetEventHandler(host, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiDockHostEvent, w);
+	(void)xuiWidgetSetEventHandler(host, XUI_EVENT_CONTEXT_MENU, __xuiDockHostEvent, w);
 	(void)xuiWidgetSetEventHandler(host, XUI_EVENT_KEY_DOWN, __xuiDockHostEvent, w);
 	(void)xuiWidgetSetTooltipResolver(host, __xuiDockHostTooltipResolve, w);
 	(void)xuiWidgetSetLayoutChildrenCallback(host, __xuiDockHostLayoutChildren, w);
@@ -5680,6 +5766,15 @@ XUI_API int xuiDockPanelSetWindowClose(xui_widget pWidget, xui_dock_window_close
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onClose = onClose;
 	pData->pCloseUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiDockPanelSetContextMenu(xui_widget pWidget, xui_dock_context_proc onContext, void* pUser)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

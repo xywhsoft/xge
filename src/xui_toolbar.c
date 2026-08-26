@@ -8,6 +8,8 @@ typedef struct xui_toolbar_data_t {
 	xui_toolbar_colors_t tColors;
 	xui_toolbar_select_proc onSelect;
 	void* pSelectUser;
+	xui_toolbar_context_proc onContext;
+	void* pContextUser;
 	xui_toolbar_overflow_proc onOverflow;
 	void* pOverflowUser;
 	xui_font pFont;
@@ -827,6 +829,26 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		pData->iActive = -1;
 		pData->bOverflowActive = 0;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	case XUI_EVENT_CONTEXT_MENU: {
+		xui_rect_t tAnchor = tWorld;
+		float fX;
+		float fY;
+		if ( pData->onContext == NULL ) break;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			iIndex = (pData->iHover >= 0) ? pData->iHover : __xuiToolbarFirstEnabled(pData);
+			if ( iIndex >= 0 ) {
+				tAnchor = pData->arrItems[iIndex].tRect;
+				tAnchor.fX += tWorld.fX;
+				tAnchor.fY += tWorld.fY;
+			}
+		} else if ( iIndex >= 0 ) {
+			(void)__xuiToolbarSetHover(pWidget, pData, iIndex);
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+		return pData->onContext(pWidget, iIndex,
+			(iIndex >= 0) ? pData->arrItems[iIndex].iValue : 0,
+			fX, fY, pData->pContextUser);
+	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
 		if ( ((tResolved.tMetrics.iOrientation == XUI_ORIENTATION_HORIZONTAL) && (pEvent->iKey == XUI_KEY_LEFT || pEvent->iKey == XUI_KEY_RIGHT)) ||
@@ -894,6 +916,7 @@ static int __xuiToolbarInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiToolbarEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiToolbarEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiToolbarEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiToolbarEvent, NULL);
 	return iRet;
 }
 
@@ -1057,6 +1080,15 @@ XUI_API int xuiToolbarSetSelect(xui_widget pWidget, xui_toolbar_select_proc onSe
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiToolbarSetContextMenu(xui_widget pWidget, xui_toolbar_context_proc onContext, void* pUser)
+{
+	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

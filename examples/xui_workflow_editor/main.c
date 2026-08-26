@@ -565,7 +565,7 @@ static xui_widget __xuiWorkflowEditorMenuForHit(xui_workflow_editor_demo_t* pDem
 	return pDemo->pCanvasMenu;
 }
 
-static int __xuiWorkflowEditorOpenContextMenu(xui_workflow_editor_demo_t* pDemo, float fX, float fY)
+static int __xuiWorkflowEditorOpenContextMenu(xui_workflow_editor_demo_t* pDemo, const xui_flow_hit_t* pKnownHit, float fX, float fY)
 {
 	xui_widget pCanvas;
 	xui_widget pMenu;
@@ -579,10 +579,14 @@ static int __xuiWorkflowEditorOpenContextMenu(xui_workflow_editor_demo_t* pDemo,
 	if ( pCanvas == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memset(&tHit, 0, sizeof(tHit));
-	tHit.iSize = sizeof(tHit);
-	iRet = xuiFlowGraphWidgetHitTest(pCanvas, fX, fY, &tHit);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( pKnownHit != NULL ) {
+		tHit = *pKnownHit;
+	} else {
+		memset(&tHit, 0, sizeof(tHit));
+		tHit.iSize = sizeof(tHit);
+		iRet = xuiFlowGraphWidgetHitTest(pCanvas, fX, fY, &tHit);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pMenu = __xuiWorkflowEditorMenuForHit(pDemo, tHit.iType);
 	if ( pMenu == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -598,12 +602,12 @@ static int __xuiWorkflowEditorOpenContextMenu(xui_workflow_editor_demo_t* pDemo,
 	return XUI_OK;
 }
 
-static int __xuiWorkflowEditorContextMenu(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+static int __xuiWorkflowEditorContextMenu(xui_widget pWidget, const xui_flow_hit_t* pHit, float fX, float fY, void* pUser)
 {
 	xui_workflow_editor_demo_t* pDemo = (xui_workflow_editor_demo_t*)pUser;
 	(void)pWidget;
-	if ( pDemo == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiWorkflowEditorOpenContextMenu(pDemo, pEvent->fX, pEvent->fY) == XUI_OK ?
+	if ( pDemo == NULL || pHit == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiWorkflowEditorOpenContextMenu(pDemo, pHit, fX, fY) == XUI_OK ?
 		XUI_EVENT_DISPATCH_STOP : XUI_OK;
 }
 
@@ -639,7 +643,7 @@ static int __xuiWorkflowEditorCreateUi(xui_workflow_editor_demo_t* pDemo)
 	tWorkflowDesc.tGraph.iGridColor = XUI_COLOR_RGBA(210, 220, 232, 190);
 	iRet = xuiWorkflowWidgetCreate(pDemo->pContext, &pDemo->pWorkflowWidget, &tWorkflowDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetSetEventHandler(pDemo->pWorkflowWidget, XUI_EVENT_CONTEXT_MENU,
+	iRet = xuiWorkflowWidgetSetContextMenu(pDemo->pWorkflowWidget,
 		__xuiWorkflowEditorContextMenu, pDemo);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetRect(pDemo->pWorkflowWidget, (xui_rect_t){214.0f, 58.0f, 766.0f, 560.0f});
@@ -750,7 +754,7 @@ static void __xuiWorkflowEditorRunContextSmoke(xui_workflow_editor_demo_t* pDemo
 		if ( !__xuiWorkflowEditorFindHitPoint(pDemo, arrTypes[i], &fX, &fY) ) {
 			return;
 		}
-		if ( __xuiWorkflowEditorOpenContextMenu(pDemo, fX, fY) != XUI_OK ) {
+		if ( __xuiWorkflowEditorOpenContextMenu(pDemo, NULL, fX, fY) != XUI_OK ) {
 			return;
 		}
 		pMenu = __xuiWorkflowEditorMenuForHit(pDemo, arrTypes[i]);

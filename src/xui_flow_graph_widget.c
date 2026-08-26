@@ -58,6 +58,8 @@ typedef struct xui_flow_graph_edge_bucket_t {
 typedef struct xui_flow_graph_widget_data_t {
 	xui_flow_graph pGraph;
 	int bOwnGraph;
+	xui_flow_context_proc onContext;
+	void* pContextUser;
 	uint32_t iBackgroundColor;
 	uint32_t iGridColor;
 	uint32_t iNodeColor;
@@ -1446,6 +1448,7 @@ static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const v
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiFlowGraphWidgetEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiFlowGraphWidgetEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiFlowGraphWidgetEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiFlowGraphWidgetEvent, NULL);
 	return XUI_OK;
 }
 
@@ -1630,6 +1633,15 @@ XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	pData->iHoverEdge = -1;
 	pData->iLastGraphRevision = xuiFlowGraphGetRevision(pGraph);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiFlowGraphWidgetSetContextMenu(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser)
+{
+	xui_flow_graph_widget_data_t* pData = __xuiFlowGraphWidgetGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
+	return XUI_OK;
 }
 
 static int __xuiFlowGraphWidgetHitTestLocal(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit)
@@ -2222,6 +2234,58 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 			return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
 		}
 		return 0;
+	}
+	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
+		xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+		xui_rect_t tAnchor = tWorld;
+		float fMenuX;
+		float fMenuY;
+		int bSelected = 0;
+		memset(&tHit, 0, sizeof(tHit));
+		tHit.iSize = sizeof(tHit);
+		tHit.iType = XUI_FLOW_HIT_BACKGROUND;
+		tHit.iNode = -1;
+		tHit.iPort = -1;
+		tHit.iEdge = -1;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			int i;
+			xui_flow_node_info_t tSelectedNode;
+			for ( i = 0; i < xuiFlowGraphGetNodeCount(pData->pGraph); i++ ) {
+				if ( xuiFlowGraphGetNode(pData->pGraph, i, &tSelectedNode) == XUI_OK &&
+				     xuiFlowGraphIsNodeSelected(pData->pGraph, tSelectedNode.sId) ) {
+					tHit.iType = XUI_FLOW_HIT_NODE;
+					tHit.iNode = i;
+					tHit.tRect = __xuiFlowGraphWidgetNodeRect(pData->pGraph, &tSelectedNode, xuiWidgetGetContentRect(pWidget));
+					tAnchor = tHit.tRect;
+					tAnchor.fX += tWorld.fX;
+					tAnchor.fY += tWorld.fY;
+					break;
+				}
+			}
+		} else {
+			__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
+			(void)__xuiFlowGraphWidgetHitTestLocal(pWidget, fLocalX, fLocalY, &tHit);
+		}
+		if ( tHit.iType == XUI_FLOW_HIT_NODE || tHit.iType == XUI_FLOW_HIT_PORT ) {
+			if ( xuiFlowGraphGetNode(pData->pGraph, tHit.iNode, &tNode) == XUI_OK ) {
+				bSelected = xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId);
+			}
+		} else if ( tHit.iType == XUI_FLOW_HIT_EDGE ) {
+			xui_flow_edge_info_t tEdge;
+			if ( xuiFlowGraphGetEdge(pData->pGraph, tHit.iEdge, &tEdge) == XUI_OK ) {
+				bSelected = xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId);
+			}
+		}
+		if ( !bSelected && tHit.iType != XUI_FLOW_HIT_BACKGROUND ) {
+			iRet = __xuiFlowGraphWidgetSelectAt(pWidget, (float)pEvent->fX, (float)pEvent->fY, 0u, &tHit);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fMenuX, &fMenuY);
+		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		if ( pData->onContext != NULL ) {
+			return pData->onContext(pWidget, &tHit, fMenuX, fMenuY, pData->pContextUser);
+		}
+		return XUI_OK;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_DOWN ) {
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {

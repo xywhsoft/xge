@@ -571,4 +571,20 @@ static xui_rect_t xuiInternalStrokeCenterRectInside(xui_rect_t tRect, float fWid
 	return xuiInternalSnapRect(tRect);
 }
 
+static void xuiInternalContextMenuPoint(const xui_event_t* pEvent, xui_rect_t tKeyboardAnchor,
+	float* pX, float* pY)
+{
+	float fX = 0.0f;
+	float fY = 0.0f;
+	if ( pEvent != NULL && pEvent->iKey != XUI_KEY_CONTEXT_MENU ) {
+		fX = (float)pEvent->fX;
+		fY = (float)pEvent->fY;
+	} else {
+		fX = (float)tKeyboardAnchor.fX;
+		fY = (float)(tKeyboardAnchor.fY + tKeyboardAnchor.fH);
+	}
+	if ( pX != NULL ) *pX = fX;
+	if ( pY != NULL ) *pY = fY;
+}
+
 #endif /* XUI_INTERNAL_H */

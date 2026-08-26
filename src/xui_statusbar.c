@@ -8,6 +8,8 @@ typedef struct xui_statusbar_data_t {
 	xui_statusbar_colors_t tColors;
 	xui_statusbar_select_proc onSelect;
 	void* pSelectUser;
+	xui_statusbar_context_proc onContext;
+	void* pContextUser;
 	xui_font pFont;
 	int iItemCount;
 	int iHover;
@@ -651,6 +653,26 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->iActive = -1;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	case XUI_EVENT_CONTEXT_MENU: {
+		xui_rect_t tAnchor = tWorld;
+		float fX;
+		float fY;
+		if ( pData->onContext == NULL ) break;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			iIndex = (pData->iHover >= 0) ? pData->iHover : __xuiStatusBarFirstInteractive(pData);
+			if ( iIndex >= 0 ) {
+				tAnchor = pData->arrItems[iIndex].tRect;
+				tAnchor.fX += tWorld.fX;
+				tAnchor.fY += tWorld.fY;
+			}
+		} else if ( iIndex >= 0 ) {
+			(void)__xuiStatusBarSetHover(pWidget, pData, iIndex);
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+		return pData->onContext(pWidget, iIndex,
+			(iIndex >= 0) ? pData->arrItems[iIndex].iValue : 0,
+			fX, fY, pData->pContextUser);
+	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
 		if ( (pEvent->iKey == XUI_KEY_ENTER) || (pEvent->iKey == XUI_KEY_SPACE) ) {
@@ -712,6 +734,7 @@ static int __xuiStatusBarInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiStatusBarEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiStatusBarEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiStatusBarEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiStatusBarEvent, NULL);
 	return iRet;
 }
 
@@ -983,6 +1006,15 @@ XUI_API int xuiStatusBarGetItemCount(xui_widget pWidget)
 {
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
 	return (pData != NULL) ? pData->iItemCount : 0;
+}
+
+XUI_API int xuiStatusBarSetContextMenu(xui_widget pWidget, xui_statusbar_context_proc onContext, void* pUser)
+{
+	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
+	return XUI_OK;
 }
 
 XUI_API const xui_statusbar_item_t* xuiStatusBarGetItem(xui_widget pWidget, int iIndex)

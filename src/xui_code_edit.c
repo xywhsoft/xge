@@ -3644,13 +3644,26 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
+	{
+		float fMenuX = (float)pEvent->fX;
+		float fMenuY = (float)pEvent->fY;
 		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( pEvent->iKey != XUI_KEY_CONTEXT_MENU && !xuiCodeSelectionHasSelection(pData->pSelection) ) {
 			(void)__xuiCodeEditPointerSelect(pWidget, pData, pEvent, 0);
+		} else if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			xui_code_selection_t tSelection;
+			xui_rect_t tAnchor;
+			memset(&tSelection, 0, sizeof(tSelection));
+			if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) == XUI_OK &&
+			     xuiCodeEditGetOffsetRect(pWidget, tSelection.iCaretOffset, &tAnchor) == XUI_OK ) {
+				fMenuX = (float)tAnchor.fX;
+				fMenuY = (float)(tAnchor.fY + tAnchor.fH);
+			}
 		}
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
-		(void)xuiCodeEditOpenMenu(pWidget, pEvent->fX, pEvent->fY);
+		(void)xuiCodeEditOpenMenu(pWidget, fMenuX, fMenuY);
 		return XUI_EVENT_DISPATCH_STOP;
+	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( pData->pCompletionPopup != NULL && xuiPopupIsOpen(pData->pCompletionPopup) &&
 		     pData->iCompletionCount > 0 ) {

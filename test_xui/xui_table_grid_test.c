@@ -27,8 +27,28 @@ typedef struct table_grid_test_data_t {
 	int iLastRow;
 	int iLastColumn;
 	int iLastType;
+	int iContextCount;
+	int iContextPart;
+	int iContextRow;
+	int iContextColumn;
 	char sLastValue[96];
 } table_grid_test_data_t;
+
+static int __xuiTableGridTestContext(xui_widget pWidget, int iPart, int iRow, int iColumn,
+	float fX, float fY, void* pUser)
+{
+	table_grid_test_data_t* pData = (table_grid_test_data_t*)pUser;
+	(void)pWidget;
+	(void)fX;
+	(void)fY;
+	if ( pData != NULL ) {
+		pData->iContextCount++;
+		pData->iContextPart = iPart;
+		pData->iContextRow = iRow;
+		pData->iContextColumn = iColumn;
+	}
+	return XUI_EVENT_DISPATCH_STOP;
+}
 
 static int __xuiTableGridTestCount(xui_widget pWidget, void* pUser)
 {
@@ -212,6 +232,17 @@ static int __xuiTableGridTestClick(xui_context pContext, float fX, float fY)
 	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
+}
+
+static int __xuiTableGridTestContextClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	return iRet;
 }
@@ -449,6 +480,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "add tablegrid");
 	pTable = xuiTableGridGetTableView(pGrid);
 	XUI_TEST_CHECK(pTable != NULL, "inner table");
+	iRet = xuiTableGridSetContextMenu(pGrid, __xuiTableGridTestContext, &tData);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 760, 360, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -465,6 +498,15 @@ int main(void)
 	tCell = xuiTableViewGetViewportRect(pTable);
 	XUI_TEST_CHECK(tCell.fW > 4.0f && tCell.fH > 4.0f, "inner table viewport");
 	XUI_TEST_CHECK(xuiTableViewGetCellRect(pTable, 0, 0, &tCell) == XUI_OK && tCell.fW > 20.0f, "cell rect");
+	tWorld = xuiWidgetGetWorldRect(pTable);
+	iRet = __xuiTableGridTestContextClick(pContext,
+		tWorld.fX + tCell.fX + tCell.fW * 0.5f,
+		tWorld.fY + tCell.fY + tCell.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextCount == 1,
+		"context forwarded from table");
+	XUI_TEST_CHECK(tData.iContextPart == XUI_CONTEXT_TARGET_ITEM &&
+		tData.iContextRow == 0 && tData.iContextColumn == 0,
+		"context cell semantics");
 
 	iRet = xuiTableGridBeginEdit(pGrid, 0, 0);
 	XUI_TEST_CHECK(iRet != 0 && xuiTableGridIsEditing(pGrid), "text begin");

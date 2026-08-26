@@ -39,6 +39,9 @@ static void __xuiListViewSelected(xui_widget pWidget, int iIndex, void* pUser)
 typedef struct xui_list_view_event_state_t {
 	int iDoubleClickCount;
 	int iContextMenuCount;
+	int iContextIndex;
+	float fContextX;
+	float fContextY;
 } xui_list_view_event_state_t;
 
 static int __xuiListViewEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -47,8 +50,19 @@ static int __xuiListViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	(void)pWidget;
 	if ( (pState == NULL) || (pEvent == NULL) ) return XUI_OK;
 	if ( pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK ) pState->iDoubleClickCount++;
-	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) pState->iContextMenuCount++;
 	return XUI_OK;
+}
+
+static int __xuiListViewContext(xui_widget pWidget, int iIndex, float fX, float fY, void* pUser)
+{
+	xui_list_view_event_state_t* pState = (xui_list_view_event_state_t*)pUser;
+	(void)pWidget;
+	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState->iContextMenuCount++;
+	pState->iContextIndex = iIndex;
+	pState->fContextX = fX;
+	pState->fContextY = fY;
+	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static int __xuiListViewRenderItem(xui_widget pWidget, int iIndex, xui_draw_context pDraw, xui_rect_t tRect, int iState, void* pUser)
@@ -156,6 +170,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
 	iRet = xuiWidgetSetEventCallback(pList, __xuiListViewEvent, &tEventState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "event callback");
+	iRet = xuiListViewSetContextMenu(pList, __xuiListViewContext, &tEventState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 	iRet = xuiListViewSetItemRenderer(pList, __xuiListViewRenderItem, &iRenderCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "renderer callback");
 	iRet = xuiListViewSetColors(pList,
@@ -215,7 +231,12 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, tListWorld.fX + tItem.fX + 8.0f, tListWorld.fY + tItem.fY + 8.0f, XUI_POINTER_BUTTON_RIGHT, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewGetSelected(pList) == 1, "right click selects");
-	XUI_TEST_CHECK(tEventState.iContextMenuCount >= 1, "right click notifies");
+	XUI_TEST_CHECK(tEventState.iContextMenuCount == 1 && tEventState.iContextIndex == 1, "right click semantic callback");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_CONTEXT_MENU, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEventState.iContextMenuCount == 2 &&
+		tEventState.iContextIndex == 1 && tEventState.fContextX >= tListWorld.fX &&
+		tEventState.fContextY >= tListWorld.fY, "menu key selected item anchor");
 
 	tItem = xuiListViewGetItemRect(pList, 4);
 	iRet = __xuiListViewClick(pContext, tListWorld.fX + tItem.fX + 8.0f, tListWorld.fY + tItem.fY + 8.0f);

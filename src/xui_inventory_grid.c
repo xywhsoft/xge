@@ -1854,18 +1854,36 @@ static int __xuiInventoryPointerUp(xui_widget pWidget, xui_inventory_grid_data_t
 static int __xuiInventoryContextMenu(xui_widget pWidget, xui_inventory_grid_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_inventory_hit_t tHit;
+	xui_rect_t tAnchor;
+	xui_rect_t tWorld;
+	float fX;
+	float fY;
 
 	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) {
 		return XUI_OK;
 	}
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
-	(void)__xuiInventoryHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
+	memset(&tHit, 0, sizeof(tHit));
+	tHit.iSlot = -1;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tAnchor = tWorld;
+	if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+		tHit.iSlot = pData->iCurrent;
+		if ( tHit.iSlot >= 0 && tHit.iSlot < pData->iSlotCount &&
+		     xuiInventoryGridGetSlotRect(pWidget, tHit.iSlot, &tAnchor) == XUI_OK ) {
+			tAnchor.fX += tWorld.fX;
+			tAnchor.fY += tWorld.fY;
+		}
+	} else {
+		(void)__xuiInventoryHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
+	}
 	if ( (tHit.iSlot >= 0) && !__xuiInventorySelected(&pData->arrSlots[tHit.iSlot]) ) {
 		(void)__xuiInventorySelectSlot(pWidget, pData, tHit.iSlot, 0, 1);
 	}
+	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
 	pData->iContextCount++;
 	if ( pData->onContext != NULL ) {
-		pData->onContext(pWidget, tHit.iSlot, pEvent->fX, pEvent->fY, pData->pContextUser);
+		pData->onContext(pWidget, tHit.iSlot, fX, fY, pData->pContextUser);
 	}
 	return XUI_EVENT_DISPATCH_STOP;
 }

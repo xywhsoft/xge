@@ -23,6 +23,28 @@ static void make_control_port(xui_flow_port_desc_t* pPort, const char* sId, int 
 	pPort->iKind = XUI_FLOW_PORT_CONTROL;
 }
 
+typedef struct workflow_context_test_t {
+	int iCount;
+	int iType;
+	int iNode;
+	xui_widget pWidget;
+} workflow_context_test_t;
+
+static int workflow_context(xui_widget pWidget, const xui_flow_hit_t* pHit,
+	float fX, float fY, void* pUser)
+{
+	workflow_context_test_t* pData = (workflow_context_test_t*)pUser;
+	(void)fX;
+	(void)fY;
+	if ( pData != NULL && pHit != NULL ) {
+		pData->iCount++;
+		pData->iType = pHit->iType;
+		pData->iNode = pHit->iNode;
+		pData->pWidget = pWidget;
+	}
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -37,6 +59,7 @@ int main(void)
 	xui_workflow_node_type_desc_t tType;
 	xui_flow_port_desc_t tPort;
 	xui_surface pCache;
+	workflow_context_test_t tContextMenu;
 	int iFailed;
 	int iRet;
 
@@ -46,6 +69,9 @@ int main(void)
 	pWorkflow = NULL;
 	pOtherWorkflow = NULL;
 	iFailed = 0;
+	memset(&tContextMenu, 0, sizeof(tContextMenu));
+	tContextMenu.iType = XUI_FLOW_HIT_NONE;
+	tContextMenu.iNode = -1;
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -96,10 +122,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "workflow widget rect");
 	iRet = xuiWidgetAddChild(pRoot, pWidget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "workflow widget add");
+	iRet = xuiWorkflowWidgetSetContextMenu(pWidget, workflow_context, &tContextMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "workflow context callback");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
 	pCache = xuiWidgetGetCacheSurface(pCanvas, xuiWidgetGetStateId(pCanvas));
 	XUI_TEST_CHECK(pCache != NULL && xuiTestSurfaceGetDrawCount(pCache) > 0, "workflow canvas render");
+	iRet = xuiFlowGraphSelectNode(xuiWorkflowGetGraph(pWorkflow), "n_start", 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "workflow select context node");
+	iRet = xuiSetFocusWidget(pContext, pCanvas);
+	XUI_TEST_CHECK(iRet == XUI_OK, "workflow context focus");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_CONTEXT_MENU, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tContextMenu.iCount == 1,
+		"workflow context forwarded");
+	XUI_TEST_CHECK(tContextMenu.pWidget == pWidget &&
+		tContextMenu.iType == XUI_FLOW_HIT_NODE && tContextMenu.iNode == 0,
+		"workflow context uses wrapper and selected node");
 
 	iRet = xuiWorkflowCreate(&pOtherWorkflow);
 	XUI_TEST_CHECK(iRet == XUI_OK && pOtherWorkflow != NULL, "other workflow create");

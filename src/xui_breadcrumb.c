@@ -25,6 +25,8 @@ typedef struct xui_breadcrumb_data_t {
 	xui_font pFont;
 	xui_breadcrumb_click_proc onClick;
 	void* pClickUser;
+	xui_breadcrumb_context_proc onContext;
+	void* pContextUser;
 	uint32_t iTextColor;
 	uint32_t iHoverTextColor;
 	uint32_t iActiveTextColor;
@@ -320,6 +322,23 @@ static int __xuiBreadcrumbHitItem(xui_widget pWidget, float fX, float fY)
 	return -1;
 }
 
+static int __xuiBreadcrumbHitContextItem(xui_widget pWidget, float fX, float fY)
+{
+	xui_breadcrumb_data_t* pData;
+	xui_rect_t tWorld;
+	int i;
+
+	pData = __xuiBreadcrumbGetData(pWidget);
+	if ( pData == NULL ) return -1;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	fX -= tWorld.fX;
+	fY -= tWorld.fY;
+	for ( i = 0; i < pData->iItemCount; ++i ) {
+		if ( __xuiBreadcrumbPointInRect(fX, fY, pData->arrItems[i].tRect) ) return i;
+	}
+	return -1;
+}
+
 static uint32_t __xuiBreadcrumbItemColor(const xui_breadcrumb_data_t* pResolved, int iIndex)
 {
 	if ( !pResolved->arrItems[iIndex].bClickable ) return pResolved->iDisabledTextColor;
@@ -489,6 +508,27 @@ static int __xuiBreadcrumbEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->iActiveIndex = -1;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	case XUI_EVENT_CONTEXT_MENU: {
+		xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+		xui_rect_t tAnchor = tWorld;
+		float fX;
+		float fY;
+		if ( pData->onContext == NULL ) break;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			iHit = (pData->iHoverIndex >= 0) ? pData->iHoverIndex : pData->iItemCount - 1;
+			if ( iHit >= 0 ) {
+				tAnchor = pData->arrItems[iHit].tRect;
+				tAnchor.fX += tWorld.fX;
+				tAnchor.fY += tWorld.fY;
+			}
+		} else {
+			iHit = __xuiBreadcrumbHitContextItem(pWidget, pEvent->fX, pEvent->fY);
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+		return pData->onContext(pWidget, iHit,
+			(iHit >= 0) ? pData->arrItems[iHit].iValue : 0,
+			fX, fY, pData->pContextUser);
+	}
 	default:
 		break;
 	}
@@ -522,6 +562,7 @@ static int __xuiBreadcrumbInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiBreadcrumbEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiBreadcrumbEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiBreadcrumbEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiBreadcrumbEvent, NULL);
 	return iRet;
 }
 
@@ -689,6 +730,15 @@ XUI_API int xuiBreadcrumbSetClick(xui_widget pWidget, xui_breadcrumb_click_proc 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onClick = onClick;
 	pData->pClickUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiBreadcrumbSetContextMenu(xui_widget pWidget, xui_breadcrumb_context_proc onContext, void* pUser)
+{
+	xui_breadcrumb_data_t* pData = __xuiBreadcrumbGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

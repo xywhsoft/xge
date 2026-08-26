@@ -6,7 +6,21 @@ typedef struct xui_workflow_widget_data_t {
 	xui_workflow pWorkflow;
 	int bOwnWorkflow;
 	xui_widget pCanvas;
+	xui_flow_context_proc onContext;
+	void* pContextUser;
 } xui_workflow_widget_data_t;
+
+static xui_workflow_widget_data_t* __xuiWorkflowWidgetGetData(xui_widget pWidget);
+
+static int __xuiWorkflowWidgetContext(xui_widget pCanvas, const xui_flow_hit_t* pHit,
+	float fX, float fY, void* pUser)
+{
+	xui_widget pWidget = (xui_widget)pUser;
+	xui_workflow_widget_data_t* pData = __xuiWorkflowWidgetGetData(pWidget);
+	(void)pCanvas;
+	if ( pData == NULL || pData->onContext == NULL ) return XUI_OK;
+	return pData->onContext(pWidget, pHit, fX, fY, pData->pContextUser);
+}
 
 static int __xuiWorkflowWidgetDescValid(const xui_workflow_desc_t* pDesc)
 {
@@ -93,6 +107,7 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 		memset(pData, 0, sizeof(*pData));
 		return iRet;
 	}
+	(void)xuiFlowGraphWidgetSetContextMenu(pData->pCanvas, __xuiWorkflowWidgetContext, pWidget);
 	(void)xuiWidgetSetSizeMode(pData->pCanvas, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	(void)xuiWidgetSetDock(pData->pCanvas, XUI_DOCK_FILL);
 	(void)xuiWidgetSetAlign(pData->pCanvas, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
@@ -192,6 +207,15 @@ XUI_API int xuiWorkflowWidgetSetWorkflow(xui_widget pWidget, xui_workflow pWorkf
 	pData->pWorkflow = pWorkflow;
 	pData->bOwnWorkflow = bOwnWorkflow ? 1 : 0;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiWorkflowWidgetSetContextMenu(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser)
+{
+	xui_workflow_widget_data_t* pData = __xuiWorkflowWidgetGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
+	return XUI_OK;
 }
 
 XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget)

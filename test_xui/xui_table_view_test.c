@@ -22,6 +22,12 @@ typedef struct table_test_data_t {
 	int iSortCallbackCount;
 	int iHeaderRenderCount;
 	int iCellRenderCount;
+	int iContextCount;
+	int iContextPart;
+	int iContextRow;
+	int iContextColumn;
+	float fContextX;
+	float fContextY;
 } table_test_data_t;
 
 static int __xuiTableTestCount(xui_widget pWidget, void* pUser)
@@ -111,6 +117,20 @@ static void __xuiTableTestSort(xui_widget pWidget, int iColumn, int bDescending,
 	if ( pData != NULL ) pData->iSortCallbackCount++;
 }
 
+static int __xuiTableTestContext(xui_widget pWidget, int iPart, int iRow, int iColumn, float fX, float fY, void* pUser)
+{
+	table_test_data_t* pData = (table_test_data_t*)pUser;
+	(void)pWidget;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->iContextCount++;
+	pData->iContextPart = iPart;
+	pData->iContextRow = iRow;
+	pData->iContextColumn = iColumn;
+	pData->fContextX = fX;
+	pData->fContextY = fY;
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
 static int __xuiTableTestHeaderRender(xui_widget pWidget, int iColumn, const xui_table_view_column_t* pColumn, xui_draw_context pDraw, xui_rect_t tRect, int iState, void* pUser)
 {
 	table_test_data_t* pData;
@@ -176,6 +196,7 @@ int main(void)
 	xui_rect_t tMerged;
 	xui_rect_t tViewport;
 	xui_rect_t tTableWorld;
+	xui_event_t tContextEvent;
 	float fOffsetX;
 	float fOffsetY;
 	float fHeaderY;
@@ -275,6 +296,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize callback");
 	iRet = xuiTableViewSetSort(pTable, __xuiTableTestSort, &tData);
 	XUI_TEST_CHECK(iRet == XUI_OK, "sort callback");
+	iRet = xuiTableViewSetContextMenu(pTable, __xuiTableTestContext, &tData);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 	iRet = xuiTableViewSetMergeProvider(pTable, __xuiTableTestMerge, &tData);
 	XUI_TEST_CHECK(iRet == XUI_OK, "merge callback");
 	iRet = xuiTableViewSetHeaderRenderer(pTable, __xuiTableTestHeaderRender, &tData);
@@ -314,6 +337,23 @@ int main(void)
 	iRet = xuiTableViewGetSelectedCell(pTable, &iRow, &iColumn);
 	XUI_TEST_CHECK(iRet == XUI_OK && iRow == 2 && iColumn == 1 && tData.iSelectCallbackCount == 1, "cell selected");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pTable, "click focus");
+	memset(&tContextEvent, 0, sizeof(tContextEvent));
+	tContextEvent.iSize = sizeof(tContextEvent);
+	tContextEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	tContextEvent.pTarget = pTable;
+	tContextEvent.fX = tTableWorld.fX + tCell.fX + 12.0f;
+	tContextEvent.fY = tTableWorld.fY + tCell.fY + 10.0f;
+	iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextCount == 1 &&
+		tData.iContextPart == XUI_CONTEXT_TARGET_ITEM &&
+		tData.iContextRow == 2 && tData.iContextColumn == 1,
+		"pointer context semantic target");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_CONTEXT_MENU, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextCount == 2 &&
+		tData.iContextRow == 2 && tData.iContextColumn == 1 &&
+		tData.fContextX >= tTableWorld.fX && tData.fContextY >= tTableWorld.fY,
+		"keyboard context selected cell anchor");
 	iRet = xuiInputPointerMove(pContext, tTableWorld.fX + tCell.fX + 15.0f, tTableWorld.fY + tCell.fY + 11.0f, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && tData.iHoverCallbackCount > 0, "hover callback fires");

@@ -44,6 +44,8 @@ typedef struct xui_chart_data_t {
 	int bTooltipVisible;
 	xui_chart_tooltip_proc onTooltip;
 	void* pTooltipUser;
+	xui_chart_context_proc onContext;
+	void* pContextUser;
 	xui_thickness_t tPadding;
 	uint32_t iDirtyFlags;
 	uint32_t iBackgroundColor;
@@ -1764,6 +1766,29 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	}
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSize = sizeof(tHit);
+	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
+		xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+		xui_rect_t tAnchor = tWorld;
+		float fX;
+		float fY;
+		if ( pData->onContext == NULL ) return XUI_OK;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			tHit = (pData->tSelected.iPart != XUI_CHART_HIT_NONE) ? pData->tSelected : pData->tHover;
+			if ( tHit.iPart != XUI_CHART_HIT_NONE && tHit.tRect.fW > 0.0f && tHit.tRect.fH > 0.0f ) {
+				tAnchor = tHit.tRect;
+				tAnchor.fX += tWorld.fX;
+				tAnchor.fY += tWorld.fY;
+			}
+		} else {
+			(void)xuiChartHitTest(pWidget, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY, &tHit);
+			if ( tHit.iPart != XUI_CHART_HIT_NONE ) {
+				pData->tSelected = tHit;
+				(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			}
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+		return pData->onContext(pWidget, &tHit, fX, fY, pData->pContextUser);
+	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
 		pData->bPanning = 0;
 		pData->bBrushing = 0;
@@ -1945,6 +1970,7 @@ static int __xuiChartInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiChartEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiChartEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiChartEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiChartEvent, NULL);
 	return XUI_OK;
 }
 
@@ -2244,6 +2270,15 @@ XUI_API int xuiChartSetTooltipCallback(xui_widget pWidget, xui_chart_tooltip_pro
 	pData->onTooltip = onTooltip;
 	pData->pTooltipUser = pUser;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiChartSetContextMenu(xui_widget pWidget, xui_chart_context_proc onContext, void* pUser)
+{
+	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
+	return XUI_OK;
 }
 
 XUI_API int xuiChartSetPadding(xui_widget pWidget, xui_thickness_t tPadding)

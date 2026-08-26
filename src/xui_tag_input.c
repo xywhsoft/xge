@@ -23,6 +23,8 @@ typedef struct xui_tag_input_data_t {
 	xui_rect_t arrCloseRect[XUI_TAG_INPUT_TAG_CAPACITY];
 	xui_tag_input_change_proc onChange;
 	void* pChangeUser;
+	xui_tag_input_context_proc onContext;
+	void* pContextUser;
 	int iTagCount;
 	int iMaxTags;
 	int iMaxLength;
@@ -621,6 +623,23 @@ static int __xuiTagInputCloseHit(xui_widget pWidget, xui_tag_input_data_t* pData
 	return -1;
 }
 
+static int __xuiTagInputTagHit(xui_widget pWidget, xui_tag_input_data_t* pData, float fWorldX, float fWorldY)
+{
+	xui_rect_t tWorld;
+	float fX;
+	float fY;
+	int i;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return -1;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	fX = fWorldX - tWorld.fX;
+	fY = fWorldY - tWorld.fY;
+	for ( i = 0; i < pData->iTagCount; ++i ) {
+		if ( __xuiTagInputPointInRect(pData->arrTagRect[i], fX, fY) ) return i;
+	}
+	return -1;
+}
+
 static int __xuiTagInputInvalidateTag(xui_widget pWidget, xui_tag_input_data_t* pData, int iIndex)
 {
 	xui_rect_t tRect;
@@ -938,6 +957,27 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
+	case XUI_EVENT_CONTEXT_MENU: {
+		xui_rect_t tWorld;
+		xui_rect_t tAnchor;
+		float fX;
+		float fY;
+		if ( pData->onContext == NULL || pEvent->pTarget != pWidget ) break;
+		tWorld = xuiWidgetGetWorldRect(pWidget);
+		tAnchor = tWorld;
+		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+			iHit = pData->iTagCount - 1;
+			if ( iHit >= 0 ) {
+				tAnchor = pData->arrTagRect[iHit];
+				tAnchor.fX += tWorld.fX;
+				tAnchor.fY += tWorld.fY;
+			}
+		} else {
+			iHit = __xuiTagInputTagHit(pWidget, pData, pEvent->fX, pEvent->fY);
+		}
+		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+		return pData->onContext(pWidget, iHit, fX, fY, pData->pContextUser);
+	}
 	default:
 		break;
 	}
@@ -1059,6 +1099,7 @@ static int __xuiTagInputInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiTagInputEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiTagInputEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_TEXT, __xuiTagInputEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiTagInputEvent, NULL);
 	return iRet;
 }
 
@@ -1316,6 +1357,15 @@ XUI_API int xuiTagInputSetChange(xui_widget pWidget, xui_tag_input_change_proc o
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiTagInputSetContextMenu(xui_widget pWidget, xui_tag_input_context_proc onContext, void* pUser)
+{
+	xui_tag_input_data_t* pData = __xuiTagInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

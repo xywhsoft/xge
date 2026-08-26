@@ -12,6 +12,8 @@ typedef struct xui_window_data_t {
 	xui_rect_t tIconSrc;
 	xui_window_close_proc onClose;
 	void* pCloseUser;
+	xui_window_context_proc onContext;
+	void* pContextUser;
 	char sTitle[XUI_WINDOW_TITLE_CAPACITY];
 	int bHasIcon;
 	int bOpen;
@@ -1251,6 +1253,22 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		xuiInternalDragAdornerHide(pContext, pWidget);
 		(void)__xuiWindowSetActivePart(pWidget, pData, XUI_WINDOW_PART_NONE);
 		return XUI_EVENT_DISPATCH_STOP;
+	case XUI_EVENT_CONTEXT_MENU: {
+		xui_rect_t tWorld;
+		xui_rect_t tTitle;
+		float fX;
+		float fY;
+		if ( pData->onContext == NULL || pEvent->pTarget != pWidget || !pData->bShowTitleBar ) break;
+		tWorld = xuiWidgetGetWorldRect(pWidget);
+		tTitle = pData->tTitleBarRect;
+		tTitle.fX += tWorld.fX;
+		tTitle.fY += tWorld.fY;
+		if ( pEvent->iKey != XUI_KEY_CONTEXT_MENU &&
+		     !__xuiWindowRectContains(tTitle, pEvent->fX, pEvent->fY) ) break;
+		xuiInternalContextMenuPoint(pEvent, tTitle, &fX, &fY);
+		return pData->onContext(pWidget, XUI_WINDOW_PART_TITLE_BAR,
+			fX, fY, pData->pContextUser);
+	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( (pEvent->iKey == XUI_KEY_ESCAPE) && (pData->iInteractionEdges != 0) ) {
 			pData->iInteractionEdges = 0;
@@ -1661,6 +1679,15 @@ XUI_API int xuiWindowSetClose(xui_widget pWidget, xui_window_close_proc onClose,
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onClose = onClose;
 	pData->pCloseUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiWindowSetContextMenu(xui_widget pWidget, xui_window_context_proc onContext, void* pUser)
+{
+	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

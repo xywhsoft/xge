@@ -13,6 +13,39 @@
 		} \
 	} while ( 0 )
 
+typedef struct xui_flow_context_test_t {
+	int iCount;
+	int iType;
+	int iNode;
+	float fX;
+	float fY;
+} xui_flow_context_test_t;
+
+static int __xuiFlowContext(xui_widget pWidget, const xui_flow_hit_t* pHit,
+	float fX, float fY, void* pUser)
+{
+	xui_flow_context_test_t* pData = (xui_flow_context_test_t*)pUser;
+	(void)pWidget;
+	if ( pData != NULL && pHit != NULL ) {
+		pData->iCount++;
+		pData->iType = pHit->iType;
+		pData->iNode = pHit->iNode;
+		pData->fX = fX;
+		pData->fY = fY;
+	}
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiFlowContextClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -28,6 +61,7 @@ int main(void)
 	xui_flow_viewport_t tViewport;
 	xui_flow_hit_t tHit;
 	xui_style_property_t arrStyle[2];
+	xui_flow_context_test_t tContextMenu;
 	xui_surface pCache;
 	int iStart;
 	int iTool;
@@ -42,6 +76,9 @@ int main(void)
 	iTool = -1;
 	iFailed = 0;
 	memset(arrStyle, 0, sizeof(arrStyle));
+	memset(&tContextMenu, 0, sizeof(tContextMenu));
+	tContextMenu.iType = XUI_FLOW_HIT_NONE;
+	tContextMenu.iNode = -1;
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -139,6 +176,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "widget rect");
 	iRet = xuiWidgetAddChild(pRoot, pWidget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "widget add");
+	iRet = xuiFlowGraphWidgetSetContextMenu(pWidget, __xuiFlowContext, &tContextMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 	arrStyle[0].iSize = sizeof(arrStyle[0]);
 	arrStyle[0].sName = "flowgraph.background.color";
 	arrStyle[0].tValue.iSize = sizeof(arrStyle[0].tValue);
@@ -206,6 +245,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "hover background dispatch");
 	iRet = xuiFlowGraphWidgetGetHoverHit(pWidget, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iType == XUI_FLOW_HIT_BACKGROUND, "hover background hit");
+	iRet = __xuiFlowContextClick(pContext, 334.0f, 158.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tContextMenu.iCount == 1,
+		"node context callback");
+	XUI_TEST_CHECK(tContextMenu.iType == XUI_FLOW_HIT_NODE && tContextMenu.iNode == iTool,
+		"node context semantics");
+	XUI_TEST_CHECK(xuiFlowGraphIsNodeSelected(pGraph, "tool") &&
+		tContextMenu.fX == 334.0f && tContextMenu.fY == 158.0f,
+		"node context selects target and preserves world anchor");
 	xuiTestSurfaceReset(pCache);
 	iRet = xuiFlowGraphSelectNode(pGraph, "start", 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "external graph mutation");

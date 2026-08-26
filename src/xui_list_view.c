@@ -16,6 +16,8 @@ typedef struct xui_list_view_data_t {
 	xui_font pFont;
 	xui_list_view_select_proc onSelect;
 	void* pSelectUser;
+	xui_list_view_context_proc onContext;
+	void* pContextUser;
 	xui_list_view_item_proc onRenderItem;
 	void* pRenderItemUser;
 	int iItemCount;
@@ -762,15 +764,37 @@ static int __xuiListViewDoubleClick(xui_widget pWidget, xui_list_view_data_t* pD
 static int __xuiListViewContextMenu(xui_widget pWidget, xui_list_view_data_t* pData, const xui_event_t* pEvent)
 {
 	int iIndex;
+	int iRet;
+	float fX;
+	float fY;
+	xui_rect_t tAnchor;
+	xui_rect_t tWorld;
 
 	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
-	iIndex = __xuiListViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
-	if ( (iIndex < 0) || !__xuiListViewItemEnabledData(pData, iIndex) ) return XUI_OK;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
-	(void)__xuiListViewSetHover(pWidget, pData, iIndex);
-	if ( !__xuiListViewItemSelectedData(pData, iIndex) ) {
-		return __xuiListViewSelectIndex(pWidget, pData, iIndex, pEvent->iModifiers, 1);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
+		iIndex = __xuiListViewItemEnabledData(pData, pData->iSelected) ? pData->iSelected : __xuiListViewFirstSelected(pData);
+		tAnchor = (iIndex >= 0) ? xuiListViewGetItemRect(pWidget, iIndex) : tWorld;
+		if ( iIndex >= 0 ) {
+			tAnchor.fX += tWorld.fX;
+			tAnchor.fY += tWorld.fY;
+		}
+	} else {
+		iIndex = __xuiListViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
+		tAnchor = tWorld;
 	}
+	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
+	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iIndex >= 0 && __xuiListViewItemEnabledData(pData, iIndex) ) {
+		(void)__xuiListViewSetHover(pWidget, pData, iIndex);
+		if ( !__xuiListViewItemSelectedData(pData, iIndex) ) {
+			iRet = __xuiListViewSelectIndex(pWidget, pData, iIndex, pEvent->iModifiers, 1);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	} else {
+		iIndex = -1;
+	}
+	if ( pData->onContext != NULL ) return pData->onContext(pWidget, iIndex, fX, fY, pData->pContextUser);
 	return XUI_OK;
 }
 
@@ -1425,6 +1449,15 @@ XUI_API int xuiListViewSetSelect(xui_widget pWidget, xui_list_view_select_proc o
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiListViewSetContextMenu(xui_widget pWidget, xui_list_view_context_proc onContext, void* pUser)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
 	return XUI_OK;
 }
 

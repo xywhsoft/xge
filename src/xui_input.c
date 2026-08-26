@@ -1786,9 +1786,12 @@ XUI_API int xuiInputKeyDownEx(xui_context pContext, int iKey, uint32_t iModifier
 			return XUI_OK;
 		}
 	} else if ( iKey == XUI_KEY_CONTEXT_MENU ) {
+		xui_rect_t tAnchor = xuiWidgetGetWorldRect(pContext->pFocusWidget);
 		__xuiInputInitEvent(&tEvent, XUI_EVENT_CONTEXT_MENU, pContext->pFocusWidget, NULL, pContext);
 		tEvent.iKey = iKey;
 		tEvent.iModifiers = iModifiers;
+		tEvent.fX = tAnchor.fX;
+		tEvent.fY = tAnchor.fY + tAnchor.fH;
 		iRet = __xuiInputDispatchEventWithFlags(pContext, &tEvent, &iFlags);
 		if ( iRet != XUI_OK ) {
 			return iRet;
