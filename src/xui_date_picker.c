@@ -1171,9 +1171,6 @@ static int __xuiDatePickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, pData->tButtonRect, XUI_COLOR_RGBA(242, 248, 254, 255));
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pProxy->drawLine != NULL) && (__xuiDatePickerAlpha(iBorder) != 0) ) {
-		(void)pProxy->drawLine(pProxy, pDraw, pData->tButtonRect.fX, pData->tButtonRect.fY + 4.0f, pData->tButtonRect.fX, pData->tButtonRect.fY + pData->tButtonRect.fH - 4.0f, 1.0f, iBorder);
-	}
 	if ( (pProxy->drawText != NULL) && (tResolved.pFont != NULL) && (__xuiDatePickerAlpha(iText) != 0) ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sText, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1280,9 +1277,6 @@ static int __xuiDatePickerDrawComboField(xui_date_picker_data_t* pData, const xu
 	if ( bSelectAll && (pProxy->drawRectFill != NULL || pProxy->drawRectFill != NULL) ) {
 		tSelect = __xuiDatePickerInsetRect(tText, 3.0f);
 		(void)__xuiDatePickerDrawFill(pProxy, pDraw, tSelect, XUI_COLOR_RGBA(218, 236, 252, 255));
-	}
-	if ( pProxy->drawLine != NULL ) {
-		(void)pProxy->drawLine(pProxy, pDraw, tArrow.fX, tArrow.fY + 4.0f, tArrow.fX, tArrow.fY + tArrow.fH - 4.0f, 1.0f, iBorder);
 	}
 	if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 		(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tText, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);

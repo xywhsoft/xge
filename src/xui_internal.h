@@ -32,6 +32,18 @@ typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
 typedef int (*xui_internal_text_read_proc)(void* pUser, int iOffset, unsigned char* pByte);
 
+typedef enum xui_internal_word_policy_t {
+	XUI_INTERNAL_WORD_NATURAL = 0,
+	XUI_INTERNAL_WORD_IDENTIFIER,
+	XUI_INTERNAL_WORD_TERMINAL
+} xui_internal_word_policy_t;
+
+typedef enum xui_internal_word_kind_t {
+	XUI_INTERNAL_WORD_SPACE = 0,
+	XUI_INTERNAL_WORD_TEXT,
+	XUI_INTERNAL_WORD_SYMBOL
+} xui_internal_word_kind_t;
+
 enum {
 	XUI_DRAG_ADORNER_RECT_FILL = 1,
 	XUI_DRAG_ADORNER_RECT_STROKE = 2
@@ -423,6 +435,23 @@ int xuiInternalTextGraphemeClampRead(xui_internal_text_read_proc onRead, void* p
 int xuiInternalTextGraphemeNext(const char* sText, int iLength, int iOffset);
 int xuiInternalTextGraphemePrev(const char* sText, int iLength, int iOffset);
 int xuiInternalTextGraphemeClamp(const char* sText, int iLength, int iOffset);
+int xuiInternalTextWordBoundaryRead(xui_internal_text_read_proc onRead, void* pUser,
+	int iLength, int iOffset, xui_internal_word_policy_t iPolicy);
+xui_internal_word_kind_t xuiInternalTextWordRangeRead(xui_internal_text_read_proc onRead,
+	void* pUser, int iLength, int iOffset, xui_internal_word_policy_t iPolicy,
+	int* pStart, int* pEnd);
+int xuiInternalTextWordPrevRead(xui_internal_text_read_proc onRead, void* pUser,
+	int iLength, int iOffset, xui_internal_word_policy_t iPolicy);
+int xuiInternalTextWordNextRead(xui_internal_text_read_proc onRead, void* pUser,
+	int iLength, int iOffset, xui_internal_word_policy_t iPolicy);
+int xuiInternalTextWordBoundary(const char* sText, int iLength, int iOffset,
+	xui_internal_word_policy_t iPolicy);
+xui_internal_word_kind_t xuiInternalTextWordRange(const char* sText, int iLength,
+	int iOffset, xui_internal_word_policy_t iPolicy, int* pStart, int* pEnd);
+int xuiInternalTextWordPrev(const char* sText, int iLength, int iOffset,
+	xui_internal_word_policy_t iPolicy);
+int xuiInternalTextWordNext(const char* sText, int iLength, int iOffset,
+	xui_internal_word_policy_t iPolicy);
 typedef void (*xui_internal_rich_change_proc)(xui_rich_document pDocument, const xui_rich_change_t* pChange, void* pUser);
 int xuiInternalRichDocumentAddObserver(xui_rich_document pDocument, xui_internal_rich_change_proc onChange, void* pUser);
 int xuiInternalRichDocumentRemoveObserver(xui_rich_document pDocument, xui_internal_rich_change_proc onChange, void* pUser);

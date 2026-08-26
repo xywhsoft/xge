@@ -66,6 +66,10 @@ int main(void)
 	double fMaxX;
 	double fMinY;
 	double fMaxY;
+	double fAutoMinX;
+	double fAutoMaxX;
+	double fAutoMinY;
+	double fAutoMaxY;
 	double fPanMinX;
 	float fMinSize;
 	float fMaxSize;
@@ -98,6 +102,10 @@ int main(void)
 	fMaxX = 0.0;
 	fMinY = 0.0;
 	fMaxY = 0.0;
+	fAutoMinX = 0.0;
+	fAutoMaxX = 0.0;
+	fAutoMinY = 0.0;
+	fAutoMaxY = 0.0;
 	fPanMinX = 0.0;
 	fMinSize = 0.0f;
 	fMaxSize = 0.0f;
@@ -327,8 +335,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch hover");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && g_iTooltipCalls > 0, "custom tooltip render");
+	XUI_TEST_CHECK(tState.iDrawClipGetCount > 0 && tState.iDrawClipSetCount > 0 &&
+	               tState.iDrawClipClearCount > 0 && !tState.bLastDrawClipActive,
+	               "plot clip applied and restored");
 	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
 	XUI_TEST_CHECK(iRet == 0 && fMaxX > fMinX && fMaxY > fMinY, "auto view range");
+	fAutoMinX = fMinX;
+	fAutoMaxX = fMaxX;
+	fAutoMinY = fMinY;
+	fAutoMaxY = fMaxY;
 	iRet = xuiChartSetViewRange(pChart, -1.0, 5.0, 0.0, 12.0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set view range");
 	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
@@ -336,6 +351,21 @@ int main(void)
 	iRet = xuiChartResetViewRange(pChart);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY) == 0, "reset view range");
 	tPlot = xuiChartGetPlotRect(pChart);
+	iRet = xuiInputPointerDown(pContext, tPlot.fX + tPlot.fW * 0.5f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "full range drag down");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "full range drag down dispatch");
+	iRet = xuiInputPointerMove(pContext, tPlot.fX + tPlot.fW * 0.75f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "full range drag move");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "full range drag move dispatch");
+	iRet = xuiInputPointerUp(pContext, tPlot.fX + tPlot.fW * 0.75f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "full range drag up");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "full range drag up dispatch");
+	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
+	XUI_TEST_CHECK(iRet == 0 && fMinX == fAutoMinX && fMaxX == fAutoMaxX &&
+	               fMinY == fAutoMinY && fMaxY == fAutoMaxY, "full range cannot be panned away");
 	iRet = xuiInputPointerWheel(pContext, tPlot.fX + tPlot.fW * 0.5f, tPlot.fY + tPlot.fH * 0.5f, 0.0f, 1.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel zoom input");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -347,16 +377,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "pan down");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pan down dispatch");
-	iRet = xuiInputPointerMove(pContext, tPlot.fX + tPlot.fW * 0.5f + 20.0f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT);
+	iRet = xuiInputPointerMove(pContext, tPlot.fX + tPlot.fW * 4.0f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pan move");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pan move dispatch");
-	iRet = xuiInputPointerUp(pContext, tPlot.fX + tPlot.fW * 0.5f + 20.0f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
+	iRet = xuiInputPointerUp(pContext, tPlot.fX + tPlot.fW * 4.0f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pan up");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pan up dispatch");
 	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
-	XUI_TEST_CHECK(iRet == 1 && fMinX < fPanMinX, "drag pan range");
+	XUI_TEST_CHECK(iRet == 1 && fMinX < fPanMinX && fabs(fMinX - fAutoMinX) < 1.0e-9,
+	               "drag pan range clamped to data bounds");
 	iRet = xuiChartResetViewRange(pChart);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset view range after interactions");
 	iRet = xuiChartSetBrushRange(pChart, 2.0, 0.0, 9.0, 3.0);

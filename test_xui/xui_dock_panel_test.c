@@ -17,7 +17,18 @@ typedef struct dock_test_data_t {
 	int iStateChanged;
 	int iActiveChanged;
 	int iClose;
+	int iClientPointerDown;
 } dock_test_data_t;
+
+static int __xuiDockTestClientEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	dock_test_data_t* pData = (dock_test_data_t*)pUser;
+	(void)pWidget;
+	if ( pData != NULL && pEvent != NULL && pEvent->iType == XUI_EVENT_POINTER_DOWN ) {
+		pData->iClientPointerDown++;
+	}
+	return XUI_OK;
+}
 
 static void __xuiDockTestState(xui_widget pWidget, int iWindow, int iOldState, int iNewState, void* pUser)
 {
@@ -176,6 +187,78 @@ static int __xuiDockNear(float a, float b)
 	return d <= 1.01f;
 }
 
+static int __xuiDockTestAutoHideResize(xui_context pContext, xui_widget pDock, int iRegion)
+{
+	xui_rect_t world;
+	xui_rect_t before;
+	xui_rect_t pending;
+	xui_rect_t after;
+	float x0;
+	float y0;
+	float x1;
+	float y1;
+	float beforeExtent;
+	float afterExtent;
+	int grow;
+	int cursor;
+	int iRet;
+	world = xuiWidgetGetWorldRect(pDock);
+	before = xuiDockPanelGetAutoHideExpandRect(pDock);
+	if ( before.fW <= 0.0f || before.fH <= 0.0f ) return 0;
+	x0 = world.fX + before.fX + before.fW * 0.5f;
+	y0 = world.fY + before.fY + before.fH * 0.5f;
+	x1 = x0;
+	y1 = y0;
+	grow = (iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT) ?
+		(before.fW < 380.0f) : (before.fH < 280.0f);
+	if ( iRegion == XUI_DOCK_PANEL_REGION_LEFT ) {
+		x0 = world.fX + before.fX + before.fW - 2.0f;
+		x1 = x0 + (grow ? 28.0f : -24.0f);
+		cursor = XUI_CURSOR_RESIZE_EW;
+	} else if ( iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) {
+		x0 = world.fX + before.fX + 2.0f;
+		x1 = x0 + (grow ? -28.0f : 24.0f);
+		cursor = XUI_CURSOR_RESIZE_EW;
+	} else if ( iRegion == XUI_DOCK_PANEL_REGION_TOP ) {
+		y0 = world.fY + before.fY + before.fH - 2.0f;
+		y1 = y0 + (grow ? 24.0f : -20.0f);
+		cursor = XUI_CURSOR_RESIZE_NS;
+	} else if ( iRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) {
+		y0 = world.fY + before.fY + 2.0f;
+		y1 = y0 + (grow ? -24.0f : 20.0f);
+		cursor = XUI_CURSOR_RESIZE_NS;
+	} else {
+		return 0;
+	}
+	if ( xuiQueryCursor(pContext, (int)x0, (int)y0) != cursor ) return 0;
+	iRet = __xuiDockTestDragMove(pContext, x0, y0, x1, y1);
+	if ( iRet != XUI_OK ) return 0;
+	pending = xuiDockPanelGetAutoHideExpandRect(pDock);
+	if ( !__xuiDockNear(pending.fX, before.fX) || !__xuiDockNear(pending.fY, before.fY) ||
+	     !__xuiDockNear(pending.fW, before.fW) || !__xuiDockNear(pending.fH, before.fH) ) return 0;
+	iRet = __xuiDockTestDragUp(pContext, x1, y1);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet != XUI_OK ) return 0;
+	after = xuiDockPanelGetAutoHideExpandRect(pDock);
+	beforeExtent = (iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT) ? before.fW : before.fH;
+	afterExtent = (iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT) ? after.fW : after.fH;
+	if ( grow ) {
+		if ( afterExtent < beforeExtent + 16.0f ) return 0;
+	} else if ( afterExtent > beforeExtent - 14.0f ) {
+		return 0;
+	}
+	if ( iRegion == XUI_DOCK_PANEL_REGION_LEFT ) {
+		return __xuiDockNear(after.fX, before.fX);
+	}
+	if ( iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) {
+		return __xuiDockNear(after.fX + after.fW, before.fX + before.fW);
+	}
+	if ( iRegion == XUI_DOCK_PANEL_REGION_TOP ) {
+		return __xuiDockNear(after.fY, before.fY);
+	}
+	return __xuiDockNear(after.fY + after.fH, before.fY + before.fH);
+}
+
 static int __xuiDockFindTabClose(xui_widget pDock, int iWindow, xui_rect_t tTabRect, xui_dock_hit_t* pHit)
 {
 	float x;
@@ -257,8 +340,11 @@ int main(void)
 	int iMenuIndex;
 	int iRenderNodeCount;
 	int iDragNodeIndex;
+	int iClientBefore;
 	float fOldX;
 	float fOldW;
+	float fOldY;
+	float fOldH;
 	float fRegionBefore;
 	float fRegionAfter;
 	float fAutoHidePaneW;
@@ -271,6 +357,7 @@ int main(void)
 	xui_rect_t tSrcRect;
 	xui_rect_t tDockWorld;
 	xui_rect_t tPreviewWorld;
+	xui_rect_t tClientWorld;
 	xui_widget pDragOverlay;
 	float fPreviewCenter;
 	float fActualCenter;
@@ -376,6 +463,7 @@ int main(void)
 	iRet = xuiWidgetCreate(pContext, &pNestedClient);
 	XUI_TEST_CHECK(iRet == XUI_OK && pNestedClient != NULL, "nested client create");
 	iRet = xuiWidgetSetFocusable(pNestedClient, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pNestedClient, XUI_EVENT_POINTER_DOWN, __xuiDockTestClientEvent, &tData);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pNestedClient, (xui_rect_t){12.0f, 12.0f, 80.0f, 28.0f});
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(arrClient[6], pNestedClient);
 	XUI_TEST_CHECK(iRet == XUI_OK, "nested client add");
@@ -856,7 +944,12 @@ int main(void)
 	iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_AUTO_HIDE, "auto hide state");
 	XUI_TEST_CHECK(tWinInfo.iLastRegion == XUI_DOCK_PANEL_REGION_DOCUMENT && tWinInfo.iLastSide == XUI_DOCK_PANEL_SIDE_LEFT, "auto hide keeps dock target");
-	XUI_TEST_CHECK(tWinInfo.tAutoHideRect.fW > 0.0f && tWinInfo.tAutoHideRect.fH > 0.0f, "auto hide strip");
+	XUI_TEST_CHECK(__xuiDockNear(tWinInfo.tAutoHideRect.fW, tMetrics.fAutoHideStripSize) &&
+		tWinInfo.tAutoHideRect.fH > tMetrics.fAutoHideStripSize, "left auto hide uses vertical title tab");
+	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		tWinInfo.tAutoHideRect.fX + tWinInfo.tAutoHideRect.fW <= tPaneInfo.tRect.fX + 1.01f,
+		"left auto hide rail does not cover document pane");
 	iRet = __xuiDockTestClick(pContext, 8.0f + tWinInfo.tAutoHideRect.fX + tWinInfo.tAutoHideRect.fW * 0.5f, 8.0f + tWinInfo.tAutoHideRect.fY + tWinInfo.tAutoHideRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide strip click");
 	iRet = xuiLayout(pContext);
@@ -873,6 +966,8 @@ int main(void)
 	} else {
 		XUI_TEST_CHECK(tHit.tRect.fW <= 420.0f, "auto hide expand clamps large width");
 	}
+	XUI_TEST_CHECK(__xuiDockTestAutoHideResize(pContext, pDock, XUI_DOCK_PANEL_REGION_LEFT),
+		"left auto hide resize is deferred and anchored");
 	iRet = xuiDockPanelCollapseAutoHide(pDock);
 	XUI_TEST_CHECK(iRet == XUI_OK, "collapse auto hide");
 	iRet = xuiLayout(pContext);
@@ -886,12 +981,120 @@ int main(void)
 	iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED && tWinInfo.iRegion == XUI_DOCK_PANEL_REGION_DOCUMENT && tWinInfo.iLastSide == XUI_DOCK_PANEL_SIDE_LEFT && xuiDockPanelGetAutoHideExpandedWindow(pDock) < 0, "auto dock state");
 
+	iRet = xuiDockPanelAutoHideWindow(pDock, props);
+	XUI_TEST_CHECK(iRet == XUI_OK, "right auto hide");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout right auto hide");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_AUTO_HIDE &&
+		__xuiDockNear(tWinInfo.tAutoHideRect.fW, tMetrics.fAutoHideStripSize) &&
+		tWinInfo.tAutoHideRect.fH > tMetrics.fAutoHideStripSize,
+		"right auto hide uses vertical title tab");
+	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		tPaneInfo.tRect.fX + tPaneInfo.tRect.fW <= tWinInfo.tAutoHideRect.fX + 1.01f,
+		"right auto hide rail does not cover document pane");
+	iRet = xuiDockPanelExpandAutoHideWindow(pDock, props);
+	XUI_TEST_CHECK(iRet == XUI_OK, "expand right auto hide");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout right auto hide expand");
+	tHit.tRect = xuiDockPanelGetAutoHideExpandRect(pDock);
+	XUI_TEST_CHECK(tHit.tRect.fX + tHit.tRect.fW <= tWinInfo.tAutoHideRect.fX + 1.01f,
+		"right auto hide expansion stays inside rail");
+	XUI_TEST_CHECK(__xuiDockTestAutoHideResize(pContext, pDock, XUI_DOCK_PANEL_REGION_RIGHT),
+		"right auto hide resize is deferred and anchored");
+	tHit.tRect = xuiDockPanelGetAutoHideExpandRect(pDock);
+	tClientWorld = xuiWidgetGetWorldRect(pNestedClient);
+	iClientBefore = tData.iClientPointerDown;
+	iRet = __xuiDockTestClick(pContext, tClientWorld.fX + tClientWorld.fW * 0.5f, tClientWorld.fY + tClientWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iClientPointerDown == iClientBefore + 1, "auto hide client remains interactive");
+	iRet = __xuiDockTestClick(pContext,
+		8.0f + tHit.tRect.fX + tHit.tRect.fW - tMetrics.fButtonGap - tMetrics.fButtonSize * 0.5f,
+		8.0f + tHit.tRect.fY + tMetrics.fCaptionHeight * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide close button click");
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_HIDDEN, "auto hide close button hides window");
+	iRet = xuiDockPanelDockWindow(pDock, props, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_RIGHT, 0.24f, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore right window after auto hide close");
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelExpandAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore expanded auto hide for dock button");
+	tHit.tRect = xuiDockPanelGetAutoHideExpandRect(pDock);
+	iRet = __xuiDockTestClick(pContext,
+		8.0f + tHit.tRect.fX + tHit.tRect.fW - tMetrics.fButtonGap * 2.0f - tMetrics.fButtonSize * 1.5f,
+		8.0f + tHit.tRect.fY + tMetrics.fCaptionHeight * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide dock button click");
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED, "auto hide dock button restores docked state");
+	iRet = xuiDockPanelAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelExpandAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tHit.tRect = xuiDockPanelGetAutoHideExpandRect(pDock);
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(8.0f + tHit.tRect.fX + 32.0f),
+		(int)(8.0f + tHit.tRect.fY + tMetrics.fCaptionHeight * 0.5f)) == XUI_CURSOR_MOVE,
+		"expanded auto hide caption move cursor");
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestDrag(pContext,
+		8.0f + tHit.tRect.fX + 32.0f,
+		8.0f + tHit.tRect.fY + tMetrics.fCaptionHeight * 0.5f,
+		8.0f + tPaneInfo.tRect.fX + tPaneInfo.tRect.fW * 0.5f,
+		8.0f + tPaneInfo.tRect.fY + tPaneInfo.tRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED, "expanded auto hide caption drag docks window");
+	iRet = xuiDockPanelDockWindow(pDock, props, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_RIGHT, 0.24f, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_AUTO_HIDE, "auto hide title drag source");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(8.0f + tWinInfo.tAutoHideRect.fX + tWinInfo.tAutoHideRect.fW * 0.5f),
+		(int)(8.0f + tWinInfo.tAutoHideRect.fY + tWinInfo.tAutoHideRect.fH * 0.5f)) == XUI_CURSOR_MOVE,
+		"auto hide side title move cursor");
+	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestDrag(pContext,
+		8.0f + tWinInfo.tAutoHideRect.fX + tWinInfo.tAutoHideRect.fW * 0.5f,
+		8.0f + tWinInfo.tAutoHideRect.fY + tWinInfo.tAutoHideRect.fH * 0.5f,
+		8.0f + tPaneInfo.tRect.fX + tPaneInfo.tRect.fW * 0.5f,
+		8.0f + tPaneInfo.tRect.fY + tPaneInfo.tRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED, "auto hide side title drag docks window");
+
+	iRet = xuiDockPanelDockWindow(pDock, props, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_TOP, 0.24f, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelExpandAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiDockTestAutoHideResize(pContext, pDock, XUI_DOCK_PANEL_REGION_TOP),
+		"top auto hide resize is deferred and anchored");
+	iRet = xuiDockPanelDockAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindow(pDock, props, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_BOTTOM, 0.24f, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelExpandAutoHideWindow(pDock, props);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiDockTestAutoHideResize(pContext, pDock, XUI_DOCK_PANEL_REGION_BOTTOM),
+		"bottom auto hide resize is deferred and anchored");
+	iRet = xuiDockPanelDockAutoHideWindow(pDock, props);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore bottom auto hide after resize");
+
 	iRet = xuiDockPanelFloatWindow(pDock, props, (xui_rect_t){330.0f, 44.0f, 210.0f, 150.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "float props");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout float");
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING && xuiWidgetGetVisible(tWinInfo.pHostWidget), "float visible");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(8.0f + tWinInfo.tRect.fX + 2.0f),
+		(int)(8.0f + tWinInfo.tRect.fY + tWinInfo.tRect.fH * 0.5f)) == XUI_CURSOR_RESIZE_EW,
+		"floating left edge resize cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(8.0f + tWinInfo.tRect.fX + tWinInfo.tRect.fW - 2.0f),
+		(int)(8.0f + tWinInfo.tRect.fY + 2.0f)) == XUI_CURSOR_RESIZE_NESW,
+		"floating top-right resize cursor");
 	XUI_TEST_CHECK(xuiWidgetGetVisible(arrClient[6]) && xuiWidgetGetVisible(pNestedClient), "floating client tree visible");
 	iRet = xuiWidgetGetLayer(tWinInfo.pHostWidget, &iLayerProps, &iZProps);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetGetLayer(arrClient[6], &iLayerClient, &iZClient);
@@ -1000,9 +1203,9 @@ int main(void)
 	fOldW = tWinInfo.tRect.fW;
 	iRet = __xuiDockTestDrag(pContext,
 		8.0f + tWinInfo.tRect.fX + 24.0f,
-		8.0f + tWinInfo.tRect.fY + 3.0f,
+		8.0f + tWinInfo.tRect.fY + tMetrics.fFloatTitleHeight * 0.5f,
 		8.0f + tWinInfo.tRect.fX + 72.0f,
-		8.0f + tWinInfo.tRect.fY + 23.0f);
+		8.0f + tWinInfo.tRect.fY + tMetrics.fFloatTitleHeight * 0.5f + 20.0f);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag-out floating title drag");
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
@@ -1084,6 +1287,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "floating resize drag");
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING && tWinInfo.tRect.fX > fOldX + 10.0f && tWinInfo.tRect.fW < fOldW - 10.0f, "floating resize updates rect");
+	fOldY = tWinInfo.tRect.fY;
+	fOldH = tWinInfo.tRect.fH;
+	iRet = __xuiDockTestDrag(pContext,
+		8.0f + tWinInfo.tRect.fX + tWinInfo.tRect.fW * 0.5f,
+		8.0f + tWinInfo.tRect.fY + 2.0f,
+		8.0f + tWinInfo.tRect.fX + tWinInfo.tRect.fW * 0.5f,
+		8.0f + tWinInfo.tRect.fY + 24.0f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tRect.fY > fOldY + 10.0f && tWinInfo.tRect.fH < fOldH - 10.0f,
+		"floating top edge resize takes priority over title move");
 	iRet = xuiDockPanelFloatWindow(pDock, toolbox, (xui_rect_t){42.0f, 58.0f, 190.0f, 135.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "float toolbox for z order");
 	iRet = xuiLayout(pContext);

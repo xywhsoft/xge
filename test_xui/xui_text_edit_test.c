@@ -354,6 +354,27 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "cursor to beginning");
 	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_DELETE, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "cd") == 0, "ctrl delete word delete");
+	iRet = xuiTextEditSetText(pTextEdit, "ab \xE4\xBD\xA0\xE5\xA5\xBD cd");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set Unicode word text");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode word layout");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode word render");
+	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	iRet = __xuiTextEditTestDoubleClick(pContext, tWorldRect.fX + tTextRect.fX + 32.0f,
+		tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.25f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "double click Unicode word");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 6 && iEnd == 9,
+		"double click selects one natural Han word");
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode word cursor start");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_KEY_RIGHT, XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode ctrl right");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 3 && iEnd == 3,
+		"Unicode ctrl right enters first Han word");
 	iRet = xuiTextEditSetText(pTextEdit, sEmojiText);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set emoji text");
 	iRet = xuiTextEditSetSelection(pTextEdit, 8, 8);

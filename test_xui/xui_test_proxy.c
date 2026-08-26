@@ -30,6 +30,8 @@ struct xui_surface_t {
 struct xui_draw_context_t {
 	uint32_t iMagic;
 	xui_surface pTarget;
+	xui_rect_t tClip;
+	int bHasClip;
 };
 
 struct xui_font_t {
@@ -546,6 +548,46 @@ static int __xuiTestDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, const 
 	return XUI_OK;
 }
 
+static int __xuiTestDrawClipGet(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip)
+{
+	xui_test_proxy_state_t* pState;
+	if ( !__xuiTestDrawValid(pDraw) || (pRect == NULL) || (pHasClip == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) pState->iDrawClipGetCount++;
+	*pRect = pDraw->tClip;
+	*pHasClip = pDraw->bHasClip;
+	return XUI_OK;
+}
+
+static int __xuiTestDrawClipSet(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect)
+{
+	xui_test_proxy_state_t* pState;
+	if ( !__xuiTestDrawValid(pDraw) || (tRect.fW < 0.0f) || (tRect.fH < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	pDraw->tClip = tRect;
+	pDraw->bHasClip = 1;
+	if ( pState != NULL ) {
+		pState->iDrawClipSetCount++;
+		pState->tLastDrawClip = tRect;
+		pState->bLastDrawClipActive = 1;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTestDrawClipClear(xui_proxy pProxy, xui_draw_context pDraw)
+{
+	xui_test_proxy_state_t* pState;
+	if ( !__xuiTestDrawValid(pDraw) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	memset(&pDraw->tClip, 0, sizeof(pDraw->tClip));
+	pDraw->bHasClip = 0;
+	if ( pState != NULL ) {
+		pState->iDrawClipClearCount++;
+		pState->bLastDrawClipActive = 0;
+	}
+	return XUI_OK;
+}
+
 static int __xuiTestDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	int iSlot;
@@ -945,6 +987,9 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.drawCircleStroke = __xuiTestDrawCircleStroke;
 	pState->tProxy.drawText = __xuiTestDrawText;
 	pState->tProxy.drawTextSpans = __xuiTestDrawTextSpans;
+	pState->tProxy.drawClipGet = __xuiTestDrawClipGet;
+	pState->tProxy.drawClipSet = __xuiTestDrawClipSet;
+	pState->tProxy.drawClipClear = __xuiTestDrawClipClear;
 	pState->tProxy.textShape = __xuiTestTextShape;
 }
 

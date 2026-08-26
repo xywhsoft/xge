@@ -602,6 +602,38 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear selection screen");
 	iRet = xuiTerminalClearScrollback(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear selection scrollback");
+	iRet = xuiTerminalWriteText(pTerminal, "\xE4\xB8\xAD text /tmp/file-name.txt");
+	XUI_TEST_CHECK(iRet == XUI_OK, "write Unicode terminal selection text");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush Unicode terminal selection text");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode terminal selection layout");
+	tWorld = xuiWidgetGetWorldRect(pTerminal);
+	iRet = __xuiTerminalTestDoubleClick(pContext,
+		tWorld.fX + 4.0f + 1.0f * 8.0f + 0.5f,
+		tWorld.fY + 4.0f + 8.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal double click wide character");
+	iRet = xuiTerminalGetSelectionText(pTerminal, sBuffer, (int)sizeof(sBuffer));
+	if ( iRet != 3 || strcmp(sBuffer, "\xE4\xB8\xAD") != 0 ) {
+		int iEndLine;
+		int iEndColumn;
+		(void)xuiTerminalGetSelectionRange(pTerminal, &iLine, &iColumn, &iEndLine, &iEndColumn);
+		printf("terminal Unicode selection: bytes=%d text=[%s] range=(%d,%d)-(%d,%d)\n",
+			iRet, sBuffer, iLine, iColumn, iEndLine, iEndColumn);
+	}
+	XUI_TEST_CHECK(iRet == 3 && strcmp(sBuffer, "\xE4\xB8\xAD") == 0,
+		"terminal wide character selection uses display columns");
+	iRet = __xuiTerminalTestDoubleClick(pContext,
+		tWorld.fX + 4.0f + 12.0f * 8.0f + 0.5f,
+		tWorld.fY + 4.0f + 8.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal double click path");
+	iRet = xuiTerminalGetSelectionText(pTerminal, sBuffer, (int)sizeof(sBuffer));
+	XUI_TEST_CHECK(iRet == 18 && strcmp(sBuffer, "/tmp/file-name.txt") == 0,
+		"terminal path remains one selectable word");
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear after Unicode selection");
+	iRet = xuiTerminalClearScrollback(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear Unicode selection history");
 	iRet = xuiTerminalWriteText(pTerminal, "alph beta\r\nsecond line");
 	XUI_TEST_CHECK(iRet == XUI_OK, "write selection text");
 	iRet = xuiTerminalFlush(pTerminal);

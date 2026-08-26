@@ -1248,10 +1248,6 @@ static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCascaderDrawRectFill(pProxy, pDraw, pData->tButtonRect, button);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( pProxy->drawLine != NULL ) {
-		iRet = pProxy->drawLine(pProxy, pDraw, pData->tButtonRect.fX, pData->tButtonRect.fY + 3.0f, pData->tButtonRect.fX, pData->tButtonRect.fY + pData->tButtonRect.fH - 3.0f, 1.0f, __xuiCascaderColorWithAlpha(border, 130));
-		if ( iRet != XUI_OK ) return iRet;
-	}
 	if ( pData->iSelectedDepth > 0 ) {
 		sText = pData->sDisplay;
 	} else {

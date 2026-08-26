@@ -53,6 +53,16 @@ int main(void)
 	iRet = xuiCodeSearchFindPlainRange(pDocument, "alpha", 24, 10, 25, XUI_CODE_SEARCH_WRAP, &tRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStart == 11, "plain range wrap");
 
+	iRet = xuiCodeDocumentSetText(pDocument,
+		"\xE5\x8F\x98\xE9\x87\x8F \xE5\x8F\x98\xE9\x87\x8Fx \xE5\x8F\x98\xE9\x87\x8F");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set Unicode whole word document");
+	iRet = xuiCodeSearchFindPlain(pDocument, "\xE5\x8F\x98\xE9\x87\x8F", 1,
+		XUI_CODE_SEARCH_CASE_SENSITIVE | XUI_CODE_SEARCH_WHOLE_WORD, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStart == 15,
+		"Unicode whole word skips longer identifier");
+	iRet = xuiCodeDocumentSetText(pDocument, "alpha beta Alpha alphabet\nfoo_1 foo_2\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore document before regex tests");
+
 	memset(&tResult, 0, sizeof(tResult));
 	memset(sError, 0, sizeof(sError));
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9])", 0, XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));

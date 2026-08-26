@@ -1960,39 +1960,14 @@ static int __xuiRichEditMove(xui_widget pWidget, xui_rich_edit_data_t* pData, in
 
 static int __xuiRichEditWordPrev(const char* sText, int iLength, int iOffset)
 {
-	int i = xuiInternalTextGraphemePrev(sText, iLength, iOffset);
-	int iClass;
-	int iPrev;
-	while ( i > 0 && isspace((unsigned char)sText[i]) ) i = xuiInternalTextGraphemePrev(sText, iLength, i);
-	iClass = ((unsigned char)sText[i] >= 0x80u) ? 3 :
-		(isalnum((unsigned char)sText[i]) || sText[i] == '_' ? 1 : 2);
-	while ( i > 0 ) {
-		iPrev = xuiInternalTextGraphemePrev(sText, iLength, i);
-		if ( isspace((unsigned char)sText[iPrev]) ) break;
-		if ( ((unsigned char)sText[iPrev] >= 0x80u ? 3 :
-		     (isalnum((unsigned char)sText[iPrev]) || sText[iPrev] == '_' ? 1 : 2)) != iClass ) break;
-		if ( iClass == 3 ) break;
-		i = iPrev;
-	}
-	return i;
+	return xuiInternalTextWordPrev(sText, iLength, iOffset,
+		XUI_INTERNAL_WORD_NATURAL);
 }
 
 static int __xuiRichEditWordNext(const char* sText, int iLength, int iOffset)
 {
-	int i = iOffset;
-	int iClass;
-	if ( i >= iLength ) return iLength;
-	iClass = ((unsigned char)sText[i] >= 0x80u) ? 3 :
-		(isalnum((unsigned char)sText[i]) || sText[i] == '_' ? 1 : 2);
-	while ( i < iLength && !isspace((unsigned char)sText[i]) ) {
-		int iCurrentClass = ((unsigned char)sText[i] >= 0x80u) ? 3 :
-			(isalnum((unsigned char)sText[i]) || sText[i] == '_' ? 1 : 2);
-		if ( iCurrentClass != iClass ) break;
-		i = xuiInternalTextGraphemeNext(sText, iLength, i);
-		if ( iClass == 3 ) break;
-	}
-	while ( i < iLength && isspace((unsigned char)sText[i]) ) i = xuiInternalTextGraphemeNext(sText, iLength, i);
-	return i;
+	return xuiInternalTextWordNext(sText, iLength, iOffset,
+		XUI_INTERNAL_WORD_NATURAL);
 }
 
 static void __xuiRichEditSelectWord(xui_rich_edit_data_t* pData, int iOffset)
@@ -2001,40 +1976,14 @@ static void __xuiRichEditSelectWord(xui_rich_edit_data_t* pData, int iOffset)
 	int iLength = xuiRichDocumentGetLength(pData->pDocument);
 	int iStart;
 	int iEnd;
-	int iClass;
+	xui_internal_word_kind_t iKind;
 	if ( iLength <= 0 ) { pData->iAnchor = pData->iCaret = 0; return; }
-	if ( iOffset >= iLength ) iOffset = xuiInternalTextGraphemePrev(sText, iLength, iLength);
 	iOffset = xuiInternalTextGraphemeClamp(sText, iLength, iOffset);
-	if ( isspace((unsigned char)sText[iOffset]) ) {
+	iKind = xuiInternalTextWordRange(sText, iLength, iOffset,
+		XUI_INTERNAL_WORD_NATURAL, &iStart, &iEnd);
+	if ( iKind == XUI_INTERNAL_WORD_SPACE ) {
 		iStart = iOffset;
-		iEnd = xuiInternalTextGraphemeNext(sText, iLength, iOffset);
-		while ( iStart > 0 ) {
-			int iPrev = xuiInternalTextGraphemePrev(sText, iLength, iStart);
-			if ( !isspace((unsigned char)sText[iPrev]) || sText[iPrev] == '\n' || sText[iPrev] == '\r' ) break;
-			iStart = iPrev;
-		}
-		while ( iEnd < iLength && isspace((unsigned char)sText[iEnd]) && sText[iEnd] != '\n' && sText[iEnd] != '\r' )
-			iEnd = xuiInternalTextGraphemeNext(sText, iLength, iEnd);
-	} else {
-		iClass = ((unsigned char)sText[iOffset] >= 0x80u) ? 3 :
-			(isalnum((unsigned char)sText[iOffset]) || sText[iOffset] == '_' ? 1 : 2);
-		iStart = iOffset;
-		iEnd = xuiInternalTextGraphemeNext(sText, iLength, iOffset);
-		if ( iClass != 3 ) {
-			while ( iStart > 0 ) {
-				int iPrev = xuiInternalTextGraphemePrev(sText, iLength, iStart);
-				int iPrevClass = ((unsigned char)sText[iPrev] >= 0x80u) ? 3 :
-					(isalnum((unsigned char)sText[iPrev]) || sText[iPrev] == '_' ? 1 : 2);
-				if ( iPrevClass != iClass ) break;
-				iStart = iPrev;
-			}
-			while ( iEnd < iLength ) {
-				int iEndClass = ((unsigned char)sText[iEnd] >= 0x80u) ? 3 :
-					(isalnum((unsigned char)sText[iEnd]) || sText[iEnd] == '_' ? 1 : 2);
-				if ( iEndClass != iClass ) break;
-				iEnd = xuiInternalTextGraphemeNext(sText, iLength, iEnd);
-			}
-		}
+		iEnd = iOffset;
 	}
 	pData->iAnchor = iStart;
 	pData->iCaret = iEnd;

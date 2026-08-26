@@ -43,6 +43,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "range excludes outside match");
 	iRet = xuiFindText("line1\nline2", -1, "1\\nline", 0, 0, -1, XUI_FIND_ESCAPE, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 4 && tResult.iEnd == 10, "escape pattern");
+	iRet = xuiFindText(
+		"\xD0\xBC\xD0\xB8\xD1\x80 \xD0\xBC\xD0\xB8\xD1\x80x \xD0\xBC\xD0\xB8\xD1\x80",
+		-1, "\xD0\xBC\xD0\xB8\xD1\x80", 1, 0, -1,
+		XUI_FIND_CASE_SENSITIVE | XUI_FIND_WHOLE_WORD, &tResult, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 15,
+		"Unicode natural whole word skips longer word");
 
 	iRet = xuiFindCollectText("one two one two", -1, "one", 0, -1, XUI_FIND_CASE_SENSITIVE, arrResults, 8, &iCount, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "collect count");

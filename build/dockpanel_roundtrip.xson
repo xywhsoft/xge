@@ -209,7 +209,7 @@
       "title": "Properties",
       "state": "floating",
       "lastRegion": "document",
-      "autoHideRegion": "left",
+      "autoHideRegion": "bottom",
       "lastSide": "fill",
       "lastTabIndex": 0,
       "closable": true,

@@ -213,9 +213,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "open layout");
 	iRet = __xuiColorPickerRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "open render");
+	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) >= 3, "smooth color gradients use shared meshes");
 	pPopup = xuiColorPickerGetPopupWidget(pPicker);
 	pPanel = xuiColorPickerGetPanelWidget(pPicker);
 	XUI_TEST_CHECK(pPopup != NULL && pPanel != NULL && xuiGetFocusWidget(pContext) == pPanel, "popup panel focus");
+	{
+		xui_rect_t tSv = xuiColorPickerGetSvRect(pPicker);
+		xui_rect_t tHex = xuiColorPickerGetHexRect(pPicker);
+		xui_rect_t tOld = xuiColorPickerGetOldRect(pPicker);
+		xui_rect_t tNew = xuiColorPickerGetNewRect(pPicker);
+		XUI_TEST_CHECK(tHex.fY + tHex.fH == tSv.fY + tSv.fH, "hex aligns with color panel bottom");
+		XUI_TEST_CHECK(tOld.fX == tHex.fX && tNew.fX + tNew.fW == tHex.fX + tHex.fW, "swatches align with control columns");
+	}
 	XUI_TEST_CHECK((xuiColorPickerGetState(pPicker) & XUI_COLOR_PICKER_STATE_OPEN) != 0u, "open state");
 	tRect = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(tRect.fY >= 60.0f, "popup below owner");
@@ -249,8 +258,8 @@ int main(void)
 	XUI_TEST_CHECK(strcmp(xuiColorPickerGetHex(pPicker), "#ABCDEF40") == 0 && tChange.iCount > iCountBefore, "hex edit applies typed color");
 
 	iCountBefore = tChange.iCount;
-	tRect = xuiColorPickerGetHexRect(pPicker);
-	tRect.fY = 84.0f;
+	tRect = xuiColorPickerGetOldRect(pPicker);
+	tRect.fY = tRect.fY + tRect.fH + 6.0f;
 	tRect.fW = 42.0f;
 	tRect.fH = 22.0f;
 	iRet = __xuiColorPickerClickPanelRectFull(pContext, pPanel, tRect);

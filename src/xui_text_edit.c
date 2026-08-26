@@ -386,92 +386,18 @@ static int __xuiTextEditImeBuildDisplay(xui_text_edit_data_t* pData)
 	return XUI_OK;
 }
 
-static int __xuiTextEditCharClass(const char* sText, int iPos)
-{
-	unsigned char c;
-
-	if ( (sText == NULL) || (iPos < 0) || (sText[iPos] == '\0') ) {
-		return 0;
-	}
-	c = (unsigned char)sText[iPos];
-	if ( c <= 32u ) {
-		return 0;
-	}
-	if ( c >= 128u ) {
-		return 1;
-	}
-	if ( ((c >= '0') && (c <= '9')) || ((c >= 'A') && (c <= 'Z')) ||
-	     ((c >= 'a') && (c <= 'z')) || (c == '_') ) {
-		return 1;
-	}
-	return 2;
-}
-
 static int __xuiTextEditPrevWord(xui_text_edit_data_t* pData)
 {
-	const char* sText;
-	int iLen;
-	int iPos;
-	int iPrev;
-	int iClass;
-
-	if ( pData == NULL || pData->sText == NULL ) {
-		return 0;
-	}
-	sText = pData->sText;
-	iLen = (int)strlen(sText);
-	iPos = __xuiTextEditUtf8Prev(sText, iLen, pData->iCursor);
-	while ( iPos > 0 && __xuiTextEditCharClass(sText, iPos) == 0 ) {
-		iPos = __xuiTextEditUtf8Prev(sText, iLen, iPos);
-	}
-	iClass = __xuiTextEditCharClass(sText, iPos);
-	while ( iPos > 0 ) {
-		iPrev = __xuiTextEditUtf8Prev(sText, iLen, iPos);
-		if ( __xuiTextEditCharClass(sText, iPrev) != iClass ) {
-			break;
-		}
-		iPos = iPrev;
-	}
-	return iPos;
+	if ( pData == NULL || pData->sText == NULL ) return 0;
+	return xuiInternalTextWordPrev(pData->sText, -1, pData->iCursor,
+		XUI_INTERNAL_WORD_NATURAL);
 }
 
 static int __xuiTextEditNextWord(xui_text_edit_data_t* pData)
 {
-	const char* sText;
-	int iLen;
-	int iPos;
-	int iNext;
-	int iClass;
-
-	if ( pData == NULL || pData->sText == NULL ) {
-		return 0;
-	}
-	sText = pData->sText;
-	iLen = (int)strlen(sText);
-	iPos = __xuiTextEditUtf8Clamp(sText, iLen, pData->iCursor);
-	if ( iPos >= iLen ) {
-		return iLen;
-	}
-	iClass = __xuiTextEditCharClass(sText, iPos);
-	while ( iPos < iLen ) {
-		iNext = __xuiTextEditUtf8Next(sText, iLen, iPos);
-		if ( iNext <= iPos ) {
-			break;
-		}
-		if ( __xuiTextEditCharClass(sText, iNext) != iClass ) {
-			iPos = iNext;
-			break;
-		}
-		iPos = iNext;
-	}
-	while ( iPos < iLen && __xuiTextEditCharClass(sText, iPos) == 0 ) {
-		iNext = __xuiTextEditUtf8Next(sText, iLen, iPos);
-		if ( iNext <= iPos ) {
-			break;
-		}
-		iPos = iNext;
-	}
-	return iPos;
+	if ( pData == NULL || pData->sText == NULL ) return 0;
+	return xuiInternalTextWordNext(pData->sText, -1, pData->iCursor,
+		XUI_INTERNAL_WORD_NATURAL);
 }
 
 static int __xuiTextEditUtf8Encode(uint32_t iCodepoint, char* sText)
@@ -1603,9 +1529,7 @@ static int __xuiTextEditSelectWordAt(xui_widget pWidget, xui_text_edit_data_t* p
 	int iLen;
 	int iStart;
 	int iEnd;
-	int iPrev;
-	int iNext;
-	int iClass;
+	xui_internal_word_kind_t iKind;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1615,28 +1539,10 @@ static int __xuiTextEditSelectWordAt(xui_widget pWidget, xui_text_edit_data_t* p
 	if ( iLen <= 0 ) {
 		return __xuiTextEditMoveCursor(pWidget, pData, 0, 0);
 	}
-	iStart = __xuiTextEditUtf8Clamp(sText, iLen, iCursor);
-	if ( iStart >= iLen ) {
-		iStart = __xuiTextEditUtf8Prev(sText, iLen, iLen);
-	}
-	iClass = __xuiTextEditCharClass(sText, iStart);
-	if ( iClass == 0 ) {
+	iKind = xuiInternalTextWordRange(sText, iLen, iCursor,
+		XUI_INTERNAL_WORD_NATURAL, &iStart, &iEnd);
+	if ( iKind == XUI_INTERNAL_WORD_SPACE ) {
 		return __xuiTextEditMoveCursor(pWidget, pData, iCursor, 0);
-	}
-	iEnd = __xuiTextEditUtf8Next(sText, iLen, iStart);
-	while ( iStart > 0 ) {
-		iPrev = __xuiTextEditUtf8Prev(sText, iLen, iStart);
-		if ( __xuiTextEditCharClass(sText, iPrev) != iClass ) {
-			break;
-		}
-		iStart = iPrev;
-	}
-	while ( iEnd < iLen ) {
-		iNext = __xuiTextEditUtf8Next(sText, iLen, iEnd);
-		if ( __xuiTextEditCharClass(sText, iEnd) != iClass ) {
-			break;
-		}
-		iEnd = iNext;
 	}
 	(void)__xuiTextEditSetSelectionData(pData, iStart, iEnd);
 	return __xuiTextEditSyncCursor(pWidget, pData);

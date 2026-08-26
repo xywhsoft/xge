@@ -77,6 +77,10 @@ typedef struct xui_chart_data_t {
 	double fMaxX;
 	double fMinY;
 	double fMaxY;
+	double fDataMinX;
+	double fDataMaxX;
+	double fDataMinY;
+	double fDataMaxY;
 	xui_chart_series_t arrSeries[XUI_CHART_MAX_SERIES];
 	int iSeriesCount;
 	xui_chart_hit_t tHover;
@@ -357,6 +361,60 @@ static xui_rect_t __xuiChartContentRect(xui_widget pWidget)
 	return xuiInternalSnapRect(tRect);
 }
 
+static xui_rect_t __xuiChartIntersectRect(xui_rect_t tA, xui_rect_t tB)
+{
+	float fLeft = (tA.fX > tB.fX) ? tA.fX : tB.fX;
+	float fTop = (tA.fY > tB.fY) ? tA.fY : tB.fY;
+	float fRight = ((tA.fX + tA.fW) < (tB.fX + tB.fW)) ? (tA.fX + tA.fW) : (tB.fX + tB.fW);
+	float fBottom = ((tA.fY + tA.fH) < (tB.fY + tB.fH)) ? (tA.fY + tA.fH) : (tB.fY + tB.fH);
+
+	if ( (fRight <= fLeft) || (fBottom <= fTop) ) {
+		return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	}
+	return (xui_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
+}
+
+static int __xuiChartPlotClipBegin(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tClip,
+	xui_rect_t* pOldClip, int* pHadOldClip, int* pActive)
+{
+	xui_rect_t tOldClip;
+	int bHadOldClip;
+	int iRet;
+
+	if ( pHadOldClip != NULL ) *pHadOldClip = 0;
+	if ( pActive != NULL ) *pActive = 0;
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pOldClip == NULL) ||
+	     (pHadOldClip == NULL) || (pActive == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pProxy->drawClipGet == NULL) || (pProxy->drawClipSet == NULL) || (pProxy->drawClipClear == NULL) ) {
+		return XUI_OK;
+	}
+	memset(&tOldClip, 0, sizeof(tOldClip));
+	bHadOldClip = 0;
+	iRet = pProxy->drawClipGet(pProxy, pDraw, &tOldClip, &bHadOldClip);
+	if ( iRet != XUI_OK ) return iRet;
+	*pOldClip = tOldClip;
+	*pHadOldClip = bHadOldClip ? 1 : 0;
+	if ( bHadOldClip ) {
+		tClip = __xuiChartIntersectRect(tClip, tOldClip);
+	}
+	iRet = pProxy->drawClipSet(pProxy, pDraw, xuiInternalSnapRect(tClip));
+	if ( iRet != XUI_OK ) return iRet;
+	*pActive = 1;
+	return XUI_OK;
+}
+
+static int __xuiChartPlotClipEnd(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tOldClip,
+	int bHadOldClip, int bActive)
+{
+	if ( !bActive ) return XUI_OK;
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawClipSet == NULL) || (pProxy->drawClipClear == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	return bHadOldClip ? pProxy->drawClipSet(pProxy, pDraw, tOldClip) : pProxy->drawClipClear(pProxy, pDraw);
+}
+
 static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 {
 	double fMinX;
@@ -473,10 +531,10 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 		}
 	}
 	if ( !bAny ) {
-		pData->fMinX = 0.0;
-		pData->fMaxX = 1.0;
-		pData->fMinY = 0.0;
-		pData->fMaxY = 1.0;
+		pData->fDataMinX = pData->fMinX = 0.0;
+		pData->fDataMaxX = pData->fMaxX = 1.0;
+		pData->fDataMinY = pData->fMinY = 0.0;
+		pData->fDataMaxY = pData->fMaxY = 1.0;
 		if ( pData->bViewRange ) {
 			pData->fMinX = pData->fViewMinX;
 			pData->fMaxX = pData->fViewMaxX;
@@ -522,16 +580,48 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 			}
 		}
 	}
-	pData->fMinX = fMinX;
-	pData->fMaxX = fMaxX;
-	pData->fMinY = fMinY;
-	pData->fMaxY = fMaxY;
+	pData->fDataMinX = pData->fMinX = fMinX;
+	pData->fDataMaxX = pData->fMaxX = fMaxX;
+	pData->fDataMinY = pData->fMinY = fMinY;
+	pData->fDataMaxY = pData->fMaxY = fMaxY;
 	if ( pData->bViewRange ) {
 		pData->fMinX = pData->fViewMinX;
 		pData->fMaxX = pData->fViewMaxX;
 		pData->fMinY = pData->fViewMinY;
 		pData->fMaxY = pData->fViewMaxY;
 	}
+}
+
+static void __xuiChartClampPanAxis(double fDataMin, double fDataMax, double fPanMin, double fPanMax,
+	double fDelta, double* pMin, double* pMax)
+{
+	double fDataRange;
+	double fPanRange;
+	double fMin;
+	double fMax;
+	double fEpsilon;
+
+	if ( (pMin == NULL) || (pMax == NULL) ) return;
+	fDataRange = fDataMax - fDataMin;
+	fPanRange = fPanMax - fPanMin;
+	fEpsilon = (fabs(fDataRange) + 1.0) * 1.0e-9;
+	if ( (fDataRange <= fEpsilon) || (fPanRange >= fDataRange - fEpsilon) ) {
+		*pMin = fPanMin;
+		*pMax = fPanMax;
+		return;
+	}
+	fMin = fPanMin + fDelta;
+	fMax = fPanMax + fDelta;
+	if ( fMin < fDataMin ) {
+		fMax += fDataMin - fMin;
+		fMin = fDataMin;
+	}
+	if ( fMax > fDataMax ) {
+		fMin -= fMax - fDataMax;
+		fMax = fDataMax;
+	}
+	*pMin = fMin;
+	*pMax = fMax;
 }
 
 static xui_rect_t __xuiChartComputePlotRect(xui_widget pWidget, xui_chart_data_t* pData)
@@ -1424,13 +1514,14 @@ static int __xuiChartDrawLegend(xui_proxy pProxy, xui_draw_context pDraw, xui_ch
 	return XUI_OK;
 }
 
-static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, xui_chart_data_t* pData)
+static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw,
+	xui_chart_data_t* pData, int bDrawOverlay, int bDrawTooltip)
 {
 	xui_chart_hit_t* pHit;
 	xui_rect_t tBrush;
 	int iRet;
 
-	if ( pData->bBrushRange && !__xuiChartHasVisiblePie(pData) ) {
+	if ( bDrawOverlay && pData->bBrushRange && !__xuiChartHasVisiblePie(pData) ) {
 		tBrush = __xuiChartRangeToRect(pData, pData->fBrushMinX, pData->fBrushMaxX, pData->fBrushMinY, pData->fBrushMaxY);
 		if ( (tBrush.fW > 0.0f) && (tBrush.fH > 0.0f) ) {
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tBrush, XUI_COLOR_RGBA(42, 124, 221, 38));
@@ -1448,9 +1539,12 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 	if ( !__xuiChartDrawablePoint(pHit->fX, pHit->fY) ) {
 		return XUI_OK;
 	}
-	iRet = pProxy->drawCircleStroke(pProxy, pDraw, pHit->fX, pHit->fY, 7.0f, 2.0f, XUI_COLOR_RGBA(30, 40, 52, 220));
-	if ( iRet != XUI_OK ) return iRet;
-	if ( pData->bTooltipVisible && (pData->pFont != NULL) && (pHit->iSeries >= 0) && (pHit->iSeries < pData->iSeriesCount) &&
+	if ( bDrawOverlay ) {
+		iRet = pProxy->drawCircleStroke(pProxy, pDraw, pHit->fX, pHit->fY, 7.0f, 2.0f, XUI_COLOR_RGBA(30, 40, 52, 220));
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( bDrawTooltip && pData->bTooltipVisible && (pData->pFont != NULL) &&
+	     (pHit->iSeries >= 0) && (pHit->iSeries < pData->iSeriesCount) &&
 	     (pHit->iItem >= 0) && (pHit->iItem < pData->arrSeries[pHit->iSeries].iCount) ) {
 		char sText[128];
 		xui_chart_point_t* pPoint = &pData->arrSeries[pHit->iSeries].pPoints[pHit->iItem];
@@ -1483,9 +1577,12 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	xui_proxy pProxy;
 	xui_rect_t tContent;
 	uint32_t arrSavedColors[7];
+	xui_rect_t tOldClip;
 	int i;
 	int iRet;
 	int bHasPie;
+	int bHadOldClip;
+	int bClipActive;
 
 	(void)iStateId;
 	(void)pUser;
@@ -1504,6 +1601,9 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	__xuiChartComputeRanges(pData);
 	pData->tPlotRect = __xuiChartComputePlotRect(pWidget, pData);
 	pData->iLastLodStride = 1;
+	memset(&tOldClip, 0, sizeof(tOldClip));
+	bHadOldClip = 0;
+	bClipActive = 0;
 	iRet = pProxy->drawRectFill(pProxy, pDraw, tContent, pData->iBackgroundColor);
 	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, pData->sTitle, (xui_rect_t){tContent.fX + 8.0f, tContent.fY + 4.0f, tContent.fW - 16.0f, 24.0f}, pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -1522,6 +1622,8 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		iRet = pProxy->drawRectFill(pProxy, pDraw, pData->tPlotRect, pData->iPlotColor);
 		if ( iRet != XUI_OK ) goto cleanup;
 	}
+	iRet = __xuiChartPlotClipBegin(pProxy, pDraw, pData->tPlotRect, &tOldClip, &bHadOldClip, &bClipActive);
+	if ( iRet != XUI_OK ) goto cleanup;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		xui_chart_series_t* pSeries = &pData->arrSeries[i];
 		if ( !pSeries->bVisible ) {
@@ -1540,13 +1642,22 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		}
 		if ( iRet != XUI_OK ) goto cleanup;
 	}
+	iRet = __xuiChartDrawSelection(pWidget, pProxy, pDraw, pData, 1, 0);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iRet = __xuiChartPlotClipEnd(pProxy, pDraw, tOldClip, bHadOldClip, bClipActive);
+	bClipActive = 0;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiChartDrawLegend(pProxy, pDraw, pData, tContent);
 	if ( iRet != XUI_OK ) goto cleanup;
-	iRet = __xuiChartDrawSelection(pWidget, pProxy, pDraw, pData);
+	iRet = __xuiChartDrawSelection(pWidget, pProxy, pDraw, pData, 0, 1);
 	if ( iRet == XUI_OK ) {
 		pData->iDirtyFlags = 0;
 	}
 cleanup:
+	if ( bClipActive ) {
+		int iClipRet = __xuiChartPlotClipEnd(pProxy, pDraw, tOldClip, bHadOldClip, bClipActive);
+		if ( iRet == XUI_OK ) iRet = iClipRet;
+	}
 	__xuiChartRestoreColors(pData, arrSavedColors);
 	return iRet;
 }
@@ -1838,6 +1949,9 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
+		if ( !pData->bViewRange ) {
+			return XUI_OK;
+		}
 		pData->bPanning = 1;
 		pData->fPanStartX = pEvent->fX;
 		pData->fPanStartY = pEvent->fY;
@@ -1895,12 +2009,18 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		double fRangeY;
 		double fDx;
 		double fDy;
+		double fMinX;
+		double fMaxX;
+		double fMinY;
+		double fMaxY;
 		fRangeX = pData->fPanMaxX - pData->fPanMinX;
 		fRangeY = pData->fPanMaxY - pData->fPanMinY;
 		if ( (pData->tPlotRect.fW > 0.0f) && (pData->tPlotRect.fH > 0.0f) ) {
 			fDx = -((double)pEvent->fX - (double)pData->fPanStartX) / (double)pData->tPlotRect.fW * fRangeX;
 			fDy = ((double)pEvent->fY - (double)pData->fPanStartY) / (double)pData->tPlotRect.fH * fRangeY;
-			(void)__xuiChartSetViewRangeData(pData, pData->fPanMinX + fDx, pData->fPanMaxX + fDx, pData->fPanMinY + fDy, pData->fPanMaxY + fDy);
+			__xuiChartClampPanAxis(pData->fDataMinX, pData->fDataMaxX, pData->fPanMinX, pData->fPanMaxX, fDx, &fMinX, &fMaxX);
+			__xuiChartClampPanAxis(pData->fDataMinY, pData->fDataMaxY, pData->fPanMinY, pData->fPanMaxY, fDy, &fMinY, &fMaxY);
+			(void)__xuiChartSetViewRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);
 			(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 		return XUI_EVENT_DISPATCH_STOP;

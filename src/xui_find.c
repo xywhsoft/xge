@@ -1,4 +1,4 @@
-#include "../xui.h"
+#include "xui_internal.h"
 #include "xui_xrt_port.h"
 
 #include <ctype.h>
@@ -237,17 +237,12 @@ static int __xuiFindDupRaw(const char* sText, char** psOutput, char* sError, int
 	return XUI_OK;
 }
 
-static int __xuiFindIsWordChar(char c)
-{
-	unsigned char ch = (unsigned char)c;
-	return isalnum(ch) || ch == '_';
-}
-
 static int __xuiFindIsWholeWord(const char* sText, int iTextLength, int iStart, int iEnd)
 {
-	if ( iStart > 0 && __xuiFindIsWordChar(sText[iStart - 1]) ) return 0;
-	if ( iEnd < iTextLength && __xuiFindIsWordChar(sText[iEnd]) ) return 0;
-	return 1;
+	return xuiInternalTextWordBoundary(sText, iTextLength, iStart,
+		XUI_INTERNAL_WORD_NATURAL) &&
+		xuiInternalTextWordBoundary(sText, iTextLength, iEnd,
+		XUI_INTERNAL_WORD_NATURAL);
 }
 
 static int __xuiFindCharEquals(char a, char b, uint32_t iFlags)

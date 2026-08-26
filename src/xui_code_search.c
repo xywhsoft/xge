@@ -1,4 +1,4 @@
-#include "../xui.h"
+#include "xui_internal.h"
 #include "xui_xrt_port.h"
 
 #include <ctype.h>
@@ -22,21 +22,22 @@ static int __xuiCodeSearchClamp(int iValue, int iMin, int iMax)
 	return iValue;
 }
 
-static int __xuiCodeSearchIsWordChar(char c)
+static int __xuiCodeSearchUnicodeRead(void* pUser, int iOffset, unsigned char* pByte)
 {
-	unsigned char ch = (unsigned char)c;
-	return isalnum(ch) || ch == '_';
+	char c;
+	if ( pUser == NULL || pByte == NULL ) return 0;
+	c = '\0';
+	if ( xuiCodeDocumentGetByte((xui_code_document)pUser, iOffset, &c) != XUI_OK ) return 0;
+	*pByte = (unsigned char)c;
+	return 1;
 }
 
 static int __xuiCodeSearchIsWholeWordDocument(xui_code_document pDocument, int iLength, int iStart, int iEnd)
 {
-	char ch;
-
-	if ( iStart > 0 && xuiCodeDocumentGetByte(pDocument, iStart - 1, &ch) == XUI_OK &&
-	     __xuiCodeSearchIsWordChar(ch) ) return 0;
-	if ( iEnd < iLength && xuiCodeDocumentGetByte(pDocument, iEnd, &ch) == XUI_OK &&
-	     __xuiCodeSearchIsWordChar(ch) ) return 0;
-	return 1;
+	return xuiInternalTextWordBoundaryRead(__xuiCodeSearchUnicodeRead, pDocument,
+		iLength, iStart, XUI_INTERNAL_WORD_IDENTIFIER) &&
+		xuiInternalTextWordBoundaryRead(__xuiCodeSearchUnicodeRead, pDocument,
+		iLength, iEnd, XUI_INTERNAL_WORD_IDENTIFIER);
 }
 
 static int __xuiCodeSearchCharEquals(char a, char b, uint32_t iFlags)
@@ -61,9 +62,10 @@ static int __xuiCodeSearchMatchBufferAt(const char* sText, const char* sPattern,
 
 static int __xuiCodeSearchIsWholeWord(const char* sText, int iLength, int iStart, int iEnd)
 {
-	if ( iStart > 0 && __xuiCodeSearchIsWordChar(sText[iStart - 1]) ) return 0;
-	if ( iEnd < iLength && __xuiCodeSearchIsWordChar(sText[iEnd]) ) return 0;
-	return 1;
+	return xuiInternalTextWordBoundary(sText, iLength, iStart,
+		XUI_INTERNAL_WORD_IDENTIFIER) &&
+		xuiInternalTextWordBoundary(sText, iLength, iEnd,
+		XUI_INTERNAL_WORD_IDENTIFIER);
 }
 
 static int __xuiCodeSearchFindPlainInRange(xui_code_document pDocument, int iTextLength,

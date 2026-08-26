@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define XUI_COLOR_PICKER_DEFAULT_POPUP_W	432.0f
-#define XUI_COLOR_PICKER_DEFAULT_POPUP_H	300.0f
+#define XUI_COLOR_PICKER_DEFAULT_POPUP_H	260.0f
 #define XUI_COLOR_PICKER_PANEL_PAD		14.0f
 #define XUI_COLOR_PICKER_RGB_PART_BASE		100
 
@@ -398,14 +398,20 @@ static void __xuiColorPickerDefaultPalette(xui_color_picker_data_t* pData)
 	static const uint32_t arrDefault[] = {
 		XUI_COLOR_RGBA(0, 0, 0, 255),
 		XUI_COLOR_RGBA(255, 255, 255, 255),
-		XUI_COLOR_RGBA(148, 158, 168, 255),
-		XUI_COLOR_RGBA(225, 58, 70, 255),
-		XUI_COLOR_RGBA(230, 126, 34, 255),
-		XUI_COLOR_RGBA(244, 201, 54, 255),
-		XUI_COLOR_RGBA(74, 165, 91, 255),
-		XUI_COLOR_RGBA(43, 184, 203, 255),
-		XUI_COLOR_RGBA(46, 124, 214, 255),
-		XUI_COLOR_RGBA(132, 86, 209, 255)
+		XUI_COLOR_RGBA(148, 163, 184, 255),
+		XUI_COLOR_RGBA(239, 68, 68, 255),
+		XUI_COLOR_RGBA(249, 115, 22, 255),
+		XUI_COLOR_RGBA(245, 158, 11, 255),
+		XUI_COLOR_RGBA(234, 179, 8, 255),
+		XUI_COLOR_RGBA(132, 204, 22, 255),
+		XUI_COLOR_RGBA(34, 197, 94, 255),
+		XUI_COLOR_RGBA(20, 184, 166, 255),
+		XUI_COLOR_RGBA(6, 182, 212, 255),
+		XUI_COLOR_RGBA(59, 130, 246, 255),
+		XUI_COLOR_RGBA(99, 102, 241, 255),
+		XUI_COLOR_RGBA(139, 92, 246, 255),
+		XUI_COLOR_RGBA(217, 70, 239, 255),
+		XUI_COLOR_RGBA(236, 72, 153, 255)
 	};
 	int i;
 
@@ -707,9 +713,17 @@ static void __xuiColorPickerUpdatePanelRects(xui_color_picker_data_t* pData)
 	float fW;
 	float fH;
 	float fRightX;
+	float fControlX;
+	float fControlRight;
+	float fControlW;
 	float fRowY;
+	float fRowStep;
 	float fPaletteCell;
 	float fPaletteGap;
+	float fPaletteWidth;
+	float fPaletteX;
+	float fSwatchGap;
+	float fSwatchW;
 	int i;
 
 	if ( pData == NULL ) {
@@ -727,20 +741,29 @@ static void __xuiColorPickerUpdatePanelRects(xui_color_picker_data_t* pData)
 	pData->tSvRect = xuiInternalSnapRect((xui_rect_t){14.0f, 16.0f, 190.0f, 172.0f});
 	pData->tHueRect = xuiInternalSnapRect((xui_rect_t){214.0f, 16.0f, 22.0f, 172.0f});
 	fRightX = 254.0f;
-	pData->tOldRect = xuiInternalSnapRect((xui_rect_t){fRightX, 24.0f, 58.0f, 30.0f});
-	pData->tNewRect = xuiInternalSnapRect((xui_rect_t){fRightX + 72.0f, 24.0f, 58.0f, 30.0f});
+	fControlX = fRightX + 22.0f;
+	fControlRight = fW - XUI_COLOR_PICKER_PANEL_PAD;
+	fControlW = __xuiColorPickerMax(84.0f, fControlRight - fControlX);
+	fSwatchGap = 14.0f;
+	fSwatchW = (fControlW - fSwatchGap) * 0.5f;
+	pData->tOldRect = xuiInternalSnapRect((xui_rect_t){fControlX, 30.0f, fSwatchW, 28.0f});
+	pData->tNewRect = xuiInternalSnapRect((xui_rect_t){fControlX + fSwatchW + fSwatchGap, 30.0f, fSwatchW, 28.0f});
+	fRowY = pData->bAlphaEnabled ? 64.0f : 72.0f;
+	fRowStep = pData->bAlphaEnabled ? 25.0f : 32.0f;
 	for ( i = 0; i < 4; i++ ) {
-		fRowY = 84.0f + (float)i * 28.0f;
-		pData->arrFieldRect[i] = xuiInternalSnapRect((xui_rect_t){fRightX + 22.0f, fRowY, 42.0f, 22.0f});
-		pData->arrSliderRect[i] = xuiInternalSnapRect((xui_rect_t){fRightX + 78.0f, fRowY + 8.0f, __xuiColorPickerMax(36.0f, fW - (fRightX + 92.0f)), 6.0f});
+		pData->arrFieldRect[i] = xuiInternalSnapRect((xui_rect_t){fControlX, fRowY + (float)i * fRowStep, 42.0f, 22.0f});
+		pData->arrSliderRect[i] = xuiInternalSnapRect((xui_rect_t){fControlX + 56.0f, fRowY + (float)i * fRowStep + 8.0f, __xuiColorPickerMax(36.0f, fControlRight - (fControlX + 56.0f)), 6.0f});
 	}
 	pData->tAlphaRect = pData->arrSliderRect[3];
-	pData->tHexRect = xuiInternalSnapRect((xui_rect_t){fRightX + 22.0f, pData->bAlphaEnabled ? 206.0f : 178.0f, __xuiColorPickerMax(84.0f, fW - (fRightX + 60.0f)), 24.0f});
+	pData->tHexRect = xuiInternalSnapRect((xui_rect_t){fControlX, pData->tSvRect.fY + pData->tSvRect.fH - 24.0f, fControlW, 24.0f});
 	fPaletteCell = 20.0f;
 	fPaletteGap = (pData->iPaletteCount > 1) ? ((fW - 28.0f - (float)pData->iPaletteCount * fPaletteCell) / (float)(pData->iPaletteCount - 1)) : 0.0f;
 	if ( fPaletteGap < 4.0f ) fPaletteGap = 4.0f;
+	if ( fPaletteGap > 16.0f ) fPaletteGap = 16.0f;
+	fPaletteWidth = (float)pData->iPaletteCount * fPaletteCell + ((pData->iPaletteCount > 1) ? (float)(pData->iPaletteCount - 1) * fPaletteGap : 0.0f);
+	fPaletteX = (fW - fPaletteWidth) * 0.5f;
 	for ( i = 0; i < pData->iPaletteCount; i++ ) {
-		pData->arrPaletteRect[i] = xuiInternalSnapRect((xui_rect_t){14.0f + (float)i * (fPaletteCell + fPaletteGap), fH - 38.0f, fPaletteCell, fPaletteCell});
+		pData->arrPaletteRect[i] = xuiInternalSnapRect((xui_rect_t){fPaletteX + (float)i * (fPaletteCell + fPaletteGap), fH - 38.0f, fPaletteCell, fPaletteCell});
 	}
 }
 
@@ -864,45 +887,67 @@ static int __xuiColorPickerDrawChevron(xui_proxy pProxy, xui_draw_context pDraw,
 	return pProxy->drawLine(pProxy, pDraw, fCx, fBottom, fRight, fTop, 1.7f, iColor);
 }
 
-static int __xuiColorPickerDrawHue(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect)
+static int __xuiColorPickerDrawGradientQuad(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect,
+	uint32_t iTopLeft, uint32_t iTopRight, uint32_t iBottomRight, uint32_t iBottomLeft)
 {
-	xui_rect_t tStep;
-	uint32_t iColor;
-	int i;
-	int iSteps;
+	static const uint32_t arrIndices[6] = {0u, 1u, 2u, 0u, 2u, 3u};
+	xui_mesh_vertex_t arrVertices[4];
 
-	if ( pProxy->drawRectFill == NULL ) {
+	if ( (pProxy == NULL) || (pProxy->drawMeshTriangles == NULL) ||
+	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	iSteps = 72;
-	tStep = tRect;
-	tStep.fX += 1.0f;
-	tStep.fY += 1.0f;
-	tStep.fW -= 2.0f;
-	tStep.fH = (tRect.fH - 2.0f) / (float)iSteps;
-	for ( i = 0; i < iSteps; i++ ) {
-		iColor = __xuiColorPickerHsvToRgb((float)i / (float)(iSteps - 1), 1.0f, 1.0f);
-		tStep.fY = tRect.fY + 1.0f + (float)i * (tRect.fH - 2.0f) / (float)iSteps;
-		(void)pProxy->drawRectFill(pProxy, pDraw, tStep, iColor);
+	arrVertices[0] = (xui_mesh_vertex_t){tRect.fX, tRect.fY, iTopLeft};
+	arrVertices[1] = (xui_mesh_vertex_t){tRect.fX + tRect.fW, tRect.fY, iTopRight};
+	arrVertices[2] = (xui_mesh_vertex_t){tRect.fX + tRect.fW, tRect.fY + tRect.fH, iBottomRight};
+	arrVertices[3] = (xui_mesh_vertex_t){tRect.fX, tRect.fY + tRect.fH, iBottomLeft};
+	return pProxy->drawMeshTriangles(pProxy, pDraw, arrVertices, 4, arrIndices, 6, 0);
+}
+
+static int __xuiColorPickerDrawHue(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect)
+{
+	xui_mesh_vertex_t arrVertices[14];
+	uint32_t arrIndices[36];
+	float fY;
+	uint32_t iColor;
+	int i;
+
+	if ( (pProxy == NULL) || (pProxy->drawMeshTriangles == NULL) ) {
+		return XUI_OK;
 	}
-	return XUI_OK;
+	tRect.fX += 1.0f;
+	tRect.fY += 1.0f;
+	tRect.fW -= 2.0f;
+	tRect.fH -= 2.0f;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	for ( i = 0; i <= 6; i++ ) {
+		fY = tRect.fY + tRect.fH * (float)i / 6.0f;
+		iColor = __xuiColorPickerHsvToRgb((float)i / 6.0f, 1.0f, 1.0f);
+		arrVertices[i * 2] = (xui_mesh_vertex_t){tRect.fX, fY, iColor};
+		arrVertices[i * 2 + 1] = (xui_mesh_vertex_t){tRect.fX + tRect.fW, fY, iColor};
+		if ( i < 6 ) {
+			int iVertex = i * 2;
+			int iIndex = i * 6;
+			arrIndices[iIndex] = (uint32_t)iVertex;
+			arrIndices[iIndex + 1] = (uint32_t)(iVertex + 1);
+			arrIndices[iIndex + 2] = (uint32_t)(iVertex + 3);
+			arrIndices[iIndex + 3] = (uint32_t)iVertex;
+			arrIndices[iIndex + 4] = (uint32_t)(iVertex + 3);
+			arrIndices[iIndex + 5] = (uint32_t)(iVertex + 2);
+		}
+	}
+	return pProxy->drawMeshTriangles(pProxy, pDraw, arrVertices, 14, arrIndices, 36, 0);
 }
 
 static int __xuiColorPickerDrawSv(xui_proxy pProxy, xui_draw_context pDraw, xui_color_picker_data_t* pData)
 {
-	xui_rect_t tCell;
 	xui_rect_t tRect;
 	uint32_t iHue;
-	uint32_t iSat;
-	uint32_t iColor;
-	float fS;
-	float fV;
-	int i;
-	int j;
-	int iCols;
-	int iRows;
+	int iRet;
 
-	if ( (pProxy->drawRectFill == NULL) || (pData == NULL) ) {
+	if ( (pProxy == NULL) || (pProxy->drawMeshTriangles == NULL) || (pData == NULL) ) {
 		return XUI_OK;
 	}
 	tRect = pData->tSvRect;
@@ -910,23 +955,16 @@ static int __xuiColorPickerDrawSv(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	tRect.fY += 1.0f;
 	tRect.fW -= 2.0f;
 	tRect.fH -= 2.0f;
-	iCols = 34;
-	iRows = 28;
-	iHue = __xuiColorPickerHsvToRgb(pData->fHue, 1.0f, 1.0f);
-	tCell.fW = tRect.fW / (float)iCols;
-	tCell.fH = tRect.fH / (float)iRows;
-	for ( j = 0; j < iRows; j++ ) {
-		fV = 1.0f - ((float)j / (float)(iRows - 1));
-		for ( i = 0; i < iCols; i++ ) {
-			fS = (float)i / (float)(iCols - 1);
-			iSat = __xuiColorPickerMix(XUI_COLOR_RGBA(255, 255, 255, 255), iHue, fS);
-			iColor = __xuiColorPickerMix(XUI_COLOR_RGBA(0, 0, 0, 255), iSat, fV);
-			tCell.fX = tRect.fX + (float)i * tRect.fW / (float)iCols;
-			tCell.fY = tRect.fY + (float)j * tRect.fH / (float)iRows;
-			(void)pProxy->drawRectFill(pProxy, pDraw, tCell, iColor);
-		}
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
 	}
-	return XUI_OK;
+	iHue = __xuiColorPickerHsvToRgb(pData->fHue, 1.0f, 1.0f);
+	iRet = __xuiColorPickerDrawGradientQuad(pProxy, pDraw, tRect,
+		XUI_COLOR_RGBA(255, 255, 255, 255), iHue, iHue, XUI_COLOR_RGBA(255, 255, 255, 255));
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiColorPickerDrawGradientQuad(pProxy, pDraw, tRect,
+		XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0),
+		XUI_COLOR_RGBA(0, 0, 0, 255), XUI_COLOR_RGBA(0, 0, 0, 255));
 }
 
 static int __xuiColorPickerDrawTrack(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tTrack, float fRate, uint32_t iAccent, uint32_t iKnobBorder)
@@ -1012,10 +1050,6 @@ static int __xuiColorPickerCacheRender(xui_widget pWidget, xui_draw_context pDra
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiColorPickerDrawFill(pProxy, pDraw, pData->tButtonRect, iButton);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pProxy->drawLine != NULL) && (__xuiColorPickerAlpha(iBorder) != 0) ) {
-		iRet = pProxy->drawLine(pProxy, pDraw, pData->tButtonRect.fX, pData->tButtonRect.fY + 3.0f, pData->tButtonRect.fX, pData->tButtonRect.fY + pData->tButtonRect.fH - 3.0f, 1.0f, __xuiColorPickerColorWithAlpha(iBorder, 132));
-		if ( iRet != XUI_OK ) return iRet;
-	}
 	iRet = __xuiColorPickerDrawSwatch(pProxy, pDraw, pData->tSwatchRect, pData->iColor, __xuiColorPickerColorWithAlpha(iBorder, 190));
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy->drawText != NULL) && (__xuiColorPickerAlpha(iText) != 0) ) {

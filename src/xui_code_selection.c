@@ -1,6 +1,5 @@
 #include "xui_internal.h"
 
-#include <ctype.h>
 #include <string.h>
 
 struct xui_code_selection_model_t {
@@ -28,15 +27,6 @@ static int __xuiCodeSelectionClamp(xui_code_document pDocument, int iOffset)
 	return iClamped;
 }
 
-static char __xuiCodeSelectionByteAt(xui_code_document pDocument, int iOffset)
-{
-	char c;
-
-	c = '\0';
-	(void)xuiCodeDocumentGetByte(pDocument, iOffset, &c);
-	return c;
-}
-
 static int __xuiCodeSelectionUnicodeRead(void* pUser, int iOffset, unsigned char* pByte)
 {
 	char c;
@@ -62,70 +52,18 @@ static int __xuiCodeSelectionUtf8Prev(xui_code_document pDocument, int iLength, 
 		pDocument, iLength, iOffset);
 }
 
-static int __xuiCodeSelectionWordChar(char c)
-{
-	unsigned char ch = (unsigned char)c;
-	return isalnum(ch) || ch == '_';
-}
-
 static int __xuiCodeSelectionMoveWordLeft(xui_code_document pDocument, int iOffset)
 {
-	int iPrevious;
-
-	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	while ( iOffset > 0 ) {
-		iPrevious = __xuiCodeSelectionUtf8Prev(pDocument, xuiCodeDocumentGetLength(pDocument), iOffset);
-		if ( __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iPrevious)) ) break;
-		iOffset = iPrevious;
-	}
-	while ( iOffset > 0 ) {
-		iPrevious = __xuiCodeSelectionUtf8Prev(pDocument, xuiCodeDocumentGetLength(pDocument), iOffset);
-		if ( !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iPrevious)) ) break;
-		iOffset = iPrevious;
-	}
-	return iOffset;
+	return xuiInternalTextWordPrevRead(__xuiCodeSelectionUnicodeRead, pDocument,
+		xuiCodeDocumentGetLength(pDocument), __xuiCodeSelectionClamp(pDocument, iOffset),
+		XUI_INTERNAL_WORD_IDENTIFIER);
 }
 
 static int __xuiCodeSelectionMoveWordRight(xui_code_document pDocument, int iOffset)
 {
-	int iLength;
-	int iNext;
-
-	iLength = xuiCodeDocumentGetLength(pDocument);
-	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	while ( iOffset < iLength &&
-	        __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) {
-		iNext = __xuiCodeSelectionUtf8Next(pDocument, iLength, iOffset);
-		if ( iNext <= iOffset ) break;
-		iOffset = iNext;
-	}
-	while ( iOffset < iLength &&
-	        !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) {
-		iNext = __xuiCodeSelectionUtf8Next(pDocument, iLength, iOffset);
-		if ( iNext <= iOffset ) break;
-		iOffset = iNext;
-	}
-	return iOffset;
-}
-
-static int __xuiCodeSelectionWordStart(xui_code_document pDocument, int iOffset)
-{
-	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	if ( iOffset >= xuiCodeDocumentGetLength(pDocument) ||
-	     !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) return iOffset;
-	while ( iOffset > 0 && __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset - 1)) ) iOffset--;
-	return iOffset;
-}
-
-static int __xuiCodeSelectionWordEnd(xui_code_document pDocument, int iOffset)
-{
-	int iLength;
-
-	iLength = xuiCodeDocumentGetLength(pDocument);
-	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	if ( iOffset >= iLength || !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) return iOffset;
-	while ( iOffset < iLength && __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) iOffset++;
-	return iOffset;
+	return xuiInternalTextWordNextRead(__xuiCodeSelectionUnicodeRead, pDocument,
+		xuiCodeDocumentGetLength(pDocument), __xuiCodeSelectionClamp(pDocument, iOffset),
+		XUI_INTERNAL_WORD_IDENTIFIER);
 }
 
 static void __xuiCodeSelectionApplyCaret(xui_code_selection_model pSelection, xui_code_document pDocument, int iOffset, int bExtend, int iPreferredColumn)
@@ -324,10 +262,14 @@ XUI_API int xuiCodeSelectionSelectWord(xui_code_selection_model pSelection, xui_
 {
 	int iStart;
 	int iEnd;
+	xui_internal_word_kind_t iKind;
 
 	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iStart = __xuiCodeSelectionWordStart(pDocument, iOffset);
-	iEnd = __xuiCodeSelectionWordEnd(pDocument, iOffset);
+	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
+	iKind = xuiInternalTextWordRangeRead(__xuiCodeSelectionUnicodeRead, pDocument,
+		xuiCodeDocumentGetLength(pDocument), iOffset, XUI_INTERNAL_WORD_IDENTIFIER,
+		&iStart, &iEnd);
+	if ( iKind == XUI_INTERNAL_WORD_SPACE ) iStart = iEnd = iOffset;
 	return xuiCodeSelectionSetRange(pSelection, pDocument, iStart, iEnd);
 }
 

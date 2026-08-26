@@ -73,6 +73,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "goto word delete forward");
 	iRet = xuiCodeEditingDeleteWordForward(pDocument, pSelection, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "alpha  ") == 0, "delete word forward");
+	iRet = xuiCodeDocumentSetText(pDocument,
+		"\xE5\x8F\x98\xE9\x87\x8F_name next");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset Unicode word delete text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 11, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto Unicode identifier end for delete");
+	iRet = xuiCodeEditingDeleteWordBackward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), " next") == 0,
+		"delete complete Unicode identifier backward");
 
 	iRet = xuiCodeDocumentSetText(pDocument, "a\xE4\xBD\xA0" "b\n\xE5\x90\x8E\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset unicode delete text");

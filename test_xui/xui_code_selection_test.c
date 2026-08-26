@@ -131,6 +131,21 @@ int main(void)
 	iRet = xuiCodeSelectionGetRange(pSelection, &iStart, &iEnd);
 	XUI_TEST_CHECK(iStart == 14 && iEnd == 24, "select last content line range");
 
+	iRet = xuiCodeDocumentSetText(pDocument,
+		"\xE5\x8F\x98\xE9\x87\x8F_name = 1");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set Unicode identifier text");
+	iRet = xuiCodeSelectionSelectWord(pSelection, pDocument, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select Unicode identifier");
+	iRet = xuiCodeSelectionGetRange(pSelection, &iStart, &iEnd);
+	XUI_TEST_CHECK(iStart == 0 && iEnd == 11, "Unicode identifier selected as one word");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 11, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto Unicode identifier end");
+	iRet = xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_MOVE_WORD_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move left across Unicode identifier");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 0,
+		"word movement uses Unicode identifier boundary");
+
 	sEmojiLines = "A"
 		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
 		"\xF0\x9F\x91\xA9\xE2\x80\x8D"
@@ -151,6 +166,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "move back across emoji");
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 1, "left crosses complete emoji");
+	iRet = xuiCodeSelectionSelectWord(pSelection, pDocument, 8);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select emoji word unit");
+	iRet = xuiCodeSelectionGetRange(pSelection, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 1 && iEnd == 26,
+		"emoji selection preserves complete grapheme");
 	iRet = xuiCodeSelectionGotoLineColumn(pSelection, pDocument, 0, 2, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "emoji line column");
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);

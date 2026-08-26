@@ -166,28 +166,33 @@ static int __xuiColorPickerAddLabel(xui_colorpicker_demo_t* pDemo, int iIndex, c
 
 static int __xuiColorPickerCreatePickers(xui_colorpicker_demo_t* pDemo)
 {
-	uint32_t arrPalette[11];
+	uint32_t arrPalette[16];
 	xui_color_picker_desc_t tDesc;
 	int iRet;
 	int i;
 
 	arrPalette[0] = XUI_COLOR_RGBA(0, 0, 0, 255);
 	arrPalette[1] = XUI_COLOR_RGBA(255, 255, 255, 255);
-	arrPalette[2] = XUI_COLOR_RGBA(148, 158, 168, 255);
-	arrPalette[3] = XUI_COLOR_RGBA(225, 58, 70, 255);
-	arrPalette[4] = XUI_COLOR_RGBA(230, 126, 34, 255);
-	arrPalette[5] = XUI_COLOR_RGBA(244, 201, 54, 255);
-	arrPalette[6] = XUI_COLOR_RGBA(74, 165, 91, 255);
-	arrPalette[7] = XUI_COLOR_RGBA(43, 184, 203, 255);
-	arrPalette[8] = XUI_COLOR_RGBA(46, 124, 214, 255);
-	arrPalette[9] = XUI_COLOR_RGBA(132, 86, 209, 255);
-	arrPalette[10] = XUI_COLOR_RGBA(132, 86, 209, 120);
+	arrPalette[2] = XUI_COLOR_RGBA(148, 163, 184, 255);
+	arrPalette[3] = XUI_COLOR_RGBA(239, 68, 68, 255);
+	arrPalette[4] = XUI_COLOR_RGBA(249, 115, 22, 255);
+	arrPalette[5] = XUI_COLOR_RGBA(245, 158, 11, 255);
+	arrPalette[6] = XUI_COLOR_RGBA(234, 179, 8, 255);
+	arrPalette[7] = XUI_COLOR_RGBA(132, 204, 22, 255);
+	arrPalette[8] = XUI_COLOR_RGBA(34, 197, 94, 255);
+	arrPalette[9] = XUI_COLOR_RGBA(20, 184, 166, 255);
+	arrPalette[10] = XUI_COLOR_RGBA(6, 182, 212, 255);
+	arrPalette[11] = XUI_COLOR_RGBA(59, 130, 246, 255);
+	arrPalette[12] = XUI_COLOR_RGBA(99, 102, 241, 255);
+	arrPalette[13] = XUI_COLOR_RGBA(139, 92, 246, 255);
+	arrPalette[14] = XUI_COLOR_RGBA(217, 70, 239, 255);
+	arrPalette[15] = XUI_COLOR_RGBA(139, 92, 246, 120);
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iColor = XUI_COLOR_RGBA(46, 124, 214, 255);
 	tDesc.arrPalette = arrPalette;
-	tDesc.iPaletteCount = 10;
+	tDesc.iPaletteCount = 15;
 	tDesc.pFont = pDemo->pFont;
 	iRet = xuiColorPickerCreate(pDemo->pContext, &pDemo->pPicker[0], &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
@@ -196,7 +201,7 @@ static int __xuiColorPickerCreatePickers(xui_colorpicker_demo_t* pDemo)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iColor = XUI_COLOR_RGBA(74, 165, 91, 160);
 	tDesc.arrPalette = arrPalette;
-	tDesc.iPaletteCount = 11;
+	tDesc.iPaletteCount = 16;
 	tDesc.bAlphaEnabled = 1;
 	tDesc.pFont = pDemo->pFont;
 	iRet = xuiColorPickerCreate(pDemo->pContext, &pDemo->pPicker[1], &tDesc);

@@ -34,6 +34,25 @@ static int check_single_cluster(const char* sText, const char* sName)
 	return 1;
 }
 
+static int check_word_range(const char* sText, int iOffset,
+	xui_internal_word_policy_t iPolicy, xui_internal_word_kind_t iExpectedKind,
+	int iExpectedStart, int iExpectedEnd, const char* sName)
+{
+	xui_internal_word_kind_t iKind;
+	int iStart;
+	int iEnd;
+
+	iStart = -1;
+	iEnd = -1;
+	iKind = xuiInternalTextWordRange(sText, -1, iOffset, iPolicy, &iStart, &iEnd);
+	if ( iKind != iExpectedKind || iStart != iExpectedStart || iEnd != iExpectedEnd ) {
+		printf("xui_unicode_test failed: %s range kind=%d [%d,%d)\n",
+			sName, (int)iKind, iStart, iEnd);
+		return 0;
+	}
+	return 1;
+}
+
 int main(void)
 {
 	static const char sFamily[] =
@@ -55,6 +74,15 @@ int main(void)
 		"\xF3\xA0\x81\xAE\xF3\xA0\x81\xA7\xF3\xA0\x81\xBF";
 	static const char sCombining[] = "e\xCC\x81";
 	static const char sHangul[] = "\xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8";
+	static const char sNaturalWords[] =
+		"can't 3.14 \xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82 "
+		"\xE4\xBD\xA0\xE5\xA5\xBD";
+	static const char sIdentifier[] =
+		"\xE5\x8F\x98\xE9\x87\x8F_name";
+	static const char sCombiningWord[] = "e\xCC\x81" "lan";
+	static const char sWordMovement[] =
+		"hello, \xD0\xBC\xD0\xB8\xD1\x80";
+	static const char sNbsp[] = "a\xC2\xA0" "b";
 	char sMixed[96];
 	char sRegionalRun[32];
 	int iFamilyLength;
@@ -90,6 +118,36 @@ int main(void)
 	XUI_TEST_CHECK(xuiInternalTextGraphemeNext(sRegionalRun, iFlagLength + 4, iFlagLength) == iFlagLength + 4, "regional odd tail");
 	XUI_TEST_CHECK(xuiInternalTextGraphemePrev(sRegionalRun, iFlagLength + 4, iFlagLength + 4) == iFlagLength, "regional tail prev");
 	XUI_TEST_CHECK(xuiInternalTextGraphemePrev(sRegionalRun, iFlagLength + 4, iFlagLength) == 0, "regional pair prev");
+
+	XUI_TEST_CHECK(check_word_range(sNaturalWords, 2, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_TEXT, 0, 5, "apostrophe word"), "apostrophe word range");
+	XUI_TEST_CHECK(check_word_range(sNaturalWords, 7, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_TEXT, 6, 10, "decimal word"), "decimal word range");
+	XUI_TEST_CHECK(check_word_range(sNaturalWords, 15, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_TEXT, 11, 23, "Cyrillic word"), "Cyrillic word range");
+	XUI_TEST_CHECK(check_word_range(sNaturalWords, 24, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_TEXT, 24, 27, "first Han word"), "first Han word range");
+	XUI_TEST_CHECK(check_word_range(sNaturalWords, 27, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_TEXT, 27, 30, "second Han word"), "second Han word range");
+	XUI_TEST_CHECK(check_word_range(sIdentifier, 3, XUI_INTERNAL_WORD_IDENTIFIER,
+		XUI_INTERNAL_WORD_TEXT, 0, 11, "Unicode identifier"), "Unicode identifier range");
+	XUI_TEST_CHECK(check_word_range(sCombiningWord, 1, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_TEXT, 0, 6, "combining word"), "combining word range");
+	XUI_TEST_CHECK(check_word_range(sNbsp, 1, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_SPACE, 1, 1, "Unicode whitespace"), "Unicode whitespace range");
+
+	XUI_TEST_CHECK(check_word_range(sMixed, 4, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_SYMBOL, 1, 1 + iFamilyLength, "emoji symbol"), "emoji symbol range");
+	XUI_TEST_CHECK(xuiInternalTextWordNext(sWordMovement, -1, 0,
+		XUI_INTERNAL_WORD_NATURAL) == 7, "word next skips punctuation and space");
+	XUI_TEST_CHECK(xuiInternalTextWordPrev(sWordMovement, -1, (int)strlen(sWordMovement),
+		XUI_INTERNAL_WORD_NATURAL) == 7, "word prev enters Cyrillic word");
+	XUI_TEST_CHECK(xuiInternalTextWordPrev(sWordMovement, -1, 7,
+		XUI_INTERNAL_WORD_NATURAL) == 0, "word prev skips punctuation and space");
+	XUI_TEST_CHECK(xuiInternalTextWordBoundary(sIdentifier, -1, 6,
+		XUI_INTERNAL_WORD_IDENTIFIER) == 0, "identifier joins underscore");
+	XUI_TEST_CHECK(xuiInternalTextWordBoundary(sNaturalWords, -1, 27,
+		XUI_INTERNAL_WORD_NATURAL) != 0, "natural Han boundary");
 
 	printf("xui_unicode_test passed\n");
 	return 0;

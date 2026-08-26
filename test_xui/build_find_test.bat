@@ -3,7 +3,7 @@ setlocal
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_find_test.exe
-set SRC=test_xui\xui_find_test.c src\xui_find.c
+set SRC=test_xui\xui_find_test.c src\xui_find.c src\xui_unicode.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib

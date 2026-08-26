@@ -23,6 +23,11 @@ typedef struct xui_test_proxy_state_t {
 	double fClockSeconds;
 	float fLastFrameDelay;
 	int iFrameRequestCount;
+	int iDrawClipGetCount;
+	int iDrawClipSetCount;
+	int iDrawClipClearCount;
+	xui_rect_t tLastDrawClip;
+	int bLastDrawClipActive;
 } xui_test_proxy_state_t;
 
 void xuiTestProxyInit(xui_test_proxy_state_t* pState);

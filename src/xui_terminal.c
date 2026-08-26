@@ -1646,12 +1646,6 @@ static int __xuiTerminalClampColumn(const xui_terminal_data_t* pData, int iColum
 	return iColumn;
 }
 
-static int __xuiTerminalIsWordChar(char ch)
-{
-	unsigned char c = (unsigned char)ch;
-	return isalnum(c) || ch == '_' || ch == '-' || ch == '.' || ch == '/' || ch == '\\' || ch == ':' || ch == '@';
-}
-
 static char* __xuiTerminalLogicalLineCopy(xui_terminal_data_t* pData, int iLine)
 {
 	const xui_terminal_cell_t* pCells;
@@ -1720,6 +1714,29 @@ static int __xuiTerminalUtf8DisplayColumns(const char* sText, int iBytes)
 		iOffset += iStep;
 	}
 	return iColumns;
+}
+
+static int __xuiTerminalUtf8ByteFromColumn(const char* sText, int iColumn)
+{
+	uint32_t iCodepoint;
+	int iOffset;
+	int iStep;
+	int iColumns;
+	int iWidth;
+
+	if ( sText == NULL || iColumn <= 0 ) return 0;
+	iOffset = 0;
+	iColumns = 0;
+	while ( sText[iOffset] != '\0' ) {
+		if ( !__xuiTerminalUtf8Next(sText + iOffset, -1, &iCodepoint, &iStep) || iStep <= 0 ) break;
+		iWidth = __xuiTerminalCodepointWidth(iCodepoint);
+		if ( iWidth < 0 ) iWidth = 0;
+		if ( iColumns + iWidth > iColumn ) break;
+		iColumns += iWidth;
+		iOffset += iStep;
+		if ( iColumns == iColumn ) break;
+	}
+	return iOffset;
 }
 
 static int __xuiTerminalSearchMatchAt(const char* sHaystack, const char* sNeedle, uint32_t iFlags)
@@ -2173,6 +2190,8 @@ static int __xuiTerminalSelectionTextToBuffer(xui_terminal_data_t* pData, char* 
 	int iLen;
 	int iStart;
 	int iEnd;
+	int iStartColumn;
+	int iEndColumn;
 	int iCopy;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2190,12 +2209,13 @@ static int __xuiTerminalSelectionTextToBuffer(xui_terminal_data_t* pData, char* 
 		sLine = __xuiTerminalLogicalLineCopy(pData, iLine);
 		if ( sLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		iLen = (int)strlen(sLine);
-		iStart = (iLine == iLine0) ? iColumn0 : 0;
-		iEnd = (iLine == iLine1) ? iColumn1 : iLen;
-		if ( iStart < 0 ) iStart = 0;
-		if ( iEnd < 0 ) iEnd = 0;
-		if ( iStart > iLen ) iStart = iLen;
-		if ( iEnd > iLen ) iEnd = iLen;
+		iStartColumn = (iLine == iLine0) ? iColumn0 : 0;
+		iEndColumn = (iLine == iLine1) ? iColumn1 :
+			__xuiTerminalUtf8DisplayColumns(sLine, iLen);
+		if ( iStartColumn < 0 ) iStartColumn = 0;
+		if ( iEndColumn < 0 ) iEndColumn = 0;
+		iStart = __xuiTerminalUtf8ByteFromColumn(sLine, iStartColumn);
+		iEnd = __xuiTerminalUtf8ByteFromColumn(sLine, iEndColumn);
 		if ( iEnd < iStart ) iEnd = iStart;
 		iNeeded += iEnd - iStart;
 		if ( sBuffer != NULL && iCapacity > 0 && iOffset < iCapacity - 1 ) {
@@ -2249,8 +2269,12 @@ static int __xuiTerminalSelectWordAt(xui_widget pWidget, xui_terminal_data_t* pD
 {
 	char* sLine;
 	int iLen;
+	int iByte;
 	int iStart;
 	int iEnd;
+	int iStartColumn;
+	int iEndColumn;
+	xui_internal_word_kind_t iKind;
 
 	(void)pWidget;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2262,23 +2286,19 @@ static int __xuiTerminalSelectWordAt(xui_widget pWidget, xui_terminal_data_t* pD
 		xrtFree(sLine);
 		return XUI_OK;
 	}
-	if ( iColumn >= iLen ) iColumn = iLen - 1;
 	if ( iColumn < 0 ) iColumn = 0;
-	if ( isspace((unsigned char)sLine[iColumn]) ) {
+	iByte = __xuiTerminalUtf8ByteFromColumn(sLine, iColumn);
+	if ( iByte >= iLen ) iByte = xuiInternalTextGraphemePrev(sLine, iLen, iLen);
+	iKind = xuiInternalTextWordRange(sLine, iLen, iByte,
+		XUI_INTERNAL_WORD_TERMINAL, &iStart, &iEnd);
+	if ( iKind == XUI_INTERNAL_WORD_SPACE ) {
 		__xuiTerminalSetSelectionRange(pData, iLine, iColumn, iLine, iColumn);
 		xrtFree(sLine);
 		return XUI_OK;
 	}
-	if ( !__xuiTerminalIsWordChar(sLine[iColumn]) ) {
-		__xuiTerminalSetSelectionRange(pData, iLine, iColumn, iLine, iColumn + 1);
-		xrtFree(sLine);
-		return XUI_OK;
-	}
-	iStart = iColumn;
-	iEnd = iColumn + 1;
-	while ( iStart > 0 && __xuiTerminalIsWordChar(sLine[iStart - 1]) ) iStart--;
-	while ( iEnd < iLen && __xuiTerminalIsWordChar(sLine[iEnd]) ) iEnd++;
-	__xuiTerminalSetSelectionRange(pData, iLine, iStart, iLine, iEnd);
+	iStartColumn = __xuiTerminalUtf8DisplayColumns(sLine, iStart);
+	iEndColumn = __xuiTerminalUtf8DisplayColumns(sLine, iEnd);
+	__xuiTerminalSetSelectionRange(pData, iLine, iStartColumn, iLine, iEndColumn);
 	xrtFree(sLine);
 	return XUI_OK;
 }
