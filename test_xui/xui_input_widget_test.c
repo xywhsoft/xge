@@ -361,6 +361,22 @@ int main(void)
 	XUI_TEST_CHECK(tTextRect.fX >= tSearchRect.fX + tSearchRect.fW, "decoration text padding");
 	XUI_TEST_CHECK(tClearRect.fW > 0.0f && tGoRect.fW > 0.0f && tGoRect.fX < tClearRect.fX, "trailing decoration order");
 	tWorldRect = xuiWidgetGetWorldRect(pInput);
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorldRect.fX + tSearchRect.fX + tSearchRect.fW * 0.5f),
+		(int)(tWorldRect.fY + tSearchRect.fY + tSearchRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"leading decoration arrow cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorldRect.fX + tClearRect.fX + tClearRect.fW * 0.5f),
+		(int)(tWorldRect.fY + tClearRect.fY + tClearRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"clear decoration arrow cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorldRect.fX + tGoRect.fX + tGoRect.fW * 0.5f),
+		(int)(tWorldRect.fY + tGoRect.fY + tGoRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"text decoration arrow cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorldRect.fX + tTextRect.fX + tTextRect.fW * 0.5f),
+		(int)(tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f)) == XUI_CURSOR_IBEAM,
+		"input text area ibeam cursor");
 	iRet = __xuiInputWidgetClick(pContext, tWorldRect.fX + tGoRect.fX + tGoRect.fW * 0.5f, tWorldRect.fY + tGoRect.fY + tGoRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && tDecorationState.iClickCount == 1, "text decoration click");
 	iRet = __xuiInputWidgetClick(pContext, tWorldRect.fX + tClearRect.fX + tClearRect.fW * 0.5f, tWorldRect.fY + tClearRect.fY + tClearRect.fH * 0.5f);

@@ -113,6 +113,7 @@ typedef struct xui_input_data_t {
 static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int iNewCursor, int bExtend);
 static int __xuiInputSetSelectionData(xui_input_data_t* pData, int iStart, int iEnd);
 static int __xuiInputSyncCursor(xui_widget pWidget, xui_input_data_t* pData);
+static xui_input_decoration __xuiInputDecorationHit(xui_widget pWidget, xui_input_data_t* pData, float fWorldX, float fWorldY);
 
 static int __xuiInputMenuTextId(int iCommand)
 {
@@ -490,10 +491,17 @@ static xui_input_data_t* __xuiInputGetData(xui_widget pWidget)
 
 static int __xuiInputQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
 {
-	(void)iX;
-	(void)iY;
-	(void)pUser;
-	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
+	xui_input_data_t* pData;
+
+	if ( !xuiWidgetGetEnabled(pWidget) ) {
+		return XUI_CURSOR_NOT_ALLOWED;
+	}
+	pData = (xui_input_data_t*)pUser;
+	if ( pData == NULL ) {
+		pData = __xuiInputGetData(pWidget);
+	}
+	return (__xuiInputDecorationHit(pWidget, pData, (float)iX, (float)iY) != NULL) ?
+		XUI_CURSOR_ARROW : XUI_CURSOR_IBEAM;
 }
 
 static int __xuiInputStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
