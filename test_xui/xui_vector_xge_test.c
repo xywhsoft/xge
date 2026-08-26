@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define TEST_W 32
+#define TEST_W 48
 #define TEST_H 32
 
 typedef struct xui_vector_xge_test_t {
@@ -24,6 +24,9 @@ static int __xuiVectorXgeFrame(void* pUser)
 	unsigned char arrPixels[TEST_W * TEST_H * 4];
 	int iLeft;
 	int iRight;
+	int iIconPixels;
+	int iX;
+	int iY;
 	int iRet;
 
 	iRet = xgeBegin();
@@ -56,6 +59,10 @@ static int __xuiVectorXgeFrame(void* pUser)
 			(xui_rect_t){0.0f, 0.0f, 12.0f, 28.0f},
 			(xui_rect_t){18.0f, 2.0f, 12.0f, 28.0f}, &tStyle, 0.25f);
 	}
+	if ( iRet == XUI_OK ) {
+		iRet = xuiPainterDrawVectorIcon(pPainter, "search",
+			(xui_rect_t){32.0f, 9.0f, 14.0f, 14.0f}, XUI_COLOR_RGBA(220, 48, 72, 255));
+	}
 	if ( pPainter != NULL ) {
 		int iEndRet = xuiPainterEnd(pPainter);
 		pPainter = NULL;
@@ -64,14 +71,25 @@ static int __xuiVectorXgeFrame(void* pUser)
 	if ( iRet == XUI_OK ) iRet = tProxy.surfaceReadRGBA(&tProxy, pSurface, arrPixels, TEST_W * 4);
 	iLeft = ((16 * TEST_W) + 8) * 4;
 	iRight = ((16 * TEST_W) + 24) * 4;
+	iIconPixels = 0;
+	if ( iRet == XUI_OK ) {
+		for ( iY = 8; iY < 24; iY++ ) {
+			for ( iX = 31; iX < 47; iX++ ) {
+				if ( arrPixels[((iY * TEST_W) + iX) * 4 + 3] != 0u ) {
+					iIconPixels++;
+				}
+			}
+		}
+	}
 	if ( iRet == XUI_OK &&
 	     ((arrPixels[iLeft + 1] < 120u) || (arrPixels[iLeft + 3] < 240u) ||
-	      (arrPixels[iRight + 2] < 160u) || (arrPixels[iRight + 3] < 240u)) ) {
-		printf("xui_vector_xge_test failed: left=%u,%u,%u,%u right=%u,%u,%u,%u\n",
+	      (arrPixels[iRight + 2] < 160u) || (arrPixels[iRight + 3] < 240u) ||
+	      (iIconPixels == 0)) ) {
+		printf("xui_vector_xge_test failed: left=%u,%u,%u,%u right=%u,%u,%u,%u icon_pixels=%d\n",
 			(unsigned)arrPixels[iLeft + 0], (unsigned)arrPixels[iLeft + 1],
 			(unsigned)arrPixels[iLeft + 2], (unsigned)arrPixels[iLeft + 3],
 			(unsigned)arrPixels[iRight + 0], (unsigned)arrPixels[iRight + 1],
-			(unsigned)arrPixels[iRight + 2], (unsigned)arrPixels[iRight + 3]);
+			(unsigned)arrPixels[iRight + 2], (unsigned)arrPixels[iRight + 3], iIconPixels);
 		iRet = XUI_ERROR_BACKEND_FAILED;
 	}
 	if ( pPath != NULL ) xuiPathDestroy(pPath);

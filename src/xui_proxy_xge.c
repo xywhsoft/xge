@@ -1734,8 +1734,8 @@ static int __xuiProxyXgeDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, co
 	}
 	if ( tTarget.fW <= 0.0f || tTarget.fH <= 0.0f ) return XGE_OK;
 	(void)pProxy;
-	fScaleX = tTarget.fW / tViewBox.fW;
-	fScaleY = tTarget.fH / tViewBox.fH;
+	fScaleX = (float)tTarget.fW / (float)tViewBox.fW;
+	fScaleY = (float)tTarget.fH / (float)tViewBox.fH;
 	fScale = (fScaleX < fScaleY) ? fScaleX : fScaleY;
 	tMatrix.fA = fScale;
 	tMatrix.fB = 0.0f;
