@@ -179,6 +179,22 @@ void xgeRenderRequest(void)
 	__xgeRenderRequestInternal();
 }
 
+void xgeRenderRequestAfter(float fDelaySeconds)
+{
+	double fDeadline;
+
+	if ( g_xge.bInitialized == 0 || !isfinite(fDelaySeconds) ) return;
+	if ( fDelaySeconds <= 0.0f ) {
+		__xgeRenderRequestInternal();
+		return;
+	}
+	if ( (g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) == 0 ) return;
+	fDeadline = xrtTimer() + (double)fDelaySeconds;
+	if ( g_xge.fOnDemandRenderDeadline <= 0.0 || fDeadline < g_xge.fOnDemandRenderDeadline ) {
+		g_xge.fOnDemandRenderDeadline = fDeadline;
+	}
+}
+
 int xgeFrame(void)
 {
 	int iRet;

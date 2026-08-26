@@ -861,6 +861,20 @@ static int __xuiTestTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font pFo
 	return XUI_OK;
 }
 
+static double __xuiTestClockSeconds(xui_proxy pProxy)
+{
+	xui_test_proxy_state_t* pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	return (pState != NULL) ? pState->fClockSeconds : 0.0;
+}
+
+static void __xuiTestRequestFrame(xui_proxy pProxy, float fDelaySeconds)
+{
+	xui_test_proxy_state_t* pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState == NULL ) return;
+	pState->fLastFrameDelay = fDelaySeconds;
+	pState->iFrameRequestCount++;
+}
+
 void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 {
 	if ( pState == NULL ) {
@@ -932,6 +946,19 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.drawText = __xuiTestDrawText;
 	pState->tProxy.drawTextSpans = __xuiTestDrawTextSpans;
 	pState->tProxy.textShape = __xuiTestTextShape;
+}
+
+void xuiTestProxyEnableFrameClock(xui_test_proxy_state_t* pState, double fClockSeconds)
+{
+	if ( pState == NULL ) return;
+	pState->fClockSeconds = fClockSeconds;
+	pState->tProxy.clockSeconds = __xuiTestClockSeconds;
+	pState->tProxy.requestFrame = __xuiTestRequestFrame;
+}
+
+void xuiTestProxySetClockSeconds(xui_test_proxy_state_t* pState, double fClockSeconds)
+{
+	if ( pState != NULL ) pState->fClockSeconds = fClockSeconds;
 }
 
 int xuiTestProxySetClipboardText(xui_test_proxy_state_t* pState, const char* sText)

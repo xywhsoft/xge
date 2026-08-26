@@ -3374,7 +3374,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	__xuiTerminalResolveStyle(pWidget, pData);
 	__xuiTerminalSyncScrollModel(pWidget, pData);
-	bCaretBlinkVisible = xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget));
+	bCaretBlinkVisible = xuiInternalCaretBlinkVisible(pWidget);
 	tRect = xuiWidgetGetContentRect(pWidget);
 	fOffsetY = 0.0f;
 	(void)xuiScrollModelGetOffset(&pData->tScroll, NULL, &fOffsetY);

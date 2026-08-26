@@ -5049,7 +5049,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 					}
 					tCaret.fX = fImeAnchorX + fImeCursorX;
 				}
-				if ( iRet == XUI_OK && bCaretVisible && xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) ) {
+				if ( iRet == XUI_OK && bCaretVisible && xuiInternalCaretBlinkVisible(pWidget) ) {
 					iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tCaret, iCaretColor);
 				}
 				iClipRet = __xuiCodeEditBodyClipEnd(pProxy, pDraw, tOldClip, bHadOldClip, bClipActive);

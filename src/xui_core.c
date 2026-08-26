@@ -1389,32 +1389,69 @@ int xuiInternalSetInteractionPolicy(xui_context pContext, const xui_interaction_
 
 void xuiInternalCaretBlinkReset(xui_context pContext)
 {
+	xui_proxy pProxy;
+	double fNow;
+
 	if ( !__xuiContextValid(pContext) ) return;
 	pContext->fCaretBlinkElapsed = 0.0f;
 	pContext->bCaretBlinkVisible = 1;
+	pProxy = xuiInternalContextGetProxy(pContext);
+	fNow = (pProxy != NULL && pProxy->clockSeconds != NULL) ? pProxy->clockSeconds(pProxy) : 0.0;
+	pContext->bCaretBlinkClockValid = isfinite(fNow) && fNow >= 0.0;
+	pContext->fCaretBlinkClockSeconds = pContext->bCaretBlinkClockValid ? fNow : 0.0;
 }
 
-int xuiInternalCaretBlinkVisible(xui_context pContext)
+int xuiInternalCaretBlinkVisible(xui_widget pWidget)
 {
-	return __xuiContextValid(pContext) ? pContext->bCaretBlinkVisible : 1;
+	xui_context pContext;
+	xui_proxy pProxy;
+	float fRemaining;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 1;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( !__xuiContextValid(pContext) ) return 1;
+	if ( pContext->pFocusWidget == pWidget && pContext->tInteractionPolicy.fCaretBlinkSeconds > 0.0f ) {
+		pProxy = xuiInternalContextGetProxy(pContext);
+		if ( pProxy != NULL && pProxy->requestFrame != NULL ) {
+			fRemaining = pContext->tInteractionPolicy.fCaretBlinkSeconds - pContext->fCaretBlinkElapsed;
+			if ( fRemaining < 0.001f ) fRemaining = 0.001f;
+			pProxy->requestFrame(pProxy, fRemaining);
+		}
+	}
+	return pContext->bCaretBlinkVisible;
 }
 
 void xuiInternalCaretBlinkUpdate(xui_context pContext, float fDelta)
 {
 	float fInterval;
+	float fStep;
 	int bOldVisible;
+	xui_proxy pProxy;
+	double fNow;
 
 	if ( !__xuiContextValid(pContext) ) return;
 	if ( (pContext->pFocusWidget == NULL) || (pContext->tInteractionPolicy.fCaretBlinkSeconds <= 0.0f) ) {
 		xuiInternalCaretBlinkReset(pContext);
 		return;
 	}
-	if ( fDelta <= 0.0f ) return;
+	fStep = fDelta;
+	pProxy = xuiInternalContextGetProxy(pContext);
+	if ( pProxy != NULL && pProxy->clockSeconds != NULL ) {
+		fNow = pProxy->clockSeconds(pProxy);
+		if ( isfinite(fNow) && fNow >= 0.0 ) {
+			if ( pContext->bCaretBlinkClockValid && fNow >= pContext->fCaretBlinkClockSeconds ) {
+				fStep = (float)(fNow - pContext->fCaretBlinkClockSeconds);
+			}
+			pContext->fCaretBlinkClockSeconds = fNow;
+			pContext->bCaretBlinkClockValid = 1;
+		}
+	}
+	if ( fStep <= 0.0f ) return;
 	/* Windows reports the interval between visible-state toggles, not a full cycle. */
 	fInterval = pContext->tInteractionPolicy.fCaretBlinkSeconds;
 	if ( fInterval < 0.05f ) fInterval = 0.05f;
 	bOldVisible = pContext->bCaretBlinkVisible;
-	pContext->fCaretBlinkElapsed += fDelta;
+	pContext->fCaretBlinkElapsed += fStep;
 	while ( pContext->fCaretBlinkElapsed >= fInterval ) {
 		pContext->fCaretBlinkElapsed -= fInterval;
 		pContext->bCaretBlinkVisible = !pContext->bCaretBlinkVisible;

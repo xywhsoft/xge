@@ -198,6 +198,7 @@ typedef struct xge_context_t {
 	void* pFrameUser;
 	int bRenderRequested;
 	int iOnDemandRenderBurst;
+	double fOnDemandRenderDeadline;
 	xge_scene arrSceneStack[XGE_SCENE_STACK_MAX];
 	int iSceneStackCount;
 	xge_platform_backend_t tPlatformBackend;
@@ -1523,6 +1524,10 @@ static void __xgeSokolFrame(void)
 	}
 
 	fFrameStart = xrtTimer();
+	if ( g_xge.fOnDemandRenderDeadline > 0.0 && fFrameStart >= g_xge.fOnDemandRenderDeadline ) {
+		g_xge.fOnDemandRenderDeadline = 0.0;
+		g_xge.bRenderRequested = 1;
+	}
 	__xgeRenderCommandReset();
 	__xgeShapeAutoBatchReset();
 	__xgeFrameStatsBeginFrame();
@@ -1544,7 +1549,20 @@ static void __xgeSokolFrame(void)
 		__xgeInputBeginFrame();
 		__xgeFrameStatsRecordTime(xrtTimer() - fFrameStart);
 		#if defined(_WIN32)
-			MsgWaitForMultipleObjects(0, NULL, FALSE, INFINITE, QS_ALLINPUT);
+			DWORD iWaitMilliseconds = INFINITE;
+			if ( g_xge.fOnDemandRenderDeadline > 0.0 ) {
+				double fRemaining = g_xge.fOnDemandRenderDeadline - xrtTimer();
+				if ( fRemaining <= 0.0 ) {
+					iWaitMilliseconds = 0;
+				} else if ( fRemaining < (double)(INFINITE - 1u) / 1000.0 ) {
+					iWaitMilliseconds = (DWORD)ceil(fRemaining * 1000.0);
+					if ( iWaitMilliseconds == 0 ) iWaitMilliseconds = 1;
+				}
+			}
+			if ( MsgWaitForMultipleObjects(0, NULL, FALSE, iWaitMilliseconds, QS_ALLINPUT) == WAIT_TIMEOUT ) {
+				g_xge.fOnDemandRenderDeadline = 0.0;
+				g_xge.bRenderRequested = 1;
+			}
 		#endif
 		return;
 	}

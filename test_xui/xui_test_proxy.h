@@ -20,9 +20,14 @@ typedef struct xui_test_proxy_state_t {
 	int iZstdDecompressCount;
 	int iSvgSurfaceLoadCount;
 	int iSurfaceDestroyCount;
+	double fClockSeconds;
+	float fLastFrameDelay;
+	int iFrameRequestCount;
 } xui_test_proxy_state_t;
 
 void xuiTestProxyInit(xui_test_proxy_state_t* pState);
+void xuiTestProxyEnableFrameClock(xui_test_proxy_state_t* pState, double fClockSeconds);
+void xuiTestProxySetClockSeconds(xui_test_proxy_state_t* pState, double fClockSeconds);
 int xuiTestProxySetClipboardText(xui_test_proxy_state_t* pState, const char* sText);
 const char* xuiTestProxyGetClipboardText(xui_test_proxy_state_t* pState);
 int xuiTestSurfaceCreate(xui_test_proxy_state_t* pState, xui_surface* ppSurface, int iWidth, int iHeight, uint32_t iFlags);

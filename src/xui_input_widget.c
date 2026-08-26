@@ -2004,7 +2004,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) &&
 	     ((iState & XUI_WIDGET_STATE_DISABLED) == 0) &&
 	     (pData->bImeComposing || !__xuiInputHasSelectionData(pData)) &&
-	     xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) &&
+	    xuiInternalCaretBlinkVisible(pWidget) &&
 	     (__xuiInputAlpha(tResolved.iCursorColor) != 0) &&
 	     (tCursor.fH > 0.0f) &&
 	     (pProxy->drawRectFill != NULL) ) {

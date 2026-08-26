@@ -43,6 +43,18 @@ typedef struct xui_proxy_xge_input_transform_t {
 
 static xui_proxy_xge_input_transform_t g_xuiProxyXgeInputTransform;
 
+static double __xuiProxyXgeClockSeconds(xui_proxy pProxy)
+{
+	(void)pProxy;
+	return xgeTimer();
+}
+
+static void __xuiProxyXgeRequestFrame(xui_proxy pProxy, float fDelaySeconds)
+{
+	(void)pProxy;
+	xgeRenderRequestAfter(fDelaySeconds);
+}
+
 struct xui_surface_t {
 	uint32_t iMagic;
 	int iKind;
@@ -2900,5 +2912,7 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.drawClipClear = __xuiProxyXgeDrawClipClear;
 	tProxy.textShape = __xuiProxyXgeTextShape;
 	tProxy.fontCreateSized = __xuiProxyXgeFontCreateSized;
+	tProxy.clockSeconds = __xuiProxyXgeClockSeconds;
+	tProxy.requestFrame = __xuiProxyXgeRequestFrame;
 	return tProxy;
 }

@@ -1530,6 +1530,8 @@ XGE_API void xgeMemoryFree(void* pData);
 XGE_API int xgeRun(xge_scene_proc procFrame, void* pUser);
 XGE_API void xgeQuit(void);
 XGE_API void xgeRenderRequest(void);
+/* Requests an on-demand frame after at most fDelaySeconds. Main-thread only. */
+XGE_API void xgeRenderRequestAfter(float fDelaySeconds);
 XGE_API int xgeFrame(void);
 XGE_API int xgeRender(void);
 XGE_API void xgeFrameStatsReset(void);

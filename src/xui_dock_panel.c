@@ -5010,6 +5010,47 @@ static xui_dock_panel_data_t* __xuiDockPanelGetData(xui_widget pWidget)
 	return (xui_dock_panel_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiDockPanelQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	xui_dock_panel_data_t* pData = (xui_dock_panel_data_t*)pUser;
+	xui_dock_hit_t tHit;
+	xui_rect_t tWorld;
+	int iOrientation = -1;
+
+	if ( pData == NULL ) return XUI_CURSOR_INHERIT;
+	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_CURSOR_NOT_ALLOWED;
+	if ( pData->iDragType == XUI_DOCK_DRAG_SPLITTER ) {
+		if ( pData->iDragNode >= 0 ) {
+			xui_dock_node_slot_t* pNode = __xuiDockNodeAt(pData, pData->iDragNode);
+			if ( pNode != NULL ) iOrientation = pNode->iOrientation;
+		} else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_LEFT ||
+		            pData->iDragRegion == XUI_DOCK_PANEL_REGION_RIGHT ) {
+			iOrientation = XUI_DOCK_ORIENTATION_VERTICAL;
+		} else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_TOP ||
+		            pData->iDragRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) {
+			iOrientation = XUI_DOCK_ORIENTATION_HORIZONTAL;
+		}
+	} else {
+		tWorld = xuiWidgetGetWorldRect(pWidget);
+		if ( __xuiDockHitLocal(pData, (float)iX - tWorld.fX, (float)iY - tWorld.fY, &tHit) &&
+		     tHit.iType == XUI_DOCK_PANEL_HIT_SPLITTER ) {
+			if ( tHit.iNode >= 0 ) {
+				xui_dock_node_slot_t* pNode = __xuiDockNodeAt(pData, tHit.iNode);
+				if ( pNode != NULL ) iOrientation = pNode->iOrientation;
+			} else if ( tHit.iRegion == XUI_DOCK_PANEL_REGION_LEFT ||
+			            tHit.iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) {
+				iOrientation = XUI_DOCK_ORIENTATION_VERTICAL;
+			} else if ( tHit.iRegion == XUI_DOCK_PANEL_REGION_TOP ||
+			            tHit.iRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) {
+				iOrientation = XUI_DOCK_ORIENTATION_HORIZONTAL;
+			}
+		}
+	}
+	if ( iOrientation == XUI_DOCK_ORIENTATION_VERTICAL ) return XUI_CURSOR_RESIZE_EW;
+	if ( iOrientation == XUI_DOCK_ORIENTATION_HORIZONTAL ) return XUI_CURSOR_RESIZE_NS;
+	return XUI_CURSOR_INHERIT;
+}
+
 XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext)
 {
 	xui_widget_type pType;
@@ -5031,6 +5072,7 @@ XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext)
 	desc.onLayoutChildren = __xuiDockPanelLayoutChildren;
 	desc.onLayoutComplete = __xuiDockPanelLayoutComplete;
 	desc.onCacheRender = __xuiDockCacheRender;
+	desc.onQueryCursor = __xuiDockPanelQueryCursor;
 	__xuiDockDefaultLayout(&layout);
 	__xuiDockDefaultCachePolicy(&policy);
 	desc.tLayout = layout;

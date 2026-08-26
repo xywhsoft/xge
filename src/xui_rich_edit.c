@@ -1870,7 +1870,7 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_UNDERLINE | XUI_TEXT_CLIP);
 	}
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget &&
-		 xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) && pProxy->drawRectFill != NULL ) {
+	    xuiInternalCaretBlinkVisible(pWidget) && pProxy->drawRectFill != NULL ) {
 		pData->tCursorRect = __xuiRichEditCaret(pWidget, pData, pData->bImeActive ? pData->iImeStart : pData->iCaret);
 		(void)__xuiRichEditDrawRect(pProxy, pDraw, pData->tCursorRect, pData->iCursorColor);
 	}

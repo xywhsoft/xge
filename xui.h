@@ -21,7 +21,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	9
+#define XUI_PROXY_VERSION	10
 
 typedef enum xui_result_t {
 	XUI_OK = 0,
@@ -5461,6 +5461,8 @@ typedef int (*xui_text_shape_proc)(xui_proxy pProxy, xui_font pFont, const char*
 	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape);
 typedef int (*xui_zstd_decompress_proc)(xui_proxy pProxy, void* pOutput, int iOutputCapacity,
 	const void* pInput, int iInputSize, int* pOutputSize);
+typedef double (*xui_clock_seconds_proc)(xui_proxy pProxy);
+typedef void (*xui_request_frame_proc)(xui_proxy pProxy, float fDelaySeconds);
 
 struct xui_proxy_t {
 	uint32_t iSize;
@@ -5531,6 +5533,8 @@ struct xui_proxy_t {
 	xui_clipboard_get_data_proc clipboardGetData;
 	xui_font_create_sized_proc fontCreateSized;
 	xui_zstd_decompress_proc zstdDecompress;
+	xui_clock_seconds_proc clockSeconds;
+	xui_request_frame_proc requestFrame;
 };
 
 XUI_API int xuiCreate(xui_context* ppContext);

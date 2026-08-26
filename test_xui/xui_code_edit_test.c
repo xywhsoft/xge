@@ -537,6 +537,7 @@ int main(void)
 	iDiagnosticColor = XUI_COLOR_RGBA(201, 31, 47, 255);
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
+	xuiTestProxyEnableFrameClock(&tState, 1.0);
 	fPointerCharWidth = 14.0f * 0.5f;
 
 	iRet = xuiCreate(&pContext);
@@ -753,6 +754,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "unicode layout");
 	iRet = xuiRender(pContext, pTarget, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "unicode render");
+	XUI_TEST_CHECK(tState.iFrameRequestCount > 0 && tState.fLastFrameDelay > 0.40f &&
+		tState.fLastFrameDelay <= 0.53f, "focused caret schedules on-demand frame");
+	xuiTestProxySetClockSeconds(&tState, 1.54);
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "caret monotonic clock update");
+	tState.iFrameRequestCount = 0;
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iFrameRequestCount > 0 &&
+		tState.fLastFrameDelay > 0.40f && tState.fLastFrameDelay <= 0.53f,
+		"caret reschedules after monotonic toggle");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\nbeta") == 0, "unicode backspace deletes character");
 	iRet = xuiCodeEditSetText(pCodeEdit, "A\xE4\xBD\xA0\xF0\x9F\x99\x82" "B");

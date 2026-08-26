@@ -2272,7 +2272,7 @@ static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDr
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) &&
 	     ((iState & XUI_WIDGET_STATE_DISABLED) == 0) &&
 	     !__xuiTextEditHasSelectionData(pData) &&
-	     xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) &&
+	    xuiInternalCaretBlinkVisible(pWidget) &&
 	     (__xuiTextEditAlpha(tResolved.iCursorColor) != 0) &&
 	     (tCursor.fH > 0.0f) &&
 	     (pProxy->drawRectFill != NULL) ) {

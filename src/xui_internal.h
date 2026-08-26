@@ -133,6 +133,8 @@ struct xui_context_t {
 	int bInteractionPolicyUserSet;
 	int bInteractionPolicyPlatformSet;
 	float fCaretBlinkElapsed;
+	double fCaretBlinkClockSeconds;
+	int bCaretBlinkClockValid;
 	int bCaretBlinkVisible;
 	uint32_t iGeneration;
 	xui_widget pRoot;
@@ -396,7 +398,7 @@ xui_proxy xuiInternalContextGetProxy(xui_context pContext);
 int xuiInternalSetInteractionPolicy(xui_context pContext, const xui_interaction_policy_t* pPolicy, int bUserSet);
 void xuiInternalCaretBlinkUpdate(xui_context pContext, float fDelta);
 void xuiInternalCaretBlinkReset(xui_context pContext);
-int xuiInternalCaretBlinkVisible(xui_context pContext);
+int xuiInternalCaretBlinkVisible(xui_widget pWidget);
 int xuiInternalContextInvalidateRect(xui_context pContext, xui_rect_i_t tRect);
 int xuiInternalContextInvalidateAll(xui_context pContext);
 void xuiInternalContextBumpGeneration(xui_context pContext);

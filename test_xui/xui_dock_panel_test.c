@@ -838,6 +838,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_HIDDEN, "close all hides scratch3");
 
 	XUI_TEST_CHECK(__xuiDockFindSplitter(pDock, &tHit), "splitter hit found");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(8.0f + tHit.tRect.fX + tHit.tRect.fW * 0.5f),
+		(int)(8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f)) ==
+		((tHit.tRect.fW <= tHit.tRect.fH) ? XUI_CURSOR_RESIZE_EW : XUI_CURSOR_RESIZE_NS),
+		"splitter resize cursor");
 	iRet = __xuiDockTestDrag(pContext, 8.0f + tHit.tRect.fX + 1.0f, 8.0f + tHit.tRect.fY + 1.0f, 8.0f + tHit.tRect.fX + 24.0f, 8.0f + tHit.tRect.fY + 12.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetLayoutChangeCount(pDock) > 0, "splitter drag");
 
