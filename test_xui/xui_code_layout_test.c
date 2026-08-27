@@ -84,6 +84,21 @@ int main(void)
 	iRet = xuiCodeLayoutHitTest(&tDesc, 82.0f, 20.0f, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iLine == 0 && tHit.iColumn == 2 && tHit.iOffset == 2, "tab hit test");
 
+	tDesc.tViewportRect.fW = 88.0f;
+	tDesc.bWordWrap = 1;
+	iRet = xuiCodeDocumentSetText(pDocument, "alpha beta gamma");
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped document text");
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, arrLines, 8, &iCount, &tContent, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 3, "wrapped visual line count");
+	XUI_TEST_CHECK(arrLines[0].iStartOffset == 0 && arrLines[0].iEndOffset == 6, "first wrap segment");
+	XUI_TEST_CHECK(arrLines[1].iStartOffset == 6 && arrLines[1].iEndOffset == 11, "second wrap segment");
+	XUI_TEST_CHECK((int)tContent.fX == 48 && (int)tContent.fY == 48, "wrapped content size");
+	iRet = xuiCodeLayoutHitTest(&tDesc, 66.0f, 37.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iLine == 0 && tHit.iColumn == 8 && tHit.iOffset == 8,
+		"wrapped hit test");
+	iRet = xuiCodeLayoutGetCaretRect(&tDesc, 0, 8, &tCaret);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCaret.fX == 66.0f && tCaret.fY == 36.0f, "wrapped caret rect");
+
 cleanup:
 	xuiCodeDocumentDestroy(pDocument);
 	if ( iFailed ) return 1;

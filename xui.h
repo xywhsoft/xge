@@ -1940,6 +1940,7 @@ typedef struct xui_code_fold_range_t xui_code_fold_range_t;
 typedef struct xui_code_layout_desc_t xui_code_layout_desc_t;
 typedef struct xui_code_layout_line_t xui_code_layout_line_t;
 typedef struct xui_code_hit_t xui_code_hit_t;
+typedef struct xui_code_edit_text_hit_t xui_code_edit_text_hit_t;
 typedef struct xui_code_search_result_t xui_code_search_result_t;
 typedef struct xui_find_result_t xui_find_result_t;
 typedef struct xui_find_options_t xui_find_options_t;
@@ -2574,6 +2575,22 @@ struct xui_code_signature_help_t {
 	int iParameterCount;
 	int iActiveParameter;
 	uintptr_t iUserData;
+};
+
+/* Exact CodeEdit geometry in XUI context pixel coordinates. Offsets are UTF-8
+ * byte offsets and every rectangle comes from the same layout used to paint. */
+struct xui_code_edit_text_hit_t {
+	uint32_t iSize;
+	int iByteOffset;
+	int iLine;
+	int iVisualLine;
+	int iVisualColumn;
+	int iClusterStart;
+	int iClusterEnd;
+	xui_rect_t tCharacterRect;
+	xui_rect_t tLineRect;
+	int bInsideText;
+	int bTrailing;
 };
 
 struct xui_code_text_edit_t {
@@ -6505,6 +6522,14 @@ XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHin
 XUI_API int xuiCodeEditCloseHint(xui_widget pWidget);
 XUI_API int xuiCodeEditIsHintOpen(xui_widget pWidget);
 XUI_API int xuiCodeEditGetOffsetRect(xui_widget pWidget, int iOffset, xui_rect_t* pRect);
+/* Exact text geometry uses UTF-8 byte offsets and XUI context pixel coordinates.
+ * Hit testing and offset geometry share rendering's fold, tab, scroll, and
+ * soft-wrap model. Padding clamps to the nearest insertion point and reports
+ * bInsideText == 0. */
+XUI_API int xuiCodeEditHitTestText(xui_widget pWidget, float fContextX,
+	float fContextY, xui_code_edit_text_hit_t* pHit);
+XUI_API int xuiCodeEditGetTextOffsetRect(xui_widget pWidget, int iByteOffset,
+	xui_rect_t* pRect);
 XUI_API int xuiCodeEditSetPlaceholders(xui_widget pWidget, const xui_code_placeholder_t* pPlaceholders, int iCount, int iActiveIndex);
 XUI_API int xuiCodeEditClearPlaceholders(xui_widget pWidget);
 XUI_API int xuiCodeEditMovePlaceholder(xui_widget pWidget, int iDirection);
@@ -6539,6 +6564,8 @@ XUI_API uint32_t xuiCodeEditGetDisplayOptions(xui_widget pWidget);
 XUI_API int xuiCodeEditSetMinimap(xui_widget pWidget, int bVisible, float fWidth);
 XUI_API int xuiCodeEditGetMinimap(xui_widget pWidget, int* pVisible, float* pWidth);
 XUI_API xui_rect_t xuiCodeEditGetMinimapRect(xui_widget pWidget);
+/* TextEdit, CodeEdit, and RichEdit use the same runtime WordWrap convention:
+ * nonzero enables soft visual lines without modifying document text. */
 XUI_API int xuiCodeEditSetWordWrap(xui_widget pWidget, int bWordWrap);
 XUI_API int xuiCodeEditGetWordWrap(xui_widget pWidget);
 XUI_API int xuiCodeEditSetEolMode(xui_widget pWidget, int iEolMode);
@@ -6890,6 +6917,8 @@ XUI_API int xuiRichEditUndo(xui_widget pWidget);
 XUI_API int xuiRichEditRedo(xui_widget pWidget);
 XUI_API int xuiRichEditSetReadonly(xui_widget pWidget, int bReadonly);
 XUI_API int xuiRichEditIsReadonly(xui_widget pWidget);
+XUI_API int xuiRichEditSetWordWrap(xui_widget pWidget, int bWordWrap);
+XUI_API int xuiRichEditGetWordWrap(xui_widget pWidget);
 XUI_API int xuiRichEditSetScroll(xui_widget pWidget, float fScrollX, float fScrollY);
 XUI_API int xuiRichEditGetScroll(xui_widget pWidget, float* pScrollX, float* pScrollY);
 XUI_API int xuiRichEditScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);

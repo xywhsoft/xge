@@ -176,6 +176,11 @@ int main(void)
 	CHECK(ret == XUI_OK, "editor"); doc = NULL;
 	CHECK(xuiWidgetSetRect(edit, (xui_rect_t){20,20,260,180}) == XUI_OK, "editor rect");
 	CHECK(xuiWidgetAddChild(root, edit) == XUI_OK, "attach editor");
+	CHECK(xuiRichEditGetWordWrap(edit) == 1, "rich editor initial word wrap");
+	CHECK(xuiRichEditSetWordWrap(edit, 0) == XUI_OK && xuiRichEditGetWordWrap(edit) == 0,
+		"rich editor disables word wrap at runtime");
+	CHECK(xuiRichEditSetWordWrap(edit, 1) == XUI_OK && xuiRichEditGetWordWrap(edit) == 1,
+		"rich editor restores word wrap at runtime");
 	CHECK(xuiRichEditSetEvent(edit, on_rich_event, NULL) == XUI_OK, "rich event callback");
 	menu = xuiRichEditGetMenuWidget(edit);
 	CHECK(menu != NULL && xuiMenuGetItemCount(menu) == 12, "built-in rich edit menu includes find and replace");

@@ -4247,6 +4247,24 @@ XUI_API int xuiRichEditSetReadonly(xui_widget pWidget, int bReadonly)
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 XUI_API int xuiRichEditIsReadonly(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);return p?p->bReadonly:0;}
+XUI_API int xuiRichEditSetWordWrap(xui_widget pWidget, int bWordWrap)
+{
+	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
+	int bValue = bWordWrap ? 1 : 0;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bWordWrap == bValue ) return XUI_OK;
+	pData->bWordWrap = bValue;
+	pData->fScrollX = 0.0f;
+	pData->bLayoutDirty = 1;
+	pData->bIncrementalLayout = 0;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+XUI_API int xuiRichEditGetWordWrap(xui_widget pWidget)
+{
+	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
+	return pData != NULL ? pData->bWordWrap : 0;
+}
 XUI_API int xuiRichEditSetScroll(xui_widget pWidget,float x,float y){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);float sx,sy;int r;if(!p)return XUI_ERROR_INVALID_ARGUMENT;r=__xuiRichEditUpdateScrollModel(pWidget,p);if(r!=XUI_OK)return r;r=xuiScrollModelSetOffset(&p->tScrollModel,x,y);if(r!=XUI_OK)return r;(void)xuiScrollModelGetOffset(&p->tScrollModel,&sx,&sy);p->fScrollX=sx;p->fScrollY=sy;if(p->pHScrollBar&&p->pVScrollBar){p->bSyncingScrollBars=1;(void)xuiScrollBarSetValue(p->pHScrollBar,sx);(void)xuiScrollBarSetValue(p->pVScrollBar,sy);p->bSyncingScrollBars=0;}(void)xuiInternalInputRefreshImePosition(xuiWidgetGetContext(pWidget));return xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);}
 XUI_API int xuiRichEditGetScroll(xui_widget pWidget,float*x,float*y){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p)return XUI_ERROR_INVALID_ARGUMENT;if(x)*x=p->fScrollX;if(y)*y=p->fScrollY;return XUI_OK;}
 XUI_API int xuiRichEditScrollBy(xui_widget pWidget,float x,float y){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p)return XUI_ERROR_INVALID_ARGUMENT;return xuiRichEditSetScroll(pWidget,p->fScrollX+x,p->fScrollY+y);}
