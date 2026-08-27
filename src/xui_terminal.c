@@ -103,6 +103,8 @@ typedef struct xui_terminal_data_t {
 	xui_widget pMenu;
 	char* arrMenuTitle[XUI_TERMINAL_MENU_TITLE_COUNT];
 	char* sSearchText;
+	char* sImeText;
+	int iImeCapacity;
 	xui_terminal_data_proc onData;
 	void* pDataUser;
 	xui_terminal_resize_proc onResize;
@@ -168,6 +170,7 @@ typedef struct xui_terminal_data_t {
 	int bLastCaretBlinkVisible;
 	int bBracketedPaste;
 	int bLigaturesEnabled;
+	int bImeActive;
 	int bFullCacheDirty;
 	int bCacheRendered;
 	int bSelectAll;
@@ -192,6 +195,66 @@ typedef struct xui_terminal_data_t {
 
 static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* pData);
 static int __xuiTerminalPointerToCell(xui_widget pWidget, xui_terminal_data_t* pData, const xui_event_t* pEvent, int* pLine, int* pColumn);
+static int __xuiTerminalPasteClipboard(xui_widget pWidget, xui_terminal_data_t* pData);
+
+static int __xuiTerminalEditSetSelection(xui_widget pWidget, int iStart, int iEnd)
+{
+	xui_terminal_data_t* pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pWidget);
+	if ( pData == NULL || iStart < 0 || iEnd < 0 || pData->iColumns <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiTerminalSetSelectionRange(pWidget, iStart / pData->iColumns,
+		iStart % pData->iColumns, iEnd / pData->iColumns, iEnd % pData->iColumns);
+}
+
+static int __xuiTerminalEditGetSelection(xui_widget pWidget, int* pStart, int* pEnd)
+{
+	xui_terminal_data_t* pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pWidget);
+	int iLine0, iColumn0, iLine1, iColumn1;
+	int iRet;
+	if ( pData == NULL || pData->iColumns <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiTerminalGetSelectionRange(pWidget, &iLine0, &iColumn0, &iLine1, &iColumn1);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pStart != NULL ) *pStart = iLine0 < 0 ? 0 : iLine0 * pData->iColumns + iColumn0;
+	if ( pEnd != NULL ) *pEnd = iLine1 < 0 ? 0 : iLine1 * pData->iColumns + iColumn1;
+	return XUI_OK;
+}
+
+static int __xuiTerminalEditHasSelection(xui_widget pWidget)
+{
+	int iStart, iEnd;
+	return __xuiTerminalEditGetSelection(pWidget, &iStart, &iEnd) == XUI_OK && iStart != iEnd;
+}
+
+static int __xuiTerminalEditPaste(xui_widget pWidget)
+{
+	xui_terminal_data_t* pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pWidget);
+	return (pData != NULL) ? __xuiTerminalPasteClipboard(pWidget, pData) : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static xui_rect_t __xuiTerminalEditCaretRect(xui_widget pWidget)
+{
+	xui_terminal_data_t* pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pWidget);
+	xui_rect_t tRect = {0.0f, 0.0f, 0.0f, 0.0f};
+	float fOffsetY = 0.0f;
+	int iTopLine;
+	if ( pData == NULL ) return tRect;
+	__xuiTerminalResolveStyle(pWidget, pData);
+	(void)xuiScrollModelGetOffset(&pData->tScroll, NULL, &fOffsetY);
+	iTopLine = pData->fCellHeight > 0.0f ? (int)(fOffsetY / pData->fCellHeight) : 0;
+	tRect.fX = pData->fPadding + (float)pData->iCursorX * pData->fCellWidth;
+	tRect.fY = pData->fPadding + (float)(pData->iCursorY + pData->iScrollbackCount - iTopLine) * pData->fCellHeight;
+	tRect.fW = pData->fCellWidth;
+	tRect.fH = pData->fCursorHeight;
+	return tRect;
+}
+
+static const xui_internal_edit_adapter_t g_xuiTerminalEditAdapter = {
+	XUI_EDIT_CAP_SELECTION | XUI_EDIT_CAP_CLIPBOARD | XUI_EDIT_CAP_CARET_RECT |
+	XUI_EDIT_CAP_CONTEXT_MENU | XUI_EDIT_CAP_IME | XUI_EDIT_CAP_TERMINAL,
+	NULL, NULL, __xuiTerminalEditSetSelection, __xuiTerminalEditGetSelection,
+	__xuiTerminalEditHasSelection, xuiTerminalSelectAll, xuiTerminalCopySelection,
+	NULL, __xuiTerminalEditPaste, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+	__xuiTerminalEditCaretRect, xuiTerminalOpenMenu
+};
 
 static int __xuiTerminalMax(int a, int b) { return (a > b) ? a : b; }
 static int __xuiTerminalMin(int a, int b) { return (a < b) ? a : b; }
@@ -212,6 +275,21 @@ static char* __xuiTerminalStrDup(const char* sText)
 	}
 	memcpy(sCopy, sText, iLen + 1u);
 	return sCopy;
+}
+
+static int __xuiTerminalImeSetText(xui_terminal_data_t* pData, const char* sText, int iSize)
+{
+	char* sNew;
+	if ( pData == NULL || iSize < 0 || (iSize > 0 && sText == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iSize + 1 > pData->iImeCapacity ) {
+		sNew = (char*)xrtRealloc(pData->sImeText, (size_t)iSize + 1u);
+		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		pData->sImeText = sNew;
+		pData->iImeCapacity = iSize + 1;
+	}
+	if ( iSize > 0 ) memcpy(pData->sImeText, sText, (size_t)iSize);
+	pData->sImeText[iSize] = '\0';
+	return XUI_OK;
 }
 
 static void __xuiTerminalFreeLinks(xui_terminal_data_t* pData)
@@ -2140,6 +2218,22 @@ static int __xuiTerminalSelectionRange(xui_terminal_data_t* pData, int* pLine0, 
 	return 1;
 }
 
+static void __xuiTerminalEmitSelectionChange(xui_widget pWidget, xui_terminal_data_t* pData)
+{
+	int iLine0;
+	int iColumn0;
+	int iLine1;
+	int iColumn1;
+	if ( pWidget == NULL || pData == NULL || pData->iColumns <= 0 ) return;
+	if ( !__xuiTerminalSelectionRange(pData, &iLine0, &iColumn0, &iLine1, &iColumn1) ) {
+		iLine0 = iLine1 = 0;
+		iColumn0 = iColumn1 = 0;
+	}
+	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED, NULL,
+		iLine0 * pData->iColumns + iColumn0,
+		iLine1 * pData->iColumns + iColumn1, 0, 0, 1);
+}
+
 static int __xuiTerminalPointerToCell(xui_widget pWidget, xui_terminal_data_t* pData, const xui_event_t* pEvent, int* pLine, int* pColumn)
 {
 	xui_rect_t tWorld;
@@ -2575,6 +2669,7 @@ static int __xuiTerminalPointerUp(xui_widget pWidget, xui_terminal_data_t* pData
 		pData->iSelectEndColumn = iColumn;
 	}
 	pData->bSelecting = 0;
+	__xuiTerminalEmitSelectionChange(pWidget, pData);
 	if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
 		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 	}
@@ -2599,6 +2694,7 @@ static int __xuiTerminalPointerDoubleClick(xui_widget pWidget, xui_terminal_data
 	pData->fDoubleClickX = pEvent->fX;
 	pData->fDoubleClickY = pEvent->fY;
 	pData->fDoubleClickTime = xrtTimer();
+	__xuiTerminalEmitSelectionChange(pWidget, pData);
 	if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
 		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 	}
@@ -2905,6 +3001,7 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		break;
 	case XUI_EVENT_TEXT:
 		if ( pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE ) {
+			if ( pData->bImeActive ) return XUI_EVENT_DISPATCH_STOP;
 			if ( pEvent->iTextSize > 0 ) {
 				return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)pEvent->sText, pEvent->iTextSize) | XUI_EVENT_DISPATCH_STOP;
 			}
@@ -2917,6 +3014,27 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			}
 		}
 		break;
+	case XUI_EVENT_IME_COMPOSITION:
+		if ( pEvent->bCompositionActive ) {
+			if ( __xuiTerminalImeSetText(pData, pEvent->sText, pEvent->iTextSize) != XUI_OK ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			pData->bImeActive = 1;
+			(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED,
+				pData->sImeText, pEvent->iTextSize, 0, 0, 0, pEvent->iTextSize, 1);
+			__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		pData->bImeActive = 0;
+		(void)__xuiTerminalImeSetText(pData, NULL, 0);
+		if ( pEvent->iTextSize > 0 ) {
+			(void)__xuiTerminalEmitInput(pWidget, pData,
+				(const uint8_t*)pEvent->sText, pEvent->iTextSize);
+		}
+		(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED,
+			NULL, 0, 0, 0, 0, 0, 1);
+		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiTerminalKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_FOCUS:
@@ -2927,12 +3045,26 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pEvent->iType == XUI_EVENT_BOUNDS_CHANGED ) {
 			(void)xuiTerminalFit(pWidget);
 		}
+		if ( pEvent->iType == XUI_EVENT_BLUR ) {
+			pData->bImeActive = 0;
+			(void)__xuiTerminalImeSetText(pData, NULL, 0);
+		}
 		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		break;
 	default:
 		break;
 	}
 	return XUI_OK;
+}
+
+static xui_rect_t __xuiTerminalImeRect(xui_widget pWidget, void* pUser)
+{
+	xui_rect_t tRect = __xuiTerminalEditCaretRect(pWidget);
+	xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+	(void)pUser;
+	tRect.fX += tWorld.fX;
+	tRect.fY += tWorld.fY;
+	return tRect;
 }
 
 static int __xuiTerminalInitEvents(xui_widget pWidget)
@@ -2949,6 +3081,7 @@ static int __xuiTerminalInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiTerminalEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_WHEEL, __xuiTerminalEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_TEXT, __xuiTerminalEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_IME_COMPOSITION, __xuiTerminalEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiTerminalEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiTerminalEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiTerminalEvent, NULL);
@@ -3445,6 +3578,31 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iRet = __xuiTerminalRenderHoverLinkLine(pProxy, pDraw, pData, iLine, tLineRect.fY);
 		if ( iRet != XUI_OK ) return iRet;
 	}
+	if ( pData->bImeActive && pData->sImeText != NULL && pData->sImeText[0] != '\0' ) {
+		xui_rect_t tIme;
+		int iImeColumns;
+		tIme.fX = pData->fPadding + (float)pData->iCursorX * pData->fCellWidth;
+		tIme.fY = pData->fPadding + (float)(pData->iCursorY + pData->iScrollbackCount - iTopLine) * pData->fCellHeight;
+		iImeColumns = __xuiTerminalUtf8DisplayColumns(pData->sImeText, -1);
+		if ( iImeColumns < 1 ) iImeColumns = 1;
+		tIme.fW = (float)iImeColumns * pData->fCellWidth;
+		if ( tIme.fW > tRect.fW - tIme.fX - pData->fPadding ) {
+			tIme.fW = tRect.fW - tIme.fX - pData->fPadding;
+		}
+		tIme.fH = pData->fCellHeight;
+		if ( tIme.fW > 0.0f ) {
+			iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, pData->sImeText,
+				tIme, pData->iForegroundColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( pProxy->drawRectFill != NULL ) {
+				xui_rect_t tUnderline = {tIme.fX, tIme.fY + tIme.fH - 1.0f,
+					tIme.fW, 1.0f};
+				iRet = pProxy->drawRectFill(pProxy, pDraw,
+					xuiInternalSnapRect(tUnderline), pData->iCursorColor);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+		}
+	}
 	if ( pData->bCursorVisible && bCaretBlinkVisible && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL && __xuiTerminalAlpha(pData->iCursorColor) != 0 ) {
 		tCursor.fX = pData->fPadding + (float)pData->iCursorX * pData->fCellWidth;
 		tCursor.fY = pData->fPadding + (float)(pData->iCursorY + pData->iScrollbackCount - iTopLine) * pData->fCellHeight;
@@ -3578,6 +3736,17 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	(void)xuiWidgetSetTabStop(pWidget, 1);
 	(void)xuiWidgetSetImeMode(pWidget, XUI_IME_ENABLED);
 	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
+	{
+		xui_edit_behavior_t tBehavior;
+		memset(&tBehavior, 0, sizeof(tBehavior));
+		tBehavior.iSize = sizeof(tBehavior);
+		tBehavior.iTabBehavior = XUI_EDIT_TAB_DEFAULT;
+		tBehavior.iEnterBehavior = XUI_EDIT_ENTER_DEFAULT;
+		tBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
+		iRet = xuiInternalEditRegister(pWidget, &g_xuiTerminalEditAdapter, &tBehavior);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	(void)xuiWidgetSetImeCandidateRect(pWidget, __xuiTerminalImeRect, NULL);
 	iRet = __xuiTerminalInitEvents(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTerminalInitMenu(pWidget, pData);
@@ -3611,6 +3780,7 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData->pDirtyRows != NULL ) xrtFree(pData->pDirtyRows);
 	if ( pData->sSearchText != NULL ) xrtFree(pData->sSearchText);
 	if ( pData->sHoverLink != NULL ) xrtFree(pData->sHoverLink);
+	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
 	for ( i = 0; i < XUI_TERMINAL_MENU_TITLE_COUNT; ++i ) {
 		xrtFree(pData->arrMenuTitle[i]);
 		pData->arrMenuTitle[i] = NULL;
@@ -4154,6 +4324,7 @@ XUI_API int xuiTerminalSelectAll(xui_widget pWidget)
 	pData->iSelectAnchorColumn = 0;
 	pData->iSelectEndLine = __xuiTerminalLogicalLineCount(pData) - 1;
 	pData->iSelectEndColumn = pData->iColumns;
+	__xuiTerminalEmitSelectionChange(pWidget, pData);
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
 }
@@ -4163,6 +4334,7 @@ XUI_API int xuiTerminalClearSelection(xui_widget pWidget)
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTerminalClearSelectionData(pData);
+	__xuiTerminalEmitSelectionChange(pWidget, pData);
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
 }
@@ -4172,6 +4344,7 @@ XUI_API int xuiTerminalSetSelectionRange(xui_widget pWidget, int iAnchorLine, in
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTerminalSetSelectionRange(pData, iAnchorLine, iAnchorColumn, iEndLine, iEndColumn);
+	__xuiTerminalEmitSelectionChange(pWidget, pData);
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
 }

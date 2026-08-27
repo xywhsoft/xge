@@ -214,6 +214,16 @@ struct xui_context_t {
 	int bDragActive;
 	int bClickMoved;
 	double fLastClickTime;
+	xui_data_object pTransferData;
+	xui_widget pDragSource;
+	xui_widget pDropTarget;
+	uint32_t iDragAllowedEffects;
+	uint32_t iDragSuggestedEffect;
+	uint32_t iDragEffect;
+	uint32_t iDragLastEffect;
+	int bTransferActive;
+	int bTransferExternal;
+	int bDragNegotiating;
 	xui_widget pContextPressWidget;
 	xui_pointer_state_t arrPointerStates[XUI_POINTER_MAX];
 	int iPointerStateCount;
@@ -308,6 +318,28 @@ struct xui_widget_type_t {
 	int bBuiltin;
 };
 
+typedef struct xui_internal_edit_adapter_t {
+	uint32_t iCapabilities;
+	int (*setText)(xui_widget pWidget, const char* sText);
+	const char* (*getText)(xui_widget pWidget);
+	int (*setSelection)(xui_widget pWidget, int iStart, int iEnd);
+	int (*getSelection)(xui_widget pWidget, int* pStart, int* pEnd);
+	int (*hasSelection)(xui_widget pWidget);
+	int (*selectAll)(xui_widget pWidget);
+	int (*copy)(xui_widget pWidget);
+	int (*cut)(xui_widget pWidget);
+	int (*paste)(xui_widget pWidget);
+	int (*deleteSelection)(xui_widget pWidget);
+	int (*undo)(xui_widget pWidget);
+	int (*redo)(xui_widget pWidget);
+	int (*canUndo)(xui_widget pWidget);
+	int (*canRedo)(xui_widget pWidget);
+	int (*setReadonly)(xui_widget pWidget, int bReadonly);
+	int (*isReadonly)(xui_widget pWidget);
+	xui_rect_t (*getCaretRect)(xui_widget pWidget);
+	int (*openContextMenu)(xui_widget pWidget, float fX, float fY);
+} xui_internal_edit_adapter_t;
+
 struct xui_widget_t {
 	uint32_t iMagic;
 	xlayout_node_t iLayoutNode;
@@ -332,6 +364,7 @@ struct xui_widget_t {
 	int iTabIndex;
 	int bFocusScope;
 	int bDragEnabled;
+	int bDropEnabled;
 	int iImeMode;
 	int bMeasureValid;
 	int bArrangeValid;
@@ -351,6 +384,12 @@ struct xui_widget_t {
 	void* pUser;
 	xui_widget pOverlayOwner;
 	void* pTypeData;
+	const xui_internal_edit_adapter_t* pEditAdapter;
+	xui_widget pEditDelegate;
+	xui_widget pEditOwner;
+	xui_edit_behavior_t tEditBehavior;
+	xui_edit_event_proc onEditEvent;
+	void* pEditEventUser;
 	char* sStyleName;
 	char** pStyleClasses;
 	int iStyleClassCount;
@@ -447,6 +486,16 @@ int xuiInternalInputRefreshImePosition(xui_context pContext);
 int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSize);
 XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext));
 int xuiInternalClipboardReadText(xui_context pContext, char** psText, int* pTextSize);
+int xuiInternalEditRegister(xui_widget pWidget, const xui_internal_edit_adapter_t* pAdapter,
+	const xui_edit_behavior_t* pBehavior);
+int xuiInternalEditDelegate(xui_widget pWidget, xui_widget pDelegate);
+void xuiInternalEditUndelegate(xui_widget pWidget);
+xui_widget xuiInternalEditHost(xui_widget pWidget);
+const xui_edit_behavior_t* xuiInternalEditBehavior(xui_widget pWidget);
+int xuiInternalEditEmit(xui_widget pWidget, int iType, const char* sText,
+	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid);
+int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, int iTextSize,
+	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid);
 int xuiInternalTextGraphemeNextRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
 int xuiInternalTextGraphemePrevRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
 int xuiInternalTextGraphemeClampRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
@@ -484,6 +533,13 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta);
 int xuiInternalDragAdornerSet(xui_context pContext, xui_widget pOwner,
 	const xui_drag_adorner_primitive_t* pPrimitives, int iPrimitiveCount);
 void xuiInternalDragAdornerHide(xui_context pContext, xui_widget pOwner);
+int xuiInternalDragTransferMove(xui_context pContext, int iX, int iY,
+	uint32_t iModifiers);
+int xuiInternalDragTransferDrop(xui_context pContext, int iX, int iY,
+	uint32_t iModifiers);
+void xuiInternalDragTransferCancel(xui_context pContext);
+void xuiInternalDragTransferDetachWidget(xui_context pContext, xui_widget pWidget);
+void xuiInternalDragTransferShutdown(xui_context pContext);
 void xuiInternalWindowFrameLayout(xui_rect_t tFrameRect,
 	const xui_internal_window_frame_metrics_t* pMetrics,
 	xui_internal_window_frame_layout_t* pLayout);

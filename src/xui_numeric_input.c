@@ -1068,7 +1068,18 @@ static int __xuiNumericInputCreateInputChild(xui_widget pWidget, xui_numeric_inp
 	(void)xuiWidgetSetFlowMode(pData->pInput, XUI_FLOW_BLOCK);
 	(void)xuiWidgetSetSizeMode(pData->pInput, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	(void)xuiWidgetSetAlign(pData->pInput, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
-	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
+	iRet = xuiInternalEditDelegate(pWidget, pData->pInput);
+	if ( iRet == XUI_OK ) {
+		xui_edit_behavior_t tBehavior;
+		memset(&tBehavior, 0, sizeof(tBehavior));
+		tBehavior.iSize = sizeof(tBehavior);
+		tBehavior.iTabBehavior = XUI_EDIT_TAB_FOCUS;
+		tBehavior.iEnterBehavior = XUI_EDIT_ENTER_COMMIT;
+		tBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_REVERT;
+		tBehavior.bCommitOnBlur = 1;
+		iRet = xuiEditSetBehavior(pWidget, &tBehavior);
+	}
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
 	if ( iRet == XUI_OK ) {
 		iRet = __xuiNumericInputSetInputTextFromValue(pWidget, pData);
 	}

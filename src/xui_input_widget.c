@@ -48,6 +48,8 @@ typedef struct xui_input_data_t {
 	int iImeTextCapacity;
 	char* sImeDisplay;
 	int iImeDisplayCapacity;
+	char* sFocusText;
+	int iFocusTextCapacity;
 	char* arrMenuTitle[XUI_INPUT_MENU_COUNT];
 	xui_widget pMenu;
 	xui_input_decoration pLeadingDecoration;
@@ -109,6 +111,19 @@ typedef struct xui_input_data_t {
 	xui_rect_t tTextRect;
 	xui_rect_t tCursorRect;
 } xui_input_data_t;
+
+static int __xuiInputEditSetText(xui_widget pWidget, const char* sText);
+
+static const xui_internal_edit_adapter_t g_xuiInputEditAdapter = {
+	XUI_EDIT_CAP_TEXT | XUI_EDIT_CAP_SELECTION | XUI_EDIT_CAP_CLIPBOARD |
+	XUI_EDIT_CAP_UNDO | XUI_EDIT_CAP_READONLY | XUI_EDIT_CAP_CARET_RECT |
+	XUI_EDIT_CAP_CONTEXT_MENU | XUI_EDIT_CAP_IME | XUI_EDIT_CAP_FORM_VALUE,
+	__xuiInputEditSetText, xuiInputGetText, xuiInputSetSelection, xuiInputGetSelection,
+	xuiInputHasSelection, xuiInputSelectAll, xuiInputCopy, xuiInputCut,
+	xuiInputPaste, xuiInputDeleteSelection, xuiInputUndo, xuiInputRedo,
+	xuiInputCanUndo, xuiInputCanRedo, xuiInputSetReadonly, xuiInputIsReadonly,
+	xuiInputGetCursorRect, xuiInputOpenMenu
+};
 
 static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int iNewCursor, int bExtend);
 static int __xuiInputSetSelectionData(xui_input_data_t* pData, int iStart, int iEnd);
@@ -1018,6 +1033,9 @@ static void __xuiInputNotifyChange(xui_widget pWidget, xui_input_data_t* pData)
 	if ( pData->onChange != NULL ) {
 		pData->onChange(pWidget, (pData->sText != NULL) ? pData->sText : "", pData->pChangeUser);
 	}
+	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_TEXT_CHANGED,
+		(pData->sText != NULL) ? pData->sText : "", pData->iSelectStart,
+		pData->iSelectEnd, 0, 0, !pData->bError);
 }
 
 static int __xuiInputRecordUndo(xui_input_data_t* pData)
@@ -1291,11 +1309,15 @@ static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int
 {
 	int iLen;
 	int iAnchor;
+	int iOldStart;
+	int iOldEnd;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iLen = (int)strlen(pData->sText);
+	iOldStart = pData->iSelectStart;
+	iOldEnd = pData->iSelectEnd;
 	iNewCursor = __xuiInputUtf8Clamp(pData->sText, iLen, iNewCursor);
 	if ( bExtend ) {
 		iAnchor = __xuiInputHasSelectionData(pData) ? pData->iAnchor : pData->iCursor;
@@ -1307,7 +1329,18 @@ static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int
 		pData->iCursor = iNewCursor;
 		(void)__xuiInputClearSelectionData(pData);
 	}
+	if ( pData->iSelectStart != iOldStart || pData->iSelectEnd != iOldEnd ) {
+		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED,
+			pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+	}
 	return __xuiInputSyncCursor(pWidget, pData);
+}
+
+static int __xuiInputEditSetText(xui_widget pWidget, const char* sText)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	if ( pData == NULL || sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiInputSetTextInternal(pWidget, pData, sText, 1, 0);
 }
 
 static int __xuiInputCursorFromPoint(xui_widget pWidget, xui_input_data_t* pData, float fX)
@@ -2028,6 +2061,7 @@ static void __xuiInputMenuSelect(xui_widget pMenu, int iIndex, int iValue, void*
 
 static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, const xui_event_t* pEvent)
 {
+	const xui_edit_behavior_t* pBehavior;
 	int iLen;
 	int iStart;
 	int iEnd;
@@ -2042,6 +2076,7 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 	iKey = pEvent->iKey;
 	bShift = ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0);
 	bCtrl = ((pEvent->iModifiers & XUI_MOD_CTRL) != 0);
+	pBehavior = xuiInternalEditBehavior(pWidget);
 	if ( bCtrl ) {
 		iKey = toupper((unsigned char)iKey);
 		if ( iKey == 'A' ) {
@@ -2061,7 +2096,7 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( iKey == 'Z' ) {
-			(void)xuiInputUndo(pWidget);
+			(void)(bShift ? xuiInputRedo(pWidget) : xuiInputUndo(pWidget));
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( iKey == 'Y' ) {
@@ -2070,6 +2105,30 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 		}
 	}
 	switch ( pEvent->iKey ) {
+	case XUI_KEY_TAB:
+		if ( pBehavior != NULL && (pBehavior->iTabBehavior == XUI_EDIT_TAB_INSERT ||
+		     pBehavior->iTabBehavior == XUI_EDIT_TAB_INDENT) ) {
+			if ( !pData->bReadonly ) (void)__xuiInputInsertText(pWidget, pData, "\t", 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
+	case XUI_KEY_ENTER:
+		if ( pBehavior != NULL && pBehavior->iEnterBehavior == XUI_EDIT_ENTER_COMMIT ) {
+			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT, pData->sText,
+				pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
+	case XUI_KEY_ESCAPE:
+		if ( pBehavior != NULL && pBehavior->iEscapeBehavior != XUI_EDIT_ESCAPE_DEFAULT ) {
+			if ( pBehavior->iEscapeBehavior == XUI_EDIT_ESCAPE_REVERT && pData->sFocusText != NULL && !pData->bReadonly ) {
+				(void)__xuiInputSetTextInternal(pWidget, pData, pData->sFocusText, 1, 0);
+			}
+			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_CANCEL, pData->sText,
+				pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
 	case XUI_KEY_LEFT:
 		if ( __xuiInputHasSelectionData(pData) && !bShift ) {
 			__xuiInputSelectionRange(pData, &iStart, &iEnd);
@@ -2156,10 +2215,20 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		return __xuiInputInvalidatePaint(pWidget);
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
+		if ( pEvent->iType == XUI_EVENT_FOCUS ) {
+			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
+			(void)__xuiInputStringSet(&pData->sFocusText, &pData->iFocusTextCapacity, pData->sText);
+			if ( pBehavior != NULL && pBehavior->bSelectAllOnFocus ) (void)xuiInputSelectAll(pWidget);
+		}
 		if ( pEvent->iType == XUI_EVENT_BLUR ) {
+			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
 			__xuiInputImeReset(pData);
 			pData->pHoverDecoration = NULL;
 			pData->pActiveDecoration = NULL;
+			if ( pBehavior != NULL && pBehavior->bCommitOnBlur ) {
+				(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT, pData->sText,
+					pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+			}
 		}
 		(void)__xuiInputDecorationSyncPadding(pWidget, pData);
 		return __xuiInputInvalidateText(pWidget);
@@ -2349,6 +2418,9 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			pData->iImeSelectionStart = __xuiInputUtf8Clamp(pData->sImeText, iTextSize, pEvent->iCompositionSelectionStart);
 			pData->iImeSelectionEnd = __xuiInputUtf8Clamp(pData->sImeText, iTextSize, pEvent->iCompositionSelectionEnd);
 			if ( pData->iImeSelectionEnd < pData->iImeSelectionStart ) pData->iImeSelectionEnd = pData->iImeSelectionStart;
+			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED, pData->sImeText,
+				pData->iSelectStart, pData->iSelectEnd, pData->iImeAnchorStart,
+				pData->iImeAnchorStart + iTextSize, 1);
 			return __xuiInputInvalidatePaint(pWidget) == XUI_OK ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 		}
 		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
@@ -2370,6 +2442,8 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		} else {
 			__xuiInputImeReset(pData);
 		}
+		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED, "",
+			pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
 		return __xuiInputInvalidatePaint(pWidget) == XUI_OK ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	default:
 		break;
@@ -2472,6 +2546,7 @@ static int __xuiInputInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 {
 	xui_input_data_t* pData;
 	const xui_input_desc_t* pDesc;
+	xui_edit_behavior_t tEditBehavior;
 	xui_theme_t tTheme;
 	xui_thickness_t tPadding;
 	xui_context pContext;
@@ -2519,6 +2594,13 @@ static int __xuiInputInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	(void)xuiWidgetSetTabStop(pWidget, 1);
 	__xuiInputSyncImeMode(pWidget, pData);
 	(void)xuiWidgetSetImeCandidateRect(pWidget, __xuiInputImeRect, NULL);
+	memset(&tEditBehavior, 0, sizeof(tEditBehavior));
+	tEditBehavior.iSize = sizeof(tEditBehavior);
+	tEditBehavior.iTabBehavior = XUI_EDIT_TAB_FOCUS;
+	tEditBehavior.iEnterBehavior = XUI_EDIT_ENTER_DEFAULT;
+	tEditBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
+	iRet = xuiInternalEditRegister(pWidget, &g_xuiInputEditAdapter, &tEditBehavior);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiInputInitEvents(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiInputInitMenu(pWidget, pData);
@@ -2580,6 +2662,7 @@ static void __xuiInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	if ( pData->sRedoText != NULL ) xrtFree(pData->sRedoText);
 	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
 	if ( pData->sImeDisplay != NULL ) xrtFree(pData->sImeDisplay);
+	if ( pData->sFocusText != NULL ) xrtFree(pData->sFocusText);
 	for ( i = 0; i < XUI_INPUT_MENU_COUNT; i++ ) {
 		if ( pData->arrMenuTitle[i] != NULL ) {
 			xrtFree(pData->arrMenuTitle[i]);
@@ -2799,8 +2882,13 @@ XUI_API int xuiInputIsReadonly(xui_widget pWidget)
 XUI_API int xuiInputSetError(xui_widget pWidget, int bError)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	int bNewError;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bError = (bError != 0);
+	bNewError = (bError != 0);
+	if ( pData->bError == bNewError ) return XUI_OK;
+	pData->bError = bNewError;
+	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_VALIDATION_CHANGED,
+		pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
 	return __xuiInputInvalidatePaint(pWidget);
 }
 
@@ -2814,9 +2902,17 @@ XUI_API int xuiInputSetSelection(xui_widget pWidget, int iStart, int iEnd)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	int iRet;
+	int iOldStart;
+	int iOldEnd;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldStart = pData->iSelectStart;
+	iOldEnd = pData->iSelectEnd;
 	iRet = __xuiInputSetSelectionData(pData, iStart, iEnd);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->iSelectStart != iOldStart || pData->iSelectEnd != iOldEnd ) {
+		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED,
+			pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+	}
 	return __xuiInputSyncCursor(pWidget, pData);
 }
 

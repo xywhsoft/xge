@@ -1136,6 +1136,7 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 	if ( __xuiContextWidgetContains(pWidget, pContext->pDragAdornerOwner) ) {
 		xuiInternalDragAdornerHide(pContext, pContext->pDragAdornerOwner);
 	}
+	xuiInternalDragTransferDetachWidget(pContext, pWidget);
 	if ( pContext->pDragAdornerWidget == pWidget ) {
 		pContext->pDragAdornerWidget = NULL;
 		pContext->pDragAdornerOwner = NULL;
@@ -1563,6 +1564,7 @@ XUI_API void xuiDestroy(xui_context pContext)
 		pContext->onImeDetach(pContext);
 		pContext->onImeDetach = NULL;
 	}
+	xuiInternalDragTransferShutdown(pContext);
 	if ( pContext->pRoot != NULL ) {
 		xuiWidgetDestroy(pContext->pRoot);
 		pContext->pRoot = NULL;

@@ -50,6 +50,10 @@ static uint64_t __xuiWidgetEventTypeMask(int iType)
 	case XUI_EVENT_DRAG_MOVE:
 	case XUI_EVENT_DRAG_END:
 	case XUI_EVENT_DRAG_CANCEL:
+	case XUI_EVENT_DRAG_ENTER:
+	case XUI_EVENT_DRAG_OVER:
+	case XUI_EVENT_DRAG_LEAVE:
+	case XUI_EVENT_DROP:
 		return XUI_EVENT_MASK_DRAG;
 	case XUI_EVENT_IME_COMPOSITION:
 		return XUI_EVENT_MASK_IME;
@@ -3169,6 +3173,16 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 
 	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
 	pContext = pWidget->pContext;
+	if ( __xuiWidgetMemoryValid(pWidget->pEditDelegate) &&
+	     pWidget->pEditDelegate->pEditOwner == pWidget ) {
+		pWidget->pEditDelegate->pEditOwner = NULL;
+	}
+	if ( __xuiWidgetMemoryValid(pWidget->pEditOwner) &&
+	     pWidget->pEditOwner->pEditDelegate == pWidget ) {
+		pWidget->pEditOwner->pEditDelegate = NULL;
+	}
+	pWidget->pEditDelegate = NULL;
+	pWidget->pEditOwner = NULL;
 	while ( (pChild = pWidget->pFirstChild) != NULL ) {
 		pWidget->pFirstChild = pChild->pNextSibling;
 		if ( pWidget->pFirstChild != NULL ) pWidget->pFirstChild->pPrevSibling = NULL;
@@ -4282,7 +4296,7 @@ XUI_API int xuiWidgetSetDragEnabled(xui_widget pWidget, int bEnabled)
 	pWidget->bDragEnabled = bEnabled ? 1 : 0;
 	if ( pWidget->bDragEnabled ) {
 		pWidget->iEventInterestMask |= XUI_EVENT_MASK_DRAG;
-	} else {
+	} else if ( !pWidget->bDropEnabled ) {
 		pWidget->iEventInterestMask &= ~XUI_EVENT_MASK_DRAG;
 	}
 	__xuiWidgetUpdateEventMasksToRoot(pWidget);
@@ -4292,6 +4306,24 @@ XUI_API int xuiWidgetSetDragEnabled(xui_widget pWidget, int bEnabled)
 XUI_API int xuiWidgetGetDragEnabled(xui_widget pWidget)
 {
 	return __xuiWidgetValid(pWidget) ? pWidget->bDragEnabled : 0;
+}
+
+XUI_API int xuiWidgetSetDropEnabled(xui_widget pWidget, int bEnabled)
+{
+	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pWidget->bDropEnabled = bEnabled ? 1 : 0;
+	if ( pWidget->bDropEnabled ) {
+		pWidget->iEventInterestMask |= XUI_EVENT_MASK_DRAG;
+	} else if ( !pWidget->bDragEnabled ) {
+		pWidget->iEventInterestMask &= ~XUI_EVENT_MASK_DRAG;
+	}
+	__xuiWidgetUpdateEventMasksToRoot(pWidget);
+	return XUI_OK;
+}
+
+XUI_API int xuiWidgetGetDropEnabled(xui_widget pWidget)
+{
+	return __xuiWidgetValid(pWidget) ? pWidget->bDropEnabled : 0;
 }
 
 static int __xuiInputImeRectEqual(xui_rect_t tA, xui_rect_t tB)
@@ -6726,6 +6758,7 @@ XUI_API int xuiDebugWidgetInspect(xui_widget pWidget, xui_debug_widget_info_t* p
 	pInfo->bFocusScope = pWidget->bFocusScope;
 	pInfo->bHitTestVisible = pWidget->bHitTestVisible;
 	pInfo->bDragEnabled = pWidget->bDragEnabled;
+	pInfo->bDropEnabled = pWidget->bDropEnabled;
 	pInfo->iImeMode = pWidget->iImeMode;
 	pInfo->iLayer = pWidget->tLayout.iLayer;
 	pInfo->iZIndex = pWidget->tLayout.iZIndex;

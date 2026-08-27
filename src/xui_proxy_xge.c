@@ -42,6 +42,126 @@ typedef struct xui_proxy_xge_input_transform_t {
 } xui_proxy_xge_input_transform_t;
 
 static xui_proxy_xge_input_transform_t g_xuiProxyXgeInputTransform;
+static xui_context g_xuiProxyXgeDragContext;
+static xui_data_object g_xuiProxyXgeDragData;
+static uint32_t __xuiProxyXgeMapModifiers(uint32_t iModifiers);
+
+static int __xuiProxyXgeResult(int iRet)
+{
+	switch ( iRet ) {
+	case XGE_OK: return XUI_OK;
+	case XGE_ERROR_INVALID_ARGUMENT: return XUI_ERROR_INVALID_ARGUMENT;
+	case XGE_ERROR_OUT_OF_MEMORY: return XUI_ERROR_OUT_OF_MEMORY;
+	case XGE_ERROR_BUFFER_TOO_SMALL: return XUI_ERROR_BUFFER_TOO_SMALL;
+	case XGE_ERROR_NOT_FOUND: return XUI_ERROR_NOT_FOUND;
+	case XGE_ERROR_UNSUPPORTED: return XUI_ERROR_UNSUPPORTED;
+	default: return XUI_ERROR;
+	}
+}
+
+static int __xuiProxyXgeDragRead(const char* sFormat, void* pOutput,
+	size_t iCapacity, size_t* pOutputSize, void* pUser)
+{
+	return __xuiProxyXgeResult(xgeDataObjectGet((xge_data_object)pUser,
+		sFormat, pOutput, iCapacity, pOutputSize));
+}
+
+static void __xuiProxyXgeDragRelease(void* pUser)
+{
+	xgeDataObjectRelease((xge_data_object)pUser);
+}
+
+static int __xuiProxyXgeDragDataWrap(xge_data_object pSource,
+	xui_data_object* ppData)
+{
+	xui_data_object pData;
+	const char* sFormat;
+	int iCount;
+	int i;
+	int iRet;
+
+	if ( pSource == NULL || ppData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppData = NULL;
+	iRet = xuiDataObjectCreate(&pData);
+	if ( iRet != XUI_OK ) return iRet;
+	iCount = xgeDataObjectFormatCount(pSource);
+	iRet = XUI_OK;
+	for ( i = 0; i < iCount; i++ ) {
+		sFormat = xgeDataObjectFormatAt(pSource, i);
+		if ( sFormat == NULL ) continue;
+		if ( xgeDataObjectAddRef(pSource) != XGE_OK ) {
+			iRet = XUI_ERROR_INVALID_ARGUMENT;
+			break;
+		}
+		iRet = xuiDataObjectSetProvider(pData, sFormat,
+			__xuiProxyXgeDragRead, __xuiProxyXgeDragRelease, pSource);
+		if ( iRet != XUI_OK ) {
+			xgeDataObjectRelease(pSource);
+			break;
+		}
+	}
+	if ( iRet != XUI_OK ) {
+		xuiDataObjectRelease(pData);
+		return iRet;
+	}
+	*ppData = pData;
+	return XUI_OK;
+}
+
+static uint32_t __xuiProxyXgeDragEvent(const xge_drag_event_t* pEvent,
+	void* pUser)
+{
+	xui_context pContext = (xui_context)pUser;
+	xui_proxy_xge_input_transform_t* pTransform = &g_xuiProxyXgeInputTransform;
+	uint32_t iEffect = XUI_DRAG_EFFECT_NONE;
+	int iX;
+	int iY;
+	int iType;
+	int iRet;
+
+	if ( pEvent == NULL || pContext == NULL ||
+		pTransform->pContext != pContext || !pTransform->bValid ) {
+		return XGE_DRAG_EFFECT_NONE;
+	}
+	iX = xuiInternalPixelFloor((pEvent->fX - (float)pTransform->tWindowRect.fX) *
+		(float)pTransform->tViewport.iW / (float)pTransform->tWindowRect.fW);
+	iY = xuiInternalPixelFloor((pEvent->fY - (float)pTransform->tWindowRect.fY) *
+		(float)pTransform->tViewport.iH / (float)pTransform->tWindowRect.fH);
+	if ( pEvent->iType == XGE_DRAG_EVENT_ENTER ) {
+		if ( g_xuiProxyXgeDragData != NULL ) {
+			xuiDataObjectRelease(g_xuiProxyXgeDragData);
+			g_xuiProxyXgeDragData = NULL;
+		}
+		iRet = __xuiProxyXgeDragDataWrap(pEvent->pData,
+			&g_xuiProxyXgeDragData);
+		if ( iRet != XUI_OK ) return XGE_DRAG_EFFECT_NONE;
+		iType = XUI_DRAG_EXTERNAL_ENTER;
+	} else if ( pEvent->iType == XGE_DRAG_EVENT_OVER ) {
+		iType = XUI_DRAG_EXTERNAL_OVER;
+	} else if ( pEvent->iType == XGE_DRAG_EVENT_LEAVE ) {
+		iType = XUI_DRAG_EXTERNAL_LEAVE;
+	} else if ( pEvent->iType == XGE_DRAG_EVENT_DROP ) {
+		iType = XUI_DRAG_EXTERNAL_DROP;
+	} else if ( pEvent->iType == XGE_DRAG_EVENT_CANCEL ) {
+		iType = XUI_DRAG_EXTERNAL_CANCEL;
+	} else {
+		return XGE_DRAG_EFFECT_NONE;
+	}
+	iRet = xuiDragExternalEvent(pContext, iType, iX, iY,
+		__xuiProxyXgeMapModifiers(pEvent->iModifiers),
+		(iType == XUI_DRAG_EXTERNAL_ENTER) ? g_xuiProxyXgeDragData : NULL,
+		pEvent->iAllowedEffects, pEvent->iSuggestedEffect, &iEffect);
+	if ( iType == XUI_DRAG_EXTERNAL_LEAVE ||
+		iType == XUI_DRAG_EXTERNAL_DROP ||
+		iType == XUI_DRAG_EXTERNAL_CANCEL ) {
+		if ( g_xuiProxyXgeDragData != NULL ) {
+			xuiDataObjectRelease(g_xuiProxyXgeDragData);
+			g_xuiProxyXgeDragData = NULL;
+		}
+	}
+	if ( iRet != XUI_OK ) return XGE_DRAG_EFFECT_NONE;
+	return iEffect;
+}
 
 static double __xuiProxyXgeClockSeconds(xui_proxy pProxy)
 {
@@ -2433,6 +2553,14 @@ static void __xuiProxyXgeDetachIme(xui_context pContext)
 	if ( g_xuiProxyXgeInputTransform.pContext == pContext ) {
 		memset(&g_xuiProxyXgeInputTransform, 0, sizeof(g_xuiProxyXgeInputTransform));
 	}
+	if ( g_xuiProxyXgeDragContext == pContext ) {
+		(void)xgeDragEventCallbackSet(NULL, NULL);
+		g_xuiProxyXgeDragContext = NULL;
+		if ( g_xuiProxyXgeDragData != NULL ) {
+			xuiDataObjectRelease(g_xuiProxyXgeDragData);
+			g_xuiProxyXgeDragData = NULL;
+		}
+	}
 	if ( g_xuiProxyXgeImeSnapshotText != NULL ) {
 		xrtFree(g_xuiProxyXgeImeSnapshotText);
 		g_xuiProxyXgeImeSnapshotText = NULL;
@@ -2824,6 +2952,10 @@ XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRec
 	g_xuiProxyXgeInputTransform.tWindowRect = tWindowRect;
 	g_xuiProxyXgeInputTransform.tViewport = tViewport;
 	g_xuiProxyXgeInputTransform.bValid = 1;
+	if ( g_xuiProxyXgeDragContext != pContext ) {
+		g_xuiProxyXgeDragContext = pContext;
+		(void)xgeDragEventCallbackSet(__xuiProxyXgeDragEvent, pContext);
+	}
 	return __xuiProxyXgePumpQueuedInput(pContext, tWindowRect, tViewport);
 }
 

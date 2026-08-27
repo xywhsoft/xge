@@ -272,6 +272,59 @@ static xui_rich_edit_data_t* __xuiRichEditData(xui_widget pWidget)
 	return pWidget != NULL ? (xui_rich_edit_data_t*)xuiWidgetGetTypeData(pWidget) : NULL;
 }
 
+static int __xuiRichEditAdapterSetText(xui_widget pWidget, const char* sText)
+{
+	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
+	if ( pData == NULL || sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiRichDocumentReplace(pData->pDocument, 0,
+		xuiRichDocumentGetLength(pData->pDocument), sText, &pData->tTypingStyle);
+}
+
+static const char* __xuiRichEditAdapterGetText(xui_widget pWidget)
+{
+	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
+	return (pData != NULL) ? xuiRichDocumentGetText(pData->pDocument) : NULL;
+}
+
+static int __xuiRichEditAdapterHasSelection(xui_widget pWidget)
+{
+	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
+	return (pData != NULL && pData->iAnchor != pData->iCaret) ? 1 : 0;
+}
+
+static int __xuiRichEditAdapterDeleteSelection(xui_widget pWidget)
+{
+	if ( !__xuiRichEditAdapterHasSelection(pWidget) ) return XUI_OK;
+	return xuiRichEditInsertText(pWidget, "");
+}
+
+static int __xuiRichEditAdapterCanUndo(xui_widget pWidget)
+{
+	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
+	return (pData != NULL) ? xuiRichDocumentCanUndo(pData->pDocument) : 0;
+}
+
+static int __xuiRichEditAdapterCanRedo(xui_widget pWidget)
+{
+	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
+	return (pData != NULL) ? xuiRichDocumentCanRedo(pData->pDocument) : 0;
+}
+
+static const xui_internal_edit_adapter_t g_xuiRichEditAdapter = {
+	XUI_EDIT_CAP_TEXT | XUI_EDIT_CAP_SELECTION | XUI_EDIT_CAP_CLIPBOARD |
+	XUI_EDIT_CAP_UNDO | XUI_EDIT_CAP_READONLY | XUI_EDIT_CAP_CARET_RECT |
+	XUI_EDIT_CAP_CONTEXT_MENU | XUI_EDIT_CAP_IME | XUI_EDIT_CAP_MULTILINE |
+	XUI_EDIT_CAP_FIND | XUI_EDIT_CAP_STRUCTURED,
+	__xuiRichEditAdapterSetText, __xuiRichEditAdapterGetText,
+	xuiRichEditSetSelection, xuiRichEditGetSelection,
+	__xuiRichEditAdapterHasSelection, xuiRichEditSelectAll,
+	xuiRichEditCopy, xuiRichEditCut, xuiRichEditPaste,
+	__xuiRichEditAdapterDeleteSelection, xuiRichEditUndo, xuiRichEditRedo,
+	__xuiRichEditAdapterCanUndo, __xuiRichEditAdapterCanRedo,
+	xuiRichEditSetReadonly, xuiRichEditIsReadonly,
+	xuiRichEditGetCursorRect, xuiRichEditOpenMenu
+};
+
 static int __xuiRichEditEndCellEdit(xui_widget pWidget, xui_rich_edit_data_t* pData, int bFocusParent)
 {
 	xui_widget pEditor;
@@ -1511,6 +1564,9 @@ static void __xuiRichEditNotifyState(xui_widget pWidget, xui_rich_edit_data_t* p
 		__xuiRichEditEmit(pWidget, pData, XUI_RICH_EDIT_EVENT_SELECTION_CHANGED, NULL);
 		(void)xuiWidgetNotifyAccessibility(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED,
 			XUI_RICH_ACCESSIBLE_ROOT_ID);
+		(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED, NULL,
+			xuiRichDocumentGetLength(pData->pDocument), pData->iAnchor,
+			pData->iCaret, 0, 0, 1);
 	}
 	if ( pData->fNotifiedScrollX != pData->fScrollX || pData->fNotifiedScrollY != pData->fScrollY ) {
 		pData->fNotifiedScrollX = pData->fScrollX;
@@ -1630,6 +1686,9 @@ static void __xuiRichEditDocumentChanged(xui_rich_document pDocument, const xui_
 			XUI_ACCESSIBLE_EVENT_TREE_CHANGED : XUI_ACCESSIBLE_EVENT_VALUE_CHANGED,
 		pChange != NULL ? pChange->iNodeId : XUI_RICH_ACCESSIBLE_ROOT_ID);
 	if ( pData->onChange != NULL ) pData->onChange(pWidget, pData->pDocument, pChange, pData->pChangeUser);
+	(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_TEXT_CHANGED, NULL,
+		xuiRichDocumentGetLength(pData->pDocument), pData->iAnchor,
+		pData->iCaret, 0, 0, 1);
 }
 
 static int __xuiRichEditDrawRect(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -2274,6 +2333,7 @@ static int __xuiRichEditListEnter(xui_widget pWidget, xui_rich_edit_data_t* pDat
 static int __xuiRichEditHandleKey(xui_widget pWidget, xui_rich_edit_data_t* pData, const xui_event_t* pEvent)
 {
 	const char* sText = xuiRichDocumentGetText(pData->pDocument);
+	const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
 	int iLength = xuiRichDocumentGetLength(pData->pDocument);
 	int iStart;
 	int iEnd;
@@ -2322,11 +2382,30 @@ static int __xuiRichEditHandleKey(xui_widget pWidget, xui_rich_edit_data_t* pDat
 		if ( bCtrl ) iEnd = iLength; else __xuiRichEditLineBounds(pWidget, pData, &iStart, &iEnd);
 		(void)__xuiRichEditMove(pWidget, pData, iEnd, bShift); return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_ENTER:
+		if ( pBehavior != NULL && pBehavior->iEnterBehavior == XUI_EDIT_ENTER_COMMIT ) {
+			(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMMIT, NULL,
+				iLength, pData->iAnchor, pData->iCaret, 0, 0, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( !pData->bReadonly ) (void)__xuiRichEditListEnter(pWidget, pData);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_TAB:
+		if ( pBehavior != NULL && pBehavior->iTabBehavior == XUI_EDIT_TAB_FOCUS ) return XUI_OK;
 		if ( !pData->bReadonly && __xuiRichEditListLevel(pData, bShift ? -1 : 1) == XUI_OK )
 			return XUI_EVENT_DISPATCH_STOP;
+		if ( !pData->bReadonly && pBehavior != NULL &&
+		     (pBehavior->iTabBehavior == XUI_EDIT_TAB_INSERT ||
+		      pBehavior->iTabBehavior == XUI_EDIT_TAB_INDENT) ) {
+			(void)xuiRichEditInsertText(pWidget, "\t");
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		return XUI_OK;
+	case XUI_KEY_ESCAPE:
+		if ( pBehavior != NULL && pBehavior->iEscapeBehavior != XUI_EDIT_ESCAPE_DEFAULT ) {
+			(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_CANCEL, NULL,
+				iLength, pData->iAnchor, pData->iCaret, 0, 0, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		return XUI_OK;
 	case XUI_KEY_BACKSPACE:
 		if ( pData->bReadonly ) return XUI_EVENT_DISPATCH_STOP;
@@ -2412,12 +2491,24 @@ static int __xuiRichEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	if ( pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_BLUR:
+		{
+			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
+			if ( pBehavior != NULL && pBehavior->bCommitOnBlur ) {
+				(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMMIT, NULL,
+					xuiRichDocumentGetLength(pData->pDocument), pData->iAnchor,
+					pData->iCaret, 0, 0, 1);
+			}
+		}
 		__xuiRichEditImeReset(pData);
 		pData->pPressedLink = NULL;
 		pData->pPressedObject = NULL;
 		pData->bDragging = 0;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_FOCUS:
+		{
+			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
+			if ( pBehavior != NULL && pBehavior->bSelectAllOnFocus ) (void)xuiRichEditSelectAll(pWidget);
+		}
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
@@ -2553,6 +2644,9 @@ static int __xuiRichEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			else if ( !pData->bImeActive ) __xuiRichEditSelection(pData, &pData->iImeStart, &pData->iImeEnd);
 			pData->bImeActive = 1; pData->iImeCursor = pEvent->iCompositionCursor;
 			(void)__xuiRichEditImeText(pData, pEvent->sText, pEvent->iTextSize);
+			(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED,
+				pData->sImeText, pEvent->iTextSize, pData->iAnchor, pData->iCaret,
+				pData->iImeStart, pData->iImeEnd, 1);
 			(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -2563,6 +2657,8 @@ static int __xuiRichEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			pData->bImeActive = 0; pData->iAnchor = iStart; pData->iCaret = iEnd;
 			(void)__xuiRichEditReplaceSelection(pWidget, pData, pEvent->sText);
 		} else __xuiRichEditImeReset(pData);
+		(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED,
+			NULL, 0, pData->iAnchor, pData->iCaret, 0, 0, 1);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_BOUNDS_CHANGED: pData->bLayoutDirty = 1; return XUI_OK;
 	default: break;
@@ -2943,6 +3039,7 @@ static int __xuiRichEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	xui_rich_edit_data_t* pData = (xui_rich_edit_data_t*)pTypeData;
 	const xui_rich_edit_desc_t* pDesc = (const xui_rich_edit_desc_t*)pCreateData;
 	xui_theme_t tTheme;
+	xui_edit_behavior_t tEditBehavior;
 	xui_rich_node pParagraph;
 	int iRet;
 	(void)pUser;
@@ -3000,6 +3097,13 @@ static int __xuiRichEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	(void)xuiWidgetSetFocusable(pWidget, 1);
 	(void)xuiWidgetSetImeMode(pWidget, XUI_IME_ENABLED);
 	(void)xuiWidgetSetImeCandidateRect(pWidget, __xuiRichEditImeRect, NULL);
+	memset(&tEditBehavior, 0, sizeof(tEditBehavior));
+	tEditBehavior.iSize = sizeof(tEditBehavior);
+	tEditBehavior.iTabBehavior = XUI_EDIT_TAB_INDENT;
+	tEditBehavior.iEnterBehavior = XUI_EDIT_ENTER_NEWLINE;
+	tEditBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
+	iRet = xuiInternalEditRegister(pWidget, &g_xuiRichEditAdapter, &tEditBehavior);
+	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetSetAccessibilityProvider(pWidget, __xuiRichEditAccessibleCount,
 		__xuiRichEditAccessibleGet, __xuiRichEditAccessibleAction, pData);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiRichEditEvent, NULL);

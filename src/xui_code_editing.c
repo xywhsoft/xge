@@ -1,6 +1,5 @@
 #include "xui_internal.h"
 
-#include <ctype.h>
 #include <string.h>
 
 static int __xuiCodeEditingWritable(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly)
@@ -56,12 +55,6 @@ static int __xuiCodeEditingAdjustOffsetForDelete(int iOffset, int iStart, int iE
 	return iStart;
 }
 
-static int __xuiCodeEditingWordChar(char c)
-{
-	unsigned char ch = (unsigned char)c;
-	return isalnum(ch) || ch == '_';
-}
-
 static char __xuiCodeEditingByteAt(xui_code_document pDocument, int iOffset)
 {
 	char c;
@@ -99,50 +92,29 @@ static int __xuiCodeEditingUtf8Prev(xui_code_document pDocument, int iLength, in
 static int __xuiCodeEditingWordLeft(xui_code_document pDocument, int iOffset)
 {
 	int iLength;
-	int iPrevious;
 
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iOffset < 0 ) iOffset = 0;
 	if ( iOffset > iLength ) iOffset = iLength;
-	iPrevious = __xuiCodeEditingUtf8Prev(pDocument, iLength, iOffset);
-	if ( iOffset > 0 && __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iPrevious)) ) {
-		while ( iOffset > 0 ) {
-			iPrevious = __xuiCodeEditingUtf8Prev(pDocument, iLength, iOffset);
-			if ( !__xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iPrevious)) ) break;
-			iOffset = iPrevious;
-		}
-	} else {
-		while ( iOffset > 0 ) {
-			iPrevious = __xuiCodeEditingUtf8Prev(pDocument, iLength, iOffset);
-			if ( __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iPrevious)) ) break;
-			iOffset = iPrevious;
-		}
-	}
-	return iOffset;
+	return xuiInternalTextWordPrevRead(__xuiCodeEditingUnicodeRead, pDocument,
+		iLength, iOffset, XUI_INTERNAL_WORD_IDENTIFIER);
 }
 
 static int __xuiCodeEditingWordRight(xui_code_document pDocument, int iOffset)
 {
+	xui_internal_word_kind_t iKind;
 	int iLength;
-	int iNext;
+	int iStart;
+	int iEnd;
 
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iOffset < 0 ) iOffset = 0;
 	if ( iOffset > iLength ) iOffset = iLength;
-	if ( iOffset < iLength && __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset)) ) {
-		while ( iOffset < iLength && __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset)) ) {
-			iNext = __xuiCodeEditingUtf8Next(pDocument, iLength, iOffset);
-			if ( iNext <= iOffset ) break;
-			iOffset = iNext;
-		}
-	} else {
-		while ( iOffset < iLength && !__xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset)) ) {
-			iNext = __xuiCodeEditingUtf8Next(pDocument, iLength, iOffset);
-			if ( iNext <= iOffset ) break;
-			iOffset = iNext;
-		}
-	}
-	return iOffset;
+	iKind = xuiInternalTextWordRangeRead(__xuiCodeEditingUnicodeRead, pDocument,
+		iLength, iOffset, XUI_INTERNAL_WORD_IDENTIFIER, &iStart, &iEnd);
+	if ( iKind == XUI_INTERNAL_WORD_TEXT && iStart <= iOffset && iEnd > iOffset ) return iEnd;
+	return xuiInternalTextWordNextRead(__xuiCodeEditingUnicodeRead, pDocument,
+		iLength, iOffset, XUI_INTERNAL_WORD_IDENTIFIER);
 }
 
 XUI_API int xuiCodeEditingInsertText(xui_code_document pDocument, xui_code_selection_model pSelection, const char* sText, int bReadonly)

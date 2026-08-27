@@ -399,6 +399,24 @@ extern "C" {
 #define XGE_INPUT_EVENT_FLAG_NATIVE_IME	0x00000002u
 #define XGE_INPUT_EVENT_FLAG_SYNTHETIC	0x00000004u
 
+#define XGE_DRAG_EFFECT_NONE	0x00000000u
+#define XGE_DRAG_EFFECT_COPY	0x00000001u
+#define XGE_DRAG_EFFECT_MOVE	0x00000002u
+#define XGE_DRAG_EFFECT_LINK	0x00000004u
+
+#define XGE_DRAG_EVENT_NONE		0
+#define XGE_DRAG_EVENT_ENTER		1
+#define XGE_DRAG_EVENT_OVER		2
+#define XGE_DRAG_EVENT_LEAVE		3
+#define XGE_DRAG_EVENT_DROP		4
+#define XGE_DRAG_EVENT_COMPLETE	5
+#define XGE_DRAG_EVENT_CANCEL		6
+
+#define XGE_DATA_FORMAT_TEXT_UTF8	"text/plain;charset=utf-8"
+#define XGE_DATA_FORMAT_URI_LIST	"text/uri-list"
+#define XGE_DATA_FORMAT_FILE_LIST	"application/x-xge-file-list;encoding=utf-8"
+#define XGE_DATA_FORMAT_HTML		"text/html"
+
 /* Windows IME presentation levels. Other platforms may expose only NATIVE. */
 #define XGE_IME_MODE_NATIVE		0
 #define XGE_IME_MODE_COMPOSITION	1
@@ -1391,6 +1409,38 @@ typedef struct xge_event_t {
 	void* pData;
 } xge_event_t;
 
+typedef struct xge_data_object_t xge_data_object_t;
+typedef xge_data_object_t* xge_data_object;
+
+typedef int (*xge_data_provider_proc)(const char* sFormat, void* pOutput,
+	size_t iCapacity, size_t* pOutputSize, void* pUser);
+typedef void (*xge_data_provider_free_proc)(void* pUser);
+
+typedef struct xge_drag_drop_caps_t {
+	uint32_t iSize;
+	int bNativeDragIn;
+	int bNativeDragOut;
+	int bCustomFormats;
+	int bInternalOnly;
+} xge_drag_drop_caps_t;
+
+typedef struct xge_drag_event_t {
+	uint32_t iSize;
+	int iType;
+	uint64_t iSequence;
+	double fTime;
+	float fX;
+	float fY;
+	uint32_t iModifiers;
+	uint32_t iAllowedEffects;
+	uint32_t iSuggestedEffect;
+	uint32_t iEffect;
+	xge_data_object pData;
+} xge_drag_event_t;
+
+typedef uint32_t (*xge_drag_event_proc)(const xge_drag_event_t* pEvent,
+	void* pUser);
+
 typedef struct xge_scene_t xge_scene_t;
 typedef xge_scene_t* xge_scene;
 typedef int (*xge_scene_lifecycle_proc)(xge_scene pScene);
@@ -1557,6 +1607,31 @@ XGE_API xge_graphics_backend_t xgeGraphicsBackendGet(void);
 XGE_API int xgeGpuCapsGet(xge_gpu_caps_t* pCaps);
 XGE_API int xgePlatformCapsGet(xge_platform_caps_t* pCaps);
 XGE_API int xgePlatformRuntimeGet(xge_platform_runtime_t* pRuntime);
+/* Borrowed backend-native handle for the primary XGE window. The concrete
+ * type is platform-specific; callers own all casts and native operations. */
+XGE_API void* xgePlatformNativeHandle(void);
+XGE_API int xgeDragDropCapsGet(xge_drag_drop_caps_t* pCaps);
+XGE_API int xgeDataObjectCreate(xge_data_object* ppData);
+XGE_API int xgeDataObjectAddRef(xge_data_object pData);
+XGE_API void xgeDataObjectRelease(xge_data_object pData);
+XGE_API int xgeDataObjectSet(xge_data_object pData, const char* sFormat,
+	const void* pValue, size_t iSize);
+XGE_API int xgeDataObjectSetProvider(xge_data_object pData,
+	const char* sFormat, xge_data_provider_proc onRead,
+	xge_data_provider_free_proc onFree, void* pUser);
+XGE_API int xgeDataObjectFormatCount(xge_data_object pData);
+XGE_API const char* xgeDataObjectFormatAt(xge_data_object pData, int iIndex);
+XGE_API int xgeDataObjectHas(xge_data_object pData, const char* sFormat);
+XGE_API int xgeDataObjectGet(xge_data_object pData, const char* sFormat,
+	void* pOutput, size_t iCapacity, size_t* pOutputSize);
+XGE_API int xgeDragEventCallbackSet(xge_drag_event_proc onEvent, void* pUser);
+/* Dispatches a platform drag event synchronously. Custom window backends use
+ * this entry point so effect negotiation completes before returning to the OS. */
+XGE_API uint32_t xgeDragEventDispatch(const xge_drag_event_t* pEvent);
+XGE_API int xgeDragBegin(xge_data_object pData, uint32_t iAllowedEffects,
+	uint32_t iSuggestedEffect);
+XGE_API int xgeDragCancel(void);
+XGE_API int xgeDragIsActive(void);
 XGE_API int xgeGraphicsShaderHeaderGet(int iBackend, char* sBuffer, int iSize);
 XGE_API int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, int iSize);
 XGE_API int xgeGraphicsMappingGet(int iBackend, xge_graphics_mapping_t* pMapping);

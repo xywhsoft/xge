@@ -36,7 +36,9 @@ typedef enum xui_result_t {
 	XUI_ERROR_GPU_FAILED = -9,
 	XUI_ERROR_RESOURCE_FAILED = -10,
 	XUI_ERROR_BUFFER_TOO_SMALL = -11,
-	XUI_ERROR_LAYOUT_UNSTABLE = -12
+	XUI_ERROR_LAYOUT_UNSTABLE = -12,
+	XUI_ERROR_NOT_FOUND = -13,
+	XUI_ERROR_INVALID_STATE = -14
 } xui_result_t;
 
 typedef enum xui_error_stage_t {
@@ -439,6 +441,26 @@ typedef struct xui_language_text_t {
 #define XUI_EVENT_BOUNDS_CHANGED	25
 #define XUI_EVENT_VISIBLE_CHANGED	26
 #define XUI_EVENT_ENABLED_CHANGED	27
+#define XUI_EVENT_DRAG_ENTER		28
+#define XUI_EVENT_DRAG_OVER		29
+#define XUI_EVENT_DRAG_LEAVE		30
+#define XUI_EVENT_DROP			31
+
+#define XUI_DRAG_EFFECT_NONE	0x00000000u
+#define XUI_DRAG_EFFECT_COPY	0x00000001u
+#define XUI_DRAG_EFFECT_MOVE	0x00000002u
+#define XUI_DRAG_EFFECT_LINK	0x00000004u
+
+#define XUI_DRAG_EXTERNAL_ENTER	1
+#define XUI_DRAG_EXTERNAL_OVER	2
+#define XUI_DRAG_EXTERNAL_LEAVE	3
+#define XUI_DRAG_EXTERNAL_DROP	4
+#define XUI_DRAG_EXTERNAL_CANCEL	5
+
+#define XUI_DATA_FORMAT_TEXT_UTF8	"text/plain;charset=utf-8"
+#define XUI_DATA_FORMAT_URI_LIST	"text/uri-list"
+#define XUI_DATA_FORMAT_FILE_LIST	"application/x-xge-file-list;encoding=utf-8"
+#define XUI_DATA_FORMAT_HTML		"text/html"
 
 #define XUI_CURSOR_INHERIT		0
 #define XUI_CURSOR_ARROW			1
@@ -643,6 +665,41 @@ typedef struct xui_language_text_t {
 #define XUI_INPUT_DECORATION_VISIBLE_NOT_EMPTY		1
 #define XUI_INPUT_DECORATION_VISIBLE_FOCUSED		2
 #define XUI_INPUT_DECORATION_VISIBLE_FOCUSED_NOT_EMPTY	3
+
+#define XUI_EDIT_CAP_TEXT		0x00000001u
+#define XUI_EDIT_CAP_SELECTION		0x00000002u
+#define XUI_EDIT_CAP_CLIPBOARD		0x00000004u
+#define XUI_EDIT_CAP_UNDO		0x00000008u
+#define XUI_EDIT_CAP_READONLY		0x00000010u
+#define XUI_EDIT_CAP_CARET_RECT		0x00000020u
+#define XUI_EDIT_CAP_CONTEXT_MENU	0x00000040u
+#define XUI_EDIT_CAP_IME		0x00000080u
+#define XUI_EDIT_CAP_MULTILINE		0x00000100u
+#define XUI_EDIT_CAP_FIND		0x00000200u
+#define XUI_EDIT_CAP_STRUCTURED		0x00000400u
+#define XUI_EDIT_CAP_FORM_VALUE		0x00000800u
+#define XUI_EDIT_CAP_TERMINAL		0x00001000u
+#define XUI_EDIT_CAP_CODE		0x00002000u
+
+#define XUI_EDIT_TAB_DEFAULT	0
+#define XUI_EDIT_TAB_FOCUS	1
+#define XUI_EDIT_TAB_INSERT	2
+#define XUI_EDIT_TAB_INDENT	3
+
+#define XUI_EDIT_ENTER_DEFAULT	0
+#define XUI_EDIT_ENTER_COMMIT	1
+#define XUI_EDIT_ENTER_NEWLINE	2
+
+#define XUI_EDIT_ESCAPE_DEFAULT	0
+#define XUI_EDIT_ESCAPE_CANCEL	1
+#define XUI_EDIT_ESCAPE_REVERT	2
+
+#define XUI_EDIT_EVENT_TEXT_CHANGED	1
+#define XUI_EDIT_EVENT_SELECTION_CHANGED	2
+#define XUI_EDIT_EVENT_COMPOSITION_CHANGED	3
+#define XUI_EDIT_EVENT_COMMIT	4
+#define XUI_EDIT_EVENT_CANCEL	5
+#define XUI_EDIT_EVENT_VALIDATION_CHANGED	6
 
 #define XUI_NUMERIC_INPUT_BUTTON_NONE	0
 #define XUI_NUMERIC_INPUT_BUTTON_UP	1
@@ -2770,6 +2827,19 @@ typedef void (*xui_icon_picker_change_proc)(xui_widget_t* pWidget, uint32_t iOld
 typedef int (*xui_icon_picker_format_proc)(xui_widget_t* pWidget, xui_icon_t* pIcon, char* sBuffer, int iCapacity, void* pUser);
 typedef void (*xui_date_picker_proc)(xui_widget_t* pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser);
 typedef void (*xui_input_change_proc)(xui_widget_t* pWidget, const char* sText, void* pUser);
+typedef struct xui_edit_event_t {
+	uint32_t iSize;
+	int iType;
+	/* Document-backed controls may leave sText NULL; iTextSize remains authoritative. */
+	const char* sText;
+	int iTextSize;
+	int iSelectionStart;
+	int iSelectionEnd;
+	int iCompositionStart;
+	int iCompositionEnd;
+	int bValid;
+} xui_edit_event_t;
+typedef int (*xui_edit_event_proc)(xui_widget_t* pWidget, const xui_edit_event_t* pEvent, void* pUser);
 typedef void (*xui_input_decoration_click_proc)(xui_widget_t* pWidget, xui_input_decoration_t* pDecoration, void* pUser);
 typedef int (*xui_input_decoration_paint_proc)(xui_widget_t* pWidget, xui_input_decoration_t* pDecoration, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, void* pUser);
 typedef void (*xui_tag_input_change_proc)(xui_widget_t* pWidget, int iTagCount, void* pUser);
@@ -2796,6 +2866,15 @@ typedef struct xui_input_decoration_desc_t {
 	xui_input_decoration_paint_proc onPaint;
 	void* pUser;
 } xui_input_decoration_desc_t;
+
+typedef struct xui_edit_behavior_t {
+	uint32_t iSize;
+	int iTabBehavior;
+	int iEnterBehavior;
+	int iEscapeBehavior;
+	int bSelectAllOnFocus;
+	int bCommitOnBlur;
+} xui_edit_behavior_t;
 
 typedef struct xui_input_desc_t {
 	uint32_t iSize;
@@ -4942,6 +5021,7 @@ typedef struct xui_painter_t xui_painter_t;
 typedef struct xui_resource_t xui_resource_t;
 typedef struct xui_event_t xui_event_t;
 typedef struct xui_path_t xui_path_t;
+typedef struct xui_data_object_t xui_data_object_t;
 
 typedef xui_context_t* xui_context;
 typedef xui_language_t* xui_language;
@@ -4956,6 +5036,7 @@ typedef xui_text_layout_t* xui_text_layout;
 typedef xui_painter_t* xui_painter;
 typedef xui_resource_t* xui_resource;
 typedef xui_path_t* xui_path;
+typedef xui_data_object_t* xui_data_object;
 typedef xui_msgbox_t* xui_msgbox;
 typedef xui_file_dialog_t* xui_file_dialog;
 typedef xui_msgtip_t* xui_msgtip;
@@ -4977,6 +5058,21 @@ typedef xui_icon_category_t* xui_icon_category;
 typedef xui_icon_t* xui_icon;
 typedef uint32_t xui_icon_id;
 typedef uint64_t xui_document_node_id_t;
+
+typedef int (*xui_data_provider_proc)(const char* sFormat, void* pOutput,
+	size_t iCapacity, size_t* pOutputSize, void* pUser);
+typedef void (*xui_data_provider_free_proc)(void* pUser);
+
+typedef struct xui_drag_event_data_t {
+	uint32_t iSize;
+	xui_data_object pData;
+	xui_widget pSource;
+	xui_widget pTarget;
+	uint32_t iAllowedEffects;
+	uint32_t iSuggestedEffect;
+	uint32_t iEffect;
+	int bExternal;
+} xui_drag_event_data_t;
 
 typedef struct xui_accessible_node_t {
 	uint32_t iSize;
@@ -5373,6 +5469,7 @@ typedef struct xui_debug_widget_info_t {
 	int bFocusScope;
 	int bHitTestVisible;
 	int bDragEnabled;
+	int bDropEnabled;
 	int iImeMode;
 	int iLayer;
 	int iZIndex;
@@ -5589,6 +5686,28 @@ XUI_API const char* xuiTranslate(xui_context pContext, int iTextId);
 XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy);
 XUI_API int xuiGetProxy(xui_context pContext, xui_proxy_t* pProxy);
 XUI_API int xuiGetProxyCaps(xui_context pContext, xui_proxy_caps_t* pCaps);
+XUI_API int xuiDataObjectCreate(xui_data_object* ppData);
+XUI_API int xuiDataObjectAddRef(xui_data_object pData);
+XUI_API void xuiDataObjectRelease(xui_data_object pData);
+XUI_API int xuiDataObjectSet(xui_data_object pData, const char* sFormat,
+	const void* pValue, size_t iSize);
+XUI_API int xuiDataObjectSetProvider(xui_data_object pData,
+	const char* sFormat, xui_data_provider_proc onRead,
+	xui_data_provider_free_proc onFree, void* pUser);
+XUI_API int xuiDataObjectFormatCount(xui_data_object pData);
+XUI_API const char* xuiDataObjectFormatAt(xui_data_object pData, int iIndex);
+XUI_API int xuiDataObjectHas(xui_data_object pData, const char* sFormat);
+XUI_API int xuiDataObjectGet(xui_data_object pData, const char* sFormat,
+	void* pOutput, size_t iCapacity, size_t* pOutputSize);
+XUI_API int xuiDragBegin(xui_context pContext, xui_widget pSource,
+	xui_data_object pData, uint32_t iAllowedEffects, uint32_t iSuggestedEffect);
+XUI_API int xuiDragAccept(xui_context pContext, uint32_t iEffect);
+XUI_API int xuiDragCancel(xui_context pContext);
+XUI_API int xuiDragIsActive(xui_context pContext);
+XUI_API uint32_t xuiDragGetEffect(xui_context pContext);
+XUI_API int xuiDragExternalEvent(xui_context pContext, int iType,
+	int iX, int iY, uint32_t iModifiers, xui_data_object pData,
+	uint32_t iAllowedEffects, uint32_t iSuggestedEffect, uint32_t* pEffect);
 XUI_API int xuiUpdate(xui_context pContext, float fDelta);
 XUI_API int xuiSetViewportSize(xui_context pContext, int iWidth, int iHeight);
 XUI_API xui_size_t xuiGetViewportSize(xui_context pContext);
@@ -6432,6 +6551,34 @@ XUI_API int xuiCodeEditSetExpandTabs(xui_widget pWidget, int bExpandTabs);
 XUI_API int xuiCodeEditGetExpandTabs(xui_widget pWidget);
 XUI_API int xuiCodeEditOpenMenu(xui_widget pWidget, float fX, float fY);
 XUI_API const char* xuiCodeEditGetLastError(xui_widget pWidget);
+
+/*
+ * Common editing surface contract. Text-control offsets are UTF-8 byte offsets;
+ * Terminal selection offsets encode line * columns + column. Caret rectangles
+ * are widget-local. These APIs do not replace type-specific structured data APIs.
+ */
+XUI_API uint32_t xuiEditGetCapabilities(xui_widget pWidget);
+XUI_API int xuiEditSetEvent(xui_widget pWidget, xui_edit_event_proc onEvent, void* pUser);
+XUI_API int xuiEditSetBehavior(xui_widget pWidget, const xui_edit_behavior_t* pBehavior);
+XUI_API int xuiEditGetBehavior(xui_widget pWidget, xui_edit_behavior_t* pBehavior);
+XUI_API int xuiEditSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiEditGetText(xui_widget pWidget);
+XUI_API int xuiEditSetSelection(xui_widget pWidget, int iStart, int iEnd);
+XUI_API int xuiEditGetSelection(xui_widget pWidget, int* pStart, int* pEnd);
+XUI_API int xuiEditHasSelection(xui_widget pWidget);
+XUI_API int xuiEditSelectAll(xui_widget pWidget);
+XUI_API int xuiEditCopy(xui_widget pWidget);
+XUI_API int xuiEditCut(xui_widget pWidget);
+XUI_API int xuiEditPaste(xui_widget pWidget);
+XUI_API int xuiEditDeleteSelection(xui_widget pWidget);
+XUI_API int xuiEditUndo(xui_widget pWidget);
+XUI_API int xuiEditRedo(xui_widget pWidget);
+XUI_API int xuiEditCanUndo(xui_widget pWidget);
+XUI_API int xuiEditCanRedo(xui_widget pWidget);
+XUI_API int xuiEditSetReadonly(xui_widget pWidget, int bReadonly);
+XUI_API int xuiEditIsReadonly(xui_widget pWidget);
+XUI_API xui_rect_t xuiEditGetCaretRect(xui_widget pWidget);
+XUI_API int xuiEditOpenContextMenu(xui_widget pWidget, float fX, float fY);
 
 XUI_API xui_widget_type xuiInputGetType(xui_context pContext);
 XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_input_desc_t* pDesc);
@@ -8769,6 +8916,8 @@ XUI_API int xuiWidgetSetDefaultAction(xui_widget pWidget, xui_widget_action_proc
 XUI_API int xuiWidgetSetCancelAction(xui_widget pWidget, xui_widget_action_proc onAction, void* pUser);
 XUI_API int xuiWidgetSetDragEnabled(xui_widget pWidget, int bEnabled);
 XUI_API int xuiWidgetGetDragEnabled(xui_widget pWidget);
+XUI_API int xuiWidgetSetDropEnabled(xui_widget pWidget, int bEnabled);
+XUI_API int xuiWidgetGetDropEnabled(xui_widget pWidget);
 XUI_API int xuiWidgetSetImeMode(xui_widget pWidget, int iImeMode);
 XUI_API int xuiWidgetGetImeMode(xui_widget pWidget);
 XUI_API int xuiWidgetSetImeCandidateRect(xui_widget pWidget, xui_widget_ime_rect_proc onRect, void* pUser);

@@ -75,6 +75,14 @@ static void __xgeWin32ApplyDllWindowIcon(void)
 #endif
 #include "src/xge_gl.h"
 
+static uint32_t __xgeDragDispatchNative(int iType, float fX, float fY,
+	uint32_t iModifiers, xge_data_object pData, uint32_t iAllowedEffects,
+	uint32_t iSuggestedEffect);
+static void __xgeDragDropSokolFiles(const sapp_event* pEvent);
+static void __xgeDragDropPlatformInit(void);
+static void __xgeDragDropPlatformUnit(void);
+static int __xgeDragDropPlatformBegin(void);
+
 #ifndef GL_DST_COLOR
 	#define GL_DST_COLOR 0x0306
 #endif
@@ -1496,6 +1504,7 @@ static void __xgeSokolInit(void)
 	#if defined(_WIN32) || defined(_WIN64)
 		__xgeImeInstallWin32();
 		__xgeWin32ApplyDllWindowIcon();
+		__xgeDragDropPlatformInit();
 	#endif
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
@@ -1611,6 +1620,7 @@ static void __xgeSokolFrame(void)
 static void __xgeSokolCleanup(void)
 {
 	#if defined(_WIN32) || defined(_WIN64)
+		__xgeDragDropPlatformUnit();
 		__xgeImeUninstallWin32();
 	#endif
 	__xgeShapeExRendererUnit();
@@ -1835,6 +1845,11 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 			tEvent.fY = pEvent->mouse_y;
 			tEvent.fDX = pEvent->mouse_dx;
 			tEvent.fDY = pEvent->mouse_dy;
+			break;
+
+		case SAPP_EVENTTYPE_FILES_DROPPED:
+			__xgeRenderRequestInternal();
+			__xgeDragDropSokolFiles(pEvent);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
@@ -2192,6 +2207,11 @@ sapp_desc __xgeMakeSokolDesc(void)
 	objDesc.sample_count = 1;
 	objDesc.swap_interval = ((g_xge.objDesc.iFlags & XGE_INIT_VSYNC) != 0) ? 1 : 0;
 	objDesc.enable_clipboard = true;
+	#if defined(_WIN32) || defined(_WIN64)
+		objDesc.enable_dragndrop = false;
+	#else
+		objDesc.enable_dragndrop = true;
+	#endif
 	#if !defined(_WIN32) && !defined(_WIN64)
 		objDesc.clipboard_size = 1024 * 1024;
 	#endif
@@ -2203,12 +2223,14 @@ sapp_desc __xgeMakeSokolDesc(void)
 
 
 static void __xgeEmojiGlobalClear(void);
+static void __xgeDragDropUnit(void);
 
 #include "xge_core.c"
 #if XGE_HAS_DEBUGMODE
 #include "xge_debug.c"
 #endif
 #include "xge_resource.c"
+#include "xge_drag_drop.c"
 #include "xge_miniprogram.c"
 #include "xge_egl.c"
 #include "xge_audio.c"

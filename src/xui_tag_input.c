@@ -884,7 +884,7 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
 			iHit = __xuiTagInputCloseHit(pWidget, pData, pEvent->fX, pEvent->fY);
-			if ( iHit >= 0 ) {
+			if ( iHit >= 0 && pData->pInput != NULL && !xuiInputIsReadonly(pData->pInput) ) {
 				pData->iActiveClose = iHit;
 				pData->iHoverClose = iHit;
 				(void)xuiSetPointerCapture(pContext, pWidget);
@@ -929,6 +929,9 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pEvent->pTarget != pWidget ) {
 			break;
 		}
+		if ( pData->pInput != NULL && xuiInputIsReadonly(pData->pInput) ) {
+			return XUI_OK;
+		}
 		if ( pEvent->iKey == XUI_KEY_ENTER ) {
 			iRet = xuiTagInputCommit(pWidget);
 			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
@@ -945,6 +948,7 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pEvent->pTarget != pWidget ) {
 			break;
 		}
+		if ( pData->pInput != NULL && xuiInputIsReadonly(pData->pInput) ) return XUI_OK;
 		if ( pEvent->iTextSize > 0 ) {
 			for ( iHit = 0; iHit < pEvent->iTextSize; iHit++ ) {
 				if ( __xuiTagInputDelimiter(pEvent->sText[iHit]) ) {
@@ -996,6 +1000,7 @@ static int __xuiTagInputChildKeyDown(xui_widget pInput, const xui_event_t* pEven
 	if ( pData == NULL || pEvent == NULL ) {
 		return XUI_OK;
 	}
+	if ( xuiInputIsReadonly(pInput) ) return XUI_OK;
 	if ( pEvent->iKey == XUI_KEY_ENTER ) {
 		iRet = xuiTagInputCommit(pTagInput);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
@@ -1167,10 +1172,20 @@ static int __xuiTagInputCreateInputChild(xui_widget pWidget, xui_tag_input_data_
 	if ( iRet == XUI_OK ) iRet = xuiWidgetGetEventHandler(pData->pInput, XUI_EVENT_KEY_DOWN, &pData->onInputKeyDown, &pData->pInputKeyDownUser);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pInput, XUI_EVENT_KEY_DOWN, __xuiTagInputChildKeyDown, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pInput);
+	if ( iRet == XUI_OK ) iRet = xuiInternalEditDelegate(pWidget, pData->pInput);
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pData->pInput);
 		pData->pInput = NULL;
 		return iRet;
+	}
+	{
+		xui_edit_behavior_t tBehavior;
+		memset(&tBehavior, 0, sizeof(tBehavior));
+		tBehavior.iSize = sizeof(tBehavior);
+		tBehavior.iTabBehavior = XUI_EDIT_TAB_FOCUS;
+		tBehavior.iEnterBehavior = XUI_EDIT_ENTER_COMMIT;
+		tBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
+		(void)xuiEditSetBehavior(pWidget, &tBehavior);
 	}
 	return __xuiTagInputSyncInputStyle(pWidget, pData);
 }

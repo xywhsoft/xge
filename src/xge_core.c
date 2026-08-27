@@ -87,6 +87,7 @@ void xgeUnit(void)
 	if ( g_xge.bInitialized == 0 ) {
 		return;
 	}
+	__xgeDragDropUnit();
 	g_xge.bInitialized = 0;
 	g_xge.bRunning = 0;
 	__xgeSceneClear();
@@ -470,6 +471,32 @@ int xgePlatformRuntimeGet(xge_platform_runtime_t* pRuntime)
 	pRuntime->iFramebufferHeight = (g_xge.iFramebufferHeight > 0) ? g_xge.iFramebufferHeight : g_xge.iHeight;
 	pRuntime->fDpiScale = (g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f;
 	return XGE_OK;
+}
+
+void* xgePlatformNativeHandle(void)
+{
+	xge_platform_backend_t tPlatform;
+
+	if ( (g_xge.bInitialized == 0) || (g_xge.bSokolRunning == 0) ) return NULL;
+	tPlatform = xgePlatformBackendGet();
+	if ( tPlatform.iType != XGE_PLATFORM_BACKEND_SOKOL ) return NULL;
+#if defined(_WIN32) || defined(_WIN64)
+	return (void*)sapp_win32_get_hwnd();
+#elif defined(__EMSCRIPTEN__)
+	return NULL;
+#elif defined(__ANDROID__)
+	return (void*)sapp_android_get_native_activity();
+#elif defined(__APPLE__)
+	#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	return (void*)sapp_ios_get_window();
+	#else
+	return (void*)sapp_macos_get_window();
+	#endif
+#elif defined(__linux__) && !defined(SOKOL_WAYLAND)
+	return (void*)sapp_x11_get_window();
+#else
+	return NULL;
+#endif
 }
 
 xge_graphics_backend_t xgeGraphicsBackendDefault(void)

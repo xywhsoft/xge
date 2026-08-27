@@ -37,6 +37,8 @@ typedef struct xui_text_edit_data_t {
 	int iImeTextCapacity;
 	char* sImeDisplay;
 	int iImeDisplayCapacity;
+	char* sFocusText;
+	int iFocusTextCapacity;
 	char* sFindPattern;
 	int iFindPatternCapacity;
 	char* sFindReplacement;
@@ -140,6 +142,19 @@ typedef struct xui_text_edit_data_t {
 	xui_rect_t tTextRect;
 	xui_rect_t tCursorRect;
 } xui_text_edit_data_t;
+
+static int __xuiTextEditEditSetText(xui_widget pWidget, const char* sText);
+
+static const xui_internal_edit_adapter_t g_xuiTextEditAdapter = {
+	XUI_EDIT_CAP_TEXT | XUI_EDIT_CAP_SELECTION | XUI_EDIT_CAP_CLIPBOARD |
+	XUI_EDIT_CAP_UNDO | XUI_EDIT_CAP_READONLY | XUI_EDIT_CAP_CARET_RECT |
+	XUI_EDIT_CAP_CONTEXT_MENU | XUI_EDIT_CAP_IME | XUI_EDIT_CAP_MULTILINE,
+	__xuiTextEditEditSetText, xuiTextEditGetText, xuiTextEditSetSelection, xuiTextEditGetSelection,
+	xuiTextEditHasSelection, xuiTextEditSelectAll, xuiTextEditCopy, xuiTextEditCut,
+	xuiTextEditPaste, xuiTextEditDeleteSelection, xuiTextEditUndo, xuiTextEditRedo,
+	xuiTextEditCanUndo, xuiTextEditCanRedo, xuiTextEditSetReadonly, xuiTextEditIsReadonly,
+	xuiTextEditGetCursorRect, xuiTextEditOpenMenu
+};
 
 static void __xuiTextEditFindWindowApplyLanguage(xui_widget pTextEdit, xui_text_edit_data_t* pData);
 static int __xuiTextEditUpdate(xui_widget pWidget, float fDelta, void* pUser);
@@ -821,6 +836,9 @@ static void __xuiTextEditNotifyChange(xui_widget pWidget, xui_text_edit_data_t* 
 	if ( pData->onChange != NULL ) {
 		pData->onChange(pWidget, (pData->sText != NULL) ? pData->sText : "", pData->pChangeUser);
 	}
+	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_TEXT_CHANGED,
+		(pData->sText != NULL) ? pData->sText : "", pData->iSelectStart,
+		pData->iSelectEnd, 0, 0, 1);
 }
 
 static int __xuiTextEditLineReserve(xui_text_edit_data_t* pData, int iCapacity)
@@ -943,39 +961,41 @@ static int __xuiTextEditAddLine(xui_widget pWidget, xui_text_edit_data_t* pData,
 
 static int __xuiTextEditBuildWrappedSegment(xui_widget pWidget, xui_text_edit_data_t* pData, xui_font pFont, int iStart, int iEnd, float fMaxWidth)
 {
-	xui_vec2_t tSize;
-	int iLineStart;
-	int iPos;
-	int iPrev;
-	int iNext;
+	xui_text_layout_desc_t tDesc;
+	xui_text_line_t tLine;
+	xui_text_layout pLayout;
+	xui_context pContext;
+	int i;
 	int iRet;
 
 	if ( (iStart >= iEnd) || !pData->bWordWrap || (fMaxWidth <= 16.0f) ) {
 		return __xuiTextEditAddLine(pWidget, pData, pFont, iStart, iEnd);
 	}
-	iLineStart = iStart;
-	while ( iLineStart < iEnd ) {
-		iPos = iLineStart;
-		iPrev = iLineStart;
-		while ( iPos < iEnd ) {
-			iNext = __xuiTextEditUtf8Next(pData->sText, iEnd, iPos);
-			tSize = __xuiTextEditMeasureRange(pWidget, pData, pFont, iLineStart, iNext);
-			if ( (tSize.fX > fMaxWidth) && (iPrev > iLineStart) ) {
-				break;
-			}
-			iPrev = iNext;
-			iPos = iNext;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sText = pData->sText + iStart;
+	tDesc.iTextSize = iEnd - iStart;
+	tDesc.pFont = pFont;
+	tDesc.fMaxWidth = fMaxWidth;
+	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
+	iRet = xuiTextLayoutCreate(pContext, &pLayout, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < xuiTextLayoutGetLineCount(pLayout); i++ ) {
+		memset(&tLine, 0, sizeof(tLine));
+		tLine.iSize = sizeof(tLine);
+		iRet = xuiTextLayoutGetLine(pLayout, i, &tLine);
+		if ( iRet == XUI_OK ) {
+			iRet = __xuiTextEditAddLine(pWidget, pData, pFont,
+				iStart + tLine.iTextOffset,
+				iStart + tLine.iTextOffset + tLine.iTextSize);
 		}
-		if ( iPrev <= iLineStart ) {
-			iPrev = __xuiTextEditUtf8Next(pData->sText, iEnd, iLineStart);
-		}
-		iRet = __xuiTextEditAddLine(pWidget, pData, pFont, iLineStart, iPrev);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-		iLineStart = iPrev;
+		if ( iRet != XUI_OK ) break;
 	}
-	return XUI_OK;
+	xuiTextLayoutDestroy(pLayout);
+	return iRet;
 }
 
 static int __xuiTextEditBuildLines(xui_widget pWidget, xui_text_edit_data_t* pData, xui_font pFont, float fWrapWidth)
@@ -1276,6 +1296,13 @@ static int __xuiTextEditSetTextInternal(xui_widget pWidget, xui_text_edit_data_t
 	return __xuiTextEditInvalidateText(pWidget);
 }
 
+static int __xuiTextEditEditSetText(xui_widget pWidget, const char* sText)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL || sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiTextEditSetTextInternal(pWidget, pData, sText, 1, 0);
+}
+
 static int __xuiTextEditDeleteRange(xui_widget pWidget, xui_text_edit_data_t* pData, int iStart, int iEnd, int bNotify, int bUndo)
 {
 	int iLen;
@@ -1504,11 +1531,15 @@ static int __xuiTextEditMoveCursor(xui_widget pWidget, xui_text_edit_data_t* pDa
 {
 	int iLen;
 	int iAnchor;
+	int iOldStart;
+	int iOldEnd;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iLen = (int)strlen(pData->sText);
+	iOldStart = pData->iSelectStart;
+	iOldEnd = pData->iSelectEnd;
 	iNewCursor = __xuiTextEditUtf8Clamp(pData->sText, iLen, iNewCursor);
 	if ( bExtend ) {
 		iAnchor = __xuiTextEditHasSelectionData(pData) ? pData->iAnchor : pData->iCursor;
@@ -1519,6 +1550,10 @@ static int __xuiTextEditMoveCursor(xui_widget pWidget, xui_text_edit_data_t* pDa
 	} else {
 		pData->iCursor = iNewCursor;
 		(void)__xuiTextEditClearSelectionData(pData);
+	}
+	if ( pData->iSelectStart != iOldStart || pData->iSelectEnd != iOldEnd ) {
+		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED,
+			pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
 	}
 	return __xuiTextEditSyncCursor(pWidget, pData);
 }
@@ -2359,6 +2394,7 @@ static void __xuiTextEditMenuSelect(xui_widget pMenu, int iIndex, int iValue, vo
 
 static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pData, const xui_event_t* pEvent)
 {
+	const xui_edit_behavior_t* pBehavior;
 	int iLen;
 	int iStart;
 	int iEnd;
@@ -2373,6 +2409,7 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 	iKey = pEvent->iKey;
 	bShift = ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0);
 	bCtrl = ((pEvent->iModifiers & XUI_MOD_CTRL) != 0);
+	pBehavior = xuiInternalEditBehavior(pWidget);
 	if ( iKey != XUI_KEY_UP && iKey != XUI_KEY_DOWN &&
 		 iKey != XUI_KEY_PAGE_UP && iKey != XUI_KEY_PAGE_DOWN ) {
 		pData->bPreferredCaretX = 0;
@@ -2404,7 +2441,7 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( iKey == 'Z' ) {
-			(void)xuiTextEditUndo(pWidget);
+			(void)(bShift ? xuiTextEditRedo(pWidget) : xuiTextEditUndo(pWidget));
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( iKey == 'Y' ) {
@@ -2413,6 +2450,13 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 		}
 	}
 	switch ( pEvent->iKey ) {
+	case XUI_KEY_TAB:
+		if ( pBehavior != NULL && (pBehavior->iTabBehavior == XUI_EDIT_TAB_INSERT ||
+		     pBehavior->iTabBehavior == XUI_EDIT_TAB_INDENT) ) {
+			if ( !pData->bReadonly ) (void)__xuiTextEditInsertText(pWidget, pData, "\t", 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
 	case XUI_KEY_F3:
 		if ( bShift ) {
 			(void)xuiTextEditFindPrevious(pWidget, NULL);
@@ -2463,10 +2507,26 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_ENTER:
+		if ( pBehavior != NULL && pBehavior->iEnterBehavior == XUI_EDIT_ENTER_COMMIT ) {
+			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT, pData->sText,
+				pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( !pData->bReadonly ) {
 			(void)__xuiTextEditInsertText(pWidget, pData, "\n", 1);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
+	case XUI_KEY_ESCAPE:
+		if ( pBehavior != NULL && pBehavior->iEscapeBehavior != XUI_EDIT_ESCAPE_DEFAULT ) {
+			if ( pBehavior->iEscapeBehavior == XUI_EDIT_ESCAPE_REVERT &&
+			     pData->sFocusText != NULL && !pData->bReadonly ) {
+				(void)__xuiTextEditSetTextInternal(pWidget, pData, pData->sFocusText, 1, 0);
+			}
+			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_CANCEL, pData->sText,
+				pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
 	case XUI_KEY_BACKSPACE:
 		if ( pData->bReadonly ) return XUI_EVENT_DISPATCH_STOP;
 		if ( __xuiTextEditHasSelectionData(pData) ) {
@@ -2527,8 +2587,20 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_VISIBLE_CHANGED:
 		return __xuiTextEditInvalidatePaint(pWidget);
 	case XUI_EVENT_FOCUS:
+		{
+			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
+			(void)__xuiTextEditStringSet(&pData->sFocusText, &pData->iFocusTextCapacity, pData->sText);
+			if ( pBehavior != NULL && pBehavior->bSelectAllOnFocus ) (void)xuiTextEditSelectAll(pWidget);
+		}
 		return __xuiTextEditInvalidateText(pWidget);
 	case XUI_EVENT_BLUR:
+		{
+			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
+			if ( pBehavior != NULL && pBehavior->bCommitOnBlur ) {
+				(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT, pData->sText,
+					pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
+			}
+		}
 		if ( pData->bImeActive ) __xuiTextEditImeReset(pData);
 		return __xuiTextEditInvalidateText(pWidget);
 	case XUI_EVENT_BOUNDS_CHANGED:
@@ -2684,6 +2756,9 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			pData->iImeCursor = pEvent->iCompositionCursor;
 			pData->iImeSelectionStart = pEvent->iCompositionSelectionStart;
 			pData->iImeSelectionEnd = pEvent->iCompositionSelectionEnd;
+			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED, pData->sImeText,
+				pData->iSelectStart, pData->iSelectEnd, pData->iImeAnchorStart,
+				pData->iImeAnchorStart + pEvent->iTextSize, 1);
 			(void)__xuiTextEditInvalidateText(pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -2708,6 +2783,8 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			__xuiTextEditImeReset(pData);
 			(void)__xuiTextEditInvalidateText(pWidget);
 		}
+		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED, "",
+			pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
 		break;
@@ -2942,6 +3019,7 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	xui_theme_t tTheme;
 	xui_thickness_t tPadding;
 	xui_context pContext;
+	xui_edit_behavior_t tEditBehavior;
 	int iRet;
 
 	(void)pUser;
@@ -2994,6 +3072,13 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	(void)xuiWidgetSetTabStop(pWidget, 1);
 	(void)xuiWidgetSetImeMode(pWidget, XUI_IME_AUTO);
 	(void)xuiWidgetSetImeCandidateRect(pWidget, __xuiTextEditImeRect, NULL);
+	memset(&tEditBehavior, 0, sizeof(tEditBehavior));
+	tEditBehavior.iSize = sizeof(tEditBehavior);
+	tEditBehavior.iTabBehavior = XUI_EDIT_TAB_FOCUS;
+	tEditBehavior.iEnterBehavior = XUI_EDIT_ENTER_NEWLINE;
+	tEditBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
+	iRet = xuiInternalEditRegister(pWidget, &g_xuiTextEditAdapter, &tEditBehavior);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTextEditInitEvents(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTextEditInitScrollBars(pWidget, pData);
@@ -3039,6 +3124,7 @@ static void __xuiTextEditDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData->sLineText != NULL ) xrtFree(pData->sLineText);
 	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
 	if ( pData->sImeDisplay != NULL ) xrtFree(pData->sImeDisplay);
+	if ( pData->sFocusText != NULL ) xrtFree(pData->sFocusText);
 	if ( pData->pLines != NULL ) xrtFree(pData->pLines);
 	if ( pData->pImeLines != NULL ) xrtFree(pData->pImeLines);
 	__xuiTextEditDestroyFindData(pData);
@@ -3464,9 +3550,17 @@ XUI_API int xuiTextEditSetSelection(xui_widget pWidget, int iStart, int iEnd)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
 	int iRet;
+	int iOldStart;
+	int iOldEnd;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldStart = pData->iSelectStart;
+	iOldEnd = pData->iSelectEnd;
 	iRet = __xuiTextEditSetSelectionData(pData, iStart, iEnd);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->iSelectStart != iOldStart || pData->iSelectEnd != iOldEnd ) {
+		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED,
+			pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
+	}
 	return __xuiTextEditSyncCursor(pWidget, pData);
 }
 

@@ -1044,6 +1044,7 @@ static int __xuiInputDragCancel(xui_context pContext)
 		return XUI_OK;
 	}
 	if ( pContext->bDragActive ) {
+		xuiInternalDragTransferCancel(pContext);
 		iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_DRAG_CANCEL, pDragWidget, NULL, pContext->iDragButton, 0.0f, 0.0f);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -1077,7 +1078,10 @@ static int __xuiInputDragMove(xui_context pContext, xui_widget pRelated)
 			return iRet;
 		}
 	}
-	return __xuiInputPushPointerEvent(pContext, XUI_EVENT_DRAG_MOVE, pContext->pDragWidget, pRelated, pContext->iDragButton, 0.0f, 0.0f);
+	iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_DRAG_MOVE, pContext->pDragWidget, pRelated, pContext->iDragButton, 0.0f, 0.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiInternalDragTransferMove(pContext, pContext->fPointerX,
+		pContext->fPointerY, pContext->iInputModifiers);
 }
 
 static int __xuiInputDragEnd(xui_context pContext, xui_widget pRelated)
@@ -1090,6 +1094,9 @@ static int __xuiInputDragEnd(xui_context pContext, xui_widget pRelated)
 		return XUI_OK;
 	}
 	if ( pContext->bDragActive ) {
+		iRet = xuiInternalDragTransferDrop(pContext, pContext->fPointerX,
+			pContext->fPointerY, pContext->iInputModifiers);
+		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_DRAG_END, pDragWidget, pRelated, pContext->iDragButton, 0.0f, 0.0f);
 		if ( iRet != XUI_OK ) {
 			return iRet;

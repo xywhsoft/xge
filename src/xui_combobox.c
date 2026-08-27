@@ -1188,6 +1188,9 @@ static int __xuiComboBoxCreateInputChild(xui_widget pWidget, xui_combobox_data_t
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiInputSetChange(pData->pInput, __xuiComboBoxInputChanged, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pInput);
+	if ( iRet == XUI_OK && pData->iMode == XUI_COMBOBOX_MODE_EDIT ) {
+		iRet = xuiInternalEditDelegate(pWidget, pData->pInput);
+	}
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pData->pInput);
 		pData->pInput = NULL;
@@ -1527,16 +1530,27 @@ XUI_API int xuiComboBoxGetSelectedValue(xui_widget pWidget)
 XUI_API int xuiComboBoxSetMode(xui_widget pWidget, int iMode)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	xui_edit_behavior_t tBehavior;
 	int iRet;
 
 	if ( (pData == NULL) || !__xuiComboBoxModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iMode == iMode ) return XUI_OK;
+	tBehavior = pWidget->tEditBehavior;
 	pData->iMode = iMode;
 	if ( iMode == XUI_COMBOBOX_MODE_EDIT ) {
+		iRet = xuiInternalEditDelegate(pWidget, pData->pInput);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( tBehavior.iSize >= sizeof(tBehavior) ) {
+			pWidget->tEditBehavior = tBehavior;
+			pWidget->tEditBehavior.iSize = sizeof(pWidget->tEditBehavior);
+		}
 		iRet = __xuiComboBoxSyncInputTextFromSelection(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
-	} else if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pData->pInput ) {
-		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	} else {
+		xuiInternalEditUndelegate(pWidget);
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pData->pInput ) {
+			(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		}
 	}
 	iRet = __xuiComboBoxSyncInputStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;

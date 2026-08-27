@@ -8,9 +8,11 @@ set OUT_DIR=build
 set PASS_COUNT=0
 set FAIL_COUNT=0
 set FAIL_LIST=
+set TEST_COUNT=0
+for %%F in (test_xui\build_*_test.bat) do set /a TEST_COUNT+=1
 
 echo ============================================
-echo  XUI Logic Test Runner (104 tests)
+echo  XUI Logic Test Runner (!TEST_COUNT! tests)
 echo ============================================
 echo.
 

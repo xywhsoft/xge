@@ -776,7 +776,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test first cluster rect");
 	{
 		xui_rect_t tNextRect;
+		xui_interaction_policy_t tHitTestPolicy;
 		float fMidpoint;
+		iRet = xuiGetInteractionPolicy(pContext, &tHitTestPolicy);
+		XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test interaction policy");
+		tHitTestPolicy.iDoubleClickWidth = 1;
+		tHitTestPolicy.iDoubleClickHeight = 1;
+		iRet = xuiSetInteractionPolicy(pContext, &tHitTestPolicy);
+		XUI_TEST_CHECK(iRet == XUI_OK, "shaped hit-test isolates single clicks");
 		iRet = xuiCodeEditGetOffsetRect(pCodeEdit, 4, &tNextRect);
 		XUI_TEST_CHECK(iRet == XUI_OK && tNextRect.fX > tRangeRect.fX, "shaped hit-test CJK boundary rect");
 		fMidpoint = (tRangeRect.fX + tNextRect.fX) * 0.5f;
@@ -1192,6 +1199,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetRectFillCount(pCodeCache) >= 2, "render selection fill");
 	iRet = __xuiCodeEditPointerUp(pContext, 20.0f + fTextOriginX + 4.0f + fPointerCharWidth * 5.0f, 30.0f + 9.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "pointer up releases capture");
+	{
+		xui_interaction_policy_t tPolicy;
+		xuiInteractionPolicyDefault(&tPolicy);
+		iRet = xuiSetInteractionPolicy(pContext, &tPolicy);
+		XUI_TEST_CHECK(iRet == XUI_OK, "restore interaction policy before double click");
+	}
 	iRet = __xuiCodeEditDoubleClick(pContext, 20.0f + fTextOriginX + 4.0f + fPointerCharWidth * 2.0f, 30.0f + 9.0f, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK, "double click word");
 	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
