@@ -658,7 +658,7 @@ int main(void)
 	iRet = __xuiInputWidgetRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "menu render");
 	pInputCache = xuiWidgetGetCacheSurface(pInput, xuiWidgetGetStateId(pInput));
-	XUI_TEST_CHECK(pInputCache != NULL && xuiTestSurfaceGetRectFillColorCount(pInputCache, XUI_COLOR_RGBA(47, 128, 237, 78)) > 0, "selection visible while menu is focused");
+	XUI_TEST_CHECK(pInputCache != NULL && xuiTestSurfaceGetRectFillColorCount(pInputCache, XUI_COLOR_RGBA(74, 144, 239, 255)) > 0, "selection visible while menu is focused");
 	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 9, "menu item count");
 	pItem = xuiMenuGetItem(pMenu, 1);
 	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_NORMAL && pItem->iValue == XUI_INPUT_MENU_REDO &&

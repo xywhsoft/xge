@@ -688,7 +688,7 @@ int main(void)
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render selection cache");
 	pCache = xuiWidgetGetCacheSurface(pTerminal, xuiWidgetGetStateId(pTerminal));
-	XUI_TEST_CHECK(pCache != NULL && xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(64, 130, 220, 95)) > 0, "selection overlay rendered");
+	XUI_TEST_CHECK(pCache != NULL && xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(74, 144, 239, 255)) > 0, "selection overlay rendered");
 
 	pMenu = xuiTerminalGetMenuWidget(pTerminal);
 	XUI_TEST_CHECK(pMenu != NULL, "terminal menu widget");

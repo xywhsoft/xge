@@ -1121,7 +1121,7 @@ static int __xuiTagInputSyncInputStyle(xui_widget pWidget, xui_tag_input_data_t*
 		XUI_COLOR_RGBA(0, 0, 0, 0),
 		XUI_COLOR_RGBA(0, 0, 0, 0),
 		XUI_COLOR_RGBA(0, 0, 0, 0),
-		XUI_COLOR_RGBA(47, 128, 237, 78),
+		XUI_COLOR_RGBA(74, 144, 239, 255),
 		tResolved.iTextColor);
 	(void)xuiInputSetBorderWidth(pData->pInput, 0.0f);
 	(void)xuiInputSetPlaceholder(pData->pInput, (pData->sPlaceholder != NULL) ? pData->sPlaceholder : "");

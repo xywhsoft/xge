@@ -4842,7 +4842,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		__xuiCodeEditColor(pWidget, "codeedit.background.color", XUI_COLOR_RGBA(248, 250, 252, 255));
 	iDividerColor = __xuiCodeEditColor(pWidget, "codeedit.divider.color", XUI_COLOR_RGBA(203, 213, 225, 255));
 	iCurrentLineColor = __xuiCodeEditColor(pWidget, "codeedit.current_line.color", XUI_COLOR_RGBA(226, 232, 240, 128));
-	iSelectionColor = __xuiCodeEditColor(pWidget, "codeedit.selection.color", XUI_COLOR_RGBA(78, 135, 216, 92));
+	iSelectionColor = __xuiCodeEditColor(pWidget, "codeedit.selection.color", XUI_COLOR_RGBA(74, 144, 239, 255));
 	iFindResultColor = __xuiCodeEditColor(pWidget, "codeedit.find.result_color", XUI_COLOR_RGBA(255, 235, 128, 150));
 	iFindActiveColor = __xuiCodeEditColor(pWidget, "codeedit.find.active_color", XUI_COLOR_RGBA(255, 183, 77, 190));
 	iCaretColor = __xuiCodeEditColor(pWidget, "codeedit.caret.color", XUI_COLOR_RGBA(15, 23, 42, 255));

@@ -1126,7 +1126,7 @@ static int __xuiNumericInputInit(xui_widget pWidget, void* pTypeData, const void
 	pData->iFocusBorderColor = (pDesc != NULL && pDesc->iFocusBorderColor != 0) ? pDesc->iFocusBorderColor : XUI_COLOR_RGBA(47, 128, 237, 255);
 	pData->iErrorBackgroundColor = (pDesc != NULL && pDesc->iErrorBackgroundColor != 0) ? pDesc->iErrorBackgroundColor : XUI_COLOR_RGBA(255, 248, 248, 255);
 	pData->iErrorBorderColor = (pDesc != NULL && pDesc->iErrorBorderColor != 0) ? pDesc->iErrorBorderColor : XUI_COLOR_RGBA(220, 72, 72, 255);
-	pData->iSelectionColor = (pDesc != NULL && pDesc->iSelectionColor != 0) ? pDesc->iSelectionColor : XUI_COLOR_RGBA(47, 128, 237, 78);
+	pData->iSelectionColor = (pDesc != NULL && pDesc->iSelectionColor != 0) ? pDesc->iSelectionColor : XUI_COLOR_RGBA(74, 144, 239, 255);
 	pData->iCursorColor = (pDesc != NULL && pDesc->iCursorColor != 0) ? pDesc->iCursorColor : XUI_COLOR_RGBA(33, 94, 170, 255);
 	pData->iSpinnerColor = (pDesc != NULL && pDesc->iSpinnerColor != 0) ? pDesc->iSpinnerColor : XUI_COLOR_RGBA(246, 250, 255, 255);
 	pData->iSpinnerHoverColor = (pDesc != NULL && pDesc->iSpinnerHoverColor != 0) ? pDesc->iSpinnerHoverColor : XUI_COLOR_RGBA(231, 241, 252, 255);

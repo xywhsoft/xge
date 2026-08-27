@@ -1725,7 +1725,7 @@ XUI_API void xuiThemeDefault(xui_theme_t* pTheme)
 	pTheme->iPanelColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	pTheme->iBorderColor = XUI_COLOR_RGBA(188, 195, 205, 255);
 	pTheme->iAccentColor = XUI_COLOR_RGBA(0, 112, 210, 255);
-	pTheme->iSelectionColor = XUI_COLOR_RGBA(0, 112, 210, 72);
+	pTheme->iSelectionColor = XUI_COLOR_RGBA(74, 144, 239, 255);
 	pTheme->iStateNormalColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	pTheme->iStateHoverColor = XUI_COLOR_RGBA(236, 244, 252, 255);
 	pTheme->iStateActiveColor = XUI_COLOR_RGBA(214, 232, 248, 255);

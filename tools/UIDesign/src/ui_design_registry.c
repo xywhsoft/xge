@@ -8241,7 +8241,7 @@ static int __uiDesignCreateInput(struct ui_design_app_t* pApp, ui_design_node_t*
 	tDesc.iFocusBorderColor = __uiDesignColor(pNode, "appearance.focusBorderColor", XUI_COLOR_RGBA(49, 126, 214, 255));
 	tDesc.iErrorBackgroundColor = __uiDesignColor(pNode, "appearance.errorBackgroundColor", XUI_COLOR_RGBA(255, 242, 243, 255));
 	tDesc.iErrorBorderColor = __uiDesignColor(pNode, "appearance.errorBorderColor", XUI_COLOR_RGBA(214, 72, 86, 255));
-	tDesc.iSelectionColor = __uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(47, 128, 237, 78));
+	tDesc.iSelectionColor = __uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(74, 144, 239, 255));
 	tDesc.iCursorColor = __uiDesignColor(pNode, "appearance.cursorColor", XUI_COLOR_RGBA(33, 94, 170, 255));
 	tDesc.fBorderWidth = __uiDesignFloat(pNode, "metrics.borderWidth", 1.0f);
 	iRet = xuiInputCreate(pApp->pContext, ppWidget, &tDesc);
@@ -8317,7 +8317,7 @@ static int __uiDesignCreateNumericInput(struct ui_design_app_t* pApp, ui_design_
 	tDesc.iFocusBorderColor = __uiDesignColor(pNode, "appearance.focusBorderColor", XUI_COLOR_RGBA(49, 126, 214, 255));
 	tDesc.iErrorBackgroundColor = __uiDesignColor(pNode, "appearance.errorBackgroundColor", XUI_COLOR_RGBA(255, 242, 243, 255));
 	tDesc.iErrorBorderColor = __uiDesignColor(pNode, "appearance.errorBorderColor", XUI_COLOR_RGBA(214, 72, 86, 255));
-	tDesc.iSelectionColor = __uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(47, 128, 237, 78));
+	tDesc.iSelectionColor = __uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(74, 144, 239, 255));
 	tDesc.iCursorColor = __uiDesignColor(pNode, "appearance.cursorColor", XUI_COLOR_RGBA(33, 94, 170, 255));
 	tDesc.iSpinnerColor = __uiDesignColor(pNode, "appearance.spinnerColor", XUI_COLOR_RGBA(239, 245, 252, 255));
 	tDesc.iSpinnerHoverColor = __uiDesignColor(pNode, "appearance.spinnerHoverColor", XUI_COLOR_RGBA(220, 235, 251, 255));
@@ -8352,7 +8352,7 @@ static int __uiDesignCreateTextEdit(struct ui_design_app_t* pApp, ui_design_node
 	tDesc.iBorderColor = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(158, 182, 209, 255));
 	tDesc.iHoverBorderColor = __uiDesignColor(pNode, "appearance.hoverBorderColor", XUI_COLOR_RGBA(105, 166, 226, 255));
 	tDesc.iFocusBorderColor = __uiDesignColor(pNode, "appearance.focusBorderColor", XUI_COLOR_RGBA(49, 126, 214, 255));
-	tDesc.iSelectionColor = __uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(47, 128, 237, 78));
+	tDesc.iSelectionColor = __uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(74, 144, 239, 255));
 	tDesc.iCursorColor = __uiDesignColor(pNode, "appearance.cursorColor", XUI_COLOR_RGBA(33, 94, 170, 255));
 	tDesc.iLineNumberColor = __uiDesignColor(pNode, "appearance.lineNumberColor", XUI_COLOR_RGBA(107, 127, 149, 255));
 	tDesc.iLineNumberBackgroundColor = __uiDesignColor(pNode, "appearance.lineNumberBackgroundColor", XUI_COLOR_RGBA(243, 247, 251, 255));
@@ -14985,7 +14985,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.hoverBackgroundColor", XUI_COLOR_RGBA(249, 252, 255, 255)),
 			__uiDesignColor(pNode, "appearance.disabledBackgroundColor", XUI_COLOR_RGBA(242, 245, 249, 255)),
 			__uiDesignColor(pNode, "appearance.hoverBorderColor", XUI_COLOR_RGBA(105, 166, 226, 255)),
-			__uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(47, 128, 237, 78)),
+			__uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(74, 144, 239, 255)),
 			__uiDesignColor(pNode, "appearance.cursorColor", XUI_COLOR_RGBA(33, 94, 170, 255)));
 		(void)xuiInputSetBorderWidth(pWidget, __uiDesignFloat(pNode, "metrics.borderWidth", 1.0f));
 		(void)__uiDesignApplyInputDecorations(pApp, pNode, pWidget);
@@ -15050,7 +15050,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.hoverBorderColor", XUI_COLOR_RGBA(105, 166, 226, 255)),
 			__uiDesignColor(pNode, "appearance.errorBackgroundColor", XUI_COLOR_RGBA(255, 242, 243, 255)),
 			__uiDesignColor(pNode, "appearance.errorBorderColor", XUI_COLOR_RGBA(214, 72, 86, 255)),
-			__uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(47, 128, 237, 78)),
+			__uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(74, 144, 239, 255)),
 			__uiDesignColor(pNode, "appearance.cursorColor", XUI_COLOR_RGBA(33, 94, 170, 255)));
 		(void)xuiNumericInputSetBorderWidth(pWidget, __uiDesignFloat(pNode, "metrics.borderWidth", 1.0f));
 		(void)xuiNumericInputSetSpinnerColors(pWidget,
@@ -15080,7 +15080,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.hoverBackgroundColor", XUI_COLOR_RGBA(249, 252, 255, 255)),
 			__uiDesignColor(pNode, "appearance.disabledBackgroundColor", XUI_COLOR_RGBA(242, 245, 249, 255)),
 			__uiDesignColor(pNode, "appearance.hoverBorderColor", XUI_COLOR_RGBA(105, 166, 226, 255)),
-			__uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(47, 128, 237, 78)),
+			__uiDesignColor(pNode, "appearance.selectionColor", XUI_COLOR_RGBA(74, 144, 239, 255)),
 			__uiDesignColor(pNode, "appearance.cursorColor", XUI_COLOR_RGBA(33, 94, 170, 255)),
 			__uiDesignColor(pNode, "appearance.findResultColor", XUI_COLOR_RGBA(255, 235, 128, 150)),
 			__uiDesignColor(pNode, "appearance.findActiveColor", XUI_COLOR_RGBA(255, 183, 77, 190)));

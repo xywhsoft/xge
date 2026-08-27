@@ -3538,7 +3538,7 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iBaseBackgroundColor = (pDesc != NULL && pDesc->iBackgroundColor != 0u) ? pDesc->iBackgroundColor : XUI_COLOR_RGBA(18, 24, 32, 255);
 	pData->iBaseForegroundColor = (pDesc != NULL && pDesc->iForegroundColor != 0u) ? pDesc->iForegroundColor : XUI_COLOR_RGBA(220, 230, 240, 255);
 	pData->iBaseCursorColor = (pDesc != NULL && pDesc->iCursorColor != 0u) ? pDesc->iCursorColor : XUI_COLOR_RGBA(255, 255, 255, 255);
-	pData->iBaseSelectionColor = (pDesc != NULL && pDesc->iSelectionColor != 0u) ? pDesc->iSelectionColor : XUI_COLOR_RGBA(64, 130, 220, 95);
+	pData->iBaseSelectionColor = (pDesc != NULL && pDesc->iSelectionColor != 0u) ? pDesc->iSelectionColor : XUI_COLOR_RGBA(74, 144, 239, 255);
 	pData->iBaseSelectionTextColor = (pDesc != NULL && pDesc->iSelectionTextColor != 0u) ? pDesc->iSelectionTextColor : XUI_COLOR_RGBA(255, 255, 255, 255);
 	pData->iBaseSearchHighlightColor = (pDesc != NULL && pDesc->iSearchHighlightColor != 0u) ? pDesc->iSearchHighlightColor : XUI_COLOR_RGBA(255, 197, 66, 110);
 	pData->iBaseFocusColor = (pDesc != NULL && pDesc->iFocusColor != 0u) ? pDesc->iFocusColor : XUI_COLOR_RGBA(47, 128, 237, 255);

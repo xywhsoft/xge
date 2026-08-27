@@ -68,7 +68,7 @@ XUI_API int xuiCodeThemeSetDefault(xui_code_theme pTheme)
 	pTheme->arrStyles[XUI_CODE_STYLE_OPERATOR].iForeground = XUI_COLOR_RGBA(87, 96, 106, 255);
 	pTheme->arrStyles[XUI_CODE_STYLE_BRACE].iForeground = XUI_COLOR_RGBA(87, 96, 106, 255);
 	pTheme->arrStyles[XUI_CODE_STYLE_ERROR].iForeground = XUI_COLOR_RGBA(207, 34, 46, 255);
-	pTheme->arrStyles[XUI_CODE_STYLE_SELECTION].iBackground = XUI_COLOR_RGBA(173, 214, 255, 160);
+	pTheme->arrStyles[XUI_CODE_STYLE_SELECTION].iBackground = XUI_COLOR_RGBA(74, 144, 239, 255);
 	pTheme->arrStyles[XUI_CODE_STYLE_CURRENT_LINE].iBackground = XUI_COLOR_RGBA(246, 248, 250, 255);
 	pTheme->arrStyles[XUI_CODE_STYLE_SEARCH_RESULT].iBackground = XUI_COLOR_RGBA(255, 235, 128, 190);
 	pTheme->arrStyles[XUI_CODE_STYLE_MATCHED_BRACE].iBackground = XUI_COLOR_RGBA(221, 244, 255, 255);
