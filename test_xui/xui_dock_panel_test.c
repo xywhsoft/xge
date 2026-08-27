@@ -957,6 +957,12 @@ int main(void)
 	iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_AUTO_HIDE && xuiDockPanelGetAutoHideExpandedWindow(pDock) == toolbox, "auto hide expanded state");
 	XUI_TEST_CHECK(xuiWidgetGetVisible(tWinInfo.pHostWidget) && tWinInfo.tRect.fW > 0.0f && tWinInfo.tClientRect.fW > 0.0f, "auto hide overlay visible");
+	iRet = xuiWidgetGetLayer(tWinInfo.pHostWidget, &iLayerToolbox, &iZToolbox);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	pCache = (iRet == XUI_OK) ? xuiWidgetGetCacheSurface(tWinInfo.pHostWidget, xuiWidgetGetStateId(tWinInfo.pHostWidget)) : NULL;
+	XUI_TEST_CHECK(iRet == XUI_OK && iLayerToolbox == XUI_LAYER_FLOATING && pCache != NULL &&
+		xuiTestSurfaceGetRectFillCount(pCache) >= 3,
+		"auto hide host paints opaque chrome in floating layer");
 	tHit.tRect = xuiDockPanelGetAutoHideExpandRect(pDock);
 	XUI_TEST_CHECK(tHit.tRect.fW > 0.0f && tHit.tRect.fH > 0.0f, "auto hide expand rect");
 	if ( fAutoHidePaneW < 160.0f ) {

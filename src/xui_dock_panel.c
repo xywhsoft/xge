@@ -904,9 +904,19 @@ static xui_dock_node_slot_t* __xuiDockNodeAt(xui_dock_panel_data_t* pData, int i
 
 static void __xuiDockInvalidate(xui_widget pWidget, int bLayout)
 {
+	xui_dock_panel_data_t* pData;
 	uint32_t flags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	int i;
 	if ( bLayout ) flags |= XUI_WIDGET_DIRTY_LAYOUT;
 	(void)xuiWidgetInvalidate(pWidget, flags);
+	pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return;
+	for ( i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; ++i ) {
+		xui_dock_window_slot_t* pWin = &pData->arrWindows[i];
+		if ( pWin->bUsed && pWin->pHostWidget != NULL ) {
+			(void)xuiWidgetInvalidate(pWin->pHostWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		}
+	}
 }
 
 static void __xuiDockDropInfoReset(xui_dock_drop_info_t* pInfo)
@@ -5004,15 +5014,48 @@ static int __xuiDockHostRender(xui_widget pHost, xui_draw_context pDraw, uint32_
 	xui_rect_t r;
 	xui_rect_t title;
 	xui_rect_t close;
+	xui_rect_t pin;
 	int ret;
 	(void)iStateId;
 	if ( (pHost == NULL) || (pDraw == NULL) || (w == NULL) || (w->pOwner == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( w->iState != XUI_DOCK_PANEL_WINDOW_FLOATING ) return XUI_OK;
 	pData = w->pOwner;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pHost));
 	r = xuiWidgetGetContentRect(pHost);
 	r.fX = 0.0f;
 	r.fY = 0.0f;
+	if ( w->iState == XUI_DOCK_PANEL_WINDOW_AUTO_HIDE &&
+	     pData->iAutoHideExpandWindow == w->iWindow ) {
+		xui_rect_t client;
+		ret = __xuiDockDrawRectFill(pProxy, pDraw, r, pData->tColors.iPaneColor);
+		if ( ret != XUI_OK ) return ret;
+		client = __xuiDockRect(pData->tMetrics.fBorderWidth,
+			pData->tMetrics.fCaptionHeight + pData->tMetrics.fBorderWidth,
+			__xuiDockMax(0.0f, r.fW - pData->tMetrics.fBorderWidth * 2.0f),
+			__xuiDockMax(0.0f, r.fH - pData->tMetrics.fCaptionHeight - pData->tMetrics.fBorderWidth * 2.0f));
+		ret = __xuiDockDrawRectFill(pProxy, pDraw, client, pData->tColors.iClientColor);
+		if ( ret != XUI_OK ) return ret;
+		title = __xuiDockRect(0.0f, 0.0f, r.fW, pData->tMetrics.fCaptionHeight);
+		ret = __xuiDockDrawRectFill(pProxy, pDraw, title, pData->tColors.iCaptionColor);
+		if ( ret != XUI_OK ) return ret;
+		close = __xuiDockRect(r.fW - pData->tMetrics.fButtonGap - pData->tMetrics.fButtonSize,
+			(pData->tMetrics.fCaptionHeight - pData->tMetrics.fButtonSize) * 0.5f,
+			pData->tMetrics.fButtonSize, pData->tMetrics.fButtonSize);
+		pin = __xuiDockRect(close.fX - pData->tMetrics.fButtonGap - pData->tMetrics.fButtonSize,
+			close.fY, pData->tMetrics.fButtonSize, pData->tMetrics.fButtonSize);
+		ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle,
+			__xuiDockRect(8.0f, 0.0f, __xuiDockMax(0.0f, pin.fX - 12.0f), pData->tMetrics.fCaptionHeight),
+			pData->tColors.iCaptionTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( ret != XUI_OK ) return ret;
+		ret = __xuiDockDrawPaneButton(w->pPanelWidget, pProxy, pDraw, pData, pin, "dock_pane_dock",
+			pData->iHoverType == XUI_DOCK_PANEL_HIT_AUTO_HIDE_PIN && pData->iHoverWindow == w->iWindow, 1);
+		if ( ret != XUI_OK ) return ret;
+		ret = __xuiDockDrawPaneButton(w->pPanelWidget, pProxy, pDraw, pData, close, "dock_pane_close",
+			pData->iHoverType == XUI_DOCK_PANEL_HIT_AUTO_HIDE_CLOSE && pData->iHoverWindow == w->iWindow, 1);
+		if ( ret != XUI_OK ) return ret;
+		return __xuiDockDrawRectStroke(pProxy, pDraw, r, pData->tMetrics.fBorderWidth,
+			XUI_COLOR_RGBA(103, 152, 179, 255));
+	}
+	if ( w->iState != XUI_DOCK_PANEL_WINDOW_FLOATING ) return XUI_OK;
 	ret = __xuiDockDrawRectFill(pProxy, pDraw, r, pData->tColors.iClientColor);
 	if ( ret != XUI_OK ) return ret;
 	title = __xuiDockRect(0.0f, 0.0f, r.fW, pData->tMetrics.fFloatTitleHeight);
@@ -5168,7 +5211,6 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 
 static int __xuiDockDrawAutoHide(xui_widget pWidget, xui_draw_context pDraw, xui_dock_panel_data_t* pData, xui_proxy pProxy)
 {
-	xui_dock_window_slot_t* pExpand;
 	int i;
 	int ret;
 	for ( i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; i++ ) {
@@ -5215,27 +5257,6 @@ static int __xuiDockDrawAutoHide(xui_widget pWidget, xui_draw_context pDraw, xui
 				if ( ret != XUI_OK ) return ret;
 			}
 		}
-	}
-	pExpand = __xuiDockWindowAt(pData, pData->iAutoHideExpandWindow);
-	if ( pExpand != NULL && pExpand->iState == XUI_DOCK_PANEL_WINDOW_AUTO_HIDE && pData->tAutoHideExpandRect.fW > 0.0f && pData->tAutoHideExpandRect.fH > 0.0f ) {
-		xui_rect_t caption;
-		ret = __xuiDockDrawFill(pProxy, pDraw, pData->tAutoHideExpandRect, pData->tColors.iPaneColor);
-		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawFill(pProxy, pDraw, pData->tAutoHideExpandClientRect, pData->tColors.iClientColor);
-		if ( ret != XUI_OK ) return ret;
-		caption = __xuiDockRect(pData->tAutoHideExpandRect.fX, pData->tAutoHideExpandRect.fY, pData->tAutoHideExpandRect.fW, pData->tMetrics.fCaptionHeight);
-		ret = __xuiDockDrawFill(pProxy, pDraw, caption, pData->tColors.iCaptionColor);
-		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, pExpand->sTitle,
-			__xuiDockRect(pData->tAutoHideExpandRect.fX + 8.0f, pData->tAutoHideExpandRect.fY, __xuiDockMax(0.0f, pData->tAutoHidePinRect.fX - pData->tAutoHideExpandRect.fX - 12.0f), pData->tMetrics.fCaptionHeight),
-			pData->tColors.iCaptionTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawPaneButton(pWidget, pProxy, pDraw, pData, pData->tAutoHidePinRect, "dock_pane_dock", pData->iHoverType == XUI_DOCK_PANEL_HIT_AUTO_HIDE_PIN, 1);
-		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawPaneButton(pWidget, pProxy, pDraw, pData, pData->tAutoHideCloseRect, "dock_pane_close", pData->iHoverType == XUI_DOCK_PANEL_HIT_AUTO_HIDE_CLOSE, 1);
-		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawStroke(pProxy, pDraw, pData->tAutoHideExpandRect, pData->tMetrics.fBorderWidth, XUI_COLOR_RGBA(103, 152, 179, 255));
-		if ( ret != XUI_OK ) return ret;
 	}
 	return XUI_OK;
 }
