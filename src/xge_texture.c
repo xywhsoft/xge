@@ -104,7 +104,8 @@ static int __xgeTextureYUV420PAlloc(xge_texture pTexture, int iWidth, int iHeigh
 	xge_texture_yuv420p_t* pYUV;
 	int i;
 
-	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
+	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ||
+		 (iWidth >= INT_MAX) || (iHeight >= INT_MAX) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pYUV = (xge_texture_yuv420p_t*)xrtMalloc(sizeof(*pYUV));
@@ -342,6 +343,10 @@ static int __xgeTextureUploadNow(xge_texture pTexture)
 	if ( !__xgeTextureHasShadow(pTexture) ) {
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
+	if ( (glGenTextures == NULL) || (glBindTexture == NULL) ||
+		 (glTexImage2D == NULL) ) {
+		return XGE_ERROR_GPU_FAILED;
+	}
 	iRet = xgeGraphicsMappingGet(XGE_GPU_BACKEND_NONE, &tMapping);
 	if ( iRet < 0 ) {
 		return iRet;
@@ -380,6 +385,10 @@ int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const vo
 	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (pTexture->iRefCount != 0) || (pTexture->iBackendId != 0) ||
+		 (pTexture->pBackend != NULL) ) {
+		return XGE_ERROR_INVALID_STATE;
+	}
 
 	memset(pTexture, 0, sizeof(*pTexture));
 	iRet = __xgeTextureShadowSet(pTexture, iWidth, iHeight, pPixels);
@@ -410,8 +419,13 @@ int xgeTextureCreateYUV420P(xge_texture pTexture, int iWidth, int iHeight)
 {
 	int iRet;
 
-	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
+	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ||
+		 (iWidth >= INT_MAX) || (iHeight >= INT_MAX) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pTexture->iRefCount != 0) || (pTexture->iBackendId != 0) ||
+		 (pTexture->pBackend != NULL) ) {
+		return XGE_ERROR_INVALID_STATE;
 	}
 	memset(pTexture, 0, sizeof(*pTexture));
 	iRet = __xgeTextureYUV420PAlloc(pTexture, iWidth, iHeight);

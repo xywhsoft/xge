@@ -5,6 +5,7 @@ static void __xgeFrameStatsRecordTime(double fSeconds);
 static void __xgeRenderCommandReset(void);
 static void __xgeRenderCommandUnit(void);
 static int __xgeRenderCommandFlush(void);
+static int __xgeFrameWithDelta(float fDelta);
 
 int xgeInit(const xge_desc_t* pDesc)
 {
@@ -60,6 +61,8 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.iBlend = XGE_BLEND_ALPHA;
 	g_xge.fDelta = 1.0f / 60.0f;
 	g_xge.fStartTime = xrtTimer();
+	g_xge.fManualFrameLastTime = g_xge.fStartTime;
+	g_xge.bManualFrameTimeValid = 1;
 	g_xge.fFPSLastTime = g_xge.fStartTime;
 	g_xge.iFPS = objDesc.iTargetFPS;
 	g_xge.tPlatformBackend = xgePlatformBackendDefault();
@@ -196,16 +199,13 @@ void xgeRenderRequestAfter(float fDelaySeconds)
 	}
 }
 
-int xgeFrame(void)
+static int __xgeFrameWithDelta(float fDelta)
 {
 	int iRet;
 	double fFrameStart;
 
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( g_xge.objDesc.iRunMode != XGE_RUN_MANUAL ) {
-		return XGE_ERROR_UNSUPPORTED;
 	}
 	if ( g_xge.bRunning == 0 ) {
 		return 0;
@@ -216,8 +216,13 @@ int xgeFrame(void)
 	__xgeFrameStatsBeginFrame();
 	g_xge.iFrameCount++;
 	g_xge.tFrameStats.iFrameCount++;
-	g_xge.fDelta = 1.0f / (float)g_xge.objDesc.iTargetFPS;
-	g_xge.iFPS = g_xge.objDesc.iTargetFPS;
+	g_xge.fDelta = (isfinite(fDelta) && fDelta >= 0.0f) ? fDelta : 0.0f;
+	if ( g_xge.fDelta > 0.0f ) {
+		double fFPS = 1.0 / (double)g_xge.fDelta;
+		g_xge.iFPS = fFPS >= (double)INT_MAX ? INT_MAX : (int)(fFPS + 0.5);
+	} else {
+		g_xge.iFPS = 0;
+	}
 	xgeTextureUploadFlush();
 	if ( g_xge.procFrame != NULL ) {
 		iRet = g_xge.procFrame(g_xge.pFrameUser);
@@ -239,6 +244,25 @@ int xgeFrame(void)
 	}
 	__xgeFrameStatsRecordTime(xrtTimer() - fFrameStart);
 	return 1;
+}
+
+int xgeFrame(void)
+{
+	double fNow;
+	double fDelta;
+
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( g_xge.objDesc.iRunMode != XGE_RUN_MANUAL ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	fNow = xrtTimer();
+	fDelta = g_xge.bManualFrameTimeValid ? fNow - g_xge.fManualFrameLastTime :
+		1.0 / (double)g_xge.objDesc.iTargetFPS;
+	g_xge.fManualFrameLastTime = fNow;
+	g_xge.bManualFrameTimeValid = 1;
+	return __xgeFrameWithDelta((float)fDelta);
 }
 
 void xgeFrameStatsReset(void)
@@ -590,7 +614,9 @@ int xgeGpuCapsGet(xge_gpu_caps_t* pCaps)
 
 int xgeGraphicsShaderHeaderGet(int iBackend, char* sBuffer, int iSize)
 {
-	return __xgeGraphicsShaderHeaderGet(iBackend, sBuffer, iSize);
+	int iLength = __xgeGraphicsShaderHeaderGet(iBackend, sBuffer, iSize);
+	if ( iLength < 0 ) return iLength;
+	return iLength >= iSize ? XGE_ERROR_BUFFER_TOO_SMALL : XGE_OK;
 }
 
 int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, int iSize)
@@ -608,7 +634,10 @@ int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, int iSize
 		sBuffer[0] = 0;
 		return XGE_ERROR_FILE_NOT_FOUND;
 	}
-	return snprintf(sBuffer, (size_t)iSize, "%s", sName);
+	if ( snprintf(sBuffer, (size_t)iSize, "%s", sName) >= iSize ) {
+		return XGE_ERROR_BUFFER_TOO_SMALL;
+	}
+	return XGE_OK;
 }
 
 int xgeGraphicsMappingGet(int iBackend, xge_graphics_mapping_t* pMapping)

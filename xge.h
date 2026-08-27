@@ -1590,6 +1590,8 @@ XGE_API xge_frame_stats_t xgeFrameStatsGet(void);
 /* Debug APIs are only declared for xgedbg builds.
  * Build with -DXGE_DEBUGMODE=1 and link xgedbg instead of xge. */
 XGE_API int xgeDebugGetStats(xge_debug_stats_t* pStats);
+/* Writes a NUL-terminated capability report. Returns XGE_OK, or
+ * XGE_ERROR_BUFFER_TOO_SMALL after writing a truncated NUL-terminated value. */
 XGE_API int xgeDebugDumpCaps(char* sBuffer, int iSize);
 #endif
 XGE_API int xgeLogSetLevel(int iLevel);
@@ -1632,6 +1634,8 @@ XGE_API int xgeDragBegin(xge_data_object pData, uint32_t iAllowedEffects,
 	uint32_t iSuggestedEffect);
 XGE_API int xgeDragCancel(void);
 XGE_API int xgeDragIsActive(void);
+/* Writes a NUL-terminated string. Returns XGE_OK, or XGE_ERROR_BUFFER_TOO_SMALL
+ * after writing a truncated NUL-terminated value. */
 XGE_API int xgeGraphicsShaderHeaderGet(int iBackend, char* sBuffer, int iSize);
 XGE_API int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, int iSize);
 XGE_API int xgeGraphicsMappingGet(int iBackend, xge_graphics_mapping_t* pMapping);
@@ -1696,6 +1700,7 @@ XGE_API int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc);
 XGE_API int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio);
 XGE_API void xgeMiniProgramUnit(void);
 XGE_API int xgeMiniProgramSetBridge(const xge_miniprogram_bridge_t* pBridge);
+/* fTimeSeconds is a finite, monotonic host timestamp in seconds. */
 XGE_API int xgeMiniProgramFrame(double fTimeSeconds);
 XGE_API int xgeMiniProgramResize(int iWidth, int iHeight, float fDevicePixelRatio);
 XGE_API int xgeMiniProgramTouch(int iPhase, const xge_miniprogram_touch_t* pTouches, int iCount);
@@ -1847,6 +1852,8 @@ XGE_API int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const vo
  * saving premultiplied RGBA, such as an external render-target capture. */
 XGE_API int xgeImageSavePNGEx(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride, uint32_t iFlags);
 XGE_API void xgeImageFree(xge_image pImage);
+/* pTexture must be zero-initialized before first use and freed before reuse.
+ * Creating over a live texture returns XGE_ERROR_INVALID_STATE. */
 XGE_API int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const void* pPixels);
 XGE_API int xgeTextureCreateYUV420P(xge_texture pTexture, int iWidth, int iHeight);
 XGE_API int xgeTextureCreateFromImage(xge_texture pTexture, const xge_image_t* pImage);

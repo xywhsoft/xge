@@ -60,7 +60,11 @@ int main(void)
 {
 	xge_desc_t tDesc;
 	xge_input_event_t tEvent;
+	xge_texture_t tTexture;
 	char sLongText[384];
+	char sShaderHeader[128];
+	char sShortHeader[4];
+	unsigned char arrPixel[4] = {0u, 0u, 0u, 255u};
 	uint64_t iLastSequence;
 	int iFailed;
 	int i;
@@ -70,6 +74,16 @@ int main(void)
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iRunMode = XGE_RUN_MANUAL;
 	TEST_CHECK(xgeInit(&tDesc) == XGE_OK, "xgeInit");
+	TEST_CHECK(xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_OPENGL33,
+		sShaderHeader, (int)sizeof(sShaderHeader)) == XGE_OK, "shader header success convention");
+	TEST_CHECK(xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_OPENGL33,
+		sShortHeader, (int)sizeof(sShortHeader)) == XGE_ERROR_BUFFER_TOO_SMALL &&
+		sShortHeader[sizeof(sShortHeader) - 1] == '\0', "shader header truncation convention");
+	memset(&tTexture, 0, sizeof(tTexture));
+	TEST_CHECK(xgeTextureCreateRGBA(&tTexture, 1, 1, arrPixel) == XGE_OK, "create texture");
+	TEST_CHECK(xgeTextureCreateRGBA(&tTexture, 1, 1, arrPixel) == XGE_ERROR_INVALID_STATE,
+		"reject texture reinitialization leak");
+	xgeTextureFree(&tTexture);
 
 	TEST_CHECK(__testPost(XGE_EVENT_KEY_DOWN, 'A', 0u, NULL, 0u) == XGE_OK, "post key down");
 	TEST_CHECK(__testPostPointer(XGE_EVENT_MOUSE_DOWN, 0u, XGE_MOUSE_LEFT,
@@ -110,10 +124,15 @@ int main(void)
 	TEST_CHECK(tEvent.iTextSize == (int)strlen(sLongText), "long IME size");
 	TEST_CHECK(strcmp(tEvent.sText, sLongText) == 0, "long IME content");
 
+	/* Keep short inline text queued while reserve moves the backing array. */
+	TEST_CHECK(__testPost(XGE_EVENT_IME_UPDATE, 0, 0u, "inline text",
+		XGE_INPUT_EVENT_FLAG_NATIVE_IME) == XGE_OK, "post inline text before expansion");
 	for ( i = 0; i < 600; i++ ) {
 		TEST_CHECK(__testPost(XGE_EVENT_KEY_DOWN, 'A' + (i % 26), 0u, NULL, XGE_INPUT_EVENT_FLAG_REPEAT) == XGE_OK, "post expanded queue event");
 	}
-	TEST_CHECK(xgeInputEventPendingCount() == 600, "expanded queue count");
+	TEST_CHECK(xgeInputEventPendingCount() == 601, "expanded queue count");
+	TEST_CHECK(xgeInputEventGet(&tEvent) == 1 && strcmp(tEvent.sText, "inline text") == 0,
+		"inline text survives queue expansion");
 	for ( i = 0; i < 600; i++ ) {
 		TEST_CHECK(xgeInputEventGet(&tEvent) == 1, "get expanded queue event");
 		TEST_CHECK(tEvent.iKey == 'A' + (i % 26), "expanded queue order");

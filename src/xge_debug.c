@@ -99,7 +99,7 @@ int xgeDebugDumpCaps(char* sBuffer, int iSize)
 		sBuffer[0] = 0;
 		return XGE_ERROR;
 	}
-	return iNeed;
+	return iNeed >= iSize ? XGE_ERROR_BUFFER_TOO_SMALL : XGE_OK;
 }
 
 int xgedbgDirtyRectCount(void)

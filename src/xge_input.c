@@ -23,6 +23,11 @@ static int __xgeInputEventQueueReserve(int iCapacity)
 	for ( i = 0; i < g_xge.iInputEventQueueCount; i++ ) {
 		int iOld = (g_xge.iInputEventQueueHead + i) % g_xge.iInputEventQueueCapacity;
 		pNew[i] = g_xge.pInputEventQueue[iOld];
+		/* tEvent.sText points at the item's inline storage for short text.
+		 * Rebase it after moving the item, before releasing the old queue. */
+		if ( pNew[i].sHeapText == NULL ) {
+			pNew[i].tEvent.sText = pNew[i].sInlineText;
+		}
 	}
 	if ( g_xge.pInputEventQueue != NULL ) xrtFree(g_xge.pInputEventQueue);
 	g_xge.pInputEventQueue = pNew;

@@ -10,7 +10,6 @@ SKIP_DIRS = {
 	".git",
 	"artifacts",
 	"build",
-	"dev",
 }
 
 CPP_SOURCE_SUFFIXES = {
@@ -85,7 +84,7 @@ def rel(path):
 def check_cpp_sources(errors):
 	for path in iter_files():
 		if path.suffix.lower() in CPP_SOURCE_SUFFIXES:
-			errors.append(f"{rel(path)}: C++ source/header is not allowed outside dev/")
+			errors.append(f"{rel(path)}: C++ source/header is not allowed")
 
 
 def check_cpp_build_entries(errors):

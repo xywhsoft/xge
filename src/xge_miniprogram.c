@@ -1,46 +1,141 @@
+typedef struct __xge_miniprogram_bridge_snapshot_t {
+	xge_miniprogram_bridge_t tBridge;
+	int iRefCount;
+} __xge_miniprogram_bridge_snapshot_t;
+
+static void __xgeMiniProgramBridgeSnapshotRelease(__xge_miniprogram_bridge_snapshot_t* pSnapshot)
+{
+	if ( pSnapshot == NULL ) return;
+	pSnapshot->iRefCount--;
+	if ( pSnapshot->iRefCount <= 0 ) {
+		xrtFree(pSnapshot);
+	}
+}
+
 static int __xgeMiniProgramResourceLoad(const char* sURI, void** ppData, int* pSize, void* pUser)
 {
+	__xge_miniprogram_bridge_snapshot_t* pSnapshot;
 	xge_miniprogram_bridge_t* pBridge;
+	int iRet;
 
-	(void)pUser;
 	if ( (sURI == NULL) || (ppData == NULL) || (pSize == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pBridge = &g_xge.tMiniProgramBridge;
+	*ppData = NULL;
+	*pSize = 0;
+	pSnapshot = (__xge_miniprogram_bridge_snapshot_t*)pUser;
+	if ( (pSnapshot == NULL) || (pSnapshot->iRefCount <= 0) ) {
+		return XGE_ERROR_INVALID_STATE;
+	}
+	pBridge = &pSnapshot->tBridge;
 	if ( pBridge->load_resource == NULL ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
-	return pBridge->load_resource(sURI, ppData, pSize, pBridge->pUser);
+	pSnapshot->iRefCount++;
+	iRet = pBridge->load_resource(sURI, ppData, pSize, pBridge->pUser);
+	if ( (iRet != XGE_OK) || (*ppData == NULL) || (*pSize < 0) ) {
+		if ( (iRet == XGE_OK) && (*ppData != NULL) ) {
+			if ( pBridge->free_resource != NULL ) pBridge->free_resource(*ppData, pBridge->pUser);
+			else xrtFree(*ppData);
+		}
+		*ppData = NULL;
+		*pSize = 0;
+		__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
+		return iRet == XGE_OK ? XGE_ERROR_RESOURCE_FAILED : iRet;
+	}
+	return XGE_OK;
 }
 
 static void __xgeMiniProgramResourceFree(void* pData, void* pUser)
 {
+	__xge_miniprogram_bridge_snapshot_t* pSnapshot;
 	xge_miniprogram_bridge_t* pBridge;
 
-	(void)pUser;
-	if ( pData == NULL ) {
+	pSnapshot = (__xge_miniprogram_bridge_snapshot_t*)pUser;
+	if ( pSnapshot == NULL ) {
+		xrtFree(pData);
 		return;
 	}
-	pBridge = &g_xge.tMiniProgramBridge;
-	if ( pBridge->free_resource != NULL ) {
-		pBridge->free_resource(pData, pBridge->pUser);
-	} else {
-		xrtFree(pData);
+	pBridge = &pSnapshot->tBridge;
+	if ( pData != NULL ) {
+		if ( pBridge->free_resource != NULL ) pBridge->free_resource(pData, pBridge->pUser);
+		else xrtFree(pData);
 	}
+	__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
 }
 
-static void __xgeMiniProgramResourceProviderAdd(void)
+static void __xgeMiniProgramResourceProviderRemove(void)
+{
+	int iRead;
+	int iWrite;
+
+	iWrite = 0;
+	for ( iRead = 0; iRead < g_xge.iResourceProviderCount; iRead++ ) {
+		xge_resource_provider_t* pProvider = &g_xge.arrResourceProviders[iRead];
+
+		if ( (pProvider->load == __xgeMiniProgramResourceLoad) &&
+		     (pProvider->free == __xgeMiniProgramResourceFree) ) {
+			__xgeMiniProgramBridgeSnapshotRelease((__xge_miniprogram_bridge_snapshot_t*)pProvider->pUser);
+			continue;
+		}
+		if ( iWrite != iRead ) g_xge.arrResourceProviders[iWrite] = *pProvider;
+		iWrite++;
+	}
+	if ( iWrite < g_xge.iResourceProviderCount ) {
+		memset(g_xge.arrResourceProviders + iWrite, 0,
+			sizeof(g_xge.arrResourceProviders[0]) * (size_t)(g_xge.iResourceProviderCount - iWrite));
+	}
+	g_xge.iResourceProviderCount = iWrite;
+}
+
+static int __xgeMiniProgramResourceProviderSet(const xge_miniprogram_bridge_t* pBridge)
 {
 	xge_resource_provider_t tProvider;
-
-	if ( g_xge.tMiniProgramBridge.load_resource == NULL ) {
-		return;
+	__xge_miniprogram_bridge_snapshot_t* pSnapshot;
+	int i;
+	if ( (pBridge == NULL) || (pBridge->load_resource == NULL) ) {
+		__xgeMiniProgramResourceProviderRemove();
+		return XGE_OK;
+	}
+	pSnapshot = (__xge_miniprogram_bridge_snapshot_t*)xrtCalloc(1, sizeof(*pSnapshot));
+	if ( pSnapshot == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	pSnapshot->tBridge = *pBridge;
+	pSnapshot->iRefCount = 1; /* Provider ownership; loaded resources take another ref. */
+	for ( i = 0; i < g_xge.iResourceProviderCount; i++ ) {
+		xge_resource_provider_t* pProvider = &g_xge.arrResourceProviders[i];
+		if ( (pProvider->load == __xgeMiniProgramResourceLoad) &&
+		     (pProvider->free == __xgeMiniProgramResourceFree) ) {
+			__xge_miniprogram_bridge_snapshot_t* pOld =
+				(__xge_miniprogram_bridge_snapshot_t*)pProvider->pUser;
+			pProvider->pUser = pSnapshot;
+			__xgeMiniProgramBridgeSnapshotRelease(pOld);
+			return XGE_OK;
+		}
 	}
 	memset(&tProvider, 0, sizeof(tProvider));
 	tProvider.sScheme = "res";
 	tProvider.load = __xgeMiniProgramResourceLoad;
 	tProvider.free = __xgeMiniProgramResourceFree;
-	(void)xgeResourceProviderAdd(&tProvider);
+	tProvider.pUser = pSnapshot;
+	if ( xgeResourceProviderAdd(&tProvider) != XGE_OK ) {
+		__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	return XGE_OK;
+}
+
+static int __xgeMiniProgramDimensionsValid(int iWidth, int iHeight, float fDevicePixelRatio)
+{
+	double fFramebufferWidth;
+	double fFramebufferHeight;
+
+	if ( (iWidth <= 0) || (iHeight <= 0) || !isfinite(fDevicePixelRatio) ||
+	     (fDevicePixelRatio <= 0.0f) ) return 0;
+	fFramebufferWidth = (double)iWidth * (double)fDevicePixelRatio;
+	fFramebufferHeight = (double)iHeight * (double)fDevicePixelRatio;
+	return isfinite(fFramebufferWidth) && isfinite(fFramebufferHeight) &&
+		fFramebufferWidth >= 1.0 && fFramebufferHeight >= 1.0 &&
+		fFramebufferWidth <= (double)INT_MAX && fFramebufferHeight <= (double)INT_MAX;
 }
 
 static void __xgeMiniProgramSetDimensions(int iWidth, int iHeight, float fDevicePixelRatio)
@@ -77,10 +172,17 @@ int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	g_xge.tMiniProgramDesc = *pDesc;
+	if ( !isfinite(g_xge.tMiniProgramDesc.fDevicePixelRatio) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	if ( g_xge.tMiniProgramDesc.fDevicePixelRatio <= 0.0f ) {
 		g_xge.tMiniProgramDesc.fDevicePixelRatio = 1.0f;
 	}
 	if ( g_xge.tMiniProgramDesc.iWidth > 0 && g_xge.tMiniProgramDesc.iHeight > 0 ) {
+		if ( !__xgeMiniProgramDimensionsValid(g_xge.tMiniProgramDesc.iWidth,
+			g_xge.tMiniProgramDesc.iHeight, g_xge.tMiniProgramDesc.fDevicePixelRatio) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
 		__xgeMiniProgramSetDimensions(g_xge.tMiniProgramDesc.iWidth,
 			g_xge.tMiniProgramDesc.iHeight, g_xge.tMiniProgramDesc.fDevicePixelRatio);
 	}
@@ -92,7 +194,11 @@ int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc)
 	tGraphics.iType = XGE_GPU_BACKEND_WEBGL2;
 	tGraphics.sName = "webgl2";
 	xgeGraphicsBackendSet(&tGraphics);
-	__xgeMiniProgramResourceProviderAdd();
+	{
+		int iRet = __xgeMiniProgramResourceProviderSet(&g_xge.tMiniProgramBridge);
+		if ( iRet != XGE_OK ) return iRet;
+	}
+	g_xge.bMiniProgramFrameTimeValid = 0;
 	g_xge.bMiniProgramInitialized = 1;
 	return XGE_OK;
 }
@@ -113,29 +219,40 @@ int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio)
 
 void xgeMiniProgramUnit(void)
 {
+	__xgeMiniProgramResourceProviderRemove();
 	memset(&g_xge.tMiniProgramDesc, 0, sizeof(g_xge.tMiniProgramDesc));
+	memset(&g_xge.tMiniProgramBridge, 0, sizeof(g_xge.tMiniProgramBridge));
 	g_xge.bMiniProgramInitialized = 0;
+	g_xge.bMiniProgramFrameTimeValid = 0;
 }
 
 int xgeMiniProgramSetBridge(const xge_miniprogram_bridge_t* pBridge)
 {
+	int iRet;
 	if ( pBridge == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	g_xge.tMiniProgramBridge = *pBridge;
 	if ( g_xge.bMiniProgramInitialized != 0 ) {
-		__xgeMiniProgramResourceProviderAdd();
+		iRet = __xgeMiniProgramResourceProviderSet(pBridge);
+		if ( iRet != XGE_OK ) return iRet;
 	}
+	g_xge.tMiniProgramBridge = *pBridge;
 	return XGE_OK;
 }
 
 int xgeMiniProgramFrame(double fTimeSeconds)
 {
-	(void)fTimeSeconds;
+	double fDelta;
 	if ( g_xge.bMiniProgramInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	return xgeFrame();
+	if ( !isfinite(fTimeSeconds) ) return XGE_ERROR_INVALID_ARGUMENT;
+	fDelta = g_xge.bMiniProgramFrameTimeValid ?
+		fTimeSeconds - g_xge.fMiniProgramLastFrameTime :
+		1.0 / (double)g_xge.objDesc.iTargetFPS;
+	g_xge.fMiniProgramLastFrameTime = fTimeSeconds;
+	g_xge.bMiniProgramFrameTimeValid = 1;
+	return __xgeFrameWithDelta((float)fDelta);
 }
 
 int xgeMiniProgramResize(int iWidth, int iHeight, float fDevicePixelRatio)
@@ -143,8 +260,12 @@ int xgeMiniProgramResize(int iWidth, int iHeight, float fDevicePixelRatio)
 	if ( (iWidth <= 0) || (iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( !isfinite(fDevicePixelRatio) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( fDevicePixelRatio <= 0.0f ) {
 		fDevicePixelRatio = 1.0f;
+	}
+	if ( !__xgeMiniProgramDimensionsValid(iWidth, iHeight, fDevicePixelRatio) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	g_xge.tMiniProgramDesc.iWidth = iWidth;
 	g_xge.tMiniProgramDesc.iHeight = iHeight;

@@ -456,6 +456,20 @@ static void __xgeDrawExImmediate(const xge_draw_t* pDraw)
 	__xgeFrameStatsAddDrawCall();
 }
 
+static int __xgeRenderRectFinite(xge_rect_t tRect)
+{
+	return isfinite(tRect.fX) && isfinite(tRect.fY) &&
+		isfinite(tRect.fW) && isfinite(tRect.fH);
+}
+
+static int __xgeRenderFloatToInt(double fValue)
+{
+	if ( !isfinite(fValue) ) return 0;
+	if ( fValue >= (double)INT_MAX ) return INT_MAX;
+	if ( fValue <= (double)INT_MIN ) return INT_MIN;
+	return (int)fValue;
+}
+
 void xgeViewportSet(xge_rect_t tRect)
 {
 	GLint iX;
@@ -464,6 +478,9 @@ void xgeViewportSet(xge_rect_t tRect)
 	GLsizei iH;
 
 	(void)xgeFlush();
+	if ( !__xgeRenderRectFinite(tRect) ) {
+		memset(&tRect, 0, sizeof(tRect));
+	}
 	if ( tRect.fW < 0.0f ) {
 		tRect.fW = 0.0f;
 	}
@@ -475,10 +492,11 @@ void xgeViewportSet(xge_rect_t tRect)
 	if ( (g_xge.bSokolRunning == 0) || (glViewport == NULL) ) {
 		return;
 	}
-	iX = (GLint)tRect.fX;
-	iY = (GLint)((float)g_xge.iHeight - tRect.fY - tRect.fH);
-	iW = (GLsizei)tRect.fW;
-	iH = (GLsizei)tRect.fH;
+	iX = (GLint)__xgeRenderFloatToInt((double)tRect.fX);
+	iY = (GLint)__xgeRenderFloatToInt((double)g_xge.iHeight -
+		(double)tRect.fY - (double)tRect.fH);
+	iW = (GLsizei)__xgeRenderFloatToInt((double)tRect.fW);
+	iH = (GLsizei)__xgeRenderFloatToInt((double)tRect.fH);
 	glViewport(iX, iY, iW, iH);
 }
 
@@ -510,9 +528,29 @@ void xgeViewportClear(void)
 	glViewport((GLint)tRect.fX, (GLint)tRect.fY, (GLsizei)tRect.fW, (GLsizei)tRect.fH);
 }
 
-static int __xgePixelRound(float fValue)
+static int __xgePixelRound(double fValue)
 {
-	return (int)floorf(fValue + 0.5f);
+	if ( !isfinite(fValue) ) return 0;
+	return __xgeRenderFloatToInt(floor(fValue + 0.5));
+}
+
+static int __xgePixelFloor(double fValue)
+{
+	if ( !isfinite(fValue) ) return 0;
+	return __xgeRenderFloatToInt(floor(fValue));
+}
+
+static int __xgePixelCeil(double fValue)
+{
+	if ( !isfinite(fValue) ) return 0;
+	return __xgeRenderFloatToInt(ceil(fValue));
+}
+
+static int __xgePixelExtent(int iStart, int iEnd)
+{
+	int64_t iExtent = (int64_t)iEnd - (int64_t)iStart;
+	if ( iExtent <= 0 ) return 0;
+	return iExtent > (int64_t)INT_MAX ? INT_MAX : (int)iExtent;
 }
 
 xge_rect_i_t xgeRectToPixelsNearest(xge_rect_t tRect)
@@ -521,12 +559,13 @@ xge_rect_i_t xgeRectToPixelsNearest(xge_rect_t tRect)
 	int iRight;
 	int iBottom;
 
+	if ( !__xgeRenderRectFinite(tRect) ) return (xge_rect_i_t){0, 0, 0, 0};
 	tPixels.iX = __xgePixelRound(tRect.fX);
 	tPixels.iY = __xgePixelRound(tRect.fY);
-	iRight = __xgePixelRound(tRect.fX + tRect.fW);
-	iBottom = __xgePixelRound(tRect.fY + tRect.fH);
-	tPixels.iW = iRight > tPixels.iX ? iRight - tPixels.iX : 0;
-	tPixels.iH = iBottom > tPixels.iY ? iBottom - tPixels.iY : 0;
+	iRight = __xgePixelRound((double)tRect.fX + (double)tRect.fW);
+	iBottom = __xgePixelRound((double)tRect.fY + (double)tRect.fH);
+	tPixels.iW = __xgePixelExtent(tPixels.iX, iRight);
+	tPixels.iH = __xgePixelExtent(tPixels.iY, iBottom);
 	return tPixels;
 }
 
@@ -536,12 +575,13 @@ xge_rect_i_t xgeRectToPixelsOutward(xge_rect_t tRect)
 	int iRight;
 	int iBottom;
 
-	tPixels.iX = (int)floorf(tRect.fX);
-	tPixels.iY = (int)floorf(tRect.fY);
-	iRight = (int)ceilf(tRect.fX + tRect.fW);
-	iBottom = (int)ceilf(tRect.fY + tRect.fH);
-	tPixels.iW = iRight > tPixels.iX ? iRight - tPixels.iX : 0;
-	tPixels.iH = iBottom > tPixels.iY ? iBottom - tPixels.iY : 0;
+	if ( !__xgeRenderRectFinite(tRect) ) return (xge_rect_i_t){0, 0, 0, 0};
+	tPixels.iX = __xgePixelFloor(tRect.fX);
+	tPixels.iY = __xgePixelFloor(tRect.fY);
+	iRight = __xgePixelCeil((double)tRect.fX + (double)tRect.fW);
+	iBottom = __xgePixelCeil((double)tRect.fY + (double)tRect.fH);
+	tPixels.iW = __xgePixelExtent(tPixels.iX, iRight);
+	tPixels.iH = __xgePixelExtent(tPixels.iY, iBottom);
 	return tPixels;
 }
 
@@ -551,12 +591,13 @@ xge_rect_i_t xgeRectToPixelsInward(xge_rect_t tRect)
 	int iRight;
 	int iBottom;
 
-	tPixels.iX = (int)ceilf(tRect.fX);
-	tPixels.iY = (int)ceilf(tRect.fY);
-	iRight = (int)floorf(tRect.fX + tRect.fW);
-	iBottom = (int)floorf(tRect.fY + tRect.fH);
-	tPixels.iW = iRight > tPixels.iX ? iRight - tPixels.iX : 0;
-	tPixels.iH = iBottom > tPixels.iY ? iBottom - tPixels.iY : 0;
+	if ( !__xgeRenderRectFinite(tRect) ) return (xge_rect_i_t){0, 0, 0, 0};
+	tPixels.iX = __xgePixelCeil(tRect.fX);
+	tPixels.iY = __xgePixelCeil(tRect.fY);
+	iRight = __xgePixelFloor((double)tRect.fX + (double)tRect.fW);
+	iBottom = __xgePixelFloor((double)tRect.fY + (double)tRect.fH);
+	tPixels.iW = __xgePixelExtent(tPixels.iX, iRight);
+	tPixels.iH = __xgePixelExtent(tPixels.iY, iBottom);
 	return tPixels;
 }
 
@@ -586,6 +627,9 @@ void xgeClipSet(xge_rect_t tRect)
 	float fScissorBottom;
 
 	(void)xgeFlush();
+	if ( !__xgeRenderRectFinite(tRect) ) {
+		memset(&tRect, 0, sizeof(tRect));
+	}
 	if ( tRect.fW < 0.0f ) {
 		tRect.fW = 0.0f;
 	}
@@ -612,6 +656,18 @@ void xgeClipSet(xge_rect_t tRect)
 	}
 	if ( fTop < 0.0f ) {
 		fTop = 0.0f;
+	}
+	if ( fLeft > (float)g_xge.iWidth ) {
+		fLeft = (float)g_xge.iWidth;
+	}
+	if ( fTop > (float)g_xge.iHeight ) {
+		fTop = (float)g_xge.iHeight;
+	}
+	if ( fRight < 0.0f ) {
+		fRight = 0.0f;
+	}
+	if ( fBottom < 0.0f ) {
+		fBottom = 0.0f;
 	}
 	if ( fRight > (float)g_xge.iWidth ) {
 		fRight = (float)g_xge.iWidth;
@@ -798,6 +854,8 @@ static const char* __xgeWin32ClipboardGetText(void)
 {
 	HANDLE hData;
 	const WCHAR* sWide;
+	SIZE_T iWideCapacity;
+	SIZE_T iWideLength;
 	DWORD iSequence;
 	DWORD iReadSequence;
 	int iUtf8Size;
@@ -834,13 +892,24 @@ static const char* __xgeWin32ClipboardGetText(void)
 		CloseClipboard();
 		return __xgeWin32ClipboardCacheInvalidate();
 	}
-	iUtf8Size = WideCharToMultiByte(CP_UTF8, 0, sWide, -1, NULL, 0, NULL, NULL);
+	iWideCapacity = GlobalSize(hData) / sizeof(WCHAR);
+	iWideLength = 0u;
+	while ( iWideLength < iWideCapacity && sWide[iWideLength] != 0 ) iWideLength++;
+	if ( (iWideLength == iWideCapacity) || (iWideLength >= (SIZE_T)INT_MAX) ) {
+		GlobalUnlock(hData);
+		CloseClipboard();
+		return __xgeWin32ClipboardCacheInvalidate();
+	}
+	/* Include the validated terminator; never ask Win32 to scan clipboard memory. */
+	iWideLength++;
+	iUtf8Size = WideCharToMultiByte(CP_UTF8, 0, sWide, (int)iWideLength, NULL, 0, NULL, NULL);
 	if ( iUtf8Size <= 0 || !__xgeWin32ClipboardCacheReserve((size_t)iUtf8Size) ) {
 		GlobalUnlock(hData);
 		CloseClipboard();
 		return __xgeWin32ClipboardCacheInvalidate();
 	}
-	iConverted = WideCharToMultiByte(CP_UTF8, 0, sWide, -1, g_xge.sClipboardText, iUtf8Size, NULL, NULL);
+	iConverted = WideCharToMultiByte(CP_UTF8, 0, sWide, (int)iWideLength,
+		g_xge.sClipboardText, iUtf8Size, NULL, NULL);
 	GlobalUnlock(hData);
 	CloseClipboard();
 	if ( iConverted <= 0 ) {
@@ -871,6 +940,36 @@ static HGLOBAL __xgeWin32ClipboardMemory(const void* pData, size_t iSize, int bT
 	if ( bTerminate ) pTarget[iSize] = 0;
 	GlobalUnlock(hMemory);
 	return hMemory;
+}
+
+static const unsigned char* __xgeWin32ClipboardFind(const unsigned char* pData,
+	size_t iSize, const char* sNeedle)
+{
+	size_t iNeedleSize = strlen(sNeedle);
+	size_t i;
+	if ( (pData == NULL) || (iNeedleSize == 0u) || (iNeedleSize > iSize) ) return NULL;
+	for ( i = 0u; i <= iSize - iNeedleSize; i++ ) {
+		if ( memcmp(pData + i, sNeedle, iNeedleSize) == 0 ) return pData + i;
+	}
+	return NULL;
+}
+
+static int __xgeWin32ClipboardParseOffset(const unsigned char* pText,
+	const unsigned char* pEnd, size_t* pOffset)
+{
+	size_t iValue = 0u;
+	int bDigit = 0;
+	if ( (pText == NULL) || (pEnd == NULL) || (pOffset == NULL) ) return 0;
+	while ( pText < pEnd && *pText >= (unsigned char)'0' && *pText <= (unsigned char)'9' ) {
+		unsigned int iDigit = (unsigned int)(*pText - (unsigned char)'0');
+		if ( iValue > (SIZE_MAX - (size_t)iDigit) / 10u ) return 0;
+		iValue = iValue * 10u + (size_t)iDigit;
+		bDigit = 1;
+		pText++;
+	}
+	if ( !bDigit ) return 0;
+	*pOffset = iValue;
+	return 1;
 }
 
 static HGLOBAL __xgeWin32ClipboardUtf8Text(const void* pData, size_t iSize)
@@ -1009,18 +1108,20 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 	iSize = GlobalSize(hData);
 	iEnd = (size_t)iSize;
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_HTML) == 0 ) {
-		const char* sStart = strstr((const char*)pSource, "StartFragment:");
-		const char* sFinish = strstr((const char*)pSource, "EndFragment:");
-		unsigned long iParsedStart;
-		unsigned long iParsedEnd;
-		if ( sStart == NULL || sFinish == NULL ) { GlobalUnlock(hData); CloseClipboard(); return XGE_ERROR_RESOURCE_FAILED; }
-		iParsedStart = strtoul(sStart + 14, NULL, 10);
-		iParsedEnd = strtoul(sFinish + 12, NULL, 10);
-		if ( iParsedStart > iParsedEnd || iParsedEnd > (unsigned long)iSize ) {
+		static const char sStartLabel[] = "StartFragment:";
+		static const char sEndLabel[] = "EndFragment:";
+		const unsigned char* pStart = __xgeWin32ClipboardFind(pSource, (size_t)iSize, sStartLabel);
+		const unsigned char* pFinish = __xgeWin32ClipboardFind(pSource, (size_t)iSize, sEndLabel);
+		size_t iParsedStart;
+		size_t iParsedEnd;
+		if ( pStart == NULL || pFinish == NULL ||
+		     !__xgeWin32ClipboardParseOffset(pStart + sizeof(sStartLabel) - 1u, pSource + iSize, &iParsedStart) ||
+		     !__xgeWin32ClipboardParseOffset(pFinish + sizeof(sEndLabel) - 1u, pSource + iSize, &iParsedEnd) ||
+		     iParsedStart > iParsedEnd || iParsedEnd > (size_t)iSize ) {
 			GlobalUnlock(hData); CloseClipboard(); return XGE_ERROR_RESOURCE_FAILED;
 		}
-		iOffset = (size_t)iParsedStart;
-		iEnd = (size_t)iParsedEnd;
+		iOffset = iParsedStart;
+		iEnd = iParsedEnd;
 	}
 	if ( iEnd - iOffset > (size_t)INT_MAX ) iResult = XGE_ERROR_BUFFER_TOO_SMALL;
 	else {
@@ -1040,7 +1141,8 @@ int xgeClipboardSetItems(const xge_clipboard_item_t* pItems, int iItemCount)
 	if ( pItems == NULL || iItemCount <= 0 || iItemCount > 64 ) return XGE_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < iItemCount; i++ ) {
 		if ( pItems[i].sFormat == NULL || pItems[i].sFormat[0] == 0 ||
-		     (pItems[i].pData == NULL && pItems[i].iDataSize != 0u) ) return XGE_ERROR_INVALID_ARGUMENT;
+		     (pItems[i].pData == NULL && pItems[i].iDataSize != 0u) ||
+		     pItems[i].iDataSize == SIZE_MAX ) return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	#if defined(_WIN32) || defined(_WIN64)
 		if ( g_xge.bInitialized ) return __xgeWin32ClipboardSetItems(pItems, iItemCount);

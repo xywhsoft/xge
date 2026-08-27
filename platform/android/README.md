@@ -1,17 +1,12 @@
-# XGE Android NativeActivity Scaffold
+# XGE Android
 
-This folder contains the first Android/Sokol integration scaffold.
+此目录提供 XGE 的 Android NativeActivity 接入文件。它通过 Sokol Android 入口构建 `libxge_android.so`，使用 OpenGL ES 3；当前 Android 接入以 `XGE_NO_AUDIO` 构建。
 
-## Scope
+完整的发布前验证要求见根目录 [平台说明](../../docs/PLATFORM.md)。
 
-- Uses Sokol's Android entry path. Android does not support `SOKOL_NO_ENTRY`.
-- Builds XGE as a `NativeActivity` shared library.
-- Uses OpenGL ES 3 through `SOKOL_GLES3`.
-- Disables XGE audio in the initial scaffold with `XGE_NO_AUDIO`; audio device validation is a later target-device task.
+## 构建
 
-## Build Outline
-
-Use Android NDK CMake to validate the native shared library:
+使用 Android NDK CMake：
 
 ```sh
 cmake -S platform/android -B build/android \
@@ -21,44 +16,8 @@ cmake -S platform/android -B build/android \
 cmake --build build/android
 ```
 
-Windows equivalent:
+Windows 可运行 `build_android_ndk.bat`。要构建调试 APK，运行 `build_android_apk.bat`；再用 `run_android_apk.bat` 安装并启动。需要已配置 Android NDK、SDK、Gradle 和设备或模拟器。
 
-```bat
-build_android_ndk.bat
-```
+## 应用入口
 
-The generated library name is `libxge_android.so`, matching `AndroidManifest.xml`.
-
-To build a debug APK with the Gradle scaffold:
-
-```sh
-./build_android_apk.sh
-```
-
-Windows:
-
-```bat
-build_android_apk.bat
-```
-
-The APK path is `platform/android/gradle/app/build/outputs/apk/debug/app-debug.apk`.
-
-Install and launch on a connected device or emulator:
-
-```sh
-./run_android_apk.sh
-```
-
-Windows:
-
-```bat
-run_android_apk.bat
-```
-
-## App Entry
-
-`xge_android_main.c` provides `sokol_main`. It initializes XGE with a minimal scene callback. Real apps should replace that file or provide a project-specific variant.
-
-## Validation
-
-This scaffold is not marked as Android support complete until it is packaged into an APK and run on a device or emulator.
+`xge_android_main.c` 提供 `sokol_main`。应用应以自身的初始化与帧回调替换或扩展该入口，并在目标设备或模拟器上完成启动、绘制和输入验证。

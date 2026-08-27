@@ -25,6 +25,9 @@
 #define XGE_SHAPE_EX_HALF_OPEN_BIAS (1.0f / 128.0f)
 #define XGE_SHAPE_EX_STROKE_UNION_DOT -0.98f
 #define XGE_SHAPE_EX_FILL_POINT_LIMIT 8192
+/* Decorated hit tests sample nine points per covered pixel. Bound the work so
+ * untrusted geometry cannot turn one query into an unbounded CPU scan. */
+#define XGE_SHAPE_EX_INTERSECT_MAX_PIXELS 262144u
 
 typedef struct xge_shape_ex_transform_state_t {
 	float fTranslateX;
@@ -12896,6 +12899,10 @@ static int __xgeShapeExDecoratedIntersectsRect(
 		iStartY = (int)fStartY;
 		iEndX = (int)fEndX;
 		iEndY = (int)fEndY;
+	}
+	if ( ((uint64_t)((int64_t)iEndX - (int64_t)iStartX) *
+		(uint64_t)((int64_t)iEndY - (int64_t)iStartY)) > XGE_SHAPE_EX_INTERSECT_MAX_PIXELS ) {
+		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	for ( y = iStartY; y < iEndY; y++ ) {
 		int x;

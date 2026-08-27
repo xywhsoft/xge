@@ -196,6 +196,10 @@ typedef struct xge_context_t {
 	float fDelta;
 	float fDpiScale;
 	double fStartTime;
+	double fManualFrameLastTime;
+	double fMiniProgramLastFrameTime;
+	int bManualFrameTimeValid;
+	int bMiniProgramFrameTimeValid;
 	double fFPSLastTime;
 	int iFPSFrameCount;
 	uint32_t iClearColor;

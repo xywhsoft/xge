@@ -21,6 +21,30 @@ typedef struct test_scene_input_t {
 	float fDY;
 } test_scene_input_t;
 
+typedef struct test_resource_bridge_t {
+	int iLoadCount;
+	int iFreeCount;
+} test_resource_bridge_t;
+
+static int __testResourceBridgeLoad(const char* sURI, void** ppData, int* pSize, void* pUser)
+{
+	test_resource_bridge_t* pBridge = (test_resource_bridge_t*)pUser;
+	(void)sURI;
+	*ppData = xrtMalloc(1u);
+	if ( *ppData == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	*(unsigned char*)*ppData = 0x5a;
+	*pSize = 1;
+	pBridge->iLoadCount++;
+	return XGE_OK;
+}
+
+static void __testResourceBridgeFree(void* pData, void* pUser)
+{
+	test_resource_bridge_t* pBridge = (test_resource_bridge_t*)pUser;
+	pBridge->iFreeCount++;
+	xrtFree(pData);
+}
+
 static int __testNear(float fA, float fB)
 {
 	return fabsf(fA - fB) < 0.001f;
@@ -148,7 +172,7 @@ static int __testDpiCase(float fDpiScale, test_scene_input_t* pSceneInput)
 	__xgeSokolEvent(&tEvent);
 	TEST_CHECK(__testGetPointerEvent(XGE_EVENT_TOUCH_BEGIN, 7u, XGE_MOUSE_LEFT,
 		XGE_MOUSE_LEFT, XGE_KEY_MOD_CTRL,
-		210.0f, 240.0f, 210.0f, 240.0f), "touch begin event");
+		210.0f, 240.0f, 0.0f, 0.0f), "touch begin event");
 	TEST_CHECK(pSceneInput->iType == XGE_EVENT_TOUCH_BEGIN &&
 		pSceneInput->iModifiers == XGE_KEY_MOD_CTRL &&
 		__testNear(pSceneInput->fX, 210.0f) && __testNear(pSceneInput->fY, 240.0f),
@@ -191,7 +215,7 @@ static int __testDpiCase(float fDpiScale, test_scene_input_t* pSceneInput)
 	tEvent.touches[0].changed = true;
 	__xgeSokolEvent(&tEvent);
 	TEST_CHECK(__testGetPointerEvent(XGE_EVENT_TOUCH_BEGIN, 8u, XGE_MOUSE_LEFT,
-		XGE_MOUSE_LEFT, 0u, 260.0f, 270.0f, 260.0f, 270.0f),
+		XGE_MOUSE_LEFT, 0u, 260.0f, 270.0f, 0.0f, 0.0f),
 		"second touch begin event");
 
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -214,9 +238,26 @@ static int __testDpiCase(float fDpiScale, test_scene_input_t* pSceneInput)
 static int __testMiniProgramCoordinates(void)
 {
 	xge_input_event_t tEvent;
+	xge_miniprogram_bridge_t tBridgeA;
+	xge_miniprogram_bridge_t tBridgeB;
+	xge_resource_t tResource;
+	test_resource_bridge_t tStateA;
+	test_resource_bridge_t tStateB;
+	float fNan = nanf("");
 
+	memset(&tBridgeA, 0, sizeof(tBridgeA));
+	memset(&tBridgeB, 0, sizeof(tBridgeB));
+	memset(&tStateA, 0, sizeof(tStateA));
+	memset(&tStateB, 0, sizeof(tStateB));
+	tBridgeA.load_resource = __testResourceBridgeLoad;
+	tBridgeA.free_resource = __testResourceBridgeFree;
+	tBridgeA.pUser = &tStateA;
+	tBridgeB.load_resource = __testResourceBridgeLoad;
+	tBridgeB.free_resource = __testResourceBridgeFree;
+	tBridgeB.pUser = &tStateB;
 	g_xge.iTouchCount = 0;
 	memset(g_xge.arrTouches, 0, sizeof(g_xge.arrTouches));
+	TEST_CHECK(xgeMiniProgramSetBridge(&tBridgeA) == XGE_OK, "set first miniprogram bridge");
 	TEST_CHECK(xgeMiniProgramInitSimple(400, 300, 2.0f) == XGE_OK,
 		"miniprogram init");
 	TEST_CHECK(xgeGetWidth() == 800 && xgeGetHeight() == 600,
@@ -229,7 +270,43 @@ static int __testMiniProgramCoordinates(void)
 		tEvent.iModifiers == 0u &&
 		__testNear(tEvent.fX, 50.0f) && __testNear(tEvent.fY, 60.0f),
 		"miniprogram touch framebuffer coordinates");
+	memset(&tResource, 0, sizeof(tResource));
+	TEST_CHECK(xgeResourceLoad("res://bridge-a", &tResource) == XGE_OK, "load with first bridge");
+	TEST_CHECK(xgeMiniProgramSetBridge(&tBridgeB) == XGE_OK, "replace miniprogram bridge");
+	xgeResourceFree(&tResource);
+	TEST_CHECK(tStateA.iFreeCount == 1 && tStateB.iFreeCount == 0,
+		"resource free uses bridge active at load time");
+	memset(&tResource, 0, sizeof(tResource));
+	TEST_CHECK(xgeResourceLoad("res://bridge-b", &tResource) == XGE_OK, "load with replacement bridge");
+	xgeResourceFree(&tResource);
+	TEST_CHECK(tStateB.iLoadCount == 1 && tStateB.iFreeCount == 1,
+		"replacement bridge owns new resources");
+	TEST_CHECK(xgeMiniProgramResize(400, 300, fNan) == XGE_ERROR_INVALID_ARGUMENT,
+		"reject non-finite device pixel ratio");
+	TEST_CHECK(xgeMiniProgramFrame(10.0) == 1 && xgeMiniProgramFrame(10.5) == 1 &&
+		__testNear(xgeGetDelta(), 0.5f), "miniprogram frame timestamp drives delta");
 	xgeMiniProgramUnit();
+	return 1;
+}
+
+static int __testNonFiniteRectHandling(void)
+{
+	xge_rect_i_t tPixels;
+	xge_rect_t tRect = {nanf(""), 0.0f, 10.0f, 10.0f};
+
+	tPixels = xgeRectToPixelsNearest(tRect);
+	TEST_CHECK(tPixels.iX == 0 && tPixels.iY == 0 && tPixels.iW == 0 && tPixels.iH == 0,
+		"non-finite rectangle conversion");
+	xgeViewportSet(tRect);
+	tRect = xgeViewportGet();
+	TEST_CHECK(tRect.fX == 0.0f && tRect.fY == 0.0f && tRect.fW == 0.0f && tRect.fH == 0.0f,
+		"non-finite viewport rejected");
+	xgeClipSet((xge_rect_t){0.0f, nanf(""), 10.0f, 10.0f});
+	tRect = xgeClipGet();
+	TEST_CHECK(tRect.fX == 0.0f && tRect.fY == 0.0f && tRect.fW == 0.0f && tRect.fH == 0.0f,
+		"non-finite clip rejected");
+	xgeViewportClear();
+	xgeClipClear();
 	return 1;
 }
 
@@ -254,7 +331,8 @@ int main(void)
 	if ( xgeSceneSet(&tScene) != XGE_OK ||
 	     !__testDpiCase(1.0f, &tSceneInput) ||
 	     !__testDpiCase(2.0f, &tSceneInput) ||
-	     !__testMiniProgramCoordinates() ) {
+	     !__testMiniProgramCoordinates() ||
+	     !__testNonFiniteRectHandling() ) {
 		iFailed = 1;
 	}
 	xgeUnit();

@@ -82,4 +82,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/emoji_pack/run_codec_b
 ```
 
 Results are written under `artifacts/emoji_compression_benchmark`. See
-`docs/emoji-codec-benchmark.md` for the recorded decision.
+`docs/EMOJI.md` for the runtime behavior exposed to applications.

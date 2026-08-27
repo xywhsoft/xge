@@ -24,7 +24,8 @@
  * The cell accumulation model is adapted from the FreeType gray raster used by
  * ThorVG. Portions are copyright 1996-2002, 2006 The FreeType Project
  * (www.freetype.org). Full upstream terms remain in the vendored reference
- * source and its license files under dev/; no reference source is compiled.
+ * source and its license files in the historical development workspace; no
+ * reference source is compiled into the release library.
  *
  * ShapeEx feeds both flattened contours and curve-preserving command paths.
  * This C adaptation owns fixed-point line/cubic coverage and RLE span generation.

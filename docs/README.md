@@ -1,87 +1,25 @@
-# XUI Docs
+# XGE 文档
 
-This directory records the XUI redesign notes before implementation.
+这里是 XGE 2.0 的发布文档入口。文档只描述当前可用的公开能力；函数签名、结构体字段、返回值和编译开关以 [`../xge.h`](../xge.h) 与 [`../xui.h`](../xui.h) 为准。
 
-Current documents:
+## 使用文档
 
-- [Current XUI Mechanism Index](current-xui-mechanism-index.md)
-- [Cache and APPUI Rendering Design](cache-appui-rendering-design.md)
-- [Render Capability and Proxy Design](render-capability-and-proxy-design.md)
-- [Empty Geometry and Render Error Recovery](xui-empty-geometry-render-merge.md)
-- [Vector Rendering Capability SPEC](vector-render-capability-spec.md)
-- [XUI Icon Manager](xui-icon-manager.md)
-- [Layout System Design](layout-system-design.md)
-- [XUI and xLayout Integration](xui-xlayout-integration.md)
-- [Style System Design](style-system-design.md)
-- [CodeEdit Control Design](xui-codeedit-design.md)
-- [CodeEdit SPEC](xui-codeedit-spec.md)
-- [CodeEdit Widget](xui/widget-codeedit.md)
-- [Chart Control Design](chart-control-design.md)
-- [Chart Control SPEC](chart-control-spec.md)
-- [Workflow / FlowGraph Control Design](workflow-control-design.md)
-- [Workflow / FlowGraph Control SPEC](workflow-control-spec.md)
-- [InventoryGrid Control Design](inventory-grid-control-design.md)
-- [InventoryGrid Control SPEC](inventory-grid-control-spec.md)
-- [Terminal Control Design](terminal-control-design.md)
-- [Terminal Control SPEC](terminal-control-spec.md)
-- [XRT Foundation Index For Workflow](xrt-workflow-foundation-index.md)
-- [FlowGraph Widget](xui/widget-flowgraph.md)
-- [Workflow Widget](xui/widget-workflow.md)
-- [Chart Widget](xui/widget-chart.md)
-- [Checkbox Widget](xui/widget-checkbox.md)
-- [CheckCard Widget](xui/widget-checkcard.md)
-- [Breadcrumb Widget](xui/widget-breadcrumb.md)
-- [Hyperlink Widget](xui/widget-hyperlink.md)
-- [QRCode Widget](xui/widget-qrcode.md)
-- [Radio Widget](xui/widget-radio.md)
-- [Toggle Widget](xui/widget-toggle.md)
-- [ScrollBar Widget](xui/widget-scrollbar.md)
-- [StepBar Widget](xui/widget-stepbar.md)
-- [Slider Widget](xui/widget-slider.md)
-- [RangeSlider Widget](xui/widget-rangeslider.md)
-- [Page Widget](xui/widget-page.md)
-- [Carousel Widget](xui/widget-carousel.md)
-- [VirtualJoystick Widget](xui/widget-virtual-joystick.md)
-- [InventoryGrid Widget](xui/widget-inventory-grid.md)
-- [Terminal Widget](xui/widget-terminal.md)
-- [Canvas Widget](xui/widget-canvas.md)
-- [SplitLayout Widget](xui/widget-splitlayout.md)
-- [ScrollModel](xui/scroll-model.md)
-- [ScrollFrame Widget](xui/widget-scrollframe.md)
-- [ScrollView Widget](xui/widget-scrollview.md)
-- [ListView Widget](xui/widget-listview.md)
-- [TreeView Widget](xui/widget-treeview.md)
-- [TableView Widget](xui/widget-tableview.md)
-- [TableGrid Widget](xui/widget-tablegrid.md)
-- [PropertyGrid Widget](xui/widget-propertygrid.md)
-- [TimeLineView Widget](xui/widget-timelineview.md)
-- [Accordion Widget](xui/widget-accordion.md)
-- [Popup Widget](xui/widget-popup.md)
-- [Menu Widget](xui/widget-menu.md)
-- [MenuBar Widget](xui/widget-menubar.md)
-- [Toolbar Widget](xui/widget-toolbar.md)
-- [StatusBar Widget](xui/widget-statusbar.md)
-- [MsgBox Utility](xui/widget-msgbox.md)
-- [File Dialog Utility](xui/widget-file-dialog.md)
-- [MsgTip Utility](xui/widget-msgtip.md)
-- [Toast Utility](xui/widget-toast.md)
-- [ComboBox Widget](xui/widget-combobox.md)
-- [Cascader Widget](xui/widget-cascader.md)
-- [ColorPicker Widget](xui/widget-color-picker.md)
-- [DatePicker Widget](xui/widget-date-picker.md)
-- [Panel Widget](xui/widget-panel.md)
-- [Window Widget](xui/widget-window.md)
-- [DockPanel Widget](xui/widget-dockpanel.md)
-- [Tabs Widget](xui/widget-tabs.md)
-- [Input Widget](xui/widget-input.md)
-- [TagInput Widget](xui/widget-tag-input.md)
-- [NumericInput Widget](xui/widget-numeric-input.md)
-- [TextEdit Widget](xui/widget-textedit.md)
-- [Image Widget](xui/widget-image.md)
-- [Separator Widget](xui/widget-separator.md)
-- [Progress Widget](xui/widget-progress.md)
+- [构建与验证](BUILD.md)
+- [XGE 使用指南](XGE.md)
+- [XUI 使用指南](XUI.md)
+- [范例索引](EXAMPLES.md)
+- [平台说明](PLATFORM.md)
+- [Emoji 支持](EMOJI.md)
 
-Planned next topics:
+## 阅读顺序
 
-- XUI architecture roadmap and implementation phases.
+1. 第一次使用：从 [构建与验证](BUILD.md) 构建 DLL 并运行基础测试。
+2. 编写图形或应用程序：阅读 [XGE 使用指南](XGE.md)，然后从 `examples/xge_*` 选择相近范例。
+3. 构建界面：阅读 [XUI 使用指南](XUI.md)，再从 `examples/xui_*` 选择控件范例。
+4. 接入 Android、iOS 或 Web：先确认 [平台说明](PLATFORM.md) 中的适用范围，再在目标环境完成验证。
 
+## 文档约定
+
+- 公共对象只通过头文件声明的创建、查询和释放 API 操作。
+- `examples/` 中的代码可作为最小集成参考；测试文件用于回归验证，不是用户 API 教程。
+- 仓库不再把设计草案、开发计划、审计记录和历史实现作为发布文档维护。
