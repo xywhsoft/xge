@@ -93,6 +93,8 @@ typedef struct xui_window_resolved_t {
 
 static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pData, int bOpen, int bRaise);
 static int __xuiWindowApplyLayerAndZ(xui_widget pWidget, xui_window_data_t* pData);
+static float __xuiWindowMinWidth(const xui_window_data_t* pData, const xui_window_resolved_t* pResolved);
+static float __xuiWindowMinHeight(const xui_window_data_t* pData, const xui_window_resolved_t* pResolved);
 
 static uint32_t __xuiWindowAlpha(uint32_t iColor)
 {
@@ -299,6 +301,21 @@ static void __xuiWindowResolve(xui_widget pWidget, const xui_window_data_t* pDat
 	if ( pResolved->fResizeGrip < 2.0f ) pResolved->fResizeGrip = 2.0f;
 }
 
+static void __xuiWindowFrameMetrics(const xui_window_data_t* pData,
+	const xui_window_resolved_t* pResolved, xui_internal_window_frame_metrics_t* pMetrics)
+{
+	memset(pMetrics, 0, sizeof(*pMetrics));
+	pMetrics->fTitleBarHeight = pResolved->fTitleBarHeight;
+	pMetrics->fBorderWidth = pResolved->fBorderWidth;
+	pMetrics->fResizeGrip = pResolved->fResizeGrip;
+	pMetrics->fButtonSize = pResolved->fButtonSize;
+	pMetrics->fButtonGap = 4.0f;
+	pMetrics->fButtonInset = 5.0f;
+	pMetrics->iResizeEdges = pData->iResizeEdges;
+	pMetrics->bShowTitleBar = pData->bShowTitleBar;
+	pMetrics->bResizable = pData->bResizable && !pData->bMaximized;
+}
+
 static int __xuiWindowDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiWindowAlpha(iColor) == 0u ) {
@@ -439,77 +456,12 @@ static xui_rect_t __xuiWindowClampRect(xui_widget pWidget, xui_window_data_t* pD
 	xui_rect_t tParent;
 	float fMinW;
 	float fMinH;
-	float fRight;
-	float fBottom;
-	float fParentRight;
-	float fParentBottom;
 
 	tParent = __xuiWindowParentRect(pWidget);
 	fMinW = __xuiWindowMinWidth(pData, pResolved);
-	fMinH = __xuiWindowMinHeight(pData, pResolved);
-	tRect.fW = __xuiWindowMax(tRect.fW, fMinW);
-	tRect.fH = pData->bCollapsed ? __xuiWindowCollapsedHeight(pData, pResolved) : __xuiWindowMax(tRect.fH, fMinH);
-	if ( (tParent.fW > 0.0f) && (tRect.fW > tParent.fW) && (tParent.fW >= fMinW) ) {
-		tRect.fW = tParent.fW;
-	}
-	if ( (tParent.fH > 0.0f) && (tRect.fH > tParent.fH) && (tParent.fH >= fMinH) ) {
-		tRect.fH = tParent.fH;
-	}
-	fRight = tRect.fX + tRect.fW;
-	fBottom = tRect.fY + tRect.fH;
-	fParentRight = tParent.fX + tParent.fW;
-	fParentBottom = tParent.fY + tParent.fH;
-	if ( tRect.fX < tParent.fX ) {
-		tRect.fX = tParent.fX;
-	}
-	if ( tRect.fY < tParent.fY ) {
-		tRect.fY = tParent.fY;
-	}
-	if ( (tParent.fW > 0.0f) && (fRight > fParentRight) ) {
-		tRect.fX = fParentRight - tRect.fW;
-		if ( tRect.fX < tParent.fX ) tRect.fX = tParent.fX;
-	}
-	if ( (tParent.fH > 0.0f) && (fBottom > fParentBottom) ) {
-		tRect.fY = fParentBottom - tRect.fH;
-		if ( tRect.fY < tParent.fY ) tRect.fY = tParent.fY;
-	}
-	return xuiInternalSnapRect(tRect);
-}
-
-static xui_rect_t __xuiWindowClampMoveRect(xui_widget pWidget, xui_rect_t tRect)
-{
-	xui_rect_t tParent;
-	float fParentRight;
-	float fParentBottom;
-
-	tParent = __xuiWindowParentRect(pWidget);
-	fParentRight = tParent.fX + tParent.fW;
-	fParentBottom = tParent.fY + tParent.fH;
-	if ( tParent.fW > 0.0f ) {
-		if ( tRect.fW >= tParent.fW ) {
-			tRect.fX = tParent.fX;
-		} else {
-			if ( tRect.fX < tParent.fX ) {
-				tRect.fX = tParent.fX;
-			}
-			if ( tRect.fX + tRect.fW > fParentRight ) {
-				tRect.fX = fParentRight - tRect.fW;
-			}
-		}
-	}
-	if ( tParent.fH > 0.0f ) {
-		if ( tRect.fH >= tParent.fH ) {
-			tRect.fY = tParent.fY;
-		} else {
-			if ( tRect.fY < tParent.fY ) {
-				tRect.fY = tParent.fY;
-			}
-			if ( tRect.fY + tRect.fH > fParentBottom ) {
-				tRect.fY = fParentBottom - tRect.fH;
-			}
-		}
-	}
-	return xuiInternalSnapRect(tRect);
+	fMinH = pData->bCollapsed ? __xuiWindowCollapsedHeight(pData, pResolved) : __xuiWindowMinHeight(pData, pResolved);
+	if ( pData->bCollapsed ) tRect.fH = fMinH;
+	return xuiInternalWindowFrameClamp(tRect, tParent, fMinW, fMinH);
 }
 
 static int __xuiWindowApplyRect(xui_widget pWidget, xui_window_data_t* pData, xui_rect_t tRect)
@@ -636,29 +588,14 @@ static xui_widget __xuiWindowFindActiveInTree(xui_widget pRoot)
 static uint32_t __xuiWindowResizeEdgesAtData(xui_widget pWidget, xui_window_data_t* pData, const xui_window_resolved_t* pResolved, float fX, float fY)
 {
 	xui_rect_t tWorld;
-	float fLocalX;
-	float fLocalY;
-	float fGrip;
-	float fTopGrip;
-	uint32_t iEdges;
+	xui_internal_window_frame_metrics_t tMetrics;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) || !pData->bResizable || pData->bMaximized ) {
 		return 0u;
 	}
 	tWorld = xuiWidgetGetWorldRect(pWidget);
-	if ( !__xuiWindowRectContains(tWorld, fX, fY) ) {
-		return 0u;
-	}
-	fLocalX = fX - tWorld.fX;
-	fLocalY = fY - tWorld.fY;
-	fGrip = pResolved->fResizeGrip;
-	fTopGrip = pData->bShowTitleBar ? __xuiWindowMin(4.0f, fGrip) : fGrip;
-	iEdges = 0u;
-	if ( fLocalX <= fGrip ) iEdges |= XUI_WINDOW_EDGE_LEFT;
-	if ( fLocalX >= (tWorld.fW - fGrip) ) iEdges |= XUI_WINDOW_EDGE_RIGHT;
-	if ( fLocalY <= fTopGrip ) iEdges |= XUI_WINDOW_EDGE_TOP;
-	if ( fLocalY >= (tWorld.fH - fGrip) ) iEdges |= XUI_WINDOW_EDGE_BOTTOM;
-	return iEdges & pData->iResizeEdges;
+	__xuiWindowFrameMetrics(pData, pResolved, &tMetrics);
+	return xuiInternalWindowFrameResizeEdgesAt(tWorld, &tMetrics, fX, fY);
 }
 
 static int __xuiWindowQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
@@ -671,12 +608,7 @@ static int __xuiWindowQueryCursor(xui_widget pWidget, int iX, int iY, void* pUse
 	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_CURSOR_NOT_ALLOWED;
 	__xuiWindowResolve(pWidget, pData, &tResolved);
 	iEdges = __xuiWindowResizeEdgesAtData(pWidget, pData, &tResolved, (float)iX, (float)iY);
-	if ( iEdges == 0u ) return XUI_CURSOR_INHERIT;
-	if ( (iEdges & (XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_RIGHT)) != 0u &&
-	     (iEdges & (XUI_WINDOW_EDGE_TOP | XUI_WINDOW_EDGE_BOTTOM)) != 0u ) {
-		return ((iEdges & XUI_WINDOW_EDGE_LEFT) != 0u) == ((iEdges & XUI_WINDOW_EDGE_TOP) != 0u) ? XUI_CURSOR_RESIZE_NWSE : XUI_CURSOR_RESIZE_NESW;
-	}
-	return ((iEdges & (XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_RIGHT)) != 0u) ? XUI_CURSOR_RESIZE_EW : XUI_CURSOR_RESIZE_NS;
+	return xuiInternalWindowFrameResizeCursor(iEdges);
 }
 
 static int __xuiWindowCanStartMove(xui_widget pWidget, xui_window_data_t* pData, const xui_window_resolved_t* pResolved, const xui_event_t* pEvent)
@@ -707,10 +639,9 @@ static xui_rect_t __xuiWindowBuildInteractionRect(xui_widget pWidget, xui_window
 {
 	xui_window_resolved_t tResolved;
 	xui_rect_t tRect;
+	xui_rect_t tBounds;
 	float fDX;
 	float fDY;
-	float fRight;
-	float fBottom;
 	float fMinW;
 	float fMinH;
 
@@ -718,40 +649,14 @@ static xui_rect_t __xuiWindowBuildInteractionRect(xui_widget pWidget, xui_window
 	tRect = pData->tDragStartRect;
 	fDX = fX - pData->fDragStartX;
 	fDY = fY - pData->fDragStartY;
+	tBounds = __xuiWindowParentRect(pWidget);
 	if ( pData->iInteractionEdges == -1 ) {
-		tRect.fX += fDX;
-		tRect.fY += fDY;
-		return __xuiWindowClampMoveRect(pWidget, tRect);
+		return xuiInternalWindowFrameMove(tRect, tBounds, fDX, fDY);
 	}
-	fRight = tRect.fX + tRect.fW;
-	fBottom = tRect.fY + tRect.fH;
 	fMinW = __xuiWindowMinWidth(pData, &tResolved);
 	fMinH = __xuiWindowMinHeight(pData, &tResolved);
-	if ( (pData->iInteractionEdges & XUI_WINDOW_EDGE_LEFT) != 0u ) {
-		tRect.fX += fDX;
-		tRect.fW -= fDX;
-		if ( tRect.fW < fMinW ) {
-			tRect.fW = fMinW;
-			tRect.fX = fRight - fMinW;
-		}
-	}
-	if ( (pData->iInteractionEdges & XUI_WINDOW_EDGE_RIGHT) != 0u ) {
-		tRect.fW += fDX;
-		if ( tRect.fW < fMinW ) tRect.fW = fMinW;
-	}
-	if ( (pData->iInteractionEdges & XUI_WINDOW_EDGE_TOP) != 0u ) {
-		tRect.fY += fDY;
-		tRect.fH -= fDY;
-		if ( tRect.fH < fMinH ) {
-			tRect.fH = fMinH;
-			tRect.fY = fBottom - fMinH;
-		}
-	}
-	if ( (pData->iInteractionEdges & XUI_WINDOW_EDGE_BOTTOM) != 0u ) {
-		tRect.fH += fDY;
-		if ( tRect.fH < fMinH ) tRect.fH = fMinH;
-	}
-	return __xuiWindowClampRect(pWidget, pData, &tResolved, tRect);
+	return xuiInternalWindowFrameResize(tRect, tBounds, (uint32_t)pData->iInteractionEdges,
+		fDX, fDY, fMinW, fMinH);
 }
 
 static xui_rect_t __xuiWindowInteractionWorldRect(xui_widget pWidget, xui_rect_t tRect)
@@ -1105,11 +1010,11 @@ static int __xuiWindowLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect
 {
 	xui_window_data_t* pData = (xui_window_data_t*)pUser;
 	xui_window_resolved_t tResolved;
-	xui_rect_t tClient;
-	xui_rect_t tButton;
-	float fRight;
-	float fGap;
+	xui_internal_window_frame_metrics_t tMetrics;
+	xui_internal_window_frame_layout_t tLayout;
+	xui_rect_t tFrame;
 	float fTitleH;
+	int iTrailing;
 	int iRet;
 
 	if ( pData == NULL ) {
@@ -1117,33 +1022,28 @@ static int __xuiWindowLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect
 	}
 	__xuiWindowResolve(pWidget, pData, &tResolved);
 	fTitleH = pData->bShowTitleBar ? tResolved.fTitleBarHeight : 0.0f;
-	pData->tTitleBarRect = (xui_rect_t){tContentRect.fX, tContentRect.fY - fTitleH,
-		tContentRect.fW, fTitleH};
-	tClient = tContentRect;
-	if ( pData->bCollapsed ) tClient.fH = 0.0f;
-	pData->tClientRect = xuiInternalSnapRect(tClient);
-	fRight = tContentRect.fX + tContentRect.fW - 5.0f;
-	fGap = 4.0f;
-	tButton.fW = tResolved.fButtonSize;
-	tButton.fH = tResolved.fButtonSize;
-	tButton.fY = pData->tTitleBarRect.fY + (pData->tTitleBarRect.fH - tButton.fH) * 0.5f;
+	__xuiWindowFrameMetrics(pData, &tResolved, &tMetrics);
+	tFrame = (xui_rect_t){tContentRect.fX - tResolved.fBorderWidth,
+		tContentRect.fY - tResolved.fBorderWidth - fTitleH,
+		tContentRect.fW + tResolved.fBorderWidth * 2.0f,
+		tContentRect.fH + tResolved.fBorderWidth * 2.0f + fTitleH};
+	xuiInternalWindowFrameLayout(tFrame, &tMetrics, &tLayout);
+	pData->tTitleBarRect = tLayout.tTitleBarRect;
+	pData->tClientRect = tLayout.tClientRect;
+	if ( pData->bCollapsed ) pData->tClientRect.fH = 0.0f;
+	iTrailing = 0;
 	if ( pData->bShowTitleBar && pData->bShowClose ) {
-		tButton.fX = fRight - tButton.fW;
-		pData->tCloseButtonRect = xuiInternalSnapRect(tButton);
-		fRight = tButton.fX - fGap;
+		pData->tCloseButtonRect = xuiInternalWindowFrameTrailingButton(&tLayout, &tMetrics, iTrailing++);
 	} else {
 		memset(&pData->tCloseButtonRect, 0, sizeof(pData->tCloseButtonRect));
 	}
 	if ( pData->bShowTitleBar && pData->bShowMaximize ) {
-		tButton.fX = fRight - tButton.fW;
-		pData->tMaximizeButtonRect = xuiInternalSnapRect(tButton);
-		fRight = tButton.fX - fGap;
+		pData->tMaximizeButtonRect = xuiInternalWindowFrameTrailingButton(&tLayout, &tMetrics, iTrailing++);
 	} else {
 		memset(&pData->tMaximizeButtonRect, 0, sizeof(pData->tMaximizeButtonRect));
 	}
 	if ( pData->bShowTitleBar && pData->bShowCollapse ) {
-		tButton.fX = fRight - tButton.fW;
-		pData->tCollapseButtonRect = xuiInternalSnapRect(tButton);
+		pData->tCollapseButtonRect = xuiInternalWindowFrameTrailingButton(&tLayout, &tMetrics, iTrailing);
 	} else {
 		memset(&pData->tCollapseButtonRect, 0, sizeof(pData->tCollapseButtonRect));
 	}

@@ -311,6 +311,8 @@ static int __xuiDockCreateUi(xui_dock_demo_t* pDemo)
 	if ( ret == XUI_OK ) ret = xuiDockPanelAddWindow(pDemo->pDock, "Toolbox", pDemo->arrContentWidget[8], &pDemo->iToolbox);
 	if ( ret == XUI_OK ) ret = xuiDockPanelAddWindow(pDemo->pDock, "Properties", pDemo->arrContentWidget[9], &pDemo->iProperties);
 	if ( ret == XUI_OK ) ret = xuiDockPanelAddWindow(pDemo->pDock, "Output", pDemo->arrContentWidget[10], &pDemo->iOutput);
+	if ( ret == XUI_OK ) ret = xuiDockPanelSetWindowMinSize(pDemo->pDock, pDemo->iProperties, 220.0f, 140.0f);
+	if ( ret == XUI_OK ) ret = xuiDockPanelSetWindowResizeEdges(pDemo->pDock, pDemo->iProperties, XUI_WINDOW_EDGE_ALL);
 	if ( ret != XUI_OK ) return ret;
 	ret = xuiDockPanelDockWindow(pDemo->pDock, pDemo->iDoc, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, &pDemo->iDocPane);
 	if ( ret == XUI_OK ) ret = xuiDockPanelDockWindowToPane(pDemo->pDock, pDemo->iPreview, pDemo->iDocPane);
@@ -407,7 +409,9 @@ static void __xuiDockRunChecks(xui_dock_demo_t* pDemo, int bExercise)
 		(void)xuiDockPanelSetWindowFlags(pDemo->pDock, pDemo->iToolbox, 1, 1);
 		(void)xuiDockPanelFloatWindow(pDemo->pDock, pDemo->iProperties, (xui_rect_t){548.0f, 92.0f, 260.0f, 170.0f});
 		(void)xuiDockPanelGetWindowInfo(pDemo->pDock, pDemo->iProperties, &info);
-		pDemo->bFloatOK = (info.iState == XUI_DOCK_PANEL_WINDOW_FLOATING);
+		pDemo->bFloatOK = (info.iState == XUI_DOCK_PANEL_WINDOW_FLOATING) && info.bMovable && info.bResizable &&
+			(info.iResizeEdges == XUI_WINDOW_EDGE_ALL) && (info.fMinWidth == 220.0f) && (info.fMinHeight == 140.0f) &&
+			(info.pCloseButtonWidget != NULL) && xuiWidgetGetVisible(info.pCloseButtonWidget);
 		(void)xuiDockPanelGetPaneInfo(pDemo->pDock, pDemo->iDocPane, &pane);
 		memset(&drop, 0, sizeof(drop));
 		(void)xuiDockPanelFindDropTarget(pDemo->pDock, pDemo->iProperties, pane.tRect.fX + pane.tRect.fW - 8.0f, pane.tRect.fY + pane.tRect.fH * 0.5f, &drop);

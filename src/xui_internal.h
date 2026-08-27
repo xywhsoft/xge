@@ -56,6 +56,24 @@ typedef struct xui_drag_adorner_primitive_t {
 	uint32_t iColor;
 } xui_drag_adorner_primitive_t;
 
+typedef struct xui_internal_window_frame_metrics_t {
+	float fTitleBarHeight;
+	float fBorderWidth;
+	float fResizeGrip;
+	float fButtonSize;
+	float fButtonGap;
+	float fButtonInset;
+	uint32_t iResizeEdges;
+	int bShowTitleBar;
+	int bResizable;
+} xui_internal_window_frame_metrics_t;
+
+typedef struct xui_internal_window_frame_layout_t {
+	xui_rect_t tFrameRect;
+	xui_rect_t tTitleBarRect;
+	xui_rect_t tClientRect;
+} xui_internal_window_frame_layout_t;
+
 struct xui_language_t {
 	uint32_t iMagic;
 	xui_context pContext;
@@ -466,6 +484,20 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta);
 int xuiInternalDragAdornerSet(xui_context pContext, xui_widget pOwner,
 	const xui_drag_adorner_primitive_t* pPrimitives, int iPrimitiveCount);
 void xuiInternalDragAdornerHide(xui_context pContext, xui_widget pOwner);
+void xuiInternalWindowFrameLayout(xui_rect_t tFrameRect,
+	const xui_internal_window_frame_metrics_t* pMetrics,
+	xui_internal_window_frame_layout_t* pLayout);
+xui_rect_t xuiInternalWindowFrameTrailingButton(const xui_internal_window_frame_layout_t* pLayout,
+	const xui_internal_window_frame_metrics_t* pMetrics, int iTrailingIndex);
+uint32_t xuiInternalWindowFrameResizeEdgesAt(xui_rect_t tFrameRect,
+	const xui_internal_window_frame_metrics_t* pMetrics, float fX, float fY);
+int xuiInternalWindowFrameResizeCursor(uint32_t iEdges);
+xui_rect_t xuiInternalWindowFrameClamp(xui_rect_t tRect, xui_rect_t tBounds,
+	float fMinWidth, float fMinHeight);
+xui_rect_t xuiInternalWindowFrameMove(xui_rect_t tRect, xui_rect_t tBounds,
+	float fDX, float fDY);
+xui_rect_t xuiInternalWindowFrameResize(xui_rect_t tRect, xui_rect_t tBounds,
+	uint32_t iEdges, float fDX, float fDY, float fMinWidth, float fMinHeight);
 
 int xuiInternalWidgetIsValid(xui_widget pWidget);
 

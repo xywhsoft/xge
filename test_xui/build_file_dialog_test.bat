@@ -3,7 +3,7 @@ setlocal
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_file_dialog_test.exe
-set SRC=test_xui\xui_file_dialog_test.c test_xui\xui_test_proxy.c test_xui\xui_test_xrt_impl.c lib\xlayout\xlayout.c src\xui_core.c src\xui_widget.c src\xui_layout.c src\xui_input.c src\xui_text.c src\xui_label.c src\xui_assets.c src\xui_builtin_atlas.c src\xui_breadcrumb.c src\xui_button.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_menu.c src\xui_list_view.c src\xui_input_widget.c src\xui_combobox.c src\xui_window.c src\xui_msgtip.c src\xui_msgbox.c src\xui_file_dialog.c
+set SRC=test_xui\xui_file_dialog_test.c test_xui\xui_test_proxy.c test_xui\xui_test_xrt_impl.c lib\xlayout\xlayout.c src\xui_core.c src\xui_widget.c src\xui_layout.c src\xui_input.c src\xui_text.c src\xui_label.c src\xui_assets.c src\xui_builtin_atlas.c src\xui_breadcrumb.c src\xui_button.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_menu.c src\xui_list_view.c src\xui_input_widget.c src\xui_combobox.c src\xui_window_frame.c src\xui_window.c src\xui_msgtip.c src\xui_msgbox.c src\xui_file_dialog.c
 set SRC=src\xui_unicode.c %SRC%
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DEBUGMODE=0

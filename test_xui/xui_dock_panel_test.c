@@ -306,6 +306,7 @@ int main(void)
 	xui_widget pNestedClient;
 	xui_widget pTempDock;
 	xui_widget pTempClient;
+	xui_widget pTempButton;
 	xui_widget pHitWidget;
 	xui_widget pMenu;
 	xui_surface pTarget;
@@ -358,6 +359,7 @@ int main(void)
 	xui_rect_t tDockWorld;
 	xui_rect_t tPreviewWorld;
 	xui_rect_t tClientWorld;
+	xui_rect_t tTempButtonWorld;
 	xui_widget pDragOverlay;
 	float fPreviewCenter;
 	float fActualCenter;
@@ -382,6 +384,7 @@ int main(void)
 	int iActiveBefore;
 	int iOverlayChildCount;
 	int iTempWindow;
+	int iCloseBefore;
 	int i;
 
 	pContext = NULL;
@@ -390,6 +393,7 @@ int main(void)
 	pNestedClient = NULL;
 	pTempDock = NULL;
 	pTempClient = NULL;
+	pTempButton = NULL;
 	pHitWidget = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
@@ -407,6 +411,7 @@ int main(void)
 	iActiveBefore = 0;
 	iOverlayChildCount = 0;
 	iTempWindow = -1;
+	iCloseBefore = 0;
 	fRegionBefore = fRegionAfter = 0.0f;
 	fAutoHidePaneW = 0.0f;
 	fNoDropX = fNoDropY = 0.0f;
@@ -1014,9 +1019,10 @@ int main(void)
 	iClientBefore = tData.iClientPointerDown;
 	iRet = __xuiDockTestClick(pContext, tClientWorld.fX + tClientWorld.fW * 0.5f, tClientWorld.fY + tClientWorld.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && tData.iClientPointerDown == iClientBefore + 1, "auto hide client remains interactive");
-	iRet = __xuiDockTestClick(pContext,
-		8.0f + tHit.tRect.fX + tHit.tRect.fW - tMetrics.fButtonGap - tMetrics.fButtonSize * 0.5f,
-		8.0f + tHit.tRect.fY + tMetrics.fCaptionHeight * 0.5f);
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	if ( iRet == XUI_OK ) tTipRect = xuiWidgetGetWorldRect(tWinInfo.pCloseButtonWidget);
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestClick(pContext,
+		tTipRect.fX + tTipRect.fW * 0.5f, tTipRect.fY + tTipRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide close button click");
 	iRet = xuiLayout(pContext);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
@@ -1028,9 +1034,10 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore expanded auto hide for dock button");
 	tHit.tRect = xuiDockPanelGetAutoHideExpandRect(pDock);
-	iRet = __xuiDockTestClick(pContext,
-		8.0f + tHit.tRect.fX + tHit.tRect.fW - tMetrics.fButtonGap * 2.0f - tMetrics.fButtonSize * 1.5f,
-		8.0f + tHit.tRect.fY + tMetrics.fCaptionHeight * 0.5f);
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	if ( iRet == XUI_OK ) tTipRect = xuiWidgetGetWorldRect(tWinInfo.pPinButtonWidget);
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestClick(pContext,
+		tTipRect.fX + tTipRect.fW * 0.5f, tTipRect.fY + tTipRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide dock button click");
 	iRet = xuiLayout(pContext);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
@@ -1442,6 +1449,87 @@ int main(void)
 	iRet = xuiRender(pContext, pTarget, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render target");
 	XUI_TEST_CHECK(xuiDockPanelGetChangeCount(pDock) > 0 && tData.iStateChanged > 0, "change counters");
+
+	pTempDock = NULL;
+	pTempClient = NULL;
+	iTempWindow = -1;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTempDock, (xui_rect_t){24.0f, 24.0f, 360.0f, 260.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Window mechanics", pTempClient, &iTempWindow);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelSetWindowClose(pTempDock, __xuiDockTestClose, &tData);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelSetWindowMinSize(pTempDock, iTempWindow, 200.0f, 150.0f);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelSetWindowResizeEdges(pTempDock, iTempWindow,
+		XUI_WINDOW_EDGE_RIGHT | XUI_WINDOW_EDGE_BOTTOM);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelFloatWindow(pTempDock, iTempWindow,
+		(xui_rect_t){42.0f, 38.0f, 240.0f, 180.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.bMovable && tWinInfo.bResizable &&
+		tWinInfo.iResizeEdges == (XUI_WINDOW_EDGE_RIGHT | XUI_WINDOW_EDGE_BOTTOM) &&
+		tWinInfo.fMinWidth == 200.0f && tWinInfo.fMinHeight == 150.0f &&
+		tWinInfo.pCloseButtonWidget != NULL && tWinInfo.pPinButtonWidget != NULL,
+		"dock window mechanics api defaults and overrides");
+	pTempButton = xuiDockPanelGetWindowCloseButtonWidget(pTempDock, iTempWindow);
+	XUI_TEST_CHECK(pTempButton == tWinInfo.pCloseButtonWidget && xuiWidgetGetVisible(pTempButton),
+		"floating close is a visible child widget");
+	iRet = xuiDockPanelSetWindowFlags(pTempDock, iTempWindow, 0, 1);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWidgetGetVisible(pTempButton), "nonclosable floating window hides close button");
+	iRet = xuiDockPanelSetWindowFlags(pTempDock, iTempWindow, 1, 1);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tTempButtonWorld = xuiWidgetGetWorldRect(pTempButton);
+	iCloseBefore = tData.iClose;
+	iRet = xuiInputPointerDown(pContext, tTempButtonWorld.fX + tTempButtonWorld.fW * 0.5f,
+		tTempButtonWorld.fY + tTempButtonWorld.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING &&
+		tData.iClose == iCloseBefore, "close button does not commit on pointer down");
+	iRet = xuiInputPointerUp(pContext, tTempButtonWorld.fX - 12.0f, tTempButtonWorld.fY - 12.0f,
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING &&
+		tData.iClose == iCloseBefore, "close button pointer-up outside cancels");
+	iRet = xuiDockPanelSetWindowMovable(pTempDock, iTempWindow, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	fOldX = tWinInfo.tRect.fX;
+	fOldY = tWinInfo.tRect.fY;
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestDrag(pContext,
+		xuiWidgetGetWorldRect(tWinInfo.pHostWidget).fX + 36.0f,
+		xuiWidgetGetWorldRect(tWinInfo.pHostWidget).fY + 12.0f,
+		xuiWidgetGetWorldRect(tWinInfo.pHostWidget).fX + 76.0f,
+		xuiWidgetGetWorldRect(tWinInfo.pHostWidget).fY + 42.0f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tRect.fX == fOldX && tWinInfo.tRect.fY == fOldY,
+		"nonmovable floating title does not move");
+	iRet = xuiDockPanelSetWindowMovable(pTempDock, iTempWindow, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelSetWindowResizable(pTempDock, iTempWindow, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	tDockWorld = xuiWidgetGetWorldRect(tWinInfo.pHostWidget);
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestDrag(pContext,
+		tDockWorld.fX + tDockWorld.fW - 1.0f, tDockWorld.fY + tDockWorld.fH * 0.5f,
+		tDockWorld.fX + 20.0f, tDockWorld.fY + tDockWorld.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tRect.fW >= 200.0f && tWinInfo.tRect.fH >= 150.0f,
+		"floating resize respects per-window minimum size");
+	pTempButton = xuiDockPanelGetWindowCloseButtonWidget(pTempDock, iTempWindow);
+	tTempButtonWorld = xuiWidgetGetWorldRect(pTempButton);
+	iRet = __xuiDockTestClick(pContext,
+		tTempButtonWorld.fX + tTempButtonWorld.fW * 0.5f,
+		tTempButtonWorld.fY + tTempButtonWorld.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_HIDDEN &&
+		tData.iClose == iCloseBefore + 1, "close button commits on pointer-up inside");
+	xuiWidgetDestroy(pTempDock);
+	pTempDock = NULL;
+	pTempClient = NULL;
+	pTempButton = NULL;
 	iOverlayChildCount = xuiWidgetGetChildCount(xuiOverlayRoot(pContext));
 	for ( i = 0; i < 24; i++ ) {
 		pTempDock = NULL;
