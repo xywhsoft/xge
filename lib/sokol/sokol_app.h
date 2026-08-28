@@ -3815,13 +3815,13 @@ _SOKOL_PRIVATE void _sapp_setup_default_icon(void) {
         const int dim = icon_sizes[i];
         SOKOL_ASSERT((dim % 8) == 0);
         const int scale = dim / 8;
-        for (int ty = 0, y = 0; ty < 8; ty++) {
+        for (int ty = 0; ty < 8; ty++) {
             const uint32_t color = colors[ty];
-            for (int sy = 0; sy < scale; sy++, y++) {
+            for (int sy = 0; sy < scale; sy++) {
                 uint8_t bits = tile[ty];
-                for (int tx = 0, x = 0; tx < 8; tx++, bits<<=1) {
+                for (int tx = 0; tx < 8; tx++, bits<<=1) {
                     uint32_t pixel = (0 == (bits & 0x80)) ? blank : color;
-                    for (int sx = 0; sx < scale; sx++, x++) {
+                    for (int sx = 0; sx < scale; sx++) {
                         SOKOL_ASSERT(dst < dst_end);
                         *dst++ = pixel;
                     }

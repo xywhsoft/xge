@@ -23,10 +23,17 @@
  */
 
 /* 此文件由 tools/amalgamate.py 生成，请勿直接修改。 */
+#if defined(XREGEX_IMPLEMENTATION) && defined(_MSC_VER) && \
+	!defined(_CRT_SECURE_NO_WARNINGS)
+	#define _CRT_SECURE_NO_WARNINGS
+#endif
 #if defined(XREGEX_IMPLEMENTATION) && \
 	!defined(_WIN32) && !defined(_WIN64)
 	#if defined(__linux__) && !defined(_GNU_SOURCE)
 		#define _GNU_SOURCE 1
+	#endif
+	#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+		#define _DARWIN_C_SOURCE 1
 	#endif
 	#if !defined(_POSIX_C_SOURCE)
 		#define _POSIX_C_SOURCE 200809L
@@ -6190,17 +6197,17 @@ XRT_API bool xrtCondDestroy(xcond* pCond);
 
 
 
-/* 当前线程持有 mutex 时原子释放并等待通知，返回前重新持有 mutex。 */
+/* 当前线程持有 mutex 时原子释放并等待；允许虚假唤醒，必须在谓词循环中调用。 */
 XRT_API xwaitresult xrtCondWait(xcond* pCond, xmutex* pMutex);
 
 
 
-/* 在相对微秒数内等待通知。 */
+/* 在相对微秒数内等待；允许虚假唤醒，超时和成功后都重新持有 mutex。 */
 XRT_API xwaitresult xrtCondWaitFor(xcond* pCond, xmutex* pMutex, uint64 iTimeout);
 
 
 
-/* 等待通知到指定单调时钟截止时间。 */
+/* 等待到单调时钟截止时间；允许虚假唤醒，应循环检查受 mutex 保护的谓词。 */
 XRT_API xwaitresult xrtCondWaitUntil(
 	xcond* pCond,
 	xmutex* pMutex,
@@ -6971,7 +6978,7 @@ XRT_API xthreadkey* xrtThreadKeyCreate(xthreadkeyproc pDestroy);
 
 
 
-/* 销毁键；调用方必须保证其他线程已经停止访问，失败时键仍然有效。 */
+/* 关闭键；其他线程不得再主动访问，已有线程槽会在退出时延迟释放。 */
 XRT_API bool xrtThreadKeyDestroy(xthreadkey* pKey);
 
 
@@ -13530,22 +13537,26 @@ XRT_API bool xrtRngShuffle(xrng* pRng,
 
 #if defined(XRT_FEATURE_RANDOM_DEFAULT)
 
-/* 重置当前线程的便捷随机数状态。 */
+/*
+	重置当前线程的快速伪随机数状态。
+	该族 API 不是密码学安全随机源，绝不可用于密钥、nonce、token、
+	会话标识或任何攻击者可以猜测的值；此类用途必须使用 xrtSecureRandom。
+*/
 XRT_API void xrtRandSeed(uint64 iSeed, uint64 iStream);
 
 
 
-/* 从当前线程状态生成一个 32 位伪随机数。 */
+/* 从当前线程状态生成一个非密码学 32 位伪随机数。 */
 XRT_API uint32 xrtRand32(void);
 
 
 
-/* 从当前线程状态生成一个 64 位伪随机数。 */
+/* 从当前线程状态生成一个非密码学 64 位伪随机数。 */
 XRT_API uint64 xrtRand64(void);
 
 
 
-/* 使用当前线程随机状态按稳定的小端顺序填充字节。 */
+/* 使用当前线程非密码学随机状态按稳定的小端顺序填充字节。 */
 XRT_API bool xrtRandBytes(ptr pData, size_t iSize);
 
 
@@ -13572,6 +13583,22 @@ XRT_API double xrtRandReal(void);
 
 /* 使用当前线程随机状态原地打乱定长元素数组。 */
 XRT_API bool xrtRandShuffle(ptr pData, size_t iCount, size_t iItemSize);
+
+
+
+/*
+	以下别名明确表达快速、非密码学语义；与 xrtRand* 共享同一线程状态。
+	新代码应优先使用这些名称，旧 xrtRand* 名称保持兼容。
+*/
+XRT_API void xrtFastRandSeed(uint64 iSeed, uint64 iStream);
+XRT_API uint32 xrtFastRand32(void);
+XRT_API uint64 xrtFastRand64(void);
+XRT_API bool xrtFastRandBytes(ptr pData, size_t iSize);
+XRT_API uint64 xrtFastRandBelow(uint64 iBound);
+XRT_API int64 xrtFastRandRange(int64 iMin, int64 iMax);
+XRT_API int64 xrtFastRandRangeClosed(int64 iMin, int64 iMax);
+XRT_API double xrtFastRandReal(void);
+XRT_API bool xrtFastRandShuffle(ptr pData, size_t iCount, size_t iItemSize);
 
 #endif
 
@@ -13852,6 +13879,8 @@ typedef struct xwsclose {
 
 
 #if defined(XRT_FEATURE_WEBSOCKET_MESSAGE)
+
+#define XWS_MESSAGE_SIZE_SAFE_DEFAULT (16u * 1024u * 1024u)
 
 /* 消息事件标志同时描述逻辑消息边界、控制帧和扩展变换。 */
 typedef enum xwsmessageflag {
@@ -14229,10 +14258,19 @@ XRT_API bool xrtWsCloseWrite(
 #if defined(XRT_FEATURE_WEBSOCKET_MESSAGE)
 
 /*
-	初始化默认消息上限、严格文本校验和不允许任何 RSV 位的配置。
+	初始化无累计上限、严格文本校验和不允许任何 RSV 位的流式配置。
+	默认 MaxSize 为 SIZE_MAX；状态机不聚合正文，拥有型上层必须设置实际消息上限。
 	Config 必须是完整可写范围，可以未对齐；无效范围只设置线程错误。
 */
 XRT_API void xrtWsMessageConfigInit(xwsmessageconfig* pConfig);
+
+
+
+/*
+	初始化面向不可信对端的流式消息配置，默认拒绝超过 16 MiB 的单条消息。
+	需要无上限流时必须显式设置 MaxSize = SIZE_MAX。
+*/
+XRT_API void xrtWsMessageConfigInitSafe(xwsmessageconfig* pConfig);
 
 
 
@@ -16077,6 +16115,9 @@ typedef struct xnetworkerstats {
 	uint64 TimerErrors;
 	uint64 Events;
 	uint64 WaitErrors;
+	uint64 WakeErrors;
+	/* BASIC 以上统计中，停机任务链未在安全代数内收敛的累计次数。 */
+	uint64 ShutdownStalls;
 	/* 最近一次端口等待错误；没有错误时 Code 为 XNET_ERROR_NONE。 */
 	xneterror LastWaitError;
 	int LastWaitSystemCode;
@@ -16104,6 +16145,9 @@ typedef struct xnetenginestats {
 	uint64 TimerErrors;
 	uint64 Events;
 	uint64 WaitErrors;
+	uint64 WakeErrors;
+	/* BASIC 以上统计中，全部 Worker 停机任务链未收敛次数之和。 */
+	uint64 ShutdownStalls;
 	uint64 NodeCacheHits;
 	uint64 NodeCacheMisses;
 	size_t PendingCommands;
@@ -16630,6 +16674,11 @@ XRT_API xnetresult xrtNetSocketSendBatch(xnetsocket Socket,
 
 #if defined(XRT_FEATURE_NET_PORT)
 
+/*
+	端口由创建线程拥有，Watch、提交、取消、等待和销毁只能由拥有线程执行。
+	查询函数以及 Post、Wake 可跨线程调用；调用方仍须保证端口对象存活。
+*/
+
 /* 初始化网络端口默认配置。 */
 XRT_API void xrtNetPortConfigInit(xnetportconfig* pConfig);
 
@@ -16847,7 +16896,10 @@ XRT_API bool xrtNetEngineStart(xnetengine* pEngine);
 
 
 
-/* 排空任务并释放运行资源；外借池块会使清理失败但允许重启后归还。 */
+/*
+	排空任务并释放运行资源。
+	任务链不收敛或仍有外借池块时返回失败，但 Engine 仍进入可重启的停止状态。
+*/
 XRT_API bool xrtNetEngineStop(xnetengine* pEngine);
 
 
@@ -17139,12 +17191,12 @@ XRT_API size_t xrtNetBufSpanCount(const xnetbuf* pBuffer);
 
 
 
-/* 获取最多指定数量的只读 Span。 */
+/* 获取文件区间前最多指定数量的只读 Span。 */
 XRT_API size_t xrtNetBufSpans(const xnetbuf* pBuffer, xnetspan* pSpans, size_t iCapacity);
 
 
 
-/* 获取首个非空连续可读 Span；缓冲为空时清空输出并返回 false。 */
+/* 获取首个内存 Span；缓冲为空或队首为文件区间时清空输出并返回 false。 */
 XRT_API bool xrtNetBufFront(const xnetbuf* pBuffer, xnetspan* pSpan);
 
 
@@ -17199,23 +17251,23 @@ XRT_API bool xrtNetBufMove(xnetbuf* pTarget, xnetbuf* pSource);
 
 
 
-/* 确保指定长度的前缀连续并返回借用 Span。 */
+/* 确保指定长度的内存前缀连续；前缀包含文件区间时失败。 */
 XRT_API bool xrtNetBufPullup(xnetbuf* pBuffer, size_t iSize, xnetspan* pSpan);
 
 
 
-/* 从指定偏移复制最多给定字节，但不消费数据。 */
+/* 从指定偏移复制最多给定字节，遇到文件区间时停止。 */
 XRT_API size_t xrtNetBufPeek(const xnetbuf* pBuffer,
 	size_t iOffset, void* pOutput, size_t iSize);
 
 
 
-/* 复制并消费最多给定字节；活动尾部写预留不阻止消费已提交前缀。 */
+/* 复制并消费最多给定字节；遇到文件区间时停止。 */
 XRT_API size_t xrtNetBufRead(xnetbuf* pBuffer, void* pOutput, size_t iSize);
 
 
 
-/* 从指定偏移查找一个字节，未找到时返回 XRT_NPOS。 */
+/* 从指定偏移查找一个字节，遇到文件区间或未找到时返回 XRT_NPOS。 */
 XRT_API size_t xrtNetBufFind(const xnetbuf* pBuffer, uint8 iByte, size_t iOffset);
 
 
@@ -19579,6 +19631,9 @@ typedef enum xtlscipher {
 	XTLS_ECDHE_ECDSA_CHACHA20_POLY1305_SHA256 = 0xCCA9
 } xtlscipher;
 
+/* TLS_FALLBACK_SCSV 是 ClientHello 中的信号值，不属于可协商密码套件。 */
+#define XTLS_FALLBACK_SCSV UINT16_C(0x5600)
+
 
 
 /* TLS 密码套件使用的摘要算法与密码后端解耦。 */
@@ -20620,6 +20675,11 @@ XRT_API bool xrtTlsRetryGroup(xbytesview Data, uint16* pGroup);
 
 
 
+/* 严格解析 HelloRetryRequest cookie 的 16 位非空字节向量。 */
+XRT_API bool xrtTlsRetryCookie(xbytesview Data, xbytesview* pCookie);
+
+
+
 /* 严格解析一条 ClientHello 正文并发布零拷贝字段视图。 */
 XRT_API bool xrtTlsClientHelloParse(
 	xbytesview Body,
@@ -21155,6 +21215,14 @@ XRT_API bool xrtTlsWriterServerKeyShare(
 XRT_API bool xrtTlsWriterRetryGroup(
 	xtlswriter* pWriter,
 	uint16 iGroup
+);
+
+
+
+/* 追加 HelloRetryRequest 或 ClientHello 使用的非空 cookie 扩展。 */
+XRT_API bool xrtTlsWriterRetryCookie(
+	xtlswriter* pWriter,
+	xbytesview Cookie
 );
 
 
@@ -22753,7 +22821,9 @@ typedef enum xx509crlpolicyflag {
 	X509_CRL_REQUIRE_NUMBER = UINT32_C(0x00000002),
 	X509_CRL_REQUIRE_AUTHORITY_KEY_ID = UINT32_C(0x00000004),
 	X509_CRL_REQUIRE_KEY_IDENTIFIER = UINT32_C(0x00000008),
-	X509_CRL_REQUIRE_KEY_USAGE = UINT32_C(0x00000010)
+	X509_CRL_REQUIRE_KEY_USAGE = UINT32_C(0x00000010),
+	/* 仅用于必须兼容历史基础设施的显式弱算法策略。 */
+	X509_CRL_ALLOW_SHA1 = UINT32_C(0x00000020)
 } xx509crlpolicyflag;
 
 
@@ -22842,7 +22912,9 @@ typedef struct xx509crlset {
 /* 路径策略标志只控制目标证书用途是否必须显式出现。 */
 typedef enum xx509pathflag {
 	X509_PATH_REQUIRE_KEY_USAGE = UINT32_C(0x00000001),
-	X509_PATH_REQUIRE_PURPOSE = UINT32_C(0x00000002)
+	X509_PATH_REQUIRE_PURPOSE = UINT32_C(0x00000002),
+	/* 默认拒绝 SHA-1 路径签名；此标志只为显式 legacy 场景保留。 */
+	X509_PATH_ALLOW_SHA1 = UINT32_C(0x00000004)
 } xx509pathflag;
 
 
@@ -23519,6 +23591,11 @@ XRT_API xx509result xrtX509RevocationResult(
 
 #if defined(XRT_FEATURE_X509_PATH)
 
+/* 初始化当前时间、默认拒绝 SHA-1 的严格路径策略。 */
+XRT_API void xrtX509PathConfigInit(xx509pathconfig* pConfig);
+
+
+
 /* 从一张受信任证书提取名称和公钥；不校验该证书的时间、扩展或自签名。 */
 XRT_API bool xrtX509Anchor(
 	const xx509cert* pCertificate,
@@ -23776,6 +23853,8 @@ typedef struct xtlsverifierconfig {
 	xtlsverifytimeproc Time;
 	xtlsverifyreleaseproc Release;
 	ptr Context;
+	/* 默认 false；只在必须兼容历史证书链时显式允许 SHA-1。 */
+	bool AllowSha1;
 } xtlsverifierconfig;
 
 
@@ -24066,6 +24145,8 @@ typedef struct xtlsclientconfig {
 	const xtlsverifier* Verifier;
 	const xtlsresume* Resume;
 	size_t ResumeLimit;
+	/* 必须接受所给票据；禁止回退完整证书握手。 */
+	bool ResumeOnly;
 } xtlsclientconfig;
 
 
@@ -24079,7 +24160,7 @@ XRT_API void xrtTlsClientConfigInit(xtlsclientconfig* pConfig);
 
 
 
-/* 创建客户端会话并立即排队初始 ClientHello；空上下文会创建默认快照。 */
+/* 创建客户端会话；默认要求 Verifier，无验证器时必须启用 ResumeOnly。 */
 XRT_API xtlssession* xrtTlsClientCreate(
 	const xtlsclientconfig* pConfig,
 	xnetbufpool* pPool
@@ -27866,6 +27947,7 @@ XRT_EXTERN_C_END
 #if defined(XRT_FEATURE_HTTP_DECODE)
 
 #define XHTTP_DECODE_OUTPUT_UNLIMITED UINT64_MAX
+#define XHTTP_DECODE_OUTPUT_SAFE_DEFAULT (UINT64_C(16) * 1024u * 1024u)
 
 
 
@@ -27922,8 +28004,17 @@ XRT_EXTERN_C_BEGIN
 
 
 
-/* 初始化严格配置：最多四层、64 KiB gzip Header、明文长度不设上限。 */
+/* 初始化兼容配置：最多四层、64 KiB gzip Header、明文长度不设上限。 */
 XRT_API void xrtHttpDecodeConfigInit(xhttpdecodeconfig* pConfig);
+
+
+
+/*
+	初始化面向不可信对端的安全配置；除协议限制外，明文最多 16 MiB。
+	需要更大正文时应显式修改 OutputLimit，使用无限制必须显式设为
+	XHTTP_DECODE_OUTPUT_UNLIMITED。
+*/
+XRT_API void xrtHttpDecodeConfigInitSafe(xhttpdecodeconfig* pConfig);
 
 
 
@@ -34052,7 +34143,8 @@ typedef enum xvaluetype {
 	XVALUE_ARRAY,
 	XVALUE_INT_MAP,
 	XVALUE_SET,
-	XVALUE_OBJECT
+	XVALUE_OBJECT,
+	XVALUE_UINT
 } xvaluetype;
 
 
@@ -34108,6 +34200,11 @@ XRT_API xvalue* xrtValueBool(bool bValue);
 
 /* 创建不可变的 64 位整数值。 */
 XRT_API xvalue* xrtValueInt(int64 iValue);
+
+
+
+/* 创建不可变的 64 位无符号整数值。 */
+XRT_API xvalue* xrtValueUInt(uint64 iValue);
 
 
 
@@ -34210,6 +34307,11 @@ XRT_API bool xrtValueGetInt(const xvalue* pValue, int64* pResult);
 
 
 
+/* 精确读取无符号整数值，类型不匹配时失败。 */
+XRT_API bool xrtValueGetUInt(const xvalue* pValue, uint64* pResult);
+
+
+
 /* 精确读取浮点值，类型不匹配时失败。 */
 XRT_API bool xrtValueGetFloat(const xvalue* pValue, double* pResult);
 
@@ -34306,6 +34408,15 @@ typedef struct xvalueiter {
 
 
 
+/* 三态推进结果显式区分元素、正常结束和迭代错误。 */
+typedef enum xvalueiterresult {
+	XVALUE_ITER_ERROR = -1,
+	XVALUE_ITER_END = 0,
+	XVALUE_ITER_ITEM = 1
+} xvalueiterresult;
+
+
+
 XRT_EXTERN_C_BEGIN
 
 
@@ -34327,6 +34438,11 @@ XRT_API xvalue* xrtValueSet(void);
 
 /* 创建保持首次插入顺序的字符串键对象。 */
 XRT_API xvalue* xrtValueObject(void);
+
+
+
+/* 创建保持首次插入顺序、最终按逆插入顺序释放拥有值的字符串键对象。 */
+XRT_API xvalue* xrtValueObjectLifo(void);
 
 
 
@@ -34592,6 +34708,15 @@ XRT_API xvalueiter* xrtValueIterRCreate(const xvalue* pValue);
 
 /* 返回下一借用值及其键；键输出不得覆盖迭代器，正常结束返回空指针。 */
 XRT_API xvalue* xrtValueIterNext(xvalueiter* pIterator, xvaluekey* pKey);
+
+
+
+/* 三态推进快照；成功项写入借用值，正常结束不设置错误。 */
+XRT_API xvalueiterresult xrtValueIterAdvance(
+	xvalueiter* pIterator,
+	xvaluekey* pKey,
+	xvalue** ppValue
+);
 
 
 
@@ -34921,7 +35046,7 @@ typedef enum xjsonduplicate {
 
 
 
-/* 超出 int64 的整数字面量默认失败，显式浮点策略允许有损接收。 */
+/* 超出 int64/uint64 的整数字面量默认失败，显式浮点策略允许有损接收。 */
 typedef enum xjsonbigint {
 	XJSON_BIGINT_REJECT = 0,
 	XJSON_BIGINT_FLOAT
@@ -34954,7 +35079,8 @@ typedef enum xjsoneventtype {
 	XJSON_EVENT_ARRAY_BEGIN,
 	XJSON_EVENT_ARRAY_END,
 	XJSON_EVENT_OBJECT_BEGIN,
-	XJSON_EVENT_OBJECT_END
+	XJSON_EVENT_OBJECT_END,
+	XJSON_EVENT_UINT
 } xjsoneventtype;
 
 
@@ -34989,6 +35115,7 @@ typedef struct xjsonevent {
 	union {
 		bool Boolean;
 		int64 Integer;
+		uint64 Unsigned;
 		double Float;
 		xstrview String;
 	} Value;
@@ -35206,6 +35333,11 @@ XRT_API bool xrtJsonWriterBool(xjsonwriter* pWriter, bool bValue);
 
 /* 写入 int64。 */
 XRT_API bool xrtJsonWriterInt(xjsonwriter* pWriter, int64 iValue);
+
+
+
+/* 写入 uint64。 */
+XRT_API bool xrtJsonWriterUInt(xjsonwriter* pWriter, uint64 iValue);
 
 
 
@@ -35456,7 +35588,7 @@ typedef enum xxsonduplicate {
 
 
 
-/* 超出 int64 的整数默认失败，可显式按 double 接收。 */
+/* 超出 int64/uint64 的整数默认失败，可显式按 double 接收。 */
 typedef enum xxsonbigint {
 	XXSON_BIGINT_REJECT = 0,
 	XXSON_BIGINT_FLOAT
@@ -35508,7 +35640,8 @@ typedef enum xxsoneventtype {
 	XXSON_EVENT_SET_BEGIN,
 	XXSON_EVENT_SET_END,
 	XXSON_EVENT_OBJECT_BEGIN,
-	XXSON_EVENT_OBJECT_END
+	XXSON_EVENT_OBJECT_END,
+	XXSON_EVENT_UINT
 } xxsoneventtype;
 
 
@@ -35549,6 +35682,7 @@ typedef struct xxsonevent {
 	union {
 		bool Boolean;
 		int64 Integer;
+		uint64 Unsigned;
 		double Float;
 		xstrview String;
 		xbytesview Bytes;
@@ -35764,6 +35898,11 @@ XRT_API bool xrtXsonWriterBool(xxsonwriter* pWriter, bool bValue);
 
 /* 写入 int64。 */
 XRT_API bool xrtXsonWriterInt(xxsonwriter* pWriter, int64 iValue);
+
+
+
+/* 写入 uint64。 */
+XRT_API bool xrtXsonWriterUInt(xxsonwriter* pWriter, uint64 iValue);
 
 
 
@@ -36054,6 +36193,7 @@ typedef struct xtemplatevalue {
 	const xvalue* Value;
 	bool Bool;
 	int64 Integer;
+	uint64 Unsigned;
 	double Float;
 	xstrview Text;
 	xtime Time;
@@ -36081,9 +36221,10 @@ typedef struct xtemplateconfig {
 
 
 
-/* 严格未定义模式把缺失路径从空输出提升为错误。 */
+/* 渲染标志可组合；HTML 转义只作用于动态 {$path} 输出，不改写模板文本。 */
 typedef enum xtemplaterenderflag {
-	XTEMPLATE_STRICT_UNDEFINED = 0x0001u
+	XTEMPLATE_STRICT_UNDEFINED = 0x0001u,
+	XTEMPLATE_ESCAPE_HTML_TEXT = 0x0002u
 } xtemplaterenderflag;
 
 
@@ -36206,8 +36347,17 @@ XRT_API void xrtTemplateConfigInit(xtemplateconfig* pConfig);
 
 
 
-/* 初始化默认作用域和有限渲染预算。 */
+/* 初始化默认作用域和有限渲染预算；默认保留通用模板的原样动态输出。 */
 XRT_API void xrtTemplateRenderConfigInit(xtemplaterenderconfig* pConfig);
+
+
+
+/*
+	初始化适合 HTML 文本节点的渲染配置；动态 {$path} 输出会转义
+	& < > " 和 '，模板原始文本保持不变。此模式不适用于 JavaScript、
+	CSS、URL、SQL 或 shell 上下文。
+*/
+XRT_API void xrtTemplateRenderHtmlConfigInit(xtemplaterenderconfig* pConfig);
 
 
 
@@ -39736,6 +39886,13 @@ XRT_EXTERN_C_END
 /* internal: src/internal/xrt_internal.h */
 /* ========================================================================== */
 
+/* MSVC 对 getenv/sscanf 等标准 CRT 报弃用警告，属工具链噪音。 */
+#if defined(_MSC_VER)
+	#ifndef _CRT_SECURE_NO_WARNINGS
+		#define _CRT_SECURE_NO_WARNINGS
+	#endif
+#endif
+
 #ifndef XRT_INTERNAL_H
 #define XRT_INTERNAL_H
 
@@ -40006,6 +40163,17 @@ static inline uint64 __xrtReadLe64(const void* pData)
 
 
 
+/* 返回短缓冲失败前真正属于调用方输出区的检查前缀。 */
+static inline size_t __xrtOutputCheckSize(
+	size_t iRequired,
+	size_t iCapacity
+)
+{
+	return (iCapacity < iRequired) ? iCapacity : iRequired;
+}
+
+
+
 /* 错误执行上下文由协程和任务调度器切换。 */
 typedef struct xrt_error_context {
 	xerror* Error;
@@ -40102,8 +40270,16 @@ static inline int32 __xrtAtomicRefLoad(const volatile int32* pValue)
 		return (int32)_InterlockedCompareExchange((volatile long*)pValue, 0, 0);
 	#elif defined(__TINYC__) && (defined(_WIN32) || defined(_WIN64))
 		return (int32)InterlockedCompareExchange((volatile LONG*)pValue, 0, 0);
-	#elif defined(__TINYC__)
-		return *pValue;
+	#elif defined(__TINYC__) && (defined(__x86_64__) || defined(_M_X64))
+		int32 iActual;
+
+		__asm__ volatile (
+			"lock; cmpxchgl %2, %1"
+			: "=a"(iActual), "+m"(*(volatile int32*)pValue)
+			: "r"(0), "0"(0)
+			: "cc", "memory"
+		);
+		return iActual;
 	#else
 		return (int32)__sync_val_compare_and_swap((volatile int32*)pValue, 0, 0);
 	#endif
@@ -40118,13 +40294,16 @@ static inline int32 __xrtAtomicRefCompareExchange(volatile int32* pValue, int32 
 		return (int32)_InterlockedCompareExchange((volatile long*)pValue, (long)iValue, (long)iExpected);
 	#elif defined(__TINYC__) && (defined(_WIN32) || defined(_WIN64))
 		return (int32)InterlockedCompareExchange((volatile LONG*)pValue, (LONG)iValue, (LONG)iExpected);
-	#elif defined(__TINYC__)
-		int32 iOld = *pValue;
+	#elif defined(__TINYC__) && (defined(__x86_64__) || defined(_M_X64))
+		int32 iActual;
 
-		if ( iOld == iExpected ) {
-			*pValue = iValue;
-		}
-		return iOld;
+		__asm__ volatile (
+			"lock; cmpxchgl %2, %1"
+			: "=a"(iActual), "+m"(*pValue)
+			: "r"(iValue), "0"(iExpected)
+			: "cc", "memory"
+		);
+		return iActual;
 	#else
 		return (int32)__sync_val_compare_and_swap(pValue, iExpected, iValue);
 	#endif
@@ -45349,9 +45528,11 @@ struct xnetport_impl {
 	bool WakePending;
 	uint32 Capabilities;
 	uint64 Owner;
+	xatomic64 OwnerThread;
 	/* Post 队列仍有积压时，下一轮先给原生后端一次非阻塞提取机会。 */
 	bool BackendTurn;
-	bool Closing;
+	/* 销毁与跨线程 Post/Wake 之间共享的关闭闸门必须使用原子状态。 */
+	xatomic32 Closing;
 };
 
 
@@ -45371,6 +45552,16 @@ bool __xrtNetPortSendFile(
 
 /* 返回每次端口创建都唯一的文件归属标识。 */
 uint64 __xrtNetPortOwner(const xnetport* pPort);
+
+
+
+/* Engine 启动 Worker 前由当前线程释放端口线程归属。 */
+bool __xrtNetPortThreadRelease(xnetport* pPort);
+
+
+
+/* Engine Worker 或回收线程认领一个当前无归属的端口。 */
+bool __xrtNetPortThreadClaim(xnetport* pPort);
 
 
 
@@ -45670,6 +45861,8 @@ typedef struct __xrt_net_engine_atomic_stats {
 	xatomic64 TimerErrors;
 	xatomic64 Events;
 	xatomic64 WaitErrors;
+	xatomic64 WakeErrors;
+	xatomic64 ShutdownStalls;
 	xatomic32 LastWaitError;
 	xatomic32 LastWaitSystemCode;
 	xatomic64 NodeCacheHits;
@@ -45684,6 +45877,8 @@ struct xnetworker {
 	uint32 Index;
 	xatomic32 Running;
 	xatomic32 Stop;
+	xatomic32 ShutdownPhase;
+	xatomic32 ShutdownFailed;
 	/* 最高位是停止门，其余位统计已经进入无锁提交区的调用。 */
 	xatomic32 Submitters;
 	xatomic32 CommandPending;
@@ -45758,8 +45953,11 @@ void __xrtNetWorkerNodeRecycleHeld(
 
 
 
-/* 无分配地把一个嵌入命令投递到目标 Worker；节点在执行前必须保持有效。 */
-void __xrtNetEnginePostInternal(
+/*
+	无分配地把一个嵌入命令投递到目标 Worker。
+	节点在执行前必须保持有效；停机封口后返回 false。
+*/
+bool __xrtNetEnginePostInternal(
 	xnetworker* pWorker,
 	__xrt_net_engine_internal* pCommand,
 	xnettaskproc pProc,
@@ -45977,6 +46175,8 @@ struct xnetstream {
 	bool AbortRequested;
 	bool EngineHeld;
 	bool RuntimeHeld;
+	uint32 ActiveDepth;
+	bool ReleasePending;
 	xnetstream* AcceptNext;
 	#if defined(XRT_FEATURE_NET_TCP_DIAL)
 		__xrt_net_stream_control Control;
@@ -46018,6 +46218,8 @@ struct xnetlistener {
 	xnetcompletion Completion;
 	__xrt_net_accept_slot* AcceptSlots;
 	uint64 WatchId;
+	uint64 AcceptRetryTimer;
+	uint64 AcceptRetryDelay;
 	uint64 NextAffinity;
 	xrt_spinlock AcceptLock;
 	xnetstream* AcceptHead;
@@ -46464,6 +46666,11 @@ bool __xrtTlsClientCompressionValid(
 /* 判断 random 是否是 HelloRetryRequest 固定标记。 */
 bool __xrtTlsHelloRetry(xbytesview Random);
 
+
+
+/* 借用 HelloRetryRequest 固定 random 标记。 */
+xbytesview __xrtTlsHelloRetryRandom(void);
+
 #endif
 
 
@@ -46692,6 +46899,18 @@ bool __xrtTls13ApplicationSchedule(
 bool __xrtTls13ResumptionBinder(
 	xcryptohash Hash,
 	xbytesview Psk,
+	xbytesview ClientHelloPartial,
+	void* pOutput,
+	size_t iOutputSize
+);
+
+
+
+/* 在可选 HRR transcript 前缀之后计算会话票据 binder。 */
+bool __xrtTls13ResumptionBinderTranscript(
+	xcryptohash Hash,
+	xbytesview Psk,
+	const xtlstranscript* pPrefix,
 	xbytesview ClientHelloPartial,
 	void* pOutput,
 	size_t iOutputSize
@@ -47436,6 +47655,8 @@ typedef struct xtlsclientstate {
 	xbytesview SniName;
 	xbytesview* Protocols;
 	size_t ProtocolCount;
+	uint16* Versions;
+	size_t VersionCount;
 	uint16* Ciphers;
 	size_t CipherCount;
 	uint16* Groups;
@@ -47452,6 +47673,7 @@ typedef struct xtlsclientstate {
 	size_t WorkspaceSize;
 	bytes ClientHello;
 	size_t ClientHelloSize;
+	bytes RetryStorage;
 	bytes HandshakeSecret;
 	bytes ClientHandshakeTraffic;
 	bytes ServerHandshakeTraffic;
@@ -47488,6 +47710,9 @@ typedef struct xtlsclientstate {
 	bool Offer12;
 	bool Offer13;
 	bool ExtendedMasterSecret;
+	bool ResumeOnly;
+	bool RetrySeen;
+	bool CompatibilityCcsSeen;
 	#if defined(XRT_FEATURE_TLS_CLIENT_VERIFY)
 		xtlsverifier* Verifier;
 		xtlsclientpeer* Peer;
@@ -47532,6 +47757,16 @@ bool __xrtTlsClientOffered(
 
 /* 根据客户端当前队列和输入需求发布等待方向。 */
 bool __xrtTlsClientWait(xtlssession* pSession, bool bInput);
+
+
+
+/* 为首航或 HRR 重试构建并排队当前 ClientHello。 */
+bool __xrtTlsClientHelloQueue(
+	xtlssession* pSession,
+	xtlsclientstate* pState,
+	xbytesview Cookie,
+	bool bRetry
+);
 
 
 
@@ -47613,7 +47848,10 @@ uint64 __xrtTlsClientResumePublished(
 
 
 /* 为已经完整编码且末尾预留 binder 的 ClientHello 写入真实 binder。 */
-bool __xrtTlsClientResumeBinder(xtlsclientstate* pState);
+bool __xrtTlsClientResumeBinder(
+	xtlsclientstate* pState,
+	const xtlstranscript* pPrefix
+);
 
 
 
@@ -48051,6 +48289,11 @@ void __xrtX509StoreSystemFailure(cstr sMessage);
 
 
 
+/* 仅允许跳过系统库中由 X.509 严格解析或算法策略拒绝的单张证书。 */
+bool __xrtX509StoreSystemCanSkip(const xerror* pError);
+
+
+
 /* 由当前平台后端把系统锚导入指定信任库。 */
 bool __xrtX509StoreSystemLoad(xx509store* pStore);
 
@@ -48303,6 +48546,7 @@ typedef struct xtlsserverselection {
 	xtlscipher Cipher;
 	xtlssignature Signature;
 	uint16 Group;
+	bool Retry;
 	#if defined(XRT_FEATURE_TLS_SERVER_RESUME)
 		xtlsserverresumeoffer Resume;
 	#endif
@@ -48319,6 +48563,8 @@ typedef struct xtlsserverstate {
 	size_t ProtocolCount;
 	xbytesview ServerName;
 	bytes ServerNameStorage;
+	bytes RetryClientHello;
+	size_t RetryClientHelloSize;
 	bytes ClientHandshakeTraffic;
 	bytes ClientApplicationTraffic;
 	bytes ServerApplicationTraffic;
@@ -48342,9 +48588,13 @@ typedef struct xtlsserverstate {
 	xtlsversion Version;
 	xtlscipher Cipher;
 	xtlssignature Signature;
+	xtlscipher RetryCipher;
 	uint16 Group;
+	uint16 RetryGroup;
 	xtlsserverstep Step;
 	bool RequireProtocol;
+	bool RetrySeen;
+	bool CompatibilityCcsSeen;
 	#if defined(XRT_FEATURE_TLS_SERVER_RESUME)
 		xtlsserverresumeproc Resume;
 		ptr ResumeContext;
@@ -48524,6 +48774,7 @@ struct xtlsstream {
 		bool AsyncAgain;
 		bool AsyncClosed;
 	#endif
+	uint32 ActiveDepth;
 	bool Server;
 	bool OpenEmitted;
 	bool EndEmitted;
@@ -48540,6 +48791,7 @@ struct xtlsstream {
 	bool CloseStarted;
 	bool Closing;
 	bool RuntimeHeld;
+	bool RuntimeReleasePending;
 	bool ReadMore;
 	size_t ReadMoreSize;
 	#if defined(XRT_FEATURE_TLS_STREAM_LISTENER)
@@ -54506,6 +54758,9 @@ xrootstep __xrtRootNativeSetMode(xrootnative Parent,
 #define XRT_POOL_FLAG_VISITING		0x0002u
 #define XRT_MEMPOOL_FLAG_READY		0x0001u
 #define XRT_MEMPOOL_FLAG_VISITING	0x0002u
+#define XRT_MEMPOOL_FLAG_PAGE_PENDING_SHIFT 26u
+#define XRT_MEMPOOL_FLAG_PAGE_PENDING_MASK \
+	(UINT32_C(0x3F) << XRT_MEMPOOL_FLAG_PAGE_PENDING_SHIFT)
 
 
 
@@ -54825,6 +55080,12 @@ bool __xrtMapCanMutate(xmap* pMap);
 
 
 
+/* 仅供拥有型封装配置最终值释放顺序；键迭代顺序不变。 */
+bool __xrtMapSetDropReverse(xmap* pMap, bool bReverse);
+bool __xrtMapDropsReverse(const xmap* pMap);
+
+
+
 /* 判断调用方字节区间是否触及映射结构、桶数组或条目。 */
 bool __xrtMapOwnsRange(
 	const xmap* pMap,
@@ -54851,14 +55112,16 @@ void __xrtMapCallbackEnd(const xmap* pMap);
 
 
 
-/* 在回调门禁内失败原子地替换已有值，并报告键是否存在。 */
-bool __xrtMapReplaceValue(
+/* 一次查询完成已有值替换或缺失值初始化，并报告是否新建。 */
+ptr __xrtMapSetOrInit(
 	xmap* pMap,
 	xbytesview Key,
 	const void* pValue,
 	xrtmapreplaceproc pReplace,
-	ptr pUserData,
-	bool* pFound
+	ptr pReplaceData,
+	xmapinit pInit,
+	ptr pInitData,
+	bool* pNew
 );
 
 
@@ -54977,6 +55240,7 @@ struct xvalue {
 	union {
 		bool Bool;
 		int64 Int;
+		uint64 UInt;
 		double Float;
 		xtime Time;
 		ptr Pointer;
@@ -55050,6 +55314,11 @@ size_t __xrtValueContainerCount(const xvalue* pValue);
 
 /* 借用 Value Set 的底层集合，供集合关系和图层复用通用 Set 实现。 */
 const xset* __xrtValueSetItems(const xvalue* pValue);
+
+
+
+/* 查询 Object 是否采用逆插入顺序释放拥有值。 */
+bool __xrtValueObjectDropsReverse(const xvalue* pValue);
 
 
 
@@ -55200,7 +55469,8 @@ typedef enum xtextvalueeventtype {
 	XTEXT_VALUE_EVENT_SET_BEGIN,
 	XTEXT_VALUE_EVENT_SET_END,
 	XTEXT_VALUE_EVENT_OBJECT_BEGIN,
-	XTEXT_VALUE_EVENT_OBJECT_END
+	XTEXT_VALUE_EVENT_OBJECT_END,
+	XTEXT_VALUE_EVENT_UINT
 } xtextvalueeventtype;
 
 
@@ -55223,6 +55493,7 @@ typedef struct xtextvalueevent {
 	union {
 		bool Boolean;
 		int64 Integer;
+		uint64 Unsigned;
 		double Float;
 		xstrview String;
 		xtextvaluetag Tag;
@@ -55404,6 +55675,7 @@ bool __xrtTextValueWriterKey(
 bool __xrtTextValueWriterNull(xtextvaluewriter* pWriter);
 bool __xrtTextValueWriterBool(xtextvaluewriter* pWriter, bool bValue);
 bool __xrtTextValueWriterInt(xtextvaluewriter* pWriter, int64 iValue);
+bool __xrtTextValueWriterUInt(xtextvaluewriter* pWriter, uint64 iValue);
 bool __xrtTextValueWriterFloat(xtextvaluewriter* pWriter, double fValue);
 bool __xrtTextValueWriterString(xtextvaluewriter* pWriter, xstrview Text);
 
@@ -55614,7 +55886,8 @@ bool __xrtXsonWriteConfigValid(const xxsonwriteconfig* pConfig);
 
 #if defined(XRT_FEATURE_TEMPLATE_CORE)
 
-#define XRT_TEMPLATE_RENDER_FLAG_MASK XTEMPLATE_STRICT_UNDEFINED
+#define XRT_TEMPLATE_RENDER_FLAG_MASK \
+	(XTEMPLATE_STRICT_UNDEFINED | XTEMPLATE_ESCAPE_HTML_TEXT)
 
 
 
@@ -55867,6 +56140,7 @@ typedef struct xrt_template_eval {
 	union {
 		bool Bool;
 		int64 Integer;
+		uint64 Unsigned;
 		double Float;
 		xstrview String;
 		xtime Time;
@@ -57267,11 +57541,22 @@ struct xregexsetmatcher {
 /* source: src/core/core.c */
 /* ========================================================================== */
 
+/* -std=c11 的严格 ISO 模式下 Darwin 系统头不定义 u_int、隐藏
+   _SC_NPROCESSORS_ONLN；必须在任何系统头之前声明 BSD 特性宏。 */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+	#define _DARWIN_C_SOURCE 1
+#endif
+
 
 #include <errno.h>
 
 #if !defined(_WIN32) && !defined(_WIN64)
 	#include <unistd.h>
+#endif
+
+#if defined(__APPLE__)
+	#include <sys/types.h>
+	#include <sys/sysctl.h>
 #endif
 
 
@@ -57383,11 +57668,24 @@ uint32 __xrtProcessorCount(void)
 		GetSystemInfo(&tInfo);
 		return tInfo.dwNumberOfProcessors != 0 ?
 			(uint32)tInfo.dwNumberOfProcessors : 1u;
-	#else
+	#elif defined(__APPLE__)
+		int aMib[2] = {CTL_HW, HW_AVAILCPU};
+		int iCount = 0;
+		size_t iSize = sizeof(iCount);
+
+		/* -std=c11 的严格 ISO 模式会隐藏 _SC_NPROCESSORS_ONLN，Apple 走 sysctl */
+		if ( (sysctl(aMib, 2, &iCount, &iSize, NULL, 0) != 0) ||
+			(iCount <= 0) ) {
+			iCount = 1;
+		}
+		return (uint32)iCount;
+	#elif defined(_SC_NPROCESSORS_ONLN)
 		long iCount = sysconf(_SC_NPROCESSORS_ONLN);
 
 		return (iCount > 0) && ((uint64)iCount <= UINT32_MAX) ?
 			(uint32)iCount : 1u;
+	#else
+		return 1u;
 	#endif
 }
 
@@ -58448,33 +58746,39 @@ static bool __xrtHeapFree(ptr pMemory, cstr sFile, uint32 iLine)
 
 	if ( (pHeader->Flags & XRT_HEAP_FLAG_POOLED) != 0 ) {
 		xrt_heap_free* pNode = (xrt_heap_free*)pMemory;
-		size_t iCapacity = __xrtHeapClassCapacity(pHeader->Class);
+		size_t iSize = pHeader->Size;
+		uint16 iClass = pHeader->Class;
+		size_t iCapacity = __xrtHeapClassCapacity(iClass);
 		int iDisposition = __xrtMemDebugFree(pHeader, pMemory, iCapacity, sFile, iLine);
 
 		if ( iDisposition == XRT_MEMDEBUG_FREE_INVALID ) {
 			return false;
 		}
-		__xrtMemStatsBlockFree(pHeader->Size, pHeader->Class, true);
+		__xrtMemStatsBlockFree(iSize, iClass, true);
 		if ( iDisposition == XRT_MEMDEBUG_FREE_CONSUMED ) {
 			return true;
 		}
 
-		__xrtHeapReturn(pHeader->Class, pNode);
+		#if !defined(XRT_FEATURE_MEMORY_DEBUG)
+			pHeader->Magic = 0;
+		#endif
+		__xrtHeapReturn(iClass, pNode);
 		return true;
 	}
 	if ( (pHeader->Flags & XRT_HEAP_FLAG_BACKING) != 0 ) {
-		size_t iCapacity = (pHeader->Size != 0 ? pHeader->Size : 1) + __xrtMemDebugTailSize();
+		size_t iSize = pHeader->Size;
+		uint16 iClass = pHeader->Class;
+		ptr pAllocation = pHeader->Allocation;
+		size_t iCapacity = (iSize != 0 ? iSize : 1) + __xrtMemDebugTailSize();
 		int iDisposition = __xrtMemDebugFree(pHeader, pMemory, iCapacity, sFile, iLine);
-		ptr pAllocation;
 
 		if ( iDisposition == XRT_MEMDEBUG_FREE_INVALID ) {
 			return false;
 		}
-		__xrtMemStatsBlockFree(pHeader->Size, pHeader->Class, false);
+		__xrtMemStatsBlockFree(iSize, iClass, false);
 		if ( iDisposition == XRT_MEMDEBUG_FREE_CONSUMED ) {
 			return true;
 		}
-		pAllocation = pHeader->Allocation;
 		pHeader->Magic = 0;
 		__xrtBackingFree(pAllocation);
 		return true;
@@ -60258,15 +60562,16 @@ XRT_API bool xrtAtomicIsLockFree(size_t iSize)
 		if ( iSize == 8u ) {
 			return __atomic_always_lock_free(8u, NULL);
 		}
+		return false;
 	#elif defined(_WIN32) || defined(_WIN64)
 		return (iSize == 4u) || (iSize == 8u);
 	#elif defined(__x86_64__) || defined(_M_X64)
 		return (iSize == 4u) || (iSize == 8u);
 	#elif defined(__i386__) || defined(_M_IX86)
 		return iSize == 4u;
+	#else
+		return false;
 	#endif
-
-	return false;
 }
 
 
@@ -70354,6 +70659,10 @@ void __xrtCoBackendYield(xrt_co_runtime* pRuntime, xcoro* pCo)
 #else
 
 #include <pthread.h>
+/* -std=c11 严格 ISO 模式下 Darwin 的 mman.h 隐藏 MAP_ANONYMOUS。 */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+	#define _DARWIN_C_SOURCE 1
+#endif
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -72100,6 +72409,8 @@ void __xrtCoWaitClose(xrt_co_wait* pWait)
 	 * 令牌字段只由当前协程访问，可以直接完成最常见的关闭路径。
 	 */
 	if (
+		(xrtCoCurrent() == pCo) &&
+		__xrtCoSchedIsOwner(pSched) &&
 		(pCo->WaitTokenArmed == pWait->Token) &&
 		(pCo->WaitTokenPending != pWait->Token)
 	) {
@@ -74316,12 +74627,19 @@ XRT_API void xrtMemDebugSnapshot(xmemdebugsnapshot* pSnapshot)
 /* 复制有界事件后在锁外调用用户访问器。 */
 XRT_API size_t xrtMemDebugVisit(xmemdebugvisitor pVisitor, ptr pUserData)
 {
-	xmemdebugevent arrEvents[XRT_MEMDEBUG_EVENT_LIMIT];
+	xmemdebugevent* pEvents;
 	size_t iCount;
 	size_t iVisited = 0;
 
 	if ( pVisitor == NULL ) {
 		__xrtErrorSetInvalidArgument();
+		return 0;
+	}
+	pEvents = (xmemdebugevent*)__xrtBackingAlloc(
+		sizeof(xmemdebugevent) * XRT_MEMDEBUG_EVENT_LIMIT
+	);
+	if ( pEvents == NULL ) {
+		__xrtErrorSetOutOfMemory();
 		return 0;
 	}
 
@@ -74331,16 +74649,17 @@ XRT_API size_t xrtMemDebugVisit(xmemdebugvisitor pVisitor, ptr pUserData)
 	for ( size_t i = 0; i < iCount; i++ ) {
 		size_t iIndex = (__xrtMemDebug.EventStart + i) % XRT_MEMDEBUG_EVENT_LIMIT;
 
-		arrEvents[i] = __xrtMemDebug.Events[iIndex];
+		pEvents[i] = __xrtMemDebug.Events[iIndex];
 	}
 	__xrtSpinUnlock(&__xrtMemDebug.Lock);
 
 	for ( size_t i = 0; i < iCount; i++ ) {
 		iVisited++;
-		if ( !pVisitor(&arrEvents[i], pUserData) ) {
+		if ( !pVisitor(&pEvents[i], pUserData) ) {
 			break;
 		}
 	}
+	__xrtBackingFree(pEvents);
 	return iVisited;
 }
 
@@ -83780,7 +84099,7 @@ static bool __xrtBase64Prepare(
 
 		if ( !bCustom ) {
 			if ( pReverse != NULL ) {
-				pReverse[iCharacter] = (int16)i;
+				pReverse[iCharacter] = (int8)i;
 			}
 			continue;
 		}
@@ -86480,6 +86799,17 @@ XRT_API void xrtWsMessageConfigInit(xwsmessageconfig* pConfig)
 
 
 
+/* 初始化有明确消息预算的安全默认配置。 */
+XRT_API void xrtWsMessageConfigInitSafe(xwsmessageconfig* pConfig)
+{
+	xrtWsMessageConfigInit(pConfig);
+	if ( pConfig != NULL ) {
+		pConfig->MaxSize = XWS_MESSAGE_SIZE_SAFE_DEFAULT;
+	}
+}
+
+
+
 /* 绑定配置并初始化无资源消息状态。 */
 XRT_API bool xrtWsMessageInit(
 	xwsmessagestate* pState,
@@ -88966,6 +89296,7 @@ static bool __xrtHttpFieldWriteList(
 	size_t* pSize
 )
 {
+	size_t iCheckSize;
 	size_t iRequired;
 	size_t iWritten;
 
@@ -88989,11 +89320,12 @@ static bool __xrtHttpFieldWriteList(
 		memcpy(pSize, &iRequired, sizeof(iRequired));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iRequired) ||
+	iCheckSize = __xrtOutputCheckSize(iRequired, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
-		pOutput, iRequired, pSize, sizeof(*pSize)
+		pOutput, iCheckSize, pSize, sizeof(*pSize)
 	) || __xrtHttpFieldArrayOverlap(
-		pFields, iCount, pOutput, iRequired
+		pFields, iCount, pOutput, iCheckSize
 	) ) {
 		__xrtErrorSetInvalidArgument();
 		return false;
@@ -91134,6 +91466,7 @@ XRT_API bool xrtHttpQuotedRead(
 )
 {
 	xstrview Body;
+	size_t iCheckSize;
 	size_t iRequired;
 
 	if ( !__xrtRangeValid(pSize, sizeof(iRequired)) ||
@@ -91160,11 +91493,12 @@ XRT_API bool xrtHttpQuotedRead(
 		memcpy(pSize, &iRequired, sizeof(iRequired));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iRequired) ||
+	iCheckSize = __xrtOutputCheckSize(iRequired, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
-			pSize, sizeof(iRequired), pOutput, iRequired
+			pSize, sizeof(iRequired), pOutput, iCheckSize
 	) || __xrtRangesOverlap(
-			Quoted.Data, Quoted.Size, pOutput, iRequired
+			Quoted.Data, Quoted.Size, pOutput, iCheckSize
 	) ) {
 		__xrtErrorSetInvalidArgument();
 		return false;
@@ -91190,6 +91524,7 @@ XRT_API bool xrtHttpQuotedWrite(
 )
 {
 	uint8* pWrite = (uint8*)pOutput;
+	size_t iCheckSize;
 	size_t iRequired;
 	size_t iOffset = 0;
 
@@ -91208,11 +91543,12 @@ XRT_API bool xrtHttpQuotedWrite(
 		memcpy(pSize, &iRequired, sizeof(iRequired));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iRequired) ||
+	iCheckSize = __xrtOutputCheckSize(iRequired, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
-			pSize, sizeof(iRequired), pOutput, iRequired
+			pSize, sizeof(iRequired), pOutput, iCheckSize
 	) || __xrtRangesOverlap(
-			Value.Data, Value.Size, pOutput, iRequired
+			Value.Data, Value.Size, pOutput, iCheckSize
 	) ) {
 		__xrtErrorSetInvalidArgument();
 		return false;
@@ -91476,6 +91812,7 @@ XRT_API bool xrtHttpParamValueWrite(
 )
 {
 	xhttpparam Param;
+	size_t iCheckSize;
 	size_t iRequired;
 
 	if ( !__xrtRangeValid(pParam, sizeof(Param)) ||
@@ -91520,13 +91857,14 @@ XRT_API bool xrtHttpParamValueWrite(
 		memcpy(pSize, &iRequired, sizeof(iRequired));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iRequired) ||
+	iCheckSize = __xrtOutputCheckSize(iRequired, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
-			pOutput, iRequired, pParam, sizeof(Param)
+			pOutput, iCheckSize, pParam, sizeof(Param)
 	) || __xrtRangesOverlap(
-			pOutput, iRequired, pSize, sizeof(iRequired)
+			pOutput, iCheckSize, pSize, sizeof(iRequired)
 	) || __xrtRangesOverlap(
-			pOutput, iRequired, Param.Value.Data,
+			pOutput, iCheckSize, Param.Value.Data,
 			Param.Value.Size
 	) ) {
 		__xrtErrorSetInvalidArgument();
@@ -91557,6 +91895,7 @@ XRT_API bool xrtHttpParamWrite(
 )
 {
 	uint8* pWrite = (uint8*)pOutput;
+	size_t iCheckSize;
 	size_t iRequired;
 	size_t iValueSize = 0;
 	size_t iOffset = 0;
@@ -91608,11 +91947,12 @@ XRT_API bool xrtHttpParamWrite(
 		memcpy(pSize, &iRequired, sizeof(iRequired));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iRequired) ||
+	iCheckSize = __xrtOutputCheckSize(iRequired, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
-			pSize, sizeof(iRequired), pOutput, iRequired
+			pSize, sizeof(iRequired), pOutput, iCheckSize
 	) || __xrtHttpParamOutputOverlap(
-		Name, Value, pOutput, iRequired
+		Name, Value, pOutput, iCheckSize
 	) ) {
 		__xrtErrorSetInvalidArgument();
 		return false;
@@ -92130,6 +92470,7 @@ XRT_API bool xrtWsExtensionWrite(
 {
 	xwsextension Extension;
 	uint8* pWrite = (uint8*)pOutput;
+	size_t iCheckSize;
 	size_t iSeparator = 0;
 	size_t iRequired;
 
@@ -92190,14 +92531,15 @@ XRT_API bool xrtWsExtensionWrite(
 		memcpy(pSize, &iRequired, sizeof(iRequired));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iRequired) ||
+	iCheckSize = __xrtOutputCheckSize(iRequired, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
-			pSize, sizeof(*pSize), pOutput, iRequired
+			pSize, sizeof(*pSize), pOutput, iCheckSize
 		) || __xrtRangesOverlap(
-			Name.Data, Name.Size, pOutput, iRequired
+			Name.Data, Name.Size, pOutput, iCheckSize
 		) || __xrtRangesOverlap(
 			Parameters.Data, Parameters.Size,
-			pOutput, iRequired
+			pOutput, iCheckSize
 		) ) {
 		__xrtWsHandshakeError(
 			XERR_ARGUMENT,
@@ -92633,6 +92975,7 @@ static bool __xrtWsDeflateWrite(
 {
 	xwsdeflate Config;
 	char Text[XWS_DEFLATE_MAX_SIZE];
+	size_t iCheckSize;
 	size_t iSize = 0;
 
 	if ( !__xrtRangeValid(pConfig, sizeof(*pConfig)) ||
@@ -92719,13 +93062,14 @@ static bool __xrtWsDeflateWrite(
 		memcpy(pSize, &iSize, sizeof(iSize));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iSize) ||
+	iCheckSize = __xrtOutputCheckSize(iSize, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
 			pSize, sizeof(*pSize),
-			pOutput, iSize
+			pOutput, iCheckSize
 		) || __xrtRangesOverlap(
 			pConfig, sizeof(*pConfig),
-			pOutput, iSize
+			pOutput, iCheckSize
 		) ) {
 		__xrtWsDeflateError(
 			XERR_ARGUMENT,
@@ -98167,7 +98511,7 @@ XRT_API xwsdeflater* xrtWsDeflaterCreate(
 	}
 	pDeflater = (xwsdeflater*)xrtMalloc(sizeof(*pDeflater));
 
-	if ( !__xrtRangeValid(pDeflater, sizeof(*pDeflater)) ) {
+	if ( pDeflater == NULL ) {
 		return NULL;
 	}
 	memset(pDeflater, 0, sizeof(*pDeflater));
@@ -99772,6 +100116,7 @@ XRT_API bool xrtNetAddrFromNative(xnetaddr* pAddr,
 #if defined(__linux__) && \
 	(!defined(XRT_SINGLE_HEADER) || defined(_GNU_SOURCE))
 	#define XRT_NET_SOCKET_NATIVE_DGRAM_BATCH 1
+	#define XRT_NET_SOCKET_RECV_BATCH_STACK 16u
 #endif
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -99981,16 +100326,19 @@ static __xrt_netsocket_native __xrtNetSocketOpenNative(
 			WSA_FLAG_NO_HANDLE_INHERIT;
 
 		(void)iFlags;
-		hSocket = WSASocket(iFamily, iType, iProtocol,
+		hSocket = WSASocketW(iFamily, iType, iProtocol,
 			NULL, 0, iNativeFlags);
 		if ( (hSocket == __XRT_NET_SOCKET_INVALID) &&
 			 (WSAGetLastError() == WSAEINVAL) ) {
-			hSocket = WSASocket(iFamily, iType, iProtocol,
+			hSocket = WSASocketW(iFamily, iType, iProtocol,
 				NULL, 0, WSA_FLAG_OVERLAPPED);
 		}
 	#else
 		int iNativeType = iType;
 
+		#if !defined(SOCK_CLOEXEC) && !defined(SOCK_NONBLOCK)
+			(void)iFlags;
+		#endif
 		#if defined(SOCK_CLOEXEC)
 			iNativeType |= SOCK_CLOEXEC;
 		#endif
@@ -100588,7 +100936,7 @@ XRT_API bool xrtNetSocketSet(xnetsocket Socket,
 					return false;
 				}
 				Linger.l_onoff = (iValue < 0) ? 0 : 1;
-				Linger.l_linger = (iValue < 0) ? 0 : (int)iValue;
+				Linger.l_linger = (u_short)((iValue < 0) ? 0 : iValue);
 				if ( setsockopt(__xrtNetSocketHandle(Socket),
 					SOL_SOCKET, SO_LINGER, (const char*)&Linger,
 					(socklen_t)sizeof(Linger)) != 0 ) {
@@ -100960,6 +101308,10 @@ static void __xrtNetSocketDgramMetaIPv4(
 
 
 /* 写入一个不带端口的 IPv6 目标地址及其接收接口。 */
+/* 该辅助只在支持对应控制消息平台的分支被引用，其余平台允许未使用。 */
+#if defined(__GNUC__) || defined(__clang__)
+	__attribute__((unused))
+#endif
 static void __xrtNetSocketDgramMetaIPv6(
 	xnetdgrammeta* pMeta,
 	const void* pAddress,
@@ -101217,6 +101569,16 @@ void __xrtNetSocketDgramMetaParse(
 						continue;
 					}
 				#endif
+				/* BSD/Darwin 以 IP_RECVTTL 作为 IPv4 TTL 的控制消息类型。 */
+				#if defined(IP_RECVTTL)
+					if ( (pHeader->cmsg_level == IPPROTO_IP) &&
+						 (pHeader->cmsg_type == IP_RECVTTL) ) {
+						pMeta->HopLimit =
+							__xrtNetSocketDgramMetaInt(pData, iSize);
+						pMeta->Flags |= XNET_DGRAM_META_HOP_LIMIT;
+						continue;
+					}
+				#endif
 				#if defined(IPV6_HOPLIMIT)
 					if ( (pHeader->cmsg_level == IPPROTO_IPV6) &&
 						 (pHeader->cmsg_type == IPV6_HOPLIMIT) ) {
@@ -101231,6 +101593,16 @@ void __xrtNetSocketDgramMetaParse(
 				#if defined(IP_TOS)
 					if ( (pHeader->cmsg_level == IPPROTO_IP) &&
 						 (pHeader->cmsg_type == IP_TOS) ) {
+						pMeta->TrafficClass =
+							__xrtNetSocketDgramMetaInt(pData, iSize) & 0xFF;
+						pMeta->Flags |= XNET_DGRAM_META_TRAFFIC_CLASS;
+						continue;
+					}
+				#endif
+				/* BSD/Darwin 以 IP_RECVTOS 作为 IPv4 TOS 的控制消息类型。 */
+				#if defined(IP_RECVTOS)
+					if ( (pHeader->cmsg_level == IPPROTO_IP) &&
+						 (pHeader->cmsg_type == IP_RECVTOS) ) {
 						pMeta->TrafficClass =
 							__xrtNetSocketDgramMetaInt(pData, iSize) & 0xFF;
 						pMeta->Flags |= XNET_DGRAM_META_TRAFFIC_CLASS;
@@ -101785,7 +102157,8 @@ XRT_API uint32 xrtNetSocketDgramControlAvailable(xnetsocket Socket)
 		}
 	#else
 		if ( Socket->Family == XNET_FAMILY_IPV4 ) {
-			#if defined(IP_SENDSRCADDR)
+			#if defined(IP_SENDSRCADDR) || \
+				(defined(IP_PKTINFO) && !defined(__linux__))
 				iFlags |= XNET_DGRAM_CONTROL_SOURCE;
 			#endif
 		} else {
@@ -102063,6 +102436,22 @@ bool __xrtNetSocketDgramControlBuild(
 				bBuilt = __xrtNetSocketDgramControlAppend(
 					pBuffer, iCapacity, &iOffset,
 					IPPROTO_IP, IP_PKTINFO, Info, sizeof(Info)
+				);
+			#elif defined(IP_PKTINFO) && !defined(__linux__)
+				/* Darwin/BSD 通过 in_pktinfo 的 ipi_spec_dst 指定源地址。 */
+				struct in_pktinfo Info;
+
+				memset(&Info, 0, sizeof(Info));
+				if ( (iFlags & XNET_DGRAM_CONTROL_INTERFACE) != 0 ) {
+					Info.ipi_ifindex = pControl->Interface;
+				}
+				if ( (iFlags & XNET_DGRAM_CONTROL_SOURCE) != 0 ) {
+					memcpy(&Info.ipi_spec_dst,
+						pControl->Source.Address, 4);
+				}
+				bBuilt = __xrtNetSocketDgramControlAppend(
+					pBuffer, iCapacity, &iOffset,
+					IPPROTO_IP, IP_PKTINFO, &Info, sizeof(Info)
 				);
 			#elif defined(IP_SENDSRCADDR)
 				bBuilt = __xrtNetSocketDgramControlAppend(
@@ -102573,7 +102962,7 @@ XRT_API xnetresult xrtNetSocketAccept(xnetsocket Socket,
 	struct sockaddr_storage Storage;
 	__xrt_netsocket_native hClient;
 	xnetsocket Client;
-	xnetaddr Remote;
+	xnetaddr Remote = {0};
 
 	#if defined(_WIN32) || defined(_WIN64)
 		int iSize = (int)sizeof(Storage);
@@ -103254,7 +103643,9 @@ XRT_API xnetresult xrtNetSocketRecvFrom(xnetsocket Socket,
 	void* pData, size_t iSize, size_t* pReceived, xnetaddr* pRemote)
 {
 	struct sockaddr_storage Storage;
-	unsigned char iDummy = 0;
+	#if defined(_WIN32) || defined(_WIN64)
+		unsigned char iDummy = 0;
+	#endif
 	int iResult;
 	xnetresult Result;
 
@@ -103310,34 +103701,82 @@ XRT_API xnetresult xrtNetSocketRecvFrom(xnetsocket Socket,
 			struct msghdr Message;
 			ssize_t iBytes;
 
-			Buffer.iov_base = (pData != NULL) ? pData : &iDummy;
-			Buffer.iov_len = iSize;
-			memset(&Message, 0, sizeof(Message));
-			Message.msg_name = &Storage;
-			Message.msg_namelen = iAddressSize;
-			Message.msg_iov = &Buffer;
-			Message.msg_iovlen = 1;
-			do {
-				iBytes = recvmsg(__xrtNetSocketHandle(Socket), &Message, 0);
-			} while ( (iBytes < 0) && (errno == EINTR) );
-			iAddressSize = Message.msg_namelen;
-			iResult = (iBytes > INT_MAX) ? INT_MAX : (int)iBytes;
-			Result = __xrtNetSocketRecvResult(iResult,
-				pReceived, true, "recv-from");
-			#if defined(MSG_TRUNC)
-				if ( (Result == XNET_RESULT_OK) &&
-					 ((Message.msg_flags & MSG_TRUNC) != 0) ) {
+			if ( iSize == 0 ) {
+				/* Darwin 对 NULL/零长度缓冲返回 EINVAL（recvmsg 与
+				   recvfrom 皆然），零长度接收传入哑缓冲；MSG_TRUNC
+				   令内核返回报文真实长度，超长时报截断。 */
+				unsigned char Dummy = 0;
+				socklen_t iDummyLen = iAddressSize;
+
+				do {
+					iBytes = recvfrom(
+						__xrtNetSocketHandle(Socket),
+						&Dummy, 0,
+						#if defined(MSG_TRUNC)
+							MSG_TRUNC,
+						#else
+							0,
+						#endif
+						(struct sockaddr*)&Storage, &iDummyLen
+					);
+				} while ( (iBytes < 0) && (errno == EINTR) );
+				iAddressSize = (socklen_t)iDummyLen;
+				if ( iBytes > 0 ) {
+					/* 报文超长被丢弃：零字节交付且报告截断。 */
+					iBytes = 0;
+					iResult = 0;
+					Result = __xrtNetSocketRecvResult(0,
+						pReceived, true, "recv-from");
 					Result = XNET_RESULT_TRUNCATED;
+				} else {
+					iResult = 0;
+					Result = __xrtNetSocketRecvResult(0,
+						pReceived, true, "recv-from");
 				}
-			#endif
+				/* 已完成结果计算，跳过下方公共重算。 */
+				if ( iSize == 0 ) {
+					goto ZeroDone;
+				}
+			} else {
+				Buffer.iov_base = pData;
+				Buffer.iov_len = iSize;
+				memset(&Message, 0, sizeof(Message));
+				Message.msg_name = &Storage;
+				Message.msg_namelen = iAddressSize;
+				Message.msg_iov = &Buffer;
+				Message.msg_iovlen = 1;
+				do {
+					iBytes = recvmsg(
+						__xrtNetSocketHandle(Socket), &Message, 0);
+				} while ( (iBytes < 0) && (errno == EINTR) );
+				iAddressSize = Message.msg_namelen;
+				iResult = (iBytes > INT_MAX) ? INT_MAX : (int)iBytes;
+				Result = __xrtNetSocketRecvResult(iResult,
+					pReceived, true, "recv-from");
+				#if defined(MSG_TRUNC)
+					/* Darwin 对零长度报文也设置 MSG_TRUNC；字节数为零
+					   表示报文被完整交付，不视为截断。 */
+					if ( (Result == XNET_RESULT_OK) && (iBytes > 0) &&
+						 ((Message.msg_flags & MSG_TRUNC) != 0) ) {
+						Result = XNET_RESULT_TRUNCATED;
+					}
+				#endif
+			}
+			ZeroDone: ;
 		}
 	#endif
 
 	if ( ((Result == XNET_RESULT_OK) ||
-		 (Result == XNET_RESULT_TRUNCATED)) && (pRemote != NULL) &&
-		 !xrtNetAddrFromNative(pRemote, &Storage, (size_t)iAddressSize) ) {
-		*pReceived = 0;
-		return XNET_RESULT_ERROR;
+		 (Result == XNET_RESULT_TRUNCATED)) && (pRemote != NULL) ) {
+		/* Darwin 收到零长度报文时不填充源地址且 addrlen 输出 0；
+		   源地址未知时不更新调用方地址，仅清为未指定族。 */
+		if ( iAddressSize == 0 ) {
+			memset(pRemote, 0, sizeof(*pRemote));
+		} else if ( !xrtNetAddrFromNative(
+			pRemote, &Storage, (size_t)iAddressSize) ) {
+			*pReceived = 0;
+			return XNET_RESULT_ERROR;
+		}
 	}
 	return Result;
 }
@@ -103465,7 +103904,9 @@ XRT_API xnetresult xrtNetSocketRecvFromVec(xnetsocket Socket,
 		Result = __xrtNetSocketRecvResult(iResult,
 			pReceived, true, "recv-from-vec");
 		#if defined(MSG_TRUNC)
-			if ( (Result == XNET_RESULT_OK) &&
+			/* Darwin 对零长度报文也设置 MSG_TRUNC；字节数为零
+			   表示报文被完整交付，不视为截断。 */
+			if ( (Result == XNET_RESULT_OK) && (iBytes > 0) &&
 				 ((Message.msg_flags & MSG_TRUNC) != 0) ) {
 				Result = XNET_RESULT_TRUNCATED;
 			}
@@ -103657,7 +104098,9 @@ XRT_API xnetresult xrtNetSocketRecvMsgVec(
 			"recv-message"
 		);
 		#if defined(MSG_TRUNC)
-			if ( (Result == XNET_RESULT_OK) &&
+			/* Darwin 对零长度报文也设置 MSG_TRUNC；字节数为零
+			   表示报文被完整交付，不视为截断。 */
+			if ( (Result == XNET_RESULT_OK) && (iBytes > 0) &&
 				 ((Message.msg_flags & MSG_TRUNC) != 0) ) {
 				Result = XNET_RESULT_TRUNCATED;
 			}
@@ -104290,15 +104733,20 @@ XRT_API xnetresult xrtNetSocketRecvBatch(xnetsocket Socket,
 
 	#if defined(XRT_NET_SOCKET_NATIVE_DGRAM_BATCH)
 		{
-			struct mmsghdr Messages[XNET_DGRAM_BATCH_MAX];
-			struct iovec Vectors[XNET_DGRAM_BATCH_MAX];
-			struct sockaddr_storage Addresses[XNET_DGRAM_BATCH_MAX];
-			__xrt_net_dgram_control Controls[
-				(Socket->DgramMeta != 0) ? iCapacity : 1
+			struct mmsghdr Messages[XRT_NET_SOCKET_RECV_BATCH_STACK];
+			struct iovec Vectors[XRT_NET_SOCKET_RECV_BATCH_STACK];
+			struct sockaddr_storage Addresses[
+				XRT_NET_SOCKET_RECV_BATCH_STACK
 			];
-			unsigned char Dummy[XNET_DGRAM_BATCH_MAX];
+			__xrt_net_dgram_control Controls[
+				XRT_NET_SOCKET_RECV_BATCH_STACK
+			];
+			unsigned char Dummy[XRT_NET_SOCKET_RECV_BATCH_STACK];
 			int iFlags = 0;
 			int iResult;
+			size_t iBatch = iCapacity <
+				XRT_NET_SOCKET_RECV_BATCH_STACK ?
+				iCapacity : XRT_NET_SOCKET_RECV_BATCH_STACK;
 			size_t i;
 			bool bAddressError = false;
 
@@ -104306,7 +104754,7 @@ XRT_API xnetresult xrtNetSocketRecvBatch(xnetsocket Socket,
 			if ( Socket->DgramMeta != 0 ) {
 				memset(Controls, 0, sizeof(Controls));
 			}
-			for ( i = 0; i < iCapacity; i++ ) {
+			for ( i = 0; i < iBatch; i++ ) {
 				Vectors[i].iov_base = (pItems[i].Data != NULL) ?
 					pItems[i].Data : &Dummy[i];
 				Vectors[i].iov_len = pItems[i].Capacity;
@@ -104328,7 +104776,7 @@ XRT_API xnetresult xrtNetSocketRecvBatch(xnetsocket Socket,
 			#endif
 			do {
 				iResult = recvmmsg(__xrtNetSocketHandle(Socket), Messages,
-					(unsigned int)iCapacity, iFlags, NULL);
+					(unsigned int)iBatch, iFlags, NULL);
 			} while ( (iResult < 0) && (errno == EINTR) );
 			if ( iResult < 0 ) {
 				int iCode = __xrtNetSocketLastError();
@@ -104556,6 +105004,31 @@ static uint64 __xrtNetPortOwnerNextId(void)
 	return Id;
 }
 
+
+
+/* 检查后端操作是否由端口当前拥有线程执行。 */
+static bool __xrtNetPortRequireThread(
+	xnetport* pPort,
+	uint32 iCode,
+	cstr sOperation
+)
+{
+	if ( xrtAtomic64Load(
+		&pPort->OwnerThread,
+		XMEMORY_ACQUIRE
+	) != __xrtCurrentThreadId() ) {
+		__xrtNetSetError(
+			XERR_STATE,
+			iCode,
+			sOperation,
+			"network port operation must run on its owner thread",
+			0
+		);
+		return false;
+	}
+	return true;
+}
+
 /* 检查端口后端枚举是否属于当前稳定集合。 */
 static bool __xrtNetPortBackendValid(xnetportbackend Backend)
 {
@@ -104756,6 +105229,8 @@ XRT_API xnetport* xrtNetPortCreate(const xnetportconfig* pConfig)
 	pPort->Driver = pDriver;
 	pPort->Capabilities = pDriver->Capabilities;
 	pPort->Owner = __xrtNetPortOwnerNextId();
+	xrtAtomic64Init(&pPort->OwnerThread, __xrtCurrentThreadId());
+	xrtAtomic32Init(&pPort->Closing, 0u);
 	if ( !xrtMutexInit(&pPort->Lock) ) {
 		xrtFree(pPort);
 		return NULL;
@@ -104776,14 +105251,32 @@ XRT_API bool xrtNetPortDestroy(xnetport* pPort)
 	xerror* pPrevious;
 	xerror* pFailure = NULL;
 	xerror* pError;
+	uint32 iExpected = 0u;
 	bool bResult;
 
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ) {
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ) {
+		__xrtErrorSetInvalidArgument();
+		return false;
+	}
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_CLOSE,
+		"destroy-port"
+	) ) {
+		return false;
+	}
+	if ( !xrtAtomic32CompareExchange(
+		&pPort->Closing,
+		&iExpected,
+		1u,
+		XMEMORY_ACQ_REL,
+		XMEMORY_ACQUIRE
+	) ) {
 		__xrtErrorSetInvalidArgument();
 		return false;
 	}
 	pPrevious = __xrtErrorSwapOwned(NULL);
-	pPort->Closing = true;
 	bResult = pPort->Driver->Unit(pPort);
 	if ( !bResult ) {
 		pFailure = __xrtErrorSwapOwned(NULL);
@@ -104883,15 +105376,88 @@ uint64 __xrtNetPortOwner(const xnetport* pPort)
 
 
 
+/* 当前拥有线程释放端口，供尚未启动的 Engine Worker 认领。 */
+bool __xrtNetPortThreadRelease(xnetport* pPort)
+{
+	uint64 iExpected;
+
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ) {
+		__xrtErrorSetInvalidArgument();
+		return false;
+	}
+	iExpected = __xrtCurrentThreadId();
+	if ( !xrtAtomic64CompareExchange(
+		&pPort->OwnerThread,
+		&iExpected,
+		0,
+		XMEMORY_ACQ_REL,
+		XMEMORY_ACQUIRE
+	) ) {
+		__xrtNetSetError(
+			XERR_STATE,
+			XNET_ERROR_PORT_CREATE,
+			"release-port-thread",
+			"network port is not owned by the current thread",
+			0
+		);
+		return false;
+	}
+	return true;
+}
+
+
+
+/* 当前线程认领一个无归属端口；重复认领自身是幂等操作。 */
+bool __xrtNetPortThreadClaim(xnetport* pPort)
+{
+	uint64 iCurrent;
+	uint64 iExpected = 0;
+
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ) {
+		__xrtErrorSetInvalidArgument();
+		return false;
+	}
+	iCurrent = __xrtCurrentThreadId();
+	if ( xrtAtomic64CompareExchange(
+		&pPort->OwnerThread,
+		&iExpected,
+		iCurrent,
+		XMEMORY_ACQ_REL,
+		XMEMORY_ACQUIRE
+	) || (iExpected == iCurrent) ) {
+		return true;
+	}
+	__xrtNetSetError(
+		XERR_STATE,
+		XNET_ERROR_PORT_CREATE,
+		"claim-port-thread",
+		"network port is owned by another thread",
+		0
+	);
+	return false;
+}
+
+
+
 /* 校验完成式端口、Socket 类别和非零操作标识。 */
 static bool __xrtNetPortCompletion(xnetport* pPort,
 	xnetsocket Socket, xnetsockettype Type, uint64 Id, cstr sOperation)
 {
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ||
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ||
 		 (Socket == NULL) || (Id == 0) ||
 		 ((Type != 0) && (Socket->Type != Type)) ) {
 		__xrtNetSetError(XERR_ARGUMENT, XNET_ERROR_PORT_SUBMIT,
 			sOperation, "invalid network completion submission", 0);
+		return false;
+	}
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_SUBMIT,
+		sOperation
+	) ) {
 		return false;
 	}
 	if ( ((pPort->Capabilities & XNET_PORT_CAP_COMPLETION) == 0) ||
@@ -104913,7 +105479,8 @@ static bool __xrtNetPortFileCompletion(
 	cstr sOperation
 )
 {
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ||
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ||
 		 (iFile == (intptr_t)-1) || (Id == 0) ) {
 		__xrtNetSetError(
 			XERR_ARGUMENT,
@@ -104922,6 +105489,13 @@ static bool __xrtNetPortFileCompletion(
 			"invalid native file completion submission",
 			0
 		);
+		return false;
+	}
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_SUBMIT,
+		sOperation
+	) ) {
 		return false;
 	}
 	if ( ((pPort->Capabilities & XNET_PORT_CAP_FILE_IO) == 0) ||
@@ -105046,6 +105620,13 @@ static bool __xrtNetPortWriteSpans(
 static bool __xrtNetPortSubmit(xnetport* pPort,
 	const __xrt_net_port_submit* pSubmit)
 {
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_SUBMIT,
+		"submit"
+	) ) {
+		return false;
+	}
 	return pPort->Driver->Submit(pPort, pSubmit);
 }
 
@@ -105055,12 +105636,20 @@ static bool __xrtNetPortSubmit(xnetport* pPort,
 XRT_API bool xrtNetPortWatch(xnetport* pPort, xnetsocket Socket,
 	uint64 Id, uint32 iEvents, ptr pUser)
 {
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ||
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ||
 		 (Socket == NULL) ||
 		 ((iEvents & ~((uint32)XNET_POLL_READ |
 			(uint32)XNET_POLL_WRITE)) != 0) ) {
 		__xrtNetSetError(XERR_ARGUMENT, XNET_ERROR_PORT_WATCH,
 			"watch", "invalid network port watch", 0);
+		return false;
+	}
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_WATCH,
+		"watch"
+	) ) {
 		return false;
 	}
 	if ( (pPort->Capabilities & XNET_PORT_CAP_READINESS) == 0 ) {
@@ -105080,10 +105669,18 @@ XRT_API bool xrtNetPortWatch(xnetport* pPort, xnetsocket Socket,
 /* 幂等移除一个 Socket 的 readiness 观察。 */
 XRT_API bool xrtNetPortUnwatch(xnetport* pPort, xnetsocket Socket)
 {
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ||
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ||
 		 (Socket == NULL) ) {
 		__xrtNetSetError(XERR_ARGUMENT, XNET_ERROR_PORT_WATCH,
 			"unwatch", "invalid network port watch", 0);
+		return false;
+	}
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_WATCH,
+		"unwatch"
+	) ) {
 		return false;
 	}
 	if ( (pPort->Capabilities & XNET_PORT_CAP_READINESS) == 0 ) {
@@ -105379,14 +105976,22 @@ bool __xrtNetPortSendFile(
 		return false;
 	}
 	if ( (iFile == (intptr_t)-1) || (iSize == 0) ||
+		(iSize > (size_t)INT_MAX) ||
+		(iOffset > (UINT64_MAX - (uint64)iSize)) ||
 		((pPort->Capabilities & XNET_PORT_CAP_SEND_FILE) == 0) ) {
 		__xrtNetSetError(
-			(iFile == (intptr_t)-1) || (iSize == 0) ?
-				XERR_ARGUMENT : XERR_UNSUPPORTED,
+			((pPort->Capabilities & XNET_PORT_CAP_SEND_FILE) == 0) ?
+				XERR_UNSUPPORTED :
+			((iSize > (size_t)INT_MAX) ||
+			 (iOffset > (UINT64_MAX - (uint64)iSize))) ?
+				XERR_RANGE : XERR_ARGUMENT,
 			XNET_ERROR_PORT_SUBMIT,
 			"send-file",
 			((pPort->Capabilities & XNET_PORT_CAP_SEND_FILE) == 0) ?
 				"network port backend cannot send file ranges" :
+			((iSize > (size_t)INT_MAX) ||
+			 (iOffset > (UINT64_MAX - (uint64)iSize))) ?
+				"network file send range is too large" :
 				"invalid network file send",
 			0
 		);
@@ -105750,10 +106355,18 @@ XRT_API bool xrtNetPortSendMsgVec(
 /* 请求取消指定 ID 的在途操作。 */
 XRT_API bool xrtNetPortCancel(xnetport* pPort, uint64 Id)
 {
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ||
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ||
 		 (Id == 0) ) {
 		__xrtNetSetError(XERR_ARGUMENT, XNET_ERROR_PORT_CANCEL,
 			"cancel", "invalid network completion cancellation", 0);
+		return false;
+	}
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_CANCEL,
+		"cancel"
+	) ) {
 		return false;
 	}
 	if ( ((pPort->Capabilities & XNET_PORT_CAP_CANCEL) == 0) ||
@@ -105773,12 +106386,19 @@ XRT_API bool xrtNetPortPost(xnetport* pPort, uint64 Id, ptr pUser)
 	__xrt_net_port_post* pPost;
 	bool bNotify;
 
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ) {
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ) {
 		__xrtNetSetError(XERR_ARGUMENT, XNET_ERROR_PORT_POST,
 			"post", "invalid network port", 0);
 		return false;
 	}
 	if ( !xrtMutexLock(&pPort->Lock) ) {
+		return false;
+	}
+	if ( xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u ) {
+		(void)xrtMutexUnlock(&pPort->Lock);
+		__xrtNetSetError(XERR_STATE, XNET_ERROR_PORT_POST,
+			"post", "network port is closing", 0);
 		return false;
 	}
 	if ( pPort->PostCount >= pPort->Config.PostLimit ) {
@@ -105818,12 +106438,19 @@ XRT_API bool xrtNetPortPost(xnetport* pPort, uint64 Id, ptr pUser)
 /* 跨线程请求一个可合并的 WAKE 事件。 */
 XRT_API bool xrtNetPortWake(xnetport* pPort)
 {
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ) {
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ) {
 		__xrtNetSetError(XERR_ARGUMENT, XNET_ERROR_PORT_POST,
 			"wake", "invalid network port", 0);
 		return false;
 	}
 	if ( !xrtMutexLock(&pPort->Lock) ) {
+		return false;
+	}
+	if ( xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u ) {
+		(void)xrtMutexUnlock(&pPort->Lock);
+		__xrtNetSetError(XERR_STATE, XNET_ERROR_PORT_POST,
+			"wake", "network port is closing", 0);
 		return false;
 	}
 	if ( pPort->WakePending ) {
@@ -105850,10 +106477,18 @@ XRT_API xnetresult xrtNetPortWait(xnetport* pPort,
 	if ( pCount != NULL ) {
 		*pCount = 0;
 	}
-	if ( (pPort == NULL) || (pPort->Driver == NULL) || pPort->Closing ||
+	if ( (pPort == NULL) || (pPort->Driver == NULL) ||
+		(xrtAtomic32Load(&pPort->Closing, XMEMORY_ACQUIRE) != 0u) ||
 		 (pEvents == NULL) || (iCapacity == 0) || (pCount == NULL) ) {
 		__xrtNetSetError(XERR_ARGUMENT, XNET_ERROR_PORT_WAIT,
 			"wait", "invalid network port wait", 0);
+		return XNET_RESULT_ERROR;
+	}
+	if ( !__xrtNetPortRequireThread(
+		pPort,
+		XNET_ERROR_PORT_WAIT,
+		"wait"
+	) ) {
 		return XNET_RESULT_ERROR;
 	}
 
@@ -106464,6 +107099,31 @@ XRT_API size_t xrtNetBufSpanCount(const xnetbuf* pBuffer)
 
 
 
+/* 返回队首文件区间前可以由字节 API 访问的内存字节数。 */
+static size_t __xrtNetBufMemoryPrefix(const xnetbuf* pBuffer)
+{
+	xnetblock* pBlock;
+	size_t iSize = 0;
+
+	if ( pBuffer == NULL ) {
+		return 0;
+	}
+	pBlock = pBuffer->Head;
+	while ( (pBlock != NULL) &&
+		(pBlock->Class != XRT_NET_BLOCK_FILE) ) {
+		size_t iReadable = __xrtNetBlockReadable(pBlock);
+
+		if ( iReadable > (SIZE_MAX - iSize) ) {
+			return SIZE_MAX;
+		}
+		iSize += iReadable;
+		pBlock = pBlock->Next;
+	}
+	return iSize;
+}
+
+
+
 /* 获取缓冲链前若干只读 Span。 */
 XRT_API size_t xrtNetBufSpans(const xnetbuf* pBuffer,
 	xnetspan* pSpans, size_t iCapacity)
@@ -106501,7 +107161,8 @@ XRT_API bool xrtNetBufFront(const xnetbuf* pBuffer, xnetspan* pSpan)
 		__xrtErrorSetInvalidArgument();
 		return false;
 	}
-	if ( pBuffer->Size == 0 ) {
+	if ( (pBuffer->Size == 0) ||
+		(pBuffer->Head->Class == XRT_NET_BLOCK_FILE) ) {
 		pSpan->Data = NULL;
 		pSpan->Size = 0;
 		return false;
@@ -106924,6 +107585,9 @@ XRT_API size_t xrtNetBufPeek(const xnetbuf* pBuffer,
 		size_t iBegin;
 		size_t iChunk;
 
+		if ( pBlock->Class == XRT_NET_BLOCK_FILE ) {
+			break;
+		}
 		if ( (iPosition + iReadable) <= iOffset ) {
 			iPosition += iReadable;
 			pBlock = pBlock->Next;
@@ -107084,6 +107748,9 @@ XRT_API size_t xrtNetBufFind(const xnetbuf* pBuffer,
 		size_t iBegin;
 		cbytes pFound;
 
+		if ( pBlock->Class == XRT_NET_BLOCK_FILE ) {
+			break;
+		}
 		if ( (iPosition + iReadable) <= iOffset ) {
 			iPosition += iReadable;
 			pBlock = pBlock->Next;
@@ -107126,6 +107793,18 @@ XRT_API bool xrtNetBufPullup(xnetbuf* pBuffer,
 		pSpan->Data = NULL;
 		pSpan->Size = 0;
 		return true;
+	}
+	if ( __xrtNetBufMemoryPrefix(pBuffer) < iSize ) {
+		pSpan->Data = NULL;
+		pSpan->Size = 0;
+		__xrtNetSetError(
+			XERR_STATE,
+			XNET_ERROR_BUFFER_STATE,
+			"pullup-buffer",
+			"buffer prefix contains a file extent",
+			0
+		);
+		return false;
 	}
 	if ( __xrtNetBlockReadable(pBuffer->Head) >= iSize ) {
 		pSpan->Data = __xrtNetBlockData(pBuffer->Head) + pBuffer->Head->Begin;
@@ -108636,7 +109315,8 @@ static xnetresult __xrtNetIOCPWait(xnetport* pPort,
 			if ( iSystemCode == WAIT_TIMEOUT ) {
 				*pCount = iCount;
 				return (iCount == 0) ?
-					XNET_RESULT_TIMEOUT : XNET_RESULT_OK;
+					(iTimeout == 0 ? XNET_RESULT_OK :
+					 XNET_RESULT_TIMEOUT) : XNET_RESULT_OK;
 			}
 			__xrtNetSetError(XERR_IO, XNET_ERROR_PORT_WAIT,
 				"wait", "waiting on IOCP failed", iSystemCode);
@@ -109203,7 +109883,8 @@ static xnetresult __xrtNetSelectWait(xnetport* pPort,
 			__xrtNetSelectTimeout(iTimeout, &Timeout));
 	#endif
 	if ( iResult == 0 ) {
-		return XNET_RESULT_TIMEOUT;
+		return iTimeout == 0 ?
+			XNET_RESULT_OK : XNET_RESULT_TIMEOUT;
 	}
 	if ( iResult < 0 ) {
 		int iCode = __xrtNetSelectLastError();
@@ -111495,7 +112176,8 @@ static xnetresult __xrtNetKqueueWait(
 		pTimeout
 	);
 	if ( iReady == 0 ) {
-		return XNET_RESULT_TIMEOUT;
+		return iTimeout == 0 ?
+			XNET_RESULT_OK : XNET_RESULT_TIMEOUT;
 	}
 	if ( iReady < 0 ) {
 		if ( errno == EINTR ) {
@@ -111532,6 +112214,34 @@ static xnetresult __xrtNetKqueueWait(
 			pEvents,
 			&iCount
 		);
+	}
+	if ( (iCount == 0) && (iTimeout == 0) ) {
+		/* 本轮只消化了内部唤醒；唤醒不得吞掉一次非阻塞轮询，
+		   再查一次避免就绪事件被积压的用户事件饿死。 */
+		iReady = kevent(
+			pContext->Port,
+			NULL,
+			0,
+			pContext->Ready,
+			iMaximum,
+			pTimeout
+		);
+		if ( iReady > 0 ) {
+			for ( int i = 0; i < iReady; i++ ) {
+				if ( __xrtNetKqueueWakeReady(
+					pContext,
+					&pContext->Ready[i]
+				) ) {
+					continue;
+				}
+				__xrtNetKqueuePublish(
+					pContext,
+					&pContext->Ready[i],
+					pEvents,
+					&iCount
+				);
+			}
+		}
 	}
 	*pCount = iCount;
 	return XNET_RESULT_OK;
@@ -111660,14 +112370,24 @@ const __xrt_net_port_driver* __xrtNetPortKqueueDriver(void)
 #define XRT_NET_ENGINE_EVENT_BATCH_DEFAULT 128u
 #define XRT_NET_ENGINE_EVENT_BATCH_MAX 4096u
 #define XRT_NET_ENGINE_COMMAND_BUDGET 256u
+#define XRT_NET_ENGINE_SHUTDOWN_ROUNDS 1024u
 #define XRT_NET_ENGINE_TIMER_INITIAL 16u
 #define XRT_NET_ENGINE_IDLE_WAIT 1000000u
 #define XRT_NET_ENGINE_SUBMIT_CLOSED UINT32_C(0x80000000)
 #define XRT_NET_ENGINE_SUBMIT_COUNT UINT32_C(0x7fffffff)
+#define XRT_NET_ENGINE_WAKE_RETRIES 3u
+
+#define XRT_NET_ENGINE_SHUTDOWN_ACTIVE 0u
+#define XRT_NET_ENGINE_SHUTDOWN_DRAINING 1u
+#define XRT_NET_ENGINE_SHUTDOWN_SEALED 2u
 
 static const size_t __xrtNetEngineNodeSizes[
 	XRT_NET_ENGINE_NODE_CLASS_COUNT
 ] = { 64u, 128u, 256u, 512u, 1024u };
+
+
+
+static void __xrtNetEngineWake(xnetworker* pWorker);
 
 
 
@@ -111751,6 +112471,8 @@ static void __xrtNetEngineStatsInit(__xrt_net_engine_atomic_stats* pStats)
 	xrtAtomic64Init(&pStats->TimerErrors, 0);
 	xrtAtomic64Init(&pStats->Events, 0);
 	xrtAtomic64Init(&pStats->WaitErrors, 0);
+	xrtAtomic64Init(&pStats->WakeErrors, 0);
+	xrtAtomic64Init(&pStats->ShutdownStalls, 0);
 	xrtAtomic32Init(&pStats->LastWaitError, XNET_ERROR_NONE);
 	xrtAtomic32Init(&pStats->LastWaitSystemCode, 0);
 	xrtAtomic64Init(&pStats->NodeCacheHits, 0);
@@ -112510,11 +113232,80 @@ static size_t __xrtNetEngineCommandsDrain(
 
 
 
+/* 按投递代排空停机任务，大批已受理任务只占一代。 */
+static bool __xrtNetEngineShutdownDrain(xnetworker* pWorker)
+{
+	for ( uint32 i = 0; i < XRT_NET_ENGINE_SHUTDOWN_ROUNDS; i++ ) {
+		size_t iInternal = __xrtNetEngineInternalDrain(
+			pWorker,
+			SIZE_MAX
+		);
+		size_t iCommands = __xrtNetEngineCommandsDrain(
+			pWorker,
+			SIZE_MAX
+		);
+
+		if ( (iInternal == 0) && (iCommands == 0) ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+/* 记录一次不收敛停机并封闭后续内部投递。 */
+static void __xrtNetEngineShutdownStall(xnetworker* pWorker)
+{
+	uint32 iExpected = 0;
+
+	xrtAtomic32Store(
+		&pWorker->ShutdownPhase,
+		XRT_NET_ENGINE_SHUTDOWN_SEALED,
+		XMEMORY_RELEASE
+	);
+	if ( xrtAtomic32CompareExchange(
+		&pWorker->ShutdownFailed,
+		&iExpected,
+		1,
+		XMEMORY_ACQ_REL,
+		XMEMORY_ACQUIRE
+	) ) {
+		__xrtNetEngineStatError(&pWorker->Stats.ShutdownStalls, 1);
+	}
+}
+
+
+
+/* 封口后不再产生新任务，因此剩余快照必然有限。 */
+static void __xrtNetEngineShutdownDrainSealed(xnetworker* pWorker)
+{
+	for ( ;; ) {
+		size_t iInternal = __xrtNetEngineInternalDrain(
+			pWorker,
+			SIZE_MAX
+		);
+		size_t iCommands = __xrtNetEngineCommandsDrain(
+			pWorker,
+			SIZE_MAX
+		);
+
+		if ( (iInternal == 0) && (iCommands == 0) ) {
+			return;
+		}
+	}
+}
+
+
+
 /* Worker 主循环公平地交替处理命令、Timer 和端口事件。 */
 static int32 __xrtNetEngineWorkerMain(ptr pData)
 {
 	xnetworker* pWorker = (xnetworker*)pData;
 
+	if ( !__xrtNetPortThreadClaim(pWorker->Port) ) {
+		return 1;
+	}
 	xrtAtomic64Store(
 		&pWorker->ThreadId,
 		xrtThreadCurrentId(),
@@ -112579,11 +113370,33 @@ static int32 __xrtNetEngineWorkerMain(ptr pData)
 		}
 		__xrtNetEngineTimersExpire(pWorker);
 	}
-	while ( (__xrtNetEngineInternalDrain(pWorker, SIZE_MAX) != 0) ||
-		 (__xrtNetEngineCommandsDrain(pWorker, SIZE_MAX) != 0) ) {
+	xrtAtomic32Store(
+		&pWorker->ShutdownPhase,
+		XRT_NET_ENGINE_SHUTDOWN_DRAINING,
+		XMEMORY_RELEASE
+	);
+	if ( !__xrtNetEngineShutdownDrain(pWorker) ) {
+		__xrtNetEngineShutdownStall(pWorker);
+		__xrtNetEngineShutdownDrainSealed(pWorker);
 	}
 	__xrtNetEngineTimersClose(pWorker);
+	if ( (xrtAtomic32Load(
+		&pWorker->ShutdownPhase,
+		XMEMORY_ACQUIRE
+	 ) != XRT_NET_ENGINE_SHUTDOWN_SEALED) &&
+		 !__xrtNetEngineShutdownDrain(pWorker) ) {
+		__xrtNetEngineShutdownStall(pWorker);
+	}
+	xrtAtomic32Store(
+		&pWorker->ShutdownPhase,
+		XRT_NET_ENGINE_SHUTDOWN_SEALED,
+		XMEMORY_RELEASE
+	);
+	__xrtNetEngineShutdownDrainSealed(pWorker);
 	xrtAtomic32Store(&pWorker->Running, 0, XMEMORY_RELEASE);
+	if ( !__xrtNetPortThreadRelease(pWorker->Port) ) {
+		return 1;
+	}
 	return 0;
 }
 
@@ -112694,6 +113507,12 @@ static bool __xrtNetEngineWorkerStart(xnetworker* pWorker)
 	}
 	xrtAtomic32Store(&pWorker->Stop, 0, XMEMORY_RELEASE);
 	xrtAtomic32Store(&pWorker->Running, 0, XMEMORY_RELEASE);
+	xrtAtomic32Store(
+		&pWorker->ShutdownPhase,
+		XRT_NET_ENGINE_SHUTDOWN_ACTIVE,
+		XMEMORY_RELEASE
+	);
+	xrtAtomic32Store(&pWorker->ShutdownFailed, 0, XMEMORY_RELEASE);
 	xrtAtomic32Store(&pWorker->CommandPending, 0, XMEMORY_RELEASE);
 	xrtAtomicPtrStore(
 		&pWorker->InternalCommands,
@@ -112753,12 +113572,17 @@ static bool __xrtNetEngineWorkerStart(xnetworker* pWorker)
 		(void)__xrtNetEngineWorkerUnit(pWorker);
 		return false;
 	}
+	if ( !__xrtNetPortThreadRelease(pWorker->Port) ) {
+		(void)__xrtNetEngineWorkerUnit(pWorker);
+		return false;
+	}
 	pWorker->Thread = xrtThreadCreate(
 		__xrtNetEngineWorkerMain,
 		pWorker,
 		pEngine->Config.ThreadStack
 	);
 	if ( pWorker->Thread == NULL ) {
+		(void)__xrtNetPortThreadClaim(pWorker->Port);
 		(void)__xrtNetEngineWorkerUnit(pWorker);
 		return false;
 	}
@@ -112767,6 +113591,7 @@ static bool __xrtNetEngineWorkerStart(xnetworker* pWorker)
 			(void)xrtThreadWait(pWorker->Thread);
 			xrtThreadDestroy(pWorker->Thread);
 			pWorker->Thread = NULL;
+			(void)__xrtNetPortThreadClaim(pWorker->Port);
 			(void)__xrtNetEngineWorkerUnit(pWorker);
 			__xrtNetEngineError(
 				XERR_INTERNAL,
@@ -112794,7 +113619,7 @@ static void __xrtNetEngineWorkerStopRequest(xnetworker* pWorker)
 		xrtMPSCQueueClose(&pWorker->Commands);
 	}
 	if ( pWorker->Port != NULL ) {
-		(void)xrtNetPortWake(pWorker->Port);
+		__xrtNetEngineWake(pWorker);
 	}
 }
 
@@ -112803,16 +113628,36 @@ static void __xrtNetEngineWorkerStopRequest(xnetworker* pWorker)
 /* 等待一个已请求停止的 Worker 排空任务并释放运行资源。 */
 static bool __xrtNetEngineWorkerStop(xnetworker* pWorker)
 {
+	bool bResult;
+	bool bShutdownFailed;
+
 	if ( pWorker->Thread == NULL ) {
 		return __xrtNetEngineWorkerUnit(pWorker);
 	}
 	if ( xrtThreadWait(pWorker->Thread) != XWAIT_OK ) {
 		return false;
 	}
+	bShutdownFailed = xrtAtomic32Load(
+		&pWorker->ShutdownFailed,
+		XMEMORY_ACQUIRE
+	) != 0;
 	xrtThreadDestroy(pWorker->Thread);
 	pWorker->Thread = NULL;
 	xrtAtomic64Store(&pWorker->ThreadId, 0, XMEMORY_RELEASE);
-	return __xrtNetEngineWorkerUnit(pWorker);
+	if ( !__xrtNetPortThreadClaim(pWorker->Port) ) {
+		return false;
+	}
+	bResult = __xrtNetEngineWorkerUnit(pWorker);
+	if ( bShutdownFailed ) {
+		__xrtNetEngineError(
+			XERR_STATE,
+			XNET_ERROR_ENGINE_STOP,
+			"stop-worker",
+			"network worker shutdown tasks did not converge"
+		);
+		return false;
+	}
+	return bResult;
 }
 
 
@@ -112864,15 +113709,14 @@ static bool __xrtNetEngineWorkersStop(
 
 
 
-/* 在 Engine 仍运行时占用 Worker 提交侧，防止 Stop 提前释放队列。 */
-static bool __xrtNetEngineSubmitEnter(xnetworker* pWorker)
+/* 占用 Worker 提交侧，关门后不再允许新生产者进入。 */
+static bool __xrtNetEngineSubmitGateEnter(xnetworker* pWorker)
 {
-	uint32 iGate;
+	uint32 iGate = xrtAtomic32Load(
+		&pWorker->Submitters,
+		XMEMORY_ACQUIRE
+	);
 
-	if ( xrtNetEngineState(pWorker->Engine) != XNET_ENGINE_RUNNING ) {
-		return false;
-	}
-	iGate = xrtAtomic32Load(&pWorker->Submitters, XMEMORY_ACQUIRE);
 	for ( ;; ) {
 		uint32 iExpected = iGate;
 
@@ -112891,6 +113735,20 @@ static bool __xrtNetEngineSubmitEnter(xnetworker* pWorker)
 			break;
 		}
 		iGate = iExpected;
+	}
+	return true;
+}
+
+
+
+/* 在 Engine 仍运行时占用 Worker 提交侧，防止 Stop 提前释放队列。 */
+static bool __xrtNetEngineSubmitEnter(xnetworker* pWorker)
+{
+	if ( xrtNetEngineState(pWorker->Engine) != XNET_ENGINE_RUNNING ) {
+		return false;
+	}
+	if ( !__xrtNetEngineSubmitGateEnter(pWorker) ) {
+		return false;
 	}
 	if ( xrtNetEngineState(pWorker->Engine) != XNET_ENGINE_RUNNING ) {
 		(void)xrtAtomic32FetchSub(
@@ -113100,6 +113958,11 @@ XRT_API xnetengine* xrtNetEngineCreate(const xnetengineconfig* pConfig)
 		pWorker->Index = i;
 		xrtAtomic32Init(&pWorker->Running, 0);
 		xrtAtomic32Init(&pWorker->Stop, 0);
+		xrtAtomic32Init(
+			&pWorker->ShutdownPhase,
+			XRT_NET_ENGINE_SHUTDOWN_ACTIVE
+		);
+		xrtAtomic32Init(&pWorker->ShutdownFailed, 0);
 		xrtAtomic32Init(
 			&pWorker->Submitters,
 			XRT_NET_ENGINE_SUBMIT_CLOSED
@@ -113526,6 +114389,29 @@ XRT_API uint64 xrtNetWorkerOperationId(xnetworker* pWorker)
 
 
 
+/* 有限重试端口唤醒；命令已经入队时失败只影响调度延迟。 */
+static void __xrtNetEngineWake(xnetworker* pWorker)
+{
+	bool bFailed = false;
+
+	for ( uint32 i = 0; i < XRT_NET_ENGINE_WAKE_RETRIES; i++ ) {
+		if ( xrtNetPortWake(pWorker->Port) ) {
+			if ( bFailed ) {
+				xrtClearError();
+			}
+			return;
+		}
+		bFailed = true;
+		if ( (i + 1u) < XRT_NET_ENGINE_WAKE_RETRIES ) {
+			xrtThreadYield();
+		}
+	}
+	__xrtNetEngineStatError(&pWorker->Stats.WakeErrors, 1);
+	xrtClearError();
+}
+
+
+
 /* 把一个已构造命令提交到 Worker 的有界队列。 */
 static bool __xrtNetEngineCommandPush(
 	xnetworker* pWorker,
@@ -113547,9 +114433,7 @@ static bool __xrtNetEngineCommandPush(
 	);
 
 	if ( Result == XQUEUE_OK ) {
-		if ( !xrtNetPortWake(pWorker->Port) ) {
-			xrtClearError();
-		}
+		__xrtNetEngineWake(pWorker);
 		return true;
 	}
 	(void)xrtAtomic32FetchSub(
@@ -113638,14 +114522,40 @@ XRT_API bool xrtNetEnginePost(
 
 
 /* 投递一个不受公开命令容量和分配器影响的内部生命周期命令。 */
-void __xrtNetEnginePostInternal(
+bool __xrtNetEnginePostInternal(
 	xnetworker* pWorker,
 	__xrt_net_engine_internal* pCommand,
 	xnettaskproc pProc,
 	ptr pData
 )
 {
-	ptr pHead = xrtAtomicPtrLoad(
+	ptr pHead;
+	bool bCurrent;
+	bool bEntered = false;
+
+	if ( (pWorker == NULL) || (pCommand == NULL) || (pProc == NULL) ) {
+		return false;
+	}
+	bCurrent = xrtNetWorkerIsCurrent(pWorker);
+	if ( !bCurrent ) {
+		bEntered = __xrtNetEngineSubmitGateEnter(pWorker);
+		if ( !bEntered ) {
+			return false;
+		}
+	}
+	if ( (xrtAtomic32Load(
+		&pWorker->Running,
+		XMEMORY_ACQUIRE
+	 ) == 0) || (xrtAtomic32Load(
+		&pWorker->ShutdownPhase,
+		XMEMORY_ACQUIRE
+	 ) == XRT_NET_ENGINE_SHUTDOWN_SEALED) ) {
+		if ( bEntered ) {
+			__xrtNetEngineSubmitLeave(pWorker);
+		}
+		return false;
+	}
+	pHead = xrtAtomicPtrLoad(
 		&pWorker->InternalCommands,
 		XMEMORY_ACQUIRE
 	);
@@ -113672,9 +114582,11 @@ void __xrtNetEnginePostInternal(
 		}
 		pHead = pExpected;
 	}
-	if ( !xrtNetPortWake(pWorker->Port) ) {
-		xrtClearError();
+	__xrtNetEngineWake(pWorker);
+	if ( bEntered ) {
+		__xrtNetEngineSubmitLeave(pWorker);
 	}
+	return true;
 }
 
 
@@ -113745,6 +114657,8 @@ XRT_API bool xrtNetPost(
 {
 	xrt_net_post_impl* pImpl;
 	uint32 iExpected = 0;
+	bool bCurrent;
+	bool bEntered = false;
 
 	if ( (pWorker == NULL) ||
 		!__xrtRangeValid(pPost, sizeof(*pPost)) ||
@@ -113753,6 +114667,7 @@ XRT_API bool xrtNetPost(
 		return false;
 	}
 	pImpl = __xrtNetPostImpl(pPost);
+	bCurrent = xrtNetWorkerIsCurrent(pWorker);
 	if ( pImpl->Magic != XRT_NET_POST_MAGIC ) {
 		__xrtNetEngineStatError(&pWorker->Stats.PostsRejected, 1);
 		__xrtErrorSetInvalidState();
@@ -113771,6 +114686,19 @@ XRT_API bool xrtNetPost(
 		);
 		return false;
 	}
+	if ( !bCurrent ) {
+		bEntered = __xrtNetEngineSubmitEnter(pWorker);
+		if ( !bEntered ) {
+			__xrtNetEngineStatError(&pWorker->Stats.PostsRejected, 1);
+			__xrtNetEngineError(
+				XERR_CLOSED,
+				XNET_ERROR_ENGINE_POST,
+				"post-worker",
+				"network worker is not accepting posts"
+			);
+			return false;
+		}
+	}
 	if ( !xrtAtomic32CompareExchange(
 		&pImpl->Pending,
 		&iExpected,
@@ -113778,6 +114706,9 @@ XRT_API bool xrtNetPost(
 		XMEMORY_ACQ_REL,
 		XMEMORY_ACQUIRE
 	) ) {
+		if ( bEntered ) {
+			__xrtNetEngineSubmitLeave(pWorker);
+		}
 		__xrtNetEngineStatError(&pWorker->Stats.PostsRejected, 1);
 		__xrtNetEngineError(
 			XERR_STATE,
@@ -113789,13 +114720,31 @@ XRT_API bool xrtNetPost(
 	}
 	pImpl->Task = pProc;
 	pImpl->Data = pData;
-	__xrtNetEngineStatAdd(&pWorker->Stats.PostsAccepted, 1);
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pWorker,
 		&pImpl->Internal,
 		__xrtNetPostTask,
 		pImpl
-	);
+	) ) {
+		pImpl->Task = NULL;
+		pImpl->Data = NULL;
+		xrtAtomic32Store(&pImpl->Pending, 0, XMEMORY_RELEASE);
+		if ( bEntered ) {
+			__xrtNetEngineSubmitLeave(pWorker);
+		}
+		__xrtNetEngineStatError(&pWorker->Stats.PostsRejected, 1);
+		__xrtNetEngineError(
+			XERR_CLOSED,
+			XNET_ERROR_ENGINE_POST,
+			"post-worker",
+			"network worker shutdown is sealed"
+		);
+		return false;
+	}
+	if ( bEntered ) {
+		__xrtNetEngineSubmitLeave(pWorker);
+	}
+	__xrtNetEngineStatAdd(&pWorker->Stats.PostsAccepted, 1);
 	return true;
 }
 
@@ -114099,6 +115048,10 @@ XRT_API bool xrtNetWorkerStats(
 	pStats->Events = __xrtNetEngineStatLoad(&pWorker->Stats.Events);
 	pStats->WaitErrors =
 		__xrtNetEngineStatLoad(&pWorker->Stats.WaitErrors);
+	pStats->WakeErrors =
+		__xrtNetEngineStatLoad(&pWorker->Stats.WakeErrors);
+	pStats->ShutdownStalls =
+		__xrtNetEngineStatLoad(&pWorker->Stats.ShutdownStalls);
 	pStats->LastWaitError = (xneterror)xrtAtomic32Load(
 		&pWorker->Stats.LastWaitError,
 		XMEMORY_ACQUIRE
@@ -114160,6 +115113,8 @@ XRT_API bool xrtNetEngineStats(
 		pStats->TimerErrors += WorkerStats.TimerErrors;
 		pStats->Events += WorkerStats.Events;
 		pStats->WaitErrors += WorkerStats.WaitErrors;
+		pStats->WakeErrors += WorkerStats.WakeErrors;
+		pStats->ShutdownStalls += WorkerStats.ShutdownStalls;
 		pStats->NodeCacheHits += WorkerStats.NodeCacheHits;
 		pStats->NodeCacheMisses += WorkerStats.NodeCacheMisses;
 		pStats->PendingCommands += WorkerStats.PendingCommands;
@@ -114293,9 +115248,12 @@ void __xrtNetEngineObjectRelease(xnetengine* pEngine)
 #if defined(XRT_FEATURE_NET_TCP) || \
 	defined(XRT_FEATURE_NET_TCP_FILE)
 
+#if !defined(_WIN32) && !defined(_WIN64)
+	#include <errno.h>
+#endif
+
 #if defined(XRT_FEATURE_NET_TCP_FILE)
 	#if !defined(_WIN32) && !defined(_WIN64)
-		#include <errno.h>
 		#include <fcntl.h>
 		#include <unistd.h>
 		#if defined(__linux__)
@@ -114306,6 +115264,21 @@ void __xrtNetEngineObjectRelease(xnetengine* pEngine)
 			#include <sys/uio.h>
 		#endif
 	#endif
+#endif
+
+
+
+#if defined(XRT_FEATURE_NET_TCP_FILE) && defined(__APPLE__)
+/* 严格 ISO 模式下 Darwin 头文件可能隐藏 sendfile 原型。 */
+struct sf_hdtr;
+extern int sendfile(
+	int iFile,
+	int iSocket,
+	off_t iOffset,
+	off_t* pLength,
+	struct sf_hdtr* pHeader,
+	int iFlags
+);
 #endif
 
 
@@ -114322,6 +115295,8 @@ void __xrtNetEngineObjectRelease(xnetengine* pEngine)
 #define XRT_NET_LISTENER_ACCEPT_MAX 1024u
 #define XRT_NET_LISTENER_QUEUE_DEFAULT 256u
 #define XRT_NET_LISTENER_BACKLOG_DEFAULT 256
+#define XRT_NET_LISTENER_RETRY_MIN 10000u
+#define XRT_NET_LISTENER_RETRY_MAX 1000000u
 #define XRT_NET_STREAM_IO_BUDGET 16u
 #define XRT_NET_STREAM_CONTROL_RESUME 0x00000001u
 #define XRT_NET_STREAM_CONTROL_SHUTDOWN 0x00000002u
@@ -114342,6 +115317,11 @@ typedef struct __xrt_net_accept_task {
 	xnetstream* Stream;
 	xerror* Error;
 } __xrt_net_accept_task;
+
+
+
+static bool __xrtNetListenerArmAccepts(xnetlistener* pListener);
+static bool __xrtNetListenerWatch(xnetlistener* pListener);
 
 
 
@@ -115330,6 +116310,43 @@ static void __xrtNetStreamTryFinish(xnetstream* pStream);
 
 
 
+/* 进入可能同步触发底层关闭的发送调用帧。 */
+static void __xrtNetStreamActiveEnter(xnetstream* pStream)
+{
+	pStream->ActiveDepth++;
+}
+
+
+
+/* 立即或延迟释放 Stream 的运行时引用。 */
+static void __xrtNetStreamReleaseRuntime(xnetstream* pStream)
+{
+	if ( !pStream->RuntimeHeld ) {
+		return;
+	}
+	if ( pStream->ActiveDepth != 0 ) {
+		pStream->ReleasePending = true;
+		return;
+	}
+	pStream->ReleasePending = false;
+	pStream->RuntimeHeld = false;
+	xrtNetStreamDestroy(pStream);
+}
+
+
+
+/* 离开最外层发送调用帧后完成延迟释放；必须是调用函数的最后一条语句。 */
+static void __xrtNetStreamActiveLeave(xnetstream* pStream)
+{
+	pStream->ActiveDepth--;
+	if ( (pStream->ActiveDepth == 0) &&
+		pStream->ReleasePending ) {
+		__xrtNetStreamReleaseRuntime(pStream);
+	}
+}
+
+
+
 /* 判断 Worker 端口是否使用完成式 IO。 */
 static bool __xrtNetStreamCompletionPort(const xnetstream* pStream)
 {
@@ -115600,10 +116617,7 @@ static void __xrtNetStreamTryFinish(xnetstream* pStream)
 		}
 	#endif
 	__xrtNetStreamNotifyFutures(pStream, false);
-	if ( pStream->RuntimeHeld ) {
-		pStream->RuntimeHeld = false;
-		xrtNetStreamDestroy(pStream);
-	}
+	__xrtNetStreamReleaseRuntime(pStream);
 }
 
 
@@ -116520,9 +117534,17 @@ static void __xrtNetStreamCompletion(
 		pStream->WatchPending = false;
 		pStream->WatchEvents = 0;
 		if ( xrtNetStreamState(pStream) == XNET_STREAM_CONNECTING ) {
-			if ( xrtNetSocketFinishConnect(pStream->Socket) ==
-				 XNET_RESULT_OK ) {
+			xnetresult Result = xrtNetSocketFinishConnect(
+				pStream->Socket
+			);
+
+			if ( Result == XNET_RESULT_OK ) {
 				__xrtNetStreamOpened(pStream);
+			} else if ( Result == XNET_RESULT_AGAIN ) {
+				if ( !__xrtNetStreamWatch(pStream) ) {
+					__xrtNetStreamRememberError(pStream);
+					__xrtNetStreamFail(pStream);
+				}
 			} else {
 				__xrtNetStreamRememberError(pStream);
 				__xrtNetStreamFail(pStream);
@@ -117721,6 +118743,7 @@ static xnetresult __xrtNetStreamSend(
 		 xrtNetWorkerIsCurrent(pStream->Worker) ) {
 		xnetspan Span = { (cbytes)pData, iSize };
 
+		__xrtNetStreamActiveEnter(pStream);
 		Result = __xrtNetStreamCopyCurrent(
 			pStream,
 			&Span,
@@ -117728,6 +118751,7 @@ static xnetresult __xrtNetStreamSend(
 			iSize
 		);
 		__xrtNetStreamEndSend(pStream);
+		__xrtNetStreamActiveLeave(pStream);
 		return Result;
 	}
 	pSend = __xrtNetStreamCreateSend(pStream, iSize, bCopy, &Result);
@@ -117744,8 +118768,10 @@ static xnetresult __xrtNetStreamSend(
 	} else {
 		pSend->Data = (cbytes)pData;
 	}
+	__xrtNetStreamActiveEnter(pStream);
 	Result = __xrtNetStreamSubmitSend(pSend);
 	__xrtNetStreamEndSend(pStream);
+	__xrtNetStreamActiveLeave(pStream);
 	return Result;
 }
 
@@ -117814,6 +118840,7 @@ XRT_API xnetresult xrtNetStreamSendVec(
 	}
 	if ( pStream->BuffersReady &&
 		 xrtNetWorkerIsCurrent(pStream->Worker) ) {
+		__xrtNetStreamActiveEnter(pStream);
 		Result = __xrtNetStreamCopyCurrent(
 			pStream,
 			pSpans,
@@ -117821,6 +118848,7 @@ XRT_API xnetresult xrtNetStreamSendVec(
 			iTotal
 		);
 		__xrtNetStreamEndSend(pStream);
+		__xrtNetStreamActiveLeave(pStream);
 		return Result;
 	}
 	pSend = __xrtNetStreamCreateSend(pStream, iTotal, true, &Result);
@@ -117839,8 +118867,10 @@ XRT_API xnetresult xrtNetStreamSendVec(
 		}
 	}
 	pSend->Data = pSend->Copy;
+	__xrtNetStreamActiveEnter(pStream);
 	Result = __xrtNetStreamSubmitSend(pSend);
 	__xrtNetStreamEndSend(pStream);
+	__xrtNetStreamActiveLeave(pStream);
 	return Result;
 }
 
@@ -117926,7 +118956,11 @@ XRT_API xnetresult xrtNetStreamSendRefs(
 		&Result
 	);
 	if ( pBatch != NULL ) {
+		__xrtNetStreamActiveEnter(pStream);
 		Result = __xrtNetStreamSubmitRefs(pBatch);
+		__xrtNetStreamEndSend(pStream);
+		__xrtNetStreamActiveLeave(pStream);
+		return Result;
 	}
 	__xrtNetStreamEndSend(pStream);
 	return Result;
@@ -118006,11 +119040,13 @@ XRT_API xnetresult xrtNetStreamSendBuffer(
 		__xrtNetStreamEndSend(pStream);
 		return Result;
 	}
+	__xrtNetStreamActiveEnter(pStream);
 	if ( !__xrtNetStreamAttachBuffer(pBatch, pBuffer) ) {
 		__xrtNetStreamDiscardBuffer(pBatch, iSize);
 		Result = XNET_RESULT_ERROR;
 	}
 	__xrtNetStreamEndSend(pStream);
+	__xrtNetStreamActiveLeave(pStream);
 	return Result;
 }
 
@@ -118082,12 +119118,14 @@ XRT_API xnetresult xrtNetStreamSendFile(
 	pFile->Offset = iOffset;
 	pFile->Size = iSize;
 
+	__xrtNetStreamActiveEnter(pStream);
 	Result = __xrtNetStreamSubmitFileNode(pFile);
 	if ( Result != XNET_RESULT_OK ) {
 		__xrtNetStreamUnreserveSend(pStream, iSize);
 		__xrtNetStreamFileRelease(pFile, NULL, 0);
 	}
 	__xrtNetStreamEndSend(pStream);
+	__xrtNetStreamActiveLeave(pStream);
 	return Result;
 }
 
@@ -118117,12 +119155,19 @@ static void __xrtNetStreamControlRequest(
 
 	if ( (iPrevious & XRT_NET_STREAM_CONTROL_POSTED) == 0 ) {
 		xrtNetStreamRef(pStream);
-		__xrtNetEnginePostInternal(
+		if ( !__xrtNetEnginePostInternal(
 			pStream->Worker,
 			&pStream->ControlCommand,
 			__xrtNetStreamControlTask,
 			pStream
-		);
+		) ) {
+			(void)xrtAtomic32FetchAnd(
+				&pStream->ControlRequests,
+				~XRT_NET_STREAM_CONTROL_POSTED,
+				XMEMORY_ACQ_REL
+			);
+			xrtNetStreamDestroy(pStream);
+		}
 	}
 }
 
@@ -118492,6 +119537,93 @@ static void __xrtNetListenerError(xnetlistener* pListener)
 
 
 
+/* 判断 accept 是否因进程或系统资源暂时耗尽而失败。 */
+static bool __xrtNetListenerResourceError(int iSystemCode)
+{
+	#if defined(_WIN32) || defined(_WIN64)
+		return (iSystemCode == WSAEMFILE) ||
+			(iSystemCode == WSAENOBUFS) ||
+			(iSystemCode == WSA_NOT_ENOUGH_MEMORY);
+	#else
+		return (iSystemCode == EMFILE) ||
+			(iSystemCode == ENFILE) ||
+			(iSystemCode == ENOBUFS) ||
+			(iSystemCode == ENOMEM);
+	#endif
+}
+
+
+
+/* Retry Timer 到期后重新补足 accept；Timer 引用在唯一终态释放。 */
+static void __xrtNetListenerAcceptRetry(
+	xnetworker* pWorker,
+	uint64 Id,
+	xnetresult Result,
+	ptr pData
+)
+{
+	xnetlistener* pListener = (xnetlistener*)pData;
+	uint32 iCapabilities;
+	bool bResult = true;
+
+	if ( pListener->AcceptRetryTimer == Id ) {
+		pListener->AcceptRetryTimer = 0;
+	}
+	if ( (Result == XNET_RESULT_OK) &&
+		(xrtNetListenerState(pListener) == XNET_LISTENER_OPEN) ) {
+		iCapabilities = xrtNetPortCapabilities(
+			xrtNetWorkerPort(pWorker)
+		);
+		if ( (iCapabilities & XNET_PORT_CAP_COMPLETION) != 0 ) {
+			bResult = __xrtNetListenerArmAccepts(pListener);
+		} else {
+			bResult = __xrtNetListenerWatch(pListener);
+		}
+		if ( !bResult ) {
+			__xrtNetListenerError(pListener);
+			(void)xrtNetListenerClose(pListener);
+		}
+	}
+	xrtNetListenerDestroy(pListener);
+}
+
+
+
+/* 暂停 accept 并使用 10 ms 到 1 s 的指数退避恢复。 */
+static bool __xrtNetListenerPauseAccept(xnetlistener* pListener)
+{
+	uint64 iDelay = pListener->AcceptRetryDelay;
+	uint64 Id;
+
+	if ( pListener->AcceptRetryTimer != 0 ) {
+		return true;
+	}
+	if ( iDelay == 0 ) {
+		iDelay = XRT_NET_LISTENER_RETRY_MIN;
+	}
+	if ( xrtNetListenerRef(pListener) == NULL ) {
+		return false;
+	}
+	Id = xrtNetEngineAfter(
+		pListener->Engine,
+		pListener->Config.Affinity,
+		iDelay,
+		__xrtNetListenerAcceptRetry,
+		pListener
+	);
+	if ( Id == 0 ) {
+		xrtNetListenerDestroy(pListener);
+		return false;
+	}
+	pListener->AcceptRetryTimer = Id;
+	pListener->AcceptRetryDelay = iDelay <
+		(XRT_NET_LISTENER_RETRY_MAX / 2u) ?
+		iDelay * 2u : XRT_NET_LISTENER_RETRY_MAX;
+	return true;
+}
+
+
+
 /* 以槽身份收回一个完成式 Accept，避免在热路径扫描全部并发槽。 */
 static bool __xrtNetListenerAcceptDone(
 	xnetlistener* pListener,
@@ -118694,12 +119826,14 @@ static void __xrtNetListenerAcceptTask(
 		__xrtNetStreamFail(pStream);
 		xrtNetStreamDestroy(pStream);
 	}
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pListener->Worker,
 		&pTask->Internal,
 		__xrtNetListenerAcceptFinished,
 		pTask
-	);
+	) ) {
+		__xrtNetListenerAcceptFinished(pWorker, pTask);
+	}
 }
 
 
@@ -118887,6 +120021,7 @@ static void __xrtNetListenerCompletion(
 	if ( pEvent->Type == XNET_PORT_EVENT_ACCEPT ) {
 		__xrt_net_accept_slot* pSlot =
 			(__xrt_net_accept_slot*)pData;
+		bool bPauseAccept = false;
 
 		pListener = pSlot->Listener;
 		if ( !__xrtNetListenerAcceptDone(
@@ -118894,6 +120029,9 @@ static void __xrtNetListenerCompletion(
 			pSlot,
 			pEvent->Id
 		) ) {
+			if ( pEvent->Accepted != NULL ) {
+				(void)xrtNetSocketClose(pEvent->Accepted);
+			}
 			__xrtNetListenerError(pListener);
 			(void)xrtNetListenerClose(pListener);
 			return;
@@ -118910,12 +120048,16 @@ static void __xrtNetListenerCompletion(
 			return;
 		}
 		if ( pEvent->Result == XNET_RESULT_OK ) {
+			pListener->AcceptRetryDelay = XRT_NET_LISTENER_RETRY_MIN;
 			__xrtNetListenerDispatch(
 				pListener,
 				pEvent->Accepted,
 				&pEvent->Address
 			);
 		} else {
+			bPauseAccept = __xrtNetListenerResourceError(
+				pEvent->SystemCode
+			);
 			__xrtNetSocketSetSystemError(
 				XNET_ERROR_LISTENER_ACCEPT,
 				"accept-listener",
@@ -118925,7 +120067,11 @@ static void __xrtNetListenerCompletion(
 			__xrtNetListenerError(pListener);
 		}
 		if ( xrtNetListenerState(pListener) == XNET_LISTENER_OPEN ) {
-			if ( !__xrtNetListenerArmAccepts(pListener) ) {
+			bool bResult = bPauseAccept ?
+				__xrtNetListenerPauseAccept(pListener) :
+				__xrtNetListenerArmAccepts(pListener);
+
+			if ( !bResult ) {
 				__xrtNetListenerError(pListener);
 				(void)xrtNetListenerClose(pListener);
 			}
@@ -118938,6 +120084,7 @@ static void __xrtNetListenerCompletion(
 			XNET_PORT_EVENT_HANGUP
 		)) != 0;
 		bool bAcceptError = false;
+		bool bPauseAccept = false;
 
 		pListener->WatchPending = false;
 		(void)xrtAtomic32FetchSub(
@@ -118961,10 +120108,17 @@ static void __xrtNetListenerCompletion(
 				break;
 			}
 			if ( Result != XNET_RESULT_OK ) {
+				const xerror* pError = xrtGetError();
+
+				bPauseAccept = (pError != NULL) &&
+					__xrtNetListenerResourceError(
+						xrtErrorSystemCode(pError)
+					);
 				__xrtNetListenerError(pListener);
 				bAcceptError = true;
 				break;
 			}
+			pListener->AcceptRetryDelay = XRT_NET_LISTENER_RETRY_MIN;
 			__xrtNetListenerDispatch(pListener, Socket, &Remote);
 		}
 		if ( bEventError ) {
@@ -118990,7 +120144,11 @@ static void __xrtNetListenerCompletion(
 			return;
 		}
 		if ( xrtNetListenerState(pListener) == XNET_LISTENER_OPEN ) {
-			if ( !__xrtNetListenerWatch(pListener) ) {
+			bool bResult = bPauseAccept ?
+				__xrtNetListenerPauseAccept(pListener) :
+				__xrtNetListenerWatch(pListener);
+
+			if ( !bResult ) {
 				__xrtNetListenerError(pListener);
 				(void)xrtNetListenerClose(pListener);
 			}
@@ -119226,6 +120384,17 @@ static void __xrtNetListenerCloseTask(
 	xnetlistener* pListener = (xnetlistener*)pData;
 	xnetport* pPort = xrtNetWorkerPort(pWorker);
 
+	if ( pListener->AcceptRetryTimer != 0 ) {
+		uint64 Id = pListener->AcceptRetryTimer;
+
+		pListener->AcceptRetryTimer = 0;
+		if ( !__xrtNetEngineTimerCancelLifecycle(
+			pListener->Engine,
+			Id
+		) ) {
+			xrtClearError();
+		}
+	}
 	__xrtNetListenerDiscardQueued(pListener);
 	__xrtNetListenerNotifyFutures(pListener);
 	if ( pListener->WatchPending ) {
@@ -119274,12 +120443,27 @@ XRT_API bool xrtNetListenerClose(xnetlistener* pListener)
 		return iExpected != XNET_LISTENER_OPEN;
 	}
 	xrtNetListenerRef(pListener);
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pListener->Worker,
 		&pListener->CloseCommand,
 		__xrtNetListenerCloseTask,
 		pListener
-	);
+	) ) {
+		xrtAtomic32Store(
+			&pListener->State,
+			XNET_LISTENER_OPEN,
+			XMEMORY_RELEASE
+		);
+		xrtNetListenerDestroy(pListener);
+		__xrtNetSetError(
+			XERR_CLOSED,
+			XNET_ERROR_LISTENER_CLOSE,
+			"close-listener",
+			"network worker shutdown is sealed",
+			0
+		);
+		return false;
+	}
 	return true;
 }
 
@@ -122019,12 +123203,19 @@ static void __xrtWsStreamDriveSchedule(xwsstream* pConnection)
 		);
 		return;
 	}
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pConnection->Worker,
 		&pConnection->DriveCommand,
 		__xrtWsStreamDrive,
 		pConnection
-	);
+	) ) {
+		xrtAtomic32Store(
+			&pConnection->DrivePosted,
+			0,
+			XMEMORY_RELEASE
+		);
+		xrtWsStreamDestroy(pConnection);
+	}
 }
 
 
@@ -125774,7 +126965,7 @@ XRT_API xtlsitemresult xrtTlsExtensionsFind(
 {
 	xtlsextensioncursor Cursor;
 	xtlsextension Extension;
-	xtlsextension Found;
+	xtlsextension Found = {0};
 	xtlsitemresult Result;
 	bool bFound = false;
 
@@ -126200,7 +127391,7 @@ XRT_API xtlsitemresult xrtTlsHostName(
 	xtlsservernamecursor Cursor;
 	xtlsservername Name;
 	xtlsitemresult Result;
-	xbytesview Host;
+	xbytesview Host = {0};
 	bool bFound = false;
 
 	if ( pHost == NULL ) {
@@ -126643,6 +127834,33 @@ XRT_API bool xrtTlsRetryGroup(xbytesview Data, uint16* pGroup)
 
 
 
+/* 严格解析 HelloRetryRequest cookie 的 16 位非空字节向量。 */
+XRT_API bool xrtTlsRetryCookie(xbytesview Data, xbytesview* pCookie)
+{
+	xbytesview Cookie;
+
+	if ( (pCookie == NULL) || !__xrtTlsViewValid(Data) ) {
+		__xrtTlsError(
+			XERR_ARGUMENT, XTLS_ERROR_ARGUMENT, "parse-retry-cookie",
+			"TLS retry-cookie input or output is invalid", SIZE_MAX
+		);
+		return false;
+	}
+	if ( (Data.Size < 3u) ||
+		((size_t)__xrtTlsRead16(Data.Data) != (Data.Size - 2u)) ) {
+		return __xrtTlsHelloError(
+			XTLS_ERROR_EXTENSION, "parse-retry-cookie",
+			"TLS retry cookie is empty or has an inconsistent length", 0
+		);
+	}
+	Cookie.Data = Data.Data + 2u;
+	Cookie.Size = Data.Size - 2u;
+	*pCookie = Cookie;
+	return true;
+}
+
+
+
 /* 验证 Hello 中当前公开支持的核心扩展语义。 */
 
 #endif
@@ -126676,6 +127894,16 @@ bool __xrtTlsHelloRetry(xbytesview Random)
 		(memcmp(
 			Random.Data, __xrtTlsRetryRandom, XTLS_RANDOM_SIZE
 		) == 0);
+}
+
+
+
+/* 借用 HelloRetryRequest 固定 random 标记。 */
+xbytesview __xrtTlsHelloRetryRandom(void)
+{
+	return (xbytesview) {
+		__xrtTlsRetryRandom, sizeof(__xrtTlsRetryRandom)
+	};
 }
 
 
@@ -126825,6 +128053,25 @@ bool __xrtTlsHelloExtensions(
 
 					if ( !xrtTlsClientKeyShares(
 						Extension.Data, &Shares
+					) ) {
+						return false;
+					}
+				}
+				break;
+
+			case XTLS_EXTENSION_COOKIE:
+				if ( bServer && !bRetry ) {
+					return __xrtTlsHelloError(
+						XTLS_ERROR_EXTENSION, "parse-server-hello",
+						"TLS cookie is forbidden in a normal ServerHello",
+						Cursor.Offset - Extension.EncodedSize
+					);
+				}
+				{
+					xbytesview Cookie;
+
+					if ( !xrtTlsRetryCookie(
+						Extension.Data, &Cookie
 					) ) {
 						return false;
 					}
@@ -130948,10 +132195,11 @@ cleanup:
 
 
 
-/* 集中计算会话票据 binder，避免客户端生成与服务端验证出现偏差。 */
-bool __xrtTls13ResumptionBinder(
+/* 在可选 HRR transcript 前缀之后计算会话票据 binder。 */
+bool __xrtTls13ResumptionBinderTranscript(
 	xcryptohash Hash,
 	xbytesview Psk,
+	const xtlstranscript* pPrefix,
 	xbytesview ClientHelloPartial,
 	void* pOutput,
 	size_t iOutputSize
@@ -130984,10 +132232,20 @@ bool __xrtTls13ResumptionBinder(
 		);
 		goto cleanup;
 	}
+	if ( pPrefix != NULL ) {
+		if ( !pPrefix->Ready || (pPrefix->Hash != Hash) ) {
+			(void)__xrtTlsScheduleArgument(
+				"tls13-resumption-binder",
+				"TLS 1.3 binder transcript prefix is invalid"
+			);
+			goto cleanup;
+		}
+		Transcript = *pPrefix;
+	} else if ( !__xrtTlsTranscriptInit(&Transcript, Hash) ) {
+		goto cleanup;
+	}
 	bResult = __xrtTls13EmptyHash(
 		Hash, EmptyHash, iHashSize
-	) && __xrtTlsTranscriptInit(
-		&Transcript, Hash
 	) && __xrtTlsTranscriptUpdate(
 		&Transcript, ClientHelloPartial
 	) && __xrtTlsTranscriptDigest(
@@ -131017,6 +132275,23 @@ cleanup:
 	xrtSecureZero(Early, sizeof(Early));
 	xrtSecureZero(EmptyHash, sizeof(EmptyHash));
 	return bResult;
+}
+
+
+
+/* 从首个 ClientHello transcript 计算会话票据 binder。 */
+bool __xrtTls13ResumptionBinder(
+	xcryptohash Hash,
+	xbytesview Psk,
+	xbytesview ClientHelloPartial,
+	void* pOutput,
+	size_t iOutputSize
+)
+{
+	return __xrtTls13ResumptionBinderTranscript(
+		Hash, Psk, NULL, ClientHelloPartial,
+		pOutput, iOutputSize
+	);
 }
 
 
@@ -134645,6 +135920,47 @@ XRT_API bool xrtTlsWriterRetryGroup(
 	return true;
 }
 
+
+
+/* 追加 HelloRetryRequest 或重试 ClientHello 的非空 cookie。 */
+XRT_API bool xrtTlsWriterRetryCookie(
+	xtlswriter* pWriter,
+	xbytesview Cookie
+)
+{
+	uint8* pWrite;
+	size_t iDataSize;
+
+	if ( !__xrtTlsViewValid(Cookie) || (Cookie.Size == 0) ||
+		(Cookie.Size > XTLS_EXTENSION_DATA_MAX - 2u) ) {
+		__xrtTlsError(
+			XERR_ARGUMENT, XTLS_ERROR_EXTENSION, "write-retry-cookie",
+			"TLS retry cookie is empty or too long", SIZE_MAX
+		);
+		return false;
+	}
+	iDataSize = 2u + Cookie.Size;
+	if ( !__xrtTlsWriterValid(pWriter) || __xrtTlsWriterOverlap(
+		pWriter, XTLS_EXTENSION_HEADER_SIZE + iDataSize,
+		Cookie.Data, Cookie.Size
+	) ) {
+		__xrtTlsError(
+			XERR_ARGUMENT, XTLS_ERROR_ARGUMENT, "write-retry-cookie",
+			"TLS retry cookie overlaps its writer destination", SIZE_MAX
+		);
+		return false;
+	}
+	if ( !__xrtTlsWriterBegin(
+		pWriter, XTLS_EXTENSION_COOKIE, iDataSize, &pWrite
+	) ) {
+		return false;
+	}
+	__xrtTlsWrite16(pWrite, (uint16)Cookie.Size);
+	memcpy(pWrite + 2u, Cookie.Data, Cookie.Size);
+	__xrtTlsWriterCommit(pWriter, XTLS_EXTENSION_COOKIE, iDataSize);
+	return true;
+}
+
 #endif
 #endif
 
@@ -135829,6 +137145,36 @@ static bool __xrtTlsClientConfigValid(
 			"TLS client name or ALPN array is invalid"
 		);
 	}
+	#if defined(XRT_FEATURE_TLS_CLIENT_VERIFY)
+		if ( (pConfig->Verifier == NULL) && !pConfig->ResumeOnly ) {
+			return __xrtTlsClientError(
+				XERR_ARGUMENT, XTLS_ERROR_VERIFY, "create-tls-client",
+				"TLS client requires a verifier outside resume-only mode"
+			);
+		}
+	#else
+		if ( !pConfig->ResumeOnly ) {
+			return __xrtTlsClientError(
+				XERR_UNSUPPORTED, XTLS_ERROR_VERIFY, "create-tls-client",
+				"TLS client build has no certificate verifier"
+			);
+		}
+	#endif
+	#if defined(XRT_FEATURE_TLS_CLIENT_RESUME)
+		if ( pConfig->ResumeOnly && (pConfig->Resume == NULL) ) {
+			return __xrtTlsClientError(
+				XERR_ARGUMENT, XTLS_ERROR_RESUME, "create-tls-client",
+				"TLS resume-only mode requires a resume object"
+			);
+		}
+	#else
+		if ( pConfig->ResumeOnly ) {
+			return __xrtTlsClientError(
+				XERR_UNSUPPORTED, XTLS_ERROR_RESUME, "create-tls-client",
+				"TLS client build has no session resumption support"
+			);
+		}
+	#endif
 	#if defined(XRT_FEATURE_TLS_CLIENT_RESUME)
 		if ( pConfig->ResumeLimit > XTLS_CLIENT_RESUME_LIMIT_MAX ) {
 			return __xrtTlsClientError(
@@ -135985,6 +137331,13 @@ static void __xrtTlsClientLayout(
 
 	pState->Protocols = (xbytesview*)pStorage;
 	pStorage += pConfig->ProtocolCount * sizeof(xbytesview);
+	pState->Versions = (uint16*)pStorage;
+	pState->VersionCount = pOffer->VersionCount;
+	memcpy(
+		pStorage, pOffer->Versions,
+		pOffer->VersionCount * sizeof(uint16)
+	);
+	pStorage += pOffer->VersionCount * sizeof(uint16);
 	pState->Ciphers = (uint16*)pStorage;
 	pState->CipherCount = pOffer->CipherCount;
 	memcpy(
@@ -136064,20 +137417,90 @@ static void __xrtTlsClientLayout(
 	pState->Group = pOffer->KeyShare->Group;
 	pState->Offer12 = pOffer->Tls12;
 	pState->Offer13 = pOffer->Tls13;
+	pState->ResumeOnly = pConfig->ResumeOnly;
 }
 
 
 
-/* 构建并排队一条完整表达当前 TLS 1.3/1.2 能力的 ClientHello。 */
-static bool __xrtTlsClientStart(
+/* 根据客户端稳定配置计算一次 ClientHello 的扩展尺寸。 */
+static bool __xrtTlsClientStateExtensionSize(
+	const xtlsclientstate* pState,
+	xbytesview Cookie,
+	size_t* pSize
+)
+{
+	size_t iSize = 0;
+	size_t iProtocols = 0;
+
+	if ( (pState == NULL) || (pSize == NULL) ||
+		((Cookie.Data == NULL) && (Cookie.Size != 0)) ||
+		(Cookie.Size > XTLS_EXTENSION_DATA_MAX - 2u) ) {
+		return __xrtTlsClientError(
+			XERR_ARGUMENT, XTLS_ERROR_ARGUMENT, "build-client-hello",
+			"TLS client retry cookie or size output is invalid"
+		);
+	}
+	if ( pState->SniName.Size != 0 ) {
+		iSize += XTLS_EXTENSION_HEADER_SIZE + 5u +
+			pState->SniName.Size;
+	}
+	iSize += XTLS_EXTENSION_HEADER_SIZE + 1u +
+		(pState->VersionCount * 2u);
+	if ( pState->Offer12 ) {
+		iSize += XTLS_EXTENSION_HEADER_SIZE;
+	}
+	iSize += XTLS_EXTENSION_HEADER_SIZE + 2u +
+		(pState->GroupCount * 2u);
+	iSize += XTLS_EXTENSION_HEADER_SIZE + 2u +
+		(pState->SignatureCount * 2u);
+	for ( size_t i = 0; i < pState->ProtocolCount; i++ ) {
+		iProtocols += 1u + pState->Protocols[i].Size;
+	}
+	if ( pState->ProtocolCount != 0 ) {
+		iSize += XTLS_EXTENSION_HEADER_SIZE + 2u + iProtocols;
+	}
+	iSize += XTLS_EXTENSION_HEADER_SIZE + 6u +
+		pState->PublicKeySize;
+	if ( Cookie.Size != 0 ) {
+		iSize += XTLS_EXTENSION_HEADER_SIZE + 2u + Cookie.Size;
+	}
+	#if defined(XRT_FEATURE_TLS_CLIENT_RESUME)
+		if ( pState->OfferResume != NULL ) {
+			xtlsresumeinfo Resume;
+
+			if ( !xrtTlsResumeInfo(pState->OfferResume, &Resume) ) {
+				return false;
+			}
+			iSize += XTLS_EXTENSION_HEADER_SIZE + 2u;
+			iSize += XTLS_EXTENSION_HEADER_SIZE + 11u +
+				Resume.Ticket.Size + Resume.Secret.Size;
+		}
+	#endif
+	if ( iSize > UINT16_MAX ) {
+		return __xrtTlsClientError(
+			XERR_RANGE, XTLS_ERROR_EXTENSION, "build-client-hello",
+			"TLS client extension vector is too long"
+		);
+	}
+	*pSize = iSize;
+	return true;
+}
+
+
+
+/* 为首航或 HRR 重试构建并排队当前 ClientHello。 */
+bool __xrtTlsClientHelloQueue(
 	xtlssession* pSession,
 	xtlsclientstate* pState,
-	const xtlsclientoffer* pOffer
+	xbytesview Cookie,
+	bool bRetry
 )
 {
 	xtlswriter Writer;
 	xtlsclienthello Hello;
 	xtlskeyshare Share;
+	const xtlsgroupinfo* pGroup;
+	const xtlslimits* pLimits;
 	uint8 CipherBytes[XTLS_CLIENT_CIPHER_CAPACITY * 2u];
 	uint8 Compression = 0;
 	#if defined(XRT_FEATURE_TLS_CLIENT_RESUME)
@@ -136086,61 +137509,135 @@ static bool __xrtTlsClientStart(
 		uint8 Mode = XTLS_PSK_DHE_KE;
 		uint8 Binder[XTLS_CLIENT_SECRET_MAX_SIZE];
 	#endif
-	size_t iBodySize = pState->ClientHelloSize -
-		XTLS_HANDSHAKE_HEADER_SIZE;
+	bytes pStorage = NULL;
+	bytes pWorkspace;
+	bytes pHello;
+	bytes pOldWorkspace;
+	bytes pOldHello;
+	size_t iOldWorkspaceSize;
+	size_t iOldHelloSize;
+	size_t iExtensions;
+	size_t iBodySize;
+	size_t iHelloSize;
+	bool bResult = false;
 
-	if ( !xrtSecureRandom(pState->Random, sizeof(pState->Random)) ||
-		!xrtSecureRandom(pState->SessionId, sizeof(pState->SessionId)) ||
+	if ( (pSession == NULL) || (pState == NULL) ) {
+		return __xrtTlsClientError(
+			XERR_ARGUMENT, XTLS_ERROR_ARGUMENT, "build-client-hello",
+			"TLS client session or state is null"
+		);
+	}
+	pGroup = xrtTlsGroupInfo(pState->Group);
+	pLimits = xrtTlsContextLimits(pSession->Context);
+	if ( (pGroup == NULL) || (pLimits == NULL) ||
+		(pGroup->PrivateSize > pState->PrivateKeyCapacity) ||
+		(pGroup->PublicSize > pState->PublicKeyCapacity) ) {
+		return __xrtTlsClientError(
+			XERR_UNSUPPORTED, XTLS_ERROR_KEY_EXCHANGE,
+			"build-client-hello",
+			"TLS retry group exceeds the client key-share capacity"
+		);
+	}
+	pState->PrivateKeySize = pGroup->PrivateSize;
+	pState->PublicKeySize = pGroup->PublicSize;
+	if ( !__xrtTlsClientStateExtensionSize(
+		pState, Cookie, &iExtensions
+	) ) {
+		return false;
+	}
+	iBodySize = 2u + XTLS_RANDOM_SIZE + 1u +
+		XTLS_SESSION_ID_MAX + 2u + (pState->CipherCount * 2u) +
+		1u + 1u + 2u + iExtensions;
+	iHelloSize = xrtTlsHandshakeSize(iBodySize);
+	if ( (iHelloSize == 0) || (iHelloSize > pLimits->HandshakeLimit) ) {
+		return __xrtTlsClientError(
+			XERR_RANGE, XTLS_ERROR_LIMIT, "build-client-hello",
+			"TLS ClientHello exceeds the configured handshake limit"
+		);
+	}
+	pWorkspace = pState->Workspace;
+	pHello = pState->ClientHello;
+	if ( bRetry ) {
+		size_t iStorage = iExtensions;
+
+		if ( !__xrtTlsClientAddSize(&iStorage, iHelloSize) ) {
+			return false;
+		}
+		pStorage = (bytes)xrtMalloc(iStorage);
+		if ( pStorage == NULL ) {
+			return __xrtTlsClientCause(
+				"build-client-hello",
+				"TLS retry ClientHello allocation failed"
+			);
+		}
+		pWorkspace = pStorage;
+		pHello = pStorage + iExtensions;
+	} else if ( (iExtensions != pState->WorkspaceSize) ||
+		(iHelloSize != pState->ClientHelloSize) ) {
+		return __xrtTlsClientError(
+			XERR_INTERNAL, XTLS_ERROR_INTERNAL, "build-client-hello",
+			"TLS initial ClientHello layout is inconsistent"
+		);
+	}
+	if ( (!bRetry &&
+		(!xrtSecureRandom(pState->Random, sizeof(pState->Random)) ||
+		 !xrtSecureRandom(pState->SessionId, sizeof(pState->SessionId)))) ||
 		!xrtTlsKeyShareGenerate(
 			pState->Group,
 			pState->PrivateKey, pState->PrivateKeySize,
 			pState->PublicKey, pState->PublicKeySize
 	) ) {
-		return __xrtTlsClientCause(
+		(void)__xrtTlsClientCause(
 			"start-tls-client", "TLS client random or key share generation failed"
 		);
+		goto cleanup;
 	}
 	if ( !xrtTlsWriterInit(
-		&Writer, pState->Workspace, pState->WorkspaceSize
+		&Writer, pWorkspace, iExtensions
 	) ) {
-		return false;
+		goto cleanup;
 	}
 	if ( (pState->SniName.Size != 0) && !xrtTlsWriterHostName(
 		&Writer, pState->SniName
 	) ) {
-		return false;
+		goto cleanup;
 	}
 	if ( !xrtTlsWriterClientVersions(
-		&Writer, pOffer->Versions, pOffer->VersionCount
-	) || (pOffer->Tls12 && !xrtTlsWriterExtension(
+		&Writer, pState->Versions, pState->VersionCount
+	) || (pState->Offer12 && !xrtTlsWriterExtension(
 		&Writer, XTLS_EXTENSION_EXTENDED_MASTER_SECRET,
 		(xbytesview) { NULL, 0 }
 	)) || !xrtTlsWriterIds(
 		&Writer, XTLS_EXTENSION_SUPPORTED_GROUPS,
-		pOffer->Groups, pOffer->GroupCount
+		pState->Groups, pState->GroupCount
 	) || !xrtTlsWriterIds(
 		&Writer, XTLS_EXTENSION_SIGNATURE_ALGORITHMS,
-		pOffer->Signatures, pOffer->SignatureCount
+		pState->Signatures, pState->SignatureCount
 	) ) {
-		return false;
+		goto cleanup;
 	}
 	if ( (pState->ProtocolCount != 0) && !xrtTlsWriterProtocols(
 		&Writer, pState->Protocols, pState->ProtocolCount
 	) ) {
-		return false;
+		goto cleanup;
 	}
 	Share.Group = pState->Group;
 	Share.Key.Data = pState->PublicKey;
 	Share.Key.Size = pState->PublicKeySize;
 	if ( !xrtTlsWriterClientKeyShares(&Writer, &Share, 1u) ) {
-		return false;
+		goto cleanup;
+	}
+	if ( (Cookie.Size != 0) && !xrtTlsWriterRetryCookie(
+		&Writer, Cookie
+	) ) {
+		goto cleanup;
 	}
 	#if defined(XRT_FEATURE_TLS_CLIENT_RESUME)
 		memset(Binder, 0, sizeof(Binder));
 		if ( pState->OfferResume != NULL ) {
 			if ( !xrtTlsResumeInfo(pState->OfferResume, &Resume) ||
 				(Resume.Secret.Size > sizeof(Binder)) ) {
-				return false;
+				goto cleanup;
 			}
 			Psk.Identity = Resume.Ticket;
 			Psk.ObfuscatedAge = pState->ResumeAge;
@@ -136149,16 +137646,16 @@ static bool __xrtTlsClientStart(
 			};
 			if ( !xrtTlsWriterPskModes(&Writer, &Mode, 1u) ||
 				!xrtTlsWriterClientPsks(&Writer, &Psk, 1u) ) {
-				return false;
+				goto cleanup;
 			}
 		}
 		xrtSecureZero(Binder, sizeof(Binder));
 	#endif
-	if ( Writer.Size != pState->WorkspaceSize ) {
-		return false;
+	if ( Writer.Size != iExtensions ) {
+		goto cleanup;
 	}
-	for ( size_t i = 0; i < pOffer->CipherCount; i++ ) {
-		__xrtTlsWrite16(CipherBytes + (i * 2u), pOffer->Ciphers[i]);
+	for ( size_t i = 0; i < pState->CipherCount; i++ ) {
+		__xrtTlsWrite16(CipherBytes + (i * 2u), pState->Ciphers[i]);
 	}
 	memset(&Hello, 0, sizeof(Hello));
 	Hello.LegacyVersion = XTLS_VERSION_12;
@@ -136169,44 +137666,72 @@ static bool __xrtTlsClientStart(
 		pState->SessionId, sizeof(pState->SessionId)
 	};
 	Hello.CipherSuites.Data = (xbytesview) {
-		CipherBytes, pOffer->CipherCount * 2u
+		CipherBytes, pState->CipherCount * 2u
 	};
 	Hello.CompressionMethods = (xbytesview) { &Compression, 1u };
 	Hello.Extensions = xrtTlsWriterData(&Writer);
 	if ( (xrtTlsClientHelloSize(&Hello) != iBodySize) ||
 		!xrtTlsClientHelloEncode(
-			&Hello, pState->ClientHello + XTLS_HANDSHAKE_HEADER_SIZE,
+			&Hello, pHello + XTLS_HANDSHAKE_HEADER_SIZE,
 			iBodySize
 		) || !xrtTlsHandshakeEncode(
 			XTLS_HANDSHAKE_CLIENT_HELLO,
 			(xbytesview) {
-				pState->ClientHello + XTLS_HANDSHAKE_HEADER_SIZE,
+				pHello + XTLS_HANDSHAKE_HEADER_SIZE,
 				iBodySize
-			}, pState->ClientHello, pState->ClientHelloSize
+			}, pHello, iHelloSize
 		) ) {
-		return false;
+		goto cleanup;
 	}
+	pOldWorkspace = pState->Workspace;
+	iOldWorkspaceSize = pState->WorkspaceSize;
+	pOldHello = pState->ClientHello;
+	iOldHelloSize = pState->ClientHelloSize;
+	pState->Workspace = pWorkspace;
+	pState->WorkspaceSize = iExtensions;
+	pState->ClientHello = pHello;
+	pState->ClientHelloSize = iHelloSize;
 	#if defined(XRT_FEATURE_TLS_CLIENT_RESUME)
 		if ( (pState->OfferResume != NULL) &&
-			!__xrtTlsClientResumeBinder(pState) ) {
-			return false;
+			!__xrtTlsClientResumeBinder(
+				pState, bRetry ? &pState->Transcript : NULL
+			) ) {
+			goto restore;
 		}
 	#endif
 	if ( __xrtTlsSessionRecordPlain(
 		pSession, XTLS_RECORD_HANDSHAKE, XTLS_VERSION_12,
 		(xbytesview) { pState->ClientHello, pState->ClientHelloSize }
 	) != XTLS_OK ) {
-		return false;
+		goto restore;
 	}
 	if ( !__xrtTlsSessionSetState(
 		pSession, XTLS_STATE_HANDSHAKE
 	) || !__xrtTlsSessionSetWait(
 		pSession, XTLS_WAIT_INPUT | XTLS_WAIT_OUTPUT
 	) ) {
-		return false;
+		goto restore;
+	}
+	if ( bRetry ) {
+		pState->RetryStorage = pStorage;
+		pStorage = NULL;
 	}
 	pState->Step = XTLS_CLIENT_WAIT_SERVER_HELLO;
-	return true;
+	bResult = true;
+	goto cleanup;
+
+restore:
+	pState->Workspace = pOldWorkspace;
+	pState->WorkspaceSize = iOldWorkspaceSize;
+	pState->ClientHello = pOldHello;
+	pState->ClientHelloSize = iOldHelloSize;
+
+cleanup:
+	if ( pStorage != NULL ) {
+		xrtSecureZero(pStorage, iExtensions + iHelloSize);
+		xrtFree(pStorage);
+	}
+	return bResult;
 }
 
 
@@ -136225,6 +137750,14 @@ static void __xrtTlsClientClean(xtlssession* pSession, ptr pRole)
 			xrtFree(pState->Peer);
 			xrtTlsVerifierRelease(pState->Verifier);
 		#endif
+		if ( pState->RetryStorage != NULL ) {
+			xrtSecureZero(
+				pState->RetryStorage,
+				pState->WorkspaceSize + pState->ClientHelloSize
+			);
+			xrtFree(pState->RetryStorage);
+			pState->RetryStorage = NULL;
+		}
 		#if defined(XRT_FEATURE_TLS_CLIENT_RESUME)
 			__xrtTlsClientResumeClear(pState);
 			xrtTlsResumeRelease((xtlsresume*)pState->OfferResume);
@@ -136410,6 +137943,8 @@ XRT_API xtlssession* xrtTlsClientCreate(
 		!__xrtTlsClientAddSize(
 			&iRoleSize, pConfig->ProtocolCount * sizeof(xbytesview)
 		) || !__xrtTlsClientAddSize(
+			&iRoleSize, Offer.VersionCount * sizeof(uint16)
+		) || !__xrtTlsClientAddSize(
 			&iRoleSize, Offer.CipherCount * sizeof(uint16)
 		) || !__xrtTlsClientAddSize(
 			&iRoleSize, Offer.GroupCount * sizeof(uint16)
@@ -136501,7 +138036,9 @@ XRT_API xtlssession* xrtTlsClientCreate(
 	}
 	if ( !xrtTlsHandshakeReaderInit(
 		&pState->Reader, &ReaderConfig
-	) || !__xrtTlsClientStart(pSession, pState, &Offer) ) {
+	) || !__xrtTlsClientHelloQueue(
+		pSession, pState, (xbytesview) { NULL, 0 }, false
+	) ) {
 		xrtTlsSessionDestroy(pSession);
 		return NULL;
 	}
@@ -136672,9 +138209,9 @@ static bool __xrtTlsClientServerHello(
 	*pResumed = false;
 	if ( pHello->Retry ) {
 		return __xrtTlsClientError(
-			XERR_UNSUPPORTED, XTLS_ERROR_HANDSHAKE,
+			XERR_PROTOCOL, XTLS_ERROR_HANDSHAKE,
 			"process-server-hello",
-			"TLS HelloRetryRequest is not enabled in the client state yet"
+			"TLS client expected a normal ServerHello"
 		);
 	}
 	if ( (pHello->SessionId.Size != sizeof(pState->SessionId)) ||
@@ -136690,7 +138227,8 @@ static bool __xrtTlsClientServerHello(
 	}
 	if ( !__xrtTlsClientOffered(
 		pState->Ciphers, pState->CipherCount, pHello->CipherSuite
-	) ) {
+	) || (pState->RetrySeen &&
+		(pHello->CipherSuite != (uint16)pState->Cipher)) ) {
 		return __xrtTlsClientError(
 			XERR_PROTOCOL, XTLS_ERROR_CIPHER,
 			"process-server-hello",
@@ -136799,6 +138337,174 @@ static bool __xrtTlsClientServerHello(
 
 
 
+/* 严格验证一次 HelloRetryRequest 并发布选择的组、套件和 cookie。 */
+static bool __xrtTlsClientRetryHello(
+	const xtlsclientstate* pState,
+	const xtlsserverhello* pHello,
+	const xtlscipherinfo** ppCipher,
+	uint16* pGroup,
+	xbytesview* pCookie
+)
+{
+	xtlsextensioncursor Cursor;
+	xtlsextension Extension;
+	xtlsitemresult Result;
+	const xtlscipherinfo* pCipher;
+	bool bVersion = false;
+	bool bGroup = false;
+
+	*ppCipher = NULL;
+	*pGroup = 0;
+	memset(pCookie, 0, sizeof(*pCookie));
+	if ( !pHello->Retry || pState->RetrySeen ) {
+		return __xrtTlsClientError(
+			XERR_PROTOCOL, XTLS_ERROR_HANDSHAKE,
+			"process-hello-retry-request",
+			"TLS peer sent an invalid or repeated HelloRetryRequest"
+		);
+	}
+	if ( (pHello->SessionId.Size != sizeof(pState->SessionId)) ||
+		(memcmp(
+			pHello->SessionId.Data, pState->SessionId,
+			sizeof(pState->SessionId)
+		) != 0) ) {
+		return __xrtTlsClientError(
+			XERR_PROTOCOL, XTLS_ERROR_HANDSHAKE,
+			"process-hello-retry-request",
+			"TLS HelloRetryRequest did not echo the session identifier"
+		);
+	}
+	if ( !__xrtTlsClientOffered(
+		pState->Ciphers, pState->CipherCount, pHello->CipherSuite
+	) ) {
+		return __xrtTlsClientError(
+			XERR_PROTOCOL, XTLS_ERROR_CIPHER,
+			"process-hello-retry-request",
+			"TLS HelloRetryRequest selected an unoffered cipher"
+		);
+	}
+	pCipher = xrtTlsCipherInfo((xtlscipher)pHello->CipherSuite);
+	if ( (pCipher == NULL) || (pCipher->Version != XTLS_VERSION_13) ||
+		(pCipher->HashSize > pState->SecretCapacity) ) {
+		return __xrtTlsClientError(
+			XERR_PROTOCOL, XTLS_ERROR_CIPHER,
+			"process-hello-retry-request",
+			"TLS HelloRetryRequest selected an unusable cipher"
+		);
+	}
+	if ( !xrtTlsExtensionsInit(&Cursor, pHello->Extensions) ) {
+		return false;
+	}
+	while ( (Result = xrtTlsExtensionsRead(
+		&Cursor, &Extension
+	)) == XTLS_ITEM_VALUE ) {
+		if ( Extension.Type == XTLS_EXTENSION_SUPPORTED_VERSIONS ) {
+			uint16 iVersion;
+
+			if ( !xrtTlsServerVersion(Extension.Data, &iVersion) ||
+				(iVersion != XTLS_VERSION_13) ) {
+				return __xrtTlsClientError(
+					XERR_PROTOCOL, XTLS_ERROR_VERSION,
+					"process-hello-retry-request",
+					"TLS HelloRetryRequest did not select TLS 1.3"
+				);
+			}
+			bVersion = true;
+		} else if ( Extension.Type == XTLS_EXTENSION_KEY_SHARE ) {
+			uint16 iGroup;
+
+			if ( !xrtTlsRetryGroup(Extension.Data, &iGroup) ) {
+				return false;
+			}
+			if ( !__xrtTlsClientOffered(
+				pState->Groups, pState->GroupCount, iGroup
+			) || (iGroup == pState->Group) ||
+				!xrtTlsGroupAvailable(iGroup) ) {
+				return __xrtTlsClientError(
+					XERR_PROTOCOL, XTLS_ERROR_KEY_EXCHANGE,
+					"process-hello-retry-request",
+					"TLS HelloRetryRequest selected an invalid retry group"
+				);
+			}
+			*pGroup = iGroup;
+			bGroup = true;
+		} else if ( Extension.Type == XTLS_EXTENSION_COOKIE ) {
+			if ( !xrtTlsRetryCookie(Extension.Data, pCookie) ) {
+				return false;
+			}
+		} else {
+			return __xrtTlsClientError(
+				XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+				"process-hello-retry-request",
+				"TLS HelloRetryRequest contains a forbidden extension"
+			);
+		}
+	}
+	if ( (Result != XTLS_ITEM_DONE) || !bVersion || !bGroup ) {
+		return __xrtTlsClientError(
+			XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+			"process-hello-retry-request",
+			"TLS HelloRetryRequest is missing a required extension"
+		);
+	}
+	*ppCipher = pCipher;
+	return true;
+}
+
+
+
+/* 提交 HRR transcript，生成新密钥共享并排队第二个 ClientHello。 */
+static xtlsresult __xrtTlsClientRetryHelloCommit(
+	xtlssession* pSession,
+	xtlsclientstate* pState,
+	const xtlshandshake* pMessage,
+	const xtlsserverhello* pHello
+)
+{
+	const xtlscipherinfo* pCipher;
+	xtlstranscript Next;
+	xbytesview Cookie;
+	xbytesview Encoded;
+	uint16 iGroup;
+	bool bCommitted = false;
+
+	memset(&Next, 0, sizeof(Next));
+	if ( !__xrtTlsClientRetryHello(
+		pState, pHello, &pCipher, &iGroup, &Cookie
+	) ) {
+		goto cleanup;
+	}
+	Encoded.Data = pMessage->Body.Data - XTLS_HANDSHAKE_HEADER_SIZE;
+	Encoded.Size = pMessage->EncodedSize;
+	if ( !__xrtTlsTranscriptInit(
+		&Next, __xrtTlsHash(pCipher->Hash)
+	) || !__xrtTlsTranscriptUpdate(
+		&Next,
+		(xbytesview) { pState->ClientHello, pState->ClientHelloSize }
+	) || !__xrtTlsTranscriptRetry(&Next) ||
+		!__xrtTlsTranscriptUpdate(&Next, Encoded) ) {
+		goto cleanup;
+	}
+	__xrtTlsTranscriptClear(&pState->Transcript);
+	pState->Transcript = Next;
+	memset(&Next, 0, sizeof(Next));
+	pState->Cipher = pCipher->Cipher;
+	pState->Group = iGroup;
+	pState->RetrySeen = true;
+	if ( !__xrtTlsClientHelloQueue(
+		pSession, pState, Cookie, true
+	) ) {
+		goto cleanup;
+	}
+	bCommitted = __xrtTlsClientWait(pSession, true);
+
+cleanup:
+	__xrtTlsTranscriptClear(&Next);
+	return bCommitted ? XTLS_OK : __xrtTlsClientFailed(pSession);
+}
+
+
+
 /* 生成 TLS 1.3 空 transcript 摘要。 */
 static bool __xrtTlsClientEmptyHash(
 	xcryptohash Hash,
@@ -136885,8 +138591,23 @@ static bool __xrtTlsClientServerKeys(
 	#else
 		(void)bResumed;
 	#endif
-	if ( !__xrtTlsTranscriptInit(&pNext->Transcript, pNext->Hash) ||
-		!__xrtTlsTranscriptUpdate(
+	if ( pState->RetrySeen ) {
+		if ( !pState->Transcript.Ready ||
+			(pState->Transcript.Hash != pNext->Hash) ) {
+			(void)__xrtTlsClientError(
+				XERR_STATE, XTLS_ERROR_TRANSCRIPT,
+				"derive-server-hello-keys",
+				"TLS retry transcript is unavailable"
+			);
+			goto cleanup;
+		}
+		pNext->Transcript = pState->Transcript;
+	} else if ( !__xrtTlsTranscriptInit(
+		&pNext->Transcript, pNext->Hash
+	) ) {
+		goto cleanup;
+	}
+	if ( !__xrtTlsTranscriptUpdate(
 			&pNext->Transcript,
 			(xbytesview) { pState->ClientHello, pState->ClientHelloSize }
 		) || !__xrtTlsTranscriptUpdate(
@@ -136986,6 +138707,14 @@ static xtlsresult __xrtTlsClient13ServerHelloCommit(
 		) ) {
 		goto cleanup;
 	}
+	if ( pState->ResumeOnly && !bResumed ) {
+		(void)__xrtTlsClientError(
+			XERR_PROTOCOL, XTLS_ERROR_RESUME,
+			"process-server-hello",
+			"TLS server rejected the required resume object"
+		);
+		goto cleanup;
+	}
 	Encoded.Data = pMessage->Body.Data - XTLS_HANDSHAKE_HEADER_SIZE;
 	Encoded.Size = pMessage->EncodedSize;
 	if ( !__xrtTlsClientServerKeys(
@@ -137064,6 +138793,18 @@ static xtlsresult __xrtTlsClientServerHelloCommit(
 	} else {
 		iVersion = Hello.LegacyVersion;
 	}
+	if ( Hello.Retry ) {
+		if ( (iVersion != XTLS_VERSION_13) || !pState->Offer13 ) {
+			return __xrtTlsClientProtocol(
+				pSession, XTLS_ERROR_VERSION,
+				"process-hello-retry-request",
+				"TLS HelloRetryRequest did not select an offered TLS version"
+			);
+		}
+		return __xrtTlsClientRetryHelloCommit(
+			pSession, pState, pMessage, &Hello
+		);
+	}
 	if ( (iVersion == XTLS_VERSION_13) && pState->Offer13 ) {
 		return __xrtTlsClient13ServerHelloCommit(
 			pSession, pState, pMessage, &Hello
@@ -137072,7 +138813,8 @@ static xtlsresult __xrtTlsClientServerHelloCommit(
 	#if defined(XRT_FEATURE_TLS_CLIENT_VERIFY) && \
 		defined(XRT_FEATURE_TLS_AUTH_MESSAGES) && \
 		defined(XRT_FEATURE_TLS_AUTH_MESSAGES_WRITE)
-		if ( (iVersion == XTLS_VERSION_12) && pState->Offer12 ) {
+		if ( (iVersion == XTLS_VERSION_12) && pState->Offer12 &&
+			!pState->ResumeOnly ) {
 			return __xrtTlsClient12ServerHello(
 				pSession, pState, pMessage, &Hello
 			);
@@ -138291,7 +140033,11 @@ static xtlsresult __xrtTlsClientChangeCipherSpec(
 	#else
 		(void)pState;
 	#endif
-	if ( pRecord->Protected || (pRecord->Data.Size != 1u) ||
+	if ( (pState->Version != XTLS_VERSION_13) ||
+		(pState->Step < XTLS_CLIENT_WAIT_ENCRYPTED_EXTENSIONS) ||
+		(pState->Step > XTLS_CLIENT_WAIT_FINISHED) ||
+		pState->CompatibilityCcsSeen || pRecord->Protected ||
+		(pRecord->Data.Size != 1u) ||
 		(pRecord->Data.Data[0] != 1u) ) {
 		return __xrtTlsClientProtocol(
 			pSession, XTLS_ERROR_HANDSHAKE,
@@ -138302,6 +140048,7 @@ static xtlsresult __xrtTlsClientChangeCipherSpec(
 	if ( __xrtTlsSessionRecordFinish(pSession, false) != XTLS_OK ) {
 		return __xrtTlsClientFailed(pSession);
 	}
+	pState->CompatibilityCcsSeen = true;
 	return XTLS_OK;
 }
 
@@ -146166,6 +147913,13 @@ static void __xrtTlsServerClean(xtlssession* pSession, ptr pRole)
 		);
 		xrtFree(pState->ServerNameStorage);
 	}
+	if ( pState->RetryClientHello != NULL ) {
+		xrtSecureZero(
+			pState->RetryClientHello, pState->RetryClientHelloSize
+		);
+		xrtFree(pState->RetryClientHello);
+		pState->RetryClientHello = NULL;
+	}
 	xrtTlsIdentityRelease((xtlsidentity*)pState->Identity);
 	pState->Identity = NULL;
 }
@@ -146634,12 +148388,19 @@ static xtlsresult __xrtTlsServerChangeCipherSpec(
 	const xtlssessionrecord* pRecord
 )
 {
+	bool bRetryWindow = pState->RetrySeen &&
+		(pState->Step == XTLS_SERVER_WAIT_CLIENT_HELLO);
+
 	if ( pState->Version == XTLS_VERSION_12 ) {
 		return __xrtTlsServer12ChangeCipherSpec(
 			pSession, pState, pRecord
 		);
 	}
-	if ( pRecord->Protected || (pRecord->Data.Size != 1u) ||
+	if ( (!bRetryWindow &&
+		((pState->Version != XTLS_VERSION_13) ||
+		 (pState->Step != XTLS_SERVER_WAIT_CLIENT_FINISHED))) ||
+		pState->CompatibilityCcsSeen || pRecord->Protected ||
+		(pRecord->Data.Size != 1u) ||
 		(pRecord->Data.Data[0] != 1u) ) {
 		return __xrtTlsServerProtocol(
 			pSession, XTLS_ERROR_HANDSHAKE, "drive-tls-server",
@@ -146649,12 +148410,13 @@ static xtlsresult __xrtTlsServerChangeCipherSpec(
 	if ( __xrtTlsSessionRecordFinish(pSession, false) != XTLS_OK ) {
 		return __xrtTlsServerFailed(pSession);
 	}
+	pState->CompatibilityCcsSeen = true;
 	return XTLS_OK;
 }
 
 
 
-/* 处理一段握手记录，支持任意记录分片但拒绝首尾消息夹带。 */
+/* 处理一段握手记录，允许一条记录顺序承载多条完整握手消息。 */
 static xtlsresult __xrtTlsServerHandshakeRecord(
 	xtlssession* pSession,
 	xtlsserverstate* pState,
@@ -146715,12 +148477,6 @@ static xtlsresult __xrtTlsServerHandshakeRecord(
 		return XTLS_OK;
 	}
 	*pComplete = true;
-	if ( *pConsumed != Input.Size ) {
-		return __xrtTlsServerProtocol(
-			pSession, XTLS_ERROR_HANDSHAKE, "drive-tls-server",
-			"TLS client handshake record contains a trailing message"
-		);
-	}
 	if ( pState->Step == XTLS_SERVER_WAIT_CLIENT_HELLO ) {
 		Result = __xrtTlsServerFirstFlight(
 			pSession, pState, &Message
@@ -147184,6 +148940,278 @@ static bool __xrtTlsServerSignature(
 
 
 
+/* TLS 只支持 1.2/1.3，因此可直接判定 Fallback SCSV 是否不恰当。 */
+static bool __xrtTlsServerFallback(
+	const xtlspolicy* pPolicy,
+	const xtlsclienthello* pHello
+)
+{
+	xtlsextension Extension;
+	xtlsids Versions;
+	xtlsitemresult Result;
+	bool bServer13 = false;
+	bool bClient13 = false;
+
+	if ( !xrtTlsIdsContain(
+		&pHello->CipherSuites, XTLS_FALLBACK_SCSV
+	) ) {
+		return true;
+	}
+	for ( size_t i = 0; i < pPolicy->VersionCount; i++ ) {
+		if ( pPolicy->Versions[i] == XTLS_VERSION_13 ) {
+			bServer13 = true;
+		}
+	}
+	Result = xrtTlsExtensionsFind(
+		pHello->Extensions,
+		XTLS_EXTENSION_SUPPORTED_VERSIONS,
+		&Extension
+	);
+	if ( Result == XTLS_ITEM_ERROR ) {
+		return false;
+	}
+	if ( Result == XTLS_ITEM_VALUE ) {
+		if ( !xrtTlsClientVersions(Extension.Data, &Versions) ) {
+			return false;
+		}
+		bClient13 = xrtTlsIdsContain(&Versions, XTLS_VERSION_13);
+	}
+	if ( bServer13 && !bClient13 ) {
+		return __xrtTlsServerError(
+			XERR_PROTOCOL, XTLS_ERROR_VERSION,
+			"select-server-flight",
+			"TLS client sent an inappropriate fallback signal"
+		);
+	}
+	return true;
+}
+
+
+
+/* 0-RTT 必须在具备反重放策略前保持显式 fail-closed。 */
+static bool __xrtTlsServerEarlyData(const xtlsclienthello* pHello)
+{
+	xtlsextension Extension;
+	xtlsitemresult Result = xrtTlsExtensionsFind(
+		pHello->Extensions, XTLS_EXTENSION_EARLY_DATA, &Extension
+	);
+
+	if ( Result == XTLS_ITEM_ERROR ) {
+		return false;
+	}
+	if ( Result == XTLS_ITEM_VALUE ) {
+		return __xrtTlsServerError(
+			XERR_UNSUPPORTED, XTLS_ERROR_EXTENSION,
+			"select-server-flight",
+			"TLS early data is not enabled without an anti-replay policy"
+		);
+	}
+	return true;
+}
+
+
+
+/* 比较两个借用字节视图。 */
+static bool __xrtTlsServerViewEqual(xbytesview Left, xbytesview Right)
+{
+	return (Left.Size == Right.Size) &&
+		((Left.Size == 0) ||
+		 (memcmp(Left.Data, Right.Data, Left.Size) == 0));
+}
+
+
+
+#if defined(XRT_FEATURE_TLS_SERVER_RESUME)
+
+/* HRR 后 PSK 身份和 binder 布局必须稳定，年龄和 binder 内容允许更新。 */
+static bool __xrtTlsServerRetryPsksEqual(
+	xbytesview First,
+	xbytesview Second
+)
+{
+	xtlspskcursor Left;
+	xtlspskcursor Right;
+	xtlspsk LeftPsk;
+	xtlspsk RightPsk;
+	xtlsitemresult LeftResult;
+	xtlsitemresult RightResult;
+
+	if ( !xrtTlsClientPsks(First, &Left) ||
+		!xrtTlsClientPsks(Second, &Right) ) {
+		return false;
+	}
+	do {
+		LeftResult = xrtTlsPsksRead(&Left, &LeftPsk);
+		RightResult = xrtTlsPsksRead(&Right, &RightPsk);
+		if ( LeftResult != RightResult ) {
+			return false;
+		}
+		if ( LeftResult == XTLS_ITEM_VALUE ) {
+			if ( !__xrtTlsServerViewEqual(
+				LeftPsk.Identity, RightPsk.Identity
+			) || (LeftPsk.Binder.Size != RightPsk.Binder.Size) ) {
+				return false;
+			}
+		}
+	} while ( LeftResult == XTLS_ITEM_VALUE );
+	return LeftResult == XTLS_ITEM_DONE;
+}
+
+#endif
+
+
+
+/* 校验第二个 ClientHello 只包含 RFC 8446 允许的 HRR 后变化。 */
+static bool __xrtTlsServerRetryClientHello(
+	const xtlsserverstate* pState,
+	const xtlsclienthello* pSecond
+)
+{
+	xtlshandshake Message;
+	xtlsclienthello First;
+	xtlsextensioncursor Cursor;
+	xtlsextension Extension;
+	xtlsitemresult Result;
+
+	if ( (pState->RetryClientHello == NULL) ||
+		(xrtTlsHandshakeParse(
+			(xbytesview) {
+				pState->RetryClientHello,
+				pState->RetryClientHelloSize
+			}, &Message, NULL
+		) != XTLS_OK) ||
+		(Message.Type != XTLS_HANDSHAKE_CLIENT_HELLO) ||
+		!xrtTlsClientHelloParse(Message.Body, &First) ) {
+		return __xrtTlsServerError(
+			XERR_STATE, XTLS_ERROR_HANDSHAKE,
+			"select-server-flight",
+			"TLS server retry ClientHello state is unavailable"
+		);
+	}
+	if ( (First.LegacyVersion != pSecond->LegacyVersion) ||
+		!__xrtTlsServerViewEqual(First.Random, pSecond->Random) ||
+		!__xrtTlsServerViewEqual(First.SessionId, pSecond->SessionId) ||
+		!__xrtTlsServerViewEqual(
+			First.CipherSuites.Data, pSecond->CipherSuites.Data
+		) || !__xrtTlsServerViewEqual(
+			First.CompressionMethods, pSecond->CompressionMethods
+		) ) {
+		return __xrtTlsServerError(
+			XERR_PROTOCOL, XTLS_ERROR_HANDSHAKE,
+			"select-server-flight",
+			"TLS second ClientHello changed a fixed field"
+		);
+	}
+	if ( !xrtTlsExtensionsInit(&Cursor, First.Extensions) ) {
+		return false;
+	}
+	while ( (Result = xrtTlsExtensionsRead(
+		&Cursor, &Extension
+	)) == XTLS_ITEM_VALUE ) {
+		xtlsextension Current;
+		xtlsitemresult Found;
+
+		if ( (Extension.Type == XTLS_EXTENSION_KEY_SHARE) ||
+			(Extension.Type == XTLS_EXTENSION_EARLY_DATA) ) {
+			continue;
+		}
+		if ( Extension.Type == XTLS_EXTENSION_COOKIE ) {
+			return __xrtTlsServerError(
+				XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+				"select-server-flight",
+				"TLS first ClientHello unexpectedly contains a cookie"
+			);
+		}
+		Found = xrtTlsExtensionsFind(
+			pSecond->Extensions, Extension.Type, &Current
+		);
+		if ( Found != XTLS_ITEM_VALUE ) {
+			return __xrtTlsServerError(
+				XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+				"select-server-flight",
+				"TLS second ClientHello removed a stable extension"
+			);
+		}
+		#if defined(XRT_FEATURE_TLS_SERVER_RESUME)
+			if ( Extension.Type == XTLS_EXTENSION_PRE_SHARED_KEY ) {
+				if ( !__xrtTlsServerRetryPsksEqual(
+					Extension.Data, Current.Data
+				) ) {
+					return __xrtTlsServerError(
+						XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+						"select-server-flight",
+						"TLS second ClientHello changed its PSK identities"
+					);
+				}
+				continue;
+			}
+		#endif
+		if ( !__xrtTlsServerViewEqual(
+			Extension.Data, Current.Data
+		) ) {
+			return __xrtTlsServerError(
+				XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+				"select-server-flight",
+				"TLS second ClientHello changed a stable extension value"
+			);
+		}
+	}
+	if ( Result != XTLS_ITEM_DONE ) {
+		return false;
+	}
+	if ( !xrtTlsExtensionsInit(&Cursor, pSecond->Extensions) ) {
+		return false;
+	}
+	while ( (Result = xrtTlsExtensionsRead(
+		&Cursor, &Extension
+	)) == XTLS_ITEM_VALUE ) {
+		if ( Extension.Type == XTLS_EXTENSION_KEY_SHARE ) {
+			xtlskeysharecursor Shares;
+			xtlskeyshare Share;
+
+			if ( !xrtTlsClientKeyShares(Extension.Data, &Shares) ||
+				(xrtTlsKeySharesRead(
+					&Shares, &Share
+				) != XTLS_ITEM_VALUE) ||
+				(Share.Group != pState->RetryGroup) ||
+				(xrtTlsKeySharesRead(
+					&Shares, &Share
+				) != XTLS_ITEM_DONE) ) {
+				return __xrtTlsServerError(
+					XERR_PROTOCOL, XTLS_ERROR_KEY_EXCHANGE,
+					"select-server-flight",
+					"TLS second ClientHello has an invalid retry key share"
+				);
+			}
+			continue;
+		}
+		if ( (Extension.Type == XTLS_EXTENSION_COOKIE) ||
+			(Extension.Type == XTLS_EXTENSION_EARLY_DATA) ) {
+			return __xrtTlsServerError(
+				XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+				"select-server-flight",
+				"TLS second ClientHello added a forbidden extension"
+			);
+		}
+		{
+			xtlsextension Original;
+
+			if ( xrtTlsExtensionsFind(
+				First.Extensions, Extension.Type, &Original
+			) != XTLS_ITEM_VALUE ) {
+				return __xrtTlsServerError(
+					XERR_PROTOCOL, XTLS_ERROR_EXTENSION,
+					"select-server-flight",
+					"TLS second ClientHello added an extension"
+				);
+			}
+		}
+	}
+	return Result == XTLS_ITEM_DONE;
+}
+
+
+
 /* 严格提取 ClientHello 并完成所有服务端策略选择。 */
 static bool __xrtTlsServerSelect(
 	const xtlssession* pSession,
@@ -147212,6 +149240,16 @@ static bool __xrtTlsServerSelect(
 	pSelection->Protocol = XTLS_SERVER_PROTOCOL_NONE;
 	if ( (pPolicy == NULL) || !xrtTlsClientHelloParse(
 		pMessage->Body, &pSelection->Hello
+	) ) {
+		return false;
+	}
+	if ( !__xrtTlsServerFallback(
+		pPolicy, &pSelection->Hello
+	) || !__xrtTlsServerEarlyData(&pSelection->Hello) ) {
+		return false;
+	}
+	if ( pState->RetrySeen && !__xrtTlsServerRetryClientHello(
+		pState, &pSelection->Hello
 	) ) {
 		return false;
 	}
@@ -147311,6 +149349,15 @@ static bool __xrtTlsServerSelect(
 			"TLS client and server have no usable cipher for the selected version"
 		);
 	}
+	if ( pState->RetrySeen &&
+		((Version != XTLS_VERSION_13) ||
+		 (pSelection->Cipher != pState->RetryCipher)) ) {
+		return __xrtTlsServerError(
+			XERR_PROTOCOL, XTLS_ERROR_NEGOTIATION,
+			"select-server-flight",
+			"TLS second ClientHello changed the retry negotiation"
+		);
+	}
 	#if defined(XRT_FEATURE_TLS_SERVER_RESUME)
 		if ( (Version == XTLS_VERSION_13) &&
 			!__xrtTlsServerResumeSelect(
@@ -147392,14 +149439,27 @@ static bool __xrtTlsServerSelect(
 		);
 	}
 	if ( KeyShare.Retry ) {
-		return __xrtTlsServerError(
-			XERR_UNSUPPORTED, XTLS_ERROR_KEY_EXCHANGE,
-			"select-server-flight",
-			"TLS server HelloRetryRequest is not enabled"
-		);
+		if ( pState->RetrySeen ) {
+			return __xrtTlsServerError(
+				XERR_PROTOCOL, XTLS_ERROR_KEY_EXCHANGE,
+				"select-server-flight",
+				"TLS second ClientHello requested another retry"
+			);
+		}
+		pSelection->Group = KeyShare.Share.Group;
+		pSelection->Retry = true;
+		return true;
 	}
 	pSelection->Share = KeyShare.Share;
 	pSelection->Group = KeyShare.Share.Group;
+	if ( pState->RetrySeen &&
+		(pSelection->Group != pState->RetryGroup) ) {
+		return __xrtTlsServerError(
+			XERR_PROTOCOL, XTLS_ERROR_KEY_EXCHANGE,
+			"select-server-flight",
+			"TLS second ClientHello used the wrong retry group"
+		);
+	}
 	return true;
 }
 
@@ -147524,9 +149584,137 @@ static bool __xrtTlsServerNameCopy(
 
 
 
+/* 构建并提交一次无 cookie 的 HelloRetryRequest。 */
+static bool __xrtTlsServerRetryFlight(
+	xtlssession* pSession,
+	xtlsserverstate* pState,
+	const xtlshandshake* pClientHello,
+	const xtlsserverselection* pSelection
+)
+{
+	const xtlscipherinfo* pCipher = xrtTlsCipherInfo(
+		pSelection->Cipher
+	);
+	xtlstranscript Transcript;
+	xtlswriter Writer;
+	xtlsserverhello Hello;
+	bytes pExtensions = NULL;
+	bytes pHello = NULL;
+	bytes pSaved = NULL;
+	xbytesview Encoded = {0};
+	size_t iBodySize;
+	size_t iMessageSize;
+	bool bResult = false;
+
+	memset(&Transcript, 0, sizeof(Transcript));
+	memset(&Hello, 0, sizeof(Hello));
+	if ( pState->RetrySeen || (pCipher == NULL) ||
+		(pCipher->Version != XTLS_VERSION_13) ||
+		!xrtTlsGroupAvailable(pSelection->Group) ) {
+		return __xrtTlsServerError(
+			XERR_PROTOCOL, XTLS_ERROR_HANDSHAKE,
+			"build-hello-retry-request",
+			"TLS server retry selection is invalid"
+		);
+	}
+	pExtensions = (bytes)xrtTempAlloc(
+		&pState->HandshakeArena, 12u
+	);
+	if ( pExtensions == NULL ) {
+		(void)__xrtTlsServerCause(
+			"build-hello-retry-request",
+			"TLS HelloRetryRequest extension allocation failed"
+		);
+		goto cleanup;
+	}
+	if ( !xrtTlsWriterInit(&Writer, pExtensions, 12u) ||
+		!xrtTlsWriterServerVersion(&Writer, XTLS_VERSION_13) ||
+		!xrtTlsWriterRetryGroup(&Writer, pSelection->Group) ||
+		(Writer.Size != 12u) ) {
+		goto cleanup;
+	}
+	Hello.LegacyVersion = XTLS_VERSION_12;
+	Hello.Random = __xrtTlsHelloRetryRandom();
+	Hello.SessionId = pSelection->Hello.SessionId;
+	Hello.CipherSuite = (uint16)pSelection->Cipher;
+	Hello.Extensions = xrtTlsWriterData(&Writer);
+	Hello.Retry = true;
+	iBodySize = xrtTlsServerHelloSize(&Hello);
+	iMessageSize = xrtTlsHandshakeSize(iBodySize);
+	if ( (iBodySize == 0) || (iMessageSize == 0) ||
+		!__xrtTlsServerHandshakeLimit(
+			pSession, iMessageSize,
+			"TLS HelloRetryRequest exceeds the configured handshake limit"
+		) ) {
+		goto cleanup;
+	}
+	pHello = (bytes)xrtTempAlloc(
+		&pState->HandshakeArena, iMessageSize
+	);
+	if ( pHello == NULL ) {
+		(void)__xrtTlsServerCause(
+			"build-hello-retry-request",
+			"TLS HelloRetryRequest allocation failed"
+		);
+		goto cleanup;
+	}
+	if ( !xrtTlsServerHelloEncode(
+		&Hello, pHello + XTLS_HANDSHAKE_HEADER_SIZE, iBodySize
+	) || !__xrtTlsServerHandshake(
+		XTLS_HANDSHAKE_SERVER_HELLO, pHello, iMessageSize
+	) ) {
+		goto cleanup;
+	}
+	Encoded.Data = pClientHello->Body.Data - XTLS_HANDSHAKE_HEADER_SIZE;
+	Encoded.Size = pClientHello->EncodedSize;
+	pSaved = (bytes)xrtMalloc(Encoded.Size);
+	if ( pSaved == NULL ) {
+		(void)__xrtTlsServerCause(
+			"build-hello-retry-request",
+			"TLS first ClientHello retention failed"
+		);
+		goto cleanup;
+	}
+	memcpy(pSaved, Encoded.Data, Encoded.Size);
+	if ( !__xrtTlsTranscriptInit(
+		&Transcript, __xrtTlsHash(pCipher->Hash)
+	) || !__xrtTlsTranscriptUpdate(&Transcript, Encoded) ||
+		!__xrtTlsTranscriptRetry(&Transcript) ||
+		!__xrtTlsTranscriptUpdate(
+			&Transcript, (xbytesview) { pHello, iMessageSize }
+		) || (__xrtTlsSessionRecordPlain(
+			pSession, XTLS_RECORD_HANDSHAKE, XTLS_VERSION_12,
+			(xbytesview) { pHello, iMessageSize }
+		) != XTLS_OK) ) {
+		goto cleanup;
+	}
+	__xrtTlsTranscriptClear(&pState->Transcript);
+	pState->Transcript = Transcript;
+	memset(&Transcript, 0, sizeof(Transcript));
+	pState->RetryClientHello = pSaved;
+	pState->RetryClientHelloSize = Encoded.Size;
+	pSaved = NULL;
+	pState->RetryCipher = pSelection->Cipher;
+	pState->RetryGroup = pSelection->Group;
+	pState->RetrySeen = true;
+	pSession->Wait = XTLS_WAIT_INPUT | XTLS_WAIT_OUTPUT;
+	bResult = true;
+
+cleanup:
+	__xrtTlsTranscriptClear(&Transcript);
+	if ( pSaved != NULL ) {
+		xrtSecureZero(pSaved, Encoded.Size);
+		xrtFree(pSaved);
+	}
+	return bResult;
+}
+
+
+
 /* 构建普通 ServerHello 并派生双向握手 epoch。 */
 static bool __xrtTlsServerHelloFlight(
 	const xtlssession* pSession,
+	const xtlsserverstate* pState,
 	const xtlsserverselection* pSelection,
 	const xtlshandshake* pClientHello,
 	xtemparena* pArena,
@@ -147662,8 +149850,23 @@ static bool __xrtTlsServerHelloFlight(
 		goto cleanup;
 	}
 	Hash = __xrtTlsHash(pCipher->Hash);
-	if ( !__xrtTlsTranscriptInit(&pFlight->Transcript, Hash) ||
-		!__xrtTlsTranscriptUpdate(
+	if ( pState->RetrySeen ) {
+		if ( !pState->Transcript.Ready ||
+			(pState->Transcript.Hash != Hash) ) {
+			(void)__xrtTlsServerError(
+				XERR_STATE, XTLS_ERROR_TRANSCRIPT,
+				"build-server-flight",
+				"TLS server retry transcript is unavailable"
+			);
+			goto cleanup;
+		}
+		pFlight->Transcript = pState->Transcript;
+	} else if ( !__xrtTlsTranscriptInit(
+		&pFlight->Transcript, Hash
+	) ) {
+		goto cleanup;
+	}
+	if ( !__xrtTlsTranscriptUpdate(
 			&pFlight->Transcript,
 			(xbytesview) {
 				pClientHello->Body.Data - XTLS_HANDSHAKE_HEADER_SIZE,
@@ -148184,6 +150387,15 @@ static void __xrtTlsServerFlightCommit(
 	pState->Cipher = pFlight->Cipher;
 	pState->Signature = pFlight->Signature;
 	pState->Step = XTLS_SERVER_WAIT_CLIENT_FINISHED;
+	if ( pState->RetryClientHello != NULL ) {
+		xrtSecureZero(
+			pState->RetryClientHello, pState->RetryClientHelloSize
+		);
+		xrtFree(pState->RetryClientHello);
+		pState->RetryClientHello = NULL;
+		pState->RetryClientHelloSize = 0;
+	}
+	pState->RetrySeen = false;
 	pSession->Version = XTLS_VERSION_13;
 	pSession->Cipher = pFlight->Cipher;
 
@@ -148251,10 +150463,16 @@ xtlsresult __xrtTlsServerFirstFlight(
 		);
 		goto cleanup;
 	}
+	if ( Selection.Retry ) {
+		Result = __xrtTlsServerRetryFlight(
+			pSession, pState, pMessage, &Selection
+		) ? XTLS_OK : XTLS_ERROR;
+		goto cleanup;
+	}
 	Flight.Protocol = Selection.Protocol;
 	if ( !__xrtTlsServerNameCopy(&Selection, &Flight) ||
 		!__xrtTlsServerHelloFlight(
-			pSession, &Selection, pMessage,
+			pSession, pState, &Selection, pMessage,
 			&pState->HandshakeArena, &Flight,
 			&pServerHello, &iServerHello, &HandshakeWrite,
 			HandshakeSecret, ServerHandshake
@@ -148285,12 +150503,14 @@ xtlsresult __xrtTlsServerFirstFlight(
 	Result = XTLS_OK;
 
 cleanup:
-	pState->Select = NULL;
-	pState->SelectContext = NULL;
-	#if defined(XRT_FEATURE_TLS_SERVER_RESUME)
-		pState->Resume = NULL;
-		pState->ResumeContext = NULL;
-	#endif
+	if ( (Result == XTLS_ERROR) || !pState->RetrySeen ) {
+		pState->Select = NULL;
+		pState->SelectContext = NULL;
+		#if defined(XRT_FEATURE_TLS_SERVER_RESUME)
+			pState->Resume = NULL;
+			pState->ResumeContext = NULL;
+		#endif
+	}
 	__xrtTlsRecordKeyClear(&HandshakeWrite);
 	__xrtTlsServerSelectionClear(&Selection);
 	__xrtTlsServerFlightClear(&Flight);
@@ -148461,6 +150681,28 @@ cleanup:
 	(4u + XTLS_SERVER12_PUBLIC_MAX_SIZE)
 #define XTLS_SERVER12_SIGN_CONTENT_MAX_SIZE \
 	((2u * XTLS12_RANDOM_SIZE) + XTLS_SERVER12_PARAMETER_MAX_SIZE)
+
+static const uint8 __xrtTls12ServerDowngrade13[] = {
+	0x44, 0x4F, 0x57, 0x4E, 0x47, 0x52, 0x44, 0x01
+};
+
+
+
+/* 判断服务端策略是否也具备 TLS 1.3 能力。 */
+static bool __xrtTlsServer12Supports13(const xtlssession* pSession)
+{
+	const xtlspolicy* pPolicy = xrtTlsContextPolicy(pSession->Context);
+
+	if ( pPolicy == NULL ) {
+		return false;
+	}
+	for ( size_t i = 0; i < pPolicy->VersionCount; i++ ) {
+		if ( pPolicy->Versions[i] == XTLS_VERSION_13 ) {
+			return true;
+		}
+	}
+	return false;
+}
 #define XTLS_SERVER12_EXTENSION_MAX_SIZE 272u
 #define XTLS_SERVER12_FINISHED_MESSAGE_SIZE \
 	(XTLS_HANDSHAKE_HEADER_SIZE + XTLS12_FINISHED_SIZE)
@@ -148741,6 +150983,14 @@ xtlsresult __xrtTlsServer12FirstFlight(
 			sizeof(ExtensionStorage), &Extensions
 		) ) {
 		goto cleanup;
+	}
+	if ( __xrtTlsServer12Supports13(pSession) ) {
+		memcpy(
+			ServerRandom + sizeof(ServerRandom) -
+				sizeof(__xrtTls12ServerDowngrade13),
+			__xrtTls12ServerDowngrade13,
+			sizeof(__xrtTls12ServerDowngrade13)
+		);
 	}
 
 	/* ServerHello 不发布 TLS 1.2 会话恢复标识，只承诺完整 EMS 握手。 */
@@ -149493,6 +151743,44 @@ XRT_API void xrtTlsStreamDestroy(xtlsstream* pStream)
 
 
 
+
+/* 进入一个可能同步触发底层 Close 的组合调用帧。 */
+static void __xrtTlsStreamActiveEnter(xtlsstream* pStream)
+{
+	pStream->ActiveDepth++;
+}
+
+
+
+/* 立即释放运行时引用，或延迟到最外层组合调用帧退出。 */
+static void __xrtTlsStreamReleaseRuntime(xtlsstream* pStream)
+{
+	if ( !pStream->RuntimeHeld ) {
+		return;
+	}
+	if ( pStream->ActiveDepth != 0 ) {
+		pStream->RuntimeReleasePending = true;
+		return;
+	}
+	pStream->RuntimeReleasePending = false;
+	pStream->RuntimeHeld = false;
+	xrtTlsStreamDestroy(pStream);
+}
+
+
+
+/* 离开最外层组合调用帧后完成延迟的运行时引用释放。 */
+static void __xrtTlsStreamActiveLeave(xtlsstream* pStream)
+{
+	pStream->ActiveDepth--;
+	if ( (pStream->ActiveDepth == 0) &&
+		pStream->RuntimeReleasePending ) {
+		__xrtTlsStreamReleaseRuntime(pStream);
+	}
+}
+
+
+
 /* 初始化握手与认证关闭默认超时。 */
 XRT_API void xrtTlsStreamConfigInit(xtlsstreamconfig* pConfig)
 {
@@ -149902,7 +152190,7 @@ static void __xrtTlsStreamFail(xtlsstream* pStream)
 	);
 	xrtAtomic32Store(
 		&pStream->TerminalResult,
-		XNET_RESULT_ERROR,
+		(uint32)XNET_RESULT_ERROR,
 		XMEMORY_RELEASE
 	);
 	xrtAtomic32Store(
@@ -149914,6 +152202,9 @@ static void __xrtTlsStreamFail(xtlsstream* pStream)
 	__xrtTlsStreamNotifyFutures(pStream);
 	(void)__xrtTlsStreamStartCloseTimer(pStream);
 	Result = __xrtTlsStreamFlush(pStream);
+	if ( pStream->CloseEmitted ) {
+		return;
+	}
 	if ( Result == XNET_RESULT_ERROR || Result == XNET_RESULT_CLOSED ) {
 		(void)xrtNetStreamAbort((xnetstream*)xrtAtomicPtrLoad(
 			&pStream->Transport,
@@ -150234,7 +152525,7 @@ static void __xrtTlsStreamProgressClose(xtlsstream* pStream)
 			);
 			xrtAtomic32Store(
 				&pStream->TerminalResult,
-				XNET_RESULT_ERROR,
+				(uint32)XNET_RESULT_ERROR,
 				XMEMORY_RELEASE
 			);
 			xrtAtomic32Store(
@@ -150277,12 +152568,15 @@ static void __xrtTlsStreamScheduleDrive(xtlsstream* pStream)
 	);
 	pStream->DrivePosted = true;
 	xrtTlsStreamRef(pStream);
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pTransport->Worker,
 		&pStream->DriveCommand,
 		__xrtTlsStreamDriveTask,
 		pStream
-	);
+	) ) {
+		pStream->DrivePosted = false;
+		xrtTlsStreamDestroy(pStream);
+	}
 }
 
 
@@ -150319,6 +152613,9 @@ static void __xrtTlsStreamDrive(xtlsstream* pStream)
 		pStream->DriveAgain = false;
 		if ( pStream->Failing ) {
 			NetResult = __xrtTlsStreamFlush(pStream);
+			if ( pStream->CloseEmitted ) {
+				break;
+			}
 			if ( NetResult == XNET_RESULT_ERROR ||
 				NetResult == XNET_RESULT_CLOSED ) {
 				(void)xrtNetStreamAbort((xnetstream*)xrtAtomicPtrLoad(
@@ -150349,6 +152646,9 @@ static void __xrtTlsStreamDrive(xtlsstream* pStream)
 			}
 		#endif
 		NetResult = __xrtTlsStreamFlush(pStream);
+		if ( pStream->CloseEmitted ) {
+			break;
+		}
 		if ( NetResult == XNET_RESULT_ERROR ||
 			NetResult == XNET_RESULT_CLOSED ) {
 			__xrtTlsStreamFail(pStream);
@@ -150373,9 +152673,21 @@ static void __xrtTlsStreamDrive(xtlsstream* pStream)
 	} while ( (pStream->DriveAgain || bProgress) &&
 		(iRound < XRT_TLS_STREAM_DRIVE_ROUNDS) );
 	pStream->Driving = false;
+	if ( pStream->CloseEmitted ) {
+		return;
+	}
 	__xrtTlsStreamResumeInput(pStream);
+	if ( pStream->CloseEmitted ) {
+		return;
+	}
 	__xrtTlsStreamWritable(pStream);
+	if ( pStream->CloseEmitted ) {
+		return;
+	}
 	__xrtTlsStreamDrain(pStream);
+	if ( pStream->CloseEmitted ) {
+		return;
+	}
 	if ( !pStream->Failing && !pStream->Closing &&
 		(iRound == XRT_TLS_STREAM_DRIVE_ROUNDS) && bProgress ) {
 		__xrtTlsStreamScheduleDrive(pStream);
@@ -150394,6 +152706,7 @@ static void __xrtTlsStreamTransportOpen(
 	xtlsstream* pStream = (xtlsstream*)pData;
 	xnetbufpool* pPool;
 
+	__xrtTlsStreamActiveEnter(pStream);
 	xrtAtomicPtrStore(
 		&pStream->Transport,
 		pTransport,
@@ -150401,7 +152714,7 @@ static void __xrtTlsStreamTransportOpen(
 	);
 	if ( xrtAtomic32Load(&pStream->AbortGate, XMEMORY_ACQUIRE) ) {
 		(void)xrtNetStreamAbort(pTransport);
-		return;
+		goto cleanup;
 	}
 	pPool = xrtNetWorkerBufPool(pTransport->Worker);
 	if ( (pPool == NULL) || !__xrtTlsSessionPool(
@@ -150409,7 +152722,7 @@ static void __xrtTlsStreamTransportOpen(
 		pPool
 	) || !__xrtTlsStreamStartHandshakeTimer(pStream) ) {
 		__xrtTlsStreamFail(pStream);
-		return;
+		goto cleanup;
 	}
 	xrtAtomic32Store(
 		&pStream->State,
@@ -150417,6 +152730,9 @@ static void __xrtTlsStreamTransportOpen(
 		XMEMORY_RELEASE
 	);
 	__xrtTlsStreamDrive(pStream);
+
+cleanup:
+	__xrtTlsStreamActiveLeave(pStream);
 }
 
 
@@ -150432,7 +152748,9 @@ static void __xrtTlsStreamTransportRead(
 
 	(void)pTransport;
 	(void)pBuffer;
+	__xrtTlsStreamActiveEnter(pStream);
 	__xrtTlsStreamDrive(pStream);
+	__xrtTlsStreamActiveLeave(pStream);
 }
 
 
@@ -150447,13 +152765,19 @@ static void __xrtTlsStreamTransportEnd(
 	xtlsresult Result;
 
 	(void)pTransport;
+	__xrtTlsStreamActiveEnter(pStream);
 	Result = xrtTlsSessionEof(pStream->Session);
 	if ( Result == XTLS_ERROR ) {
 		__xrtTlsStreamFail(pStream);
-		return;
+		goto cleanup;
 	}
 	__xrtTlsStreamEnd(pStream);
-	__xrtTlsStreamProgressClose(pStream);
+	if ( !pStream->CloseEmitted ) {
+		__xrtTlsStreamProgressClose(pStream);
+	}
+
+cleanup:
+	__xrtTlsStreamActiveLeave(pStream);
 }
 
 
@@ -150469,13 +152793,21 @@ static void __xrtTlsStreamTransportLowWater(
 
 	(void)pTransport;
 	(void)iQueued;
+	__xrtTlsStreamActiveEnter(pStream);
 	if ( pStream->Driving || pStream->Sending ) {
 		pStream->DriveAgain = true;
-		return;
+		goto cleanup;
 	}
 	__xrtTlsStreamDrive(pStream);
-	__xrtTlsStreamWritable(pStream);
-	__xrtTlsStreamDrain(pStream);
+	if ( !pStream->CloseEmitted ) {
+		__xrtTlsStreamWritable(pStream);
+	}
+	if ( !pStream->CloseEmitted ) {
+		__xrtTlsStreamDrain(pStream);
+	}
+
+cleanup:
+	__xrtTlsStreamActiveLeave(pStream);
 }
 
 
@@ -150489,14 +152821,24 @@ static void __xrtTlsStreamTransportDrain(
 	xtlsstream* pStream = (xtlsstream*)pData;
 
 	(void)pTransport;
+	__xrtTlsStreamActiveEnter(pStream);
 	if ( pStream->Driving || pStream->Sending ) {
 		pStream->DriveAgain = true;
-		return;
+		goto cleanup;
 	}
 	__xrtTlsStreamDrive(pStream);
-	__xrtTlsStreamWritable(pStream);
-	__xrtTlsStreamDrain(pStream);
-	__xrtTlsStreamProgressClose(pStream);
+	if ( !pStream->CloseEmitted ) {
+		__xrtTlsStreamWritable(pStream);
+	}
+	if ( !pStream->CloseEmitted ) {
+		__xrtTlsStreamDrain(pStream);
+	}
+	if ( !pStream->CloseEmitted ) {
+		__xrtTlsStreamProgressClose(pStream);
+	}
+
+cleanup:
+	__xrtTlsStreamActiveLeave(pStream);
 }
 
 
@@ -150612,10 +152954,7 @@ static void __xrtTlsStreamTransportClose(
 		);
 	}
 	__xrtTlsStreamNotifyFutures(pStream);
-	if ( pStream->RuntimeHeld ) {
-		pStream->RuntimeHeld = false;
-		xrtTlsStreamDestroy(pStream);
-	}
+	__xrtTlsStreamReleaseRuntime(pStream);
 }
 
 
@@ -151196,12 +153535,14 @@ static xtlsresult __xrtTlsStreamSendSpans(
 		return XTLS_AGAIN;
 	}
 	NetResult = __xrtTlsStreamFlush(pStream);
+	pStream->Sending = false;
+	if ( pStream->CloseEmitted ) {
+		return *pWritten != 0 ? Result : XTLS_CLOSED;
+	}
 	if ( NetResult == XNET_RESULT_ERROR || NetResult == XNET_RESULT_CLOSED ) {
-		pStream->Sending = false;
 		__xrtTlsStreamFail(pStream);
 		return XTLS_ERROR;
 	}
-	pStream->Sending = false;
 	if ( pStream->DriveAgain || pStream->DrainPending ) {
 		__xrtTlsStreamScheduleDrive(pStream);
 	}
@@ -151693,12 +154034,23 @@ XRT_API bool xrtTlsStreamClose(xtlsstream* pStream)
 	#if defined(XRT_FEATURE_TLS_STREAM_FUTURE)
 		__xrtSpinUnlock(&pStream->AsyncLock);
 	#endif
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pTransport->Worker,
 		&pStream->CloseCommand,
 		__xrtTlsStreamCloseTask,
 		pStream
-	);
+	) ) {
+		xrtAtomic32Store(&pStream->CloseGate, 0, XMEMORY_RELEASE);
+		xrtTlsStreamDestroy(pStream);
+		__xrtTlsStreamSetError(
+			XERR_CLOSED,
+			XTLS_ERROR_CLOSED,
+			"close-tls-stream",
+			"network worker shutdown is sealed",
+			NULL
+		);
+		return false;
+	}
 	return true;
 }
 
@@ -155910,7 +158262,7 @@ bool __xrtX509PathDuplicate(
 bool __xrtX509PathConfigValid(const xx509pathconfig* pConfig)
 {
 	const uint32 iKnownFlags = X509_PATH_REQUIRE_KEY_USAGE |
-		X509_PATH_REQUIRE_PURPOSE;
+		X509_PATH_REQUIRE_PURPOSE | X509_PATH_ALLOW_SHA1;
 
 	return (pConfig != NULL) &&
 		((pConfig->Flags & ~iKnownFlags) == 0) &&
@@ -155920,6 +158272,51 @@ bool __xrtX509PathConfigValid(const xx509pathconfig* pConfig)
 		((pConfig->Purpose.Data != NULL) || (pConfig->Purpose.Size == 0)) &&
 		(((pConfig->Flags & X509_PATH_REQUIRE_PURPOSE) == 0) ||
 		 (pConfig->Purpose.Size != 0));
+}
+
+
+
+/* 初始化当前时间下默认拒绝弱签名算法的路径策略。 */
+XRT_API void xrtX509PathConfigInit(xx509pathconfig* pConfig)
+{
+	if ( pConfig == NULL ) {
+		__xrtErrorSetInvalidArgument();
+		return;
+	}
+	memset(pConfig, 0, sizeof(*pConfig));
+	pConfig->Time = xrtNow();
+}
+
+
+
+/* 在密码验签前执行路径级签名算法强度策略。 */
+static bool __xrtX509PathSignature(
+	const xx509cert* pCertificate,
+	const xx509pathconfig* pConfig
+)
+{
+	xx509signature Signature;
+	xx509result Result = xrtX509SignatureParse(
+		&pCertificate->SignatureAlgorithm,
+		&Signature
+	);
+
+	if ( Result != X509_VALUE ) {
+		return __xrtX509PathError(
+			X509_ERROR_SIGNATURE,
+			"certificate path uses an unsupported signature algorithm",
+			Result == X509_ERROR ? xrtGetError() : NULL
+		);
+	}
+	if ( (Signature.Hash == X509_HASH_SHA1) &&
+		((pConfig->Flags & X509_PATH_ALLOW_SHA1) == 0) ) {
+		return __xrtX509PathError(
+			X509_ERROR_SIGNATURE,
+			"certificate path uses SHA-1 without explicit legacy policy",
+			NULL
+		);
+	}
+	return true;
 }
 
 
@@ -156485,6 +158882,9 @@ XRT_API bool xrtX509PathValidate(
 				X509_ERROR_PATH,
 				"certificate is not valid at the requested time", NULL
 			);
+		}
+		if ( !__xrtX509PathSignature(pCertificate, pConfig) ) {
+			return false;
 		}
 		if ( !__xrtX509PathExtensions(pCertificate, i, pConfig) ) {
 			return false;
@@ -157984,7 +160384,7 @@ XRT_API xx509result xrtX509MatchHost(
 	xx509gencursor Cursor;
 	xx509genname Name;
 	xx509result Result;
-	xnetaddr Address;
+	xnetaddr Address = {0};
 	xstrview Reference = Host;
 	size_t iHostSize = 0;
 	bool bWildcard = false;
@@ -158112,6 +160512,7 @@ struct xtlsverifier {
 	xtlsverifytimeproc Time;
 	xtlsverifyreleaseproc Release;
 	ptr Context;
+	bool AllowSha1;
 };
 
 
@@ -158262,11 +160663,12 @@ static bool __xrtTlsVerifyPolicy(
 
 
 /* 使用显式时间、证书和借用信任库执行默认路径与身份验证。 */
-XRT_API bool xrtTlsPeerVerify(
+static bool __xrtTlsPeerVerify(
 	const xtlspeer* pPeer,
 	const xx509store* pStore,
 	xtlsverifypolicyproc pPolicy,
-	ptr pContext
+	ptr pContext,
+	bool bAllowSha1
 )
 {
 	static const uint8 ServerPurpose[] = {
@@ -158302,9 +160704,12 @@ XRT_API bool xrtTlsPeerVerify(
 		ppWorkspace[i - 1u] = &pPeer->Certificates[i];
 	}
 	ppPath = ppWorkspace + pPeer->CertificateCount;
-	memset(&Config, 0, sizeof(Config));
+	xrtX509PathConfigInit(&Config);
 	memset(&Result, 0, sizeof(Result));
 	Config.Time = pPeer->Time;
+	if ( bAllowSha1 ) {
+		Config.Flags |= X509_PATH_ALLOW_SHA1;
+	}
 	Config.KeyUsage = X509_USAGE_DIGITAL_SIGNATURE;
 	if ( pPeer->Role == XTLS_SERVER ) {
 		Config.Purpose = (xbytesview) {
@@ -158360,6 +160765,21 @@ XRT_API bool xrtTlsPeerVerify(
 	}
 	xrtFree(ppWorkspace);
 	return bVerified;
+}
+
+
+
+/* 使用默认现代算法策略验证路径、用途和对端身份。 */
+XRT_API bool xrtTlsPeerVerify(
+	const xtlspeer* pPeer,
+	const xx509store* pStore,
+	xtlsverifypolicyproc pPolicy,
+	ptr pContext
+)
+{
+	return __xrtTlsPeerVerify(
+		pPeer, pStore, pPolicy, pContext, false
+	);
 }
 
 
@@ -158426,6 +160846,7 @@ XRT_API xtlsverifier* xrtTlsVerifierCreate(
 	pVerifier->Time = pConfig->Time;
 	pVerifier->Release = pConfig->Release;
 	pVerifier->Context = pConfig->Context;
+	pVerifier->AllowSha1 = pConfig->AllowSha1;
 	return pVerifier;
 }
 
@@ -158532,9 +160953,10 @@ XRT_API bool xrtTlsVerifierVerify(
 				"TLS custom verifier deferred without a trust store"
 			);
 		}
-		return xrtTlsPeerVerify(
+		return __xrtTlsPeerVerify(
 			&Peer, pVerifier->Store,
-			pVerifier->Policy, pVerifier->Context
+			pVerifier->Policy, pVerifier->Context,
+			pVerifier->AllowSha1
 		);
 	}
 	if ( Decision == XTLS_VERIFY_REJECT ) {
@@ -164742,6 +167164,10 @@ bool __xrtX509VerifyEd25519(
 #define XTLS_CLIENT12_FINISHED_MESSAGE_SIZE \
 	(XTLS_HANDSHAKE_HEADER_SIZE + XTLS12_FINISHED_SIZE)
 
+static const uint8 __xrtTls12ClientDowngrade13[] = {
+	0x44, 0x4F, 0x57, 0x4E, 0x47, 0x52, 0x44, 0x01
+};
+
 
 
 /* 保留当前根错误并把客户端会话推进到失败终态。 */
@@ -164782,11 +167208,24 @@ static bool __xrtTlsClient12Hello(
 	memset(pProtocol, 0, sizeof(*pProtocol));
 	if ( pHello->Retry || (pHello->LegacyVersion != XTLS_VERSION_12) ||
 		(pHello->CompressionMethod != 0) ||
-		(pHello->SessionId.Size > XTLS_SESSION_ID_MAX) ) {
+		(pHello->SessionId.Size > XTLS_SESSION_ID_MAX) ||
+		(pHello->Random.Size != XTLS12_RANDOM_SIZE) ) {
 		return __xrtTlsClientError(
 			XERR_PROTOCOL, XTLS_ERROR_HANDSHAKE,
 			"process-tls12-server-hello",
 			"TLS 1.2 ServerHello fixed fields are invalid"
+		);
+	}
+	if ( pState->Offer13 && xrtConstTimeEqual(
+		pHello->Random.Data + XTLS12_RANDOM_SIZE -
+			sizeof(__xrtTls12ClientDowngrade13),
+		__xrtTls12ClientDowngrade13,
+		sizeof(__xrtTls12ClientDowngrade13)
+	) ) {
+		return __xrtTlsClientError(
+			XERR_PROTOCOL, XTLS_ERROR_VERSION,
+			"process-tls12-server-hello",
+			"TLS 1.2 ServerHello contains a TLS 1.3 downgrade marker"
 		);
 	}
 	if ( !__xrtTlsClientOffered(
@@ -164933,6 +167372,7 @@ static xtlsresult __xrtTlsClient12ServerKeyExchange(
 {
 	xtls12serverkeyexchange Exchange;
 	const xtlsgroupinfo* pGroup;
+	const xtlssignatureinfo* pSignature;
 	xtlstranscript Next = pState->Transcript;
 	xbytesview Encoded = __xrtTlsClient12Encoded(pMessage);
 
@@ -164941,11 +167381,17 @@ static xtlsresult __xrtTlsClient12ServerKeyExchange(
 		goto failed;
 	}
 	pGroup = xrtTlsGroupInfo(Exchange.Group);
+	pSignature = xrtTlsSignatureInfo(
+		(xtlssignature)Exchange.Verify.Scheme
+	);
 	if ( !__xrtTlsClientOffered(
 		pState->Groups, pState->GroupCount, Exchange.Group
 	) || !__xrtTlsClientOffered(
 		pState->Signatures, pState->SignatureCount, Exchange.Verify.Scheme
-	) || (pGroup == NULL) ||
+	) || (pGroup == NULL) || (pSignature == NULL) ||
+		!xrtTlsCipherCompatible(
+			XTLS_VERSION_12, pState->Cipher, pSignature->Identity
+		) ||
 		(pGroup->PrivateSize > pState->PrivateKeyCapacity) ||
 		(pGroup->PublicSize > pState->PublicKeyCapacity) ||
 		(pGroup->SharedSize > sizeof(pState->Shared)) ) {
@@ -166089,7 +168535,10 @@ static bool __xrtTlsClientResumeViewEqual(
 
 
 /* 为最终 ClientHello 的唯一外部 PSK 计算并原位写入 res binder。 */
-bool __xrtTlsClientResumeBinder(xtlsclientstate* pState)
+bool __xrtTlsClientResumeBinder(
+	xtlsclientstate* pState,
+	const xtlstranscript* pPrefix
+)
 {
 	uint8 Binder[XTLS_CLIENT_SECRET_MAX_SIZE];
 	const xtlscipherinfo* pCipher;
@@ -166099,7 +168548,7 @@ bool __xrtTlsClientResumeBinder(xtlsclientstate* pState)
 	xtlsextensioncursor Extensions;
 	xtlsextension Extension;
 	xtlspskcursor Psks;
-	xtlspsk Psk;
+	xtlspsk Psk = {0};
 	xcryptohash Hash;
 	size_t iPartial;
 	bool bPsk = false;
@@ -166169,8 +168618,8 @@ bool __xrtTlsClientResumeBinder(xtlsclientstate* pState)
 	iPartial = (size_t)(Psk.Binder.Data -
 		(const uint8*)pState->ClientHello) - 3u;
 	Hash = __xrtTlsHash(pCipher->Hash);
-	if ( !__xrtTls13ResumptionBinder(
-		Hash, Resume.Secret,
+	if ( !__xrtTls13ResumptionBinderTranscript(
+		Hash, Resume.Secret, pPrefix,
 		(xbytesview) { pState->ClientHello, iPartial },
 		Binder, Resume.Secret.Size
 	) ) {
@@ -166678,8 +169127,10 @@ bool __xrtTlsServerResumeSelect(
 		}
 		if ( bMatch ) {
 			Hash = __xrtTlsHash(pCipher->Hash);
-			bMatch = __xrtTls13ResumptionBinder(
-				Hash, Info.Secret, Partial,
+			bMatch = __xrtTls13ResumptionBinderTranscript(
+				Hash, Info.Secret,
+				pState->RetrySeen ? &pState->Transcript : NULL,
+				Partial,
 				Expected, pCipher->HashSize
 			);
 			if ( bMatch && !xrtConstTimeEqual(
@@ -166790,7 +169241,7 @@ XRT_API xtlsresult xrtTlsServerTicket(
 	uint8 AgeBytes[4];
 	uint8 Secret[XTLS_SERVER_SECRET_MAX_SIZE];
 	size_t iBody;
-	size_t iMessage;
+	size_t iMessage = 0;
 	xtlsresult Writable;
 	xtlsresult Result = XTLS_ERROR;
 
@@ -167666,7 +170117,8 @@ XRT_API bool xrtX25519KeyPair(void* pPrivate, void* pPublic)
 	 defined(_M_X64) || defined(_M_AMD64)) && \
 	(defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER))
 	#define XRT_AES_X86_HARDWARE 1
-	#if defined(_MSC_VER)
+	/* clang-cl 同样定义 _MSC_VER，但需要显式 target 特性。 */
+	#if defined(_MSC_VER) && !defined(__clang__)
 		#include <intrin.h>
 		#include <wmmintrin.h>
 		#define XRT_AES_TARGET
@@ -167720,7 +170172,7 @@ static uint32 __xrtAesHardwareFeatures(void)
 	uint32 iFeatures = 0;
 
 	#if XRT_AES_X86_HARDWARE
-		#if defined(_MSC_VER)
+		#if defined(_MSC_VER) && !defined(__clang__) && !defined(__clang__)
 			int Cpu[4];
 
 			__cpuid(Cpu, 0);
@@ -167790,7 +170242,7 @@ static uint32 __xrtAesHardwareFeaturesCached(void)
 		static uint32 iCached = UINT32_MAX;
 	#endif
 
-	#if defined(_MSC_VER) && XRT_AES_X86_HARDWARE
+	#if defined(_MSC_VER) && !defined(__clang__) && XRT_AES_X86_HARDWARE
 		iFeatures = (uint32)_InterlockedCompareExchange(
 			(volatile long*)&iCached,
 			(long)UINT32_MAX,
@@ -168845,7 +171297,7 @@ XRT_API bool xrtAesDecrypt(
 	#define XRT_GHASH_X86_HARDWARE 1
 	#include <tmmintrin.h>
 	#include <wmmintrin.h>
-	#if defined(_MSC_VER)
+	#if defined(_MSC_VER) && !defined(__clang__)
 		#define XRT_GHASH_TARGET
 	#else
 		#define XRT_GHASH_TARGET __attribute__((target("ssse3,pclmul")))
@@ -172998,6 +175450,7 @@ bool __xrtHttp1WriteOutputValid(
 )
 {
 	xhttpfield Field;
+	size_t iCheckSize;
 	size_t i;
 
 	if ( !__xrtRangeValid(pSize, sizeof(iRequired)) ) {
@@ -173044,13 +175497,14 @@ bool __xrtHttp1WriteOutputValid(
 		memcpy(pSize, &iRequired, sizeof(iRequired));
 		return true;
 	}
-	if ( !__xrtRangeValid(pOutput, iRequired) ||
+	iCheckSize = __xrtOutputCheckSize(iRequired, iCapacity);
+	if ( !__xrtRangeValid(pOutput, iCheckSize) ||
 		__xrtRangesOverlap(
-			pOutput, iRequired,
+			pOutput, iCheckSize,
 			pSize, sizeof(iRequired)
 		) || __xrtHttpFieldArrayOverlap(
 			pFields, iFieldCount,
-			pOutput, iRequired
+			pOutput, iCheckSize
 		) ) {
 		(void)__xrtHttp1Fail(
 			NULL, NULL, XHTTP1_ERROR_ARGUMENT, 0, 0,
@@ -178250,6 +180704,17 @@ XRT_API void xrtHttpDecodeConfigInit(xhttpdecodeconfig* pConfig)
 
 
 
+/* 初始化有明确明文预算的安全默认配置。 */
+XRT_API void xrtHttpDecodeConfigInitSafe(xhttpdecodeconfig* pConfig)
+{
+	xrtHttpDecodeConfigInit(pConfig);
+	if ( pConfig != NULL ) {
+		pConfig->OutputLimit = XHTTP_DECODE_OUTPUT_SAFE_DEFAULT;
+	}
+}
+
+
+
 /* 创建可跨消息复用的 HTTP 正文解码器。 */
 XRT_API xhttpdecode* xrtHttpDecodeCreate(
 	const xhttpfield* pFields,
@@ -179604,25 +182069,24 @@ XRT_API bool xrtHttpTargetAuthority(
 
 #define XRT_HTTP1_BODY_CHUNK_SIZE_START UINT32_C(1)
 #define XRT_HTTP1_BODY_CHUNK_SIZE UINT32_C(2)
-#define XRT_HTTP1_BODY_CHUNK_SIZE_BWS UINT32_C(3)
-#define XRT_HTTP1_BODY_CHUNK_EXT_NAME_START UINT32_C(4)
-#define XRT_HTTP1_BODY_CHUNK_EXT_NAME UINT32_C(5)
-#define XRT_HTTP1_BODY_CHUNK_EXT_AFTER_NAME UINT32_C(6)
-#define XRT_HTTP1_BODY_CHUNK_EXT_VALUE_START UINT32_C(7)
-#define XRT_HTTP1_BODY_CHUNK_EXT_TOKEN UINT32_C(8)
-#define XRT_HTTP1_BODY_CHUNK_EXT_QUOTED UINT32_C(9)
-#define XRT_HTTP1_BODY_CHUNK_EXT_ESCAPE UINT32_C(10)
-#define XRT_HTTP1_BODY_CHUNK_EXT_AFTER_VALUE UINT32_C(11)
-#define XRT_HTTP1_BODY_CHUNK_EXT_VALUE_BWS UINT32_C(12)
-#define XRT_HTTP1_BODY_CHUNK_LINE_LF UINT32_C(13)
-#define XRT_HTTP1_BODY_CHUNK_DATA UINT32_C(14)
-#define XRT_HTTP1_BODY_CHUNK_DATA_CR UINT32_C(15)
-#define XRT_HTTP1_BODY_CHUNK_DATA_LF UINT32_C(16)
-#define XRT_HTTP1_BODY_TRAILERS UINT32_C(17)
-#define XRT_HTTP1_BODY_FIXED_DATA UINT32_C(18)
-#define XRT_HTTP1_BODY_CLOSE_DATA UINT32_C(19)
-#define XRT_HTTP1_BODY_COMPLETE UINT32_C(20)
-#define XRT_HTTP1_BODY_FAILED UINT32_C(21)
+#define XRT_HTTP1_BODY_CHUNK_EXT_NAME_START UINT32_C(3)
+#define XRT_HTTP1_BODY_CHUNK_EXT_NAME UINT32_C(4)
+#define XRT_HTTP1_BODY_CHUNK_EXT_AFTER_NAME UINT32_C(5)
+#define XRT_HTTP1_BODY_CHUNK_EXT_VALUE_START UINT32_C(6)
+#define XRT_HTTP1_BODY_CHUNK_EXT_TOKEN UINT32_C(7)
+#define XRT_HTTP1_BODY_CHUNK_EXT_QUOTED UINT32_C(8)
+#define XRT_HTTP1_BODY_CHUNK_EXT_ESCAPE UINT32_C(9)
+#define XRT_HTTP1_BODY_CHUNK_EXT_AFTER_VALUE UINT32_C(10)
+#define XRT_HTTP1_BODY_CHUNK_EXT_VALUE_BWS UINT32_C(11)
+#define XRT_HTTP1_BODY_CHUNK_LINE_LF UINT32_C(12)
+#define XRT_HTTP1_BODY_CHUNK_DATA UINT32_C(13)
+#define XRT_HTTP1_BODY_CHUNK_DATA_CR UINT32_C(14)
+#define XRT_HTTP1_BODY_CHUNK_DATA_LF UINT32_C(15)
+#define XRT_HTTP1_BODY_TRAILERS UINT32_C(16)
+#define XRT_HTTP1_BODY_FIXED_DATA UINT32_C(17)
+#define XRT_HTTP1_BODY_CLOSE_DATA UINT32_C(18)
+#define XRT_HTTP1_BODY_COMPLETE UINT32_C(19)
+#define XRT_HTTP1_BODY_FAILED UINT32_C(20)
 
 #define XRT_HTTP1_DEFAULT_CHUNK_LINE UINT32_C(8192)
 #define XRT_HTTP1_DEFAULT_TRAILER UINT32_C(16384)
@@ -179850,27 +182314,11 @@ static bool __xrtHttp1ChunkSyntax(
 					(pBody->ChunkSize * UINT64_C(16)) + (uint64)iHex;
 				return true;
 			}
-			if ( (iByte == (unsigned char)' ') ||
-				(iByte == (unsigned char)'\t') ) {
-				pBody->State = XRT_HTTP1_BODY_CHUNK_SIZE_BWS;
-				return true;
-			}
 			if ( iByte == (unsigned char)';' ) {
 				pBody->State = XRT_HTTP1_BODY_CHUNK_EXT_NAME_START;
 				return true;
 			}
 			if ( __xrtHttp1ChunkLineEnd(pBody, iByte) ) {
-				return true;
-			}
-			break;
-
-		case XRT_HTTP1_BODY_CHUNK_SIZE_BWS:
-			if ( (iByte == (unsigned char)' ') ||
-				(iByte == (unsigned char)'\t') ) {
-				return true;
-			}
-			if ( iByte == (unsigned char)';' ) {
-				pBody->State = XRT_HTTP1_BODY_CHUNK_EXT_NAME_START;
 				return true;
 			}
 			break;
@@ -180010,13 +182458,13 @@ static bool __xrtHttp1ChunkSyntax(
 	(void)__xrtHttp1BodyFail(
 		pBody,
 		pError,
-		(iState <= XRT_HTTP1_BODY_CHUNK_SIZE_BWS) ?
+		(iState <= XRT_HTTP1_BODY_CHUNK_SIZE) ?
 			XHTTP1_ERROR_CHUNK_SIZE : XHTTP1_ERROR_CHUNK_EXTENSION,
 		pBody->WireBytes,
 		0,
 		XERR_PROTOCOL,
 		"read-http1-body",
-		(iState <= XRT_HTTP1_BODY_CHUNK_SIZE_BWS) ?
+		(iState <= XRT_HTTP1_BODY_CHUNK_SIZE) ?
 			"chunk size line is invalid" : "chunk extension is invalid"
 	);
 	return false;
@@ -184463,6 +186911,70 @@ XRT_API bool xrtRandShuffle(ptr pData, size_t iCount, size_t iItemSize)
 	xrng* pRng = __xrtRandCurrent();
 
 	return pRng != NULL && xrtRngShuffle(pRng, pData, iCount, iItemSize);
+}
+
+
+
+/* 保持旧默认随机状态的兼容别名，供新代码显式选择非安全随机。 */
+XRT_API void xrtFastRandSeed(uint64 iSeed, uint64 iStream)
+{
+	xrtRandSeed(iSeed, iStream);
+}
+
+
+
+XRT_API uint32 xrtFastRand32(void)
+{
+	return xrtRand32();
+}
+
+
+
+XRT_API uint64 xrtFastRand64(void)
+{
+	return xrtRand64();
+}
+
+
+
+XRT_API bool xrtFastRandBytes(ptr pData, size_t iSize)
+{
+	return xrtRandBytes(pData, iSize);
+}
+
+
+
+XRT_API uint64 xrtFastRandBelow(uint64 iBound)
+{
+	return xrtRandBelow(iBound);
+}
+
+
+
+XRT_API int64 xrtFastRandRange(int64 iMin, int64 iMax)
+{
+	return xrtRandRange(iMin, iMax);
+}
+
+
+
+XRT_API int64 xrtFastRandRangeClosed(int64 iMin, int64 iMax)
+{
+	return xrtRandRangeClosed(iMin, iMax);
+}
+
+
+
+XRT_API double xrtFastRandReal(void)
+{
+	return xrtRandReal();
+}
+
+
+
+XRT_API bool xrtFastRandShuffle(ptr pData, size_t iCount, size_t iItemSize)
+{
+	return xrtRandShuffle(pData, iCount, iItemSize);
 }
 
 #endif
@@ -190387,11 +192899,44 @@ static bool __xrtX509CrlPolicyConfigValid(const xx509crlconfig* pConfig)
 {
 	const uint32 iKnown = X509_CRL_REQUIRE_NEXT_UPDATE |
 		X509_CRL_REQUIRE_NUMBER | X509_CRL_REQUIRE_AUTHORITY_KEY_ID |
-		X509_CRL_REQUIRE_KEY_IDENTIFIER | X509_CRL_REQUIRE_KEY_USAGE;
+		X509_CRL_REQUIRE_KEY_IDENTIFIER | X509_CRL_REQUIRE_KEY_USAGE |
+		X509_CRL_ALLOW_SHA1;
 
 	return (pConfig != NULL) && ((pConfig->Flags & ~iKnown) == 0) &&
 		(((pConfig->Flags & X509_CRL_REQUIRE_KEY_IDENTIFIER) == 0) ||
 		 ((pConfig->Flags & X509_CRL_REQUIRE_AUTHORITY_KEY_ID) != 0));
+}
+
+
+
+/* 在密码验签前执行 CRL 级签名算法强度策略。 */
+static bool __xrtX509CrlPolicySignature(
+	const xx509crl* pCrl,
+	const xx509crlconfig* pConfig
+)
+{
+	xx509signature Signature;
+	xx509result Result = xrtX509SignatureParse(
+		&pCrl->SignatureAlgorithm,
+		&Signature
+	);
+
+	if ( Result != X509_VALUE ) {
+		return __xrtX509CrlPolicyError(
+			X509_ERROR_SIGNATURE,
+			"CRL uses an unsupported signature algorithm",
+			Result == X509_ERROR ? xrtGetError() : NULL
+		);
+	}
+	if ( (Signature.Hash == X509_HASH_SHA1) &&
+		((pConfig->Flags & X509_CRL_ALLOW_SHA1) == 0) ) {
+		return __xrtX509CrlPolicyError(
+			X509_ERROR_SIGNATURE,
+			"CRL uses SHA-1 without explicit legacy policy",
+			NULL
+		);
+	}
+	return true;
 }
 
 
@@ -190895,6 +193440,9 @@ XRT_API bool xrtX509CrlValidate(
 	}
 	Result = xrtX509CrlFreshest(pCrl, &Freshest);
 	if ( Result == X509_ERROR ) {
+		return false;
+	}
+	if ( !__xrtX509CrlPolicySignature(pCrl, pConfig) ) {
 		return false;
 	}
 	if ( !xrtX509CrlVerify(pCrl, pIssuer) ) {
@@ -196971,6 +199519,23 @@ static bool __xrtDirFlags(uint32 iFlags)
 
 #if defined(_WIN32) || defined(_WIN64)
 
+/* FindFirstFileW 的目录部分必须是字面路径，只允许扩展前缀自带的问号。 */
+static bool __xrtDirWindowsLiteralPath(cstr sPath)
+{
+	size_t iPosition = ((sPath[0] == '\\') && (sPath[1] == '\\') &&
+		(sPath[2] == '?') && (sPath[3] == '\\')) ? 4u : 0u;
+
+	for ( ; sPath[iPosition] != '\0'; iPosition++ ) {
+		if ( (sPath[iPosition] == '*') || (sPath[iPosition] == '?') ) {
+			__xrtErrorSetInvalidArgument();
+			return false;
+		}
+	}
+	return true;
+}
+
+
+
 /* 打开 Windows 目录枚举句柄，并保留首条结果。 */
 static bool __xrtDirOpenNative(xdir Dir)
 {
@@ -197253,6 +199818,11 @@ XRT_API xdir xrtDirOpen(cstr sPath, uint32 iFlags)
 		}
 		return NULL;
 	}
+	#if defined(_WIN32) || defined(_WIN64)
+		if ( !__xrtDirWindowsLiteralPath(sPath) ) {
+			return NULL;
+		}
+	#endif
 	if ( !xrtPathStat(sPath, true, &Info) ) {
 		return NULL;
 	}
@@ -197764,6 +200334,26 @@ void __xrtX509StoreSystemFailure(cstr sMessage)
 
 
 
+/* 区分可跳过的存量证书兼容问题与必须终止导入的基础设施失败。 */
+bool __xrtX509StoreSystemCanSkip(const xerror* pError)
+{
+	while ( pError != NULL ) {
+		cstr sDomain = xrtErrorDomain(pError);
+		int32 iCode = xrtErrorCode(pError);
+		xerrkind Kind = xrtErrorKind(pError);
+
+		if ( (sDomain != NULL) && (strcmp(sDomain, "xrt.x509") == 0) &&
+			(iCode != X509_ERROR_TRUST_STORE) &&
+			(iCode != X509_ERROR_TRUST_STORE_SYSTEM) ) {
+			return (Kind == XERR_PROTOCOL) || (Kind == XERR_UNSUPPORTED);
+		}
+		pError = xrtErrorCause(pError);
+	}
+	return false;
+}
+
+
+
 /* 原子导入当前平台可见的系统信任锚。 */
 XRT_API bool xrtX509StoreAddSystem(xx509store* pStore, size_t* pAdded)
 {
@@ -197956,12 +200546,18 @@ static bool __xrtX509StoreWindowsLocation(
 			(size_t)pCertificate->cbCertEncoded
 		);
 		if ( Result == X509_ERROR ) {
-			pApi->Free(pCertificate);
-			(void)pApi->Close(Store, 0);
-			__xrtX509StoreSystemFailure(
-				"Windows ROOT certificate import failed"
-			);
-			return false;
+			/* 系统库允许存在 XRT 严格策略不接受的单张存量证书，
+			   但资源、状态和基础设施错误必须终止事务。 */
+			if ( !__xrtX509StoreSystemCanSkip(xrtGetError()) ) {
+				pApi->Free(pCertificate);
+				(void)pApi->Close(Store, 0);
+				__xrtX509StoreSystemFailure(
+					"Windows ROOT certificate import failed"
+				);
+				return false;
+			}
+			xrtClearError();
+			continue;
 		}
 		*pFound = true;
 	}
@@ -198156,6 +200752,7 @@ bool __xrtX509StoreSystemLoad(xx509store* pStore)
 	CFArrayRef Anchors = NULL;
 	CFIndex iCount;
 	OSStatus Status;
+	bool bFound = false;
 
 	if ( !__xrtX509StoreMacApi(&Api) ) {
 		return false;
@@ -198233,16 +200830,29 @@ bool __xrtX509StoreSystemLoad(xx509store* pStore)
 		);
 		Api.Release(Data);
 		if ( Result == X509_ERROR ) {
-			Api.Release(Anchors);
-			__xrtX509StoreMacClose(&Api);
-			__xrtX509StoreSystemFailure(
-				"macOS system anchor import failed"
-			);
-			return false;
+			/* 与 Windows 一致，只跳过证书自身的严格解析或算法策略错误。 */
+			if ( !__xrtX509StoreSystemCanSkip(xrtGetError()) ) {
+				Api.Release(Anchors);
+				__xrtX509StoreMacClose(&Api);
+				__xrtX509StoreSystemFailure(
+					"macOS system anchor import failed"
+				);
+				return false;
+			}
+			xrtClearError();
+			continue;
 		}
+		bFound = true;
 	}
 	Api.Release(Anchors);
 	__xrtX509StoreMacClose(&Api);
+	if ( !bFound ) {
+		__xrtX509StoreSystemError(
+			XERR_NOT_FOUND, 0,
+			"macOS system anchor set contains no usable certificates", NULL
+		);
+		return false;
+	}
 	return true;
 }
 
@@ -198870,15 +201480,25 @@ XRT_API bool xrtOnce(xonce* pOnce, xonceproc pProc, ptr pData)
 
 #if defined(XRT_FEATURE_THREAD_KEY)
 
-/* 动态键只保存平台索引和用户值析构过程。 */
+/* 动态键由调用方和每个非空线程槽共同持有。 */
 struct xthreadkey {
 	xthreadkeyproc Destroy;
+	volatile int32 References;
+	volatile int32 Closed;
 	#if defined(_WIN32) || defined(_WIN64)
 		DWORD Index;
 	#else
 		pthread_key_t Key;
 	#endif
 };
+
+
+
+/* 返回键是否已经进入逻辑关闭状态。 */
+static bool __xrtThreadKeyClosed(const xthreadkey* pKey)
+{
+	return __xrtAtomicRefLoad(&pKey->Closed) != 0;
+}
 
 
 
@@ -199113,6 +201733,44 @@ static bool __xrtThreadKeySlotSet(xthreadkey* pKey, xthreadkeyslot* pSlot)
 
 
 
+/* 删除不再被任何调用方或线程槽引用的平台键。 */
+static bool __xrtThreadKeyRelease(xthreadkey* pKey)
+{
+	int32 iReferences = xrtRefRelease(&pKey->References);
+	bool bResult = true;
+
+	if ( iReferences != 0 ) {
+		return iReferences > 0;
+	}
+	#if defined(_WIN32) || defined(_WIN64)
+		if ( !TlsFree(pKey->Index) ) {
+			__xrtThreadKeySetSystemError(
+				"destroy",
+				(int)GetLastError(),
+				"thread-local key destruction failed"
+			);
+			bResult = false;
+		}
+	#else
+		{
+			int iResult = pthread_key_delete(pKey->Key);
+
+			if ( iResult != 0 ) {
+				__xrtThreadKeySetSystemError(
+					"destroy",
+					iResult,
+					"thread-local key destruction failed"
+				);
+				bResult = false;
+			}
+		}
+	#endif
+	xrtFree(pKey);
+	return bResult;
+}
+
+
+
 /* 从当前线程清理链移除一个值槽。 */
 static void __xrtThreadKeySlotUnlink(xthreadkeyslot* pSlot)
 {
@@ -199185,14 +201843,16 @@ static void __xrtThreadKeyStateClear(xthreadkeystate* pState)
 	pState->Head = NULL;
 	while ( pSlot != NULL ) {
 		xthreadkeyslot* pNext = pSlot->Next;
-		xthreadkeyproc pDestroy = pSlot->Key->Destroy;
+		xthreadkey* pKey = pSlot->Key;
+		xthreadkeyproc pDestroy = pKey->Destroy;
 		ptr pValue = pSlot->Value;
 
-		(void)__xrtThreadKeySlotSet(pSlot->Key, NULL);
+		(void)__xrtThreadKeySlotSet(pKey, NULL);
 		xrtFree(pSlot);
 		if ( (pDestroy != NULL) && (pValue != NULL) ) {
 			pDestroy(pValue);
 		}
+		(void)__xrtThreadKeyRelease(pKey);
 		pSlot = pNext;
 	}
 	xrtFree(pState);
@@ -199219,6 +201879,8 @@ XRT_API xthreadkey* xrtThreadKeyCreate(xthreadkeyproc pDestroy)
 		return NULL;
 	}
 	pKey->Destroy = pDestroy;
+	pKey->References = 1;
+	pKey->Closed = 0;
 	#if defined(_WIN32) || defined(_WIN64)
 		pKey->Index = TlsAlloc();
 		if ( pKey->Index == TLS_OUT_OF_INDEXES ) {
@@ -199252,7 +201914,7 @@ XRT_API xthreadkey* xrtThreadKeyCreate(xthreadkeyproc pDestroy)
 
 
 
-/* 销毁动态键，并析构当前线程仍由它拥有的值。 */
+/* 关闭动态键，并延迟到最后一个线程槽退出后释放平台资源。 */
 XRT_API bool xrtThreadKeyDestroy(xthreadkey* pKey)
 {
 	xthreadkeyslot* pSlot;
@@ -199262,44 +201924,33 @@ XRT_API bool xrtThreadKeyDestroy(xthreadkey* pKey)
 	if ( pKey == NULL ) {
 		return true;
 	}
+	if ( __xrtThreadKeyClosed(pKey) ) {
+		__xrtErrorSetInvalidState();
+		return false;
+	}
 	pSlot = __xrtThreadKeySlot(pKey);
 	pDestroy = pKey->Destroy;
 	pValue = pSlot != NULL ? pSlot->Value : NULL;
-	#if defined(_WIN32) || defined(_WIN64)
-		if ( !TlsFree(pKey->Index) ) {
-			__xrtThreadKeySetSystemError(
-				"destroy",
-				(int)GetLastError(),
-				"thread-local key destruction failed"
-			);
-			return false;
-		}
-	#else
-		{
-			int iResult = pthread_key_delete(pKey->Key);
-
-			if ( iResult != 0 ) {
-				__xrtThreadKeySetSystemError(
-					"destroy",
-					iResult,
-					"thread-local key destruction failed"
-				);
-				return false;
-			}
-		}
-	#endif
 	if ( pSlot != NULL ) {
 		xthreadkeystate* pState = pSlot->State;
 
+		if ( !__xrtThreadKeySlotSet(pKey, NULL) ) {
+			return false;
+		}
+		(void)__xrtAtomicRefCompareExchange(&pKey->Closed, 1, 0);
 		__xrtThreadKeySlotUnlink(pSlot);
 		xrtFree(pSlot);
 		__xrtThreadKeyStateDropEmpty(pState);
+	} else {
+		(void)__xrtAtomicRefCompareExchange(&pKey->Closed, 1, 0);
 	}
-	xrtFree(pKey);
 	if ( (pDestroy != NULL) && (pValue != NULL) ) {
 		pDestroy(pValue);
 	}
-	return true;
+	if ( pSlot != NULL ) {
+		(void)__xrtThreadKeyRelease(pKey);
+	}
+	return __xrtThreadKeyRelease(pKey);
 }
 
 
@@ -199311,6 +201962,10 @@ XRT_API ptr xrtThreadKeyGet(const xthreadkey* pKey)
 
 	if ( pKey == NULL ) {
 		__xrtErrorSetInvalidArgument();
+		return NULL;
+	}
+	if ( __xrtThreadKeyClosed(pKey) ) {
+		__xrtErrorSetInvalidState();
 		return NULL;
 	}
 	pSlot = __xrtThreadKeySlot(pKey);
@@ -199329,6 +201984,10 @@ XRT_API bool xrtThreadKeySet(xthreadkey* pKey, ptr pValue)
 		__xrtErrorSetInvalidArgument();
 		return false;
 	}
+	if ( __xrtThreadKeyClosed(pKey) ) {
+		__xrtErrorSetInvalidState();
+		return false;
+	}
 	pSlot = __xrtThreadKeySlot(pKey);
 	if ( pSlot != NULL ) {
 		xthreadkeystate* pState = pSlot->State;
@@ -199344,6 +202003,7 @@ XRT_API bool xrtThreadKeySet(xthreadkey* pKey, ptr pValue)
 			__xrtThreadKeySlotUnlink(pSlot);
 			xrtFree(pSlot);
 			__xrtThreadKeyStateDropEmpty(pState);
+			(void)__xrtThreadKeyRelease(pKey);
 		} else {
 			pSlot->Value = pValue;
 		}
@@ -199373,6 +202033,12 @@ XRT_API bool xrtThreadKeySet(xthreadkey* pKey, ptr pValue)
 		pSlot->State = pState;
 		pSlot->Key = pKey;
 		pSlot->Value = pValue;
+		if ( xrtRefRetain(&pKey->References) < 0 ) {
+			xrtFree(pSlot);
+			__xrtThreadKeyStateDropEmpty(pState);
+			__xrtErrorSetInvalidState();
+			return false;
+		}
 		pSlot->Next = pState->Head;
 		if ( pState->Head != NULL ) {
 			pState->Head->Previous = pSlot;
@@ -199382,6 +202048,7 @@ XRT_API bool xrtThreadKeySet(xthreadkey* pKey, ptr pValue)
 			__xrtThreadKeySlotUnlink(pSlot);
 			xrtFree(pSlot);
 			__xrtThreadKeyStateDropEmpty(pState);
+			(void)__xrtThreadKeyRelease(pKey);
 			return false;
 		}
 	}
@@ -199401,6 +202068,10 @@ XRT_API ptr xrtThreadKeyTake(xthreadkey* pKey)
 		__xrtErrorSetInvalidArgument();
 		return NULL;
 	}
+	if ( __xrtThreadKeyClosed(pKey) ) {
+		__xrtErrorSetInvalidState();
+		return NULL;
+	}
 	pSlot = __xrtThreadKeySlot(pKey);
 	if ( pSlot == NULL ) {
 		return NULL;
@@ -199413,6 +202084,7 @@ XRT_API ptr xrtThreadKeyTake(xthreadkey* pKey)
 	__xrtThreadKeySlotUnlink(pSlot);
 	xrtFree(pSlot);
 	__xrtThreadKeyStateDropEmpty(pState);
+	(void)__xrtThreadKeyRelease(pKey);
 	return pValue;
 }
 
@@ -206364,6 +209036,7 @@ static bool __xrtNetWindowsMeasure(PIP_ADAPTER_ADDRESSES pAdapters,
 	for ( pAdapter = pAdapters; pAdapter != NULL; pAdapter = pAdapter->Next ) {
 		PIP_ADAPTER_UNICAST_ADDRESS pAddress;
 		size_t iDisplaySize;
+		size_t iHardwareSize;
 		size_t iNameSize;
 
 		if ( (pAdapter->AdapterName == NULL) ||
@@ -206371,6 +209044,10 @@ static bool __xrtNetWindowsMeasure(PIP_ADAPTER_ADDRESSES pAdapters,
 			continue;
 		}
 		iNameSize = strlen(pAdapter->AdapterName);
+		iHardwareSize = (size_t)pAdapter->PhysicalAddressLength;
+		if ( iHardwareSize > sizeof(pAdapter->PhysicalAddress) ) {
+			iHardwareSize = sizeof(pAdapter->PhysicalAddress);
+		}
 		if ( !__xrtNetWindowsTextSize(
 			pAdapter->FriendlyName, &iDisplaySize
 		) || !__xrtNetInterfaceSizeAdd(
@@ -206379,7 +209056,7 @@ static bool __xrtNetWindowsMeasure(PIP_ADAPTER_ADDRESSES pAdapters,
 			&pMeasure->Bytes, iDisplaySize + 1u
 		)) || !__xrtNetInterfaceSizeAdd(
 			&pMeasure->Bytes,
-			(size_t)pAdapter->PhysicalAddressLength
+			iHardwareSize
 		) ) {
 			return false;
 		}
@@ -208604,6 +211281,14 @@ static void __xrtNetResolverCachePut(
 	pEntry->Addresses = pAddresses != NULL ?
 		xrtNetAddrListRef(pAddresses) : NULL;
 	pEntry->Error = pError != NULL ? xrtErrorRef(pError) : NULL;
+	if ( ((pAddresses != NULL) && (pEntry->Addresses == NULL)) ||
+		((pError != NULL) && (pEntry->Error == NULL)) ) {
+		xrtNetAddrListDestroy(pEntry->Addresses);
+		xrtErrorFree(pEntry->Error);
+		xrtFree(pEntry);
+		xrtClearError();
+		return;
+	}
 
 	if ( pResolver->CachedResults >= pResolver->Config.CacheEntries ) {
 		__xrtNetResolverCacheRemove(pResolver, pResolver->LRUTail);
@@ -209413,6 +212098,7 @@ XRT_API const xerror* xrtNetResolveOpError(
 /* Resolver Future 桥接一个底层解析操作与一个公开 Future。 */
 typedef struct xrt_net_resolver_future {
 	xfuturebridge Bridge;
+	volatile int32 References;
 	xnetresolveop* Operation;
 } xrt_net_resolver_future;
 
@@ -209482,7 +212168,9 @@ static void __xrtNetResolverFutureDone(
 		}
 	}
 	xrtNetResolveOpDestroy(pHeld);
-	xrtFree(pContext);
+	if ( xrtRefRelease(&pContext->References) == 0 ) {
+		xrtFree(pContext);
+	}
 	if ( !bReady ) {
 		xrtNetAddrListDestroy(pAddresses);
 	} else if ( (State == XNET_RESOLVE_RESOLVED) &&
@@ -209531,6 +212219,7 @@ XRT_API xfuture* xrtNetResolveAsync(
 		xrtFree(pContext);
 		return NULL;
 	}
+	pContext->References = 2;
 	pContext->Operation = xrtNetResolverResolve(
 		pResolver,
 		sHost,
@@ -209557,9 +212246,15 @@ XRT_API xfuture* xrtNetResolveAsync(
 			xrtSetError(pError);
 			xrtErrorFree(pError);
 		}
+		if ( xrtRefRelease(&pContext->References) == 0 ) {
+			xrtFree(pContext);
+		}
 		return NULL;
 	}
 	(void)xrtFutureBridgeReady(&pContext->Bridge);
+	if ( xrtRefRelease(&pContext->References) == 0 ) {
+		xrtFree(pContext);
+	}
 	return pFuture;
 }
 
@@ -212230,12 +214925,14 @@ static void __xrtNetDialDetachResolve(xnetdial* pDial)
 	}
 	xrtNetResolveOpDestroy(pDial->Resolve);
 	pDial->Resolve = NULL;
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pDial->Worker,
 		&pDial->ResolveCommand,
 		__xrtNetDialResolveTask,
 		pDial
-	);
+	) ) {
+		__xrtNetDialResolveTask(pDial->Worker, pDial);
+	}
 }
 
 
@@ -212463,6 +215160,7 @@ static bool __xrtNetDialAttemptOpen(xnetstream* pStream, ptr pData)
 			XNET_RESULT_ERROR
 		);
 		pDial->Stopping = true;
+		__xrtNetDialRejectOthers(pDial, pAttempt);
 		__xrtNetDialFinish(
 			pDial,
 			XNET_RESULT_ERROR,
@@ -213107,12 +215805,14 @@ static void __xrtNetDialResolvedPost(xnetresolveop* pOperation, ptr pData)
 			xrtNetResolveOpError(pOperation)
 		);
 	}
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pDial->Worker,
 		&pDial->ResolveCommand,
 		__xrtNetDialResolveTask,
 		pDial
-	);
+	) ) {
+		__xrtNetDialResolveTask(pDial->Worker, pDial);
+	}
 }
 
 
@@ -213267,12 +215967,14 @@ XRT_API xnetdial* xrtNetDial(
 		xrtNetDialDestroy(pDial);
 		return NULL;
 	}
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pDial->Worker,
 		&pDial->StartCommand,
 		__xrtNetDialStartTask,
 		pDial
-	);
+	) ) {
+		__xrtNetDialStartTask(pDial->Worker, pDial);
+	}
 	return pDial;
 }
 
@@ -213338,12 +216040,27 @@ XRT_API bool xrtNetDialCancel(xnetdial* pDial)
 		);
 		return false;
 	}
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pDial->Worker,
 		&pDial->CancelCommand,
 		__xrtNetDialCancelTask,
 		pDial
-	);
+	) ) {
+		xrtAtomic32Store(
+			&pDial->CancelGate,
+			XRT_NET_DIAL_GATE_OPEN,
+			XMEMORY_RELEASE
+		);
+		__xrtNetDialResourceDrop(pDial);
+		__xrtNetSetError(
+			XERR_CLOSED,
+			XNET_ERROR_DIAL_CONNECT,
+			"cancel-dial",
+			"network worker shutdown is sealed",
+			0
+		);
+		return false;
+	}
 	return true;
 }
 
@@ -214489,14 +217206,25 @@ XRT_API bool xrtNetProxyDialCancel(xnetproxydial* pDial)
 		(void)xrtNetDialCancel(pTransportDial);
 	}
 	if ( xrtNetProxyDialRef(pDial) == NULL ) {
+		xrtAtomic32Store(&pDial->CancelGate, 0, XMEMORY_RELEASE);
 		return false;
 	}
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pDial->Worker,
 		&pDial->CancelCommand,
 		__xrtNetProxyDialCancelTask,
 		pDial
-	);
+	) ) {
+		xrtAtomic32Store(&pDial->CancelGate, 0, XMEMORY_RELEASE);
+		xrtNetProxyDialDestroy(pDial);
+		__xrtNetProxyDialSetError(
+			XERR_CLOSED,
+			XNET_ERROR_PROXY_CONNECT,
+			"cancel-proxy-dial",
+			"network worker shutdown is sealed"
+		);
+		return false;
+	}
 	return true;
 }
 
@@ -214669,9 +217397,14 @@ extern long syscall(long iNumber, ...);
 #define XRT_NET_URING_PROBE_COUNT 32u
 #define XRT_NET_URING_CONTROL_CANCEL UINT64_C(1)
 #define XRT_NET_URING_SPLICE_F_MOVE 1u
+#define XRT_NET_URING_PIPE_TARGET (1024u * 1024u)
 
 #if !defined(F_GETPIPE_SZ)
 	#define F_GETPIPE_SZ 1032
+#endif
+
+#if !defined(F_SETPIPE_SZ)
+	#define F_SETPIPE_SZ 1031
 #endif
 
 
@@ -214852,6 +217585,8 @@ struct __xrt_net_uring_operation {
 	bool OperationCompleted;
 	intptr_t File;
 	uint64 FileOffset;
+	size_t FileSize;
+	size_t FileBytes;
 	int PipeRead;
 	int PipeWrite;
 	size_t PipeBytes;
@@ -215644,6 +218379,8 @@ static bool __xrtNetUringPipeOpen(
 			return false;
 		}
 	}
+	/* 内核会按系统上限裁剪；权限或限额失败时继续使用默认容量。 */
+	(void)fcntl(Pipe[1], F_SETPIPE_SZ, XRT_NET_URING_PIPE_TARGET);
 	iCapacity = fcntl(Pipe[0], F_GETPIPE_SZ, 0);
 	if ( iCapacity <= 0 ) {
 		int iCode = (iCapacity < 0) ? errno : EIO;
@@ -215791,6 +218528,7 @@ static __xrt_net_uring_operation* __xrtNetUringOperationCreate(
 	pOperation->User = pSubmit->User;
 	pOperation->File = pSubmit->File;
 	pOperation->FileOffset = pSubmit->FileOffset;
+	pOperation->FileSize = pSubmit->FileSize;
 	pOperation->PipeRead = -1;
 	pOperation->PipeWrite = -1;
 	if ( pSubmit->Type == XNET_PORT_EVENT_SEND_FILE ) {
@@ -215812,8 +218550,7 @@ static __xrt_net_uring_operation* __xrtNetUringOperationCreate(
 			);
 			return NULL;
 		}
-		pOperation->Capacity = pSubmit->FileSize < iPipeCapacity ?
-			pSubmit->FileSize : iPipeCapacity;
+		pOperation->Capacity = iPipeCapacity;
 	}
 	pOperation->NativeAddressSize =
 		(socklen_t)sizeof(pOperation->NativeAddress);
@@ -216107,24 +218844,44 @@ static bool __xrtNetUringPrepare(
 			return true;
 
 		case XNET_PORT_EVENT_SEND_FILE:
+		{
+			size_t iRemaining;
+
+			if ( (pOperation->FileBytes > pOperation->FileSize) ||
+				(pOperation->PipeBytes >
+				 (pOperation->FileSize - pOperation->FileBytes)) ) {
+				return false;
+			}
 			pSQE->Opcode = XRT_NET_URING_OP_SPLICE;
 			pSQE->Offset = UINT64_MAX;
 			pSQE->ReadWriteFlags = XRT_NET_URING_SPLICE_F_MOVE;
 			if ( pOperation->FileOutput ) {
+				if ( (pOperation->PipeBytes == 0) ||
+					(pOperation->PipeBytes > (size_t)UINT32_MAX) ) {
+					return false;
+				}
 				pSQE->Fd = (int)pOperation->Socket->Native;
 				pSQE->Address = UINT64_MAX;
 				pSQE->Length = (uint32)pOperation->PipeBytes;
 				pSQE->Tail.SpliceFdIn = pOperation->PipeRead;
 			} else {
+				iRemaining = pOperation->FileSize -
+					pOperation->FileBytes;
+				if ( iRemaining == 0 ) {
+					return false;
+				}
 				pSQE->Fd = pOperation->PipeWrite;
 				pSQE->Address = pOperation->FileOffset;
-				pSQE->Length = pOperation->Capacity >
-					(size_t)UINT32_MAX ? UINT32_MAX :
-					(uint32)pOperation->Capacity;
+				if ( iRemaining > pOperation->Capacity ) {
+					iRemaining = pOperation->Capacity;
+				}
+				pSQE->Length = iRemaining > (size_t)UINT32_MAX ?
+					UINT32_MAX : (uint32)iRemaining;
 				pSQE->Tail.SpliceFdIn = (int32)pOperation->File;
 			}
 			/* splice_fd_in 位于 SQE 尾部稳定 UAPI 字段。 */
 			return true;
+		}
 
 		case XNET_PORT_EVENT_FILE_READ:
 			pSQE->Opcode = XRT_NET_URING_OP_READV;
@@ -216246,11 +219003,11 @@ static bool __xrtNetUringSubmit(
 
 
 
-/* 文件进入私有管道后，按实际字节数提交管道到 Socket 的第二阶段。 */
-static bool __xrtNetUringFileOutput(
+/* 在私有管道内持续推进完整文件区间，只向上层发布一次终态。 */
+static bool __xrtNetUringFileAdvance(
 	__xrt_net_uring_context* pContext,
 	__xrt_net_uring_operation* pOperation,
-	int32 iInput,
+	int32 iStage,
 	int32* pFinal
 )
 {
@@ -216259,27 +219016,59 @@ static bool __xrtNetUringFileOutput(
 	uint32 iSlot;
 	bool bConsumed;
 
-	if ( (pOperation->Type != XNET_PORT_EVENT_SEND_FILE) ||
-		 pOperation->FileOutput ) {
+	if ( pOperation->Type != XNET_PORT_EVENT_SEND_FILE ) {
+		return false;
+	}
+	if ( (pOperation->FileBytes > pOperation->FileSize) ||
+		(pOperation->PipeBytes >
+		 (pOperation->FileSize - pOperation->FileBytes)) ) {
+		*pFinal = pOperation->FileBytes != 0 ?
+			(int32)pOperation->FileBytes : -EIO;
 		return false;
 	}
 	if ( pOperation->CancelRequested ) {
-		*pFinal = -ECANCELED;
+		*pFinal = pOperation->FileBytes != 0 ?
+			(int32)pOperation->FileBytes : -ECANCELED;
 		return false;
 	}
-	if ( iInput <= 0 ) {
-		*pFinal = (iInput == 0) ? -EIO : iInput;
+	if ( iStage <= 0 ) {
+		*pFinal = pOperation->FileBytes != 0 ?
+			(int32)pOperation->FileBytes :
+			(iStage == 0 ? -EIO : iStage);
 		return false;
 	}
-	pOperation->PipeBytes = (size_t)iInput;
-	pOperation->FileOutput = true;
-	if ( pOperation->PipeWrite >= 0 ) {
-		(void)close(pOperation->PipeWrite);
-		pOperation->PipeWrite = -1;
+	if ( pOperation->FileOutput ) {
+		if ( (size_t)iStage > pOperation->PipeBytes ) {
+			*pFinal = pOperation->FileBytes != 0 ?
+				(int32)pOperation->FileBytes : -EIO;
+			return false;
+		}
+		pOperation->PipeBytes -= (size_t)iStage;
+		pOperation->FileBytes += (size_t)iStage;
+		if ( pOperation->PipeBytes == 0 ) {
+			pOperation->FileOutput = false;
+		}
+	} else {
+		if ( ((size_t)iStage > pOperation->Capacity) ||
+			((size_t)iStage >
+			 (pOperation->FileSize - pOperation->FileBytes)) ) {
+			*pFinal = pOperation->FileBytes != 0 ?
+				(int32)pOperation->FileBytes : -EIO;
+			return false;
+		}
+		pOperation->PipeBytes = (size_t)iStage;
+		pOperation->FileOffset += (uint64)(size_t)iStage;
+		pOperation->FileOutput = true;
+	}
+	if ( (pOperation->FileBytes == pOperation->FileSize) &&
+		(pOperation->PipeBytes == 0) ) {
+		*pFinal = (int32)pOperation->FileBytes;
+		return false;
 	}
 	pSQE = __xrtNetUringSQE(&pContext->Ring, &iTail, &iSlot);
 	if ( (pSQE == NULL) || !__xrtNetUringPrepare(pOperation, pSQE) ) {
-		*pFinal = -EAGAIN;
+		*pFinal = pOperation->FileBytes != 0 ?
+			(int32)pOperation->FileBytes : -EAGAIN;
 		return false;
 	}
 	__xrtNetUringSQECommit(&pContext->Ring, iTail, iSlot);
@@ -216290,7 +219079,8 @@ static bool __xrtNetUringFileOutput(
 		&bConsumed
 	) ) {
 		(void)bConsumed;
-		*pFinal = -errno;
+		*pFinal = pOperation->FileBytes != 0 ?
+			(int32)pOperation->FileBytes : -errno;
 		return false;
 	}
 	return true;
@@ -216608,7 +219398,7 @@ static bool __xrtNetUringDrain(
 				(__xrt_net_uring_operation*)(uintptr_t)pCQE->UserData;
 			int32 iResult = pCQE->Result;
 
-			if ( !bDiscard && __xrtNetUringFileOutput(
+			if ( !bDiscard && __xrtNetUringFileAdvance(
 				pContext,
 				pOperation,
 				iResult,
@@ -216774,13 +219564,15 @@ static xnetresult __xrtNetUringWait(
 				 !xrtDeadlineExpired(Deadline) ) {
 				continue;
 			}
-			return XNET_RESULT_TIMEOUT;
+			return iTimeout == 0 ?
+				XNET_RESULT_OK : XNET_RESULT_TIMEOUT;
 		}
 		if ( iResult < 0 ) {
 			if ( errno == EINTR ) {
 				if ( (Deadline != XRT_DEADLINE_NEVER) &&
 					 xrtDeadlineExpired(Deadline) ) {
-					return XNET_RESULT_TIMEOUT;
+					return iTimeout == 0 ?
+						XNET_RESULT_OK : XNET_RESULT_TIMEOUT;
 				}
 				continue;
 			}
@@ -218226,6 +221018,7 @@ typedef struct xrt_task_net_data {
 /* 延迟任务桥接 Engine Timer、任务作业与协作取消监听。 */
 typedef struct xrt_task_net_timer {
 	xfuturebridge Bridge;
+	volatile int32 References;
 	xrt_task_job* Job;
 	xnetengine* Engine;
 	uint64 Timer;
@@ -218399,7 +221192,9 @@ static void __xrtTaskNetTimerDone(
 		__xrtTaskNetReject(pJob);
 	}
 	xrtErrorFree(pError);
-	xrtFree(pTimer);
+	if ( xrtRefRelease(&pTimer->References) == 0 ) {
+		xrtFree(pTimer);
+	}
 }
 
 
@@ -218434,6 +221229,7 @@ static xfuture* __xrtTaskNetSchedule(
 	}
 	pTimer->Job = pJob;
 	pTimer->Engine = pEngine;
+	pTimer->References = 2;
 	(void)xrtFutureBridgeInit(&pTimer->Bridge, pJob->Promise);
 	pTimer->Timer = xrtNetEngineSchedule(
 		pEngine,
@@ -218461,9 +221257,15 @@ static xfuture* __xrtTaskNetSchedule(
 		} else {
 			__xrtErrorSetInternal();
 		}
+		if ( xrtRefRelease(&pTimer->References) == 0 ) {
+			xrtFree(pTimer);
+		}
 		return NULL;
 	}
 	(void)xrtFutureBridgeReady(&pTimer->Bridge);
+	if ( xrtRefRelease(&pTimer->References) == 0 ) {
+		xrtFree(pTimer);
+	}
 	return pFuture;
 }
 
@@ -220929,12 +223731,16 @@ static bool __xrtTlsStreamAsyncSchedule(xtlsstream* pStream)
 	}
 	xrtTlsStreamRef(pStream);
 	pStream->AsyncPosted = true;
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pTransport->Worker,
 		&pStream->AsyncCommand,
 		__xrtTlsStreamAsyncTask,
 		pStream
-	);
+	) ) {
+		pStream->AsyncPosted = false;
+		xrtTlsStreamDestroy(pStream);
+		return false;
+	}
 	return true;
 }
 
@@ -224144,6 +226950,7 @@ XRT_API bool xrtTlsDialTransportStats(
 /* TLS Dial Future 桥接一个受管 TLS Dial 与一个公开 Future。 */
 typedef struct xrt_tls_dial_future {
 	xfuturebridge Bridge;
+	volatile int32 References;
 	xtlsdial* Dial;
 } xrt_tls_dial_future;
 
@@ -224212,7 +227019,9 @@ static void __xrtTlsDialFutureDone(
 		pFailure = __xrtTlsDialFutureInvalidError();
 	}
 	xrtTlsDialDestroy(pHeld);
-	xrtFree(pContext);
+	if ( xrtRefRelease(&pContext->References) == 0 ) {
+		xrtFree(pContext);
+	}
 	if ( !bReady ) {
 		if ( pStream != NULL ) {
 			(void)xrtTlsStreamAbort(pStream);
@@ -224270,6 +227079,7 @@ XRT_API xfuture* xrtTlsDialAsync(
 		xrtFree(pContext);
 		return NULL;
 	}
+	pContext->References = 2;
 	pContext->Dial = xrtTlsDial(
 		pEngine,
 		pResolver,
@@ -224306,9 +227116,15 @@ XRT_API xfuture* xrtTlsDialAsync(
 			xrtSetError(pError);
 			xrtErrorFree(pError);
 		}
+		if ( xrtRefRelease(&pContext->References) == 0 ) {
+			xrtFree(pContext);
+		}
 		return NULL;
 	}
 	(void)xrtFutureBridgeReady(&pContext->Bridge);
+	if ( xrtRefRelease(&pContext->References) == 0 ) {
+		xrtFree(pContext);
+	}
 	return pFuture;
 }
 
@@ -224329,6 +227145,7 @@ XRT_API xfuture* xrtTlsDialAsync(
 /* TCP Dial Future 桥接一个底层 Dial 与一个公开 Future。 */
 typedef struct xrt_net_dial_future {
 	xfuturebridge Bridge;
+	volatile int32 References;
 	xnetdial* Dial;
 } xrt_net_dial_future;
 
@@ -224386,7 +227203,9 @@ static void __xrtNetDialFutureDone(
 		pFailure = xrtTakeError();
 	}
 	xrtNetDialDestroy(pHeld);
-	xrtFree(pContext);
+	if ( xrtRefRelease(&pContext->References) == 0 ) {
+		xrtFree(pContext);
+	}
 	if ( !bReady ) {
 		if ( pStream != NULL ) {
 			(void)xrtNetStreamAbort(pStream);
@@ -224443,6 +227262,7 @@ XRT_API xfuture* xrtNetDialAsync(
 		xrtFree(pContext);
 		return NULL;
 	}
+	pContext->References = 2;
 	pContext->Dial = xrtNetDial(
 		pEngine,
 		pResolver,
@@ -224473,9 +227293,15 @@ XRT_API xfuture* xrtNetDialAsync(
 			xrtSetError(pError);
 			xrtErrorFree(pError);
 		}
+		if ( xrtRefRelease(&pContext->References) == 0 ) {
+			xrtFree(pContext);
+		}
 		return NULL;
 	}
 	(void)xrtFutureBridgeReady(&pContext->Bridge);
+	if ( xrtRefRelease(&pContext->References) == 0 ) {
+		xrtFree(pContext);
+	}
 	return pFuture;
 }
 
@@ -225093,12 +227919,15 @@ static void __xrtNetStreamWaitSchedule(xnetstream* pStream)
 	}
 	pStream->WaitPosted = true;
 	(void)xrtNetStreamRef(pStream);
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pStream->Worker,
 		&pStream->WaitCommand,
 		__xrtNetStreamWaitTask,
 		pStream
-	);
+	) ) {
+		pStream->WaitPosted = false;
+		xrtNetStreamDestroy(pStream);
+	}
 }
 
 
@@ -227712,7 +230541,6 @@ static void __xrtNetUdpDriveWriteRun(xnetudp* pUdp)
 				return;
 			}
 			if ( (pSend != NULL) && pSend->Controlled ) {
-				size_t iSent = 0;
 				xnetresult SendResult = __xrtNetUdpSocketSend(
 					pUdp,
 					pSend,
@@ -228064,12 +230892,19 @@ static void __xrtNetUdpControlRequest(
 
 	if ( (iPrevious & XRT_NET_UDP_CONTROL_POSTED) == 0 ) {
 		xrtNetUdpRef(pUdp);
-		__xrtNetEnginePostInternal(
+		if ( !__xrtNetEnginePostInternal(
 			pUdp->Worker,
 			&pUdp->ControlCommand,
 			__xrtNetUdpControl,
 			pUdp
-		);
+		) ) {
+			(void)xrtAtomic32FetchAnd(
+				&pUdp->ControlRequests,
+				~XRT_NET_UDP_CONTROL_POSTED,
+				XMEMORY_ACQ_REL
+			);
+			xrtNetUdpDestroy(pUdp);
+		}
 	}
 }
 
@@ -228906,12 +231741,25 @@ XRT_API xnetudp* xrtNetUdpOpen(
 		return NULL;
 	}
 	xrtNetUdpRef(pUdp);
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pWorker,
 		&pUdp->ControlCommand,
 		__xrtNetUdpControl,
 		pUdp
-	);
+	) ) {
+		__xrtNetUdpSetError(
+			XERR_CLOSED,
+			XNET_ERROR_UDP_CREATE,
+			"open-udp",
+			"network worker shutdown is sealed"
+		);
+		__xrtNetUdpClosePreserveError(Socket);
+		pUdp->Socket = NULL;
+		xrtNetUdpDestroy(pUdp);
+		xrtNetUdpDestroy(pUdp);
+		xrtNetUdpDestroy(pUdp);
+		return NULL;
+	}
 	return pUdp;
 }
 
@@ -229902,6 +232750,7 @@ static xnetresult __xrtNetUdpSubmitSend(
 		while ( pHead != NULL ) {
 			__xrt_net_udp_send* pNext = pHead->Next;
 
+			/* 未受理失败保持 Take/Ref 数据的调用方所有权。 */
 			__xrtNetUdpDiscardSend(pHead, false);
 			pHead = pNext;
 		}
@@ -231067,12 +233916,15 @@ static void __xrtNetUdpWaitScheduleLocked(xnetudp* pUdp)
 	}
 	pUdp->WaitPosted = true;
 	(void)xrtNetUdpRef(pUdp);
-	__xrtNetEnginePostInternal(
+	if ( !__xrtNetEnginePostInternal(
 		pUdp->Worker,
 		&pUdp->WaitCommand,
 		__xrtNetUdpWaitTask,
 		pUdp
-	);
+	) ) {
+		pUdp->WaitPosted = false;
+		xrtNetUdpDestroy(pUdp);
+	}
 }
 
 
@@ -234016,7 +236868,7 @@ XRT_API bool xrtDateTimeParse(xstrview Text, xstrview Format, xdatetime* pDateTi
 XRT_API bool xrtTimeParse(xstrview Text, xstrview Format, xtime* pTime)
 {
 	xdatetime tDateTime;
-	xtime iResult;
+	xtime iResult = 0;
 
 	if ( pTime == NULL ) {
 		__xrtErrorSetInvalidArgument();
@@ -234127,7 +236979,7 @@ static bool __xrtTimeParseRFC3339Value(xstrview Text, xtime* pTime)
 	size_t iFractionDigits = 0;
 	int iValue;
 	int iMicrosecond = 0;
-	xtime iResult;
+	xtime iResult = 0;
 
 	memset(&tDateTime, 0, sizeof(tDateTime));
 	if ( !__xrtTimeParseDigits(Text, &iPosition, 4, &iValue) ) {
@@ -234199,7 +237051,7 @@ static bool __xrtTimeParseRFC3339Value(xstrview Text, xtime* pTime)
 /* 严格解析 RFC 3339。 */
 XRT_API bool xrtTimeParseRFC3339(xstrview Text, xtime* pTime)
 {
-	xtime iResult;
+	xtime iResult = 0;
 
 	if ( (pTime == NULL) || !__xrtTimeTextViewValid(Text) ) {
 		__xrtErrorSetInvalidArgument();
@@ -234284,7 +237136,7 @@ XRT_API str xrtTimeHTTPDate(xtime iTime)
 static bool __xrtTimeHTTPBuild(int iWeekday, int64 iYear, int iMonth, int iDay,
 	int iHour, int iMinute, int iSecond, xtime* pTime)
 {
-	xtime iResult;
+	xtime iResult = 0;
 	xdatetime tUTC;
 
 	memset(&tUTC, 0, sizeof(tUTC));
@@ -234454,7 +237306,7 @@ XRT_API bool xrtTimeTryParseHTTPDate(
 	xtime* pTime
 )
 {
-	xtime iResult;
+	xtime iResult = 0;
 	bool bParsed = false;
 
 	if ( !__xrtRangeValid(pTime, sizeof(*pTime)) ||
@@ -243878,6 +246730,7 @@ XRT_API size_t xrtPoolVisit(xpool* pPool, xpoolvisitor pVisitor, ptr pUserData)
 #define XRT_MEMPOOL_LARGE_EMPTY	0u
 #define XRT_MEMPOOL_LARGE_USED		1u
 #define XRT_MEMPOOL_LARGE_DELETED	2u
+#define XRT_MEMPOOL_PAGE_SORT_BATCH	64u
 
 
 
@@ -244156,27 +247009,61 @@ static bool __xrtMemPoolPageReserve(xmempool* pPool, size_t iNeed)
 
 
 
-/* 按用户区地址将页插入变长池全局索引。 */
+/* 比较两个页的用户区基址，供全局索引批量重建使用。 */
+static int __xrtMemPoolPageCompare(const void* pLeft, const void* pRight)
+{
+	const xpoolpage* pLeftPage = *(xpoolpage* const*)pLeft;
+	const xpoolpage* pRightPage = *(xpoolpage* const*)pRight;
+	uintptr_t iLeft = (uintptr_t)pLeftPage->Memory;
+	uintptr_t iRight = (uintptr_t)pRightPage->Memory;
+
+	return (iLeft > iRight) - (iLeft < iRight);
+}
+
+
+
+/* Pages 的有序前缀长度；末尾最多保留固定数量的未排序新页。 */
+static size_t __xrtMemPoolPageSortedCount(const xmempool* pPool)
+{
+	uint32 iPending = (pPool->Flags & XRT_MEMPOOL_FLAG_PAGE_PENDING_MASK) >>
+		XRT_MEMPOOL_FLAG_PAGE_PENDING_SHIFT;
+
+	return pPool->PageCount - (size_t)iPending;
+}
+
+
+
+/* 将未排序页数编码在内部 Flags 的高位，避免改变公开池对象布局。 */
+static void __xrtMemPoolPagePendingSet(xmempool* pPool, uint32 iPending)
+{
+	pPool->Flags = (pPool->Flags & ~XRT_MEMPOOL_FLAG_PAGE_PENDING_MASK) |
+		(iPending << XRT_MEMPOOL_FLAG_PAGE_PENDING_SHIFT);
+}
+
+
+
+/*
+	把新页先追加到一个有界乱序尾部；达到批量阈值才排序全部索引。
+	这避免了每次扩页都搬移已有指针，同时查找只额外线性检查很小的尾部。
+*/
 static void __xrtMemPoolPageInsert(xmempool* pPool, xpoolpage* pPage)
 {
-	size_t iPosition = 0;
-	uintptr_t iBase = (uintptr_t)pPage->Memory;
+	uint32 iPending = (pPool->Flags & XRT_MEMPOOL_FLAG_PAGE_PENDING_MASK) >>
+		XRT_MEMPOOL_FLAG_PAGE_PENDING_SHIFT;
 
-	while (
-		(iPosition < pPool->PageCount) &&
-		((uintptr_t)pPool->Pages[iPosition]->Memory < iBase)
-	) {
-		iPosition++;
-	}
-	if ( iPosition < pPool->PageCount ) {
-		memmove(
-			&pPool->Pages[iPosition + 1],
-			&pPool->Pages[iPosition],
-			(pPool->PageCount - iPosition) * sizeof(xpoolpage*)
-		);
-	}
-	pPool->Pages[iPosition] = pPage;
+	pPool->Pages[pPool->PageCount] = pPage;
 	pPool->PageCount++;
+	iPending++;
+	if ( iPending >= XRT_MEMPOOL_PAGE_SORT_BATCH ) {
+		qsort(
+			pPool->Pages,
+			pPool->PageCount,
+			sizeof(xpoolpage*),
+			__xrtMemPoolPageCompare
+		);
+		iPending = 0;
+	}
+	__xrtMemPoolPagePendingSet(pPool, iPending);
 }
 
 
@@ -244194,20 +247081,16 @@ static void __xrtMemPoolPageRebuild(xmempool* pPool)
 			iCount++;
 		}
 	}
-	for ( size_t i = 1; i < iCount; i++ ) {
-		xpoolpage* pPage = pPool->Pages[i];
-		size_t j = i;
-
-		while (
-			(j != 0) &&
-			((uintptr_t)pPool->Pages[j - 1]->Memory > (uintptr_t)pPage->Memory)
-		) {
-			pPool->Pages[j] = pPool->Pages[j - 1];
-			j--;
-		}
-		pPool->Pages[j] = pPage;
+	if ( iCount > 1 ) {
+		qsort(
+			pPool->Pages,
+			iCount,
+			sizeof(xpoolpage*),
+			__xrtMemPoolPageCompare
+		);
 	}
 	pPool->PageCount = iCount;
+	__xrtMemPoolPagePendingSet(pPool, 0);
 }
 
 
@@ -244216,11 +247099,20 @@ static void __xrtMemPoolPageRebuild(xmempool* pPool)
 static xpoolpage* __xrtMemPoolFindPage(const xmempool* pPool, const void* pMemory)
 {
 	size_t iLeft = 0;
-	size_t iRight = pPool->PageCount;
+	size_t iSorted = __xrtMemPoolPageSortedCount(pPool);
+	size_t iRight = iSorted;
 	uintptr_t iValue = (uintptr_t)pMemory;
 	xpoolpage* pPage;
 	uintptr_t iBase;
 
+	/* 新页尚未批量排序时，最多扫描固定数量以保持查找有界。 */
+	for ( size_t i = iSorted; i < pPool->PageCount; i++ ) {
+		pPage = pPool->Pages[i];
+		iBase = (uintptr_t)pPage->Memory;
+		if ( (iValue >= iBase) && ((iValue - iBase) < pPage->MemorySize) ) {
+			return pPage;
+		}
+	}
 	while ( iLeft < iRight ) {
 		size_t iMiddle = iLeft + ((iRight - iLeft) / 2);
 
@@ -251401,7 +254293,8 @@ XRT_API void xrtIntMapIterEnd(xintmapiter* pIterator)
 #define XRT_MAP_FLAG_READY    0x0001u
 #define XRT_MAP_FLAG_BUSY     0x0002u
 #define XRT_MAP_FLAG_VISITING 0x0004u
-#define XRT_MAP_FLAGS         0x0007u
+#define XRT_MAP_FLAG_DROP_REVERSE 0x0008u
+#define XRT_MAP_FLAGS         0x000Fu
 
 
 
@@ -251528,6 +254421,31 @@ bool __xrtMapCanMutate(xmap* pMap)
 	}
 
 	return true;
+}
+
+
+
+/* 配置值释放器的调用顺序，公开键顺序和桶结构不受影响。 */
+bool __xrtMapSetDropReverse(xmap* pMap, bool bReverse)
+{
+	if ( !__xrtMapCanMutate(pMap) ) {
+		return false;
+	}
+	if ( bReverse ) {
+		pMap->Flags |= XRT_MAP_FLAG_DROP_REVERSE;
+	} else {
+		pMap->Flags &= ~XRT_MAP_FLAG_DROP_REVERSE;
+	}
+	return true;
+}
+
+
+
+/* 查询拥有型封装已经固定的释放顺序。 */
+bool __xrtMapDropsReverse(const xmap* pMap)
+{
+	return __xrtMapValid(pMap) &&
+		((pMap->Flags & XRT_MAP_FLAG_DROP_REVERSE) != 0);
 }
 
 
@@ -252006,47 +254924,77 @@ void __xrtMapCallbackEnd(const xmap* pMap)
 
 
 
-/* 在回调门禁内失败原子地替换已有值。 */
-bool __xrtMapReplaceValue(
+/* 新条目实现位于组合设置函数之后，先声明以保持相关操作相邻。 */
+static xmapentry* __xrtMapInsertEntry(
+	xmap* pMap,
+	xbytesview Key,
+	uint64 iHash,
+	xmapinit pInit,
+	ptr pUserData
+);
+
+
+
+/* 一次哈希查询完成失败原子的替换或初始化。 */
+ptr __xrtMapSetOrInit(
 	xmap* pMap,
 	xbytesview Key,
 	const void* pValue,
 	xrtmapreplaceproc pReplace,
-	ptr pUserData,
-	bool* pFound
+	ptr pReplaceData,
+	xmapinit pInit,
+	ptr pInitData,
+	bool* pNew
 )
 {
 	xmapentry* pEntry;
 	ptr pStored;
+	uint64 iHash;
 	bool bReplaced;
 
-	if ( pFound != NULL ) {
-		*pFound = false;
+	if ( pNew != NULL ) {
+		*pNew = false;
 	}
 	if (
 		!__xrtMapCanMutate(pMap) ||
 		!__xrtMapKeyValid(Key) ||
 		(pValue == NULL) ||
 		(pReplace == NULL) ||
-		(pFound == NULL)
+		(pInit == NULL) ||
+		(pNew == NULL)
 	) {
 		if (
 			(pValue == NULL) ||
 			(pReplace == NULL) ||
-			(pFound == NULL)
+			(pInit == NULL) ||
+			(pNew == NULL)
 		) {
 			__xrtErrorSetInvalidArgument();
 		}
-		return false;
+		return NULL;
 	}
-	pEntry = __xrtMapFind(pMap, Key, NULL, NULL);
+	pEntry = __xrtMapFind(pMap, Key, &iHash, NULL);
 	if ( pEntry == NULL ) {
-		return true;
+		if ( __xrtMapOwnsCoreRange(pMap, pValue, pMap->ValueSize) ) {
+			__xrtErrorSetInvalidArgument();
+			return NULL;
+		}
+		pEntry = __xrtMapInsertEntry(
+			pMap,
+			Key,
+			iHash,
+			pInit,
+			pInitData
+		);
+		if ( pEntry == NULL ) {
+			return NULL;
+		}
+		*pNew = true;
+		return __xrtMapValue(pMap, pEntry);
 	}
-	*pFound = true;
 	pStored = __xrtMapValue(pMap, pEntry);
 	if ( pStored == pValue ) {
-		return true;
+		return pStored;
 	}
 	if (
 		__xrtMapOwnsCoreRange(pMap, pValue, pMap->ValueSize) ||
@@ -252055,13 +255003,13 @@ bool __xrtMapReplaceValue(
 		)
 	) {
 		__xrtErrorSetInvalidArgument();
-		return false;
+		return NULL;
 	}
 
 	pMap->Flags |= XRT_MAP_FLAG_BUSY;
-	bReplaced = pReplace(pStored, pValue, pUserData);
+	bReplaced = pReplace(pStored, pValue, pReplaceData);
 	pMap->Flags &= ~XRT_MAP_FLAG_BUSY;
-	return bReplaced;
+	return bReplaced ? pStored : NULL;
 }
 
 
@@ -252243,10 +255191,11 @@ static void __xrtMapUnlink(
 /* 释放全部条目并按需调用值释放器。 */
 static void __xrtMapReleaseAll(xmap* pMap)
 {
-	xmapentry* pEntry = pMap->First;
+	bool bReverse = (pMap->Flags & XRT_MAP_FLAG_DROP_REVERSE) != 0;
+	xmapentry* pEntry = bReverse ? pMap->Last : pMap->First;
 
 	while ( pEntry != NULL ) {
-		xmapentry* pNext = pEntry->OrderNext;
+		xmapentry* pNext = bReverse ? pEntry->OrderPrev : pEntry->OrderNext;
 
 		__xrtMapDropValue(pMap, pEntry);
 		__xrtMapFreeEntry(pEntry);
@@ -254932,6 +257881,35 @@ static bool __xrtValueFloatToInt(double fValue, int64* pValue)
 
 
 
+/* 只在浮点数能够无损表示为 uint64 时完成转换。 */
+static bool __xrtValueFloatToUInt(double fValue, uint64* pValue)
+{
+	#if defined(__TINYC__)
+		uint64 iValue;
+
+		if ( !(fValue >= 0.0) || !(fValue < 18446744073709551616.0) ) {
+			return false;
+		}
+		iValue = (uint64)fValue;
+		if ( (double)iValue != fValue ) {
+			return false;
+		}
+		*pValue = iValue;
+		return true;
+	#else
+		if (
+			!isfinite(fValue) || (fValue < 0.0) ||
+			(fValue >= 18446744073709551616.0) || (floor(fValue) != fValue)
+		) {
+			return false;
+		}
+		*pValue = (uint64)fValue;
+		return true;
+	#endif
+}
+
+
+
 /* 检查借用视图的数据指针与长度是否一致。 */
 static bool __xrtValueViewValid(const void* pData, size_t iSize)
 {
@@ -255178,7 +258156,7 @@ xvalue* __xrtValueCreate(xvaluetype Type)
 {
 	xvalue* pValue;
 
-	if ( (Type <= XVALUE_INVALID) || (Type > XVALUE_OBJECT) ) {
+	if ( (Type <= XVALUE_INVALID) || (Type > XVALUE_UINT) ) {
 		__xrtErrorSetInvalidArgument();
 		return NULL;
 	}
@@ -255225,6 +258203,19 @@ XRT_API xvalue* xrtValueInt(int64 iValue)
 
 	if ( pValue != NULL ) {
 		pValue->Data.Int = iValue;
+	}
+	return pValue;
+}
+
+
+
+/* 创建不可变的 64 位无符号整数值。 */
+XRT_API xvalue* xrtValueUInt(uint64 iValue)
+{
+	xvalue* pValue = __xrtValueCreate(XVALUE_UINT);
+
+	if ( pValue != NULL ) {
+		pValue->Data.UInt = iValue;
 	}
 	return pValue;
 }
@@ -255487,6 +258478,7 @@ XRT_API cstr xrtValueTypeName(xvaluetype Type)
 		case XVALUE_INT_MAP: return "int_map";
 		case XVALUE_SET: return "set";
 		case XVALUE_OBJECT: return "object";
+		case XVALUE_UINT: return "uint";
 		case XVALUE_INVALID:
 		default:
 			return "invalid";
@@ -255520,7 +258512,8 @@ XRT_API bool xrtValueIsNumber(const xvalue* pValue)
 		__xrtErrorSetInvalidState();
 		return false;
 	}
-	return (pValue->Type == XVALUE_INT) || (pValue->Type == XVALUE_FLOAT);
+	return (pValue->Type == XVALUE_INT) || (pValue->Type == XVALUE_UINT) ||
+		(pValue->Type == XVALUE_FLOAT);
 }
 
 
@@ -255555,6 +258548,8 @@ XRT_API bool xrtValueTruthy(const xvalue* pValue)
 			return pValue->Data.Bool;
 		case XVALUE_INT:
 			return pValue->Data.Int != 0;
+		case XVALUE_UINT:
+			return pValue->Data.UInt != 0;
 		case XVALUE_FLOAT:
 			return pValue->Data.Float != 0.0;
 		case XVALUE_STRING:
@@ -255611,6 +258606,23 @@ XRT_API bool xrtValueGetInt(const xvalue* pValue, int64* pResult)
 		return false;
 	}
 	*pResult = pValue->Data.Int;
+	return true;
+}
+
+
+
+/* 精确读取无符号整数值。 */
+XRT_API bool xrtValueGetUInt(const xvalue* pValue, uint64* pResult)
+{
+	if ( !__xrtValueGetValid(
+		pValue,
+		XVALUE_UINT,
+		pResult,
+		sizeof(*pResult)
+	) ) {
+		return false;
+	}
+	*pResult = pValue->Data.UInt;
 	return true;
 }
 
@@ -255769,6 +258781,7 @@ XRT_API bool xrtValueGetHandle(
 uint64 __xrtValueHashKnown(const xvalue* pValue)
 {
 	uint64 iBits;
+	uint64 iUnsigned;
 	int64 iInteger;
 
 	switch ( (xvaluetype)pValue->Type ) {
@@ -255778,9 +258791,16 @@ uint64 __xrtValueHashKnown(const xvalue* pValue)
 			return __xrtValueTaggedHash(XVALUE_BOOL, pValue->Data.Bool ? 1u : 0u);
 		case XVALUE_INT:
 			return __xrtValueTaggedHash(XVALUE_INT, (uint64)pValue->Data.Int);
+		case XVALUE_UINT:
+			return pValue->Data.UInt <= (uint64)INT64_MAX
+				? __xrtValueTaggedHash(XVALUE_INT, pValue->Data.UInt)
+				: __xrtValueTaggedHash(XVALUE_UINT, pValue->Data.UInt);
 		case XVALUE_FLOAT:
 			if ( __xrtValueFloatToInt(pValue->Data.Float, &iInteger) ) {
 				return __xrtValueTaggedHash(XVALUE_INT, (uint64)iInteger);
+			}
+			if ( __xrtValueFloatToUInt(pValue->Data.Float, &iUnsigned) ) {
+				return __xrtValueTaggedHash(XVALUE_UINT, iUnsigned);
 			}
 			if ( isnan(pValue->Data.Float) ) {
 				iBits = UINT64_C(0x7FF8000000000000);
@@ -255823,21 +258843,41 @@ uint64 __xrtValueHashKnown(const xvalue* pValue)
 /* 判断两个数值是否在无损转换后相等。 */
 static bool __xrtValueNumberEqual(const xvalue* pLeft, const xvalue* pRight)
 {
-	int64 iValue;
+	int64 iInteger;
+	uint64 iUnsigned;
 
 	if ( (pLeft->Type == XVALUE_INT) && (pRight->Type == XVALUE_INT) ) {
 		return pLeft->Data.Int == pRight->Data.Int;
+	}
+	if ( (pLeft->Type == XVALUE_UINT) && (pRight->Type == XVALUE_UINT) ) {
+		return pLeft->Data.UInt == pRight->Data.UInt;
 	}
 	if ( (pLeft->Type == XVALUE_FLOAT) && (pRight->Type == XVALUE_FLOAT) ) {
 		return (pLeft->Data.Float == pRight->Data.Float) ||
 			(isnan(pLeft->Data.Float) && isnan(pRight->Data.Float));
 	}
-	if ( pLeft->Type == XVALUE_FLOAT ) {
-		return __xrtValueFloatToInt(pLeft->Data.Float, &iValue) &&
-			(iValue == pRight->Data.Int);
+	if ( (pLeft->Type == XVALUE_INT) && (pRight->Type == XVALUE_UINT) ) {
+		return pLeft->Data.Int >= 0 &&
+			(uint64)pLeft->Data.Int == pRight->Data.UInt;
 	}
-	return __xrtValueFloatToInt(pRight->Data.Float, &iValue) &&
-		(iValue == pLeft->Data.Int);
+	if ( (pLeft->Type == XVALUE_UINT) && (pRight->Type == XVALUE_INT) ) {
+		return pRight->Data.Int >= 0 &&
+			pLeft->Data.UInt == (uint64)pRight->Data.Int;
+	}
+	if ( pLeft->Type == XVALUE_FLOAT ) {
+		if ( pRight->Type == XVALUE_UINT ) {
+			return __xrtValueFloatToUInt(pLeft->Data.Float, &iUnsigned) &&
+				iUnsigned == pRight->Data.UInt;
+		}
+		return __xrtValueFloatToInt(pLeft->Data.Float, &iInteger) &&
+			iInteger == pRight->Data.Int;
+	}
+	if ( pLeft->Type == XVALUE_UINT ) {
+		return __xrtValueFloatToUInt(pRight->Data.Float, &iUnsigned) &&
+			pLeft->Data.UInt == iUnsigned;
+	}
+	return __xrtValueFloatToInt(pRight->Data.Float, &iInteger) &&
+		iInteger == pLeft->Data.Int;
 }
 
 
@@ -255848,8 +258888,10 @@ bool __xrtValueEqualKnown(const xvalue* pLeft, const xvalue* pRight)
 	if ( pLeft == pRight ) {
 		return true;
 	}
-	if ( ((pLeft->Type == XVALUE_INT) || (pLeft->Type == XVALUE_FLOAT)) &&
-		 ((pRight->Type == XVALUE_INT) || (pRight->Type == XVALUE_FLOAT)) ) {
+	if ( ((pLeft->Type == XVALUE_INT) || (pLeft->Type == XVALUE_UINT) ||
+		  (pLeft->Type == XVALUE_FLOAT)) &&
+		 ((pRight->Type == XVALUE_INT) || (pRight->Type == XVALUE_UINT) ||
+		  (pRight->Type == XVALUE_FLOAT)) ) {
 		return __xrtValueNumberEqual(pLeft, pRight);
 	}
 	if ( pLeft->Type != pRight->Type ) {
@@ -256443,10 +259485,14 @@ static bool __xrtValueObjectBackingCopy(
 )
 {
 	xmapiter tIterator;
-	xbytesview Key;
+	xbytesview Key = {0};
 	ptr pSlot;
 
-	if ( !xrtMapReserve(&pTarget->Items, xrtMapCount(&pSource->Items)) ||
+	if ( !__xrtMapSetDropReverse(
+			&pTarget->Items,
+			__xrtMapDropsReverse(&pSource->Items)
+		 ) ||
+		 !xrtMapReserve(&pTarget->Items, xrtMapCount(&pSource->Items)) ||
 		 !xrtMapIterBegin(&pSource->Items, &tIterator) ) {
 		return false;
 	}
@@ -257001,6 +260047,19 @@ const xset* __xrtValueSetItems(const xvalue* pValue)
 
 
 
+/* 查询 Object backing 的拥有值释放顺序。 */
+bool __xrtValueObjectDropsReverse(const xvalue* pValue)
+{
+	xvalueobjectbacking* pBacking = (xvalueobjectbacking*)__xrtValueBacking(
+		pValue,
+		XVALUE_OBJECT
+	);
+
+	return (pBacking != NULL) && __xrtMapDropsReverse(&pBacking->Items);
+}
+
+
+
 #if defined(XRT_FEATURE_VALUE_COLLECTION)
 
 /* 把准备容器的完整 backing 原子提交给同类型目标。 */
@@ -257039,6 +260098,27 @@ bool __xrtValueContainerCommit(xvalue* pTarget, xvalue* pPrepared)
 	}
 	if ( Result == XVALUE_CONTAINS_ERROR ) {
 		return false;
+	}
+	if ( pTarget->Type == XVALUE_OBJECT ) {
+		bool bTargetReverse = __xrtMapDropsReverse(
+			&((xvalueobjectbacking*)pTargetBacking)->Items
+		);
+		bool bPreparedReverse = __xrtMapDropsReverse(
+			&((xvalueobjectbacking*)pPreparedBacking)->Items
+		);
+
+		if ( bTargetReverse != bPreparedReverse ) {
+			if ( !__xrtValueEnsureUnique(pPrepared) ) {
+				return false;
+			}
+			pPreparedBacking = pPrepared->Data.Backing;
+			if ( !__xrtMapSetDropReverse(
+					&((xvalueobjectbacking*)pPreparedBacking)->Items,
+					bTargetReverse
+			) ) {
+				return false;
+			}
+		}
 	}
 	pTarget->Data.Backing = pPreparedBacking;
 	pPrepared->Data.Backing = pTargetBacking;
@@ -257101,6 +260181,29 @@ XRT_API xvalue* xrtValueSet(void)
 XRT_API xvalue* xrtValueObject(void)
 {
 	return __xrtValueContainerCreate(XVALUE_OBJECT);
+}
+
+
+
+/* 创建遍历顺序稳定、拥有值按栈顺序析构的对象。 */
+XRT_API xvalue* xrtValueObjectLifo(void)
+{
+	xvalue* pValue = __xrtValueContainerCreate(XVALUE_OBJECT);
+	xvaluebacking* pBacking;
+
+	if ( pValue == NULL ) {
+		return NULL;
+	}
+	pBacking = __xrtValueBacking(pValue, XVALUE_OBJECT);
+	if ( (pBacking == NULL) ||
+		 !__xrtMapSetDropReverse(
+			&((xvalueobjectbacking*)pBacking)->Items,
+			true
+		 ) ) {
+		xrtValueRelease(pValue);
+		return NULL;
+	}
+	return pValue;
 }
 
 
@@ -258035,7 +261138,7 @@ XRT_API xvalue* xrtValueObjectAt(
 		XVALUE_OBJECT
 	);
 	xmapiter Iterator;
-	xbytesview Key;
+	xbytesview Key = {0};
 	xvalue* const* pSlot = NULL;
 
 	if ( pBacking == NULL ) {
@@ -258652,7 +261755,7 @@ XRT_API xvalue* xrtValueIterNext(
 		return pItem != NULL ? *(xvalue* const*)pItem : NULL;
 	}
 	if ( pIterator->Type == XVALUE_OBJECT ) {
-		xbytesview Key;
+		xbytesview Key = {0};
 
 		pSlot = xrtMapIterNext(&pIterator->State.Map, &Key);
 		if ( (pSlot != NULL) && (pKey != NULL) ) {
@@ -258664,6 +261767,54 @@ XRT_API xvalue* xrtValueIterNext(
 	}
 	__xrtErrorSetInvalidState();
 	return NULL;
+}
+
+
+
+/* 隔离调用前错误并以三态结果推进一个快照元素。 */
+XRT_API xvalueiterresult xrtValueIterAdvance(
+	xvalueiter* pIterator,
+	xvaluekey* pKey,
+	xvalue** ppValue
+)
+{
+	xerror* pPrevious;
+	xerror* pCurrent;
+	xerror* pDiscard;
+	xvalue* pValue;
+
+	if ( (pIterator == NULL) || (ppValue == NULL) ||
+		((pIterator != NULL) && __xrtRangesOverlap(
+			pIterator,
+			sizeof(xvalueiter),
+			ppValue,
+			sizeof(xvalue*)
+		)) ||
+		((pKey != NULL) && __xrtRangesOverlap(
+			pKey,
+			sizeof(xvaluekey),
+			ppValue,
+			sizeof(xvalue*)
+		)) ) {
+		__xrtErrorSetInvalidArgument();
+		return XVALUE_ITER_ERROR;
+	}
+	if ( pIterator->Backing == NULL ) {
+		*ppValue = NULL;
+		__xrtErrorSetInvalidState();
+		return XVALUE_ITER_ERROR;
+	}
+	*ppValue = NULL;
+	pPrevious = __xrtErrorSwapOwned(NULL);
+	pValue = xrtValueIterNext(pIterator, pKey);
+	pCurrent = __xrtErrorSwapOwned(pPrevious);
+	if ( pCurrent != NULL ) {
+		pDiscard = __xrtErrorSwapOwned(pCurrent);
+		xrtErrorFree(pDiscard);
+		return XVALUE_ITER_ERROR;
+	}
+	*ppValue = pValue;
+	return pValue != NULL ? XVALUE_ITER_ITEM : XVALUE_ITER_END;
 }
 
 
@@ -259701,7 +262852,9 @@ static xvalue* __xrtValueCloneContainer(const xvalue* pSource)
 		case XVALUE_SET:
 			return xrtValueSet();
 		case XVALUE_OBJECT:
-			return xrtValueObject();
+			return __xrtValueObjectDropsReverse(pSource)
+				? xrtValueObjectLifo()
+				: xrtValueObject();
 		default:
 			__xrtErrorSetType();
 			return NULL;
@@ -260338,9 +263491,9 @@ static bool __xrtValueEqual(
 		__xrtErrorSetValue();
 		return false;
 	}
-	if ( ((pLeft->Type == XVALUE_INT) ||
+	if ( ((pLeft->Type == XVALUE_INT) || (pLeft->Type == XVALUE_UINT) ||
 		  (pLeft->Type == XVALUE_FLOAT)) &&
-		 ((pRight->Type == XVALUE_INT) ||
+		 ((pRight->Type == XVALUE_INT) || (pRight->Type == XVALUE_UINT) ||
 		  (pRight->Type == XVALUE_FLOAT)) ) {
 		return __xrtValueEqualKnown(pLeft, pRight);
 	}
@@ -261574,7 +264727,7 @@ static void __xrtTextValueParserLiteral(
 
 
 
-/* 扫描严格 JSON 数字 token 并解析为 int64 或 double。 */
+/* 扫描严格 JSON 数字 token 并解析为 int64、uint64 或 double。 */
 static bool __xrtTextValueParserNumber(
 	xtextvalueparser* pParser,
 	xtextvalueevent* pEvent
@@ -261583,6 +264736,7 @@ static bool __xrtTextValueParserNumber(
 	size_t iStart = pParser->Offset;
 	bool bInteger = true;
 	int64 iInteger = 0;
+	uint64 iUnsigned = 0;
 	double fValue = 0.0;
 
 	if ( __xrtTextValueParserPeek(pParser) == (uint8)'-' ) {
@@ -261671,13 +264825,21 @@ static bool __xrtTextValueParserNumber(
 		pEvent->Value.Integer = iInteger;
 		return true;
 	}
+	if ( bInteger && pEvent->Raw.Size != 0u && pEvent->Raw.Data[0] != '-' ) {
+		xrtClearError();
+		if ( xrtUIntParse(pEvent->Raw, 10u, 0, &iUnsigned) ) {
+			pEvent->Type = XTEXT_VALUE_EVENT_UINT;
+			pEvent->Value.Unsigned = iUnsigned;
+			return true;
+		}
+	}
 	if ( bInteger && !pParser->Config.BigIntegerFloat ) {
 		xrtClearError();
 		__xrtTextValueLocationError(
 			pParser,
 			XERR_RANGE,
 			XTEXT_VALUE_ERROR_NUMBER,
-			"integer does not fit int64",
+			"integer does not fit int64 or uint64",
 			&pEvent->Location
 		);
 		return false;
@@ -262588,6 +265750,8 @@ static xvalue* __xrtJsonDomScalar(const xtextvalueevent* pEvent)
 			return xrtValueRetain(xrtValueBool(pEvent->Value.Boolean));
 		case XTEXT_VALUE_EVENT_INT:
 			return xrtValueInt(pEvent->Value.Integer);
+		case XTEXT_VALUE_EVENT_UINT:
+			return xrtValueUInt(pEvent->Value.Unsigned);
 		case XTEXT_VALUE_EVENT_FLOAT:
 			return xrtValueFloat(pEvent->Value.Float);
 		case XTEXT_VALUE_EVENT_STRING:
@@ -262700,6 +265864,9 @@ static bool __xrtJsonEventType(
 		case XTEXT_VALUE_EVENT_INT:
 			*pType = XJSON_EVENT_INT;
 			break;
+		case XTEXT_VALUE_EVENT_UINT:
+			*pType = XJSON_EVENT_UINT;
+			break;
 		case XTEXT_VALUE_EVENT_FLOAT:
 			*pType = XJSON_EVENT_FLOAT;
 			break;
@@ -262753,6 +265920,8 @@ static xtextvaluevisitaction __xrtJsonVisitAdapter(
 		Event.Value.Boolean = pSource->Value.Boolean;
 	} else if ( pSource->Type == XTEXT_VALUE_EVENT_INT ) {
 		Event.Value.Integer = pSource->Value.Integer;
+	} else if ( pSource->Type == XTEXT_VALUE_EVENT_UINT ) {
+		Event.Value.Unsigned = pSource->Value.Unsigned;
 	} else if ( pSource->Type == XTEXT_VALUE_EVENT_FLOAT ) {
 		Event.Value.Float = pSource->Value.Float;
 	} else if ( pSource->Type == XTEXT_VALUE_EVENT_STRING ) {
@@ -263295,6 +266464,28 @@ static bool __xrtTextValueWriterIntToken(
 
 
 
+/* 写出 uint64 token。 */
+static bool __xrtTextValueWriterUIntToken(
+	xtextvaluewriter* pWriter,
+	uint64 iValue
+)
+{
+	char Output[32];
+	size_t iSize;
+
+	if ( !xrtUIntWrite(iValue, 10u, Output, sizeof(Output), &iSize, 0) ) {
+		return __xrtTextValueWriterFail(
+			pWriter,
+			XERR_INTERNAL,
+			XTEXT_VALUE_WRITE_ERROR_OUTPUT,
+			"failed to format unsigned integer"
+		);
+	}
+	return __xrtTextValueWriterEmit(pWriter, Output, iSize);
+}
+
+
+
 /* 写出有限 double token。 */
 static bool __xrtTextValueWriterFloatToken(
 	xtextvaluewriter* pWriter,
@@ -263608,6 +266799,25 @@ bool __xrtTextValueWriterInt(
 	bResult =
 		__xrtTextValueWriterBeforeValue(pWriter) &&
 		__xrtTextValueWriterIntToken(pWriter, iValue);
+	return __xrtTextValueWriterLeave(pWriter, bResult);
+}
+
+
+
+/* 写入 uint64。 */
+bool __xrtTextValueWriterUInt(
+	xtextvaluewriter* pWriter,
+	uint64 iValue
+)
+{
+	bool bResult;
+
+	if ( !__xrtTextValueWriterEnter(pWriter) ) {
+		return false;
+	}
+	bResult =
+		__xrtTextValueWriterBeforeValue(pWriter) &&
+		__xrtTextValueWriterUIntToken(pWriter, iValue);
 	return __xrtTextValueWriterLeave(pWriter, bResult);
 }
 
@@ -264159,7 +267369,8 @@ static bool __xrtJsonWriterSkipValue(
 	Type = xrtValueType(pValue);
 	if (
 		(Type == XVALUE_NULL) || (Type == XVALUE_BOOL) ||
-		(Type == XVALUE_INT) || (Type == XVALUE_FLOAT) ||
+		(Type == XVALUE_INT) || (Type == XVALUE_UINT) ||
+		(Type == XVALUE_FLOAT) ||
 		(Type == XVALUE_STRING) || (Type == XVALUE_ARRAY) ||
 		(Type == XVALUE_OBJECT)
 	) {
@@ -264370,6 +267581,7 @@ static bool __xrtJsonWriterTree(
 	ptr pIdentity;
 	bool bValue;
 	int64 iInteger;
+	uint64 iUnsigned;
 	double fValue;
 	xstrview Text;
 
@@ -264398,6 +267610,13 @@ static bool __xrtJsonWriterTree(
 			return false;
 		}
 		return __xrtTextValueWriterInt(pWriter->Core, iInteger);
+	}
+	if ( Type == XVALUE_UINT ) {
+		if ( !xrtValueGetUInt(pValue, &iUnsigned) ) {
+			__xrtTextValueWriterPoison(pWriter->Core);
+			return false;
+		}
+		return __xrtTextValueWriterUInt(pWriter->Core, iUnsigned);
 	}
 	if ( Type == XVALUE_FLOAT ) {
 		if ( !xrtValueGetFloat(pValue, &fValue) ) {
@@ -264617,6 +267836,17 @@ XRT_API bool xrtJsonWriterInt(xjsonwriter* pWriter, int64 iValue)
 		return false;
 	}
 	return __xrtTextValueWriterInt(pWriter->Core, iValue);
+}
+
+
+
+/* 写入 uint64。 */
+XRT_API bool xrtJsonWriterUInt(xjsonwriter* pWriter, uint64 iValue)
+{
+	if ( !__xrtJsonWriterValid(pWriter) ) {
+		return false;
+	}
+	return __xrtTextValueWriterUInt(pWriter->Core, iValue);
 }
 
 
@@ -265233,6 +268463,9 @@ static bool __xrtXsonMakeEvent(
 	} else if ( pSource->Type == XTEXT_VALUE_EVENT_INT ) {
 		pEvent->Type = XXSON_EVENT_INT;
 		pEvent->Value.Integer = pSource->Value.Integer;
+	} else if ( pSource->Type == XTEXT_VALUE_EVENT_UINT ) {
+		pEvent->Type = XXSON_EVENT_UINT;
+		pEvent->Value.Unsigned = pSource->Value.Unsigned;
 	} else if ( pSource->Type == XTEXT_VALUE_EVENT_FLOAT ) {
 		pEvent->Type = XXSON_EVENT_FLOAT;
 		pEvent->Value.Float = pSource->Value.Float;
@@ -265566,6 +268799,8 @@ static xvalue* __xrtXsonDomScalar(
 			return xrtValueRetain(xrtValueBool(pEvent->Value.Boolean));
 		case XXSON_EVENT_INT:
 			return xrtValueInt(pEvent->Value.Integer);
+		case XXSON_EVENT_UINT:
+			return xrtValueUInt(pEvent->Value.Unsigned);
 		case XXSON_EVENT_FLOAT:
 			return xrtValueFloat(pEvent->Value.Float);
 		case XXSON_EVENT_STRING:
@@ -266357,6 +269592,7 @@ static bool __xrtXsonWriterTree(
 	ptr pIdentity;
 	bool bValue;
 	int64 iInteger;
+	uint64 iUnsigned;
 	double fValue;
 	xstrview Text;
 	xbytesview Data;
@@ -266387,6 +269623,13 @@ static bool __xrtXsonWriterTree(
 			return false;
 		}
 		return __xrtTextValueWriterInt(pWriter->Core, iInteger);
+	}
+	if ( Type == XVALUE_UINT ) {
+		if ( !xrtValueGetUInt(pValue, &iUnsigned) ) {
+			__xrtTextValueWriterPoison(pWriter->Core);
+			return false;
+		}
+		return __xrtTextValueWriterUInt(pWriter->Core, iUnsigned);
 	}
 	if ( Type == XVALUE_FLOAT ) {
 		if ( !xrtValueGetFloat(pValue, &fValue) ) {
@@ -266652,6 +269895,18 @@ XRT_API bool xrtXsonWriterInt(xxsonwriter* pWriter, int64 iValue)
 		return false;
 	}
 	return __xrtTextValueWriterInt(pWriter->Core, iValue);
+}
+
+
+
+/* 写入 uint64。 */
+XRT_API bool xrtXsonWriterUInt(xxsonwriter* pWriter, uint64 iValue)
+{
+	if ( pWriter == NULL ) {
+		__xrtErrorSetInvalidArgument();
+		return false;
+	}
+	return __xrtTextValueWriterUInt(pWriter->Core, iValue);
 }
 
 
@@ -267226,12 +270481,12 @@ bool __xrtTemplateRenderConfigValid(
 	#if defined(XRT_FEATURE_TEMPLATE_CONTROL)
 		bInvalid = bInvalid || (pConfig->MaxDepth == 0) ||
 			(pConfig->MaxLoopIterations == 0) ||
-			(pConfig->MaxDepth > (size_t)INT64_MAX) ||
-			(pConfig->MaxLoopIterations > (size_t)INT64_MAX);
+			((uint64)pConfig->MaxDepth > (uint64)INT64_MAX) ||
+			((uint64)pConfig->MaxLoopIterations > (uint64)INT64_MAX);
 	#endif
 	#if defined(XRT_FEATURE_TEMPLATE_COMPOSE)
 		bInvalid = bInvalid || (pConfig->MaxIncludeDepth == 0) ||
-			(pConfig->MaxIncludeDepth > (size_t)INT64_MAX);
+			((uint64)pConfig->MaxIncludeDepth > (uint64)INT64_MAX);
 	#endif
 	if ( bInvalid ) {
 		__xrtTemplateError(
@@ -267294,6 +270549,17 @@ XRT_API void xrtTemplateRenderConfigInit(xtemplaterenderconfig* pConfig)
 	#if defined(XRT_FEATURE_TEMPLATE_COMPOSE)
 		pConfig->MaxIncludeDepth = XTEMPLATE_INCLUDE_DEPTH_DEFAULT;
 	#endif
+}
+
+
+
+/* 初始化 HTML 文本节点安全渲染配置。 */
+XRT_API void xrtTemplateRenderHtmlConfigInit(xtemplaterenderconfig* pConfig)
+{
+	xrtTemplateRenderConfigInit(pConfig);
+	if ( pConfig != NULL ) {
+		pConfig->Flags |= XTEMPLATE_ESCAPE_HTML_TEXT;
+	}
 }
 
 
@@ -270117,7 +273383,7 @@ bool __xrtTemplateStep(
 
 
 /* 调用 writer 并隔离回调内部留下的错误状态。 */
-bool __xrtTemplateEmit(
+static bool __xrtTemplateEmitRaw(
 	xrt_template_render* pRender,
 	const xrt_template_node* pNode,
 	xstrview Text
@@ -270166,6 +273432,51 @@ bool __xrtTemplateEmit(
 		);
 	}
 	return false;
+}
+
+
+
+/* HTML 文本模式只转义动态输出节点，原始模板文本始终按原样写出。 */
+bool __xrtTemplateEmit(
+	xrt_template_render* pRender,
+	const xrt_template_node* pNode,
+	xstrview Text
+)
+{
+	static const xstrview Escapes[] = {
+		{ "&amp;", 5u }, { "&lt;", 4u }, { "&gt;", 4u },
+		{ "&quot;", 6u }, { "&#39;", 5u }
+	};
+	size_t iStart = 0;
+
+	if ( ((pRender->Config->Flags & XTEMPLATE_ESCAPE_HTML_TEXT) == 0) ||
+		(pNode->Type != XTEMPLATE_NODE_OUTPUT) ) {
+		return __xrtTemplateEmitRaw(pRender, pNode, Text);
+	}
+	for ( size_t i = 0; i < Text.Size; i++ ) {
+		xstrview Escape;
+
+		switch ( Text.Data[i] ) {
+			case '&': Escape = Escapes[0]; break;
+			case '<': Escape = Escapes[1]; break;
+			case '>': Escape = Escapes[2]; break;
+			case '"': Escape = Escapes[3]; break;
+			case '\'': Escape = Escapes[4]; break;
+			default: continue;
+		}
+		if ( (i > iStart) && !__xrtTemplateEmitRaw(
+			pRender, pNode, (xstrview){ Text.Data + iStart, i - iStart }
+		) ) {
+			return false;
+		}
+		if ( !__xrtTemplateEmitRaw(pRender, pNode, Escape) ) {
+			return false;
+		}
+		iStart = i + 1u;
+	}
+	return (iStart == Text.Size) || __xrtTemplateEmitRaw(
+		pRender, pNode, (xstrview){ Text.Data + iStart, Text.Size - iStart }
+	);
 }
 
 
@@ -270559,6 +273870,37 @@ static bool __xrtTemplateWriteNumber(
 			iSize + 1u,
 			&iSize
 		);
+	} else if ( pValue->Type == XVALUE_UINT ) {
+		uint64 iValue;
+
+		if ( pValue->Value != NULL ) {
+			if ( !xrtValueGetUInt(pValue->Value, &iValue) ) {
+				goto format_error;
+			}
+		} else {
+			iValue = pValue->Data.Unsigned;
+		}
+		if ( !xrtUIntFormatTo(
+			iValue, Format, NULL, 0, &iSize
+		) ) {
+			goto format_error;
+		}
+		if ( !__xrtTemplateOutputFits(pRender, pNode, iSize) ) {
+			return false;
+		}
+		if ( iSize >= sizeof(arrBuffer) ) {
+			sOutput = (char*)xrtMalloc(iSize + 1u);
+			if ( sOutput == NULL ) {
+				return false;
+			}
+		}
+		bResult = xrtUIntFormatTo(
+			iValue,
+			Format,
+			sOutput,
+			iSize + 1u,
+			&iSize
+		);
 	} else {
 		double fValue;
 
@@ -270736,6 +274078,7 @@ static bool __xrtTemplateWriteText(
 			);
 		}
 		case XVALUE_INT:
+		case XVALUE_UINT:
 		case XVALUE_FLOAT:
 			return __xrtTemplateWriteNumber(
 				pRender,
@@ -270849,6 +274192,7 @@ static bool __xrtTemplateRenderOutput(
 	}
 	if ( pNode->Output == XTEMPLATE_OUTPUT_NUMBER ) {
 		if ( (Value.Type != XVALUE_INT) &&
+			 (Value.Type != XVALUE_UINT) &&
 			 (Value.Type != XVALUE_FLOAT) ) {
 			__xrtTemplateError(
 				XERR_TYPE,
@@ -272100,6 +275444,7 @@ bool __xrtTemplateEvalTruthy(
 		case XVALUE_NULL: *pResult = false; break;
 		case XVALUE_BOOL: *pResult = pValue->Data.Bool; break;
 		case XVALUE_INT: *pResult = pValue->Data.Integer != 0; break;
+		case XVALUE_UINT: *pResult = pValue->Data.Unsigned != 0; break;
 		case XVALUE_FLOAT: *pResult = pValue->Data.Float != 0.0; break;
 		case XVALUE_STRING:
 		case XVALUE_BYTES: *pResult = pValue->Data.String.Size != 0; break;
@@ -272136,28 +275481,53 @@ bool __xrtTemplateEvalInteger(
 
 
 
-/* 读取可比较的数字并保留整数精确比较所需的类型。 */
+typedef enum xrt_template_number_kind {
+	XRT_TEMPLATE_NUMBER_SIGNED,
+	XRT_TEMPLATE_NUMBER_UNSIGNED,
+	XRT_TEMPLATE_NUMBER_FLOAT
+} xrt_template_number_kind;
+
+
+
+typedef struct xrt_template_number {
+	xrt_template_number_kind Kind;
+	union {
+		int64 Signed;
+		uint64 Unsigned;
+		double Float;
+	} Value;
+} xrt_template_number;
+
+
+
+/* 读取可比较的数字并保留 signed/unsigned 整数精度。 */
 static bool __xrtTemplateEvalNumber(
 	const xrt_template_eval* pValue,
-	int64* pInteger,
-	double* pFloat,
-	bool* pIsInteger
+	xrt_template_number* pNumber
 )
 {
 	if ( pValue->Type == XVALUE_INT ) {
-		*pIsInteger = true;
+		pNumber->Kind = XRT_TEMPLATE_NUMBER_SIGNED;
 		if ( pValue->Value != NULL ) {
-			return xrtValueGetInt(pValue->Value, pInteger);
+			return xrtValueGetInt(pValue->Value, &pNumber->Value.Signed);
 		}
-		*pInteger = pValue->Data.Integer;
+		pNumber->Value.Signed = pValue->Data.Integer;
+		return true;
+	}
+	if ( pValue->Type == XVALUE_UINT ) {
+		pNumber->Kind = XRT_TEMPLATE_NUMBER_UNSIGNED;
+		if ( pValue->Value != NULL ) {
+			return xrtValueGetUInt(pValue->Value, &pNumber->Value.Unsigned);
+		}
+		pNumber->Value.Unsigned = pValue->Data.Unsigned;
 		return true;
 	}
 	if ( pValue->Type == XVALUE_FLOAT ) {
-		*pIsInteger = false;
+		pNumber->Kind = XRT_TEMPLATE_NUMBER_FLOAT;
 		if ( pValue->Value != NULL ) {
-			return xrtValueGetFloat(pValue->Value, pFloat);
+			return xrtValueGetFloat(pValue->Value, &pNumber->Value.Float);
 		}
-		*pFloat = pValue->Data.Float;
+		pNumber->Value.Float = pValue->Data.Float;
 		return true;
 	}
 	return false;
@@ -272233,6 +275603,55 @@ static int __xrtTemplateCompareIntegerFloat(
 
 
 
+/* 精确比较 uint64 与 double，避免高位整数先转 double。 */
+static int __xrtTemplateCompareUnsignedFloat(
+	uint64 iUnsigned,
+	double fValue,
+	bool* pUnordered
+)
+{
+	uint64 iFloatUnsigned;
+
+	*pUnordered = fValue != fValue;
+	if ( *pUnordered ) {
+		return 0;
+	}
+	if ( fValue < 0.0 ) {
+		return 1;
+	}
+	if ( fValue >= 18446744073709551616.0 ) {
+		return -1;
+	}
+	iFloatUnsigned = (uint64)fValue;
+	if ( iUnsigned < iFloatUnsigned ) {
+		return -1;
+	}
+	if ( iUnsigned > iFloatUnsigned ) {
+		return 1;
+	}
+	if ( fValue > (double)iFloatUnsigned ) {
+		return -1;
+	}
+	return 0;
+}
+
+
+
+/* 转为仅供近似比较使用的浮点尺度。 */
+static double __xrtTemplateNumberFloat(const xrt_template_number* pNumber)
+{
+	switch ( pNumber->Kind ) {
+		case XRT_TEMPLATE_NUMBER_SIGNED:
+			return (double)pNumber->Value.Signed;
+		case XRT_TEMPLATE_NUMBER_UNSIGNED:
+			return (double)pNumber->Value.Unsigned;
+		default:
+			return pNumber->Value.Float;
+	}
+}
+
+
+
 /* 比较两个标量且不把它们临时转换为字符串。 */
 static bool __xrtTemplateEvalCompare(
 	xrt_template_render* pRender,
@@ -272243,43 +275662,69 @@ static bool __xrtTemplateEvalCompare(
 	bool* pResult
 )
 {
-	int64 iLeft = 0;
-	int64 iRight = 0;
-	double fLeft = 0.0;
-	double fRight = 0.0;
-	bool bLeftInt = false;
-	bool bRightInt = false;
+	xrt_template_number LeftNumber;
+	xrt_template_number RightNumber;
+	double fLeft;
+	double fRight;
 	bool bUnordered = false;
 	int iCompare = 0;
 
-	if ( __xrtTemplateEvalNumber(
-		pLeft, &iLeft, &fLeft, &bLeftInt
-	) && __xrtTemplateEvalNumber(
-		pRight, &iRight, &fRight, &bRightInt
-	) ) {
-		if ( bLeftInt && bRightInt ) {
-			iCompare = iLeft < iRight ? -1 : (iLeft > iRight ? 1 : 0);
-			fLeft = (double)iLeft;
-			fRight = (double)iRight;
-		} else if ( bLeftInt ) {
+	if ( __xrtTemplateEvalNumber(pLeft, &LeftNumber) &&
+		 __xrtTemplateEvalNumber(pRight, &RightNumber) ) {
+		fLeft = __xrtTemplateNumberFloat(&LeftNumber);
+		fRight = __xrtTemplateNumberFloat(&RightNumber);
+		if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_SIGNED) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_SIGNED) ) {
+			iCompare = LeftNumber.Value.Signed < RightNumber.Value.Signed ? -1 :
+				(LeftNumber.Value.Signed > RightNumber.Value.Signed ? 1 : 0);
+		} else if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_UNSIGNED) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_UNSIGNED) ) {
+			iCompare = LeftNumber.Value.Unsigned < RightNumber.Value.Unsigned ? -1 :
+				(LeftNumber.Value.Unsigned > RightNumber.Value.Unsigned ? 1 : 0);
+		} else if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_SIGNED) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_UNSIGNED) ) {
+			iCompare = LeftNumber.Value.Signed < 0 ? -1 :
+				((uint64)LeftNumber.Value.Signed < RightNumber.Value.Unsigned ? -1 :
+				 ((uint64)LeftNumber.Value.Signed > RightNumber.Value.Unsigned ? 1 : 0));
+		} else if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_UNSIGNED) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_SIGNED) ) {
+			iCompare = RightNumber.Value.Signed < 0 ? 1 :
+				(LeftNumber.Value.Unsigned < (uint64)RightNumber.Value.Signed ? -1 :
+				 (LeftNumber.Value.Unsigned > (uint64)RightNumber.Value.Signed ? 1 : 0));
+		} else if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_SIGNED) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_FLOAT) ) {
 			iCompare = __xrtTemplateCompareIntegerFloat(
-				iLeft,
-				fRight,
+				LeftNumber.Value.Signed,
+				RightNumber.Value.Float,
 				&bUnordered
 			);
-			fLeft = (double)iLeft;
-		} else if ( bRightInt ) {
+		} else if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_FLOAT) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_SIGNED) ) {
 			iCompare = -__xrtTemplateCompareIntegerFloat(
-				iRight,
-				fLeft,
+				RightNumber.Value.Signed,
+				LeftNumber.Value.Float,
 				&bUnordered
 			);
-			fRight = (double)iRight;
+		} else if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_UNSIGNED) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_FLOAT) ) {
+			iCompare = __xrtTemplateCompareUnsignedFloat(
+				LeftNumber.Value.Unsigned,
+				RightNumber.Value.Float,
+				&bUnordered
+			);
+		} else if ( (LeftNumber.Kind == XRT_TEMPLATE_NUMBER_FLOAT) &&
+			 (RightNumber.Kind == XRT_TEMPLATE_NUMBER_UNSIGNED) ) {
+			iCompare = -__xrtTemplateCompareUnsignedFloat(
+				RightNumber.Value.Unsigned,
+				LeftNumber.Value.Float,
+				&bUnordered
+			);
 		} else {
-			bUnordered = (fLeft != fLeft) || (fRight != fRight);
+			bUnordered = (LeftNumber.Value.Float != LeftNumber.Value.Float) ||
+				(RightNumber.Value.Float != RightNumber.Value.Float);
 			if ( !bUnordered ) {
-				iCompare = fLeft < fRight ? -1 :
-					(fLeft > fRight ? 1 : 0);
+				iCompare = LeftNumber.Value.Float < RightNumber.Value.Float ? -1 :
+					(LeftNumber.Value.Float > RightNumber.Value.Float ? 1 : 0);
 			}
 		}
 		if ( Type == XRT_TEMPLATE_EXPR_APPROX ) {
@@ -273248,10 +276693,11 @@ static bool __xrtTemplateCallValue(
 	pValue->Type = pSource->Type;
 	pValue->Value = pSource->Value;
 	if ( pSource->Value == NULL ) {
-		switch ( pSource->Type ) {
-			case XVALUE_BOOL: pValue->Bool = pSource->Data.Bool; break;
-			case XVALUE_INT: pValue->Integer = pSource->Data.Integer; break;
-			case XVALUE_FLOAT: pValue->Float = pSource->Data.Float; break;
+			switch ( pSource->Type ) {
+				case XVALUE_BOOL: pValue->Bool = pSource->Data.Bool; break;
+				case XVALUE_INT: pValue->Integer = pSource->Data.Integer; break;
+				case XVALUE_UINT: pValue->Unsigned = pSource->Data.Unsigned; break;
+				case XVALUE_FLOAT: pValue->Float = pSource->Data.Float; break;
 			case XVALUE_STRING:
 			case XVALUE_BYTES: pValue->Text = pSource->Data.String; break;
 			case XVALUE_TIME: pValue->Time = pSource->Data.Time; break;
@@ -273264,6 +276710,8 @@ static bool __xrtTemplateCallValue(
 			return xrtValueGetBool(pSource->Value, &pValue->Bool);
 		case XVALUE_INT:
 			return xrtValueGetInt(pSource->Value, &pValue->Integer);
+		case XVALUE_UINT:
+			return xrtValueGetUInt(pSource->Value, &pValue->Unsigned);
 		case XVALUE_FLOAT:
 			return xrtValueGetFloat(pSource->Value, &pValue->Float);
 		case XVALUE_STRING:
@@ -287891,6 +291339,7 @@ typedef struct xprocessrunstate {
 	xprocessrunoptions Options;
 	xerror* Error;
 	bool Failed;
+	bool Terminal;
 	xprocessrunpump Stdout;
 	xprocessrunpump Stderr;
 	xprocessruninput Stdin;
@@ -288142,7 +291591,56 @@ static int32 __xrtProcessRunOutput(ptr pData)
 
 
 
-/* 写完借用输入后无条件关闭 stdin，短写和提前关闭由结果字节数表达。 */
+/* 为一次性终端输入追加平台控制台可识别的 EOF 序列。 */
+static void __xrtProcessRunTerminalEof(xprocessruninput* pInput)
+{
+	#if defined(_WIN32) || defined(_WIN64)
+		static const unsigned char arrLineEof[] = {
+			'\r', '\n', 0x1Au, '\r', '\n'
+		};
+		static const unsigned char arrEof[] = { 0x1Au, '\r', '\n' };
+		const unsigned char* pEof = arrEof;
+		size_t iEofSize = sizeof(arrEof);
+	#else
+		static const unsigned char arrEof[] = { 0x04u, 0x04u };
+		const unsigned char* pEof = arrEof;
+		size_t iEofSize = sizeof(arrEof);
+	#endif
+	size_t iOffset = 0u;
+
+	#if defined(_WIN32) || defined(_WIN64)
+		/* Ctrl-Z 只有在新行起点才表示控制台 EOF。 */
+		if ( (pInput->Input.Size != 0u) &&
+			(pInput->Input.Data[pInput->Input.Size - 1u] != '\r') &&
+			(pInput->Input.Data[pInput->Input.Size - 1u] != '\n') ) {
+			pEof = arrLineEof;
+			iEofSize = sizeof(arrLineEof);
+		}
+	#endif
+	while ( iOffset < iEofSize ) {
+		int64 iWrite = xrtProcessWrite(
+			pInput->State->Process,
+			pEof + iOffset,
+			iEofSize - iOffset
+		);
+
+		if ( iWrite <= 0 ) {
+			xrtClearError();
+			break;
+		}
+		iOffset += (size_t)iWrite;
+	}
+	#if !defined(_WIN32) && !defined(_WIN64)
+		(void)xrtProcessClose(
+			pInput->State->Process,
+			XPROCESS_STDIN
+		);
+	#endif
+}
+
+
+
+/* 写完借用输入后发送 EOF，短写和提前关闭由结果字节数表达。 */
 static int32 __xrtProcessRunInput(ptr pData)
 {
 	xprocessruninput* pInput = (xprocessruninput*)pData;
@@ -288160,7 +291658,11 @@ static int32 __xrtProcessRunInput(ptr pData)
 		}
 		pInput->Written += (size_t)iWrite;
 	}
-	(void)xrtProcessClose(pInput->State->Process, XPROCESS_STDIN);
+	if ( pInput->State->Terminal ) {
+		__xrtProcessRunTerminalEof(pInput);
+	} else {
+		(void)xrtProcessClose(pInput->State->Process, XPROCESS_STDIN);
+	}
 	return 0;
 }
 
@@ -288361,7 +291863,8 @@ XRT_API bool xrtProcessRun(
 	} else if ( Config.Stderr.Mode != XPROCESS_IO_MERGE ) {
 		Config.Stderr.Mode = XPROCESS_IO_PIPE;
 	}
-	bNeedInput = (Options.Input.Data != NULL) ||
+	bNeedInput = Config.Terminal ||
+		(Options.Input.Data != NULL) ||
 		(Options.Input.Size != 0u) ||
 		(Config.Stdin.Mode == XPROCESS_IO_PIPE);
 	if ( bNeedInput ) {
@@ -288373,6 +291876,7 @@ XRT_API bool xrtProcessRun(
 		goto cleanup;
 	}
 	State.Process = pProcess;
+	State.Terminal = Config.Terminal;
 	State.Stdout.Thread = xrtThreadCreate(
 		__xrtProcessRunOutput,
 		&State.Stdout,
@@ -288927,7 +292431,7 @@ XRT_API bool xrtProcessPipeline(
 	xprocesspipe* pPipes = NULL;
 	xwaitresult Wait = XWAIT_OK;
 	uint64 iStart = 0u;
-	size_t iPumpCount;
+	size_t iPumpCount = 0;
 	bool bNeedInput = false;
 	bool bLockReady = false;
 	bool bOk = false;
@@ -291835,6 +295339,10 @@ static int bbre_buf_resize_t(bbre_alloc *a, void **buf, size_t size)
   int err = 0;
   assert(buf && *buf);
   hdr = bbre_buf_get_hdr(*buf);
+  if (size > (size_t)-1 - sizeof(bbre_buf_hdr)) {
+    err = BBRE_ERR_MEM;
+    goto error;
+  }
   next_alloc = hdr->alloc ? hdr->alloc : /* sentinel */ 1;
   if (size <= hdr->alloc) {
     hdr->size = size;
@@ -291848,8 +295356,13 @@ static int bbre_buf_resize_t(bbre_alloc *a, void **buf, size_t size)
    * code when we are checking coverage. */
   next_alloc = size < 128 ? size : next_alloc;
 #endif
-  while (next_alloc < size)
+  while (next_alloc < size) {
+    if (next_alloc > (size_t)-1 / 2) {
+      next_alloc = size;
+      break;
+    }
     next_alloc *= 2;
+  }
   next_ptr = bbre_alloci(
       a, hdr->alloc ? hdr : /* sentinel */ NULL,
       hdr->alloc ? sizeof(bbre_buf_hdr) + hdr->alloc : /* sentinel */ 0,
@@ -291889,8 +295402,22 @@ static void bbre_buf_destroy_t(bbre_alloc *a, void **buf)
 /* Increase size by `incr`. */
 static int bbre_buf_grow_t(bbre_alloc *a, void **buf, size_t incr)
 {
+  size_t size;
+
   assert(buf);
-  return bbre_buf_resize_t(a, buf, bbre_buf_size_t(*buf) + incr);
+  size = bbre_buf_size_t(*buf);
+  if (incr > (size_t)-1 - size)
+    return BBRE_ERR_MEM;
+  return bbre_buf_resize_t(a, buf, size + incr);
+}
+
+/* Set the element count after checking the byte-size multiplication. */
+static int bbre_buf_reserve_t(
+    bbre_alloc *a, void **buf, size_t element_size, size_t count)
+{
+  if (count > (size_t)-1 / element_size)
+    return BBRE_ERR_MEM;
+  return bbre_buf_resize_t(a, buf, element_size * count);
 }
 
 /* Get the last element index of the dynamic array. */
@@ -291940,7 +295467,7 @@ static void bbre_buf_clear(void *buf)
 
 /* Set the size to `n`. */
 #define bbre_buf_reserve(r, b, n)                                              \
-  (bbre_buf_resize_t(r, (void **)(b), bbre_buf_esz(b) * (n)))
+  (bbre_buf_reserve_t((r), (void **)(b), bbre_buf_esz(b), (n)))
 
 /* Pop an element. */
 #define bbre_buf_pop(b)                                                        \
@@ -292218,6 +295745,24 @@ bbre_ast_cls_invert(bbre *r, bbre_uint *out_node_hdl, bbre_uint child_hdl)
   return bbre_ast_make(r, out_node_hdl, BBRE_AST_TYPE_CC_NOT, child_hdl);
 }
 
+/* Append one inclusive range to a character class syntax tree. */
+static int bbre_ast_cls_append_range(
+    bbre *r, bbre_uint *root_hdl, bbre_uint min, bbre_uint max)
+{
+  bbre_uint leaf_hdl;
+  int err;
+
+  if ((err =
+           bbre_ast_make(r, &leaf_hdl, BBRE_AST_TYPE_CC_LEAF, min, max)))
+    return err;
+  if (*root_hdl == BBRE_NIL) {
+    *root_hdl = leaf_hdl;
+    return 0;
+  }
+  return bbre_ast_make(
+      r, root_hdl, BBRE_AST_TYPE_CC_OR, *root_hdl, leaf_hdl);
+}
+
 /* Helper function to add a character to the argument stack.
  * Returns `BBRE_ERR_MEM` if out of memory. */
 static int bbre_parse_escape_addchr(
@@ -292484,20 +296029,43 @@ static int bbre_parse_number(bbre *r, bbre_uint *out, bbre_uint max_digits)
     err = bbre_err_parse(r, "expected at least one decimal digit");
     goto error;
   }
-  while (ndigs < max_digits && bbre_parse_has_more(r) &&
-         (ch = bbre_peek_next(r)) >= '0' && ch <= '9')
+  while (bbre_parse_has_more(r) &&
+         (ch = bbre_peek_next(r)) >= '0' && ch <= '9') {
+    if (ndigs == max_digits) {
+      err = bbre_err_parse(r, "too many digits for decimal number");
+      goto error;
+    }
     acc = acc * 10 + (bbre_parse_next(r) - '0'), ndigs++;
+  }
   if (!ndigs) {
     err = bbre_err_parse(r, "expected at least one decimal digit");
-    goto error;
-  }
-  if (ndigs == max_digits) {
-    err = bbre_err_parse(r, "too many digits for decimal number");
     goto error;
   }
   *out = acc;
 error:
   return err;
+}
+
+/* Map an inline flag character without retaining state from a prior flag. */
+static int bbre_parse_group_flag(bbre_uint ch, bbre_uint *flag)
+{
+  switch (ch) {
+  case 'i':
+    *flag = BBRE_GROUP_FLAG_INSENSITIVE;
+    return 1;
+  case 'm':
+    *flag = BBRE_GROUP_FLAG_MULTILINE;
+    return 1;
+  case 's':
+    *flag = BBRE_GROUP_FLAG_DOTNEWLINE;
+    return 1;
+  case 'U':
+    *flag = BBRE_GROUP_FLAG_UNGREEDY;
+    return 1;
+  default:
+    *flag = 0;
+    return 0;
+  }
 }
 
 /* Parse a regular expression, storing its resulting AST node into *root. */
@@ -292562,6 +296130,17 @@ bbre_parse(bbre *r, const bbre_byte *ts, size_t tsz, bbre_flags start_flags)
           goto error;
         }
       }
+      if ((min_rep > BBRE_LIMIT_REPETITION_COUNT) ||
+          (max_rep != BBRE_INFTY &&
+           max_rep > BBRE_LIMIT_REPETITION_COUNT)) {
+        bbre_error_set(&r->error, "repetition count exceeds maximum");
+        err = BBRE_ERR_LIMIT;
+        goto error;
+      }
+      if (min_rep > max_rep) {
+        err = bbre_err_parse(r, "repetition lower bound exceeds upper bound");
+        goto error;
+      }
       if (bbre_parse_has_more(r) && bbre_peek_next(r) == '?')
         bbre_parse_next(r), greedy = !greedy;
       /* pop one from op stk, create quant, push to op stk */
@@ -292621,12 +296200,14 @@ bbre_parse(bbre *r, const bbre_byte *ts, size_t tsz, bbre_flags start_flags)
               goto error;
             if (ch == '>')
               break;
+            if (ch == 0) {
+              err = bbre_err_parse(r, "capture group name contains zero byte");
+              goto error;
+            }
           }
           name_end = r->expr_pos - 1; /* backtrack behind > */
         } else {
-          bbre_uint neg = 0 /* should we negate flags? */,
-                    flag = BBRE_GROUP_FLAG_UNGREEDY; /* default flag (this makes
-                                                  coverage testing simpler) */
+          bbre_uint neg = 0 /* should we negate flags? */, flag;
           while (1) {
             if (ch == ':' /* noncapturing */ || ch == ')' /* inline */)
               break;
@@ -292637,11 +296218,7 @@ bbre_parse(bbre *r, const bbre_byte *ts, size_t tsz, bbre_flags start_flags)
                 goto error;
               }
               neg = 1;
-            } else if (
-                (ch == 'i' && (flag = BBRE_GROUP_FLAG_INSENSITIVE)) ||
-                (ch == 'm' && (flag = BBRE_GROUP_FLAG_MULTILINE)) ||
-                (ch == 's' && (flag = BBRE_GROUP_FLAG_DOTNEWLINE)) ||
-                (ch == 'u')) {
+            } else if (bbre_parse_group_flag(ch, &flag)) {
               /* unset bit if negated, set bit if not */
               if (!neg)
                 hi_flags |= flag;
@@ -292665,10 +296242,27 @@ bbre_parse(bbre *r, const bbre_byte *ts, size_t tsz, bbre_flags start_flags)
       }
       assert(BBRE_IMPLIES(inline_group, !named_group));
       assert(BBRE_IMPLIES(named_group, !inline_group));
+      if (named_group && name_end == name_start) {
+        err = bbre_err_parse(r, "capture group name cannot be empty");
+        goto error;
+      }
       if (named_group && (name_end - name_start) > BBRE_LIMIT_GROUP_NAME_SIZE) {
         bbre_error_set(&r->error, "group name exceeds maximum length");
         err = BBRE_ERR_LIMIT;
         goto error;
+      }
+      if (named_group) {
+        size_t i, name_size = name_end - name_start;
+
+        for (i = 0; i < bbre_buf_size(r->group_names); i++) {
+          const bbre_group_name *name = &r->group_names[i];
+
+          if (name->name && name->name_size == name_size &&
+              !memcmp(name->name, r->expr + name_start, name_size)) {
+            err = bbre_err_parse(r, "duplicate capture group name");
+            goto error;
+          }
+        }
       }
       if (!inline_group) {
         if ((err = bbre_ast_make(
@@ -292720,6 +296314,7 @@ bbre_parse(bbre *r, const bbre_byte *ts, size_t tsz, bbre_flags start_flags)
       res_hdl = BBRE_NIL; /* resulting CC node */
       while (1) {
         bbre_uint next; /* temp var to store child classes */
+        bbre_uint has_range = 0, trailing_dash = 0;
         if ((err = bbre_parse_next_or(r, &ch, "unclosed character class")))
           goto error;
         if ((r->expr_pos - cc_start_pos == 1) && ch == '^') {
@@ -292814,27 +296409,30 @@ bbre_parse(bbre *r, const bbre_byte *ts, size_t tsz, bbre_flags start_flags)
                    "class "
                    "range expression")))
             goto error;
-          if (ch == '\\') { /* start of escape */
+          if (ch == ']') {
+            /* A dash immediately before ] is a literal class member. */
+            trailing_dash = 1;
+          } else if (ch == '\\') { /* start of escape */
             if ((err = bbre_parse_escape(r, (1 << BBRE_AST_TYPE_CHR), &next)))
               goto error;
             assert(*bbre_ast_type_ptr(r, next) == BBRE_AST_TYPE_CHR);
             max = *bbre_ast_param_ptr(r, next, 0);
+            has_range = 1;
           } else {
             max = ch; /* non-escaped character */
+            has_range = 1;
           }
         }
-        {
-          bbre_uint tmp_hdl;
-          if ((err = bbre_ast_make(
-                   r, &tmp_hdl, BBRE_AST_TYPE_CC_LEAF, min < max ? min : max,
-                   min < max ? max : min)))
+        if (has_range && min > max) {
+          err = bbre_err_parse(r, "character class range is reversed");
+          goto error;
+        }
+        if ((err = bbre_ast_cls_append_range(r, &res_hdl, min, max)))
+          goto error;
+        if (trailing_dash) {
+          if ((err = bbre_ast_cls_append_range(r, &res_hdl, '-', '-')))
             goto error;
-          if (res_hdl != BBRE_NIL) {
-            if ((err = bbre_ast_make(
-                     r, &res_hdl, BBRE_AST_TYPE_CC_OR, res_hdl, tmp_hdl)))
-              goto error;
-          } else
-            res_hdl = tmp_hdl;
+          break;
         }
       }
       assert(res_hdl); /* charclass cannot be empty */
@@ -294596,20 +298194,45 @@ bbre_save_slots_new(bbre_exec *exec, bbre_save_slots *s, bbre_uint *next)
     *next = s->last_empty;
     s->last_empty = *bbre_save_slots_refcnt(s, *next);
   } else {
-    if ((s->slots_size + 1) * (s->per_thrd + 1) > s->slots_alloc) {
+    size_t needed, new_alloc, old_bytes, new_bytes;
+    size_t *new_slots;
+
+    if (s->slots_size >= UINT_MAX ||
+        s->slots_size == (size_t)-1 ||
+        s->per_thrd > (size_t)-1 / (s->slots_size + 1)) {
+      err = BBRE_ERR_MEM;
+      goto error;
+    }
+    needed = (s->slots_size + 1) * s->per_thrd;
+    if (needed > s->slots_alloc) {
       /* initial alloc / realloc */
-      size_t new_alloc =
-          (s->slots_alloc ? s->slots_alloc * 2 : 16) * s->per_thrd;
-      size_t *new_slots = bbre_alloci(
-          &exec->alloc, s->slots, s->slots_alloc * sizeof(size_t),
-          new_alloc * sizeof(size_t));
+      if (s->slots_alloc) {
+        new_alloc = s->slots_alloc > (size_t)-1 / 2
+                        ? needed
+                        : s->slots_alloc * 2;
+      } else {
+        new_alloc = s->per_thrd > (size_t)-1 / 16
+                        ? needed
+                        : 16 * s->per_thrd;
+      }
+      if (new_alloc < needed)
+        new_alloc = needed;
+      if (s->slots_alloc > (size_t)-1 / sizeof(size_t) ||
+          new_alloc > (size_t)-1 / sizeof(size_t)) {
+        err = BBRE_ERR_MEM;
+        goto error;
+      }
+      old_bytes = s->slots_alloc * sizeof(size_t);
+      new_bytes = new_alloc * sizeof(size_t);
+      new_slots =
+          bbre_alloci(&exec->alloc, s->slots, old_bytes, new_bytes);
       if (!new_slots) {
         err = BBRE_ERR_MEM;
         goto error;
       }
       s->slots = new_slots, s->slots_alloc = new_alloc;
     }
-    *next = s->slots_size++;
+    *next = (bbre_uint)s->slots_size++;
     assert(s->slots_size * s->per_thrd <= s->slots_alloc);
   }
   for (i = 0; i < s->per_thrd - 1; i++)
@@ -294701,13 +298324,14 @@ static int
 bbre_bmp_init(bbre_alloc alloc, bbre_buf(bbre_uint) * b, bbre_uint size)
 {
   bbre_uint i;
+  bbre_uint words =
+      size / BBRE_BITS_PER_U32 + !!(size % BBRE_BITS_PER_U32);
   int err = 0;
   bbre_buf_clear(b);
-  if ((err = bbre_buf_reserve(
-           &alloc, b, (size + BBRE_BITS_PER_U32) / BBRE_BITS_PER_U32)))
+  if ((err = bbre_buf_reserve(&alloc, b, words)))
     goto error;
-  for (i = 0; i < (size + BBRE_BITS_PER_U32) / BBRE_BITS_PER_U32; i++)
-    *b[i] = 0;
+  for (i = 0; i < words; i++)
+    (*b)[i] = 0;
 error:
   return err;
 }
@@ -294715,19 +298339,21 @@ error:
 static void bbre_bmp_clear(bbre_buf(bbre_uint) * b)
 {
   assert(*b);
-  memset(*b, 0, bbre_buf_size(*b));
+  memset(*b, 0, bbre_buf_size(*b) * sizeof(**b));
 }
 
 static void bbre_bmp_set(bbre_buf(bbre_uint) b, bbre_uint idx)
 {
   /* TODO: assert idx < nsets */
-  b[idx / BBRE_BITS_PER_U32] |= (1 << (idx % BBRE_BITS_PER_U32));
+  b[idx / BBRE_BITS_PER_U32] |=
+      ((bbre_uint)1u << (idx % BBRE_BITS_PER_U32));
 }
 
 /* returns 0 or a positive value (not necessarily 1) */
 static bbre_uint bbre_bmp_get(bbre_buf(bbre_uint) b, bbre_uint idx)
 {
-  return b[idx / BBRE_BITS_PER_U32] & (1 << (idx % BBRE_BITS_PER_U32));
+  return b[idx / BBRE_BITS_PER_U32] &
+         ((bbre_uint)1u << (idx % BBRE_BITS_PER_U32));
 }
 
 static void bbre_nfa_destroy(bbre_exec *exec, bbre_nfa *n)

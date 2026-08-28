@@ -215,7 +215,10 @@ int main(void)
 	xui_terminal_session_t* pSession;
 	xui_style_property_t arrStyle[6];
 	xui_rect_t tCursorRect;
+	xui_rect_t tTextRect;
+	xui_rect_t tContent;
 	xui_rect_t tWorld;
+	xui_thickness_t tWidgetPadding;
 	uint32_t iStyledForeground;
 	uint32_t iStyledPaletteRed;
 	char sBuffer[2048];
@@ -234,6 +237,9 @@ int main(void)
 	int iPollBytes;
 	float fScrollY;
 	float fMaxY;
+	float fCellWidth;
+	float fCellHeight;
+	float fPadding;
 
 	memset(&tProxyState, 0, sizeof(tProxyState));
 	memset(&tState, 0, sizeof(tState));
@@ -323,6 +329,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal inline style clear");
 	iRet = xuiTerminalResize(pTerminal, 10, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal style restore size");
+	iRet = xuiTerminalSetMetrics(pTerminal, 7.4f, 15.6f, 2.4f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal fractional metrics set");
+	iRet = xuiTerminalGetMetrics(pTerminal, &fCellWidth, &fCellHeight, &fPadding);
+	XUI_TEST_CHECK(iRet == XUI_OK && fCellWidth == 7.0f && fCellHeight == 16.0f && fPadding == 2.0f,
+		"terminal metrics resolve to stable pixel grid");
+	iRet = xuiTerminalSetMetrics(pTerminal, 8.0f, 16.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal metrics restore");
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal style restore clear");
 	XUI_TEST_CHECK(xuiTerminalGetPalette(pTerminal, 1) == XUI_COLOR_RGBA(205, 49, 49, 255), "terminal palette restores base");
@@ -366,6 +379,41 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY == fMaxY, "terminal input follows tail");
 	memset(tState.sInput, 0, sizeof(tState.sInput));
 	tState.iInputSize = 0;
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal wheel layout");
+	tWorld = xuiWidgetGetWorldRect(pTerminal);
+	iRet = xuiInputPointerWheel(pContext, (int)(tWorld.fX + 20.0f), (int)(tWorld.fY + 20.0f), 0.0f, 1.0f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal wheel input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal wheel dispatch");
+	iRet = xuiScrollModelGetOffset(xuiTerminalGetScrollModel(pTerminal), NULL, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY == fMaxY - 48.0f, "terminal wheel scrolls three text rows");
+
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear fractional scroll screen");
+	iRet = xuiTerminalClearScrollback(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear fractional scroll history");
+	iRet = xuiTerminalWriteText(pTerminal, "zero\r\none\r\ntwo\r\nthree\r\nfour");
+	XUI_TEST_CHECK(iRet == XUI_OK, "write fractional scroll rows");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush fractional scroll rows");
+	iRet = xuiScrollModelSetOffset(xuiTerminalGetScrollModel(pTerminal), 0.0f, 5.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set fractional terminal scroll offset");
+	iRet = xuiWidgetInvalidate(pTerminal, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate fractional terminal scroll offset");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render fractional terminal scroll offset");
+	pCache = xuiWidgetGetCacheSurface(pTerminal, xuiWidgetGetStateId(pTerminal));
+	tTextRect = xuiTestSurfaceGetLastTextRect(pCache);
+	XUI_TEST_CHECK(tTextRect.fY == 63.0f, "terminal renders partial bottom row at exact pixel offset");
+	tWorld = xuiWidgetGetWorldRect(pTerminal);
+	iRet = __xuiTerminalTestDoubleClick(pContext,
+		tWorld.fX + 4.0f + 1.0f * 8.0f + 0.5f,
+		tWorld.fY + 4.0f + 12.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal fractional scroll hit test");
+	iRet = xuiTerminalGetSelectionText(pTerminal, sBuffer, (int)sizeof(sBuffer));
+	XUI_TEST_CHECK(iRet == 3 && strcmp(sBuffer, "one") == 0,
+		"terminal hit testing uses exact pixel scroll offset");
 
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear");
@@ -410,6 +458,29 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "flush clear all tab stops");
 	iRet = xuiTerminalGetCell(pTerminal, 9, 0, &tCell);
 	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'Z', "clear all tab stops falls to last column");
+
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear combining character screen");
+	iRet = xuiTerminalWriteText(pTerminal, "e\xcc\x81X");
+	XUI_TEST_CHECK(iRet == XUI_OK, "write combining character");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush combining character");
+	iRet = xuiTerminalGetCell(pTerminal, 0, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'e' && tCell.iCombiningCount == 1 &&
+		tCell.arrCombining[0] == 0x0301u, "terminal combining mark attaches to base cell");
+	iRet = xuiTerminalGetCell(pTerminal, 1, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'X', "terminal combining mark consumes no column");
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear emoji width screen");
+	iRet = xuiTerminalWriteText(pTerminal, "\xf0\x9f\x98\x80X");
+	XUI_TEST_CHECK(iRet == XUI_OK, "write emoji width text");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush emoji width text");
+	iRet = xuiTerminalGetCell(pTerminal, 0, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 0x1f600u && tCell.iWidth == 2,
+		"terminal emoji occupies two cells");
+	iRet = xuiTerminalGetCell(pTerminal, 2, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'X', "terminal text follows emoji cell width");
 
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear dirty row cache screen");
@@ -905,6 +976,34 @@ int main(void)
 	xuiTerminalSessionDestroy(pSession);
 	pSession = NULL;
 #endif
+
+	tWidgetPadding = (xui_thickness_t){3, 5, 7, 9};
+	iRet = xuiWidgetSetPadding(pTerminal, tWidgetPadding);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal widget content padding set");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal padded content layout");
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal padded content clear");
+	iRet = xuiTerminalClearScrollback(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal padded content history clear");
+	iRet = xuiScrollModelSetOffset(xuiTerminalGetScrollModel(pTerminal), 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal padded content scroll reset");
+	tContent = xuiWidgetGetContentRect(pTerminal);
+	tCursorRect = xuiEditGetCaretRect(pTerminal);
+	XUI_TEST_CHECK(tCursorRect.fX == tContent.fX + 4.0f && tCursorRect.fY == tContent.fY + 4.0f,
+		"terminal caret includes content rect origin");
+	iRet = xuiTerminalWriteText(pTerminal, "padded");
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal padded content write");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal padded content flush");
+	tWorld = xuiWidgetGetWorldRect(pTerminal);
+	iRet = __xuiTerminalTestDoubleClick(pContext,
+		tWorld.fX + tContent.fX + 4.0f + 2.0f * 8.0f + 0.5f,
+		tWorld.fY + tContent.fY + 4.0f + 8.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal padded content hit test");
+	iRet = xuiTerminalGetSelectionText(pTerminal, sBuffer, (int)sizeof(sBuffer));
+	XUI_TEST_CHECK(iRet == 6 && strcmp(sBuffer, "padded") == 0,
+		"terminal pointer hit includes content rect origin");
 
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");

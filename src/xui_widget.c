@@ -3169,10 +3169,8 @@ static int __xuiWidgetIsDescendantOf(xui_widget pWidget, xui_widget pAncestor)
 static void __xuiWidgetDestroyNow(xui_widget pWidget)
 {
 	xui_widget pChild;
-	xui_context pContext;
 
 	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
-	pContext = pWidget->pContext;
 	if ( __xuiWidgetMemoryValid(pWidget->pEditDelegate) &&
 	     pWidget->pEditDelegate->pEditOwner == pWidget ) {
 		pWidget->pEditDelegate->pEditOwner = NULL;

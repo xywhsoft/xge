@@ -2032,8 +2032,7 @@ static bool xl_set_tracks(xlayout_context_t* context, xlayout_node_t handle, con
 	current_count = columns ? node->column_count : node->row_count;
 	if ( current_count == count && (count == 0u || memcmp(current, tracks, sizeof(*tracks) * count) == 0) ) return true;
 	if ( count != 0u ) {
-		if ( (size_t)count > SIZE_MAX / sizeof(*copy) ) return false;
-		copy = (xlayout_track_t*)xrtMalloc(sizeof(*copy) * count);
+		copy = (xlayout_track_t*)xrtCalloc((size_t)count, sizeof(*copy));
 		if ( copy == NULL ) return false;
 		memcpy(copy, tracks, sizeof(*copy) * count);
 	}

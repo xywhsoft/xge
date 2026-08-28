@@ -147,14 +147,20 @@ static int __xuiInventoryRectContains(xui_rect_t tRect, float fX, float fY)
 
 static void __xuiInventorySafeCopy(char* sDst, int iCapacity, const char* sSrc)
 {
+	size_t iLength;
+	size_t iMaxLength;
+
 	if ( (sDst == NULL) || (iCapacity <= 0) ) {
 		return;
 	}
 	if ( sSrc == NULL ) {
 		sSrc = "";
 	}
-	strncpy(sDst, sSrc, (size_t)iCapacity - 1u);
-	sDst[iCapacity - 1] = '\0';
+	iMaxLength = (size_t)iCapacity - 1u;
+	iLength = strlen(sSrc);
+	if ( iLength > iMaxLength ) iLength = iMaxLength;
+	if ( iLength > 0u ) memcpy(sDst, sSrc, iLength);
+	sDst[iLength] = '\0';
 }
 
 static xui_inventory_grid_data_t* __xuiInventoryGetData(xui_widget pWidget)

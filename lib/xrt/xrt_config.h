@@ -37,6 +37,19 @@
 #define XRT_MODULE_VALUE_GRAPH
 #define XRT_MODULE_XSON
 
+/*
+ * Optional profile for CPU-heavy procedural generation tools.  Keep these
+ * capabilities behind an explicit build flag so the default XGE DLL retains
+ * its current footprint while specialized hosts can use the same exported
+ * XRT runtime instance instead of linking a second copy.
+ */
+#if defined(XGE_XRT_PROFILE_MAPGEN)
+	#define XRT_MODULE_HASH64
+	#define XRT_MODULE_RANDOM
+	#define XRT_MODULE_TASK_GROUP_POOL
+	#define XRT_MODULE_DEFLATE
+#endif
+
 #define XREGEX_MODULE_REGEX_CORE
 #define XREGEX_MODULE_REGEX_MATCH
 
