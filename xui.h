@@ -816,8 +816,21 @@ typedef struct xui_language_text_t {
 #define XUI_TERMINAL_CELL_WIDE_CONT	0x00000020u
 #define XUI_TERMINAL_CELL_COMBINING	0x00000040u
 #define XUI_TERMINAL_CELL_COMBINING_OVERFLOW	0x00000080u
+#define XUI_TERMINAL_CELL_ITALIC		0x00000100u
+#define XUI_TERMINAL_CELL_BLINK		0x00000200u
+#define XUI_TERMINAL_CELL_STRIKE		0x00000400u
 #define XUI_TERMINAL_MAX_COMBINING	16
 #define XUI_TERMINAL_SEARCH_CASE_SENSITIVE	0x00000001u
+#define XUI_TERMINAL_SEARCH_WHOLE_WORD	0x00000002u
+#define XUI_TERMINAL_SEARCH_REGEX	0x00000004u
+#define XUI_TERMINAL_MOUSE_TRACKING_NONE	0
+#define XUI_TERMINAL_MOUSE_TRACKING_PRESS	1000
+#define XUI_TERMINAL_MOUSE_TRACKING_DRAG	1002
+#define XUI_TERMINAL_MOUSE_TRACKING_ANY	1003
+#define XUI_TERMINAL_MOUSE_ENCODING_X10	0
+#define XUI_TERMINAL_MOUSE_ENCODING_UTF8	1005
+#define XUI_TERMINAL_MOUSE_ENCODING_SGR	1006
+#define XUI_TERMINAL_MOUSE_ENCODING_URXVT	1015
 #define XUI_TERMINAL_MENU_COPY		1
 #define XUI_TERMINAL_MENU_PASTE		2
 #define XUI_TERMINAL_MENU_SELECT_ALL	3
@@ -3397,6 +3410,24 @@ typedef struct xui_terminal_desc_t {
 	uint32_t iFocusColor;
 	uint32_t iLinkHoverColor;
 } xui_terminal_desc_t;
+
+typedef struct xui_terminal_stats_t {
+	uint32_t iSize;
+	int iColumns;
+	int iRows;
+	int iHistoryLogicalLines;
+	int iHistoryDisplayRows;
+	int iQueuedBytes;
+	int iQueueCapacity;
+	int iQueuePeakBytes;
+	int iDirtyRows;
+	int iChangeCount;
+	uint64_t iOutputBytesReceived;
+	uint64_t iOutputBytesParsed;
+	size_t iScreenMemoryBytes;
+	size_t iHistoryMemoryBytes;
+	size_t iQueueMemoryBytes;
+} xui_terminal_stats_t;
 
 typedef struct xui_terminal_session_desc_t {
 	uint32_t iSize;
@@ -7405,6 +7436,8 @@ XUI_API int xuiTerminalFindNext(xui_widget pWidget, const char* sText, uint32_t 
 XUI_API int xuiTerminalFindPrev(xui_widget pWidget, const char* sText, uint32_t iFlags, int* pLine, int* pColumn);
 XUI_API int xuiTerminalClearFind(xui_widget pWidget);
 XUI_API int xuiTerminalGetFindMatch(xui_widget pWidget, int* pLine, int* pColumn, int* pLength);
+XUI_API int xuiTerminalOpenFind(xui_widget pWidget);
+XUI_API xui_widget xuiTerminalGetFindWindow(xui_widget pWidget);
 XUI_API int xuiTerminalGetLinkAt(xui_widget pWidget, int iLine, int iColumn, char* sBuffer, int iCapacity, int* pStartColumn, int* pLength);
 XUI_API int xuiTerminalOpenMenu(xui_widget pWidget, float fX, float fY);
 XUI_API xui_widget xuiTerminalGetMenuWidget(xui_widget pWidget);
@@ -7424,6 +7457,7 @@ XUI_API int xuiTerminalSessionTerminate(xui_terminal_session_t* pSession);
 XUI_API int xuiTerminalSessionResize(xui_terminal_session_t* pSession, int iColumns, int iRows);
 XUI_API int xuiTerminalSessionSetResizeCallback(xui_terminal_session_t* pSession, xui_terminal_session_resize_proc onResize, void* pUser);
 XUI_API int xuiTerminalGetChangeCount(xui_widget pWidget);
+XUI_API int xuiTerminalGetStats(xui_widget pWidget, xui_terminal_stats_t* pStats);
 
 XUI_API xui_widget_type xuiSplitLayoutGetType(xui_context pContext);
 XUI_API int xuiSplitLayoutCreate(xui_context pContext, xui_widget* ppWidget, const xui_split_layout_desc_t* pDesc);

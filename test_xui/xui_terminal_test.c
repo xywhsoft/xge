@@ -210,6 +210,7 @@ int main(void)
 	const xui_menu_item_t* pItem;
 	xui_terminal_desc_t tDesc;
 	xui_terminal_cell_t tCell;
+	xui_terminal_stats_t tStats;
 	xui_terminal_session_desc_t tSessionDesc;
 	xui_terminal_process_desc_t tProcessDesc;
 	xui_terminal_session_t* pSession;
@@ -244,6 +245,7 @@ int main(void)
 	memset(&tProxyState, 0, sizeof(tProxyState));
 	memset(&tState, 0, sizeof(tState));
 	memset(&tDesc, 0, sizeof(tDesc));
+	memset(&tStats, 0, sizeof(tStats));
 	memset(&tProcessDesc, 0, sizeof(tProcessDesc));
 	pContext = NULL;
 	pRoot = NULL;
@@ -591,6 +593,76 @@ int main(void)
 	iRet = xuiTerminalPasteText(pTerminal, "paste");
 	XUI_TEST_CHECK(iRet == XUI_OK && strstr(tState.sInput, "\x1b[200~paste\x1b[201~") != NULL, "bracketed paste");
 
+	iRet = xuiTerminalGetStats(pTerminal, &tStats);
+	XUI_TEST_CHECK(iRet == XUI_OK && tStats.iSize == sizeof(tStats) &&
+		tStats.iQueuedBytes == 0 && tStats.iQueueCapacity >= tStats.iQueuePeakBytes &&
+		tStats.iOutputBytesReceived == tStats.iOutputBytesParsed &&
+		tStats.iScreenMemoryBytes > 0 && tStats.iHistoryMemoryBytes > 0,
+		"terminal runtime statistics");
+
+	if ( xuiTerminalGetFindWindow(pTerminal) != NULL ) {
+		(void)xuiWindowSetOpen(xuiTerminalGetFindWindow(pTerminal), 0);
+	}
+	(void)xuiSetFocusWidget(pContext, pTerminal);
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
+	iRet = __xuiTerminalTestKey(pContext, 'F', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iInputSize == 1 &&
+		(unsigned char)tState.sInput[0] == 0x06u, "terminal ctrl f reaches TUI");
+	iRet = __xuiTerminalTestKey(pContext, 'F', XUI_MOD_CTRL | XUI_MOD_SHIFT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTerminalGetFindWindow(pTerminal) != NULL &&
+		xuiWindowIsOpen(xuiTerminalGetFindWindow(pTerminal)), "terminal ctrl shift f opens find window");
+	iRet = xuiInputKeyUp(pContext, 'F', 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal find shortcut key release");
+	(void)xuiWindowSetOpen(xuiTerminalGetFindWindow(pTerminal), 0);
+	(void)xuiSetFocusWidget(pContext, pTerminal);
+	(void)xuiDispatchPendingEvents(pContext);
+
+	iRet = xuiTerminalWriteText(pTerminal, "\x1b[?1002h\x1b[?1006h\x1b[?1004h");
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable terminal application input modes");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush terminal application input modes");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
+	tWorld = xuiWidgetGetWorldRect(pTerminal);
+	tContent = xuiWidgetGetContentRect(pTerminal);
+	iRet = xuiInputPointerDown(pContext,
+		(int)(tWorld.fX + tContent.fX + 4.0f + 1.0f),
+		(int)(tWorld.fY + tContent.fY + 4.0f + 1.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal application mouse down");
+	iRet = xuiInputPointerMove(pContext,
+		(int)(tWorld.fX + tContent.fX + 4.0f + 8.0f + 1.0f),
+		(int)(tWorld.fY + tContent.fY + 4.0f + 1.0f), XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal application mouse drag");
+	iRet = xuiInputPointerUp(pContext,
+		(int)(tWorld.fX + tContent.fX + 4.0f + 8.0f + 1.0f),
+		(int)(tWorld.fY + tContent.fY + 4.0f + 1.0f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && strstr(tState.sInput, "\x1b[<0;1;1M") != NULL &&
+		strstr(tState.sInput, "\x1b[<32;2;1M") != NULL &&
+		strstr(tState.sInput, "\x1b[<0;2;1m") != NULL, "terminal SGR mouse protocol");
+	iRet = xuiInputPointerWheel(pContext,
+		(int)(tWorld.fX + tContent.fX + 4.0f + 8.0f + 1.0f),
+		(int)(tWorld.fY + tContent.fY + 4.0f + 1.0f), 0.0f, 1.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && strstr(tState.sInput, "\x1b[<64;2;1M") != NULL,
+		"terminal SGR wheel protocol");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pTerminal);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && strstr(tState.sInput, "\x1b[O") != NULL &&
+		strstr(tState.sInput, "\x1b[I") != NULL, "terminal focus reporting");
+	iRet = xuiTerminalWriteText(pTerminal, "\x1b[?1002l\x1b[?1006l\x1b[?1004l");
+	if ( iRet == XUI_OK ) iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable terminal application input modes");
+
 	iRet = xuiTerminalSelectAll(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select all");
 	iRet = xuiTerminalGetSelectionText(pTerminal, sBuffer, (int)sizeof(sBuffer));
@@ -832,7 +904,7 @@ int main(void)
 	pItem = xuiMenuGetItem(pMenu, 3);
 	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_SEPARATOR, "terminal menu separator");
 	pItem = xuiMenuGetItem(pMenu, 7);
-	XUI_TEST_CHECK(pItem != NULL && pItem->iValue == XUI_TERMINAL_MENU_FIND && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "terminal find menu disabled placeholder");
+	XUI_TEST_CHECK(pItem != NULL && pItem->iValue == XUI_TERMINAL_MENU_FIND && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "terminal find menu enabled");
 	iRet = xuiMenuSetHoverIndex(pMenu, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal copy menu hover");
 	iRet = xuiMenuCommitHover(pMenu);
@@ -883,22 +955,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal find menu hover");
 	iRet = xuiMenuCommitHover(pMenu);
 	XUI_TEST_CHECK(iRet == XUI_OK || iRet == XUI_EVENT_DISPATCH_STOP, "terminal find menu commit selection");
+	XUI_TEST_CHECK(xuiTerminalGetFindWindow(pTerminal) != NULL &&
+		xuiWindowIsOpen(xuiTerminalGetFindWindow(pTerminal)), "terminal find menu opens window");
 	iRet = xuiTerminalGetFindMatch(pTerminal, &iLine, &iColumn, &iLength);
 	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 6 && iLength == 4, "terminal find menu first match");
 	iRet = xuiTerminalClearSelection(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal find menu clear selection");
-	iRet = xuiTerminalOpenMenu(pTerminal, 44.0f, 44.0f);
-	XUI_TEST_CHECK(iRet == XUI_OK, "open terminal find next menu");
-	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "terminal find next menu layout");
-	pItem = xuiMenuGetItem(pMenu, 7);
-	XUI_TEST_CHECK(pItem != NULL && pItem->iValue == XUI_TERMINAL_MENU_FIND && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "terminal find menu enabled by existing query");
-	iRet = xuiMenuSetHoverIndex(pMenu, 7);
-	XUI_TEST_CHECK(iRet == XUI_OK, "terminal find next menu hover");
-	iRet = xuiMenuCommitHover(pMenu);
-	XUI_TEST_CHECK(iRet == XUI_OK || iRet == XUI_EVENT_DISPATCH_STOP, "terminal find menu commit next");
-	iRet = xuiTerminalGetFindMatch(pTerminal, &iLine, &iColumn, &iLength);
-	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 17 && iLength == 4, "terminal find menu next match");
+	iRet = xuiWindowSetOpen(xuiTerminalGetFindWindow(pTerminal), 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close terminal find window");
+	iRet = xuiSetFocusWidget(pContext, pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore terminal focus after find window");
 
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear before menu clear");

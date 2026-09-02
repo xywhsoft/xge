@@ -37,6 +37,7 @@
 #define XUI_TERMINAL_PROCESS_READ_CHUNK 4096
 #define XUI_TERMINAL_PROCESS_POLL_LIMIT 16
 #define XUI_TERMINAL_MENU_TITLE_COUNT 6
+#define XUI_TERMINAL_HISTORY_INITIAL_VIEW 128
 
 static int __xuiTerminalQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser);
 
@@ -68,10 +69,45 @@ typedef struct xui_terminal_parser_t {
 	int iParamCount;
 	int iCurrentParam;
 	int bParamActive;
-	int bPrivate;
+	char cPrivate;
+	char arrIntermediates[2];
+	int iIntermediateCount;
+	char cCharsetTarget;
 	char sOsc[XUI_TERMINAL_MAX_OSC];
 	int iOscSize;
 } xui_terminal_parser_t;
+
+typedef struct xui_terminal_history_cell_t {
+	uint32_t iCodepoint;
+	uint32_t iFgColor;
+	uint32_t iBgColor;
+	uint32_t iFlags;
+	uint32_t iCombiningOffset;
+	uint16_t iStyle;
+	uint16_t iLinkId;
+	uint8_t iWidth;
+	uint8_t iCombiningCount;
+	uint8_t arrReserved[2];
+} xui_terminal_history_cell_t;
+
+typedef struct xui_terminal_history_line_t {
+	xui_terminal_history_cell_t* pCells;
+	uint32_t* pCombining;
+	char* sTextCache;
+	uint64_t iId;
+	int iCellCount;
+	int iCellCapacity;
+	int iCombiningCount;
+	int iCombiningCapacity;
+	int bOpen;
+} xui_terminal_history_line_t;
+
+typedef struct xui_terminal_history_view_row_t {
+	xui_terminal_history_line_t* pLine;
+	int iStart;
+	int iEnd;
+	char* sTextCache;
+} xui_terminal_history_view_row_t;
 
 #if defined(_WIN32) || defined(_WIN64)
 typedef HRESULT (WINAPI* xui_terminal_create_pseudo_console_proc)(COORD, HANDLE, HANDLE, DWORD, HPCON*);
@@ -88,9 +124,11 @@ typedef struct xui_terminal_conpty_api_t {
 typedef struct xui_terminal_data_t {
 	xui_terminal_cell_t* pMain;
 	xui_terminal_cell_t* pAlt;
-	char** ppScrollback;
-	uint16_t** ppScrollbackLinks;
-	int* pScrollbackColumns;
+	uint8_t* pMainWrapped;
+	uint8_t* pAltWrapped;
+	xui_terminal_history_line_t** ppHistory;
+	xui_terminal_history_view_row_t* pHistoryView;
+	xui_terminal_cell_t* pHistoryRenderCells;
 	uint8_t* pQueue;
 	uint8_t* pTabStops;
 	uint8_t* pDirtyRows;
@@ -101,6 +139,14 @@ typedef struct xui_terminal_data_t {
 	xui_terminal_parser_t tParser;
 	xui_terminal_session_t* pSession;
 	xui_widget pMenu;
+	xui_widget pFindWindow;
+	xui_widget pFindInput;
+	xui_widget pFindPrevButton;
+	xui_widget pFindNextButton;
+	xui_widget pFindCaseCheck;
+	xui_widget pFindWordCheck;
+	xui_widget pFindRegexCheck;
+	xui_widget pFindStatus;
 	char* arrMenuTitle[XUI_TERMINAL_MENU_TITLE_COUNT];
 	char* sSearchText;
 	char* sImeText;
@@ -118,6 +164,7 @@ typedef struct xui_terminal_data_t {
 	int iLinkCount;
 	int iLinkCapacity;
 	uint16_t iCurrentLinkId;
+	uint32_t iLastCodepoint;
 	uint32_t arrBasePalette[256];
 	uint32_t arrPalette[256];
 	uint32_t iBaseBackgroundColor;
@@ -141,18 +188,38 @@ typedef struct xui_terminal_data_t {
 	uint32_t iCurrentFlags;
 	int iColumns;
 	int iRows;
+	int iMainRowOffset;
+	int iAltRowOffset;
 	int iCursorX;
 	int iCursorY;
 	int iSavedCursorX;
 	int iSavedCursorY;
+	uint32_t iSavedFg;
+	uint32_t iSavedBg;
+	uint32_t iSavedFlags;
+	uint16_t iSavedLinkId;
+	int iMainCursorX;
+	int iMainCursorY;
+	int iAltCursorX;
+	int iAltCursorY;
 	int iScrollTop;
 	int iScrollBottom;
 	int iScrollbackLimit;
 	int iScrollbackStart;
 	int iScrollbackCount;
+	int iHistoryCount;
+	int iHistoryViewCapacity;
+	int iHistoryRenderCapacity;
+	int iHistoryViewColumns;
+	int bHistoryViewDirty;
+	uint64_t iNextHistoryId;
+	int iQueueHead;
 	int iQueueSize;
 	int iQueueCapacity;
+	int iQueuePeak;
 	int iParseBudget;
+	uint64_t iOutputBytesReceived;
+	uint64_t iOutputBytesParsed;
 	int iChangeCount;
 	int iDirtyRowCount;
 	int iLastRenderTopLine;
@@ -162,6 +229,8 @@ typedef struct xui_terminal_data_t {
 	int iSearchLine;
 	int iSearchColumn;
 	int iSearchLength;
+	uint64_t iSearchHistoryId;
+	int iSearchHistoryCell;
 	int iHoverLinkLine;
 	int iHoverLinkColumn;
 	int iHoverLinkLength;
@@ -169,6 +238,20 @@ typedef struct xui_terminal_data_t {
 	int bAltScreen;
 	int bCursorVisible;
 	int bWrapPending;
+	int bAutoWrap;
+	int bOriginMode;
+	int bInsertMode;
+	int bApplicationCursor;
+	int bApplicationKeypad;
+	int iG0Charset;
+	int iG1Charset;
+	int iActiveCharset;
+	int bFocusReporting;
+	int iMouseTracking;
+	int iMouseEncoding;
+	int iMouseButton;
+	int bMouseCaptured;
+	int iCursorStyle;
 	int bLastCaretBlinkVisible;
 	int bBracketedPaste;
 	int bLigaturesEnabled;
@@ -200,6 +283,11 @@ static int __xuiTerminalPointerToCell(xui_widget pWidget, xui_terminal_data_t* p
 static int __xuiTerminalPasteClipboard(xui_widget pWidget, xui_terminal_data_t* pData);
 static int __xuiTerminalScrollOffsetPixels(xui_terminal_data_t* pData);
 static int __xuiTerminalUtf8Next(const char* sText, int iRemaining, uint32_t* pCodepoint, int* pBytes);
+static int __xuiTerminalEmitInput(xui_widget pWidget, xui_terminal_data_t* pData, const uint8_t* pBytes, int iSize);
+static void __xuiTerminalInsertCharacters(xui_terminal_data_t* pData, int iCount);
+static int __xuiTerminalOpenFindWindow(xui_widget pTerminal, xui_terminal_data_t* pData);
+static void __xuiTerminalClearFindMatch(xui_terminal_data_t* pData);
+static int __xuiTerminalResolveFindAnchor(xui_terminal_data_t* pData);
 
 static int __xuiTerminalEditSetSelection(xui_widget pWidget, int iStart, int iEnd)
 {
@@ -516,6 +604,55 @@ static const xui_terminal_cell_t* __xuiTerminalScreenConst(const xui_terminal_da
 	return (pData != NULL && pData->bAltScreen) ? pData->pAlt : ((pData != NULL) ? pData->pMain : NULL);
 }
 
+static int __xuiTerminalBufferRowIndex(const xui_terminal_data_t* pData,
+	const xui_terminal_cell_t* pCells, int iRow)
+{
+	int iOffset = 0;
+	if ( pData == NULL || pCells == NULL || pData->iRows <= 0 ) return 0;
+	if ( pCells == pData->pMain ) iOffset = pData->iMainRowOffset;
+	else if ( pCells == pData->pAlt ) iOffset = pData->iAltRowOffset;
+	return (iRow + iOffset) % pData->iRows;
+}
+
+static xui_terminal_cell_t* __xuiTerminalBufferRow(xui_terminal_data_t* pData,
+	xui_terminal_cell_t* pCells, int iRow)
+{
+	if ( pData == NULL || pCells == NULL || iRow < 0 || iRow >= pData->iRows ) return NULL;
+	return pCells + __xuiTerminalBufferRowIndex(pData, pCells, iRow) * pData->iColumns;
+}
+
+static const xui_terminal_cell_t* __xuiTerminalBufferRowConst(const xui_terminal_data_t* pData,
+	const xui_terminal_cell_t* pCells, int iRow)
+{
+	if ( pData == NULL || pCells == NULL || iRow < 0 || iRow >= pData->iRows ) return NULL;
+	return pCells + __xuiTerminalBufferRowIndex(pData, pCells, iRow) * pData->iColumns;
+}
+
+static xui_terminal_cell_t* __xuiTerminalScreenRow(xui_terminal_data_t* pData, int iRow)
+{
+	return __xuiTerminalBufferRow(pData, __xuiTerminalScreen(pData), iRow);
+}
+
+static const xui_terminal_cell_t* __xuiTerminalScreenRowConst(const xui_terminal_data_t* pData, int iRow)
+{
+	return __xuiTerminalBufferRowConst(pData, __xuiTerminalScreenConst(pData), iRow);
+}
+
+static xui_terminal_cell_t __xuiTerminalEraseCell(const xui_terminal_data_t* pData)
+{
+	xui_terminal_cell_t tCell = __xuiTerminalBlankCell(pData);
+	if ( pData != NULL ) {
+		tCell.iFgColor = pData->iCurrentFg;
+		tCell.iBgColor = pData->iCurrentBg;
+	}
+	return tCell;
+}
+
+static uint8_t* __xuiTerminalScreenWrapped(xui_terminal_data_t* pData)
+{
+	return (pData != NULL && pData->bAltScreen) ? pData->pAltWrapped : ((pData != NULL) ? pData->pMainWrapped : NULL);
+}
+
 static void __xuiTerminalMarkDirtyRow(xui_terminal_data_t* pData, int iRow)
 {
 	if ( pData == NULL || pData->pDirtyRows == NULL || iRow < 0 || iRow >= pData->iRows ) {
@@ -626,57 +763,59 @@ static void __xuiTerminalDefaultPalette(xui_terminal_data_t* pData)
 	memcpy(pData->arrPalette, pData->arrBasePalette, sizeof(pData->arrPalette));
 }
 
+static void __xuiTerminalHistoryLineDestroy(xui_terminal_history_line_t* pLine)
+{
+	if ( pLine == NULL ) return;
+	xrtFree(pLine->pCells);
+	xrtFree(pLine->pCombining);
+	xrtFree(pLine->sTextCache);
+	xrtFree(pLine);
+}
+
+static void __xuiTerminalHistoryViewClear(xui_terminal_data_t* pData)
+{
+	int i;
+	if ( pData == NULL ) return;
+	for ( i = 0; i < pData->iScrollbackCount; ++i ) {
+		xrtFree(pData->pHistoryView != NULL ? pData->pHistoryView[i].sTextCache : NULL);
+		if ( pData->pHistoryView != NULL ) pData->pHistoryView[i].sTextCache = NULL;
+	}
+	pData->iScrollbackCount = 0;
+}
+
 static void __xuiTerminalFreeScrollback(xui_terminal_data_t* pData)
 {
 	int i;
 	int idx;
-
-	if ( pData == NULL ) {
-		return;
-	}
-	for ( i = 0; i < pData->iScrollbackCount; i++ ) {
+	if ( pData == NULL ) return;
+	__xuiTerminalHistoryViewClear(pData);
+	for ( i = 0; i < pData->iHistoryCount; ++i ) {
 		idx = (pData->iScrollbackStart + i) % pData->iScrollbackLimit;
-		if ( pData->ppScrollback != NULL && pData->ppScrollback[idx] != NULL ) {
-			xrtFree(pData->ppScrollback[idx]);
-			pData->ppScrollback[idx] = NULL;
-		}
-		if ( pData->ppScrollbackLinks != NULL && pData->ppScrollbackLinks[idx] != NULL ) {
-			xrtFree(pData->ppScrollbackLinks[idx]);
-			pData->ppScrollbackLinks[idx] = NULL;
-		}
-		if ( pData->pScrollbackColumns != NULL ) {
-			pData->pScrollbackColumns[idx] = 0;
+		if ( pData->ppHistory != NULL ) {
+			__xuiTerminalHistoryLineDestroy(pData->ppHistory[idx]);
+			pData->ppHistory[idx] = NULL;
 		}
 	}
-	if ( pData->ppScrollback != NULL ) xrtFree(pData->ppScrollback);
-	if ( pData->ppScrollbackLinks != NULL ) xrtFree(pData->ppScrollbackLinks);
-	if ( pData->pScrollbackColumns != NULL ) xrtFree(pData->pScrollbackColumns);
-	pData->ppScrollback = NULL;
-	pData->ppScrollbackLinks = NULL;
-	pData->pScrollbackColumns = NULL;
+	xrtFree(pData->ppHistory);
+	xrtFree(pData->pHistoryView);
+	pData->ppHistory = NULL;
+	pData->pHistoryView = NULL;
 	pData->iScrollbackStart = 0;
-	pData->iScrollbackCount = 0;
+	pData->iHistoryCount = 0;
+	pData->iHistoryViewCapacity = 0;
+	pData->iHistoryViewColumns = 0;
+	pData->bHistoryViewDirty = 1;
 }
 
 static int __xuiTerminalAllocScrollback(xui_terminal_data_t* pData, int iLimit)
 {
-	if ( pData == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTerminalFreeScrollback(pData);
 	pData->iScrollbackLimit = (iLimit > 0) ? iLimit : XUI_TERMINAL_DEFAULT_SCROLLBACK;
-	pData->ppScrollback = (char**)xrtCalloc((size_t)pData->iScrollbackLimit, sizeof(char*));
-	pData->ppScrollbackLinks = (uint16_t**)xrtCalloc((size_t)pData->iScrollbackLimit, sizeof(uint16_t*));
-	pData->pScrollbackColumns = (int*)xrtCalloc((size_t)pData->iScrollbackLimit, sizeof(int));
-	if ( pData->ppScrollback == NULL || pData->ppScrollbackLinks == NULL || pData->pScrollbackColumns == NULL ) {
-		if ( pData->ppScrollback != NULL ) xrtFree(pData->ppScrollback);
-		if ( pData->ppScrollbackLinks != NULL ) xrtFree(pData->ppScrollbackLinks);
-		if ( pData->pScrollbackColumns != NULL ) xrtFree(pData->pScrollbackColumns);
-		pData->ppScrollback = NULL;
-		pData->ppScrollbackLinks = NULL;
-		pData->pScrollbackColumns = NULL;
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
+	pData->ppHistory = (xui_terminal_history_line_t**)xrtCalloc(
+		(size_t)pData->iScrollbackLimit, sizeof(*pData->ppHistory));
+	if ( pData->ppHistory == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->bHistoryViewDirty = 1;
 	return XUI_OK;
 }
 
@@ -751,130 +890,311 @@ static char* __xuiTerminalSerializeRow(const xui_terminal_data_t* pData, const x
 
 static void __xuiTerminalClearScrollbackSlot(xui_terminal_data_t* pData, int idx)
 {
-	if ( pData == NULL || idx < 0 || idx >= pData->iScrollbackLimit ) {
-		return;
-	}
-	if ( pData->ppScrollback != NULL && pData->ppScrollback[idx] != NULL ) {
-		xrtFree(pData->ppScrollback[idx]);
-		pData->ppScrollback[idx] = NULL;
-	}
-	if ( pData->ppScrollbackLinks != NULL && pData->ppScrollbackLinks[idx] != NULL ) {
-		xrtFree(pData->ppScrollbackLinks[idx]);
-		pData->ppScrollbackLinks[idx] = NULL;
-	}
-	if ( pData->pScrollbackColumns != NULL ) {
-		pData->pScrollbackColumns[idx] = 0;
-	}
+	if ( pData == NULL || idx < 0 || idx >= pData->iScrollbackLimit || pData->ppHistory == NULL ) return;
+	__xuiTerminalHistoryLineDestroy(pData->ppHistory[idx]);
+	pData->ppHistory[idx] = NULL;
 }
 
-static uint16_t* __xuiTerminalCopyRowLinks(const xui_terminal_cell_t* pRow, int iColumns)
+static void __xuiTerminalHistoryLineReset(xui_terminal_history_line_t* pLine)
 {
-	uint16_t* pLinks;
-	int bHasLink;
-	int i;
-
-	if ( pRow == NULL || iColumns <= 0 ) {
-		return NULL;
-	}
-	bHasLink = 0;
-	for ( i = 0; i < iColumns; i++ ) {
-		if ( pRow[i].iLinkId != 0 ) {
-			bHasLink = 1;
-			break;
-		}
-	}
-	if ( !bHasLink ) {
-		return NULL;
-	}
-	pLinks = (uint16_t*)xrtMalloc(sizeof(*pLinks) * (size_t)iColumns);
-	if ( pLinks == NULL ) {
-		return NULL;
-	}
-	for ( i = 0; i < iColumns; i++ ) {
-		pLinks[i] = pRow[i].iLinkId;
-	}
-	return pLinks;
+	if ( pLine == NULL ) return;
+	xrtFree(pLine->sTextCache);
+	pLine->sTextCache = NULL;
+	pLine->iCellCount = 0;
+	pLine->iCombiningCount = 0;
+	pLine->bOpen = 0;
 }
 
-static int __xuiTerminalPushScrollback(xui_terminal_data_t* pData, const char* sLine, const xui_terminal_cell_t* pRow, int iColumns)
+static int __xuiTerminalHistoryReserveCells(xui_terminal_history_line_t* pLine, int iNeeded)
 {
-	char* sCopy;
-	uint16_t* pLinks;
-	int idx;
-
-	if ( (pData == NULL) || (pData->ppScrollback == NULL) || (pData->iScrollbackLimit <= 0) ) {
-		return XUI_OK;
-	}
-	sCopy = __xuiTerminalStrDup(sLine);
-	if ( sCopy == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	pLinks = __xuiTerminalCopyRowLinks(pRow, iColumns);
-	if ( pRow != NULL && iColumns > 0 && pLinks == NULL ) {
-		int i;
-		for ( i = 0; i < iColumns; i++ ) {
-			if ( pRow[i].iLinkId != 0 ) {
-				xrtFree(sCopy);
-				return XUI_ERROR_OUT_OF_MEMORY;
-			}
-		}
-	}
-	if ( pData->iScrollbackCount < pData->iScrollbackLimit ) {
-		idx = (pData->iScrollbackStart + pData->iScrollbackCount) % pData->iScrollbackLimit;
-		pData->iScrollbackCount++;
+	xui_terminal_history_cell_t* pNew;
+	int iCapacity;
+	if ( pLine == NULL || iNeeded < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNeeded <= pLine->iCellCapacity ) return XUI_OK;
+	if ( pLine->iCellCapacity > 0 ) {
+		iCapacity = pLine->iCellCapacity + pLine->iCellCapacity / 2;
+		if ( iCapacity < iNeeded ) iCapacity = iNeeded;
 	} else {
-		idx = pData->iScrollbackStart;
-		__xuiTerminalClearScrollbackSlot(pData, idx);
-		pData->iScrollbackStart = (pData->iScrollbackStart + 1) % pData->iScrollbackLimit;
+		iCapacity = iNeeded > 0 ? iNeeded : 16;
 	}
-	pData->ppScrollback[idx] = sCopy;
-	if ( pData->ppScrollbackLinks != NULL ) {
-		pData->ppScrollbackLinks[idx] = pLinks;
-	}
-	if ( pData->pScrollbackColumns != NULL ) {
-		pData->pScrollbackColumns[idx] = (pLinks != NULL) ? iColumns : 0;
-	}
+	iCapacity = (iCapacity + 15) & ~15;
+	pNew = (xui_terminal_history_cell_t*)xrtRealloc(pLine->pCells, sizeof(*pNew) * (size_t)iCapacity);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pLine->pCells = pNew;
+	pLine->iCellCapacity = iCapacity;
 	return XUI_OK;
 }
 
-static const char* __xuiTerminalGetScrollbackLine(const xui_terminal_data_t* pData, int iLine)
+static int __xuiTerminalHistoryReserveCombining(xui_terminal_history_line_t* pLine, int iNeeded)
 {
-	int idx;
-
-	if ( (pData == NULL) || (pData->ppScrollback == NULL) || (iLine < 0) || (iLine >= pData->iScrollbackCount) || (pData->iScrollbackLimit <= 0) ) {
-		return "";
-	}
-	idx = (pData->iScrollbackStart + iLine) % pData->iScrollbackLimit;
-	return (pData->ppScrollback[idx] != NULL) ? pData->ppScrollback[idx] : "";
+	uint32_t* pNew;
+	int iCapacity;
+	if ( pLine == NULL || iNeeded < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNeeded <= pLine->iCombiningCapacity ) return XUI_OK;
+	iCapacity = pLine->iCombiningCapacity > 0 ? pLine->iCombiningCapacity : 16;
+	while ( iCapacity < iNeeded ) iCapacity *= 2;
+	pNew = (uint32_t*)xrtRealloc(pLine->pCombining, sizeof(*pNew) * (size_t)iCapacity);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pLine->pCombining = pNew;
+	pLine->iCombiningCapacity = iCapacity;
+	return XUI_OK;
 }
 
-static const uint16_t* __xuiTerminalGetScrollbackLinks(const xui_terminal_data_t* pData, int iLine, int* pColumns)
+static int __xuiTerminalHistoryAppendRow(xui_terminal_history_line_t* pLine,
+	const xui_terminal_cell_t* pRow, int iColumns, int bSoftWrapped)
+{
+	int i;
+	int iCount;
+	int iCombining;
+	int iRet;
+	if ( pLine == NULL || pRow == NULL || iColumns <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iCount = iColumns;
+	if ( !bSoftWrapped ) {
+		while ( iCount > 0 ) {
+			const xui_terminal_cell_t* pCell = &pRow[iCount - 1];
+			if ( pCell->iCodepoint != 0u && pCell->iCodepoint != ' ' &&
+			    (pCell->iFlags & XUI_TERMINAL_CELL_WIDE_CONT) == 0u ) break;
+			iCount--;
+		}
+	}
+	iCombining = 0;
+	for ( i = 0; i < iCount; ++i ) iCombining += pRow[i].iCombiningCount;
+	iRet = __xuiTerminalHistoryReserveCells(pLine, pLine->iCellCount + iCount);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTerminalHistoryReserveCombining(pLine, pLine->iCombiningCount + iCombining);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < iCount; ++i ) {
+		const xui_terminal_cell_t* pSource = &pRow[i];
+		xui_terminal_history_cell_t* pTarget = &pLine->pCells[pLine->iCellCount++];
+		memset(pTarget, 0, sizeof(*pTarget));
+		pTarget->iCodepoint = pSource->iCodepoint;
+		pTarget->iFgColor = pSource->iFgColor;
+		pTarget->iBgColor = pSource->iBgColor;
+		pTarget->iFlags = pSource->iFlags;
+		pTarget->iStyle = pSource->iStyle;
+		pTarget->iLinkId = pSource->iLinkId;
+		pTarget->iWidth = pSource->iWidth;
+		pTarget->iCombiningCount = pSource->iCombiningCount;
+		pTarget->iCombiningOffset = (uint32_t)pLine->iCombiningCount;
+		if ( pSource->iCombiningCount > 0 ) {
+			memcpy(pLine->pCombining + pLine->iCombiningCount, pSource->arrCombining,
+				sizeof(uint32_t) * (size_t)pSource->iCombiningCount);
+			pLine->iCombiningCount += pSource->iCombiningCount;
+		}
+	}
+	xrtFree(pLine->sTextCache);
+	pLine->sTextCache = NULL;
+	pLine->bOpen = bSoftWrapped != 0;
+	return XUI_OK;
+}
+
+static xui_terminal_history_line_t* __xuiTerminalHistoryLastLine(xui_terminal_data_t* pData)
 {
 	int idx;
+	if ( pData == NULL || pData->ppHistory == NULL || pData->iHistoryCount <= 0 || pData->iScrollbackLimit <= 0 ) return NULL;
+	idx = (pData->iScrollbackStart + pData->iHistoryCount - 1) % pData->iScrollbackLimit;
+	return pData->ppHistory[idx];
+}
 
-	if ( pColumns != NULL ) *pColumns = 0;
-	if ( (pData == NULL) || (pData->ppScrollbackLinks == NULL) || (iLine < 0) || (iLine >= pData->iScrollbackCount) || (pData->iScrollbackLimit <= 0) ) {
-		return NULL;
+static int __xuiTerminalPushScrollback(xui_terminal_data_t* pData,
+	const xui_terminal_cell_t* pRow, int iColumns, int bSoftWrapped)
+{
+	xui_terminal_history_line_t* pLine;
+	int idx;
+	int iRet;
+	if ( pData == NULL || pData->ppHistory == NULL || pData->iScrollbackLimit <= 0 || pRow == NULL || iColumns <= 0 ) return XUI_OK;
+	pLine = __xuiTerminalHistoryLastLine(pData);
+	if ( pLine == NULL || !pLine->bOpen ) {
+		if ( pData->iHistoryCount < pData->iScrollbackLimit ) {
+			idx = (pData->iScrollbackStart + pData->iHistoryCount) % pData->iScrollbackLimit;
+			pData->iHistoryCount++;
+			pLine = (xui_terminal_history_line_t*)xrtCalloc(1, sizeof(*pLine));
+			if ( pLine == NULL ) {
+				pData->iHistoryCount--;
+				return XUI_ERROR_OUT_OF_MEMORY;
+			}
+		} else {
+			idx = pData->iScrollbackStart;
+			pLine = pData->ppHistory[idx];
+			pData->ppHistory[idx] = NULL;
+			pData->iScrollbackStart = (pData->iScrollbackStart + 1) % pData->iScrollbackLimit;
+			if ( pLine == NULL ) {
+				pLine = (xui_terminal_history_line_t*)xrtCalloc(1, sizeof(*pLine));
+				if ( pLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+			} else {
+				__xuiTerminalHistoryLineReset(pLine);
+			}
+		}
+		pLine->iId = ++pData->iNextHistoryId;
+		pData->ppHistory[idx] = pLine;
 	}
-	idx = (pData->iScrollbackStart + iLine) % pData->iScrollbackLimit;
-	if ( pColumns != NULL && pData->pScrollbackColumns != NULL ) {
-		*pColumns = pData->pScrollbackColumns[idx];
+	iRet = __xuiTerminalHistoryAppendRow(pLine, pRow, iColumns, bSoftWrapped);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->bHistoryViewDirty = 1;
+	return XUI_OK;
+}
+
+static int __xuiTerminalHistoryViewReserve(xui_terminal_data_t* pData, int iNeeded)
+{
+	xui_terminal_history_view_row_t* pNew;
+	int iCapacity;
+	if ( pData == NULL || iNeeded < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNeeded <= pData->iHistoryViewCapacity ) return XUI_OK;
+	iCapacity = pData->iHistoryViewCapacity > 0 ? pData->iHistoryViewCapacity : XUI_TERMINAL_HISTORY_INITIAL_VIEW;
+	while ( iCapacity < iNeeded ) iCapacity *= 2;
+	pNew = (xui_terminal_history_view_row_t*)xrtRealloc(pData->pHistoryView, sizeof(*pNew) * (size_t)iCapacity);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memset(pNew + pData->iHistoryViewCapacity, 0,
+		sizeof(*pNew) * (size_t)(iCapacity - pData->iHistoryViewCapacity));
+	pData->pHistoryView = pNew;
+	pData->iHistoryViewCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static int __xuiTerminalRebuildHistoryView(xui_terminal_data_t* pData)
+{
+	int i;
+	int idx;
+	int iStart;
+	int iEnd;
+	int iRet;
+	if ( pData == NULL || pData->iColumns <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !pData->bHistoryViewDirty && pData->iHistoryViewColumns == pData->iColumns ) return XUI_OK;
+	__xuiTerminalHistoryViewClear(pData);
+	for ( i = 0; i < pData->iHistoryCount; ++i ) {
+		xui_terminal_history_line_t* pLine;
+		idx = (pData->iScrollbackStart + i) % pData->iScrollbackLimit;
+		pLine = pData->ppHistory != NULL ? pData->ppHistory[idx] : NULL;
+		if ( pLine == NULL ) continue;
+		if ( pLine->iCellCount <= 0 ) {
+			iRet = __xuiTerminalHistoryViewReserve(pData, pData->iScrollbackCount + 1);
+			if ( iRet != XUI_OK ) return iRet;
+			pData->pHistoryView[pData->iScrollbackCount].pLine = pLine;
+			pData->pHistoryView[pData->iScrollbackCount].iStart = 0;
+			pData->pHistoryView[pData->iScrollbackCount].iEnd = 0;
+			pData->iScrollbackCount++;
+			continue;
+		}
+		iStart = 0;
+		while ( iStart < pLine->iCellCount ) {
+			iEnd = __xuiTerminalMin(iStart + pData->iColumns, pLine->iCellCount);
+			if ( iEnd < pLine->iCellCount && iEnd > iStart &&
+			     (pLine->pCells[iEnd - 1].iFlags & XUI_TERMINAL_CELL_WIDE) != 0u &&
+			     (pLine->pCells[iEnd].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) iEnd--;
+			if ( iEnd <= iStart ) iEnd = __xuiTerminalMin(iStart + 1, pLine->iCellCount);
+			iRet = __xuiTerminalHistoryViewReserve(pData, pData->iScrollbackCount + 1);
+			if ( iRet != XUI_OK ) return iRet;
+			pData->pHistoryView[pData->iScrollbackCount].pLine = pLine;
+			pData->pHistoryView[pData->iScrollbackCount].iStart = iStart;
+			pData->pHistoryView[pData->iScrollbackCount].iEnd = iEnd;
+			pData->pHistoryView[pData->iScrollbackCount].sTextCache = NULL;
+			pData->iScrollbackCount++;
+			iStart = iEnd;
+		}
 	}
-	return pData->ppScrollbackLinks[idx];
+	pData->iHistoryViewColumns = pData->iColumns;
+	pData->bHistoryViewDirty = 0;
+	return XUI_OK;
+}
+
+static xui_terminal_history_view_row_t* __xuiTerminalGetHistoryViewRow(xui_terminal_data_t* pData, int iLine)
+{
+	if ( pData == NULL || __xuiTerminalRebuildHistoryView(pData) != XUI_OK || iLine < 0 || iLine >= pData->iScrollbackCount ) return NULL;
+	return &pData->pHistoryView[iLine];
+}
+
+static void __xuiTerminalHistoryCellToPublic(const xui_terminal_history_line_t* pLine,
+	int iCell, xui_terminal_cell_t* pTarget)
+{
+	const xui_terminal_history_cell_t* pSource;
+	int iCount;
+	if ( pTarget == NULL ) return;
+	memset(pTarget, 0, sizeof(*pTarget));
+	pTarget->iSize = sizeof(*pTarget);
+	if ( pLine == NULL || iCell < 0 || iCell >= pLine->iCellCount ) return;
+	pSource = &pLine->pCells[iCell];
+	pTarget->iCodepoint = pSource->iCodepoint;
+	pTarget->iFgColor = pSource->iFgColor;
+	pTarget->iBgColor = pSource->iBgColor;
+	pTarget->iFlags = pSource->iFlags;
+	pTarget->iStyle = pSource->iStyle;
+	pTarget->iLinkId = pSource->iLinkId;
+	pTarget->iWidth = pSource->iWidth;
+	iCount = pSource->iCombiningCount;
+	if ( iCount > XUI_TERMINAL_MAX_COMBINING ) iCount = XUI_TERMINAL_MAX_COMBINING;
+	pTarget->iCombiningCount = (uint8_t)iCount;
+	if ( iCount > 0 && pLine->pCombining != NULL ) {
+		memcpy(pTarget->arrCombining, pLine->pCombining + pSource->iCombiningOffset,
+			sizeof(uint32_t) * (size_t)iCount);
+	}
+}
+
+static const char* __xuiTerminalGetScrollbackLine(xui_terminal_data_t* pData, int iLine)
+{
+	xui_terminal_history_view_row_t* pView;
+	xui_terminal_cell_t tCell;
+	char sUtf[8];
+	char* sText;
+	int i;
+	int j;
+	int n;
+	int iSize;
+	int iCapacity;
+	pView = __xuiTerminalGetHistoryViewRow(pData, iLine);
+	if ( pView == NULL ) return "";
+	if ( pView->sTextCache != NULL ) return pView->sTextCache;
+	iCapacity = (pView->iEnd - pView->iStart + 1) * 4 + 1;
+	if ( iCapacity < 1 ) iCapacity = 1;
+	sText = (char*)xrtMalloc((size_t)iCapacity);
+	if ( sText == NULL ) return "";
+	iSize = 0;
+	for ( i = pView->iStart; i < pView->iEnd; ++i ) {
+		__xuiTerminalHistoryCellToPublic(pView->pLine, i, &tCell);
+		if ( (tCell.iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) continue;
+		n = __xuiTerminalEncodeUtf8(tCell.iCodepoint != 0u ? tCell.iCodepoint : ' ', sUtf);
+		while ( iSize + n + 1 >= iCapacity ) {
+			char* sNew;
+			iCapacity *= 2;
+			sNew = (char*)xrtRealloc(sText, (size_t)iCapacity);
+			if ( sNew == NULL ) { xrtFree(sText); return ""; }
+			sText = sNew;
+		}
+		if ( n > 0 ) { memcpy(sText + iSize, sUtf, (size_t)n); iSize += n; }
+		for ( j = 0; j < tCell.iCombiningCount; ++j ) {
+			n = __xuiTerminalEncodeUtf8(tCell.arrCombining[j], sUtf);
+			while ( iSize + n + 1 >= iCapacity ) {
+				char* sNew;
+				iCapacity *= 2;
+				sNew = (char*)xrtRealloc(sText, (size_t)iCapacity);
+				if ( sNew == NULL ) { xrtFree(sText); return ""; }
+				sText = sNew;
+			}
+			if ( n > 0 ) { memcpy(sText + iSize, sUtf, (size_t)n); iSize += n; }
+		}
+	}
+	while ( iSize > 0 && sText[iSize - 1] == ' ' ) iSize--;
+	sText[iSize] = '\0';
+	pView->sTextCache = sText;
+	return sText;
 }
 
 static void __xuiTerminalBlankRow(xui_terminal_data_t* pData, xui_terminal_cell_t* pCells, int iRow)
 {
 	xui_terminal_cell_t tBlank;
+	xui_terminal_cell_t* pRow;
 	int i;
 
 	if ( (pData == NULL) || (pCells == NULL) || (iRow < 0) || (iRow >= pData->iRows) ) {
 		return;
 	}
+	pRow = __xuiTerminalBufferRow(pData, pCells, iRow);
+	if ( pRow == NULL ) return;
 	tBlank = __xuiTerminalBlankCell(pData);
 	for ( i = 0; i < pData->iColumns; i++ ) {
-		pCells[iRow * pData->iColumns + i] = tBlank;
+		pRow[i] = tBlank;
 	}
+	if ( pCells == pData->pMain && pData->pMainWrapped != NULL ) pData->pMainWrapped[iRow] = 0u;
+	if ( pCells == pData->pAlt && pData->pAltWrapped != NULL ) pData->pAltWrapped[iRow] = 0u;
 	__xuiTerminalMarkDirtyRow(pData, iRow);
 }
 
@@ -926,15 +1246,16 @@ static void __xuiTerminalClearAllTabStops(xui_terminal_data_t* pData)
 }
 
 static int __xuiTerminalLastContentRow(const xui_terminal_data_t* pData,
-	const xui_terminal_cell_t* pCells, int iColumns, int iRows)
+	const xui_terminal_cell_t* pCells, int iColumns, int iRows, int iRowOffset)
 {
 	int x;
 	int y;
 
 	if ( pData == NULL || pCells == NULL || iColumns <= 0 || iRows <= 0 ) return -1;
 	for ( y = iRows - 1; y >= 0; y-- ) {
+		const xui_terminal_cell_t* pRow = pCells + ((y + iRowOffset) % iRows) * iColumns;
 		for ( x = 0; x < iColumns; x++ ) {
-			const xui_terminal_cell_t* pCell = pCells + y * iColumns + x;
+			const xui_terminal_cell_t* pCell = &pRow[x];
 			if ( pCell->iCodepoint != 0u && pCell->iCodepoint != ' ' ) return y;
 		}
 	}
@@ -943,75 +1264,206 @@ static int __xuiTerminalLastContentRow(const xui_terminal_data_t* pData,
 
 static void __xuiTerminalPopScrollbackRow(xui_terminal_data_t* pData, xui_terminal_cell_t* pRow)
 {
-	const uint16_t* pLinks;
-	const char* sLine;
-	int iLinkColumns;
-	int iRemaining;
-	int iOffset;
-	int iColumn;
-	int iBytes;
-	int iWidth;
+	xui_terminal_history_view_row_t* pView;
+	xui_terminal_history_line_t* pLine;
+	int i;
 	int iIndex;
-	uint32_t iCodepoint;
+	int iCount;
+	if ( pData == NULL || pRow == NULL || pData->iColumns <= 0 ) return;
+	if ( __xuiTerminalRebuildHistoryView(pData) != XUI_OK || pData->iScrollbackCount <= 0 ) return;
+	pView = &pData->pHistoryView[pData->iScrollbackCount - 1];
+	pLine = pView->pLine;
+	iCount = __xuiTerminalMin(pView->iEnd - pView->iStart, pData->iColumns);
+	for ( i = 0; i < iCount; ++i ) {
+		__xuiTerminalHistoryCellToPublic(pLine, pView->iStart + i, &pRow[i]);
+	}
+	if ( pView->iStart > 0 ) {
+		pLine->iCellCount = pView->iStart;
+		pLine->bOpen = 1;
+		xrtFree(pLine->sTextCache);
+		pLine->sTextCache = NULL;
+	} else if ( pData->iHistoryCount > 0 ) {
+		iIndex = (pData->iScrollbackStart + pData->iHistoryCount - 1) % pData->iScrollbackLimit;
+		__xuiTerminalClearScrollbackSlot(pData, iIndex);
+		pData->iHistoryCount--;
+		if ( pData->iHistoryCount == 0 ) pData->iScrollbackStart = 0;
+	}
+	pData->bHistoryViewDirty = 1;
+	(void)__xuiTerminalRebuildHistoryView(pData);
+}
 
-	if ( pData == NULL || pRow == NULL || pData->iColumns <= 0 || pData->iScrollbackCount <= 0 ) return;
-	iIndex = (pData->iScrollbackStart + pData->iScrollbackCount - 1) % pData->iScrollbackLimit;
-	sLine = (pData->ppScrollback != NULL && pData->ppScrollback[iIndex] != NULL) ? pData->ppScrollback[iIndex] : "";
-	pLinks = (pData->ppScrollbackLinks != NULL) ? pData->ppScrollbackLinks[iIndex] : NULL;
-	iLinkColumns = (pData->pScrollbackColumns != NULL) ? pData->pScrollbackColumns[iIndex] : 0;
-	iRemaining = (int)strlen(sLine);
-	iOffset = 0;
-	iColumn = 0;
-	while ( iOffset < iRemaining && iColumn < pData->iColumns ) {
-		if ( !__xuiTerminalUtf8Next(sLine + iOffset, iRemaining - iOffset, &iCodepoint, &iBytes) || iBytes <= 0 ) break;
-		iOffset += iBytes;
-		iWidth = __xuiTerminalCodepointWidth(iCodepoint);
-		if ( iWidth == 0 ) {
-			int iBaseColumn = iColumn - 1;
-			if ( iBaseColumn >= 0 && (pRow[iBaseColumn].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) iBaseColumn--;
-			if ( iBaseColumn >= 0 && pRow[iBaseColumn].iCombiningCount < XUI_TERMINAL_MAX_COMBINING ) {
-				pRow[iBaseColumn].arrCombining[pRow[iBaseColumn].iCombiningCount++] = iCodepoint;
-				pRow[iBaseColumn].iFlags |= XUI_TERMINAL_CELL_COMBINING;
+typedef struct xui_terminal_reflow_t {
+	xui_terminal_cell_t* pCells;
+	uint8_t* pWrapped;
+	int iRows;
+	int iCapacity;
+	int iColumns;
+	int iCursorRow;
+	int iCursorColumn;
+} xui_terminal_reflow_t;
+
+static void __xuiTerminalReflowUnit(xui_terminal_reflow_t* pReflow)
+{
+	if ( pReflow == NULL ) return;
+	xrtFree(pReflow->pCells);
+	xrtFree(pReflow->pWrapped);
+	memset(pReflow, 0, sizeof(*pReflow));
+}
+
+static int __xuiTerminalReflowReserve(xui_terminal_reflow_t* pReflow, int iRows)
+{
+	xui_terminal_cell_t* pCells;
+	uint8_t* pWrapped;
+	int iCapacity;
+	if ( pReflow == NULL || iRows < 0 || pReflow->iColumns <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iRows <= pReflow->iCapacity ) return XUI_OK;
+	iCapacity = pReflow->iCapacity > 0 ? pReflow->iCapacity : 16;
+	while ( iCapacity < iRows ) iCapacity *= 2;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pCells) / (size_t)pReflow->iColumns ) return XUI_ERROR_OUT_OF_MEMORY;
+	pCells = (xui_terminal_cell_t*)xrtRealloc(pReflow->pCells,
+		sizeof(*pCells) * (size_t)iCapacity * (size_t)pReflow->iColumns);
+	if ( pCells == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pWrapped = (uint8_t*)xrtRealloc(pReflow->pWrapped, (size_t)iCapacity);
+	if ( pWrapped == NULL ) {
+		pReflow->pCells = pCells;
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pReflow->pCells = pCells;
+	pReflow->pWrapped = pWrapped;
+	pReflow->iCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static int __xuiTerminalRowContentColumns(const xui_terminal_cell_t* pRow,
+	int iColumns, int bWrapped, int iMinimum)
+{
+	int iCount;
+	if ( pRow == NULL || iColumns <= 0 ) return 0;
+	iCount = bWrapped ? iColumns : 0;
+	if ( !bWrapped ) {
+		for ( iCount = iColumns; iCount > 0; --iCount ) {
+			const xui_terminal_cell_t* pCell = &pRow[iCount - 1];
+			if ( pCell->iCodepoint != 0u && pCell->iCodepoint != ' ' &&
+			    (pCell->iFlags & XUI_TERMINAL_CELL_WIDE_CONT) == 0u ) break;
+		}
+	}
+	if ( iCount < iMinimum ) iCount = iMinimum;
+	if ( iCount > iColumns ) iCount = iColumns;
+	return iCount;
+}
+
+static int __xuiTerminalReflowMain(const xui_terminal_data_t* pData,
+	const xui_terminal_cell_t* pOld, const uint8_t* pOldWrapped,
+	int iOldColumns, int iOldRows, int iOldRowOffset,
+	int iNewColumns, xui_terminal_reflow_t* pOut)
+{
+	xui_terminal_cell_t* pLogical;
+	int iLogicalCapacity;
+	int iLogicalCount;
+	int iLastRow;
+	int iGroupStart;
+	int iGroupEnd;
+	int iCursorOffset;
+	int iCursorLogical;
+	int iStart;
+	int iEnd;
+	int i;
+	int y;
+	int iRet;
+	xui_terminal_cell_t tBlank;
+	if ( pData == NULL || pOld == NULL || iOldColumns <= 0 || iOldRows <= 0 || iNewColumns <= 0 || pOut == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pOut, 0, sizeof(*pOut));
+	pOut->iColumns = iNewColumns;
+	pOut->iCursorRow = 0;
+	pOut->iCursorColumn = 0;
+	pLogical = NULL;
+	iLogicalCapacity = 0;
+	iLastRow = __xuiTerminalLastContentRow(pData, pOld, iOldColumns, iOldRows, iOldRowOffset);
+	if ( pData->iCursorY > iLastRow ) iLastRow = pData->iCursorY;
+	if ( iLastRow < 0 ) iLastRow = 0;
+	tBlank = __xuiTerminalEraseCell(pData);
+	for ( iGroupStart = 0; iGroupStart <= iLastRow; iGroupStart = iGroupEnd + 1 ) {
+		iGroupEnd = iGroupStart;
+		while ( iGroupEnd < iLastRow && pOldWrapped != NULL && pOldWrapped[iGroupEnd] != 0u ) iGroupEnd++;
+		iLogicalCount = 0;
+		iCursorOffset = -1;
+		for ( y = iGroupStart; y <= iGroupEnd; ++y ) {
+			const xui_terminal_cell_t* pOldRow = pOld + ((y + iOldRowOffset) % iOldRows) * iOldColumns;
+			int iMinimum = (y == pData->iCursorY) ? pData->iCursorX + 1 : 0;
+			int iCount = __xuiTerminalRowContentColumns(pOldRow, iOldColumns,
+				pOldWrapped != NULL && pOldWrapped[y] != 0u, iMinimum);
+			if ( iLogicalCount + iCount > iLogicalCapacity ) {
+				int iCapacity = iLogicalCapacity > 0 ? iLogicalCapacity : 64;
+				xui_terminal_cell_t* pNew;
+				while ( iCapacity < iLogicalCount + iCount ) iCapacity *= 2;
+				pNew = (xui_terminal_cell_t*)xrtRealloc(pLogical, sizeof(*pNew) * (size_t)iCapacity);
+				if ( pNew == NULL ) { xrtFree(pLogical); __xuiTerminalReflowUnit(pOut); return XUI_ERROR_OUT_OF_MEMORY; }
+				pLogical = pNew;
+				iLogicalCapacity = iCapacity;
 			}
+			if ( y == pData->iCursorY ) iCursorOffset = iLogicalCount + pData->iCursorX;
+			if ( iCount > 0 ) memcpy(pLogical + iLogicalCount, pOldRow,
+				sizeof(*pLogical) * (size_t)iCount);
+			iLogicalCount += iCount;
+		}
+		if ( iLogicalCount == 0 ) {
+			iRet = __xuiTerminalReflowReserve(pOut, pOut->iRows + 1);
+			if ( iRet != XUI_OK ) { xrtFree(pLogical); __xuiTerminalReflowUnit(pOut); return iRet; }
+			for ( i = 0; i < iNewColumns; ++i ) pOut->pCells[pOut->iRows * iNewColumns + i] = tBlank;
+			pOut->pWrapped[pOut->iRows] = 0u;
+			if ( iCursorOffset >= 0 ) { pOut->iCursorRow = pOut->iRows; pOut->iCursorColumn = 0; }
+			pOut->iRows++;
 			continue;
 		}
-		if ( iWidth < 0 ) continue;
-		if ( iWidth > pData->iColumns - iColumn ) break;
-		pRow[iColumn] = __xuiTerminalBlankCell(pData);
-		pRow[iColumn].iCodepoint = iCodepoint;
-		pRow[iColumn].iWidth = (uint8_t)iWidth;
-		if ( pLinks != NULL && iColumn < iLinkColumns ) pRow[iColumn].iLinkId = pLinks[iColumn];
-		if ( iWidth == 2 ) {
-			pRow[iColumn].iFlags |= XUI_TERMINAL_CELL_WIDE;
-			pRow[iColumn + 1] = pRow[iColumn];
-			pRow[iColumn + 1].iCodepoint = 0u;
-			pRow[iColumn + 1].iFlags &= ~XUI_TERMINAL_CELL_WIDE;
-			pRow[iColumn + 1].iFlags |= XUI_TERMINAL_CELL_WIDE_CONT;
-			pRow[iColumn + 1].iWidth = 0;
-			if ( pLinks != NULL && iColumn + 1 < iLinkColumns ) pRow[iColumn + 1].iLinkId = pLinks[iColumn + 1];
+		iCursorLogical = iCursorOffset;
+		iStart = 0;
+		while ( iStart < iLogicalCount ) {
+			iEnd = __xuiTerminalMin(iStart + iNewColumns, iLogicalCount);
+			if ( iEnd < iLogicalCount && iEnd > iStart &&
+			     (pLogical[iEnd - 1].iFlags & XUI_TERMINAL_CELL_WIDE) != 0u &&
+			     (pLogical[iEnd].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) iEnd--;
+			if ( iEnd <= iStart ) iEnd = __xuiTerminalMin(iStart + 1, iLogicalCount);
+			iRet = __xuiTerminalReflowReserve(pOut, pOut->iRows + 1);
+			if ( iRet != XUI_OK ) { xrtFree(pLogical); __xuiTerminalReflowUnit(pOut); return iRet; }
+			for ( i = 0; i < iNewColumns; ++i ) pOut->pCells[pOut->iRows * iNewColumns + i] = tBlank;
+			memcpy(pOut->pCells + pOut->iRows * iNewColumns, pLogical + iStart,
+				sizeof(*pLogical) * (size_t)(iEnd - iStart));
+			pOut->pWrapped[pOut->iRows] = (uint8_t)((iEnd < iLogicalCount ||
+				(pOldWrapped != NULL && pOldWrapped[iGroupEnd] != 0u)) ? 1 : 0);
+			if ( iCursorLogical >= iStart && (iCursorLogical < iEnd || iEnd == iLogicalCount) ) {
+				pOut->iCursorRow = pOut->iRows;
+				pOut->iCursorColumn = __xuiTerminalMin(iCursorLogical - iStart, iNewColumns - 1);
+			}
+			pOut->iRows++;
+			iStart = iEnd;
 		}
-		iColumn += iWidth;
 	}
-	__xuiTerminalClearScrollbackSlot(pData, iIndex);
-	pData->iScrollbackCount--;
-	if ( pData->iScrollbackCount <= 0 ) {
-		pData->iScrollbackCount = 0;
-		pData->iScrollbackStart = 0;
-	}
+	xrtFree(pLogical);
+	return XUI_OK;
 }
 
 static int __xuiTerminalResizeBuffers(xui_terminal_data_t* pData, int iColumns, int iRows)
 {
 	xui_terminal_cell_t* pNewMain;
 	xui_terminal_cell_t* pNewAlt;
+	uint8_t* pNewMainWrapped;
+	uint8_t* pNewAltWrapped;
 	uint8_t* pNewTabStops;
 	uint8_t* pNewDirtyRows;
 	xui_terminal_cell_t* pOldMain;
 	xui_terminal_cell_t* pOldAlt;
+	uint8_t* pOldMainWrapped;
+	uint8_t* pOldAltWrapped;
 	uint8_t* pOldTabStops;
 	uint8_t* pOldDirtyRows;
+	xui_terminal_reflow_t tReflow;
+	xui_terminal_data_t tMainState;
 	int iOldColumns;
 	int iOldRows;
+	int iOldActiveCursorX;
+	int iOldActiveCursorY;
+	int iOldMainRowOffset;
+	int iOldAltRowOffset;
 	int x;
 	int y;
 	int iCopyColumns;
@@ -1019,54 +1471,67 @@ static int __xuiTerminalResizeBuffers(xui_terminal_data_t* pData, int iColumns, 
 	int iMainSourceRow;
 	int iMainTargetRow;
 	int iRestoreRows;
-	int iShiftRows;
-	int iLastContentRow;
+	int iDropRows;
+	int iRet;
 
 	if ( (pData == NULL) || (iColumns <= 0) || (iRows <= 0) || (iColumns > 1000) || (iRows > 1000) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pData->iColumns == iColumns) && (pData->iRows == iRows) && (pData->pMain != NULL) && (pData->pAlt != NULL) && (pData->pTabStops != NULL) && (pData->pDirtyRows != NULL) ) {
+	if ( (pData->iColumns == iColumns) && (pData->iRows == iRows) && (pData->pMain != NULL) && (pData->pAlt != NULL) &&
+	     (pData->pMainWrapped != NULL) && (pData->pAltWrapped != NULL) && (pData->pTabStops != NULL) && (pData->pDirtyRows != NULL) ) {
 		return XUI_OK;
 	}
-	pNewMain = (xui_terminal_cell_t*)xrtMalloc(sizeof(*pNewMain) * (size_t)iColumns * (size_t)iRows);
-	pNewAlt = (xui_terminal_cell_t*)xrtMalloc(sizeof(*pNewAlt) * (size_t)iColumns * (size_t)iRows);
-	pNewTabStops = (uint8_t*)xrtMalloc((size_t)iColumns);
-	pNewDirtyRows = (uint8_t*)xrtCalloc((size_t)iRows, sizeof(*pNewDirtyRows));
-	if ( (pNewMain == NULL) || (pNewAlt == NULL) || (pNewTabStops == NULL) || (pNewDirtyRows == NULL) ) {
-		if ( pNewMain != NULL ) xrtFree(pNewMain);
-		if ( pNewAlt != NULL ) xrtFree(pNewAlt);
-		if ( pNewTabStops != NULL ) xrtFree(pNewTabStops);
-		if ( pNewDirtyRows != NULL ) xrtFree(pNewDirtyRows);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
+	memset(&tReflow, 0, sizeof(tReflow));
 	pOldMain = pData->pMain;
 	pOldAlt = pData->pAlt;
+	pOldMainWrapped = pData->pMainWrapped;
+	pOldAltWrapped = pData->pAltWrapped;
 	pOldTabStops = pData->pTabStops;
 	pOldDirtyRows = pData->pDirtyRows;
 	iOldColumns = pData->iColumns;
 	iOldRows = pData->iRows;
-	iShiftRows = 0;
-	iRestoreRows = 0;
-	if ( pOldMain != NULL && iOldRows > iRows && !pData->bAltScreen ) {
-		iLastContentRow = __xuiTerminalLastContentRow(pData, pOldMain, iOldColumns, iOldRows);
-		if ( pData->iCursorY > iLastContentRow ) iLastContentRow = pData->iCursorY;
-		if ( iLastContentRow >= iRows ) iShiftRows = iLastContentRow - iRows + 1;
-		if ( iShiftRows > iOldRows - iRows ) iShiftRows = iOldRows - iRows;
-		for ( y = 0; y < iShiftRows; y++ ) {
-			char* sLine = __xuiTerminalSerializeRow(pData, pOldMain + y * iOldColumns);
-			if ( sLine != NULL ) {
-				(void)__xuiTerminalPushScrollback(pData, sLine, pOldMain + y * iOldColumns, iOldColumns);
-				xrtFree(sLine);
-			}
+	iOldActiveCursorX = pData->iCursorX;
+	iOldActiveCursorY = pData->iCursorY;
+	iOldMainRowOffset = pData->iMainRowOffset;
+	iOldAltRowOffset = pData->iAltRowOffset;
+	if ( pOldMain != NULL && iOldColumns > 0 && iOldRows > 0 ) {
+		tMainState = *pData;
+		if ( pData->bAltScreen ) {
+			tMainState.iCursorX = pData->iMainCursorX;
+			tMainState.iCursorY = pData->iMainCursorY;
 		}
+		iRet = __xuiTerminalReflowMain(&tMainState, pOldMain, pOldMainWrapped,
+			iOldColumns, iOldRows, iOldMainRowOffset, iColumns, &tReflow);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	pNewMain = (xui_terminal_cell_t*)xrtMalloc(sizeof(*pNewMain) * (size_t)iColumns * (size_t)iRows);
+	pNewAlt = (xui_terminal_cell_t*)xrtMalloc(sizeof(*pNewAlt) * (size_t)iColumns * (size_t)iRows);
+	pNewMainWrapped = (uint8_t*)xrtCalloc((size_t)iRows, sizeof(*pNewMainWrapped));
+	pNewAltWrapped = (uint8_t*)xrtCalloc((size_t)iRows, sizeof(*pNewAltWrapped));
+	pNewTabStops = (uint8_t*)xrtMalloc((size_t)iColumns);
+	pNewDirtyRows = (uint8_t*)xrtCalloc((size_t)iRows, sizeof(*pNewDirtyRows));
+	if ( (pNewMain == NULL) || (pNewAlt == NULL) || (pNewMainWrapped == NULL) || (pNewAltWrapped == NULL) ||
+	     (pNewTabStops == NULL) || (pNewDirtyRows == NULL) ) {
+		if ( pNewMain != NULL ) xrtFree(pNewMain);
+		if ( pNewAlt != NULL ) xrtFree(pNewAlt);
+		if ( pNewMainWrapped != NULL ) xrtFree(pNewMainWrapped);
+		if ( pNewAltWrapped != NULL ) xrtFree(pNewAltWrapped);
+		if ( pNewTabStops != NULL ) xrtFree(pNewTabStops);
+		if ( pNewDirtyRows != NULL ) xrtFree(pNewDirtyRows);
+		__xuiTerminalReflowUnit(&tReflow);
+		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	pData->pMain = pNewMain;
 	pData->pAlt = pNewAlt;
+	pData->pMainWrapped = pNewMainWrapped;
+	pData->pAltWrapped = pNewAltWrapped;
 	pData->pTabStops = pNewTabStops;
 	pData->pDirtyRows = pNewDirtyRows;
 	pData->iDirtyRowCount = 0;
 	pData->iColumns = iColumns;
 	pData->iRows = iRows;
+	pData->iMainRowOffset = 0;
+	pData->iAltRowOffset = 0;
 	__xuiTerminalClearCells(pData, pData->pMain);
 	__xuiTerminalClearCells(pData, pData->pAlt);
 	__xuiTerminalSetDefaultTabStops(pData->pTabStops, pData->iColumns);
@@ -1077,37 +1542,70 @@ static int __xuiTerminalResizeBuffers(xui_terminal_data_t* pData, int iColumns, 
 	if ( pOldDirtyRows != NULL ) {
 		xrtFree(pOldDirtyRows);
 	}
+	pData->bHistoryViewDirty = 1;
+	(void)__xuiTerminalRebuildHistoryView(pData);
 	if ( (pOldMain != NULL) && (pOldAlt != NULL) && (iOldColumns > 0) && (iOldRows > 0) ) {
-		iCopyColumns = __xuiTerminalMin(iOldColumns, iColumns);
-		iRestoreRows = (!pData->bAltScreen && iRows > iOldRows) ? __xuiTerminalMin(iRows - iOldRows, pData->iScrollbackCount) : 0;
+		iDropRows = __xuiTerminalMax(0, tReflow.iRows - iRows);
+		for ( y = 0; y < iDropRows; ++y ) {
+			(void)__xuiTerminalPushScrollback(pData,
+				tReflow.pCells + y * iColumns, iColumns,
+				tReflow.pWrapped != NULL ? tReflow.pWrapped[y] != 0u : 0);
+		}
+		(void)__xuiTerminalRebuildHistoryView(pData);
+		iRestoreRows = (iRows > tReflow.iRows - iDropRows) ?
+			__xuiTerminalMin(iRows - (tReflow.iRows - iDropRows), pData->iScrollbackCount) : 0;
 		for ( y = iRestoreRows - 1; y >= 0; y-- ) {
-			__xuiTerminalPopScrollbackRow(pData, pData->pMain + y * iColumns);
+			__xuiTerminalPopScrollbackRow(pData, __xuiTerminalBufferRow(pData, pData->pMain, y));
 		}
-		iMainSourceRow = iShiftRows;
+		iMainSourceRow = iDropRows;
 		iMainTargetRow = iRestoreRows;
-		iCopyRows = __xuiTerminalMin(iOldRows - iMainSourceRow, iRows - iMainTargetRow);
+		iCopyRows = __xuiTerminalMin(tReflow.iRows - iMainSourceRow, iRows - iMainTargetRow);
 		for ( y = 0; y < iCopyRows; y++ ) {
-			for ( x = 0; x < iCopyColumns; x++ ) {
-				pData->pMain[(y + iMainTargetRow) * iColumns + x] = pOldMain[(y + iMainSourceRow) * iOldColumns + x];
-			}
+			memcpy(__xuiTerminalBufferRow(pData, pData->pMain, y + iMainTargetRow),
+				tReflow.pCells + (y + iMainSourceRow) * iColumns,
+				sizeof(*pData->pMain) * (size_t)iColumns);
+			pData->pMainWrapped[y + iMainTargetRow] = tReflow.pWrapped[y + iMainSourceRow];
 		}
+		iCopyColumns = __xuiTerminalMin(iOldColumns, iColumns);
 		iCopyRows = __xuiTerminalMin(iOldRows, iRows);
 		for ( y = 0; y < iCopyRows; y++ ) {
+			const xui_terminal_cell_t* pOldAltRow = pOldAlt +
+				((y + iOldAltRowOffset) % iOldRows) * iOldColumns;
+			xui_terminal_cell_t* pNewAltRow = __xuiTerminalBufferRow(pData, pData->pAlt, y);
 			for ( x = 0; x < iCopyColumns; x++ ) {
-				pData->pAlt[y * iColumns + x] = pOldAlt[y * iOldColumns + x];
+				pNewAltRow[x] = pOldAltRow[x];
 			}
+			if ( pOldAltWrapped != NULL ) pData->pAltWrapped[y] = pOldAltWrapped[y];
 		}
 		xrtFree(pOldMain);
 		xrtFree(pOldAlt);
+		xrtFree(pOldMainWrapped);
+		xrtFree(pOldAltWrapped);
+		pData->iMainCursorX = __xuiTerminalMin(tReflow.iCursorColumn, iColumns - 1);
+		pData->iMainCursorY = __xuiTerminalMin(__xuiTerminalMax(0,
+			tReflow.iCursorRow - iDropRows + iRestoreRows), iRows - 1);
+		if ( pData->bAltScreen ) {
+			pData->iCursorX = __xuiTerminalMin(__xuiTerminalMax(0, iOldActiveCursorX), iColumns - 1);
+			pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(0, iOldActiveCursorY), iRows - 1);
+			pData->iAltCursorX = pData->iCursorX;
+			pData->iAltCursorY = pData->iCursorY;
+		} else {
+			pData->iCursorX = pData->iMainCursorX;
+			pData->iCursorY = pData->iMainCursorY;
+		}
 	}
+	__xuiTerminalReflowUnit(&tReflow);
 	pData->iCursorX = __xuiTerminalMin(pData->iCursorX, iColumns - 1);
-	if ( !pData->bAltScreen ) pData->iCursorY += iRestoreRows - iShiftRows;
 	pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(0, pData->iCursorY), iRows - 1);
 	pData->iSavedCursorX = __xuiTerminalMin(pData->iSavedCursorX, iColumns - 1);
 	pData->iSavedCursorY = __xuiTerminalMin(pData->iSavedCursorY, iRows - 1);
 	pData->bWrapPending = 0;
 	pData->iScrollTop = 0;
 	pData->iScrollBottom = iRows - 1;
+	if ( pData->iSearchLine >= 0 ) {
+		if ( pData->iSearchHistoryId != 0u ) (void)__xuiTerminalResolveFindAnchor(pData);
+		else __xuiTerminalClearFindMatch(pData);
+	}
 	__xuiTerminalMarkFullCacheDirty(pData);
 	return XUI_OK;
 }
@@ -1169,6 +1667,8 @@ static void __xuiTerminalSyncScrollModel(xui_widget pWidget, xui_terminal_data_t
 		return;
 	}
 	bFollowBottom = __xuiTerminalIsAtBottom(pData);
+	(void)__xuiTerminalRebuildHistoryView(pData);
+	if ( pData->iSearchHistoryId != 0u ) (void)__xuiTerminalResolveFindAnchor(pData);
 	tViewport = xuiWidgetGetContentRect(pWidget);
 	xuiScrollModelSetViewport(&pData->tScroll, tViewport);
 	fVisibleHeight = (float)pData->iRows * pData->fCellHeight + pData->fPadding * 2.0f;
@@ -1222,15 +1722,16 @@ static void __xuiTerminalInvalidateDirty(xui_widget pWidget, xui_terminal_data_t
 static int __xuiTerminalScrollUp(xui_widget pWidget, xui_terminal_data_t* pData, int iTop, int iBottom, int iCount)
 {
 	xui_terminal_cell_t* pCells;
-	char* sLine;
+	uint8_t* pWrapped;
 	int i;
 	int iRows;
-	int iWidth;
+	int* pRowOffset;
 
 	if ( (pData == NULL) || (iCount <= 0) ) {
 		return XUI_OK;
 	}
 	pCells = __xuiTerminalScreen(pData);
+	pWrapped = __xuiTerminalScreenWrapped(pData);
 	if ( pCells == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -1241,21 +1742,31 @@ static int __xuiTerminalScrollUp(xui_widget pWidget, xui_terminal_data_t* pData,
 	if ( iCount > iRows ) iCount = iRows;
 	if ( !pData->bAltScreen && iTop == 0 ) {
 		for ( i = 0; i < iCount; i++ ) {
-			sLine = __xuiTerminalSerializeRow(pData, pCells + (iTop + i) * pData->iColumns);
-			if ( sLine != NULL ) {
-				(void)__xuiTerminalPushScrollback(pData, sLine, pCells + (iTop + i) * pData->iColumns, pData->iColumns);
-				xrtFree(sLine);
-			}
+			(void)__xuiTerminalPushScrollback(pData,
+				__xuiTerminalBufferRow(pData, pCells, iTop + i), pData->iColumns,
+				pWrapped != NULL ? pWrapped[iTop + i] != 0u : 0);
 		}
 		__xuiTerminalMarkFullCacheDirty(pData);
 	}
-	iWidth = pData->iColumns;
-	memmove(pCells + iTop * iWidth, pCells + (iTop + iCount) * iWidth, sizeof(*pCells) * (size_t)(iRows - iCount) * (size_t)iWidth);
+	if ( iTop == 0 && iBottom == pData->iRows - 1 ) {
+		pRowOffset = pData->bAltScreen ? &pData->iAltRowOffset : &pData->iMainRowOffset;
+		*pRowOffset = (*pRowOffset + iCount) % pData->iRows;
+	} else {
+		for ( i = iTop; i <= iBottom - iCount; ++i ) {
+			memcpy(__xuiTerminalBufferRow(pData, pCells, i),
+				__xuiTerminalBufferRow(pData, pCells, i + iCount),
+				sizeof(*pCells) * (size_t)pData->iColumns);
+		}
+	}
+	if ( pWrapped != NULL ) {
+		memmove(pWrapped + iTop, pWrapped + iTop + iCount, (size_t)(iRows - iCount));
+		memset(pWrapped + iBottom - iCount + 1, 0, (size_t)iCount);
+	}
 	for ( i = iBottom - iCount + 1; i <= iBottom; i++ ) {
 		__xuiTerminalBlankRow(pData, pCells, i);
 	}
 	__xuiTerminalMarkDirtyRows(pData, iTop, iBottom);
-	__xuiTerminalSyncScrollModel(pWidget, pData);
+	(void)pWidget;
 	return XUI_OK;
 }
 
@@ -1274,21 +1785,24 @@ static void __xuiTerminalLineFeed(xui_widget pWidget, xui_terminal_data_t* pData
 
 static void __xuiTerminalClearWideAt(xui_terminal_data_t* pData, xui_terminal_cell_t* pCells, int iX, int iY)
 {
-	int iIndex;
+	xui_terminal_cell_t* pRow;
 
 	if ( pData == NULL || pCells == NULL || iX < 0 || iX >= pData->iColumns || iY < 0 || iY >= pData->iRows ) return;
-	iIndex = iY * pData->iColumns + iX;
-	if ( (pCells[iIndex].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u && iX > 0 ) {
-		pCells[iIndex - 1] = __xuiTerminalBlankCell(pData);
+	pRow = __xuiTerminalBufferRow(pData, pCells, iY);
+	if ( pRow == NULL ) return;
+	if ( (pRow[iX].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u && iX > 0 ) {
+		pRow[iX - 1] = __xuiTerminalBlankCell(pData);
 	}
-	if ( (pCells[iIndex].iFlags & XUI_TERMINAL_CELL_WIDE) != 0u && iX + 1 < pData->iColumns ) {
-		pCells[iIndex + 1] = __xuiTerminalBlankCell(pData);
+	if ( (pRow[iX].iFlags & XUI_TERMINAL_CELL_WIDE) != 0u && iX + 1 < pData->iColumns ) {
+		pRow[iX + 1] = __xuiTerminalBlankCell(pData);
 	}
 }
 
 static void __xuiTerminalPutCodepoint(xui_widget pWidget, xui_terminal_data_t* pData, uint32_t iCodepoint)
 {
 	xui_terminal_cell_t* pCells;
+	xui_terminal_cell_t* pRow;
+	uint8_t* pWrapped;
 	xui_terminal_cell_t tCell;
 	int iWidth;
 	int iIndex;
@@ -1297,6 +1811,7 @@ static void __xuiTerminalPutCodepoint(xui_widget pWidget, xui_terminal_data_t* p
 		return;
 	}
 	pCells = __xuiTerminalScreen(pData);
+	pWrapped = __xuiTerminalScreenWrapped(pData);
 	if ( pCells == NULL ) {
 		return;
 	}
@@ -1309,14 +1824,15 @@ static void __xuiTerminalPutCodepoint(xui_widget pWidget, xui_terminal_data_t* p
 			iBaseX = pData->iColumns - 1;
 		}
 		if ( iBaseX >= 0 ) {
-			iIndex = iBaseY * pData->iColumns + iBaseX;
-			if ( (pCells[iIndex].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u && iBaseX > 0 ) iIndex--;
-			if ( pCells[iIndex].iCodepoint != 0u && pCells[iIndex].iCodepoint != ' ' ) {
-				if ( pCells[iIndex].iCombiningCount < XUI_TERMINAL_MAX_COMBINING ) {
-					pCells[iIndex].arrCombining[pCells[iIndex].iCombiningCount++] = iCodepoint;
-					pCells[iIndex].iFlags |= XUI_TERMINAL_CELL_COMBINING;
+			pRow = __xuiTerminalBufferRow(pData, pCells, iBaseY);
+			iIndex = iBaseX;
+			if ( pRow != NULL && (pRow[iIndex].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u && iBaseX > 0 ) iIndex--;
+			if ( pRow != NULL && pRow[iIndex].iCodepoint != 0u && pRow[iIndex].iCodepoint != ' ' ) {
+				if ( pRow[iIndex].iCombiningCount < XUI_TERMINAL_MAX_COMBINING ) {
+					pRow[iIndex].arrCombining[pRow[iIndex].iCombiningCount++] = iCodepoint;
+					pRow[iIndex].iFlags |= XUI_TERMINAL_CELL_COMBINING;
 				} else {
-					pCells[iIndex].iFlags |= XUI_TERMINAL_CELL_COMBINING_OVERFLOW;
+					pRow[iIndex].iFlags |= XUI_TERMINAL_CELL_COMBINING_OVERFLOW;
 				}
 				__xuiTerminalMarkDirtyRow(pData, iBaseY);
 				return;
@@ -1329,12 +1845,20 @@ static void __xuiTerminalPutCodepoint(xui_widget pWidget, xui_terminal_data_t* p
 	}
 	if ( pData->bWrapPending ) {
 		pData->bWrapPending = 0;
-		pData->iCursorX = 0;
-		__xuiTerminalLineFeed(pWidget, pData);
+		if ( pData->bAutoWrap ) {
+			if ( pWrapped != NULL ) pWrapped[pData->iCursorY] = 1u;
+			pData->iCursorX = 0;
+			__xuiTerminalLineFeed(pWidget, pData);
+		}
 	}
 	if ( (pData->iCursorX + iWidth) > pData->iColumns ) {
-		pData->iCursorX = 0;
-		__xuiTerminalLineFeed(pWidget, pData);
+		if ( pData->bAutoWrap ) {
+			if ( pWrapped != NULL ) pWrapped[pData->iCursorY] = 1u;
+			pData->iCursorX = 0;
+			__xuiTerminalLineFeed(pWidget, pData);
+		} else {
+			pData->iCursorX = __xuiTerminalMax(0, pData->iColumns - iWidth);
+		}
 	}
 	tCell = __xuiTerminalBlankCell(pData);
 	tCell.iCodepoint = iCodepoint;
@@ -1343,25 +1867,29 @@ static void __xuiTerminalPutCodepoint(xui_widget pWidget, xui_terminal_data_t* p
 	tCell.iFlags = pData->iCurrentFlags;
 	tCell.iWidth = (uint8_t)iWidth;
 	tCell.iLinkId = pData->iCurrentLinkId;
+	pData->iLastCodepoint = iCodepoint;
 	if ( iWidth == 2 ) {
 		tCell.iFlags |= XUI_TERMINAL_CELL_WIDE;
 	}
-	iIndex = pData->iCursorY * pData->iColumns + pData->iCursorX;
+	if ( pData->bInsertMode ) __xuiTerminalInsertCharacters(pData, iWidth);
 	__xuiTerminalClearWideAt(pData, pCells, pData->iCursorX, pData->iCursorY);
 	if ( iWidth == 2 ) __xuiTerminalClearWideAt(pData, pCells, pData->iCursorX + 1, pData->iCursorY);
-	pCells[iIndex] = tCell;
+	pRow = __xuiTerminalBufferRow(pData, pCells, pData->iCursorY);
+	if ( pRow == NULL ) return;
+	iIndex = pData->iCursorX;
+	pRow[iIndex] = tCell;
 	if ( iWidth == 2 && pData->iCursorX + 1 < pData->iColumns ) {
-		pCells[iIndex + 1] = tCell;
-		pCells[iIndex + 1].iCodepoint = 0u;
-		pCells[iIndex + 1].iFlags &= ~XUI_TERMINAL_CELL_WIDE;
-		pCells[iIndex + 1].iFlags |= XUI_TERMINAL_CELL_WIDE_CONT;
-		pCells[iIndex + 1].iWidth = 0;
-		pCells[iIndex + 1].iCombiningCount = 0;
+		pRow[iIndex + 1] = tCell;
+		pRow[iIndex + 1].iCodepoint = 0u;
+		pRow[iIndex + 1].iFlags &= ~XUI_TERMINAL_CELL_WIDE;
+		pRow[iIndex + 1].iFlags |= XUI_TERMINAL_CELL_WIDE_CONT;
+		pRow[iIndex + 1].iWidth = 0;
+		pRow[iIndex + 1].iCombiningCount = 0;
 	}
 	__xuiTerminalMarkDirtyRow(pData, pData->iCursorY);
 	if ( pData->iCursorX + iWidth >= pData->iColumns ) {
 		pData->iCursorX = pData->iColumns - 1;
-		pData->bWrapPending = 1;
+		pData->bWrapPending = pData->bAutoWrap ? 1 : 0;
 	} else {
 		pData->iCursorX += iWidth;
 	}
@@ -1370,6 +1898,7 @@ static void __xuiTerminalPutCodepoint(xui_widget pWidget, xui_terminal_data_t* p
 static void __xuiTerminalEraseLine(xui_terminal_data_t* pData, int iMode)
 {
 	xui_terminal_cell_t* pCells;
+	xui_terminal_cell_t* pRow;
 	xui_terminal_cell_t tBlank;
 	int iStart;
 	int iEnd;
@@ -1378,6 +1907,8 @@ static void __xuiTerminalEraseLine(xui_terminal_data_t* pData, int iMode)
 	if ( pData == NULL ) return;
 	pCells = __xuiTerminalScreen(pData);
 	if ( pCells == NULL ) return;
+	pRow = __xuiTerminalBufferRow(pData, pCells, pData->iCursorY);
+	if ( pRow == NULL ) return;
 	tBlank = __xuiTerminalBlankCell(pData);
 	iStart = 0;
 	iEnd = pData->iColumns - 1;
@@ -1387,7 +1918,11 @@ static void __xuiTerminalEraseLine(xui_terminal_data_t* pData, int iMode)
 		iEnd = pData->iCursorX;
 	}
 	for ( i = iStart; i <= iEnd; i++ ) {
-		pCells[pData->iCursorY * pData->iColumns + i] = tBlank;
+		pRow[i] = tBlank;
+	}
+	if ( iStart == 0 && iEnd == pData->iColumns - 1 ) {
+		uint8_t* pWrapped = __xuiTerminalScreenWrapped(pData);
+		if ( pWrapped != NULL ) pWrapped[pData->iCursorY] = 0u;
 	}
 	__xuiTerminalMarkDirtyRow(pData, pData->iCursorY);
 }
@@ -1396,25 +1931,169 @@ static void __xuiTerminalEraseDisplay(xui_terminal_data_t* pData, int iMode)
 {
 	xui_terminal_cell_t* pCells;
 	xui_terminal_cell_t tBlank;
-	int iStart;
-	int iEnd;
-	int i;
+	uint8_t* pWrapped;
+	int iStartRow;
+	int iEndRow;
+	int x;
+	int y;
 
 	if ( pData == NULL ) return;
 	pCells = __xuiTerminalScreen(pData);
 	if ( pCells == NULL ) return;
 	tBlank = __xuiTerminalBlankCell(pData);
-	iStart = 0;
-	iEnd = pData->iColumns * pData->iRows - 1;
-	if ( iMode == 0 ) {
-		iStart = pData->iCursorY * pData->iColumns + pData->iCursorX;
-	} else if ( iMode == 1 ) {
-		iEnd = pData->iCursorY * pData->iColumns + pData->iCursorX;
+	iStartRow = iMode == 0 ? pData->iCursorY : 0;
+	iEndRow = iMode == 1 ? pData->iCursorY : pData->iRows - 1;
+	pWrapped = __xuiTerminalScreenWrapped(pData);
+	for ( y = iStartRow; y <= iEndRow; ++y ) {
+		xui_terminal_cell_t* pRow = __xuiTerminalBufferRow(pData, pCells, y);
+		int iStartColumn = (iMode == 0 && y == pData->iCursorY) ? pData->iCursorX : 0;
+		int iEndColumn = (iMode == 1 && y == pData->iCursorY) ? pData->iCursorX : pData->iColumns - 1;
+		if ( pRow == NULL ) continue;
+		for ( x = iStartColumn; x <= iEndColumn; ++x ) pRow[x] = tBlank;
+		if ( pWrapped != NULL && iStartColumn == 0 && iEndColumn == pData->iColumns - 1 ) pWrapped[y] = 0u;
 	}
-	for ( i = iStart; i <= iEnd; i++ ) {
-		pCells[i] = tBlank;
+	__xuiTerminalMarkDirtyRows(pData, iStartRow, iEndRow);
+}
+
+static void __xuiTerminalSaveCursorState(xui_terminal_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	pData->iSavedCursorX = pData->iCursorX;
+	pData->iSavedCursorY = pData->iCursorY;
+	pData->iSavedFg = pData->iCurrentFg;
+	pData->iSavedBg = pData->iCurrentBg;
+	pData->iSavedFlags = pData->iCurrentFlags;
+	pData->iSavedLinkId = pData->iCurrentLinkId;
+}
+
+static void __xuiTerminalRestoreCursorState(xui_terminal_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	pData->iCursorX = __xuiTerminalMin(__xuiTerminalMax(0, pData->iSavedCursorX), pData->iColumns - 1);
+	pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(0, pData->iSavedCursorY), pData->iRows - 1);
+	pData->iCurrentFg = pData->iSavedFg != 0u ? pData->iSavedFg : pData->iForegroundColor;
+	pData->iCurrentBg = pData->iSavedBg != 0u ? pData->iSavedBg : pData->iBackgroundColor;
+	pData->iCurrentFlags = pData->iSavedFlags;
+	pData->iCurrentLinkId = pData->iSavedLinkId;
+	pData->bWrapPending = 0;
+}
+
+static void __xuiTerminalScrollDown(xui_terminal_data_t* pData, int iTop, int iBottom, int iCount)
+{
+	xui_terminal_cell_t* pCells;
+	uint8_t* pWrapped;
+	int iRows;
+	int i;
+	int* pRowOffset;
+	if ( pData == NULL || iCount <= 0 ) return;
+	pCells = __xuiTerminalScreen(pData);
+	pWrapped = __xuiTerminalScreenWrapped(pData);
+	if ( pCells == NULL ) return;
+	if ( iTop < 0 ) iTop = 0;
+	if ( iBottom < 0 || iBottom >= pData->iRows ) iBottom = pData->iRows - 1;
+	if ( iBottom < iTop ) return;
+	iRows = iBottom - iTop + 1;
+	if ( iCount > iRows ) iCount = iRows;
+	if ( iTop == 0 && iBottom == pData->iRows - 1 ) {
+		pRowOffset = pData->bAltScreen ? &pData->iAltRowOffset : &pData->iMainRowOffset;
+		*pRowOffset = (*pRowOffset - iCount + pData->iRows) % pData->iRows;
+	} else {
+		for ( i = iBottom; i >= iTop + iCount; --i ) {
+			memcpy(__xuiTerminalBufferRow(pData, pCells, i),
+				__xuiTerminalBufferRow(pData, pCells, i - iCount),
+				sizeof(*pCells) * (size_t)pData->iColumns);
+		}
 	}
-	__xuiTerminalMarkDirtyRows(pData, iStart / pData->iColumns, iEnd / pData->iColumns);
+	if ( pWrapped != NULL ) {
+		memmove(pWrapped + iTop + iCount, pWrapped + iTop, (size_t)(iRows - iCount));
+		memset(pWrapped + iTop, 0, (size_t)iCount);
+	}
+	for ( i = iTop; i < iTop + iCount; ++i ) __xuiTerminalBlankRow(pData, pCells, i);
+	__xuiTerminalMarkDirtyRows(pData, iTop, iBottom);
+}
+
+static void __xuiTerminalInsertCharacters(xui_terminal_data_t* pData, int iCount)
+{
+	xui_terminal_cell_t* pRow;
+	xui_terminal_cell_t tBlank;
+	int iAvailable;
+	int i;
+	if ( pData == NULL || iCount <= 0 ) return;
+	pRow = __xuiTerminalScreen(pData);
+	if ( pRow == NULL ) return;
+	pRow = __xuiTerminalBufferRow(pData, pRow, pData->iCursorY);
+	iAvailable = pData->iColumns - pData->iCursorX;
+	if ( iCount > iAvailable ) iCount = iAvailable;
+	__xuiTerminalClearWideAt(pData, __xuiTerminalScreen(pData), pData->iCursorX, pData->iCursorY);
+	memmove(pRow + pData->iCursorX + iCount, pRow + pData->iCursorX,
+		sizeof(*pRow) * (size_t)(iAvailable - iCount));
+	tBlank = __xuiTerminalEraseCell(pData);
+	for ( i = 0; i < iCount; ++i ) pRow[pData->iCursorX + i] = tBlank;
+	__xuiTerminalClearWideAt(pData, __xuiTerminalScreen(pData), pData->iColumns - 1, pData->iCursorY);
+	__xuiTerminalMarkDirtyRow(pData, pData->iCursorY);
+}
+
+static void __xuiTerminalDeleteCharacters(xui_terminal_data_t* pData, int iCount)
+{
+	xui_terminal_cell_t* pRow;
+	xui_terminal_cell_t tBlank;
+	int iAvailable;
+	int i;
+	if ( pData == NULL || iCount <= 0 ) return;
+	pRow = __xuiTerminalScreen(pData);
+	if ( pRow == NULL ) return;
+	pRow = __xuiTerminalBufferRow(pData, pRow, pData->iCursorY);
+	iAvailable = pData->iColumns - pData->iCursorX;
+	if ( iCount > iAvailable ) iCount = iAvailable;
+	__xuiTerminalClearWideAt(pData, __xuiTerminalScreen(pData), pData->iCursorX, pData->iCursorY);
+	memmove(pRow + pData->iCursorX, pRow + pData->iCursorX + iCount,
+		sizeof(*pRow) * (size_t)(iAvailable - iCount));
+	tBlank = __xuiTerminalEraseCell(pData);
+	for ( i = pData->iColumns - iCount; i < pData->iColumns; ++i ) pRow[i] = tBlank;
+	__xuiTerminalClearWideAt(pData, __xuiTerminalScreen(pData), pData->iCursorX, pData->iCursorY);
+	__xuiTerminalMarkDirtyRow(pData, pData->iCursorY);
+}
+
+static void __xuiTerminalEraseCharacters(xui_terminal_data_t* pData, int iCount)
+{
+	xui_terminal_cell_t* pRow;
+	xui_terminal_cell_t tBlank;
+	int iEnd;
+	int i;
+	if ( pData == NULL || iCount <= 0 ) return;
+	pRow = __xuiTerminalScreen(pData);
+	if ( pRow == NULL ) return;
+	pRow = __xuiTerminalBufferRow(pData, pRow, pData->iCursorY);
+	iEnd = __xuiTerminalMin(pData->iColumns, pData->iCursorX + iCount);
+	tBlank = __xuiTerminalEraseCell(pData);
+	for ( i = pData->iCursorX; i < iEnd; ++i ) pRow[i] = tBlank;
+	__xuiTerminalMarkDirtyRow(pData, pData->iCursorY);
+}
+
+static void __xuiTerminalDeleteLines(xui_terminal_data_t* pData, int iCount)
+{
+	xui_terminal_cell_t* pCells;
+	uint8_t* pWrapped;
+	int iBottom;
+	int iRows;
+	int i;
+	if ( pData == NULL || iCount <= 0 || pData->iCursorY < pData->iScrollTop || pData->iCursorY > pData->iScrollBottom ) return;
+	pCells = __xuiTerminalScreen(pData);
+	pWrapped = __xuiTerminalScreenWrapped(pData);
+	iBottom = pData->iScrollBottom;
+	iRows = iBottom - pData->iCursorY + 1;
+	if ( iCount > iRows ) iCount = iRows;
+	for ( i = pData->iCursorY; i <= iBottom - iCount; ++i ) {
+		memcpy(__xuiTerminalBufferRow(pData, pCells, i),
+			__xuiTerminalBufferRow(pData, pCells, i + iCount),
+			sizeof(*pCells) * (size_t)pData->iColumns);
+	}
+	if ( pWrapped != NULL ) {
+		memmove(pWrapped + pData->iCursorY, pWrapped + pData->iCursorY + iCount, (size_t)(iRows - iCount));
+		memset(pWrapped + iBottom - iCount + 1, 0, (size_t)iCount);
+	}
+	for ( i = iBottom - iCount + 1; i <= iBottom; ++i ) __xuiTerminalBlankRow(pData, pCells, i);
+	__xuiTerminalMarkDirtyRows(pData, pData->iCursorY, iBottom);
 }
 
 static int __xuiTerminalParam(const xui_terminal_parser_t* pParser, int iIndex, int iDefault)
@@ -1436,7 +2115,9 @@ static void __xuiTerminalCsiReset(xui_terminal_parser_t* pParser)
 	pParser->iParamCount = 0;
 	pParser->iCurrentParam = -1;
 	pParser->bParamActive = 0;
-	pParser->bPrivate = 0;
+	pParser->cPrivate = 0;
+	pParser->iIntermediateCount = 0;
+	memset(pParser->arrIntermediates, 0, sizeof(pParser->arrIntermediates));
 }
 
 static void __xuiTerminalCsiAppendDigit(xui_terminal_parser_t* pParser, int iDigit)
@@ -1497,16 +2178,28 @@ static void __xuiTerminalApplySgr(xui_terminal_data_t* pData, const xui_terminal
 			pData->iCurrentFlags |= XUI_TERMINAL_CELL_BOLD;
 		} else if ( p == 2 ) {
 			pData->iCurrentFlags |= XUI_TERMINAL_CELL_DIM;
+		} else if ( p == 3 ) {
+			pData->iCurrentFlags |= XUI_TERMINAL_CELL_ITALIC;
 		} else if ( p == 4 ) {
 			pData->iCurrentFlags |= XUI_TERMINAL_CELL_UNDERLINE;
+		} else if ( p == 5 || p == 6 ) {
+			pData->iCurrentFlags |= XUI_TERMINAL_CELL_BLINK;
 		} else if ( p == 7 ) {
 			pData->iCurrentFlags |= XUI_TERMINAL_CELL_INVERSE;
+		} else if ( p == 9 ) {
+			pData->iCurrentFlags |= XUI_TERMINAL_CELL_STRIKE;
 		} else if ( p == 22 ) {
 			pData->iCurrentFlags &= ~(XUI_TERMINAL_CELL_BOLD | XUI_TERMINAL_CELL_DIM);
 		} else if ( p == 24 ) {
 			pData->iCurrentFlags &= ~XUI_TERMINAL_CELL_UNDERLINE;
+		} else if ( p == 23 ) {
+			pData->iCurrentFlags &= ~XUI_TERMINAL_CELL_ITALIC;
+		} else if ( p == 25 ) {
+			pData->iCurrentFlags &= ~XUI_TERMINAL_CELL_BLINK;
 		} else if ( p == 27 ) {
 			pData->iCurrentFlags &= ~XUI_TERMINAL_CELL_INVERSE;
+		} else if ( p == 29 ) {
+			pData->iCurrentFlags &= ~XUI_TERMINAL_CELL_STRIKE;
 		} else if ( p >= 30 && p <= 37 ) {
 			pData->iCurrentFg = pData->arrPalette[p - 30];
 		} else if ( p == 39 ) {
@@ -1543,46 +2236,65 @@ static void __xuiTerminalApplySgr(xui_terminal_data_t* pData, const xui_terminal
 	}
 }
 
-static void __xuiTerminalSetAltScreen(xui_terminal_data_t* pData, int bEnabled)
+static void __xuiTerminalSetAltScreen(xui_terminal_data_t* pData, int bEnabled, int bClear)
 {
 	if ( pData == NULL || pData->bAltScreen == bEnabled ) {
 		return;
 	}
-	pData->bAltScreen = bEnabled ? 1 : 0;
-	pData->iCursorX = 0;
-	pData->iCursorY = 0;
+	if ( bEnabled ) {
+		pData->iMainCursorX = pData->iCursorX;
+		pData->iMainCursorY = pData->iCursorY;
+		pData->bAltScreen = 1;
+		if ( bClear ) {
+			__xuiTerminalClearCells(pData, pData->pAlt);
+			pData->iAltCursorX = 0;
+			pData->iAltCursorY = 0;
+		}
+		pData->iCursorX = __xuiTerminalMin(__xuiTerminalMax(0, pData->iAltCursorX), pData->iColumns - 1);
+		pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(0, pData->iAltCursorY), pData->iRows - 1);
+	} else {
+		pData->iAltCursorX = pData->iCursorX;
+		pData->iAltCursorY = pData->iCursorY;
+		pData->bAltScreen = 0;
+		pData->iCursorX = __xuiTerminalMin(__xuiTerminalMax(0, pData->iMainCursorX), pData->iColumns - 1);
+		pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(0, pData->iMainCursorY), pData->iRows - 1);
+	}
 	pData->bWrapPending = 0;
 	pData->iScrollTop = 0;
 	pData->iScrollBottom = pData->iRows - 1;
-	if ( bEnabled ) {
-		__xuiTerminalClearCells(pData, pData->pAlt);
-	}
 	__xuiTerminalMarkFullCacheDirty(pData);
 }
 
 static void __xuiTerminalDispatchCsi(xui_widget pWidget, xui_terminal_data_t* pData, int iFinal)
 {
+	char sResponse[64];
 	int n;
 	int row;
 	int col;
 	int mode;
 	int i;
+	int iTop;
+	int iBottom;
+	int iSize;
 
 	if ( (pData == NULL) || (pData->iColumns <= 0) || (pData->iRows <= 0) ) return;
+	iTop = pData->bOriginMode ? pData->iScrollTop : 0;
+	iBottom = pData->bOriginMode ? pData->iScrollBottom : pData->iRows - 1;
 	switch ( iFinal ) {
 	case 'A':
 		pData->bWrapPending = 0;
 		n = __xuiTerminalParam(&pData->tParser, 0, 1);
 		if ( n <= 0 ) n = 1;
-		pData->iCursorY = __xuiTerminalMax(0, pData->iCursorY - n);
+		pData->iCursorY = __xuiTerminalMax(iTop, pData->iCursorY - n);
 		break;
 	case 'B':
 		pData->bWrapPending = 0;
 		n = __xuiTerminalParam(&pData->tParser, 0, 1);
 		if ( n <= 0 ) n = 1;
-		pData->iCursorY = __xuiTerminalMin(pData->iRows - 1, pData->iCursorY + n);
+		pData->iCursorY = __xuiTerminalMin(iBottom, pData->iCursorY + n);
 		break;
 	case 'C':
+	case 'a':
 		pData->bWrapPending = 0;
 		n = __xuiTerminalParam(&pData->tParser, 0, 1);
 		if ( n <= 0 ) n = 1;
@@ -1594,23 +2306,101 @@ static void __xuiTerminalDispatchCsi(xui_widget pWidget, xui_terminal_data_t* pD
 		if ( n <= 0 ) n = 1;
 		pData->iCursorX = __xuiTerminalMax(0, pData->iCursorX - n);
 		break;
+	case 'E':
+	case 'F':
+		pData->bWrapPending = 0;
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		if ( n <= 0 ) n = 1;
+		pData->iCursorY = (iFinal == 'E') ? __xuiTerminalMin(iBottom, pData->iCursorY + n) :
+			__xuiTerminalMax(iTop, pData->iCursorY - n);
+		pData->iCursorX = 0;
+		break;
+	case 'G':
+	case '`':
+		pData->bWrapPending = 0;
+		col = __xuiTerminalParam(&pData->tParser, 0, 1) - 1;
+		pData->iCursorX = __xuiTerminalMin(__xuiTerminalMax(0, col), pData->iColumns - 1);
+		break;
+	case 'd':
+		pData->bWrapPending = 0;
+		row = __xuiTerminalParam(&pData->tParser, 0, 1) - 1;
+		if ( pData->bOriginMode ) row += pData->iScrollTop;
+		pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(iTop, row), iBottom);
+		break;
 	case 'H':
 	case 'f':
 		pData->bWrapPending = 0;
 		row = __xuiTerminalParam(&pData->tParser, 0, 1) - 1;
 		col = __xuiTerminalParam(&pData->tParser, 1, 1) - 1;
+		if ( pData->bOriginMode ) row += pData->iScrollTop;
 		if ( row < 0 ) row = 0;
 		if ( col < 0 ) col = 0;
-		pData->iCursorY = __xuiTerminalMin(row, pData->iRows - 1);
+		pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(iTop, row), iBottom);
 		pData->iCursorX = __xuiTerminalMin(col, pData->iColumns - 1);
+		break;
+	case 'I':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		if ( n <= 0 ) n = 1;
+		while ( n-- > 0 ) pData->iCursorX = __xuiTerminalNextTabStop(pData);
+		pData->bWrapPending = 0;
+		break;
+	case 'Z':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		if ( n <= 0 ) n = 1;
+		while ( n-- > 0 ) {
+			for ( i = pData->iCursorX - 1; i > 0; --i ) {
+				if ( pData->pTabStops != NULL && pData->pTabStops[i] != 0u ) break;
+			}
+			pData->iCursorX = __xuiTerminalMax(0, i);
+		}
+		pData->bWrapPending = 0;
 		break;
 	case 'J':
 		pData->bWrapPending = 0;
-		__xuiTerminalEraseDisplay(pData, __xuiTerminalParam(&pData->tParser, 0, 0));
+		mode = __xuiTerminalParam(&pData->tParser, 0, 0);
+		if ( mode == 3 && !pData->bAltScreen ) {
+			__xuiTerminalFreeScrollback(pData);
+			(void)__xuiTerminalAllocScrollback(pData, pData->iScrollbackLimit);
+		} else {
+			__xuiTerminalEraseDisplay(pData, mode);
+		}
 		break;
 	case 'K':
 		pData->bWrapPending = 0;
 		__xuiTerminalEraseLine(pData, __xuiTerminalParam(&pData->tParser, 0, 0));
+		break;
+	case '@':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		__xuiTerminalInsertCharacters(pData, n > 0 ? n : 1);
+		break;
+	case 'P':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		__xuiTerminalDeleteCharacters(pData, n > 0 ? n : 1);
+		break;
+	case 'X':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		__xuiTerminalEraseCharacters(pData, n > 0 ? n : 1);
+		break;
+	case 'L':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		__xuiTerminalScrollDown(pData, pData->iCursorY, pData->iScrollBottom, n > 0 ? n : 1);
+		break;
+	case 'M':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		__xuiTerminalDeleteLines(pData, n > 0 ? n : 1);
+		break;
+	case 'S':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		(void)__xuiTerminalScrollUp(pWidget, pData, pData->iScrollTop, pData->iScrollBottom, n > 0 ? n : 1);
+		break;
+	case 'T':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		__xuiTerminalScrollDown(pData, pData->iScrollTop, pData->iScrollBottom, n > 0 ? n : 1);
+		break;
+	case 'b':
+		n = __xuiTerminalParam(&pData->tParser, 0, 1);
+		if ( n <= 0 ) n = 1;
+		if ( pData->iLastCodepoint != 0u ) while ( n-- > 0 ) __xuiTerminalPutCodepoint(pWidget, pData, pData->iLastCodepoint);
 		break;
 	case 'g':
 		pData->bWrapPending = 0;
@@ -1633,30 +2423,86 @@ static void __xuiTerminalDispatchCsi(xui_widget pWidget, xui_terminal_data_t* pD
 		pData->iScrollTop = row;
 		pData->iScrollBottom = col;
 		pData->iCursorX = 0;
-		pData->iCursorY = 0;
+		pData->iCursorY = pData->bOriginMode ? row : 0;
 		break;
 	case 's':
 		pData->bWrapPending = 0;
-		pData->iSavedCursorX = pData->iCursorX;
-		pData->iSavedCursorY = pData->iCursorY;
+		__xuiTerminalSaveCursorState(pData);
 		break;
 	case 'u':
-		pData->bWrapPending = 0;
-		pData->iCursorX = __xuiTerminalMin(pData->iSavedCursorX, pData->iColumns - 1);
-		pData->iCursorY = __xuiTerminalMin(pData->iSavedCursorY, pData->iRows - 1);
+		__xuiTerminalRestoreCursorState(pData);
+		break;
+	case 'n':
+		mode = __xuiTerminalParam(&pData->tParser, 0, 0);
+		if ( mode == 5 ) {
+			(void)__xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)"\x1b[0n", 4);
+		} else if ( mode == 6 ) {
+			row = pData->iCursorY + 1;
+			if ( pData->bOriginMode ) row -= pData->iScrollTop;
+			iSize = snprintf(sResponse, sizeof(sResponse), "\x1b[%d;%dR", row, pData->iCursorX + 1);
+			if ( iSize > 0 ) (void)__xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sResponse, iSize);
+		}
+		break;
+	case 'c':
+		if ( pData->tParser.cPrivate == '>' ) {
+			(void)__xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)"\x1b[>0;1;0c", 10);
+		} else {
+			(void)__xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)"\x1b[?1;2c", 7);
+		}
+		break;
+	case 'q':
+		if ( pData->tParser.iIntermediateCount > 0 && pData->tParser.arrIntermediates[0] == ' ' ) {
+			mode = __xuiTerminalParam(&pData->tParser, 0, 0);
+			pData->iCursorStyle = __xuiTerminalMin(__xuiTerminalMax(0, mode), 6);
+		}
 		break;
 	case 'h':
 	case 'l':
-		if ( pData->tParser.bPrivate ) {
+		if ( pData->tParser.cPrivate == '?' ) {
 			for ( i = 0; i < pData->tParser.iParamCount; i++ ) {
 				mode = __xuiTerminalParam(&pData->tParser, i, 0);
-				if ( mode == 25 ) {
+				if ( mode == 1 ) {
+					pData->bApplicationCursor = (iFinal == 'h');
+				} else if ( mode == 6 ) {
+					pData->bOriginMode = (iFinal == 'h');
+					pData->iCursorX = 0;
+					pData->iCursorY = pData->bOriginMode ? pData->iScrollTop : 0;
+				} else if ( mode == 7 ) {
+					pData->bAutoWrap = (iFinal == 'h');
+					pData->bWrapPending = 0;
+				} else if ( mode == 25 ) {
 					pData->bCursorVisible = (iFinal == 'h');
+				} else if ( mode == 47 ) {
+					__xuiTerminalSetAltScreen(pData, iFinal == 'h', 0);
+				} else if ( mode == 1000 || mode == 1002 || mode == 1003 ) {
+					if ( iFinal == 'h' ) pData->iMouseTracking = mode;
+					else if ( pData->iMouseTracking == mode ) pData->iMouseTracking = XUI_TERMINAL_MOUSE_TRACKING_NONE;
+				} else if ( mode == 1004 ) {
+					pData->bFocusReporting = (iFinal == 'h');
+				} else if ( mode == 1005 || mode == 1006 || mode == 1015 ) {
+					if ( iFinal == 'h' ) pData->iMouseEncoding = mode;
+					else if ( pData->iMouseEncoding == mode ) pData->iMouseEncoding = XUI_TERMINAL_MOUSE_ENCODING_X10;
+				} else if ( mode == 1047 ) {
+					__xuiTerminalSetAltScreen(pData, iFinal == 'h', iFinal == 'h');
+				} else if ( mode == 1048 ) {
+					if ( iFinal == 'h' ) __xuiTerminalSaveCursorState(pData);
+					else __xuiTerminalRestoreCursorState(pData);
 				} else if ( mode == 1049 ) {
-					__xuiTerminalSetAltScreen(pData, iFinal == 'h');
+					if ( iFinal == 'h' ) {
+						__xuiTerminalSaveCursorState(pData);
+						__xuiTerminalSetAltScreen(pData, 1, 1);
+					} else {
+						__xuiTerminalSetAltScreen(pData, 0, 0);
+						__xuiTerminalRestoreCursorState(pData);
+					}
 				} else if ( mode == 2004 ) {
 					pData->bBracketedPaste = (iFinal == 'h');
 				}
+			}
+		} else {
+			for ( i = 0; i < pData->tParser.iParamCount; ++i ) {
+				mode = __xuiTerminalParam(&pData->tParser, i, 0);
+				if ( mode == 4 ) pData->bInsertMode = (iFinal == 'h');
 			}
 		}
 		break;
@@ -1708,6 +2554,42 @@ static void __xuiTerminalDispatchOsc(xui_widget pWidget, xui_terminal_data_t* pD
 	}
 }
 
+static uint32_t __xuiTerminalDecSpecialCodepoint(uint8_t b)
+{
+	switch ( b ) {
+	case '`': return 0x25c6u;
+	case 'a': return 0x2592u;
+	case 'f': return 0x00b0u;
+	case 'g': return 0x00b1u;
+	case 'j': return 0x2518u;
+	case 'k': return 0x2510u;
+	case 'l': return 0x250cu;
+	case 'm': return 0x2514u;
+	case 'n': return 0x253cu;
+	case 'q': return 0x2500u;
+	case 't': return 0x251cu;
+	case 'u': return 0x2524u;
+	case 'v': return 0x2534u;
+	case 'w': return 0x252cu;
+	case 'x': return 0x2502u;
+	case 'y': return 0x2264u;
+	case 'z': return 0x2265u;
+	case '{': return 0x03c0u;
+	case '|': return 0x2260u;
+	case '}': return 0x00a3u;
+	case '~': return 0x00b7u;
+	default: return (uint32_t)b;
+	}
+}
+
+static uint32_t __xuiTerminalMapGraphicCodepoint(const xui_terminal_data_t* pData, uint8_t b)
+{
+	int iCharset;
+	if ( pData == NULL || b < 0x20u || b > 0x7eu ) return (uint32_t)b;
+	iCharset = pData->iActiveCharset != 0 ? pData->iG1Charset : pData->iG0Charset;
+	return iCharset != 0 ? __xuiTerminalDecSpecialCodepoint(b) : (uint32_t)b;
+}
+
 static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pData, uint8_t b)
 {
 	uint32_t cp;
@@ -1732,7 +2614,15 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 	}
 	switch ( pData->tParser.iState ) {
 	case 0:
-		if ( b == 0x1bu ) {
+		if ( b == 0x9bu ) {
+			__xuiTerminalCsiReset(&pData->tParser);
+			pData->tParser.iState = 2;
+		} else if ( b == 0x9du ) {
+			pData->tParser.iOscSize = 0;
+			pData->tParser.iState = 3;
+		} else if ( b == 0x90u || b == 0x98u || b == 0x9eu || b == 0x9fu ) {
+			pData->tParser.iState = 5;
+		} else if ( b == 0x1bu ) {
 			pData->tParser.iState = 1;
 		} else if ( b == '\a' ) {
 			return;
@@ -1748,10 +2638,15 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 		} else if ( b == '\r' ) {
 			pData->bWrapPending = 0;
 			pData->iCursorX = 0;
+		} else if ( b == 0x0eu ) {
+			pData->iActiveCharset = 1;
+		} else if ( b == 0x0fu ) {
+			pData->iActiveCharset = 0;
 		} else if ( b < 0x20u ) {
 			return;
 		} else if ( b < 0x80u ) {
-			__xuiTerminalPutCodepoint(pWidget, pData, b);
+			__xuiTerminalPutCodepoint(pWidget, pData,
+				__xuiTerminalMapGraphicCodepoint(pData, b));
 		} else if ( (b & 0xe0u) == 0xc0u ) {
 			pData->tParser.iUtfExpected = 1;
 			pData->tParser.iUtfSeen = 0;
@@ -1773,38 +2668,90 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 		} else if ( b == ']' ) {
 			pData->tParser.iOscSize = 0;
 			pData->tParser.iState = 3;
+		} else if ( b == 'P' || b == 'X' || b == '^' || b == '_' ) {
+			pData->tParser.iState = 5;
+		} else if ( b == '(' || b == ')' || b == '*' || b == '+' ||
+		            b == '-' || b == '.' || b == '/' || b == '%' || b == '#' ) {
+			pData->tParser.cCharsetTarget = (char)b;
+			pData->tParser.iState = 7;
 		} else if ( b == '7' ) {
-			pData->bWrapPending = 0;
-			pData->iSavedCursorX = pData->iCursorX;
-			pData->iSavedCursorY = pData->iCursorY;
+			__xuiTerminalSaveCursorState(pData);
 			pData->tParser.iState = 0;
 		} else if ( b == '8' ) {
-			pData->bWrapPending = 0;
-			pData->iCursorX = __xuiTerminalMin(pData->iSavedCursorX, pData->iColumns - 1);
-			pData->iCursorY = __xuiTerminalMin(pData->iSavedCursorY, pData->iRows - 1);
+			__xuiTerminalRestoreCursorState(pData);
 			pData->tParser.iState = 0;
 		} else if ( b == 'H' ) {
 			pData->bWrapPending = 0;
 			__xuiTerminalSetTabStop(pData, pData->iCursorX, 1);
+			pData->tParser.iState = 0;
+		} else if ( b == 'D' ) {
+			pData->bWrapPending = 0;
+			__xuiTerminalLineFeed(pWidget, pData);
+			pData->tParser.iState = 0;
+		} else if ( b == 'E' ) {
+			pData->bWrapPending = 0;
+			pData->iCursorX = 0;
+			__xuiTerminalLineFeed(pWidget, pData);
+			pData->tParser.iState = 0;
+		} else if ( b == 'M' ) {
+			pData->bWrapPending = 0;
+			if ( pData->iCursorY <= pData->iScrollTop ) {
+				__xuiTerminalScrollDown(pData, pData->iScrollTop, pData->iScrollBottom, 1);
+				pData->iCursorY = pData->iScrollTop;
+			} else {
+				pData->iCursorY--;
+			}
+			pData->tParser.iState = 0;
+		} else if ( b == '=' ) {
+			pData->bApplicationKeypad = 1;
+			pData->tParser.iState = 0;
+		} else if ( b == '>' ) {
+			pData->bApplicationKeypad = 0;
+			pData->tParser.iState = 0;
+		} else if ( b == 'c' ) {
+			pData->bApplicationCursor = 0;
+			pData->bApplicationKeypad = 0;
+			pData->iG0Charset = 0;
+			pData->iG1Charset = 0;
+			pData->iActiveCharset = 0;
+			pData->bOriginMode = 0;
+			pData->bInsertMode = 0;
+			pData->bAutoWrap = 1;
+			pData->bCursorVisible = 1;
+			pData->iMouseTracking = XUI_TERMINAL_MOUSE_TRACKING_NONE;
+			pData->iMouseEncoding = XUI_TERMINAL_MOUSE_ENCODING_X10;
+			pData->bFocusReporting = 0;
+			pData->bBracketedPaste = 0;
+			pData->iScrollTop = 0;
+			pData->iScrollBottom = pData->iRows - 1;
+			pData->iCurrentFg = pData->iForegroundColor;
+			pData->iCurrentBg = pData->iBackgroundColor;
+			pData->iCurrentFlags = 0;
+			pData->iCurrentLinkId = 0;
+			(void)xuiTerminalClear(pWidget);
 			pData->tParser.iState = 0;
 		} else {
 			pData->tParser.iState = 0;
 		}
 		break;
 	case 2:
-		if ( b == '?' ) {
-			pData->tParser.bPrivate = 1;
+		if ( b >= 0x3cu && b <= 0x3fu && pData->tParser.iParamCount == 0 && pData->tParser.cPrivate == 0 ) {
+			pData->tParser.cPrivate = (char)b;
 		} else if ( b >= '0' && b <= '9' ) {
 			__xuiTerminalCsiAppendDigit(&pData->tParser, b - '0');
 		} else if ( b == ';' ) {
 			__xuiTerminalCsiNextParam(&pData->tParser);
+		} else if ( b >= 0x20u && b <= 0x2fu ) {
+			if ( pData->tParser.iIntermediateCount < (int)sizeof(pData->tParser.arrIntermediates) ) {
+				pData->tParser.arrIntermediates[pData->tParser.iIntermediateCount++] = (char)b;
+			}
 		} else if ( b >= 0x40u && b <= 0x7eu ) {
 			__xuiTerminalDispatchCsi(pWidget, pData, b);
 			pData->tParser.iState = 0;
 		}
 		break;
 	case 3:
-		if ( b == '\a' ) {
+		if ( b == '\a' || b == 0x9cu ) {
 			__xuiTerminalDispatchOsc(pWidget, pData);
 			pData->tParser.iState = 0;
 		} else if ( b == 0x1bu ) {
@@ -1821,6 +2768,26 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			pData->tParser.iState = 3;
 		}
 		break;
+	case 5:
+		if ( b == 0x9cu ) {
+			pData->tParser.iState = 0;
+		} else if ( b == 0x1bu ) {
+			pData->tParser.iState = 6;
+		}
+		break;
+	case 6:
+		if ( b == '\\' ) pData->tParser.iState = 0;
+		else if ( b != 0x1bu ) pData->tParser.iState = 5;
+		break;
+	case 7:
+		if ( pData->tParser.cCharsetTarget == '(' ) {
+			pData->iG0Charset = b == '0' ? 1 : 0;
+		} else if ( pData->tParser.cCharsetTarget == ')' ) {
+			pData->iG1Charset = b == '0' ? 1 : 0;
+		}
+		pData->tParser.cCharsetTarget = 0;
+		pData->tParser.iState = 0;
+		break;
 	default:
 		pData->tParser.iState = 0;
 		break;
@@ -1831,6 +2798,7 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 {
 	int iCount;
 	int i;
+	int iIndex;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTerminalResolveStyle(pWidget, pData);
@@ -1841,15 +2809,19 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 	}
 	__xuiTerminalMarkDirtyRow(pData, pData->iCursorY);
 	for ( i = 0; i < iCount; i++ ) {
-		__xuiTerminalProcessByte(pWidget, pData, pData->pQueue[i]);
+		iIndex = pData->iQueueHead + i;
+		if ( iIndex >= pData->iQueueCapacity ) iIndex -= pData->iQueueCapacity;
+		__xuiTerminalProcessByte(pWidget, pData, pData->pQueue[iIndex]);
+	}
+	pData->iOutputBytesParsed += (uint64_t)iCount;
+	if ( pData->iSearchLine >= 0 ) {
+		if ( pData->iSearchHistoryId != 0u ) (void)__xuiTerminalResolveFindAnchor(pData);
+		else __xuiTerminalClearFindMatch(pData);
 	}
 	__xuiTerminalMarkDirtyRow(pData, pData->iCursorY);
-	if ( iCount < pData->iQueueSize ) {
-		memmove(pData->pQueue, pData->pQueue + iCount, (size_t)(pData->iQueueSize - iCount));
-		pData->iQueueSize -= iCount;
-	} else {
-		pData->iQueueSize = 0;
-	}
+	pData->iQueueHead = (pData->iQueueHead + iCount) % pData->iQueueCapacity;
+	pData->iQueueSize -= iCount;
+	if ( pData->iQueueSize == 0 ) pData->iQueueHead = 0;
 	__xuiTerminalSyncScrollModel(pWidget, pData);
 	__xuiTerminalInvalidateDirty(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
@@ -1859,6 +2831,8 @@ static int __xuiTerminalAppendQueue(xui_terminal_data_t* pData, const void* pByt
 {
 	uint8_t* pNew;
 	int iCapacity;
+	int iFirst;
+	int iTail;
 
 	if ( (pData == NULL) || (pBytes == NULL) || (iSize < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1866,21 +2840,44 @@ static int __xuiTerminalAppendQueue(xui_terminal_data_t* pData, const void* pByt
 	if ( iSize == 0 ) {
 		return XUI_OK;
 	}
+	if ( iSize > 0x7fffffff - pData->iQueueSize ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( pData->iQueueSize + iSize > pData->iQueueCapacity ) {
 		iCapacity = pData->iQueueCapacity;
 		if ( iCapacity < 256 ) iCapacity = 256;
 		while ( iCapacity < pData->iQueueSize + iSize ) {
+			if ( iCapacity > 0x3fffffff ) {
+				iCapacity = pData->iQueueSize + iSize;
+				break;
+			}
 			iCapacity *= 2;
 		}
-		pNew = (uint8_t*)xrtRealloc(pData->pQueue, (size_t)iCapacity);
+		pNew = (uint8_t*)xrtMalloc((size_t)iCapacity);
 		if ( pNew == NULL ) {
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
+		if ( pData->iQueueSize > 0 ) {
+			iFirst = __xuiTerminalMin(pData->iQueueSize,
+				pData->iQueueCapacity - pData->iQueueHead);
+			memcpy(pNew, pData->pQueue + pData->iQueueHead, (size_t)iFirst);
+			if ( iFirst < pData->iQueueSize ) {
+				memcpy(pNew + iFirst, pData->pQueue,
+					(size_t)(pData->iQueueSize - iFirst));
+			}
+		}
+		if ( pData->pQueue != NULL ) xrtFree(pData->pQueue);
 		pData->pQueue = pNew;
 		pData->iQueueCapacity = iCapacity;
+		pData->iQueueHead = 0;
 	}
-	memcpy(pData->pQueue + pData->iQueueSize, pBytes, (size_t)iSize);
+	iTail = (pData->iQueueHead + pData->iQueueSize) % pData->iQueueCapacity;
+	iFirst = __xuiTerminalMin(iSize, pData->iQueueCapacity - iTail);
+	memcpy(pData->pQueue + iTail, pBytes, (size_t)iFirst);
+	if ( iFirst < iSize ) {
+		memcpy(pData->pQueue, (const uint8_t*)pBytes + iFirst, (size_t)(iSize - iFirst));
+	}
 	pData->iQueueSize += iSize;
+	pData->iOutputBytesReceived += (uint64_t)iSize;
+	if ( pData->iQueueSize > pData->iQueuePeak ) pData->iQueuePeak = pData->iQueueSize;
 	return XUI_OK;
 }
 
@@ -1913,7 +2910,8 @@ static int __xuiTerminalSerializeToBuffer(xui_terminal_data_t* pData, char* sBuf
 	}
 	pCells = __xuiTerminalScreenConst(pData);
 	for ( i = 0; i < pData->iRows; i++ ) {
-		sLine = __xuiTerminalSerializeRow(pData, pCells + i * pData->iColumns);
+		sLine = __xuiTerminalSerializeRow(pData,
+			__xuiTerminalBufferRowConst(pData, pCells, i));
 		if ( sLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		n = (int)strlen(sLine);
 		iNeeded += n + ((i + 1 < pData->iRows) ? 1 : 0);
@@ -1964,7 +2962,8 @@ static char* __xuiTerminalLogicalLineCopy(xui_terminal_data_t* pData, int iLine)
 	if ( pCells == NULL ) return __xuiTerminalStrDup("");
 	iLine -= pData->iScrollbackCount;
 	if ( iLine < 0 || iLine >= pData->iRows ) return __xuiTerminalStrDup("");
-	return __xuiTerminalSerializeRow(pData, pCells + iLine * pData->iColumns);
+	return __xuiTerminalSerializeRow(pData,
+		__xuiTerminalBufferRowConst(pData, pCells, iLine));
 }
 
 static int __xuiTerminalUtf8Next(const char* sText, int iRemaining, uint32_t* pCodepoint, int* pBytes)
@@ -2044,50 +3043,44 @@ static int __xuiTerminalUtf8ByteFromColumn(const char* sText, int iColumn)
 	return iOffset;
 }
 
-static int __xuiTerminalSearchMatchAt(const char* sHaystack, const char* sNeedle, uint32_t iFlags)
+static uint32_t __xuiTerminalSearchToFindFlags(uint32_t iFlags, int bForward)
 {
-	while ( (sNeedle != NULL) && (*sNeedle != '\0') ) {
-		char a;
-		char b;
-		if ( (sHaystack == NULL) || (*sHaystack == '\0') ) return 0;
-		a = *sHaystack++;
-		b = *sNeedle++;
-		if ( (iFlags & XUI_TERMINAL_SEARCH_CASE_SENSITIVE) == 0u ) {
-			a = (char)tolower((unsigned char)a);
-			b = (char)tolower((unsigned char)b);
-		}
-		if ( a != b ) return 0;
-	}
-	return 1;
+	uint32_t iFindFlags = 0u;
+	if ( (iFlags & XUI_TERMINAL_SEARCH_CASE_SENSITIVE) != 0u ) iFindFlags |= XUI_FIND_CASE_SENSITIVE;
+	if ( (iFlags & XUI_TERMINAL_SEARCH_WHOLE_WORD) != 0u ) iFindFlags |= XUI_FIND_WHOLE_WORD;
+	if ( (iFlags & XUI_TERMINAL_SEARCH_REGEX) != 0u ) iFindFlags |= XUI_FIND_REGEX;
+	if ( !bForward ) iFindFlags |= XUI_FIND_BACKWARD;
+	return iFindFlags;
 }
 
-static int __xuiTerminalFindInLine(const char* sLine, const char* sText, uint32_t iFlags, int iStartColumn, int bForward, int* pColumn)
+static int __xuiTerminalFindInLine(const char* sLine, const char* sText, uint32_t iFlags,
+	int iStartColumn, int bForward, int* pColumn, int* pLength)
 {
-	int iByte;
-	int iColumn;
-	int iBest;
+	xui_find_result_t tResult;
+	char sError[128];
+	int iLineBytes;
+	int iStartByte;
+	int iRet;
 
 	if ( (sLine == NULL) || (sText == NULL) || (sText[0] == '\0') ) return 0;
-	iBest = -1;
-	for ( iByte = 0; sLine[iByte] != '\0'; iByte++ ) {
-		if ( !__xuiTerminalSearchMatchAt(sLine + iByte, sText, iFlags) ) {
-			continue;
-		}
-		iColumn = __xuiTerminalUtf8DisplayColumns(sLine, iByte);
-		if ( bForward ) {
-			if ( iColumn >= iStartColumn ) {
-				if ( pColumn != NULL ) *pColumn = iColumn;
-				return 1;
-			}
-		} else if ( iColumn <= iStartColumn ) {
-			iBest = iColumn;
-		}
+	if ( iStartColumn < 0 ) return 0;
+	iLineBytes = (int)strlen(sLine);
+	iStartByte = __xuiTerminalUtf8ByteFromColumn(sLine, iStartColumn);
+	memset(&tResult, 0, sizeof(tResult));
+	tResult.iSize = sizeof(tResult);
+	sError[0] = '\0';
+	iRet = xuiFindText(sLine, iLineBytes, sText, iStartByte, 0, iLineBytes,
+		__xuiTerminalSearchToFindFlags(iFlags, bForward), &tResult,
+		sError, (int)sizeof(sError));
+	if ( iRet == XUI_ERROR_UNSUPPORTED ) return 0;
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pColumn != NULL ) *pColumn = __xuiTerminalUtf8DisplayColumns(sLine, tResult.iStart);
+	if ( pLength != NULL ) {
+		*pLength = __xuiTerminalUtf8DisplayColumns(sLine + tResult.iStart,
+			tResult.iEnd - tResult.iStart);
+		if ( *pLength < 1 ) *pLength = 1;
 	}
-	if ( !bForward && iBest >= 0 ) {
-		if ( pColumn != NULL ) *pColumn = iBest;
-		return 1;
-	}
-	return 0;
+	return 1;
 }
 
 static void __xuiTerminalClearFindMatch(xui_terminal_data_t* pData)
@@ -2096,6 +3089,39 @@ static void __xuiTerminalClearFindMatch(xui_terminal_data_t* pData)
 	pData->iSearchLine = -1;
 	pData->iSearchColumn = 0;
 	pData->iSearchLength = 0;
+	pData->iSearchHistoryId = 0u;
+	pData->iSearchHistoryCell = 0;
+}
+
+static void __xuiTerminalSetFindAnchor(xui_terminal_data_t* pData, int iLine, int iColumn)
+{
+	xui_terminal_history_view_row_t* pView;
+	if ( pData == NULL ) return;
+	pData->iSearchHistoryId = 0u;
+	pData->iSearchHistoryCell = 0;
+	if ( iLine < 0 || iLine >= pData->iScrollbackCount ) return;
+	pView = __xuiTerminalGetHistoryViewRow(pData, iLine);
+	if ( pView == NULL || pView->pLine == NULL ) return;
+	pData->iSearchHistoryId = pView->pLine->iId;
+	pData->iSearchHistoryCell = pView->iStart + __xuiTerminalMax(iColumn, 0);
+}
+
+static int __xuiTerminalResolveFindAnchor(xui_terminal_data_t* pData)
+{
+	int i;
+	if ( pData == NULL || pData->iSearchHistoryId == 0u ) return 0;
+	if ( __xuiTerminalRebuildHistoryView(pData) != XUI_OK ) return 0;
+	for ( i = 0; i < pData->iScrollbackCount; ++i ) {
+		xui_terminal_history_view_row_t* pView = &pData->pHistoryView[i];
+		if ( pView->pLine == NULL || pView->pLine->iId != pData->iSearchHistoryId ) continue;
+		if ( pData->iSearchHistoryCell < pView->iStart ||
+		     pData->iSearchHistoryCell >= pView->iEnd ) continue;
+		pData->iSearchLine = i;
+		pData->iSearchColumn = pData->iSearchHistoryCell - pView->iStart;
+		return 1;
+	}
+	__xuiTerminalClearFindMatch(pData);
+	return 0;
 }
 
 static void __xuiTerminalClearHoverLinkData(xui_terminal_data_t* pData)
@@ -2182,7 +3208,7 @@ static int __xuiTerminalOscLinkAt(xui_terminal_data_t* pData, int iLine, int iCo
 {
 	const xui_terminal_cell_t* pCells;
 	const xui_terminal_cell_t* pRow;
-	const uint16_t* pLinks;
+	xui_terminal_history_view_row_t* pHistoryRow;
 	const char* sUrl;
 	uint16_t iLinkId;
 	int iScreenRow;
@@ -2195,18 +3221,20 @@ static int __xuiTerminalOscLinkAt(xui_terminal_data_t* pData, int iLine, int iCo
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iLine < 0 || iLine >= __xuiTerminalLogicalLineCount(pData) || iColumn < 0 ) return 0;
 	if ( iLine < pData->iScrollbackCount ) {
-		pLinks = __xuiTerminalGetScrollbackLinks(pData, iLine, &iLinkColumns);
-		if ( pLinks == NULL || iColumn >= iLinkColumns ) return 0;
-		iLinkId = pLinks[iColumn];
+		pHistoryRow = __xuiTerminalGetHistoryViewRow(pData, iLine);
+		if ( pHistoryRow == NULL ) return 0;
+		iLinkColumns = pHistoryRow->iEnd - pHistoryRow->iStart;
+		if ( iColumn >= iLinkColumns ) return 0;
+		iLinkId = pHistoryRow->pLine->pCells[pHistoryRow->iStart + iColumn].iLinkId;
 		if ( iLinkId == 0 ) return 0;
 		sUrl = __xuiTerminalGetLinkUrl(pData, iLinkId);
 		if ( sUrl == NULL || sUrl[0] == '\0' ) return 0;
 		iStart = iColumn;
-		while ( iStart > 0 && pLinks[iStart - 1] == iLinkId ) {
+		while ( iStart > 0 && pHistoryRow->pLine->pCells[pHistoryRow->iStart + iStart - 1].iLinkId == iLinkId ) {
 			iStart--;
 		}
 		iEnd = iColumn + 1;
-		while ( iEnd < iLinkColumns && pLinks[iEnd] == iLinkId ) {
+		while ( iEnd < iLinkColumns && pHistoryRow->pLine->pCells[pHistoryRow->iStart + iEnd].iLinkId == iLinkId ) {
 			iEnd++;
 		}
 	} else {
@@ -2215,7 +3243,7 @@ static int __xuiTerminalOscLinkAt(xui_terminal_data_t* pData, int iLine, int iCo
 		if ( iScreenRow < 0 || iScreenRow >= pData->iRows ) return 0;
 		pCells = __xuiTerminalScreenConst(pData);
 		if ( pCells == NULL ) return 0;
-		pRow = pCells + iScreenRow * pData->iColumns;
+		pRow = __xuiTerminalBufferRowConst(pData, pCells, iScreenRow);
 		iLinkId = pRow[iColumn].iLinkId;
 		if ( iLinkId == 0 ) return 0;
 		sUrl = __xuiTerminalGetLinkUrl(pData, iLinkId);
@@ -2350,6 +3378,7 @@ static int __xuiTerminalFindNavigate(xui_widget pWidget, xui_terminal_data_t* pD
 	int iStartColumn;
 	int iLine;
 	int iColumn;
+	int iLength;
 	int i;
 	int iRet;
 
@@ -2359,6 +3388,7 @@ static int __xuiTerminalFindNavigate(xui_widget pWidget, xui_terminal_data_t* pD
 	iCount = __xuiTerminalLogicalLineCount(pData);
 	if ( iCount <= 0 ) return 0;
 	if ( bContinue && pData->iSearchLine >= 0 ) {
+		if ( pData->iSearchHistoryId != 0u ) (void)__xuiTerminalResolveFindAnchor(pData);
 		iStartLine = __xuiTerminalClampLine(pData, pData->iSearchLine);
 		iStartColumn = bForward ? (pData->iSearchColumn + __xuiTerminalMax(pData->iSearchLength, 1)) : (pData->iSearchColumn - 1);
 	} else {
@@ -2372,12 +3402,16 @@ static int __xuiTerminalFindNavigate(xui_widget pWidget, xui_terminal_data_t* pD
 		iColumn = (i == 0) ? iStartColumn : (bForward ? 0 : pData->iColumns);
 		sLine = __xuiTerminalLogicalLineCopy(pData, iLine);
 		if ( sLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		iRet = __xuiTerminalFindInLine(sLine, sText, iFlags, iColumn, bForward, &iColumn);
+		iLength = 0;
+		iRet = __xuiTerminalFindInLine(sLine, sText, iFlags, iColumn, bForward,
+			&iColumn, &iLength);
 		xrtFree(sLine);
-		if ( iRet ) {
+		if ( iRet < 0 ) return iRet;
+		if ( iRet > 0 ) {
 			pData->iSearchLine = iLine;
 			pData->iSearchColumn = __xuiTerminalClampColumn(pData, iColumn);
-			pData->iSearchLength = __xuiTerminalMax(1, __xuiTerminalUtf8DisplayColumns(sText, -1));
+			pData->iSearchLength = iLength;
+			__xuiTerminalSetFindAnchor(pData, pData->iSearchLine, pData->iSearchColumn);
 			if ( pLine != NULL ) *pLine = pData->iSearchLine;
 			if ( pColumn != NULL ) *pColumn = pData->iSearchColumn;
 			__xuiTerminalSyncScrollModel(pWidget, pData);
@@ -2692,6 +3726,7 @@ static int __xuiTerminalBuildModifiedTilde(char* sSeq, int iCapacity, int iPrefi
 
 	if ( sSeq == NULL || iCapacity <= 0 ) return 0;
 	iCode = __xuiTerminalInputModifierCode(iModifiers);
+	if ( iCode <= 1 ) return snprintf(sSeq, (size_t)iCapacity, "\x1b[%d~", iPrefix);
 	return snprintf(sSeq, (size_t)iCapacity, "\x1b[%d;%d~", iPrefix, iCode);
 }
 
@@ -2733,67 +3768,111 @@ static int __xuiTerminalKeyDown(xui_widget pWidget, xui_terminal_data_t* pData, 
 		return XUI_OK;
 	}
 	iSize = 0;
+	if ( (pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT | XUI_MOD_ALT)) ==
+	     (XUI_MOD_CTRL | XUI_MOD_SHIFT) &&
+	     (pEvent->iKey == 'F' || pEvent->iKey == 'f') ) {
+		return __xuiTerminalOpenFindWindow(pWidget, pData) | XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pEvent->iKey == XUI_KEY_F3 ) {
+		if ( pData->sSearchText == NULL || pData->sSearchText[0] == '\0' ) {
+			return __xuiTerminalOpenFindWindow(pWidget, pData) | XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( (pEvent->iModifiers & XUI_MOD_SHIFT) != 0u ) {
+			return xuiTerminalFindPrev(pWidget, pData->sSearchText, pData->iSearchFlags,
+				NULL, NULL) | XUI_EVENT_DISPATCH_STOP;
+		}
+		return xuiTerminalFindNext(pWidget, pData->sSearchText, pData->iSearchFlags,
+			NULL, NULL) | XUI_EVENT_DISPATCH_STOP;
+	}
 	switch ( pEvent->iKey ) {
 	case XUI_KEY_ENTER:
 		sSeq[0] = '\r'; iSize = 1; break;
+	case XUI_KEY_ESCAPE:
+		sSeq[0] = '\x1b'; iSize = 1; break;
 	case XUI_KEY_BACKSPACE:
 		b = ((pEvent->iModifiers & XUI_MOD_CTRL) != 0u) ? 0x08u : 0x7fu;
 		return __xuiTerminalEmitInputMaybeAlt(pWidget, pData, &b, 1, pEvent->iModifiers) | XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_TAB:
-		sSeq[0] = '\t'; iSize = 1; break;
+		if ( (pEvent->iModifiers & XUI_MOD_SHIFT) != 0u ) {
+			memcpy(sSeq, "\x1b[Z", 3); iSize = 3;
+		} else {
+			sSeq[0] = '\t'; iSize = 1;
+		}
+		break;
 	case XUI_KEY_UP:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
+		if ( pEvent->iModifiers != 0u ) {
 			iSize = __xuiTerminalBuildModifiedCursor(sSeq, (int)sizeof(sSeq), 'A', pEvent->iModifiers);
 			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 		}
-		memcpy(sSeq, "\x1b[A", 3); iSize = 3; break;
+		memcpy(sSeq, pData->bApplicationCursor ? "\x1bOA" : "\x1b[A", 3); iSize = 3; break;
 	case XUI_KEY_DOWN:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
+		if ( pEvent->iModifiers != 0u ) {
 			iSize = __xuiTerminalBuildModifiedCursor(sSeq, (int)sizeof(sSeq), 'B', pEvent->iModifiers);
 			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 		}
-		memcpy(sSeq, "\x1b[B", 3); iSize = 3; break;
+		memcpy(sSeq, pData->bApplicationCursor ? "\x1bOB" : "\x1b[B", 3); iSize = 3; break;
 	case XUI_KEY_RIGHT:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
+		if ( pEvent->iModifiers != 0u ) {
 			iSize = __xuiTerminalBuildModifiedCursor(sSeq, (int)sizeof(sSeq), 'C', pEvent->iModifiers);
 			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 		}
-		memcpy(sSeq, "\x1b[C", 3); iSize = 3; break;
+		memcpy(sSeq, pData->bApplicationCursor ? "\x1bOC" : "\x1b[C", 3); iSize = 3; break;
 	case XUI_KEY_LEFT:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
+		if ( pEvent->iModifiers != 0u ) {
 			iSize = __xuiTerminalBuildModifiedCursor(sSeq, (int)sizeof(sSeq), 'D', pEvent->iModifiers);
 			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 		}
-		memcpy(sSeq, "\x1b[D", 3); iSize = 3; break;
+		memcpy(sSeq, pData->bApplicationCursor ? "\x1bOD" : "\x1b[D", 3); iSize = 3; break;
 	case XUI_KEY_HOME:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
+		if ( pEvent->iModifiers != 0u ) {
 			iSize = __xuiTerminalBuildModifiedCursor(sSeq, (int)sizeof(sSeq), 'H', pEvent->iModifiers);
 			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 		}
-		memcpy(sSeq, "\x1b[H", 3); iSize = 3; break;
+		memcpy(sSeq, pData->bApplicationCursor ? "\x1bOH" : "\x1b[H", 3); iSize = 3; break;
 	case XUI_KEY_END:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
+		if ( pEvent->iModifiers != 0u ) {
 			iSize = __xuiTerminalBuildModifiedCursor(sSeq, (int)sizeof(sSeq), 'F', pEvent->iModifiers);
 			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 		}
-		memcpy(sSeq, "\x1b[F", 3); iSize = 3; break;
+		memcpy(sSeq, pData->bApplicationCursor ? "\x1bOF" : "\x1b[F", 3); iSize = 3; break;
+	case XUI_KEY_INSERT:
+		iSize = __xuiTerminalBuildModifiedTilde(sSeq, (int)sizeof(sSeq), 2, pEvent->iModifiers);
+		return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
+	case XUI_KEY_DELETE:
+		iSize = __xuiTerminalBuildModifiedTilde(sSeq, (int)sizeof(sSeq), 3, pEvent->iModifiers);
+		return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_PAGE_UP:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
-			iSize = __xuiTerminalBuildModifiedTilde(sSeq, (int)sizeof(sSeq), 5, pEvent->iModifiers);
-			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->iModifiers & XUI_MOD_SHIFT) != 0u ) {
+			(void)xuiScrollModelScrollBy(&pData->tScroll, 0.0f, -(float)pData->iRows * pData->fCellHeight);
+			__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return XUI_EVENT_DISPATCH_STOP;
 		}
-		(void)xuiScrollModelScrollBy(&pData->tScroll, 0.0f, -(float)pData->iRows * pData->fCellHeight);
-		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_EVENT_DISPATCH_STOP;
+		iSize = __xuiTerminalBuildModifiedTilde(sSeq, (int)sizeof(sSeq), 5, pEvent->iModifiers);
+		return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_PAGE_DOWN:
-		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
-			iSize = __xuiTerminalBuildModifiedTilde(sSeq, (int)sizeof(sSeq), 6, pEvent->iModifiers);
+		if ( (pEvent->iModifiers & XUI_MOD_SHIFT) != 0u ) {
+			(void)xuiScrollModelScrollBy(&pData->tScroll, 0.0f, (float)pData->iRows * pData->fCellHeight);
+			__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		iSize = __xuiTerminalBuildModifiedTilde(sSeq, (int)sizeof(sSeq), 6, pEvent->iModifiers);
+		return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
+	default:
+		if ( pEvent->iKey >= XUI_KEY_F1 && pEvent->iKey <= XUI_KEY_F4 ) {
+			static const char arrFinal[4] = {'P', 'Q', 'R', 'S'};
+			if ( pEvent->iModifiers == 0u ) {
+				sSeq[0] = '\x1b'; sSeq[1] = 'O'; sSeq[2] = arrFinal[pEvent->iKey - XUI_KEY_F1]; iSize = 3;
+			} else {
+				iSize = __xuiTerminalBuildModifiedCursor(sSeq, (int)sizeof(sSeq), arrFinal[pEvent->iKey - XUI_KEY_F1], pEvent->iModifiers);
+				return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
+			}
+			break;
+		}
+		if ( pEvent->iKey >= XUI_KEY_F5 && pEvent->iKey <= XUI_KEY_F12 ) {
+			static const int arrTilde[8] = {15, 17, 18, 19, 20, 21, 23, 24};
+			iSize = __xuiTerminalBuildModifiedTilde(sSeq, (int)sizeof(sSeq), arrTilde[pEvent->iKey - XUI_KEY_F5], pEvent->iModifiers);
 			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSeq, iSize) | XUI_EVENT_DISPATCH_STOP;
 		}
-		(void)xuiScrollModelScrollBy(&pData->tScroll, 0.0f, (float)pData->iRows * pData->fCellHeight);
-		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_EVENT_DISPATCH_STOP;
-	default:
 		if ( ((pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT)) == (XUI_MOD_CTRL | XUI_MOD_SHIFT)) &&
 		     (pEvent->iKey == 'C' || pEvent->iKey == 'c') ) {
 			return xuiTerminalCopySelection(pWidget) | XUI_EVENT_DISPATCH_STOP;
@@ -2821,17 +3900,105 @@ static int __xuiTerminalKeyDown(xui_widget pWidget, xui_terminal_data_t* pData, 
 	return XUI_OK;
 }
 
+static int __xuiTerminalMouseButtonCode(int iButton)
+{
+	if ( iButton == XUI_POINTER_BUTTON_LEFT ) return 0;
+	if ( iButton == XUI_POINTER_BUTTON_MIDDLE ) return 1;
+	if ( iButton == XUI_POINTER_BUTTON_RIGHT ) return 2;
+	return 3;
+}
+
+static int __xuiTerminalMouseModifierBits(uint32_t iModifiers)
+{
+	int iBits = 0;
+	if ( (iModifiers & XUI_MOD_SHIFT) != 0u ) iBits |= 4;
+	if ( (iModifiers & XUI_MOD_ALT) != 0u ) iBits |= 8;
+	if ( (iModifiers & XUI_MOD_CTRL) != 0u ) iBits |= 16;
+	return iBits;
+}
+
+static int __xuiTerminalPointerToApplicationCell(xui_widget pWidget,
+	xui_terminal_data_t* pData, const xui_event_t* pEvent, int* pColumn, int* pRow)
+{
+	int iLine;
+	int iColumn;
+	if ( __xuiTerminalPointerToCell(pWidget, pData, pEvent, &iLine, &iColumn) != XUI_OK ) return 0;
+	if ( iLine < pData->iScrollbackCount || iLine >= pData->iScrollbackCount + pData->iRows ) return 0;
+	if ( pColumn != NULL ) *pColumn = iColumn + 1;
+	if ( pRow != NULL ) *pRow = iLine - pData->iScrollbackCount + 1;
+	return 1;
+}
+
+static int __xuiTerminalEmitMouse(xui_widget pWidget, xui_terminal_data_t* pData,
+	int iCode, int iColumn, int iRow, int bRelease, int bMotion, uint32_t iModifiers)
+{
+	char sSequence[64];
+	char sUtf[4];
+	int iSize;
+	int n;
+	iCode += __xuiTerminalMouseModifierBits(iModifiers);
+	if ( bMotion ) iCode += 32;
+	if ( pData->iMouseEncoding == XUI_TERMINAL_MOUSE_ENCODING_SGR ) {
+		iSize = snprintf(sSequence, sizeof(sSequence), "\x1b[<%d;%d;%d%c",
+			iCode, iColumn, iRow, bRelease ? 'm' : 'M');
+		return iSize > 0 ? __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSequence, iSize) : XUI_OK;
+	}
+	if ( pData->iMouseEncoding == XUI_TERMINAL_MOUSE_ENCODING_URXVT ) {
+		if ( bRelease ) iCode = 3 + __xuiTerminalMouseModifierBits(iModifiers);
+		iSize = snprintf(sSequence, sizeof(sSequence), "\x1b[%d;%d;%dM", iCode + 32, iColumn, iRow);
+		return iSize > 0 ? __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSequence, iSize) : XUI_OK;
+	}
+	if ( bRelease ) iCode = 3 + __xuiTerminalMouseModifierBits(iModifiers);
+	iSize = 0;
+	sSequence[iSize++] = '\x1b';
+	sSequence[iSize++] = '[';
+	sSequence[iSize++] = 'M';
+	if ( pData->iMouseEncoding == XUI_TERMINAL_MOUSE_ENCODING_UTF8 ) {
+		n = __xuiTerminalEncodeUtf8((uint32_t)(iCode + 32), sUtf);
+		if ( n > 0 ) { memcpy(sSequence + iSize, sUtf, (size_t)n); iSize += n; }
+		n = __xuiTerminalEncodeUtf8((uint32_t)(iColumn + 32), sUtf);
+		if ( n > 0 ) { memcpy(sSequence + iSize, sUtf, (size_t)n); iSize += n; }
+		n = __xuiTerminalEncodeUtf8((uint32_t)(iRow + 32), sUtf);
+		if ( n > 0 ) { memcpy(sSequence + iSize, sUtf, (size_t)n); iSize += n; }
+	} else {
+		if ( iColumn > 223 ) iColumn = 223;
+		if ( iRow > 223 ) iRow = 223;
+		sSequence[iSize++] = (char)(iCode + 32);
+		sSequence[iSize++] = (char)(iColumn + 32);
+		sSequence[iSize++] = (char)(iRow + 32);
+	}
+	return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sSequence, iSize);
+}
+
+static int __xuiTerminalApplicationMouseEnabled(const xui_terminal_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	return pData != NULL && pEvent != NULL &&
+		pData->iMouseTracking != XUI_TERMINAL_MOUSE_TRACKING_NONE &&
+		(pEvent->iModifiers & XUI_MOD_SHIFT) == 0u;
+}
+
 static int __xuiTerminalPointerDown(xui_widget pWidget, xui_terminal_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_context pContext;
 	int iLine;
 	int iColumn;
+	int iRow;
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
-	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	pContext = xuiWidgetGetContext(pWidget);
 	(void)xuiSetFocusWidget(pContext, pWidget);
+	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) {
+		if ( !__xuiTerminalPointerToApplicationCell(pWidget, pData, pEvent, &iColumn, &iRow) ) return XUI_EVENT_DISPATCH_STOP;
+		pData->iMouseButton = pEvent->iButton;
+		pData->bMouseCaptured = 1;
+		(void)xuiSetPointerCapture(pContext, pWidget);
+		return __xuiTerminalEmitMouse(pWidget, pData,
+			__xuiTerminalMouseButtonCode(pEvent->iButton), iColumn, iRow, 0, 0,
+			pEvent->iModifiers) | XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	if ( __xuiTerminalPointerToCell(pWidget, pData, pEvent, &iLine, &iColumn) != XUI_OK ) return XUI_OK;
 	if ( (pEvent->iModifiers & XUI_MOD_SHIFT) != 0u ) {
 		if ( !__xuiTerminalSelectionRange(pData, NULL, NULL, NULL, NULL) ) {
@@ -2854,9 +4021,24 @@ static int __xuiTerminalPointerMove(xui_widget pWidget, xui_terminal_data_t* pDa
 {
 	int iLine;
 	int iColumn;
+	int iRow;
+	int iButton;
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) {
+		if ( pData->iMouseTracking == XUI_TERMINAL_MOUSE_TRACKING_PRESS ) return XUI_EVENT_DISPATCH_STOP;
+		if ( pData->iMouseTracking == XUI_TERMINAL_MOUSE_TRACKING_DRAG && pEvent->iButtons == 0u ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !__xuiTerminalPointerToApplicationCell(pWidget, pData, pEvent, &iColumn, &iRow) ) return XUI_EVENT_DISPATCH_STOP;
+		iButton = pData->iMouseButton;
+		if ( (pEvent->iButtons & XUI_POINTER_BUTTON_LEFT) != 0u ) iButton = XUI_POINTER_BUTTON_LEFT;
+		else if ( (pEvent->iButtons & XUI_POINTER_BUTTON_MIDDLE) != 0u ) iButton = XUI_POINTER_BUTTON_MIDDLE;
+		else if ( (pEvent->iButtons & XUI_POINTER_BUTTON_RIGHT) != 0u ) iButton = XUI_POINTER_BUTTON_RIGHT;
+		else iButton = 0;
+		return __xuiTerminalEmitMouse(pWidget, pData,
+			iButton != 0 ? __xuiTerminalMouseButtonCode(iButton) : 3,
+			iColumn, iRow, 0, 1, pEvent->iModifiers) | XUI_EVENT_DISPATCH_STOP;
+	}
 	if ( !pData->bSelecting ) {
 		return __xuiTerminalUpdateHoverLink(pWidget, pData, pEvent);
 	}
@@ -2880,9 +4062,24 @@ static int __xuiTerminalPointerUp(xui_widget pWidget, xui_terminal_data_t* pData
 {
 	int iLine;
 	int iColumn;
+	int iRow;
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) || pData->bMouseCaptured ) {
+		int iRet = XUI_OK;
+		if ( __xuiTerminalPointerToApplicationCell(pWidget, pData, pEvent, &iColumn, &iRow) ) {
+			iRet = __xuiTerminalEmitMouse(pWidget, pData,
+				__xuiTerminalMouseButtonCode(pEvent->iButton), iColumn, iRow, 1, 0,
+				pEvent->iModifiers);
+		}
+		pData->bMouseCaptured = 0;
+		pData->iMouseButton = 0;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+		}
+		return iRet | XUI_EVENT_DISPATCH_STOP;
+	}
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	if ( pData->bSelecting && __xuiTerminalPointerToCell(pWidget, pData, pEvent, &iLine, &iColumn) == XUI_OK ) {
 		pData->iSelectEndLine = iLine;
@@ -2905,6 +4102,7 @@ static int __xuiTerminalPointerDoubleClick(xui_widget pWidget, xui_terminal_data
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	if ( __xuiTerminalPointerToCell(pWidget, pData, pEvent, &iLine, &iColumn) != XUI_OK ) return XUI_EVENT_DISPATCH_STOP;
 	iRet = __xuiTerminalSelectWordAt(pWidget, pData, iLine, iColumn);
@@ -2960,6 +4158,7 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	sUrl = NULL;
 	iStartColumn = 0;
@@ -2994,6 +4193,273 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 	}
 	pData->bDoubleClickPending = 0;
 	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static uint32_t __xuiTerminalFindWindowFlags(const xui_terminal_data_t* pData)
+{
+	uint32_t iFlags = 0u;
+	if ( pData == NULL ) return 0u;
+	if ( pData->pFindCaseCheck != NULL && xuiCheckBoxGetChecked(pData->pFindCaseCheck) ) {
+		iFlags |= XUI_TERMINAL_SEARCH_CASE_SENSITIVE;
+	}
+	if ( pData->pFindWordCheck != NULL && xuiCheckBoxGetChecked(pData->pFindWordCheck) ) {
+		iFlags |= XUI_TERMINAL_SEARCH_WHOLE_WORD;
+	}
+	if ( pData->pFindRegexCheck != NULL && xuiCheckBoxGetChecked(pData->pFindRegexCheck) ) {
+		iFlags |= XUI_TERMINAL_SEARCH_REGEX;
+	}
+	return iFlags;
+}
+
+static void __xuiTerminalFindWindowSetStatus(xui_terminal_data_t* pData, const char* sText)
+{
+	if ( pData != NULL && pData->pFindStatus != NULL ) {
+		(void)xuiLabelSetText(pData->pFindStatus, sText != NULL ? sText : "");
+	}
+}
+
+static int __xuiTerminalFindWindowNavigate(xui_widget pTerminal, int iDirection, int bContinue)
+{
+	xui_terminal_data_t* pData;
+	xui_context pContext;
+	const char* sPattern;
+	uint32_t iFlags;
+	int iRet;
+
+	if ( pTerminal == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pTerminal);
+	if ( pData == NULL || pData->pFindInput == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pTerminal);
+	sPattern = xuiInputGetText(pData->pFindInput);
+	if ( sPattern == NULL || sPattern[0] == '\0' ) {
+		(void)xuiTerminalClearFind(pTerminal);
+		__xuiTerminalFindWindowSetStatus(pData, "");
+		return XUI_OK;
+	}
+	iFlags = __xuiTerminalFindWindowFlags(pData);
+	if ( !bContinue ) iRet = xuiTerminalFindText(pTerminal, sPattern, iFlags, NULL, NULL);
+	else if ( iDirection < 0 ) iRet = xuiTerminalFindPrev(pTerminal, sPattern, iFlags, NULL, NULL);
+	else iRet = xuiTerminalFindNext(pTerminal, sPattern, iFlags, NULL, NULL);
+	if ( iRet > 0 ) {
+		__xuiTerminalFindWindowSetStatus(pData, "");
+		return XUI_OK;
+	}
+	if ( iRet == 0 ) {
+		__xuiTerminalFindWindowSetStatus(pData, xuiTranslate(pContext, XUI_TR_FIND_NOT_FOUND));
+		return XUI_OK;
+	}
+	__xuiTerminalFindWindowSetStatus(pData, xuiTranslate(pContext, XUI_TR_FIND_INVALID_PATTERN));
+	return iRet;
+}
+
+static void __xuiTerminalFindInputChange(xui_widget pWidget, const char* sText, void* pUser)
+{
+	(void)pWidget;
+	(void)sText;
+	(void)__xuiTerminalFindWindowNavigate((xui_widget)pUser, 1, 0);
+}
+
+static void __xuiTerminalFindCheckChange(xui_widget pWidget, int bChecked, void* pUser)
+{
+	(void)pWidget;
+	(void)bChecked;
+	(void)__xuiTerminalFindWindowNavigate((xui_widget)pUser, 1, 0);
+}
+
+static void __xuiTerminalFindButtonClick(xui_widget pButton, void* pUser)
+{
+	xui_widget pTerminal = (xui_widget)pUser;
+	xui_terminal_data_t* pData;
+	if ( pTerminal == NULL ) return;
+	pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pTerminal);
+	if ( pData == NULL ) return;
+	(void)__xuiTerminalFindWindowNavigate(pTerminal,
+		pButton == pData->pFindPrevButton ? -1 : 1, 1);
+}
+
+static void __xuiTerminalFindWindowClose(xui_widget pWindow, void* pUser)
+{
+	xui_widget pTerminal = (xui_widget)pUser;
+	(void)pWindow;
+	if ( pTerminal != NULL ) (void)xuiSetFocusWidget(xuiWidgetGetContext(pTerminal), pTerminal);
+}
+
+static int __xuiTerminalFindWindowKeyDown(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_widget pTerminal = (xui_widget)pUser;
+	xui_terminal_data_t* pData;
+	(void)pWidget;
+	if ( pTerminal == NULL || pEvent == NULL || pEvent->iType != XUI_EVENT_KEY_DOWN ) return XUI_OK;
+	pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pTerminal);
+	if ( pData == NULL || pData->pFindWindow == NULL ) return XUI_OK;
+	if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_F3 ) {
+		(void)__xuiTerminalFindWindowNavigate(pTerminal,
+			(pEvent->iModifiers & XUI_MOD_SHIFT) != 0u ? -1 : 1, 1);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
+		(void)xuiWindowSetOpen(pData->pFindWindow, 0);
+		(void)xuiSetFocusWidget(xuiWidgetGetContext(pTerminal), pTerminal);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTerminalCreateFindButton(xui_context pContext, xui_widget* ppButton,
+	xui_font pFont, const char* sText, xui_widget pTerminal)
+{
+	xui_button_desc_t tDesc;
+	int iRet;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = pFont;
+	tDesc.sText = sText;
+	tDesc.fBorderWidth = 1.0f;
+	iRet = xuiButtonCreate(pContext, ppButton, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(*ppButton, __xuiTerminalFindButtonClick, pTerminal);
+	return iRet;
+}
+
+static int __xuiTerminalCreateFindCheck(xui_context pContext, xui_widget* ppCheck,
+	xui_font pFont, const char* sText, xui_widget pTerminal)
+{
+	xui_checkbox_desc_t tDesc;
+	int iRet;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = pFont;
+	tDesc.sText = sText;
+	tDesc.fIndicatorSize = 14.0f;
+	tDesc.fGap = 4.0f;
+	iRet = xuiCheckBoxCreate(pContext, ppCheck, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiCheckBoxSetChange(*ppCheck, __xuiTerminalFindCheckChange, pTerminal);
+	return iRet;
+}
+
+static int __xuiTerminalCreateFindWindow(xui_widget pTerminal, xui_terminal_data_t* pData)
+{
+	xui_context pContext;
+	xui_widget pRoot;
+	xui_widget pClient;
+	xui_window_desc_t tWindow;
+	xui_input_desc_t tInput;
+	xui_label_desc_t tLabel;
+	xui_font pFont;
+	xui_widget arrChildren[8];
+	int iRet;
+	int i;
+
+	if ( pTerminal == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pTerminal);
+	pRoot = xuiGetRootWidget(pContext);
+	if ( pRoot == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	pFont = pData->pFont != NULL ? pData->pFont : xuiGetDefaultFont(pContext);
+	memset(&tWindow, 0, sizeof(tWindow));
+	tWindow.iSize = sizeof(tWindow);
+	tWindow.sTitle = xuiTranslate(pContext, XUI_TR_FIND_TITLE);
+	tWindow.pFont = pFont;
+	tWindow.bClosed = 1;
+	tWindow.bTopMost = 1;
+	tWindow.bHideCollapse = 1;
+	tWindow.bHideMaximize = 1;
+	tWindow.bNotResizable = 1;
+	tWindow.fTitleBarHeight = 28.0f;
+	tWindow.fBorderWidth = 1.0f;
+	tWindow.fButtonSize = 18.0f;
+	iRet = xuiWindowCreate(pContext, &pData->pFindWindow, &tWindow);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWindowSetClose(pData->pFindWindow, __xuiTerminalFindWindowClose, pTerminal);
+	pClient = xuiWindowGetClientWidget(pData->pFindWindow);
+	(void)xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetSetFlowMode(pClient, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetPadding(pClient, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	(void)xuiWidgetSetGap(pClient, 0.0f);
+	(void)xuiWidgetSetEventHandler(pClient, XUI_EVENT_KEY_DOWN,
+		__xuiTerminalFindWindowKeyDown, pTerminal);
+	memset(&tInput, 0, sizeof(tInput));
+	tInput.iSize = sizeof(tInput);
+	tInput.pFont = pFont;
+	tInput.sPlaceholder = xuiTranslate(pContext, XUI_TR_FIND_PLACEHOLDER);
+	tInput.fBorderWidth = 1.0f;
+	iRet = xuiInputCreate(pContext, &pData->pFindInput, &tInput);
+	if ( iRet == XUI_OK ) iRet = __xuiTerminalCreateFindButton(pContext, &pData->pFindPrevButton,
+		pFont, xuiTranslate(pContext, XUI_TR_FIND_PREVIOUS), pTerminal);
+	if ( iRet == XUI_OK ) iRet = __xuiTerminalCreateFindButton(pContext, &pData->pFindNextButton,
+		pFont, xuiTranslate(pContext, XUI_TR_FIND_NEXT), pTerminal);
+	if ( iRet == XUI_OK ) iRet = __xuiTerminalCreateFindCheck(pContext, &pData->pFindCaseCheck,
+		pFont, xuiTranslate(pContext, XUI_TR_FIND_CASE), pTerminal);
+	if ( iRet == XUI_OK ) iRet = __xuiTerminalCreateFindCheck(pContext, &pData->pFindWordCheck,
+		pFont, xuiTranslate(pContext, XUI_TR_FIND_WORD), pTerminal);
+	if ( iRet == XUI_OK ) iRet = __xuiTerminalCreateFindCheck(pContext, &pData->pFindRegexCheck,
+		pFont, xuiTranslate(pContext, XUI_TR_FIND_REGEX), pTerminal);
+	memset(&tLabel, 0, sizeof(tLabel));
+	tLabel.iSize = sizeof(tLabel);
+	tLabel.pFont = pFont;
+	tLabel.sText = "";
+	tLabel.iTextColor = XUI_COLOR_RGBA(90, 105, 124, 255);
+	tLabel.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
+	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pContext, &pData->pFindStatus, &tLabel);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiInputSetChange(pData->pFindInput, __xuiTerminalFindInputChange, pTerminal);
+	arrChildren[0] = pData->pFindInput;
+	arrChildren[1] = pData->pFindPrevButton;
+	arrChildren[2] = pData->pFindNextButton;
+	arrChildren[3] = pData->pFindCaseCheck;
+	arrChildren[4] = pData->pFindWordCheck;
+	arrChildren[5] = pData->pFindRegexCheck;
+	arrChildren[6] = pData->pFindStatus;
+	for ( i = 0; i < 7 && iRet == XUI_OK; ++i ) {
+		iRet = xuiWindowAddChild(pData->pFindWindow, arrChildren[i]);
+	}
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pData->pFindWindow);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWidgetSetRect(pData->pFindWindow, (xui_rect_t){32.0f, 32.0f, 548.0f, 132.0f});
+	(void)xuiWidgetSetRect(pData->pFindInput, (xui_rect_t){12.0f, 12.0f, 300.0f, 28.0f});
+	(void)xuiWidgetSetRect(pData->pFindPrevButton, (xui_rect_t){320.0f, 12.0f, 92.0f, 28.0f});
+	(void)xuiWidgetSetRect(pData->pFindNextButton, (xui_rect_t){420.0f, 12.0f, 92.0f, 28.0f});
+	(void)xuiWidgetSetRect(pData->pFindCaseCheck, (xui_rect_t){12.0f, 50.0f, 150.0f, 24.0f});
+	(void)xuiWidgetSetRect(pData->pFindWordCheck, (xui_rect_t){170.0f, 50.0f, 150.0f, 24.0f});
+	(void)xuiWidgetSetRect(pData->pFindRegexCheck, (xui_rect_t){328.0f, 50.0f, 100.0f, 24.0f});
+	(void)xuiWidgetSetRect(pData->pFindStatus, (xui_rect_t){12.0f, 78.0f, 500.0f, 22.0f});
+	return XUI_OK;
+}
+
+static int __xuiTerminalOpenFindWindow(xui_widget pTerminal, xui_terminal_data_t* pData)
+{
+	xui_rect_t tOwner;
+	xui_rect_t tWindow;
+	char* sSelected = NULL;
+	int iRet;
+
+	if ( pTerminal == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFindWindow == NULL ) {
+		iRet = __xuiTerminalCreateFindWindow(pTerminal, pData);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	iRet = __xuiTerminalCopySingleLineSelectionText(pData, &sSelected);
+	if ( iRet < 0 ) return iRet;
+	if ( iRet > 0 && sSelected != NULL ) {
+		(void)xuiInputSetText(pData->pFindInput, sSelected);
+	} else if ( pData->sSearchText != NULL ) {
+		(void)xuiInputSetText(pData->pFindInput, pData->sSearchText);
+	}
+	xrtFree(sSelected);
+	(void)xuiCheckBoxSetChecked(pData->pFindCaseCheck,
+		(pData->iSearchFlags & XUI_TERMINAL_SEARCH_CASE_SENSITIVE) != 0u);
+	(void)xuiCheckBoxSetChecked(pData->pFindWordCheck,
+		(pData->iSearchFlags & XUI_TERMINAL_SEARCH_WHOLE_WORD) != 0u);
+	(void)xuiCheckBoxSetChecked(pData->pFindRegexCheck,
+		(pData->iSearchFlags & XUI_TERMINAL_SEARCH_REGEX) != 0u);
+	tOwner = xuiWidgetGetWorldRect(pTerminal);
+	tWindow = xuiWidgetGetRect(pData->pFindWindow);
+	tWindow.fX = tOwner.fX + 16.0f;
+	tWindow.fY = tOwner.fY + 16.0f;
+	(void)xuiWidgetSetRect(pData->pFindWindow, tWindow);
+	(void)xuiWindowSetOpen(pData->pFindWindow, 1);
+	(void)xuiWindowBringToFront(pData->pFindWindow);
+	(void)xuiSetFocusWidget(xuiWidgetGetContext(pTerminal), pData->pFindInput);
+	(void)__xuiTerminalFindWindowNavigate(pTerminal, 1, 0);
+	return XUI_OK;
 }
 
 static int __xuiTerminalMenuTitleIndexForCommand(int iCommand)
@@ -3057,8 +4523,7 @@ static int __xuiTerminalUpdateMenu(xui_widget pWidget, xui_terminal_data_t* pDat
 		memset(sProbe, 0, sizeof(sProbe));
 		bCanPaste = (pProxy->clipboardGetText(pProxy, sProbe, (int)sizeof(sProbe)) > 0);
 	}
-	bCanFind = (__xuiTerminalCopySingleLineSelectionText(pData, NULL) > 0) ||
-	           (pData->sSearchText != NULL && pData->sSearchText[0] != '\0');
+	bCanFind = 1;
 	arrItems[0].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_COPY);
 	arrItems[0].sShortcut = "Ctrl+Shift+C";
 	arrItems[0].iType = XUI_MENU_ITEM_NORMAL;
@@ -3084,7 +4549,7 @@ static int __xuiTerminalUpdateMenu(xui_widget pWidget, xui_terminal_data_t* pDat
 	arrItems[5].iValue = XUI_TERMINAL_MENU_CLEAR_SCROLLBACK;
 	arrItems[6].iType = XUI_MENU_ITEM_SEPARATOR;
 	arrItems[7].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_FIND);
-	arrItems[7].sShortcut = "Ctrl+F";
+	arrItems[7].sShortcut = "Ctrl+Shift+F";
 	arrItems[7].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[7].iState = bCanFind ? iEnabled : 0u;
 	arrItems[7].iValue = XUI_TERMINAL_MENU_FIND;
@@ -3093,23 +4558,8 @@ static int __xuiTerminalUpdateMenu(xui_widget pWidget, xui_terminal_data_t* pDat
 
 static int __xuiTerminalRunFindMenuCommand(xui_widget pWidget, xui_terminal_data_t* pData)
 {
-	char* sText;
-	int iRet;
-
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	sText = NULL;
-	iRet = __xuiTerminalCopySingleLineSelectionText(pData, &sText);
-	if ( iRet < 0 ) return iRet;
-	if ( iRet > 0 && sText != NULL ) {
-		iRet = xuiTerminalFindText(pWidget, sText, 0, NULL, NULL);
-		xrtFree(sText);
-		return (iRet < 0) ? iRet : XUI_OK;
-	}
-	if ( pData->sSearchText != NULL && pData->sSearchText[0] != '\0' ) {
-		iRet = xuiTerminalFindNext(pWidget, pData->sSearchText, pData->iSearchFlags, NULL, NULL);
-		return (iRet < 0) ? iRet : XUI_OK;
-	}
-	return XUI_OK;
+	return __xuiTerminalOpenFindWindow(pWidget, pData);
 }
 
 static void __xuiTerminalMenuSelect(xui_widget pMenu, int iIndex, int iValue, void* pUser)
@@ -3158,6 +4608,7 @@ static int __xuiTerminalContextMenu(xui_widget pWidget, xui_terminal_data_t* pDa
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) && pEvent->iKey != XUI_KEY_CONTEXT_MENU ) return XUI_EVENT_DISPATCH_STOP;
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 	pData->bSelecting = 0;
 	if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
@@ -3180,6 +4631,48 @@ static int __xuiTerminalContextMenu(xui_widget pWidget, xui_terminal_data_t* pDa
 		fY = pEvent->fY;
 	}
 	(void)xuiTerminalOpenMenu(pWidget, fX, fY);
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiTerminalPointerWheel(xui_widget pWidget, xui_terminal_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	float fDelta;
+	int iCode;
+	int iColumn;
+	int iRow;
+	int iSteps;
+	int i;
+	int iRet = XUI_OK;
+
+	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) {
+		if ( !__xuiTerminalPointerToApplicationCell(pWidget, pData, pEvent, &iColumn, &iRow) ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pEvent->fWheelY != 0.0f ) {
+			fDelta = pEvent->fWheelY;
+			iCode = fDelta > 0.0f ? 64 : 65;
+		} else if ( pEvent->fWheelX != 0.0f ) {
+			fDelta = pEvent->fWheelX;
+			iCode = fDelta > 0.0f ? 66 : 67;
+		} else {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		iSteps = (int)(fDelta < 0.0f ? -fDelta : fDelta);
+		if ( iSteps < 1 ) iSteps = 1;
+		for ( i = 0; i < iSteps; ++i ) {
+			iRet = __xuiTerminalEmitMouse(pWidget, pData, iCode,
+				iColumn, iRow, 0, 0, pEvent->iModifiers);
+			if ( iRet != XUI_OK ) break;
+		}
+		return iRet | XUI_EVENT_DISPATCH_STOP;
+	}
+	__xuiTerminalResolveStyle(pWidget, pData);
+	(void)xuiScrollModelScrollBy(&pData->tScroll, 0.0f,
+		-pEvent->fWheelY * pData->fCellHeight * 3.0f);
+	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
@@ -3209,18 +4702,13 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return __xuiTerminalPointerDoubleClick(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->bSelecting = 0;
+		pData->bMouseCaptured = 0;
+		pData->iMouseButton = 0;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
 		return __xuiTerminalContextMenu(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_WHEEL:
-		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
-			__xuiTerminalResolveStyle(pWidget, pData);
-			(void)xuiScrollModelScrollBy(&pData->tScroll, 0.0f,
-				-pEvent->fWheelY * pData->fCellHeight * 3.0f);
-			__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-			return XUI_EVENT_DISPATCH_STOP;
-		}
-		break;
+		return __xuiTerminalPointerWheel(pWidget, pData, pEvent);
 	case XUI_EVENT_TEXT:
 		if ( pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE ) {
 			if ( pData->bImeActive ) return XUI_EVENT_DISPATCH_STOP;
@@ -3267,8 +4755,20 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pEvent->iType == XUI_EVENT_BOUNDS_CHANGED ) {
 			(void)xuiTerminalFit(pWidget);
 		}
+		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE && pData->bFocusReporting ) {
+			static const uint8_t sFocusIn[] = "\x1b[I";
+			static const uint8_t sFocusOut[] = "\x1b[O";
+			if ( pEvent->iType == XUI_EVENT_FOCUS ) {
+				(void)__xuiTerminalEmitInput(pWidget, pData, sFocusIn, (int)sizeof(sFocusIn) - 1);
+			} else if ( pEvent->iType == XUI_EVENT_BLUR ) {
+				(void)__xuiTerminalEmitInput(pWidget, pData, sFocusOut, (int)sizeof(sFocusOut) - 1);
+			}
+		}
 		if ( pEvent->iType == XUI_EVENT_BLUR ) {
 			pData->bImeActive = 0;
+			pData->bSelecting = 0;
+			pData->bMouseCaptured = 0;
+			pData->iMouseButton = 0;
 			(void)__xuiTerminalImeSetText(pData, NULL, 0);
 		}
 		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3690,9 +5190,20 @@ static int __xuiTerminalCellUtf8(const xui_terminal_cell_t* pCell, char* sText, 
 	return iOffset;
 }
 
-static int __xuiTerminalRenderScreenRow(xui_proxy pProxy, xui_draw_context pDraw, xui_terminal_data_t* pData, int iLogicalLine, int iScreenRow, float fX, float fY)
+static int __xuiTerminalRenderStrike(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tTextRect, uint32_t iColor)
 {
-	const xui_terminal_cell_t* pCells;
+	float fY;
+	if ( pProxy == NULL || pProxy->drawLine == NULL ) return XUI_OK;
+	fY = tTextRect.fY + tTextRect.fH * 0.55f;
+	return pProxy->drawLine(pProxy, pDraw, tTextRect.fX, fY,
+		tTextRect.fX + tTextRect.fW, fY, 1.0f, iColor);
+}
+
+static int __xuiTerminalRenderCellRow(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_terminal_data_t* pData, const xui_terminal_cell_t* pCells, int iCellCount,
+	int iLogicalLine, float fX, float fY)
+{
 	char sRun[1024];
 	char sCell[4 * (XUI_TERMINAL_MAX_COMBINING + 1) + 1];
 	xui_rect_t tCellRect;
@@ -3713,11 +5224,9 @@ static int __xuiTerminalRenderScreenRow(xui_proxy pProxy, xui_draw_context pDraw
 	int iCellBytes;
 	int iCellWidth;
 
-	pCells = __xuiTerminalScreenConst(pData);
-	if ( (pCells == NULL) || (iScreenRow < 0) || (iScreenRow >= pData->iRows) ) return XUI_OK;
-	pCells += iScreenRow * pData->iColumns;
+	if ( pCells == NULL || iCellCount <= 0 ) return XUI_OK;
 	bHasSelection = __xuiTerminalSelectionColumns(pData, iLogicalLine, &iSelectionStart, &iSelectionEnd);
-	for ( x = 0; x < pData->iColumns; x++ ) {
+	for ( x = 0; x < iCellCount; x++ ) {
 		iBg = pCells[x].iBgColor;
 		if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u ) {
 			iBg = pCells[x].iFgColor;
@@ -3733,9 +5242,11 @@ static int __xuiTerminalRenderScreenRow(xui_proxy pProxy, xui_draw_context pDraw
 		}
 	}
 	if ( !pData->bLigaturesEnabled ) {
-		for ( x = 0; x < pData->iColumns; ++x ) {
+		for ( x = 0; x < iCellCount; ++x ) {
 			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ||
 			     pCells[x].iCodepoint == 0u || pCells[x].iCodepoint == ' ' ) continue;
+			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_BLINK) != 0u &&
+			     !pData->bLastCaretBlinkVisible ) continue;
 			iCellBytes = __xuiTerminalCellUtf8(&pCells[x], sCell, (int)sizeof(sCell));
 			if ( iCellBytes <= 0 ) continue;
 			iFg = ((pCells[x].iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u) ? pCells[x].iBgColor : pCells[x].iFgColor;
@@ -3749,32 +5260,48 @@ static int __xuiTerminalRenderScreenRow(xui_proxy pProxy, xui_draw_context pDraw
 			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_UNDERLINE) != 0u ) iTextFlags |= XUI_TEXT_UNDERLINE;
 			iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sCell, tTextRect, iFg, iTextFlags);
 			if ( iRet != XUI_OK ) return iRet;
+			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_BOLD) != 0u ) {
+				xui_rect_t tBoldRect = tTextRect;
+				tBoldRect.fX += 1.0f;
+				iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sCell,
+					tBoldRect, iFg, iTextFlags);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_STRIKE) != 0u ) {
+				iRet = __xuiTerminalRenderStrike(pProxy, pDraw, tTextRect, iFg);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 		}
 		return XUI_OK;
 	}
 	x = 0;
-	while ( x < pData->iColumns ) {
-		while ( x < pData->iColumns &&
+	while ( x < iCellCount ) {
+		while ( x < iCellCount &&
 		        (((pCells[x].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u) ||
 		         (pCells[x].iCodepoint == 0u) ||
 		         (pCells[x].iCodepoint == ' ')) ) {
 			x++;
 		}
-		if ( x >= pData->iColumns ) break;
+		if ( x >= iCellCount ) break;
 		iRunStart = x;
 		iFg = pCells[x].iFgColor;
 		iBg = pCells[x].iBgColor;
-		iFlags = pCells[x].iFlags & (XUI_TERMINAL_CELL_BOLD | XUI_TERMINAL_CELL_DIM | XUI_TERMINAL_CELL_UNDERLINE | XUI_TERMINAL_CELL_INVERSE);
+		iFlags = pCells[x].iFlags & (XUI_TERMINAL_CELL_BOLD | XUI_TERMINAL_CELL_DIM |
+			XUI_TERMINAL_CELL_UNDERLINE | XUI_TERMINAL_CELL_INVERSE |
+			XUI_TERMINAL_CELL_ITALIC | XUI_TERMINAL_CELL_BLINK | XUI_TERMINAL_CELL_STRIKE);
 		bRunSelected = bHasSelection && x >= iSelectionStart && x < iSelectionEnd;
 		iRunBytes = 0;
-		while ( x < pData->iColumns &&
+		while ( x < iCellCount &&
 		        ((pCells[x].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) == 0u) &&
 		        (pCells[x].iCodepoint != 0u) &&
 		        (pCells[x].iCodepoint != ' ') &&
 		        (pCells[x].iFgColor == iFg) &&
 		        (pCells[x].iBgColor == iBg) &&
 		        ((bHasSelection && x >= iSelectionStart && x < iSelectionEnd) == bRunSelected) &&
-		        ((pCells[x].iFlags & (XUI_TERMINAL_CELL_BOLD | XUI_TERMINAL_CELL_DIM | XUI_TERMINAL_CELL_UNDERLINE | XUI_TERMINAL_CELL_INVERSE)) == iFlags) ) {
+		        ((pCells[x].iFlags & (XUI_TERMINAL_CELL_BOLD | XUI_TERMINAL_CELL_DIM |
+		         XUI_TERMINAL_CELL_UNDERLINE | XUI_TERMINAL_CELL_INVERSE |
+		         XUI_TERMINAL_CELL_ITALIC | XUI_TERMINAL_CELL_BLINK |
+		         XUI_TERMINAL_CELL_STRIKE)) == iFlags) ) {
 			n = __xuiTerminalCellUtf8(&pCells[x], sCell, (int)sizeof(sCell));
 			if ( n <= 0 || iRunBytes + n >= (int)sizeof(sRun) - 1 ) break;
 			memcpy(sRun + iRunBytes, sCell, (size_t)n);
@@ -3790,65 +5317,61 @@ static int __xuiTerminalRenderScreenRow(xui_proxy pProxy, xui_draw_context pDraw
 		if ( bRunSelected ) iFg = pData->iSelectionTextColor;
 		iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 		if ( (iFlags & XUI_TERMINAL_CELL_UNDERLINE) != 0u ) iTextFlags |= XUI_TEXT_UNDERLINE;
-		iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sRun, tTextRect, iFg, iTextFlags);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( (iFlags & XUI_TERMINAL_CELL_BLINK) == 0u || pData->bLastCaretBlinkVisible ) {
+			iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sRun, tTextRect, iFg, iTextFlags);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( (iFlags & XUI_TERMINAL_CELL_BOLD) != 0u ) {
+				xui_rect_t tBoldRect = tTextRect;
+				tBoldRect.fX += 1.0f;
+				iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sRun,
+					tBoldRect, iFg, iTextFlags);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+			if ( (iFlags & XUI_TERMINAL_CELL_STRIKE) != 0u ) {
+				iRet = __xuiTerminalRenderStrike(pProxy, pDraw, tTextRect, iFg);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+		}
 	}
 	return XUI_OK;
 }
 
-static int __xuiTerminalRenderSerializedRow(xui_proxy pProxy, xui_draw_context pDraw,
-	xui_terminal_data_t* pData, const char* sText, int iLogicalLine, float fX, float fY)
+static int __xuiTerminalRenderScreenRow(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_terminal_data_t* pData, int iLogicalLine, int iScreenRow, float fX, float fY)
 {
-	char sGlyph[4 * (XUI_TERMINAL_MAX_COMBINING + 1) + 1];
-	xui_rect_t tTextRect;
-	uint32_t iCodepoint;
-	uint32_t iNextCodepoint;
-	int iBytes;
-	int iNextBytes;
-	int iLength;
-	int iOffset;
-	int iStart;
-	int iColumn;
-	int iWidth;
-	int iSelectionStart;
-	int iSelectionEnd;
-	int bHasSelection;
-	int iRet;
-	uint32_t iColor;
+	const xui_terminal_cell_t* pCells = __xuiTerminalScreenConst(pData);
+	if ( pCells == NULL || iScreenRow < 0 || iScreenRow >= pData->iRows ) return XUI_OK;
+	return __xuiTerminalRenderCellRow(pProxy, pDraw, pData,
+		__xuiTerminalBufferRowConst(pData, pCells, iScreenRow), pData->iColumns,
+		iLogicalLine, fX, fY);
+}
 
-	if ( sText == NULL || sText[0] == '\0' ) return XUI_OK;
-	iLength = (int)strlen(sText);
-	iOffset = 0;
-	iColumn = 0;
-	bHasSelection = __xuiTerminalSelectionColumns(pData, iLogicalLine, &iSelectionStart, &iSelectionEnd);
-	while ( iOffset < iLength && iColumn < pData->iColumns ) {
-		iStart = iOffset;
-		if ( !__xuiTerminalUtf8Next(sText + iOffset, iLength - iOffset, &iCodepoint, &iBytes) ) break;
-		iOffset += iBytes;
-		iWidth = __xuiTerminalCodepointWidth(iCodepoint);
-		if ( iWidth <= 0 ) iWidth = 1;
-		while ( iOffset < iLength &&
-		        __xuiTerminalUtf8Next(sText + iOffset, iLength - iOffset, &iNextCodepoint, &iNextBytes) &&
-		        __xuiTerminalCodepointWidth(iNextCodepoint) == 0 ) {
-			iOffset += iNextBytes;
-		}
-		if ( iOffset - iStart >= (int)sizeof(sGlyph) ) iOffset = iStart + (int)sizeof(sGlyph) - 1;
-		memcpy(sGlyph, sText + iStart, (size_t)(iOffset - iStart));
-		sGlyph[iOffset - iStart] = '\0';
-		if ( iCodepoint != ' ' ) {
-			tTextRect.fX = fX + (float)iColumn * pData->fCellWidth;
-			tTextRect.fY = fY;
-			tTextRect.fW = (float)iWidth * pData->fCellWidth;
-			tTextRect.fH = pData->fCellHeight;
-			iColor = (bHasSelection && iColumn >= iSelectionStart && iColumn < iSelectionEnd) ?
-				pData->iSelectionTextColor : pData->iForegroundColor;
-			iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sGlyph, tTextRect,
-				iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-		iColumn += iWidth;
+static int __xuiTerminalRenderHistoryRow(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_terminal_data_t* pData, int iLogicalLine, float fX, float fY)
+{
+	xui_terminal_history_view_row_t* pView;
+	xui_terminal_cell_t* pNew;
+	xui_terminal_cell_t tBlank;
+	int i;
+	int iCount;
+	pView = __xuiTerminalGetHistoryViewRow(pData, iLogicalLine);
+	if ( pView == NULL ) return XUI_OK;
+	if ( pData->iHistoryRenderCapacity < pData->iColumns ) {
+		pNew = (xui_terminal_cell_t*)xrtRealloc(pData->pHistoryRenderCells,
+			sizeof(*pNew) * (size_t)pData->iColumns);
+		if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		pData->pHistoryRenderCells = pNew;
+		pData->iHistoryRenderCapacity = pData->iColumns;
 	}
-	return XUI_OK;
+	tBlank = __xuiTerminalEraseCell(pData);
+	for ( i = 0; i < pData->iColumns; ++i ) pData->pHistoryRenderCells[i] = tBlank;
+	iCount = __xuiTerminalMin(pView->iEnd - pView->iStart, pData->iColumns);
+	for ( i = 0; i < iCount; ++i ) {
+		__xuiTerminalHistoryCellToPublic(pView->pLine, pView->iStart + i,
+			&pData->pHistoryRenderCells[i]);
+	}
+	return __xuiTerminalRenderCellRow(pProxy, pDraw, pData,
+		pData->pHistoryRenderCells, pData->iColumns, iLogicalLine, fX, fY);
 }
 
 static xui_rect_t __xuiTerminalIntersectRect(xui_rect_t a, xui_rect_t b)
@@ -3916,6 +5439,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	int iRet;
 	int bFullRender;
 	int bCaretBlinkVisible;
+	int bCursorBlink;
 	int bHadOldClip;
 	int bClipActive;
 	int iClipRet;
@@ -3954,6 +5478,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( !bFullRender && pData->iDirtyRowCount <= 0 ) {
 		return XUI_OK;
 	}
+	pData->bLastCaretBlinkVisible = bCaretBlinkVisible;
 	if ( bFullRender && pProxy->drawRectFill != NULL && __xuiTerminalAlpha(pData->iBackgroundColor) != 0 ) {
 		iRet = pProxy->drawRectFill(pProxy, pDraw,
 			xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH),
@@ -3990,8 +5515,8 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iRet = __xuiTerminalRenderSelectionLine(pProxy, pDraw, pData, iLine, tLineRect.fX, tLineRect.fY, tLineRect.fW);
 		if ( iRet != XUI_OK ) goto render_done;
 		if ( iLine < pData->iScrollbackCount ) {
-			iRet = __xuiTerminalRenderSerializedRow(pProxy, pDraw, pData,
-				__xuiTerminalGetScrollbackLine(pData, iLine), iLine, tLineRect.fX, tLineRect.fY);
+			iRet = __xuiTerminalRenderHistoryRow(pProxy, pDraw, pData,
+				iLine, tLineRect.fX, tLineRect.fY);
 			if ( iRet != XUI_OK ) goto render_done;
 		} else {
 			iRet = __xuiTerminalRenderScreenRow(pProxy, pDraw, pData, iLine, iScreenLine, tLineRect.fX, tLineRect.fY);
@@ -4027,15 +5552,32 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 			}
 		}
 	}
-	if ( pData->bCursorVisible && bCaretBlinkVisible && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL && __xuiTerminalAlpha(pData->iCursorColor) != 0 ) {
+	bCursorBlink = pData->iCursorStyle == 0 || pData->iCursorStyle == 1 ||
+		pData->iCursorStyle == 3 || pData->iCursorStyle == 5;
+	if ( pData->bCursorVisible && (!bCursorBlink || bCaretBlinkVisible) &&
+	     xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget &&
+	     __xuiTerminalAlpha(pData->iCursorColor) != 0 ) {
 		tCursor.fX = fLineX + (float)pData->iCursorX * pData->fCellWidth;
 		tCursor.fY = tRect.fY + pData->fPadding +
 			(float)(pData->iCursorY + pData->iScrollbackCount) * pData->fCellHeight - (float)iOffsetY;
 		tCursor.fW = pData->fCellWidth;
 		tCursor.fH = pData->fCursorHeight;
-		iRet = pProxy->drawRectStroke(pProxy, pDraw,
-			xuiInternalRectFromFloatNearest(tCursor.fX, tCursor.fY, tCursor.fW, tCursor.fH),
-			1.0f, pData->iCursorColor);
+		if ( pData->iCursorStyle == 3 || pData->iCursorStyle == 4 ) {
+			tCursor.fY += tCursor.fH - 2.0f;
+			tCursor.fH = 2.0f;
+			iRet = pProxy->drawRectFill != NULL ? pProxy->drawRectFill(pProxy, pDraw,
+				xuiInternalRectFromFloatNearest(tCursor.fX, tCursor.fY, tCursor.fW, tCursor.fH),
+				pData->iCursorColor) : XUI_OK;
+		} else if ( pData->iCursorStyle == 5 || pData->iCursorStyle == 6 ) {
+			tCursor.fW = 2.0f;
+			iRet = pProxy->drawRectFill != NULL ? pProxy->drawRectFill(pProxy, pDraw,
+				xuiInternalRectFromFloatNearest(tCursor.fX, tCursor.fY, tCursor.fW, tCursor.fH),
+				pData->iCursorColor) : XUI_OK;
+		} else {
+			iRet = pProxy->drawRectStroke != NULL ? pProxy->drawRectStroke(pProxy, pDraw,
+				xuiInternalRectFromFloatNearest(tCursor.fX, tCursor.fY, tCursor.fW, tCursor.fH),
+				1.0f, pData->iCursorColor) : XUI_OK;
+		}
 		if ( iRet != XUI_OK ) goto render_done;
 	}
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL ) {
@@ -4145,6 +5687,8 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iLinkHoverColor = pData->iBaseLinkHoverColor;
 	pData->iCurrentFg = pData->iForegroundColor;
 	pData->iCurrentBg = pData->iBackgroundColor;
+	pData->iSavedFg = pData->iForegroundColor;
+	pData->iSavedBg = pData->iBackgroundColor;
 	pData->iScrollbackLimit = (pDesc != NULL && pDesc->iScrollbackLimit > 0) ? pDesc->iScrollbackLimit : XUI_TERMINAL_DEFAULT_SCROLLBACK;
 	pData->iParseBudget = (pDesc != NULL && pDesc->iParseBudgetBytes > 0) ? pDesc->iParseBudgetBytes : XUI_TERMINAL_DEFAULT_PARSE_BUDGET;
 	pData->fBaseCellWidth = (pDesc != NULL) ? pDesc->fCellWidth : 0.0f;
@@ -4154,6 +5698,9 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->fCellHeight = pData->fBaseCellHeight;
 	pData->fPadding = pData->fBasePadding;
 	pData->bCursorVisible = 1;
+	pData->bAutoWrap = 1;
+	pData->iMouseTracking = XUI_TERMINAL_MOUSE_TRACKING_NONE;
+	pData->iMouseEncoding = XUI_TERMINAL_MOUSE_ENCODING_X10;
 	__xuiTerminalClearSelectionData(pData);
 	__xuiTerminalClearFindMatch(pData);
 	__xuiTerminalClearHoverLinkData(pData);
@@ -4198,6 +5745,10 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( xuiInternalWidgetIsValid(pWidget) && xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
 		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 	}
+	if ( pData->pFindWindow != NULL ) {
+		xuiWidgetDestroy(pData->pFindWindow);
+		pData->pFindWindow = NULL;
+	}
 	if ( pData->pMenu != NULL ) {
 		pPopup = xuiMenuGetPopupWidget(pData->pMenu);
 		if ( pPopup != NULL ) {
@@ -4209,6 +5760,9 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	}
 	if ( pData->pMain != NULL ) xrtFree(pData->pMain);
 	if ( pData->pAlt != NULL ) xrtFree(pData->pAlt);
+	if ( pData->pMainWrapped != NULL ) xrtFree(pData->pMainWrapped);
+	if ( pData->pAltWrapped != NULL ) xrtFree(pData->pAltWrapped);
+	if ( pData->pHistoryRenderCells != NULL ) xrtFree(pData->pHistoryRenderCells);
 	if ( pData->pQueue != NULL ) xrtFree(pData->pQueue);
 	if ( pData->pTabStops != NULL ) xrtFree(pData->pTabStops);
 	if ( pData->pDirtyRows != NULL ) xrtFree(pData->pDirtyRows);
@@ -4390,12 +5944,8 @@ XUI_API int xuiTerminalClearScrollback(xui_widget pWidget)
 XUI_API int xuiTerminalSetScrollbackLimit(xui_widget pWidget, int iLimit)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
-	char** ppOldScrollback;
-	uint16_t** ppOldLinks;
-	int* pOldColumns;
-	char** ppNewScrollback;
-	uint16_t** ppNewLinks;
-	int* pNewColumns;
+	xui_terminal_history_line_t** ppOldHistory;
+	xui_terminal_history_line_t** ppNewHistory;
 	int iOldLimit;
 	int iOldStart;
 	int iOldCount;
@@ -4406,21 +5956,13 @@ XUI_API int xuiTerminalSetScrollbackLimit(xui_widget pWidget, int iLimit)
 
 	if ( pData == NULL || iLimit <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iLimit == pData->iScrollbackLimit ) return XUI_OK;
-	ppNewScrollback = (char**)xrtCalloc((size_t)iLimit, sizeof(char*));
-	ppNewLinks = (uint16_t**)xrtCalloc((size_t)iLimit, sizeof(uint16_t*));
-	pNewColumns = (int*)xrtCalloc((size_t)iLimit, sizeof(int));
-	if ( ppNewScrollback == NULL || ppNewLinks == NULL || pNewColumns == NULL ) {
-		if ( ppNewScrollback != NULL ) xrtFree(ppNewScrollback);
-		if ( ppNewLinks != NULL ) xrtFree(ppNewLinks);
-		if ( pNewColumns != NULL ) xrtFree(pNewColumns);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	ppOldScrollback = pData->ppScrollback;
-	ppOldLinks = pData->ppScrollbackLinks;
-	pOldColumns = pData->pScrollbackColumns;
+	ppNewHistory = (xui_terminal_history_line_t**)xrtCalloc((size_t)iLimit, sizeof(*ppNewHistory));
+	if ( ppNewHistory == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	__xuiTerminalHistoryViewClear(pData);
+	ppOldHistory = pData->ppHistory;
 	iOldLimit = pData->iScrollbackLimit;
 	iOldStart = pData->iScrollbackStart;
-	iOldCount = pData->iScrollbackCount;
+	iOldCount = pData->iHistoryCount;
 	iKeepCount = (iOldCount < iLimit) ? iOldCount : iLimit;
 	iDropCount = iOldCount - iKeepCount;
 	if ( iOldLimit <= 0 ) {
@@ -4432,33 +5974,25 @@ XUI_API int xuiTerminalSetScrollbackLimit(xui_widget pWidget, int iLimit)
 	}
 	for ( i = 0; i < iDropCount; ++i ) {
 		iOldIndex = (iOldStart + i) % iOldLimit;
-		if ( ppOldScrollback != NULL && ppOldScrollback[iOldIndex] != NULL ) xrtFree(ppOldScrollback[iOldIndex]);
-		if ( ppOldLinks != NULL && ppOldLinks[iOldIndex] != NULL ) xrtFree(ppOldLinks[iOldIndex]);
+		if ( ppOldHistory != NULL ) {
+			__xuiTerminalHistoryLineDestroy(ppOldHistory[iOldIndex]);
+			ppOldHistory[iOldIndex] = NULL;
+		}
 	}
 	for ( i = 0; i < iKeepCount; ++i ) {
 		iOldIndex = (iOldStart + iDropCount + i) % iOldLimit;
-		if ( ppOldScrollback != NULL ) {
-			ppNewScrollback[i] = ppOldScrollback[iOldIndex];
-			ppOldScrollback[iOldIndex] = NULL;
-		}
-		if ( ppOldLinks != NULL ) {
-			ppNewLinks[i] = ppOldLinks[iOldIndex];
-			ppOldLinks[iOldIndex] = NULL;
-		}
-		if ( pOldColumns != NULL ) {
-			pNewColumns[i] = pOldColumns[iOldIndex];
-			pOldColumns[iOldIndex] = 0;
+		if ( ppOldHistory != NULL ) {
+			ppNewHistory[i] = ppOldHistory[iOldIndex];
+			ppOldHistory[iOldIndex] = NULL;
 		}
 	}
-	if ( ppOldScrollback != NULL ) xrtFree(ppOldScrollback);
-	if ( ppOldLinks != NULL ) xrtFree(ppOldLinks);
-	if ( pOldColumns != NULL ) xrtFree(pOldColumns);
-	pData->ppScrollback = ppNewScrollback;
-	pData->ppScrollbackLinks = ppNewLinks;
-	pData->pScrollbackColumns = pNewColumns;
+	xrtFree(ppOldHistory);
+	pData->ppHistory = ppNewHistory;
 	pData->iScrollbackLimit = iLimit;
 	pData->iScrollbackStart = 0;
-	pData->iScrollbackCount = iKeepCount;
+	pData->iHistoryCount = iKeepCount;
+	pData->bHistoryViewDirty = 1;
+	(void)__xuiTerminalRebuildHistoryView(pData);
 	__xuiTerminalClearSelectionData(pData);
 	__xuiTerminalClearFindMatch(pData);
 	__xuiTerminalSyncScrollModel(pWidget, pData);
@@ -4707,7 +6241,7 @@ XUI_API int xuiTerminalGetCell(xui_widget pWidget, int iColumn, int iRow, xui_te
 	const xui_terminal_cell_t* pCells;
 	if ( pData == NULL || pCell == NULL || iColumn < 0 || iRow < 0 || iColumn >= pData->iColumns || iRow >= pData->iRows ) return XUI_ERROR_INVALID_ARGUMENT;
 	pCells = __xuiTerminalScreenConst(pData);
-	*pCell = pCells[iRow * pData->iColumns + iColumn];
+	*pCell = __xuiTerminalBufferRowConst(pData, pCells, iRow)[iColumn];
 	pCell->iSize = sizeof(*pCell);
 	return XUI_OK;
 }
@@ -4883,6 +6417,19 @@ XUI_API int xuiTerminalGetFindMatch(xui_widget pWidget, int* pLine, int* pColumn
 	if ( pColumn != NULL ) *pColumn = pData->iSearchColumn;
 	if ( pLength != NULL ) *pLength = pData->iSearchLength;
 	return (pData->iSearchLine >= 0 && pData->iSearchLength > 0) ? 1 : 0;
+}
+
+XUI_API int xuiTerminalOpenFind(xui_widget pWidget)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiTerminalOpenFindWindow(pWidget, pData);
+}
+
+XUI_API xui_widget xuiTerminalGetFindWindow(xui_widget pWidget)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	return pData != NULL ? pData->pFindWindow : NULL;
 }
 
 XUI_API int xuiTerminalGetLinkAt(xui_widget pWidget, int iLine, int iColumn, char* sBuffer, int iCapacity, int* pStartColumn, int* pLength)
@@ -5468,4 +7015,52 @@ XUI_API int xuiTerminalGetChangeCount(xui_widget pWidget)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
+}
+
+XUI_API int xuiTerminalGetStats(xui_widget pWidget, xui_terminal_stats_t* pStats)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	size_t iHistoryBytes;
+	int i;
+	int idx;
+
+	if ( pData == NULL || pStats == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( __xuiTerminalRebuildHistoryView(pData) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
+	memset(pStats, 0, sizeof(*pStats));
+	pStats->iSize = sizeof(*pStats);
+	pStats->iColumns = pData->iColumns;
+	pStats->iRows = pData->iRows;
+	pStats->iHistoryLogicalLines = pData->iHistoryCount;
+	pStats->iHistoryDisplayRows = pData->iScrollbackCount;
+	pStats->iQueuedBytes = pData->iQueueSize;
+	pStats->iQueueCapacity = pData->iQueueCapacity;
+	pStats->iQueuePeakBytes = pData->iQueuePeak;
+	pStats->iDirtyRows = pData->iDirtyRowCount;
+	pStats->iChangeCount = pData->iChangeCount;
+	pStats->iOutputBytesReceived = pData->iOutputBytesReceived;
+	pStats->iOutputBytesParsed = pData->iOutputBytesParsed;
+	pStats->iScreenMemoryBytes =
+		sizeof(xui_terminal_cell_t) * (size_t)pData->iColumns * (size_t)pData->iRows * 2u +
+		(size_t)pData->iRows * 3u + (size_t)pData->iColumns;
+	pStats->iQueueMemoryBytes = (size_t)pData->iQueueCapacity;
+	iHistoryBytes = sizeof(*pData->ppHistory) * (size_t)pData->iScrollbackLimit +
+		sizeof(*pData->pHistoryView) * (size_t)pData->iHistoryViewCapacity +
+		sizeof(*pData->pHistoryRenderCells) * (size_t)pData->iHistoryRenderCapacity;
+	for ( i = 0; i < pData->iHistoryCount; ++i ) {
+		xui_terminal_history_line_t* pLine;
+		idx = (pData->iScrollbackStart + i) % pData->iScrollbackLimit;
+		pLine = pData->ppHistory != NULL ? pData->ppHistory[idx] : NULL;
+		if ( pLine == NULL ) continue;
+		iHistoryBytes += sizeof(*pLine) +
+			sizeof(*pLine->pCells) * (size_t)pLine->iCellCapacity +
+			sizeof(*pLine->pCombining) * (size_t)pLine->iCombiningCapacity;
+		if ( pLine->sTextCache != NULL ) iHistoryBytes += strlen(pLine->sTextCache) + 1u;
+	}
+	for ( i = 0; i < pData->iScrollbackCount; ++i ) {
+		if ( pData->pHistoryView[i].sTextCache != NULL ) {
+			iHistoryBytes += strlen(pData->pHistoryView[i].sTextCache) + 1u;
+		}
+	}
+	pStats->iHistoryMemoryBytes = iHistoryBytes;
+	return XUI_OK;
 }

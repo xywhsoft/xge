@@ -25,6 +25,8 @@ XUI 的精确初始化顺序、结构体字段和回调签名以 `xui.h` 与 `ex
 
 每种控件都有同名的 `examples/xui_*` 可运行范例。范例比开发期设计文档更适合作为组合控件、样式和事件处理的参考。
 
+Terminal 的缓冲区、VT/TUI 输入、ConPTY、查找和性能约定见 [XUI Terminal 使用指南](TERMINAL.md)。
+
 ## 布局、事件与绘制
 
 - 使用公开 layout、style 和 widget API 描述控件尺寸、间距、对齐和可见性；不要直接写入私有控件数据。

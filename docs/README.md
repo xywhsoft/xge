@@ -7,6 +7,7 @@
 - [构建与验证](BUILD.md)
 - [XGE 使用指南](XGE.md)
 - [XUI 使用指南](XUI.md)
+- [XUI Terminal 使用指南](TERMINAL.md)
 - [范例索引](EXAMPLES.md)
 - [平台说明](PLATFORM.md)
 - [Emoji 支持](EMOJI.md)
