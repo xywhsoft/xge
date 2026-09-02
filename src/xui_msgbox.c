@@ -506,16 +506,44 @@ static void __xuiMsgBoxApplyButtonVisual(xui_msgbox pBox)
 	}
 }
 
+static float __xuiMsgBoxMeasureButtonWidth(xui_msgbox pBox, int iIndex)
+{
+	xui_vec2_t tContentSize;
+	xui_thickness_t tPadding;
+	xui_widget pButton;
+	float fWidth;
+
+	fWidth = pBox->tMetrics.fButtonWidth;
+	if ( (iIndex < 0) || (iIndex >= pBox->iButtonCount) ) {
+		return (float)xuiInternalPixelCeil(fWidth);
+	}
+	pButton = pBox->arrButtons[iIndex];
+	if ( pButton == NULL ) {
+		return (float)xuiInternalPixelCeil(fWidth);
+	}
+	tContentSize = (xui_vec2_t){0.0f, 0.0f};
+	if ( xuiWidgetMeasureContent(pButton,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED},
+		&tContentSize) == XUI_OK ) {
+		tPadding = xuiWidgetGetPadding(pButton);
+		fWidth = __xuiMsgBoxMax(fWidth,
+			tContentSize.fX + tPadding.fLeft + tPadding.fRight);
+	}
+	return (float)xuiInternalPixelCeil(fWidth);
+}
+
 static int __xuiMsgBoxLayout(xui_msgbox pBox)
 {
 	xui_rect_t tRoot;
 	xui_rect_t tWin;
 	xui_vec2_t tTextSize;
+	float arrButtonWidth[XUI_MSGBOX_BUTTON_CAPACITY];
 	float fTitleBar;
 	float fBorder;
 	float fResizeGrip;
 	float fButtonSize;
 	float fRootMaxWidth;
+	float fRootAvailableWidth;
 	float fMaxWidth;
 	float fWidth;
 	float fClientW;
@@ -526,8 +554,10 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 	float fRowH;
 	float fFooterTop;
 	float fButtonsW;
+	float fButtonsRequiredWidth;
 	float fButtonsX;
 	float fButtonsY;
+	float fButtonX;
 	float fWindowH;
 	int bIcon;
 	int i;
@@ -546,22 +576,36 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 	(void)fButtonSize;
 	bIcon = __xuiMsgBoxHasIcon(pBox);
 	fIconBlock = bIcon ? (pBox->tMetrics.fIconSize + pBox->tMetrics.fIconGap) : 0.0f;
+	fButtonsW = 0.0f;
+	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
+		arrButtonWidth[i] = 0.0f;
+		if ( i < pBox->iButtonCount ) {
+			arrButtonWidth[i] = __xuiMsgBoxMeasureButtonWidth(pBox, i);
+			fButtonsW += arrButtonWidth[i];
+		}
+	}
+	if ( pBox->iButtonCount > 1 ) {
+		fButtonsW += (float)(pBox->iButtonCount - 1) * pBox->tMetrics.fButtonGap;
+	}
+	fButtonsRequiredWidth = fBorder * 2.0f + pBox->tMetrics.fPaddingX * 2.0f + fButtonsW;
 	fRootMaxWidth = tRoot.fW * pBox->tMetrics.fMaxWidthRatio;
+	fRootAvailableWidth = __xuiMsgBoxMax(1.0f, tRoot.fW - 24.0f);
 	fMaxWidth = __xuiMsgBoxMin(pBox->tMetrics.fMaxWidth, fRootMaxWidth);
 	if ( fMaxWidth < 220.0f ) fMaxWidth = __xuiMsgBoxMin(tRoot.fW - 24.0f, pBox->tMetrics.fMaxWidth);
 	if ( fMaxWidth < 220.0f ) fMaxWidth = 220.0f;
-	fMessageW = __xuiMsgBoxMax(120.0f, fMaxWidth - pBox->tMetrics.fPaddingX * 2.0f - fIconBlock);
+	if ( fButtonsRequiredWidth > fMaxWidth ) {
+		fMaxWidth = __xuiMsgBoxMin(fButtonsRequiredWidth, fRootAvailableWidth);
+	}
+	fMessageW = __xuiMsgBoxMax(120.0f, fMaxWidth - fBorder * 2.0f - pBox->tMetrics.fPaddingX * 2.0f - fIconBlock);
 	iRet = __xuiMsgBoxMeasureText(pBox, fMessageW, &tTextSize, &pBox->iWrapLineCount);
 	if ( iRet != XUI_OK ) {
 		tTextSize.fX = fMessageW;
 		tTextSize.fY = pBox->tMetrics.fMinMessageHeight;
 		pBox->iWrapLineCount = 1;
 	}
-	fButtonsW = 0.0f;
-	if ( pBox->iButtonCount > 0 ) {
-		fButtonsW = (float)pBox->iButtonCount * pBox->tMetrics.fButtonWidth + (float)(pBox->iButtonCount - 1) * pBox->tMetrics.fButtonGap;
-	}
-	fWidth = pBox->tMetrics.fPaddingX * 2.0f + fIconBlock + __xuiMsgBoxMax(tTextSize.fX, fButtonsW);
+	fWidth = __xuiMsgBoxMax(
+		fBorder * 2.0f + pBox->tMetrics.fPaddingX * 2.0f + fIconBlock + tTextSize.fX,
+		fButtonsRequiredWidth);
 	fWidth = __xuiMsgBoxClamp(fWidth, pBox->tMetrics.fMinWidth, fMaxWidth);
 	fClientW = __xuiMsgBoxMax(1.0f, fWidth - fBorder * 2.0f);
 	fMessageW = __xuiMsgBoxMax(80.0f, fClientW - pBox->tMetrics.fPaddingX * 2.0f - fIconBlock);
@@ -599,14 +643,16 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 	fFooterTop = fClientH - pBox->tMetrics.fFooterHeight;
 	fButtonsX = fClientW - pBox->tMetrics.fPaddingX - fButtonsW;
 	fButtonsY = fFooterTop + (pBox->tMetrics.fFooterHeight - pBox->tMetrics.fButtonHeight) * 0.5f;
+	fButtonX = fButtonsX;
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
 		if ( i < pBox->iButtonCount ) {
 			pBox->arrButtonRect[i] = (xui_rect_t){
-				fButtonsX + (float)i * (pBox->tMetrics.fButtonWidth + pBox->tMetrics.fButtonGap),
+				fButtonX,
 				fButtonsY,
-				pBox->tMetrics.fButtonWidth,
+				arrButtonWidth[i],
 				pBox->tMetrics.fButtonHeight
 			};
+			fButtonX += arrButtonWidth[i] + pBox->tMetrics.fButtonGap;
 			if ( pBox->arrButtons[i] != NULL ) {
 				(void)xuiWidgetSetRect(pBox->arrButtons[i], pBox->arrButtonRect[i]);
 				(void)xuiWidgetSetVisible(pBox->arrButtons[i], 1);

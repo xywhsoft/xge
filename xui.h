@@ -3775,7 +3775,7 @@ typedef struct xui_msgbox_metrics_t {
 	float fPaddingY;
 	float fIconSize;
 	float fIconGap;
-	float fButtonWidth;
+	float fButtonWidth; /* Minimum width; buttons expand to fit measured content. */
 	float fButtonHeight;
 	float fButtonGap;
 	float fFooterHeight;

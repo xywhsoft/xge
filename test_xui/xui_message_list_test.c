@@ -52,7 +52,10 @@ int main(void)
 	xui_font pFont;
 	xui_rect_t tContent;
 	xui_rect_t tRect;
+	xui_rect_t tOtherBubble;
+	xui_rect_t tSelfBubble;
 	xui_rect_t tWorld;
+	xui_message_list_metrics_t tMetrics;
 	const xui_message_node_t* pNode;
 	char sBuffer[2048];
 	const char* sRoundTripPath;
@@ -138,24 +141,42 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 
 	tWorld = xuiWidgetGetWorldRect(pDialog);
+	tContent = xuiWidgetGetContentRect(pDialog);
+	memset(&tMetrics, 0, sizeof(tMetrics));
+	tMetrics.iSize = sizeof(tMetrics);
+	XUI_TEST_CHECK(xuiMessageListGetMetrics(pDialog, &tMetrics) == XUI_OK, "get message metrics");
 	tRect = xuiMessageListGetNodeRect(pDialog, 0);
 	XUI_TEST_CHECK(tRect.fH > 52.0f, "wrapped node rect");
-	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
-	XUI_TEST_CHECK(tRect.fX == 58.0f && tRect.fW == 346.0f,
-		"other message fills the avatar-excluded row lane");
-	tRect = xuiMessageListGetBubbleRect(pDialog, 2);
-	XUI_TEST_CHECK(tRect.fX == 16.0f && tRect.fW == 346.0f,
-		"self message fills the avatar-excluded row lane");
+	tOtherBubble = xuiMessageListGetBubbleRect(pDialog, 0);
+	tSelfBubble = xuiMessageListGetBubbleRect(pDialog, 2);
+	XUI_TEST_CHECK(tOtherBubble.fX == tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap,
+		"other message starts after the left avatar lane");
+	XUI_TEST_CHECK(tSelfBubble.fX + tSelfBubble.fW == tContent.fW - tMetrics.fPaddingX - tMetrics.fAvatarSize - tMetrics.fAvatarGap,
+		"self message ends before the right avatar lane");
+	XUI_TEST_CHECK(tOtherBubble.fX + tOtherBubble.fW <= tSelfBubble.fX + tSelfBubble.fW &&
+		tSelfBubble.fX >= tOtherBubble.fX,
+		"conversation bubbles stay inside the shared center lane");
+	XUI_TEST_CHECK(tOtherBubble.fW < tContent.fW - (tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap) * 2.0f &&
+		tSelfBubble.fW < tContent.fW - (tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap) * 2.0f,
+		"conversation bubbles shrink to their wrapped content");
+	tRect = xuiMessageListGetBubbleRect(pDialog, 1);
+	XUI_TEST_CHECK(tRect.fX >= tOtherBubble.fX &&
+		tRect.fX + tRect.fW <= tContent.fW - tMetrics.fPaddingX - tMetrics.fAvatarSize - tMetrics.fAvatarGap,
+		"system message stays inside the center lane");
 	iRet = xuiWidgetSetRect(pDialog, (xui_rect_t){20.0f, 18.0f, 360.0f, 300.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize message list");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout resized message list");
-	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
-	XUI_TEST_CHECK(tRect.fX == 58.0f && tRect.fW == 286.0f,
-		"other message lane tracks the final content width");
-	tRect = xuiMessageListGetBubbleRect(pDialog, 2);
-	XUI_TEST_CHECK(tRect.fX == 16.0f && tRect.fW == 286.0f,
-		"self message lane tracks the final content width");
+	tContent = xuiWidgetGetContentRect(pDialog);
+	tOtherBubble = xuiMessageListGetBubbleRect(pDialog, 0);
+	tSelfBubble = xuiMessageListGetBubbleRect(pDialog, 2);
+	XUI_TEST_CHECK(tOtherBubble.fX == tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap,
+		"resized other message keeps the left avatar lane clear");
+	XUI_TEST_CHECK(tSelfBubble.fX + tSelfBubble.fW == tContent.fW - tMetrics.fPaddingX - tMetrics.fAvatarSize - tMetrics.fAvatarGap,
+		"resized self message keeps the right avatar lane clear");
+	XUI_TEST_CHECK(tOtherBubble.fW <= tContent.fW - (tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap) * 2.0f &&
+		tSelfBubble.fW <= tContent.fW - (tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap) * 2.0f,
+		"resized bubbles remain inside the center lane");
 	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
 	iRet = xuiInputPointerDown(pContext, tWorld.fX + tRect.fX + 13.0f, tWorld.fY + tRect.fY + 10.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "selection down");
@@ -236,6 +257,9 @@ int main(void)
 	tContent = xuiWidgetGetContentRect(pDialog);
 	tWorld = xuiWidgetGetWorldRect(pDialog);
 	tRect = xuiMessageListGetBubbleRect(pDialog, 3);
+	XUI_TEST_CHECK(tRect.fX == tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap + 12.0f &&
+		tRect.fX + tRect.fW <= tContent.fW - tMetrics.fPaddingX - tMetrics.fAvatarSize - tMetrics.fAvatarGap,
+		"auxiliary message stays inside the center lane");
 	iRet = __xuiMessageListClick(pContext,
 		tWorld.fX + tContent.fX + tRect.fX + 12.0f,
 		tWorld.fY + tContent.fY + tRect.fY + 12.0f - xuiMessageListGetScroll(pDialog));

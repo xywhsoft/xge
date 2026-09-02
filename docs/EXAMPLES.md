@@ -24,3 +24,16 @@
 - 专用功能：`xui_flowgraph`、`xui_workflow_editor`、`xui_terminal`、`xui_qrcode`。
 
 以范例中的公开 API 调用为准；`test_xui/` 适合用于验证行为和边界条件，而不是替代应用代码。
+
+## 视觉审计程序
+
+`examples/audit_*` 是固定场景的视觉审计程序，用于人工检查渲染质量以及生成截图回归素材。它们覆盖基础形状、ShapeEx、SVG、文字、相机、九宫格和多组 XUI 控件，不是对应单个 API 的入门范例。
+
+审计程序默认创建可见窗口并持续运行，按 `Esc` 或关闭窗口退出。仍可使用原有自动审计参数：
+
+```bat
+build\audit_shape_basic.exe --frames 120
+build\audit_shape_basic.exe --capture build\audit_shape_basic.png
+```
+
+指定 `--capture` 后，程序在成功保存离屏渲染结果后自动退出；截图内容与窗口预览使用同一个渲染目标。

@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../audit_render_common.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -323,8 +324,10 @@ static int frame(void* user)
 
 	ret = capture(demo);
 	if ( ret != XGE_OK ) return ret;
-
-	xgeEnd();
+	ret = auditPresentRenderTarget(&demo->tTarget, AUDIT_W, AUDIT_H, BG_COLOR);
+	if ( ret != XGE_OK ) return ret;
+	ret = xgeEnd();
+	if ( ret != XGE_OK ) return ret;
 	demo->iFrame++;
 	if ( demo->bCaptureDone || ((demo->iMaxFrames > 0) && (demo->iFrame >= demo->iMaxFrames)) ) {
 		xgeQuit();
@@ -352,8 +355,9 @@ int main(int argc, char** argv)
 	tDesc.iWidth = AUDIT_W;
 	tDesc.iHeight = AUDIT_H;
 	tDesc.sTitle = "audit_shape_basic";
-	tDesc.iFlags = XGE_INIT_OFFSCREEN;
+	tDesc.iFlags = XGE_INIT_WINDOW | XGE_INIT_VSYNC;
 	tDesc.iRunMode = XGE_RUN_GAME_LOOP;
+	tDesc.iTargetFPS = 60;
 
 	ret = xgeInit(&tDesc);
 	if ( ret != XGE_OK ) {

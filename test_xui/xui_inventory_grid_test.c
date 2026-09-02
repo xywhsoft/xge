@@ -441,7 +441,7 @@ int main(void)
 	tWorld = xuiWidgetGetWorldRect(pGrid);
 	iRet = xuiInventoryGridHitTest(pGrid, tWorld.fX + tSlot0.fX + 18.0f, tWorld.fY + tSlot0.fY + 18.0f, &tHit);
 	if ( !(iRet == XUI_OK && tHit.iSlot == 0 && tHit.iPart == XUI_INVENTORY_HIT_ICON) ) {
-		printf("hit debug: ret=%d slot=%d part=%d world=(%.1f,%.1f,%.1f,%.1f) slot0=(%.1f,%.1f,%.1f,%.1f)\n",
+		printf("hit debug: ret=%d slot=%d part=%d world=(%d,%d,%d,%d) slot0=(%d,%d,%d,%d)\n",
 			iRet, tHit.iSlot, tHit.iPart, tWorld.fX, tWorld.fY, tWorld.fW, tWorld.fH, tSlot0.fX, tSlot0.fY, tSlot0.fW, tSlot0.fH);
 	}
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iSlot == 0 && tHit.iPart == XUI_INVENTORY_HIT_ICON, "hit icon");

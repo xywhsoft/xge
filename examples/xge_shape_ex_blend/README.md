@@ -30,5 +30,8 @@ Build from the repository root with:
 examples\xge_shape_ex_blend\build.bat
 ```
 
-Pass a PNG path as the first argument to capture the atlas.
+Run `build\xge_shape_ex_blend.exe` without arguments for the interactive preview.
+Press Escape or close the window to exit. Use `--frames N` for a bounded run and
+`--capture PATH` to save the atlas and exit. A PNG path as the first argument is
+also accepted for existing capture scripts.
 The checked-in `reference.png` is the current XGE output.

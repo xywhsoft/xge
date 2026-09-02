@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../audit_render_common.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +47,7 @@ static int frame(void* user)
 	xgePassInit(&p, &d->tTarget, XGE_PASS_CLEAR_COLOR, BG_COLOR);
 	ret = xgePassBegin(&p); if(ret!=XGE_OK) return ret;
 
+	memset(&tex, 0, sizeof(tex));
 	ret = create_test_texture(&tex);
 	if ( ret != XGE_OK ) { xgePassEnd(&p); xgeEnd(); xgeQuit(); return ret; }
 
@@ -99,6 +101,7 @@ static int frame(void* user)
 		xge_sprite_batch_t batch;
 		xge_draw_t draw;
 		int i;
+		memset(&batch, 0, sizeof(batch));
 		if ( xgeSpriteBatchInit(&batch, &tex, 64, 0) == XGE_OK ) {
 			for ( i = 0; i < 8; i++ ) {
 				memset(&draw, 0, sizeof(draw));
@@ -127,7 +130,9 @@ static int frame(void* user)
 	xgeTextureFree(&tex);
 	ret = xgePassEnd(&p); if(ret!=XGE_OK) return ret;
 	ret = capture(d); if(ret!=XGE_OK) return ret;
-	xgeEnd(); d->iFrame++;
+	ret = auditPresentRenderTarget(&d->tTarget, AUDIT_W, AUDIT_H, BG_COLOR); if(ret!=XGE_OK) return ret;
+	ret = xgeEnd(); if(ret!=XGE_OK) return ret;
+	d->iFrame++;
 	if(d->bCaptureDone||((d->iMaxFrames>0)&&(d->iFrame>=d->iMaxFrames))) xgeQuit();
 	return XGE_OK;
 }
@@ -138,7 +143,7 @@ int main(int argc, char** argv)
 	memset(&t,0,sizeof(t)); parse_args(&t,argc,argv);
 	memset(&desc,0,sizeof(desc));
 	desc.iWidth=AUDIT_W; desc.iHeight=AUDIT_H; desc.sTitle="audit_ninepatch_sprite";
-	desc.iFlags=XGE_INIT_OFFSCREEN; desc.iRunMode=XGE_RUN_GAME_LOOP;
+	desc.iFlags=XGE_INIT_WINDOW|XGE_INIT_VSYNC; desc.iRunMode=XGE_RUN_GAME_LOOP; desc.iTargetFPS=60;
 	ret=xgeInit(&desc); if(ret!=XGE_OK) return 1;
 	ret=xgeRenderTargetCreate(&t.tTarget,AUDIT_W,AUDIT_H); if(ret!=XGE_OK){xgeUnit();return 1;}
 	ret=xgeRun(frame,&t);

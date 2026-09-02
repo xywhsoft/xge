@@ -108,14 +108,14 @@ static int __xuiMessageListCreateUi(xui_messagelist_demo_t* pDemo)
 	int iRet;
 
 	memset(arrNodes, 0, sizeof(arrNodes));
-	arrNodes[0] = (xui_message_node_t){sizeof(xui_message_node_t), "m1", "Leaf Elbold Dadunur", "10:53", "Mobile UI must keep finger-sized hit targets.", XUI_MESSAGE_NODE_SELF, 0, NULL};
-	arrNodes[1] = (xui_message_node_t){sizeof(xui_message_node_t), "m2", "Anubis", "10:54", "It also needs to respect narrow screen limits.", XUI_MESSAGE_NODE_OTHER, 0, NULL};
-	arrNodes[2] = (xui_message_node_t){sizeof(xui_message_node_t), "s1", "", "Yesterday 10:56", "Yesterday 10:56", XUI_MESSAGE_NODE_SYSTEM, 0, NULL};
-	arrNodes[3] = (xui_message_node_t){sizeof(xui_message_node_t), "m3", "Leaf Elbold Dadunur", "10:57", "Cross-platform behavior cannot skip this detail.", XUI_MESSAGE_NODE_SELF, 0, NULL};
-	arrNodes[4] = (xui_message_node_t){sizeof(xui_message_node_t), "m4", "Anubis", "10:58", "@serci+loser Maybe use the desktop editor first.", XUI_MESSAGE_NODE_OTHER, 0, NULL};
-	arrNodes[5] = (xui_message_node_t){sizeof(xui_message_node_t), "s2", "", "Today 09:15", "Today 09:15", XUI_MESSAGE_NODE_SYSTEM, 0, NULL};
-	arrNodes[6] = (xui_message_node_t){sizeof(xui_message_node_t), "m5", "Leaf Elbold Dadunur", "09:16", "The first version should cover history display, events, loading and saving.", XUI_MESSAGE_NODE_SELF, 0, NULL};
-	arrNodes[7] = (xui_message_node_t){sizeof(xui_message_node_t), "m6", "Anubis", "09:17", "Then we can wire it to real account, avatar and message storage.", XUI_MESSAGE_NODE_OTHER, 0, NULL};
+	arrNodes[0] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "m1", .sSender = "Leaf Elbold Dadunur", .sTime = "10:53", .sText = "Mobile UI must keep finger-sized hit targets.", .iType = XUI_MESSAGE_NODE_SELF};
+	arrNodes[1] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "m2", .sSender = "Anubis", .sTime = "10:54", .sText = "It also needs to respect narrow screen limits.", .iType = XUI_MESSAGE_NODE_OTHER};
+	arrNodes[2] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "s1", .sSender = "", .sTime = "Yesterday 10:56", .sText = "Yesterday 10:56", .iType = XUI_MESSAGE_NODE_SYSTEM};
+	arrNodes[3] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "m3", .sSender = "Leaf Elbold Dadunur", .sTime = "10:57", .sText = "Cross-platform behavior cannot skip this detail.", .iType = XUI_MESSAGE_NODE_SELF};
+	arrNodes[4] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "m4", .sSender = "Anubis", .sTime = "10:58", .sText = "@serci+loser Maybe use the desktop editor first.", .iType = XUI_MESSAGE_NODE_OTHER};
+	arrNodes[5] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "s2", .sSender = "", .sTime = "Today 09:15", .sText = "Today 09:15", .iType = XUI_MESSAGE_NODE_SYSTEM};
+	arrNodes[6] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "m5", .sSender = "Leaf Elbold Dadunur", .sTime = "09:16", .sText = "The first version should cover history display, events, loading and saving.", .iType = XUI_MESSAGE_NODE_SELF};
+	arrNodes[7] = (xui_message_node_t){.iSize = sizeof(xui_message_node_t), .sId = "m6", .sSender = "Anubis", .sTime = "09:17", .sText = "Then we can wire it to real account, avatar and message storage.", .iType = XUI_MESSAGE_NODE_OTHER};
 	arrNodes[8].iSize = sizeof(arrNodes[8]);
 	arrNodes[8].sId = "thinking-1";
 	arrNodes[8].sParentId = "m6";

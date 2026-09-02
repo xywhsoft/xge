@@ -27,21 +27,7 @@ static int create_ui(audit_xui_ctx_t* ctx) {
 	return XUI_OK;
 }
 static int frame(void* user) {
-	audit_xui_ctx_t* ctx = (audit_xui_ctx_t*)user;
-	xui_rect_i_t tFull; int ret;
-	ret = xgeBegin(); if (ret != XGE_OK) return ret;
-	(void)xuiDispatchPendingEvents(ctx->pContext);
-	(void)xuiLayout(ctx->pContext);
-	(void)xuiUpdate(ctx->pContext, xgeGetDelta());
-	(void)ctx->tProxy.surfaceClear(&ctx->tProxy, ctx->pTargetSurface, XUI_COLOR_RGBA(40,45,55,255));
-	tFull = (xui_rect_i_t){0,0,AUDIT_XUI_W,AUDIT_XUI_H};
-	(void)xuiRender(ctx->pContext, ctx->pTargetSurface, &tFull, 1);
-	ret = audit_xui_capture(ctx);
-	if (ret == XGE_OK) ret = xgeEnd();
-	if (ret != XGE_OK) return ret;
-	ctx->iFrame++;
-	if (ctx->bCaptureDone || ((ctx->iMaxFrames > 0) && (ctx->iFrame >= ctx->iMaxFrames))) xgeQuit();
-	return XGE_OK;
+	return audit_xui_frame((audit_xui_ctx_t*)user);
 }
 int main(int argc, char** argv) {
 	int ret; setbuf(stdout, NULL);

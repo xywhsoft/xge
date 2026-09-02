@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../audit_render_common.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -201,7 +202,9 @@ static int frame(void* user)
 
 	ret = xgePassEnd(&p); if(ret!=XGE_OK) return ret;
 	ret = capture(d); if(ret!=XGE_OK) return ret;
-	xgeEnd(); d->iFrame++;
+	ret = auditPresentRenderTarget(&d->tTarget, AUDIT_W, AUDIT_H, BG_COLOR); if(ret!=XGE_OK) return ret;
+	ret = xgeEnd(); if(ret!=XGE_OK) return ret;
+	d->iFrame++;
 	if(d->bCaptureDone||((d->iMaxFrames>0)&&(d->iFrame>=d->iMaxFrames))) xgeQuit();
 	return XGE_OK;
 }
@@ -212,7 +215,7 @@ int main(int argc, char** argv)
 	memset(&t,0,sizeof(t)); parse_args(&t,argc,argv);
 	memset(&desc,0,sizeof(desc));
 	desc.iWidth=AUDIT_W; desc.iHeight=AUDIT_H; desc.sTitle="audit_shape_ex_transform";
-	desc.iFlags=XGE_INIT_OFFSCREEN; desc.iRunMode=XGE_RUN_GAME_LOOP;
+	desc.iFlags=XGE_INIT_WINDOW|XGE_INIT_VSYNC; desc.iRunMode=XGE_RUN_GAME_LOOP; desc.iTargetFPS=60;
 	ret=xgeInit(&desc); if(ret!=XGE_OK) return 1;
 	ret=xgeRenderTargetCreate(&t.tTarget,AUDIT_W,AUDIT_H); if(ret!=XGE_OK){xgeUnit();return 1;}
 	ret=xgeRun(frame,&t);

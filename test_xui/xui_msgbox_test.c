@@ -98,6 +98,11 @@ int main(void)
 	xui_rect_t tBeforeDrag;
 	xui_rect_t tAfterDrag;
 	xui_rect_t tAfterUpdate;
+	xui_rect_t tLongButton;
+	xui_rect_t tShortButton;
+	xui_vec2_t tButtonContent;
+	xui_thickness_t tButtonPadding;
+	xui_msgbox_metrics_t tMetrics;
 	int iLayer;
 	int iZ;
 	int iWindowZ;
@@ -239,7 +244,7 @@ int main(void)
 	XUI_TEST_CHECK(!xuiMsgBoxIsOpen(pBox) && xuiMsgBoxGetResult(pBox) == XUI_MSGBOX_RESULT_CANCEL, "cancel closes");
 	XUI_TEST_CHECK(tResult.iCount == 2 && tResult.iLastResult == XUI_MSGBOX_RESULT_CANCEL, "cancel result callback");
 
-	arrCustom[0].sText = "Retry";
+	arrCustom[0].sText = "Retry after reconnecting to the service";
 	arrCustom[0].iResult = 10;
 	arrCustom[0].iSemantic = XUI_BUTTON_SEMANTIC_PRIMARY;
 	arrCustom[1].sText = "Delete";
@@ -253,6 +258,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgBoxIsOpen(pBox), "reopen custom");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout custom");
+	tLongButton = xuiMsgBoxGetButtonRect(pBox, 0);
+	tShortButton = xuiMsgBoxGetButtonRect(pBox, 1);
+	iRet = xuiMsgBoxGetMetrics(pBox, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get msgbox metrics");
+	iRet = xuiWidgetMeasureContent(xuiMsgBoxGetButtonWidget(pBox, 0),
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tButtonContent);
+	XUI_TEST_CHECK(iRet == XUI_OK, "measure long button content");
+	tButtonPadding = xuiWidgetGetPadding(xuiMsgBoxGetButtonWidget(pBox, 0));
+	XUI_TEST_CHECK(tLongButton.fW >= tButtonContent.fX + tButtonPadding.fLeft + tButtonPadding.fRight,
+		"long button fits measured text and padding");
+	XUI_TEST_CHECK(tLongButton.fW > tMetrics.fButtonWidth, "long button expands past minimum width");
+	XUI_TEST_CHECK(__xuiMsgBoxNear(tShortButton.fW, tMetrics.fButtonWidth), "short button keeps minimum width");
+	XUI_TEST_CHECK(tShortButton.fX >= tLongButton.fX + tLongButton.fW + tMetrics.fButtonGap,
+		"variable-width buttons preserve gap");
 	tButton = xuiMsgBoxGetButtonRect(pBox, 1);
 	tWorld = xuiWidgetGetWorldRect(xuiMsgBoxGetContentWidget(pBox));
 	iRet = __xuiMsgBoxDispatchClick(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f);

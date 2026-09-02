@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xge_shape_ex_demo.h"
 
 #include <math.h>
 #include <limits.h>
@@ -18,6 +19,8 @@ typedef struct effects_demo_t {
 	char sCapturePath[260];
 	int iRepeat;
 	int bCaptureDone;
+	int iFrame;
+	int iMaxFrames;
 } effects_demo_t;
 
 static int add_source_shapes(xge_shape_ex_scene scene)
@@ -290,7 +293,7 @@ static int capture(effects_demo_t* demo)
 	int x;
 	int y;
 
-	if ( demo->bCaptureDone ) return XGE_OK;
+	if ( demo->sCapturePath[0] == 0 || demo->bCaptureDone ) return XGE_OK;
 	pixels = (unsigned char*)malloc((size_t)stride * DEMO_H);
 	if ( pixels == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	ret = xgeRenderTargetReadPixels(&demo->tTarget, pixels, stride);
@@ -330,6 +333,7 @@ static int frame(void* user)
 	int i;
 	int ret = xgeBegin();
 
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( ret != XGE_OK ) return ret;
 	fStart = xgeTimer();
 	for ( i = 0; (i < demo->iRepeat) && (ret == XGE_OK); i++ ) {
@@ -339,56 +343,40 @@ static int frame(void* user)
 		if ( ret == XGE_OK ) ret = xgePassEnd(&pass);
 	}
 	fSeconds = xgeTimer() - fStart;
-	if ( ret == XGE_OK ) {
+	if ( ret == XGE_OK && demo->iFrame == 0 ) {
 		printf(
 			"xge_shape_ex_effects render-benchmark repeats=%d total_ms=%.3f average_ms=%.3f\n",
 			demo->iRepeat, fSeconds * 1000.0, fSeconds * 1000.0 / (double)demo->iRepeat
 		);
 	}
 	if ( ret == XGE_OK ) ret = capture(demo);
+	if ( ret == XGE_OK ) xgeShapeExDemoPresent(&demo->tTarget, DEMO_W, DEMO_H, XGE_COLOR_RGBA(14, 18, 24, 255));
 	if ( ret == XGE_OK ) ret = xgeEnd();
-	if ( demo->bCaptureDone ) xgeQuit();
+	demo->iFrame++;
+	if ( xgeShapeExDemoShouldQuit(demo->bCaptureDone, demo->iFrame, demo->iMaxFrames) ) xgeQuit();
 	return ret;
-}
-
-static int parse_positive_int(const char* text, int* value)
-{
-	char* end;
-	long parsed;
-
-	if ( (text == NULL) || (value == NULL) || (*text == '\0') ) return 0;
-	end = NULL;
-	parsed = strtol(text, &end, 10);
-	if ( (end == text) || (*end != '\0') || (parsed <= 0) || (parsed > INT_MAX) ) return 0;
-	*value = (int)parsed;
-	return 1;
 }
 
 int main(int argc, char** argv)
 {
 	effects_demo_t demo;
 	xge_desc_t desc;
-	int i;
 	int ret;
 
 	memset(&demo, 0, sizeof(demo));
 	demo.iRepeat = 1;
-	snprintf(demo.sCapturePath, sizeof(demo.sCapturePath), "%s",
-		((argc > 1) && (strncmp(argv[1], "--", 2) != 0)) ?
-			argv[1] : "artifacts/xge_shape_ex_effects.png");
-	for ( i = 1; i < argc; i++ ) {
-		if ( strcmp(argv[i], "--repeat") == 0 ) {
-			if ( (++i >= argc) || !parse_positive_int(argv[i], &demo.iRepeat) ) return 2;
-		} else if ( strncmp(argv[i], "--repeat=", 9) == 0 ) {
-			if ( !parse_positive_int(argv[i] + 9, &demo.iRepeat) ) return 2;
-		} else if ( (i != 1) || (strncmp(argv[i], "--", 2) == 0) ) {
-			return 2;
-		}
+	ret = xgeShapeExDemoParseArgs("xge_shape_ex_effects", argc, argv,
+		demo.sCapturePath, sizeof(demo.sCapturePath), &demo.iMaxFrames, &demo.iRepeat);
+	if ( ret == 1 ) return 0;
+	if ( ret != XGE_OK ) {
+		xgeShapeExDemoUsage("xge_shape_ex_effects", 1);
+		return 2;
 	}
 	memset(&desc, 0, sizeof(desc));
 	desc.iWidth = DEMO_W;
 	desc.iHeight = DEMO_H;
 	desc.sTitle = "xge_shape_ex_effects";
+	desc.iFlags = XGE_INIT_VSYNC;
 	desc.iRunMode = XGE_RUN_GAME_LOOP;
 	ret = xgeInit(&desc);
 	if ( ret != XGE_OK ) return 1;

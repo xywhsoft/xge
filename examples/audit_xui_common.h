@@ -16,7 +16,6 @@
 #endif
 
 typedef struct audit_xui_ctx_t {
-	xge_render_target_t tTarget;
 	xui_proxy_t tProxy;
 	xui_context pContext;
 	xui_surface pTargetSurface;
@@ -78,13 +77,11 @@ static int audit_xui_init(audit_xui_ctx_t* ctx, const char* title)
 	desc.iWidth = AUDIT_XUI_W;
 	desc.iHeight = AUDIT_XUI_H;
 	desc.sTitle = title;
-	desc.iFlags = XGE_INIT_WINDOW;
+	desc.iFlags = XGE_INIT_WINDOW | XGE_INIT_VSYNC;
 	desc.iRunMode = XGE_RUN_GAME_LOOP;
+	desc.iTargetFPS = 60;
 	ret = xgeInit(&desc);
 	if ( ret != XGE_OK ) return ret;
-
-	ret = xgeRenderTargetCreate(&ctx->tTarget, AUDIT_XUI_W, AUDIT_XUI_H);
-	if ( ret != XGE_OK ) { xgeUnit(); return ret; }
 
 	ctx->tProxy = xuiProxyXge();
 	ret = xuiCreate(&ctx->pContext);
@@ -132,12 +129,51 @@ static int audit_xui_capture(audit_xui_ctx_t* ctx)
 	return ret;
 }
 
+static int audit_xui_frame(audit_xui_ctx_t* ctx)
+{
+	xui_rect_i_t tFull;
+	xui_rect_t tScreen;
+	xui_rect_t tSource;
+	int ret;
+
+	if ( ctx == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	ret = xgeBegin();
+	if ( ret != XGE_OK ) return ret;
+	tScreen = (xui_rect_t){0.0f, 0.0f, (float)xgeGetWidth(), (float)xgeGetHeight()};
+	ret = xuiProxyXgePumpInputRect(ctx->pContext, tScreen);
+	if ( ret != XUI_OK ) return ret;
+	ret = xuiDispatchPendingEvents(ctx->pContext);
+	if ( ret != XUI_OK ) return ret;
+	ret = xuiLayout(ctx->pContext);
+	if ( ret != XUI_OK ) return ret;
+	ret = xuiUpdate(ctx->pContext, xgeGetDelta());
+	if ( ret != XUI_OK ) return ret;
+	ret = ctx->tProxy.surfaceClear(&ctx->tProxy, ctx->pTargetSurface, XUI_COLOR_RGBA(229, 235, 244, 255));
+	if ( ret != XUI_OK ) return ret;
+	tFull = (xui_rect_i_t){0, 0, AUDIT_XUI_W, AUDIT_XUI_H};
+	ret = xuiRender(ctx->pContext, ctx->pTargetSurface, &tFull, 1);
+	if ( ret != XUI_OK ) return ret;
+	ret = audit_xui_capture(ctx);
+	if ( ret != XGE_OK ) return ret;
+	xgeClear(XGE_COLOR_RGBA(24, 29, 37, 255));
+	tSource = (xui_rect_t){0.0f, 0.0f, (float)AUDIT_XUI_W, (float)AUDIT_XUI_H};
+	ret = ctx->tProxy.surfaceDraw(&ctx->tProxy, ctx->pTargetSurface, tSource, tScreen,
+		XUI_COLOR_WHITE, XUI_SURFACE_DRAW_SCREEN_SPACE);
+	if ( ret == XGE_OK ) ret = xgeEnd();
+	if ( ret != XGE_OK ) return ret;
+	ctx->iFrame++;
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) || ctx->bCaptureDone ||
+	     ((ctx->iMaxFrames > 0) && (ctx->iFrame >= ctx->iMaxFrames)) ) {
+		xgeQuit();
+	}
+	return XGE_OK;
+}
+
 static void audit_xui_shutdown(audit_xui_ctx_t* ctx)
 {
 	if ( ctx->pContext ) xuiDestroy(ctx->pContext);
 	if ( ctx->pFont ) ctx->tProxy.fontDestroy(&ctx->tProxy, ctx->pFont);
 	if ( ctx->pTargetSurface ) ctx->tProxy.surfaceDestroy(&ctx->tProxy, ctx->pTargetSurface);
-	xgeRenderTargetFree(&ctx->tTarget);
 	xgeUnit();
 }
 

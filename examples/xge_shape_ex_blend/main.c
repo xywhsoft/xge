@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xge_shape_ex_demo.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,8 @@ typedef struct blend_demo_t {
 	xge_render_target_t tTarget;
 	char sCapturePath[260];
 	int bCaptureDone;
+	int iFrame;
+	int iMaxFrames;
 } blend_demo_t;
 
 static const int g_blendModes[] = {
@@ -76,7 +79,7 @@ static int capture(blend_demo_t* demo)
 	int x;
 	int y;
 
-	if ( demo->bCaptureDone ) return XGE_OK;
+	if ( demo->sCapturePath[0] == 0 || demo->bCaptureDone ) return XGE_OK;
 	pixels = (unsigned char*)malloc((size_t)stride * DEMO_H);
 	if ( pixels == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	ret = xgeRenderTargetReadPixels(&demo->tTarget, pixels, stride);
@@ -113,14 +116,17 @@ static int frame(void* user)
 	xge_pass_t pass;
 	int ret = xgeBegin();
 
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( ret != XGE_OK ) return ret;
 	xgePassInit(&pass, &demo->tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
 	ret = xgePassBegin(&pass);
 	if ( ret == XGE_OK ) ret = draw_scene();
 	if ( ret == XGE_OK ) ret = xgePassEnd(&pass);
 	if ( ret == XGE_OK ) ret = capture(demo);
+	if ( ret == XGE_OK ) xgeShapeExDemoPresent(&demo->tTarget, DEMO_W, DEMO_H, XGE_COLOR_RGBA(14, 18, 24, 255));
 	if ( ret == XGE_OK ) ret = xgeEnd();
-	if ( demo->bCaptureDone ) xgeQuit();
+	demo->iFrame++;
+	if ( xgeShapeExDemoShouldQuit(demo->bCaptureDone, demo->iFrame, demo->iMaxFrames) ) xgeQuit();
 	return ret;
 }
 
@@ -131,12 +137,18 @@ int main(int argc, char** argv)
 	int ret;
 
 	memset(&demo, 0, sizeof(demo));
-	snprintf(demo.sCapturePath, sizeof(demo.sCapturePath), "%s",
-		(argc > 1) ? argv[1] : "artifacts/xge_shape_ex_blend.png");
+	ret = xgeShapeExDemoParseArgs("xge_shape_ex_blend", argc, argv,
+		demo.sCapturePath, sizeof(demo.sCapturePath), &demo.iMaxFrames, NULL);
+	if ( ret == 1 ) return 0;
+	if ( ret != XGE_OK ) {
+		xgeShapeExDemoUsage("xge_shape_ex_blend", 0);
+		return 2;
+	}
 	memset(&desc, 0, sizeof(desc));
 	desc.iWidth = DEMO_W;
 	desc.iHeight = DEMO_H;
 	desc.sTitle = "xge_shape_ex_blend";
+	desc.iFlags = XGE_INIT_VSYNC;
 	desc.iRunMode = XGE_RUN_GAME_LOOP;
 	ret = xgeInit(&desc);
 	if ( ret != XGE_OK ) return 1;
