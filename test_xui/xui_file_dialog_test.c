@@ -134,6 +134,8 @@ int main(void)
 	xui_rect_t tWorld;
 	str sFixture = NULL;
 	str sSub = NULL;
+	str sSubTxt = NULL;
+	str sSubSave = NULL;
 	str sTxt = NULL;
 	str sBin = NULL;
 	str sLate = NULL;
@@ -142,6 +144,9 @@ int main(void)
 	int iFailed = 0;
 	int iRet;
 	int iIndex;
+	int iBulk;
+	char sBulkName[64];
+	str sBulkPath;
 
 	xuiTestProxyInit(&tState);
 	iRet = xuiCreate(&pContext);
@@ -162,16 +167,26 @@ int main(void)
 
 	sFixture = xrtPathJoin("build", "file_dialog_fixture");
 	sSub = xrtPathJoin(sFixture, "sub");
+	sSubTxt = xrtPathJoin(sSub, "inside.txt");
+	sSubSave = xrtPathJoin(sSub, "new.txt");
 	sTxt = xrtPathJoin(sFixture, "alpha.txt");
 	sBin = xrtPathJoin(sFixture, "beta.bin");
 	sLate = xrtPathJoin(sFixture, "late.txt");
 	sSave = xrtPathJoin(sFixture, "new.txt");
 	sMissingDir = xrtPathJoin(sFixture, "missing_dir");
-	XUI_TEST_CHECK(sFixture != NULL && sSub != NULL && sTxt != NULL && sBin != NULL && sLate != NULL && sSave != NULL && sMissingDir != NULL, "fixture paths");
+	XUI_TEST_CHECK(sFixture != NULL && sSub != NULL && sSubTxt != NULL && sSubSave != NULL && sTxt != NULL && sBin != NULL && sLate != NULL && sSave != NULL && sMissingDir != NULL, "fixture paths");
 	(void)xrtDirRemoveAll(sFixture);
 	XUI_TEST_CHECK(xrtDirCreateAll(sSub) == TRUE, "fixture dirs");
+	XUI_TEST_CHECK(xrtFileWriteAll(sSubTxt, (xbytesview){ (const unsigned char*)"inside", 6 }), "fixture sub txt");
 	XUI_TEST_CHECK(xrtFileWriteAll(sTxt, (xbytesview){ (const unsigned char*)"alpha", 5 }), "fixture txt");
 	XUI_TEST_CHECK(xrtFileWriteAll(sBin, (xbytesview){ (const unsigned char*)"beta", 4 }), "fixture bin");
+	for ( iBulk = 0; iBulk < 48; iBulk++ ) {
+		snprintf(sBulkName, sizeof(sBulkName), "zbulk_%02d.txt", iBulk);
+		sBulkPath = xrtPathJoin(sFixture, sBulkName);
+		XUI_TEST_CHECK(sBulkPath != NULL, "bulk fixture path");
+		XUI_TEST_CHECK(xrtFileWriteAll(sBulkPath, (xbytesview){ (const unsigned char*)"bulk", 4 }), "bulk fixture file");
+		xrtFree(sBulkPath);
+	}
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 800, 520, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	tFullRect = (xui_rect_i_t){0, 0, 800, 520};
@@ -203,8 +218,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "dialog layout");
 	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetNameInputWidget(pDialog));
 	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetFilterComboWidget(pDialog));
-	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH, "name and filter share row");
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH && tRect.fH >= 28.0f, "name and filter fixed row height");
+	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiWidgetGetParent(xuiFileDialogGetOkButtonWidget(pDialog))).fH >= 28.0f, "button fixed row height");
+	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog)).fH >= 24.0f, "button control height");
 	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog)).fY > tRect.fY, "buttons below fields");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog));
+	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetWindowWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fY + tRect.fH <= tWorld.fY + tWorld.fH, "buttons remain inside dialog");
 	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetRootListWidget(pDialog));
 	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetFileListWidget(pDialog));
 	XUI_TEST_CHECK(tRect.fH == tWorld.fH, "root list fills list row");
@@ -215,8 +235,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "dialog relayout after resize");
 	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetNameInputWidget(pDialog));
 	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetFilterComboWidget(pDialog));
-	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fW >= 120.0f && tWorld.fW >= 176.0f, "resized name filter row");
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH >= 28.0f && tRect.fW >= 120.0f && tWorld.fW >= 176.0f, "resized name filter row");
+	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiWidgetGetParent(xuiFileDialogGetOkButtonWidget(pDialog))).fH >= 28.0f, "resized button row height");
 	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog)).fY > tRect.fY, "resized buttons below fields");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog));
+	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetWindowWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fY + tRect.fH <= tWorld.fY + tWorld.fH, "resized buttons remain inside dialog");
 	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetFileListWidget(pDialog)).fH >= 72.0f, "resized file list height");
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dialog render");
@@ -304,6 +328,33 @@ int main(void)
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sInitialDir = (const char*)sFixture;
+	tDesc.sFilter = "Text Files (*.txt)|*.txt";
+	tDesc.onResult = __xuiFileDialogTestResult;
+	tDesc.pResultUser = &tResult;
+	iRet = xuiOpenFileDialog(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL, "directory switch open dialog");
+	iIndex = __xuiFileDialogFindEntry(pDialog, "sub");
+	XUI_TEST_CHECK(iIndex >= 0, "directory switch open entry");
+	iRet = xuiFileDialogSelectIndex(pDialog, iIndex);
+	XUI_TEST_CHECK(iRet == XUI_OK, "directory switch select folder");
+	iRet = xuiFileDialogCommit(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sSub) == 0, "directory switch enters folder");
+	XUI_TEST_CHECK(strcmp(xuiInputGetText(xuiFileDialogGetNameInputWidget(pDialog)), "") == 0, "directory switch clears open name");
+	iRet = xuiFileDialogCommit(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiFileDialogIsOpen(pDialog) && tResult.iCount == 0, "directory switch clears stale selection");
+	iIndex = __xuiFileDialogFindEntry(pDialog, "inside.txt");
+	XUI_TEST_CHECK(iIndex >= 0, "directory switch target visible");
+	iRet = xuiFileDialogSelectIndex(pDialog, iIndex);
+	XUI_TEST_CHECK(iRet == XUI_OK, "directory switch target select");
+	iRet = xuiFileDialogCommit(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetResultPath(pDialog), (const char*)sSubTxt) == 0, "directory switch open result path");
+	xuiFileDialogDestroy(pDialog);
+	pDialog = NULL;
+
+	memset(&tResult, 0, sizeof(tResult));
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sInitialDir = (const char*)sFixture;
 	tDesc.sFilter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
 	tDesc.sFileName = "new";
 	tDesc.onResult = __xuiFileDialogTestResult;
@@ -321,6 +372,29 @@ int main(void)
 	iRet = xuiFileDialogCommit(pDialog);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetResultPath(pDialog), (const char*)sSave) == 0, "save appends default extension");
 	XUI_TEST_CHECK(tResult.iCount == 1 && strcmp(tResult.sPath, (const char*)sSave) == 0, "save callback path");
+	xuiFileDialogDestroy(pDialog);
+	pDialog = NULL;
+
+	memset(&tResult, 0, sizeof(tResult));
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sInitialDir = (const char*)sFixture;
+	tDesc.sFilter = "Text Files (*.txt)|*.txt";
+	tDesc.sFileName = "new";
+	tDesc.onResult = __xuiFileDialogTestResult;
+	tDesc.pResultUser = &tResult;
+	iRet = xuiSaveFileDialog(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL, "directory switch save dialog");
+	iIndex = __xuiFileDialogFindEntry(pDialog, "sub");
+	XUI_TEST_CHECK(iIndex >= 0, "directory switch save entry");
+	iRet = xuiFileDialogSelectIndex(pDialog, iIndex);
+	XUI_TEST_CHECK(iRet == XUI_OK, "directory switch save folder select");
+	XUI_TEST_CHECK(strcmp(xuiInputGetText(xuiFileDialogGetNameInputWidget(pDialog)), "new") == 0, "save folder selection preserves name");
+	iRet = xuiFileDialogCommit(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sSub) == 0, "directory switch save enters folder");
+	XUI_TEST_CHECK(strcmp(xuiInputGetText(xuiFileDialogGetNameInputWidget(pDialog)), "new") == 0, "save directory switch preserves name");
+	iRet = xuiFileDialogCommit(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetResultPath(pDialog), (const char*)sSubSave) == 0, "directory switch save result path");
 	xuiFileDialogDestroy(pDialog);
 	pDialog = NULL;
 
@@ -425,6 +499,8 @@ cleanup:
 	}
 	if ( sFixture != NULL ) xrtFree(sFixture);
 	if ( sSub != NULL ) xrtFree(sSub);
+	if ( sSubTxt != NULL ) xrtFree(sSubTxt);
+	if ( sSubSave != NULL ) xrtFree(sSubSave);
 	if ( sTxt != NULL ) xrtFree(sTxt);
 	if ( sBin != NULL ) xrtFree(sBin);
 	if ( sLate != NULL ) xrtFree(sLate);

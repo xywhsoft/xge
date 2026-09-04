@@ -706,6 +706,30 @@ static int __xuiFileDialogSetNameText(xui_file_dialog pDialog, const char* sText
 	return iRet;
 }
 
+static void __xuiFileDialogClearSelection(xui_file_dialog pDialog)
+{
+	if ( !__xuiFileDialogValid(pDialog) ) {
+		return;
+	}
+	pDialog->iSelectedEntry = -1;
+	pDialog->iLastSelectEntry = -1;
+	pDialog->fLastSelectTime = 0.0;
+	if ( pDialog->pFileList != NULL ) {
+		(void)xuiListViewSetSelected(pDialog->pFileList, -1);
+	}
+}
+
+static int __xuiFileDialogSetSelectedName(xui_file_dialog pDialog, int iIndex)
+{
+	if ( !__xuiFileDialogValid(pDialog) || iIndex < 0 || iIndex >= pDialog->iEntryCount ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pDialog->iMode == XUI_FILE_DIALOG_MODE_SAVE_FILE && pDialog->arrEntries[iIndex].bDir ) {
+		return XUI_OK;
+	}
+	return __xuiFileDialogSetNameText(pDialog, pDialog->arrEntries[iIndex].sName);
+}
+
 static int __xuiFileDialogRootProc(str sPath, size_t iSize, int bDir, ptr pData, ptr Param)
 {
 	xui_file_dialog pDialog = (xui_file_dialog)Param;
@@ -1207,7 +1231,7 @@ static void __xuiFileDialogFileSelect(xui_widget pWidget, int iIndex, void* pUse
 	pDialog->iSelectedEntry = iIndex;
 	pDialog->iLastSelectEntry = iIndex;
 	pDialog->fLastSelectTime = fNow;
-	(void)__xuiFileDialogSetNameText(pDialog, pDialog->arrEntries[iIndex].sName);
+	(void)__xuiFileDialogSetSelectedName(pDialog, iIndex);
 	if ( bDoubleSelect ) {
 		if ( pDialog->iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER && pDialog->arrEntries[iIndex].bDir ) {
 			(void)xuiFileDialogSetDirectory(pDialog, pDialog->arrEntries[iIndex].sPath);
@@ -1233,7 +1257,7 @@ static int __xuiFileDialogListContext(xui_widget pWidget, int iIndex, float fX, 
 		pDialog->iSelectedEntry = iIndex;
 		sPath = pDialog->arrEntries[iIndex].sPath;
 		bDirectory = pDialog->arrEntries[iIndex].bDir;
-		(void)__xuiFileDialogSetNameText(pDialog, pDialog->arrEntries[iIndex].sName);
+		(void)__xuiFileDialogSetSelectedName(pDialog, iIndex);
 	}
 	return pDialog->onContext(pDialog, iIndex, sPath, bDirectory,
 		fX, fY, pDialog->pContextUser);
@@ -1252,10 +1276,7 @@ static void __xuiFileDialogNameChange(xui_widget pWidget, const char* sText, voi
 	(void)sText;
 	if ( __xuiFileDialogValid(pDialog) ) {
 		if ( !pDialog->bInternalNameChange ) {
-			pDialog->iSelectedEntry = -1;
-			pDialog->iLastSelectEntry = -1;
-			pDialog->fLastSelectTime = 0.0;
-			(void)xuiListViewSetSelected(pDialog->pFileList, -1);
+			__xuiFileDialogClearSelection(pDialog);
 		}
 	}
 	(void)xuiInputSetError(pWidget, 0);
@@ -1696,6 +1717,12 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	(void)xuiWidgetSetPreferredSize(pDialog->pPathRow, (xui_vec2_t){0.0f, 32.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pFieldRow, (xui_vec2_t){0.0f, 28.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pButtonRow, (xui_vec2_t){0.0f, 28.0f});
+	(void)xuiWidgetSetMinSize(pDialog->pPathRow, (xui_vec2_t){0.0f, 32.0f});
+	(void)xuiWidgetSetMinSize(pDialog->pFieldRow, (xui_vec2_t){0.0f, 28.0f});
+	(void)xuiWidgetSetMinSize(pDialog->pButtonRow, (xui_vec2_t){0.0f, 28.0f});
+	(void)xuiWidgetSetFlex(pDialog->pPathRow, 0.0f, 0.0f);
+	(void)xuiWidgetSetFlex(pDialog->pFieldRow, 0.0f, 0.0f);
+	(void)xuiWidgetSetFlex(pDialog->pButtonRow, 0.0f, 0.0f);
 	(void)xuiWidgetSetFlex(pDialog->pListRow, 1.0f, 1.0f);
 	(void)xuiWidgetSetMinSize(pDialog->pListRow, (xui_vec2_t){0.0f, 72.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pPathLabel, (xui_vec2_t){58.0f, 32.0f});
@@ -1927,6 +1954,7 @@ XUI_API const char* xuiFileDialogGetFilter(xui_file_dialog pDialog)
 XUI_API int xuiFileDialogSetDirectory(xui_file_dialog pDialog, const char* sDir)
 {
 	const char* sUseDir;
+	int bChanged;
 	int iRet;
 
 	if ( !__xuiFileDialogValid(pDialog) ) {
@@ -1936,8 +1964,13 @@ XUI_API int xuiFileDialogSetDirectory(xui_file_dialog pDialog, const char* sDir)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	sUseDir = sDir;
+	bChanged = pDialog->sCurrentDir == NULL || strcmp(pDialog->sCurrentDir, sUseDir) != 0;
 	iRet = __xuiFileDialogSetCurrentDir(pDialog, sUseDir);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( bChanged && pDialog->iMode != XUI_FILE_DIALOG_MODE_SAVE_FILE ) {
+		iRet = __xuiFileDialogSetNameText(pDialog, "");
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	return xuiFileDialogRefresh(pDialog);
 }
 
@@ -1972,8 +2005,10 @@ XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
 	xdir tDir;
 	xdirentry tEntry;
 	xdirnext iNext;
+	xfileinfo tInfo;
 	char* sPath;
 	size_t i;
+	int bDir;
 	int iRet;
 	int iRootCount;
 
@@ -1990,21 +2025,31 @@ XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
 	(void)xuiListViewSetItems(pDialog->pRootList, (const char**)pDialog->arrRootItems, pDialog->iRootCount);
 	iRootCount = pDialog->iRootCount;
 	__xuiFileDialogClearEntries(pDialog);
-	pDialog->iLastSelectEntry = -1;
-	pDialog->fLastSelectTime = 0.0;
+	__xuiFileDialogClearSelection(pDialog);
 	if ( pDialog->sCurrentDir == NULL || pDialog->sCurrentDir[0] == 0 ) {
 		for ( iRet = 0; iRet < iRootCount; iRet++ ) {
 			(void)__xuiFileDialogAddEntry(pDialog, pDialog->arrRootItems[iRet], pDialog->arrRootItems[iRet], 1);
 		}
 	} else {
-		tDir = xrtDirOpen(pDialog->sCurrentDir, XDIR_STAT);
+		tDir = xrtDirOpen(pDialog->sCurrentDir, 0u);
 		if ( tDir != NULL ) {
 			while ( (iNext = xrtDirNext(tDir, &tEntry)) == XDIR_NEXT_ITEM ) {
 				sPath = xrtDirEntryPath(tDir, &tEntry);
 				if ( sPath == NULL ) continue;
-				(void)__xuiFileDialogAddEntry(pDialog, tEntry.Name.Data, sPath,
-					tEntry.Info.Type == XFILE_TYPE_DIRECTORY);
+				bDir = tEntry.Info.Type == XFILE_TYPE_DIRECTORY;
+				if ( tEntry.Info.Type == XFILE_TYPE_NONE || tEntry.Info.Type == XFILE_TYPE_LINK ) {
+					if ( xrtPathStat(sPath, true, &tInfo) ) {
+						bDir = tInfo.Type == XFILE_TYPE_DIRECTORY;
+					} else {
+						xrtClearError();
+					}
+				}
+				iRet = __xuiFileDialogAddEntry(pDialog, tEntry.Name.Data, sPath, bDir);
 				xrtFree(sPath);
+				if ( iRet != XUI_OK ) {
+					(void)xrtDirClose(tDir);
+					return iRet;
+				}
 			}
 			(void)xrtDirClose(tDir);
 		}
@@ -2021,8 +2066,7 @@ XUI_API int xuiFileDialogSelectIndex(xui_file_dialog pDialog, int iIndex)
 	}
 	pDialog->iSelectedEntry = iIndex;
 	(void)xuiListViewSetSelected(pDialog->pFileList, iIndex);
-	(void)__xuiFileDialogSetNameText(pDialog, pDialog->arrEntries[iIndex].sName);
-	return XUI_OK;
+	return __xuiFileDialogSetSelectedName(pDialog, iIndex);
 }
 
 XUI_API int xuiFileDialogCommit(xui_file_dialog pDialog)
