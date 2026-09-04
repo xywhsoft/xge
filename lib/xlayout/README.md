@@ -115,9 +115,9 @@ default bottom-edge baseline.
 - `item` describes how the node participates in its parent.
 - `container` describes how the node arranges its children.
 
-This separation is intentional. For example, a child's `grow` value is read by
-its parent Stack, while the child's own Stack direction applies only to its
-children.
+This separation is intentional. For example, a Flow parent reads a child's
+`grow` and `shrink` values, while the child's own formatting context applies
+only to its children.
 
 Start from `xLayoutStyleDefault()` and change only the required fields.
 
@@ -152,10 +152,11 @@ effect.
 
 ### Stack
 
-`XLAYOUT_FORMAT_STACK` arranges children on one axis. Set `axis` to horizontal
-or vertical. Stack supports:
+`XLAYOUT_FORMAT_STACK` is the rigid, linear application-layout path. It
+arranges children on one axis without wrapping or compressing requested child
+sizes. Set `axis` to horizontal or vertical. Stack supports:
 
-- grow and shrink weights;
+- fixed, automatic, percentage, and Fill sizes;
 - min/max sizes;
 - margins and gaps;
 - start, center, end, stretch, and baseline alignment;
@@ -163,6 +164,12 @@ or vertical. Stack supports:
   justification;
 - reverse order;
 - absolute children outside normal flow.
+
+Fill items divide positive remaining main-axis space using their `grow` weight.
+If rigid items already consume the available space, Fill items collapse for
+that arrange pass and reserve no margins or gaps. Fixed, automatic, and
+percentage items are never compressed by Stack; overflow is clipped by default
+and can be made visible explicitly.
 
 Use Stack for rows, columns, toolbars, forms, and ordinary application layout.
 
@@ -204,6 +211,11 @@ Children select a row and column and may span multiple tracks.
 limit. It supports horizontal or vertical flow, item margins, line gaps,
 baseline alignment, explicit breaks, absolute items, and multi-fragment
 sources.
+
+Flow is the flexible content-layout path. After line formation, positive
+`grow` weights divide remaining line space and positive `shrink` weights absorb
+line overflow while respecting item minimum sizes. Both weights default to
+zero, so deformation is always explicit.
 
 A multi-fragment source supplies two callbacks:
 
@@ -299,8 +311,8 @@ root_style.container.axis = XLAYOUT_HORIZONTAL;
 root_style.container.column_gap = 8.0f;
 xLayoutNodeSetStyle(layout, root, &root_style);
 
+right_style.size.width.kind = XLAYOUT_LENGTH_FILL;
 right_style.item.grow = 1.0f;
-right_style.item.shrink = 1.0f;
 xLayoutNodeSetStyle(layout, right, &right_style);
 
 xLayoutNodeAppend(layout, root, left);

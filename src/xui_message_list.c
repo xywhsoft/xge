@@ -6,6 +6,9 @@
 #include <limits.h>
 #include <string.h>
 
+#define XUI_MESSAGE_LIST_DEFAULT_WIDTH 360.0f
+#define XUI_MESSAGE_LIST_DEFAULT_HEIGHT 160.0f
+
 typedef struct xui_message_node_data_t {
 	char* sId;
 	char* sSender;
@@ -563,7 +566,7 @@ static int __xuiMessageInvalidate(xui_widget pWidget, xui_message_list_data_t* p
 {
 	if ( pData != NULL ) pData->iChangeCount++;
 	(void)__xuiMessageLayoutNodes(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiMessageNotify(xui_widget pWidget, xui_message_list_data_t* pData, int iEvent, int iIndex, const xui_event_t* pInput)
@@ -1077,18 +1080,12 @@ static int __xuiMessageInitEvents(xui_widget pWidget)
 
 static int __xuiMessageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
-	xui_message_list_data_t* pData;
-	xui_rect_t tContent;
-	float fWidth;
 	(void)pUser;
+	(void)tConstraint;
 	if ( (pWidget == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData = __xuiMessageListGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	fWidth = (tConstraint.fX > 0.0f && tConstraint.fX < XUI_LAYOUT_UNBOUNDED) ? tConstraint.fX : 360.0f;
-	tContent = (xui_rect_t){0.0f, 0.0f, fWidth, 0.0f};
-	(void)__xuiMessageLayoutNodesForContent(pWidget, pData, tContent, 0);
-	pSize->fX = fWidth;
-	pSize->fY = __xuiMessageMin(__xuiMessageMax(160.0f, pData->fContentHeight), (tConstraint.fY > 0.0f) ? tConstraint.fY : XUI_LAYOUT_UNBOUNDED);
+	if ( __xuiMessageListGetData(pWidget) == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pSize->fX = XUI_MESSAGE_LIST_DEFAULT_WIDTH;
+	pSize->fY = XUI_MESSAGE_LIST_DEFAULT_HEIGHT;
 	return XUI_OK;
 }
 

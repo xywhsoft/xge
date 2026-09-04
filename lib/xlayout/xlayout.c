@@ -32,6 +32,8 @@ typedef struct {
 	uint32_t fragment_index;
 	xlayout_fragment_spec_t fragment;
 	bool is_fragment;
+	bool is_fill;
+	bool collapsed;
 } xlayout_work_item_t;
 
 struct xlayout_node_internal {
@@ -313,6 +315,25 @@ static float xl_resolve_length(xlayout_length_t length, float natural, float ava
 static float xl_style_max(float value)
 {
 	return value < 0.0f ? XLAYOUT_UNBOUNDED : value;
+}
+
+static xlayout_length_t xl_axis_length(const xlayout_node_internal_t* node, xlayout_axis_t axis)
+{
+	return axis == XLAYOUT_HORIZONTAL ? node->style.size.width : node->style.size.height;
+}
+
+static float xl_arranged_axis_size(
+	const xlayout_node_internal_t* node,
+	xlayout_axis_t axis,
+	float natural,
+	float available)
+{
+	float minimum = xl_nonnegative(axis == XLAYOUT_HORIZONTAL
+		? node->style.size.min_width : node->style.size.min_height);
+	float maximum = xl_style_max(axis == XLAYOUT_HORIZONTAL
+		? node->style.size.max_width : node->style.size.max_height);
+	float size = xl_resolve_length(xl_axis_length(node, axis), natural, available);
+	return xl_clamp(size, minimum, xl_max(minimum, maximum));
 }
 
 static void xl_apply_node_size(
@@ -867,6 +888,11 @@ static bool xl_measure_flow(
 			continue;
 		}
 		child_constraints = xl_child_constraints(node, constraints, child);
+		if ( axis == XLAYOUT_HORIZONTAL ) {
+			child_constraints.max_width = XLAYOUT_UNBOUNDED;
+		} else {
+			child_constraints.max_height = XLAYOUT_UNBOUNDED;
+		}
 		if ( !xl_measure_node(context, child, child_constraints, &child->cached_measure) ) {
 			return false;
 		}
@@ -1059,7 +1085,7 @@ static void xl_set_axis_rect(
 	}
 }
 
-static float xl_stack_item_min_main(
+static float xl_item_min_main(
 	xlayout_axis_t axis,
 	const xlayout_work_item_t* item)
 {
@@ -1069,7 +1095,7 @@ static float xl_stack_item_min_main(
 }
 
 /* Returns the deficit that cannot be removed without violating child minimums. */
-static float xl_shrink_stack_items(
+static float xl_shrink_items(
 	xlayout_work_item_t* items,
 	uint32_t count,
 	xlayout_axis_t axis,
@@ -1082,7 +1108,7 @@ static float xl_shrink_stack_items(
 		uint32_t index;
 		for ( index = 0u; index < count; ++index ) {
 			xlayout_work_item_t* item = &items[index];
-			float minimum = xl_stack_item_min_main(axis, item);
+			float minimum = xl_item_min_main(axis, item);
 			if ( item->shrink > 0.0f && item->main_size > minimum + epsilon ) {
 				total_weight += item->shrink * item->main_size;
 			}
@@ -1090,7 +1116,7 @@ static float xl_shrink_stack_items(
 		if ( total_weight <= epsilon ) break;
 		for ( index = 0u; index < count; ++index ) {
 			xlayout_work_item_t* item = &items[index];
-			float minimum = xl_stack_item_min_main(axis, item);
+			float minimum = xl_item_min_main(axis, item);
 			float capacity;
 			float reduction;
 			if ( item->shrink <= 0.0f || item->main_size <= minimum + epsilon ) continue;
@@ -1178,12 +1204,14 @@ static bool xl_arrange_stack(xlayout_context_t* context, xlayout_node_internal_t
 	xlayout_node_internal_t* child;
 	uint32_t mark = context->item_count;
 	uint32_t count = 0;
+	uint32_t active_count;
+	uint32_t arranged_count;
 	uint32_t index;
 	float available_main = xl_main_size(axis, content.width, content.height);
 	float available_cross = xl_cross_size(axis, content.width, content.height);
 	float base_gap = axis == XLAYOUT_HORIZONTAL ? node->style.container.column_gap : node->style.container.row_gap;
 	float total = 0.0f;
-	float total_grow = 0.0f;
+	float total_fill_weight = 0.0f;
 	float free_space;
 	float position;
 	float gap;
@@ -1203,16 +1231,20 @@ static bool xl_arrange_stack(xlayout_context_t* context, xlayout_node_internal_t
 		memset(item, 0, sizeof(*item));
 		item->node = child;
 		item->measure = child->cached_measure;
-		item->main_size = xl_main_size(axis, item->measure.width, item->measure.height);
-		item->cross_size = xl_cross_size(axis, item->measure.width, item->measure.height);
+		item->is_fill = xl_axis_length(child, axis).kind == XLAYOUT_LENGTH_FILL;
+		item->main_size = item->is_fill ? 0.0f
+			: xl_arranged_axis_size(child, axis,
+				xl_main_size(axis, item->measure.width, item->measure.height), available_main);
 		item->margin_main_before = xl_main_before(axis, child->style.item.margin);
 		item->margin_main_after = xl_main_after(axis, child->style.item.margin);
 		item->margin_cross_before = xl_cross_before(axis, child->style.item.margin);
 		item->margin_cross_after = xl_cross_after(axis, child->style.item.margin);
-		item->grow = xl_nonnegative(child->style.item.grow);
-		item->shrink = xl_nonnegative(child->style.item.shrink);
-		total += item->main_size + item->margin_main_before + item->margin_main_after;
-		total_grow += item->grow;
+		item->cross_size = xl_arranged_axis_size(child,
+			axis == XLAYOUT_HORIZONTAL ? XLAYOUT_VERTICAL : XLAYOUT_HORIZONTAL,
+			xl_cross_size(axis, item->measure.width, item->measure.height),
+			xl_nonnegative(available_cross - item->margin_cross_before - item->margin_cross_after));
+		item->grow = item->is_fill ? xl_nonnegative(child->style.item.grow) : 0.0f;
+		if ( item->is_fill && item->grow <= 0.0f ) item->grow = 1.0f;
 	}
 	/* Stable insertion sort keeps equal order values in tree order. */
 	for ( index = 1; index < count; ++index ) {
@@ -1224,34 +1256,58 @@ static bool xl_arrange_stack(xlayout_context_t* context, xlayout_node_internal_t
 		}
 		context->items[mark + at] = value;
 	}
+	for ( index = 0; index < count; ++index ) {
+		xlayout_work_item_t* item = &context->items[mark + index];
+		total += item->main_size + item->margin_main_before + item->margin_main_after;
+		if ( item->is_fill ) total_fill_weight += item->grow;
+	}
 	if ( count > 1u ) total += base_gap * (float)(count - 1u);
+	active_count = count;
+	free_space = available_main - total;
+	if ( total_fill_weight > 0.0f ) {
+		if ( free_space > 0.0f ) {
+			for ( index = 0; index < count; ++index ) {
+				xlayout_work_item_t* item = &context->items[mark + index];
+				if ( item->is_fill ) item->main_size = free_space * item->grow / total_fill_weight;
+			}
+			free_space = 0.0f;
+		} else {
+			total = 0.0f;
+			active_count = 0u;
+			for ( index = 0; index < count; ++index ) {
+				xlayout_work_item_t* item = &context->items[mark + index];
+				if ( item->is_fill ) {
+					item->collapsed = true;
+					continue;
+				}
+				total += item->main_size + item->margin_main_before + item->margin_main_after;
+				active_count++;
+			}
+			if ( active_count > 1u ) total += base_gap * (float)(active_count - 1u);
+			free_space = available_main - total;
+		}
+	}
 	if ( axis == XLAYOUT_HORIZONTAL ) {
 		for ( index = 0; index < count; ++index ) {
 			xlayout_work_item_t* item = &context->items[mark + index];
-			if ( xl_item_alignment(node, item->node) == XLAYOUT_ALIGN_BASELINE ) {
+			if ( !item->collapsed && xl_item_alignment(node, item->node) == XLAYOUT_ALIGN_BASELINE ) {
 				baseline = xl_max(baseline, item->margin_cross_before + item->measure.baseline);
 			}
 		}
 	}
-	free_space = available_main - total;
-	if ( free_space > 0.0f && total_grow > 0.0f ) {
-		for ( index = 0; index < count; ++index ) {
-			xlayout_work_item_t* item = &context->items[mark + index];
-			item->main_size += free_space * item->grow / total_grow;
-		}
-		total = available_main;
-		free_space = 0.0f;
-	} else if ( free_space < 0.0f && count > 0u ) {
-		free_space = -xl_shrink_stack_items(&context->items[mark], count, axis, -free_space);
-	}
-	xl_justify(node->style.container.justify_content, free_space, count, base_gap, &position, &gap);
+	xl_justify(node->style.container.justify_content, free_space, active_count, base_gap, &position, &gap);
+	arranged_count = 0u;
 	for ( index = 0; index < count; ++index ) {
 		uint32_t source_index = node->style.container.reverse ? count - index - 1u : index;
 		xlayout_work_item_t* item = &context->items[mark + source_index];
 		xlayout_align_t align = xl_item_alignment(node, item->node);
 		float cross_available = xl_nonnegative(available_cross - item->margin_cross_before - item->margin_cross_after);
-		float cross_size = align == XLAYOUT_ALIGN_STRETCH ? cross_available : xl_min(item->cross_size, cross_available);
+		float cross_size = align == XLAYOUT_ALIGN_STRETCH ? cross_available : item->cross_size;
 		float cross_position = item->margin_cross_before;
+		if ( item->collapsed ) {
+			xl_set_axis_rect(axis, content, 0.0f, 0.0f, 0.0f, 0.0f, &item->rect);
+			continue;
+		}
 		if ( align == XLAYOUT_ALIGN_BASELINE && axis == XLAYOUT_HORIZONTAL ) {
 			cross_position = baseline - item->measure.baseline;
 		} else if ( align == XLAYOUT_ALIGN_CENTER ) {
@@ -1261,7 +1317,8 @@ static bool xl_arrange_stack(xlayout_context_t* context, xlayout_node_internal_t
 		}
 		position += item->margin_main_before;
 		xl_set_axis_rect(axis, content, position, cross_position, item->main_size, cross_size, &item->rect);
-		position += item->main_size + item->margin_main_after + (index + 1u < count ? gap : 0.0f);
+		arranged_count++;
+		position += item->main_size + item->margin_main_after + (arranged_count < active_count ? gap : 0.0f);
 	}
 	for ( index = 0; index < count; ++index ) {
 		xlayout_work_item_t item = context->items[mark + index];
@@ -1501,6 +1558,20 @@ static bool xl_finish_flow_line(
 	uint32_t index;
 	float base_gap = axis == XLAYOUT_HORIZONTAL ? node->style.container.column_gap : node->style.container.row_gap;
 	float baseline = 0.0f;
+	float total_grow = 0.0f;
+	for ( index = 0; index < count; ++index ) {
+		xlayout_work_item_t* item = &context->items[start + index];
+		total_grow += item->grow;
+	}
+	if ( free_space > 0.0f && total_grow > 0.0f ) {
+		for ( index = 0; index < count; ++index ) {
+			xlayout_work_item_t* item = &context->items[start + index];
+			item->main_size += free_space * item->grow / total_grow;
+		}
+		free_space = 0.0f;
+	} else if ( free_space < 0.0f && count > 0u ) {
+		free_space = -xl_shrink_items(&context->items[start], count, axis, -free_space);
+	}
 	for ( index = 0; index < count; ++index ) {
 		xlayout_work_item_t* item = &context->items[start + index];
 		if ( xl_item_alignment(node, item->node) == XLAYOUT_ALIGN_BASELINE ) {
@@ -1614,6 +1685,8 @@ static bool xl_arrange_flow(xlayout_context_t* context, xlayout_node_internal_t*
 			item->margin_cross_before = child_cross_before;
 			item->margin_cross_after = child_cross_after;
 			item->is_fragment = child->fragment_measure_callback != NULL;
+			item->grow = item->is_fragment ? 0.0f : xl_nonnegative(child->style.item.grow);
+			item->shrink = item->is_fragment ? 0.0f : xl_nonnegative(child->style.item.shrink);
 			item->fragment_index = index;
 			item->fragment = fragment;
 			line_main += (line_count > 1u ? main_gap : 0.0f) + outer_main;
@@ -1782,7 +1855,7 @@ xlayout_style_t xLayoutStyleDefault(void)
 	style.size.max_height = XLAYOUT_AUTO;
 	style.item.align_self = XLAYOUT_ALIGN_AUTO;
 	style.item.justify_self = XLAYOUT_ALIGN_AUTO;
-	style.item.shrink = 1.0f;
+	style.item.shrink = 0.0f;
 	style.item.column_span = 1u;
 	style.item.row_span = 1u;
 	style.container.format = XLAYOUT_FORMAT_STACK;
@@ -1790,8 +1863,8 @@ xlayout_style_t xLayoutStyleDefault(void)
 	style.container.align_items = XLAYOUT_ALIGN_STRETCH;
 	style.container.justify_items = XLAYOUT_ALIGN_STRETCH;
 	style.container.justify_content = XLAYOUT_JUSTIFY_START;
-	style.container.overflow_x = XLAYOUT_OVERFLOW_VISIBLE;
-	style.container.overflow_y = XLAYOUT_OVERFLOW_VISIBLE;
+	style.container.overflow_x = XLAYOUT_OVERFLOW_CLIP;
+	style.container.overflow_y = XLAYOUT_OVERFLOW_CLIP;
 	style.visible = true;
 	return style;
 }

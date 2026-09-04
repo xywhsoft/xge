@@ -1001,7 +1001,7 @@ static void __xuiWidgetInitLayout(xui_widget pWidget)
 	pWidget->tLayout.iHeightMode = XUI_SIZE_FIXED;
 	pWidget->tLayout.iFlowMode = XUI_FLOW_BLOCK;
 	pWidget->tLayout.iDock = XUI_DOCK_FILL;
-	pWidget->tLayout.iOverflow = XUI_OVERFLOW_VISIBLE;
+	pWidget->tLayout.iOverflow = XUI_OVERFLOW_CLIP;
 	pWidget->tLayout.iMeasureContainment = XUI_MEASURE_CONTAIN_NONE;
 	pWidget->tLayout.iAlignX = XUI_ALIGN_START;
 	pWidget->tLayout.iAlignY = XUI_ALIGN_START;
@@ -1019,7 +1019,7 @@ static void __xuiWidgetInitLayout(xui_widget pWidget)
 	pWidget->tLayout.fMaxWidth = XUI_LAYOUT_UNBOUNDED;
 	pWidget->tLayout.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	pWidget->tLayout.fGrow = 0.0f;
-	pWidget->tLayout.fShrink = 1.0f;
+	pWidget->tLayout.fShrink = 0.0f;
 	pWidget->tLayout.fGap = 0.0f;
 	pWidget->tLayout.fGridItemWidth = 0.0f;
 	pWidget->tLayout.fGridItemHeight = 0.0f;

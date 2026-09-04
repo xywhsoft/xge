@@ -30,7 +30,10 @@ Terminal 的缓冲区、VT/TUI 输入、ConPTY、查找和性能约定见 [XUI T
 ## 布局、事件与绘制
 
 - 使用公开 layout、style 和 widget API 描述控件尺寸、间距、对齐和可见性；不要直接写入私有控件数据。
+- `ROW`/`COLUMN` 使用刚性 Stack 模型：固定和内容尺寸不因父空间不足而压缩，`FILL` 只分配正的剩余空间，空间为负时该 Fill 项在本次布局中折叠。基础容器默认裁剪溢出内容。
+- `FLOW` 是内容排版模型，负责换行，并仅按显式 `grow`/`shrink` 权重进行行内伸缩；需要弹性变形时应使用 Flow，而不是依赖 Row/Column 改写控件申请尺寸。
 - 滚动控件的外部期望尺寸由 viewport 决定，滚动内容范围只参与内部滚动模型和滚动条计算。`ScrollFrame`、`ScrollView` 与 `Canvas` 可通过 `SetViewportHint` 设置内容尺寸未被父布局约束时的默认视口；自定义复合控件可用 `xuiWidgetSetMeasureContainment` 按轴阻止内部子树尺寸向父布局传播。
+- `MessageList` 的消息总高度属于内部虚拟内容范围，不参与父布局测量；追加、折叠或清空消息不会改变 MessageList 的外部申请尺寸。
 - 事件通过 context 分发，并遵守焦点、捕获、弹出层与模态层的规则。输入控件需使用 XUI 的文本、剪贴板和 IME 入口，而非绕过控件状态直接修改内部文本。
 - Window、Popup、Menu、Toast 等需要浮层语义的组件应通过其专用创建 API 使用，而不是作为普通 child 模拟。
 - 自绘、proxy 和 surface 接口适合接入现有图形资源；调用者仍负责遵守 `xui.h` 中的资源所有权约定。

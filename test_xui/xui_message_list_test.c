@@ -48,6 +48,10 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pDialog;
+	xui_widget pLayoutHost;
+	xui_widget pMessageView;
+	xui_widget pHeader;
+	xui_widget pFooter;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_rect_t tContent;
@@ -55,6 +59,10 @@ int main(void)
 	xui_rect_t tOtherBubble;
 	xui_rect_t tSelfBubble;
 	xui_rect_t tWorld;
+	xui_rect_t tMessageBefore;
+	xui_rect_t tFooterBefore;
+	xui_vec2_t tDesiredBefore;
+	xui_vec2_t tDesiredAfter;
 	xui_message_list_metrics_t tMetrics;
 	const xui_message_node_t* pNode;
 	char sBuffer[2048];
@@ -67,6 +75,10 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pDialog = NULL;
+	pLayoutHost = NULL;
+	pMessageView = NULL;
+	pHeader = NULL;
+	pFooter = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -279,6 +291,70 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strstr(xuiMessageListGetNode(pDialog, 3)->sText, "third streamed") != NULL, "append node text");
 	iRet = xuiMessageListEnsureVisible(pDialog, 3);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ensure visible");
+
+	iRet = xuiWidgetCreate(pContext, &pLayoutHost);
+	XUI_TEST_CHECK(iRet == XUI_OK && pLayoutHost != NULL, "layout host create");
+	iRet = xuiWidgetSetRect(pLayoutHost, (xui_rect_t){0.0f, 0.0f, 460.0f, 220.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout host rect");
+	iRet = xuiWidgetSetLayoutType(pLayoutHost, XUI_LAYOUT_COLUMN);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout host column");
+	iRet = xuiWidgetAddChild(pRoot, pLayoutHost);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout host add");
+	iRet = xuiWidgetCreate(pContext, &pHeader);
+	XUI_TEST_CHECK(iRet == XUI_OK && pHeader != NULL, "layout header create");
+	iRet = xuiMessageListCreate(pContext, &pMessageView, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && pMessageView != NULL, "layout message list create");
+	iRet = xuiWidgetCreate(pContext, &pFooter);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFooter != NULL, "layout footer create");
+	XUI_TEST_CHECK(xuiWidgetAddChild(pLayoutHost, pHeader) == XUI_OK &&
+		xuiWidgetAddChild(pLayoutHost, pMessageView) == XUI_OK &&
+		xuiWidgetAddChild(pLayoutHost, pFooter) == XUI_OK, "layout children add");
+	XUI_TEST_CHECK(xuiWidgetSetSizeMode(pHeader, XUI_SIZE_FILL, XUI_SIZE_FIXED) == XUI_OK &&
+		xuiWidgetSetPreferredSize(pHeader, (xui_vec2_t){0.0f, 32.0f}) == XUI_OK,
+		"layout header sizing");
+	XUI_TEST_CHECK(xuiWidgetSetSizeMode(pFooter, XUI_SIZE_FILL, XUI_SIZE_FIXED) == XUI_OK &&
+		xuiWidgetSetPreferredSize(pFooter, (xui_vec2_t){0.0f, 40.0f}) == XUI_OK,
+		"layout footer sizing");
+	arrNodes[4].iSize = sizeof(arrNodes[4]);
+	arrNodes[4].iType = XUI_MESSAGE_NODE_OTHER;
+	arrNodes[4].sId = "layout-message";
+	arrNodes[4].sSender = "Layout";
+	arrNodes[4].sText = "A message list is a viewport. Its document extent must never become its requested layout size.";
+	XUI_TEST_CHECK(xuiMessageListSetNodes(pMessageView, &arrNodes[4], 1) == XUI_OK,
+		"layout message seed");
+	XUI_TEST_CHECK(xuiWidgetMeasureContent(pMessageView,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tDesiredBefore) == XUI_OK,
+		"message desired size before append");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "message column baseline layout");
+	tMessageBefore = xuiWidgetGetRect(pMessageView);
+	tFooterBefore = xuiWidgetGetRect(pFooter);
+	XUI_TEST_CHECK(__xuiMessageListRender(pContext, pTarget) == XUI_OK, "message column baseline render");
+	XUI_TEST_CHECK(xuiMessageListAppendNodeText(pMessageView, "layout-message",
+		"\nThis deliberately adds much more virtual content. This deliberately adds much more virtual content."
+		"\nThis deliberately adds much more virtual content. This deliberately adds much more virtual content."
+		"\nThis deliberately adds much more virtual content. This deliberately adds much more virtual content."
+		"\nThis deliberately adds much more virtual content. This deliberately adds much more virtual content.") == XUI_OK,
+		"append virtual message content");
+	XUI_TEST_CHECK(xuiWidgetMeasureContent(pMessageView,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tDesiredAfter) == XUI_OK,
+		"message desired size after append");
+	XUI_TEST_CHECK(tDesiredAfter.fX == tDesiredBefore.fX && tDesiredAfter.fY == tDesiredBefore.fY,
+		"message virtual content changed requested size");
+	XUI_TEST_CHECK(xuiMessageListScrollToEnd(pMessageView) == XUI_OK && xuiMessageListGetScroll(pMessageView) > 0.0f,
+		"message virtual content did not remain scrollable");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "message column layout after append");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pMessageView).fX == tMessageBefore.fX &&
+		xuiWidgetGetRect(pMessageView).fY == tMessageBefore.fY &&
+		xuiWidgetGetRect(pMessageView).fW == tMessageBefore.fW &&
+		xuiWidgetGetRect(pMessageView).fH == tMessageBefore.fH,
+		"message content changed its arranged viewport");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pFooter).fX == tFooterBefore.fX &&
+		xuiWidgetGetRect(pFooter).fY == tFooterBefore.fY &&
+		xuiWidgetGetRect(pFooter).fW == tFooterBefore.fW &&
+		xuiWidgetGetRect(pFooter).fH == tFooterBefore.fH,
+		"message content displaced the footer");
 
 cleanup:
 	remove(sRoundTripPath);

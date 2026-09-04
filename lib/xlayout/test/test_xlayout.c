@@ -186,6 +186,7 @@ static void test_stack(void)
 	root_style.container.axis = XLAYOUT_HORIZONTAL;
 	root_style.container.column_gap = 10.0f;
 	root_style.container.align_items = XLAYOUT_ALIGN_CENTER;
+	right_style.size.width = (xlayout_length_t){ XLAYOUT_LENGTH_FILL, 0.0f };
 	right_style.item.grow = 1.0f;
 	xLayoutNodeSetStyle(context, root, &root_style);
 	xLayoutNodeSetStyle(context, right, &right_style);
@@ -202,7 +203,7 @@ static void test_stack(void)
 	xLayoutContextDestroy(context);
 }
 
-static void test_stack_column_shrink_respects_minimum(void)
+static void test_stack_column_preserves_requested_sizes(void)
 {
 	xlayout_context_t* context = xLayoutContextCreate(NULL);
 	test_leaf_t content_data = { 120.0f, 240.0f, 0u };
@@ -222,9 +223,11 @@ static void test_stack_column_shrink_respects_minimum(void)
 	expect_true(xLayoutNodeAppend(context, root, footer), "minimum column footer appended");
 	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 120, 100 }), "minimum column arrange succeeds");
 	xLayoutNodeGetResult(context, footer, &result);
-	expect_near(result.rect.height, 64.0f, "column footer remains at minimum height");
+	expect_near(result.rect.height, 64.0f, "column footer keeps requested height");
 	xLayoutNodeGetResult(context, content, &result);
-	expect_near(result.rect.height, 36.0f, "column content consumes shrink deficit");
+	expect_near(result.rect.height, 240.0f, "column content is not compressed");
+	xLayoutNodeGetResult(context, footer, &result);
+	expect_near(result.rect.y, 240.0f, "column overflow preserves structural order");
 	xLayoutContextDestroy(context);
 }
 
@@ -245,6 +248,7 @@ static void test_stack_minimum_overflow(void)
 	xlayout_result_t first_result;
 	xlayout_result_t second_result;
 	xlayout_result_t third_result;
+	xlayout_result_t root_result;
 	root_style.container.axis = XLAYOUT_VERTICAL;
 	first_style.size.min_height = 30.0f;
 	second_style.size.min_height = 36.0f;
@@ -260,6 +264,7 @@ static void test_stack_minimum_overflow(void)
 	xLayoutNodeGetResult(context, first, &first_result);
 	xLayoutNodeGetResult(context, second, &second_result);
 	xLayoutNodeGetResult(context, third, &third_result);
+	xLayoutNodeGetResult(context, root, &root_result);
 	expect_near(first_result.rect.height, 30.0f, "overflow first minimum preserved");
 	expect_near(second_result.rect.height, 36.0f, "overflow second minimum preserved");
 	expect_near(third_result.rect.height, 64.0f, "overflow third minimum preserved");
@@ -267,10 +272,11 @@ static void test_stack_minimum_overflow(void)
 		&& second_result.rect.height == second_result.rect.height
 		&& third_result.rect.height == third_result.rect.height, "overflow dimensions remain finite");
 	expect_true(third_result.rect.y + third_result.rect.height > 80.0f, "minimum items overflow the parent instead of shrinking");
+	expect_true(root_result.clipped, "stack overflow is clipped by default");
 	xLayoutContextDestroy(context);
 }
 
-static void test_stack_row_shrink_respects_minimum(void)
+static void test_stack_row_preserves_requested_sizes(void)
 {
 	xlayout_context_t* context = xLayoutContextCreate(NULL);
 	test_leaf_t content_data = { 200.0f, 24.0f, 0u };
@@ -292,13 +298,15 @@ static void test_stack_row_shrink_respects_minimum(void)
 	expect_true(xLayoutNodeAppend(context, root, button), "row button appended");
 	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 24 }), "minimum row arrange succeeds");
 	xLayoutNodeGetResult(context, input, &result);
-	expect_near(result.rect.width, 64.0f, "row input remains at minimum width");
+	expect_near(result.rect.x, 200.0f, "row input follows uncompressed content");
+	expect_near(result.rect.width, 64.0f, "row input keeps requested width");
 	xLayoutNodeGetResult(context, button, &result);
-	expect_near(result.rect.width, 36.0f, "row button remains at minimum width");
+	expect_near(result.rect.x, 264.0f, "row button preserves structural order");
+	expect_near(result.rect.width, 36.0f, "row button keeps requested width");
 	xLayoutContextDestroy(context);
 }
 
-static void test_stack_shrink_still_distributes(void)
+static void test_stack_ignores_shrink(void)
 {
 	xlayout_context_t* context = xLayoutContextCreate(NULL);
 	test_leaf_t first_data = { 80.0f, 20.0f, 0u };
@@ -309,42 +317,101 @@ static void test_stack_shrink_still_distributes(void)
 	xlayout_style_t item_style = xLayoutStyleDefault();
 	xlayout_result_t result;
 	item_style.size.min_width = 20.0f;
+	item_style.item.shrink = 1.0f;
 	expect_true(xLayoutNodeSetStyle(context, first, &item_style), "ordinary shrink first style set");
 	expect_true(xLayoutNodeSetStyle(context, second, &item_style), "ordinary shrink second style set");
 	expect_true(xLayoutNodeAppend(context, root, first), "ordinary shrink first appended");
 	expect_true(xLayoutNodeAppend(context, root, second), "ordinary shrink second appended");
 	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 20 }), "ordinary shrink arrange succeeds");
 	xLayoutNodeGetResult(context, first, &result);
-	expect_near(result.rect.width, 50.0f, "ordinary shrink first width");
+	expect_near(result.rect.width, 80.0f, "stack ignores first shrink request");
 	xLayoutNodeGetResult(context, second, &result);
-	expect_near(result.rect.width, 50.0f, "ordinary shrink second width");
+	expect_near(result.rect.x, 80.0f, "stack keeps second item after first");
+	expect_near(result.rect.width, 80.0f, "stack ignores second shrink request");
 	xLayoutContextDestroy(context);
 }
 
-static void test_stack_shrink_redistributes_after_minimum(void)
+static void test_stack_fill_uses_only_positive_remaining(void)
 {
 	xlayout_context_t* context = xLayoutContextCreate(NULL);
-	test_leaf_t first_data = { 100.0f, 20.0f, 0u };
+	test_leaf_t first_data = { 30.0f, 20.0f, 0u };
 	test_leaf_t second_data = { 100.0f, 20.0f, 0u };
-	test_leaf_t third_data = { 100.0f, 20.0f, 0u };
+	test_leaf_t third_data = { 40.0f, 20.0f, 0u };
 	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
 	xlayout_node_t first = make_leaf(context, &first_data);
 	xlayout_node_t second = make_leaf(context, &second_data);
 	xlayout_node_t third = make_leaf(context, &third_data);
-	xlayout_style_t first_style = xLayoutStyleDefault();
+	xlayout_style_t second_style = xLayoutStyleDefault();
 	xlayout_result_t result;
-	first_style.size.min_width = 80.0f;
-	expect_true(xLayoutNodeSetStyle(context, first, &first_style), "redistribution first style set");
-	expect_true(xLayoutNodeAppend(context, root, first), "redistribution first appended");
-	expect_true(xLayoutNodeAppend(context, root, second), "redistribution second appended");
-	expect_true(xLayoutNodeAppend(context, root, third), "redistribution third appended");
-	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 150, 20 }), "redistribution arrange succeeds");
-	xLayoutNodeGetResult(context, first, &result);
-	expect_near(result.rect.width, 80.0f, "redistribution first stops at minimum");
+	second_style.size.width = (xlayout_length_t){ XLAYOUT_LENGTH_FILL, 0.0f };
+	second_style.item.grow = 1.0f;
+	expect_true(xLayoutNodeSetStyle(context, second, &second_style), "fill item style set");
+	expect_true(xLayoutNodeAppend(context, root, first), "fill first appended");
+	expect_true(xLayoutNodeAppend(context, root, second), "fill second appended");
+	expect_true(xLayoutNodeAppend(context, root, third), "fill third appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 20 }), "fill arrange succeeds");
 	xLayoutNodeGetResult(context, second, &result);
-	expect_near(result.rect.width, 35.0f, "redistribution second receives remaining deficit");
+	expect_near(result.rect.x, 30.0f, "fill starts after first rigid item");
+	expect_near(result.rect.width, 30.0f, "fill consumes positive remaining space");
 	xLayoutNodeGetResult(context, third, &result);
-	expect_near(result.rect.width, 35.0f, "redistribution third receives remaining deficit");
+	expect_near(result.rect.x, 60.0f, "last rigid item follows fill allocation");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 60, 20 }), "negative fill arrange succeeds");
+	xLayoutNodeGetResult(context, second, &result);
+	expect_near(result.rect.width, 0.0f, "fill collapses when rigid items exceed available space");
+	xLayoutNodeGetResult(context, third, &result);
+	expect_near(result.rect.x, 30.0f, "collapsed fill does not reserve stack space");
+	xLayoutContextDestroy(context);
+}
+
+static void test_stack_resolves_rigid_sizes_at_arrange(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t leaf_data = { 10.0f, 10.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t child = make_leaf(context, &leaf_data);
+	xlayout_style_t child_style = xLayoutStyleDefault();
+	xlayout_result_t result;
+	child_style.size.width = (xlayout_length_t){ XLAYOUT_LENGTH_PERCENT, 0.5f };
+	child_style.size.height = (xlayout_length_t){ XLAYOUT_LENGTH_FIXED, 40.0f };
+	child_style.item.align_self = XLAYOUT_ALIGN_START;
+	expect_true(xLayoutNodeSetStyle(context, child, &child_style), "rigid resolved style set");
+	expect_true(xLayoutNodeAppend(context, root, child), "rigid resolved child appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 20 }), "rigid resolved arrange succeeds");
+	xLayoutNodeGetResult(context, child, &result);
+	expect_near(result.rect.width, 50.0f, "stack resolves percentage against arranged width");
+	expect_near(result.rect.height, 40.0f, "stack preserves fixed cross-axis overflow");
+	xLayoutContextDestroy(context);
+}
+
+static void test_flow_shrink_is_explicit(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t leaf_data = { 160.0f, 20.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t child = make_leaf(context, &leaf_data);
+	xlayout_style_t root_style = xLayoutStyleDefault();
+	xlayout_style_t child_style = xLayoutStyleDefault();
+	xlayout_result_t result;
+	root_style.container.format = XLAYOUT_FORMAT_FLOW;
+	child_style.item.shrink = 1.0f;
+	expect_true(xLayoutNodeSetStyle(context, root, &root_style), "flow flex root style set");
+	expect_true(xLayoutNodeSetStyle(context, child, &child_style), "flow shrink style set");
+	expect_true(xLayoutNodeAppend(context, root, child), "flow shrink child appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 30 }), "flow shrink arrange succeeds");
+	xLayoutNodeGetResult(context, child, &result);
+	expect_near(result.rect.width, 100.0f, "flow explicitly shrinks an oversized item");
+	child_style.item.shrink = 0.0f;
+	expect_true(xLayoutNodeSetStyle(context, child, &child_style), "flow rigid style set");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 30 }), "flow rigid arrange succeeds");
+	xLayoutNodeGetResult(context, child, &result);
+	expect_near(result.rect.width, 160.0f, "flow preserves an item when shrink is disabled");
+	leaf_data.width = 20.0f;
+	child_style.item.grow = 1.0f;
+	expect_true(xLayoutNodeSetStyle(context, child, &child_style), "flow grow style set");
+	xLayoutNodeInvalidateMeasure(context, child);
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 30 }), "flow grow arrange succeeds");
+	xLayoutNodeGetResult(context, child, &result);
+	expect_near(result.rect.width, 100.0f, "flow explicitly grows an item into remaining space");
 	xLayoutContextDestroy(context);
 }
 
@@ -828,11 +895,13 @@ int main(void)
 {
 	test_handles_and_cache();
 	test_stack();
-	test_stack_column_shrink_respects_minimum();
+	test_stack_column_preserves_requested_sizes();
 	test_stack_minimum_overflow();
-	test_stack_row_shrink_respects_minimum();
-	test_stack_shrink_still_distributes();
-	test_stack_shrink_redistributes_after_minimum();
+	test_stack_row_preserves_requested_sizes();
+	test_stack_ignores_shrink();
+	test_stack_fill_uses_only_positive_remaining();
+	test_stack_resolves_rigid_sizes_at_arrange();
+	test_flow_shrink_is_explicit();
 	test_hidden_child_becomes_visible();
 	test_layer();
 	test_measure_containment();

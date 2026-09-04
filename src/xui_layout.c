@@ -258,6 +258,7 @@ static void __xuiLayoutMapItem(
 	} else if ( parent->tLayout.iLayoutType == XUI_LAYOUT_FLOW ) {
 		style->item.position = (widget->tLayout.iFlowMode == XUI_FLOW_NONE || widget->tLayout.iFlowMode == XUI_FLOW_ABSOLUTE)
 			? XLAYOUT_POSITION_ABSOLUTE : XLAYOUT_POSITION_FLOW;
+		if ( widget->tLayout.iWidthMode == XUI_SIZE_FILL && style->item.grow <= 0.0f ) style->item.grow = 1.0f;
 		style->item.x = widget->tRect.fX;
 		style->item.y = widget->tRect.fY;
 		style->item.break_before = widget->tLayout.iFlowMode == XUI_FLOW_BLOCK;

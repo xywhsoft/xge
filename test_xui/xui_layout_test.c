@@ -75,6 +75,7 @@ int main(void)
 
 	iRet = xuiWidgetCreate(pContext, &pRoot);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pRoot != NULL), "root create failed");
+	XUI_TEST_CHECK(xuiWidgetGetOverflow(pRoot) == XUI_OVERFLOW_CLIP, "widget overflow is not clipped by default");
 	iRet = xuiWidgetCreate(pContext, &pA);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pA != NULL), "A create failed");
 	iRet = xuiWidgetCreate(pContext, &pB);
@@ -363,10 +364,26 @@ int main(void)
 	iRet = xuiWidgetSetMinSize(pC, (xui_vec2_t){0.0f, 36.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum footer size failed");
 	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "minimum column layout failed");
-	XUI_TEST_CHECK(xuiWidgetGetRect(pB).fH >= 30.0f, "minimum input height was shrunk");
-	XUI_TEST_CHECK(xuiWidgetGetRect(pC).fH >= 36.0f, "minimum footer height was shrunk");
-	XUI_TEST_CHECK(xuiWidgetGetRect(pA).fH == 24.0f, "minimum content absorbs shrink failed");
+	XUI_TEST_CHECK(iRet == XUI_OK, "rigid column layout failed");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pA).fH == 240.0f, "rigid content height was compressed");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pB).fY == 240.0f && xuiWidgetGetRect(pB).fH == 30.0f,
+		"rigid input did not follow overflowing content");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pC).fY == 270.0f && xuiWidgetGetRect(pC).fH == 36.0f,
+		"rigid footer did not preserve its requested size");
+	iRet = xuiWidgetSetSizeMode(pA, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set remaining content mode failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "remaining column layout failed");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pA).fH == 24.0f, "fill content did not receive remaining height");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pB).fY == 24.0f && xuiWidgetGetRect(pC).fY == 54.0f,
+		"fixed controls did not follow fill allocation");
+	iRet = xuiSetViewportSize(pContext, 120.0f, 50.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set negative remaining viewport failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "negative remaining column layout failed");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pA).fH == 0.0f, "fill content was not collapsed under rigid overflow");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pB).fY == 0.0f && xuiWidgetGetRect(pC).fY == 30.0f,
+		"collapsed fill still reserved stack space");
 
 	iRet = xuiWidgetArrange(pA, (xui_rect_t){0, 0, 10, 10});
 	XUI_TEST_CHECK(iRet == XUI_OK, "manual integer arrange failed");
