@@ -667,9 +667,18 @@ int main(void)
 	pPopupOwner = __xuiTableGridTestFindPopupOwner(pContext, xuiComboBoxGetType(pContext));
 	XUI_TEST_CHECK(pPopupOwner != NULL && xuiComboBoxIsOpen(pPopupOwner), "quick enum popup open");
 	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "quick enum layout");
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 3), "quick enum layout geometry");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 3), "quick enum update geometry");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 3), "quick enum next frame geometry");
 	iRet = __xuiTableGridTestRender(pContext, pTarget);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pPopupOwner), "quick enum popup survives render");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pPopupOwner) &&
+	               __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 3), "quick enum popup survives render");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+	               (xuiWidgetGetDirtyFlags(pPopupOwner) & (XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) == 0 &&
+	               __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 3), "quick enum stable frame geometry");
 	(void)xuiComboBoxClose(pPopupOwner);
 	iRet = xuiTableGridEndEdit(pGrid, 0);
 	XUI_TEST_CHECK(iRet != 0 && !xuiTableGridIsEditing(pGrid), "quick enum cancel");
@@ -682,9 +691,18 @@ int main(void)
 	pPopupOwner = __xuiTableGridTestFindPopupOwner(pContext, xuiColorPickerGetType(pContext));
 	XUI_TEST_CHECK(pPopupOwner != NULL && xuiColorPickerIsOpen(pPopupOwner), "quick color popup open");
 	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "quick color layout");
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 4), "quick color layout geometry");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 4), "quick color update geometry");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 4), "quick color next frame geometry");
 	iRet = __xuiTableGridTestRender(pContext, pTarget);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiColorPickerIsOpen(pPopupOwner), "quick color popup survives render");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiColorPickerIsOpen(pPopupOwner) &&
+	               __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 4), "quick color popup survives render");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+	               (xuiWidgetGetDirtyFlags(pPopupOwner) & (XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) == 0 &&
+	               __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 1, 4), "quick color stable frame geometry");
 	(void)xuiColorPickerClose(pPopupOwner);
 	iRet = xuiTableGridEndEdit(pGrid, 0);
 	XUI_TEST_CHECK(iRet != 0 && !xuiTableGridIsEditing(pGrid), "quick color cancel");

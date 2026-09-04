@@ -330,8 +330,9 @@ static int __xuiTableGridPlaceEditor(xui_widget pWidget, xui_table_grid_data_t* 
 	tRect = xuiInternalSnapRect(tRect);
 	(void)xuiWidgetSetRect(pEditor, tRect);
 	(void)xuiWidgetSetVisible(pEditor, 1);
-	(void)xuiWidgetArrange(pEditor, tRect);
-	return xuiWidgetInvalidate(pEditor, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	/* The editor remains an absolute child of the grid. Arranging it as a
+	 * standalone root would discard its parent-relative item coordinates. */
+	return XUI_OK;
 }
 
 static int __xuiTableGridSetEditorLayerTree(xui_widget pWidget, int iLayer, int iZIndex)
