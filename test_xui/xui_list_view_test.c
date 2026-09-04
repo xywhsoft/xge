@@ -118,6 +118,7 @@ int main(void)
 	xui_list_view_desc_t tDesc;
 	xui_rect_t tItem;
 	xui_rect_t tListWorld;
+	xui_vec2_t tMeasured;
 	uint32_t iBorderColor;
 	float fScroll;
 	int iSelectCount;
@@ -163,6 +164,8 @@ int main(void)
 	tDesc.fItemHeight = 22.0f;
 	iRet = xuiListViewCreate(pContext, &pList, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pList != NULL, "listview create");
+	iRet = xuiWidgetMeasure(pList, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiListViewNear(tMeasured.fX, 180.0f) && __xuiListViewNear(tMeasured.fY, 134.0f), "list content extent is contained by six-row viewport");
 	iRet = xuiWidgetAddChild(pRoot, pList);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add listview");
 	xuiWidgetSetRect(pList, (xui_rect_t){24.0f, 20.0f, 190.0f, 120.0f});

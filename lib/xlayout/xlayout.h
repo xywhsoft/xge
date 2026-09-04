@@ -120,6 +120,13 @@ typedef enum {
 } xlayout_overflow_t;
 
 typedef enum {
+	XLAYOUT_MEASURE_CONTAIN_NONE = 0,
+	XLAYOUT_MEASURE_CONTAIN_WIDTH = 1u << 0,
+	XLAYOUT_MEASURE_CONTAIN_HEIGHT = 1u << 1,
+	XLAYOUT_MEASURE_CONTAIN_BOTH = XLAYOUT_MEASURE_CONTAIN_WIDTH | XLAYOUT_MEASURE_CONTAIN_HEIGHT
+} xlayout_measure_containment_t;
+
+typedef enum {
 	XLAYOUT_TRACK_FIXED = 0,
 	XLAYOUT_TRACK_AUTO = 1,
 	XLAYOUT_TRACK_FRACTION = 2,
@@ -195,6 +202,7 @@ typedef struct {
 	xlayout_justify_t justify_content;
 	xlayout_overflow_t overflow_x;
 	xlayout_overflow_t overflow_y;
+	uint32_t measure_containment;
 	xlayout_edges_t padding;
 	float column_gap;
 	float row_gap;

@@ -68,6 +68,7 @@ int main(void)
 	xui_rect_t tContentRect;
 	xui_rect_t tChildWorld;
 	xui_rect_t tViewportWorld;
+	xui_vec2_t tMeasured;
 	xui_widget pHit;
 	float fOffsetX;
 	float fOffsetY;
@@ -110,8 +111,18 @@ int main(void)
 	tDesc.bContentDragEnabled = 1;
 	tDesc.fScrollbarSize = 8.0f;
 	tDesc.fWheelStep = 20.0f;
+	tDesc.fViewportWidth = 140.0f;
+	tDesc.fViewportHeight = 110.0f;
 	iRet = xuiScrollViewCreate(pContext, &pView, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pView != NULL, "scrollview create");
+	iRet = xuiWidgetMeasure(pView, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(tMeasured.fX, 140.0f) && __xuiScrollViewNear(tMeasured.fY, 110.0f), "scrollview desired viewport");
+	iRet = xuiScrollViewSetContentSize(pView, 3000.0f, 2200.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scrollview large content extent");
+	iRet = xuiWidgetMeasure(pView, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(tMeasured.fX, 140.0f) && __xuiScrollViewNear(tMeasured.fY, 110.0f), "scrollview extent does not change desired viewport");
+	iRet = xuiScrollViewSetContentSize(pView, 300.0f, 220.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore scrollview content extent");
 	iRet = xuiWidgetAddChild(pRoot, pView);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add scrollview");
 	xuiWidgetSetRect(pView, (xui_rect_t){20.0f, 20.0f, 140.0f, 110.0f});

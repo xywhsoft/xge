@@ -371,6 +371,11 @@ int main(void)
 	iRet = xuiWidgetArrange(pA, (xui_rect_t){0, 0, 10, 10});
 	XUI_TEST_CHECK(iRet == XUI_OK, "manual integer arrange failed");
 	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pA), 0, 0, 10, 10), "manual integer arrange rect failed");
+	iRet = xuiWidgetSetMeasureContainment(pA, XUI_MEASURE_CONTAIN_BOTH);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetMeasureContainment(pA) == XUI_MEASURE_CONTAIN_BOTH,
+		"measure containment API failed");
+	iRet = xuiWidgetSetMeasureContainment(pA, XUI_MEASURE_CONTAIN_BOTH | 4);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid measure containment accepted");
 
 cleanup:
 	if ( pContext != NULL ) {

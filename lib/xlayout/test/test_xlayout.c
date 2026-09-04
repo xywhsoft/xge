@@ -400,6 +400,39 @@ static void test_layer(void)
 	xLayoutContextDestroy(context);
 }
 
+static void test_measure_containment(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t viewport = { 80.0f, 40.0f, 0u };
+	test_leaf_t content = { 400.0f, 300.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t child = make_leaf(context, &content);
+	xlayout_style_t style = xLayoutStyleDefault();
+	xlayout_constraints_t constraints = xLayoutConstraints(1000.0f, 1000.0f);
+	xlayout_measure_t measured;
+	xlayout_result_t result;
+
+	style.container.format = XLAYOUT_FORMAT_LAYER;
+	style.container.measure_containment = XLAYOUT_MEASURE_CONTAIN_WIDTH;
+	expect_true(xLayoutNodeSetStyle(context, root, &style), "containment root style set");
+	expect_true(xLayoutNodeSetMeasure(context, root, measure_leaf, &viewport), "containment own measure set");
+	expect_true(xLayoutNodeAppend(context, root, child), "containment child appended");
+	expect_true(xLayoutMeasure(context, root, &constraints, &measured), "width containment measure succeeds");
+	expect_near(measured.width, 80.0f, "width containment uses viewport width");
+	expect_near(measured.height, 300.0f, "width containment preserves content height");
+
+	style.container.measure_containment = XLAYOUT_MEASURE_CONTAIN_BOTH;
+	expect_true(xLayoutNodeSetStyle(context, root, &style), "both containment style set");
+	expect_true(xLayoutMeasure(context, root, &constraints, &measured), "both containment measure succeeds");
+	expect_near(measured.width, 80.0f, "both containment uses viewport width");
+	expect_near(measured.height, 40.0f, "both containment uses viewport height");
+	expect_true(content.calls > 0u, "contained child is still measured");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 80, 40 }), "contained layout arranges");
+	expect_true(xLayoutNodeGetResult(context, child, &result), "contained child result available");
+	expect_true(result.rect.width > 0.0f && result.rect.height > 0.0f, "contained child is still arranged");
+	xLayoutContextDestroy(context);
+}
+
 static void test_dock(void)
 {
 	xlayout_context_t* context = xLayoutContextCreate(NULL);
@@ -802,6 +835,7 @@ int main(void)
 	test_stack_shrink_redistributes_after_minimum();
 	test_hidden_child_becomes_visible();
 	test_layer();
+	test_measure_containment();
 	test_dock();
 	test_track();
 	test_track_max_redistribution();

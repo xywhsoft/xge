@@ -30,6 +30,7 @@ Terminal 的缓冲区、VT/TUI 输入、ConPTY、查找和性能约定见 [XUI T
 ## 布局、事件与绘制
 
 - 使用公开 layout、style 和 widget API 描述控件尺寸、间距、对齐和可见性；不要直接写入私有控件数据。
+- 滚动控件的外部期望尺寸由 viewport 决定，滚动内容范围只参与内部滚动模型和滚动条计算。`ScrollFrame`、`ScrollView` 与 `Canvas` 可通过 `SetViewportHint` 设置内容尺寸未被父布局约束时的默认视口；自定义复合控件可用 `xuiWidgetSetMeasureContainment` 按轴阻止内部子树尺寸向父布局传播。
 - 事件通过 context 分发，并遵守焦点、捕获、弹出层与模态层的规则。输入控件需使用 XUI 的文本、剪贴板和 IME 入口，而非绕过控件状态直接修改内部文本。
 - Window、Popup、Menu、Toast 等需要浮层语义的组件应通过其专用创建 API 使用，而不是作为普通 child 模拟。
 - 自绘、proxy 和 surface 接口适合接入现有图形资源；调用者仍负责遵守 `xui.h` 中的资源所有权约定。

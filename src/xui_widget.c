@@ -205,6 +205,11 @@ static int __xuiOverflowValid(int iOverflow)
 	       (iOverflow == XUI_OVERFLOW_REPORT);
 }
 
+static int __xuiMeasureContainmentValid(int iContainment)
+{
+	return iContainment >= 0 && (iContainment & ~XUI_MEASURE_CONTAIN_BOTH) == 0;
+}
+
 static int __xuiThicknessValid(xui_thickness_t tValue)
 {
 	return __xuiNonNegativeFloatValid(tValue.fLeft) &&
@@ -997,6 +1002,7 @@ static void __xuiWidgetInitLayout(xui_widget pWidget)
 	pWidget->tLayout.iFlowMode = XUI_FLOW_BLOCK;
 	pWidget->tLayout.iDock = XUI_DOCK_FILL;
 	pWidget->tLayout.iOverflow = XUI_OVERFLOW_VISIBLE;
+	pWidget->tLayout.iMeasureContainment = XUI_MEASURE_CONTAIN_NONE;
 	pWidget->tLayout.iAlignX = XUI_ALIGN_START;
 	pWidget->tLayout.iAlignY = XUI_ALIGN_START;
 	pWidget->tLayout.iTableRow = 0;
@@ -1636,6 +1642,7 @@ static int __xuiLayoutStructValid(const xui_layout_t* pLayout)
 	     !__xuiFlowModeValid(pLayout->iFlowMode) ||
 	     !__xuiDockValid(pLayout->iDock) ||
 	     !__xuiOverflowValid(pLayout->iOverflow) ||
+	     !__xuiMeasureContainmentValid(pLayout->iMeasureContainment) ||
 	     !__xuiAlignValid(pLayout->iAlignX) ||
 	     !__xuiAlignValid(pLayout->iAlignY) ) {
 		return 0;
@@ -3739,6 +3746,23 @@ XUI_API int xuiWidgetGetOverflow(xui_widget pWidget)
 	return __xuiWidgetValid(pWidget) ? pWidget->tLayout.iOverflow : XUI_OVERFLOW_VISIBLE;
 }
 
+XUI_API int xuiWidgetSetMeasureContainment(xui_widget pWidget, int iContainment)
+{
+	if ( !__xuiWidgetValid(pWidget) || !__xuiMeasureContainmentValid(iContainment) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pWidget->tLayout.iMeasureContainment == iContainment ) {
+		return XUI_OK;
+	}
+	pWidget->tLayout.iMeasureContainment = iContainment;
+	return __xuiWidgetLayoutChanged(pWidget);
+}
+
+XUI_API int xuiWidgetGetMeasureContainment(xui_widget pWidget)
+{
+	return __xuiWidgetValid(pWidget) ? pWidget->tLayout.iMeasureContainment : XUI_MEASURE_CONTAIN_NONE;
+}
+
 XUI_API int xuiWidgetSetGridMetrics(xui_widget pWidget, int iColumnCount, float fItemWidth, float fItemHeight)
 {
 	if ( !__xuiWidgetValid(pWidget) || (iColumnCount <= 0) ||
@@ -5677,6 +5701,21 @@ XUI_API int xuiWidgetInvalidate(xui_widget pWidget, uint32_t iFlags)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	return __xuiWidgetInvalidateWorldRect(pWidget, xuiWidgetGetWorldRect(pWidget), iFlags);
+}
+
+int xuiInternalWidgetInvalidateArrange(xui_widget pWidget, uint32_t iPaintFlags)
+{
+	xui_widget pScan;
+
+	if ( !__xuiWidgetValid(pWidget) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	xuiInternalLayoutInvalidate(pWidget, 0);
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		pScan->bArrangeValid = 0;
+	}
+	iPaintFlags &= ~(XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_TREE);
+	return __xuiWidgetInvalidateWorldRect(pWidget, xuiWidgetGetWorldRect(pWidget), iPaintFlags);
 }
 
 XUI_API int xuiWidgetInvalidateRect(xui_widget pWidget, xui_rect_t tRect, uint32_t iFlags)

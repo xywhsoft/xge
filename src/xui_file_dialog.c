@@ -1717,12 +1717,6 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	(void)xuiWidgetSetPreferredSize(pDialog->pPathRow, (xui_vec2_t){0.0f, 32.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pFieldRow, (xui_vec2_t){0.0f, 28.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pButtonRow, (xui_vec2_t){0.0f, 28.0f});
-	(void)xuiWidgetSetMinSize(pDialog->pPathRow, (xui_vec2_t){0.0f, 32.0f});
-	(void)xuiWidgetSetMinSize(pDialog->pFieldRow, (xui_vec2_t){0.0f, 28.0f});
-	(void)xuiWidgetSetMinSize(pDialog->pButtonRow, (xui_vec2_t){0.0f, 28.0f});
-	(void)xuiWidgetSetFlex(pDialog->pPathRow, 0.0f, 0.0f);
-	(void)xuiWidgetSetFlex(pDialog->pFieldRow, 0.0f, 0.0f);
-	(void)xuiWidgetSetFlex(pDialog->pButtonRow, 0.0f, 0.0f);
 	(void)xuiWidgetSetFlex(pDialog->pListRow, 1.0f, 1.0f);
 	(void)xuiWidgetSetMinSize(pDialog->pListRow, (xui_vec2_t){0.0f, 72.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pPathLabel, (xui_vec2_t){58.0f, 32.0f});

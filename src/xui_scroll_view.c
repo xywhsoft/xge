@@ -2,11 +2,16 @@
 
 #include <string.h>
 
+#define XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_WIDTH 240.0f
+#define XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_HEIGHT 160.0f
+
 typedef struct xui_scroll_view_data_t {
 	xui_widget pFrame;
 	xui_widget pContent;
 	xui_scroll_view_change_proc onChange;
 	void* pChangeUser;
+	float fViewportWidth;
+	float fViewportHeight;
 	int iChangeCount;
 } xui_scroll_view_data_t;
 
@@ -15,7 +20,9 @@ static int __xuiScrollViewDescValid(const xui_scroll_view_desc_t* pDesc)
 	if ( pDesc == NULL ) {
 		return 1;
 	}
-	return (pDesc->iSize == 0) || (pDesc->iSize >= sizeof(*pDesc));
+	if ( pDesc->iSize != 0 && pDesc->iSize < sizeof(*pDesc) ) return 0;
+	return pDesc->fViewportWidth >= 0.0f && pDesc->fViewportWidth <= XUI_LAYOUT_UNBOUNDED &&
+	       pDesc->fViewportHeight >= 0.0f && pDesc->fViewportHeight <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static xui_scroll_view_data_t* __xuiScrollViewGetData(xui_widget pWidget)
@@ -47,6 +54,8 @@ static void __xuiScrollViewMakeFrameDesc(const xui_scroll_view_desc_t* pDesc, xu
 	pFrameDesc->iSize = sizeof(*pFrameDesc);
 	pFrameDesc->iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
 	pFrameDesc->iCornerMode = XUI_SCROLL_FRAME_CORNER_AUTO;
+	pFrameDesc->fViewportWidth = XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_WIDTH;
+	pFrameDesc->fViewportHeight = XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_HEIGHT;
 	if ( pDesc == NULL ) {
 		return;
 	}
@@ -75,6 +84,8 @@ static void __xuiScrollViewMakeFrameDesc(const xui_scroll_view_desc_t* pDesc, xu
 	pFrameDesc->iButtonIconColor = pDesc->iButtonIconColor;
 	pFrameDesc->iCornerColor = pDesc->iCornerColor;
 	pFrameDesc->iGripColor = pDesc->iGripColor;
+	pFrameDesc->fViewportWidth = pDesc->fViewportWidth > 0.0f ? pDesc->fViewportWidth : XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_WIDTH;
+	pFrameDesc->fViewportHeight = pDesc->fViewportHeight > 0.0f ? pDesc->fViewportHeight : XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_HEIGHT;
 }
 
 static float __xuiScrollViewMaxFloat(float fA, float fB)
@@ -117,7 +128,7 @@ static int __xuiScrollViewSyncContent(xui_widget pWidget, xui_scroll_view_data_t
 	tViewport = xuiScrollFrameGetViewportRect(pData->pFrame);
 	iRet = __xuiScrollViewContentRect(pData, tViewport.fW, tViewport.fH, &tContent);
 	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetSetRect(pData->pContent, tContent);
+	return xuiWidgetArrange(pData->pContent, tContent);
 }
 
 static int __xuiScrollViewLayoutContent(xui_widget pViewport, xui_rect_t tContentRect, void* pUser)
@@ -163,6 +174,17 @@ static int __xuiScrollViewLayoutComplete(xui_widget pWidget, xui_rect_t tContent
 	return __xuiScrollViewSyncContent(pWidget, pData);
 }
 
+static int __xuiScrollViewContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+{
+	xui_scroll_view_data_t* pData = (xui_scroll_view_data_t*)pUser;
+	(void)pWidget;
+	(void)tConstraint;
+	if ( pData == NULL || pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pSize->fX = pData->fViewportWidth;
+	pSize->fY = pData->fViewportHeight;
+	return XUI_OK;
+}
+
 static void __xuiScrollViewDefaultLayout(xui_layout_t* pLayout)
 {
 	memset(pLayout, 0, sizeof(*pLayout));
@@ -172,6 +194,7 @@ static void __xuiScrollViewDefaultLayout(xui_layout_t* pLayout)
 	pLayout->iFlowMode = XUI_FLOW_BLOCK;
 	pLayout->iDock = XUI_DOCK_FILL;
 	pLayout->iOverflow = XUI_OVERFLOW_CLIP;
+	pLayout->iMeasureContainment = XUI_MEASURE_CONTAIN_BOTH;
 	pLayout->iAlignX = XUI_ALIGN_START;
 	pLayout->iAlignY = XUI_ALIGN_START;
 	pLayout->iTableRowSpan = 1;
@@ -206,6 +229,8 @@ static int __xuiScrollViewInit(xui_widget pWidget, void* pTypeData, const void* 
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pData, 0, sizeof(*pData));
+	pData->fViewportWidth = (pDesc != NULL && pDesc->fViewportWidth > 0.0f) ? pDesc->fViewportWidth : XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_WIDTH;
+	pData->fViewportHeight = (pDesc != NULL && pDesc->fViewportHeight > 0.0f) ? pDesc->fViewportHeight : XUI_SCROLL_VIEW_DEFAULT_VIEWPORT_HEIGHT;
 	__xuiScrollViewMakeFrameDesc(pDesc, &tFrameDesc);
 	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
 	(void)xuiWidgetSetFocusable(pWidget, 0);
@@ -296,6 +321,7 @@ XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext)
 	tDesc.iTypeDataSize = sizeof(xui_scroll_view_data_t);
 	tDesc.onInit = __xuiScrollViewInit;
 	tDesc.onDestroy = __xuiScrollViewDestroy;
+	tDesc.onContentMeasure = __xuiScrollViewContentMeasure;
 	tDesc.onLayoutComplete = __xuiScrollViewLayoutComplete;
 	__xuiScrollViewDefaultLayout(&tDesc.tLayout);
 	__xuiScrollViewDefaultCachePolicy(&tDesc.tCachePolicy);
@@ -369,6 +395,32 @@ XUI_API int xuiScrollViewGetContentSize(xui_widget pWidget, float* pWidth, float
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	return xuiScrollFrameGetContentSize(pData->pFrame, pWidth, pHeight);
+}
+
+XUI_API int xuiScrollViewSetViewportHint(xui_widget pWidget, float fWidth, float fHeight)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	int iRet;
+	if ( pData == NULL || fWidth <= 0.0f || fHeight <= 0.0f ||
+	     fWidth > XUI_LAYOUT_UNBOUNDED || fHeight > XUI_LAYOUT_UNBOUNDED ||
+	     fWidth != fWidth || fHeight != fHeight ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->fViewportWidth == fWidth && pData->fViewportHeight == fHeight ) return XUI_OK;
+	iRet = xuiScrollFrameSetViewportHint(pData->pFrame, fWidth, fHeight);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->fViewportWidth = fWidth;
+	pData->fViewportHeight = fHeight;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiScrollViewGetViewportHint(xui_widget pWidget, float* pWidth, float* pHeight)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pWidth != NULL ) *pWidth = pData->fViewportWidth;
+	if ( pHeight != NULL ) *pHeight = pData->fViewportHeight;
+	return XUI_OK;
 }
 
 XUI_API int xuiScrollViewSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY)

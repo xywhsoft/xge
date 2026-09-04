@@ -1580,6 +1580,11 @@ typedef struct xui_language_text_t {
 #define XUI_OVERFLOW_CLIP		2
 #define XUI_OVERFLOW_REPORT		3
 
+#define XUI_MEASURE_CONTAIN_NONE	0
+#define XUI_MEASURE_CONTAIN_WIDTH	(1 << 0)
+#define XUI_MEASURE_CONTAIN_HEIGHT	(1 << 1)
+#define XUI_MEASURE_CONTAIN_BOTH	(XUI_MEASURE_CONTAIN_WIDTH | XUI_MEASURE_CONTAIN_HEIGHT)
+
 #if defined(_WIN32) || defined(_WIN64)
 	#if defined(XUI_DLL)
 		#if defined(XUI_BUILD_DLL)
@@ -1634,6 +1639,7 @@ typedef struct xui_layout_t {
 	int iFlowMode;
 	int iDock;
 	int iOverflow;
+	int iMeasureContainment;
 	int iAlignX;
 	int iAlignY;
 	int iTableRow;
@@ -3561,6 +3567,8 @@ typedef struct xui_canvas_desc_t {
 	uint32_t iButtonIconColor;
 	uint32_t iCornerColor;
 	uint32_t iGripColor;
+	float fViewportWidth;
+	float fViewportHeight;
 } xui_canvas_desc_t;
 
 typedef struct xui_split_layout_desc_t {
@@ -3987,6 +3995,8 @@ typedef struct xui_scroll_frame_desc_t {
 	uint32_t iButtonIconColor;
 	uint32_t iCornerColor;
 	uint32_t iGripColor;
+	float fViewportWidth;
+	float fViewportHeight;
 } xui_scroll_frame_desc_t;
 
 typedef struct xui_scroll_view_desc_t {
@@ -4016,6 +4026,8 @@ typedef struct xui_scroll_view_desc_t {
 	uint32_t iButtonIconColor;
 	uint32_t iCornerColor;
 	uint32_t iGripColor;
+	float fViewportWidth;
+	float fViewportHeight;
 } xui_scroll_view_desc_t;
 
 typedef struct xui_list_view_desc_t {
@@ -7888,6 +7900,8 @@ XUI_API xui_widget xuiScrollFrameGetVScrollBarWidget(xui_widget pWidget);
 XUI_API xui_widget xuiScrollFrameGetCornerWidget(xui_widget pWidget);
 XUI_API int xuiScrollFrameSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
 XUI_API int xuiScrollFrameGetContentSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiScrollFrameSetViewportHint(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiScrollFrameGetViewportHint(xui_widget pWidget, float* pWidth, float* pHeight);
 XUI_API int xuiScrollFrameSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
 XUI_API int xuiScrollFrameScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
 XUI_API int xuiScrollFrameGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
@@ -7932,6 +7946,8 @@ XUI_API xui_widget xuiScrollViewGetViewportWidget(xui_widget pWidget);
 XUI_API xui_scroll_model_t* xuiScrollViewGetModel(xui_widget pWidget);
 XUI_API int xuiScrollViewSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
 XUI_API int xuiScrollViewGetContentSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiScrollViewSetViewportHint(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiScrollViewGetViewportHint(xui_widget pWidget, float* pWidth, float* pHeight);
 XUI_API int xuiScrollViewSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
 XUI_API int xuiScrollViewScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
 XUI_API int xuiScrollViewGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
@@ -7970,6 +7986,8 @@ XUI_API xui_scroll_model_t* xuiCanvasGetModel(xui_widget pWidget);
 XUI_API xui_surface xuiCanvasGetSurface(xui_widget pWidget);
 XUI_API int xuiCanvasSetCanvasSize(xui_widget pWidget, float fWidth, float fHeight);
 XUI_API int xuiCanvasGetCanvasSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiCanvasSetViewportHint(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiCanvasGetViewportHint(xui_widget pWidget, float* pWidth, float* pHeight);
 XUI_API int xuiCanvasSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
 XUI_API int xuiCanvasScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
 XUI_API int xuiCanvasGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
@@ -8930,6 +8948,8 @@ XUI_API int xuiWidgetSetDock(xui_widget pWidget, int iDock);
 XUI_API int xuiWidgetGetDock(xui_widget pWidget);
 XUI_API int xuiWidgetSetOverflow(xui_widget pWidget, int iOverflow);
 XUI_API int xuiWidgetGetOverflow(xui_widget pWidget);
+XUI_API int xuiWidgetSetMeasureContainment(xui_widget pWidget, int iContainment);
+XUI_API int xuiWidgetGetMeasureContainment(xui_widget pWidget);
 XUI_API int xuiWidgetSetGridMetrics(xui_widget pWidget, int iColumnCount, float fItemWidth, float fItemHeight);
 XUI_API int xuiWidgetGetGridMetrics(xui_widget pWidget, int* pColumnCount, float* pItemWidth, float* pItemHeight);
 XUI_API int xuiWidgetSetLayer(xui_widget pWidget, int iLayer, int iZIndex);

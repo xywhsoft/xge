@@ -41,6 +41,7 @@ int main(void)
 	xui_surface pCanvasSurface;
 	xui_canvas_desc_t tDesc;
 	xui_rect_t tViewportWorld;
+	xui_vec2_t tMeasured;
 	xui_mesh_vertex_t arrVertices[3];
 	uint32_t arrIndices[3];
 	float fWidth;
@@ -77,6 +78,8 @@ int main(void)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.fCanvasWidth = 480.0f;
 	tDesc.fCanvasHeight = 320.0f;
+	tDesc.fViewportWidth = 180.0f;
+	tDesc.fViewportHeight = 140.0f;
 	tDesc.iPolicyX = XUI_SCROLLBAR_POLICY_AUTO;
 	tDesc.iPolicyY = XUI_SCROLLBAR_POLICY_AUTO;
 	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
@@ -87,6 +90,8 @@ int main(void)
 	tDesc.iPenColor = XUI_COLOR_RGBA(20, 90, 210, 255);
 	iRet = xuiCanvasCreate(pContext, &pCanvas, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCanvas != NULL, "canvas create");
+	iRet = xuiWidgetMeasure(pCanvas, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(tMeasured.fX, 180.0f) && __xuiCanvasNear(tMeasured.fY, 140.0f), "canvas extent does not define viewport");
 	iRet = xuiWidgetAddChild(pRoot, pCanvas);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add canvas");
 	xuiWidgetSetRect(pCanvas, (xui_rect_t){12.0f, 16.0f, 180.0f, 140.0f});
@@ -137,6 +142,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize");
 	iRet = xuiCanvasGetCanvasSize(pCanvas, &fWidth, &fHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fWidth, 260.0f) && __xuiCanvasNear(fHeight, 200.0f), "resized size");
+	iRet = xuiWidgetMeasure(pCanvas, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(tMeasured.fX, 180.0f) && __xuiCanvasNear(tMeasured.fY, 140.0f), "canvas resize keeps viewport hint");
 
 	iRet = xuiCanvasSetPen(pCanvas, 1, 5.0f, XUI_COLOR_RGBA(90, 70, 210, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set pen");

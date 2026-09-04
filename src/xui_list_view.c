@@ -1165,6 +1165,7 @@ static void __xuiListViewDefaultLayout(xui_layout_t* pLayout)
 	pLayout->iFlowMode = XUI_FLOW_BLOCK;
 	pLayout->iDock = XUI_DOCK_FILL;
 	pLayout->iOverflow = XUI_OVERFLOW_CLIP;
+	pLayout->iMeasureContainment = XUI_MEASURE_CONTAIN_BOTH;
 	pLayout->iAlignX = XUI_ALIGN_START;
 	pLayout->iAlignY = XUI_ALIGN_START;
 	pLayout->iTableRowSpan = 1;

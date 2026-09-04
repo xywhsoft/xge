@@ -973,6 +973,7 @@ static bool xl_measure_node(
 		if ( !xl_measure_own_content(context, node, constraints, &measured) ) return false;
 	} else {
 		xlayout_measure_t own;
+		uint32_t containment = node->style.container.measure_containment;
 		switch ( node->style.container.format ) {
 		case XLAYOUT_FORMAT_LAYER:
 			if ( !xl_measure_layer(context, node, constraints, &measured) ) return false;
@@ -992,9 +993,18 @@ static bool xl_measure_node(
 			break;
 		}
 		if ( !xl_measure_own_content(context, node, constraints, &own) ) return false;
-		measured.width = xl_max(measured.width, own.width);
-		measured.height = xl_max(measured.height, own.height);
-		if ( own.baseline >= 0.0f && own.height >= measured.height ) measured.baseline = own.baseline;
+		if ( (containment & XLAYOUT_MEASURE_CONTAIN_WIDTH) != 0u ) {
+			measured.width = own.width;
+		} else {
+			measured.width = xl_max(measured.width, own.width);
+		}
+		if ( (containment & XLAYOUT_MEASURE_CONTAIN_HEIGHT) != 0u ) {
+			measured.height = own.height;
+			measured.baseline = own.baseline;
+		} else {
+			measured.height = xl_max(measured.height, own.height);
+			if ( own.baseline >= 0.0f && own.height >= measured.height ) measured.baseline = own.baseline;
+		}
 	}
 	if ( node->role == XLAYOUT_ROLE_CONTAINER ) {
 		xlayout_node_internal_t* child;

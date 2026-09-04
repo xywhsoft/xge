@@ -187,6 +187,7 @@ static void __xuiLayoutMapContainer(xui_widget widget, xlayout_style_t* style)
 	style->container.row_gap = widget->tLayout.fGap;
 	style->container.overflow_x = __xuiLayoutOverflow(widget->tLayout.iOverflow);
 	style->container.overflow_y = __xuiLayoutOverflow(widget->tLayout.iOverflow);
+	style->container.measure_containment = (uint32_t)widget->tLayout.iMeasureContainment;
 	style->container.align_items = XLAYOUT_ALIGN_STRETCH;
 	style->container.justify_items = XLAYOUT_ALIGN_STRETCH;
 }

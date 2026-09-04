@@ -1812,6 +1812,7 @@ static void __xuiTimeLineDefaultLayout(xui_layout_t* pLayout)
 	pLayout->iWidthMode = XUI_SIZE_CONTENT;
 	pLayout->iHeightMode = XUI_SIZE_CONTENT;
 	pLayout->iFlowMode = XUI_FLOW_BLOCK;
+	pLayout->iMeasureContainment = XUI_MEASURE_CONTAIN_BOTH;
 	pLayout->fMaxWidth = XUI_LAYOUT_UNBOUNDED;
 	pLayout->fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	pLayout->fShrink = 1.0f;

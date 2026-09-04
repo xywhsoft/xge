@@ -81,6 +81,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pFrame;
+	xui_widget pFooter;
 	xui_surface pTarget;
 	xui_scroll_frame_desc_t tDesc;
 	xui_rect_t tViewport;
@@ -88,8 +89,13 @@ int main(void)
 	xui_rect_t tVBar;
 	xui_rect_t tCorner;
 	xui_rect_t tViewportWorld;
+	xui_rect_t tFooterBefore;
+	xui_rect_t tFooterAfter;
+	xui_vec2_t tMeasured;
 	float fOffsetX;
 	float fOffsetY;
+	float fHintWidth;
+	float fHintHeight;
 	float fMaxX;
 	float fMaxY;
 	int iChanged;
@@ -99,6 +105,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pFrame = NULL;
+	pFooter = NULL;
 	pTarget = NULL;
 	iChanged = 0;
 	iFailed = 0;
@@ -129,8 +136,20 @@ int main(void)
 	tDesc.bContentDragEnabled = 1;
 	tDesc.fScrollbarSize = 16.0f;
 	tDesc.fWheelStep = 20.0f;
+	tDesc.fViewportWidth = 120.0f;
+	tDesc.fViewportHeight = 100.0f;
 	iRet = xuiScrollFrameCreate(pContext, &pFrame, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFrame != NULL, "frame create");
+	iRet = xuiWidgetMeasure(pFrame, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(tMeasured.fX, 120.0f) && __xuiScrollFrameNear(tMeasured.fY, 100.0f), "content extent does not define desired viewport");
+	iRet = xuiScrollFrameGetViewportHint(pFrame, &fHintWidth, &fHintHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fHintWidth, 120.0f) && __xuiScrollFrameNear(fHintHeight, 100.0f), "viewport hint get");
+	iRet = xuiScrollFrameSetContentSize(pFrame, 2400.0f, 2200.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "large content extent");
+	iRet = xuiWidgetMeasure(pFrame, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(tMeasured.fX, 120.0f) && __xuiScrollFrameNear(tMeasured.fY, 100.0f), "large extent keeps desired viewport");
+	iRet = xuiScrollFrameSetContentSize(pFrame, 240.0f, 220.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore content extent");
 	iRet = xuiWidgetAddChild(pRoot, pFrame);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add frame");
 	xuiWidgetSetRect(pFrame, (xui_rect_t){10.0f, 10.0f, 120.0f, 100.0f});
@@ -184,6 +203,31 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "always layout");
 	XUI_TEST_CHECK(xuiScrollFrameIsHScrollBarVisible(pFrame) && xuiScrollFrameIsVScrollBarVisible(pFrame), "always bars");
+
+	iRet = xuiWidgetCreate(pContext, &pFooter);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFooter != NULL, "footer create");
+	iRet = xuiWidgetAddChild(pRoot, pFooter);
+	XUI_TEST_CHECK(iRet == XUI_OK, "footer add");
+	iRet = xuiWidgetSetLayoutType(pRoot, XUI_LAYOUT_COLUMN);
+	XUI_TEST_CHECK(iRet == XUI_OK, "column layout");
+	iRet = xuiWidgetSetSizeMode(pFrame, XUI_SIZE_FILL, XUI_SIZE_CONTENT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "frame viewport sizing");
+	iRet = xuiWidgetSetFlex(pFrame, 1.0f, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "frame flex");
+	iRet = xuiWidgetSetSizeMode(pFooter, XUI_SIZE_FILL, XUI_SIZE_FIXED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "footer sizing");
+	iRet = xuiWidgetSetPreferredSize(pFooter, (xui_vec2_t){0.0f, 40.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "footer size");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "column baseline layout");
+	tFooterBefore = xuiWidgetGetRect(pFooter);
+	iRet = xuiScrollFrameSetContentSize(pFrame, 2000.0f, 20000.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "huge extent in column");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "column layout after extent change");
+	tFooterAfter = xuiWidgetGetRect(pFooter);
+	XUI_TEST_CHECK(tFooterAfter.fY == tFooterBefore.fY && tFooterAfter.fH == tFooterBefore.fH,
+		"content extent does not move or shrink sibling controls");
 
 cleanup:
 	if ( pContext != NULL ) {

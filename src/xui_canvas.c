@@ -11,6 +11,8 @@ typedef struct xui_canvas_data_t {
 	xui_surface pSurface;
 	float fCanvasWidth;
 	float fCanvasHeight;
+	float fViewportWidth;
+	float fViewportHeight;
 	float fPenWidth;
 	float fLastPenX;
 	float fLastPenY;
@@ -29,7 +31,9 @@ static int __xuiCanvasDescValid(const xui_canvas_desc_t* pDesc)
 	if ( pDesc == NULL ) return 1;
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
 	if ( (pDesc->fCanvasWidth < 0.0f) || (pDesc->fCanvasHeight < 0.0f) ||
-	     (pDesc->fPenWidth < 0.0f) ) return 0;
+	     (pDesc->fPenWidth < 0.0f) ||
+	     (pDesc->fViewportWidth < 0.0f) || (pDesc->fViewportWidth > XUI_LAYOUT_UNBOUNDED) ||
+	     (pDesc->fViewportHeight < 0.0f) || (pDesc->fViewportHeight > XUI_LAYOUT_UNBOUNDED) ) return 0;
 	return 1;
 }
 
@@ -290,6 +294,7 @@ static void __xuiCanvasDefaultLayout(xui_layout_t* pLayout)
 	pLayout->iFlowMode = XUI_FLOW_BLOCK;
 	pLayout->iDock = XUI_DOCK_FILL;
 	pLayout->iOverflow = XUI_OVERFLOW_CLIP;
+	pLayout->iMeasureContainment = XUI_MEASURE_CONTAIN_BOTH;
 	pLayout->iAlignX = XUI_ALIGN_START;
 	pLayout->iAlignY = XUI_ALIGN_START;
 	pLayout->iTableRowSpan = 1;
@@ -298,6 +303,17 @@ static void __xuiCanvasDefaultLayout(xui_layout_t* pLayout)
 	pLayout->fMaxWidth = XUI_LAYOUT_UNBOUNDED;
 	pLayout->fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	pLayout->fShrink = 1.0f;
+}
+
+static int __xuiCanvasContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+{
+	xui_canvas_data_t* pData = (xui_canvas_data_t*)pUser;
+	(void)pWidget;
+	(void)tConstraint;
+	if ( pData == NULL || pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pSize->fX = pData->fViewportWidth;
+	pSize->fY = pData->fViewportHeight;
+	return XUI_OK;
 }
 
 static void __xuiCanvasDefaultCachePolicy(xui_cache_policy_t* pPolicy)
@@ -323,6 +339,8 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	memset(pData, 0, sizeof(*pData));
 	pData->fCanvasWidth = (pDesc != NULL && pDesc->fCanvasWidth > 0.0f) ? pDesc->fCanvasWidth : XUI_CANVAS_DEFAULT_WIDTH;
 	pData->fCanvasHeight = (pDesc != NULL && pDesc->fCanvasHeight > 0.0f) ? pDesc->fCanvasHeight : XUI_CANVAS_DEFAULT_HEIGHT;
+	pData->fViewportWidth = (pDesc != NULL && pDesc->fViewportWidth > 0.0f) ? pDesc->fViewportWidth : XUI_CANVAS_DEFAULT_WIDTH;
+	pData->fViewportHeight = (pDesc != NULL && pDesc->fViewportHeight > 0.0f) ? pDesc->fViewportHeight : XUI_CANVAS_DEFAULT_HEIGHT;
 	pData->fPenWidth = (pDesc != NULL && pDesc->fPenWidth > 0.0f) ? pDesc->fPenWidth : 3.0f;
 	pData->bPenEnabled = (pDesc != NULL) ? (pDesc->bPenEnabled != 0) : 0;
 	pData->iClearColor = (pDesc != NULL && pDesc->iClearColor != 0) ? pDesc->iClearColor : XUI_COLOR_RGBA(255, 255, 255, 255);
@@ -333,6 +351,8 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	tFrameDesc.iSize = sizeof(tFrameDesc);
 	tFrameDesc.fContentWidth = pData->fCanvasWidth;
 	tFrameDesc.fContentHeight = pData->fCanvasHeight;
+	tFrameDesc.fViewportWidth = pData->fViewportWidth;
+	tFrameDesc.fViewportHeight = pData->fViewportHeight;
 	tFrameDesc.fOffsetX = (pDesc != NULL) ? pDesc->fOffsetX : 0.0f;
 	tFrameDesc.fOffsetY = (pDesc != NULL) ? pDesc->fOffsetY : 0.0f;
 	tFrameDesc.iPolicyX = (pDesc != NULL) ? pDesc->iPolicyX : XUI_SCROLLBAR_POLICY_AUTO;
@@ -445,6 +465,7 @@ XUI_API xui_widget_type xuiCanvasGetType(xui_context pContext)
 	tDesc.iTypeDataSize = sizeof(xui_canvas_data_t);
 	tDesc.onInit = __xuiCanvasInit;
 	tDesc.onDestroy = __xuiCanvasDestroy;
+	tDesc.onContentMeasure = __xuiCanvasContentMeasure;
 	__xuiCanvasDefaultLayout(&tDesc.tLayout);
 	__xuiCanvasDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
@@ -518,6 +539,32 @@ XUI_API int xuiCanvasGetCanvasSize(xui_widget pWidget, float* pWidth, float* pHe
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pWidth != NULL ) *pWidth = pData->fCanvasWidth;
 	if ( pHeight != NULL ) *pHeight = pData->fCanvasHeight;
+	return XUI_OK;
+}
+
+XUI_API int xuiCanvasSetViewportHint(xui_widget pWidget, float fWidth, float fHeight)
+{
+	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
+	int iRet;
+	if ( pData == NULL || fWidth <= 0.0f || fHeight <= 0.0f ||
+	     fWidth > XUI_LAYOUT_UNBOUNDED || fHeight > XUI_LAYOUT_UNBOUNDED ||
+	     fWidth != fWidth || fHeight != fHeight ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->fViewportWidth == fWidth && pData->fViewportHeight == fHeight ) return XUI_OK;
+	iRet = xuiScrollFrameSetViewportHint(pData->pFrame, fWidth, fHeight);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->fViewportWidth = fWidth;
+	pData->fViewportHeight = fHeight;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiCanvasGetViewportHint(xui_widget pWidget, float* pWidth, float* pHeight)
+{
+	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pWidth != NULL ) *pWidth = pData->fViewportWidth;
+	if ( pHeight != NULL ) *pHeight = pData->fViewportHeight;
 	return XUI_OK;
 }
 

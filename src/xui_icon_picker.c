@@ -1055,6 +1055,7 @@ static void __xuiIconPickerDefaultLayout(xui_layout_t* pLayout)
 {
 	memset(pLayout, 0, sizeof(*pLayout));
 	pLayout->iLayoutType = XUI_LAYOUT_MANUAL;
+	pLayout->iMeasureContainment = XUI_MEASURE_CONTAIN_BOTH;
 	pLayout->iWidthMode = XUI_SIZE_CONTENT;
 	pLayout->iHeightMode = XUI_SIZE_CONTENT;
 	pLayout->iFlowMode = XUI_FLOW_BLOCK;
