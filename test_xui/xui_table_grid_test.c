@@ -264,6 +264,46 @@ static xui_widget __xuiTableGridTestFindNumericEditor(xui_context pContext, xui_
 	return NULL;
 }
 
+static xui_widget __xuiTableGridTestFindVisibleEditor(xui_widget pGrid, xui_widget pTable)
+{
+	xui_widget pChild;
+
+	if ( pGrid == NULL ) {
+		return NULL;
+	}
+	for ( pChild = xuiWidgetGetFirstChild(pGrid); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
+		if ( pChild != pTable && xuiWidgetGetVisible(pChild) ) {
+			return pChild;
+		}
+	}
+	return NULL;
+}
+
+static int __xuiTableGridTestEditorMatchesCell(xui_widget pGrid, xui_widget pTable, int iRow, int iColumn)
+{
+	xui_widget pEditor;
+	xui_rect_t tCell;
+	xui_rect_t tTable;
+	xui_rect_t tGridWorld;
+	xui_rect_t tEditorWorld;
+
+	if ( (pGrid == NULL) || (pTable == NULL) ||
+	     (xuiTableViewGetCellRect(pTable, iRow, iColumn, &tCell) != XUI_OK) ) {
+		return 0;
+	}
+	pEditor = __xuiTableGridTestFindVisibleEditor(pGrid, pTable);
+	if ( pEditor == NULL ) {
+		return 0;
+	}
+	tTable = xuiWidgetGetRect(pTable);
+	tGridWorld = xuiWidgetGetWorldRect(pGrid);
+	tEditorWorld = xuiWidgetGetWorldRect(pEditor);
+	return tEditorWorld.fX == tGridWorld.fX + tTable.fX + tCell.fX &&
+	       tEditorWorld.fY == tGridWorld.fY + tTable.fY + tCell.fY &&
+	       tEditorWorld.fW == tCell.fW &&
+	       tEditorWorld.fH == tCell.fH;
+}
+
 static xui_widget __xuiTableGridTestFindPopupOwner(xui_context pContext, xui_widget_type pOwnerType)
 {
 	xui_widget pScan;
@@ -510,6 +550,8 @@ int main(void)
 
 	iRet = xuiTableGridBeginEdit(pGrid, 0, 0);
 	XUI_TEST_CHECK(iRet != 0 && xuiTableGridIsEditing(pGrid), "text begin");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 0, 0), "text editor exact cell geometry");
 	iRet = __xuiTableGridTestTypeText(pContext, "Renamed");
 	XUI_TEST_CHECK(iRet == XUI_OK, "text input");
 	iRet = xuiTableGridEndEdit(pGrid, 1);
@@ -521,6 +563,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet != 0 && xuiTableGridIsEditing(pGrid), "numeric begin invalid");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "numeric editor layout invalid");
+	XUI_TEST_CHECK(__xuiTableGridTestEditorMatchesCell(pGrid, pTable, 0, 1), "numeric editor exact cell geometry");
 	iRet = __xuiTableGridTestRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "numeric editor render invalid");
 	XUI_TEST_CHECK(__xuiTableGridTestCheckNumericEditor(pContext, pGrid, "10"), "numeric editor shows initial value invalid");
@@ -550,14 +593,30 @@ int main(void)
 
 	iRet = xuiTableGridBeginEdit(pGrid, 0, 3);
 	XUI_TEST_CHECK(iRet != 0 && xuiTableGridIsEditing(pGrid), "enum begin");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 0, 3), "enum editor exact cell geometry");
 	iRet = xuiTableGridEndEdit(pGrid, 1);
 	XUI_TEST_CHECK(iRet != 0 && strcmp(tData.arrText[0][3], "Done") == 0, "enum commit");
 	XUI_TEST_CHECK(tData.iConfigCount >= 2, "editor config used");
 
+	iRet = xuiTableGridBeginEdit(pGrid, 0, 4);
+	XUI_TEST_CHECK(iRet != 0 && xuiTableGridIsEditing(pGrid), "color begin");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 0, 4), "color editor exact cell geometry");
+	iRet = xuiTableGridEndEdit(pGrid, 0);
+	XUI_TEST_CHECK(iRet != 0 && !xuiTableGridIsEditing(pGrid), "color cancel");
+
+	iRet = xuiTableGridBeginEdit(pGrid, 0, 5);
+	XUI_TEST_CHECK(iRet != 0 && xuiTableGridIsEditing(pGrid), "date begin");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTableGridTestEditorMatchesCell(pGrid, pTable, 0, 5), "date editor exact cell geometry");
+	iRet = xuiTableGridEndEdit(pGrid, 0);
+	XUI_TEST_CHECK(iRet != 0 && !xuiTableGridIsEditing(pGrid), "date cancel");
+
 	iRet = xuiTableGridBeginEdit(pGrid, 0, 6);
 	XUI_TEST_CHECK(iRet != 0 && xuiTableGridIsEditing(pGrid), "textarea begin");
 	iRet = xuiTableGridEndEdit(pGrid, 0);
-	XUI_TEST_CHECK(iRet != 0 && xuiTableGridGetCancelCount(pGrid) == 2, "textarea cancel");
+	XUI_TEST_CHECK(iRet != 0 && xuiTableGridGetCancelCount(pGrid) == 4, "textarea cancel");
 
 	iRet = xuiTableGridBeginEdit(pGrid, 0, 7);
 	XUI_TEST_CHECK(iRet != 0 && !xuiTableGridIsEditing(pGrid), "picker begin");

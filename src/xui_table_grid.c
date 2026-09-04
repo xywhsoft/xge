@@ -275,10 +275,6 @@ static int __xuiTableGridClipEditorRect(xui_table_grid_data_t* pData, xui_rect_t
 		return 0;
 	}
 	tView = xuiTableViewGetViewportRect(pData->pTable);
-	tView.fX -= 1.0f;
-	tView.fY -= 1.0f;
-	tView.fW += 2.0f;
-	tView.fH += 2.0f;
 	fRight = pRect->fX + pRect->fW;
 	fBottom = pRect->fY + pRect->fH;
 	fViewRight = tView.fX + tView.fW;
@@ -314,10 +310,6 @@ static int __xuiTableGridEditingRect(xui_widget pWidget, xui_table_grid_data_t* 
 	if ( xuiTableViewGetCellRect(pData->pTable, pData->iEditingRow, pData->iEditingColumn, &tCell) != XUI_OK ) {
 		return 0;
 	}
-	tCell.fX -= 1.0f;
-	tCell.fY -= 1.0f;
-	tCell.fW += 2.0f;
-	tCell.fH += 2.0f;
 	if ( !__xuiTableGridClipEditorRect(pData, &tCell) ) {
 		return 0;
 	}
@@ -1240,6 +1232,11 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	(void)xuiWidgetSetVisible(pData->pCombo, 0);
 	(void)xuiWidgetSetVisible(pData->pColor, 0);
 	(void)xuiWidgetSetVisible(pData->pDate, 0);
+	(void)xuiWidgetSetFlowMode(pData->pInput, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetFlowMode(pData->pNumeric, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetFlowMode(pData->pCombo, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetFlowMode(pData->pColor, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetFlowMode(pData->pDate, XUI_FLOW_ABSOLUTE);
 	iRet = __xuiTableGridSetEditorLayerTree(pData->pInput, XUI_LAYER_NORMAL, 100);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTableGridSetEditorLayerTree(pData->pNumeric, XUI_LAYER_NORMAL, 100);
