@@ -1348,6 +1348,7 @@ static uint32_t __xuiWidgetRecomputeSubtreeDirtyFlags(xui_widget pWidget)
 	xui_widget pChild;
 	uint32_t iFlags;
 
+	if ( !__xuiWidgetValid(pWidget) ) return 0;
 	iFlags = pWidget->iDirtyFlags;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		iFlags |= __xuiWidgetRecomputeSubtreeDirtyFlags(pChild);
@@ -7113,6 +7114,12 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 	if ( pWidget->onCacheRender != NULL ) {
 		iRet = pWidget->onCacheRender(pWidget, pDraw, iStateId, pWidget->pCacheRenderUser);
 	}
+	/* Destruction is deferred by RenderPrepare's operation, but the cache must
+	 * stop now and close its draw before any surface can be purged. */
+	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) ) {
+		__xuiWidgetEndActiveUpdate(pWidget);
+		return XUI_OK;
+	}
 	if ( (iRet == XUI_OK) && (iPolicy == XUI_CACHE_POLICY_SUBTREE) ) {
 		tWorldRect = xuiWidgetGetWorldRect(pWidget);
 		iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
@@ -7164,6 +7171,8 @@ static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, i
 		return XUI_OK;
 	}
 	iRet = __xuiWidgetUpdateCacheState(pWidget, iStateId);
+	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) ) return XUI_OK;
+	pSlot = __xuiWidgetFindCacheSlot(pWidget, iStateId);
 	if ( iRet != XUI_OK ) {
 		if ( pSlot != NULL ) {
 			__xuiWidgetPurgeCacheSlotSurface(pWidget, pSlot);
@@ -7204,6 +7213,7 @@ static int __xuiWidgetPrepareCache(xui_widget pWidget)
 		iCount = pWidget->iCacheCount;
 		for ( i = 0; i < iCount; i++ ) {
 			iRet = __xuiWidgetPrepareCacheState(pWidget, pWidget->pCacheSlots[i].iStateId, bForceAll);
+			if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) ) return XUI_OK;
 			if ( iRet != XUI_OK ) {
 				return iRet;
 			}
@@ -7216,15 +7226,19 @@ static int __xuiWidgetPrepareCache(xui_widget pWidget)
 static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 {
 	xui_widget pChild;
+	xui_widget pNext;
 	int iRet;
 
-	if ( !pWidget->bVisible ) {
+	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) || !pWidget->bVisible ) {
 		return;
 	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pNext ) {
+		pNext = pChild->pNextSibling;
 		__xuiWidgetRenderPrepareTree(pChild);
+		if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) ) return;
 	}
 	iRet = __xuiWidgetPrepareCache(pWidget);
+	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) ) return;
 	if ( iRet != XUI_OK ) {
 		xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_CACHE, 1,
 			"cache.prepare", "The widget cache could not be prepared and was skipped.");
@@ -7233,6 +7247,7 @@ static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 
 static int __xuiRenderPrepareOperation(xui_context pContext)
 {
+	xui_widget pRoot;
 	uint32_t iGeneration;
 	int iRet;
 
@@ -7252,18 +7267,23 @@ static int __xuiRenderPrepareOperation(xui_context pContext)
 	pContext->tRenderStats.iSize = sizeof(pContext->tRenderStats);
 	pContext->tRenderStats.iGeneration = iGeneration;
 	iRet = xuiInternalEnsureLayout(pContext);
+	if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
 	if ( iRet != XUI_OK ) {
 		xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_LAYOUT, 0,
 			"layout", "Layout failed; rendering cannot safely continue with a new tree.");
 		return iRet;
 	}
-	if ( pContext->pRoot != NULL ) {
-		__xuiWidgetRenderPrepareTree(pContext->pRoot);
-		(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pContext->pRoot);
+	pRoot = pContext->pRoot;
+	if ( pRoot != NULL ) {
+		__xuiWidgetRenderPrepareTree(pRoot);
+		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
+		if ( pContext->pRoot == pRoot ) (void)__xuiWidgetRecomputeSubtreeDirtyFlags(pRoot);
 	}
-	if ( pContext->pOverlayRoot != NULL ) {
-		__xuiWidgetRenderPrepareTree(pContext->pOverlayRoot);
-		(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pContext->pOverlayRoot);
+	pRoot = pContext->pOverlayRoot;
+	if ( pRoot != NULL ) {
+		__xuiWidgetRenderPrepareTree(pRoot);
+		if ( !xuiInternalContextDestroyPending(pContext) && pContext->pOverlayRoot == pRoot )
+			(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pRoot);
 	}
 	return XUI_OK;
 }

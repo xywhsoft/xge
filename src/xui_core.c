@@ -3101,10 +3101,12 @@ static int __xuiRenderOperation(xui_context pContext, xui_surface pTarget, const
 	}
 	if ( pContext->pRoot != NULL ) {
 		iRet = xuiRenderPrepare(pContext);
+		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 		iRet = xuiBuildRenderTree(pContext);
+		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}

@@ -368,9 +368,6 @@ int main(int argc, char** argv)
     else for (callback = 0; callback < CALLBACKS; ++callback) for (action = 0; action < ACTIONS; ++action) {
         if ((action == READ_OTHER || action == READ_SAME) && callback != CELL && callback != MERGE) continue;
         for (path = 0; path < PATHS; ++path) {
-            /* The root-destruction render crash is in xuiRenderPrepare, outside TableView.
-             * Keep the exact reproducer callable as: 0 9 15 0. */
-            if (path == RENDER && action == DESTROY_ROOT) continue;
             if (callback == HEADER_RENDER ? path != HEADER && path != RENDER : path == HEADER) continue;
             if (callback >= CELL_FORMAT && callback < HEADER_RENDER && path != PAINT && path != RENDER) continue;
             if ((callback == CELL || callback == MERGE) && (path < CONTENT_RECT || path == SELECT_ROW)) continue;
@@ -385,6 +382,5 @@ int main(int argc, char** argv)
         for (action = LIVE; action <= DESTROY_CONTEXT; ++action) event_case(kind, action, callback);
     }
     printf("xui_table_provider_lifetime_test: %d cases, %d checks, %d failures\n", cases, checks, failures);
-    if (argc != 5) puts("Known external case excluded: root destruction in xuiRenderPrepare (0 9 15 0).");
     return failures ? 1 : 0;
 }
