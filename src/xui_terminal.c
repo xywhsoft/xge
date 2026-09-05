@@ -209,6 +209,7 @@ typedef struct xui_terminal_data_t {
 	uint32_t iSelectionTextColor;
 	uint32_t iSearchHighlightColor;
 	uint32_t iFocusColor;
+	uint32_t iDisabledFocusColor;
 	uint32_t iLinkHoverColor;
 	uint32_t iCurrentFg;
 	uint32_t iCurrentBg;
@@ -5082,6 +5083,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	uint32_t iOldSelectionText;
 	uint32_t iOldSearch;
 	uint32_t iOldFocus;
+	uint32_t iOldDisabledFocus;
 	uint32_t iOldLink;
 	uint32_t iOldCurrentFg;
 	uint32_t iOldCurrentBg;
@@ -5102,6 +5104,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	iOldSelectionText = pData->iSelectionTextColor;
 	iOldSearch = pData->iSearchHighlightColor;
 	iOldFocus = pData->iFocusColor;
+	iOldDisabledFocus = pData->iDisabledFocusColor;
 	iOldLink = pData->iLinkHoverColor;
 	iOldCurrentFg = pData->iCurrentFg;
 	iOldCurrentBg = pData->iCurrentBg;
@@ -5119,6 +5122,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	pData->iSelectionTextColor = pData->iBaseSelectionTextColor;
 	pData->iSearchHighlightColor = pData->iBaseSearchHighlightColor;
 	pData->iFocusColor = pData->iBaseFocusColor;
+	pData->iDisabledFocusColor = XUI_COLOR_RGBA(115,135,155,150);
 	pData->iLinkHoverColor = pData->iBaseLinkHoverColor;
 	pData->fCellWidth = pData->fBaseCellWidth;
 	pData->fCellHeight = pData->fBaseCellHeight;
@@ -5132,6 +5136,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	(void)__xuiTerminalStyleColor(pWidget, "terminal.selection.text_color", &pData->iSelectionTextColor);
 	(void)__xuiTerminalStyleColor(pWidget, "terminal.search.highlight_color", &pData->iSearchHighlightColor);
 	(void)__xuiTerminalStyleColor(pWidget, "terminal.focus.color", &pData->iFocusColor);
+	(void)__xuiTerminalStyleColor(pWidget, "terminal.focus.disabled_color", &pData->iDisabledFocusColor);
 	(void)__xuiTerminalStyleColor(pWidget, "terminal.link.hover_color", &pData->iLinkHoverColor);
 	for ( i = 0; i < 16; i++ ) {
 		snprintf(sName, sizeof(sName), "terminal.palette.%d", i);
@@ -5200,6 +5205,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	     (iOldSelectionText != pData->iSelectionTextColor) ||
 	     (iOldSearch != pData->iSearchHighlightColor) ||
 	     (iOldFocus != pData->iFocusColor) ||
+	     (iOldDisabledFocus != pData->iDisabledFocusColor) ||
 	     (iOldLink != pData->iLinkHoverColor) ||
 	     (memcmp(arrOldPalette, pData->arrPalette, sizeof(arrOldPalette)) != 0) ) {
 		__xuiTerminalMarkFullCacheDirty(pData);
@@ -5751,7 +5757,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		if ( iRet != XUI_OK ) goto render_done;
 	}
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL ) {
-		iFocusColor = xuiWidgetGetEnabled(pWidget) ? pData->iFocusColor : XUI_COLOR_RGBA(115, 135, 155, 150);
+		iFocusColor = xuiWidgetGetEnabled(pWidget) ? pData->iFocusColor : pData->iDisabledFocusColor;
 		if ( __xuiTerminalAlpha(iFocusColor) != 0 ) {
 			iRet = pProxy->drawRectStroke(pProxy, pDraw,
 				xuiInternalInsetRect(xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH), 0.5f),
@@ -5982,6 +5988,7 @@ static void __xuiTerminalRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTerminalRegisterStyleProperty(pContext, pType, "terminal.selection.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTerminalRegisterStyleProperty(pContext, pType, "terminal.search.highlight_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTerminalRegisterStyleProperty(pContext, pType, "terminal.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTerminalRegisterStyleProperty(pContext, pType, "terminal.focus.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTerminalRegisterStyleProperty(pContext, pType, "terminal.link.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTerminalRegisterStyleProperty(pContext, pType, "terminal.cell.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTerminalRegisterStyleProperty(pContext, pType, "terminal.cell.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);

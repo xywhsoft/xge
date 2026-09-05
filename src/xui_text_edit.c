@@ -209,6 +209,7 @@ static float __xuiTextEditMaxFloat(float fA, float fB)
 
 static uint32_t __xuiTextEditColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0 ) return iColor;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
@@ -2079,6 +2080,7 @@ static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDr
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) {
 		iBackground = tResolved.iDisabledBackgroundColor;
 		iBorder = __xuiTextEditColorWithAlpha(tResolved.iBorderColor, 120);
+		(void)__xuiTextEditStyleColor(pWidget, "textedit.border.disabled_color", "input.border.disabled_color", &iBorder);
 	} else if ( (iState & XUI_WIDGET_STATE_FOCUS) != 0 ) {
 		iBorder = tResolved.iFocusBorderColor;
 	} else if ( (iState & XUI_WIDGET_STATE_HOVER) != 0 ) {
@@ -3125,6 +3127,7 @@ static void __xuiTextEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.find.result_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.find.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

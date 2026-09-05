@@ -297,6 +297,7 @@ int main(void)
 
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "terminal.background.color") != 0u, "terminal background style registered");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "terminal.palette.1") != 0u, "terminal palette style registered");
+	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "terminal.focus.disabled_color") != 0u, "terminal disabled focus style registered");
 	arrStyle[0] = __xuiTerminalTestColorProp("terminal.foreground.color", iStyledForeground);
 	arrStyle[1] = __xuiTerminalTestColorProp("terminal.palette.1", iStyledPaletteRed);
 	arrStyle[2] = __xuiTerminalTestFloatProp("terminal.cell.width", 10.0f);
