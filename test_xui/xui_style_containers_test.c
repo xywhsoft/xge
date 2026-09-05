@@ -9,6 +9,41 @@ static int checks, failures;
 static uint32_t colors[4096];
 static int color_count;
 static xui_draw_rect_fill_proc fill_original;
+static xui_draw_surface_proc surface_original;
+static xui_draw_text_proc text_original;
+static xui_draw_line_proc line_original;
+static xui_widget_cache_render_proc frame_render_original;
+static void* frame_render_user;
+static int frame_renders;
+static xui_test_proxy_state_t* active_proxy;
+static int count_frame_render(xui_widget w, xui_draw_context d, uint32_t state, void* user)
+{
+    (void)user;
+    ++frame_renders;
+    return frame_render_original(w, d, state, frame_render_user);
+}
+static void record(uint32_t color)
+{
+    if (color_count < 4096) colors[color_count++] = color;
+}
+static int capture_surface(xui_proxy p, xui_draw_context d, xui_surface surface,
+    xui_rect_t src, xui_rect_t dst, uint32_t color, uint32_t flags)
+{
+    record(color);
+    return surface_original(p, d, surface, src, dst, color, flags);
+}
+static int capture_text(xui_proxy p, xui_draw_context d, xui_font font,
+    const char* text, xui_rect_t r, uint32_t color, uint32_t flags)
+{
+    record(color);
+    return text_original(p, d, font, text, r, color, flags);
+}
+static int capture_line(xui_proxy p, xui_draw_context d, float x, float y,
+    float x1, float y1, float width, uint32_t color)
+{
+    record(color);
+    return line_original(p, d, x, y, x1, y1, width, color);
+}
 static int capture_fill(xui_proxy p, xui_draw_context draw, xui_rect_t r, uint32_t color)
 {
     if (color_count < 4096) colors[color_count++] = color;
@@ -40,8 +75,12 @@ static xui_context setup(xui_test_proxy_state_t* proxy)
 {
     xui_context c = NULL;
     xuiTestProxyInit(proxy);
+    active_proxy = proxy;
     fill_original = proxy->tProxy.drawRectFill;
     proxy->tProxy.drawRectFill = capture_fill;
+    surface_original = proxy->tProxy.drawSurface; proxy->tProxy.drawSurface = capture_surface;
+    text_original = proxy->tProxy.drawText; proxy->tProxy.drawText = capture_text;
+    line_original = proxy->tProxy.drawLine; proxy->tProxy.drawLine = capture_line;
     CHECK(xuiCreate(&c) == XUI_OK);
     CHECK(xuiSetProxy(c, &proxy->tProxy) == XUI_OK);
     CHECK(xuiSetViewportSize(c, 640, 420) == XUI_OK);
@@ -49,8 +88,14 @@ static xui_context setup(xui_test_proxy_state_t* proxy)
 }
 static void paint(xui_context c)
 {
+    xui_surface target = NULL;
     color_count = 0;
+    frame_renders = 0;
+    CHECK(xuiTestSurfaceCreate(active_proxy, &target, 640, 420, 0) == XUI_OK);
     CHECK(xuiRenderPrepare(c) == XUI_OK);
+    CHECK(xuiWidgetRenderTree(xuiGetRootWidget(c), target) == XUI_OK);
+    CHECK(frame_renders <= 1);
+    active_proxy->tProxy.surfaceDestroy(&active_proxy->tProxy, target);
 }
 static void paint_only(xui_widget widget)
 {
@@ -65,6 +110,7 @@ static void scroll_styles(void)
     xui_style_property_t p[3];
     xui_style_desc_t s;
     xui_rect_t before;
+    uint32_t layout_version, frame_layout_version;
     uint32_t base_bg = 0x123456ff, base_corner = 0x234567ff, base_grip = 0x345678ff;
     memset(&desc, 0, sizeof(desc)); desc.iSize = sizeof(desc);
     desc.fContentWidth = 1200; desc.fContentHeight = 900;
@@ -73,12 +119,17 @@ static void scroll_styles(void)
     CHECK(xuiScrollViewCreate(c, &view, &desc) == XUI_OK);
     CHECK(xuiSetRootWidget(c, view) == XUI_OK);
     frame = xuiScrollViewGetFrameWidget(view);
+    CHECK(xuiWidgetGetCacheRenderCallback(frame, &frame_render_original, &frame_render_user) == XUI_OK);
+    CHECK(xuiWidgetSetCacheRenderCallback(frame, count_frame_render, NULL) == XUI_OK);
     bar = xuiScrollFrameGetVScrollBarWidget(frame);
     CHECK(xuiScrollViewSetBackgroundColor(view, base_bg) == XUI_OK);
     CHECK(xuiScrollViewSetCornerColors(view, base_corner, base_grip) == XUI_OK);
     paint(c);
     CHECK(seen(base_bg) && seen(base_corner) && seen(base_grip));
     before = xuiScrollFrameGetViewportRect(frame);
+    layout_version = view->iLayoutVersion;
+    frame_layout_version = frame->iLayoutVersion;
+    paint(c); CHECK(frame_renders == 0);
 
     p[0] = prop("scrollframe.background.color", 0x445566ff);
     p[1] = prop("scrollframe.corner.color", 0x556677ff);
@@ -114,6 +165,7 @@ static void scroll_styles(void)
     CHECK(!seen(base_bg) && !seen(base_corner) && !seen(base_grip));
     CHECK(!seen(0x987654ff) && !seen(0x8899aaff) && !seen(0x99aabbff));
     CHECK(xuiScrollFrameGetBackgroundColor(frame) == base_bg);
+    CHECK(frame_renders == 1);
     CHECK(xuiWidgetSetInlineStyle(view, NULL, 0) == XUI_OK);
     xuiWidgetClearStyleClasses(view);
     CHECK(xuiStyleRemoveType(c, xuiScrollViewGetType(c)) == XUI_OK);
@@ -123,6 +175,8 @@ static void scroll_styles(void)
         xui_rect_t after = xuiScrollFrameGetViewportRect(frame);
         CHECK(memcmp(&before, &after, sizeof(before)) == 0);
     }
+    CHECK(view->iLayoutVersion == layout_version);
+    CHECK(frame->iLayoutVersion == frame_layout_version);
 
     /* The actual nested ScrollBar owns all thumb/track/button styling. */
     p[0] = prop("scrollbar.track.color", 0xa1b2c3ff);
@@ -144,6 +198,7 @@ static void scroll_styles(void)
     paint(c); CHECK(!seen(base_bg));
     CHECK(xuiWidgetSetInlineStyle(frame, NULL, 0) == XUI_OK);
     paint(c); CHECK(seen(base_bg) && seen(base_corner) && seen(base_grip));
+    paint(c); CHECK(frame_renders == 0);
     xuiDestroy(c);
 }
 int main(void)

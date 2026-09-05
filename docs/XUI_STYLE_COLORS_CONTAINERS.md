@@ -13,8 +13,14 @@ restores the latest base colors.
 
 ScrollView colors override the corresponding colors of its owned ScrollFrame.
 The frame resolves them while painting, without changing its base palette.
-The view refreshes an already prepared frame cache on a runtime style change,
-including a change to transparent and removal of the override.
+The ScrollView properties are inherited by its backing frame, so normal style
+invalidation and cache preparation handle runtime changes without invoking
+child rendering callbacks or clearing their dirty flags manually.
+
+The baseline core resolves inherited styles for global stylesheet changes but
+not for local class/inline changes. The regression test intentionally checks
+those local changes without an explicit `xuiStyleRefresh`: integration needs
+the shared style resolver to propagate inherited-property changes to descendants.
 
 Scrollbars delegate to the actual ScrollBar widgets returned by
 `xuiScrollFrameGetHScrollBarWidget` / `xuiScrollFrameGetVScrollBarWidget` (or

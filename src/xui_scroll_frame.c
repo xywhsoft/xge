@@ -168,13 +168,10 @@ static uint32_t __xuiScrollFrameStyleColor(xui_widget pWidget, const char* sName
 	const char* sViewName, uint32_t iBase)
 {
 	xui_style_property_t tProperty;
-	xui_widget pParent = xuiWidgetGetParent(pWidget);
-	xui_widget_type pViewType = xuiWidgetFindType(xuiWidgetGetContext(pWidget), "scrollview");
 	if ( xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty) == XUI_OK &&
 	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) iBase = tProperty.tValue.iColor;
-	/* A ScrollView owns its frame; its palette never replaces the frame's API colors. */
-	if ( pViewType != NULL && xuiWidgetIsType(pParent, pViewType) &&
-	     xuiWidgetGetResolvedStyleProperty(pParent, sViewName, &tProperty) == XUI_OK &&
+	/* Inherited owner paint properties participate in normal child invalidation. */
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, sViewName, &tProperty) == XUI_OK &&
 	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) iBase = tProperty.tValue.iColor;
 	return iBase;
 }
