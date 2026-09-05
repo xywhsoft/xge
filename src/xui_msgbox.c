@@ -6,6 +6,12 @@
 #define XUI_MSGBOX_MAGIC 0x584D5342u
 #define XUI_MSGBOX_PRESET_BUTTON_TITLE_COUNT 4
 
+typedef struct xui_msgbox_button_paint_t {
+	uint32_t iBaseFill, iBaseBorder;
+	uint32_t iFill, iBorder;
+	int iMask;
+} xui_msgbox_button_paint_t;
+
 struct xui_msgbox_t {
 	uint32_t iMagic;
 	xui_context pContext;
@@ -21,6 +27,15 @@ struct xui_msgbox_t {
 	int arrButtonSemantic[XUI_MSGBOX_BUTTON_CAPACITY];
 	xui_msgbox_metrics_t tMetrics;
 	xui_msgbox_colors_t tColors;
+	xui_msgbox_button_paint_t arrButtonPaint[XUI_MSGBOX_BUTTON_CAPACITY][6];
+	uint32_t arrBaseMuted[XUI_MSGBOX_BUTTON_CAPACITY];
+	uint32_t arrAppliedMuted[XUI_MSGBOX_BUTTON_CAPACITY];
+	int arrStyledMuted[XUI_MSGBOX_BUTTON_CAPACITY];
+	xui_widget_cache_render_proc onWindowRender;
+	void* pWindowRenderUser;
+	uint32_t iPaintStyleHash;
+	int bPaintReady;
+	int bHasColors;
 	xui_msgbox_result_proc onResult;
 	void* pResultUser;
 	xui_widget_event_proc onWindowEvent;
@@ -48,6 +63,58 @@ struct xui_msgbox_t {
 static int __xuiMsgBoxValid(xui_msgbox pBox)
 {
 	return (pBox != NULL) && (pBox->iMagic == XUI_MSGBOX_MAGIC);
+}
+
+static int __xuiMsgBoxStyleColor(xui_msgbox pBox, const char* sName, uint32_t* pColor)
+{
+	xui_style_property_t tProperty;
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	if ( xuiWidgetGetResolvedStyleProperty(pBox->pWindow, sName, &tProperty) == XUI_OK &&
+		tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) {
+		*pColor = tProperty.tValue.iColor;
+		return 1;
+	}
+	return 0;
+}
+
+static uint32_t __xuiMsgBoxColor(xui_msgbox pBox, const char* sName, uint32_t iBase)
+{
+	(void)__xuiMsgBoxStyleColor(pBox, sName, &iBase);
+	return iBase;
+}
+
+static xui_widget_type __xuiMsgBoxEnsureType(xui_context pContext)
+{
+	static const char* arrNames[] = {
+		"msgbox.backdrop.color", "msgbox.client.color", "msgbox.text.color", "msgbox.text.muted_color",
+		"msgbox.icon.color", "msgbox.icon.text.color", "msgbox.button.color", "msgbox.button.hover_color",
+		"msgbox.button.active_color", "msgbox.button.focus_color", "msgbox.button.disabled_color",
+		"msgbox.button.border_color"
+	};
+	xui_widget_type pType = xuiWidgetFindType(pContext, "msgbox");
+	xui_widget_type_desc_t tDesc;
+	xui_style_property_info_t tInfo;
+	size_t i;
+	if ( pType != NULL ) return pType;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sName = "msgbox";
+	tDesc.pParent = xuiWindowGetType(pContext);
+	if ( tDesc.pParent == NULL ) return NULL;
+	tDesc.iTypeDataSize = tDesc.pParent->iTypeDataSize;
+	if ( xuiWidgetRegisterType(pContext, &pType, &tDesc) != XUI_OK ) return NULL;
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.pWidgetType = pType;
+	tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+	tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	tInfo.iFlags = XUI_STYLE_PROPERTY_INHERITED;
+	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); ++i ) {
+		tInfo.sName = arrNames[i];
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+	return pType;
 }
 
 static float __xuiMsgBoxMax(float fA, float fB)
@@ -496,6 +563,7 @@ static void __xuiMsgBoxApplyButtonVisual(xui_msgbox pBox)
 		}
 		(void)xuiButtonSetFont(pBox->arrButtons[i], __xuiMsgBoxFont(pBox));
 		(void)xuiButtonSetBorder(pBox->arrButtons[i], 1.0f, XUI_COLOR_RGBA(166, 196, 224, 255));
+		(void)xuiButtonSetDisabledTextColor(pBox->arrButtons[i], pBox->tColors.iMutedTextColor);
 		if ( pBox->arrButtonSemantic[i] == XUI_BUTTON_SEMANTIC_DEFAULT ) {
 			(void)xuiButtonSetColors(pBox->arrButtons[i],
 				pBox->tColors.iButtonColor,
@@ -505,6 +573,7 @@ static void __xuiMsgBoxApplyButtonVisual(xui_msgbox pBox)
 				pBox->tColors.iButtonDisabledColor);
 		}
 	}
+	pBox->bPaintReady = 0;
 }
 
 static float __xuiMsgBoxMeasureButtonWidth(xui_msgbox pBox, int iIndex)
@@ -689,10 +758,123 @@ static int __xuiMsgBoxSyncLayout(xui_msgbox pBox)
 	return __xuiMsgBoxLayout(pBox);
 }
 
+static void __xuiMsgBoxStyleButtons(xui_msgbox pBox)
+{
+	static const uint32_t arrStates[] = {0, XUI_WIDGET_STATE_HOVER, XUI_WIDGET_STATE_ACTIVE,
+		XUI_WIDGET_STATE_FOCUS, XUI_WIDGET_STATE_DISABLED, XUI_BUTTON_STATE_CHECKED};
+	static const char* arrFillNames[] = {"msgbox.button.color", "msgbox.button.hover_color",
+		"msgbox.button.active_color", "msgbox.button.color", "msgbox.button.disabled_color",
+		"msgbox.button.active_color"};
+	int i, j;
+	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; ++i ) {
+		if ( pBox->arrButtons[i] == NULL ) continue;
+		{
+			uint32_t iOld = xuiButtonGetDisabledTextColor(pBox->arrButtons[i]);
+			uint32_t iColor = iOld;
+			if ( pBox->arrStyledMuted[i] && iColor == pBox->arrAppliedMuted[i] ) iColor = pBox->arrBaseMuted[i];
+			pBox->arrBaseMuted[i] = iColor;
+			pBox->arrStyledMuted[i] = __xuiMsgBoxStyleColor(pBox, "msgbox.text.muted_color", &iColor);
+			pBox->arrAppliedMuted[i] = iColor;
+			if ( iColor != iOld ) (void)xuiButtonSetDisabledTextColor(pBox->arrButtons[i], iColor);
+		}
+		for ( j = 0; j < 6; ++j ) {
+			xui_msgbox_button_paint_t* pPaint = &pBox->arrButtonPaint[i][j];
+			uint32_t iFill, iBorder, iOldFill, iOldBorder;
+			float fWidth;
+			int iMask = 0;
+			(void)xuiButtonGetStateVisual(pBox->arrButtons[i], arrStates[j], &iOldFill, &fWidth, &iOldBorder);
+			iFill = iOldFill;
+			iBorder = iOldBorder;
+			/* Keep caller edits made while a service style is active as the new base. */
+			if ( (pPaint->iMask & 1) && iFill == pPaint->iFill ) iFill = pPaint->iBaseFill;
+			if ( (pPaint->iMask & 2) && iBorder == pPaint->iBorder ) iBorder = pPaint->iBaseBorder;
+			pPaint->iBaseFill = iFill;
+			pPaint->iBaseBorder = iBorder;
+			if ( __xuiMsgBoxStyleColor(pBox, arrFillNames[j], &iFill) ) iMask |= 1;
+			if ( __xuiMsgBoxStyleColor(pBox, "msgbox.button.border_color", &iBorder) ) iMask |= 2;
+			if ( j == 3 && __xuiMsgBoxStyleColor(pBox, "msgbox.button.focus_color", &iBorder) ) iMask |= 2;
+			pPaint->iFill = iFill;
+			pPaint->iBorder = iBorder;
+			pPaint->iMask = iMask;
+			if ( iFill != iOldFill || iBorder != iOldBorder )
+				(void)xuiButtonSetStateVisual(pBox->arrButtons[i], arrStates[j], iFill, fWidth, iBorder);
+		}
+	}
+}
+
+static int __xuiMsgBoxSyncPaint(xui_msgbox pBox)
+{
+	uint32_t iHash;
+	if ( !__xuiMsgBoxValid(pBox) || pBox->pContent == NULL || pBox->pBackdrop == NULL ) return 0;
+	iHash = xuiWidgetGetStyleHash(pBox->pWindow);
+	if ( pBox->bPaintReady && pBox->iPaintStyleHash == iHash ) return 0;
+	pBox->iPaintStyleHash = iHash;
+	pBox->bPaintReady = 1;
+	__xuiMsgBoxStyleButtons(pBox);
+	(void)xuiWidgetInvalidate(pBox->pContent, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiWidgetInvalidate(pBox->pBackdrop, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiWidgetInvalidate(xuiWindowGetClientWidget(pBox->pWindow), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return 1;
+}
+
+/* A local class/inline change only dirties the window. Its children may already
+ * have prepared before the window callback, so refresh the owned SELF caches. */
+static int __xuiMsgBoxRefreshCache(xui_widget pWidget)
+{
+	xui_draw_context pDraw;
+	uint32_t iState;
+	int iRet, iEndRet;
+	if ( pWidget == NULL || !xuiWidgetGetVisible(pWidget) || pWidget->onCacheRender == NULL ||
+		pWidget->pActiveUpdateDraw != NULL ||
+		(pWidget->tCachePolicy.iPolicy != XUI_CACHE_POLICY_SELF &&
+		 !(pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_AUTO && pWidget->iChildCount == 0)) )
+		return XUI_OK;
+	iState = xuiWidgetGetStateId(pWidget);
+	iRet = xuiWidgetUpdateBegin(pWidget, iState, XUI_WIDGET_UPDATE_CLEAR, 0, &pDraw);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = pWidget->onCacheRender(pWidget, pDraw, iState, pWidget->pCacheRenderUser);
+	iEndRet = xuiWidgetUpdateEnd(pWidget, iState, pDraw);
+	if ( iRet == XUI_OK && iEndRet == XUI_OK )
+		xuiWidgetClearDirty(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE);
+	return iRet != XUI_OK ? iRet : iEndRet;
+}
+
+static int __xuiMsgBoxWindowRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_msgbox pBox = (xui_msgbox)pUser;
+	int bChanged, i, iRet;
+	if ( !__xuiMsgBoxValid(pBox) ) return XUI_ERROR_INVALID_ARGUMENT;
+	bChanged = __xuiMsgBoxSyncPaint(pBox);
+	iRet = pBox->onWindowRender(pWidget, pDraw, iStateId, pBox->pWindowRenderUser);
+	if ( iRet != XUI_OK || !bChanged ) return iRet;
+	iRet = __xuiMsgBoxRefreshCache(pBox->pContent);
+	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxRefreshCache(xuiWindowGetClientWidget(pWidget));
+	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxRefreshCache(pBox->pBackdrop);
+	for ( i = 0; iRet == XUI_OK && i < XUI_MSGBOX_BUTTON_CAPACITY; ++i )
+		iRet = __xuiMsgBoxRefreshCache(pBox->arrButtons[i]);
+	return iRet;
+}
+
+static int __xuiMsgBoxClientRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_msgbox pBox = (xui_msgbox)pUser;
+	xui_proxy pProxy;
+	uint32_t iColor;
+	(void)iStateId;
+	if ( !__xuiMsgBoxValid(pBox) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(pBox->pContext);
+	(void)xuiWindowGetColors(pBox->pWindow, NULL, &iColor, NULL, NULL, NULL, NULL, NULL, NULL);
+	iColor = __xuiMsgBoxColor(pBox, "window.client.color", iColor);
+	iColor = __xuiMsgBoxColor(pBox, "msgbox.client.color", iColor);
+	if ( (iColor & 0xffu) == 0u || pProxy == NULL || pProxy->drawRectFill == NULL ) return XUI_OK;
+	return pProxy->drawRectFill(pProxy, pDraw, xuiWidgetGetContentRect(pWidget), iColor);
+}
+
 static int __xuiMsgBoxWindowUpdate(xui_widget pWidget, float fDelta, void* pUser)
 {
 	(void)pWidget;
 	(void)fDelta;
+	(void)__xuiMsgBoxSyncPaint((xui_msgbox)pUser);
 	return __xuiMsgBoxSyncLayout((xui_msgbox)pUser);
 }
 
@@ -745,7 +927,7 @@ static int __xuiMsgBoxDrawTextLayout(xui_msgbox pBox, xui_draw_context pDraw)
 		tLineRect.fY = pBox->tMessageRect.fY + tLine.fY;
 		tLineRect.fW = pBox->tMessageRect.fW;
 		tLineRect.fH = tLine.fH;
-		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), pBox->tColors.iMessageColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), __xuiMsgBoxColor(pBox, "msgbox.text.color", pBox->tColors.iMessageColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
@@ -761,7 +943,7 @@ static int __xuiMsgBoxDrawIconFallback(xui_msgbox pBox, xui_draw_context pDraw, 
 		return XUI_OK;
 	}
 	tIcon = xuiInternalSnapRect(pBox->tIconRect);
-	iColor = pBox->tColors.iIconColor;
+	iColor = __xuiMsgBoxColor(pBox, "msgbox.icon.color", pBox->tColors.iIconColor);
 	if ( pProxy->drawCircleFill != NULL ) {
 		(void)pProxy->drawCircleFill(pProxy, pDraw, tIcon.fX + tIcon.fW * 0.5f, tIcon.fY + tIcon.fH * 0.5f, tIcon.fW * 0.5f, iColor);
 	} else if ( pProxy->drawRectFill != NULL ) {
@@ -771,7 +953,7 @@ static int __xuiMsgBoxDrawIconFallback(xui_msgbox pBox, xui_draw_context pDraw, 
 	}
 	if ( pProxy->drawText != NULL ) {
 		tText = tIcon;
-		(void)pProxy->drawText(pProxy, pDraw, __xuiMsgBoxFont(pBox), __xuiMsgBoxIconFallbackText(pBox->iType), tText, XUI_COLOR_WHITE, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, __xuiMsgBoxFont(pBox), __xuiMsgBoxIconFallbackText(pBox->iType), tText, __xuiMsgBoxColor(pBox, "msgbox.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -809,7 +991,8 @@ static int __xuiMsgBoxDrawIcon(xui_msgbox pBox, xui_draw_context pDraw, xui_prox
 	if ( pSurface == NULL ) {
 		return __xuiMsgBoxDrawIconFallback(pBox, pDraw, pProxy);
 	}
-	return pProxy->drawSurface(pProxy, pDraw, pSurface, tSrc, xuiInternalSnapRect(pBox->tIconRect), XUI_COLOR_WHITE, 0);
+	return pProxy->drawSurface(pProxy, pDraw, pSurface, tSrc, xuiInternalSnapRect(pBox->tIconRect), pBox->bCustomIcon ? XUI_COLOR_WHITE :
+		__xuiMsgBoxColor(pBox, "msgbox.icon.color", pBox->tColors.iIconColor), 0);
 }
 
 static int __xuiMsgBoxContentRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -849,7 +1032,7 @@ static int __xuiMsgBoxBackdropRender(xui_widget pWidget, xui_draw_context pDraw,
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	return pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), pBox->tColors.iBackdropColor);
+	return pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), __xuiMsgBoxColor(pBox, "msgbox.backdrop.color", pBox->tColors.iBackdropColor));
 }
 
 static int __xuiMsgBoxBackdropEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -991,6 +1174,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	xui_msgbox pBox;
 	xui_window_desc_t tWindowDesc;
 	xui_button_desc_t tButtonDesc;
+	xui_widget_type pType;
 	int i;
 	int iRet;
 
@@ -998,6 +1182,8 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppBox = NULL;
+	pType = __xuiMsgBoxEnsureType(pContext);
+	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	pBox = (xui_msgbox)xrtCalloc(1, sizeof(*pBox));
 	if ( pBox == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1009,6 +1195,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	__xuiMsgBoxDefaultColors(&pBox->tColors);
 	if ( pDesc != NULL && pDesc->bHasMetrics ) pBox->tMetrics = pDesc->tMetrics;
 	if ( pDesc != NULL && pDesc->bHasColors ) pBox->tColors = pDesc->tColors;
+	pBox->bHasColors = pDesc != NULL && pDesc->bHasColors;
 	pBox->tMetrics.iSize = sizeof(pBox->tMetrics);
 	pBox->tColors.iSize = sizeof(pBox->tColors);
 	pBox->iType = (pDesc != NULL) ? pDesc->iType : XUI_MSGBOX_ICON_INFO;
@@ -1022,7 +1209,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 		pBox->bCustomIcon = 1;
 		pBox->bBuiltinIcon = 0;
 	}
-	pBox->tColors.iIconColor = __xuiMsgBoxIconColor(pBox->iType);
+	if ( !pBox->bHasColors ) pBox->tColors.iIconColor = __xuiMsgBoxIconColor(pBox->iType);
 	iRet = __xuiMsgBoxReplaceText(&pBox->sTitle, (pDesc != NULL && pDesc->sTitle != NULL) ? pDesc->sTitle : "Message");
 	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxReplaceText(&pBox->sMessage, (pDesc != NULL && pDesc->sMessage != NULL) ? pDesc->sMessage : "");
 	if ( iRet != XUI_OK ) {
@@ -1052,7 +1239,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	tWindowDesc.iButtonColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tWindowDesc.iButtonHoverColor = XUI_COLOR_RGBA(218, 234, 249, 255);
 	tWindowDesc.iButtonActiveColor = XUI_COLOR_RGBA(200, 222, 244, 255);
-	iRet = xuiWindowCreate(pContext, &pBox->pWindow, &tWindowDesc);
+	iRet = xuiWidgetCreateTyped(pContext, pType, &pBox->pWindow, &tWindowDesc);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
 		return iRet;
@@ -1064,6 +1251,10 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	(void)xuiWidgetSetEventCallback(pBox->pWindow, __xuiMsgBoxWindowEvent, pBox);
 	pBox->pWindow->onUpdate = __xuiMsgBoxWindowUpdate;
 	pBox->pWindow->pUpdateUser = pBox;
+	pBox->onWindowRender = pBox->pWindow->onCacheRender;
+	pBox->pWindowRenderUser = pBox->pWindow->pCacheRenderUser;
+	(void)xuiWidgetSetCacheRenderCallback(pBox->pWindow, __xuiMsgBoxWindowRender, pBox);
+	(void)xuiWidgetSetCacheRenderCallback(xuiWindowGetClientWidget(pBox->pWindow), __xuiMsgBoxClientRender, pBox);
 	(void)xuiWidgetSetLayoutType(xuiWindowGetClientWidget(pBox->pWindow), XUI_LAYOUT_MANUAL);
 	(void)xuiWidgetSetFlowMode(xuiWindowGetClientWidget(pBox->pWindow), XUI_FLOW_ABSOLUTE);
 	(void)xuiWidgetSetPadding(xuiWindowGetClientWidget(pBox->pWindow), (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
@@ -1225,7 +1416,7 @@ XUI_API int xuiMsgBoxSetType(xui_msgbox pBox, int iType)
 	pBox->bBuiltinIcon = 1;
 	pBox->bCustomIcon = 0;
 	pBox->pIconSurface = NULL;
-	pBox->tColors.iIconColor = __xuiMsgBoxIconColor(iType);
+	if ( !pBox->bHasColors ) pBox->tColors.iIconColor = __xuiMsgBoxIconColor(iType);
 	pBox->iChangeCount++;
 	return __xuiMsgBoxLayout(pBox);
 }
@@ -1430,23 +1621,23 @@ XUI_API int xuiMsgBoxGetMetrics(xui_msgbox pBox, xui_msgbox_metrics_t* pMetrics)
 
 XUI_API int xuiMsgBoxSetColors(xui_msgbox pBox, const xui_msgbox_colors_t* pColors)
 {
+	uint32_t iBackground, iTitle, iText, iBorder, iButton, iHover, iActive;
+	uint32_t iInactiveTitle, iInactiveText, iActiveBorder, iCloseHover, iCloseActive;
 	if ( !__xuiMsgBoxValid(pBox) || !__xuiMsgBoxColorsValid(pColors) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pBox->tColors = *pColors;
 	pBox->tColors.iSize = sizeof(pBox->tColors);
+	pBox->bHasColors = 1;
+	(void)xuiWindowGetColors(pBox->pWindow, &iBackground, NULL, &iTitle, &iText, &iBorder, &iButton, &iHover, &iActive);
+	(void)xuiWindowGetStateColors(pBox->pWindow, &iInactiveTitle, &iInactiveText, &iActiveBorder, &iCloseHover, &iCloseActive);
 	(void)xuiWindowSetColors(pBox->pWindow,
-		XUI_COLOR_RGBA(245, 250, 254, 255),
-		pBox->tColors.iClientColor,
-		XUI_COLOR_RGBA(231, 241, 250, 255),
-		XUI_COLOR_RGBA(35, 54, 80, 255),
-		XUI_COLOR_RGBA(135, 173, 211, 255),
-		XUI_COLOR_RGBA(232, 242, 251, 255),
-		XUI_COLOR_RGBA(218, 234, 249, 255),
-		XUI_COLOR_RGBA(200, 222, 244, 255));
+		iBackground, pBox->tColors.iClientColor, iTitle, iText, iBorder, iButton, iHover, iActive);
+	(void)xuiWindowSetStateColors(pBox->pWindow, iInactiveTitle, iInactiveText, iActiveBorder, iCloseHover, iCloseActive);
 	__xuiMsgBoxApplyButtonVisual(pBox);
+	(void)__xuiMsgBoxSyncPaint(pBox);
 	pBox->iChangeCount++;
-	return __xuiMsgBoxLayout(pBox);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgBoxGetColors(xui_msgbox pBox, xui_msgbox_colors_t* pColors)

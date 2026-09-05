@@ -15,10 +15,21 @@ typedef struct fixture_t {
 	xui_test_proxy_state_t proxy;
 } fixture_t;
 
+static xui_draw_begin_proc original_begin;
+
+static int record_begin(xui_proxy proxy, xui_draw_context* draw, xui_surface target)
+{
+	/* Record the final cache rebuild, not stale draws replaced earlier in this frame. */
+	xuiTestSurfaceReset(target);
+	return original_begin(proxy, draw, target);
+}
+
 static int init(fixture_t* f)
 {
 	memset(f, 0, sizeof(*f));
 	xuiTestProxyInit(&f->proxy);
+	original_begin = f->proxy.tProxy.drawBegin;
+	f->proxy.tProxy.drawBegin = record_begin;
 	OK(xuiCreate(&f->context));
 	OK(xuiSetProxy(f->context, &f->proxy.tProxy));
 	OK(f->proxy.tProxy.fontLoadMemory(&f->proxy.tProxy, &f->font, "body", 4, 14.0f, XUI_FONT_FORMAT_TTF));
@@ -321,12 +332,88 @@ static int toast_colors(void)
 	return 0;
 }
 
+static int msgbox_colors(void)
+{
+	fixture_t f;
+	xui_msgbox box;
+	xui_msgbox_desc_t desc;
+	xui_msgbox_colors_t base, after;
+	xui_widget window, content, client, backdrop, button;
+	xui_style_property_t p[6];
+	xui_style_desc_t s;
+	xui_rect_i_t full = {0, 0, 800, 600};
+	uint32_t buttonBase, current;
+	CHECK(init(&f) == 0);
+	memset(&desc, 0, sizeof(desc));
+	desc.iSize = sizeof(desc);
+	desc.sTitle = "Status";
+	desc.sMessage = "Saved message";
+	desc.iType = XUI_MSGBOX_ICON_INFO;
+	desc.iButtons = XUI_MSGBOX_BUTTON_OK_CANCEL;
+	OK(xuiMsgBoxCreate(f.context, &box, &desc));
+	OK(xuiMsgBoxGetColors(box, &base));
+	base.iClientColor = 0x567831ff;
+	base.iIconColor = 0x386714ff;
+	OK(xuiMsgBoxSetColors(box, &base));
+	OK(xuiMsgBoxSetOpen(box, 1));
+	window = xuiMsgBoxGetWindowWidget(box);
+	content = xuiMsgBoxGetContentWidget(box);
+	client = xuiWindowGetClientWidget(window);
+	backdrop = xuiMsgBoxGetBackdropWidget(box);
+	button = xuiMsgBoxGetButtonWidget(box, 1);
+	OK(xuiButtonSetStateVisual(button, 0, 0x184628ff, 1, 0x615273ff));
+	OK(xuiButtonGetStateVisual(button, 0, &buttonBase, NULL, NULL));
+	CHECK(render(&f) == 0 && fill(client, base.iClientColor) > 0);
+	CHECK(xuiWidgetIsType(window, xuiWindowGetType(f.context)));
+	p[0] = color("msgbox.client.color", 0x967453ff);
+	p[1] = color("msgbox.backdrop.color", 0x67543277);
+	p[2] = color("msgbox.text.color", 0x761259ff);
+	p[3] = color("msgbox.icon.color", 0x753219ff);
+	p[4] = color("msgbox.button.color", 0x675421ff);
+	p[5] = color("msgbox.text.muted_color", 0x716238ff);
+	s = style(p, 6);
+	OK(xuiStyleSetType(f.context, xuiWidgetFindType(f.context, "msgbox"), &s));
+	CHECK(paint_only(window) == 0);
+	CHECK(render(&f) == 0 && fill(client, p[0].tValue.iColor) > 0 && fill(backdrop, p[1].tValue.iColor) > 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(content)) == p[2].tValue.iColor);
+	CHECK(xuiTestSurfaceGetLastColor(cache(content)) == p[3].tValue.iColor);
+	CHECK(fill(button, p[4].tValue.iColor) > 0);
+	OK(xuiMsgBoxGetColors(box, &after));
+	CHECK(memcmp(&base, &after, sizeof(base)) == 0);
+	OK(xuiWidgetSetEnabled(button, 0));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetLastTextColor(cache(button)) == p[5].tValue.iColor);
+	OK(xuiWidgetSetEnabled(button, 1));
+	p[0].tValue.iColor = 0;
+	p[1].tValue.iColor = 0;
+	p[2].tValue.iColor = 0;
+	p[3].tValue.iColor = 0;
+	p[4].tValue.iColor = 0;
+	OK(xuiWidgetSetInlineStyle(window, p, 5));
+	CHECK(paint_only(window) == 0);
+	reset_draws(f.root);
+	reset_draws(f.context->pOverlayRoot);
+	OK(xuiRender(f.context, f.target, &full, 1));
+	CHECK(fill(client, 0x967453ff) == 0 && xuiTestSurfaceGetRectFillCount(cache(client)) == 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(content)) == 0 && xuiTestSurfaceGetLastColor(cache(content)) == 0);
+	CHECK(fill(backdrop, 0x67543277) == 0 && fill(button, 0x675421ff) == 0);
+	OK(xuiWidgetSetInlineStyle(window, NULL, 0));
+	OK(xuiStyleRemoveType(f.context, xuiWidgetFindType(f.context, "msgbox")));
+	CHECK(render(&f) == 0 && fill(client, base.iClientColor) > 0 && fill(backdrop, base.iBackdropColor) > 0);
+	OK(xuiButtonGetStateVisual(button, 0, &current, NULL, NULL));
+	CHECK(current == buttonBase && fill(button, buttonBase) > 0);
+	xuiMsgBoxDestroy(box);
+	finish(&f);
+	puts("PASS msgbox composite rendered client/backdrop/text/icon/buttons, render-only inline/transparent refresh, clear restores API child palette");
+	return 0;
+}
+
 int main(void)
 {
 	CHECK(popup_colors() == 0);
 	CHECK(menu_colors() == 0);
 	CHECK(msgtip_colors() == 0);
 	CHECK(toast_colors() == 0);
+	CHECK(msgbox_colors() == 0);
 	puts("PASS style_overlays");
 	return 0;
 }
