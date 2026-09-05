@@ -2822,12 +2822,6 @@ static int __xuiCoreEffectiveCachePolicy(xui_widget pWidget)
 	if ( pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_AUTO ) {
 		return (pWidget->iChildCount > 0) ? XUI_CACHE_POLICY_SUBTREE : XUI_CACHE_POLICY_SELF;
 	}
-	if ( pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_SUBTREE_TILED ) {
-		return XUI_CACHE_POLICY_SUBTREE;
-	}
-	if ( pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_DISPLAY_LIST ) {
-		return XUI_CACHE_POLICY_SELF;
-	}
 	return pWidget->tCachePolicy.iPolicy;
 }
 

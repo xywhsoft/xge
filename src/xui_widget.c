@@ -484,6 +484,12 @@ static int __xuiCachePolicyValid(const xui_cache_policy_t* pPolicy)
 	return 1;
 }
 
+static int __xuiCachePolicySupported(int iPolicy)
+{
+	return iPolicy == XUI_CACHE_POLICY_NONE || iPolicy == XUI_CACHE_POLICY_SELF ||
+		iPolicy == XUI_CACHE_POLICY_SUBTREE || iPolicy == XUI_CACHE_POLICY_AUTO;
+}
+
 static int __xuiTooltipTypeValid(int iType)
 {
 	return (iType == XUI_TOOLTIP_NONE) ||
@@ -1630,12 +1636,6 @@ static int __xuiWidgetEffectiveCachePolicy(xui_widget pWidget)
 	if ( pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_AUTO ) {
 		return (pWidget->iChildCount > 0) ? XUI_CACHE_POLICY_SUBTREE : XUI_CACHE_POLICY_SELF;
 	}
-	if ( pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_SUBTREE_TILED ) {
-		return XUI_CACHE_POLICY_SUBTREE;
-	}
-	if ( pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_DISPLAY_LIST ) {
-		return XUI_CACHE_POLICY_SELF;
-	}
 	return pWidget->tCachePolicy.iPolicy;
 }
 
@@ -2778,6 +2778,10 @@ XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppType = NULL;
+	if ( (pDesc->iFlags & XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY) != 0 &&
+	     !__xuiCachePolicySupported(pDesc->tCachePolicy.iPolicy) ) {
+		return XUI_ERROR_UNSUPPORTED;
+	}
 	if ( __xuiWidgetFindTypeInContext(pContext, pDesc->sName) != NULL ) {
 		return XUI_ERROR_ALREADY_INITIALIZED;
 	}
@@ -6711,6 +6715,9 @@ XUI_API int xuiWidgetSetCachePolicy(xui_widget pWidget, const xui_cache_policy_t
 
 	if ( !__xuiWidgetValid(pWidget) || !__xuiCachePolicyValid(pPolicy) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !__xuiCachePolicySupported(pPolicy->iPolicy) ) {
+		return XUI_ERROR_UNSUPPORTED;
 	}
 	tPolicy = *pPolicy;
 	if ( tPolicy.iSize == 0 ) {

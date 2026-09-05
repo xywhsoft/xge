@@ -194,6 +194,17 @@ int main(void)
 	tDesc.onCacheRender = __xuiTestCacheRender;
 	tDesc.tLayout = __xuiTestLayoutDefault();
 	tDesc.tCachePolicy = tPolicy;
+	tDesc.tCachePolicy.iPolicy = XUI_CACHE_POLICY_SUBTREE_TILED;
+	iRet = xuiWidgetRegisterType(pContext, &pParentType, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && pParentType == NULL &&
+		xuiWidgetFindType(pContext, "test.parent") == NULL,
+		"unimplemented tiled type policy must fail without registration");
+	tDesc.tCachePolicy.iPolicy = XUI_CACHE_POLICY_DISPLAY_LIST;
+	iRet = xuiWidgetRegisterType(pContext, &pParentType, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && pParentType == NULL &&
+		xuiWidgetFindType(pContext, "test.parent") == NULL,
+		"unimplemented display-list type policy must fail without registration");
+	tDesc.tCachePolicy = tPolicy;
 	iRet = xuiWidgetRegisterType(pContext, &pParentType, &tDesc);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pParentType != NULL), "parent type register failed");
 	XUI_TEST_CHECK(xuiWidgetFindType(pContext, "test.parent") == pParentType, "parent type lookup failed");

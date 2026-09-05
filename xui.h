@@ -337,8 +337,10 @@ typedef struct xui_language_text_t {
 #define XUI_CACHE_POLICY_NONE		0
 #define XUI_CACHE_POLICY_SELF		1
 #define XUI_CACHE_POLICY_SUBTREE	2
+/* Reserved: SetCachePolicy/RegisterType return XUI_ERROR_UNSUPPORTED. */
 #define XUI_CACHE_POLICY_SUBTREE_TILED	3
 #define XUI_CACHE_POLICY_DISPLAY_LIST	4
+/* AUTO selects SUBTREE for a widget with children, otherwise SELF. */
 #define XUI_CACHE_POLICY_AUTO		5
 
 #define XUI_CACHE_UPDATE_ALL_STATES	0x00000001u
@@ -9076,6 +9078,7 @@ XUI_API int xuiWidgetGetResolvedStylePropertyAt(xui_widget pWidget, int iIndex, 
 
 XUI_API int xuiWidgetSetStateId(xui_widget pWidget, uint32_t iStateId);
 XUI_API uint32_t xuiWidgetGetStateId(xui_widget pWidget);
+/* An unsupported policy leaves the current policy unchanged. */
 XUI_API int xuiWidgetSetCachePolicy(xui_widget pWidget, const xui_cache_policy_t* pPolicy);
 XUI_API xui_cache_policy_t xuiWidgetGetCachePolicy(xui_widget pWidget);
 XUI_API int xuiWidgetSetCacheRenderCallback(xui_widget pWidget, xui_widget_cache_render_proc onRender, void* pUser);

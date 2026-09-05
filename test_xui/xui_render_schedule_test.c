@@ -1398,13 +1398,18 @@ int main(void)
 	tPolicy.iTileHeight = 16;
 	tPolicy.iMaxBytes = 4096;
 	iRet = xuiWidgetSetCachePolicy(pRoot, &tPolicy);
-	XUI_TEST_CHECK(iRet == XUI_OK, "root tiled cache policy failed");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED &&
+		xuiWidgetGetCachePolicy(pRoot).iPolicy == XUI_CACHE_POLICY_SUBTREE,
+		"unsupported tiled policy changed the root policy");
 	tPolicy.iPolicy = XUI_CACHE_POLICY_DISPLAY_LIST;
 	tPolicy.iTileWidth = 0;
 	tPolicy.iTileHeight = 0;
 	tPolicy.iMaxBytes = 0;
 	iRet = xuiWidgetSetCachePolicy(pChild, &tPolicy);
-	XUI_TEST_CHECK((iRet == XUI_OK) && (xuiWidgetGetCachePolicy(pChild).iPolicy == XUI_CACHE_POLICY_DISPLAY_LIST), "child display-list policy failed");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED &&
+		xuiWidgetGetCachePolicy(pChild).iPolicy == XUI_CACHE_POLICY_SELF &&
+		(xuiWidgetGetCachePolicy(pChild).iFlags & XUI_CACHE_UPDATE_ALL_STATES) != 0,
+		"unsupported display-list policy changed the child policy");
 	iRet = xuiWidgetSetLayer(pRoot, 0, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root layer failed");
 	iRet = xuiWidgetSetLayer(pChild, 3, 7);
