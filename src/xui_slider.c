@@ -287,13 +287,18 @@ static int __xuiSliderRectContains(xui_rect_t tRect, float fX, float fY)
 	       (fY < (tRect.fY + tRect.fH));
 }
 
-static xui_rect_t __xuiSliderTrackRect(const xui_slider_data_t* pData, xui_rect_t tContent)
+/* Geometry shared by the track, fill and knobs stays in float until output. */
+typedef struct xui_slider_rect_t {
+	float fX, fY, fW, fH;
+} xui_slider_rect_t;
+
+static xui_slider_rect_t __xuiSliderTrackRect(const xui_slider_data_t* pData, xui_rect_t tContent)
 {
-	xui_rect_t tTrack;
+	xui_slider_rect_t tTrack;
 	float fCrossSize;
 	float fInset;
 
-	tTrack = tContent;
+	tTrack = (xui_slider_rect_t){tContent.fX, tContent.fY, tContent.fW, tContent.fH};
 	fCrossSize = (pData->fTrackSize > 0.0f) ? pData->fTrackSize : 4.0f;
 	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
 		if ( fCrossSize > tContent.fH ) fCrossSize = tContent.fH;
@@ -320,12 +325,12 @@ static xui_rect_t __xuiSliderTrackRect(const xui_slider_data_t* pData, xui_rect_
 	}
 	if ( tTrack.fW < 0.0f ) tTrack.fW = 0.0f;
 	if ( tTrack.fH < 0.0f ) tTrack.fH = 0.0f;
-	return xuiInternalSnapRect(tTrack);
+	return tTrack;
 }
 
-static xui_rect_t __xuiSliderFillRect(const xui_slider_data_t* pData, xui_rect_t tTrack)
+static xui_rect_t __xuiSliderFillRect(const xui_slider_data_t* pData, xui_slider_rect_t tTrack)
 {
-	xui_rect_t tFill;
+	xui_slider_rect_t tFill;
 	float fRate;
 
 	tFill = tTrack;
@@ -336,19 +341,19 @@ static xui_rect_t __xuiSliderFillRect(const xui_slider_data_t* pData, xui_rect_t
 		tFill.fH = tTrack.fH * fRate;
 		tFill.fY = tTrack.fY + tTrack.fH - tFill.fH;
 	}
-	return xuiInternalSnapRect(tFill);
+	return xuiInternalRectFromFloatNearest(tFill.fX, tFill.fY, tFill.fW, tFill.fH);
 }
 
-static xui_rect_t __xuiSliderKnobRect(const xui_slider_data_t* pData, xui_rect_t tContent, xui_rect_t tTrack)
+static xui_rect_t __xuiSliderKnobRect(const xui_slider_data_t* pData, xui_rect_t tContent, xui_slider_rect_t tTrack)
 {
-	xui_rect_t tRect;
+	xui_slider_rect_t tRect;
 	float fRate;
 	float fSize;
 	float fCenter;
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return tRect;
+		return (xui_rect_t){0};
 	}
 	fRate = __xuiSliderRateFromData(pData);
 	fSize = (pData->fKnobSize > 0.0f) ? pData->fKnobSize : 14.0f;
@@ -373,17 +378,19 @@ static xui_rect_t __xuiSliderKnobRect(const xui_slider_data_t* pData, xui_rect_t
 		if ( tRect.fY < tContent.fY ) tRect.fY = tContent.fY;
 		if ( tRect.fY + tRect.fH > tContent.fY + tContent.fH ) tRect.fY = tContent.fY + tContent.fH - tRect.fH;
 	}
-	return xuiInternalSnapRect(tRect);
+	return xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH);
 }
 
 static void __xuiSliderUpdateRects(xui_widget pWidget, xui_slider_data_t* pData, const xui_slider_data_t* pResolved)
 {
 	xui_rect_t tContent;
+	xui_slider_rect_t tTrack;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
-	pData->tTrackRect = __xuiSliderTrackRect(pResolved, tContent);
-	pData->tFillRect = __xuiSliderFillRect(pResolved, pData->tTrackRect);
-	pData->tKnobRect = __xuiSliderKnobRect(pResolved, tContent, pData->tTrackRect);
+	tTrack = __xuiSliderTrackRect(pResolved, tContent);
+	pData->tTrackRect = xuiInternalRectFromFloatNearest(tTrack.fX, tTrack.fY, tTrack.fW, tTrack.fH);
+	pData->tFillRect = __xuiSliderFillRect(pResolved, tTrack);
+	pData->tKnobRect = __xuiSliderKnobRect(pResolved, tContent, tTrack);
 }
 
 static float __xuiSliderValueFromLocalPoint(const xui_slider_data_t* pData, float fLocalX, float fLocalY)
@@ -674,17 +681,16 @@ static int __xuiSliderDrawTrackFill(xui_proxy pProxy, xui_draw_context pDraw, xu
 	if ( (fRadius <= 0.0f) || (pProxy->drawCircleFill == NULL) ) {
 		return __xuiSliderDrawRectFill(pProxy, pDraw, tRect, iColor);
 	}
-	tBody = tRect;
 	if ( tRect.fW >= tRect.fH ) {
-		tBody.fX += fRadius;
-		tBody.fW -= fRadius * 2.0f;
+		tBody = xuiInternalRectFromFloatNearest(tRect.fX + fRadius, tRect.fY,
+			tRect.fW - fRadius * 2.0f, tRect.fH);
 		fCX0 = tRect.fX + fRadius;
 		fCY0 = tRect.fY + tRect.fH * 0.5f;
 		fCX1 = tRect.fX + tRect.fW - fRadius;
 		fCY1 = fCY0;
 	} else {
-		tBody.fY += fRadius;
-		tBody.fH -= fRadius * 2.0f;
+		tBody = xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY + fRadius,
+			tRect.fW, tRect.fH - fRadius * 2.0f);
 		fCX0 = tRect.fX + tRect.fW * 0.5f;
 		fCY0 = tRect.fY + fRadius;
 		fCX1 = fCX0;

@@ -300,13 +300,18 @@ static int __xuiRangeSliderRectContains(xui_rect_t tRect, float fX, float fY)
 	       (fY < (tRect.fY + tRect.fH));
 }
 
-static xui_rect_t __xuiRangeSliderTrackRect(const xui_range_slider_data_t* pData, xui_rect_t tContent)
+/* Geometry shared by the track, fill and knobs stays in float until output. */
+typedef struct xui_range_slider_rect_t {
+	float fX, fY, fW, fH;
+} xui_range_slider_rect_t;
+
+static xui_range_slider_rect_t __xuiRangeSliderTrackRect(const xui_range_slider_data_t* pData, xui_rect_t tContent)
 {
-	xui_rect_t tTrack;
+	xui_range_slider_rect_t tTrack;
 	float fCrossSize;
 	float fInset;
 
-	tTrack = tContent;
+	tTrack = (xui_range_slider_rect_t){tContent.fX, tContent.fY, tContent.fW, tContent.fH};
 	fCrossSize = (pData->fTrackSize > 0.0f) ? pData->fTrackSize : 4.0f;
 	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
 		if ( fCrossSize > tContent.fH ) fCrossSize = tContent.fH;
@@ -333,12 +338,12 @@ static xui_rect_t __xuiRangeSliderTrackRect(const xui_range_slider_data_t* pData
 	}
 	if ( tTrack.fW < 0.0f ) tTrack.fW = 0.0f;
 	if ( tTrack.fH < 0.0f ) tTrack.fH = 0.0f;
-	return xuiInternalSnapRect(tTrack);
+	return tTrack;
 }
 
-static xui_rect_t __xuiRangeSliderFillRect(const xui_range_slider_data_t* pData, xui_rect_t tTrack)
+static xui_rect_t __xuiRangeSliderFillRect(const xui_range_slider_data_t* pData, xui_range_slider_rect_t tTrack)
 {
-	xui_rect_t tFill;
+	xui_range_slider_rect_t tFill;
 	float fStartRate;
 	float fEndRate;
 	float fA;
@@ -361,19 +366,19 @@ static xui_rect_t __xuiRangeSliderFillRect(const xui_range_slider_data_t* pData,
 		tFill.fY = tTrack.fY + tTrack.fH * (1.0f - fB);
 		tFill.fH = tTrack.fH * (fB - fA);
 	}
-	return xuiInternalSnapRect(tFill);
+	return xuiInternalRectFromFloatNearest(tFill.fX, tFill.fY, tFill.fW, tFill.fH);
 }
 
-static xui_rect_t __xuiRangeSliderKnobRectForValue(const xui_range_slider_data_t* pData, xui_rect_t tContent, xui_rect_t tTrack, float fValue)
+static xui_rect_t __xuiRangeSliderKnobRectForValue(const xui_range_slider_data_t* pData, xui_rect_t tContent, xui_range_slider_rect_t tTrack, float fValue)
 {
-	xui_rect_t tRect;
+	xui_range_slider_rect_t tRect;
 	float fRate;
 	float fSize;
 	float fCenter;
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return tRect;
+		return (xui_rect_t){0};
 	}
 	fRate = __xuiRangeSliderRateFromValue(pData, fValue);
 	fSize = (pData->fKnobSize > 0.0f) ? pData->fKnobSize : 14.0f;
@@ -398,18 +403,20 @@ static xui_rect_t __xuiRangeSliderKnobRectForValue(const xui_range_slider_data_t
 		if ( tRect.fY < tContent.fY ) tRect.fY = tContent.fY;
 		if ( tRect.fY + tRect.fH > tContent.fY + tContent.fH ) tRect.fY = tContent.fY + tContent.fH - tRect.fH;
 	}
-	return xuiInternalSnapRect(tRect);
+	return xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH);
 }
 
 static void __xuiRangeSliderUpdateRects(xui_widget pWidget, xui_range_slider_data_t* pData, const xui_range_slider_data_t* pResolved)
 {
 	xui_rect_t tContent;
+	xui_range_slider_rect_t tTrack;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
-	pData->tTrackRect = __xuiRangeSliderTrackRect(pResolved, tContent);
-	pData->tFillRect = __xuiRangeSliderFillRect(pResolved, pData->tTrackRect);
-	pData->tStartKnobRect = __xuiRangeSliderKnobRectForValue(pResolved, tContent, pData->tTrackRect, pResolved->fStart);
-	pData->tEndKnobRect = __xuiRangeSliderKnobRectForValue(pResolved, tContent, pData->tTrackRect, pResolved->fEnd);
+	tTrack = __xuiRangeSliderTrackRect(pResolved, tContent);
+	pData->tTrackRect = xuiInternalRectFromFloatNearest(tTrack.fX, tTrack.fY, tTrack.fW, tTrack.fH);
+	pData->tFillRect = __xuiRangeSliderFillRect(pResolved, tTrack);
+	pData->tStartKnobRect = __xuiRangeSliderKnobRectForValue(pResolved, tContent, tTrack, pResolved->fStart);
+	pData->tEndKnobRect = __xuiRangeSliderKnobRectForValue(pResolved, tContent, tTrack, pResolved->fEnd);
 }
 
 static float __xuiRangeSliderValueFromLocalPoint(const xui_range_slider_data_t* pData, float fLocalX, float fLocalY)
