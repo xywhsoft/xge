@@ -1,11 +1,16 @@
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
+
+typedef struct xui_image_rect_t {
+	float fX, fY, fW, fH;
+} xui_image_rect_t;
 
 typedef struct xui_image_data_t {
 	xui_surface pSurface;
-	xui_rect_t tSrc;
-	xui_rect_t tDst;
+	xui_image_rect_t tSrc;
+	xui_image_rect_t tDst;
 	uint32_t iColor;
 	int iMode;
 	int iAlignX;
@@ -133,28 +138,34 @@ static int __xuiImageSurfaceDesc(xui_widget pWidget, xui_surface pSurface, xui_s
 	return pProxy->surfaceGetDesc(pProxy, pSurface, pDesc);
 }
 
-static xui_rect_t __xuiImageSourceRect(xui_widget pWidget, const xui_image_data_t* pData)
+static int __xuiImageFloatRectValid(xui_image_rect_t tRect)
+{
+	return isfinite(tRect.fX) && isfinite(tRect.fY) && isfinite(tRect.fW) && isfinite(tRect.fH) &&
+		tRect.fW >= 0.0f && tRect.fH >= 0.0f;
+}
+
+static xui_image_rect_t __xuiImageSourceRect(xui_widget pWidget, const xui_image_data_t* pData)
 {
 	xui_surface_desc_t tDesc;
-	xui_rect_t tSrc;
+	xui_image_rect_t tSrc;
 
 	memset(&tSrc, 0, sizeof(tSrc));
 	if ( pData == NULL ) {
 		return tSrc;
 	}
 	if ( (pData->tSrc.fW > 0.0f) && (pData->tSrc.fH > 0.0f) ) {
-		return xuiInternalSnapRect(pData->tSrc);
+		return pData->tSrc;
 	}
 	if ( __xuiImageSurfaceDesc(pWidget, pData->pSurface, &tDesc) == XUI_OK ) {
 		tSrc.fW = (float)tDesc.iWidth;
 		tSrc.fH = (float)tDesc.iHeight;
 	}
-	return xuiInternalSnapRect(tSrc);
+	return tSrc;
 }
 
 static xui_rect_t __xuiImageAlignRect(xui_rect_t tContent, float fW, float fH, int iAlignX, int iAlignY)
 {
-	xui_rect_t tDst;
+	xui_image_rect_t tDst;
 
 	tDst.fX = tContent.fX;
 	tDst.fY = tContent.fY;
@@ -170,7 +181,7 @@ static xui_rect_t __xuiImageAlignRect(xui_rect_t tContent, float fW, float fH, i
 	} else if ( iAlignY == XUI_ALIGN_END ) {
 		tDst.fY = tContent.fY + tContent.fH - fH;
 	}
-	return xuiInternalSnapRect(tDst);
+	return xuiInternalRectFromFloatNearest(tDst.fX, tDst.fY, tDst.fW, tDst.fH);
 }
 
 static void __xuiImageResolve(xui_widget pWidget, const xui_image_data_t* pData, xui_image_data_t* pResolved)
@@ -197,7 +208,7 @@ static void __xuiImageResolve(xui_widget pWidget, const xui_image_data_t* pData,
 static xui_rect_t __xuiImageDrawRectFromData(xui_widget pWidget, const xui_image_data_t* pData)
 {
 	xui_rect_t tContent;
-	xui_rect_t tSrc;
+	xui_image_rect_t tSrc;
 	xui_rect_t tDst;
 	float fSrcW;
 	float fSrcH;
@@ -217,10 +228,8 @@ static xui_rect_t __xuiImageDrawRectFromData(xui_widget pWidget, const xui_image
 	tDst = tContent;
 	switch ( pData->iMode ) {
 	case XUI_IMAGE_CUSTOM:
-		tDst = pData->tDst;
-		tDst.fX += tContent.fX;
-		tDst.fY += tContent.fY;
-		return xuiInternalSnapRect(tDst);
+		return xuiInternalRectFromFloatNearest(pData->tDst.fX + tContent.fX,
+			pData->tDst.fY + tContent.fY, pData->tDst.fW, pData->tDst.fH);
 	case XUI_IMAGE_STRETCH:
 		return xuiInternalSnapRect(tContent);
 	case XUI_IMAGE_CONTAIN:
@@ -253,7 +262,7 @@ static xui_rect_t __xuiImageDrawRectFromData(xui_widget pWidget, const xui_image
 static int __xuiImageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_image_data_t* pData;
-	xui_rect_t tSrc;
+	xui_image_rect_t tSrc;
 
 	(void)tConstraint;
 	if ( (pWidget == NULL) || (pSize == NULL) || (pUser == NULL) ) {
@@ -273,6 +282,7 @@ static int __xuiImageCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	xui_proxy pProxy;
 	xui_rect_t tSrc;
 	xui_rect_t tDst;
+	xui_image_rect_t tSource;
 
 	(void)iStateId;
 	(void)pUser;
@@ -294,7 +304,8 @@ static int __xuiImageCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( (tResolved.pSurface == NULL) || (__xuiImageColorAlpha(tResolved.iColor) == 0) ) {
 		return XUI_OK;
 	}
-	tSrc = __xuiImageSourceRect(pWidget, &tResolved);
+	tSource = __xuiImageSourceRect(pWidget, &tResolved);
+	tSrc = xuiInternalRectFromFloatNearest(tSource.fX, tSource.fY, tSource.fW, tSource.fH);
 	tDst = __xuiImageDrawRectFromData(pWidget, &tResolved);
 	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
 		return XUI_OK;
@@ -320,8 +331,8 @@ static int __xuiImageInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->iAlignY = XUI_ALIGN_CENTER;
 	if ( pDesc != NULL ) {
 		pData->pSurface = pDesc->pSurface;
-		pData->tSrc = pDesc->tSrc;
-		pData->tDst = pDesc->tDst;
+		pData->tSrc = (xui_image_rect_t){pDesc->tSrc.fX, pDesc->tSrc.fY, pDesc->tSrc.fW, pDesc->tSrc.fH};
+		pData->tDst = (xui_image_rect_t){pDesc->tDst.fX, pDesc->tDst.fY, pDesc->tDst.fW, pDesc->tDst.fH};
 		pData->iColor = (pDesc->iColor != 0) ? pDesc->iColor : XUI_COLOR_WHITE;
 		pData->iMode = pDesc->iMode;
 		pData->iAlignX = pDesc->iAlignX;
@@ -477,13 +488,20 @@ XUI_API int xuiImageSetSource(xui_widget pWidget, xui_rect_t tSrc)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pData->tSrc = tSrc;
+	pData->tSrc = (xui_image_rect_t){tSrc.fX, tSrc.fY, tSrc.fW, tSrc.fH};
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiImageSetSourceRect(xui_widget pWidget, float fX1, float fY1, float fX2, float fY2)
 {
-	return xuiImageSetSource(pWidget, (xui_rect_t){fX1, fY1, fX2 - fX1, fY2 - fY1});
+	xui_image_data_t* pData;
+	xui_image_rect_t tSrc = {fX1, fY1, fX2 - fX1, fY2 - fY1};
+
+	if ( !__xuiImageFloatRectValid(tSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData = __xuiImageGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->tSrc = tSrc;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiImageClearSource(xui_widget pWidget)
@@ -498,7 +516,8 @@ XUI_API xui_rect_t xuiImageGetSource(xui_widget pWidget)
 
 	memset(&tRect, 0, sizeof(tRect));
 	pData = __xuiImageGetData(pWidget);
-	return (pData != NULL) ? pData->tSrc : tRect;
+	return (pData != NULL) ? xuiInternalRectFromFloatNearest(pData->tSrc.fX, pData->tSrc.fY,
+		pData->tSrc.fW, pData->tSrc.fH) : tRect;
 }
 
 XUI_API int xuiImageSetColor(xui_widget pWidget, uint32_t iColor)
@@ -594,10 +613,10 @@ XUI_API int xuiImageGetAlign(xui_widget pWidget, int* pAlignX, int* pAlignY)
 XUI_API int xuiImageSetCustomRect(xui_widget pWidget, float fX1, float fY1, float fX2, float fY2)
 {
 	xui_image_data_t* pData;
-	xui_rect_t tDst;
+	xui_image_rect_t tDst;
 
-	tDst = (xui_rect_t){fX1, fY1, fX2 - fX1, fY2 - fY1};
-	if ( (tDst.fW < 0.0f) || (tDst.fH < 0.0f) ) {
+	tDst = (xui_image_rect_t){fX1, fY1, fX2 - fX1, fY2 - fY1};
+	if ( !__xuiImageFloatRectValid(tDst) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiImageGetData(pWidget);
@@ -616,7 +635,8 @@ XUI_API xui_rect_t xuiImageGetCustomRect(xui_widget pWidget)
 
 	memset(&tRect, 0, sizeof(tRect));
 	pData = __xuiImageGetData(pWidget);
-	return (pData != NULL) ? pData->tDst : tRect;
+	return (pData != NULL) ? xuiInternalRectFromFloatNearest(pData->tDst.fX, pData->tDst.fY,
+		pData->tDst.fW, pData->tDst.fH) : tRect;
 }
 
 XUI_API xui_rect_t xuiImageGetDrawRect(xui_widget pWidget)

@@ -662,9 +662,13 @@ surface_size:
 	return XUI_ERROR_UNSUPPORTED;
 }
 
-static xui_rect_t __xuiIconCenteredRect(xui_rect_t tOuter, float fWidth, float fHeight)
+typedef struct xui_icon_rect_t {
+	float fX, fY, fW, fH;
+} xui_icon_rect_t;
+
+static xui_icon_rect_t __xuiIconCenteredRect(xui_icon_rect_t tOuter, float fWidth, float fHeight)
 {
-	xui_rect_t tRect;
+	xui_icon_rect_t tRect;
 
 	tRect.fW = fWidth;
 	tRect.fH = fHeight;
@@ -673,7 +677,7 @@ static xui_rect_t __xuiIconCenteredRect(xui_rect_t tOuter, float fWidth, float f
 	return tRect;
 }
 
-static xui_rect_t __xuiIconFitRect(xui_rect_t tOuter, xui_vec2_t tSource, int iFitMode)
+static xui_icon_rect_t __xuiIconFitRect(xui_icon_rect_t tOuter, xui_vec2_t tSource, int iFitMode)
 {
 	float fScale;
 	float fScaleX;
@@ -704,6 +708,7 @@ static xui_rect_t __xuiIconFitRect(xui_rect_t tOuter, xui_vec2_t tSource, int iF
 static int __xuiIconResolveDrawRect(xui_icon pIcon, xui_rect_t tRect, const xui_icon_draw_desc_t* pDesc, xui_rect_t* pDrawRect)
 {
 	xui_vec2_t tSourceSize;
+	xui_icon_rect_t tLayout;
 	xui_icon_category_desc_t* pCategoryDesc;
 	uint32_t iFlags;
 	int iFitMode;
@@ -713,18 +718,19 @@ static int __xuiIconResolveDrawRect(xui_icon pIcon, xui_rect_t tRect, const xui_
 	     !__xuiIconFloatPositive(tRect.fH) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	tLayout = (xui_icon_rect_t){tRect.fX, tRect.fY, tRect.fW, tRect.fH};
 	iFlags = (pDesc != NULL) ? pDesc->iFlags : 0u;
 	iFitMode = (pDesc != NULL) ? pDesc->iFitMode : -1;
 	pCategoryDesc = __xuiIconCategoryValid(pIcon->pCategory) ? &pIcon->pCategory->tDesc : NULL;
 	if ( (pCategoryDesc != NULL) &&
 	     (pCategoryDesc->iSizeMode == XUI_ICON_SIZE_FIXED) &&
 	     ((iFlags & XUI_ICON_DRAW_IGNORE_CATEGORY_SIZE) == 0) ) {
-		tRect = __xuiIconCenteredRect(tRect, pCategoryDesc->fWidth, pCategoryDesc->fHeight);
+		tLayout = __xuiIconCenteredRect(tLayout, pCategoryDesc->fWidth, pCategoryDesc->fHeight);
 	}
 	if ( (iFlags & XUI_ICON_DRAW_USE_SOURCE_SIZE) != 0 ) {
 		iRet = __xuiIconIntrinsicSizeDepth(pIcon, &tSourceSize, 0);
 		if ( iRet == XUI_OK ) {
-			tRect = __xuiIconCenteredRect(tRect, tSourceSize.fX, tSourceSize.fY);
+			tLayout = __xuiIconCenteredRect(tLayout, tSourceSize.fX, tSourceSize.fY);
 		}
 	}
 	if ( iFitMode < 0 ) {
@@ -732,10 +738,11 @@ static int __xuiIconResolveDrawRect(xui_icon pIcon, xui_rect_t tRect, const xui_
 	}
 	iRet = __xuiIconIntrinsicSizeDepth(pIcon, &tSourceSize, 0);
 	if ( iRet != XUI_OK ) {
-		tSourceSize.fX = tRect.fW;
-		tSourceSize.fY = tRect.fH;
+		tSourceSize.fX = tLayout.fW;
+		tSourceSize.fY = tLayout.fH;
 	}
-	*pDrawRect = __xuiIconFitRect(tRect, tSourceSize, iFitMode);
+	tLayout = __xuiIconFitRect(tLayout, tSourceSize, iFitMode);
+	*pDrawRect = xuiInternalRectFromFloatNearest(tLayout.fX, tLayout.fY, tLayout.fW, tLayout.fH);
 	return XUI_OK;
 }
 
@@ -821,8 +828,8 @@ static int __xuiIconSurfaceAndSource(xui_icon pIcon, xui_surface* ppSurface, xui
 		if ( iRet != XUI_OK ) return iRet;
 		pSource->fX = 0.0f;
 		pSource->fY = 0.0f;
-		pSource->fW = (float)tDesc.iWidth;
-		pSource->fH = (float)tDesc.iHeight;
+		pSource->fW = tDesc.iWidth;
+		pSource->fH = tDesc.iHeight;
 	}
 	*ppSurface = pSurface;
 	return XUI_OK;
@@ -853,6 +860,7 @@ static int __xuiIconDrawDepth(xui_painter pPainter, xui_icon pIcon, xui_rect_t t
 		iRet = __xuiIconResolveDrawRect(pIcon, tRect, pDesc, &tDrawRect);
 		if ( iRet != XUI_OK ) return iRet;
 	}
+	if ( (tDrawRect.fW <= 0) || (tDrawRect.fH <= 0) ) return XUI_OK;
 	iColor = (pDesc != NULL) ? pDesc->iColor : XUI_COLOR_WHITE;
 	switch ( pIcon->iSourceType ) {
 	case XUI_ICON_SOURCE_SVG_PATH:
@@ -869,7 +877,7 @@ static int __xuiIconDrawDepth(xui_painter pPainter, xui_icon pIcon, xui_rect_t t
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiIconGetSurfaceDesc(pIcon, pEntry->pSurface, &tSurfaceDesc);
 		if ( iRet != XUI_OK ) return iRet;
-		tSource = (xui_rect_t){0.0f, 0.0f, (float)tSurfaceDesc.iWidth, (float)tSurfaceDesc.iHeight};
+		tSource = (xui_rect_t){0, 0, tSurfaceDesc.iWidth, tSurfaceDesc.iHeight};
 		return xuiPainterDrawSurface(pPainter, pEntry->pSurface, tSource, tDrawRect, iColor, 0);
 	case XUI_ICON_SOURCE_RASTER_FILE:
 	case XUI_ICON_SOURCE_RASTER_MEMORY:
