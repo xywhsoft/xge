@@ -12,6 +12,29 @@
 
 #include "xui_text_break.inl"
 
+int xuiInternalTextNextHardLine(const char* sText, int iSize, int iStart, int* pEnd, int* pNext)
+{
+	struct LineBreakContext tContext;
+	size_t iAt;
+	if ( sText == NULL || iSize < 0 || iStart < 0 || iStart > iSize || pEnd == NULL || pNext == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiUbInit(&tContext, 0, "-strict");
+	iAt = (size_t)iStart;
+	while ( iAt < (size_t)iSize ) {
+		size_t iBefore = iAt;
+		utf32_t iScalar = __xuiTextBreakDecode(sText, (size_t)iSize, &iAt);
+		enum LineBreakClass iClass = __xuiUbClass(&tContext, iScalar);
+		if ( iClass == LBP_BK || iClass == LBP_NL || iClass == LBP_CR || iClass == LBP_LF ) {
+			if ( iClass == LBP_CR && iAt < (size_t)iSize && sText[iAt] == '\n' ) iAt++;
+			*pEnd = (int)iBefore;
+			*pNext = (int)iAt;
+			return XUI_OK;
+		}
+	}
+	*pEnd = *pNext = iSize;
+	return XUI_OK;
+}
+
 struct xui_text_layout_t {
 	uint32_t iMagic;
 	xui_context pContext;
@@ -929,6 +952,37 @@ int xuiInternalTextLayoutGetDisplayLine(xui_text_layout pLayout, int iIndex, con
 	iRet = xuiTextLayoutGetLine(pLayout, iIndex, &tLine);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTextLayoutDisplayLine(pLayout, &tLine, ppText, pSize);
+}
+
+int xuiInternalTextLayoutLineAdvance(xui_text_layout pLayout, int iLine, int iOffset, float* pAdvance)
+{
+	xui_text_line_t tLine;
+	xui_vec2_t tSize;
+	int iRet, iEnd;
+	if ( pAdvance == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pAdvance = 0.0f;
+	iRet = xuiTextLayoutGetLine(pLayout, iLine, &tLine);
+	if ( iRet != XUI_OK ) return iRet;
+	iEnd = tLine.iTextOffset + tLine.iTextSize;
+	if ( iOffset <= tLine.iTextOffset ) return XUI_OK;
+	if ( iOffset >= iEnd ) { *pAdvance = tLine.fW; return XUI_OK; }
+	iRet = __xuiTextMeasureRange(pLayout, pLayout->sText + tLine.iTextOffset,
+		pLayout->sText + iOffset, &tSize);
+	if ( iRet == XUI_OK ) *pAdvance = tSize.fX;
+	return iRet;
+}
+
+int xuiInternalTextLayoutNextCaret(xui_text_layout pLayout, int iOffset, int iLimit, int* pNext)
+{
+	int iRet;
+	if ( pNext == NULL || iOffset < 0 || iLimit < iOffset ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pNext = iOffset;
+	iRet = __xuiTextLayoutEnsureDpi(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iLimit > pLayout->iTextSize ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pNext = (int)(__xuiTextNextLayoutCluster(pLayout, pLayout->sText + iOffset,
+		pLayout->sText + iLimit) - pLayout->sText);
+	return XUI_OK;
 }
 
 XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)

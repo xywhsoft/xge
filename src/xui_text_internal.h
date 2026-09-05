@@ -11,4 +11,14 @@
 int xuiInternalTextLayoutGetDisplayLine(xui_text_layout pLayout, int iIndex,
 	const char** ppText, int* pSize);
 
+/* Geometry remains in original UTF-8 coordinates, including discretionary hyphens. */
+int xuiInternalTextLayoutLineAdvance(xui_text_layout pLayout, int iLine,
+	int iOffset, float* pAdvance);
+int xuiInternalTextLayoutNextCaret(xui_text_layout pLayout, int iOffset,
+	int iLimit, int* pNext);
+
+/* Font-independent source lines; CRLF is one mandatory break. */
+int xuiInternalTextNextHardLine(const char* sText, int iSize, int iStart,
+	int* pEnd, int* pNext);
+
 #endif
