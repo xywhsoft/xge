@@ -6977,14 +6977,19 @@ static int __xuiWidgetEnsureCacheStateSlot(xui_widget pWidget, uint32_t iStateId
 	return xuiWidgetSetCacheStateId(pWidget, iOldCount, iStateId);
 }
 
-static int __xuiWidgetRenderTreeToDraw(xui_widget pWidget, xui_draw_context pDraw, float fOffsetX, float fOffsetY);
+static int __xuiWidgetRenderTreeToDraw(xui_widget pWidget, xui_draw_context pDraw,
+	xui_rect_t tTargetWorld, xui_rect_t tClip);
 
-static int __xuiWidgetRenderCacheToDraw(xui_widget pWidget, xui_draw_context pDraw, float fOffsetX, float fOffsetY)
+static int __xuiWidgetRenderCacheToDraw(xui_widget pWidget, xui_draw_context pDraw,
+	xui_rect_t tTargetWorld, xui_rect_t tClip)
 {
 	xui_widget_cache_slot_t* pSlot;
 	xui_proxy pProxy;
 	xui_rect_t tSrc;
 	xui_rect_t tDst;
+	xui_rect_t tWorld;
+	float fScaleX;
+	float fScaleY;
 	int iPolicy;
 	int iRet;
 
@@ -7000,14 +7005,15 @@ static int __xuiWidgetRenderCacheToDraw(xui_widget pWidget, xui_draw_context pDr
 	if ( pProxy == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	tSrc.fX = 0.0f;
-	tSrc.fY = 0.0f;
-	tSrc.fW = (float)pSlot->iWidth;
-	tSrc.fH = (float)pSlot->iHeight;
-	tDst = xuiWidgetGetWorldRect(pWidget);
-	tDst.fX -= fOffsetX;
-	tDst.fY -= fOffsetY;
-	tDst = xuiInternalSnapRect(tDst);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tDst = __xuiWidgetIntersectRect(tWorld, tClip);
+	if ( tDst.fW <= 0 || tDst.fH <= 0 ) return XUI_OK;
+	fScaleX = (float)pSlot->iWidth / tWorld.fW;
+	fScaleY = (float)pSlot->iHeight / tWorld.fH;
+	tSrc = xuiInternalRectFromFloatNearest((tDst.fX - tWorld.fX) * fScaleX,
+		(tDst.fY - tWorld.fY) * fScaleY, tDst.fW * fScaleX, tDst.fH * fScaleY);
+	tDst.fX -= tTargetWorld.fX;
+	tDst.fY -= tTargetWorld.fY;
 	iRet = pProxy->drawSurface(pProxy, pDraw, pSlot->pSurface, tSrc, tDst, XUI_COLOR_WHITE, 0);
 	if ( iRet == XUI_OK ) {
 		pWidget->pContext->tRenderStats.iDrawnCaches++;
@@ -7015,32 +7021,44 @@ static int __xuiWidgetRenderCacheToDraw(xui_widget pWidget, xui_draw_context pDr
 	return iRet;
 }
 
-static int __xuiWidgetRenderTreeToDraw(xui_widget pWidget, xui_draw_context pDraw, float fOffsetX, float fOffsetY)
+static int __xuiWidgetRenderTreeToDraw(xui_widget pWidget, xui_draw_context pDraw,
+	xui_rect_t tTargetWorld, xui_rect_t tClip)
 {
 	const xui_widget* ppChildren;
+	xui_rect_t tWorld;
+	xui_rect_t arrChildClips[4];
+	int iClipCount = 1;
+	int c;
 	int iChildCount;
 	int i;
 	int iPolicy;
 	int iRet;
 
-	if ( !pWidget->bVisible ) {
+	if ( !pWidget->bVisible || tClip.fW <= 0 || tClip.fH <= 0 ) {
 		return XUI_OK;
 	}
 	iPolicy = __xuiWidgetEffectiveCachePolicy(pWidget);
-	iRet = __xuiWidgetRenderCacheToDraw(pWidget, pDraw, fOffsetX, fOffsetY);
+	iRet = __xuiWidgetRenderCacheToDraw(pWidget, pDraw, tTargetWorld, tClip);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	if ( (iPolicy == XUI_CACHE_POLICY_SUBTREE) &&
-	     __xuiWidgetHasCurrentCacheSurface(pWidget) ) {
-		return XUI_OK;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	if ( pWidget->tLayout.iOverflow == XUI_OVERFLOW_CLIP ||
+	     pWidget->tLayout.iOverflow == XUI_OVERFLOW_HIDDEN ) {
+		tClip = __xuiWidgetIntersectRect(tClip, tWorld);
 	}
+	arrChildClips[0] = tClip;
+	if ( iPolicy == XUI_CACHE_POLICY_SUBTREE && __xuiWidgetHasCurrentCacheSurface(pWidget) ) {
+		/* The cache already contains the descendants inside its own box. */
+		iClipCount = xuiInternalRectSubtract(tClip, tWorld, arrChildClips);
+	}
+	if ( iClipCount == 0 || tClip.fW <= 0 || tClip.fH <= 0 ) return XUI_OK;
 	iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < iChildCount; ++i ) {
-		iRet = __xuiWidgetRenderTreeToDraw(ppChildren[i], pDraw, fOffsetX, fOffsetY);
-		if ( iRet != XUI_OK ) {
-			return iRet;
+		for ( c = 0; c < iClipCount; ++c ) {
+			iRet = __xuiWidgetRenderTreeToDraw(ppChildren[i], pDraw, tTargetWorld, arrChildClips[c]);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
 	return XUI_OK;
@@ -7107,7 +7125,7 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 		tWorldRect = xuiWidgetGetWorldRect(pWidget);
 		iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
 		for ( i = 0; iRet == XUI_OK && i < iChildCount; ++i ) {
-			iRet = __xuiWidgetRenderTreeToDraw(ppChildren[i], pDraw, tWorldRect.fX, tWorldRect.fY);
+			iRet = __xuiWidgetRenderTreeToDraw(ppChildren[i], pDraw, tWorldRect, tWorldRect);
 			if ( iRet != XUI_OK ) {
 				break;
 			}

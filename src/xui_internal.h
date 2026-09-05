@@ -678,6 +678,30 @@ static xui_rect_t xuiInternalSnapRectIn(xui_rect_t tRect)
 	return xuiInternalSnapRect(tRect);
 }
 
+/* Disjoint pieces of rect outside cover, in the same pixel coordinate space. */
+static int xuiInternalRectSubtract(xui_rect_t tRect, xui_rect_t tCover, xui_rect_t* pParts)
+{
+	int64_t l = tRect.fX > tCover.fX ? tRect.fX : tCover.fX;
+	int64_t t = tRect.fY > tCover.fY ? tRect.fY : tCover.fY;
+	int64_t rr = (int64_t)tRect.fX + tRect.fW;
+	int64_t rb = (int64_t)tRect.fY + tRect.fH;
+	int64_t cr = (int64_t)tCover.fX + tCover.fW;
+	int64_t cb = (int64_t)tCover.fY + tCover.fH;
+	int64_t r = rr < cr ? rr : cr;
+	int64_t b = rb < cb ? rb : cb;
+	int n = 0;
+	if ( tRect.fW <= 0 || tRect.fH <= 0 ) return 0;
+	if ( tCover.fW <= 0 || tCover.fH <= 0 || r <= l || b <= t ) {
+		pParts[0] = tRect;
+		return 1;
+	}
+	if ( t > tRect.fY ) pParts[n++] = (xui_rect_t){tRect.fX, tRect.fY, tRect.fW, (int)(t - tRect.fY)};
+	if ( b < rb ) pParts[n++] = (xui_rect_t){tRect.fX, (int)b, tRect.fW, (int)(rb - b)};
+	if ( l > tRect.fX ) pParts[n++] = (xui_rect_t){tRect.fX, (int)t, (int)(l - tRect.fX), (int)(b - t)};
+	if ( r < rr ) pParts[n++] = (xui_rect_t){(int)r, (int)t, (int)(rr - r), (int)(b - t)};
+	return n;
+}
+
 static xui_rect_i_t xuiInternalRectToDamage(xui_rect_t tRect)
 {
 	xui_rect_i_t tDamage;

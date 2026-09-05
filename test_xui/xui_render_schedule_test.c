@@ -125,10 +125,11 @@ static int __xuiTestDrawValid(xui_draw_context pDraw)
 
 static void __xuiTestColorWrite(unsigned char* pPixel, uint32_t iColor)
 {
-	pPixel[0] = (unsigned char)((iColor >> 24) & 0xFFu);
-	pPixel[1] = (unsigned char)((iColor >> 16) & 0xFFu);
-	pPixel[2] = (unsigned char)((iColor >> 8) & 0xFFu);
-	pPixel[3] = (unsigned char)(iColor & 0xFFu);
+	unsigned int a = iColor & 0xFFu;
+	pPixel[0] = (unsigned char)((((iColor >> 24) & 0xFFu) * a + 127u) / 255u);
+	pPixel[1] = (unsigned char)((((iColor >> 16) & 0xFFu) * a + 127u) / 255u);
+	pPixel[2] = (unsigned char)((((iColor >> 8) & 0xFFu) * a + 127u) / 255u);
+	pPixel[3] = (unsigned char)a;
 }
 
 static int __xuiTestSurfaceFillRect(xui_surface pTarget, xui_rect_t tRect, uint32_t iColor)
@@ -178,6 +179,9 @@ static int __xuiTestSurfaceBlit(xui_surface pTarget, xui_surface pSurface, xui_r
 	int iHeight;
 	int x;
 	int y;
+	int c;
+	unsigned char* pDst;
+	const unsigned char* pSrc;
 
 	if ( !__xuiTestSurfaceValid(pTarget) || !__xuiTestSurfaceValid(pSurface) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -204,9 +208,11 @@ static int __xuiTestSurfaceBlit(xui_surface pTarget, xui_surface pSurface, xui_r
 			     (iSrcX + x < 0) || (iSrcX + x >= pSurface->tDesc.iWidth) ) {
 				continue;
 			}
-			memcpy(pTarget->pPixels + ((((iDstY + y) * pTarget->tDesc.iWidth) + (iDstX + x)) * 4),
-			       pSurface->pPixels + ((((iSrcY + y) * pSurface->tDesc.iWidth) + (iSrcX + x)) * 4),
-			       4);
+			pDst = pTarget->pPixels + ((((iDstY + y) * pTarget->tDesc.iWidth) + (iDstX + x)) * 4);
+			pSrc = pSurface->pPixels + ((((iSrcY + y) * pSurface->tDesc.iWidth) + (iSrcX + x)) * 4);
+			for ( c = 0; c < 4; ++c ) {
+				pDst[c] = (unsigned char)(pSrc[c] + (pDst[c] * (255u - pSrc[3]) + 127u) / 255u);
+			}
 		}
 	}
 	pTarget->iGeneration++;
@@ -1019,6 +1025,99 @@ cleanup:
 	return !iFailed;
 }
 
+static int __xuiTestSolidDraw(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_rect_t tRect = xuiWidgetGetRect(pWidget);
+	(void)iStateId;
+	tRect.fX = tRect.fY = 0;
+	return __xuiTestSurfaceFillRect(pDraw->pTarget, tRect, *(const uint32_t*)pUser);
+}
+
+static int __xuiTestCacheClipImage(int iCacheMask, int iParentOverflow, int iBranchOverflow, int iGeometry,
+	unsigned char* pPixels)
+{
+	xui_proxy_t tProxy = __xuiTestProxy();
+	xui_surface_desc_t tDesc = {0};
+	xui_cache_policy_t tPolicy = {0};
+	xui_context pContext = NULL;
+	xui_widget arrWidgets[5] = {0};
+	xui_surface pTarget = NULL;
+	const uint32_t arrColors[] = {XUI_COLOR_WHITE, XUI_COLOR_RGBA(255, 0, 0, 128),
+		XUI_COLOR_RGBA(0, 0, 255, 128)};
+	const xui_rect_t arrRects[] = {{0, 0, 64, 64}, {10, 10, 28, 28},
+		{6, 6, 12, 12}, {-10, -10, 40, 40}, {16, 16, 20, 20}};
+	int iFailed = 0;
+	int i;
+	XUI_TEST_CHECK(xuiCreate(&pContext) == XUI_OK &&
+		xuiSetProxy(pContext, &tProxy) == XUI_OK &&
+		xuiSetViewportSize(pContext, 64, 64) == XUI_OK, "cache clip context");
+	tPolicy.iSize = sizeof(tPolicy);
+	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
+	for ( i = 0; i < 5; ++i ) {
+		XUI_TEST_CHECK(xuiWidgetCreate(pContext, &arrWidgets[i]) == XUI_OK, "cache clip widget");
+		(void)xuiWidgetSetRect(arrWidgets[i], arrRects[i]);
+		tPolicy.iPolicy = (i < 3 && (iCacheMask & (1 << i))) ?
+			XUI_CACHE_POLICY_SUBTREE : XUI_CACHE_POLICY_SELF;
+		(void)xuiWidgetSetCachePolicy(arrWidgets[i], &tPolicy);
+		(void)xuiWidgetSetOverflow(arrWidgets[i], XUI_OVERFLOW_VISIBLE);
+	}
+	if ( iGeometry == 1 ) {
+		(void)xuiWidgetSetRect(arrWidgets[1], (xui_rect_t){9, 11, 29, 27});
+		(void)xuiWidgetSetRect(arrWidgets[2], (xui_rect_t){7, 5, 13, 11});
+		(void)xuiWidgetSetRect(arrWidgets[3], (xui_rect_t){-11, -8, 41, 39});
+		(void)xuiWidgetSetRect(arrWidgets[4], (xui_rect_t){17, 15, 21, 19});
+	} else if ( iGeometry == 2 ) {
+		(void)xuiWidgetSetRect(arrWidgets[1], (xui_rect_t){-8, -6, 28, 28});
+	}
+	(void)xuiSetRootWidget(pContext, arrWidgets[0]);
+	(void)xuiWidgetAddChild(arrWidgets[0], arrWidgets[1]);
+	(void)xuiWidgetAddChild(arrWidgets[1], arrWidgets[2]);
+	(void)xuiWidgetAddChild(arrWidgets[2], arrWidgets[3]);
+	(void)xuiWidgetAddChild(arrWidgets[1], arrWidgets[4]);
+	(void)xuiWidgetSetOverflow(arrWidgets[1], iParentOverflow);
+	(void)xuiWidgetSetOverflow(arrWidgets[2], iBranchOverflow);
+	(void)xuiWidgetSetCacheRenderCallback(arrWidgets[0], __xuiTestSolidDraw, (void*)&arrColors[0]);
+	(void)xuiWidgetSetCacheRenderCallback(arrWidgets[3], __xuiTestSolidDraw, (void*)&arrColors[1]);
+	(void)xuiWidgetSetCacheRenderCallback(arrWidgets[4], __xuiTestSolidDraw, (void*)&arrColors[2]);
+	tDesc.iWidth = tDesc.iHeight = 64;
+	tDesc.iKind = XUI_SURFACE_KIND_TEXTURE;
+	tDesc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
+	tDesc.iFlags = XUI_SURFACE_USAGE_TARGET | XUI_SURFACE_ALPHA_PREMULTIPLIED;
+	XUI_TEST_CHECK(tProxy.surfaceCreate(&tProxy, &pTarget, &tDesc) == XUI_OK, "cache clip target");
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "cache clip render");
+	memcpy(pPixels, pTarget->pPixels, 64 * 64 * 4);
+cleanup:
+	if ( pTarget != NULL ) tProxy.surfaceDestroy(&tProxy, pTarget);
+	if ( pContext != NULL ) xuiDestroy(pContext);
+	return !iFailed;
+}
+
+static int __xuiTestCacheClipping(void)
+{
+	const int arrOverflow[] = {XUI_OVERFLOW_VISIBLE, XUI_OVERFLOW_CLIP, XUI_OVERFLOW_HIDDEN};
+	unsigned char arrExpected[64 * 64 * 4];
+	unsigned char arrActual[64 * 64 * 4];
+	int g, p, b, mask, k;
+	for ( g = 0; g < 3; ++g ) {
+		for ( p = 0; p < 3; ++p ) {
+			for ( b = 0; b < 3; ++b ) {
+				if ( !__xuiTestCacheClipImage(0, arrOverflow[p], arrOverflow[b], g, arrExpected) ) return 0;
+				for ( mask = 1; mask < 8; ++mask ) {
+					if ( !__xuiTestCacheClipImage(mask, arrOverflow[p], arrOverflow[b], g, arrActual) ) return 0;
+					for ( k = 0; k < (int)sizeof(arrExpected); ++k ) {
+						if ( arrExpected[k] != arrActual[k] ) {
+							printf("cache clip mismatch: geometry=%d mask=%d parent=%d branch=%d x=%d y=%d channel=%d expected=%d actual=%d\n",
+								g, mask, p, b, (k / 4) % 64, (k / 4) / 64, k % 4, arrExpected[k], arrActual[k]);
+							return 0;
+						}
+					}
+				}
+			}
+		}
+	}
+	return 1;
+}
+
 static int __xuiDpiDraw(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_render_schedule_test_state_t* pState = (xui_render_schedule_test_state_t*)pUser;
@@ -1594,6 +1693,7 @@ cleanup:
 	if ( !__xuiTestLayoutDamage() ) return 1;
 	if ( !__xuiTestCacheStacking() ) return 1;
 	if ( !__xuiTestDpiCaches() ) return 1;
+	if ( !__xuiTestCacheClipping() ) return 1;
 	printf("xui_render_schedule_test passed\n");
 	return 0;
 }

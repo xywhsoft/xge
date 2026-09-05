@@ -2935,16 +2935,19 @@ static int __xuiCoreNodeCoveredBySubtreeCache(const xui_render_node_t* pNode)
 	return 0;
 }
 
-static int __xuiCoreDrawRenderNode(xui_context pContext, xui_surface pTarget, const xui_render_node_t* pNode, xui_rect_i_t tDamage)
+static int __xuiCoreDrawRenderNodeRegion(xui_context pContext, xui_surface pTarget,
+	const xui_render_node_t* pNode, xui_widget pAncestor, xui_rect_t tClipRect)
 {
 	xui_widget_cache_slot_t* pSlot;
+	xui_widget_cache_slot_t* pAncestorSlot;
 	xui_proxy pProxy;
-	xui_rect_t tDamageRect;
-	xui_rect_t tClipRect;
+	xui_rect_t arrParts[4];
 	xui_rect_t tSrc;
 	xui_rect_t tDst;
 	float fScaleX;
 	float fScaleY;
+	int iPartCount;
+	int i;
 	int iPolicy;
 	int iRet;
 
@@ -2961,10 +2964,20 @@ static int __xuiCoreDrawRenderNode(xui_context pContext, xui_surface pTarget, co
 	     (pNode->tWorldRect.fW <= 0.0f) || (pNode->tWorldRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	tDamageRect = __xuiCoreRectFromInt(tDamage);
-	tClipRect = __xuiCoreIntersectRect(pNode->tPaintRect, tDamageRect);
-	tClipRect = xuiInternalSnapRect(tClipRect);
 	if ( !__xuiCoreFloatRectValid(tClipRect) ) {
+		return XUI_OK;
+	}
+	for ( ; pAncestor != NULL; pAncestor = pAncestor->pParent ) {
+		if ( __xuiCoreEffectiveCachePolicy(pAncestor) != XUI_CACHE_POLICY_SUBTREE ) continue;
+		pAncestorSlot = __xuiCoreFindCacheSlot(pAncestor, pAncestor->iStateId);
+		if ( pAncestorSlot == NULL || pAncestorSlot->pSurface == NULL ) continue;
+		iPartCount = xuiInternalRectSubtract(tClipRect, xuiWidgetGetWorldRect(pAncestor), arrParts);
+		if ( iPartCount == 1 && arrParts[0].fW == tClipRect.fW && arrParts[0].fH == tClipRect.fH ) continue;
+		/* Only compose pixels not already present in any ancestor subtree cache. */
+		for ( i = 0; i < iPartCount; ++i ) {
+			iRet = __xuiCoreDrawRenderNodeRegion(pContext, pTarget, pNode, pAncestor->pParent, arrParts[i]);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 		return XUI_OK;
 	}
 	fScaleX = (float)pSlot->iWidth / pNode->tWorldRect.fW;
@@ -2984,6 +2997,13 @@ static int __xuiCoreDrawRenderNode(xui_context pContext, xui_surface pTarget, co
 		pContext->tRenderStats.iDrawnCaches++;
 	}
 	return iRet;
+}
+
+static int __xuiCoreDrawRenderNode(xui_context pContext, xui_surface pTarget,
+	const xui_render_node_t* pNode, xui_rect_i_t tDamage)
+{
+	xui_rect_t tClip = __xuiCoreIntersectRect(pNode->tPaintRect, __xuiCoreRectFromInt(tDamage));
+	return __xuiCoreDrawRenderNodeRegion(pContext, pTarget, pNode, pNode->pWidget->pParent, tClip);
 }
 
 static void __xuiCoreClearRenderDirtyRecursive(xui_widget pWidget)
