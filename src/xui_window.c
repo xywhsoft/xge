@@ -1494,11 +1494,9 @@ static void __xuiWindowRegisterStyleProperty(xui_context pContext, xui_widget_ty
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
-static int __xuiWindowUpdate(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiWindowPreparePaint(xui_widget pWidget)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
 	pData->iChromeStyleVersion = pWidget->iStyleVersion;
@@ -1513,6 +1511,7 @@ static void __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
 
+	pType->onPreparePaint = __xuiWindowPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiWindowRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
@@ -1597,7 +1596,6 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiWindowPrepare;
 	tDesc.onLayoutChildren = __xuiWindowLayoutChildren;
 	tDesc.onCacheRender = __xuiWindowCacheRender;
-	tDesc.onUpdate = __xuiWindowUpdate;
 	tDesc.onQueryCursor = __xuiWindowQueryCursor;
 	__xuiWindowDefaultLayout(&tDesc.tLayout);
 	__xuiWindowDefaultCachePolicy(&tDesc.tCachePolicy);

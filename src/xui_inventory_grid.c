@@ -2787,12 +2787,10 @@ static void __xuiInventoryRegisterStyleProperty(xui_context pContext, xui_widget
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
-static int __xuiInventoryUpdate(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiInventoryPreparePaint(xui_widget pWidget)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	xui_context pContext = xuiWidgetGetContext(pWidget);
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
 	pData->iChromeStyleVersion = pWidget->iStyleVersion;
@@ -2807,6 +2805,7 @@ static void __xuiInventoryRegisterStyleProperties(xui_context pContext, xui_widg
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
 
+	pType->onPreparePaint = __xuiInventoryPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -2993,7 +2992,6 @@ XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext)
 	tDesc.onContentMeasure = __xuiInventoryContentMeasure;
 	tDesc.onLayoutComplete = __xuiInventoryLayoutComplete;
 	tDesc.onCacheRender = __xuiInventoryCacheRender;
-	tDesc.onUpdate = __xuiInventoryUpdate;
 	__xuiInventoryDefaultLayout(&tDesc.tLayout);
 	__xuiInventoryDefaultCachePolicy(&tPolicy);
 	tDesc.tCachePolicy = tPolicy;

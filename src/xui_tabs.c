@@ -1896,11 +1896,9 @@ static void __xuiTabsRegisterStyleProperty(xui_context pContext, xui_widget_type
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
-static int __xuiTabsUpdate(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiTabsPreparePaint(xui_widget pWidget)
 {
 	xui_tabs_data_t* pData = __xuiTabsGetData(pWidget);
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
 	pData->iChromeStyleVersion = pWidget->iStyleVersion;
@@ -1912,6 +1910,7 @@ static void __xuiTabsRegisterStyleProperties(xui_context pContext, xui_widget_ty
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
 
+	pType->onPreparePaint = __xuiTabsPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -1962,7 +1961,6 @@ XUI_API xui_widget_type xuiTabsGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiTabsPrepare;
 	tDesc.onLayoutComplete = __xuiTabsLayoutComplete;
 	tDesc.onCacheRender = __xuiTabsCacheRender;
-	tDesc.onUpdate = __xuiTabsUpdate;
 	__xuiTabsDefaultLayout(&tDesc.tLayout);
 	__xuiTabsDefaultCachePolicy(&tPolicy);
 	tDesc.tCachePolicy = tPolicy;

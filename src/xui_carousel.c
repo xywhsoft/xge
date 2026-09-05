@@ -731,6 +731,15 @@ static int __xuiCarouselContentMeasure(xui_widget pWidget, xui_vec2_t tConstrain
 	return XUI_OK;
 }
 
+static int __xuiCarouselPreparePaint(xui_widget pWidget)
+{
+	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
+	pData->iChromeStyleVersion = pWidget->iStyleVersion;
+	return xuiWidgetInvalidate(pData->pOverlay, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiCarouselUpdate(xui_widget pWidget, float fDelta, void* pUser)
 {
 	xui_carousel_data_t* pData;
@@ -740,10 +749,6 @@ static int __xuiCarouselUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	(void)pUser;
 	pData = __xuiCarouselGetData(pWidget);
 	if ( (pData == NULL) || (fDelta < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->iChromeStyleVersion != pWidget->iStyleVersion ) {
-		pData->iChromeStyleVersion = pWidget->iStyleVersion;
-		(void)xuiWidgetInvalidate(pData->pOverlay, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
 	__xuiCarouselResolve(pWidget, pData, &tResolved);
 	if ( !tResolved.bAutoPlay || (tResolved.fAutoInterval <= 0.0f) || (tResolved.iPageCount <= 1) ) {
 		pData->fAutoElapsed = 0.0f;
@@ -909,6 +914,7 @@ static void __xuiCarouselRegisterStyleProperties(xui_context pContext, xui_widge
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
 
+	pType->onPreparePaint = __xuiCarouselPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

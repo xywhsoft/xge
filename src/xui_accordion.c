@@ -1197,11 +1197,9 @@ static void __xuiAccordionRegisterStyleProperty(xui_context pContext, xui_widget
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
-static int __xuiAccordionUpdate(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiAccordionPreparePaint(xui_widget pWidget)
 {
 	xui_accordion_data_t* pData = __xuiAccordionGetData(pWidget);
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
 	pData->iChromeStyleVersion = pWidget->iStyleVersion;
@@ -1213,6 +1211,7 @@ static void __xuiAccordionRegisterStyleProperties(xui_context pContext, xui_widg
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
 
+	pType->onPreparePaint = __xuiAccordionPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -1257,7 +1256,6 @@ XUI_API xui_widget_type xuiAccordionGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiAccordionPrepare;
 	tDesc.onLayoutComplete = __xuiAccordionLayoutComplete;
 	tDesc.onCacheRender = __xuiAccordionCacheRender;
-	tDesc.onUpdate = __xuiAccordionUpdate;
 	__xuiAccordionDefaultLayout(&tDesc.tLayout);
 	__xuiAccordionDefaultCachePolicy(&tPolicy);
 	tDesc.tCachePolicy = tPolicy;

@@ -239,7 +239,6 @@ static void chrome_bars(pixel_fixture_t* f)
 
 static void chrome_frame(pixel_fixture_t* f)
 {
-	PIXEL_CHECK(xuiUpdate(f->context, 0) == XUI_OK);
 	g_color_count = 0;
 	PIXEL_CHECK(xuiRender(f->context, f->target, NULL, 0) == XUI_OK);
 }
