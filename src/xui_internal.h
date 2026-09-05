@@ -375,6 +375,7 @@ struct xui_widget_t {
 	int bMeasureValid;
 	int bArrangeValid;
 	int bDestroyPending;
+	int bInteractionCancelling;
 	uint32_t iPendingStateChanges;
 	xui_rect_t tPendingStateOldWorldRect;
 	int bPendingStateOldVisible;
@@ -492,6 +493,8 @@ void xuiInternalContextBumpGeneration(xui_context pContext);
 void xuiInternalReportError(xui_context pContext, xui_widget pWidget, int iCode, int iStage,
 	int bRecoverable, const char* sOperation, const char* sMessage);
 void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget);
+int xuiInternalInputCancelSubtree(xui_context pContext, xui_widget pWidget);
+int xuiInternalInputCancelFocusSubtree(xui_context pContext, xui_widget pWidget);
 void xuiInternalWidgetDestroyFlush(xui_context pContext);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);

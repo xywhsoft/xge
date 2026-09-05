@@ -8982,13 +8982,17 @@ XUI_API int xuiWidgetMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec
 XUI_API int xuiWidgetArrange(xui_widget pWidget, xui_rect_t tRect);
 XUI_API int xuiWidgetSetVisible(xui_widget pWidget, int bVisible);
 XUI_API int xuiWidgetGetVisible(xui_widget pWidget);
+XUI_API int xuiWidgetGetEffectiveVisible(xui_widget pWidget);
 XUI_API int xuiWidgetSetEnabled(xui_widget pWidget, int bEnabled);
 XUI_API int xuiWidgetGetEnabled(xui_widget pWidget);
+XUI_API int xuiWidgetGetEffectiveEnabled(xui_widget pWidget);
 XUI_API uint32_t xuiWidgetGetInputState(xui_widget pWidget);
 XUI_API int xuiWidgetSetHitTestVisible(xui_widget pWidget, int bVisible);
 XUI_API int xuiWidgetGetHitTestVisible(xui_widget pWidget);
+XUI_API int xuiWidgetGetEffectiveHitTestVisible(xui_widget pWidget);
 XUI_API int xuiWidgetSetFocusable(xui_widget pWidget, int bFocusable);
 XUI_API int xuiWidgetGetFocusable(xui_widget pWidget);
+XUI_API int xuiWidgetGetEffectiveFocusable(xui_widget pWidget);
 XUI_API int xuiWidgetSetTabStop(xui_widget pWidget, int bTabStop);
 XUI_API int xuiWidgetGetTabStop(xui_widget pWidget);
 XUI_API int xuiWidgetSetTabIndex(xui_widget pWidget, int iTabIndex);

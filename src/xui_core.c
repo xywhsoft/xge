@@ -1175,10 +1175,19 @@ static void __xuiContextClearOverlayOwners(xui_widget pScan, xui_widget pRemoved
 
 void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 {
+	int iRet;
 	int i;
 
 	if ( !__xuiContextValid(pContext) || (pWidget == NULL) ) {
 		return;
+	}
+	if ( !pContext->bDestroying && xuiInternalWidgetIsValid(pWidget) ) {
+		pWidget->bInteractionCancelling = 1;
+		iRet = xuiInternalInputCancelSubtree(pContext, pWidget);
+		if ( iRet != XUI_OK && __xuiContextValid(pContext) ) {
+			xuiInternalReportError(pContext, pWidget, iRet, XUI_ERROR_STAGE_INPUT, 1,
+				"input.cancel_subtree", "A subtree interaction-cancel handler failed.");
+		}
 	}
 	if ( __xuiContextWidgetContains(pWidget, pContext->pDragAdornerOwner) ) {
 		xuiInternalDragAdornerHide(pContext, pContext->pDragAdornerOwner);
@@ -1285,6 +1294,7 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 			pContext->pEvents[i].pRelated = NULL;
 		}
 	}
+	if ( pWidget->iMagic == XUI_WIDGET_MAGIC ) pWidget->bInteractionCancelling = 0;
 }
 
 static xui_rect_i_t __xuiContextFullRect(xui_context pContext)

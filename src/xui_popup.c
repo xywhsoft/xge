@@ -275,7 +275,8 @@ static int __xuiPopupOwnerAvailable(const xui_popup_data_t* pData)
 	if ( !xuiInternalWidgetIsValid(pData->pOwner) ) {
 		return 0;
 	}
-	return xuiWidgetGetVisible(pData->pOwner) && xuiWidgetGetEnabled(pData->pOwner);
+	return xuiWidgetGetEffectiveVisible(pData->pOwner) &&
+		xuiWidgetGetEffectiveEnabled(pData->pOwner);
 }
 
 static xui_rect_t __xuiPopupResolveAnchor(xui_widget pWidget, const xui_popup_data_t* pData)
@@ -555,7 +556,7 @@ static xui_widget __xuiPopupFindFirstFocusable(xui_widget pWidget)
 	if ( pWidget == NULL ) {
 		return NULL;
 	}
-	if ( xuiWidgetGetFocusable(pWidget) && xuiWidgetGetVisible(pWidget) && xuiWidgetGetEnabled(pWidget) ) {
+	if ( xuiWidgetGetEffectiveFocusable(pWidget) ) {
 		return pWidget;
 	}
 	for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
@@ -613,9 +614,7 @@ static int __xuiPopupRestoreFocus(xui_widget pWidget, xui_popup_data_t* pData)
 	pRestore = pData->pFocusRestore;
 	if ( pRestore != NULL &&
 	     xuiInternalWidgetIsValid(pRestore) &&
-	     xuiWidgetGetVisible(pRestore) &&
-	     xuiWidgetGetEnabled(pRestore) &&
-	     xuiWidgetGetFocusable(pRestore) ) {
+	     xuiWidgetGetEffectiveFocusable(pRestore) ) {
 		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pRestore);
 	}
 	if ( !pData->bFocusRestoreExplicit ) {

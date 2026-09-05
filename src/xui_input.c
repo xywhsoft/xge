@@ -583,7 +583,7 @@ static xui_widget __xuiInputFindFocusable(xui_widget pWidget)
 	xui_widget pScan;
 
 	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
-		if ( pScan->bFocusable && pScan->bVisible && pScan->bEnabled ) {
+		if ( xuiWidgetGetEffectiveFocusable(pScan) ) {
 			return pScan;
 		}
 	}
@@ -749,10 +749,8 @@ static int __xuiInputDispatchPath(const xui_event_t* pSourceEvent, xui_widget* p
 static int __xuiInputFocusableForTab(xui_widget pWidget)
 {
 	return (pWidget != NULL) &&
-	       pWidget->bFocusable &&
 	       pWidget->bTabStop &&
-	       pWidget->bVisible &&
-	       pWidget->bEnabled;
+	       xuiWidgetGetEffectiveFocusable(pWidget);
 }
 
 static xui_widget __xuiInputFocusScopeRoot(xui_context pContext)
@@ -806,6 +804,7 @@ static int __xuiInputCollectFocusItems(xui_widget pWidget, xui_input_focus_item_
 	if ( pWidget == NULL ) {
 		return XUI_OK;
 	}
+	if ( !pWidget->bVisible || !pWidget->bEnabled ) return XUI_OK;
 	if ( __xuiInputFocusableForTab(pWidget) ) {
 		iRet = __xuiInputFocusListReserve(ppItems, pCapacity, *pCount + 1);
 		if ( iRet != XUI_OK ) {
@@ -908,7 +907,8 @@ static xui_widget __xuiInputFocusNextInScope(xui_context pContext, int iForward)
 
 static int __xuiInputWidgetWantsDrag(xui_widget pWidget)
 {
-	return (pWidget != NULL) && pWidget->bDragEnabled && pWidget->bVisible && pWidget->bEnabled;
+	return (pWidget != NULL) && pWidget->bDragEnabled &&
+		xuiWidgetGetEffectiveVisible(pWidget) && xuiWidgetGetEffectiveEnabled(pWidget);
 }
 
 static float __xuiInputDistanceSquared(float fX0, float fY0, float fX1, float fY1)
@@ -990,8 +990,8 @@ static int __xuiInputContextPressUpdateCurrent(xui_context pContext, float fDelt
 	if ( (pTarget == NULL) ||
 	     !xuiInternalWidgetIsValid(pTarget) ||
 	     (pTarget->pContext != pContext) ||
-	     !pTarget->bVisible ||
-	     !pTarget->bEnabled ) {
+	     !xuiWidgetGetEffectiveVisible(pTarget) ||
+	     !xuiWidgetGetEffectiveEnabled(pTarget) ) {
 		xuiInternalContextPressCancel(pContext);
 		return XUI_OK;
 	}
@@ -1054,6 +1054,151 @@ static int __xuiInputDragCancel(xui_context pContext)
 	pContext->bDragActive = 0;
 	pContext->iDragButton = 0;
 	return XUI_OK;
+}
+
+static int __xuiInputSubtreeContains(xui_widget pRoot, xui_widget pWidget)
+{
+	xui_widget pScan;
+
+	if ( pRoot == NULL || pWidget == NULL ) return 0;
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		if ( pScan == pRoot ) return 1;
+	}
+	return 0;
+}
+
+static int __xuiInputDispatchCancelNow(xui_context pContext, xui_pointer_state_t* pState,
+	int iType, xui_widget pTarget, int iButton)
+{
+	xui_event_t tEvent;
+	int iRet;
+
+	if ( !xuiInternalWidgetIsValid(pTarget) ) return XUI_OK;
+	if ( pState != NULL ) __xuiInputPointerStateStore(pContext, pState);
+	__xuiInputInitEvent(&tEvent, iType, pTarget, NULL, pContext);
+	tEvent.iButton = iButton;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	if ( pState != NULL && !xuiInternalContextDestroyPending(pContext) ) {
+		__xuiInputPointerStateLoad(pContext, pState);
+	}
+	return iRet;
+}
+
+static void __xuiInputCancelRememberError(int* pResult, int iRet)
+{
+	if ( pResult != NULL && *pResult == XUI_OK && iRet != XUI_OK ) *pResult = iRet;
+}
+
+int xuiInternalInputCancelFocusSubtree(xui_context pContext, xui_widget pWidget)
+{
+	xui_widget pFocus;
+	xui_event_t tEvent;
+	int iRet;
+	int iResult;
+
+	if ( !xuiInternalContextIsValid(pContext) || !xuiInternalWidgetIsValid(pWidget) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pFocus = pContext->pFocusWidget;
+	if ( !__xuiInputSubtreeContains(pWidget, pFocus) ) return XUI_OK;
+	iResult = XUI_OK;
+	pContext->pFocusWidget = NULL;
+	iRet = __xuiInputSetWidgetFlag(pFocus, XUI_WIDGET_STATE_FOCUS, 0);
+	__xuiInputCancelRememberError(&iResult, iRet);
+	xuiInternalCaretBlinkReset(pContext);
+	__xuiInputInitEvent(&tEvent, XUI_EVENT_BLUR, pFocus, NULL, pContext);
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	__xuiInputCancelRememberError(&iResult, iRet);
+	if ( xuiInternalContextDestroyPending(pContext) ) return iResult;
+	iRet = xuiInternalInputSyncIme(pContext);
+	__xuiInputCancelRememberError(&iResult, iRet);
+	return iResult;
+}
+
+int xuiInternalInputCancelSubtree(xui_context pContext, xui_widget pWidget)
+{
+	xui_pointer_state_t* pRestoreState;
+	xui_pointer_state_t* pState;
+	xui_widget pTarget;
+	uint64_t iRestorePointerId;
+	int iRestorePointerType;
+	int iButton;
+	int bDragActive;
+	int iRet;
+	int iResult;
+	int i;
+
+	if ( !xuiInternalContextIsValid(pContext) || !xuiInternalWidgetIsValid(pWidget) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRestorePointerId = pContext->iInputPointerId;
+	iRestorePointerType = pContext->iInputPointerType;
+	iResult = XUI_OK;
+	for ( i = 0; i < XUI_POINTER_MAX; i++ ) {
+		pState = &pContext->arrPointerStates[i];
+		if ( !pState->bAllocated ) continue;
+		__xuiInputPointerStateLoad(pContext, pState);
+		if ( __xuiInputSubtreeContains(pWidget, pContext->pDragWidget) ) {
+			pTarget = pContext->pDragWidget;
+			iButton = pContext->iDragButton;
+			bDragActive = pContext->bDragActive;
+			pContext->pDragWidget = NULL;
+			pContext->bDragActive = 0;
+			pContext->iDragButton = 0;
+			__xuiInputPointerStateStore(pContext, pState);
+			if ( bDragActive ) {
+				xuiInternalDragTransferCancel(pContext);
+				if ( xuiInternalContextDestroyPending(pContext) ) return iResult;
+				iRet = __xuiInputDispatchCancelNow(pContext, pState,
+					XUI_EVENT_DRAG_CANCEL, pTarget, iButton);
+				__xuiInputCancelRememberError(&iResult, iRet);
+				if ( xuiInternalContextDestroyPending(pContext) ) return iResult;
+			}
+		}
+		if ( __xuiInputSubtreeContains(pWidget, pContext->pPointerCaptureWidget) ) {
+			pTarget = pContext->pPointerCaptureWidget;
+			pContext->pPointerCaptureWidget = NULL;
+			iRet = __xuiInputDispatchCancelNow(pContext, pState,
+				XUI_EVENT_POINTER_CAPTURE_LOST, pTarget, 0);
+			__xuiInputCancelRememberError(&iResult, iRet);
+			if ( xuiInternalContextDestroyPending(pContext) ) return iResult;
+		}
+		if ( __xuiInputSubtreeContains(pWidget, pContext->pHoverWidget) ) {
+			pTarget = pContext->pHoverWidget;
+			pContext->pHoverWidget = NULL;
+			iRet = __xuiInputSetWidgetFlag(pTarget, XUI_WIDGET_STATE_HOVER, 0);
+			__xuiInputCancelRememberError(&iResult, iRet);
+			iRet = __xuiInputDispatchCancelNow(pContext, pState,
+				XUI_EVENT_POINTER_LEAVE, pTarget, 0);
+			__xuiInputCancelRememberError(&iResult, iRet);
+			if ( xuiInternalContextDestroyPending(pContext) ) return iResult;
+		}
+		if ( __xuiInputSubtreeContains(pWidget, pContext->pActiveWidget) ) {
+			pTarget = pContext->pActiveWidget;
+			pContext->pActiveWidget = NULL;
+			pContext->iActiveButton = 0;
+			iRet = __xuiInputSetWidgetFlag(pTarget, XUI_WIDGET_STATE_ACTIVE, 0);
+			__xuiInputCancelRememberError(&iResult, iRet);
+		}
+		if ( __xuiInputSubtreeContains(pWidget, pContext->pContextPressWidget) ) {
+			xuiInternalContextPressCancel(pContext);
+		}
+		if ( __xuiInputSubtreeContains(pWidget, pContext->pLastClickWidget) ) {
+			pContext->pLastClickWidget = NULL;
+			pContext->iLastClickButton = 0;
+			pContext->fLastClickTime = 0.0;
+		}
+		__xuiInputPointerStateStore(pContext, pState);
+	}
+
+	iRet = xuiInternalInputCancelFocusSubtree(pContext, pWidget);
+	__xuiInputCancelRememberError(&iResult, iRet);
+	if ( xuiInternalContextDestroyPending(pContext) ) return iResult;
+
+	pRestoreState = __xuiInputPointerStateFind(pContext, iRestorePointerId,
+		iRestorePointerType, 0);
+	if ( pRestoreState != NULL ) __xuiInputPointerStateLoad(pContext, pRestoreState);
+	return iResult;
 }
 
 static int __xuiInputDragMove(xui_context pContext, xui_widget pRelated)
@@ -2006,7 +2151,8 @@ XUI_API int xuiInputText(xui_context pContext, uint32_t iCodepoint)
 
 static int __xuiInputWidgetImeEnabled(xui_widget pWidget)
 {
-	if ( (pWidget == NULL) || !pWidget->bVisible || !pWidget->bEnabled ) {
+	if ( (pWidget == NULL) || !xuiWidgetGetEffectiveVisible(pWidget) ||
+	     !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		return 0;
 	}
 	return (pWidget->iImeMode == XUI_IME_ENABLED) ||
@@ -2385,8 +2531,8 @@ static int __xuiInputSetPointerCaptureCurrent(xui_context pContext, xui_widget p
 	if ( pWidget != NULL ) {
 		if ( !xuiInternalWidgetIsValid(pWidget) ||
 		     (pWidget->pContext != pContext) ||
-		     !pWidget->bVisible ||
-		     !pWidget->bEnabled ) {
+		     !xuiWidgetGetEffectiveVisible(pWidget) ||
+		     !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
@@ -2544,9 +2690,7 @@ static int __xuiSetFocusWidgetOperation(xui_context pContext, xui_widget pWidget
 	if ( pWidget != NULL ) {
 		if ( !xuiInternalWidgetIsValid(pWidget) ||
 		     (pWidget->pContext != pContext) ||
-		     !pWidget->bVisible ||
-		     !pWidget->bEnabled ||
-		     !pWidget->bFocusable ) {
+		     !xuiWidgetGetEffectiveFocusable(pWidget) ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
