@@ -272,6 +272,68 @@ typedef struct xui_rich_edit_data_t {
 	xui_rect_t tCursorRect;
 } xui_rich_edit_data_t;
 
+typedef struct xui_rich_edit_colors_t {
+	uint32_t iText, iBackground, iBorder, iFocusBorder, iSelection, iCursor;
+	uint32_t iFindResult, iFindActive, iLink, iQuoteBorder, iRule;
+	uint32_t iParagraphBackground, iTableBorder, iTableHeader, iTableCell;
+	uint32_t iImageBackground, iImageBorder, iImageText;
+} xui_rich_edit_colors_t;
+
+static uint32_t __xuiRichEditColor(xui_widget pWidget, const char* sName, uint32_t iFallback)
+{
+	xui_style_property_t tProperty;
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) return tProperty.tValue.iColor;
+	return iFallback;
+}
+
+static void __xuiRichEditResolveColors(xui_widget pWidget, const xui_rich_edit_data_t* pData,
+	xui_rich_edit_colors_t* pColors)
+{
+	pColors->iText = __xuiRichEditColor(pWidget, "richedit.text.color", pData->iTextColor);
+	pColors->iBackground = __xuiRichEditColor(pWidget, "richedit.background.color", pData->iBackgroundColor);
+	pColors->iBorder = __xuiRichEditColor(pWidget, "richedit.border.color", pData->iBorderColor);
+	pColors->iFocusBorder = __xuiRichEditColor(pWidget, "richedit.border.focus_color", pData->iFocusBorderColor);
+	pColors->iSelection = __xuiRichEditColor(pWidget, "richedit.selection.color", pData->iSelectionColor);
+	pColors->iCursor = __xuiRichEditColor(pWidget, "richedit.cursor.color", pData->iCursorColor);
+	pColors->iFindResult = __xuiRichEditColor(pWidget, "richedit.find.result_color", pData->iFindResultColor);
+	pColors->iFindActive = __xuiRichEditColor(pWidget, "richedit.find.active_color", pData->iFindActiveColor);
+	pColors->iLink = __xuiRichEditColor(pWidget, "richedit.link.color", XUI_COLOR_RGBA(20,92,170,255));
+	pColors->iQuoteBorder = __xuiRichEditColor(pWidget, "richedit.quote.border_color", XUI_COLOR_RGBA(90,120,160,255));
+	pColors->iRule = __xuiRichEditColor(pWidget, "richedit.rule.color", XUI_COLOR_RGBA(170,180,192,255));
+	pColors->iParagraphBackground = __xuiRichEditColor(pWidget, "richedit.paragraph.background_color", 0);
+	pColors->iTableBorder = __xuiRichEditColor(pWidget, "richedit.table.border_color", XUI_COLOR_RGBA(170,180,192,255));
+	pColors->iTableHeader = __xuiRichEditColor(pWidget, "richedit.table.header_color", 0);
+	pColors->iTableCell = __xuiRichEditColor(pWidget, "richedit.table.cell_color", 0);
+	pColors->iImageBackground = __xuiRichEditColor(pWidget, "richedit.image.placeholder_color", XUI_COLOR_RGBA(238,241,245,255));
+	pColors->iImageBorder = __xuiRichEditColor(pWidget, "richedit.image.border_color", XUI_COLOR_RGBA(170,180,192,255));
+	pColors->iImageText = __xuiRichEditColor(pWidget, "richedit.image.text_color", XUI_COLOR_RGBA(90,100,112,255));
+}
+
+static void __xuiRichEditRegisterStyles(xui_context pContext, xui_widget_type pType)
+{
+	static const char* const arrNames[] = {
+		"richedit.text.color", "richedit.background.color", "richedit.border.color",
+		"richedit.border.focus_color", "richedit.selection.color", "richedit.cursor.color",
+		"richedit.find.result_color", "richedit.find.active_color", "richedit.link.color",
+		"richedit.quote.border_color", "richedit.rule.color", "richedit.paragraph.background_color",
+		"richedit.table.border_color", "richedit.table.header_color", "richedit.table.cell_color",
+		"richedit.image.placeholder_color", "richedit.image.border_color", "richedit.image.text_color"
+	};
+	size_t i;
+	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); i++ ) {
+		xui_style_property_info_t tInfo;
+		if ( xuiStyleFindProperty(pContext, arrNames[i]) != 0 ) continue;
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.iSize = sizeof(tInfo); tInfo.sName = arrNames[i];
+		tInfo.pWidgetType = pType; tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+		tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+}
+
 static int __xuiRichEditReserve(void** ppData, int* pCapacity, int iNeed, size_t iItemSize);
 static void __xuiRichEditFindApplyLanguage(xui_widget pRichEdit, xui_rich_edit_data_t* pData);
 
@@ -542,7 +604,8 @@ static int __xuiRichEditAtom(xui_rich_edit_data_t* pData, xui_rich_node pNode,
 		return XUI_OK;
 	}
 	pAtom->pFont = pFont;
-	pAtom->iTextColor = (pInfo->tStyle.iTextColor & 0xffu) != 0 ? pInfo->tStyle.iTextColor : pData->iTextColor;
+	/* Keep inherited color unresolved so a theme change never rebuilds paragraph geometry. */
+	pAtom->iTextColor = pInfo->tStyle.iTextColor;
 	pAtom->iBackgroundColor = pInfo->tStyle.iBackgroundColor;
 	pAtom->iStyleFlags = pInfo->tStyle.iFlags;
 	pAtom->fBaselineShift = pInfo->tStyle.fBaselineShift * pData->fZoom;
@@ -2219,7 +2282,7 @@ static int __xuiRichEditTableCellAt(xui_widget pWidget, xui_rich_edit_data_t* pD
 }
 
 static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* pData,
-	xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tContent)
+	xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tContent, const xui_rich_edit_colors_t* pColors)
 {
 	int i, iFirst, iLast;
 	int iListNumber = 0;
@@ -2233,13 +2296,14 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 		if ( tRect.fY + tRect.fH < tContent.fY || tRect.fY > tContent.fY + tContent.fH ) continue;
 		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
 		if ( xuiRichNodeGetInfo(pBlock->pNode, &tInfo) != XUI_OK ) continue;
-		if ( (tInfo.tParagraphStyle.iBackgroundColor & 0xffu) != 0 )
-			(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect, tInfo.tParagraphStyle.iBackgroundColor);
+		(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect,
+			(tInfo.tParagraphStyle.iBackgroundColor & 0xffu) != 0 ?
+			tInfo.tParagraphStyle.iBackgroundColor : pColors->iParagraphBackground);
 		if ( tInfo.iType == XUI_RICH_NODE_BLOCK_QUOTE && pProxy->drawLine != NULL )
 			(void)pProxy->drawLine(pProxy, pDraw, tRect.fX + 4.0f * pData->fZoom, tRect.fY,
 				tRect.fX + 4.0f * pData->fZoom, tRect.fY + tRect.fH, 3.0f * pData->fZoom,
 				(tInfo.tParagraphStyle.iBorderColor & 0xffu) != 0 ?
-				tInfo.tParagraphStyle.iBorderColor : XUI_COLOR_RGBA(90,120,160,255));
+				tInfo.tParagraphStyle.iBorderColor : pColors->iQuoteBorder);
 		if ( (tInfo.iType == XUI_RICH_NODE_LIST_ITEM || tInfo.tParagraphStyle.iListType != XUI_RICH_LIST_NONE) && pProxy->drawText != NULL ) {
 			char sMarker[24];
 			if ( tInfo.tParagraphStyle.iListType == XUI_RICH_LIST_NUMBER ) snprintf(sMarker, sizeof(sMarker), "%d.", ++iListNumber);
@@ -2249,7 +2313,7 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 			(void)pProxy->drawText(pProxy, pDraw,
 				__xuiRichEditSizedFont(pWidget, pData, pData->pFont, 0.0f), sMarker,
 				__xuiRichEditMarkerRect(pWidget, pData, pBlock, &tInfo),
-				pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+				pColors->iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		} else iListNumber = 0;
 		if ( tInfo.iType == XUI_RICH_NODE_IMAGE ) {
 			if ( tInfo.pSurface != NULL && pProxy->drawSurface != NULL && pProxy->surfaceGetDesc != NULL ) {
@@ -2259,19 +2323,20 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 					(void)pProxy->drawSurface(pProxy, pDraw, tInfo.pSurface,
 						(xui_rect_t){0.0f, 0.0f, (float)tDesc.iWidth, (float)tDesc.iHeight}, tRect, 0xffffffffu, 0);
 			} else {
-				(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect, XUI_COLOR_RGBA(238,241,245,255));
-				if ( pProxy->drawRectStroke != NULL ) (void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, XUI_COLOR_RGBA(170,180,192,255));
+				(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect, pColors->iImageBackground);
+				if ( pProxy->drawRectStroke != NULL ) (void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pColors->iImageBorder);
 				if ( pProxy->drawText != NULL ) (void)pProxy->drawText(pProxy, pDraw,
 					__xuiRichEditSizedFont(pWidget, pData, pData->pFont, 0.0f),
-					tInfo.sAltText != NULL ? tInfo.sAltText : "Image", tRect, XUI_COLOR_RGBA(90,100,112,255),
+					tInfo.sAltText != NULL ? tInfo.sAltText : "Image", tRect, pColors->iImageText,
 					XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		} else if ( tInfo.iType == XUI_RICH_NODE_TABLE ) {
-			uint32_t iBorder = (tInfo.iBorderColor & 0xffu) != 0 ? tInfo.iBorderColor : XUI_COLOR_RGBA(170,180,192,255);
+			uint32_t iBorder = (tInfo.iBorderColor & 0xffu) != 0 ? tInfo.iBorderColor : pColors->iTableBorder;
 			int r, c;
 			for ( r = 0; r < tInfo.iRows; r++ ) for ( c = 0; c < tInfo.iColumns; c++ ) {
 				xui_rect_t tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, r, c, 0.0);
 				uint32_t iCell = r == 0 ? tInfo.iHeaderColor : tInfo.iCellColor;
+				if ( (iCell & 0xffu) == 0 ) iCell = r == 0 ? pColors->iTableHeader : pColors->iTableCell;
 				xui_rich_text_style_t tCellStyle;
 				const char* sCell = xuiRichTableGetCellText(pBlock->pNode, r, c);
 				if ( (iCell & 0xffu) != 0 ) (void)__xuiRichEditDrawRect(pProxy, pDraw, tCell, iCell);
@@ -2285,13 +2350,13 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 					tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, r, c, tInfo.fCellPadding * pData->fZoom);
 					(void)pProxy->drawText(pProxy, pDraw,
 						pCellFont != NULL ? pCellFont : pData->pFont, sCell, tCell,
-						(tCellStyle.iTextColor & 0xffu) != 0 ? tCellStyle.iTextColor : pData->iTextColor,
+						(tCellStyle.iTextColor & 0xffu) != 0 ? tCellStyle.iTextColor : pColors->iText,
 						XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP |
 						((tCellStyle.iFlags & XUI_RICH_STYLE_UNDERLINE) ? XUI_TEXT_UNDERLINE : 0));
 				}
 			}
 		} else if ( tInfo.iType == XUI_RICH_NODE_HORIZONTAL_RULE && pProxy->drawLine != NULL ) {
-			uint32_t iColor = (tInfo.tParagraphStyle.iBorderColor & 0xffu) != 0 ? tInfo.tParagraphStyle.iBorderColor : XUI_COLOR_RGBA(170,180,192,255);
+			uint32_t iColor = (tInfo.tParagraphStyle.iBorderColor & 0xffu) != 0 ? tInfo.tParagraphStyle.iBorderColor : pColors->iRule;
 			(void)pProxy->drawLine(pProxy, pDraw, tRect.fX, tRect.fY + tRect.fH * 0.5f,
 				tRect.fX + tRect.fW, tRect.fY + tRect.fH * 0.5f, 1.0f, iColor);
 		}
@@ -2308,17 +2373,19 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 	xui_rect_t tRect;
 	xui_rich_node_info_t tInfo;
 	xui_rich_layout_fragment_t tFragment;
+	xui_rich_edit_colors_t tColors;
 	int iStart;
 	int iEnd;
 	int i, iFirst, iLast;
 	int iRet;
 	(void)iStateId; (void)pUser;
 	if ( pData == NULL || pProxy == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiRichEditResolveColors(pWidget, pData, &tColors);
 	iRet = __xuiRichEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)__xuiRichEditDrawRect(pProxy, pDraw, tBounds, pData->iBackgroundColor);
+	(void)__xuiRichEditDrawRect(pProxy, pDraw, tBounds, tColors.iBackground);
 	tContent = __xuiRichEditContentRect(pWidget, pData);
-	(void)__xuiRichEditRenderBlocks(pWidget, pData, pProxy, pDraw, tContent);
+	(void)__xuiRichEditRenderBlocks(pWidget, pData, pProxy, pDraw, tContent, &tColors);
 	__xuiRichEditSelection(pData, &iStart, &iEnd);
 	__xuiRichEditVisibleFragments(pData, pData->fScrollY - 1.0f, pData->fScrollY + tContent.fH + 1.0f, &iFirst, &iLast);
 	for ( i = iFirst; i < iLast; i++ ) {
@@ -2335,7 +2402,7 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 				if ( pFind->iEnd > pFragment->tPublic.iDocumentStart &&
 				     pFind->iStart < pFragment->tPublic.iDocumentEnd ) {
 					(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect,
-						iFind == pData->iFindActiveIndex ? pData->iFindActiveColor : pData->iFindResultColor);
+						iFind == pData->iFindActiveIndex ? tColors.iFindActive : tColors.iFindResult);
 					break;
 				}
 			}
@@ -2351,14 +2418,14 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 							(xui_rect_t){0.0f, 0.0f, (float)tSurfaceDesc.iWidth, (float)tSurfaceDesc.iHeight},
 							tRect, 0xffffffffu, 0);
 				} else {
-					(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect, XUI_COLOR_RGBA(238,241,245,255));
+					(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect, tColors.iImageBackground);
 					if ( pProxy->drawRectStroke != NULL ) (void)pProxy->drawRectStroke(pProxy, pDraw, tRect,
-						1.0f, XUI_COLOR_RGBA(170,180,192,255));
+						1.0f, tColors.iImageBorder);
 				}
 			}
 		}
 		if ( iEnd > pFragment->tPublic.iDocumentStart && iStart < pFragment->tPublic.iDocumentEnd )
-			(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect, pData->iSelectionColor);
+			(void)__xuiRichEditDrawRect(pProxy, pDraw, tRect, tColors.iSelection);
 	}
 	for ( i = iFirst; i < iLast; ) {
 		xui_rich_layout_fragment_t tNext;
@@ -2366,6 +2433,7 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 		xui_rect_t tNextRect;
 		int iRunEnd;
 		int iTextEnd;
+		uint32_t iTextColor;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, pFragment);
 		if ( pFragment->tPublic.iNodeType != XUI_RICH_NODE_TEXT && pFragment->tPublic.iNodeType != XUI_RICH_NODE_LINK ) { i++; continue; }
 		tRect = __xuiRichEditFragmentRect(pWidget, pData, pFragment);
@@ -2393,28 +2461,30 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 		memcpy(pData->sScratch, tInfo.sText + pFragment->tPublic.iStartOffset,
 			(size_t)(iTextEnd - pFragment->tPublic.iStartOffset));
 		pData->sScratch[iTextEnd - pFragment->tPublic.iStartOffset] = 0;
+		iTextColor = (pFragment->iTextColor & 0xffu) != 0 ? pFragment->iTextColor :
+			(pFragment->tPublic.iNodeType == XUI_RICH_NODE_LINK ? tColors.iLink : tColors.iText);
 		if ( pProxy->drawText != NULL ) (void)pProxy->drawText(pProxy, pDraw, pFragment->pFont, pData->sScratch,
-			tRect, pFragment->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP |
+			tRect, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP |
 			((pFragment->iStyleFlags & XUI_RICH_STYLE_UNDERLINE) ? XUI_TEXT_UNDERLINE : 0));
 		if ( (pFragment->iStyleFlags & XUI_RICH_STYLE_STRIKEOUT) != 0 && pProxy->drawLine != NULL )
 			(void)pProxy->drawLine(pProxy, pDraw, tRect.fX, tRect.fY + tRect.fH * 0.52f,
-				tRect.fX + tRect.fW, tRect.fY + tRect.fH * 0.52f, 1.0f, pFragment->iTextColor);
+				tRect.fX + tRect.fW, tRect.fY + tRect.fH * 0.52f, 1.0f, iTextColor);
 		i = iRunEnd;
 	}
 		if ( pData->bImeActive && pData->sImeText != NULL && pData->sImeText[0] != 0 && pProxy->drawText != NULL ) {
 		tRect = __xuiRichEditCaret(pWidget, pData, pData->iImeStart);
 		tRect.fW = tContent.fX + tContent.fW - tRect.fX;
 		(void)pProxy->drawText(pProxy, pDraw,
-			__xuiRichEditSizedFont(pWidget, pData, pData->pFont, 0.0f), pData->sImeText, tRect, pData->iTextColor,
+			__xuiRichEditSizedFont(pWidget, pData, pData->pFont, 0.0f), pData->sImeText, tRect, tColors.iText,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_UNDERLINE | XUI_TEXT_CLIP);
 	}
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget &&
 	    xuiInternalCaretBlinkVisible(pWidget) && pProxy->drawRectFill != NULL ) {
 		pData->tCursorRect = __xuiRichEditCaret(pWidget, pData, pData->bImeActive ? pData->iImeStart : pData->iCaret);
-		(void)__xuiRichEditDrawRect(pProxy, pDraw, pData->tCursorRect, pData->iCursorColor);
+		(void)__xuiRichEditDrawRect(pProxy, pDraw, pData->tCursorRect, tColors.iCursor);
 	}
 	if ( pData->fBorderWidth > 0.0f && pProxy->drawRectStroke != NULL ) {
-		uint32_t iBorder = xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ? pData->iFocusBorderColor : pData->iBorderColor;
+		uint32_t iBorder = xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ? tColors.iFocusBorder : tColors.iBorder;
 		tRect = xuiInternalStrokeCenterRectInside(tBounds, pData->fBorderWidth, NULL);
 		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, pData->fBorderWidth, iBorder);
 	}
@@ -3559,7 +3629,7 @@ static int __xuiRichEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	xuiScrollModelInit(&pData->tScrollModel);
 	pData->tTypingStyle.iSize = sizeof(pData->tTypingStyle);
 	pData->tTypingStyle.pFont = NULL;
-	pData->tTypingStyle.iTextColor = pData->iTextColor;
+	pData->tTypingStyle.iTextColor = 0;
 	if ( pDesc != NULL && pDesc->pDocument != NULL ) { pData->pDocument = pDesc->pDocument; pData->bOwnDocument = pDesc->bOwnDocument; }
 	else {
 		iRet = xuiRichDocumentCreate(&pData->pDocument); if ( iRet != XUI_OK ) return iRet;
@@ -3667,7 +3737,7 @@ static int __xuiRichEditEnsureType(xui_context pContext, xui_widget_type* ppType
 	tDesc.tCachePolicy.iPolicy = XUI_CACHE_POLICY_SELF;
 	tDesc.tCachePolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
-	if ( iRet == XUI_OK ) *ppType = pType;
+	if ( iRet == XUI_OK ) { __xuiRichEditRegisterStyles(pContext, pType); *ppType = pType; }
 	return iRet;
 }
 

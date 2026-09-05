@@ -1141,7 +1141,6 @@ XUI_API xui_rich_node xuiRichDocumentAppendLink(xui_rich_document pDocument, xui
 	pNode->iTextSize = iSize;
 	pNode->tStyle = __xuiRichStyle(pStyle);
 	if ( pStyle == NULL ) {
-		pNode->tStyle.iTextColor = XUI_COLOR_RGBA(20, 92, 170, 255);
 		pNode->tStyle.iFlags |= XUI_RICH_STYLE_UNDERLINE;
 	}
 	__xuiRichNodeAppend(pParagraph, pNode);
@@ -3084,7 +3083,7 @@ static xui_rich_node __xuiRichHtmlAppendTextN(xui_rich_document pDocument, xui_r
 	if ( sLink != NULL ) {
 		pNode->sResource = __xuiRichString(sLink);
 		if ( pNode->sResource == NULL ) { __xuiRichNodeDestroy(pNode); return NULL; }
-		if ( pStyle == NULL ) { pNode->tStyle.iTextColor = XUI_COLOR_RGBA(20,92,170,255); pNode->tStyle.iFlags |= XUI_RICH_STYLE_UNDERLINE; }
+		if ( pStyle == NULL ) pNode->tStyle.iFlags |= XUI_RICH_STYLE_UNDERLINE;
 	}
 	__xuiRichNodeAppend(pBlock, pNode);
 	return pNode;
