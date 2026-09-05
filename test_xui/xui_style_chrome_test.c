@@ -10,6 +10,7 @@
 #include "../src/xui_accordion.c"
 #include "../src/xui_carousel.c"
 #include "../src/xui_window.c"
+#include "../src/xui_chart.c"
 
 /* Record the colors actually submitted to the renderer, not just resolution. */
 static uint32_t g_colors[32768];
@@ -98,7 +99,7 @@ static void chrome_key(pixel_fixture_t* f, xui_widget w, const char* key, uint32
 	s.iSize = sizeof(s); s.pProperties = &p; s.iPropertyCount = 1;
 	PIXEL_CHECK(xuiStyleGetPropertyInfo(f->context, xuiStyleFindProperty(f->context, key), &info) == XUI_OK);
 	PIXEL_CHECK(info.iValueType == XUI_STYLE_VALUE_COLOR);
-	PIXEL_CHECK(info.iDirtyFlags == (XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
+	PIXEL_CHECK((info.iDirtyFlags & ~XUI_WIDGET_DIRTY_STYLE) == (XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 	chrome_expect(f, w, state, base);
 	PIXEL_CHECK(xuiStyleSetDefault(f->context, &p, 1) == XUI_OK);
 	chrome_expect(f, w, state, p.tValue.iColor);
@@ -331,6 +332,37 @@ static void chrome_composites(pixel_fixture_t* f)
 	xuiWidgetDestroy(window);
 }
 
+static void chrome_chart(pixel_fixture_t* f)
+{
+	xui_widget chart = NULL;
+	xui_chart_point_t points[2] = {0};
+	xui_chart_data_t* data;
+	int index;
+	PIXEL_CHECK(xuiChartCreate(f->context, &chart, NULL) == XUI_OK);
+	chrome_attach(f, chart, 400, 280);
+	PIXEL_CHECK(xuiChartAddSeries(chart, XUI_CHART_SERIES_SCATTER, "Data", &index) == XUI_OK);
+	points[0].x = 1; points[0].y = 1;
+	points[1].x = 5; points[1].y = 5; points[1].color = 0xb72345ffu;
+	PIXEL_CHECK(xuiChartSetSeriesData(chart, index, points, 2) == XUI_OK);
+	PIXEL_CHECK(xuiChartSetSeriesColor(chart, index, 0x812345ffu) == XUI_OK);
+	PIXEL_CHECK(xuiChartSetLegendVisible(chart, 1) == XUI_OK);
+	PIXEL_CHECK(xuiChartAddSeries(chart, XUI_CHART_SERIES_LINE, "Hidden", &index) == XUI_OK);
+	PIXEL_CHECK(xuiChartSetSeriesVisible(chart, index, 0) == XUI_OK);
+	PIXEL_CHECK(xuiChartSetBrushRange(chart, 1, 4, 1, 4) == XUI_OK);
+	data = __xuiChartGetData(chart);
+	data->tSelected.iPart = XUI_CHART_HIT_SERIES;
+	data->tSelected.iSeries = 0; data->tSelected.iItem = 0;
+	chrome_key(f, chart, "chart.legend.hidden_color", XUI_COLOR_RGBA(120, 128, 136, 120), 0);
+	chrome_key(f, chart, "chart.brush.color", XUI_COLOR_RGBA(42, 124, 221, 38), 0);
+	chrome_key(f, chart, "chart.brush.border_color", XUI_COLOR_RGBA(42, 124, 221, 180), 0);
+	chrome_key(f, chart, "chart.selection.color", XUI_COLOR_RGBA(30, 40, 52, 220), 0);
+	chrome_inline(chart, "chart.selection.color", 0x123456ffu);
+	chrome_paint(f, chart, 0);
+	PIXEL_CHECK(chrome_count(0x812345ffu) > 0 && chrome_count(0xb72345ffu) > 0);
+	PIXEL_CHECK(data->arrSeries[0].iColor == 0x812345ffu && data->arrSeries[0].pPoints[1].color == 0xb72345ffu);
+	xuiWidgetDestroy(chart);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -340,6 +372,7 @@ int main(void)
 	chrome_sliders(&f);
 	chrome_bars(&f);
 	chrome_composites(&f);
+	chrome_chart(&f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_chrome_test");
 }

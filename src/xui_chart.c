@@ -1497,8 +1497,9 @@ static int __xuiChartDrawPieSeries(xui_proxy pProxy, xui_draw_context pDraw, xui
 	return XUI_OK;
 }
 
-static int __xuiChartDrawLegend(xui_proxy pProxy, xui_draw_context pDraw, xui_chart_data_t* pData, xui_rect_t tContent)
+static int __xuiChartDrawLegend(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, xui_chart_data_t* pData, xui_rect_t tContent)
 {
+	uint32_t iHiddenColor = XUI_COLOR_RGBA(120, 128, 136, 120);
 	int i;
 	float fX;
 	float fY;
@@ -1507,11 +1508,12 @@ static int __xuiChartDrawLegend(xui_proxy pProxy, xui_draw_context pDraw, xui_ch
 		return XUI_OK;
 	}
 	fX = tContent.fX + tContent.fW - 108.0f;
+	(void)__xuiChartStyleColor(pWidget, "chart.legend.hidden_color", &iHiddenColor);
 	fY = tContent.fY + 36.0f;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		xui_rect_t tSwatch = {fX, fY + (float)i * 20.0f + 4.0f, 10.0f, 10.0f};
 		xui_rect_t tText = {fX + 16.0f, fY + (float)i * 20.0f, 90.0f, 18.0f};
-		uint32_t iColor = pData->arrSeries[i].bVisible ? pData->arrSeries[i].iColor : XUI_COLOR_RGBA(120, 128, 136, 120);
+		uint32_t iColor = pData->arrSeries[i].bVisible ? pData->arrSeries[i].iColor : iHiddenColor;
 		int iRet = pProxy->drawRectFill(pProxy, pDraw, tSwatch, iColor);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, pData->arrSeries[i].sName, tText, pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -1685,17 +1687,23 @@ static void __xuiChartTargetRect(xui_widget pWidget, xui_chart_data_t* pData, xu
 static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw,
 	xui_chart_data_t* pData, int bDrawOverlay, int bDrawTooltip)
 {
+	uint32_t iBrushColor = XUI_COLOR_RGBA(42, 124, 221, 38);
+	uint32_t iBrushBorderColor = XUI_COLOR_RGBA(42, 124, 221, 180);
+	uint32_t iSelectionColor = XUI_COLOR_RGBA(30, 40, 52, 220);
 	xui_chart_hit_t* pHit;
 	xui_rect_t tBrush;
 	int iRet;
 
+	(void)__xuiChartStyleColor(pWidget, "chart.brush.color", &iBrushColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.brush.border_color", &iBrushBorderColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.selection.color", &iSelectionColor);
 	if ( bDrawOverlay && pData->bBrushRange && !__xuiChartHasVisiblePie(pData) ) {
 		tBrush = __xuiChartRangeToRect(pData, pData->fBrushMinX, pData->fBrushMaxX, pData->fBrushMinY, pData->fBrushMaxY);
 		if ( (tBrush.fW > 0.0f) && (tBrush.fH > 0.0f) ) {
-			iRet = pProxy->drawRectFill(pProxy, pDraw, tBrush, XUI_COLOR_RGBA(42, 124, 221, 38));
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tBrush, iBrushColor);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( pProxy->drawRectStroke != NULL ) {
-				iRet = pProxy->drawRectStroke(pProxy, pDraw, tBrush, 1.0f, XUI_COLOR_RGBA(42, 124, 221, 180));
+				iRet = pProxy->drawRectStroke(pProxy, pDraw, tBrush, 1.0f, iBrushBorderColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -1708,7 +1716,7 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 		return XUI_OK;
 	}
 	if ( bDrawOverlay ) {
-		iRet = pProxy->drawCircleStroke(pProxy, pDraw, pHit->fX, pHit->fY, 7.0f, 2.0f, XUI_COLOR_RGBA(30, 40, 52, 220));
+		iRet = pProxy->drawCircleStroke(pProxy, pDraw, pHit->fX, pHit->fY, 7.0f, 2.0f, iSelectionColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( bDrawTooltip && pData->bTooltipVisible && (pData->pFont != NULL) &&
@@ -1817,7 +1825,7 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	iRet = __xuiChartPlotClipEnd(pProxy, pDraw, tOldClip, bHadOldClip, bClipActive);
 	bClipActive = 0;
 	if ( iRet != XUI_OK ) goto cleanup;
-	iRet = __xuiChartDrawLegend(pProxy, pDraw, pData, tContent);
+	iRet = __xuiChartDrawLegend(pWidget, pProxy, pDraw, pData, tContent);
 	if ( iRet != XUI_OK ) goto cleanup;
 	if ( xuiWidgetGetEffectiveEnabled(pWidget) &&
 		xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL ) {
@@ -2526,6 +2534,10 @@ static void __xuiChartRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiChartRegisterStyleProperty(pContext, pType, "chart.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiChartRegisterStyleProperty(pContext, pType, "chart.tooltip.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiChartRegisterStyleProperty(pContext, pType, "chart.tooltip.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.legend.hidden_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.brush.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.brush.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 }
 
 XUI_API xui_widget_type xuiChartGetType(xui_context pContext)
