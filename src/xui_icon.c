@@ -13,6 +13,9 @@ typedef struct xui_icon_cache_entry_t {
 	xui_surface pSurface;
 	int iPixelWidth;
 	int iPixelHeight;
+	float fLogicalWidth;
+	float fLogicalHeight;
+	uint32_t iDpiGeneration;
 	uint32_t iLastUse;
 } xui_icon_cache_entry_t;
 
@@ -472,7 +475,8 @@ static xui_icon_cache_entry_t* __xuiIconFindCache(xui_icon pIcon, int iWidth, in
 
 	for ( i = 0; i < pIcon->iCacheCount; i++ ) {
 		if ( (pIcon->pCache[i].iPixelWidth == iWidth) &&
-		     (pIcon->pCache[i].iPixelHeight == iHeight) ) {
+		     (pIcon->pCache[i].iPixelHeight == iHeight) &&
+		     (pIcon->pCache[i].iDpiGeneration == pIcon->pContext->iDpiGeneration) ) {
 			pIcon->iCacheClock++;
 			if ( pIcon->iCacheClock == 0 ) pIcon->iCacheClock = 1;
 			pIcon->pCache[i].iLastUse = pIcon->iCacheClock;
@@ -502,7 +506,8 @@ static int __xuiIconLoadSvgSurface(xui_icon pIcon, int iWidth, int iHeight, xui_
 	return pProxy->surfaceLoadSvgMemory(pProxy, ppSurface, pIcon->pMemory, pIcon->iMemorySize, iWidth, iHeight, 0);
 }
 
-static int __xuiIconEnsureSvgCache(xui_icon pIcon, int iWidth, int iHeight, xui_icon_cache_entry_t** ppEntry)
+static int __xuiIconEnsureSvgCache(xui_icon pIcon, int iWidth, int iHeight,
+	float fLogicalWidth, float fLogicalHeight, xui_icon_cache_entry_t** ppEntry)
 {
 	xui_icon_cache_entry_t* pEntry;
 	xui_icon_cache_entry_t* pNewCache;
@@ -567,6 +572,9 @@ static int __xuiIconEnsureSvgCache(xui_icon pIcon, int iWidth, int iHeight, xui_
 	pEntry->pSurface = pSurface;
 	pEntry->iPixelWidth = iWidth;
 	pEntry->iPixelHeight = iHeight;
+	pEntry->fLogicalWidth = fLogicalWidth;
+	pEntry->fLogicalHeight = fLogicalHeight;
+	pEntry->iDpiGeneration = pIcon->pContext->iDpiGeneration;
 	pEntry->iLastUse = pIcon->iCacheClock;
 	*ppEntry = pEntry;
 	return XUI_OK;
@@ -630,8 +638,8 @@ surface_size:
 	case XUI_ICON_SOURCE_SVG_FILE:
 	case XUI_ICON_SOURCE_SVG_MEMORY:
 		if ( pIcon->iCacheCount > 0 ) {
-			pSize->fX = (float)pIcon->pCache[0].iPixelWidth / pIcon->pContext->fDpiScale;
-			pSize->fY = (float)pIcon->pCache[0].iPixelHeight / pIcon->pContext->fDpiScale;
+			pSize->fX = pIcon->pCache[0].fLogicalWidth;
+			pSize->fY = pIcon->pCache[0].fLogicalHeight;
 			return XUI_OK;
 		}
 		break;
@@ -766,7 +774,7 @@ static int __xuiIconPrepareDepth(xui_icon pIcon, float fWidth, float fHeight, in
 	case XUI_ICON_SOURCE_SVG_MEMORY:
 		iRet = __xuiIconPixelSize(pIcon, fWidth, fHeight, &iPixelWidth, &iPixelHeight);
 		if ( iRet != XUI_OK ) return iRet;
-		return __xuiIconEnsureSvgCache(pIcon, iPixelWidth, iPixelHeight, &pEntry);
+		return __xuiIconEnsureSvgCache(pIcon, iPixelWidth, iPixelHeight, fWidth, fHeight, &pEntry);
 	case XUI_ICON_SOURCE_ALIAS:
 		return __xuiIconPrepareDepth(pIcon->pAlias, fWidth, fHeight, iDepth + 1);
 	case XUI_ICON_SOURCE_CUSTOM:
@@ -856,7 +864,8 @@ static int __xuiIconDrawDepth(xui_painter pPainter, xui_icon pIcon, xui_rect_t t
 	case XUI_ICON_SOURCE_SVG_MEMORY:
 		iRet = __xuiIconPixelSize(pIcon, tDrawRect.fW, tDrawRect.fH, &iPixelWidth, &iPixelHeight);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiIconEnsureSvgCache(pIcon, iPixelWidth, iPixelHeight, &pEntry);
+		iRet = __xuiIconEnsureSvgCache(pIcon, iPixelWidth, iPixelHeight,
+			tDrawRect.fW, tDrawRect.fH, &pEntry);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiIconGetSurfaceDesc(pIcon, pEntry->pSurface, &tSurfaceDesc);
 		if ( iRet != XUI_OK ) return iRet;

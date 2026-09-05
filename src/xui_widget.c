@@ -1329,6 +1329,14 @@ static void __xuiWidgetMarkDirtyOnly(xui_widget pWidget, uint32_t iFlags)
 	xuiInternalContextBumpGeneration(pWidget->pContext);
 }
 
+void xuiInternalWidgetSyncDpi(xui_widget pWidget)
+{
+	if ( !__xuiWidgetValid(pWidget) || pWidget->iDpiGeneration == pWidget->pContext->iDpiGeneration ) return;
+	pWidget->iDpiGeneration = pWidget->pContext->iDpiGeneration;
+	__xuiWidgetMarkDirtyOnly(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static uint32_t __xuiWidgetRecomputeSubtreeDirtyFlags(xui_widget pWidget)
 {
 	xui_widget pChild;
@@ -3325,6 +3333,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->iDirtyFlags = XUI_WIDGET_DIRTY_ALL;
 	pWidget->iSubtreeDirtyFlags = XUI_WIDGET_DIRTY_ALL;
 	pWidget->iGeneration = 1;
+	pWidget->iDpiGeneration = pContext->iDpiGeneration;
 	pWidget->iResolvedStyleHash = __xuiStyleHashProps(NULL, 0);
 	pWidget->iResolvedStyleGeneration = pContext->iStyleGeneration;
 	pWidget->tCachePolicy.iSize = sizeof(pWidget->tCachePolicy);
@@ -6897,6 +6906,7 @@ XUI_API int xuiWidgetUpdateBegin(xui_widget pWidget, uint32_t iStateId, uint32_t
 	}
 	pWidget->pActiveUpdateDraw = *ppDraw;
 	pWidget->pActiveUpdateSlot = pSlot;
+	pSlot->iDpiGeneration = pWidget->pContext->iDpiGeneration;
 	return XUI_OK;
 }
 
@@ -7046,6 +7056,7 @@ static int __xuiWidgetCacheStateNeedsUpdate(xui_widget pWidget, xui_widget_cache
 	if ( (pSlot->pSurface == NULL) || ((pSlot->iFlags & XUI_WIDGET_DIRTY_CACHE) != 0) ) {
 		return 1;
 	}
+	if ( pSlot->iDpiGeneration != pWidget->pContext->iDpiGeneration ) return 1;
 	if ( (pSlot->iWidth != iWidth) || (pSlot->iHeight != iHeight) ) {
 		return 1;
 	}

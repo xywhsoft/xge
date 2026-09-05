@@ -129,6 +129,7 @@ typedef struct xui_widget_cache_slot_t {
 	int iWidth;
 	int iHeight;
 	uint32_t iSurfaceGeneration;
+	uint32_t iDpiGeneration;
 	uint32_t iFlags;
 } xui_widget_cache_slot_t;
 
@@ -159,6 +160,7 @@ struct xui_context_t {
 	int fViewportWidth;
 	int fViewportHeight;
 	float fDpiScale;
+	uint32_t iDpiGeneration;
 	xui_interaction_policy_t tInteractionPolicy;
 	int bInteractionPolicyUserSet;
 	int bInteractionPolicyPlatformSet;
@@ -401,6 +403,7 @@ struct xui_widget_t {
 	uint32_t iLayoutVersion;
 	uint32_t iLayoutSyncedVersion;
 	uint32_t iLayoutSyncedParentVersion;
+	uint32_t iDpiGeneration;
 	uint32_t iStyleVersion;
 	void* pUser;
 	xui_widget pOverlayOwner;
@@ -489,6 +492,7 @@ void xuiInternalLayoutDestroyWidget(xui_widget pWidget);
 int xuiInternalLayoutAttach(xui_widget pParent, xui_widget pChild, xui_widget pBefore);
 void xuiInternalLayoutDetach(xui_widget pWidget);
 void xuiInternalLayoutInvalidate(xui_widget pWidget, int bMeasure);
+void xuiInternalWidgetSyncDpi(xui_widget pWidget);
 int xuiInternalWidgetInvalidateArrange(xui_widget pWidget, uint32_t iPaintFlags);
 int xuiInternalLayoutMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasured);
 int xuiInternalLayoutArrange(xui_widget pWidget, xui_rect_t tRect);

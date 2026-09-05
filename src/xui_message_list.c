@@ -37,6 +37,7 @@ typedef struct xui_message_node_data_t {
 	xui_font pTextLayoutFont;
 	const char* sTextLayoutSource;
 	float fTextLayoutWidth;
+	uint32_t iTextDpiGeneration;
 	xui_message_text_caret_t* arrTextCarets;
 	int iTextCaretCount;
 	int iTextCaretCapacity;
@@ -46,6 +47,7 @@ typedef struct xui_message_node_data_t {
 	const char* sTitleLayoutSource;
 	float fTitleLayoutWidth;
 	uint32_t iTitleLanguageRevision;
+	uint32_t iTitleDpiGeneration;
 	xui_vec2_t tMeasuredText;
 	xui_vec2_t tMeasuredTitle;
 	float fMetaWidth;
@@ -88,6 +90,7 @@ typedef struct xui_message_list_data_t {
 	float fLayoutHeight;
 	xui_font pLayoutFont;
 	uint32_t iLayoutLanguageRevision;
+	uint32_t iLayoutDpiGeneration;
 } xui_message_list_data_t;
 
 static int __xuiMessageNodeCanSelectText(const xui_message_node_data_t* pNode);
@@ -431,7 +434,8 @@ static int __xuiMessageEnsureNodeTextLayout(xui_widget pWidget, xui_message_list
 	pFont = __xuiMessageFont(pWidget, pData);
 	fMaxWidth = __xuiMessageMax(1.0f, fMaxWidth);
 	if ( pNode->pTextLayout != NULL && pNode->pTextLayoutFont == pFont &&
-	     pNode->sTextLayoutSource == pNode->sText && pNode->fTextLayoutWidth == fMaxWidth ) {
+	     pNode->sTextLayoutSource == pNode->sText && pNode->fTextLayoutWidth == fMaxWidth &&
+	     pNode->iTextDpiGeneration == pWidget->pContext->iDpiGeneration ) {
 		*ppLayout = pNode->pTextLayout;
 		return XUI_OK;
 	}
@@ -459,6 +463,7 @@ static int __xuiMessageEnsureNodeTextLayout(xui_widget pWidget, xui_message_list
 	pNode->pTextLayoutFont = pFont;
 	pNode->sTextLayoutSource = pNode->sText;
 	pNode->fTextLayoutWidth = fMaxWidth;
+	pNode->iTextDpiGeneration = pWidget->pContext->iDpiGeneration;
 	*ppLayout = pNode->pTextLayout;
 	return XUI_OK;
 }
@@ -492,7 +497,8 @@ static int __xuiMessageMeasureTitle(xui_widget pWidget, xui_message_list_data_t*
 	fMaxWidth = __xuiMessageMax(1.0f, fMaxWidth);
 	if ( pNode->pTitleLayout != NULL && pNode->pTitleLayoutFont == pFont &&
 	     pNode->sTitleLayoutSource == sText && pNode->fTitleLayoutWidth == fMaxWidth &&
-	     pNode->iTitleLanguageRevision == iRevision ) {
+	     pNode->iTitleLanguageRevision == iRevision &&
+	     pNode->iTitleDpiGeneration == pWidget->pContext->iDpiGeneration ) {
 		*pSize = xuiTextLayoutGetSize(pNode->pTitleLayout);
 		return XUI_OK;
 	}
@@ -519,6 +525,7 @@ static int __xuiMessageMeasureTitle(xui_widget pWidget, xui_message_list_data_t*
 	pNode->sTitleLayoutSource = sText;
 	pNode->fTitleLayoutWidth = fMaxWidth;
 	pNode->iTitleLanguageRevision = iRevision;
+	pNode->iTitleDpiGeneration = pWidget->pContext->iDpiGeneration;
 	*pSize = xuiTextLayoutGetSize(pNode->pTitleLayout);
 	return XUI_OK;
 }
@@ -597,7 +604,8 @@ static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_lis
 	pFont = __xuiMessageFont(pWidget, pData);
 	iLanguageRevision = xuiGetLanguageRevision(xuiWidgetGetContext(pWidget));
 	bAll = !pData->bLayoutValid || pData->fLayoutWidth != tContent.fW ||
-		pData->pLayoutFont != pFont || pData->iLayoutLanguageRevision != iLanguageRevision;
+		pData->pLayoutFont != pFont || pData->iLayoutLanguageRevision != iLanguageRevision ||
+		pData->iLayoutDpiGeneration != pWidget->pContext->iDpiGeneration;
 	iStart = bAll ? 0 : pData->iLayoutDirtyFrom;
 	if ( iStart >= pData->iNodeCount && !bAll && pData->fLayoutHeight == tContent.fH ) return XUI_OK;
 	if ( bUpdateScroll && pData->iLaidOutCount > 0 ) {
@@ -705,6 +713,7 @@ static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_lis
 	pData->fLayoutHeight = tContent.fH;
 	pData->pLayoutFont = pFont;
 	pData->iLayoutLanguageRevision = iLanguageRevision;
+	pData->iLayoutDpiGeneration = pWidget->pContext->iDpiGeneration;
 	return XUI_OK;
 }
 

@@ -1019,6 +1019,84 @@ cleanup:
 	return !iFailed;
 }
 
+static int __xuiDpiDraw(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_render_schedule_test_state_t* pState = (xui_render_schedule_test_state_t*)pUser;
+	xui_rect_t tRect = xuiWidgetGetRect(pWidget);
+	int iColor = (int)(100.0f * xuiGetVirtualDpi(xuiWidgetGetContext(pWidget)));
+	tRect.fX = tRect.fY = 0;
+	pState->iRenderCount++;
+	return pState->tProxy.drawRectFill(&pState->tProxy, pDraw, tRect,
+		XUI_COLOR_RGBA(iColor, iStateId ? 64 : 0, 0, 255));
+}
+
+static int __xuiDpiMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+{
+	(void)tConstraint;
+	(void)pUser;
+	pSize->fX = pSize->fY = 8.0f * xuiGetVirtualDpi(xuiWidgetGetContext(pWidget));
+	return XUI_OK;
+}
+
+static int __xuiTestDpiCaches(void)
+{
+	const float arrDpi[] = {1.0f, 1.25f, 1.5f, 2.0f, 1.0f};
+	xui_render_schedule_test_state_t tState;
+	xui_surface_desc_t tSurfaceDesc = {0};
+	xui_context pContext = NULL;
+	xui_widget pRoot = NULL, pSizer = NULL, pCached = NULL, pDetached = NULL;
+	xui_surface pTarget = NULL;
+	xui_vec2_t tMeasured;
+	int iFailed = 0;
+	int i, s;
+	memset(&tState, 0, sizeof(tState));
+	tState.tProxy = __xuiTestProxy();
+	XUI_TEST_CHECK(xuiCreate(&pContext) == XUI_OK &&
+		xuiSetProxy(pContext, &tState.tProxy) == XUI_OK &&
+		xuiSetViewportSize(pContext, 64, 64) == XUI_OK, "dpi context");
+	XUI_TEST_CHECK(xuiWidgetCreate(pContext, &pRoot) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pSizer) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pCached) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pDetached) == XUI_OK, "dpi widgets");
+	(void)xuiSetRootWidget(pContext, pRoot);
+	(void)xuiWidgetSetLayoutType(pRoot, XUI_LAYOUT_ROW);
+	(void)xuiWidgetSetSizeMode(pSizer, XUI_SIZE_CONTENT, XUI_SIZE_CONTENT);
+	(void)xuiWidgetSetSizeMode(pDetached, XUI_SIZE_CONTENT, XUI_SIZE_CONTENT);
+	(void)xuiWidgetSetContentMeasureCallback(pSizer, __xuiDpiMeasure, NULL);
+	(void)xuiWidgetSetContentMeasureCallback(pDetached, __xuiDpiMeasure, NULL);
+	(void)xuiWidgetSetPreferredSize(pCached, (xui_vec2_t){20, 20});
+	(void)xuiWidgetAddChild(pRoot, pSizer);
+	(void)xuiWidgetAddChild(pRoot, pCached);
+	(void)xuiWidgetSetCacheRenderCallback(pCached, __xuiDpiDraw, &tState);
+	tSurfaceDesc.iWidth = tSurfaceDesc.iHeight = 64;
+	tSurfaceDesc.iKind = XUI_SURFACE_KIND_TEXTURE;
+	tSurfaceDesc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
+	tSurfaceDesc.iFlags = XUI_SURFACE_USAGE_TARGET;
+	XUI_TEST_CHECK(tState.tProxy.surfaceCreate(&tState.tProxy, &pTarget, &tSurfaceDesc) == XUI_OK, "dpi target");
+	for ( i = 0; i < (int)(sizeof(arrDpi) / sizeof(arrDpi[0])); ++i ) {
+		XUI_TEST_CHECK(xuiSetVirtualDpi(pContext, arrDpi[i]) == XUI_OK, "dpi set");
+		for ( s = 0; s < 2; ++s ) {
+			(void)xuiWidgetSetStateId(pCached, (uint32_t)s);
+			XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "dpi render");
+			XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, xuiWidgetGetRect(pCached).fX + 1, 1,
+				(unsigned char)(100.0f * arrDpi[i]), s ? 64 : 0, 0, 255), "stale dpi cache state pixels");
+		}
+		XUI_TEST_CHECK(xuiWidgetGetRect(pSizer).fW == (int)(8.0f * arrDpi[i]), "attached dpi measure was reused");
+		XUI_TEST_CHECK(xuiWidgetGetRect(pCached).fW == 20, "fixed pixel box was scaled twice");
+		XUI_TEST_CHECK(xuiWidgetMeasure(pDetached, (xui_vec2_t){64, 64}, &tMeasured) == XUI_OK &&
+			tMeasured.fX == 8.0f * arrDpi[i], "detached dpi measure was reused");
+		XUI_TEST_CHECK(tState.iRenderCount == 2 * (i + 1), "dpi did not refresh each cache state exactly once");
+		(void)xuiSetVirtualDpi(pContext, arrDpi[i]);
+		XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK &&
+			tState.iRenderCount == 2 * (i + 1), "unchanged dpi rebuilt the cache");
+	}
+cleanup:
+	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
+	if ( pDetached != NULL ) xuiWidgetDestroy(pDetached);
+	if ( pContext != NULL ) xuiDestroy(pContext);
+	return !iFailed;
+}
+
 static int __xuiTestCacheStacking(void)
 {
 	xui_render_schedule_test_state_t tState;
@@ -1510,6 +1588,7 @@ cleanup:
 	}
 	if ( !__xuiTestLayoutDamage() ) return 1;
 	if ( !__xuiTestCacheStacking() ) return 1;
+	if ( !__xuiTestDpiCaches() ) return 1;
 	printf("xui_render_schedule_test passed\n");
 	return 0;
 }

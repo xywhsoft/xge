@@ -324,6 +324,7 @@ static int __xuiLayoutSyncNode(xui_widget widget, xui_widget parent, uint32_t vi
 	int sync_self;
 	int result;
 	if ( !xuiInternalWidgetIsValid(widget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xuiInternalWidgetSyncDpi(widget);
 	if ( widget->onLayoutPrepare != NULL ) {
 		result = widget->onLayoutPrepare(widget, widget->pLayoutPrepareUser);
 		if ( result != XUI_OK ) {

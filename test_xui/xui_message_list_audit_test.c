@@ -442,6 +442,25 @@ static int auditLayouts(int iCount)
     CHECK(iNode == iCount - 1 && iOffset == (int)strlen(sText));
     CHECK(g_tSteps.HitNode <= 3 * (iLog + 1));
     if (iCount == 128) {
+        arrNodes[0].iType = XUI_MESSAGE_NODE_OTHER;
+        arrNodes[1].iType = XUI_MESSAGE_NODE_AUXILIARY;
+        arrNodes[1].sTitle = "DPI title";
+        arrNodes[1].iFlags = 0;
+        CHECK(xuiMessageListSetNodes(pWidget, arrNodes, 2) == XUI_OK);
+        CHECK(auditHit(pWidget, 0, 4, &iOffset));
+        CHECK(pData->arrNodes[0].iTextCaretCount > 0);
+        auditResetCounts();
+        CHECK(xuiSetVirtualDpi(pContext, 1.5f) == XUI_OK);
+        CHECK(__xuiMessageLayoutNodes(pWidget, pData) == XUI_OK);
+        CHECK(g_tSteps.MeasureNode == 2 && g_iLayoutResets == 3 && g_iLayoutCreates == 0);
+        CHECK(pData->arrNodes[0].iTextCaretCount == 0);
+        auditResetCounts();
+        CHECK(xuiSetVirtualDpi(pContext, 1.5f) == XUI_OK);
+        CHECK(__xuiMessageLayoutNodes(pWidget, pData) == XUI_OK);
+        CHECK(g_tSteps.MeasureNode == 0 && g_iLayoutResets == 0);
+        CHECK(xuiSetVirtualDpi(pContext, 1.0f) == XUI_OK);
+        CHECK(__xuiMessageLayoutNodes(pWidget, pData) == XUI_OK);
+        CHECK(g_tSteps.MeasureNode == 2 && g_iLayoutResets == 3);
         sLong = (char*)malloc(8193);
         CHECK(sLong != NULL);
         for (i = 0; i < 2048; i++) memcpy(sLong + i * 4, "x y\n", 4);

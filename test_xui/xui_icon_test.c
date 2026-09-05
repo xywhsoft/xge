@@ -348,6 +348,23 @@ static int __xuiIconTestRenderAndOwnership(void)
 	iDestroyBefore = xuiTestProxyGetSvgSurfaceLoadCount(&tState);
 	XUI_TEST_CHECK(xuiIconPrepare(pSvgFile, 22.0f, 18.0f) == XUI_OK, "svg file prepare");
 	XUI_TEST_CHECK(xuiTestProxyGetSvgSurfaceLoadCount(&tState) == iDestroyBefore + 1, "svg file loader used");
+	{
+		const float arrDpi[] = {1.25f, 1.5f, 2.0f, 1.0f};
+		xui_vec2_t tIntrinsic;
+		int i;
+		for ( i = 0; i < 4; ++i ) {
+			XUI_TEST_CHECK(xuiSetVirtualDpi(pContext, arrDpi[i]) == XUI_OK, "icon dpi set");
+			XUI_TEST_CHECK(xuiIconGetIntrinsicSize(pSvgFile, &tIntrinsic) == XUI_OK &&
+				tIntrinsic.fX == 22.0f && tIntrinsic.fY == 18.0f, "dpi changed svg intrinsic size");
+			iDestroyBefore = xuiTestProxyGetSvgSurfaceLoadCount(&tState);
+			XUI_TEST_CHECK(xuiIconPrepare(pSvgFile, 0.0f, 0.0f) == XUI_OK &&
+				xuiTestProxyGetSvgSurfaceLoadCount(&tState) == iDestroyBefore + 1, "svg cache did not refresh for dpi");
+			XUI_TEST_CHECK(xuiIconGetIntrinsicSize(pSvgFile, &tIntrinsic) == XUI_OK &&
+				tIntrinsic.fX == 22.0f && tIntrinsic.fY == 18.0f, "svg raster rounding changed logical size");
+			XUI_TEST_CHECK(xuiIconPrepare(pSvgFile, 0.0f, 0.0f) == XUI_OK &&
+				xuiTestProxyGetSvgSurfaceLoadCount(&tState) == iDestroyBefore + 1, "stable dpi missed svg cache");
+		}
+	}
 	iDestroyBefore = xuiTestProxyGetSurfaceLoadCount(&tState);
 	XUI_TEST_CHECK(xuiIconPrepare(pRasterFile, 22.0f, 18.0f) == XUI_OK, "raster file prepare");
 	XUI_TEST_CHECK(xuiTestProxyGetSurfaceLoadCount(&tState) == iDestroyBefore + 1, "raster file loader used");

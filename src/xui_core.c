@@ -1553,6 +1553,7 @@ XUI_API int xuiCreate(xui_context* ppContext)
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	pContext->fDpiScale = 1.0f;
+	pContext->iDpiGeneration = 1u;
 	xuiInteractionPolicyDefault(&pContext->tInteractionPolicy);
 	pContext->bCaretBlinkVisible = 1;
 	pContext->iGeneration = 1;
@@ -1772,6 +1773,16 @@ XUI_API int xuiSetVirtualDpi(xui_context pContext, float fDpiScale)
 		return XUI_OK;
 	}
 	pContext->fDpiScale = fDpiScale;
+	if ( ++pContext->iDpiGeneration == 0u ) pContext->iDpiGeneration = 1u;
+	/* Pixel-valued geometry stays unchanged; dependent metrics and caches do not. */
+	if ( pContext->pRoot != NULL ) {
+		(void)xuiWidgetInvalidate(pContext->pRoot,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	if ( pContext->pOverlayRoot != NULL ) {
+		(void)xuiWidgetInvalidate(pContext->pOverlayRoot,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
 	pContext->iDamageCount = 0;
 	if ( (__xuiContextCeilPositive(pContext->fViewportWidth) <= 0) ||
 	     (__xuiContextCeilPositive(pContext->fViewportHeight) <= 0) ) {
