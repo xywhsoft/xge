@@ -266,6 +266,10 @@ struct xui_context_t {
 	int bReportingError;
 	xui_accessibility_event_proc onAccessibilityEvent;
 	void* pAccessibilityEventUser;
+	xui_widget pAccessibilityHead;
+	xui_widget pAccessibilityTail;
+	uint32_t iAccessibilityFlushEpoch;
+	int bAccessibilityFlushing;
 	xui_render_node_t* pRenderNodes;
 	int iRenderNodeCount;
 	int iRenderNodeCapacity;
@@ -308,6 +312,11 @@ struct xui_context_t {
 	void (*onImeDetach)(xui_context pContext);
 };
 
+typedef struct xui_internal_accessibility_adapter_t {
+	int (*getNode)(xui_widget pWidget, xui_accessible_node_t* pNode);
+	int (*performAction)(xui_widget pWidget, int iAction, const void* pData);
+} xui_internal_accessibility_adapter_t;
+
 struct xui_widget_type_t {
 	uint32_t iMagic;
 	xui_context pContext;
@@ -326,6 +335,7 @@ struct xui_widget_type_t {
 	xui_widget_cache_render_proc onCacheRender;
 	xui_widget_update_proc onUpdate;
 	xui_widget_cursor_proc onQueryCursor;
+	const xui_internal_accessibility_adapter_t* pAccessibleAdapter;
 	xui_layout_t tLayout;
 	xui_cache_policy_t tCachePolicy;
 	int iWidgetCount;
@@ -457,6 +467,18 @@ struct xui_widget_t {
 	char* sAccessibleName;
 	char* sAccessibleDescription;
 	uint32_t iAccessibilityRevision;
+	uint32_t iAccessibleProviderGeneration;
+	uint32_t iAccessibleMutationGeneration;
+	uint32_t iPendingAccessibilityEvents;
+	uint32_t iActiveAccessibilityEvents;
+	uint32_t iAccessibilitySeenEpoch;
+	uint32_t iAccessibilitySeenEvents;
+	xui_widget pAccessibilityOldParent;
+	xui_widget pAccessibilityPrev;
+	xui_widget pAccessibilityNext;
+	int bAccessibleQueryActive;
+	int bAccessibleActionActive;
+	char sAccessibleValue[64];
 	xui_cache_policy_t tCachePolicy;
 	xui_widget_cache_render_proc onCacheRender;
 	void* pCacheRenderUser;
@@ -516,6 +538,11 @@ void xuiInternalReportError(xui_context pContext, xui_widget pWidget, int iCode,
 void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget);
 int xuiInternalInputCancelSubtree(xui_context pContext, xui_widget pWidget);
 int xuiInternalInputCancelFocusSubtree(xui_context pContext, xui_widget pWidget);
+void xuiInternalAccessibilityQueue(xui_widget pWidget, int iEventType);
+void xuiInternalAccessibilityFlush(xui_context pContext);
+void xuiInternalAccessibilityDetach(xui_widget pWidget);
+int xuiInternalAccessibilityEditNode(xui_widget pWidget, xui_accessible_node_t* pNode);
+int xuiInternalAccessibilityEditAction(xui_widget pWidget, int iAction, const void* pData);
 xui_widget xuiInternalInputModalRoot(xui_context pContext);
 xui_widget xuiInternalInputFocusParent(xui_widget pWidget);
 int xuiInternalInputFocusContains(xui_widget pRoot, xui_widget pWidget);

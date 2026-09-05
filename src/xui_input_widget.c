@@ -1026,6 +1026,8 @@ static int __xuiInputSyncCursor(xui_widget pWidget, xui_input_data_t* pData)
 
 static void __xuiInputNotifyChange(xui_widget pWidget, xui_input_data_t* pData)
 {
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( pData == NULL ) {
 		return;
 	}
@@ -1099,6 +1101,8 @@ static int __xuiInputSetTextInternal(xui_widget pWidget, xui_input_data_t* pData
 	if ( bNotify ) {
 		__xuiInputNotifyChange(pWidget, pData);
 	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	return __xuiInputInvalidateText(pWidget);
 }
 
@@ -2713,6 +2717,24 @@ static void __xuiInputRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiInputRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
+static int __xuiInputAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	(void)xuiInternalAccessibilityEditNode(pWidget, pNode);
+	pNode->sName = pData->sPlaceholder;
+	if ( pData->bPassword ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_PROTECTED;
+		pNode->sValue = NULL;
+		pNode->iTextStart = pNode->iTextEnd = 0;
+	}
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiInputAccessible = {
+	__xuiInputAccessibleNode, xuiInternalAccessibilityEditAction
+};
+
 XUI_API xui_widget_type xuiInputGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -2745,6 +2767,7 @@ XUI_API xui_widget_type xuiInputGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiInputRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiInputAccessible;
 	return pType;
 }
 
@@ -2794,6 +2817,7 @@ XUI_API int xuiInputSetPlaceholder(xui_widget pWidget, const char* sText)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiInputStringSet(&pData->sPlaceholder, &pData->iPlaceholderCapacity, sText);
 	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return __xuiInputInvalidatePaint(pWidget);
 }
 
@@ -2826,6 +2850,7 @@ XUI_API int xuiInputSetMaxLength(xui_widget pWidget, int iMaxLength)
 	if ( (pData == NULL) || (iMaxLength < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iMaxLength = iMaxLength;
 	(void)__xuiInputAssignTextBytes(pData, pData->sText, -1);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	return __xuiInputInvalidateText(pWidget);
 }
 
@@ -2852,9 +2877,12 @@ XUI_API int xuiInputGetTextAlign(xui_widget pWidget)
 XUI_API int xuiInputSetPassword(xui_widget pWidget, int bPassword)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	int bChanged;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	bChanged = pData->bPassword != (bPassword != 0);
 	pData->bPassword = (bPassword != 0);
 	__xuiInputSyncImeMode(pWidget, pData);
+	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return __xuiInputInvalidatePaint(pWidget);
 }
 
@@ -2867,9 +2895,12 @@ XUI_API int xuiInputIsPassword(xui_widget pWidget)
 XUI_API int xuiInputSetReadonly(xui_widget pWidget, int bReadonly)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	int bChanged;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	bChanged = pData->bReadonly != (bReadonly != 0);
 	pData->bReadonly = (bReadonly != 0);
 	__xuiInputSyncImeMode(pWidget, pData);
+	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	return __xuiInputInvalidatePaint(pWidget);
 }
 

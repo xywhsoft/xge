@@ -611,6 +611,8 @@ static int __xuiRadioSetCheckedInternal(xui_widget pWidget, xui_radio_data_t* pD
 		return XUI_OK;
 	}
 	pData->bChecked = bChecked;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	(void)__xuiRadioSyncState(pWidget, pData);
 	if ( bNotify ) {
 		__xuiRadioNotify(pWidget, pData);
@@ -896,6 +898,20 @@ static void __xuiRadioRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiRadioRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
+static int __xuiRadioAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_RADIO_BUTTON;
+	pNode->sName = pData->sText;
+	pNode->sValue = pData->bChecked ? "true" : "false";
+	if ( pData->bChecked ) pNode->iState |= XUI_ACCESSIBLE_STATE_CHECKED;
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiRadioAccessible = {__xuiRadioAccessibleNode, NULL};
+
 XUI_API xui_widget_type xuiRadioGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -927,6 +943,7 @@ XUI_API xui_widget_type xuiRadioGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiRadioRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiRadioAccessible;
 	return pType;
 }
 
@@ -963,6 +980,7 @@ XUI_API int xuiRadioSetText(xui_widget pWidget, const char* sText)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiRadioTextSet(pData, sText);
 	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

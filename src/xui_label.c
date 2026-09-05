@@ -475,6 +475,15 @@ static void __xuiLabelRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiLabelRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 }
 
+static int __xuiLabelAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_TEXT;
+	pNode->sName = xuiLabelGetText(pWidget);
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiLabelAccessible = {__xuiLabelAccessibleNode, NULL};
+
 XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -506,6 +515,7 @@ XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiLabelRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiLabelAccessible;
 	return pType;
 }
 
@@ -543,6 +553,7 @@ XUI_API int xuiLabelSetText(xui_widget pWidget, const char* sText)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

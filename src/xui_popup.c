@@ -1184,6 +1184,27 @@ static void __xuiPopupDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	}
 }
 
+static int __xuiPopupAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = pData->bModal ? XUI_ACCESSIBLE_ROLE_DIALOG : XUI_ACCESSIBLE_ROLE_GROUP;
+	if ( pData->bModal ) pNode->iState |= XUI_ACCESSIBLE_STATE_MODAL;
+	pNode->iState |= pData->bOpen ? XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED;
+	if ( pData->bOpen ) pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_CLOSE);
+	return XUI_OK;
+}
+
+static int __xuiPopupAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	(void)pPayload;
+	return iAction == XUI_ACCESSIBLE_ACTION_CLOSE ? xuiPopupSetOpen(pWidget, 0) : XUI_ERROR_UNSUPPORTED;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiPopupAccessible = {
+	__xuiPopupAccessibleNode, __xuiPopupAccessibleAction
+};
+
 XUI_API xui_widget_type xuiPopupGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1212,6 +1233,7 @@ XUI_API xui_widget_type xuiPopupGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) {
 		return NULL;
 	}
+	pType->pAccessibleAdapter = &g_xuiPopupAccessible;
 	return pType;
 }
 
@@ -1487,6 +1509,7 @@ XUI_API int xuiPopupSetModal(xui_widget pWidget, int bModal)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bModal = bModal ? 1 : 0;
 	pWidget->bModalFocus = pData->bModal && pData->bOpen;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
 }
 

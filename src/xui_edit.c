@@ -114,6 +114,12 @@ int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, i
 	xui_widget pHost;
 
 	pHost = xuiInternalEditHost(pWidget);
+	if ( iType == XUI_EDIT_EVENT_TEXT_CHANGED || iType == XUI_EDIT_EVENT_SELECTION_CHANGED ) {
+		int iEvent = iType == XUI_EDIT_EVENT_TEXT_CHANGED ? XUI_ACCESSIBLE_EVENT_VALUE_CHANGED :
+			XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED;
+		xuiInternalAccessibilityQueue(pWidget, iEvent);
+		if ( pHost != pWidget ) xuiInternalAccessibilityQueue(pHost, iEvent);
+	}
 	if ( pHost == NULL || pHost->onEditEvent == NULL ) return XUI_OK;
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iSize = sizeof(tEvent);

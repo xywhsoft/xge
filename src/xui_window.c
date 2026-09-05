@@ -1517,6 +1517,37 @@ static void __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.min_height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 }
 
+static int __xuiWindowAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_WINDOW;
+	pNode->sName = pData->sTitle;
+	pNode->iState |= pData->bCollapsed ? XUI_ACCESSIBLE_STATE_COLLAPSED : XUI_ACCESSIBLE_STATE_EXPANDED;
+	if ( pData->bShowClose ) pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_CLOSE);
+	return XUI_OK;
+}
+
+static int __xuiWindowAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	int iRet;
+	(void)pPayload;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction != XUI_ACCESSIBLE_ACTION_CLOSE || !pData->bShowClose ) return XUI_ERROR_UNSUPPORTED;
+	pData->iCloseCount++;
+	iRet = xuiWindowSetOpen(pWidget, 0);
+	if ( iRet == XUI_OK && xuiInternalWidgetIsValid(pWidget) &&
+		!xuiInternalContextDestroyPending(pWidget->pContext) && pData->onClose != NULL ) {
+		pData->onClose(pWidget, pData->pCloseUser);
+	}
+	return iRet;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiWindowAccessible = {
+	__xuiWindowAccessibleNode, __xuiWindowAccessibleAction
+};
+
 XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1551,6 +1582,7 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiWindowRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiWindowAccessible;
 	return pType;
 }
 
@@ -1662,6 +1694,7 @@ XUI_API int xuiWindowSetTitle(xui_widget pWidget, const char* sTitle)
 	if ( sTitle == NULL ) sTitle = "";
 	strncpy(pData->sTitle, sTitle, sizeof(pData->sTitle) - 1u);
 	pData->sTitle[sizeof(pData->sTitle) - 1u] = '\0';
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1865,6 +1898,7 @@ XUI_API int xuiWindowSetShowClose(xui_widget pWidget, int bShow)
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bShowClose = bShow ? 1 : 0;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1894,6 +1928,7 @@ XUI_API int xuiWindowSetCollapsed(xui_widget pWidget, int bCollapsed)
 		tRect = xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, pData->fExpandedHeight);
 	}
 	pData->bCollapsed = bCollapsed;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	pData->iChangeCount++;
 	(void)__xuiWindowApplyRect(pWidget, pData, tRect);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

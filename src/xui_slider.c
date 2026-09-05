@@ -1,6 +1,7 @@
 #include "xui_internal.h"
 
 #include <string.h>
+#include <stdio.h>
 
 typedef struct xui_slider_data_t {
 	xui_slider_change_proc onChange;
@@ -421,6 +422,7 @@ static int __xuiSliderSetValueInternal(xui_widget pWidget, xui_slider_data_t* pD
 		return XUI_OK;
 	}
 	pData->fValue = fValue;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	pData->iChangeCount++;
 	if ( bNotify && (pData->onChange != NULL) ) {
 		pData->onChange(pWidget, pData->fValue, pData->pChangeUser);
@@ -1000,6 +1002,47 @@ static void __xuiSliderRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.track.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 }
 
+static int __xuiSliderAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_slider_data_t* pData = __xuiSliderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_SLIDER;
+	(void)snprintf(pWidget->sAccessibleValue, sizeof(pWidget->sAccessibleValue), "%.9g", (double)pData->fValue);
+	pNode->sValue = pWidget->sAccessibleValue;
+	pNode->tRange.iSize = sizeof(pNode->tRange);
+	pNode->tRange.fValue = pData->fValue;
+	pNode->tRange.fMin = pData->fMin;
+	pNode->tRange.fMax = pData->fMax;
+	pNode->tRange.fStep = __xuiSliderSmallStep(pData);
+	pNode->tRange.fPageStep = __xuiSliderPageStep(pData);
+	if ( pData->iOrientation == XUI_ORIENTATION_VERTICAL ) pNode->iState |= XUI_ACCESSIBLE_STATE_VERTICAL;
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_VALUE) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_INCREMENT) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_DECREMENT);
+	return XUI_OK;
+}
+
+static int __xuiSliderAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	xui_slider_data_t* pData = __xuiSliderGetData(pWidget);
+	double fValue;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_VALUE ) {
+		const xui_accessible_value_t* pValue = (const xui_accessible_value_t*)pPayload;
+		if ( pValue == NULL || pValue->iSize < sizeof(*pValue) || pValue->iType != XUI_ACCESSIBLE_VALUE_NUMBER )
+			return XUI_ERROR_INVALID_ARGUMENT;
+		fValue = pValue->fNumber;
+		if ( !(fValue >= pData->fMin && fValue <= pData->fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
+	} else if ( iAction == XUI_ACCESSIBLE_ACTION_INCREMENT || iAction == XUI_ACCESSIBLE_ACTION_DECREMENT ) {
+		fValue = pData->fValue + (iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ? 1.0 : -1.0) * __xuiSliderSmallStep(pData);
+	} else return XUI_ERROR_UNSUPPORTED;
+	return __xuiSliderSetValueInternal(pWidget, pData, (float)fValue, 1);
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiSliderAccessible = {
+	__xuiSliderAccessibleNode, __xuiSliderAccessibleAction
+};
+
 XUI_API xui_widget_type xuiSliderGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1031,6 +1074,7 @@ XUI_API xui_widget_type xuiSliderGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiSliderRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiSliderAccessible;
 	return pType;
 }
 
@@ -1067,6 +1111,7 @@ XUI_API int xuiSliderSetRange(xui_widget pWidget, float fMin, float fMax)
 	__xuiSliderNormalizeRange(&fMin, &fMax);
 	pData->fMin = fMin;
 	pData->fMax = fMax;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	(void)__xuiSliderSetValueInternal(pWidget, pData, pData->fValue, 0);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1105,6 +1150,7 @@ XUI_API int xuiSliderSetStep(xui_widget pWidget, float fStep, float fPageStep)
 	if ( (pData == NULL) || (fStep < 0.0f) || (fPageStep < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fStep = fStep;
 	pData->fPageStep = fPageStep;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
 
@@ -1123,6 +1169,7 @@ XUI_API int xuiSliderSetOrientation(xui_widget pWidget, int iOrientation)
 	if ( (pData == NULL) || !__xuiSliderOrientationValid(iOrientation) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iOrientation == iOrientation ) return XUI_OK;
 	pData->iOrientation = iOrientation;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

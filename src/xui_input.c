@@ -1213,6 +1213,7 @@ int xuiInternalInputCancelFocusSubtree(xui_context pContext, xui_widget pWidget)
 	if ( !__xuiInputSubtreeContains(pWidget, pFocus) ) return XUI_OK;
 	iResult = XUI_OK;
 	pContext->pFocusWidget = NULL;
+	xuiInternalAccessibilityQueue(pFocus, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	iRet = __xuiInputSetWidgetFlag(pFocus, XUI_WIDGET_STATE_FOCUS, 0);
 	__xuiInputCancelRememberError(&iResult, iRet);
 	xuiInternalCaretBlinkReset(pContext);
@@ -2863,6 +2864,8 @@ static int __xuiSetFocusWidgetOperation(xui_context pContext, xui_widget pWidget
 		if ( (pWidget != NULL) && !xuiInternalWidgetIsValid(pWidget) ) pWidget = NULL;
 	}
 	pContext->pFocusWidget = pWidget;
+	xuiInternalAccessibilityQueue(pOldWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	xuiInternalCaretBlinkReset(pContext);
 	iRet = xuiInternalInputSyncIme(pContext);
 	if ( iRet != XUI_OK ) {

@@ -1,6 +1,7 @@
 #include "xui_internal.h"
 
 #include <string.h>
+#include <stdio.h>
 
 #define XUI_SCROLLBAR_STATE_HOVER_SHIFT	8
 #define XUI_SCROLLBAR_STATE_ACTIVE_SHIFT	12
@@ -614,6 +615,7 @@ static int __xuiScrollBarSetValueInternal(xui_widget pWidget, xui_scrollbar_data
 		return XUI_OK;
 	}
 	pData->fValue = fValue;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	pData->iChangeCount++;
 	if ( bNotify && (pData->onChange != NULL) ) {
 		pData->onChange(pWidget, pData->fValue, pData->pChangeUser);
@@ -1359,6 +1361,47 @@ static void __xuiScrollBarRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiScrollBarRegisterStyleProperty(pContext, pType, "scrollbar.button_size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 }
 
+static int __xuiScrollBarAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_SCROLLBAR;
+	(void)snprintf(pWidget->sAccessibleValue, sizeof(pWidget->sAccessibleValue), "%.9g", (double)pData->fValue);
+	pNode->sValue = pWidget->sAccessibleValue;
+	pNode->tRange.iSize = sizeof(pNode->tRange);
+	pNode->tRange.fValue = pData->fValue;
+	pNode->tRange.fMin = pData->fMin;
+	pNode->tRange.fMax = pData->fMax;
+	pNode->tRange.fStep = __xuiScrollBarSmallStep(pData);
+	pNode->tRange.fPageStep = __xuiScrollBarLargeStep(pData);
+	if ( pData->iOrientation == XUI_ORIENTATION_VERTICAL ) pNode->iState |= XUI_ACCESSIBLE_STATE_VERTICAL;
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_VALUE) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_INCREMENT) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_DECREMENT);
+	return XUI_OK;
+}
+
+static int __xuiScrollBarAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
+	double fValue;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_VALUE ) {
+		const xui_accessible_value_t* pValue = (const xui_accessible_value_t*)pPayload;
+		if ( pValue == NULL || pValue->iSize < sizeof(*pValue) || pValue->iType != XUI_ACCESSIBLE_VALUE_NUMBER )
+			return XUI_ERROR_INVALID_ARGUMENT;
+		fValue = pValue->fNumber;
+		if ( !(fValue >= pData->fMin && fValue <= pData->fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
+	} else if ( iAction == XUI_ACCESSIBLE_ACTION_INCREMENT || iAction == XUI_ACCESSIBLE_ACTION_DECREMENT ) {
+		fValue = pData->fValue + (iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ? 1.0 : -1.0) * __xuiScrollBarSmallStep(pData);
+	} else return XUI_ERROR_UNSUPPORTED;
+	return __xuiScrollBarSetValueInternal(pWidget, pData, (float)fValue, 1);
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiScrollBarAccessible = {
+	__xuiScrollBarAccessibleNode, __xuiScrollBarAccessibleAction
+};
+
 XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1391,6 +1434,7 @@ XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiScrollBarRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiScrollBarAccessible;
 	return pType;
 }
 
@@ -1430,6 +1474,7 @@ XUI_API int xuiScrollBarSetRange(xui_widget pWidget, float fMin, float fMax, flo
 	pData->fMax = fMax;
 	pData->fPage = fPage;
 	(void)__xuiScrollBarSetValueInternal(pWidget, pData, pData->fValue, 0);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1449,6 +1494,7 @@ XUI_API int xuiScrollBarSetPage(xui_widget pWidget, float fPage)
 	if ( (pData == NULL) || (fPage < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fPage == fPage ) return XUI_OK;
 	pData->fPage = fPage;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1478,6 +1524,7 @@ XUI_API int xuiScrollBarSetSteps(xui_widget pWidget, float fSmallStep, float fLa
 	if ( pData->fSmallStep == fSmallStep && pData->fLargeStep == fLargeStep ) return XUI_OK;
 	pData->fSmallStep = fSmallStep;
 	pData->fLargeStep = fLargeStep;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
 
@@ -1496,6 +1543,7 @@ XUI_API int xuiScrollBarSetOrientation(xui_widget pWidget, int iOrientation)
 	if ( (pData == NULL) || !__xuiScrollBarOrientationValid(iOrientation) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iOrientation == iOrientation ) return XUI_OK;
 	pData->iOrientation = iOrientation;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

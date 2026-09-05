@@ -22,7 +22,7 @@ mkdir -p build
     -DXGE_DEBUGMODE=0 -I. -Isrc $HEADER -o "$OUT" \
     test_xui/xui_popup_focus_test.c test_xui/xui_test_xrt_impl.c \
     lib/xlayout/xlayout.c src/xui_core.c src/xui_widget.c src/xui_layout.c \
-    "$INPUT" src/xui_edit.c src/xui_drag_drop.c src/xui_text.c \
+    "$INPUT" src/xui_edit.c src/xui_drag_drop.c src/xui_accessibility.c src/xui_text.c \
     src/xui_assets.c src/xui_builtin_atlas.c src/xui_unicode.c \
     src/xui_scroll_model.c src/xui_scrollbar.c src/xui_scroll_frame.c \
     src/xui_scroll_view.c "$POPUP" -lm -ldl -lpthread

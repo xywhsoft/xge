@@ -828,6 +828,8 @@ static int __xuiTextEditRecordUndo(xui_text_edit_data_t* pData)
 
 static void __xuiTextEditNotifyChange(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( pData == NULL ) {
 		return;
 	}
@@ -1293,6 +1295,8 @@ static int __xuiTextEditSetTextInternal(xui_widget pWidget, xui_text_edit_data_t
 	if ( bNotify ) {
 		__xuiTextEditNotifyChange(pWidget, pData);
 	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	return __xuiTextEditInvalidateText(pWidget);
 }
 
@@ -3185,6 +3189,20 @@ static void __xuiTextEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
+static int __xuiTextEditAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	(void)xuiInternalAccessibilityEditNode(pWidget, pNode);
+	pNode->sName = pData->sPlaceholder;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_MULTILINE;
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiTextEditAccessible = {
+	__xuiTextEditAccessibleNode, xuiInternalAccessibilityEditAction
+};
+
 XUI_API xui_widget_type xuiTextEditGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -3218,6 +3236,7 @@ XUI_API xui_widget_type xuiTextEditGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiTextEditRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiTextEditAccessible;
 	return pType;
 }
 
@@ -3267,6 +3286,7 @@ XUI_API int xuiTextEditSetPlaceholder(xui_widget pWidget, const char* sText)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiTextEditStringSet(&pData->sPlaceholder, &pData->iPlaceholderCapacity, sText);
 	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return __xuiTextEditInvalidatePaint(pWidget);
 }
 
@@ -3300,6 +3320,7 @@ XUI_API int xuiTextEditSetMaxLength(xui_widget pWidget, int iMaxLength)
 	pData->iMaxLength = iMaxLength;
 	if ( iMaxLength > 0 ) {
 		(void)__xuiTextEditAssignTextBytes(pData, pData->sText, -1);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	}
 	return __xuiTextEditInvalidateText(pWidget);
 }
@@ -3314,7 +3335,10 @@ XUI_API int xuiTextEditSetReadonly(xui_widget pWidget, int bReadonly)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bReadonly = bReadonly != 0;
+	if ( pData->bReadonly != (bReadonly != 0) ) {
+		pData->bReadonly = bReadonly != 0;
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	}
 	return __xuiTextEditInvalidatePaint(pWidget);
 }
 

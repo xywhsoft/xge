@@ -38,8 +38,9 @@ static void on_rich_event(xui_widget widget, const xui_rich_edit_event_t* event,
 static void on_accessibility_event(xui_context context, xui_widget widget,
 	const xui_accessibility_event_t* event, void* user)
 {
-	(void)context; (void)widget; (void)user;
-	if ( event == NULL ) return;
+	(void)context;
+	/* Revisions belong to the emitting widget, including built-in child controls. */
+	if ( event == NULL || user == NULL || widget != *(xui_widget*)user ) return;
 	g_accessibility_events++;
 	g_accessibility_last_type = event->iType;
 	g_accessibility_last_revision = event->iRevision;
@@ -146,7 +147,7 @@ int main(void)
 	xuiTestProxyInit(&proxy);
 	CHECK(xuiCreate(&context) == XUI_OK, "context");
 	CHECK(xuiSetProxy(context, &proxy.tProxy) == XUI_OK, "proxy");
-	CHECK(xuiSetAccessibilityEventCallback(context, on_accessibility_event, NULL) == XUI_OK,
+	CHECK(xuiSetAccessibilityEventCallback(context, on_accessibility_event, &edit) == XUI_OK,
 		"accessibility event callback");
 	CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, "test.ttf", 14.0f, 0) == XUI_OK, "font");
 	CHECK(xuiSetDefaultFont(context, font) == XUI_OK, "default font");

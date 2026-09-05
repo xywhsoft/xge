@@ -983,6 +983,8 @@ static void __xuiButtonDoClick(xui_widget pWidget, xui_button_data_t* pData)
 	}
 	if ( pData->bSelectable ) {
 		pData->bSelected = pData->bSelected ? 0 : 1;
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	}
 	pData->iClickCount++;
 	(void)__xuiButtonSyncState(pWidget, pData);
@@ -1276,6 +1278,24 @@ static void __xuiButtonRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.icon_placement", XUI_STYLE_VALUE_INT, iLayoutDirty, 0);
 }
 
+static int __xuiButtonAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_button_data_t* pData = __xuiButtonGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_BUTTON;
+	pNode->sName = pData->sText;
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	if ( pData->bSelectable ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTABLE;
+		if ( pData->bSelected ) pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED | XUI_ACCESSIBLE_STATE_CHECKED;
+		pNode->sValue = pData->bSelected ? "true" : "false";
+		pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE);
+	}
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiButtonAccessible = {__xuiButtonAccessibleNode, NULL};
+
 XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1307,6 +1327,7 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiButtonRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiButtonAccessible;
 	return pType;
 }
 
@@ -1357,6 +1378,7 @@ XUI_API int xuiButtonSetText(xui_widget pWidget, const char* sText)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1471,6 +1493,8 @@ XUI_API int xuiButtonSetSelectable(xui_widget pWidget, int bSelectable)
 		return XUI_OK;
 	}
 	pData->bSelectable = bSelectable;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	if ( !bSelectable ) {
 		pData->bSelected = 0;
 	}
@@ -1499,6 +1523,8 @@ XUI_API int xuiButtonSetSelected(xui_widget pWidget, int bSelected)
 	}
 	pData->bSelectable = 1;
 	pData->bSelected = bSelected;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	return __xuiButtonSyncState(pWidget, pData);
 }
 

@@ -501,6 +501,27 @@ typedef struct xui_language_text_t {
 #define XUI_ACCESSIBLE_ROLE_TEXT		11
 #define XUI_ACCESSIBLE_ROLE_BLOCK_QUOTE		12
 #define XUI_ACCESSIBLE_ROLE_LIST_ITEM		13
+#define XUI_ACCESSIBLE_ROLE_BUTTON		14
+#define XUI_ACCESSIBLE_ROLE_TEXTBOX		15
+#define XUI_ACCESSIBLE_ROLE_LIST			16
+#define XUI_ACCESSIBLE_ROLE_TREE			17
+#define XUI_ACCESSIBLE_ROLE_TREE_ITEM		18
+#define XUI_ACCESSIBLE_ROLE_MENU			19
+#define XUI_ACCESSIBLE_ROLE_MENU_ITEM		20
+#define XUI_ACCESSIBLE_ROLE_DIALOG		21
+#define XUI_ACCESSIBLE_ROLE_COMBOBOX		22
+#define XUI_ACCESSIBLE_ROLE_SLIDER		23
+#define XUI_ACCESSIBLE_ROLE_SWITCH		24
+#define XUI_ACCESSIBLE_ROLE_RADIO_BUTTON		25
+#define XUI_ACCESSIBLE_ROLE_RADIO_GROUP		26
+#define XUI_ACCESSIBLE_ROLE_WINDOW		27
+#define XUI_ACCESSIBLE_ROLE_GROUP			28
+#define XUI_ACCESSIBLE_ROLE_SCROLLBAR		29
+#define XUI_ACCESSIBLE_ROLE_PROGRESS		30
+#define XUI_ACCESSIBLE_ROLE_TOOLBAR		31
+#define XUI_ACCESSIBLE_ROLE_TAB_LIST		32
+#define XUI_ACCESSIBLE_ROLE_TAB			33
+#define XUI_ACCESSIBLE_ROLE_ROOT			34
 
 #define XUI_ACCESSIBLE_STATE_FOCUSABLE		0x00000001u
 #define XUI_ACCESSIBLE_STATE_FOCUSED		0x00000002u
@@ -510,12 +531,29 @@ typedef struct xui_language_text_t {
 #define XUI_ACCESSIBLE_STATE_EDITABLE		0x00000020u
 #define XUI_ACCESSIBLE_STATE_OFFSCREEN		0x00000040u
 #define XUI_ACCESSIBLE_STATE_DISABLED		0x00000080u
+#define XUI_ACCESSIBLE_STATE_PROTECTED		0x00000100u
+#define XUI_ACCESSIBLE_STATE_MULTILINE		0x00000200u
+#define XUI_ACCESSIBLE_STATE_EXPANDED		0x00000400u
+#define XUI_ACCESSIBLE_STATE_COLLAPSED		0x00000800u
+#define XUI_ACCESSIBLE_STATE_SELECTABLE		0x00001000u
+#define XUI_ACCESSIBLE_STATE_MODAL		0x00002000u
+#define XUI_ACCESSIBLE_STATE_VERTICAL		0x00004000u
 
 #define XUI_ACCESSIBLE_ACTION_FOCUS		1
 #define XUI_ACCESSIBLE_ACTION_ACTIVATE		2
 #define XUI_ACCESSIBLE_ACTION_SET_SELECTION	3
 #define XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW	4
 #define XUI_ACCESSIBLE_ACTION_TOGGLE		5
+#define XUI_ACCESSIBLE_ACTION_SET_VALUE		6
+#define XUI_ACCESSIBLE_ACTION_INCREMENT		7
+#define XUI_ACCESSIBLE_ACTION_DECREMENT		8
+#define XUI_ACCESSIBLE_ACTION_EXPAND		9
+#define XUI_ACCESSIBLE_ACTION_COLLAPSE		10
+#define XUI_ACCESSIBLE_ACTION_CLOSE		11
+/* Use with the action constants above (1 through 31). */
+#define XUI_ACCESSIBLE_ACTION_MASK(action)	(1u << ((action) - 1))
+#define XUI_ACCESSIBLE_VALUE_TEXT			1
+#define XUI_ACCESSIBLE_VALUE_NUMBER		2
 
 #define XUI_ACCESSIBLE_EVENT_TREE_CHANGED	1
 #define XUI_ACCESSIBLE_EVENT_NODE_CHANGED	2
@@ -523,6 +561,7 @@ typedef struct xui_language_text_t {
 #define XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED	4
 #define XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED	5
 #define XUI_ACCESSIBLE_EVENT_VALUE_CHANGED	6
+#define XUI_ACCESSIBLE_EVENT_STATE_CHANGED	7
 
 #define XUI_INPUT_RESULT_CONSUMED	0x00000001u
 #define XUI_INPUT_RESULT_FOCUS_CHANGED	0x00000002u
@@ -5136,6 +5175,23 @@ typedef struct xui_drag_event_data_t {
 	int bExternal;
 } xui_drag_event_data_t;
 
+typedef struct xui_accessible_range_t {
+	uint32_t iSize; /* Zero when the node has no numeric range. */
+	double fValue;
+	double fMin;
+	double fMax;
+	double fStep;
+	double fPageStep;
+} xui_accessible_range_t;
+
+/* SET_VALUE uses this payload. ComboBox NUMBER values are item indices. */
+typedef struct xui_accessible_value_t {
+	uint32_t iSize;
+	int iType;
+	const char* sText;
+	double fNumber;
+} xui_accessible_value_t;
+
 typedef struct xui_accessible_node_t {
 	uint32_t iSize;
 	uint64_t iId;
@@ -5153,6 +5209,8 @@ typedef struct xui_accessible_node_t {
 	int iColumn;
 	int iRowCount;
 	int iColumnCount;
+	uint32_t iActions;
+	xui_accessible_range_t tRange;
 } xui_accessible_node_t;
 
 typedef struct xui_accessible_selection_t {
@@ -9024,6 +9082,14 @@ XUI_API const char* xuiWidgetGetAccessibleName(xui_widget pWidget);
 XUI_API int xuiWidgetSetAccessibleDescription(xui_widget pWidget, const char* sDescription);
 XUI_API const char* xuiWidgetGetAccessibleDescription(xui_widget pWidget);
 XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget);
+/* Every ordinary widget exposes one local node (id 1). Enumerate the physical
+ * tree with the Widget parent/child APIs; provider node ids remain widget-local.
+ * Strings are borrowed until the next widget/provider mutation. Queries which
+ * destroy or replace their provider fail and clear the result. Older node sizes
+ * ending at iColumnCount are accepted. No native platform bridge is installed.
+ * Automatic semantic notifications are coalesced at the next outer xuiUpdate;
+ * explicit NotifyAccessibility remains synchronous. Repeated notifications of
+ * the same change during a callback/drain are suppressed. */
 XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_accessible_node_t* pNode);
 XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeId, int iAction, const void* pData);
 XUI_API uint32_t xuiWidgetGetAccessibilityRevision(xui_widget pWidget);

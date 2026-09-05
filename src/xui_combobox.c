@@ -383,6 +383,8 @@ static int __xuiComboBoxClearSelectionIfTextMismatch(xui_widget pWidget, xui_com
 		return XUI_OK;
 	}
 	pData->iSelected = -1;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	(void)__xuiComboBoxRefreshMenu(pWidget, pData);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -406,6 +408,8 @@ static int __xuiComboBoxSetSelectedInternal(xui_widget pWidget, xui_combobox_dat
 	}
 	iOld = pData->iSelected;
 	pData->iSelected = iIndex;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	pData->iChangeCount++;
 	iRet = __xuiComboBoxRefreshMenu(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
@@ -455,7 +459,10 @@ static uint32_t __xuiComboBoxState(xui_widget pWidget, xui_combobox_data_t* pDat
 
 static int __xuiComboBoxSyncState(xui_widget pWidget, xui_combobox_data_t* pData)
 {
-	return xuiWidgetSetStateId(pWidget, __xuiComboBoxState(pWidget, pData));
+	uint32_t iState = __xuiComboBoxState(pWidget, pData);
+	if ( ((xuiWidgetGetStateId(pWidget) ^ iState) & XUI_COMBOBOX_STATE_OPEN) != 0 )
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	return xuiWidgetSetStateId(pWidget, iState);
 }
 
 static int __xuiComboBoxApplyMenuStyle(xui_widget pWidget, xui_combobox_data_t* pData)
@@ -670,6 +677,8 @@ static int __xuiComboBoxSetItemsInternal(xui_widget pWidget, xui_combobox_data_t
 	memcpy(pData->arrItems, arrNewItems, sizeof(arrNewItems));
 	memcpy(pData->arrItemTextStorage, arrNewTexts, sizeof(arrNewTexts));
 	pData->iItemCount = iCount;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	if ( !__xuiComboBoxItemEnabled(pData, pData->iSelected) ) {
 		pData->iSelected = -1;
 	}
@@ -1364,6 +1373,48 @@ static xui_combobox_data_t* __xuiComboBoxGetData(xui_widget pWidget)
 	return (xui_combobox_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiComboBoxAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iMode == XUI_COMBOBOX_MODE_EDIT ) (void)xuiInternalAccessibilityEditNode(pWidget, pNode);
+	else pNode->iState |= XUI_ACCESSIBLE_STATE_READONLY;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_COMBOBOX;
+	pNode->sName = xuiComboBoxGetPlaceholder(pWidget);
+	if ( (pNode->iState & XUI_ACCESSIBLE_STATE_PROTECTED) == 0 ) pNode->sValue = xuiComboBoxGetText(pWidget);
+	pNode->iState |= xuiComboBoxIsOpen(pWidget) ? XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED;
+	pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE);
+	if ( pData->iMode != XUI_COMBOBOX_MODE_EDIT || !xuiEditIsReadonly(pWidget) )
+		pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_VALUE);
+	return XUI_OK;
+}
+
+static int __xuiComboBoxAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_EXPAND ) return xuiComboBoxOpen(pWidget);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE ) return xuiComboBoxClose(pWidget);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_VALUE ) {
+		const xui_accessible_value_t* pValue = (const xui_accessible_value_t*)pPayload;
+		if ( pValue == NULL || pValue->iSize < sizeof(*pValue) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pValue->iType == XUI_ACCESSIBLE_VALUE_NUMBER ) {
+			int iIndex;
+			if ( !(pValue->fNumber >= 0 && pValue->fNumber < pData->iItemCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+			iIndex = (int)pValue->fNumber;
+			if ( iIndex != pValue->fNumber || !__xuiComboBoxItemEnabled(pData, iIndex) ) return XUI_ERROR_INVALID_ARGUMENT;
+			return __xuiComboBoxSetSelectedInternal(pWidget, pData, iIndex, 1);
+		}
+	}
+	if ( pData->iMode == XUI_COMBOBOX_MODE_EDIT ) return xuiInternalAccessibilityEditAction(pWidget, iAction, pPayload);
+	return XUI_ERROR_UNSUPPORTED;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiComboBoxAccessible = {
+	__xuiComboBoxAccessibleNode, __xuiComboBoxAccessibleAction
+};
+
 XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1398,6 +1449,7 @@ XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiComboBoxRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiComboBoxAccessible;
 	return pType;
 }
 
@@ -1537,6 +1589,7 @@ XUI_API int xuiComboBoxSetMode(xui_widget pWidget, int iMode)
 	if ( pData->iMode == iMode ) return XUI_OK;
 	tBehavior = pWidget->tEditBehavior;
 	pData->iMode = iMode;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	if ( iMode == XUI_COMBOBOX_MODE_EDIT ) {
 		iRet = xuiInternalEditDelegate(pWidget, pData->pInput);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1594,6 +1647,7 @@ XUI_API int xuiComboBoxSetText(xui_widget pWidget, const char* sText)
 	if ( iRet != XUI_OK ) return iRet;
 	(void)__xuiComboBoxClearSelectionIfTextMismatch(pWidget, pData, sText);
 	pData->iChangeCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1610,8 +1664,11 @@ XUI_API const char* xuiComboBoxGetText(xui_widget pWidget)
 XUI_API int xuiComboBoxSetPlaceholder(xui_widget pWidget, const char* sText)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	int iRet;
 	if ( (pData == NULL) || (pData->pInput == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xuiInputSetPlaceholder(pData->pInput, sText);
+	iRet = xuiInputSetPlaceholder(pData->pInput, sText);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	return iRet;
 }
 
 XUI_API const char* xuiComboBoxGetPlaceholder(xui_widget pWidget)
