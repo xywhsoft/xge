@@ -39,6 +39,7 @@ int main(void)
     attach(w);
     data = __xuiComboBoxGetData(w);
     test_colors(w, data, colors, sizeof(colors) / sizeof(colors[0]), resolved);
+    test_owner_colors(w, data, colors, 14, xuiComboBoxOpen, xuiComboBoxClose);
     phase = "button paint and setter restoration";
     CHECK(xuiComboBoxSetButtonColors(w, 0x912345ffu, 0x923456ffu, 0x934567ffu) == XUI_OK);
     inline_color(w, "combobox.button.color", 0xa12345ffu);
@@ -67,16 +68,23 @@ int main(void)
             CHECK(xuiDispatchPendingEvents(context) == XUI_OK);
         }
         inline_color(w, colors[i].key, value);
+        CHECK(xuiUpdate(context, 0) == XUI_OK);
+        if (xuiStyleFindProperty(context, "menu.panel.color") != 0)
+            CHECK((data->pMenu->iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0);
         paint();
         CHECK(xuiComboBoxIsOpen(w));
         CHECK(xuiMenuGetColors(data->pMenu, &menu) == XUI_OK);
         CHECK(has_color(value));
         inline_color(w, colors[i].key, 0);
         paint(); CHECK(!has_color(value));
+        inline_color(w, colors[i].key, 0xabcdef00u);
+        prepare_only(); CHECK(!has_color(value) && !has_color(0xabcdefffu));
         CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
         paint();
         CHECK(resolved(w, colors[i].offset) == *(uint32_t*)((char*)data + colors[i].offset));
     }
+    test_live_token(w, "combobox.popup.panel_color", data->iPopupPanelColor);
+    test_prepare_only(w, data->pMenu, "combobox.popup.panel_color", data->iPopupPanelColor);
     CHECK(xuiComboBoxClose(w) == XUI_OK);
     phase = "cached editable child";
     CHECK(xuiComboBoxSetMode(w, XUI_COMBOBOX_MODE_EDIT) == XUI_OK);
@@ -89,6 +97,10 @@ int main(void)
     CHECK(xuiInputGetColors(data->pInput, NULL, &base, NULL, NULL) == XUI_OK && base == 0);
     CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
     paint(); CHECK(has_color(data->iTextColor));
+    test_prepare_only(w, data->pInput, "combobox.text.color", data->iTextColor);
+    CHECK(xuiComboBoxSetColors(w, 0x812345ffu, data->iDisabledTextColor, data->iBackgroundColor,
+        data->iHoverBackgroundColor, data->iOpenBackgroundColor, data->iDisabledBackgroundColor) == XUI_OK);
+    prepare_only(); CHECK(has_color(0x812345ffu));
     CHECK(xuiWidgetSetEnabled(w, 0) == XUI_OK);
     inline_color(w, "combobox.text.disabled_color", 0xe23456ffu);
     paint(); CHECK(has_color(0xe23456ffu));

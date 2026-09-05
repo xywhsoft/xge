@@ -582,13 +582,36 @@ static int __xuiComboBoxApplyPlacement(xui_widget pWidget, xui_combobox_data_t* 
 	return XUI_OK;
 }
 
+static int __xuiComboBoxApplyInputColors(xui_widget pWidget, xui_combobox_data_t* pData)
+{
+	xui_combobox_data_t tResolved;
+	uint32_t iText, iOldText, iBackground, iBorder, iFocus;
+	uint32_t iPlaceholder, iDisabledText, iHoverBackground, iDisabledBackground, iHoverBorder, iSelection, iCursor;
+	int iRet;
+	if ( pData->pInput == NULL ) return XUI_OK;
+	__xuiComboBoxResolve(pWidget, pData, &tResolved);
+	iText = xuiWidgetGetEnabled(pWidget) ? tResolved.iTextColor : tResolved.iDisabledTextColor;
+	iRet = xuiInputGetColors(pData->pInput, &iBackground, &iOldText, &iBorder, &iFocus);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iBackground != 0u || iOldText != iText || iBorder != 0u || iFocus != 0u )
+		(void)xuiInputSetColors(pData->pInput, 0u, iText, 0u, 0u);
+	iRet = xuiInputGetErrorColors(pData->pInput, &iBackground, &iBorder);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iBackground != 0u || iBorder != 0u ) (void)xuiInputSetErrorColors(pData->pInput, 0u, 0u);
+	iRet = xuiInputGetExtendedColors(pData->pInput, &iPlaceholder, &iDisabledText,
+		&iHoverBackground, &iDisabledBackground, &iHoverBorder, &iSelection, &iCursor);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iDisabledText != tResolved.iDisabledTextColor || iHoverBackground != 0u ||
+	     iDisabledBackground != 0u || iHoverBorder != 0u )
+		return xuiInputSetExtendedColors(pData->pInput, iPlaceholder, tResolved.iDisabledTextColor,
+			0u, 0u, 0u, iSelection, iCursor);
+	return XUI_OK;
+}
+
 static int __xuiComboBoxSyncInputStyle(xui_widget pWidget, xui_combobox_data_t* pData)
 {
 	xui_combobox_data_t tResolved;
-	uint32_t iText;
-	uint32_t iPlaceholder, iSelection, iCursor;
-	int bEdit;
-	int bEnabled;
+	int bEdit, bEnabled;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pInput == NULL) ) {
 		return XUI_OK;
@@ -596,12 +619,7 @@ static int __xuiComboBoxSyncInputStyle(xui_widget pWidget, xui_combobox_data_t* 
 	__xuiComboBoxResolve(pWidget, pData, &tResolved);
 	bEdit = (pData->iMode == XUI_COMBOBOX_MODE_EDIT);
 	bEnabled = xuiWidgetGetEnabled(pWidget);
-	iText = bEnabled ? tResolved.iTextColor : tResolved.iDisabledTextColor;
-	(void)xuiInputSetColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), iText, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
-	(void)xuiInputSetErrorColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
-	(void)xuiInputGetExtendedColors(pData->pInput, &iPlaceholder, NULL, NULL, NULL, NULL, &iSelection, &iCursor);
-	(void)xuiInputSetExtendedColors(pData->pInput, iPlaceholder, tResolved.iDisabledTextColor,
-		0u, 0u, 0u, iSelection, iCursor);
+	(void)__xuiComboBoxApplyInputColors(pWidget, pData);
 	(void)xuiInputSetReadonly(pData->pInput, !bEdit);
 	(void)xuiInputSetTextAlign(pData->pInput, XUI_INPUT_ALIGN_LEFT);
 	if ( xuiInputGetFont(pData->pInput) != tResolved.pFont ) {
@@ -620,16 +638,15 @@ static int __xuiComboBoxSyncInputStyle(xui_widget pWidget, xui_combobox_data_t* 
 	return XUI_OK;
 }
 
-static int __xuiComboBoxSyncStyle(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiComboBoxSyncStyle(xui_widget pWidget)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	int iRet;
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
-	iRet = __xuiComboBoxSyncInputStyle(pWidget, pData);
+	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash &&
+	     (pWidget->iDirtyFlags & XUI_WIDGET_DIRTY_CACHE) == 0u ) return XUI_OK;
+	iRet = __xuiComboBoxApplyInputColors(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiComboBoxApplyMenuColors(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1122,8 +1139,6 @@ static int __xuiComboBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	__xuiComboBoxResolve(pWidget, pData, &tResolved);
 	__xuiComboBoxUpdateRects(pWidget, pData);
-	iRet = __xuiComboBoxSyncStyle(pWidget, 0.0f, NULL);
-	if ( iRet != XUI_OK ) return iRet;
 	iState = __xuiComboBoxState(pWidget, pData);
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
@@ -1500,7 +1515,6 @@ XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiComboBoxLayoutPrepare;
 	tDesc.onLayoutComplete = __xuiComboBoxLayoutComplete;
 	tDesc.onCacheRender = __xuiComboBoxCacheRender;
-	tDesc.onUpdate = __xuiComboBoxSyncStyle;
 	__xuiComboBoxDefaultLayout(&tLayout);
 	__xuiComboBoxDefaultCachePolicy(&tPolicy);
 	tDesc.tLayout = tLayout;
@@ -1510,6 +1524,7 @@ XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiComboBoxRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiComboBoxSyncStyle;
 	pType->pAccessibleAdapter = &g_xuiComboBoxAccessible;
 	return pType;
 }
