@@ -31,6 +31,28 @@ the ScrollView accessors). Use `scrollbar.track.color`, `scrollbar.thumb.color`,
 and `scrollbar.button.icon_color` on the ScrollBar type or these child widgets.
 No parent aliases rewrite child inline styles or base colors.
 
+## DockPanel
+
+The `dockpanel.*` properties cover the full API palette: `background.color`,
+`pane.color`, `client.color`, `caption.color`, `caption.active_color`,
+`caption.text_color`, `caption.active_text_color`, `tab.color`, `tab.hover_color`,
+`tab.active_color`, `tab.text_color`, `tab.active_text_color`, `border.color`,
+`focus.color`, `splitter.color`, `splitter.hover_color`, `splitter.active_color`,
+`button.color`, `button.hover_color`, `button.active_color`, `auto_hide.color`,
+`auto_hide.hover_color`, `float.title_color`, and `float.border_color`.
+
+Additional chrome keys are `button.icon_color`, `button.disabled_color`,
+`button.close_icon_color`, `auto_hide.border_color`, `tab.disabled_border_color`,
+`tab.disabled_text_color`, `tab.indicator_color`, `drag.indicator_color`,
+`drag.insert_border_color`, `drag.preview_color`, `drag.preview_border_color`,
+and `drag.preview_inner_border_color`, all with the `dockpanel.` prefix.
+
+The owner's paint palette is separate from `xuiDockPanelGetColors`. The private
+paint preparation hook invalidates floating/expanded hosts, their button state
+caches, and active detached drag visuals before framework cache traversal.
+Content icons keep their original white modulation; built-in chrome icon tints
+are themeable. Menus delegate to their actual Menu widgets and `menu.*` styles.
+
 ## Verification
 
 From the detached workspace in Windows PowerShell:
@@ -41,6 +63,11 @@ cmd /c test_xui\build_style_containers_test.bat
 
 The `scroll` test selection passes 113 checks, including one child render per
 changed frame, zero child renders on warm frames, and stable layout versions.
+The `dock` selection passes 261 checks, including cached floating/auto-hide
+chrome, all three button states, active drag overlays, transparent/clear
+transitions, original icon modulation, and unchanged layout versions.
+The existing `dock_panel` regression passes; `dock_panel_pixel` passes 1688
+checks with no failures when rebuilt through `--regression <name>`.
 
 The standalone build uses current project sources, including
 `src/xui_accessibility.c`, rather than a prebuilt XGE DLL. Tests observe colors

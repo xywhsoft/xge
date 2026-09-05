@@ -121,6 +121,11 @@ struct xui_dock_panel_data_t {
 	xui_font pFont;
 	xui_dock_panel_metrics_t tMetrics;
 	xui_dock_panel_colors_t tColors;
+	xui_widget pWidget;
+	xui_dock_panel_colors_t tPaintColors;
+	uint32_t iColorStyleHash;
+	int bPaintColorsValid;
+	int bChromeColorsDirty;
 	xui_dock_region_slot_t arrRegions[XUI_DOCK_PANEL_REGION_COUNT];
 	xui_dock_window_slot_t arrWindows[XUI_DOCK_PANEL_WINDOW_CAPACITY];
 	xui_dock_pane_slot_t arrPanes[XUI_DOCK_PANEL_PANE_CAPACITY];
@@ -198,6 +203,86 @@ static float __xuiDockNodeMinimumAxis(xui_dock_panel_data_t* pData, int iNode, i
 static float __xuiDockMin(float a, float b) { return (a < b) ? a : b; }
 static float __xuiDockMax(float a, float b) { return (a > b) ? a : b; }
 static float __xuiDockAbs(float a) { return (a < 0.0f) ? -a : a; }
+
+static const struct {
+	const char* sName;
+	size_t iOffset;
+} __xuiDockColorProperties[] = {
+	{"dockpanel.background.color", offsetof(xui_dock_panel_colors_t, iBackgroundColor)},
+	{"dockpanel.pane.color", offsetof(xui_dock_panel_colors_t, iPaneColor)},
+	{"dockpanel.client.color", offsetof(xui_dock_panel_colors_t, iClientColor)},
+	{"dockpanel.caption.color", offsetof(xui_dock_panel_colors_t, iCaptionColor)},
+	{"dockpanel.caption.active_color", offsetof(xui_dock_panel_colors_t, iActiveCaptionColor)},
+	{"dockpanel.caption.text_color", offsetof(xui_dock_panel_colors_t, iCaptionTextColor)},
+	{"dockpanel.caption.active_text_color", offsetof(xui_dock_panel_colors_t, iActiveCaptionTextColor)},
+	{"dockpanel.tab.color", offsetof(xui_dock_panel_colors_t, iTabColor)},
+	{"dockpanel.tab.hover_color", offsetof(xui_dock_panel_colors_t, iTabHoverColor)},
+	{"dockpanel.tab.active_color", offsetof(xui_dock_panel_colors_t, iActiveTabColor)},
+	{"dockpanel.tab.text_color", offsetof(xui_dock_panel_colors_t, iTabTextColor)},
+	{"dockpanel.tab.active_text_color", offsetof(xui_dock_panel_colors_t, iActiveTabTextColor)},
+	{"dockpanel.border.color", offsetof(xui_dock_panel_colors_t, iBorderColor)},
+	{"dockpanel.focus.color", offsetof(xui_dock_panel_colors_t, iFocusColor)},
+	{"dockpanel.splitter.color", offsetof(xui_dock_panel_colors_t, iSplitterColor)},
+	{"dockpanel.splitter.hover_color", offsetof(xui_dock_panel_colors_t, iSplitterHoverColor)},
+	{"dockpanel.splitter.active_color", offsetof(xui_dock_panel_colors_t, iSplitterActiveColor)},
+	{"dockpanel.button.color", offsetof(xui_dock_panel_colors_t, iButtonColor)},
+	{"dockpanel.button.hover_color", offsetof(xui_dock_panel_colors_t, iButtonHoverColor)},
+	{"dockpanel.button.active_color", offsetof(xui_dock_panel_colors_t, iButtonActiveColor)},
+	{"dockpanel.auto_hide.color", offsetof(xui_dock_panel_colors_t, iAutoHideColor)},
+	{"dockpanel.auto_hide.hover_color", offsetof(xui_dock_panel_colors_t, iAutoHideHoverColor)},
+	{"dockpanel.float.title_color", offsetof(xui_dock_panel_colors_t, iFloatTitleColor)},
+	{"dockpanel.float.border_color", offsetof(xui_dock_panel_colors_t, iFloatBorderColor)}
+};
+
+static uint32_t __xuiDockStyleColor(xui_dock_panel_data_t* pData, const char* sName, uint32_t iBase)
+{
+	xui_style_property_t tProperty;
+	if ( xuiWidgetGetResolvedStyleProperty(pData->pWidget, sName, &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) return tProperty.tValue.iColor;
+	return iBase;
+}
+
+static const xui_dock_panel_colors_t* __xuiDockColors(xui_dock_panel_data_t* pData)
+{
+	uint32_t iHash = xuiWidgetGetStyleHash(pData->pWidget);
+	size_t i;
+	if ( pData->bPaintColorsValid && pData->iColorStyleHash == iHash ) return &pData->tPaintColors;
+	pData->tPaintColors = pData->tColors;
+	for ( i = 0; i < sizeof(__xuiDockColorProperties) / sizeof(__xuiDockColorProperties[0]); ++i ) {
+		uint32_t* pColor = (uint32_t*)((char*)&pData->tPaintColors + __xuiDockColorProperties[i].iOffset);
+		*pColor = __xuiDockStyleColor(pData, __xuiDockColorProperties[i].sName, *pColor);
+	}
+	pData->iColorStyleHash = iHash;
+	pData->bPaintColorsValid = 1;
+	pData->bChromeColorsDirty = 1;
+	return &pData->tPaintColors;
+}
+
+static void __xuiDockRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+	static const char* arrExtraNames[] = {
+		"dockpanel.button.icon_color", "dockpanel.button.disabled_color",
+		"dockpanel.button.close_icon_color", "dockpanel.auto_hide.border_color",
+		"dockpanel.drag.indicator_color", "dockpanel.tab.disabled_border_color",
+		"dockpanel.tab.disabled_text_color", "dockpanel.tab.indicator_color",
+		"dockpanel.drag.insert_border_color", "dockpanel.drag.preview_color",
+		"dockpanel.drag.preview_border_color", "dockpanel.drag.preview_inner_border_color"
+	};
+	xui_style_property_info_t tInfo;
+	size_t i, iCount = sizeof(__xuiDockColorProperties) / sizeof(__xuiDockColorProperties[0]);
+	for ( i = 0; i < iCount + sizeof(arrExtraNames) / sizeof(arrExtraNames[0]); ++i ) {
+		const char* sName = i < iCount ? __xuiDockColorProperties[i].sName : arrExtraNames[i - iCount];
+		if ( xuiStyleFindProperty(pContext, sName) != 0 ) continue;
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.iSize = sizeof(tInfo);
+		tInfo.sName = sName;
+		tInfo.pWidgetType = pType;
+		tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+		tInfo.iDirtyFlags = XUI_STYLE_DIRTY_DEFAULT;
+		tInfo.iFlags = XUI_STYLE_PROPERTY_INHERITED;
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+}
 
 static xui_rect_t __xuiDockAdornerWorldRect(xui_widget pPanel, xui_rect_t tRect)
 {
@@ -758,16 +843,19 @@ static int __xuiDockDrawPaneButton(xui_widget pWidget, xui_proxy pProxy, xui_dra
 	int ret;
 	if ( !__xuiDockRectRenderable(r) || (pData == NULL) ) return XUI_OK;
 	if ( bHot && bEnabled ) {
-		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), pData->tColors.iTabHoverColor);
+		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), __xuiDockColors(pData)->iTabHoverColor);
 		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawStroke(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), 1.0f, pData->tColors.iFocusColor);
+		ret = __xuiDockDrawStroke(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), 1.0f, __xuiDockColors(pData)->iFocusColor);
 		if ( ret != XUI_OK ) return ret;
 	}
 	icon = __xuiDockRect(r.fX + (r.fW - 16.0f) * 0.5f, r.fY + (r.fH - 15.0f) * 0.5f, 16.0f, 15.0f);
-	iconColor = bEnabled ? XUI_COLOR_WHITE : XUI_COLOR_RGBA(255, 255, 255, 120);
+	iconColor = __xuiDockStyleColor(pData, bEnabled ? "dockpanel.button.icon_color" : "dockpanel.button.disabled_color",
+		bEnabled ? XUI_COLOR_WHITE : XUI_COLOR_RGBA(255, 255, 255, 120));
 	ret = __xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, sAsset, icon, iconColor);
 	if ( ret == XUI_OK ) return XUI_OK;
-	return __xuiDockDrawPaneIconFallback(pProxy, pDraw, sAsset, r, bEnabled ? pData->tColors.iButtonColor : XUI_COLOR_RGBA(120, 138, 153, 160));
+	return __xuiDockDrawPaneIconFallback(pProxy, pDraw, sAsset, r,
+		__xuiDockStyleColor(pData, bEnabled ? "dockpanel.button.icon_color" : "dockpanel.button.disabled_color",
+		bEnabled ? __xuiDockColors(pData)->iButtonColor : XUI_COLOR_RGBA(120, 138, 153, 160)));
 }
 
 static int __xuiDockDrawTabCloseButton(xui_proxy pProxy, xui_draw_context pDraw, xui_dock_panel_data_t* pData, xui_rect_t r, uint32_t iColor, int bHot)
@@ -775,9 +863,9 @@ static int __xuiDockDrawTabCloseButton(xui_proxy pProxy, xui_draw_context pDraw,
 	int ret;
 	if ( !__xuiDockRectRenderable(r) || (pData == NULL) ) return XUI_OK;
 	if ( bHot ) {
-		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), pData->tColors.iTabHoverColor);
+		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), __xuiDockColors(pData)->iTabHoverColor);
 		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawStroke(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), 1.0f, pData->tColors.iFocusColor);
+		ret = __xuiDockDrawStroke(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), 1.0f, __xuiDockColors(pData)->iFocusColor);
 		if ( ret != XUI_OK ) return ret;
 	}
 	return __xuiDockDrawCloseGlyph(pProxy, pDraw, r, iColor);
@@ -927,6 +1015,8 @@ static void __xuiDockInvalidate(xui_widget pWidget, int bLayout)
 		xui_dock_window_slot_t* pWin = &pData->arrWindows[i];
 		if ( pWin->bUsed && pWin->pHostWidget != NULL ) {
 			(void)xuiWidgetInvalidate(pWin->pHostWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			(void)xuiWidgetInvalidate(pWin->pCloseButtonWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			(void)xuiWidgetInvalidate(pWin->pPinButtonWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 	}
 }
@@ -4429,7 +4519,7 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				}
 				(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 				(void)__xuiDockShowAdorner(pWidget, pData, hit.tRect,
-					XUI_DRAG_ADORNER_RECT_FILL, pData->tColors.iSplitterActiveColor, 0.0f);
+					XUI_DRAG_ADORNER_RECT_FILL, __xuiDockColors(pData)->iSplitterActiveColor, 0.0f);
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		} else if ( pData->iAutoHideExpandWindow >= 0 ) {
@@ -4476,7 +4566,7 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			preview = __xuiDockRect(raw.x, raw.y, raw.width, raw.height);
 			pData->tDragPendingRect = preview;
 			(void)__xuiDockShowAdorner(pWidget, pData, preview,
-				XUI_DRAG_ADORNER_RECT_FILL, pData->tColors.iSplitterActiveColor, 0.0f);
+				XUI_DRAG_ADORNER_RECT_FILL, __xuiDockColors(pData)->iSplitterActiveColor, 0.0f);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( (pData->iDragType == XUI_DOCK_DRAG_DOCKED) && (xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget) ) {
@@ -4513,7 +4603,7 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			r = __xuiDockRect(r.fX + dx, r.fY + dy, r.fW, r.fH);
 			pData->tDragPendingRect = __xuiDockClampFloatRect(pWidget, w, r);
 			(void)__xuiDockShowAdorner(pWidget, pData, pData->tDragPendingRect,
-				XUI_DRAG_ADORNER_RECT_STROKE, pData->tColors.iFloatBorderColor, 1.5f);
+				XUI_DRAG_ADORNER_RECT_STROKE, __xuiDockColors(pData)->iFloatBorderColor, 1.5f);
 			if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u ) {
 				ret = __xuiDockSetDragPreview(pWidget, pData, NULL);
 			} else {
@@ -4855,7 +4945,7 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 			(void)xuiSetPointerCapture(xuiWidgetGetContext(pHost), pHost);
 			(void)__xuiDockShowAdorner(w->pPanelWidget, pData,
 				__xuiDockAutoHideResizeAdornerRect(pData, pData->tDragPendingRect, pData->iDragRegion),
-				XUI_DRAG_ADORNER_RECT_FILL, pData->tColors.iSplitterActiveColor, 0.0f);
+				XUI_DRAG_ADORNER_RECT_FILL, __xuiDockColors(pData)->iSplitterActiveColor, 0.0f);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( left && bFloating && resizeSide != 0 ) {
@@ -4875,7 +4965,7 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 			(void)__xuiDockSetDragPreview(w->pPanelWidget, pData, NULL);
 			(void)xuiSetPointerCapture(xuiWidgetGetContext(pHost), pHost);
 			(void)__xuiDockShowAdorner(w->pPanelWidget, pData, w->tFloatRect,
-				XUI_DRAG_ADORNER_RECT_STROKE, pData->tColors.iFloatBorderColor, 1.5f);
+				XUI_DRAG_ADORNER_RECT_STROKE, __xuiDockColors(pData)->iFloatBorderColor, 1.5f);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( left && w->bMovable && __xuiDockRectContains(title, lx, ly) ) {
@@ -4902,7 +4992,7 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 				(void)__xuiDockSetDragPreview(w->pPanelWidget, pData, NULL);
 				(void)xuiSetPointerCapture(xuiWidgetGetContext(pHost), pHost);
 				(void)__xuiDockShowAdorner(w->pPanelWidget, pData, w->tFloatRect,
-					XUI_DRAG_ADORNER_RECT_STROKE, pData->tColors.iFloatBorderColor, 1.5f);
+					XUI_DRAG_ADORNER_RECT_STROKE, __xuiDockColors(pData)->iFloatBorderColor, 1.5f);
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -4917,7 +5007,7 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 			(void)__xuiDockSetDragPreview(w->pPanelWidget, pData, NULL);
 			(void)__xuiDockShowAdorner(w->pPanelWidget, pData,
 				__xuiDockAutoHideResizeAdornerRect(pData, pData->tDragPendingRect, pData->iDragRegion),
-				XUI_DRAG_ADORNER_RECT_FILL, pData->tColors.iSplitterActiveColor, 0.0f);
+				XUI_DRAG_ADORNER_RECT_FILL, __xuiDockColors(pData)->iSplitterActiveColor, 0.0f);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( (pData->iDragType == XUI_DOCK_DRAG_FLOAT_RESIZE) && (pData->iDragWindow == w->iWindow) && (xuiGetPointerCapture(xuiWidgetGetContext(pHost)) == pHost) ) {
@@ -4925,7 +5015,7 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 				pData->iDragSide, pEvent->fX - pData->fDragStartX, pEvent->fY - pData->fDragStartY);
 			(void)__xuiDockSetDragPreview(w->pPanelWidget, pData, NULL);
 			(void)__xuiDockShowAdorner(w->pPanelWidget, pData, pData->tDragPendingRect,
-				XUI_DRAG_ADORNER_RECT_STROKE, pData->tColors.iFloatBorderColor, 1.5f);
+				XUI_DRAG_ADORNER_RECT_STROKE, __xuiDockColors(pData)->iFloatBorderColor, 1.5f);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( (pData->iDragType == XUI_DOCK_DRAG_FLOAT) && (pData->iDragWindow == w->iWindow) && (xuiGetPointerCapture(xuiWidgetGetContext(pHost)) == pHost) ) {
@@ -4938,7 +5028,7 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 				r.fY + pEvent->fY - pData->fDragStartY, r.fW, r.fH);
 			pData->tDragPendingRect = __xuiDockClampFloatRect(w->pPanelWidget, w, r);
 			(void)__xuiDockShowAdorner(w->pPanelWidget, pData, pData->tDragPendingRect,
-				XUI_DRAG_ADORNER_RECT_STROKE, pData->tColors.iFloatBorderColor, 1.5f);
+				XUI_DRAG_ADORNER_RECT_STROKE, __xuiDockColors(pData)->iFloatBorderColor, 1.5f);
 			panelWorld = xuiWidgetGetWorldRect(w->pPanelWidget);
 			if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u ) {
 				ret = __xuiDockSetDragPreview(w->pPanelWidget, pData, NULL);
@@ -5087,9 +5177,9 @@ static int __xuiDockHostButtonRender(xui_widget pButton, xui_draw_context pDraw,
 	rect = xuiWidgetGetRect(pButton);
 	rect.fX = 0.0f;
 	rect.fY = 0.0f;
-	fill = pData->tColors.iButtonColor;
-	if ( (iStateId & XUI_WIDGET_STATE_ACTIVE) != 0u ) fill = pData->tColors.iButtonActiveColor;
-	else if ( (iStateId & XUI_WIDGET_STATE_HOVER) != 0u ) fill = pData->tColors.iButtonHoverColor;
+	fill = __xuiDockColors(pData)->iButtonColor;
+	if ( (iStateId & XUI_WIDGET_STATE_ACTIVE) != 0u ) fill = __xuiDockColors(pData)->iButtonActiveColor;
+	else if ( (iStateId & XUI_WIDGET_STATE_HOVER) != 0u ) fill = __xuiDockColors(pData)->iButtonHoverColor;
 	ret = __xuiDockDrawRectFill(pProxy, pDraw, rect, fill);
 	if ( ret != XUI_OK ) return ret;
 	icon.fW = __xuiDockMin(12.0f, __xuiDockMax(0.0f, rect.fW - 4.0f));
@@ -5097,8 +5187,10 @@ static int __xuiDockHostButtonRender(xui_widget pButton, xui_draw_context pDraw,
 	icon = __xuiDockRect((rect.fW - icon.fW) * 0.5f,
 		(rect.fH - icon.fH) * 0.5f, icon.fW, icon.fH);
 	asset = __xuiDockHostButtonIsClose(pWin, pButton) ? "dock_pane_close" : "dock_pane_dock";
-	color = __xuiDockHostButtonIsClose(pWin, pButton) ? XUI_COLOR_RGBA(171, 72, 76, 255) :
-		pData->tColors.iActiveCaptionTextColor;
+	color = __xuiDockStyleColor(pData, __xuiDockHostButtonIsClose(pWin, pButton) ?
+		"dockpanel.button.close_icon_color" : "dockpanel.button.icon_color",
+		__xuiDockHostButtonIsClose(pWin, pButton) ? XUI_COLOR_RGBA(171, 72, 76, 255) :
+		__xuiDockColors(pData)->iActiveCaptionTextColor);
 	ret = __xuiDockDrawBuiltinAsset(pWin->pPanelWidget, pProxy, pDraw, asset, icon, color);
 	if ( ret != XUI_OK ) ret = __xuiDockDrawPaneIconFallback(pProxy, pDraw, asset, icon, color);
 	return ret;
@@ -5195,11 +5287,12 @@ static int __xuiDockHostRender(xui_widget pHost, xui_draw_context pDraw, uint32_
 	if ( !bFloating && !bAutoHide ) return XUI_OK;
 	bActive = bAutoHide || (pData->iFloatCount > 0 &&
 		pData->arrFloatOrder[pData->iFloatCount - 1] == w->iWindow);
-	titleColor = bActive ? pData->tColors.iFloatTitleColor : pData->tColors.iCaptionColor;
-	titleTextColor = bActive ? pData->tColors.iActiveCaptionTextColor : pData->tColors.iCaptionTextColor;
-	borderColor = bActive ? pData->tColors.iFloatBorderColor : pData->tColors.iBorderColor;
+	titleColor = bActive ? (bAutoHide ? __xuiDockColors(pData)->iActiveCaptionColor :
+		__xuiDockColors(pData)->iFloatTitleColor) : __xuiDockColors(pData)->iCaptionColor;
+	titleTextColor = bActive ? __xuiDockColors(pData)->iActiveCaptionTextColor : __xuiDockColors(pData)->iCaptionTextColor;
+	borderColor = bActive ? __xuiDockColors(pData)->iFloatBorderColor : __xuiDockColors(pData)->iBorderColor;
 	borderWidth = bAutoHide ? pData->tMetrics.fBorderWidth : pData->tMetrics.fFloatBorderWidth;
-	ret = __xuiDockDrawRectFill(pProxy, pDraw, r, pData->tColors.iClientColor);
+	ret = __xuiDockDrawRectFill(pProxy, pDraw, r, __xuiDockColors(pData)->iClientColor);
 	if ( ret != XUI_OK ) return ret;
 	title = __xuiDockRect(0.0f, 0.0f, r.fW,
 		bAutoHide ? pData->tMetrics.fCaptionHeight : pData->tMetrics.fFloatTitleHeight);
@@ -5237,7 +5330,7 @@ static int __xuiDockHostRender(xui_widget pHost, xui_draw_context pDraw, uint32_
 
 static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_dock_panel_data_t* pData, xui_dock_pane_slot_t* pPane, xui_proxy pProxy)
 {
-	xui_dock_panel_colors_t* c = &pData->tColors;
+	const xui_dock_panel_colors_t* c = __xuiDockColors(pData);
 	xui_dock_panel_metrics_t* m = &pData->tMetrics;
 	xui_rect_t activeTab;
 	xui_rect_t line;
@@ -5318,8 +5411,8 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		border = c->iBorderColor;
 		text = c->iTabTextColor;
 		if ( !w->bDockable ) {
-			border = XUI_COLOR_RGBA(150, 174, 198, 155);
-			text = XUI_COLOR_RGBA(112, 132, 154, 185);
+			border = __xuiDockStyleColor(pData, "dockpanel.tab.disabled_border_color", XUI_COLOR_RGBA(150, 174, 198, 155));
+			text = __xuiDockStyleColor(pData, "dockpanel.tab.disabled_text_color", XUI_COLOR_RGBA(112, 132, 154, 185));
 		}
 		ret = __xuiDockDrawFill(pProxy, pDraw, tab, fill);
 		if ( ret != XUI_OK ) return ret;
@@ -5339,7 +5432,8 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		if ( ret != XUI_OK ) return ret;
 		ret = __xuiDockDrawEdgeRect(pProxy, pDraw, activeTab, c->iBorderColor, 1, 1, 1, 0);
 		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockRect(activeTab.fX + 1.0f, activeTab.fY + 1.0f, __xuiDockMax(0.0f, activeTab.fW - 2.0f), 2.0f), XUI_COLOR_RGBA(238, 126, 24, 255));
+		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockRect(activeTab.fX + 1.0f, activeTab.fY + 1.0f, __xuiDockMax(0.0f, activeTab.fW - 2.0f), 2.0f),
+			__xuiDockStyleColor(pData, "dockpanel.tab.indicator_color", XUI_COLOR_RGBA(238, 126, 24, 255)));
 		if ( ret != XUI_OK ) return ret;
 		if ( active != NULL ) {
 			xui_rect_t close = active->tTabCloseRect;
@@ -5383,8 +5477,9 @@ static int __xuiDockDrawAutoHide(xui_widget pWidget, xui_draw_context pDraw, xui
 		iRegion = __xuiDockWindowAutoHideRegion(w);
 		hot = (pData->iHoverType == XUI_DOCK_PANEL_HIT_AUTO_HIDE && pData->iHoverWindow == i);
 		active = (pData->iAutoHideExpandWindow == w->iWindow);
-		fill = (hot || active) ? pData->tColors.iAutoHideHoverColor : pData->tColors.iAutoHideColor;
-		border = (hot || active) ? XUI_COLOR_RGBA(229, 195, 101, 255) : pData->tColors.iBorderColor;
+		fill = (hot || active) ? __xuiDockColors(pData)->iAutoHideHoverColor : __xuiDockColors(pData)->iAutoHideColor;
+		border = (hot || active) ? __xuiDockStyleColor(pData, "dockpanel.auto_hide.border_color",
+			XUI_COLOR_RGBA(229, 195, 101, 255)) : __xuiDockColors(pData)->iBorderColor;
 		ret = __xuiDockDrawFill(pProxy, pDraw, w->tAutoHideRect, fill);
 		if ( ret != XUI_OK ) return ret;
 		ret = __xuiDockDrawStroke(pProxy, pDraw, w->tAutoHideRect, 1.0f, border);
@@ -5399,17 +5494,19 @@ static int __xuiDockDrawAutoHide(xui_widget pWidget, xui_draw_context pDraw, xui
 			icon = __xuiDockRect(w->tAutoHideRect.fX + 3.0f, w->tAutoHideRect.fY + 3.0f, 16.0f, 15.0f);
 		}
 		if ( icon.fX + icon.fW <= w->tAutoHideRect.fX + w->tAutoHideRect.fW && icon.fY + icon.fH <= w->tAutoHideRect.fY + w->tAutoHideRect.fH ) {
-			ret = __xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, "dock_pane_dock", icon, XUI_COLOR_WHITE);
-			if ( ret != XUI_OK ) ret = __xuiDockDrawPaneIconFallback(pProxy, pDraw, "dock_pane_dock", icon, pData->tColors.iButtonColor);
+			ret = __xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, "dock_pane_dock", icon,
+				__xuiDockStyleColor(pData, "dockpanel.button.icon_color", XUI_COLOR_WHITE));
+			if ( ret != XUI_OK ) ret = __xuiDockDrawPaneIconFallback(pProxy, pDraw, "dock_pane_dock", icon,
+				__xuiDockStyleColor(pData, "dockpanel.button.icon_color", __xuiDockColors(pData)->iButtonColor));
 			if ( ret != XUI_OK ) return ret;
 		}
 		if ( iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) {
-			ret = __xuiDockDrawAutoHideSideTitle(pProxy, pDraw, w, iRegion, pData->tColors.iTabTextColor);
+			ret = __xuiDockDrawAutoHideSideTitle(pProxy, pDraw, w, iRegion, __xuiDockColors(pData)->iTabTextColor);
 			if ( ret != XUI_OK ) return ret;
 		} else {
 			text = __xuiDockRect(w->tAutoHideRect.fX + 22.0f, w->tAutoHideRect.fY, __xuiDockMax(0.0f, w->tAutoHideRect.fW - 26.0f), w->tAutoHideRect.fH);
 			if ( text.fW > 8.0f ) {
-				ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle, text, pData->tColors.iTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle, text, __xuiDockColors(pData)->iTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( ret != XUI_OK ) return ret;
 			}
 		}
@@ -5429,15 +5526,19 @@ static int __xuiDockDrawDragPreview(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( bHasPreview ) {
 		r = __xuiDockOffsetRect(pData->tDragPreview.tRect, fOffsetX, fOffsetY);
 		if ( pData->iDragInsertIndex >= 0 ) {
-			ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockInset(r, -1.0f, 0.0f), XUI_COLOR_RGBA(255, 255, 255, 210));
+			ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockInset(r, -1.0f, 0.0f),
+				__xuiDockStyleColor(pData, "dockpanel.drag.insert_border_color", XUI_COLOR_RGBA(255, 255, 255, 210)));
 			if ( ret != XUI_OK ) return ret;
-			return __xuiDockDrawFill(pProxy, pDraw, r, pData->tColors.iFocusColor);
+			return __xuiDockDrawFill(pProxy, pDraw, r, __xuiDockColors(pData)->iFocusColor);
 		}
-		ret = __xuiDockDrawFill(pProxy, pDraw, r, XUI_COLOR_RGBA(47, 125, 214, 54));
+		ret = __xuiDockDrawFill(pProxy, pDraw, r,
+			__xuiDockStyleColor(pData, "dockpanel.drag.preview_color", XUI_COLOR_RGBA(47, 125, 214, 54)));
 		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawStroke(pProxy, pDraw, r, 2.0f, XUI_COLOR_RGBA(47, 125, 214, 220));
+		ret = __xuiDockDrawStroke(pProxy, pDraw, r, 2.0f,
+			__xuiDockStyleColor(pData, "dockpanel.drag.preview_border_color", XUI_COLOR_RGBA(47, 125, 214, 220)));
 		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawStroke(pProxy, pDraw, __xuiDockInset(r, 3.0f, 3.0f), 1.0f, XUI_COLOR_RGBA(255, 255, 255, 150));
+		ret = __xuiDockDrawStroke(pProxy, pDraw, __xuiDockInset(r, 3.0f, 3.0f), 1.0f,
+			__xuiDockStyleColor(pData, "dockpanel.drag.preview_inner_border_color", XUI_COLOR_RGBA(255, 255, 255, 150)));
 		if ( ret != XUI_OK ) return ret;
 	}
 	indicator = pData->tDragIndicator;
@@ -5450,7 +5551,8 @@ static int __xuiDockDrawDragPreview(xui_widget pWidget, xui_draw_context pDraw, 
 			target = __xuiDockOffsetRect(pData->arrPanes[indicator.iPane].tRect, fOffsetX, fOffsetY);
 			dst = __xuiDockRect(target.fX + (target.fW - 88.0f) * 0.5f, target.fY + (target.fH - 88.0f) * 0.5f, 88.0f, 88.0f);
 			asset = __xuiDockPaneIndicatorAssetName(indicator.iSide);
-			(void)__xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, asset, dst, XUI_COLOR_WHITE);
+			(void)__xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, asset, dst,
+				__xuiDockStyleColor(pData, "dockpanel.drag.indicator_color", XUI_COLOR_WHITE));
 		} else {
 			target = __xuiDockOffsetRect(xuiWidgetGetContentRect(pWidget), fOffsetX, fOffsetY);
 			switch ( indicator.iRegion ) {
@@ -5471,9 +5573,32 @@ static int __xuiDockDrawDragPreview(xui_widget pWidget, xui_draw_context pDraw, 
 				break;
 			}
 			asset = __xuiDockPanelIndicatorAssetName(indicator.iRegion);
-			(void)__xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, asset, dst, XUI_COLOR_WHITE);
+			(void)__xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, asset, dst,
+				__xuiDockStyleColor(pData, "dockpanel.drag.indicator_color", XUI_COLOR_WHITE));
 		}
 	}
+	return XUI_OK;
+}
+
+
+static int __xuiDockPreparePaint(xui_widget pWidget)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	if ( pData == NULL ) return XUI_OK;
+	(void)__xuiDockColors(pData);
+	if ( !pData->bChromeColorsDirty ) return XUI_OK;
+	__xuiDockInvalidate(pWidget, 0);
+	/* Detached overlays are prepared after the owner's root, not as child caches. */
+	if ( pData->pDragOverlayWidget != NULL )
+		(void)xuiWidgetInvalidate(pData->pDragOverlayWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( pContext->pDragAdornerOwner == pData->pWidget && pContext->iDragAdornerPrimitiveCount == 1 ) {
+		xui_drag_adorner_primitive_t tPrimitive = pContext->arrDragAdornerPrimitives[0];
+		tPrimitive.iColor = tPrimitive.iType == XUI_DRAG_ADORNER_RECT_FILL ?
+			__xuiDockColors(pData)->iSplitterActiveColor : __xuiDockColors(pData)->iFloatBorderColor;
+		(void)xuiInternalDragAdornerSet(pContext, pData->pWidget, &tPrimitive, 1);
+	}
+	pData->bChromeColorsDirty = 0;
 	return XUI_OK;
 }
 
@@ -5490,16 +5615,16 @@ static int __xuiDockCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	r = xuiWidgetGetContentRect(pWidget);
-	ret = __xuiDockDrawFill(pProxy, pDraw, r, pData->tColors.iBackgroundColor);
+	ret = __xuiDockDrawFill(pProxy, pDraw, r, __xuiDockColors(pData)->iBackgroundColor);
 	if ( ret != XUI_OK ) return ret;
 	for ( i = 0; i < XUI_DOCK_PANEL_REGION_COUNT; i++ ) {
 		if ( pData->arrRegions[i].iRootNode >= 0 ) {
-			ret = __xuiDockDrawFill(pProxy, pDraw, pData->arrRegions[i].tRect, pData->tColors.iPaneColor);
+			ret = __xuiDockDrawFill(pProxy, pDraw, pData->arrRegions[i].tRect, __xuiDockColors(pData)->iPaneColor);
 			if ( ret != XUI_OK ) return ret;
 		}
 		if ( pData->arrRegions[i].tSplitterRect.fW > 0.0f && pData->arrRegions[i].tSplitterRect.fH > 0.0f ) {
-			uint32_t color = (pData->iDragType == XUI_DOCK_DRAG_SPLITTER && pData->iDragRegion == i) ? pData->tColors.iSplitterActiveColor :
-				((pData->iHoverType == XUI_DOCK_PANEL_HIT_SPLITTER && pData->iHoverRegion == i) ? pData->tColors.iSplitterHoverColor : pData->tColors.iSplitterColor);
+			uint32_t color = (pData->iDragType == XUI_DOCK_DRAG_SPLITTER && pData->iDragRegion == i) ? __xuiDockColors(pData)->iSplitterActiveColor :
+				((pData->iHoverType == XUI_DOCK_PANEL_HIT_SPLITTER && pData->iHoverRegion == i) ? __xuiDockColors(pData)->iSplitterHoverColor : __xuiDockColors(pData)->iSplitterColor);
 			ret = __xuiDockDrawFill(pProxy, pDraw, pData->arrRegions[i].tSplitterRect, color);
 			if ( ret != XUI_OK ) return ret;
 		}
@@ -5508,8 +5633,8 @@ static int __xuiDockCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 		xui_dock_node_slot_t* n = &pData->arrNodes[i];
 		uint32_t color;
 		if ( !n->bUsed || n->iType != XUI_DOCK_NODE_SPLIT ) continue;
-		color = (pData->iDragType == XUI_DOCK_DRAG_SPLITTER && pData->iDragNode == i) ? pData->tColors.iSplitterActiveColor :
-			((pData->iHoverType == XUI_DOCK_PANEL_HIT_SPLITTER && pData->iHoverNode == i) ? pData->tColors.iSplitterHoverColor : pData->tColors.iSplitterColor);
+		color = (pData->iDragType == XUI_DOCK_DRAG_SPLITTER && pData->iDragNode == i) ? __xuiDockColors(pData)->iSplitterActiveColor :
+			((pData->iHoverType == XUI_DOCK_PANEL_HIT_SPLITTER && pData->iHoverNode == i) ? __xuiDockColors(pData)->iSplitterHoverColor : __xuiDockColors(pData)->iSplitterColor);
 		ret = __xuiDockDrawFill(pProxy, pDraw, n->tSplitterRect, color);
 		if ( ret != XUI_OK ) return ret;
 	}
@@ -5648,6 +5773,7 @@ static int __xuiDockPanelInit(xui_widget pWidget, void* pTypeData, const void* p
 	if ( (pWidget == NULL) || (pTypeData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = (xui_dock_panel_data_t*)pTypeData;
 	__xuiDockDefaults(pData);
+	pData->pWidget = pWidget;
 	pData->pLayoutContext = pWidget->pContext->pLayoutContext;
 	__xuiDockApplyDesc(pData, (const xui_dock_panel_desc_t*)pCreateData);
 	if ( pData->pFont == NULL ) pData->pFont = xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
@@ -5768,7 +5894,11 @@ XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext)
 	xui_cache_policy_t policy;
 	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "dockpanel");
-	if ( pType != NULL ) return pType;
+	if ( pType != NULL ) {
+		pType->onPreparePaint = __xuiDockPreparePaint;
+		__xuiDockRegisterStyleProperties(pContext, pType);
+		return pType;
+	}
 	memset(&desc, 0, sizeof(desc));
 	desc.iSize = sizeof(desc);
 	desc.sName = "dockpanel";
@@ -5787,6 +5917,8 @@ XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext)
 	desc.tLayout = layout;
 	desc.tCachePolicy = policy;
 	if ( xuiWidgetRegisterType(pContext, &pType, &desc) != XUI_OK ) return NULL;
+	pType->onPreparePaint = __xuiDockPreparePaint;
+	__xuiDockRegisterStyleProperties(pContext, pType);
 	return pType;
 }
 
@@ -5855,6 +5987,7 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 		xLayoutNodeDestroy(pData->pLayoutContext, pData->iRegionLayoutRoot);
 	}
 	__xuiDockDefaults(pData);
+	pData->pWidget = pWidget;
 	pData->pLayoutContext = pLayoutContext;
 	pData->pFont = pFont;
 	pData->tMetrics = metrics;
@@ -6521,6 +6654,7 @@ XUI_API int xuiDockPanelSetColors(xui_widget pWidget, const xui_dock_panel_color
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	if ( (pData == NULL) || (pColors == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->tColors = *pColors;
+	pData->bPaintColorsValid = 0;
 	__xuiDockInvalidate(pWidget, 0);
 	return XUI_OK;
 }
