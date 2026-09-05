@@ -150,6 +150,7 @@ typedef struct xui_code_edit_data_t {
 	int bInputDispatch;
 	xui_widget pAssistPopup;
 	xui_widget pAssistContent;
+	uint32_t arrAssistColors[3];
 	int iAssistKind;
 	char* sAssistLabel;
 	int iAssistLabelCapacity;
@@ -227,6 +228,7 @@ static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t*
 static int __xuiCodeEditUpdateScrollModel(xui_widget pWidget, xui_code_edit_data_t* pData);
 static void __xuiCodeEditFindWindowApplyLanguage(xui_widget pCodeEdit, xui_code_edit_data_t* pData);
 static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser);
+static uint32_t __xuiCodeEditColor(xui_widget pWidget, const char* sName, uint32_t iDefaultColor);
 static int __xuiCodeEditVisibleRowToLine(xui_code_edit_data_t* pData, int iRow);
 static int __xuiCodeEditDocumentVisibleRowToLine(xui_code_edit_data_t* pData,
 	int iRow);
@@ -2350,6 +2352,19 @@ static int __xuiCodeEditQueryCursor(xui_widget pWidget, int iX, int iY, void* pU
 	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
 }
 
+static void __xuiCodeEditSyncAssistColors(xui_widget pWidget, xui_code_edit_data_t* pData)
+{
+	uint32_t arrColors[3];
+	arrColors[0] = __xuiCodeEditColor(pWidget, "codeedit.assist.active_color", XUI_COLOR_RGBA(219,234,254,255));
+	arrColors[1] = __xuiCodeEditColor(pWidget, "codeedit.assist.text.color", XUI_COLOR_RGBA(15,23,42,255));
+	arrColors[2] = __xuiCodeEditColor(pWidget, "codeedit.assist.documentation.color", XUI_COLOR_RGBA(71,85,105,255));
+	if ( memcmp(arrColors, pData->arrAssistColors, sizeof(arrColors)) == 0 ) return;
+	memcpy(pData->arrAssistColors, arrColors, sizeof(arrColors));
+	/* The assist content lives in the overlay tree, outside the editor's cache. */
+	if ( pData->pAssistContent != NULL )
+		(void)xuiWidgetInvalidate(pData->pAssistContent, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiCodeEditAssistCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	uint32_t iStateId, void* pUser)
 {
@@ -2371,6 +2386,7 @@ static int __xuiCodeEditAssistCacheRender(xui_widget pWidget, xui_draw_context p
 	if ( pWidget == NULL || pDraw == NULL || pData == NULL || pData->sAssistLabel == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	__xuiCodeEditSyncAssistColors(pCodeEdit, pData);
 	pContext = xuiWidgetGetContext(pCodeEdit);
 	pProxy = xuiInternalContextGetProxy(pContext);
 	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
@@ -2391,16 +2407,16 @@ static int __xuiCodeEditAssistCacheRender(xui_widget pWidget, xui_draw_context p
 		(void)pProxy->drawRectFill(pProxy, pDraw,
 			xuiInternalSnapRect((xui_rect_t){tLabel.fX + fPrefix - 2.0f,
 				tLabel.fY + 3.0f, fActive + 4.0f, tLabel.fH - 6.0f}),
-			XUI_COLOR_RGBA(219, 234, 254, 255));
+			pData->arrAssistColors[0]);
 	}
 	iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->sAssistLabel, tLabel,
-		XUI_COLOR_RGBA(15, 23, 42, 255),
+		pData->arrAssistColors[1],
 		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->sAssistDocumentation != NULL && pData->sAssistDocumentation[0] != '\0' ) {
 		iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->sAssistDocumentation,
 			(xui_rect_t){tRect.fX + 8.0f, tRect.fY + 30.0f, tRect.fW - 16.0f, tRect.fH - 34.0f},
-			XUI_COLOR_RGBA(71, 85, 105, 255),
+			pData->arrAssistColors[2],
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return iRet;
@@ -5350,23 +5366,29 @@ static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_
 		}
 		if ( pMargins[i].iKind == XUI_CODE_MARGIN_LINE_NUMBER ) {
 			if ( iLine == iActiveLine ) {
-				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tLineRect, XUI_COLOR_RGBA(226, 232, 240, 255));
+				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tLineRect,
+					__xuiCodeEditColor(pWidget, "codeedit.line_number.active_background_color", XUI_COLOR_RGBA(226,232,240,255)));
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			snprintf(sNumber, sizeof(sNumber), "%d", iLine + 1);
-			iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, sNumber, 0, (int)strlen(sNumber), (xui_rect_t){tLineRect.fX + 2.0f, tLineRect.fY, tLineRect.fW - 4.0f, tLineRect.fH}, (iLine == iActiveLine) ? XUI_COLOR_RGBA(15, 23, 42, 255) : XUI_COLOR_RGBA(100, 116, 139, 255));
+			iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, sNumber, 0, (int)strlen(sNumber),
+				(xui_rect_t){tLineRect.fX + 2.0f, tLineRect.fY, tLineRect.fW - 4.0f, tLineRect.fH},
+				(iLine == iActiveLine) ? __xuiCodeEditColor(pWidget, "codeedit.line_number.active_color", XUI_COLOR_RGBA(15,23,42,255)) :
+				__xuiCodeEditColor(pWidget, "codeedit.line_number.color", XUI_COLOR_RGBA(100,116,139,255)));
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( pMargins[i].iKind == XUI_CODE_MARGIN_MARKER ) {
 			iCount = 0;
 			iRet = xuiCodeAnnotationGetMarkers(pData->pAnnotations, iLine, arrMarkers, (int)(sizeof(arrMarkers) / sizeof(arrMarkers[0])), &iCount);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( iCount > 0 ) {
-				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){tLineRect.fX + 4.0f, tLineRect.fY + 5.0f, 7.0f, 7.0f}, XUI_COLOR_RGBA(37, 99, 235, 255));
+				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){tLineRect.fX + 4.0f, tLineRect.fY + 5.0f, 7.0f, 7.0f},
+					__xuiCodeEditColor(pWidget, "codeedit.marker.color", XUI_COLOR_RGBA(37,99,235,255)));
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		} else if ( pMargins[i].iKind == XUI_CODE_MARGIN_FOLD ) {
 			if ( __xuiCodeEditLineHasFoldHeader(pData, iLine) ) {
-				iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, "-", 0, 1, (xui_rect_t){tLineRect.fX + 4.0f, tLineRect.fY, 8.0f, tLineRect.fH}, XUI_COLOR_RGBA(71, 85, 105, 255));
+				iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, "-", 0, 1, (xui_rect_t){tLineRect.fX + 4.0f, tLineRect.fY, 8.0f, tLineRect.fH},
+					__xuiCodeEditColor(pWidget, "codeedit.fold.color", XUI_COLOR_RGBA(71,85,105,255)));
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		} else if ( pMargins[i].iKind == XUI_CODE_MARGIN_DIAGNOSTIC ) {
@@ -5378,7 +5400,7 @@ static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( iCount > 0 ) {
-				uint32_t iColor = (arrDiagnostics[0].iSeverity == XUI_CODE_DIAGNOSTIC_ERROR) ? XUI_COLOR_RGBA(220, 38, 38, 255) : XUI_COLOR_RGBA(217, 119, 6, 255);
+				uint32_t iColor = __xuiCodeEditDiagnosticColor(pWidget, arrDiagnostics[0].iSeverity);
 				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){tLineRect.fX + 4.0f, tLineRect.fY + 5.0f, 7.0f, 7.0f}, iColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
@@ -5564,6 +5586,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	pContext = xuiWidgetGetContext(pWidget);
 	pProxy = xuiInternalContextGetProxy(pContext);
 	if ( pProxy == NULL ) return XUI_OK;
+	__xuiCodeEditSyncAssistColors(pWidget, pData);
 	iRet = __xuiCodeEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	tRect = xuiWidgetGetContentRect(pWidget);
@@ -5587,7 +5610,8 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, tRect.fW, tRect.fH}, iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( tTextContent.fX > 0.0f ) {
-		iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, tTextContent.fX, tContent.fH}, XUI_COLOR_RGBA(241, 245, 249, 255));
+		iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, tTextContent.fX, tContent.fH},
+			__xuiCodeEditColor(pWidget, "codeedit.margin.background_color", XUI_COLOR_RGBA(241,245,249,255)));
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){tTextContent.fX - 1.0f, 0.0f, 1.0f, tContent.fH}, iDividerColor);
@@ -5867,6 +5891,15 @@ static void __xuiCodeEditRegisterStyleProperty(xui_context pContext, xui_widget_
 static void __xuiCodeEditRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	uint32_t iPaintDirty = XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.margin.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.line_number.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.line_number.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.line_number.active_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.marker.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.fold.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.assist.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.assist.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.assist.documentation.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.text.readonly_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
@@ -7886,6 +7919,7 @@ static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	(void)pUser;
 	pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiCodeEditSyncAssistColors(pWidget, pData);
 	iVersion = xuiCodeDocumentGetVersion(pData->pDocument);
 	memset(&tSelection, 0, sizeof(tSelection));
 	bSelectionChanged = xuiCodeSelectionGetState(pData->pSelection, &tSelection) == XUI_OK &&
