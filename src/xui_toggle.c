@@ -74,11 +74,6 @@ typedef struct xui_toggle_data_t {
 	xui_rect_t tInnerTextRect;
 } xui_toggle_data_t;
 
-static uint32_t __xuiToggleColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
-{
-	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
-}
-
 static uint32_t __xuiToggleColorAlpha(uint32_t iColor)
 {
 	return iColor & 0xffu;
@@ -252,6 +247,10 @@ static void __xuiToggleResolve(xui_widget pWidget, xui_toggle_data_t* pData, xui
 	(void)__xuiToggleStyleColor(pWidget, "toggle.track.border_color", &pResolved->iTrackBorderColor);
 	(void)__xuiToggleStyleColor(pWidget, "toggle.thumb.color", &pResolved->iThumbColor);
 	(void)__xuiToggleStyleColor(pWidget, "toggle.thumb.border_color", &pResolved->iThumbBorderColor);
+	(void)__xuiToggleStyleColor(pWidget, "toggle.track.disabled_color", &pResolved->iDisabledTrackColor);
+	(void)__xuiToggleStyleColor(pWidget, "toggle.track.disabled_border_color", &pResolved->iDisabledTrackBorderColor);
+	(void)__xuiToggleStyleColor(pWidget, "toggle.thumb.disabled_color", &pResolved->iDisabledThumbColor);
+	(void)__xuiToggleStyleColor(pWidget, "toggle.thumb.disabled_border_color", &pResolved->iDisabledThumbBorderColor);
 	(void)__xuiToggleStyleFloat(pWidget, "toggle.track.width", &pResolved->fTrackWidth);
 	(void)__xuiToggleStyleFloat(pWidget, "toggle.track.height", &pResolved->fTrackHeight);
 	(void)__xuiToggleStyleFloat(pWidget, "toggle.thumb.size", &pResolved->fThumbSize);
@@ -582,7 +581,7 @@ static int __xuiToggleDrawDefaultIndicator(xui_widget pWidget, xui_draw_context 
 		sInnerText = bChecked ? pResolved->sCheckedText : pResolved->sUncheckedText;
 		if ( (sInnerText != NULL) && (sInnerText[0] != '\0') ) {
 			iInnerColor = bChecked ? pResolved->iCheckedTextColor : pResolved->iUncheckedTextColor;
-			if ( !xuiWidgetGetEnabled(pWidget) ) {
+			if ( (iVisual == XUI_TOGGLE_VISUAL_DISABLED) || (iVisual == XUI_TOGGLE_VISUAL_CHECKED_DISABLED) ) {
 				iInnerColor = pResolved->iDisabledTextColor;
 			}
 			if ( __xuiToggleColorAlpha(iInnerColor) != 0 ) {
@@ -650,7 +649,7 @@ static int __xuiToggleCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 		return iRet;
 	}
 	if ( ((iRenderState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iRenderState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiToggleColorAlpha(tResolved.iFocusColor) != 0) ) {
-		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(pData->tTrackRect, -2.0f), tResolved.fFocusWidth, __xuiToggleColorWithAlpha(tResolved.iFocusColor, 160));
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(pData->tTrackRect, -2.0f), tResolved.fFocusWidth, tResolved.iFocusColor);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -882,7 +881,7 @@ static int __xuiToggleInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	pData->iTrackBorderColor = XUI_COLOR_RGBA(185, 199, 216, 255);
 	pData->iThumbColor = XUI_COLOR_WHITE;
 	pData->iThumbBorderColor = XUI_COLOR_RGBA(186, 199, 214, 255);
-	pData->iFocusColor = XUI_COLOR_RGBA(47, 128, 237, 255);
+	pData->iFocusColor = XUI_COLOR_RGBA(47, 128, 237, 160);
 	pData->iDisabledTrackColor = XUI_COLOR_RGBA(232, 237, 244, 255);
 	pData->iDisabledTrackBorderColor = XUI_COLOR_RGBA(214, 221, 230, 255);
 	pData->iDisabledThumbColor = XUI_COLOR_RGBA(247, 249, 252, 255);
@@ -976,6 +975,10 @@ static void __xuiToggleRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.track.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.thumb.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.thumb.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.track.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.track.disabled_border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.thumb.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.thumb.disabled_border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);

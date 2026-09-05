@@ -39,6 +39,7 @@ typedef struct xui_checkbox_data_t {
 	uint32_t iFocusColor;
 	uint32_t iUncheckedFillColor;
 	uint32_t iUncheckedHoverFillColor;
+	uint32_t iUncheckedActiveFillColor;
 	uint32_t iDisabledFillColor;
 	uint32_t iDisabledBorderColor;
 	uint32_t iDisabledCheckColor;
@@ -61,11 +62,6 @@ typedef struct xui_checkbox_data_t {
 static uint32_t __xuiCheckBoxColorAlpha(uint32_t iColor)
 {
 	return iColor & 0x000000ffu;
-}
-
-static uint32_t __xuiCheckBoxColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
-{
-	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
 static int __xuiCheckBoxDescValid(const xui_checkbox_desc_t* pDesc)
@@ -204,6 +200,13 @@ static void __xuiCheckBoxResolve(xui_widget pWidget, xui_checkbox_data_t* pData,
 	(void)__xuiCheckBoxStyleColor(pWidget, "choice.border.color", &pResolved->iBorderColor);
 	(void)__xuiCheckBoxStyleColor(pWidget, "choice.border.hover_color", &pResolved->iBorderHoverColor);
 	(void)__xuiCheckBoxStyleColor(pWidget, "choice.focus.color", &pResolved->iFocusColor);
+	(void)__xuiCheckBoxStyleColor(pWidget, "choice.background.color", &pResolved->iUncheckedFillColor);
+	(void)__xuiCheckBoxStyleColor(pWidget, "choice.background.hover_color", &pResolved->iUncheckedHoverFillColor);
+	(void)__xuiCheckBoxStyleColor(pWidget, "choice.background.active_color", &pResolved->iUncheckedActiveFillColor);
+	(void)__xuiCheckBoxStyleColor(pWidget, "choice.background.disabled_color", &pResolved->iDisabledFillColor);
+	(void)__xuiCheckBoxStyleColor(pWidget, "choice.border.disabled_color", &pResolved->iDisabledBorderColor);
+	(void)__xuiCheckBoxStyleColor(pWidget, "checkbox.check.color", &pResolved->iCheckColor);
+	(void)__xuiCheckBoxStyleColor(pWidget, "checkbox.check.disabled_color", &pResolved->iDisabledCheckColor);
 	(void)__xuiCheckBoxStyleFloat(pWidget, "choice.indicator.size", &pResolved->fIndicatorSize);
 	(void)__xuiCheckBoxStyleFloat(pWidget, "choice.indicator.gap", &pResolved->fGap);
 	(void)__xuiCheckBoxStyleFloat(pWidget, "choice.focus.width", &pResolved->fFocusWidth);
@@ -358,7 +361,7 @@ static xui_checkbox_visual_t __xuiCheckBoxVisual(xui_checkbox_data_t* pResolved,
 		tVisual.iBorderColor = pResolved->iBorderHoverColor;
 		break;
 	case XUI_CHECKBOX_VISUAL_ACTIVE:
-		tVisual.iFillColor = XUI_COLOR_RGBA(234, 244, 255, 255);
+		tVisual.iFillColor = pResolved->iUncheckedActiveFillColor;
 		tVisual.iBorderColor = pResolved->iAccentActiveColor;
 		break;
 	case XUI_CHECKBOX_VISUAL_CHECKED:
@@ -503,7 +506,7 @@ static int __xuiCheckBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	iState = iRenderState;
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiCheckBoxColorAlpha(tResolved.iFocusColor) != 0) ) {
-		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tIndicator, -2.0f), tResolved.fFocusWidth, __xuiCheckBoxColorWithAlpha(tResolved.iFocusColor, 160));
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tIndicator, -2.0f), tResolved.fFocusWidth, tResolved.iFocusColor);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -739,9 +742,10 @@ static int __xuiCheckBoxInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iAccentActiveColor = XUI_COLOR_RGBA(31, 111, 214, 255);
 	pData->iBorderColor = XUI_COLOR_RGBA(184, 196, 210, 255);
 	pData->iBorderHoverColor = XUI_COLOR_RGBA(127, 181, 243, 255);
-	pData->iFocusColor = XUI_COLOR_RGBA(47, 128, 237, 255);
+	pData->iFocusColor = XUI_COLOR_RGBA(47, 128, 237, 160);
 	pData->iUncheckedFillColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	pData->iUncheckedHoverFillColor = XUI_COLOR_RGBA(247, 251, 255, 255);
+	pData->iUncheckedActiveFillColor = XUI_COLOR_RGBA(234, 244, 255, 255);
 	pData->iDisabledFillColor = XUI_COLOR_RGBA(243, 245, 248, 255);
 	pData->iDisabledBorderColor = XUI_COLOR_RGBA(214, 221, 230, 255);
 	pData->iDisabledCheckColor = XUI_COLOR_RGBA(174, 184, 196, 255);
@@ -820,6 +824,13 @@ static void __xuiCheckBoxRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.border.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.background.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.background.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.background.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.border.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "checkbox.check.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "checkbox.check.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.focus.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);

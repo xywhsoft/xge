@@ -39,6 +39,7 @@ typedef struct xui_radio_data_t {
 	uint32_t iFocusColor;
 	uint32_t iUncheckedFillColor;
 	uint32_t iUncheckedHoverFillColor;
+	uint32_t iUncheckedActiveFillColor;
 	uint32_t iDisabledFillColor;
 	uint32_t iDisabledBorderColor;
 	uint32_t iDisabledDotColor;
@@ -72,11 +73,6 @@ static int __xuiRadioSetCheckedInternal(xui_widget pWidget, xui_radio_data_t* pD
 static int __xuiRadioGroupSelectRadioInternal(xui_widget pGroup, xui_widget pRadio, int bNotify);
 static int __xuiRadioGroupIndexOf(xui_widget pGroup, xui_widget pRadio);
 static xui_widget __xuiRadioGroupRadioAt(xui_widget pGroup, int iIndex);
-
-static uint32_t __xuiRadioColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
-{
-	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
-}
 
 static uint32_t __xuiRadioColorAlpha(uint32_t iColor)
 {
@@ -241,6 +237,13 @@ static void __xuiRadioResolve(xui_widget pWidget, xui_radio_data_t* pData, xui_r
 	(void)__xuiRadioStyleColor(pWidget, "choice.border.color", &pResolved->iBorderColor);
 	(void)__xuiRadioStyleColor(pWidget, "choice.border.hover_color", &pResolved->iBorderHoverColor);
 	(void)__xuiRadioStyleColor(pWidget, "choice.focus.color", &pResolved->iFocusColor);
+	(void)__xuiRadioStyleColor(pWidget, "choice.background.color", &pResolved->iUncheckedFillColor);
+	(void)__xuiRadioStyleColor(pWidget, "choice.background.hover_color", &pResolved->iUncheckedHoverFillColor);
+	(void)__xuiRadioStyleColor(pWidget, "choice.background.active_color", &pResolved->iUncheckedActiveFillColor);
+	(void)__xuiRadioStyleColor(pWidget, "choice.background.disabled_color", &pResolved->iDisabledFillColor);
+	(void)__xuiRadioStyleColor(pWidget, "choice.border.disabled_color", &pResolved->iDisabledBorderColor);
+	(void)__xuiRadioStyleColor(pWidget, "radio.dot.color", &pResolved->iDotColor);
+	(void)__xuiRadioStyleColor(pWidget, "radio.dot.disabled_color", &pResolved->iDisabledDotColor);
 	(void)__xuiRadioStyleFloat(pWidget, "choice.indicator.size", &pResolved->fIndicatorSize);
 	(void)__xuiRadioStyleFloat(pWidget, "choice.indicator.gap", &pResolved->fGap);
 	(void)__xuiRadioStyleFloat(pWidget, "choice.focus.width", &pResolved->fFocusWidth);
@@ -386,7 +389,7 @@ static xui_radio_visual_t __xuiRadioVisual(xui_radio_data_t* pResolved, int iVis
 		tVisual.iBorderColor = pResolved->iBorderHoverColor;
 		break;
 	case XUI_RADIO_VISUAL_ACTIVE:
-		tVisual.iFillColor = XUI_COLOR_RGBA(234, 244, 255, 255);
+		tVisual.iFillColor = pResolved->iUncheckedActiveFillColor;
 		tVisual.iBorderColor = pResolved->iAccentActiveColor;
 		break;
 	case XUI_RADIO_VISUAL_CHECKED:
@@ -529,7 +532,7 @@ static int __xuiRadioCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 			tIndicator.fY + tIndicator.fH * 0.5f,
 			(tIndicator.fW < tIndicator.fH ? tIndicator.fW : tIndicator.fH) * 0.5f + 2.0f,
 			tResolved.fFocusWidth,
-			__xuiRadioColorWithAlpha(tResolved.iFocusColor, 160));
+			tResolved.iFocusColor);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -816,9 +819,10 @@ static int __xuiRadioInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->iAccentActiveColor = XUI_COLOR_RGBA(31, 111, 214, 255);
 	pData->iBorderColor = XUI_COLOR_RGBA(184, 196, 210, 255);
 	pData->iBorderHoverColor = XUI_COLOR_RGBA(127, 181, 243, 255);
-	pData->iFocusColor = XUI_COLOR_RGBA(47, 128, 237, 255);
+	pData->iFocusColor = XUI_COLOR_RGBA(47, 128, 237, 160);
 	pData->iUncheckedFillColor = XUI_COLOR_WHITE;
 	pData->iUncheckedHoverFillColor = XUI_COLOR_RGBA(247, 251, 255, 255);
+	pData->iUncheckedActiveFillColor = XUI_COLOR_RGBA(234, 244, 255, 255);
 	pData->iDisabledFillColor = XUI_COLOR_RGBA(243, 245, 248, 255);
 	pData->iDisabledBorderColor = XUI_COLOR_RGBA(214, 221, 230, 255);
 	pData->iDisabledDotColor = XUI_COLOR_RGBA(174, 184, 196, 255);
@@ -890,6 +894,13 @@ static void __xuiRadioRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.border.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.background.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.background.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.background.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.border.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiRadioRegisterStyleProperty(pContext, pType, "radio.dot.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiRadioRegisterStyleProperty(pContext, pType, "radio.dot.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiRadioRegisterStyleProperty(pContext, pType, "choice.focus.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiRadioRegisterStyleProperty(pContext, pType, "radio.dot.scale", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiRadioRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
