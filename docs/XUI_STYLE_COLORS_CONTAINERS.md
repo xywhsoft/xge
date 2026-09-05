@@ -17,10 +17,11 @@ The ScrollView properties are inherited by its backing frame, so normal style
 invalidation and cache preparation handle runtime changes without invoking
 child rendering callbacks or clearing their dirty flags manually.
 
-The baseline core resolves inherited styles for global stylesheet changes but
-not for local class/inline changes. The regression test intentionally checks
-those local changes without an explicit `xuiStyleRefresh`: integration needs
-the shared style resolver to propagate inherited-property changes to descendants.
+The private `onPreparePaint` hook resolves the backing frame when the owner's
+resolved style changes, including local class/inline changes. This happens
+before child cache preparation, without an explicit `xuiStyleRefresh`, manual
+child drawing, or layout invalidation. It requires the shared core commit
+`4ca291e` (cherry-picked into this worktree as `883874b`).
 
 Scrollbars delegate to the actual ScrollBar widgets returned by
 `xuiScrollFrameGetHScrollBarWidget` / `xuiScrollFrameGetVScrollBarWidget` (or
@@ -37,6 +38,9 @@ From the detached workspace in Windows PowerShell:
 ```powershell
 cmd /c test_xui\build_style_containers_test.bat
 ```
+
+The `scroll` test selection passes 113 checks, including one child render per
+changed frame, zero child renders on warm frames, and stable layout versions.
 
 The standalone build uses current project sources, including
 `src/xui_accessibility.c`, rather than a prebuilt XGE DLL. Tests observe colors

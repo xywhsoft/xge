@@ -13,6 +13,8 @@ typedef struct xui_scroll_view_data_t {
 	float fViewportWidth;
 	float fViewportHeight;
 	int iChangeCount;
+	uint32_t iFrameStyleHash;
+	int bFrameStyleValid;
 } xui_scroll_view_data_t;
 
 static void __xuiScrollViewRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
@@ -60,6 +62,21 @@ static xui_scroll_view_data_t* __xuiScrollViewGetData(xui_widget pWidget)
 		return NULL;
 	}
 	return (xui_scroll_view_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiScrollViewPreparePaint(xui_widget pWidget)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int iRet;
+	if ( pData == NULL || pData->pFrame == NULL ) return XUI_OK;
+	if ( pData->bFrameStyleValid && pData->iFrameStyleHash == iHash ) return XUI_OK;
+	/* Resolve inherited owner colors before the framework prepares the frame. */
+	iRet = xuiWidgetResolveStyle(pData->pFrame);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iFrameStyleHash = iHash;
+	pData->bFrameStyleValid = 1;
+	return XUI_OK;
 }
 
 static int __xuiScrollViewDescWantsFullMode(const xui_scroll_view_desc_t* pDesc)
@@ -333,6 +350,7 @@ XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "scrollview");
 	if ( pType != NULL ) {
+		pType->onPreparePaint = __xuiScrollViewPreparePaint;
 		__xuiScrollViewRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
@@ -353,6 +371,7 @@ XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiScrollViewRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiScrollViewPreparePaint;
 	return pType;
 }
 
