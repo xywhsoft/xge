@@ -56,6 +56,8 @@ typedef struct xui_button_resolved_t {
 	uint32_t iDisabledTextColor;
 	uint32_t iTextFlags;
 	uint32_t iIconColor;
+	uint32_t iBadgeColor;
+	uint32_t iBadgeBorderColor;
 	xui_button_visual_t arrVisual[XUI_BUTTON_VISUAL_COUNT];
 	int iIconPlacement;
 	float fIconSize;
@@ -398,6 +400,8 @@ static void __xuiButtonResolve(xui_widget pWidget, xui_button_data_t* pData, xui
 	pResolved->iDisabledTextColor = pData->iDisabledTextColor;
 	pResolved->iTextFlags = pData->iTextFlags | XUI_TEXT_CLIP;
 	pResolved->iIconColor = pData->iIconColor;
+	pResolved->iBadgeColor = XUI_COLOR_RGBA(224, 48, 64, 255);
+	pResolved->iBadgeBorderColor = XUI_COLOR_RGBA(255, 255, 255, 245);
 	memcpy(pResolved->arrVisual, pData->arrVisual, sizeof(pResolved->arrVisual));
 	pResolved->iIconPlacement = pData->iIconPlacement;
 	pResolved->fIconSize = pData->fIconSize;
@@ -412,6 +416,8 @@ static void __xuiButtonResolve(xui_widget pWidget, xui_button_data_t* pData, xui
 		pResolved->iTextFlags = (uint32_t)iTextFlags | XUI_TEXT_CLIP;
 	}
 	(void)__xuiButtonStyleColor(pWidget, "button.icon_color", &pResolved->iIconColor);
+	(void)__xuiButtonStyleColor(pWidget, "button.badge.color", &pResolved->iBadgeColor);
+	(void)__xuiButtonStyleColor(pWidget, "button.badge.border_color", &pResolved->iBadgeBorderColor);
 	(void)__xuiButtonStyleFloat(pWidget, "button.icon_size", &pResolved->fIconSize);
 	(void)__xuiButtonStyleFloat(pWidget, "button.icon_gap", &pResolved->fIconGap);
 	iPlacement = pResolved->iIconPlacement;
@@ -963,11 +969,16 @@ static int __xuiButtonCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 				return iRet;
 			}
 		} else if ( (pProxy->drawCircleFill != NULL) && (pProxy->drawCircleStroke != NULL) ) {
-			iRet = pProxy->drawCircleFill(pProxy, pDraw, tBadge.fX + tBadge.fW * 0.5f, tBadge.fY + tBadge.fH * 0.5f, tBadge.fW * 0.5f, XUI_COLOR_RGBA(224, 48, 64, 255));
+			iRet = XUI_OK;
+			if ( __xuiButtonColorAlpha(tResolved.iBadgeColor) != 0 ) {
+				iRet = pProxy->drawCircleFill(pProxy, pDraw, tBadge.fX + tBadge.fW * 0.5f, tBadge.fY + tBadge.fH * 0.5f, tBadge.fW * 0.5f, tResolved.iBadgeColor);
+			}
 			if ( iRet != XUI_OK ) {
 				return iRet;
 			}
-			iRet = pProxy->drawCircleStroke(pProxy, pDraw, tBadge.fX + tBadge.fW * 0.5f, tBadge.fY + tBadge.fH * 0.5f, tBadge.fW * 0.5f, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 245));
+			if ( __xuiButtonColorAlpha(tResolved.iBadgeBorderColor) != 0 ) {
+				iRet = pProxy->drawCircleStroke(pProxy, pDraw, tBadge.fX + tBadge.fW * 0.5f, tBadge.fY + tBadge.fH * 0.5f, tBadge.fW * 0.5f, 1.0f, tResolved.iBadgeBorderColor);
+			}
 			if ( iRet != XUI_OK ) {
 				return iRet;
 			}
@@ -1254,8 +1265,12 @@ static void __xuiButtonRegisterStyleProperties(xui_context pContext, xui_widget_
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiButtonRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiButtonRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.disabled_text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.icon_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiButtonRegisterStyleProperty(pContext, pType, "button.badge.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiButtonRegisterStyleProperty(pContext, pType, "button.badge.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.normal_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

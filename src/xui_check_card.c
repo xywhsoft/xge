@@ -92,6 +92,8 @@ static int __xuiCheckCardStyleFloat(xui_widget pWidget, const char* sName, float
 static void __xuiCheckCardResolve(xui_widget pWidget, const xui_check_card_data_t* pData, xui_check_card_data_t* pResolved)
 {
 	*pResolved = *pData;
+	pResolved->iFocusColor = (__xuiCheckCardAlpha(pData->iFocusColor) != 0) ?
+		__xuiCheckCardWithAlpha(pData->iFocusColor, 150) : pData->iFocusColor;
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.background.hover_color", &pResolved->iHoverBackgroundColor);
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.background.active_color", &pResolved->iActiveBackgroundColor);
@@ -306,7 +308,7 @@ static int __xuiCheckCardCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		}
 	}
 	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && ((iStateId & XUI_WIDGET_STATE_DISABLED) == 0) ) {
-		iRet = __xuiCheckCardDrawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, 2.0f), tResolved.fFocusWidth, __xuiCheckCardWithAlpha(tResolved.iFocusColor, 150));
+		iRet = __xuiCheckCardDrawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, 2.0f), tResolved.fFocusWidth, tResolved.iFocusColor);
 	}
 	return iRet;
 }
