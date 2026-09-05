@@ -398,6 +398,9 @@ static void __xuiToggleLayoutContent(xui_widget pWidget, xui_toggle_data_t* pDat
 	float fThumb;
 	float fInset;
 	float fThumbX;
+	float fTrackY;
+	float fInnerX;
+	float fInnerW;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
 	fTrackW = pResolved->fTrackWidth;
@@ -414,33 +417,27 @@ static void __xuiToggleLayoutContent(xui_widget pWidget, xui_toggle_data_t* pDat
 	if ( fTrackW > tContent.fW ) fTrackW = tContent.fW;
 	fInset = (fTrackH - fThumb) * 0.5f;
 	if ( fInset < 1.0f ) fInset = 1.0f;
-	pData->tTrackRect = xuiInternalSnapRect((xui_rect_t){tContent.fX, tContent.fY + (tContent.fH - fTrackH) * 0.5f, fTrackW, fTrackH});
-	fThumbX = bChecked ? (pData->tTrackRect.fX + pData->tTrackRect.fW - fInset - fThumb) : (pData->tTrackRect.fX + fInset);
-	pData->tThumbRect = xuiInternalSnapRect((xui_rect_t){fThumbX, pData->tTrackRect.fY + (pData->tTrackRect.fH - fThumb) * 0.5f, fThumb, fThumb});
+	/* Keep dependent positions in float until each final rectangle is emitted. */
+	fTrackY = tContent.fY + (tContent.fH - fTrackH) * 0.5f;
+	fThumbX = bChecked ? (tContent.fX + fTrackW - fInset - fThumb) : (tContent.fX + fInset);
+	pData->tTrackRect = xuiInternalRectFromFloatNearest(tContent.fX, fTrackY, fTrackW, fTrackH);
+	pData->tThumbRect = xuiInternalRectFromFloatNearest(fThumbX,
+		fTrackY + (fTrackH - fThumb) * 0.5f, fThumb, fThumb);
 	memset(&pData->tInnerTextRect, 0, sizeof(pData->tInnerTextRect));
 	if ( __xuiToggleHasInnerText(pResolved) ) {
-		pData->tInnerTextRect = pData->tTrackRect;
 		if ( bChecked ) {
-			pData->tInnerTextRect.fX += pResolved->fInnerTextPadding;
-			pData->tInnerTextRect.fW = pData->tThumbRect.fX - pResolved->fInnerTextGap - pData->tInnerTextRect.fX;
+			fInnerX = tContent.fX + pResolved->fInnerTextPadding;
+			fInnerW = fThumbX - pResolved->fInnerTextGap - fInnerX;
 		} else {
-			pData->tInnerTextRect.fX = pData->tThumbRect.fX + pData->tThumbRect.fW + pResolved->fInnerTextGap;
-			pData->tInnerTextRect.fW = pData->tTrackRect.fX + pData->tTrackRect.fW - pResolved->fInnerTextPadding - pData->tInnerTextRect.fX;
+			fInnerX = fThumbX + fThumb + pResolved->fInnerTextGap;
+			fInnerW = tContent.fX + fTrackW - pResolved->fInnerTextPadding - fInnerX;
 		}
-		if ( pData->tInnerTextRect.fW < 0.0f ) {
-			pData->tInnerTextRect.fW = 0.0f;
-		}
-		pData->tInnerTextRect = xuiInternalSnapRect(pData->tInnerTextRect);
+		pData->tInnerTextRect = xuiInternalRectFromFloatNearest(fInnerX, fTrackY, fInnerW, fTrackH);
 	}
 	tTextSize = __xuiToggleMeasureText(pWidget, pResolved->pFont, pData->sText);
 	(void)tTextSize;
-	pData->tTextRect = tContent;
-	pData->tTextRect.fX += fTrackW + pResolved->fGap;
-	pData->tTextRect.fW -= fTrackW + pResolved->fGap;
-	if ( pData->tTextRect.fW < 0.0f ) {
-		pData->tTextRect.fW = 0.0f;
-	}
-	pData->tTextRect = xuiInternalSnapRect(pData->tTextRect);
+	pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX + fTrackW + pResolved->fGap,
+		tContent.fY, tContent.fW - fTrackW - pResolved->fGap, tContent.fH);
 }
 
 static int __xuiToggleContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)

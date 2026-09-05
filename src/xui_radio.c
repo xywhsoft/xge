@@ -335,12 +335,10 @@ static void __xuiRadioLayoutContent(xui_widget pWidget, xui_radio_data_t* pData,
 	tTextSize = __xuiRadioMeasureText(pWidget, pResolved->pFont, pData->sText);
 	fLineH = (tTextSize.fY > fSize) ? tTextSize.fY : fSize;
 	if ( fLineH > tContent.fH ) fLineH = tContent.fH;
-	pData->tIndicatorRect = xuiInternalSnapRect((xui_rect_t){tContent.fX, tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize});
-	pData->tTextRect = tContent;
-	pData->tTextRect.fX += fSize + pResolved->fGap;
-	pData->tTextRect.fW -= fSize + pResolved->fGap;
-	if ( pData->tTextRect.fW < 0.0f ) pData->tTextRect.fW = 0.0f;
-	pData->tTextRect = xuiInternalSnapRect(pData->tTextRect);
+	pData->tIndicatorRect = xuiInternalRectFromFloatNearest(tContent.fX,
+		tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
+	pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX + fSize + pResolved->fGap,
+		tContent.fY, tContent.fW - fSize - pResolved->fGap, tContent.fH);
 }
 
 static int __xuiRadioContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
