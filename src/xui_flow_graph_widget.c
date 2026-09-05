@@ -7,6 +7,59 @@
 #define XUI_FLOW_NODE_BUCKET_SIZE 256.0f
 #define XUI_FLOW_GRID_ZOOM_BUCKET_SCALE 100.0f
 
+#define XUI_FLOW_EXTRA_COLORS(X) \
+	X(NODE_HOVER, "flowgraph.node.hover_color", XUI_COLOR_RGBA(238,247,255,255)) \
+	X(NODE_RUNNING, "flowgraph.node.running_color", XUI_COLOR_RGBA(232,244,255,255)) \
+	X(NODE_SUCCESS, "flowgraph.node.success_color", XUI_COLOR_RGBA(232,250,240,255)) \
+	X(NODE_FAILED, "flowgraph.node.failed_color", XUI_COLOR_RGBA(255,238,238,255)) \
+	X(NODE_WARNING, "flowgraph.node.warning_color", XUI_COLOR_RGBA(255,246,232,255)) \
+	X(NODE_DIAGNOSTIC_BORDER, "flowgraph.node.diagnostic_border_color", XUI_COLOR_RGBA(214,72,72,240)) \
+	X(NODE_DISABLED_BORDER, "flowgraph.node.disabled_border_color", XUI_COLOR_RGBA(140,150,164,120)) \
+	X(NODE_DISABLED, "flowgraph.node.disabled_color", XUI_COLOR_RGBA(246,248,251,190)) \
+	X(RUN_QUEUED, "flowgraph.run.queued_color", XUI_COLOR_RGBA(245,180,55,255)) \
+	X(RUN_RUNNING, "flowgraph.run.running_color", XUI_COLOR_RGBA(42,134,230,255)) \
+	X(RUN_SUCCESS, "flowgraph.run.success_color", XUI_COLOR_RGBA(30,160,95,255)) \
+	X(RUN_FAILED, "flowgraph.run.failed_color", XUI_COLOR_RGBA(214,72,72,255)) \
+	X(RUN_SKIPPED, "flowgraph.run.skipped_color", XUI_COLOR_RGBA(140,150,164,210)) \
+	X(RUN_WARNING, "flowgraph.run.warning_color", XUI_COLOR_RGBA(225,140,36,255)) \
+	X(BADGE, "flowgraph.badge.color", XUI_COLOR_RGBA(92,105,121,235)) \
+	X(BADGE_TEXT, "flowgraph.badge.text_color", XUI_COLOR_RGBA(255,255,255,255)) \
+	X(BADGE_SUCCESS, "flowgraph.badge.success_color", XUI_COLOR_RGBA(30,160,95,235)) \
+	X(BADGE_FAILED, "flowgraph.badge.failed_color", XUI_COLOR_RGBA(214,72,72,235)) \
+	X(BADGE_SKIPPED, "flowgraph.badge.skipped_color", XUI_COLOR_RGBA(130,140,154,220)) \
+	X(BADGE_WARNING, "flowgraph.badge.warning_color", XUI_COLOR_RGBA(232,160,36,235)) \
+	X(BADGE_WARNING_TEXT, "flowgraph.badge.warning_text_color", XUI_COLOR_RGBA(30,36,44,255)) \
+	X(EDGE_ACTIVE, "flowgraph.edge.active_color", XUI_COLOR_RGBA(42,134,230,245)) \
+	X(EDGE_TAKEN, "flowgraph.edge.taken_color", XUI_COLOR_RGBA(30,160,95,245)) \
+	X(EDGE_SKIPPED, "flowgraph.edge.skipped_color", XUI_COLOR_RGBA(140,150,164,180)) \
+	X(EDGE_INVALID, "flowgraph.edge.invalid_color", XUI_COLOR_RGBA(214,72,72,230)) \
+	X(EDGE_HOVER, "flowgraph.edge.hover_color", XUI_COLOR_RGBA(18,102,208,255)) \
+	X(CONNECTION_VALID, "flowgraph.connection.valid_color", XUI_COLOR_RGBA(30,160,95,230)) \
+	X(CONNECTION_INVALID, "flowgraph.connection.invalid_color", XUI_COLOR_RGBA(214,72,72,210)) \
+	X(MARQUEE, "flowgraph.selection.color", XUI_COLOR_RGBA(42,134,230,38)) \
+	X(MARQUEE_BORDER, "flowgraph.selection.border_color", XUI_COLOR_RGBA(26,115,232,210)) \
+	X(PORT_DISABLED, "flowgraph.port.disabled_color", XUI_COLOR_RGBA(140,150,164,180)) \
+	X(PORT_HOVER, "flowgraph.port.hover_color", XUI_COLOR_RGBA(18,102,208,255)) \
+	X(TEXT, "flowgraph.text.color", XUI_COLOR_RGBA(26,36,52,255)) \
+	X(TEXT_DISABLED, "flowgraph.text.disabled_color", XUI_COLOR_RGBA(108,118,132,180)) \
+	X(DIAGNOSTIC_BADGE, "flowgraph.diagnostic.badge_color", XUI_COLOR_RGBA(214,72,72,235)) \
+	X(DIAGNOSTIC_TEXT, "flowgraph.diagnostic.text_color", XUI_COLOR_RGBA(255,255,255,255)) \
+	X(SUMMARY, "flowgraph.text.summary_color", XUI_COLOR_RGBA(82,96,112,230))
+
+enum {
+#define XUI_FLOW_COLOR_ID(id, name, value) XUI_FLOW_COLOR_##id,
+	XUI_FLOW_EXTRA_COLORS(XUI_FLOW_COLOR_ID)
+#undef XUI_FLOW_COLOR_ID
+	XUI_FLOW_COLOR_COUNT
+};
+
+static const struct { const char* sName; uint32_t iDefault; } g_xuiFlowExtraColors[] = {
+#define XUI_FLOW_COLOR_ENTRY(id, name, value) {name, value},
+	XUI_FLOW_EXTRA_COLORS(XUI_FLOW_COLOR_ENTRY)
+#undef XUI_FLOW_COLOR_ENTRY
+};
+
+
 typedef struct xui_flow_graph_drag_node_t {
 	char* sId;
 	float fStartX;
@@ -68,6 +121,8 @@ typedef struct xui_flow_graph_widget_data_t {
 	uint32_t iPortColor;
 	uint32_t iEdgeColor;
 	uint32_t iSelectedEdgeColor;
+	uint32_t arrExtraColors[XUI_FLOW_COLOR_COUNT];
+	uint32_t arrLastPaintColors[8];
 	uint32_t iLastGraphRevision;
 	int bDraggingNode;
 	int bDraggingConnection;
@@ -241,26 +296,26 @@ static void __xuiFlowGraphWidgetApplyStyleColors(xui_widget pWidget, xui_flow_gr
 	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.edge.selected_color", &pData->iSelectedEdgeColor);
 }
 
-static uint32_t __xuiFlowGraphWidgetNodeRunColor(int iRunState, uint32_t iFallback)
+static uint32_t __xuiFlowGraphWidgetNodeRunColor(const xui_flow_graph_widget_data_t* pData, int iRunState, uint32_t iFallback)
 {
 	switch ( iRunState ) {
-	case XUI_WORKFLOW_NODE_RUN_QUEUED: return XUI_COLOR_RGBA(245, 180, 55, 255);
-	case XUI_WORKFLOW_NODE_RUN_RUNNING: return XUI_COLOR_RGBA(42, 134, 230, 255);
-	case XUI_WORKFLOW_NODE_RUN_SUCCESS: return XUI_COLOR_RGBA(30, 160, 95, 255);
-	case XUI_WORKFLOW_NODE_RUN_FAILED: return XUI_COLOR_RGBA(214, 72, 72, 255);
-	case XUI_WORKFLOW_NODE_RUN_SKIPPED: return XUI_COLOR_RGBA(140, 150, 164, 210);
-	case XUI_WORKFLOW_NODE_RUN_WARNING: return XUI_COLOR_RGBA(225, 140, 36, 255);
+	case XUI_WORKFLOW_NODE_RUN_QUEUED: return pData->arrExtraColors[XUI_FLOW_COLOR_RUN_QUEUED];
+	case XUI_WORKFLOW_NODE_RUN_RUNNING: return pData->arrExtraColors[XUI_FLOW_COLOR_RUN_RUNNING];
+	case XUI_WORKFLOW_NODE_RUN_SUCCESS: return pData->arrExtraColors[XUI_FLOW_COLOR_RUN_SUCCESS];
+	case XUI_WORKFLOW_NODE_RUN_FAILED: return pData->arrExtraColors[XUI_FLOW_COLOR_RUN_FAILED];
+	case XUI_WORKFLOW_NODE_RUN_SKIPPED: return pData->arrExtraColors[XUI_FLOW_COLOR_RUN_SKIPPED];
+	case XUI_WORKFLOW_NODE_RUN_WARNING: return pData->arrExtraColors[XUI_FLOW_COLOR_RUN_WARNING];
 	default: return iFallback;
 	}
 }
 
-static uint32_t __xuiFlowGraphWidgetEdgeRunColor(int iRunState, uint32_t iFallback)
+static uint32_t __xuiFlowGraphWidgetEdgeRunColor(const xui_flow_graph_widget_data_t* pData, int iRunState, uint32_t iFallback)
 {
 	switch ( iRunState ) {
-	case XUI_WORKFLOW_EDGE_RUN_ACTIVE: return XUI_COLOR_RGBA(42, 134, 230, 245);
-	case XUI_WORKFLOW_EDGE_RUN_TAKEN: return XUI_COLOR_RGBA(30, 160, 95, 245);
-	case XUI_WORKFLOW_EDGE_RUN_SKIPPED: return XUI_COLOR_RGBA(140, 150, 164, 180);
-	case XUI_WORKFLOW_EDGE_RUN_INVALID: return XUI_COLOR_RGBA(214, 72, 72, 230);
+	case XUI_WORKFLOW_EDGE_RUN_ACTIVE: return pData->arrExtraColors[XUI_FLOW_COLOR_EDGE_ACTIVE];
+	case XUI_WORKFLOW_EDGE_RUN_TAKEN: return pData->arrExtraColors[XUI_FLOW_COLOR_EDGE_TAKEN];
+	case XUI_WORKFLOW_EDGE_RUN_SKIPPED: return pData->arrExtraColors[XUI_FLOW_COLOR_EDGE_SKIPPED];
+	case XUI_WORKFLOW_EDGE_RUN_INVALID: return pData->arrExtraColors[XUI_FLOW_COLOR_EDGE_INVALID];
 	default: return iFallback;
 	}
 }
@@ -907,47 +962,48 @@ static int __xuiFlowGraphWidgetRebuildNodeCardStates(xui_flow_graph_widget_data_
 		pState->iNode = iNode;
 		iFill = xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId) ? pData->iSelectedNodeColor : pData->iNodeColor;
 		if ( pData->iHoverType == XUI_FLOW_HIT_NODE && pData->iHoverNode == iNode ) {
-			iFill = XUI_COLOR_RGBA(238, 247, 255, 255);
+			iFill = pData->arrExtraColors[XUI_FLOW_COLOR_NODE_HOVER];
 		}
 		if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_RUNNING ) {
-			iFill = XUI_COLOR_RGBA(232, 244, 255, 255);
+			iFill = pData->arrExtraColors[XUI_FLOW_COLOR_NODE_RUNNING];
 		} else if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_SUCCESS ) {
-			iFill = XUI_COLOR_RGBA(232, 250, 240, 255);
+			iFill = pData->arrExtraColors[XUI_FLOW_COLOR_NODE_SUCCESS];
 		} else if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_FAILED ) {
-			iFill = XUI_COLOR_RGBA(255, 238, 238, 255);
+			iFill = pData->arrExtraColors[XUI_FLOW_COLOR_NODE_FAILED];
 		} else if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_WARNING ) {
-			iFill = XUI_COLOR_RGBA(255, 246, 232, 255);
+			iFill = pData->arrExtraColors[XUI_FLOW_COLOR_NODE_WARNING];
 		}
 		iDiagCount = xuiFlowGraphGetNodeDiagnosticCount(pData->pGraph, tNode.sId);
 		if ( iDiagCount > 0 ) {
-			iBorder = XUI_COLOR_RGBA(214, 72, 72, 240);
+			iBorder = pData->arrExtraColors[XUI_FLOW_COLOR_NODE_DIAGNOSTIC_BORDER];
 		} else {
-			iBorder = __xuiFlowGraphWidgetNodeRunColor(tNode.iRunState, bEnabled ? pData->iNodeBorderColor : XUI_COLOR_RGBA(140, 150, 164, 120));
+			iBorder = __xuiFlowGraphWidgetNodeRunColor(pData, tNode.iRunState,
+				bEnabled ? pData->iNodeBorderColor : pData->arrExtraColors[XUI_FLOW_COLOR_NODE_DISABLED_BORDER]);
 		}
 		if ( !bEnabled ) {
-			iFill = XUI_COLOR_RGBA(246, 248, 251, 190);
+			iFill = pData->arrExtraColors[XUI_FLOW_COLOR_NODE_DISABLED];
 		}
 		pState->iFill = iFill;
 		pState->iBorder = iBorder;
 		pState->iDiagCount = iDiagCount;
-		pState->iRunBadgeColor = XUI_COLOR_RGBA(92, 105, 121, 235);
-		pState->iRunBadgeTextColor = XUI_COLOR_RGBA(255, 255, 255, 255);
+		pState->iRunBadgeColor = pData->arrExtraColors[XUI_FLOW_COLOR_BADGE];
+		pState->iRunBadgeTextColor = pData->arrExtraColors[XUI_FLOW_COLOR_BADGE_TEXT];
 		if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_SUCCESS ) {
 			pState->bHasRunBadge = 1;
-			pState->iRunBadgeColor = XUI_COLOR_RGBA(30, 160, 95, 235);
+			pState->iRunBadgeColor = pData->arrExtraColors[XUI_FLOW_COLOR_BADGE_SUCCESS];
 			snprintf(pState->sRunBadge, sizeof(pState->sRunBadge), "OK");
 		} else if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_FAILED ) {
 			pState->bHasRunBadge = 1;
-			pState->iRunBadgeColor = XUI_COLOR_RGBA(214, 72, 72, 235);
+			pState->iRunBadgeColor = pData->arrExtraColors[XUI_FLOW_COLOR_BADGE_FAILED];
 			snprintf(pState->sRunBadge, sizeof(pState->sRunBadge), "!");
 		} else if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_SKIPPED ) {
 			pState->bHasRunBadge = 1;
-			pState->iRunBadgeColor = XUI_COLOR_RGBA(130, 140, 154, 220);
+			pState->iRunBadgeColor = pData->arrExtraColors[XUI_FLOW_COLOR_BADGE_SKIPPED];
 			snprintf(pState->sRunBadge, sizeof(pState->sRunBadge), "--");
 		} else if ( tNode.iRunState == XUI_WORKFLOW_NODE_RUN_WARNING ) {
 			pState->bHasRunBadge = 1;
-			pState->iRunBadgeColor = XUI_COLOR_RGBA(232, 160, 36, 235);
-			pState->iRunBadgeTextColor = XUI_COLOR_RGBA(30, 36, 44, 255);
+			pState->iRunBadgeColor = pData->arrExtraColors[XUI_FLOW_COLOR_BADGE_WARNING];
+			pState->iRunBadgeTextColor = pData->arrExtraColors[XUI_FLOW_COLOR_BADGE_WARNING_TEXT];
 			snprintf(pState->sRunBadge, sizeof(pState->sRunBadge), "!");
 		}
 	}
@@ -1011,12 +1067,12 @@ static int __xuiFlowGraphWidgetRebuildEdgeLayerStates(xui_flow_graph_widget_data
 			}
 		}
 		iColor = xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId) ? pData->iSelectedEdgeColor : pData->iEdgeColor;
-		iColor = __xuiFlowGraphWidgetEdgeRunColor(tEdge.iRunState, iColor);
+		iColor = __xuiFlowGraphWidgetEdgeRunColor(pData, tEdge.iRunState, iColor);
 		if ( pData->iHoverType == XUI_FLOW_HIT_EDGE && pData->iHoverEdge == iEdge ) {
-			iColor = XUI_COLOR_RGBA(18, 102, 208, 255);
+			iColor = pData->arrExtraColors[XUI_FLOW_COLOR_EDGE_HOVER];
 		}
 		if ( tEdge.bInvalid || xuiFlowGraphGetEdgeDiagnosticCount(pData->pGraph, tEdge.sId) > 0 ) {
-			iColor = XUI_COLOR_RGBA(214, 72, 72, 230);
+			iColor = pData->arrExtraColors[XUI_FLOW_COLOR_EDGE_INVALID];
 		}
 		pState->iColor = iColor;
 	}
@@ -1194,7 +1250,7 @@ static int __xuiFlowGraphWidgetDrawConnectionPreview(xui_proxy pProxy, xui_draw_
 		return XUI_OK;
 	}
 	__xuiFlowGraphWidgetPortCenter(pGraph, iNode, iPort, tContent, &fX0, &fY0);
-	iColor = pData->bDragConnectionValid ? XUI_COLOR_RGBA(30, 160, 95, 230) : XUI_COLOR_RGBA(214, 72, 72, 210);
+	iColor = pData->arrExtraColors[pData->bDragConnectionValid ? XUI_FLOW_COLOR_CONNECTION_VALID : XUI_FLOW_COLOR_CONNECTION_INVALID];
 	__xuiFlowGraphWidgetBuildRoute(&tRoute, fX0, fY0, pData->fDragCurrentX, pData->fDragCurrentY, XUI_FLOW_ROUTE_AUTO, 0.5f, 0.0f, 0.0f);
 	for ( i = 1; i < tRoute.iCount; ++i ) {
 		iRet = pProxy->drawLine(pProxy, pDraw, tRoute.arrX[i - 1], tRoute.arrY[i - 1], tRoute.arrX[i], tRoute.arrY[i], 2.0f, iColor);
@@ -1216,11 +1272,11 @@ static int __xuiFlowGraphWidgetDrawMarquee(xui_proxy pProxy, xui_draw_context pD
 		return XUI_OK;
 	}
 	if ( pProxy->drawRectFill != NULL ) {
-		iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, XUI_COLOR_RGBA(42, 134, 230, 38));
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pData->arrExtraColors[XUI_FLOW_COLOR_MARQUEE]);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pProxy->drawRectStroke != NULL ) {
-		return pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, XUI_COLOR_RGBA(26, 115, 232, 210));
+		return pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pData->arrExtraColors[XUI_FLOW_COLOR_MARQUEE_BORDER]);
 	}
 	return XUI_OK;
 }
@@ -1251,8 +1307,8 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 	}
 	pFont = xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	bEnabled = xuiWidgetGetEnabled(pWidget);
-	iPort = bEnabled ? pData->iPortColor : XUI_COLOR_RGBA(140, 150, 164, 180);
-	iText = bEnabled ? XUI_COLOR_RGBA(26, 36, 52, 255) : XUI_COLOR_RGBA(108, 118, 132, 180);
+	iPort = bEnabled ? pData->iPortColor : pData->arrExtraColors[XUI_FLOW_COLOR_PORT_DISABLED];
+	iText = pData->arrExtraColors[bEnabled ? XUI_FLOW_COLOR_TEXT : XUI_FLOW_COLOR_TEXT_DISABLED];
 	iRet = __xuiFlowGraphWidgetRebuildNodeCardStates(pData, bEnabled);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 1; i <= (int)pData->arrNodeCardStates.Count; ++i ) {
@@ -1279,10 +1335,10 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			tBadgeRect.fW = 20.0f;
 			tBadgeRect.fH = 16.0f;
 			snprintf(sBadge, sizeof(sBadge), "%d", pState->iDiagCount);
-			iRet = pProxy->drawRectFill(pProxy, pDraw, tBadgeRect, XUI_COLOR_RGBA(214, 72, 72, 235));
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tBadgeRect, pData->arrExtraColors[XUI_FLOW_COLOR_DIAGNOSTIC_BADGE]);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( pProxy->drawText != NULL && pFont != NULL ) {
-				iRet = pProxy->drawText(pProxy, pDraw, pFont, sBadge, tBadgeRect, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, pFont, sBadge, tBadgeRect, pData->arrExtraColors[XUI_FLOW_COLOR_DIAGNOSTIC_TEXT], XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -1311,7 +1367,7 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			tSummaryRect.fY = tNodeRect.fY + 32.0f;
 			tSummaryRect.fW = tNodeRect.fW - 24.0f;
 			tSummaryRect.fH = 18.0f;
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, tNode.sSummary, tSummaryRect, XUI_COLOR_RGBA(82, 96, 112, 230), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, pFont, tNode.sSummary, tSummaryRect, pData->arrExtraColors[XUI_FLOW_COLOR_SUMMARY], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( (pProxy->drawText != NULL) && (pFont != NULL) && (tNode.sRunPreview != NULL) && (tNode.sRunPreview[0] != 0) ) {
@@ -1319,16 +1375,17 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			tSummaryRect.fY = tNodeRect.fY + tNodeRect.fH - 24.0f;
 			tSummaryRect.fW = tNodeRect.fW - 24.0f;
 			tSummaryRect.fH = 16.0f;
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, tNode.sRunPreview, tSummaryRect, __xuiFlowGraphWidgetNodeRunColor(tNode.iRunState, XUI_COLOR_RGBA(82, 96, 112, 230)), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, pFont, tNode.sRunPreview, tSummaryRect,
+				__xuiFlowGraphWidgetNodeRunColor(pData, tNode.iRunState, pData->arrExtraColors[XUI_FLOW_COLOR_SUMMARY]), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		iPortCount = xuiFlowGraphGetNodePortCount(pGraph, iNode);
 		for ( j = 0; j < iPortCount; ++j ) {
 			__xuiFlowGraphWidgetPortCenter(pGraph, iNode, j, tContent, &fPortX, &fPortY);
 			if ( pData->iHoverType == XUI_FLOW_HIT_PORT && pData->iHoverNode == iNode && pData->iHoverPort == j ) {
-				iPort = XUI_COLOR_RGBA(18, 102, 208, 255);
+				iPort = pData->arrExtraColors[XUI_FLOW_COLOR_PORT_HOVER];
 			} else {
-				iPort = bEnabled ? pData->iPortColor : XUI_COLOR_RGBA(140, 150, 164, 180);
+				iPort = bEnabled ? pData->iPortColor : pData->arrExtraColors[XUI_FLOW_COLOR_PORT_DISABLED];
 			}
 			if ( pProxy->drawCircleFill != NULL ) {
 				iRet = pProxy->drawCircleFill(pProxy, pDraw, fPortX, fPortY, 4.0f, iPort);
@@ -1339,6 +1396,25 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 		}
 	}
 	return XUI_OK;
+}
+
+static void __xuiFlowGraphWidgetResolveExtraColors(xui_widget pWidget, xui_flow_graph_widget_data_t* pData)
+{
+	uint32_t arrColors[XUI_FLOW_COLOR_COUNT];
+	uint32_t arrBase[8];
+	int i;
+	for ( i = 0; i < XUI_FLOW_COLOR_COUNT; i++ ) {
+		arrColors[i] = g_xuiFlowExtraColors[i].iDefault;
+		(void)__xuiFlowGraphWidgetStyleColor(pWidget, g_xuiFlowExtraColors[i].sName, &arrColors[i]);
+	}
+	__xuiFlowGraphWidgetSaveColors(pData, arrBase);
+	if ( memcmp(arrBase, pData->arrLastPaintColors, sizeof(arrBase)) == 0 &&
+	     memcmp(arrColors, pData->arrExtraColors, sizeof(arrColors)) == 0 ) return;
+	memcpy(pData->arrLastPaintColors, arrBase, sizeof(arrBase));
+	memcpy(pData->arrExtraColors, arrColors, sizeof(arrColors));
+	/* Colors participate in paint caches, but never in graph geometry or spatial indexes. */
+	__xuiFlowGraphWidgetClearNodeCardStates(pData);
+	__xuiFlowGraphWidgetClearEdgeLayerStates(pData);
 }
 
 static int __xuiFlowGraphWidgetCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1365,6 +1441,7 @@ static int __xuiFlowGraphWidgetCacheRender(xui_widget pWidget, xui_draw_context 
 	}
 	__xuiFlowGraphWidgetSaveColors(pData, arrSavedColors);
 	__xuiFlowGraphWidgetApplyStyleColors(pWidget, pData);
+	__xuiFlowGraphWidgetResolveExtraColors(pWidget, pData);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	iRet = pProxy->drawRectFill(pProxy, pDraw, tContent, pData->iBackgroundColor);
 	if ( iRet != XUI_OK ) goto cleanup;
@@ -1539,6 +1616,7 @@ static void __xuiFlowGraphWidgetRegisterStyleProperty(xui_context pContext, xui_
 
 static void __xuiFlowGraphWidgetRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
+	int i;
 	uint32_t iPaintDirty;
 
 	iPaintDirty = XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
@@ -1550,6 +1628,8 @@ static void __xuiFlowGraphWidgetRegisterStyleProperties(xui_context pContext, xu
 	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.port.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.edge.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.edge.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	for ( i = 0; i < XUI_FLOW_COLOR_COUNT; i++ )
+		__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, g_xuiFlowExtraColors[i].sName, XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 }
 
 XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext)
