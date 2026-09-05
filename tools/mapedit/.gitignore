@@ -1,1 +1,4 @@
-/release/mapedit_startup.log
+/build/
+/tests/*.exe
+/tests/xge.dll
+/tests/map_sdk_test_*.xson

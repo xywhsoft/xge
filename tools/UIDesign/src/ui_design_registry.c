@@ -88,7 +88,7 @@ static int __uiDesignApplyDockPanelMenuTitles(ui_design_node_t* pNode, xui_widge
 static int __uiDesignApplyDockPanelTooltips(ui_design_node_t* pNode, xui_widget pWidget);
 static void __uiDesignApplyTooltip(ui_design_node_t* pNode, xui_widget pWidget);
 static void __uiDesignApplyInlineStyle(ui_design_node_t* pNode, xui_widget pWidget);
-static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidget);
+static int __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidget);
 static int __uiDesignTableMergeProvider(xui_widget pWidget, int iRow, int iColumn, int* pRowSpan, int* pColSpan, void* pUser);
 static int __uiDesignTableGridEditorConfig(xui_widget pWidget, int iRow, int iColumn, int iType, xui_table_grid_editor_config_t* pConfig, void* pUser);
 static xui_font __uiDesignResolveNodeFont(struct ui_design_app_t* pApp, ui_design_node_t* pNode);
@@ -4415,7 +4415,7 @@ static int __uiDesignHasCachePolicyProperties(const ui_design_node_t* pNode)
 	       __uiDesignHasProperty(pNode, "cache.maxBytes");
 }
 
-static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidget)
+static int __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidget)
 {
 	xui_cache_policy_t tPolicy;
 	const char* sCursor;
@@ -4430,7 +4430,7 @@ static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidg
 	int iValue;
 	int i;
 
-	if ( (pNode == NULL) || (pWidget == NULL) ) return;
+	if ( (pNode == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( __uiDesignHasCachePolicyProperties(pNode) ) {
 		memset(&tPolicy, 0, sizeof(tPolicy));
 		tPolicy.iSize = sizeof(tPolicy);
@@ -4445,14 +4445,15 @@ static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidg
 		tPolicy.iTileHeight = (iValue > 0) ? iValue : 0;
 		iValue = __uiDesignInt(pNode, "cache.maxBytes", 0);
 		tPolicy.iMaxBytes = (iValue > 0) ? (size_t)iValue : 0u;
-		(void)xuiWidgetSetCachePolicy(pWidget, &tPolicy);
+		iValue = xuiWidgetSetCachePolicy(pWidget, &tPolicy);
+		if ( iValue != XUI_OK ) return iValue;
 	}
 	iStateCount = -1;
 	if ( __uiDesignTryInt(pNode, "cache.stateCount", &iValue) ) {
 		iStateCount = (iValue > 0) ? iValue : 0;
 		(void)xuiWidgetSetCacheStateCount(pWidget, iStateCount);
 	}
-	if ( !__uiDesignHasProperty(pNode, "cache.stateIds") ) return;
+	if ( !__uiDesignHasProperty(pNode, "cache.stateIds") ) return XUI_OK;
 	iCount = 0;
 	iMaxIndex = -1;
 	sCursor = __uiDesignText(pNode, "cache.stateIds", "");
@@ -4466,7 +4467,7 @@ static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidg
 		if ( arrIndex[iCount] > iMaxIndex ) iMaxIndex = arrIndex[iCount];
 		++iCount;
 	}
-	if ( iMaxIndex < 0 ) return;
+	if ( iMaxIndex < 0 ) return XUI_OK;
 	if ( iStateCount <= iMaxIndex ) {
 		iStateCount = iMaxIndex + 1;
 		(void)xuiWidgetSetCacheStateCount(pWidget, iStateCount);
@@ -4476,6 +4477,7 @@ static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidg
 			(void)xuiWidgetSetCacheStateId(pWidget, arrIndex[i], arrStateId[i]);
 		}
 	}
+	return XUI_OK;
 }
 
 static int __uiDesignTextContainsNoCase(const char* sText, const char* sNeedle)
@@ -14331,7 +14333,6 @@ static void __uiDesignApplyGenericLayout(ui_design_node_t* pNode)
 		}
 	}
 	__uiDesignApplyInlineStyle(pNode, pWidget);
-	__uiDesignApplyWidgetCache(pNode, pWidget);
 }
 
 static void __uiDesignReadTwoStateSourceRects(const ui_design_node_t* pNode, xui_rect_t* pUncheckedSrc, xui_rect_t* pCheckedSrc)
@@ -14939,6 +14940,11 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiWidgetSetHitTestVisible(pWidget, 0);
 	}
 	__uiDesignApplyGenericLayout(pNode);
+	iRet = __uiDesignApplyWidgetCache(pNode, pWidget);
+	if ( iRet != XUI_OK ) {
+		uiDesignAppSetStatus(pApp, "Cache policy was rejected by XUI; choose None, Self, Subtree or Auto.");
+		return iRet;
+	}
 	(void)__uiDesignApplyNodeFont(pApp, pNode);
 	switch ( pNode->iType ) {
 	case UI_DESIGN_NODE_LABEL:

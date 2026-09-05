@@ -97,8 +97,6 @@ static const xui_combobox_item_t g_arrCachePolicyEnum[] = {
 	{"None", XUI_CACHE_POLICY_NONE, 1, 0, 0, NULL},
 	{"Self", XUI_CACHE_POLICY_SELF, 1, 0, 0, NULL},
 	{"Subtree", XUI_CACHE_POLICY_SUBTREE, 1, 0, 0, NULL},
-	{"Subtree Tiled", XUI_CACHE_POLICY_SUBTREE_TILED, 1, 0, 0, NULL},
-	{"Display List", XUI_CACHE_POLICY_DISPLAY_LIST, 1, 0, 0, NULL},
 	{"Auto", XUI_CACHE_POLICY_AUTO, 1, 0, 0, NULL}
 };
 

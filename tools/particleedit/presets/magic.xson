@@ -1,0 +1,391 @@
+{
+  "version": 1,
+  "emitters": [
+    {
+      "name": "环绕粒子",
+      "texture": "soft",
+      "material": "",
+      "maxParticles": 512,
+      "automatic": true,
+      "loop": true,
+      "space": 1,
+      "shape": 4,
+      "delay": 0.0,
+      "duration": 0.0,
+      "rate": 140.0,
+      "rateOverDistance": 0.0,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "shapeSize": [
+        0.0,
+        0.0
+      ],
+      "radius": 155.0,
+      "innerRadius": 145.0,
+      "direction": -1.5707963705062866,
+      "spread": 6.2831854820251465,
+      "life": [
+        0.800000011920929,
+        1.7999999523162842
+      ],
+      "speed": [
+        0.0,
+        10.0
+      ],
+      "size": [
+        3.0,
+        9.0
+      ],
+      "rotation": [
+        0.0,
+        0.0
+      ],
+      "angularVelocity": [
+        0.0,
+        0.0
+      ],
+      "startFrame": [
+        0.0,
+        0.0
+      ],
+      "colorMin": "#FFFFFFFF",
+      "colorMax": "#FFFFFFFF",
+      "gravity": [
+        0.0,
+        0.0
+      ],
+      "drag": 0.3499999940395355,
+      "radialAcceleration": -22.0,
+      "tangentialAcceleration": 110.0,
+      "inheritVelocity": 0.0,
+      "noiseStrength": 0.0,
+      "noiseFrequency": 0.009999999776482582,
+      "noiseScroll": 0.0,
+      "aspect": 1.0,
+      "stretch": 0.0,
+      "alignVelocity": false,
+      "screenSpace": false,
+      "blend": 2,
+      "layer": 0,
+      "order": 0,
+      "textureRect": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "columns": 1,
+      "rows": 1,
+      "framesPerSecond": 0.0,
+      "collision": 0,
+      "collisionRadius": 0.0,
+      "restitution": 0.5,
+      "friction": 0.0,
+      "sizeOverLife": {
+        "interpolation": 2,
+        "keys": [
+          [
+            0.0,
+            0.10000000149011612,
+            0.0,
+            3.0
+          ],
+          [
+            1.0,
+            1.0,
+            -2.0,
+            0.0
+          ]
+        ]
+      },
+      "speedOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "alphaOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "colorOverLife": [
+        [
+          0.0,
+          "#69F5DFFF"
+        ],
+        [
+          0.3499999940395355,
+          "#80A2FFAA"
+        ],
+        [
+          1.0,
+          "#C981FF00"
+        ]
+      ],
+      "bursts": [],
+      "subEmitters": {
+        "birth": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        },
+        "death": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        },
+        "collision": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        }
+      }
+    },
+    {
+      "name": "符文光环",
+      "texture": "",
+      "material": "ring",
+      "maxParticles": 512,
+      "automatic": true,
+      "loop": false,
+      "space": 1,
+      "shape": 0,
+      "delay": 0.0,
+      "duration": 0.25,
+      "rate": 0.0,
+      "rateOverDistance": 0.0,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "shapeSize": [
+        0.0,
+        0.0
+      ],
+      "radius": 0.0,
+      "innerRadius": 0.0,
+      "direction": -1.5707963705062866,
+      "spread": 1.0471975803375244,
+      "life": [
+        3600.0,
+        3600.0
+      ],
+      "speed": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        360.0,
+        360.0
+      ],
+      "rotation": [
+        0.0,
+        0.0
+      ],
+      "angularVelocity": [
+        0.0,
+        0.0
+      ],
+      "startFrame": [
+        0.0,
+        0.0
+      ],
+      "colorMin": "#6BB5E0AA",
+      "colorMax": "#6BB5E0AA",
+      "gravity": [
+        0.0,
+        0.0
+      ],
+      "drag": 0.0,
+      "radialAcceleration": 0.0,
+      "tangentialAcceleration": 0.0,
+      "inheritVelocity": 0.0,
+      "noiseStrength": 0.0,
+      "noiseFrequency": 0.009999999776482582,
+      "noiseScroll": 0.0,
+      "aspect": 1.0,
+      "stretch": 0.0,
+      "alignVelocity": false,
+      "screenSpace": false,
+      "blend": 2,
+      "layer": 1,
+      "order": 0,
+      "textureRect": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "columns": 1,
+      "rows": 1,
+      "framesPerSecond": 0.0,
+      "collision": 0,
+      "collisionRadius": 0.0,
+      "restitution": 0.5,
+      "friction": 0.0,
+      "sizeOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "speedOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "alphaOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "colorOverLife": [],
+      "bursts": [
+        [
+          0.0,
+          1
+        ]
+      ],
+      "subEmitters": {
+        "birth": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        },
+        "death": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        },
+        "collision": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        }
+      }
+    },
+    {
+      "name": "魔法微光",
+      "texture": "soft",
+      "material": "",
+      "maxParticles": 512,
+      "automatic": true,
+      "loop": true,
+      "space": 0,
+      "shape": 3,
+      "delay": 0.0,
+      "duration": 0.0,
+      "rate": 30.0,
+      "rateOverDistance": 0.0,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "shapeSize": [
+        0.0,
+        0.0
+      ],
+      "radius": 90.0,
+      "innerRadius": 0.0,
+      "direction": -1.5707963705062866,
+      "spread": 1.0471975803375244,
+      "life": [
+        1.0,
+        2.0
+      ],
+      "speed": [
+        12.0,
+        30.0
+      ],
+      "size": [
+        3.0,
+        7.0
+      ],
+      "rotation": [
+        0.0,
+        0.0
+      ],
+      "angularVelocity": [
+        0.0,
+        0.0
+      ],
+      "startFrame": [
+        0.0,
+        0.0
+      ],
+      "colorMin": "#FFFFFFFF",
+      "colorMax": "#FFFFFFFF",
+      "gravity": [
+        0.0,
+        0.0
+      ],
+      "drag": 0.0,
+      "radialAcceleration": 0.0,
+      "tangentialAcceleration": 0.0,
+      "inheritVelocity": 0.0,
+      "noiseStrength": 18.0,
+      "noiseFrequency": 0.009999999776482582,
+      "noiseScroll": 0.0,
+      "aspect": 1.0,
+      "stretch": 0.0,
+      "alignVelocity": false,
+      "screenSpace": false,
+      "blend": 4,
+      "layer": 2,
+      "order": 0,
+      "textureRect": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "columns": 1,
+      "rows": 1,
+      "framesPerSecond": 0.0,
+      "collision": 0,
+      "collisionRadius": 0.0,
+      "restitution": 0.5,
+      "friction": 0.0,
+      "sizeOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "speedOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "alphaOverLife": {
+        "interpolation": 0,
+        "keys": []
+      },
+      "colorOverLife": [
+        [
+          0.0,
+          "#C4A1FFFF"
+        ],
+        [
+          0.3499999940395355,
+          "#96D3F7BB"
+        ],
+        [
+          1.0,
+          "#90CAFF00"
+        ]
+      ],
+      "bursts": [],
+      "subEmitters": {
+        "birth": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        },
+        "death": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        },
+        "collision": {
+          "emitter": -1,
+          "count": 0,
+          "inheritVelocity": 0.0
+        }
+      }
+    }
+  ]
+}

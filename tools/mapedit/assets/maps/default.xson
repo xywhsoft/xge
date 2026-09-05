@@ -1,0 +1,16 @@
+{
+	"format": "xge.map",
+	"version": 2,
+	"layerCount": 3,
+	"tileWidth": 16,
+	"tileHeight": 16,
+	"地图名称": "默认地图",
+	"图集": "default.xson",
+	"当前状态": 0,
+	"地图宽度": 100,
+	"地图高度": 100,
+	"自定义数据": "",
+	"图块数据": [],
+	"通行修正": [],
+	"cellCustomData": {}
+}

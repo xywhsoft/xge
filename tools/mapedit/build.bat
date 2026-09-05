@@ -5,7 +5,7 @@ set ROOT=%~dp0..\..
 for %%I in ("%ROOT%") do set ROOT=%%~fI
 set TOOL_DIR=%~dp0.
 for %%I in ("%TOOL_DIR%") do set TOOL_DIR=%%~fI
-set OUT_DIR=%TOOL_DIR%\release
+set OUT_DIR=%TOOL_DIR%\build
 set OUT=%OUT_DIR%\xge_mapedit.exe
 set CORE_OUT=%OUT_DIR%\xge_mapedit_core.exe
 set RES_OBJ=%OUT_DIR%\mapedit_res.o
@@ -15,11 +15,12 @@ set OPTION_DIR=%TOOL_DIR%\option
 set RES_DIR=%TOOL_DIR%\res
 set ASSETS_DIR=%TOOL_DIR%\assets
 set RC_FILE=%TOOL_DIR%\mapedit.rc
-set APP_SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\map_sdk\xge_map.c"
+set APP_SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\src\mapedit_history.c" "%TOOL_DIR%\src\mapedit_document.c" "%TOOL_DIR%\src\mapedit_theme.c" "%TOOL_DIR%\map_sdk\xge_map.c"
 set LAUNCHER_SRC="%TOOL_DIR%\src\launcher.c"
+set APP_SRC=%APP_SRC% "%TOOL_DIR%\src\mapedit_files.c" "%TOOL_DIR%\src\mapedit_view.c"
 set INC=-I"%ROOT%" -I"%TOOL_DIR%"
-set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0 -DMAPEDIT_FORCE_DISCRETE_GPU=1
-set LAUNCHER_FLAGS=-O2 -Wall -Wextra
+set FLAGS=-std=c11 -O2 -Wall -Wextra -Wconversion -Wsign-conversion -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0 -DMAPEDIT_FORCE_DISCRETE_GPU=1
+set LAUNCHER_FLAGS=-std=c11 -O2 -Wall -Wextra -Wconversion -Wsign-conversion
 set LIBS=%XGE_LIB% -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lcomdlg32 -lole32 -lwinmm -lavrt
 set LAUNCHER_LIBS=-luser32 -lshell32
 
@@ -29,7 +30,12 @@ if %errorlevel% neq 0 (
 	exit /b 1
 )
 
-if not exist "%OUT_DIR%" mkdir "%OUT_DIR%" || exit /b 1
+if /I not "%OUT_DIR%"=="%TOOL_DIR%\build" (
+	echo [MAPEDIT:XUI2] Refusing to clean unexpected output directory: %OUT_DIR%
+	exit /b 1
+)
+if exist "%OUT_DIR%" rmdir /S /Q "%OUT_DIR%" || exit /b 1
+mkdir "%OUT_DIR%" || exit /b 1
 where windres >nul 2>nul
 if %errorlevel% neq 0 (
 	echo [MAPEDIT:XUI2] windres not found in PATH
@@ -107,7 +113,7 @@ for /D %%R in ("%RES_DIR%\passage_*") do (
 	)
 )
 if not exist "%OUT_DIR%\res\fonts" mkdir "%OUT_DIR%\res\fonts" || exit /b 1
-copy /Y "%RES_DIR%\fonts\*.xrf" "%OUT_DIR%\res\fonts\" >nul
+copy /Y "%RES_DIR%\fonts\*.ttf" "%OUT_DIR%\res\fonts\" >nul
 if errorlevel 1 (
 	echo [MAPEDIT:XUI2] Failed to copy font resources
 	exit /b 1

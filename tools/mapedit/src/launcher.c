@@ -48,21 +48,24 @@ static int mapedit_launcher_append_quoted_arg(wchar_t* sOut, size_t iCap, size_t
 			continue;
 		}
 		if ( sArg[i] == L'"' ) {
-			while ( slashes-- > 0 ) {
+			while ( slashes > 0 ) {
 				if ( !mapedit_launcher_append(sOut, iCap, pLen, L"\\\\") ) return 0;
+				slashes--;
 			}
 			if ( !mapedit_launcher_append(sOut, iCap, pLen, L"\\\"") ) return 0;
 			slashes = 0;
 			continue;
 		}
-		while ( slashes-- > 0 ) {
+		while ( slashes > 0 ) {
 			if ( !mapedit_launcher_append_char(sOut, iCap, pLen, L'\\') ) return 0;
+			slashes--;
 		}
 		if ( !mapedit_launcher_append_char(sOut, iCap, pLen, sArg[i]) ) return 0;
 		slashes = 0;
 	}
-	while ( slashes-- > 0 ) {
+	while ( slashes > 0 ) {
 		if ( !mapedit_launcher_append(sOut, iCap, pLen, L"\\\\") ) return 0;
+		slashes--;
 	}
 	if ( !mapedit_launcher_append_char(sOut, iCap, pLen, L'"') ) return 0;
 	return 1;
@@ -113,10 +116,21 @@ static int mapedit_launcher_build_cmdline(wchar_t* sCmd, size_t iCap, const wcha
 	return 1;
 }
 
+static BOOL CALLBACK mapedit_launcher_find_window_proc(HWND hWnd, LPARAM lParam)
+{
+	wchar_t title[64];
+	HWND* pFound = (HWND*)lParam;
+	if ( pFound == NULL || !IsWindowVisible(hWnd) ) return TRUE;
+	if ( GetWindowTextW(hWnd, title, (int)(sizeof(title) / sizeof(title[0]))) <= 0 ) return TRUE;
+	if ( wcsncmp(title, L"MapEdit", 7u) != 0 ) return TRUE;
+	*pFound = hWnd;
+	return FALSE;
+}
+
 static void mapedit_launcher_foreground_existing(void)
 {
-	HWND hWnd;
-	hWnd = FindWindowA(NULL, "MapEdit");
+	HWND hWnd = NULL;
+	(void)EnumWindows(mapedit_launcher_find_window_proc, (LPARAM)&hWnd);
 	if ( hWnd != NULL ) {
 		ShowWindow(hWnd, SW_SHOWNORMAL);
 		SetForegroundWindow(hWnd);
@@ -143,9 +157,6 @@ int main(void)
 		MessageBoxW(NULL, L"Failed to locate MapEdit directory.", L"MapEdit", MB_OK | MB_ICONERROR);
 		return 1;
 	}
-	SetCurrentDirectoryW(appDir);
-	SetDllDirectoryW(appDir);
-
 	hMutex = CreateMutexW(NULL, TRUE, L"Local\\xge_xui2_mapedit_single_instance");
 	if ( hMutex == NULL ) {
 		MessageBoxW(NULL, L"Failed to create MapEdit single-instance mutex.", L"MapEdit", MB_OK | MB_ICONERROR);
@@ -170,7 +181,7 @@ int main(void)
 	memset(&pi, 0, sizeof(pi));
 	si.cb = sizeof(si);
 	GetStartupInfoW(&si);
-	if ( !CreateProcessW(corePath, cmdLine, NULL, NULL, TRUE, 0, NULL, appDir, &si, &pi) ) {
+	if ( !CreateProcessW(corePath, cmdLine, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi) ) {
 		ReleaseMutex(hMutex);
 		CloseHandle(hMutex);
 		MessageBoxW(NULL, L"Failed to start xge_mapedit_core.exe.", L"MapEdit", MB_OK | MB_ICONERROR);

@@ -228,6 +228,14 @@ Renderer capacity 小于本帧可绘制粒子数时返回 `XGE_ERROR_BUFFER_TOO_
 
 ## 验证入口
 
+### 原生粒子编辑器
+
+`tools/particleedit` 提供 C + XGE + XUI 编辑器：Dock 工作区、实时预览、发射时间轴、Burst 编辑、生命周期曲线与渐变、资源绑定、事务撤销和安全保存。直接读写本节描述的 version 1 JSON / XSON，不引入另一套粒子格式。
+
+运行 `tools\particleedit\build.bat` 后启动 `tools\particleedit\release\particleedit.exe`。七个经典范例可作为模板载入；编辑器和范例共用程序纹理与材质实现。具体用法、测试命令与当前边界见 [粒子编辑器说明](../tools/particleedit/README.md)。
+
+### 运行时与范例回归
+
 Windows 完整复验可直接执行 `test\build_particle_suite.bat`：重建 DLL，运行 CPU/DLL/GPU 与现有 XGE smoke 测试，构建七个范例并逐个导出、重载 JSON/XSON。GPU 和范例测试会短暂创建窗口。也可按需分别运行：
 
 ```bat

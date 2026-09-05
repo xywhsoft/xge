@@ -1,5 +1,11 @@
 # XUI UI Design
 
+The new **embeddable form designer 0.1** is available as an independent C library
+and reference host. See [component/README.md](component/README.md) for its API,
+scope and real design → compiled event-handler test chain. Build it with
+`./tools/UIDesign/build_component.ps1 -Test`. The standalone editor below remains
+available; the new component does not silently convert its document format.
+
 XUI UI Design is the visual editor for XUI documents. Its design surface uses
 a fixed 900 x 600 coordinate system, while the editor view can zoom and pan
 without changing saved widget geometry.

@@ -1,16 +1,23 @@
 #include "xge.h"
 #include "xui.h"
-#include "src/xui_xrt_port.h"
+#include "mapedit_xrt.h"
+#include "mapedit_history.h"
+#include "mapedit_theme.h"
+#include "mapedit_document.h"
+#include "mapedit_files.h"
+#include "mapedit_view.h"
 #include "map_sdk/xge_map.h"
 
-#include <dirent.h>
+#include <limits.h>
+#include <errno.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 #include <windows.h>
-#include <commdlg.h>
+#include <shlobj.h>
 
 #if defined(MAPEDIT_FORCE_DISCRETE_GPU)
 __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
@@ -30,9 +37,9 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 
 #define MAPEDIT_W 1400
 #define MAPEDIT_H 900
-#define MAPEDIT_MENU_H 26.0f
-#define MAPEDIT_SWITCH_H 68.0f
-#define MAPEDIT_STATUS_H 28.0f
+#define MAPEDIT_MENU_H 34.0f
+#define MAPEDIT_SWITCH_H 46.0f
+#define MAPEDIT_STATUS_H 32.0f
 #define MAPEDIT_TILE_W gMapeditTileWidth
 #define MAPEDIT_TILE_H gMapeditTileHeight
 #define MAPEDIT_MAP_PASSAGE_CELL 32
@@ -41,10 +48,10 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #define MAPEDIT_PATH_MAX 512
 #define MAPEDIT_NAME_MAX 128
 #define MAPEDIT_FILE_MAX 256
-#define MAPEDIT_LIST_MAX 512
 #define MAPEDIT_LIST_TEXT_MAX 512
+#define MAPEDIT_FILE_LIST_HARD_MAX 1048576
 #define MAPEDIT_SPECIAL_MAX 512
-#define MAPEDIT_HISTORY_MAX 128
+/* History storage and limits live in mapedit_history.h. */
 #define MAPEDIT_TOOL_COUNT 6
 #define MAPEDIT_CUSTOM_CHANNEL_MAX 16
 #define MAPEDIT_CUSTOM_OPTION_MAX 32
@@ -54,8 +61,6 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #define MAPEDIT_BLOB47_ROWS 6
 #define MAPEDIT_BLOB47_COUNT 47
 #define MAPEDIT_MAP_PREVIEW_FRAME_SECONDS 0.25f
-#define MAPEDIT_MAP_DIM_MAX 2048
-#define MAPEDIT_MAP_SIZE_MAX 1048576
 #define MAPEDIT_BLOB47_N 0x01
 #define MAPEDIT_BLOB47_E 0x02
 #define MAPEDIT_BLOB47_S 0x04
@@ -69,6 +74,9 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #define MAPEDIT_MATERIAL_STATIC_COLS 20
 #define MAPEDIT_MATERIAL_INITIAL_ROWS 64
 #define MAPEDIT_MATERIAL_EXTEND_ROWS 32
+#define MAPEDIT_TILE_DIM_MAX 1024
+#define MAPEDIT_TILES_PER_ROW_MAX 4096
+#define MAPEDIT_MATERIAL_OUTPUT_BYTE_MAX ((size_t)128u * 1024u * 1024u)
 #define MAPEDIT_MATERIAL_STATIC_PANE_WIDTH 356.0f
 #define MAPEDIT_TILE_SELECT_PLACEHOLDER_ROWS 8
 #define MAPEDIT_MAP_EDIT_SCROLLBAR_SIZE 12.0f
@@ -86,6 +94,7 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 static int gMapeditTileWidth = 16;
 static int gMapeditTileHeight = 16;
 static int gMapeditTilesPerRow = 20;
+static char gMapeditMapIoError[256];
 
 #define MAP_KEY_NAME "地图名称"
 #define MAP_KEY_TILESET "图集"
@@ -100,6 +109,8 @@ static int gMapeditTilesPerRow = 20;
 #define MAP_KEY_VALUE "value"
 
 #define SET_KEY_STATIC "静态图块集"
+#define SET_KEY_FORMAT "format"
+#define SET_KEY_VERSION "version"
 #define SET_KEY_NAME "图集名称"
 #define SET_KEY_SPECIAL_COUNT "特殊图块数量"
 #define SET_KEY_SPECIAL_TILES "特殊图块"
@@ -110,6 +121,8 @@ static int gMapeditTilesPerRow = 20;
 #define SET_KEY_CUSTOM "自定义数据"
 #define SET_KEY_TILE_DATA "tileCustomData"
 #define SET_KEY_TILE "tile"
+#define MAPEDIT_TILESET_FORMAT_NAME "xge.tileset"
+#define MAPEDIT_TILESET_FORMAT_VERSION 2
 
 enum {
 	MAPEDIT_WORKSPACE_TILESET = 0,
@@ -129,9 +142,12 @@ enum {
 	CMD_FILE_OPEN = 100,
 	CMD_FILE_SAVE,
 	CMD_FILE_SAVE_AS,
+	CMD_FILE_RECOVER,
 	CMD_FILE_EXIT,
 	CMD_VIEW_RESET_LAYOUT,
 	CMD_HELP_ABOUT,
+	CMD_VIEW_ACTUAL_SIZE,
+	CMD_VIEW_FIT,
 	CMD_WS_TILESET = 200,
 	CMD_WS_MAP,
 	CMD_TOOL_BRUSH = 300,
@@ -146,16 +162,18 @@ enum {
 	CMD_REDO,
 	CMD_MATERIAL_VIEW = 500,
 	CMD_MATERIAL_RENAME,
-	CMD_MATERIAL_EDIT
+	CMD_MATERIAL_EDIT,
+	CMD_MATERIAL_SOURCE_IMAGE
 };
 
 typedef struct mapedit_file_list_t {
-	char arrNames[MAPEDIT_LIST_MAX][MAPEDIT_FILE_MAX];
-	char arrText[MAPEDIT_LIST_MAX][MAPEDIT_LIST_TEXT_MAX];
-	const char* arrPtrs[MAPEDIT_LIST_MAX];
-	const char* arrTextPtrs[MAPEDIT_LIST_MAX];
+	char (*arrNames)[MAPEDIT_FILE_MAX];
+	char (*arrText)[MAPEDIT_LIST_TEXT_MAX];
+	const char** arrPtrs;
+	const char** arrTextPtrs;
 	int iCount;
 	int iSelected;
+	int iCapacity;
 } mapedit_file_list_t;
 
 typedef struct mapedit_material_category_t {
@@ -190,18 +208,6 @@ static const char* g_arrTilesetSpecialTypeNames[] = {
 	"对象"
 };
 
-typedef struct mapedit_history_change_t {
-	int iIndex;
-	int iOldTile;
-	int iNewTile;
-} mapedit_history_change_t;
-
-typedef struct mapedit_history_cmd_t {
-	mapedit_history_change_t* arrChanges;
-	int iChangeCount;
-	int iChangeCapacity;
-} mapedit_history_cmd_t;
-
 typedef struct mapedit_setup_layer_t {
 	int iId;
 	char sName[MAPEDIT_NAME_MAX];
@@ -233,54 +239,8 @@ typedef struct mapedit_custom_channel_def_t {
 	int iMaxValue;
 } mapedit_custom_channel_def_t;
 
-typedef struct mapedit_map_passage_override_t {
-	int iCellId;
-	unsigned char iValue;
-} mapedit_map_passage_override_t;
-
-typedef struct mapedit_map_doc_t {
-	char sPath[MAPEDIT_PATH_MAX];
-	char sName[MAPEDIT_NAME_MAX];
-	char sTileset[MAPEDIT_FILE_MAX];
-	char sCustomData[MAPEDIT_NAME_MAX];
-	int iWidth;
-	int iHeight;
-	int iLayers;
-	int iState;
-	int* pTiles;
-	int iTileCount;
-	xvalue* pPassageRaw;
-	xvalue* pCellDataRaw;
-	mapedit_map_passage_override_t* arrPassageOverrides;
-	int iPassageOverrideCount;
-	int iPassageOverrideCapacity;
-	int bDirty;
-} mapedit_map_doc_t;
-
-typedef struct mapedit_special_tile_t {
-	char sType[64];
-	char sFile[MAPEDIT_FILE_MAX];
-	xui_surface pSurface;
-	xui_surface_desc_t tDesc;
-} mapedit_special_tile_t;
-
-typedef struct mapedit_tileset_t {
-	char sPath[MAPEDIT_PATH_MAX];
-	char sFile[MAPEDIT_FILE_MAX];
-	char sName[MAPEDIT_NAME_MAX];
-	char sStaticFile[MAPEDIT_FILE_MAX];
-	char sCustomData[MAPEDIT_NAME_MAX];
-	int iSpecialCount;
-	int iPassageCount;
-	int iActorOverlayCount;
-	mapedit_special_tile_t arrSpecial[MAPEDIT_SPECIAL_MAX];
-	unsigned char arrPassage[65536];
-	unsigned char arrActorOverlay[65536];
-	xui_surface pStaticSurface;
-	xui_surface_desc_t tStaticDesc;
-	xvalue* pTileCustomRaw;
-	int bLoaded;
-} mapedit_tileset_t;
+typedef xge_map_passage_override_t mapedit_map_passage_override_t;
+typedef xge_map_t mapedit_map_doc_t;
 
 typedef struct mapedit_app_t {
 	xui_proxy_t tProxy;
@@ -291,6 +251,7 @@ typedef struct mapedit_app_t {
 	int iTargetHeight;
 	xui_widget pRoot;
 	xui_widget pMenuBar;
+	xui_widget pSwitchBar;
 	xui_widget pFileMenu;
 	xui_widget pViewMenu;
 	xui_widget pHelpMenu;
@@ -366,14 +327,8 @@ typedef struct mapedit_app_t {
 	mapedit_file_list_t tTilesetFiles;
 	mapedit_file_list_t tMaterialFiles;
 	mapedit_file_list_t tMaterialCategoryFiles;
-	char arrMapTilesetOptionText[MAPEDIT_LIST_MAX][MAPEDIT_LIST_TEXT_MAX];
-	char arrMapTilesetOptionValue[MAPEDIT_LIST_MAX][MAPEDIT_FILE_MAX];
-	const char* arrMapTilesetOptionPtrs[MAPEDIT_LIST_MAX];
-	int iMapTilesetOptionCount;
-	char arrTilesetSpecialFileOptionText[MAPEDIT_LIST_MAX][MAPEDIT_LIST_TEXT_MAX];
-	char arrTilesetSpecialFileOptionValue[MAPEDIT_LIST_MAX][MAPEDIT_FILE_MAX];
-	const char* arrTilesetSpecialFileOptionPtrs[MAPEDIT_LIST_MAX];
-	int iTilesetSpecialFileOptionCount;
+	mapedit_file_list_t tMapTilesetOptions;
+	mapedit_file_list_t tTilesetSpecialFileOptions;
 	mapedit_setup_layer_t arrSetupLayers[MAPEDIT_MAP_LAYER_MAX];
 	const char* arrLayerNames[MAPEDIT_MAP_LAYER_MAX];
 	int iSetupLayerCount;
@@ -442,6 +397,24 @@ typedef struct mapedit_app_t {
 	int iMaterialRenameIndex;
 	int iMaterialTooltipIndex;
 	char sAppDir[MAPEDIT_PATH_MAX];
+	char sProjectDir[MAPEDIT_PATH_MAX];
+	char sUserDir[MAPEDIT_PATH_MAX];
+	xui_file_dialog pFileDialog;
+	int iFileDialogCommand;
+	int iFileDialogWorkspace;
+	xui_msgbox pConfirmBox;
+	xui_msgbox pExternalBox;
+	int iExternalDocument;
+	int iPendingOperation, iPendingDiscardMask, iPendingDocument;
+	char sPendingPath[MAPEDIT_PATH_MAX];
+	mapedit_file_stamp_t tMapStamp, tTilesetStamp;
+	double fNextFileCheck;
+	int bMapExternalConflict, bTilesetExternalConflict;
+	float fDpiScale;
+	int iMapLayoutRevision, iTilesetLayoutRevision;
+	double fLayoutDirtyAt;
+	double fMapDirtySince;
+	double fLastRecoveryWrite;
 	char sStatusText[256];
 	char sStatusMapText[64];
 	char sStatusTileText[160];
@@ -453,8 +426,13 @@ typedef struct mapedit_app_t {
 	int iStartupWorkspace;
 	int iLargeMapWidth;
 	int iLargeMapHeight;
+	int bSmokeWorkbench, bSmokeWorkbenchOK, iSmokeWorkbenchStage;
 	int bSmokeCustomDefault;
 	int bSmokeCustomDefaultOK;
+	float arrViewZoom[8];
+	int iLastView, iPanView, bViewPanning, iPanX, iPanY;
+	xui_widget pPanWidget;
+	char sCapturePath[MAPEDIT_PATH_MAX];
 	int iActiveWorkspace;
 	int iActiveTool;
 	int iSelectedTile;
@@ -480,9 +458,9 @@ typedef struct mapedit_app_t {
 	int bGrid;
 	float fPreviewAnimTime;
 	int iPreviewAnimFrame;
-	int bMouse;
 	int bPainting;
 	int bBatchEdit;
+	int bHistoryFailed;
 	int bGestureDirty;
 	int iDragStartX;
 	int iDragStartY;
@@ -490,8 +468,6 @@ typedef struct mapedit_app_t {
 	int iDragCurrentY;
 	int iLastPaintX;
 	int iLastPaintY;
-	float fMouseX;
-	float fMouseY;
 	float fMapScrollX;
 	float fMapScrollY;
 	float fMapTagsScrollX;
@@ -508,12 +484,8 @@ typedef struct mapedit_app_t {
 	float fTilesetActorScrollY;
 	float fTilesetTagsScrollX;
 	float fTilesetTagsScrollY;
-	uint32_t iButtons;
-	mapedit_history_cmd_t tCurrentCommand;
-	mapedit_history_cmd_t arrUndo[MAPEDIT_HISTORY_MAX];
-	mapedit_history_cmd_t arrRedo[MAPEDIT_HISTORY_MAX];
-	int iUndoCount;
-	int iRedoCount;
+	mapedit_history_t tMapHistory;
+	mapedit_history_t tTilesetHistory;
 	int bCreateOK;
 	int bLayoutOK;
 	int bDataOK;
@@ -527,8 +499,10 @@ typedef struct mapedit_app_t {
 static int mapedit_min_i(int a, int b) { return a < b ? a : b; }
 static int mapedit_max_i(int a, int b) { return a > b ? a : b; }
 static float mapedit_clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
+static void mapedit_copy_text(char* sDst, int iCap, const char* sSrc);
+static int mapedit_ensure_dir_utf8(const char* sPath);
 static void mapedit_status(mapedit_app_t* pApp, const char* sText);
-static int mapedit_material_preview_render(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
+static void mapedit_update_window_title(mapedit_app_t* pApp);
 static int mapedit_material_view_render(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
 static int mapedit_material_edit_output_render(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
 static int mapedit_material_edit_source_render(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
@@ -539,6 +513,18 @@ static void mapedit_material_display_name(mapedit_app_t* pApp, int iIndex, char*
 static int mapedit_material_open_editor(mapedit_app_t* pApp, int iIndex);
 static void mapedit_material_edit_close(mapedit_app_t* pApp);
 static void mapedit_refresh_toolbar_state(mapedit_app_t* pApp);
+static void mapedit_activate_loaded_map(mapedit_app_t* pApp, const char* sStatus);
+static void mapedit_invalidate_map_views(mapedit_app_t* pApp);
+static void mapedit_invalidate_tileset_views(mapedit_app_t* pApp);
+static int mapedit_show_material_source_dialog(mapedit_app_t* pApp);
+static int mapedit_show_map_file_dialog(mapedit_app_t* pApp, int iCommand);
+static void mapedit_pending_continue(mapedit_app_t* pApp);
+static int mapedit_save_current(mapedit_app_t* pApp);
+static void mapedit_zoom_command(mapedit_app_t* pApp, int fit);
+static int mapedit_view_interact(mapedit_app_t* pApp, xui_widget widget, const xui_event_t* event);
+static void mapedit_request_operation(mapedit_app_t* pApp, int operation, const char* path);
+static void mapedit_clear_recovery_for(mapedit_app_t* pApp, int workspace, const char* path);
+static void mapedit_tileset_selected(xui_widget pWidget, int iIndex, void* pUser);
 
 static int mapedit_arg_int(const char* sText, int iDefault)
 {
@@ -586,7 +572,23 @@ static void mapedit_path_join(char* sOut, int iCap, const char* sA, const char* 
 
 static void mapedit_app_path(mapedit_app_t* pApp, char* sOut, int iCap, const char* sRel)
 {
-	mapedit_path_join(sOut, iCap, pApp->sAppDir, sRel);
+	const char* sBase;
+	const char* sUseRel;
+	if ( sOut == NULL || iCap <= 0 ) return;
+	if ( pApp == NULL ) {
+		sOut[0] = 0;
+		return;
+	}
+	sUseRel = sRel != NULL ? sRel : "";
+	sBase = pApp->sAppDir;
+	if ( strncmp(sUseRel, "assets\\", 7) == 0 || strcmp(sUseRel, "assets") == 0 ||
+	     strcmp(sUseRel, "option\\setup.xson") == 0 ) {
+		sBase = pApp->sProjectDir[0] != 0 ? pApp->sProjectDir : pApp->sAppDir;
+	} else if ( strncmp(sUseRel, "option\\layout_", 14) == 0 ) {
+		sBase = pApp->sUserDir[0] != 0 ? pApp->sUserDir : pApp->sAppDir;
+		sUseRel += 7;
+	}
+	mapedit_path_join(sOut, iCap, sBase, sUseRel);
 }
 
 static int mapedit_utf8_to_wide(const char* sText, wchar_t* sOut, int iCap)
@@ -607,6 +609,38 @@ static int mapedit_wide_to_utf8(const wchar_t* sText, char* sOut, int iCap)
 	if ( sText == NULL ) sText = L"";
 	n = WideCharToMultiByte(CP_UTF8, 0, sText, -1, sOut, iCap, NULL, NULL);
 	return n > 0;
+}
+
+static void mapedit_get_user_dir(mapedit_app_t* pApp)
+{
+	wchar_t wBase[MAPEDIT_PATH_MAX];
+	char base[MAPEDIT_PATH_MAX];
+	DWORD n;
+	if ( pApp == NULL ) return;
+	n = GetEnvironmentVariableW(L"LOCALAPPDATA", wBase, (DWORD)(sizeof(wBase) / sizeof(wBase[0])));
+	if ( n == 0 || n >= (DWORD)(sizeof(wBase) / sizeof(wBase[0])) ||
+	     !mapedit_wide_to_utf8(wBase, base, (int)sizeof(base)) ) {
+		mapedit_copy_text(base, sizeof(base), pApp->sAppDir);
+	}
+	mapedit_path_join(pApp->sUserDir, sizeof(pApp->sUserDir), base, "XGE\\MapEdit");
+}
+
+static void mapedit_set_project_dir(mapedit_app_t* pApp, const char* sPath)
+{
+	wchar_t wInput[MAPEDIT_PATH_MAX];
+	wchar_t wFull[MAPEDIT_PATH_MAX];
+	DWORD n;
+	if ( pApp == NULL ) return;
+	if ( sPath == NULL || sPath[0] == 0 ||
+	     !mapedit_utf8_to_wide(sPath, wInput, (int)(sizeof(wInput) / sizeof(wInput[0]))) ) {
+		mapedit_copy_text(pApp->sProjectDir, sizeof(pApp->sProjectDir), pApp->sAppDir);
+		return;
+	}
+	n = GetFullPathNameW(wInput, (DWORD)(sizeof(wFull) / sizeof(wFull[0])), wFull, NULL);
+	if ( n == 0 || n >= (DWORD)(sizeof(wFull) / sizeof(wFull[0])) ||
+	     !mapedit_wide_to_utf8(wFull, pApp->sProjectDir, (int)sizeof(pApp->sProjectDir)) ) {
+		mapedit_copy_text(pApp->sProjectDir, sizeof(pApp->sProjectDir), pApp->sAppDir);
+	}
 }
 
 static void mapedit_get_app_dir(char* sOut, int iCap)
@@ -632,7 +666,6 @@ static void mapedit_configure_process_startup(const char* sAppDir)
 	SetEnvironmentVariableA("SHIM_MCCOMPAT", "0x800000001");
 	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 	if ( mapedit_utf8_to_wide(sAppDir, wDir, (int)(sizeof(wDir) / sizeof(wDir[0]))) ) {
-		SetCurrentDirectoryW(wDir);
 		SetDllDirectoryW(wDir);
 	}
 }
@@ -640,8 +673,8 @@ static void mapedit_configure_process_startup(const char* sAppDir)
 static void mapedit_startup_log_open(mapedit_app_t* pApp)
 {
 	char path[MAPEDIT_PATH_MAX + 64];
-	if ( pApp == NULL || pApp->sAppDir[0] == 0 ) return;
-	snprintf(path, sizeof(path), "%s\\mapedit_startup.log", pApp->sAppDir);
+	if ( pApp == NULL || pApp->sUserDir[0] == 0 ) return;
+	snprintf(path, sizeof(path), "%s\\mapedit_startup.log", pApp->sUserDir);
 	pApp->pStartupLog = fopen(path, "ab");
 }
 
@@ -655,6 +688,24 @@ static void mapedit_startup_log(mapedit_app_t* pApp, const char* sFmt, ...)
 	va_end(args);
 	fputc('\n', pApp->pStartupLog);
 	fflush(pApp->pStartupLog);
+}
+
+static BOOL CALLBACK mapedit_find_window_proc(HWND hWnd, LPARAM lParam)
+{
+	wchar_t title[64];
+	HWND* pFound = (HWND*)lParam;
+	if ( pFound == NULL || !IsWindowVisible(hWnd) ) return TRUE;
+	if ( GetWindowTextW(hWnd, title, (int)(sizeof(title) / sizeof(title[0]))) <= 0 ) return TRUE;
+	if ( wcsncmp(title, L"MapEdit", 7u) != 0 ) return TRUE;
+	*pFound = hWnd;
+	return FALSE;
+}
+
+static HWND mapedit_find_existing_window(void)
+{
+	HWND hWnd = NULL;
+	(void)EnumWindows(mapedit_find_window_proc, (LPARAM)&hWnd);
+	return hWnd;
 }
 
 static int mapedit_acquire_single_instance(mapedit_app_t* pApp)
@@ -673,7 +724,7 @@ static int mapedit_acquire_single_instance(mapedit_app_t* pApp)
 		return 1;
 	}
 	mapedit_startup_log(pApp, "single-instance already running");
-	hWnd = FindWindowA(NULL, "MapEdit");
+	hWnd = mapedit_find_existing_window();
 	if ( hWnd != NULL ) {
 		ShowWindow(hWnd, SW_SHOWNORMAL);
 		SetForegroundWindow(hWnd);
@@ -698,6 +749,116 @@ static void mapedit_release_single_instance(mapedit_app_t* pApp)
 	}
 }
 
+typedef struct mapedit_file_row_t {
+	char sName[MAPEDIT_FILE_MAX];
+	char sText[MAPEDIT_LIST_TEXT_MAX];
+} mapedit_file_row_t;
+
+static void mapedit_file_list_rebuild_ptrs(mapedit_file_list_t* pList)
+{
+	int i;
+	if ( pList == NULL ) return;
+	for ( i = 0; i < pList->iCount; ++i ) {
+		pList->arrPtrs[i] = pList->arrNames[i];
+		pList->arrTextPtrs[i] = pList->arrText[i];
+	}
+}
+
+static void mapedit_file_list_clear(mapedit_file_list_t* pList)
+{
+	if ( pList == NULL ) return;
+	free(pList->arrNames);
+	free(pList->arrText);
+	free(pList->arrPtrs);
+	free(pList->arrTextPtrs);
+	memset(pList, 0, sizeof(*pList));
+	pList->iSelected = -1;
+}
+
+static int mapedit_file_list_reserve(mapedit_file_list_t* pList, int iNeed)
+{
+	char (*arrNames)[MAPEDIT_FILE_MAX];
+	char (*arrText)[MAPEDIT_LIST_TEXT_MAX];
+	const char** arrPtrs;
+	const char** arrTextPtrs;
+	int capacity;
+	if ( pList == NULL || iNeed < 0 || iNeed > MAPEDIT_FILE_LIST_HARD_MAX ) return 0;
+	if ( iNeed <= pList->iCapacity ) return 1;
+	capacity = pList->iCapacity > 0 ? pList->iCapacity : 32;
+	while ( capacity < iNeed ) {
+		if ( capacity > MAPEDIT_FILE_LIST_HARD_MAX / 2 ) {
+			capacity = MAPEDIT_FILE_LIST_HARD_MAX;
+			break;
+		}
+		capacity *= 2;
+	}
+	arrNames = (char (*)[MAPEDIT_FILE_MAX])calloc((size_t)capacity, sizeof(*arrNames));
+	arrText = (char (*)[MAPEDIT_LIST_TEXT_MAX])calloc((size_t)capacity, sizeof(*arrText));
+	arrPtrs = (const char**)calloc((size_t)capacity, sizeof(*arrPtrs));
+	arrTextPtrs = (const char**)calloc((size_t)capacity, sizeof(*arrTextPtrs));
+	if ( arrNames == NULL || arrText == NULL || arrPtrs == NULL || arrTextPtrs == NULL ) {
+		free(arrNames);
+		free(arrText);
+		free(arrPtrs);
+		free(arrTextPtrs);
+		return 0;
+	}
+	if ( pList->iCount > 0 ) {
+		memcpy(arrNames, pList->arrNames, (size_t)pList->iCount * sizeof(*arrNames));
+		memcpy(arrText, pList->arrText, (size_t)pList->iCount * sizeof(*arrText));
+	}
+	free(pList->arrNames);
+	free(pList->arrText);
+	free(pList->arrPtrs);
+	free(pList->arrTextPtrs);
+	pList->arrNames = arrNames;
+	pList->arrText = arrText;
+	pList->arrPtrs = arrPtrs;
+	pList->arrTextPtrs = arrTextPtrs;
+	pList->iCapacity = capacity;
+	mapedit_file_list_rebuild_ptrs(pList);
+	return 1;
+}
+
+static int mapedit_file_list_append(mapedit_file_list_t* pList, const char* sName, const char* sText)
+{
+	int i;
+	if ( pList == NULL || sName == NULL || !mapedit_file_list_reserve(pList, pList->iCount + 1) ) return 0;
+	i = pList->iCount++;
+	mapedit_copy_text(pList->arrNames[i], MAPEDIT_FILE_MAX, sName);
+	mapedit_copy_text(pList->arrText[i], MAPEDIT_LIST_TEXT_MAX, sText != NULL ? sText : sName);
+	pList->arrPtrs[i] = pList->arrNames[i];
+	pList->arrTextPtrs[i] = pList->arrText[i];
+	return 1;
+}
+
+static int mapedit_file_row_compare(const void* pLeft, const void* pRight)
+{
+	const mapedit_file_row_t* pA = (const mapedit_file_row_t*)pLeft;
+	const mapedit_file_row_t* pB = (const mapedit_file_row_t*)pRight;
+	return _stricmp(pA->sName, pB->sName);
+}
+
+static void mapedit_file_list_sort(mapedit_file_list_t* pList)
+{
+	mapedit_file_row_t* arrRows;
+	int i;
+	if ( pList == NULL || pList->iCount < 2 ) return;
+	arrRows = (mapedit_file_row_t*)malloc((size_t)pList->iCount * sizeof(*arrRows));
+	if ( arrRows == NULL ) return;
+	for ( i = 0; i < pList->iCount; ++i ) {
+		mapedit_copy_text(arrRows[i].sName, sizeof(arrRows[i].sName), pList->arrNames[i]);
+		mapedit_copy_text(arrRows[i].sText, sizeof(arrRows[i].sText), pList->arrText[i]);
+	}
+	qsort(arrRows, (size_t)pList->iCount, sizeof(*arrRows), mapedit_file_row_compare);
+	for ( i = 0; i < pList->iCount; ++i ) {
+		mapedit_copy_text(pList->arrNames[i], MAPEDIT_FILE_MAX, arrRows[i].sName);
+		mapedit_copy_text(pList->arrText[i], MAPEDIT_LIST_TEXT_MAX, arrRows[i].sText);
+	}
+	free(arrRows);
+	mapedit_file_list_rebuild_ptrs(pList);
+}
+
 static void mapedit_scan_files(const char* sPath, const char* sExt, mapedit_file_list_t* pList)
 {
 	wchar_t wPath[MAPEDIT_PATH_MAX];
@@ -705,8 +866,7 @@ static void mapedit_scan_files(const char* sPath, const char* sExt, mapedit_file
 	WIN32_FIND_DATAW tFind;
 	HANDLE hFind;
 	if ( pList == NULL ) return;
-	memset(pList, 0, sizeof(*pList));
-	pList->iSelected = -1;
+	mapedit_file_list_clear(pList);
 	if ( !mapedit_utf8_to_wide(sPath, wPath, (int)(sizeof(wPath) / sizeof(wPath[0]))) ) return;
 	_snwprintf(wPattern, sizeof(wPattern) / sizeof(wPattern[0]), L"%ls\\*", wPath);
 	wPattern[(sizeof(wPattern) / sizeof(wPattern[0])) - 1] = 0;
@@ -714,17 +874,13 @@ static void mapedit_scan_files(const char* sPath, const char* sExt, mapedit_file
 	if ( hFind == INVALID_HANDLE_VALUE ) return;
 	do {
 		char sName[MAPEDIT_FILE_MAX];
-		if ( pList->iCount >= MAPEDIT_LIST_MAX ) break;
 		if ( tFind.cFileName[0] == L'.' || (tFind.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ) continue;
 		if ( !mapedit_wide_to_utf8(tFind.cFileName, sName, (int)sizeof(sName)) ) continue;
 		if ( !mapedit_has_ext(sName, sExt) ) continue;
-		snprintf(pList->arrNames[pList->iCount], MAPEDIT_FILE_MAX, "%s", sName);
-		snprintf(pList->arrText[pList->iCount], MAPEDIT_LIST_TEXT_MAX, "%s", sName);
-		pList->arrPtrs[pList->iCount] = pList->arrNames[pList->iCount];
-		pList->arrTextPtrs[pList->iCount] = pList->arrText[pList->iCount];
-		pList->iCount++;
+		if ( !mapedit_file_list_append(pList, sName, sName) ) break;
 	} while ( FindNextFileW(hFind, &tFind) );
 	FindClose(hFind);
+	mapedit_file_list_sort(pList);
 	if ( pList->iCount > 0 ) pList->iSelected = 0;
 }
 
@@ -740,11 +896,32 @@ static int mapedit_dir_exists_utf8(const char* sPath)
 static int mapedit_ensure_dir_utf8(const char* sPath)
 {
 	wchar_t wPath[MAPEDIT_PATH_MAX];
+	int result;
 	if ( sPath == NULL || sPath[0] == 0 ) return 0;
 	if ( mapedit_dir_exists_utf8(sPath) ) return 1;
 	if ( !mapedit_utf8_to_wide(sPath, wPath, (int)(sizeof(wPath) / sizeof(wPath[0]))) ) return 0;
-	if ( CreateDirectoryW(wPath, NULL) ) return 1;
+	result = SHCreateDirectoryExW(NULL, wPath, NULL);
+	if ( result == ERROR_SUCCESS || result == ERROR_ALREADY_EXISTS || result == ERROR_FILE_EXISTS ) return 1;
 	return mapedit_dir_exists_utf8(sPath);
+}
+
+static int mapedit_prepare_project_dirs(mapedit_app_t* pApp)
+{
+	static const char* const arrDirs[] = {
+		"assets",
+		"assets\\maps",
+		"assets\\图块集",
+		"option"
+	};
+	char path[MAPEDIT_PATH_MAX];
+	int i;
+	if ( pApp == NULL || pApp->sProjectDir[0] == 0 ) return 0;
+	if ( !mapedit_ensure_dir_utf8(pApp->sProjectDir) ) return 0;
+	for ( i = 0; i < (int)(sizeof(arrDirs) / sizeof(arrDirs[0])); ++i ) {
+		mapedit_path_join(path, sizeof(path), pApp->sProjectDir, arrDirs[i]);
+		if ( !mapedit_ensure_dir_utf8(path) ) return 0;
+	}
+	return 1;
 }
 
 static int mapedit_is_image_file(const char* sName)
@@ -819,8 +996,7 @@ static int mapedit_material_scan_category(mapedit_app_t* pApp, int iCategory, in
 	pList = &pApp->tMaterialCategoryFiles;
 	if ( bCollectItems ) {
 		mapedit_material_tooltip_clear(pApp);
-		memset(pList, 0, sizeof(*pList));
-		pList->iSelected = -1;
+		mapedit_file_list_clear(pList);
 		pApp->iMaterialCategory = iCategory;
 	}
 	changed = !mapedit_file_exists_utf8(mapPath);
@@ -831,6 +1007,7 @@ static int mapedit_material_scan_category(mapedit_app_t* pApp, int iCategory, in
 		if ( hFind != INVALID_HANDLE_VALUE ) {
 			do {
 				char sName[MAPEDIT_FILE_MAX];
+				char sText[MAPEDIT_LIST_TEXT_MAX];
 				const char* sDisplay;
 				xvalue* pNameValue;
 				if ( tFind.cFileName[0] == L'.' || (tFind.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ) continue;
@@ -843,12 +1020,9 @@ static int mapedit_material_scan_category(mapedit_app_t* pApp, int iCategory, in
 					sDisplay = "未命名图块";
 					if ( xuiXrtValueObjectSetText(pMap, sName, (uint32)strlen(sName), sDisplay, 0, TRUE) ) changed = 1;
 				}
-				if ( bCollectItems && pList->iCount < MAPEDIT_LIST_MAX ) {
-					snprintf(pList->arrNames[pList->iCount], MAPEDIT_FILE_MAX, "%s", sName);
-					snprintf(pList->arrText[pList->iCount], MAPEDIT_LIST_TEXT_MAX, "%s    %s", sDisplay, sName);
-					pList->arrPtrs[pList->iCount] = pList->arrNames[pList->iCount];
-					pList->arrTextPtrs[pList->iCount] = pList->arrText[pList->iCount];
-					pList->iCount++;
+				if ( bCollectItems ) {
+					snprintf(sText, sizeof(sText), "%s    %s", sDisplay, sName);
+					if ( !mapedit_file_list_append(pList, sName, sText) ) break;
 				}
 			} while ( FindNextFileW(hFind, &tFind) );
 			FindClose(hFind);
@@ -857,6 +1031,7 @@ static int mapedit_material_scan_category(mapedit_app_t* pApp, int iCategory, in
 	if ( changed ) (void)xrtXsonStringifyFile(mapPath, pMap, true);
 	xrtValueRelease(pMap);
 	if ( bCollectItems ) {
+		mapedit_file_list_sort(pList);
 		if ( pList->iCount > 0 ) pList->iSelected = 0;
 		if ( pApp->pMaterialListView != NULL ) {
 			(void)xuiListViewSetItems(pApp->pMaterialListView, pList->arrTextPtrs, pList->iCount);
@@ -935,10 +1110,37 @@ static void mapedit_save_layouts(mapedit_app_t* pApp)
 	if ( pApp->pMapDock != NULL ) (void)xuiDockPanelSaveXSONFile(pApp->pMapDock, path);
 }
 
+static void mapedit_poll_layout(mapedit_app_t* pApp)
+{
+	int mapRevision = xuiDockPanelGetLayoutChangeCount(pApp->pMapDock);
+	int tilesetRevision = xuiDockPanelGetLayoutChangeCount(pApp->pTilesetDock);
+	double now = xgeTimer();
+	if (mapRevision != pApp->iMapLayoutRevision || tilesetRevision != pApp->iTilesetLayoutRevision) {
+		pApp->iMapLayoutRevision = mapRevision;
+		pApp->iTilesetLayoutRevision = tilesetRevision;
+		pApp->fLayoutDirtyAt = now;
+	}
+	if (pApp->fLayoutDirtyAt > 0.0) {
+		if (now - pApp->fLayoutDirtyAt >= 0.75) {
+			mapedit_save_layouts(pApp);
+			pApp->fLayoutDirtyAt = 0.0;
+		} else xgeRenderRequestAfter((float)(0.75 - (now - pApp->fLayoutDirtyAt)));
+	}
+}
+
 static xvalue* mapedit_table_get(xvalue* pRoot, const char* sKey)
 {
 	if ( pRoot == NULL || sKey == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) return NULL;
 	return xuiXrtValueObjectGet(pRoot, sKey, (uint32)strlen(sKey));
+}
+
+static int mapedit_table_set_take(xvalue* pRoot, const char* sKey, xvalue** ppValue)
+{
+	xstrview key;
+	if ( pRoot == NULL || sKey == NULL || ppValue == NULL || *ppValue == NULL ) return 0;
+	key.Data = sKey;
+	key.Size = strlen(sKey);
+	return xrtValueObjectSetTake(pRoot, key, ppValue) ? 1 : 0;
 }
 
 static int mapedit_table_int(xvalue* pRoot, const char* sKey, int iDefault)
@@ -948,6 +1150,23 @@ static int mapedit_table_int(xvalue* pRoot, const char* sKey, int iDefault)
 	if ( xuiXrtValueType(pValue) == XVALUE_INT ) return (int)xuiXrtValueGetInt(pValue);
 	if ( xuiXrtValueType(pValue) == XVALUE_FLOAT ) return (int)xuiXrtValueGetFloat(pValue);
 	return iDefault;
+}
+
+static int mapedit_table_read_int_strict(xvalue* pRoot, const char* sKey, int iDefault, int* pOut)
+{
+	xvalue* pValue;
+	long long value;
+	if ( pOut == NULL ) return 0;
+	pValue = mapedit_table_get(pRoot, sKey);
+	if ( pValue == NULL ) {
+		*pOut = iDefault;
+		return 1;
+	}
+	if ( xuiXrtValueType(pValue) != XVALUE_INT ) return 0;
+	value = (long long)xuiXrtValueGetInt(pValue);
+	if ( value < INT_MIN || value > INT_MAX ) return 0;
+	*pOut = (int)value;
+	return 1;
 }
 
 static int mapedit_table_bool(xvalue* pRoot, const char* sKey, int iDefault)
@@ -964,6 +1183,20 @@ static const char* mapedit_table_text(xvalue* pRoot, const char* sKey, const cha
 	xvalue* pValue = mapedit_table_get(pRoot, sKey);
 	if ( pValue != NULL && xuiXrtValueType(pValue) == XVALUE_STRING ) return (const char*)xuiXrtValueGetText(pValue);
 	return sDefault;
+}
+
+static int mapedit_table_read_text_strict(xvalue* pRoot, const char* sKey, const char* sDefault, const char** ppText)
+{
+	xvalue* pValue;
+	if ( ppText == NULL ) return 0;
+	pValue = mapedit_table_get(pRoot, sKey);
+	if ( pValue == NULL ) {
+		*ppText = sDefault != NULL ? sDefault : "";
+		return 1;
+	}
+	if ( xuiXrtValueType(pValue) != XVALUE_STRING ) return 0;
+	*ppText = (const char*)xuiXrtValueGetText(pValue);
+	return 1;
 }
 
 static void mapedit_value_text(xvalue* pValue, char* sOut, int iCap, const char* sDefault)
@@ -1001,7 +1234,7 @@ static void mapedit_copy_text(char* sDst, int iCap, const char* sSrc)
 	if ( sSrc == NULL ) sSrc = "";
 	n = strlen(sSrc);
 	if ( n >= (size_t)iCap ) n = (size_t)iCap - 1;
-	memcpy(sDst, sSrc, n);
+	memmove(sDst, sSrc, n);
 	sDst[n] = 0;
 }
 
@@ -1061,12 +1294,8 @@ static void mapedit_refresh_tileset_list_texts(mapedit_app_t* pApp, mapedit_file
 
 static void mapedit_map_tileset_option_add(mapedit_app_t* pApp, const char* sText, const char* sValue)
 {
-	int i;
-	if ( pApp == NULL || sText == NULL || pApp->iMapTilesetOptionCount >= MAPEDIT_LIST_MAX ) return;
-	i = pApp->iMapTilesetOptionCount++;
-	mapedit_copy_text(pApp->arrMapTilesetOptionText[i], MAPEDIT_LIST_TEXT_MAX, sText);
-	mapedit_copy_text(pApp->arrMapTilesetOptionValue[i], MAPEDIT_FILE_MAX, sValue != NULL ? sValue : "");
-	pApp->arrMapTilesetOptionPtrs[i] = pApp->arrMapTilesetOptionText[i];
+	if ( pApp == NULL || sText == NULL ) return;
+	(void)mapedit_file_list_append(&pApp->tMapTilesetOptions, sValue != NULL ? sValue : "", sText);
 }
 
 static void mapedit_map_tileset_options_build(mapedit_app_t* pApp, const char* sCurrentFile)
@@ -1079,7 +1308,7 @@ static void mapedit_map_tileset_options_build(mapedit_app_t* pApp, const char* s
 	int i;
 	int found;
 	if ( pApp == NULL ) return;
-	pApp->iMapTilesetOptionCount = 0;
+	mapedit_file_list_clear(&pApp->tMapTilesetOptions);
 	mapedit_map_tileset_option_add(pApp, "未设置", "");
 	found = (sCurrentFile == NULL || sCurrentFile[0] == 0);
 	for ( i = 0; i < pApp->tTilesetFiles.iCount; i++ ) {
@@ -1096,25 +1325,22 @@ static void mapedit_map_tileset_options_build(mapedit_app_t* pApp, const char* s
 		snprintf(text, sizeof(text), "已丢失(%s)", sCurrentFile);
 		mapedit_map_tileset_option_add(pApp, text, sCurrentFile);
 	}
+	mapedit_file_list_sort(&pApp->tMapTilesetOptions);
 }
 
 static int mapedit_map_tileset_option_find_value(mapedit_app_t* pApp, const char* sValue)
 {
-	int i;
 	if ( pApp == NULL ) return -1;
 	if ( sValue == NULL ) sValue = "";
-	for ( i = 0; i < pApp->iMapTilesetOptionCount; i++ ) {
-		if ( strcmp(pApp->arrMapTilesetOptionValue[i], sValue) == 0 ) return i;
-	}
-	return -1;
+	return mapedit_file_list_find(&pApp->tMapTilesetOptions, sValue);
 }
 
 static int mapedit_map_tileset_option_find_text(mapedit_app_t* pApp, const char* sText)
 {
 	int i;
 	if ( pApp == NULL || sText == NULL ) return -1;
-	for ( i = 0; i < pApp->iMapTilesetOptionCount; i++ ) {
-		if ( strcmp(pApp->arrMapTilesetOptionText[i], sText) == 0 ) return i;
+	for ( i = 0; i < pApp->tMapTilesetOptions.iCount; i++ ) {
+		if ( strcmp(pApp->tMapTilesetOptions.arrText[i], sText) == 0 ) return i;
 	}
 	return -1;
 }
@@ -1122,15 +1348,15 @@ static int mapedit_map_tileset_option_find_text(mapedit_app_t* pApp, const char*
 static const char* mapedit_map_tileset_display_for_value(mapedit_app_t* pApp, const char* sValue)
 {
 	int i = mapedit_map_tileset_option_find_value(pApp, sValue);
-	return i >= 0 ? pApp->arrMapTilesetOptionText[i] : "未设置";
+	return i >= 0 ? pApp->tMapTilesetOptions.arrText[i] : "未设置";
 }
 
 static const char* mapedit_map_tileset_value_for_display(mapedit_app_t* pApp, const char* sText)
 {
 	int i = mapedit_map_tileset_option_find_text(pApp, sText);
-	if ( i >= 0 ) return pApp->arrMapTilesetOptionValue[i];
+	if ( i >= 0 ) return pApp->tMapTilesetOptions.arrNames[i];
 	i = mapedit_map_tileset_option_find_value(pApp, sText);
-	return i >= 0 ? pApp->arrMapTilesetOptionValue[i] : "";
+	return i >= 0 ? pApp->tMapTilesetOptions.arrNames[i] : "";
 }
 
 static int mapedit_tileset_special_type_count(void)
@@ -1167,31 +1393,23 @@ static const mapedit_material_category_t* mapedit_tileset_special_category_for_t
 
 static void mapedit_tileset_special_file_option_add(mapedit_app_t* pApp, const char* sText, const char* sValue)
 {
-	int i;
-	if ( pApp == NULL || sText == NULL || pApp->iTilesetSpecialFileOptionCount >= MAPEDIT_LIST_MAX ) return;
-	i = pApp->iTilesetSpecialFileOptionCount++;
-	mapedit_copy_text(pApp->arrTilesetSpecialFileOptionText[i], MAPEDIT_LIST_TEXT_MAX, sText);
-	mapedit_copy_text(pApp->arrTilesetSpecialFileOptionValue[i], MAPEDIT_FILE_MAX, sValue != NULL ? sValue : "");
-	pApp->arrTilesetSpecialFileOptionPtrs[i] = pApp->arrTilesetSpecialFileOptionText[i];
+	if ( pApp == NULL || sText == NULL ) return;
+	(void)mapedit_file_list_append(&pApp->tTilesetSpecialFileOptions, sValue != NULL ? sValue : "", sText);
 }
 
 static int mapedit_tileset_special_file_find_value(mapedit_app_t* pApp, const char* sValue)
 {
-	int i;
 	if ( pApp == NULL ) return -1;
 	if ( sValue == NULL ) sValue = "";
-	for ( i = 0; i < pApp->iTilesetSpecialFileOptionCount; i++ ) {
-		if ( strcmp(pApp->arrTilesetSpecialFileOptionValue[i], sValue) == 0 ) return i;
-	}
-	return -1;
+	return mapedit_file_list_find(&pApp->tTilesetSpecialFileOptions, sValue);
 }
 
 static int mapedit_tileset_special_file_find_text(mapedit_app_t* pApp, const char* sText)
 {
 	int i;
 	if ( pApp == NULL || sText == NULL ) return -1;
-	for ( i = 0; i < pApp->iTilesetSpecialFileOptionCount; i++ ) {
-		if ( strcmp(pApp->arrTilesetSpecialFileOptionText[i], sText) == 0 ) return i;
+	for ( i = 0; i < pApp->tTilesetSpecialFileOptions.iCount; i++ ) {
+		if ( strcmp(pApp->tTilesetSpecialFileOptions.arrText[i], sText) == 0 ) return i;
 	}
 	return -1;
 }
@@ -1199,15 +1417,15 @@ static int mapedit_tileset_special_file_find_text(mapedit_app_t* pApp, const cha
 static const char* mapedit_tileset_special_file_display_for_value(mapedit_app_t* pApp, const char* sValue)
 {
 	int i = mapedit_tileset_special_file_find_value(pApp, sValue);
-	return i >= 0 ? pApp->arrTilesetSpecialFileOptionText[i] : "未设置";
+	return i >= 0 ? pApp->tTilesetSpecialFileOptions.arrText[i] : "未设置";
 }
 
 static const char* mapedit_tileset_special_file_value_for_display(mapedit_app_t* pApp, const char* sText)
 {
 	int i = mapedit_tileset_special_file_find_text(pApp, sText);
-	if ( i >= 0 ) return pApp->arrTilesetSpecialFileOptionValue[i];
+	if ( i >= 0 ) return pApp->tTilesetSpecialFileOptions.arrNames[i];
 	i = mapedit_tileset_special_file_find_value(pApp, sText);
-	return i >= 0 ? pApp->arrTilesetSpecialFileOptionValue[i] : "";
+	return i >= 0 ? pApp->tTilesetSpecialFileOptions.arrNames[i] : "";
 }
 
 static void mapedit_tileset_special_file_options_build(mapedit_app_t* pApp, const char* sType, const char* sCurrentFile)
@@ -1225,7 +1443,7 @@ static void mapedit_tileset_special_file_options_build(mapedit_app_t* pApp, cons
 	int found;
 	int changed;
 	if ( pApp == NULL ) return;
-	pApp->iTilesetSpecialFileOptionCount = 0;
+	mapedit_file_list_clear(&pApp->tTilesetSpecialFileOptions);
 	mapedit_tileset_special_file_option_add(pApp, "未设置", "");
 	pCategory = mapedit_tileset_special_category_for_type(sType);
 	snprintf(rel, sizeof(rel), "assets\\%s", pCategory->sDir);
@@ -1269,6 +1487,7 @@ static void mapedit_tileset_special_file_options_build(mapedit_app_t* pApp, cons
 		snprintf(text, sizeof(text), "已丢失 (%s)", sCurrentFile);
 		mapedit_tileset_special_file_option_add(pApp, text, sCurrentFile);
 	}
+	mapedit_file_list_sort(&pApp->tTilesetSpecialFileOptions);
 }
 
 static void mapedit_setup_default_layers(mapedit_app_t* pApp)
@@ -1385,9 +1604,9 @@ static void mapedit_load_setup(mapedit_app_t* pApp)
 	pApp->iSetupTileWidth = mapedit_table_int(pTile, "width", pApp->iSetupTileWidth);
 	pApp->iSetupTileHeight = mapedit_table_int(pTile, "height", pApp->iSetupTileHeight);
 	pApp->iSetupTilesPerRow = mapedit_table_int(pTile, "tilesPerRow", pApp->iSetupTilesPerRow);
-	if ( pApp->iSetupTileWidth <= 0 ) pApp->iSetupTileWidth = 16;
-	if ( pApp->iSetupTileHeight <= 0 ) pApp->iSetupTileHeight = 16;
-	if ( pApp->iSetupTilesPerRow <= 0 ) pApp->iSetupTilesPerRow = 20;
+	if ( pApp->iSetupTileWidth <= 0 || pApp->iSetupTileWidth > MAPEDIT_TILE_DIM_MAX ) pApp->iSetupTileWidth = 16;
+	if ( pApp->iSetupTileHeight <= 0 || pApp->iSetupTileHeight > MAPEDIT_TILE_DIM_MAX ) pApp->iSetupTileHeight = 16;
+	if ( pApp->iSetupTilesPerRow <= 0 || pApp->iSetupTilesPerRow > MAPEDIT_TILES_PER_ROW_MAX ) pApp->iSetupTilesPerRow = 20;
 	gMapeditTileWidth = pApp->iSetupTileWidth;
 	gMapeditTileHeight = pApp->iSetupTileHeight;
 	gMapeditTilesPerRow = pApp->iSetupTilesPerRow;
@@ -1519,6 +1738,13 @@ static const char* mapedit_custom_enum_value(const mapedit_custom_channel_def_t*
 static int mapedit_property_add(xui_widget pGrid, int iCategory, const char* sId, const char* sName, const char* sDesc, int iType, const char* sValue, const char* sDefault, int iFlags)
 {
 	xui_property_desc_t p;
+	int existing = xuiPropertyGridFindProperty(pGrid, sId);
+	if (existing >= 0) {
+		const char* current = xuiPropertyGridGetValue(pGrid, existing);
+		if (!current || strcmp(current, sValue ? sValue : "") != 0) (void)xuiPropertyGridSetValue(pGrid, existing, sValue);
+		(void)xuiPropertyGridSetPropertyFlags(pGrid, existing, iFlags);
+		return existing;
+	}
 	memset(&p, 0, sizeof(p));
 	p.sId = sId;
 	p.sName = sName;
@@ -1528,6 +1754,12 @@ static int mapedit_property_add(xui_widget pGrid, int iCategory, const char* sId
 	p.sDefaultValue = sDefault;
 	p.iFlags = iFlags;
 	return xuiPropertyGridAddProperty(pGrid, iCategory, &p);
+}
+
+static int mapedit_property_category(xui_widget grid, const char* id, const char* name, int expanded)
+{
+	int category = xuiPropertyGridFindCategory(grid, id);
+	return category >= 0 ? category : xuiPropertyGridAddCategory(grid, id, name, expanded);
 }
 
 static mapedit_custom_channel_def_t* mapedit_tags_current_channel(mapedit_app_t* pApp, int bMap)
@@ -1782,35 +2014,6 @@ static void mapedit_tags_inspect_change(xui_widget pWidget, int bChecked, void* 
 	mapedit_status(pApp, bMap ? (pApp->bMapTagsInspectMode ? "地图打标：检查模式" : "地图打标：写入模式") : (pApp->bTilesetTagsInspectMode ? "图块打标：检查模式" : "图块打标：写入模式"));
 }
 
-static void mapedit_custom_pick_write_value(mapedit_custom_channel_def_t* pDef, char* sOut, int iCap)
-{
-	int i;
-	int base;
-	if ( sOut == NULL || iCap <= 0 ) return;
-	sOut[0] = 0;
-	if ( pDef == NULL ) return;
-	for ( i = 0; i < pDef->iOptionCount; i++ ) {
-		if ( strcmp(pDef->arrOptions[i].sValue, pDef->sDefaultValue) != 0 ) {
-			mapedit_copy_text(sOut, iCap, pDef->arrOptions[i].sValue);
-			return;
-		}
-	}
-	if ( pDef->iOptionCount > 0 ) {
-		mapedit_copy_text(sOut, iCap, pDef->arrOptions[0].sValue);
-		return;
-	}
-	if ( strcmp(pDef->sDataType, "string") == 0 || strcmp(pDef->sMarkMode, "text") == 0 ) {
-		mapedit_copy_text(sOut, iCap, pDef->sName[0] ? pDef->sName : pDef->sId);
-		return;
-	}
-	if ( strcmp(pDef->sDataType, "bool") == 0 ) {
-		mapedit_copy_text(sOut, iCap, (strcmp(pDef->sDefaultValue, "true") == 0 || strcmp(pDef->sDefaultValue, "1") == 0) ? "false" : "true");
-		return;
-	}
-	base = atoi(pDef->sDefaultValue);
-	snprintf(sOut, (size_t)iCap, "%d", base + 1);
-}
-
 static int mapedit_custom_get_value(xvalue* pRoot, const char* sChannel, const char* sIndexKey, int iIndex, char* sOut, int iCap)
 {
 	xvalue* pArray;
@@ -1913,12 +2116,6 @@ static int mapedit_custom_set_value(xvalue** ppRoot, const char* sChannel, const
 	return XUI_OK;
 }
 
-static int mapedit_map_cell_count(const mapedit_map_doc_t* pMap)
-{
-	if ( pMap == NULL || pMap->iWidth <= 0 || pMap->iHeight <= 0 ) return 0;
-	return pMap->iWidth * pMap->iHeight;
-}
-
 static int mapedit_map_cell_id(const mapedit_map_doc_t* pMap, int x, int y)
 {
 	if ( pMap == NULL || x < 0 || y < 0 || x >= pMap->iWidth || y >= pMap->iHeight ) return -1;
@@ -1927,347 +2124,57 @@ static int mapedit_map_cell_id(const mapedit_map_doc_t* pMap, int x, int y)
 
 static int mapedit_map_find_passage_override(mapedit_map_doc_t* pMap, int iCellId)
 {
-	int i;
-	if ( pMap == NULL || iCellId < 0 ) return -1;
-	for ( i = 0; i < pMap->iPassageOverrideCount; i++ ) {
-		if ( pMap->arrPassageOverrides[i].iCellId == iCellId ) return i;
-	}
-	return -1;
+	return xgeMapFindPassageOverride(pMap, iCellId);
 }
 
 static void mapedit_map_remove_passage_override(mapedit_map_doc_t* pMap, int iIndex)
 {
-	if ( pMap == NULL || iIndex < 0 || iIndex >= pMap->iPassageOverrideCount ) return;
-	if ( iIndex + 1 < pMap->iPassageOverrideCount ) {
-		memmove(&pMap->arrPassageOverrides[iIndex], &pMap->arrPassageOverrides[iIndex + 1],
-			(size_t)(pMap->iPassageOverrideCount - iIndex - 1) * sizeof(mapedit_map_passage_override_t));
-	}
-	pMap->iPassageOverrideCount--;
+	(void)xgeMapRemovePassageOverride(pMap, iIndex);
 }
 
 static int mapedit_map_set_passage_override(mapedit_map_doc_t* pMap, int iCellId, unsigned char iValue)
 {
-	mapedit_map_passage_override_t* pNew;
-	int iIndex;
-	int iNewCapacity;
-	if ( pMap == NULL || iCellId < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	iIndex = mapedit_map_find_passage_override(pMap, iCellId);
-	if ( iIndex >= 0 ) {
-		pMap->arrPassageOverrides[iIndex].iValue = iValue;
-		return XUI_OK;
-	}
-	if ( pMap->iPassageOverrideCount >= pMap->iPassageOverrideCapacity ) {
-		iNewCapacity = pMap->iPassageOverrideCapacity > 0 ? pMap->iPassageOverrideCapacity * 2 : 64;
-		pNew = (mapedit_map_passage_override_t*)realloc(pMap->arrPassageOverrides, (size_t)iNewCapacity * sizeof(mapedit_map_passage_override_t));
-		if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		pMap->arrPassageOverrides = pNew;
-		pMap->iPassageOverrideCapacity = iNewCapacity;
-	}
-	pMap->arrPassageOverrides[pMap->iPassageOverrideCount].iCellId = iCellId;
-	pMap->arrPassageOverrides[pMap->iPassageOverrideCount].iValue = iValue;
-	pMap->iPassageOverrideCount++;
-	return XUI_OK;
-}
-
-static void mapedit_map_load_passage_overrides(mapedit_map_doc_t* pMap, xvalue* pArray)
-{
-	int i;
-	int n;
-	int cellCount;
-	if ( pMap == NULL ) return;
-	free(pMap->arrPassageOverrides);
-	pMap->arrPassageOverrides = NULL;
-	pMap->iPassageOverrideCount = 0;
-	pMap->iPassageOverrideCapacity = 0;
-	if ( pArray == NULL || xuiXrtValueType(pArray) != XVALUE_ARRAY ) return;
-	n = (int)xrtValueCount(pArray);
-	cellCount = mapedit_map_cell_count(pMap);
-	for ( i = 0; i < n; i++ ) {
-		xvalue* pEntry = xuiXrtValueArrayGet(pArray, (uint32)i);
-		int cell;
-		int value;
-		if ( pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) continue;
-		cell = mapedit_table_int(pEntry, MAP_KEY_CELL, -1);
-		value = mapedit_table_int(pEntry, MAP_KEY_VALUE, 255);
-		if ( cell < 0 || cell >= cellCount ) continue;
-		if ( value < 0 ) value = 0;
-		if ( value > 255 ) value = 255;
-		(void)mapedit_map_set_passage_override(pMap, cell, (unsigned char)value);
-	}
-}
-
-static xvalue* mapedit_map_build_passage_value(mapedit_map_doc_t* pMap)
-{
-	xvalue* pArray;
-	int i;
-	int cellCount;
-	pArray = xrtValueArray();
-	if ( pArray == NULL ) return NULL;
-	if ( pMap == NULL ) return pArray;
-	cellCount = mapedit_map_cell_count(pMap);
-	for ( i = 0; i < pMap->iPassageOverrideCount; i++ ) {
-		xvalue* pEntry;
-		int cell = pMap->arrPassageOverrides[i].iCellId;
-		if ( cell < 0 || cell >= cellCount ) continue;
-		pEntry = xrtValueObject();
-		if ( pEntry == NULL ||
-		     !xuiXrtValueObjectSetInt(pEntry, MAP_KEY_CELL, (uint32)strlen(MAP_KEY_CELL), cell) ||
-		     !xuiXrtValueObjectSetInt(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), (int)pMap->arrPassageOverrides[i].iValue) ||
-		     !xuiXrtValueArrayAppendTake(pArray, pEntry, TRUE) ) {
-			if ( pEntry != NULL ) xrtValueRelease(pEntry);
-			xrtValueRelease(pArray);
-			return NULL;
-		}
-	}
-	return pArray;
-}
-
-typedef struct mapedit_map_cell_data_build_ctx_t {
-	xvalue* pRoot;
-	int iCellCount;
-	int bFailed;
-} mapedit_map_cell_data_build_ctx_t;
-
-static int mapedit_map_append_cell_data_entry(xvalue* pArray, xvalue* pEntry)
-{
-	xvalue* pCopy;
-	char sValue[MAPEDIT_CUSTOM_VALUE_MAX];
-	int cell;
-	if ( pArray == NULL || pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) return XUI_OK;
-	cell = mapedit_table_int(pEntry, MAP_KEY_CELL, -1);
-	if ( cell < 0 ) return XUI_OK;
-	mapedit_value_text(mapedit_table_get(pEntry, MAP_KEY_VALUE), sValue, sizeof(sValue), "");
-	pCopy = xrtValueObject();
-	if ( pCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( !xuiXrtValueObjectSetInt(pCopy, MAP_KEY_CELL, (uint32)strlen(MAP_KEY_CELL), cell) ||
-	     !xuiXrtValueObjectSetText(pCopy, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), sValue, 0, FALSE) ||
-	     !xuiXrtValueArrayAppendTake(pArray, pCopy, TRUE) ) {
-		xrtValueRelease(pCopy);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	return XUI_OK;
-}
-
-static void mapedit_map_build_cell_data_channel(xstrview Key, xvalue* pSrcArray, mapedit_map_cell_data_build_ctx_t* pCtx)
-{
-	xvalue* pDstArray;
-	int count;
-	int i;
-	if ( pCtx == NULL || pCtx->bFailed || Key.Data == NULL ) return;
-	if ( pSrcArray == NULL || xuiXrtValueType(pSrcArray) != XVALUE_ARRAY ) return;
-	pDstArray = xrtValueArray();
-	if ( pDstArray == NULL ) {
-		pCtx->bFailed = 1;
-		return;
-	}
-	count = (int)xrtValueCount(pSrcArray);
-	for ( i = 0; i < count; i++ ) {
-		xvalue* pEntry = xuiXrtValueArrayGet(pSrcArray, (uint32)i);
-		int cell;
-		if ( pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) continue;
-		cell = mapedit_table_int(pEntry, MAP_KEY_CELL, -1);
-		if ( cell < 0 || cell >= pCtx->iCellCount ) continue;
-		if ( mapedit_map_append_cell_data_entry(pDstArray, pEntry) != XUI_OK ) {
-			xrtValueRelease(pDstArray);
-			pCtx->bFailed = 1;
-			return;
-		}
-	}
-	if ( xrtValueCount(pDstArray) <= 0 ) {
-		xrtValueRelease(pDstArray);
-		return;
-	}
-	if ( !xuiXrtValueObjectSetTake(pCtx->pRoot, Key.Data, Key.Size, pDstArray, TRUE) ) {
-		xrtValueRelease(pDstArray);
-		pCtx->bFailed = 1;
-	}
-}
-
-static xvalue* mapedit_map_build_cell_data_value(mapedit_map_doc_t* pMap)
-{
-	mapedit_map_cell_data_build_ctx_t ctx;
-	xvalue* pRoot;
-	size_t i;
-	size_t iCount;
-	pRoot = xrtValueObject();
-	if ( pRoot == NULL ) return NULL;
-	if ( pMap == NULL || pMap->pCellDataRaw == NULL || xuiXrtValueType(pMap->pCellDataRaw) != XVALUE_OBJECT ) return pRoot;
-	memset(&ctx, 0, sizeof(ctx));
-	ctx.pRoot = pRoot;
-	ctx.iCellCount = mapedit_map_cell_count(pMap);
-	iCount = xrtValueCount(pMap->pCellDataRaw);
-	for ( i = 0; i < iCount && !ctx.bFailed; ++i ) {
-		xstrview Key = { 0 };
-		xvalue* pValue = xrtValueObjectAt(pMap->pCellDataRaw, i, &Key);
-		mapedit_map_build_cell_data_channel(Key, pValue, &ctx);
-	}
-	if ( ctx.bFailed ) {
-		xrtValueRelease(pRoot);
-		return NULL;
-	}
-	return pRoot;
-}
-
-static int mapedit_map_compact_cell_data(mapedit_map_doc_t* pMap)
-{
-	xvalue* pCellData;
-	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pCellData = mapedit_map_build_cell_data_value(pMap);
-	if ( pCellData == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( pMap->pCellDataRaw != NULL ) xrtValueRelease(pMap->pCellDataRaw);
-	pMap->pCellDataRaw = pCellData;
-	return XUI_OK;
-}
-
-static int mapedit_map_compact_runtime_data(mapedit_map_doc_t* pMap)
-{
-	int cellCount;
-	int i;
-	int n;
-	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	cellCount = mapedit_map_cell_count(pMap);
-	n = 0;
-	for ( i = 0; i < pMap->iPassageOverrideCount; i++ ) {
-		if ( pMap->arrPassageOverrides[i].iCellId < 0 || pMap->arrPassageOverrides[i].iCellId >= cellCount ) continue;
-		if ( n != i ) pMap->arrPassageOverrides[n] = pMap->arrPassageOverrides[i];
-		n++;
-	}
-	pMap->iPassageOverrideCount = n;
-	return mapedit_map_compact_cell_data(pMap);
+	int ret = xgeMapSetPassageOverride(pMap, iCellId, iValue);
+	if ( ret == XGE_MAP_OK ) return XUI_OK;
+	return ret == XGE_MAP_ERROR_OUT_OF_MEMORY ? XUI_ERROR_OUT_OF_MEMORY : XUI_ERROR_INVALID_ARGUMENT;
 }
 
 static void mapedit_map_clear(mapedit_map_doc_t* pMap)
 {
-	xvalue* pPassageRaw;
-	xvalue* pCellDataRaw;
 	if ( pMap == NULL ) return;
-	pPassageRaw = pMap->pPassageRaw;
-	pCellDataRaw = pMap->pCellDataRaw;
-	free(pMap->pTiles);
-	free(pMap->arrPassageOverrides);
-	if ( pPassageRaw != NULL ) xrtValueRelease(pPassageRaw);
-	if ( pCellDataRaw != NULL ) xrtValueRelease(pCellDataRaw);
-	memset(pMap, 0, sizeof(*pMap));
-	pMap->iWidth = 100;
-	pMap->iHeight = 100;
-	pMap->iLayers = 3;
-	pMap->iState = 0;
-	mapedit_copy_text(pMap->sName, MAPEDIT_NAME_MAX, "默认地图");
-	mapedit_copy_text(pMap->sTileset, MAPEDIT_FILE_MAX, "default.xson");
+	xgeMapSetDefault(pMap);
 }
 
 static int mapedit_map_alloc(mapedit_map_doc_t* pMap)
 {
-	int n;
+	int ret;
 	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pMap->iWidth <= 0 ) pMap->iWidth = 100;
-	if ( pMap->iHeight <= 0 ) pMap->iHeight = 100;
-	if ( pMap->iLayers <= 0 || pMap->iLayers > MAPEDIT_MAP_LAYER_MAX ) pMap->iLayers = 3;
-	n = pMap->iWidth * pMap->iHeight * pMap->iLayers;
-	free(pMap->pTiles);
-	pMap->pTiles = (int*)calloc((size_t)n, sizeof(int));
-	if ( pMap->pTiles == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	pMap->iTileCount = n;
-	return XUI_OK;
+	pMap->iTileWidth = MAPEDIT_TILE_W;
+	pMap->iTileHeight = MAPEDIT_TILE_H;
+	ret = xgeMapAllocate(pMap);
+	if ( ret == XGE_MAP_OK ) return XUI_OK;
+	return ret == XGE_MAP_ERROR_OUT_OF_MEMORY ? XUI_ERROR_OUT_OF_MEMORY : XUI_ERROR_INVALID_ARGUMENT;
 }
 
 static int mapedit_map_load(mapedit_map_doc_t* pMap, const char* sPath)
 {
-	xvalue* pRoot;
-	xvalue* pTiles;
-	int n;
-	int i;
-	int loadCount;
-	if ( pMap == NULL || sPath == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pRoot = xrtXsonParseFile(sPath);
-	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) {
-		if ( pRoot != NULL ) xrtValueRelease(pRoot);
-		return XUI_ERROR_FILE_NOT_FOUND;
-	}
-	mapedit_map_clear(pMap);
-	mapedit_copy_text(pMap->sPath, MAPEDIT_PATH_MAX, sPath);
-	mapedit_copy_text(pMap->sName, MAPEDIT_NAME_MAX, mapedit_table_text(pRoot, MAP_KEY_NAME, "默认地图"));
-	mapedit_copy_text(pMap->sTileset, MAPEDIT_FILE_MAX, mapedit_table_text(pRoot, MAP_KEY_TILESET, "default.xson"));
-	mapedit_copy_text(pMap->sCustomData, MAPEDIT_NAME_MAX, mapedit_table_text(pRoot, MAP_KEY_CUSTOM, ""));
-	pMap->iWidth = mapedit_table_int(pRoot, MAP_KEY_WIDTH, 100);
-	pMap->iHeight = mapedit_table_int(pRoot, MAP_KEY_HEIGHT, 100);
-	pMap->iState = mapedit_table_int(pRoot, MAP_KEY_STATE, 0);
-	pMap->iLayers = 3;
-	pMap->pPassageRaw = mapedit_table_get(pRoot, MAP_KEY_PASSAGE);
-	pMap->pCellDataRaw = mapedit_table_get(pRoot, MAP_KEY_CELL_DATA);
-	pMap->pPassageRaw = (pMap->pPassageRaw != NULL) ? xrtValueClone(pMap->pPassageRaw) : xrtValueArray();
-	pMap->pCellDataRaw = (pMap->pCellDataRaw != NULL) ? xrtValueClone(pMap->pCellDataRaw) : xrtValueObject();
-	if ( mapedit_map_alloc(pMap) != XUI_OK ) {
-		xrtValueRelease(pRoot);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	mapedit_map_load_passage_overrides(pMap, pMap->pPassageRaw);
-	pTiles = mapedit_table_get(pRoot, MAP_KEY_TILES);
-	if ( pTiles != NULL && xuiXrtValueType(pTiles) == XVALUE_ARRAY ) {
-		loadCount = (int)xrtValueCount(pTiles);
-		n = mapedit_min_i(loadCount, pMap->iTileCount);
-		for ( i = 0; i < n; i++ ) {
-			xvalue* pValue = xuiXrtValueArrayGet(pTiles, (uint32)i);
-			if ( pValue != NULL && (xuiXrtValueType(pValue) == XVALUE_INT || xuiXrtValueType(pValue) == XVALUE_FLOAT) ) {
-				pMap->pTiles[i] = (int)xuiXrtValueGetInt(pValue);
-			}
-		}
-	}
-	pMap->bDirty = 0;
-	xrtValueRelease(pRoot);
-	return XUI_OK;
+	int ret;
+	gMapeditMapIoError[0] = 0;
+	ret = xgeMapLoadXson(pMap, sPath, gMapeditMapIoError, sizeof(gMapeditMapIoError));
+	if ( ret == XGE_MAP_OK ) return XUI_OK;
+	return ret == XGE_MAP_ERROR_OUT_OF_MEMORY ? XUI_ERROR_OUT_OF_MEMORY : XUI_ERROR;
 }
 
 static int mapedit_map_save(mapedit_map_doc_t* pMap, const char* sPath)
 {
-	xvalue* pRoot;
-	xvalue* pTiles;
-	xvalue* pPassage;
-	xvalue* pCellData;
-	int i;
-	int ok;
-	if ( pMap == NULL || sPath == NULL || pMap->pTiles == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( mapedit_map_compact_runtime_data(pMap) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	pRoot = xrtValueObject();
-	pTiles = xrtValueArray();
-	pPassage = mapedit_map_build_passage_value(pMap);
-	pCellData = (pMap->pCellDataRaw != NULL) ? xrtValueClone(pMap->pCellDataRaw) : xrtValueObject();
-	if ( pRoot == NULL || pTiles == NULL || pPassage == NULL || pCellData == NULL ) {
-		if ( pRoot != NULL ) xrtValueRelease(pRoot);
-		if ( pTiles != NULL ) xrtValueRelease(pTiles);
-		if ( pPassage != NULL ) xrtValueRelease(pPassage);
-		if ( pCellData != NULL ) xrtValueRelease(pCellData);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	for ( i = 0; i < pMap->iTileCount; i++ ) {
-		if ( !xuiXrtValueArrayAppendInt(pTiles, pMap->pTiles[i]) ) {
-			xrtValueRelease(pRoot);
-			xrtValueRelease(pTiles);
-			xrtValueRelease(pPassage);
-			xrtValueRelease(pCellData);
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-	}
-	ok = xuiXrtValueObjectSetText(pRoot, MAP_KEY_NAME, (uint32)strlen(MAP_KEY_NAME), pMap->sName, 0, FALSE) &&
-	     xuiXrtValueObjectSetText(pRoot, MAP_KEY_TILESET, (uint32)strlen(MAP_KEY_TILESET), pMap->sTileset, 0, FALSE) &&
-	     xuiXrtValueObjectSetInt(pRoot, MAP_KEY_STATE, (uint32)strlen(MAP_KEY_STATE), pMap->iState) &&
-	     xuiXrtValueObjectSetInt(pRoot, MAP_KEY_WIDTH, (uint32)strlen(MAP_KEY_WIDTH), pMap->iWidth) &&
-	     xuiXrtValueObjectSetInt(pRoot, MAP_KEY_HEIGHT, (uint32)strlen(MAP_KEY_HEIGHT), pMap->iHeight) &&
-	     xuiXrtValueObjectSetText(pRoot, MAP_KEY_CUSTOM, (uint32)strlen(MAP_KEY_CUSTOM), pMap->sCustomData, 0, FALSE) &&
-	     xuiXrtValueObjectSetTake(pRoot, MAP_KEY_TILES, (uint32)strlen(MAP_KEY_TILES), pTiles, TRUE) &&
-	     xuiXrtValueObjectSetTake(pRoot, MAP_KEY_PASSAGE, (uint32)strlen(MAP_KEY_PASSAGE), pPassage, TRUE) &&
-	     xuiXrtValueObjectSetTake(pRoot, MAP_KEY_CELL_DATA, (uint32)strlen(MAP_KEY_CELL_DATA), pCellData, TRUE);
-	if ( !ok ) {
-		xrtValueRelease(pRoot);
-		xrtValueRelease(pTiles);
-		xrtValueRelease(pPassage);
-		xrtValueRelease(pCellData);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	ok = xrtXsonStringifyFile(sPath, pRoot, true) ? XUI_OK : XUI_ERROR;
-	xrtValueRelease(pRoot);
-	if ( ok == XUI_OK ) pMap->bDirty = 0;
-	return ok;
+	int ret;
+	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pMap->iTileWidth = MAPEDIT_TILE_W;
+	pMap->iTileHeight = MAPEDIT_TILE_H;
+	gMapeditMapIoError[0] = 0;
+	ret = xgeMapSaveXson(pMap, sPath, gMapeditMapIoError, sizeof(gMapeditMapIoError));
+	if ( ret == XGE_MAP_OK ) return XUI_OK;
+	return ret == XGE_MAP_ERROR_OUT_OF_MEMORY ? XUI_ERROR_OUT_OF_MEMORY : XUI_ERROR;
 }
 
 static void mapedit_tileset_clear(mapedit_app_t* pApp)
@@ -2421,7 +2328,7 @@ static int mapedit_material_view_load(mapedit_app_t* pApp, int iIndex)
 	if ( pApp->pMaterialViewWindow != NULL ) (void)xuiWindowSetTitle(pApp->pMaterialViewWindow, pApp->sMaterialViewTitle);
 	if ( pApp->pMaterialViewScroll != NULL ) (void)xuiScrollViewSetContentSize(pApp->pMaterialViewScroll, (float)pApp->tMaterialViewDesc.iWidth, (float)pApp->tMaterialViewDesc.iHeight);
 	if ( pApp->pMaterialViewCanvas != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pMaterialViewCanvas, (xui_rect_t){0.0f, 0.0f, (float)pApp->tMaterialViewDesc.iWidth, (float)pApp->tMaterialViewDesc.iHeight});
+		(void)xuiWidgetSetRect(pApp->pMaterialViewCanvas, (xui_rect_t){0, 0, pApp->tMaterialViewDesc.iWidth, pApp->tMaterialViewDesc.iHeight});
 		(void)xuiWidgetInvalidate(pApp->pMaterialViewCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_OK;
@@ -2565,6 +2472,29 @@ static void mapedit_material_edit_clear_output(mapedit_app_t* pApp)
 	pApp->iMaterialEditUsedRows = 0;
 }
 
+static int mapedit_material_edit_output_dimensions(int iCols, int iRows, int* pWidth, int* pHeight, size_t* pBytes)
+{
+	size_t width;
+	size_t height;
+	size_t pixels;
+	size_t bytes;
+	if ( iCols <= 0 || iRows <= 0 || MAPEDIT_TILE_W <= 0 || MAPEDIT_TILE_H <= 0 ) return 0;
+	if ( (size_t)iCols > (size_t)INT_MAX / (size_t)MAPEDIT_TILE_W ) return 0;
+	if ( (size_t)iRows > (size_t)INT_MAX / (size_t)MAPEDIT_TILE_H ) return 0;
+	width = (size_t)iCols * (size_t)MAPEDIT_TILE_W;
+	height = (size_t)iRows * (size_t)MAPEDIT_TILE_H;
+	if ( width > (size_t)INT_MAX / 4u || height > (size_t)INT_MAX ) return 0;
+	if ( width > (size_t)-1 / height ) return 0;
+	pixels = width * height;
+	if ( pixels > (size_t)-1 / 4u ) return 0;
+	bytes = pixels * 4u;
+	if ( bytes > MAPEDIT_MATERIAL_OUTPUT_BYTE_MAX ) return 0;
+	if ( pWidth != NULL ) *pWidth = (int)width;
+	if ( pHeight != NULL ) *pHeight = (int)height;
+	if ( pBytes != NULL ) *pBytes = bytes;
+	return 1;
+}
+
 static int mapedit_material_edit_refresh_output_surface(mapedit_app_t* pApp)
 {
 	int w;
@@ -2574,13 +2504,12 @@ static int mapedit_material_edit_refresh_output_surface(mapedit_app_t* pApp)
 		pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->pMaterialEditOutputSurface);
 		pApp->pMaterialEditOutputSurface = NULL;
 	}
-	w = pApp->iMaterialEditOutputCols * MAPEDIT_TILE_W;
-	h = pApp->iMaterialEditOutputRows * MAPEDIT_TILE_H;
+	if ( !mapedit_material_edit_output_dimensions(pApp->iMaterialEditOutputCols, pApp->iMaterialEditOutputRows, &w, &h, NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pApp->tProxy.surfaceCreateRGBA(&pApp->tProxy, &pApp->pMaterialEditOutputSurface, w, h, pApp->pMaterialEditOutputPixels, w * 4, XUI_SURFACE_ALPHA_STRAIGHT) != XUI_OK ) return XUI_ERROR;
 	(void)pApp->tProxy.surfaceGetDesc(&pApp->tProxy, pApp->pMaterialEditOutputSurface, &pApp->tMaterialEditOutputDesc);
 	if ( pApp->pMaterialEditOutputScroll != NULL ) (void)xuiScrollViewSetContentSize(pApp->pMaterialEditOutputScroll, (float)w, (float)h);
 	if ( pApp->pMaterialEditOutputCanvas != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pMaterialEditOutputCanvas, (xui_rect_t){0.0f, 0.0f, (float)w, (float)h});
+		(void)xuiWidgetSetRect(pApp->pMaterialEditOutputCanvas, (xui_rect_t){0, 0, w, h});
 		(void)xuiWidgetInvalidate(pApp->pMaterialEditOutputCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_OK;
@@ -2596,13 +2525,15 @@ static int mapedit_material_edit_set_output_size(mapedit_app_t* pApp, int iCols,
 	int copyW;
 	int copyH;
 	int y;
+	size_t newBytes;
 	if ( pApp == NULL || iCols <= 0 || iRows <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCols == pApp->iMaterialEditOutputCols && iRows == pApp->iMaterialEditOutputRows && pApp->pMaterialEditOutputPixels != NULL ) return XUI_OK;
-	oldW = pApp->iMaterialEditOutputCols * MAPEDIT_TILE_W;
-	oldH = pApp->iMaterialEditOutputRows * MAPEDIT_TILE_H;
-	newW = iCols * MAPEDIT_TILE_W;
-	newH = iRows * MAPEDIT_TILE_H;
-	pNew = (unsigned char*)calloc((size_t)newW * (size_t)newH * 4u, 1u);
+	if ( !mapedit_material_edit_output_dimensions(iCols, iRows, &newW, &newH, &newBytes) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !mapedit_material_edit_output_dimensions(pApp->iMaterialEditOutputCols, pApp->iMaterialEditOutputRows, &oldW, &oldH, NULL) ) {
+		oldW = 0;
+		oldH = 0;
+	}
+	pNew = (unsigned char*)calloc(newBytes, 1u);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( pApp->pMaterialEditOutputPixels != NULL && oldW > 0 && oldH > 0 ) {
 		copyW = mapedit_min_i(oldW, newW);
@@ -2624,17 +2555,26 @@ static int mapedit_material_edit_ensure_output(mapedit_app_t* pApp, int iCols, i
 {
 	int cols;
 	int rows;
-	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pApp == NULL || iCols <= 0 || iRows <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	cols = pApp->iMaterialEditOutputCols;
 	rows = pApp->iMaterialEditOutputRows;
 	if ( cols <= 0 ) cols = (pApp->iMaterialEditMode == MAPEDIT_MATERIAL_MODE_STATIC) ? MAPEDIT_MATERIAL_STATIC_COLS : 4;
 	if ( rows <= 0 ) rows = (pApp->iMaterialEditMode == MAPEDIT_MATERIAL_MODE_STATIC) ? MAPEDIT_MATERIAL_INITIAL_ROWS : 4;
 	if ( pApp->iMaterialEditMode == MAPEDIT_MATERIAL_MODE_STATIC ) {
 		cols = MAPEDIT_MATERIAL_STATIC_COLS;
-		while ( iRows > rows ) rows += MAPEDIT_MATERIAL_EXTEND_ROWS;
+		if ( iRows > rows ) {
+			if ( iRows > INT_MAX - (MAPEDIT_MATERIAL_EXTEND_ROWS - 1) ) return XUI_ERROR_INVALID_ARGUMENT;
+			rows = ((iRows + MAPEDIT_MATERIAL_EXTEND_ROWS - 1) / MAPEDIT_MATERIAL_EXTEND_ROWS) * MAPEDIT_MATERIAL_EXTEND_ROWS;
+		}
 	} else {
-		while ( iCols > cols ) cols *= 2;
-		while ( iRows > rows ) rows *= 2;
+		while ( iCols > cols ) {
+			if ( cols > INT_MAX / 2 ) return XUI_ERROR_INVALID_ARGUMENT;
+			cols *= 2;
+		}
+		while ( iRows > rows ) {
+			if ( rows > INT_MAX / 2 ) return XUI_ERROR_INVALID_ARGUMENT;
+			rows *= 2;
+		}
 	}
 	if ( cols != pApp->iMaterialEditOutputCols || rows != pApp->iMaterialEditOutputRows || pApp->pMaterialEditOutputPixels == NULL ) {
 		return mapedit_material_edit_set_output_size(pApp, cols, rows);
@@ -2651,14 +2591,15 @@ static int mapedit_material_edit_output_at_bottom(mapedit_app_t* pApp)
 	if ( xuiScrollViewGetOffset(pApp->pMaterialEditOutputScroll, NULL, &offsetY) != XUI_OK ) return 0;
 	if ( xuiScrollViewGetContentSize(pApp->pMaterialEditOutputScroll, NULL, &contentH) != XUI_OK ) return 0;
 	viewport = xuiScrollViewGetViewportRect(pApp->pMaterialEditOutputScroll);
-	if ( contentH <= viewport.fH ) return 0;
-	return (offsetY + viewport.fH + 1.0f >= contentH);
+	if ( contentH <= (float)viewport.fH ) return 0;
+	return (offsetY + (float)viewport.fH + 1.0f >= contentH);
 }
 
 static int mapedit_material_edit_extend_output_rows(mapedit_app_t* pApp)
 {
 	int rows;
 	if ( pApp == NULL || pApp->iMaterialEditMode != MAPEDIT_MATERIAL_MODE_STATIC ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pApp->iMaterialEditOutputRows > INT_MAX - MAPEDIT_MATERIAL_EXTEND_ROWS ) return XUI_ERROR_INVALID_ARGUMENT;
 	rows = pApp->iMaterialEditOutputRows + MAPEDIT_MATERIAL_EXTEND_ROWS;
 	if ( rows < MAPEDIT_MATERIAL_INITIAL_ROWS + MAPEDIT_MATERIAL_EXTEND_ROWS ) rows = MAPEDIT_MATERIAL_INITIAL_ROWS + MAPEDIT_MATERIAL_EXTEND_ROWS;
 	return mapedit_material_edit_ensure_output(pApp, MAPEDIT_MATERIAL_STATIC_COLS, rows);
@@ -2784,8 +2725,12 @@ static int mapedit_material_edit_load_existing_output(mapedit_app_t* pApp, int i
 	if ( mapedit_material_build_path(pApp, iIndex, path, sizeof(path)) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&img, 0, sizeof(img));
 	if ( xgeImageLoadEx(&img, path, XGE_IMAGE_STRAIGHT_ALPHA) != XGE_OK ) return XUI_ERROR_FILE_NOT_FOUND;
-	cols = (img.iWidth + MAPEDIT_TILE_W - 1) / MAPEDIT_TILE_W;
-	rows = (img.iHeight + MAPEDIT_TILE_H - 1) / MAPEDIT_TILE_H;
+	if ( img.iWidth <= 0 || img.iHeight <= 0 ) {
+		xgeImageFree(&img);
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	cols = 1 + (img.iWidth - 1) / MAPEDIT_TILE_W;
+	rows = 1 + (img.iHeight - 1) / MAPEDIT_TILE_H;
 	if ( pApp->iMaterialEditMode == MAPEDIT_MATERIAL_MODE_STATIC ) {
 		cols = MAPEDIT_MATERIAL_STATIC_COLS;
 		if ( rows < MAPEDIT_MATERIAL_INITIAL_ROWS ) rows = MAPEDIT_MATERIAL_INITIAL_ROWS;
@@ -2820,6 +2765,11 @@ static int mapedit_material_edit_load_source(mapedit_app_t* pApp, const char* sP
 		mapedit_status(pApp, "外部图片加载失败");
 		return XUI_ERROR;
 	}
+	if ( img.iWidth <= 0 || img.iHeight <= 0 ) {
+		xgeImageFree(&img);
+		mapedit_status(pApp, "外部图片尺寸无效");
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	mapedit_material_edit_clear_source(pApp);
 	pApp->tMaterialEditSourceImage = img;
 	w = img.iWidth;
@@ -2830,15 +2780,15 @@ static int mapedit_material_edit_load_source(mapedit_app_t* pApp, const char* sP
 		return XUI_ERROR;
 	}
 	(void)pApp->tProxy.surfaceGetDesc(&pApp->tProxy, pApp->pMaterialEditSourceSurface, &pApp->tMaterialEditSourceDesc);
-	pApp->iMaterialEditSourceCols = (w + MAPEDIT_TILE_W - 1) / MAPEDIT_TILE_W;
-	pApp->iMaterialEditSourceRows = (h + MAPEDIT_TILE_H - 1) / MAPEDIT_TILE_H;
+	pApp->iMaterialEditSourceCols = 1 + (w - 1) / MAPEDIT_TILE_W;
+	pApp->iMaterialEditSourceRows = 1 + (h - 1) / MAPEDIT_TILE_H;
 	pApp->iMaterialEditSelCol = 0;
 	pApp->iMaterialEditSelRow = 0;
 	pApp->iMaterialEditSelCols = pApp->iMaterialEditSourceCols > 0 ? 1 : 0;
 	pApp->iMaterialEditSelRows = pApp->iMaterialEditSourceRows > 0 ? 1 : 0;
 	if ( pApp->pMaterialEditSourceScroll != NULL ) (void)xuiScrollViewSetContentSize(pApp->pMaterialEditSourceScroll, (float)w, (float)h);
 	if ( pApp->pMaterialEditSourceCanvas != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pMaterialEditSourceCanvas, (xui_rect_t){0.0f, 0.0f, (float)w, (float)h});
+		(void)xuiWidgetSetRect(pApp->pMaterialEditSourceCanvas, (xui_rect_t){0, 0, w, h});
 		(void)xuiWidgetInvalidate(pApp->pMaterialEditSourceCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	mapedit_status(pApp, "外部图片已加载");
@@ -2847,20 +2797,7 @@ static int mapedit_material_edit_load_source(mapedit_app_t* pApp, const char* sP
 
 static int mapedit_material_edit_open_source_dialog(mapedit_app_t* pApp)
 {
-	OPENFILENAMEW ofn;
-	wchar_t wFile[MAPEDIT_PATH_MAX];
-	char path[MAPEDIT_PATH_MAX];
-	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	memset(&ofn, 0, sizeof(ofn));
-	memset(wFile, 0, sizeof(wFile));
-	ofn.lStructSize = sizeof(ofn);
-	ofn.lpstrFile = wFile;
-	ofn.nMaxFile = (DWORD)(sizeof(wFile) / sizeof(wFile[0]));
-	ofn.lpstrFilter = L"Image Files\0*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.webp\0All Files\0*.*\0";
-	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-	if ( !GetOpenFileNameW(&ofn) ) return XUI_OK;
-	if ( !mapedit_wide_to_utf8(wFile, path, sizeof(path)) ) return XUI_ERROR;
-	return mapedit_material_edit_load_source(pApp, path);
+	return mapedit_show_material_source_dialog(pApp);
 }
 
 static int mapedit_material_edit_cell_from_event(xui_widget pWidget, const xui_event_t* pEvent, int* pCol, int* pRow)
@@ -2870,8 +2807,8 @@ static int mapedit_material_edit_cell_from_event(xui_widget pWidget, const xui_e
 	int row;
 	if ( pWidget == NULL || pEvent == NULL ) return 0;
 	wr = xuiWidgetGetWorldRect(pWidget);
-	col = (int)((pEvent->fX - wr.fX) / (float)MAPEDIT_TILE_W);
-	row = (int)((pEvent->fY - wr.fY) / (float)MAPEDIT_TILE_H);
+	col = (pEvent->fX - wr.fX) / MAPEDIT_TILE_W;
+	row = (pEvent->fY - wr.fY) / MAPEDIT_TILE_H;
 	if ( col < 0 || row < 0 ) return 0;
 	if ( pCol != NULL ) *pCol = col;
 	if ( pRow != NULL ) *pRow = row;
@@ -2925,6 +2862,7 @@ static int mapedit_material_edit_paste(mapedit_app_t* pApp, int iDstCol, int iDs
 	if ( iDstCol < 0 || iDstRow < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	copyCols = pApp->iMaterialEditSelCols > 0 ? pApp->iMaterialEditSelCols : 1;
 	copyRows = pApp->iMaterialEditSelRows > 0 ? pApp->iMaterialEditSelRows : 1;
+	if ( copyCols > INT_MAX - iDstCol || copyRows > INT_MAX - iDstRow ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pApp->iMaterialEditMode == MAPEDIT_MATERIAL_MODE_STATIC && iDstCol + copyCols > MAPEDIT_MATERIAL_STATIC_COLS ) copyCols = MAPEDIT_MATERIAL_STATIC_COLS - iDstCol;
 	if ( copyCols <= 0 || copyRows <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	totalCols = iDstCol + copyCols;
@@ -2979,6 +2917,81 @@ static int mapedit_material_edit_update_mapping(mapedit_app_t* pApp, const char*
 	     xrtXsonStringifyFile(mapPath, pMap, true);
 	xrtValueRelease(pMap);
 	return ok ? XUI_OK : XUI_ERROR;
+}
+
+/*
+ * Copy-on-write reference update: the new image is written before this runs,
+ * every XSON file is replaced atomically, and the old image is retained unless
+ * all references succeed. A mid-operation failure therefore cannot leave a
+ * tileset pointing at a missing file.
+ */
+static int mapedit_material_update_tileset_references(mapedit_app_t* pApp,
+	const char* sOldFile, const char* sNewFile)
+{
+	const mapedit_material_category_t* pCategory;
+	int i;
+	int allOk = 1;
+	if ( pApp == NULL || sOldFile == NULL || sNewFile == NULL || strcmp(sOldFile, sNewFile) == 0 ) return XUI_OK;
+	pCategory = &g_arrMaterialCategories[mapedit_material_category_clamp(pApp->iMaterialCategory)];
+	for ( i = 0; i < pApp->tTilesetFiles.iCount; ++i ) {
+		char rel[MAPEDIT_PATH_MAX];
+		char path[MAPEDIT_PATH_MAX];
+		xvalue* pRoot;
+		int changed = 0;
+		snprintf(rel, sizeof(rel), "assets\\图块集\\%s", pApp->tTilesetFiles.arrNames[i]);
+		mapedit_app_path(pApp, path, sizeof(path), rel);
+		pRoot = xrtXsonParseFile(path);
+		if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) {
+			if ( pRoot != NULL ) xrtValueRelease(pRoot);
+			allOk = 0;
+			continue;
+		}
+		if ( pApp->iMaterialCategory == MAPEDIT_MATERIAL_MODE_STATIC ) {
+			const char* sStatic = mapedit_table_text(pRoot, SET_KEY_STATIC, "");
+			if ( strcmp(sStatic, sOldFile) == 0 ) {
+				changed = xuiXrtValueObjectSetText(pRoot, SET_KEY_STATIC, strlen(SET_KEY_STATIC), sNewFile, 0u, FALSE) ? 1 : -1;
+			}
+		} else {
+			xvalue* pItems = mapedit_table_get(pRoot, SET_KEY_SPECIAL_TILES);
+			if ( pItems != NULL && xuiXrtValueType(pItems) == XVALUE_ARRAY ) {
+				size_t j;
+				for ( j = 0u; j < xrtValueCount(pItems); ++j ) {
+					xvalue* pItem = xuiXrtValueArrayGet(pItems, j);
+					if ( pItem == NULL || xuiXrtValueType(pItem) != XVALUE_OBJECT ) continue;
+					if ( strcmp(mapedit_table_text(pItem, SET_KEY_SPECIAL_TYPE, ""), pCategory->sTitle) == 0 &&
+					     strcmp(mapedit_table_text(pItem, SET_KEY_SPECIAL_FILE, ""), sOldFile) == 0 ) {
+						if ( !xuiXrtValueObjectSetText(pItem, SET_KEY_SPECIAL_FILE, strlen(SET_KEY_SPECIAL_FILE), sNewFile, 0u, FALSE) ) {
+							changed = -1;
+							break;
+						}
+						changed = 1;
+					}
+				}
+			}
+		}
+		if ( changed > 0 ) {
+			if ( !xuiXrtValueObjectSetText(pRoot, SET_KEY_FORMAT, strlen(SET_KEY_FORMAT), MAPEDIT_TILESET_FORMAT_NAME, 0u, FALSE) ||
+			     !xuiXrtValueObjectSetInt(pRoot, SET_KEY_VERSION, strlen(SET_KEY_VERSION), MAPEDIT_TILESET_FORMAT_VERSION) ||
+			     !xrtXsonStringifyFile(path, pRoot, true) ) allOk = 0;
+		} else if ( changed < 0 ) {
+			allOk = 0;
+		}
+		xrtValueRelease(pRoot);
+	}
+	if ( pApp->iMaterialCategory == MAPEDIT_MATERIAL_MODE_STATIC ) {
+		if ( strcmp(pApp->tTileset.sStaticFile, sOldFile) == 0 ) {
+			mapedit_copy_text(pApp->tTileset.sStaticFile, sizeof(pApp->tTileset.sStaticFile), sNewFile);
+		}
+	} else {
+		for ( i = 0; i < pApp->tTileset.iSpecialCount; ++i ) {
+			if ( strcmp(pApp->tTileset.arrSpecial[i].sType, pCategory->sTitle) == 0 &&
+			     strcmp(pApp->tTileset.arrSpecial[i].sFile, sOldFile) == 0 ) {
+				mapedit_copy_text(pApp->tTileset.arrSpecial[i].sFile,
+					sizeof(pApp->tTileset.arrSpecial[i].sFile), sNewFile);
+			}
+		}
+	}
+	return allOk ? XUI_OK : XUI_ERROR;
 }
 
 static int mapedit_material_edit_submit(mapedit_app_t* pApp)
@@ -3049,8 +3062,15 @@ static int mapedit_material_edit_submit(mapedit_app_t* pApp)
 		return XUI_ERROR;
 	}
 	if ( editing && !sameFile ) {
+		if ( mapedit_material_update_tileset_references(pApp, pApp->sMaterialEditOriginalFile, file) != XUI_OK ) {
+			mapedit_status(pApp, "新图块已保存，但引用更新未完成；旧文件已保留，可安全重试");
+			return XUI_ERROR;
+		}
 		mapedit_path_join(oldPath, sizeof(oldPath), dir, pApp->sMaterialEditOriginalFile);
-		(void)mapedit_delete_file_utf8(oldPath);
+		if ( !mapedit_delete_file_utf8(oldPath) ) {
+			mapedit_status(pApp, "引用已更新，但旧图块文件删除失败");
+			return XUI_ERROR;
+		}
 	}
 	if ( mapedit_material_scan_category(pApp, pApp->iMaterialCategory, 1) == XUI_OK ) {
 		index = mapedit_file_list_find(&pApp->tMaterialCategoryFiles, file);
@@ -3064,70 +3084,153 @@ static int mapedit_material_edit_submit(mapedit_app_t* pApp)
 	return XUI_OK;
 }
 
+static void mapedit_tileset_refresh_surfaces(mapedit_app_t* pApp)
+{
+	char sPath[MAPEDIT_PATH_MAX], sAssetPath[MAPEDIT_PATH_MAX];
+	int i;
+	if (pApp->tTileset.pStaticSurface) pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->tTileset.pStaticSurface);
+	pApp->tTileset.pStaticSurface = NULL;
+	memset(&pApp->tTileset.tStaticDesc, 0, sizeof(pApp->tTileset.tStaticDesc));
+	for (i = 0; i < MAPEDIT_SPECIAL_MAX; ++i) {
+		if (pApp->tTileset.arrSpecial[i].pSurface) pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->tTileset.arrSpecial[i].pSurface);
+		pApp->tTileset.arrSpecial[i].pSurface = NULL;
+		memset(&pApp->tTileset.arrSpecial[i].tDesc, 0, sizeof(pApp->tTileset.arrSpecial[i].tDesc));
+	}
+	if ( pApp->tTileset.sStaticFile[0] != 0 ) {
+		snprintf(sAssetPath, sizeof(sAssetPath), "assets\\tilesheets\\%s", pApp->tTileset.sStaticFile);
+		mapedit_app_path(pApp, sPath, sizeof(sPath), sAssetPath);
+		if ( mapedit_file_exists_utf8(sPath) ) {
+			(void)mapedit_surface_load(pApp, sPath, &pApp->tTileset.pStaticSurface, &pApp->tTileset.tStaticDesc);
+		}
+	}
+	for ( i = 0; i < pApp->tTileset.iSpecialCount; i++ ) {
+		(void)mapedit_tileset_load_special_surface(pApp,
+			pApp->tTileset.arrSpecial[i].sType, pApp->tTileset.arrSpecial[i].sFile,
+			&pApp->tTileset.arrSpecial[i].pSurface, &pApp->tTileset.arrSpecial[i].tDesc);
+	}
+
+}
+
 static int mapedit_tileset_load(mapedit_app_t* pApp, const char* sFile)
 {
 	char sPath[MAPEDIT_PATH_MAX];
 	char sAssetPath[MAPEDIT_PATH_MAX];
+	mapedit_tileset_t* pLoaded;
 	xvalue* pRoot;
 	xvalue* pArray;
+	xvalue* pValue;
+	const char* sFormat;
+	const char* sStatic;
+	const char* sText;
+	size_t iArrayCount;
+	long long iWideValue;
+	int iVersion;
+	int iValue;
 	int i;
 	if ( pApp == NULL || sFile == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	mapedit_tileset_clear(pApp);
-	snprintf(pApp->tTileset.sFile, MAPEDIT_FILE_MAX, "%s", sFile);
-	snprintf(sPath, sizeof(sPath), "assets\\图块集\\%s", sFile);
-	mapedit_app_path(pApp, pApp->tTileset.sPath, MAPEDIT_PATH_MAX, sPath);
-	pRoot = xrtXsonParseFile(pApp->tTileset.sPath);
+	if (strchr(sFile, ':') || sFile[0] == '/' || sFile[0] == '\\') mapedit_copy_text(sAssetPath, sizeof(sAssetPath), sFile);
+	else {
+		snprintf(sPath, sizeof(sPath), "assets\\图块集\\%s", sFile);
+		mapedit_app_path(pApp, sAssetPath, sizeof(sAssetPath), sPath);
+	}
+	pRoot = xrtXsonParseFile(sAssetPath);
 	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) {
 		if ( pRoot != NULL ) xrtValueRelease(pRoot);
 		return XUI_ERROR_FILE_NOT_FOUND;
 	}
-	mapedit_copy_text(pApp->tTileset.sName, MAPEDIT_NAME_MAX, mapedit_table_text(pRoot, SET_KEY_NAME, sFile));
-	mapedit_copy_text(pApp->tTileset.sCustomData, MAPEDIT_NAME_MAX, mapedit_table_text(pRoot, SET_KEY_CUSTOM, ""));
-	mapedit_copy_text(pApp->tTileset.sStaticFile, MAPEDIT_FILE_MAX, mapedit_table_text(pRoot, SET_KEY_STATIC, "common_tileset.png"));
-	pApp->tTileset.iSpecialCount = mapedit_table_int(pRoot, SET_KEY_SPECIAL_COUNT, 0);
-	if ( pApp->tTileset.iSpecialCount < 0 ) pApp->tTileset.iSpecialCount = 0;
-	if ( pApp->tTileset.iSpecialCount > MAPEDIT_SPECIAL_MAX ) pApp->tTileset.iSpecialCount = MAPEDIT_SPECIAL_MAX;
-	snprintf(sAssetPath, sizeof(sAssetPath), "assets\\tilesheets\\%s", pApp->tTileset.sStaticFile);
-	mapedit_app_path(pApp, sPath, sizeof(sPath), sAssetPath);
-	(void)mapedit_surface_load(pApp, sPath, &pApp->tTileset.pStaticSurface, &pApp->tTileset.tStaticDesc);
+	pLoaded = (mapedit_tileset_t*)calloc(1u, sizeof(*pLoaded));
+	if ( pLoaded == NULL ) {
+		xrtValueRelease(pRoot);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	memset(pLoaded->arrPassage, 255, sizeof(pLoaded->arrPassage));
+	mapedit_copy_text(pLoaded->sPath, sizeof(pLoaded->sPath), sAssetPath);
+	mapedit_copy_text(pLoaded->sFile, sizeof(pLoaded->sFile), sFile);
+	if ( !mapedit_table_read_text_strict(pRoot, SET_KEY_FORMAT, "", &sFormat) ||
+	     !mapedit_table_read_int_strict(pRoot, SET_KEY_VERSION, 1, &iVersion) ) goto format_error;
+	if ( (sFormat[0] != 0 && strcmp(sFormat, MAPEDIT_TILESET_FORMAT_NAME) != 0) ||
+	     iVersion <= 0 || iVersion > MAPEDIT_TILESET_FORMAT_VERSION ) {
+		goto format_error;
+	}
+	if ( !mapedit_table_read_text_strict(pRoot, SET_KEY_NAME, sFile, &sText) ) goto format_error;
+	mapedit_copy_text(pLoaded->sName, sizeof(pLoaded->sName), sText);
+	if ( !mapedit_table_read_text_strict(pRoot, SET_KEY_CUSTOM, "", &sText) ) goto format_error;
+	mapedit_copy_text(pLoaded->sCustomData, sizeof(pLoaded->sCustomData), sText);
+	if ( !mapedit_table_read_text_strict(pRoot, SET_KEY_STATIC, "", &sStatic) ) goto format_error;
+	if ( strcmp(sStatic, "未设置") == 0 ) sStatic = "";
+	mapedit_copy_text(pLoaded->sStaticFile, sizeof(pLoaded->sStaticFile), sStatic);
+	pLoaded->iSchemaVersion = iVersion;
 	pArray = mapedit_table_get(pRoot, SET_KEY_SPECIAL_TILES);
-	if ( pArray != NULL && xuiXrtValueType(pArray) == XVALUE_ARRAY ) {
-		int n = mapedit_min_i((int)xrtValueCount(pArray), pApp->tTileset.iSpecialCount);
-		for ( i = 0; i < n; i++ ) {
+	if ( pArray != NULL && xuiXrtValueType(pArray) != XVALUE_ARRAY ) goto format_error;
+	iArrayCount = pArray != NULL ? xrtValueCount(pArray) : 0u;
+	if ( iArrayCount > MAPEDIT_SPECIAL_MAX ||
+	     !mapedit_table_read_int_strict(pRoot, SET_KEY_SPECIAL_COUNT, (int)iArrayCount, &pLoaded->iSpecialCount) ||
+	     pLoaded->iSpecialCount < 0 || pLoaded->iSpecialCount > MAPEDIT_SPECIAL_MAX ||
+	     (size_t)pLoaded->iSpecialCount > iArrayCount ||
+	     (iVersion >= MAPEDIT_TILESET_FORMAT_VERSION && (size_t)pLoaded->iSpecialCount != iArrayCount) ) goto format_error;
+	if ( pArray != NULL ) {
+		for ( i = 0; i < pLoaded->iSpecialCount; i++ ) {
 			xvalue* pItem = xuiXrtValueArrayGet(pArray, (uint32)i);
 			const char* sType;
 			const char* sName;
-			if ( pItem == NULL || xuiXrtValueType(pItem) != XVALUE_OBJECT ) continue;
-			sType = mapedit_table_text(pItem, SET_KEY_SPECIAL_TYPE, "");
-			sName = mapedit_table_text(pItem, SET_KEY_SPECIAL_FILE, "");
-			mapedit_copy_text(pApp->tTileset.arrSpecial[i].sType, 64, sType);
-			mapedit_copy_text(pApp->tTileset.arrSpecial[i].sFile, MAPEDIT_FILE_MAX, sName);
-			(void)mapedit_tileset_load_special_surface(pApp, sType, sName, &pApp->tTileset.arrSpecial[i].pSurface, &pApp->tTileset.arrSpecial[i].tDesc);
+			if ( pItem == NULL || xuiXrtValueType(pItem) != XVALUE_OBJECT ||
+			     !mapedit_table_read_text_strict(pItem, SET_KEY_SPECIAL_TYPE, "", &sType) ||
+			     !mapedit_table_read_text_strict(pItem, SET_KEY_SPECIAL_FILE, "", &sName) ) goto format_error;
+			mapedit_copy_text(pLoaded->arrSpecial[i].sType, sizeof(pLoaded->arrSpecial[i].sType), sType);
+			mapedit_copy_text(pLoaded->arrSpecial[i].sFile, sizeof(pLoaded->arrSpecial[i].sFile), sName);
 		}
 	}
 	pArray = mapedit_table_get(pRoot, SET_KEY_PASSAGE);
-	if ( pArray != NULL && xuiXrtValueType(pArray) == XVALUE_ARRAY ) {
-		int n = mapedit_min_i((int)xrtValueCount(pArray), (int)sizeof(pApp->tTileset.arrPassage));
-		pApp->tTileset.iPassageCount = n;
-		for ( i = 0; i < n; i++ ) {
-			xvalue* pValue = xuiXrtValueArrayGet(pArray, (uint32)i);
-			if ( pValue != NULL && xuiXrtValueType(pValue) == XVALUE_INT ) pApp->tTileset.arrPassage[i] = (unsigned char)xuiXrtValueGetInt(pValue);
+	if ( pArray != NULL ) {
+		if ( xuiXrtValueType(pArray) != XVALUE_ARRAY || xrtValueCount(pArray) > sizeof(pLoaded->arrPassage) ) goto format_error;
+		pLoaded->iPassageCount = (int)xrtValueCount(pArray);
+		for ( i = 0; i < pLoaded->iPassageCount; i++ ) {
+			pValue = xuiXrtValueArrayGet(pArray, (uint32)i);
+			if ( pValue == NULL || xuiXrtValueType(pValue) != XVALUE_INT ) goto format_error;
+			iWideValue = (long long)xuiXrtValueGetInt(pValue);
+			if ( iWideValue < 0 || iWideValue > 255 ) goto format_error;
+			iValue = (int)iWideValue;
+			pLoaded->arrPassage[i] = (unsigned char)iValue;
 		}
 	}
 	pArray = mapedit_table_get(pRoot, SET_KEY_ACTOR);
-	if ( pArray != NULL && xuiXrtValueType(pArray) == XVALUE_ARRAY ) {
-		int n = mapedit_min_i((int)xrtValueCount(pArray), (int)sizeof(pApp->tTileset.arrActorOverlay));
-		pApp->tTileset.iActorOverlayCount = n;
-		for ( i = 0; i < n; i++ ) {
-			xvalue* pValue = xuiXrtValueArrayGet(pArray, (uint32)i);
-			if ( pValue != NULL && xuiXrtValueType(pValue) == XVALUE_INT ) pApp->tTileset.arrActorOverlay[i] = (unsigned char)(xuiXrtValueGetInt(pValue) != 0);
+	if ( pArray != NULL ) {
+		if ( xuiXrtValueType(pArray) != XVALUE_ARRAY || xrtValueCount(pArray) > sizeof(pLoaded->arrActorOverlay) ) goto format_error;
+		pLoaded->iActorOverlayCount = (int)xrtValueCount(pArray);
+		for ( i = 0; i < pLoaded->iActorOverlayCount; i++ ) {
+			pValue = xuiXrtValueArrayGet(pArray, (uint32)i);
+			if ( pValue == NULL || xuiXrtValueType(pValue) != XVALUE_INT ) goto format_error;
+			iWideValue = (long long)xuiXrtValueGetInt(pValue);
+			if ( iWideValue != 0 && iWideValue != 1 ) goto format_error;
+			iValue = (int)iWideValue;
+			pLoaded->arrActorOverlay[i] = (unsigned char)iValue;
 		}
 	}
-	pApp->tTileset.pTileCustomRaw = mapedit_table_get(pRoot, SET_KEY_TILE_DATA);
-	pApp->tTileset.pTileCustomRaw = (pApp->tTileset.pTileCustomRaw != NULL) ? xrtValueClone(pApp->tTileset.pTileCustomRaw) : xrtValueObject();
-	pApp->tTileset.bLoaded = 1;
+	pValue = mapedit_table_get(pRoot, SET_KEY_TILE_DATA);
+	if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_OBJECT ) goto format_error;
+	pLoaded->pTileCustomRaw = pValue != NULL ? xrtValueClone(pValue) : xrtValueObject();
+	if ( pLoaded->pTileCustomRaw == NULL ) {
+		free(pLoaded);
+		xrtValueRelease(pRoot);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pLoaded->bLoaded = 1;
+	pLoaded->bDirty = 0;
 	xrtValueRelease(pRoot);
+	mapedit_tileset_clear(pApp);
+	pApp->tTileset = *pLoaded;
+	free(pLoaded);
+	mapeditHistoryClear(&pApp->tTilesetHistory);
+	mapedit_tileset_refresh_surfaces(pApp);
+	pApp->tTilesetStamp = mapeditFileStamp(pApp->tTileset.sPath);
+	pApp->bTilesetExternalConflict = 0;
 	return XUI_OK;
+
+format_error:
+	if ( pLoaded->pTileCustomRaw != NULL ) xrtValueRelease(pLoaded->pTileCustomRaw);
+	free(pLoaded);
+	xrtValueRelease(pRoot);
+	return XUI_ERROR;
 }
 
 static int mapedit_tileset_tile_count(mapedit_app_t* pApp)
@@ -3150,7 +3253,7 @@ static int mapedit_tileset_tile_count(mapedit_app_t* pApp)
 	return count;
 }
 
-static int mapedit_tileset_save(mapedit_app_t* pApp)
+static int mapedit_tileset_save_to(mapedit_app_t* pApp, const char* path, int commit)
 {
 	xvalue* pRoot;
 	xvalue* pSpecialTiles;
@@ -3160,7 +3263,7 @@ static int mapedit_tileset_save(mapedit_app_t* pApp)
 	int i;
 	int count;
 	int ok;
-	if ( pApp == NULL || !pApp->tTileset.bLoaded || pApp->tTileset.sPath[0] == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pApp == NULL || !pApp->tTileset.bLoaded || path == NULL || path[0] == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	pRoot = xrtValueObject();
 	pSpecialTiles = xrtValueArray();
 	pPassage = xrtValueArray();
@@ -3202,32 +3305,104 @@ static int mapedit_tileset_save(mapedit_app_t* pApp)
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 	}
-	ok = xuiXrtValueObjectSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), (pApp->tTileset.sName[0] ? pApp->tTileset.sName : pApp->tTileset.sFile), 0, FALSE) &&
-	     xuiXrtValueObjectSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), pApp->tTileset.sStaticFile, 0, FALSE) &&
-	     xuiXrtValueObjectSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), pApp->tTileset.iSpecialCount) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_SPECIAL_TILES, (uint32)strlen(SET_KEY_SPECIAL_TILES), pSpecialTiles, TRUE) &&
-	     xuiXrtValueObjectSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), pApp->tTileset.sCustomData, 0, FALSE) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_PASSAGE, (uint32)strlen(SET_KEY_PASSAGE), pPassage, TRUE) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_ACTOR, (uint32)strlen(SET_KEY_ACTOR), pActorOverlay, TRUE) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_TILE_DATA, (uint32)strlen(SET_KEY_TILE_DATA), pTileCustom, TRUE);
-	if ( !ok ) {
-		xrtValueRelease(pRoot);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	ok = xrtXsonStringifyFile(pApp->tTileset.sPath, pRoot, true) ? XUI_OK : XUI_ERROR;
+	if ( !xuiXrtValueObjectSetText(pRoot, SET_KEY_FORMAT, (uint32)strlen(SET_KEY_FORMAT), MAPEDIT_TILESET_FORMAT_NAME, 0, FALSE) ||
+	     !xuiXrtValueObjectSetInt(pRoot, SET_KEY_VERSION, (uint32)strlen(SET_KEY_VERSION), MAPEDIT_TILESET_FORMAT_VERSION) ||
+	     !xuiXrtValueObjectSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), (pApp->tTileset.sName[0] ? pApp->tTileset.sName : pApp->tTileset.sFile), 0, FALSE) ||
+	     !xuiXrtValueObjectSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), pApp->tTileset.sStaticFile, 0, FALSE) ||
+	     !xuiXrtValueObjectSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), pApp->tTileset.iSpecialCount) ||
+	     !xuiXrtValueObjectSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), pApp->tTileset.sCustomData, 0, FALSE) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_SPECIAL_TILES, &pSpecialTiles) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_PASSAGE, &pPassage) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_ACTOR, &pActorOverlay) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_TILE_DATA, &pTileCustom) ) goto save_out_of_memory;
+	ok = xrtXsonStringifyFile(path, pRoot, true) ? XUI_OK : XUI_ERROR;
 	xrtValueRelease(pRoot);
-	if ( ok == XUI_OK ) {
+	if ( ok == XUI_OK && commit ) {
+		pApp->tTileset.iSchemaVersion = MAPEDIT_TILESET_FORMAT_VERSION;
 		pApp->tTileset.iPassageCount = count;
 		pApp->tTileset.iActorOverlayCount = count;
+		mapedit_clear_recovery_for(pApp, MAPEDIT_WORKSPACE_TILESET, pApp->tTileset.sPath);
+		mapedit_copy_text(pApp->tTileset.sPath, sizeof(pApp->tTileset.sPath), path);
+		mapeditHistorySaved(&pApp->tTilesetHistory);
+		pApp->tTilesetStamp = mapeditFileStamp(path);
+		pApp->bTilesetExternalConflict = 0;
+		pApp->tTileset.bDirty = 0;
+		mapedit_update_window_title(pApp);
 	}
 	return ok;
+
+save_out_of_memory:
+	if ( pSpecialTiles != NULL ) xrtValueRelease(pSpecialTiles);
+	if ( pPassage != NULL ) xrtValueRelease(pPassage);
+	if ( pActorOverlay != NULL ) xrtValueRelease(pActorOverlay);
+	if ( pTileCustom != NULL ) xrtValueRelease(pTileCustom);
+	xrtValueRelease(pRoot);
+	return XUI_ERROR_OUT_OF_MEMORY;
 }
 
 static void mapedit_status(mapedit_app_t* pApp, const char* sText)
 {
 	if ( pApp == NULL || pApp->pStatus == NULL || sText == NULL ) return;
-	snprintf(pApp->sStatusText, sizeof(pApp->sStatusText), "%s", sText);
+	mapedit_copy_text(pApp->sStatusText, sizeof(pApp->sStatusText), sText);
 	(void)xuiStatusBarSetItemText(pApp->pStatus, 0, pApp->sStatusText);
+}
+
+static void mapedit_update_window_title(mapedit_app_t* pApp)
+{
+	char title[MAPEDIT_NAME_MAX + 32];
+	const char* sName;
+	if ( pApp == NULL ) return;
+	if ( pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_TILESET ) {
+		sName = pApp->tTileset.sName[0] != 0 ? pApp->tTileset.sName : "未命名图集";
+	} else {
+		sName = pApp->tMap.sName[0] != 0 ? pApp->tMap.sName : "未命名地图";
+	}
+	snprintf(title, sizeof(title), "MapEdit - %s%s", sName,
+		(pApp->tMap.bDirty || pApp->tTileset.bDirty) ? " *" : "");
+	xgeSetTitle(title);
+}
+
+static int mapedit_capture_map(mapedit_app_t* pApp, int flags)
+{
+	if (mapeditDocumentCaptureMap(&pApp->tMapHistory, &pApp->tMap, flags)) return 1;
+	mapedit_status(pApp, "无法分配撤销记录，文档未修改");
+	return 0;
+}
+
+static int mapedit_capture_tileset(mapedit_app_t* pApp)
+{
+	if (mapeditDocumentCaptureTileset(&pApp->tTilesetHistory, &pApp->tTileset)) return 1;
+	mapedit_status(pApp, "无法分配撤销记录，图集未修改");
+	return 0;
+}
+
+static void mapedit_mark_map_dirty(mapedit_app_t* pApp)
+{
+	if ( pApp == NULL ) return;
+	if (pApp->tMapHistory.tCurrentCommand.pPayload) {
+		if (mapeditDocumentUnchanged(&pApp->tMapHistory.tCurrentCommand, &pApp->tMap, &pApp->tTileset)) mapeditHistoryBegin(&pApp->tMapHistory);
+		else (void)mapeditHistoryCommit(&pApp->tMapHistory);
+	}
+	pApp->tMap.bDirty = mapeditHistoryDirty(&pApp->tMapHistory);
+	mapedit_refresh_toolbar_state(pApp);
+	if ( pApp->fMapDirtySince <= 0.0 ) pApp->fMapDirtySince = xgeTimer();
+	mapedit_update_window_title(pApp);
+	xgeRenderRequest();
+	xgeRenderRequestAfter(2.0f);
+}
+
+static void mapedit_mark_tileset_dirty(mapedit_app_t* pApp)
+{
+	if ( pApp == NULL ) return;
+	if (pApp->tTilesetHistory.tCurrentCommand.pPayload) {
+		if (mapeditDocumentUnchanged(&pApp->tTilesetHistory.tCurrentCommand, &pApp->tMap, &pApp->tTileset)) mapeditHistoryBegin(&pApp->tTilesetHistory);
+		else (void)mapeditHistoryCommit(&pApp->tTilesetHistory);
+	}
+	pApp->tTileset.bDirty = mapeditHistoryDirty(&pApp->tTilesetHistory);
+	mapedit_refresh_toolbar_state(pApp);
+	mapedit_update_window_title(pApp);
+	xgeRenderRequest();
+	xgeRenderRequestAfter(2.0f);
 }
 
 static void mapedit_update_status_details(mapedit_app_t* pApp)
@@ -3316,16 +3491,33 @@ static void mapedit_tileset_panel_set_hover(mapedit_app_t* pApp, xui_widget pWid
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int mapedit_view_index(mapedit_app_t* pApp, xui_widget widget)
+{
+	if (widget == pApp->pMapCanvas) return 0;
+	if (widget == pApp->pMapPassageCanvas) return 1;
+	if (widget == pApp->pMapTagsCanvas) return 2;
+	if (widget == pApp->pTileSelectCanvas) return 3;
+	if (widget == pApp->pTilesetArrangeCanvas) return 4;
+	if (widget == pApp->pTilesetPassageCanvas) return 5;
+	if (widget == pApp->pTilesetActorCanvas) return 6;
+	return 7;
+}
+
+static int mapedit_view_cell(mapedit_app_t* pApp, xui_widget widget, int axis)
+{
+	int index = mapedit_view_index(pApp, widget);
+	int base = index == 1 || index == 5 ? 32 : (axis ? MAPEDIT_TILE_H : MAPEDIT_TILE_W);
+	return mapeditViewCell(base, pApp->arrViewZoom[index]);
+}
+
 static int mapedit_tileset_panel_cell_width(mapedit_app_t* pApp, xui_widget pWidget)
 {
-	if ( pApp != NULL && pWidget == pApp->pTilesetPassageCanvas ) return MAPEDIT_TILESET_PASSAGE_DISPLAY_CELL;
-	return MAPEDIT_TILE_W;
+	return mapedit_view_cell(pApp, pWidget, 0);
 }
 
 static int mapedit_tileset_panel_cell_height(mapedit_app_t* pApp, xui_widget pWidget)
 {
-	if ( pApp != NULL && pWidget == pApp->pTilesetPassageCanvas ) return MAPEDIT_TILESET_PASSAGE_DISPLAY_CELL;
-	return MAPEDIT_TILE_H;
+	return mapedit_view_cell(pApp, pWidget, 1);
 }
 
 static float mapedit_tileset_panel_content_width(mapedit_app_t* pApp, xui_widget pWidget)
@@ -3349,8 +3541,8 @@ static void mapedit_tileset_panel_max_scroll(mapedit_app_t* pApp, xui_widget pWi
 	if ( pMaxY != NULL ) *pMaxY = 0.0f;
 	if ( pApp == NULL || pWidget == NULL ) return;
 	wr = xuiWidgetGetWorldRect(pWidget);
-	maxX = mapedit_tileset_panel_content_width(pApp, pWidget) - wr.fW;
-	maxY = mapedit_tileset_panel_content_height(pApp, pWidget) - wr.fH;
+	maxX = mapedit_tileset_panel_content_width(pApp, pWidget) - (float)wr.fW;
+	maxY = mapedit_tileset_panel_content_height(pApp, pWidget) - (float)wr.fH;
 	if ( maxX < 0.0f ) maxX = 0.0f;
 	if ( maxY < 0.0f ) maxY = 0.0f;
 	if ( pMaxX != NULL ) *pMaxX = maxX;
@@ -3466,118 +3658,79 @@ static void mapedit_finish_map_edit(mapedit_app_t* pApp, const char* sAction)
 	pApp->bBatchEdit = 0;
 	if ( pApp->pMapCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( pApp->pMapPassageCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapPassageCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if (pApp->bHistoryFailed) {
+		int i;
+		mapedit_history_cmd_t* command = &pApp->tMapHistory.tCurrentCommand;
+		for (i = 0; i < command->iChangeCount; ++i) pApp->tMap.pTiles[command->arrChanges[i].iIndex] = command->arrChanges[i].iOldTile;
+		mapeditHistoryBegin(&pApp->tMapHistory);
+		pApp->bGestureDirty = 0; pApp->bHistoryFailed = 0;
+		pApp->tMap.bDirty = mapeditHistoryDirty(&pApp->tMapHistory);
+		mapedit_update_window_title(pApp);
+		mapedit_status(pApp, "历史内存不足，本次编辑已完整回滚");
+		return;
+	}
 	if ( !pApp->bGestureDirty ) {
 		mapedit_status(pApp, "地图没有变化");
 		return;
 	}
-	(void)mapedit_commit_history(pApp);
+	if (!mapedit_commit_history(pApp)) { pApp->bGestureDirty = 0; mapedit_update_window_title(pApp); return; }
 	if ( sAction == NULL ) sAction = "地图编辑";
-	if ( pApp->tMap.sPath[0] != 0 && mapedit_map_save(&pApp->tMap, pApp->tMap.sPath) == XUI_OK ) {
-		sLayer = mapedit_layer_name(pApp, pApp->iActiveLayer);
-		if ( sLayer != NULL && sLayer[0] != 0 ) snprintf(status, sizeof(status), "%s已写入图层 %s", sAction, sLayer);
-		else snprintf(status, sizeof(status), "%s已写入图层 %d", sAction, pApp->iActiveLayer + 1);
-	} else {
-		snprintf(status, sizeof(status), "%s已修改，但地图保存失败", sAction);
-	}
+	mapedit_mark_map_dirty(pApp);
+	sLayer = mapedit_layer_name(pApp, pApp->iActiveLayer);
+	if ( sLayer != NULL && sLayer[0] != 0 ) snprintf(status, sizeof(status), "%s已修改图层 %s（未保存）", sAction, sLayer);
+	else snprintf(status, sizeof(status), "%s已修改图层 %d（未保存）", sAction, pApp->iActiveLayer + 1);
 	mapedit_status(pApp, status);
 	pApp->bGestureDirty = 0;
 }
 
-static void mapedit_history_free_cmd(mapedit_history_cmd_t* pCmd)
-{
-	if ( pCmd == NULL ) return;
-	free(pCmd->arrChanges);
-	memset(pCmd, 0, sizeof(*pCmd));
-}
 
-static void mapedit_history_clear_stack(mapedit_history_cmd_t* arrCmds, int* pCount)
-{
-	int i;
-	if ( arrCmds == NULL || pCount == NULL ) return;
-	for ( i = 0; i < *pCount; i++ ) mapedit_history_free_cmd(&arrCmds[i]);
-	*pCount = 0;
-}
+
+
 
 static void mapedit_clear_history(mapedit_app_t* pApp)
 {
-	if ( pApp == NULL ) return;
-	mapedit_history_free_cmd(&pApp->tCurrentCommand);
-	mapedit_history_clear_stack(pApp->arrUndo, &pApp->iUndoCount);
-	mapedit_history_clear_stack(pApp->arrRedo, &pApp->iRedoCount);
+	if (pApp == NULL) return;
+	mapeditHistoryClear(&pApp->tMapHistory);
+	if (pApp->tMap.bDirty) pApp->tMapHistory.iSavedRevision = UINT64_MAX;
 	mapedit_refresh_toolbar_state(pApp);
 }
 
 static void mapedit_begin_history(mapedit_app_t* pApp)
 {
-	if ( pApp == NULL ) return;
-	mapedit_history_free_cmd(&pApp->tCurrentCommand);
+	if (pApp) { mapeditHistoryBegin(&pApp->tMapHistory); pApp->bHistoryFailed = 0; }
 }
 
 static int mapedit_record_history(mapedit_app_t* pApp, int iIndex, int iOld, int iNew)
 {
-	mapedit_history_change_t* pNew;
-	mapedit_history_cmd_t* pCmd;
-	int i;
-	if ( pApp == NULL || iIndex < 0 || iOld == iNew ) return XUI_OK;
-	pCmd = &pApp->tCurrentCommand;
-	for ( i = 0; i < pCmd->iChangeCount; i++ ) {
-		if ( pCmd->arrChanges[i].iIndex == iIndex ) {
-			pCmd->arrChanges[i].iNewTile = iNew;
-			if ( pCmd->arrChanges[i].iOldTile == iNew ) {
-				if ( i + 1 < pCmd->iChangeCount ) memmove(&pCmd->arrChanges[i], &pCmd->arrChanges[i + 1], (size_t)(pCmd->iChangeCount - i - 1) * sizeof(pCmd->arrChanges[0]));
-				pCmd->iChangeCount--;
-			}
-			return XUI_OK;
-		}
-	}
-	if ( pCmd->iChangeCount >= pCmd->iChangeCapacity ) {
-		int cap = pCmd->iChangeCapacity > 0 ? pCmd->iChangeCapacity * 2 : 64;
-		pNew = (mapedit_history_change_t*)realloc(pCmd->arrChanges, (size_t)cap * sizeof(mapedit_history_change_t));
-		if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		pCmd->arrChanges = pNew;
-		pCmd->iChangeCapacity = cap;
-	}
-	pCmd->arrChanges[pCmd->iChangeCount].iIndex = iIndex;
-	pCmd->arrChanges[pCmd->iChangeCount].iOldTile = iOld;
-	pCmd->arrChanges[pCmd->iChangeCount].iNewTile = iNew;
-	pCmd->iChangeCount++;
-	return XUI_OK;
+	return mapeditHistoryRecord(&pApp->tMapHistory, iIndex, iOld, iNew) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
 
 static int mapedit_commit_history(mapedit_app_t* pApp)
 {
-	if ( pApp == NULL ) return 0;
-	if ( pApp->tCurrentCommand.iChangeCount <= 0 ) {
-		mapedit_history_free_cmd(&pApp->tCurrentCommand);
-		return 0;
-	}
-	mapedit_history_clear_stack(pApp->arrRedo, &pApp->iRedoCount);
-	if ( pApp->iUndoCount >= MAPEDIT_HISTORY_MAX ) {
-		mapedit_history_free_cmd(&pApp->arrUndo[0]);
-		memmove(pApp->arrUndo, pApp->arrUndo + 1, sizeof(pApp->arrUndo[0]) * (MAPEDIT_HISTORY_MAX - 1));
-		memset(&pApp->arrUndo[MAPEDIT_HISTORY_MAX - 1], 0, sizeof(pApp->arrUndo[MAPEDIT_HISTORY_MAX - 1]));
-		pApp->iUndoCount = MAPEDIT_HISTORY_MAX - 1;
-	}
-	pApp->arrUndo[pApp->iUndoCount++] = pApp->tCurrentCommand;
-	memset(&pApp->tCurrentCommand, 0, sizeof(pApp->tCurrentCommand));
+	int changed = mapeditHistoryCommit(&pApp->tMapHistory);
+	pApp->tMap.bDirty = mapeditHistoryDirty(&pApp->tMapHistory);
 	mapedit_refresh_toolbar_state(pApp);
-	return 1;
+	return changed;
 }
 
 static void mapedit_set_tile(mapedit_app_t* pApp, int iX, int iY, int iLayer, int iTile)
 {
 	int idx;
 	int oldTile;
-	if ( pApp == NULL || pApp->tMap.pTiles == NULL ) return;
+	if ( pApp == NULL || pApp->tMap.pTiles == NULL || pApp->bHistoryFailed ) return;
 	if ( iX < 0 || iY < 0 || iX >= pApp->tMap.iWidth || iY >= pApp->tMap.iHeight ) return;
 	if ( iLayer < 0 || iLayer >= pApp->tMap.iLayers ) return;
 	idx = (iLayer * pApp->tMap.iHeight + iY) * pApp->tMap.iWidth + iX;
 	oldTile = pApp->tMap.pTiles[idx];
 	if ( oldTile == iTile ) return;
+	if (mapedit_record_history(pApp, idx, oldTile, iTile) != XUI_OK) {
+		pApp->bHistoryFailed = 1;
+		mapedit_status(pApp, "编辑历史内存不足；此图块未被修改");
+		return;
+	}
 	pApp->tMap.pTiles[idx] = iTile;
 	pApp->tMap.bDirty = 1;
 	pApp->bGestureDirty = 1;
-	(void)mapedit_record_history(pApp, idx, oldTile, iTile);
 	pApp->bEditOK = 1;
 	if ( !pApp->bBatchEdit ) {
 		if ( pApp->pMapCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3720,7 +3873,7 @@ static int mapedit_apply_brush_at(mapedit_app_t* pApp, int iX, int iY)
 	int dy;
 	if ( pApp == NULL ) return -1;
 	if ( !mapedit_need_brush(pApp) ) return -1;
-	before = pApp->tCurrentCommand.iChangeCount;
+	before = pApp->tMapHistory.tCurrentCommand.iChangeCount;
 	cols = (pApp->iActiveTool == MAPEDIT_TOOL_ERASER) ? 1 : (pApp->iBrushW > 0 ? pApp->iBrushW : 1);
 	rows = (pApp->iActiveTool == MAPEDIT_TOOL_ERASER) ? 1 : (pApp->iBrushH > 0 ? pApp->iBrushH : 1);
 	for ( dy = 0; dy < rows; dy++ ) {
@@ -3728,7 +3881,7 @@ static int mapedit_apply_brush_at(mapedit_app_t* pApp, int iX, int iY)
 			mapedit_set_tile(pApp, iX + dx, iY + dy, pApp->iActiveLayer, mapedit_brush_tile_at(pApp, dx, dy));
 		}
 	}
-	return pApp->tCurrentCommand.iChangeCount > before ? 1 : 0;
+	return pApp->tMapHistory.tCurrentCommand.iChangeCount > before ? 1 : 0;
 }
 
 static void mapedit_apply_line(mapedit_app_t* pApp, int x0, int y0, int x1, int y1)
@@ -3881,59 +4034,48 @@ static void mapedit_apply_shape(mapedit_app_t* pApp, int x0, int y0, int x1, int
 	else if ( pApp->iActiveTool == MAPEDIT_TOOL_CIRCLE ) mapedit_apply_circle(pApp, x0, y0, x1, y1);
 }
 
-static void mapedit_undo(mapedit_app_t* pApp)
+static void mapedit_history_move(mapedit_app_t* pApp, int redo)
 {
-	mapedit_history_cmd_t cmd;
-	int i;
-	if ( pApp == NULL || pApp->iUndoCount <= 0 || pApp->tMap.pTiles == NULL ) return;
-	mapedit_history_free_cmd(&pApp->tCurrentCommand);
-	cmd = pApp->arrUndo[--pApp->iUndoCount];
-	memset(&pApp->arrUndo[pApp->iUndoCount], 0, sizeof(pApp->arrUndo[pApp->iUndoCount]));
-	for ( i = cmd.iChangeCount - 1; i >= 0; i-- ) {
-		int idx = cmd.arrChanges[i].iIndex;
-		if ( idx >= 0 && idx < pApp->tMap.iTileCount ) pApp->tMap.pTiles[idx] = cmd.arrChanges[i].iOldTile;
+	mapedit_history_t* history;
+	mapedit_history_cmd_t* cmd;
+	int i, tileset;
+	char oldTileset[MAPEDIT_FILE_MAX];
+	if (!pApp || pApp->bPainting) return;
+	tileset = pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_TILESET;
+	history = tileset ? &pApp->tTilesetHistory : &pApp->tMapHistory;
+	mapeditHistoryBegin(history);
+	cmd = mapeditHistoryPeek(history, redo);
+	if (!cmd) return;
+	mapedit_copy_text(oldTileset, sizeof(oldTileset), pApp->tMap.sTileset);
+	mapeditDocumentSwap(cmd, &pApp->tMap, &pApp->tTileset);
+	for (i = 0; i < cmd->iChangeCount; ++i) {
+		int index = cmd->arrChanges[i].iIndex;
+		if (index >= 0 && index < pApp->tMap.iTileCount)
+			pApp->tMap.pTiles[index] = redo ? cmd->arrChanges[i].iNewTile : cmd->arrChanges[i].iOldTile;
 	}
-	if ( pApp->iRedoCount >= MAPEDIT_HISTORY_MAX ) {
-		mapedit_history_free_cmd(&pApp->arrRedo[0]);
-		memmove(pApp->arrRedo, pApp->arrRedo + 1, sizeof(pApp->arrRedo[0]) * (MAPEDIT_HISTORY_MAX - 1));
-		memset(&pApp->arrRedo[MAPEDIT_HISTORY_MAX - 1], 0, sizeof(pApp->arrRedo[MAPEDIT_HISTORY_MAX - 1]));
-		pApp->iRedoCount = MAPEDIT_HISTORY_MAX - 1;
+	mapeditHistoryMoved(history, redo);
+	if (tileset) {
+		pApp->tTileset.bDirty = mapeditHistoryDirty(history);
+		mapedit_tileset_refresh_surfaces(pApp);
+	} else {
+		pApp->tMap.bDirty = mapeditHistoryDirty(history);
+		if (strcmp(oldTileset, pApp->tMap.sTileset) != 0 && !pApp->tTileset.bDirty)
+			(void)mapedit_tileset_load(pApp, pApp->tMap.sTileset);
 	}
-	pApp->arrRedo[pApp->iRedoCount++] = cmd;
-	pApp->tMap.bDirty = 1;
-	(void)mapedit_map_save(&pApp->tMap, pApp->tMap.sPath);
-	mapedit_status(pApp, "已撤销地图编辑操作");
-	if ( pApp->pMapCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( pApp->pMapPassageCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapPassageCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	mapedit_invalidate_map_views(pApp);
+	mapedit_invalidate_tileset_views(pApp);
+	mapedit_refresh_map_properties(pApp);
+	mapedit_refresh_tileset_properties(pApp);
 	mapedit_refresh_toolbar_state(pApp);
+	mapedit_update_window_title(pApp);
+	mapedit_update_status_details(pApp);
+	mapedit_status(pApp, redo ? "已重做" : "已撤销");
+	xgeRenderRequestAfter(2.0f);
 }
 
-static void mapedit_redo(mapedit_app_t* pApp)
-{
-	mapedit_history_cmd_t cmd;
-	int i;
-	if ( pApp == NULL || pApp->iRedoCount <= 0 || pApp->tMap.pTiles == NULL ) return;
-	mapedit_history_free_cmd(&pApp->tCurrentCommand);
-	cmd = pApp->arrRedo[--pApp->iRedoCount];
-	memset(&pApp->arrRedo[pApp->iRedoCount], 0, sizeof(pApp->arrRedo[pApp->iRedoCount]));
-	for ( i = 0; i < cmd.iChangeCount; i++ ) {
-		int idx = cmd.arrChanges[i].iIndex;
-		if ( idx >= 0 && idx < pApp->tMap.iTileCount ) pApp->tMap.pTiles[idx] = cmd.arrChanges[i].iNewTile;
-	}
-	if ( pApp->iUndoCount >= MAPEDIT_HISTORY_MAX ) {
-		mapedit_history_free_cmd(&pApp->arrUndo[0]);
-		memmove(pApp->arrUndo, pApp->arrUndo + 1, sizeof(pApp->arrUndo[0]) * (MAPEDIT_HISTORY_MAX - 1));
-		memset(&pApp->arrUndo[MAPEDIT_HISTORY_MAX - 1], 0, sizeof(pApp->arrUndo[MAPEDIT_HISTORY_MAX - 1]));
-		pApp->iUndoCount = MAPEDIT_HISTORY_MAX - 1;
-	}
-	pApp->arrUndo[pApp->iUndoCount++] = cmd;
-	pApp->tMap.bDirty = 1;
-	(void)mapedit_map_save(&pApp->tMap, pApp->tMap.sPath);
-	mapedit_status(pApp, "已重做地图编辑操作");
-	if ( pApp->pMapCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( pApp->pMapPassageCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapPassageCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	mapedit_refresh_toolbar_state(pApp);
-}
+static void mapedit_undo(mapedit_app_t* pApp) { mapedit_history_move(pApp, 0); }
+
+static void mapedit_redo(mapedit_app_t* pApp) { mapedit_history_move(pApp, 1); }
 
 static unsigned char mapedit_blob47_normalize_mask(unsigned char iMask)
 {
@@ -4047,7 +4189,7 @@ static void mapedit_draw_special_missing(mapedit_app_t* pApp, xui_draw_context p
 	}
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, dst, XUI_COLOR_RGBA(246, 218, 158, 205));
 	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, dst, 1.0f, XUI_COLOR_RGBA(190, 140, 42, 220));
-	if ( dst.fW >= 18.0f && dst.fH >= 14.0f ) {
+	if ( dst.fW >= 18 && dst.fH >= 14 ) {
 		snprintf(sText, sizeof(sText), "%d", iTile);
 		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText, dst, XUI_COLOR_RGBA(96, 72, 24, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
@@ -4071,21 +4213,21 @@ static int mapedit_draw_tile_rect(mapedit_app_t* pApp, xui_draw_context pDraw, i
 			mapedit_draw_special_missing(pApp, pDraw, dst, iTile, 1, pApp->tTileset.arrSpecial[idx].sFile[0] != 0 || pApp->tTileset.arrSpecial[idx].sType[0] != 0);
 			return XUI_OK;
 		}
-		src = (xui_rect_t){0.0f, 0.0f, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H};
-		if ( src.fW > (float)pDesc->iWidth ) src.fW = (float)pDesc->iWidth;
-		if ( src.fH > (float)pDesc->iHeight ) src.fH = (float)pDesc->iHeight;
+		src = (xui_rect_t){0, 0, MAPEDIT_TILE_W, MAPEDIT_TILE_H};
+		if ( src.fW > pDesc->iWidth ) src.fW = pDesc->iWidth;
+		if ( src.fH > pDesc->iHeight ) src.fH = pDesc->iHeight;
 		return pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pSurface, src, dst, XUI_COLOR_WHITE, 0);
 	}
 	if ( pApp->tTileset.pStaticSurface == NULL ) return XUI_OK;
 	local = iTile - mapedit_tile_static_start(pApp);
 	if ( local < 0 ) return XUI_OK;
 	src = (xui_rect_t){
-		(float)((local % MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_W),
-		(float)((local / MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_H),
-		(float)MAPEDIT_TILE_W,
-		(float)MAPEDIT_TILE_H
+		(local % MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_W,
+		(local / MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_H,
+		MAPEDIT_TILE_W,
+		MAPEDIT_TILE_H
 	};
-	if ( src.fX + src.fW > (float)pApp->tTileset.tStaticDesc.iWidth || src.fY + src.fH > (float)pApp->tTileset.tStaticDesc.iHeight ) {
+	if ( src.fX + src.fW > pApp->tTileset.tStaticDesc.iWidth || src.fY + src.fH > pApp->tTileset.tStaticDesc.iHeight ) {
 		return XUI_OK;
 	}
 	return pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->tTileset.pStaticSurface, src, dst, XUI_COLOR_WHITE, 0);
@@ -4117,11 +4259,11 @@ static int mapedit_draw_map_tile_rect(mapedit_app_t* pApp, xui_draw_context pDra
 			return XUI_OK;
 		}
 		autoTile = mapedit_special_is_auto(pApp->tTileset.arrSpecial[idx].sType);
-		src = (xui_rect_t){0.0f, 0.0f, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H};
+		src = (xui_rect_t){0, 0, MAPEDIT_TILE_W, MAPEDIT_TILE_H};
 		if ( autoTile && pDesc->iWidth >= MAPEDIT_TILE_W * MAPEDIT_BLOB47_COLS && pDesc->iHeight >= MAPEDIT_TILE_H * MAPEDIT_BLOB47_ROWS ) {
 			int blob = mapedit_blob47_index_from_mask(mapedit_blob47_mask_for_cell(pApp, iLayer, iX, iY, iTile));
-			src.fX += (float)((blob % MAPEDIT_BLOB47_COLS) * MAPEDIT_TILE_W);
-			src.fY = (float)((blob / MAPEDIT_BLOB47_COLS) * MAPEDIT_TILE_H);
+			src.fX += (blob % MAPEDIT_BLOB47_COLS) * MAPEDIT_TILE_W;
+			src.fY = (blob / MAPEDIT_BLOB47_COLS) * MAPEDIT_TILE_H;
 		}
 		if ( mapedit_special_has_state(pApp->tTileset.arrSpecial[idx].sType) ) {
 			if ( state < 0 ) state = 0;
@@ -4129,7 +4271,7 @@ static int mapedit_draw_map_tile_rect(mapedit_app_t* pApp, xui_draw_context pDra
 			availableStates = stateBlockH > 0 ? (pDesc->iHeight / stateBlockH) : 0;
 			if ( availableStates > 0 ) {
 				if ( state >= availableStates ) state = availableStates - 1;
-				src.fY += (float)(state * stateBlockH);
+				src.fY += state * stateBlockH;
 			}
 		}
 		if ( pApp->bPreview ) {
@@ -4138,13 +4280,13 @@ static int mapedit_draw_map_tile_rect(mapedit_app_t* pApp, xui_draw_context pDra
 			if ( frameCount > 1 ) {
 				frameIndex = pApp->iPreviewAnimFrame % frameCount;
 				if ( frameIndex < 0 ) frameIndex = 0;
-				src.fX += (float)(frameIndex * frameBlockW);
+				src.fX += frameIndex * frameBlockW;
 			}
 		}
-		if ( src.fX >= (float)pDesc->iWidth || src.fY >= (float)pDesc->iHeight ) return XUI_OK;
-		if ( src.fX + src.fW > (float)pDesc->iWidth ) src.fW = (float)pDesc->iWidth - src.fX;
-		if ( src.fY + src.fH > (float)pDesc->iHeight ) src.fH = (float)pDesc->iHeight - src.fY;
-		if ( src.fW <= 0.0f || src.fH <= 0.0f ) {
+		if ( src.fX >= pDesc->iWidth || src.fY >= pDesc->iHeight ) return XUI_OK;
+		if ( src.fX + src.fW > pDesc->iWidth ) src.fW = pDesc->iWidth - src.fX;
+		if ( src.fY + src.fH > pDesc->iHeight ) src.fH = pDesc->iHeight - src.fY;
+		if ( src.fW <= 0 || src.fH <= 0 ) {
 			return XUI_OK;
 		}
 		return pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pSurface, src, dst, XUI_COLOR_WHITE, 0);
@@ -4153,37 +4295,34 @@ static int mapedit_draw_map_tile_rect(mapedit_app_t* pApp, xui_draw_context pDra
 	local = iTile - mapedit_tile_static_start(pApp);
 	if ( local < 0 ) return XUI_OK;
 	src = (xui_rect_t){
-		(float)((local % MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_W),
-		(float)((local / MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_H),
-		(float)MAPEDIT_TILE_W,
-		(float)MAPEDIT_TILE_H
+		(local % MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_W,
+		(local / MAPEDIT_TILES_PER_ROW) * MAPEDIT_TILE_H,
+		MAPEDIT_TILE_W,
+		MAPEDIT_TILE_H
 	};
-	if ( src.fX + src.fW > (float)pApp->tTileset.tStaticDesc.iWidth || src.fY + src.fH > (float)pApp->tTileset.tStaticDesc.iHeight ) {
+	if ( src.fX + src.fW > pApp->tTileset.tStaticDesc.iWidth || src.fY + src.fH > pApp->tTileset.tStaticDesc.iHeight ) {
 		return XUI_OK;
 	}
 	return pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->tTileset.pStaticSurface, src, dst, XUI_COLOR_WHITE, 0);
 }
 
-static int mapedit_draw_tile(mapedit_app_t* pApp, xui_draw_context pDraw, int iTile, float fX, float fY)
-{
-	return mapedit_draw_tile_rect(pApp, pDraw, iTile, (xui_rect_t){fX, fY, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H});
-}
+
 
 static void mapedit_draw_tag_marker(mapedit_app_t* pApp, xui_draw_context pDraw, xui_rect_t cell, const char* sValue)
 {
 	xui_rect_t dot;
 	xui_rect_t textRect;
-	float dotSize;
+	int dotSize;
 	if ( pApp == NULL || pDraw == NULL ) return;
 	if ( sValue == NULL || sValue[0] == 0 ) return;
-	dotSize = (cell.fW < cell.fH ? cell.fW : cell.fH) * 0.35f;
-	if ( dotSize < 5.0f ) dotSize = 5.0f;
-	if ( dotSize > 12.0f ) dotSize = 12.0f;
-	dot = (xui_rect_t){cell.fX + 2.0f, cell.fY + 2.0f, dotSize, dotSize};
+	dotSize = ((cell.fW < cell.fH ? cell.fW : cell.fH) * 35 + 50) / 100;
+	if ( dotSize < 5 ) dotSize = 5;
+	if ( dotSize > 12 ) dotSize = 12;
+	dot = (xui_rect_t){cell.fX + 2, cell.fY + 2, dotSize, dotSize};
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, dot, XUI_COLOR_RGBA(30, 135, 210, 210));
 	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, dot, 1.0f, XUI_COLOR_RGBA(245, 252, 255, 230));
-	if ( cell.fW >= 28.0f && cell.fH >= 20.0f ) {
-		textRect = (xui_rect_t){cell.fX + 2.0f, cell.fY + cell.fH - 15.0f, cell.fW - 4.0f, 13.0f};
+	if ( cell.fW >= 28 && cell.fH >= 20 ) {
+		textRect = (xui_rect_t){cell.fX + 2, cell.fY + cell.fH - 15, cell.fW - 4, 13};
 		(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, textRect, XUI_COLOR_RGBA(245, 252, 255, 190));
 		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sValue, textRect,
 			XUI_COLOR_RGBA(31, 75, 112, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -4208,26 +4347,30 @@ static void mapedit_draw_special_placeholder_cell(mapedit_app_t* pApp, xui_draw_
 
 static void mapedit_draw_tilegrid_lines(mapedit_app_t* pApp, xui_draw_context pDraw, xui_rect_t viewport, float scrollX, float scrollY, int iCellW, int iCellH, int iCols, int iRows, uint32_t iGridColor)
 {
-	float originX;
-	float originY;
-	float contentW;
-	float contentH;
-	float viewRight;
-	float viewBottom;
-	float y0;
-	float y1;
-	float x0;
-	float x1;
+	int scrollPixelX;
+	int scrollPixelY;
+	int originX;
+	int originY;
+	int contentW;
+	int contentH;
+	int viewRight;
+	int viewBottom;
+	int y0;
+	int y1;
+	int x0;
+	int x1;
 	int firstCol;
 	int lastCol;
 	int firstRow;
 	int lastRow;
 	int i;
 	if ( pApp == NULL || pDraw == NULL || iCellW <= 0 || iCellH <= 0 || iCols <= 0 || iRows <= 0 ) return;
-	originX = viewport.fX - scrollX;
-	originY = viewport.fY - scrollY;
-	contentW = (float)(iCols * iCellW);
-	contentH = (float)(iRows * iCellH);
+	scrollPixelX = (int)floorf(scrollX);
+	scrollPixelY = (int)floorf(scrollY);
+	originX = viewport.fX - scrollPixelX;
+	originY = viewport.fY - scrollPixelY;
+	contentW = iCols * iCellW;
+	contentH = iRows * iCellH;
 	viewRight = viewport.fX + viewport.fW;
 	viewBottom = viewport.fY + viewport.fH;
 	y0 = (viewport.fY > originY) ? viewport.fY : originY;
@@ -4235,21 +4378,21 @@ static void mapedit_draw_tilegrid_lines(mapedit_app_t* pApp, xui_draw_context pD
 	x0 = (viewport.fX > originX) ? viewport.fX : originX;
 	x1 = (viewRight < originX + contentW) ? viewRight : originX + contentW;
 	if ( y1 > y0 ) {
-		firstCol = mapedit_max_i(0, (int)floorf(scrollX / (float)iCellW));
-		lastCol = mapedit_min_i(iCols, (int)ceilf((scrollX + viewport.fW) / (float)iCellW) + 1);
+		firstCol = mapedit_max_i(0, scrollPixelX / iCellW);
+		lastCol = mapedit_min_i(iCols, (scrollPixelX + viewport.fW + iCellW - 1) / iCellW + 1);
 		for ( i = firstCol; i <= lastCol; i++ ) {
-			float x = originX + (float)(i * iCellW);
-			if ( x < viewport.fX - 1.0f || x > viewRight ) continue;
-			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, (xui_rect_t){x, y0, 1.0f, y1 - y0}, iGridColor);
+			int x = originX + i * iCellW;
+			if ( x < viewport.fX - 1 || x > viewRight ) continue;
+			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, (xui_rect_t){x, y0, 1, y1 - y0}, iGridColor);
 		}
 	}
 	if ( x1 > x0 ) {
-		firstRow = mapedit_max_i(0, (int)floorf(scrollY / (float)iCellH));
-		lastRow = mapedit_min_i(iRows, (int)ceilf((scrollY + viewport.fH) / (float)iCellH) + 1);
+		firstRow = mapedit_max_i(0, scrollPixelY / iCellH);
+		lastRow = mapedit_min_i(iRows, (scrollPixelY + viewport.fH + iCellH - 1) / iCellH + 1);
 		for ( i = firstRow; i <= lastRow; i++ ) {
-			float y = originY + (float)(i * iCellH);
-			if ( y < viewport.fY - 1.0f || y > viewBottom ) continue;
-			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, (xui_rect_t){x0, y, x1 - x0, 1.0f}, iGridColor);
+			int y = originY + i * iCellH;
+			if ( y < viewport.fY - 1 || y > viewBottom ) continue;
+			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, (xui_rect_t){x0, y, x1 - x0, 1}, iGridColor);
 		}
 	}
 }
@@ -4259,16 +4402,16 @@ static void mapedit_draw_tilegrid_border(mapedit_app_t* pApp, xui_draw_context p
 	if ( pApp == NULL || pDraw == NULL || iCellW <= 0 || iCellH <= 0 || iCols <= 0 || iRows <= 0 ) return;
 	(void)viewport;
 	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw,
-		(xui_rect_t){viewport.fX - scrollX, viewport.fY - scrollY, (float)(iCols * iCellW), (float)(iRows * iCellH)},
+		(xui_rect_t){viewport.fX - (int)floorf(scrollX), viewport.fY - (int)floorf(scrollY), iCols * iCellW, iRows * iCellH},
 		1.0f, MAPEDIT_TILEGRID_BORDER);
 }
 
 static void mapedit_draw_actor_overlay_marker(mapedit_app_t* pApp, xui_draw_context pDraw, xui_rect_t cell)
 {
-	float shadow;
+	int shadow;
 	if ( pApp == NULL || pDraw == NULL ) return;
-	shadow = (cell.fW < 20.0f || cell.fH < 20.0f) ? 0.0f : 1.0f;
-	if ( shadow > 0.0f ) {
+	shadow = (cell.fW < 20 || cell.fH < 20) ? 0 : 1;
+	if ( shadow > 0 ) {
 		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "≈",
 			(xui_rect_t){cell.fX + shadow, cell.fY + shadow, cell.fW, cell.fH},
 			XUI_COLOR_RGBA(248, 252, 255, 210), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -4300,6 +4443,8 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 	xui_rect_t r;
 	float scrollX;
 	float scrollY;
+	int scrollPixelX;
+	int scrollPixelY;
 	int firstX;
 	int firstY;
 	int lastX;
@@ -4316,22 +4461,24 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "未加载地图", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
 	}
 	mapedit_map_widget_scroll(pApp, pWidget, &scrollX, &scrollY);
-	firstX = mapedit_max_i(0, (int)floorf(scrollX / (float)MAPEDIT_TILE_W));
-	firstY = mapedit_max_i(0, (int)floorf(scrollY / (float)MAPEDIT_TILE_H));
-	lastX = mapedit_min_i(pApp->tMap.iWidth - 1, (int)ceilf((scrollX + r.fW) / (float)MAPEDIT_TILE_W));
-	lastY = mapedit_min_i(pApp->tMap.iHeight - 1, (int)ceilf((scrollY + r.fH) / (float)MAPEDIT_TILE_H));
+	scrollPixelX = (int)floorf(scrollX);
+	scrollPixelY = (int)floorf(scrollY);
+	firstX = mapedit_max_i(0, scrollPixelX / mapedit_view_cell(pApp, pWidget, 0));
+	firstY = mapedit_max_i(0, scrollPixelY / mapedit_view_cell(pApp, pWidget, 1));
+	lastX = mapedit_min_i(pApp->tMap.iWidth - 1, (scrollPixelX + r.fW + mapedit_view_cell(pApp, pWidget, 0) - 1) / mapedit_view_cell(pApp, pWidget, 0));
+	lastY = mapedit_min_i(pApp->tMap.iHeight - 1, (scrollPixelY + r.fH + mapedit_view_cell(pApp, pWidget, 1) - 1) / mapedit_view_cell(pApp, pWidget, 1));
 	for ( y = firstY; y <= lastY; y++ ) {
 		for ( x = firstX; x <= lastX; x++ ) {
-			float dx = r.fX + (float)(x * MAPEDIT_TILE_W) - scrollX;
-			float dy = r.fY + (float)(y * MAPEDIT_TILE_H) - scrollY;
+			int dx = r.fX + x * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX;
+			int dy = r.fY + y * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY;
 			visibleCells++;
 			for ( l = 0; l < pApp->tMap.iLayers; l++ ) {
 				int idx = (l * pApp->tMap.iHeight + y) * pApp->tMap.iWidth + x;
 				int tile = pApp->tMap.pTiles[idx];
-				if ( tile > 0 ) (void)mapedit_draw_map_tile_rect(pApp, pDraw, tile, l, x, y, (xui_rect_t){dx, dy, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H});
+				if ( tile > 0 ) (void)mapedit_draw_map_tile_rect(pApp, pDraw, tile, l, x, y, (xui_rect_t){dx, dy, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 1)});
 			}
 			if ( pApp->bGrid && !(pWidget == pApp->pMapCanvas && pApp->bPreview) ) {
-				(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){dx, dy, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H}, 1.0f, XUI_COLOR_RGBA(46, 72, 98, 56));
+				(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){dx, dy, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 1)}, 1.0f, XUI_COLOR_RGBA(46, 72, 98, 56));
 			}
 			if ( pWidget == pApp->pMapTagsCanvas ) {
 				mapedit_custom_channel_def_t* pDef = mapedit_custom_channel(pApp, pApp->iMapTagChannel);
@@ -4342,7 +4489,7 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 					}
 				}
 				if ( pDef != NULL && sValue[0] != 0 && strcmp(sValue, pDef->sDefaultValue) != 0 ) {
-					mapedit_draw_tag_marker(pApp, pDraw, (xui_rect_t){dx, dy, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H}, sValue);
+					mapedit_draw_tag_marker(pApp, pDraw, (xui_rect_t){dx, dy, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 1)}, sValue);
 				}
 			}
 		}
@@ -4350,10 +4497,10 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 	if ( pWidget == pApp->pMapCanvas && !pApp->bPreview && pApp->iMapHoverX >= 0 && pApp->iMapHoverY >= 0 &&
 	     pApp->iMapHoverX < pApp->tMap.iWidth && pApp->iMapHoverY < pApp->tMap.iHeight ) {
 		xui_rect_t hover = {
-			r.fX + (float)(pApp->iMapHoverX * MAPEDIT_TILE_W) - scrollX,
-			r.fY + (float)(pApp->iMapHoverY * MAPEDIT_TILE_H) - scrollY,
-			(float)MAPEDIT_TILE_W + 1.0f,
-			(float)MAPEDIT_TILE_H + 1.0f
+			r.fX + pApp->iMapHoverX * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX,
+			r.fY + pApp->iMapHoverY * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY,
+			mapedit_view_cell(pApp, pWidget, 0) + 1,
+			mapedit_view_cell(pApp, pWidget, 1) + 1
 		};
 		(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, hover, 1.0f, XUI_COLOR_RGBA(42, 140, 210, 180));
 	}
@@ -4361,10 +4508,10 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 		if ( pApp->iMapTagsHoverX >= 0 && pApp->iMapTagsHoverY >= 0 &&
 		     pApp->iMapTagsHoverX < pApp->tMap.iWidth && pApp->iMapTagsHoverY < pApp->tMap.iHeight ) {
 			xui_rect_t hover = {
-				r.fX + (float)(pApp->iMapTagsHoverX * MAPEDIT_TILE_W) - scrollX,
-				r.fY + (float)(pApp->iMapTagsHoverY * MAPEDIT_TILE_H) - scrollY,
-				(float)MAPEDIT_TILE_W + 1.0f,
-				(float)MAPEDIT_TILE_H + 1.0f
+				r.fX + pApp->iMapTagsHoverX * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX,
+				r.fY + pApp->iMapTagsHoverY * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY,
+				mapedit_view_cell(pApp, pWidget, 0) + 1,
+				mapedit_view_cell(pApp, pWidget, 1) + 1
 			};
 			(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, hover, 1.0f, XUI_COLOR_RGBA(42, 140, 210, 180));
 		}
@@ -4373,10 +4520,10 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 			int sy = pApp->iMapTagsSelectedCell / pApp->tMap.iWidth;
 			if ( sx >= 0 && sy >= 0 && sx < pApp->tMap.iWidth && sy < pApp->tMap.iHeight ) {
 				xui_rect_t sel = {
-					r.fX + (float)(sx * MAPEDIT_TILE_W) - scrollX,
-					r.fY + (float)(sy * MAPEDIT_TILE_H) - scrollY,
-					(float)MAPEDIT_TILE_W + 1.0f,
-					(float)MAPEDIT_TILE_H + 1.0f
+					r.fX + sx * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX,
+					r.fY + sy * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY,
+					mapedit_view_cell(pApp, pWidget, 0) + 1,
+					mapedit_view_cell(pApp, pWidget, 1) + 1
 				};
 				(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, sel, 1.0f, XUI_COLOR_RGBA(28, 122, 196, 230));
 			}
@@ -4390,10 +4537,10 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 		int minY = mapedit_min_i(pApp->iDragStartY, pApp->iDragCurrentY);
 		int maxY = mapedit_max_i(pApp->iDragStartY, pApp->iDragCurrentY);
 		xui_rect_t sel = {
-			r.fX + (float)(minX * MAPEDIT_TILE_W) - scrollX,
-			r.fY + (float)(minY * MAPEDIT_TILE_H) - scrollY,
-			(float)((maxX - minX + 1) * MAPEDIT_TILE_W) + 1.0f,
-			(float)((maxY - minY + 1) * MAPEDIT_TILE_H) + 1.0f
+			r.fX + minX * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX,
+			r.fY + minY * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY,
+			(maxX - minX + 1) * mapedit_view_cell(pApp, pWidget, 0) + 1,
+			(maxY - minY + 1) * mapedit_view_cell(pApp, pWidget, 1) + 1
 		};
 		(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, sel, 1.0f, XUI_COLOR_RGBA(28, 122, 196, 230));
 	}
@@ -4417,13 +4564,17 @@ static int mapedit_tile_select_render(xui_widget pWidget, xui_draw_context pDraw
 	int staticStart;
 	int selCol;
 	int selRow;
+	int scrollPixelX;
+	int scrollPixelY;
 	(void)iStateId;
 	if ( pApp == NULL || pDraw == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, MAPEDIT_TILEGRID_BG);
 	rowCount = mapedit_tile_select_row_count(pApp);
-	visibleRows = (int)(r.fH / MAPEDIT_TILE_H) + 2;
-	firstRow = mapedit_max_i(0, (int)(pApp->fTileScrollY / MAPEDIT_TILE_H));
+	scrollPixelX = (int)floorf(pApp->fTileScrollX);
+	scrollPixelY = (int)floorf(pApp->fTileScrollY);
+	visibleRows = r.fH / mapedit_view_cell(pApp, pWidget, 1) + 2;
+	firstRow = mapedit_max_i(0, scrollPixelY / mapedit_view_cell(pApp, pWidget, 1));
 	lastRow = mapedit_min_i(rowCount, firstRow + visibleRows);
 	special = pApp->tTileset.iSpecialCount;
 	staticStart = mapedit_tile_static_start(pApp);
@@ -4432,10 +4583,10 @@ static int mapedit_tile_select_render(xui_widget pWidget, xui_draw_context pDraw
 	if ( pApp->tTileset.pStaticSurface == NULL ) {
 		int staticRow = staticStart / MAPEDIT_TILES_PER_ROW;
 		xui_rect_t staticRect = {
-			r.fX - pApp->fTileScrollX,
-			r.fY + (float)(staticRow * MAPEDIT_TILE_H) - pApp->fTileScrollY,
-			(float)(MAPEDIT_TILES_PER_ROW * MAPEDIT_TILE_W),
-			(float)(mapedit_tile_static_rows(pApp) * MAPEDIT_TILE_H)
+			r.fX - scrollPixelX,
+			r.fY + staticRow * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY,
+			MAPEDIT_TILES_PER_ROW * mapedit_view_cell(pApp, pWidget, 0),
+			mapedit_tile_static_rows(pApp) * mapedit_view_cell(pApp, pWidget, 1)
 		};
 		(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, staticRect, XUI_COLOR_RGBA(235, 244, 250, 255));
 		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "当前地图未设置可用静态图块集", staticRect, XUI_COLOR_RGBA(104, 128, 148, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -4443,27 +4594,27 @@ static int mapedit_tile_select_render(xui_widget pWidget, xui_draw_context pDraw
 	for ( row = firstRow; row < lastRow; row++ ) {
 		for ( col = 0; col < MAPEDIT_TILES_PER_ROW; col++ ) {
 		int tile = row * MAPEDIT_TILES_PER_ROW + col;
-		float dx = r.fX + (float)(col * MAPEDIT_TILE_W) - pApp->fTileScrollX;
-		float dy = r.fY + (float)(row * MAPEDIT_TILE_H) - pApp->fTileScrollY;
-		xui_rect_t cell = (xui_rect_t){dx, dy, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H};
+		int dx = r.fX + col * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX;
+		int dy = r.fY + row * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY;
+		xui_rect_t cell = (xui_rect_t){dx, dy, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 1)};
 		if ( tile == 0 ) {
 			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, cell, XUI_COLOR_RGBA(242, 248, 252, 235));
 			(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "0", cell, XUI_COLOR_RGBA(48, 112, 62, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		} else if ( mapedit_tile_select_tile_selectable(pApp, tile) ) {
-			(void)mapedit_draw_tile(pApp, pDraw, tile, dx, dy);
+			(void)mapedit_draw_tile_rect(pApp, pDraw, tile, cell);
 		} else if ( tile > special && tile < staticStart ) {
 			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, cell, XUI_COLOR_RGBA(224, 232, 238, 180));
 		}
 		}
 	}
-	mapedit_draw_tilegrid_lines(pApp, pDraw, r, pApp->fTileScrollX, pApp->fTileScrollY, MAPEDIT_TILE_W, MAPEDIT_TILE_H, MAPEDIT_TILES_PER_ROW, rowCount, MAPEDIT_TILEGRID_GRID);
+	mapedit_draw_tilegrid_lines(pApp, pDraw, r, pApp->fTileScrollX, pApp->fTileScrollY, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 1), MAPEDIT_TILES_PER_ROW, rowCount, MAPEDIT_TILEGRID_GRID);
 	if ( pApp->iTileSelectHoverCol >= 0 && pApp->iTileSelectHoverRow >= 0 &&
 	     pApp->iTileSelectHoverCol < MAPEDIT_TILES_PER_ROW && pApp->iTileSelectHoverRow < rowCount ) {
 		xui_rect_t hover = {
-			r.fX + (float)(pApp->iTileSelectHoverCol * MAPEDIT_TILE_W) - pApp->fTileScrollX,
-			r.fY + (float)(pApp->iTileSelectHoverRow * MAPEDIT_TILE_H) - pApp->fTileScrollY,
-			(float)MAPEDIT_TILE_W + 1.0f,
-			(float)MAPEDIT_TILE_H + 1.0f
+			r.fX + pApp->iTileSelectHoverCol * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX,
+			r.fY + pApp->iTileSelectHoverRow * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY,
+			mapedit_view_cell(pApp, pWidget, 0) + 1,
+			mapedit_view_cell(pApp, pWidget, 1) + 1
 		};
 		if ( hover.fX + hover.fW >= r.fX && hover.fY + hover.fH >= r.fY && hover.fX <= r.fX + r.fW && hover.fY <= r.fY + r.fH ) {
 			(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, hover, 1.0f, XUI_COLOR_RGBA(42, 140, 210, 180));
@@ -4471,16 +4622,16 @@ static int mapedit_tile_select_render(xui_widget pWidget, xui_draw_context pDraw
 	}
 	if ( selCol >= 0 && selRow >= 0 ) {
 		xui_rect_t sel = {
-			r.fX + (float)(selCol * MAPEDIT_TILE_W) - pApp->fTileScrollX,
-			r.fY + (float)(selRow * MAPEDIT_TILE_H) - pApp->fTileScrollY,
-			(float)(mapedit_max_i(1, pApp->iBrushW) * MAPEDIT_TILE_W) + 1.0f,
-			(float)(mapedit_max_i(1, pApp->iBrushH) * MAPEDIT_TILE_H) + 1.0f
+			r.fX + selCol * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX,
+			r.fY + selRow * mapedit_view_cell(pApp, pWidget, 1) - scrollPixelY,
+			mapedit_max_i(1, pApp->iBrushW) * mapedit_view_cell(pApp, pWidget, 0) + 1,
+			mapedit_max_i(1, pApp->iBrushH) * mapedit_view_cell(pApp, pWidget, 1) + 1
 		};
 		if ( sel.fX + sel.fW >= r.fX && sel.fY + sel.fH >= r.fY && sel.fX <= r.fX + r.fW && sel.fY <= r.fY + r.fH ) {
 			(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, sel, 1.0f, XUI_COLOR_RGBA(28, 122, 196, 230));
 		}
 	}
-	mapedit_draw_tilegrid_border(pApp, pDraw, r, pApp->fTileScrollX, pApp->fTileScrollY, MAPEDIT_TILE_W, MAPEDIT_TILE_H, MAPEDIT_TILES_PER_ROW, rowCount);
+	mapedit_draw_tilegrid_border(pApp, pDraw, r, pApp->fTileScrollX, pApp->fTileScrollY, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 1), MAPEDIT_TILES_PER_ROW, rowCount);
 	return XUI_OK;
 }
 
@@ -4494,61 +4645,41 @@ static int mapedit_simple_panel_render(xui_widget pWidget, xui_draw_context pDra
 	proxy = xuiProxyXge();
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)proxy.drawRectFill(&proxy, pDraw, r, XUI_COLOR_RGBA(250, 253, 255, 255));
-	return proxy.drawText(&proxy, pDraw, xuiGetDefaultFont(xuiWidgetGetContext(pWidget)), sText != NULL ? sText : "", (xui_rect_t){r.fX + 12.0f, r.fY + 12.0f, r.fW - 24.0f, r.fH - 24.0f}, XUI_COLOR_RGBA(54, 74, 96, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+	return proxy.drawText(&proxy, pDraw, xuiGetDefaultFont(xuiWidgetGetContext(pWidget)), sText != NULL ? sText : "", (xui_rect_t){r.fX + 12, r.fY + 12, r.fW - 24, r.fH - 24}, XUI_COLOR_RGBA(54, 74, 96, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 }
 
-static int mapedit_material_preview_render(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static void mapedit_fit_dimensions(int iSourceW, int iSourceH, int iMaxW, int iMaxH, int* pWidth, int* pHeight)
 {
-	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
-	xui_rect_t r;
-	xui_rect_t src;
-	xui_rect_t dst;
-	float scale;
-	float sx;
-	float sy;
-	float sw;
-	float sh;
-	(void)iStateId;
-	if ( pApp == NULL || pDraw == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	r = xuiWidgetGetContentRect(pWidget);
-	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, XUI_COLOR_RGBA(250, 253, 255, 255));
-	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, r, 1.0f, XUI_COLOR_RGBA(152, 174, 198, 255));
-	if ( pApp->pMaterialPreviewSurface == NULL || pApp->tMaterialPreviewDesc.iWidth <= 0 || pApp->tMaterialPreviewDesc.iHeight <= 0 ) {
-		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "选择素材预览", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	int w = iSourceW;
+	int h = iSourceH;
+	if ( iMaxW < 1 ) iMaxW = 1;
+	if ( iMaxH < 1 ) iMaxH = 1;
+	if ( w > iMaxW || h > iMaxH ) {
+		if ( (long long)w * (long long)iMaxH > (long long)h * (long long)iMaxW ) {
+			h = mapedit_max_i(1, (int)((long long)h * (long long)iMaxW / (long long)w));
+			w = iMaxW;
+		} else {
+			w = mapedit_max_i(1, (int)((long long)w * (long long)iMaxH / (long long)h));
+			h = iMaxH;
+		}
 	}
-	src = (xui_rect_t){0.0f, 0.0f, (float)pApp->tMaterialPreviewDesc.iWidth, (float)pApp->tMaterialPreviewDesc.iHeight};
-	sx = (r.fW - 12.0f) / src.fW;
-	sy = (r.fH - 12.0f) / src.fH;
-	scale = sx < sy ? sx : sy;
-	if ( scale <= 0.0f ) scale = 1.0f;
-	if ( scale > 1.0f ) scale = 1.0f;
-	sw = src.fW * scale;
-	sh = src.fH * scale;
-	dst = (xui_rect_t){r.fX + (r.fW - sw) * 0.5f, r.fY + (r.fH - sh) * 0.5f, sw, sh};
-	return pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->pMaterialPreviewSurface, src, dst, XUI_COLOR_WHITE, 0);
+	if ( pWidth != NULL ) *pWidth = w;
+	if ( pHeight != NULL ) *pHeight = h;
 }
 
 static xui_vec2_t mapedit_material_tooltip_measure(xui_context pContext, xui_widget pOwner, void* pUser)
 {
 	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
-	float w;
-	float h;
-	float scale;
+	int w;
+	int h;
 	(void)pContext;
 	(void)pOwner;
 	if ( pApp == NULL || pApp->pMaterialTooltipSurface == NULL ||
 	     pApp->tMaterialTooltipDesc.iWidth <= 0 || pApp->tMaterialTooltipDesc.iHeight <= 0 ) {
 		return (xui_vec2_t){160.0f, 48.0f};
 	}
-	w = (float)pApp->tMaterialTooltipDesc.iWidth;
-	h = (float)pApp->tMaterialTooltipDesc.iHeight;
-	scale = 1.0f;
-	if ( w > 320.0f ) scale = 320.0f / w;
-	if ( h * scale > 240.0f ) scale = 240.0f / h;
-	if ( scale > 1.0f ) scale = 1.0f;
-	w *= scale;
-	h *= scale;
-	return (xui_vec2_t){w + 16.0f, h + 40.0f};
+	mapedit_fit_dimensions(pApp->tMaterialTooltipDesc.iWidth, pApp->tMaterialTooltipDesc.iHeight, 320, 240, &w, &h);
+	return (xui_vec2_t){(float)(w + 16), (float)(h + 40)};
 }
 
 static int mapedit_material_tooltip_paint(xui_context pContext, xui_widget pOwner, xui_draw_context pDraw, xui_rect_t tRect, void* pUser)
@@ -4558,28 +4689,22 @@ static int mapedit_material_tooltip_paint(xui_context pContext, xui_widget pOwne
 	xui_rect_t dst;
 	xui_rect_t textRect;
 	char name[MAPEDIT_NAME_MAX];
-	float scale;
-	float sw;
-	float sh;
+	int drawW;
+	int drawH;
 	(void)pContext;
 	(void)pOwner;
 	if ( pApp == NULL || pDraw == NULL || pApp->pMaterialTooltipSurface == NULL ||
 	     pApp->tMaterialTooltipDesc.iWidth <= 0 || pApp->tMaterialTooltipDesc.iHeight <= 0 ) {
 		return XUI_OK;
 	}
-	src = (xui_rect_t){0.0f, 0.0f, (float)pApp->tMaterialTooltipDesc.iWidth, (float)pApp->tMaterialTooltipDesc.iHeight};
-	scale = 1.0f;
-	if ( src.fW > 320.0f ) scale = 320.0f / src.fW;
-	if ( src.fH * scale > 240.0f ) scale = 240.0f / src.fH;
-	if ( scale > 1.0f ) scale = 1.0f;
-	sw = src.fW * scale;
-	sh = src.fH * scale;
-	dst = (xui_rect_t){tRect.fX + (tRect.fW - sw) * 0.5f, tRect.fY + 8.0f, sw, sh};
+	src = (xui_rect_t){0, 0, pApp->tMaterialTooltipDesc.iWidth, pApp->tMaterialTooltipDesc.iHeight};
+	mapedit_fit_dimensions(src.fW, src.fH, 320, 240, &drawW, &drawH);
+	dst = (xui_rect_t){tRect.fX + (tRect.fW - drawW) / 2, tRect.fY + 8, drawW, drawH};
 	(void)pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->pMaterialTooltipSurface, src, dst, XUI_COLOR_WHITE, 0);
 	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, dst, 1.0f, XUI_COLOR_RGBA(128, 172, 204, 255));
 	name[0] = 0;
 	if ( pApp->iMaterialTooltipIndex >= 0 ) mapedit_material_display_name(pApp, pApp->iMaterialTooltipIndex, name, sizeof(name));
-	textRect = (xui_rect_t){tRect.fX + 8.0f, dst.fY + dst.fH + 6.0f, tRect.fW - 16.0f, 20.0f};
+	textRect = (xui_rect_t){tRect.fX + 8, dst.fY + dst.fH + 6, tRect.fW - 16, 20};
 	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, name[0] ? name : "", textRect,
 		XUI_COLOR_RGBA(31, 75, 112, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
@@ -4591,6 +4716,7 @@ static int mapedit_material_tooltip_resolve(xui_context pContext, xui_widget pWi
 	xui_rect_t viewport;
 	xui_rect_t item;
 	int hover;
+	(void)pContext;
 	if ( pApp == NULL || pWidget == NULL || pDesc == NULL || pWidget != pApp->pMaterialListView ) return 0;
 	hover = xuiListViewGetHoverIndex(pWidget);
 	if ( hover < 0 || hover >= pApp->tMaterialCategoryFiles.iCount ) return 0;
@@ -4635,9 +4761,9 @@ static int mapedit_material_view_render(xui_widget pWidget, xui_draw_context pDr
 	if ( pApp->pMaterialViewSurface == NULL || pApp->tMaterialViewDesc.iWidth <= 0 || pApp->tMaterialViewDesc.iHeight <= 0 ) {
 		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "选择素材预览", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
-	src = (xui_rect_t){0.0f, 0.0f, (float)pApp->tMaterialViewDesc.iWidth, (float)pApp->tMaterialViewDesc.iHeight};
+	src = (xui_rect_t){0, 0, pApp->tMaterialViewDesc.iWidth, pApp->tMaterialViewDesc.iHeight};
 	dst = (xui_rect_t){r.fX, r.fY, src.fW, src.fH};
-	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){dst.fX - 1.0f, dst.fY - 1.0f, dst.fW + 2.0f, dst.fH + 2.0f}, 1.0f, XUI_COLOR_RGBA(152, 174, 198, 255));
+	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){dst.fX - 1, dst.fY - 1, dst.fW + 2, dst.fH + 2}, 1.0f, XUI_COLOR_RGBA(152, 174, 198, 255));
 	return pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->pMaterialViewSurface, src, dst, XUI_COLOR_WHITE, 0);
 }
 
@@ -4647,12 +4773,12 @@ static void mapedit_material_edit_draw_grid(mapedit_app_t* pApp, xui_draw_contex
 	int y;
 	if ( pApp == NULL || pDraw == NULL || iCols <= 0 || iRows <= 0 ) return;
 	for ( y = 0; y <= iRows; y++ ) {
-		float py = r.fY + (float)(y * MAPEDIT_TILE_H);
-		(void)pApp->tProxy.drawLine(&pApp->tProxy, pDraw, r.fX, py, r.fX + (float)(iCols * MAPEDIT_TILE_W), py, 1.0f, iColor);
+		float py = (float)(r.fY + y * MAPEDIT_TILE_H);
+		(void)pApp->tProxy.drawLine(&pApp->tProxy, pDraw, (float)r.fX, py, (float)(r.fX + iCols * MAPEDIT_TILE_W), py, 1.0f, iColor);
 	}
 	for ( x = 0; x <= iCols; x++ ) {
-		float px = r.fX + (float)(x * MAPEDIT_TILE_W);
-		(void)pApp->tProxy.drawLine(&pApp->tProxy, pDraw, px, r.fY, px, r.fY + (float)(iRows * MAPEDIT_TILE_H), 1.0f, iColor);
+		float px = (float)(r.fX + x * MAPEDIT_TILE_W);
+		(void)pApp->tProxy.drawLine(&pApp->tProxy, pDraw, px, (float)r.fY, px, (float)(r.fY + iRows * MAPEDIT_TILE_H), 1.0f, iColor);
 	}
 }
 
@@ -4666,7 +4792,7 @@ static int mapedit_material_edit_output_render(xui_widget pWidget, xui_draw_cont
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, XUI_COLOR_RGBA(245, 248, 252, 255));
 	if ( pApp->pMaterialEditOutputSurface != NULL && pApp->tMaterialEditOutputDesc.iWidth > 0 && pApp->tMaterialEditOutputDesc.iHeight > 0 ) {
-		src = (xui_rect_t){0.0f, 0.0f, (float)pApp->tMaterialEditOutputDesc.iWidth, (float)pApp->tMaterialEditOutputDesc.iHeight};
+		src = (xui_rect_t){0, 0, pApp->tMaterialEditOutputDesc.iWidth, pApp->tMaterialEditOutputDesc.iHeight};
 		(void)pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->pMaterialEditOutputSurface, src, r, XUI_COLOR_WHITE, 0);
 	}
 	mapedit_material_edit_draw_grid(pApp, pDraw, r, pApp->iMaterialEditOutputCols, pApp->iMaterialEditOutputRows, XUI_COLOR_RGBA(56, 78, 104, 70));
@@ -4687,15 +4813,15 @@ static int mapedit_material_edit_source_render(xui_widget pWidget, xui_draw_cont
 	if ( pApp->pMaterialEditSourceSurface == NULL || pApp->tMaterialEditSourceDesc.iWidth <= 0 || pApp->tMaterialEditSourceDesc.iHeight <= 0 ) {
 		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "打开图片后选择图块", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
-	src = (xui_rect_t){0.0f, 0.0f, (float)pApp->tMaterialEditSourceDesc.iWidth, (float)pApp->tMaterialEditSourceDesc.iHeight};
+	src = (xui_rect_t){0, 0, pApp->tMaterialEditSourceDesc.iWidth, pApp->tMaterialEditSourceDesc.iHeight};
 	(void)pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->pMaterialEditSourceSurface, src, r, XUI_COLOR_WHITE, 0);
 	mapedit_material_edit_draw_grid(pApp, pDraw, r, pApp->iMaterialEditSourceCols, pApp->iMaterialEditSourceRows, XUI_COLOR_RGBA(56, 78, 104, 70));
 	if ( pApp->iMaterialEditSelCols > 0 && pApp->iMaterialEditSelRows > 0 ) {
 		sel = (xui_rect_t){
-			r.fX + (float)(pApp->iMaterialEditSelCol * MAPEDIT_TILE_W),
-			r.fY + (float)(pApp->iMaterialEditSelRow * MAPEDIT_TILE_H),
-			(float)(pApp->iMaterialEditSelCols * MAPEDIT_TILE_W),
-			(float)(pApp->iMaterialEditSelRows * MAPEDIT_TILE_H)
+			r.fX + pApp->iMaterialEditSelCol * MAPEDIT_TILE_W,
+			r.fY + pApp->iMaterialEditSelRow * MAPEDIT_TILE_H,
+			pApp->iMaterialEditSelCols * MAPEDIT_TILE_W,
+			pApp->iMaterialEditSelRows * MAPEDIT_TILE_H
 		};
 		(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, sel, XUI_COLOR_RGBA(32, 126, 212, 64));
 		(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, sel, 2.0f, XUI_COLOR_RGBA(32, 126, 212, 230));
@@ -4727,46 +4853,54 @@ static void mapedit_draw_forbidden_triangle(mapedit_app_t* pApp, xui_draw_contex
 	float fSize;
 	float fPad;
 	float fTri;
+	float fX;
+	float fY;
+	float fW;
+	float fH;
 	xui_vec2_t a;
 	xui_vec2_t b;
 	xui_vec2_t c;
 	if ( pApp == NULL || pDraw == NULL || pApp->tProxy.drawTriangleStroke == NULL ) return;
-	fSize = mapedit_min_f(cell.fW, cell.fH);
+	fX = (float)cell.fX;
+	fY = (float)cell.fY;
+	fW = (float)cell.fW;
+	fH = (float)cell.fH;
+	fSize = mapedit_min_f(fW, fH);
 	fPad = fSize <= 16.0f ? 2.0f : 3.0f;
 	fTri = fSize * 0.36f;
 	if ( fTri < 5.0f ) fTri = 5.0f;
 	if ( iRegionRow == 0 && iRegionCol == 0 ) {
-		a = (xui_vec2_t){cell.fX + fPad, cell.fY + fPad};
-		b = (xui_vec2_t){cell.fX + fPad + fTri, cell.fY + fPad};
-		c = (xui_vec2_t){cell.fX + fPad, cell.fY + fPad + fTri};
+		a = (xui_vec2_t){fX + fPad, fY + fPad};
+		b = (xui_vec2_t){fX + fPad + fTri, fY + fPad};
+		c = (xui_vec2_t){fX + fPad, fY + fPad + fTri};
 	} else if ( iRegionRow == 0 && iRegionCol == 1 ) {
-		a = (xui_vec2_t){cell.fX + cell.fW * 0.5f, cell.fY + fPad + fTri};
-		b = (xui_vec2_t){cell.fX + cell.fW * 0.5f - fTri * 0.5f, cell.fY + fPad};
-		c = (xui_vec2_t){cell.fX + cell.fW * 0.5f + fTri * 0.5f, cell.fY + fPad};
+		a = (xui_vec2_t){fX + fW * 0.5f, fY + fPad + fTri};
+		b = (xui_vec2_t){fX + fW * 0.5f - fTri * 0.5f, fY + fPad};
+		c = (xui_vec2_t){fX + fW * 0.5f + fTri * 0.5f, fY + fPad};
 	} else if ( iRegionRow == 0 && iRegionCol == 2 ) {
-		a = (xui_vec2_t){cell.fX + cell.fW - fPad, cell.fY + fPad};
-		b = (xui_vec2_t){cell.fX + cell.fW - fPad - fTri, cell.fY + fPad};
-		c = (xui_vec2_t){cell.fX + cell.fW - fPad, cell.fY + fPad + fTri};
+		a = (xui_vec2_t){fX + fW - fPad, fY + fPad};
+		b = (xui_vec2_t){fX + fW - fPad - fTri, fY + fPad};
+		c = (xui_vec2_t){fX + fW - fPad, fY + fPad + fTri};
 	} else if ( iRegionRow == 1 && iRegionCol == 0 ) {
-		a = (xui_vec2_t){cell.fX + fPad + fTri, cell.fY + cell.fH * 0.5f};
-		b = (xui_vec2_t){cell.fX + fPad, cell.fY + cell.fH * 0.5f - fTri * 0.5f};
-		c = (xui_vec2_t){cell.fX + fPad, cell.fY + cell.fH * 0.5f + fTri * 0.5f};
+		a = (xui_vec2_t){fX + fPad + fTri, fY + fH * 0.5f};
+		b = (xui_vec2_t){fX + fPad, fY + fH * 0.5f - fTri * 0.5f};
+		c = (xui_vec2_t){fX + fPad, fY + fH * 0.5f + fTri * 0.5f};
 	} else if ( iRegionRow == 1 && iRegionCol == 2 ) {
-		a = (xui_vec2_t){cell.fX + cell.fW - fPad - fTri, cell.fY + cell.fH * 0.5f};
-		b = (xui_vec2_t){cell.fX + cell.fW - fPad, cell.fY + cell.fH * 0.5f - fTri * 0.5f};
-		c = (xui_vec2_t){cell.fX + cell.fW - fPad, cell.fY + cell.fH * 0.5f + fTri * 0.5f};
+		a = (xui_vec2_t){fX + fW - fPad - fTri, fY + fH * 0.5f};
+		b = (xui_vec2_t){fX + fW - fPad, fY + fH * 0.5f - fTri * 0.5f};
+		c = (xui_vec2_t){fX + fW - fPad, fY + fH * 0.5f + fTri * 0.5f};
 	} else if ( iRegionRow == 2 && iRegionCol == 0 ) {
-		a = (xui_vec2_t){cell.fX + fPad, cell.fY + cell.fH - fPad};
-		b = (xui_vec2_t){cell.fX + fPad + fTri, cell.fY + cell.fH - fPad};
-		c = (xui_vec2_t){cell.fX + fPad, cell.fY + cell.fH - fPad - fTri};
+		a = (xui_vec2_t){fX + fPad, fY + fH - fPad};
+		b = (xui_vec2_t){fX + fPad + fTri, fY + fH - fPad};
+		c = (xui_vec2_t){fX + fPad, fY + fH - fPad - fTri};
 	} else if ( iRegionRow == 2 && iRegionCol == 1 ) {
-		a = (xui_vec2_t){cell.fX + cell.fW * 0.5f, cell.fY + cell.fH - fPad - fTri};
-		b = (xui_vec2_t){cell.fX + cell.fW * 0.5f - fTri * 0.5f, cell.fY + cell.fH - fPad};
-		c = (xui_vec2_t){cell.fX + cell.fW * 0.5f + fTri * 0.5f, cell.fY + cell.fH - fPad};
+		a = (xui_vec2_t){fX + fW * 0.5f, fY + fH - fPad - fTri};
+		b = (xui_vec2_t){fX + fW * 0.5f - fTri * 0.5f, fY + fH - fPad};
+		c = (xui_vec2_t){fX + fW * 0.5f + fTri * 0.5f, fY + fH - fPad};
 	} else if ( iRegionRow == 2 && iRegionCol == 2 ) {
-		a = (xui_vec2_t){cell.fX + cell.fW - fPad, cell.fY + cell.fH - fPad};
-		b = (xui_vec2_t){cell.fX + cell.fW - fPad - fTri, cell.fY + cell.fH - fPad};
-		c = (xui_vec2_t){cell.fX + cell.fW - fPad, cell.fY + cell.fH - fPad - fTri};
+		a = (xui_vec2_t){fX + fW - fPad, fY + fH - fPad};
+		b = (xui_vec2_t){fX + fW - fPad - fTri, fY + fH - fPad};
+		c = (xui_vec2_t){fX + fW - fPad, fY + fH - fPad - fTri};
 	} else {
 		return;
 	}
@@ -4779,19 +4913,21 @@ static void mapedit_draw_passage_overlay_rect(mapedit_app_t* pApp, xui_draw_cont
 	int ry;
 	if ( pApp == NULL || pDraw == NULL ) return;
 	if ( value == 255 ) {
-		float fSize = mapedit_min_f(cell.fW, cell.fH);
+		float fSize = mapedit_min_f((float)cell.fW, (float)cell.fH);
+		float centerX = (float)cell.fX + (float)cell.fW * 0.5f;
+		float centerY = (float)cell.fY + (float)cell.fH * 0.5f;
 		float r = fSize * 0.12f;
 		if ( r < 2.0f ) r = 2.0f;
 		if ( r > 4.0f ) r = 4.0f;
 		if ( pApp->tProxy.drawCircleFill != NULL ) {
-			(void)pApp->tProxy.drawCircleFill(&pApp->tProxy, pDraw, cell.fX + cell.fW * 0.5f, cell.fY + cell.fH * 0.5f, r + 1.0f, XUI_COLOR_RGBA(245, 252, 246, 210));
-			(void)pApp->tProxy.drawCircleFill(&pApp->tProxy, pDraw, cell.fX + cell.fW * 0.5f, cell.fY + cell.fH * 0.5f, r, XUI_COLOR_RGBA(26, 166, 62, 230));
+			(void)pApp->tProxy.drawCircleFill(&pApp->tProxy, pDraw, centerX, centerY, r + 1.0f, XUI_COLOR_RGBA(245, 252, 246, 210));
+			(void)pApp->tProxy.drawCircleFill(&pApp->tProxy, pDraw, centerX, centerY, r, XUI_COLOR_RGBA(26, 166, 62, 230));
 		}
 		return;
 	}
 	if ( value == 0 ) {
-		(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){cell.fX + 1.5f, cell.fY + 1.5f, cell.fW - 3.0f, cell.fH - 3.0f}, 2.0f, XUI_COLOR_RGBA(232, 26, 36, 225));
-		(void)pApp->tProxy.drawLine(&pApp->tProxy, pDraw, cell.fX + 3.0f, cell.fY + cell.fH - 3.0f, cell.fX + cell.fW - 3.0f, cell.fY + 3.0f, 2.0f, XUI_COLOR_RGBA(232, 26, 36, 225));
+		(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){cell.fX + 2, cell.fY + 2, cell.fW - 4, cell.fH - 4}, 2.0f, XUI_COLOR_RGBA(232, 26, 36, 225));
+		(void)pApp->tProxy.drawLine(&pApp->tProxy, pDraw, (float)(cell.fX + 3), (float)(cell.fY + cell.fH - 3), (float)(cell.fX + cell.fW - 3), (float)(cell.fY + 3), 2.0f, XUI_COLOR_RGBA(232, 26, 36, 225));
 		return;
 	}
 	for ( ry = 0; ry < 3; ry++ ) {
@@ -4802,12 +4938,6 @@ static void mapedit_draw_passage_overlay_rect(mapedit_app_t* pApp, xui_draw_cont
 			if ( (value & bit) == 0 ) mapedit_draw_forbidden_triangle(pApp, pDraw, cell, rx, ry);
 		}
 	}
-}
-
-static void mapedit_draw_passage_overlay(mapedit_app_t* pApp, xui_draw_context pDraw, int iTile, float dx, float dy)
-{
-	if ( pApp == NULL || iTile < 0 || iTile >= (int)sizeof(pApp->tTileset.arrPassage) ) return;
-	mapedit_draw_passage_overlay_rect(pApp, pDraw, (xui_rect_t){dx, dy, (float)MAPEDIT_TILE_W, (float)MAPEDIT_TILE_H}, pApp->tTileset.arrPassage[iTile]);
 }
 
 static int mapedit_map_passage_render(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -4821,6 +4951,8 @@ static int mapedit_map_passage_render(xui_widget pWidget, xui_draw_context pDraw
 	int x;
 	int y;
 	int l;
+	int scrollPixelX;
+	int scrollPixelY;
 	(void)iStateId;
 	if ( pApp == NULL || pDraw == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	r = xuiWidgetGetContentRect(pWidget);
@@ -4828,15 +4960,17 @@ static int mapedit_map_passage_render(xui_widget pWidget, xui_draw_context pDraw
 	if ( pApp->tMap.pTiles == NULL ) {
 		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "未加载地图", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
 	}
-	firstX = mapedit_max_i(0, (int)floorf(pApp->fMapPassageScrollX / (float)MAPEDIT_MAP_PASSAGE_CELL));
-	firstY = mapedit_max_i(0, (int)floorf(pApp->fMapPassageScrollY / (float)MAPEDIT_MAP_PASSAGE_CELL));
-	lastX = mapedit_min_i(pApp->tMap.iWidth - 1, (int)ceilf((pApp->fMapPassageScrollX + r.fW) / (float)MAPEDIT_MAP_PASSAGE_CELL));
-	lastY = mapedit_min_i(pApp->tMap.iHeight - 1, (int)ceilf((pApp->fMapPassageScrollY + r.fH) / (float)MAPEDIT_MAP_PASSAGE_CELL));
+	scrollPixelX = (int)floorf(pApp->fMapPassageScrollX);
+	scrollPixelY = (int)floorf(pApp->fMapPassageScrollY);
+	firstX = mapedit_max_i(0, scrollPixelX / mapedit_view_cell(pApp, pWidget, 0));
+	firstY = mapedit_max_i(0, scrollPixelY / mapedit_view_cell(pApp, pWidget, 0));
+	lastX = mapedit_min_i(pApp->tMap.iWidth - 1, (scrollPixelX + r.fW + mapedit_view_cell(pApp, pWidget, 0) - 1) / mapedit_view_cell(pApp, pWidget, 0));
+	lastY = mapedit_min_i(pApp->tMap.iHeight - 1, (scrollPixelY + r.fH + mapedit_view_cell(pApp, pWidget, 0) - 1) / mapedit_view_cell(pApp, pWidget, 0));
 	for ( y = firstY; y <= lastY; y++ ) {
 		for ( x = firstX; x <= lastX; x++ ) {
-			float dx = r.fX + (float)(x * MAPEDIT_MAP_PASSAGE_CELL) - pApp->fMapPassageScrollX;
-			float dy = r.fY + (float)(y * MAPEDIT_MAP_PASSAGE_CELL) - pApp->fMapPassageScrollY;
-			xui_rect_t cell = {dx, dy, (float)MAPEDIT_MAP_PASSAGE_CELL, (float)MAPEDIT_MAP_PASSAGE_CELL};
+			int dx = r.fX + x * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelX;
+			int dy = r.fY + y * mapedit_view_cell(pApp, pWidget, 0) - scrollPixelY;
+			xui_rect_t cell = {dx, dy, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 0)};
 			for ( l = 0; l < pApp->tMap.iLayers; l++ ) {
 				int tile = mapedit_get_tile(pApp, x, y, l);
 				if ( tile > 0 ) (void)mapedit_draw_map_tile_rect(pApp, pDraw, tile, l, x, y, cell);
@@ -4844,7 +4978,7 @@ static int mapedit_map_passage_render(xui_widget pWidget, xui_draw_context pDraw
 			mapedit_draw_passage_overlay_rect(pApp, pDraw, cell, mapedit_map_get_cell_passage(pApp, x, y));
 			(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, cell, 1.0f, XUI_COLOR_RGBA(124, 181, 219, 130));
 			if ( mapedit_map_cell_id(&pApp->tMap, x, y) == pApp->iMapPassageSelectedCell ) {
-				(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){cell.fX + 1.0f, cell.fY + 1.0f, cell.fW - 2.0f, cell.fH - 2.0f}, 2.0f, XUI_COLOR_RGBA(255, 144, 0, 255));
+				(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){cell.fX + 1, cell.fY + 1, cell.fW - 2, cell.fH - 2}, 2.0f, XUI_COLOR_RGBA(255, 144, 0, 255));
 			}
 		}
 	}
@@ -4867,6 +5001,8 @@ static int mapedit_tile_panel_render(xui_widget pWidget, xui_draw_context pDraw,
 	float* pScrollY;
 	float scrollX;
 	float scrollY;
+	int scrollPixelX;
+	int scrollPixelY;
 	int cellW;
 	int cellH;
 	uint32_t gridColor;
@@ -4878,6 +5014,8 @@ static int mapedit_tile_panel_render(xui_widget pWidget, xui_draw_context pDraw,
 	mapedit_tileset_panel_scroll_ptrs(pApp, pWidget, &pScrollX, &pScrollY);
 	scrollX = pScrollX != NULL ? *pScrollX : 0.0f;
 	scrollY = pScrollY != NULL ? *pScrollY : 0.0f;
+	scrollPixelX = (int)floorf(scrollX);
+	scrollPixelY = (int)floorf(scrollY);
 	cellW = mapedit_tileset_panel_cell_width(pApp, pWidget);
 	cellH = mapedit_tileset_panel_cell_height(pApp, pWidget);
 	gridColor = (pWidget == pApp->pTilesetTagsCanvas) ? MAPEDIT_TILEGRID_GRID_TAGS : MAPEDIT_TILEGRID_GRID;
@@ -4885,27 +5023,27 @@ static int mapedit_tile_panel_render(xui_widget pWidget, xui_draw_context pDraw,
 	special = pApp->tTileset.iSpecialCount;
 	staticStart = mapedit_tile_static_start(pApp);
 	firstRow = mapedit_max_i(0, (int)(scrollY / (float)cellH));
-	lastRow = mapedit_min_i(rowCount, firstRow + (int)(r.fH / (float)cellH) + 3);
+	lastRow = mapedit_min_i(rowCount, firstRow + r.fH / cellH + 3);
 	if ( pApp->tTileset.pStaticSurface == NULL ) {
 		int staticRow = staticStart / MAPEDIT_TILES_PER_ROW;
 		xui_rect_t staticRect = {
-			r.fX - scrollX,
-			r.fY + (float)(staticRow * cellH) - scrollY,
-			(float)(MAPEDIT_TILES_PER_ROW * cellW),
-			(float)(mapedit_tile_static_rows(pApp) * cellH)
+			r.fX - scrollPixelX,
+			r.fY + staticRow * cellH - scrollPixelY,
+			MAPEDIT_TILES_PER_ROW * cellW,
+			mapedit_tile_static_rows(pApp) * cellH
 		};
 		(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, staticRect, XUI_COLOR_RGBA(235, 244, 250, 255));
 	}
 	for ( row = firstRow; row < lastRow; row++ ) {
 		for ( col = 0; col < MAPEDIT_TILES_PER_ROW; col++ ) {
 		int tile = row * MAPEDIT_TILES_PER_ROW + col;
-		float dx = r.fX + (float)(col * cellW) - scrollX;
-		float dy = r.fY + (float)(row * cellH) - scrollY;
-		xui_rect_t cell = (xui_rect_t){dx, dy, (float)cellW, (float)cellH};
+		int dx = r.fX + col * cellW - scrollPixelX;
+		int dy = r.fY + row * cellH - scrollPixelY;
+		xui_rect_t cell = (xui_rect_t){dx, dy, cellW, cellH};
 		int editable;
 		int isSpecial;
-		if ( dx + (float)cellW < r.fX || dx > r.fX + r.fW ||
-		     dy + (float)cellH < r.fY || dy > r.fY + r.fH ) continue;
+		if ( dx + cellW < r.fX || dx > r.fX + r.fW ||
+		     dy + cellH < r.fY || dy > r.fY + r.fH ) continue;
 		editable = mapedit_tileset_panel_tile_editable(pApp, pWidget, tile);
 		isSpecial = tile >= 1 && tile <= special;
 		if ( tile == 0 ) {
@@ -4948,10 +5086,10 @@ static int mapedit_tile_panel_render(xui_widget pWidget, xui_draw_context pDraw,
 			int hoverCol = hoverTile % MAPEDIT_TILES_PER_ROW;
 			int hoverRow = hoverTile / MAPEDIT_TILES_PER_ROW;
 			xui_rect_t hover = {
-				r.fX + (float)(hoverCol * cellW) - scrollX,
-				r.fY + (float)(hoverRow * cellH) - scrollY,
-				(float)cellW + 1.0f,
-				(float)cellH + 1.0f
+				r.fX + hoverCol * cellW - scrollPixelX,
+				r.fY + hoverRow * cellH - scrollPixelY,
+				cellW + 1,
+				cellH + 1
 			};
 			if ( hover.fX + hover.fW >= r.fX && hover.fY + hover.fH >= r.fY && hover.fX <= r.fX + r.fW && hover.fY <= r.fY + r.fH ) {
 				(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, hover, 1.0f, XUI_COLOR_RGBA(42, 140, 210, 180));
@@ -4961,10 +5099,10 @@ static int mapedit_tile_panel_render(xui_widget pWidget, xui_draw_context pDraw,
 			int selectCol = selectTile % MAPEDIT_TILES_PER_ROW;
 			int selectRow = selectTile / MAPEDIT_TILES_PER_ROW;
 			xui_rect_t sel = {
-				r.fX + (float)(selectCol * cellW) - scrollX,
-				r.fY + (float)(selectRow * cellH) - scrollY,
-				(float)cellW + 1.0f,
-				(float)cellH + 1.0f
+				r.fX + selectCol * cellW - scrollPixelX,
+				r.fY + selectRow * cellH - scrollPixelY,
+				cellW + 1,
+				cellH + 1
 			};
 			if ( sel.fX + sel.fW >= r.fX && sel.fY + sel.fH >= r.fY && sel.fX <= r.fX + r.fW && sel.fY <= r.fY + r.fH ) {
 				(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, sel, 1.0f, XUI_COLOR_RGBA(28, 122, 196, 230));
@@ -4975,27 +5113,32 @@ static int mapedit_tile_panel_render(xui_widget pWidget, xui_draw_context pDraw,
 	return XUI_OK;
 }
 
-static int mapedit_pointer_to_map_tile_on_widget(mapedit_app_t* pApp, xui_widget pWidget, float fWorldX, float fWorldY, int* pTileX, int* pTileY)
+static int mapedit_pointer_to_map_tile_on_widget(mapedit_app_t* pApp, xui_widget pWidget, int iWorldX, int iWorldY, int* pTileX, int* pTileY)
 {
 	xui_rect_t wr;
 	float scrollX;
 	float scrollY;
+	int localX;
+	int localY;
 	int tx;
 	int ty;
 	if ( pApp == NULL || pWidget == NULL ) return 0;
 	wr = xuiWidgetGetWorldRect(pWidget);
 	mapedit_map_widget_scroll(pApp, pWidget, &scrollX, &scrollY);
-	tx = (int)((fWorldX - wr.fX + scrollX) / (float)MAPEDIT_TILE_W);
-	ty = (int)((fWorldY - wr.fY + scrollY) / (float)MAPEDIT_TILE_H);
+	localX = iWorldX - wr.fX + (int)floorf(scrollX);
+	localY = iWorldY - wr.fY + (int)floorf(scrollY);
+	if ( localX < 0 || localY < 0 ) return 0;
+	tx = localX / mapedit_view_cell(pApp, pWidget, 0);
+	ty = localY / mapedit_view_cell(pApp, pWidget, 1);
 	if ( tx < 0 || ty < 0 || tx >= pApp->tMap.iWidth || ty >= pApp->tMap.iHeight ) return 0;
 	if ( pTileX != NULL ) *pTileX = tx;
 	if ( pTileY != NULL ) *pTileY = ty;
 	return 1;
 }
 
-static int mapedit_pointer_to_tile(mapedit_app_t* pApp, float fWorldX, float fWorldY, int* pTileX, int* pTileY)
+static int mapedit_pointer_to_tile(mapedit_app_t* pApp, int iWorldX, int iWorldY, int* pTileX, int* pTileY)
 {
-	return mapedit_pointer_to_map_tile_on_widget(pApp, pApp != NULL ? pApp->pMapCanvas : NULL, fWorldX, fWorldY, pTileX, pTileY);
+	return mapedit_pointer_to_map_tile_on_widget(pApp, pApp != NULL ? pApp->pMapCanvas : NULL, iWorldX, iWorldY, pTileX, pTileY);
 }
 
 static void mapedit_set_map_hover(mapedit_app_t* pApp, int x, int y)
@@ -5018,10 +5161,7 @@ static void mapedit_set_map_tags_hover(mapedit_app_t* pApp, int x, int y)
 
 static int mapedit_rect_almost_equal(xui_rect_t a, xui_rect_t b)
 {
-	return fabsf(a.fX - b.fX) < 0.01f &&
-	       fabsf(a.fY - b.fY) < 0.01f &&
-	       fabsf(a.fW - b.fW) < 0.01f &&
-	       fabsf(a.fH - b.fH) < 0.01f;
+	return a.fX == b.fX && a.fY == b.fY && a.fW == b.fW && a.fH == b.fH;
 }
 
 static void mapedit_map_scroll_content_size(mapedit_app_t* pApp, float* pWidth, float* pHeight)
@@ -5031,8 +5171,8 @@ static void mapedit_map_scroll_content_size(mapedit_app_t* pApp, float* pWidth, 
 	w = 1.0f;
 	h = 1.0f;
 	if ( pApp != NULL && pApp->tMap.iWidth > 0 && pApp->tMap.iHeight > 0 ) {
-		w = (float)(pApp->tMap.iWidth * MAPEDIT_TILE_W);
-		h = (float)(pApp->tMap.iHeight * MAPEDIT_TILE_H);
+		w = (float)(pApp->tMap.iWidth * mapedit_view_cell(pApp, pApp->pMapCanvas, 0));
+		h = (float)(pApp->tMap.iHeight * mapedit_view_cell(pApp, pApp->pMapCanvas, 1));
 	}
 	if ( pWidth != NULL ) *pWidth = w;
 	if ( pHeight != NULL ) *pHeight = h;
@@ -5095,7 +5235,7 @@ static void mapedit_map_scroll_sync_content(mapedit_app_t* pApp)
 	targetRect = (xui_rect_t){0.0f, 0.0f, viewportRect.fW, viewportRect.fH};
 	canvasRect = xuiWidgetGetRect(pApp->pMapCanvas);
 	if ( !mapedit_rect_almost_equal(canvasRect, targetRect) ) {
-		(void)xuiWidgetArrange(pApp->pMapCanvas, targetRect);
+		(void)xuiWidgetArrangeChild(viewport, pApp->pMapCanvas, targetRect);
 	}
 }
 
@@ -5129,7 +5269,7 @@ static void mapedit_canvas_scroll_arrange(xui_widget pFrame, xui_widget pCanvas)
 	targetRect = (xui_rect_t){0.0f, 0.0f, viewportRect.fW, viewportRect.fH};
 	canvasRect = xuiWidgetGetRect(pCanvas);
 	if ( !mapedit_rect_almost_equal(canvasRect, targetRect) ) {
-		(void)xuiWidgetArrange(pCanvas, targetRect);
+		(void)xuiWidgetArrangeChild(viewport, pCanvas, targetRect);
 	}
 }
 
@@ -5239,8 +5379,8 @@ static void mapedit_tileset_workspace_scroll_sync_content(mapedit_app_t* pApp)
 
 static void mapedit_tile_select_scroll_content_size(mapedit_app_t* pApp, float* pWidth, float* pHeight)
 {
-	if ( pWidth != NULL ) *pWidth = (float)(MAPEDIT_TILES_PER_ROW * MAPEDIT_TILE_W);
-	if ( pHeight != NULL ) *pHeight = (float)(mapedit_tile_select_row_count(pApp) * MAPEDIT_TILE_H);
+	if ( pWidth != NULL ) *pWidth = (float)(MAPEDIT_TILES_PER_ROW * mapedit_view_cell(pApp, pApp->pTileSelectCanvas, 0));
+	if ( pHeight != NULL ) *pHeight = (float)(mapedit_tile_select_row_count(pApp) * mapedit_view_cell(pApp, pApp->pTileSelectCanvas, 1));
 }
 
 static void mapedit_tile_select_scroll_sync_from_frame(mapedit_app_t* pApp)
@@ -5300,8 +5440,8 @@ static void mapedit_map_passage_scroll_content_size(mapedit_app_t* pApp, float* 
 	float w = 1.0f;
 	float h = 1.0f;
 	if ( pApp != NULL && pApp->tMap.iWidth > 0 && pApp->tMap.iHeight > 0 ) {
-		w = (float)(pApp->tMap.iWidth * MAPEDIT_MAP_PASSAGE_CELL);
-		h = (float)(pApp->tMap.iHeight * MAPEDIT_MAP_PASSAGE_CELL);
+		w = (float)(pApp->tMap.iWidth * mapedit_view_cell(pApp, pApp->pMapPassageCanvas, 0));
+		h = (float)(pApp->tMap.iHeight * mapedit_view_cell(pApp, pApp->pMapPassageCanvas, 0));
 	}
 	if ( pWidth != NULL ) *pWidth = w;
 	if ( pHeight != NULL ) *pHeight = h;
@@ -5364,8 +5504,8 @@ static void mapedit_map_tags_scroll_content_size(mapedit_app_t* pApp, float* pWi
 	float w = 1.0f;
 	float h = 1.0f;
 	if ( pApp != NULL && pApp->tMap.iWidth > 0 && pApp->tMap.iHeight > 0 ) {
-		w = (float)(pApp->tMap.iWidth * MAPEDIT_TILE_W);
-		h = (float)(pApp->tMap.iHeight * MAPEDIT_TILE_H);
+		w = (float)(pApp->tMap.iWidth * mapedit_view_cell(pApp, pApp->pMapTagsCanvas, 0));
+		h = (float)(pApp->tMap.iHeight * mapedit_view_cell(pApp, pApp->pMapTagsCanvas, 1));
 	}
 	if ( pWidth != NULL ) *pWidth = w;
 	if ( pHeight != NULL ) *pHeight = h;
@@ -5431,12 +5571,12 @@ static void mapedit_map_workspace_scroll_sync_content(mapedit_app_t* pApp)
 	mapedit_map_tags_scroll_sync_content(pApp);
 }
 
-static int mapedit_apply_pointer_brush(mapedit_app_t* pApp, float fWorldX, float fWorldY)
+static int mapedit_apply_pointer_brush(mapedit_app_t* pApp, int iWorldX, int iWorldY)
 {
 	int tx;
 	int ty;
 	int changed;
-	if ( !mapedit_pointer_to_tile(pApp, fWorldX, fWorldY, &tx, &ty) ) return 0;
+	if ( !mapedit_pointer_to_tile(pApp, iWorldX, iWorldY, &tx, &ty) ) return 0;
 	if ( tx == pApp->iLastPaintX && ty == pApp->iLastPaintY ) return 0;
 	changed = mapedit_apply_brush_at(pApp, tx, ty);
 	if ( changed >= 0 ) {
@@ -5454,13 +5594,14 @@ static int mapedit_map_event(xui_widget pWidget, const xui_event_t* pEvent, void
 	int ty;
 	(void)pWidget;
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	wr = xuiWidgetGetWorldRect(pApp->pMapCanvas);
 	if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL ) {
 		if ( pApp->pMapScrollFrame != NULL ) {
 			mapedit_map_scroll_by_wheel(pApp, pEvent);
 		} else {
-			float maxX = mapedit_max_i(0, pApp->tMap.iWidth * MAPEDIT_TILE_W - (int)wr.fW);
-			float maxY = mapedit_max_i(0, pApp->tMap.iHeight * MAPEDIT_TILE_H - (int)wr.fH);
+			float maxX = (float)mapedit_max_i(0, pApp->tMap.iWidth * MAPEDIT_TILE_W - wr.fW);
+			float maxY = (float)mapedit_max_i(0, pApp->tMap.iHeight * MAPEDIT_TILE_H - wr.fH);
 			pApp->fMapScrollX = mapedit_clampf(pApp->fMapScrollX - pEvent->fWheelX * 40.0f, 0.0f, maxX);
 			pApp->fMapScrollY = mapedit_clampf(pApp->fMapScrollY - pEvent->fWheelY * 40.0f, 0.0f, maxY);
 			mapedit_map_scroll_invalidate(pApp);
@@ -5475,7 +5616,7 @@ static int mapedit_map_event(xui_widget pWidget, const xui_event_t* pEvent, void
 		if ( pApp->bPainting && (pApp->iActiveTool == MAPEDIT_TOOL_BRUSH || pApp->iActiveTool == MAPEDIT_TOOL_ERASER) ) {
 			mapedit_finish_map_edit(pApp, pApp->iActiveTool == MAPEDIT_TOOL_ERASER ? "橡皮" : "画笔");
 		} else {
-			mapedit_history_free_cmd(&pApp->tCurrentCommand);
+			mapeditHistoryFreeCommand(&pApp->tMapHistory.tCurrentCommand);
 			pApp->bGestureDirty = 0;
 			pApp->bBatchEdit = 0;
 		}
@@ -5506,7 +5647,7 @@ static int mapedit_map_event(xui_widget pWidget, const xui_event_t* pEvent, void
 		(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 		if ( pApp->iActiveTool == MAPEDIT_TOOL_BRUSH || pApp->iActiveTool == MAPEDIT_TOOL_ERASER ) {
 			if ( mapedit_apply_pointer_brush(pApp, pEvent->fX, pEvent->fY) < 0 ) {
-				mapedit_history_free_cmd(&pApp->tCurrentCommand);
+				mapeditHistoryFreeCommand(&pApp->tMapHistory.tCurrentCommand);
 				pApp->bGestureDirty = 0;
 				pApp->bPainting = 0;
 				if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) (void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
@@ -5516,7 +5657,7 @@ static int mapedit_map_event(xui_widget pWidget, const xui_event_t* pEvent, void
 			if ( mapedit_apply_bucket(pApp, tx, ty) ) {
 				mapedit_finish_map_edit(pApp, "填充");
 			} else {
-				mapedit_history_free_cmd(&pApp->tCurrentCommand);
+				mapeditHistoryFreeCommand(&pApp->tMapHistory.tCurrentCommand);
 				pApp->bGestureDirty = 0;
 				pApp->bBatchEdit = 0;
 			}
@@ -5568,17 +5709,18 @@ static int mapedit_map_event(xui_widget pWidget, const xui_event_t* pEvent, void
 static int mapedit_tile_select_hit(mapedit_app_t* pApp, xui_widget pWidget, const xui_event_t* pEvent, int* pCol, int* pRow)
 {
 	xui_rect_t wr;
-	float rx;
-	float ry;
+	int rx;
+	int ry;
 	int col;
 	int row;
 	if ( pApp == NULL || pWidget == NULL || pEvent == NULL || pCol == NULL || pRow == NULL ) return 0;
 	wr = xuiWidgetGetWorldRect(pWidget);
-	rx = pEvent->fX - wr.fX + pApp->fTileScrollX;
-	ry = pEvent->fY - wr.fY;
-	if ( rx < 0.0f || ry < 0.0f || rx >= (float)(MAPEDIT_TILES_PER_ROW * MAPEDIT_TILE_W) || ry >= wr.fH ) return 0;
-	col = (int)(rx / (float)MAPEDIT_TILE_W);
-	row = (int)((ry + pApp->fTileScrollY) / (float)MAPEDIT_TILE_H);
+	if ( pEvent->fX < wr.fX || pEvent->fY < wr.fY || pEvent->fX >= wr.fX + wr.fW || pEvent->fY >= wr.fY + wr.fH ) return 0;
+	rx = pEvent->fX - wr.fX + (int)floorf(pApp->fTileScrollX);
+	ry = pEvent->fY - wr.fY + (int)floorf(pApp->fTileScrollY);
+	if ( rx < 0 || ry < 0 || rx >= MAPEDIT_TILES_PER_ROW * mapedit_view_cell(pApp, pWidget, 0) ) return 0;
+	col = rx / mapedit_view_cell(pApp, pWidget, 0);
+	row = ry / mapedit_view_cell(pApp, pWidget, 1);
 	if ( col < 0 || col >= MAPEDIT_TILES_PER_ROW || row < 0 || row >= mapedit_tile_select_row_count(pApp) ) return 0;
 	*pCol = col;
 	*pRow = row;
@@ -5638,14 +5780,15 @@ static int mapedit_tile_select_event(xui_widget pWidget, const xui_event_t* pEve
 	int col;
 	int row;
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	if ( pWidget == NULL ) return XUI_OK;
 	wr = xuiWidgetGetWorldRect(pWidget);
 	if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL ) {
 		if ( pApp->pTileSelectScrollFrame != NULL ) {
 			mapedit_tile_select_scroll_by_wheel(pApp, pEvent);
 		} else {
-			float maxX = mapedit_max_i(0, MAPEDIT_TILES_PER_ROW * MAPEDIT_TILE_W - (int)wr.fW);
-			float maxY = mapedit_max_i(0, mapedit_tile_select_row_count(pApp) * MAPEDIT_TILE_H - (int)wr.fH);
+			float maxX = (float)mapedit_max_i(0, MAPEDIT_TILES_PER_ROW * MAPEDIT_TILE_W - wr.fW);
+			float maxY = (float)mapedit_max_i(0, mapedit_tile_select_row_count(pApp) * MAPEDIT_TILE_H - wr.fH);
 			pApp->fTileScrollX = mapedit_clampf(pApp->fTileScrollX - pEvent->fWheelX * 40.0f, 0.0f, maxX);
 			pApp->fTileScrollY = mapedit_clampf(pApp->fTileScrollY - pEvent->fWheelY * 40.0f, 0.0f, maxY);
 			(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -5701,26 +5844,27 @@ static int mapedit_tile_select_event(xui_widget pWidget, const xui_event_t* pEve
 static int mapedit_map_passage_hit(mapedit_app_t* pApp, xui_widget pWidget, const xui_event_t* pEvent, int* pX, int* pY, int* pRegionCol, int* pRegionRow)
 {
 	xui_rect_t wr;
-	float rx;
-	float ry;
+	int rx;
+	int ry;
 	int x;
 	int y;
-	float inCellX;
-	float inCellY;
+	int inCellX;
+	int inCellY;
 	if ( pApp == NULL || pWidget == NULL || pEvent == NULL || pX == NULL || pY == NULL ) return 0;
 	wr = xuiWidgetGetWorldRect(pWidget);
-	rx = pEvent->fX - wr.fX + pApp->fMapPassageScrollX;
-	ry = pEvent->fY - wr.fY + pApp->fMapPassageScrollY;
-	if ( rx < 0.0f || ry < 0.0f ) return 0;
-	x = (int)(rx / (float)MAPEDIT_MAP_PASSAGE_CELL);
-	y = (int)(ry / (float)MAPEDIT_MAP_PASSAGE_CELL);
+	if ( pEvent->fX < wr.fX || pEvent->fY < wr.fY || pEvent->fX >= wr.fX + wr.fW || pEvent->fY >= wr.fY + wr.fH ) return 0;
+	rx = pEvent->fX - wr.fX + (int)floorf(pApp->fMapPassageScrollX);
+	ry = pEvent->fY - wr.fY + (int)floorf(pApp->fMapPassageScrollY);
+	if ( rx < 0 || ry < 0 ) return 0;
+	x = rx / mapedit_view_cell(pApp, pWidget, 0);
+	y = ry / mapedit_view_cell(pApp, pWidget, 0);
 	if ( x < 0 || y < 0 || x >= pApp->tMap.iWidth || y >= pApp->tMap.iHeight ) return 0;
-	inCellX = rx - (float)(x * MAPEDIT_MAP_PASSAGE_CELL);
-	inCellY = ry - (float)(y * MAPEDIT_MAP_PASSAGE_CELL);
+	inCellX = rx - x * mapedit_view_cell(pApp, pWidget, 0);
+	inCellY = ry - y * mapedit_view_cell(pApp, pWidget, 0);
 	*pX = x;
 	*pY = y;
-	if ( pRegionCol != NULL ) *pRegionCol = mapedit_max_i(0, mapedit_min_i(2, (int)(inCellX / ((float)MAPEDIT_MAP_PASSAGE_CELL / 3.0f))));
-	if ( pRegionRow != NULL ) *pRegionRow = mapedit_max_i(0, mapedit_min_i(2, (int)(inCellY / ((float)MAPEDIT_MAP_PASSAGE_CELL / 3.0f))));
+	if ( pRegionCol != NULL ) *pRegionCol = mapedit_max_i(0, mapedit_min_i(2, inCellX * 3 / mapedit_view_cell(pApp, pWidget, 0)));
+	if ( pRegionRow != NULL ) *pRegionRow = mapedit_max_i(0, mapedit_min_i(2, inCellY * 3 / mapedit_view_cell(pApp, pWidget, 0)));
 	return 1;
 }
 
@@ -5736,13 +5880,14 @@ static int mapedit_map_passage_event(xui_widget pWidget, const xui_event_t* pEve
 	unsigned char bit;
 	char status[160];
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	wr = xuiWidgetGetWorldRect(pWidget);
 	if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL ) {
 		if ( pApp->pMapPassageScrollFrame != NULL ) {
 			mapedit_map_passage_scroll_by_wheel(pApp, pEvent);
 		} else {
-			float maxX = mapedit_max_i(0, pApp->tMap.iWidth * MAPEDIT_MAP_PASSAGE_CELL - (int)wr.fW);
-			float maxY = mapedit_max_i(0, pApp->tMap.iHeight * MAPEDIT_MAP_PASSAGE_CELL - (int)wr.fH);
+			float maxX = (float)mapedit_max_i(0, pApp->tMap.iWidth * MAPEDIT_MAP_PASSAGE_CELL - wr.fW);
+			float maxY = (float)mapedit_max_i(0, pApp->tMap.iHeight * MAPEDIT_MAP_PASSAGE_CELL - wr.fH);
 			pApp->fMapPassageScrollX = mapedit_clampf(pApp->fMapPassageScrollX - pEvent->fWheelX * 40.0f, 0.0f, maxX);
 			pApp->fMapPassageScrollY = mapedit_clampf(pApp->fMapPassageScrollY - pEvent->fWheelY * 40.0f, 0.0f, maxY);
 			(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -5755,15 +5900,13 @@ static int mapedit_map_passage_event(xui_widget pWidget, const xui_event_t* pEve
 	bit = mapedit_tileset_passage_bit_for_region(regionCol, regionRow);
 	if ( bit == 0 ) value = (value == 0) ? 255 : 0;
 	else value = (unsigned char)(value ^ bit);
+	if (!mapedit_capture_map(pApp, MAPEDIT_SNAPSHOT_PASSAGE)) return XUI_EVENT_DISPATCH_STOP;
 	if ( mapedit_map_set_cell_passage(pApp, x, y, value) != XUI_OK ) {
 		mapedit_status(pApp, "地图通行修正写入失败");
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( pApp->tMap.sPath[0] != 0 && mapedit_map_save(&pApp->tMap, pApp->tMap.sPath) == XUI_OK ) {
-		snprintf(status, sizeof(status), "地图通行修正已保存: (%d,%d) = %u", x, y, (unsigned int)value);
-	} else {
-		snprintf(status, sizeof(status), "地图通行修正已修改，但保存失败: (%d,%d)", x, y);
-	}
+	mapedit_mark_map_dirty(pApp);
+	snprintf(status, sizeof(status), "地图通行修正已修改（未保存）: (%d,%d) = %u", x, y, (unsigned int)value);
 	mapedit_status(pApp, status);
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	mapedit_refresh_map_properties(pApp);
@@ -5773,8 +5916,8 @@ static int mapedit_map_passage_event(xui_widget pWidget, const xui_event_t* pEve
 static int mapedit_tileset_panel_hit(mapedit_app_t* pApp, xui_widget pWidget, const xui_event_t* pEvent, int* pTile, int* pRegionCol, int* pRegionRow)
 {
 	xui_rect_t wr;
-	float rx;
-	float ry;
+	int rx;
+	int ry;
 	int col;
 	int row;
 	int inCellX;
@@ -5793,18 +5936,18 @@ static int mapedit_tileset_panel_hit(mapedit_app_t* pApp, xui_widget pWidget, co
 	scrollY = pScrollY != NULL ? *pScrollY : 0.0f;
 	cellW = mapedit_tileset_panel_cell_width(pApp, pWidget);
 	cellH = mapedit_tileset_panel_cell_height(pApp, pWidget);
-	rx = pEvent->fX - wr.fX + scrollX;
-	ry = pEvent->fY - wr.fY + scrollY;
-	if ( rx < 0.0f || ry < 0.0f ) return 0;
-	col = (int)(rx / (float)cellW);
-	row = (int)(ry / (float)cellH);
-	inCellX = (int)rx - col * cellW;
-	inCellY = (int)ry - row * cellH;
+	rx = pEvent->fX - wr.fX + (int)floorf(scrollX);
+	ry = pEvent->fY - wr.fY + (int)floorf(scrollY);
+	if ( rx < 0 || ry < 0 ) return 0;
+	col = rx / cellW;
+	row = ry / cellH;
+	inCellX = rx - col * cellW;
+	inCellY = ry - row * cellH;
 	if ( col < 0 || row < 0 || col >= MAPEDIT_TILES_PER_ROW || row >= mapedit_tile_select_row_count(pApp) ||
 	     inCellX < 0 || inCellY < 0 || inCellX >= cellW || inCellY >= cellH ) return 0;
 	*pTile = row * MAPEDIT_TILES_PER_ROW + col;
-	if ( pRegionCol != NULL ) *pRegionCol = mapedit_max_i(0, mapedit_min_i(2, (int)((float)inCellX / ((float)cellW / 3.0f))));
-	if ( pRegionRow != NULL ) *pRegionRow = mapedit_max_i(0, mapedit_min_i(2, (int)((float)inCellY / ((float)cellH / 3.0f))));
+	if ( pRegionCol != NULL ) *pRegionCol = mapedit_max_i(0, mapedit_min_i(2, inCellX * 3 / cellW));
+	if ( pRegionRow != NULL ) *pRegionRow = mapedit_max_i(0, mapedit_min_i(2, inCellY * 3 / cellH));
 	return 1;
 }
 
@@ -5851,6 +5994,7 @@ static int mapedit_tileset_arrange_event(xui_widget pWidget, const xui_event_t* 
 	int tile;
 	char status[256];
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	if ( mapedit_tileset_panel_handle_wheel(pApp, pWidget, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	mapedit_tileset_panel_handle_hover(pApp, pWidget, pEvent);
 	if ( pEvent->iType != XUI_EVENT_POINTER_DOWN || pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
@@ -5890,6 +6034,7 @@ static int mapedit_tileset_passage_event(xui_widget pWidget, const xui_event_t* 
 	unsigned char value;
 	char status[128];
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	if ( mapedit_tileset_panel_handle_wheel(pApp, pWidget, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pEvent->iType != XUI_EVENT_POINTER_DOWN || pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	if ( !mapedit_tileset_panel_hit(pApp, pWidget, pEvent, &tile, &regionCol, &regionRow) ) return XUI_EVENT_DISPATCH_STOP;
@@ -5898,14 +6043,15 @@ static int mapedit_tileset_passage_event(xui_widget pWidget, const xui_event_t* 
 		mapedit_status(pApp, status);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
+	if (!mapedit_capture_tileset(pApp)) return XUI_EVENT_DISPATCH_STOP;
 	value = pApp->tTileset.arrPassage[tile];
 	bit = mapedit_tileset_passage_bit_for_region(regionCol, regionRow);
 	if ( bit == 0 ) pApp->tTileset.arrPassage[tile] = (value == 0) ? 255 : 0;
 	else pApp->tTileset.arrPassage[tile] = (unsigned char)(value ^ bit);
 	if ( pApp->tTileset.iPassageCount <= tile ) pApp->tTileset.iPassageCount = tile + 1;
 	pApp->iTilesetPassageSelectedTile = tile;
-	if ( mapedit_tileset_save(pApp) == XUI_OK ) snprintf(status, sizeof(status), "通行数据已保存: ID %d = %u", tile, (unsigned int)pApp->tTileset.arrPassage[tile]);
-	else snprintf(status, sizeof(status), "通行数据已修改，但保存失败: ID %d", tile);
+	mapedit_mark_tileset_dirty(pApp);
+	snprintf(status, sizeof(status), "通行数据已修改（未保存）: ID %d = %u", tile, (unsigned int)pApp->tTileset.arrPassage[tile]);
 	mapedit_status(pApp, status);
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	mapedit_refresh_tileset_properties(pApp);
@@ -5918,6 +6064,7 @@ static int mapedit_tileset_actor_event(xui_widget pWidget, const xui_event_t* pE
 	int tile;
 	char status[128];
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	if ( mapedit_tileset_panel_handle_wheel(pApp, pWidget, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pEvent->iType != XUI_EVENT_POINTER_DOWN || pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	if ( !mapedit_tileset_panel_hit(pApp, pWidget, pEvent, &tile, NULL, NULL) ) return XUI_EVENT_DISPATCH_STOP;
@@ -5926,11 +6073,12 @@ static int mapedit_tileset_actor_event(xui_widget pWidget, const xui_event_t* pE
 		mapedit_status(pApp, status);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
+	if (!mapedit_capture_tileset(pApp)) return XUI_EVENT_DISPATCH_STOP;
 	pApp->tTileset.arrActorOverlay[tile] = (unsigned char)(pApp->tTileset.arrActorOverlay[tile] ? 0 : 1);
 	if ( pApp->tTileset.iActorOverlayCount <= tile ) pApp->tTileset.iActorOverlayCount = tile + 1;
 	pApp->iTilesetActorSelectedTile = tile;
-	if ( mapedit_tileset_save(pApp) == XUI_OK ) snprintf(status, sizeof(status), "角色覆盖数据已保存: ID %d = %s", tile, pApp->tTileset.arrActorOverlay[tile] ? "覆盖" : "不覆盖");
-	else snprintf(status, sizeof(status), "角色覆盖数据已修改，但保存失败: ID %d", tile);
+	mapedit_mark_tileset_dirty(pApp);
+	snprintf(status, sizeof(status), "角色覆盖数据已修改（未保存）: ID %d = %s", tile, pApp->tTileset.arrActorOverlay[tile] ? "覆盖" : "不覆盖");
 	mapedit_status(pApp, status);
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	mapedit_refresh_tileset_properties(pApp);
@@ -5944,6 +6092,7 @@ static int mapedit_tileset_tags_event(xui_widget pWidget, const xui_event_t* pEv
 	int tile;
 	char status[192];
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	if ( mapedit_tileset_panel_handle_wheel(pApp, pWidget, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	mapedit_tileset_panel_handle_hover(pApp, pWidget, pEvent);
 	if ( pEvent->iType != XUI_EVENT_POINTER_DOWN || pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
@@ -5970,12 +6119,13 @@ static int mapedit_tileset_tags_event(xui_widget pWidget, const xui_event_t* pEv
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pApp->sTilesetTagValue[0] == 0 && pDef->sDefaultValue[0] != 0 ) mapedit_tags_use_default_value(pApp, 0);
+	if (!mapedit_capture_tileset(pApp)) return XUI_EVENT_DISPATCH_STOP;
 	if ( mapedit_custom_set_value(&pApp->tTileset.pTileCustomRaw, pDef->sId, SET_KEY_TILE, tile, pApp->sTilesetTagValue) != XUI_OK ) {
 		mapedit_status(pApp, "图块打标失败");
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( mapedit_tileset_save(pApp) == XUI_OK ) snprintf(status, sizeof(status), "图块打标已保存: ID %d / %s = %s", tile, pDef->sId, pApp->sTilesetTagValue);
-	else snprintf(status, sizeof(status), "图块打标已修改，但保存失败: ID %d", tile);
+	mapedit_mark_tileset_dirty(pApp);
+	snprintf(status, sizeof(status), "图块打标已修改（未保存）: ID %d / %s = %s", tile, pDef->sId, pApp->sTilesetTagValue);
 	mapedit_status(pApp, status);
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	mapedit_refresh_tileset_properties(pApp);
@@ -5992,13 +6142,14 @@ static int mapedit_map_tags_event(xui_widget pWidget, const xui_event_t* pEvent,
 	int cell;
 	char status[192];
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
+	if (mapedit_view_interact(pApp, pWidget, pEvent)) return XUI_EVENT_DISPATCH_STOP;
 	wr = xuiWidgetGetWorldRect(pWidget);
 	if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL ) {
 		if ( pApp->pMapTagsScrollFrame != NULL ) {
 			mapedit_map_tags_scroll_by_wheel(pApp, pEvent);
 		} else {
-			float maxX = mapedit_max_i(0, pApp->tMap.iWidth * MAPEDIT_TILE_W - (int)wr.fW);
-			float maxY = mapedit_max_i(0, pApp->tMap.iHeight * MAPEDIT_TILE_H - (int)wr.fH);
+			float maxX = (float)mapedit_max_i(0, pApp->tMap.iWidth * MAPEDIT_TILE_W - wr.fW);
+			float maxY = (float)mapedit_max_i(0, pApp->tMap.iHeight * MAPEDIT_TILE_H - wr.fH);
 			pApp->fMapTagsScrollX = mapedit_clampf(pApp->fMapTagsScrollX - pEvent->fWheelX * 40.0f, 0.0f, maxX);
 			pApp->fMapTagsScrollY = mapedit_clampf(pApp->fMapTagsScrollY - pEvent->fWheelY * 40.0f, 0.0f, maxY);
 			(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -6038,12 +6189,13 @@ static int mapedit_map_tags_event(xui_widget pWidget, const xui_event_t* pEvent,
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pApp->sMapTagValue[0] == 0 && pDef->sDefaultValue[0] != 0 ) mapedit_tags_use_default_value(pApp, 1);
+	if (!mapedit_capture_map(pApp, MAPEDIT_SNAPSHOT_CUSTOM)) return XUI_EVENT_DISPATCH_STOP;
 	if ( mapedit_map_set_cell_custom_value(pApp, pDef, x, y, pApp->sMapTagValue) != XUI_OK ) {
 		mapedit_status(pApp, "地图打标写入失败");
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( pApp->tMap.sPath[0] != 0 && mapedit_map_save(&pApp->tMap, pApp->tMap.sPath) == XUI_OK ) snprintf(status, sizeof(status), "地图打标已保存: (%d,%d) / %s = %s", x, y, pDef->sId, pApp->sMapTagValue);
-	else snprintf(status, sizeof(status), "地图打标已修改，但保存失败");
+	mapedit_mark_map_dirty(pApp);
+	snprintf(status, sizeof(status), "地图打标已修改（未保存）: (%d,%d) / %s = %s", x, y, pDef->sId, pApp->sMapTagValue);
 	pApp->iMapPropertyMode = MAPEDIT_MAP_PROPERTY_MODE_MAP;
 	pApp->iMapPropertyCell = -1;
 	mapedit_status(pApp, status);
@@ -6052,23 +6204,123 @@ static int mapedit_map_tags_event(xui_widget pWidget, const xui_event_t* pEvent,
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
+static xui_widget mapedit_view_widget(mapedit_app_t* pApp, int index, xui_widget* frame)
+{
+	xui_widget widgets[] = {pApp->pMapCanvas, pApp->pMapPassageCanvas, pApp->pMapTagsCanvas, pApp->pTileSelectCanvas,
+		pApp->pTilesetArrangeCanvas, pApp->pTilesetPassageCanvas, pApp->pTilesetActorCanvas, pApp->pTilesetTagsCanvas};
+	xui_widget frames[] = {pApp->pMapScrollFrame, pApp->pMapPassageScrollFrame, pApp->pMapTagsScrollFrame, pApp->pTileSelectScrollFrame,
+		pApp->pTilesetArrangeScrollFrame, pApp->pTilesetPassageScrollFrame, pApp->pTilesetActorScrollFrame, pApp->pTilesetTagsScrollFrame};
+	if (index < 0 || index >= 8) index = 0;
+	if (frame) *frame = frames[index];
+	return widgets[index];
+}
+
+static void mapedit_view_zoom_at(mapedit_app_t* pApp, xui_widget widget, float zoom, float x, float y)
+{
+	int index = mapedit_view_index(pApp, widget);
+	int oldW = mapedit_view_cell(pApp, widget, 0), oldH = mapedit_view_cell(pApp, widget, 1);
+	float sx = 0.0f, sy = 0.0f;
+	xui_widget frame;
+	char status[128];
+	(void)mapedit_view_widget(pApp, index, &frame);
+	if (pApp->bPainting || !frame) return;
+	(void)xuiScrollFrameGetOffset(frame, &sx, &sy);
+	pApp->arrViewZoom[index] = mapeditViewZoom(zoom);
+	mapedit_map_workspace_scroll_sync_content(pApp);
+	mapedit_tileset_workspace_scroll_sync_content(pApp);
+	(void)xuiScrollFrameSetOffset(frame,
+		mapeditViewAnchor(sx, x, oldW, mapedit_view_cell(pApp, widget, 0)),
+		mapeditViewAnchor(sy, y, oldH, mapedit_view_cell(pApp, widget, 1)));
+	pApp->iLastView = index;
+	(void)xuiWidgetInvalidate(widget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	snprintf(status, sizeof(status), "缩放 %.0f%% · Ctrl+滚轮缩放 / 中键拖动画布", (double)pApp->arrViewZoom[index] * 100.0);
+	mapedit_status(pApp, status);
+}
+
+static int mapedit_view_interact(mapedit_app_t* pApp, xui_widget widget, const xui_event_t* event)
+{
+	xui_widget frame;
+	int index = mapedit_view_index(pApp, widget);
+	if (event->iType == XUI_EVENT_POINTER_DOWN || event->iType == XUI_EVENT_POINTER_WHEEL) pApp->iLastView = index;
+	if (event->iType == XUI_EVENT_POINTER_WHEEL && (event->iModifiers & XUI_MOD_CTRL)) {
+		xui_rect_t rect = xuiWidgetGetWorldRect(widget);
+		float factor = event->fWheelY > 0.0f ? 1.25f : 0.8f;
+		mapedit_view_zoom_at(pApp, widget, mapeditViewZoom(pApp->arrViewZoom[index]) * factor,
+			(float)(event->fX - rect.fX), (float)(event->fY - rect.fY));
+		return 1;
+	}
+	if (event->iType == XUI_EVENT_POINTER_DOWN && event->iButton == XUI_POINTER_BUTTON_MIDDLE && !pApp->bPainting) {
+		pApp->bViewPanning = 1; pApp->pPanWidget = widget; pApp->iPanView = index;
+		pApp->iPanX = event->fX; pApp->iPanY = event->fY;
+		(void)xuiSetPointerCapture(pApp->pContext, widget);
+		return 1;
+	}
+	if (!pApp->bViewPanning || widget != pApp->pPanWidget) return 0;
+	(void)mapedit_view_widget(pApp, index, &frame);
+	if (event->iType == XUI_EVENT_POINTER_MOVE) {
+		(void)xuiScrollFrameScrollBy(frame, (float)(pApp->iPanX - event->fX), (float)(pApp->iPanY - event->fY));
+		pApp->iPanX = event->fX; pApp->iPanY = event->fY;
+	} else if (event->iType == XUI_EVENT_POINTER_UP || event->iType == XUI_EVENT_POINTER_CAPTURE_LOST) {
+		pApp->bViewPanning = 0; pApp->pPanWidget = NULL;
+		if (xuiGetPointerCapture(pApp->pContext) == widget) (void)xuiReleasePointerCapture(pApp->pContext, widget);
+	}
+	return 1;
+}
+
+static void mapedit_zoom_command(mapedit_app_t* pApp, int fit)
+{
+	xui_widget widget;
+	xui_rect_t rect;
+	int index = pApp->iLastView;
+	int width, height, baseW, baseH;
+	float zoom = 1.0f;
+	if (pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_MAP && index >= 4) index = 0;
+	if (pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_TILESET && index < 4) index = 4;
+	widget = mapedit_view_widget(pApp, index, NULL);
+	rect = xuiWidgetGetWorldRect(widget);
+	if (fit) {
+		width = index < 3 ? pApp->tMap.iWidth : MAPEDIT_TILES_PER_ROW;
+		height = index < 3 ? pApp->tMap.iHeight : mapedit_tile_select_row_count(pApp);
+		baseW = index == 1 || index == 5 ? 32 : MAPEDIT_TILE_W;
+		baseH = index == 1 || index == 5 ? 32 : MAPEDIT_TILE_H;
+		if (width > 0 && height > 0)
+			zoom = fminf((float)rect.fW / (float)(width * baseW), (float)rect.fH / (float)(height * baseH));
+	}
+	mapedit_view_zoom_at(pApp, widget, zoom, (float)rect.fW * 0.5f, (float)rect.fH * 0.5f);
+}
+
+static void mapedit_register_view_gestures(mapedit_app_t* pApp)
+{
+	xui_widget_event_proc handlers[] = {mapedit_map_event, mapedit_map_passage_event, mapedit_map_tags_event, mapedit_tile_select_event,
+		mapedit_tileset_arrange_event, mapedit_tileset_passage_event, mapedit_tileset_actor_event, mapedit_tileset_tags_event};
+	int events[] = {XUI_EVENT_POINTER_DOWN, XUI_EVENT_POINTER_UP, XUI_EVENT_POINTER_MOVE, XUI_EVENT_POINTER_WHEEL, XUI_EVENT_POINTER_CAPTURE_LOST};
+	int i, j;
+	for (i = 0; i < 8; ++i) {
+		xui_widget widget = mapedit_view_widget(pApp, i, NULL);
+		for (j = 0; j < 5; ++j) (void)xuiWidgetSetEventHandler(widget, events[j], handlers[i], pApp);
+	}
+}
+
 static void mapedit_select_workspace(mapedit_app_t* pApp, int iWorkspace)
 {
 	if ( pApp == NULL ) return;
 	pApp->iActiveWorkspace = iWorkspace;
+	mapedit_refresh_toolbar_state(pApp);
 	if ( pApp->pTilesetDock != NULL ) (void)xuiWidgetSetVisible(pApp->pTilesetDock, iWorkspace == MAPEDIT_WORKSPACE_TILESET);
 	if ( pApp->pMapDock != NULL ) (void)xuiWidgetSetVisible(pApp->pMapDock, iWorkspace == MAPEDIT_WORKSPACE_MAP);
 	if ( pApp->pTileButton != NULL ) (void)xuiButtonSetSelected(pApp->pTileButton, iWorkspace == MAPEDIT_WORKSPACE_TILESET);
 	if ( pApp->pMapButton != NULL ) (void)xuiButtonSetSelected(pApp->pMapButton, iWorkspace == MAPEDIT_WORKSPACE_MAP);
 	mapedit_status(pApp, iWorkspace == MAPEDIT_WORKSPACE_TILESET ? "当前工作区: 图块编辑器" : "当前工作区: 地图编辑器");
+	mapedit_update_window_title(pApp);
 }
 
 static void mapedit_workspace_click(xui_widget pWidget, void* pUser)
 {
 	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
+	int target;
 	if ( pApp == NULL ) return;
-	if ( pWidget == pApp->pTileButton ) mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_TILESET);
-	else mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_MAP);
+	target = pWidget == pApp->pTileButton ? MAPEDIT_WORKSPACE_TILESET : MAPEDIT_WORKSPACE_MAP;
+	mapedit_select_workspace(pApp, target);
 }
 
 static void mapedit_toolbar_select(xui_widget pWidget, int iIndex, int iValue, void* pUser)
@@ -6117,21 +6369,239 @@ static void mapedit_layer_select(xui_widget pWidget, int iIndex, int iValue, voi
 	if ( pApp->pMapPassageCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapPassageCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static void mapedit_menu_select(xui_widget pWidget, int iIndex, int iValue, void* pUser)
+static const char* mapedit_path_file_name(const char* sPath)
+{
+	const char* pBack;
+	const char* pSlash;
+	if ( sPath == NULL ) return "";
+	pBack = strrchr(sPath, '\\');
+	pSlash = strrchr(sPath, '/');
+	if ( pSlash != NULL && (pBack == NULL || pSlash > pBack) ) pBack = pSlash;
+	return pBack != NULL ? pBack + 1 : sPath;
+}
+
+static int mapedit_paths_equal(const char* sLeft, const char* sRight)
+{
+	wchar_t left[MAPEDIT_PATH_MAX];
+	wchar_t right[MAPEDIT_PATH_MAX];
+	wchar_t leftFull[MAPEDIT_PATH_MAX];
+	wchar_t rightFull[MAPEDIT_PATH_MAX];
+	DWORD leftSize;
+	DWORD rightSize;
+	if ( sLeft == NULL || sRight == NULL ||
+	     !mapedit_utf8_to_wide(sLeft, left, (int)(sizeof(left) / sizeof(left[0]))) ||
+	     !mapedit_utf8_to_wide(sRight, right, (int)(sizeof(right) / sizeof(right[0]))) ) return 0;
+	leftSize = GetFullPathNameW(left, (DWORD)(sizeof(leftFull) / sizeof(leftFull[0])), leftFull, NULL);
+	rightSize = GetFullPathNameW(right, (DWORD)(sizeof(rightFull) / sizeof(rightFull[0])), rightFull, NULL);
+	if ( leftSize == 0 || leftSize >= (DWORD)(sizeof(leftFull) / sizeof(leftFull[0])) ||
+	     rightSize == 0 || rightSize >= (DWORD)(sizeof(rightFull) / sizeof(rightFull[0])) ) return 0;
+	return _wcsicmp(leftFull, rightFull) == 0;
+}
+
+static void mapedit_rescan_map_list(mapedit_app_t* pApp, const char* sSelectedPath)
+{
+	char dir[MAPEDIT_PATH_MAX];
+	char candidate[MAPEDIT_PATH_MAX];
+	const char* sFile;
+	if ( pApp == NULL ) return;
+	mapedit_app_path(pApp, dir, sizeof(dir), "assets\\maps");
+	mapedit_scan_files(dir, ".xson", &pApp->tMapFiles);
+	mapedit_refresh_map_list_texts(pApp, &pApp->tMapFiles);
+	pApp->tMapFiles.iSelected = -1;
+	if ( sSelectedPath != NULL && sSelectedPath[0] != 0 ) {
+		sFile = mapedit_path_file_name(sSelectedPath);
+		mapedit_path_join(candidate, sizeof(candidate), dir, sFile);
+		if ( mapedit_paths_equal(candidate, sSelectedPath) ) {
+			pApp->tMapFiles.iSelected = mapedit_file_list_find(&pApp->tMapFiles, sFile);
+		}
+	}
+	if ( pApp->pMapListView != NULL ) {
+		(void)xuiListViewSetItems(pApp->pMapListView, pApp->tMapFiles.arrTextPtrs, pApp->tMapFiles.iCount);
+		(void)xuiListViewSetSelected(pApp->pMapListView, pApp->tMapFiles.iSelected);
+	}
+}
+
+static void mapedit_recovery_path_for(mapedit_app_t* pApp, int workspace, const char* documentPath, char* path, int capacity)
+{
+	char name[96];
+	snprintf(name, sizeof(name), "recovery-%016llx-%s-%016llx.xson",
+		(unsigned long long)mapeditPathKey(pApp->sProjectDir),
+		workspace == MAPEDIT_WORKSPACE_MAP ? "map" : "tileset",
+		(unsigned long long)mapeditPathKey(documentPath && *documentPath ? documentPath :
+			(workspace == MAPEDIT_WORKSPACE_MAP ? "untitled-map" : "untitled-tileset")));
+	mapedit_path_join(path, capacity, pApp->sUserDir, name);
+}
+
+static void mapedit_recovery_path(mapedit_app_t* pApp, char* path, int capacity)
+{
+	int workspace = pApp->iActiveWorkspace;
+	mapedit_recovery_path_for(pApp, workspace, workspace == MAPEDIT_WORKSPACE_MAP ? pApp->tMap.sPath : pApp->tTileset.sPath, path, capacity);
+}
+
+static void mapedit_clear_recovery_for(mapedit_app_t* pApp, int workspace, const char* sourcePath)
+{
+	char path[MAPEDIT_PATH_MAX];
+	mapedit_recovery_path_for(pApp, workspace, sourcePath, path, sizeof(path));
+	(void)mapedit_delete_file_utf8(path);
+}
+
+static int mapedit_write_recovery_now(mapedit_app_t* pApp)
+{
+	char path[MAPEDIT_PATH_MAX];
+	int ret = XUI_OK;
+	if (pApp->tMap.bDirty && pApp->tMap.pTiles) {
+		/* Save changes identity/schema flags only: preserve the live document. */
+		xge_map_t copy = pApp->tMap;
+		mapedit_recovery_path_for(pApp, MAPEDIT_WORKSPACE_MAP, copy.sPath, path, sizeof(path));
+		ret = mapedit_map_save(&copy, path);
+	}
+	if (pApp->tTileset.bDirty && pApp->tTileset.bLoaded) {
+		mapedit_recovery_path_for(pApp, MAPEDIT_WORKSPACE_TILESET, pApp->tTileset.sPath, path, sizeof(path));
+		if (mapedit_tileset_save_to(pApp, path, 0) != XUI_OK) ret = XUI_ERROR;
+	}
+	if (ret != XUI_OK) mapedit_status(pApp, "自动恢复文件写入失败，请立即手动保存");
+	return ret;
+}
+
+static void mapedit_maybe_write_recovery(mapedit_app_t* pApp)
+{
+	double now;
+	double delay;
+	if ( pApp == NULL || (!pApp->tMap.bDirty && !pApp->tTileset.bDirty) ) return;
+	now = xgeTimer();
+	if ( pApp->fMapDirtySince <= 0.0 ) pApp->fMapDirtySince = now;
+	delay = (pApp->fLastRecoveryWrite > 0.0 ? 30.0 : 2.0) -
+		(now - (pApp->fLastRecoveryWrite > 0.0 ? pApp->fLastRecoveryWrite : pApp->fMapDirtySince));
+	if ( delay > 0.0 ) {
+		xgeRenderRequestAfter((float)delay);
+		return;
+	}
+	pApp->fLastRecoveryWrite = now;
+	(void)mapedit_write_recovery_now(pApp);
+	xgeRenderRequestAfter(30.0f);
+}
+
+static void mapedit_recover_map(mapedit_app_t* pApp)
+{
+	char path[MAPEDIT_PATH_MAX];
+	mapedit_recovery_path(pApp, path, sizeof(path));
+	if (!mapedit_file_exists_utf8(path)) { mapedit_status(pApp, "当前文档没有可恢复的自动保存文件"); return; }
+	mapedit_request_operation(pApp, pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_MAP ? 4 : 5, path);
+}
+
+static int mapedit_save_map_to(mapedit_app_t* pApp, const char* sPath)
+{
+	char status[sizeof(gMapeditMapIoError) + 48];
+	if ( pApp == NULL || sPath == NULL || sPath[0] == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	char oldPath[MAPEDIT_PATH_MAX];
+	mapedit_copy_text(oldPath, sizeof(oldPath), pApp->tMap.sPath);
+	if ( mapedit_map_save(&pApp->tMap, sPath) != XUI_OK ) {
+		snprintf(status, sizeof(status), "地图保存失败: %s", gMapeditMapIoError[0] != 0 ? gMapeditMapIoError : "未知错误");
+		mapedit_status(pApp, status);
+		return XUI_ERROR;
+	}
+	pApp->fMapDirtySince = 0.0;
+	pApp->fLastRecoveryWrite = 0.0;
+	mapedit_clear_recovery_for(pApp, MAPEDIT_WORKSPACE_MAP, oldPath);
+	mapeditHistorySaved(&pApp->tMapHistory);
+	pApp->tMapStamp = mapeditFileStamp(pApp->tMap.sPath);
+	pApp->bMapExternalConflict = 0;
+	mapedit_rescan_map_list(pApp, sPath);
+	mapedit_update_window_title(pApp);
+	mapedit_status(pApp, "地图已保存");
+	return XUI_OK;
+}
+
+static void mapedit_file_dialog_result(xui_file_dialog_t* pDialog, int iResult, const char* sPath, void* pUser)
 {
 	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
-	(void)pWidget;
-	(void)iIndex;
+	int command = pApp->iFileDialogCommand;
+	int workspace = pApp->iFileDialogWorkspace;
+	int ret = XUI_ERROR;
+	(void)pDialog;
+	pApp->iFileDialogCommand = 0;
+	if (iResult != XUI_FILE_DIALOG_RESULT_OK || !sPath || !*sPath) {
+		pApp->iPendingOperation = 0;
+		mapedit_status(pApp, "文件操作已取消，文档保持不变");
+		return;
+	}
+	if (command == CMD_FILE_OPEN) {
+		mapedit_request_operation(pApp, workspace == MAPEDIT_WORKSPACE_MAP ? 2 : 3, sPath);
+	} else if (command == CMD_FILE_SAVE_AS) {
+		ret = workspace == MAPEDIT_WORKSPACE_MAP ? mapedit_save_map_to(pApp, sPath) : mapedit_tileset_save_to(pApp, sPath, 1);
+		if (ret == XUI_OK) {
+			mapedit_status(pApp, "文档已另存");
+			mapedit_pending_continue(pApp);
+		} else {
+			pApp->iPendingOperation = 0;
+			mapedit_status(pApp, "保存失败，未关闭或替换当前文档");
+		}
+	} else if (command == CMD_MATERIAL_SOURCE_IMAGE) (void)mapedit_material_edit_load_source(pApp, sPath);
+}
+
+static int mapedit_show_file_dialog(mapedit_app_t* pApp, int iCommand, const char* sTitle,
+	const char* sInitialDir, const char* sFileName, const char* sFilter, int bSave)
+{
+	xui_file_dialog_desc_t desc;
+	int ret;
+	if ( pApp == NULL || pApp->pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pApp->pFileDialog != NULL ) {
+		if ( xuiFileDialogIsOpen(pApp->pFileDialog) ) return XUI_OK;
+		xuiFileDialogDestroy(pApp->pFileDialog);
+		pApp->pFileDialog = NULL;
+	}
+	memset(&desc, 0, sizeof(desc));
+	desc.iSize = sizeof(desc);
+	desc.sTitle = sTitle;
+	desc.sInitialDir = sInitialDir;
+	desc.sFileName = sFileName;
+	desc.sFilter = sFilter;
+	desc.pFont = pApp->pFont;
+	desc.onResult = mapedit_file_dialog_result;
+	desc.pResultUser = pApp;
+	desc.bModal = 1;
+	pApp->iFileDialogCommand = iCommand;
+	pApp->iFileDialogWorkspace = pApp->iActiveWorkspace;
+	if ( bSave ) ret = xuiSaveFileDialog(pApp->pContext, &pApp->pFileDialog, &desc);
+	else ret = xuiOpenFileDialog(pApp->pContext, &pApp->pFileDialog, &desc);
+	if ( ret != XUI_OK ) pApp->iFileDialogCommand = 0;
+	return ret;
+}
+
+static int mapedit_show_map_file_dialog(mapedit_app_t* pApp, int iCommand)
+{
+	char dir[MAPEDIT_PATH_MAX];
+	int map = pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_MAP;
+	const char* path = map ? pApp->tMap.sPath : pApp->tTileset.sPath;
+	mapedit_app_path(pApp, dir, sizeof(dir), map ? "assets\\maps" : "assets\\图块集");
+	return mapedit_show_file_dialog(pApp, iCommand,
+		iCommand == CMD_FILE_OPEN ? (map ? "打开地图" : "打开图集") : (map ? "地图另存为" : "图集另存为"),
+		dir, iCommand == CMD_FILE_SAVE_AS ? mapedit_path_file_name(path) : "",
+		map ? "XGE 地图 (*.xson)|*.xson" : "XGE 图集 (*.xson)|*.xson", iCommand == CMD_FILE_SAVE_AS);
+}
+
+static int mapedit_show_material_source_dialog(mapedit_app_t* pApp)
+{
+	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return mapedit_show_file_dialog(pApp, CMD_MATERIAL_SOURCE_IMAGE, "打开外部图片",
+		pApp->sProjectDir, "", "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.webp|所有文件 (*.*)|*.*", 0);
+}
+
+static void mapedit_execute_command(mapedit_app_t* pApp, int iValue)
+{
 	if ( pApp == NULL ) return;
 	if ( iValue == CMD_FILE_OPEN ) {
-		mapedit_status(pApp, "打开地图: 占位命令");
+		if (mapedit_show_map_file_dialog(pApp, CMD_FILE_OPEN) != XUI_OK) mapedit_status(pApp, "无法打开文件选择器");
 	} else if ( iValue == CMD_FILE_SAVE ) {
-		mapedit_save_layouts(pApp);
-		mapedit_status(pApp, "保存地图: 占位命令，DockPanel 布局已保存");
+		(void)mapedit_save_current(pApp);
 	} else if ( iValue == CMD_FILE_SAVE_AS ) {
-		mapedit_status(pApp, "另存为: 占位命令");
+		if ( mapedit_show_map_file_dialog(pApp, CMD_FILE_SAVE_AS) != XUI_OK ) mapedit_status(pApp, "无法打开另存为对话框");
+	} else if ( iValue == CMD_FILE_RECOVER ) {
+		mapedit_recover_map(pApp);
 	} else if ( iValue == CMD_FILE_EXIT ) {
-		xgeQuit();
+		mapedit_request_operation(pApp, 1, NULL);
+	} else if (iValue == CMD_VIEW_ACTUAL_SIZE || iValue == CMD_VIEW_FIT) {
+		mapedit_zoom_command(pApp, iValue == CMD_VIEW_FIT);
 	} else if ( iValue == CMD_VIEW_RESET_LAYOUT ) {
 		mapedit_map_scroll_reset(pApp);
 		mapedit_map_passage_scroll_reset(pApp);
@@ -6141,65 +6611,94 @@ static void mapedit_menu_select(xui_widget pWidget, int iIndex, int iValue, void
 		if ( mapedit_load_default_layouts(pApp) == XUI_OK ) {
 			mapedit_save_layouts(pApp);
 			mapedit_status(pApp, "已重置并保存默认 DockPanel 布局");
-		} else {
-			mapedit_status(pApp, "重置 DockPanel 布局失败");
-		}
+		} else mapedit_status(pApp, "重置 DockPanel 布局失败");
 	} else if ( iValue == CMD_HELP_ABOUT ) {
-		mapedit_status(pApp, "XGE MapEdit - 通用地图编辑器框架");
+		mapedit_status(pApp, "XGE MapEdit 2 - V2 地图编辑器");
+	} else if ( iValue == CMD_UNDO || iValue == CMD_REDO ) {
+		if ( iValue == CMD_UNDO ) mapedit_undo(pApp);
+		else mapedit_redo(pApp);
 	} else {
 		mapedit_status(pApp, "未知菜单命令");
 	}
 }
 
+static void mapedit_menu_select(xui_widget pWidget, int iIndex, int iValue, void* pUser)
+{
+	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
+	(void)pWidget;
+	(void)iIndex;
+	mapedit_execute_command(pApp, iValue);
+}
+
+static void mapedit_activate_loaded_map(mapedit_app_t* pApp, const char* sStatus)
+{
+	int tilesetRet;
+	if ( pApp == NULL ) return;
+	pApp->tMap.iState = mapedit_setup_clamp_state(pApp, pApp->tMap.iState);
+	pApp->iActiveLayer = mapedit_max_i(0, mapedit_min_i(pApp->iActiveLayer, pApp->tMap.iLayers - 1));
+	if ( pApp->pLayerCombo != NULL ) (void)xuiComboBoxSetSelected(pApp->pLayerCombo, pApp->iActiveLayer);
+	mapedit_clear_history(pApp);
+	if ( pApp->tMap.sTileset[0] != 0 ) {
+		tilesetRet = mapedit_tileset_load(pApp, pApp->tMap.sTileset);
+		if ( tilesetRet != XUI_OK ) mapedit_tileset_clear(pApp);
+	} else {
+		mapedit_tileset_clear(pApp);
+		tilesetRet = XUI_OK;
+	}
+	mapedit_map_scroll_reset(pApp);
+	mapedit_map_passage_scroll_reset(pApp);
+	mapedit_map_tags_scroll_reset(pApp);
+	mapedit_tile_select_scroll_reset(pApp);
+	mapedit_reset_tileset_panel_scrolls(pApp);
+	pApp->iMapPassageSelectedCell = -1;
+	pApp->iMapTagsSelectedCell = -1;
+	pApp->iMapPropertyMode = MAPEDIT_MAP_PROPERTY_MODE_MAP;
+	pApp->iMapPropertyCell = -1;
+	pApp->iMapHoverX = -1;
+	pApp->iMapHoverY = -1;
+	pApp->iMapTagsHoverX = -1;
+	pApp->iMapTagsHoverY = -1;
+	pApp->iTilesetArrangeHoverTile = -1;
+	pApp->iTilesetTagsHoverTile = -1;
+	pApp->iDragCurrentX = -1;
+	pApp->iDragCurrentY = -1;
+	pApp->fMapDirtySince = 0.0;
+	pApp->tMapStamp = mapeditFileStamp(pApp->tMap.sPath);
+	pApp->bMapExternalConflict = 0;
+	pApp->bMapOK = 1;
+	if ( tilesetRet == XUI_OK ) mapedit_status(pApp, sStatus != NULL ? sStatus : "已切换地图");
+	else mapedit_status(pApp, "地图已载入，但引用的图集无法读取");
+	mapedit_update_window_title(pApp);
+	mapedit_update_status_details(pApp);
+	if ( pApp->pMapCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( pApp->pMapPassageCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapPassageCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( pApp->pMapTagsCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapTagsCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	mapedit_tags_update_channel_combo(pApp, 1);
+	mapedit_refresh_map_properties(pApp);
+}
+
 static void mapedit_map_selected(xui_widget pWidget, int iIndex, void* pUser)
 {
 	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
-	char sRel[MAPEDIT_PATH_MAX];
-	char sPath[MAPEDIT_PATH_MAX];
+	char rel[MAPEDIT_PATH_MAX], path[MAPEDIT_PATH_MAX];
 	(void)pWidget;
-	if ( pApp == NULL || iIndex < 0 || iIndex >= pApp->tMapFiles.iCount ) return;
-	pApp->tMapFiles.iSelected = iIndex;
-	snprintf(sRel, sizeof(sRel), "assets\\maps\\%s", pApp->tMapFiles.arrNames[iIndex]);
-	mapedit_app_path(pApp, sPath, sizeof(sPath), sRel);
-	if ( mapedit_map_load(&pApp->tMap, sPath) == XUI_OK ) {
-		pApp->tMap.iState = mapedit_setup_clamp_state(pApp, pApp->tMap.iState);
-		mapedit_clear_history(pApp);
-		(void)mapedit_tileset_load(pApp, pApp->tMap.sTileset);
-		mapedit_map_scroll_reset(pApp);
-		mapedit_map_passage_scroll_reset(pApp);
-		mapedit_map_tags_scroll_reset(pApp);
-		mapedit_tile_select_scroll_reset(pApp);
-		mapedit_reset_tileset_panel_scrolls(pApp);
-		pApp->iMapPassageSelectedCell = -1;
-		pApp->iMapTagsSelectedCell = -1;
-		pApp->iMapPropertyMode = MAPEDIT_MAP_PROPERTY_MODE_MAP;
-		pApp->iMapPropertyCell = -1;
-		pApp->iMapHoverX = -1;
-		pApp->iMapHoverY = -1;
-		pApp->iMapTagsHoverX = -1;
-		pApp->iMapTagsHoverY = -1;
-		pApp->iTilesetArrangeHoverTile = -1;
-		pApp->iTilesetTagsHoverTile = -1;
-		pApp->iDragCurrentX = -1;
-		pApp->iDragCurrentY = -1;
-		mapedit_status(pApp, "已切换地图");
-		pApp->bMapOK = 1;
-		mapedit_update_status_details(pApp);
-		if ( pApp->pMapCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( pApp->pMapPassageCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapPassageCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( pApp->pMapTagsCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapTagsCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		mapedit_tags_update_channel_combo(pApp, 1);
-		mapedit_refresh_map_properties(pApp);
-	}
+	if (!pApp || iIndex < 0 || iIndex >= pApp->tMapFiles.iCount) return;
+	snprintf(rel, sizeof(rel), "assets\\maps\\%s", pApp->tMapFiles.arrNames[iIndex]);
+	mapedit_app_path(pApp, path, sizeof(path), rel);
+	if (mapedit_paths_equal(path, pApp->tMap.sPath)) return;
+	if (pApp->pMapListView) (void)xuiListViewSetSelected(pApp->pMapListView, pApp->tMapFiles.iSelected);
+	mapedit_request_operation(pApp, 2, path);
 }
 
-static void mapedit_tileset_selected(xui_widget pWidget, int iIndex, void* pUser)
+static int mapedit_open_tileset(mapedit_app_t* pApp, const char* path)
 {
-	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
-	(void)pWidget;
-	if ( pApp == NULL || iIndex < 0 || iIndex >= pApp->tTilesetFiles.iCount ) return;
-	pApp->tTilesetFiles.iSelected = iIndex;
-	if ( mapedit_tileset_load(pApp, pApp->tTilesetFiles.arrNames[iIndex]) == XUI_OK ) {
+	if (mapedit_tileset_load(pApp, path) != XUI_OK) {
+		mapedit_status(pApp, "图集文件格式无效，已保留当前图集");
+		return XUI_ERROR;
+	}
+	mapedit_copy_text(pApp->tTileset.sFile, sizeof(pApp->tTileset.sFile), mapedit_path_file_name(path));
+	pApp->tTilesetFiles.iSelected = mapedit_file_list_find(&pApp->tTilesetFiles, pApp->tTileset.sFile);
+	if (pApp->pTilesetListView) (void)xuiListViewSetSelected(pApp->pTilesetListView, pApp->tTilesetFiles.iSelected);
 		pApp->iTilesetArrangeSelectedTile = -1;
 		pApp->iTilesetPassageSelectedTile = -1;
 		pApp->iTilesetActorSelectedTile = -1;
@@ -6225,30 +6724,206 @@ static void mapedit_tileset_selected(xui_widget pWidget, int iIndex, void* pUser
 		if ( pApp->pTilesetTagsCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pTilesetTagsCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		mapedit_tags_update_channel_combo(pApp, 0);
 		mapedit_refresh_tileset_properties(pApp);
-	}
+	mapedit_invalidate_map_views(pApp);
+	mapedit_update_window_title(pApp);
+	return XUI_OK;
 }
 
-static int mapedit_create_label(mapedit_app_t* pApp, xui_widget pParent, const char* sText, xui_rect_t r, xui_widget* ppOut)
+static void mapedit_tileset_selected(xui_widget pWidget, int iIndex, void* pUser)
 {
-	xui_label_desc_t d;
-	xui_widget w;
+	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
+	char rel[MAPEDIT_PATH_MAX], path[MAPEDIT_PATH_MAX];
+	(void)pWidget;
+	if (!pApp || iIndex < 0 || iIndex >= pApp->tTilesetFiles.iCount) return;
+	snprintf(rel, sizeof(rel), "assets\\图块集\\%s", pApp->tTilesetFiles.arrNames[iIndex]);
+	mapedit_app_path(pApp, path, sizeof(path), rel);
+	if (mapedit_paths_equal(path, pApp->tTileset.sPath)) return;
+	if (pApp->pTilesetListView) (void)xuiListViewSetSelected(pApp->pTilesetListView, pApp->tTilesetFiles.iSelected);
+	mapedit_request_operation(pApp, 3, path);
+}
+
+static int mapedit_save_current(mapedit_app_t* pApp)
+{
+	int map = pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_MAP;
+	const char* path = map ? pApp->tMap.sPath : pApp->tTileset.sPath;
+	mapedit_file_stamp_t baseline = map ? pApp->tMapStamp : pApp->tTilesetStamp;
 	int ret;
-	memset(&d, 0, sizeof(d));
-	d.iSize = sizeof(d);
-	d.sText = sText;
-	d.pFont = pApp->pFont;
-	d.iTextColor = XUI_COLOR_RGBA(42, 60, 82, 255);
-	d.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-	ret = xuiLabelCreate(pApp->pContext, &w, &d);
-	if ( ret != XUI_OK ) return ret;
-	(void)xuiWidgetSetRect(w, r);
-	ret = xuiWidgetAddChild(pParent, w);
-	if ( ret != XUI_OK ) {
-		xuiWidgetDestroy(w);
-		return ret;
+	if (!*path) return mapedit_show_map_file_dialog(pApp, CMD_FILE_SAVE_AS) == XUI_OK ? 1 : XUI_ERROR;
+	if (!mapeditFileStampEqual(baseline, mapeditFileStamp(path)) ||
+		(map ? pApp->bMapExternalConflict : pApp->bTilesetExternalConflict)) {
+		mapedit_status(pApp, "磁盘文件已变化；请重新打开或另存为，避免覆盖外部修改");
+		return XUI_ERROR;
 	}
-	if ( ppOut != NULL ) *ppOut = w;
-	return XUI_OK;
+	ret = map ? mapedit_save_map_to(pApp, path) : mapedit_tileset_save_to(pApp, path, 1);
+	mapedit_status(pApp, ret == XUI_OK ? "当前文档已保存" : "保存失败，文档保持打开");
+	return ret;
+}
+
+static void mapedit_confirm_result(xui_msgbox_t* box, int result, void* user)
+{
+	mapedit_app_t* pApp = (mapedit_app_t*)user;
+	int ret;
+	(void)box;
+	if (!pApp->iPendingOperation) return;
+	if (result == XUI_MSGBOX_RESULT_CANCEL || result == XUI_MSGBOX_RESULT_CLOSE) {
+		pApp->iPendingOperation = 0;
+		mapedit_status(pApp, "已取消；所有修改仍保留");
+		return;
+	}
+	if (result == XUI_MSGBOX_RESULT_NO) {
+		pApp->iPendingDiscardMask |= 1 << pApp->iPendingDocument;
+		mapedit_pending_continue(pApp);
+		return;
+	}
+	mapedit_select_workspace(pApp, pApp->iPendingDocument);
+	ret = mapedit_save_current(pApp);
+	if (ret == XUI_OK) mapedit_pending_continue(pApp);
+	else if (ret < 0) pApp->iPendingOperation = 0;
+}
+
+static void mapedit_pending_continue(mapedit_app_t* pApp)
+{
+	int operation = pApp->iPendingOperation;
+	int document = -1, result = XUI_OK;
+	char message[512], oldMapPath[MAPEDIT_PATH_MAX], oldTilesetPath[MAPEDIT_PATH_MAX];
+	char path[MAPEDIT_PATH_MAX];
+	if (!operation) return;
+	if ((operation == 1 || operation == 2 || operation == 4) && pApp->tMap.bDirty &&
+		!(pApp->iPendingDiscardMask & (1 << MAPEDIT_WORKSPACE_MAP))) document = MAPEDIT_WORKSPACE_MAP;
+	else if (pApp->tTileset.bDirty && !(pApp->iPendingDiscardMask & (1 << MAPEDIT_WORKSPACE_TILESET))) document = MAPEDIT_WORKSPACE_TILESET;
+	if (document >= 0) {
+		const xui_msgbox_button_t buttons[] = {
+			{"保存", XUI_MSGBOX_RESULT_YES, 0}, {"不保存", XUI_MSGBOX_RESULT_NO, 0}, {"取消", XUI_MSGBOX_RESULT_CANCEL, 0}
+		};
+		pApp->iPendingDocument = document;
+		snprintf(message, sizeof(message), "%s“%s”有未保存修改。是否保存后继续？",
+			document == MAPEDIT_WORKSPACE_MAP ? "地图" : "图集",
+			document == MAPEDIT_WORKSPACE_MAP ? pApp->tMap.sName : pApp->tTileset.sName);
+		if (!pApp->pConfirmBox) {
+			xui_msgbox_desc_t desc;
+			memset(&desc, 0, sizeof(desc));
+			desc.iSize = sizeof(desc); desc.pFont = pApp->pFont;
+			desc.sTitle = "未保存的修改"; desc.sMessage = message;
+			desc.iButtons = XUI_MSGBOX_BUTTON_CUSTOM;
+			desc.pCustomButtons = buttons; desc.iCustomButtonCount = 3;
+			desc.bModal = 1; desc.bHasModal = 1;
+			if (xuiMsgBoxCreate(pApp->pContext, &pApp->pConfirmBox, &desc) != XUI_OK) {
+				pApp->iPendingOperation = 0; mapedit_status(pApp, "无法创建确认窗口，操作已取消"); return;
+			}
+			(void)xuiMsgBoxSetResult(pApp->pConfirmBox, mapedit_confirm_result, pApp);
+		}
+		(void)xuiMsgBoxSetText(pApp->pConfirmBox, "未保存的修改", message);
+		(void)xuiMsgBoxSetOpen(pApp->pConfirmBox, 1);
+		xgeRenderRequest();
+		return;
+	}
+	mapedit_copy_text(path, sizeof(path), pApp->sPendingPath);
+	mapedit_copy_text(oldMapPath, sizeof(oldMapPath), pApp->tMap.sPath);
+	mapedit_copy_text(oldTilesetPath, sizeof(oldTilesetPath), pApp->tTileset.sPath);
+	pApp->iPendingOperation = 0;
+	if (operation == 1) {
+		if (pApp->iPendingDiscardMask & (1 << MAPEDIT_WORKSPACE_MAP)) pApp->tMap.bDirty = 0;
+		if (pApp->iPendingDiscardMask & (1 << MAPEDIT_WORKSPACE_TILESET)) pApp->tTileset.bDirty = 0;
+		mapedit_save_layouts(pApp);
+		xgeQuit();
+	} else if (operation == 2 || operation == 4) {
+		result = mapedit_map_load(&pApp->tMap, path);
+		if (result == XUI_OK) {
+			if (operation == 4) { mapedit_copy_text(pApp->tMap.sPath, sizeof(pApp->tMap.sPath), oldMapPath); pApp->tMap.bDirty = 1; }
+			mapedit_activate_loaded_map(pApp, operation == 4 ? "恢复版本已载入，请检查后保存" : "地图已打开");
+			mapedit_rescan_map_list(pApp, pApp->tMap.sPath);
+			mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_MAP);
+		} else mapedit_status(pApp, gMapeditMapIoError);
+	} else {
+		result = mapedit_open_tileset(pApp, path);
+		if (result == XUI_OK) {
+			if (operation == 5) {
+				mapedit_copy_text(pApp->tTileset.sPath, sizeof(pApp->tTileset.sPath), oldTilesetPath);
+				mapedit_copy_text(pApp->tTileset.sFile, sizeof(pApp->tTileset.sFile), mapedit_path_file_name(oldTilesetPath));
+				pApp->tTileset.bDirty = 1; pApp->tTilesetHistory.iSavedRevision = UINT64_MAX;
+				pApp->tTilesetStamp = mapeditFileStamp(oldTilesetPath);
+			}
+			mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_TILESET);
+		}
+	}
+	if (result == XUI_OK) {
+		if (pApp->iPendingDiscardMask & (1 << MAPEDIT_WORKSPACE_MAP)) mapedit_clear_recovery_for(pApp, MAPEDIT_WORKSPACE_MAP, oldMapPath);
+		if (pApp->iPendingDiscardMask & (1 << MAPEDIT_WORKSPACE_TILESET)) mapedit_clear_recovery_for(pApp, MAPEDIT_WORKSPACE_TILESET, oldTilesetPath);
+	}
+	pApp->iPendingDiscardMask = 0;
+	mapedit_update_window_title(pApp);
+}
+
+static void mapedit_request_operation(mapedit_app_t* pApp, int operation, const char* path)
+{
+	if (!pApp || pApp->iPendingOperation || pApp->bPainting) return;
+	if (pApp->pFileDialog && xuiFileDialogIsOpen(pApp->pFileDialog)) return;
+	pApp->iPendingOperation = operation;
+	pApp->iPendingDiscardMask = 0;
+	mapedit_copy_text(pApp->sPendingPath, sizeof(pApp->sPendingPath), path ? path : "");
+	mapedit_pending_continue(pApp);
+}
+
+static int mapedit_native_close(void* user)
+{
+	mapedit_app_t* pApp = (mapedit_app_t*)user;
+	if (!pApp->tMap.bDirty && !pApp->tTileset.bDirty && !pApp->iPendingOperation) {
+		mapedit_save_layouts(pApp);
+		return 1;
+	}
+	mapedit_request_operation(pApp, 1, NULL);
+	return 0;
+}
+
+static void mapedit_external_result(xui_msgbox_t* box, int result, void* user)
+{
+	mapedit_app_t* pApp = (mapedit_app_t*)user;
+	int map = pApp->iExternalDocument == MAPEDIT_WORKSPACE_MAP;
+	(void)box;
+	if (result == XUI_MSGBOX_RESULT_YES)
+		mapedit_request_operation(pApp, map ? 2 : 3, map ? pApp->tMap.sPath : pApp->tTileset.sPath);
+	else mapedit_status(pApp, "保留内存版本；如需保存请另存为，避免覆盖外部修改");
+}
+
+static void mapedit_poll_external_files(mapedit_app_t* pApp)
+{
+	int mapChanged, setChanged, document;
+	const char* path;
+	char message[640];
+	double now = xgeTimer();
+	mapedit_file_stamp_t mapStamp, setStamp;
+	if (now < pApp->fNextFileCheck) { xgeRenderRequestAfter((float)(pApp->fNextFileCheck - now)); return; }
+	pApp->fNextFileCheck = now + 2.0;
+	xgeRenderRequestAfter(2.0f);
+	if (pApp->iPendingOperation || (pApp->pFileDialog && xuiFileDialogIsOpen(pApp->pFileDialog)) ||
+		(pApp->pExternalBox && xuiMsgBoxIsOpen(pApp->pExternalBox))) return;
+	mapStamp = mapeditFileStamp(pApp->tMap.sPath);
+	setStamp = mapeditFileStamp(pApp->tTileset.sPath);
+	mapChanged = pApp->tMap.sPath[0] && !pApp->bMapExternalConflict && !mapeditFileStampEqual(mapStamp, pApp->tMapStamp);
+	setChanged = pApp->tTileset.sPath[0] && !pApp->bTilesetExternalConflict && !mapeditFileStampEqual(setStamp, pApp->tTilesetStamp);
+	if (!mapChanged && !setChanged) return;
+	document = mapChanged ? MAPEDIT_WORKSPACE_MAP : MAPEDIT_WORKSPACE_TILESET;
+	path = mapChanged ? pApp->tMap.sPath : pApp->tTileset.sPath;
+	if (mapChanged) pApp->bMapExternalConflict = 1;
+	else pApp->bTilesetExternalConflict = 1;
+	pApp->iExternalDocument = document;
+	snprintf(message, sizeof(message), "磁盘上的文件已被修改或删除：\n%s\n\n重新加载磁盘版本，还是保留当前内存版本？", path);
+	if (!pApp->pExternalBox) {
+		const xui_msgbox_button_t buttons[] = {{"重新加载", XUI_MSGBOX_RESULT_YES, 0}, {"保留内存版本", XUI_MSGBOX_RESULT_NO, 0}};
+		xui_msgbox_desc_t desc;
+		memset(&desc, 0, sizeof(desc));
+		desc.iSize = sizeof(desc); desc.pFont = pApp->pFont;
+		desc.sTitle = "外部文件变化"; desc.sMessage = message;
+		desc.iButtons = XUI_MSGBOX_BUTTON_CUSTOM; desc.pCustomButtons = buttons; desc.iCustomButtonCount = 2;
+		desc.bHasModal = 1; desc.bModal = 1;
+		if (xuiMsgBoxCreate(pApp->pContext, &pApp->pExternalBox, &desc) != XUI_OK) {
+			mapedit_status(pApp, "检测到外部文件变化；保存已保护，请重新打开或另存为");
+			return;
+		}
+		(void)xuiMsgBoxSetResult(pApp->pExternalBox, mapedit_external_result, pApp);
+	}
+	(void)xuiMsgBoxSetText(pApp->pExternalBox, "外部文件变化", message);
+	(void)xuiMsgBoxSetOpen(pApp->pExternalBox, 1);
 }
 
 static int mapedit_create_render_widget(mapedit_app_t* pApp, xui_widget* ppWidget, xui_widget_cache_render_proc onRender, void* pUser)
@@ -6382,7 +7057,7 @@ static int mapedit_create_tags_panel(mapedit_app_t* pApp, int bMap, xui_widget* 
 	memset(&cd, 0, sizeof(cd));
 	cd.iSize = sizeof(cd);
 	cd.pFont = pApp->pFont;
-	cd.fItemHeight = 24.0f;
+	cd.fItemHeight = MAPEDIT_ROW_HEIGHT;
 	cd.fPopupMaxHeight = 220.0f;
 	cd.iTextColor = XUI_COLOR_RGBA(40, 58, 76, 255);
 	cd.iBackgroundColor = XUI_COLOR_RGBA(250, 253, 255, 255);
@@ -6419,7 +7094,7 @@ static int mapedit_create_tags_panel(mapedit_app_t* pApp, int bMap, xui_widget* 
 	pd.iSize = sizeof(pd);
 	pd.pFont = pApp->pFont;
 	pd.fNameWidth = 120.0f;
-	pd.fRowHeight = 24.0f;
+	pd.fRowHeight = MAPEDIT_ROW_HEIGHT;
 	pd.fCategoryHeight = 25.0f;
 	pd.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP;
 	pd.iEditMode = XUI_TABLE_GRID_EDIT_QUICK;
@@ -6474,7 +7149,7 @@ static int mapedit_create_list(mapedit_app_t* pApp, xui_widget* ppList, mapedit_
 	d.arrItems = pFiles->arrTextPtrs;
 	d.iItemCount = pFiles->iCount;
 	d.pFont = pApp->pFont;
-	d.fItemHeight = 24.0f;
+	d.fItemHeight = MAPEDIT_ROW_HEIGHT;
 	d.fPadding = 4.0f;
 	d.iSelected = pFiles->iSelected;
 	d.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
@@ -6482,7 +7157,7 @@ static int mapedit_create_list(mapedit_app_t* pApp, xui_widget* ppList, mapedit_
 	d.iBorderColor = XUI_COLOR_RGBA(152, 174, 198, 255);
 	d.iRowColor = XUI_COLOR_RGBA(250, 253, 255, 255);
 	d.iHoverColor = XUI_COLOR_RGBA(232, 242, 252, 255);
-	d.iSelectedColor = XUI_COLOR_RGBA(199, 226, 252, 255);
+	d.iSelectedColor = XUI_COLOR_RGBA(38, 117, 178, 255);
 	d.iTextColor = XUI_COLOR_RGBA(40, 58, 76, 255);
 	d.iDisabledTextColor = XUI_COLOR_RGBA(130, 142, 154, 255);
 	ret = xuiListViewCreate(pApp->pContext, &w, &d);
@@ -6537,7 +7212,7 @@ static int mapedit_create_default_map_file(mapedit_app_t* pApp, char* sOutName, 
 	mapedit_copy_text(doc.sTileset, sizeof(doc.sTileset), pApp->tTileset.sFile[0] ? pApp->tTileset.sFile : "default.xson");
 	doc.iWidth = 100;
 	doc.iHeight = 100;
-	doc.iLayers = pApp->iSetupLayerCount > 0 ? pApp->iSetupLayerCount : 3;
+	doc.iLayers = pApp->iSetupLayerCount > 0 ? pApp->iSetupLayerCount : XGE_MAP_LEGACY_DEFAULT_LAYERS;
 	doc.iState = mapedit_setup_clamp_state(pApp, pApp != NULL ? pApp->iSetupStateMin : 0);
 	doc.pPassageRaw = xrtValueArray();
 	doc.pCellDataRaw = xrtValueObject();
@@ -6560,7 +7235,7 @@ static int mapedit_create_default_tileset_file(mapedit_app_t* pApp, char* sOutNa
 	int ok;
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( mapedit_make_unique_asset_file(pApp, "assets\\图块集", "tileset", ".xson", sOutName, iCap, path, sizeof(path)) != XUI_OK ) return XUI_ERROR;
-	sStatic = pApp->tMaterialFiles.iCount > 0 ? pApp->tMaterialFiles.arrNames[0] : "common_tileset.png";
+	sStatic = pApp->tMaterialFiles.iCount > 0 ? pApp->tMaterialFiles.arrNames[0] : "";
 	pRoot = xrtValueObject();
 	pSpecial = xrtValueArray();
 	pPassage = xrtValueArray();
@@ -6575,17 +7250,27 @@ static int mapedit_create_default_tileset_file(mapedit_app_t* pApp, char* sOutNa
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	snprintf(displayName, sizeof(displayName), "新建图集%d", pApp->tTilesetFiles.iCount + 1);
-	ok = xuiXrtValueObjectSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), displayName, 0, FALSE) &&
-	     xuiXrtValueObjectSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), sStatic, 0, FALSE) &&
-	     xuiXrtValueObjectSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), 0) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_SPECIAL_TILES, (uint32)strlen(SET_KEY_SPECIAL_TILES), pSpecial, TRUE) &&
-	     xuiXrtValueObjectSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), "", 0, FALSE) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_PASSAGE, (uint32)strlen(SET_KEY_PASSAGE), pPassage, TRUE) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_ACTOR, (uint32)strlen(SET_KEY_ACTOR), pActor, TRUE) &&
-	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_TILE_DATA, (uint32)strlen(SET_KEY_TILE_DATA), pCustom, TRUE);
-	if ( ok ) ok = xrtXsonStringifyFile(path, pRoot, true) ? 1 : 0;
+	if ( !xuiXrtValueObjectSetText(pRoot, SET_KEY_FORMAT, (uint32)strlen(SET_KEY_FORMAT), MAPEDIT_TILESET_FORMAT_NAME, 0, FALSE) ||
+	     !xuiXrtValueObjectSetInt(pRoot, SET_KEY_VERSION, (uint32)strlen(SET_KEY_VERSION), MAPEDIT_TILESET_FORMAT_VERSION) ||
+	     !xuiXrtValueObjectSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), displayName, 0, FALSE) ||
+	     !xuiXrtValueObjectSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), sStatic, 0, FALSE) ||
+	     !xuiXrtValueObjectSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), 0) ||
+	     !xuiXrtValueObjectSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), "", 0, FALSE) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_SPECIAL_TILES, &pSpecial) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_PASSAGE, &pPassage) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_ACTOR, &pActor) ||
+	     !mapedit_table_set_take(pRoot, SET_KEY_TILE_DATA, &pCustom) ) goto create_out_of_memory;
+	ok = xrtXsonStringifyFile(path, pRoot, true) ? 1 : 0;
 	xrtValueRelease(pRoot);
 	return ok ? XUI_OK : XUI_ERROR;
+
+create_out_of_memory:
+	if ( pSpecial != NULL ) xrtValueRelease(pSpecial);
+	if ( pPassage != NULL ) xrtValueRelease(pPassage);
+	if ( pActor != NULL ) xrtValueRelease(pActor);
+	if ( pCustom != NULL ) xrtValueRelease(pCustom);
+	xrtValueRelease(pRoot);
+	return XUI_ERROR_OUT_OF_MEMORY;
 }
 
 static int mapedit_material_select_for_action(mapedit_app_t* pApp, int iIndex)
@@ -6663,7 +7348,7 @@ static void mapedit_material_close_modal(mapedit_app_t* pApp, xui_widget pWindow
 	}
 }
 
-static int mapedit_point_in_rect(xui_rect_t r, float x, float y)
+static int mapedit_point_in_rect(xui_rect_t r, int x, int y)
 {
 	return x >= r.fX && y >= r.fY && x < r.fX + r.fW && y < r.fY + r.fH;
 }
@@ -6695,6 +7380,10 @@ static int mapedit_root_event(xui_widget pWidget, const xui_event_t* pEvent, voi
 	if ( pApp == NULL || pEvent == NULL ) return XUI_OK;
 	mapedit_material_close_context_menu_on_list_click(pApp, pEvent);
 	pModal = mapedit_material_top_modal(pApp);
+	if ( pModal == NULL && pEvent->iType == XUI_EVENT_COMMAND && pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
+		mapedit_execute_command(pApp, pEvent->iCommand);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
 	if ( pModal == NULL ) return XUI_OK;
 	if ( pEvent->iType == XUI_EVENT_KEY_DOWN && pEvent->iKey == XUI_KEY_ESCAPE ) {
 		mapedit_material_close_modal(pApp, pModal);
@@ -6732,30 +7421,23 @@ static int mapedit_resize_target(mapedit_app_t* pApp, int iWidth, int iHeight)
 
 static int mapedit_sync_viewport(mapedit_app_t* pApp)
 {
+	xge_platform_runtime_t runtime;
 	int w;
 	int h;
-	float fw;
-	float fh;
-	float contentY;
-	float contentH;
+	float dpi = 1.0f;
 	if ( pApp == NULL || pApp->pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	w = xgeGetWidth();
 	h = xgeGetHeight();
 	if ( w <= 0 ) w = MAPEDIT_W;
 	if ( h <= 0 ) h = MAPEDIT_H;
-	fw = (float)w;
-	fh = (float)h;
+	memset(&runtime, 0, sizeof(runtime));
+	if ( xgePlatformRuntimeGet(&runtime) == XGE_OK && runtime.fDpiScale > 0.0f ) dpi = runtime.fDpiScale;
+	if ( pApp->iTargetWidth == w && pApp->iTargetHeight == h && fabsf(pApp->fDpiScale - dpi) < 0.001f ) return XUI_OK;
 	if ( mapedit_resize_target(pApp, w, h) != XUI_OK ) return XUI_ERROR;
-	(void)xuiInputViewport(pApp->pContext, fw, fh);
-	(void)xuiSetViewportSize(pApp->pContext, fw, fh);
-	if ( pApp->pRoot != NULL ) (void)xuiWidgetSetRect(pApp->pRoot, (xui_rect_t){0.0f, 0.0f, fw, fh});
-	if ( pApp->pMenuBar != NULL ) (void)xuiWidgetSetRect(pApp->pMenuBar, (xui_rect_t){0.0f, 0.0f, fw, MAPEDIT_MENU_H});
-	contentY = MAPEDIT_MENU_H + MAPEDIT_SWITCH_H;
-	contentH = fh - contentY - MAPEDIT_STATUS_H;
-	if ( contentH < 1.0f ) contentH = 1.0f;
-	if ( pApp->pTilesetDock != NULL ) (void)xuiWidgetSetRect(pApp->pTilesetDock, (xui_rect_t){0.0f, contentY, fw, contentH});
-	if ( pApp->pMapDock != NULL ) (void)xuiWidgetSetRect(pApp->pMapDock, (xui_rect_t){0.0f, contentY, fw, contentH});
-	if ( pApp->pStatus != NULL ) (void)xuiWidgetSetRect(pApp->pStatus, (xui_rect_t){0.0f, fh - MAPEDIT_STATUS_H, fw, MAPEDIT_STATUS_H});
+	pApp->fDpiScale = dpi;
+	(void)xuiInputViewport(pApp->pContext, w, h);
+	(void)xuiInputDpi(pApp->pContext, dpi);
+	if ( pApp->pRoot != NULL ) (void)xuiWidgetSetRect(pApp->pRoot, (xui_rect_t){0, 0, w, h});
 	if ( pApp->pRoot != NULL ) (void)xuiWidgetInvalidate(pApp->pRoot, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
 }
@@ -6765,13 +7447,13 @@ static xui_rect_t mapedit_centered_root_rect(mapedit_app_t* pApp, float fScaleW,
 	xui_rect_t root;
 	xui_rect_t rect;
 	if ( pApp != NULL && pApp->pRoot != NULL ) root = xuiWidgetGetRect(pApp->pRoot);
-	else root = (xui_rect_t){0.0f, 0.0f, (float)MAPEDIT_W, (float)MAPEDIT_H};
+	else root = (xui_rect_t){0, 0, MAPEDIT_W, MAPEDIT_H};
 	if ( fScaleW <= 0.0f ) fScaleW = 0.8f;
 	if ( fScaleH <= 0.0f ) fScaleH = 0.8f;
-	rect.fW = root.fW * fScaleW;
-	rect.fH = root.fH * fScaleH;
-	rect.fX = root.fX + (root.fW - rect.fW) * 0.5f;
-	rect.fY = root.fY + (root.fH - rect.fH) * 0.5f;
+	rect.fW = (int)lroundf((float)root.fW * fScaleW);
+	rect.fH = (int)lroundf((float)root.fH * fScaleH);
+	rect.fX = root.fX + (root.fW - rect.fW) / 2;
+	rect.fY = root.fY + (root.fH - rect.fH) / 2;
 	return rect;
 }
 
@@ -7007,7 +7689,7 @@ static int mapedit_material_hit_list_item(xui_widget pWidget, const xui_event_t*
 	xui_rect_t wr;
 	if ( pWidget == NULL || pEvent == NULL ) return -1;
 	wr = xuiWidgetGetWorldRect(pWidget);
-	return xuiListViewGetItemAt(pWidget, pEvent->fX - wr.fX, pEvent->fY - wr.fY);
+	return xuiListViewGetItemAt(pWidget, (float)(pEvent->fX - wr.fX), (float)(pEvent->fY - wr.fY));
 }
 
 static int mapedit_material_list_event(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -7128,24 +7810,8 @@ static int mapedit_create_manager_button_widget(mapedit_app_t* pApp, const char*
 	d.fBorderWidth = 1.0f;
 	ret = xuiButtonCreate(pApp->pContext, &b, &d);
 	if ( ret != XUI_OK ) return ret;
-	mapedit_widget_fixed_size(b, 64.0f, 26.0f);
+	mapedit_widget_fixed_size(b, 92.0f, MAPEDIT_BUTTON_HEIGHT);
 	(void)xuiButtonSetClick(b, mapedit_manager_button_click, pApp);
-	*ppButton = b;
-	return XUI_OK;
-}
-
-static int mapedit_create_manager_button(mapedit_app_t* pApp, xui_widget pParent, const char* sText, xui_widget* ppButton)
-{
-	xui_widget b;
-	int ret;
-	if ( pParent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	ret = mapedit_create_manager_button_widget(pApp, sText, &b);
-	if ( ret != XUI_OK ) return ret;
-	ret = xuiWidgetAddChild(pParent, b);
-	if ( ret != XUI_OK ) {
-		xuiWidgetDestroy(b);
-		return ret;
-	}
 	*ppButton = b;
 	return XUI_OK;
 }
@@ -7423,7 +8089,7 @@ static int mapedit_create_material_edit_input(mapedit_app_t* pApp, xui_widget* p
 	return XUI_OK;
 }
 
-static int mapedit_create_material_edit_scroll(mapedit_app_t* pApp, xui_widget* ppScroll, xui_widget* ppCanvas, xui_widget_cache_render_proc onRender, xui_widget_event_proc onEvent, float fW, float fH)
+static int mapedit_create_material_edit_scroll(mapedit_app_t* pApp, xui_widget* ppScroll, xui_widget* ppCanvas, xui_widget_cache_render_proc onRender, xui_widget_event_proc onEvent, int iWidth, int iHeight)
 {
 	xui_scroll_view_desc_t d;
 	xui_widget scroll;
@@ -7433,8 +8099,8 @@ static int mapedit_create_material_edit_scroll(mapedit_app_t* pApp, xui_widget* 
 	if ( pApp == NULL || ppScroll == NULL || ppCanvas == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&d, 0, sizeof(d));
 	d.iSize = sizeof(d);
-	d.fContentWidth = fW;
-	d.fContentHeight = fH;
+	d.fContentWidth = (float)iWidth;
+	d.fContentHeight = (float)iHeight;
 	d.iPolicyX = XUI_SCROLLBAR_POLICY_AUTO;
 	d.iPolicyY = XUI_SCROLLBAR_POLICY_AUTO;
 	d.iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
@@ -7459,7 +8125,7 @@ static int mapedit_create_material_edit_scroll(mapedit_app_t* pApp, xui_widget* 
 		xuiWidgetDestroy(scroll);
 		return ret;
 	}
-	(void)xuiWidgetSetRect(canvas, (xui_rect_t){0.0f, 0.0f, fW, fH});
+	(void)xuiWidgetSetRect(canvas, (xui_rect_t){0, 0, iWidth, iHeight});
 	if ( onEvent != NULL ) {
 		(void)xuiWidgetSetEventHandler(canvas, XUI_EVENT_POINTER_DOWN, onEvent, pApp);
 		(void)xuiWidgetSetEventHandler(canvas, XUI_EVENT_POINTER_MOVE, onEvent, pApp);
@@ -7511,10 +8177,10 @@ static int mapedit_create_material_edit_pane(mapedit_app_t* pApp, xui_widget* pp
 		return ret;
 	}
 	if ( bSource ) {
-		ret = mapedit_create_material_edit_scroll(pApp, &pApp->pMaterialEditSourceScroll, &pApp->pMaterialEditSourceCanvas, mapedit_material_edit_source_render, mapedit_material_edit_source_event, 320.0f, 240.0f);
+		ret = mapedit_create_material_edit_scroll(pApp, &pApp->pMaterialEditSourceScroll, &pApp->pMaterialEditSourceCanvas, mapedit_material_edit_source_render, mapedit_material_edit_source_event, 320, 240);
 		if ( ret == XUI_OK ) ret = xuiWidgetAddChild(panel, pApp->pMaterialEditSourceScroll);
 	} else {
-		ret = mapedit_create_material_edit_scroll(pApp, &pApp->pMaterialEditOutputScroll, &pApp->pMaterialEditOutputCanvas, mapedit_material_edit_output_render, mapedit_material_edit_output_event, (float)(MAPEDIT_MATERIAL_STATIC_COLS * MAPEDIT_TILE_W), (float)(MAPEDIT_MATERIAL_INITIAL_ROWS * MAPEDIT_TILE_H));
+		ret = mapedit_create_material_edit_scroll(pApp, &pApp->pMaterialEditOutputScroll, &pApp->pMaterialEditOutputCanvas, mapedit_material_edit_output_render, mapedit_material_edit_output_event, MAPEDIT_MATERIAL_STATIC_COLS * MAPEDIT_TILE_W, MAPEDIT_MATERIAL_INITIAL_ROWS * MAPEDIT_TILE_H);
 		if ( ret == XUI_OK ) ret = xuiScrollViewSetChange(pApp->pMaterialEditOutputScroll, mapedit_material_edit_output_scroll_change, pApp);
 		if ( ret == XUI_OK ) ret = xuiWidgetAddChild(panel, pApp->pMaterialEditOutputScroll);
 	}
@@ -7666,7 +8332,7 @@ static int mapedit_create_material_manager_panel(mapedit_app_t* pApp, xui_widget
 	cd.iItemCount = mapedit_material_category_count();
 	cd.iSelected = mapedit_material_category_clamp(pApp->iMaterialCategory);
 	cd.pFont = pApp->pFont;
-	cd.fItemHeight = 24.0f;
+	cd.fItemHeight = MAPEDIT_ROW_HEIGHT;
 	cd.fPopupMaxHeight = 160.0f;
 	ret = xuiWidgetCreate(pApp->pContext, &panel);
 	if ( ret == XUI_OK ) ret = xuiComboBoxCreate(pApp->pContext, &pApp->pMaterialCategoryCombo, &cd);
@@ -7766,75 +8432,11 @@ static void mapedit_invalidate_tileset_views(mapedit_app_t* pApp)
 	if ( pApp->pTileSelectCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pTileSelectCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static void mapedit_map_normalize_size(int* pWidth, int* pHeight, int iLayers)
-{
-	long long count;
-	int w;
-	int h;
-	int layers;
-	if ( pWidth == NULL || pHeight == NULL ) return;
-	w = *pWidth;
-	h = *pHeight;
-	layers = iLayers > 0 ? iLayers : 3;
-	if ( w < 1 ) w = 1;
-	else if ( w > MAPEDIT_MAP_DIM_MAX ) w = MAPEDIT_MAP_DIM_MAX;
-	if ( h < 1 ) h = 1;
-	else if ( h > MAPEDIT_MAP_DIM_MAX ) h = MAPEDIT_MAP_DIM_MAX;
-	count = (long long)w * (long long)h * (long long)layers;
-	while ( count > MAPEDIT_MAP_SIZE_MAX && h > 1 ) {
-		h--;
-		count = (long long)w * (long long)h * (long long)layers;
-	}
-	while ( count > MAPEDIT_MAP_SIZE_MAX && w > 1 ) {
-		w--;
-		count = (long long)w * (long long)h * (long long)layers;
-	}
-	*pWidth = w;
-	*pHeight = h;
-}
+
 
 static int mapedit_map_resize_doc(mapedit_map_doc_t* pMap, int iWidth, int iHeight)
 {
-	int* pOld;
-	int* pNew;
-	int oldW;
-	int oldH;
-	int layers;
-	int minW;
-	int minH;
-	int x;
-	int y;
-	int l;
-	long long total;
-	if ( pMap == NULL || iWidth <= 0 || iHeight <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iWidth > 4096 || iHeight > 4096 ) return XUI_ERROR_INVALID_ARGUMENT;
-	layers = pMap->iLayers > 0 ? pMap->iLayers : 3;
-	total = (long long)iWidth * (long long)iHeight * (long long)layers;
-	if ( total <= 0 || total > 4194304LL * MAPEDIT_MAP_LAYER_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
-	pNew = (int*)calloc((size_t)total, sizeof(int));
-	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	pOld = pMap->pTiles;
-	oldW = pMap->iWidth;
-	oldH = pMap->iHeight;
-	minW = mapedit_min_i(oldW, iWidth);
-	minH = mapedit_min_i(oldH, iHeight);
-	if ( pOld != NULL ) {
-		for ( l = 0; l < layers; l++ ) {
-			for ( y = 0; y < minH; y++ ) {
-				for ( x = 0; x < minW; x++ ) {
-					pNew[(l * iHeight + y) * iWidth + x] = pOld[(l * oldH + y) * oldW + x];
-				}
-			}
-		}
-	}
-	free(pOld);
-	pMap->pTiles = pNew;
-	pMap->iWidth = iWidth;
-	pMap->iHeight = iHeight;
-	pMap->iLayers = layers;
-	pMap->iTileCount = (int)total;
-	pMap->bDirty = 1;
-	return XUI_OK;
+	return mapeditDocumentResize(pMap, iWidth, iHeight) == XGE_MAP_OK ? XUI_OK : XUI_ERROR;
 }
 
 static int mapedit_tileset_property_tile(mapedit_app_t* pApp)
@@ -7879,9 +8481,15 @@ static void mapedit_refresh_tileset_properties(mapedit_app_t* pApp)
 	if ( pApp == NULL || pApp->pTilesetPropertyGrid == NULL ) return;
 	pGrid = pApp->pTilesetPropertyGrid;
 	pApp->bTilesetPropertyUpdating = 1;
-	(void)xuiPropertyGridClear(pGrid);
+	{
+		const char* schema = !pApp->tTileset.bLoaded ? "empty" :
+			pApp->iTilesetPropertyMode == MAPEDIT_TILESET_PROPERTY_MODE_SPECIAL &&
+				pApp->iTilesetPropertyTile > 0 && pApp->iTilesetPropertyTile <= pApp->tTileset.iSpecialCount ? "tileset.special" :
+			pApp->iTilesetPropertyMode == MAPEDIT_TILESET_PROPERTY_MODE_TILE_CUSTOM ? "tileset.tile_custom" : "tileset.set";
+		if (xuiPropertyGridFindCategory(pGrid, schema) < 0) (void)xuiPropertyGridClear(pGrid);
+	}
 	if ( !pApp->tTileset.bLoaded ) {
-		cat = xuiPropertyGridAddCategory(pGrid, "empty", "图块属性", 1);
+		cat = mapedit_property_category(pGrid, "empty", "图块属性", 1);
 		if ( cat >= 0 ) {
 			(void)mapedit_property_add(pGrid, cat, "empty.hint", "当前对象", "选择图集后显示图集属性", XUI_TABLE_CELL_TYPE_TEXT, "未选择", "未选择", XUI_PROPERTY_FLAG_READONLY);
 		}
@@ -7900,7 +8508,7 @@ static void mapedit_refresh_tileset_properties(mapedit_app_t* pApp)
 			const char* sFileDisplay;
 			int typeProp;
 			int fileProp;
-			cat = xuiPropertyGridAddCategory(pGrid, "tileset.special", "特殊图块", 1);
+			cat = mapedit_property_category(pGrid, "tileset.special", "特殊图块", 1);
 			if ( cat >= 0 ) {
 				snprintf(text, sizeof(text), "%d", tile);
 				(void)mapedit_property_add(pGrid, cat, "special.tile_id", "图块ID", "图集中的图块 ID", XUI_TABLE_CELL_TYPE_INT, text, text, XUI_PROPERTY_FLAG_READONLY);
@@ -7915,13 +8523,13 @@ static void mapedit_refresh_tileset_properties(mapedit_app_t* pApp)
 					cfg.iEnumItemCount = mapedit_tileset_special_type_count();
 					cfg.iEnumSelected = mapedit_tileset_special_type_find(sType);
 					(void)xuiPropertyGridSetEditorConfig(pGrid, typeProp, &cfg);
-					(void)xuiPropertyGridSetSelected(pGrid, typeProp);
+					if (xuiPropertyGridGetSelected(pGrid) < 0) (void)xuiPropertyGridSetSelected(pGrid, typeProp);
 				}
 				fileProp = mapedit_property_add(pGrid, cat, "special.file", "特殊图块文件", "选择对应素材目录下的图块文件，显示为映射名和文件名", XUI_TABLE_CELL_TYPE_ENUM, sFileDisplay, "未设置", 0);
 				if ( fileProp >= 0 ) {
 					memset(&cfg, 0, sizeof(cfg));
-					cfg.arrEnumItems = pApp->arrTilesetSpecialFileOptionPtrs;
-					cfg.iEnumItemCount = pApp->iTilesetSpecialFileOptionCount;
+					cfg.arrEnumItems = pApp->tTilesetSpecialFileOptions.arrTextPtrs;
+					cfg.iEnumItemCount = pApp->tTilesetSpecialFileOptions.iCount;
 					cfg.iEnumSelected = mapedit_tileset_special_file_find_value(pApp, pApp->tTileset.arrSpecial[slot].sFile);
 					(void)xuiPropertyGridSetEditorConfig(pGrid, fileProp, &cfg);
 				}
@@ -7934,7 +8542,7 @@ static void mapedit_refresh_tileset_properties(mapedit_app_t* pApp)
 	if ( pApp->iTilesetPropertyMode == MAPEDIT_TILESET_PROPERTY_MODE_TILE_CUSTOM ) {
 		tile = pApp->iTilesetPropertyTile;
 		if ( tile < 0 ) {
-			cat = xuiPropertyGridAddCategory(pGrid, "empty", "图块属性", 1);
+			cat = mapedit_property_category(pGrid, "empty", "图块属性", 1);
 			if ( cat >= 0 ) {
 				(void)mapedit_property_add(pGrid, cat, "empty.hint", "当前对象", "选择图块后显示图块属性", XUI_TABLE_CELL_TYPE_TEXT, "未选择", "未选择", XUI_PROPERTY_FLAG_READONLY);
 			}
@@ -7942,11 +8550,11 @@ static void mapedit_refresh_tileset_properties(mapedit_app_t* pApp)
 			(void)xuiWidgetInvalidate(pGrid, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			return;
 		}
-		cat = xuiPropertyGridAddCategory(pGrid, "tileset.tile_custom", "图块自定义数据", 1);
+		cat = mapedit_property_category(pGrid, "tileset.tile_custom", "图块自定义数据", 1);
 		if ( cat >= 0 ) {
 			snprintf(text, sizeof(text), "%d", tile);
 			prop = mapedit_property_add(pGrid, cat, "tile_custom.tile_id", "图块ID", "当前查看的图块 ID", XUI_TABLE_CELL_TYPE_INT, text, text, XUI_PROPERTY_FLAG_READONLY);
-			if ( prop >= 0 ) (void)xuiPropertyGridSetSelected(pGrid, prop);
+			if (prop >= 0 && xuiPropertyGridGetSelected(pGrid) < 0) (void)xuiPropertyGridSetSelected(pGrid, prop);
 			for ( i = 0; i < pApp->iCustomChannelCount; i++ ) {
 				mapedit_custom_channel_def_t* pDef = &pApp->arrCustomChannels[i];
 				char propId[MAPEDIT_NAME_MAX + 32];
@@ -7961,10 +8569,10 @@ static void mapedit_refresh_tileset_properties(mapedit_app_t* pApp)
 		(void)xuiWidgetInvalidate(pGrid, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return;
 	}
-	cat = xuiPropertyGridAddCategory(pGrid, "tileset.set", "图集", 1);
+	cat = mapedit_property_category(pGrid, "tileset.set", "图集", 1);
 	if ( cat >= 0 ) {
 		prop = mapedit_property_add(pGrid, cat, "tileset.name", "图集名称", "当前图集的显示名称", XUI_TABLE_CELL_TYPE_TEXT, pApp->tTileset.sName, "默认图集", 0);
-		if ( prop >= 0 ) (void)xuiPropertyGridSetSelected(pGrid, prop);
+		if (prop >= 0 && xuiPropertyGridGetSelected(pGrid) < 0) (void)xuiPropertyGridSetSelected(pGrid, prop);
 		snprintf(text, sizeof(text), "%d", pApp->tTileset.iSpecialCount);
 		(void)mapedit_property_add(pGrid, cat, "tileset.special_tile_count", "特殊图块数量", "独立素材图块槽位数量，0 号图块仍保留为橡皮", XUI_TABLE_CELL_TYPE_INT, text, "0", 0);
 		prop = mapedit_property_add(pGrid, cat, "tileset.static_tilesheet", "静态图块集", "从 assets/tilesheets 中选择静态图块集素材", XUI_TABLE_CELL_TYPE_ENUM, pApp->tTileset.sStaticFile, "未设置", 0);
@@ -7990,9 +8598,14 @@ static void mapedit_refresh_map_properties(mapedit_app_t* pApp)
 	if ( pApp == NULL || pApp->pMapPropertyGrid == NULL ) return;
 	pGrid = pApp->pMapPropertyGrid;
 	pApp->bMapPropertyUpdating = 1;
-	(void)xuiPropertyGridClear(pGrid);
+	{
+		const char* schema = !pApp->tMap.pTiles ? "empty" :
+			pApp->iMapPropertyMode == MAPEDIT_MAP_PROPERTY_MODE_CELL_CUSTOM &&
+				pApp->iMapPropertyCell >= 0 && pApp->iMapPropertyCell < pApp->tMap.iWidth * pApp->tMap.iHeight ? "map.cell_custom" : "map";
+		if (xuiPropertyGridFindCategory(pGrid, schema) < 0) (void)xuiPropertyGridClear(pGrid);
+	}
 	if ( pApp->tMap.pTiles == NULL ) {
-		cat = xuiPropertyGridAddCategory(pGrid, "empty", "地图属性", 1);
+		cat = mapedit_property_category(pGrid, "empty", "地图属性", 1);
 		if ( cat >= 0 ) {
 			(void)mapedit_property_add(pGrid, cat, "empty.hint", "当前对象", "选择地图后显示地图属性", XUI_TABLE_CELL_TYPE_TEXT, "未选择", "未选择", XUI_PROPERTY_FLAG_READONLY);
 		}
@@ -8005,11 +8618,11 @@ static void mapedit_refresh_map_properties(mapedit_app_t* pApp)
 		x = cell % pApp->tMap.iWidth;
 		y = cell / pApp->tMap.iWidth;
 		if ( y >= 0 && y < pApp->tMap.iHeight ) {
-			cat = xuiPropertyGridAddCategory(pGrid, "map.cell_custom", "地图位置自定义数据", 1);
+			cat = mapedit_property_category(pGrid, "map.cell_custom", "地图位置自定义数据", 1);
 			if ( cat >= 0 ) {
 				snprintf(text, sizeof(text), "%d, %d", x, y);
 				prop = mapedit_property_add(pGrid, cat, "cell.position", "地图位置", "当前检查的地图位置", XUI_TABLE_CELL_TYPE_TEXT, text, text, XUI_PROPERTY_FLAG_READONLY);
-				if ( prop >= 0 ) (void)xuiPropertyGridSetSelected(pGrid, prop);
+				if (prop >= 0 && xuiPropertyGridGetSelected(pGrid) < 0) (void)xuiPropertyGridSetSelected(pGrid, prop);
 				snprintf(text, sizeof(text), "%d", mapedit_map_top_tile(pApp, x, y));
 				(void)mapedit_property_add(pGrid, cat, "cell.tile", "参考图块", "当前位置最上层非空图块", XUI_TABLE_CELL_TYPE_INT, text, text, XUI_PROPERTY_FLAG_READONLY);
 				snprintf(text, sizeof(text), "%u", (unsigned int)mapedit_map_get_cell_passage(pApp, x, y));
@@ -8031,14 +8644,14 @@ static void mapedit_refresh_map_properties(mapedit_app_t* pApp)
 		pApp->iMapPropertyMode = MAPEDIT_MAP_PROPERTY_MODE_MAP;
 		pApp->iMapPropertyCell = -1;
 	}
-	cat = xuiPropertyGridAddCategory(pGrid, "map", "地图", 1);
+	cat = mapedit_property_category(pGrid, "map", "地图", 1);
 	if ( cat >= 0 ) {
 		prop = mapedit_property_add(pGrid, cat, "map.name", "地图名称", "当前地图的显示名称", XUI_TABLE_CELL_TYPE_TEXT, pApp->tMap.sName, "默认地图", 0);
-		if ( prop >= 0 ) (void)xuiPropertyGridSetSelected(pGrid, prop);
+		if (prop >= 0 && xuiPropertyGridGetSelected(pGrid) < 0) (void)xuiPropertyGridSetSelected(pGrid, prop);
 		mapedit_map_tileset_options_build(pApp, pApp->tMap.sTileset);
 		sTilesetDisplay = mapedit_map_tileset_display_for_value(pApp, pApp->tMap.sTileset);
 		prop = mapedit_property_add(pGrid, cat, "map.tileset", "图集", "地图使用的图集", XUI_TABLE_CELL_TYPE_ENUM, sTilesetDisplay, "未设置", 0);
-		if ( prop >= 0 && pApp->iMapTilesetOptionCount > 0 ) mapedit_property_set_enum(pGrid, prop, pApp->arrMapTilesetOptionPtrs, pApp->iMapTilesetOptionCount, mapedit_map_tileset_option_find_value(pApp, pApp->tMap.sTileset));
+		if ( prop >= 0 && pApp->tMapTilesetOptions.iCount > 0 ) mapedit_property_set_enum(pGrid, prop, pApp->tMapTilesetOptions.arrTextPtrs, pApp->tMapTilesetOptions.iCount, mapedit_map_tileset_option_find_value(pApp, pApp->tMap.sTileset));
 		snprintf(text, sizeof(text), "%d", pApp->tMap.iState);
 		(void)mapedit_property_add(pGrid, cat, "map.state", "当前状态", "地图当前状态，用于多状态图块显示", XUI_TABLE_CELL_TYPE_INT, text, "0", 0);
 		snprintf(text, sizeof(text), "%d", pApp->tMap.iWidth);
@@ -8051,16 +8664,34 @@ static void mapedit_refresh_map_properties(mapedit_app_t* pApp)
 	(void)xuiWidgetInvalidate(pGrid, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int mapedit_property_integer(const char* text, int* number)
+{
+	char* end = NULL;
+	long long value;
+	errno = 0;
+	value = strtoll(text, &end, 10);
+	if (errno == ERANGE || end == text || value < INT_MIN || value > INT_MAX) return 0;
+	while (*end == ' ' || *end == '\t') ++end;
+	if (*end) return 0;
+	*number = (int)value;
+	return 1;
+}
+
 static void mapedit_tileset_property_change(xui_widget pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser)
 {
 	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
 	int tile;
 	int reload = 0;
 	int save = 0;
+	int number = 0;
 	(void)pWidget;
 	(void)iProperty;
 	(void)iType;
 	if ( pApp == NULL || pApp->bTilesetPropertyUpdating || sId == NULL || sValue == NULL ) return;
+	if (strcmp(sId, "tileset.special_tile_count") == 0 || strcmp(sId, "tileset.special_count") == 0 || strcmp(sId, "tile.passage") == 0) {
+		if (!mapedit_property_integer(sValue, &number)) { mapedit_status(pApp, "请输入有效整数"); mapedit_refresh_tileset_properties(pApp); return; }
+	}
+	if (!mapedit_capture_tileset(pApp)) { mapedit_refresh_tileset_properties(pApp); return; }
 	tile = mapedit_tileset_property_tile(pApp);
 	if ( strcmp(sId, "tileset.name") == 0 ) {
 		mapedit_copy_text(pApp->tTileset.sName, sizeof(pApp->tTileset.sName), sValue);
@@ -8070,7 +8701,7 @@ static void mapedit_tileset_property_change(xui_widget pWidget, int iProperty, c
 		save = 1;
 		reload = 1;
 	} else if ( strcmp(sId, "tileset.special_tile_count") == 0 || strcmp(sId, "tileset.special_count") == 0 ) {
-		int count = atoi(sValue);
+		int count = number;
 		if ( count < 0 ) count = 0;
 		if ( count > MAPEDIT_SPECIAL_MAX ) count = MAPEDIT_SPECIAL_MAX;
 		pApp->tTileset.iSpecialCount = count;
@@ -8084,7 +8715,7 @@ static void mapedit_tileset_property_change(xui_widget pWidget, int iProperty, c
 		mapedit_copy_text(pApp->tTileset.sCustomData, sizeof(pApp->tTileset.sCustomData), sValue);
 		save = 1;
 	} else if ( strcmp(sId, "tile.passage") == 0 && tile > 0 && tile < (int)sizeof(pApp->tTileset.arrPassage) ) {
-		int v = atoi(sValue);
+		int v = number;
 		if ( v < 0 ) v = 0;
 		if ( v > 255 ) v = 255;
 		pApp->tTileset.arrPassage[tile] = (unsigned char)v;
@@ -8112,23 +8743,16 @@ static void mapedit_tileset_property_change(xui_widget pWidget, int iProperty, c
 		if ( pDef != NULL && mapedit_custom_set_value(&pApp->tTileset.pTileCustomRaw, pDef->sId, SET_KEY_TILE, tile, value) == XUI_OK ) save = 1;
 	}
 	if ( save ) {
-		char file[MAPEDIT_FILE_MAX];
-		mapedit_copy_text(file, sizeof(file), pApp->tTileset.sFile);
-		if ( mapedit_tileset_save(pApp) == XUI_OK ) {
-			mapedit_status(pApp, "图集属性已保存");
-			mapedit_refresh_tileset_list_texts(pApp, &pApp->tTilesetFiles);
-			if ( pApp->pTilesetListView != NULL ) {
-				(void)xuiListViewSetItems(pApp->pTilesetListView, pApp->tTilesetFiles.arrTextPtrs, pApp->tTilesetFiles.iCount);
-				if ( pApp->tTilesetFiles.iSelected >= 0 ) (void)xuiListViewSetSelected(pApp->pTilesetListView, pApp->tTilesetFiles.iSelected);
-			}
-			if ( reload && file[0] != 0 ) {
-				mapedit_reset_tileset_panel_scrolls(pApp);
-				(void)mapedit_tileset_load(pApp, file);
-			}
-		} else {
-			mapedit_status(pApp, "图集属性已修改，但保存失败");
+		mapedit_mark_tileset_dirty(pApp);
+		if (reload) mapedit_tileset_refresh_surfaces(pApp);
+		mapedit_status(pApp, "图集属性已修改（未保存，可撤销）");
+		mapedit_refresh_tileset_list_texts(pApp, &pApp->tTilesetFiles);
+		if ( pApp->pTilesetListView != NULL ) {
+			(void)xuiListViewSetItems(pApp->pTilesetListView, pApp->tTilesetFiles.arrTextPtrs, pApp->tTilesetFiles.iCount);
+			if ( pApp->tTilesetFiles.iSelected >= 0 ) (void)xuiListViewSetSelected(pApp->pTilesetListView, pApp->tTilesetFiles.iSelected);
 		}
 	}
+	if (!save) mapeditHistoryBegin(&pApp->tTilesetHistory);
 	mapedit_invalidate_tileset_views(pApp);
 	mapedit_invalidate_map_views(pApp);
 	mapedit_refresh_tileset_properties(pApp);
@@ -8138,6 +8762,7 @@ static void mapedit_map_property_change(xui_widget pWidget, int iProperty, const
 {
 	mapedit_app_t* pApp = (mapedit_app_t*)pUser;
 	int save = 0;
+	int number = 0;
 	int reloadTileset = 0;
 	int resized = 0;
 	int cell;
@@ -8145,13 +8770,35 @@ static void mapedit_map_property_change(xui_widget pWidget, int iProperty, const
 	(void)iProperty;
 	(void)iType;
 	if ( pApp == NULL || pApp->bMapPropertyUpdating || sId == NULL || sValue == NULL ) return;
+	if (strcmp(sId, "map.width") == 0 || strcmp(sId, "map.height") == 0 || strcmp(sId, "map.state") == 0 || strcmp(sId, "cell.passage") == 0) {
+		int width, height;
+		if (!mapedit_property_integer(sValue, &number)) { mapedit_status(pApp, "请输入有效整数"); mapedit_refresh_map_properties(pApp); return; }
+		width = strcmp(sId, "map.width") == 0 ? number : pApp->tMap.iWidth;
+		height = strcmp(sId, "map.height") == 0 ? number : pApp->tMap.iHeight;
+		if (xgeMapValidateSize(width, height, pApp->tMap.iLayers, NULL, NULL) != XGE_MAP_OK) {
+			mapedit_status(pApp, "尺寸无效：单边最多 2048，总格数最多 1048576；原地图未改动");
+			mapedit_refresh_map_properties(pApp); return;
+		}
+	}
+	if (strcmp(sId, "map.tileset") == 0 && pApp->tTileset.bDirty) {
+		mapedit_status(pApp, "请先保存或撤销当前图集的修改，再更换地图引用");
+		mapedit_refresh_map_properties(pApp);
+		return;
+	}
+	{
+		int flags = MAPEDIT_SNAPSHOT_META;
+		if (strcmp(sId, "map.width") == 0 || strcmp(sId, "map.height") == 0)
+			flags |= MAPEDIT_SNAPSHOT_SIZE | MAPEDIT_SNAPSHOT_PASSAGE | MAPEDIT_SNAPSHOT_CUSTOM;
+		else if (strcmp(sId, "cell.passage") == 0) flags = MAPEDIT_SNAPSHOT_PASSAGE;
+		else if (strncmp(sId, "cell_custom.", 12) == 0) flags = MAPEDIT_SNAPSHOT_CUSTOM;
+		if (!mapedit_capture_map(pApp, flags)) { mapedit_refresh_map_properties(pApp); return; }
+	}
 	if ( strcmp(sId, "map.name") == 0 ) {
 		mapedit_copy_text(pApp->tMap.sName, sizeof(pApp->tMap.sName), sValue);
 		save = 1;
 	} else if ( strcmp(sId, "map.width") == 0 || strcmp(sId, "map.height") == 0 ) {
-		int w = strcmp(sId, "map.width") == 0 ? atoi(sValue) : pApp->tMap.iWidth;
-		int h = strcmp(sId, "map.height") == 0 ? atoi(sValue) : pApp->tMap.iHeight;
-		mapedit_map_normalize_size(&w, &h, pApp->tMap.iLayers);
+		int w = strcmp(sId, "map.width") == 0 ? number : pApp->tMap.iWidth;
+		int h = strcmp(sId, "map.height") == 0 ? number : pApp->tMap.iHeight;
 		if ( mapedit_map_resize_doc(&pApp->tMap, w, h) == XUI_OK ) {
 			mapedit_map_scroll_reset(pApp);
 			mapedit_map_passage_scroll_reset(pApp);
@@ -8162,14 +8809,13 @@ static void mapedit_map_property_change(xui_widget pWidget, int iProperty, const
 			pApp->iMapHoverY = -1;
 			pApp->iMapTagsHoverX = -1;
 			pApp->iMapTagsHoverY = -1;
-			mapedit_clear_history(pApp);
 			resized = 1;
 			save = 1;
 		} else {
 			mapedit_status(pApp, "地图尺寸已修改，但图块数据重建失败");
 		}
 	} else if ( strcmp(sId, "map.state") == 0 ) {
-		pApp->tMap.iState = mapedit_setup_clamp_state(pApp, atoi(sValue));
+		pApp->tMap.iState = mapedit_setup_clamp_state(pApp, number);
 		save = 1;
 	} else if ( strcmp(sId, "map.tileset") == 0 ) {
 		mapedit_copy_text(pApp->tMap.sTileset, sizeof(pApp->tMap.sTileset), mapedit_map_tileset_value_for_display(pApp, sValue));
@@ -8190,7 +8836,7 @@ static void mapedit_map_property_change(xui_widget pWidget, int iProperty, const
 		if ( cell >= 0 && pApp->tMap.iWidth > 0 ) {
 			int x = cell % pApp->tMap.iWidth;
 			int y = cell / pApp->tMap.iWidth;
-			int v = atoi(sValue);
+			int v = number;
 			if ( v < 0 ) v = 0;
 			if ( v > 255 ) v = 255;
 			if ( mapedit_map_set_cell_passage(pApp, x, y, (unsigned char)v) == XUI_OK ) save = 1;
@@ -8207,18 +8853,11 @@ static void mapedit_map_property_change(xui_widget pWidget, int iProperty, const
 		}
 	}
 	if ( save ) {
-		if ( pApp->tMap.sPath[0] == 0 || mapedit_map_save(&pApp->tMap, pApp->tMap.sPath) == XUI_OK ) {
-			mapedit_status(pApp, "地图属性已修改并保存");
-			mapedit_refresh_map_list_texts(pApp, &pApp->tMapFiles);
-			if ( pApp->pMapListView != NULL ) {
-				(void)xuiListViewSetItems(pApp->pMapListView, pApp->tMapFiles.arrTextPtrs, pApp->tMapFiles.iCount);
-				if ( pApp->tMapFiles.iSelected >= 0 ) (void)xuiListViewSetSelected(pApp->pMapListView, pApp->tMapFiles.iSelected);
-			}
-			if ( reloadTileset ) (void)mapedit_tileset_load(pApp, pApp->tMap.sTileset);
-		} else {
-			mapedit_status(pApp, "地图属性已修改，但保存失败");
-		}
+		mapedit_mark_map_dirty(pApp);
+		mapedit_status(pApp, "地图属性已修改（未保存）");
+		if ( reloadTileset ) (void)mapedit_tileset_load(pApp, pApp->tMap.sTileset);
 	}
+	if (!save) mapeditHistoryBegin(&pApp->tMapHistory);
 	mapedit_invalidate_map_views(pApp);
 	mapedit_invalidate_tileset_views(pApp);
 	if ( resized ) mapedit_update_status_details(pApp);
@@ -8233,9 +8872,9 @@ static int mapedit_create_property_grid(mapedit_app_t* pApp, xui_widget* ppGrid,
 	memset(&d, 0, sizeof(d));
 	d.iSize = sizeof(d);
 	d.pFont = pApp->pFont;
-	d.fNameWidth = 118.0f;
-	d.fRowHeight = 24.0f;
-	d.fCategoryHeight = 26.0f;
+	d.fNameWidth = 148.0f;
+	d.fRowHeight = MAPEDIT_ROW_HEIGHT;
+	d.fCategoryHeight = 32.0f;
 	d.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP;
 	d.iEditMode = XUI_TABLE_GRID_EDIT_QUICK;
 	d.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
@@ -8244,6 +8883,20 @@ static int mapedit_create_property_grid(mapedit_app_t* pApp, xui_widget* ppGrid,
 	(void)xuiPropertyGridSetChange(w, bMap ? mapedit_map_property_change : mapedit_tileset_property_change, pApp);
 	*ppGrid = w;
 	return XUI_OK;
+}
+
+static void mapedit_configure_dock_metrics(xui_widget dock)
+{
+	xui_dock_panel_metrics_t metrics;
+	memset(&metrics, 0, sizeof(metrics));
+	metrics.iSize = sizeof(metrics);
+	if (xuiDockPanelGetMetrics(dock, &metrics) != XUI_OK) return;
+	metrics.fCaptionHeight = 32.0f;
+	metrics.fTabStripHeight = 34.0f;
+	metrics.fFloatTitleHeight = 34.0f;
+	metrics.fAutoHideStripSize = 30.0f;
+	metrics.fTabMinWidth = 100.0f;
+	(void)xuiDockPanelSetMetrics(dock, &metrics);
 }
 
 static int mapedit_add_dock_window(xui_widget pDock, const char* sId, const char* sTitle, xui_widget pClient, int* pWindow, int iRegion, int iSide, float fRatio, int* pPane)
@@ -8278,7 +8931,9 @@ static int mapedit_create_tileset_workspace(mapedit_app_t* pApp)
 	d.pFont = pApp->pFont;
 	ret = xuiDockPanelCreate(pApp->pContext, &pApp->pTilesetDock, &d);
 	if ( ret != XUI_OK ) return ret;
-	(void)xuiWidgetSetRect(pApp->pTilesetDock, (xui_rect_t){0.0f, MAPEDIT_MENU_H + MAPEDIT_SWITCH_H, (float)MAPEDIT_W, (float)MAPEDIT_H - MAPEDIT_MENU_H - MAPEDIT_SWITCH_H - MAPEDIT_STATUS_H});
+	mapedit_widget_fill(pApp->pTilesetDock);
+	(void)xuiWidgetSetDock(pApp->pTilesetDock, XUI_DOCK_FILL);
+	mapedit_configure_dock_metrics(pApp->pTilesetDock);
 	(void)xuiWidgetAddChild(pApp->pRoot, pApp->pTilesetDock);
 	if ( mapedit_create_list(pApp, &materials, &pApp->tMaterialCategoryFiles, mapedit_material_selected) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_create_list(pApp, &sets, &pApp->tTilesetFiles, mapedit_tileset_selected) != XUI_OK ) return XUI_ERROR;
@@ -8338,6 +8993,7 @@ static int mapedit_create_map_edit_panel(mapedit_app_t* pApp, xui_widget* ppPane
 {
 	xui_widget panel = NULL;
 	xui_widget row = NULL;
+	xui_widget commandRow = NULL;
 	xui_widget spacer = NULL;
 	xui_widget viewport = NULL;
 	xui_scroll_frame_desc_t scrollDesc;
@@ -8346,6 +9002,7 @@ static int mapedit_create_map_edit_panel(mapedit_app_t* pApp, xui_widget* ppPane
 	ret = xuiWidgetCreate(pApp->pContext, &panel);
 	if ( ret == XUI_OK ) ret = xuiWidgetCreate(pApp->pContext, &row);
 	if ( ret == XUI_OK ) ret = xuiWidgetCreate(pApp->pContext, &spacer);
+	if ( ret == XUI_OK ) ret = xuiWidgetCreate(pApp->pContext, &commandRow);
 	if ( ret == XUI_OK ) {
 		memset(&scrollDesc, 0, sizeof(scrollDesc));
 		scrollDesc.iSize = sizeof(scrollDesc);
@@ -8384,7 +9041,10 @@ static int mapedit_create_map_edit_panel(mapedit_app_t* pApp, xui_widget* ppPane
 	mapedit_widget_fill(panel);
 	(void)xuiWidgetSetLayoutType(row, XUI_LAYOUT_ROW);
 	(void)xuiWidgetSetGap(row, 6.0f);
-	mapedit_widget_fixed_height(row, 34.0f);
+	mapedit_widget_fixed_height(row, 38.0f);
+	(void)xuiWidgetSetLayoutType(commandRow, XUI_LAYOUT_ROW);
+	(void)xuiWidgetSetGap(commandRow, 6.0f);
+	mapedit_widget_fixed_height(commandRow, 38.0f);
 	mapedit_widget_fill(spacer);
 	mapedit_widget_fill(pApp->pMapScrollFrame);
 	(void)xuiScrollFrameSetChange(pApp->pMapScrollFrame, mapedit_map_scroll_changed, pApp);
@@ -8395,11 +9055,12 @@ static int mapedit_create_map_edit_panel(mapedit_app_t* pApp, xui_widget* ppPane
 	}
 	(void)xuiWidgetSetRect(pApp->pMapCanvas, (xui_rect_t){0.0f, 0.0f, 1.0f, 1.0f});
 	ret = xuiWidgetAddChild(row, pApp->pMapToolbar);
-	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(row, pApp->pLayerCombo);
-	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(row, pApp->pMapCommandToolbar);
-	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(row, spacer);
+	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(commandRow, pApp->pLayerCombo);
+	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(commandRow, pApp->pMapCommandToolbar);
+	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(commandRow, spacer);
 	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(viewport, pApp->pMapCanvas);
 	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(panel, row);
+	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(panel, commandRow);
 	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(panel, pApp->pMapScrollFrame);
 	if ( ret != XUI_OK ) {
 		xuiWidgetDestroy(panel);
@@ -8428,7 +9089,9 @@ static int mapedit_create_map_workspace(mapedit_app_t* pApp)
 	d.pFont = pApp->pFont;
 	ret = xuiDockPanelCreate(pApp->pContext, &pApp->pMapDock, &d);
 	if ( ret != XUI_OK ) return ret;
-	(void)xuiWidgetSetRect(pApp->pMapDock, (xui_rect_t){0.0f, MAPEDIT_MENU_H + MAPEDIT_SWITCH_H, (float)MAPEDIT_W, (float)MAPEDIT_H - MAPEDIT_MENU_H - MAPEDIT_SWITCH_H - MAPEDIT_STATUS_H});
+	mapedit_widget_fill(pApp->pMapDock);
+	(void)xuiWidgetSetDock(pApp->pMapDock, XUI_DOCK_FILL);
+	mapedit_configure_dock_metrics(pApp->pMapDock);
 	(void)xuiWidgetAddChild(pApp->pRoot, pApp->pMapDock);
 	if ( mapedit_create_list(pApp, &pApp->pMapListView, &pApp->tMapFiles, mapedit_map_selected) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_create_list_manager_panel(pApp, pApp->pMapListView, &mapPanel, &pApp->pMapAddButton, "添加地图") != XUI_OK ) return XUI_ERROR;
@@ -8495,8 +9158,8 @@ static int mapedit_create_menu(mapedit_app_t* pApp)
 	xui_menubar_desc_t mb;
 	xui_menu_desc_t md;
 	xui_menubar_item_t items[3];
-	xui_menu_item_t fileItems[5];
-	xui_menu_item_t viewItems[1];
+	xui_menu_item_t fileItems[6];
+	xui_menu_item_t viewItems[3];
 	xui_menu_item_t helpItems[1];
 	int ret;
 	memset(&mb, 0, sizeof(mb));
@@ -8504,7 +9167,8 @@ static int mapedit_create_menu(mapedit_app_t* pApp)
 	mb.pFont = pApp->pFont;
 	ret = xuiMenuBarCreate(pApp->pContext, &pApp->pMenuBar, &mb);
 	if ( ret != XUI_OK ) return ret;
-	(void)xuiWidgetSetRect(pApp->pMenuBar, (xui_rect_t){0.0f, 0.0f, (float)MAPEDIT_W, MAPEDIT_MENU_H});
+	mapedit_widget_fixed_height(pApp->pMenuBar, MAPEDIT_MENU_H);
+	(void)xuiWidgetSetDock(pApp->pMenuBar, XUI_DOCK_TOP);
 	(void)xuiWidgetAddChild(pApp->pRoot, pApp->pMenuBar);
 	memset(&md, 0, sizeof(md));
 	md.iSize = sizeof(md);
@@ -8515,15 +9179,18 @@ static int mapedit_create_menu(mapedit_app_t* pApp)
 	if ( ret == XUI_OK ) ret = xuiMenuCreate(pApp->pContext, &pApp->pHelpMenu, &md);
 	if ( ret != XUI_OK ) return ret;
 	memset(fileItems, 0, sizeof(fileItems));
-	fileItems[0] = (xui_menu_item_t){"打开地图", "Ctrl+O", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_OPEN, 0, NULL, NULL};
-	fileItems[1] = (xui_menu_item_t){"保存地图", "Ctrl+S", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_SAVE, 0, NULL, NULL};
-	fileItems[2] = (xui_menu_item_t){"另存为", NULL, XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_SAVE_AS, 0, NULL, NULL};
-	fileItems[3] = (xui_menu_item_t){NULL, NULL, XUI_MENU_ITEM_SEPARATOR, 0, 0, 0, NULL, NULL};
-	fileItems[4] = (xui_menu_item_t){"退出", "Alt+F4", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_EXIT, 0, NULL, NULL};
+	fileItems[0] = (xui_menu_item_t){"打开当前类型文档", "Ctrl+O", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_OPEN, 0, NULL, NULL};
+	fileItems[1] = (xui_menu_item_t){"保存当前文档", "Ctrl+S", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_SAVE, 0, NULL, NULL};
+	fileItems[2] = (xui_menu_item_t){"当前文档另存为", "Ctrl+Shift+S", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_SAVE_AS, 0, NULL, NULL};
+	fileItems[3] = (xui_menu_item_t){"恢复自动保存", NULL, XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_RECOVER, 0, NULL, NULL};
+	fileItems[4] = (xui_menu_item_t){NULL, NULL, XUI_MENU_ITEM_SEPARATOR, 0, 0, 0, NULL, NULL};
+	fileItems[5] = (xui_menu_item_t){"退出", "Alt+F4", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_FILE_EXIT, 0, NULL, NULL};
 	viewItems[0] = (xui_menu_item_t){"重置布局", NULL, XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_VIEW_RESET_LAYOUT, 0, NULL, NULL};
 	helpItems[0] = (xui_menu_item_t){"关于", NULL, XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_HELP_ABOUT, 0, NULL, NULL};
-	(void)xuiMenuSetItems(pApp->pFileMenu, fileItems, 5);
-	(void)xuiMenuSetItems(pApp->pViewMenu, viewItems, 1);
+	(void)xuiMenuSetItems(pApp->pFileMenu, fileItems, 6);
+	viewItems[1] = (xui_menu_item_t){"原始大小 (100%)", "Ctrl+0", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_VIEW_ACTUAL_SIZE, 0, NULL, NULL};
+	viewItems[2] = (xui_menu_item_t){"适应视图", NULL, XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, CMD_VIEW_FIT, 0, NULL, NULL};
+	(void)xuiMenuSetItems(pApp->pViewMenu, viewItems, 3);
 	(void)xuiMenuSetItems(pApp->pHelpMenu, helpItems, 1);
 	(void)xuiMenuSetSelect(pApp->pFileMenu, mapedit_menu_select, pApp);
 	(void)xuiMenuSetSelect(pApp->pViewMenu, mapedit_menu_select, pApp);
@@ -8558,10 +9225,17 @@ static int mapedit_create_switch(mapedit_app_t* pApp)
 	(void)xuiButtonSetSelectable(pApp->pMapButton, 1);
 	(void)xuiButtonSetClick(pApp->pTileButton, mapedit_workspace_click, pApp);
 	(void)xuiButtonSetClick(pApp->pMapButton, mapedit_workspace_click, pApp);
-	(void)xuiWidgetSetRect(pApp->pTileButton, (xui_rect_t){8.0f, MAPEDIT_MENU_H + 6.0f, 86.0f, 58.0f});
-	(void)xuiWidgetSetRect(pApp->pMapButton, (xui_rect_t){102.0f, MAPEDIT_MENU_H + 6.0f, 86.0f, 58.0f});
-	(void)xuiWidgetAddChild(pApp->pRoot, pApp->pTileButton);
-	(void)xuiWidgetAddChild(pApp->pRoot, pApp->pMapButton);
+	if (xuiWidgetCreate(pApp->pContext, &pApp->pSwitchBar) != XUI_OK) return XUI_ERROR;
+	(void)xuiWidgetSetLayoutType(pApp->pSwitchBar, XUI_LAYOUT_ROW);
+	(void)xuiWidgetSetDock(pApp->pSwitchBar, XUI_DOCK_TOP);
+	(void)xuiWidgetSetPadding(pApp->pSwitchBar, (xui_thickness_t){8, 6, 8, 6});
+	(void)xuiWidgetSetGap(pApp->pSwitchBar, 8.0f);
+	mapedit_widget_fixed_height(pApp->pSwitchBar, MAPEDIT_SWITCH_H);
+	mapedit_widget_fixed_size(pApp->pTileButton, 120.0f, MAPEDIT_BUTTON_HEIGHT);
+	mapedit_widget_fixed_size(pApp->pMapButton, 120.0f, MAPEDIT_BUTTON_HEIGHT);
+	(void)xuiWidgetAddChild(pApp->pSwitchBar, pApp->pTileButton);
+	(void)xuiWidgetAddChild(pApp->pSwitchBar, pApp->pMapButton);
+	(void)xuiWidgetAddChild(pApp->pRoot, pApp->pSwitchBar);
 	return XUI_OK;
 }
 
@@ -8574,13 +9248,14 @@ static int mapedit_create_status(mapedit_app_t* pApp)
 	d.pFont = pApp->pFont;
 	ret = xuiStatusBarCreate(pApp->pContext, &pApp->pStatus, &d);
 	if ( ret != XUI_OK ) return ret;
-	(void)xuiWidgetSetRect(pApp->pStatus, (xui_rect_t){0.0f, (float)MAPEDIT_H - MAPEDIT_STATUS_H, (float)MAPEDIT_W, MAPEDIT_STATUS_H});
+	mapedit_widget_fixed_height(pApp->pStatus, MAPEDIT_STATUS_H);
+	(void)xuiWidgetSetDock(pApp->pStatus, XUI_DOCK_BOTTOM);
 	(void)xuiWidgetAddChild(pApp->pRoot, pApp->pStatus);
-	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_LEFT, "坐标: 0,0", 148.0f, 0, 0);
-	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_LEFT, "地图: 100 x 100", 132.0f, 0, 0);
-	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_LEFT, "图块: tileset 0 / tile 0 / layer 0", 230.0f, 0, 0);
+	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_LEFT, "坐标: 0,0", 420.0f, 0, 0);
+	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_LEFT, "地图: 100 x 100", 170.0f, 0, 0);
+	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_LEFT, "图块: tileset 0 / tile 0 / layer 0", 310.0f, 0, 0);
 	(void)xuiStatusBarAddFlexibleSpacer(pApp->pStatus, XUI_STATUSBAR_SECTION_LEFT, 1.0f);
-	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_RIGHT, "位置: passable / region 0 / event none", 280.0f, 0, 0);
+	(void)xuiStatusBarAddText(pApp->pStatus, XUI_STATUSBAR_SECTION_RIGHT, "位置: passable / region 0 / event none", 330.0f, 0, 0);
 	mapedit_status(pApp, "就绪");
 	return XUI_OK;
 }
@@ -8612,8 +9287,8 @@ static void mapedit_refresh_toolbar_state(mapedit_app_t* pApp)
 		(void)xuiToolbarSetItemChecked(pApp->pMapCommandToolbar, 1, pApp->bGrid);
 		(void)xuiToolbarSetItemChecked(pApp->pMapCommandToolbar, 2, 0);
 		(void)xuiToolbarSetItemChecked(pApp->pMapCommandToolbar, 3, 0);
-		(void)xuiToolbarSetItemEnabled(pApp->pMapCommandToolbar, 2, pApp->iUndoCount > 0);
-		(void)xuiToolbarSetItemEnabled(pApp->pMapCommandToolbar, 3, pApp->iRedoCount > 0);
+		(void)xuiToolbarSetItemEnabled(pApp->pMapCommandToolbar, 2, (pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_TILESET ? pApp->tTilesetHistory.iUndoCount : pApp->tMapHistory.iUndoCount) > 0);
+		(void)xuiToolbarSetItemEnabled(pApp->pMapCommandToolbar, 3, (pApp->iActiveWorkspace == MAPEDIT_WORKSPACE_TILESET ? pApp->tTilesetHistory.iRedoCount : pApp->tMapHistory.iRedoCount) > 0);
 	}
 }
 
@@ -8632,22 +9307,22 @@ static int mapedit_create_toolbar(mapedit_app_t* pApp)
 	toolItems[0] = mapedit_toolbar_item("画笔", "画笔", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED | XUI_TOOLBAR_ITEM_CHECKED, CMD_TOOL_BRUSH, 1);
 	toolItems[1] = mapedit_toolbar_item("橡皮", "橡皮", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_ERASER, 1);
 	toolItems[2] = mapedit_toolbar_item("线条", "线条", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_LINE, 1);
-	toolItems[3] = mapedit_toolbar_item("矩形填充", "矩形填充", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_RECT, 1);
-	toolItems[4] = mapedit_toolbar_item("圆形填充", "圆形填充", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_CIRCLE, 1);
-	toolItems[5] = mapedit_toolbar_item("填充模式", "填充模式", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_BUCKET, 1);
+	toolItems[3] = mapedit_toolbar_item("矩形", "矩形填充", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_RECT, 1);
+	toolItems[4] = mapedit_toolbar_item("圆形", "圆形填充", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_CIRCLE, 1);
+	toolItems[5] = mapedit_toolbar_item("填充", "填充模式", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_TOOL_BUCKET, 1);
 	memset(commandItems, 0, sizeof(commandItems));
 	commandItems[0] = mapedit_toolbar_item("预览", "预览", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED, CMD_PREVIEW, 2);
 	commandItems[1] = mapedit_toolbar_item("网格", "网格", XUI_TOOLBAR_ITEM_TOGGLE, XUI_TOOLBAR_ITEM_ENABLED | XUI_TOOLBAR_ITEM_CHECKED, CMD_GRID, 2);
 	commandItems[2] = mapedit_toolbar_item("撤销", "撤销", XUI_TOOLBAR_ITEM_BUTTON, 0, CMD_UNDO, 3);
 	commandItems[3] = mapedit_toolbar_item("重做", "重做", XUI_TOOLBAR_ITEM_BUTTON, 0, CMD_REDO, 3);
 	(void)xuiToolbarSetItems(pApp->pMapToolbar, toolItems, MAPEDIT_TOOL_COUNT);
-	(void)xuiToolbarSetItemSize(pApp->pMapToolbar, 70.0f, 26.0f, 6.0f);
+	(void)xuiToolbarSetItemSize(pApp->pMapToolbar, 58.0f, 34.0f, 4.0f);
 	(void)xuiToolbarSetSelect(pApp->pMapToolbar, mapedit_toolbar_select, pApp);
-	mapedit_widget_fixed_size(pApp->pMapToolbar, 438.0f, 30.0f);
+	mapedit_widget_fixed_size(pApp->pMapToolbar, 374.0f, 38.0f);
 	(void)xuiToolbarSetItems(pApp->pMapCommandToolbar, commandItems, 4);
-	(void)xuiToolbarSetItemSize(pApp->pMapCommandToolbar, 54.0f, 26.0f, 6.0f);
+	(void)xuiToolbarSetItemSize(pApp->pMapCommandToolbar, 58.0f, 34.0f, 4.0f);
 	(void)xuiToolbarSetSelect(pApp->pMapCommandToolbar, mapedit_toolbar_select, pApp);
-	mapedit_widget_fixed_size(pApp->pMapCommandToolbar, 236.0f, 30.0f);
+	mapedit_widget_fixed_size(pApp->pMapCommandToolbar, 252.0f, 38.0f);
 	mapedit_refresh_toolbar_state(pApp);
 	memset(&cd, 0, sizeof(cd));
 	cd.iSize = sizeof(cd);
@@ -8655,7 +9330,7 @@ static int mapedit_create_toolbar(mapedit_app_t* pApp)
 	cd.iItemCount = pApp->iSetupLayerCount > 0 ? pApp->iSetupLayerCount : 1;
 	cd.iSelected = 0;
 	cd.pFont = pApp->pFont;
-	cd.fItemHeight = 24.0f;
+	cd.fItemHeight = MAPEDIT_ROW_HEIGHT;
 	cd.fPopupMaxHeight = 220.0f;
 	cd.iTextColor = XUI_COLOR_RGBA(31, 75, 112, 255);
 	cd.iDisabledTextColor = XUI_COLOR_RGBA(132, 142, 152, 255);
@@ -8680,7 +9355,7 @@ static int mapedit_create_toolbar(mapedit_app_t* pApp)
 	cd.iPopupSeparatorColor = XUI_COLOR_RGBA(230, 236, 240, 255);
 	if ( xuiComboBoxCreate(pApp->pContext, &pApp->pLayerCombo, &cd) != XUI_OK ) return XUI_ERROR;
 	(void)xuiComboBoxSetSelect(pApp->pLayerCombo, mapedit_layer_select, pApp);
-	mapedit_widget_fixed_size(pApp->pLayerCombo, 112.0f, 28.0f);
+	mapedit_widget_fixed_size(pApp->pLayerCombo, 136.0f, 34.0f);
 	return XUI_OK;
 }
 
@@ -8692,31 +9367,38 @@ static int mapedit_root_render(xui_widget pWidget, xui_draw_context pDraw, uint3
 	if ( pApp == NULL || pDraw == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, XUI_COLOR_RGBA(232, 241, 250, 255));
-	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, (xui_rect_t){0.0f, MAPEDIT_MENU_H, r.fW, MAPEDIT_SWITCH_H}, XUI_COLOR_RGBA(242, 247, 252, 255));
-	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, (xui_rect_t){0.0f, MAPEDIT_MENU_H + MAPEDIT_SWITCH_H - 1.0f, r.fW, 1.0f}, 1.0f, XUI_COLOR_RGBA(166, 188, 210, 255));
 	return XUI_OK;
+}
+
+static int mapedit_register_hotkeys(mapedit_app_t* pApp)
+{
+	int ret;
+	if ( pApp == NULL || pApp->pContext == NULL || pApp->pRoot == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	ret = xuiHotKeyRegisterCommand(pApp->pContext, pApp->pRoot, 'O', XUI_MOD_CTRL, CMD_FILE_OPEN, "file.open", pApp);
+	if ( ret == XUI_OK ) ret = xuiHotKeyRegisterCommand(pApp->pContext, pApp->pRoot, 'S', XUI_MOD_CTRL, CMD_FILE_SAVE, "file.save", pApp);
+	if ( ret == XUI_OK ) ret = xuiHotKeyRegisterCommand(pApp->pContext, pApp->pRoot, 'S', XUI_MOD_CTRL | XUI_MOD_SHIFT, CMD_FILE_SAVE_AS, "file.save_as", pApp);
+	if ( ret == XUI_OK ) ret = xuiHotKeyRegisterCommand(pApp->pContext, pApp->pRoot, 'Z', XUI_MOD_CTRL, CMD_UNDO, "edit.undo", pApp);
+	if ( ret == XUI_OK ) ret = xuiHotKeyRegisterCommand(pApp->pContext, pApp->pRoot, 'Y', XUI_MOD_CTRL, CMD_REDO, "edit.redo", pApp);
+	if ( ret == XUI_OK ) ret = xuiHotKeyRegisterCommand(pApp->pContext, pApp->pRoot, XUI_KEY_F4, XUI_MOD_ALT, CMD_FILE_EXIT, "file.exit", pApp);
+	if (ret == XUI_OK) ret = xuiHotKeyRegisterCommand(pApp->pContext, pApp->pRoot, '0', XUI_MOD_CTRL, CMD_VIEW_ACTUAL_SIZE, "view.actual", pApp);
+	return ret;
 }
 
 static int mapedit_create_ui(mapedit_app_t* pApp)
 {
 	xui_cache_policy_t policy;
-	const char* sFontPath = "C:\\Windows\\Fonts\\msyh.ttc";
 	int ret;
 	pApp->tProxy = xuiProxyXge();
 	ret = xuiCreate(&pApp->pContext);
 	if ( ret != XUI_OK ) return ret;
 	ret = xuiSetProxy(pApp->pContext, &pApp->tProxy);
 	if ( ret != XUI_OK ) return ret;
-	ret = xuiInputViewport(pApp->pContext, (float)MAPEDIT_W, (float)MAPEDIT_H);
+	ret = xuiInputViewport(pApp->pContext, MAPEDIT_W, MAPEDIT_H);
 	if ( ret != XUI_OK ) return ret;
 	ret = mapedit_resize_target(pApp, MAPEDIT_W, MAPEDIT_H);
 	if ( ret != XUI_OK ) return ret;
-	if ( pApp->tProxy.fontLoadFile(&pApp->tProxy, &pApp->pFont, sFontPath, 13.0f, XUI_FONT_FORMAT_TTF) != XUI_OK ) {
-		sFontPath = "C:\\Windows\\Fonts\\arial.ttf";
-		ret = pApp->tProxy.fontLoadFile(&pApp->tProxy, &pApp->pFont, sFontPath, 13.0f, XUI_FONT_FORMAT_TTF);
-		if ( ret != XUI_OK ) return ret;
-	}
-	(void)xuiSetDefaultFont(pApp->pContext, pApp->pFont);
+	ret = mapeditThemeInit(pApp->pContext, &pApp->tProxy, &pApp->pFont, pApp->sAppDir);
+	if (ret != XUI_OK) return ret;
 	ret = xuiWidgetCreate(pApp->pContext, &pApp->pRoot);
 	if ( ret != XUI_OK ) return ret;
 	memset(&policy, 0, sizeof(policy));
@@ -8725,7 +9407,7 @@ static int mapedit_create_ui(mapedit_app_t* pApp)
 	policy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	policy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	(void)xuiWidgetSetRect(pApp->pRoot, (xui_rect_t){0.0f, 0.0f, (float)MAPEDIT_W, (float)MAPEDIT_H});
-	(void)xuiWidgetSetLayoutType(pApp->pRoot, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetSetLayoutType(pApp->pRoot, XUI_LAYOUT_DOCK);
 	(void)xuiWidgetSetCachePolicy(pApp->pRoot, &policy);
 	(void)xuiWidgetSetCacheRenderCallback(pApp->pRoot, mapedit_root_render, pApp);
 	(void)xuiWidgetSetEventHandler(pApp->pRoot, XUI_EVENT_POINTER_DOWN, mapedit_root_event, pApp);
@@ -8743,6 +9425,8 @@ static int mapedit_create_ui(mapedit_app_t* pApp)
 	(void)xuiWidgetSetEventInterest(pApp->pRoot, XUI_EVENT_MASK_POINTER | XUI_EVENT_MASK_KEYBOARD, 1);
 	ret = xuiSetRootWidget(pApp->pContext, pApp->pRoot);
 	if ( ret != XUI_OK ) return ret;
+	ret = mapedit_register_hotkeys(pApp);
+	if ( ret != XUI_OK ) return ret;
 	if ( mapedit_create_menu(pApp) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_create_switch(pApp) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_create_toolbar(pApp) != XUI_OK ) return XUI_ERROR;
@@ -8750,6 +9434,7 @@ static int mapedit_create_ui(mapedit_app_t* pApp)
 	if ( mapedit_create_tileset_workspace(pApp) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_create_map_workspace(pApp) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_sync_viewport(pApp) != XUI_OK ) return XUI_ERROR;
+	mapedit_register_view_gestures(pApp);
 	mapedit_load_layouts(pApp);
 	mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_TILESET);
 	pApp->bCreateOK = 1;
@@ -8826,7 +9511,7 @@ static void mapedit_make_large_map(mapedit_app_t* pApp, int iWidth, int iHeight)
 	int x;
 	int y;
 	if ( pApp == NULL || iWidth <= 0 || iHeight <= 0 ) return;
-	if ( iWidth * iHeight > 1048576 ) {
+	if ( xgeMapValidateSize(iWidth, iHeight, XGE_MAP_LEGACY_DEFAULT_LAYERS, NULL, NULL) != XGE_MAP_OK ) {
 		iWidth = 1024;
 		iHeight = 1024;
 	}
@@ -8836,7 +9521,7 @@ static void mapedit_make_large_map(mapedit_app_t* pApp, int iWidth, int iHeight)
 	mapedit_copy_text(pApp->tMap.sTileset, MAPEDIT_FILE_MAX, pApp->tTileset.sFile[0] ? pApp->tTileset.sFile : "default.xson");
 	pApp->tMap.iWidth = iWidth;
 	pApp->tMap.iHeight = iHeight;
-	pApp->tMap.iLayers = 3;
+	pApp->tMap.iLayers = XGE_MAP_LEGACY_DEFAULT_LAYERS;
 	pApp->tMap.iState = mapedit_setup_clamp_state(pApp, pApp->iSetupStateMin);
 	pApp->tMap.pPassageRaw = xrtValueArray();
 	pApp->tMap.pCellDataRaw = xrtValueObject();
@@ -8891,7 +9576,7 @@ static int mapedit_run_custom_default_smoke(mapedit_app_t* pApp)
 	if ( pApp->tMap.pTiles == NULL ) {
 		pApp->tMap.iWidth = 2;
 		pApp->tMap.iHeight = 2;
-		pApp->tMap.iLayers = 3;
+		pApp->tMap.iLayers = XGE_MAP_LEGACY_DEFAULT_LAYERS;
 		if ( mapedit_map_alloc(&pApp->tMap) != XUI_OK ) goto cleanup;
 	}
 	if ( pApp->tMap.iWidth <= 0 || pApp->tMap.iHeight <= 0 ) goto cleanup;
@@ -8929,10 +9614,61 @@ cleanup:
 	return ok;
 }
 
+static int mapedit_run_edit_history_smoke(mapedit_app_t* pApp)
+{
+	double savedDirtySince;
+	double savedRecoveryWrite;
+	int oldTile;
+	int newTile;
+	int savedDirty;
+	int savedGestureDirty;
+	int savedBatchEdit;
+	int ok;
+	int workspace = pApp->iActiveWorkspace;
+	if ( pApp == NULL || pApp->tMap.pTiles == NULL || pApp->tMap.iTileCount <= 0 || pApp->tMap.iLayers <= 0 ) return 0;
+	pApp->iActiveWorkspace = MAPEDIT_WORKSPACE_MAP;
+	oldTile = pApp->tMap.pTiles[0];
+	newTile = oldTile == 0 ? 1 : 0;
+	savedDirty = pApp->tMap.bDirty;
+	savedGestureDirty = pApp->bGestureDirty;
+	savedBatchEdit = pApp->bBatchEdit;
+	savedDirtySince = pApp->fMapDirtySince;
+	savedRecoveryWrite = pApp->fLastRecoveryWrite;
+	mapedit_clear_history(pApp);
+	mapedit_begin_history(pApp);
+	pApp->bBatchEdit = 1;
+	pApp->bGestureDirty = 0;
+	mapedit_set_tile(pApp, 0, 0, 0, newTile);
+	ok = pApp->tMap.pTiles[0] == newTile && mapedit_commit_history(pApp) && pApp->tMapHistory.iUndoCount == 1;
+	if ( ok ) {
+		mapedit_undo(pApp);
+		ok = pApp->tMap.pTiles[0] == oldTile && pApp->tMapHistory.iRedoCount == 1;
+	}
+	if ( ok ) {
+		mapedit_redo(pApp);
+		ok = pApp->tMap.pTiles[0] == newTile && pApp->tMapHistory.iUndoCount == 1;
+	}
+	pApp->tMap.pTiles[0] = oldTile;
+	mapedit_clear_history(pApp);
+	pApp->tMap.bDirty = savedDirty;
+	pApp->bGestureDirty = savedGestureDirty;
+	pApp->bBatchEdit = savedBatchEdit;
+	pApp->fMapDirtySince = savedDirtySince;
+	pApp->fLastRecoveryWrite = savedRecoveryWrite;
+	pApp->bEditOK = ok;
+	pApp->iActiveWorkspace = workspace;
+	mapedit_update_window_title(pApp);
+	return ok;
+}
+
 static void mapedit_destroy(mapedit_app_t* pApp)
 {
 	if ( pApp == NULL ) return;
+	xgeSetQuitRequestCallback(NULL, NULL);
+	if (pApp->pExternalBox) { xuiMsgBoxDestroy(pApp->pExternalBox); pApp->pExternalBox = NULL; }
+	if (pApp->pConfirmBox) { xuiMsgBoxDestroy(pApp->pConfirmBox); pApp->pConfirmBox = NULL; }
 	mapedit_clear_history(pApp);
+	mapeditHistoryClear(&pApp->tTilesetHistory);
 	mapedit_material_preview_clear(pApp);
 	mapedit_material_tooltip_clear(pApp);
 	mapedit_material_view_clear(pApp);
@@ -8944,10 +9680,20 @@ static void mapedit_destroy(mapedit_app_t* pApp)
 	}
 	mapedit_tileset_clear(pApp);
 	mapedit_map_clear(&pApp->tMap);
+	if ( pApp->pFileDialog != NULL ) {
+		xuiFileDialogDestroy(pApp->pFileDialog);
+		pApp->pFileDialog = NULL;
+	}
 	if ( pApp->pContext != NULL ) {
 		xuiDestroy(pApp->pContext);
 		pApp->pContext = NULL;
 	}
+	mapedit_file_list_clear(&pApp->tMapFiles);
+	mapedit_file_list_clear(&pApp->tTilesetFiles);
+	mapedit_file_list_clear(&pApp->tMaterialFiles);
+	mapedit_file_list_clear(&pApp->tMaterialCategoryFiles);
+	mapedit_file_list_clear(&pApp->tMapTilesetOptions);
+	mapedit_file_list_clear(&pApp->tTilesetSpecialFileOptions);
 	if ( pApp->pFont != NULL ) {
 		pApp->tProxy.fontDestroy(&pApp->tProxy, pApp->pFont);
 		pApp->pFont = NULL;
@@ -8956,144 +9702,6 @@ static void mapedit_destroy(mapedit_app_t* pApp)
 		pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->pTarget);
 		pApp->pTarget = NULL;
 	}
-}
-
-static uint32_t mapedit_read_buttons(void)
-{
-	uint32_t b = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) b |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) b |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) b |= XUI_POINTER_BUTTON_MIDDLE;
-	return b;
-}
-
-static uint32_t mapedit_read_modifiers(void)
-{
-	uint32_t modifiers;
-	modifiers = 0;
-	if ( xgeKeyDown(XGE_KEY_LEFT_SHIFT) || xgeKeyDown(XGE_KEY_RIGHT_SHIFT) ) modifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(XGE_KEY_LEFT_CONTROL) || xgeKeyDown(XGE_KEY_RIGHT_CONTROL) ) modifiers |= XUI_MOD_CTRL;
-	if ( xgeKeyDown(XGE_KEY_LEFT_ALT) || xgeKeyDown(XGE_KEY_RIGHT_ALT) ) modifiers |= XUI_MOD_ALT;
-	if ( xgeKeyDown(XGE_KEY_LEFT_SUPER) || xgeKeyDown(XGE_KEY_RIGHT_SUPER) ) modifiers |= XUI_MOD_SUPER;
-	return modifiers;
-}
-
-static int mapedit_map_key(int key)
-{
-	switch ( key ) {
-	case XGE_KEY_ENTER: return XUI_KEY_ENTER;
-	case XGE_KEY_TAB: return XUI_KEY_TAB;
-	case XGE_KEY_SPACE: return XUI_KEY_SPACE;
-	case XGE_KEY_BACKSPACE: return XUI_KEY_BACKSPACE;
-	case XGE_KEY_DELETE: return XUI_KEY_DELETE;
-	case XGE_KEY_LEFT: return XUI_KEY_LEFT;
-	case XGE_KEY_RIGHT: return XUI_KEY_RIGHT;
-	case XGE_KEY_UP: return XUI_KEY_UP;
-	case XGE_KEY_DOWN: return XUI_KEY_DOWN;
-	case XGE_KEY_PAGE_UP: return XUI_KEY_PAGE_UP;
-	case XGE_KEY_PAGE_DOWN: return XUI_KEY_PAGE_DOWN;
-	case XGE_KEY_HOME: return XUI_KEY_HOME;
-	case XGE_KEY_END: return XUI_KEY_END;
-	case XGE_KEY_ESCAPE: return XUI_KEY_ESCAPE;
-	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
-	case XGE_KEY_F10: return XUI_KEY_F10;
-	default: return 0;
-	}
-}
-
-static int mapedit_send_keyboard_input(mapedit_app_t* pApp)
-{
-	static const int arrKeys[] = {
-		XGE_KEY_ENTER,
-		XGE_KEY_TAB,
-		XGE_KEY_SPACE,
-		XGE_KEY_BACKSPACE,
-		XGE_KEY_DELETE,
-		XGE_KEY_LEFT,
-		XGE_KEY_RIGHT,
-		XGE_KEY_UP,
-		XGE_KEY_DOWN,
-		XGE_KEY_PAGE_UP,
-		XGE_KEY_PAGE_DOWN,
-		XGE_KEY_HOME,
-		XGE_KEY_END,
-		XGE_KEY_ESCAPE,
-		XGE_KEY_MENU,
-		XGE_KEY_F10,
-		'A',
-		'C',
-		'V',
-		'X',
-		'Y',
-		'Z'
-	};
-	uint32_t modifiers;
-	uint32_t text;
-	int i;
-	int key;
-	int ret;
-
-	modifiers = mapedit_read_modifiers();
-	ret = xuiInputSetModifiers(pApp->pContext, modifiers);
-	if ( ret != XUI_OK ) return ret;
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
-	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
-		key = mapedit_map_key(arrKeys[i]);
-		if ( key == 0 ) key = arrKeys[i];
-		if ( xgeKeyPressed(arrKeys[i]) ) {
-			ret = xuiInputKeyDown(pApp->pContext, key, modifiers);
-			if ( ret != XUI_OK ) return ret;
-		}
-		if ( xgeKeyReleased(arrKeys[i]) ) {
-			ret = xuiInputKeyUp(pApp->pContext, key, modifiers);
-			if ( ret != XUI_OK ) return ret;
-		}
-	}
-	while ( (text = xgeTextGet()) != 0 ) {
-		ret = xuiInputText(pApp->pContext, text);
-		if ( ret != XUI_OK ) return ret;
-	}
-	return XUI_OK;
-}
-
-static int mapedit_handle_input(mapedit_app_t* pApp)
-{
-	float x;
-	float y;
-	float wx;
-	float wy;
-	uint32_t buttons;
-	uint32_t pressed;
-	uint32_t released;
-	int ret;
-	ret = mapedit_send_keyboard_input(pApp);
-	if ( ret != XUI_OK ) return ret;
-	xgeMouseGet(&x, &y);
-	xgeMouseGetWheel(&wx, &wy);
-	buttons = mapedit_read_buttons();
-	if ( !pApp->bMouse || x != pApp->fMouseX || y != pApp->fMouseY || buttons != pApp->iButtons ) {
-		ret = xuiInputPointerMove(pApp->pContext, x, y, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	if ( wx != 0.0f || wy != 0.0f ) {
-		ret = xuiInputPointerWheel(pApp->pContext, x, y, wx, wy, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	pressed = buttons & ~pApp->iButtons;
-	released = pApp->iButtons & ~buttons;
-	if ( (pressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		ret = xuiInputPointerDown(pApp->pContext, x, y, XUI_POINTER_BUTTON_LEFT, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	if ( (released & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		ret = xuiInputPointerUp(pApp->pContext, x, y, XUI_POINTER_BUTTON_LEFT, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	pApp->bMouse = 1;
-	pApp->fMouseX = x;
-	pApp->fMouseY = y;
-	pApp->iButtons = buttons;
-	return XUI_OK;
 }
 
 static void mapedit_update_summary_checks(mapedit_app_t* pApp)
@@ -9114,7 +9722,7 @@ static void mapedit_update_preview(mapedit_app_t* pApp, float fDelta)
 	if ( fDelta < 0.0f ) fDelta = 0.0f;
 	pApp->fPreviewAnimTime += fDelta;
 	if ( pApp->fPreviewAnimTime < MAPEDIT_MAP_PREVIEW_FRAME_SECONDS ) {
-		xgeRenderRequest();
+		xgeRenderRequestAfter(MAPEDIT_MAP_PREVIEW_FRAME_SECONDS - pApp->fPreviewAnimTime);
 		return;
 	}
 	step = (int)(pApp->fPreviewAnimTime / MAPEDIT_MAP_PREVIEW_FRAME_SECONDS);
@@ -9123,7 +9731,153 @@ static void mapedit_update_preview(mapedit_app_t* pApp, float fDelta)
 	if ( pApp->fPreviewAnimTime < 0.0f ) pApp->fPreviewAnimTime = 0.0f;
 	pApp->iPreviewAnimFrame = (pApp->iPreviewAnimFrame + step) & 0x3fffffff;
 	if ( pApp->pMapCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pMapCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	xgeRenderRequest();
+	xgeRenderRequestAfter(MAPEDIT_MAP_PREVIEW_FRAME_SECONDS - pApp->fPreviewAnimTime);
+}
+
+static void mapedit_smoke_activate_view(mapedit_app_t* pApp, const char* id)
+{
+	int window;
+	for (window = 0; window < xuiDockPanelGetWindowCount(pApp->pMapDock); ++window) {
+		const char* current = (const char*)xuiDockPanelGetWindowUserData(pApp->pMapDock, window);
+		xui_dock_window_info_t info;
+		memset(&info, 0, sizeof(info)); info.iSize = sizeof(info);
+		if (current && !strcmp(id, current) && xuiDockPanelGetWindowInfo(pApp->pMapDock, window, &info) == XUI_OK)
+			(void)xuiDockPanelSetPaneActiveWindow(pApp->pMapDock, info.iPane, window);
+	}
+}
+
+static int mapedit_smoke_workbench(mapedit_app_t* pApp)
+{
+	char mapPath[MAPEDIT_PATH_MAX], setPath[MAPEDIT_PATH_MAX], recovery[MAPEDIT_PATH_MAX];
+	char name[MAPEDIT_NAME_MAX], oldMapPath[MAPEDIT_PATH_MAX], oldSetPath[MAPEDIT_PATH_MAX];
+	int oldDirty, oldTile, tx, ty, ok = 1, category, selected, oldWidth;
+	xui_rect_t rect;
+	xui_event_t event;
+	if (pApp->iSmokeWorkbenchStage == 0) {
+		mapedit_smoke_activate_view(pApp, "map.tags");
+		/* Execute a real native WM_CLOSE while dirty; the next frame must survive. */
+		mapedit_map_property_change(NULL, 0, "map.name", "native-close-test", 0, pApp);
+		PostMessageW((HWND)xgePlatformNativeHandle(), WM_CLOSE, 0, 0);
+		pApp->iSmokeWorkbenchStage = 1;
+		xgeRenderRequest();
+		return 1;
+	}
+	if (pApp->iSmokeWorkbenchStage != 1) {
+		xui_rect_t canvas = xuiWidgetGetRect(pApp->pMapTagsCanvas);
+		if (canvas.fW < 100 || canvas.fH < 100 || pApp->iLastVisibleCells < 100) {
+			pApp->bSmokeWorkbenchOK = 0;
+			fprintf(stderr, "workbench FAIL: canvas %dx%d, visible cells %d\n", canvas.fW, canvas.fH, pApp->iLastVisibleCells);
+		}
+		if (pApp->iSmokeWorkbenchStage == 2) {
+			mapedit_smoke_activate_view(pApp, "map.edit");
+			pApp->iSmokeWorkbenchStage = 3;
+		}
+		return pApp->bSmokeWorkbenchOK;
+	}
+#define WORKBENCH_CHECK(expr) do { if (!(expr)) { fprintf(stderr, "workbench FAIL line %d: %s\n", __LINE__, #expr); ok = 0; } } while (0)
+	WORKBENCH_CHECK(pApp->pConfirmBox && xuiMsgBoxIsOpen(pApp->pConfirmBox) && pApp->iPendingOperation == 1);
+	if (pApp->pConfirmBox) (void)xuiMsgBoxSetOpen(pApp->pConfirmBox, 0);
+	mapedit_confirm_result(pApp->pConfirmBox, XUI_MSGBOX_RESULT_CANCEL, pApp);
+	WORKBENCH_CHECK(pApp->tMap.bDirty && !pApp->iPendingOperation);
+	mapedit_undo(pApp);
+	mapedit_copy_text(name, sizeof(name), pApp->tMap.sName);
+	mapedit_copy_text(oldMapPath, sizeof(oldMapPath), pApp->tMap.sPath);
+	mapedit_copy_text(oldSetPath, sizeof(oldSetPath), pApp->tTileset.sPath);
+	oldDirty = pApp->tMap.bDirty;
+	mapedit_path_join(mapPath, sizeof(mapPath), pApp->sAppDir, "workbench-test-map.xson");
+	mapedit_path_join(setPath, sizeof(setPath), pApp->sAppDir, "workbench-test-tileset.xson");
+	selected = xuiPropertyGridFindProperty(pApp->pMapPropertyGrid, "map.width");
+	category = xuiPropertyGridFindCategory(pApp->pMapPropertyGrid, "map");
+	(void)xuiPropertyGridSetSelected(pApp->pMapPropertyGrid, selected);
+	(void)xuiPropertyGridSetCategoryExpanded(pApp->pMapPropertyGrid, category, 0);
+	mapedit_map_property_change(NULL, 0, "map.name", "history-test", 0, pApp);
+	WORKBENCH_CHECK(xuiPropertyGridGetSelected(pApp->pMapPropertyGrid) == selected);
+	WORKBENCH_CHECK(!xuiPropertyGridGetCategoryExpanded(pApp->pMapPropertyGrid, category));
+	WORKBENCH_CHECK(mapedit_save_map_to(pApp, mapPath) == XUI_OK && !pApp->tMap.bDirty);
+	mapedit_undo(pApp); WORKBENCH_CHECK(pApp->tMap.bDirty && strcmp(pApp->tMap.sName, name) == 0);
+	mapedit_redo(pApp); WORKBENCH_CHECK(!pApp->tMap.bDirty && !strcmp(pApp->tMap.sPath, mapPath));
+	{
+		int undoCount = pApp->tMapHistory.iUndoCount;
+		mapedit_map_property_change(NULL, 0, "map.name", "history-test", 0, pApp);
+		WORKBENCH_CHECK(!pApp->tMap.bDirty && pApp->tMapHistory.iUndoCount == undoCount);
+		mapedit_map_property_change(NULL, 0, "map.width", "9999999999999999999", 0, pApp);
+		WORKBENCH_CHECK(!pApp->tMap.bDirty && pApp->tMapHistory.iUndoCount == undoCount);
+	}
+	{
+		xge_map_t diskCopy = pApp->tMap;
+		mapedit_copy_text(diskCopy.sName, sizeof(diskCopy.sName), "externally-edited");
+		WORKBENCH_CHECK(mapedit_map_save(&diskCopy, mapPath) == XUI_OK);
+		pApp->fNextFileCheck = 0;
+		mapedit_poll_external_files(pApp);
+		WORKBENCH_CHECK(pApp->bMapExternalConflict && pApp->pExternalBox && xuiMsgBoxIsOpen(pApp->pExternalBox));
+		if (pApp->pExternalBox) (void)xuiMsgBoxSetOpen(pApp->pExternalBox, 0);
+		mapedit_external_result(pApp->pExternalBox, XUI_MSGBOX_RESULT_NO, pApp);
+		WORKBENCH_CHECK(mapedit_save_current(pApp) == XUI_ERROR);
+		pApp->bMapExternalConflict = 0;
+		pApp->tMapStamp = mapeditFileStamp(mapPath);
+	}
+	oldWidth = pApp->tMap.iWidth;
+	mapedit_map_property_change(NULL, 0, "map.width", "37", 0, pApp);
+	WORKBENCH_CHECK(pApp->tMap.iWidth == 37);
+	mapedit_undo(pApp); WORKBENCH_CHECK(pApp->tMap.iWidth == oldWidth && !pApp->tMap.bDirty);
+	oldTile = pApp->tMap.pTiles[0];
+	mapedit_begin_history(pApp); pApp->bBatchEdit = 1; pApp->bGestureDirty = 0;
+	mapedit_set_tile(pApp, 0, 0, 0, oldTile == 0 ? 1 : 0);
+	pApp->bHistoryFailed = 1; mapedit_finish_map_edit(pApp, "allocation failure");
+	WORKBENCH_CHECK(pApp->tMap.pTiles[0] == oldTile && !pApp->tMap.bDirty);
+	mapedit_map_property_change(NULL, 0, "map.name", "save-failure-test", 0, pApp);
+	/* An existing directory cannot be atomically replaced with a document. */
+	mapedit_request_operation(pApp, 2, mapPath);
+	WORKBENCH_CHECK(pApp->iPendingOperation == 2);
+	(void)xuiMsgBoxSetOpen(pApp->pConfirmBox, 0);
+	mapedit_copy_text(pApp->tMap.sPath, sizeof(pApp->tMap.sPath), pApp->sAppDir);
+	pApp->tMapStamp = mapeditFileStamp(pApp->sAppDir);
+	mapedit_confirm_result(pApp->pConfirmBox, XUI_MSGBOX_RESULT_YES, pApp);
+	WORKBENCH_CHECK(!pApp->iPendingOperation && pApp->tMap.bDirty && !strcmp(pApp->tMap.sName, "save-failure-test"));
+	mapedit_copy_text(pApp->tMap.sPath, sizeof(pApp->tMap.sPath), mapPath);
+	pApp->tMapStamp = mapeditFileStamp(mapPath);
+	WORKBENCH_CHECK(mapedit_write_recovery_now(pApp) == XUI_OK);
+	mapedit_recovery_path_for(pApp, MAPEDIT_WORKSPACE_MAP, mapPath, recovery, sizeof(recovery));
+	WORKBENCH_CHECK(mapedit_file_exists_utf8(recovery));
+	mapedit_clear_recovery_for(pApp, MAPEDIT_WORKSPACE_MAP, mapPath);
+	mapedit_undo(pApp);
+	mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_TILESET);
+	mapedit_tileset_property_change(NULL, 0, "tileset.name", "tileset-save-as-test", 0, pApp);
+	pApp->iFileDialogCommand = CMD_FILE_SAVE_AS; pApp->iFileDialogWorkspace = MAPEDIT_WORKSPACE_TILESET;
+	mapedit_file_dialog_result(NULL, XUI_FILE_DIALOG_RESULT_OK, setPath, pApp);
+	WORKBENCH_CHECK(!pApp->tTileset.bDirty && !strcmp(pApp->tTileset.sPath, setPath));
+	WORKBENCH_CHECK(!strcmp(pApp->tMap.sPath, mapPath));
+	mapedit_undo(pApp); WORKBENCH_CHECK(pApp->tTileset.bDirty);
+	mapedit_redo(pApp); WORKBENCH_CHECK(!pApp->tTileset.bDirty);
+	mapedit_undo(pApp);
+	mapedit_copy_text(pApp->tTileset.sPath, sizeof(pApp->tTileset.sPath), oldSetPath);
+	pApp->tTileset.bDirty = 0; mapeditHistoryClear(&pApp->tTilesetHistory);
+	pApp->tTilesetStamp = mapeditFileStamp(oldSetPath);
+	mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_MAP);
+	mapedit_copy_text(pApp->tMap.sName, sizeof(pApp->tMap.sName), name);
+	mapedit_copy_text(pApp->tMap.sPath, sizeof(pApp->tMap.sPath), oldMapPath);
+	pApp->tMap.bDirty = oldDirty; mapedit_clear_history(pApp);
+	pApp->tMapStamp = mapeditFileStamp(oldMapPath);
+	(void)xuiPropertyGridSetCategoryExpanded(pApp->pMapPropertyGrid, category, 1);
+	rect = xuiWidgetGetWorldRect(pApp->pMapTagsCanvas);
+	mapedit_view_zoom_at(pApp, pApp->pMapTagsCanvas, 2.0f, 0.0f, 0.0f);
+	(void)xuiScrollFrameSetOffset(pApp->pMapTagsScrollFrame, 0, 0);
+	WORKBENCH_CHECK(mapedit_pointer_to_map_tile_on_widget(pApp, pApp->pMapTagsCanvas, rect.fX + 33, rect.fY + 33, &tx, &ty) && tx == 1 && ty == 1);
+	memset(&event, 0, sizeof(event)); event.iType = XUI_EVENT_POINTER_DOWN; event.iButton = XUI_POINTER_BUTTON_MIDDLE;
+	event.fX = rect.fX + 60; event.fY = rect.fY + 60;
+	WORKBENCH_CHECK(mapedit_view_interact(pApp, pApp->pMapTagsCanvas, &event) && pApp->bViewPanning);
+	event.iType = XUI_EVENT_POINTER_CAPTURE_LOST;
+	WORKBENCH_CHECK(mapedit_view_interact(pApp, pApp->pMapTagsCanvas, &event) && !pApp->bViewPanning);
+	mapedit_view_zoom_at(pApp, pApp->pMapTagsCanvas, 1.0f, 0.0f, 0.0f);
+	mapedit_map_tags_scroll_reset(pApp);
+	mapedit_refresh_map_properties(pApp); mapedit_refresh_tileset_properties(pApp);
+	mapedit_update_window_title(pApp);
+	mapedit_update_status_details(pApp);
+	(void)mapedit_delete_file_utf8(mapPath); (void)mapedit_delete_file_utf8(setPath);
+	pApp->iSmokeWorkbenchStage = 2; pApp->bSmokeWorkbenchOK = ok;
+	printf("workbench: native-close/cancel, save-failure, save-as routing, undo/savepoint, property state, external conflict, recovery, zoom/pan %s\n", ok ? "OK" : "FAILED");
+#undef WORKBENCH_CHECK
+	return ok;
 }
 
 static int mapedit_frame(void* pUser)
@@ -9140,32 +9894,47 @@ static int mapedit_frame(void* pUser)
 	ret = xgeBegin();
 	if ( ret != XGE_OK ) return ret;
 	ret = mapedit_sync_viewport(pApp);
-	if ( ret != XUI_OK ) return ret;
-	ret = mapedit_handle_input(pApp);
-	if ( ret != XUI_OK ) return ret;
+	if ( ret != XUI_OK ) goto frame_end;
+	ret = xuiProxyXgePumpInput(pApp->pContext);
+	if ( ret != XUI_OK ) goto frame_end;
 	ret = xuiDispatchPendingEvents(pApp->pContext);
-	if ( ret != XUI_OK ) return ret;
+	if ( ret != XUI_OK ) goto frame_end;
 	mapedit_update_preview(pApp, xgeGetDelta());
 	ret = xuiLayout(pApp->pContext);
-	if ( ret != XUI_OK ) return ret;
+	if ( ret != XUI_OK ) goto frame_end;
 	mapedit_map_workspace_scroll_sync_content(pApp);
 	mapedit_tileset_workspace_scroll_sync_content(pApp);
 	ret = xuiUpdate(pApp->pContext, xgeGetDelta());
-	if ( ret != XUI_OK ) return ret;
+	if ( ret != XUI_OK ) goto frame_end;
+	mapedit_maybe_write_recovery(pApp);
+	mapedit_poll_layout(pApp);
+	mapedit_poll_external_files(pApp);
 	mapedit_update_summary_checks(pApp);
+	if (pApp->bSmokeWorkbench && pApp->iFrame > 0) (void)mapedit_smoke_workbench(pApp);
 	ret = pApp->tProxy.surfaceClear(&pApp->tProxy, pApp->pTarget, XUI_COLOR_RGBA(232, 241, 250, 255));
-	if ( ret != XUI_OK ) return ret;
+	if ( ret != XUI_OK ) goto frame_end;
 	targetW = pApp->iTargetWidth > 0 ? pApp->iTargetWidth : MAPEDIT_W;
 	targetH = pApp->iTargetHeight > 0 ? pApp->iTargetHeight : MAPEDIT_H;
 	full = (xui_rect_i_t){0, 0, targetW, targetH};
 	ret = xuiRender(pApp->pContext, pApp->pTarget, &full, 1);
-	if ( ret != XUI_OK ) return ret;
+	if ( ret != XUI_OK ) goto frame_end;
 	pApp->bRenderOK = 1;
+	if (pApp->sCapturePath[0] && pApp->iFrameLimit > 0 && pApp->iFrame + 1 >= pApp->iFrameLimit) {
+		size_t bytes = (size_t)targetW * (size_t)targetH * 4u;
+		void* pixels = malloc(bytes);
+		if (pixels && pApp->tProxy.surfaceReadRGBA(&pApp->tProxy, pApp->pTarget, pixels, targetW * 4) == XUI_OK)
+			(void)xgeImageSavePNG(pApp->sCapturePath, targetW, targetH, pixels, targetW * 4);
+		free(pixels);
+	}
 	xgeClear(XUI_COLOR_RGBA(18, 23, 32, 255));
-	src = (xui_rect_t){0.0f, 0.0f, (float)targetW, (float)targetH};
+	src = (xui_rect_t){0, 0, targetW, targetH};
 	dst = src;
 	ret = pApp->tProxy.surfaceDraw(&pApp->tProxy, pApp->pTarget, src, dst, XUI_COLOR_WHITE, XUI_SURFACE_DRAW_SCREEN_SPACE);
-	if ( ret == XUI_OK ) ret = xgeEnd();
+	frame_end:
+	{
+		int endResult = xgeEnd();
+		if (ret == XUI_OK) ret = endResult;
+	}
 	if ( ret != XGE_OK ) return ret;
 	pApp->iFrame++;
 	if ( pApp->iFrameLimit > 0 && pApp->iFrame >= pApp->iFrameLimit ) {
@@ -9190,6 +9959,8 @@ static int mapedit_frame(void* pUser)
 			stats.iDrawnCaches,
 			pApp->iLastVisibleCells);
 		xgeQuit();
+	} else if ( pApp->iFrameLimit > 0 ) {
+		xgeRenderRequest();
 	}
 	return XGE_OK;
 }
@@ -9198,6 +9969,7 @@ int main(int argc, char** argv)
 {
 	static mapedit_app_t app;
 	xge_desc_t desc;
+	char recoveryPath[MAPEDIT_PATH_MAX];
 	int bWrapperChild;
 	int i;
 	int ret;
@@ -9212,8 +9984,12 @@ int main(int argc, char** argv)
 	gMapeditTilesPerRow = app.iSetupTilesPerRow;
 	mapedit_get_app_dir(app.sAppDir, sizeof(app.sAppDir));
 	mapedit_configure_process_startup(app.sAppDir);
+	mapedit_get_user_dir(&app);
+	(void)mapedit_ensure_dir_utf8(app.sUserDir);
+	mapedit_set_project_dir(&app, getenv("XGE_MAPEDIT_PROJECT_DIR"));
 	mapedit_startup_log_open(&app);
-	mapedit_startup_log(&app, "start appDir=%s argc=%d", app.sAppDir, argc);
+	mapedit_startup_log(&app, "start appDir=%s userDir=%s projectDir=%s argc=%d",
+		app.sAppDir, app.sUserDir, app.sProjectDir, argc);
 	bWrapperChild = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--mapedit-wrapper-child") == 0 ) {
@@ -9236,6 +10012,12 @@ int main(int argc, char** argv)
 			app.iFrameLimit = mapedit_arg_int(argv[++i], app.iFrameLimit);
 		} else if ( strncmp(argv[i], "--frames=", 9) == 0 ) {
 			app.iFrameLimit = mapedit_arg_int(argv[i] + 9, app.iFrameLimit);
+		} else if ( strcmp(argv[i], "--project") == 0 && i + 1 < argc ) {
+			mapedit_set_project_dir(&app, argv[++i]);
+		} else if ( strncmp(argv[i], "--project=", 10) == 0 ) {
+			mapedit_set_project_dir(&app, argv[i] + 10);
+		} else if ( strcmp(argv[i], "--capture") == 0 && i + 1 < argc ) {
+			mapedit_copy_text(app.sCapturePath, sizeof(app.sCapturePath), argv[++i]);
 		} else if ( strcmp(argv[i], "--map") == 0 || strcmp(argv[i], "--workspace=map") == 0 ) {
 			app.iStartupWorkspace = MAPEDIT_WORKSPACE_MAP;
 		} else if ( strcmp(argv[i], "--tileset") == 0 || strcmp(argv[i], "--workspace=tileset") == 0 ) {
@@ -9247,16 +10029,33 @@ int main(int argc, char** argv)
 			if ( mapedit_parse_size_arg(argv[++i], &app.iLargeMapWidth, &app.iLargeMapHeight) ) app.iStartupWorkspace = MAPEDIT_WORKSPACE_MAP;
 		} else if ( strncmp(argv[i], "--large-map=", 12) == 0 ) {
 			if ( mapedit_parse_size_arg(argv[i] + 12, &app.iLargeMapWidth, &app.iLargeMapHeight) ) app.iStartupWorkspace = MAPEDIT_WORKSPACE_MAP;
+		} else if ( strcmp(argv[i], "--smoke-workbench") == 0 ) {
+			app.bSmokeWorkbench = 1;
+			app.iStartupWorkspace = MAPEDIT_WORKSPACE_MAP;
 		} else if ( strcmp(argv[i], "--smoke-custom-default") == 0 ) {
 			app.bSmokeCustomDefault = 1;
 			app.iStartupWorkspace = MAPEDIT_WORKSPACE_MAP;
 		}
 	}
+	if (app.iFrameLimit > 0) {
+		/* Automated runs must not overwrite the user's interactive layout/recovery. */
+		mapedit_path_join(app.sUserDir, sizeof(app.sUserDir), app.sAppDir, "test-user");
+		(void)mapedit_ensure_dir_utf8(app.sUserDir);
+		(void)mapedit_ensure_dir_utf8(app.sAppDir);
+	}
+	if ( !mapedit_prepare_project_dirs(&app) ) {
+		mapedit_startup_log(&app, "project directory unavailable: %s", app.sProjectDir);
+		printf("mapedit_xui2: project directory unavailable: %s\n", app.sProjectDir);
+		mapedit_release_single_instance(&app);
+		return 1;
+	}
+	mapedit_startup_log(&app, "using projectDir=%s", app.sProjectDir);
 	memset(&desc, 0, sizeof(desc));
 	desc.sTitle = "MapEdit";
 	desc.iWidth = MAPEDIT_W;
 	desc.iHeight = MAPEDIT_H;
-	desc.iFlags = XGE_INIT_WINDOW | XGE_INIT_VSYNC;
+	desc.iFlags = XGE_INIT_WINDOW | XGE_INIT_RESIZABLE | XGE_INIT_HIGHDPI |
+		XGE_INIT_VSYNC | XGE_INIT_ON_DEMAND;
 	desc.iRunMode = XGE_RUN_GAME_LOOP;
 	desc.iTargetFPS = 60;
 	mapedit_startup_log(&app, "before xgeInit");
@@ -9285,14 +10084,25 @@ int main(int argc, char** argv)
 	mapedit_load_initial_data(&app);
 	mapedit_startup_log(&app, "after load initial data");
 	if ( app.iLargeMapWidth > 0 && app.iLargeMapHeight > 0 ) mapedit_make_large_map(&app, app.iLargeMapWidth, app.iLargeMapHeight);
+	if ( app.iFrameLimit > 0 ) app.bEditOK = mapedit_run_edit_history_smoke(&app);
 	if ( app.bSmokeCustomDefault ) app.bSmokeCustomDefaultOK = mapedit_run_custom_default_smoke(&app);
 	mapedit_select_workspace(&app, app.iStartupWorkspace);
+	mapedit_recovery_path(&app, recoveryPath, sizeof(recoveryPath));
+	if ( mapedit_file_exists_utf8(recoveryPath) ) {
+		mapedit_status(&app, "检测到自动保存：可从“文件 → 恢复自动保存”载入");
+	}
 	mapedit_startup_log(&app, "before xgeRun");
+	xgeSetQuitRequestCallback(mapedit_native_close, &app);
 	ret = xgeRun(mapedit_frame, &app);
 	mapedit_startup_log(&app, "after xgeRun ret=%d", ret);
+	mapedit_save_layouts(&app);
+	if (app.tMap.bDirty || app.tTileset.bDirty) (void)mapedit_write_recovery_now(&app);
 	mapedit_destroy(&app);
 	xgeUnit();
-	i = (ret == XGE_OK && app.bCreateOK && app.bLayoutOK && app.bDataOK && app.bMapOK && app.bTilesetOK && app.bRenderOK) ? 0 : 1;
+	i = (ret == XGE_OK && app.bCreateOK && app.bLayoutOK && app.bDataOK && app.bMapOK && app.bTilesetOK && app.bRenderOK &&
+		(app.iFrameLimit <= 0 || app.bEditOK) &&
+		(!app.bSmokeCustomDefault || app.bSmokeCustomDefaultOK) &&
+		(!app.bSmokeWorkbench || app.bSmokeWorkbenchOK)) ? 0 : 1;
 	mapedit_release_single_instance(&app);
 	return i;
 }

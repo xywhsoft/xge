@@ -1,4 +1,5 @@
 #include "demo.h"
+#include "shared_assets.h"
 
 void demo_curve(xge_particle_curve_t *c, float from, float to)
 {
@@ -66,63 +67,16 @@ static int demo_trigger(demo_t *d, xge_vec2_t position, int primary)
 	}
 	return result;
 }
-static int demo_textures(demo_t *d)
-{
-	unsigned char pixels[64 * 64 * 4 * 4];
-	int x, y, cell, index, result;
-	for (cell = 0; cell < 4; cell++)
-		for (y = 0; y < 64; y++)
-			for (x = 0; x < 64; x++)
-			{
-				float u = (x - 31.5f) / 31.5f, v = (y - 31.5f) / 31.5f;
-				float warp = 1 + .1f * sinf(9 * u + cell * 2) * sinf(7 * v - cell);
-				float radius = sqrtf(u * u + v * v) * warp, alpha = powf(fmaxf(0, 1 - radius), 2);
-				unsigned char a = (unsigned char)(alpha * 255);
-				index = (y * 256 + cell * 64 + x) * 4;
-				pixels[index] = pixels[index + 1] = pixels[index + 2] = pixels[index + 3] = a;
-			}
-	result = xgeTextureCreateRGBA(&d->sheet, 256, 64, pixels);
-	if (result != XGE_OK)
-		return result;
-	for (y = 0; y < 64; y++)
-		for (x = 0; x < 64; x++)
-		{
-			float u = (x - 31.5f) / 31.5f, v = (y - 31.5f) / 31.5f,
-			      alpha = powf(fmaxf(0, 1 - u * u - v * v), 2);
-			unsigned char a = (unsigned char)(alpha * 255);
-			index = (y * 64 + x) * 4;
-			pixels[index] = pixels[index + 1] = pixels[index + 2] = pixels[index + 3] = a;
-		}
-	return xgeTextureCreateRGBA(&d->soft, 64, 64, pixels);
-}
 static int demo_gpu_init(demo_t *d)
 {
-	int i, result = demo_textures(d);
-	const char *vsBody =
-	    "layout(location=0) in vec4 aPos; layout(location=1) in vec2 aUV; layout(location=2) in vec4 aColor; "
-	    "uniform vec2 uResolution; out vec2 vUV; out vec4 vColor; void main(){vec2 "
-	    "p=aPos.xy/uResolution*2.-1.; gl_Position=vec4(p.x,-p.y,0.,1.);vUV=aUV;vColor=aColor;}";
-	const char *fsBody = "in vec2 vUV; in vec4 vColor; uniform vec4 uColor; uniform float uTime; out vec4 "
-	                     "FragColor; void main(){vec2 p=vUV*2.-1.;float r=length(p),a=atan(p.y,p.x);float "
-	                     "ring=exp(-pow((r-.75)*40.,2.));float inner=exp(-pow((r-.52)*70.,2.));float "
-	                     "marks=pow(max(0.,cos(a*12.+uTime)),20.)*exp(-pow((r-.64)*24.,2.));float "
-	                     "glow=clamp(ring+inner*.5+marks,0.,1.);FragColor=vColor*uColor*glow;}";
+	int i, result = particle_example_textures(&d->soft, &d->sheet);
 	if (result != XGE_OK)
 		return result;
 	if (d->kind == 5)
 	{
-		char header[128], vs[1024], fs[1536];
-		result = xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, header, sizeof(header));
+		result = particle_example_ring(&d->shader, &d->material);
 		if (result != XGE_OK)
 			return result;
-		snprintf(vs, sizeof(vs), "%s%s", header, vsBody);
-		snprintf(fs, sizeof(fs), "%s%s", header, fsBody);
-		result = xgeShaderCreate(&d->shader, vs, fs);
-		if (result != XGE_OK)
-			return result;
-		xgeMaterialInit(&d->material);
-		xgeMaterialSetShader(&d->material, &d->shader);
-		xgeMaterialSetBlend(&d->material, XGE_BLEND_ADD);
 	}
 	for (i = 0; i < d->count; i++)
 	{
@@ -369,6 +323,19 @@ int main(int argc, char **argv)
 	d->density = 1;
 	d->spawning = 1;
 	demo_configure(d);
+	/* Semantic names travel with exported templates and make editor outlines useful. */
+	{
+		static const char *names[7][4] = {{"命中火花", "碰撞余烬", "瞬时闪光", NULL},
+		                                  {"上升烟雾", "火焰", "飘散余烬", NULL},
+		                                  {"爆炸烟团", "火球", "爆闪", "死亡余烬"},
+		                                  {"雨滴", "雪花", "雨滴飞溅", NULL},
+		                                  {"移动尘雾", "碎屑", NULL, NULL},
+		                                  {"环绕粒子", "符文光环", "魔法微光", NULL},
+		                                  {"珊瑚彩纸", "青色彩纸", "金色彩纸", "紫色彩纸"}};
+		for (int i = 0; i < d->count; ++i)
+			if (d->kind >= 0 && d->kind < 7 && i < 4 && names[d->kind][i])
+				snprintf(d->emitters[i].sName, sizeof(d->emitters[i].sName), "%s", names[d->kind][i]);
+	}
 	d->initialOrigin = d->origin;
 	for (i = 1; i < argc; i++)
 	{
