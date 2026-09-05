@@ -1214,14 +1214,12 @@ static int __xuiCascaderDrawClear(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	return pProxy->drawLine(pProxy, pDraw, cx + 4.0f, cy - 4.0f, cx - 4.0f, cy + 4.0f, 1.5f, iColor);
 }
 
-static int __xuiCascaderSyncStyle(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiCascaderSyncStyle(xui_widget pWidget)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
 	xui_cascader_data_t tResolved;
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	int iRet;
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
 	__xuiCascaderResolve(pWidget, pData, &tResolved);
@@ -1261,8 +1259,6 @@ static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	__xuiCascaderResolve(pWidget, pData, &tResolved);
 	__xuiCascaderUpdateOwnerRects(pWidget, pData);
-	iRet = __xuiCascaderSyncStyle(pWidget, 0.0f, NULL);
-	if ( iRet != XUI_OK ) return iRet;
 	state = __xuiCascaderState(pWidget, pData);
 	r = xuiWidgetGetRect(pWidget);
 	r.fX = 0.0f;
@@ -1297,7 +1293,7 @@ static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, 
 		sText = pData->sDisplay;
 	} else {
 		sText = tResolved.sPlaceholder;
-		text = tResolved.iPlaceholderColor;
+		if ( (state & XUI_WIDGET_STATE_DISABLED) == 0u ) text = tResolved.iPlaceholderColor;
 	}
 	if ( pProxy->drawText != NULL ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sText, pData->tTextRect, text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -1691,7 +1687,6 @@ XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiCascaderDestroy;
 	tDesc.onContentMeasure = __xuiCascaderContentMeasure;
 	tDesc.onCacheRender = __xuiCascaderOwnerRender;
-	tDesc.onUpdate = __xuiCascaderSyncStyle;
 	__xuiCascaderDefaultLayout(&tLayout);
 	__xuiCascaderDefaultCachePolicy(&tPolicy);
 	tDesc.tLayout = tLayout;
@@ -1699,6 +1694,7 @@ XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext)
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiCascaderRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiCascaderSyncStyle;
 	return pType;
 }
 

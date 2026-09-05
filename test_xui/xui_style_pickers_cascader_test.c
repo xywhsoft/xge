@@ -59,6 +59,7 @@ int main(void)
     attach(w);
     data = __xuiCascaderGetData(w);
     test_colors(w, data, colors, sizeof(colors) / sizeof(colors[0]), resolved);
+    test_owner_colors(w, data, colors, 15, xuiCascaderOpen, xuiCascaderClose);
     phase = "cascader owner states";
     CHECK(xuiCascaderSetButtonColors(w, 0x912345ffu, 0x923456ffu, 0x934567ffu) == XUI_OK);
     inline_color(w, "cascader.button.color", 0xa12345ffu);
@@ -100,9 +101,27 @@ int main(void)
         CHECK(xuiCascaderIsOpen(w));
         inline_color(w, colors[i].key, 0);
         paint(); CHECK(!has_color(value));
+        inline_color(w, colors[i].key, 0xabcdef00u);
+        prepare_only(); CHECK(!has_color(value) && !has_color(0xabcdefffu));
         CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
         paint(); CHECK(has_color(before));
     }
+    test_live_token(w, "cascader.popup.panel_color", data->iPopupPanelColor);
+    test_prepare_only(w, data->pPanel, "cascader.popup.panel_color", data->iPopupPanelColor);
     CHECK(xuiCascaderGetSelectedPath(w, path, 2) == 2 && path[0] == 1 && path[1] == 11);
+    phase = "disabled placeholder uses disabled text style";
+    CHECK(xuiCascaderClose(w) == XUI_OK);
+    CHECK(xuiCascaderClear(w) == XUI_OK);
+    inline_color(w, "cascader.placeholder.color", 0xe45678ffu);
+    prepare_only(); CHECK(cache_has_color(w, 0xe45678ffu));
+    inline_color(w, "cascader.placeholder.color", 0);
+    prepare_only(); CHECK(!cache_has_color(w, 0xe45678ffu));
+    inline_color(w, "cascader.placeholder.color", 0xabcdef00u);
+    prepare_only(); CHECK(!cache_has_color(w, 0xe45678ffu) && !cache_has_color(w, 0xabcdefffu));
+    CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
+    prepare_only(); CHECK(cache_has_color(w, data->iPlaceholderColor));
+    CHECK(xuiWidgetSetEnabled(w, 0) == XUI_OK);
+    inline_color(w, "cascader.text.disabled_color", 0xe34567ffu);
+    prepare_only(); CHECK(has_color(0xe34567ffu));
     return finish();
 }
