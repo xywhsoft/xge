@@ -4,12 +4,21 @@
 
 #define XUI_TEXT_LAYOUT_MAGIC 0x58554954u
 
+#ifndef XUI_TEXT_TEST_COUNT
+#define XUI_TEXT_TEST_COUNT(field, count) ((void)0)
+#endif
+
 struct xui_text_layout_t {
 	uint32_t iMagic;
 	xui_context pContext;
 	xui_text_layout_desc_t tDesc;
 	xui_font_metrics_t tMetrics;
 	xui_text_shape_t tShape;
+	double* pClusterAdvances;
+	int iTrimStart;
+	int iTrimEnd;
+	int iSkipStart;
+	int iSkipEnd;
 	char* sText;
 	int iTextSize;
 	xui_text_line_t* pLines;
@@ -73,6 +82,10 @@ static int __xuiTextDescValid(const xui_text_layout_desc_t* pDesc)
 static void __xuiTextLayoutClear(xui_text_layout pLayout)
 {
 	xuiTextShapeFree(&pLayout->tShape);
+	xrtFree(pLayout->pClusterAdvances);
+	pLayout->pClusterAdvances = NULL;
+	pLayout->iTrimStart = pLayout->iTrimEnd = 0;
+	pLayout->iSkipStart = pLayout->iSkipEnd = 0;
 	if ( pLayout->sText != NULL ) {
 		xrtFree(pLayout->sText);
 		pLayout->sText = NULL;
@@ -128,6 +141,56 @@ static int __xuiTextScratchReserve(xui_text_layout pLayout, int iCapacity)
 	return XUI_OK;
 }
 
+static int __xuiTextBuildClusterIndex(xui_text_layout pLayout)
+{
+	const xui_text_cluster_t* pClusters = pLayout->tShape.pClusters;
+	int iCount = pLayout->tShape.iClusterCount;
+	int i;
+
+	/* Unordered or non-finite custom shapes retain their legacy scan semantics. */
+	for ( i = 0; i < iCount; i++ ) {
+		XUI_TEXT_TEST_COUNT(iIndexBuildSteps, 1);
+		if ( !__xuiTextFloatValid(pClusters[i].fAdvance) ) return XUI_OK;
+		if ( (i > 0) && ((pClusters[i].iTextStart < pClusters[i - 1].iTextStart) ||
+		     (pClusters[i].iTextEnd < pClusters[i - 1].iTextEnd)) ) return XUI_OK;
+	}
+	if ( iCount <= 0 ) return XUI_OK;
+	if ( (size_t)iCount >= SIZE_MAX / sizeof(*pLayout->pClusterAdvances) ) {
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pLayout->pClusterAdvances = (double*)xrtMalloc(((size_t)iCount + 1u) * sizeof(*pLayout->pClusterAdvances));
+	if ( pLayout->pClusterAdvances == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pLayout->pClusterAdvances[0] = 0.0;
+	for ( i = 0; i < iCount; i++ ) {
+		double fPrefix = pLayout->pClusterAdvances[i];
+		double fAdvance = pClusters[i].fAdvance;
+		double fNext = fPrefix + fAdvance;
+		XUI_TEXT_TEST_COUNT(iIndexBuildSteps, 1);
+		/* Do not let extreme custom advances erase small ranges through cancellation. */
+		if ( (fNext - fPrefix != fAdvance) || (fNext - fAdvance != fPrefix) ) {
+			xrtFree(pLayout->pClusterAdvances);
+			pLayout->pClusterAdvances = NULL;
+			return XUI_OK;
+		}
+		pLayout->pClusterAdvances[i + 1] = fNext;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTextClusterAfter(xui_text_layout pLayout, int iOffset, int bNext)
+{
+	int iLo = 0;
+	int iHi = pLayout->tShape.iClusterCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( bNext ) { XUI_TEXT_TEST_COUNT(iNextProbes, 1); }
+		else { XUI_TEXT_TEST_COUNT(iRangeProbes, 1); }
+		if ( pLayout->tShape.pClusters[iMid].iTextEnd <= iOffset ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	return iLo;
+}
+
 static int __xuiTextMeasureRange(xui_text_layout pLayout, const char* sStart, const char* sEnd, xui_vec2_t* pSize)
 {
 	int iStart;
@@ -141,8 +204,22 @@ static int __xuiTextMeasureRange(xui_text_layout pLayout, const char* sStart, co
 	}
 	iStart = (int)(sStart - pLayout->sText);
 	iEnd = (int)(sEnd - pLayout->sText);
+	if ( pLayout->pClusterAdvances != NULL ) {
+		int iFirst = __xuiTextClusterAfter(pLayout, iStart, 0);
+		int iLo = iFirst;
+		int iHi = pLayout->tShape.iClusterCount;
+		while ( iLo < iHi ) {
+			int iMid = iLo + (iHi - iLo) / 2;
+			XUI_TEXT_TEST_COUNT(iRangeProbes, 1);
+			if ( pLayout->tShape.pClusters[iMid].iTextStart < iEnd ) iLo = iMid + 1;
+			else iHi = iMid;
+		}
+		pSize->fX = (float)(pLayout->pClusterAdvances[iLo] - pLayout->pClusterAdvances[iFirst]);
+		return XUI_OK;
+	}
 	for ( i = 0; i < pLayout->tShape.iClusterCount; i++ ) {
 		xui_text_cluster_t* pCluster = &pLayout->tShape.pClusters[i];
+		XUI_TEXT_TEST_COUNT(iRangeProbes, 1);
 		if ( pCluster->iTextEnd <= iStart ) continue;
 		if ( pCluster->iTextStart >= iEnd ) break;
 		pSize->fX += pCluster->fAdvance;
@@ -155,8 +232,19 @@ static const char* __xuiTextNextCluster(xui_text_layout pLayout, const char* sAt
 	int iOffset = (int)(sAt - pLayout->sText);
 	int iLimit = (int)(sEnd - pLayout->sText);
 	int i;
+	if ( pLayout->pClusterAdvances != NULL ) {
+		i = __xuiTextClusterAfter(pLayout, iOffset, 1);
+		if ( i < pLayout->tShape.iClusterCount ) {
+			const xui_text_cluster_t* pCluster = &pLayout->tShape.pClusters[i];
+			if ( pCluster->iTextStart < iLimit ) {
+				return pLayout->sText + (pCluster->iTextEnd < iLimit ? pCluster->iTextEnd : iLimit);
+			}
+		}
+		return sAt < sEnd ? sAt + 1 : sEnd;
+	}
 	for ( i = 0; i < pLayout->tShape.iClusterCount; i++ ) {
 		xui_text_cluster_t* pCluster = &pLayout->tShape.pClusters[i];
+		XUI_TEXT_TEST_COUNT(iNextProbes, 1);
 		if ( pCluster->iTextEnd <= iOffset ) continue;
 		if ( pCluster->iTextStart >= iLimit ) break;
 		return pLayout->sText + (pCluster->iTextEnd < iLimit ? pCluster->iTextEnd : iLimit);
@@ -186,24 +274,48 @@ static int __xuiTextAsciiSpaceAt(const char* sAt, const char* sEnd)
 	return (*sAt == ' ') || (*sAt == '\t');
 }
 
-static const char* __xuiTextTrimEndSpaces(const char* sBegin, const char* sEnd)
+static const char* __xuiTextTrimEndSpaces(xui_text_layout pLayout, const char* sBegin, const char* sEnd)
 {
 	const char* sPrev;
+	const char* sOriginalEnd = sEnd;
 
 	while ( sEnd > sBegin ) {
+		XUI_TEXT_TEST_COUNT(iWhitespaceVisits, 1);
+		if ( (sBegin <= pLayout->sText + pLayout->iTrimStart) &&
+		     (sEnd > pLayout->sText + pLayout->iTrimStart) &&
+		     (sEnd <= pLayout->sText + pLayout->iTrimEnd) ) {
+			sEnd = pLayout->sText + pLayout->iTrimStart;
+			continue;
+		}
 		sPrev = __xuiTextPrevUtf8(sBegin, sEnd);
 		if ( !__xuiTextAsciiSpaceAt(sPrev, sEnd) ) {
 			break;
 		}
 		sEnd = sPrev;
 	}
+	if ( sEnd < sOriginalEnd ) {
+		pLayout->iTrimStart = (int)(sEnd - pLayout->sText);
+		pLayout->iTrimEnd = (int)(sOriginalEnd - pLayout->sText);
+	}
 	return sEnd;
 }
 
-static const char* __xuiTextSkipSpaces(const char* sAt, const char* sEnd)
+static const char* __xuiTextSkipSpaces(xui_text_layout pLayout, const char* sAt, const char* sEnd)
 {
+	const char* sStart = sAt;
 	while ( (sAt < sEnd) && __xuiTextAsciiSpaceAt(sAt, sEnd) ) {
+		XUI_TEXT_TEST_COUNT(iWhitespaceVisits, 1);
+		if ( (sAt >= pLayout->sText + pLayout->iSkipStart) &&
+		     (sAt < pLayout->sText + pLayout->iSkipEnd) ) {
+			const char* sCachedEnd = pLayout->sText + pLayout->iSkipEnd;
+			sAt = sCachedEnd < sEnd ? sCachedEnd : sEnd;
+			continue;
+		}
 		sAt++;
+	}
+	if ( sAt > sStart ) {
+		pLayout->iSkipStart = (int)(sStart - pLayout->sText);
+		pLayout->iSkipEnd = (int)(sAt - pLayout->sText);
 	}
 	return sAt;
 }
@@ -274,7 +386,7 @@ static int __xuiTextAddLine(xui_text_layout pLayout, const char* sStart, const c
 
 static int __xuiTextLayoutNoWrapParagraph(xui_text_layout pLayout, const char* sStart, const char* sEnd, int iBreakType)
 {
-	return __xuiTextAddLine(pLayout, sStart, __xuiTextTrimEndSpaces(sStart, sEnd), iBreakType);
+	return __xuiTextAddLine(pLayout, sStart, __xuiTextTrimEndSpaces(pLayout, sStart, sEnd), iBreakType);
 }
 
 static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* sStart, const char* sEnd, int iBreakType)
@@ -299,9 +411,10 @@ static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* 
 	sLastBreakEnd = NULL;
 	sLastBreakNext = NULL;
 	while ( sScan < sEnd ) {
+		XUI_TEXT_TEST_COUNT(iWrapSteps, 1);
 		sNext = __xuiTextNextCluster(pLayout, sScan, sEnd);
 		if ( sNext <= sScan ) break;
-		sMeasureEnd = __xuiTextTrimEndSpaces(sLineStart, sNext);
+		sMeasureEnd = __xuiTextTrimEndSpaces(pLayout, sLineStart, sNext);
 		iRet = __xuiTextMeasureRange(pLayout, sLineStart, sMeasureEnd, &tMeasure);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -316,7 +429,7 @@ static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* 
 				}
 				sLineStart = sLastBreakNext;
 			} else {
-				iRet = __xuiTextAddLine(pLayout, sLineStart, __xuiTextTrimEndSpaces(sLineStart, sScan), XUI_TEXT_BREAK_WRAP);
+				iRet = __xuiTextAddLine(pLayout, sLineStart, __xuiTextTrimEndSpaces(pLayout, sLineStart, sScan), XUI_TEXT_BREAK_WRAP);
 				if ( iRet != XUI_OK ) {
 					return iRet;
 				}
@@ -345,13 +458,13 @@ static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* 
 			continue;
 		}
 		if ( __xuiTextAsciiSpaceAt(sScan, sEnd) ) {
-			sLastBreakEnd = __xuiTextTrimEndSpaces(sLineStart, sScan);
-			sLastBreakNext = __xuiTextSkipSpaces(sNext, sEnd);
+			sLastBreakEnd = __xuiTextTrimEndSpaces(pLayout, sLineStart, sScan);
+			sLastBreakNext = __xuiTextSkipSpaces(pLayout, sNext, sEnd);
 		}
 		sScan = sNext;
 	}
 	if ( !pLayout->bTruncated && (sLineStart <= sEnd) ) {
-		return __xuiTextAddLine(pLayout, sLineStart, __xuiTextTrimEndSpaces(sLineStart, sEnd), iBreakType);
+		return __xuiTextAddLine(pLayout, sLineStart, __xuiTextTrimEndSpaces(pLayout, sLineStart, sEnd), iBreakType);
 	}
 	return XUI_OK;
 }
@@ -390,6 +503,8 @@ static int __xuiTextLayoutBuild(xui_text_layout pLayout)
 	int iRet;
 	int iBreakType;
 
+	iRet = __xuiTextBuildClusterIndex(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
 	sScan = pLayout->sText;
 	sEnd = pLayout->sText + pLayout->iTextSize;
 	while ( sScan < sEnd ) {
