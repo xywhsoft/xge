@@ -275,11 +275,58 @@ static int msgtip_colors(void)
 	return 0;
 }
 
+static int toast_colors(void)
+{
+	fixture_t f;
+	xui_toast toast;
+	xui_widget first, second;
+	xui_toast_colors_t base, after;
+	xui_style_property_t p[4];
+	xui_style_desc_t s;
+	CHECK(init(&f) == 0);
+	OK(xuiToastCreate(f.context, &toast, NULL));
+	OK(xuiToastGetColors(toast, &base));
+	base.iBackgroundColor = 0x375643ff;
+	OK(xuiToastSetColors(toast, &base));
+	CHECK(xuiToastShow(toast, XUI_TOAST_TYPE_INFO, "First", "First message", 100, NULL, NULL) > 0);
+	CHECK(xuiToastShow(toast, XUI_TOAST_TYPE_INFO, "Second", "Second message", 100, NULL, NULL) > 0);
+	first = xuiToastGetItemWidget(toast, 0);
+	second = xuiToastGetItemWidget(toast, 1);
+	CHECK(render(&f) == 0 && fill(first, base.iBackgroundColor) > 0);
+	p[0] = color("toast.background.color", 0x876534ff);
+	p[1] = color("toast.text.muted_color", 0x967831ff);
+	p[2] = color("toast.info.color", 0x965427ff);
+	p[3] = color("toast.close.color", 0x763237ff);
+	s = style(p, 4);
+	OK(xuiStyleSetType(f.context, xuiWidgetFindType(f.context, "toast-item"), &s));
+	CHECK(paint_only(first) == 0);
+	CHECK(render(&f) == 0 && fill(first, p[0].tValue.iColor) > 0 && fill(second, p[0].tValue.iColor) > 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(first)) == p[1].tValue.iColor);
+	CHECK(fill(first, p[2].tValue.iColor) > 0 && fill(first, 0x96542720) > 0 && fill(first, 0x96542760) > 0);
+	p[0] = color("toast.background.color", 0);
+	p[1] = color("toast.text.muted_color", 0);
+	p[2] = color("toast.info.color", 0);
+	OK(xuiWidgetSetInlineStyle(first, p, 3));
+	CHECK(render(&f) == 0 && fill(first, 0x876534ff) == 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(first)) == 0);
+	CHECK(fill(first, 0x00000020) == 0 && fill(first, 0x00000060) == 0);
+	OK(xuiToastGetColors(toast, &after));
+	CHECK(memcmp(&base, &after, sizeof(base)) == 0);
+	OK(xuiWidgetSetInlineStyle(first, NULL, 0));
+	OK(xuiStyleRemoveType(f.context, xuiWidgetFindType(f.context, "toast-item")));
+	CHECK(render(&f) == 0 && fill(first, base.iBackgroundColor) > 0 && fill(second, base.iBackgroundColor) > 0);
+	xuiToastDestroy(toast);
+	finish(&f);
+	puts("PASS toast per-item rendered palettes, accents and alpha-derived fills, type/inline/clear, service base preservation");
+	return 0;
+}
+
 int main(void)
 {
 	CHECK(popup_colors() == 0);
 	CHECK(menu_colors() == 0);
 	CHECK(msgtip_colors() == 0);
+	CHECK(toast_colors() == 0);
 	puts("PASS style_overlays");
 	return 0;
 }

@@ -60,6 +60,62 @@ static int __xuiToastValid(xui_toast pToast)
 	return (pToast != NULL) && (pToast->iMagic == XUI_TOAST_MAGIC);
 }
 
+static uint32_t __xuiToastStyleColor(xui_widget pWidget, const char* sName, uint32_t iBase)
+{
+	xui_style_property_t tProperty;
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty) == XUI_OK &&
+		tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) return tProperty.tValue.iColor;
+	return iBase;
+}
+
+static void __xuiToastResolveColors(xui_widget pWidget, xui_toast pToast, xui_toast_colors_t* pColors)
+{
+	*pColors = pToast->tColors;
+	pColors->iBackgroundColor = __xuiToastStyleColor(pWidget, "toast.background.color", pColors->iBackgroundColor);
+	pColors->iBorderColor = __xuiToastStyleColor(pWidget, "toast.border.color", pColors->iBorderColor);
+	pColors->iTextColor = __xuiToastStyleColor(pWidget, "toast.text.color", pColors->iTextColor);
+	pColors->iMutedTextColor = __xuiToastStyleColor(pWidget, "toast.text.muted_color", pColors->iMutedTextColor);
+	pColors->iShadowColor = __xuiToastStyleColor(pWidget, "toast.shadow.color", pColors->iShadowColor);
+	pColors->iInfoColor = __xuiToastStyleColor(pWidget, "toast.info.color", pColors->iInfoColor);
+	pColors->iSuccessColor = __xuiToastStyleColor(pWidget, "toast.success.color", pColors->iSuccessColor);
+	pColors->iWarningColor = __xuiToastStyleColor(pWidget, "toast.warning.color", pColors->iWarningColor);
+	pColors->iErrorColor = __xuiToastStyleColor(pWidget, "toast.error.color", pColors->iErrorColor);
+	pColors->iCloseColor = __xuiToastStyleColor(pWidget, "toast.close.color", pColors->iCloseColor);
+	pColors->iCloseHoverColor = __xuiToastStyleColor(pWidget, "toast.close.hover_color", pColors->iCloseHoverColor);
+}
+
+static void __xuiToastRegisterColors(xui_context pContext, xui_widget_type pType)
+{
+	static const char* arrNames[] = {
+		"toast.background.color",
+		"toast.border.color",
+		"toast.text.color",
+		"toast.text.muted_color",
+		"toast.shadow.color",
+		"toast.info.color",
+		"toast.success.color",
+		"toast.warning.color",
+		"toast.error.color",
+		"toast.close.color",
+		"toast.close.hover_color",
+		"toast.icon.background.color",
+		"toast.progress.color"
+	};
+	xui_style_property_info_t tInfo;
+	size_t i;
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.pWidgetType = pType;
+	tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+	tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); ++i ) {
+		tInfo.sName = arrNames[i];
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+}
+
 static float __xuiToastMin(float fA, float fB)
 {
 	return (fA < fB) ? fA : fB;
@@ -85,7 +141,7 @@ static int __xuiToastFloatValid(float fValue)
 
 static uint32_t __xuiToastColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
-	return (iColor & 0xFFFFFF00u) | (iAlpha & 0xFFu);
+	return (iColor & 0xFFFFFF00u) | (((iColor & 0xFFu) * (iAlpha & 0xFFu) + 127u) / 255u);
 }
 
 static uint32_t __xuiToastAlpha(uint32_t iColor)
@@ -247,19 +303,19 @@ static xui_font __xuiToastFont(xui_toast pToast)
 	return (pToast->pFont != NULL) ? pToast->pFont : xuiGetDefaultFont(pToast->pContext);
 }
 
-static uint32_t __xuiToastTypeColor(xui_toast pToast, int iType)
+static uint32_t __xuiToastTypeColor(const xui_toast_colors_t* pColors, int iType)
 {
-	if ( !__xuiToastValid(pToast) ) return 0;
+	if ( pColors == NULL ) return 0;
 	switch ( iType ) {
 	case XUI_TOAST_TYPE_SUCCESS:
-		return pToast->tColors.iSuccessColor;
+		return pColors->iSuccessColor;
 	case XUI_TOAST_TYPE_WARNING:
-		return pToast->tColors.iWarningColor;
+		return pColors->iWarningColor;
 	case XUI_TOAST_TYPE_ERROR:
-		return pToast->tColors.iErrorColor;
+		return pColors->iErrorColor;
 	case XUI_TOAST_TYPE_INFO:
 	default:
-		return pToast->tColors.iInfoColor;
+		return pColors->iInfoColor;
 	}
 }
 
@@ -828,6 +884,7 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 {
 	xui_toast_item_view_t* pView;
 	xui_toast pToast;
+	xui_toast_colors_t tColors;
 	xui_toast_item_t* pItem;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
@@ -854,16 +911,19 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 		return XUI_OK;
 	}
 	tRect = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, pItem->tRect.fW, pItem->tRect.fH});
-	iTypeColor = __xuiToastTypeColor(pToast, pItem->iType);
-	if ( (__xuiToastAlpha(pToast->tColors.iShadowColor) != 0) && (pProxy->drawRectFill != NULL) ) {
-		tShadow = xuiInternalSnapRect((xui_rect_t){0.0f, 2.0f, tRect.fW, tRect.fH});
-		(void)pProxy->drawRectFill(pProxy, pDraw, tShadow, pToast->tColors.iShadowColor);
+	__xuiToastResolveColors(pWidget, pToast, &tColors);
+	iTypeColor = __xuiToastTypeColor(&tColors, pItem->iType);
+	if ( (__xuiToastAlpha(tColors.iShadowColor) != 0) && (pProxy->drawRectFill != NULL) ) {
+		tShadow = tRect;
+		(void)pProxy->drawRectFill(pProxy, pDraw, tShadow, tColors.iShadowColor);
+		tRect.fW = __xuiToastMax(1.0f, tRect.fW - 2.0f);
+		tRect.fH = __xuiToastMax(1.0f, tRect.fH - 2.0f);
 	}
 	if ( pProxy->drawRectFill != NULL ) {
-		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, pToast->tColors.iBackgroundColor);
+		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, tColors.iBackgroundColor);
 	}
-	if ( (__xuiToastAlpha(pToast->tColors.iBorderColor) != 0) && (pProxy->drawRectStroke != NULL) ) {
-		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pToast->tColors.iBorderColor);
+	if ( (__xuiToastAlpha(tColors.iBorderColor) != 0) && (pProxy->drawRectStroke != NULL) ) {
+		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, tColors.iBorderColor);
 	}
 	if ( pProxy->drawRectFill != NULL ) {
 		tBand = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, 4.0f, tRect.fH});
@@ -871,7 +931,7 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 	}
 	tIconBg = xuiInternalSnapRect(pItem->tIconRect);
 	if ( pProxy->drawRectFill != NULL ) {
-		(void)pProxy->drawRectFill(pProxy, pDraw, tIconBg, __xuiToastColorWithAlpha(iTypeColor, 32));
+		(void)pProxy->drawRectFill(pProxy, pDraw, tIconBg, __xuiToastStyleColor(pWidget, "toast.icon.background.color", __xuiToastColorWithAlpha(iTypeColor, 32)));
 	}
 	fIconInset = __xuiToastClamp(pToast->tMetrics.fIconSize * 0.1f, 2.0f, 3.0f);
 	tIcon = xuiInternalInsetRect(pItem->tIconRect, fIconInset);
@@ -883,12 +943,12 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 	if ( (pProxy->drawText != NULL) && (__xuiToastFont(pToast) != NULL) ) {
 		if ( (pItem->sTitle != NULL) && (pItem->sTitle[0] != 0) ) {
 			(void)__xuiToastDrawTextLayout(pToast, pDraw, pItem->sTitle, pItem->tTitleRect,
-				pToast->tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		(void)__xuiToastDrawTextLayout(pToast, pDraw, pItem->sMessage, pItem->tMessageRect,
-			pToast->tColors.iMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+			tColors.iMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	}
-	iCloseColor = (pView->iSlot == pToast->iHoverClose) ? pToast->tColors.iCloseHoverColor : pToast->tColors.iCloseColor;
+	iCloseColor = (pView->iSlot == pToast->iHoverClose) ? tColors.iCloseHoverColor : tColors.iCloseColor;
 	tClose = xuiInternalInsetRect(pItem->tCloseRect, (pItem->tCloseRect.fW - 10.0f) * 0.5f);
 	if ( __xuiToastDrawAtlas(pToast, pDraw, "clear_10", tClose, iCloseColor) != XUI_OK && pProxy->drawLine != NULL ) {
 		(void)pProxy->drawLine(pProxy, pDraw, tClose.fX, tClose.fY, tClose.fX + tClose.fW, tClose.fY + tClose.fH, 1.0f, iCloseColor);
@@ -899,7 +959,7 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 		if ( fProgress < 0.0f ) fProgress = 0.0f;
 		if ( fProgress > 1.0f ) fProgress = 1.0f;
 		tProgress = xuiInternalSnapRect((xui_rect_t){4.0f, tRect.fH - pToast->tMetrics.fProgressHeight, (tRect.fW - 4.0f) * fProgress, pToast->tMetrics.fProgressHeight});
-		(void)pProxy->drawRectFill(pProxy, pDraw, tProgress, __xuiToastColorWithAlpha(iTypeColor, 96));
+		(void)pProxy->drawRectFill(pProxy, pDraw, tProgress, __xuiToastStyleColor(pWidget, "toast.progress.color", __xuiToastColorWithAlpha(iTypeColor, 96)));
 	}
 	(void)pWidget;
 	return XUI_OK;
@@ -1047,6 +1107,7 @@ static xui_widget_type __xuiToastEnsureType(xui_context pContext)
 	tDesc.onCacheRender = __xuiToastRender;
 	tDesc.onUpdate = __xuiToastUpdate;
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
+	if ( iRet == XUI_OK ) __xuiToastRegisterColors(pContext, pType);
 	if ( iRet == XUI_ERROR_ALREADY_INITIALIZED ) {
 		return xuiWidgetFindType(pContext, "toast-item");
 	}
