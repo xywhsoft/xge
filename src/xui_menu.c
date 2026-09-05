@@ -35,6 +35,60 @@ static int __xuiMenuApplyPopupSize(xui_widget pWidget, xui_menu_data_t* pData);
 static int __xuiMenuCloseSubmenu(xui_widget pWidget, xui_menu_data_t* pData);
 static int __xuiMenuUpdate(xui_widget pWidget, float fDelta, void* pUser);
 
+static const struct {
+	const char* sName;
+	size_t iOffset;
+} g_xuiMenuColorProperties[] = {
+	{"menu.panel.color", offsetof(xui_menu_colors_t, iPanelColor)},
+	{"menu.border.color", offsetof(xui_menu_colors_t, iBorderColor)},
+	{"menu.shadow.color", offsetof(xui_menu_colors_t, iShadowColor)},
+	{"menu.item.hover_color", offsetof(xui_menu_colors_t, iHoverColor)},
+	{"menu.text.color", offsetof(xui_menu_colors_t, iTextColor)},
+	{"menu.text.hover_color", offsetof(xui_menu_colors_t, iHoverTextColor)},
+	{"menu.text.disabled_color", offsetof(xui_menu_colors_t, iDisabledTextColor)},
+	{"menu.shortcut.color", offsetof(xui_menu_colors_t, iShortcutColor)},
+	{"menu.text.danger_color", offsetof(xui_menu_colors_t, iDangerTextColor)},
+	{"menu.mark.color", offsetof(xui_menu_colors_t, iMarkColor)},
+	{"menu.separator.color", offsetof(xui_menu_colors_t, iSeparatorColor)},
+	{"menu.focus.color", offsetof(xui_menu_colors_t, iFocusColor)}
+};
+
+static void __xuiMenuResolveColors(xui_widget pWidget, const xui_menu_data_t* pData, xui_menu_colors_t* pColors)
+{
+	xui_style_property_t tProperty;
+	size_t i;
+	*pColors = pData->tColors;
+	for ( i = 0; i < sizeof(g_xuiMenuColorProperties) / sizeof(g_xuiMenuColorProperties[0]); ++i ) {
+		memset(&tProperty, 0, sizeof(tProperty));
+		tProperty.iSize = sizeof(tProperty);
+		if ( xuiWidgetGetResolvedStyleProperty(pWidget, g_xuiMenuColorProperties[i].sName, &tProperty) == XUI_OK &&
+			tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR )
+			*(uint32_t*)((char*)pColors + g_xuiMenuColorProperties[i].iOffset) = tProperty.tValue.iColor;
+	}
+}
+
+static void __xuiMenuRegisterColors(xui_context pContext, xui_widget_type pType)
+{
+	xui_style_property_info_t tInfo;
+	size_t i;
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.pWidgetType = pType;
+	tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+	tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	for ( i = 0; i < sizeof(g_xuiMenuColorProperties) / sizeof(g_xuiMenuColorProperties[0]); ++i ) {
+		tInfo.sName = g_xuiMenuColorProperties[i].sName;
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+}
+
+static void __xuiMenuApplyPopupColors(xui_menu_data_t* pData, const xui_menu_colors_t* pColors)
+{
+	if ( pData->pPopup != NULL )
+		(void)xuiPopupSetColors(pData->pPopup, pColors->iPanelColor, pColors->iBorderColor,
+			pColors->iShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
+}
+
 static int __xuiMenuAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
@@ -429,6 +483,7 @@ static int __xuiMenuDrawArrow(xui_proxy pProxy, xui_draw_context pDraw, xui_rect
 static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_menu_data_t* pData;
+	xui_menu_colors_t tColors;
 	xui_proxy pProxy;
 	xui_font pFont;
 	xui_rect_t tRect;
@@ -459,26 +514,29 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	iRet = __xuiMenuMeasureData(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pFont = __xuiMenuResolveFont(pWidget, pData);
+	__xuiMenuResolveColors(pWidget, pData, &tColors);
+	/* Menu caches prepare before their popup panel, including while already open. */
+	__xuiMenuApplyPopupColors(pData, &tColors);
 	tRect = (xui_rect_t){0.0f, 0.0f, pData->fContentW, pData->fContentH};
-	iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tRect, pData->tColors.iPanelColor);
+	iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tRect, tColors.iPanelColor);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		tItem = pData->arrItemRect[i];
 		if ( pData->arrItems[i].iType == XUI_MENU_ITEM_SEPARATOR ) {
-			if ( (pProxy->drawLine != NULL) && (__xuiMenuAlpha(pData->tColors.iSeparatorColor) != 0) ) {
+			if ( (pProxy->drawLine != NULL) && (__xuiMenuAlpha(tColors.iSeparatorColor) != 0) ) {
 				iRet = pProxy->drawLine(pProxy, pDraw,
 					tItem.fX + pData->tMetrics.fMarkWidth + 4.0f,
 					tItem.fY + tItem.fH * 0.5f,
 					tItem.fX + tItem.fW - 6.0f,
 					tItem.fY + tItem.fH * 0.5f,
 					1.0f,
-					pData->tColors.iSeparatorColor);
+					tColors.iSeparatorColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			continue;
 		}
 		if ( i == pData->iHover ) {
-			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tItem, pData->tColors.iHoverColor);
+			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tItem, tColors.iHoverColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		tMark = (xui_rect_t){
@@ -487,25 +545,25 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			15.0f,
 			15.0f
 		};
-		iTextColor = pData->tColors.iTextColor;
-		iShortcutColor = pData->tColors.iShortcutColor;
+		iTextColor = tColors.iTextColor;
+		iShortcutColor = tColors.iShortcutColor;
 		if ( i == pData->iHover ) {
-			iTextColor = pData->tColors.iHoverTextColor;
-			iShortcutColor = pData->tColors.iHoverTextColor;
+			iTextColor = tColors.iHoverTextColor;
+			iShortcutColor = tColors.iHoverTextColor;
 		}
 		if ( !__xuiMenuItemEnabled(&pData->arrItems[i]) ) {
-			iTextColor = pData->tColors.iDisabledTextColor;
-			iShortcutColor = pData->tColors.iDisabledTextColor;
+			iTextColor = tColors.iDisabledTextColor;
+			iShortcutColor = tColors.iDisabledTextColor;
 		} else if ( (pData->arrItems[i].iState & XUI_MENU_ITEM_DANGER) != 0u && i != pData->iHover ) {
-			iTextColor = pData->tColors.iDangerTextColor;
+			iTextColor = tColors.iDangerTextColor;
 		}
 		if ( ((pData->arrItems[i].iType == XUI_MENU_ITEM_CHECK) ||
 		      (pData->arrItems[i].iType == XUI_MENU_ITEM_RADIO)) &&
 		     ((pData->arrItems[i].iState & XUI_MENU_ITEM_CHECKED) != 0u) ) {
 			if ( pData->arrItems[i].iType == XUI_MENU_ITEM_RADIO ) {
-				iRet = __xuiMenuDrawRadio(pProxy, pDraw, tMark, (i == pData->iHover) ? pData->tColors.iHoverTextColor : pData->tColors.iMarkColor);
+				iRet = __xuiMenuDrawRadio(pProxy, pDraw, tMark, (i == pData->iHover) ? tColors.iHoverTextColor : tColors.iMarkColor);
 			} else {
-				iRet = __xuiMenuDrawCheck(pProxy, pDraw, tMark, (i == pData->iHover) ? pData->tColors.iHoverTextColor : pData->tColors.iMarkColor);
+				iRet = __xuiMenuDrawCheck(pProxy, pDraw, tMark, (i == pData->iHover) ? tColors.iHoverTextColor : tColors.iMarkColor);
 			}
 			if ( iRet != XUI_OK ) return iRet;
 		}
@@ -516,7 +574,7 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 				6.0f,
 				6.0f
 			};
-			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tIcon, (i == pData->iHover) ? pData->tColors.iHoverTextColor : pData->tColors.iMarkColor);
+			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tIcon, (i == pData->iHover) ? tColors.iHoverTextColor : tColors.iMarkColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		fTextX = tItem.fX + pData->tMetrics.fMarkWidth + pData->tMetrics.fIconWidth + 4.0f;
@@ -556,6 +614,8 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
+	if ( (xuiWidgetGetInputState(pWidget) & XUI_WIDGET_STATE_FOCUS) != 0u )
+		return __xuiMenuDrawRectStroke(pProxy, pDraw, tRect, 1.0f, tColors.iFocusColor);
 	return XUI_OK;
 }
 
@@ -1185,6 +1245,7 @@ static int __xuiMenuCreatePopup(xui_widget pWidget, xui_menu_data_t* pData, cons
 static int __xuiMenuApplyPopupSize(xui_widget pWidget, xui_menu_data_t* pData)
 {
 	int iRet;
+	xui_menu_colors_t tColors;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1197,7 +1258,8 @@ static int __xuiMenuApplyPopupSize(xui_widget pWidget, xui_menu_data_t* pData)
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = xuiPopupSetMaxSize(pData->pPopup, 0.0f, pData->tMetrics.fMaxHeight);
 		if ( iRet != XUI_OK ) return iRet;
-		(void)xuiPopupSetColors(pData->pPopup, pData->tColors.iPanelColor, pData->tColors.iBorderColor, pData->tColors.iShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
+		__xuiMenuResolveColors(pWidget, pData, &tColors);
+		__xuiMenuApplyPopupColors(pData, &tColors);
 		if ( xuiPopupIsOpen(pData->pPopup) ) {
 			(void)xuiPopupApplyPlacement(pData->pPopup);
 		}
@@ -1237,6 +1299,7 @@ XUI_API xui_widget_type xuiMenuGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) {
 		return NULL;
 	}
+	__xuiMenuRegisterColors(pContext, pType);
 	return pType;
 }
 
@@ -1453,10 +1516,13 @@ XUI_API int xuiMenuGetMetrics(xui_widget pWidget, xui_menu_metrics_t* pMetrics)
 XUI_API int xuiMenuSetColors(xui_widget pWidget, const xui_menu_colors_t* pColors)
 {
 	xui_menu_data_t* pData = __xuiMenuGetData(pWidget);
+	xui_menu_colors_t tColors;
 	if ( (pData == NULL) || !__xuiMenuColorsValid(pColors) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->tColors = *pColors;
 	pData->tColors.iSize = sizeof(pData->tColors);
-	return __xuiMenuApplyPopupSize(pWidget, pData);
+	__xuiMenuResolveColors(pWidget, pData, &tColors);
+	__xuiMenuApplyPopupColors(pData, &tColors);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiMenuGetColors(xui_widget pWidget, xui_menu_colors_t* pColors)

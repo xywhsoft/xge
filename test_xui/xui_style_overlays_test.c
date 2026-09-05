@@ -11,6 +11,7 @@ typedef struct fixture_t {
 	xui_context context;
 	xui_widget root;
 	xui_surface target;
+	xui_font font;
 	xui_test_proxy_state_t proxy;
 } fixture_t;
 
@@ -20,6 +21,8 @@ static int init(fixture_t* f)
 	xuiTestProxyInit(&f->proxy);
 	OK(xuiCreate(&f->context));
 	OK(xuiSetProxy(f->context, &f->proxy.tProxy));
+	OK(f->proxy.tProxy.fontLoadMemory(&f->proxy.tProxy, &f->font, "body", 4, 14.0f, XUI_FONT_FORMAT_TTF));
+	OK(xuiSetDefaultFont(f->context, f->font));
 	OK(xuiInputViewport(f->context, 800.0f, 600.0f));
 	OK(xuiWidgetCreate(f->context, &f->root));
 	OK(xuiWidgetSetRect(f->root, (xui_rect_t){0, 0, 800, 600}));
@@ -32,6 +35,7 @@ static void finish(fixture_t* f)
 {
 	f->proxy.tProxy.surfaceDestroy(&f->proxy.tProxy, f->target);
 	xuiDestroy(f->context);
+	f->proxy.tProxy.fontDestroy(&f->proxy.tProxy, f->font);
 }
 
 static void reset_draws(xui_widget widget)
@@ -158,9 +162,68 @@ static int popup_colors(void)
 	return 0;
 }
 
+static int menu_colors(void)
+{
+	fixture_t f;
+	xui_widget menu, panel;
+	xui_menu_item_t item;
+	xui_menu_colors_t base, after;
+	xui_style_property_t p[5];
+	xui_style_desc_t s;
+	xui_rect_i_t full = {0, 0, 800, 600};
+	CHECK(init(&f) == 0);
+	OK(xuiMenuCreate(f.context, &menu, NULL));
+	OK(xuiMenuGetColors(menu, &base));
+	base.iPanelColor = 0x123456ff;
+	base.iHoverColor = 0x345678ff;
+	base.iTextColor = 0x456789ff;
+	OK(xuiMenuSetColors(menu, &base));
+	memset(&item, 0, sizeof(item));
+	item.iType = XUI_MENU_ITEM_NORMAL;
+	item.iState = XUI_MENU_ITEM_ENABLED;
+	item.sText = "Open";
+	OK(xuiMenuAddItem(menu, &item));
+	OK(xuiMenuOpenAt(menu, NULL, 30, 30));
+	panel = xuiPopupGetPanelWidget(xuiMenuGetPopupWidget(menu));
+	CHECK(render(&f) == 0 && fill(panel, base.iPanelColor) > 0 && fill(menu, base.iPanelColor) > 0);
+	p[0] = color("menu.panel.color", 0x817263ff);
+	p[1] = color("menu.border.color", 0x786543ff);
+	p[2] = color("menu.item.hover_color", 0x681723ff);
+	p[3] = color("menu.text.hover_color", 0x879867ff);
+	p[4] = color("menu.focus.color", 0x787858ff);
+	s = style(p, 5);
+	OK(xuiStyleSetClass(f.context, "overlay.menu", &s));
+	OK(xuiWidgetAddStyleClass(menu, "overlay.menu"));
+	CHECK(paint_only(menu) == 0);
+	reset_draws(f.context->pOverlayRoot);
+	OK(xuiRender(f.context, f.target, &full, 1));
+	CHECK(fill(menu, p[0].tValue.iColor) > 0 && fill(panel, p[0].tValue.iColor) > 0);
+	CHECK(fill(panel, p[1].tValue.iColor) > 0 && fill(menu, p[2].tValue.iColor) > 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(menu)) == p[3].tValue.iColor);
+	CHECK(fill(menu, p[4].tValue.iColor) > 0);
+	OK(xuiMenuGetColors(menu, &after));
+	CHECK(memcmp(&after, &base, sizeof(base)) == 0);
+	base.iPanelColor = 0x342198ff;
+	OK(xuiMenuSetColors(menu, &base));
+	CHECK(paint_only(menu) == 0);
+	CHECK(render(&f) == 0 && fill(menu, p[0].tValue.iColor) > 0);
+	p[0] = color("menu.panel.color", 0);
+	p[1] = color("menu.border.color", 0);
+	p[2] = color("menu.shadow.color", 0);
+	OK(xuiWidgetSetInlineStyle(menu, p, 3));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetRectFillCount(cache(panel)) == 0);
+	OK(xuiWidgetSetInlineStyle(menu, NULL, 0));
+	OK(xuiWidgetRemoveStyleClass(menu, "overlay.menu"));
+	CHECK(render(&f) == 0 && fill(menu, base.iPanelColor) > 0 && fill(panel, base.iPanelColor) > 0);
+	finish(&f);
+	puts("PASS menu rendered text/hover/focus/chrome, open popup render-only refresh, class/inline/clear, API palette preservation");
+	return 0;
+}
+
 int main(void)
 {
 	CHECK(popup_colors() == 0);
+	CHECK(menu_colors() == 0);
 	puts("PASS style_overlays");
 	return 0;
 }
