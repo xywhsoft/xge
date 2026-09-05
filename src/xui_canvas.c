@@ -17,6 +17,7 @@ typedef struct xui_canvas_data_t {
 	float fLastPenX;
 	float fLastPenY;
 	int bPenEnabled;
+	int bPenColorExplicit;
 	int bPenDown;
 	int iChangeCount;
 	int iDrawCount;
@@ -24,6 +25,7 @@ typedef struct xui_canvas_data_t {
 	uint32_t iBackgroundColor;
 	uint32_t iBorderColor;
 	uint32_t iPenColor;
+	uint32_t iViewportStyleHash;
 } xui_canvas_data_t;
 
 static int __xuiCanvasDescValid(const xui_canvas_desc_t* pDesc)
@@ -95,13 +97,49 @@ static void __xuiCanvasResolve(xui_widget pWidget, const xui_canvas_data_t* pDat
 	*pResolved = *pData;
 	(void)__xuiCanvasStyleColor(pWidget, "canvas.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiCanvasStyleColor(pWidget, "canvas.border.color", &pResolved->iBorderColor);
-	(void)__xuiCanvasStyleColor(pWidget, "canvas.pen.color", &pResolved->iPenColor);
+	if ( !pData->bPenColorExplicit ) {
+		(void)__xuiCanvasStyleColor(pWidget, "canvas.pen.color", &pResolved->iPenColor);
+	}
 }
 
 static int __xuiCanvasInvalidateViewport(xui_canvas_data_t* pData)
 {
 	if ( (pData == NULL) || (pData->pViewport == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	return xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiCanvasCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
+	(void)pDraw;
+	(void)iStateId;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iViewportStyleHash != xuiWidgetGetStyleHash(pWidget) ) {
+		xui_widget pViewport = pData->pViewport;
+		xui_widget_cache_render_proc onRender = NULL;
+		xui_draw_context pChildDraw = NULL;
+		void* pChildUser = NULL;
+		xui_rect_t tRect = xuiWidgetGetRect(pViewport);
+		uint32_t iState = xuiWidgetGetStateId(pViewport);
+		int iRet, iEndRet;
+		if ( !xuiWidgetGetVisible(pViewport) || tRect.fW <= 0 || tRect.fH <= 0 ) return XUI_OK;
+		(void)xuiWidgetGetCacheRenderCallback(pViewport, &onRender, &pChildUser);
+		if ( onRender == NULL ) return XUI_OK;
+		/* Cache preparation visits children first. Refresh the dependent viewport
+		 * now, before this frame is composed, including local parent style edits. */
+		iRet = xuiWidgetUpdateBegin(pViewport, iState, XUI_WIDGET_UPDATE_CLEAR, 0, &pChildDraw);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = onRender(pViewport, pChildDraw, iState, pChildUser);
+		if ( !xuiInternalWidgetIsValid(pViewport) ) return XUI_OK;
+		iEndRet = xuiWidgetUpdateEnd(pViewport, iState, pChildDraw);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iEndRet != XUI_OK ) return iEndRet;
+		(void)xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_CACHE);
+		if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_OK;
+		pData->iViewportStyleHash = xuiWidgetGetStyleHash(pWidget);
+	}
+	return XUI_OK;
 }
 
 static int __xuiCanvasEnsureSurface(xui_widget pWidget, xui_canvas_data_t* pData, int bClear)
@@ -244,12 +282,14 @@ static int __xuiCanvasViewportEvent(xui_widget pViewport, const xui_event_t* pEv
 {
 	xui_widget pWidget;
 	xui_canvas_data_t* pData;
+	xui_canvas_data_t tResolved;
 	xui_vec2_t tPoint;
 
 	(void)pViewport;
 	pWidget = (xui_widget)pUser;
 	pData = __xuiCanvasGetData(pWidget);
 	if ( (pData == NULL) || (pEvent == NULL) || !pData->bPenEnabled ) return XUI_OK;
+	__xuiCanvasResolve(pWidget, pData, &tResolved);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
@@ -258,12 +298,12 @@ static int __xuiCanvasViewportEvent(xui_widget pViewport, const xui_event_t* pEv
 		pData->fLastPenX = tPoint.fX;
 		pData->fLastPenY = tPoint.fY;
 		(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pViewport);
-		(void)xuiCanvasDrawPoint(pWidget, tPoint.fX, tPoint.fY, pData->fPenWidth, pData->iPenColor);
+		(void)xuiCanvasDrawPoint(pWidget, tPoint.fX, tPoint.fY, pData->fPenWidth, tResolved.iPenColor);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_MOVE:
 		if ( !pData->bPenDown ) return XUI_OK;
 		tPoint = __xuiCanvasEventToContent(pData, pEvent);
-		(void)xuiCanvasDrawLine(pWidget, pData->fLastPenX, pData->fLastPenY, tPoint.fX, tPoint.fY, pData->fPenWidth, pData->iPenColor);
+		(void)xuiCanvasDrawLine(pWidget, pData->fLastPenX, pData->fLastPenY, tPoint.fX, tPoint.fY, pData->fPenWidth, tResolved.iPenColor);
 		pData->fLastPenX = tPoint.fX;
 		pData->fLastPenY = tPoint.fY;
 		return XUI_EVENT_DISPATCH_STOP;
@@ -347,6 +387,7 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	pData->iBackgroundColor = (pDesc != NULL && pDesc->iBackgroundColor != 0) ? pDesc->iBackgroundColor : XUI_COLOR_RGBA(246, 249, 252, 255);
 	pData->iBorderColor = (pDesc != NULL && pDesc->iBorderColor != 0) ? pDesc->iBorderColor : XUI_COLOR_RGBA(190, 205, 220, 255);
 	pData->iPenColor = (pDesc != NULL && pDesc->iPenColor != 0) ? pDesc->iPenColor : XUI_COLOR_RGBA(34, 107, 214, 255);
+	pData->bPenColorExplicit = (pDesc != NULL && pDesc->iPenColor != 0);
 	memset(&tFrameDesc, 0, sizeof(tFrameDesc));
 	tFrameDesc.iSize = sizeof(tFrameDesc);
 	tFrameDesc.fContentWidth = pData->fCanvasWidth;
@@ -466,6 +507,7 @@ XUI_API xui_widget_type xuiCanvasGetType(xui_context pContext)
 	tDesc.onInit = __xuiCanvasInit;
 	tDesc.onDestroy = __xuiCanvasDestroy;
 	tDesc.onContentMeasure = __xuiCanvasContentMeasure;
+	tDesc.onCacheRender = __xuiCanvasCacheRender;
 	__xuiCanvasDefaultLayout(&tDesc.tLayout);
 	__xuiCanvasDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
@@ -839,6 +881,7 @@ XUI_API int xuiCanvasSetPen(xui_widget pWidget, int bEnabled, float fWidth, uint
 	pData->bPenEnabled = (bEnabled != 0);
 	if ( fWidth > 0.0f ) pData->fPenWidth = fWidth;
 	pData->iPenColor = iColor;
+	pData->bPenColorExplicit = 1;
 	return XUI_OK;
 }
 
@@ -859,6 +902,7 @@ XUI_API int xuiCanvasSetColors(xui_widget pWidget, uint32_t iBackground, uint32_
 	pData->iBackgroundColor = iBackground;
 	pData->iBorderColor = iBorder;
 	pData->iPenColor = iPen;
+	pData->bPenColorExplicit = 1;
 	return __xuiCanvasInvalidateViewport(pData);
 }
 
