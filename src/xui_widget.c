@@ -6887,6 +6887,9 @@ XUI_API int xuiWidgetUpdateBegin(xui_widget pWidget, uint32_t iStateId, uint32_t
 	if ( pSlot == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pSlot->iContentPolicy != __xuiWidgetEffectiveCachePolicy(pWidget) ) {
+		__xuiWidgetPurgeCacheSlotSurface(pWidget, pSlot);
+	}
 	pWidget->iActiveUpdateStateId = iStateId;
 	iRet = __xuiWidgetEnsureCacheSurface(pWidget, pSlot);
 	if ( iRet != XUI_OK ) {
@@ -6914,6 +6917,7 @@ XUI_API int xuiWidgetUpdateBegin(xui_widget pWidget, uint32_t iStateId, uint32_t
 	pWidget->pActiveUpdateDraw = *ppDraw;
 	pWidget->pActiveUpdateSlot = pSlot;
 	pSlot->iDpiGeneration = pWidget->pContext->iDpiGeneration;
+	pSlot->iContentPolicy = __xuiWidgetEffectiveCachePolicy(pWidget);
 	return XUI_OK;
 }
 
@@ -7191,6 +7195,14 @@ static int __xuiWidgetPrepareCache(xui_widget pWidget)
 	int bForceAll;
 
 	iPolicy = __xuiWidgetEffectiveCachePolicy(pWidget);
+	/* AUTO can change meaning when its last child is detached. Keep all state
+	 * slots consistent, including manual SELF caches without a paint callback. */
+	for ( i = 0; i < pWidget->iCacheCount; ++i ) {
+		xui_widget_cache_slot_t* pSlot = &pWidget->pCacheSlots[i];
+		if ( pSlot->iContentPolicy != iPolicy && pSlot != pWidget->pActiveUpdateSlot ) {
+			__xuiWidgetPurgeCacheSlotSurface(pWidget, pSlot);
+		}
+	}
 	if ( !pWidget->bVisible || (iPolicy == XUI_CACHE_POLICY_NONE) ) {
 		return XUI_OK;
 	}

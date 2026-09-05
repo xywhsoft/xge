@@ -130,6 +130,7 @@ typedef struct xui_widget_cache_slot_t {
 	int iHeight;
 	uint32_t iSurfaceGeneration;
 	uint32_t iDpiGeneration;
+	int iContentPolicy;
 	uint32_t iFlags;
 } xui_widget_cache_slot_t;
 
