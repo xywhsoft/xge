@@ -11,9 +11,9 @@ set OUT=%OUT_DIR%\xui_uidesign.exe
 set XGE_LIB=%ROOT%\build\xge.lib
 set XGE_DLL=%ROOT%\build\xge.dll
 set INC=-I"%ROOT%" -I"%TOOL_DIR%\src"
-set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0
-set SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\src\ui_design_document.c" "%TOOL_DIR%\src\ui_design_model.c" "%TOOL_DIR%\src\ui_design_registry.c" "%TOOL_DIR%\src\ui_design_toolbox.c" "%TOOL_DIR%\src\ui_design_canvas.c" "%TOOL_DIR%\src\ui_design_inspector.c"
-set LIBS=%XGE_LIB% -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lole32 -lwinmm -lavrt
+set FLAGS=-O2 -Wall -Wextra -Wformat=2 -Werror=format -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0
+set SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\src\ui_design_document.c" "%TOOL_DIR%\src\ui_design_model.c" "%TOOL_DIR%\src\ui_design_codegen.c" "%TOOL_DIR%\src\ui_design_registry.c" "%TOOL_DIR%\src\ui_design_toolbox.c" "%TOOL_DIR%\src\ui_design_canvas.c" "%TOOL_DIR%\src\ui_design_inspector.c" "%TOOL_DIR%\src\ui_design_session.c" "%TOOL_DIR%\src\ui_design_workbench.c"
+set LIBS="%XGE_LIB%" -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lole32 -lwinmm -lavrt -lcomctl32
 set NEED_XGE_BUILD=0
 
 where gcc >nul 2>nul
@@ -23,11 +23,14 @@ if %errorlevel% neq 0 (
 )
 
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%" || exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOL_DIR%\tools\sdk_manifest.ps1" -Capture
+if errorlevel 1 exit /b 1
 
 if not exist "%XGE_LIB%" set NEED_XGE_BUILD=1
 if not exist "%XGE_DLL%" set NEED_XGE_BUILD=1
 if "%NEED_XGE_BUILD%"=="0" (
 	for /f %%I in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$dll=(Get-Item -LiteralPath '%XGE_DLL%').LastWriteTimeUtc; $inputs=@('%ROOT%\build_dll.bat','%ROOT%\xge.c','%ROOT%\xge.rc','%ROOT%\xui.h','%ROOT%\xui_sources.bat') + (Get-ChildItem -LiteralPath '%ROOT%\src' -Include '*.c','*.h' -File -Recurse | ForEach-Object FullName); if ($inputs | Where-Object { (Test-Path -LiteralPath $_) -and ((Get-Item -LiteralPath $_).LastWriteTimeUtc -gt $dll) }) { '1' } else { '0' }"') do set NEED_XGE_BUILD=%%I
+	for /f %%I in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$dll=(Get-Item -LiteralPath '%XGE_DLL%').LastWriteTimeUtc; if (@('%ROOT%\xge.h','%ROOT%\lib\xrt\xrt.h','%ROOT%\lib\xrt\xrt_config.h') | Where-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc -gt $dll }) { '1' } else { '0' }"') do if "%%I"=="1" set NEED_XGE_BUILD=1
 )
 
 if "%NEED_XGE_BUILD%"=="1" (
@@ -54,5 +57,7 @@ if errorlevel 1 (
 	exit /b 1
 )
 
+powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOL_DIR%\tools\sdk_manifest.ps1"
+if errorlevel 1 exit /b 1
 echo [UIDESIGN] Build successful: %OUT%
 endlocal

@@ -556,9 +556,9 @@ static const uint32_t g_arrDefaultPalette[] = {
 };
 
 static const xui_message_node_t g_arrDefaultMessages[] = {
-	{sizeof(xui_message_node_t), "m1", "Designer", "09:20", "Widget created", XUI_MESSAGE_NODE_OTHER, 0, NULL},
-	{sizeof(xui_message_node_t), "m2", "You", "09:21", "Adjust layout", XUI_MESSAGE_NODE_SELF, 0, NULL},
-	{sizeof(xui_message_node_t), "m3", "System", "09:22", "Preview updated", XUI_MESSAGE_NODE_SYSTEM, 0, NULL}
+	{sizeof(xui_message_node_t), "m1", "Designer", "09:20", "Widget created", XUI_MESSAGE_NODE_OTHER, 0, NULL, NULL, NULL, 0},
+	{sizeof(xui_message_node_t), "m2", "You", "09:21", "Adjust layout", XUI_MESSAGE_NODE_SELF, 0, NULL, NULL, NULL, 0},
+	{sizeof(xui_message_node_t), "m3", "System", "09:22", "Preview updated", XUI_MESSAGE_NODE_SYSTEM, 0, NULL, NULL, NULL, 0}
 };
 
 static const xui_inventory_slot_t g_arrDefaultInventorySlots[] = {
@@ -627,6 +627,7 @@ static const ui_design_property_def_t g_arrHyperlinkProperties[] = {
 };
 
 static const ui_design_property_def_t g_arrButtonProperties[] = {
+	UI_DESIGN_PROP("event.onClick", "On Click", "Events", "Action name emitted when the button is clicked.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.selectable", "Selectable", "Behavior", "Button can stay selected.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.selected", "Selected", "Behavior", "Current selected state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.semantic", "Semantic", "Behavior", "Built-in button semantic.", "0", g_arrButtonSemanticEnum, UI_DESIGN_PROPERTY_INLINE),
@@ -9380,6 +9381,26 @@ static int __uiDesignApplyQrCodeIcon(struct ui_design_app_t* pApp, ui_design_nod
 	return xuiQrCodeSetIcon(pWidget, NULL, tIconSrc, 0.0f);
 }
 
+static void __uiDesignButtonAction(xui_widget pWidget, void* pUser)
+{
+	ui_design_app_t* pApp;
+	ui_design_node_t* pNode;
+	const char* sAction;
+	int i;
+
+	pApp = (ui_design_app_t*)pUser;
+	if ( pApp == NULL || pWidget == NULL ) return;
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		pNode = &pApp->pSession->tModel.arrNodes[i];
+		if ( pNode->pWidget != pWidget ) continue;
+		sAction = uiDesignNodeGetProperty(pNode, "event.onClick", "");
+		if ( sAction[0] == 0 ) return;
+		printf("xui_uidesign action=%s node=%d\n", sAction, pNode->iId);
+		uiDesignAppSetStatus(pApp, sAction);
+		return;
+	}
+}
+
 static void __uiDesignApplyButtonProperties(struct ui_design_app_t* pApp, ui_design_node_t* pNode)
 {
 	xui_widget pWidget;
@@ -11088,8 +11109,8 @@ static int __uiDesignContainerHasModelChildren(const ui_design_app_t* pApp, cons
 	int i;
 
 	if ( (pApp == NULL) || (pNode == NULL) ) return 0;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		if ( pApp->tModel.arrNodes[i].iParentId == pNode->iId ) return 1;
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		if ( pApp->pSession->tModel.arrNodes[i].iParentId == pNode->iId ) return 1;
 	}
 	return 0;
 }
@@ -11100,8 +11121,8 @@ static void __uiDesignDetachContainerModelChildren(ui_design_app_t* pApp, const 
 	int i;
 
 	if ( (pApp == NULL) || (pNode == NULL) ) return;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		pChild = &pApp->tModel.arrNodes[i];
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		pChild = &pApp->pSession->tModel.arrNodes[i];
 		if ( (pChild->iParentId == pNode->iId) && (pChild->pWidget != NULL) && (xuiWidgetGetParent(pChild->pWidget) != NULL) ) {
 			(void)xuiWidgetRemoveFromParent(pChild->pWidget);
 		}
@@ -11247,8 +11268,8 @@ static int __uiDesignAttachContainerModelChildren(ui_design_app_t* pApp, ui_desi
 	int iRet;
 
 	if ( (pApp == NULL) || (pParent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		pChild = &pApp->tModel.arrNodes[i];
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		pChild = &pApp->pSession->tModel.arrNodes[i];
 		if ( pChild->iParentId != pParent->iId ) continue;
 		iRet = __uiDesignAttachContainerModelChild(pApp, pParent, pChild);
 		if ( iRet != XUI_OK ) return iRet;
@@ -14856,6 +14877,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 	xui_surface pSurface;
 	xui_rect_t tSrc;
 	xui_rect_t tPreviewAnchor;
+	xui_rect_t tWidgetRect;
 	const char* arrTextItems[UI_DESIGN_RUNTIME_TEXT_COUNT];
 	xui_combobox_item_t arrComboItems[XUI_COMBOBOX_ITEM_CAPACITY];
 	int arrListEnabled[UI_DESIGN_RUNTIME_TEXT_COUNT];
@@ -14902,7 +14924,15 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 
 	if ( (pNode == NULL) || (pNode->pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pWidget = pNode->pWidget;
-	(void)xuiWidgetSetRect(pWidget, pNode->tRect);
+	tWidgetRect = pNode->tRect;
+	if ( !pApp->bPreviewRunner ) {
+		float fZoom = pApp->pSession->fZoom > 0.0f ? pApp->pSession->fZoom : 1.0f;
+		tWidgetRect.fX *= fZoom;
+		tWidgetRect.fY *= fZoom;
+		tWidgetRect.fW *= fZoom;
+		tWidgetRect.fH *= fZoom;
+	}
+	(void)xuiWidgetSetRect(pWidget, tWidgetRect);
 	(void)xuiWidgetSetVisible(pWidget, pNode->bVisible);
 	(void)xuiWidgetSetEnabled(pWidget, pNode->bEnabled);
 	if ( !pApp->bPreviewRunner ) {
@@ -14936,6 +14966,9 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		break;
 	case UI_DESIGN_NODE_BUTTON:
 		__uiDesignApplyButtonProperties(pApp, pNode);
+		(void)xuiButtonSetClick(pWidget,
+			uiDesignNodeGetProperty(pNode, "event.onClick", "")[0] != 0 ? __uiDesignButtonAction : NULL,
+			pApp);
 		break;
 	case UI_DESIGN_NODE_CHECKBOX:
 		__uiDesignApplyCheckProperties(pApp, pNode, 0);

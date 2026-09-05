@@ -1,0 +1,42 @@
+name: UIDesign
+
+on:
+  push:
+    paths:
+      - "tools/UIDesign/**"
+      - "src/**"
+      - "xui.h"
+      - "xge.h"
+      - "xge.c"
+      - "lib/xrt/**"
+      - "xui_sources.bat"
+      - "build_dll.bat"
+      - ".github/workflows/uidesign.yml"
+  pull_request:
+    paths:
+      - "tools/UIDesign/**"
+      - "src/**"
+      - "xui.h"
+      - "xge.h"
+      - "xge.c"
+      - "lib/xrt/**"
+      - "xui_sources.bat"
+      - "build_dll.bat"
+      - ".github/workflows/uidesign.yml"
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+      - name: Build and test UIDesign
+        shell: cmd
+        run: |
+          set "PATH=C:\msys64\ucrt64\bin;%PATH%"
+          call tools\UIDesign\test.bat

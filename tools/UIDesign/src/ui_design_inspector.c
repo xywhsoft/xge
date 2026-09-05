@@ -1,5 +1,6 @@
 #include "ui_design_inspector.h"
 #include "ui_design_registry.h"
+#include "ui_design_codegen.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -216,8 +217,8 @@ static int __uiDesignInspectorHasChildren(ui_design_app_t* pApp, int iNodeId)
 	int i;
 
 	if ( pApp == NULL ) return 0;
-	for ( i = 0; i < pApp->tModel.iNodeCount; i++ ) {
-		if ( pApp->tModel.arrNodes[i].iParentId == iNodeId ) return 1;
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; i++ ) {
+		if ( pApp->pSession->tModel.arrNodes[i].iParentId == iNodeId ) return 1;
 	}
 	return 0;
 }
@@ -301,8 +302,8 @@ static int __uiDesignInspectorRefreshTree(ui_design_app_t* pApp)
 	arrNodes[n].bHasChildren = __uiDesignInspectorHasChildren(pApp, 0);
 	arrNodes[n].bIconReserved = 1;
 	n++;
-	for ( i = 0; i < pApp->tModel.iNodeCount && n < UI_DESIGN_MAX_NODES + 1; i++ ) {
-		pNode = &pApp->tModel.arrNodes[i];
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount && n < UI_DESIGN_MAX_NODES + 1; i++ ) {
+		pNode = &pApp->pSession->tModel.arrNodes[i];
 		__uiDesignInspectorFormatNode(pNode, arrText[n], (int)sizeof(arrText[n]));
 		arrNodes[n].iId = pNode->iId;
 		arrNodes[n].iParent = pNode->iParentId;
@@ -316,10 +317,10 @@ static int __uiDesignInspectorRefreshTree(ui_design_app_t* pApp)
 	pApp->bSyncingTree = 1;
 	iRet = xuiTreeViewSetNodes(pApp->pTree, arrNodes, n);
 	if ( iRet == XUI_OK ) {
-		iRet = xuiTreeViewSetSelected(pApp->pTree, pApp->tModel.iSelectedId);
+		iRet = xuiTreeViewSetSelected(pApp->pTree, pApp->pSession->tModel.iSelectedId);
 	}
 	if ( iRet == XUI_OK ) {
-		(void)xuiTreeViewEnsureVisible(pApp->pTree, pApp->tModel.iSelectedId);
+		(void)xuiTreeViewEnsureVisible(pApp->pTree, pApp->pSession->tModel.iSelectedId);
 	}
 	pApp->bSyncingTree = 0;
 	return iRet;
@@ -339,6 +340,23 @@ static int __uiDesignInspectorAddProperty(xui_widget pGrid, int iCategory, const
 	tProp.sDefaultValue = sValue;
 	tProp.iFlags = iFlags;
 	return xuiPropertyGridAddProperty(pGrid, iCategory, &tProp);
+}
+
+/* Help and Reset share the registry's default, not the currently edited value. */
+static int __uiDesignInspectorAddMetadataProperty(xui_widget grid, int category,
+	const char* id, const char* name, const char* description, int type,
+	const char* value, const char* defaultValue)
+{
+	xui_property_desc_t property = {0};
+	char help[XUI_PROPERTY_GRID_DESCRIPTION_CAPACITY];
+	snprintf(help, sizeof(help), "Default: %.60s\n%.170s", defaultValue ? defaultValue : "", description ? description : "");
+	property.sId = id;
+	property.sName = name;
+	property.sDescription = help;
+	property.iType = type;
+	property.sValue = value;
+	property.sDefaultValue = defaultValue;
+	return xuiPropertyGridAddProperty(grid, category, &property);
 }
 
 static int __uiDesignInspectorEnsureCategory(xui_widget pGrid, const char* sId, const char* sName)
@@ -2301,7 +2319,7 @@ static int __uiDesignComplexGridEditorConfig(xui_widget pWidget, int iRow, int i
 		pConfig->sFileFilter = "All Files (*.*)|*.*";
 	}
 	if ( __uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "data.rows") ) {
-		ui_design_node_t* pNode = uiDesignModelGetNode(&pApp->tModel, pApp->iComplexEditorNodeId);
+		ui_design_node_t* pNode = uiDesignModelGetNode(&pApp->pSession->tModel, pApp->iComplexEditorNodeId);
 		xui_table_grid_editor_config_t tResolved;
 		if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_TABLEGRID &&
 		     uiDesignRegistryResolveTableGridEditorConfig(pNode, NULL, iRow, iColumn, iCellType, &tResolved) == XUI_OK ) {
@@ -2799,7 +2817,7 @@ static void __uiDesignComplexEditorDefaultCell(ui_design_app_t* pApp, int iRow, 
 	if ( (pApp == NULL) || (iColumn < 0) || (iColumn >= pApp->iComplexEditorColumnCount) ) return;
 	sTitle = pApp->arrComplexEditorColumnTitle[iColumn];
 	sId = pApp->sComplexEditorPropertyId;
-	pNode = uiDesignModelGetNode(&pApp->tModel, pApp->iComplexEditorNodeId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, pApp->iComplexEditorNodeId);
 	if ( __uiDesignComplexEquals(sId, "layout.tableRowsConfig") || __uiDesignComplexEquals(sId, "layout.tableColumnsConfig") ) {
 		switch ( iColumn ) {
 		case 0:
@@ -3195,7 +3213,7 @@ static int __uiDesignComplexEditorOpen(ui_design_app_t* pApp, const char* sId)
 	int iRet;
 
 	if ( (pApp == NULL) || (sId == NULL) || (sId[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
-	pNode = uiDesignModelGetSelected(&pApp->tModel);
+	pNode = uiDesignModelGetSelected(&pApp->pSession->tModel);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pDesc = uiDesignRegistryFind(pNode->iType);
 	pDef = uiDesignRegistryFindProperty(pDesc, sId);
@@ -3242,7 +3260,7 @@ static int __uiDesignInspectorAddLayoutProperties(ui_design_app_t* pApp, const u
 	for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrLayoutProperties); i++ ) {
 		pDef = &g_arrLayoutProperties[i];
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
-		iProperty = __uiDesignInspectorAddProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, 0);
+		iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->sDefaultValue);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
 		}
@@ -3264,7 +3282,7 @@ static int __uiDesignInspectorAddCommonWidgetProperties(ui_design_app_t* pApp, c
 	for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrCommonWidgetProperties); i++ ) {
 		pDef = &g_arrCommonWidgetProperties[i];
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
-		iProperty = __uiDesignInspectorAddProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, 0);
+		iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->sDefaultValue);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
 		}
@@ -3340,7 +3358,7 @@ static int __uiDesignInspectorAddFontProperties(ui_design_app_t* pApp, const ui_
 	for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrFontProperties); i++ ) {
 		pDef = &g_arrFontProperties[i];
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
-		iProperty = __uiDesignInspectorAddProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, 0);
+		iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->sDefaultValue);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
 		}
@@ -3365,7 +3383,7 @@ static int __uiDesignInspectorAddControlProperties(ui_design_app_t* pApp, const 
 		iCategory = __uiDesignInspectorEnsureCategory(pApp->pPropertyGrid, pDef->sCategory, pDef->sCategory);
 		if ( iCategory < 0 ) return XUI_ERROR;
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
-		iProperty = __uiDesignInspectorAddProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, 0);
+		iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->sDefaultValue);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
 		}
@@ -3396,7 +3414,7 @@ static int __uiDesignInspectorPrecreateControlCategories(ui_design_app_t* pApp, 
 static int __uiDesignInspectorCanEditGeometry(ui_design_app_t* pApp, const ui_design_node_t* pNode)
 {
 	if ( (pApp == NULL) || (pNode == NULL) ) return 0;
-	return uiDesignModelCanFreeTransformNode(&pApp->tModel, pNode);
+	return uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, pNode);
 }
 
 static int __uiDesignInspectorIsGeometryId(const char* sId)
@@ -3433,7 +3451,7 @@ static int __uiDesignInspectorRefreshProperties(ui_design_app_t* pApp)
 		pApp->bSyncingInspector = 0;
 		return iRet;
 	}
-	pNode = uiDesignModelGetSelected(&pApp->tModel);
+	pNode = uiDesignModelGetSelected(&pApp->pSession->tModel);
 	if ( pNode == NULL ) {
 		iIdentity = xuiPropertyGridAddCategory(pApp->pPropertyGrid, "selection", "Selection", 1);
 		if ( iIdentity >= 0 ) {
@@ -3470,6 +3488,9 @@ static int __uiDesignInspectorRefreshProperties(ui_design_app_t* pApp)
 	iGeometryFlags = __uiDesignInspectorCanEditGeometry(pApp, pNode) ? 0 : (XUI_PROPERTY_FLAG_READONLY | XUI_PROPERTY_FLAG_DISABLED);
 	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iIdentity, "type", "Type", "XUI control type.", XUI_TABLE_CELL_TYPE_TEXT, sType, XUI_PROPERTY_FLAG_READONLY);
 	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iIdentity, "id", "Id", "Designer node id.", XUI_TABLE_CELL_TYPE_TEXT, sId, XUI_PROPERTY_FLAG_READONLY);
+	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iIdentity, "exportSupport", "C Export",
+		"Export support for this control type. Preview supports the full registry; C export currently supports a subset.",
+		XUI_TABLE_CELL_TYPE_TEXT, uiDesignCodegenSupportsControl(pNode->iType) ? "Supported type" : "Preview only", XUI_PROPERTY_FLAG_READONLY);
 	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iGeometry, "x", "X", "Left position relative to the parent container. Disabled when parent layout manages placement.", XUI_TABLE_CELL_TYPE_FLOAT, sX, iGeometryFlags);
 	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iGeometry, "y", "Y", "Top position relative to the parent container. Disabled when parent layout manages placement.", XUI_TABLE_CELL_TYPE_FLOAT, sY, iGeometryFlags);
 	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iGeometry, "width", "Width", "Control width. Disabled when parent layout manages size.", XUI_TABLE_CELL_TYPE_FLOAT, sW, iGeometryFlags);
@@ -3531,7 +3552,7 @@ static int __uiDesignInspectorValidate(xui_widget pWidget, int iProperty, const 
 	(void)iProperty;
 	if ( sId == NULL ) return 1;
 	pApp = (ui_design_app_t*)pUser;
-	pNode = (pApp != NULL) ? uiDesignModelGetSelected(&pApp->tModel) : NULL;
+	pNode = (pApp != NULL) ? uiDesignModelGetSelected(&pApp->pSession->tModel) : NULL;
 	if ( __uiDesignInspectorIsGeometryId(sId) && !__uiDesignInspectorCanEditGeometry(pApp, pNode) ) return 0;
 	if ( strcmp(sId, "width") == 0 || strcmp(sId, "height") == 0 ) {
 		return __uiDesignInspectorParseFloat(sValue, &fValue) && fValue >= 8.0f;
@@ -3626,7 +3647,7 @@ static void __uiDesignInspectorChange(xui_widget pWidget, int iProperty, const c
 
 	pApp = (ui_design_app_t*)pUser;
 	if ( (pApp == NULL) || (pWidget == NULL) || (sId == NULL) || pApp->bSyncingInspector ) return;
-	pNode = uiDesignModelGetSelected(&pApp->tModel);
+	pNode = uiDesignModelGetSelected(&pApp->pSession->tModel);
 	if ( pNode == NULL ) return;
 	if ( __uiDesignInspectorIsGeometryId(sId) && !__uiDesignInspectorCanEditGeometry(pApp, pNode) ) return;
 	tRect = pNode->tRect;
@@ -3692,7 +3713,7 @@ static int __uiDesignInspectorTreeTargetCanContain(ui_design_app_t* pApp, int iN
 
 	if ( pApp == NULL ) return 0;
 	if ( iNodeId == 0 ) return 1;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iNodeId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iNodeId);
 	return (pNode != NULL) && uiDesignNodeTypeIsContainer(pNode->iType);
 }
 
@@ -3701,7 +3722,7 @@ static int __uiDesignInspectorTreeTargetCanPromote(ui_design_app_t* pApp, int iN
 	ui_design_node_t* pNode;
 
 	if ( (pApp == NULL) || (iNodeId <= 0) ) return 0;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iNodeId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iNodeId);
 	return (pNode != NULL) && (pNode->iParentId != 0);
 }
 
@@ -3848,7 +3869,7 @@ static int __uiDesignInspectorExerciseOneComplex(ui_design_app_t* pApp, ui_desig
 	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (sPropertyId == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)uiDesignModelSetSelected(&pApp->tModel, pNode->iId);
+	(void)uiDesignModelSetSelected(&pApp->pSession->tModel, pNode->iId);
 	iRet = __uiDesignComplexEditorOpen(pApp, sPropertyId);
 	if ( iRet != XUI_OK ) {
 		printf("xui_uidesign exercise-complex-open-failed type=%s id=%d property=%s ret=%d\n",
@@ -4098,8 +4119,8 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 	bMessageListImportText = 0;
 	bPropertyGridProperties = 0;
 	bSourceEditor = 0;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		pNode = &pApp->tModel.arrNodes[i];
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		pNode = &pApp->pSession->tModel.arrNodes[i];
 		if ( (!bLayoutTableRowsConfig || !bLayoutTableColumnsConfig) && pNode->iType == UI_DESIGN_NODE_WIDGET ) {
 			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "layout.type", sLayoutTable);
 			if ( iRet != XUI_OK ) return iRet;
@@ -4791,11 +4812,11 @@ int uiDesignInspectorExercisePropertyCoverage(ui_design_app_t* pApp)
 	int i;
 
 	if ( (pApp == NULL) || (pApp->pPropertyGrid == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iOldSelected = pApp->tModel.iSelectedId;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		pNode = &pApp->tModel.arrNodes[i];
+	iOldSelected = pApp->pSession->tModel.iSelectedId;
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		pNode = &pApp->pSession->tModel.arrNodes[i];
 		if ( uiDesignRegistryFind(pNode->iType) == NULL ) continue;
-		(void)uiDesignModelSetSelected(&pApp->tModel, pNode->iId);
+		(void)uiDesignModelSetSelected(&pApp->pSession->tModel, pNode->iId);
 		iRet = uiDesignInspectorRefresh(pApp);
 		if ( iRet != XUI_OK ) return iRet;
 		iExpected = __uiDesignInspectorExpectedPropertyCount(pNode);
@@ -4803,12 +4824,12 @@ int uiDesignInspectorExercisePropertyCoverage(ui_design_app_t* pApp)
 		if ( iActual < iExpected ) {
 			printf("xui_uidesign exercise-property-coverage-failed type=%s id=%d actual=%d expected=%d capacity=%d\n",
 				uiDesignNodeTypeName(pNode->iType), pNode->iId, iActual, iExpected, XUI_PROPERTY_GRID_PROPERTY_CAPACITY);
-			(void)uiDesignModelSetSelected(&pApp->tModel, iOldSelected);
+			(void)uiDesignModelSetSelected(&pApp->pSession->tModel, iOldSelected);
 			(void)uiDesignInspectorRefresh(pApp);
 			return XUI_ERROR;
 		}
 	}
-	(void)uiDesignModelSetSelected(&pApp->tModel, iOldSelected);
+	(void)uiDesignModelSetSelected(&pApp->pSession->tModel, iOldSelected);
 	return uiDesignInspectorRefresh(pApp);
 }
 
@@ -4843,7 +4864,7 @@ int uiDesignInspectorCreate(ui_design_app_t* pApp)
 	memset(&tTreeDesc, 0, sizeof(tTreeDesc));
 	tTreeDesc.iSize = sizeof(tTreeDesc);
 	tTreeDesc.pFont = pApp->pFont;
-	tTreeDesc.fItemHeight = 23.0f;
+	tTreeDesc.fItemHeight = pApp->fFontSize + 12.0f;
 	tTreeDesc.fIndent = 18.0f;
 	tTreeDesc.fPadding = 8.0f;
 	tTreeDesc.fBorderWidth = 1.0f;
@@ -4867,10 +4888,11 @@ int uiDesignInspectorCreate(ui_design_app_t* pApp)
 	memset(&tPropDesc, 0, sizeof(tPropDesc));
 	tPropDesc.iSize = sizeof(tPropDesc);
 	tPropDesc.pFont = pApp->pFont;
-	tPropDesc.fNameWidth = 96.0f;
-	tPropDesc.fRowHeight = 24.0f;
-	tPropDesc.fCategoryHeight = 24.0f;
-	tPropDesc.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP;
+	tPropDesc.fNameWidth = 138.0f;
+	tPropDesc.fRowHeight = pApp->fFontSize + 12.0f;
+	tPropDesc.fCategoryHeight = pApp->fFontSize + 12.0f;
+	tPropDesc.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_BOTH;
+	tPropDesc.fDescriptionPanelHeight = 112.0f;
 	tPropDesc.iEditMode = XUI_TABLE_GRID_EDIT_QUICK;
 	tPropDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
 	iRet = xuiPropertyGridCreate(pApp->pContext, &pApp->pPropertyGrid, &tPropDesc);

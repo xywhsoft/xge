@@ -95,16 +95,14 @@ typedef struct ui_design_property_value_t {
 	char sValue[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
 } ui_design_property_value_t;
 
-typedef struct ui_design_node_t {
-	int iId;
-	ui_design_node_type_t iType;
-	int iParentId;
-	xui_rect_t tRect;
-	char sText[UI_DESIGN_TEXT_CAPACITY];
-	int bChecked;
-	int bVisible;
-	int bEnabled;
-	xui_widget pWidget;
+/*
+ * Runtime buffers are intentionally kept outside ui_design_node_t.  Several
+ * XUI controls retain pointers into these buffers, so the allocation must stay
+ * at a stable address while a widget is alive.  Keeping one optional payload
+ * per live node also avoids embedding every control's worst-case scratch space
+ * in all 512 document slots.
+ */
+typedef struct ui_design_node_runtime_t {
 	xui_font pRuntimeFont;
 	char sRuntimeFontSource[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
 	float fRuntimeFontSize;
@@ -114,8 +112,6 @@ typedef struct ui_design_node_t {
 	xui_surface arrRuntimeSurface[UI_DESIGN_RUNTIME_SURFACE_COUNT];
 	char arrRuntimeSurfaceSource[UI_DESIGN_RUNTIME_SURFACE_COUNT][UI_DESIGN_PROPERTY_VALUE_CAPACITY];
 	xui_widget arrRuntimeMenuPopup[UI_DESIGN_RUNTIME_MENUBAR_MENUS];
-	ui_design_property_value_t arrProperties[UI_DESIGN_MAX_NODE_PROPERTIES];
-	int iPropertyCount;
 	char arrRuntimeText[UI_DESIGN_RUNTIME_TEXT_COUNT][UI_DESIGN_RUNTIME_TEXT_CAPACITY];
 	int iRuntimeTextCount;
 	int iRuntimeTableRowCount;
@@ -131,7 +127,49 @@ typedef struct ui_design_node_t {
 	uint32_t arrRuntimeEditorPalette[UI_DESIGN_RUNTIME_EDITOR_PALETTE];
 	int iRuntimePropertyPaletteCount;
 	uint32_t arrRuntimePropertyPalettes[UI_DESIGN_RUNTIME_PROPERTY_PALETTES][UI_DESIGN_RUNTIME_EDITOR_PALETTE];
+} ui_design_node_runtime_t;
+
+typedef struct ui_design_node_t {
+	int iId;
+	ui_design_node_type_t iType;
+	int iParentId;
+	xui_rect_t tRect;
+	char sText[UI_DESIGN_TEXT_CAPACITY];
+	int bChecked;
+	int bVisible;
+	int bEnabled;
+	xui_widget pWidget;
+	ui_design_node_runtime_t* pRuntime;
+	ui_design_property_value_t* arrProperties;
+	int iPropertyCount;
+	int iPropertyCapacity;
 } ui_design_node_t;
+
+/* Compatibility aliases for the registry's field-oriented runtime code. */
+#define pRuntimeFont pRuntime->pRuntimeFont
+#define sRuntimeFontSource pRuntime->sRuntimeFontSource
+#define fRuntimeFontSize pRuntime->fRuntimeFontSize
+#define iRuntimeFontFlags pRuntime->iRuntimeFontFlags
+#define pRuntimeSurface pRuntime->pRuntimeSurface
+#define sRuntimeSurfaceSource pRuntime->sRuntimeSurfaceSource
+#define arrRuntimeSurface pRuntime->arrRuntimeSurface
+#define arrRuntimeSurfaceSource pRuntime->arrRuntimeSurfaceSource
+#define arrRuntimeMenuPopup pRuntime->arrRuntimeMenuPopup
+#define arrRuntimeText pRuntime->arrRuntimeText
+#define iRuntimeTextCount pRuntime->iRuntimeTextCount
+#define iRuntimeTableRowCount pRuntime->iRuntimeTableRowCount
+#define iRuntimeTableColumnCount pRuntime->iRuntimeTableColumnCount
+#define arrRuntimeTableColumnType pRuntime->arrRuntimeTableColumnType
+#define arrRuntimeTableText pRuntime->arrRuntimeTableText
+#define arrRuntimeTableCells pRuntime->arrRuntimeTableCells
+#define arrRuntimeTableCellTypeSet pRuntime->arrRuntimeTableCellTypeSet
+#define arrRuntimeEditorOptionText pRuntime->arrRuntimeEditorOptionText
+#define arrRuntimeEditorOptions pRuntime->arrRuntimeEditorOptions
+#define arrRuntimeEditorItemData pRuntime->arrRuntimeEditorItemData
+#define arrRuntimeEditorEnabled pRuntime->arrRuntimeEditorEnabled
+#define arrRuntimeEditorPalette pRuntime->arrRuntimeEditorPalette
+#define iRuntimePropertyPaletteCount pRuntime->iRuntimePropertyPaletteCount
+#define arrRuntimePropertyPalettes pRuntime->arrRuntimePropertyPalettes
 
 typedef struct ui_design_flat_node_t {
 	int iId;
@@ -149,6 +187,10 @@ typedef struct ui_design_model_t {
 } ui_design_model_t;
 
 void uiDesignModelInit(ui_design_model_t* pModel);
+void uiDesignModelDestroy(ui_design_model_t* pModel);
+int uiDesignNodeEnsureRuntime(ui_design_node_t* pNode);
+void uiDesignNodeReleaseStorage(ui_design_node_t* pNode);
+void uiDesignNodeClearProperties(ui_design_node_t* pNode);
 const char* uiDesignNodeTypeName(ui_design_node_type_t iType);
 int uiDesignNodeTypeIsContainer(ui_design_node_type_t iType);
 void uiDesignNodeTypeDefaultSize(ui_design_node_type_t iType, float* pW, float* pH);

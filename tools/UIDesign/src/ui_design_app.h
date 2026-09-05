@@ -3,7 +3,7 @@
 
 #include "xge.h"
 #include "xui.h"
-#include "ui_design_model.h"
+#include "ui_design_session.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,9 +15,7 @@ extern "C" {
 #define UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS 24
 #define UI_DESIGN_COMPLEX_EDITOR_COLUMN_CAPACITY 40
 #define UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY 192
-#define UI_DESIGN_HISTORY_LIMIT 64
 #define UI_DESIGN_STATUS_CAPACITY 160
-#define UI_DESIGN_PATH_CAPACITY 520
 
 typedef enum ui_design_command_t {
 	UI_DESIGN_COMMAND_NONE = 0,
@@ -26,6 +24,8 @@ typedef enum ui_design_command_t {
 	UI_DESIGN_COMMAND_FILE_SAVE,
 	UI_DESIGN_COMMAND_FILE_SAVE_AS,
 	UI_DESIGN_COMMAND_FILE_EXPORT,
+	UI_DESIGN_COMMAND_FILE_CLOSE,
+	UI_DESIGN_COMMAND_FILE_RELOAD,
 	UI_DESIGN_COMMAND_FILE_EXIT,
 	UI_DESIGN_COMMAND_EDIT_UNDO,
 	UI_DESIGN_COMMAND_EDIT_REDO,
@@ -55,6 +55,7 @@ typedef enum ui_design_command_t {
 	UI_DESIGN_COMMAND_VIEW_ZOOM_OUT,
 	UI_DESIGN_COMMAND_VIEW_ZOOM_FIT,
 	UI_DESIGN_COMMAND_VIEW_ZOOM_100,
+	UI_DESIGN_COMMAND_VIEW_RESET_LAYOUT,
 	UI_DESIGN_COMMAND_TOOL_POINTER,
 	UI_DESIGN_COMMAND_TOOL_WIDGET,
 	UI_DESIGN_COMMAND_TOOL_LABEL,
@@ -67,13 +68,6 @@ typedef enum ui_design_command_t {
 	UI_DESIGN_COMMAND_HELP_ABOUT,
 	UI_DESIGN_COMMAND_HELP_SHORTCUTS
 } ui_design_command_t;
-
-typedef struct ui_design_history_entry_t {
-	ui_design_command_t iCommand;
-	char sName[48];
-	char* sBefore;
-	char* sAfter;
-} ui_design_history_entry_t;
 
 typedef enum ui_design_property_t {
 	UI_DESIGN_PROPERTY_NONE = 0,
@@ -118,6 +112,8 @@ typedef struct ui_design_app_t {
 	xui_widget pToolbox;
 	xui_widget pToolboxScrollBar;
 	xui_widget pCanvas;
+	xui_widget pDesignerHost;
+	xui_widget pDocumentTabs;
 	xui_widget pArtboard;
 	xui_widget pOverlay;
 	xui_widget pCanvasContextMenu;
@@ -135,30 +131,44 @@ typedef struct ui_design_app_t {
 	xui_widget pComplexEditorOk;
 	xui_widget pComplexEditorCancel;
 	xui_file_dialog pFileDialog;
+	xui_msgbox pUnsavedBox;
 	int iToolboxWindow;
 	int iCanvasWindow;
 	int iInspectorWindow;
 	int iCanvasPane;
-	ui_design_model_t tModel;
-	ui_design_history_entry_t arrUndo[UI_DESIGN_HISTORY_LIMIT];
-	ui_design_history_entry_t arrRedo[UI_DESIGN_HISTORY_LIMIT];
-	int iUndoCount;
-	int iRedoCount;
-	char* sHistoryTransactionBefore;
-	ui_design_command_t iHistoryTransactionCommand;
-	char sHistoryTransactionName[48];
-	char sDocumentPath[UI_DESIGN_PATH_CAPACITY];
+	ui_design_session_t* pSession;
+	ui_design_session_t* arrSessions[UI_DESIGN_SESSION_LIMIT];
+	int iSessionCount;
+	uint64_t iNextSessionId;
+	int bSyncingTabs;
+	int iPendingTab;
+	int iPendingCloseTab;
+	int bExitRequested;
+	int bNativeCloseRequested;
+	void* pNativeWindow;
+	xvalue* pDefaultLayout;
+	char* sLastLayout;
+	char sWorkspacePath[UI_DESIGN_PATH_CAPACITY];
+	double fNextWorkspaceCheck;
+	double fNextDiskCheck;
+	int bWorkspaceExplicit;
+	int bWorkspaceLoadFailed;
+	int iLastLayoutChange;
+	int bWorkbenchExercise;
+	char sScreenshotPath[UI_DESIGN_PATH_CAPACITY];
+	char sFontPath[UI_DESIGN_PATH_CAPACITY];
+	float fFontSize;
 	char sStatus[UI_DESIGN_STATUS_CAPACITY];
-	int bDocumentDirty;
-	int bGridVisible;
-	int bSnapEnabled;
-	int bMarqueeSelectContain;
 	int bPreviewMode;
-	float fZoom;
+	float fCanvasPanPointerStartX;
+	float fCanvasPanPointerStartY;
+	float fCanvasPanStartX;
+	float fCanvasPanStartY;
 	int iStatusMessageItem;
 	int iStatusSelectionItem;
 	int iStatusZoomItem;
 	int iPendingFileCommand;
+	int iPendingUnsavedCommand;
 	ui_design_clipboard_node_t* pClipboardNodes;
 	int iClipboardNodeCount;
 	int iClipboardCapacity;
@@ -218,6 +228,9 @@ typedef struct ui_design_app_t {
 	int bPreviewRunner;
 	int bPreviewDeleteFile;
 	char sPreviewPath[UI_DESIGN_PATH_CAPACITY];
+	int bGenerate;
+	char sGenerateInputPath[UI_DESIGN_PATH_CAPACITY];
+	char sGenerateOutputPath[UI_DESIGN_PATH_CAPACITY];
 	int bHasMouse;
 	float fLastMouseX;
 	float fLastMouseY;
@@ -262,6 +275,12 @@ int uiDesignAppCommitHistoryTransaction(ui_design_app_t* pApp);
 void uiDesignAppCancelHistoryTransaction(ui_design_app_t* pApp);
 void uiDesignAppUpdateCommandUI(ui_design_app_t* pApp);
 void uiDesignAppSetStatus(ui_design_app_t* pApp, const char* sStatus);
+int uiDesignAppSwitchSession(ui_design_app_t* pApp, int iIndex);
+int uiDesignAppNewSession(ui_design_app_t* pApp);
+int uiDesignAppOpenSession(ui_design_app_t* pApp, const char* sPath);
+int uiDesignAppSaveSession(ui_design_app_t* pApp, const char* sPath);
+void uiDesignAppPollSessions(ui_design_app_t* pApp);
+void uiDesignAppTrimHistory(ui_design_app_t* pApp);
 
 #ifdef __cplusplus
 }

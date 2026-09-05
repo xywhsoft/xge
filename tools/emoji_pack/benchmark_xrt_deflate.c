@@ -1,6 +1,6 @@
 #define XRT_MODULE_DEFLATE
 #define XRT_MODULE_INFLATE
-#define XREGEX_IMPLEMENTATION
+#define XRT_IMPLEMENTATION
 #include "../../lib/xrt/xrt.h"
 
 #include <stdio.h>

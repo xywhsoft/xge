@@ -1,5 +1,6 @@
 #include "ui_design_model.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,42 @@ void uiDesignModelInit(ui_design_model_t* pModel)
 	pModel->iSelectedId = 0;
 	pModel->iSelectedCount = 0;
 	pModel->iRevision = 1u;
+}
+
+int uiDesignNodeEnsureRuntime(ui_design_node_t* pNode)
+{
+	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pNode->pRuntime != NULL ) return XUI_OK;
+	pNode->pRuntime = (ui_design_node_runtime_t*)calloc(1u, sizeof(*pNode->pRuntime));
+	return (pNode->pRuntime != NULL) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+}
+
+void uiDesignNodeClearProperties(ui_design_node_t* pNode)
+{
+	if ( pNode == NULL ) return;
+	free(pNode->arrProperties);
+	pNode->arrProperties = NULL;
+	pNode->iPropertyCount = 0;
+	pNode->iPropertyCapacity = 0;
+}
+
+void uiDesignNodeReleaseStorage(ui_design_node_t* pNode)
+{
+	if ( pNode == NULL ) return;
+	uiDesignNodeClearProperties(pNode);
+	free(pNode->pRuntime);
+	pNode->pRuntime = NULL;
+}
+
+void uiDesignModelDestroy(ui_design_model_t* pModel)
+{
+	int i;
+
+	if ( pModel == NULL ) return;
+	for ( i = 0; i < pModel->iNodeCount; ++i ) {
+		uiDesignNodeReleaseStorage(&pModel->arrNodes[i]);
+	}
+	memset(pModel, 0, sizeof(*pModel));
 }
 
 const char* uiDesignNodeTypeName(ui_design_node_type_t iType)
@@ -427,6 +464,7 @@ int uiDesignModelAddNode(ui_design_model_t* pModel, ui_design_node_type_t iType,
 
 	if ( (pModel == NULL) || (iType <= UI_DESIGN_NODE_NONE) || (iType > UI_DESIGN_NODE_LAST) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pModel->iNodeCount >= UI_DESIGN_MAX_NODES ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( pModel->iNextId <= 0 || pModel->iNextId >= INT_MAX ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( !__uiDesignDefaultParentValid(pModel, iParentId) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNode = &pModel->arrNodes[pModel->iNodeCount++];
 	memset(pNode, 0, sizeof(*pNode));
@@ -655,6 +693,12 @@ int uiDesignNodeSetProperty(ui_design_node_t* pNode, const char* sPropertyId, co
 	iIndex = __uiDesignNodeFindProperty(pNode, sPropertyId);
 	if ( iIndex < 0 ) {
 		if ( pNode->iPropertyCount >= UI_DESIGN_MAX_NODE_PROPERTIES ) return XUI_ERROR_OUT_OF_MEMORY;
+		if ( pNode->arrProperties == NULL ) {
+			pNode->arrProperties = (ui_design_property_value_t*)calloc(
+				UI_DESIGN_MAX_NODE_PROPERTIES, sizeof(*pNode->arrProperties));
+			if ( pNode->arrProperties == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+			pNode->iPropertyCapacity = UI_DESIGN_MAX_NODE_PROPERTIES;
+		}
 		iIndex = pNode->iPropertyCount++;
 	}
 	pProp = &pNode->arrProperties[iIndex];

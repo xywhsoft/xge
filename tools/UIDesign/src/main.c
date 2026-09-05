@@ -1,9 +1,11 @@
 #include "ui_design_app.h"
 #include "ui_design_canvas.h"
+#include "ui_design_codegen.h"
 #include "ui_design_document.h"
 #include "ui_design_inspector.h"
 #include "ui_design_registry.h"
 #include "ui_design_toolbox.h"
+#include "ui_design_workbench.h"
 #include "src/xui_xrt_port.h"
 
 #if defined(_WIN32) && !defined(WIN32_LEAN_AND_MEAN)
@@ -24,9 +26,9 @@
 #define UI_DESIGN_KEY_RIGHT_SHIFT 344
 #define UI_DESIGN_KEY_RIGHT_CTRL 345
 #define UI_DESIGN_KEY_RIGHT_ALT 346
-#define UI_DESIGN_MENUBAR_HEIGHT 28.0f
-#define UI_DESIGN_TOOLBAR_HEIGHT 36.0f
-#define UI_DESIGN_STATUSBAR_HEIGHT 24.0f
+#define UI_DESIGN_MENUBAR_HEIGHT 32.0f
+#define UI_DESIGN_TOOLBAR_HEIGHT 40.0f
+#define UI_DESIGN_STATUSBAR_HEIGHT 28.0f
 #define UI_DESIGN_CHROME_GAP 4.0f
 #define UI_DESIGN_PREVIEW_W 900
 #define UI_DESIGN_PREVIEW_H 600
@@ -34,6 +36,9 @@
 static void __uiDesignUsage(void)
 {
 	printf("usage: xui_uidesign [--frames N] [--seconds N] [--exercise] [--preview FILE]\n");
+	printf("       xui_uidesign --generate INPUT.json OUTPUT.c\n");
+	printf("       --font FILE --font-size 14..24 (default: Chinese-capable font, 18px)\n");
+	printf("       --workspace FILE --screenshot FILE --workbench-exercise\n");
 	printf("       no duration option means run until the window is closed.\n");
 }
 
@@ -183,6 +188,22 @@ static int __uiDesignParseArgs(ui_design_app_t* pApp, int argc, char** argv)
 			if ( pApp->fMaxSeconds <= 0.0 ) return XGE_ERROR_INVALID_ARGUMENT;
 		} else if ( strcmp(argv[i], "--exercise") == 0 ) {
 			pApp->bExercise = 1;
+		} else if ( strcmp(argv[i], "--workbench-exercise") == 0 ) {
+			pApp->bWorkbenchExercise = 1;
+		} else if ( strcmp(argv[i], "--workspace") == 0 ) {
+			if ( i + 1 >= argc || strlen(argv[i + 1]) >= sizeof(pApp->sWorkspacePath) ) return XGE_ERROR_INVALID_ARGUMENT;
+			pApp->bWorkspaceExplicit = 1;
+			snprintf(pApp->sWorkspacePath, sizeof(pApp->sWorkspacePath), "%s", argv[++i]);
+		} else if ( strcmp(argv[i], "--font") == 0 ) {
+			if ( i + 1 >= argc || strlen(argv[i + 1]) >= sizeof(pApp->sFontPath) ) return XGE_ERROR_INVALID_ARGUMENT;
+			snprintf(pApp->sFontPath, sizeof(pApp->sFontPath), "%s", argv[++i]);
+		} else if ( strcmp(argv[i], "--font-size") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			pApp->fFontSize = (float)atof(argv[++i]);
+			if ( !(pApp->fFontSize >= 14 && pApp->fFontSize <= 24) ) return XGE_ERROR_INVALID_ARGUMENT;
+		} else if ( strcmp(argv[i], "--screenshot") == 0 ) {
+			if ( i + 1 >= argc || strlen(argv[i + 1]) >= sizeof(pApp->sScreenshotPath) ) return XGE_ERROR_INVALID_ARGUMENT;
+			snprintf(pApp->sScreenshotPath, sizeof(pApp->sScreenshotPath), "%s", argv[++i]);
 		} else if ( strcmp(argv[i], "--preview") == 0 ) {
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			pApp->bPreviewRunner = 1;
@@ -192,6 +213,11 @@ static int __uiDesignParseArgs(ui_design_app_t* pApp, int argc, char** argv)
 			snprintf(pApp->sPreviewPath, sizeof(pApp->sPreviewPath), "%s", argv[i] + 10);
 		} else if ( strcmp(argv[i], "--preview-delete") == 0 ) {
 			pApp->bPreviewDeleteFile = 1;
+		} else if ( strcmp(argv[i], "--generate") == 0 ) {
+			if ( i + 2 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			pApp->bGenerate = 1;
+			snprintf(pApp->sGenerateInputPath, sizeof(pApp->sGenerateInputPath), "%s", argv[++i]);
+			snprintf(pApp->sGenerateOutputPath, sizeof(pApp->sGenerateOutputPath), "%s", argv[++i]);
 		} else if ( strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0 ) {
 			__uiDesignUsage();
 			return 1;
@@ -199,36 +225,19 @@ static int __uiDesignParseArgs(ui_design_app_t* pApp, int argc, char** argv)
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 	}
+	if ( pApp->bGenerate && pApp->bPreviewRunner ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pApp->bWorkbenchExercise && (!pApp->bWorkspaceExplicit || !pApp->sWorkspacePath[0] || pApp->iMaxFrames <= 0 || pApp->bExercise || pApp->bPreviewRunner) ) return XGE_ERROR_INVALID_ARGUMENT;
 	return XGE_OK;
 }
 
-static const char* __uiDesignFindTtf(void)
-{
-	static const char* arrPaths[] = {
-		"C:\\Windows\\Fonts\\segoeui.ttf",
-		"C:\\Windows\\Fonts\\arial.ttf",
-		"C:\\Windows\\Fonts\\calibri.ttf",
-		"C:\\Windows\\Fonts\\msyh.ttc",
-		"C:\\Windows\\Fonts\\simhei.ttf"
-	};
-	FILE* pFile;
-	int i;
 
-	for ( i = 0; i < (int)(sizeof(arrPaths) / sizeof(arrPaths[0])); i++ ) {
-		pFile = fopen(arrPaths[i], "rb");
-		if ( pFile != NULL ) {
-			fclose(pFile);
-			return arrPaths[i];
-		}
-	}
-	return NULL;
-}
 
 void uiDesignAppInvalidate(ui_design_app_t* pApp)
 {
 	if ( pApp == NULL ) return;
+	xgeRenderRequest();
 	if ( pApp->pToolbox != NULL ) (void)xuiWidgetInvalidate(pApp->pToolbox, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( pApp->pCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pCanvas, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( pApp->pCanvas != NULL ) (void)xuiWidgetInvalidate(pApp->pCanvas, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( pApp->pArtboard != NULL ) (void)xuiWidgetInvalidate(pApp->pArtboard, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( pApp->pOverlay != NULL ) (void)xuiWidgetInvalidate(pApp->pOverlay, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( pApp->pInspector != NULL ) (void)xuiWidgetInvalidate(pApp->pInspector, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -250,7 +259,7 @@ int uiDesignAppSelectNode(ui_design_app_t* pApp, int iId)
 	pApp->iEditingProperty = UI_DESIGN_PROPERTY_NONE;
 	pApp->sEditBuffer[0] = '\0';
 	pApp->iEditLength = 0;
-	iRet = uiDesignModelSetSelected(&pApp->tModel, iId);
+	iRet = uiDesignModelSetSelected(&pApp->pSession->tModel, iId);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppSetStatus(pApp, (iId > 0) ? "Selected control" : "Ready");
@@ -267,7 +276,7 @@ int uiDesignAppAddNodeSelection(ui_design_app_t* pApp, int iId)
 	pApp->iEditingProperty = UI_DESIGN_PROPERTY_NONE;
 	pApp->sEditBuffer[0] = '\0';
 	pApp->iEditLength = 0;
-	iRet = uiDesignModelAddSelection(&pApp->tModel, iId);
+	iRet = uiDesignModelAddSelection(&pApp->pSession->tModel, iId);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppSetStatus(pApp, "Selection changed");
@@ -284,7 +293,7 @@ int uiDesignAppToggleNodeSelection(ui_design_app_t* pApp, int iId)
 	pApp->iEditingProperty = UI_DESIGN_PROPERTY_NONE;
 	pApp->sEditBuffer[0] = '\0';
 	pApp->iEditLength = 0;
-	iRet = uiDesignModelToggleSelection(&pApp->tModel, iId);
+	iRet = uiDesignModelToggleSelection(&pApp->pSession->tModel, iId);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppSetStatus(pApp, "Selection changed");
@@ -718,13 +727,15 @@ int uiDesignAppCreateNodeWidget(ui_design_app_t* pApp, ui_design_node_t* pNode)
 
 	if ( (pApp == NULL) || (pNode == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pNode->pWidget != NULL ) return uiDesignAppSyncNodeWidget(pApp, pNode);
+	iRet = uiDesignNodeEnsureRuntime(pNode);
+	if ( iRet != XUI_OK ) return iRet;
 	pDesc = uiDesignRegistryFind(pNode->iType);
 	if ( (pDesc == NULL) || (pDesc->onCreate == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pParentNode = NULL;
 	if ( pNode->iParentId == 0 ) {
 		pParent = pApp->pArtboard;
 	} else {
-		pParentNode = uiDesignModelGetNode(&pApp->tModel, pNode->iParentId);
+		pParentNode = uiDesignModelGetNode(&pApp->pSession->tModel, pNode->iParentId);
 		pParent = (pParentNode != NULL) ? pParentNode->pWidget : NULL;
 	}
 	if ( pParent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -822,14 +833,14 @@ static int __uiDesignAppFillClipboardSubtree(ui_design_app_t* pApp, int iRootId,
 	int iRet;
 
 	if ( (pApp == NULL) || (pCount == NULL) || (pApp->pClipboardNodes == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pNode = uiDesignModelGetNodeConst(&pApp->tModel, iRootId);
+	pNode = uiDesignModelGetNodeConst(&pApp->pSession->tModel, iRootId);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( *pCount >= pApp->iClipboardCapacity ) return XUI_ERROR_OUT_OF_MEMORY;
 	__uiDesignAppCopyPersistentNode(&pApp->pClipboardNodes[*pCount], pNode);
 	(*pCount)++;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		if ( pApp->tModel.arrNodes[i].iParentId == iRootId ) {
-			iRet = __uiDesignAppFillClipboardSubtree(pApp, pApp->tModel.arrNodes[i].iId, pCount);
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		if ( pApp->pSession->tModel.arrNodes[i].iParentId == iRootId ) {
+			iRet = __uiDesignAppFillClipboardSubtree(pApp, pApp->pSession->tModel.arrNodes[i].iId, pCount);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
@@ -848,13 +859,13 @@ static int __uiDesignAppSelectionRootIds(ui_design_app_t* pApp, int* arrRootIds,
 
 	if ( (pApp == NULL) || (arrRootIds == NULL) || (iCapacity <= 0) ) return 0;
 	iCount = 0;
-	for ( i = 0; i < pApp->tModel.iSelectedCount; ++i ) {
-		iId = pApp->tModel.arrSelectedIds[i];
-		if ( iId <= 0 || uiDesignModelGetNode(&pApp->tModel, iId) == NULL ) continue;
+	for ( i = 0; i < pApp->pSession->tModel.iSelectedCount; ++i ) {
+		iId = pApp->pSession->tModel.arrSelectedIds[i];
+		if ( iId <= 0 || uiDesignModelGetNode(&pApp->pSession->tModel, iId) == NULL ) continue;
 		bDescendantSelected = 0;
-		for ( j = 0; j < pApp->tModel.iSelectedCount; ++j ) {
+		for ( j = 0; j < pApp->pSession->tModel.iSelectedCount; ++j ) {
 			if ( i == j ) continue;
-			if ( __uiDesignAppNodeIsDescendantOf(&pApp->tModel, iId, pApp->tModel.arrSelectedIds[j]) ) {
+			if ( __uiDesignAppNodeIsDescendantOf(&pApp->pSession->tModel, iId, pApp->pSession->tModel.arrSelectedIds[j]) ) {
 				bDescendantSelected = 1;
 				break;
 			}
@@ -893,10 +904,10 @@ static int __uiDesignAppCopyNodeList(ui_design_app_t* pApp, const int* arrRootId
 	fMinX = 0.0f;
 	fMinY = 0.0f;
 	for ( i = 0; i < iRootCount; ++i ) {
-		pNode = uiDesignModelGetNodeConst(&pApp->tModel, arrRootIds[i]);
+		pNode = uiDesignModelGetNodeConst(&pApp->pSession->tModel, arrRootIds[i]);
 		if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-		iTotal += __uiDesignAppCountSubtree(&pApp->tModel, arrRootIds[i]);
-		if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, arrRootIds[i], &tAbs) == XUI_OK ) {
+		iTotal += __uiDesignAppCountSubtree(&pApp->pSession->tModel, arrRootIds[i]);
+		if ( uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, arrRootIds[i], &tAbs) == XUI_OK ) {
 			if ( i == 0 || tAbs.fX < fMinX ) fMinX = tAbs.fX;
 			if ( i == 0 || tAbs.fY < fMinY ) fMinY = tAbs.fY;
 		}
@@ -922,7 +933,7 @@ static int __uiDesignAppCopyNodeList(ui_design_app_t* pApp, const int* arrRootId
 			pApp->iClipboardRootOriginalId = 0;
 			return iRet;
 		}
-		if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, arrRootIds[i], &tAbs) == XUI_OK ) {
+		if ( uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, arrRootIds[i], &tAbs) == XUI_OK ) {
 			pApp->pClipboardNodes[iStart].iOriginalParentId = 0;
 			pApp->pClipboardNodes[iStart].tRect = tAbs;
 		}
@@ -967,7 +978,7 @@ static void __uiDesignAppReleaseNodeRuntime(ui_design_app_t* pApp, ui_design_nod
 {
 	int j;
 
-	if ( (pApp == NULL) || (pNode == NULL) ) return;
+	if ( (pApp == NULL) || (pNode == NULL) || (pNode->pRuntime == NULL) ) return;
 	if ( pNode->pRuntimeFont != NULL ) {
 		pApp->tProxy.fontDestroy(&pApp->tProxy, pNode->pRuntimeFont);
 		pNode->pRuntimeFont = NULL;
@@ -993,6 +1004,8 @@ static void __uiDesignAppReleaseNodeRuntime(ui_design_app_t* pApp, ui_design_nod
 			pNode->arrRuntimeMenuPopup[j] = NULL;
 		}
 	}
+	free(pNode->pRuntime);
+	pNode->pRuntime = NULL;
 }
 
 static void __uiDesignAppApplyDropLayoutProperties(ui_design_app_t* pApp, ui_design_node_t* pNode, int iParentId, xui_rect_t tParentRect, int bHasParentHost, float fLocalDropX, float fLocalDropY)
@@ -1007,7 +1020,7 @@ static void __uiDesignAppApplyDropLayoutProperties(ui_design_app_t* pApp, ui_des
 	int iDock;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (iParentId == 0) ) return;
-	pParentNode = uiDesignModelGetNode(&pApp->tModel, iParentId);
+	pParentNode = uiDesignModelGetNode(&pApp->pSession->tModel, iParentId);
 	if ( pParentNode == NULL ) return;
 	iParentLayout = uiDesignNodeGetPropertyInt(pParentNode, "layout.type", XUI_LAYOUT_MANUAL);
 	if ( iParentLayout == XUI_LAYOUT_OVERLAY ) {
@@ -1084,7 +1097,7 @@ int uiDesignAppDeleteNode(ui_design_app_t* pApp, int iId)
 	int iWrite;
 
 	if ( (pApp == NULL) || (iId <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pModel = &pApp->tModel;
+	pModel = &pApp->pSession->tModel;
 	pNode = uiDesignModelGetNode(pModel, iId);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(arrDelete, 0, sizeof(arrDelete));
@@ -1104,6 +1117,7 @@ int uiDesignAppDeleteNode(ui_design_app_t* pApp, int iId)
 		}
 		pModel->arrNodes[iRead].pWidget = NULL;
 		__uiDesignAppReleaseNodeRuntime(pApp, &pModel->arrNodes[iRead]);
+		uiDesignNodeReleaseStorage(&pModel->arrNodes[iRead]);
 	}
 	iWrite = 0;
 	for ( iRead = 0; iRead < pModel->iNodeCount; ++iRead ) {
@@ -1137,7 +1151,7 @@ int uiDesignAppDeleteSelection(ui_design_app_t* pApp)
 	iRootCount = __uiDesignAppSelectionRootIds(pApp, arrRootIds, UI_DESIGN_MAX_NODES);
 	if ( iRootCount <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < iRootCount; ++i ) {
-		if ( uiDesignModelGetNode(&pApp->tModel, arrRootIds[i]) == NULL ) continue;
+		if ( uiDesignModelGetNode(&pApp->pSession->tModel, arrRootIds[i]) == NULL ) continue;
 		iRet = uiDesignAppDeleteNode(pApp, arrRootIds[i]);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -1178,17 +1192,17 @@ static int __uiDesignAppPasteClipboardAt(ui_design_app_t* pApp, float fDesignX, 
 	if ( pApp->iClipboardNodeCount > UI_DESIGN_MAX_NODES ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( iForcedParentId >= 0 ) {
 		if ( iForcedParentId != 0 ) {
-			pParentNode = uiDesignModelGetNode(&pApp->tModel, iForcedParentId);
+			pParentNode = uiDesignModelGetNode(&pApp->pSession->tModel, iForcedParentId);
 			if ( pParentNode == NULL || !uiDesignNodeTypeIsContainer(pParentNode->iType) ) return XUI_ERROR_INVALID_ARGUMENT;
 		}
 		iParentId = iForcedParentId;
 	} else {
-		iParentId = uiDesignModelFindDropParent(&pApp->tModel, fDesignX, fDesignY);
+		iParentId = uiDesignModelFindDropParent(&pApp->pSession->tModel, fDesignX, fDesignY);
 	}
 	fLocalX = fDesignX;
 	fLocalY = fDesignY;
 	bHasParentHost = 0;
-	if ( iParentId != 0 && uiDesignModelGetChildHostRect(&pApp->tModel, iParentId, &tParentRect) == XUI_OK ) {
+	if ( iParentId != 0 && uiDesignModelGetChildHostRect(&pApp->pSession->tModel, iParentId, &tParentRect) == XUI_OK ) {
 		bHasParentHost = 1;
 		fLocalX = fDesignX - tParentRect.fX;
 		fLocalY = fDesignY - tParentRect.fY;
@@ -1216,19 +1230,19 @@ static int __uiDesignAppPasteClipboardAt(ui_design_app_t* pApp, float fDesignX, 
 			tRect.fX = fLocalX + (pClip->tRect.fX - pApp->fClipboardRootX);
 			tRect.fY = fLocalY + (pClip->tRect.fY - pApp->fClipboardRootY);
 		}
-		iRet = uiDesignModelAddNode(&pApp->tModel, pClip->iType, iMappedParent, tRect.fX, tRect.fY, &iNewId);
+		iRet = uiDesignModelAddNode(&pApp->pSession->tModel, pClip->iType, iMappedParent, tRect.fX, tRect.fY, &iNewId);
 		if ( iRet != XUI_OK ) return iRet;
-		pNode = uiDesignModelGetNode(&pApp->tModel, iNewId);
+		pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iNewId);
 		if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 		pNode->tRect = tRect;
 		snprintf(pNode->sText, sizeof(pNode->sText), "%s", pClip->sText);
 		pNode->bChecked = pClip->bChecked;
 		pNode->bVisible = pClip->bVisible;
 		pNode->bEnabled = pClip->bEnabled;
-		pNode->iPropertyCount = pClip->iPropertyCount;
-		if ( pNode->iPropertyCount > UI_DESIGN_MAX_NODE_PROPERTIES ) pNode->iPropertyCount = UI_DESIGN_MAX_NODE_PROPERTIES;
-		if ( pNode->iPropertyCount > 0 ) {
-			memcpy(pNode->arrProperties, pClip->arrProperties, sizeof(pNode->arrProperties[0]) * (size_t)pNode->iPropertyCount);
+		uiDesignNodeClearProperties(pNode);
+		for ( j = 0; j < pClip->iPropertyCount && j < UI_DESIGN_MAX_NODE_PROPERTIES; ++j ) {
+			iRet = uiDesignNodeSetProperty(pNode, pClip->arrProperties[j].sId, pClip->arrProperties[j].sValue);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( i == 0 ) {
 			__uiDesignAppApplyDropLayoutProperties(pApp, pNode, iMappedParent, tParentRect, bHasParentHost, fLocalX, fLocalY);
@@ -1241,17 +1255,17 @@ static int __uiDesignAppPasteClipboardAt(ui_design_app_t* pApp, float fDesignX, 
 		if ( bPasteRoot && iRootNewId == 0 ) iRootNewId = iNewId;
 	}
 	if ( iParentId != 0 ) {
-		pParentNode = uiDesignModelGetNode(&pApp->tModel, iParentId);
+		pParentNode = uiDesignModelGetNode(&pApp->pSession->tModel, iParentId);
 		if ( pParentNode != NULL && pParentNode->pWidget != NULL ) (void)uiDesignAppSyncNodeWidget(pApp, pParentNode);
 	}
 	if ( iRootNewId == 0 ) iRootNewId = arrNewIds[0];
-	(void)uiDesignModelClearSelection(&pApp->tModel);
+	(void)uiDesignModelClearSelection(&pApp->pSession->tModel);
 	for ( i = 0; i < pApp->iClipboardNodeCount; ++i ) {
 		pClip = &pApp->pClipboardNodes[i];
 		bPasteRoot = (pClip->iOriginalParentId == 0) || !__uiDesignAppClipboardHasOriginalId(pApp, pClip->iOriginalParentId);
-		if ( bPasteRoot && arrNewIds[i] > 0 ) (void)uiDesignModelAddSelection(&pApp->tModel, arrNewIds[i]);
+		if ( bPasteRoot && arrNewIds[i] > 0 ) (void)uiDesignModelAddSelection(&pApp->pSession->tModel, arrNewIds[i]);
 	}
-	if ( pApp->tModel.iSelectedCount <= 0 ) (void)uiDesignModelSetSelected(&pApp->tModel, iRootNewId);
+	if ( pApp->pSession->tModel.iSelectedCount <= 0 ) (void)uiDesignModelSetSelected(&pApp->pSession->tModel, iRootNewId);
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppInvalidate(pApp);
 	if ( pNewRootId != NULL ) *pNewRootId = iRootNewId;
@@ -1271,12 +1285,12 @@ int uiDesignAppPasteClipboardAsChild(ui_design_app_t* pApp, int iParentId, int* 
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iParentId != 0 ) {
-		ui_design_node_t* pParent = uiDesignModelGetNode(&pApp->tModel, iParentId);
+		ui_design_node_t* pParent = uiDesignModelGetNode(&pApp->pSession->tModel, iParentId);
 		if ( pParent == NULL || !uiDesignNodeTypeIsContainer(pParent->iType) ) return XUI_ERROR_INVALID_ARGUMENT;
-		if ( uiDesignModelGetChildHostRect(&pApp->tModel, iParentId, &tParentHost) == XUI_OK ) {
+		if ( uiDesignModelGetChildHostRect(&pApp->pSession->tModel, iParentId, &tParentHost) == XUI_OK ) {
 			fX = tParentHost.fX + 16.0f;
 			fY = tParentHost.fY + 16.0f;
-		} else if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, iParentId, &tParentHost) == XUI_OK ) {
+		} else if ( uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, iParentId, &tParentHost) == XUI_OK ) {
 			fX = tParentHost.fX + 16.0f;
 			fY = tParentHost.fY + 16.0f;
 		} else {
@@ -1322,13 +1336,13 @@ int uiDesignAppAddNodeAt(ui_design_app_t* pApp, ui_design_node_type_t iType, flo
 	if ( pDesc == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	fW = pDesc->fDefaultW;
 	fH = pDesc->fDefaultH;
-	iParentId = uiDesignModelFindDropParent(&pApp->tModel, fDesignX, fDesignY);
+	iParentId = uiDesignModelFindDropParent(&pApp->pSession->tModel, fDesignX, fDesignY);
 	fX = fDesignX - fW * 0.5f;
 	fY = fDesignY - fH * 0.5f;
 	fLocalDropX = fDesignX;
 	fLocalDropY = fDesignY;
 	bHasParentHost = 0;
-	if ( iParentId != 0 && uiDesignModelGetChildHostRect(&pApp->tModel, iParentId, &tParentRect) == XUI_OK ) {
+	if ( iParentId != 0 && uiDesignModelGetChildHostRect(&pApp->pSession->tModel, iParentId, &tParentRect) == XUI_OK ) {
 		bHasParentHost = 1;
 		fLocalDropX = fDesignX - tParentRect.fX;
 		fLocalDropY = fDesignY - tParentRect.fY;
@@ -1338,20 +1352,20 @@ int uiDesignAppAddNodeAt(ui_design_app_t* pApp, ui_design_node_type_t iType, flo
 	if ( fX < 0.0f ) fX = 0.0f;
 	if ( fY < 0.0f ) fY = 0.0f;
 	iNewId = 0;
-	iRet = uiDesignModelAddNode(&pApp->tModel, iType, iParentId, fX, fY, &iNewId);
+	iRet = uiDesignModelAddNode(&pApp->pSession->tModel, iType, iParentId, fX, fY, &iNewId);
 	if ( iRet == XUI_OK ) {
-		pNode = uiDesignModelGetNode(&pApp->tModel, iNewId);
+		pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iNewId);
 		if ( pNode != NULL ) {
 			pNode->tRect.fW = fW;
 			pNode->tRect.fH = fH;
 			iRet = uiDesignRegistryInitNodeProperties(pDesc, pNode);
 			if ( iRet != XUI_OK ) return iRet;
-			pParentNode = (iParentId != 0) ? uiDesignModelGetNode(&pApp->tModel, iParentId) : NULL;
+			pParentNode = (iParentId != 0) ? uiDesignModelGetNode(&pApp->pSession->tModel, iParentId) : NULL;
 			if ( pParentNode != NULL ) {
 				iParentLayout = uiDesignNodeGetPropertyInt(pParentNode, "layout.type", XUI_LAYOUT_MANUAL);
 				if ( iParentLayout == XUI_LAYOUT_OVERLAY ) {
 					snprintf(sLayoutValue, sizeof(sLayoutValue), "%d", XUI_FLOW_ABSOLUTE);
-					iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.flowMode", sLayoutValue);
+					iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.flowMode", sLayoutValue);
 					if ( iRet != XUI_OK ) return iRet;
 				} else if ( (iParentLayout == XUI_LAYOUT_TABLE) && bHasParentHost ) {
 					iRows = uiDesignNodeGetPropertyInt(pParentNode, "layout.tableRows", 1);
@@ -1365,37 +1379,37 @@ int uiDesignAppAddNodeAt(ui_design_app_t* pApp, ui_design_node_type_t iType, flo
 					if ( iRow >= iRows ) iRow = iRows - 1;
 					if ( iColumn >= iColumns ) iColumn = iColumns - 1;
 					snprintf(sLayoutValue, sizeof(sLayoutValue), "%d", iRow);
-					iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.tableCellRow", sLayoutValue);
+					iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.tableCellRow", sLayoutValue);
 					if ( iRet != XUI_OK ) return iRet;
 					snprintf(sLayoutValue, sizeof(sLayoutValue), "%d", iColumn);
-					iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.tableCellColumn", sLayoutValue);
+					iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.tableCellColumn", sLayoutValue);
 					if ( iRet != XUI_OK ) return iRet;
 				} else if ( (iParentLayout == XUI_LAYOUT_DOCK) && bHasParentHost ) {
 					iDock = __uiDesignAppDropDockSide(tParentRect.fW, tParentRect.fH, fLocalDropX, fLocalDropY);
 					snprintf(sLayoutValue, sizeof(sLayoutValue), "%d", iDock);
-					iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.dock", sLayoutValue);
+					iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.dock", sLayoutValue);
 					if ( iRet != XUI_OK ) return iRet;
 				}
 			}
 			if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_CAROUSEL) ) {
 				snprintf(sPage, sizeof(sPage), "%d", __uiDesignAppCarouselPage(pParentNode, pNode));
-				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.carouselPage", sPage);
+				iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.carouselPage", sPage);
 				if ( iRet != XUI_OK ) return iRet;
 			} else if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_SPLIT_LAYOUT) ) {
 				snprintf(sPane, sizeof(sPane), "%d", __uiDesignAppSplitPane(pParentNode, pNode, fX + fW * 0.5f, fY + fH * 0.5f));
-				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.splitPane", sPane);
+				iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.splitPane", sPane);
 				if ( iRet != XUI_OK ) return iRet;
 			} else if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_TABS) ) {
 				snprintf(sPage, sizeof(sPage), "%d", __uiDesignAppTabsPage(pParentNode, pNode));
-				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.tabPage", sPage);
+				iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.tabPage", sPage);
 				if ( iRet != XUI_OK ) return iRet;
 			} else if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_ACCORDION) ) {
 				snprintf(sSection, sizeof(sSection), "%d", __uiDesignAppAccordionSection(pParentNode, pNode));
-				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.accordionSection", sSection);
+				iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.accordionSection", sSection);
 				if ( iRet != XUI_OK ) return iRet;
 			} else if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_DOCK_PANEL) ) {
 				snprintf(sDockWindow, sizeof(sDockWindow), "%d", __uiDesignAppDockWindow(pParentNode, pNode));
-				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.dockWindow", sDockWindow);
+				iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iNewId, "layout.dockWindow", sDockWindow);
 				if ( iRet != XUI_OK ) return iRet;
 				iRet = uiDesignAppSyncNodeWidget(pApp, pParentNode);
 				if ( iRet != XUI_OK ) return iRet;
@@ -1418,9 +1432,9 @@ int uiDesignAppSetNodeRect(ui_design_app_t* pApp, int iId, xui_rect_t tRect)
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = uiDesignModelSetRect(&pApp->tModel, iId, tRect);
+	iRet = uiDesignModelSetRect(&pApp->pSession->tModel, iId, tRect);
 	if ( iRet != XUI_OK ) return iRet;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode != NULL ) (void)uiDesignAppSyncNodeWidget(pApp, pNode);
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppInvalidate(pApp);
@@ -1433,9 +1447,9 @@ int uiDesignAppSetNodeText(ui_design_app_t* pApp, int iId, const char* sText)
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = uiDesignModelSetText(&pApp->tModel, iId, sText);
+	iRet = uiDesignModelSetText(&pApp->pSession->tModel, iId, sText);
 	if ( iRet != XUI_OK ) return iRet;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode != NULL ) (void)uiDesignAppSyncNodeWidget(pApp, pNode);
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppInvalidate(pApp);
@@ -1448,9 +1462,9 @@ int uiDesignAppSetNodeChecked(ui_design_app_t* pApp, int iId, int bChecked)
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = uiDesignModelSetChecked(&pApp->tModel, iId, bChecked);
+	iRet = uiDesignModelSetChecked(&pApp->pSession->tModel, iId, bChecked);
 	if ( iRet != XUI_OK ) return iRet;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode != NULL ) (void)uiDesignAppSyncNodeWidget(pApp, pNode);
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppInvalidate(pApp);
@@ -1463,9 +1477,9 @@ int uiDesignAppSetNodeVisible(ui_design_app_t* pApp, int iId, int bVisible)
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = uiDesignModelSetVisible(&pApp->tModel, iId, bVisible);
+	iRet = uiDesignModelSetVisible(&pApp->pSession->tModel, iId, bVisible);
 	if ( iRet != XUI_OK ) return iRet;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode != NULL ) (void)uiDesignAppSyncNodeWidget(pApp, pNode);
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppInvalidate(pApp);
@@ -1478,9 +1492,9 @@ int uiDesignAppSetNodeEnabled(ui_design_app_t* pApp, int iId, int bEnabled)
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = uiDesignModelSetEnabled(&pApp->tModel, iId, bEnabled);
+	iRet = uiDesignModelSetEnabled(&pApp->pSession->tModel, iId, bEnabled);
 	if ( iRet != XUI_OK ) return iRet;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode != NULL ) (void)uiDesignAppSyncNodeWidget(pApp, pNode);
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppInvalidate(pApp);
@@ -1495,20 +1509,20 @@ int uiDesignAppSetNodeProperty(ui_design_app_t* pApp, int iId, const char* sProp
 	int bChecked;
 
 	if ( (pApp == NULL) || (sPropertyId == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = uiDesignModelSetProperty(&pApp->tModel, iId, sPropertyId, sValue);
+	iRet = uiDesignModelSetProperty(&pApp->pSession->tModel, iId, sPropertyId, sValue);
 	if ( iRet != XUI_OK ) return iRet;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( strcmp(sPropertyId, "checked") == 0 ) {
 		bChecked = uiDesignNodeGetPropertyBool(pNode, "checked", pNode->bChecked);
-		(void)uiDesignModelSetChecked(&pApp->tModel, iId, bChecked);
+		(void)uiDesignModelSetChecked(&pApp->pSession->tModel, iId, bChecked);
 	}
 	if ( (strcmp(sPropertyId, "layout.carouselPage") == 0 ||
 	      strcmp(sPropertyId, "layout.splitPane") == 0 ||
 	      strcmp(sPropertyId, "layout.tabPage") == 0 ||
 	      strcmp(sPropertyId, "layout.accordionSection") == 0) &&
 	     pNode->pWidget != NULL && pNode->iParentId != 0 ) {
-		pParentNode = uiDesignModelGetNode(&pApp->tModel, pNode->iParentId);
+		pParentNode = uiDesignModelGetNode(&pApp->pSession->tModel, pNode->iParentId);
 		if ( (pParentNode != NULL) && (pParentNode->pWidget != NULL) ) {
 			iRet = __uiDesignAppAttachNodeWidget(pParentNode, pNode, pParentNode->pWidget, pNode->pWidget);
 			if ( iRet != XUI_OK ) return iRet;
@@ -1523,7 +1537,58 @@ int uiDesignAppSetNodeProperty(ui_design_app_t* pApp, int iId, const char* sProp
 static int __uiDesignCaptureSnapshot(ui_design_app_t* pApp, char** ppSnapshot)
 {
 	if ( (pApp == NULL) || (ppSnapshot == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	return uiDesignDocumentSaveModel(&pApp->tModel, ppSnapshot);
+	return uiDesignDocumentSaveModel(&pApp->pSession->tModel, ppSnapshot);
+}
+
+static int __uiDesignAppFinishPropertyEdit(ui_design_app_t* pApp)
+{
+	int ret;
+	if ( pApp->pPropertyGrid == NULL || !xuiPropertyGridIsEditing(pApp->pPropertyGrid) ) return XUI_OK;
+	ret = xuiPropertyGridEndEdit(pApp->pPropertyGrid, 1);
+	if ( ret != XUI_OK || xuiPropertyGridIsEditing(pApp->pPropertyGrid) ) {
+		uiDesignAppSetStatus(pApp, "Finish or correct the current property before continuing");
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	return XUI_OK;
+}
+
+static void __uiDesignAppRefreshDocumentTitle(ui_design_app_t* pApp)
+{
+	const char* sName;
+	const char* pSlash;
+	const char* pBackslash;
+	char sTitle[UI_DESIGN_PATH_CAPACITY + 48];
+
+	if ( pApp == NULL || pApp->bPreviewRunner ) return;
+	sName = "Untitled";
+	if ( pApp->pSession->sDocumentPath[0] != '\0' ) {
+		sName = pApp->pSession->sDocumentPath;
+		pSlash = strrchr(sName, '/');
+		pBackslash = strrchr(sName, '\\');
+		if ( pSlash != NULL && (pBackslash == NULL || pSlash > pBackslash) ) sName = pSlash + 1;
+		else if ( pBackslash != NULL ) sName = pBackslash + 1;
+	}
+	snprintf(sTitle, sizeof(sTitle), "XUI UI Design - %s%s", sName, pApp->pSession->bDocumentDirty ? " *" : "");
+	xgeSetTitle(sTitle);
+	uiDesignWorkbenchRefreshTabs(pApp);
+}
+
+static int __uiDesignAppSetCleanSnapshot(ui_design_app_t* pApp, const char* sSnapshot)
+{
+	int ret;
+	(void)sSnapshot;
+	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	ret = uiDesignSessionSetClean(pApp->pSession);
+	__uiDesignAppRefreshDocumentTitle(pApp);
+	return ret;
+}
+
+static void __uiDesignAppUpdateDirtyFromSnapshot(ui_design_app_t* pApp, const char* sSnapshot)
+{
+	(void)sSnapshot;
+	if ( pApp == NULL ) return;
+	(void)uiDesignSessionUpdateDirty(pApp->pSession);
+	__uiDesignAppRefreshDocumentTitle(pApp);
 }
 
 static int __uiDesignParseSnapshot(const char* sSnapshot, ui_design_model_t** ppModel)
@@ -1537,9 +1602,9 @@ static void __uiDesignAppClearNodeRuntime(ui_design_app_t* pApp)
 	int i;
 
 	if ( pApp == NULL ) return;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		pNode = &pApp->tModel.arrNodes[i];
-		if ( pNode->pWidget != NULL && (pNode->iParentId == 0 || uiDesignModelGetNode(&pApp->tModel, pNode->iParentId) == NULL) ) {
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		pNode = &pApp->pSession->tModel.arrNodes[i];
+		if ( pNode->pWidget != NULL && (pNode->iParentId == 0 || uiDesignModelGetNode(&pApp->pSession->tModel, pNode->iParentId) == NULL) ) {
 			xuiWidgetDestroy(pNode->pWidget);
 		}
 		pNode->pWidget = NULL;
@@ -1549,14 +1614,34 @@ static void __uiDesignAppClearNodeRuntime(ui_design_app_t* pApp)
 
 static int __uiDesignAppRebuildNodeRuntime(ui_design_app_t* pApp)
 {
+	unsigned char arrBuilt[UI_DESIGN_MAX_NODES];
+	ui_design_node_t* pNode;
+	ui_design_node_t* pParent;
+	int iBuiltCount;
+	int iProgress;
 	int i;
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		pApp->tModel.arrNodes[i].pWidget = NULL;
-		iRet = uiDesignAppCreateNodeWidget(pApp, &pApp->tModel.arrNodes[i]);
-		if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		pApp->pSession->tModel.arrNodes[i].pWidget = NULL;
+	}
+	memset(arrBuilt, 0, sizeof(arrBuilt));
+	iBuiltCount = 0;
+	while ( iBuiltCount < pApp->pSession->tModel.iNodeCount ) {
+		iProgress = 0;
+		for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+			if ( arrBuilt[i] ) continue;
+			pNode = &pApp->pSession->tModel.arrNodes[i];
+			pParent = (pNode->iParentId != 0) ? uiDesignModelGetNode(&pApp->pSession->tModel, pNode->iParentId) : NULL;
+			if ( pNode->iParentId != 0 && (pParent == NULL || pParent->pWidget == NULL) ) continue;
+			iRet = uiDesignAppCreateNodeWidget(pApp, pNode);
+			if ( iRet != XUI_OK ) return iRet;
+			arrBuilt[i] = 1u;
+			iBuiltCount++;
+			iProgress = 1;
+		}
+		if ( !iProgress ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	return XUI_OK;
 }
@@ -1564,17 +1649,48 @@ static int __uiDesignAppRebuildNodeRuntime(ui_design_app_t* pApp)
 static int __uiDesignAppRestoreSnapshot(ui_design_app_t* pApp, const char* sSnapshot)
 {
 	ui_design_model_t* pNewModel;
+	ui_design_model_t* pRollbackModel;
+	char* sRollbackSnapshot;
 	int iRet;
+	int iRollbackRet;
 
 	if ( (pApp == NULL) || (sSnapshot == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNewModel = NULL;
 	iRet = __uiDesignParseSnapshot(sSnapshot, &pNewModel);
 	if ( iRet != XUI_OK ) return iRet;
+	sRollbackSnapshot = NULL;
+	iRet = __uiDesignCaptureSnapshot(pApp, &sRollbackSnapshot);
+	if ( iRet != XUI_OK ) {
+		uiDesignModelDestroy(pNewModel);
+		free(pNewModel);
+		return iRet;
+	}
 	__uiDesignAppClearNodeRuntime(pApp);
-	pApp->tModel = *pNewModel;
+	uiDesignModelDestroy(&pApp->pSession->tModel);
+	pApp->pSession->tModel = *pNewModel;
 	free(pNewModel);
 	iRet = __uiDesignAppRebuildNodeRuntime(pApp);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		__uiDesignAppClearNodeRuntime(pApp);
+		uiDesignModelDestroy(&pApp->pSession->tModel);
+		pRollbackModel = NULL;
+		iRollbackRet = __uiDesignParseSnapshot(sRollbackSnapshot, &pRollbackModel);
+		if ( iRollbackRet == XUI_OK ) {
+			pApp->pSession->tModel = *pRollbackModel;
+			free(pRollbackModel);
+			iRollbackRet = __uiDesignAppRebuildNodeRuntime(pApp);
+		}
+		if ( iRollbackRet != XUI_OK ) {
+			__uiDesignAppClearNodeRuntime(pApp);
+			uiDesignModelDestroy(&pApp->pSession->tModel);
+			uiDesignModelInit(&pApp->pSession->tModel);
+		}
+		free(sRollbackSnapshot);
+		(void)__uiDesignAppRefreshInspector(pApp);
+		uiDesignAppInvalidate(pApp);
+		return iRet;
+	}
+	free(sRollbackSnapshot);
 	pApp->iEditingProperty = UI_DESIGN_PROPERTY_NONE;
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppUpdateCommandUI(pApp);
@@ -1602,9 +1718,9 @@ static int __uiDesignExercisePreviewRuntime(ui_design_app_t* pApp)
 
 	if ( (pApp == NULL) || !pApp->bPreviewRunner ) return XUI_OK;
 	pNode = NULL;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		if ( pApp->tModel.arrNodes[i].iType == UI_DESIGN_NODE_SPLIT_LAYOUT ) {
-			pNode = &pApp->tModel.arrNodes[i];
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		if ( pApp->pSession->tModel.arrNodes[i].iType == UI_DESIGN_NODE_SPLIT_LAYOUT ) {
+			pNode = &pApp->pSession->tModel.arrNodes[i];
 			break;
 		}
 	}
@@ -1694,36 +1810,56 @@ static int __uiDesignExercisePreviewRuntime(ui_design_app_t* pApp)
 	return XUI_OK;
 }
 
+void uiDesignAppCancelGesture(ui_design_app_t* pApp)
+{
+	char* before = pApp->pSession->sHistoryTransactionBefore;
+	pApp->pSession->sHistoryTransactionBefore = NULL;
+	pApp->iCanvasDragMode = 0;
+	pApp->bDraggingTool = 0;
+	pApp->iDraggingTool = UI_DESIGN_NODE_NONE;
+	pApp->iActiveTool = UI_DESIGN_NODE_NONE;
+	pApp->iCanvasDragNodeCount = 0;
+	(void)xuiReleasePointerCapture(pApp->pContext, pApp->pOverlay);
+	if ( before ) {
+		if ( __uiDesignAppRestoreSnapshot(pApp, before) != XUI_OK ) uiDesignAppSetStatus(pApp, "Could not restore the cancelled operation");
+		free(before);
+	}
+	uiDesignAppUpdateCommandUI(pApp);
+	uiDesignAppInvalidate(pApp);
+}
+
+void uiDesignAppTrimHistory(ui_design_app_t* pApp)
+{
+	size_t total = 0;
+	int i;
+	for ( i = 0; i < pApp->iSessionCount; ++i ) {
+		uiDesignSessionTrimHistory(pApp->arrSessions[i], pApp->arrSessions[i]->iHistoryBudget);
+		total += uiDesignSessionHistoryBytes(pApp->arrSessions[i]);
+	}
+	/* Prefer retaining the active document's most recent history. */
+	for ( i = 0; i < pApp->iSessionCount && total > UI_DESIGN_TOTAL_HISTORY_BYTES; ++i ) {
+		ui_design_session_t* session = pApp->arrSessions[i];
+		size_t bytes = uiDesignSessionHistoryBytes(session);
+		size_t excess = total - UI_DESIGN_TOTAL_HISTORY_BYTES;
+		if ( session == pApp->pSession ) continue;
+		uiDesignSessionTrimHistory(session, bytes > excess ? bytes - excess : 0);
+		total -= bytes - uiDesignSessionHistoryBytes(session);
+	}
+}
+
 static void __uiDesignHistoryEntryFree(ui_design_history_entry_t* pEntry)
 {
-	if ( pEntry == NULL ) return;
-	free(pEntry->sBefore);
-	free(pEntry->sAfter);
-	memset(pEntry, 0, sizeof(*pEntry));
+	uiDesignHistoryEntryFree(pEntry);
 }
 
 static void __uiDesignHistoryClear(ui_design_history_entry_t* pEntries, int* pCount)
 {
-	int i;
-
-	if ( (pEntries == NULL) || (pCount == NULL) ) return;
-	for ( i = 0; i < *pCount; ++i ) {
-		__uiDesignHistoryEntryFree(&pEntries[i]);
-	}
-	*pCount = 0;
+	uiDesignHistoryClear(pEntries, pCount);
 }
 
 static void __uiDesignHistoryPushRaw(ui_design_history_entry_t* pEntries, int* pCount, ui_design_history_entry_t* pEntry)
 {
-	if ( (pEntries == NULL) || (pCount == NULL) || (pEntry == NULL) ) return;
-	if ( *pCount >= UI_DESIGN_HISTORY_LIMIT ) {
-		__uiDesignHistoryEntryFree(&pEntries[0]);
-		memmove(&pEntries[0], &pEntries[1], sizeof(pEntries[0]) * (UI_DESIGN_HISTORY_LIMIT - 1));
-		*pCount = UI_DESIGN_HISTORY_LIMIT - 1;
-	}
-	pEntries[*pCount] = *pEntry;
-	memset(pEntry, 0, sizeof(*pEntry));
-	(*pCount)++;
+	uiDesignHistoryPush(pEntries, pCount, pEntry);
 }
 
 static int __uiDesignHistoryPushUndo(ui_design_app_t* pApp, ui_design_command_t iCommand, const char* sName, char* sBefore, char* sAfter)
@@ -1741,9 +1877,10 @@ static int __uiDesignHistoryPushUndo(ui_design_app_t* pApp, ui_design_command_t 
 	snprintf(tEntry.sName, sizeof(tEntry.sName), "%s", (sName != NULL && sName[0] != '\0') ? sName : "Edit");
 	tEntry.sBefore = sBefore;
 	tEntry.sAfter = sAfter;
-	__uiDesignHistoryClear(pApp->arrRedo, &pApp->iRedoCount);
-	__uiDesignHistoryPushRaw(pApp->arrUndo, &pApp->iUndoCount, &tEntry);
-	pApp->bDocumentDirty = 1;
+	__uiDesignHistoryClear(pApp->pSession->arrRedo, &pApp->pSession->iRedoCount);
+	__uiDesignAppUpdateDirtyFromSnapshot(pApp, sAfter);
+	__uiDesignHistoryPushRaw(pApp->pSession->arrUndo, &pApp->pSession->iUndoCount, &tEntry);
+	uiDesignAppTrimHistory(pApp);
 	uiDesignAppUpdateCommandUI(pApp);
 	return XUI_OK;
 }
@@ -1754,10 +1891,10 @@ int uiDesignAppBeginHistoryTransaction(ui_design_app_t* pApp, ui_design_command_
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	uiDesignAppCancelHistoryTransaction(pApp);
-	iRet = __uiDesignCaptureSnapshot(pApp, &pApp->sHistoryTransactionBefore);
+	iRet = __uiDesignCaptureSnapshot(pApp, &pApp->pSession->sHistoryTransactionBefore);
 	if ( iRet != XUI_OK ) return iRet;
-	pApp->iHistoryTransactionCommand = iCommand;
-	snprintf(pApp->sHistoryTransactionName, sizeof(pApp->sHistoryTransactionName), "%s", (sName != NULL && sName[0] != '\0') ? sName : "Edit");
+	pApp->pSession->iHistoryTransactionCommand = iCommand;
+	snprintf(pApp->pSession->sHistoryTransactionName, sizeof(pApp->pSession->sHistoryTransactionName), "%s", (sName != NULL && sName[0] != '\0') ? sName : "Edit");
 	return XUI_OK;
 }
 
@@ -1768,28 +1905,29 @@ int uiDesignAppCommitHistoryTransaction(ui_design_app_t* pApp)
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pApp->sHistoryTransactionBefore == NULL ) return XUI_OK;
+	if ( pApp->pSession->sHistoryTransactionBefore == NULL ) return XUI_OK;
 	sAfter = NULL;
 	iRet = __uiDesignCaptureSnapshot(pApp, &sAfter);
 	if ( iRet != XUI_OK ) {
 		uiDesignAppCancelHistoryTransaction(pApp);
+		__uiDesignAppUpdateDirtyFromSnapshot(pApp, NULL);
 		return iRet;
 	}
-	sBefore = pApp->sHistoryTransactionBefore;
-	pApp->sHistoryTransactionBefore = NULL;
-	iRet = __uiDesignHistoryPushUndo(pApp, pApp->iHistoryTransactionCommand, pApp->sHistoryTransactionName, sBefore, sAfter);
-	pApp->iHistoryTransactionCommand = UI_DESIGN_COMMAND_NONE;
-	pApp->sHistoryTransactionName[0] = '\0';
+	sBefore = pApp->pSession->sHistoryTransactionBefore;
+	pApp->pSession->sHistoryTransactionBefore = NULL;
+	iRet = __uiDesignHistoryPushUndo(pApp, pApp->pSession->iHistoryTransactionCommand, pApp->pSession->sHistoryTransactionName, sBefore, sAfter);
+	pApp->pSession->iHistoryTransactionCommand = UI_DESIGN_COMMAND_NONE;
+	pApp->pSession->sHistoryTransactionName[0] = '\0';
 	return iRet;
 }
 
 void uiDesignAppCancelHistoryTransaction(ui_design_app_t* pApp)
 {
 	if ( pApp == NULL ) return;
-	free(pApp->sHistoryTransactionBefore);
-	pApp->sHistoryTransactionBefore = NULL;
-	pApp->iHistoryTransactionCommand = UI_DESIGN_COMMAND_NONE;
-	pApp->sHistoryTransactionName[0] = '\0';
+	free(pApp->pSession->sHistoryTransactionBefore);
+	pApp->pSession->sHistoryTransactionBefore = NULL;
+	pApp->pSession->iHistoryTransactionCommand = UI_DESIGN_COMMAND_NONE;
+	pApp->pSession->sHistoryTransactionName[0] = '\0';
 }
 
 static int __uiDesignAppBeginImmediateUndo(ui_design_app_t* pApp, char** ppBefore)
@@ -1810,12 +1948,14 @@ static int __uiDesignAppFinishImmediateUndo(ui_design_app_t* pApp, ui_design_com
 	}
 	if ( iOperationRet != XUI_OK ) {
 		free(sBefore);
+		__uiDesignAppUpdateDirtyFromSnapshot(pApp, NULL);
 		return iOperationRet;
 	}
 	sAfter = NULL;
 	iRet = __uiDesignCaptureSnapshot(pApp, &sAfter);
 	if ( iRet != XUI_OK ) {
 		free(sBefore);
+		__uiDesignAppUpdateDirtyFromSnapshot(pApp, NULL);
 		return iRet;
 	}
 	iRet = __uiDesignHistoryPushUndo(pApp, iCommand, sName, sBefore, sAfter);
@@ -1892,6 +2032,7 @@ int uiDesignAppCommandSetNodeProperty(ui_design_app_t* pApp, int iId, const char
 void uiDesignAppSetStatus(ui_design_app_t* pApp, const char* sStatus)
 {
 	if ( pApp == NULL ) return;
+	xgeRenderRequest();
 	if ( sStatus == NULL ) sStatus = "";
 	snprintf(pApp->sStatus, sizeof(pApp->sStatus), "%s", sStatus);
 	if ( pApp->pStatusBar != NULL && pApp->iStatusMessageItem >= 0 ) {
@@ -1906,8 +2047,8 @@ static void __uiDesignAppUpdateStatusBar(ui_design_app_t* pApp)
 
 	if ( (pApp == NULL) || (pApp->pStatusBar == NULL) ) return;
 	if ( pApp->sStatus[0] == '\0' ) snprintf(pApp->sStatus, sizeof(pApp->sStatus), "Ready");
-	snprintf(sSelection, sizeof(sSelection), "%d selected", pApp->tModel.iSelectedCount);
-	snprintf(sZoom, sizeof(sZoom), "%.0f%%", (pApp->fZoom > 0.01f ? pApp->fZoom : 1.0f) * 100.0f);
+	snprintf(sSelection, sizeof(sSelection), "%d selected", pApp->pSession->tModel.iSelectedCount);
+	snprintf(sZoom, sizeof(sZoom), "%.0f%%", (pApp->pSession->fZoom > 0.01f ? pApp->pSession->fZoom : 1.0f) * 100.0f);
 	if ( pApp->iStatusMessageItem >= 0 ) (void)xuiStatusBarSetItemText(pApp->pStatusBar, pApp->iStatusMessageItem, pApp->sStatus);
 	if ( pApp->iStatusSelectionItem >= 0 ) (void)xuiStatusBarSetItemText(pApp->pStatusBar, pApp->iStatusSelectionItem, sSelection);
 	if ( pApp->iStatusZoomItem >= 0 ) (void)xuiStatusBarSetItemText(pApp->pStatusBar, pApp->iStatusZoomItem, sZoom);
@@ -1922,11 +2063,11 @@ static int __uiDesignAppSelectionTransformIds(ui_design_app_t* pApp, int* arrIds
 
 	if ( (pApp == NULL) || (arrIds == NULL) || (iCapacity <= 0) ) return 0;
 	iCount = 0;
-	for ( i = 0; i < pApp->tModel.iSelectedCount; ++i ) {
-		iId = pApp->tModel.arrSelectedIds[i];
-		pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	for ( i = 0; i < pApp->pSession->tModel.iSelectedCount; ++i ) {
+		iId = pApp->pSession->tModel.arrSelectedIds[i];
+		pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 		if ( pNode == NULL ) continue;
-		if ( !uiDesignModelCanFreeTransformNode(&pApp->tModel, pNode) ) continue;
+		if ( !uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, pNode) ) continue;
 		if ( iCount < iCapacity ) arrIds[iCount++] = iId;
 	}
 	return iCount;
@@ -1941,11 +2082,11 @@ static int __uiDesignAppSelectionTransformCount(const ui_design_app_t* pApp)
 
 	if ( pApp == NULL ) return 0;
 	iCount = 0;
-	for ( i = 0; i < pApp->tModel.iSelectedCount; ++i ) {
-		iId = pApp->tModel.arrSelectedIds[i];
-		pNode = uiDesignModelGetNodeConst(&pApp->tModel, iId);
+	for ( i = 0; i < pApp->pSession->tModel.iSelectedCount; ++i ) {
+		iId = pApp->pSession->tModel.arrSelectedIds[i];
+		pNode = uiDesignModelGetNodeConst(&pApp->pSession->tModel, iId);
 		if ( pNode == NULL ) continue;
-		if ( !uiDesignModelCanFreeTransformNode(&pApp->tModel, pNode) ) continue;
+		if ( !uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, pNode) ) continue;
 		++iCount;
 	}
 	return iCount;
@@ -1956,7 +2097,7 @@ static xui_rect_t __uiDesignAppAbsoluteToLocalRect(ui_design_app_t* pApp, ui_des
 	xui_rect_t tParent;
 
 	if ( (pApp != NULL) && (pNode != NULL) && pNode->iParentId != 0 &&
-	     uiDesignModelGetChildHostRect(&pApp->tModel, pNode->iParentId, &tParent) == XUI_OK ) {
+	     uiDesignModelGetChildHostRect(&pApp->pSession->tModel, pNode->iParentId, &tParent) == XUI_OK ) {
 		tAbs.fX -= tParent.fX;
 		tAbs.fY -= tParent.fY;
 	}
@@ -1968,7 +2109,7 @@ static int __uiDesignAppSetNodeAbsoluteRect(ui_design_app_t* pApp, int iId, xui_
 	ui_design_node_t* pNode;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	return uiDesignAppSetNodeRect(pApp, iId, __uiDesignAppAbsoluteToLocalRect(pApp, pNode, tAbs));
 }
@@ -1986,10 +2127,10 @@ static int __uiDesignAppAlignSelection(ui_design_app_t* pApp, ui_design_command_
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iCount = __uiDesignAppSelectionTransformIds(pApp, arrIds, UI_DESIGN_MAX_NODES);
 	if ( iCount < 2 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, pApp->tModel.iSelectedId, &tPrimary) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, pApp->pSession->tModel.iSelectedId, &tPrimary) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < iCount; ++i ) {
-		if ( arrIds[i] == pApp->tModel.iSelectedId ) continue;
-		if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, arrIds[i], &tRect) != XUI_OK ) continue;
+		if ( arrIds[i] == pApp->pSession->tModel.iSelectedId ) continue;
+		if ( uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, arrIds[i], &tRect) != XUI_OK ) continue;
 		switch ( iCommand ) {
 		case UI_DESIGN_COMMAND_ARRANGE_ALIGN_LEFT:
 			tRect.fX = tPrimary.fX;
@@ -2064,7 +2205,7 @@ static int __uiDesignAppDistributeSelection(ui_design_app_t* pApp, int bVertical
 	if ( iCount < 3 ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < iCount; ++i ) {
 		arrItems[i].iId = arrIds[i];
-		if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, arrIds[i], &arrItems[i].tRect) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, arrIds[i], &arrItems[i].tRect) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__uiDesignSortItems(arrItems, iCount, bVertical);
 	fStart = bVertical ? arrItems[0].tRect.fY : arrItems[0].tRect.fX;
@@ -2140,7 +2281,7 @@ static int __uiDesignAppReorderPrimary(ui_design_app_t* pApp, int bForward)
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pModel = &pApp->tModel;
+	pModel = &pApp->pSession->tModel;
 	pNode = uiDesignModelGetNode(pModel, pModel->iSelectedId);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __uiDesignAppNodeIndexById(pModel, pNode->iId);
@@ -2194,21 +2335,21 @@ int uiDesignAppPromoteNode(ui_design_app_t* pApp, int iId)
 	int bHasNewParentHost;
 
 	if ( (pApp == NULL) || (iId <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode == NULL || pNode->iParentId == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iOldParentId = pNode->iParentId;
-	pParentNode = uiDesignModelGetNode(&pApp->tModel, iOldParentId);
+	pParentNode = uiDesignModelGetNode(&pApp->pSession->tModel, iOldParentId);
 	if ( pParentNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iNewParentId = pParentNode->iParentId;
 	if ( iNewParentId != 0 ) {
-		pNewParentNode = uiDesignModelGetNode(&pApp->tModel, iNewParentId);
+		pNewParentNode = uiDesignModelGetNode(&pApp->pSession->tModel, iNewParentId);
 		if ( pNewParentNode == NULL || !uiDesignNodeTypeIsContainer(pNewParentNode->iType) ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, iId, &tAbs) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, iId, &tAbs) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 	tLocal = tAbs;
 	tNewParentHost = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	bHasNewParentHost = 0;
-	if ( iNewParentId != 0 && uiDesignModelGetChildHostRect(&pApp->tModel, iNewParentId, &tNewParentHost) == XUI_OK ) {
+	if ( iNewParentId != 0 && uiDesignModelGetChildHostRect(&pApp->pSession->tModel, iNewParentId, &tNewParentHost) == XUI_OK ) {
 		bHasNewParentHost = 1;
 		tLocal.fX -= tNewParentHost.fX;
 		tLocal.fY -= tNewParentHost.fY;
@@ -2216,12 +2357,12 @@ int uiDesignAppPromoteNode(ui_design_app_t* pApp, int iId)
 	if ( tLocal.fX < 0.0f ) tLocal.fX = 0.0f;
 	if ( tLocal.fY < 0.0f ) tLocal.fY = 0.0f;
 	__uiDesignAppClearNodeRuntime(pApp);
-	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNode->iParentId = iNewParentId;
 	pNode->tRect = tLocal;
 	__uiDesignAppApplyDropLayoutProperties(pApp, pNode, iNewParentId, tNewParentHost, bHasNewParentHost, tLocal.fX + tLocal.fW * 0.5f, tLocal.fY + tLocal.fH * 0.5f);
-	pApp->tModel.iRevision++;
+	pApp->pSession->tModel.iRevision++;
 	iRet = __uiDesignAppRebuildNodeRuntime(pApp);
 	(void)__uiDesignAppRefreshInspector(pApp);
 	uiDesignAppInvalidate(pApp);
@@ -2233,7 +2374,7 @@ static void __uiDesignAppDefaultPastePoint(ui_design_app_t* pApp, float* pX, flo
 	xui_rect_t tBounds;
 
 	if ( (pApp == NULL) || (pX == NULL) || (pY == NULL) ) return;
-	if ( uiDesignModelGetSelectionBounds(&pApp->tModel, &tBounds) == XUI_OK ) {
+	if ( uiDesignModelGetSelectionBounds(&pApp->pSession->tModel, &tBounds) == XUI_OK ) {
 		*pX = tBounds.fX + 18.0f;
 		*pY = tBounds.fY + 18.0f;
 		return;
@@ -2249,11 +2390,14 @@ int uiDesignAppCanExecuteCommand(const ui_design_app_t* pApp, ui_design_command_
 	int iTransformCount;
 
 	if ( pApp == NULL ) return 0;
-	iSelectionCount = pApp->tModel.iSelectedCount;
+	if ( pApp->iPendingFileCommand || pApp->iPendingUnsavedCommand || pApp->iComplexEditorNodeId > 0 ) return 0;
+	if ( (pApp->iCanvasDragMode || pApp->bDraggingTool) && iCommand >= UI_DESIGN_COMMAND_FILE_NEW && iCommand <= UI_DESIGN_COMMAND_FILE_EXIT ) return 0;
+	iSelectionCount = pApp->pSession->tModel.iSelectedCount;
 	iTransformCount = __uiDesignAppSelectionTransformCount(pApp);
 	switch ( iCommand ) {
-	case UI_DESIGN_COMMAND_EDIT_UNDO: return pApp->iUndoCount > 0;
-	case UI_DESIGN_COMMAND_EDIT_REDO: return pApp->iRedoCount > 0;
+	case UI_DESIGN_COMMAND_FILE_RELOAD: return pApp->pSession->sDocumentPath[0] != 0;
+	case UI_DESIGN_COMMAND_EDIT_UNDO: return pApp->pSession->iUndoCount > 0;
+	case UI_DESIGN_COMMAND_EDIT_REDO: return pApp->pSession->iRedoCount > 0;
 	case UI_DESIGN_COMMAND_EDIT_COPY:
 	case UI_DESIGN_COMMAND_EDIT_CUT:
 	case UI_DESIGN_COMMAND_EDIT_DUPLICATE:
@@ -2262,7 +2406,7 @@ int uiDesignAppCanExecuteCommand(const ui_design_app_t* pApp, ui_design_command_
 	case UI_DESIGN_COMMAND_EDIT_PASTE:
 		return pApp->iClipboardNodeCount > 0;
 	case UI_DESIGN_COMMAND_EDIT_SELECT_ALL:
-		return pApp->tModel.iNodeCount > 0;
+		return pApp->pSession->tModel.iNodeCount > 0;
 	case UI_DESIGN_COMMAND_ARRANGE_ALIGN_LEFT:
 	case UI_DESIGN_COMMAND_ARRANGE_ALIGN_CENTER:
 	case UI_DESIGN_COMMAND_ARRANGE_ALIGN_RIGHT:
@@ -2275,7 +2419,7 @@ int uiDesignAppCanExecuteCommand(const ui_design_app_t* pApp, ui_design_command_
 		return iTransformCount >= 3;
 	case UI_DESIGN_COMMAND_ARRANGE_BRING_FORWARD:
 	case UI_DESIGN_COMMAND_ARRANGE_SEND_BACKWARD:
-		return pApp->tModel.iSelectedId > 0;
+		return pApp->pSession->tModel.iSelectedId > 0;
 	default:
 		return 1;
 	}
@@ -2286,16 +2430,17 @@ static int __uiDesignAppExecuteUndo(ui_design_app_t* pApp)
 	ui_design_history_entry_t tEntry;
 	int iRet;
 
-	if ( (pApp == NULL) || (pApp->iUndoCount <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pApp->iUndoCount--;
-	tEntry = pApp->arrUndo[pApp->iUndoCount];
-	memset(&pApp->arrUndo[pApp->iUndoCount], 0, sizeof(pApp->arrUndo[pApp->iUndoCount]));
+	if ( (pApp == NULL) || (pApp->pSession->iUndoCount <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pApp->pSession->iUndoCount--;
+	tEntry = pApp->pSession->arrUndo[pApp->pSession->iUndoCount];
+	memset(&pApp->pSession->arrUndo[pApp->pSession->iUndoCount], 0, sizeof(pApp->pSession->arrUndo[pApp->pSession->iUndoCount]));
 	iRet = __uiDesignAppRestoreSnapshot(pApp, tEntry.sBefore);
 	if ( iRet != XUI_OK ) {
-		__uiDesignHistoryEntryFree(&tEntry);
+		__uiDesignHistoryPushRaw(pApp->pSession->arrUndo, &pApp->pSession->iUndoCount, &tEntry);
 		return iRet;
 	}
-	__uiDesignHistoryPushRaw(pApp->arrRedo, &pApp->iRedoCount, &tEntry);
+	__uiDesignAppUpdateDirtyFromSnapshot(pApp, tEntry.sBefore);
+	__uiDesignHistoryPushRaw(pApp->pSession->arrRedo, &pApp->pSession->iRedoCount, &tEntry);
 	uiDesignAppSetStatus(pApp, "Undo");
 	uiDesignAppUpdateCommandUI(pApp);
 	return XUI_OK;
@@ -2306,16 +2451,17 @@ static int __uiDesignAppExecuteRedo(ui_design_app_t* pApp)
 	ui_design_history_entry_t tEntry;
 	int iRet;
 
-	if ( (pApp == NULL) || (pApp->iRedoCount <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pApp->iRedoCount--;
-	tEntry = pApp->arrRedo[pApp->iRedoCount];
-	memset(&pApp->arrRedo[pApp->iRedoCount], 0, sizeof(pApp->arrRedo[pApp->iRedoCount]));
+	if ( (pApp == NULL) || (pApp->pSession->iRedoCount <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pApp->pSession->iRedoCount--;
+	tEntry = pApp->pSession->arrRedo[pApp->pSession->iRedoCount];
+	memset(&pApp->pSession->arrRedo[pApp->pSession->iRedoCount], 0, sizeof(pApp->pSession->arrRedo[pApp->pSession->iRedoCount]));
 	iRet = __uiDesignAppRestoreSnapshot(pApp, tEntry.sAfter);
 	if ( iRet != XUI_OK ) {
-		__uiDesignHistoryEntryFree(&tEntry);
+		__uiDesignHistoryPushRaw(pApp->pSession->arrRedo, &pApp->pSession->iRedoCount, &tEntry);
 		return iRet;
 	}
-	__uiDesignHistoryPushRaw(pApp->arrUndo, &pApp->iUndoCount, &tEntry);
+	__uiDesignAppUpdateDirtyFromSnapshot(pApp, tEntry.sAfter);
+	__uiDesignHistoryPushRaw(pApp->pSession->arrUndo, &pApp->pSession->iUndoCount, &tEntry);
 	uiDesignAppSetStatus(pApp, "Redo");
 	uiDesignAppUpdateCommandUI(pApp);
 	return XUI_OK;
@@ -2331,13 +2477,6 @@ static int __uiDesignAppExecuteUndoableCommand(ui_design_app_t* pApp, ui_design_
 	iRet = __uiDesignAppBeginImmediateUndo(pApp, &sBefore);
 	if ( iRet != XUI_OK ) return iRet;
 	switch ( iCommand ) {
-	case UI_DESIGN_COMMAND_FILE_NEW:
-		__uiDesignAppClearNodeRuntime(pApp);
-		uiDesignModelInit(&pApp->tModel);
-		(void)__uiDesignAppRefreshInspector(pApp);
-		uiDesignAppInvalidate(pApp);
-		iRet = XUI_OK;
-		break;
 	case UI_DESIGN_COMMAND_EDIT_CUT:
 		iRet = uiDesignAppCopySelection(pApp);
 		if ( iRet == XUI_OK ) iRet = uiDesignAppDeleteSelection(pApp);
@@ -2385,109 +2524,185 @@ static int __uiDesignAppExecuteUndoableCommand(ui_design_app_t* pApp, ui_design_
 
 static int __uiDesignAppWriteTextFile(const char* sPath, const char* sText)
 {
-	FILE* pFile;
-
-	if ( (sPath == NULL) || (sText == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pFile = fopen(sPath, "wb");
-	if ( pFile == NULL ) return XUI_ERROR;
-	if ( fputs(sText, pFile) < 0 ) {
-		fclose(pFile);
-		return XUI_ERROR;
-	}
-	fclose(pFile);
-	return XUI_OK;
+	return uiDesignFileWrite(sPath, sText);
 }
 
 static char* __uiDesignAppReadTextFile(const char* sPath)
 {
-	FILE* pFile;
-	char* sData;
-	long iSize;
+	return uiDesignFileRead(sPath, UI_DESIGN_DOCUMENT_MAX_BYTES);
+}
 
-	if ( sPath == NULL ) return NULL;
-	pFile = fopen(sPath, "rb");
-	if ( pFile == NULL ) return NULL;
-	if ( fseek(pFile, 0, SEEK_END) != 0 ) {
-		fclose(pFile);
-		return NULL;
+int uiDesignAppSaveSession(ui_design_app_t* pApp, const char* sPath)
+{
+	char path[UI_DESIGN_PATH_CAPACITY];
+	char* snapshot = NULL;
+	int i, ret;
+	ui_design_session_t* session;
+	if ( pApp == NULL || pApp->pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	session = pApp->pSession;
+	if ( __uiDesignAppFinishPropertyEdit(pApp) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( uiDesignFileCanonicalPath(sPath, path, sizeof(path)) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < pApp->iSessionCount; ++i ) {
+		if ( pApp->arrSessions[i] != session && uiDesignFileSamePath(path, pApp->arrSessions[i]->sDocumentPath) ) {
+			uiDesignAppSetStatus(pApp, "This path is already open in another tab");
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
 	}
-	iSize = ftell(pFile);
-	if ( iSize < 0 ) {
-		fclose(pFile);
-		return NULL;
+	if ( session->bDiskKnown && uiDesignFileSamePath(path, session->sDocumentPath) &&
+	     !uiDesignFileStampEqual(session->tDisk, uiDesignFileStamp(path)) ) {
+		session->bExternalChange = 1;
+		uiDesignAppSetStatus(pApp, "File changed on disk. Reload or Save As a different file.");
+		return XUI_ERROR_RESOURCE_FAILED;
 	}
-	rewind(pFile);
-	sData = (char*)malloc((size_t)iSize + 1u);
-	if ( sData == NULL ) {
-		fclose(pFile);
-		return NULL;
+	ret = uiDesignDocumentSaveContent(&session->tModel, &snapshot);
+	if ( ret == XUI_OK ) ret = uiDesignFileWrite(path, snapshot);
+	if ( ret == XUI_OK ) {
+		snprintf(session->sDocumentPath, sizeof(session->sDocumentPath), "%s", path);
+		/* The successfully written bytes become the clean baseline without a second allocation. */
+		free(session->sCleanSnapshot);
+		session->sCleanSnapshot = snapshot;
+		snapshot = NULL;
+		session->bDocumentDirty = 0;
+		session->tDisk = uiDesignFileStamp(path);
+		session->bDiskKnown = 1;
+		session->bExternalChange = 0;
+		__uiDesignAppRefreshDocumentTitle(pApp);
+		uiDesignAppSetStatus(pApp, "Saved");
+		uiDesignAppUpdateCommandUI(pApp);
 	}
-	if ( fread(sData, 1u, (size_t)iSize, pFile) != (size_t)iSize ) {
-		free(sData);
-		fclose(pFile);
-		return NULL;
-	}
-	sData[iSize] = '\0';
-	fclose(pFile);
-	return sData;
+	free(snapshot);
+	return ret;
 }
 
 static int __uiDesignAppSaveDocument(ui_design_app_t* pApp, const char* sPath)
 {
-	char* sSnapshot;
-	int iRet;
+	return uiDesignAppSaveSession(pApp, sPath);
+}
 
-	if ( (pApp == NULL) || (sPath == NULL) || (sPath[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
-	sSnapshot = NULL;
-	iRet = __uiDesignCaptureSnapshot(pApp, &sSnapshot);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __uiDesignAppWriteTextFile(sPath, sSnapshot);
-	free(sSnapshot);
-	if ( iRet == XUI_OK ) {
-		snprintf(pApp->sDocumentPath, sizeof(pApp->sDocumentPath), "%s", sPath);
-		pApp->bDocumentDirty = 0;
-		uiDesignAppSetStatus(pApp, "Saved");
-		uiDesignAppUpdateCommandUI(pApp);
+int uiDesignAppSwitchSession(ui_design_app_t* pApp, int iIndex)
+{
+	ui_design_session_t* previous;
+	int ret;
+	if ( pApp == NULL || pApp->pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iIndex < 0 || iIndex >= pApp->iSessionCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pApp->pSession == pApp->arrSessions[iIndex] ) return XUI_OK;
+	if ( pApp->iPendingFileCommand || pApp->iPendingUnsavedCommand || pApp->iCanvasDragMode ||
+	     pApp->bDraggingTool || pApp->iComplexEditorNodeId > 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	previous = pApp->pSession;
+	if ( __uiDesignAppFinishPropertyEdit(pApp) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	(void)uiDesignAppCommitHistoryTransaction(pApp);
+	(void)xuiSetFocusWidget(pApp->pContext, pApp->pOverlay);
+	__uiDesignAppClearNodeRuntime(pApp);
+	pApp->pSession = pApp->arrSessions[iIndex];
+	ret = __uiDesignAppRebuildNodeRuntime(pApp);
+	if ( ret != XUI_OK ) {
+		__uiDesignAppClearNodeRuntime(pApp);
+		pApp->pSession = previous;
+		(void)__uiDesignAppRebuildNodeRuntime(pApp);
 	}
-	return iRet;
+	pApp->iEditingProperty = UI_DESIGN_PROPERTY_NONE;
+	pApp->iContextMenuNodeId = pApp->iTreeContextMenuNodeId = 0;
+	(void)__uiDesignAppRefreshInspector(pApp);
+	__uiDesignAppRefreshDocumentTitle(pApp);
+	uiDesignAppUpdateCommandUI(pApp);
+	uiDesignAppInvalidate(pApp);
+	return ret;
+}
+
+int uiDesignAppOpenSession(ui_design_app_t* pApp, const char* sPath)
+{
+	char path[UI_DESIGN_PATH_CAPACITY];
+	char* snapshot;
+	ui_design_model_t* model = NULL;
+	ui_design_session_t* session;
+	ui_design_file_stamp_t before;
+	int i, ret;
+	if ( pApp == NULL || pApp->pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( uiDesignFileCanonicalPath(sPath, path, sizeof(path)) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < pApp->iSessionCount; ++i )
+		if ( uiDesignFileSamePath(path, pApp->arrSessions[i]->sDocumentPath) ) return uiDesignAppSwitchSession(pApp, i);
+	if ( pApp->iSessionCount >= UI_DESIGN_SESSION_LIMIT ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	before = uiDesignFileStamp(path);
+	snapshot = __uiDesignAppReadTextFile(path);
+	if ( snapshot == NULL ) return XUI_ERROR_FILE_NOT_FOUND;
+	ret = uiDesignDocumentLoadModel(snapshot, &model);
+	free(snapshot);
+	if ( ret != XUI_OK ) return ret;
+	session = uiDesignSessionCreate(++pApp->iNextSessionId);
+	if ( session == NULL ) { uiDesignModelDestroy(model); free(model); return XUI_ERROR_OUT_OF_MEMORY; }
+	uiDesignModelDestroy(&session->tModel);
+	session->tModel = *model;
+	free(model);
+	ret = uiDesignSessionSetClean(session);
+	if ( ret != XUI_OK ) { uiDesignSessionDestroy(session); return ret; }
+	snprintf(session->sDocumentPath, sizeof(session->sDocumentPath), "%s", path);
+	session->tDisk = before;
+	session->bDiskKnown = 1;
+	session->bExternalChange = !uiDesignFileStampEqual(before, uiDesignFileStamp(path));
+	pApp->arrSessions[pApp->iSessionCount++] = session;
+	ret = uiDesignAppSwitchSession(pApp, pApp->iSessionCount - 1);
+	if ( ret != XUI_OK ) { --pApp->iSessionCount; uiDesignSessionDestroy(session); }
+	else uiDesignAppSetStatus(pApp, "Opened in a new tab");
+	return ret;
 }
 
 static int __uiDesignAppOpenDocument(ui_design_app_t* pApp, const char* sPath)
 {
-	char* sSnapshot;
+	return uiDesignAppOpenSession(pApp, sPath);
+}
+
+int uiDesignAppNewSession(ui_design_app_t* pApp)
+{
+	ui_design_session_t* session;
+	int ret;
+	if ( pApp == NULL || pApp->pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pApp->iSessionCount >= UI_DESIGN_SESSION_LIMIT ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	session = uiDesignSessionCreate(++pApp->iNextSessionId);
+	if ( session == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pApp->arrSessions[pApp->iSessionCount++] = session;
+	ret = uiDesignAppSwitchSession(pApp, pApp->iSessionCount - 1);
+	if ( ret != XUI_OK ) { --pApp->iSessionCount; uiDesignSessionDestroy(session); }
+	else uiDesignAppSetStatus(pApp, "New document");
+	return ret;
+}
+
+static int __uiDesignAppNewDocument(ui_design_app_t* pApp)
+{
+	return uiDesignAppNewSession(pApp);
+}
+
+static int __uiDesignAppExportDocument(ui_design_app_t* pApp, const char* sPath)
+{
+	char sHeaderPath[UI_DESIGN_PATH_CAPACITY];
 	int iRet;
 
 	if ( (pApp == NULL) || (sPath == NULL) || (sPath[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
-	sSnapshot = __uiDesignAppReadTextFile(sPath);
-	if ( sSnapshot == NULL ) return XUI_ERROR;
-	iRet = __uiDesignAppRestoreSnapshot(pApp, sSnapshot);
-	free(sSnapshot);
+	iRet = uiDesignCodegenExport(&pApp->pSession->tModel, sPath, NULL, sHeaderPath, sizeof(sHeaderPath));
 	if ( iRet == XUI_OK ) {
-		snprintf(pApp->sDocumentPath, sizeof(pApp->sDocumentPath), "%s", sPath);
-		__uiDesignHistoryClear(pApp->arrUndo, &pApp->iUndoCount);
-		__uiDesignHistoryClear(pApp->arrRedo, &pApp->iRedoCount);
-		pApp->bDocumentDirty = 0;
-		uiDesignAppSetStatus(pApp, "Opened");
+		uiDesignAppSetStatus(pApp, "Exported C and header");
 		uiDesignAppUpdateCommandUI(pApp);
 	}
 	return iRet;
 }
 
-static int __uiDesignAppExportDocument(ui_design_app_t* pApp, const char* sPath)
+static int __uiDesignRunGenerate(ui_design_app_t* pApp)
 {
+	ui_design_model_t* pModel;
 	char* sSnapshot;
+	char sHeaderPath[UI_DESIGN_PATH_CAPACITY];
 	int iRet;
 
-	if ( (pApp == NULL) || (sPath == NULL) || (sPath[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
-	sSnapshot = NULL;
-	iRet = __uiDesignCaptureSnapshot(pApp, &sSnapshot);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __uiDesignAppWriteTextFile(sPath, sSnapshot);
+	if ( pApp == NULL || !pApp->bGenerate || pApp->sGenerateInputPath[0] == 0 || pApp->sGenerateOutputPath[0] == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	sSnapshot = __uiDesignAppReadTextFile(pApp->sGenerateInputPath);
+	if ( sSnapshot == NULL ) return XUI_ERROR_FILE_NOT_FOUND;
+	pModel = NULL;
+	iRet = uiDesignDocumentLoadModel(sSnapshot, &pModel);
 	free(sSnapshot);
-	if ( iRet == XUI_OK ) {
-		uiDesignAppSetStatus(pApp, "Exported");
-		uiDesignAppUpdateCommandUI(pApp);
-	}
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = uiDesignCodegenExport(pModel, pApp->sGenerateOutputPath, NULL, sHeaderPath, sizeof(sHeaderPath));
+	uiDesignModelDestroy(pModel);
+	free(pModel);
+	if ( iRet == XUI_OK ) printf("xui_uidesign generated %s and %s\n", pApp->sGenerateOutputPath, sHeaderPath);
 	return iRet;
 }
 
@@ -2542,10 +2757,13 @@ static int __uiDesignAppLaunchPreview(ui_design_app_t* pApp)
 #endif
 }
 
+static int __uiDesignAppContinueDestructiveCommand(ui_design_app_t* pApp, ui_design_command_t iCommand);
+
 static void __uiDesignFileDialogResult(xui_file_dialog pDialog, int iResult, const char* sPath, void* pUser)
 {
 	ui_design_app_t* pApp;
 	ui_design_command_t iCommand;
+	ui_design_command_t iNextCommand;
 	int iRet;
 
 	(void)pDialog;
@@ -2554,7 +2772,13 @@ static void __uiDesignFileDialogResult(xui_file_dialog pDialog, int iResult, con
 	iCommand = (ui_design_command_t)pApp->iPendingFileCommand;
 	pApp->iPendingFileCommand = UI_DESIGN_COMMAND_NONE;
 	if ( iResult != XUI_FILE_DIALOG_RESULT_OK || sPath == NULL || sPath[0] == '\0' ) {
+		if ( (iCommand == UI_DESIGN_COMMAND_FILE_SAVE || iCommand == UI_DESIGN_COMMAND_FILE_SAVE_AS) &&
+		     pApp->iPendingUnsavedCommand != UI_DESIGN_COMMAND_NONE ) {
+			pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+		}
+		pApp->bExitRequested = 0;
 		uiDesignAppSetStatus(pApp, "File command cancelled");
+		pApp->bNativeCloseRequested = 0;
 		uiDesignAppUpdateCommandUI(pApp);
 		return;
 	}
@@ -2566,6 +2790,11 @@ static void __uiDesignFileDialogResult(xui_file_dialog pDialog, int iResult, con
 	case UI_DESIGN_COMMAND_FILE_SAVE:
 	case UI_DESIGN_COMMAND_FILE_SAVE_AS:
 		iRet = __uiDesignAppSaveDocument(pApp, sPath);
+		if ( iRet == XUI_OK && pApp->iPendingUnsavedCommand != UI_DESIGN_COMMAND_NONE ) {
+			iNextCommand = (ui_design_command_t)pApp->iPendingUnsavedCommand;
+			pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+			iRet = __uiDesignAppContinueDestructiveCommand(pApp, iNextCommand);
+		}
 		break;
 	case UI_DESIGN_COMMAND_FILE_EXPORT:
 		iRet = __uiDesignAppExportDocument(pApp, sPath);
@@ -2574,7 +2803,9 @@ static void __uiDesignFileDialogResult(xui_file_dialog pDialog, int iResult, con
 		break;
 	}
 	if ( iRet != XUI_OK ) {
-		uiDesignAppSetStatus(pApp, "File command failed");
+		pApp->iPendingUnsavedCommand = 0;
+		pApp->bExitRequested = 0;
+		if ( !pApp->pSession->bExternalChange ) uiDesignAppSetStatus(pApp, "File command failed; document retained");
 		uiDesignAppUpdateCommandUI(pApp);
 	}
 }
@@ -2598,9 +2829,9 @@ static int __uiDesignAppShowFileDialog(ui_design_app_t* pApp, ui_design_command_
 	if ( iCommand == UI_DESIGN_COMMAND_FILE_SAVE || iCommand == UI_DESIGN_COMMAND_FILE_SAVE_AS ) {
 		sTitle = "Save XUI Design";
 	} else if ( iCommand == UI_DESIGN_COMMAND_FILE_EXPORT ) {
-		sTitle = "Export XUI Design";
-		sFileName = "uidesign_export.json";
-		sFilter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*";
+		sTitle = "Export XUI C Source";
+		sFileName = "uidesign_view.c";
+		sFilter = "C Source Files (*.c)|*.c|All Files (*.*)|*.*";
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -2622,6 +2853,163 @@ static int __uiDesignAppShowFileDialog(ui_design_app_t* pApp, ui_design_command_
 	}
 	if ( iRet != XUI_OK ) pApp->iPendingFileCommand = UI_DESIGN_COMMAND_NONE;
 	return iRet;
+}
+
+static int __uiDesignAppRequestDestructiveCommand(ui_design_app_t* pApp, ui_design_command_t iCommand);
+
+static int __uiDesignAppContinueExit(ui_design_app_t* pApp)
+{
+	int i, ret;
+	for ( i = 0; i < pApp->iSessionCount; ++i ) {
+		if ( pApp->arrSessions[i]->bDocumentDirty && !pApp->arrSessions[i]->bCloseApproved ) {
+			ret = uiDesignAppSwitchSession(pApp, i);
+			if ( ret != XUI_OK ) { pApp->bExitRequested = 0; return ret; }
+			return __uiDesignAppRequestDestructiveCommand(pApp, UI_DESIGN_COMMAND_FILE_EXIT);
+		}
+	}
+	xgeQuit();
+	return XUI_OK;
+}
+
+static int __uiDesignAppContinueDestructiveCommand(ui_design_app_t* pApp, ui_design_command_t iCommand)
+{
+	int i, index = -1, ret;
+	ui_design_session_t* closing;
+	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	switch ( iCommand ) {
+	case UI_DESIGN_COMMAND_FILE_CLOSE:
+		closing = pApp->pSession;
+		for ( i = 0; i < pApp->iSessionCount; ++i ) if ( pApp->arrSessions[i] == closing ) index = i;
+		if ( index < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pApp->iSessionCount == 1 ) ret = uiDesignAppNewSession(pApp);
+		else ret = uiDesignAppSwitchSession(pApp, index == 0 ? 1 : index - 1);
+		if ( ret != XUI_OK ) return ret;
+		memmove(&pApp->arrSessions[index], &pApp->arrSessions[index + 1],
+		        (size_t)(pApp->iSessionCount - index - 1) * sizeof(pApp->arrSessions[0]));
+		pApp->arrSessions[--pApp->iSessionCount] = NULL;
+		uiDesignSessionDestroy(closing);
+		__uiDesignAppRefreshDocumentTitle(pApp);
+		return XUI_OK;
+	case UI_DESIGN_COMMAND_FILE_RELOAD:
+		{
+			ui_design_file_stamp_t stamp = uiDesignFileStamp(pApp->pSession->sDocumentPath);
+			char* snapshot = __uiDesignAppReadTextFile(pApp->pSession->sDocumentPath);
+			if ( snapshot == NULL ) return XUI_ERROR_FILE_NOT_FOUND;
+			ret = __uiDesignAppRestoreSnapshot(pApp, snapshot);
+			free(snapshot);
+			if ( ret != XUI_OK ) return ret;
+			uiDesignHistoryClear(pApp->pSession->arrUndo, &pApp->pSession->iUndoCount);
+			uiDesignHistoryClear(pApp->pSession->arrRedo, &pApp->pSession->iRedoCount);
+			pApp->pSession->tDisk = stamp;
+			pApp->pSession->bExternalChange = !uiDesignFileStampEqual(stamp, uiDesignFileStamp(pApp->pSession->sDocumentPath));
+			++pApp->pSession->iRevision;
+			ret = __uiDesignAppSetCleanSnapshot(pApp, NULL);
+			uiDesignAppUpdateCommandUI(pApp);
+			return ret;
+		}
+	case UI_DESIGN_COMMAND_FILE_EXIT:
+		pApp->pSession->bCloseApproved = 1;
+		return __uiDesignAppContinueExit(pApp);
+	default:
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+}
+
+static void __uiDesignUnsavedResult(xui_msgbox pBox, int iResult, void* pUser)
+{
+	ui_design_app_t* pApp;
+	ui_design_command_t iCommand;
+	int iRet;
+
+	pApp = (ui_design_app_t*)pUser;
+	if ( pApp == NULL ) return;
+	(void)xuiMsgBoxSetOpen(pBox, 0);
+	iCommand = (ui_design_command_t)pApp->iPendingUnsavedCommand;
+	if ( iCommand == UI_DESIGN_COMMAND_NONE ) return;
+	if ( iResult == XUI_MSGBOX_RESULT_YES ) {
+		if ( pApp->pSession->sDocumentPath[0] == '\0' ) {
+			iRet = __uiDesignAppShowFileDialog(pApp, UI_DESIGN_COMMAND_FILE_SAVE);
+			if ( iRet != XUI_OK ) pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+		} else {
+			iRet = __uiDesignAppSaveDocument(pApp, pApp->pSession->sDocumentPath);
+			if ( iRet == XUI_OK ) {
+				pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+				iRet = __uiDesignAppContinueDestructiveCommand(pApp, iCommand);
+			} else {
+				pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+			}
+		}
+	} else if ( iResult == XUI_MSGBOX_RESULT_NO ) {
+		pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+		iRet = __uiDesignAppContinueDestructiveCommand(pApp, iCommand);
+	} else {
+		pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+		pApp->bExitRequested = 0;
+		uiDesignAppSetStatus(pApp, "Command cancelled");
+		pApp->bNativeCloseRequested = 0;
+		uiDesignAppUpdateCommandUI(pApp);
+		uiDesignAppInvalidate(pApp);
+		return;
+	}
+	if ( iRet != XUI_OK ) {
+		pApp->iPendingUnsavedCommand = UI_DESIGN_COMMAND_NONE;
+		pApp->bExitRequested = 0;
+		if ( !pApp->pSession->bExternalChange ) uiDesignAppSetStatus(pApp, "File command failed; document retained");
+	}
+	uiDesignAppUpdateCommandUI(pApp);
+	uiDesignAppInvalidate(pApp);
+}
+
+static int __uiDesignAppRequestDestructiveCommand(ui_design_app_t* pApp, ui_design_command_t iCommand)
+{
+	xui_msgbox_desc_t desc;
+	char message[UI_DESIGN_PATH_CAPACITY + 180];
+	const char* action = iCommand == UI_DESIGN_COMMAND_FILE_CLOSE ? "closing this tab" :
+	                     iCommand == UI_DESIGN_COMMAND_FILE_RELOAD ? "reloading from disk" : "exiting";
+	int ret;
+	if ( !pApp->pSession->bDocumentDirty ) return __uiDesignAppContinueDestructiveCommand(pApp, iCommand);
+	if ( pApp->pUnsavedBox == NULL ) {
+		memset(&desc, 0, sizeof(desc));
+		desc.iSize = sizeof(desc);
+		desc.sTitle = "Unsaved changes";
+		desc.pFont = pApp->pFont;
+		desc.iType = XUI_MSGBOX_ICON_WAR;
+		desc.iButtons = XUI_MSGBOX_BUTTON_YES_NO_CANCEL;
+		desc.bModal = desc.bHasModal = 1;
+		ret = xuiMsgBoxCreate(pApp->pContext, &pApp->pUnsavedBox, &desc);
+		if ( ret != XUI_OK ) return ret;
+		(void)xuiMsgBoxSetResult(pApp->pUnsavedBox, __uiDesignUnsavedResult, pApp);
+	}
+	snprintf(message, sizeof(message), "Save %s before %s?\nYes: save  /  No: discard  /  Cancel: keep editing",
+	         pApp->pSession->sDocumentPath[0] ? pApp->pSession->sDocumentPath : "Untitled", action);
+	(void)xuiMsgBoxSetText(pApp->pUnsavedBox, "Unsaved changes", message);
+	pApp->iPendingUnsavedCommand = iCommand;
+	ret = xuiMsgBoxSetOpen(pApp->pUnsavedBox, 1);
+	if ( ret != XUI_OK ) { pApp->iPendingUnsavedCommand = 0; pApp->bExitRequested = 0; }
+	return ret;
+}
+
+void uiDesignAppPollSessions(ui_design_app_t* pApp)
+{
+	int index;
+	if ( pApp->iPendingTab >= 0 ) {
+		index = pApp->iPendingTab;
+		pApp->iPendingTab = -1;
+		(void)uiDesignAppSwitchSession(pApp, index);
+		uiDesignWorkbenchRefreshTabs(pApp);
+	}
+	if ( pApp->iPendingCloseTab >= 0 ) {
+		index = pApp->iPendingCloseTab;
+		pApp->iPendingCloseTab = -1;
+		if ( uiDesignAppSwitchSession(pApp, index) == XUI_OK && uiDesignAppCanExecuteCommand(pApp, UI_DESIGN_COMMAND_FILE_CLOSE) )
+			(void)uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_FILE_CLOSE);
+		uiDesignWorkbenchRefreshTabs(pApp);
+	}
+	if ( pApp->bNativeCloseRequested && uiDesignAppCanExecuteCommand(pApp, UI_DESIGN_COMMAND_FILE_EXIT) ) {
+		pApp->bNativeCloseRequested = 0;
+		uiDesignAppCancelGesture(pApp);
+		(void)uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_FILE_EXIT);
+	}
 }
 
 static int __uiDesignAppDockWindowVisible(ui_design_app_t* pApp, int iWindow)
@@ -2680,6 +3068,8 @@ int uiDesignAppExecuteCommand(ui_design_app_t* pApp, ui_design_command_t iComman
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !uiDesignAppCanExecuteCommand(pApp, iCommand) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iCommand >= UI_DESIGN_COMMAND_FILE_NEW && iCommand <= UI_DESIGN_COMMAND_FILE_EXIT &&
+	     __uiDesignAppFinishPropertyEdit(pApp) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = XUI_OK;
 	switch ( iCommand ) {
 	case UI_DESIGN_COMMAND_EDIT_UNDO:
@@ -2691,8 +3081,7 @@ int uiDesignAppExecuteCommand(ui_design_app_t* pApp, ui_design_command_t iComman
 		if ( iRet == XUI_OK ) uiDesignAppSetStatus(pApp, "Copied");
 		break;
 	case UI_DESIGN_COMMAND_FILE_NEW:
-		iRet = __uiDesignAppExecuteUndoableCommand(pApp, iCommand, "New Document");
-		if ( iRet == XUI_OK ) uiDesignAppSetStatus(pApp, "New document");
+		iRet = __uiDesignAppNewDocument(pApp);
 		break;
 	case UI_DESIGN_COMMAND_EDIT_CUT:
 		iRet = __uiDesignAppExecuteUndoableCommand(pApp, iCommand, "Cut");
@@ -2711,8 +3100,8 @@ int uiDesignAppExecuteCommand(ui_design_app_t* pApp, ui_design_command_t iComman
 		if ( iRet == XUI_OK ) uiDesignAppSetStatus(pApp, "Deleted");
 		break;
 	case UI_DESIGN_COMMAND_EDIT_SELECT_ALL:
-		(void)uiDesignModelClearSelection(&pApp->tModel);
-		for ( iRet = 0; iRet < pApp->tModel.iNodeCount; ++iRet ) (void)uiDesignModelAddSelection(&pApp->tModel, pApp->tModel.arrNodes[iRet].iId);
+		(void)uiDesignModelClearSelection(&pApp->pSession->tModel);
+		for ( iRet = 0; iRet < pApp->pSession->tModel.iNodeCount; ++iRet ) (void)uiDesignModelAddSelection(&pApp->pSession->tModel, pApp->pSession->tModel.arrNodes[iRet].iId);
 		(void)__uiDesignAppRefreshInspector(pApp);
 		uiDesignAppSetStatus(pApp, "Selected all");
 		iRet = XUI_OK;
@@ -2731,52 +3120,65 @@ int uiDesignAppExecuteCommand(ui_design_app_t* pApp, ui_design_command_t iComman
 		if ( iRet == XUI_OK ) uiDesignAppSetStatus(pApp, "Arranged");
 		break;
 	case UI_DESIGN_COMMAND_FILE_SAVE:
-		if ( pApp->sDocumentPath[0] == '\0' ) {
+		if ( pApp->pSession->sDocumentPath[0] == '\0' ) {
 			iRet = __uiDesignAppShowFileDialog(pApp, UI_DESIGN_COMMAND_FILE_SAVE);
 		} else {
-			iRet = __uiDesignAppSaveDocument(pApp, pApp->sDocumentPath);
+			iRet = __uiDesignAppSaveDocument(pApp, pApp->pSession->sDocumentPath);
 		}
 		break;
 	case UI_DESIGN_COMMAND_FILE_SAVE_AS:
 		iRet = __uiDesignAppShowFileDialog(pApp, UI_DESIGN_COMMAND_FILE_SAVE_AS);
 		break;
 	case UI_DESIGN_COMMAND_FILE_OPEN:
-		iRet = __uiDesignAppShowFileDialog(pApp, UI_DESIGN_COMMAND_FILE_OPEN);
+		iRet = __uiDesignAppShowFileDialog(pApp, iCommand);
 		break;
 	case UI_DESIGN_COMMAND_FILE_EXPORT:
 		iRet = __uiDesignAppShowFileDialog(pApp, UI_DESIGN_COMMAND_FILE_EXPORT);
 		break;
 	case UI_DESIGN_COMMAND_FILE_EXIT:
-		xgeQuit();
+		for ( iRet = 0; iRet < pApp->iSessionCount; ++iRet ) pApp->arrSessions[iRet]->bCloseApproved = 0;
+		pApp->bExitRequested = 1;
+		iRet = __uiDesignAppContinueExit(pApp);
+		break;
+	case UI_DESIGN_COMMAND_FILE_CLOSE:
+	case UI_DESIGN_COMMAND_FILE_RELOAD:
+		iRet = __uiDesignAppRequestDestructiveCommand(pApp, iCommand);
+		break;
+	case UI_DESIGN_COMMAND_VIEW_RESET_LAYOUT:
+		iRet = uiDesignWorkbenchResetLayout(pApp);
 		break;
 	case UI_DESIGN_COMMAND_VIEW_GRID:
-		pApp->bGridVisible = !pApp->bGridVisible;
-		uiDesignAppSetStatus(pApp, pApp->bGridVisible ? "Grid on" : "Grid off");
+		pApp->pSession->bGridVisible = !pApp->pSession->bGridVisible;
+		uiDesignAppSetStatus(pApp, pApp->pSession->bGridVisible ? "Grid on" : "Grid off");
 		break;
 	case UI_DESIGN_COMMAND_VIEW_SNAP:
-		pApp->bSnapEnabled = !pApp->bSnapEnabled;
-		uiDesignAppSetStatus(pApp, pApp->bSnapEnabled ? "Snap on" : "Snap off");
+		pApp->pSession->bSnapEnabled = !pApp->pSession->bSnapEnabled;
+		uiDesignAppSetStatus(pApp, pApp->pSession->bSnapEnabled ? "Snap on" : "Snap off");
 		break;
 	case UI_DESIGN_COMMAND_VIEW_MARQUEE_CONTAIN:
-		pApp->bMarqueeSelectContain = 1;
+		pApp->pSession->bMarqueeSelectContain = 1;
 		uiDesignAppSetStatus(pApp, "Marquee: enclosed");
 		break;
 	case UI_DESIGN_COMMAND_VIEW_MARQUEE_TOUCH:
-		pApp->bMarqueeSelectContain = 0;
+		pApp->pSession->bMarqueeSelectContain = 0;
 		uiDesignAppSetStatus(pApp, "Marquee: touching");
 		break;
 	case UI_DESIGN_COMMAND_VIEW_ZOOM_IN:
-		pApp->fZoom *= 1.10f;
+		iRet = uiDesignCanvasSetZoom(pApp, pApp->pSession->fZoom * 1.10f, 0.0f, 0.0f, 0);
 		uiDesignAppSetStatus(pApp, "Zoom in");
 		break;
 	case UI_DESIGN_COMMAND_VIEW_ZOOM_OUT:
-		pApp->fZoom /= 1.10f;
-		if ( pApp->fZoom < 0.25f ) pApp->fZoom = 0.25f;
+		iRet = uiDesignCanvasSetZoom(pApp, pApp->pSession->fZoom / 1.10f, 0.0f, 0.0f, 0);
 		uiDesignAppSetStatus(pApp, "Zoom out");
 		break;
 	case UI_DESIGN_COMMAND_VIEW_ZOOM_FIT:
+		iRet = uiDesignCanvasZoomFit(pApp);
+		uiDesignAppSetStatus(pApp, "Zoom to fit");
+		break;
 	case UI_DESIGN_COMMAND_VIEW_ZOOM_100:
-		pApp->fZoom = 1.0f;
+		pApp->pSession->fCanvasPanX = 0.0f;
+		pApp->pSession->fCanvasPanY = 0.0f;
+		iRet = uiDesignCanvasSetZoom(pApp, 1.0f, 0.0f, 0.0f, 0);
 		uiDesignAppSetStatus(pApp, "Zoom 100%");
 		break;
 	case UI_DESIGN_COMMAND_TOOL_POINTER:
@@ -2828,8 +3230,8 @@ void uiDesignAppUpdateCommandUI(ui_design_app_t* pApp)
 			if ( pItem == NULL || pItem->iType == XUI_TOOLBAR_ITEM_SEPARATOR ) continue;
 			iCommand = (ui_design_command_t)pItem->iValue;
 			(void)xuiToolbarSetItemEnabled(pApp->pToolbar, i, uiDesignAppCanExecuteCommand(pApp, iCommand));
-			if ( iCommand == UI_DESIGN_COMMAND_VIEW_GRID ) (void)xuiToolbarSetItemChecked(pApp->pToolbar, i, pApp->bGridVisible);
-			if ( iCommand == UI_DESIGN_COMMAND_VIEW_SNAP ) (void)xuiToolbarSetItemChecked(pApp->pToolbar, i, pApp->bSnapEnabled);
+			if ( iCommand == UI_DESIGN_COMMAND_VIEW_GRID ) (void)xuiToolbarSetItemChecked(pApp->pToolbar, i, pApp->pSession->bGridVisible);
+			if ( iCommand == UI_DESIGN_COMMAND_VIEW_SNAP ) (void)xuiToolbarSetItemChecked(pApp->pToolbar, i, pApp->pSession->bSnapEnabled);
 			if ( iCommand == UI_DESIGN_COMMAND_PREVIEW ) (void)xuiToolbarSetItemChecked(pApp->pToolbar, i, pApp->bPreviewMode);
 			if ( iCommand == UI_DESIGN_COMMAND_TOOL_POINTER ) (void)xuiToolbarSetItemChecked(pApp->pToolbar, i, pApp->iActiveTool == UI_DESIGN_NODE_NONE);
 		}
@@ -2844,16 +3246,16 @@ static uint32_t __uiDesignCommandMenuState(ui_design_app_t* pApp, ui_design_comm
 	iState = uiDesignAppCanExecuteCommand(pApp, iCommand) ? XUI_MENU_ITEM_ENABLED : 0u;
 	switch ( iCommand ) {
 	case UI_DESIGN_COMMAND_VIEW_GRID:
-		if ( pApp != NULL && pApp->bGridVisible ) iState |= XUI_MENU_ITEM_CHECKED;
+		if ( pApp != NULL && pApp->pSession->bGridVisible ) iState |= XUI_MENU_ITEM_CHECKED;
 		break;
 	case UI_DESIGN_COMMAND_VIEW_SNAP:
-		if ( pApp != NULL && pApp->bSnapEnabled ) iState |= XUI_MENU_ITEM_CHECKED;
+		if ( pApp != NULL && pApp->pSession->bSnapEnabled ) iState |= XUI_MENU_ITEM_CHECKED;
 		break;
 	case UI_DESIGN_COMMAND_VIEW_MARQUEE_CONTAIN:
-		if ( pApp != NULL && pApp->bMarqueeSelectContain ) iState |= XUI_MENU_ITEM_CHECKED;
+		if ( pApp != NULL && pApp->pSession->bMarqueeSelectContain ) iState |= XUI_MENU_ITEM_CHECKED;
 		break;
 	case UI_DESIGN_COMMAND_VIEW_MARQUEE_TOUCH:
-		if ( pApp != NULL && !pApp->bMarqueeSelectContain ) iState |= XUI_MENU_ITEM_CHECKED;
+		if ( pApp != NULL && !pApp->pSession->bMarqueeSelectContain ) iState |= XUI_MENU_ITEM_CHECKED;
 		break;
 	case UI_DESIGN_COMMAND_VIEW_TOOLBOX:
 		if ( pApp != NULL && __uiDesignAppDockWindowVisible(pApp, pApp->iToolboxWindow) ) iState |= XUI_MENU_ITEM_CHECKED;
@@ -2899,7 +3301,9 @@ static void __uiDesignAppRefreshMenus(ui_design_app_t* pApp)
 		__uiDesignMenuItem(pApp, &arrItems[n++], "Save As", "Ctrl+Shift+S", XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_FILE_SAVE_AS);
 		__uiDesignMenuItem(pApp, &arrItems[n++], "Export", NULL, XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_FILE_EXPORT);
 		__uiDesignMenuItem(pApp, &arrItems[n++], NULL, NULL, XUI_MENU_ITEM_SEPARATOR, UI_DESIGN_COMMAND_NONE);
-		__uiDesignMenuItem(pApp, &arrItems[n++], "Exit", "Esc", XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_FILE_EXIT);
+		__uiDesignMenuItem(pApp, &arrItems[n++], "Reload from Disk", NULL, XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_FILE_RELOAD);
+		__uiDesignMenuItem(pApp, &arrItems[n++], "Close Tab", "Ctrl+W", XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_FILE_CLOSE);
+		__uiDesignMenuItem(pApp, &arrItems[n++], "Exit", "Ctrl+Q", XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_FILE_EXIT);
 		(void)xuiMenuSetItems(pApp->pFileMenu, arrItems, n);
 	}
 	if ( pApp->pEditMenu != NULL ) {
@@ -2947,6 +3351,7 @@ static void __uiDesignAppRefreshMenus(ui_design_app_t* pApp)
 		__uiDesignMenuItem(pApp, &arrItems[n++], "Zoom Out", NULL, XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_VIEW_ZOOM_OUT);
 		__uiDesignMenuItem(pApp, &arrItems[n++], "Zoom Fit", NULL, XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_VIEW_ZOOM_FIT);
 		__uiDesignMenuItem(pApp, &arrItems[n++], "100%", NULL, XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_VIEW_ZOOM_100);
+		__uiDesignMenuItem(pApp, &arrItems[n++], "Reset Layout", NULL, XUI_MENU_ITEM_NORMAL, UI_DESIGN_COMMAND_VIEW_RESET_LAYOUT);
 		(void)xuiMenuSetItems(pApp->pViewMenu, arrItems, n);
 	}
 	if ( pApp->pToolsMenu != NULL ) {
@@ -3055,8 +3460,8 @@ static int __uiDesignCreateChrome(ui_design_app_t* pApp)
 	(void)xuiToolbarAddItem(pApp->pToolbar, "Dist H", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_ARRANGE_DISTRIBUTE_H);
 	(void)xuiToolbarAddItem(pApp->pToolbar, "Dist V", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_ARRANGE_DISTRIBUTE_V);
 	(void)xuiToolbarAddSeparator(pApp->pToolbar);
-	(void)xuiToolbarAddItem(pApp->pToolbar, "Forward", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_ARRANGE_BRING_FORWARD);
-	(void)xuiToolbarAddItem(pApp->pToolbar, "Backward", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_ARRANGE_SEND_BACKWARD);
+	(void)xuiToolbarAddItem(pApp->pToolbar, "Raise", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_ARRANGE_BRING_FORWARD);
+	(void)xuiToolbarAddItem(pApp->pToolbar, "Lower", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_ARRANGE_SEND_BACKWARD);
 	(void)xuiToolbarAddSeparator(pApp->pToolbar);
 	(void)xuiToolbarAddItem(pApp->pToolbar, "Zoom+", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_VIEW_ZOOM_IN);
 	(void)xuiToolbarAddItem(pApp->pToolbar, "Zoom-", XUI_TOOLBAR_ITEM_BUTTON, UI_DESIGN_COMMAND_VIEW_ZOOM_OUT);
@@ -3165,13 +3570,15 @@ static int __uiDesignCreateDock(ui_design_app_t* pApp)
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = uiDesignToolboxCreate(pApp);
 	if ( iRet == XUI_OK ) iRet = uiDesignCanvasCreate(pApp);
+	if ( iRet == XUI_OK ) iRet = uiDesignWorkbenchCreateTabs(pApp);
 	if ( iRet == XUI_OK ) iRet = uiDesignInspectorCreate(pApp);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDockPanelAddWindow(pApp->pDock, "Toolbox", pApp->pToolbox, &pApp->iToolboxWindow);
-	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pApp->pDock, "Designer", pApp->pCanvas, &pApp->iCanvasWindow);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pApp->pDock, "Designer", pApp->pDesignerHost, &pApp->iCanvasWindow);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pApp->pDock, "Inspector", pApp->pInspector, &pApp->iInspectorWindow);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDockPanelDockWindow(pApp->pDock, pApp->iCanvasWindow, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, &pApp->iCanvasPane);
+	(void)xuiDockPanelSetWindowFlags(pApp->pDock, pApp->iCanvasWindow, 0, 1);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindow(pApp->pDock, pApp->iToolboxWindow, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_LEFT, 0.20f, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindow(pApp->pDock, pApp->iInspectorWindow, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_RIGHT, 0.28f, NULL);
 	if ( iRet == XUI_OK ) iRet = __uiDesignAppApplyViewportLayout(pApp, __uiDesignAppSurfaceWidth(pApp), __uiDesignAppSurfaceHeight(pApp));
@@ -3233,6 +3640,88 @@ static int __uiDesignExerciseResizeLayout(ui_design_app_t* pApp)
 	}
 	iRestore = __uiDesignAppResizeTarget(pApp, iOldWidth, iOldHeight);
 	if ( iRet == XUI_OK ) iRet = iRestore;
+	return iRet;
+}
+
+static int __uiDesignExerciseCanvasView(ui_design_app_t* pApp)
+{
+	ui_design_node_t* pNode;
+	xui_rect_t tArtboard;
+	xui_rect_t tWidget;
+	xui_rect_t tExpected;
+	xui_rect_t tModelRect;
+	float fOldZoom;
+	float fOldPanX;
+	float fOldPanY;
+	float fAnchorX;
+	float fAnchorY;
+	float fDesignX;
+	float fDesignY;
+	int iNode;
+	int iRet;
+
+	if ( pApp == NULL || pApp->pArtboard == NULL || pApp->pCanvas == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	fOldZoom = pApp->pSession->fZoom;
+	fOldPanX = pApp->pSession->fCanvasPanX;
+	fOldPanY = pApp->pSession->fCanvasPanY;
+	iNode = 0;
+	iRet = uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_LABEL, 0, 100.0f, 80.0f, &iNode);
+	if ( iRet == XUI_OK ) iRet = uiDesignModelSetRect(&pApp->pSession->tModel, iNode, (xui_rect_t){100, 80, 120, 30});
+	if ( iRet == XUI_OK ) iRet = uiDesignAppCreateNodeWidget(pApp, uiDesignModelGetNode(&pApp->pSession->tModel, iNode));
+	if ( iRet != XUI_OK ) goto done;
+	iRet = xuiLayout(pApp->pContext);
+	if ( iRet != XUI_OK ) goto done;
+	tArtboard = xuiWidgetGetWorldRect(pApp->pArtboard);
+	fAnchorX = tArtboard.fX + 300.0f * pApp->pSession->fZoom;
+	fAnchorY = tArtboard.fY + 200.0f * pApp->pSession->fZoom;
+	iRet = uiDesignCanvasWorldToDesign(pApp, fAnchorX, fAnchorY, &fDesignX, &fDesignY);
+	if ( iRet != XUI_OK || __uiDesignAppAbsFloat(fDesignX - 300.0f) > 0.01f || __uiDesignAppAbsFloat(fDesignY - 200.0f) > 0.01f ) {
+		printf("xui_uidesign exercise-canvas-transform-before-failed design=%.2f/%.2f\n", fDesignX, fDesignY);
+		iRet = XUI_ERROR;
+		goto done;
+	}
+	iRet = uiDesignCanvasSetZoom(pApp, 2.0f, fAnchorX, fAnchorY, 1);
+	if ( iRet != XUI_OK ) goto done;
+	iRet = xuiLayout(pApp->pContext);
+	if ( iRet != XUI_OK ) goto done;
+	tArtboard = xuiWidgetGetWorldRect(pApp->pArtboard);
+	iRet = uiDesignCanvasWorldToDesign(pApp, fAnchorX, fAnchorY, &fDesignX, &fDesignY);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iNode);
+	if ( pNode == NULL || pNode->pWidget == NULL ) {
+		iRet = XUI_ERROR;
+		goto done;
+	}
+	tWidget = xuiWidgetGetRect(pNode->pWidget);
+	tModelRect = pNode->tRect;
+	tExpected = (xui_rect_t){200, 160, 240, 60};
+	if ( iRet != XUI_OK || __uiDesignAppAbsFloat(fDesignX - 300.0f) > 0.01f || __uiDesignAppAbsFloat(fDesignY - 200.0f) > 0.01f ||
+	     tArtboard.fW != 1800 || tArtboard.fH != 1200 || !__uiDesignAppRectAlmostEqual(tWidget, tExpected, 0.01f) ||
+	     !__uiDesignAppRectAlmostEqual(tModelRect, (xui_rect_t){100, 80, 120, 30}, 0.01f) ) {
+		printf("xui_uidesign exercise-canvas-transform-after-failed zoom=%.2f design=%.2f/%.2f board=%d/%d widget=%d/%d/%d/%d\n",
+			pApp->pSession->fZoom, fDesignX, fDesignY, tArtboard.fW, tArtboard.fH,
+			tWidget.fX, tWidget.fY, tWidget.fW, tWidget.fH);
+		iRet = XUI_ERROR;
+		goto done;
+	}
+	iRet = uiDesignCanvasSetZoom(pApp, 0.01f, 0.0f, 0.0f, 0);
+	if ( iRet != XUI_OK || pApp->pSession->fZoom != UI_DESIGN_ZOOM_MIN ) {
+		printf("xui_uidesign exercise-canvas-zoom-clamp-failed zoom=%.2f ret=%d\n", pApp->pSession->fZoom, iRet);
+		iRet = XUI_ERROR;
+		goto done;
+	}
+	iRet = uiDesignCanvasZoomFit(pApp);
+	if ( iRet != XUI_OK || pApp->pSession->fZoom < UI_DESIGN_ZOOM_MIN || pApp->pSession->fZoom > UI_DESIGN_ZOOM_MAX ||
+	     pApp->pSession->fCanvasPanX != 0.0f || pApp->pSession->fCanvasPanY != 0.0f ) {
+		printf("xui_uidesign exercise-canvas-zoom-fit-failed zoom=%.2f pan=%.2f/%.2f ret=%d\n",
+			pApp->pSession->fZoom, pApp->pSession->fCanvasPanX, pApp->pSession->fCanvasPanY, iRet);
+		iRet = XUI_ERROR;
+	}
+done:
+	pApp->pSession->fCanvasPanX = fOldPanX;
+	pApp->pSession->fCanvasPanY = fOldPanY;
+	if ( uiDesignCanvasSetZoom(pApp, fOldZoom, 0.0f, 0.0f, 0) != XUI_OK && iRet == XUI_OK ) iRet = XUI_ERROR;
+	if ( iNode > 0 ) (void)uiDesignAppDeleteNode(pApp, iNode);
+	(void)xuiLayout(pApp->pContext);
 	return iRet;
 }
 
@@ -3303,47 +3792,47 @@ static int __uiDesignExerciseMarqueeSelection(ui_design_app_t* pApp)
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iA = 0;
 	iB = 0;
-	iOldContain = pApp->bMarqueeSelectContain;
+	iOldContain = pApp->pSession->bMarqueeSelectContain;
 	iRet = uiDesignCanvasPlaceToolRect(pApp, UI_DESIGN_NODE_LABEL, (xui_rect_t){2220.0f, 1300.0f, 40.0f, 40.0f}, &iA);
 	if ( iRet != XUI_OK ) goto done;
 	iRet = uiDesignCanvasPlaceToolRect(pApp, UI_DESIGN_NODE_LABEL, (xui_rect_t){2280.0f, 1300.0f, 40.0f, 40.0f}, &iB);
 	if ( iRet != XUI_OK ) goto done;
-	pApp->bMarqueeSelectContain = 1;
+	pApp->pSession->bMarqueeSelectContain = 1;
 	iRet = uiDesignCanvasSelectRect(pApp, (xui_rect_t){2218.0f, 1298.0f, 44.0f, 44.0f});
 	if ( iRet != XUI_OK ) goto done;
-	if ( uiDesignModelGetSelectionCount(&pApp->tModel) != 1 ||
-	     !uiDesignModelIsSelected(&pApp->tModel, iA) ||
-	     uiDesignModelIsSelected(&pApp->tModel, iB) ) {
+	if ( uiDesignModelGetSelectionCount(&pApp->pSession->tModel) != 1 ||
+	     !uiDesignModelIsSelected(&pApp->pSession->tModel, iA) ||
+	     uiDesignModelIsSelected(&pApp->pSession->tModel, iB) ) {
 		printf("xui_uidesign exercise-marquee-contain-failed a=%d b=%d count=%d\n",
-			iA, iB, uiDesignModelGetSelectionCount(&pApp->tModel));
+			iA, iB, uiDesignModelGetSelectionCount(&pApp->pSession->tModel));
 		iRet = XUI_ERROR;
 		goto done;
 	}
-	pApp->bMarqueeSelectContain = 0;
+	pApp->pSession->bMarqueeSelectContain = 0;
 	iRet = uiDesignCanvasSelectRect(pApp, (xui_rect_t){2258.0f, 1298.0f, 24.0f, 44.0f});
 	if ( iRet != XUI_OK ) goto done;
-	if ( uiDesignModelGetSelectionCount(&pApp->tModel) != 2 ||
-	     !uiDesignModelIsSelected(&pApp->tModel, iA) ||
-	     !uiDesignModelIsSelected(&pApp->tModel, iB) ) {
+	if ( uiDesignModelGetSelectionCount(&pApp->pSession->tModel) != 2 ||
+	     !uiDesignModelIsSelected(&pApp->pSession->tModel, iA) ||
+	     !uiDesignModelIsSelected(&pApp->pSession->tModel, iB) ) {
 		printf("xui_uidesign exercise-marquee-touch-failed a=%d b=%d count=%d\n",
-			iA, iB, uiDesignModelGetSelectionCount(&pApp->tModel));
+			iA, iB, uiDesignModelGetSelectionCount(&pApp->pSession->tModel));
 		iRet = XUI_ERROR;
 		goto done;
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_VIEW_MARQUEE_CONTAIN);
-	if ( iRet != XUI_OK || !pApp->bMarqueeSelectContain ) {
-		printf("xui_uidesign exercise-marquee-command-contain-failed ret=%d contain=%d\n", iRet, pApp->bMarqueeSelectContain);
+	if ( iRet != XUI_OK || !pApp->pSession->bMarqueeSelectContain ) {
+		printf("xui_uidesign exercise-marquee-command-contain-failed ret=%d contain=%d\n", iRet, pApp->pSession->bMarqueeSelectContain);
 		iRet = XUI_ERROR;
 		goto done;
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_VIEW_MARQUEE_TOUCH);
-	if ( iRet != XUI_OK || pApp->bMarqueeSelectContain ) {
-		printf("xui_uidesign exercise-marquee-command-touch-failed ret=%d contain=%d\n", iRet, pApp->bMarqueeSelectContain);
+	if ( iRet != XUI_OK || pApp->pSession->bMarqueeSelectContain ) {
+		printf("xui_uidesign exercise-marquee-command-touch-failed ret=%d contain=%d\n", iRet, pApp->pSession->bMarqueeSelectContain);
 		iRet = XUI_ERROR;
 		goto done;
 	}
 done:
-	pApp->bMarqueeSelectContain = iOldContain;
+	pApp->pSession->bMarqueeSelectContain = iOldContain;
 	if ( iA > 0 ) (void)uiDesignAppDeleteNode(pApp, iA);
 	if ( iB > 0 ) (void)uiDesignAppDeleteNode(pApp, iB);
 	return iRet;
@@ -3361,9 +3850,9 @@ static int __uiDesignExerciseContextCommands(ui_design_app_t* pApp, int iSourceI
 	int iRet;
 
 	if ( (pApp == NULL) || (iSourceId <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pSource = uiDesignModelGetNode(&pApp->tModel, iSourceId);
+	pSource = uiDesignModelGetNode(&pApp->pSession->tModel, iSourceId);
 	if ( pSource == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iBefore = pApp->tModel.iNodeCount;
+	iBefore = pApp->pSession->tModel.iNodeCount;
 	iRet = uiDesignAppCopyNode(pApp, iSourceId);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pApp->iClipboardNodeCount != 1 ) {
@@ -3373,48 +3862,48 @@ static int __uiDesignExerciseContextCommands(ui_design_app_t* pApp, int iSourceI
 	iPasteId = 0;
 	iRet = uiDesignAppPasteClipboard(pApp, 1900.0f, 1040.0f, &iPasteId);
 	if ( iRet != XUI_OK ) return iRet;
-	pPaste = uiDesignModelGetNode(&pApp->tModel, iPasteId);
+	pPaste = uiDesignModelGetNode(&pApp->pSession->tModel, iPasteId);
 	if ( (pPaste == NULL) || (pPaste->pWidget == NULL) ||
-	     (pApp->tModel.iNodeCount != iBefore + 1) ||
+	     (pApp->pSession->tModel.iNodeCount != iBefore + 1) ||
 	     (pPaste->iType != pSource->iType) ||
 	     (strcmp(pPaste->sText, pSource->sText) != 0) ) {
 		printf("xui_uidesign exercise-context-paste-failed source=%d paste=%d before=%d now=%d\n",
-			iSourceId, iPasteId, iBefore, pApp->tModel.iNodeCount);
+			iSourceId, iPasteId, iBefore, pApp->pSession->tModel.iNodeCount);
 		return XUI_ERROR;
 	}
 	iRet = uiDesignAppDeleteNode(pApp, iPasteId);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pApp->tModel.iNodeCount != iBefore) || (uiDesignModelGetNode(&pApp->tModel, iPasteId) != NULL) ) {
-		printf("xui_uidesign exercise-context-delete-failed paste=%d before=%d now=%d\n", iPasteId, iBefore, pApp->tModel.iNodeCount);
+	if ( (pApp->pSession->tModel.iNodeCount != iBefore) || (uiDesignModelGetNode(&pApp->pSession->tModel, iPasteId) != NULL) ) {
+		printf("xui_uidesign exercise-context-delete-failed paste=%d before=%d now=%d\n", iPasteId, iBefore, pApp->pSession->tModel.iNodeCount);
 		return XUI_ERROR;
 	}
 	iTempId = 0;
 	iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_BUTTON, 1900.0f, 1100.0f, &iTempId);
 	if ( iRet != XUI_OK ) return iRet;
-	iBefore = pApp->tModel.iNodeCount;
+	iBefore = pApp->pSession->tModel.iNodeCount;
 	iRet = uiDesignAppCutNode(pApp, iTempId);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pApp->tModel.iNodeCount != iBefore - 1) ||
-	     (uiDesignModelGetNode(&pApp->tModel, iTempId) != NULL) ||
+	if ( (pApp->pSession->tModel.iNodeCount != iBefore - 1) ||
+	     (uiDesignModelGetNode(&pApp->pSession->tModel, iTempId) != NULL) ||
 	     (pApp->iClipboardNodeCount != 1) ) {
 		printf("xui_uidesign exercise-context-cut-failed temp=%d before=%d now=%d clip=%d\n",
-			iTempId, iBefore, pApp->tModel.iNodeCount, pApp->iClipboardNodeCount);
+			iTempId, iBefore, pApp->pSession->tModel.iNodeCount, pApp->iClipboardNodeCount);
 		return XUI_ERROR;
 	}
-	iBefore = pApp->tModel.iNodeCount;
+	iBefore = pApp->pSession->tModel.iNodeCount;
 	iTempId = 0;
 	iRet = uiDesignCanvasPlaceToolRect(pApp, UI_DESIGN_NODE_LABEL, (xui_rect_t){1920.0f, 1160.0f, 136.0f, 48.0f}, &iTempId);
 	if ( iRet != XUI_OK ) return iRet;
-	pTemp = uiDesignModelGetNode(&pApp->tModel, iTempId);
+	pTemp = uiDesignModelGetNode(&pApp->pSession->tModel, iTempId);
 	tRect = (pTemp != NULL && pTemp->pWidget != NULL) ? xuiWidgetGetRect(pTemp->pWidget) : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	if ( (pTemp == NULL) || (pTemp->pWidget == NULL) ||
-	     (pApp->tModel.iNodeCount != iBefore + 1) ||
+	     (pApp->pSession->tModel.iNodeCount != iBefore + 1) ||
 	     (pTemp->tRect.fX != 1920.0f) || (pTemp->tRect.fY != 1160.0f) ||
 	     (pTemp->tRect.fW != 136.0f) || (pTemp->tRect.fH != 48.0f) ||
 	     (tRect.fX != 1920.0f) || (tRect.fY != 1160.0f) ||
 	     (tRect.fW != 136.0f) || (tRect.fH != 48.0f) ) {
 		printf("xui_uidesign exercise-canvas-place-rect-failed temp=%d before=%d now=%d model=%.1f/%.1f/%.1f/%.1f widget=%d/%d/%d/%d\n",
-			iTempId, iBefore, pApp->tModel.iNodeCount,
+			iTempId, iBefore, pApp->pSession->tModel.iNodeCount,
 			pTemp != NULL ? pTemp->tRect.fX : 0.0f,
 			pTemp != NULL ? pTemp->tRect.fY : 0.0f,
 			pTemp != NULL ? pTemp->tRect.fW : 0.0f,
@@ -3424,18 +3913,18 @@ static int __uiDesignExerciseContextCommands(ui_design_app_t* pApp, int iSourceI
 	}
 	iRet = uiDesignAppDeleteNode(pApp, iTempId);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pApp->tModel.iNodeCount != iBefore) || (uiDesignModelGetNode(&pApp->tModel, iTempId) != NULL) ) {
-		printf("xui_uidesign exercise-canvas-place-delete-failed temp=%d before=%d now=%d\n", iTempId, iBefore, pApp->tModel.iNodeCount);
+	if ( (pApp->pSession->tModel.iNodeCount != iBefore) || (uiDesignModelGetNode(&pApp->pSession->tModel, iTempId) != NULL) ) {
+		printf("xui_uidesign exercise-canvas-place-delete-failed temp=%d before=%d now=%d\n", iTempId, iBefore, pApp->pSession->tModel.iNodeCount);
 		return XUI_ERROR;
 	}
-	iBefore = pApp->tModel.iNodeCount;
+	iBefore = pApp->pSession->tModel.iNodeCount;
 	iTempId = 0;
 	iRet = uiDesignCanvasPlaceToolRect(pApp, UI_DESIGN_NODE_WINDOW, (xui_rect_t){1960.0f, 1220.0f, 200.0f, 120.0f}, &iTempId);
 	if ( iRet != XUI_OK ) return iRet;
-	pTemp = uiDesignModelGetNode(&pApp->tModel, iTempId);
+	pTemp = uiDesignModelGetNode(&pApp->pSession->tModel, iTempId);
 	tRect = (pTemp != NULL && pTemp->pWidget != NULL) ? xuiWidgetGetRect(pTemp->pWidget) : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	if ( (pTemp == NULL) || (pTemp->pWidget == NULL) ||
-	     (pApp->tModel.iNodeCount != iBefore + 1) ||
+	     (pApp->pSession->tModel.iNodeCount != iBefore + 1) ||
 	     (xuiWidgetGetParent(pTemp->pWidget) != pApp->pArtboard) ||
 	     (xuiWidgetGetVisible(pTemp->pWidget) == 0) ||
 	     (pTemp->tRect.fX != 1960.0f) || (pTemp->tRect.fY != 1220.0f) ||
@@ -3443,7 +3932,7 @@ static int __uiDesignExerciseContextCommands(ui_design_app_t* pApp, int iSourceI
 	     (tRect.fX != 1960.0f) || (tRect.fY != 1220.0f) ||
 	     (tRect.fW != 200.0f) || (tRect.fH != 120.0f) ) {
 		printf("xui_uidesign exercise-canvas-place-window-failed temp=%d before=%d now=%d parent=%p artboard=%p model=%.1f/%.1f/%.1f/%.1f widget=%d/%d/%d/%d visible=%d\n",
-			iTempId, iBefore, pApp->tModel.iNodeCount,
+			iTempId, iBefore, pApp->pSession->tModel.iNodeCount,
 			(void*)((pTemp != NULL && pTemp->pWidget != NULL) ? xuiWidgetGetParent(pTemp->pWidget) : NULL),
 			(void*)pApp->pArtboard,
 			pTemp != NULL ? pTemp->tRect.fX : 0.0f,
@@ -3456,8 +3945,8 @@ static int __uiDesignExerciseContextCommands(ui_design_app_t* pApp, int iSourceI
 	}
 	iRet = uiDesignAppDeleteNode(pApp, iTempId);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pApp->tModel.iNodeCount != iBefore) || (uiDesignModelGetNode(&pApp->tModel, iTempId) != NULL) ) {
-		printf("xui_uidesign exercise-canvas-place-window-delete-failed temp=%d before=%d now=%d\n", iTempId, iBefore, pApp->tModel.iNodeCount);
+	if ( (pApp->pSession->tModel.iNodeCount != iBefore) || (uiDesignModelGetNode(&pApp->pSession->tModel, iTempId) != NULL) ) {
+		printf("xui_uidesign exercise-canvas-place-window-delete-failed temp=%d before=%d now=%d\n", iTempId, iBefore, pApp->pSession->tModel.iNodeCount);
 		return XUI_ERROR;
 	}
 	return __uiDesignExerciseMarqueeSelection(pApp);
@@ -3491,9 +3980,9 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	if ( iRet == XUI_OK ) iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_BUTTON, 2280.0f, 1080.0f, &iB);
 	if ( iRet == XUI_OK ) iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_BUTTON, 2420.0f, 1160.0f, &iC);
 	if ( iRet != XUI_OK ) goto done;
-	pA = uiDesignModelGetNode(&pApp->tModel, iA);
-	pB = uiDesignModelGetNode(&pApp->tModel, iB);
-	pC = uiDesignModelGetNode(&pApp->tModel, iC);
+	pA = uiDesignModelGetNode(&pApp->pSession->tModel, iA);
+	pB = uiDesignModelGetNode(&pApp->pSession->tModel, iB);
+	pC = uiDesignModelGetNode(&pApp->pSession->tModel, iC);
 	if ( pA == NULL || pB == NULL || pC == NULL ) {
 		iRet = XUI_ERROR;
 		goto done;
@@ -3507,19 +3996,19 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	(void)uiDesignAppSelectNode(pApp, iA);
 	(void)uiDesignAppAddNodeSelection(pApp, iB);
 	(void)uiDesignAppAddNodeSelection(pApp, iC);
-	iUndoBefore = pApp->iUndoCount;
+	iUndoBefore = pApp->pSession->iUndoCount;
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_ARRANGE_ALIGN_LEFT);
 	if ( iRet != XUI_OK ) goto done;
-	pA = uiDesignModelGetNode(&pApp->tModel, iA);
-	pB = uiDesignModelGetNode(&pApp->tModel, iB);
-	pC = uiDesignModelGetNode(&pApp->tModel, iC);
+	pA = uiDesignModelGetNode(&pApp->pSession->tModel, iA);
+	pB = uiDesignModelGetNode(&pApp->pSession->tModel, iB);
+	pC = uiDesignModelGetNode(&pApp->pSession->tModel, iC);
 	if ( pA == NULL || pB == NULL || pC == NULL ||
 	     pB->tRect.fX != pA->tRect.fX ||
 	     pC->tRect.fX != pA->tRect.fX ||
-	     pApp->iUndoCount != iUndoBefore + 1 ||
+	     pApp->pSession->iUndoCount != iUndoBefore + 1 ||
 	     !uiDesignAppCanExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO) ) {
 		printf("xui_uidesign exercise-command-align-failed undo=%d/%d ax=%.1f bx=%.1f cx=%.1f\n",
-			iUndoBefore, pApp->iUndoCount,
+			iUndoBefore, pApp->pSession->iUndoCount,
 			pA != NULL ? pA->tRect.fX : -1.0f,
 			pB != NULL ? pB->tRect.fX : -1.0f,
 			pC != NULL ? pC->tRect.fX : -1.0f);
@@ -3528,8 +4017,8 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO);
 	if ( iRet != XUI_OK ) goto done;
-	pB = uiDesignModelGetNode(&pApp->tModel, iB);
-	pC = uiDesignModelGetNode(&pApp->tModel, iC);
+	pB = uiDesignModelGetNode(&pApp->pSession->tModel, iB);
+	pC = uiDesignModelGetNode(&pApp->pSession->tModel, iC);
 	if ( pB == NULL || pC == NULL || pB->tRect.fX != tB.fX || pC->tRect.fX != tC.fX ) {
 		printf("xui_uidesign exercise-command-undo-failed b=%.1f c=%.1f\n",
 			pB != NULL ? pB->tRect.fX : -1.0f,
@@ -3539,31 +4028,31 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_REDO);
 	if ( iRet != XUI_OK ) goto done;
-	iCountBefore = pApp->tModel.iNodeCount;
+	iCountBefore = pApp->pSession->tModel.iNodeCount;
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_DUPLICATE);
 	if ( iRet != XUI_OK ) goto done;
-	if ( pApp->tModel.iNodeCount <= iCountBefore ) {
-		printf("xui_uidesign exercise-command-duplicate-failed before=%d now=%d\n", iCountBefore, pApp->tModel.iNodeCount);
+	if ( pApp->pSession->tModel.iNodeCount <= iCountBefore ) {
+		printf("xui_uidesign exercise-command-duplicate-failed before=%d now=%d\n", iCountBefore, pApp->pSession->tModel.iNodeCount);
 		iRet = XUI_ERROR;
 		goto done;
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO);
 	if ( iRet != XUI_OK ) goto done;
-	if ( pApp->tModel.iNodeCount != iCountBefore ) {
-		printf("xui_uidesign exercise-command-duplicate-undo-failed before=%d now=%d\n", iCountBefore, pApp->tModel.iNodeCount);
+	if ( pApp->pSession->tModel.iNodeCount != iCountBefore ) {
+		printf("xui_uidesign exercise-command-duplicate-undo-failed before=%d now=%d\n", iCountBefore, pApp->pSession->tModel.iNodeCount);
 		iRet = XUI_ERROR;
 		goto done;
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_DELETE);
 	if ( iRet != XUI_OK ) goto done;
-	if ( uiDesignModelGetNode(&pApp->tModel, iA) != NULL || uiDesignModelGetNode(&pApp->tModel, iB) != NULL || uiDesignModelGetNode(&pApp->tModel, iC) != NULL ) {
+	if ( uiDesignModelGetNode(&pApp->pSession->tModel, iA) != NULL || uiDesignModelGetNode(&pApp->pSession->tModel, iB) != NULL || uiDesignModelGetNode(&pApp->pSession->tModel, iC) != NULL ) {
 		printf("xui_uidesign exercise-command-delete-failed\n");
 		iRet = XUI_ERROR;
 		goto done;
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO);
 	if ( iRet != XUI_OK ) goto done;
-	if ( uiDesignModelGetNode(&pApp->tModel, iA) == NULL || uiDesignModelGetNode(&pApp->tModel, iB) == NULL || uiDesignModelGetNode(&pApp->tModel, iC) == NULL ) {
+	if ( uiDesignModelGetNode(&pApp->pSession->tModel, iA) == NULL || uiDesignModelGetNode(&pApp->pSession->tModel, iB) == NULL || uiDesignModelGetNode(&pApp->pSession->tModel, iC) == NULL ) {
 		printf("xui_uidesign exercise-command-delete-undo-failed\n");
 		iRet = XUI_ERROR;
 		goto done;
@@ -3573,7 +4062,7 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	if ( iRet != XUI_OK ) goto done;
 	iRet = uiDesignAppCopyNode(pApp, iChild);
 	if ( iRet != XUI_OK ) goto done;
-	iUndoBefore = pApp->iUndoCount;
+	iUndoBefore = pApp->pSession->iUndoCount;
 	iRet = uiDesignAppBeginHistoryTransaction(pApp, UI_DESIGN_COMMAND_EDIT_PASTE, "Paste Child");
 	if ( iRet == XUI_OK ) {
 		iRet = uiDesignAppPasteClipboardAsChild(pApp, iContainer, &iPasted);
@@ -3581,15 +4070,15 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 		else uiDesignAppCancelHistoryTransaction(pApp);
 	}
 	if ( iRet != XUI_OK ) goto done;
-	if ( uiDesignModelGetNode(&pApp->tModel, iPasted) == NULL ||
-	     uiDesignModelGetNode(&pApp->tModel, iPasted)->iParentId != iContainer ||
-	     pApp->iUndoCount != iUndoBefore + 1 ) {
+	if ( uiDesignModelGetNode(&pApp->pSession->tModel, iPasted) == NULL ||
+	     uiDesignModelGetNode(&pApp->pSession->tModel, iPasted)->iParentId != iContainer ||
+	     pApp->pSession->iUndoCount != iUndoBefore + 1 ) {
 		printf("xui_uidesign exercise-tree-paste-child-failed container=%d pasted=%d undo=%d/%d\n",
-			iContainer, iPasted, iUndoBefore, pApp->iUndoCount);
+			iContainer, iPasted, iUndoBefore, pApp->pSession->iUndoCount);
 		iRet = XUI_ERROR;
 		goto done;
 	}
-	iUndoBefore = pApp->iUndoCount;
+	iUndoBefore = pApp->pSession->iUndoCount;
 	iRet = uiDesignAppBeginHistoryTransaction(pApp, UI_DESIGN_COMMAND_NONE, "Promote");
 	if ( iRet == XUI_OK ) {
 		iRet = uiDesignAppPromoteNode(pApp, iPasted);
@@ -3597,18 +4086,18 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 		else uiDesignAppCancelHistoryTransaction(pApp);
 	}
 	if ( iRet != XUI_OK ) goto done;
-	if ( uiDesignModelGetNode(&pApp->tModel, iPasted) == NULL ||
-	     uiDesignModelGetNode(&pApp->tModel, iPasted)->iParentId != 0 ||
-	     pApp->iUndoCount != iUndoBefore + 1 ) {
+	if ( uiDesignModelGetNode(&pApp->pSession->tModel, iPasted) == NULL ||
+	     uiDesignModelGetNode(&pApp->pSession->tModel, iPasted)->iParentId != 0 ||
+	     pApp->pSession->iUndoCount != iUndoBefore + 1 ) {
 		printf("xui_uidesign exercise-tree-promote-failed pasted=%d undo=%d/%d\n",
-			iPasted, iUndoBefore, pApp->iUndoCount);
+			iPasted, iUndoBefore, pApp->pSession->iUndoCount);
 		iRet = XUI_ERROR;
 		goto done;
 	}
 	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO);
 	if ( iRet != XUI_OK ) goto done;
-	if ( uiDesignModelGetNode(&pApp->tModel, iPasted) == NULL ||
-	     uiDesignModelGetNode(&pApp->tModel, iPasted)->iParentId != iContainer ) {
+	if ( uiDesignModelGetNode(&pApp->pSession->tModel, iPasted) == NULL ||
+	     uiDesignModelGetNode(&pApp->pSession->tModel, iPasted)->iParentId != iContainer ) {
 		printf("xui_uidesign exercise-tree-promote-undo-failed pasted=%d container=%d\n", iPasted, iContainer);
 		iRet = XUI_ERROR;
 		goto done;
@@ -3620,8 +4109,8 @@ done:
 		free(sSnapshot);
 		if ( iRet == XUI_OK ) iRet = iRestore;
 	}
-	__uiDesignHistoryClear(pApp->arrUndo, &pApp->iUndoCount);
-	__uiDesignHistoryClear(pApp->arrRedo, &pApp->iRedoCount);
+	__uiDesignHistoryClear(pApp->pSession->arrUndo, &pApp->pSession->iUndoCount);
+	__uiDesignHistoryClear(pApp->pSession->arrRedo, &pApp->pSession->iRedoCount);
 	return iRet;
 }
 
@@ -3747,27 +4236,27 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 	int bHasMax;
 
 	if ( (pApp == NULL) || pApp->bExerciseSeeded ) return XUI_OK;
-	(void)uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_WIDGET, 0, 120.0f, 90.0f, &iWidget);
-	(void)uiDesignModelSetRect(&pApp->tModel, iWidget, (xui_rect_t){120.0f, 90.0f, 260.0f, 170.0f});
-	(void)uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_BUTTON, iWidget, 28.0f, 44.0f, &iButton);
-	(void)uiDesignModelSetText(&pApp->tModel, iButton, "Run");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tooltipText", "Run script");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tooltipAnchor", "4");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tooltipFollowCursor", "true");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tooltipDelay", "0.1");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tooltipOffsetX", "10");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tooltipOffsetY", "14");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tabStop", "true");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "common.tabIndex", "2");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "layout.minWidth", "80");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "layout.maxWidth", "240");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "layout.tableCellRow", "0");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "layout.tableCellColumn", "0");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "style.classes", "primary accent");
-	(void)uiDesignModelSetProperty(&pApp->tModel, iButton, "style.inlineProperties", "button.normal_color|color|#D9EAFE|render");
-	(void)uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_CHECKBOX, iWidget, 28.0f, 92.0f, &iCheck);
-	(void)uiDesignModelSetText(&pApp->tModel, iCheck, "Enabled");
-	(void)uiDesignModelSetChecked(&pApp->tModel, iCheck, 1);
+	(void)uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_WIDGET, 0, 120.0f, 90.0f, &iWidget);
+	(void)uiDesignModelSetRect(&pApp->pSession->tModel, iWidget, (xui_rect_t){120.0f, 90.0f, 260.0f, 170.0f});
+	(void)uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_BUTTON, iWidget, 28.0f, 44.0f, &iButton);
+	(void)uiDesignModelSetText(&pApp->pSession->tModel, iButton, "Run");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tooltipText", "Run script");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tooltipAnchor", "4");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tooltipFollowCursor", "true");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tooltipDelay", "0.1");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tooltipOffsetX", "10");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tooltipOffsetY", "14");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tabStop", "true");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "common.tabIndex", "2");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "layout.minWidth", "80");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "layout.maxWidth", "240");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "layout.tableCellRow", "0");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "layout.tableCellColumn", "0");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "style.classes", "primary accent");
+	(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iButton, "style.inlineProperties", "button.normal_color|color|#D9EAFE|render");
+	(void)uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_CHECKBOX, iWidget, 28.0f, 92.0f, &iCheck);
+	(void)uiDesignModelSetText(&pApp->pSession->tModel, iCheck, "Enabled");
+	(void)uiDesignModelSetChecked(&pApp->pSession->tModel, iCheck, 1);
 	iLabel = 0;
 	iHyperlink = 0;
 	iRadio = 0;
@@ -3849,8 +4338,8 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		if ( pDesc->iType == UI_DESIGN_NODE_WIDGET || pDesc->iType == UI_DESIGN_NODE_BUTTON || pDesc->iType == UI_DESIGN_NODE_CHECKBOX ) continue;
 		fX = 420.0f + (float)iCol * 170.0f;
 		fY = 36.0f + (float)iRow * 112.0f;
-		if ( uiDesignModelAddNode(&pApp->tModel, pDesc->iType, 0, fX, fY, &iId) == XUI_OK ) {
-			ui_design_node_t* pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+		if ( uiDesignModelAddNode(&pApp->pSession->tModel, pDesc->iType, 0, fX, fY, &iId) == XUI_OK ) {
+			ui_design_node_t* pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
 			if ( pNode != NULL ) {
 				pNode->tRect.fW = pDesc->fDefaultW;
 				pNode->tRect.fH = pDesc->fDefaultH;
@@ -3921,76 +4410,76 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iInput != 0 ) {
-		(void)uiDesignModelSetText(&pApp->tModel, iInput, "Filter text");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iInput, "value.selectionStart", "0");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iInput, "value.selectionEnd", "6");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iInput, "Filter text");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iInput, "value.selectionStart", "0");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iInput, "value.selectionEnd", "6");
 	}
 	if ( iNumericInput != 0 ) {
-		(void)uiDesignModelSetProperty(&pApp->tModel, iNumericInput, "behavior.textOverride", "true");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iNumericInput, "text.rawText", "42.5?");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iNumericInput, "behavior.textOverride", "true");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iNumericInput, "text.rawText", "42.5?");
 	}
 	if ( iFlowGraph != 0 ) {
-		(void)uiDesignModelSetProperty(&pApp->tModel, iFlowGraph, "behavior.commandHistoryLimit", "7");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iFlowGraph, "behavior.commandHistoryLimit", "7");
 	}
 	if ( iWorkflow != 0 ) {
-		(void)uiDesignModelSetProperty(&pApp->tModel, iWorkflow, "behavior.commandHistoryLimit", "9");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iWorkflow, "behavior.commandHistoryLimit", "9");
 	}
 	if ( iHyperlink != 0 ) {
-		(void)uiDesignModelSetText(&pApp->tModel, iHyperlink, "Open Docs");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iHyperlink, "Open Docs");
 	}
 	if ( iToggle != 0 ) {
-		(void)uiDesignModelSetText(&pApp->tModel, iToggle, "Power");
-		(void)uiDesignModelSetChecked(&pApp->tModel, iToggle, 1);
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iToggle, "Power");
+		(void)uiDesignModelSetChecked(&pApp->pSession->tModel, iToggle, 1);
 	}
 	if ( iPanel != 0 ) {
 		snprintf(sLayout, sizeof(sLayout), "%d", XUI_LAYOUT_ROW);
-		(void)uiDesignModelSetProperty(&pApp->tModel, iPanel, "layout.type", sLayout);
-		(void)uiDesignModelSetProperty(&pApp->tModel, iPanel, "layout.gap", "8");
-		if ( uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_LABEL, iPanel, 8.0f, 8.0f, &iNested) == XUI_OK ) {
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iPanel, "layout.type", sLayout);
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iPanel, "layout.gap", "8");
+		if ( uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_LABEL, iPanel, 8.0f, 8.0f, &iNested) == XUI_OK ) {
 			iPanelLayoutChild = iNested;
-			(void)uiDesignModelSetText(&pApp->tModel, iNested, "Panel layout child");
+			(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Panel layout child");
 		}
 	}
-	if ( iCarousel != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_LABEL, iCarousel, 14.0f, 18.0f, &iNested) == XUI_OK ) {
+	if ( iCarousel != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_LABEL, iCarousel, 14.0f, 18.0f, &iNested) == XUI_OK ) {
 		iCarouselChild = iNested;
-		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Carousel child");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.carouselPage", "0");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Carousel child");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iNested, "layout.carouselPage", "0");
 	}
-	if ( iSplit != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_LABEL, iSplit, 12.0f, 12.0f, &iNested) == XUI_OK ) {
+	if ( iSplit != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_LABEL, iSplit, 12.0f, 12.0f, &iNested) == XUI_OK ) {
 		iSplitChild = iNested;
-		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Split child");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.splitPane", "1");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Split child");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iNested, "layout.splitPane", "1");
 	}
-	if ( iTabs != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_BUTTON, iTabs, 18.0f, 18.0f, &iNested) == XUI_OK ) {
+	if ( iTabs != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_BUTTON, iTabs, 18.0f, 18.0f, &iNested) == XUI_OK ) {
 		iTabsChild = iNested;
-		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Tab child");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.tabPage", "1");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Tab child");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iNested, "layout.tabPage", "1");
 	}
-	if ( iAccordion != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_CHECKBOX, iAccordion, 12.0f, 8.0f, &iNested) == XUI_OK ) {
+	if ( iAccordion != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_CHECKBOX, iAccordion, 12.0f, 8.0f, &iNested) == XUI_OK ) {
 		iAccordionChild = iNested;
-		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Section child");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.accordionSection", "1");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Section child");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iNested, "layout.accordionSection", "1");
 	}
-	if ( iDockPanel != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_BUTTON, iDockPanel, 18.0f, 18.0f, &iNested) == XUI_OK ) {
+	if ( iDockPanel != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_BUTTON, iDockPanel, 18.0f, 18.0f, &iNested) == XUI_OK ) {
 		iDockPanelChild = iNested;
-		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Dock child");
-		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.dockWindow", "0");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Dock child");
+		(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iNested, "layout.dockWindow", "0");
 	}
-	if ( iPopup != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_BUTTON, iPopup, 18.0f, 18.0f, &iNested) == XUI_OK ) {
+	if ( iPopup != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_BUTTON, iPopup, 18.0f, 18.0f, &iNested) == XUI_OK ) {
 		iPopupChild = iNested;
-		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Popup child");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Popup child");
 	}
-	if ( iRadioGroup != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_RADIO, iRadioGroup, 0.0f, 0.0f, &iNested) == XUI_OK ) {
+	if ( iRadioGroup != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_RADIO, iRadioGroup, 0.0f, 0.0f, &iNested) == XUI_OK ) {
 		iRadioGroupRadioChild = iNested;
-		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Grouped radio");
-		(void)uiDesignModelSetChecked(&pApp->tModel, iNested, 1);
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iNested, "Grouped radio");
+		(void)uiDesignModelSetChecked(&pApp->pSession->tModel, iNested, 1);
 	}
-	if ( iRadioGroup != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_CHECK_CARD, iRadioGroup, 0.0f, 34.0f, &iNested) == XUI_OK ) {
+	if ( iRadioGroup != 0 && uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_CHECK_CARD, iRadioGroup, 0.0f, 34.0f, &iNested) == XUI_OK ) {
 		iRadioGroupCardChild = iNested;
-		(void)uiDesignModelSetChecked(&pApp->tModel, iNested, 0);
+		(void)uiDesignModelSetChecked(&pApp->pSession->tModel, iNested, 0);
 	}
-	if ( uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_RADIO_GROUP, 0, 1280.0f, 520.0f, &iRadioGroupGenerated) == XUI_OK ) {
-		ui_design_node_t* pGeneratedGroup = uiDesignModelGetNode(&pApp->tModel, iRadioGroupGenerated);
+	if ( uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_RADIO_GROUP, 0, 1280.0f, 520.0f, &iRadioGroupGenerated) == XUI_OK ) {
+		ui_design_node_t* pGeneratedGroup = uiDesignModelGetNode(&pApp->pSession->tModel, iRadioGroupGenerated);
 		const ui_design_control_desc_t* pRadioGroupDesc = uiDesignRegistryFind(UI_DESIGN_NODE_RADIO_GROUP);
 		if ( pGeneratedGroup != NULL ) {
 			pGeneratedGroup->tRect.fW = (pRadioGroupDesc != NULL) ? pRadioGroupDesc->fDefaultW : 180.0f;
@@ -4000,52 +4489,52 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 	} else {
 		iRadioGroupGenerated = 0;
 	}
-	if ( uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_PANEL, 0, 1080.0f, 36.0f, &iOverlayPanel) == XUI_OK ) {
-		ui_design_node_t* pOverlay = uiDesignModelGetNode(&pApp->tModel, iOverlayPanel);
+	if ( uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_PANEL, 0, 1080.0f, 36.0f, &iOverlayPanel) == XUI_OK ) {
+		ui_design_node_t* pOverlay = uiDesignModelGetNode(&pApp->pSession->tModel, iOverlayPanel);
 		const ui_design_control_desc_t* pPanelDesc = uiDesignRegistryFind(UI_DESIGN_NODE_PANEL);
 		if ( pOverlay != NULL ) {
 			pOverlay->tRect.fW = 220.0f;
 			pOverlay->tRect.fH = 130.0f;
 			if ( pPanelDesc != NULL ) (void)uiDesignRegistryInitNodeProperties(pPanelDesc, pOverlay);
 			snprintf(sLayout, sizeof(sLayout), "%d", XUI_LAYOUT_OVERLAY);
-			(void)uiDesignModelSetProperty(&pApp->tModel, iOverlayPanel, "layout.type", sLayout);
+			(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iOverlayPanel, "layout.type", sLayout);
 		}
 	}
-	if ( uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_PANEL, 0, 1080.0f, 200.0f, &iTablePanel) == XUI_OK ) {
-		ui_design_node_t* pTable = uiDesignModelGetNode(&pApp->tModel, iTablePanel);
+	if ( uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_PANEL, 0, 1080.0f, 200.0f, &iTablePanel) == XUI_OK ) {
+		ui_design_node_t* pTable = uiDesignModelGetNode(&pApp->pSession->tModel, iTablePanel);
 		const ui_design_control_desc_t* pPanelDesc = uiDesignRegistryFind(UI_DESIGN_NODE_PANEL);
 		if ( pTable != NULL ) {
 			pTable->tRect.fW = 240.0f;
 			pTable->tRect.fH = 150.0f;
 			if ( pPanelDesc != NULL ) (void)uiDesignRegistryInitNodeProperties(pPanelDesc, pTable);
 			snprintf(sLayout, sizeof(sLayout), "%d", XUI_LAYOUT_TABLE);
-			(void)uiDesignModelSetProperty(&pApp->tModel, iTablePanel, "layout.type", sLayout);
-			(void)uiDesignModelSetProperty(&pApp->tModel, iTablePanel, "layout.tableRows", "2");
-			(void)uiDesignModelSetProperty(&pApp->tModel, iTablePanel, "layout.tableColumns", "3");
+			(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iTablePanel, "layout.type", sLayout);
+			(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iTablePanel, "layout.tableRows", "2");
+			(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iTablePanel, "layout.tableColumns", "3");
 		}
 	}
-	if ( uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_PANEL, 0, 1080.0f, 380.0f, &iDockLayoutPanel) == XUI_OK ) {
-		ui_design_node_t* pDock = uiDesignModelGetNode(&pApp->tModel, iDockLayoutPanel);
+	if ( uiDesignModelAddNode(&pApp->pSession->tModel, UI_DESIGN_NODE_PANEL, 0, 1080.0f, 380.0f, &iDockLayoutPanel) == XUI_OK ) {
+		ui_design_node_t* pDock = uiDesignModelGetNode(&pApp->pSession->tModel, iDockLayoutPanel);
 		const ui_design_control_desc_t* pPanelDesc = uiDesignRegistryFind(UI_DESIGN_NODE_PANEL);
 		if ( pDock != NULL ) {
 			pDock->tRect.fW = 240.0f;
 			pDock->tRect.fH = 150.0f;
 			if ( pPanelDesc != NULL ) (void)uiDesignRegistryInitNodeProperties(pPanelDesc, pDock);
 			snprintf(sLayout, sizeof(sLayout), "%d", XUI_LAYOUT_DOCK);
-			(void)uiDesignModelSetProperty(&pApp->tModel, iDockLayoutPanel, "layout.type", sLayout);
+			(void)uiDesignModelSetProperty(&pApp->pSession->tModel, iDockLayoutPanel, "layout.type", sLayout);
 		}
 	}
-	(void)uiDesignModelSetSelected(&pApp->tModel, iButton);
-	for ( i = 0; i < pApp->tModel.iNodeCount; i++ ) {
-		pDesc = uiDesignRegistryFind(pApp->tModel.arrNodes[i].iType);
+	(void)uiDesignModelSetSelected(&pApp->pSession->tModel, iButton);
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; i++ ) {
+		pDesc = uiDesignRegistryFind(pApp->pSession->tModel.arrNodes[i].iType);
 		if ( pDesc != NULL ) {
-			(void)uiDesignRegistryInitNodeProperties(pDesc, &pApp->tModel.arrNodes[i]);
+			(void)uiDesignRegistryInitNodeProperties(pDesc, &pApp->pSession->tModel.arrNodes[i]);
 		}
-		iCreateRet = uiDesignAppCreateNodeWidget(pApp, &pApp->tModel.arrNodes[i]);
+		iCreateRet = uiDesignAppCreateNodeWidget(pApp, &pApp->pSession->tModel.arrNodes[i]);
 		if ( iCreateRet != XUI_OK ) {
 			printf("xui_uidesign exercise-create-failed type=%s id=%d ret=%d\n",
-				uiDesignNodeTypeName(pApp->tModel.arrNodes[i].iType),
-				pApp->tModel.arrNodes[i].iId,
+				uiDesignNodeTypeName(pApp->pSession->tModel.arrNodes[i].iType),
+				pApp->pSession->tModel.arrNodes[i].iId,
 				iCreateRet);
 		}
 	}
@@ -4053,9 +4542,9 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 	if ( iTabs != 0 ) (void)uiDesignAppSetNodeProperty(pApp, iTabs, "data.selected", "1");
 	if ( iAccordion != 0 ) (void)uiDesignAppSetNodeProperty(pApp, iAccordion, "behavior.mode", "1");
 	if ( iWidget != 0 ) {
-		ui_design_node_t* pWidgetNode = uiDesignModelGetNode(&pApp->tModel, iWidget);
-		ui_design_node_t* pButtonNode = uiDesignModelGetNode(&pApp->tModel, iButton);
-		ui_design_node_t* pCheckNode = uiDesignModelGetNode(&pApp->tModel, iCheck);
+		ui_design_node_t* pWidgetNode = uiDesignModelGetNode(&pApp->pSession->tModel, iWidget);
+		ui_design_node_t* pButtonNode = uiDesignModelGetNode(&pApp->pSession->tModel, iButton);
+		ui_design_node_t* pCheckNode = uiDesignModelGetNode(&pApp->pSession->tModel, iCheck);
 		xui_widget_cache_render_proc onRender = NULL;
 		xui_cache_policy_t tPolicy;
 		void* pRenderUser = NULL;
@@ -4094,7 +4583,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iScrollFrame != 0 ) {
-		ui_design_node_t* pScrollNode = uiDesignModelGetNode(&pApp->tModel, iScrollFrame);
+		ui_design_node_t* pScrollNode = uiDesignModelGetNode(&pApp->pSession->tModel, iScrollFrame);
 		float fContentWidth = 0.0f;
 		float fContentHeight = 0.0f;
 		float fOffsetX = 0.0f;
@@ -4182,7 +4671,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iScrollView != 0 ) {
-		ui_design_node_t* pScrollNode = uiDesignModelGetNode(&pApp->tModel, iScrollView);
+		ui_design_node_t* pScrollNode = uiDesignModelGetNode(&pApp->pSession->tModel, iScrollView);
 		xui_widget pFrameWidget = NULL;
 		float fContentWidth = 0.0f;
 		float fContentHeight = 0.0f;
@@ -4272,7 +4761,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iButton != 0 ) {
-		ui_design_node_t* pButtonNode = uiDesignModelGetNode(&pApp->tModel, iButton);
+		ui_design_node_t* pButtonNode = uiDesignModelGetNode(&pApp->pSession->tModel, iButton);
 		char sButtonPatches[512];
 		xui_surface pIconSurface = NULL;
 		xui_surface pBadgeSurface = NULL;
@@ -4389,7 +4878,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iInput != 0 ) {
-		ui_design_node_t* pInputNode = uiDesignModelGetNode(&pApp->tModel, iInput);
+		ui_design_node_t* pInputNode = uiDesignModelGetNode(&pApp->pSession->tModel, iInput);
 		xui_input_decoration pLeadingDecoration = NULL;
 		xui_input_decoration pTrailingDecoration = NULL;
 		xui_input_decoration_desc_t tLeadingDecoration;
@@ -4511,7 +5000,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iNumericInput != 0 ) {
-		ui_design_node_t* pNumericNode = uiDesignModelGetNode(&pApp->tModel, iNumericInput);
+		ui_design_node_t* pNumericNode = uiDesignModelGetNode(&pApp->pSession->tModel, iNumericInput);
 		xui_widget pInnerInput = NULL;
 		float fMin = 0.0f;
 		float fMax = 0.0f;
@@ -4621,7 +5110,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iPanel != 0 ) {
-		ui_design_node_t* pPanelNode = uiDesignModelGetNode(&pApp->tModel, iPanel);
+		ui_design_node_t* pPanelNode = uiDesignModelGetNode(&pApp->pSession->tModel, iPanel);
 		xui_surface pIconSurface = NULL;
 		xui_rect_t tIconSrc;
 		float fBorderWidth = 0.0f;
@@ -4674,7 +5163,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iCheck != 0 ) {
-		ui_design_node_t* pCheckNode = uiDesignModelGetNode(&pApp->tModel, iCheck);
+		ui_design_node_t* pCheckNode = uiDesignModelGetNode(&pApp->pSession->tModel, iCheck);
 		uint32_t iAccentColor = 0u;
 		uint32_t iBorderColor = 0u;
 		uint32_t iHoverBorderColor = 0u;
@@ -4729,7 +5218,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iLabel != 0 ) {
-		ui_design_node_t* pLabelNode = uiDesignModelGetNode(&pApp->tModel, iLabel);
+		ui_design_node_t* pLabelNode = uiDesignModelGetNode(&pApp->pSession->tModel, iLabel);
 		(void)uiDesignAppSetNodeText(pApp, iLabel, "Status Label");
 		(void)uiDesignAppSetNodeProperty(pApp, iLabel, "appearance.textColor", "#213243");
 		(void)uiDesignAppSetNodeProperty(pApp, iLabel, "appearance.disabledTextColor", "#546576");
@@ -4753,7 +5242,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iRadio != 0 ) {
-		ui_design_node_t* pRadioNode = uiDesignModelGetNode(&pApp->tModel, iRadio);
+		ui_design_node_t* pRadioNode = uiDesignModelGetNode(&pApp->pSession->tModel, iRadio);
 		uint32_t iAccentColor = 0u;
 		uint32_t iBorderColor = 0u;
 		uint32_t iHoverBorderColor = 0u;
@@ -4809,7 +5298,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iCheckCard != 0 ) {
-		ui_design_node_t* pCardNode = uiDesignModelGetNode(&pApp->tModel, iCheckCard);
+		ui_design_node_t* pCardNode = uiDesignModelGetNode(&pApp->pSession->tModel, iCheckCard);
 		xui_thickness_t tPadding;
 		xui_vec2_t tMinSize;
 		float fBorderWidth;
@@ -4885,7 +5374,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iHyperlink != 0 ) {
-		ui_design_node_t* pHyperlinkNode = uiDesignModelGetNode(&pApp->tModel, iHyperlink);
+		ui_design_node_t* pHyperlinkNode = uiDesignModelGetNode(&pApp->pSession->tModel, iHyperlink);
 		(void)uiDesignAppSetNodeProperty(pApp, iHyperlink, "appearance.textColor", "#102030");
 		(void)uiDesignAppSetNodeProperty(pApp, iHyperlink, "appearance.hoverTextColor", "#203040");
 		(void)uiDesignAppSetNodeProperty(pApp, iHyperlink, "appearance.activeTextColor", "#304050");
@@ -4916,7 +5405,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iToggle != 0 ) {
-		ui_design_node_t* pToggleNode = uiDesignModelGetNode(&pApp->tModel, iToggle);
+		ui_design_node_t* pToggleNode = uiDesignModelGetNode(&pApp->pSession->tModel, iToggle);
 		uint32_t iAccentColor = 0u;
 		uint32_t iTrackColor = 0u;
 		uint32_t iHoverTrackColor = 0u;
@@ -4992,7 +5481,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iScrollBar != 0 ) {
-		ui_design_node_t* pScrollBarNode = uiDesignModelGetNode(&pApp->tModel, iScrollBar);
+		ui_design_node_t* pScrollBarNode = uiDesignModelGetNode(&pApp->pSession->tModel, iScrollBar);
 		float fMin;
 		float fMax;
 		float fPage;
@@ -5063,7 +5552,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iSlider != 0 ) {
-		ui_design_node_t* pSliderNode = uiDesignModelGetNode(&pApp->tModel, iSlider);
+		ui_design_node_t* pSliderNode = uiDesignModelGetNode(&pApp->pSession->tModel, iSlider);
 		float fMin;
 		float fMax;
 		float fStep;
@@ -5116,7 +5605,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iRangeSlider != 0 ) {
-		ui_design_node_t* pRangeNode = uiDesignModelGetNode(&pApp->tModel, iRangeSlider);
+		ui_design_node_t* pRangeNode = uiDesignModelGetNode(&pApp->pSession->tModel, iRangeSlider);
 		float fMin;
 		float fMax;
 		float fStart;
@@ -5178,7 +5667,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iSeparator != 0 ) {
-		ui_design_node_t* pSeparatorNode = uiDesignModelGetNode(&pApp->tModel, iSeparator);
+		ui_design_node_t* pSeparatorNode = uiDesignModelGetNode(&pApp->pSession->tModel, iSeparator);
 		(void)uiDesignAppSetNodeProperty(pApp, iSeparator, "appearance.color", "#334455");
 		(void)uiDesignAppSetNodeProperty(pApp, iSeparator, "metrics.thickness", "3");
 		(void)uiDesignAppSetNodeProperty(pApp, iSeparator, "behavior.orientation", "1");
@@ -5195,7 +5684,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iProgress != 0 ) {
-		ui_design_node_t* pProgressNode = uiDesignModelGetNode(&pApp->tModel, iProgress);
+		ui_design_node_t* pProgressNode = uiDesignModelGetNode(&pApp->pSession->tModel, iProgress);
 		float fMin;
 		float fMax;
 		int bHasTrackPatch;
@@ -5282,7 +5771,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iVirtualJoystick != 0 ) {
-		ui_design_node_t* pJoystickNode = uiDesignModelGetNode(&pApp->tModel, iVirtualJoystick);
+		ui_design_node_t* pJoystickNode = uiDesignModelGetNode(&pApp->pSession->tModel, iVirtualJoystick);
 		int bRightPressed;
 		int bLeftPressed;
 		float fRightValue;
@@ -5438,7 +5927,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		(void)uiDesignAppSetNodeProperty(pApp, iVirtualJoystick, "data.channels", "right|true|0.75\nup|true|0.5\nleft|false|0.25");
 	}
 	if ( iListView != 0 ) {
-		ui_design_node_t* pListNode = uiDesignModelGetNode(&pApp->tModel, iListView);
+		ui_design_node_t* pListNode = uiDesignModelGetNode(&pApp->pSession->tModel, iListView);
 		float fItemHeight;
 		float fPadding;
 		float fBorderWidth;
@@ -5526,7 +6015,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTreeView != 0 ) {
-		ui_design_node_t* pTreeNode = uiDesignModelGetNode(&pApp->tModel, iTreeView);
+		ui_design_node_t* pTreeNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTreeView);
 		const xui_tree_view_node_t* pTreeItem;
 		float fItemHeight;
 		float fIndent;
@@ -5623,7 +6112,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iCanvas != 0 ) {
-		ui_design_node_t* pCanvasNode = uiDesignModelGetNode(&pApp->tModel, iCanvas);
+		ui_design_node_t* pCanvasNode = uiDesignModelGetNode(&pApp->pSession->tModel, iCanvas);
 		xui_widget pFrameWidget;
 		float fCanvasWidth;
 		float fCanvasHeight;
@@ -5771,7 +6260,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTextEdit != 0 ) {
-		ui_design_node_t* pTextNode = uiDesignModelGetNode(&pApp->tModel, iTextEdit);
+		ui_design_node_t* pTextNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTextEdit);
 		const char* sText;
 		const char* sPlaceholder;
 		const char* sCopyTitle;
@@ -5900,7 +6389,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iCodeEdit != 0 ) {
-		ui_design_node_t* pCodeNode = uiDesignModelGetNode(&pApp->tModel, iCodeEdit);
+		ui_design_node_t* pCodeNode = uiDesignModelGetNode(&pApp->pSession->tModel, iCodeEdit);
 		xui_code_annotation_store pAnnotations;
 		xui_code_fold_state pFoldState;
 		xui_code_margin_model pMargins;
@@ -6189,7 +6678,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iWindow != 0 ) {
-		ui_design_node_t* pWindowNode = uiDesignModelGetNode(&pApp->tModel, iWindow);
+		ui_design_node_t* pWindowNode = uiDesignModelGetNode(&pApp->pSession->tModel, iWindow);
 		float fTitleBarHeight;
 		float fBorderWidth;
 		float fResizeGrip;
@@ -6321,7 +6810,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iPopup != 0 ) {
-		ui_design_node_t* pPopupNode = uiDesignModelGetNode(&pApp->tModel, iPopup);
+		ui_design_node_t* pPopupNode = uiDesignModelGetNode(&pApp->pSession->tModel, iPopup);
 		xui_widget pContentWidget;
 		xui_widget pScrollViewWidget;
 		xui_widget pPopupChildWidget;
@@ -6486,7 +6975,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		if ( iCreateRet != XUI_OK ) return iCreateRet;
 		(void)uiDesignAppSetNodeProperty(pApp, iPopupContent, "data.content", "Alpha row|14|16|120|22|#A1B2C3|left\nBeta row|18|44|132|24|#B2C3D4|right");
 		(void)uiDesignAppSetNodeProperty(pApp, iPopupContent, "behavior.open", "true");
-		pPopupContentNode = uiDesignModelGetNode(&pApp->tModel, iPopupContent);
+		pPopupContentNode = uiDesignModelGetNode(&pApp->pSession->tModel, iPopupContent);
 		pContentWidget = (pPopupContentNode != NULL && pPopupContentNode->pWidget != NULL) ? xuiPopupGetContentWidget(pPopupContentNode->pWidget) : NULL;
 		if ( pContentWidget != NULL ) {
 			pFirstPopupLabel = xuiWidgetGetFirstChild(pContentWidget);
@@ -6512,8 +7001,8 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iRadioGroup != 0 ) {
-		ui_design_node_t* pGroupNode = uiDesignModelGetNode(&pApp->tModel, iRadioGroup);
-		ui_design_node_t* pGroupCardNode = uiDesignModelGetNode(&pApp->tModel, iRadioGroupCardChild);
+		ui_design_node_t* pGroupNode = uiDesignModelGetNode(&pApp->pSession->tModel, iRadioGroup);
+		ui_design_node_t* pGroupCardNode = uiDesignModelGetNode(&pApp->pSession->tModel, iRadioGroupCardChild);
 		(void)uiDesignAppSetNodeProperty(pApp, iRadioGroup, "behavior.orientation", "0");
 		(void)uiDesignAppSetNodeProperty(pApp, iRadioGroup, "behavior.useBuiltinAtlas", "false");
 		(void)uiDesignAppSetNodeProperty(pApp, iRadioGroup, "data.indicatorSource", __uiDesignExerciseResourcePath("xui_virtual_joystick_base.png"));
@@ -6554,7 +7043,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iRadioGroupGenerated != 0 ) {
-		ui_design_node_t* pGeneratedNode = uiDesignModelGetNode(&pApp->tModel, iRadioGroupGenerated);
+		ui_design_node_t* pGeneratedNode = uiDesignModelGetNode(&pApp->pSession->tModel, iRadioGroupGenerated);
 		xui_widget pFirstRadio = NULL;
 		xui_widget pSecondRadio = NULL;
 		xui_widget pThirdRadio = NULL;
@@ -6633,8 +7122,8 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iDockPanel != 0 ) {
-		ui_design_node_t* pDockNode = uiDesignModelGetNode(&pApp->tModel, iDockPanel);
-		ui_design_node_t* pDockChildNode = uiDesignModelGetNode(&pApp->tModel, iDockPanelChild);
+		ui_design_node_t* pDockNode = uiDesignModelGetNode(&pApp->pSession->tModel, iDockPanel);
+		ui_design_node_t* pDockChildNode = uiDesignModelGetNode(&pApp->pSession->tModel, iDockPanelChild);
 		xui_dock_panel_metrics_t tDockMetrics;
 		xui_dock_panel_colors_t tDockColors;
 		xui_dock_window_info_t tDockWindow;
@@ -6763,7 +7252,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iMenu != 0 ) {
-		ui_design_node_t* pMenuNode = uiDesignModelGetNode(&pApp->tModel, iMenu);
+		ui_design_node_t* pMenuNode = uiDesignModelGetNode(&pApp->pSession->tModel, iMenu);
 		xui_widget pMenuContent;
 		xui_widget pMenuWidget;
 		const xui_menu_item_t* pRunItem;
@@ -6870,7 +7359,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iMsgBox != 0 ) {
-		ui_design_node_t* pMsgNode = uiDesignModelGetNode(&pApp->tModel, iMsgBox);
+		ui_design_node_t* pMsgNode = uiDesignModelGetNode(&pApp->pSession->tModel, iMsgBox);
 		xui_widget pClient;
 		xui_widget pIconChild;
 		xui_widget pMessageChild;
@@ -6996,7 +7485,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iFileDialog != 0 ) {
-		ui_design_node_t* pFileNode = uiDesignModelGetNode(&pApp->tModel, iFileDialog);
+		ui_design_node_t* pFileNode = uiDesignModelGetNode(&pApp->pSession->tModel, iFileDialog);
 		xui_widget pClient;
 		xui_widget pFirstChild;
 		xui_widget pSelectedFill;
@@ -7132,7 +7621,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iMsgTip != 0 ) {
-		ui_design_node_t* pTipNode = uiDesignModelGetNode(&pApp->tModel, iMsgTip);
+		ui_design_node_t* pTipNode = uiDesignModelGetNode(&pApp->pSession->tModel, iMsgTip);
 		xui_widget pClient;
 		xui_widget pShadowChild;
 		xui_widget pIconChild;
@@ -7275,7 +7764,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iToast != 0 ) {
-		ui_design_node_t* pToastNode = uiDesignModelGetNode(&pApp->tModel, iToast);
+		ui_design_node_t* pToastNode = uiDesignModelGetNode(&pApp->pSession->tModel, iToast);
 		xui_widget pClient;
 		xui_widget pShadowChild;
 		xui_widget pFirstCard;
@@ -7416,7 +7905,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (xuiPanelGetClientColor(pProgressChild) != XUI_COLOR_RGBA(129, 130, 131, 255)) ||
 		     (tProgressRect.fX != 20.0f) ||
 		     (tProgressRect.fY != 77.0f) ||
-		     (tProgressRect.fW != 53.0f) ||
+		     (tProgressRect.fW != 52.0f) ||
 		     (tProgressRect.fH != 3.0f) ||
 		     (pSecondCard == NULL) ||
 		     (tSecondRect.fX != 20.0f) ||
@@ -7442,7 +7931,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTableView != 0 ) {
-		ui_design_node_t* pTableNode = uiDesignModelGetNode(&pApp->tModel, iTableView);
+		ui_design_node_t* pTableNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTableView);
 		const xui_table_view_column_t* pColumn;
 		xui_table_view_colors_t tColors;
 		xui_rect_t tMerged;
@@ -7578,7 +8067,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTableGrid != 0 ) {
-		ui_design_node_t* pTableNode = uiDesignModelGetNode(&pApp->tModel, iTableGrid);
+		ui_design_node_t* pTableNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTableGrid);
 		xui_widget pTableWidget = (pTableNode != NULL && pTableNode->pWidget != NULL) ? xuiTableGridGetTableView(pTableNode->pWidget) : NULL;
 		const xui_table_view_column_t* pColumn;
 		xui_table_view_colors_t tColors;
@@ -7724,7 +8213,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iQrCode != 0 ) {
-		ui_design_node_t* pQrNode = uiDesignModelGetNode(&pApp->tModel, iQrCode);
+		ui_design_node_t* pQrNode = uiDesignModelGetNode(&pApp->pSession->tModel, iQrCode);
 		xui_surface pIconSurface = NULL;
 		xui_rect_t tIconSrc;
 		memset(&tIconSrc, 0, sizeof(tIconSrc));
@@ -7763,7 +8252,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iImage != 0 ) {
-		ui_design_node_t* pImageNode = uiDesignModelGetNode(&pApp->tModel, iImage);
+		ui_design_node_t* pImageNode = uiDesignModelGetNode(&pApp->pSession->tModel, iImage);
 		xui_surface pImageSurface = NULL;
 		xui_rect_t tSource;
 		xui_rect_t tCustom;
@@ -7805,7 +8294,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iMenuBar != 0 ) {
-		ui_design_node_t* pMenuNode = uiDesignModelGetNode(&pApp->tModel, iMenuBar);
+		ui_design_node_t* pMenuNode = uiDesignModelGetNode(&pApp->pSession->tModel, iMenuBar);
 		const xui_menubar_item_t* pItem;
 		const xui_menu_item_t* pToolsItem;
 		const xui_menu_item_t* pProfilerItem;
@@ -7883,11 +8372,18 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 				tMetrics.fPaddingY,
 				(pMenuNode != NULL && pMenuNode->pWidget != NULL) ? xuiMenuBarGetItemCount(pMenuNode->pWidget) : -1,
 				(pMenuNode != NULL && pMenuNode->pWidget != NULL) ? xuiMenuBarGetOpenIndex(pMenuNode->pWidget) : -1);
+			if ( pMenuNode ) {
+				xui_widget ancestor;
+				for ( ancestor = pMenuNode->pWidget; ancestor != NULL; ancestor = xuiWidgetGetParent(ancestor) ) {
+					xui_rect_t rect = xuiWidgetGetWorldRect(ancestor);
+					printf("menu-ancestor visible=%d/%d enabled=%d/%d rect=%d,%d,%d,%d\n", xuiWidgetGetVisible(ancestor), xuiWidgetGetEffectiveVisible(ancestor), xuiWidgetGetEnabled(ancestor), xuiWidgetGetEffectiveEnabled(ancestor), rect.fX, rect.fY, rect.fW, rect.fH);
+				}
+			}
 			return XUI_ERROR;
 		}
 	}
 	if ( iToolbar != 0 ) {
-		ui_design_node_t* pToolbarNode = uiDesignModelGetNode(&pApp->tModel, iToolbar);
+		ui_design_node_t* pToolbarNode = uiDesignModelGetNode(&pApp->pSession->tModel, iToolbar);
 		const xui_toolbar_item_t* pItem;
 		xui_toolbar_metrics_t tMetrics;
 		xui_toolbar_colors_t tColors;
@@ -7967,7 +8463,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iStatusBar != 0 ) {
-		ui_design_node_t* pStatusNode = uiDesignModelGetNode(&pApp->tModel, iStatusBar);
+		ui_design_node_t* pStatusNode = uiDesignModelGetNode(&pApp->pSession->tModel, iStatusBar);
 		const xui_statusbar_item_t* pItem;
 		xui_statusbar_metrics_t tMetrics;
 		xui_statusbar_colors_t tColors;
@@ -8038,7 +8534,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iChart != 0 ) {
-		ui_design_node_t* pChartNode = uiDesignModelGetNode(&pApp->tModel, iChart);
+		ui_design_node_t* pChartNode = uiDesignModelGetNode(&pApp->pSession->tModel, iChart);
 		xui_thickness_t tPadding;
 		double fMinX;
 		double fMaxX;
@@ -8057,7 +8553,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		uint32_t iColorA;
 		uint32_t iColorB;
 		int bAnimation;
-		(void)uiDesignModelSetText(&pApp->tModel, iChart, "Default Series");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iChart, "Default Series");
 		(void)uiDesignAppSetNodeProperty(pApp, iChart, "appearance.seriesColor", "#ABCDEF");
 		(void)uiDesignAppSetNodeProperty(pApp, iChart, "data.seriesType", "4");
 		(void)uiDesignAppSetNodeProperty(pApp, iChart, "data.seriesList", "base||Base|true|");
@@ -8069,7 +8565,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 			printf("xui_uidesign exercise-chart-default-series-color-failed id=%d\n", iChart);
 			return XUI_ERROR;
 		}
-		(void)uiDesignModelSetText(&pApp->tModel, iChart, "Revenue");
+		(void)uiDesignModelSetText(&pApp->pSession->tModel, iChart, "Revenue");
 		(void)uiDesignAppSetNodeProperty(pApp, iChart, "data.seriesList", "s1|line|Trend|true|#102030|true|#203040|true|4,2|diamond|7|0|0||\ns2|scatter|Points|false|#405060|false||false||rect|9|3|11|#010203|#040506");
 		(void)uiDesignAppSetNodeProperty(pApp, iChart, "data.series", "s1|A|0|1|1|#102030\ns1|B|1|2|2|#102030\ns2|P|2|3|5|#405060");
 		(void)uiDesignAppSetNodeProperty(pApp, iChart, "behavior.xAxis", "2");
@@ -8173,7 +8669,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iInventoryGrid != 0 ) {
-		ui_design_node_t* pInventoryNode = uiDesignModelGetNode(&pApp->tModel, iInventoryGrid);
+		ui_design_node_t* pInventoryNode = uiDesignModelGetNode(&pApp->pSession->tModel, iInventoryGrid);
 		xui_inventory_slot_t tSlot;
 		xui_inventory_grid_layout_t tLayout;
 		xui_inventory_grid_colors_t tColors;
@@ -8310,7 +8806,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		(void)uiDesignAppSetNodeProperty(pApp, iInventoryGrid, "behavior.previewSplitOpen", "false");
 	}
 	if ( iMessageList != 0 ) {
-		ui_design_node_t* pMessageNode = uiDesignModelGetNode(&pApp->tModel, iMessageList);
+		ui_design_node_t* pMessageNode = uiDesignModelGetNode(&pApp->pSession->tModel, iMessageList);
 		const xui_message_node_t* pMessage;
 		const xui_message_node_t* pImportMessage;
 		const xui_message_node_t* pFileMessage;
@@ -8440,7 +8936,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTimelineView != 0 ) {
-		ui_design_node_t* pTimelineNode = uiDesignModelGetNode(&pApp->tModel, iTimelineView);
+		ui_design_node_t* pTimelineNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTimelineView);
 		xui_timeline_layer_t tLayer;
 		xui_timeline_frame_t tFrame;
 		xui_timeline_span_t tSpan;
@@ -8601,7 +9097,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTerminal != 0 ) {
-		ui_design_node_t* pTerminalNode = uiDesignModelGetNode(&pApp->tModel, iTerminal);
+		ui_design_node_t* pTerminalNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTerminal);
 		float fCellWidth;
 		float fCellHeight;
 		float fPadding;
@@ -8707,7 +9203,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iPropertyGrid != 0 ) {
-		ui_design_node_t* pPropertyNode = uiDesignModelGetNode(&pApp->tModel, iPropertyGrid);
+		ui_design_node_t* pPropertyNode = uiDesignModelGetNode(&pApp->pSession->tModel, iPropertyGrid);
 		xui_widget pPropertyTableView;
 		xui_property_grid_style_t tStyle;
 		float fNameWidth;
@@ -8829,7 +9325,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iFlowGraph != 0 ) {
-		ui_design_node_t* pFlowNode = uiDesignModelGetNode(&pApp->tModel, iFlowGraph);
+		ui_design_node_t* pFlowNode = uiDesignModelGetNode(&pApp->pSession->tModel, iFlowGraph);
 		xui_flow_graph pGraph;
 		xui_flow_node_info_t tNodeInfo;
 		xui_flow_port_info_t tPortInfo;
@@ -8987,7 +9483,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iWorkflow != 0 ) {
-		ui_design_node_t* pWorkflowNode = uiDesignModelGetNode(&pApp->tModel, iWorkflow);
+		ui_design_node_t* pWorkflowNode = uiDesignModelGetNode(&pApp->pSession->tModel, iWorkflow);
 		xui_workflow pWorkflow;
 		xui_flow_graph pWorkflowGraph;
 		xui_flow_node_info_t tSelectedNode;
@@ -9180,7 +9676,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTagInput != 0 ) {
-		ui_design_node_t* pTagNode = uiDesignModelGetNode(&pApp->tModel, iTagInput);
+		ui_design_node_t* pTagNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTagInput);
 		float fBorderWidth = 0.0f;
 		float fTagHeight = 0.0f;
 		uint32_t iBackgroundColor = 0u;
@@ -9267,7 +9763,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iComboBox != 0 ) {
-		ui_design_node_t* pComboNode = uiDesignModelGetNode(&pApp->tModel, iComboBox);
+		ui_design_node_t* pComboNode = uiDesignModelGetNode(&pApp->pSession->tModel, iComboBox);
 		const xui_combobox_item_t* pItem;
 		uint32_t iTextColor = 0u;
 		uint32_t iDisabledTextColor = 0u;
@@ -9386,7 +9882,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iColorPicker != 0 ) {
-		ui_design_node_t* pColorNode = uiDesignModelGetNode(&pApp->tModel, iColorPicker);
+		ui_design_node_t* pColorNode = uiDesignModelGetNode(&pApp->pSession->tModel, iColorPicker);
 		uint32_t iTextColor = 0u;
 		uint32_t iDisabledTextColor = 0u;
 		uint32_t iBackgroundColor = 0u;
@@ -9504,7 +10000,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iDatePicker != 0 ) {
-		ui_design_node_t* pDateNode = uiDesignModelGetNode(&pApp->tModel, iDatePicker);
+		ui_design_node_t* pDateNode = uiDesignModelGetNode(&pApp->pSession->tModel, iDatePicker);
 		uint32_t iTextColor = 0u;
 		uint32_t iDisabledTextColor = 0u;
 		uint32_t iBackgroundColor = 0u;
@@ -9650,7 +10146,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iStepBar != 0 ) {
-		ui_design_node_t* pStepNode = uiDesignModelGetNode(&pApp->tModel, iStepBar);
+		ui_design_node_t* pStepNode = uiDesignModelGetNode(&pApp->pSession->tModel, iStepBar);
 		uint32_t iDoneColor = 0u;
 		uint32_t iActiveColor = 0u;
 		uint32_t iPendingColor = 0u;
@@ -9704,7 +10200,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iPage != 0 ) {
-		ui_design_node_t* pPageNode = uiDesignModelGetNode(&pApp->tModel, iPage);
+		ui_design_node_t* pPageNode = uiDesignModelGetNode(&pApp->pSession->tModel, iPage);
 		const char* sFirst = NULL;
 		const char* sLast = NULL;
 		const char* sPrev = NULL;
@@ -9787,8 +10283,8 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iCarousel != 0 ) {
-		ui_design_node_t* pCarouselNode = uiDesignModelGetNode(&pApp->tModel, iCarousel);
-		ui_design_node_t* pChildNode = (iCarouselChild != 0) ? uiDesignModelGetNode(&pApp->tModel, iCarouselChild) : NULL;
+		ui_design_node_t* pCarouselNode = uiDesignModelGetNode(&pApp->pSession->tModel, iCarousel);
+		ui_design_node_t* pChildNode = (iCarouselChild != 0) ? uiDesignModelGetNode(&pApp->pSession->tModel, iCarouselChild) : NULL;
 		xui_widget pPageWidget = NULL;
 		float fArrowSize = 0.0f;
 		float fIndicatorSize = 0.0f;
@@ -9873,7 +10369,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iBreadcrumb != 0 ) {
-		ui_design_node_t* pBreadcrumbNode = uiDesignModelGetNode(&pApp->tModel, iBreadcrumb);
+		ui_design_node_t* pBreadcrumbNode = uiDesignModelGetNode(&pApp->pSession->tModel, iBreadcrumb);
 		xui_surface pSeparatorIcon = NULL;
 		xui_rect_t tSeparatorIconSrc;
 		uint32_t iNormalTextColor = 0u;
@@ -9932,7 +10428,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iCascader != 0 ) {
-		ui_design_node_t* pCascaderNode = uiDesignModelGetNode(&pApp->tModel, iCascader);
+		ui_design_node_t* pCascaderNode = uiDesignModelGetNode(&pApp->pSession->tModel, iCascader);
 		uint32_t iTextColor = 0u;
 		uint32_t iPlaceholderColor = 0u;
 		uint32_t iDisabledTextColor = 0u;
@@ -10064,7 +10560,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iTabs != 0 ) {
-		ui_design_node_t* pTabsNode = uiDesignModelGetNode(&pApp->tModel, iTabs);
+		ui_design_node_t* pTabsNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTabs);
 		uint32_t iBorder = 0;
 		uint32_t iClient = 0;
 		uint32_t iBackgroundColor = 0;
@@ -10104,9 +10600,9 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 			fScrollBeforeLayout = xuiTabsGetScroll(pTabsNode->pWidget);
 			(void)xuiWidgetArrange(pTabsNode->pWidget, pTabsNode->tRect);
 			if ( iTabsChild != 0 ) {
-				ui_design_node_t* pTabsChildNode = uiDesignModelGetNode(&pApp->tModel, iTabsChild);
+				ui_design_node_t* pTabsChildNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTabsChild);
 				if ( pTabsChildNode != NULL && pTabsChildNode->pWidget != NULL &&
-				     uiDesignModelGetAbsoluteRect(&pApp->tModel, iTabsChild, &tTabsChildModelRect) == XUI_OK ) {
+				     uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, iTabsChild, &tTabsChildModelRect) == XUI_OK ) {
 					tTabsChildWorldRect = xuiWidgetGetWorldRect(pTabsChildNode->pWidget);
 					if ( pApp->pArtboard != NULL ) {
 						tArtboardWorldRect = xuiWidgetGetWorldRect(pApp->pArtboard);
@@ -10172,7 +10668,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iAccordion != 0 ) {
-		ui_design_node_t* pAccordionNode = uiDesignModelGetNode(&pApp->tModel, iAccordion);
+		ui_design_node_t* pAccordionNode = uiDesignModelGetNode(&pApp->pSession->tModel, iAccordion);
 		uint32_t iBackgroundColor = 0;
 		uint32_t iHeaderColor = 0;
 		uint32_t iHoverColor = 0;
@@ -10238,7 +10734,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		}
 	}
 	if ( iSplit != 0 ) {
-		ui_design_node_t* pSplitNode = uiDesignModelGetNode(&pApp->tModel, iSplit);
+		ui_design_node_t* pSplitNode = uiDesignModelGetNode(&pApp->pSession->tModel, iSplit);
 		xui_rect_t tSplitChildRect = {0.0f, 0.0f, 0.0f, 0.0f};
 		uint32_t iDivider = 0;
 		uint32_t iHover = 0;
@@ -10289,7 +10785,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 			return XUI_ERROR;
 		}
 		if ( (iSplitChild != 0) &&
-		     (uiDesignModelGetAbsoluteRect(&pApp->tModel, iSplitChild, &tSplitChildRect) != XUI_OK ||
+		     (uiDesignModelGetAbsoluteRect(&pApp->pSession->tModel, iSplitChild, &tSplitChildRect) != XUI_OK ||
 		      tSplitChildRect.fX <= pSplitNode->tRect.fX + 40.0f ||
 		      tSplitChildRect.fY >= pSplitNode->tRect.fY + 40.0f) ) {
 			printf("xui_uidesign exercise-split-layout-child-axis-failed id=%d child=%d child=%d/%d split=%d/%d\n",
@@ -10308,67 +10804,67 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		iCreateRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_LABEL, 1095.0f, 440.0f, &iDockLayoutDropChild);
 		if ( iCreateRet != XUI_OK ) return iCreateRet;
 	}
-	if ( (iPanelLayoutChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iPanelLayoutChild)) ) {
+	if ( (iPanelLayoutChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iPanelLayoutChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=panel_row child=%d\n", iPanelLayoutChild);
 		return XUI_ERROR;
 	}
-	if ( (iCarouselChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iCarouselChild)) ) {
+	if ( (iCarouselChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iCarouselChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=carousel child=%d\n", iCarouselChild);
 		return XUI_ERROR;
 	}
-	if ( (iSplitChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iSplitChild)) ) {
+	if ( (iSplitChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iSplitChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=split_layout child=%d\n", iSplitChild);
 		return XUI_ERROR;
 	}
-	if ( (iTabsChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iTabsChild)) ) {
+	if ( (iTabsChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iTabsChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=tabs child=%d\n", iTabsChild);
 		return XUI_ERROR;
 	}
-	if ( (iAccordionChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iAccordionChild)) ) {
+	if ( (iAccordionChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iAccordionChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=accordion child=%d\n", iAccordionChild);
 		return XUI_ERROR;
 	}
-	if ( (iDockPanelChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iDockPanelChild)) ) {
+	if ( (iDockPanelChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iDockPanelChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=dock_panel child=%d\n", iDockPanelChild);
 		return XUI_ERROR;
 	}
-	if ( (iPopupChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iPopupChild)) ) {
+	if ( (iPopupChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iPopupChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=popup child=%d\n", iPopupChild);
 		return XUI_ERROR;
 	}
-	if ( (iRadioGroupRadioChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iRadioGroupRadioChild)) ) {
+	if ( (iRadioGroupRadioChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iRadioGroupRadioChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=radio_group radio_child=%d\n", iRadioGroupRadioChild);
 		return XUI_ERROR;
 	}
-	if ( (iRadioGroupCardChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iRadioGroupCardChild)) ) {
+	if ( (iRadioGroupCardChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iRadioGroupCardChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=radio_group card_child=%d\n", iRadioGroupCardChild);
 		return XUI_ERROR;
 	}
-	if ( (iOverlayDropChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iOverlayDropChild)) ) {
+	if ( (iOverlayDropChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iOverlayDropChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=overlay child=%d\n", iOverlayDropChild);
 		return XUI_ERROR;
 	}
 	if ( (iOverlayDropChild != 0) &&
-	     (uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->tModel, iOverlayDropChild), "layout.flowMode", XUI_FLOW_BLOCK) != XUI_FLOW_ABSOLUTE) ) {
+	     (uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->pSession->tModel, iOverlayDropChild), "layout.flowMode", XUI_FLOW_BLOCK) != XUI_FLOW_ABSOLUTE) ) {
 		printf("xui_uidesign exercise-layout-flow-failed type=overlay child=%d\n", iOverlayDropChild);
 		return XUI_ERROR;
 	}
 	if ( (iTableDropChild != 0) &&
-	     (uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->tModel, iTableDropChild), "layout.tableCellRow", -1) != 1 ||
-	      uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->tModel, iTableDropChild), "layout.tableCellColumn", -1) != 2) ) {
+	     (uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->pSession->tModel, iTableDropChild), "layout.tableCellRow", -1) != 1 ||
+	      uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->pSession->tModel, iTableDropChild), "layout.tableCellColumn", -1) != 2) ) {
 		printf("xui_uidesign exercise-layout-table-drop-failed child=%d\n", iTableDropChild);
 		return XUI_ERROR;
 	}
-	if ( (iTableDropChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iTableDropChild)) ) {
+	if ( (iTableDropChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iTableDropChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=table child=%d\n", iTableDropChild);
 		return XUI_ERROR;
 	}
 	if ( (iDockLayoutDropChild != 0) &&
-	     (uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->tModel, iDockLayoutDropChild), "layout.dock", 0) != XUI_DOCK_LEFT) ) {
+	     (uiDesignNodeGetPropertyInt(uiDesignModelGetNode(&pApp->pSession->tModel, iDockLayoutDropChild), "layout.dock", 0) != XUI_DOCK_LEFT) ) {
 		printf("xui_uidesign exercise-layout-dock-drop-failed child=%d\n", iDockLayoutDropChild);
 		return XUI_ERROR;
 	}
-	if ( (iDockLayoutDropChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iDockLayoutDropChild)) ) {
+	if ( (iDockLayoutDropChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->pSession->tModel, uiDesignModelGetNode(&pApp->pSession->tModel, iDockLayoutDropChild)) ) {
 		printf("xui_uidesign exercise-layout-transform-failed type=dock child=%d\n", iDockLayoutDropChild);
 		return XUI_ERROR;
 	}
@@ -10397,16 +10893,132 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		printf("xui_uidesign exercise-resize-layout-command-failed ret=%d\n", iCreateRet);
 		return iCreateRet;
 	}
-	(void)uiDesignModelSetSelected(&pApp->tModel, iButton);
+	iCreateRet = __uiDesignExerciseCanvasView(pApp);
+	if ( iCreateRet != XUI_OK ) {
+		printf("xui_uidesign exercise-canvas-view-failed ret=%d\n", iCreateRet);
+		return iCreateRet;
+	}
+	(void)uiDesignModelSetSelected(&pApp->pSession->tModel, iButton);
 	(void)uiDesignInspectorRefresh(pApp);
 	pApp->bExerciseSeeded = 1;
 	uiDesignAppInvalidate(pApp);
 	return XUI_OK;
 }
 
+static int __uiDesignExerciseWorkbench(ui_design_app_t* pApp)
+{
+	ui_design_session_t* first = pApp->pSession;
+	ui_design_session_t* second;
+	ui_design_node_t* node;
+	char a[UI_DESIGN_PATH_CAPACITY], b[UI_DESIGN_PATH_CAPACITY];
+	char* text;
+	int id, other, historyCount;
+	xge_input_event_t event = {0};
+	xui_input_desc_t inputDesc = {0};
+	xui_widget input = NULL;
+	xui_dock_window_info_t info = {0};
+#define WB_CHECK(expr) do { if (!(expr)) { printf("workbench-test failed at %d: %s\n", __LINE__, #expr); return XUI_ERROR; } } while (0)
+	WB_CHECK(pApp->bWorkspaceExplicit && pApp->sWorkspacePath[0] && pApp->iMaxFrames > 0);
+	WB_CHECK(strlen(pApp->sWorkspacePath) + 12 < sizeof(a));
+	snprintf(a, sizeof(a), "%s.a.json", pApp->sWorkspacePath);
+	snprintf(b, sizeof(b), "%s.b.json", pApp->sWorkspacePath);
+	WB_CHECK(!uiDesignFileStamp(a).bPresent && !uiDesignFileStamp(b).bPresent);
+	WB_CHECK(uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_LABEL, 40, 40, &id) == XUI_OK);
+	WB_CHECK(uiDesignAppCommandSetNodeText(pApp, id, "清晰的中文 / Clear text") == XUI_OK);
+	WB_CHECK(uiDesignAppSaveSession(pApp, a) == XUI_OK && !first->bDocumentDirty);
+	WB_CHECK(uiDesignCanvasSetZoom(pApp, 0.8f, 0, 0, 0) == XUI_OK);
+	first->fCanvasPanX = 20;
+	WB_CHECK(uiDesignAppNewSession(pApp) == XUI_OK);
+	second = pApp->pSession;
+	WB_CHECK(second != first && second->fZoom == 1 && second->iUndoCount == 0);
+	WB_CHECK(first->tModel.arrNodes[0].pWidget == NULL && first->tModel.arrNodes[0].pRuntime == NULL);
+	WB_CHECK(uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_BUTTON, 60, 50, &other) == XUI_OK);
+	WB_CHECK(uiDesignAppCommandSetNodeText(pApp, other, "Independent history") == XUI_OK);
+	WB_CHECK(uiDesignAppSaveSession(pApp, b) == XUI_OK);
+	WB_CHECK(uiDesignAppCommandSetNodeText(pApp, other, "Unsaved second") == XUI_OK);
+	WB_CHECK(uiDesignAppSwitchSession(pApp, 0) == XUI_OK && first->fZoom == 0.8f && first->fCanvasPanX == 20);
+	WB_CHECK(first->tModel.arrNodes[0].pWidget != NULL && first->iUndoCount == 1);
+	WB_CHECK(uiDesignAppOpenSession(pApp, a) == XUI_OK && pApp->iSessionCount == 2 && pApp->pSession == first);
+	WB_CHECK(uiDesignAppCommandSetNodeText(pApp, id, "Temporary edit") == XUI_OK && first->bDocumentDirty);
+	WB_CHECK(uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO) == XUI_OK && !first->bDocumentDirty);
+	WB_CHECK(uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_REDO) == XUI_OK && first->bDocumentDirty);
+	WB_CHECK(uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_FILE_CLOSE) == XUI_OK && pApp->iPendingUnsavedCommand);
+	__uiDesignUnsavedResult(pApp->pUnsavedBox, XUI_MSGBOX_RESULT_CANCEL, pApp);
+	WB_CHECK(pApp->iSessionCount == 2 && pApp->pSession == first && first->bDocumentDirty);
+	WB_CHECK(xuiToolbarIsItemEnabled(pApp->pToolbar, 0));
+	WB_CHECK(uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_FILE_EXIT) == XUI_OK && pApp->iPendingUnsavedCommand);
+	__uiDesignUnsavedResult(pApp->pUnsavedBox, XUI_MSGBOX_RESULT_NO, pApp);
+	WB_CHECK(pApp->pSession == second && pApp->iPendingUnsavedCommand == UI_DESIGN_COMMAND_FILE_EXIT);
+	__uiDesignUnsavedResult(pApp->pUnsavedBox, XUI_MSGBOX_RESULT_CANCEL, pApp);
+	WB_CHECK(!pApp->bExitRequested && pApp->iSessionCount == 2 && first->bDocumentDirty && second->bDocumentDirty);
+	WB_CHECK(uiDesignAppSwitchSession(pApp, 0) == XUI_OK);
+#if defined(_WIN32)
+	SendMessageW((HWND)xgePlatformNativeHandle(), WM_CLOSE, 0, 0);
+	WB_CHECK(pApp->bNativeCloseRequested);
+	uiDesignAppPollSessions(pApp);
+	WB_CHECK(pApp->iPendingUnsavedCommand == UI_DESIGN_COMMAND_FILE_EXIT);
+	__uiDesignUnsavedResult(pApp->pUnsavedBox, XUI_MSGBOX_RESULT_CANCEL, pApp);
+#endif
+	WB_CHECK(uiDesignFileWrite(a, "external content that must not be overwritten") == XUI_OK);
+	WB_CHECK(uiDesignAppSaveSession(pApp, a) != XUI_OK && first->bExternalChange && first->bDocumentDirty);
+	text = uiDesignFileRead(a, 4096);
+	WB_CHECK(text && strcmp(text, "external content that must not be overwritten") == 0); free(text);
+	WB_CHECK(__uiDesignAppContinueDestructiveCommand(pApp, UI_DESIGN_COMMAND_FILE_RELOAD) != XUI_OK && first->tModel.iNodeCount == 1);
+	WB_CHECK(uiDesignFileWrite(a, first->sCleanSnapshot) == XUI_OK);
+	WB_CHECK(__uiDesignAppContinueDestructiveCommand(pApp, UI_DESIGN_COMMAND_FILE_RELOAD) == XUI_OK && !first->bDocumentDirty);
+	/* Down and up are queued before a single pump: a frame snapshot would lose them. */
+	WB_CHECK(xuiLayout(pApp->pContext) == XUI_OK);
+	WB_CHECK(xuiProxyXgePumpInput(pApp->pContext) == XUI_OK);
+	(void)xuiSetFocusWidget(pApp->pContext, pApp->pOverlay);
+	event.iSize = sizeof(event); event.iKey = 'N'; event.iModifiers = XGE_KEY_MOD_CTRL;
+	event.iType = XGE_EVENT_KEY_DOWN; WB_CHECK(xgeInputEventPost(&event) == XGE_OK);
+	event.iType = XGE_EVENT_KEY_UP; WB_CHECK(xgeInputEventPost(&event) == XGE_OK);
+	WB_CHECK(xuiProxyXgePumpInput(pApp->pContext) == XUI_OK && pApp->iSessionCount == 3);
+	WB_CHECK(uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_FILE_CLOSE) == XUI_OK && pApp->iSessionCount == 2);
+	WB_CHECK(uiDesignAppSwitchSession(pApp, 0) == XUI_OK);
+	inputDesc.iSize = sizeof(inputDesc); inputDesc.pFont = pApp->pFont; inputDesc.sText = "abc";
+	WB_CHECK(xuiInputCreate(pApp->pContext, &input, &inputDesc) == XUI_OK);
+	WB_CHECK(xuiWidgetAddChild(pApp->pRoot, input) == XUI_OK);
+	(void)xuiWidgetSetRect(input, (xui_rect_t){20, 20, 200, 32});
+	WB_CHECK(xuiLayout(pApp->pContext) == XUI_OK);
+	WB_CHECK(xuiSetFocusWidget(pApp->pContext, input) == XUI_OK);
+	historyCount = first->iUndoCount;
+	memset(&event, 0, sizeof(event)); event.iSize = sizeof(event); event.iType = XGE_EVENT_TEXT; event.iCodepoint = 0x4E2D;
+	WB_CHECK(xgeInputEventPost(&event) == XGE_OK && xuiProxyXgePumpInput(pApp->pContext) == XUI_OK);
+	WB_CHECK(strstr(xuiInputGetText(input), "中") != NULL);
+	event.iType = XGE_EVENT_KEY_DOWN; event.iKey = 'Z'; event.iModifiers = XGE_KEY_MOD_CTRL;
+	WB_CHECK(xgeInputEventPost(&event) == XGE_OK && xuiProxyXgePumpInput(pApp->pContext) == XUI_OK);
+	WB_CHECK(strcmp(xuiInputGetText(input), "abc") == 0 && first->iUndoCount == historyCount);
+	xuiWidgetDestroy(input);
+	(void)xuiSetFocusWidget(pApp->pContext, pApp->pOverlay);
+	WB_CHECK(xuiDockPanelHideWindow(pApp->pDock, pApp->iToolboxWindow) == XUI_OK);
+	WB_CHECK(uiDesignWorkbenchSaveLayout(pApp) == XUI_OK);
+	text = uiDesignFileRead(pApp->sWorkspacePath, 1024u * 1024u);
+	WB_CHECK(text && strstr(text, "toolbox") && strstr(text, "uidesignVersion")); free(text);
+	WB_CHECK(xuiDockPanelLoadState(pApp->pDock, pApp->pDefaultLayout) == XUI_OK);
+	WB_CHECK(uiDesignWorkbenchLoadLayout(pApp) == XUI_OK);
+	info.iSize = sizeof(info);
+	WB_CHECK(xuiDockPanelGetWindowInfo(pApp->pDock, pApp->iToolboxWindow, &info) == XUI_OK && info.iState == XUI_DOCK_PANEL_WINDOW_HIDDEN);
+	WB_CHECK(uiDesignWorkbenchResetLayout(pApp) == XUI_OK);
+	WB_CHECK(uiDesignFileWrite(pApp->sWorkspacePath, "broken workspace") == XUI_OK);
+	WB_CHECK(uiDesignWorkbenchLoadLayout(pApp) != XUI_OK && pApp->bWorkspaceLoadFailed);
+	WB_CHECK(uiDesignWorkbenchSaveLayout(pApp) == XUI_OK);
+	text = uiDesignFileRead(pApp->sWorkspacePath, 1024);
+	WB_CHECK(text && strcmp(text, "broken workspace") == 0); free(text);
+	WB_CHECK(uiDesignWorkbenchResetLayout(pApp) == XUI_OK);
+	node = uiDesignModelGetNode(&first->tModel, id);
+	WB_CHECK(node && strcmp(node->sText, "清晰的中文 / Clear text") == 0);
+	(void)uiDesignAppSelectNode(pApp, id);
+	(void)uiDesignAppCommandSetNodeRect(pApp, id, (xui_rect_t){40, 40, 360, 50}, "Readability sample");
+	(void)xuiPropertyGridSetSelected(pApp->pPropertyGrid, xuiPropertyGridFindProperty(pApp->pPropertyGrid, "text"));
+	uiDesignAppSetStatus(pApp, "Workbench checks passed / 字体清晰度测试");
+	printf("workbench-tests: sessions, undo isolation, guarded exit, native close/input, conflicts and layout passed\n");
+#undef WB_CHECK
+	return XUI_OK;
+}
+
 static int __uiDesignCreateAssets(ui_design_app_t* pApp)
 {
-	const char* sFontPath;
 	char* sSnapshot;
 	int iWidth;
 	int iHeight;
@@ -10421,12 +11033,9 @@ static int __uiDesignCreateAssets(ui_design_app_t* pApp)
 	iHeight = __uiDesignAppSurfaceHeight(pApp);
 	iRet = __uiDesignAppResizeTarget(pApp, iWidth, iHeight);
 	if ( iRet != XUI_OK ) return iRet;
-	sFontPath = __uiDesignFindTtf();
-	if ( sFontPath == NULL ) return XUI_ERROR_FILE_NOT_FOUND;
-	iRet = pApp->tProxy.fontLoadFile(&pApp->tProxy, &pApp->pFont, sFontPath, 13.0f, XUI_FONT_FORMAT_TTF);
+	iRet = uiDesignWorkbenchLoadFont(pApp);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiSetDefaultFont(pApp->pContext, pApp->pFont);
-	uiDesignModelInit(&pApp->tModel);
 	if ( pApp->bPreviewRunner ) {
 		if ( pApp->sPreviewPath[0] == '\0' ) return XUI_ERROR_INVALID_ARGUMENT;
 		iRet = __uiDesignCreatePreviewRoot(pApp);
@@ -10449,293 +11058,66 @@ static int __uiDesignCreateAssets(ui_design_app_t* pApp)
 	}
 	pApp->iActiveTool = UI_DESIGN_NODE_NONE;
 	pApp->iDraggingTool = UI_DESIGN_NODE_NONE;
-	pApp->bGridVisible = 1;
-	pApp->bSnapEnabled = 0;
-	pApp->bMarqueeSelectContain = 1;
-	pApp->fZoom = 1.0f;
+	pApp->pSession->bGridVisible = 1;
+	pApp->pSession->bSnapEnabled = 0;
+	pApp->pSession->bMarqueeSelectContain = 1;
+	pApp->pSession->fZoom = 1.0f;
 	pApp->iStatusMessageItem = -1;
 	pApp->iStatusSelectionItem = -1;
 	pApp->iStatusZoomItem = -1;
 	iRet = __uiDesignCreateRoot(pApp);
 	if ( iRet == XUI_OK ) iRet = __uiDesignCreateChrome(pApp);
 	if ( iRet == XUI_OK ) iRet = __uiDesignCreateDock(pApp);
+	if ( iRet == XUI_OK ) iRet = uiDesignWorkbenchInit(pApp);
+	/* Dock clients become effectively visible during layout, before any
+	 * control preview is allowed to open an owned popup. */
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pApp->pContext);
 	if ( iRet == XUI_OK && pApp->bExercise ) iRet = __uiDesignSeedExercise(pApp);
+	if ( iRet == XUI_OK ) {
+		sSnapshot = NULL;
+		iRet = __uiDesignCaptureSnapshot(pApp, &sSnapshot);
+		if ( iRet == XUI_OK ) iRet = __uiDesignAppSetCleanSnapshot(pApp, sSnapshot);
+		free(sSnapshot);
+	}
 	return iRet;
 }
 
 static void __uiDesignDestroyAssets(ui_design_app_t* pApp)
 {
 	int i;
-
-	if ( pApp != NULL ) {
-		for ( i = 0; i < pApp->tModel.iNodeCount; i++ ) {
-			__uiDesignAppReleaseNodeRuntime(pApp, &pApp->tModel.arrNodes[i]);
-		}
-		free(pApp->pClipboardNodes);
-		pApp->pClipboardNodes = NULL;
-		pApp->iClipboardNodeCount = 0;
-		pApp->iClipboardCapacity = 0;
-		__uiDesignHistoryClear(pApp->arrUndo, &pApp->iUndoCount);
-		__uiDesignHistoryClear(pApp->arrRedo, &pApp->iRedoCount);
-		uiDesignAppCancelHistoryTransaction(pApp);
-		if ( pApp->pFileDialog != NULL ) {
-			xuiFileDialogDestroy(pApp->pFileDialog);
-			pApp->pFileDialog = NULL;
-		}
-	}
-	if ( pApp->pContext != NULL ) {
-		xuiDestroy(pApp->pContext);
-		pApp->pContext = NULL;
-	}
-	if ( pApp->pFont != NULL ) {
-		pApp->tProxy.fontDestroy(&pApp->tProxy, pApp->pFont);
-		pApp->pFont = NULL;
-	}
-	if ( pApp->pTarget != NULL ) {
-		pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->pTarget);
-		pApp->pTarget = NULL;
-	}
+	if ( pApp == NULL ) return;
+	uiDesignWorkbenchShutdown(pApp);
+	if ( pApp->pSession ) __uiDesignAppClearNodeRuntime(pApp);
+	if ( pApp->pFileDialog ) xuiFileDialogDestroy(pApp->pFileDialog);
+	if ( pApp->pUnsavedBox ) xuiMsgBoxDestroy(pApp->pUnsavedBox);
+	if ( pApp->pContext ) { xuiDestroy(pApp->pContext); pApp->pContext = NULL; }
+	for ( i = 0; i < pApp->iSessionCount; ++i ) uiDesignSessionDestroy(pApp->arrSessions[i]);
+	pApp->pSession = NULL;
+	pApp->iSessionCount = 0;
+	free(pApp->pClipboardNodes);
+	if ( pApp->pFont ) { pApp->tProxy.fontDestroy(&pApp->tProxy, pApp->pFont); pApp->pFont = NULL; }
+	if ( pApp->pTarget ) { pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->pTarget); pApp->pTarget = NULL; }
 }
 
-static uint32_t __uiDesignReadButtons(void)
-{
-	uint32_t iButtons;
 
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
 
-static uint32_t __uiDesignReadModifiers(void)
-{
-	uint32_t iModifiers;
 
-	iModifiers = 0;
-	if ( xgeKeyDown(UI_DESIGN_KEY_LEFT_SHIFT) || xgeKeyDown(UI_DESIGN_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(UI_DESIGN_KEY_LEFT_CTRL) || xgeKeyDown(UI_DESIGN_KEY_RIGHT_CTRL) ) iModifiers |= XUI_MOD_CTRL;
-	if ( xgeKeyDown(UI_DESIGN_KEY_LEFT_ALT) || xgeKeyDown(UI_DESIGN_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
-	return iModifiers;
-}
 
-static int __uiDesignMapKey(int iKey)
-{
-	switch ( iKey ) {
-	case XGE_KEY_ENTER: return XUI_KEY_ENTER;
-	case XGE_KEY_TAB: return XUI_KEY_TAB;
-	case XGE_KEY_SPACE: return XUI_KEY_SPACE;
-	case XGE_KEY_BACKSPACE: return XUI_KEY_BACKSPACE;
-	case XGE_KEY_DELETE: return XUI_KEY_DELETE;
-	case XGE_KEY_LEFT: return XUI_KEY_LEFT;
-	case XGE_KEY_RIGHT: return XUI_KEY_RIGHT;
-	case XGE_KEY_UP: return XUI_KEY_UP;
-	case XGE_KEY_DOWN: return XUI_KEY_DOWN;
-	case XGE_KEY_PAGE_UP: return XUI_KEY_PAGE_UP;
-	case XGE_KEY_PAGE_DOWN: return XUI_KEY_PAGE_DOWN;
-	case XGE_KEY_HOME: return XUI_KEY_HOME;
-	case XGE_KEY_END: return XUI_KEY_END;
-	case XGE_KEY_ESCAPE: return XUI_KEY_ESCAPE;
-	default: return 0;
-	}
-}
 
-static int __uiDesignCanHandleDesignShortcut(ui_design_app_t* pApp)
-{
-	if ( (pApp == NULL) || (pApp->pContext == NULL) || (pApp->pOverlay == NULL) ) return 0;
-	return xuiGetFocusWidget(pApp->pContext) == pApp->pOverlay;
-}
 
-static void __uiDesignShortcutPastePoint(ui_design_app_t* pApp, float* pX, float* pY)
-{
-	xui_rect_t tRect;
 
-	if ( pX != NULL ) *pX = 48.0f;
-	if ( pY != NULL ) *pY = 48.0f;
-	if ( (pApp == NULL) || (pX == NULL) || (pY == NULL) ) return;
-	if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, pApp->tModel.iSelectedId, &tRect) == XUI_OK ) {
-		*pX = tRect.fX + 16.0f;
-		*pY = tRect.fY + 16.0f;
-	}
-}
 
-static int __uiDesignHandleDesignShortcut(ui_design_app_t* pApp, int iKey, uint32_t iModifiers, uint32_t* pResult)
-{
-	int iRet;
-	ui_design_command_t iCommand;
 
-	if ( !__uiDesignCanHandleDesignShortcut(pApp) ) return XUI_OK;
-	iRet = XUI_OK;
-	iCommand = UI_DESIGN_COMMAND_NONE;
-	if ( (iModifiers & XUI_MOD_CTRL) != 0u && (iModifiers & XUI_MOD_ALT) == 0u ) {
-		switch ( iKey ) {
-		case 'A':
-			iCommand = UI_DESIGN_COMMAND_EDIT_SELECT_ALL;
-			break;
-		case 'C':
-			iCommand = UI_DESIGN_COMMAND_EDIT_COPY;
-			break;
-		case 'D':
-			iCommand = UI_DESIGN_COMMAND_EDIT_DUPLICATE;
-			break;
-		case 'X':
-			iCommand = UI_DESIGN_COMMAND_EDIT_CUT;
-			break;
-		case 'V':
-			iCommand = UI_DESIGN_COMMAND_EDIT_PASTE;
-			break;
-		case 'Y':
-			iCommand = UI_DESIGN_COMMAND_EDIT_REDO;
-			break;
-		case 'Z':
-			iCommand = UI_DESIGN_COMMAND_EDIT_UNDO;
-			break;
-		case 'N':
-			iCommand = UI_DESIGN_COMMAND_FILE_NEW;
-			break;
-		case 'O':
-			iCommand = UI_DESIGN_COMMAND_FILE_OPEN;
-			break;
-		case 'S':
-			iCommand = ((iModifiers & XUI_MOD_SHIFT) != 0u) ? UI_DESIGN_COMMAND_FILE_SAVE_AS : UI_DESIGN_COMMAND_FILE_SAVE;
-			break;
-		default:
-			return XUI_OK;
-		}
-		if ( iCommand != UI_DESIGN_COMMAND_NONE && uiDesignAppCanExecuteCommand(pApp, iCommand) ) iRet = uiDesignAppExecuteCommand(pApp, iCommand);
-		if ( iRet == XUI_OK && pResult != NULL ) *pResult |= XUI_INPUT_RESULT_CONSUMED;
-		return iRet;
-	}
-	if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u && iKey == XUI_KEY_DELETE && uiDesignAppCanExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_DELETE) ) {
-		iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_DELETE);
-		if ( iRet == XUI_OK && pResult != NULL ) *pResult |= XUI_INPUT_RESULT_CONSUMED;
-	}
-	return iRet;
-}
 
-static int __uiDesignSendKeys(ui_design_app_t* pApp)
-{
-	static const int arrKeys[] = {
-		'A',
-		'C',
-		'D',
-		'N',
-		'O',
-		'S',
-		'V',
-		'X',
-		'Y',
-		'Z',
-		XGE_KEY_ENTER,
-		XGE_KEY_TAB,
-		XGE_KEY_SPACE,
-		XGE_KEY_BACKSPACE,
-		XGE_KEY_DELETE,
-		XGE_KEY_LEFT,
-		XGE_KEY_RIGHT,
-		XGE_KEY_UP,
-		XGE_KEY_DOWN,
-		XGE_KEY_PAGE_UP,
-		XGE_KEY_PAGE_DOWN,
-		XGE_KEY_HOME,
-		XGE_KEY_END,
-		XGE_KEY_ESCAPE
-	};
-	uint32_t iModifiers;
-	uint32_t iResult;
-	uint32_t iText;
-	int iKey;
-	int iRet;
-	int i;
 
-	iModifiers = __uiDesignReadModifiers();
-	iRet = xuiInputSetModifiers(pApp->pContext, iModifiers);
-	if ( iRet != XUI_OK ) return iRet;
-	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
-		iKey = __uiDesignMapKey(arrKeys[i]);
-		if ( iKey == 0 ) iKey = arrKeys[i];
-		if ( xgeKeyPressed(arrKeys[i]) ) {
-			iResult = 0u;
-			iRet = xuiInputKeyDownEx(pApp->pContext, iKey, iModifiers, &iResult);
-			if ( iRet != XUI_OK ) return iRet;
-			if ( !pApp->bPreviewRunner && (iResult & XUI_INPUT_RESULT_CONSUMED) == 0u ) {
-				iRet = __uiDesignHandleDesignShortcut(pApp, iKey, iModifiers, &iResult);
-				if ( iRet != XUI_OK ) return iRet;
-			}
-			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(arrKeys[i]);
-			if ( arrKeys[i] == XGE_KEY_ESCAPE && (iResult & XUI_INPUT_RESULT_CONSUMED) == 0u && pApp->iMaxFrames <= 0 ) xgeQuit();
-		}
-		if ( xgeKeyReleased(arrKeys[i]) ) {
-			iResult = 0u;
-			iRet = xuiInputKeyUpEx(pApp->pContext, iKey, iModifiers, &iResult);
-			if ( iRet != XUI_OK ) return iRet;
-			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(arrKeys[i]);
-		}
-	}
-	while ( (iText = xgeTextGet()) != 0 ) {
-		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
-			iRet = xuiInputTextEx(pApp->pContext, iText, NULL);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	return XUI_OK;
-}
+
+
 
 static int __uiDesignHandleInput(ui_design_app_t* pApp)
 {
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	iButtons = __uiDesignReadButtons();
-	if ( !pApp->bHasMouse || pApp->fLastMouseX != fX || pApp->fLastMouseY != fY || pApp->iLastButtons != iButtons ) {
-		iRet = xuiInputPointerMove(pApp->pContext, fX, fY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pApp->pContext, fX, fY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pApp->iLastButtons;
-	iReleased = pApp->iLastButtons & ~iButtons;
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pApp->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerDown(pApp->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerDown(pApp->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pApp->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerUp(pApp->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerUp(pApp->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iRet = __uiDesignSendKeys(pApp);
-	if ( iRet != XUI_OK ) return iRet;
+	xgeMouseGet(&pApp->fLastMouseX, &pApp->fLastMouseY);
 	pApp->bHasMouse = 1;
-	pApp->fLastMouseX = fX;
-	pApp->fLastMouseY = fY;
-	pApp->iLastButtons = iButtons;
-	return XUI_OK;
+	return xuiProxyXgePumpInput(pApp->pContext);
 }
 
 static int __uiDesignFrameFail(const char* sStage, int iRet)
@@ -10746,7 +11128,6 @@ static int __uiDesignFrameFail(const char* sStage, int iRet)
 
 static void __uiDesignRunChecks(ui_design_app_t* pApp)
 {
-	xui_dock_pane_info_t tPane;
 	float fScrollMin;
 	float fScrollMax;
 	float fScrollPage;
@@ -10769,7 +11150,9 @@ static void __uiDesignRunChecks(ui_design_app_t* pApp)
 	pApp->bCreateOK = pApp->bCreateOK && (pApp->pToolsMenu != NULL) && (pApp->pHelpMenu != NULL);
 	pApp->bCreateOK = pApp->bCreateOK && (pApp->pToolbar != NULL) && (xuiToolbarGetItemCount(pApp->pToolbar) >= 18);
 	pApp->bCreateOK = pApp->bCreateOK && (pApp->pStatusBar != NULL) && (xuiStatusBarGetItemCount(pApp->pStatusBar) >= 3);
-	pApp->bLayoutOK = (xuiDockPanelGetPaneInfo(pApp->pDock, pApp->iCanvasPane, &tPane) == XUI_OK) && (tPane.tClientRect.fW > 200.0f) && (tPane.tClientRect.fH > 200.0f);
+	/* Check actual document geometry, not only the dock container. */
+	pApp->bLayoutOK = xuiWidgetGetWorldRect(pApp->pCanvas).fW > 200 &&
+		xuiWidgetGetWorldRect(pApp->pCanvas).fH > 200 && xuiWidgetGetWorldRect(pApp->pDocumentTabs).fH >= 34;
 	bToolboxScrollOK = 1;
 	if ( pApp->bExercise ) {
 		bToolboxScrollOK = 0;
@@ -10790,14 +11173,14 @@ static void __uiDesignRunChecks(ui_design_app_t* pApp)
 	}
 	pApp->bLayoutOK = pApp->bLayoutOK && bToolboxScrollOK;
 	bWidgetsOK = 1;
-	for ( i = 0; i < pApp->tModel.iNodeCount; i++ ) {
-		if ( pApp->tModel.arrNodes[i].pWidget == NULL ) {
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; i++ ) {
+		if ( pApp->pSession->tModel.arrNodes[i].pWidget == NULL ) {
 			bWidgetsOK = 0;
 			break;
 		}
 	}
-	pApp->bModelOK = pApp->bExercise ? (pApp->tModel.iNodeCount >= 3 && pApp->tModel.iSelectedId > 0 && bWidgetsOK) : 1;
-	pApp->bPaintOK = pApp->tModel.iRevision > 0u;
+	pApp->bModelOK = pApp->bExercise ? (pApp->pSession->tModel.iNodeCount >= 3 && pApp->pSession->tModel.iSelectedId > 0 && bWidgetsOK) : 1;
+	pApp->bPaintOK = pApp->pSession->tModel.iRevision > 0u;
 }
 
 static int __uiDesignPreviewFrame(ui_design_app_t* pApp)
@@ -10843,7 +11226,7 @@ static int __uiDesignPreviewFrame(ui_design_app_t* pApp)
 		(void)xuiGetRenderStats(pApp->pContext, &tStats);
 		printf("xui_uidesign preview-summary frames=%d nodes=%d caches=%d/%d\n",
 			pApp->iFrame,
-			pApp->tModel.iNodeCount,
+			pApp->pSession->tModel.iNodeCount,
 			tStats.iUpdatedCaches,
 			tStats.iDrawnCaches);
 		xgeQuit();
@@ -10879,7 +11262,16 @@ static int __uiDesignFrame(void* pUser)
 	if ( iRet != XUI_OK ) return __uiDesignFrameFail("layout", iRet);
 	iRet = xuiUpdate(pApp->pContext, xgeGetDelta());
 	if ( iRet != XUI_OK ) return __uiDesignFrameFail("update", iRet);
-	__uiDesignRunChecks(pApp);
+	iRet = uiDesignWorkbenchTick(pApp);
+	if ( iRet != XUI_OK ) return __uiDesignFrameFail("workbench", iRet);
+	if ( pApp->bWorkbenchExercise ) {
+		iRet = __uiDesignExerciseWorkbench(pApp);
+		if ( iRet != XUI_OK ) return __uiDesignFrameFail("workbench-test", iRet);
+		pApp->bWorkbenchExercise = 0;
+		iRet = xuiLayout(pApp->pContext);
+		if ( iRet != XUI_OK ) return __uiDesignFrameFail("workbench-layout", iRet);
+	}
+	if ( pApp->iFrame == 0 || pApp->iMaxFrames > 0 || pApp->fMaxSeconds > 0 ) __uiDesignRunChecks(pApp);
 	iRet = pApp->tProxy.surfaceClear(&pApp->tProxy, pApp->pTarget, XUI_COLOR_RGBA(229, 236, 245, 255));
 	if ( iRet != XUI_OK ) return __uiDesignFrameFail("surfaceClear", iRet);
 	tFull = (xui_rect_i_t){0, 0, iWidth, iHeight};
@@ -10902,10 +11294,12 @@ static int __uiDesignFrame(void* pUser)
 			pApp->bLayoutOK,
 			pApp->bModelOK,
 			pApp->bPaintOK,
-			pApp->tModel.iNodeCount,
-			pApp->tModel.iSelectedId,
+			pApp->pSession->tModel.iNodeCount,
+			pApp->pSession->tModel.iSelectedId,
 			tStats.iUpdatedCaches,
 			tStats.iDrawnCaches);
+		iRet = uiDesignWorkbenchScreenshot(pApp);
+		if ( iRet != XUI_OK ) return iRet;
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -10933,16 +11327,28 @@ int main(int argc, char** argv)
 		free(pApp);
 		return 1;
 	}
+	if ( pApp->bGenerate ) {
+		iRet = __uiDesignRunGenerate(pApp);
+		if ( iRet != XUI_OK ) printf("xui_uidesign: code generation failed: %d\n", iRet);
+		free(pApp);
+		return iRet == XUI_OK ? 0 : 1;
+	}
+	pApp->pSession = uiDesignSessionCreate(++pApp->iNextSessionId);
+	if ( pApp->pSession == NULL ) { free(pApp); return 1; }
+	pApp->arrSessions[pApp->iSessionCount++] = pApp->pSession;
+	pApp->iPendingTab = pApp->iPendingCloseTab = -1;
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iWidth = __uiDesignAppSurfaceWidth(pApp);
 	tDesc.iHeight = __uiDesignAppSurfaceHeight(pApp);
 	tDesc.sTitle = pApp->bPreviewRunner ? "XUI UI Preview" : "XUI UI Design";
 	tDesc.iFlags = XGE_INIT_WINDOW | XGE_INIT_VSYNC;
+	if ( !pApp->bPreviewRunner && pApp->iMaxFrames <= 0 ) tDesc.iFlags |= XGE_INIT_ON_DEMAND;
 	tDesc.iRunMode = XGE_RUN_GAME_LOOP;
 	tDesc.iTargetFPS = 60;
 	iRet = xgeInit(&tDesc);
 	if ( iRet != XGE_OK ) {
 		printf("xui_uidesign: xgeInit failed: %d\n", iRet);
+		uiDesignSessionDestroy(pApp->pSession);
 		free(pApp);
 		return 1;
 	}
