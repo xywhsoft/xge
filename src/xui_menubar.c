@@ -261,7 +261,7 @@ static int __xuiMenuBarLayoutItems(xui_widget pWidget, xui_menubar_data_t* pData
 		tText = __xuiMenuBarMeasureText(pWidget, pResolved->pFont, sDisplay);
 		fW = tText.fX + pResolved->tMetrics.fItemPaddingX * 2.0f;
 		if ( fW < 20.0f ) fW = 20.0f;
-		pData->arrItems[i].tRect = xuiInternalSnapRect((xui_rect_t){fX, fY, fW, fH});
+		pData->arrItems[i].tRect = xuiInternalRectFromFloatNearest(fX, fY, fW, fH);
 		fX += fW + pResolved->tMetrics.fItemGap;
 	}
 	if ( pMeasured != NULL ) {
@@ -591,9 +591,8 @@ static int __xuiMenuBarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
-		tText = tItem;
-		tText.fX += tResolved.tMetrics.fItemPaddingX;
-		tText.fW -= tResolved.tMetrics.fItemPaddingX * 2.0f;
+		tText = xuiInternalRectFromFloatNearest(tItem.fX + tResolved.tMetrics.fItemPaddingX,
+			tItem.fY, tItem.fW - tResolved.tMetrics.fItemPaddingX * 2.0f, tItem.fH);
 		(void)__xuiMenuBarTextToDisplay(pData->arrItems[i].sText, sDisplay, (int)sizeof(sDisplay), NULL, NULL);
 		if ( (tResolved.pFont != NULL) && (pProxy->drawText != NULL) && (tText.fW > 0.0f) ) {
 			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sDisplay, tText, iText,
