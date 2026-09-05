@@ -15,6 +15,9 @@
 | --- | --- | --- |
 | P0-1 | 公共操作生命周期、回调中延迟销毁、热键快照 | `de48027` |
 | P0-1 补查 | TreeView adapter 原子刷新、拒绝递归重绑、回调销毁和变更后中止旧事务 | `90ea737` |
+| P0-1 表格补查 | TableView provider/count/cell/merge/formatter/render 回调重入、重绑和销毁后中止旧事务 | `a4c065a` |
+| P0-1 渲染补查 | 渲染回调销毁或替换根节点后中止失效访问，活动 draw 结束后才释放 surface | `c5dcc67` |
+| 析构补查 | TextEdit 不再重复销毁已由控件树释放的滚动条子控件 | `a6ea209` |
 | P1-1 | Bounds/Visible/Enabled 状态事件事务与去重 | `48e6d65` |
 | P1-2/P1-3 | 子树失效取消事件、祖先有效状态、焦点和 IME 清理 | `755cfb7` |
 | P1-4 | 统一分层绘制和反向命中、子树缓存排序 | `aa6c2bf`、`92230b0` |
@@ -41,7 +44,9 @@
 | P2-3 | Chart/Breadcrumb 键盘交互，保留原鼠标行为 | `744412a` |
 | P2-4 | MessageList 字素边界命中和行内 caret 索引 | `e905f7e` |
 | P2-5 | MessageList 持久布局、增量失效和可见范围索引 | `7c4de78` |
+| P2-4/P2-7 集成 | MessageList 使用显示行绘制，零宽字符、SHY 连字符、合字命中和复制保持原文偏移 | `f6c3101` |
 | P2-8 | TreeView ID/邻接/可见索引，消除全树平方扫描 | `cd43175` |
+| P2-10 基础语义 | 常规控件角色/状态/动作、密码保护、provider 生命周期及延迟合并通知 | `04f346a` |
 | P2-11 | TILED/DISPLAY_LIST 明确返回 unsupported | `d918a52` |
 | 缓存补查 | 子树越界裁剪、半透明重复合成 | `4d48550` |
 | 缓存补查 | SELF/SUBTREE/AUTO 内容策略切换和旧画面失效 | `12f996f` |
@@ -52,23 +57,29 @@
 
 | 项目 | 已验证结果 | 尚未完成的部分 |
 | --- | --- | --- |
-| P2-6 RichEdit 第一阶段 `dc27085` | 10000 段可视区扫描从约 193 万次 fragment 读取降至 8877 次，暖态不重复 shaping | 首帧/宽度变化仍全量布局；惰性段落、稳定估算高度和离屏 widget 尚在实施 |
-| P2-7 共享文字索引 `efed5eb` | 65536 字符规模和随机参考实现对照通过；range/next 使用前缀与索引，空白处理线性 | Unicode 断行规则独立实施；不是完整 bidi 或 shaping 引擎替换 |
+| P2-6 RichEdit `dc27085`、`88eacd6` | 10000 段暖态 fragment 读取从约 193 万次降至 8877 次；惰性阶段首帧 116 段、resize 72 段，暖态布局/索引重建/shaping 均为 0；首帧私有容量 1449784 B | 文档和宽度变化允许 O(N) 轻量索引；超长单段、负段落间距、重复 widget 引用和显式全局 fragment 枚举仍可能全量布局 |
+| P2-7 共享文字索引 `efed5eb`、`2d0402c` | Unicode 逻辑断行/字素保护、显示投影后 shaping、原文偏移映射；range/next 前缀索引、线性预处理及 O(B+C log C) 换行预算通过 | 固定上游 Unicode 数据版本；1 个显式验证的上游断行例外；不替代完整 bidi、跨行 shaping 或语言词典断词 |
 | P2-9 Terminal 紧凑历史 `26db525` | 4 MiB 输入、20000 行历史，历史/双屏/队列结构容量从 51982576 B 降至 10624720 B；缩放/查找/复制后为 12291960 B | 宽度变化仍需重建历史 view 索引；尚非完全增量 reflow |
 
-Terminal 数字是结构容量模型，不是进程 RSS；不含 allocator 额外开销、代理纹理/字体和调用者缓冲。
+以上内存数字是结构容量模型，不是进程 RSS；不含 allocator 额外开销、代理纹理/字体和调用者缓冲。RichEdit 还不含文档与共享 flow/proxy 容量。
 
 ## 进行中的工作
 
-- P2-6：RichEdit 可视区惰性排版、DPI 缓存和内嵌 widget 的可视区处理。
-- P2-7：基于成熟 Unicode 数据与算法的断行规则，以及 MessageList 的显示文本与原始偏移映射。
-- P2-10：常规控件的默认可访问性语义、动作和通知。
-- P0-1 补查：TableView provider 回调销毁、重绑及旧事务中止。
+- P2-7 集成：TextEdit 的共享显示布局、源偏移几何及独立 IME 布局；Label/Hyperlink/MsgBox/MsgTip/Toast 的显示行绘制。
+- 所有本轮集成后的全量回归与主线 DLL 重建。
 
 ## 验证记录
 
 - 主线 `21c2686`：`test_xui/run_all_tests.bat`，126 组通过，0 失败。
 - 对应主线 `bdea276` 的隔离集成版本：`test_xui/run_all_tests.bat`，136 组通过，0 失败，没有失败重试；后续提交继续单独验证。
+- 对应主线 `5c4822d` 的隔离集成版本：`test_xui/run_all_tests.bat`，140 组通过，0 失败，没有失败重试。
+- TableView provider：完整矩阵 996 cases / 11335 checks 通过，包含此前公共层根销毁崩溃的全部 RENDER 组合；原有表格/布局/缓存/生命周期测试与 2240 张原生像素联合回归通过。
+- 公共渲染生命周期：2092 项 Windows 与 ASan/UBSan 检查通过，覆盖 SELF/SUBTREE、多状态缓存、普通/overlay 根、销毁控件/父级/根/上下文、替换根及销毁后继；校验 drawEnd 先于 surfaceDestroy。
+- TextEdit 析构：7 类 Windows/ASan/UBSan 回归通过，包含直接销毁、控件作为根、回调销毁、滚动后销毁和 32 次重复创建销毁。
+- 基础可访问性：62 个 Windows 与 ASan/UBSan 用例全部通过；包括 provider 重入/替换/销毁、密码、readonly、modal、旧节点结构、事件合并及循环通知；原有 20 组相关回归通过。
+- RichEdit：原始 flow 独立参考的 14620 次几何、4300 次光标、4050 次命中比较一致，另有 81 项表格共享边、编辑器和可访问性边界检查；10000 个内嵌 widget 首帧 39 次布局、22 次排列，离屏焦点/IME/多指针捕获保留。
+- Unicode：58 项功能夹具通过；UAX14 15.0 为 7653 项通过、1 项精确记录的上游例外，UAX29 15.1 为 1187 项全部通过；构造与 DPI 失败重试、至百万 cluster 的操作数预算均通过。
+- MessageList 显示集成：14 类夹具覆盖代理 shaping、fallback 和 DPI；786432 字节冷态映射 1114112 次操作，32 次暖态命中 shaping/measure/display 重建为 0；32769 行深处命中仅解码 3 个原文 scalar。
 - TreeView adapter 补查：16 类 callback 场景通过，另通过原有 TreeView、65536 节点规模、公共回调生命周期和输入测试。
 - 容器像素修复：Window 955、SplitLayout 320、DockPanel 1688 项新增检查通过；联合验证原有窗口/停靠/分隔/布局/布局代际/缓存/滚动/弹层/复合焦点/TreeView adapter 测试及 960 张原生像素比对。
 - 基础控件像素修复：五组新回归分别 4960/186170/18937/31789/73970 项检查通过，九个控件原有测试及像素几何、弹层、PropertyGrid、callback lifetime、复合焦点、缓存调度联合回归通过；960 张原生像素再次比对通过。
