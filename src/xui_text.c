@@ -11,6 +11,8 @@
 struct xui_text_layout_t {
 	uint32_t iMagic;
 	xui_context pContext;
+	uint32_t iDpiGeneration;
+	int bRefreshing;
 	xui_text_layout_desc_t tDesc;
 	xui_font_metrics_t tMetrics;
 	xui_text_shape_t tShape;
@@ -79,28 +81,34 @@ static int __xuiTextDescValid(const xui_text_layout_desc_t* pDesc)
 	return 1;
 }
 
-static void __xuiTextLayoutClear(xui_text_layout pLayout)
+static void __xuiTextLayoutClearGeometry(xui_text_layout pLayout)
 {
 	xuiTextShapeFree(&pLayout->tShape);
 	xrtFree(pLayout->pClusterAdvances);
 	pLayout->pClusterAdvances = NULL;
 	pLayout->iTrimStart = pLayout->iTrimEnd = 0;
 	pLayout->iSkipStart = pLayout->iSkipEnd = 0;
-	if ( pLayout->sText != NULL ) {
-		xrtFree(pLayout->sText);
-		pLayout->sText = NULL;
-	}
 	if ( pLayout->pLines != NULL ) {
 		xrtFree(pLayout->pLines);
 		pLayout->pLines = NULL;
 	}
-	pLayout->iTextSize = 0;
+	pLayout->iDpiGeneration = 0;
 	pLayout->iLineCount = 0;
 	pLayout->iLineCapacity = 0;
 	pLayout->tSize.fX = 0.0f;
 	pLayout->tSize.fY = 0.0f;
 	pLayout->bTruncated = 0;
 	pLayout->fNextY = 0.0f;
+}
+
+static void __xuiTextLayoutClear(xui_text_layout pLayout)
+{
+	__xuiTextLayoutClearGeometry(pLayout);
+	if ( pLayout->sText != NULL ) {
+		xrtFree(pLayout->sText);
+		pLayout->sText = NULL;
+	}
+	pLayout->iTextSize = 0;
 }
 
 static int __xuiTextLineReserve(xui_text_layout pLayout, int iCapacity)
@@ -669,6 +677,29 @@ XUI_API void xuiTextLayoutDestroy(xui_text_layout pLayout)
 	xrtFree(pLayout);
 }
 
+static int __xuiTextLayoutCompute(xui_text_layout pLayout, xui_proxy pProxy)
+{
+	uint32_t iDpiGeneration = pLayout->pContext->iDpiGeneration;
+	int iRet;
+
+	iRet = pProxy->fontGetMetrics(pProxy, pLayout->tDesc.pFont, &pLayout->tMetrics);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pLayout->tMetrics.fLineHeight <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiTextShape(pLayout->pContext, pLayout->tDesc.pFont, pLayout->sText,
+		pLayout->iTextSize, XUI_TEXT_SHAPE_DEFAULT, &pLayout->tShape);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pLayout->tShape.fLineHeight > 0.0f ) {
+		pLayout->tMetrics.fAscent = pLayout->tShape.fAscent;
+		pLayout->tMetrics.fDescent = pLayout->tShape.fDescent;
+		pLayout->tMetrics.fLineHeight = pLayout->tShape.fLineHeight;
+	}
+	iRet = __xuiTextLayoutBuild(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pLayout->pContext->iDpiGeneration != iDpiGeneration ) return XUI_ERROR_INVALID_STATE;
+	pLayout->iDpiGeneration = iDpiGeneration;
+	return XUI_OK;
+}
+
 XUI_API int xuiTextLayoutReset(xui_text_layout pLayout, const xui_text_layout_desc_t* pDesc)
 {
 	xui_proxy pProxy;
@@ -678,6 +709,7 @@ XUI_API int xuiTextLayoutReset(xui_text_layout pLayout, const xui_text_layout_de
 	if ( !__xuiTextLayoutValid(pLayout) || !__xuiTextDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pLayout->bRefreshing ) return XUI_ERROR_INVALID_STATE;
 	if ( !xuiInternalContextIsValid(pLayout->pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -699,22 +731,45 @@ XUI_API int xuiTextLayoutReset(xui_text_layout pLayout, const xui_text_layout_de
 	}
 	memcpy(pLayout->sText, pDesc->sText, (size_t)iTextSize);
 	pLayout->sText[iTextSize] = 0;
-	iRet = pProxy->fontGetMetrics(pProxy, pLayout->tDesc.pFont, &pLayout->tMetrics);
+	pLayout->bRefreshing = 1;
+	iRet = __xuiTextLayoutCompute(pLayout, pProxy);
+	pLayout->bRefreshing = 0;
+	return iRet;
+}
+
+static int __xuiTextLayoutEnsureDpi(xui_text_layout pLayout)
+{
+	struct xui_text_layout_t tNext;
+	xui_proxy pProxy;
+	int iRet;
+
+	if ( !__xuiTextLayoutValid(pLayout) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pLayout->bRefreshing ) return XUI_ERROR_INVALID_STATE;
+	if ( !xuiInternalContextIsValid(pLayout->pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pLayout->iDpiGeneration == pLayout->pContext->iDpiGeneration ) return XUI_OK;
+	if ( pLayout->sText == NULL ) return XUI_ERROR_INVALID_STATE;
+	pProxy = xuiInternalContextGetProxy(pLayout->pContext);
+	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+
+	/* Keep borrowed GetText pointers stable and publish only a complete rebuild. */
+	memset(&tNext, 0, sizeof(tNext));
+	tNext.iMagic = pLayout->iMagic;
+	tNext.pContext = pLayout->pContext;
+	tNext.tDesc = pLayout->tDesc;
+	tNext.sText = pLayout->sText;
+	tNext.iTextSize = pLayout->iTextSize;
+	tNext.pScratch = pLayout->pScratch;
+	tNext.iScratchCapacity = pLayout->iScratchCapacity;
+	pLayout->bRefreshing = 1;
+	iRet = __xuiTextLayoutCompute(&tNext, pProxy);
+	pLayout->bRefreshing = 0;
 	if ( iRet != XUI_OK ) {
+		__xuiTextLayoutClearGeometry(&tNext);
 		return iRet;
 	}
-	if ( pLayout->tMetrics.fLineHeight <= 0.0f ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = xuiTextShape(pLayout->pContext, pLayout->tDesc.pFont, pLayout->sText,
-		pLayout->iTextSize, XUI_TEXT_SHAPE_DEFAULT, &pLayout->tShape);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( pLayout->tShape.fLineHeight > 0.0f ) {
-		pLayout->tMetrics.fAscent = pLayout->tShape.fAscent;
-		pLayout->tMetrics.fDescent = pLayout->tShape.fDescent;
-		pLayout->tMetrics.fLineHeight = pLayout->tShape.fLineHeight;
-	}
-	return __xuiTextLayoutBuild(pLayout);
+	__xuiTextLayoutClearGeometry(pLayout);
+	*pLayout = tNext;
+	return XUI_OK;
 }
 
 XUI_API xui_vec2_t xuiTextLayoutGetSize(xui_text_layout pLayout)
@@ -723,7 +778,7 @@ XUI_API xui_vec2_t xuiTextLayoutGetSize(xui_text_layout pLayout)
 
 	tSize.fX = 0.0f;
 	tSize.fY = 0.0f;
-	if ( __xuiTextLayoutValid(pLayout) ) {
+	if ( __xuiTextLayoutEnsureDpi(pLayout) == XUI_OK ) {
 		tSize = pLayout->tSize;
 	}
 	return tSize;
@@ -731,14 +786,18 @@ XUI_API xui_vec2_t xuiTextLayoutGetSize(xui_text_layout pLayout)
 
 XUI_API int xuiTextLayoutGetLineCount(xui_text_layout pLayout)
 {
-	return __xuiTextLayoutValid(pLayout) ? pLayout->iLineCount : 0;
+	return __xuiTextLayoutEnsureDpi(pLayout) == XUI_OK ? pLayout->iLineCount : 0;
 }
 
 XUI_API int xuiTextLayoutGetLine(xui_text_layout pLayout, int iIndex, xui_text_line_t* pLine)
 {
-	if ( !__xuiTextLayoutValid(pLayout) || (pLine == NULL) || (iIndex < 0) || (iIndex >= pLayout->iLineCount) ) {
+	int iRet;
+	if ( !__xuiTextLayoutValid(pLayout) || (pLine == NULL) || (iIndex < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiTextLayoutEnsureDpi(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iIndex >= pLayout->iLineCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pLine = pLayout->pLines[iIndex];
 	return XUI_OK;
 }
@@ -748,12 +807,13 @@ XUI_API const char* xuiTextLayoutGetText(xui_text_layout pLayout)
 	if ( !__xuiTextLayoutValid(pLayout) ) {
 		return NULL;
 	}
+	(void)__xuiTextLayoutEnsureDpi(pLayout);
 	return pLayout->sText;
 }
 
 XUI_API int xuiTextLayoutGetTruncated(xui_text_layout pLayout)
 {
-	return __xuiTextLayoutValid(pLayout) ? pLayout->bTruncated : 0;
+	return __xuiTextLayoutEnsureDpi(pLayout) == XUI_OK ? pLayout->bTruncated : 0;
 }
 
 XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
@@ -771,6 +831,8 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 	if ( !__xuiTextLayoutValid(pLayout) || (pTarget == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiTextLayoutEnsureDpi(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
 	pProxy = xuiInternalContextGetProxy(pLayout->pContext);
 	if ( pProxy == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
