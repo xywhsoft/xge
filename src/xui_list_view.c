@@ -48,7 +48,8 @@ typedef struct xui_list_view_data_t {
 	uint32_t iScrollbarActiveColor;
 	uint32_t iScrollbarFocusColor;
 	uint32_t iScrollbarDisabledColor;
-	uint32_t iViewportStyleHash;
+	uint32_t iPreparedStyleHash;
+	int bPaintStylePrepared;
 } xui_list_view_data_t;
 
 static xui_list_view_data_t* __xuiListViewGetData(xui_widget pWidget);
@@ -1035,56 +1036,19 @@ static int __xuiListViewDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw,
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
-/* The cache walk is child-first. Refresh already prepared SELF caches here so
- * owner-only style changes are visible in the same frame, without layout work. */
-static int __xuiListViewRefreshChildCache(xui_widget pChild)
+static int __xuiListViewPreparePaint(xui_widget pWidget)
 {
-	xui_widget_cache_render_proc onRender;
-	xui_cache_policy_t tPolicy;
-	xui_draw_context pDraw;
-	xui_proxy pProxy;
-	void* pUser;
-	uint32_t iState;
-	int iRet, iEndRet;
-	if ( !xuiInternalWidgetIsValid(pChild) || !xuiWidgetGetVisible(pChild) ||
-	     (xuiWidgetGetDirtyFlags(pChild) & XUI_WIDGET_DIRTY_CACHE) == 0 ) return XUI_OK;
-	tPolicy = xuiWidgetGetCachePolicy(pChild);
-	iState = xuiWidgetGetStateId(pChild);
-	if ( tPolicy.iPolicy != XUI_CACHE_POLICY_SELF ||
-	     xuiWidgetGetCacheSurface(pChild, iState) == NULL ) return XUI_OK;
-	(void)xuiWidgetGetCacheRenderCallback(pChild, &onRender, &pUser);
-	if ( onRender == NULL ) return XUI_OK;
-	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pChild));
-	iRet = xuiWidgetUpdateBegin(pChild, iState, XUI_WIDGET_UPDATE_CLEAR, tPolicy.iClearColor, &pDraw);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = onRender(pChild, pDraw, iState, pUser);
-	if ( !xuiInternalWidgetIsValid(pChild) || xuiInternalContextDestroyPending(pChild->pContext) ) {
-		(void)pProxy->drawEnd(pProxy, pDraw);
-		pChild->pActiveUpdateDraw = NULL;
-		pChild->pActiveUpdateSlot = NULL;
-		pChild->iActiveUpdateStateId = 0;
-		return XUI_OK;
-	}
-	iEndRet = xuiWidgetUpdateEnd(pChild, iState, pDraw);
-	if ( iRet == XUI_OK ) iRet = iEndRet;
-	if ( iRet == XUI_OK ) xuiWidgetClearDirty(pChild, XUI_WIDGET_DIRTY_CACHE);
-	return iRet;
-}
-
-static int __xuiListViewSyncPaint(xui_widget pWidget, xui_list_view_data_t* pData, const xui_list_view_data_t* pResolved)
-{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	xui_list_view_data_t tResolved;
 	int iRet;
-	iRet = xuiScrollFrameSetColors(pData->pFrame, pResolved->iTrackColor, pResolved->iThumbColor, pResolved->iScrollbarHoverColor, pResolved->iScrollbarActiveColor, pResolved->iScrollbarFocusColor, pResolved->iScrollbarDisabledColor);
+	if ( pData == NULL || pData->pFrame == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bPaintStylePrepared && pData->iPreparedStyleHash == xuiWidgetGetStyleHash(pWidget) ) return XUI_OK;
+	__xuiListViewResolve(pWidget, pData, &tResolved);
+	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( pData->iViewportStyleHash != xuiWidgetGetStyleHash(pWidget) ) {
-		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		iRet = __xuiListViewRefreshChildCache(pData->pViewport);
-		if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
-	}
-	iRet = __xuiListViewRefreshChildCache(xuiScrollFrameGetHScrollBarWidget(pData->pFrame));
-	if ( iRet == XUI_OK ) iRet = __xuiListViewRefreshChildCache(xuiScrollFrameGetVScrollBarWidget(pData->pFrame));
-	if ( iRet == XUI_OK ) iRet = __xuiListViewRefreshChildCache(pData->pFrame);
-	return iRet;
+	pData->iPreparedStyleHash = xuiWidgetGetStyleHash(pWidget);
+	pData->bPaintStylePrepared = 1;
+	return xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiListViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1111,8 +1075,6 @@ static int __xuiListViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	__xuiListViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pWidget);
-	iRet = __xuiListViewSyncPaint(pWidget, pData, &tResolved);
-	if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect = xuiInternalSnapRect(tRect);
@@ -1161,7 +1123,6 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	}
 	__xuiListViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pViewport);
-	pData->iViewportStyleHash = xuiWidgetGetStyleHash(pWidget);
 	fViewportW = __xuiListViewMaxFloat(0.0f, tRect.fW);
 	fViewportH = __xuiListViewMaxFloat(0.0f, tRect.fH);
 	tRect.fX = 0.0f;
@@ -1500,6 +1461,7 @@ XUI_API xui_widget_type xuiListViewGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiListViewRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiListViewPreparePaint;
 	return pType;
 }
 
