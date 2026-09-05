@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "emitters": [{
+    "name": "sparks",
+    "maxParticles": 256,
+    "rate": 0,
+    "loop": false,
+    "duration": 0.25,
+    "shape": 5,
+    "direction": -1.5707963,
+    "spread": 1.8,
+    "life": [0.25, 0.8],
+    "speed": [100, 260],
+    "size": [2, 5],
+    "gravity": [0, 400],
+    "colorMin": "#FFB344FF",
+    "colorMax": "#FFF5CCFF",
+    "alphaOverLife": {"interpolation": 0, "keys": [[0, 1], [1, 0]]},
+    "bursts": [[0, 80]]
+  }]
+}

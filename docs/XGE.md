@@ -40,6 +40,8 @@ int main(void) {
 
 ## 常用能力
 
+独立 CPU 粒子模拟、资源配置与批绘制参见 [2D 粒子系统](PARTICLES.md)，实际集成参见 [七个粒子场景](../examples/xge_particles/README.md)。
+
 | 需求 | 公开 API / 范例 |
 | --- | --- |
 | 绘制基础形状、精细路径和渐变 | `xgeShape*`、`xgeShapeEx*`；`examples/xge_shape*`。 |

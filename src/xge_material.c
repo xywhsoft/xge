@@ -548,32 +548,30 @@ static void __xgeDrawBuildVertices10(const xge_draw_t* pDraw, xge_texture pTextu
 	}
 }
 
-void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
+static int __xgeMaterialSubmit(const xge_material_t* pMaterial, xge_texture pTexture,
+	const float* pVertices, int iVertexCount, int bTriangles)
 {
-	float arrVertices[40];
 	xge_shader pShader;
-	xge_texture pTexture;
 	int iOldBlend;
 
-	if ( (pMaterial == NULL) || (pDraw == NULL) || (pMaterial->pShader == NULL) ) {
-		return;
+	if ( (pMaterial == NULL) || (pVertices == NULL) || (pMaterial->pShader == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pShader = pMaterial->pShader;
-	pTexture = pMaterial->pTexture ? pMaterial->pTexture : pDraw->pTexture;
 	if ( (pTexture == NULL) || (pTexture->iBackendId == 0) || (pShader->iProgram == 0) ) {
-		return;
+		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( (pMaterial->pTexture2 != NULL) && (pMaterial->pTexture2->iBackendId == 0) ) {
-		return;
+		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( (pMaterial->pTexture3 != NULL) && (pMaterial->pTexture3->iBackendId == 0) ) {
-		return;
+		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( g_xge.bSokolRunning == 0 ) {
-		return;
+		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( __xgeQuad3DRendererInit() != XGE_OK ) {
-		return;
+		return XGE_ERROR_GPU_FAILED;
 	}
 	if ( pMaterial->tPipeline.iBlend != XGE_MATERIAL_DEFAULT_BLEND ) {
 		iOldBlend = xgeBlendGet();
@@ -581,7 +579,6 @@ void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
 	} else {
 		iOldBlend = XGE_MATERIAL_DEFAULT_BLEND;
 	}
-	__xgeDrawBuildVertices10(pDraw, pTexture, arrVertices, pMaterial->iColor);
 	glUseProgram((GLuint)pShader->iProgram);
 	if ( pShader->iLocResolution >= 0 ) {
 		glUniform2f(pShader->iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
@@ -620,8 +617,9 @@ void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
 	glEnableVertexAttribArray(2);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	if (bTriangles) glBufferData(GL_ARRAY_BUFFER, (size_t)iVertexCount * 10u * sizeof(float), pVertices, GL_DYNAMIC_DRAW);
+	else glBufferSubData(GL_ARRAY_BUFFER, 0, (size_t)iVertexCount * 10u * sizeof(float), pVertices);
+	glDrawArrays(bTriangles ? GL_TRIANGLES : GL_TRIANGLE_STRIP, 0, iVertexCount);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	if ( pMaterial->pTexture2 != NULL ) {
@@ -640,4 +638,29 @@ void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
 		xgeBlendSet(iOldBlend);
 	}
 	__xgeFrameStatsAddDrawCall();
+	if (bTriangles) __xgeFrameStatsAddBatch();
+	return XGE_OK;
+}
+
+void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
+{
+	float vertices[40];
+	xge_texture texture;
+	if (!pMaterial || !pDraw || !pMaterial->pShader) return;
+	texture = pMaterial->pTexture ? pMaterial->pTexture : pDraw->pTexture;
+	if (!texture || texture->iWidth <= 0 || texture->iHeight <= 0) return;
+	__xgeDrawBuildVertices10(pDraw, texture, vertices, pMaterial->iColor);
+	(void)__xgeMaterialSubmit(pMaterial, texture, vertices, 4, 0);
+}
+
+int xgeSpriteBatchFlushMaterial(xge_sprite_batch batch, const xge_material_t* material)
+{
+	int result;
+	if (!material) return xgeSpriteBatchFlush(batch);
+	if (!batch || !batch->pVertices || !batch->pTexture) return XGE_ERROR_INVALID_ARGUMENT;
+	if (!batch->iCount) return XGE_OK;
+	if (material->pTexture && material->pTexture != batch->pTexture) return XGE_ERROR_INVALID_ARGUMENT;
+	result = __xgeMaterialSubmit(material, batch->pTexture, (const float*)batch->pVertices, batch->iCount * 6, 1);
+	if (result == XGE_OK) xgeSpriteBatchClear(batch);
+	return result;
 }

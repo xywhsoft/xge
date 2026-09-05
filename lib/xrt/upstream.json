@@ -1,0 +1,7 @@
+{
+  "source_commit": "9bfc3c0f82e91dacc93d654f27fc72a21f1e784f",
+  "source_worktree_dirty": true,
+  "source_snapshot_sha256": "3efd5c88af8f8a54bac39b74d3e60b3b9fe7e46c4acb286a6966944d0522d44e",
+  "header_sha256": "e677e0bc7fd3db3a0aa9732ebee1d33813e80c9cc281bee298f8c7679af6abaa",
+  "generation": "tools/amalgamate.py in isolated source snapshot"
+}

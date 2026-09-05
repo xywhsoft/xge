@@ -8934,6 +8934,7 @@ XUI_API int xuiWidgetSetLayoutPrepareCallback(xui_widget pWidget, xui_widget_lay
 XUI_API int xuiWidgetGetLayoutPrepareCallback(xui_widget pWidget, xui_widget_layout_prepare_proc* pPrepare, void** ppUser);
 XUI_API int xuiWidgetSetLayoutChildrenCallback(xui_widget pWidget, xui_widget_layout_children_proc onChildren, void* pUser);
 XUI_API int xuiWidgetGetLayoutChildrenCallback(xui_widget pWidget, xui_widget_layout_children_proc* pChildren, void** ppUser);
+/* Only from pParent's layout-children callback; tRect is parent-local. */
 XUI_API int xuiLayoutArrangeChild(xui_widget pParent, xui_widget pChild, xui_rect_t tRect);
 XUI_API int xuiWidgetSetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc onComplete, void* pUser);
 XUI_API int xuiWidgetGetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc* pComplete, void** ppUser);
@@ -8979,7 +8980,10 @@ XUI_API int xuiWidgetGetTableColumn(xui_widget pWidget, int iColumn, xui_table_t
 XUI_API int xuiWidgetSetTableCell(xui_widget pWidget, int iRow, int iColumn, int iRowSpan, int iColumnSpan);
 XUI_API int xuiWidgetGetTableCell(xui_widget pWidget, int* pRow, int* pColumn, int* pRowSpan, int* pColumnSpan);
 XUI_API int xuiWidgetMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasuredSize);
+/* Immediate root arrangement. Attached widgets must use xuiWidgetArrangeChild. */
 XUI_API int xuiWidgetArrange(xui_widget pWidget, xui_rect_t tRect);
+/* Immediate subtree arrangement outside layout-children callbacks, in parent-local pixels. */
+XUI_API int xuiWidgetArrangeChild(xui_widget pParent, xui_widget pChild, xui_rect_t tRect);
 XUI_API int xuiWidgetSetVisible(xui_widget pWidget, int bVisible);
 XUI_API int xuiWidgetGetVisible(xui_widget pWidget);
 XUI_API int xuiWidgetGetEffectiveVisible(xui_widget pWidget);

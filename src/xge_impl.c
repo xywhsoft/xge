@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include "xge_math2d.h"
 
 #if defined(__APPLE__)
 	#include <TargetConditionals.h>
@@ -208,6 +209,9 @@ typedef struct xge_context_t {
 	xge_desc_t objDesc;
 	xge_scene_proc procFrame;
 	void* pFrameUser;
+	xge_quit_request_proc procQuitRequest;
+	void* pQuitRequestUser;
+	int bQuitRequestDispatching;
 	int bRenderRequested;
 	int iOnDemandRenderBurst;
 	double fOnDemandRenderDeadline;
@@ -2130,6 +2134,10 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_QUIT_REQUESTED:
 			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iQuitEventCount++;
+			if ( !xgeRequestQuit() ) {
+				sapp_cancel_quit();
+				return;
+			}
 			g_xge.bRunning = 0;
 			break;
 
@@ -2255,6 +2263,10 @@ static void __xgeDragDropUnit(void);
 #include "xge_material.c"
 #include "xge_render_target.c"
 #include "xge_buffer.c"
+#include "xge_particle.c"
+#include "xge_particle_io.c"
+#include "xge_particle_resource.c"
+#include "xge_particle_render.c"
 #include "xge_async.c"
 #include "xge_input.c"
 #if defined(_WIN32) || defined(_WIN64)

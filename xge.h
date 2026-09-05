@@ -1579,6 +1579,12 @@ XGE_API void xgeUnit(void);
 XGE_API void xgeMemoryFree(void* pData);
 XGE_API int xgeRun(xge_scene_proc procFrame, void* pUser);
 XGE_API void xgeQuit(void);
+/* Native close and xgeRequestQuit call this on the UI thread. Return zero to
+ * veto/defer (for example, while an asynchronous save confirmation is open).
+ * xgeQuit remains unconditional and bypasses this callback. */
+typedef int (*xge_quit_request_proc)(void* pUser);
+XGE_API void xgeSetQuitRequestCallback(xge_quit_request_proc proc, void* pUser);
+XGE_API int xgeRequestQuit(void);
 XGE_API void xgeRenderRequest(void);
 /* Requests an on-demand frame after at most fDelaySeconds. Main-thread only. */
 XGE_API void xgeRenderRequestAfter(float fDelaySeconds);
@@ -1926,6 +1932,10 @@ XGE_API void xgeSpriteBatchFree(xge_sprite_batch pBatch);
 XGE_API void xgeSpriteBatchClear(xge_sprite_batch pBatch);
 XGE_API int xgeSpriteBatchAdd(xge_sprite_batch pBatch, const xge_draw_t* pDraw);
 XGE_API int xgeSpriteBatchFlush(xge_sprite_batch pBatch);
+/* Retarget only an empty batch; retained vertex storage is reused. */
+XGE_API int xgeSpriteBatchSetTexture(xge_sprite_batch pBatch, xge_texture pTexture);
+/* NULL material selects the default shader. Custom material tint is uColor. */
+XGE_API int xgeSpriteBatchFlushMaterial(xge_sprite_batch pBatch, const xge_material_t* pMaterial);
 XGE_API void xgeShapePoint(float fX, float fY, float fSize, uint32_t iColor);
 XGE_API void xgeShapePointPx(float fX, float fY, float fSize, uint32_t iColor);
 XGE_API void xgeShapeLine(float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor);
@@ -2330,6 +2340,198 @@ XGE_API int xgeGamepadButtonReleased(int iGamepad, uint32_t iButton);
 XGE_API float xgeGamepadAxis(int iGamepad, int iAxis);
 XGE_API int xgeGamepadSetConnected(int iGamepad, int bConnected);
 XGE_API int xgeGamepadSetState(int iGamepad, const xge_gamepad_state_t* pState);
+
+/* CPU 2D particles. Simulation needs no window, GPU, Sprite, XUI or animation player.
+ * All world operations are single-threaded; callbacks must not mutate the world.
+ * Descriptions are copied. Renderer resource bindings are separate from simulation.
+ * See docs/PARTICLES.md for units, time, ownership and capacity contracts. */
+#define XGE_PARTICLE_MAX_KEYS 8
+#define XGE_PARTICLE_MAX_BURSTS 16
+#define XGE_PARTICLE_MAX_EMITTERS 16
+#define XGE_PARTICLE_NO_EMITTER (-1)
+#define XGE_PARTICLE_CURVE_LINEAR 0
+#define XGE_PARTICLE_CURVE_STEP 1
+#define XGE_PARTICLE_CURVE_HERMITE 2
+#define XGE_PARTICLE_SHAPE_POINT 0
+#define XGE_PARTICLE_SHAPE_LINE 1
+#define XGE_PARTICLE_SHAPE_RECT 2
+#define XGE_PARTICLE_SHAPE_CIRCLE 3
+#define XGE_PARTICLE_SHAPE_RING 4
+#define XGE_PARTICLE_SHAPE_CONE 5
+#define XGE_PARTICLE_SPACE_WORLD 0
+#define XGE_PARTICLE_SPACE_LOCAL 1
+#define XGE_PARTICLE_PLAYING 0
+#define XGE_PARTICLE_PAUSED 1
+#define XGE_PARTICLE_DRAINING 2
+#define XGE_PARTICLE_FINISHED 3
+#define XGE_PARTICLE_EVENT_BIRTH 0
+#define XGE_PARTICLE_EVENT_DEATH 1
+#define XGE_PARTICLE_EVENT_COLLISION 2
+#define XGE_PARTICLE_EVENT_FINISHED 3
+#define XGE_PARTICLE_COLLISION_NONE 0
+#define XGE_PARTICLE_COLLISION_BOUNCE 1
+#define XGE_PARTICLE_COLLISION_KILL 2
+#define XGE_PARTICLE_CULL_DRAW 0
+#define XGE_PARTICLE_CULL_PAUSE 1
+#define XGE_PARTICLE_CULL_CLEAR 2
+
+typedef struct xge_particle_definition_t* xge_particle_definition;
+typedef struct xge_particle_world_t* xge_particle_world;
+typedef struct xge_particle_renderer_t* xge_particle_renderer;
+typedef uint64_t xge_particle_effect; /* World-scoped generational handle; zero invalid. */
+
+typedef struct xge_particle_range_t { float fMin, fMax; } xge_particle_range_t;
+typedef struct xge_particle_key_t {
+	float fTime, fValue, fInTangent, fOutTangent;
+} xge_particle_key_t;
+typedef struct xge_particle_curve_t {
+	int iCount, iInterpolation;
+	xge_particle_key_t arrKeys[XGE_PARTICLE_MAX_KEYS];
+} xge_particle_curve_t;
+typedef struct xge_particle_color_key_t { float fTime; uint32_t iColor; } xge_particle_color_key_t;
+typedef struct xge_particle_gradient_t {
+	int iCount;
+	xge_particle_color_key_t arrKeys[XGE_PARTICLE_MAX_KEYS];
+} xge_particle_gradient_t;
+typedef struct xge_particle_burst_t { float fTime; uint32_t iCount; } xge_particle_burst_t;
+typedef struct xge_particle_subemitter_t {
+	int iEmitter;
+	uint32_t iCount;
+	float fInheritVelocity;
+} xge_particle_subemitter_t;
+
+typedef struct xge_particle_emitter_t {
+	char sName[64], sTexture[128], sMaterial[64]; /* Logical resource names, not loaded by the CPU core. */
+	uint32_t iMaxParticles;
+	int bAutomatic, bLoop, iSpace, iShape;
+	float fDelay, fDuration, fRate, fRateOverDistance;
+	xge_vec2_t tOffset, tShapeSize;
+	float fRadius, fInnerRadius, fDirection, fSpread;
+	xge_particle_range_t tLife, tSpeed, tSize, tRotation, tAngularVelocity, tStartFrame;
+	uint32_t iColorMin, iColorMax;
+	xge_particle_curve_t tSizeOverLife, tSpeedOverLife, tAlphaOverLife;
+	xge_particle_gradient_t tColorOverLife;
+	xge_vec2_t tGravity;
+	float fDrag, fRadialAcceleration, fTangentialAcceleration, fInheritVelocity;
+	float fNoiseStrength, fNoiseFrequency, fNoiseScroll;
+	float fAspect, fStretch;
+	int bAlignVelocity, bScreenSpace, iBlend, iLayer, iOrder;
+	xge_rect_t tTextureRect; /* Pixel rectangle; zero width/height selects the whole texture. */
+	int iColumns, iRows;
+	float fFramesPerSecond; /* Zero fits the sheet to particle lifetime. */
+	int iCollision;
+	float fCollisionRadius, fRestitution, fFriction;
+	int iBurstCount;
+	xge_particle_burst_t arrBursts[XGE_PARTICLE_MAX_BURSTS];
+	xge_particle_subemitter_t arrSubEmitters[3]; /* Birth, death, collision; acyclic only. */
+} xge_particle_emitter_t;
+
+typedef struct xge_particle_transform_t {
+	xge_vec2_t tPosition, tScale;
+	float fRotation; /* Radians; scale components must be positive. */
+} xge_particle_transform_t;
+typedef struct xge_particle_parameters_t {
+	float fRateScale, fSpeedScale, fSizeScale, fTimeScale;
+	uint32_t iTint;
+} xge_particle_parameters_t;
+typedef struct xge_particle_play_t {
+	xge_particle_transform_t tTransform;
+	xge_particle_parameters_t tParameters;
+	uint64_t iSeed;
+	int bAutoRelease, iCullPolicy;
+} xge_particle_play_t;
+
+typedef struct xge_particle_hit_t {
+	xge_vec2_t tPosition, tNormal; /* Swept particle center and outward unit normal in world/screen space. */
+	float fFraction; /* [0,1] along the queried segment. */
+} xge_particle_hit_t;
+typedef int (*xge_particle_collision_proc)(xge_vec2_t tFrom, xge_vec2_t tTo,
+	float fRadius, xge_particle_hit_t* pHit, void* pUser);
+typedef struct xge_particle_world_desc_t {
+	uint32_t iMaxEffects, iMaxParticles, iMaxEvents, iMaxSpawnPerStep, iMaxSubsteps;
+	float fFixedStep;
+	xge_particle_collision_proc pCollision;
+	void* pCollisionUser;
+} xge_particle_world_desc_t;
+typedef struct xge_particle_event_t {
+	int iType, iEmitter;
+	xge_particle_effect iEffect;
+	uint64_t iParticle;
+	xge_vec2_t tPosition, tVelocity;
+} xge_particle_event_t;
+typedef struct xge_particle_snapshot_t {
+	xge_particle_effect iEffect;
+	xge_particle_definition pDefinition; /* Borrowed during Visit only. */
+	uint64_t iParticle;
+	int iEmitter;
+	xge_vec2_t tPosition, tVelocity, tSize;
+	float fAge, fLife, fRotation, fFrame;
+	uint32_t iColor;
+} xge_particle_snapshot_t;
+typedef int (*xge_particle_visit_proc)(const xge_particle_snapshot_t* pParticle, void* pUser);
+typedef struct xge_particle_stats_t {
+	uint32_t iActiveEffects, iCachedEffects, iLiveParticles, iPeakParticles, iPendingEvents;
+	uint64_t iSpawned, iDroppedParticles, iDroppedEvents, iCollisions, iSteps;
+	double fDroppedTime, fLastUpdateSeconds;
+} xge_particle_stats_t;
+
+XGE_API void xgeParticleEmitterInit(xge_particle_emitter_t* pEmitter);
+XGE_API void xgeParticleWorldDescInit(xge_particle_world_desc_t* pDesc);
+XGE_API void xgeParticlePlayInit(xge_particle_play_t* pPlay);
+XGE_API float xgeParticleCurveEval(const xge_particle_curve_t* pCurve, float fTime, float fDefault);
+XGE_API uint32_t xgeParticleGradientEval(const xge_particle_gradient_t* pGradient, float fTime, uint32_t iDefault);
+XGE_API int xgeParticleDefinitionCreate(xge_particle_definition* ppDefinition,
+	const xge_particle_emitter_t* pEmitters, int iCount);
+XGE_API void xgeParticleDefinitionAddRef(xge_particle_definition pDefinition);
+XGE_API void xgeParticleDefinitionFree(xge_particle_definition pDefinition);
+XGE_API int xgeParticleDefinitionCount(xge_particle_definition pDefinition);
+XGE_API int xgeParticleDefinitionGet(xge_particle_definition pDefinition, int iEmitter, xge_particle_emitter_t* pOut);
+/* JSON and XSON share schema version 1. Output is UTF-8, freed with xrtFree.
+ * Invalid input leaves *ppDefinition NULL. Error text is optional and bounded. */
+XGE_API int xgeParticleDefinitionParse(xge_particle_definition* ppDefinition, const char* sText,
+	size_t iSize, int bXson, char* sError, size_t iErrorSize);
+XGE_API int xgeParticleDefinitionLoad(xge_particle_definition* ppDefinition, const char* sURI,
+	int bXson, char* sError, size_t iErrorSize);
+XGE_API int xgeParticleDefinitionStringify(xge_particle_definition pDefinition, int bXson, char** ppText, size_t* pSize);
+XGE_API int xgeParticleWorldCreate(xge_particle_world* ppWorld, const xge_particle_world_desc_t* pDesc);
+XGE_API void xgeParticleWorldFree(xge_particle_world pWorld);
+/* Reserve caches inactive instances and their buffers; partial success is retained on OOM. */
+XGE_API int xgeParticleWorldReserve(xge_particle_world pWorld, xge_particle_definition pDefinition, uint32_t iCount);
+XGE_API int xgeParticlePlay(xge_particle_world pWorld, xge_particle_definition pDefinition,
+	const xge_particle_play_t* pPlay, xge_particle_effect* pEffect);
+XGE_API int xgeParticleRelease(xge_particle_world pWorld, xge_particle_effect iEffect);
+XGE_API int xgeParticleRestart(xge_particle_world pWorld, xge_particle_effect iEffect, uint64_t iSeed);
+XGE_API int xgeParticlePause(xge_particle_world pWorld, xge_particle_effect iEffect, int bPaused);
+XGE_API int xgeParticleStop(xge_particle_world pWorld, xge_particle_effect iEffect, int bClear);
+XGE_API int xgeParticleSetTransform(xge_particle_world pWorld, xge_particle_effect iEffect, const xge_particle_transform_t* pTransform);
+XGE_API int xgeParticleSetParameters(xge_particle_world pWorld, xge_particle_effect iEffect, const xge_particle_parameters_t* pParameters);
+XGE_API int xgeParticleSetVisible(xge_particle_world pWorld, xge_particle_effect iEffect, int bVisible);
+XGE_API int xgeParticleState(xge_particle_world pWorld, xge_particle_effect iEffect);
+XGE_API int xgeParticleBounds(xge_particle_world pWorld, xge_particle_effect iEffect, xge_rect_t* pBounds);
+/* Manual emission returns actual count through pSpawned; capacity loss is reported in stats. */
+XGE_API int xgeParticleEmit(xge_particle_world pWorld, xge_particle_effect iEffect, int iEmitter, uint32_t iCount, uint32_t* pSpawned);
+XGE_API int xgeParticleUpdate(xge_particle_world pWorld, double fDeltaSeconds);
+/* Prewarm simulates this effect only; public events suppressed, internal subemitters still run. */
+XGE_API int xgeParticlePrewarm(xge_particle_world pWorld, xge_particle_effect iEffect, float fSeconds);
+XGE_API int xgeParticleVisit(xge_particle_world pWorld, xge_particle_visit_proc pVisit, void* pUser);
+XGE_API int xgeParticleEventPoll(xge_particle_world pWorld, xge_particle_event_t* pEvent);
+XGE_API xge_particle_stats_t xgeParticleStats(xge_particle_world pWorld);
+/* Optional collision query helpers; plane's allowed side is dot(P, normal) >= offset. */
+XGE_API int xgeParticleCollidePlane(xge_vec2_t tFrom, xge_vec2_t tTo, float fRadius,
+	xge_vec2_t tNormal, float fOffset, xge_particle_hit_t* pHit);
+XGE_API int xgeParticleCollideRect(xge_vec2_t tFrom, xge_vec2_t tTo, float fRadius,
+	xge_rect_t tRect, xge_particle_hit_t* pHit);
+
+/* Renderer holds references to definitions, textures and shader resources.
+ * Their caller-owned C structs must remain alive until unbound/renderer destruction. */
+XGE_API int xgeParticleRendererCreate(xge_particle_renderer* ppRenderer, uint32_t iCapacity, uint32_t iBatchCapacity);
+XGE_API void xgeParticleRendererFree(xge_particle_renderer pRenderer);
+XGE_API int xgeParticleRendererBind(xge_particle_renderer pRenderer, xge_particle_definition pDefinition,
+	int iEmitter, xge_texture pTexture, const xge_material_t* pMaterial);
+XGE_API int xgeParticleRendererUnbind(xge_particle_renderer pRenderer, xge_particle_definition pDefinition);
+/* Explicit view rectangle uses the same coordinates as particles; NULL disables draw culling.
+ * Missing bindings draw a white quad. Simulation culling is controlled via SetVisible. */
+XGE_API int xgeParticleRender(xge_particle_renderer pRenderer, xge_particle_world pWorld, const xge_rect_t* pView);
 
 
 #ifdef __cplusplus

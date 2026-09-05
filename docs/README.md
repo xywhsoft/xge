@@ -6,6 +6,7 @@
 
 - [构建与验证](BUILD.md)
 - [XGE 使用指南](XGE.md)
+- [2D 粒子系统](PARTICLES.md)
 - [XUI 使用指南](XUI.md)
 - [XUI Terminal 使用指南](TERMINAL.md)
 - [范例索引](EXAMPLES.md)

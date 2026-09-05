@@ -1,0 +1,65 @@
+#include "demo.h"
+void demo_configure(demo_t *d)
+{
+	xge_particle_emitter_t *e = d->emitters;
+	d->title = "03 / EXPLOSION";
+	d->features =
+	    "Timed bursts | expanding smoke | lifetime-fit atlas | death subemitter | reusable effect pool";
+	d->kind = 2;
+	d->count = 4;
+	d->interval = 2;
+	d->origin = (xge_vec2_t){500, 395};
+	xgeParticleEmitterInit(&e[0]);
+	demo_burst(&e[0], 38);
+	e[0].arrBursts[0].fTime = .09f;
+	e[0].iShape = XGE_PARTICLE_SHAPE_CIRCLE;
+	e[0].fRadius = 24;
+	e[0].fSpread = 2 * DEMO_PI;
+	e[0].tLife = (xge_particle_range_t){1.5f, 2.3f};
+	e[0].tSpeed = (xge_particle_range_t){40, 100};
+	e[0].tSize = (xge_particle_range_t){30, 70};
+	e[0].fDrag = 1.1f;
+	e[0].tGravity = (xge_vec2_t){0, -15};
+	e[0].fNoiseStrength = 25;
+	e[0].fNoiseScroll = .4f;
+	demo_curve(&e[0].tSizeOverLife, .2f, 3);
+	demo_gradient(&e[0].tColorOverLife, 0x96878600, 0x77737dbb, 0x5a667600);
+	strcpy(e[0].sTexture, "sheet");
+	e[0].iColumns = 4;
+	xgeParticleEmitterInit(&e[1]);
+	demo_burst(&e[1], 140);
+	e[1].fSpread = 2 * DEMO_PI;
+	e[1].tLife = (xge_particle_range_t){.2f, .8f};
+	e[1].tSpeed = (xge_particle_range_t){60, 350};
+	e[1].tSize = (xge_particle_range_t){14, 40};
+	e[1].fDrag = 2.2f;
+	e[1].iBlend = XGE_BLEND_ADD;
+	e[1].iLayer = 1;
+	demo_curve(&e[1].tSizeOverLife, 1, .1f);
+	demo_gradient(&e[1].tColorOverLife, 0xffebb5ff, 0xff8533ee, 0xcb290000);
+	strcpy(e[1].sTexture, "sheet");
+	e[1].iColumns = 4;
+	e[1].arrSubEmitters[XGE_PARTICLE_EVENT_DEATH] = (xge_particle_subemitter_t){3, 1, .3f};
+	xgeParticleEmitterInit(&e[2]);
+	demo_burst(&e[2], 1);
+	e[2].tLife = (xge_particle_range_t){.2f, .2f};
+	e[2].tSpeed = (xge_particle_range_t){0, 0};
+	e[2].tSize = (xge_particle_range_t){260, 260};
+	e[2].iBlend = XGE_BLEND_ADD;
+	e[2].iLayer = 2;
+	demo_curve(&e[2].tAlphaOverLife, 1, 0);
+	strcpy(e[2].sTexture, "soft");
+	xgeParticleEmitterInit(&e[3]);
+	e[3].bAutomatic = 0;
+	e[3].fSpread = 2 * DEMO_PI;
+	e[3].tSpeed = (xge_particle_range_t){10, 80};
+	e[3].tLife = (xge_particle_range_t){.3f, .7f};
+	e[3].tSize = (xge_particle_range_t){2, 4};
+	e[3].tGravity = (xge_vec2_t){0, 140};
+	e[3].iBlend = XGE_BLEND_ADD;
+	e[3].iLayer = 3;
+	e[3].bAlignVelocity = 1;
+	e[3].fStretch = .02f;
+	demo_gradient(&e[3].tColorOverLife, 0xffde82ff, 0xff8534bb, 0xff440000);
+	strcpy(e[3].sTexture, "soft");
+}

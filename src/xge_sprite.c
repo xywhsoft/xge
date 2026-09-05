@@ -42,6 +42,17 @@ void xgeSpriteBatchClear(xge_sprite_batch pBatch)
 	}
 }
 
+int xgeSpriteBatchSetTexture(xge_sprite_batch pBatch, xge_texture pTexture)
+{
+	if (!pBatch || !pBatch->pVertices || !pTexture || pTexture->iRefCount <= 0) return XGE_ERROR_INVALID_ARGUMENT;
+	if (pBatch->iCount) return XGE_ERROR_INVALID_STATE;
+	if (pBatch->pTexture == pTexture) return XGE_OK;
+	if (xgeTextureAddRef(pTexture) <= 0) return XGE_ERROR_INVALID_STATE;
+	xgeTextureFree(pBatch->pTexture);
+	pBatch->pTexture = pTexture;
+	return XGE_OK;
+}
+
 static void __xgeSpriteBatchSetVertex(float* pVertices, int iIndex, float fX, float fY, float fU, float fV, float fR, float fG, float fB, float fA)
 {
 	pVertices[(iIndex * 10) + 0] = fX;

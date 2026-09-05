@@ -1231,7 +1231,7 @@ static int __xuiIconPickerApplyPopup(xui_widget pWidget, xui_icon_picker_data_t*
 	(void)xuiScrollFrameSetMetrics(pData->pFrame, pData->fScrollbarSize, 18.0f, 0.0f);
 	(void)xuiScrollFrameSetWheelStep(pData->pFrame, pData->fCellHeight + pData->fGapY);
 	(void)xuiScrollFrameSetContentSize(pData->pFrame, fGridWidth, fContentHeight);
-	(void)xuiWidgetArrange(pData->pFrame, tFrame);
+	(void)xuiWidgetArrangeChild(pData->pPanel, pData->pFrame, tFrame);
 	return XUI_OK;
 }
 

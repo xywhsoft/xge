@@ -170,6 +170,23 @@ int xgeRun(xge_scene_proc procFrame, void* pUser)
 #endif
 }
 
+void xgeSetQuitRequestCallback(xge_quit_request_proc proc, void* pUser)
+{
+	g_xge.procQuitRequest = proc;
+	g_xge.pQuitRequestUser = pUser;
+}
+
+int xgeRequestQuit(void)
+{
+	int allow = 1;
+	if ( !g_xge.bInitialized || g_xge.bQuitRequestDispatching ) return 0;
+	g_xge.bQuitRequestDispatching = 1;
+	if ( g_xge.procQuitRequest != NULL ) allow = g_xge.procQuitRequest(g_xge.pQuitRequestUser);
+	g_xge.bQuitRequestDispatching = 0;
+	if ( allow ) xgeQuit();
+	return allow != 0;
+}
+
 void xgeQuit(void)
 {
 	g_xge.bRunning = 0;

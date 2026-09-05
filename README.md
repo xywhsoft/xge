@@ -8,6 +8,7 @@ XGE 是一个 C 语言图形与应用界面库。它提供窗口与渲染循环�
 
 - [构建与验证](docs/BUILD.md)：Windows 构建、测试与输出位置。
 - [XGE 使用指南](docs/XGE.md)：运行时、绘制、资源、输入与生命周期。
+- [2D 粒子系统](docs/PARTICLES.md)：独立 CPU 模拟、配置、批渲染与七个经典场景范例。
 - [XUI 使用指南](docs/XUI.md)：控件、布局、事件和范例选择。
 - [范例索引](docs/EXAMPLES.md)：按功能选择可运行范例。
 - [平台说明](docs/PLATFORM.md)：Windows、Android、iOS 和 Web 的当前入口。

@@ -8,6 +8,7 @@ The current public version is **2.0.0**. [`xge.h`](xge.h) and [`xui.h`](xui.h) a
 
 - [Build and verification](docs/BUILD.md)
 - [Using XGE](docs/XGE.md)
+- [2D particles](docs/PARTICLES.md) and [seven runnable scenes](examples/xge_particles/README.md)
 - [Using XUI](docs/XUI.md)
 - [Examples](docs/EXAMPLES.md)
 - [Platform notes](docs/PLATFORM.md)

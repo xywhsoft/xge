@@ -24,7 +24,12 @@ test\build_input_event_queue_test.bat
 test\build_native_input_coordinates_test.bat
 test\build_clipboard_win32_test.bat
 test\build_zstd_resource_test.bat
+test\build_particle_test.bat
+test\build_particle_dll_test.bat
+test\build_particle_render_test.bat
 ```
+
+粒子 CPU 测试独立编译模拟器与 XRT，并启用分配失败/泄漏检查；DLL 测试和 GPU 像素测试使用 `build/xge.dll`，更改源码后应先重建 DLL。范例用 `examples\xge_particles\build.bat` 构建，详见 [粒子文档](PARTICLES.md)。
 
 在变更 XUI 后，至少执行：
 

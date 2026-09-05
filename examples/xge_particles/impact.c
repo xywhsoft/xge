@@ -1,0 +1,50 @@
+#include "demo.h"
+void demo_configure(demo_t *d)
+{
+	xge_particle_emitter_t *e = d->emitters;
+	d->title = "01 / IMPACT SPARKS";
+	d->features = "Burst + cone | swept collision + bounce | collision subemitter | velocity stretch";
+	d->kind = 0;
+	d->count = 3;
+	d->interval = .65f;
+	d->origin = (xge_vec2_t){532, 405};
+	xgeParticleEmitterInit(&e[0]);
+	demo_burst(&e[0], 100);
+	e[0].iShape = XGE_PARTICLE_SHAPE_CONE;
+	e[0].fRadius = 5;
+	e[0].fDirection = -2.5f;
+	e[0].fSpread = 2.4f;
+	e[0].tLife = (xge_particle_range_t){.25f, .85f};
+	e[0].tSpeed = (xge_particle_range_t){140, 440};
+	e[0].tSize = (xge_particle_range_t){2, 5};
+	e[0].tGravity = (xge_vec2_t){0, 680};
+	e[0].fDrag = .7f;
+	e[0].bAlignVelocity = 1;
+	e[0].fStretch = .014f;
+	e[0].iBlend = XGE_BLEND_ADD;
+	e[0].iCollision = XGE_PARTICLE_COLLISION_BOUNCE;
+	e[0].fRestitution = .45f;
+	e[0].fFriction = .3f;
+	demo_gradient(&e[0].tColorOverLife, 0xfff5bcff, 0xffa43aff, 0xff441000);
+	strcpy(e[0].sTexture, "soft");
+	e[0].arrSubEmitters[XGE_PARTICLE_EVENT_COLLISION] = (xge_particle_subemitter_t){1, 3, .15f};
+	xgeParticleEmitterInit(&e[1]);
+	e[1].bAutomatic = 0;
+	e[1].tLife = (xge_particle_range_t){.15f, .3f};
+	e[1].tSpeed = (xge_particle_range_t){12, 55};
+	e[1].fSpread = DEMO_PI;
+	e[1].tSize = (xge_particle_range_t){2, 3};
+	e[1].iBlend = XGE_BLEND_ADD;
+	e[1].iOrder = 1;
+	demo_gradient(&e[1].tColorOverLife, 0xffd377ff, 0xff8517cc, 0xff551100);
+	strcpy(e[1].sTexture, "soft");
+	xgeParticleEmitterInit(&e[2]);
+	demo_burst(&e[2], 1);
+	e[2].tLife = (xge_particle_range_t){.13f, .13f};
+	e[2].tSpeed = (xge_particle_range_t){0, 0};
+	e[2].tSize = (xge_particle_range_t){75, 75};
+	e[2].iBlend = XGE_BLEND_ADD;
+	e[2].iOrder = 2;
+	demo_curve(&e[2].tAlphaOverLife, 1, 0);
+	strcpy(e[2].sTexture, "soft");
+}

@@ -4523,7 +4523,7 @@ XUI_API int xuiWidgetMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec
 	return iRet;
 }
 
-static int __xuiWidgetArrangeOperation(xui_widget pWidget, xui_rect_t tRect)
+static int __xuiWidgetArrangeOperation(xui_widget pParent, xui_widget pWidget, xui_rect_t tRect)
 {
 	xui_rect_t tOldRect;
 	xui_rect_t tNewRect;
@@ -4533,7 +4533,8 @@ static int __xuiWidgetArrangeOperation(xui_widget pWidget, xui_rect_t tRect)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tOldRect = xuiWidgetGetWorldRect(pWidget);
-	iRet = xuiInternalLayoutArrange(pWidget, tRect);
+	iRet = pParent != NULL ? xuiInternalLayoutArrangeChild(pParent, pWidget, tRect)
+		: xuiInternalLayoutArrange(pWidget, tRect);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -4552,7 +4553,20 @@ XUI_API int xuiWidgetArrange(xui_widget pWidget, xui_rect_t tRect)
 
 	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
 	xuiInternalOperationEnter(pContext);
-	iRet = __xuiWidgetArrangeOperation(pWidget, tRect);
+	iRet = __xuiWidgetArrangeOperation(NULL, pWidget, tRect);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiWidgetArrangeChild(xui_widget pParent, xui_widget pChild, xui_rect_t tRect)
+{
+	xui_context pContext;
+	int iRet;
+	if ( !__xuiWidgetValid(pParent) || !__xuiWidgetValid(pChild) ||
+		pChild->pParent != pParent || pParent->pContext != pChild->pContext ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = pParent->pContext;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetArrangeOperation(pParent, pChild, tRect);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }

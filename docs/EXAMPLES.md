@@ -7,6 +7,7 @@
 | 目录 | 主题 |
 | --- | --- |
 | `examples/xge_shape` | 基础形状绘制。 |
+| [`examples/xge_particles`](../examples/xge_particles/README.md) | 七个独立粒子程序：火花、火烟、爆炸、雨雪、尾尘、光环、彩纸。 |
 | `examples/xge_shape_ex`、`xge_shape_ex_*` | 路径、混合、特效、渐变、裁剪和绘制顺序。 |
 | `examples/xge_svg` | SVG 加载与绘制。 |
 | `examples/xge_emoji` | 文本中的 Emoji 显示。 |

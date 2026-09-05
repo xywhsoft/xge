@@ -731,11 +731,7 @@ static xge_shape_ex_matrix_t __xgeShapeExMatrixMul(xge_shape_ex_matrix_t tParent
 
 static xge_vec2_t __xgeShapeExMatrixPoint(xge_shape_ex_matrix_t tMatrix, xge_vec2_t tPoint)
 {
-	xge_vec2_t tOut;
-
-	tOut.fX = (tMatrix.fA * tPoint.fX) + (tMatrix.fC * tPoint.fY) + tMatrix.fE;
-	tOut.fY = (tMatrix.fB * tPoint.fX) + (tMatrix.fD * tPoint.fY) + tMatrix.fF;
-	return tOut;
+	return __xgeMath2DPoint(tMatrix, tPoint);
 }
 
 static xge_rect_t __xgeShapeExMatrixRectBounds(xge_shape_ex_matrix_t tMatrix, xge_rect_t tRect)
@@ -1345,26 +1341,7 @@ static int __xgeShapeExCommandPointCount(uint8_t iCommand)
 
 static uint32_t __xgeShapeExColorLerp(uint32_t iA, uint32_t iB, float fT)
 {
-	int r;
-	int g;
-	int b;
-	int a;
-
-	if ( fT < 0.0f ) fT = 0.0f;
-	if ( fT > 1.0f ) fT = 1.0f;
-	r = (int)((float)XGE_COLOR_GET_R(iA) + ((float)XGE_COLOR_GET_R(iB) - (float)XGE_COLOR_GET_R(iA)) * fT + 0.5f);
-	g = (int)((float)XGE_COLOR_GET_G(iA) + ((float)XGE_COLOR_GET_G(iB) - (float)XGE_COLOR_GET_G(iA)) * fT + 0.5f);
-	b = (int)((float)XGE_COLOR_GET_B(iA) + ((float)XGE_COLOR_GET_B(iB) - (float)XGE_COLOR_GET_B(iA)) * fT + 0.5f);
-	a = (int)((float)XGE_COLOR_GET_A(iA) + ((float)XGE_COLOR_GET_A(iB) - (float)XGE_COLOR_GET_A(iA)) * fT + 0.5f);
-	if ( r < 0 ) r = 0;
-	if ( r > 255 ) r = 255;
-	if ( g < 0 ) g = 0;
-	if ( g > 255 ) g = 255;
-	if ( b < 0 ) b = 0;
-	if ( b > 255 ) b = 255;
-	if ( a < 0 ) a = 0;
-	if ( a > 255 ) a = 255;
-	return XGE_COLOR_RGBA(r, g, b, a);
+	return __xgeMathColorLerp(iA, iB, fT);
 }
 
 static float __xgeShapeExGradientSpreadT(int iSpread, float fT)

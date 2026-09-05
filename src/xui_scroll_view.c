@@ -128,7 +128,7 @@ static int __xuiScrollViewSyncContent(xui_widget pWidget, xui_scroll_view_data_t
 	tViewport = xuiScrollFrameGetViewportRect(pData->pFrame);
 	iRet = __xuiScrollViewContentRect(pData, tViewport.fW, tViewport.fH, &tContent);
 	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetArrange(pData->pContent, tContent);
+	return xuiWidgetArrangeChild(xuiWidgetGetParent(pData->pContent), pData->pContent, tContent);
 }
 
 static int __xuiScrollViewLayoutContent(xui_widget pViewport, xui_rect_t tContentRect, void* pUser)

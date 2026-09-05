@@ -389,7 +389,7 @@ static xui_rect_t __xuiLayoutLocalRect(xui_widget widget, xlayout_rect_t rect, i
 	return result;
 }
 
-static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot);
+static int __xuiLayoutApply(xui_widget widget, const xui_rect_t* local_root_rect);
 
 static void __xuiLayoutClearDirtyTree(xui_widget widget)
 {
@@ -411,7 +411,7 @@ static void __xuiLayoutRefreshSubtreeDirty(xui_widget widget)
 	widget->iSubtreeDirtyFlags = (widget->iSubtreeDirtyFlags & ~XUI_WIDGET_DIRTY_LAYOUT) | flags;
 }
 
-static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot)
+static int __xuiLayoutApply(xui_widget widget, const xui_rect_t* local_root_rect)
 {
 	xlayout_result_t layout_result;
 	xui_widget child;
@@ -425,7 +425,7 @@ static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot)
 	if ( !xLayoutNodeGetResult(widget->pContext->pLayoutContext, widget->iLayoutNode, &layout_result) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	rect = __xuiLayoutLocalRect(widget, layout_result.rect, bSubtreeRoot);
+	rect = local_root_rect != NULL ? *local_root_rect : __xuiLayoutLocalRect(widget, layout_result.rect, 0);
 	if ( (widget->tRect.fX != rect.fX) || (widget->tRect.fY != rect.fY) ||
 	     (widget->tRect.fW != rect.fW) || (widget->tRect.fH != rect.fH) ) {
 		xuiInternalStateRecordBoundsTree(widget);
@@ -439,7 +439,7 @@ static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot)
 	widget->iDirtyFlags &= ~XUI_WIDGET_DIRTY_LAYOUT;
 	content = xuiWidgetGetContentRect(widget);
 	for ( child = widget->pFirstChild; child != NULL; child = child->pNextSibling ) {
-		result = __xuiLayoutApply(child, 0);
+		result = __xuiLayoutApply(child, NULL);
 		if ( result != XUI_OK ) return result;
 	}
 	if ( widget->onLayoutComplete != NULL ) {
@@ -497,13 +497,23 @@ void xuiInternalLayoutInvalidate(xui_widget widget, int measure)
 	else xLayoutNodeInvalidateArrange(widget->pContext->pLayoutContext, widget->iLayoutNode);
 }
 
+static uint32_t __xuiLayoutVisibleIndex(xui_widget widget)
+{
+	xui_widget sibling;
+	uint32_t index = 0u;
+	for ( sibling = widget->pPrevSibling; sibling != NULL; sibling = sibling->pPrevSibling ) {
+		if ( sibling->bVisible ) index++;
+	}
+	return index;
+}
+
 int xuiInternalLayoutMeasure(xui_widget widget, xui_vec2_t constraint, xui_vec2_t* measured)
 {
 	xlayout_constraints_t constraints;
 	xlayout_measure_t result;
 	int sync_result;
 	if ( !xuiInternalWidgetIsValid(widget) || measured == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	sync_result = __xuiLayoutSyncNode(widget, NULL, 0u);
+	sync_result = __xuiLayoutSyncNode(widget, widget->pParent, __xuiLayoutVisibleIndex(widget));
 	if ( sync_result != XUI_OK ) return sync_result;
 	constraints = xLayoutConstraints(constraint.fX, constraint.fY);
 	if ( !xLayoutMeasure(widget->pContext->pLayoutContext, widget->iLayoutNode, &constraints, &result) ) return XUI_ERROR_OUT_OF_MEMORY;
@@ -518,12 +528,30 @@ int xuiInternalLayoutMeasure(xui_widget widget, xui_vec2_t constraint, xui_vec2_
 int xuiInternalLayoutArrange(xui_widget widget, xui_rect_t rect)
 {
 	int result;
-	if ( !xuiInternalWidgetIsValid(widget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalWidgetIsValid(widget) || widget->pParent != NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	result = __xuiLayoutSyncNode(widget, NULL, 0u);
 	if ( result != XUI_OK ) return result;
 	if ( !xLayoutArrange(widget->pContext->pLayoutContext, widget->iLayoutNode,
 		(xlayout_rect_t){ rect.fX, rect.fY, rect.fW, rect.fH }) ) return XUI_ERROR_OUT_OF_MEMORY;
-	return __xuiLayoutApply(widget, 1);
+	return __xuiLayoutApply(widget, &rect);
+}
+
+int xuiInternalLayoutArrangeChild(xui_widget parent, xui_widget child, xui_rect_t rect)
+{
+	xui_rect_t parent_world;
+	xlayout_rect_t global_rect;
+	int result;
+	if ( !xuiInternalWidgetIsValid(parent) || !xuiInternalWidgetIsValid(child)
+		|| child->pParent != parent || parent->pContext != child->pContext ) return XUI_ERROR_INVALID_ARGUMENT;
+	result = xuiWidgetSetRect(child, rect);
+	if ( result != XUI_OK ) return result;
+	result = __xuiLayoutSyncNode(child, parent, __xuiLayoutVisibleIndex(child));
+	if ( result != XUI_OK ) return result;
+	/* SetRect may have moved the parent before its xLayout result is refreshed. */
+	parent_world = xuiWidgetGetWorldRect(parent);
+	global_rect = (xlayout_rect_t){parent_world.fX + rect.fX, parent_world.fY + rect.fY, rect.fW, rect.fH};
+	if ( !xLayoutArrange(child->pContext->pLayoutContext, child->iLayoutNode, global_rect) ) return XUI_ERROR_OUT_OF_MEMORY;
+	return __xuiLayoutApply(child, &rect);
 }
 
 int xuiLayoutArrangeChild(xui_widget parent, xui_widget child, xui_rect_t rect)
