@@ -30,11 +30,45 @@ struct xui_msgtip_t {
 	int iChangeCount;
 	int bOpen;
 	int bCustomIcon;
+	int bHasColors;
 };
 
 static int __xuiMsgTipValid(xui_msgtip pTip)
 {
 	return (pTip != NULL) && (pTip->iMagic == XUI_MSGTIP_MAGIC);
+}
+
+static uint32_t __xuiMsgTipStyleColor(xui_msgtip pTip, const char* sName, uint32_t iBase)
+{
+	xui_style_property_t tProperty;
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	if ( xuiWidgetGetResolvedStyleProperty(pTip->pWidget, sName, &tProperty) == XUI_OK &&
+		tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) return tProperty.tValue.iColor;
+	return iBase;
+}
+
+static void __xuiMsgTipRegisterColors(xui_context pContext, xui_widget_type pType)
+{
+	static const char* arrNames[] = {
+		"msgtip.background.color",
+		"msgtip.border.color",
+		"msgtip.text.color",
+		"msgtip.icon.color",
+		"msgtip.shadow.color",
+		"msgtip.icon.text.color"
+	};
+	xui_style_property_info_t tInfo;
+	size_t i;
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.pWidgetType = pType;
+	tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+	tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); ++i ) {
+		tInfo.sName = arrNames[i];
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
 }
 
 static float __xuiMsgTipMin(float fA, float fB)
@@ -461,7 +495,7 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 		tLineRect.fY = pTip->tTextRect.fY + tLine.fY;
 		tLineRect.fW = pTip->tTextRect.fW;
 		tLineRect.fH = tLine.fH;
-		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), pTip->tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), __xuiMsgTipStyleColor(pTip, "msgtip.text.color", pTip->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
@@ -479,12 +513,12 @@ static int __xuiMsgTipDrawFallbackIcon(xui_msgtip pTip, xui_draw_context pDraw, 
 	tIcon = pTip->tIconRect;
 	fRadius = __xuiMsgTipMin(tIcon.fW, tIcon.fH) * 0.5f;
 	if ( pProxy->drawCircleFill != NULL ) {
-		(void)pProxy->drawCircleFill(pProxy, pDraw, tIcon.fX + tIcon.fW * 0.5f, tIcon.fY + tIcon.fH * 0.5f, fRadius, pTip->tColors.iIconColor);
+		(void)pProxy->drawCircleFill(pProxy, pDraw, tIcon.fX + tIcon.fW * 0.5f, tIcon.fY + tIcon.fH * 0.5f, fRadius, __xuiMsgTipStyleColor(pTip, "msgtip.icon.color", pTip->tColors.iIconColor));
 	}
 	if ( (pProxy->drawText != NULL) && (__xuiMsgTipFont(pTip) != NULL) ) {
 		tText = tIcon;
 		tText.fY -= 1.0f;
-		(void)pProxy->drawText(pProxy, pDraw, __xuiMsgTipFont(pTip), __xuiMsgTipIconFallbackText(pTip->iType), tText, XUI_COLOR_WHITE, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, __xuiMsgTipFont(pTip), __xuiMsgTipIconFallbackText(pTip->iType), tText, __xuiMsgTipStyleColor(pTip, "msgtip.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -509,7 +543,7 @@ static int __xuiMsgTipDrawBuiltinIcon(xui_msgtip pTip, xui_draw_context pDraw, x
 		iRet = xuiBuiltinAssetGetRect(sName, &tSrc);
 	}
 	if ( (iRet == XUI_OK) && (pAtlas != NULL) && (pProxy->drawSurface != NULL) ) {
-		return pProxy->drawSurface(pProxy, pDraw, pAtlas, tSrc, pTip->tIconRect, pTip->tColors.iIconColor, 0);
+		return pProxy->drawSurface(pProxy, pDraw, pAtlas, tSrc, pTip->tIconRect, __xuiMsgTipStyleColor(pTip, "msgtip.icon.color", pTip->tColors.iIconColor), 0);
 	}
 	return __xuiMsgTipDrawFallbackIcon(pTip, pDraw, pProxy);
 }
@@ -534,10 +568,18 @@ static int __xuiMsgTipRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 	}
 	tRect = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, pTip->tTipRect.fW, pTip->tTipRect.fH});
 	if ( pProxy->drawRectFill != NULL ) {
-		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, pTip->tColors.iBackgroundColor);
+		uint32_t iShadow = __xuiMsgTipStyleColor(pTip, "msgtip.shadow.color", pTip->tColors.iShadowColor);
+		if ( (iShadow & 0xffu) != 0u ) {
+			(void)pProxy->drawRectFill(pProxy, pDraw, tRect, iShadow);
+			tRect.fW = __xuiMsgTipMax(1.0f, tRect.fW - 2.0f);
+			tRect.fH = __xuiMsgTipMax(1.0f, tRect.fH - 2.0f);
+		}
 	}
-	if ( ((pTip->tColors.iBorderColor & 0xffu) != 0u) && (pProxy->drawRectStroke != NULL) ) {
-		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pTip->tColors.iBorderColor);
+	if ( pProxy->drawRectFill != NULL ) {
+		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, __xuiMsgTipStyleColor(pTip, "msgtip.background.color", pTip->tColors.iBackgroundColor));
+	}
+	if ( ((__xuiMsgTipStyleColor(pTip, "msgtip.border.color", pTip->tColors.iBorderColor) & 0xffu) != 0u) && (pProxy->drawRectStroke != NULL) ) {
+		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, __xuiMsgTipStyleColor(pTip, "msgtip.border.color", pTip->tColors.iBorderColor));
 	}
 	if ( __xuiMsgTipHasIcon(pTip) ) {
 		if ( pTip->bCustomIcon && (pTip->pIconSurface != NULL) && (pProxy->drawSurface != NULL) ) {
@@ -676,6 +718,7 @@ static xui_widget_type __xuiMsgTipEnsureType(xui_context pContext)
 	tDesc.onCacheRender = __xuiMsgTipRender;
 	tDesc.onUpdate = __xuiMsgTipUpdate;
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
+	if ( iRet == XUI_OK ) __xuiMsgTipRegisterColors(pContext, pType);
 	if ( iRet == XUI_ERROR_ALREADY_INITIALIZED ) {
 		return xuiWidgetFindType(pContext, "msgtip");
 	}
@@ -709,10 +752,11 @@ XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_m
 	__xuiMsgTipDefaultColors(&pTip->tColors);
 	if ( pDesc != NULL && pDesc->bHasMetrics ) pTip->tMetrics = pDesc->tMetrics;
 	if ( pDesc != NULL && pDesc->bHasColors ) pTip->tColors = pDesc->tColors;
+	pTip->bHasColors = pDesc != NULL && pDesc->bHasColors;
 	pTip->tMetrics.iSize = sizeof(pTip->tMetrics);
 	pTip->tColors.iSize = sizeof(pTip->tColors);
 	if ( !(pDesc != NULL && pDesc->bHasColors) ) {
-		pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
+		if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
 	}
 	if ( pDesc != NULL && pDesc->bHasCustomIcon && pDesc->pIconSurface != NULL ) {
 		pTip->pIconSurface = pDesc->pIconSurface;
@@ -772,7 +816,7 @@ XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float f
 	if ( iRet != XUI_OK ) return iRet;
 	pTip->iType = __xuiMsgTipNormalizeType(iType);
 	if ( !pTip->bCustomIcon ) {
-		pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
+		if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
 	}
 	pTip->fDuration = (fDuration < 0.0f) ? 0.0f : fDuration;
 	pTip->fElapsed = 0.0f;
@@ -826,7 +870,7 @@ XUI_API int xuiMsgTipSetType(xui_msgtip pTip, int iType)
 	}
 	pTip->iType = __xuiMsgTipNormalizeType(iType);
 	if ( !pTip->bCustomIcon ) {
-		pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
+		if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
 	}
 	pTip->iChangeCount++;
 	return __xuiMsgTipLayout(pTip);
@@ -872,7 +916,7 @@ XUI_API int xuiMsgTipUseBuiltinIcon(xui_msgtip pTip)
 	pTip->pIconSurface = NULL;
 	pTip->tIconSrc = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	pTip->bCustomIcon = 0;
-	pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
+	if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
 	pTip->iChangeCount++;
 	return __xuiMsgTipLayout(pTip);
 }
@@ -907,6 +951,7 @@ XUI_API int xuiMsgTipSetColors(xui_msgtip pTip, const xui_msgtip_colors_t* pColo
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pTip->tColors = *pColors;
+	pTip->bHasColors = 1;
 	pTip->tColors.iSize = sizeof(pTip->tColors);
 	pTip->iChangeCount++;
 	return xuiWidgetInvalidate(pTip->pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

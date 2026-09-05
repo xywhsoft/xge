@@ -220,10 +220,66 @@ static int menu_colors(void)
 	return 0;
 }
 
+static int msgtip_colors(void)
+{
+	fixture_t f;
+	xui_msgtip tip;
+	xui_widget widget;
+	xui_msgtip_colors_t base, after;
+	xui_style_property_t p[5];
+	xui_style_desc_t s;
+	xui_surface icon;
+	CHECK(init(&f) == 0);
+	OK(xuiMsgTipCreate(f.context, &tip, NULL));
+	OK(xuiMsgTipGetColors(tip, &base));
+	base.iBackgroundColor = 0x234567ff;
+	base.iIconColor = 0x367894ff;
+	OK(xuiMsgTipSetColors(tip, &base));
+	OK(xuiMsgTipShow(tip, XUI_MSGTIP_ICON_INFO, "Status", 100));
+	widget = xuiMsgTipGetWidget(tip);
+	CHECK(render(&f) == 0 && fill(widget, base.iBackgroundColor) > 0);
+	p[0] = color("msgtip.background.color", 0x817268ff);
+	p[1] = color("msgtip.border.color", 0x783243ff);
+	p[2] = color("msgtip.text.color", 0x889922ff);
+	p[3] = color("msgtip.icon.color", 0x812213ff);
+	p[4] = color("msgtip.shadow.color", 0x23212166);
+	s = style(p, 5);
+	s.sName = "overlay.tip";
+	OK(xuiStyleSetNamed(f.context, &s));
+	OK(xuiWidgetSetStyleName(widget, "overlay.tip"));
+	CHECK(paint_only(widget) == 0);
+	CHECK(render(&f) == 0 && fill(widget, p[0].tValue.iColor) > 0 && fill(widget, p[1].tValue.iColor) > 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(widget)) == p[2].tValue.iColor);
+	CHECK(xuiTestSurfaceGetLastColor(cache(widget)) == p[3].tValue.iColor);
+	CHECK(fill(widget, p[4].tValue.iColor) > 0);
+	OK(xuiMsgTipGetColors(tip, &after));
+	CHECK(memcmp(&base, &after, sizeof(base)) == 0);
+	p[0] = color("msgtip.background.color", 0);
+	p[1] = color("msgtip.border.color", 0);
+	p[2] = color("msgtip.text.color", 0);
+	p[3] = color("msgtip.icon.color", 0);
+	p[4] = color("msgtip.shadow.color", 0);
+	OK(xuiWidgetSetInlineStyle(widget, p, 5));
+	CHECK(render(&f) == 0 && fill(widget, base.iBackgroundColor) == 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(widget)) == 0 && xuiTestSurfaceGetLastColor(cache(widget)) == 0);
+	OK(xuiTestSurfaceCreate(&f.proxy, &icon, 16, 16, XUI_SURFACE_USAGE_TARGET));
+	OK(xuiMsgTipSetIconSurface(tip, icon, (xui_rect_t){0, 0, 16, 16}));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetLastColor(cache(widget)) == XUI_COLOR_WHITE);
+	OK(xuiWidgetSetInlineStyle(widget, NULL, 0));
+	OK(xuiWidgetSetStyleName(widget, NULL));
+	CHECK(render(&f) == 0 && fill(widget, base.iBackgroundColor) > 0);
+	xuiMsgTipDestroy(tip);
+	f.proxy.tProxy.surfaceDestroy(&f.proxy.tProxy, icon);
+	finish(&f);
+	puts("PASS msgtip named styles, rendered text/icon/shadow, clear/transparent zero, API/custom icon preservation");
+	return 0;
+}
+
 int main(void)
 {
 	CHECK(popup_colors() == 0);
 	CHECK(menu_colors() == 0);
+	CHECK(msgtip_colors() == 0);
 	puts("PASS style_overlays");
 	return 0;
 }
