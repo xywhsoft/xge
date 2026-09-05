@@ -297,6 +297,8 @@ int main(void)
 	xui_widget pA;
 	xui_widget pB;
 	xui_widget pC;
+	xui_widget pOverflowParent;
+	xui_widget pOverflowChild;
 	xui_widget pOverlay;
 	xui_event_t tEvent;
 	xui_debug_widget_info_t tDebugInfo;
@@ -321,6 +323,8 @@ int main(void)
 	pA = NULL;
 	pB = NULL;
 	pC = NULL;
+	pOverflowParent = NULL;
+	pOverflowChild = NULL;
 	pOverlay = NULL;
 	iFailed = 0;
 	XUI_TEST_CHECK(XUI_KEY_SPACE == ' ', "space key must retain its printable ASCII value");
@@ -378,6 +382,36 @@ int main(void)
 	iRet = xuiWidgetSetLayer(pRoot, 0, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayer(pA, 0, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore stacking layers failed");
+	iRet = xuiWidgetCreate(pContext, &pOverflowParent);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pOverflowChild);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overflow hit widgets create failed");
+	(void)xuiWidgetSetRect(pOverflowParent, (xui_rect_t){100, 0, 20, 20});
+	(void)xuiWidgetSetRect(pOverflowChild, (xui_rect_t){30, 0, 20, 20});
+	(void)xuiWidgetSetOverflow(pOverflowParent, XUI_OVERFLOW_VISIBLE);
+	iRet = xuiWidgetAddChild(pOverflowParent, pOverflowChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pOverflowParent);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overflow hit widgets attach failed");
+	XUI_TEST_CHECK(xuiHitTest(pContext, 135, 5, XUI_WIDGET_HIT_DEFAULT) == pOverflowChild,
+		"visible overflow child must hit outside its parent");
+	iRet = xuiWidgetSetOverflow(pOverflowParent, XUI_OVERFLOW_CLIP);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiHitTest(pContext, 135, 5, XUI_WIDGET_HIT_DEFAULT) != pOverflowChild,
+		"clipped overflow child must not hit outside its parent");
+	iRet = xuiWidgetSetOverflow(pOverflowParent, XUI_OVERFLOW_HIDDEN);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiHitTest(pContext, 135, 5, XUI_WIDGET_HIT_DEFAULT) != pOverflowChild,
+		"hidden overflow child must obey the ancestor clip");
+	iRet = xuiWidgetSetOverflow(pOverflowParent, XUI_OVERFLOW_REPORT);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiHitTest(pContext, 135, 5, XUI_WIDGET_HIT_DEFAULT) == pOverflowChild,
+		"reported overflow child must retain visible hit semantics");
+	(void)xuiWidgetSetRect(pOverflowParent, (xui_rect_t){190, 60, 10, 10});
+	(void)xuiWidgetSetRect(pOverflowChild, (xui_rect_t){20, 0, 10, 10});
+	XUI_TEST_CHECK(xuiHitTest(pContext, 215, 65, XUI_WIDGET_HIT_DEFAULT) == NULL,
+		"visible overflow must remain clipped to the viewport");
+	xuiWidgetDestroy(pOverflowParent);
+	pOverflowParent = NULL;
+	pOverflowChild = NULL;
 	iRet = xuiWidgetSetEventCallback(pRoot, __xuiTestEventCallback, &tLog);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root event callback set failed");
 	iRet = xuiWidgetSetEventCallback(pB, __xuiTestEventCallback, &tLog);

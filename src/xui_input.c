@@ -598,13 +598,34 @@ static int __xuiInputPointInRect(int fX, int fY, xui_rect_t tRect)
 	       (fY < (tRect.fY + tRect.fH));
 }
 
+static xui_rect_t __xuiInputIntersectRect(xui_rect_t tA, xui_rect_t tB)
+{
+	xui_rect_t tRect;
+	int iRight;
+	int iBottom;
+
+	tRect.fX = (tA.fX > tB.fX) ? tA.fX : tB.fX;
+	tRect.fY = (tA.fY > tB.fY) ? tA.fY : tB.fY;
+	iRight = ((tA.fX + tA.fW) < (tB.fX + tB.fW)) ?
+		(tA.fX + tA.fW) : (tB.fX + tB.fW);
+	iBottom = ((tA.fY + tA.fH) < (tB.fY + tB.fH)) ?
+		(tA.fY + tA.fH) : (tB.fY + tB.fH);
+	tRect.fW = iRight > tRect.fX ? iRight - tRect.fX : 0;
+	tRect.fH = iBottom > tRect.fY ? iBottom - tRect.fY : 0;
+	return tRect;
+}
+
 static int __xuiInputHitTestWidget(xui_context pContext, xui_widget pWidget,
-	int fX, int fY, uint32_t iFlags, xui_widget* pHitResult)
+	int fX, int fY, uint32_t iFlags, xui_rect_t tParentClip,
+	int bHasClip, xui_widget* pHitResult)
 {
 	xui_widget pChild;
 	xui_widget pHit;
 	const xui_widget* ppChildren;
 	xui_rect_t tWorldRect;
+	xui_rect_t tChildClip;
+	int bInsideSelf;
+	int bChildHasClip;
 	int iChildCount;
 	int i;
 	int iRet;
@@ -622,9 +643,20 @@ static int __xuiInputHitTestWidget(xui_context pContext, xui_widget pWidget,
 	if ( !pWidget->bHitTestVisible ) {
 		return XUI_OK;
 	}
-	tWorldRect = xuiWidgetGetWorldRect(pWidget);
-	if ( !__xuiInputPointInRect(fX, fY, tWorldRect) ) {
+	if ( bHasClip && !__xuiInputPointInRect(fX, fY, tParentClip) ) {
 		return XUI_OK;
+	}
+	tWorldRect = xuiWidgetGetWorldRect(pWidget);
+	bInsideSelf = __xuiInputPointInRect(fX, fY, tWorldRect);
+	tChildClip = tParentClip;
+	bChildHasClip = bHasClip;
+	if ( (pWidget->tLayout.iOverflow == XUI_OVERFLOW_HIDDEN) ||
+	     (pWidget->tLayout.iOverflow == XUI_OVERFLOW_CLIP) ) {
+		if ( !bInsideSelf ) {
+			return XUI_OK;
+		}
+		tChildClip = bHasClip ? __xuiInputIntersectRect(tParentClip, tWorldRect) : tWorldRect;
+		bChildHasClip = 1;
 	}
 	if ( (iFlags & XUI_WIDGET_HIT_CHILDREN) != 0 ) {
 		iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
@@ -633,7 +665,8 @@ static int __xuiInputHitTestWidget(xui_context pContext, xui_widget pWidget,
 		}
 		for ( i = iChildCount - 1; i >= 0; i-- ) {
 			pChild = ppChildren[i];
-			iRet = __xuiInputHitTestWidget(pContext, pChild, fX, fY, iFlags, &pHit);
+			iRet = __xuiInputHitTestWidget(pContext, pChild, fX, fY, iFlags,
+				tChildClip, bChildHasClip, &pHit);
 			if ( iRet != XUI_OK ) {
 				return iRet;
 			}
@@ -643,7 +676,7 @@ static int __xuiInputHitTestWidget(xui_context pContext, xui_widget pWidget,
 			}
 		}
 	}
-	if ( (iFlags & XUI_WIDGET_HIT_SELF) != 0 ) {
+	if ( bInsideSelf && ((iFlags & XUI_WIDGET_HIT_SELF) != 0) ) {
 		*pHitResult = pWidget;
 	}
 	return XUI_OK;
@@ -2487,6 +2520,8 @@ XUI_API int xuiDispatchPendingEvents(xui_context pContext)
 static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, uint32_t iFlags)
 {
 	xui_widget pHit;
+	xui_rect_t tViewportClip;
+	int bHasViewportClip;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ||
@@ -2504,8 +2539,13 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 		return NULL;
 	}
 	if ( xuiInternalContextDestroyPending(pContext) ) return NULL;
+	tViewportClip.fX = 0;
+	tViewportClip.fY = 0;
+	tViewportClip.fW = pContext->fViewportWidth;
+	tViewportClip.fH = pContext->fViewportHeight;
+	bHasViewportClip = (tViewportClip.fW > 0) && (tViewportClip.fH > 0);
 	iRet = __xuiInputHitTestWidget(pContext, pContext->pOverlayRoot,
-		fX, fY, iFlags, &pHit);
+		fX, fY, iFlags, tViewportClip, bHasViewportClip, &pHit);
 	if ( iRet != XUI_OK ) {
 		xuiInternalReportError(pContext, pContext->pOverlayRoot, iRet,
 			XUI_ERROR_STAGE_INPUT, 1, "hit_test.stacking",
@@ -2516,7 +2556,7 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 		return pHit;
 	}
 	iRet = __xuiInputHitTestWidget(pContext, pContext->pRoot,
-		fX, fY, iFlags, &pHit);
+		fX, fY, iFlags, tViewportClip, bHasViewportClip, &pHit);
 	if ( iRet != XUI_OK ) {
 		xuiInternalReportError(pContext, pContext->pRoot, iRet,
 			XUI_ERROR_STAGE_INPUT, 1, "hit_test.stacking",
