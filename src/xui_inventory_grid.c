@@ -70,6 +70,7 @@ typedef struct xui_inventory_grid_data_t {
 	int iSplitCommitCount;
 	int bTooltipVisible;
 	int iTooltipSlot;
+	uint32_t iChromeStyleVersion;
 	int iResolvedColumns;
 	int iResolvedRows;
 	xui_inventory_visible_range_t tLastPaintRange;
@@ -1297,6 +1298,7 @@ static xui_vec2_t __xuiInventoryTooltipMeasure(xui_context pContext, xui_widget 
 static int __xuiInventoryTooltipPaint(xui_context pContext, xui_widget pOwner, xui_draw_context pDraw, xui_rect_t tRect, void* pUser)
 {
 	xui_inventory_grid_data_t* pData;
+	xui_inventory_grid_data_t tResolved;
 	const xui_inventory_slot_t* pSlot;
 	xui_proxy pProxy;
 	xui_surface_desc_t tSurfaceDesc;
@@ -1306,13 +1308,16 @@ static int __xuiInventoryTooltipPaint(xui_context pContext, xui_widget pOwner, x
 	xui_rect_t tSrc;
 	xui_rect_t tText;
 	uint32_t iQuality;
+	uint32_t iIconBackground = XUI_COLOR_RGBA(245, 249, 253, 255);
 	int iRet;
 
-	(void)pOwner;
 	pData = (xui_inventory_grid_data_t*)pUser;
 	if ( (pData == NULL) || (pData->iTooltipSlot < 0) || (pData->iTooltipSlot >= pData->iSlotCount) ) {
 		return XUI_OK;
 	}
+	__xuiInventoryResolve(pOwner, pData, &tResolved);
+	pData = &tResolved;
+	(void)__xuiInventoryStyleColor(pOwner, "inventory.tooltip.icon_background_color", &iIconBackground);
 	pSlot = &pData->arrSlots[pData->iTooltipSlot];
 	pProxy = xuiInternalContextGetProxy(pContext);
 	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
@@ -1320,11 +1325,11 @@ static int __xuiInventoryTooltipPaint(xui_context pContext, xui_widget pOwner, x
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	iQuality = (pSlot->iQualityColor != 0u) ? pSlot->iQualityColor : pData->tColors.iQualityColor;
-	if ( iQuality == 0u ) {
+	if ( iQuality == 0u && !__xuiInventoryStyleColor(pOwner, "inventory.slot.quality_color", &iQuality) ) {
 		iQuality = pData->tColors.iBorderColor;
 	}
 	tIcon = (xui_rect_t){tRect.fX + 10.0f, tRect.fY + 10.0f, 36.0f, 36.0f};
-	iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tIcon, XUI_COLOR_RGBA(245, 249, 253, 255));
+	iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tIcon, iIconBackground);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiInventoryDrawStroke(pProxy, pDraw, tIcon, 1.0f, iQuality);
 	if ( iRet != XUI_OK ) return iRet;
@@ -2782,6 +2787,21 @@ static void __xuiInventoryRegisterStyleProperty(xui_context pContext, xui_widget
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
+static int __xuiInventoryUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
+	pData->iChromeStyleVersion = pWidget->iStyleVersion;
+	if ( xuiWidgetTooltipGetOwner(pContext) == pWidget && pContext->pTooltipPopupWidget != NULL ) {
+		return xuiWidgetInvalidate(pContext->pTooltipPopupWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return XUI_OK;
+}
+
 static void __xuiInventoryRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	uint32_t iPaintDirty;
@@ -2799,6 +2819,7 @@ static void __xuiInventoryRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.slot.locked_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.slot.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.slot.quality_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.tooltip.icon_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.slot.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.text.muted_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -2972,6 +2993,7 @@ XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext)
 	tDesc.onContentMeasure = __xuiInventoryContentMeasure;
 	tDesc.onLayoutComplete = __xuiInventoryLayoutComplete;
 	tDesc.onCacheRender = __xuiInventoryCacheRender;
+	tDesc.onUpdate = __xuiInventoryUpdate;
 	__xuiInventoryDefaultLayout(&tDesc.tLayout);
 	__xuiInventoryDefaultCachePolicy(&tPolicy);
 	tDesc.tCachePolicy = tPolicy;

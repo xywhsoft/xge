@@ -11,6 +11,7 @@
 #include "../src/xui_carousel.c"
 #include "../src/xui_window.c"
 #include "../src/xui_chart.c"
+#include "../src/xui_inventory_grid.c"
 
 /* Record the colors actually submitted to the renderer, not just resolution. */
 static uint32_t g_colors[32768];
@@ -363,6 +364,51 @@ static void chrome_chart(pixel_fixture_t* f)
 	xuiWidgetDestroy(chart);
 }
 
+static void chrome_inventory(pixel_fixture_t* f)
+{
+	xui_widget grid = NULL, tooltip;
+	xui_inventory_slot_t slot = {0};
+	xui_inventory_grid_data_t* data;
+	xui_rect_t rect, world;
+	PIXEL_CHECK(xuiInventoryGridCreate(f->context, &grid, NULL) == XUI_OK);
+	chrome_attach(f, grid, 320, 220);
+	PIXEL_CHECK(xuiInventoryGridSetSlotCount(grid, 1) == XUI_OK);
+	slot.iItemId = 1; slot.iCount = 2; slot.iMaxCount = 10;
+	strcpy(slot.sText, "Item"); strcpy(slot.sHotkey, "1");
+	slot.iIconTint = 0xa82547ffu;
+	slot.pIcon = f->target; slot.tIconSrc = (xui_rect_t){0, 0, 20, 20};
+	PIXEL_CHECK(xuiInventoryGridSetSlot(grid, 0, &slot) == XUI_OK);
+	chrome_frame(f);
+	PIXEL_CHECK(xuiInventoryGridGetSlotRect(grid, 0, &rect) == XUI_OK);
+	world = xuiWidgetGetWorldRect(grid);
+	PIXEL_CHECK(xuiInputPointerMove(f->context, world.fX + rect.fX + 8, world.fY + rect.fY + 8, 0) == XUI_OK);
+	PIXEL_CHECK(xuiUpdate(f->context, 0.3f) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetTooltipIsOpen(f->context) && xuiWidgetTooltipGetOwner(f->context) == grid);
+	tooltip = f->context->pTooltipPopupWidget;
+	PIXEL_CHECK(tooltip != NULL);
+	data = __xuiInventoryGetData(grid);
+	g_paint_widget = tooltip;
+	chrome_key(f, grid, "inventory.tooltip.icon_background_color", XUI_COLOR_RGBA(245, 249, 253, 255), 0);
+	chrome_key(f, grid, "inventory.text.color", data->tColors.iTextColor, 0);
+	chrome_key(f, grid, "inventory.text.muted_color", data->tColors.iMutedTextColor, 0);
+	chrome_key(f, grid, "inventory.hotkey.color", data->tColors.iHotkeyColor, 0);
+	chrome_key(f, grid, "inventory.slot.quality_color", data->tColors.iQualityColor, 0);
+	chrome_inline(grid, "inventory.slot.quality_color", 0);
+	chrome_paint(f, grid, 0);
+	PIXEL_CHECK(chrome_count(data->tColors.iBorderColor) == 0);
+	PIXEL_CHECK(chrome_count(slot.iIconTint) > 0);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(grid, NULL, 0) == XUI_OK);
+	g_paint_widget = NULL;
+	chrome_cached(f, grid, tooltip, "inventory.tooltip.icon_background_color", XUI_COLOR_RGBA(245, 249, 253, 255));
+	slot.iQualityColor = 0xb93658ffu;
+	PIXEL_CHECK(xuiInventoryGridSetSlot(grid, 0, &slot) == XUI_OK);
+	chrome_inline(grid, "inventory.slot.quality_color", 0x123456ffu);
+	chrome_paint(f, grid, 0);
+	PIXEL_CHECK(chrome_count(slot.iQualityColor) > 0 && chrome_count(slot.iIconTint) > 0);
+	PIXEL_CHECK(data->arrSlots[0].iQualityColor == slot.iQualityColor && data->arrSlots[0].iIconTint == slot.iIconTint);
+	xuiWidgetDestroy(grid);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -373,6 +419,7 @@ int main(void)
 	chrome_bars(&f);
 	chrome_composites(&f);
 	chrome_chart(&f);
+	chrome_inventory(&f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_chrome_test");
 }
