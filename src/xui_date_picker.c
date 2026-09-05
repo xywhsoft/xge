@@ -1171,14 +1171,12 @@ static int __xuiDatePickerDrawArrow(xui_proxy pProxy, xui_draw_context pDraw, xu
 	return pProxy->drawLine(pProxy, pDraw, fCx + 4.0f, fCy, fCx - 4.0f, fCy + 6.0f, 1.6f, iColor);
 }
 
-static int __xuiDatePickerSyncStyle(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiDatePickerSyncStyle(xui_widget pWidget)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	xui_date_picker_data_t tResolved;
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	int iRet;
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
 	__xuiDatePickerResolve(pWidget, pData, &tResolved);
@@ -1217,8 +1215,6 @@ static int __xuiDatePickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	__xuiDatePickerResolve(pWidget, pData, &tResolved);
 	__xuiDatePickerUpdateOwnerRects(pWidget, pData);
-	iRet = __xuiDatePickerSyncStyle(pWidget, 0.0f, NULL);
-	if ( iRet != XUI_OK ) return iRet;
 	tRect = xuiInternalSnapRect(xuiWidgetGetContentRect(pWidget));
 	iState = __xuiDatePickerState(pWidget, pData);
 	iBackground = tResolved.iBackgroundColor;
@@ -2736,12 +2732,12 @@ XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiDatePickerDestroy;
 	tDesc.onContentMeasure = __xuiDatePickerContentMeasure;
 	tDesc.onCacheRender = __xuiDatePickerCacheRender;
-	tDesc.onUpdate = __xuiDatePickerSyncStyle;
 	__xuiDatePickerDefaultLayout(&tDesc.tLayout);
 	__xuiDatePickerDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiDatePickerRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiDatePickerSyncStyle;
 	return pType;
 }
 

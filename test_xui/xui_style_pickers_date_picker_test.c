@@ -59,6 +59,8 @@ int main(void)
     attach(w);
     data = __xuiDatePickerGetData(w);
     test_colors(w, data, colors, sizeof(colors) / sizeof(colors[0]), resolved);
+    test_owner_colors(w, data, colors, 11, xuiDatePickerOpen, xuiDatePickerClose);
+    test_owner_colors(w, data, colors + 22, 4, xuiDatePickerOpen, xuiDatePickerClose);
     phase = "datepicker button states";
     inline_color(w, "datepicker.button.color", 0xa12345ffu);
     paint(); CHECK(has_color(0xa12345ffu));
@@ -97,6 +99,8 @@ int main(void)
         CHECK(xuiDatePickerIsOpen(w));
         inline_color(w, colors[i].key, 0);
         paint(); CHECK(!has_color(value));
+        inline_color(w, colors[i].key, 0xabcdef00u);
+        prepare_only(); CHECK(!has_color(value) && !has_color(0xabcdefffu));
         CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
         paint(); CHECK(has_color(before));
     }
@@ -120,5 +124,7 @@ int main(void)
     paint(); CHECK(has_color(0xe45678ffu));
     CHECK(xuiDatePickerGetRangeValue(w, &actual_start, &actual_end) == XUI_OK);
     CHECK(actual_start == start && actual_end == end);
+    test_live_token(w, "datepicker.popup.panel_color", data->iPopupPanelColor);
+    test_prepare_only(w, data->pPanel, "datepicker.field.color", data->iFieldColor);
     return finish();
 }
