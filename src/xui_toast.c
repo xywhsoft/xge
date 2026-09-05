@@ -1,4 +1,5 @@
 #include "xui_internal.h"
+#include "xui_text_internal.h"
 
 #include <string.h>
 
@@ -731,23 +732,25 @@ static int __xuiToastUpdateService(xui_toast pToast, float fDelta)
 	return __xuiToastActivatePending(pToast);
 }
 
-static int __xuiToastDrawTextLayout(xui_toast pToast, xui_toast_item_t* pItem, xui_draw_context pDraw)
+static int __xuiToastDrawTextLayout(xui_toast pToast, xui_draw_context pDraw,
+	const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
 	xui_text_layout_desc_t tDesc;
 	xui_text_layout pLayout;
 	xui_text_line_t tLine;
 	xui_proxy pProxy;
 	xui_font pFont;
-	const char* sText;
-	char* sLine;
+	const char* sLine;
 	xui_rect_t tLineRect;
+	float fOffsetY;
 	int i;
+	int iDisplaySize;
 	int iRet;
 
-	if ( !__xuiToastValid(pToast) || (pItem == NULL) || (pDraw == NULL) ) {
+	if ( !__xuiToastValid(pToast) || (pDraw == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pItem->sMessage == NULL) || (pItem->sMessage[0] == 0) || (pItem->tMessageRect.fW <= 0.0f) ) {
+	if ( (sText == NULL) || (sText[0] == 0) || (tRect.fW <= 0.0f) ) {
 		return XUI_OK;
 	}
 	pProxy = xuiInternalContextGetProxy(pToast->pContext);
@@ -757,39 +760,40 @@ static int __xuiToastDrawTextLayout(xui_toast pToast, xui_toast_item_t* pItem, x
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
-	tDesc.sText = pItem->sMessage;
+	tDesc.sText = sText;
 	tDesc.iTextSize = -1;
 	tDesc.pFont = pFont;
-	tDesc.fMaxWidth = pItem->tMessageRect.fW;
-	tDesc.fMaxHeight = pItem->tMessageRect.fH;
+	tDesc.fMaxWidth = tRect.fW;
+	tDesc.fMaxHeight = tRect.fH;
 	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
-	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
+	tDesc.iFlags = iFlags;
 	tDesc.fLineGap = 2.0f;
 	pLayout = NULL;
 	iRet = xuiTextLayoutCreate(pToast->pContext, &pLayout, &tDesc);
 	if ( iRet != XUI_OK ) {
 		return XUI_OK;
 	}
-	sText = xuiTextLayoutGetText(pLayout);
+	fOffsetY = 0.0f;
+	if ( (iFlags & XUI_TEXT_ALIGN_MIDDLE) != 0 ) {
+		fOffsetY = __xuiToastMax(0.0f, (tRect.fH - xuiTextLayoutGetSize(pLayout).fY) * 0.5f);
+	}
 	for ( i = 0; i < xuiTextLayoutGetLineCount(pLayout); i++ ) {
 		memset(&tLine, 0, sizeof(tLine));
 		tLine.iSize = sizeof(tLine);
 		if ( xuiTextLayoutGetLine(pLayout, i, &tLine) != XUI_OK || tLine.iTextSize <= 0 ) {
 			continue;
 		}
-		sLine = (char*)xrtMalloc((size_t)tLine.iTextSize + 1u);
-		if ( sLine == NULL ) {
+		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, i, &sLine, &iDisplaySize);
+		if ( iRet != XUI_OK ) {
 			xuiTextLayoutDestroy(pLayout);
-			return XUI_ERROR_OUT_OF_MEMORY;
+			return iRet;
 		}
-		memcpy(sLine, sText + tLine.iTextOffset, (size_t)tLine.iTextSize);
-		sLine[tLine.iTextSize] = 0;
-		tLineRect.fX = pItem->tMessageRect.fX + tLine.fX;
-		tLineRect.fY = pItem->tMessageRect.fY + tLine.fY;
-		tLineRect.fW = pItem->tMessageRect.fW;
+		if ( iDisplaySize <= 0 ) continue;
+		tLineRect.fX = tRect.fX + tLine.fX;
+		tLineRect.fY = tRect.fY + fOffsetY + tLine.fY;
+		tLineRect.fW = tRect.fW;
 		tLineRect.fH = tLine.fH;
-		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), pToast->tColors.iMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
-		xrtFree(sLine);
+		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), iColor, iFlags);
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
@@ -878,9 +882,11 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 	}
 	if ( (pProxy->drawText != NULL) && (__xuiToastFont(pToast) != NULL) ) {
 		if ( (pItem->sTitle != NULL) && (pItem->sTitle[0] != 0) ) {
-			(void)pProxy->drawText(pProxy, pDraw, __xuiToastFont(pToast), pItem->sTitle, pItem->tTitleRect, pToast->tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiToastDrawTextLayout(pToast, pDraw, pItem->sTitle, pItem->tTitleRect,
+				pToast->tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
-		(void)__xuiToastDrawTextLayout(pToast, pItem, pDraw);
+		(void)__xuiToastDrawTextLayout(pToast, pDraw, pItem->sMessage, pItem->tMessageRect,
+			pToast->tColors.iMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	}
 	iCloseColor = (pView->iSlot == pToast->iHoverClose) ? pToast->tColors.iCloseHoverColor : pToast->tColors.iCloseColor;
 	tClose = xuiInternalInsetRect(pItem->tCloseRect, (pItem->tCloseRect.fW - 10.0f) * 0.5f);

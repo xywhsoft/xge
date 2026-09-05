@@ -1,4 +1,5 @@
 #include "xui_internal.h"
+#include "xui_text_internal.h"
 
 #include <string.h>
 
@@ -415,10 +416,10 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 	xui_text_line_t tLine;
 	xui_proxy pProxy;
 	xui_font pFont;
-	const char* sText;
-	char* sLine;
+	const char* sLine;
 	xui_rect_t tLineRect;
 	int i;
+	int iDisplaySize;
 	int iRet;
 
 	if ( !__xuiMsgTipValid(pTip) ) {
@@ -444,26 +445,23 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 	if ( iRet != XUI_OK ) {
 		return XUI_OK;
 	}
-	sText = xuiTextLayoutGetText(pLayout);
 	for ( i = 0; i < xuiTextLayoutGetLineCount(pLayout); i++ ) {
 		memset(&tLine, 0, sizeof(tLine));
 		tLine.iSize = sizeof(tLine);
 		if ( xuiTextLayoutGetLine(pLayout, i, &tLine) != XUI_OK || tLine.iTextSize <= 0 ) {
 			continue;
 		}
-		sLine = (char*)xrtMalloc((size_t)tLine.iTextSize + 1u);
-		if ( sLine == NULL ) {
+		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, i, &sLine, &iDisplaySize);
+		if ( iRet != XUI_OK ) {
 			xuiTextLayoutDestroy(pLayout);
-			return XUI_ERROR_OUT_OF_MEMORY;
+			return iRet;
 		}
-		memcpy(sLine, sText + tLine.iTextOffset, (size_t)tLine.iTextSize);
-		sLine[tLine.iTextSize] = 0;
+		if ( iDisplaySize <= 0 ) continue;
 		tLineRect.fX = pTip->tTextRect.fX + tLine.fX;
 		tLineRect.fY = pTip->tTextRect.fY + tLine.fY;
 		tLineRect.fW = pTip->tTextRect.fW;
 		tLineRect.fH = tLine.fH;
 		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), pTip->tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
-		xrtFree(sLine);
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;

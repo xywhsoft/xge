@@ -1,12 +1,11 @@
 #include "xui_internal.h"
+#include "xui_text_internal.h"
 
 #include <string.h>
 
 typedef struct xui_label_data_t {
 	char* sText;
 	int iTextCapacity;
-	char* sScratch;
-	int iScratchCapacity;
 	xui_font pFont;
 	uint32_t iTextColor;
 	uint32_t iDisabledTextColor;
@@ -62,25 +61,6 @@ static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 		pData->iTextCapacity = iNeed;
 	}
 	memcpy(pData->sText, sText, (size_t)iNeed);
-	return XUI_OK;
-}
-
-static int __xuiLabelScratchReserve(xui_label_data_t* pData, int iCapacity)
-{
-	char* sNew;
-
-	if ( (pData == NULL) || (iCapacity <= 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iCapacity <= pData->iScratchCapacity ) {
-		return XUI_OK;
-	}
-	sNew = (char*)xrtRealloc(pData->sScratch, (size_t)iCapacity);
-	if ( sNew == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	pData->sScratch = sNew;
-	pData->iScratchCapacity = iCapacity;
 	return XUI_OK;
 }
 
@@ -277,13 +257,14 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	xui_rect_t tLineRect;
 	xui_vec2_t tSize;
 	xui_proxy pProxy;
-	const char* sText;
+	const char* sDisplay;
 	uint32_t iTextColor;
 	uint32_t iLineFlags;
 	float fOffsetY;
 	float fLineBottom;
 	int iLine;
 	int iLineCount;
+	int iDisplaySize;
 	int iRet;
 
 	(void)iStateId;
@@ -316,7 +297,6 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		return iRet;
 	}
 	tSize = xuiTextLayoutGetSize(pLayout);
-	sText = xuiTextLayoutGetText(pLayout);
 	iLineCount = xuiTextLayoutGetLineCount(pLayout);
 	iLineFlags = (tDesc.iFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE)) | XUI_TEXT_ALIGN_TOP;
 	fOffsetY = __xuiLabelVerticalOffset(tContent, tSize, tDesc.iFlags);
@@ -328,12 +308,11 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		if ( tLine.iTextSize <= 0 ) {
 			continue;
 		}
-		iRet = __xuiLabelScratchReserve(pData, tLine.iTextSize + 1);
+		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, iLine, &sDisplay, &iDisplaySize);
 		if ( iRet != XUI_OK ) {
 			break;
 		}
-		memcpy(pData->sScratch, sText + tLine.iTextOffset, (size_t)tLine.iTextSize);
-		pData->sScratch[tLine.iTextSize] = 0;
+		if ( iDisplaySize <= 0 ) continue;
 		tLineRect.fX = tContent.fX;
 		tLineRect.fY = tContent.fY + fOffsetY + tLine.fY;
 		tLineRect.fW = tContent.fW;
@@ -354,7 +333,7 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 				continue;
 			}
 		}
-		iRet = pProxy->drawText(pProxy, pDraw, tDesc.pFont, pData->sScratch, tLineRect, iTextColor, iLineFlags);
+		iRet = pProxy->drawText(pProxy, pDraw, tDesc.pFont, sDisplay, tLineRect, iTextColor, iLineFlags);
 		if ( iRet != XUI_OK ) {
 			break;
 		}
@@ -411,9 +390,6 @@ static void __xuiLabelDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	}
 	if ( pData->sText != NULL ) {
 		xrtFree(pData->sText);
-	}
-	if ( pData->sScratch != NULL ) {
-		xrtFree(pData->sScratch);
 	}
 	memset(pData, 0, sizeof(*pData));
 }
