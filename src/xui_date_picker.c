@@ -130,6 +130,18 @@ typedef struct xui_date_picker_data_t {
 	uint32_t iSelectedTextColor;
 	uint32_t iDisabledDayColor;
 	uint32_t iSeparatorColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonOpenColor;
+	uint32_t iButtonDisabledColor;
+	uint32_t iCalendarColor;
+	uint32_t iTimePanelColor;
+	uint32_t iRangeColor;
+	uint32_t iSelectionColor;
+	uint32_t iErrorBorderColor;
+	uint32_t iOptionHoverColor;
+	uint32_t iChildStyleHash;
+	int bChildStyleSynced;
 } xui_date_picker_data_t;
 
 static xui_date_picker_data_t* __xuiDatePickerGetData(xui_widget pWidget);
@@ -669,6 +681,16 @@ static void __xuiDatePickerDefaults(xui_date_picker_data_t* pData)
 	pData->iSelectedTextColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	pData->iDisabledDayColor = XUI_COLOR_RGBA(168, 178, 190, 255);
 	pData->iSeparatorColor = XUI_COLOR_RGBA(216, 228, 238, 255);
+	pData->iButtonColor = XUI_COLOR_RGBA(242, 248, 254, 255);
+	pData->iButtonHoverColor = XUI_COLOR_RGBA(242, 248, 254, 255);
+	pData->iButtonOpenColor = XUI_COLOR_RGBA(242, 248, 254, 255);
+	pData->iButtonDisabledColor = XUI_COLOR_RGBA(242, 248, 254, 255);
+	pData->iCalendarColor = XUI_COLOR_RGBA(255, 255, 255, 160);
+	pData->iTimePanelColor = XUI_COLOR_RGBA(255, 255, 255, 150);
+	pData->iRangeColor = XUI_COLOR_RGBA(218, 236, 252, 255);
+	pData->iSelectionColor = XUI_COLOR_RGBA(218, 236, 252, 255);
+	pData->iErrorBorderColor = XUI_COLOR_RGBA(226, 74, 92, 255);
+	pData->iOptionHoverColor = XUI_COLOR_RGBA(232, 244, 255, 255);
 	__xuiDatePickerCopyText(pData->sRangeSeparator, (int)sizeof(pData->sRangeSeparator), " - ");
 	__xuiDatePickerSyncDefaultFormat(pData);
 	__xuiDatePickerUpdatePopupSizeForMode(pData);
@@ -808,6 +830,27 @@ static void __xuiDatePickerResolve(xui_widget pWidget, xui_date_picker_data_t* p
 	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.border.focus_color", &pResolved->iFocusBorderColor);
 	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.arrow.color", &pResolved->iArrowColor);
 	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.arrow.disabled_color", &pResolved->iDisabledArrowColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.popup.panel_color", &pResolved->iPopupPanelColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.popup.border_color", &pResolved->iPopupBorderColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.popup.shadow_color", &pResolved->iPopupShadowColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.popup.text_color", &pResolved->iPopupTextColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.popup.muted_text_color", &pResolved->iPopupMutedTextColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.accent.color", &pResolved->iAccentColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.field.color", &pResolved->iFieldColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.field.border_color", &pResolved->iFieldBorderColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.day.selected_text_color", &pResolved->iSelectedTextColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.day.disabled_color", &pResolved->iDisabledDayColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.separator.color", &pResolved->iSeparatorColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.button.color", &pResolved->iButtonColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.button.hover_color", &pResolved->iButtonHoverColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.button.open_color", &pResolved->iButtonOpenColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.button.disabled_color", &pResolved->iButtonDisabledColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.calendar.color", &pResolved->iCalendarColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.time.color", &pResolved->iTimePanelColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.day.range_color", &pResolved->iRangeColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.selection.color", &pResolved->iSelectionColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.field.error_border_color", &pResolved->iErrorBorderColor);
+	(void)__xuiDatePickerStyleColor(pWidget, "datepicker.option.hover_color", &pResolved->iOptionHoverColor);
 	(void)__xuiDatePickerStyleFloat(pWidget, "datepicker.border.width", &pResolved->fBorderWidth);
 }
 
@@ -1128,6 +1171,29 @@ static int __xuiDatePickerDrawArrow(xui_proxy pProxy, xui_draw_context pDraw, xu
 	return pProxy->drawLine(pProxy, pDraw, fCx + 4.0f, fCy, fCx - 4.0f, fCy + 6.0f, 1.6f, iColor);
 }
 
+static int __xuiDatePickerSyncStyle(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	xui_date_picker_data_t tResolved;
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int iRet;
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
+	__xuiDatePickerResolve(pWidget, pData, &tResolved);
+	if ( pData->pPopup != NULL ) {
+		iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor,
+			tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, 0u);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pPanel != NULL )
+		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->iChildStyleHash = iHash;
+	pData->bChildStyleSynced = 1;
+	return XUI_OK;
+}
+
 static int __xuiDatePickerCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_date_picker_data_t* pData;
@@ -1139,6 +1205,7 @@ static int __xuiDatePickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	uint32_t iBorder;
 	uint32_t iText;
 	uint32_t iArrow;
+	uint32_t iButton;
 	int iRet;
 
 	(void)iStateId;
@@ -1150,29 +1217,35 @@ static int __xuiDatePickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	__xuiDatePickerResolve(pWidget, pData, &tResolved);
 	__xuiDatePickerUpdateOwnerRects(pWidget, pData);
+	iRet = __xuiDatePickerSyncStyle(pWidget, 0.0f, NULL);
+	if ( iRet != XUI_OK ) return iRet;
 	tRect = xuiInternalSnapRect(xuiWidgetGetContentRect(pWidget));
 	iState = __xuiDatePickerState(pWidget, pData);
 	iBackground = tResolved.iBackgroundColor;
 	iBorder = tResolved.iBorderColor;
 	iText = tResolved.iTextColor;
 	iArrow = tResolved.iArrowColor;
+	iButton = tResolved.iButtonColor;
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0u ) {
 		iBackground = tResolved.iDisabledBackgroundColor;
 		iBorder = tResolved.iBorderColor;
 		iText = tResolved.iDisabledTextColor;
 		iArrow = tResolved.iDisabledArrowColor;
+		iButton = tResolved.iButtonDisabledColor;
 	} else if ( (iState & XUI_DATE_PICKER_STATE_OPEN) != 0u ) {
 		iBackground = tResolved.iOpenBackgroundColor;
 		iBorder = tResolved.iFocusBorderColor;
+		iButton = tResolved.iButtonOpenColor;
 	} else if ( (iState & XUI_WIDGET_STATE_FOCUS) != 0u ) {
 		iBorder = tResolved.iFocusBorderColor;
 	} else if ( (iState & XUI_WIDGET_STATE_HOVER) != 0u ) {
 		iBackground = tResolved.iHoverBackgroundColor;
 		iBorder = tResolved.iHoverBorderColor;
+		iButton = tResolved.iButtonHoverColor;
 	}
 	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tRect, iBackground);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, pData->tButtonRect, XUI_COLOR_RGBA(242, 248, 254, 255));
+	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, pData->tButtonRect, iButton);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy->drawText != NULL) && (tResolved.pFont != NULL) && (__xuiDatePickerAlpha(iText) != 0) ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sText, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -1272,14 +1345,14 @@ static int __xuiDatePickerDrawComboField(xui_date_picker_data_t* pData, const xu
 	uint32_t iBorder;
 	int iRet;
 
-	iBorder = bError ? XUI_COLOR_RGBA(226, 74, 92, 255) : (bActive ? pResolved->iAccentColor : pResolved->iFieldBorderColor);
+	iBorder = bError ? pResolved->iErrorBorderColor : (bActive ? pResolved->iAccentColor : pResolved->iFieldBorderColor);
 	iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, tRect, "", pResolved->iPopupTextColor, pResolved->iFieldColor, iBorder, bActive);
 	if ( iRet != XUI_OK ) return iRet;
 	tArrow = xuiInternalRectFromFloatNearest(tRect.fX + tRect.fW - 20.0f, tRect.fY, 20.0f, tRect.fH);
 	tText = xuiInternalRectFromFloatNearest(tRect.fX + 6.0f, tRect.fY, tRect.fW - 28.0f, tRect.fH);
 	if ( bSelectAll && (pProxy->drawRectFill != NULL || pProxy->drawRectFill != NULL) ) {
 		tSelect = __xuiDatePickerInsetRect(tText, 3.0f);
-		(void)__xuiDatePickerDrawFill(pProxy, pDraw, tSelect, XUI_COLOR_RGBA(218, 236, 252, 255));
+		(void)__xuiDatePickerDrawFill(pProxy, pDraw, tSelect, pResolved->iSelectionColor);
 	}
 	if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 		(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tText, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -1312,7 +1385,7 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 	(void)pOwner;
 	if ( pData->tCalendarRect[iPanel].fW <= 0.0f ) return XUI_OK;
 	tRect = pData->tCalendarRect[iPanel];
-	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tRect, XUI_COLOR_RGBA(255, 255, 255, 160));
+	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tRect, pResolved->iCalendarColor);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiDatePickerDrawStroke(pProxy, pDraw, tRect, 1.0f, pResolved->iSeparatorColor);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1370,7 +1443,7 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 			iText = pResolved->iSelectedTextColor;
 			iBorder = pResolved->iAccentColor;
 		} else if ( bInRange ) {
-			iFill = XUI_COLOR_RGBA(218, 236, 252, 255);
+			iFill = pResolved->iRangeColor;
 			iText = pResolved->iPopupTextColor;
 		} else if ( xrtDatePart(xrtNow()) == tDay ) {
 			iBorder = pResolved->iAccentColor;
@@ -1419,7 +1492,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 
 	if ( pData->tTimePanelRect[iPanel].fW <= 0.0f ) return XUI_OK;
 	tRect = pData->tTimePanelRect[iPanel];
-	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tRect, XUI_COLOR_RGBA(255, 255, 255, 150));
+	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tRect, pResolved->iTimePanelColor);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiDatePickerDrawStroke(pProxy, pDraw, tRect, 1.0f, pResolved->iSeparatorColor);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1441,7 +1514,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 		iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, tRect, "", pResolved->iPopupTextColor, pResolved->iFieldColor, ((pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i)) ? pResolved->iAccentColor : pResolved->iFieldBorderColor, (pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i));
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pData->iEditKind == XUI_DATE_PICKER_EDIT_TIME && pData->iEditPanel == iPanel && pData->iEditField == i && pData->iEditSelectAll ) {
-			(void)__xuiDatePickerDrawFill(pProxy, pDraw, __xuiDatePickerInsetRect(tRect, 4.0f), XUI_COLOR_RGBA(218, 236, 252, 255));
+			(void)__xuiDatePickerDrawFill(pProxy, pDraw, __xuiDatePickerInsetRect(tRect, 4.0f), pResolved->iSelectionColor);
 		}
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 			if ( pData->iEditKind == XUI_DATE_PICKER_EDIT_TIME && pData->iEditPanel == iPanel && pData->iEditField == i ) {
@@ -1487,7 +1560,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 			iValue = __xuiDatePickerYearOptionValue(pData, iPanel, i);
 			tItem = __xuiDatePickerInsetRect(__xuiDatePickerYearOptionRect(pData, iPanel, i), 2.0f);
 			bSelected = (iValue == iYear);
-			iFill = bSelected ? pResolved->iAccentColor : ((pData->iHoverPart == XUI_DATE_PICKER_PART_YEAR_OPTION && pData->iHoverPanel == iPanel && pData->iHoverIndex == i) ? XUI_COLOR_RGBA(232, 244, 255, 255) : 0);
+			iFill = bSelected ? pResolved->iAccentColor : ((pData->iHoverPart == XUI_DATE_PICKER_PART_YEAR_OPTION && pData->iHoverPanel == iPanel && pData->iHoverIndex == i) ? pResolved->iOptionHoverColor : 0);
 			iText = bSelected ? pResolved->iSelectedTextColor : pResolved->iPopupTextColor;
 			if ( __xuiDatePickerAlpha(iFill) != 0 ) {
 				iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tItem, iFill);
@@ -1502,7 +1575,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 		for ( i = 0; i < 12; i++ ) {
 			tItem = __xuiDatePickerInsetRect(__xuiDatePickerMonthOptionRect(pData, iPanel, i), 2.0f);
 			bSelected = (i + 1 == iMonth);
-			iFill = bSelected ? pResolved->iAccentColor : ((pData->iHoverPart == XUI_DATE_PICKER_PART_MONTH_OPTION && pData->iHoverPanel == iPanel && pData->iHoverIndex == i) ? XUI_COLOR_RGBA(232, 244, 255, 255) : 0);
+			iFill = bSelected ? pResolved->iAccentColor : ((pData->iHoverPart == XUI_DATE_PICKER_PART_MONTH_OPTION && pData->iHoverPanel == iPanel && pData->iHoverIndex == i) ? pResolved->iOptionHoverColor : 0);
 			iText = bSelected ? pResolved->iSelectedTextColor : pResolved->iPopupTextColor;
 			if ( __xuiDatePickerAlpha(iFill) != 0 ) {
 				iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tItem, iFill);
@@ -2604,6 +2677,27 @@ static void __xuiDatePickerRegisterStyleProperties(xui_context pContext, xui_wid
 	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.border.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.arrow.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.arrow.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.popup.panel_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.popup.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.popup.shadow_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.popup.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.popup.muted_text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.accent.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.field.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.field.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.day.selected_text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.day.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.separator.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.button.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.button.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.button.open_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.button.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.calendar.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.time.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.day.range_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.field.error_border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.option.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiDatePickerRegisterStyleProperty(pContext, pType, "datepicker.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiDatePickerRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -2642,6 +2736,7 @@ XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiDatePickerDestroy;
 	tDesc.onContentMeasure = __xuiDatePickerContentMeasure;
 	tDesc.onCacheRender = __xuiDatePickerCacheRender;
+	tDesc.onUpdate = __xuiDatePickerSyncStyle;
 	__xuiDatePickerDefaultLayout(&tDesc.tLayout);
 	__xuiDatePickerDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
