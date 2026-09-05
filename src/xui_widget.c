@@ -1632,38 +1632,167 @@ static int __xuiWidgetAppendRenderNode(xui_context pContext, xui_widget pWidget,
 	return XUI_OK;
 }
 
-static int __xuiWidgetRenderNodeGreater(const xui_render_node_t* pA, const xui_render_node_t* pB)
+static int __xuiWidgetStackingGreater(xui_widget pA, xui_widget pB)
 {
-	if ( pA->iLayer != pB->iLayer ) {
-		return pA->iLayer > pB->iLayer;
+	if ( pA->tLayout.iLayer != pB->tLayout.iLayer ) {
+		return pA->tLayout.iLayer > pB->tLayout.iLayer;
 	}
-	return pA->iZIndex > pB->iZIndex;
+	return pA->tLayout.iZIndex > pB->tLayout.iZIndex;
 }
 
-static void __xuiWidgetSortRenderNodes(xui_context pContext)
+static void __xuiWidgetStackingDirty(xui_widget pParent)
 {
-	xui_render_node_t tNode;
+	if ( __xuiWidgetMemoryValid(pParent) ) {
+		pParent->bStackingChildrenDirty = 1;
+	}
+}
+
+static int __xuiWidgetReserveStackingChildren(xui_widget pParent, int iCapacity)
+{
+	xui_widget* pChildren;
+	int iNewCapacity;
+
+	if ( iCapacity <= pParent->iStackingChildCapacity ) return XUI_OK;
+	iNewCapacity = pParent->iStackingChildCapacity * 2;
+	if ( iNewCapacity < iCapacity ) iNewCapacity = iCapacity;
+	if ( iNewCapacity < 8 ) iNewCapacity = 8;
+	pChildren = (xui_widget*)xrtRealloc(pParent->pStackingChildren,
+		sizeof(*pChildren) * (size_t)iNewCapacity);
+	if ( pChildren == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pParent->pStackingChildren = pChildren;
+	pParent->iStackingChildCapacity = iNewCapacity;
+	return XUI_OK;
+}
+
+static int __xuiWidgetSortStackingChildren(xui_widget pParent)
+{
+	xui_widget pChild;
+	xui_widget pEntry;
+	xui_widget* pSource;
+	xui_widget* pTarget;
+	xui_widget* pSwap;
+	xui_widget* pMerge;
+	int iCount;
+	int iWidth;
+	int iStart;
+	int iMiddle;
+	int iEnd;
+	int iLeft;
+	int iRight;
+	int iWrite;
 	int i;
 	int j;
 
-	for ( i = 1; i < pContext->iRenderNodeCount; i++ ) {
-		tNode = pContext->pRenderNodes[i];
-		j = i - 1;
-		while ( (j >= 0) && __xuiWidgetRenderNodeGreater(&pContext->pRenderNodes[j], &tNode) ) {
-			pContext->pRenderNodes[j + 1] = pContext->pRenderNodes[j];
-			j--;
-		}
-		pContext->pRenderNodes[j + 1] = tNode;
+	iCount = pParent->iChildCount;
+	if ( __xuiWidgetReserveStackingChildren(pParent, iCount) != XUI_OK ) {
+		return XUI_ERROR_OUT_OF_MEMORY;
 	}
+	i = 0;
+	for ( pChild = pParent->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		pParent->pStackingChildren[i++] = pChild;
+	}
+	iCount = i;
+	if ( iCount <= 32 ) {
+		for ( i = 1; i < iCount; i++ ) {
+			pEntry = pParent->pStackingChildren[i];
+			j = i - 1;
+			while ( (j >= 0) && __xuiWidgetStackingGreater(
+				pParent->pStackingChildren[j], pEntry) ) {
+				pParent->pStackingChildren[j + 1] = pParent->pStackingChildren[j];
+				j--;
+			}
+			pParent->pStackingChildren[j + 1] = pEntry;
+		}
+	} else {
+		pMerge = (xui_widget*)xrtMalloc(sizeof(*pMerge) * (size_t)iCount);
+		if ( pMerge == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		pSource = pParent->pStackingChildren;
+		pTarget = pMerge;
+		for ( iWidth = 1; iWidth < iCount; ) {
+			for ( iStart = 0; iStart < iCount; iStart += iWidth * 2 ) {
+				iMiddle = iStart + iWidth;
+				if ( iMiddle > iCount ) iMiddle = iCount;
+				iEnd = iMiddle + iWidth;
+				if ( iEnd > iCount ) iEnd = iCount;
+				iLeft = iStart;
+				iRight = iMiddle;
+				iWrite = iStart;
+				while ( (iLeft < iMiddle) && (iRight < iEnd) ) {
+					if ( __xuiWidgetStackingGreater(pSource[iLeft], pSource[iRight]) ) {
+						pTarget[iWrite++] = pSource[iRight++];
+					} else {
+						pTarget[iWrite++] = pSource[iLeft++];
+					}
+				}
+				while ( iLeft < iMiddle ) pTarget[iWrite++] = pSource[iLeft++];
+				while ( iRight < iEnd ) pTarget[iWrite++] = pSource[iRight++];
+			}
+			pSwap = pSource;
+			pSource = pTarget;
+			pTarget = pSwap;
+			if ( iWidth > iCount / 2 ) iWidth = iCount;
+			else iWidth *= 2;
+		}
+		if ( pSource != pParent->pStackingChildren ) {
+			memcpy(pParent->pStackingChildren, pSource,
+				sizeof(*pSource) * (size_t)iCount);
+		}
+		xrtFree(pMerge);
+	}
+	pParent->iStackingChildCount = iCount;
+	pParent->bStackingChildrenDirty = 0;
+	return XUI_OK;
+}
+
+int xuiInternalStackingChildren(xui_widget pParent,
+	const xui_widget** ppChildren, int* pCount)
+{
+	int iRet;
+
+	if ( !xuiInternalWidgetIsValid(pParent) ||
+	     (ppChildren == NULL) || (pCount == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pParent->bStackingChildrenDirty ||
+	     (pParent->iStackingChildCount != pParent->iChildCount) ) {
+		iRet = __xuiWidgetSortStackingChildren(pParent);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	*ppChildren = pParent->pStackingChildren;
+	*pCount = pParent->iStackingChildCount;
+	return XUI_OK;
+}
+
+/* Keep the cache valid for empty widgets without requiring an allocation. */
+static void __xuiWidgetInitStackingChildren(xui_widget pWidget)
+{
+	pWidget->pStackingChildren = NULL;
+	pWidget->iStackingChildCount = 0;
+	pWidget->iStackingChildCapacity = 0;
+	pWidget->bStackingChildrenDirty = 1;
+}
+
+static void __xuiWidgetDestroyStackingChildren(xui_widget pWidget)
+{
+	if ( pWidget->pStackingChildren != NULL ) {
+		xrtFree(pWidget->pStackingChildren);
+	}
+	pWidget->pStackingChildren = NULL;
+	pWidget->iStackingChildCount = 0;
+	pWidget->iStackingChildCapacity = 0;
+	pWidget->bStackingChildrenDirty = 1;
 }
 
 static int __xuiWidgetBuildRenderTreeRecursive(xui_context pContext, xui_widget pWidget, xui_rect_t tParentClip, int bHasClip)
 {
 	xui_widget pChild;
+	const xui_widget* ppChildren;
 	xui_rect_t tWorldRect;
 	xui_rect_t tPaintRect;
 	xui_rect_t tChildClip;
 	int bChildHasClip;
+	int iChildCount;
+	int i;
 	int iRet;
 
 	if ( !pWidget->bVisible ) {
@@ -1682,7 +1811,12 @@ static int __xuiWidgetBuildRenderTreeRecursive(xui_context pContext, xui_widget 
 		tChildClip = bHasClip ? __xuiWidgetIntersectRect(tPaintRect, tParentClip) : tPaintRect;
 		bChildHasClip = 1;
 	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+	iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	for ( i = 0; i < iChildCount; i++ ) {
+		pChild = ppChildren[i];
 		iRet = __xuiWidgetBuildRenderTreeRecursive(pContext, pChild, tChildClip, bChildHasClip);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -3118,6 +3252,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->iMagic = XUI_WIDGET_MAGIC;
 	pWidget->pContext = pContext;
 	pWidget->pType = pType;
+	__xuiWidgetInitStackingChildren(pWidget);
 	__xuiWidgetInitLayout(pWidget);
 	pWidget->bVisible = 1;
 	pWidget->bEnabled = 1;
@@ -3415,6 +3550,7 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	__xuiWidgetDestroyStyleData(pWidget);
 	__xuiWidgetDestroyTooltipData(pWidget);
 	__xuiWidgetDestroyAccessibilityData(pWidget);
+	__xuiWidgetDestroyStackingChildren(pWidget);
 	if ( pWidget->pTypeData != NULL ) {
 		xrtFree(pWidget->pTypeData);
 	}
@@ -3586,6 +3722,7 @@ XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_wid
 	}
 	pChild->pParent = pParent;
 	pParent->iChildCount++;
+	__xuiWidgetStackingDirty(pParent);
 	__xuiWidgetBumpLayoutVersion(pParent);
 	__xuiWidgetUpdateEventMasksToRoot(pParent);
 	(void)xuiWidgetInvalidate(pParent, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
@@ -3624,6 +3761,7 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
 	if ( pParent->iChildCount > 0 ) {
 		pParent->iChildCount--;
 	}
+	__xuiWidgetStackingDirty(pParent);
 	__xuiWidgetBumpLayoutVersion(pParent);
 	(void)__xuiWidgetRecomputeSubtreeEventMask(pWidget);
 	__xuiWidgetUpdateEventMasksToRoot(pParent);
@@ -4062,6 +4200,7 @@ XUI_API int xuiWidgetSetLayer(xui_widget pWidget, int iLayer, int iZIndex)
 	}
 	pWidget->tLayout.iLayer = iLayer;
 	pWidget->tLayout.iZIndex = iZIndex;
+	__xuiWidgetStackingDirty(pWidget->pParent);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -5145,6 +5284,7 @@ XUI_API int xuiOverlayBringToFront(xui_widget pOverlay)
 	pOverlay->pNextSibling = NULL;
 	pParent->pLastChild->pNextSibling = pOverlay;
 	pParent->pLastChild = pOverlay;
+	__xuiWidgetStackingDirty(pParent);
 	__xuiWidgetBumpLayoutVersion(pParent);
 	iRet = __xuiWidgetSetOverlayTreeLayer(pOverlay, iLayer, iZIndex + 1);
 	if ( iRet != XUI_OK ) {
@@ -7116,7 +7256,6 @@ static int __xuiBuildRenderTreeOperation(xui_context pContext)
 			return iRet;
 		}
 	}
-	__xuiWidgetSortRenderNodes(pContext);
 	iGeneration = pContext->iRenderTreeGeneration + 1;
 	pContext->iRenderTreeGeneration = (iGeneration != 0) ? iGeneration : 1;
 	return XUI_OK;

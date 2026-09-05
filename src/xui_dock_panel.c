@@ -3638,9 +3638,14 @@ static int __xuiDockArrangeWindowHosts(xui_widget pWidget, xui_dock_panel_data_t
 
 static int __xuiDockArrangeDragOverlay(xui_widget pWidget, xui_dock_panel_data_t* pData, xui_rect_t tRect)
 {
+	xui_rect_t tWorld;
+
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pDragOverlayWidget == NULL ) return XUI_OK;
-	return xuiLayoutArrangeChild(pWidget, pData->pDragOverlayWidget, tRect);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tRect.fX += tWorld.fX;
+	tRect.fY += tWorld.fY;
+	return xuiWidgetSetRect(pData->pDragOverlayWidget, xuiInternalSnapRect(tRect));
 }
 
 static int __xuiDockPanelLayoutChildren(xui_widget pWidget, xui_rect_t tRect, void* pUser)
@@ -5523,7 +5528,6 @@ static int __xuiDockDragOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 	xui_widget pWidget;
 	xui_dock_panel_data_t* pData;
 	xui_proxy pProxy;
-	xui_rect_t r;
 	(void)iStateId;
 	pWidget = (xui_widget)pUser;
 	if ( (pOverlay == NULL) || (pDraw == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -5531,8 +5535,7 @@ static int __xuiDockDragOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	r = xuiWidgetGetRect(pOverlay);
-	return __xuiDockDrawDragPreview(pWidget, pDraw, pData, pProxy, r.fX, r.fY);
+	return __xuiDockDrawDragPreview(pWidget, pDraw, pData, pProxy, 0.0f, 0.0f);
 }
 
 static void __xuiDockDefaultLayout(xui_layout_t* pLayout)
@@ -5628,7 +5631,8 @@ static int __xuiDockPanelInitDragOverlay(xui_widget pWidget, xui_dock_panel_data
 	(void)xuiWidgetSetCachePolicy(pOverlay, &policy);
 	(void)xuiWidgetSetCacheRenderCallback(pOverlay, __xuiDockDragOverlayRender, pWidget);
 	(void)xuiWidgetSetVisible(pOverlay, 0);
-	ret = xuiWidgetAddChild(pWidget, pOverlay);
+	ret = xuiOverlayAttach(xuiWidgetGetContext(pWidget), pWidget, pOverlay,
+		XUI_LAYER_DRAG, XUI_WINDOW_Z_TOPMOST + 200);
 	if ( ret != XUI_OK ) {
 		xuiWidgetDestroy(pOverlay);
 		return ret;
@@ -5669,7 +5673,7 @@ static void __xuiDockPanelDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	if ( pData != NULL ) {
 		xuiWidgetDestroy(pData->pOptionMenu);
 		xuiWidgetDestroy(pData->pOverflowMenu);
-		/* The drag overlay is an owned child and has already been destroyed by xuiWidgetDestroy(). */
+		xuiWidgetDestroy(pData->pDragOverlayWidget);
 		pData->pDragOverlayWidget = NULL;
 		for ( i = 0; i < XUI_DOCK_PANEL_MENU_TITLE_COUNT; ++i ) {
 			xrtFree(pData->arrMenuTitle[i]);

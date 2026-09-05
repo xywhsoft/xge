@@ -20,6 +20,22 @@ static int __xuiTestPoll(xui_context pContext, int iType, xui_widget pTarget, xu
 	return (iRet == 1) && (pEvent->iType == iType) && (pEvent->pTarget == pTarget);
 }
 
+static int __xuiTestRenderIndex(xui_context pContext, xui_widget pWidget)
+{
+	xui_render_node_t tNode;
+	int i;
+
+	for ( i = 0; i < xuiGetRenderNodeCount(pContext); i++ ) {
+		memset(&tNode, 0, sizeof(tNode));
+		tNode.iSize = sizeof(tNode);
+		if ( (xuiGetRenderNode(pContext, i, &tNode) == XUI_OK) &&
+		     (tNode.pWidget == pWidget) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 typedef struct xui_input_dispatch_log_t {
 	int iCount;
 	xui_widget arrWidget[16];
@@ -346,6 +362,22 @@ int main(void)
 	xuiClearEvents(pContext);
 
 	XUI_TEST_CHECK(xuiHitTest(pContext, 25.0f, 25.0f, XUI_WIDGET_HIT_DEFAULT) == pB, "z-order hit test failed");
+	iRet = xuiWidgetSetLayer(pRoot, 9, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "root stacking layer failed");
+	iRet = xuiWidgetSetLayer(pA, 0, 10);
+	XUI_TEST_CHECK(iRet == XUI_OK, "A stacking layer failed");
+	iRet = xuiWidgetSetLayer(pB, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "B stacking layer failed");
+	XUI_TEST_CHECK(xuiHitTest(pContext, 25.0f, 25.0f, XUI_WIDGET_HIT_DEFAULT) == pA,
+		"hit test must follow sibling layer and z order");
+	iRet = xuiBuildRenderTree(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "stacking render tree failed");
+	XUI_TEST_CHECK(__xuiTestRenderIndex(pContext, pRoot) < __xuiTestRenderIndex(pContext, pB) &&
+		__xuiTestRenderIndex(pContext, pB) < __xuiTestRenderIndex(pContext, pA),
+		"paint order must keep parent first and sort siblings by layer and z order");
+	iRet = xuiWidgetSetLayer(pRoot, 0, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayer(pA, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore stacking layers failed");
 	iRet = xuiWidgetSetEventCallback(pRoot, __xuiTestEventCallback, &tLog);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root event callback set failed");
 	iRet = xuiWidgetSetEventCallback(pB, __xuiTestEventCallback, &tLog);

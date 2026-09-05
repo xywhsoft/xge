@@ -355,6 +355,10 @@ struct xui_widget_t {
 	xui_widget pLastChild;
 	xui_widget pPrevSibling;
 	xui_widget pNextSibling;
+	xui_widget* pStackingChildren;
+	int iStackingChildCount;
+	int iStackingChildCapacity;
+	int bStackingChildrenDirty;
 	xui_widget pDeferredDestroyNext;
 	xui_widget pStateChangeNext;
 	int iChildCount;
@@ -500,6 +504,8 @@ void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);
 void xuiInternalContextDestroyResources(xui_context pContext);
 void xuiInternalContextDestroyRenderTree(xui_context pContext);
+int xuiInternalStackingChildren(xui_widget pParent,
+	const xui_widget** ppChildren, int* pCount);
 void xuiInternalContextDestroyInput(xui_context pContext);
 int xuiInternalInputSyncIme(xui_context pContext);
 int xuiInternalInputRefreshIme(xui_context pContext);

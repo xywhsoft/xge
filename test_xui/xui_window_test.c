@@ -313,10 +313,14 @@ int main(void)
 	iRet = xuiWidgetGetLayer(xuiWindowGetClientWidget(pMain), &iLayerTop, &iZTop);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLayerTop == iLayerMain && iZTop == iZMain, "client follows raised window layer");
 
+	iRet = xuiWindowSetOpen(pTop, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWindowSetOpen(pOrderWindow, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close overlapping top-most windows before resize");
 	tWorld = xuiWidgetGetWorldRect(pMain);
-	iRet = __xuiWindowDispatchDown(pContext, tWorld.fX + tWorld.fW - 2.0f, tWorld.fY + 80.0f);
+	/* Keep the resize probe outside the overlapping top-most window. */
+	iRet = __xuiWindowDispatchDown(pContext, tWorld.fX + tWorld.fW - 2.0f, tWorld.fY + 15.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize down");
-	iRet = __xuiWindowDispatchMove(pContext, tWorld.fX + tWorld.fW + 42.0f, tWorld.fY + 80.0f, XUI_POINTER_BUTTON_LEFT);
+	iRet = __xuiWindowDispatchMove(pContext, tWorld.fX + tWorld.fW + 42.0f, tWorld.fY + 15.0f, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize move");
 	tRect = xuiWidgetGetRect(pMain);
 	XUI_TEST_CHECK(__xuiWindowNear(tRect.fW, 260.0f), "resize move remains deferred");
@@ -327,7 +331,7 @@ int main(void)
 	tRect = xuiWidgetGetWorldRect(pDragAdorner);
 	XUI_TEST_CHECK(tRect.fX > 100.0f && tRect.fY > 80.0f && tRect.fW > 295.0f,
 		"resize adorner keeps position while following size");
-	iRet = __xuiWindowDispatchUp(pContext, tWorld.fX + tWorld.fW + 42.0f, tWorld.fY + 80.0f);
+	iRet = __xuiWindowDispatchUp(pContext, tWorld.fX + tWorld.fW + 42.0f, tWorld.fY + 15.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize up");
 	tRect = xuiWidgetGetRect(pMain);
 	XUI_TEST_CHECK(tRect.fW > 295.0f, "resize updates width");

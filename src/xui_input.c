@@ -598,40 +598,55 @@ static int __xuiInputPointInRect(int fX, int fY, xui_rect_t tRect)
 	       (fY < (tRect.fY + tRect.fH));
 }
 
-static xui_widget __xuiInputHitTestWidget(xui_widget pWidget, int fX, int fY, uint32_t iFlags)
+static int __xuiInputHitTestWidget(xui_context pContext, xui_widget pWidget,
+	int fX, int fY, uint32_t iFlags, xui_widget* pHitResult)
 {
 	xui_widget pChild;
 	xui_widget pHit;
+	const xui_widget* ppChildren;
 	xui_rect_t tWorldRect;
+	int iChildCount;
+	int i;
+	int iRet;
 
+	*pHitResult = NULL;
 	if ( !xuiInternalWidgetIsValid(pWidget) ) {
-		return NULL;
+		return XUI_OK;
 	}
 	if ( ((iFlags & XUI_WIDGET_HIT_VISIBLE) != 0) && !pWidget->bVisible ) {
-		return NULL;
+		return XUI_OK;
 	}
 	if ( ((iFlags & XUI_WIDGET_HIT_ENABLED) != 0) && !pWidget->bEnabled ) {
-		return NULL;
+		return XUI_OK;
 	}
 	if ( !pWidget->bHitTestVisible ) {
-		return NULL;
+		return XUI_OK;
 	}
 	tWorldRect = xuiWidgetGetWorldRect(pWidget);
 	if ( !__xuiInputPointInRect(fX, fY, tWorldRect) ) {
-		return NULL;
+		return XUI_OK;
 	}
 	if ( (iFlags & XUI_WIDGET_HIT_CHILDREN) != 0 ) {
-		for ( pChild = pWidget->pLastChild; pChild != NULL; pChild = pChild->pPrevSibling ) {
-			pHit = __xuiInputHitTestWidget(pChild, fX, fY, iFlags);
+		iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+		for ( i = iChildCount - 1; i >= 0; i-- ) {
+			pChild = ppChildren[i];
+			iRet = __xuiInputHitTestWidget(pContext, pChild, fX, fY, iFlags, &pHit);
+			if ( iRet != XUI_OK ) {
+				return iRet;
+			}
 			if ( pHit != NULL ) {
-				return pHit;
+				*pHitResult = pHit;
+				return XUI_OK;
 			}
 		}
 	}
 	if ( (iFlags & XUI_WIDGET_HIT_SELF) != 0 ) {
-		return pWidget;
+		*pHitResult = pWidget;
 	}
-	return NULL;
+	return XUI_OK;
 }
 
 static int __xuiInputSetPointer(xui_context pContext, int fX, int fY, uint32_t iButtons)
@@ -2472,6 +2487,7 @@ XUI_API int xuiDispatchPendingEvents(xui_context pContext)
 static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, uint32_t iFlags)
 {
 	xui_widget pHit;
+	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ||
 	     (fX < -XUI_CONTEXT_MAX_VIEWPORT) || (fY < -XUI_CONTEXT_MAX_VIEWPORT) ||
@@ -2488,11 +2504,26 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 		return NULL;
 	}
 	if ( xuiInternalContextDestroyPending(pContext) ) return NULL;
-	pHit = __xuiInputHitTestWidget(pContext->pOverlayRoot, fX, fY, iFlags);
+	iRet = __xuiInputHitTestWidget(pContext, pContext->pOverlayRoot,
+		fX, fY, iFlags, &pHit);
+	if ( iRet != XUI_OK ) {
+		xuiInternalReportError(pContext, pContext->pOverlayRoot, iRet,
+			XUI_ERROR_STAGE_INPUT, 1, "hit_test.stacking",
+			"The hit-test stacking order could not be built.");
+		return NULL;
+	}
 	if ( (pHit != NULL) && (pHit != pContext->pOverlayRoot) ) {
 		return pHit;
 	}
-	return __xuiInputHitTestWidget(pContext->pRoot, fX, fY, iFlags);
+	iRet = __xuiInputHitTestWidget(pContext, pContext->pRoot,
+		fX, fY, iFlags, &pHit);
+	if ( iRet != XUI_OK ) {
+		xuiInternalReportError(pContext, pContext->pRoot, iRet,
+			XUI_ERROR_STAGE_INPUT, 1, "hit_test.stacking",
+			"The hit-test stacking order could not be built.");
+		return NULL;
+	}
+	return pHit;
 }
 
 XUI_API xui_widget xuiHitTest(xui_context pContext, int fX, int fY, uint32_t iFlags)
