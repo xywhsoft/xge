@@ -1,4 +1,5 @@
 #include "xui_internal.h"
+#include "xui_text_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,8 +82,6 @@ typedef struct xui_message_list_data_t {
 	int iSelectionActiveOffset;
 	int bSelecting;
 	xui_widget pContextMenu;
-	char* sLineScratch;
-	int iLineScratchCapacity;
 	int bLayoutValid;
 	int iLayoutDirtyFrom;
 	int iLaidOutCount;
@@ -404,22 +403,6 @@ static float __xuiMessageLineHeight(xui_context pContext, xui_font pFont)
 		}
 	}
 	return 18.0f;
-}
-
-static int __xuiMessageEnsureLineScratch(xui_message_list_data_t* pData, int iCapacity)
-{
-	char* sNew;
-	int iNewCapacity;
-
-	if ( pData == NULL || iCapacity <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iCapacity <= pData->iLineScratchCapacity ) return XUI_OK;
-	iNewCapacity = (pData->iLineScratchCapacity > 0) ? pData->iLineScratchCapacity : 128;
-	while ( iNewCapacity < iCapacity ) iNewCapacity *= 2;
-	sNew = (char*)xrtRealloc(pData->sLineScratch, (size_t)iNewCapacity);
-	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	pData->sLineScratch = sNew;
-	pData->iLineScratchCapacity = iNewCapacity;
-	return XUI_OK;
 }
 
 static int __xuiMessageEnsureNodeTextLayout(xui_widget pWidget, xui_message_list_data_t* pData,
@@ -831,41 +814,76 @@ static int __xuiMessageEnsureLineCarets(xui_widget pWidget, xui_message_list_dat
 {
 	xui_text_shape_t tShape;
 	xui_message_text_caret_t* pCarets;
-	const char* sText = xuiTextLayoutGetText(pLayout);
-	int iLength;
-	int iBoundary;
-	int iEnd;
-	int iCount;
-	int i;
+	const char* sText;
+	const char* sDisplay;
+	int iLength = pLine->iTextSize;
+	int iBoundary, iCapacity = 1, iCount = 1;
+	int iSource = 0, iDisplay = 0, iDisplaySize, iDisplayBoundary = 0;
+	int iCluster = 0, iClusterEnd = 0;
 	int iRet;
 	float fX = 0.0f;
 	if ( pNode->iTextCaretCount > 0 && pNode->iTextCaretLine == iLine ) return XUI_OK;
-	iLength = (int)strlen(sText);
+	pNode->iTextCaretCount = 0;
+	iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, iLine, &sDisplay, &iDisplaySize);
+	if ( iRet != XUI_OK ) return iRet;
+	sText = xuiTextLayoutGetText(pLayout) + pLine->iTextOffset;
 	memset(&tShape, 0, sizeof(tShape));
 	iRet = xuiTextShape(xuiWidgetGetContext(pWidget), __xuiMessageFont(pWidget, pData),
-		sText + pLine->iTextOffset, pLine->iTextSize, XUI_TEXT_SHAPE_DEFAULT, &tShape);
+		sDisplay, iDisplaySize, XUI_TEXT_SHAPE_DEFAULT, &tShape);
 	if ( iRet != XUI_OK ) { xuiTextShapeFree(&tShape); return iRet; }
-	if ( tShape.iClusterCount > INT_MAX - 2 ) { xuiTextShapeFree(&tShape); return XUI_ERROR_OUT_OF_MEMORY; }
-	if ( pNode->iTextCaretCapacity < tShape.iClusterCount + 2 ) {
+	/* Layout lines already end at grapheme boundaries. Work on this line only,
+	 * including zero-width source boundaries that disappeared from its display. */
+	for ( iBoundary = 0; iBoundary < iLength; iCapacity++ ) {
+		XUI_MESSAGE_LIST_AUDIT_STEP(CaretSource);
+		if ( iCapacity == INT_MAX ) { xuiTextShapeFree(&tShape); return XUI_ERROR_OUT_OF_MEMORY; }
+		iBoundary = xuiInternalTextGraphemeNext(sText, iLength, iBoundary);
+	}
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pCarets) ) { xuiTextShapeFree(&tShape); return XUI_ERROR_OUT_OF_MEMORY; }
+	if ( pNode->iTextCaretCapacity < iCapacity ) {
 		pCarets = (xui_message_text_caret_t*)xrtRealloc(pNode->arrTextCarets,
-			sizeof(*pCarets) * (size_t)(tShape.iClusterCount + 2));
+			sizeof(*pCarets) * (size_t)iCapacity);
 		if ( pCarets == NULL ) { xuiTextShapeFree(&tShape); return XUI_ERROR_OUT_OF_MEMORY; }
 		pNode->arrTextCarets = pCarets;
-		pNode->iTextCaretCapacity = tShape.iClusterCount + 2;
+		pNode->iTextCaretCapacity = iCapacity;
 	}
 	pCarets = pNode->arrTextCarets;
-	iBoundary = xuiInternalTextGraphemeClamp(sText, iLength, pLine->iTextOffset);
-	pCarets[0] = (xui_message_text_caret_t){iBoundary, 0.0f};
-	iCount = 1;
-	/* Shaping clusters supply advances; only shared grapheme boundaries admit carets. */
-	for ( i = 0; i < tShape.iClusterCount; i++ ) {
-		fX += tShape.pClusters[i].fAdvance;
-		iEnd = pLine->iTextOffset + tShape.pClusters[i].iTextEnd;
-		while ( iBoundary < iEnd ) iBoundary = xuiInternalTextGraphemeNext(sText, iLength, iBoundary);
-		if ( iBoundary == iEnd ) pCarets[iCount++] = (xui_message_text_caret_t){iEnd, fX};
+	pCarets[0] = (xui_message_text_caret_t){pLine->iTextOffset, 0.0f};
+	for ( iBoundary = 0; iBoundary < iLength; ) {
+		uint32 iScalar = 0;
+		XUI_MESSAGE_LIST_AUDIT_STEP(CaretSource);
+		iBoundary = xuiInternalTextGraphemeNext(sText, iLength, iBoundary);
+		/* Display is an ordered source subsequence plus an optional final '-'.
+		 * Match whole UTF-8 scalars: removed and retained scalars can share bytes. */
+		while ( iSource < iBoundary ) {
+			xstrview tView = {sText + iSource, (size_t)(iLength - iSource)};
+			size_t iRead = 0;
+			XUI_MESSAGE_LIST_AUDIT_STEP(CaretDecode);
+			if ( xrtUtf8Decode(tView, &iScalar, &iRead) != XUTF_OK ) iRead = 1;
+			if ( iRead <= (size_t)(iDisplaySize - iDisplay) &&
+			     memcmp(sText + iSource, sDisplay + iDisplay, iRead) == 0 ) iDisplay += (int)iRead;
+			iSource += (int)iRead;
+		}
+		if ( iSource == iLength && iDisplay < iDisplaySize ) {
+			/* The selected hyphen belongs to the original SHY's ending offset. */
+			if ( iScalar != 0xADu || pLine->iBreakType != XUI_TEXT_BREAK_WRAP ||
+			     iDisplaySize - iDisplay != 1 || sDisplay[iDisplay] != '-' ) {
+				xuiTextShapeFree(&tShape);
+				return XUI_ERROR_INVALID_STATE;
+			}
+			iDisplay++;
+		}
+		while ( iCluster < tShape.iClusterCount && tShape.pClusters[iCluster].iTextEnd <= iDisplay ) {
+			XUI_MESSAGE_LIST_AUDIT_STEP(CaretCluster);
+			fX += tShape.pClusters[iCluster].fAdvance;
+			iClusterEnd = tShape.pClusters[iCluster++].iTextEnd;
+		}
+		while ( iDisplayBoundary < iDisplay ) {
+			XUI_MESSAGE_LIST_AUDIT_STEP(CaretDisplay);
+			iDisplayBoundary = xuiInternalTextGraphemeNext(sDisplay, iDisplaySize, iDisplayBoundary);
+		}
+		if ( iClusterEnd == iDisplay && iDisplayBoundary == iDisplay )
+			pCarets[iCount++] = (xui_message_text_caret_t){pLine->iTextOffset + iBoundary, fX};
 	}
-	/* A backend can wrap inside a grapheme. Never expose that split as a caret. */
-	if ( iBoundary > pCarets[iCount - 1].iOffset ) pCarets[iCount++] = (xui_message_text_caret_t){iBoundary, fX};
 	xuiTextShapeFree(&tShape);
 	pNode->iTextCaretLine = iLine;
 	pNode->iTextCaretCount = iCount;
@@ -937,6 +955,7 @@ static int __xuiMessageHitTextOffset(xui_widget pWidget, xui_message_list_data_t
 	while ( iLow < iHigh ) {
 		int iMid = iLow + (iHigh - iLow) / 2;
 		float fMiddle = (pNode->arrTextCarets[iMid].fX + pNode->arrTextCarets[iMid + 1].fX) * 0.5f;
+		XUI_MESSAGE_LIST_AUDIT_STEP(HitCaret);
 		if ( fLocalX - tText.fX > fMiddle ) iLow = iMid + 1;
 		else iHigh = iMid;
 	}
@@ -1292,15 +1311,15 @@ static int __xuiMessageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint
 	return XUI_OK;
 }
 
-static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data_t* pData, xui_proxy pProxy, xui_draw_context pDraw, int iNodeIndex, xui_rect_t tRect, uint32_t iColor, int bCenter)
+static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data_t* pData, xui_proxy pProxy, xui_draw_context pDraw, xui_text_layout pLayout, int iNodeIndex, xui_rect_t tRect, uint32_t iColor, int bCenter)
 {
-	xui_text_layout pLayout;
 	xui_text_line_t tLine;
 	xui_font pFont;
 	xui_rect_t tContent;
 	xui_rect_t tLineRect;
 	xui_rect_t tSelectionRect;
-	const char* sLayoutText;
+	const char* sDisplay;
+	int iDisplaySize;
 	float fStart;
 	float fEnd;
 	int iStart;
@@ -1312,10 +1331,8 @@ static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data
 	/* Headless callers may intentionally omit a font; preserve the old no-op rendering behavior. */
 	if ( pFont == NULL ) return XUI_OK;
 	/* The bubble shrinks after measurement; paint and hit must retain that wrap. */
-	pLayout = pData->arrNodes[iNodeIndex].pTextLayout;
 	if ( pLayout == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	tContent = xuiWidgetGetContentRect(pWidget);
-	sLayoutText = xuiTextLayoutGetText(pLayout);
 	for ( iLine = __xuiMessageLowerBoundLineY(pLayout, tContent.fY - tRect.fY);
 	      iLine < xuiTextLayoutGetLineCount(pLayout); iLine++ ) {
 		XUI_MESSAGE_LIST_AUDIT_STEP(RenderLine);
@@ -1334,15 +1351,13 @@ static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data
 				if ( iRet != XUI_OK ) return iRet;
 				fStart = __xuiMessageLineCaretX(pNode, &tLine, iStart);
 				fEnd = __xuiMessageLineCaretX(pNode, &tLine, iEnd);
-				tSelectionRect = (xui_rect_t){tLineRect.fX + fStart, tLineRect.fY, __xuiMessageMax(1.0f, fEnd - fStart), tLineRect.fH};
-				(void)__xuiMessageDrawFill(pProxy, pDraw, tSelectionRect, XUI_COLOR_RGBA(68, 130, 205, 104));
+				tSelectionRect = (xui_rect_t){tLineRect.fX + fStart, tLineRect.fY, fEnd - fStart, tLineRect.fH};
+				if ( fEnd > fStart ) (void)__xuiMessageDrawFill(pProxy, pDraw, tSelectionRect, XUI_COLOR_RGBA(68, 130, 205, 104));
 			}
 		}
-		iRet = __xuiMessageEnsureLineScratch(pData, tLine.iTextSize + 1);
+		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, iLine, &sDisplay, &iDisplaySize);
 		if ( iRet != XUI_OK ) return iRet;
-		memcpy(pData->sLineScratch, sLayoutText + tLine.iTextOffset, (size_t)tLine.iTextSize);
-		pData->sLineScratch[tLine.iTextSize] = 0;
-		iRet = __xuiMessageDrawText(pProxy, pDraw, pFont, pData->sLineScratch, tLineRect, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		iRet = __xuiMessageDrawText(pProxy, pDraw, pFont, sDisplay, tLineRect, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1403,7 +1418,7 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			tText = pNode->tTextRect;
 			tText.fX += tContent.fX;
 			tText.fY += tContent.fY - pData->fScrollY;
-			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, i, tText, pData->tColors.iSystemTextColor, 1);
+			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, pData->tColors.iSystemTextColor, 1);
 			if ( iRet != XUI_OK ) return iRet;
 			continue;
 		}
@@ -1415,12 +1430,15 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			tHeader.fY += tContent.fY - pData->fScrollY;
 			(void)__xuiMessageDrawFill(pProxy, pDraw, tHeader, XUI_COLOR_RGBA(232, 237, 243, 220));
 			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? ">" : "v", (xui_rect_t){tHeader.fX + 7.0f, tHeader.fY, 12.0f, tHeader.fH}, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageAuxiliaryTitle(pWidget, pNode), (xui_rect_t){tHeader.fX + 23.0f, tHeader.fY, tHeader.fW - 30.0f, tHeader.fH}, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			tText = (xui_rect_t){tHeader.fX + 23.0f, tHeader.fY + (tHeader.fH - pNode->tMeasuredTitle.fY) * 0.5f,
+				__xuiMessageMin(pNode->fTitleLayoutWidth, __xuiMessageMax(0.0f, tHeader.fW - 30.0f)), pNode->tMeasuredTitle.fY};
+			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTitleLayout, -1, tText, pData->tColors.iMetaTextColor, 0);
+			if ( iRet != XUI_OK ) return iRet;
 			if ( (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) == 0 ) {
 				tText = pNode->tTextRect;
 				tText.fX += tContent.fX;
 				tText.fY += tContent.fY - pData->fScrollY;
-				iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, i, tText, pData->tColors.iOtherTextColor, 0);
+				iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, pData->tColors.iOtherTextColor, 0);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			continue;
@@ -1453,7 +1471,7 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tText = pNode->tTextRect;
 		tText.fX += tContent.fX;
 		tText.fY += tContent.fY - pData->fScrollY;
-		iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, i, tText, iTextColor, 0);
+		iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, iTextColor, 0);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1527,7 +1545,6 @@ static void __xuiMessageDestroy(xui_widget pWidget, void* pTypeData, void* pUser
 	}
 	__xuiMessageClearData(pData);
 	if ( pData->arrNodes != NULL ) xrtFree(pData->arrNodes);
-	if ( pData->sLineScratch != NULL ) xrtFree(pData->sLineScratch);
 	memset(pData, 0, sizeof(*pData));
 }
 
