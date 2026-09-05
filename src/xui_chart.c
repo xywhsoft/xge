@@ -85,6 +85,12 @@ typedef struct xui_chart_data_t {
 	int iSeriesCount;
 	xui_chart_hit_t tHover;
 	xui_chart_hit_t tSelected;
+	int bAutoFocusable;
+	int iActiveKey;
+	int bPointerDown;
+	int bKeyboardBrush;
+	double fKeyboardBrushX;
+	double fKeyboardBrushY;
 	int bPanning;
 	float fPanStartX;
 	float fPanStartY;
@@ -1514,6 +1520,168 @@ static int __xuiChartDrawLegend(xui_proxy pProxy, xui_draw_context pDraw, xui_ch
 	return XUI_OK;
 }
 
+static int __xuiChartItemAvailable(const xui_chart_data_t* pData, int iSeries, int iItem)
+{
+	const xui_chart_series_t* pSeries;
+	if ( iSeries < 0 || iSeries >= pData->iSeriesCount ) return 0;
+	pSeries = &pData->arrSeries[iSeries];
+	return pSeries->bVisible && iItem >= 0 && iItem < pSeries->iCount &&
+		(pSeries->iType != XUI_CHART_SERIES_PIE || pSeries->pPoints[iItem].value > 0.0);
+}
+
+static int __xuiChartTargetValid(const xui_chart_data_t* pData, const xui_chart_hit_t* pHit)
+{
+	if ( pHit->iPart == XUI_CHART_HIT_LEGEND ) {
+		return pData->bLegendVisible && pHit->iSeries >= 0 && pHit->iSeries < pData->iSeriesCount;
+	}
+	return pHit->iPart == XUI_CHART_HIT_SERIES && __xuiChartItemAvailable(pData, pHit->iSeries, pHit->iItem);
+}
+
+/* A single tab stop traverses data in series/item order, then every legend entry. */
+static int __xuiChartStepTarget(const xui_chart_data_t* pData, const xui_chart_hit_t* pCurrent,
+	int iStep, xui_chart_hit_t* pNext)
+{
+	int bValid = __xuiChartTargetValid(pData, pCurrent);
+	int iPart = bValid ? pCurrent->iPart : XUI_CHART_HIT_NONE;
+	int i, j;
+	memset(pNext, 0, sizeof(*pNext));
+	pNext->iSize = sizeof(*pNext);
+	if ( iStep < 0 && iPart != XUI_CHART_HIT_SERIES && pData->bLegendVisible ) {
+		i = (iPart == XUI_CHART_HIT_LEGEND) ? pCurrent->iSeries - 1 : pData->iSeriesCount - 1;
+		if ( i >= 0 ) goto legend;
+	}
+	if ( iPart != XUI_CHART_HIT_LEGEND || iStep < 0 ) {
+		i = (iPart == XUI_CHART_HIT_SERIES) ? pCurrent->iSeries : (iStep > 0 ? 0 : pData->iSeriesCount - 1);
+		for ( ; i >= 0 && i < pData->iSeriesCount; i += iStep ) {
+			const xui_chart_series_t* pSeries = &pData->arrSeries[i];
+			if ( !pSeries->bVisible ) continue;
+			j = (iPart == XUI_CHART_HIT_SERIES && i == pCurrent->iSeries) ?
+				pCurrent->iItem + iStep : (iStep > 0 ? 0 : pSeries->iCount - 1);
+			for ( ; j >= 0 && j < pSeries->iCount; j += iStep ) {
+				if ( !__xuiChartItemAvailable(pData, i, j) ) continue;
+				pNext->iPart = XUI_CHART_HIT_SERIES;
+				pNext->iSeries = i;
+				pNext->iItem = j;
+				return 1;
+			}
+		}
+	}
+	if ( iStep > 0 && pData->bLegendVisible ) {
+		i = (iPart == XUI_CHART_HIT_LEGEND) ? pCurrent->iSeries + 1 : 0;
+		if ( i < pData->iSeriesCount ) goto legend;
+	}
+	return 0;
+legend:
+	pNext->iPart = XUI_CHART_HIT_LEGEND;
+	pNext->iSeries = i;
+	pNext->iItem = -1;
+	return 1;
+}
+
+static int __xuiChartSyncFocus(xui_widget pWidget, xui_chart_data_t* pData, int bCancelPointer)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_chart_hit_t tNone = {0};
+	xui_chart_hit_t tFirst;
+	/* Presentation settings choose automatic keyboard entry, never mouse capability. */
+	int bAutoFocusable = (pData->bLegendVisible || pData->bTooltipVisible || pData->onContext != NULL) &&
+		__xuiChartStepTarget(pData, &tNone, 1, &tFirst);
+	int bChanged = pData->bAutoFocusable != bAutoFocusable;
+	int iRet = XUI_OK;
+	pData->iActiveKey = 0;
+	pData->bKeyboardBrush = 0;
+	if ( bCancelPointer ) {
+		pData->bPointerDown = 0;
+		pData->bBrushing = 0;
+		pData->bPanning = 0;
+	}
+	if ( !__xuiChartTargetValid(pData, &pData->tHover) ) pData->tHover = tNone;
+	if ( !__xuiChartTargetValid(pData, &pData->tSelected) ) {
+		pData->tSelected = bAutoFocusable && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ? tFirst : tNone;
+	}
+	pData->bAutoFocusable = bAutoFocusable;
+	xuiInternalOperationEnter(pContext);
+	if ( bChanged ) (void)xuiWidgetSetTabStop(pWidget, bAutoFocusable);
+	if ( bCancelPointer && xuiGetPointerCapture(pContext) == pWidget ) (void)xuiReleasePointerCapture(pContext, pWidget);
+	/* Cancellation and blur callbacks can destroy the control or its context. */
+	if ( bChanged && xuiInternalWidgetIsValid(pWidget) ) iRet = xuiWidgetSetFocusable(pWidget, bAutoFocusable);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+/* Rebuild target geometry from the same data for both mouse and keyboard selection. */
+static void __xuiChartTargetRect(xui_widget pWidget, xui_chart_data_t* pData, xui_chart_hit_t* pHit)
+{
+	xui_chart_series_t* pSeries;
+	xui_chart_point_t* pPoint;
+	double x, y;
+	float px, py;
+	int i = pHit->iSeries;
+	int j = pHit->iItem;
+	if ( !__xuiChartTargetValid(pData, pHit) ) {
+		memset(pHit, 0, sizeof(*pHit));
+		return;
+	}
+	pHit->iSize = sizeof(*pHit);
+	if ( pHit->iPart == XUI_CHART_HIT_LEGEND ) {
+		xui_rect_t tContent = __xuiChartContentRect(pWidget);
+		pHit->tRect = (xui_rect_t){tContent.fX + tContent.fW - 108, tContent.fY + 36 + i * 20, 106, 18};
+		pHit->fX = (float)pHit->tRect.fX + 53.0f;
+		pHit->fY = (float)pHit->tRect.fY + 9.0f;
+		return;
+	}
+	pSeries = &pData->arrSeries[i];
+	pPoint = &pSeries->pPoints[j];
+	x = pData->iXAxisType == XUI_CHART_AXIS_CATEGORY ? (double)j : pPoint->x;
+	y = pPoint->y;
+	px = __xuiChartMapX(pData, x);
+	py = __xuiChartMapY(pData, y);
+	if ( pSeries->iType == XUI_CHART_SERIES_BAR ) {
+		int bHorizontal = pData->iBarDirection == XUI_CHART_BAR_HORIZONTAL;
+		float fSlot = (float)(bHorizontal ? pData->tPlotRect.fH : pData->tPlotRect.fW) / (float)pSeries->iCount;
+		float fOffset = 0.0f;
+		double fStart = 0.0, fEnd = y;
+		if ( pData->iBarMode == XUI_CHART_BAR_STACKED ) {
+			__xuiChartStackedBarRange(pData, i, j, &fStart, &fEnd);
+		} else {
+			float fWidth = fSlot * 0.72f / (float)__xuiChartVisibleBarSeries(pData);
+			fOffset = -fSlot * 0.36f + fWidth * ((float)__xuiChartBarVisibleIndex(pData, i) + 0.5f);
+		}
+		if ( bHorizontal ) {
+			px = __xuiChartMapX(pData, (fStart + fEnd) * 0.5);
+			py = __xuiChartMapY(pData, (double)j) + fOffset;
+		} else {
+			px += fOffset;
+			py = __xuiChartMapY(pData, (fStart + fEnd) * 0.5);
+		}
+	} else if ( pSeries->iType == XUI_CHART_SERIES_PIE ) {
+		double fTotal = 0.0, fBefore = 0.0;
+		double fAngle;
+		float fInner, fOuter, fRadius;
+		int k;
+		fRadius = (float)(pData->tPlotRect.fW < pData->tPlotRect.fH ? pData->tPlotRect.fW : pData->tPlotRect.fH) * 0.42f;
+		__xuiChartPieRing(pData, i, fRadius, &fInner, &fOuter);
+		if ( pData->iPieMode == XUI_CHART_PIE_ROSE ) {
+			fAngle = -XUI_CHART_PI * 0.5 + XUI_CHART_PI * 2.0 * ((double)j + 0.5) / (double)pSeries->iCount;
+			fOuter = fInner + (fOuter - fInner) * (float)(pPoint->value / __xuiChartPieMaxValue(pSeries));
+		} else {
+			for ( k = 0; k < pSeries->iCount; k++ ) {
+				if ( pSeries->pPoints[k].value <= 0.0 ) continue;
+				fTotal += pSeries->pPoints[k].value;
+				if ( k < j ) fBefore += pSeries->pPoints[k].value;
+			}
+			fAngle = -XUI_CHART_PI * 0.5 + (fBefore + pPoint->value * 0.5) / fTotal * XUI_CHART_PI * 2.0;
+		}
+		fRadius = (fInner + fOuter) * 0.5f;
+		px = (float)pData->tPlotRect.fX + (float)pData->tPlotRect.fW * 0.5f + (float)cos(fAngle) * fRadius;
+		py = (float)pData->tPlotRect.fY + (float)pData->tPlotRect.fH * 0.5f + (float)sin(fAngle) * fRadius;
+	}
+	pHit->fX = px;
+	pHit->fY = py;
+	pHit->tRect = __xuiChartDrawablePoint(px, py) ?
+		xuiInternalRectFromFloatNearest(px - 6.0f, py - 6.0f, 12.0f, 12.0f) : (xui_rect_t){0, 0, 0, 0};
+}
+
 static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw,
 	xui_chart_data_t* pData, int bDrawOverlay, int bDrawTooltip)
 {
@@ -1600,6 +1768,8 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	tContent = __xuiChartContentRect(pWidget);
 	__xuiChartComputeRanges(pData);
 	pData->tPlotRect = __xuiChartComputePlotRect(pWidget, pData);
+	__xuiChartTargetRect(pWidget, pData, &pData->tSelected);
+	__xuiChartTargetRect(pWidget, pData, &pData->tHover);
 	pData->iLastLodStride = 1;
 	memset(&tOldClip, 0, sizeof(tOldClip));
 	bHadOldClip = 0;
@@ -1649,6 +1819,16 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiChartDrawLegend(pProxy, pDraw, pData, tContent);
 	if ( iRet != XUI_OK ) goto cleanup;
+	if ( xuiWidgetGetEffectiveEnabled(pWidget) &&
+		xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL ) {
+		xui_rect_t tFocus = {tContent.fX + 1, tContent.fY + 1, tContent.fW - 2, tContent.fH - 2};
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tFocus, 1.0f, pData->iAxisColor);
+		if ( iRet != XUI_OK ) goto cleanup;
+		if ( pData->tSelected.iPart == XUI_CHART_HIT_LEGEND ) {
+			iRet = pProxy->drawRectStroke(pProxy, pDraw, pData->tSelected.tRect, 1.0f, pData->iTextColor);
+			if ( iRet != XUI_OK ) goto cleanup;
+		}
+	}
 	iRet = __xuiChartDrawSelection(pWidget, pProxy, pDraw, pData, 0, 1);
 	if ( iRet == XUI_OK ) {
 		pData->iDirtyFlags = 0;
@@ -1865,10 +2045,139 @@ static int __xuiChartHitSeries(xui_chart_data_t* pData, float fX, float fY, xui_
 	return 0;
 }
 
+static int __xuiChartActivate(xui_widget pWidget, xui_chart_data_t* pData, xui_chart_hit_t tHit)
+{
+	__xuiChartTargetRect(pWidget, pData, &tHit);
+	pData->tSelected = tHit;
+	if ( tHit.iPart == XUI_CHART_HIT_LEGEND ) {
+		return xuiChartSetSeriesVisible(pWidget, tHit.iSeries, !pData->arrSeries[tHit.iSeries].bVisible);
+	}
+	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static void __xuiChartEnsureTargetVisible(xui_chart_data_t* pData)
+{
+	double x, y, dx = 0.0, dy = 0.0;
+	double fMinX, fMaxX, fMinY, fMaxY;
+	if ( !pData->bViewRange || pData->tSelected.iPart != XUI_CHART_HIT_SERIES || __xuiChartHasVisiblePie(pData) ) return;
+	x = __xuiChartUnmapX(pData, pData->tSelected.fX);
+	y = __xuiChartUnmapY(pData, pData->tSelected.fY);
+	if ( x < pData->fMinX ) dx = x - pData->fMinX;
+	else if ( x > pData->fMaxX ) dx = x - pData->fMaxX;
+	if ( y < pData->fMinY ) dy = y - pData->fMinY;
+	else if ( y > pData->fMaxY ) dy = y - pData->fMaxY;
+	if ( dx == 0.0 && dy == 0.0 ) return;
+	__xuiChartClampPanAxis(pData->fDataMinX, pData->fDataMaxX, pData->fMinX, pData->fMaxX, dx, &fMinX, &fMaxX);
+	__xuiChartClampPanAxis(pData->fDataMinY, pData->fDataMaxY, pData->fMinY, pData->fMaxY, dy, &fMinY, &fMaxY);
+	(void)__xuiChartSetViewRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);
+}
+
+static int __xuiChartKey(xui_widget pWidget, xui_chart_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_chart_hit_t tCurrent, tNext, tNone = {0};
+	int iKey = pEvent->iKey;
+	int bArrow = iKey == XUI_KEY_LEFT || iKey == XUI_KEY_RIGHT || iKey == XUI_KEY_UP || iKey == XUI_KEY_DOWN;
+	int iStep = (iKey == XUI_KEY_LEFT || iKey == XUI_KEY_UP || iKey == XUI_KEY_END) ? -1 : 1;
+	if ( xuiGetFocusWidget(pContext) != pWidget || !xuiWidgetGetEffectiveFocusable(pWidget) ) return XUI_OK;
+	if ( pEvent->iType == XUI_EVENT_KEY_UP ) {
+		if ( iKey != XUI_KEY_ENTER && iKey != XUI_KEY_SPACE ) return XUI_OK;
+		if ( pData->iActiveKey == iKey ) {
+			pData->iActiveKey = 0;
+			(void)__xuiChartActivate(pWidget, pData, pData->tSelected);
+		}
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( iKey == XUI_KEY_ESCAPE ) {
+		pData->iActiveKey = 0;
+		pData->bKeyboardBrush = 0;
+		pData->bBrushing = 0;
+		pData->bPanning = 0;
+		pData->bPointerDown = 0;
+		pData->bBrushRange = 0;
+		pData->tSelected = tNone;
+		pData->tHover = tNone;
+		(void)xuiReleasePointerCapture(pContext, pWidget);
+		goto changed;
+	}
+	if ( (pEvent->iModifiers & ~(XUI_MOD_CTRL | XUI_MOD_SHIFT)) != 0 ) return XUI_OK;
+	if ( pData->bPointerDown && (bArrow || iKey == XUI_KEY_HOME || iKey == XUI_KEY_END ||
+		iKey == XUI_KEY_ENTER || iKey == XUI_KEY_SPACE || iKey == XUI_KEY_PAGE_UP || iKey == XUI_KEY_PAGE_DOWN) ) return XUI_EVENT_DISPATCH_STOP;
+	__xuiChartComputeRanges(pData);
+	pData->tPlotRect = __xuiChartComputePlotRect(pWidget, pData);
+	__xuiChartTargetRect(pWidget, pData, &pData->tSelected);
+	if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0 ) {
+		double fMinX, fMaxX, fMinY, fMaxY;
+		double dx = 0.0, dy = 0.0;
+		if ( __xuiChartHasVisiblePie(pData) || (pEvent->iModifiers & XUI_MOD_SHIFT) != 0 ) return XUI_OK;
+		if ( iKey == XUI_KEY_HOME ) {
+			pData->bViewRange = 0;
+			goto changed;
+		}
+		if ( !bArrow ) return XUI_OK;
+		pData->iActiveKey = 0;
+		if ( !pData->bViewRange ) return XUI_EVENT_DISPATCH_STOP;
+		if ( iKey == XUI_KEY_LEFT || iKey == XUI_KEY_RIGHT ) dx = (pData->fMaxX - pData->fMinX) * (iKey == XUI_KEY_LEFT ? -0.1 : 0.1);
+		else dy = (pData->fMaxY - pData->fMinY) * (iKey == XUI_KEY_DOWN ? -0.1 : 0.1);
+		__xuiChartClampPanAxis(pData->fDataMinX, pData->fDataMaxX, pData->fMinX, pData->fMaxX, dx, &fMinX, &fMaxX);
+		__xuiChartClampPanAxis(pData->fDataMinY, pData->fDataMaxY, pData->fMinY, pData->fMaxY, dy, &fMinY, &fMaxY);
+		(void)__xuiChartSetViewRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);
+		goto changed;
+	}
+	if ( iKey == XUI_KEY_PAGE_UP || iKey == XUI_KEY_PAGE_DOWN ) {
+		double fFactor = iKey == XUI_KEY_PAGE_UP ? 0.8 : 1.25;
+		double x = (pData->fMinX + pData->fMaxX) * 0.5;
+		double y = (pData->fMinY + pData->fMaxY) * 0.5;
+		if ( __xuiChartHasVisiblePie(pData) || pEvent->iModifiers != 0 ) return XUI_OK;
+		(void)__xuiChartSetViewRangeData(pData, x - (x - pData->fMinX) * fFactor,
+			x + (pData->fMaxX - x) * fFactor, y - (y - pData->fMinY) * fFactor, y + (pData->fMaxY - y) * fFactor);
+		goto changed;
+	}
+	if ( iKey == XUI_KEY_ENTER || iKey == XUI_KEY_SPACE ) {
+		if ( pEvent->iModifiers != 0 ) return XUI_OK;
+		if ( pData->iActiveKey == 0 && !pData->bPointerDown ) {
+			if ( !__xuiChartTargetValid(pData, &pData->tSelected) && __xuiChartStepTarget(pData, &tNone, 1, &tNext) ) pData->tSelected = tNext;
+			pData->iActiveKey = iKey;
+		}
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( !bArrow && iKey != XUI_KEY_HOME && iKey != XUI_KEY_END ) return XUI_OK;
+	tCurrent = pData->tSelected;
+	if ( __xuiChartStepTarget(pData, (iKey == XUI_KEY_HOME || iKey == XUI_KEY_END) ? &tNone : &tCurrent, iStep, &tNext) ) {
+		pData->tSelected = tNext;
+		__xuiChartTargetRect(pWidget, pData, &pData->tSelected);
+		if ( (pEvent->iModifiers & XUI_MOD_SHIFT) != 0 && !__xuiChartHasVisiblePie(pData) &&
+			tCurrent.iPart == XUI_CHART_HIT_SERIES && tNext.iPart == XUI_CHART_HIT_SERIES ) {
+			double x = __xuiChartUnmapX(pData, pData->tSelected.fX);
+			double y = __xuiChartUnmapY(pData, pData->tSelected.fY);
+			double fPadX = (pData->fMaxX - pData->fMinX) / (double)pData->tPlotRect.fW;
+			double fPadY = (pData->fMaxY - pData->fMinY) / (double)pData->tPlotRect.fH;
+			if ( !pData->bKeyboardBrush ) {
+				pData->fKeyboardBrushX = __xuiChartUnmapX(pData, tCurrent.fX);
+				pData->fKeyboardBrushY = __xuiChartUnmapY(pData, tCurrent.fY);
+				pData->bKeyboardBrush = 1;
+			}
+			(void)__xuiChartSetBrushRangeData(pData, fmin(x, pData->fKeyboardBrushX) - fPadX,
+				fmax(x, pData->fKeyboardBrushX) + fPadX, fmin(y, pData->fKeyboardBrushY) - fPadY,
+				fmax(y, pData->fKeyboardBrushY) + fPadY);
+		} else {
+			pData->bKeyboardBrush = 0;
+		}
+		__xuiChartEnsureTargetVisible(pData);
+	}
+changed:
+	pData->iActiveKey = 0;
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
 static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_chart_data_t* pData;
 	xui_chart_hit_t tHit;
+	xui_event_t tLocal;
 
 	(void)pUser;
 	pData = __xuiChartGetData(pWidget);
@@ -1877,12 +2186,34 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	}
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSize = sizeof(tHit);
+	if ( pEvent->iType == XUI_EVENT_BLUR || pEvent->iType == XUI_EVENT_ENABLED_CHANGED ||
+		pEvent->iType == XUI_EVENT_VISIBLE_CHANGED || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+		pData->iActiveKey = 0;
+		pData->bPointerDown = 0;
+		pData->bKeyboardBrush = 0;
+		pData->bPanning = 0;
+		pData->bBrushing = 0;
+		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	if ( pEvent->iType == XUI_EVENT_FOCUS ) {
+		if ( !__xuiChartTargetValid(pData, &pData->tSelected) ) {
+			(void)__xuiChartStepTarget(pData, &tHit, 1, &pData->tSelected);
+		}
+		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	if ( pEvent->iType == XUI_EVENT_KEY_DOWN || pEvent->iType == XUI_EVENT_KEY_UP ) {
+		return __xuiChartKey(pWidget, pData, pEvent);
+	}
 	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
 		xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
 		xui_rect_t tAnchor = tWorld;
 		float fX;
 		float fY;
 		if ( pData->onContext == NULL ) return XUI_OK;
+		__xuiChartComputeRanges(pData);
+		pData->tPlotRect = __xuiChartComputePlotRect(pWidget, pData);
+		__xuiChartTargetRect(pWidget, pData, &pData->tSelected);
+		__xuiChartTargetRect(pWidget, pData, &pData->tHover);
 		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
 			tHit = (pData->tSelected.iPart != XUI_CHART_HIT_NONE) ? pData->tSelected : pData->tHover;
 			if ( tHit.iPart != XUI_CHART_HIT_NONE && tHit.tRect.fW > 0.0f && tHit.tRect.fH > 0.0f ) {
@@ -1900,9 +2231,19 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
 		return pData->onContext(pWidget, &tHit, fX, fY, pData->pContextUser);
 	}
+	/* Pointer events carry world coordinates; chart hit/range helpers use local coordinates. */
+	tLocal = *pEvent;
+	{
+		xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+		tLocal.fX -= tWorld.fX;
+		tLocal.fY -= tWorld.fY;
+	}
+	pEvent = &tLocal;
 	if ( pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
 		pData->bPanning = 0;
 		pData->bBrushing = 0;
+		pData->bPointerDown = 0;
+		pData->iActiveKey = 0;
 		return XUI_OK;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_LEAVE ) {
@@ -1936,6 +2277,10 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_DOWN ) {
+		if ( pEvent->iButton != 0 && pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
+		pData->iActiveKey = 0;
+		pData->bPointerDown = 1;
+		pData->bKeyboardBrush = 0;
 		if ( __xuiChartHasVisiblePie(pData) ) return XUI_OK;
 		__xuiChartComputeRanges(pData);
 		pData->tPlotRect = __xuiChartComputePlotRect(pWidget, pData);
@@ -1963,6 +2308,8 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_UP ) {
+		if ( pEvent->iButton != 0 && pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
+		pData->bPointerDown = 0;
 		if ( pData->bBrushing ) {
 			double fDataX0;
 			double fDataY0;
@@ -2028,11 +2375,11 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	if ( (pEvent->iType == XUI_EVENT_POINTER_MOVE) || (pEvent->iType == XUI_EVENT_POINTER_CLICK) ) {
 		(void)xuiChartHitTest(pWidget, pEvent->fX, pEvent->fY, &tHit);
 		if ( pEvent->iType == XUI_EVENT_POINTER_CLICK ) {
-			if ( tHit.iPart == XUI_CHART_HIT_LEGEND ) {
-				(void)xuiChartSetSeriesVisible(pWidget, tHit.iSeries, !pData->arrSeries[tHit.iSeries].bVisible);
-				return XUI_EVENT_DISPATCH_STOP;
-			}
-			pData->tSelected = tHit;
+			if ( pEvent->iButton != 0 && pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
+			pData->iActiveKey = 0;
+			pData->bKeyboardBrush = 0;
+			(void)__xuiChartActivate(pWidget, pData, tHit);
+			return XUI_EVENT_DISPATCH_STOP;
 		} else {
 			pData->tHover = tHit;
 		}
@@ -2081,8 +2428,8 @@ static int __xuiChartInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->bAnimationEnabled = 0;
 	pData->fAnimationDuration = 0.25f;
 	pData->fAnimationProgress = 1.0f;
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
+	pData->bAutoFocusable = -1;
+	(void)__xuiChartSyncFocus(pWidget, pData, 0);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_MOVE, __xuiChartEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_LEAVE, __xuiChartEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CLICK, __xuiChartEvent, NULL);
@@ -2091,6 +2438,12 @@ static int __xuiChartInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiChartEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiChartEvent, NULL);
 	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiChartEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiChartEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_UP, __xuiChartEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiChartEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiChartEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiChartEvent, NULL);
+	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiChartEvent, NULL);
 	return XUI_OK;
 }
 
@@ -2360,7 +2713,8 @@ XUI_API int xuiChartSetLegendVisible(xui_widget pWidget, int bVisible)
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bLegendVisible = bVisible ? 1 : 0;
-	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiChartSyncFocus(pWidget, pData, 0);
 }
 
 XUI_API int xuiChartGetLegendVisible(xui_widget pWidget)
@@ -2374,7 +2728,8 @@ XUI_API int xuiChartSetTooltipVisible(xui_widget pWidget, int bVisible)
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bTooltipVisible = bVisible ? 1 : 0;
-	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiChartSyncFocus(pWidget, pData, 0);
 }
 
 XUI_API int xuiChartGetTooltipVisible(xui_widget pWidget)
@@ -2398,7 +2753,8 @@ XUI_API int xuiChartSetContextMenu(xui_widget pWidget, xui_chart_context_proc on
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onContext = onContext;
 	pData->pContextUser = pUser;
-	return XUI_OK;
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiChartSyncFocus(pWidget, pData, 0);
 }
 
 XUI_API int xuiChartSetPadding(xui_widget pWidget, xui_thickness_t tPadding)
@@ -2576,7 +2932,8 @@ XUI_API int xuiChartAddSeries(xui_widget pWidget, int iType, const char* sName, 
 	if ( pIndex != NULL ) *pIndex = pData->iSeriesCount;
 	pData->iSeriesCount++;
 	__xuiChartStartAnimation(pData);
-	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiChartSyncFocus(pWidget, pData, 1);
 }
 
 XUI_API int xuiChartClearSeries(xui_widget pWidget)
@@ -2593,7 +2950,8 @@ XUI_API int xuiChartClearSeries(xui_widget pWidget)
 	memset(&pData->tHover, 0, sizeof(pData->tHover));
 	memset(&pData->tSelected, 0, sizeof(pData->tSelected));
 	__xuiChartStartAnimation(pData);
-	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiChartSyncFocus(pWidget, pData, 1);
 }
 
 XUI_API int xuiChartGetSeriesCount(xui_widget pWidget)
@@ -2633,7 +2991,8 @@ XUI_API int xuiChartSetSeriesData(xui_widget pWidget, int iSeries, const xui_cha
 	pData->arrSeries[iSeries].pPoints = pNew;
 	pData->arrSeries[iSeries].iCount = iCount;
 	__xuiChartStartAnimation(pData);
-	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiChartSyncFocus(pWidget, pData, 1);
 }
 
 XUI_API int xuiChartSetSeriesColor(xui_widget pWidget, int iSeries, uint32_t iColor)
@@ -2752,7 +3111,8 @@ XUI_API int xuiChartSetSeriesVisible(xui_widget pWidget, int iSeries, int bVisib
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->arrSeries[iSeries].bVisible = bVisible ? 1 : 0;
 	__xuiChartStartAnimation(pData);
-	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiChartSyncFocus(pWidget, pData, 1);
 }
 
 XUI_API int xuiChartGetSeriesVisible(xui_widget pWidget, int iSeries)
