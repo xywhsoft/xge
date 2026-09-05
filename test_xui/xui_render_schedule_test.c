@@ -1019,6 +1019,65 @@ cleanup:
 	return !iFailed;
 }
 
+static int __xuiTestCacheStacking(void)
+{
+	xui_render_schedule_test_state_t tState;
+	xui_surface_desc_t tSurfaceDesc = {0};
+	xui_cache_policy_t tPolicy;
+	xui_layout_t tLayout;
+	xui_context pContext = NULL;
+	xui_widget pRoot = NULL, pBranch = NULL, pA = NULL, pB = NULL;
+	xui_surface pTarget = NULL;
+	int iFailed = 0;
+	int iNested;
+	memset(&tState, 0, sizeof(tState));
+	tState.tProxy = __xuiTestProxy();
+	XUI_TEST_CHECK(xuiCreate(&pContext) == XUI_OK &&
+		xuiSetProxy(pContext, &tState.tProxy) == XUI_OK &&
+		xuiSetViewportSize(pContext, 64, 64) == XUI_OK, "stack context");
+	XUI_TEST_CHECK(xuiWidgetCreate(pContext, &pRoot) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pBranch) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pA) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pB) == XUI_OK, "stack widgets");
+	(void)xuiSetRootWidget(pContext, pRoot);
+	(void)xuiWidgetSetRect(pBranch, (xui_rect_t){3, 5, 55, 55});
+	(void)xuiWidgetSetRect(pA, (xui_rect_t){2, 2, 30, 30});
+	(void)xuiWidgetSetRect(pB, (xui_rect_t){2, 2, 30, 30});
+	(void)xuiWidgetAddChild(pRoot, pBranch);
+	(void)xuiWidgetAddChild(pBranch, pA);
+	(void)xuiWidgetAddChild(pBranch, pB);
+	(void)xuiWidgetSetCacheRenderCallback(pRoot, __xuiRenderScheduleDraw, &tState);
+	(void)xuiWidgetSetCacheRenderCallback(pA, __xuiRenderScheduleDraw, &tState);
+	(void)xuiWidgetSetCacheRenderCallback(pB, __xuiRenderScheduleDraw, &tState);
+	(void)xuiWidgetSetStateId(pB, 1);
+	tPolicy = xuiWidgetGetCachePolicy(pRoot);
+	tPolicy.iPolicy = XUI_CACHE_POLICY_SUBTREE;
+	(void)xuiWidgetSetCachePolicy(pRoot, &tPolicy);
+	tSurfaceDesc.iWidth = tSurfaceDesc.iHeight = 64;
+	tSurfaceDesc.iKind = XUI_SURFACE_KIND_TEXTURE;
+	tSurfaceDesc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
+	tSurfaceDesc.iFlags = XUI_SURFACE_USAGE_TARGET;
+	XUI_TEST_CHECK(tState.tProxy.surfaceCreate(&tState.tProxy, &pTarget, &tSurfaceDesc) == XUI_OK, "stack target");
+	for ( iNested = 0; iNested < 2; ++iNested ) {
+		(void)xuiWidgetSetLayer(pA, XUI_LAYER_NORMAL, 10);
+		(void)xuiWidgetSetLayer(pB, XUI_LAYER_NORMAL, 0);
+		XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "subtree stack render");
+		XUI_TEST_CHECK(xuiHitTest(pContext, 10, 10, 0) == pA, "subtree stack hit");
+		XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 10, 10, 255, 0, 0, 255), "subtree cache ignored z order");
+		tLayout = xuiWidgetGetLayout(pB);
+		tLayout.iZIndex = 20;
+		(void)xuiWidgetSetLayout(pB, &tLayout);
+		XUI_TEST_CHECK(xuiHitTest(pContext, 10, 10, 0) == pB, "layout replacement left stale stack hit");
+		XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "layout stack render");
+		XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 10, 10, 0, 255, 0, 255), "layout replacement left stale stack pixels");
+		(void)xuiWidgetSetCachePolicy(pBranch, &tPolicy);
+	}
+cleanup:
+	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
+	if ( pContext != NULL ) xuiDestroy(pContext);
+	return !iFailed;
+}
+
 int main(void)
 {
 	xui_render_schedule_test_state_t tState;
@@ -1450,6 +1509,7 @@ cleanup:
 		return 1;
 	}
 	if ( !__xuiTestLayoutDamage() ) return 1;
+	if ( !__xuiTestCacheStacking() ) return 1;
 	printf("xui_render_schedule_test passed\n");
 	return 0;
 }

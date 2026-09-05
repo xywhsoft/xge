@@ -3959,6 +3959,9 @@ XUI_API int xuiWidgetSetLayout(xui_widget pWidget, const xui_layout_t* pLayout)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pWidget->tLayout.iOverflow != pLayout->iOverflow ) __xuiWidgetDamagePaintTree(pWidget);
+	if ( pWidget->tLayout.iLayer != pLayout->iLayer || pWidget->tLayout.iZIndex != pLayout->iZIndex ) {
+		__xuiWidgetStackingDirty(pWidget->pParent);
+	}
 	pWidget->tLayout = *pLayout;
 	return __xuiWidgetLayoutChanged(pWidget);
 }
@@ -6997,7 +7000,9 @@ static int __xuiWidgetRenderCacheToDraw(xui_widget pWidget, xui_draw_context pDr
 
 static int __xuiWidgetRenderTreeToDraw(xui_widget pWidget, xui_draw_context pDraw, float fOffsetX, float fOffsetY)
 {
-	xui_widget pChild;
+	const xui_widget* ppChildren;
+	int iChildCount;
+	int i;
 	int iPolicy;
 	int iRet;
 
@@ -7013,8 +7018,10 @@ static int __xuiWidgetRenderTreeToDraw(xui_widget pWidget, xui_draw_context pDra
 	     __xuiWidgetHasCurrentCacheSurface(pWidget) ) {
 		return XUI_OK;
 	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		iRet = __xuiWidgetRenderTreeToDraw(pChild, pDraw, fOffsetX, fOffsetY);
+	iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < iChildCount; ++i ) {
+		iRet = __xuiWidgetRenderTreeToDraw(ppChildren[i], pDraw, fOffsetX, fOffsetY);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -7056,7 +7063,9 @@ static int __xuiWidgetCacheStateNeedsUpdate(xui_widget pWidget, xui_widget_cache
 static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 {
 	xui_draw_context pDraw;
-	xui_widget pChild;
+	const xui_widget* ppChildren;
+	int iChildCount;
+	int i;
 	xui_rect_t tWorldRect;
 	uint32_t iUpdateFlags;
 	int iPolicy;
@@ -7078,8 +7087,9 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 	}
 	if ( (iRet == XUI_OK) && (iPolicy == XUI_CACHE_POLICY_SUBTREE) ) {
 		tWorldRect = xuiWidgetGetWorldRect(pWidget);
-		for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-			iRet = __xuiWidgetRenderTreeToDraw(pChild, pDraw, tWorldRect.fX, tWorldRect.fY);
+		iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
+		for ( i = 0; iRet == XUI_OK && i < iChildCount; ++i ) {
+			iRet = __xuiWidgetRenderTreeToDraw(ppChildren[i], pDraw, tWorldRect.fX, tWorldRect.fY);
 			if ( iRet != XUI_OK ) {
 				break;
 			}
