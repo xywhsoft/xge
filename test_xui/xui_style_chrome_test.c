@@ -12,6 +12,7 @@
 #include "../src/xui_window.c"
 #include "../src/xui_chart.c"
 #include "../src/xui_inventory_grid.c"
+#include "../src/xui_step_bar.c"
 
 /* Record the colors actually submitted to the renderer, not just resolution. */
 static uint32_t g_colors[32768];
@@ -408,6 +409,25 @@ static void chrome_inventory(pixel_fixture_t* f)
 	xuiWidgetDestroy(grid);
 }
 
+static void chrome_steps(pixel_fixture_t* f)
+{
+	xui_widget steps = NULL;
+	const char* titles[] = {"Done", "Current", "Pending"};
+	PIXEL_CHECK(xuiStepBarCreate(f->context, &steps, NULL) == XUI_OK);
+	chrome_attach(f, steps, 420, 240);
+	PIXEL_CHECK(xuiStepBarSetSteps(steps, titles, 3) == XUI_OK);
+	PIXEL_CHECK(xuiStepBarSetCurrent(steps, 1) == XUI_OK);
+	chrome_key(f, steps, "stepbar.arrow.text_color", XUI_COLOR_WHITE, 0);
+	PIXEL_CHECK(xuiStepBarSetStyle(steps, XUI_STEP_BAR_STYLE_DOT) == XUI_OK);
+	chrome_key(f, steps, "stepbar.check.active_color", XUI_COLOR_WHITE, 0);
+	PIXEL_CHECK(xuiStepBarSetStyle(steps, XUI_STEP_BAR_STYLE_VERTICAL) == XUI_OK);
+	chrome_key(f, steps, "stepbar.check.active_color", XUI_COLOR_WHITE, 0);
+	PIXEL_CHECK(xuiStepBarSetColors(steps, 0x813557ffu, 0x924668ffu, 0xa35779ffu, 0xb4688affu) == XUI_OK);
+	chrome_key(f, steps, "stepbar.done.color", 0x813557ffu, 0);
+	chrome_key(f, steps, "stepbar.active.color", 0x924668ffu, 0);
+	xuiWidgetDestroy(steps);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -419,6 +439,7 @@ int main(void)
 	chrome_composites(&f);
 	chrome_chart(&f);
 	chrome_inventory(&f);
+	chrome_steps(&f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_chrome_test");
 }

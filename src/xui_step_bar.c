@@ -25,6 +25,8 @@ typedef struct xui_step_bar_data_t {
 	uint32_t iTextColor;
 	uint32_t iActiveTextColor;
 	uint32_t iPendingTextColor;
+	uint32_t iArrowTextColor;
+	uint32_t iActiveCheckColor;
 	uint32_t iBackgroundColor;
 	float fBarHeight;
 	float fDotRadius;
@@ -243,6 +245,10 @@ static void __xuiStepBarResolve(xui_widget pWidget, const xui_step_bar_data_t* p
 	(void)__xuiStepBarStyleColor(pWidget, "stepbar.text.color", &pResolved->iTextColor);
 	(void)__xuiStepBarStyleColor(pWidget, "stepbar.text.active_color", &pResolved->iActiveTextColor);
 	(void)__xuiStepBarStyleColor(pWidget, "stepbar.text.pending_color", &pResolved->iPendingTextColor);
+	pResolved->iArrowTextColor = XUI_COLOR_WHITE;
+	pResolved->iActiveCheckColor = XUI_COLOR_WHITE;
+	(void)__xuiStepBarStyleColor(pWidget, "stepbar.arrow.text_color", &pResolved->iArrowTextColor);
+	(void)__xuiStepBarStyleColor(pWidget, "stepbar.check.active_color", &pResolved->iActiveCheckColor);
 	(void)__xuiStepBarStyleColor(pWidget, "stepbar.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiStepBarStyleFloat(pWidget, "stepbar.bar_height", &pResolved->fBarHeight);
 	(void)__xuiStepBarStyleFloat(pWidget, "stepbar.dot_radius", &pResolved->fDotRadius);
@@ -351,7 +357,7 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 		tRect = tStep;
 		tRect.fX += 8.0f;
 		tRect.fW -= 14.0f + ((i < pResolved->iStepCount - 1) ? fArrowW : 0.0f);
-		iRet = __xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, sText, tRect, XUI_COLOR_WHITE,
+		iRet = __xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, sText, tRect, pResolved->iArrowTextColor,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -409,7 +415,7 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( i == pResolved->iCurrent ) {
 			if ( (__xuiStepBarAlpha(iCircleColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, iCircleColor);
-			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fX, fLineY, fRadius, XUI_COLOR_WHITE);
+			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iActiveCheckColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else {
 			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
@@ -487,7 +493,7 @@ static int __xuiStepBarDrawVerticalDot(xui_widget pWidget, xui_proxy pProxy, xui
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( i == pResolved->iCurrent ) {
 			if ( (__xuiStepBarAlpha(pResolved->iActiveColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iActiveColor);
-			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fLineX, fY, fRadius, XUI_COLOR_WHITE);
+			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iActiveCheckColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else {
 			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
@@ -696,6 +702,8 @@ static void __xuiStepBarRegisterStyleProperties(xui_context pContext, xui_widget
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.text.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.text.pending_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.arrow.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.check.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.bar_height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.dot_radius", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
