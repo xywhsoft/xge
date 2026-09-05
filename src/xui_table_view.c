@@ -134,6 +134,18 @@ typedef struct xui_table_view_data_t {
 	uint32_t iScrollbarActiveColor;
 	uint32_t iScrollbarFocusColor;
 	uint32_t iScrollbarDisabledColor;
+	uint32_t iSelectedTextColor;
+	uint32_t iCheckBackgroundColor;
+	uint32_t iCheckMarkColor;
+	uint32_t iCheckerPrimaryColor;
+	uint32_t iCheckerSecondaryColor;
+	uint32_t iColorFallbackColor;
+	uint32_t iInvalidColor;
+	uint32_t iDirtyColor;
+	uint32_t iEditingColor;
+	uint32_t iPickerBackgroundColor;
+	uint32_t iPickerBorderColor;
+	uint32_t iViewportStyleHash;
 } xui_table_view_data_t;
 
 static xui_table_view_data_t* __xuiTableViewGetData(xui_widget pWidget);
@@ -250,6 +262,17 @@ static void __xuiTableViewDefaults(xui_table_view_data_t* pData)
 	pData->iScrollbarActiveColor = XUI_COLOR_RGBA(47, 128, 237, 255);
 	pData->iScrollbarFocusColor = XUI_COLOR_RGBA(47, 128, 237, 180);
 	pData->iScrollbarDisabledColor = XUI_COLOR_RGBA(181, 190, 204, 135);
+	pData->iSelectedTextColor = XUI_COLOR_WHITE;
+	pData->iCheckBackgroundColor = XUI_COLOR_WHITE;
+	pData->iCheckMarkColor = XUI_COLOR_WHITE;
+	pData->iCheckerPrimaryColor = XUI_COLOR_RGBA(236, 241, 247, 255);
+	pData->iCheckerSecondaryColor = XUI_COLOR_WHITE;
+	pData->iColorFallbackColor = XUI_COLOR_RGBA(120, 160, 200, 255);
+	pData->iInvalidColor = XUI_COLOR_RGBA(218, 82, 82, 255);
+	pData->iDirtyColor = XUI_COLOR_RGBA(245, 158, 11, 255);
+	pData->iEditingColor = XUI_COLOR_RGBA(34, 160, 112, 255);
+	pData->iPickerBackgroundColor = XUI_COLOR_RGBA(232, 241, 250, 220);
+	pData->iPickerBorderColor = XUI_COLOR_RGBA(206, 221, 235, 220);
 }
 
 static void __xuiTableViewApplyDesc(xui_table_view_data_t* pData, const xui_table_view_desc_t* pDesc)
@@ -339,10 +362,11 @@ static xui_font __xuiTableViewStyleFont(xui_widget pWidget, xui_font pBaseFont)
 
 static void __xuiTableViewResolve(xui_widget pWidget, const xui_table_view_data_t* pData, xui_table_view_data_t* pOut)
 {
-	if ( (pWidget == NULL) || (pData == NULL) || (pOut == NULL) ) {
+	if ( (pData == NULL) || (pOut == NULL) ) {
 		return;
 	}
 	*pOut = *pData;
+	if ( pWidget == NULL ) return;
 	pOut->pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	pOut->pFont = __xuiTableViewStyleFont(pWidget, pOut->pFont);
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.background.color", &pOut->iBackgroundColor);
@@ -357,6 +381,25 @@ static void __xuiTableViewResolve(xui_widget pWidget, const xui_table_view_data_
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.text.color", &pOut->iTextColor);
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.text.disabled_color", &pOut->iDisabledTextColor);
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.focus.color", &pOut->iFocusRingColor);
+	pOut->iPickerBackgroundColor = __xuiTableViewColorWithAlpha(pOut->iHeaderColor, (uint8_t)(__xuiTableViewAlpha(pOut->iHeaderColor) * 220 / 255));
+	pOut->iPickerBorderColor = __xuiTableViewColorWithAlpha(pOut->iGridColor, (uint8_t)(__xuiTableViewAlpha(pOut->iGridColor) * 220 / 255));
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.text.selected_color", &pOut->iSelectedTextColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.check.background_color", &pOut->iCheckBackgroundColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.check.mark_color", &pOut->iCheckMarkColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.checker.primary_color", &pOut->iCheckerPrimaryColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.checker.secondary_color", &pOut->iCheckerSecondaryColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.color.fallback_color", &pOut->iColorFallbackColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.cell.invalid_color", &pOut->iInvalidColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.cell.dirty_color", &pOut->iDirtyColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.cell.editing_color", &pOut->iEditingColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.picker.background_color", &pOut->iPickerBackgroundColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.picker.border_color", &pOut->iPickerBorderColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.scrollbar.track_color", &pOut->iBarColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.scrollbar.thumb_color", &pOut->iThumbColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.scrollbar.hover_color", &pOut->iScrollbarHoverColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.scrollbar.active_color", &pOut->iScrollbarActiveColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.scrollbar.focus_color", &pOut->iScrollbarFocusColor);
+	(void)__xuiTableViewStyleColor(pWidget, "tableview.scrollbar.disabled_color", &pOut->iScrollbarDisabledColor);
 	(void)__xuiTableViewStyleFloat(pWidget, "tableview.default.column_width", &pOut->fDefaultColumnWidth);
 	(void)__xuiTableViewStyleFloat(pWidget, "tableview.default.row_height", &pOut->fDefaultRowHeight);
 	(void)__xuiTableViewStyleFloat(pWidget, "tableview.header.height", &pOut->fHeaderHeight);
@@ -1182,7 +1225,7 @@ static int __xuiTableViewDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw
 	return __xuiTableViewDrawStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
-static int __xuiTableViewDrawChecker(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect)
+static int __xuiTableViewDrawChecker(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, const xui_table_view_data_t* pResolved)
 {
 	xui_rect_t tCell;
 	uint32_t iA;
@@ -1196,8 +1239,8 @@ static int __xuiTableViewDrawChecker(xui_proxy pProxy, xui_draw_context pDraw, x
 	if ( (pProxy == NULL) || (pProxy->drawRectFill == NULL) ) {
 		return XUI_OK;
 	}
-	iA = XUI_COLOR_RGBA(236, 241, 247, 255);
-	iB = XUI_COLOR_RGBA(255, 255, 255, 255);
+	iA = pResolved->iCheckerPrimaryColor;
+	iB = pResolved->iCheckerSecondaryColor;
 	fSize = 4.0f;
 	iy = 0;
 	for ( y = tRect.fY; y < tRect.fY + tRect.fH; y += fSize, iy++ ) {
@@ -1210,22 +1253,22 @@ static int __xuiTableViewDrawChecker(xui_proxy pProxy, xui_draw_context pDraw, x
 	return XUI_OK;
 }
 
-static int __xuiTableViewDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bChecked, int bDisabled, uint32_t iAccent, uint32_t iDisabledColor)
+static int __xuiTableViewDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bChecked, int bDisabled, uint32_t iAccent, uint32_t iDisabledColor, const xui_table_view_data_t* pResolved)
 {
 	uint32_t iBorder;
 	uint32_t iFill;
 	int iRet;
 
 	iBorder = bDisabled ? iDisabledColor : iAccent;
-	iFill = bChecked ? iAccent : XUI_COLOR_RGBA(255, 255, 255, 255);
+	iFill = bChecked ? iAccent : pResolved->iCheckBackgroundColor;
 	iRet = __xuiTableViewDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTableViewDrawRectStroke(pProxy, pDraw, tRect, 1.0f, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChecked && (pProxy->drawLine != NULL) ) {
-		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 3.0f, tRect.fY + 6.0f, tRect.fX + 5.2f, tRect.fY + 8.2f, 1.7f, XUI_COLOR_RGBA(255, 255, 255, 255));
+		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 3.0f, tRect.fY + 6.0f, tRect.fX + 5.2f, tRect.fY + 8.2f, 1.7f, pResolved->iCheckMarkColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 5.0f, tRect.fY + 8.1f, tRect.fX + 9.3f, tRect.fY + 3.8f, 1.7f, XUI_COLOR_RGBA(255, 255, 255, 255));
+		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 5.0f, tRect.fY + 8.1f, tRect.fX + 9.3f, tRect.fY + 3.8f, 1.7f, pResolved->iCheckMarkColor);
 	}
 	return iRet;
 }
@@ -1270,7 +1313,7 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 
 	iText = ((iState & XUI_TABLE_CELL_DISABLED) != 0) ? pResolved->iDisabledTextColor : pResolved->iTextColor;
 	if ( (iState & XUI_TABLE_CELL_SELECTED) != 0 ) {
-		iText = XUI_COLOR_RGBA(255, 255, 255, 255);
+		iText = pResolved->iSelectedTextColor;
 	}
 	if ( pCell->bHasStyle && (__xuiTableViewAlpha(pCell->iTextColor) != 0) ) {
 		iText = pCell->iTextColor;
@@ -1291,18 +1334,18 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 	tText = (xui_rect_t){tCell.fX + 8.0f, tCell.fY + 1.0f, __xuiTableViewMaxFloat(1.0f, tCell.fW - 16.0f), __xuiTableViewMaxFloat(1.0f, tCell.fH - 2.0f)};
 	if ( pCell->iType == XUI_TABLE_CELL_TYPE_BOOL ) {
 		tBox = xuiInternalSnapRect((xui_rect_t){tCell.fX + 8.0f, tCell.fY + (tCell.fH - 12.0f) * 0.5f, 12.0f, 12.0f});
-		iRet = __xuiTableViewDrawCheck(pProxy, pDraw, tBox, __xuiTableViewBoolFromText(sText), (iState & XUI_TABLE_CELL_DISABLED) != 0, pResolved->iSelectedColor, pResolved->iDisabledTextColor);
+		iRet = __xuiTableViewDrawCheck(pProxy, pDraw, tBox, __xuiTableViewBoolFromText(sText), (iState & XUI_TABLE_CELL_DISABLED) != 0, pResolved->iSelectedColor, pResolved->iDisabledTextColor, pResolved);
 		if ( iRet != XUI_OK ) return iRet;
 		tText.fX = tBox.fX + tBox.fW + 6.0f;
 		tText.fW = __xuiTableViewMaxFloat(1.0f, tCell.fX + tCell.fW - tText.fX - 7.0f);
 		iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 	} else if ( pCell->iType == XUI_TABLE_CELL_TYPE_COLOR ) {
 		tBox = xuiInternalSnapRect((xui_rect_t){tCell.fX + 8.0f, tCell.fY + (tCell.fH - 14.0f) * 0.5f, 24.0f, 14.0f});
-		iColor = XUI_COLOR_RGBA(120, 160, 200, 255);
+		iColor = pResolved->iColorFallbackColor;
 		(void)__xuiTableViewParseColor(sText, &iColor);
 		iGrid = pResolved->iGridColor;
 		if ( __xuiTableViewAlpha(iColor) < 255 ) {
-			iRet = __xuiTableViewDrawChecker(pProxy, pDraw, tBox);
+			iRet = __xuiTableViewDrawChecker(pProxy, pDraw, tBox, pResolved);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		iRet = __xuiTableViewDrawRectFill(pProxy, pDraw, tBox, iColor);
@@ -1315,9 +1358,9 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 	} else if ( (pCell->iType == XUI_TABLE_CELL_TYPE_PICKER) || (pCell->iType == XUI_TABLE_CELL_TYPE_FILE) || (pCell->iType == XUI_TABLE_CELL_TYPE_IMAGE) ) {
 		tButton = xuiInternalSnapRect((xui_rect_t){tCell.fX + tCell.fW - 25.0f, tCell.fY + 2.0f, 21.0f, __xuiTableViewMaxFloat(1.0f, tCell.fH - 4.0f)});
 		tText.fW = __xuiTableViewMaxFloat(1.0f, tButton.fX - tText.fX - 4.0f);
-		iRet = __xuiTableViewDrawRectFill(pProxy, pDraw, tButton, __xuiTableViewColorWithAlpha(pResolved->iHeaderColor, 220));
+		iRet = __xuiTableViewDrawRectFill(pProxy, pDraw, tButton, pResolved->iPickerBackgroundColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiTableViewDrawRectStroke(pProxy, pDraw, tButton, 1.0f, __xuiTableViewColorWithAlpha(pResolved->iGridColor, 220));
+		iRet = __xuiTableViewDrawRectStroke(pProxy, pDraw, tButton, 1.0f, pResolved->iPickerBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( (pResolved->pFont != NULL) && (__xuiTableViewAlpha(iText) != 0) ) {
 			iRet = pProxy->drawText(pProxy, pDraw, pResolved->pFont, "...", tButton, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -1606,6 +1649,7 @@ static int __xuiTableViewQueryCursor(xui_widget pWidget, int iX, int iY, void* p
 
 static int __xuiTableViewApplyFrameStyle(xui_widget pWidget, xui_table_view_data_t* pData)
 {
+	xui_table_view_data_t tResolved;
 	int iRet;
 
 	(void)pWidget;
@@ -1618,7 +1662,8 @@ static int __xuiTableViewApplyFrameStyle(xui_widget pWidget, xui_table_view_data
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetContentDragEnabled(pData->pFrame, 0);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetCornerMode(pData->pFrame, XUI_SCROLL_FRAME_CORNER_AUTO);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 0.0f);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, pData->iBarColor, pData->iThumbColor, pData->iScrollbarHoverColor, pData->iScrollbarActiveColor, pData->iScrollbarFocusColor, pData->iScrollbarDisabledColor);
+	__xuiTableViewResolve(pWidget, pData, &tResolved);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iBarColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	return iRet;
 }
 
@@ -2029,6 +2074,58 @@ static int __xuiTableViewLayoutComplete(xui_widget pWidget, xui_rect_t tContentR
 	return iRet;
 }
 
+/* The cache walk is child-first. Refresh already prepared SELF caches here so
+ * owner-only style changes are visible in the same frame, without layout work. */
+static int __xuiTableViewRefreshChildCache(xui_widget pChild)
+{
+	xui_widget_cache_render_proc onRender;
+	xui_cache_policy_t tPolicy;
+	xui_draw_context pDraw;
+	xui_proxy pProxy;
+	void* pUser;
+	uint32_t iState;
+	int iRet, iEndRet;
+	if ( !xuiInternalWidgetIsValid(pChild) || !xuiWidgetGetVisible(pChild) ||
+	     (xuiWidgetGetDirtyFlags(pChild) & XUI_WIDGET_DIRTY_CACHE) == 0 ) return XUI_OK;
+	tPolicy = xuiWidgetGetCachePolicy(pChild);
+	iState = xuiWidgetGetStateId(pChild);
+	if ( tPolicy.iPolicy != XUI_CACHE_POLICY_SELF ||
+	     xuiWidgetGetCacheSurface(pChild, iState) == NULL ) return XUI_OK;
+	(void)xuiWidgetGetCacheRenderCallback(pChild, &onRender, &pUser);
+	if ( onRender == NULL ) return XUI_OK;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pChild));
+	iRet = xuiWidgetUpdateBegin(pChild, iState, XUI_WIDGET_UPDATE_CLEAR, tPolicy.iClearColor, &pDraw);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = onRender(pChild, pDraw, iState, pUser);
+	if ( !xuiInternalWidgetIsValid(pChild) || xuiInternalContextDestroyPending(pChild->pContext) ) {
+		(void)pProxy->drawEnd(pProxy, pDraw);
+		pChild->pActiveUpdateDraw = NULL;
+		pChild->pActiveUpdateSlot = NULL;
+		pChild->iActiveUpdateStateId = 0;
+		return XUI_OK;
+	}
+	iEndRet = xuiWidgetUpdateEnd(pChild, iState, pDraw);
+	if ( iRet == XUI_OK ) iRet = iEndRet;
+	if ( iRet == XUI_OK ) xuiWidgetClearDirty(pChild, XUI_WIDGET_DIRTY_CACHE);
+	return iRet;
+}
+
+static int __xuiTableViewSyncPaint(xui_widget pWidget, xui_table_view_data_t* pData, const xui_table_view_data_t* pResolved)
+{
+	int iRet;
+	iRet = xuiScrollFrameSetColors(pData->pFrame, pResolved->iBarColor, pResolved->iThumbColor, pResolved->iScrollbarHoverColor, pResolved->iScrollbarActiveColor, pResolved->iScrollbarFocusColor, pResolved->iScrollbarDisabledColor);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->iViewportStyleHash != xuiWidgetGetStyleHash(pWidget) ) {
+		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = __xuiTableViewRefreshChildCache(pData->pViewport);
+		if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
+	}
+	iRet = __xuiTableViewRefreshChildCache(xuiScrollFrameGetHScrollBarWidget(pData->pFrame));
+	if ( iRet == XUI_OK ) iRet = __xuiTableViewRefreshChildCache(xuiScrollFrameGetVScrollBarWidget(pData->pFrame));
+	if ( iRet == XUI_OK ) iRet = __xuiTableViewRefreshChildCache(pData->pFrame);
+	return iRet;
+}
+
 static int __xuiTableViewCacheRenderOperation(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_table_view_data_t* pData;
@@ -2065,6 +2162,8 @@ static int __xuiTableViewCacheRenderOperation(xui_widget pWidget, xui_draw_conte
 	}
 	__xuiTableViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pWidget);
+	iRet = __xuiTableViewSyncPaint(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect = xuiInternalSnapRect(tRect);
@@ -2178,6 +2277,7 @@ static int __xuiTableViewViewportRenderOperation(xui_widget pViewport, xui_draw_
 	}
 	__xuiTableViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pViewport);
+	pData->iViewportStyleHash = xuiWidgetGetStyleHash(pWidget);
 	fViewportW = __xuiTableViewMaxFloat(0.0f, tRect.fW);
 	fViewportH = __xuiTableViewMaxFloat(0.0f, tRect.fH);
 	tRect.fX = 0.0f;
@@ -2315,7 +2415,7 @@ static int __xuiTableViewViewportRenderOperation(xui_widget pViewport, xui_draw_
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( (iState & XUI_TABLE_CELL_INVALID) != 0 ) {
-				iRet = __xuiTableViewDrawFill(pProxy, pDraw, (xui_rect_t){tCell.fX, tCell.fY, 3.0f, tCell.fH}, XUI_COLOR_RGBA(218, 82, 82, 255));
+				iRet = __xuiTableViewDrawFill(pProxy, pDraw, (xui_rect_t){tCell.fX, tCell.fY, 3.0f, tCell.fH}, tResolved.iInvalidColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( (iState & XUI_TABLE_CELL_DIRTY) != 0 && pProxy->drawTriangleFill != NULL ) {
@@ -2323,10 +2423,10 @@ static int __xuiTableViewViewportRenderOperation(xui_widget pViewport, xui_draw_
 					(xui_vec2_t){tCell.fX + tCell.fW - 8.0f, tCell.fY},
 					(xui_vec2_t){tCell.fX + tCell.fW, tCell.fY},
 					(xui_vec2_t){tCell.fX + tCell.fW, tCell.fY + 8.0f},
-					XUI_COLOR_RGBA(245, 158, 11, 255));
+					tResolved.iDirtyColor);
 			}
 			if ( (iState & XUI_TABLE_CELL_EDITING) != 0 ) {
-				iRet = __xuiTableViewDrawStroke(pProxy, pDraw, (xui_rect_t){tCell.fX + 1.0f, tCell.fY + 1.0f, __xuiTableViewMaxFloat(1.0f, tCell.fW - 2.0f), __xuiTableViewMaxFloat(1.0f, tCell.fH - 2.0f)}, 1.0f, XUI_COLOR_RGBA(34, 160, 112, 255));
+				iRet = __xuiTableViewDrawStroke(pProxy, pDraw, (xui_rect_t){tCell.fX + 1.0f, tCell.fY + 1.0f, __xuiTableViewMaxFloat(1.0f, tCell.fW - 2.0f), __xuiTableViewMaxFloat(1.0f, tCell.fH - 2.0f)}, 1.0f, tResolved.iEditingColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( ((iState & XUI_TABLE_CELL_FOCUS) != 0) &&
@@ -2621,6 +2721,23 @@ static void __xuiTableViewRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.text.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.check.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.check.mark_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.checker.primary_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.checker.secondary_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.color.fallback_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.cell.invalid_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.cell.dirty_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.cell.editing_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.picker.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.picker.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.scrollbar.track_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.scrollbar.thumb_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.scrollbar.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.scrollbar.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.scrollbar.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.scrollbar.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.default.column_width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.default.row_height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTableViewRegisterStyleProperty(pContext, pType, "tableview.header.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
@@ -3219,6 +3336,7 @@ XUI_API int xuiTableViewSetColors(xui_widget pWidget, uint32_t iBackground, uint
 XUI_API int xuiTableViewSetColorStyle(xui_widget pWidget, const xui_table_view_colors_t* pColors)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	xui_table_view_data_t tResolved;
 	if ( (pData == NULL) || (pColors == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iBackgroundColor = pColors->iBackgroundColor;
 	pData->iHeaderColor = pColors->iHeaderColor;
@@ -3234,14 +3352,15 @@ XUI_API int xuiTableViewSetColorStyle(xui_widget pWidget, const xui_table_view_c
 	pData->iFocusRingColor = pColors->iFocusRingColor;
 	pData->iBarColor = pColors->iBarColor;
 	pData->iThumbColor = pColors->iThumbColor;
+	__xuiTableViewResolve(pWidget, pData, &tResolved);
 	if ( pData->pFrame != NULL ) {
 		(void)xuiScrollFrameSetColors(pData->pFrame,
-			pData->iBarColor,
-			pData->iThumbColor,
-			pData->iScrollbarHoverColor,
-			pData->iScrollbarActiveColor,
-			pData->iScrollbarFocusColor,
-			pData->iScrollbarDisabledColor);
+			tResolved.iBarColor,
+			tResolved.iThumbColor,
+			tResolved.iScrollbarHoverColor,
+			tResolved.iScrollbarActiveColor,
+			tResolved.iScrollbarFocusColor,
+			tResolved.iScrollbarDisabledColor);
 	}
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3278,6 +3397,7 @@ XUI_API int xuiTableViewSetDisabledTextColor(xui_widget pWidget, uint32_t iColor
 
 XUI_API int xuiTableViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
 {
+	xui_table_view_data_t tResolved;
 	xui_table_view_data_t* pData;
 	int iRet;
 
@@ -3289,7 +3409,8 @@ XUI_API int xuiTableViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, 
 	pData->iScrollbarActiveColor = iActive;
 	pData->iScrollbarFocusColor = iFocus;
 	pData->iScrollbarDisabledColor = iDisabled;
-	iRet = xuiScrollFrameSetColors(pData->pFrame, iTrack, iThumb, iHover, iActive, iFocus, iDisabled);
+	__xuiTableViewResolve(pWidget, pData, &tResolved);
+	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iBarColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
