@@ -43,6 +43,7 @@ typedef struct xui_numeric_input_data_t {
 	uint32_t iBorderColor;
 	uint32_t iHoverBorderColor;
 	uint32_t iFocusBorderColor;
+	uint32_t iDisabledBorderColor;
 	uint32_t iErrorBackgroundColor;
 	uint32_t iErrorBorderColor;
 	uint32_t iSelectionColor;
@@ -53,6 +54,7 @@ typedef struct xui_numeric_input_data_t {
 	uint32_t iSpinnerBorderColor;
 	uint32_t iSpinnerIconColor;
 	uint32_t iSpinnerDisabledIconColor;
+	uint32_t iChildStyleHash;
 	float fBorderWidth;
 	xui_rect_t tSpinnerRect;
 	xui_rect_t tButtonUpRect;
@@ -225,6 +227,9 @@ static void __xuiNumericInputResolve(xui_widget pWidget, const xui_numeric_input
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.border.color", &pResolved->iBorderColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.border.hover_color", &pResolved->iHoverBorderColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.border.focus_color", &pResolved->iFocusBorderColor);
+	pResolved->iDisabledBorderColor = (__xuiNumericInputAlpha(pResolved->iBorderColor) > 120) ?
+		__xuiNumericInputColorWithAlpha(pResolved->iBorderColor, 120) : pResolved->iBorderColor;
+	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.border.disabled_color", &pResolved->iDisabledBorderColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.error.background_color", &pResolved->iErrorBackgroundColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.error.border_color", &pResolved->iErrorBorderColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.spinner.color", &pResolved->iSpinnerColor);
@@ -346,17 +351,17 @@ static int __xuiNumericInputSyncInputStyle(xui_widget pWidget, xui_numeric_input
 		return XUI_OK;
 	}
 	__xuiNumericInputResolve(pWidget, pData, &tResolved);
-	iText = xuiWidgetGetEnabled(pWidget) ? tResolved.iTextColor : tResolved.iDisabledTextColor;
+	iText = pData->iTextColor;
 	(void)xuiInputSetColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), iText, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
 	(void)xuiInputSetErrorColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
 	(void)xuiInputSetExtendedColors(pData->pInput,
-		tResolved.iPlaceholderColor,
-		tResolved.iDisabledTextColor,
+		pData->iPlaceholderColor,
+		pData->iDisabledTextColor,
 		XUI_COLOR_RGBA(0, 0, 0, 0),
 		XUI_COLOR_RGBA(0, 0, 0, 0),
 		XUI_COLOR_RGBA(0, 0, 0, 0),
-		tResolved.iSelectionColor,
-		tResolved.iCursorColor);
+		pData->iSelectionColor,
+		pData->iCursorColor);
 	(void)xuiInputSetBorderWidth(pData->pInput, 0.0f);
 	(void)xuiInputSetReadonly(pData->pInput, pData->bReadonly);
 	(void)xuiInputSetError(pData->pInput, pData->bError);
@@ -952,6 +957,11 @@ static int __xuiNumericInputCacheRender(xui_widget pWidget, xui_draw_context pDr
 	}
 	__xuiNumericInputResolve(pWidget, pData, &tResolved);
 	__xuiNumericInputUpdateRects(pWidget, pData, &tResolved, NULL);
+	if ( (pData->pInput != NULL) && (pData->iChildStyleHash != xuiWidgetGetStyleHash(pWidget)) ) {
+		pData->iChildStyleHash = xuiWidgetGetStyleHash(pWidget);
+		(void)xuiWidgetResolveStyle(pData->pInput);
+		(void)xuiWidgetInvalidate(pData->pInput, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
 	iState = __xuiNumericInputState(pWidget, pData);
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
@@ -961,7 +971,7 @@ static int __xuiNumericInputCacheRender(xui_widget pWidget, xui_draw_context pDr
 	iBorder = tResolved.iBorderColor;
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) {
 		iBackground = tResolved.iDisabledBackgroundColor;
-		iBorder = __xuiNumericInputColorWithAlpha(tResolved.iBorderColor, 120);
+		iBorder = tResolved.iDisabledBorderColor;
 	} else if ( (iState & XUI_NUMERIC_INPUT_STATE_ERROR) != 0 ) {
 		iBackground = tResolved.iErrorBackgroundColor;
 		iBorder = tResolved.iErrorBorderColor;
@@ -1194,6 +1204,11 @@ static void __xuiNumericInputRegisterStyleProperties(xui_context pContext, xui_w
 	uint32_t iLayoutDirty;
 
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.placeholder.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.cursor.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.background.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -1201,6 +1216,7 @@ static void __xuiNumericInputRegisterStyleProperties(xui_context pContext, xui_w
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.border.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.border.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.border.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.error.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.error.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.spinner.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

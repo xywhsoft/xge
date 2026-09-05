@@ -3,7 +3,12 @@
 
 #include "xui_control_pixel_test.h"
 
-enum { BASIC_FILL, BASIC_STROKE, BASIC_LINE, BASIC_CIRCLE, BASIC_RING, BASIC_TEXT, BASIC_SURFACE };
+#undef PIXEL_CHECK
+#define PIXEL_CHECK(expr) do { ++g_checks; if (!(expr)) { \
+	++g_failures; printf("%s:%d: %s\n", __FILE__, __LINE__, #expr); \
+} } while (0)
+
+enum { BASIC_FILL, BASIC_STROKE, BASIC_LINE, BASIC_CIRCLE, BASIC_RING, BASIC_TEXT, BASIC_SURFACE, BASIC_TRIANGLE };
 typedef struct basic_draw_t { int kind; uint32_t color; } basic_draw_t;
 static basic_draw_t basic_draws[8192];
 static int basic_count;
@@ -30,6 +35,8 @@ static int basic_text(xui_proxy p, xui_draw_context d, xui_font f, const char* s
 { basic_record(BASIC_TEXT, c); return basic_proxy.drawText(p, d, f, s, r, c, flags); }
 static int basic_surface(xui_proxy p, xui_draw_context d, xui_surface s, xui_rect_t a, xui_rect_t b, uint32_t c, uint32_t flags)
 { basic_record(BASIC_SURFACE, c); return basic_proxy.drawSurface(p, d, s, a, b, c, flags); }
+static int basic_triangle(xui_proxy p, xui_draw_context d, xui_vec2_t a, xui_vec2_t b, xui_vec2_t c, uint32_t color)
+{ basic_record(BASIC_TRIANGLE, color); return basic_proxy.drawTriangleFill(p, d, a, b, c, color); }
 
 static void basic_configure(xui_proxy p)
 {
@@ -37,6 +44,7 @@ static void basic_configure(xui_proxy p)
 	p->drawRectFill = basic_fill; p->drawRectStroke = basic_stroke;
 	p->drawLine = basic_line; p->drawCircleFill = basic_circle; p->drawCircleStroke = basic_ring;
 	p->drawText = basic_text; p->drawSurface = basic_surface;
+	p->drawTriangleFill = basic_triangle;
 }
 
 static int basic_seen(int kind, uint32_t color)
@@ -91,7 +99,7 @@ static void basic_attach(pixel_fixture_t* f, xui_widget w)
 
 /* Test the installed painter, not resolved-property getters. Each key walks the
  * cascade, a live token update, both alpha-zero encodings, and exact restoration. */
-static void basic_case(pixel_fixture_t* f, xui_widget w, const char* key, uint32_t state, int kind)
+static void basic_case_on(pixel_fixture_t* f, xui_widget w, xui_widget painted, const char* key, uint32_t state, int kind)
 {
 	const uint32_t colors[] = {0x19283791u, 0x28473683u, 0x37684575u, 0x46895467u, 0x57a06359u};
 	basic_draw_t base[256];
@@ -103,47 +111,50 @@ static void basic_case(pixel_fixture_t* f, xui_widget w, const char* key, uint32
 	PIXEL_CHECK(xuiStyleGetPropertyInfo(f->context, xuiStyleFindProperty(f->context, key), &info) == XUI_OK);
 	PIXEL_CHECK(info.iValueType == XUI_STYLE_VALUE_COLOR);
 	PIXEL_CHECK(info.iDirtyFlags == (XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
-	basic_paint(f, w, state);
+	basic_paint(f, painted, state);
 	count = basic_count; kind_count = basic_kind_count(kind);
 	PIXEL_CHECK(count <= 256 && kind_count > 0);
 	if (count > 256) return;
 	memcpy(base, basic_draws, (size_t)count * sizeof(*base));
 	PIXEL_CHECK(xuiStyleSetDefault(f->context, &p, 1) == XUI_OK);
-	basic_paint(f, w, state); PIXEL_CHECK(basic_seen(kind, colors[0]) > 0);
+	basic_paint(f, painted, state); PIXEL_CHECK(basic_seen(kind, colors[0]) > 0);
 	p.tValue.iColor = colors[1]; s = basic_style(&p, 1);
 	PIXEL_CHECK(xuiStyleSetType(f->context, xuiWidgetGetType(w), &s) == XUI_OK);
-	basic_paint(f, w, state); PIXEL_CHECK(basic_seen(kind, colors[1]) > 0);
+	basic_paint(f, painted, state); PIXEL_CHECK(basic_seen(kind, colors[1]) > 0);
 	p.tValue.iColor = colors[2];
 	PIXEL_CHECK(xuiStyleSetClass(f->context, "basic", &s) == XUI_OK);
 	PIXEL_CHECK(xuiWidgetAddStyleClass(w, "basic") == XUI_OK);
-	basic_paint(f, w, state); PIXEL_CHECK(basic_seen(kind, colors[2]) > 0);
+	basic_paint(f, painted, state); PIXEL_CHECK(basic_seen(kind, colors[2]) > 0);
 	p.tValue.iColor = colors[3];
 	PIXEL_CHECK(xuiStyleSetToken(f->context, "basic.color", &p.tValue) == XUI_OK);
 	p.tValue.iType = XUI_STYLE_VALUE_TOKEN; p.tValue.sText = "basic.color";
 	PIXEL_CHECK(xuiWidgetSetInlineStyle(w, &p, 1) == XUI_OK);
-	basic_paint(f, w, state); PIXEL_CHECK(basic_seen(kind, colors[3]) > 0);
+	basic_paint(f, painted, state); PIXEL_CHECK(basic_seen(kind, colors[3]) > 0);
 	p.tValue.iType = XUI_STYLE_VALUE_COLOR; p.tValue.iColor = colors[4];
 	xuiWidgetClearDirty(w, 0);
 	PIXEL_CHECK(xuiStyleSetToken(f->context, "basic.color", &p.tValue) == XUI_OK);
-	basic_paint(f, w, state); PIXEL_CHECK(basic_seen(kind, colors[4]) > 0);
+	basic_paint(f, painted, state); PIXEL_CHECK(basic_seen(kind, colors[4]) > 0);
 	PIXEL_CHECK((xuiWidgetGetDirtyFlags(w) & XUI_WIDGET_DIRTY_LAYOUT) == 0);
 	for (i = 0; i < 2; ++i) {
 		p.tValue.iColor = i ? 0 : 0x12345600u;
 		PIXEL_CHECK(xuiStyleSetToken(f->context, "basic.color", &p.tValue) == XUI_OK);
-		basic_paint(f, w, state);
+		basic_paint(f, painted, state);
 		PIXEL_CHECK(basic_kind_count(kind) < kind_count || basic_seen(kind, p.tValue.iColor) > 0);
 		PIXEL_CHECK(basic_seen(kind, colors[2]) == 0);
 	}
 	PIXEL_CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
-	basic_paint(f, w, state); PIXEL_CHECK(basic_seen(kind, colors[2]) > 0);
+	basic_paint(f, painted, state); PIXEL_CHECK(basic_seen(kind, colors[2]) > 0);
 	PIXEL_CHECK(xuiWidgetRemoveStyleClass(w, "basic") == XUI_OK);
 	PIXEL_CHECK(xuiStyleRemoveClass(f->context, "basic") == XUI_OK);
 	PIXEL_CHECK(xuiStyleRemoveType(f->context, xuiWidgetGetType(w)) == XUI_OK);
 	PIXEL_CHECK(xuiStyleClearDefault(f->context) == XUI_OK);
-	basic_paint(f, w, state);
+	basic_paint(f, painted, state);
 	PIXEL_CHECK(basic_count == count && memcmp(base, basic_draws, (size_t)count * sizeof(*base)) == 0);
 	if (g_failures != failures) printf("color case failed: %s state %u\n", key, state);
 }
+
+static void basic_case(pixel_fixture_t* f, xui_widget w, const char* key, uint32_t state, int kind)
+{ basic_case_on(f, w, w, key, state, kind); }
 
 static void basic_cached_case(pixel_fixture_t* f, xui_widget w, const char* key, int kind)
 {
@@ -153,6 +164,8 @@ static void basic_cached_case(pixel_fixture_t* f, xui_widget w, const char* key,
 	p.tValue.iType = XUI_STYLE_VALUE_TOKEN; p.tValue.sText = "basic.live";
 	PIXEL_CHECK(xuiStyleSetType(f->context, xuiWidgetGetType(w), &s) == XUI_OK);
 	basic_render(f); PIXEL_CHECK(basic_seen(kind, 0x21436587u) > 0);
+	/* A composite may invalidate a child's already scheduled cache job once. */
+	basic_render(f);
 	basic_render(f); PIXEL_CHECK(basic_seen(kind, 0x21436587u) == 0);
 	p.tValue.iType = XUI_STYLE_VALUE_COLOR; p.tValue.iColor = 0x32547698u;
 	PIXEL_CHECK(xuiStyleSetToken(f->context, "basic.live", &p.tValue) == XUI_OK);
