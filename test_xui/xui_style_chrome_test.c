@@ -13,6 +13,7 @@
 #include "../src/xui_chart.c"
 #include "../src/xui_inventory_grid.c"
 #include "../src/xui_step_bar.c"
+#include "../src/xui_tag_input.c"
 
 /* Record the colors actually submitted to the renderer, not just resolution. */
 static uint32_t g_colors[32768];
@@ -62,6 +63,8 @@ static int chrome_count(uint32_t color)
 
 static void chrome_paint(pixel_fixture_t* f, xui_widget w, uint32_t state)
 {
+	if (xuiWidgetGetType(w)->onPreparePaint != NULL)
+		PIXEL_CHECK(xuiWidgetGetType(w)->onPreparePaint(w) == XUI_OK);
 	g_color_count = 0;
 	pixel_paint(f, g_paint_widget ? g_paint_widget : w, state);
 }
@@ -428,6 +431,51 @@ static void chrome_steps(pixel_fixture_t* f)
 	xuiWidgetDestroy(steps);
 }
 
+static void chrome_tags(pixel_fixture_t* f)
+{
+	xui_widget tags = NULL, input;
+	xui_tag_input_data_t* data;
+	uint32_t selection;
+	PIXEL_CHECK(xuiTagInputCreate(f->context, &tags, NULL) == XUI_OK);
+	chrome_attach(f, tags, 420, 80);
+	input = xuiTagInputGetInputWidget(tags);
+	PIXEL_CHECK(input != NULL);
+	PIXEL_CHECK(xuiInputSetText(input, "Selected text") == XUI_OK);
+	PIXEL_CHECK(xuiInputSelectAll(input) == XUI_OK);
+	PIXEL_CHECK(xuiSetFocusWidget(f->context, input) == XUI_OK);
+	PIXEL_CHECK(xuiLayout(f->context) == XUI_OK);
+	data = __xuiTagInputGetData(tags);
+	PIXEL_CHECK(xuiInputSetExtendedColors(input, data->iPlaceholderColor, data->iDisabledTextColor,
+		0, 0, 0, 0x8a3557ffu, data->iTextColor) == XUI_OK);
+	g_paint_widget = input;
+	chrome_key(f, tags, "taginput.text.color", data->iTextColor, XUI_WIDGET_STATE_FOCUS);
+	PIXEL_CHECK(xuiWidgetSetEnabled(tags, 0) == XUI_OK);
+	chrome_key(f, tags, "taginput.text.disabled_color", data->iDisabledTextColor, XUI_WIDGET_STATE_DISABLED);
+	PIXEL_CHECK(xuiWidgetSetEnabled(tags, 1) == XUI_OK);
+	PIXEL_CHECK(xuiSetFocusWidget(f->context, input) == XUI_OK);
+	PIXEL_CHECK(xuiInputGetExtendedColors(input, NULL, NULL, NULL, NULL, NULL, &selection, NULL) == XUI_OK);
+	PIXEL_CHECK(selection == 0x8a3557ffu);
+	chrome_key(f, input, "input.selection.color", selection, XUI_WIDGET_STATE_FOCUS);
+	chrome_inline(tags, "taginput.text.color", 0x923557ffu);
+	chrome_inline(input, "input.text.color", 0xa34668ffu);
+	chrome_paint(f, tags, XUI_WIDGET_STATE_FOCUS);
+	PIXEL_CHECK(chrome_count(0xa34668ffu) > 0 && chrome_count(0x923557ffu) == 0);
+	PIXEL_CHECK(chrome_count(selection) > 0);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(tags, NULL, 0) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(input, NULL, 0) == XUI_OK);
+	g_paint_widget = NULL;
+	chrome_cached(f, tags, input, "taginput.text.color", data->iTextColor);
+	PIXEL_CHECK(xuiInputSetText(input, "") == XUI_OK);
+	PIXEL_CHECK(xuiTagInputSetPlaceholder(tags, "Placeholder") == XUI_OK);
+	g_paint_widget = input;
+	chrome_key(f, tags, "taginput.placeholder.color", data->iPlaceholderColor, 0);
+	g_paint_widget = NULL;
+	chrome_cached(f, tags, input, "taginput.placeholder.color", data->iPlaceholderColor);
+	PIXEL_CHECK(xuiInputGetExtendedColors(input, NULL, NULL, NULL, NULL, NULL, &selection, NULL) == XUI_OK);
+	PIXEL_CHECK(selection == 0x8a3557ffu);
+	xuiWidgetDestroy(tags);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -440,6 +488,7 @@ int main(void)
 	chrome_chart(&f);
 	chrome_inventory(&f);
 	chrome_steps(&f);
+	chrome_tags(&f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_chrome_test");
 }

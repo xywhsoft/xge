@@ -1108,6 +1108,45 @@ static int __xuiTagInputInitEvents(xui_widget pWidget)
 	return iRet;
 }
 
+static int __xuiTagInputSyncInputColors(xui_widget pInput, const xui_tag_input_data_t* pResolved)
+{
+	uint32_t arrColors[7];
+	int iRet;
+
+	iRet = xuiInputGetColors(pInput, &arrColors[0], &arrColors[1], &arrColors[2], &arrColors[3]);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( arrColors[0] != 0 || arrColors[1] != pResolved->iTextColor || arrColors[2] != 0 || arrColors[3] != 0 ) {
+		iRet = xuiInputSetColors(pInput, 0, pResolved->iTextColor, 0, 0);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	iRet = xuiInputGetErrorColors(pInput, &arrColors[0], &arrColors[1]);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( arrColors[0] != 0 || arrColors[1] != 0 ) {
+		iRet = xuiInputSetErrorColors(pInput, 0, 0);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	iRet = xuiInputGetExtendedColors(pInput, &arrColors[0], &arrColors[1], &arrColors[2],
+		&arrColors[3], &arrColors[4], &arrColors[5], &arrColors[6]);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( arrColors[0] != pResolved->iPlaceholderColor || arrColors[1] != pResolved->iDisabledTextColor ||
+	     arrColors[2] != 0 || arrColors[3] != 0 || arrColors[4] != 0 || arrColors[6] != pResolved->iTextColor ) {
+		/* Selection belongs to the child Input, including its API base color. */
+		return xuiInputSetExtendedColors(pInput, pResolved->iPlaceholderColor, pResolved->iDisabledTextColor,
+			0, 0, 0, arrColors[5], pResolved->iTextColor);
+	}
+	return XUI_OK;
+}
+
+static int __xuiTagInputPreparePaint(xui_widget pWidget)
+{
+	xui_tag_input_data_t* pData = __xuiTagInputGetData(pWidget);
+	xui_tag_input_data_t tResolved;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pInput == NULL ) return XUI_OK;
+	__xuiTagInputResolve(pWidget, pData, &tResolved);
+	return __xuiTagInputSyncInputColors(pData->pInput, &tResolved);
+}
+
 static int __xuiTagInputSyncInputStyle(xui_widget pWidget, xui_tag_input_data_t* pData)
 {
 	xui_tag_input_data_t tResolved;
@@ -1118,16 +1157,7 @@ static int __xuiTagInputSyncInputStyle(xui_widget pWidget, xui_tag_input_data_t*
 	}
 	__xuiTagInputResolve(pWidget, pData, &tResolved);
 	bEnabled = xuiWidgetGetEnabled(pWidget) && xuiWidgetGetVisible(pWidget);
-	(void)xuiInputSetColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), tResolved.iTextColor, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
-	(void)xuiInputSetErrorColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
-	(void)xuiInputSetExtendedColors(pData->pInput,
-		tResolved.iPlaceholderColor,
-		tResolved.iDisabledTextColor,
-		XUI_COLOR_RGBA(0, 0, 0, 0),
-		XUI_COLOR_RGBA(0, 0, 0, 0),
-		XUI_COLOR_RGBA(0, 0, 0, 0),
-		XUI_COLOR_RGBA(74, 144, 239, 255),
-		tResolved.iTextColor);
+	(void)__xuiTagInputSyncInputColors(pData->pInput, &tResolved);
 	(void)xuiInputSetBorderWidth(pData->pInput, 0.0f);
 	(void)xuiInputSetPlaceholder(pData->pInput, (pData->sPlaceholder != NULL) ? pData->sPlaceholder : "");
 	if ( xuiInputGetFont(pData->pInput) != tResolved.pFont ) {
@@ -1273,6 +1303,7 @@ static void __xuiTagInputRegisterStyleProperties(xui_context pContext, xui_widge
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
 
+	pType->onPreparePaint = __xuiTagInputPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiTagInputRegisterStyleProperty(pContext, pType, "taginput.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
