@@ -43,6 +43,7 @@ typedef struct xui_tree_view_data_t {
 	xui_tree_view_count_proc onCount;
 	xui_tree_view_node_proc onNode;
 	void* pAdapterUser;
+	int bRefreshingAdapter;
 	xui_tree_view_item_proc onRenderItem;
 	void* pRenderItemUser;
 	int iSelectedId;
@@ -1997,38 +1998,50 @@ XUI_API int xuiTreeViewSetAdapter(xui_widget pWidget, xui_tree_view_count_proc o
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bRefreshingAdapter ) return XUI_ERROR_INVALID_STATE;
 	pData->onCount = onCount;
 	pData->onNode = onNode;
 	pData->pAdapterUser = pUser;
 	return xuiTreeViewRefreshAdapter(pWidget);
 }
 
-XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
+static int __xuiTreeViewAdapterCurrent(xui_widget widget, xui_tree_view_data_t* data, int change)
+{
+	return xuiInternalWidgetIsValid(widget) &&
+		!xuiInternalContextDestroyPending(xuiWidgetGetContext(widget)) && data->iChangeCount == change;
+}
+
+static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
 {
 	xui_tree_view_data_t* pData;
+	xui_tree_view_data_t tStaged;
 	xui_tree_view_node_t tNode;
 	int iCount;
 	int i;
 	int iSelectedId;
+	int iChange;
+	int iReadRet;
 	float fScroll;
-	int iRet;
+	int iRet = XUI_OK;
 
 	pData = __xuiTreeViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bRefreshingAdapter ) return XUI_ERROR_INVALID_STATE;
 	if ( (pData->onCount == NULL) || (pData->onNode == NULL) ) {
 		return XUI_OK;
 	}
+	pData->bRefreshingAdapter = 1;
+	iChange = pData->iChangeCount;
+	tStaged = *pData;
+	__xuiTreeViewInitNodeStorage(&tStaged);
 	iCount = pData->onCount(pWidget, pData->pAdapterUser);
+	if ( !__xuiTreeViewAdapterCurrent(pWidget, pData, iChange) ) {
+		iRet = XUI_ERROR_INVALID_STATE;
+		goto cleanup;
+	}
 	if ( iCount < 0 ) {
 		iCount = 0;
 	}
-	iSelectedId = pData->iSelectedId;
-	fScroll = xuiTreeViewGetScroll(pWidget);
-	__xuiTreeViewResetNodes(pData);
-	pData->iHoverVisible = -1;
-	pData->iFocusVisible = -1;
-	pData->iActiveVisible = -1;
-	pData->iSelectedId = iSelectedId;
 	for ( i = 0; i < iCount; i++ ) {
 		memset(&tNode, 0, sizeof(tNode));
 		tNode.iId = -1;
@@ -2036,14 +2049,40 @@ XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
 		tNode.sText = "";
 		tNode.bEnabled = 1;
 		tNode.bIconReserved = 1;
-		if ( pData->onNode(pWidget, i, &tNode, pData->pAdapterUser) != XUI_OK ) {
+		iReadRet = pData->onNode(pWidget, i, &tNode, pData->pAdapterUser);
+		if ( !__xuiTreeViewAdapterCurrent(pWidget, pData, iChange) ) {
+			iRet = XUI_ERROR_INVALID_STATE;
+			goto cleanup;
+		}
+		if ( iReadRet != XUI_OK ) {
 			continue;
 		}
-		(void)__xuiTreeViewAppendNodeData(pData, &tNode);
+		iRet = __xuiTreeViewAppendNodeData(&tStaged, &tNode);
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) goto cleanup;
 	}
-	iRet = __xuiTreeViewRebuildVisible(pWidget, pData, -1);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiTreeViewSetScroll(pWidget, fScroll);
+	/* SetNodes publishes owned node storage atomically and keeps current widget
+	 * configuration, including changes made by adapter callbacks. */
+	iSelectedId = pData->iSelectedId;
+	fScroll = xuiTreeViewGetScroll(pWidget);
+	iRet = xuiTreeViewSetNodes(pWidget, tStaged.arrNodes, tStaged.iNodeCount);
+	if ( iRet == XUI_OK ) {
+		(void)xuiTreeViewSetSelected(pWidget, iSelectedId);
+		iRet = xuiTreeViewSetScroll(pWidget, fScroll);
+	}
+cleanup:
+	__xuiTreeViewClearNodeStorage(&tStaged);
+	pData->bRefreshingAdapter = 0;
+	return iRet;
+}
+
+XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
+{
+	xui_context context = xuiWidgetGetContext(pWidget);
+	int result;
+	xuiInternalOperationEnter(context);
+	result = __xuiTreeViewRefreshAdapterOperation(pWidget);
+	xuiInternalOperationLeave(context);
+	return result;
 }
 
 XUI_API int xuiTreeViewClear(xui_widget pWidget)

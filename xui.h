@@ -8113,6 +8113,8 @@ XUI_API int xuiTreeViewSetSelect(xui_widget pWidget, xui_tree_view_select_proc o
 XUI_API int xuiTreeViewSetContextMenu(xui_widget pWidget, xui_tree_view_context_proc onContext, void* pUser);
 XUI_API int xuiTreeViewSetItemRenderer(xui_widget pWidget, xui_tree_view_item_proc onRender, void* pUser);
 XUI_API int xuiTreeViewSetAdapter(xui_widget pWidget, xui_tree_view_count_proc onCount, xui_tree_view_node_proc onNode, void* pUser);
+/* Adapter reads observe the old tree until commit. Reentrant refresh/rebind or
+ * a callback invalidating the tree aborts with XUI_ERROR_INVALID_STATE. */
 XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget);
 XUI_API int xuiTreeViewClear(xui_widget pWidget);
 XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* pNodes, int iCount);
