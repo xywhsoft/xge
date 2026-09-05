@@ -3101,14 +3101,9 @@ static void __xuiTextEditDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData == NULL ) {
 		return;
 	}
-	if ( pData->pHScrollBar != NULL ) {
-		xuiWidgetDestroy(pData->pHScrollBar);
-		pData->pHScrollBar = NULL;
-	}
-	if ( pData->pVScrollBar != NULL ) {
-		xuiWidgetDestroy(pData->pVScrollBar);
-		pData->pVScrollBar = NULL;
-	}
+	/* These are tree-owned children, already freed before type destruction. */
+	pData->pHScrollBar = NULL;
+	pData->pVScrollBar = NULL;
 	if ( pData->pMenu != NULL ) {
 		pPopup = xuiMenuGetPopupWidget(pData->pMenu);
 		if ( pPopup != NULL ) {
