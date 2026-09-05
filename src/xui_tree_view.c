@@ -74,6 +74,21 @@ typedef struct xui_tree_view_data_t {
 	uint32_t iScrollbarActiveColor;
 	uint32_t iScrollbarFocusColor;
 	uint32_t iScrollbarDisabledColor;
+	uint32_t iSelectedTextColor;
+	uint32_t iSelectedExpanderColor;
+	uint32_t iExpanderBackgroundColor;
+	uint32_t iExpanderDisabledBackgroundColor;
+	uint32_t iExpanderSelectedBackgroundColor;
+	uint32_t iExpanderSelectedActiveBackgroundColor;
+	uint32_t iExpanderActiveBackgroundColor;
+	uint32_t iExpanderHoverBackgroundColor;
+	uint32_t iCheckBackgroundColor;
+	uint32_t iCheckMarkColor;
+	uint32_t iFolderTabColor;
+	uint32_t iFolderBodyColor;
+	uint32_t iFileBackgroundColor;
+	uint32_t iFileLineColor;
+	uint32_t iViewportStyleHash;
 } xui_tree_view_data_t;
 
 static xui_tree_view_data_t* __xuiTreeViewGetData(xui_widget pWidget);
@@ -229,6 +244,20 @@ static void __xuiTreeViewDefaults(xui_tree_view_data_t* pData)
 	pData->iScrollbarActiveColor = XUI_COLOR_RGBA(47, 128, 237, 255);
 	pData->iScrollbarFocusColor = XUI_COLOR_RGBA(47, 128, 237, 180);
 	pData->iScrollbarDisabledColor = XUI_COLOR_RGBA(181, 190, 204, 135);
+	pData->iSelectedTextColor = XUI_COLOR_WHITE;
+	pData->iSelectedExpanderColor = XUI_COLOR_WHITE;
+	pData->iExpanderBackgroundColor = XUI_COLOR_RGBA(205, 225, 246, 165);
+	pData->iExpanderDisabledBackgroundColor = XUI_COLOR_RGBA(224, 232, 242, 130);
+	pData->iExpanderSelectedBackgroundColor = XUI_COLOR_RGBA(18, 86, 178, 145);
+	pData->iExpanderSelectedActiveBackgroundColor = XUI_COLOR_RGBA(13, 62, 132, 190);
+	pData->iExpanderActiveBackgroundColor = XUI_COLOR_RGBA(47, 128, 237, 52);
+	pData->iExpanderHoverBackgroundColor = XUI_COLOR_RGBA(47, 128, 237, 32);
+	pData->iCheckBackgroundColor = XUI_COLOR_WHITE;
+	pData->iCheckMarkColor = XUI_COLOR_WHITE;
+	pData->iFolderTabColor = XUI_COLOR_RGBA(171, 201, 231, 230);
+	pData->iFolderBodyColor = XUI_COLOR_RGBA(206, 226, 246, 235);
+	pData->iFileBackgroundColor = XUI_COLOR_RGBA(255, 255, 255, 230);
+	pData->iFileLineColor = XUI_COLOR_RGBA(164, 190, 217, 210);
 }
 
 static void __xuiTreeViewApplyDesc(xui_tree_view_data_t* pData, const xui_tree_view_desc_t* pDesc)
@@ -327,6 +356,26 @@ static void __xuiTreeViewResolve(xui_widget pWidget, xui_tree_view_data_t* pData
 	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.color", &pResolved->iExpanderColor);
 	(void)__xuiTreeViewStyleColor(pWidget, "treeview.icon.color", &pResolved->iIconColor);
 	(void)__xuiTreeViewStyleColor(pWidget, "treeview.check.color", &pResolved->iCheckColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.text.selected_color", &pResolved->iSelectedTextColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.selected_color", &pResolved->iSelectedExpanderColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.background_color", &pResolved->iExpanderBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.disabled_background_color", &pResolved->iExpanderDisabledBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.selected_background_color", &pResolved->iExpanderSelectedBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.selected_active_background_color", &pResolved->iExpanderSelectedActiveBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.active_background_color", &pResolved->iExpanderActiveBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.expander.hover_background_color", &pResolved->iExpanderHoverBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.check.background_color", &pResolved->iCheckBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.check.mark_color", &pResolved->iCheckMarkColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.icon.folder_tab_color", &pResolved->iFolderTabColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.icon.folder_body_color", &pResolved->iFolderBodyColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.icon.file_background_color", &pResolved->iFileBackgroundColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.icon.file_line_color", &pResolved->iFileLineColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.scrollbar.track_color", &pResolved->iTrackColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.scrollbar.thumb_color", &pResolved->iThumbColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.scrollbar.hover_color", &pResolved->iScrollbarHoverColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.scrollbar.active_color", &pResolved->iScrollbarActiveColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.scrollbar.focus_color", &pResolved->iScrollbarFocusColor);
+	(void)__xuiTreeViewStyleColor(pWidget, "treeview.scrollbar.disabled_color", &pResolved->iScrollbarDisabledColor);
 	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.item.height", &pResolved->fItemHeight);
 	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.indent", &pResolved->fIndent);
 	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.padding", &pResolved->fPadding);
@@ -994,6 +1043,7 @@ static int __xuiTreeViewHitCheck(xui_widget pWidget, xui_tree_view_data_t* pData
 
 static int __xuiTreeViewApplyFrameStyle(xui_widget pWidget, xui_tree_view_data_t* pData)
 {
+	xui_tree_view_data_t tResolved;
 	int iRet;
 
 	(void)pWidget;
@@ -1006,7 +1056,8 @@ static int __xuiTreeViewApplyFrameStyle(xui_widget pWidget, xui_tree_view_data_t
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetWheelStep(pData->pFrame, pData->fItemHeight * 3.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetContentDragEnabled(pData->pFrame, 0);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 0.0f);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, pData->iTrackColor, pData->iThumbColor, pData->iScrollbarHoverColor, pData->iScrollbarActiveColor, pData->iScrollbarFocusColor, pData->iScrollbarDisabledColor);
+	__xuiTreeViewResolve(pWidget, pData, &tResolved);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	return iRet;
 }
 
@@ -1408,6 +1459,58 @@ static int __xuiTreeViewDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw,
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
+/* The cache walk is child-first. Refresh already prepared SELF caches here so
+ * owner-only style changes are visible in the same frame, without layout work. */
+static int __xuiTreeViewRefreshChildCache(xui_widget pChild)
+{
+	xui_widget_cache_render_proc onRender;
+	xui_cache_policy_t tPolicy;
+	xui_draw_context pDraw;
+	xui_proxy pProxy;
+	void* pUser;
+	uint32_t iState;
+	int iRet, iEndRet;
+	if ( !xuiInternalWidgetIsValid(pChild) || !xuiWidgetGetVisible(pChild) ||
+	     (xuiWidgetGetDirtyFlags(pChild) & XUI_WIDGET_DIRTY_CACHE) == 0 ) return XUI_OK;
+	tPolicy = xuiWidgetGetCachePolicy(pChild);
+	iState = xuiWidgetGetStateId(pChild);
+	if ( tPolicy.iPolicy != XUI_CACHE_POLICY_SELF ||
+	     xuiWidgetGetCacheSurface(pChild, iState) == NULL ) return XUI_OK;
+	(void)xuiWidgetGetCacheRenderCallback(pChild, &onRender, &pUser);
+	if ( onRender == NULL ) return XUI_OK;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pChild));
+	iRet = xuiWidgetUpdateBegin(pChild, iState, XUI_WIDGET_UPDATE_CLEAR, tPolicy.iClearColor, &pDraw);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = onRender(pChild, pDraw, iState, pUser);
+	if ( !xuiInternalWidgetIsValid(pChild) || xuiInternalContextDestroyPending(pChild->pContext) ) {
+		(void)pProxy->drawEnd(pProxy, pDraw);
+		pChild->pActiveUpdateDraw = NULL;
+		pChild->pActiveUpdateSlot = NULL;
+		pChild->iActiveUpdateStateId = 0;
+		return XUI_OK;
+	}
+	iEndRet = xuiWidgetUpdateEnd(pChild, iState, pDraw);
+	if ( iRet == XUI_OK ) iRet = iEndRet;
+	if ( iRet == XUI_OK ) xuiWidgetClearDirty(pChild, XUI_WIDGET_DIRTY_CACHE);
+	return iRet;
+}
+
+static int __xuiTreeViewSyncPaint(xui_widget pWidget, xui_tree_view_data_t* pData, const xui_tree_view_data_t* pResolved)
+{
+	int iRet;
+	iRet = xuiScrollFrameSetColors(pData->pFrame, pResolved->iTrackColor, pResolved->iThumbColor, pResolved->iScrollbarHoverColor, pResolved->iScrollbarActiveColor, pResolved->iScrollbarFocusColor, pResolved->iScrollbarDisabledColor);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->iViewportStyleHash != xuiWidgetGetStyleHash(pWidget) ) {
+		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = __xuiTreeViewRefreshChildCache(pData->pViewport);
+		if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
+	}
+	iRet = __xuiTreeViewRefreshChildCache(xuiScrollFrameGetHScrollBarWidget(pData->pFrame));
+	if ( iRet == XUI_OK ) iRet = __xuiTreeViewRefreshChildCache(xuiScrollFrameGetVScrollBarWidget(pData->pFrame));
+	if ( iRet == XUI_OK ) iRet = __xuiTreeViewRefreshChildCache(pData->pFrame);
+	return iRet;
+}
+
 static int __xuiTreeViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_tree_view_data_t* pData;
@@ -1432,6 +1535,8 @@ static int __xuiTreeViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	__xuiTreeViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pWidget);
+	iRet = __xuiTreeViewSyncPaint(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect = xuiInternalSnapRect(tRect);
@@ -1471,21 +1576,21 @@ static int __xuiTreeViewDrawExpander(xui_proxy pProxy, xui_draw_context pDraw, x
 	return pProxy->drawTriangleFill(pProxy, pDraw, tA, tB, tC, iColor);
 }
 
-static uint32_t __xuiTreeViewExpanderHotspotColor(int iState, int bActiveExpander)
+static uint32_t __xuiTreeViewExpanderHotspotColor(const xui_tree_view_data_t* pResolved, int iState, int bActiveExpander)
 {
 	if ( (iState & XUI_TREE_ITEM_DISABLED) != 0 ) {
-		return XUI_COLOR_RGBA(224, 232, 242, 130);
+		return pResolved->iExpanderDisabledBackgroundColor;
 	}
 	if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) {
-		return bActiveExpander ? XUI_COLOR_RGBA(13, 62, 132, 190) : XUI_COLOR_RGBA(18, 86, 178, 145);
+		return bActiveExpander ? pResolved->iExpanderSelectedActiveBackgroundColor : pResolved->iExpanderSelectedBackgroundColor;
 	}
 	if ( bActiveExpander ) {
-		return XUI_COLOR_RGBA(47, 128, 237, 52);
+		return pResolved->iExpanderActiveBackgroundColor;
 	}
 	if ( (iState & XUI_TREE_ITEM_HOVER) != 0 ) {
-		return XUI_COLOR_RGBA(47, 128, 237, 32);
+		return pResolved->iExpanderHoverBackgroundColor;
 	}
-	return XUI_COLOR_RGBA(205, 225, 246, 165);
+	return pResolved->iExpanderBackgroundColor;
 }
 
 static uint32_t __xuiTreeViewExpanderGlyphColor(const xui_tree_view_data_t* pResolved, int iState)
@@ -1497,32 +1602,32 @@ static uint32_t __xuiTreeViewExpanderGlyphColor(const xui_tree_view_data_t* pRes
 		return pResolved->iDisabledTextColor;
 	}
 	if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) {
-		return XUI_COLOR_RGBA(255, 255, 255, 255);
+		return pResolved->iSelectedExpanderColor;
 	}
 	return pResolved->iExpanderColor;
 }
 
-static int __xuiTreeViewDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bChecked, int bDisabled, uint32_t iColor, uint32_t iDisabledColor)
+static int __xuiTreeViewDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bChecked, int bDisabled, uint32_t iColor, uint32_t iDisabledColor, const xui_tree_view_data_t* pResolved)
 {
 	uint32_t iBorder;
 	uint32_t iFill;
 	int iRet;
 
 	iBorder = bDisabled ? iDisabledColor : iColor;
-	iFill = bChecked ? iColor : XUI_COLOR_RGBA(255, 255, 255, 255);
+	iFill = bChecked ? iColor : pResolved->iCheckBackgroundColor;
 	iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tRect, 1.0f, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChecked && (pProxy->drawLine != NULL) ) {
-		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 3.0f, tRect.fY + 6.0f, tRect.fX + 5.2f, tRect.fY + 8.2f, 1.7f, XUI_COLOR_RGBA(255, 255, 255, 255));
+		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 3.0f, tRect.fY + 6.0f, tRect.fX + 5.2f, tRect.fY + 8.2f, 1.7f, pResolved->iCheckMarkColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 5.0f, tRect.fY + 8.1f, tRect.fX + 9.3f, tRect.fY + 3.8f, 1.7f, XUI_COLOR_RGBA(255, 255, 255, 255));
+		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 5.0f, tRect.fY + 8.1f, tRect.fX + 9.3f, tRect.fY + 3.8f, 1.7f, pResolved->iCheckMarkColor);
 	}
 	return iRet;
 }
 
-static int __xuiTreeViewDrawIcon(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bFolder, uint32_t iColor)
+static int __xuiTreeViewDrawIcon(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bFolder, uint32_t iColor, const xui_tree_view_data_t* pResolved)
 {
 	xui_rect_t tBody;
 	xui_rect_t tTab;
@@ -1534,19 +1639,19 @@ static int __xuiTreeViewDrawIcon(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 	if ( bFolder ) {
 		tTab = xuiInternalSnapRect((xui_rect_t){tRect.fX + 1.0f, tRect.fY + 3.0f, tRect.fW * 0.42f, 3.0f});
 		tBody = xuiInternalSnapRect((xui_rect_t){tRect.fX + 1.0f, tRect.fY + 5.0f, tRect.fW - 2.0f, tRect.fH - 6.0f});
-		iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tTab, XUI_COLOR_RGBA(171, 201, 231, 230));
+		iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tTab, pResolved->iFolderTabColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tBody, XUI_COLOR_RGBA(206, 226, 246, 235));
+		iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tBody, pResolved->iFolderBodyColor);
 		if ( iRet != XUI_OK ) return iRet;
 		return __xuiTreeViewDrawRectStroke(pProxy, pDraw, tBody, 1.0f, iColor);
 	}
 	tBody = xuiInternalSnapRect((xui_rect_t){tRect.fX + 3.0f, tRect.fY + 2.0f, tRect.fW - 6.0f, tRect.fH - 4.0f});
-	iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tBody, XUI_COLOR_RGBA(255, 255, 255, 230));
+	iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tBody, pResolved->iFileBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tBody, 1.0f, iColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pProxy->drawLine != NULL ) {
-		iRet = pProxy->drawLine(pProxy, pDraw, tBody.fX + 3.0f, tBody.fY + 5.0f, tBody.fX + tBody.fW - 3.0f, tBody.fY + 5.0f, 1.0f, XUI_COLOR_RGBA(164, 190, 217, 210));
+		iRet = pProxy->drawLine(pProxy, pDraw, tBody.fX + 3.0f, tBody.fY + 5.0f, tBody.fX + tBody.fW - 3.0f, tBody.fY + 5.0f, 1.0f, pResolved->iFileLineColor);
 	}
 	return iRet;
 }
@@ -1593,6 +1698,7 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	}
 	__xuiTreeViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pViewport);
+	pData->iViewportStyleHash = xuiWidgetGetStyleHash(pWidget);
 	fViewportW = __xuiTreeViewMaxFloat(0.0f, tRect.fW);
 	fViewportH = __xuiTreeViewMaxFloat(0.0f, tRect.fH);
 	tRect.fX = 0.0f;
@@ -1650,7 +1756,7 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		if ( pNode->bHasChildren ) {
 			bActiveExpander = (pData->iActiveVisible == i) && (pData->iActivePart == XUI_TREE_VIEW_ACTIVE_EXPANDER);
 			tFill = xuiInternalSnapRect((xui_rect_t){tExpander.fX - 1.0f, tExpander.fY - 1.0f, tExpander.fW + 2.0f, tExpander.fH + 2.0f});
-			iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tFill, __xuiTreeViewExpanderHotspotColor(iState, bActiveExpander));
+			iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tFill, __xuiTreeViewExpanderHotspotColor(&tResolved, iState, bActiveExpander));
 			if ( iRet != XUI_OK ) return iRet;
 			iExpanderColor = __xuiTreeViewExpanderGlyphColor(&tResolved, iState);
 			iRet = __xuiTreeViewDrawExpander(pProxy, pDraw, tExpander, pNode->bExpanded, iExpanderColor);
@@ -1659,19 +1765,19 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		fTextX = tExpander.fX + tExpander.fW + 5.0f;
 		if ( pNode->bCheckReserved ) {
 			tCheck = __xuiTreeViewCheckRect(&tResolved, pNode, tRow);
-			iRet = __xuiTreeViewDrawCheck(pProxy, pDraw, tCheck, pNode->bChecked, (iState & XUI_TREE_ITEM_DISABLED) != 0, tResolved.iCheckColor, tResolved.iDisabledTextColor);
+			iRet = __xuiTreeViewDrawCheck(pProxy, pDraw, tCheck, pNode->bChecked, (iState & XUI_TREE_ITEM_DISABLED) != 0, tResolved.iCheckColor, tResolved.iDisabledTextColor, &tResolved);
 			if ( iRet != XUI_OK ) return iRet;
 			fTextX = tCheck.fX + tCheck.fW + 6.0f;
 		}
 		if ( pNode->bIconReserved ) {
 			tIcon = xuiInternalSnapRect((xui_rect_t){fTextX, tRow.fY + (tRow.fH - 14.0f) * 0.5f, 15.0f, 14.0f});
-			iRet = __xuiTreeViewDrawIcon(pProxy, pDraw, tIcon, pNode->bHasChildren, ((iState & XUI_TREE_ITEM_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iIconColor);
+			iRet = __xuiTreeViewDrawIcon(pProxy, pDraw, tIcon, pNode->bHasChildren, ((iState & XUI_TREE_ITEM_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iIconColor, &tResolved);
 			if ( iRet != XUI_OK ) return iRet;
 			fTextX = tIcon.fX + tIcon.fW + 6.0f;
 		}
 		iTextColor = ((iState & XUI_TREE_ITEM_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 		if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) {
-			iTextColor = XUI_COLOR_RGBA(255, 255, 255, 255);
+			iTextColor = tResolved.iSelectedTextColor;
 		}
 		if ( (tResolved.pFont != NULL) && (__xuiTreeViewAlpha(iTextColor) != 0) ) {
 			tText = xuiInternalSnapRect((xui_rect_t){fTextX, tRow.fY, __xuiTreeViewMaxFloat(1.0f, tRow.fW - fTextX - tResolved.fPadding), tRow.fH});
@@ -1887,6 +1993,26 @@ static void __xuiTreeViewRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.icon.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.check.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.text.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.disabled_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.selected_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.selected_active_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.active_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.expander.hover_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.check.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.check.mark_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.icon.folder_tab_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.icon.folder_body_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.icon.file_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.icon.file_line_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.scrollbar.track_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.scrollbar.thumb_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.scrollbar.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.scrollbar.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.scrollbar.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.scrollbar.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.item.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.indent", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
@@ -2430,6 +2556,7 @@ XUI_API int xuiTreeViewGetDecorationColors(xui_widget pWidget, uint32_t* pExpand
 
 XUI_API int xuiTreeViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
 {
+	xui_tree_view_data_t tResolved;
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	int iRet;
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2439,7 +2566,8 @@ XUI_API int xuiTreeViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, u
 	pData->iScrollbarActiveColor = iActive;
 	pData->iScrollbarFocusColor = iFocus;
 	pData->iScrollbarDisabledColor = iDisabled;
-	iRet = xuiScrollFrameSetColors(pData->pFrame, iTrack, iThumb, iHover, iActive, iFocus, iDisabled);
+	__xuiTreeViewResolve(pWidget, pData, &tResolved);
+	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTreeViewInvalidateRows(pWidget, pData);
 }
