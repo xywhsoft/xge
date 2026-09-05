@@ -52,6 +52,7 @@ int main(void)
     CHECK(xuiTreeViewSetSelected(w,1)==XUI_OK);
     collectionAttach(w); work=gTreeWork;
     collectionVerifyKeys(w,d,sizeof(*d),resolve,keys,COUNT(keys));
+    collectionVerifyRenderedCascade(w,"treeview.text.selected_color",d->iSelectedTextColor);
     for(i=0;i<COUNT(keys);i++) {
         collectionInline(w,keys[i].sKey,COLOR_C); collectionRender();
         if(strstr(keys[i].sKey,"folder_") || strstr(keys[i].sKey,"file_") ||

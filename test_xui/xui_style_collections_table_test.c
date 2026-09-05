@@ -57,6 +57,7 @@ int main(void)
     d=__xuiTableViewGetData(w); CHECK(d!=NULL); collectionAttach(w);
     collectionVerifyKeys(w,d,sizeof(*d),resolve,keys,COUNT(keys));
     prefix=d->arrRowPrefix; merges=d->iMergeGeneration;
+    collectionVerifyRenderedCascade(w,"tableview.cell.invalid_color",d->iInvalidColor);
     p=collectionProperty("tableview.row.color",COLOR_A); style.iSize=sizeof(style); style.pProperties=&p; style.iPropertyCount=1;
     CHECK(xuiStyleSetType(gContext,xuiTableViewGetType(gContext),&style)==XUI_OK);
     collectionRender(); CHECK(collectionSeen(COLOR_A)); CHECK(collectionSeen(0x249173ffu));

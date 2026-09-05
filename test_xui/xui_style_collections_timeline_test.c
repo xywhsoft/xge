@@ -61,6 +61,7 @@ int main(void)
     __xuiTimeLineResolvePaint(w,d,&basePaint); baseColors=d->tColors;
     layerChanges=d->iLayerChangeCount; frameChanges=d->iFrameChangeCount; spanChanges=d->iSpanChangeCount;
     collectionVerifyKeys(w,&basePaint,sizeof(basePaint),resolve,keys,COUNT(keys));
+    collectionVerifyRenderedCascade(w,"timelineview.span.color",baseColors.iSpanColor);
     for(i=0;i<COUNT(keys);i++) {
         if(!strcmp(keys[i].sKey,"timelineview.disabled.color")) CHECK(xuiWidgetSetEnabled(w,0)==XUI_OK);
         collectionInline(w,keys[i].sKey,COLOR_C); collectionRender();

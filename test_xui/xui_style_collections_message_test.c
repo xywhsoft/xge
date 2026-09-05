@@ -55,6 +55,7 @@ int main(void)
     for(i=0;i<5;i++) layouts[i]=d->arrNodes[i].pTextLayout;
     layoutWork=gMessageWork.LayoutNode; measureWork=gMessageWork.MeasureNode;
     collectionVerifyKeys(w,&basePaint,sizeof(basePaint),resolve,keys,COUNT(keys));
+    collectionVerifyRenderedCascade(w,"messagelist.bubble.other_color",baseColors.iOtherBubbleColor);
     for(i=0;i<COUNT(keys);i++) {
         collectionInline(w,keys[i].sKey,COLOR_C); collectionRender();
         if(!collectionSeen(COLOR_C)) fprintf(stderr,"not rendered: %s\n",keys[i].sKey);

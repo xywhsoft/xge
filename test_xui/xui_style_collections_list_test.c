@@ -18,6 +18,7 @@ int main(void)
     CHECK(xuiListViewCreate(gContext,&w,&desc)==XUI_OK); d=__xuiListViewGetData(w);
     collectionAttach(w);
     collectionVerifyKeys(w,d,sizeof(*d),resolve,keys,COUNT(keys));
+    collectionVerifyRenderedCascade(w,"listview.text.selected_color",d->iSelectedTextColor);
     collectionInline(w,"listview.text.selected_color",COLOR_A); collectionRender(); CHECK(collectionSeen(COLOR_A));
     collectionInline(w,"listview.text.selected_color",COLOR_B); collectionRender(); CHECK(collectionSeen(COLOR_B)); CHECK(!collectionSeen(COLOR_A));
     collectionInline(w,"listview.text.selected_color",0); collectionRender(); CHECK(!collectionSeen(COLOR_B));
