@@ -68,6 +68,8 @@ typedef struct xui_cascader_data_t {
 	uint32_t iPopupDisabledTextColor;
 	uint32_t iPopupSeparatorColor;
 	float fBorderWidth;
+	uint32_t iChildStyleHash;
+	int bChildStyleSynced;
 } xui_cascader_data_t;
 
 static xui_cascader_data_t* __xuiCascaderGetData(xui_widget pWidget);
@@ -82,6 +84,7 @@ static int __xuiCascaderAlpha(uint32_t iColor)
 
 static uint32_t __xuiCascaderColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0 ) return iColor;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
@@ -294,6 +297,23 @@ static void __xuiCascaderResolve(xui_widget pWidget, xui_cascader_data_t* pData,
 	(void)__xuiCascaderStyleColor(pWidget, "cascader.border.hover_color", &pResolved->iHoverBorderColor);
 	(void)__xuiCascaderStyleColor(pWidget, "cascader.border.focus_color", &pResolved->iFocusBorderColor);
 	(void)__xuiCascaderStyleColor(pWidget, "cascader.arrow.color", &pResolved->iArrowColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.text.disabled_color", &pResolved->iDisabledTextColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.background.disabled_color", &pResolved->iDisabledBackgroundColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.arrow.disabled_color", &pResolved->iDisabledArrowColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.button.color", &pResolved->iButtonColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.button.hover_color", &pResolved->iButtonHoverColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.button.open_color", &pResolved->iButtonOpenColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.panel_color", &pResolved->iPopupPanelColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.border_color", &pResolved->iPopupBorderColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.shadow_color", &pResolved->iPopupShadowColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.text_color", &pResolved->iPopupTextColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.muted_text_color", &pResolved->iPopupMutedTextColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.hover_color", &pResolved->iPopupHoverColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.active_color", &pResolved->iPopupActiveColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.selected_color", &pResolved->iPopupSelectedColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.active_text_color", &pResolved->iPopupActiveTextColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.disabled_text_color", &pResolved->iPopupDisabledTextColor);
+	(void)__xuiCascaderStyleColor(pWidget, "cascader.popup.separator_color", &pResolved->iPopupSeparatorColor);
 	(void)__xuiCascaderStyleFloat(pWidget, "cascader.border.width", &pResolved->fBorderWidth);
 }
 
@@ -1194,6 +1214,29 @@ static int __xuiCascaderDrawClear(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	return pProxy->drawLine(pProxy, pDraw, cx + 4.0f, cy - 4.0f, cx - 4.0f, cy + 4.0f, 1.5f, iColor);
 }
 
+static int __xuiCascaderSyncStyle(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	xui_cascader_data_t tResolved;
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int iRet;
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
+	__xuiCascaderResolve(pWidget, pData, &tResolved);
+	if ( pData->pPopup != NULL ) {
+		iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor,
+			tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, 0u);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pPanel != NULL )
+		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->iChildStyleHash = iHash;
+	pData->bChildStyleSynced = 1;
+	return XUI_OK;
+}
+
 static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_cascader_data_t* pData;
@@ -1218,6 +1261,8 @@ static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	__xuiCascaderResolve(pWidget, pData, &tResolved);
 	__xuiCascaderUpdateOwnerRects(pWidget, pData);
+	iRet = __xuiCascaderSyncStyle(pWidget, 0.0f, NULL);
+	if ( iRet != XUI_OK ) return iRet;
 	state = __xuiCascaderState(pWidget, pData);
 	r = xuiWidgetGetRect(pWidget);
 	r.fX = 0.0f;
@@ -1594,6 +1639,23 @@ static void __xuiCascaderRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.border.hover_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.border.focus_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.arrow.color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.text.disabled_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.background.disabled_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.arrow.disabled_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.button.color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.button.hover_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.button.open_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.panel_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.border_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.shadow_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.text_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.muted_text_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.hover_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.active_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.selected_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.active_text_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.disabled_text_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
+	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.popup.separator_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.border.width", XUI_STYLE_VALUE_FLOAT, layoutDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, layoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -1629,6 +1691,7 @@ XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiCascaderDestroy;
 	tDesc.onContentMeasure = __xuiCascaderContentMeasure;
 	tDesc.onCacheRender = __xuiCascaderOwnerRender;
+	tDesc.onUpdate = __xuiCascaderSyncStyle;
 	__xuiCascaderDefaultLayout(&tLayout);
 	__xuiCascaderDefaultCachePolicy(&tPolicy);
 	tDesc.tLayout = tLayout;
