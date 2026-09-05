@@ -260,7 +260,8 @@ static int textLayoutDifferential(void)
 		memcpy(tLegacy.sText, tIndexed.sText, (size_t)iCount);
 		memcpy(tLegacy.tShape.pClusters, tIndexed.tShape.pClusters, (size_t)iCount * sizeof(xui_text_cluster_t));
 		CHECK(__xuiTextLayoutBuild(&tIndexed) == XUI_OK);
-		/* The unindexed path is the original linear range/next-cluster implementation. */
+		/* Same Unicode policy, but the original linear range/next-cluster scans. */
+		CHECK(__xuiTextBuildBreakIndex(&tLegacy) == XUI_OK);
 		CHECK(__xuiTextLayoutParagraph(&tLegacy, tLegacy.sText, tLegacy.sText + iCount, XUI_TEXT_BREAK_END) == XUI_OK);
 		__xuiTextLayoutAlignLines(&tLegacy);
 		CHECK(tIndexed.iLineCount == tLegacy.iLineCount && tIndexed.bTruncated == tLegacy.bTruncated);

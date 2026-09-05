@@ -1,5 +1,7 @@
 #include "xui_internal.h"
+#include "xui_text_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 #define XUI_TEXT_LAYOUT_MAGIC 0x58554954u
@@ -7,6 +9,8 @@
 #ifndef XUI_TEXT_TEST_COUNT
 #define XUI_TEXT_TEST_COUNT(field, count) ((void)0)
 #endif
+
+#include "xui_text_break.inl"
 
 struct xui_text_layout_t {
 	uint32_t iMagic;
@@ -17,6 +21,8 @@ struct xui_text_layout_t {
 	xui_font_metrics_t tMetrics;
 	xui_text_shape_t tShape;
 	double* pClusterAdvances;
+	unsigned char* pBreaks;
+	float fHyphenWidth;
 	int iTrimStart;
 	int iTrimEnd;
 	int iSkipStart;
@@ -86,6 +92,9 @@ static void __xuiTextLayoutClearGeometry(xui_text_layout pLayout)
 	xuiTextShapeFree(&pLayout->tShape);
 	xrtFree(pLayout->pClusterAdvances);
 	pLayout->pClusterAdvances = NULL;
+	xrtFree(pLayout->pBreaks);
+	pLayout->pBreaks = NULL;
+	pLayout->fHyphenWidth = 0;
 	pLayout->iTrimStart = pLayout->iTrimEnd = 0;
 	pLayout->iSkipStart = pLayout->iSkipEnd = 0;
 	if ( pLayout->pLines != NULL ) {
@@ -199,6 +208,16 @@ static int __xuiTextClusterAfter(xui_text_layout pLayout, int iOffset, int bNext
 	return iLo;
 }
 
+static int __xuiTextBuildBreakIndex(xui_text_layout pLayout)
+{
+	if ( pLayout->pBreaks != NULL || pLayout->iTextSize <= 0 ) return XUI_OK;
+	pLayout->pBreaks = (unsigned char*)xrtCalloc((size_t)pLayout->iTextSize + 1u, 1);
+	if ( pLayout->pBreaks == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	return __xuiTextBreakMap(pLayout->sText, pLayout->iTextSize, pLayout->pBreaks);
+}
+
+#include "xui_text_projection.inl"
+
 static int __xuiTextMeasureRange(xui_text_layout pLayout, const char* sStart, const char* sEnd, xui_vec2_t* pSize)
 {
 	int iStart;
@@ -258,6 +277,18 @@ static const char* __xuiTextNextCluster(xui_text_layout pLayout, const char* sAt
 		return pLayout->sText + (pCluster->iTextEnd < iLimit ? pCluster->iTextEnd : iLimit);
 	}
 	return sAt < sEnd ? sAt + 1 : sEnd;
+}
+
+static const char* __xuiTextNextLayoutCluster(xui_text_layout pLayout, const char* sAt, const char* sEnd)
+{
+	const char* sNext = sAt;
+	do {
+		const char* sPrevious = sNext;
+		sNext = __xuiTextNextCluster(pLayout, sNext, sEnd);
+		if ( sNext <= sPrevious ) return sEnd;
+	} while ( sNext < sEnd && pLayout->pBreaks != NULL &&
+		!(pLayout->pBreaks[sNext - pLayout->sText] & XUI_LB_GRAPHEME) );
+	return sNext;
 }
 
 static const char* __xuiTextPrevUtf8(const char* sBegin, const char* sAt)
@@ -328,7 +359,7 @@ static const char* __xuiTextSkipSpaces(xui_text_layout pLayout, const char* sAt,
 	return sAt;
 }
 
-static const char* __xuiTextFindNewline(const char* sStart, const char* sEnd, const char** psAfter)
+static const char* __xuiTextFindNewline(xui_text_layout pLayout, const char* sStart, const char* sEnd, const char** psAfter)
 {
 	const char* sScan;
 
@@ -343,6 +374,12 @@ static const char* __xuiTextFindNewline(const char* sStart, const char* sEnd, co
 			} else {
 				*psAfter = sScan + 1;
 			}
+			return sScan;
+		}
+		if ( pLayout->pBreaks != NULL && (pLayout->pBreaks[sScan - pLayout->sText] & XUI_LB_HARD) ) {
+			size_t iAt = (size_t)(sScan - pLayout->sText);
+			(void)__xuiTextBreakDecode(pLayout->sText, (size_t)pLayout->iTextSize, &iAt);
+			*psAfter = pLayout->sText + iAt;
 			return sScan;
 		}
 	}
@@ -383,6 +420,8 @@ static int __xuiTextAddLine(xui_text_layout pLayout, const char* sStart, const c
 	tLine.iBreakType = iBreakType;
 	tLine.fY = pLayout->fNextY;
 	tLine.fW = tMeasure.fX;
+	if ( iBreakType == XUI_TEXT_BREAK_WRAP && pLayout->pBreaks != NULL &&
+	     (pLayout->pBreaks[sEnd - pLayout->sText] & XUI_LB_HYPHEN_USED) ) tLine.fW += pLayout->fHyphenWidth;
 	tLine.fH = pLayout->tMetrics.fLineHeight;
 	tLine.fBaseline = pLayout->tMetrics.fAscent;
 	pLayout->pLines[pLayout->iLineCount++] = tLine;
@@ -397,14 +436,12 @@ static int __xuiTextLayoutNoWrapParagraph(xui_text_layout pLayout, const char* s
 	return __xuiTextAddLine(pLayout, sStart, __xuiTextTrimEndSpaces(pLayout, sStart, sEnd), iBreakType);
 }
 
-static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* sStart, const char* sEnd, int iBreakType)
+static int __xuiTextLayoutCharParagraph(xui_text_layout pLayout, const char* sStart, const char* sEnd, int iBreakType)
 {
 	const char* sLineStart;
 	const char* sScan;
 	const char* sNext;
 	const char* sMeasureEnd;
-	const char* sLastBreakEnd;
-	const char* sLastBreakNext;
 	xui_vec2_t tMeasure;
 	int iRet;
 
@@ -416,11 +453,9 @@ static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* 
 	}
 	sLineStart = sStart;
 	sScan = sStart;
-	sLastBreakEnd = NULL;
-	sLastBreakNext = NULL;
 	while ( sScan < sEnd ) {
 		XUI_TEXT_TEST_COUNT(iWrapSteps, 1);
-		sNext = __xuiTextNextCluster(pLayout, sScan, sEnd);
+		sNext = __xuiTextNextLayoutCluster(pLayout, sScan, sEnd);
 		if ( sNext <= sScan ) break;
 		sMeasureEnd = __xuiTextTrimEndSpaces(pLayout, sLineStart, sNext);
 		iRet = __xuiTextMeasureRange(pLayout, sLineStart, sMeasureEnd, &tMeasure);
@@ -428,27 +463,13 @@ static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* 
 			return iRet;
 		}
 		if ( (tMeasure.fX > pLayout->tDesc.fMaxWidth) && (sLineStart < sScan) ) {
-			if ( (pLayout->tDesc.iWrapMode == XUI_TEXT_WRAP_WORD) &&
-			     (sLastBreakEnd != NULL) && (sLastBreakNext != NULL) &&
-			     (sLastBreakNext > sLineStart) ) {
-				iRet = __xuiTextAddLine(pLayout, sLineStart, sLastBreakEnd, XUI_TEXT_BREAK_WRAP);
-				if ( iRet != XUI_OK ) {
-					return iRet;
-				}
-				sLineStart = sLastBreakNext;
-			} else {
-				iRet = __xuiTextAddLine(pLayout, sLineStart, __xuiTextTrimEndSpaces(pLayout, sLineStart, sScan), XUI_TEXT_BREAK_WRAP);
-				if ( iRet != XUI_OK ) {
-					return iRet;
-				}
-				sLineStart = sScan;
-			}
+			iRet = __xuiTextAddLine(pLayout, sLineStart, __xuiTextTrimEndSpaces(pLayout, sLineStart, sScan), XUI_TEXT_BREAK_WRAP);
+			if ( iRet != XUI_OK ) return iRet;
+			sLineStart = sScan;
 			if ( pLayout->bTruncated ) {
 				return XUI_OK;
 			}
 			sScan = sLineStart;
-			sLastBreakEnd = NULL;
-			sLastBreakNext = NULL;
 			continue;
 		}
 		if ( (tMeasure.fX > pLayout->tDesc.fMaxWidth) && (sLineStart == sScan) ) {
@@ -461,13 +482,7 @@ static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* 
 			}
 			sLineStart = sNext;
 			sScan = sLineStart;
-			sLastBreakEnd = NULL;
-			sLastBreakNext = NULL;
 			continue;
-		}
-		if ( __xuiTextAsciiSpaceAt(sScan, sEnd) ) {
-			sLastBreakEnd = __xuiTextTrimEndSpaces(pLayout, sLineStart, sScan);
-			sLastBreakNext = __xuiTextSkipSpaces(pLayout, sNext, sEnd);
 		}
 		sScan = sNext;
 	}
@@ -477,12 +492,62 @@ static int __xuiTextLayoutWrappedParagraph(xui_text_layout pLayout, const char* 
 	return XUI_OK;
 }
 
+static int __xuiTextLayoutWordParagraph(xui_text_layout pLayout, const char* sStart, const char* sEnd, int iBreakType)
+{
+	const char* sLineStart = sStart;
+	const char* sScan = sStart;
+	const char* sNormal = NULL;
+	const char* sEmergency = NULL;
+	if ( sStart >= sEnd || !__xuiTextMaxFinite(pLayout->tDesc.fMaxWidth) ) {
+		return __xuiTextLayoutNoWrapParagraph(pLayout, sStart, sEnd, iBreakType);
+	}
+	while ( sScan < sEnd ) {
+		const char* sNext = __xuiTextNextLayoutCluster(pLayout, sScan, sEnd);
+		const char* sTrim = __xuiTextTrimEndSpaces(pLayout, sLineStart, sNext);
+		unsigned char iBoundary = pLayout->pBreaks[sNext - pLayout->sText];
+		xui_vec2_t tMeasure;
+		float fBreakWidth;
+		int iRet;
+		XUI_TEXT_TEST_COUNT(iWrapSteps, 1);
+		iRet = __xuiTextMeasureRange(pLayout, sLineStart, sTrim, &tMeasure);
+		if ( iRet != XUI_OK ) return iRet;
+		fBreakWidth = tMeasure.fX;
+		if ( sNext < sEnd && (iBoundary & XUI_LB_SOFT_HYPHEN) ) fBreakWidth += pLayout->fHyphenWidth;
+		if ( tMeasure.fX > pLayout->tDesc.fMaxWidth ) {
+			const char* sCut = sNormal != NULL ? sNormal : sEmergency;
+			if ( sCut == NULL && sNext < sEnd && (iBoundary & (XUI_LB_NORMAL | XUI_LB_EMERGENCY)) ) sCut = sNext;
+			if ( sCut != NULL ) {
+				const char* sLineEnd = __xuiTextTrimEndSpaces(pLayout, sLineStart, sCut);
+				/* An over-wide protected unit is kept intact. Emergency breaks
+				 * inside alphabetic/numeric runs never bypass GL/WJ or kinsoku. */
+				if ( sLineEnd == sCut && (pLayout->pBreaks[sCut - pLayout->sText] & XUI_LB_SOFT_HYPHEN) ) {
+					pLayout->pBreaks[sCut - pLayout->sText] |= XUI_LB_HYPHEN_USED;
+				}
+				iRet = __xuiTextAddLine(pLayout, sLineStart, sLineEnd, XUI_TEXT_BREAK_WRAP);
+				if ( iRet != XUI_OK || pLayout->bTruncated ) return iRet;
+				sLineStart = __xuiTextSkipSpaces(pLayout, sCut, sEnd);
+				sScan = sLineStart;
+				sNormal = sEmergency = NULL;
+				continue;
+			}
+		} else {
+			if ( (iBoundary & XUI_LB_NORMAL) && fBreakWidth <= pLayout->tDesc.fMaxWidth ) sNormal = sNext;
+			if ( iBoundary & XUI_LB_EMERGENCY ) sEmergency = sNext;
+		}
+		sScan = sNext;
+	}
+	return __xuiTextAddLine(pLayout, sLineStart, __xuiTextTrimEndSpaces(pLayout, sLineStart, sEnd), iBreakType);
+}
+
 static int __xuiTextLayoutParagraph(xui_text_layout pLayout, const char* sStart, const char* sEnd, int iBreakType)
 {
 	if ( pLayout->tDesc.iWrapMode == XUI_TEXT_WRAP_NONE ) {
 		return __xuiTextLayoutNoWrapParagraph(pLayout, sStart, sEnd, iBreakType);
 	}
-	return __xuiTextLayoutWrappedParagraph(pLayout, sStart, sEnd, iBreakType);
+	if ( pLayout->tDesc.iWrapMode == XUI_TEXT_WRAP_WORD && pLayout->pBreaks != NULL ) {
+		return __xuiTextLayoutWordParagraph(pLayout, sStart, sEnd, iBreakType);
+	}
+	return __xuiTextLayoutCharParagraph(pLayout, sStart, sEnd, iBreakType);
 }
 
 static void __xuiTextLayoutAlignLines(xui_text_layout pLayout)
@@ -511,12 +576,14 @@ static int __xuiTextLayoutBuild(xui_text_layout pLayout)
 	int iRet;
 	int iBreakType;
 
+	iRet = __xuiTextBuildBreakIndex(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTextBuildClusterIndex(pLayout);
 	if ( iRet != XUI_OK ) return iRet;
 	sScan = pLayout->sText;
 	sEnd = pLayout->sText + pLayout->iTextSize;
 	while ( sScan < sEnd ) {
-		sParagraphEnd = __xuiTextFindNewline(sScan, sEnd, &sAfterNewline);
+		sParagraphEnd = __xuiTextFindNewline(pLayout, sScan, sEnd, &sAfterNewline);
 		iBreakType = (sParagraphEnd < sEnd) ? XUI_TEXT_BREAK_NEWLINE : XUI_TEXT_BREAK_END;
 		iRet = __xuiTextLayoutParagraph(pLayout, sScan, sParagraphEnd, iBreakType);
 		if ( iRet != XUI_OK ) {
@@ -680,18 +747,35 @@ XUI_API void xuiTextLayoutDestroy(xui_text_layout pLayout)
 static int __xuiTextLayoutCompute(xui_text_layout pLayout, xui_proxy pProxy)
 {
 	uint32_t iDpiGeneration = pLayout->pContext->iDpiGeneration;
-	int iRet;
+	int iRet, i;
 
 	iRet = pProxy->fontGetMetrics(pProxy, pLayout->tDesc.pFont, &pLayout->tMetrics);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pLayout->tMetrics.fLineHeight <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = xuiTextShape(pLayout->pContext, pLayout->tDesc.pFont, pLayout->sText,
-		pLayout->iTextSize, XUI_TEXT_SHAPE_DEFAULT, &pLayout->tShape);
+	iRet = __xuiTextBuildBreakIndex(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTextShapeProjection(pLayout);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pLayout->tShape.fLineHeight > 0.0f ) {
 		pLayout->tMetrics.fAscent = pLayout->tShape.fAscent;
 		pLayout->tMetrics.fDescent = pLayout->tShape.fDescent;
 		pLayout->tMetrics.fLineHeight = pLayout->tShape.fLineHeight;
+	}
+	if ( pLayout->tDesc.iWrapMode == XUI_TEXT_WRAP_WORD && __xuiTextMaxFinite(pLayout->tDesc.fMaxWidth) ) {
+		for ( i = 0; i + 1 < pLayout->iTextSize; i++ ) {
+			if ( (unsigned char)pLayout->sText[i] == 0xc2u && (unsigned char)pLayout->sText[i + 1] == 0xadu ) {
+				xui_text_shape_t tHyphen;
+				int j;
+				iRet = xuiTextShape(pLayout->pContext, pLayout->tDesc.pFont, "-", 1, XUI_TEXT_SHAPE_DEFAULT, &tHyphen);
+				if ( iRet == XUI_OK ) {
+					for ( j = 0; j < tHyphen.iClusterCount; j++ ) pLayout->fHyphenWidth += tHyphen.pClusters[j].fAdvance;
+					if ( !__xuiTextFloatValid(pLayout->fHyphenWidth) ) iRet = XUI_ERROR_INVALID_ARGUMENT;
+				}
+				xuiTextShapeFree(&tHyphen);
+				if ( iRet != XUI_OK ) return iRet;
+				break;
+			}
+		}
 	}
 	iRet = __xuiTextLayoutBuild(pLayout);
 	if ( iRet != XUI_OK ) return iRet;
@@ -816,6 +900,37 @@ XUI_API int xuiTextLayoutGetTruncated(xui_text_layout pLayout)
 	return __xuiTextLayoutEnsureDpi(pLayout) == XUI_OK ? pLayout->bTruncated : 0;
 }
 
+static int __xuiTextLayoutDisplayLine(xui_text_layout pLayout, const xui_text_line_t* pLine, const char** ppText, int* pSize)
+{
+	int i, iEnd, iSize = 0, iRet;
+	/* Replacing the two-byte SHY by one byte never increases source length. */
+	if ( pLine->iTextSize == INT_MAX ) return XUI_ERROR_OUT_OF_MEMORY;
+	iRet = __xuiTextScratchReserve(pLayout, pLine->iTextSize + 1);
+	if ( iRet != XUI_OK ) return iRet;
+	iEnd = pLine->iTextOffset + pLine->iTextSize;
+	for ( i = pLine->iTextOffset; i < iEnd; i++ ) {
+		if ( pLayout->pBreaks == NULL || !(pLayout->pBreaks[i] & XUI_LB_INVISIBLE) ) pLayout->pScratch[iSize++] = pLayout->sText[i];
+	}
+	if ( pLine->iBreakType == XUI_TEXT_BREAK_WRAP && pLayout->pBreaks != NULL &&
+	     (pLayout->pBreaks[iEnd] & XUI_LB_HYPHEN_USED) ) pLayout->pScratch[iSize++] = '-';
+	pLayout->pScratch[iSize] = 0;
+	*ppText = pLayout->pScratch;
+	*pSize = iSize;
+	return XUI_OK;
+}
+
+int xuiInternalTextLayoutGetDisplayLine(xui_text_layout pLayout, int iIndex, const char** ppText, int* pSize)
+{
+	xui_text_line_t tLine;
+	int iRet;
+	if ( ppText == NULL || pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppText = NULL;
+	*pSize = 0;
+	iRet = xuiTextLayoutGetLine(pLayout, iIndex, &tLine);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiTextLayoutDisplayLine(pLayout, &tLine, ppText, pSize);
+}
+
 XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
 	xui_proxy pProxy;
@@ -841,16 +956,16 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 	iLineFlags = (iMergedFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE)) | XUI_TEXT_ALIGN_TOP;
 	fOffsetY = __xuiTextVerticalOffset(pLayout, tRect, iMergedFlags);
 	for ( i = 0; i < pLayout->iLineCount; i++ ) {
+		const char* sDisplay;
+		int iDisplaySize;
 		pLine = &pLayout->pLines[i];
 		if ( pLine->iTextSize <= 0 ) {
 			continue;
 		}
-		iRet = __xuiTextScratchReserve(pLayout, pLine->iTextSize + 1);
+		iRet = __xuiTextLayoutDisplayLine(pLayout, pLine, &sDisplay, &iDisplaySize);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
-		memcpy(pLayout->pScratch, pLayout->sText + pLine->iTextOffset, (size_t)pLine->iTextSize);
-		pLayout->pScratch[pLine->iTextSize] = 0;
 		tLineRect.fX = tRect.fX;
 		tLineRect.fY = tRect.fY + fOffsetY + pLine->fY;
 		tLineRect.fW = tRect.fW;
@@ -871,7 +986,7 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 				continue;
 			}
 		}
-		iRet = pProxy->textDraw(pProxy, pTarget, pLayout->tDesc.pFont, pLayout->pScratch, tLineRect, iColor, iLineFlags);
+		iRet = pProxy->textDraw(pProxy, pTarget, pLayout->tDesc.pFont, sDisplay, tLineRect, iColor, iLineFlags);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}

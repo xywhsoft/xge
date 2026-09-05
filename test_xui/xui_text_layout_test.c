@@ -149,13 +149,15 @@ int main(void)
 	for ( iMode = XUI_TEXT_WRAP_WORD; iMode <= XUI_TEXT_WRAP_CHAR; iMode++ ) {
 		tDesc.iWrapMode = iMode;
 		CHECK(xuiTextLayoutReset(pLayout, &tDesc) == XUI_OK);
-		CHECK(xuiTextLayoutGetLineCount(pLayout) == (int)(sizeof(arrClusters) / sizeof(arrClusters[0])) + 1);
+		/* WORD terminates an oversized final protected unit with END; CHAR
+		 * retains its historical extra empty line after a forced character. */
+		CHECK(xuiTextLayoutGetLineCount(pLayout) == (int)(sizeof(arrClusters) / sizeof(arrClusters[0])) + (iMode == XUI_TEXT_WRAP_CHAR));
 		iOffset = 0;
 		for ( i = 0; i < (int)(sizeof(arrClusters) / sizeof(arrClusters[0])); i++ ) {
 			CHECK(textLineEquals(pLayout, i, arrClusters[i], iOffset));
 			iOffset += (int)strlen(arrClusters[i]);
 		}
-		CHECK(textLineEquals(pLayout, i, "", iOffset));
+		if ( iMode == XUI_TEXT_WRAP_CHAR ) CHECK(textLineEquals(pLayout, i, "", iOffset));
 	}
 
 	/* A failed shape/reset must not leave the old index or whitespace cache reachable. */
