@@ -1,8 +1,10 @@
-// Full-scan oracle from 92230b0; intentionally preserves baseline geometry and tie rules.
+// Full-scan search oracle from 92230b0, using the final pixel-edge coordinate contract.
+// Independent raw-layout geometry coverage lives in xui_rich_edit_fractional_test.h.
 static xui_rect_t auditReferenceCaret(xui_widget pWidget, xui_rich_edit_data_t* pData, int iOffset)
 {
 	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	xui_rect_t tRect = {tContent.fX - pData->fScrollX, tContent.fY - pData->fScrollY, 1.0f, 16.0f};
+	xui_rect_t tRect = __xuiRichEditPixelRect((xui_rich_edges_t){0, 0, 1, 16},
+		(double)tContent.fX - pData->fScrollX, (double)tContent.fY - pData->fScrollY);
 	xui_rich_layout_fragment_t tFragment;
 	xui_rich_block_layout_t* pBlock;
 	int iBlock;
@@ -35,9 +37,8 @@ static xui_rect_t auditReferenceCaret(xui_widget pWidget, xui_rich_edit_data_t* 
 
 static int auditReferenceHit(xui_widget pWidget, xui_rich_edit_data_t* pData, float fLocalX, float fLocalY)
 {
-	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	float fX = fLocalX - tContent.fX + pData->fScrollX;
-	float fY = fLocalY - tContent.fY + pData->fScrollY;
+	float fX = fLocalX;
+	float fY = fLocalY;
 	int iLineStart;
 	int iLineEnd;
 	int iNext;
@@ -52,12 +53,12 @@ static int auditReferenceHit(xui_widget pWidget, xui_rich_edit_data_t* pData, fl
 	if ( pData->iTotalFragmentCount == 0 || __xuiRichEditGetLayoutFragment(pData, 0, &tFragment) != XUI_OK ) return 0;
 
 	/* Outside the document vertically, editors conventionally clamp to its ends. */
-	fDocumentTop = tFragment.tPublic.tRect.fY;
-	fDocumentBottom = fDocumentTop + tFragment.tPublic.tRect.fH;
+	fDocumentTop = __xuiRichEditFragmentRect(pWidget, pData, &tFragment).fY;
+	fDocumentBottom = fDocumentTop + __xuiRichEditFragmentRect(pWidget, pData, &tFragment).fH;
 	for ( i = 1; i < pData->iTotalFragmentCount; i++ ) {
 		xui_rect_t tRect;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, &tFragment);
-		tRect = tFragment.tPublic.tRect;
+		tRect = __xuiRichEditFragmentRect(pWidget, pData, &tFragment);
 		if ( tRect.fY < fDocumentTop ) fDocumentTop = tRect.fY;
 		if ( tRect.fY + tRect.fH > fDocumentBottom ) fDocumentBottom = tRect.fY + tRect.fH;
 	}
@@ -72,24 +73,24 @@ static int auditReferenceHit(xui_widget pWidget, xui_rich_edit_data_t* pData, fl
 		float fNextTop;
 		(void)__xuiRichEditGetLayoutFragment(pData, iLineStart, &tFragment);
 		iLine = tFragment.tPublic.iLine;
-		fBottom = tFragment.tPublic.tRect.fY + tFragment.tPublic.tRect.fH;
+		fBottom = __xuiRichEditFragmentRect(pWidget, pData, &tFragment).fY + __xuiRichEditFragmentRect(pWidget, pData, &tFragment).fH;
 		iLineEnd = iLineStart + 1;
 		while ( iLineEnd < pData->iTotalFragmentCount ) {
 			xui_rect_t tRect;
 			(void)__xuiRichEditGetLayoutFragment(pData, iLineEnd, &tNextFragment);
 			if ( tNextFragment.tPublic.iLine != iLine ) break;
-			tRect = tNextFragment.tPublic.tRect;
+			tRect = __xuiRichEditFragmentRect(pWidget, pData, &tNextFragment);
 			if ( tRect.fY + tRect.fH > fBottom ) fBottom = tRect.fY + tRect.fH;
 			iLineEnd++;
 		}
 		if ( iLineEnd >= pData->iTotalFragmentCount ) break;
 		iNext = iLineEnd;
 		(void)__xuiRichEditGetLayoutFragment(pData, iLineEnd, &tNextFragment);
-		fNextTop = tNextFragment.tPublic.tRect.fY;
+		fNextTop = __xuiRichEditFragmentRect(pWidget, pData, &tNextFragment).fY;
 		while ( iNext < pData->iTotalFragmentCount ) {
 			(void)__xuiRichEditGetLayoutFragment(pData, iNext, &tFragment);
 			if ( tFragment.tPublic.iLine != tNextFragment.tPublic.iLine ) break;
-			if ( tFragment.tPublic.tRect.fY < fNextTop ) fNextTop = tFragment.tPublic.tRect.fY;
+			if ( __xuiRichEditFragmentRect(pWidget, pData, &tFragment).fY < fNextTop ) fNextTop = __xuiRichEditFragmentRect(pWidget, pData, &tFragment).fY;
 			iNext++;
 		}
 		if ( fY < (fBottom + fNextTop) * 0.5f ) break;
@@ -103,7 +104,7 @@ static int auditReferenceHit(xui_widget pWidget, xui_rich_edit_data_t* pData, fl
 	for ( i = iLineStart; i < iLineEnd; i++ ) {
 		xui_rect_t tRect;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, &tFragment);
-		tRect = tFragment.tPublic.tRect;
+		tRect = __xuiRichEditFragmentRect(pWidget, pData, &tFragment);
 		float fDistance = fX >= tRect.fX ? fX - tRect.fX : tRect.fX - fX;
 		if ( fDistance < fBest ) {
 			fBest = fDistance;
@@ -121,16 +122,15 @@ static int auditReferenceHit(xui_widget pWidget, xui_rich_edit_data_t* pData, fl
 static xui_rich_node auditReferenceLinkAt(xui_widget pWidget, xui_rich_edit_data_t* pData,
 	float fLocalX, float fLocalY)
 {
-	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	float fX = fLocalX - tContent.fX + pData->fScrollX;
-	float fY = fLocalY - tContent.fY + pData->fScrollY;
+	float fX = fLocalX;
+	float fY = fLocalY;
 	xui_rich_layout_fragment_t tFragment;
 	int i;
 	(void)__xuiRichEditEnsureLayout(pWidget, pData);
 	for ( i = 0; i < pData->iTotalFragmentCount; i++ ) {
 		xui_rich_layout_fragment_t* pFragment = &tFragment;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, pFragment);
-		xui_rect_t tRect = pFragment->tPublic.tRect;
+		xui_rect_t tRect = __xuiRichEditFragmentRect(pWidget, pData, pFragment);
 		if ( pFragment->tPublic.iNodeType == XUI_RICH_NODE_LINK && fX >= tRect.fX &&
 		     fX <= tRect.fX + tRect.fW && fY >= tRect.fY && fY <= tRect.fY + tRect.fH ) return pFragment->pNode;
 	}
@@ -140,9 +140,8 @@ static xui_rich_node auditReferenceLinkAt(xui_widget pWidget, xui_rich_edit_data
 static int auditReferenceAtomicAt(xui_widget pWidget, xui_rich_edit_data_t* pData,
 	float fLocalX, float fLocalY, int* pStart, int* pEnd, xui_rich_node* ppNode)
 {
-	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	float fX = fLocalX - tContent.fX + pData->fScrollX;
-	float fY = fLocalY - tContent.fY + pData->fScrollY;
+	float fX = fLocalX;
+	float fY = fLocalY;
 	xui_rich_layout_fragment_t tFragment;
 	int i;
 	(void)__xuiRichEditEnsureLayout(pWidget, pData);
@@ -151,7 +150,7 @@ static int auditReferenceAtomicAt(xui_widget pWidget, xui_rich_edit_data_t* pDat
 		(void)__xuiRichEditGetLayoutFragment(pData, i, &tFragment);
 		if ( tFragment.tPublic.iNodeType == XUI_RICH_NODE_TEXT ||
 		     tFragment.tPublic.iNodeType == XUI_RICH_NODE_LINK ) continue;
-		tRect = tFragment.tPublic.tRect;
+		tRect = __xuiRichEditFragmentRect(pWidget, pData, &tFragment);
 		if ( fX >= tRect.fX && fX <= tRect.fX + tRect.fW &&
 		     fY >= tRect.fY && fY <= tRect.fY + tRect.fH ) {
 			if ( pStart != NULL ) *pStart = tFragment.tPublic.iDocumentStart;
@@ -171,7 +170,7 @@ static int auditReferenceRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* 
 	for ( i = 0; i < pData->iBlockCount; i++ ) {
 		xui_rich_block_layout_t* pBlock = &pData->pBlocks[i];
 		xui_rich_node_info_t tInfo;
-		xui_rect_t tRect = __xuiRichEditBlockRect(pWidget, pData, pBlock->tRect);
+		xui_rect_t tRect = __xuiRichEditBlockRect(pWidget, pData, pBlock);
 		if ( tRect.fY + tRect.fH < tContent.fY || tRect.fY > tContent.fY + tContent.fH ) continue;
 		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
 		if ( xuiRichNodeGetInfo(pBlock->pNode, &tInfo) != XUI_OK ) continue;
@@ -190,8 +189,7 @@ static int auditReferenceRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* 
 			else strcpy(sMarker, "\xe2\x80\xa2");
 			(void)pProxy->drawText(pProxy, pDraw,
 				__xuiRichEditSizedFont(pWidget, pData, pData->pFont, 0.0f), sMarker,
-				(xui_rect_t){tRect.fX + tInfo.tParagraphStyle.fIndentLeft * pData->fZoom,
-					tRect.fY, 22.0f * pData->fZoom, tRect.fH},
+				__xuiRichEditMarkerRect(pWidget, pData, pBlock, &tInfo),
 				pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		} else iListNumber = 0;
 		if ( tInfo.iType == XUI_RICH_NODE_IMAGE ) {
@@ -210,12 +208,10 @@ static int auditReferenceRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* 
 					XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		} else if ( tInfo.iType == XUI_RICH_NODE_TABLE ) {
-			float fCellW = tInfo.iColumns > 0 ? tRect.fW / (float)tInfo.iColumns : tRect.fW;
-			float fCellH = tInfo.iRows > 0 ? tRect.fH / (float)tInfo.iRows : tRect.fH;
 			uint32_t iBorder = (tInfo.iBorderColor & 0xffu) != 0 ? tInfo.iBorderColor : XUI_COLOR_RGBA(170,180,192,255);
 			int r, c;
 			for ( r = 0; r < tInfo.iRows; r++ ) for ( c = 0; c < tInfo.iColumns; c++ ) {
-				xui_rect_t tCell = {tRect.fX + fCellW * c, tRect.fY + fCellH * r, fCellW, fCellH};
+				xui_rect_t tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, r, c, 0.0);
 				uint32_t iCell = r == 0 ? tInfo.iHeaderColor : tInfo.iCellColor;
 				xui_rich_text_style_t tCellStyle;
 				const char* sCell = xuiRichTableGetCellText(pBlock->pNode, r, c);
@@ -227,9 +223,7 @@ static int auditReferenceRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* 
 				if ( sCell != NULL && pProxy->drawText != NULL ) {
 					xui_font pCellFont = __xuiRichEditSizedFont(pWidget, pData,
 						tCellStyle.pFont != NULL ? tCellStyle.pFont : pData->pFont, tCellStyle.fFontSize);
-					tCell.fX += tInfo.fCellPadding * pData->fZoom; tCell.fY += tInfo.fCellPadding * pData->fZoom;
-					tCell.fW -= tInfo.fCellPadding * pData->fZoom * 2.0f;
-					tCell.fH -= tInfo.fCellPadding * pData->fZoom * 2.0f;
+					tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, r, c, tInfo.fCellPadding * pData->fZoom);
 					(void)pProxy->drawText(pProxy, pDraw,
 						pCellFont != NULL ? pCellFont : pData->pFont, sCell, tCell,
 						(tCellStyle.iTextColor & 0xffu) != 0 ? tCellStyle.iTextColor : pData->iTextColor,

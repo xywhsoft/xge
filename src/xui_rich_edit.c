@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,8 +34,35 @@ typedef struct xui_rich_atom_t {
 	uint32_t iBreakFlags;
 } xui_rich_atom_t;
 
+/* Preserve layout edges until the paragraph prefix and viewport translation are known. */
+typedef struct xui_rich_edges_t {
+	double fLeft, fTop, fRight, fBottom;
+} xui_rich_edges_t;
+
+static xui_rich_edges_t __xuiRichEditEdges(xlayout_rect_t tRect)
+{
+	return (xui_rich_edges_t){tRect.x, tRect.y, tRect.x + tRect.width, tRect.y + tRect.height};
+}
+
+static int __xuiRichEditPixel(double fEdge)
+{
+	/* Same nearest-edge rule as xuiInternalSnapPixel, without narrowing a double prefix. */
+	return (int)floor(fEdge + 0.5);
+}
+
+static xui_rect_t __xuiRichEditPixelRect(xui_rich_edges_t tEdges, double fX, double fY)
+{
+	xui_rect_t tRect;
+	tRect.fX = __xuiRichEditPixel(tEdges.fLeft + fX);
+	tRect.fY = __xuiRichEditPixel(tEdges.fTop + fY);
+	tRect.fW = __xuiRichEditPixel(tEdges.fRight + fX) - tRect.fX;
+	tRect.fH = __xuiRichEditPixel(tEdges.fBottom + fY) - tRect.fY;
+	return xuiInternalSnapRect(tRect);
+}
+
 typedef struct xui_rich_layout_fragment_t {
 	xui_rich_fragment_t tPublic;
+	xui_rich_edges_t tEdges;
 	xui_rich_node pNode;
 	xui_font pFont;
 	uint32_t iTextColor;
@@ -45,16 +73,19 @@ typedef struct xui_rich_layout_fragment_t {
 typedef struct xui_rich_line_index_t {
 	int iStart;
 	int iEnd;
-	float fTop;
-	float fBottom;
-	float fPrefixBottom;
-	float fSuffixTop;
-	float fHitPrefix;
+	double fTop;
+	double fBottom;
+	double fPrefixBottom;
+	double fSuffixTop;
+	double fHitPrefix;
 } xui_rich_line_index_t;
 
 typedef struct xui_rich_block_layout_t {
+	int iParagraph;
+	int bRetain;
 	xui_rich_node pNode;
-	xui_rect_t tRect;
+	xui_rich_edges_t tEdges;
+	double fParagraphY;
 	int iType;
 	int iDocumentStart;
 	int iDocumentEnd;
@@ -65,18 +96,34 @@ typedef struct xui_rich_block_layout_t {
 	int iLineCount;
 	int iFragmentDocumentBase;
 	int iFragmentLineBase;
-	float fFragmentYBase;
 	float fContentWidth;
 	xui_rich_line_index_t* pLines;
 	int iVisualLineCount;
 	int* pWidgetFragments;
 	int iWidgetCount;
 	int iNextWidgetBlock;
-	float fPrefixBottom;
-	float fSuffixTop;
-	float fHitPrefix;
-	float fHitEnd;
+	double fPrefixBottom;
+	double fSuffixTop;
+	double fHitPrefix;
+	double fHitEnd;
 } xui_rich_block_layout_t;
+
+/* Document offsets are exact; height is an estimate until this paragraph is visited. */
+typedef struct xui_rich_paragraph_index_t {
+	xui_rich_node pNode;
+	xui_document_node_id_t iId;
+	int iType;
+	int iStart;
+	int iEnd;
+	float fAdvance;
+	float fWidth;
+} xui_rich_paragraph_index_t;
+
+typedef struct xui_rich_widget_index_t {
+	int iParagraph;
+	int iFragment;
+	uint64_t iWanted;
+} xui_rich_widget_index_t;
 
 typedef struct xui_rich_flow_t {
 	xui_rich_atom_t* pAtoms;
@@ -154,14 +201,26 @@ typedef struct xui_rich_edit_data_t {
 	xui_rich_block_layout_t* pBlocks;
 	int iBlockCount;
 	int iBlockCapacity;
-	float fFragmentTop;
-	float fFragmentBottom;
+	xui_rich_paragraph_index_t* pParagraphs;
+	int iParagraphCount;
+	int iParagraphCapacity;
+	double* pHeightTree;
+	int iHeightCapacity;
+	float* pWidthTree;
+	int iWidthCapacity;
+	int iWidthLeaves;
+	xmap mapWidgetParagraphs;
+	uint64_t iWidgetPass;
+	xui_rich_document pIndexDocument;
+	uint32_t iLayoutDpiGeneration;
+	int bExactLayout;
+	int bNeedsExactLayout;
+	int bCacheDirty;
+	int iLayoutTarget;
+	int iCellLayoutTarget;
+	double fFragmentTop;
+	double fFragmentBottom;
 	int iFirstWidgetBlock;
-	xui_widget* pWidgets;
-	int iWidgetCount;
-	int iWidgetCapacity;
-	xui_rich_document pWidgetDocument;
-	uint32_t iWidgetVersion;
 	char* sScratch;
 	int iScratchCapacity;
 	char* sImeText;
@@ -181,10 +240,6 @@ typedef struct xui_rich_edit_data_t {
 	int bReadonly;
 	int bWordWrap;
 	int bLayoutDirty;
-	int bIncrementalLayout;
-	int iDirtyBlock;
-	int iDirtyBlockEnd;
-	xui_rich_change_t tLayoutChange;
 	uint32_t iLayoutVersion;
 	float fLayoutWidth;
 	float fContentWidth;
@@ -612,7 +667,9 @@ static int __xuiRichEditAddFragment(xui_rich_edit_data_t* pData, const xui_rich_
 	pFragment->tPublic.iEndOffset = pAtom->iNodeEnd;
 	pFragment->tPublic.iDocumentStart = pAtom->iDocumentStart;
 	pFragment->tPublic.iDocumentEnd = pAtom->iDocumentEnd;
-	pFragment->tPublic.tRect = (xui_rect_t){tLayout.rect.x, tLayout.rect.y + fOffsetY, tLayout.rect.width, tLayout.rect.height};
+	pFragment->tEdges = __xuiRichEditEdges(tLayout.rect);
+	pFragment->tEdges.fTop += fOffsetY;
+	pFragment->tEdges.fBottom += fOffsetY;
 	pFragment->tPublic.fBaseline = tLayout.baseline;
 	pFragment->tPublic.iLine = iLine;
 	pFragment->tPublic.iNodeType = pAtom->iNodeType;
@@ -625,7 +682,7 @@ static int __xuiRichEditAddFragment(xui_rich_edit_data_t* pData, const xui_rich_
 }
 
 static int __xuiRichEditAddBlock(xui_rich_edit_data_t* pData, xui_rich_node pNode, int iType,
-	int iDocumentStart, int iDocumentEnd, xui_rect_t tRect,
+	int iDocumentStart, int iDocumentEnd, xlayout_rect_t tRect,
 	int iFragmentStart, int iLineStart, int iLineCount)
 {
 	xui_rich_block_layout_t* pBlock;
@@ -646,7 +703,7 @@ static int __xuiRichEditAddBlock(xui_rich_edit_data_t* pData, xui_rich_node pNod
 	pBlock->iType = iType;
 	pBlock->iDocumentStart = iDocumentStart;
 	pBlock->iDocumentEnd = iDocumentEnd;
-	pBlock->tRect = tRect;
+	pBlock->tEdges = __xuiRichEditEdges(tRect);
 	pBlock->iFragmentStart = pData->iTotalFragmentCount;
 	pBlock->iFragmentCount = iCount;
 	if ( iCount > 0 ) {
@@ -660,12 +717,11 @@ static int __xuiRichEditAddBlock(xui_rich_edit_data_t* pData, xui_rich_node pNod
 	pBlock->iLineCount = iLineCount;
 	pBlock->iFragmentDocumentBase = iDocumentStart;
 	pBlock->iFragmentLineBase = iLineStart;
-	pBlock->fFragmentYBase = tRect.fY;
-	pBlock->fContentWidth = tRect.fX + tRect.fW;
+	pBlock->fContentWidth = tRect.x + tRect.width;
 	{
 		int i;
 		for ( i = 0; i < iCount; i++ ) {
-			float fRight = pBlock->pFragments[i].tPublic.tRect.fX + pBlock->pFragments[i].tPublic.tRect.fW;
+			float fRight = (float)pBlock->pFragments[i].tEdges.fRight;
 			if ( fRight > pBlock->fContentWidth ) pBlock->fContentWidth = fRight;
 		}
 	}
@@ -674,30 +730,38 @@ static int __xuiRichEditAddBlock(xui_rich_edit_data_t* pData, xui_rich_node pNod
 	pBlock->pWidgetFragments = (int*)(pBlock->pLines + iLines);
 	for ( i = 0; i < iCount; i++ ) {
 		xui_rich_fragment_t* pFragment = &pBlock->pFragments[i].tPublic;
+		xui_rich_edges_t tEdges = pBlock->pFragments[i].tEdges;
 		xui_rich_line_index_t* pLine;
 		if ( i == 0 || pFragment->iLine != pBlock->pFragments[i - 1].tPublic.iLine ) {
 			pLine = &pBlock->pLines[pBlock->iVisualLineCount++];
 			memset(pLine, 0, sizeof(*pLine));
 			pLine->iStart = i;
-			pLine->fTop = pFragment->tRect.fY;
-			pLine->fBottom = pFragment->tRect.fY + pFragment->tRect.fH;
+			pLine->fTop = tEdges.fTop;
+			pLine->fBottom = tEdges.fBottom;
 		}
 		pLine = &pBlock->pLines[pBlock->iVisualLineCount - 1];
 		pLine->iEnd = i + 1;
-		pLine->fTop = fminf(pLine->fTop, pFragment->tRect.fY);
-		pLine->fBottom = fmaxf(pLine->fBottom, pFragment->tRect.fY + pFragment->tRect.fH);
-		if ( pFragment->iNodeType == XUI_RICH_NODE_INLINE_WIDGET )
+		pLine->fTop = fmin(pLine->fTop, tEdges.fTop);
+		pLine->fBottom = fmax(pLine->fBottom, tEdges.fBottom);
+		if ( pFragment->iNodeType == XUI_RICH_NODE_INLINE_WIDGET ) {
+			xui_rich_node_info_t tInfo = {0};
+			xui_rich_widget_index_t* pEntry;
 			pBlock->pWidgetFragments[pBlock->iWidgetCount++] = i;
+			(void)xuiRichNodeGetInfo(pBlock->pFragments[i].pNode, &tInfo);
+			pEntry = (xui_rich_widget_index_t*)xrtMapGet(&pData->mapWidgetParagraphs,
+				xuiXrtBytes(&tInfo.pWidget, sizeof(tInfo.pWidget)));
+			if ( pEntry != NULL ) pEntry->iFragment = i;
+		}
 	}
 	for ( i = 0; i < iLines; i++ ) {
 		xui_rich_line_index_t* pLine = &pBlock->pLines[i];
-		pLine->fPrefixBottom = fmaxf(pLine->fBottom, i > 0 ? pBlock->pLines[i - 1].fPrefixBottom : -FLT_MAX);
-		if ( i + 1 < iLines ) pLine->fHitPrefix = fmaxf((pLine->fBottom + pBlock->pLines[i + 1].fTop) * 0.5f,
-			i > 0 ? pBlock->pLines[i - 1].fHitPrefix : -FLT_MAX);
+		pLine->fPrefixBottom = fmax(pLine->fBottom, i > 0 ? pBlock->pLines[i - 1].fPrefixBottom : -DBL_MAX);
+		if ( i + 1 < iLines ) pLine->fHitPrefix = fmax((pLine->fBottom + pBlock->pLines[i + 1].fTop) * 0.5,
+			i > 0 ? pBlock->pLines[i - 1].fHitPrefix : -DBL_MAX);
 	}
 	for ( i = iLines - 1; i >= 0; i-- )
-		pBlock->pLines[i].fSuffixTop = fminf(pBlock->pLines[i].fTop,
-			i + 1 < iLines ? pBlock->pLines[i + 1].fSuffixTop : FLT_MAX);
+		pBlock->pLines[i].fSuffixTop = fmin(pBlock->pLines[i].fTop,
+			i + 1 < iLines ? pBlock->pLines[i + 1].fSuffixTop : DBL_MAX);
 	pData->iTotalFragmentCount += iCount;
 	return XUI_OK;
 }
@@ -705,22 +769,22 @@ static int __xuiRichEditAddBlock(xui_rich_edit_data_t* pData, xui_rich_node pNod
 /* Prefix maxima and suffix minima retain overlapping baselines and paragraph bounds. */
 static void __xuiRichEditIndexBlocks(xui_rich_edit_data_t* pData)
 {
-	float fBottom = -FLT_MAX;
-	float fTop = FLT_MAX;
-	float fHit = -FLT_MAX;
+	double fBottom = -DBL_MAX;
+	double fTop = DBL_MAX;
+	double fHit = -DBL_MAX;
 	int i;
-	pData->fFragmentTop = FLT_MAX;
-	pData->fFragmentBottom = -FLT_MAX;
+	pData->fFragmentTop = DBL_MAX;
+	pData->fFragmentBottom = -DBL_MAX;
 	pData->iFirstWidgetBlock = -1;
 	for ( i = pData->iBlockCount - 1; i >= 0; i-- ) {
 		xui_rich_block_layout_t* pBlock = &pData->pBlocks[i];
-		float fShift = pBlock->tRect.fY - pBlock->fFragmentYBase;
+		double fShift = pBlock->fParagraphY;
 		XUI_RICH_EDIT_AUDIT_STEP(IndexBlock);
-		fTop = fminf(fTop, pBlock->tRect.fY);
+		fTop = fmin(fTop, pBlock->tEdges.fTop + fShift);
 		if ( pBlock->iVisualLineCount > 0 ) {
-			float fLineTop = pBlock->pLines[0].fSuffixTop + fShift;
-			fTop = fminf(fTop, fLineTop);
-			pData->fFragmentTop = fminf(pData->fFragmentTop, fLineTop);
+			double fLineTop = pBlock->pLines[0].fSuffixTop + fShift;
+			fTop = fmin(fTop, fLineTop);
+			pData->fFragmentTop = fmin(pData->fFragmentTop, fLineTop);
 		}
 		pBlock->fSuffixTop = fTop;
 		pBlock->iNextWidgetBlock = pData->iFirstWidgetBlock;
@@ -728,29 +792,29 @@ static void __xuiRichEditIndexBlocks(xui_rich_edit_data_t* pData)
 	}
 	for ( i = 0; i < pData->iBlockCount; i++ ) {
 		xui_rich_block_layout_t* pBlock = &pData->pBlocks[i];
-		float fShift = pBlock->tRect.fY - pBlock->fFragmentYBase;
+		double fShift = pBlock->fParagraphY;
 		int n = pBlock->iVisualLineCount;
 		XUI_RICH_EDIT_AUDIT_STEP(IndexBlock);
-		fBottom = fmaxf(fBottom, pBlock->tRect.fY + pBlock->tRect.fH);
+		fBottom = fmax(fBottom, pBlock->tEdges.fBottom + fShift);
 		if ( n > 0 ) {
-			float fLineBottom = pBlock->pLines[n - 1].fPrefixBottom + fShift;
-			fBottom = fmaxf(fBottom, fLineBottom);
-			pData->fFragmentBottom = fmaxf(pData->fFragmentBottom, fLineBottom);
-			pBlock->fHitEnd = FLT_MAX;
+			double fLineBottom = pBlock->pLines[n - 1].fPrefixBottom + fShift;
+			fBottom = fmax(fBottom, fLineBottom);
+			pData->fFragmentBottom = fmax(pData->fFragmentBottom, fLineBottom);
+			pBlock->fHitEnd = DBL_MAX;
 			if ( i + 1 < pData->iBlockCount && pData->pBlocks[i + 1].iVisualLineCount > 0 ) {
 				xui_rich_block_layout_t* pNext = &pData->pBlocks[i + 1];
 				pBlock->fHitEnd = (pBlock->pLines[n - 1].fBottom + fShift +
-					(pNext->pLines[0].fTop + (pNext->tRect.fY - pNext->fFragmentYBase))) * 0.5f;
+					(pNext->pLines[0].fTop + pNext->fParagraphY)) * 0.5f;
 			}
-			fHit = fmaxf(fHit, pBlock->fHitEnd);
-			if ( n > 1 ) fHit = fmaxf(fHit, pBlock->pLines[n - 2].fHitPrefix + fShift);
+			fHit = fmax(fHit, pBlock->fHitEnd);
+			if ( n > 1 ) fHit = fmax(fHit, pBlock->pLines[n - 2].fHitPrefix + fShift);
 		}
 		pBlock->fPrefixBottom = fBottom;
 		pBlock->fHitPrefix = fHit;
 	}
 }
 
-static void __xuiRichEditVisibleBlocks(xui_rich_edit_data_t* pData, float fTop, float fBottom, int* pStart, int* pEnd)
+static void __xuiRichEditVisibleBlocks(xui_rich_edit_data_t* pData, double fTop, double fBottom, int* pStart, int* pEnd)
 {
 	int lo = 0, hi = pData->iBlockCount;
 	while ( lo < hi ) {
@@ -768,7 +832,7 @@ static void __xuiRichEditVisibleBlocks(xui_rich_edit_data_t* pData, float fTop, 
 	*pEnd = lo;
 }
 
-static void __xuiRichEditVisibleFragments(xui_rich_edit_data_t* pData, float fTop, float fBottom, int* pStart, int* pEnd)
+static void __xuiRichEditVisibleFragments(xui_rich_edit_data_t* pData, double fTop, double fBottom, int* pStart, int* pEnd)
 {
 	int a, b, lo, hi;
 	xui_rich_block_layout_t* pBlock;
@@ -780,7 +844,7 @@ static void __xuiRichEditVisibleFragments(xui_rich_edit_data_t* pData, float fTo
 	while ( lo < hi ) {
 		int m = lo + (hi - lo) / 2;
 		XUI_RICH_EDIT_AUDIT_STEP(SearchLine);
-		if ( pBlock->pLines[m].fPrefixBottom + (pBlock->tRect.fY - pBlock->fFragmentYBase) < fTop ) lo = m + 1; else hi = m;
+		if ( pBlock->pLines[m].fPrefixBottom + pBlock->fParagraphY < fTop ) lo = m + 1; else hi = m;
 	}
 	*pStart = pBlock->iFragmentStart + (lo < pBlock->iVisualLineCount ? pBlock->pLines[lo].iStart : pBlock->iFragmentCount);
 	pBlock = &pData->pBlocks[b - 1];
@@ -788,28 +852,46 @@ static void __xuiRichEditVisibleFragments(xui_rich_edit_data_t* pData, float fTo
 	while ( lo < hi ) {
 		int m = lo + (hi - lo) / 2;
 		XUI_RICH_EDIT_AUDIT_STEP(SearchLine);
-		if ( pBlock->pLines[m].fSuffixTop + (pBlock->tRect.fY - pBlock->fFragmentYBase) <= fBottom ) lo = m + 1; else hi = m;
+		if ( pBlock->pLines[m].fSuffixTop + pBlock->fParagraphY <= fBottom ) lo = m + 1; else hi = m;
 	}
 	*pEnd = pBlock->iFragmentStart + (lo > 0 ? pBlock->pLines[lo - 1].iEnd : 0);
 }
 
-static void __xuiRichEditHitLine(xui_rich_edit_data_t* pData, float fY, int* pStart, int* pEnd)
+static void __xuiRichEditHitLine(xui_rich_edit_data_t* pData, double fLocalY, double fScreenY, int* pStart, int* pEnd)
 {
 	int lo = 0, hi = pData->iBlockCount - 1;
+	int iBlock;
 	xui_rich_block_layout_t* pBlock;
-	float fShift;
+	/* Rounding moves a midpoint by at most half a pixel. Binary search a conservative
+	 * raw boundary, then resolve the candidate against the same final edges as drawing. */
+	double fY = fLocalY - fScreenY - 0.5;
 	while ( lo < hi ) {
 		int m = lo + (hi - lo) / 2;
 		XUI_RICH_EDIT_AUDIT_STEP(SearchBlock);
 		if ( fY >= pData->pBlocks[m].fHitPrefix ) lo = m + 1; else hi = m;
 	}
-	pBlock = &pData->pBlocks[lo];
-	fShift = pBlock->tRect.fY - pBlock->fFragmentYBase;
+	iBlock = lo;
+	pBlock = &pData->pBlocks[iBlock];
 	lo = 0; hi = pBlock->iVisualLineCount - 1;
 	while ( lo < hi ) {
 		int m = lo + (hi - lo) / 2;
 		XUI_RICH_EDIT_AUDIT_STEP(SearchLine);
-		if ( fY >= pBlock->pLines[m].fHitPrefix + fShift ) lo = m + 1; else hi = m;
+		if ( fY >= pBlock->pLines[m].fHitPrefix + pBlock->fParagraphY ) lo = m + 1; else hi = m;
+	}
+	for (;;) {
+		xui_rich_block_layout_t* pNext = pBlock;
+		int iNext = lo + 1;
+		double fBottom, fTop;
+		if ( iNext >= pBlock->iVisualLineCount ) {
+			if ( iBlock + 1 >= pData->iBlockCount ) break;
+			pNext = &pData->pBlocks[iBlock + 1]; iNext = 0;
+		}
+		XUI_RICH_EDIT_AUDIT_STEP(SearchLine);
+		fBottom = __xuiRichEditPixel(pBlock->fParagraphY + pBlock->pLines[lo].fBottom + fScreenY);
+		fTop = __xuiRichEditPixel(pNext->fParagraphY + pNext->pLines[iNext].fTop + fScreenY);
+		if ( fLocalY < (fBottom + fTop) * 0.5 ) break;
+		if ( pNext != pBlock ) iBlock++;
+		pBlock = pNext; lo = iNext;
 	}
 	*pStart = pBlock->iFragmentStart + pBlock->pLines[lo].iStart;
 	*pEnd = pBlock->iFragmentStart + pBlock->pLines[lo].iEnd;
@@ -842,7 +924,9 @@ static int __xuiRichEditGetLayoutFragment(xui_rich_edit_data_t* pData, int iInde
 			pFragment->tPublic.iDocumentStart += pBlock->iDocumentStart - pBlock->iFragmentDocumentBase;
 			pFragment->tPublic.iDocumentEnd += pBlock->iDocumentStart - pBlock->iFragmentDocumentBase;
 			pFragment->tPublic.iLine += pBlock->iLineStart - pBlock->iFragmentLineBase;
-			pFragment->tPublic.tRect.fY += pBlock->tRect.fY - pBlock->fFragmentYBase;
+			pFragment->tEdges.fTop += pBlock->fParagraphY;
+			pFragment->tEdges.fBottom += pBlock->fParagraphY;
+			pFragment->tPublic.tRect = __xuiRichEditPixelRect(pFragment->tEdges, 0.0, 0.0);
 			return XUI_OK;
 		}
 	}
@@ -857,7 +941,9 @@ static void __xuiRichEditGetBlockFragment(const xui_rich_block_layout_t* pBlock,
 	pFragment->tPublic.iDocumentStart += pBlock->iDocumentStart - pBlock->iFragmentDocumentBase;
 	pFragment->tPublic.iDocumentEnd += pBlock->iDocumentStart - pBlock->iFragmentDocumentBase;
 	pFragment->tPublic.iLine += pBlock->iLineStart - pBlock->iFragmentLineBase;
-	pFragment->tPublic.tRect.fY += pBlock->tRect.fY - pBlock->fFragmentYBase;
+	pFragment->tEdges.fTop += pBlock->fParagraphY;
+	pFragment->tEdges.fBottom += pBlock->fParagraphY;
+	pFragment->tPublic.tRect = __xuiRichEditPixelRect(pFragment->tEdges, 0.0, 0.0);
 }
 
 static int __xuiRichEditFindBlockByOffset(xui_rich_edit_data_t* pData, int iOffset)
@@ -888,7 +974,7 @@ static int __xuiRichEditFragmentWhitespace(const xui_rich_layout_fragment_t* pFr
 }
 
 static int __xuiRichEditAddAtomicFragment(xui_rich_edit_data_t* pData, xui_rich_node pNode,
-	const xui_rich_node_info_t* pInfo, int iDocumentStart, xui_rect_t tRect, int iLine)
+	const xui_rich_node_info_t* pInfo, int iDocumentStart, xlayout_rect_t tRect, int iLine)
 {
 	xui_rich_layout_fragment_t* pFragment;
 	int iRet = __xuiRichEditReserve((void**)&pData->pFragments, &pData->iFragmentCapacity,
@@ -902,8 +988,8 @@ static int __xuiRichEditAddAtomicFragment(xui_rich_edit_data_t* pData, xui_rich_
 	pFragment->tPublic.iEndOffset = 3;
 	pFragment->tPublic.iDocumentStart = iDocumentStart;
 	pFragment->tPublic.iDocumentEnd = iDocumentStart + 3;
-	pFragment->tPublic.tRect = tRect;
-	pFragment->tPublic.fBaseline = tRect.fH;
+	pFragment->tEdges = __xuiRichEditEdges(tRect);
+	pFragment->tPublic.fBaseline = tRect.height;
 	pFragment->tPublic.iLine = iLine;
 	pFragment->tPublic.iNodeType = pInfo->iType;
 	pFragment->pNode = pNode;
@@ -911,7 +997,7 @@ static int __xuiRichEditAddAtomicFragment(xui_rich_edit_data_t* pData, xui_rich_
 }
 
 static int __xuiRichEditAddEmptyFragment(xui_rich_edit_data_t* pData, xui_rich_node pNode,
-	const xui_rich_node_info_t* pInfo, int iDocumentStart, xui_rect_t tRect, int iLine)
+	const xui_rich_node_info_t* pInfo, int iDocumentStart, xlayout_rect_t tRect, int iLine)
 {
 	xui_rich_layout_fragment_t* pFragment;
 	int iRet = __xuiRichEditReserve((void**)&pData->pFragments, &pData->iFragmentCapacity,
@@ -923,8 +1009,8 @@ static int __xuiRichEditAddEmptyFragment(xui_rich_edit_data_t* pData, xui_rich_n
 	pFragment->tPublic.iNodeId = pInfo->iId;
 	pFragment->tPublic.iDocumentStart = iDocumentStart;
 	pFragment->tPublic.iDocumentEnd = iDocumentStart;
-	pFragment->tPublic.tRect = tRect;
-	pFragment->tPublic.fBaseline = tRect.fH;
+	pFragment->tEdges = __xuiRichEditEdges(tRect);
+	pFragment->tPublic.fBaseline = tRect.height;
 	pFragment->tPublic.iLine = iLine;
 	pFragment->tPublic.iNodeType = pInfo->iType;
 	pFragment->pNode = pNode;
@@ -942,7 +1028,7 @@ static void __xuiRichEditAlignParagraph(xui_rich_edit_data_t* pData, int iFragme
 		float fRight = 0.0f;
 		float fShift = fIndentLeft;
 		while ( i < pData->iFragmentCount && pData->pFragments[i].tPublic.iLine == iLine ) {
-			float fItemRight = pData->pFragments[i].tPublic.tRect.fX + pData->pFragments[i].tPublic.tRect.fW;
+			float fItemRight = (float)pData->pFragments[i].tEdges.fRight;
 			if ( fItemRight > fRight ) fRight = fItemRight;
 			i++;
 		}
@@ -958,13 +1044,17 @@ static void __xuiRichEditAlignParagraph(xui_rich_edit_data_t* pData, int iFragme
 			fExtra = (fAvailable - fRight) / (float)iGaps;
 			if ( fExtra < 0.0f ) fExtra = 0.0f;
 			for ( j = iBegin; j < i; j++ ) {
-				pData->pFragments[j].tPublic.tRect.fX += fIndentLeft + fAccum;
+				pData->pFragments[j].tEdges.fLeft += fIndentLeft + fAccum;
+				pData->pFragments[j].tEdges.fRight += fIndentLeft + fAccum;
 				if ( j < i - 1 && (__xuiRichEditFragmentWhitespace(&pData->pFragments[j]) || iGaps == i - iBegin - 1) ) fAccum += fExtra;
 			}
 			continue;
 		}
 		if ( fShift < 0.0f ) fShift = 0.0f;
-		while ( iBegin < i ) pData->pFragments[iBegin++].tPublic.tRect.fX += fShift;
+		while ( iBegin < i ) {
+			pData->pFragments[iBegin].tEdges.fLeft += fShift;
+			pData->pFragments[iBegin++].tEdges.fRight += fShift;
+		}
 	}
 }
 
@@ -1009,12 +1099,12 @@ static int __xuiRichEditLayoutParagraph(xui_widget pWidget, xui_rich_edit_data_t
 		fLineHeight = tBlockInfo.tParagraphStyle.fLineHeight * pData->fZoom > fEmptyHeight ?
 			tBlockInfo.tParagraphStyle.fLineHeight * pData->fZoom : fEmptyHeight;
 		iRet = __xuiRichEditAddEmptyFragment(pData, pParagraph, &tBlockInfo, iDocumentStart,
-			(xui_rect_t){tBlockInfo.tParagraphStyle.fIndentLeft * pData->fZoom, fLineY, 0.0f, fLineHeight}, *pLineBase);
+			(xlayout_rect_t){tBlockInfo.tParagraphStyle.fIndentLeft * pData->fZoom, fLineY, 0.0f, fLineHeight}, *pLineBase);
 		if ( iRet != XUI_OK ) return iRet;
 		*pY += fLineHeight;
 		*pY += tBlockInfo.tParagraphStyle.fSpaceAfter * pData->fZoom;
 		iRet = __xuiRichEditAddBlock(pData, pParagraph, tBlockInfo.iType, iDocumentStart,
-			*pDocumentAt, (xui_rect_t){0.0f, fBlockY, fWidth, *pY - fBlockY},
+			*pDocumentAt, (xlayout_rect_t){0.0f, fBlockY, fWidth, *pY - fBlockY},
 			iFragmentStart, iLineStart, 1);
 		if ( iRet != XUI_OK ) return iRet;
 		(*pLineBase)++;
@@ -1049,7 +1139,6 @@ static int __xuiRichEditLayoutParagraph(xui_widget pWidget, xui_rich_edit_data_t
 		iRet = __xuiRichEditAddFragment(pData, &pData->pAtoms[(int)tFragment.tag], tFragment, *pY, iLine);
 		if ( iRet != XUI_OK ) { xLayoutNodeDestroy(pLayout, iRoot); return iRet; }
 	}
-	if ( tMeasure.width > pData->fContentWidth ) pData->fContentWidth = tMeasure.width;
 	{
 		xui_rich_node_info_t tBlockInfo;
 		memset(&tBlockInfo, 0, sizeof(tBlockInfo)); tBlockInfo.iSize = sizeof(tBlockInfo);
@@ -1059,7 +1148,10 @@ static int __xuiRichEditLayoutParagraph(xui_widget pWidget, xui_rich_edit_data_t
 			int j;
 			if ( tBlockInfo.iType == XUI_RICH_NODE_BLOCK_QUOTE ) fIndentLeft += 16.0f * pData->fZoom;
 			if ( tBlockInfo.iType == XUI_RICH_NODE_LIST_ITEM || tBlockInfo.tParagraphStyle.iListType != XUI_RICH_LIST_NONE ) fIndentLeft += 24.0f * pData->fZoom;
-			for ( j = iFragmentStart; j < pData->iFragmentCount; j++ ) pData->pFragments[j].tPublic.tRect.fY += fBefore;
+			for ( j = iFragmentStart; j < pData->iFragmentCount; j++ ) {
+				pData->pFragments[j].tEdges.fTop += fBefore;
+				pData->pFragments[j].tEdges.fBottom += fBefore;
+			}
 			__xuiRichEditAlignParagraph(pData, iFragmentStart, fWidth, tBlockInfo.tParagraphStyle.iAlign,
 				fIndentLeft + tBlockInfo.tParagraphStyle.fFirstLineIndent * pData->fZoom,
 				tBlockInfo.tParagraphStyle.fIndentRight * pData->fZoom);
@@ -1072,8 +1164,12 @@ static int __xuiRichEditLayoutParagraph(xui_widget pWidget, xui_rich_edit_data_t
 		memset(&tBlockInfo, 0, sizeof(tBlockInfo)); tBlockInfo.iSize = sizeof(tBlockInfo);
 		if ( xuiRichNodeGetInfo(pParagraph, &tBlockInfo) == XUI_OK )
 			iRet = __xuiRichEditAddBlock(pData, pParagraph, tBlockInfo.iType, iDocumentStart,
-				*pDocumentAt, (xui_rect_t){0.0f, fBlockY, fWidth, *pY - fBlockY},
+				*pDocumentAt, (xlayout_rect_t){0.0f, fBlockY, fWidth, *pY - fBlockY},
 				iFragmentStart, iLineStart, iLine - iLineStart + 1);
+		if ( iRet == XUI_OK ) {
+			xui_rich_block_layout_t* pBlock = &pData->pBlocks[pData->iBlockCount - 1];
+			pBlock->fContentWidth = fmaxf(pBlock->fContentWidth, tMeasure.width);
+		}
 	}
 	*pLineBase = iLine + 1;
 	xLayoutNodeDestroy(pLayout, iRoot);
@@ -1087,7 +1183,7 @@ static int __xuiRichEditLayoutAtomic(xui_widget pWidget, xui_rich_edit_data_t* p
 	xui_proxy pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	xui_font_metrics_t tMetrics;
 	xui_vec2_t tSize;
-	xui_rect_t tRect;
+	xlayout_rect_t tRect;
 	float fW;
 	float fH;
 	float fLineHeight = 18.0f;
@@ -1138,266 +1234,486 @@ static int __xuiRichEditLayoutAtomic(xui_widget pWidget, xui_rich_edit_data_t* p
 		fW = fWidth;
 		fH = 17.0f * pData->fZoom;
 	}
-	tRect = (xui_rect_t){0.0f, *pY + tInfo.tParagraphStyle.fSpaceBefore * pData->fZoom, fW, fH};
-	if ( tInfo.tParagraphStyle.iAlign == XUI_RICH_ALIGN_CENTER ) tRect.fX = (fWidth - fW) * 0.5f;
-	else if ( tInfo.tParagraphStyle.iAlign == XUI_RICH_ALIGN_RIGHT ) tRect.fX = fWidth - fW;
+	tRect = (xlayout_rect_t){0.0f, *pY + tInfo.tParagraphStyle.fSpaceBefore * pData->fZoom, fW, fH};
+	if ( tInfo.tParagraphStyle.iAlign == XUI_RICH_ALIGN_CENTER ) tRect.x = (fWidth - fW) * 0.5f;
+	else if ( tInfo.tParagraphStyle.iAlign == XUI_RICH_ALIGN_RIGHT ) tRect.x = fWidth - fW;
 	iRet = __xuiRichEditAddAtomicFragment(pData, pNode, &tInfo, *pDocumentAt, tRect, *pLine);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiRichEditAddBlock(pData, pNode, tInfo.iType, *pDocumentAt, *pDocumentAt + 3, tRect,
 		iFragmentStart, iLineStart, 1);
 	if ( iRet != XUI_OK ) return iRet;
+	pData->pBlocks[pData->iBlockCount - 1].fContentWidth = fmaxf(tRect.x + tRect.width, fW);
 	*pDocumentAt += 3;
-	*pY = tRect.fY + tRect.fH + tInfo.tParagraphStyle.fSpaceAfter * pData->fZoom;
+	*pY = tRect.y + tRect.height + tInfo.tParagraphStyle.fSpaceAfter * pData->fZoom;
 	(*pLine)++;
-	if ( fW > pData->fContentWidth ) pData->fContentWidth = fW;
 	return XUI_OK;
 }
 
-static void __xuiRichEditRecomputeContentWidth(xui_rich_edit_data_t* pData)
-{
-	float fWidth = 0.0f;
-	int i;
-	for ( i = 0; i < pData->iBlockCount; i++ ) if ( pData->pBlocks[i].fContentWidth > fWidth )
-		fWidth = pData->pBlocks[i].fContentWidth;
-	pData->fContentWidth = fWidth;
-}
+static double __xuiRichEditHeightBefore(xui_rich_edit_data_t* pData, int i);
+static int __xuiRichEditParagraphByY(xui_rich_edit_data_t* pData, double fY);
 
-static int __xuiRichEditIncrementalLayout(xui_widget pWidget, xui_rich_edit_data_t* pData, float fWidth)
+/* Estimates and exact widths occupy the same leaves, so replacing a maximum can shrink the root. */
+static int __xuiRichEditBuildWidthIndex(xui_rich_edit_data_t* pData)
 {
-	xui_rich_block_layout_t tOldBlock;
-	xui_rich_node pNode;
-	xui_rich_node_info_t tNodeInfo;
-	xui_rich_node_info_t tBlockInfo;
-	float fY;
-	float fYDelta;
-	int iDocumentAt;
-	int iDocumentDelta;
-	int iLine;
-	int iLineDelta;
-	int iFragmentDelta;
-	int iOldBlockCount;
-	int iOldTotalFragments;
-	int i;
-	int iRet;
-	if ( pData->iDirtyBlock < 0 || pData->iDirtyBlock >= pData->iBlockCount ||
-	     pData->tLayoutChange.iNodeId == 0 ) return XUI_ERROR_UNSUPPORTED;
-	pNode = xuiRichDocumentFindNode(pData->pDocument, pData->tLayoutChange.iNodeId);
-	memset(&tNodeInfo, 0, sizeof(tNodeInfo)); tNodeInfo.iSize = sizeof(tNodeInfo);
-	if ( pNode == NULL || xuiRichNodeGetInfo(pNode, &tNodeInfo) != XUI_OK || tNodeInfo.iParentId == 0 )
-		return XUI_ERROR_UNSUPPORTED;
-	pNode = xuiRichDocumentFindNode(pData->pDocument, tNodeInfo.iParentId);
-	memset(&tBlockInfo, 0, sizeof(tBlockInfo)); tBlockInfo.iSize = sizeof(tBlockInfo);
-	if ( pNode == NULL || xuiRichNodeGetInfo(pNode, &tBlockInfo) != XUI_OK ||
-	     (tBlockInfo.iType != XUI_RICH_NODE_PARAGRAPH && tBlockInfo.iType != XUI_RICH_NODE_HEADING &&
-	      tBlockInfo.iType != XUI_RICH_NODE_BLOCK_QUOTE && tBlockInfo.iType != XUI_RICH_NODE_LIST_ITEM) ||
-	     pData->pBlocks[pData->iDirtyBlock].pNode != pNode ) return XUI_ERROR_UNSUPPORTED;
-	tOldBlock = pData->pBlocks[pData->iDirtyBlock];
-	iOldBlockCount = pData->iBlockCount;
-	iOldTotalFragments = pData->iTotalFragmentCount;
-	pData->iFragmentCount = 0;
-	pData->iTotalFragmentCount = tOldBlock.iFragmentStart;
-	pData->iBlockCount = pData->iDirtyBlock;
-	iDocumentAt = tOldBlock.iDocumentStart;
-	fY = tOldBlock.tRect.fY;
-	iLine = tOldBlock.iLineStart;
-	iRet = __xuiRichEditLayoutParagraph(pWidget, pData, pNode, &iDocumentAt, fWidth, &fY, &iLine);
-	if ( iRet != XUI_OK ) {
-		pData->pBlocks[pData->iDirtyBlock] = tOldBlock;
-		pData->iBlockCount = iOldBlockCount;
-		pData->iTotalFragmentCount = iOldTotalFragments;
-		return iRet;
+	int i, iLeaves = 1, iRet;
+	while ( iLeaves < pData->iParagraphCount ) {
+		if ( iLeaves > INT_MAX / 2 ) return XUI_ERROR_OUT_OF_MEMORY;
+		iLeaves *= 2;
 	}
-	iFragmentDelta = pData->pBlocks[pData->iDirtyBlock].iFragmentCount - tOldBlock.iFragmentCount;
-	iDocumentDelta = pData->pBlocks[pData->iDirtyBlock].iDocumentEnd - tOldBlock.iDocumentEnd;
-	iLineDelta = pData->pBlocks[pData->iDirtyBlock].iLineCount - tOldBlock.iLineCount;
-	fYDelta = pData->pBlocks[pData->iDirtyBlock].tRect.fH - tOldBlock.tRect.fH;
-	if ( tOldBlock.pFragments != NULL ) xrtFree(tOldBlock.pFragments);
-	pData->iBlockCount = iOldBlockCount;
-	pData->iTotalFragmentCount = iOldTotalFragments + iFragmentDelta;
-	for ( i = pData->iDirtyBlock + 1; i < pData->iBlockCount; i++ ) {
-		pData->pBlocks[i].iDocumentStart += iDocumentDelta;
-		pData->pBlocks[i].iDocumentEnd += iDocumentDelta;
-		pData->pBlocks[i].iFragmentStart += iFragmentDelta;
-		pData->pBlocks[i].iLineStart += iLineDelta;
-		pData->pBlocks[i].tRect.fY += fYDelta;
+	if ( iLeaves > INT_MAX / 2 ) return XUI_ERROR_OUT_OF_MEMORY;
+	iRet = __xuiRichEditReserve((void**)&pData->pWidthTree, &pData->iWidthCapacity,
+		iLeaves * 2, sizeof(*pData->pWidthTree));
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iWidthLeaves = iLeaves;
+	memset(pData->pWidthTree, 0, (size_t)iLeaves * 2 * sizeof(*pData->pWidthTree));
+	for ( i = 0; i < pData->iParagraphCount; i++ ) {
+		XUI_RICH_EDIT_AUDIT_STEP(WidthStep);
+		pData->pWidthTree[iLeaves + i] = pData->pParagraphs[i].fWidth;
 	}
-	pData->fContentHeight += fYDelta;
-	__xuiRichEditRecomputeContentWidth(pData);
-	pData->fLayoutWidth = fWidth;
-	pData->iLayoutVersion = xuiRichDocumentGetVersion(pData->pDocument);
-	pData->bLayoutDirty = 0;
-	pData->bIncrementalLayout = 0;
+	for ( i = iLeaves - 1; i > 0; i-- ) {
+		XUI_RICH_EDIT_AUDIT_STEP(WidthStep);
+		pData->pWidthTree[i] = fmaxf(pData->pWidthTree[i * 2], pData->pWidthTree[i * 2 + 1]);
+	}
+	pData->fContentWidth = pData->pWidthTree[1];
 	return XUI_OK;
 }
 
-static int __xuiRichEditIncrementalStructureLayout(xui_widget pWidget, xui_rich_edit_data_t* pData, float fWidth)
+static void __xuiRichEditSetWidth(xui_rich_edit_data_t* pData, int iParagraph, float fWidth)
 {
-	xui_rich_block_layout_t* pOldBlocks;
-	xui_rich_node pRoot;
-	xui_rich_node pNode;
-	xui_rich_node pAfter;
-	float fStartY;
-	float fOldEndY;
-	float fY;
-	float fYDelta;
-	float fOldContentHeight = pData->fContentHeight;
-	float fOldContentWidth = pData->fContentWidth;
-	int iOldBlockCount = pData->iBlockCount;
-	int iOldTotalFragments = pData->iTotalFragmentCount;
-	int iOldTailDocument;
-	int iOldTailLine;
-	int iOldTailFragment;
-	int iDocumentAt;
-	int iLine;
-	int iDocumentDelta;
-	int iLineDelta;
-	int iFragmentDelta;
-	int iNewEnd;
-	int iTailCount;
-	int i;
-	int iRet = XUI_OK;
-	if ( pData->iDirtyBlock < 0 || pData->iDirtyBlockEnd < pData->iDirtyBlock ||
-	     pData->iDirtyBlockEnd >= pData->iBlockCount ) return XUI_ERROR_UNSUPPORTED;
-	pOldBlocks = (xui_rich_block_layout_t*)xrtMalloc(sizeof(*pOldBlocks) *
-		(size_t)(iOldBlockCount - pData->iDirtyBlock));
-	if ( pOldBlocks == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memcpy(pOldBlocks, pData->pBlocks + pData->iDirtyBlock,
-		sizeof(*pOldBlocks) * (size_t)(iOldBlockCount - pData->iDirtyBlock));
-	iTailCount = iOldBlockCount - pData->iDirtyBlockEnd - 1;
-	pAfter = iTailCount > 0 ? pOldBlocks[pData->iDirtyBlockEnd - pData->iDirtyBlock + 1].pNode : NULL;
-	pRoot = xuiRichDocumentGetRoot(pData->pDocument);
-	pNode = pData->iDirtyBlock > 0 ? xuiRichNodeGetNextSibling(pData->pBlocks[pData->iDirtyBlock - 1].pNode) :
-		xuiRichNodeGetFirstChild(pRoot);
-	if ( pNode == NULL || pNode == pAfter ) { xrtFree(pOldBlocks); return XUI_ERROR_UNSUPPORTED; }
-	fStartY = pOldBlocks[0].tRect.fY;
-	fOldEndY = iTailCount > 0 ? pOldBlocks[pData->iDirtyBlockEnd - pData->iDirtyBlock + 1].tRect.fY : fOldContentHeight;
-	iOldTailDocument = iTailCount > 0 ? pOldBlocks[pData->iDirtyBlockEnd - pData->iDirtyBlock + 1].iDocumentStart :
-		xuiRichDocumentGetLength(pData->pDocument) -
-		(pData->tLayoutChange.iNewEnd - pData->tLayoutChange.iNewStart) +
-		(pData->tLayoutChange.iOldEnd - pData->tLayoutChange.iOldStart);
-	iOldTailLine = iTailCount > 0 ? pOldBlocks[pData->iDirtyBlockEnd - pData->iDirtyBlock + 1].iLineStart :
-		pOldBlocks[pData->iDirtyBlockEnd - pData->iDirtyBlock].iLineStart +
-		pOldBlocks[pData->iDirtyBlockEnd - pData->iDirtyBlock].iLineCount;
-	iOldTailFragment = iTailCount > 0 ? pOldBlocks[pData->iDirtyBlockEnd - pData->iDirtyBlock + 1].iFragmentStart : iOldTotalFragments;
-	pData->iBlockCount = pData->iDirtyBlock;
-	pData->iTotalFragmentCount = pOldBlocks[0].iFragmentStart;
-	pData->iFragmentCount = 0;
-	iDocumentAt = pOldBlocks[0].iDocumentStart;
-	iLine = pOldBlocks[0].iLineStart;
-	fY = fStartY;
-	while ( pNode != pAfter ) {
-		xui_rich_node_info_t tInfo;
-		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
-		if ( xuiRichNodeGetInfo(pNode, &tInfo) != XUI_OK ) { iRet = XUI_ERROR_INVALID_ARGUMENT; break; }
-		pData->iFragmentCount = 0;
-		if ( tInfo.iType == XUI_RICH_NODE_IMAGE || tInfo.iType == XUI_RICH_NODE_TABLE || tInfo.iType == XUI_RICH_NODE_HORIZONTAL_RULE )
-			iRet = __xuiRichEditLayoutAtomic(pWidget, pData, pNode, &iDocumentAt, fWidth, &fY, &iLine);
-		else iRet = __xuiRichEditLayoutParagraph(pWidget, pData, pNode, &iDocumentAt, fWidth, &fY, &iLine);
-		if ( iRet != XUI_OK ) break;
-		pNode = xuiRichNodeGetNextSibling(pNode);
-		if ( pNode != NULL ) { iDocumentAt++; fY += pData->fParagraphGap * pData->fZoom; }
-		if ( pNode == NULL && pAfter != NULL ) { iRet = XUI_ERROR_UNSUPPORTED; break; }
+	int i = pData->iWidthLeaves + iParagraph;
+	pData->pParagraphs[iParagraph].fWidth = fWidth;
+	pData->pWidthTree[i] = fWidth;
+	XUI_RICH_EDIT_AUDIT_STEP(WidthStep);
+	while ( i > 1 ) {
+		i /= 2;
+		XUI_RICH_EDIT_AUDIT_STEP(WidthStep);
+		pData->pWidthTree[i] = fmaxf(pData->pWidthTree[i * 2], pData->pWidthTree[i * 2 + 1]);
 	}
-	if ( iRet != XUI_OK ) {
-		for ( i = pData->iDirtyBlock; i < pData->iBlockCount; i++ )
-			if ( pData->pBlocks[i].pFragments != NULL ) xrtFree(pData->pBlocks[i].pFragments);
-		memcpy(pData->pBlocks + pData->iDirtyBlock, pOldBlocks,
-			sizeof(*pOldBlocks) * (size_t)(iOldBlockCount - pData->iDirtyBlock));
-		pData->iBlockCount = iOldBlockCount;
-		pData->iTotalFragmentCount = iOldTotalFragments;
-		pData->fContentHeight = fOldContentHeight;
-		pData->fContentWidth = fOldContentWidth;
-		xrtFree(pOldBlocks);
-		return iRet;
-	}
-	iNewEnd = pData->iBlockCount;
-	iDocumentDelta = iDocumentAt - iOldTailDocument;
-	iLineDelta = iLine - iOldTailLine;
-	iFragmentDelta = pData->iTotalFragmentCount - iOldTailFragment;
-	fYDelta = fY - fOldEndY;
-	iRet = __xuiRichEditReserve((void**)&pData->pBlocks, &pData->iBlockCapacity,
-		iNewEnd + iTailCount, sizeof(*pData->pBlocks));
-	if ( iRet != XUI_OK ) {
-		for ( i = pData->iDirtyBlock; i < pData->iBlockCount; i++ )
-			if ( pData->pBlocks[i].pFragments != NULL ) xrtFree(pData->pBlocks[i].pFragments);
-		memcpy(pData->pBlocks + pData->iDirtyBlock, pOldBlocks,
-			sizeof(*pOldBlocks) * (size_t)(iOldBlockCount - pData->iDirtyBlock));
-		pData->iBlockCount = iOldBlockCount;
-		pData->iTotalFragmentCount = iOldTotalFragments;
-		pData->fContentHeight = fOldContentHeight;
-		pData->fContentWidth = fOldContentWidth;
-		xrtFree(pOldBlocks);
-		return iRet;
-	}
-	for ( i = 0; i <= pData->iDirtyBlockEnd - pData->iDirtyBlock; i++ )
-		if ( pOldBlocks[i].pFragments != NULL ) xrtFree(pOldBlocks[i].pFragments);
-	if ( iTailCount > 0 ) memcpy(pData->pBlocks + iNewEnd,
-		pOldBlocks + pData->iDirtyBlockEnd - pData->iDirtyBlock + 1,
-		sizeof(*pOldBlocks) * (size_t)iTailCount);
-	pData->iBlockCount = iNewEnd + iTailCount;
-	for ( i = iNewEnd; i < pData->iBlockCount; i++ ) {
-		pData->pBlocks[i].iDocumentStart += iDocumentDelta;
-		pData->pBlocks[i].iDocumentEnd += iDocumentDelta;
-		pData->pBlocks[i].iFragmentStart += iFragmentDelta;
-		pData->pBlocks[i].iLineStart += iLineDelta;
-		pData->pBlocks[i].tRect.fY += fYDelta;
-	}
-	pData->iTotalFragmentCount = iOldTotalFragments + iFragmentDelta;
-	pData->fContentHeight = fOldContentHeight + fYDelta;
-	__xuiRichEditRecomputeContentWidth(pData);
-	pData->fLayoutWidth = fWidth;
-	pData->iLayoutVersion = xuiRichDocumentGetVersion(pData->pDocument);
-	pData->bLayoutDirty = 0;
-	pData->bIncrementalLayout = 0;
-	xrtFree(pOldBlocks);
-	return XUI_OK;
+	pData->fContentWidth = pData->pWidthTree[1];
 }
 
-static int __xuiRichEditEnsureLayout(xui_widget pWidget, xui_rich_edit_data_t* pData)
+static int __xuiRichEditEnsureExactLayout(xui_widget pWidget, xui_rich_edit_data_t* pData)
 {
 	xui_rect_t tContent;
 	xui_rich_node pRoot;
 	xui_rich_node pParagraph;
-	float fY = 0.0f;
+	double fY = 0.0;
 	float fWidth;
 	int iDocumentAt = 0;
 	int iLine = 0;
-	int iRet;
+	int iRet, i, iAnchor = -1;
+	float fAnchorOffset = 0.0f;
+	if ( pData->iParagraphCount > 0 && !pData->bNeedsExactLayout ) {
+		iAnchor = __xuiRichEditParagraphByY(pData, pData->fScrollY);
+		fAnchorOffset = pData->fScrollY - (float)__xuiRichEditHeightBefore(pData, iAnchor);
+	}
+	pData->bLayoutDirty = 1;
 	if ( pData->pDocument == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	tContent = __xuiRichEditContentRect(pWidget, pData);
 	fWidth = tContent.fW > 1.0f ? tContent.fW : 1.0f;
-	/* TODO(P1-9): compare pWidget->pContext->iDpiGeneration before both cache paths;
-	 * on change, clear sized fonts and rebuild persistent layout/index state. */
-	if ( !pData->bLayoutDirty && pData->iLayoutVersion == xuiRichDocumentGetVersion(pData->pDocument) && pData->fLayoutWidth == fWidth ) return XUI_OK;
-	if ( pData->bIncrementalLayout && pData->fLayoutWidth == fWidth ) {
-		iRet = (pData->tLayoutChange.iFlags & XUI_RICH_CHANGE_STRUCTURE) != 0 ?
-			__xuiRichEditIncrementalStructureLayout(pWidget, pData, fWidth) :
-			__xuiRichEditIncrementalLayout(pWidget, pData, fWidth);
-		if ( iRet == XUI_OK ) { __xuiRichEditIndexBlocks(pData); return XUI_OK; }
-		pData->bIncrementalLayout = 0;
-	}
 	__xuiRichEditReleaseBlocks(pData);
 	pData->iFragmentCount = 0;
 	pData->fContentWidth = 0.0f;
 	pRoot = xuiRichDocumentGetRoot(pData->pDocument);
 	for ( pParagraph = xuiRichNodeGetFirstChild(pRoot); pParagraph != NULL; pParagraph = xuiRichNodeGetNextSibling(pParagraph) ) {
 		xui_rich_node_info_t tInfo;
+		float fLocalY = 0.0f;
+		xui_rich_block_layout_t* pBlock;
 		pData->iFragmentCount = 0;
 		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
 		if ( xuiRichNodeGetInfo(pParagraph, &tInfo) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( tInfo.iType == XUI_RICH_NODE_IMAGE || tInfo.iType == XUI_RICH_NODE_TABLE || tInfo.iType == XUI_RICH_NODE_HORIZONTAL_RULE )
-			iRet = __xuiRichEditLayoutAtomic(pWidget, pData, pParagraph, &iDocumentAt, fWidth, &fY, &iLine);
-		else iRet = __xuiRichEditLayoutParagraph(pWidget, pData, pParagraph, &iDocumentAt, fWidth, &fY, &iLine);
+			iRet = __xuiRichEditLayoutAtomic(pWidget, pData, pParagraph, &iDocumentAt, fWidth, &fLocalY, &iLine);
+		else iRet = __xuiRichEditLayoutParagraph(pWidget, pData, pParagraph, &iDocumentAt, fWidth, &fLocalY, &iLine);
 		if ( iRet != XUI_OK ) return iRet;
-		if ( xuiRichNodeGetNextSibling(pParagraph) != NULL ) { iDocumentAt++; fY += pData->fParagraphGap * pData->fZoom; }
+		pBlock = &pData->pBlocks[pData->iBlockCount - 1];
+		pBlock->fParagraphY = fY;
+		if ( xuiRichNodeGetNextSibling(pParagraph) != NULL ) { iDocumentAt++; fLocalY += pData->fParagraphGap * pData->fZoom; }
+		pBlock->iParagraph = pData->iBlockCount - 1;
+		pData->pParagraphs[pBlock->iParagraph].fAdvance = fmaxf(1.0f, fLocalY);
+		pData->pParagraphs[pBlock->iParagraph].fWidth = pBlock->fContentWidth;
+		fY += pData->bNeedsExactLayout ? fLocalY : fmaxf(1.0f, fLocalY);
 	}
+	memset(pData->pHeightTree, 0, (pData->iParagraphCount + 1) * sizeof(*pData->pHeightTree));
+	for ( i = 1; i <= pData->iParagraphCount; i++ ) {
+		int parent = i + (i & -i);
+		pData->pHeightTree[i] += pData->pParagraphs[i - 1].fAdvance;
+		if ( parent <= pData->iParagraphCount ) pData->pHeightTree[parent] += pData->pHeightTree[i];
+	}
+	if ( iAnchor >= 0 ) pData->fScrollY = (float)__xuiRichEditHeightBefore(pData, iAnchor) + fAnchorOffset;
+	iRet = __xuiRichEditBuildWidthIndex(pData);
+	if ( iRet != XUI_OK ) return iRet;
 	__xuiRichEditIndexBlocks(pData);
 	pData->fContentHeight = fY;
 	pData->fLayoutWidth = fWidth;
 	pData->iLayoutVersion = xuiRichDocumentGetVersion(pData->pDocument);
 	pData->bLayoutDirty = 0;
-	pData->bIncrementalLayout = 0;
+	pData->bExactLayout = 1;
 	return XUI_OK;
+}
+
+
+/* Fenwick sums keep corrections and offset-to-paragraph lookup logarithmic.
+ * Only the compact document index is rebuilt on document/width/font epochs. */
+static double __xuiRichEditHeightBefore(xui_rich_edit_data_t* pData, int i)
+{
+	double fY = 0.0;
+	for ( ; i > 0; i -= i & -i ) {
+		XUI_RICH_EDIT_AUDIT_STEP(HeightStep);
+		fY += pData->pHeightTree[i];
+	}
+	return fY;
+}
+
+static void __xuiRichEditSetHeight(xui_rich_edit_data_t* pData, int i, float fHeight)
+{
+	double fDelta = (double)fHeight - pData->pParagraphs[i].fAdvance;
+	pData->pParagraphs[i].fAdvance = fHeight;
+	for ( i++; i <= pData->iParagraphCount; i += i & -i ) {
+		XUI_RICH_EDIT_AUDIT_STEP(HeightStep);
+		pData->pHeightTree[i] += fDelta;
+	}
+}
+
+static int __xuiRichEditParagraphByY(xui_rich_edit_data_t* pData, double fY)
+{
+	int i = 0, bit = 1;
+	double fSum = 0.0;
+	while ( bit <= pData->iParagraphCount / 2 ) bit *= 2;
+	for ( ; bit > 0; bit /= 2 ) {
+		int next = i + bit;
+		XUI_RICH_EDIT_AUDIT_STEP(HeightStep);
+		if ( next <= pData->iParagraphCount && fSum + pData->pHeightTree[next] <= fY ) {
+			fSum += pData->pHeightTree[next];
+			i = next;
+		}
+	}
+	return i < pData->iParagraphCount ? i : pData->iParagraphCount - 1;
+}
+
+static int __xuiRichEditParagraphByOffset(xui_rich_edit_data_t* pData, int iOffset)
+{
+	int lo = 0, hi = pData->iParagraphCount;
+	while ( lo < hi ) {
+		int m = lo + (hi - lo) / 2;
+		XUI_RICH_EDIT_AUDIT_STEP(ParagraphSearch);
+		if ( pData->pParagraphs[m].iEnd < iOffset ) lo = m + 1; else hi = m;
+	}
+	return lo < pData->iParagraphCount ? lo : pData->iParagraphCount - 1;
+}
+
+static int __xuiRichEditCachedParagraph(xui_rich_edit_data_t* pData, int iParagraph)
+{
+	int lo = 0, hi = pData->iBlockCount;
+	while ( lo < hi ) {
+		int m = lo + (hi - lo) / 2;
+		if ( pData->pBlocks[m].iParagraph < iParagraph ) lo = m + 1; else hi = m;
+	}
+	return lo;
+}
+
+static int __xuiRichEditBuildParagraphIndex(xui_widget pWidget, xui_rich_edit_data_t* pData, float fWidth)
+{
+	xui_rich_node pNode;
+	xui_proxy pProxy = xuiInternalContextGetProxy(pWidget->pContext);
+	xui_font_metrics_t tMetrics = {0};
+	xui_document_node_id_t iAnchorId = 0;
+	float fAnchorOffset = 0.0f, fLineHeight = 16.0f * pData->fZoom;
+	float fFontSize = 14.0f * pData->fZoom;
+	int iAnchor = -1, iAt = 0, i, iRet;
+	if ( pData->pIndexDocument == pData->pDocument && pData->iParagraphCount > 0 ) {
+		i = __xuiRichEditParagraphByY(pData, pData->fScrollY);
+		iAnchorId = pData->pParagraphs[i].iId;
+		fAnchorOffset = pData->fScrollY - (float)__xuiRichEditHeightBefore(pData, i);
+	}
+	if ( pProxy != NULL && pProxy->fontGetMetrics != NULL && pData->pFont != NULL &&
+	     pProxy->fontGetMetrics(pProxy, pData->pFont, &tMetrics) == XUI_OK ) {
+		if ( tMetrics.fLineHeight > 0.0f ) fLineHeight = tMetrics.fLineHeight * pData->fZoom;
+		if ( tMetrics.fSize > 0.0f ) fFontSize = tMetrics.fSize * pData->fZoom;
+	}
+	__xuiRichEditReleaseBlocks(pData);
+	pData->bExactLayout = 0;
+	pData->bNeedsExactLayout = 0;
+	pData->iParagraphCount = 0;
+	pData->fContentWidth = 0.0f;
+	if ( pData->mapWidgetParagraphs.ValueSize != 0 ) xrtMapClear(&pData->mapWidgetParagraphs);
+	if ( pData->mapWidgetParagraphs.ValueSize == 0 &&
+	     !xrtMapInit(&pData->mapWidgetParagraphs, sizeof(xui_rich_widget_index_t)) )
+		return XUI_ERROR_OUT_OF_MEMORY;
+	for ( pNode = xuiRichNodeGetFirstChild(xuiRichDocumentGetRoot(pData->pDocument));
+	      pNode != NULL; pNode = xuiRichNodeGetNextSibling(pNode) ) {
+		xui_rich_node_info_t tInfo = {0};
+		xui_rich_paragraph_index_t tIndex = {0};
+		xui_rich_node pRun;
+		float fHeight = fLineHeight, fWidthEstimate = 0.0f;
+		XUI_RICH_EDIT_AUDIT_STEP(ParagraphIndex);
+		if ( xuiRichNodeGetInfo(pNode, &tInfo) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+		tIndex.pNode = pNode; tIndex.iId = tInfo.iId; tIndex.iType = tInfo.iType; tIndex.iStart = iAt;
+		if ( tInfo.tParagraphStyle.fSpaceBefore < 0.0f || tInfo.tParagraphStyle.fSpaceAfter < 0.0f )
+			pData->bNeedsExactLayout = 1;
+		if ( tInfo.iType == XUI_RICH_NODE_IMAGE || tInfo.iType == XUI_RICH_NODE_TABLE ||
+		     tInfo.iType == XUI_RICH_NODE_HORIZONTAL_RULE ) {
+			iAt += 3;
+			if ( tInfo.iType == XUI_RICH_NODE_TABLE )
+				fHeight = (fLineHeight + tInfo.fCellPadding * pData->fZoom * 2.0f) * tInfo.iRows;
+			else if ( tInfo.iType == XUI_RICH_NODE_IMAGE )
+				fHeight = tInfo.fHeight > 0.0f ? tInfo.fHeight * pData->fZoom : 96.0f * pData->fZoom;
+			else fHeight = 17.0f * pData->fZoom;
+			fWidthEstimate = fWidth;
+		} else {
+			fHeight = fmaxf(fHeight, tInfo.tParagraphStyle.fLineHeight * pData->fZoom);
+			for ( pRun = xuiRichNodeGetFirstChild(pNode); pRun != NULL; pRun = xuiRichNodeGetNextSibling(pRun) ) {
+				xui_rich_node_info_t tRun = {0};
+				XUI_RICH_EDIT_AUDIT_STEP(ParagraphIndex);
+				if ( xuiRichNodeGetInfo(pRun, &tRun) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+				if ( tRun.iType == XUI_RICH_NODE_TEXT || tRun.iType == XUI_RICH_NODE_LINK ) {
+					float fSize = tRun.tStyle.fFontSize > 0.0f ? tRun.tStyle.fFontSize * pData->fZoom : fFontSize;
+					iAt += tRun.iTextSize;
+					/* A byte-length workload estimate, not glyph geometry or caret stops.
+					 * Actual clusters, wrapping and hit geometry always come from shared shaping. */
+					fWidthEstimate += tRun.iTextSize * fSize * 0.5f;
+					fHeight = fmaxf(fHeight, fSize);
+				} else if ( tRun.iType == XUI_RICH_NODE_INLINE_WIDGET || tRun.iType == XUI_RICH_NODE_INLINE_IMAGE ) {
+					iAt += 3;
+					fHeight = fmaxf(fHeight, (tRun.fHeight > 0.0f ? tRun.fHeight : 24.0f) * pData->fZoom);
+					fWidthEstimate += (tRun.fWidth > 0.0f ? tRun.fWidth : 24.0f) * pData->fZoom;
+					if ( tRun.iType == XUI_RICH_NODE_INLINE_WIDGET && tRun.pWidget != NULL ) {
+						bool bAdded = false;
+						xui_rich_widget_index_t* pEntry = (xui_rich_widget_index_t*)xrtMapGetOrAdd(
+							&pData->mapWidgetParagraphs, xuiXrtBytes(&tRun.pWidget, sizeof(tRun.pWidget)), &bAdded);
+						if ( pEntry == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+						/* Repeated widget references retain the existing last-arrange-wins contract. */
+						if ( !bAdded ) pData->bNeedsExactLayout = 1;
+						pEntry->iParagraph = pData->iParagraphCount; pEntry->iFragment = -1; pEntry->iWanted = 0;
+						if ( xuiWidgetGetParent(tRun.pWidget) != NULL && xuiWidgetGetParent(tRun.pWidget) != pWidget )
+							return XUI_ERROR_INVALID_ARGUMENT;
+					}
+				}
+			}
+			if ( pData->bWordWrap ) fHeight *= fmaxf(1.0f, ceilf(fWidthEstimate / fWidth));
+		}
+		tIndex.iEnd = iAt;
+		tIndex.fWidth = fmaxf(fWidth, fWidthEstimate);
+		tIndex.fAdvance = fmaxf(1.0f, fHeight +
+			(tInfo.tParagraphStyle.fSpaceBefore + tInfo.tParagraphStyle.fSpaceAfter) * pData->fZoom +
+			(xuiRichNodeGetNextSibling(pNode) != NULL ? pData->fParagraphGap * pData->fZoom : 0.0f));
+		iRet = __xuiRichEditReserve((void**)&pData->pParagraphs, &pData->iParagraphCapacity,
+			pData->iParagraphCount + 1, sizeof(*pData->pParagraphs));
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iAnchorId != 0 && tIndex.iId == iAnchorId ) iAnchor = pData->iParagraphCount;
+		pData->pParagraphs[pData->iParagraphCount++] = tIndex;
+		if ( xuiRichNodeGetNextSibling(pNode) != NULL ) iAt++;
+	}
+	iRet = __xuiRichEditReserve((void**)&pData->pHeightTree, &pData->iHeightCapacity,
+		pData->iParagraphCount + 1, sizeof(*pData->pHeightTree));
+	if ( iRet != XUI_OK ) return iRet;
+	memset(pData->pHeightTree, 0, (pData->iParagraphCount + 1) * sizeof(*pData->pHeightTree));
+	for ( i = 1; i <= pData->iParagraphCount; i++ ) {
+		int parent = i + (i & -i);
+		pData->pHeightTree[i] += pData->pParagraphs[i - 1].fAdvance;
+		if ( parent <= pData->iParagraphCount ) pData->pHeightTree[parent] += pData->pHeightTree[i];
+	}
+	iRet = __xuiRichEditBuildWidthIndex(pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iAnchor >= 0 ) pData->fScrollY = (float)__xuiRichEditHeightBefore(pData, iAnchor) +
+		fminf(fAnchorOffset, pData->pParagraphs[iAnchor].fAdvance - 1.0f);
+	pData->fContentHeight = (float)__xuiRichEditHeightBefore(pData, pData->iParagraphCount);
+	pData->pIndexDocument = pData->pDocument;
+	pData->iLayoutVersion = xuiRichDocumentGetVersion(pData->pDocument);
+	pData->fLayoutWidth = fWidth;
+	pData->bLayoutDirty = 0;
+	pData->bCacheDirty = 1;
+	return XUI_OK;
+}
+
+static void __xuiRichEditSyncParagraphCache(xui_rich_edit_data_t* pData)
+{
+	int i, iFragment = 0, iLine = 0;
+	if ( !pData->bCacheDirty || pData->bExactLayout ) return;
+	for ( i = 0; i < pData->iBlockCount; i++ ) {
+		xui_rich_block_layout_t* p = &pData->pBlocks[i];
+		p->fParagraphY = __xuiRichEditHeightBefore(pData, p->iParagraph);
+		p->iFragmentStart = iFragment; iFragment += p->iFragmentCount;
+		p->iLineStart = iLine; iLine += p->iLineCount;
+	}
+	pData->iTotalFragmentCount = iFragment;
+	pData->fContentHeight = (float)__xuiRichEditHeightBefore(pData, pData->iParagraphCount);
+	__xuiRichEditIndexBlocks(pData);
+	pData->bCacheDirty = 0;
+}
+
+static int __xuiRichEditMaterialize(xui_widget pWidget, xui_rich_edit_data_t* pData, int iParagraph)
+{
+	xui_rich_paragraph_index_t* pIndex;
+	xui_rich_block_layout_t tBlock;
+	float fY, fAnchorOffset;
+	int i, iAt, iLine = 0, iRet, iAnchor;
+	if ( iParagraph < 0 || iParagraph >= pData->iParagraphCount ) return XUI_OK;
+	i = __xuiRichEditCachedParagraph(pData, iParagraph);
+	if ( i < pData->iBlockCount && pData->pBlocks[i].iParagraph == iParagraph ) {
+		pData->pBlocks[i].bRetain = 1; return XUI_OK;
+	}
+	pIndex = &pData->pParagraphs[iParagraph];
+	iAt = pIndex->iStart;
+	/* Local geometry stays unquantized; prefix corrections are applied at the final pixel edge. */
+	fY = 0.0f;
+	iAnchor = __xuiRichEditParagraphByY(pData, pData->fScrollY);
+	fAnchorOffset = pData->fScrollY - (float)__xuiRichEditHeightBefore(pData, iAnchor);
+	pData->iFragmentCount = 0;
+	if ( pIndex->iType == XUI_RICH_NODE_IMAGE || pIndex->iType == XUI_RICH_NODE_TABLE ||
+	     pIndex->iType == XUI_RICH_NODE_HORIZONTAL_RULE )
+		iRet = __xuiRichEditLayoutAtomic(pWidget, pData, pIndex->pNode, &iAt, pData->fLayoutWidth, &fY, &iLine);
+	else iRet = __xuiRichEditLayoutParagraph(pWidget, pData, pIndex->pNode, &iAt, pData->fLayoutWidth, &fY, &iLine);
+	if ( iRet != XUI_OK ) return iRet;
+	tBlock = pData->pBlocks[pData->iBlockCount - 1];
+	tBlock.iParagraph = iParagraph;
+	tBlock.bRetain = 1;
+	memmove(pData->pBlocks + i + 1, pData->pBlocks + i,
+		(size_t)(pData->iBlockCount - i - 1) * sizeof(*pData->pBlocks));
+	pData->pBlocks[i] = tBlock;
+	__xuiRichEditSetWidth(pData, iParagraph, tBlock.fContentWidth);
+	__xuiRichEditSetHeight(pData, iParagraph, fmaxf(1.0f, fY +
+		(iParagraph + 1 < pData->iParagraphCount ? pData->fParagraphGap * pData->fZoom : 0.0f)));
+	if ( iAnchor >= 0 ) pData->fScrollY = (float)__xuiRichEditHeightBefore(pData, iAnchor) +
+		fminf(fAnchorOffset, pData->pParagraphs[iAnchor].fAdvance - 1.0f);
+	pData->bCacheDirty = 1;
+	return XUI_OK;
+}
+
+static int __xuiRichEditMaterializeTarget(xui_widget pWidget, xui_rich_edit_data_t* pData, int iOffset)
+{
+	int i = __xuiRichEditParagraphByOffset(pData, iOffset), j, iRet;
+	for ( j = i - 1; j <= i + 1; j++ ) {
+		iRet = __xuiRichEditMaterialize(pWidget, pData, j);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __xuiRichEditPinWidget(xui_widget pWidget, xui_rich_edit_data_t* pData, xui_widget pTarget)
+{
+	const xui_rich_widget_index_t* pEntry;
+	if ( pTarget == NULL || pTarget == pWidget ) return XUI_OK;
+	while ( xuiWidgetGetParent(pTarget) != NULL && xuiWidgetGetParent(pTarget) != pWidget )
+		pTarget = xuiWidgetGetParent(pTarget);
+	pEntry = (const xui_rich_widget_index_t*)xrtMapConstGet(&pData->mapWidgetParagraphs,
+		xuiXrtBytes(&pTarget, sizeof(pTarget)));
+	return pEntry != NULL ? __xuiRichEditMaterialize(pWidget, pData, pEntry->iParagraph) : XUI_OK;
+}
+
+static int __xuiRichEditEnsureLayout(xui_widget pWidget, xui_rich_edit_data_t* pData)
+{
+	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
+	xui_context pContext = pWidget->pContext;
+	float fWidth = fmaxf(1.0f, tContent.fW);
+	int i, iRet, iStart, iEnd;
+	if ( pData->pDocument == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	if ( pData->iLayoutDpiGeneration != pContext->iDpiGeneration ) {
+		__xuiRichEditClearFontCache(pWidget, pData);
+		pData->iLayoutDpiGeneration = pContext->iDpiGeneration;
+		pData->bLayoutDirty = 1;
+	}
+	if ( pData->bLayoutDirty || pData->pIndexDocument != pData->pDocument ||
+	     pData->iLayoutVersion != xuiRichDocumentGetVersion(pData->pDocument) || pData->fLayoutWidth != fWidth ) {
+		iRet = __xuiRichEditBuildParagraphIndex(pWidget, pData, fWidth);
+		if ( iRet != XUI_OK ) { pData->bLayoutDirty = 1; pData->pIndexDocument = NULL; return iRet; }
+	}
+	if ( pData->pCellEditor != NULL ) {
+		int k = pData->iCellLayoutTarget;
+		if ( k < 0 || k >= pData->iParagraphCount || pData->pParagraphs[k].iId != pData->iActiveTableId ) {
+			for ( k = 0; k < pData->iParagraphCount; k++ )
+				if ( pData->pParagraphs[k].iId == pData->iActiveTableId ) break;
+			pData->iCellLayoutTarget = k;
+		}
+	}
+	/* Negative margins lack monotone height order; repeated widgets lack unique ownership. */
+	if ( pData->bNeedsExactLayout && !pData->bExactLayout )
+		return __xuiRichEditEnsureExactLayout(pWidget, pData);
+	if ( pData->bExactLayout || pData->iParagraphCount == 0 ) return XUI_OK;
+	for ( i = 0; i < pData->iBlockCount; i++ ) pData->pBlocks[i].bRetain = 0;
+	/* Corrections above the viewport preserve its paragraph and local pixel offset. */
+	iStart = __xuiRichEditParagraphByY(pData, fmaxf(0.0f, pData->fScrollY - 64.0f));
+	if ( iStart > 0 ) iStart--;
+	for ( i = iStart; i < pData->iParagraphCount; i++ ) {
+		iRet = __xuiRichEditMaterialize(pWidget, pData, i);
+		if ( iRet != XUI_OK ) { __xuiRichEditSyncParagraphCache(pData); return iRet; }
+		if ( __xuiRichEditHeightBefore(pData, i + 1) > pData->fScrollY + tContent.fH + 64.0f ) {
+			iRet = __xuiRichEditMaterialize(pWidget, pData, i + 1);
+			if ( iRet != XUI_OK ) { __xuiRichEditSyncParagraphCache(pData); return iRet; }
+			break;
+		}
+	}
+	iRet = __xuiRichEditMaterializeTarget(pWidget, pData, pData->iLayoutTarget);
+	if ( iRet != XUI_OK ) { __xuiRichEditSyncParagraphCache(pData); return iRet; }
+	{
+		xui_widget arrTargets[] = {pContext->pFocusWidget, pContext->pPointerCaptureWidget,
+			pContext->pActiveWidget, pContext->pDragWidget, pContext->pContextPressWidget,
+			pContext->pDragSource, pContext->pDropTarget};
+		for ( i = 0; i < (int)(sizeof(arrTargets) / sizeof(arrTargets[0])); i++ ) {
+			iRet = __xuiRichEditPinWidget(pWidget, pData, arrTargets[i]);
+			if ( iRet != XUI_OK ) { __xuiRichEditSyncParagraphCache(pData); return iRet; }
+		}
+		for ( i = 0; i < XUI_POINTER_MAX; i++ ) if ( pContext->arrPointerStates[i].bAllocated ) {
+			xui_pointer_state_t* pPointer = &pContext->arrPointerStates[i];
+			xui_widget targets[] = {pPointer->pPointerCaptureWidget, pPointer->pActiveWidget,
+				pPointer->pDragWidget, pPointer->pContextPressWidget};
+			int j;
+			for ( j = 0; j < 4; j++ ) {
+				iRet = __xuiRichEditPinWidget(pWidget, pData, targets[j]);
+				if ( iRet != XUI_OK ) { __xuiRichEditSyncParagraphCache(pData); return iRet; }
+			}
+		}
+	}
+	if ( pData->pCellEditor != NULL ) {
+		int k = pData->iCellLayoutTarget;
+		if ( k < pData->iParagraphCount ) {
+			iRet = __xuiRichEditMaterialize(pWidget, pData, k);
+			if ( iRet != XUI_OK ) { __xuiRichEditSyncParagraphCache(pData); return iRet; }
+		}
+	}
+	for ( i = iEnd = 0; i < pData->iBlockCount; i++ ) {
+		if ( pData->pBlocks[i].bRetain ) pData->pBlocks[iEnd++] = pData->pBlocks[i];
+		else { xrtFree(pData->pBlocks[i].pFragments); pData->bCacheDirty = 1; }
+	}
+	pData->iBlockCount = iEnd;
+	__xuiRichEditSyncParagraphCache(pData);
+	return XUI_OK;
+}
+
+static int __xuiRichEditEnsureOffset(xui_widget pWidget, xui_rich_edit_data_t* pData, int iOffset)
+{
+	int iRet;
+	pData->iLayoutTarget = iOffset;
+	iRet = __xuiRichEditEnsureLayout(pWidget, pData);
+	return iRet;
+}
+
+static int __xuiRichEditEnsureAllLayout(xui_widget pWidget, xui_rich_edit_data_t* pData)
+{
+	int iRet = __xuiRichEditEnsureLayout(pWidget, pData);
+	int i;
+	if ( iRet != XUI_OK || pData->bExactLayout ) return iRet;
+	/* Public fragment enumeration explicitly requests exact global geometry and ordinals. */
+	for ( i = 0; i < pData->iParagraphCount; i++ ) {
+		iRet = __xuiRichEditMaterialize(pWidget, pData, i);
+		if ( iRet != XUI_OK ) { __xuiRichEditSyncParagraphCache(pData); return iRet; }
+	}
+	__xuiRichEditSyncParagraphCache(pData);
+	pData->bExactLayout = 1;
+	return XUI_OK;
+}
+
+static int __xuiRichEditEnsurePoint(xui_widget pWidget, xui_rich_edit_data_t* pData, float fLocalY)
+{
+	int iRet = __xuiRichEditEnsureLayout(pWidget, pData);
+	int i;
+	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
+	if ( iRet != XUI_OK || pData->bExactLayout || pData->iParagraphCount == 0 ) return iRet;
+	i = __xuiRichEditParagraphByY(pData, fLocalY - tContent.fY + pData->fScrollY);
+	pData->iLayoutTarget = pData->pParagraphs[i].iStart;
+	iRet = __xuiRichEditMaterializeTarget(pWidget, pData, pData->iLayoutTarget);
+	__xuiRichEditSyncParagraphCache(pData);
+	return iRet;
 }
 
 static int __xuiRichEditUpdateScrollModel(xui_widget pWidget, xui_rich_edit_data_t* pData)
@@ -1478,62 +1794,68 @@ static int __xuiRichEditUpdateScrollModel(xui_widget pWidget, xui_rich_edit_data
 	return XUI_OK;
 }
 
-static int __xuiRichEditCollectWidgets(xui_rich_edit_data_t* pData, xui_rich_node pNode)
+static int __xuiRichEditWidgetContains(xui_widget pRoot, xui_widget pTarget)
 {
-	xui_rich_node pChild;
-	for ( pChild = xuiRichNodeGetFirstChild(pNode); pChild != NULL; pChild = xuiRichNodeGetNextSibling(pChild) ) {
-		xui_rich_node_info_t tInfo = {0};
-		int iRet;
-		XUI_RICH_EDIT_AUDIT_STEP(WidgetNode);
-		iRet = xuiRichNodeGetInfo(pChild, &tInfo);
-		if ( iRet != XUI_OK ) return iRet;
-		if ( tInfo.iType == XUI_RICH_NODE_INLINE_WIDGET && tInfo.pWidget != NULL ) {
-			iRet = __xuiRichEditReserve((void**)&pData->pWidgets, &pData->iWidgetCapacity,
-				pData->iWidgetCount + 1, sizeof(*pData->pWidgets));
-			if ( iRet != XUI_OK ) return iRet;
-			pData->pWidgets[pData->iWidgetCount++] = tInfo.pWidget;
-		}
-		iRet = __xuiRichEditCollectWidgets(pData, pChild);
-		if ( iRet != XUI_OK ) return iRet;
+	for ( ; pTarget != NULL; pTarget = xuiWidgetGetParent(pTarget) )
+		if ( pTarget == pRoot ) return 1;
+	return 0;
+}
+
+static int __xuiRichEditWidgetPinned(xui_widget pWidget, xui_widget pEmbedded)
+{
+	xui_context c = pWidget->pContext;
+	int i;
+	xui_widget targets[] = {c->pFocusWidget, c->pPointerCaptureWidget, c->pActiveWidget,
+		c->pDragWidget, c->pContextPressWidget, c->pDragSource, c->pDropTarget};
+	for ( i = 0; i < (int)(sizeof(targets) / sizeof(targets[0])); i++ )
+		if ( __xuiRichEditWidgetContains(pEmbedded, targets[i]) ) return 1;
+	for ( i = 0; i < XUI_POINTER_MAX; i++ ) if ( c->arrPointerStates[i].bAllocated ) {
+		xui_pointer_state_t* p = &c->arrPointerStates[i];
+		if ( __xuiRichEditWidgetContains(pEmbedded, p->pPointerCaptureWidget) ||
+		     __xuiRichEditWidgetContains(pEmbedded, p->pActiveWidget) ||
+		     __xuiRichEditWidgetContains(pEmbedded, p->pDragWidget) ||
+		     __xuiRichEditWidgetContains(pEmbedded, p->pContextPressWidget) ) return 1;
 	}
-	return XUI_OK;
+	return 0;
 }
 
 static int __xuiRichEditSyncWidgets(xui_widget pWidget, xui_rich_edit_data_t* pData,
 	xui_rich_document pDocument, int bAttach)
 {
-	xui_rich_node pRoot = pDocument != NULL ? xuiRichDocumentGetRoot(pDocument) : NULL;
 	xui_widget pChild, pNext;
-	int i, iRet;
-	if ( pRoot == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->pWidgetDocument != pDocument || pData->iWidgetVersion != xuiRichDocumentGetVersion(pDocument) ) {
-		pData->pWidgetDocument = NULL;
-		pData->iWidgetCount = 0;
-		iRet = __xuiRichEditCollectWidgets(pData, pRoot);
-		if ( iRet != XUI_OK ) return iRet;
-		pData->pWidgetDocument = pDocument;
-		pData->iWidgetVersion = xuiRichDocumentGetVersion(pDocument);
-	}
-	/* Keep ownership and offscreen focus semantics; cache membership, not visibility. */
-	for ( i = 0; i < pData->iWidgetCount; i++ ) {
-		xui_widget pEmbedded = pData->pWidgets[i];
-		xui_widget pParent = xuiWidgetGetParent(pEmbedded);
-		if ( bAttach ) {
-			if ( pParent == NULL ) {
-				iRet = xuiWidgetAddChild(pWidget, pEmbedded);
+	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
+	int i, j, iFirst, iLast, iRet;
+	(void)pDocument;
+	pData->iWidgetPass++;
+	if ( bAttach ) {
+		__xuiRichEditVisibleBlocks(pData, pData->fScrollY - 65.0f,
+			pData->fScrollY + tContent.fH + 65.0f, &iFirst, &iLast);
+		for ( j = iFirst; j < iLast; j++ ) for ( i = 0; i < pData->pBlocks[j].iWidgetCount; i++ ) {
+			xui_rich_layout_fragment_t tFragment;
+			xui_rich_node_info_t tInfo = {0};
+			xui_rich_widget_index_t* pEntry;
+			__xuiRichEditGetBlockFragment(&pData->pBlocks[j], pData->pBlocks[j].pWidgetFragments[i], &tFragment);
+			if ( tFragment.tPublic.tRect.fY + tFragment.tPublic.tRect.fH < pData->fScrollY - 65.0f ||
+			     tFragment.tPublic.tRect.fY > pData->fScrollY + tContent.fH + 65.0f ) continue;
+			if ( xuiRichNodeGetInfo(tFragment.pNode, &tInfo) != XUI_OK || tInfo.pWidget == NULL ) continue;
+			pEntry = (xui_rich_widget_index_t*)xrtMapGet(&pData->mapWidgetParagraphs,
+				xuiXrtBytes(&tInfo.pWidget, sizeof(tInfo.pWidget)));
+			if ( pEntry == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+			pEntry->iWanted = pData->iWidgetPass;
+			if ( xuiWidgetGetParent(tInfo.pWidget) == NULL ) {
+				iRet = xuiWidgetAddChild(pWidget, tInfo.pWidget);
 				if ( iRet != XUI_OK ) return iRet;
-			} else if ( pParent != pWidget ) return XUI_ERROR_INVALID_ARGUMENT;
-		} else if ( pParent == pWidget ) {
-			iRet = xuiWidgetRemoveFromParent(pEmbedded);
-			if ( iRet != XUI_OK ) return iRet;
+			} else if ( xuiWidgetGetParent(tInfo.pWidget) != pWidget ) return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
-	if ( !bAttach ) return XUI_OK;
 	for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = pNext ) {
+		const xui_rich_widget_index_t* pEntry;
 		pNext = xuiWidgetGetNextSibling(pChild);
 		if ( pChild == pData->pCellEditor || pChild == pData->pHScrollBar || pChild == pData->pVScrollBar ) continue;
-		for ( i = 0; i < pData->iWidgetCount && pData->pWidgets[i] != pChild; i++ ) {}
-		if ( i == pData->iWidgetCount ) {
+		pEntry = (const xui_rich_widget_index_t*)xrtMapConstGet(&pData->mapWidgetParagraphs,
+			xuiXrtBytes(&pChild, sizeof(pChild)));
+		if ( !bAttach || pEntry == NULL ||
+		     (pEntry->iWanted != pData->iWidgetPass && !__xuiRichEditWidgetPinned(pWidget, pChild)) ) {
 			iRet = xuiWidgetRemoveFromParent(pChild);
 			if ( iRet != XUI_OK ) return iRet;
 		}
@@ -1544,21 +1866,20 @@ static int __xuiRichEditSyncWidgets(xui_widget pWidget, xui_rich_edit_data_t* pD
 static xui_rect_t __xuiRichEditFragmentRect(xui_widget pWidget, xui_rich_edit_data_t* pData, const xui_rich_layout_fragment_t* pFragment)
 {
 	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	xui_rect_t tRect = pFragment->tPublic.tRect;
-	tRect.fX += tContent.fX - pData->fScrollX;
-	tRect.fY += tContent.fY - pData->fScrollY;
-	return tRect;
+	return __xuiRichEditPixelRect(pFragment->tEdges, (double)tContent.fX - pData->fScrollX,
+		(double)tContent.fY - pData->fScrollY);
 }
 
 static xui_rect_t __xuiRichEditCaret(xui_widget pWidget, xui_rich_edit_data_t* pData, int iOffset)
 {
 	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	xui_rect_t tRect = {tContent.fX - pData->fScrollX, tContent.fY - pData->fScrollY, 1.0f, 16.0f};
+	xui_rect_t tRect = __xuiRichEditPixelRect((xui_rich_edges_t){0, 0, 1, 16},
+		(double)tContent.fX - pData->fScrollX, (double)tContent.fY - pData->fScrollY);
 	xui_rich_layout_fragment_t tFragment;
 	xui_rich_block_layout_t* pBlock;
 	int iBlock;
 	int i, iHigh;
-	if ( __xuiRichEditEnsureLayout(pWidget, pData) != XUI_OK ) return tRect;
+	if ( __xuiRichEditEnsureOffset(pWidget, pData, iOffset) != XUI_OK ) return tRect;
 	if ( pData->iBlockCount <= 0 ) return tRect;
 	iBlock = __xuiRichEditFindBlockByOffset(pData, iOffset);
 	if ( iBlock < 0 ) return tRect;
@@ -1595,20 +1916,20 @@ static xui_rect_t __xuiRichEditCaret(xui_widget pWidget, xui_rich_edit_data_t* p
 static int __xuiRichEditHit(xui_widget pWidget, xui_rich_edit_data_t* pData, float fLocalX, float fLocalY)
 {
 	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	float fX = fLocalX - tContent.fX + pData->fScrollX;
-	float fY = fLocalY - tContent.fY + pData->fScrollY;
+	double fScreenY;
 	int iLineStart;
 	int iLineEnd;
 	int i;
 	int iBest;
 	float fBest;
 	xui_rich_layout_fragment_t tFragment;
-	if ( __xuiRichEditEnsureLayout(pWidget, pData) != XUI_OK ) return 0;
+	if ( __xuiRichEditEnsurePoint(pWidget, pData, fLocalY) != XUI_OK ) return 0;
+	fScreenY = (double)tContent.fY - pData->fScrollY;
 	if ( pData->iTotalFragmentCount == 0 || __xuiRichEditGetLayoutFragment(pData, 0, &tFragment) != XUI_OK ) return 0;
 
-	if ( fY < pData->fFragmentTop ) return 0;
-	if ( fY > pData->fFragmentBottom ) return xuiRichDocumentGetLength(pData->pDocument);
-	__xuiRichEditHitLine(pData, fY, &iLineStart, &iLineEnd);
+	if ( fLocalY < __xuiRichEditPixel(pData->fFragmentTop + fScreenY) ) return 0;
+	if ( fLocalY > __xuiRichEditPixel(pData->fFragmentBottom + fScreenY) ) return xuiRichDocumentGetLength(pData->pDocument);
+	__xuiRichEditHitLine(pData, fLocalY, fScreenY, &iLineStart, &iLineEnd);
 
 	/* Every fragment contributes a leading and trailing caret stop. */
 	(void)__xuiRichEditGetLayoutFragment(pData, iLineStart, &tFragment);
@@ -1617,13 +1938,13 @@ static int __xuiRichEditHit(xui_widget pWidget, xui_rich_edit_data_t* pData, flo
 	for ( i = iLineStart; i < iLineEnd; i++ ) {
 		xui_rect_t tRect;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, &tFragment);
-		tRect = tFragment.tPublic.tRect;
-		float fDistance = fX >= tRect.fX ? fX - tRect.fX : tRect.fX - fX;
+		tRect = __xuiRichEditFragmentRect(pWidget, pData, &tFragment);
+		float fDistance = fabsf(fLocalX - tRect.fX);
 		if ( fDistance < fBest ) {
 			fBest = fDistance;
 			iBest = tFragment.tPublic.iDocumentStart;
 		}
-		fDistance = fX >= tRect.fX + tRect.fW ? fX - tRect.fX - tRect.fW : tRect.fX + tRect.fW - fX;
+		fDistance = fabsf(fLocalX - (tRect.fX + tRect.fW));
 		if ( fDistance <= fBest ) {
 			fBest = fDistance;
 			iBest = tFragment.tPublic.iDocumentEnd;
@@ -1636,18 +1957,18 @@ static xui_rich_node __xuiRichEditLinkAt(xui_widget pWidget, xui_rich_edit_data_
 	float fLocalX, float fLocalY)
 {
 	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	float fX = fLocalX - tContent.fX + pData->fScrollX;
 	float fY = fLocalY - tContent.fY + pData->fScrollY;
 	xui_rich_layout_fragment_t tFragment;
 	int i, iFirst, iLast;
-	if ( __xuiRichEditEnsureLayout(pWidget, pData) != XUI_OK ) return NULL;
-	__xuiRichEditVisibleFragments(pData, fY, fY, &iFirst, &iLast);
+	if ( __xuiRichEditEnsurePoint(pWidget, pData, fLocalY) != XUI_OK ) return NULL;
+	fY = fLocalY - tContent.fY + pData->fScrollY;
+	__xuiRichEditVisibleFragments(pData, fY - 1.0, fY + 1.0, &iFirst, &iLast);
 	for ( i = iFirst; i < iLast; i++ ) {
 		xui_rich_layout_fragment_t* pFragment = &tFragment;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, pFragment);
-		xui_rect_t tRect = pFragment->tPublic.tRect;
-		if ( pFragment->tPublic.iNodeType == XUI_RICH_NODE_LINK && fX >= tRect.fX &&
-		     fX <= tRect.fX + tRect.fW && fY >= tRect.fY && fY <= tRect.fY + tRect.fH ) return pFragment->pNode;
+		xui_rect_t tRect = __xuiRichEditFragmentRect(pWidget, pData, pFragment);
+		if ( pFragment->tPublic.iNodeType == XUI_RICH_NODE_LINK && fLocalX >= tRect.fX &&
+		     fLocalX <= tRect.fX + tRect.fW && fLocalY >= tRect.fY && fLocalY <= tRect.fY + tRect.fH ) return pFragment->pNode;
 	}
 	return NULL;
 }
@@ -1656,20 +1977,20 @@ static int __xuiRichEditAtomicAt(xui_widget pWidget, xui_rich_edit_data_t* pData
 	float fLocalX, float fLocalY, int* pStart, int* pEnd, xui_rich_node* ppNode)
 {
 	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	float fX = fLocalX - tContent.fX + pData->fScrollX;
 	float fY = fLocalY - tContent.fY + pData->fScrollY;
 	xui_rich_layout_fragment_t tFragment;
 	int i, iFirst, iLast;
-	if ( __xuiRichEditEnsureLayout(pWidget, pData) != XUI_OK ) return 0;
-	__xuiRichEditVisibleFragments(pData, fY, fY, &iFirst, &iLast);
+	if ( __xuiRichEditEnsurePoint(pWidget, pData, fLocalY) != XUI_OK ) return 0;
+	fY = fLocalY - tContent.fY + pData->fScrollY;
+	__xuiRichEditVisibleFragments(pData, fY - 1.0, fY + 1.0, &iFirst, &iLast);
 	for ( i = iFirst; i < iLast; i++ ) {
 		xui_rect_t tRect;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, &tFragment);
 		if ( tFragment.tPublic.iNodeType == XUI_RICH_NODE_TEXT ||
 		     tFragment.tPublic.iNodeType == XUI_RICH_NODE_LINK ) continue;
-		tRect = tFragment.tPublic.tRect;
-		if ( fX >= tRect.fX && fX <= tRect.fX + tRect.fW &&
-		     fY >= tRect.fY && fY <= tRect.fY + tRect.fH ) {
+		tRect = __xuiRichEditFragmentRect(pWidget, pData, &tFragment);
+		if ( fLocalX >= tRect.fX && fLocalX <= tRect.fX + tRect.fW &&
+		     fLocalY >= tRect.fY && fLocalY <= tRect.fY + tRect.fH ) {
 			if ( pStart != NULL ) *pStart = tFragment.tPublic.iDocumentStart;
 			if ( pEnd != NULL ) *pEnd = tFragment.tPublic.iDocumentEnd;
 			if ( ppNode != NULL ) *ppNode = tFragment.pNode;
@@ -1791,11 +2112,7 @@ static void __xuiRichEditDocumentChanged(xui_rich_document pDocument, const xui_
 {
 	xui_widget pWidget = (xui_widget)pUser;
 	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
-	xui_rich_node pChangedNode;
-	xui_rich_node_info_t tNodeInfo;
-	xui_rich_node pBlockNode = NULL;
 	int iLength;
-	int i;
 	(void)pDocument;
 	if ( pData == NULL ) return;
 	if ( !pData->bUpdatingFind ) __xuiRichEditClearFindData(pData);
@@ -1806,34 +2123,6 @@ static void __xuiRichEditDocumentChanged(xui_rich_document pDocument, const xui_
 	iLength = xuiRichDocumentGetLength(pData->pDocument);
 	if ( pData->iAnchor > iLength ) pData->iAnchor = iLength;
 	if ( pData->iCaret > iLength ) pData->iCaret = iLength;
-	pData->bIncrementalLayout = 0;
-	if ( pChange != NULL && pData->iBlockCount > 0 && pChange->iKind != XUI_RICH_CHANGE_RESET &&
-	     (pChange->iFlags & XUI_RICH_CHANGE_GEOMETRY) != 0 &&
-	     (pChange->iFlags & XUI_RICH_CHANGE_STRUCTURE) != 0 ) {
-		int iStartBlock = __xuiRichEditFindBlockByOffset(pData, pChange->iOldStart);
-		int iEndProbe = pChange->iOldEnd > pChange->iOldStart ? pChange->iOldEnd - 1 : pChange->iOldStart;
-		int iEndBlock = __xuiRichEditFindBlockByOffset(pData, iEndProbe);
-		if ( iStartBlock >= 0 && iEndBlock >= iStartBlock ) {
-			pData->bIncrementalLayout = 1;
-			pData->iDirtyBlock = iStartBlock;
-			pData->iDirtyBlockEnd = iEndBlock;
-			pData->tLayoutChange = *pChange;
-		}
-	} else if ( pChange != NULL && pData->iBlockCount > 0 &&
-	     (pChange->iFlags & XUI_RICH_CHANGE_STRUCTURE) == 0 &&
-	     (pChange->iFlags & XUI_RICH_CHANGE_GEOMETRY) != 0 && pChange->iNodeId != 0 ) {
-		pChangedNode = xuiRichDocumentFindNode(pData->pDocument, pChange->iNodeId);
-		memset(&tNodeInfo, 0, sizeof(tNodeInfo)); tNodeInfo.iSize = sizeof(tNodeInfo);
-		if ( pChangedNode != NULL && xuiRichNodeGetInfo(pChangedNode, &tNodeInfo) == XUI_OK && tNodeInfo.iParentId != 0 )
-			pBlockNode = xuiRichDocumentFindNode(pData->pDocument, tNodeInfo.iParentId);
-		for ( i = 0; pBlockNode != NULL && i < pData->iBlockCount; i++ ) if ( pData->pBlocks[i].pNode == pBlockNode ) {
-			pData->bIncrementalLayout = 1;
-			pData->iDirtyBlock = i;
-			pData->iDirtyBlockEnd = i;
-			pData->tLayoutChange = *pChange;
-			break;
-		}
-	}
 	pData->bLayoutDirty = 1;
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	(void)xuiWidgetNotifyAccessibility(pWidget,
@@ -1851,19 +2140,48 @@ static int __xuiRichEditDrawRect(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 	return (iColor & 0xffu) != 0 && pProxy->drawRectFill != NULL ? pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), iColor) : XUI_OK;
 }
 
-static xui_rect_t __xuiRichEditBlockRect(xui_widget pWidget, xui_rich_edit_data_t* pData, xui_rect_t tRect)
+static xui_rect_t __xuiRichEditBlockEdgesRect(xui_widget pWidget, xui_rich_edit_data_t* pData,
+	const xui_rich_block_layout_t* pBlock, xui_rich_edges_t tEdges)
 {
 	xui_rect_t tContent = __xuiRichEditContentRect(pWidget, pData);
-	tRect.fX += tContent.fX - pData->fScrollX;
-	tRect.fY += tContent.fY - pData->fScrollY;
-	return tRect;
+	tEdges.fTop += pBlock->fParagraphY;
+	tEdges.fBottom += pBlock->fParagraphY;
+	return __xuiRichEditPixelRect(tEdges, (double)tContent.fX - pData->fScrollX,
+		(double)tContent.fY - pData->fScrollY);
+}
+
+static xui_rect_t __xuiRichEditBlockRect(xui_widget pWidget, xui_rich_edit_data_t* pData,
+	const xui_rich_block_layout_t* pBlock)
+{
+	return __xuiRichEditBlockEdgesRect(pWidget, pData, pBlock, pBlock->tEdges);
+}
+
+static xui_rect_t __xuiRichEditCellRect(xui_widget pWidget, xui_rich_edit_data_t* pData,
+	const xui_rich_block_layout_t* pBlock, const xui_rich_node_info_t* pInfo, int iRow, int iColumn, double fPadding)
+{
+	xui_rich_edges_t tEdges = pBlock->tEdges;
+	double fW = tEdges.fRight - tEdges.fLeft, fH = tEdges.fBottom - tEdges.fTop;
+	tEdges.fRight = tEdges.fLeft + fW * (iColumn + 1) / pInfo->iColumns - fPadding;
+	tEdges.fBottom = tEdges.fTop + fH * (iRow + 1) / pInfo->iRows - fPadding;
+	tEdges.fLeft += fW * iColumn / pInfo->iColumns + fPadding;
+	tEdges.fTop += fH * iRow / pInfo->iRows + fPadding;
+	return __xuiRichEditBlockEdgesRect(pWidget, pData, pBlock, tEdges);
+}
+
+static xui_rect_t __xuiRichEditMarkerRect(xui_widget pWidget, xui_rich_edit_data_t* pData,
+	const xui_rich_block_layout_t* pBlock, const xui_rich_node_info_t* pInfo)
+{
+	xui_rich_edges_t tEdges = pBlock->tEdges;
+	tEdges.fLeft += pInfo->tParagraphStyle.fIndentLeft * pData->fZoom;
+	tEdges.fRight = tEdges.fLeft + 22.0f * pData->fZoom;
+	return __xuiRichEditBlockEdgesRect(pWidget, pData, pBlock, tEdges);
 }
 
 static int __xuiRichEditTableCellAt(xui_widget pWidget, xui_rich_edit_data_t* pData,
 	float fLocalX, float fLocalY, xui_rich_node* ppTable, int* pRow, int* pColumn, xui_rect_t* pCellRect)
 {
 	int i;
-	if ( __xuiRichEditEnsureLayout(pWidget, pData) != XUI_OK ) return 0;
+	if ( __xuiRichEditEnsurePoint(pWidget, pData, fLocalY) != XUI_OK ) return 0;
 	for ( i = 0; i < pData->iBlockCount; i++ ) {
 		xui_rich_block_layout_t* pBlock = &pData->pBlocks[i];
 		xui_rich_node_info_t tInfo;
@@ -1871,22 +2189,30 @@ static int __xuiRichEditTableCellAt(xui_widget pWidget, xui_rich_edit_data_t* pD
 		int iRow;
 		int iColumn;
 		if ( pBlock->iType != XUI_RICH_NODE_TABLE ) continue;
-		tRect = __xuiRichEditBlockRect(pWidget, pData, pBlock->tRect);
+		tRect = __xuiRichEditBlockRect(pWidget, pData, pBlock);
 		if ( fLocalX < tRect.fX || fLocalX >= tRect.fX + tRect.fW ||
 		     fLocalY < tRect.fY || fLocalY >= tRect.fY + tRect.fH ) continue;
 		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
 		if ( xuiRichNodeGetInfo(pBlock->pNode, &tInfo) != XUI_OK || tInfo.iRows <= 0 || tInfo.iColumns <= 0 ) return 0;
-		iColumn = (int)((fLocalX - tRect.fX) * (float)tInfo.iColumns / tRect.fW);
-		iRow = (int)((fLocalY - tRect.fY) * (float)tInfo.iRows / tRect.fH);
-		if ( iColumn >= tInfo.iColumns ) iColumn = tInfo.iColumns - 1;
-		if ( iRow >= tInfo.iRows ) iRow = tInfo.iRows - 1;
+		{
+			int lo = 0, hi = tInfo.iColumns - 1;
+			while ( lo < hi ) {
+				int m = lo + (hi - lo) / 2;
+				xui_rect_t tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, 0, m, 0.0);
+				if ( fLocalX >= tCell.fX + tCell.fW ) lo = m + 1; else hi = m;
+			}
+			iColumn = lo; lo = 0; hi = tInfo.iRows - 1;
+			while ( lo < hi ) {
+				int m = lo + (hi - lo) / 2;
+				xui_rect_t tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, m, iColumn, 0.0);
+				if ( fLocalY >= tCell.fY + tCell.fH ) lo = m + 1; else hi = m;
+			}
+			iRow = lo;
+		}
 		if ( ppTable != NULL ) *ppTable = pBlock->pNode;
 		if ( pRow != NULL ) *pRow = iRow;
 		if ( pColumn != NULL ) *pColumn = iColumn;
-		if ( pCellRect != NULL ) *pCellRect = (xui_rect_t){
-			tRect.fX + tRect.fW * (float)iColumn / (float)tInfo.iColumns,
-			tRect.fY + tRect.fH * (float)iRow / (float)tInfo.iRows,
-			tRect.fW / (float)tInfo.iColumns, tRect.fH / (float)tInfo.iRows};
+		if ( pCellRect != NULL ) *pCellRect = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, iRow, iColumn, 0.0);
 		return 1;
 	}
 	return 0;
@@ -1903,7 +2229,7 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 		XUI_RICH_EDIT_AUDIT_STEP(RenderBlock);
 		xui_rich_block_layout_t* pBlock = &pData->pBlocks[i];
 		xui_rich_node_info_t tInfo;
-		xui_rect_t tRect = __xuiRichEditBlockRect(pWidget, pData, pBlock->tRect);
+		xui_rect_t tRect = __xuiRichEditBlockRect(pWidget, pData, pBlock);
 		if ( tRect.fY + tRect.fH < tContent.fY || tRect.fY > tContent.fY + tContent.fH ) continue;
 		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
 		if ( xuiRichNodeGetInfo(pBlock->pNode, &tInfo) != XUI_OK ) continue;
@@ -1922,8 +2248,7 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 			else strcpy(sMarker, "\xe2\x80\xa2");
 			(void)pProxy->drawText(pProxy, pDraw,
 				__xuiRichEditSizedFont(pWidget, pData, pData->pFont, 0.0f), sMarker,
-				(xui_rect_t){tRect.fX + tInfo.tParagraphStyle.fIndentLeft * pData->fZoom,
-					tRect.fY, 22.0f * pData->fZoom, tRect.fH},
+				__xuiRichEditMarkerRect(pWidget, pData, pBlock, &tInfo),
 				pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		} else iListNumber = 0;
 		if ( tInfo.iType == XUI_RICH_NODE_IMAGE ) {
@@ -1942,12 +2267,10 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 					XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		} else if ( tInfo.iType == XUI_RICH_NODE_TABLE ) {
-			float fCellW = tInfo.iColumns > 0 ? tRect.fW / (float)tInfo.iColumns : tRect.fW;
-			float fCellH = tInfo.iRows > 0 ? tRect.fH / (float)tInfo.iRows : tRect.fH;
 			uint32_t iBorder = (tInfo.iBorderColor & 0xffu) != 0 ? tInfo.iBorderColor : XUI_COLOR_RGBA(170,180,192,255);
 			int r, c;
 			for ( r = 0; r < tInfo.iRows; r++ ) for ( c = 0; c < tInfo.iColumns; c++ ) {
-				xui_rect_t tCell = {tRect.fX + fCellW * c, tRect.fY + fCellH * r, fCellW, fCellH};
+				xui_rect_t tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, r, c, 0.0);
 				uint32_t iCell = r == 0 ? tInfo.iHeaderColor : tInfo.iCellColor;
 				xui_rich_text_style_t tCellStyle;
 				const char* sCell = xuiRichTableGetCellText(pBlock->pNode, r, c);
@@ -1959,9 +2282,7 @@ static int __xuiRichEditRenderBlocks(xui_widget pWidget, xui_rich_edit_data_t* p
 				if ( sCell != NULL && pProxy->drawText != NULL ) {
 					xui_font pCellFont = __xuiRichEditSizedFont(pWidget, pData,
 						tCellStyle.pFont != NULL ? tCellStyle.pFont : pData->pFont, tCellStyle.fFontSize);
-					tCell.fX += tInfo.fCellPadding * pData->fZoom; tCell.fY += tInfo.fCellPadding * pData->fZoom;
-					tCell.fW -= tInfo.fCellPadding * pData->fZoom * 2.0f;
-					tCell.fH -= tInfo.fCellPadding * pData->fZoom * 2.0f;
+					tCell = __xuiRichEditCellRect(pWidget, pData, pBlock, &tInfo, r, c, tInfo.fCellPadding * pData->fZoom);
 					(void)pProxy->drawText(pProxy, pDraw,
 						pCellFont != NULL ? pCellFont : pData->pFont, sCell, tCell,
 						(tCellStyle.iTextColor & 0xffu) != 0 ? tCellStyle.iTextColor : pData->iTextColor,
@@ -2103,40 +2424,37 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 static int __xuiRichEditArrangeChildren(xui_widget pWidget, xui_rect_t tContent, void* pUser)
 {
 	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
-	xui_rich_node_info_t tInfo;
 	xui_rich_layout_fragment_t tFragment;
-	xui_rect_t tEditorContent;
 	int i, j;
 	(void)tContent; (void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( __xuiRichEditUpdateScrollModel(pWidget, pData) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
-	tEditorContent = __xuiRichEditContentRect(pWidget, pData);
-	for ( j = pData->iFirstWidgetBlock; j >= 0; j = pData->pBlocks[j].iNextWidgetBlock )
-	for ( i = 0; i < pData->pBlocks[j].iWidgetCount; i++ ) {
-		xui_rich_layout_fragment_t* pFragment = &tFragment;
-		XUI_RICH_EDIT_AUDIT_STEP(ArrangeWidget);
-		__xuiRichEditGetBlockFragment(&pData->pBlocks[j], pData->pBlocks[j].pWidgetFragments[i], pFragment);
-		xui_rect_t tRect;
-		if ( pFragment->tPublic.iNodeType != XUI_RICH_NODE_INLINE_WIDGET ) continue;
-		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
-		if ( xuiRichNodeGetInfo(pFragment->pNode, &tInfo) != XUI_OK || tInfo.pWidget == NULL ) continue;
-		if ( xuiWidgetGetParent(tInfo.pWidget) != pWidget ) continue;
-		tRect = pFragment->tPublic.tRect;
-		tRect.fX += tEditorContent.fX - pData->fScrollX;
-		tRect.fY += tEditorContent.fY - pData->fScrollY;
-		if ( xuiLayoutArrangeChild(pWidget, tInfo.pWidget, tRect) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	{
+		xui_widget pChild;
+		for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
+			const xui_rich_widget_index_t* pEntry = (const xui_rich_widget_index_t*)xrtMapConstGet(
+				&pData->mapWidgetParagraphs, xuiXrtBytes(&pChild, sizeof(pChild)));
+			xui_rect_t tRect;
+			if ( pEntry == NULL ) continue;
+			j = __xuiRichEditFindBlockByOffset(pData, pData->pParagraphs[pEntry->iParagraph].iStart);
+			if ( j < 0 || pData->pBlocks[j].iParagraph != pEntry->iParagraph ||
+			     pEntry->iFragment < 0 || pEntry->iFragment >= pData->pBlocks[j].iFragmentCount ) continue;
+			XUI_RICH_EDIT_AUDIT_STEP(ArrangeWidget);
+			__xuiRichEditGetBlockFragment(&pData->pBlocks[j], pEntry->iFragment, &tFragment);
+			tRect = __xuiRichEditFragmentRect(pWidget, pData, &tFragment);
+			if ( xuiLayoutArrangeChild(pWidget, pChild, tRect) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+		}
 	}
 	if ( pData->pCellEditor != NULL ) {
-		xui_rich_node pTable = xuiRichDocumentFindNode(pData->pDocument, pData->iActiveTableId);
+		int k = pData->iCellLayoutTarget;
+		xui_rich_node pTable = k >= 0 && k < pData->iParagraphCount ? pData->pParagraphs[k].pNode : NULL;
 		xui_rich_node_info_t tTableInfo;
 		for ( i = 0; pTable != NULL && i < pData->iBlockCount; i++ ) if ( pData->pBlocks[i].pNode == pTable ) {
-			xui_rect_t tRect = __xuiRichEditBlockRect(pWidget, pData, pData->pBlocks[i].tRect);
+			xui_rect_t tRect;
 			memset(&tTableInfo, 0, sizeof(tTableInfo)); tTableInfo.iSize = sizeof(tTableInfo);
 			if ( xuiRichNodeGetInfo(pTable, &tTableInfo) != XUI_OK || tTableInfo.iRows <= 0 || tTableInfo.iColumns <= 0 ) break;
-			tRect.fX += tRect.fW * (float)pData->iActiveCellColumn / (float)tTableInfo.iColumns;
-			tRect.fY += tRect.fH * (float)pData->iActiveCellRow / (float)tTableInfo.iRows;
-			tRect.fW /= (float)tTableInfo.iColumns;
-			tRect.fH /= (float)tTableInfo.iRows;
+			tRect = __xuiRichEditCellRect(pWidget, pData, &pData->pBlocks[i], &tTableInfo,
+				pData->iActiveCellRow, pData->iActiveCellColumn, 0.0);
 			if ( xuiLayoutArrangeChild(pWidget, pData->pCellEditor, tRect) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 			break;
 		}
@@ -2149,9 +2467,9 @@ static int __xuiRichEditPrepareLayout(xui_widget pWidget, void* pUser)
 	xui_rich_edit_data_t* pData = (xui_rich_edit_data_t*)pUser;
 	int iRet;
 	if ( pData == NULL || pData->pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiRichEditSyncWidgets(pWidget, pData, pData->pDocument, 1);
+	iRet = __xuiRichEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	return __xuiRichEditUpdateScrollModel(pWidget, pData);
+	return __xuiRichEditSyncWidgets(pWidget, pData, pData->pDocument, 1);
 }
 
 static int __xuiRichEditMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -2259,7 +2577,7 @@ static void __xuiRichEditLineBounds(xui_widget pWidget, xui_rich_edit_data_t* pD
 	int iLine = 0;
 	int i;
 	*pStart = *pEnd = pData->iCaret;
-	(void)__xuiRichEditEnsureLayout(pWidget, pData);
+	if ( __xuiRichEditEnsureOffset(pWidget, pData, pData->iCaret) != XUI_OK ) return;
 	for ( i = 0; i < pData->iTotalFragmentCount; i++ ) {
 		(void)__xuiRichEditGetLayoutFragment(pData, i, &tFragment);
 		if ( pData->iCaret >= tFragment.tPublic.iDocumentStart && pData->iCaret <= tFragment.tPublic.iDocumentEnd ) { iLine = tFragment.tPublic.iLine; break; }
@@ -2427,7 +2745,7 @@ static int __xuiRichEditToggleCheckAt(xui_widget pWidget, xui_rich_edit_data_t* 
 	float fLocalX, float fLocalY)
 {
 	int i;
-	if ( pData->bReadonly || __xuiRichEditEnsureLayout(pWidget, pData) != XUI_OK ) return 0;
+	if ( pData->bReadonly || __xuiRichEditEnsurePoint(pWidget, pData, fLocalY) != XUI_OK ) return 0;
 	for ( i = 0; i < pData->iBlockCount; i++ ) {
 		xui_rich_block_layout_t* pBlock = &pData->pBlocks[i];
 		xui_rich_node_info_t tInfo;
@@ -2439,10 +2757,9 @@ static int __xuiRichEditToggleCheckAt(xui_widget pWidget, xui_rich_edit_data_t* 
 		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
 		if ( xuiRichNodeGetInfo(pBlock->pNode, &tInfo) != XUI_OK ||
 		     tInfo.tParagraphStyle.iListType != XUI_RICH_LIST_CHECK ) continue;
-		tRect = __xuiRichEditBlockRect(pWidget, pData, pBlock->tRect);
+		tRect = __xuiRichEditMarkerRect(pWidget, pData, pBlock, &tInfo);
 		if ( fLocalY < tRect.fY || fLocalY >= tRect.fY + tRect.fH ||
-		     fLocalX < tRect.fX + tInfo.tParagraphStyle.fIndentLeft * pData->fZoom ||
-		     fLocalX >= tRect.fX + (tInfo.tParagraphStyle.fIndentLeft + 22.0f) * pData->fZoom ) continue;
+		     fLocalX < tRect.fX || fLocalX >= tRect.fX + tRect.fW ) continue;
 		if ( __xuiRichEditBlockRange(pData, pBlock->pNode, &iStart, &iEnd) != XUI_OK ) return 0;
 		tStyle = tInfo.tParagraphStyle; tStyle.iSize = sizeof(tStyle);
 		tStyle.bListChecked = !tStyle.bListChecked;
@@ -2821,7 +3138,9 @@ static int __xuiRichEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED,
 			NULL, 0, pData->iAnchor, pData->iCaret, 0, 0, 1);
 		return XUI_EVENT_DISPATCH_STOP;
-	case XUI_EVENT_BOUNDS_CHANGED: pData->bLayoutDirty = 1; return XUI_OK;
+	case XUI_EVENT_BOUNDS_CHANGED:
+		/* EnsureLayout keys the actual content width; moving children/scrollbars is not a text edit. */
+		return XUI_OK;
 	default: break;
 	}
 	return XUI_OK;
@@ -3035,13 +3354,14 @@ static xui_rect_t __xuiRichEditAccessibleNodeBounds(xui_widget pWidget,
 	xui_rich_layout_fragment_t tFragment;
 	int bFound = 0;
 	int i;
+	int iOffset;
+	if ( xuiInternalRichDocumentNodeOffset(pData->pDocument, pNode, &iOffset) != XUI_OK ||
+	     __xuiRichEditEnsureOffset(pWidget, pData, iOffset) != XUI_OK ) return tResult;
 	for ( i = 0; i < pData->iBlockCount; i++ ) if ( pData->pBlocks[i].pNode == pNode ) {
-		tResult = __xuiRichEditBlockRect(pWidget, pData, pData->pBlocks[i].tRect); bFound = 1; break;
+		tResult = __xuiRichEditBlockRect(pWidget, pData, &pData->pBlocks[i]); bFound = 1; break;
 	}
 	memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
-	if ( !bFound && xuiRichNodeGetInfo(pNode, &tInfo) == XUI_OK &&
-	     tInfo.iType == XUI_RICH_NODE_INLINE_WIDGET && tInfo.pWidget != NULL )
-		return xuiWidgetGetWorldRect(tInfo.pWidget);
+	(void)xuiRichNodeGetInfo(pNode, &tInfo);
 	if ( !bFound ) for ( i = 0; i < pData->iTotalFragmentCount; i++ ) {
 		xui_rect_t tRect;
 		(void)__xuiRichEditGetLayoutFragment(pData, i, &tFragment);
@@ -3105,17 +3425,21 @@ static int __xuiRichEditAccessibleGet(xui_widget pWidget, int iIndex,
 	}
 	pNode = __xuiRichEditAccessibleNodeAt(pData, iIndex, &pCellTable, &iRow, &iColumn);
 	if ( pCellTable != NULL ) {
-		xui_rect_t tTable;
+		xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+		int iOffset, iBlock;
 		memset(&tInfo, 0, sizeof(tInfo)); tInfo.iSize = sizeof(tInfo);
 		if ( xuiRichNodeGetInfo(pCellTable, &tInfo) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
-		tTable = __xuiRichEditAccessibleNodeBounds(pWidget, pData, pCellTable);
+		if ( xuiInternalRichDocumentNodeOffset(pData->pDocument, pCellTable, &iOffset) != XUI_OK ||
+		     __xuiRichEditEnsureOffset(pWidget, pData, iOffset) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+		iBlock = __xuiRichEditFindBlockByOffset(pData, iOffset);
+		if ( iBlock < 0 || pData->pBlocks[iBlock].pNode != pCellTable ) return XUI_ERROR_INVALID_ARGUMENT;
 		pAccessible->iId = __xuiRichEditAccessibleCellId(tInfo.iId, iRow, iColumn);
 		pAccessible->iParentId = tInfo.iId;
 		pAccessible->iRole = XUI_ACCESSIBLE_ROLE_CELL;
 		pAccessible->sValue = xuiRichTableGetCellText(pCellTable, iRow, iColumn);
 		pAccessible->iRow = iRow; pAccessible->iColumn = iColumn;
-		pAccessible->tBounds = (xui_rect_t){tTable.fX + tTable.fW * iColumn / tInfo.iColumns,
-			tTable.fY + tTable.fH * iRow / tInfo.iRows, tTable.fW / tInfo.iColumns, tTable.fH / tInfo.iRows};
+		pAccessible->tBounds = __xuiRichEditCellRect(pWidget, pData, &pData->pBlocks[iBlock], &tInfo, iRow, iColumn, 0.0);
+		pAccessible->tBounds.fX += tWorld.fX; pAccessible->tBounds.fY += tWorld.fY;
 		pAccessible->iState = pData->bReadonly ? XUI_ACCESSIBLE_STATE_READONLY : XUI_ACCESSIBLE_STATE_EDITABLE;
 		return XUI_OK;
 	}
@@ -3301,10 +3625,13 @@ static void __xuiRichEditDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 		pData->pMenu = NULL;
 	}
 	if ( pData->pFragments != NULL ) xrtFree(pData->pFragments);
-	if ( pData->pWidgets != NULL ) xrtFree(pData->pWidgets);
 	if ( pData->pAtoms != NULL ) xrtFree(pData->pAtoms);
 	__xuiRichEditReleaseBlocks(pData);
 	if ( pData->pBlocks != NULL ) xrtFree(pData->pBlocks);
+	if ( pData->pParagraphs != NULL ) xrtFree(pData->pParagraphs);
+	if ( pData->pHeightTree != NULL ) xrtFree(pData->pHeightTree);
+	if ( pData->pWidthTree != NULL ) xrtFree(pData->pWidthTree);
+	if ( pData->mapWidgetParagraphs.ValueSize != 0 ) xrtMapUnit(&pData->mapWidgetParagraphs);
 	if ( pData->sScratch != NULL ) xrtFree(pData->sScratch);
 	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
 	if ( pData->sFindPattern != NULL ) xrtFree(pData->sFindPattern);
@@ -3552,7 +3879,6 @@ XUI_API int xuiRichEditQueryCommand(xui_widget pWidget, int iCommand, int* pStat
 {
 	xui_rich_edit_data_t* pData = __xuiRichEditData(pWidget);
 	uint32_t iFlag;
-	xui_rich_layout_fragment_t tFragment;
 	int s, e, i, bSeen = 0, bOn = 0, bOff = 0;
 	if ( pData == NULL || pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pState = XUI_RICH_COMMAND_STATE_OFF;
@@ -3575,13 +3901,31 @@ XUI_API int xuiRichEditQueryCommand(xui_widget pWidget, int iCommand, int* pStat
 	iFlag = __xuiRichEditCommandFlag(iCommand);
 	if ( iFlag != 0 ) {
 		if ( s == e ) { xui_rich_text_style_t tStyle; (void)__xuiRichEditStyleAt(pData, s, &tStyle); *pState = (tStyle.iFlags & iFlag) ? XUI_RICH_COMMAND_STATE_ON : XUI_RICH_COMMAND_STATE_OFF; return XUI_OK; }
-		(void)__xuiRichEditEnsureLayout(pWidget, pData);
-		for ( i = 0; i < pData->iTotalFragmentCount; i++ ) {
-			xui_rich_layout_fragment_t* pFragment = &tFragment;
-			(void)__xuiRichEditGetLayoutFragment(pData, i, pFragment);
-			if ( pFragment->tPublic.iNodeType != XUI_RICH_NODE_TEXT && pFragment->tPublic.iNodeType != XUI_RICH_NODE_LINK ) continue;
-			if ( e <= pFragment->tPublic.iDocumentStart || s >= pFragment->tPublic.iDocumentEnd ) continue;
-			bSeen = 1; if ( (pFragment->iStyleFlags & iFlag) != 0 ) bOn = 1; else bOff = 1;
+		if ( __xuiRichEditEnsureLayout(pWidget, pData) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+		for ( i = __xuiRichEditParagraphByOffset(pData, s); i >= 0 && i < pData->iParagraphCount; i++ ) {
+			xui_rich_paragraph_index_t* pIndex = &pData->pParagraphs[i];
+			xui_rich_node pRun;
+			xui_rich_node_info_t tBlock = {0};
+			int iAt = pIndex->iStart;
+			if ( iAt >= e ) break;
+			(void)xuiRichNodeGetInfo(pIndex->pNode, &tBlock);
+			for ( pRun = xuiRichNodeGetFirstChild(pIndex->pNode); pRun != NULL; pRun = xuiRichNodeGetNextSibling(pRun) ) {
+				xui_rich_node_info_t tRun = {0};
+				int n;
+				(void)xuiRichNodeGetInfo(pRun, &tRun);
+				n = (tRun.iType == XUI_RICH_NODE_TEXT || tRun.iType == XUI_RICH_NODE_LINK) ? tRun.iTextSize : 3;
+				if ( (tRun.iType == XUI_RICH_NODE_TEXT || tRun.iType == XUI_RICH_NODE_LINK) && iAt < e && iAt + n > s ) {
+					uint32_t flags = tRun.tStyle.iFlags;
+					if ( tRun.tStyle.pFont == NULL && tBlock.iType == XUI_RICH_NODE_HEADING ) {
+						int level = tBlock.tParagraphStyle.iHeadingLevel;
+						xui_font font = level <= 1 ? pData->tFonts.pHeading1 :
+							(level == 2 ? pData->tFonts.pHeading2 : pData->tFonts.pHeading3);
+						if ( font == NULL ) flags |= XUI_RICH_STYLE_BOLD;
+					}
+					bSeen = 1; if ( (flags & iFlag) != 0 ) bOn = 1; else bOff = 1;
+				}
+				iAt += n;
+			}
 		}
 		*pState = bOn && bOff ? XUI_RICH_COMMAND_STATE_MIXED : (bSeen && bOn ? XUI_RICH_COMMAND_STATE_ON : XUI_RICH_COMMAND_STATE_OFF);
 		return XUI_OK;
@@ -4418,7 +4762,6 @@ XUI_API int xuiRichEditSetWordWrap(xui_widget pWidget, int bWordWrap)
 	pData->bWordWrap = bValue;
 	pData->fScrollX = 0.0f;
 	pData->bLayoutDirty = 1;
-	pData->bIncrementalLayout = 0;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT |
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -4430,11 +4773,11 @@ XUI_API int xuiRichEditGetWordWrap(xui_widget pWidget)
 XUI_API int xuiRichEditSetScroll(xui_widget pWidget,float x,float y){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);float sx,sy;int r;if(!p)return XUI_ERROR_INVALID_ARGUMENT;r=__xuiRichEditUpdateScrollModel(pWidget,p);if(r!=XUI_OK)return r;r=xuiScrollModelSetOffset(&p->tScrollModel,x,y);if(r!=XUI_OK)return r;(void)xuiScrollModelGetOffset(&p->tScrollModel,&sx,&sy);p->fScrollX=sx;p->fScrollY=sy;if(p->pHScrollBar&&p->pVScrollBar){p->bSyncingScrollBars=1;(void)xuiScrollBarSetValue(p->pHScrollBar,sx);(void)xuiScrollBarSetValue(p->pVScrollBar,sy);p->bSyncingScrollBars=0;}(void)xuiInternalInputRefreshImePosition(xuiWidgetGetContext(pWidget));return xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);}
 XUI_API int xuiRichEditGetScroll(xui_widget pWidget,float*x,float*y){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p)return XUI_ERROR_INVALID_ARGUMENT;if(x)*x=p->fScrollX;if(y)*y=p->fScrollY;return XUI_OK;}
 XUI_API int xuiRichEditScrollBy(xui_widget pWidget,float x,float y){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p)return XUI_ERROR_INVALID_ARGUMENT;return xuiRichEditSetScroll(pWidget,p->fScrollX+x,p->fScrollY+y);}
-XUI_API int xuiRichEditSetZoom(xui_widget pWidget,float z){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p||!isfinite(z)||z<0.25f||z>8.0f)return XUI_ERROR_INVALID_ARGUMENT;if(fabsf(p->fZoom-z)<0.0001f)return XUI_OK;__xuiRichEditClearFontCache(pWidget,p);p->fZoom=z;p->bLayoutDirty=1;p->bIncrementalLayout=0;return xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);}
+XUI_API int xuiRichEditSetZoom(xui_widget pWidget,float z){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p||!isfinite(z)||z<0.25f||z>8.0f)return XUI_ERROR_INVALID_ARGUMENT;if(fabsf(p->fZoom-z)<0.0001f)return XUI_OK;__xuiRichEditClearFontCache(pWidget,p);p->fZoom=z;p->bLayoutDirty=1;return xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);}
 XUI_API float xuiRichEditGetZoom(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);return p?p->fZoom:0.0f;}
 XUI_API xui_scroll_model_t* xuiRichEditGetScrollModel(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p)return NULL;(void)__xuiRichEditUpdateScrollModel(pWidget,p);return &p->tScrollModel;}
 XUI_API xui_widget xuiRichEditGetHScrollBarWidget(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);return p?p->pHScrollBar:NULL;}
 XUI_API xui_widget xuiRichEditGetVScrollBarWidget(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);return p?p->pVScrollBar:NULL;}
-XUI_API int xuiRichEditGetFragmentCount(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p)return 0;(void)__xuiRichEditEnsureLayout(pWidget,p);return p->iTotalFragmentCount;}
-XUI_API int xuiRichEditGetFragment(xui_widget pWidget,int i,xui_rich_fragment_t*f){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);xui_rich_layout_fragment_t t;if(!p||!f)return XUI_ERROR_INVALID_ARGUMENT;(void)__xuiRichEditEnsureLayout(pWidget,p);if(i<0||i>=p->iTotalFragmentCount||__xuiRichEditGetLayoutFragment(p,i,&t)!=XUI_OK)return XUI_ERROR_INVALID_ARGUMENT;*f=t.tPublic;f->iSize=sizeof(*f);return XUI_OK;}
+XUI_API int xuiRichEditGetFragmentCount(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);if(!p)return 0;if(__xuiRichEditEnsureAllLayout(pWidget,p)!=XUI_OK)return 0;return p->iTotalFragmentCount;}
+XUI_API int xuiRichEditGetFragment(xui_widget pWidget,int i,xui_rich_fragment_t*f){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);xui_rich_layout_fragment_t t;if(!p||!f)return XUI_ERROR_INVALID_ARGUMENT;int ret=__xuiRichEditEnsureAllLayout(pWidget,p);if(ret!=XUI_OK)return ret;if(i<0||i>=p->iTotalFragmentCount||__xuiRichEditGetLayoutFragment(p,i,&t)!=XUI_OK)return XUI_ERROR_INVALID_ARGUMENT;*f=t.tPublic;f->iSize=sizeof(*f);return XUI_OK;}
 XUI_API xui_rect_t xuiRichEditGetCursorRect(xui_widget pWidget){xui_rich_edit_data_t*p=__xuiRichEditData(pWidget);xui_rect_t r={0,0,0,0};if(p)r=__xuiRichEditCaret(pWidget,p,p->iCaret);return r;}

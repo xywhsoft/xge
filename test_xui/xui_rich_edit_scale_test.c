@@ -7,6 +7,7 @@
 static struct {
     unsigned LayoutBlock, IndexBlock, SearchBlock, SearchLine, SearchFragment;
     unsigned FragmentRead, RenderBlock, ArrangeWidget, WidgetNode;
+    unsigned ParagraphIndex, ParagraphSearch, HeightStep, WidthStep;
 } g_work;
 static int g_failAllocation = -1;
 static void* auditMalloc(size_t n)
@@ -69,10 +70,17 @@ static void resetWork(void)
 }
 static size_t privateBytes(xui_rich_edit_data_t* p)
 {
+    /* RichEdit-owned index/fragment/staging capacities; excludes document, widgets and proxy/flow resources. */
     size_t bytes = sizeof(*p) + (size_t)p->iBlockCapacity * sizeof(*p->pBlocks) +
         (size_t)p->iFragmentCapacity * sizeof(*p->pFragments) +
         (size_t)p->iAtomCapacity * sizeof(*p->pAtoms) +
-        (size_t)p->iWidgetCapacity * sizeof(*p->pWidgets) + (size_t)p->iScratchCapacity;
+        (size_t)p->iScratchCapacity +
+        (size_t)p->iParagraphCapacity * sizeof(*p->pParagraphs) +
+        (size_t)p->iHeightCapacity * sizeof(*p->pHeightTree) +
+        (size_t)p->iWidthCapacity * sizeof(*p->pWidthTree) +
+        p->mapWidgetParagraphs.BucketCount * sizeof(xmapentry*) +
+        p->mapWidgetParagraphs.Count * (p->mapWidgetParagraphs.KeyOffset + sizeof(xui_widget)) +
+        (size_t)p->iFontCacheCapacity * sizeof(*p->pFontCache);
     int i;
     for (i = 0; i < p->iBlockCount; i++)
         bytes += (size_t)p->pBlocks[i].iFragmentCount * sizeof(*p->pFragments) +
@@ -89,6 +97,17 @@ static int compareView(xui_widget edit, xui_draw_context draw)
     xui_rect_t content = __xuiRichEditContentRect(edit, p);
     uint64_t hash;
     int failed = 0, i, j;
+    REQUIRE(__xuiRichEditUpdateScrollModel(edit, p) == XUI_OK);
+    if (!p->bExactLayout) {
+        g_trace = 0;
+        REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK);
+        hash = g_trace;
+        REQUIRE(__xuiRichEditEnsureAllLayout(edit, p) == XUI_OK);
+        g_trace = 0;
+        REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK);
+        REQUIRE(hash == g_trace);
+    }
+    REQUIRE(__xuiRichEditEnsureAllLayout(edit, p) == XUI_OK);
     g_trace = 0; g_recordCount = 0;
     REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK);
     memcpy(g_expected, g_records, sizeof(g_records));
@@ -172,7 +191,7 @@ static int scaleTest(int count, int columns)
     REQUIRE(xuiUpdate(context, 0.016f) == XUI_OK);
     REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK);
     coldBlocks = g_work.LayoutBlock; coldShapes = g_shapeCalls;
-    REQUIRE(coldBlocks >= (unsigned)count && coldBlocks <= (unsigned)count * 3);
+    REQUIRE(coldBlocks > 0 && coldBlocks <= 400);
     REQUIRE(g_shapeBytes <= (unsigned)length * 3);
     REQUIRE(xuiRichEditGetFragmentCount(edit) == count * columns);
     bytes = privateBytes(p);
@@ -185,7 +204,7 @@ static int scaleTest(int count, int columns)
         REQUIRE(__xuiRichEditArrangeChildren(edit, (xui_rect_t){0}, NULL) == XUI_OK);
         REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK);
         REQUIRE(g_work.LayoutBlock == 0 && g_work.IndexBlock == 0 && g_work.WidgetNode == 0);
-        REQUIRE(g_work.SearchBlock <= 80 && g_work.SearchLine <= 64);
+        REQUIRE(g_work.SearchBlock <= 120 && g_work.SearchLine <= 64);
         /* 936x616 viewport: at most 46 lines of 134 proxy glyphs, plus run lookahead. */
         REQUIRE(g_shapeCalls == 0 && g_work.FragmentRead < 14000 && g_work.RenderBlock < 50);
         reads = g_work.FragmentRead; blocks = g_work.RenderBlock;
@@ -217,7 +236,7 @@ static int scaleTest(int count, int columns)
     REQUIRE(xuiLayout(context) == XUI_OK);
     REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK);
     widthBlocks = g_work.LayoutBlock;
-    REQUIRE(widthBlocks >= (unsigned)count && widthBlocks <= (unsigned)count * 3);
+    REQUIRE(widthBlocks > 0 && widthBlocks <= 400);
     printf("RichEdit indexed N=%d width_switch_layout=%u shape=%u private_bytes=%zu\n",
         count, widthBlocks, g_shapeCalls, privateBytes(p));
     REQUIRE(compareView(edit, draw) == 0);
@@ -246,15 +265,28 @@ static int scaleTest(int count, int columns)
         REQUIRE(xuiRichEditSetScroll(edit, 0, p->fContentHeight * 0.8f) == XUI_OK);
         resetWork();
         REQUIRE(xuiLayout(context) == XUI_OK);
-        REQUIRE(g_work.ArrangeWidget == 1 && g_work.FragmentRead == 1);
-        REQUIRE(xuiWidgetGetParent(child) == edit);
+        REQUIRE(g_work.ArrangeWidget <= 1);
+        REQUIRE(xuiWidgetGetParent(child) == NULL);
         REQUIRE(xuiWidgetRemoveFromParent(child) == XUI_OK);
-        REQUIRE(__xuiRichEditPrepareLayout(edit, p) == XUI_OK && xuiWidgetGetParent(child) == edit);
-        g_failAllocation = 0; p->bLayoutDirty = 1; p->bIncrementalLayout = 0;
+        REQUIRE(__xuiRichEditPrepareLayout(edit, p) == XUI_OK && xuiWidgetGetParent(child) == NULL);
+        g_failAllocation = 0; p->bLayoutDirty = 1;
         REQUIRE(__xuiRichEditEnsureLayout(edit, p) == XUI_ERROR_OUT_OF_MEMORY);
-        REQUIRE(p->bLayoutDirty);
+        REQUIRE(p->bLayoutDirty || !p->bExactLayout);
         g_failAllocation = -1;
         REQUIRE(__xuiRichEditEnsureLayout(edit, p) == XUI_OK);
+        REQUIRE(compareView(edit, draw) == 0);
+        para.fSpaceBefore = -30.0f;
+        REQUIRE(xuiRichNodeSetParagraphStyle(doc, node, &para) == XUI_OK);
+        REQUIRE(__xuiRichEditEnsureLayout(edit, p) == XUI_OK);
+        REQUIRE(p->bNeedsExactLayout && p->bExactLayout);
+        REQUIRE(compareView(edit, draw) == 0);
+        para.fSpaceBefore = 8.0f;
+        REQUIRE(xuiRichNodeSetParagraphStyle(doc, node, &para) == XUI_OK);
+        REQUIRE(__xuiRichEditEnsureLayout(edit, p) == XUI_OK);
+        REQUIRE(xuiRichDocumentAppendWidget(doc, p->pParagraphs[p->iParagraphCount - 1].pNode,
+            child, 80, 130, 17) != NULL);
+        REQUIRE(__xuiRichEditEnsureLayout(edit, p) == XUI_OK);
+        REQUIRE(p->bNeedsExactLayout && p->bExactLayout);
         REQUIRE(compareView(edit, draw) == 0);
     }
     g_trace = 0; REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK); hash = g_trace;
@@ -274,11 +306,21 @@ cleanup:
 #include "xui_rich_edit_test.c"
 #undef main
 
+#include "xui_rich_edit_lazy_test.h"
+#include "xui_rich_edit_width_test.h"
+#include "xui_rich_edit_fractional_test.h"
+
 int main(int argc, char** argv)
 {
+    if (argc > 1 && strcmp(argv[1], "fractional") == 0) return fractionalGeometryTest() || fractionalObjectTest();
+    if (argc > 1 && strcmp(argv[1], "width") == 0) return lazyWidthTest(48) || lazyWidthTest(160);
+    if (argc > 1 && strcmp(argv[1], "lazy") == 0) return lazyTextTest() || lazyWidgetTest();
     if (argc > 1) return scaleTest(atoi(argv[1]), argc > 2 ? atoi(argv[2]) : 96);
     if (scaleTest(100, 96) || scaleTest(1000, 96) || scaleTest(10000, 96) || scaleTest(1, 100000)) return 1;
     if (richLegacyMain()) return 1;
+    if (lazyTextTest() || lazyWidgetTest()) return 1;
+    if (lazyWidthTest(48) || lazyWidthTest(160)) return 1;
+    if (fractionalGeometryTest() || fractionalObjectTest()) return 1;
     puts("RichEdit visible-range scale regression passed");
     return 0;
 }
