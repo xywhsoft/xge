@@ -5751,6 +5751,13 @@ static xui_rect_t __xuiTooltipResolveRect(xui_context pContext, xui_widget pOwne
 	return xuiInternalSnapRect(tRect);
 }
 
+static void __xuiTooltipStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
+{
+	xui_style_property_t tProperty;
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) *pColor = tProperty.tValue.iColor;
+}
+
 static int __xuiTooltipCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_context pContext;
@@ -5761,7 +5768,6 @@ static int __xuiTooltipCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	xui_font pFont;
 	int iRet;
 
-	(void)pWidget;
 	(void)iStateId;
 	pContext = (xui_context)pUser;
 	if ( !xuiInternalContextIsValid(pContext) || (pDraw == NULL) || (pContext->bTooltipOpen == 0) ) {
@@ -5774,6 +5780,9 @@ static int __xuiTooltipCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	memset(&tChrome, 0, sizeof(tChrome));
 	tChrome.iSize = sizeof(tChrome);
 	(void)xuiGetChromeStyle(pContext, &tChrome);
+	__xuiTooltipStyleColor(pWidget, "tooltip.background.color", &tChrome.iTooltipColor);
+	__xuiTooltipStyleColor(pWidget, "tooltip.border.color", &tChrome.iPopupBorderColor);
+	__xuiTooltipStyleColor(pWidget, "tooltip.text.color", &tChrome.iTooltipTextColor);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect.fW = pContext->tTooltipRect.fW;
@@ -5808,8 +5817,15 @@ static int __xuiTooltipCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 
 static int __xuiTooltipEnsurePopup(xui_context pContext)
 {
+	static const char* const arrColors[] = {
+		"tooltip.background.color", "tooltip.border.color", "tooltip.text.color"
+	};
 	xui_widget pPopup;
+	xui_widget_type pType;
+	xui_widget_type_desc_t tType;
+	xui_style_property_info_t tInfo;
 	xui_cache_policy_t tPolicy;
+	size_t i;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ) {
@@ -5818,7 +5834,25 @@ static int __xuiTooltipEnsurePopup(xui_context pContext)
 	if ( pContext->pTooltipPopupWidget != NULL ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetCreate(pContext, &pPopup);
+	pType = xuiWidgetFindType(pContext, "tooltip");
+	if ( pType == NULL ) {
+		memset(&tType, 0, sizeof(tType));
+		tType.iSize = sizeof(tType);
+		tType.sName = "tooltip";
+		iRet = xuiWidgetRegisterType(pContext, &pType, &tType);
+		if ( iRet != XUI_OK ) return iRet;
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.iSize = sizeof(tInfo);
+		tInfo.pWidgetType = pType;
+		tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+		tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+		for ( i = 0; i < sizeof(arrColors) / sizeof(arrColors[0]); ++i ) {
+			tInfo.sName = arrColors[i];
+			iRet = xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	iRet = xuiWidgetCreateTyped(pContext, pType, &pPopup, NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}

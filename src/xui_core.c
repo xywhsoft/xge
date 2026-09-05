@@ -1921,7 +1921,11 @@ XUI_API int xuiSetChromeStyle(xui_context pContext, const xui_chrome_style_t* pC
 		(void)xuiStyleEndUpdate(pContext);
 		return iRet;
 	}
-	return xuiStyleEndUpdate(pContext);
+	iRet = xuiStyleEndUpdate(pContext);
+	if ( iRet == XUI_OK && pContext->pTooltipPopupWidget != NULL ) {
+		(void)xuiWidgetInvalidate(pContext->pTooltipPopupWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return iRet;
 }
 
 XUI_API int xuiGetChromeStyle(xui_context pContext, xui_chrome_style_t* pChrome)
