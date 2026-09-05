@@ -75,11 +75,13 @@ int main(void)
         if (strstr(colors[i].key, "focus") != NULL) CHECK(xuiSetFocusWidget(context, w) == XUI_OK);
         if (strstr(colors[i].key, "open") != NULL) CHECK(xuiIconPickerOpen(w) == XUI_OK);
         inline_color(w, colors[i].key, value);
-        paint(); CHECK(has_color(value));
+        prepare_only(); CHECK(cache_has_color(w, value));
         inline_color(w, colors[i].key, 0);
-        paint(); CHECK(!has_color(value));
+        prepare_only(); CHECK(!cache_has_color(w, value));
+        inline_color(w, colors[i].key, 0xabcdef00u);
+        prepare_only(); CHECK(!cache_has_color(w, value) && !cache_has_color(w, 0xabcdefffu));
         CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
-        paint(); CHECK(has_color(before));
+        prepare_only(); CHECK(cache_has_color(w, before));
         CHECK(xuiIconPickerClose(w) == XUI_OK);
         CHECK(xuiWidgetSetEnabled(w, 1) == XUI_OK);
         CHECK(xuiIconPickerSetSelectedId(w, selected) == XUI_OK);
@@ -104,6 +106,9 @@ int main(void)
         inline_color(w, colors[i].key, 0);
         paint(); CHECK(!has_color(value));
         if (i == 15) CHECK(xuiScrollFrameGetBackgroundColor(data->pFrame) == 0);
+        inline_color(w, colors[i].key, 0xabcdef00u);
+        prepare_only(); CHECK(!has_color(value) && !has_color(0xabcdefffu));
+        if (i == 15) CHECK(xuiScrollFrameGetBackgroundColor(data->pFrame) == 0xabcdef00u);
         CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
         paint(); CHECK(has_color(before));
         CHECK(xuiIconPickerGetSelectedId(w) == selected);
@@ -117,6 +122,8 @@ int main(void)
     CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
     paint(); CHECK(has_color(0xe23456ffu));
     CHECK(xuiScrollFrameGetBackgroundColor(data->pFrame) == 0xe23456ffu);
+    test_live_token(w, "iconpicker.popup.panel_color", data->iPopupPanelColor);
+    test_prepare_only(w, data->pViewport, "iconpicker.popup.panel_color", data->iPopupPanelColor);
     CHECK(xuiIconCategoryRelease(category) == XUI_OK);
     return finish();
 }

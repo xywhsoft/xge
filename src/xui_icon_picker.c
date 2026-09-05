@@ -258,10 +258,12 @@ static int __xuiIconPickerApplyPopupColors(xui_widget pWidget, xui_icon_picker_d
 	return XUI_OK;
 }
 
-static int __xuiIconPickerSyncStyle(xui_widget pWidget, xui_icon_picker_data_t* pData)
+static int __xuiIconPickerSyncStyle(xui_widget pWidget)
 {
+	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
 	iRet = __xuiIconPickerApplyPopupColors(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
@@ -602,8 +604,6 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	if ( (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)__xuiIconPickerSyncCategory(pWidget, pData);
 	(void)__xuiIconPickerUpdateRects(pWidget, pData);
-	iRet = __xuiIconPickerSyncStyle(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
 	__xuiIconPickerResolve(pWidget, pData, &tResolved);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
@@ -1113,7 +1113,7 @@ static int __xuiIconPickerUpdate(xui_widget pWidget, float fDelta, void* pUser)
 			(void)xuiPopupApplyPlacement(pData->pPopup);
 		}
 	}
-	return __xuiIconPickerSyncStyle(pWidget, pData);
+	return XUI_OK;
 }
 
 static int __xuiIconPickerContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -1461,7 +1461,10 @@ XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
 	__xuiIconPickerDefaultLayout(&tDesc.tLayout);
 	__xuiIconPickerDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
-	if ( iRet == XUI_OK ) __xuiIconPickerRegisterStyleProperties(pContext, pType);
+	if ( iRet == XUI_OK ) {
+		__xuiIconPickerRegisterStyleProperties(pContext, pType);
+		pType->onPreparePaint = __xuiIconPickerSyncStyle;
+	}
 	return (iRet == XUI_OK) ? pType : NULL;
 }
 
