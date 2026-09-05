@@ -38,6 +38,12 @@
 #define XUI_TERMINAL_PROCESS_POLL_LIMIT 16
 #define XUI_TERMINAL_MENU_TITLE_COUNT 6
 #define XUI_TERMINAL_HISTORY_INITIAL_VIEW 128
+#define XUI_TERMINAL_HISTORY_TEXT_STRIDE 32
+#define XUI_TERMINAL_HISTORY_GLYPH_FLAGS (XUI_TERMINAL_CELL_WIDE | XUI_TERMINAL_CELL_WIDE_CONT | \
+	XUI_TERMINAL_CELL_COMBINING | XUI_TERMINAL_CELL_COMBINING_OVERFLOW)
+#ifndef XUI_TERMINAL_HISTORY_STEP
+#define XUI_TERMINAL_HISTORY_STEP(kind) ((void)0)
+#endif
 
 static int __xuiTerminalQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser);
 
@@ -77,36 +83,57 @@ typedef struct xui_terminal_parser_t {
 	int iOscSize;
 } xui_terminal_parser_t;
 
-typedef struct xui_terminal_history_cell_t {
-	uint32_t iCodepoint;
+typedef struct xui_terminal_history_run_t {
+	int iStart;
 	uint32_t iFgColor;
 	uint32_t iBgColor;
 	uint32_t iFlags;
-	uint32_t iCombiningOffset;
 	uint16_t iStyle;
 	uint16_t iLinkId;
+} xui_terminal_history_run_t;
+
+typedef struct xui_terminal_history_glyph_t {
+	int iCell;
+	int iCombiningOffset;
 	uint8_t iWidth;
 	uint8_t iCombiningCount;
-	uint8_t arrReserved[2];
-} xui_terminal_history_cell_t;
+	uint8_t iFlags;
+} xui_terminal_history_glyph_t;
 
 typedef struct xui_terminal_history_line_t {
-	xui_terminal_history_cell_t* pCells;
+	char* pText;
+	int* pTextIndex;
+	xui_terminal_history_run_t* pRuns;
+	xui_terminal_history_glyph_t* pGlyphs;
 	uint32_t* pCombining;
-	char* sTextCache;
 	uint64_t iId;
 	int iCellCount;
-	int iCellCapacity;
+	int iTextSize;
+	int iTextCapacity;
+	int iTextIndexCapacity;
+	int iRunCount;
+	int iRunCapacity;
+	int iGlyphCount;
+	int iGlyphCapacity;
 	int iCombiningCount;
 	int iCombiningCapacity;
 	int bOpen;
 } xui_terminal_history_line_t;
+
+typedef struct xui_terminal_history_reader_t {
+	const xui_terminal_history_line_t* pLine;
+	int iCell;
+	int iTextOffset;
+	int iRun;
+	int iGlyph;
+} xui_terminal_history_reader_t;
 
 typedef struct xui_terminal_history_view_row_t {
 	xui_terminal_history_line_t* pLine;
 	int iStart;
 	int iEnd;
 	char* sTextCache;
+	int iTextCapacity;
 } xui_terminal_history_view_row_t;
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -288,6 +315,8 @@ static void __xuiTerminalInsertCharacters(xui_terminal_data_t* pData, int iCount
 static int __xuiTerminalOpenFindWindow(xui_widget pTerminal, xui_terminal_data_t* pData);
 static void __xuiTerminalClearFindMatch(xui_terminal_data_t* pData);
 static int __xuiTerminalResolveFindAnchor(xui_terminal_data_t* pData);
+static int __xuiTerminalRowContentColumns(const xui_terminal_cell_t* pRow,
+	int iColumns, int bWrapped, int iMinimum);
 
 static int __xuiTerminalEditSetSelection(xui_widget pWidget, int iStart, int iEnd)
 {
@@ -766,9 +795,11 @@ static void __xuiTerminalDefaultPalette(xui_terminal_data_t* pData)
 static void __xuiTerminalHistoryLineDestroy(xui_terminal_history_line_t* pLine)
 {
 	if ( pLine == NULL ) return;
-	xrtFree(pLine->pCells);
+	xrtFree(pLine->pText);
+	xrtFree(pLine->pTextIndex);
+	xrtFree(pLine->pRuns);
+	xrtFree(pLine->pGlyphs);
 	xrtFree(pLine->pCombining);
-	xrtFree(pLine->sTextCache);
 	xrtFree(pLine);
 }
 
@@ -778,7 +809,10 @@ static void __xuiTerminalHistoryViewClear(xui_terminal_data_t* pData)
 	if ( pData == NULL ) return;
 	for ( i = 0; i < pData->iScrollbackCount; ++i ) {
 		xrtFree(pData->pHistoryView != NULL ? pData->pHistoryView[i].sTextCache : NULL);
-		if ( pData->pHistoryView != NULL ) pData->pHistoryView[i].sTextCache = NULL;
+		if ( pData->pHistoryView != NULL ) {
+			pData->pHistoryView[i].sTextCache = NULL;
+			pData->pHistoryView[i].iTextCapacity = 0;
+		}
 	}
 	pData->iScrollbackCount = 0;
 }
@@ -898,46 +932,53 @@ static void __xuiTerminalClearScrollbackSlot(xui_terminal_data_t* pData, int idx
 static void __xuiTerminalHistoryLineReset(xui_terminal_history_line_t* pLine)
 {
 	if ( pLine == NULL ) return;
-	xrtFree(pLine->sTextCache);
-	pLine->sTextCache = NULL;
 	pLine->iCellCount = 0;
+	pLine->iTextSize = 0;
+	pLine->iRunCount = 0;
+	pLine->iGlyphCount = 0;
 	pLine->iCombiningCount = 0;
 	pLine->bOpen = 0;
 }
 
-static int __xuiTerminalHistoryReserveCells(xui_terminal_history_line_t* pLine, int iNeeded)
+static int __xuiTerminalHistoryReserve(void** ppBuffer, int* pCapacity,
+	size_t iNeeded, size_t iElementSize)
 {
-	xui_terminal_history_cell_t* pNew;
-	int iCapacity;
-	if ( pLine == NULL || iNeeded < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iNeeded <= pLine->iCellCapacity ) return XUI_OK;
-	if ( pLine->iCellCapacity > 0 ) {
-		iCapacity = pLine->iCellCapacity + pLine->iCellCapacity / 2;
-		if ( iCapacity < iNeeded ) iCapacity = iNeeded;
-	} else {
-		iCapacity = iNeeded > 0 ? iNeeded : 16;
-	}
-	iCapacity = (iCapacity + 15) & ~15;
-	pNew = (xui_terminal_history_cell_t*)xrtRealloc(pLine->pCells, sizeof(*pNew) * (size_t)iCapacity);
+	void* pNew;
+	size_t iCapacity;
+	if ( iNeeded <= (size_t)*pCapacity ) return XUI_OK;
+	iCapacity = (size_t)*pCapacity + (size_t)*pCapacity / 2u;
+	if ( iCapacity < iNeeded ) iCapacity = iNeeded;
+	if ( iCapacity > INT_MAX || iCapacity > SIZE_MAX / iElementSize ) return XUI_ERROR_OUT_OF_MEMORY;
+	pNew = xrtRealloc(*ppBuffer, iElementSize * iCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	pLine->pCells = pNew;
-	pLine->iCellCapacity = iCapacity;
+	*ppBuffer = pNew;
+	*pCapacity = (int)iCapacity;
 	return XUI_OK;
 }
 
-static int __xuiTerminalHistoryReserveCombining(xui_terminal_history_line_t* pLine, int iNeeded)
+static xui_terminal_history_run_t __xuiTerminalHistoryAttributes(const xui_terminal_cell_t* pCell)
 {
-	uint32_t* pNew;
-	int iCapacity;
-	if ( pLine == NULL || iNeeded < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iNeeded <= pLine->iCombiningCapacity ) return XUI_OK;
-	iCapacity = pLine->iCombiningCapacity > 0 ? pLine->iCombiningCapacity : 16;
-	while ( iCapacity < iNeeded ) iCapacity *= 2;
-	pNew = (uint32_t*)xrtRealloc(pLine->pCombining, sizeof(*pNew) * (size_t)iCapacity);
-	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	pLine->pCombining = pNew;
-	pLine->iCombiningCapacity = iCapacity;
-	return XUI_OK;
+	xui_terminal_history_run_t tRun;
+	tRun.iStart = 0;
+	tRun.iFgColor = pCell->iFgColor;
+	tRun.iBgColor = pCell->iBgColor;
+	tRun.iFlags = pCell->iFlags & ~XUI_TERMINAL_HISTORY_GLYPH_FLAGS;
+	tRun.iStyle = pCell->iStyle;
+	tRun.iLinkId = pCell->iLinkId;
+	return tRun;
+}
+
+static int __xuiTerminalHistorySameAttributes(const xui_terminal_history_run_t* a,
+	const xui_terminal_history_run_t* b)
+{
+	return a->iFgColor == b->iFgColor && a->iBgColor == b->iBgColor &&
+		a->iFlags == b->iFlags && a->iStyle == b->iStyle && a->iLinkId == b->iLinkId;
+}
+
+static int __xuiTerminalHistoryEncode(uint32_t cp, char* pText)
+{
+	if ( cp == 0u ) { pText[0] = '\0'; return 1; }
+	return __xuiTerminalEncodeUtf8(cp, pText);
 }
 
 static int __xuiTerminalHistoryAppendRow(xui_terminal_history_line_t* pLine,
@@ -945,47 +986,173 @@ static int __xuiTerminalHistoryAppendRow(xui_terminal_history_line_t* pLine,
 {
 	int i;
 	int iCount;
-	int iCombining;
-	int iRet;
+	size_t iTextSize, iRuns, iGlyphs, iCombining;
+	xui_terminal_history_run_t tLast = {0};
+	char sUtf[8];
 	if ( pLine == NULL || pRow == NULL || iColumns <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	iCount = iColumns;
-	if ( !bSoftWrapped ) {
-		while ( iCount > 0 ) {
-			const xui_terminal_cell_t* pCell = &pRow[iCount - 1];
-			if ( pCell->iCodepoint != 0u && pCell->iCodepoint != ' ' &&
-			    (pCell->iFlags & XUI_TERMINAL_CELL_WIDE_CONT) == 0u ) break;
-			iCount--;
-		}
+	iCount = __xuiTerminalRowContentColumns(pRow, iColumns, bSoftWrapped, 0);
+	if ( iCount > INT_MAX - pLine->iCellCount ) return XUI_ERROR_OUT_OF_MEMORY;
+	iTextSize = (size_t)pLine->iTextSize;
+	iRuns = (size_t)pLine->iRunCount;
+	iGlyphs = (size_t)pLine->iGlyphCount;
+	iCombining = (size_t)pLine->iCombiningCount;
+	if ( iRuns > 0 ) tLast = pLine->pRuns[iRuns - 1];
+	for ( i = 0; i < iCount; ++i ) {
+		xui_terminal_history_run_t tRun = __xuiTerminalHistoryAttributes(&pRow[i]);
+		int n = __xuiTerminalHistoryEncode(pRow[i].iCodepoint, sUtf);
+		if ( n <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( iTextSize > (size_t)INT_MAX - (size_t)n ) return XUI_ERROR_OUT_OF_MEMORY;
+		iTextSize += (size_t)n;
+		if ( iRuns == 0 || !__xuiTerminalHistorySameAttributes(&tLast, &tRun) ) { iRuns++; tLast = tRun; }
+		if ( pRow[i].iWidth != 1 || pRow[i].iCombiningCount != 0 ||
+		     (pRow[i].iFlags & XUI_TERMINAL_HISTORY_GLYPH_FLAGS) != 0u ) iGlyphs++;
+		iCombining += (size_t)__xuiTerminalMin(pRow[i].iCombiningCount, XUI_TERMINAL_MAX_COMBINING);
 	}
-	iCombining = 0;
-	for ( i = 0; i < iCount; ++i ) iCombining += pRow[i].iCombiningCount;
-	iRet = __xuiTerminalHistoryReserveCells(pLine, pLine->iCellCount + iCount);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTerminalHistoryReserveCombining(pLine, pLine->iCombiningCount + iCombining);
-	if ( iRet != XUI_OK ) return iRet;
+	/* Reserve all streams before publishing counts, so allocation failure leaves a readable line. */
+#define XUI_HISTORY_RESERVE(field, capacity, needed) do { \
+	void* pNew = pLine->field; \
+	int iRet = __xuiTerminalHistoryReserve(&pNew, &pLine->capacity, (needed), sizeof(*pLine->field)); \
+	if (iRet != XUI_OK) return iRet; \
+	pLine->field = pNew; \
+} while (0)
+	XUI_HISTORY_RESERVE(pText, iTextCapacity, iTextSize);
+	XUI_HISTORY_RESERVE(pTextIndex, iTextIndexCapacity,
+		((size_t)pLine->iCellCount + (size_t)iCount + XUI_TERMINAL_HISTORY_TEXT_STRIDE - 1u) / XUI_TERMINAL_HISTORY_TEXT_STRIDE);
+	XUI_HISTORY_RESERVE(pRuns, iRunCapacity, iRuns);
+	XUI_HISTORY_RESERVE(pGlyphs, iGlyphCapacity, iGlyphs);
+	XUI_HISTORY_RESERVE(pCombining, iCombiningCapacity, iCombining);
+#undef XUI_HISTORY_RESERVE
 	for ( i = 0; i < iCount; ++i ) {
 		const xui_terminal_cell_t* pSource = &pRow[i];
-		xui_terminal_history_cell_t* pTarget = &pLine->pCells[pLine->iCellCount++];
-		memset(pTarget, 0, sizeof(*pTarget));
-		pTarget->iCodepoint = pSource->iCodepoint;
-		pTarget->iFgColor = pSource->iFgColor;
-		pTarget->iBgColor = pSource->iBgColor;
-		pTarget->iFlags = pSource->iFlags;
-		pTarget->iStyle = pSource->iStyle;
-		pTarget->iLinkId = pSource->iLinkId;
-		pTarget->iWidth = pSource->iWidth;
-		pTarget->iCombiningCount = pSource->iCombiningCount;
-		pTarget->iCombiningOffset = (uint32_t)pLine->iCombiningCount;
-		if ( pSource->iCombiningCount > 0 ) {
-			memcpy(pLine->pCombining + pLine->iCombiningCount, pSource->arrCombining,
-				sizeof(uint32_t) * (size_t)pSource->iCombiningCount);
-			pLine->iCombiningCount += pSource->iCombiningCount;
+		xui_terminal_history_run_t tRun = __xuiTerminalHistoryAttributes(pSource);
+		int n = __xuiTerminalHistoryEncode(pSource->iCodepoint, sUtf);
+		int iMarks = __xuiTerminalMin(pSource->iCombiningCount, XUI_TERMINAL_MAX_COMBINING);
+		if ( pLine->iCellCount % XUI_TERMINAL_HISTORY_TEXT_STRIDE == 0 )
+			pLine->pTextIndex[pLine->iCellCount / XUI_TERMINAL_HISTORY_TEXT_STRIDE] = pLine->iTextSize;
+		memcpy(pLine->pText + pLine->iTextSize, sUtf, (size_t)n);
+		pLine->iTextSize += n;
+		if ( pLine->iRunCount == 0 || !__xuiTerminalHistorySameAttributes(&pLine->pRuns[pLine->iRunCount - 1], &tRun) ) {
+			tRun.iStart = pLine->iCellCount;
+			pLine->pRuns[pLine->iRunCount++] = tRun;
 		}
+		if ( pSource->iWidth != 1 || iMarks != 0 || (pSource->iFlags & XUI_TERMINAL_HISTORY_GLYPH_FLAGS) != 0u ) {
+			xui_terminal_history_glyph_t* pGlyph = &pLine->pGlyphs[pLine->iGlyphCount++];
+			pGlyph->iCell = pLine->iCellCount;
+			pGlyph->iWidth = pSource->iWidth;
+			pGlyph->iFlags = (uint8_t)(pSource->iFlags & XUI_TERMINAL_HISTORY_GLYPH_FLAGS);
+			pGlyph->iCombiningCount = (uint8_t)iMarks;
+			pGlyph->iCombiningOffset = pLine->iCombiningCount;
+		}
+		if ( iMarks > 0 ) {
+			memcpy(pLine->pCombining + pLine->iCombiningCount, pSource->arrCombining,
+				sizeof(uint32_t) * (size_t)iMarks);
+			pLine->iCombiningCount += iMarks;
+		}
+		pLine->iCellCount++;
 	}
-	xrtFree(pLine->sTextCache);
-	pLine->sTextCache = NULL;
 	pLine->bOpen = bSoftWrapped != 0;
 	return XUI_OK;
+}
+
+static int __xuiTerminalHistoryRunAt(const xui_terminal_history_line_t* pLine, int iCell)
+{
+	int lo = 0, hi = pLine->iRunCount;
+	while ( lo < hi ) {
+		int mid = lo + (hi - lo) / 2;
+		if ( pLine->pRuns[mid].iStart <= iCell ) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo - 1;
+}
+
+static int __xuiTerminalHistoryGlyphAt(const xui_terminal_history_line_t* pLine, int iCell)
+{
+	int lo = 0, hi = pLine->iGlyphCount;
+	while ( lo < hi ) {
+		int mid = lo + (hi - lo) / 2;
+		if ( pLine->pGlyphs[mid].iCell < iCell ) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo;
+}
+
+static uint32_t __xuiTerminalHistoryGlyphFlags(const xui_terminal_history_line_t* pLine, int iCell)
+{
+	int i = __xuiTerminalHistoryGlyphAt(pLine, iCell);
+	return (i < pLine->iGlyphCount && pLine->pGlyphs[i].iCell == iCell) ? pLine->pGlyphs[i].iFlags : 0u;
+}
+
+static uint32_t __xuiTerminalHistoryDecode(const xui_terminal_history_line_t* pLine, int* pOffset)
+{
+	uint32_t cp = 0;
+	int n = 1;
+	XUI_TERMINAL_HISTORY_STEP(DecodeSteps);
+	/* NUL is a stored empty/continuation cell, not a text terminator. */
+	(void)__xuiTerminalUtf8Next(pLine->pText + *pOffset, pLine->iTextSize - *pOffset, &cp, &n);
+	*pOffset += n;
+	return cp;
+}
+
+static int __xuiTerminalHistoryTextOffset(const xui_terminal_history_line_t* pLine, int iCell)
+{
+	int i, iOffset;
+	if ( iCell >= pLine->iCellCount ) return pLine->iTextSize;
+	i = iCell / XUI_TERMINAL_HISTORY_TEXT_STRIDE;
+	iOffset = pLine->pTextIndex[i];
+	for ( i *= XUI_TERMINAL_HISTORY_TEXT_STRIDE; i < iCell; ++i )
+		(void)__xuiTerminalHistoryDecode(pLine, &iOffset);
+	return iOffset;
+}
+
+static void __xuiTerminalHistoryReaderInit(xui_terminal_history_reader_t* pReader,
+	const xui_terminal_history_line_t* pLine, int iCell)
+{
+	pReader->pLine = pLine;
+	pReader->iCell = iCell;
+	pReader->iTextOffset = __xuiTerminalHistoryTextOffset(pLine, iCell);
+	pReader->iRun = __xuiTerminalHistoryRunAt(pLine, iCell);
+	pReader->iGlyph = __xuiTerminalHistoryGlyphAt(pLine, iCell);
+}
+
+static void __xuiTerminalHistoryReaderNext(xui_terminal_history_reader_t* pReader,
+	xui_terminal_cell_t* pTarget)
+{
+	const xui_terminal_history_line_t* pLine = pReader->pLine;
+	const xui_terminal_history_run_t* pRun;
+	memset(pTarget, 0, sizeof(*pTarget));
+	pTarget->iSize = sizeof(*pTarget);
+	if ( pReader->iCell >= pLine->iCellCount ) return;
+	XUI_TERMINAL_HISTORY_STEP(CellReads);
+	while ( pReader->iRun + 1 < pLine->iRunCount && pLine->pRuns[pReader->iRun + 1].iStart <= pReader->iCell )
+		pReader->iRun++;
+	pRun = &pLine->pRuns[pReader->iRun];
+	pTarget->iCodepoint = __xuiTerminalHistoryDecode(pLine, &pReader->iTextOffset);
+	pTarget->iFgColor = pRun->iFgColor;
+	pTarget->iBgColor = pRun->iBgColor;
+	pTarget->iFlags = pRun->iFlags;
+	pTarget->iStyle = pRun->iStyle;
+	pTarget->iLinkId = pRun->iLinkId;
+	pTarget->iWidth = 1;
+	if ( pReader->iGlyph < pLine->iGlyphCount && pLine->pGlyphs[pReader->iGlyph].iCell == pReader->iCell ) {
+		const xui_terminal_history_glyph_t* pGlyph = &pLine->pGlyphs[pReader->iGlyph++];
+		pTarget->iWidth = pGlyph->iWidth;
+		pTarget->iFlags |= pGlyph->iFlags;
+		pTarget->iCombiningCount = pGlyph->iCombiningCount;
+		if ( pGlyph->iCombiningCount > 0 ) memcpy(pTarget->arrCombining,
+			pLine->pCombining + pGlyph->iCombiningOffset, sizeof(uint32_t) * pGlyph->iCombiningCount);
+	}
+	pReader->iCell++;
+}
+
+static void __xuiTerminalHistoryTruncate(xui_terminal_history_line_t* pLine, int iCount)
+{
+	int iGlyph = __xuiTerminalHistoryGlyphAt(pLine, iCount);
+	pLine->iTextSize = __xuiTerminalHistoryTextOffset(pLine, iCount);
+	pLine->iCellCount = iCount;
+	pLine->iRunCount = iCount > 0 ? __xuiTerminalHistoryRunAt(pLine, iCount - 1) + 1 : 0;
+	if ( iGlyph < pLine->iGlyphCount ) pLine->iCombiningCount = pLine->pGlyphs[iGlyph].iCombiningOffset;
+	pLine->iGlyphCount = iGlyph;
+	pLine->bOpen = 1;
 }
 
 static xui_terminal_history_line_t* __xuiTerminalHistoryLastLine(xui_terminal_data_t* pData)
@@ -1079,8 +1246,8 @@ static int __xuiTerminalRebuildHistoryView(xui_terminal_data_t* pData)
 		while ( iStart < pLine->iCellCount ) {
 			iEnd = __xuiTerminalMin(iStart + pData->iColumns, pLine->iCellCount);
 			if ( iEnd < pLine->iCellCount && iEnd > iStart &&
-			     (pLine->pCells[iEnd - 1].iFlags & XUI_TERMINAL_CELL_WIDE) != 0u &&
-			     (pLine->pCells[iEnd].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) iEnd--;
+			     (__xuiTerminalHistoryGlyphFlags(pLine, iEnd - 1) & XUI_TERMINAL_CELL_WIDE) != 0u &&
+			     (__xuiTerminalHistoryGlyphFlags(pLine, iEnd) & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) iEnd--;
 			if ( iEnd <= iStart ) iEnd = __xuiTerminalMin(iStart + 1, pLine->iCellCount);
 			iRet = __xuiTerminalHistoryViewReserve(pData, pData->iScrollbackCount + 1);
 			if ( iRet != XUI_OK ) return iRet;
@@ -1106,32 +1273,19 @@ static xui_terminal_history_view_row_t* __xuiTerminalGetHistoryViewRow(xui_termi
 static void __xuiTerminalHistoryCellToPublic(const xui_terminal_history_line_t* pLine,
 	int iCell, xui_terminal_cell_t* pTarget)
 {
-	const xui_terminal_history_cell_t* pSource;
-	int iCount;
+	xui_terminal_history_reader_t tReader;
 	if ( pTarget == NULL ) return;
 	memset(pTarget, 0, sizeof(*pTarget));
 	pTarget->iSize = sizeof(*pTarget);
 	if ( pLine == NULL || iCell < 0 || iCell >= pLine->iCellCount ) return;
-	pSource = &pLine->pCells[iCell];
-	pTarget->iCodepoint = pSource->iCodepoint;
-	pTarget->iFgColor = pSource->iFgColor;
-	pTarget->iBgColor = pSource->iBgColor;
-	pTarget->iFlags = pSource->iFlags;
-	pTarget->iStyle = pSource->iStyle;
-	pTarget->iLinkId = pSource->iLinkId;
-	pTarget->iWidth = pSource->iWidth;
-	iCount = pSource->iCombiningCount;
-	if ( iCount > XUI_TERMINAL_MAX_COMBINING ) iCount = XUI_TERMINAL_MAX_COMBINING;
-	pTarget->iCombiningCount = (uint8_t)iCount;
-	if ( iCount > 0 && pLine->pCombining != NULL ) {
-		memcpy(pTarget->arrCombining, pLine->pCombining + pSource->iCombiningOffset,
-			sizeof(uint32_t) * (size_t)iCount);
-	}
+	__xuiTerminalHistoryReaderInit(&tReader, pLine, iCell);
+	__xuiTerminalHistoryReaderNext(&tReader, pTarget);
 }
 
 static const char* __xuiTerminalGetScrollbackLine(xui_terminal_data_t* pData, int iLine)
 {
 	xui_terminal_history_view_row_t* pView;
+	xui_terminal_history_reader_t tReader;
 	xui_terminal_cell_t tCell;
 	char sUtf[8];
 	char* sText;
@@ -1143,17 +1297,20 @@ static const char* __xuiTerminalGetScrollbackLine(xui_terminal_data_t* pData, in
 	pView = __xuiTerminalGetHistoryViewRow(pData, iLine);
 	if ( pView == NULL ) return "";
 	if ( pView->sTextCache != NULL ) return pView->sTextCache;
-	iCapacity = (pView->iEnd - pView->iStart + 1) * 4 + 1;
-	if ( iCapacity < 1 ) iCapacity = 1;
+	__xuiTerminalHistoryReaderInit(&tReader, pView->pLine, pView->iStart);
+	iCapacity = __xuiTerminalHistoryTextOffset(pView->pLine, pView->iEnd) - tReader.iTextOffset;
+	if ( iCapacity == INT_MAX ) return "";
+	iCapacity++;
 	sText = (char*)xrtMalloc((size_t)iCapacity);
 	if ( sText == NULL ) return "";
 	iSize = 0;
 	for ( i = pView->iStart; i < pView->iEnd; ++i ) {
-		__xuiTerminalHistoryCellToPublic(pView->pLine, i, &tCell);
+		__xuiTerminalHistoryReaderNext(&tReader, &tCell);
 		if ( (tCell.iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) continue;
 		n = __xuiTerminalEncodeUtf8(tCell.iCodepoint != 0u ? tCell.iCodepoint : ' ', sUtf);
-		while ( iSize + n + 1 >= iCapacity ) {
+		while ( n >= iCapacity - iSize ) {
 			char* sNew;
+			if ( iCapacity > INT_MAX / 2 ) { xrtFree(sText); return ""; }
 			iCapacity *= 2;
 			sNew = (char*)xrtRealloc(sText, (size_t)iCapacity);
 			if ( sNew == NULL ) { xrtFree(sText); return ""; }
@@ -1162,8 +1319,9 @@ static const char* __xuiTerminalGetScrollbackLine(xui_terminal_data_t* pData, in
 		if ( n > 0 ) { memcpy(sText + iSize, sUtf, (size_t)n); iSize += n; }
 		for ( j = 0; j < tCell.iCombiningCount; ++j ) {
 			n = __xuiTerminalEncodeUtf8(tCell.arrCombining[j], sUtf);
-			while ( iSize + n + 1 >= iCapacity ) {
+			while ( n >= iCapacity - iSize ) {
 				char* sNew;
+				if ( iCapacity > INT_MAX / 2 ) { xrtFree(sText); return ""; }
 				iCapacity *= 2;
 				sNew = (char*)xrtRealloc(sText, (size_t)iCapacity);
 				if ( sNew == NULL ) { xrtFree(sText); return ""; }
@@ -1175,6 +1333,7 @@ static const char* __xuiTerminalGetScrollbackLine(xui_terminal_data_t* pData, in
 	while ( iSize > 0 && sText[iSize - 1] == ' ' ) iSize--;
 	sText[iSize] = '\0';
 	pView->sTextCache = sText;
+	pView->iTextCapacity = iCapacity;
 	return sText;
 }
 
@@ -1262,26 +1421,27 @@ static int __xuiTerminalLastContentRow(const xui_terminal_data_t* pData,
 	return -1;
 }
 
-static void __xuiTerminalPopScrollbackRow(xui_terminal_data_t* pData, xui_terminal_cell_t* pRow)
+static int __xuiTerminalPopScrollbackRow(xui_terminal_data_t* pData, xui_terminal_cell_t* pRow)
 {
 	xui_terminal_history_view_row_t* pView;
 	xui_terminal_history_line_t* pLine;
+	xui_terminal_history_reader_t tReader;
 	int i;
 	int iIndex;
 	int iCount;
-	if ( pData == NULL || pRow == NULL || pData->iColumns <= 0 ) return;
-	if ( __xuiTerminalRebuildHistoryView(pData) != XUI_OK || pData->iScrollbackCount <= 0 ) return;
+	int bWrapped;
+	if ( pData == NULL || pRow == NULL || pData->iColumns <= 0 ) return 0;
+	if ( __xuiTerminalRebuildHistoryView(pData) != XUI_OK || pData->iScrollbackCount <= 0 ) return 0;
 	pView = &pData->pHistoryView[pData->iScrollbackCount - 1];
 	pLine = pView->pLine;
+	bWrapped = pLine->bOpen;
 	iCount = __xuiTerminalMin(pView->iEnd - pView->iStart, pData->iColumns);
+	__xuiTerminalHistoryReaderInit(&tReader, pLine, pView->iStart);
 	for ( i = 0; i < iCount; ++i ) {
-		__xuiTerminalHistoryCellToPublic(pLine, pView->iStart + i, &pRow[i]);
+		__xuiTerminalHistoryReaderNext(&tReader, &pRow[i]);
 	}
 	if ( pView->iStart > 0 ) {
-		pLine->iCellCount = pView->iStart;
-		pLine->bOpen = 1;
-		xrtFree(pLine->sTextCache);
-		pLine->sTextCache = NULL;
+		__xuiTerminalHistoryTruncate(pLine, pView->iStart);
 	} else if ( pData->iHistoryCount > 0 ) {
 		iIndex = (pData->iScrollbackStart + pData->iHistoryCount - 1) % pData->iScrollbackLimit;
 		__xuiTerminalClearScrollbackSlot(pData, iIndex);
@@ -1290,6 +1450,7 @@ static void __xuiTerminalPopScrollbackRow(xui_terminal_data_t* pData, xui_termin
 	}
 	pData->bHistoryViewDirty = 1;
 	(void)__xuiTerminalRebuildHistoryView(pData);
+	return bWrapped;
 }
 
 typedef struct xui_terminal_reflow_t {
@@ -1343,9 +1504,12 @@ static int __xuiTerminalRowContentColumns(const xui_terminal_cell_t* pRow,
 	if ( !bWrapped ) {
 		for ( iCount = iColumns; iCount > 0; --iCount ) {
 			const xui_terminal_cell_t* pCell = &pRow[iCount - 1];
-			if ( pCell->iCodepoint != 0u && pCell->iCodepoint != ' ' &&
+			if ( (pCell->iCombiningCount > 0 || (pCell->iCodepoint != 0u && pCell->iCodepoint != ' ')) &&
 			    (pCell->iFlags & XUI_TERMINAL_CELL_WIDE_CONT) == 0u ) break;
 		}
+		if ( iCount > 0 && iCount < iColumns &&
+		     (pRow[iCount - 1].iFlags & XUI_TERMINAL_CELL_WIDE) != 0u &&
+		     (pRow[iCount].iFlags & XUI_TERMINAL_CELL_WIDE_CONT) != 0u ) iCount++;
 	}
 	if ( iCount < iMinimum ) iCount = iMinimum;
 	if ( iCount > iColumns ) iCount = iColumns;
@@ -1555,7 +1719,8 @@ static int __xuiTerminalResizeBuffers(xui_terminal_data_t* pData, int iColumns, 
 		iRestoreRows = (iRows > tReflow.iRows - iDropRows) ?
 			__xuiTerminalMin(iRows - (tReflow.iRows - iDropRows), pData->iScrollbackCount) : 0;
 		for ( y = iRestoreRows - 1; y >= 0; y-- ) {
-			__xuiTerminalPopScrollbackRow(pData, __xuiTerminalBufferRow(pData, pData->pMain, y));
+			pData->pMainWrapped[y] = (uint8_t)__xuiTerminalPopScrollbackRow(pData,
+				__xuiTerminalBufferRow(pData, pData->pMain, y));
 		}
 		iMainSourceRow = iDropRows;
 		iMainTargetRow = iRestoreRows;
@@ -3221,22 +3386,26 @@ static int __xuiTerminalOscLinkAt(xui_terminal_data_t* pData, int iLine, int iCo
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iLine < 0 || iLine >= __xuiTerminalLogicalLineCount(pData) || iColumn < 0 ) return 0;
 	if ( iLine < pData->iScrollbackCount ) {
+		const xui_terminal_history_line_t* pLine;
+		int iRun, iFirstRun, iLastRun;
 		pHistoryRow = __xuiTerminalGetHistoryViewRow(pData, iLine);
 		if ( pHistoryRow == NULL ) return 0;
 		iLinkColumns = pHistoryRow->iEnd - pHistoryRow->iStart;
 		if ( iColumn >= iLinkColumns ) return 0;
-		iLinkId = pHistoryRow->pLine->pCells[pHistoryRow->iStart + iColumn].iLinkId;
+		pLine = pHistoryRow->pLine;
+		iRun = __xuiTerminalHistoryRunAt(pLine, pHistoryRow->iStart + iColumn);
+		iLinkId = pLine->pRuns[iRun].iLinkId;
 		if ( iLinkId == 0 ) return 0;
 		sUrl = __xuiTerminalGetLinkUrl(pData, iLinkId);
 		if ( sUrl == NULL || sUrl[0] == '\0' ) return 0;
-		iStart = iColumn;
-		while ( iStart > 0 && pHistoryRow->pLine->pCells[pHistoryRow->iStart + iStart - 1].iLinkId == iLinkId ) {
-			iStart--;
-		}
-		iEnd = iColumn + 1;
-		while ( iEnd < iLinkColumns && pHistoryRow->pLine->pCells[pHistoryRow->iStart + iEnd].iLinkId == iLinkId ) {
-			iEnd++;
-		}
+		iFirstRun = iLastRun = iRun;
+		while ( iFirstRun > 0 && pLine->pRuns[iFirstRun].iStart > pHistoryRow->iStart &&
+		        pLine->pRuns[iFirstRun - 1].iLinkId == iLinkId ) iFirstRun--;
+		while ( iLastRun + 1 < pLine->iRunCount && pLine->pRuns[iLastRun + 1].iStart < pHistoryRow->iEnd &&
+		        pLine->pRuns[iLastRun + 1].iLinkId == iLinkId ) iLastRun++;
+		iStart = __xuiTerminalMax(0, pLine->pRuns[iFirstRun].iStart - pHistoryRow->iStart);
+		iEnd = iLastRun + 1 < pLine->iRunCount ? pLine->pRuns[iLastRun + 1].iStart : pLine->iCellCount;
+		iEnd = __xuiTerminalMin(iEnd - pHistoryRow->iStart, iLinkColumns);
 	} else {
 		if ( iColumn >= pData->iColumns ) return 0;
 		iScreenRow = iLine - pData->iScrollbackCount;
@@ -5350,6 +5519,7 @@ static int __xuiTerminalRenderHistoryRow(xui_proxy pProxy, xui_draw_context pDra
 	xui_terminal_data_t* pData, int iLogicalLine, float fX, float fY)
 {
 	xui_terminal_history_view_row_t* pView;
+	xui_terminal_history_reader_t tReader;
 	xui_terminal_cell_t* pNew;
 	xui_terminal_cell_t tBlank;
 	int i;
@@ -5366,9 +5536,9 @@ static int __xuiTerminalRenderHistoryRow(xui_proxy pProxy, xui_draw_context pDra
 	tBlank = __xuiTerminalEraseCell(pData);
 	for ( i = 0; i < pData->iColumns; ++i ) pData->pHistoryRenderCells[i] = tBlank;
 	iCount = __xuiTerminalMin(pView->iEnd - pView->iStart, pData->iColumns);
+	__xuiTerminalHistoryReaderInit(&tReader, pView->pLine, pView->iStart);
 	for ( i = 0; i < iCount; ++i ) {
-		__xuiTerminalHistoryCellToPublic(pView->pLine, pView->iStart + i,
-			&pData->pHistoryRenderCells[i]);
+		__xuiTerminalHistoryReaderNext(&tReader, &pData->pHistoryRenderCells[i]);
 	}
 	return __xuiTerminalRenderCellRow(pProxy, pDraw, pData,
 		pData->pHistoryRenderCells, pData->iColumns, iLogicalLine, fX, fY);
@@ -7052,13 +7222,15 @@ XUI_API int xuiTerminalGetStats(xui_widget pWidget, xui_terminal_stats_t* pStats
 		pLine = pData->ppHistory != NULL ? pData->ppHistory[idx] : NULL;
 		if ( pLine == NULL ) continue;
 		iHistoryBytes += sizeof(*pLine) +
-			sizeof(*pLine->pCells) * (size_t)pLine->iCellCapacity +
+			(size_t)pLine->iTextCapacity +
+			sizeof(*pLine->pTextIndex) * (size_t)pLine->iTextIndexCapacity +
+			sizeof(*pLine->pRuns) * (size_t)pLine->iRunCapacity +
+			sizeof(*pLine->pGlyphs) * (size_t)pLine->iGlyphCapacity +
 			sizeof(*pLine->pCombining) * (size_t)pLine->iCombiningCapacity;
-		if ( pLine->sTextCache != NULL ) iHistoryBytes += strlen(pLine->sTextCache) + 1u;
 	}
 	for ( i = 0; i < pData->iScrollbackCount; ++i ) {
 		if ( pData->pHistoryView[i].sTextCache != NULL ) {
-			iHistoryBytes += strlen(pData->pHistoryView[i].sTextCache) + 1u;
+			iHistoryBytes += (size_t)pData->pHistoryView[i].iTextCapacity;
 		}
 	}
 	pStats->iHistoryMemoryBytes = iHistoryBytes;
