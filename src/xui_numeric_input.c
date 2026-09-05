@@ -958,31 +958,6 @@ static int __xuiNumericInputCacheRender(xui_widget pWidget, xui_draw_context pDr
 	}
 	__xuiNumericInputResolve(pWidget, pData, &tResolved);
 	__xuiNumericInputUpdateRects(pWidget, pData, &tResolved, NULL);
-	if ( (pData->pInput != NULL) && (pData->iChildStyleHash != xuiWidgetGetStyleHash(pWidget)) ) {
-		xui_widget pInput = pData->pInput;
-		xui_widget_cache_render_proc onRender = NULL;
-		xui_draw_context pChildDraw = NULL;
-		void* pChildUser = NULL;
-		xui_rect_t tChildRect = xuiWidgetGetRect(pInput);
-		uint32_t iChildState = xuiWidgetGetStateId(pInput);
-		(void)xuiWidgetResolveStyle(pInput);
-		(void)xuiWidgetGetCacheRenderCallback(pInput, &onRender, &pChildUser);
-		if ( onRender != NULL && xuiWidgetGetVisible(pInput) && tChildRect.fW > 0 && tChildRect.fH > 0 ) {
-			int iEndRet;
-			/* The child cache was visited before its owner. Repaint it in this
-			 * frame instead of deferring an inline/class color change one frame. */
-			iRet = xuiWidgetUpdateBegin(pInput, iChildState, XUI_WIDGET_UPDATE_CLEAR, 0, &pChildDraw);
-			if ( iRet != XUI_OK ) return iRet;
-			iRet = onRender(pInput, pChildDraw, iChildState, pChildUser);
-			if ( !xuiInternalWidgetIsValid(pInput) ) return XUI_OK;
-			iEndRet = xuiWidgetUpdateEnd(pInput, iChildState, pChildDraw);
-			if ( iRet != XUI_OK ) return iRet;
-			if ( iEndRet != XUI_OK ) return iEndRet;
-			(void)xuiWidgetClearDirty(pInput, XUI_WIDGET_DIRTY_CACHE);
-		}
-		if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_OK;
-		pData->iChildStyleHash = xuiWidgetGetStyleHash(pWidget);
-	}
 	iState = __xuiNumericInputState(pWidget, pData);
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
@@ -1036,6 +1011,20 @@ static void __xuiNumericInputDefaultLayout(xui_layout_t* pLayout)
 	pLayout->fMaxWidth = XUI_LAYOUT_UNBOUNDED;
 	pLayout->fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	pLayout->fShrink = 1.0f;
+}
+
+static int __xuiNumericInputPreparePaint(xui_widget pWidget)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pInput != NULL && pData->iChildStyleHash != iHash ) {
+		iRet = xuiWidgetInvalidate(pData->pInput, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) return iRet;
+		pData->iChildStyleHash = iHash;
+	}
+	return XUI_OK;
 }
 
 static void __xuiNumericInputDefaultCachePolicy(xui_cache_policy_t* pPolicy)
@@ -1262,6 +1251,7 @@ XUI_API xui_widget_type xuiNumericInputGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "numeric_input");
 	if ( pType != NULL ) {
+		pType->onPreparePaint = __xuiNumericInputPreparePaint;
 		__xuiNumericInputRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
@@ -1284,6 +1274,7 @@ XUI_API xui_widget_type xuiNumericInputGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) {
 		return NULL;
 	}
+	pType->onPreparePaint = __xuiNumericInputPreparePaint;
 	__xuiNumericInputRegisterStyleProperties(pContext, pType);
 	return pType;
 }

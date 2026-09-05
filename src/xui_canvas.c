@@ -25,7 +25,9 @@ typedef struct xui_canvas_data_t {
 	uint32_t iBackgroundColor;
 	uint32_t iBorderColor;
 	uint32_t iPenColor;
-	uint32_t iViewportStyleHash;
+	uint32_t iViewportBackgroundColor;
+	uint32_t iViewportBorderColor;
+	int bViewportStyleSeen;
 } xui_canvas_data_t;
 
 static int __xuiCanvasDescValid(const xui_canvas_desc_t* pDesc)
@@ -108,36 +110,18 @@ static int __xuiCanvasInvalidateViewport(xui_canvas_data_t* pData)
 	return xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiCanvasCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiCanvasPreparePaint(xui_widget pWidget)
 {
 	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
-	(void)pDraw;
-	(void)iStateId;
-	(void)pUser;
+	xui_canvas_data_t tResolved;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->iViewportStyleHash != xuiWidgetGetStyleHash(pWidget) ) {
-		xui_widget pViewport = pData->pViewport;
-		xui_widget_cache_render_proc onRender = NULL;
-		xui_draw_context pChildDraw = NULL;
-		void* pChildUser = NULL;
-		xui_rect_t tRect = xuiWidgetGetRect(pViewport);
-		uint32_t iState = xuiWidgetGetStateId(pViewport);
-		int iRet, iEndRet;
-		if ( !xuiWidgetGetVisible(pViewport) || tRect.fW <= 0 || tRect.fH <= 0 ) return XUI_OK;
-		(void)xuiWidgetGetCacheRenderCallback(pViewport, &onRender, &pChildUser);
-		if ( onRender == NULL ) return XUI_OK;
-		/* Cache preparation visits children first. Refresh the dependent viewport
-		 * now, before this frame is composed, including local parent style edits. */
-		iRet = xuiWidgetUpdateBegin(pViewport, iState, XUI_WIDGET_UPDATE_CLEAR, 0, &pChildDraw);
-		if ( iRet != XUI_OK ) return iRet;
-		iRet = onRender(pViewport, pChildDraw, iState, pChildUser);
-		if ( !xuiInternalWidgetIsValid(pViewport) ) return XUI_OK;
-		iEndRet = xuiWidgetUpdateEnd(pViewport, iState, pChildDraw);
-		if ( iRet != XUI_OK ) return iRet;
-		if ( iEndRet != XUI_OK ) return iEndRet;
-		(void)xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_CACHE);
-		if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_OK;
-		pData->iViewportStyleHash = xuiWidgetGetStyleHash(pWidget);
+	__xuiCanvasResolve(pWidget, pData, &tResolved);
+	if ( !pData->bViewportStyleSeen || pData->iViewportBackgroundColor != tResolved.iBackgroundColor ||
+	     pData->iViewportBorderColor != tResolved.iBorderColor ) {
+		pData->bViewportStyleSeen = 1;
+		pData->iViewportBackgroundColor = tResolved.iBackgroundColor;
+		pData->iViewportBorderColor = tResolved.iBorderColor;
+		return __xuiCanvasInvalidateViewport(pData);
 	}
 	return XUI_OK;
 }
@@ -495,6 +479,7 @@ XUI_API xui_widget_type xuiCanvasGetType(xui_context pContext)
 	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "canvas");
 	if ( pType != NULL ) {
+		pType->onPreparePaint = __xuiCanvasPreparePaint;
 		__xuiCanvasRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
@@ -507,11 +492,11 @@ XUI_API xui_widget_type xuiCanvasGetType(xui_context pContext)
 	tDesc.onInit = __xuiCanvasInit;
 	tDesc.onDestroy = __xuiCanvasDestroy;
 	tDesc.onContentMeasure = __xuiCanvasContentMeasure;
-	tDesc.onCacheRender = __xuiCanvasCacheRender;
 	__xuiCanvasDefaultLayout(&tDesc.tLayout);
 	__xuiCanvasDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
+	pType->onPreparePaint = __xuiCanvasPreparePaint;
 	__xuiCanvasRegisterStyleProperties(pContext, pType);
 	return pType;
 }
