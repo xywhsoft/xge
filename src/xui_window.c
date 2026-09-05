@@ -351,7 +351,7 @@ static int __xuiWindowDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float f
 		float fY = __xuiWindowMin(fY0, fY1);
 		float fW = __xuiWindowMax(1.0f, __xuiWindowMax(fX0, fX1) - fX + fWidth);
 		float fH = __xuiWindowMax(1.0f, __xuiWindowMax(fY0, fY1) - fY + fWidth);
-		return pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){fX, fY, fW, fH}, iColor);
+		return pProxy->drawRectFill(pProxy, pDraw, xuiInternalRectFromFloatNearest(fX, fY, fW, fH), iColor);
 	}
 	return XUI_ERROR_NOT_INITIALIZED;
 }
@@ -460,7 +460,7 @@ static xui_rect_t __xuiWindowClampRect(xui_widget pWidget, xui_window_data_t* pD
 	tParent = __xuiWindowParentRect(pWidget);
 	fMinW = __xuiWindowMinWidth(pData, pResolved);
 	fMinH = pData->bCollapsed ? __xuiWindowCollapsedHeight(pData, pResolved) : __xuiWindowMinHeight(pData, pResolved);
-	if ( pData->bCollapsed ) tRect.fH = fMinH;
+	if ( pData->bCollapsed ) tRect.fH = 0;
 	return xuiInternalWindowFrameClamp(tRect, tParent, fMinW, fMinH);
 }
 
@@ -632,7 +632,8 @@ static int __xuiWindowCanStartMove(xui_widget pWidget, xui_window_data_t* pData,
 	if ( !pData->bShowTitleBar || pEvent->pTarget != pWidget ) {
 		return 0;
 	}
-	return __xuiWindowRectContains((xui_rect_t){0.0f, 0.0f, tWorld.fW, pResolved->fBorderWidth + pResolved->fTitleBarHeight}, fLocalX, fLocalY);
+	return __xuiWindowRectContains(xuiInternalRectFromFloatNearest(0.0f, 0.0f, tWorld.fW,
+		pResolved->fBorderWidth + pResolved->fTitleBarHeight), fLocalX, fLocalY);
 }
 
 static xui_rect_t __xuiWindowBuildInteractionRect(xui_widget pWidget, xui_window_data_t* pData, float fX, float fY)
@@ -758,10 +759,8 @@ static int __xuiWindowButtonRender(xui_widget pButton, xui_draw_context pDraw, u
 		(pData->bActive ? tResolved.iTitleTextColor : tResolved.iInactiveTitleTextColor);
 	iRet = __xuiWindowDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
-	tIcon.fW = 10.0f;
-	tIcon.fH = 10.0f;
-	tIcon.fX = tRect.fX + (tRect.fW - tIcon.fW) * 0.5f;
-	tIcon.fY = tRect.fY + (tRect.fH - tIcon.fH) * 0.5f;
+	tIcon = xuiInternalRectFromFloatNearest(tRect.fX + (tRect.fW - 10.0f) * 0.5f,
+		tRect.fY + (tRect.fH - 10.0f) * 0.5f, 10.0f, 10.0f);
 	if ( iPart == XUI_WINDOW_PART_COLLAPSE ) {
 		if ( pData->bCollapsed ) {
 			iRet = __xuiWindowDrawLine(pProxy, pDraw, tIcon.fX + 1.0f, tIcon.fY + 6.0f, tIcon.fX + 5.0f, tIcon.fY + 2.0f, 1.2f, iIcon);
@@ -894,7 +893,7 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	uint32_t iTitle;
 	uint32_t iTitleText;
 	uint32_t iBottomFill;
-	float fTextRight;
+	int iTextRight;
 	int iRet;
 
 	(void)iStateId;
@@ -934,21 +933,20 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 		tText = tTitle;
 		tText.fX += 8.0f;
 		tText.fW -= 16.0f;
-		fTextRight = tTitle.fX + tTitle.fW - 8.0f;
-		if ( xuiWidgetGetVisible(pData->pCloseButton) ) fTextRight = pData->tCloseButtonRect.fX - 6.0f;
-		if ( xuiWidgetGetVisible(pData->pMaximizeButton) && pData->tMaximizeButtonRect.fX < fTextRight ) fTextRight = pData->tMaximizeButtonRect.fX - 6.0f;
-		if ( xuiWidgetGetVisible(pData->pCollapseButton) && pData->tCollapseButtonRect.fX < fTextRight ) fTextRight = pData->tCollapseButtonRect.fX - 6.0f;
-		tText.fW = fTextRight - tText.fX;
+		iTextRight = tTitle.fX + tTitle.fW - 8;
+		if ( xuiWidgetGetVisible(pData->pCloseButton) ) iTextRight = pData->tCloseButtonRect.fX - 6;
+		if ( xuiWidgetGetVisible(pData->pMaximizeButton) && pData->tMaximizeButtonRect.fX < iTextRight ) iTextRight = pData->tMaximizeButtonRect.fX - 6;
+		if ( xuiWidgetGetVisible(pData->pCollapseButton) && pData->tCollapseButtonRect.fX < iTextRight ) iTextRight = pData->tCollapseButtonRect.fX - 6;
+		tText.fW = iTextRight - tText.fX;
 		if ( tText.fW < 0.0f ) tText.fW = 0.0f;
 		if ( pData->bHasIcon && pData->pIconSurface != NULL && pProxy->drawSurface != NULL ) {
-			tIcon.fW = tResolved.fIconSize;
-			tIcon.fH = tResolved.fIconSize;
-			tIcon.fX = tTitle.fX + 8.0f;
-			tIcon.fY = tTitle.fY + (tTitle.fH - tIcon.fH) * 0.5f;
+			tIcon = xuiInternalRectFromFloatNearest(tTitle.fX + 8.0f,
+				tTitle.fY + (tTitle.fH - tResolved.fIconSize) * 0.5f,
+				tResolved.fIconSize, tResolved.fIconSize);
 			iRet = pProxy->drawSurface(pProxy, pDraw, pData->pIconSurface, pData->tIconSrc, xuiInternalSnapRect(tIcon), XUI_COLOR_RGBA(255, 255, 255, 255), 0);
 			if ( iRet != XUI_OK ) return iRet;
 			tText.fX = tIcon.fX + tIcon.fW + 8.0f;
-			tText.fW = fTextRight - tText.fX;
+			tText.fW = iTextRight - tText.fX;
 			if ( tText.fW < 0.0f ) tText.fW = 0.0f;
 		}
 		if ( (tResolved.pFont != NULL) && (pProxy->drawText != NULL) && (pData->sTitle[0] != '\0') ) {
@@ -991,10 +989,11 @@ static int __xuiWindowPrepare(xui_widget pWidget, void* pUser)
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiWindowResolve(pWidget, pData, &tResolved);
-	tPadding.fLeft = tResolved.fBorderWidth;
-	tPadding.fTop = tResolved.fBorderWidth + (pData->bShowTitleBar ? tResolved.fTitleBarHeight : 0.0f);
-	tPadding.fRight = tResolved.fBorderWidth;
-	tPadding.fBottom = tResolved.fBorderWidth;
+	tPadding.fLeft = xuiInternalSnapPixel(tResolved.fBorderWidth);
+	tPadding.fTop = xuiInternalSnapPixel(tResolved.fBorderWidth + (pData->bShowTitleBar ? tResolved.fTitleBarHeight : 0.0f));
+	/* Far edges round at size - border, including half-pixel ties. */
+	tPadding.fRight = -xuiInternalSnapPixel(-tResolved.fBorderWidth);
+	tPadding.fBottom = -xuiInternalSnapPixel(-tResolved.fBorderWidth);
 	iRet = xuiWidgetSetPadding(pWidget, tPadding);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pClient, !pData->bCollapsed);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pCollapseButton,
@@ -1013,7 +1012,6 @@ static int __xuiWindowLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect
 	xui_internal_window_frame_metrics_t tMetrics;
 	xui_internal_window_frame_layout_t tLayout;
 	xui_rect_t tFrame;
-	float fTitleH;
 	int iTrailing;
 	int iRet;
 
@@ -1021,12 +1019,10 @@ static int __xuiWindowLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiWindowResolve(pWidget, pData, &tResolved);
-	fTitleH = pData->bShowTitleBar ? tResolved.fTitleBarHeight : 0.0f;
 	__xuiWindowFrameMetrics(pData, &tResolved, &tMetrics);
-	tFrame = (xui_rect_t){tContentRect.fX - tResolved.fBorderWidth,
-		tContentRect.fY - tResolved.fBorderWidth - fTitleH,
-		tContentRect.fW + tResolved.fBorderWidth * 2.0f,
-		tContentRect.fH + tResolved.fBorderWidth * 2.0f + fTitleH};
+	tFrame = xuiWidgetGetRect(pWidget);
+	tFrame.fX = 0;
+	tFrame.fY = 0;
 	xuiInternalWindowFrameLayout(tFrame, &tMetrics, &tLayout);
 	pData->tTitleBarRect = tLayout.tTitleBarRect;
 	pData->tClientRect = tLayout.tClientRect;
@@ -1892,10 +1888,10 @@ XUI_API int xuiWindowSetCollapsed(xui_widget pWidget, int bCollapsed)
 	fCollapsedHeight = __xuiWindowCollapsedHeight(pData, &tResolved);
 	if ( bCollapsed ) {
 		if ( tRect.fH > fCollapsedHeight ) pData->fExpandedHeight = tRect.fH;
-		tRect.fH = fCollapsedHeight;
+		tRect.fH = 0;
 	} else {
 		if ( pData->fExpandedHeight < fCollapsedHeight + 48.0f ) pData->fExpandedHeight = fCollapsedHeight + 96.0f;
-		tRect.fH = pData->fExpandedHeight;
+		tRect = xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, pData->fExpandedHeight);
 	}
 	pData->bCollapsed = bCollapsed;
 	pData->iChangeCount++;

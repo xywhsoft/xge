@@ -29,18 +29,18 @@ void xuiInternalWindowFrameLayout(xui_rect_t tFrameRect,
 	border = __xuiWindowFrameMax(0.0f, pMetrics->fBorderWidth);
 	title = pMetrics->bShowTitleBar ? __xuiWindowFrameMax(0.0f, pMetrics->fTitleBarHeight) : 0.0f;
 	title = __xuiWindowFrameMin(title, __xuiWindowFrameMax(0.0f, tFrameRect.fH - border * 2.0f));
-	pLayout->tTitleBarRect = xuiInternalSnapRect((xui_rect_t){
+	pLayout->tTitleBarRect = xuiInternalRectFromFloatNearest(
 		tFrameRect.fX + border,
 		tFrameRect.fY + border,
 		__xuiWindowFrameMax(0.0f, tFrameRect.fW - border * 2.0f),
 		title
-	});
-	pLayout->tClientRect = xuiInternalSnapRect((xui_rect_t){
+	);
+	pLayout->tClientRect = xuiInternalRectFromFloatNearest(
 		tFrameRect.fX + border,
 		tFrameRect.fY + border + title,
 		__xuiWindowFrameMax(0.0f, tFrameRect.fW - border * 2.0f),
 		__xuiWindowFrameMax(0.0f, tFrameRect.fH - border * 2.0f - title)
-	});
+	);
 }
 
 xui_rect_t xuiInternalWindowFrameTrailingButton(const xui_internal_window_frame_layout_t* pLayout,
@@ -50,17 +50,17 @@ xui_rect_t xuiInternalWindowFrameTrailingButton(const xui_internal_window_frame_
 	float size;
 	float gap;
 	float inset;
+	float x;
+	float y;
 	if ( pLayout == NULL || pMetrics == NULL || !pMetrics->bShowTitleBar || iTrailingIndex < 0 ) return r;
 	size = __xuiWindowFrameMax(0.0f, pMetrics->fButtonSize);
 	size = __xuiWindowFrameMin(size, pLayout->tTitleBarRect.fH);
 	gap = __xuiWindowFrameMax(0.0f, pMetrics->fButtonGap);
 	inset = __xuiWindowFrameMax(0.0f, pMetrics->fButtonInset);
-	r.fW = size;
-	r.fH = size;
-	r.fX = pLayout->tTitleBarRect.fX + pLayout->tTitleBarRect.fW - inset - size - (float)iTrailingIndex * (size + gap);
-	r.fY = pLayout->tTitleBarRect.fY + (pLayout->tTitleBarRect.fH - size) * 0.5f;
-	if ( r.fX < pLayout->tTitleBarRect.fX ) return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-	return xuiInternalSnapRect(r);
+	x = pLayout->tTitleBarRect.fX + pLayout->tTitleBarRect.fW - inset - size - (float)iTrailingIndex * (size + gap);
+	y = pLayout->tTitleBarRect.fY + (pLayout->tTitleBarRect.fH - size) * 0.5f;
+	if ( x < pLayout->tTitleBarRect.fX ) return r;
+	return xuiInternalRectFromFloatNearest(x, y, size, size);
 }
 
 uint32_t xuiInternalWindowFrameResizeEdgesAt(xui_rect_t tFrameRect,
@@ -92,44 +92,50 @@ int xuiInternalWindowFrameResizeCursor(uint32_t iEdges)
 	return XUI_CURSOR_INHERIT;
 }
 
-xui_rect_t xuiInternalWindowFrameClamp(xui_rect_t r, xui_rect_t bounds, float fMinWidth, float fMinHeight)
+static xui_rect_t __xuiWindowFrameClampFloat(float x, float y, float w, float h,
+	xui_rect_t bounds, float fMinWidth, float fMinHeight)
 {
 	float right;
 	float bottom;
 	fMinWidth = __xuiWindowFrameMax(0.0f, fMinWidth);
 	fMinHeight = __xuiWindowFrameMax(0.0f, fMinHeight);
-	r.fW = __xuiWindowFrameMax(r.fW, fMinWidth);
-	r.fH = __xuiWindowFrameMax(r.fH, fMinHeight);
-	if ( bounds.fW > 0.0f && r.fW > bounds.fW && bounds.fW >= fMinWidth ) r.fW = bounds.fW;
-	if ( bounds.fH > 0.0f && r.fH > bounds.fH && bounds.fH >= fMinHeight ) r.fH = bounds.fH;
-	if ( r.fX < bounds.fX ) r.fX = bounds.fX;
-	if ( r.fY < bounds.fY ) r.fY = bounds.fY;
+	w = __xuiWindowFrameMax(w, fMinWidth);
+	h = __xuiWindowFrameMax(h, fMinHeight);
+	if ( bounds.fW > 0.0f && w > bounds.fW && bounds.fW >= fMinWidth ) w = bounds.fW;
+	if ( bounds.fH > 0.0f && h > bounds.fH && bounds.fH >= fMinHeight ) h = bounds.fH;
+	if ( x < bounds.fX ) x = bounds.fX;
+	if ( y < bounds.fY ) y = bounds.fY;
 	right = bounds.fX + bounds.fW;
 	bottom = bounds.fY + bounds.fH;
-	if ( bounds.fW > 0.0f && r.fX + r.fW > right ) r.fX = __xuiWindowFrameMax(bounds.fX, right - r.fW);
-	if ( bounds.fH > 0.0f && r.fY + r.fH > bottom ) r.fY = __xuiWindowFrameMax(bounds.fY, bottom - r.fH);
-	return xuiInternalSnapRect(r);
+	if ( bounds.fW > 0.0f && x + w > right ) x = __xuiWindowFrameMax(bounds.fX, right - w);
+	if ( bounds.fH > 0.0f && y + h > bottom ) y = __xuiWindowFrameMax(bounds.fY, bottom - h);
+	return xuiInternalRectFromFloatNearest(x, y, w, h);
+}
+
+xui_rect_t xuiInternalWindowFrameClamp(xui_rect_t r, xui_rect_t bounds, float fMinWidth, float fMinHeight)
+{
+	return __xuiWindowFrameClampFloat(r.fX, r.fY, r.fW, r.fH, bounds, fMinWidth, fMinHeight);
 }
 
 xui_rect_t xuiInternalWindowFrameMove(xui_rect_t r, xui_rect_t bounds, float fDX, float fDY)
 {
-	r.fX += fDX;
-	r.fY += fDY;
+	float x = r.fX + fDX;
+	float y = r.fY + fDY;
 	if ( bounds.fW > 0.0f ) {
-		if ( r.fW >= bounds.fW ) r.fX = bounds.fX;
+		if ( r.fW >= bounds.fW ) x = bounds.fX;
 		else {
-			r.fX = __xuiWindowFrameMax(bounds.fX, r.fX);
-			r.fX = __xuiWindowFrameMin(bounds.fX + bounds.fW - r.fW, r.fX);
+			x = __xuiWindowFrameMax(bounds.fX, x);
+			x = __xuiWindowFrameMin(bounds.fX + bounds.fW - r.fW, x);
 		}
 	}
 	if ( bounds.fH > 0.0f ) {
-		if ( r.fH >= bounds.fH ) r.fY = bounds.fY;
+		if ( r.fH >= bounds.fH ) y = bounds.fY;
 		else {
-			r.fY = __xuiWindowFrameMax(bounds.fY, r.fY);
-			r.fY = __xuiWindowFrameMin(bounds.fY + bounds.fH - r.fH, r.fY);
+			y = __xuiWindowFrameMax(bounds.fY, y);
+			y = __xuiWindowFrameMin(bounds.fY + bounds.fH - r.fH, y);
 		}
 	}
-	return xuiInternalSnapRect(r);
+	return xuiInternalRectFromFloatNearest(x, y, r.fW, r.fH);
 }
 
 xui_rect_t xuiInternalWindowFrameResize(xui_rect_t r, xui_rect_t bounds, uint32_t iEdges,
@@ -137,23 +143,24 @@ xui_rect_t xuiInternalWindowFrameResize(xui_rect_t r, xui_rect_t bounds, uint32_
 {
 	float right = r.fX + r.fW;
 	float bottom = r.fY + r.fH;
+	float x = r.fX, y = r.fY, w = r.fW, h = r.fH;
 	if ( (iEdges & XUI_WINDOW_EDGE_LEFT) != 0u ) {
-		r.fX += fDX;
-		r.fW -= fDX;
-		if ( r.fW < fMinWidth ) { r.fW = fMinWidth; r.fX = right - fMinWidth; }
+		x += fDX;
+		w -= fDX;
+		if ( w < fMinWidth ) { w = fMinWidth; x = right - fMinWidth; }
 	}
 	if ( (iEdges & XUI_WINDOW_EDGE_RIGHT) != 0u ) {
-		r.fW += fDX;
-		if ( r.fW < fMinWidth ) r.fW = fMinWidth;
+		w += fDX;
+		if ( w < fMinWidth ) w = fMinWidth;
 	}
 	if ( (iEdges & XUI_WINDOW_EDGE_TOP) != 0u ) {
-		r.fY += fDY;
-		r.fH -= fDY;
-		if ( r.fH < fMinHeight ) { r.fH = fMinHeight; r.fY = bottom - fMinHeight; }
+		y += fDY;
+		h -= fDY;
+		if ( h < fMinHeight ) { h = fMinHeight; y = bottom - fMinHeight; }
 	}
 	if ( (iEdges & XUI_WINDOW_EDGE_BOTTOM) != 0u ) {
-		r.fH += fDY;
-		if ( r.fH < fMinHeight ) r.fH = fMinHeight;
+		h += fDY;
+		if ( h < fMinHeight ) h = fMinHeight;
 	}
-	return xuiInternalWindowFrameClamp(r, bounds, fMinWidth, fMinHeight);
+	return __xuiWindowFrameClampFloat(x, y, w, h, bounds, fMinWidth, fMinHeight);
 }
