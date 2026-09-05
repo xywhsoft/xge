@@ -2614,7 +2614,7 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 	if ( iFlags == 0 ) {
 		iFlags = XUI_WIDGET_HIT_DEFAULT;
 	}
-	if ( xuiLayout(pContext) != XUI_OK ) {
+	if ( xuiInternalEnsureLayout(pContext) != XUI_OK ) {
 		return NULL;
 	}
 	if ( xuiInternalContextDestroyPending(pContext) ) return NULL;

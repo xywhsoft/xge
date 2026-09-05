@@ -2627,6 +2627,13 @@ static int __xuiWidgetResizeTrackArray(xui_table_track_t** ppTracks, int* pCount
 	return XUI_OK;
 }
 
+static int __xuiLayoutRootNeedsArrange(xui_widget root, xui_rect_t rect)
+{
+	return root != NULL && (((root->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) != 0) ||
+		!root->bArrangeValid || root->tRect.fX != rect.fX || root->tRect.fY != rect.fY ||
+		root->tRect.fW != rect.fW || root->tRect.fH != rect.fH);
+}
+
 static int __xuiLayoutOperation(xui_context pContext)
 {
 	xui_widget pRoot;
@@ -2661,20 +2668,8 @@ static int __xuiLayoutOperation(xui_context pContext)
 	tRootRect.fH = tViewport.iH;
 	tRootRect = xuiInternalSnapRect(tRootRect);
 	for ( iPass = 0; iPass < XUI_LAYOUT_MAX_PASSES; iPass++ ) {
-		bNeedRoot = (pRoot != NULL) &&
-			(((pRoot->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) != 0) ||
-			 !pRoot->bArrangeValid ||
-			 (pRoot->tRect.fX != tRootRect.fX) ||
-			 (pRoot->tRect.fY != tRootRect.fY) ||
-			 (pRoot->tRect.fW != tRootRect.fW) ||
-			 (pRoot->tRect.fH != tRootRect.fH));
-		bNeedOverlay = (pOverlayRoot != NULL) &&
-			(((pOverlayRoot->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) != 0) ||
-			 !pOverlayRoot->bArrangeValid ||
-			 (pOverlayRoot->tRect.fX != tRootRect.fX) ||
-			 (pOverlayRoot->tRect.fY != tRootRect.fY) ||
-			 (pOverlayRoot->tRect.fW != tRootRect.fW) ||
-			 (pOverlayRoot->tRect.fH != tRootRect.fH));
+		bNeedRoot = __xuiLayoutRootNeedsArrange(pRoot, tRootRect);
+		bNeedOverlay = __xuiLayoutRootNeedsArrange(pOverlayRoot, tRootRect);
 		if ( !bNeedRoot && !bNeedOverlay ) break;
 		pContext->tLayoutStats.iPassCount++;
 		if ( bNeedRoot ) {
@@ -3814,6 +3809,20 @@ XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_wid
 	iRet = __xuiWidgetInsertBeforeOperation(pParent, pChild, pBefore);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
+}
+
+int xuiInternalEnsureLayout(xui_context context)
+{
+	xui_size_t viewport;
+	xui_rect_t rect;
+	if ( !xuiInternalContextIsValid(context) ) return XUI_ERROR_INVALID_ARGUMENT;
+	viewport = xuiGetViewportSize(context);
+	if ( viewport.iW <= 0 || viewport.iH <= 0 ) return XUI_OK;
+	rect = (xui_rect_t){0, 0, viewport.iW, viewport.iH};
+	if ( context->tLayoutStats.iGeneration != 0 && context->tLayoutStats.bStabilized &&
+	     !__xuiLayoutRootNeedsArrange(context->pRoot, rect) &&
+	     !__xuiLayoutRootNeedsArrange(context->pOverlayRoot, rect) ) return XUI_OK;
+	return xuiLayout(context);
 }
 
 static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
@@ -7242,7 +7251,7 @@ static int __xuiRenderPrepareOperation(xui_context pContext)
 	memset(&pContext->tRenderStats, 0, sizeof(pContext->tRenderStats));
 	pContext->tRenderStats.iSize = sizeof(pContext->tRenderStats);
 	pContext->tRenderStats.iGeneration = iGeneration;
-	iRet = xuiLayout(pContext);
+	iRet = xuiInternalEnsureLayout(pContext);
 	if ( iRet != XUI_OK ) {
 		xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_LAYOUT, 0,
 			"layout", "Layout failed; rendering cannot safely continue with a new tree.");
@@ -7358,7 +7367,7 @@ static int __xuiBuildRenderTreeOperation(xui_context pContext)
 	if ( (pContext->pRoot == NULL) && (pContext->pOverlayRoot == NULL) ) {
 		return XUI_OK;
 	}
-	iRet = xuiLayout(pContext);
+	iRet = xuiInternalEnsureLayout(pContext);
 	if ( iRet != XUI_OK ) {
 		xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_LAYOUT, 0,
 			"render_tree.layout", "The render tree could not be rebuilt because layout failed.");
