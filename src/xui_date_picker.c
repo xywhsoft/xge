@@ -207,13 +207,8 @@ static int __xuiDatePickerRectContains(xui_rect_t tRect, float fX, float fY)
 
 static xui_rect_t __xuiDatePickerInsetRect(xui_rect_t tRect, float fInset)
 {
-	tRect.fX += fInset;
-	tRect.fY += fInset;
-	tRect.fW -= fInset * 2.0f;
-	tRect.fH -= fInset * 2.0f;
-	if ( tRect.fW < 0.0f ) tRect.fW = 0.0f;
-	if ( tRect.fH < 0.0f ) tRect.fH = 0.0f;
-	return xuiInternalSnapRect(tRect);
+	return xuiInternalRectFromFloatNearest(tRect.fX + fInset, tRect.fY + fInset,
+		tRect.fW - fInset * 2.0f, tRect.fH - fInset * 2.0f);
 }
 
 static int __xuiDatePickerEditing(const xui_date_picker_data_t* pData)
@@ -888,16 +883,21 @@ static void __xuiDatePickerUpdateOwnerRects(xui_widget pWidget, xui_date_picker_
 	fButtonW = tRect.fH;
 	if ( fButtonW < 24.0f ) fButtonW = 24.0f;
 	if ( fButtonW > 34.0f ) fButtonW = 34.0f;
-	pData->tButtonRect = xuiInternalSnapRect((xui_rect_t){tRect.fX + tRect.fW - fButtonW, tRect.fY, fButtonW, tRect.fH});
-	pData->tTextRect = xuiInternalSnapRect((xui_rect_t){tRect.fX + 8.0f, tRect.fY, __xuiDatePickerMax(1.0f, tRect.fW - fButtonW - 14.0f), tRect.fH});
+	pData->tButtonRect = xuiInternalRectFromFloatNearest(tRect.fX + tRect.fW - fButtonW, tRect.fY, fButtonW, tRect.fH);
+	pData->tTextRect = xuiInternalRectFromFloatNearest(tRect.fX + 8.0f, tRect.fY, __xuiDatePickerMax(1.0f, tRect.fW - fButtonW - 14.0f), tRect.fH);
 }
 
-static void __xuiDatePickerLayoutCalendar(xui_date_picker_data_t* pData, int iPanel, xui_rect_t tPanel)
+typedef struct xui_date_picker_rect_t {
+	float fX, fY, fW, fH;
+} xui_date_picker_rect_t;
+
+static void __xuiDatePickerLayoutCalendar(xui_date_picker_data_t* pData, int iPanel, xui_date_picker_rect_t tPanel)
 {
 	static const float fHeaderH = 32.0f;
 	static const float fWeekH = 22.0f;
-	float fCellW;
-	float fCellH;
+	float fGridH;
+	float arrX[8];
+	float arrY[7];
 	float fGridY;
 	float fButtonW;
 	float fLabelW;
@@ -913,15 +913,16 @@ static void __xuiDatePickerLayoutCalendar(xui_date_picker_data_t* pData, int iPa
 	int i;
 
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) return;
-	tPanel = xuiInternalSnapRect(tPanel);
-	pData->tCalendarRect[iPanel] = tPanel;
-	pData->tHeaderRect[iPanel] = xuiInternalSnapRect((xui_rect_t){tPanel.fX, tPanel.fY, tPanel.fW, fHeaderH});
+	if ( tPanel.fW < 0.0f ) tPanel.fW = 0.0f;
+	if ( tPanel.fH < 0.0f ) tPanel.fH = 0.0f;
+	pData->tCalendarRect[iPanel] = xuiInternalRectFromFloatNearest(tPanel.fX, tPanel.fY, tPanel.fW, tPanel.fH);
+	pData->tHeaderRect[iPanel] = xuiInternalRectFromFloatNearest(tPanel.fX, tPanel.fY, tPanel.fW, fHeaderH);
 	fButtonW = 28.0f;
-	pData->tPrevRect[iPanel] = xuiInternalSnapRect((xui_rect_t){tPanel.fX + 2.0f, tPanel.fY + 2.0f, fButtonW, fHeaderH - 4.0f});
-	pData->tNextRect[iPanel] = xuiInternalSnapRect((xui_rect_t){tPanel.fX + tPanel.fW - fButtonW - 2.0f, tPanel.fY + 2.0f, fButtonW, fHeaderH - 4.0f});
+	pData->tPrevRect[iPanel] = xuiInternalRectFromFloatNearest(tPanel.fX + 2.0f, tPanel.fY + 2.0f, fButtonW, fHeaderH - 4.0f);
+	pData->tNextRect[iPanel] = xuiInternalRectFromFloatNearest(tPanel.fX + tPanel.fW - fButtonW - 2.0f, tPanel.fY + 2.0f, fButtonW, fHeaderH - 4.0f);
 	fLabelW = __xuiDatePickerMax(80.0f, tPanel.fW - fButtonW * 2.0f - 18.0f);
 	if ( fLabelW > 150.0f ) fLabelW = 150.0f;
-	pData->tMonthLabelRect[iPanel] = xuiInternalSnapRect((xui_rect_t){tPanel.fX + (tPanel.fW - fLabelW) * 0.5f, tPanel.fY + 4.0f, fLabelW, fHeaderH - 8.0f});
+	pData->tMonthLabelRect[iPanel] = xuiInternalRectFromFloatNearest(tPanel.fX + (tPanel.fW - fLabelW) * 0.5f, tPanel.fY + 4.0f, fLabelW, fHeaderH - 8.0f);
 	fYearW = XUI_DATE_PICKER_YEAR_FIELD_W;
 	fMonthW = XUI_DATE_PICKER_MONTH_FIELD_W;
 	fGap = XUI_DATE_PICKER_HEADER_COMBO_GAP;
@@ -933,28 +934,29 @@ static void __xuiDatePickerLayoutCalendar(xui_date_picker_data_t* pData, int iPa
 		fMonthW = fComboW - fGap - fYearW;
 	}
 	fComboX = tPanel.fX + (tPanel.fW - fComboW) * 0.5f;
-	pData->tYearRect[iPanel] = xuiInternalSnapRect((xui_rect_t){fComboX, tPanel.fY + 4.0f, fYearW, fHeaderH - 8.0f});
-	pData->tMonthRect[iPanel] = xuiInternalSnapRect((xui_rect_t){fComboX + fYearW + fGap, tPanel.fY + 4.0f, fMonthW, fHeaderH - 8.0f});
+	pData->tYearRect[iPanel] = xuiInternalRectFromFloatNearest(fComboX, tPanel.fY + 4.0f, fYearW, fHeaderH - 8.0f);
+	pData->tMonthRect[iPanel] = xuiInternalRectFromFloatNearest(fComboX + fYearW + fGap, tPanel.fY + 4.0f, fMonthW, fHeaderH - 8.0f);
 	fGridY = tPanel.fY + fHeaderH + fWeekH;
-	fCellW = tPanel.fW / 7.0f;
-	fCellH = (tPanel.fH - fHeaderH - fWeekH) / 6.0f;
-	if ( fCellH < 20.0f ) fCellH = 20.0f;
+	fGridH = __xuiDatePickerMax(120.0f, tPanel.fH - fHeaderH - fWeekH);
+	/* Share exact edges; multiplying an already divided cell size can lose a half pixel. */
+	for ( i = 0; i < 7; i++ ) arrX[i] = tPanel.fX + tPanel.fW * (float)i / 7.0f;
+	arrX[7] = tPanel.fX + tPanel.fW;
+	for ( i = 0; i < 6; i++ ) arrY[i] = fGridY + fGridH * (float)i / 6.0f;
+	arrY[6] = fGridY + fGridH;
 	tFirst = xuiXrtFirstDayOfMonth(pData->tViewMonth[iPanel]);
 	xuiXrtDecodeSerial(tFirst, NULL, NULL, NULL, NULL, NULL, NULL, &iWeekday, NULL);
 	iOffset = (iWeekday - pData->iFirstDayOfWeek + 7) % 7;
 	for ( i = 0; i < XUI_DATE_PICKER_CELL_COUNT; i++ ) {
-		pData->arrDayRect[iPanel][i] = xuiInternalSnapRect((xui_rect_t){
-			tPanel.fX + (float)(i % 7) * fCellW,
-			fGridY + (float)(i / 7) * fCellH,
-			fCellW,
-			fCellH
-		});
+		pData->arrDayRect[iPanel][i] = xuiInternalRectFromFloatNearest(
+			arrX[i % 7], arrY[i / 7],
+			arrX[i % 7 + 1] - arrX[i % 7], arrY[i / 7 + 1] - arrY[i / 7]
+		);
 		tCell = tFirst + ((xtime)i - (xtime)iOffset) * XRT_TIME_DAY;
 		pData->arrDayValue[iPanel][i] = xrtDatePart(tCell);
 	}
 }
 
-static void __xuiDatePickerLayoutTime(xui_date_picker_data_t* pData, int iPanel, xui_rect_t tPanel)
+static void __xuiDatePickerLayoutTime(xui_date_picker_data_t* pData, int iPanel, xui_date_picker_rect_t tPanel)
 {
 	float fFieldW;
 	float fFieldY;
@@ -966,8 +968,9 @@ static void __xuiDatePickerLayoutTime(xui_date_picker_data_t* pData, int iPanel,
 	int i;
 
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) return;
-	tPanel = xuiInternalSnapRect(tPanel);
-	pData->tTimePanelRect[iPanel] = tPanel;
+	if ( tPanel.fW < 0.0f ) tPanel.fW = 0.0f;
+	if ( tPanel.fH < 0.0f ) tPanel.fH = 0.0f;
+	pData->tTimePanelRect[iPanel] = xuiInternalRectFromFloatNearest(tPanel.fX, tPanel.fY, tPanel.fW, tPanel.fH);
 	iCount = pData->bShowSecond ? 3 : 2;
 	fGap = 8.0f;
 	fInnerW = tPanel.fW - XUI_DATE_PICKER_TIME_INSET * 2.0f;
@@ -988,7 +991,7 @@ static void __xuiDatePickerLayoutTime(xui_date_picker_data_t* pData, int iPanel,
 	}
 	for ( i = 0; i < 3; i++ ) {
 		if ( i < iCount ) {
-			pData->arrTimeRect[iPanel][i] = xuiInternalSnapRect((xui_rect_t){fX + (float)i * (fFieldW + fGap), fFieldY, fFieldW, 28.0f});
+			pData->arrTimeRect[iPanel][i] = xuiInternalRectFromFloatNearest(fX + (float)i * (fFieldW + fGap), fFieldY, fFieldW, 28.0f);
 		} else {
 			pData->arrTimeRect[iPanel][i] = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 		}
@@ -1026,46 +1029,46 @@ static void __xuiDatePickerUpdatePanelRects(xui_date_picker_data_t* pData)
 			fColW = (fW - fPad * 3.0f) * 0.5f;
 			fCalH = 238.0f;
 			fTimeH = __xuiDatePickerMax(XUI_DATE_PICKER_TIME_MIN_HEIGHT, fFooterY - fPad * 2.0f - fCalH);
-			__xuiDatePickerLayoutCalendar(pData, 0, (xui_rect_t){fPad, fPad, fColW, fCalH});
-			__xuiDatePickerLayoutCalendar(pData, 1, (xui_rect_t){fPad * 2.0f + fColW, fPad, fColW, fCalH});
-			__xuiDatePickerLayoutTime(pData, 0, (xui_rect_t){fPad, fPad + fCalH + 6.0f, fColW, fTimeH});
-			__xuiDatePickerLayoutTime(pData, 1, (xui_rect_t){fPad * 2.0f + fColW, fPad + fCalH + 6.0f, fColW, fTimeH});
+			__xuiDatePickerLayoutCalendar(pData, 0, (xui_date_picker_rect_t){fPad, fPad, fColW, fCalH});
+			__xuiDatePickerLayoutCalendar(pData, 1, (xui_date_picker_rect_t){fPad * 2.0f + fColW, fPad, fColW, fCalH});
+			__xuiDatePickerLayoutTime(pData, 0, (xui_date_picker_rect_t){fPad, fPad + fCalH + 6.0f, fColW, fTimeH});
+			__xuiDatePickerLayoutTime(pData, 1, (xui_date_picker_rect_t){fPad * 2.0f + fColW, fPad + fCalH + 6.0f, fColW, fTimeH});
 		} else {
 			fCalH = fFooterY - fPad * 2.0f;
 			fColW = 292.0f;
 			if ( fColW > fW * 0.58f ) fColW = fW * 0.58f;
-			__xuiDatePickerLayoutCalendar(pData, 0, (xui_rect_t){fPad, fPad, fColW, fCalH});
-			__xuiDatePickerLayoutTime(pData, 0, (xui_rect_t){fPad * 2.0f + fColW, fPad + 58.0f, fW - fColW - fPad * 3.0f, 96.0f});
+			__xuiDatePickerLayoutCalendar(pData, 0, (xui_date_picker_rect_t){fPad, fPad, fColW, fCalH});
+			__xuiDatePickerLayoutTime(pData, 0, (xui_date_picker_rect_t){fPad * 2.0f + fColW, fPad + 58.0f, fW - fColW - fPad * 3.0f, 96.0f});
 		}
 	} else if ( __xuiDatePickerHasDate(pData->iMode) ) {
 		fCalH = fFooterY - fPad * 2.0f;
 		if ( __xuiDatePickerIsRange(pData->iMode) ) {
 			fColW = (fW - fPad * 3.0f) * 0.5f;
-			__xuiDatePickerLayoutCalendar(pData, 0, (xui_rect_t){fPad, fPad, fColW, fCalH});
-			__xuiDatePickerLayoutCalendar(pData, 1, (xui_rect_t){fPad * 2.0f + fColW, fPad, fColW, fCalH});
+			__xuiDatePickerLayoutCalendar(pData, 0, (xui_date_picker_rect_t){fPad, fPad, fColW, fCalH});
+			__xuiDatePickerLayoutCalendar(pData, 1, (xui_date_picker_rect_t){fPad * 2.0f + fColW, fPad, fColW, fCalH});
 		} else {
-			__xuiDatePickerLayoutCalendar(pData, 0, (xui_rect_t){fPad, fPad, fW - fPad * 2.0f, fCalH});
+			__xuiDatePickerLayoutCalendar(pData, 0, (xui_date_picker_rect_t){fPad, fPad, fW - fPad * 2.0f, fCalH});
 		}
 	} else {
 		if ( __xuiDatePickerIsRange(pData->iMode) ) {
 			fColW = (fW - fPad * 3.0f) * 0.5f;
-			__xuiDatePickerLayoutTime(pData, 0, (xui_rect_t){fPad, fPad + 12.0f, fColW, fFooterY - fPad * 2.0f});
-			__xuiDatePickerLayoutTime(pData, 1, (xui_rect_t){fPad * 2.0f + fColW, fPad + 12.0f, fColW, fFooterY - fPad * 2.0f});
+			__xuiDatePickerLayoutTime(pData, 0, (xui_date_picker_rect_t){fPad, fPad + 12.0f, fColW, fFooterY - fPad * 2.0f});
+			__xuiDatePickerLayoutTime(pData, 1, (xui_date_picker_rect_t){fPad * 2.0f + fColW, fPad + 12.0f, fColW, fFooterY - fPad * 2.0f});
 		} else {
-			__xuiDatePickerLayoutTime(pData, 0, (xui_rect_t){fPad, fPad + 12.0f, fW - fPad * 2.0f, fFooterY - fPad * 2.0f});
+			__xuiDatePickerLayoutTime(pData, 0, (xui_date_picker_rect_t){fPad, fPad + 12.0f, fW - fPad * 2.0f, fFooterY - fPad * 2.0f});
 		}
 	}
 	for ( i = 0; i < 4; i++ ) pData->arrFooterRect[i] = (xui_rect_t){0};
 	fButtonW = 66.0f;
 	fX = fW - fPad - fButtonW;
-	pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_OK] = xuiInternalSnapRect((xui_rect_t){fX, fFooterY, fButtonW, fFooterH});
+	pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_OK] = xuiInternalRectFromFloatNearest(fX, fFooterY, fButtonW, fFooterH);
 	fX -= fButtonW + 8.0f;
-	pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CANCEL] = xuiInternalSnapRect((xui_rect_t){fX, fFooterY, fButtonW, fFooterH});
+	pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CANCEL] = xuiInternalRectFromFloatNearest(fX, fFooterY, fButtonW, fFooterH);
 	if ( pData->bNullable ) {
 		fX -= fButtonW + 8.0f;
-		pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CLEAR] = xuiInternalSnapRect((xui_rect_t){fX, fFooterY, fButtonW, fFooterH});
+		pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CLEAR] = xuiInternalRectFromFloatNearest(fX, fFooterY, fButtonW, fFooterH);
 	}
-	pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_TODAY] = xuiInternalSnapRect((xui_rect_t){fPad, fFooterY, 78.0f, fFooterH});
+	pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_TODAY] = xuiInternalRectFromFloatNearest(fPad, fFooterY, 78.0f, fFooterH);
 }
 
 static int __xuiDatePickerDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -1199,7 +1202,7 @@ static xui_rect_t __xuiDatePickerComboPopupRect(const xui_date_picker_data_t* pD
 {
 	xui_rect_t tField;
 	xui_rect_t tCalendar;
-	xui_rect_t tRect;
+	xui_date_picker_rect_t tRect;
 	float fW;
 	float fH;
 
@@ -1210,17 +1213,17 @@ static xui_rect_t __xuiDatePickerComboPopupRect(const xui_date_picker_data_t* pD
 	if ( iKind == XUI_DATE_PICKER_COMBO_MONTH ) {
 		fW = 144.0f;
 		fH = 96.0f;
-		tRect = (xui_rect_t){tField.fX + tField.fW - fW, tField.fY + tField.fH + 2.0f, fW, fH};
+		tRect = (xui_date_picker_rect_t){tField.fX + tField.fW - fW, tField.fY + tField.fH + 2.0f, fW, fH};
 	} else {
 		fW = __xuiDatePickerMax(tField.fW, XUI_DATE_PICKER_YEAR_FIELD_W);
 		fH = 22.0f * (float)XUI_DATE_PICKER_YEAR_OPTION_COUNT;
-		tRect = (xui_rect_t){tField.fX, tField.fY + tField.fH + 2.0f, fW, fH};
+		tRect = (xui_date_picker_rect_t){tField.fX, tField.fY + tField.fH + 2.0f, fW, fH};
 	}
 	if ( tRect.fX < tCalendar.fX + 2.0f ) tRect.fX = tCalendar.fX + 2.0f;
 	if ( tRect.fX + tRect.fW > tCalendar.fX + tCalendar.fW - 2.0f ) tRect.fX = tCalendar.fX + tCalendar.fW - tRect.fW - 2.0f;
 	if ( tRect.fY + tRect.fH > pData->fPopupHeight - 50.0f ) tRect.fY = pData->fPopupHeight - 50.0f - tRect.fH;
 	if ( tRect.fY < tField.fY + tField.fH + 2.0f ) tRect.fY = tField.fY + tField.fH + 2.0f;
-	return xuiInternalSnapRect(tRect);
+	return xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH);
 }
 
 static xui_rect_t __xuiDatePickerYearOptionRect(const xui_date_picker_data_t* pData, int iPanel, int iIndex)
@@ -1229,7 +1232,7 @@ static xui_rect_t __xuiDatePickerYearOptionRect(const xui_date_picker_data_t* pD
 
 	if ( iIndex < 0 || iIndex >= XUI_DATE_PICKER_YEAR_OPTION_COUNT ) return (xui_rect_t){0};
 	tDrop = __xuiDatePickerComboPopupRect(pData, XUI_DATE_PICKER_COMBO_YEAR, iPanel);
-	return xuiInternalSnapRect((xui_rect_t){tDrop.fX, tDrop.fY + (float)iIndex * 22.0f, tDrop.fW, 22.0f});
+	return xuiInternalRectFromFloatNearest(tDrop.fX, tDrop.fY + (float)iIndex * 22.0f, tDrop.fW, 22.0f);
 }
 
 static xui_rect_t __xuiDatePickerMonthOptionRect(const xui_date_picker_data_t* pData, int iPanel, int iIndex)
@@ -1242,7 +1245,7 @@ static xui_rect_t __xuiDatePickerMonthOptionRect(const xui_date_picker_data_t* p
 	tDrop = __xuiDatePickerComboPopupRect(pData, XUI_DATE_PICKER_COMBO_MONTH, iPanel);
 	fCellW = tDrop.fW / 3.0f;
 	fCellH = tDrop.fH / 4.0f;
-	return xuiInternalSnapRect((xui_rect_t){tDrop.fX + (float)(iIndex % 3) * fCellW, tDrop.fY + (float)(iIndex / 3) * fCellH, fCellW, fCellH});
+	return xuiInternalRectFromFloatNearest(tDrop.fX + (float)(iIndex % 3) * fCellW, tDrop.fY + (float)(iIndex / 3) * fCellH, fCellW, fCellH);
 }
 
 static int64 __xuiDatePickerYearOptionValue(const xui_date_picker_data_t* pData, int iPanel, int iIndex)
@@ -1272,8 +1275,8 @@ static int __xuiDatePickerDrawComboField(xui_date_picker_data_t* pData, const xu
 	iBorder = bError ? XUI_COLOR_RGBA(226, 74, 92, 255) : (bActive ? pResolved->iAccentColor : pResolved->iFieldBorderColor);
 	iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, tRect, "", pResolved->iPopupTextColor, pResolved->iFieldColor, iBorder, bActive);
 	if ( iRet != XUI_OK ) return iRet;
-	tArrow = xuiInternalSnapRect((xui_rect_t){tRect.fX + tRect.fW - 20.0f, tRect.fY, 20.0f, tRect.fH});
-	tText = xuiInternalSnapRect((xui_rect_t){tRect.fX + 6.0f, tRect.fY, tRect.fW - 28.0f, tRect.fH});
+	tArrow = xuiInternalRectFromFloatNearest(tRect.fX + tRect.fW - 20.0f, tRect.fY, 20.0f, tRect.fH);
+	tText = xuiInternalRectFromFloatNearest(tRect.fX + 6.0f, tRect.fY, tRect.fW - 28.0f, tRect.fH);
 	if ( bSelectAll && (pProxy->drawRectFill != NULL || pProxy->drawRectFill != NULL) ) {
 		tSelect = __xuiDatePickerInsetRect(tText, 3.0f);
 		(void)__xuiDatePickerDrawFill(pProxy, pDraw, tSelect, XUI_COLOR_RGBA(218, 236, 252, 255));
@@ -1337,8 +1340,8 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 		0, 0);
 	for ( i = 0; i < 7; i++ ) {
 		tRect = pData->arrDayRect[iPanel][i];
-		tRect.fY = pData->tCalendarRect[iPanel].fY + 34.0f;
-		tRect.fH = 20.0f;
+		tRect.fY = pData->tCalendarRect[iPanel].fY + 34;
+		tRect.fH = 20;
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 			(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, arrWeek[(i + pData->iFirstDayOfWeek) % 7], tRect, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
@@ -1373,10 +1376,7 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 			iBorder = pResolved->iAccentColor;
 		}
 		tRect = pData->arrDayRect[iPanel][i];
-		tRect.fX += 2.0f;
-		tRect.fY += 2.0f;
-		tRect.fW -= 4.0f;
-		tRect.fH -= 4.0f;
+		tRect = __xuiDatePickerInsetRect(tRect, 2.0f);
 		if ( __xuiDatePickerAlpha(iFill) != 0 ) {
 			iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tRect, iFill);
 			if ( iRet != XUI_OK ) return iRet;
@@ -1426,7 +1426,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 	fTitleY = tRect.fY + 7.0f;
 	if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 		snprintf(sText, sizeof(sText), "%s time", (__xuiDatePickerIsRange(pData->iMode) ? ((iPanel == 0) ? "Start" : "End") : "Select"));
-		(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, (xui_rect_t){tRect.fX + 8.0f, fTitleY, tRect.fW - 16.0f, 16.0f}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, xuiInternalRectFromFloatNearest(tRect.fX + 8.0f, fTitleY, tRect.fW - 16.0f, 16.0f), pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
 	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
@@ -1436,7 +1436,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 	for ( i = 0; i < (pData->bShowSecond ? 3 : 2); i++ ) {
 		tRect = pData->arrTimeRect[iPanel][i];
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-			(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, arrName[i], (xui_rect_t){tRect.fX, tRect.fY - 18.0f, tRect.fW, 16.0f}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, arrName[i], (xui_rect_t){tRect.fX, tRect.fY - 18, tRect.fW, 16}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, tRect, "", pResolved->iPopupTextColor, pResolved->iFieldColor, ((pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i)) ? pResolved->iAccentColor : pResolved->iFieldBorderColor, (pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i));
 		if ( iRet != XUI_OK ) return iRet;
@@ -1542,7 +1542,7 @@ static int __xuiDatePickerPanelRender(xui_widget pPanel, xui_draw_context pDraw,
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pProxy->drawRectFill != NULL ) {
-		(void)pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){XUI_DATE_PICKER_PAD, pData->fPopupHeight - 48.0f, pData->fPopupWidth - XUI_DATE_PICKER_PAD * 2.0f, 1.0f}, tResolved.iSeparatorColor);
+		(void)pProxy->drawRectFill(pProxy, pDraw, xuiInternalRectFromFloatNearest(XUI_DATE_PICKER_PAD, pData->fPopupHeight - 48.0f, pData->fPopupWidth - XUI_DATE_PICKER_PAD * 2.0f, 1.0f), tResolved.iSeparatorColor);
 	}
 	(void)__xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_TODAY], __xuiDatePickerHasDate(pData->iMode) ? "Today" : "Now", tResolved.iPopupTextColor, tResolved.iFieldColor, tResolved.iFieldBorderColor, 0);
 	if ( pData->bNullable ) {
@@ -2527,7 +2527,7 @@ static int __xuiDatePickerApplyPopupStyle(xui_widget pWidget, xui_date_picker_da
 		(void)xuiPopupSetDirection(pData->pPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
 	}
 	if ( pData->pPanel != NULL ) {
-		(void)xuiWidgetSetRect(pData->pPanel, (xui_rect_t){0.0f, 0.0f, pData->fPopupWidth, pData->fPopupHeight});
+		(void)xuiWidgetSetRect(pData->pPanel, xuiInternalRectFromFloatNearest(0.0f, 0.0f, pData->fPopupWidth, pData->fPopupHeight));
 	}
 	return XUI_OK;
 }
