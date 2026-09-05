@@ -52,6 +52,8 @@ typedef struct xui_combobox_data_t {
 	uint32_t iPopupDisabledTextColor;
 	uint32_t iPopupSeparatorColor;
 	float fBorderWidth;
+	uint32_t iChildStyleHash;
+	int bChildStyleSynced;
 } xui_combobox_data_t;
 
 static xui_combobox_data_t* __xuiComboBoxGetData(xui_widget pWidget);
@@ -101,6 +103,7 @@ static int __xuiComboBoxAlpha(uint32_t iColor)
 
 static uint32_t __xuiComboBoxColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0 ) return iColor;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
@@ -282,6 +285,17 @@ static void __xuiComboBoxResolve(xui_widget pWidget, xui_combobox_data_t* pData,
 	(void)__xuiComboBoxStyleColor(pWidget, "combobox.border.focus_color", &pResolved->iFocusBorderColor);
 	(void)__xuiComboBoxStyleColor(pWidget, "combobox.arrow.color", &pResolved->iArrowColor);
 	(void)__xuiComboBoxStyleColor(pWidget, "combobox.arrow.disabled_color", &pResolved->iDisabledArrowColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.button.color", &pResolved->iButtonColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.button.hover_color", &pResolved->iButtonHoverColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.button.open_color", &pResolved->iButtonOpenColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.panel_color", &pResolved->iPopupPanelColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.border_color", &pResolved->iPopupBorderColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.shadow_color", &pResolved->iPopupShadowColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.hover_color", &pResolved->iPopupHoverColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.text_color", &pResolved->iPopupTextColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.hover_text_color", &pResolved->iPopupHoverTextColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.disabled_text_color", &pResolved->iPopupDisabledTextColor);
+	(void)__xuiComboBoxStyleColor(pWidget, "combobox.popup.separator_color", &pResolved->iPopupSeparatorColor);
 	(void)__xuiComboBoxStyleFloat(pWidget, "combobox.border.width", &pResolved->fBorderWidth);
 }
 
@@ -465,11 +479,36 @@ static int __xuiComboBoxSyncState(xui_widget pWidget, xui_combobox_data_t* pData
 	return xuiWidgetSetStateId(pWidget, iState);
 }
 
+static int __xuiComboBoxApplyMenuColors(xui_widget pWidget, xui_combobox_data_t* pData)
+{
+	xui_combobox_data_t tResolved;
+	xui_menu_colors_t tColors, tOldColors;
+
+	if ( pData->pMenu == NULL ) return XUI_OK;
+	__xuiComboBoxResolve(pWidget, pData, &tResolved);
+	memset(&tColors, 0, sizeof(tColors));
+	tColors.iSize = sizeof(tColors);
+	tColors.iPanelColor = tResolved.iPopupPanelColor;
+	tColors.iBorderColor = tResolved.iPopupBorderColor;
+	tColors.iShadowColor = tResolved.iPopupShadowColor;
+	tColors.iHoverColor = tResolved.iPopupHoverColor;
+	tColors.iTextColor = tResolved.iPopupTextColor;
+	tColors.iHoverTextColor = tResolved.iPopupHoverTextColor;
+	tColors.iDisabledTextColor = tResolved.iPopupDisabledTextColor;
+	tColors.iShortcutColor = __xuiComboBoxColorWithAlpha(tResolved.iPopupTextColor, 180);
+	tColors.iDangerTextColor = tResolved.iPopupTextColor;
+	tColors.iMarkColor = tResolved.iArrowColor;
+	tColors.iSeparatorColor = tResolved.iPopupSeparatorColor;
+	tColors.iFocusColor = tResolved.iFocusBorderColor;
+	if ( xuiMenuGetColors(pData->pMenu, &tOldColors) == XUI_OK &&
+	     memcmp(&tColors, &tOldColors, sizeof(tColors)) == 0 ) return XUI_OK;
+	return xuiMenuSetColors(pData->pMenu, &tColors);
+}
+
 static int __xuiComboBoxApplyMenuStyle(xui_widget pWidget, xui_combobox_data_t* pData)
 {
 	xui_combobox_data_t tResolved;
 	xui_menu_metrics_t tMetrics;
-	xui_menu_colors_t tColors;
 	xui_widget pPopup;
 	xui_rect_t tRect;
 	float fMinWidth;
@@ -504,21 +543,7 @@ static int __xuiComboBoxApplyMenuStyle(xui_widget pWidget, xui_combobox_data_t* 
 	iRet = xuiMenuSetMetrics(pData->pMenu, &tMetrics);
 	if ( iRet != XUI_OK ) return iRet;
 
-	memset(&tColors, 0, sizeof(tColors));
-	tColors.iSize = sizeof(tColors);
-	tColors.iPanelColor = tResolved.iPopupPanelColor;
-	tColors.iBorderColor = tResolved.iPopupBorderColor;
-	tColors.iShadowColor = tResolved.iPopupShadowColor;
-	tColors.iHoverColor = tResolved.iPopupHoverColor;
-	tColors.iTextColor = tResolved.iPopupTextColor;
-	tColors.iHoverTextColor = tResolved.iPopupHoverTextColor;
-	tColors.iDisabledTextColor = tResolved.iPopupDisabledTextColor;
-	tColors.iShortcutColor = __xuiComboBoxColorWithAlpha(tResolved.iPopupTextColor, 180);
-	tColors.iDangerTextColor = tResolved.iPopupTextColor;
-	tColors.iMarkColor = tResolved.iArrowColor;
-	tColors.iSeparatorColor = tResolved.iPopupSeparatorColor;
-	tColors.iFocusColor = tResolved.iFocusBorderColor;
-	iRet = xuiMenuSetColors(pData->pMenu, &tColors);
+	iRet = __xuiComboBoxApplyMenuColors(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiMenuSetFont(pData->pMenu, tResolved.pFont);
 	if ( iRet != XUI_OK ) return iRet;
@@ -561,6 +586,7 @@ static int __xuiComboBoxSyncInputStyle(xui_widget pWidget, xui_combobox_data_t* 
 {
 	xui_combobox_data_t tResolved;
 	uint32_t iText;
+	uint32_t iPlaceholder, iSelection, iCursor;
 	int bEdit;
 	int bEnabled;
 
@@ -573,6 +599,9 @@ static int __xuiComboBoxSyncInputStyle(xui_widget pWidget, xui_combobox_data_t* 
 	iText = bEnabled ? tResolved.iTextColor : tResolved.iDisabledTextColor;
 	(void)xuiInputSetColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), iText, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
 	(void)xuiInputSetErrorColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
+	(void)xuiInputGetExtendedColors(pData->pInput, &iPlaceholder, NULL, NULL, NULL, NULL, &iSelection, &iCursor);
+	(void)xuiInputSetExtendedColors(pData->pInput, iPlaceholder, tResolved.iDisabledTextColor,
+		0u, 0u, 0u, iSelection, iCursor);
 	(void)xuiInputSetReadonly(pData->pInput, !bEdit);
 	(void)xuiInputSetTextAlign(pData->pInput, XUI_INPUT_ALIGN_LEFT);
 	if ( xuiInputGetFont(pData->pInput) != tResolved.pFont ) {
@@ -588,6 +617,24 @@ static int __xuiComboBoxSyncInputStyle(xui_widget pWidget, xui_combobox_data_t* 
 	(void)xuiWidgetSetTabStop(pData->pInput, bEdit);
 	(void)xuiWidgetSetFocusable(pWidget, !bEdit);
 	(void)xuiWidgetSetTabStop(pWidget, !bEdit);
+	return XUI_OK;
+}
+
+static int __xuiComboBoxSyncStyle(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int iRet;
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
+	iRet = __xuiComboBoxSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiComboBoxApplyMenuColors(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iChildStyleHash = iHash;
+	pData->bChildStyleSynced = 1;
 	return XUI_OK;
 }
 
@@ -1075,6 +1122,8 @@ static int __xuiComboBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	__xuiComboBoxResolve(pWidget, pData, &tResolved);
 	__xuiComboBoxUpdateRects(pWidget, pData);
+	iRet = __xuiComboBoxSyncStyle(pWidget, 0.0f, NULL);
+	if ( iRet != XUI_OK ) return iRet;
 	iState = __xuiComboBoxState(pWidget, pData);
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
@@ -1353,6 +1402,17 @@ static void __xuiComboBoxRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.border.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.arrow.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.arrow.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.button.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.button.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.button.open_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.panel_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.shadow_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.hover_text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.disabled_text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.popup.separator_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -1440,6 +1500,7 @@ XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiComboBoxLayoutPrepare;
 	tDesc.onLayoutComplete = __xuiComboBoxLayoutComplete;
 	tDesc.onCacheRender = __xuiComboBoxCacheRender;
+	tDesc.onUpdate = __xuiComboBoxSyncStyle;
 	__xuiComboBoxDefaultLayout(&tLayout);
 	__xuiComboBoxDefaultCachePolicy(&tPolicy);
 	tDesc.tLayout = tLayout;
