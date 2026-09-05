@@ -39,6 +39,54 @@ static xui_table_track_t __xuiTestTrack(int iSizeMode, float fValue)
 	return tTrack;
 }
 
+static int __xuiTestAttachedArrange(void)
+{
+	xui_context pContext = NULL;
+	xui_widget pRoot = NULL;
+	xui_widget pParent = NULL;
+	xui_widget pChild = NULL;
+	xui_widget pLeaf = NULL;
+	xui_vec2_t tMeasured;
+	int iFailed = 0;
+	int i;
+	XUI_TEST_CHECK(xuiCreate(&pContext) == XUI_OK, "subtree context create");
+	XUI_TEST_CHECK(xuiWidgetCreate(pContext, &pRoot) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pParent) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pChild) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pLeaf) == XUI_OK, "subtree widget create");
+	XUI_TEST_CHECK(xuiSetRootWidget(pContext, pRoot) == XUI_OK &&
+		xuiWidgetAddChild(pRoot, pParent) == XUI_OK &&
+		xuiWidgetAddChild(pParent, pChild) == XUI_OK &&
+		xuiWidgetAddChild(pChild, pLeaf) == XUI_OK, "subtree attach");
+	(void)xuiWidgetSetRect(pParent, (xui_rect_t){31, 47, 200, 150});
+	(void)xuiWidgetSetRect(pChild, (xui_rect_t){17, 19, 80, 60});
+	(void)xuiWidgetSetRect(pLeaf, (xui_rect_t){5, 7, 21, 13});
+	XUI_TEST_CHECK(xuiWidgetArrange(pRoot, (xui_rect_t){11, 13, 400, 300}) == XUI_OK,
+		"offset root arrange");
+	XUI_TEST_CHECK(xuiWidgetArrangeChild(pRoot, pChild, (xui_rect_t){0, 0, 1, 1}) == XUI_ERROR_INVALID_ARGUMENT,
+		"subtree arrange accepted a non-parent");
+	for ( i = 0; i < 8; i++ ) {
+		/* Move the parent without refreshing its cached layout result first. */
+		(void)xuiWidgetSetRect(pParent, (xui_rect_t){51 + i, 67 + i, 200, 150});
+		(void)xuiWidgetInvalidate(pChild, XUI_WIDGET_DIRTY_LAYOUT);
+		XUI_TEST_CHECK(xuiWidgetMeasure(pChild, (xui_vec2_t){200, 150}, &tMeasured) == XUI_OK,
+			"mounted child measure");
+		XUI_TEST_CHECK(xuiWidgetArrangeChild(pParent, pChild, (xui_rect_t){-19, 23, 90, 70}) == XUI_OK,
+			"mounted child arrange");
+		XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pChild), -19, 23, 90, 70),
+			"subtree local rect drifted");
+		XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetWorldRect(pLeaf), 48 + i, 110 + i, 21, 13),
+			"subtree descendant world rect drifted");
+		XUI_TEST_CHECK(xuiWidgetArrange(pRoot, (xui_rect_t){11, 13, 400, 300}) == XUI_OK,
+			"root layout after subtree update");
+		XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetWorldRect(pLeaf), 48 + i, 110 + i, 21, 13),
+			"root layout reset a mounted subtree to root coordinates");
+	}
+cleanup:
+	if ( pContext != NULL ) xuiDestroy(pContext);
+	return !iFailed;
+}
+
 int main(void)
 {
 	xui_context pContext;
@@ -386,6 +434,8 @@ int main(void)
 		"collapsed fill still reserved stack space");
 
 	iRet = xuiWidgetArrange(pA, (xui_rect_t){0, 0, 10, 10});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "root arrange accepted an attached widget");
+	iRet = xuiWidgetArrangeChild(pRoot, pA, (xui_rect_t){0, 0, 10, 10});
 	XUI_TEST_CHECK(iRet == XUI_OK, "manual integer arrange failed");
 	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pA), 0, 0, 10, 10), "manual integer arrange rect failed");
 	iRet = xuiWidgetSetMeasureContainment(pA, XUI_MEASURE_CONTAIN_BOTH);
@@ -393,6 +443,7 @@ int main(void)
 		"measure containment API failed");
 	iRet = xuiWidgetSetMeasureContainment(pA, XUI_MEASURE_CONTAIN_BOTH | 4);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid measure containment accepted");
+	XUI_TEST_CHECK(__xuiTestAttachedArrange(), "attached arrange regression");
 
 cleanup:
 	if ( pContext != NULL ) {
