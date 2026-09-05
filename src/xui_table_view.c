@@ -39,6 +39,18 @@ typedef struct xui_table_view_merge_t {
 	uint64_t iPaintSerial;
 } xui_table_view_merge_t;
 
+typedef struct xui_table_view_cell_read_t {
+	int iRow;
+	int iColumn;
+	struct xui_table_view_cell_read_t* pPrevious;
+} xui_table_view_cell_read_t;
+
+typedef struct xui_table_view_count_read_t {
+	xui_table_view_count_proc onCount;
+	void* pUser;
+	struct xui_table_view_count_read_t* pPrevious;
+} xui_table_view_count_read_t;
+
 typedef struct xui_table_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
@@ -52,6 +64,9 @@ typedef struct xui_table_view_data_t {
 	int iMergeIndexedRows;
 	int bMergeBuilding;
 	uint64_t iMergeGeneration;
+	uint64_t iCallbackGeneration;
+	xui_table_view_count_read_t* pCountRead;
+	xui_table_view_cell_read_t* pCellRead;
 	uint64_t iPaintSerial;
 	int iColumnCount;
 	int iRowCount;
@@ -124,8 +139,18 @@ typedef struct xui_table_view_data_t {
 static xui_table_view_data_t* __xuiTableViewGetData(xui_widget pWidget);
 static float __xuiTableViewRowHeight(const xui_table_view_data_t* pData, int iRow);
 static float __xuiTableViewRowTop(const xui_table_view_data_t* pData, int iRow);
-static void __xuiTableViewGetCell(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell);
+static int __xuiTableViewGetCell(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell);
 static xui_rect_t __xuiTableViewCellContentRectData(xui_table_view_data_t* pData, int iRow, int iColumn, int iRowSpan, int iColSpan);
+static int __xuiTableViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
+static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
+
+/* The enclosing operation keeps storage alive; generations reject stale callback results. */
+static int __xuiTableViewCallbackCurrent(xui_widget pWidget, const xui_table_view_data_t* pData, uint64_t iGeneration)
+{
+	return xuiInternalWidgetIsValid(pWidget) &&
+		!xuiInternalContextDestroyPending(xuiWidgetGetContext(pWidget)) &&
+		pData->iCallbackGeneration == iGeneration;
+}
 
 static int __xuiTableViewFloatValid(float fValue)
 {
@@ -410,7 +435,7 @@ static int __xuiTableViewInvalidateHoverCell(xui_widget pWidget, xui_table_view_
 	if ( (iColumn < 0) || (iColumn >= pData->iColumnCount) ) {
 		return XUI_OK;
 	}
-	__xuiTableViewGetCell(pWidget, pData, iRow, iColumn, &tCell);
+	if ( __xuiTableViewGetCell(pWidget, pData, iRow, iColumn, &tCell) != XUI_OK ) return XUI_ERROR_INVALID_STATE;
 	tContent = __xuiTableViewCellContentRectData(pData, iRow, iColumn, tCell.iRowSpan, tCell.iColSpan);
 	tLocal.fX = tContent.fX - fOffsetX;
 	tLocal.fY = tContent.fY - fOffsetY;
@@ -440,6 +465,7 @@ static void __xuiTableViewInvalidateMerges(xui_table_view_data_t* pData)
 {
 	int i;
 	pData->iMergeGeneration++;
+	pData->iCallbackGeneration++;
 	pData->iMergeIndexedRows = 0;
 	pData->iMergeCount = 0;
 	for ( i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; i++ ) {
@@ -450,12 +476,25 @@ static void __xuiTableViewInvalidateMerges(xui_table_view_data_t* pData)
 static int __xuiTableViewSyncRowCount(xui_widget pWidget, xui_table_view_data_t* pData)
 {
 	int iCount;
+	uint64_t iGeneration;
+	xui_table_view_count_read_t tRead;
+	xui_table_view_count_read_t* pRead;
 
 	if ( pData == NULL ) {
 		return 0;
 	}
 	if ( pData->onCount != NULL ) {
+		/* Recursive reads use the committed count; a newly bound provider may run immediately. */
+		for ( pRead = pData->pCountRead; pRead != NULL; pRead = pRead->pPrevious ) {
+			if ( pRead->onCount == pData->onCount && pRead->pUser == pData->pAdapterUser ) return pData->iRowCount;
+		}
+		iGeneration = pData->iCallbackGeneration;
+		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) return XUI_ERROR_INVALID_STATE;
+		tRead = (xui_table_view_count_read_t){pData->onCount, pData->pAdapterUser, pData->pCountRead};
+		pData->pCountRead = &tRead;
 		iCount = pData->onCount(pWidget, pData->pAdapterUser);
+		pData->pCountRead = tRead.pPrevious;
+		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) return XUI_ERROR_INVALID_STATE;
 		if ( iCount < 0 ) iCount = 0;
 	} else {
 		iCount = pData->iRowStateCount;
@@ -578,7 +617,8 @@ static float __xuiTableViewRowTop(const xui_table_view_data_t* pData, int iRow)
 
 static float __xuiTableViewContentHeight(xui_widget pWidget, xui_table_view_data_t* pData)
 {
-	return __xuiTableViewRowTop(pData, __xuiTableViewSyncRowCount(pWidget, pData));
+	int iCount = __xuiTableViewSyncRowCount(pWidget, pData);
+	return (iCount < 0) ? -1.0f : __xuiTableViewRowTop(pData, iCount);
 }
 
 static float __xuiTableViewColumnLeft(const xui_table_view_data_t* pData, int iColumn)
@@ -695,32 +735,53 @@ static void __xuiTableViewDefaultCell(const xui_table_view_data_t* pData, int iC
 	pCell->iType = ((pData != NULL) && (iColumn >= 0) && (iColumn < pData->iColumnCount)) ? pData->arrColumns[iColumn].iType : XUI_TABLE_CELL_TYPE_TEXT;
 }
 
-static void __xuiTableViewGetCell(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell)
+static int __xuiTableViewGetCell(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell)
 {
+	xui_table_view_cell_read_t tRead;
+	xui_table_view_cell_read_t* pRead;
 	int iRowSpan;
 	int iColSpan;
+	int iHandled;
+	uint64_t iGeneration;
 
 	__xuiTableViewDefaultCell(pData, iColumn, pCell);
 	if ( (pData == NULL) || (pCell == NULL) || (iRow < 0) || (iColumn < 0) ) {
-		return;
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	/* Reject cycles, not independent reads of other already indexed cells. */
+	for ( pRead = pData->pCellRead; pRead != NULL; pRead = pRead->pPrevious ) {
+		if ( pRead->iRow == iRow && pRead->iColumn == iColumn ) return XUI_ERROR_INVALID_STATE;
+	}
+	iGeneration = pData->iCallbackGeneration;
+	if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) return XUI_ERROR_INVALID_STATE;
+	tRead = (xui_table_view_cell_read_t){iRow, iColumn, pData->pCellRead};
+	pData->pCellRead = &tRead;
 	if ( pData->onCell != NULL ) {
 		(void)pData->onCell(pWidget, iRow, iColumn, pCell, pData->pAdapterUser);
+		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) goto interrupted;
 	}
 	if ( pData->onMerge != NULL ) {
 		iRowSpan = pCell->iRowSpan;
 		iColSpan = pCell->iColSpan;
-		if ( pData->onMerge(pWidget, iRow, iColumn, &iRowSpan, &iColSpan, pData->pMergeUser) != 0 ) {
+		iHandled = pData->onMerge(pWidget, iRow, iColumn, &iRowSpan, &iColSpan, pData->pMergeUser);
+		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) goto interrupted;
+		if ( iHandled != 0 ) {
 			pCell->iRowSpan = iRowSpan;
 			pCell->iColSpan = iColSpan;
 		}
 	}
+	pData->pCellRead = tRead.pPrevious;
 	if ( pCell->iRowSpan <= 0 ) pCell->iRowSpan = 1;
 	if ( pCell->iColSpan <= 0 ) pCell->iColSpan = 1;
 	if ( pCell->iRowSpan > pData->iRowCount - iRow ) pCell->iRowSpan = pData->iRowCount - iRow;
 	if ( pCell->iColSpan > pData->iColumnCount - iColumn ) pCell->iColSpan = pData->iColumnCount - iColumn;
 	if ( pCell->iRowSpan <= 0 ) pCell->iRowSpan = 1;
 	if ( pCell->iColSpan <= 0 ) pCell->iColSpan = 1;
+	return XUI_OK;
+interrupted:
+	pData->pCellRead = tRead.pPrevious;
+	memset(pCell, 0, sizeof(*pCell));
+	return XUI_ERROR_INVALID_STATE;
 }
 
 static int __xuiTableViewMergeBandAt(const xui_table_view_merge_column_t* pColumn, int iRow)
@@ -768,15 +829,15 @@ static int __xuiTableViewIndexMerges(xui_widget pWidget, xui_table_view_data_t* 
 	int iRet = XUI_OK;
 
 	if ( (pData->onMerge == NULL && pData->onCell == NULL) || iLastRow < pData->iMergeIndexedRows ) return XUI_OK;
-	if ( pData->bMergeBuilding ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bMergeBuilding || pData->pCellRead != NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bMergeBuilding = 1;
 	iGeneration = pData->iMergeGeneration;
 	/* Either callback can supply spans. Discover each row once per data generation;
 	 * callers must Refresh after changing adapter spans without a count change. */
 	for ( r = pData->iMergeIndexedRows; r <= iLastRow; r++ ) {
 		for ( c = 0; c < pData->iColumnCount; c++ ) {
-			__xuiTableViewGetCell(pWidget, pData, r, c, &tCell);
-			if ( iGeneration != pData->iMergeGeneration ) {
+			iRet = __xuiTableViewGetCell(pWidget, pData, r, c, &tCell);
+			if ( iRet != XUI_OK || iGeneration != pData->iMergeGeneration ) {
 				iRet = XUI_ERROR_INVALID_ARGUMENT;
 				goto done;
 			}
@@ -815,7 +876,7 @@ static int __xuiTableViewIndexMerges(xui_widget pWidget, xui_table_view_data_t* 
 	}
 done:
 	pData->bMergeBuilding = 0;
-	if ( iRet != XUI_OK ) __xuiTableViewInvalidateMerges(pData);
+	if ( iRet != XUI_OK && iGeneration == pData->iMergeGeneration ) __xuiTableViewInvalidateMerges(pData);
 	return iRet;
 }
 
@@ -957,6 +1018,7 @@ static int __xuiTableViewUpdateContentSize(xui_widget pWidget, xui_table_view_da
 	tFrame = __xuiTableViewFrameRect(pWidget, pData);
 	fWidth = __xuiTableViewContentWidth(pData);
 	fHeight = __xuiTableViewContentHeight(pWidget, pData);
+	if ( fHeight < 0.0f ) return XUI_ERROR_INVALID_STATE;
 	iRet = xuiScrollFrameSetContentSize(pData->pFrame, __xuiTableViewMaxFloat(0.0f, fWidth), __xuiTableViewMaxFloat(0.0f, fHeight));
 	if ( iRet != XUI_OK ) return iRet;
 	(void)tFrame;
@@ -984,6 +1046,8 @@ static const char* __xuiTableViewCellText(xui_widget pWidget, xui_table_view_dat
 {
 	xui_table_view_format_proc onFormat;
 	void* pUser;
+	uint64_t iGeneration;
+	int iHandled;
 
 	if ( (pCell == NULL) || (sBuffer == NULL) || (iCapacity <= 0) ) {
 		return "";
@@ -1003,7 +1067,10 @@ static const char* __xuiTableViewCellText(xui_widget pWidget, xui_table_view_dat
 		pUser = pData->arrColumns[iColumn].pFormatUser;
 	}
 	if ( onFormat != NULL ) {
-		if ( onFormat(pWidget, iRow, iColumn, pCell, sBuffer, iCapacity, pUser) != 0 ) {
+		iGeneration = pData->iCallbackGeneration;
+		iHandled = onFormat(pWidget, iRow, iColumn, pCell, sBuffer, iCapacity, pUser);
+		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) { sBuffer[0] = 0; return NULL; }
+		if ( iHandled != 0 ) {
 			sBuffer[iCapacity - 1] = 0;
 			return sBuffer;
 		}
@@ -1220,6 +1287,7 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 		}
 	}
 	sText = __xuiTableViewCellText(pWidget, pData, iRow, iColumn, pCell, sBuffer, (int)sizeof(sBuffer));
+	if ( sText == NULL ) return XUI_ERROR_INVALID_STATE;
 	tText = (xui_rect_t){tCell.fX + 8.0f, tCell.fY + 1.0f, __xuiTableViewMaxFloat(1.0f, tCell.fW - 16.0f), __xuiTableViewMaxFloat(1.0f, tCell.fH - 2.0f)};
 	if ( pCell->iType == XUI_TABLE_CELL_TYPE_BOOL ) {
 		tBox = xuiInternalSnapRect((xui_rect_t){tCell.fX + 8.0f, tCell.fY + (tCell.fH - 12.0f) * 0.5f, 12.0f, 12.0f});
@@ -1270,7 +1338,7 @@ static int __xuiTableViewCellDisabled(xui_widget pWidget, xui_table_view_data_t*
 	if ( __xuiTableViewRowDisabled(pData, iRow) ) {
 		return 1;
 	}
-	__xuiTableViewGetCell(pWidget, pData, iRow, iColumn, &tCell);
+	if ( __xuiTableViewGetCell(pWidget, pData, iRow, iColumn, &tCell) != XUI_OK ) return XUI_ERROR_INVALID_STATE;
 	return tCell.bDisabled != 0;
 }
 
@@ -1296,6 +1364,7 @@ static int __xuiTableViewFindSelectableCell(xui_widget pWidget, xui_table_view_d
 {
 	int r;
 	int c;
+	int iDisabled;
 
 	if ( pOutRow != NULL ) *pOutRow = -1;
 	if ( pOutColumn != NULL ) *pOutColumn = -1;
@@ -1305,7 +1374,9 @@ static int __xuiTableViewFindSelectableCell(xui_widget pWidget, xui_table_view_d
 	r = iRow;
 	c = iColumn;
 	while ( (r >= 0) && (r < pData->iRowCount) && (c >= 0) && (c < pData->iColumnCount) ) {
-		if ( (__xuiTableViewColumnWidth(pData, c) > 0.0f) && !__xuiTableViewCellDisabled(pWidget, pData, r, c) ) {
+		iDisabled = (__xuiTableViewColumnWidth(pData, c) > 0.0f) ? __xuiTableViewCellDisabled(pWidget, pData, r, c) : 1;
+		if ( iDisabled < 0 ) return 0;
+		if ( !iDisabled ) {
 			if ( pOutRow != NULL ) *pOutRow = r;
 			if ( pOutColumn != NULL ) *pOutColumn = c;
 			return 1;
@@ -1323,6 +1394,7 @@ static int __xuiTableViewSetHover(xui_widget pWidget, xui_table_view_data_t* pDa
 {
 	int iOldRow;
 	int iOldColumn;
+	uint64_t iGeneration;
 
 	if ( pData == NULL ) {
 		return XUI_OK;
@@ -1336,7 +1408,9 @@ static int __xuiTableViewSetHover(xui_widget pWidget, xui_table_view_data_t* pDa
 	pData->iHoverColumn = iColumn;
 	pData->iHoverCount++;
 	if ( pData->onHover != NULL ) {
+		iGeneration = pData->iCallbackGeneration;
 		pData->onHover(pWidget, iRow, iColumn, pData->iSelectionMode, pData->pHoverUser);
+		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) return XUI_ERROR_INVALID_STATE;
 	}
 	return __xuiTableViewInvalidateHoverCells(pWidget, pData, iOldRow, iOldColumn, iRow, iColumn);
 }
@@ -1352,13 +1426,13 @@ static int __xuiTableViewEnsureVisibleInternal(xui_widget pWidget, xui_table_vie
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	(void)__xuiTableViewSyncRowCount(pWidget, pData);
+	if ( __xuiTableViewSyncRowCount(pWidget, pData) < 0 ) return XUI_ERROR_INVALID_STATE;
 	if ( (iRow < 0) || (iRow >= pData->iRowCount) || (iColumn < 0) || (iColumn >= pData->iColumnCount) ) {
 		return XUI_OK;
 	}
 	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
 	if ( iRet < 0 ) return iRet;
-	__xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell);
+	if ( __xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell) != XUI_OK ) return XUI_ERROR_INVALID_STATE;
 	tRect = __xuiTableViewCellContentRectData(pData, iOwnerRow, iOwnerColumn, tCell.iRowSpan, tCell.iColSpan);
 	return xuiScrollFrameEnsureRectVisible(pData->pFrame, tRect);
 }
@@ -1376,10 +1450,11 @@ static void __xuiTableViewNotifySelect(xui_widget pWidget, xui_table_view_data_t
 
 static int __xuiTableViewSelect(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, int bNotify)
 {
+	int iRet;
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	(void)__xuiTableViewSyncRowCount(pWidget, pData);
+	if ( __xuiTableViewSyncRowCount(pWidget, pData) < 0 ) return XUI_ERROR_INVALID_STATE;
 	if ( (iRow < 0) || (iRow >= pData->iRowCount) ) {
 		iRow = -1;
 		iColumn = -1;
@@ -1391,9 +1466,12 @@ static int __xuiTableViewSelect(xui_widget pWidget, xui_table_view_data_t* pData
 				return XUI_OK;
 			}
 		} else {
-			if ( (iColumn < 0) || (iColumn >= pData->iColumnCount) || __xuiTableViewCellDisabled(pWidget, pData, iRow, iColumn) ) {
+			if ( (iColumn < 0) || (iColumn >= pData->iColumnCount) ) {
 				return XUI_OK;
 			}
+			iRet = __xuiTableViewCellDisabled(pWidget, pData, iRow, iColumn);
+			if ( iRet < 0 ) return iRet;
+			if ( iRet ) return XUI_OK;
 		}
 	}
 	if ( (pData->iSelectedRow == iRow) && (pData->iSelectedColumn == iColumn) ) {
@@ -1401,6 +1479,10 @@ static int __xuiTableViewSelect(xui_widget pWidget, xui_table_view_data_t* pData
 			__xuiTableViewNotifySelect(pWidget, pData);
 		}
 		return XUI_OK;
+	}
+	if ( iRow >= 0 ) {
+		iRet = __xuiTableViewEnsureVisibleInternal(pWidget, pData, iRow, (iColumn >= 0) ? iColumn : __xuiTableViewFirstVisibleColumn(pData));
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	pData->iSelectedRow = iRow;
 	pData->iSelectedColumn = iColumn;
@@ -1410,9 +1492,6 @@ static int __xuiTableViewSelect(xui_widget pWidget, xui_table_view_data_t* pData
 		pData->iFocusColumn = -1;
 	}
 	pData->iChangeCount++;
-	if ( iRow >= 0 ) {
-		(void)__xuiTableViewEnsureVisibleInternal(pWidget, pData, iRow, (iColumn >= 0) ? iColumn : __xuiTableViewFirstVisibleColumn(pData));
-	}
 	if ( bNotify ) {
 		__xuiTableViewNotifySelect(pWidget, pData);
 	}
@@ -1430,13 +1509,14 @@ static int __xuiTableViewHitCellWorld(xui_widget pWidget, xui_table_view_data_t*
 	int iColumn;
 	int iOwnerRow;
 	int iOwnerColumn;
+	int iRet;
 
 	if ( pRow != NULL ) *pRow = -1;
 	if ( pColumn != NULL ) *pColumn = -1;
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pViewport == NULL) ) {
 		return 0;
 	}
-	(void)__xuiTableViewSyncRowCount(pWidget, pData);
+	if ( __xuiTableViewSyncRowCount(pWidget, pData) < 0 ) return XUI_ERROR_INVALID_STATE;
 	tViewportWorld = xuiWidgetGetWorldRect(pData->pViewport);
 	if ( !__xuiTableViewPointInRect(tViewportWorld, fX, fY) ) {
 		return 0;
@@ -1451,7 +1531,8 @@ static int __xuiTableViewHitCellWorld(xui_widget pWidget, xui_table_view_data_t*
 	if ( (iRow < 0) || (iColumn < 0) ) {
 		return 0;
 	}
-	if ( __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn) < 0 ) return 0;
+	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	if ( iRet < 0 ) return iRet;
 	if ( pRow != NULL ) *pRow = iOwnerRow;
 	if ( pColumn != NULL ) *pColumn = iOwnerColumn;
 	return 1;
@@ -1549,6 +1630,7 @@ static int __xuiTableViewPointerMove(xui_widget pWidget, xui_table_view_data_t* 
 	float fMax;
 	int iRow;
 	int iColumn;
+	int iRet;
 
 	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) {
 		return XUI_OK;
@@ -1566,7 +1648,7 @@ static int __xuiTableViewPointerMove(xui_widget pWidget, xui_table_view_data_t* 
 			__xuiTableViewInvalidateMerges(pData);
 			pData->iColumnResizeCount++;
 			pData->iChangeCount++;
-			(void)__xuiTableViewUpdateContentSize(pWidget, pData);
+			if ( __xuiTableViewUpdateContentSize(pWidget, pData) != XUI_OK ) return XUI_EVENT_DISPATCH_STOP;
 			if ( pData->onColumnResize != NULL ) {
 				pData->onColumnResize(pWidget, pData->iResizeColumn, fWidth, pData->pColumnResizeUser);
 			}
@@ -1575,7 +1657,9 @@ static int __xuiTableViewPointerMove(xui_widget pWidget, xui_table_view_data_t* 
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( __xuiTableViewHitCellWorld(pWidget, pData, pEvent->fX, pEvent->fY, &iRow, &iColumn) ) {
+	iRet = __xuiTableViewHitCellWorld(pWidget, pData, pEvent->fX, pEvent->fY, &iRow, &iColumn);
+	if ( iRet < 0 ) return XUI_EVENT_DISPATCH_STOP;
+	if ( iRet ) {
 		return __xuiTableViewSetHover(pWidget, pData, iRow, iColumn);
 	}
 	return __xuiTableViewSetHover(pWidget, pData, -1, -1);
@@ -1587,6 +1671,7 @@ static int __xuiTableViewPointerDown(xui_widget pWidget, xui_table_view_data_t* 
 	int iColumn;
 	int iResize;
 	int iHeader;
+	int iRet;
 
 	if ( (pEvent == NULL) || (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) {
 		return XUI_OK;
@@ -1622,11 +1707,13 @@ static int __xuiTableViewPointerDown(xui_widget pWidget, xui_table_view_data_t* 
 		(void)__xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( __xuiTableViewHitCellWorld(pWidget, pData, pEvent->fX, pEvent->fY, &iRow, &iColumn) ) {
+	iRet = __xuiTableViewHitCellWorld(pWidget, pData, pEvent->fX, pEvent->fY, &iRow, &iColumn);
+	if ( iRet < 0 ) return XUI_EVENT_DISPATCH_STOP;
+	if ( iRet ) {
 		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		pData->iActiveRow = iRow;
 		pData->iActiveColumn = iColumn;
-		(void)__xuiTableViewSetHover(pWidget, pData, iRow, iColumn);
+		if ( __xuiTableViewSetHover(pWidget, pData, iRow, iColumn) != XUI_OK ) return XUI_EVENT_DISPATCH_STOP;
 		(void)__xuiTableViewSelect(pWidget, pData, iRow, iColumn, 1);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -1669,7 +1756,9 @@ static int __xuiTableViewContextMenu(xui_widget pWidget, xui_table_view_data_t* 
 		if ( iRow >= 0 ) {
 			iPart = XUI_CONTEXT_TARGET_ITEM;
 			iAnchorColumn = (iColumn >= 0) ? iColumn : __xuiTableViewFirstVisibleColumn(pData);
-			if ( iAnchorColumn >= 0 && xuiTableViewGetCellRect(pWidget, iRow, iAnchorColumn, &tLocal) == XUI_OK ) {
+			if ( iAnchorColumn >= 0 ) {
+				iRet = xuiTableViewGetCellRect(pWidget, iRow, iAnchorColumn, &tLocal);
+				if ( iRet != XUI_OK ) return XUI_EVENT_DISPATCH_STOP;
 				tAnchor = tLocal;
 				tAnchor.fX += tWorld.fX;
 				tAnchor.fY += tWorld.fY;
@@ -1680,14 +1769,16 @@ static int __xuiTableViewContextMenu(xui_widget pWidget, xui_table_view_data_t* 
 		if ( iColumn >= 0 ) {
 			iPart = XUI_CONTEXT_TARGET_HEADER;
 			iRow = -1;
-		} else if ( __xuiTableViewHitCellWorld(pWidget, pData, pEvent->fX, pEvent->fY, &iRow, &iColumn) ) {
-			iPart = XUI_CONTEXT_TARGET_ITEM;
+		} else {
+			iRet = __xuiTableViewHitCellWorld(pWidget, pData, pEvent->fX, pEvent->fY, &iRow, &iColumn);
+			if ( iRet < 0 ) return XUI_EVENT_DISPATCH_STOP;
+			if ( iRet ) iPart = XUI_CONTEXT_TARGET_ITEM;
 		}
 	}
 	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 	if ( iPart == XUI_CONTEXT_TARGET_ITEM ) {
-		(void)__xuiTableViewSetHover(pWidget, pData, iRow, iColumn);
+		if ( __xuiTableViewSetHover(pWidget, pData, iRow, iColumn) != XUI_OK ) return XUI_EVENT_DISPATCH_STOP;
 		if ( pData->iSelectedRow != iRow ||
 		     (pData->iSelectionMode == XUI_TABLE_VIEW_SELECTION_CELL && pData->iSelectedColumn != iColumn) ) {
 			iRet = __xuiTableViewSelect(pWidget, pData, iRow, iColumn, 1);
@@ -1938,10 +2029,12 @@ static int __xuiTableViewLayoutComplete(xui_widget pWidget, xui_rect_t tContentR
 	return iRet;
 }
 
-static int __xuiTableViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiTableViewCacheRenderOperation(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_table_view_data_t* pData;
 	xui_table_view_data_t tResolved;
+	xui_table_view_column_t tColumn;
+	uint64_t iGeneration;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
 	xui_rect_t tHeader;
@@ -2001,7 +2094,10 @@ static int __xuiTableViewCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 			iState = XUI_TABLE_CELL_HEADER;
 			if ( i == pData->iSortColumn ) iState |= XUI_TABLE_CELL_FOCUS;
 			if ( pData->onHeaderRender != NULL ) {
-				iHandled = pData->onHeaderRender(pWidget, i, &pData->arrColumns[i], pDraw, tVisible, iState, pData->pHeaderRenderUser);
+				iGeneration = pData->iCallbackGeneration;
+				tColumn = pData->arrColumns[i];
+				iHandled = pData->onHeaderRender(pWidget, i, &tColumn, pDraw, tVisible, iState, pData->pHeaderRenderUser);
+				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) return XUI_OK;
 				if ( iHandled < 0 ) return iHandled;
 				if ( iHandled ) continue;
 			}
@@ -2032,7 +2128,7 @@ static int __xuiTableViewCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	return __xuiTableViewDrawStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBorder);
 }
 
-static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiTableViewViewportRenderOperation(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_widget pWidget;
 	xui_table_view_data_t* pData;
@@ -2061,6 +2157,7 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 	int iVisibleColumn;
 	int arrMergeCursors[XUI_TABLE_VIEW_COLUMN_CAPACITY];
 	uint64_t iGeneration;
+	uint64_t iCallbackGeneration;
 	int i;
 	int j;
 	int iState;
@@ -2088,7 +2185,7 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 	tRect = xuiInternalSnapRect(tRect);
 	iRet = __xuiTableViewDrawFill(pProxy, pDraw, tRect, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)__xuiTableViewSyncRowCount(pWidget, pData);
+	if ( __xuiTableViewSyncRowCount(pWidget, pData) < 0 ) return XUI_OK;
 	if ( (pData->iRowCount <= 0) || (pData->iColumnCount <= 0) ) {
 		pData->iFirstVisible = 0;
 		pData->iPaintVisibleCount = 0;
@@ -2117,7 +2214,9 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 		fColumnLeft += fColumnWidth;
 	}
 	if ( iStart == iEnd || iColumnStart >= iColumnEnd || fViewportH <= 0.0f ) return XUI_OK;
+	iCallbackGeneration = pData->iCallbackGeneration;
 	iRet = __xuiTableViewIndexMerges(pWidget, pData, iEnd - 1);
+	if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
 	if ( iRet != XUI_OK ) return iRet;
 	iGeneration = pData->iMergeGeneration;
 	pData->iPaintSerial++;
@@ -2130,7 +2229,7 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 	}
 	for ( iVisibleRow = iStart; iVisibleRow < iEnd; iVisibleRow++ ) {
 		for ( iVisibleColumn = iColumnStart; iVisibleColumn < iColumnEnd; iVisibleColumn++ ) {
-			if ( iGeneration != pData->iMergeGeneration ) return XUI_OK;
+			if ( iGeneration != pData->iMergeGeneration || !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
 			i = iVisibleRow;
 			j = iVisibleColumn;
 			if ( __xuiTableViewColumnWidth(pData, j) <= 0.0f ) continue;
@@ -2147,7 +2246,7 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 				j = pMerge->iColumn;
 				if ( __xuiTableViewColumnWidth(pData, j) <= 0.0f ) continue;
 			}
-			__xuiTableViewGetCell(pWidget, pData, i, j, &tCellData);
+			if ( __xuiTableViewGetCell(pWidget, pData, i, j, &tCellData) != XUI_OK ) return XUI_OK;
 			tCellContent = __xuiTableViewCellContentRectData(pData, i, j, tCellData.iRowSpan, tCellData.iColSpan);
 			if ( !__xuiTableViewRectIntersects(tCellContent, tViewportContent) ) {
 				continue;
@@ -2184,6 +2283,7 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 			if ( tCellData.bHasStyle && __xuiTableViewAlpha(tCellData.iGridColor) != 0 ) iGrid = tCellData.iGridColor;
 			if ( tCellData.onRender != NULL ) {
 				iHandled = tCellData.onRender(pWidget, i, j, &tCellData, pDraw, tCell, iState, tCellData.pRenderUser);
+				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
 				if ( iHandled < 0 ) return iHandled;
 				if ( iHandled ) {
 					continue;
@@ -2191,6 +2291,7 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 			}
 			if ( pData->arrColumns[j].onRender != NULL ) {
 				iHandled = pData->arrColumns[j].onRender(pWidget, i, j, &tCellData, pDraw, tCell, iState, pData->arrColumns[j].pRenderUser);
+				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
 				if ( iHandled < 0 ) return iHandled;
 				if ( iHandled ) {
 					continue;
@@ -2198,12 +2299,14 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 			}
 			if ( pData->onCellRender != NULL ) {
 				iHandled = pData->onCellRender(pWidget, i, j, &tCellData, pDraw, tCell, iState, pData->pCellRenderUser);
+				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
 				if ( iHandled < 0 ) return iHandled;
 				if ( iHandled ) {
 					continue;
 				}
 			}
 			iRet = __xuiTableViewDrawCellContent(pWidget, pData, &tResolved, pProxy, pDraw, i, j, &tCellData, tCell, iState);
+			if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
 			if ( iRet != XUI_OK ) return iRet;
 			if ( pProxy->drawLine != NULL ) {
 				iRet = pProxy->drawLine(pProxy, pDraw, tCell.fX, tCell.fY + tCell.fH - 0.5f, tCell.fX + tCell.fW, tCell.fY + tCell.fH - 0.5f, 1.0f, iGrid);
@@ -2238,6 +2341,26 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 	return XUI_OK;
 }
 
+static int __xuiTableViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewCacheRenderOperation(pWidget, pDraw, iStateId, pUser);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_context pContext = xuiWidgetGetContext((xui_widget)pUser);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewViewportRenderOperation(pViewport, pDraw, iStateId, pUser);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
 static int __xuiTableViewTooltipResolve(xui_context pContext, xui_widget pTooltipWidget, xui_tooltip_desc_t* pDesc, void* pUser)
 {
 	xui_widget pWidget;
@@ -2252,10 +2375,10 @@ static int __xuiTableViewTooltipResolve(xui_context pContext, xui_widget pToolti
 	if ( (pContext == NULL) || (pData == NULL) || (pDesc == NULL) ) {
 		return 0;
 	}
-	if ( !__xuiTableViewHitCellWorld(pWidget, pData, pContext->fTooltipMouseX, pContext->fTooltipMouseY, &iRow, &iColumn) ) {
+	if ( __xuiTableViewHitCellWorld(pWidget, pData, pContext->fTooltipMouseX, pContext->fTooltipMouseY, &iRow, &iColumn) <= 0 ) {
 		return 0;
 	}
-	__xuiTableViewGetCell(pWidget, pData, iRow, iColumn, &tCell);
+	if ( __xuiTableViewGetCell(pWidget, pData, iRow, iColumn, &tCell) != XUI_OK ) return 0;
 	if ( (tCell.sTooltip == NULL) || (tCell.sTooltip[0] == 0) ) {
 		return 0;
 	}
@@ -2514,7 +2637,7 @@ static xui_table_view_data_t* __xuiTableViewGetData(xui_widget pWidget)
 		return NULL;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiInternalContextIsValid(pContext) ) {
+	if ( !xuiInternalContextIsValid(pContext) || xuiInternalContextDestroyPending(pContext) ) {
 		return NULL;
 	}
 	pType = xuiWidgetFindType(pContext, "tableview");
@@ -2579,7 +2702,7 @@ XUI_API int xuiTableViewCreate(xui_context pContext, xui_widget* ppWidget, const
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
-XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount)
+static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount)
 {
 	xui_table_view_data_t* pData;
 	int i;
@@ -2607,7 +2730,7 @@ XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_colu
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)
+static int __xuiTableViewSetRowsOperation(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)
 {
 	xui_table_view_data_t* pData;
 	xui_table_view_row_t* arrNewRows;
@@ -2663,7 +2786,7 @@ XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* 
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiTableViewSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, void* pUser)
+static int __xuiTableViewSetAdapterOperation(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, void* pUser)
 {
 	xui_table_view_data_t* pData;
 	int iRet;
@@ -2746,6 +2869,7 @@ XUI_API int xuiTableViewSetHeaderRenderer(xui_widget pWidget, xui_table_view_hea
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onHeaderRender = onRender;
 	pData->pHeaderRenderUser = pUser;
+	pData->iCallbackGeneration++;
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -2755,6 +2879,7 @@ XUI_API int xuiTableViewSetCellRenderer(xui_widget pWidget, xui_table_view_cell_
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onCellRender = onRender;
 	pData->pCellRenderUser = pUser;
+	pData->iCallbackGeneration++;
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -2764,6 +2889,7 @@ XUI_API int xuiTableViewSetColumnFormatter(xui_widget pWidget, int iColumn, xui_
 	if ( (pData == NULL) || (iColumn < 0) || (iColumn >= pData->iColumnCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->arrColumns[iColumn].onFormat = onFormat;
 	pData->arrColumns[iColumn].pFormatUser = pUser;
+	pData->iCallbackGeneration++;
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -2781,7 +2907,7 @@ XUI_API xui_font xuiTableViewGetFont(xui_widget pWidget)
 	return (pData != NULL) ? pData->pFont : NULL;
 }
 
-XUI_API int xuiTableViewSetDefaultMetrics(xui_widget pWidget, float fColumnWidth, float fRowHeight, float fHeaderHeight)
+static int __xuiTableViewSetDefaultMetricsOperation(xui_widget pWidget, float fColumnWidth, float fRowHeight, float fHeaderHeight)
 {
 	xui_table_view_data_t* pData;
 	int iRet;
@@ -2830,7 +2956,7 @@ XUI_API int xuiTableViewGetSelectionMode(xui_widget pWidget)
 	return (pData != NULL) ? pData->iSelectionMode : XUI_TABLE_VIEW_SELECTION_CELL;
 }
 
-XUI_API int xuiTableViewSetSelectedRow(xui_widget pWidget, int iRow)
+static int __xuiTableViewSetSelectedRowOperation(xui_widget pWidget, int iRow)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2844,7 +2970,7 @@ XUI_API int xuiTableViewGetSelectedRow(xui_widget pWidget)
 	return (pData != NULL) ? pData->iSelectedRow : -1;
 }
 
-XUI_API int xuiTableViewSetSelectedCell(xui_widget pWidget, int iRow, int iColumn)
+static int __xuiTableViewSetSelectedCellOperation(xui_widget pWidget, int iRow, int iColumn)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2907,7 +3033,7 @@ XUI_API float xuiTableViewGetColumnWidth(xui_widget pWidget, int iColumn)
 	return __xuiTableViewColumnWidth(pData, iColumn);
 }
 
-XUI_API int xuiTableViewSetColumnWidth(xui_widget pWidget, int iColumn, float fWidth)
+static int __xuiTableViewSetColumnWidthOperation(xui_widget pWidget, int iColumn, float fWidth)
 {
 	xui_table_view_data_t* pData;
 	float fMin;
@@ -2929,7 +3055,7 @@ XUI_API int xuiTableViewSetColumnWidth(xui_widget pWidget, int iColumn, float fW
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiTableViewGetRowCount(xui_widget pWidget)
+static int __xuiTableViewGetRowCountOperation(xui_widget pWidget)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	return __xuiTableViewSyncRowCount(pWidget, pData);
@@ -2965,7 +3091,7 @@ XUI_API int xuiTableViewGetHoverCell(xui_widget pWidget, int* pRow, int* pColumn
 	return XUI_OK;
 }
 
-XUI_API int xuiTableViewGetCellContentRect(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect)
+static int __xuiTableViewGetCellContentRectOperation(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect)
 {
 	xui_table_view_data_t* pData;
 	xui_table_view_cell_t tCell;
@@ -2975,15 +3101,18 @@ XUI_API int xuiTableViewGetCellContentRect(xui_widget pWidget, int iRow, int iCo
 
 	if ( pRect != NULL ) memset(pRect, 0, sizeof(*pRect));
 	pData = __xuiTableViewGetData(pWidget);
-	if ( (pData == NULL) || (pRect == NULL) || (iRow < 0) || (iColumn < 0) || (iRow >= __xuiTableViewSyncRowCount(pWidget, pData)) || (iColumn >= pData->iColumnCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (pRect == NULL) || (iRow < 0) || (iColumn < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiTableViewSyncRowCount(pWidget, pData);
+	if ( iRet < 0 ) return iRet;
+	if ( iRow >= iRet || iColumn >= pData->iColumnCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
 	if ( iRet < 0 ) return iRet;
-	__xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell);
+	if ( __xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell) != XUI_OK ) return XUI_ERROR_INVALID_STATE;
 	*pRect = __xuiTableViewCellContentRectData(pData, iOwnerRow, iOwnerColumn, tCell.iRowSpan, tCell.iColSpan);
 	return XUI_OK;
 }
 
-XUI_API int xuiTableViewGetCellRect(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect)
+static int __xuiTableViewGetCellRectOperation(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect)
 {
 	xui_table_view_data_t* pData;
 	xui_rect_t tContent;
@@ -3035,7 +3164,7 @@ XUI_API xui_rect_t xuiTableViewGetViewportRect(xui_widget pWidget)
 	return __xuiTableViewViewportRectLocal(pWidget, pData);
 }
 
-XUI_API int xuiTableViewGetItemAt(xui_widget pWidget, float fX, float fY, int* pRow, int* pColumn)
+static int __xuiTableViewGetItemAtOperation(xui_widget pWidget, float fX, float fY, int* pRow, int* pColumn)
 {
 	xui_table_view_data_t* pData;
 	xui_rect_t tViewport;
@@ -3053,7 +3182,7 @@ XUI_API int xuiTableViewGetItemAt(xui_widget pWidget, float fX, float fY, int* p
 	if ( pColumn != NULL ) *pColumn = -1;
 	pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiTableViewSyncRowCount(pWidget, pData);
+	if ( __xuiTableViewSyncRowCount(pWidget, pData) < 0 ) return XUI_ERROR_INVALID_STATE;
 	tViewport = __xuiTableViewViewportRectLocal(pWidget, pData);
 	if ( !__xuiTableViewPointInRect(tViewport, fX, fY) ) return XUI_OK;
 	fOffsetX = 0.0f;
@@ -3178,7 +3307,7 @@ XUI_API int xuiTableViewGetScrollbarColors(xui_widget pWidget, uint32_t* pTrack,
 	return XUI_OK;
 }
 
-XUI_API int xuiTableViewRefresh(xui_widget pWidget)
+static int __xuiTableViewRefreshOperation(xui_widget pWidget)
 {
 	xui_table_view_data_t* pData;
 	int iRet;
@@ -3192,7 +3321,7 @@ XUI_API int xuiTableViewRefresh(xui_widget pWidget)
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiTableViewEnsureCellVisible(xui_widget pWidget, int iRow, int iColumn)
+static int __xuiTableViewEnsureCellVisibleOperation(xui_widget pWidget, int iRow, int iColumn)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -3235,4 +3364,136 @@ XUI_API int xuiTableViewGetChangeCount(xui_widget pWidget)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
+}
+
+/* Public provider operations own the barrier until all their callers have unwound. */
+
+XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewSetColumnsOperation(pWidget, arrColumns, iCount);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewSetRowsOperation(pWidget, arrRows, iCount);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, void* pUser)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewSetAdapterOperation(pWidget, onCount, onCell, pUser);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewSetDefaultMetrics(xui_widget pWidget, float fColumnWidth, float fRowHeight, float fHeaderHeight)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewSetDefaultMetricsOperation(pWidget, fColumnWidth, fRowHeight, fHeaderHeight);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewSetSelectedRow(xui_widget pWidget, int iRow)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewSetSelectedRowOperation(pWidget, iRow);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewSetSelectedCell(xui_widget pWidget, int iRow, int iColumn)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewSetSelectedCellOperation(pWidget, iRow, iColumn);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewSetColumnWidth(xui_widget pWidget, int iColumn, float fWidth)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewSetColumnWidthOperation(pWidget, iColumn, fWidth);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewGetRowCount(xui_widget pWidget)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewGetRowCountOperation(pWidget);
+	xuiInternalOperationLeave(pContext);
+	return (iRet < 0) ? 0 : iRet;
+}
+
+XUI_API int xuiTableViewGetCellContentRect(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewGetCellContentRectOperation(pWidget, iRow, iColumn, pRect);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewGetCellRect(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewGetCellRectOperation(pWidget, iRow, iColumn, pRect);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewGetItemAt(xui_widget pWidget, float fX, float fY, int* pRow, int* pColumn)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewGetItemAtOperation(pWidget, fX, fY, pRow, pColumn);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewRefresh(xui_widget pWidget)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewRefreshOperation(pWidget);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTableViewEnsureCellVisible(xui_widget pWidget, int iRow, int iColumn)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTableViewEnsureCellVisibleOperation(pWidget, iRow, iColumn);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
