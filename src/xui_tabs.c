@@ -65,6 +65,14 @@ typedef struct xui_tabs_data_t {
 	uint32_t iActiveTextColor;
 	uint32_t iBorderColor;
 	uint32_t iClientColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iCloseColor;
+	uint32_t iCloseDisabledColor;
+	uint32_t iCloseHoverColor;
+	uint32_t iCloseActiveColor;
+	uint32_t iCloseHoverBackgroundColor;
+	uint32_t iCloseActiveBackgroundColor;
+	uint32_t iChromeStyleVersion;
 } xui_tabs_data_t;
 
 #define XUI_TABS_TAB_START		3.0f
@@ -248,6 +256,20 @@ static void __xuiTabsResolveColors(xui_widget pWidget, const xui_tabs_data_t* pD
 	(void)__xuiTabsStyleColor(pWidget, "tabs.text.active_color", &pOut->iActiveTextColor);
 	(void)__xuiTabsStyleColor(pWidget, "tabs.border.color", &pOut->iBorderColor);
 	(void)__xuiTabsStyleColor(pWidget, "tabs.client.color", &pOut->iClientColor);
+	pOut->iDisabledTextColor = __xuiTabsAlpha(pOut->iTextColor) ? (pOut->iTextColor & 0xffffff00u) | 120u : pOut->iTextColor;
+	pOut->iCloseColor = pOut->iTextColor;
+	pOut->iCloseDisabledColor = __xuiTabsAlpha(pOut->iTextColor) ? (pOut->iTextColor & 0xffffff00u) | 100u : pOut->iTextColor;
+	pOut->iCloseHoverBackgroundColor = XUI_COLOR_RGBA(220, 232, 246, 255);
+	(void)__xuiTabsStyleColor(pWidget, "tabs.text.disabled_color", &pOut->iDisabledTextColor);
+	(void)__xuiTabsStyleColor(pWidget, "tabs.close.color", &pOut->iCloseColor);
+	(void)__xuiTabsStyleColor(pWidget, "tabs.close.disabled_color", &pOut->iCloseDisabledColor);
+	(void)__xuiTabsStyleColor(pWidget, "tabs.close.hover_background_color", &pOut->iCloseHoverBackgroundColor);
+	pOut->iCloseHoverColor = pOut->iCloseColor;
+	(void)__xuiTabsStyleColor(pWidget, "tabs.close.hover_color", &pOut->iCloseHoverColor);
+	pOut->iCloseActiveColor = pOut->iCloseHoverColor;
+	pOut->iCloseActiveBackgroundColor = pOut->iCloseHoverBackgroundColor;
+	(void)__xuiTabsStyleColor(pWidget, "tabs.close.active_color", &pOut->iCloseActiveColor);
+	(void)__xuiTabsStyleColor(pWidget, "tabs.close.active_background_color", &pOut->iCloseActiveBackgroundColor);
 }
 
 static int __xuiTabsDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -1355,7 +1377,7 @@ static int __xuiTabsButtonRender(xui_widget pButton, xui_draw_context pDraw, uin
 	iText = tColors.iTextColor;
 	if ( !bEnabled ) {
 		iFill = tColors.iDisabledColor;
-		iText = (tColors.iTextColor & 0xffffff00u) | 120u;
+		iText = tColors.iDisabledTextColor;
 	} else if ( bSelected ) {
 		iFill = tColors.iClientColor;
 		iText = tColors.iActiveTextColor;
@@ -1412,10 +1434,14 @@ static int __xuiTabsButtonRender(xui_widget pButton, xui_draw_context pDraw, uin
 		tClose = pPage->tCloseRect;
 		tClose.fX -= pPage->tTabRect.fX;
 		tClose.fY -= pPage->tTabRect.fY;
-		if ( pData->iCloseHoverIndex == iIndex ) {
-			(void)__xuiTabsDrawFill(pProxy, pDraw, tClose, XUI_COLOR_RGBA(220, 232, 246, 255));
+		iCloseColor = bEnabled ? tColors.iCloseColor : tColors.iCloseDisabledColor;
+		if ( bEnabled && pData->iCloseActiveIndex == iIndex ) {
+			(void)__xuiTabsDrawFill(pProxy, pDraw, tClose, tColors.iCloseActiveBackgroundColor);
+			iCloseColor = tColors.iCloseActiveColor;
+		} else if ( pData->iCloseHoverIndex == iIndex ) {
+			(void)__xuiTabsDrawFill(pProxy, pDraw, tClose, tColors.iCloseHoverBackgroundColor);
+			if ( bEnabled ) iCloseColor = tColors.iCloseHoverColor;
 		}
-		iCloseColor = bEnabled ? tColors.iTextColor : ((tColors.iTextColor & 0xffffff00u) | 100u);
 		iRet = __xuiTabsDrawLine(pProxy, pDraw, tClose.fX + 5.0f, tClose.fY + 5.0f, tClose.fX + tClose.fW - 5.0f, tClose.fY + tClose.fH - 5.0f, iCloseColor);
 		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, tClose.fX + tClose.fW - 5.0f, tClose.fY + 5.0f, tClose.fX + 5.0f, tClose.fY + tClose.fH - 5.0f, iCloseColor);
 	}
@@ -1870,6 +1896,17 @@ static void __xuiTabsRegisterStyleProperty(xui_context pContext, xui_widget_type
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
+static int __xuiTabsUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_tabs_data_t* pData = __xuiTabsGetData(pWidget);
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
+	pData->iChromeStyleVersion = pWidget->iStyleVersion;
+	return __xuiTabsInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static void __xuiTabsRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	uint32_t iPaintDirty;
@@ -1885,6 +1922,13 @@ static void __xuiTabsRegisterStyleProperties(xui_context pContext, xui_widget_ty
 	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.tab.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.text.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.close.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.close.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.close.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.close.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.close.hover_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.close.active_background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.client.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTabsRegisterStyleProperty(pContext, pType, "tabs.tab.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
@@ -1918,6 +1962,7 @@ XUI_API xui_widget_type xuiTabsGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiTabsPrepare;
 	tDesc.onLayoutComplete = __xuiTabsLayoutComplete;
 	tDesc.onCacheRender = __xuiTabsCacheRender;
+	tDesc.onUpdate = __xuiTabsUpdate;
 	__xuiTabsDefaultLayout(&tDesc.tLayout);
 	__xuiTabsDefaultCachePolicy(&tPolicy);
 	tDesc.tCachePolicy = tPolicy;

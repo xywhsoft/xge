@@ -36,6 +36,8 @@ typedef struct xui_carousel_data_t {
 	uint32_t iArrowHoverColor;
 	uint32_t iArrowTextColor;
 	uint32_t iIndicatorColor;
+	uint32_t iIndicatorBackgroundColor;
+	uint32_t iChromeStyleVersion;
 	uint32_t iIndicatorActiveColor;
 	uint32_t iIndicatorHoverColor;
 	uint32_t iFocusColor;
@@ -185,6 +187,8 @@ static void __xuiCarouselResolve(xui_widget pWidget, const xui_carousel_data_t* 
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.arrow.hover_color", &pResolved->iArrowHoverColor);
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.arrow.text_color", &pResolved->iArrowTextColor);
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.indicator.color", &pResolved->iIndicatorColor);
+	pResolved->iIndicatorBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 62);
+	(void)__xuiCarouselStyleColor(pWidget, "carousel.indicator.background_color", &pResolved->iIndicatorBackgroundColor);
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.indicator.active_color", &pResolved->iIndicatorActiveColor);
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.indicator.hover_color", &pResolved->iIndicatorHoverColor);
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.focus.color", &pResolved->iFocusColor);
@@ -408,7 +412,7 @@ static int __xuiCarouselOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tResolved.bShowIndicators && (tResolved.iPageCount > 1) ) {
-		iRet = __xuiCarouselDrawRectFill(pProxy, pDraw, pData->tIndicatorGroupRect, XUI_COLOR_RGBA(0, 0, 0, 62));
+		iRet = __xuiCarouselDrawRectFill(pProxy, pDraw, pData->tIndicatorGroupRect, tResolved.iIndicatorBackgroundColor);
 		if ( iRet != XUI_OK ) return iRet;
 		for ( i = 0; i < tResolved.iPageCount; i++ ) {
 			fCX = pData->arrIndicatorRects[i].fX + pData->arrIndicatorRects[i].fW * 0.5f;
@@ -736,6 +740,10 @@ static int __xuiCarouselUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	(void)pUser;
 	pData = __xuiCarouselGetData(pWidget);
 	if ( (pData == NULL) || (fDelta < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iChromeStyleVersion != pWidget->iStyleVersion ) {
+		pData->iChromeStyleVersion = pWidget->iStyleVersion;
+		(void)xuiWidgetInvalidate(pData->pOverlay, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
 	__xuiCarouselResolve(pWidget, pData, &tResolved);
 	if ( !tResolved.bAutoPlay || (tResolved.fAutoInterval <= 0.0f) || (tResolved.iPageCount <= 1) ) {
 		pData->fAutoElapsed = 0.0f;
@@ -908,6 +916,7 @@ static void __xuiCarouselRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

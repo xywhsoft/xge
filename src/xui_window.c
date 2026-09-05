@@ -65,9 +65,12 @@ typedef struct xui_window_data_t {
 	xui_rect_t tCloseButtonRect;
 	int iChangeCount;
 	int iCloseCount;
+	uint32_t iChromeStyleVersion;
 } xui_window_data_t;
 
 typedef struct xui_window_resolved_t {
+	uint32_t iCloseIconColor;
+	uint32_t iTopMostColor;
 	xui_font pFont;
 	float fTitleBarHeight;
 	float fBorderWidth;
@@ -287,6 +290,10 @@ static void __xuiWindowResolve(xui_widget pWidget, const xui_window_data_t* pDat
 	(void)__xuiWindowStyleColor(pWidget, "window.button.active_color", &pResolved->iButtonActiveColor);
 	(void)__xuiWindowStyleColor(pWidget, "window.close.hover_color", &pResolved->iCloseHoverColor);
 	(void)__xuiWindowStyleColor(pWidget, "window.close.active_color", &pResolved->iCloseActiveColor);
+	pResolved->iCloseIconColor = XUI_COLOR_RGBA(171, 72, 76, 255);
+	pResolved->iTopMostColor = XUI_COLOR_RGBA(47, 128, 208, 255);
+	(void)__xuiWindowStyleColor(pWidget, "window.close.icon_color", &pResolved->iCloseIconColor);
+	(void)__xuiWindowStyleColor(pWidget, "window.titlebar.topmost_color", &pResolved->iTopMostColor);
 	(void)__xuiWindowStyleFloat(pWidget, "window.titlebar.height", &pResolved->fTitleBarHeight);
 	(void)__xuiWindowStyleFloat(pWidget, "window.border.width", &pResolved->fBorderWidth);
 	(void)__xuiWindowStyleFloat(pWidget, "window.resize_grip", &pResolved->fResizeGrip);
@@ -755,7 +762,7 @@ static int __xuiWindowButtonRender(xui_widget pButton, xui_draw_context pDraw, u
 	} else if ( pData->iHoverPart == iPart ) {
 		iFill = (iPart == XUI_WINDOW_PART_CLOSE) ? tResolved.iCloseHoverColor : tResolved.iButtonHoverColor;
 	}
-	iIcon = (iPart == XUI_WINDOW_PART_CLOSE) ? XUI_COLOR_RGBA(171, 72, 76, 255) :
+	iIcon = (iPart == XUI_WINDOW_PART_CLOSE) ? tResolved.iCloseIconColor :
 		(pData->bActive ? tResolved.iTitleTextColor : tResolved.iInactiveTitleTextColor);
 	iRet = __xuiWindowDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
@@ -927,7 +934,7 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( pData->bTopMost ) {
-			iRet = __xuiWindowDrawRectFill(pProxy, pDraw, (xui_rect_t){tTitle.fX, tTitle.fY, tTitle.fW, 2.0f}, XUI_COLOR_RGBA(47, 128, 208, 255));
+			iRet = __xuiWindowDrawRectFill(pProxy, pDraw, (xui_rect_t){tTitle.fX, tTitle.fY, tTitle.fW, 2.0f}, tResolved.iTopMostColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		tText = tTitle;
@@ -1487,6 +1494,20 @@ static void __xuiWindowRegisterStyleProperty(xui_context pContext, xui_widget_ty
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
+static int __xuiWindowUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
+	pData->iChromeStyleVersion = pWidget->iStyleVersion;
+	(void)xuiWidgetInvalidate(pData->pClient, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiWidgetInvalidate(pData->pCollapseButton, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiWidgetInvalidate(pData->pMaximizeButton, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pData->pCloseButton, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static void __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	uint32_t iPaintDirty;
@@ -1508,6 +1529,8 @@ static void __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.button.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.close.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.close.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiWindowRegisterStyleProperty(pContext, pType, "window.close.icon_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiWindowRegisterStyleProperty(pContext, pType, "window.titlebar.topmost_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.titlebar.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.resize_grip", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
@@ -1574,6 +1597,7 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiWindowPrepare;
 	tDesc.onLayoutChildren = __xuiWindowLayoutChildren;
 	tDesc.onCacheRender = __xuiWindowCacheRender;
+	tDesc.onUpdate = __xuiWindowUpdate;
 	tDesc.onQueryCursor = __xuiWindowQueryCursor;
 	__xuiWindowDefaultLayout(&tDesc.tLayout);
 	__xuiWindowDefaultCachePolicy(&tDesc.tCachePolicy);

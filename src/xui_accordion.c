@@ -32,6 +32,7 @@ typedef struct xui_accordion_data_t {
 	int iHoverIndex;
 	int iActiveIndex;
 	int iChangeCount;
+	uint32_t iChromeStyleVersion;
 	float fHeaderHeight;
 	float fSpacing;
 	float fContentPadding;
@@ -48,6 +49,7 @@ typedef struct xui_accordion_data_t {
 } xui_accordion_data_t;
 
 typedef struct xui_accordion_resolved_t {
+	uint32_t iIndicatorColor;
 	xui_font pFont;
 	float fHeaderHeight;
 	float fSpacing;
@@ -215,6 +217,8 @@ static void __xuiAccordionResolve(xui_widget pWidget, const xui_accordion_data_t
 	(void)__xuiAccordionStyleColor(pWidget, "accordion.text.color", &pOut->iTextColor);
 	(void)__xuiAccordionStyleColor(pWidget, "accordion.text.active_color", &pOut->iActiveTextColor);
 	(void)__xuiAccordionStyleColor(pWidget, "accordion.text.disabled_color", &pOut->iDisabledTextColor);
+	pOut->iIndicatorColor = __xuiAccordionIndicatorColor(pOut);
+	(void)__xuiAccordionStyleColor(pWidget, "accordion.indicator.color", &pOut->iIndicatorColor);
 	if ( pOut->fHeaderHeight < 18.0f ) pOut->fHeaderHeight = 18.0f;
 	if ( pOut->fSpacing < 0.0f ) pOut->fSpacing = 0.0f;
 	if ( pOut->fContentPadding < 0.0f ) pOut->fContentPadding = 0.0f;
@@ -779,7 +783,7 @@ static int __xuiAccordionHeaderRender(xui_widget pHeader, xui_draw_context pDraw
 		if ( iRet == XUI_OK ) iRet = __xuiAccordionDrawRectStroke(pProxy, pDraw, tRect, tResolved.iBorderColor);
 	}
 	if ( (iRet == XUI_OK) && bEnabled && pSection->bExpanded ) {
-		iIndicator = __xuiAccordionIndicatorColor(&tResolved);
+		iIndicator = tResolved.iIndicatorColor;
 		iRet = __xuiAccordionDrawExpandedIndicator(pProxy, pDraw, tRect, iIndicator);
 	}
 	if ( iRet != XUI_OK ) return iRet;
@@ -1193,6 +1197,17 @@ static void __xuiAccordionRegisterStyleProperty(xui_context pContext, xui_widget
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
+static int __xuiAccordionUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_accordion_data_t* pData = __xuiAccordionGetData(pWidget);
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
+	pData->iChromeStyleVersion = pWidget->iStyleVersion;
+	return __xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static void __xuiAccordionRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	uint32_t iPaintDirty;
@@ -1206,6 +1221,7 @@ static void __xuiAccordionRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.header.expanded_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.content.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.indicator.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.text.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiAccordionRegisterStyleProperty(pContext, pType, "accordion.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -1241,6 +1257,7 @@ XUI_API xui_widget_type xuiAccordionGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiAccordionPrepare;
 	tDesc.onLayoutComplete = __xuiAccordionLayoutComplete;
 	tDesc.onCacheRender = __xuiAccordionCacheRender;
+	tDesc.onUpdate = __xuiAccordionUpdate;
 	__xuiAccordionDefaultLayout(&tDesc.tLayout);
 	__xuiAccordionDefaultCachePolicy(&tPolicy);
 	tDesc.tCachePolicy = tPolicy;

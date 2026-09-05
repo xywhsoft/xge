@@ -6,11 +6,16 @@
 #include "../src/xui_toolbar.c"
 #include "../src/xui_menubar.c"
 #include "../src/xui_statusbar.c"
+#include "../src/xui_tabs.c"
+#include "../src/xui_accordion.c"
+#include "../src/xui_carousel.c"
+#include "../src/xui_window.c"
 
 /* Record the colors actually submitted to the renderer, not just resolution. */
 static uint32_t g_colors[32768];
 static int g_color_count;
 static const char* g_key;
+static xui_widget g_paint_widget;
 
 static int chrome_record(uint32_t color)
 {
@@ -55,7 +60,7 @@ static int chrome_count(uint32_t color)
 static void chrome_paint(pixel_fixture_t* f, xui_widget w, uint32_t state)
 {
 	g_color_count = 0;
-	pixel_paint(f, w, state);
+	pixel_paint(f, g_paint_widget ? g_paint_widget : w, state);
 }
 
 static xui_style_property_t chrome_prop(const char* key, uint32_t color)
@@ -141,7 +146,7 @@ static void chrome_key(pixel_fixture_t* f, xui_widget w, const char* key, uint32
 static void chrome_attach(pixel_fixture_t* f, xui_widget w, int width, int height)
 {
 	PIXEL_CHECK(w != NULL);
-	PIXEL_CHECK(xuiWidgetAddChild(f->root, w) == XUI_OK);
+	if (xuiWidgetGetParent(w) == NULL) PIXEL_CHECK(xuiWidgetAddChild(f->root, w) == XUI_OK);
 	PIXEL_CHECK(xuiWidgetSetRect(w, (xui_rect_t){0, 0, width, height}) == XUI_OK);
 }
 
@@ -230,12 +235,111 @@ static void chrome_bars(pixel_fixture_t* f)
 	xuiWidgetDestroy(statusbar);
 }
 
+static void chrome_frame(pixel_fixture_t* f)
+{
+	PIXEL_CHECK(xuiUpdate(f->context, 0) == XUI_OK);
+	g_color_count = 0;
+	PIXEL_CHECK(xuiRender(f->context, f->target, NULL, 0) == XUI_OK);
+}
+
+static void chrome_cached(pixel_fixture_t* f, xui_widget owner, xui_widget child, const char* key, uint32_t base)
+{
+	xui_style_property_t p = chrome_prop(key, 0x1d3e5fffu);
+	xui_style_value_t token = p.tValue;
+	chrome_frame(f);
+	chrome_frame(f);
+	PIXEL_CHECK(xuiWidgetGetCacheSurface(child, xuiWidgetGetStateId(child)) != NULL);
+	PIXEL_CHECK(xuiStyleSetToken(f->context, "cached-chrome", &token) == XUI_OK);
+	p.tValue.iType = XUI_STYLE_VALUE_TOKEN; p.tValue.sText = "cached-chrome";
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(owner, &p, 1) == XUI_OK);
+	PIXEL_CHECK((xuiWidgetGetDirtyFlags(owner) & XUI_WIDGET_DIRTY_LAYOUT) == 0);
+	chrome_frame(f);
+	if (!chrome_count(token.iColor)) printf("cached child did not refresh: %s\n", key);
+	PIXEL_CHECK(chrome_count(token.iColor) > 0);
+	chrome_frame(f);
+	PIXEL_CHECK(chrome_count(token.iColor) == 0);
+	token.iColor = 0x2e4f70ffu;
+	PIXEL_CHECK(xuiStyleSetToken(f->context, "cached-chrome", &token) == XUI_OK);
+	chrome_frame(f);
+	PIXEL_CHECK(chrome_count(token.iColor) > 0);
+	token.iColor = 0;
+	PIXEL_CHECK(xuiStyleSetToken(f->context, "cached-chrome", &token) == XUI_OK);
+	chrome_frame(f);
+	PIXEL_CHECK(chrome_count(0x2e4f70ffu) == 0);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(owner, NULL, 0) == XUI_OK);
+	chrome_frame(f);
+	PIXEL_CHECK(chrome_count(base) > 0);
+	PIXEL_CHECK(xuiStyleRemoveToken(f->context, "cached-chrome") == XUI_OK);
+}
+
+static void chrome_close(xui_widget w, int index, void* user) { }
+
+static void chrome_composites(pixel_fixture_t* f)
+{
+	xui_widget tabs = NULL, accordion = NULL, carousel = NULL, window = NULL;
+	xui_tabs_data_t* td;
+	xui_accordion_data_t* ad;
+	xui_carousel_data_t* cd;
+	xui_window_data_t* wd;
+	PIXEL_CHECK(xuiTabsCreate(f->context, &tabs, NULL) == XUI_OK);
+	PIXEL_CHECK(xuiAccordionCreate(f->context, &accordion, NULL) == XUI_OK);
+	PIXEL_CHECK(xuiCarouselCreate(f->context, &carousel, NULL) == XUI_OK);
+	PIXEL_CHECK(xuiWindowCreate(f->context, &window, NULL) == XUI_OK);
+	chrome_attach(f, tabs, 320, 200);
+	chrome_attach(f, accordion, 320, 200);
+	chrome_attach(f, carousel, 320, 200);
+	chrome_attach(f, window, 320, 200);
+	PIXEL_CHECK(xuiTabsAddPage(tabs, "Document", NULL) == XUI_OK);
+	PIXEL_CHECK(xuiTabsSetClose(tabs, chrome_close, 1, NULL) == XUI_OK);
+	PIXEL_CHECK(xuiAccordionAddSection(accordion, "Section", 1, 1, NULL) == XUI_OK);
+	PIXEL_CHECK(xuiCarouselSetPageCount(carousel, 2) == XUI_OK);
+	PIXEL_CHECK(xuiCarouselSetAutoPlay(carousel, 0, 1) == XUI_OK);
+	PIXEL_CHECK(xuiWindowSetOpen(window, 1) == XUI_OK);
+	PIXEL_CHECK(xuiWindowSetTopMost(window, 1) == XUI_OK);
+	PIXEL_CHECK(xuiLayout(f->context) == XUI_OK);
+	td = __xuiTabsGetData(tabs); ad = __xuiAccordionGetData(accordion);
+	cd = __xuiCarouselGetData(carousel); wd = __xuiWindowGetData(window);
+	g_paint_widget = td->arrPages[0].pButton;
+	chrome_key(f, tabs, "tabs.close.color", td->iTextColor, 0);
+	td->iCloseHoverIndex = 0;
+	chrome_key(f, tabs, "tabs.close.hover_color", td->iTextColor, 0);
+	chrome_key(f, tabs, "tabs.close.hover_background_color", XUI_COLOR_RGBA(220, 232, 246, 255), 0);
+	td->iCloseActiveIndex = 0;
+	chrome_key(f, tabs, "tabs.close.active_color", td->iTextColor, 0);
+	chrome_key(f, tabs, "tabs.close.active_background_color", XUI_COLOR_RGBA(220, 232, 246, 255), 0);
+	td->iCloseHoverIndex = td->iCloseActiveIndex = -1;
+	td->arrPages[0].bEnabled = 0;
+	chrome_key(f, tabs, "tabs.close.disabled_color", (td->iTextColor & 0xffffff00u) | 100u, 0);
+	chrome_key(f, tabs, "tabs.text.disabled_color", (td->iTextColor & 0xffffff00u) | 120u, 0);
+	td->arrPages[0].bEnabled = 1;
+	g_paint_widget = ad->arrSections[0].pHeader;
+	chrome_key(f, accordion, "accordion.indicator.color", XUI_ACCORDION_DEFAULT_INDICATOR_COLOR, 0);
+	g_paint_widget = cd->pOverlay;
+	chrome_key(f, carousel, "carousel.indicator.background_color", 62, 0);
+	g_paint_widget = wd->pCloseButton;
+	chrome_key(f, window, "window.close.icon_color", XUI_COLOR_RGBA(171, 72, 76, 255), 0);
+	g_paint_widget = NULL;
+	chrome_key(f, window, "window.titlebar.topmost_color", XUI_COLOR_RGBA(47, 128, 208, 255), 0);
+	chrome_cached(f, tabs, td->arrPages[0].pButton, "tabs.close.color", td->iTextColor);
+	chrome_cached(f, accordion, ad->arrSections[0].pHeader, "accordion.indicator.color", XUI_ACCORDION_DEFAULT_INDICATOR_COLOR);
+	chrome_cached(f, carousel, cd->pOverlay, "carousel.indicator.background_color", 62);
+	chrome_cached(f, window, wd->pCloseButton, "window.close.icon_color", XUI_COLOR_RGBA(171, 72, 76, 255));
+	chrome_cached(f, window, wd->pClient, "window.client.color", wd->iClientColor);
+	xuiWidgetDestroy(tabs);
+	xuiWidgetDestroy(accordion);
+	xuiWidgetDestroy(carousel);
+	xuiWidgetDestroy(window);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
 	if (!pixel_init_proxy(&f, chrome_configure)) return 1;
+	f.proxy.tProxy.surfaceDestroy(&f.proxy.tProxy, f.target);
+	PIXEL_CHECK(xuiTestSurfaceCreate(&f.proxy, &f.target, 640, 480, XUI_SURFACE_USAGE_TARGET) == XUI_OK);
 	chrome_sliders(&f);
 	chrome_bars(&f);
+	chrome_composites(&f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_chrome_test");
 }
