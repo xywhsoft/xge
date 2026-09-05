@@ -43,10 +43,11 @@ static void pixel_rect(xui_rect_t actual, float x, float y, float w, float h)
 	}
 }
 
-static int pixel_init(pixel_fixture_t* f)
+static int pixel_init_proxy(pixel_fixture_t* f, void (*configure)(xui_proxy))
 {
 	memset(f, 0, sizeof(*f));
 	xuiTestProxyInit(&f->proxy);
+	if (configure) configure(&f->proxy.tProxy);
 	if (xuiCreate(&f->context) != XUI_OK || xuiSetProxy(f->context, &f->proxy.tProxy) != XUI_OK) return 0;
 	if (xuiInputViewport(f->context, 640, 480) != XUI_OK) return 0;
 	if (f->proxy.tProxy.fontLoadMemory(&f->proxy.tProxy, &f->font, "pixel", 5, 16.0f, XUI_FONT_FORMAT_TTF) != XUI_OK) return 0;
@@ -55,6 +56,11 @@ static int pixel_init(pixel_fixture_t* f)
 	if (xuiWidgetCreate(f->context, &f->root) != XUI_OK) return 0;
 	if (xuiWidgetSetRect(f->root, (xui_rect_t){0, 0, 640, 480}) != XUI_OK) return 0;
 	return xuiSetRootWidget(f->context, f->root) == XUI_OK;
+}
+
+static int pixel_init(pixel_fixture_t* f)
+{
+	return pixel_init_proxy(f, NULL);
 }
 
 /* Exercise the installed paint callback even for zero-size boundary cases. */

@@ -62,10 +62,14 @@ typedef struct xui_button_resolved_t {
 	float fIconGap;
 } xui_button_resolved_t;
 
+typedef struct xui_button_rect_t {
+	float fX, fY, fW, fH;
+} xui_button_rect_t;
+
 typedef struct xui_button_content_t {
-	xui_rect_t tIconRect;
-	xui_rect_t tTextRect;
-	xui_rect_t tGroupRect;
+	xui_button_rect_t tIconRect;
+	xui_button_rect_t tTextRect;
+	xui_button_rect_t tGroupRect;
 } xui_button_content_t;
 
 static uint32_t __xuiButtonColorAlpha(uint32_t iColor)
@@ -525,8 +529,8 @@ static xui_rect_t __xuiButtonSurfaceSrc(xui_proxy pProxy, xui_surface pSurface, 
 	     (pProxy->surfaceGetDesc(pProxy, pSurface, &tDesc) == XUI_OK) ) {
 		tSrc.fX = 0.0f;
 		tSrc.fY = 0.0f;
-		tSrc.fW = (float)tDesc.iWidth;
-		tSrc.fH = (float)tDesc.iHeight;
+		tSrc.fW = tDesc.iWidth;
+		tSrc.fH = tDesc.iHeight;
 	}
 	return tSrc;
 }
@@ -566,33 +570,33 @@ static int __xuiButtonDrawTilePiece(xui_proxy pProxy, xui_draw_context pDraw, xu
 {
 	xui_rect_t tTileSrc;
 	xui_rect_t tTileDst;
-	float fX;
-	float fY;
-	float fW;
-	float fH;
+	int iX;
+	int iY;
+	int iW;
+	int iH;
 	int iRet;
 
 	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	for ( fY = 0.0f; fY < tDst.fH; fY += tSrc.fH ) {
-		fH = tSrc.fH;
-		if ( fY + fH > tDst.fH ) {
-			fH = tDst.fH - fY;
+	for ( iY = 0; iY < tDst.fH; iY += iH ) {
+		iH = tSrc.fH;
+		if ( iH > tDst.fH - iY ) {
+			iH = tDst.fH - iY;
 		}
-		for ( fX = 0.0f; fX < tDst.fW; fX += tSrc.fW ) {
-			fW = tSrc.fW;
-			if ( fX + fW > tDst.fW ) {
-				fW = tDst.fW - fX;
+		for ( iX = 0; iX < tDst.fW; iX += iW ) {
+			iW = tSrc.fW;
+			if ( iW > tDst.fW - iX ) {
+				iW = tDst.fW - iX;
 			}
 			tTileSrc = tSrc;
 			tTileDst = tDst;
-			tTileSrc.fW = fW;
-			tTileSrc.fH = fH;
-			tTileDst.fX += fX;
-			tTileDst.fY += fY;
-			tTileDst.fW = fW;
-			tTileDst.fH = fH;
+			tTileSrc.fW = iW;
+			tTileSrc.fH = iH;
+			tTileDst.fX += iX;
+			tTileDst.fY += iY;
+			tTileDst.fW = iW;
+			tTileDst.fH = iH;
 			iRet = __xuiButtonDrawSurfacePiece(pProxy, pDraw, pSurface, tTileSrc, tTileDst, iColor);
 			if ( iRet != XUI_OK ) {
 				return iRet;
@@ -670,8 +674,8 @@ static int __xuiButtonDrawNinePatch(xui_proxy pProxy, xui_draw_context pDraw, co
 	for ( y = 0; y < 3; y++ ) {
 		for ( x = 0; x < 3; x++ ) {
 			iIndex = y * 3 + x;
-			arrSrc[iIndex] = (xui_rect_t){arrSrcX[x], arrSrcY[y], arrSrcX[x + 1] - arrSrcX[x], arrSrcY[y + 1] - arrSrcY[y]};
-			arrDst[iIndex] = (xui_rect_t){arrDstX[x], arrDstY[y], arrDstX[x + 1] - arrDstX[x], arrDstY[y + 1] - arrDstY[y]};
+			arrSrc[iIndex] = xuiInternalRectFromFloatNearest(arrSrcX[x], arrSrcY[y], arrSrcX[x + 1] - arrSrcX[x], arrSrcY[y + 1] - arrSrcY[y]);
+			arrDst[iIndex] = xuiInternalRectFromFloatNearest(arrDstX[x], arrDstY[y], arrDstX[x + 1] - arrDstX[x], arrDstY[y + 1] - arrDstY[y]);
 		}
 	}
 	for ( iIndex = 0; iIndex < 9; iIndex++ ) {
@@ -688,14 +692,15 @@ static int __xuiButtonDrawNinePatch(xui_proxy pProxy, xui_draw_context pDraw, co
 	return XUI_OK;
 }
 
-static xui_rect_t __xuiButtonZeroRect(void)
+static xui_button_rect_t __xuiButtonZeroRect(void)
 {
-	return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	return (xui_button_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 }
 
 static void __xuiButtonLayoutContent(xui_widget pWidget, xui_button_data_t* pData, const xui_button_resolved_t* pResolved, xui_button_content_t* pContent)
 {
-	xui_rect_t tContent;
+	xui_rect_t tPixelContent;
+	xui_button_rect_t tContent;
 	xui_vec2_t tTextSize;
 	float fIconSize;
 	float fTextW;
@@ -710,19 +715,20 @@ static void __xuiButtonLayoutContent(xui_widget pWidget, xui_button_data_t* pDat
 	int bVertical;
 
 	memset(pContent, 0, sizeof(*pContent));
-	tContent = xuiWidgetGetContentRect(pWidget);
-	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		tContent = xuiWidgetGetRect(pWidget);
-		tContent.fX = 0.0f;
-		tContent.fY = 0.0f;
+	tPixelContent = xuiWidgetGetContentRect(pWidget);
+	if ( (tPixelContent.fW <= 0) || (tPixelContent.fH <= 0) ) {
+		tPixelContent = xuiWidgetGetRect(pWidget);
+		tPixelContent.fX = 0;
+		tPixelContent.fY = 0;
 	}
+	tContent = (xui_button_rect_t){tPixelContent.fX, tPixelContent.fY, tPixelContent.fW, tPixelContent.fH};
 	pContent->tIconRect = __xuiButtonZeroRect();
 	pContent->tTextRect = tContent;
 	pContent->tGroupRect = tContent;
 	bHasText = (pData->sText != NULL) && (pData->sText[0] != '\0') && (pResolved->pFont != NULL);
 	bHasIcon = (pData->pIconSurface != NULL) && (pResolved->fIconSize > 0.0f);
 	if ( !bHasText && !bHasIcon ) {
-		pContent->tGroupRect = (xui_rect_t){tContent.fX + tContent.fW * 0.5f, tContent.fY + tContent.fH * 0.5f, 0.0f, 0.0f};
+		pContent->tGroupRect = (xui_button_rect_t){tContent.fX + tContent.fW * 0.5f, tContent.fY + tContent.fH * 0.5f, 0.0f, 0.0f};
 		return;
 	}
 	fIconSize = pResolved->fIconSize;
@@ -745,7 +751,7 @@ static void __xuiButtonLayoutContent(xui_widget pWidget, xui_button_data_t* pDat
 		return;
 	}
 	if ( !bHasText ) {
-		pContent->tIconRect = xuiInternalSnapRect((xui_rect_t){tContent.fX + (tContent.fW - fIconSize) * 0.5f, tContent.fY + (tContent.fH - fIconSize) * 0.5f, fIconSize, fIconSize});
+		pContent->tIconRect = (xui_button_rect_t){tContent.fX + (tContent.fW - fIconSize) * 0.5f, tContent.fY + (tContent.fH - fIconSize) * 0.5f, fIconSize, fIconSize};
 		pContent->tGroupRect = pContent->tIconRect;
 		return;
 	}
@@ -767,13 +773,13 @@ static void __xuiButtonLayoutContent(xui_widget pWidget, xui_button_data_t* pDat
 		fX = tContent.fX + (tContent.fW - fGroupW) * 0.5f;
 		fY = tContent.fY + (tContent.fH - fGroupH) * 0.5f;
 		if ( pResolved->iIconPlacement == XUI_BUTTON_ICON_BOTTOM ) {
-			pContent->tTextRect = (xui_rect_t){fX, fY, fGroupW, fTextH};
-			pContent->tIconRect = (xui_rect_t){fX + (fGroupW - fIconSize) * 0.5f, fY + fTextH + fGap, fIconSize, fIconSize};
+			pContent->tTextRect = (xui_button_rect_t){fX, fY, fGroupW, fTextH};
+			pContent->tIconRect = (xui_button_rect_t){fX + (fGroupW - fIconSize) * 0.5f, fY + fTextH + fGap, fIconSize, fIconSize};
 		} else {
-			pContent->tIconRect = (xui_rect_t){fX + (fGroupW - fIconSize) * 0.5f, fY, fIconSize, fIconSize};
-			pContent->tTextRect = (xui_rect_t){fX, fY + fIconSize + fGap, fGroupW, fTextH};
+			pContent->tIconRect = (xui_button_rect_t){fX + (fGroupW - fIconSize) * 0.5f, fY, fIconSize, fIconSize};
+			pContent->tTextRect = (xui_button_rect_t){fX, fY + fIconSize + fGap, fGroupW, fTextH};
 		}
-		pContent->tGroupRect = (xui_rect_t){fX, fY, fGroupW, fGroupH};
+		pContent->tGroupRect = (xui_button_rect_t){fX, fY, fGroupW, fGroupH};
 	} else {
 		if ( fTextW > tContent.fW - fIconSize - fGap ) {
 			fTextW = tContent.fW - fIconSize - fGap;
@@ -789,22 +795,19 @@ static void __xuiButtonLayoutContent(xui_widget pWidget, xui_button_data_t* pDat
 		fX = tContent.fX + (tContent.fW - fGroupW) * 0.5f;
 		fY = tContent.fY + (tContent.fH - fGroupH) * 0.5f;
 		if ( pResolved->iIconPlacement == XUI_BUTTON_ICON_RIGHT ) {
-			pContent->tTextRect = (xui_rect_t){fX, fY, fTextW, fGroupH};
-			pContent->tIconRect = (xui_rect_t){fX + fTextW + fGap, fY + (fGroupH - fIconSize) * 0.5f, fIconSize, fIconSize};
+			pContent->tTextRect = (xui_button_rect_t){fX, fY, fTextW, fGroupH};
+			pContent->tIconRect = (xui_button_rect_t){fX + fTextW + fGap, fY + (fGroupH - fIconSize) * 0.5f, fIconSize, fIconSize};
 		} else {
-			pContent->tIconRect = (xui_rect_t){fX, fY + (fGroupH - fIconSize) * 0.5f, fIconSize, fIconSize};
-			pContent->tTextRect = (xui_rect_t){fX + fIconSize + fGap, fY, fTextW, fGroupH};
+			pContent->tIconRect = (xui_button_rect_t){fX, fY + (fGroupH - fIconSize) * 0.5f, fIconSize, fIconSize};
+			pContent->tTextRect = (xui_button_rect_t){fX + fIconSize + fGap, fY, fTextW, fGroupH};
 		}
-		pContent->tGroupRect = (xui_rect_t){fX, fY, fGroupW, fGroupH};
+		pContent->tGroupRect = (xui_button_rect_t){fX, fY, fGroupW, fGroupH};
 	}
-	pContent->tIconRect = xuiInternalSnapRect(pContent->tIconRect);
-	pContent->tTextRect = xuiInternalSnapRect(pContent->tTextRect);
-	pContent->tGroupRect = xuiInternalSnapRect(pContent->tGroupRect);
 }
 
 static xui_rect_t __xuiButtonLayoutBadge(xui_widget pWidget, xui_button_data_t* pData, const xui_button_content_t* pContent)
 {
-	xui_rect_t tAnchorRect;
+	xui_button_rect_t tAnchorRect;
 	xui_rect_t tContent;
 	float fSize;
 	float fX;
@@ -813,21 +816,19 @@ static xui_rect_t __xuiButtonLayoutBadge(xui_widget pWidget, xui_button_data_t* 
 	tContent = xuiWidgetGetContentRect(pWidget);
 	tAnchorRect = pContent->tGroupRect;
 	if ( pData->iBadgeAnchor == XUI_BUTTON_BADGE_WIDGET_TOP_RIGHT ) {
-		tAnchorRect = xuiWidgetGetRect(pWidget);
-		tAnchorRect.fX = 0.0f;
-		tAnchorRect.fY = 0.0f;
+		tAnchorRect = (xui_button_rect_t){0, 0, xuiWidgetGetRect(pWidget).fW, xuiWidgetGetRect(pWidget).fH};
 	} else if ( (pData->iBadgeAnchor == XUI_BUTTON_BADGE_ICON_TOP_RIGHT) && (pContent->tIconRect.fW > 0.0f) ) {
 		tAnchorRect = pContent->tIconRect;
 	} else if ( (pData->iBadgeAnchor == XUI_BUTTON_BADGE_TEXT_TOP_RIGHT) && (pContent->tTextRect.fW > 0.0f) ) {
 		tAnchorRect = pContent->tTextRect;
 	}
 	if ( (tAnchorRect.fW <= 0.0f) && (tAnchorRect.fH <= 0.0f) ) {
-		tAnchorRect = tContent;
+		tAnchorRect = (xui_button_rect_t){tContent.fX, tContent.fY, tContent.fW, tContent.fH};
 	}
 	fSize = (pData->fBadgeSize > 0.0f) ? pData->fBadgeSize : 12.0f;
 	fX = tAnchorRect.fX + tAnchorRect.fW - fSize * 0.5f + pData->fBadgeOffsetX;
 	fY = tAnchorRect.fY + fSize * 0.5f + pData->fBadgeOffsetY;
-	return xuiInternalSnapRect((xui_rect_t){fX - fSize * 0.5f, fY - fSize * 0.5f, fSize, fSize});
+	return xuiInternalRectFromFloatNearest(fX - fSize * 0.5f, fY - fSize * 0.5f, fSize, fSize);
 }
 
 static int __xuiButtonDrawDefaultBackground(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, const xui_button_visual_t* pVisual)
@@ -869,6 +870,8 @@ static int __xuiButtonCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	xui_rect_t tRect;
 	xui_rect_t tSrc;
 	xui_rect_t tBadge;
+	xui_rect_t tIconRect;
+	xui_rect_t tTextRect;
 	uint32_t iRenderState;
 	uint32_t iTextColor;
 	int iVisual;
@@ -922,11 +925,15 @@ static int __xuiButtonCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 		}
 	}
 	__xuiButtonLayoutContent(pWidget, pData, &tResolved, &tContent);
+	tIconRect = xuiInternalRectFromFloatNearest(tContent.tIconRect.fX, tContent.tIconRect.fY,
+		tContent.tIconRect.fW, tContent.tIconRect.fH);
+	tTextRect = xuiInternalRectFromFloatNearest(tContent.tTextRect.fX, tContent.tTextRect.fY,
+		tContent.tTextRect.fW, tContent.tTextRect.fH);
 	bHasIcon = (pData->pIconSurface != NULL) && (tResolved.fIconSize > 0.0f);
 	bHasText = (pData->sText != NULL) && (pData->sText[0] != '\0') && (tResolved.pFont != NULL);
 	if ( bHasIcon && (__xuiButtonColorAlpha(tResolved.iIconColor) != 0) ) {
 		tSrc = __xuiButtonSurfaceSrc(pProxy, pData->pIconSurface, pData->tIconSrc);
-		iRet = __xuiButtonDrawSurfacePiece(pProxy, pDraw, pData->pIconSurface, tSrc, tContent.tIconRect, tResolved.iIconColor);
+		iRet = __xuiButtonDrawSurfacePiece(pProxy, pDraw, pData->pIconSurface, tSrc, tIconRect, tResolved.iIconColor);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -939,7 +946,7 @@ static int __xuiButtonCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 				pDraw,
 				tResolved.pFont,
 				pData->sText,
-				bHasIcon ? tContent.tTextRect : xuiWidgetGetContentRect(pWidget),
+				bHasIcon ? tTextRect : xuiWidgetGetContentRect(pWidget),
 				iTextColor,
 				bHasIcon ? (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) : tResolved.iTextFlags);
 			if ( iRet != XUI_OK ) {
