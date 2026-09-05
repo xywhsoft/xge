@@ -1,6 +1,7 @@
 #include "xui_internal.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -10,11 +11,48 @@
 #define XUI_TABLE_VIEW_DEFAULT_WIDTH 420.0f
 #define XUI_TABLE_VIEW_DEFAULT_ROWS 8
 
+#ifndef XUI_TABLE_VIEW_INDEX_STEP
+#define XUI_TABLE_VIEW_INDEX_STEP(kind) ((void)0)
+#endif
+
+typedef struct xui_table_view_row_prefix_t {
+	double fExplicitHeight;
+	int iDefaultCount;
+} xui_table_view_row_prefix_t;
+
+typedef struct xui_table_view_merge_band_t {
+	int iStart;
+	int iEnd;
+	int iMerge;
+} xui_table_view_merge_band_t;
+
+typedef struct xui_table_view_merge_column_t {
+	xui_table_view_merge_band_t* arrBands;
+	int iCount;
+	int iCapacity;
+} xui_table_view_merge_column_t;
+
+typedef struct xui_table_view_merge_t {
+	int iRow;
+	int iColumn;
+	int bPaintable;
+	uint64_t iPaintSerial;
+} xui_table_view_merge_t;
+
 typedef struct xui_table_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
 	xui_table_view_column_t arrColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
 	xui_table_view_row_t* arrRows;
+	xui_table_view_row_prefix_t* arrRowPrefix;
+	xui_table_view_merge_column_t arrMergeColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	xui_table_view_merge_t* arrMerges;
+	int iMergeCount;
+	int iMergeCapacity;
+	int iMergeIndexedRows;
+	int bMergeBuilding;
+	uint64_t iMergeGeneration;
+	uint64_t iPaintSerial;
 	int iColumnCount;
 	int iRowCount;
 	int iRowStateCount;
@@ -398,6 +436,17 @@ static int __xuiTableViewInvalidateHoverCells(xui_widget pWidget, xui_table_view
 	return iRet;
 }
 
+static void __xuiTableViewInvalidateMerges(xui_table_view_data_t* pData)
+{
+	int i;
+	pData->iMergeGeneration++;
+	pData->iMergeIndexedRows = 0;
+	pData->iMergeCount = 0;
+	for ( i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; i++ ) {
+		pData->arrMergeColumns[i].iCount = 0;
+	}
+}
+
 static int __xuiTableViewSyncRowCount(xui_widget pWidget, xui_table_view_data_t* pData)
 {
 	int iCount;
@@ -408,9 +457,12 @@ static int __xuiTableViewSyncRowCount(xui_widget pWidget, xui_table_view_data_t*
 	if ( pData->onCount != NULL ) {
 		iCount = pData->onCount(pWidget, pData->pAdapterUser);
 		if ( iCount < 0 ) iCount = 0;
-		pData->iRowCount = iCount;
 	} else {
-		pData->iRowCount = pData->iRowStateCount;
+		iCount = pData->iRowStateCount;
+	}
+	if ( pData->iRowCount != iCount ) {
+		pData->iRowCount = iCount;
+		__xuiTableViewInvalidateMerges(pData);
 	}
 	if ( pData->iSelectedRow >= pData->iRowCount ) {
 		pData->iSelectedRow = -1;
@@ -446,6 +498,8 @@ static float __xuiTableViewColumnWidth(const xui_table_view_data_t* pData, int i
 static float __xuiTableViewRowHeight(const xui_table_view_data_t* pData, int iRow)
 {
 	float fHeight;
+
+	XUI_TABLE_VIEW_INDEX_STEP(ROW_READ);
 
 	if ( pData == NULL ) {
 		return 0.0f;
@@ -495,33 +549,36 @@ static float __xuiTableViewContentWidth(const xui_table_view_data_t* pData)
 	return fW;
 }
 
+static double __xuiTableViewRowOffset(const xui_table_view_data_t* pData, int iRow)
+{
+	double fHeight;
+	int iExplicitRows;
+	int iDefaultRows;
+
+	if ( (pData == NULL) || (iRow <= 0) ) {
+		return 0.0;
+	}
+	if ( iRow > pData->iRowCount ) iRow = pData->iRowCount;
+	iExplicitRows = (iRow < pData->iRowStateCount) ? iRow : pData->iRowStateCount;
+	iDefaultRows = iRow - iExplicitRows;
+	fHeight = 0.0;
+	if ( iExplicitRows > 0 ) {
+		fHeight = pData->arrRowPrefix[iExplicitRows].fExplicitHeight;
+		iDefaultRows += pData->arrRowPrefix[iExplicitRows].iDefaultCount;
+	}
+	/* Default-height rows remain parametric, including an adapter-only tail. */
+	return fHeight + (double)iDefaultRows * ((pData->fDefaultRowHeight > 0.0f) ?
+		pData->fDefaultRowHeight : XUI_TABLE_VIEW_DEFAULT_ROW_HEIGHT);
+}
+
 static float __xuiTableViewRowTop(const xui_table_view_data_t* pData, int iRow)
 {
-	float fY;
-	int i;
-
-	fY = 0.0f;
-	if ( pData == NULL ) {
-		return 0.0f;
-	}
-	for ( i = 0; (i < iRow) && (i < pData->iRowCount); i++ ) {
-		fY += __xuiTableViewRowHeight(pData, i);
-	}
-	return fY;
+	return (float)__xuiTableViewRowOffset(pData, iRow);
 }
 
 static float __xuiTableViewContentHeight(xui_widget pWidget, xui_table_view_data_t* pData)
 {
-	float fH;
-	int i;
-	int iCount;
-
-	fH = 0.0f;
-	iCount = __xuiTableViewSyncRowCount(pWidget, pData);
-	for ( i = 0; i < iCount; i++ ) {
-		fH += __xuiTableViewRowHeight(pData, i);
-	}
-	return fH;
+	return __xuiTableViewRowTop(pData, __xuiTableViewSyncRowCount(pWidget, pData));
 }
 
 static float __xuiTableViewColumnLeft(const xui_table_view_data_t* pData, int iColumn)
@@ -564,22 +621,40 @@ static int __xuiTableViewColumnAtContentX(const xui_table_view_data_t* pData, fl
 
 static int __xuiTableViewRowAtContentY(const xui_table_view_data_t* pData, float fContentY)
 {
-	float fY;
-	float fH;
-	int i;
+	int iLow;
+	int iHigh;
+	int iMid;
 
-	if ( pData == NULL ) {
+	if ( (pData == NULL) || !(fContentY >= 0.0f) ||
+	     ((double)fContentY >= __xuiTableViewRowOffset(pData, pData->iRowCount)) ) {
 		return -1;
 	}
-	fY = 0.0f;
-	for ( i = 0; i < pData->iRowCount; i++ ) {
-		fH = __xuiTableViewRowHeight(pData, i);
-		if ( (fContentY >= fY) && (fContentY < fY + fH) ) {
-			return i;
+	iLow = 0;
+	iHigh = pData->iRowCount;
+	while ( iLow < iHigh ) {
+		XUI_TABLE_VIEW_INDEX_STEP(ROW_PROBE);
+		iMid = iLow + (iHigh - iLow) / 2;
+		if ( __xuiTableViewRowOffset(pData, iMid + 1) <= (double)fContentY ) {
+			iLow = iMid + 1;
+		} else {
+			iHigh = iMid;
 		}
-		fY += fH;
 	}
-	return -1;
+	return iLow;
+}
+
+static int __xuiTableViewRowEndAtContentY(const xui_table_view_data_t* pData, float fContentY)
+{
+	int iLow = 0;
+	int iHigh = pData->iRowCount;
+	int iMid;
+	while ( iLow < iHigh ) {
+		XUI_TABLE_VIEW_INDEX_STEP(ROW_PROBE);
+		iMid = iLow + (iHigh - iLow) / 2;
+		if ( __xuiTableViewRowOffset(pData, iMid) < (double)fContentY ) iLow = iMid + 1;
+		else iHigh = iMid;
+	}
+	return iLow;
 }
 
 static int __xuiTableViewNextVisibleColumn(const xui_table_view_data_t* pData, int iColumn, int iStep)
@@ -642,35 +717,128 @@ static void __xuiTableViewGetCell(xui_widget pWidget, xui_table_view_data_t* pDa
 	}
 	if ( pCell->iRowSpan <= 0 ) pCell->iRowSpan = 1;
 	if ( pCell->iColSpan <= 0 ) pCell->iColSpan = 1;
-	if ( iRow + pCell->iRowSpan > pData->iRowCount ) pCell->iRowSpan = pData->iRowCount - iRow;
-	if ( iColumn + pCell->iColSpan > pData->iColumnCount ) pCell->iColSpan = pData->iColumnCount - iColumn;
+	if ( pCell->iRowSpan > pData->iRowCount - iRow ) pCell->iRowSpan = pData->iRowCount - iRow;
+	if ( pCell->iColSpan > pData->iColumnCount - iColumn ) pCell->iColSpan = pData->iColumnCount - iColumn;
 	if ( pCell->iRowSpan <= 0 ) pCell->iRowSpan = 1;
 	if ( pCell->iColSpan <= 0 ) pCell->iColSpan = 1;
 }
 
-static int __xuiTableViewMergeOwner(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, int* pOwnerRow, int* pOwnerColumn)
+static int __xuiTableViewMergeBandAt(const xui_table_view_merge_column_t* pColumn, int iRow)
+{
+	int iLow = 0;
+	int iHigh = pColumn->iCount;
+	int iMid;
+	while ( iLow < iHigh ) {
+		XUI_TABLE_VIEW_INDEX_STEP(MERGE_PROBE);
+		iMid = iLow + (iHigh - iLow) / 2;
+		if ( pColumn->arrBands[iMid].iEnd <= iRow ) iLow = iMid + 1;
+		else iHigh = iMid;
+	}
+	return iLow;
+}
+
+static void* __xuiTableViewGrowIndex(void* pItems, int* pCapacity, int iCount, size_t iItemSize)
+{
+	void* pNew;
+	int iCapacity;
+	if ( iCount < *pCapacity ) return pItems;
+	if ( iCount == INT_MAX ) return NULL;
+	iCapacity = (*pCapacity == 0) ? 16 : ((*pCapacity > INT_MAX / 2) ? INT_MAX : *pCapacity * 2);
+	if ( (size_t)iCapacity > (size_t)-1 / iItemSize ) return NULL;
+	pNew = xrtRealloc(pItems, (size_t)iCapacity * iItemSize);
+	if ( pNew != NULL ) *pCapacity = iCapacity;
+	return pNew;
+}
+
+static int __xuiTableViewIndexMerges(xui_widget pWidget, xui_table_view_data_t* pData, int iLastRow)
 {
 	xui_table_view_cell_t tCell;
+	xui_table_view_merge_column_t* pColumn;
+	xui_table_view_merge_band_t* pBands;
+	xui_table_view_merge_t* pMerges;
+	uint64_t iGeneration;
+	int iBand;
+	int iStart;
+	int iEnd;
+	int bPaintable;
+	int bContributes;
 	int r;
 	int c;
+	int j;
+	int iRet = XUI_OK;
 
+	if ( (pData->onMerge == NULL && pData->onCell == NULL) || iLastRow < pData->iMergeIndexedRows ) return XUI_OK;
+	if ( pData->bMergeBuilding ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->bMergeBuilding = 1;
+	iGeneration = pData->iMergeGeneration;
+	/* Either callback can supply spans. Discover each row once per data generation;
+	 * callers must Refresh after changing adapter spans without a count change. */
+	for ( r = pData->iMergeIndexedRows; r <= iLastRow; r++ ) {
+		for ( c = 0; c < pData->iColumnCount; c++ ) {
+			__xuiTableViewGetCell(pWidget, pData, r, c, &tCell);
+			if ( iGeneration != pData->iMergeGeneration ) {
+				iRet = XUI_ERROR_INVALID_ARGUMENT;
+				goto done;
+			}
+			if ( tCell.iRowSpan <= 1 && tCell.iColSpan <= 1 ) continue;
+			iEnd = r + tCell.iRowSpan;
+			bContributes = 0;
+			for ( j = c; j < c + tCell.iColSpan; j++ ) {
+				pColumn = &pData->arrMergeColumns[j];
+				if ( pColumn->iCount == 0 || pColumn->arrBands[pColumn->iCount - 1].iEnd < iEnd ) bContributes = 1;
+			}
+			if ( !bContributes ) continue;
+			pColumn = &pData->arrMergeColumns[c];
+			iBand = __xuiTableViewMergeBandAt(pColumn, r);
+			bPaintable = (iBand == pColumn->iCount || pColumn->arrBands[iBand].iStart > r);
+			pMerges = (xui_table_view_merge_t*)__xuiTableViewGrowIndex(pData->arrMerges, &pData->iMergeCapacity, pData->iMergeCount, sizeof(*pMerges));
+			if ( pMerges == NULL ) { iRet = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+			pData->arrMerges = pMerges;
+			pMerges[pData->iMergeCount] = (xui_table_view_merge_t){r, c, bPaintable, 0};
+			/* Row-major discovery makes only the uncovered tail appendable. Keeping
+			 * disjoint bands preserves the original first-owner overlap precedence. */
+			for ( j = c; j < c + tCell.iColSpan; j++ ) {
+				pColumn = &pData->arrMergeColumns[j];
+				iStart = r;
+				if ( pColumn->iCount > 0 && pColumn->arrBands[pColumn->iCount - 1].iEnd > iStart ) {
+					iStart = pColumn->arrBands[pColumn->iCount - 1].iEnd;
+				}
+				if ( iStart >= iEnd ) continue;
+				pBands = (xui_table_view_merge_band_t*)__xuiTableViewGrowIndex(pColumn->arrBands, &pColumn->iCapacity, pColumn->iCount, sizeof(*pBands));
+				if ( pBands == NULL ) { iRet = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+				pColumn->arrBands = pBands;
+				pBands[pColumn->iCount++] = (xui_table_view_merge_band_t){iStart, iEnd, pData->iMergeCount};
+			}
+			pData->iMergeCount++;
+		}
+		pData->iMergeIndexedRows = r + 1;
+	}
+done:
+	pData->bMergeBuilding = 0;
+	if ( iRet != XUI_OK ) __xuiTableViewInvalidateMerges(pData);
+	return iRet;
+}
+
+static int __xuiTableViewMergeOwner(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, int* pOwnerRow, int* pOwnerColumn)
+{
+	xui_table_view_merge_column_t* pColumn;
+	xui_table_view_merge_t* pMerge;
+	int iBand;
+	int iRet;
 	if ( pOwnerRow != NULL ) *pOwnerRow = iRow;
 	if ( pOwnerColumn != NULL ) *pOwnerColumn = iColumn;
-	if ( (pData == NULL) || (iRow < 0) || (iColumn < 0) ) {
-		return 0;
-	}
-	for ( r = 0; r <= iRow; r++ ) {
-		for ( c = 0; c <= iColumn; c++ ) {
-			__xuiTableViewGetCell(pWidget, pData, r, c, &tCell);
-			if ( (tCell.iRowSpan <= 1) && (tCell.iColSpan <= 1) ) {
-				continue;
-			}
-			if ( (iRow >= r) && (iRow < r + tCell.iRowSpan) && (iColumn >= c) && (iColumn < c + tCell.iColSpan) ) {
-				if ( pOwnerRow != NULL ) *pOwnerRow = r;
-				if ( pOwnerColumn != NULL ) *pOwnerColumn = c;
-				return (r != iRow) || (c != iColumn);
-			}
-		}
+	if ( (pData == NULL) || (iRow < 0) || (iColumn < 0) ||
+	     (iRow >= pData->iRowCount) || (iColumn >= pData->iColumnCount) ||
+	     (pData->onMerge == NULL && pData->onCell == NULL) ) return 0;
+	iRet = __xuiTableViewIndexMerges(pWidget, pData, iRow);
+	if ( iRet != XUI_OK ) return iRet;
+	pColumn = &pData->arrMergeColumns[iColumn];
+	iBand = __xuiTableViewMergeBandAt(pColumn, iRow);
+	if ( iBand < pColumn->iCount && pColumn->arrBands[iBand].iStart <= iRow ) {
+		pMerge = &pData->arrMerges[pColumn->arrBands[iBand].iMerge];
+		if ( pOwnerRow != NULL ) *pOwnerRow = pMerge->iRow;
+		if ( pOwnerColumn != NULL ) *pOwnerColumn = pMerge->iColumn;
+		return pMerge->iRow != iRow || pMerge->iColumn != iColumn;
 	}
 	return 0;
 }
@@ -690,15 +858,10 @@ static float __xuiTableViewSpanWidth(const xui_table_view_data_t* pData, int iCo
 
 static float __xuiTableViewSpanHeight(const xui_table_view_data_t* pData, int iRow, int iRowSpan)
 {
-	float fH;
-	int i;
-
-	fH = 0.0f;
+	if ( (pData == NULL) || (iRow < 0) || (iRow >= pData->iRowCount) ) return 0.0f;
 	if ( iRowSpan <= 0 ) iRowSpan = 1;
-	for ( i = 0; (i < iRowSpan) && (iRow + i < pData->iRowCount); i++ ) {
-		fH += __xuiTableViewRowHeight(pData, iRow + i);
-	}
-	return fH;
+	if ( iRowSpan > pData->iRowCount - iRow ) iRowSpan = pData->iRowCount - iRow;
+	return (float)(__xuiTableViewRowOffset(pData, iRow + iRowSpan) - __xuiTableViewRowOffset(pData, iRow));
 }
 
 static xui_rect_t __xuiTableViewCellContentRectData(xui_table_view_data_t* pData, int iRow, int iColumn, int iRowSpan, int iColSpan)
@@ -1184,14 +1347,17 @@ static int __xuiTableViewEnsureVisibleInternal(xui_widget pWidget, xui_table_vie
 	xui_rect_t tRect;
 	int iOwnerRow;
 	int iOwnerColumn;
+	int iRet;
 
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	(void)__xuiTableViewSyncRowCount(pWidget, pData);
 	if ( (iRow < 0) || (iRow >= pData->iRowCount) || (iColumn < 0) || (iColumn >= pData->iColumnCount) ) {
 		return XUI_OK;
 	}
-	(void)__xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	if ( iRet < 0 ) return iRet;
 	__xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell);
 	tRect = __xuiTableViewCellContentRectData(pData, iOwnerRow, iOwnerColumn, tCell.iRowSpan, tCell.iColSpan);
 	return xuiScrollFrameEnsureRectVisible(pData->pFrame, tRect);
@@ -1285,7 +1451,7 @@ static int __xuiTableViewHitCellWorld(xui_widget pWidget, xui_table_view_data_t*
 	if ( (iRow < 0) || (iColumn < 0) ) {
 		return 0;
 	}
-	(void)__xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	if ( __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn) < 0 ) return 0;
 	if ( pRow != NULL ) *pRow = iOwnerRow;
 	if ( pColumn != NULL ) *pColumn = iOwnerColumn;
 	return 1;
@@ -1397,12 +1563,14 @@ static int __xuiTableViewPointerMove(xui_widget pWidget, xui_table_view_data_t* 
 		if ( (fMax > 0.0f) && (fWidth > fMax) ) fWidth = fMax;
 		if ( pData->arrColumns[pData->iResizeColumn].fWidth != fWidth ) {
 			pData->arrColumns[pData->iResizeColumn].fWidth = fWidth;
+			__xuiTableViewInvalidateMerges(pData);
 			pData->iColumnResizeCount++;
 			pData->iChangeCount++;
 			(void)__xuiTableViewUpdateContentSize(pWidget, pData);
 			if ( pData->onColumnResize != NULL ) {
 				pData->onColumnResize(pWidget, pData->iResizeColumn, fWidth, pData->pColumnResizeUser);
 			}
+			__xuiTableViewInvalidateMerges(pData);
 			(void)__xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
@@ -1446,9 +1614,11 @@ static int __xuiTableViewPointerDown(xui_widget pWidget, xui_table_view_data_t* 
 		}
 		pData->iSortCount++;
 		pData->iChangeCount++;
+		__xuiTableViewInvalidateMerges(pData);
 		if ( pData->onSort != NULL ) {
 			pData->onSort(pWidget, pData->iSortColumn, pData->bSortDescending, pData->pSortUser);
 		}
+		__xuiTableViewInvalidateMerges(pData);
 		(void)__xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -1739,6 +1909,9 @@ static int __xuiTableViewPrepare(xui_widget pWidget, void* pUser)
 	}
 	__xuiTableViewResolve(pWidget, pData, &tResolved);
 	pData->pFont = tResolved.pFont;
+	if ( pData->fDefaultColumnWidth != tResolved.fDefaultColumnWidth || pData->fDefaultRowHeight != tResolved.fDefaultRowHeight ) {
+		__xuiTableViewInvalidateMerges(pData);
+	}
 	pData->fDefaultColumnWidth = tResolved.fDefaultColumnWidth;
 	pData->fDefaultRowHeight = tResolved.fDefaultRowHeight;
 	pData->fHeaderHeight = tResolved.fHeaderHeight;
@@ -1866,6 +2039,8 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 	xui_table_view_data_t tResolved;
 	xui_proxy pProxy;
 	xui_table_view_cell_t tCellData;
+	xui_table_view_merge_column_t* pMergeColumn;
+	xui_table_view_merge_t* pMerge;
 	xui_rect_t tRect;
 	xui_rect_t tViewportContent;
 	xui_rect_t tCellContent;
@@ -1875,14 +2050,19 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 	float fOffsetY;
 	float fViewportW;
 	float fViewportH;
-	float fRowTop;
-	float fRowHeight;
+	float fColumnLeft;
+	float fColumnWidth;
 	int iStart;
 	int iEnd;
+	int iCounterEnd;
+	int iColumnStart;
+	int iColumnEnd;
+	int iVisibleRow;
+	int iVisibleColumn;
+	int arrMergeCursors[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	uint64_t iGeneration;
 	int i;
 	int j;
-	int iOwnerRow;
-	int iOwnerColumn;
 	int iState;
 	int iHandled;
 	int iRet;
@@ -1918,30 +2098,54 @@ static int __xuiTableViewViewportRender(xui_widget pViewport, xui_draw_context p
 	fOffsetY = 0.0f;
 	(void)xuiScrollFrameGetOffset(pData->pFrame, &fOffsetX, &fOffsetY);
 	tViewportContent = (xui_rect_t){fOffsetX, fOffsetY, fViewportW, fViewportH};
-	iStart = 0;
-	fRowTop = 0.0f;
-	for ( i = 0; i < pData->iRowCount; i++ ) {
-		fRowHeight = __xuiTableViewRowHeight(pData, i);
-		if ( fRowTop + fRowHeight > fOffsetY ) {
-			iStart = i;
-			break;
-		}
-		fRowTop += fRowHeight;
-	}
-	iEnd = iStart;
-	while ( (iEnd < pData->iRowCount) && (fRowTop < fOffsetY + fViewportH + pData->fDefaultRowHeight) ) {
-		fRowTop += __xuiTableViewRowHeight(pData, iEnd);
-		iEnd++;
-	}
+	iStart = __xuiTableViewRowAtContentY(pData, fOffsetY);
+	if ( iStart < 0 ) iStart = pData->iRowCount;
+	iEnd = __xuiTableViewRowEndAtContentY(pData, fOffsetY + fViewportH);
+	/* Keep the historical overscan counter without visiting its offscreen cells. */
+	iCounterEnd = __xuiTableViewRowEndAtContentY(pData, fOffsetY + fViewportH + pData->fDefaultRowHeight);
 	pData->iFirstVisible = iStart;
-	pData->iPaintVisibleCount = (iEnd > iStart) ? (iEnd - iStart) : 0;
-	for ( i = iStart; i < iEnd; i++ ) {
-		for ( j = 0; j < pData->iColumnCount; j++ ) {
-			if ( __xuiTableViewColumnWidth(pData, j) <= 0.0f ) {
-				continue;
+	pData->iPaintVisibleCount = (iCounterEnd > iStart) ? (iCounterEnd - iStart) : 0;
+	iColumnStart = pData->iColumnCount;
+	iColumnEnd = 0;
+	fColumnLeft = 0.0f;
+	for ( j = 0; j < pData->iColumnCount; j++ ) {
+		fColumnWidth = __xuiTableViewColumnWidth(pData, j);
+		if ( fColumnWidth > 0.0f && fColumnLeft + fColumnWidth > fOffsetX && fColumnLeft < fOffsetX + fViewportW ) {
+			if ( iColumnStart == pData->iColumnCount ) iColumnStart = j;
+			iColumnEnd = j + 1;
+		}
+		fColumnLeft += fColumnWidth;
+	}
+	if ( iStart == iEnd || iColumnStart >= iColumnEnd || fViewportH <= 0.0f ) return XUI_OK;
+	iRet = __xuiTableViewIndexMerges(pWidget, pData, iEnd - 1);
+	if ( iRet != XUI_OK ) return iRet;
+	iGeneration = pData->iMergeGeneration;
+	pData->iPaintSerial++;
+	if ( pData->iPaintSerial == 0 ) {
+		for ( i = 0; i < pData->iMergeCount; i++ ) pData->arrMerges[i].iPaintSerial = 0;
+		pData->iPaintSerial = 1;
+	}
+	for ( j = iColumnStart; j < iColumnEnd; j++ ) {
+		arrMergeCursors[j] = __xuiTableViewMergeBandAt(&pData->arrMergeColumns[j], iStart);
+	}
+	for ( iVisibleRow = iStart; iVisibleRow < iEnd; iVisibleRow++ ) {
+		for ( iVisibleColumn = iColumnStart; iVisibleColumn < iColumnEnd; iVisibleColumn++ ) {
+			if ( iGeneration != pData->iMergeGeneration ) return XUI_OK;
+			i = iVisibleRow;
+			j = iVisibleColumn;
+			if ( __xuiTableViewColumnWidth(pData, j) <= 0.0f ) continue;
+			pMergeColumn = &pData->arrMergeColumns[j];
+			while ( arrMergeCursors[j] < pMergeColumn->iCount && pMergeColumn->arrBands[arrMergeCursors[j]].iEnd <= i ) {
+				XUI_TABLE_VIEW_INDEX_STEP(MERGE_PROBE);
+				arrMergeCursors[j]++;
 			}
-			if ( __xuiTableViewMergeOwner(pWidget, pData, i, j, &iOwnerRow, &iOwnerColumn) ) {
-				continue;
+			if ( arrMergeCursors[j] < pMergeColumn->iCount && pMergeColumn->arrBands[arrMergeCursors[j]].iStart <= i ) {
+				pMerge = &pData->arrMerges[pMergeColumn->arrBands[arrMergeCursors[j]].iMerge];
+				if ( !pMerge->bPaintable || pMerge->iPaintSerial == pData->iPaintSerial ) continue;
+				pMerge->iPaintSerial = pData->iPaintSerial;
+				i = pMerge->iRow;
+				j = pMerge->iColumn;
+				if ( __xuiTableViewColumnWidth(pData, j) <= 0.0f ) continue;
 			}
 			__xuiTableViewGetCell(pWidget, pData, i, j, &tCellData);
 			tCellContent = __xuiTableViewCellContentRectData(pData, i, j, tCellData.iRowSpan, tCellData.iColSpan);
@@ -2240,6 +2444,7 @@ static int __xuiTableViewInit(xui_widget pWidget, void* pTypeData, const void* p
 static void __xuiTableViewDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
 	xui_table_view_data_t* pData;
+	int i;
 
 	(void)pWidget;
 	(void)pUser;
@@ -2247,6 +2452,11 @@ static void __xuiTableViewDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	if ( pData != NULL ) {
 		if ( pData->arrRows != NULL ) {
 			xrtFree(pData->arrRows);
+		}
+		xrtFree(pData->arrRowPrefix);
+		xrtFree(pData->arrMerges);
+		for ( i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; i++ ) {
+			xrtFree(pData->arrMergeColumns[i].arrBands);
 		}
 		memset(pData, 0, sizeof(*pData));
 	}
@@ -2390,6 +2600,7 @@ XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_colu
 	}
 	if ( pData->iSelectedColumn >= iCount ) pData->iSelectedColumn = -1;
 	if ( pData->iFocusColumn >= iCount ) pData->iFocusColumn = -1;
+	__xuiTableViewInvalidateMerges(pData);
 	iRet = __xuiTableViewUpdateContentSize(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iChangeCount++;
@@ -2400,6 +2611,8 @@ XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* 
 {
 	xui_table_view_data_t* pData;
 	xui_table_view_row_t* arrNewRows;
+	xui_table_view_row_prefix_t* arrPrefix;
+	int i;
 	int iRet;
 
 	pData = __xuiTableViewGetData(pWidget);
@@ -2407,7 +2620,10 @@ XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* 
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	arrNewRows = NULL;
+	arrPrefix = NULL;
 	if ( iCount > 0 ) {
+		if ( (size_t)iCount > (size_t)-1 / sizeof(*arrNewRows) ||
+		     (size_t)iCount >= (size_t)-1 / sizeof(*arrPrefix) ) return XUI_ERROR_OUT_OF_MEMORY;
 		arrNewRows = (xui_table_view_row_t*)xrtMalloc((size_t)iCount * sizeof(xui_table_view_row_t));
 		if ( arrNewRows == NULL ) {
 			return XUI_ERROR_OUT_OF_MEMORY;
@@ -2417,12 +2633,27 @@ XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* 
 		} else {
 			memset(arrNewRows, 0, (size_t)iCount * sizeof(xui_table_view_row_t));
 		}
+		arrPrefix = (xui_table_view_row_prefix_t*)xrtMalloc(((size_t)iCount + 1) * sizeof(*arrPrefix));
+		if ( arrPrefix == NULL ) {
+			xrtFree(arrNewRows);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		arrPrefix[0] = (xui_table_view_row_prefix_t){0.0, 0};
+		for ( i = 0; i < iCount; i++ ) {
+			XUI_TABLE_VIEW_INDEX_STEP(ROW_READ);
+			arrPrefix[i + 1] = arrPrefix[i];
+			if ( arrNewRows[i].fHeight <= 0.0f ) arrPrefix[i + 1].iDefaultCount++;
+			else arrPrefix[i + 1].fExplicitHeight += arrNewRows[i].fHeight;
+		}
 	}
 	if ( pData->arrRows != NULL ) {
 		xrtFree(pData->arrRows);
 	}
 	pData->arrRows = arrNewRows;
+	xrtFree(pData->arrRowPrefix);
+	pData->arrRowPrefix = arrPrefix;
 	pData->iRowStateCount = iCount;
+	__xuiTableViewInvalidateMerges(pData);
 	if ( pData->onCount == NULL ) {
 		pData->iRowCount = iCount;
 	}
@@ -2442,6 +2673,7 @@ XUI_API int xuiTableViewSetAdapter(xui_widget pWidget, xui_table_view_count_proc
 	pData->onCount = onCount;
 	pData->onCell = onCell;
 	pData->pAdapterUser = pUser;
+	__xuiTableViewInvalidateMerges(pData);
 	iRet = __xuiTableViewUpdateContentSize(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iChangeCount++;
@@ -2504,6 +2736,7 @@ XUI_API int xuiTableViewSetMergeProvider(xui_widget pWidget, xui_table_view_merg
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onMerge = onMerge;
 	pData->pMergeUser = pUser;
+	__xuiTableViewInvalidateMerges(pData);
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -2563,6 +2796,7 @@ XUI_API int xuiTableViewSetDefaultMetrics(xui_widget pWidget, float fColumnWidth
 	if ( fColumnWidth > 0.0f ) pData->fDefaultColumnWidth = fColumnWidth;
 	if ( fRowHeight > 0.0f ) pData->fDefaultRowHeight = fRowHeight;
 	if ( fHeaderHeight >= 0.0f ) pData->fHeaderHeight = fHeaderHeight;
+	__xuiTableViewInvalidateMerges(pData);
 	iRet = __xuiTableViewUpdateContentSize(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -2688,6 +2922,7 @@ XUI_API int xuiTableViewSetColumnWidth(xui_widget pWidget, int iColumn, float fW
 	if ( fWidth < fMin ) fWidth = fMin;
 	if ( (fMax > 0.0f) && (fWidth > fMax) ) fWidth = fMax;
 	pData->arrColumns[iColumn].fWidth = fWidth;
+	__xuiTableViewInvalidateMerges(pData);
 	iRet = __xuiTableViewUpdateContentSize(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iChangeCount++;
@@ -2736,11 +2971,13 @@ XUI_API int xuiTableViewGetCellContentRect(xui_widget pWidget, int iRow, int iCo
 	xui_table_view_cell_t tCell;
 	int iOwnerRow;
 	int iOwnerColumn;
+	int iRet;
 
 	if ( pRect != NULL ) memset(pRect, 0, sizeof(*pRect));
 	pData = __xuiTableViewGetData(pWidget);
 	if ( (pData == NULL) || (pRect == NULL) || (iRow < 0) || (iColumn < 0) || (iRow >= __xuiTableViewSyncRowCount(pWidget, pData)) || (iColumn >= pData->iColumnCount) ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	if ( iRet < 0 ) return iRet;
 	__xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell);
 	*pRect = __xuiTableViewCellContentRectData(pData, iOwnerRow, iOwnerColumn, tCell.iRowSpan, tCell.iColSpan);
 	return XUI_OK;
@@ -2810,6 +3047,7 @@ XUI_API int xuiTableViewGetItemAt(xui_widget pWidget, float fX, float fY, int* p
 	int iColumn;
 	int iOwnerRow;
 	int iOwnerColumn;
+	int iRet;
 
 	if ( pRow != NULL ) *pRow = -1;
 	if ( pColumn != NULL ) *pColumn = -1;
@@ -2826,7 +3064,8 @@ XUI_API int xuiTableViewGetItemAt(xui_widget pWidget, float fX, float fY, int* p
 	iColumn = __xuiTableViewColumnAtContentX(pData, fContentX);
 	iRow = __xuiTableViewRowAtContentY(pData, fContentY);
 	if ( (iRow < 0) || (iColumn < 0) ) return XUI_OK;
-	(void)__xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
+	if ( iRet < 0 ) return iRet;
 	if ( pRow != NULL ) *pRow = iOwnerRow;
 	if ( pColumn != NULL ) *pColumn = iOwnerColumn;
 	return XUI_OK;
@@ -2946,6 +3185,7 @@ XUI_API int xuiTableViewRefresh(xui_widget pWidget)
 
 	pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiTableViewInvalidateMerges(pData);
 	iRet = __xuiTableViewUpdateContentSize(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iChangeCount++;
