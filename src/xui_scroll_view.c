@@ -13,7 +13,60 @@ typedef struct xui_scroll_view_data_t {
 	float fViewportWidth;
 	float fViewportHeight;
 	int iChangeCount;
+	uint32_t iPaintStyleHash;
+	int bPaintStyleValid;
 } xui_scroll_view_data_t;
+
+static void __xuiScrollViewRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+	static const char* arrNames[] = {
+		"scrollview.background.color", "scrollview.corner.color", "scrollview.grip.color"
+	};
+	xui_style_property_info_t tInfo;
+	size_t i;
+	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); ++i ) {
+		if ( xuiStyleFindProperty(pContext, arrNames[i]) != 0 ) continue;
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.iSize = sizeof(tInfo);
+		tInfo.sName = arrNames[i];
+		tInfo.pWidgetType = pType;
+		tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+		tInfo.iDirtyFlags = XUI_STYLE_DIRTY_DEFAULT;
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+}
+
+static int __xuiScrollViewCacheRender(xui_widget pWidget, xui_draw_context pDraw,
+	uint32_t iStateId, void* pUser)
+{
+	xui_scroll_view_data_t* pData = (xui_scroll_view_data_t*)pUser;
+	xui_widget_cache_render_proc onRender;
+	void* pRenderUser;
+	xui_draw_context pFrameDraw;
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int i, iRet, iEndRet;
+	(void)pDraw;
+	(void)iStateId;
+	if ( pData->bPaintStyleValid && pData->iPaintStyleHash == iHash ) return XUI_OK;
+	/* Cache preparation is child-first. Repaint the owned frame in this same pass. */
+	iRet = xuiWidgetGetCacheRenderCallback(pData->pFrame, &onRender, &pRenderUser);
+	if ( iRet != XUI_OK || onRender == NULL ) return iRet;
+	(void)xuiWidgetInvalidate(pData->pFrame, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	for ( i = 0; i < xuiWidgetGetCacheStateCount(pData->pFrame); ++i ) {
+		uint32_t iState = xuiWidgetGetCacheStateId(pData->pFrame, i);
+		if ( xuiWidgetGetCacheSurface(pData->pFrame, iState) == NULL ) continue;
+		iRet = xuiWidgetUpdateBegin(pData->pFrame, iState, XUI_WIDGET_UPDATE_CLEAR, 0, &pFrameDraw);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = onRender(pData->pFrame, pFrameDraw, iState, pRenderUser);
+		iEndRet = xuiWidgetUpdateEnd(pData->pFrame, iState, pFrameDraw);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iEndRet != XUI_OK ) return iEndRet;
+	}
+	(void)xuiWidgetClearDirty(pData->pFrame, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE);
+	pData->iPaintStyleHash = iHash;
+	pData->bPaintStyleValid = 1;
+	return XUI_OK;
+}
 
 static int __xuiScrollViewDescValid(const xui_scroll_view_desc_t* pDesc)
 {
@@ -312,6 +365,7 @@ XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "scrollview");
 	if ( pType != NULL ) {
+		__xuiScrollViewRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -324,12 +378,14 @@ XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiScrollViewDestroy;
 	tDesc.onContentMeasure = __xuiScrollViewContentMeasure;
 	tDesc.onLayoutComplete = __xuiScrollViewLayoutComplete;
+	tDesc.onCacheRender = __xuiScrollViewCacheRender;
 	__xuiScrollViewDefaultLayout(&tDesc.tLayout);
 	__xuiScrollViewDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) {
 		return NULL;
 	}
+	__xuiScrollViewRegisterStyleProperties(pContext, pType);
 	return pType;
 }
 

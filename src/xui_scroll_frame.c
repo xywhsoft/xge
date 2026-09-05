@@ -164,6 +164,40 @@ static int __xuiScrollFrameAlpha(uint32_t iColor)
 	return (int)(iColor & 0xffu);
 }
 
+static uint32_t __xuiScrollFrameStyleColor(xui_widget pWidget, const char* sName,
+	const char* sViewName, uint32_t iBase)
+{
+	xui_style_property_t tProperty;
+	xui_widget pParent = xuiWidgetGetParent(pWidget);
+	xui_widget_type pViewType = xuiWidgetFindType(xuiWidgetGetContext(pWidget), "scrollview");
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) iBase = tProperty.tValue.iColor;
+	/* A ScrollView owns its frame; its palette never replaces the frame's API colors. */
+	if ( pViewType != NULL && xuiWidgetIsType(pParent, pViewType) &&
+	     xuiWidgetGetResolvedStyleProperty(pParent, sViewName, &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) iBase = tProperty.tValue.iColor;
+	return iBase;
+}
+
+static void __xuiScrollFrameRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+	static const char* arrNames[] = {
+		"scrollframe.background.color", "scrollframe.corner.color", "scrollframe.grip.color"
+	};
+	xui_style_property_info_t tInfo;
+	size_t i;
+	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); ++i ) {
+		if ( xuiStyleFindProperty(pContext, arrNames[i]) != 0 ) continue;
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.iSize = sizeof(tInfo);
+		tInfo.sName = arrNames[i];
+		tInfo.pWidgetType = pType;
+		tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+		tInfo.iDirtyFlags = XUI_STYLE_DIRTY_DEFAULT;
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+}
+
 static void __xuiScrollFrameComputeShow(const xui_scroll_frame_data_t* pData, float fWidth, float fHeight, int* pShowH, int* pShowV)
 {
 	float fReserve;
@@ -366,6 +400,7 @@ static void __xuiScrollFrameVBarChanged(xui_widget pBar, float fValue, void* pUs
 static int __xuiScrollFrameCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_scroll_frame_data_t* pData;
+	xui_scroll_frame_data_t tResolved;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
 	xui_rect_t tGrip;
@@ -378,6 +413,11 @@ static int __xuiScrollFrameCacheRender(xui_widget pWidget, xui_draw_context pDra
 	if ( (pWidget == NULL) || (pData == NULL) || (pDraw == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	tResolved = *pData;
+	tResolved.iBackgroundColor = __xuiScrollFrameStyleColor(pWidget, "scrollframe.background.color", "scrollview.background.color", pData->iBackgroundColor);
+	tResolved.iCornerColor = __xuiScrollFrameStyleColor(pWidget, "scrollframe.corner.color", "scrollview.corner.color", pData->iCornerColor);
+	tResolved.iGripColor = __xuiScrollFrameStyleColor(pWidget, "scrollframe.grip.color", "scrollview.grip.color", pData->iGripColor);
+	pData = &tResolved;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -717,6 +757,7 @@ XUI_API xui_widget_type xuiScrollFrameGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "scrollframe");
 	if ( pType != NULL ) {
+		__xuiScrollFrameRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -737,6 +778,7 @@ XUI_API xui_widget_type xuiScrollFrameGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) {
 		return NULL;
 	}
+	__xuiScrollFrameRegisterStyleProperties(pContext, pType);
 	return pType;
 }
 
