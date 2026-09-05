@@ -92,6 +92,80 @@ typedef struct xui_message_list_data_t {
 	uint32_t iLayoutDpiGeneration;
 } xui_message_list_data_t;
 
+typedef struct xui_message_paint_t {
+    xui_message_list_colors_t tColors;
+    uint32_t iAuxiliaryColor;
+    uint32_t iAuxiliaryHeaderColor;
+    uint32_t iTextSelectionColor;
+} xui_message_paint_t;
+
+static void __xuiMessageStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
+{
+    xui_style_property_t tProperty;
+    memset(&tProperty, 0, sizeof(tProperty));
+    tProperty.iSize = sizeof(tProperty);
+    if ( xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty) == XUI_OK &&
+         tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) *pColor = tProperty.tValue.iColor;
+}
+
+static void __xuiMessageResolvePaint(xui_widget pWidget, const xui_message_list_data_t* pData, xui_message_paint_t* pPaint)
+{
+    pPaint->tColors = pData->tColors;
+    pPaint->iAuxiliaryColor = XUI_COLOR_RGBA(255, 255, 255, 226);
+    pPaint->iAuxiliaryHeaderColor = XUI_COLOR_RGBA(232, 237, 243, 220);
+    pPaint->iTextSelectionColor = XUI_COLOR_RGBA(68, 130, 205, 104);
+    __xuiMessageStyleColor(pWidget, "messagelist.background.color", &pPaint->tColors.iBackgroundColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.bubble.self_color", &pPaint->tColors.iSelfBubbleColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.bubble.other_color", &pPaint->tColors.iOtherBubbleColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.bubble.system_color", &pPaint->tColors.iSystemBubbleColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.text.self_color", &pPaint->tColors.iSelfTextColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.text.other_color", &pPaint->tColors.iOtherTextColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.text.system_color", &pPaint->tColors.iSystemTextColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.text.meta_color", &pPaint->tColors.iMetaTextColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.avatar.self_color", &pPaint->tColors.iAvatarSelfColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.avatar.other_color", &pPaint->tColors.iAvatarOtherColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.row.hover_color", &pPaint->tColors.iHoverColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.row.selected_color", &pPaint->tColors.iSelectedColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.border.color", &pPaint->tColors.iBorderColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.auxiliary.background_color", &pPaint->iAuxiliaryColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.auxiliary.header_color", &pPaint->iAuxiliaryHeaderColor);
+    __xuiMessageStyleColor(pWidget, "messagelist.text.selection_color", &pPaint->iTextSelectionColor);
+}
+
+static void __xuiMessageRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+    static const char* const arrKeys[] = {
+        "messagelist.background.color",
+        "messagelist.bubble.self_color",
+        "messagelist.bubble.other_color",
+        "messagelist.bubble.system_color",
+        "messagelist.text.self_color",
+        "messagelist.text.other_color",
+        "messagelist.text.system_color",
+        "messagelist.text.meta_color",
+        "messagelist.avatar.self_color",
+        "messagelist.avatar.other_color",
+        "messagelist.row.hover_color",
+        "messagelist.row.selected_color",
+        "messagelist.border.color",
+        "messagelist.auxiliary.background_color",
+        "messagelist.auxiliary.header_color",
+        "messagelist.text.selection_color",
+    };
+    xui_style_property_info_t tInfo;
+    size_t i;
+    for ( i = 0; i < sizeof(arrKeys) / sizeof(arrKeys[0]); i++ ) {
+        if ( xuiStyleFindProperty(pContext, arrKeys[i]) != 0 ) continue;
+        memset(&tInfo, 0, sizeof(tInfo));
+        tInfo.iSize = sizeof(tInfo);
+        tInfo.sName = arrKeys[i];
+        tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+        tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+        tInfo.pWidgetType = pType;
+        (void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+    }
+}
+
 static int __xuiMessageNodeCanSelectText(const xui_message_node_data_t* pNode);
 
 static xui_message_list_data_t* __xuiMessageListGetData(xui_widget pWidget)
@@ -1311,7 +1385,7 @@ static int __xuiMessageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint
 	return XUI_OK;
 }
 
-static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data_t* pData, xui_proxy pProxy, xui_draw_context pDraw, xui_text_layout pLayout, int iNodeIndex, xui_rect_t tRect, uint32_t iColor, int bCenter)
+static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data_t* pData, xui_proxy pProxy, xui_draw_context pDraw, xui_text_layout pLayout, int iNodeIndex, xui_rect_t tRect, uint32_t iColor, int bCenter, uint32_t iSelectionColor)
 {
 	xui_text_line_t tLine;
 	xui_font pFont;
@@ -1352,7 +1426,7 @@ static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data
 				fStart = __xuiMessageLineCaretX(pNode, &tLine, iStart);
 				fEnd = __xuiMessageLineCaretX(pNode, &tLine, iEnd);
 				tSelectionRect = (xui_rect_t){tLineRect.fX + fStart, tLineRect.fY, fEnd - fStart, tLineRect.fH};
-				if ( fEnd > fStart ) (void)__xuiMessageDrawFill(pProxy, pDraw, tSelectionRect, XUI_COLOR_RGBA(68, 130, 205, 104));
+				if ( fEnd > fStart ) (void)__xuiMessageDrawFill(pProxy, pDraw, tSelectionRect, iSelectionColor);
 			}
 		}
 		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, iLine, &sDisplay, &iDisplaySize);
@@ -1366,6 +1440,7 @@ static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data
 static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_message_list_data_t* pData;
+	xui_message_paint_t tPaint;
 	xui_message_node_data_t* pNode;
 	xui_message_node_t tPublicNode;
 	xui_proxy pProxy;
@@ -1389,11 +1464,12 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	if ( (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	__xuiMessageResolvePaint(pWidget, pData, &tPaint);
 	pFont = __xuiMessageFont(pWidget, pData);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	iRet = __xuiMessageLayoutNodes(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)__xuiMessageDrawFill(pProxy, pDraw, tContent, pData->tColors.iBackgroundColor);
+	(void)__xuiMessageDrawFill(pProxy, pDraw, tContent, tPaint.tColors.iBackgroundColor);
 	for ( i = __xuiMessageLowerBoundY(pData, pData->fScrollY); i < pData->iNodeCount; i++ ) {
 		XUI_MESSAGE_LIST_AUDIT_STEP(RenderNode);
 		pNode = &pData->arrNodes[i];
@@ -1408,48 +1484,48 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			if ( iHandled < 0 ) return iHandled;
 			if ( iHandled ) continue;
 		}
-		if ( i == pData->iHover ) (void)__xuiMessageDrawFill(pProxy, pDraw, tNode, pData->tColors.iHoverColor);
-		if ( i == pData->iSelected ) (void)__xuiMessageDrawFill(pProxy, pDraw, tNode, pData->tColors.iSelectedColor);
+		if ( i == pData->iHover ) (void)__xuiMessageDrawFill(pProxy, pDraw, tNode, tPaint.tColors.iHoverColor);
+		if ( i == pData->iSelected ) (void)__xuiMessageDrawFill(pProxy, pDraw, tNode, tPaint.tColors.iSelectedColor);
 		tBubble = pNode->tBubbleRect;
 		tBubble.fX += tContent.fX;
 		tBubble.fY += tContent.fY - pData->fScrollY;
 		if ( pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) {
-			(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, pData->tColors.iSystemBubbleColor);
+			(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, tPaint.tColors.iSystemBubbleColor);
 			tText = pNode->tTextRect;
 			tText.fX += tContent.fX;
 			tText.fY += tContent.fY - pData->fScrollY;
-			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, pData->tColors.iSystemTextColor, 1);
+			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, tPaint.tColors.iSystemTextColor, 1, tPaint.iTextSelectionColor);
 			if ( iRet != XUI_OK ) return iRet;
 			continue;
 		}
 		if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY ) {
-			(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, XUI_COLOR_RGBA(255, 255, 255, 226));
-			(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, pData->tColors.iBorderColor);
+			(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, tPaint.iAuxiliaryColor);
+			(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, tPaint.tColors.iBorderColor);
 			tHeader = pNode->tHeaderRect;
 			tHeader.fX += tContent.fX;
 			tHeader.fY += tContent.fY - pData->fScrollY;
-			(void)__xuiMessageDrawFill(pProxy, pDraw, tHeader, XUI_COLOR_RGBA(232, 237, 243, 220));
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? ">" : "v", (xui_rect_t){tHeader.fX + 7.0f, tHeader.fY, 12.0f, tHeader.fH}, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiMessageDrawFill(pProxy, pDraw, tHeader, tPaint.iAuxiliaryHeaderColor);
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? ">" : "v", (xui_rect_t){tHeader.fX + 7.0f, tHeader.fY, 12.0f, tHeader.fH}, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			tText = (xui_rect_t){tHeader.fX + 23.0f, tHeader.fY + (tHeader.fH - pNode->tMeasuredTitle.fY) * 0.5f,
 				__xuiMessageMin(pNode->fTitleLayoutWidth, __xuiMessageMax(0.0f, tHeader.fW - 30.0f)), pNode->tMeasuredTitle.fY};
-			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTitleLayout, -1, tText, pData->tColors.iMetaTextColor, 0);
+			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTitleLayout, -1, tText, tPaint.tColors.iMetaTextColor, 0, tPaint.iTextSelectionColor);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) == 0 ) {
 				tText = pNode->tTextRect;
 				tText.fX += tContent.fX;
 				tText.fY += tContent.fY - pData->fScrollY;
-				iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, pData->tColors.iOtherTextColor, 0);
+				iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, tPaint.tColors.iOtherTextColor, 0, tPaint.iTextSelectionColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			continue;
 		}
-		iBubbleColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? pData->tColors.iSelfBubbleColor : pData->tColors.iOtherBubbleColor;
-		iTextColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? pData->tColors.iSelfTextColor : pData->tColors.iOtherTextColor;
+		iBubbleColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? tPaint.tColors.iSelfBubbleColor : tPaint.tColors.iOtherBubbleColor;
+		iTextColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? tPaint.tColors.iSelfTextColor : tPaint.tColors.iOtherTextColor;
 		tAvatar.fY = tNode.fY + pData->tMetrics.fMetaHeight;
 		tAvatar.fW = pData->tMetrics.fAvatarSize;
 		tAvatar.fH = pData->tMetrics.fAvatarSize;
 		tAvatar.fX = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? (tContent.fX + tContent.fW - pData->tMetrics.fPaddingX - pData->tMetrics.fAvatarSize) : (tContent.fX + pData->tMetrics.fPaddingX);
-		iAvatarColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? pData->tColors.iAvatarSelfColor : pData->tColors.iAvatarOtherColor;
+		iAvatarColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? tPaint.tColors.iAvatarSelfColor : tPaint.tColors.iAvatarOtherColor;
 		if ( __xuiMessageAlpha(iAvatarColor) != 0 ) {
 			if ( pProxy->drawCircleFill != NULL ) {
 				(void)pProxy->drawCircleFill(pProxy, pDraw, tAvatar.fX + tAvatar.fW * 0.5f, tAvatar.fY + tAvatar.fH * 0.5f, pData->tMetrics.fAvatarSize * 0.5f, iAvatarColor);
@@ -1462,16 +1538,16 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tMeta.fX = tBubble.fX;
 		tMeta.fW = tBubble.fW;
 		if ( pNode->iType == XUI_MESSAGE_NODE_SELF ) {
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		} else {
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, iBubbleColor);
-		(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, pData->tColors.iBorderColor);
+		(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, tPaint.tColors.iBorderColor);
 		tText = pNode->tTextRect;
 		tText.fX += tContent.fX;
 		tText.fY += tContent.fY - pData->fScrollY;
-		iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, iTextColor, 0);
+		iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, iTextColor, 0, tPaint.iTextSelectionColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1595,6 +1671,7 @@ XUI_API xui_widget_type xuiMessageListGetType(xui_context pContext)
 	__xuiMessageDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
+	__xuiMessageRegisterStyleProperties(pContext, pType);
 	return pType;
 }
 
