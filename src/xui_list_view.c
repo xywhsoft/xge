@@ -41,12 +41,14 @@ typedef struct xui_list_view_data_t {
 	uint32_t iSelectedColor;
 	uint32_t iTextColor;
 	uint32_t iDisabledTextColor;
+	uint32_t iSelectedTextColor;
 	uint32_t iTrackColor;
 	uint32_t iThumbColor;
 	uint32_t iScrollbarHoverColor;
 	uint32_t iScrollbarActiveColor;
 	uint32_t iScrollbarFocusColor;
 	uint32_t iScrollbarDisabledColor;
+	uint32_t iViewportStyleHash;
 } xui_list_view_data_t;
 
 static xui_list_view_data_t* __xuiListViewGetData(xui_widget pWidget);
@@ -158,6 +160,7 @@ static void __xuiListViewDefaults(xui_list_view_data_t* pData)
 	pData->iSelectedColor = XUI_COLOR_RGBA(47, 128, 237, 255);
 	pData->iTextColor = XUI_COLOR_RGBA(31, 50, 73, 255);
 	pData->iDisabledTextColor = XUI_COLOR_RGBA(132, 146, 162, 210);
+	pData->iSelectedTextColor = XUI_COLOR_WHITE;
 	pData->iTrackColor = XUI_COLOR_RGBA(224, 234, 244, 255);
 	pData->iThumbColor = XUI_COLOR_RGBA(126, 161, 196, 245);
 	pData->iScrollbarHoverColor = XUI_COLOR_RGBA(76, 136, 204, 250);
@@ -257,6 +260,13 @@ static void __xuiListViewResolve(xui_widget pWidget, xui_list_view_data_t* pData
 	(void)__xuiListViewStyleColor(pWidget, "listview.row.selected_color", &pResolved->iSelectedColor);
 	(void)__xuiListViewStyleColor(pWidget, "listview.text.color", &pResolved->iTextColor);
 	(void)__xuiListViewStyleColor(pWidget, "listview.text.disabled_color", &pResolved->iDisabledTextColor);
+	(void)__xuiListViewStyleColor(pWidget, "listview.text.selected_color", &pResolved->iSelectedTextColor);
+	(void)__xuiListViewStyleColor(pWidget, "listview.scrollbar.track_color", &pResolved->iTrackColor);
+	(void)__xuiListViewStyleColor(pWidget, "listview.scrollbar.thumb_color", &pResolved->iThumbColor);
+	(void)__xuiListViewStyleColor(pWidget, "listview.scrollbar.hover_color", &pResolved->iScrollbarHoverColor);
+	(void)__xuiListViewStyleColor(pWidget, "listview.scrollbar.active_color", &pResolved->iScrollbarActiveColor);
+	(void)__xuiListViewStyleColor(pWidget, "listview.scrollbar.focus_color", &pResolved->iScrollbarFocusColor);
+	(void)__xuiListViewStyleColor(pWidget, "listview.scrollbar.disabled_color", &pResolved->iScrollbarDisabledColor);
 	(void)__xuiListViewStyleFloat(pWidget, "listview.item.height", &pResolved->fItemHeight);
 	(void)__xuiListViewStyleFloat(pWidget, "listview.padding", &pResolved->fPadding);
 	(void)__xuiListViewStyleFloat(pWidget, "listview.border.width", &pResolved->fBorderWidth);
@@ -418,6 +428,7 @@ static xui_rect_t __xuiListViewFrameRect(xui_widget pWidget, const xui_list_view
 
 static int __xuiListViewApplyFrameStyle(xui_widget pWidget, xui_list_view_data_t* pData)
 {
+	xui_list_view_data_t tResolved;
 	int iRet;
 
 	(void)pWidget;
@@ -430,7 +441,8 @@ static int __xuiListViewApplyFrameStyle(xui_widget pWidget, xui_list_view_data_t
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetWheelStep(pData->pFrame, pData->fItemHeight);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetContentDragEnabled(pData->pFrame, 0);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 0.0f);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, pData->iTrackColor, pData->iThumbColor, pData->iScrollbarHoverColor, pData->iScrollbarActiveColor, pData->iScrollbarFocusColor, pData->iScrollbarDisabledColor);
+	__xuiListViewResolve(pWidget, pData, &tResolved);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	return iRet;
 }
 
@@ -1023,6 +1035,58 @@ static int __xuiListViewDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw,
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
+/* The cache walk is child-first. Refresh already prepared SELF caches here so
+ * owner-only style changes are visible in the same frame, without layout work. */
+static int __xuiListViewRefreshChildCache(xui_widget pChild)
+{
+	xui_widget_cache_render_proc onRender;
+	xui_cache_policy_t tPolicy;
+	xui_draw_context pDraw;
+	xui_proxy pProxy;
+	void* pUser;
+	uint32_t iState;
+	int iRet, iEndRet;
+	if ( !xuiInternalWidgetIsValid(pChild) || !xuiWidgetGetVisible(pChild) ||
+	     (xuiWidgetGetDirtyFlags(pChild) & XUI_WIDGET_DIRTY_CACHE) == 0 ) return XUI_OK;
+	tPolicy = xuiWidgetGetCachePolicy(pChild);
+	iState = xuiWidgetGetStateId(pChild);
+	if ( tPolicy.iPolicy != XUI_CACHE_POLICY_SELF ||
+	     xuiWidgetGetCacheSurface(pChild, iState) == NULL ) return XUI_OK;
+	(void)xuiWidgetGetCacheRenderCallback(pChild, &onRender, &pUser);
+	if ( onRender == NULL ) return XUI_OK;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pChild));
+	iRet = xuiWidgetUpdateBegin(pChild, iState, XUI_WIDGET_UPDATE_CLEAR, tPolicy.iClearColor, &pDraw);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = onRender(pChild, pDraw, iState, pUser);
+	if ( !xuiInternalWidgetIsValid(pChild) || xuiInternalContextDestroyPending(pChild->pContext) ) {
+		(void)pProxy->drawEnd(pProxy, pDraw);
+		pChild->pActiveUpdateDraw = NULL;
+		pChild->pActiveUpdateSlot = NULL;
+		pChild->iActiveUpdateStateId = 0;
+		return XUI_OK;
+	}
+	iEndRet = xuiWidgetUpdateEnd(pChild, iState, pDraw);
+	if ( iRet == XUI_OK ) iRet = iEndRet;
+	if ( iRet == XUI_OK ) xuiWidgetClearDirty(pChild, XUI_WIDGET_DIRTY_CACHE);
+	return iRet;
+}
+
+static int __xuiListViewSyncPaint(xui_widget pWidget, xui_list_view_data_t* pData, const xui_list_view_data_t* pResolved)
+{
+	int iRet;
+	iRet = xuiScrollFrameSetColors(pData->pFrame, pResolved->iTrackColor, pResolved->iThumbColor, pResolved->iScrollbarHoverColor, pResolved->iScrollbarActiveColor, pResolved->iScrollbarFocusColor, pResolved->iScrollbarDisabledColor);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->iViewportStyleHash != xuiWidgetGetStyleHash(pWidget) ) {
+		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = __xuiListViewRefreshChildCache(pData->pViewport);
+		if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
+	}
+	iRet = __xuiListViewRefreshChildCache(xuiScrollFrameGetHScrollBarWidget(pData->pFrame));
+	if ( iRet == XUI_OK ) iRet = __xuiListViewRefreshChildCache(xuiScrollFrameGetVScrollBarWidget(pData->pFrame));
+	if ( iRet == XUI_OK ) iRet = __xuiListViewRefreshChildCache(pData->pFrame);
+	return iRet;
+}
+
 static int __xuiListViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_list_view_data_t* pData;
@@ -1047,6 +1111,8 @@ static int __xuiListViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	__xuiListViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pWidget);
+	iRet = __xuiListViewSyncPaint(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK || !xuiInternalWidgetIsValid(pWidget) ) return iRet;
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect = xuiInternalSnapRect(tRect);
@@ -1095,6 +1161,7 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	}
 	__xuiListViewResolve(pWidget, pData, &tResolved);
 	tRect = xuiWidgetGetRect(pViewport);
+	pData->iViewportStyleHash = xuiWidgetGetStyleHash(pWidget);
 	fViewportW = __xuiListViewMaxFloat(0.0f, tRect.fW);
 	fViewportH = __xuiListViewMaxFloat(0.0f, tRect.fH);
 	tRect.fX = 0.0f;
@@ -1145,7 +1212,7 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		}
 		iTextColor = ((iState & XUI_LIST_ITEM_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 		if ( (iState & XUI_LIST_ITEM_SELECTED) != 0 ) {
-			iTextColor = XUI_COLOR_RGBA(255, 255, 255, 255);
+			iTextColor = tResolved.iSelectedTextColor;
 		}
 		if ( (tResolved.pFont != NULL) && (__xuiListViewAlpha(iTextColor) != 0) ) {
 			tText = xuiInternalSnapRect((xui_rect_t){tRow.fX + tResolved.fPadding, tRow.fY, __xuiListViewMaxFloat(1.0f, tRow.fW - tResolved.fPadding * 2.0f), tRow.fH});
@@ -1365,6 +1432,13 @@ static void __xuiListViewRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.row.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.text.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.scrollbar.track_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.scrollbar.thumb_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.scrollbar.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.scrollbar.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.scrollbar.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.scrollbar.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.item.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
@@ -1820,6 +1894,7 @@ XUI_API int xuiListViewGetColors(xui_widget pWidget, uint32_t* pBackground, uint
 XUI_API int xuiListViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	xui_list_view_data_t tResolved;
 	int iRet;
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iTrackColor = iTrack;
@@ -1828,7 +1903,8 @@ XUI_API int xuiListViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, u
 	pData->iScrollbarActiveColor = iActive;
 	pData->iScrollbarFocusColor = iFocus;
 	pData->iScrollbarDisabledColor = iDisabled;
-	iRet = xuiScrollFrameSetColors(pData->pFrame, iTrack, iThumb, iHover, iActive, iFocus, iDisabled);
+	__xuiListViewResolve(pWidget, pData, &tResolved);
+	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiListViewInvalidateRows(pWidget, pData);
 }
