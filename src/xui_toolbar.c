@@ -274,13 +274,13 @@ static void __xuiToolbarResolve(xui_widget pWidget, const xui_toolbar_data_t* pD
 	pOut->pFont = __xuiToolbarStyleFont(pWidget, pOut->pFont);
 }
 
-static int __xuiToolbarItemSize(const xui_toolbar_item_t* pItem, const xui_toolbar_resolved_t* pResolved)
+static float __xuiToolbarItemSize(const xui_toolbar_item_t* pItem, const xui_toolbar_resolved_t* pResolved)
 {
 	if ( (pItem != NULL) && (pItem->iType == XUI_TOOLBAR_ITEM_SEPARATOR) ) {
-		return (int)pResolved->tMetrics.fSeparatorSize;
+		return pResolved->tMetrics.fSeparatorSize;
 	}
 	return (pResolved->tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL) ?
-		(int)pResolved->tMetrics.fItemHeight : (int)pResolved->tMetrics.fItemWidth;
+		pResolved->tMetrics.fItemHeight : pResolved->tMetrics.fItemWidth;
 }
 
 static int __xuiToolbarMeasureItems(xui_widget pWidget, xui_toolbar_data_t* pData, const xui_toolbar_resolved_t* pResolved, xui_vec2_t* pSize)
@@ -303,7 +303,7 @@ static int __xuiToolbarMeasureItems(xui_widget pWidget, xui_toolbar_data_t* pDat
 		     (pData->arrItems[i].iGroup != iPrevGroup) ) {
 			fAxis += pResolved->tMetrics.fGroupGap;
 		}
-		fItem = (float)__xuiToolbarItemSize(&pData->arrItems[i], pResolved);
+		fItem = __xuiToolbarItemSize(&pData->arrItems[i], pResolved);
 		fAxis += __xuiToolbarMax(fItem, 1.0f);
 		if ( pData->arrItems[i].iType != XUI_TOOLBAR_ITEM_SEPARATOR ) {
 			iPrevGroup = pData->arrItems[i].iGroup;
@@ -322,24 +322,24 @@ static int __xuiToolbarMeasureItems(xui_widget pWidget, xui_toolbar_data_t* pDat
 static int __xuiToolbarLayoutItems(xui_widget pWidget, xui_toolbar_data_t* pData, const xui_toolbar_resolved_t* pResolved)
 {
 	xui_rect_t tContent;
-	xui_rect_t tInner;
-	xui_rect_t tItem;
+	float fInnerX;
+	float fInnerY;
+	float fInnerW;
+	float fInnerH;
 	float fLimit;
 	float fCursor;
 	float fSize;
+	float fVisibleSize;
 	int bVertical;
 	int iPrevGroup;
 	int i;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	tContent = xuiInternalSnapRect(xuiWidgetGetContentRect(pWidget));
-	tInner = tContent;
-	tInner.fX += pResolved->tMetrics.fPaddingX;
-	tInner.fY += pResolved->tMetrics.fPaddingY;
-	tInner.fW -= pResolved->tMetrics.fPaddingX * 2.0f;
-	tInner.fH -= pResolved->tMetrics.fPaddingY * 2.0f;
-	if ( tInner.fW < 0.0f ) tInner.fW = 0.0f;
-	if ( tInner.fH < 0.0f ) tInner.fH = 0.0f;
+	fInnerX = tContent.fX + pResolved->tMetrics.fPaddingX;
+	fInnerY = tContent.fY + pResolved->tMetrics.fPaddingY;
+	fInnerW = __xuiToolbarMax(0.0f, tContent.fW - pResolved->tMetrics.fPaddingX * 2.0f);
+	fInnerH = __xuiToolbarMax(0.0f, tContent.fH - pResolved->tMetrics.fPaddingY * 2.0f);
 	memset(&pData->tOverflowRect, 0, sizeof(pData->tOverflowRect));
 	pData->iOverflowFirst = -1;
 	pData->iOverflowCount = 0;
@@ -347,11 +347,11 @@ static int __xuiToolbarLayoutItems(xui_widget pWidget, xui_toolbar_data_t* pData
 		memset(&pData->arrItems[i].tRect, 0, sizeof(pData->arrItems[i].tRect));
 	}
 	bVertical = (pResolved->tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL);
-	fLimit = bVertical ? (tInner.fY + tInner.fH) : (tInner.fX + tInner.fW);
+	fLimit = bVertical ? (fInnerY + fInnerH) : (fInnerX + fInnerW);
 	if ( pData->bOverflowEnabled ) {
 		fLimit -= pResolved->tMetrics.fOverflowSize;
 	}
-	fCursor = bVertical ? tInner.fY : tInner.fX;
+	fCursor = bVertical ? fInnerY : fInnerX;
 	iPrevGroup = 0;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		if ( (i > 0) &&
@@ -359,27 +359,19 @@ static int __xuiToolbarLayoutItems(xui_widget pWidget, xui_toolbar_data_t* pData
 		     (pData->arrItems[i].iGroup != iPrevGroup) ) {
 			fCursor += pResolved->tMetrics.fGroupGap;
 		}
-		fSize = (float)__xuiToolbarItemSize(&pData->arrItems[i], pResolved);
+		fSize = __xuiToolbarItemSize(&pData->arrItems[i], pResolved);
 		if ( fSize < 1.0f ) fSize = 1.0f;
 		if ( pData->bOverflowEnabled && ((fCursor + fSize) > fLimit) ) {
 			pData->iOverflowFirst = i;
 			pData->iOverflowCount = pData->iItemCount - i;
 			break;
 		}
-		if ( bVertical ) {
-			tItem = (xui_rect_t){tInner.fX, fCursor, tInner.fW, fSize};
-			if ( (tItem.fY + tItem.fH) > (tInner.fY + tInner.fH) ) {
-				tItem.fH = tInner.fY + tInner.fH - tItem.fY;
-			}
-		} else {
-			tItem = (xui_rect_t){fCursor, tInner.fY, fSize, tInner.fH};
-			if ( (tItem.fX + tItem.fW) > (tInner.fX + tInner.fW) ) {
-				tItem.fW = tInner.fX + tInner.fW - tItem.fX;
-			}
-		}
-		if ( tItem.fW < 0.0f ) tItem.fW = 0.0f;
-		if ( tItem.fH < 0.0f ) tItem.fH = 0.0f;
-		pData->arrItems[i].tRect = xuiInternalSnapRect(tItem);
+		fVisibleSize = (bVertical ? fInnerY + fInnerH : fInnerX + fInnerW) - fCursor;
+		if ( fVisibleSize > fSize ) fVisibleSize = fSize;
+		if ( fVisibleSize < 0.0f ) fVisibleSize = 0.0f;
+		pData->arrItems[i].tRect = bVertical ?
+			xuiInternalRectFromFloatNearest(fInnerX, fCursor, fInnerW, fVisibleSize) :
+			xuiInternalRectFromFloatNearest(fCursor, fInnerY, fVisibleSize, fInnerH);
 		fCursor += fSize;
 		if ( pData->arrItems[i].iType != XUI_TOOLBAR_ITEM_SEPARATOR ) {
 			iPrevGroup = pData->arrItems[i].iGroup;
@@ -387,11 +379,12 @@ static int __xuiToolbarLayoutItems(xui_widget pWidget, xui_toolbar_data_t* pData
 	}
 	if ( pData->iOverflowCount > 0 ) {
 		if ( bVertical ) {
-			pData->tOverflowRect = (xui_rect_t){tInner.fX, tInner.fY + tInner.fH - pResolved->tMetrics.fOverflowSize, tInner.fW, pResolved->tMetrics.fOverflowSize};
+			pData->tOverflowRect = xuiInternalRectFromFloatNearest(fInnerX,
+				fInnerY + fInnerH - pResolved->tMetrics.fOverflowSize, fInnerW, pResolved->tMetrics.fOverflowSize);
 		} else {
-			pData->tOverflowRect = (xui_rect_t){tInner.fX + tInner.fW - pResolved->tMetrics.fOverflowSize, tInner.fY, pResolved->tMetrics.fOverflowSize, tInner.fH};
+			pData->tOverflowRect = xuiInternalRectFromFloatNearest(fInnerX + fInnerW - pResolved->tMetrics.fOverflowSize,
+				fInnerY, pResolved->tMetrics.fOverflowSize, fInnerH);
 		}
-		pData->tOverflowRect = xuiInternalSnapRect(pData->tOverflowRect);
 	}
 	return XUI_OK;
 }
@@ -520,27 +513,22 @@ static int __xuiToolbarDrawSeparator(xui_proxy pProxy, xui_draw_context pDraw, x
 	int iRet;
 
 	if ( __xuiToolbarAlpha(iColor) == 0 ) return XUI_OK;
-	tLine = tRect;
 	if ( bVerticalToolbar ) {
-		tLine.fY += (tLine.fH - 1.0f) * 0.5f;
-		tLine.fH = 1.0f;
-		tLine.fX += 6.0f;
-		tLine.fW -= 12.0f;
+		tLine = xuiInternalRectFromFloatNearest(tRect.fX + 6.0f,
+			tRect.fY + (tRect.fH - 1.0f) * 0.5f, tRect.fW - 12.0f, 1.0f);
 	} else {
-		tLine.fX += (tLine.fW - 1.0f) * 0.5f;
-		tLine.fW = 1.0f;
-		tLine.fY += 5.0f;
-		tLine.fH -= 10.0f;
+		tLine = xuiInternalRectFromFloatNearest(tRect.fX + (tRect.fW - 1.0f) * 0.5f,
+			tRect.fY + 5.0f, 1.0f, tRect.fH - 10.0f);
 	}
 	if ( (tLine.fW <= 0.0f) || (tLine.fH <= 0.0f) ) return XUI_OK;
-	iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), iColor);
+	iRet = pProxy->drawRectFill(pProxy, pDraw, tLine, iColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bVerticalToolbar ) {
 		tLine.fY += 1.0f;
 	} else {
 		tLine.fX += 1.0f;
 	}
-	return pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), XUI_COLOR_RGBA(255, 255, 255, 112));
+	return pProxy->drawRectFill(pProxy, pDraw, tLine, XUI_COLOR_RGBA(255, 255, 255, 112));
 }
 
 static int __xuiToolbarDrawOverflowDots(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -549,10 +537,8 @@ static int __xuiToolbarDrawOverflowDots(xui_proxy pProxy, xui_draw_context pDraw
 	int i;
 	int iRet;
 
-	tDot.fW = 2.0f;
-	tDot.fH = 2.0f;
-	tDot.fX = tRect.fX + (tRect.fW - 10.0f) * 0.5f;
-	tDot.fY = tRect.fY + (tRect.fH - 2.0f) * 0.5f;
+	tDot = xuiInternalRectFromFloatNearest(tRect.fX + (tRect.fW - 10.0f) * 0.5f,
+		tRect.fY + (tRect.fH - 2.0f) * 0.5f, 2.0f, 2.0f);
 	for ( i = 0; i < 3; i++ ) {
 		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, tDot, iColor);
 		if ( iRet != XUI_OK ) return iRet;
@@ -567,6 +553,9 @@ static int __xuiToolbarDrawItemContent(xui_widget pWidget, xui_proxy pProxy, xui
 	xui_rect_t tText;
 	xui_vec2_t tTextSize;
 	float fIconSize;
+	float fIconX;
+	float fIconY;
+	float fTextX;
 	float fGroupW;
 	int bHasIcon;
 	int bHasText;
@@ -580,18 +569,21 @@ static int __xuiToolbarDrawItemContent(xui_widget pWidget, xui_proxy pProxy, xui
 	if ( bHasIcon ) {
 		fIconSize = pResolved->tMetrics.fIconSize;
 		if ( fIconSize > tText.fH ) fIconSize = tText.fH;
+		fIconY = tText.fY + (tText.fH - fIconSize) * 0.5f;
 		if ( !bHasText ) {
-			tIcon = (xui_rect_t){tText.fX + (tText.fW - fIconSize) * 0.5f, tText.fY + (tText.fH - fIconSize) * 0.5f, fIconSize, fIconSize};
+			fIconX = tText.fX + (tText.fW - fIconSize) * 0.5f;
 		} else {
 			tTextSize = __xuiToolbarMeasureText(pWidget, pResolved->pFont, pItem->sText);
 			fGroupW = fIconSize + pResolved->tMetrics.fIconGap + tTextSize.fX;
 			if ( fGroupW > tText.fW ) fGroupW = tText.fW;
-			tIcon = (xui_rect_t){tText.fX + (tText.fW - fGroupW) * 0.5f, tText.fY + (tText.fH - fIconSize) * 0.5f, fIconSize, fIconSize};
-			tText.fX = tIcon.fX + fIconSize + pResolved->tMetrics.fIconGap;
-			tText.fW = tRect.fX + tRect.fW - 6.0f - tText.fX;
+			fIconX = tText.fX + (tText.fW - fGroupW) * 0.5f;
+			fTextX = fIconX + fIconSize + pResolved->tMetrics.fIconGap;
+			tText = xuiInternalRectFromFloatNearest(fTextX, tText.fY,
+				tRect.fX + tRect.fW - 6.0f - fTextX, tText.fH);
 		}
+		tIcon = xuiInternalRectFromFloatNearest(fIconX, fIconY, fIconSize, fIconSize);
 		if ( pProxy->drawSurface != NULL ) {
-			iRet = pProxy->drawSurface(pProxy, pDraw, pItem->pIcon, pItem->tIconSrc, xuiInternalSnapRect(tIcon), iIconColor, 0);
+			iRet = pProxy->drawSurface(pProxy, pDraw, pItem->pIcon, pItem->tIconSrc, tIcon, iIconColor, 0);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
