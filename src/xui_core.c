@@ -197,6 +197,8 @@ static int __xuiContextValid(xui_context pContext)
 	return (pContext != NULL) && (pContext->iMagic == XUI_CONTEXT_MAGIC);
 }
 
+static void __xuiContextDestroyNow(xui_context pContext);
+
 static int __xuiResourceValid(xui_resource pResource)
 {
 	return (pResource != NULL) && (pResource->iMagic == XUI_RESOURCE_MAGIC);
@@ -868,6 +870,37 @@ int xuiInternalContextIsValid(xui_context pContext)
 	return __xuiContextValid(pContext);
 }
 
+void xuiInternalOperationEnter(xui_context pContext)
+{
+	if ( __xuiContextValid(pContext) ) {
+		pContext->iOperationDepth++;
+	}
+}
+
+void xuiInternalOperationLeave(xui_context pContext)
+{
+	if ( !__xuiContextValid(pContext) || (pContext->iOperationDepth <= 0) ) {
+		return;
+	}
+	pContext->iOperationDepth--;
+	if ( (pContext->iOperationDepth > 0) || (pContext->iWidgetCallbackDepth > 0) ) {
+		return;
+	}
+	if ( pContext->bDestroyPending ) {
+		__xuiContextDestroyNow(pContext);
+		return;
+	}
+	xuiInternalWidgetDestroyFlush(pContext);
+	if ( __xuiContextValid(pContext) && pContext->bDestroyPending ) {
+		__xuiContextDestroyNow(pContext);
+	}
+}
+
+int xuiInternalContextDestroyPending(xui_context pContext)
+{
+	return __xuiContextValid(pContext) && pContext->bDestroyPending;
+}
+
 int xuiInternalContextHasProxy(xui_context pContext)
 {
 	return __xuiContextValid(pContext) && pContext->bHasProxy;
@@ -936,9 +969,11 @@ XUI_API int xuiReportError(xui_context pContext, const xui_error_info_t* pError)
 	}
 	tError = *pError;
 	tError.iSize = sizeof(tError);
+	xuiInternalOperationEnter(pContext);
 	pContext->bReportingError = 1;
 	pContext->onError(pContext, &tError, pContext->pErrorUser);
 	pContext->bReportingError = 0;
+	xuiInternalOperationLeave(pContext);
 	return XUI_OK;
 }
 
@@ -1552,11 +1587,13 @@ static void __xuiContextDestroyFonts(xui_context pContext)
 	pContext->pDefaultFont = NULL;
 }
 
-XUI_API void xuiDestroy(xui_context pContext)
+static void __xuiContextDestroyNow(xui_context pContext)
 {
-	if ( !__xuiContextValid(pContext) ) {
+	if ( !__xuiContextValid(pContext) || pContext->bDestroying ) {
 		return;
 	}
+	pContext->bDestroying = 1;
+	pContext->bDestroyPending = 0;
 	if ( pContext->bHasProxy && pContext->tProxy.imeSetEnabled != NULL ) {
 		(void)pContext->tProxy.imeSetEnabled(&pContext->tProxy, 0);
 	}
@@ -1597,6 +1634,19 @@ XUI_API void xuiDestroy(xui_context pContext)
 	pContext->pLayoutContext = NULL;
 	pContext->iMagic = 0;
 	xrtFree(pContext);
+}
+
+XUI_API void xuiDestroy(xui_context pContext)
+{
+	if ( !__xuiContextValid(pContext) || pContext->bDestroying ) {
+		return;
+	}
+	if ( (pContext->iOperationDepth > 0) || (pContext->iWidgetCallbackDepth > 0) ||
+	     (pContext->iDestroyFlushDepth > 0) ) {
+		pContext->bDestroyPending = 1;
+		return;
+	}
+	__xuiContextDestroyNow(pContext);
 }
 
 XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext))
@@ -2957,7 +3007,7 @@ static int __xuiCoreComposeRenderTree(xui_context pContext, xui_surface pTarget,
 	return XUI_OK;
 }
 
-XUI_API int xuiRender(xui_context pContext, xui_surface pTarget, const xui_rect_i_t* pRects, int iRectCount)
+static int __xuiRenderOperation(xui_context pContext, xui_surface pTarget, const xui_rect_i_t* pRects, int iRectCount)
 {
 	xui_surface_desc_t tDesc;
 	xui_rect_i_t tInlineRect;
@@ -3030,4 +3080,14 @@ XUI_API int xuiRender(xui_context pContext, xui_surface pTarget, const xui_rect_
 	}
 	pContext->iDamageCount = 0;
 	return XUI_OK;
+}
+
+XUI_API int xuiRender(xui_context pContext, xui_surface pTarget, const xui_rect_i_t* pRects, int iRectCount)
+{
+	int iRet;
+
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiRenderOperation(pContext, pTarget, pRects, iRectCount);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }

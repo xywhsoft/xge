@@ -42,7 +42,9 @@ typedef struct xui_render_schedule_test_state_t {
 	int bLastRecoverable;
 	xui_widget pLastErrorWidget;
 	xui_widget pFailUpdateWidget;
+	xui_widget pDestroyUpdateWidget;
 	int iHealthyUpdateCount;
+	int iDestroyUpdateCount;
 	xui_widget pFailEventWidget;
 	int iHealthyEventCount;
 } xui_render_schedule_test_state_t;
@@ -77,6 +79,11 @@ static int __xuiTestUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	}
 	if ( pState->pFailUpdateWidget == pWidget ) {
 		return XUI_ERROR;
+	}
+	if ( pState->pDestroyUpdateWidget == pWidget ) {
+		pState->iDestroyUpdateCount++;
+		xuiWidgetDestroy(pWidget);
+		return XUI_OK;
 	}
 	pState->iHealthyUpdateCount++;
 	return XUI_OK;
@@ -892,6 +899,17 @@ static int __xuiRenderScheduleDraw(xui_widget pWidget, xui_draw_context pDraw, u
 	return pState->tProxy.drawRectFill(&pState->tProxy, pDraw, tRect, iColor);
 }
 
+static int __xuiRenderScheduleDestroySelf(xui_widget pWidget, xui_draw_context pDraw,
+	uint32_t iStateId, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)pDraw;
+	(void)iStateId;
+	(*pCount)++;
+	xuiWidgetDestroy(pWidget);
+	return XUI_OK;
+}
+
 static int __xuiPixelEquals(const unsigned char* pPixels, int iStride, int iX, int iY, unsigned char r, unsigned char g, unsigned char b, unsigned char a)
 {
 	const unsigned char* pPixel;
@@ -918,6 +936,7 @@ int main(void)
 	xui_widget pOverlay;
 	xui_widget pUpdateBad;
 	xui_widget pUpdateGood;
+	xui_widget pUpdateDestroy;
 	xui_resource pResource;
 	xui_resource pDependency;
 	xui_painter pPainter;
@@ -929,6 +948,7 @@ int main(void)
 	unsigned char arrReadback[64 * 64 * 4];
 	int iRet;
 	int iFailed;
+	int iDestroyCacheCount;
 
 	memset(&tState, 0, sizeof(tState));
 	memset(&tStats, 0, sizeof(tStats));
@@ -939,6 +959,7 @@ int main(void)
 	pOverlay = NULL;
 	pUpdateBad = NULL;
 	pUpdateGood = NULL;
+	pUpdateDestroy = NULL;
 	pResource = NULL;
 	pDependency = NULL;
 	pPainter = NULL;
@@ -946,6 +967,7 @@ int main(void)
 	pTarget = NULL;
 	pPatchSurface = NULL;
 	iFailed = 0;
+	iDestroyCacheCount = 0;
 
 	tState.tProxy = __xuiTestProxy();
 	iRet = xuiCreate(&pContext);
@@ -1244,6 +1266,18 @@ int main(void)
 	               (tState.pLastErrorWidget == pUpdateBad), "update error callback mismatch");
 	XUI_TEST_CHECK(tState.iHealthyUpdateCount == 1, "healthy overlay update was skipped");
 
+	iRet = xuiWidgetCreateTyped(pContext, pUpdateType, &pUpdateDestroy, NULL);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pUpdateDestroy != NULL), "destroying update widget create failed");
+	iRet = xuiWidgetAddChild(pRoot, pUpdateDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying update widget attach failed");
+	tState.pDestroyUpdateWidget = pUpdateDestroy;
+	tState.iDestroyUpdateCount = 0;
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "self-destroying update callback escaped xuiUpdate");
+	XUI_TEST_CHECK(tState.iDestroyUpdateCount == 1, "self-destroying update callback was not called");
+	pUpdateDestroy = NULL;
+	tState.pDestroyUpdateWidget = NULL;
+
 	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_VIEWPORT, __xuiTestPendingEvent, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "failing event handler setup failed");
 	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_DPI, __xuiTestPendingEvent, &tState);
@@ -1262,6 +1296,16 @@ int main(void)
 	               (tState.pLastErrorWidget == pRoot), "event error callback mismatch");
 	XUI_TEST_CHECK(tState.iHealthyEventCount == 1, "healthy queued event was skipped");
 
+	iRet = xuiWidgetSetCacheRenderCallback(pChild, __xuiRenderScheduleDestroySelf,
+		&iDestroyCacheCount);
+	XUI_TEST_CHECK(iRet == XUI_OK, "self-destroying cache callback setup failed");
+	iRet = xuiWidgetInvalidate(pChild, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "self-destroying cache invalidate failed");
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "self-destroying cache callback escaped xuiRender");
+	XUI_TEST_CHECK(iDestroyCacheCount > 0, "self-destroying cache callback was not called");
+	pChild = NULL;
+
 cleanup:
 	g_pXuiUpdateTestState = NULL;
 	if ( pUpdateBad != NULL ) {
@@ -1271,6 +1315,10 @@ cleanup:
 	if ( pUpdateGood != NULL ) {
 		xuiWidgetDestroy(pUpdateGood);
 		pUpdateGood = NULL;
+	}
+	if ( pUpdateDestroy != NULL ) {
+		xuiWidgetDestroy(pUpdateDestroy);
+		pUpdateDestroy = NULL;
 	}
 	if ( pUpdateType != NULL ) {
 		(void)xuiWidgetUnregisterType(pUpdateType);

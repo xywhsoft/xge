@@ -2255,7 +2255,7 @@ static int __xuiWidgetResizeTrackArray(xui_table_track_t** ppTracks, int* pCount
 	return XUI_OK;
 }
 
-XUI_API int xuiLayout(xui_context pContext)
+static int __xuiLayoutOperation(xui_context pContext)
 {
 	xui_widget pRoot;
 	xui_widget pOverlayRoot;
@@ -2322,6 +2322,16 @@ XUI_API int xuiLayout(xui_context pContext)
 			"layout.stabilize", "Layout did not stabilize; the last completed pass was preserved.");
 	}
 	return xuiInternalInputRefreshIme(pContext);
+}
+
+XUI_API int xuiLayout(xui_context pContext)
+{
+	int iRet;
+
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiLayoutOperation(pContext);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiGetLayoutStats(xui_context pContext, xui_layout_stats_t* pStats)
@@ -2999,12 +3009,28 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 
 XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget)
 {
-	return __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, ppWidget, NULL);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, ppWidget, NULL);
+	if ( (iRet == XUI_OK) && (ppWidget != NULL) && !__xuiWidgetValid(*ppWidget) ) {
+		*ppWidget = NULL;
+		iRet = XUI_ERROR;
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData)
 {
-	return __xuiWidgetCreateInternal(pContext, pType, ppWidget, pCreateData);
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetCreateInternal(pContext, pType, ppWidget, pCreateData);
+	if ( (iRet == XUI_OK) && (ppWidget != NULL) && !__xuiWidgetValid(*ppWidget) ) {
+		*ppWidget = NULL;
+		iRet = XUI_ERROR;
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 static int __xuiDragAdornerRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -3223,7 +3249,7 @@ void xuiInternalWidgetDestroyFlush(xui_context pContext)
 	xui_widget pPending;
 
 	if ( !xuiInternalContextIsValid(pContext) || pContext->iDestroyFlushDepth > 0 ||
-		pContext->iWidgetCallbackDepth > 0 ) return;
+		pContext->iWidgetCallbackDepth > 0 || pContext->iOperationDepth > 0 ) return;
 	pContext->iDestroyFlushDepth++;
 	while ( (pWidget = pContext->pDeferredDestroyHead) != NULL ) {
 		pContext->pDeferredDestroyHead = pWidget->pDeferredDestroyNext;
@@ -3269,8 +3295,9 @@ XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 	}
 	__xuiWidgetMarkDestroyPending(pWidget);
 	__xuiWidgetDestroyQueue(pContext, pWidget);
-	if ( pContext->iWidgetCallbackDepth == 0 ) {
+	if ( (pContext->iWidgetCallbackDepth == 0) && (pContext->iOperationDepth == 0) ) {
 		xuiInternalWidgetDestroyFlush(pContext);
+		if ( xuiInternalContextDestroyPending(pContext) ) xuiDestroy(pContext);
 	}
 }
 
@@ -3637,7 +3664,7 @@ XUI_API int xuiWidgetGetLayoutCompleteCallback(xui_widget pWidget, xui_widget_la
 	return XUI_OK;
 }
 
-XUI_API int xuiWidgetMeasureContent(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pContentSize)
+static int __xuiWidgetMeasureContentOperation(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pContentSize)
 {
 	if ( !__xuiWidgetValid(pWidget) || (pContentSize == NULL) ||
 	     !__xuiNonNegativeFloatValid(tConstraint.fX) ||
@@ -3646,6 +3673,18 @@ XUI_API int xuiWidgetMeasureContent(xui_widget pWidget, xui_vec2_t tConstraint, 
 	}
 	*pContentSize = __xuiWidgetMeasureOwnContent(pWidget, tConstraint);
 	return XUI_OK;
+}
+
+XUI_API int xuiWidgetMeasureContent(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pContentSize)
+{
+	xui_context pContext;
+	int iRet;
+
+	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetMeasureContentOperation(pWidget, tConstraint, pContentSize);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiWidgetSetLayoutType(xui_widget pWidget, int iLayoutType)
@@ -4107,7 +4146,7 @@ XUI_API int xuiWidgetGetTableCell(xui_widget pWidget, int* pRow, int* pColumn, i
 	return XUI_OK;
 }
 
-XUI_API int xuiWidgetMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasuredSize)
+static int __xuiWidgetMeasureOperation(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasuredSize)
 {
 	if ( !__xuiWidgetValid(pWidget) || (pMeasuredSize == NULL) ||
 	     !__xuiNonNegativeFloatValid(tConstraint.fX) ||
@@ -4117,7 +4156,19 @@ XUI_API int xuiWidgetMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec
 	return xuiInternalLayoutMeasure(pWidget, tConstraint, pMeasuredSize);
 }
 
-XUI_API int xuiWidgetArrange(xui_widget pWidget, xui_rect_t tRect)
+XUI_API int xuiWidgetMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasuredSize)
+{
+	xui_context pContext;
+	int iRet;
+
+	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetMeasureOperation(pWidget, tConstraint, pMeasuredSize);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+static int __xuiWidgetArrangeOperation(xui_widget pWidget, xui_rect_t tRect)
 {
 	xui_rect_t tOldRect;
 	xui_rect_t tNewRect;
@@ -4137,6 +4188,18 @@ XUI_API int xuiWidgetArrange(xui_widget pWidget, xui_rect_t tRect)
 		return iRet;
 	}
 	return __xuiWidgetInvalidateWorldRect(pWidget, tNewRect, XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiWidgetArrange(xui_widget pWidget, xui_rect_t tRect)
+{
+	xui_context pContext;
+	int iRet;
+
+	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetArrangeOperation(pWidget, tRect);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiWidgetSetVisible(xui_widget pWidget, int bVisible)
@@ -4551,7 +4614,7 @@ XUI_API int xuiWidgetGetCursorQueryCallback(xui_widget pWidget, xui_widget_curso
 	return XUI_OK;
 }
 
-XUI_API int xuiQueryCursor(xui_context pContext, int iX, int iY)
+static int __xuiQueryCursorOperation(xui_context pContext, int iX, int iY)
 {
 	xui_widget pWidget;
 	int iCursor;
@@ -4572,6 +4635,15 @@ XUI_API int xuiQueryCursor(xui_context pContext, int iX, int iY)
 		}
 	}
 	return XUI_CURSOR_ARROW;
+}
+
+XUI_API int xuiQueryCursor(xui_context pContext, int iX, int iY)
+{
+	int iCursor;
+	xuiInternalOperationEnter(pContext);
+	iCursor = __xuiQueryCursorOperation(pContext, iX, iY);
+	xuiInternalOperationLeave(pContext);
+	return iCursor;
 }
 
 XUI_API int xuiWidgetSetEventHandler(xui_widget pWidget, int iEventType, xui_widget_event_proc onEvent, void* pUser)
@@ -5463,7 +5535,7 @@ XUI_API const char* xuiWidgetGetAccessibleDescription(xui_widget pWidget)
 	return __xuiWidgetValid(pWidget) ? pWidget->sAccessibleDescription : NULL;
 }
 
-XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget)
+static int __xuiWidgetGetAccessibleNodeCountOperation(xui_widget pWidget)
 {
 	int iCount;
 	if ( !__xuiWidgetValid(pWidget) ) return 0;
@@ -5473,7 +5545,20 @@ XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget)
 	return iCount > 0 ? iCount : 0;
 }
 
-XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_accessible_node_t* pNode)
+XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget)
+{
+	xui_context pContext;
+	int iCount;
+
+	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
+	xuiInternalOperationEnter(pContext);
+	iCount = __xuiWidgetGetAccessibleNodeCountOperation(pWidget);
+	if ( (pWidget != NULL) && !__xuiWidgetValid(pWidget) ) iCount = 0;
+	xuiInternalOperationLeave(pContext);
+	return iCount;
+}
+
+static int __xuiWidgetGetAccessibleNodeOperation(xui_widget pWidget, int iIndex, xui_accessible_node_t* pNode)
 {
 	int iRet;
 	if ( !__xuiWidgetValid(pWidget) || pNode == NULL || iIndex < 0 ||
@@ -5499,7 +5584,23 @@ XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_acces
 	return XUI_OK;
 }
 
-XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_accessible_node_t* pNode)
+{
+	xui_context pContext;
+	int iRet;
+
+	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetGetAccessibleNodeOperation(pWidget, iIndex, pNode);
+	if ( (pWidget != NULL) && !__xuiWidgetValid(pWidget) ) {
+		if ( pNode != NULL ) memset(pNode, 0, sizeof(*pNode));
+		iRet = XUI_ERROR_INVALID_ARGUMENT;
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+static int __xuiWidgetPerformAccessibleActionOperation(xui_widget pWidget, uint64_t iNodeId,
 	int iAction, const void* pData)
 {
 	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -5510,12 +5611,25 @@ XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeI
 	return XUI_ERROR_UNSUPPORTED;
 }
 
+XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pData)
+{
+	xui_context pContext;
+	int iRet;
+
+	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetPerformAccessibleActionOperation(pWidget, iNodeId, iAction, pData);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
 XUI_API uint32_t xuiWidgetGetAccessibilityRevision(xui_widget pWidget)
 {
 	return __xuiWidgetValid(pWidget) ? pWidget->iAccessibilityRevision : 0u;
 }
 
-XUI_API int xuiWidgetNotifyAccessibility(xui_widget pWidget, int iEventType, uint64_t iNodeId)
+static int __xuiWidgetNotifyAccessibilityOperation(xui_widget pWidget, int iEventType, uint64_t iNodeId)
 {
 	xui_accessibility_event_t tEvent;
 	if ( !__xuiWidgetValid(pWidget) || iEventType < XUI_ACCESSIBLE_EVENT_TREE_CHANGED ||
@@ -5533,7 +5647,19 @@ XUI_API int xuiWidgetNotifyAccessibility(xui_widget pWidget, int iEventType, uin
 	return XUI_OK;
 }
 
-XUI_API int xuiUpdate(xui_context pContext, float fDelta)
+XUI_API int xuiWidgetNotifyAccessibility(xui_widget pWidget, int iEventType, uint64_t iNodeId)
+{
+	xui_context pContext;
+	int iRet;
+
+	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetNotifyAccessibilityOperation(pWidget, iEventType, iNodeId);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+static int __xuiUpdateOperation(xui_context pContext, float fDelta)
 {
 	int iRet;
 
@@ -5563,6 +5689,16 @@ XUI_API int xuiUpdate(xui_context pContext, float fDelta)
 	__xuiWidgetUpdateTree(pContext->pOverlayRoot, fDelta);
 	xuiInternalWidgetDestroyFlush(pContext);
 	return XUI_OK;
+}
+
+XUI_API int xuiUpdate(xui_context pContext, float fDelta)
+{
+	int iRet;
+
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiUpdateOperation(pContext, fDelta);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiWidgetSetTooltipText(xui_widget pWidget, const char* sText)
@@ -6508,7 +6644,7 @@ static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 	}
 }
 
-XUI_API int xuiRenderPrepare(xui_context pContext)
+static int __xuiRenderPrepareOperation(xui_context pContext)
 {
 	uint32_t iGeneration;
 	int iRet;
@@ -6543,6 +6679,16 @@ XUI_API int xuiRenderPrepare(xui_context pContext)
 		(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pContext->pOverlayRoot);
 	}
 	return XUI_OK;
+}
+
+XUI_API int xuiRenderPrepare(xui_context pContext)
+{
+	int iRet;
+
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiRenderPrepareOperation(pContext);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiGetRenderStats(xui_context pContext, xui_render_stats_t* pStats)
@@ -6621,7 +6767,7 @@ XUI_API int xuiPurgeCaches(xui_context pContext, size_t iTargetBytes)
 	return xuiInternalContextInvalidateAll(pContext);
 }
 
-XUI_API int xuiBuildRenderTree(xui_context pContext)
+static int __xuiBuildRenderTreeOperation(xui_context pContext)
 {
 	xui_rect_t tRootClip;
 	uint32_t iGeneration;
@@ -6664,6 +6810,16 @@ XUI_API int xuiBuildRenderTree(xui_context pContext)
 	iGeneration = pContext->iRenderTreeGeneration + 1;
 	pContext->iRenderTreeGeneration = (iGeneration != 0) ? iGeneration : 1;
 	return XUI_OK;
+}
+
+XUI_API int xuiBuildRenderTree(xui_context pContext)
+{
+	int iRet;
+
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiBuildRenderTreeOperation(pContext);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiGetRenderNodeCount(xui_context pContext)

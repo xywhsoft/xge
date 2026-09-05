@@ -232,6 +232,9 @@ struct xui_context_t {
 	xui_widget pDeferredDestroyHead;
 	int iDestroyFlushDepth;
 	int iWidgetCallbackDepth;
+	int iOperationDepth;
+	int bDestroyPending;
+	int bDestroying;
 	xui_rect_i_t arrInlineDamage[XUI_CONTEXT_DAMAGE_INLINE];
 	xui_rect_i_t* pDamage;
 	int iDamageCount;
@@ -455,6 +458,9 @@ struct xui_painter_t {
 };
 
 int xuiInternalContextIsValid(xui_context pContext);
+void xuiInternalOperationEnter(xui_context pContext);
+void xuiInternalOperationLeave(xui_context pContext);
+int xuiInternalContextDestroyPending(xui_context pContext);
 int xuiInternalLayoutCreateWidget(xui_widget pWidget);
 void xuiInternalLayoutDestroyWidget(xui_widget pWidget);
 int xuiInternalLayoutAttach(xui_widget pParent, xui_widget pChild, xui_widget pBefore);
