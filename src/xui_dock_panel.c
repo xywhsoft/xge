@@ -240,14 +240,13 @@ static xui_rect_t __xuiDockSplitterHitRect(xui_dock_panel_data_t* pData,
 	float fExpand;
 	if ( iOrientation == XUI_DOCK_ORIENTATION_VERTICAL ) {
 		fExpand = __xuiDockMax(0.0f, pData->tMetrics.fSplitterHitSize - tRect.fW) * 0.5f;
-		tRect.fX -= fExpand;
-		tRect.fW += fExpand * 2.0f;
+		return xuiInternalRectFromFloatNearest(tRect.fX - fExpand, tRect.fY,
+			tRect.fW + fExpand * 2.0f, tRect.fH);
 	} else {
 		fExpand = __xuiDockMax(0.0f, pData->tMetrics.fSplitterHitSize - tRect.fH) * 0.5f;
-		tRect.fY -= fExpand;
-		tRect.fH += fExpand * 2.0f;
+		return xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY - fExpand,
+			tRect.fW, tRect.fH + fExpand * 2.0f);
 	}
-	return tRect;
 }
 
 static int __xuiDockAlpha(uint32_t c)
@@ -318,28 +317,28 @@ static int __xuiDockRectContains(xui_rect_t r, float x, float y)
 
 static xui_rect_t __xuiDockRect(float x, float y, float w, float h)
 {
-	xui_rect_t r;
-	r.fX = x;
-	r.fY = y;
-	r.fW = (w > 0.0f) ? w : 0.0f;
-	r.fH = (h > 0.0f) ? h : 0.0f;
-	return xuiInternalSnapRect(r);
+	return xuiInternalRectFromFloatNearest(x, y, w, h);
 }
 
 static xui_rect_t __xuiDockInset(xui_rect_t r, float x, float y)
 {
-	r.fX += x;
-	r.fY += y;
-	r.fW = __xuiDockMax(0.0f, r.fW - x * 2.0f);
-	r.fH = __xuiDockMax(0.0f, r.fH - y * 2.0f);
-	return xuiInternalSnapRect(r);
+	return __xuiDockRect(r.fX + x, r.fY + y, r.fW - x * 2.0f, r.fH - y * 2.0f);
 }
 
 static xui_rect_t __xuiDockOffsetRect(xui_rect_t r, float x, float y)
 {
-	r.fX -= x;
-	r.fY -= y;
-	return xuiInternalSnapRect(r);
+	return __xuiDockRect(r.fX - x, r.fY - y, r.fW, r.fH);
+}
+
+/* Drag ratios must use the same unrounded tracks as the layout engine. */
+static xlayout_rect_t __xuiDockLayoutFloatRect(xui_dock_panel_data_t* pData,
+	xlayout_node_t iNode, xui_rect_t tFallback)
+{
+	xlayout_result_t tResult;
+	if ( pData->pLayoutContext != NULL && xLayoutNodeGetResult(pData->pLayoutContext, iNode, &tResult) ) {
+		return tResult.rect;
+	}
+	return (xlayout_rect_t){tFallback.fX, tFallback.fY, tFallback.fW, tFallback.fH};
 }
 
 static void __xuiDockCopy(char* dst, int cap, const char* src)
@@ -3170,23 +3169,23 @@ static float __xuiDockRegionSize(xui_dock_region_slot_t* r, float total)
 	return v;
 }
 
-static float __xuiDockRegionDragBasis(xui_widget pWidget, int iRegion)
+static float __xuiDockRegionDragBasis(xui_widget pWidget, xui_dock_panel_data_t* pData, int iRegion)
 {
-	xui_rect_t r;
+	xlayout_rect_t r;
 	if ( pWidget == NULL ) return 0.0f;
-	r = xuiWidgetGetContentRect(pWidget);
-	if ( iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) return r.fW;
-	if ( iRegion == XUI_DOCK_PANEL_REGION_TOP || iRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) return r.fH;
+	r = __xuiDockLayoutFloatRect(pData, pData->iRegionLayoutRoot, xuiWidgetGetContentRect(pWidget));
+	if ( iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) return r.width;
+	if ( iRegion == XUI_DOCK_PANEL_REGION_TOP || iRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) return r.height;
 	return 0.0f;
 }
 
 static float __xuiDockRegionCurrentSize(xui_dock_panel_data_t* pData, int iRegion)
 {
-	xui_rect_t r;
+	xlayout_rect_t r;
 	if ( (pData == NULL) || !__xuiDockRegionValid(iRegion) ) return 0.0f;
-	r = pData->arrRegions[iRegion].tRect;
-	if ( iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) return r.fW;
-	if ( iRegion == XUI_DOCK_PANEL_REGION_TOP || iRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) return r.fH;
+	r = __xuiDockLayoutFloatRect(pData, pData->arrRegionLayoutAreas[iRegion], pData->arrRegions[iRegion].tRect);
+	if ( iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT ) return r.width;
+	if ( iRegion == XUI_DOCK_PANEL_REGION_TOP || iRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) return r.height;
 	return 0.0f;
 }
 
@@ -3212,6 +3211,7 @@ static float __xuiDockNodeMinimumAxis(xui_dock_panel_data_t* pData, int iNode, i
 static float __xuiDockClampNodeSplitterStart(xui_dock_panel_data_t* pData,
 	xui_dock_node_slot_t* pNode, float fStart, float* pRatio)
 {
+	xlayout_rect_t r;
 	float fNodeStart;
 	float fNodeSize;
 	float fBasis;
@@ -3223,12 +3223,13 @@ static float __xuiDockClampNodeSplitterStart(xui_dock_panel_data_t* pData,
 		if ( pRatio != NULL ) *pRatio = 0.5f;
 		return fStart;
 	}
+	r = __xuiDockLayoutFloatRect(pData, pNode->iLayoutNode, pNode->tRect);
 	if ( pNode->iOrientation == XUI_DOCK_ORIENTATION_VERTICAL ) {
-		fNodeStart = pNode->tRect.fX;
-		fNodeSize = pNode->tRect.fW;
+		fNodeStart = r.x;
+		fNodeSize = r.width;
 	} else {
-		fNodeStart = pNode->tRect.fY;
-		fNodeSize = pNode->tRect.fH;
+		fNodeStart = r.y;
+		fNodeSize = r.height;
 	}
 	fBasis = __xuiDockMax(0.0f, fNodeSize - pData->tMetrics.fSplitterSize);
 	fMinimumFirst = __xuiDockNodeMinimumAxis(pData, pNode->iFirst, pNode->iOrientation);
@@ -3267,7 +3268,7 @@ static float __xuiDockClampRegionDragSize(xui_widget pWidget, xui_dock_panel_dat
 
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiDockRegionIsSide(iRegion) ) return fSize;
 	r = &pData->arrRegions[iRegion];
-	basis = __xuiDockRegionDragBasis(pWidget, iRegion);
+	basis = __xuiDockRegionDragBasis(pWidget, pData, iRegion);
 	if ( basis <= 1.0f ) return fSize;
 	minSize = __xuiDockMax(r->fMinSize,
 		(iRegion == XUI_DOCK_PANEL_REGION_LEFT || iRegion == XUI_DOCK_PANEL_REGION_RIGHT) ?
@@ -3286,7 +3287,7 @@ static int __xuiDockSetRegionDragSize(xui_widget pWidget, xui_dock_panel_data_t*
 	float basis;
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiDockRegionIsSide(iRegion) ) return XUI_ERROR_INVALID_ARGUMENT;
 	r = &pData->arrRegions[iRegion];
-	basis = __xuiDockRegionDragBasis(pWidget, iRegion);
+	basis = __xuiDockRegionDragBasis(pWidget, pData, iRegion);
 	if ( basis <= 1.0f ) return XUI_OK;
 	fSize = __xuiDockClampRegionDragSize(pWidget, pData, iRegion, fSize);
 	if ( r->iSizeMode == XUI_DOCK_PANEL_SIZE_PIXEL ) {
@@ -3453,27 +3454,28 @@ static xui_rect_t __xuiDockAutoHideContentRect(const xui_dock_panel_data_t* pDat
 {
 	float s;
 	float take;
+	float x = r.fX, y = r.fY, w = r.fW, h = r.fH;
 	if ( pData == NULL ) return r;
 	s = __xuiDockMax(0.0f, pData->tMetrics.fAutoHideStripSize);
 	if ( __xuiDockHasAutoHideRegion(pData, XUI_DOCK_PANEL_REGION_LEFT) ) {
-		take = __xuiDockMin(s, r.fW);
-		r.fX += take;
-		r.fW -= take;
+		take = __xuiDockMin(s, w);
+		x += take;
+		w -= take;
 	}
 	if ( __xuiDockHasAutoHideRegion(pData, XUI_DOCK_PANEL_REGION_RIGHT) ) {
-		take = __xuiDockMin(s, r.fW);
-		r.fW -= take;
+		take = __xuiDockMin(s, w);
+		w -= take;
 	}
 	if ( __xuiDockHasAutoHideRegion(pData, XUI_DOCK_PANEL_REGION_TOP) ) {
-		take = __xuiDockMin(s, r.fH);
-		r.fY += take;
-		r.fH -= take;
+		take = __xuiDockMin(s, h);
+		y += take;
+		h -= take;
 	}
 	if ( __xuiDockHasAutoHideRegion(pData, XUI_DOCK_PANEL_REGION_BOTTOM) ) {
-		take = __xuiDockMin(s, r.fH);
-		r.fH -= take;
+		take = __xuiDockMin(s, h);
+		h -= take;
 	}
-	return xuiInternalSnapRect(r);
+	return __xuiDockRect(x, y, w, h);
 }
 
 static void __xuiDockLayoutAutoHide(xui_dock_panel_data_t* pData, xui_rect_t r)
@@ -4441,8 +4443,10 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( (pData->iDragType == XUI_DOCK_DRAG_SPLITTER) && (xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget) ) {
 			xui_dock_node_slot_t* n = __xuiDockNodeAt(pData, pData->iDragNode);
 			xui_rect_t preview = pData->tDragStartRect;
+			xlayout_rect_t raw = {preview.fX, preview.fY, preview.fW, preview.fH};
 			if ( pData->iDragRegion >= 0 ) {
 				float delta;
+				raw = __xuiDockLayoutFloatRect(pData, pData->arrRegionLayoutSplitters[pData->iDragRegion - 1], preview);
 				if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_LEFT || pData->iDragRegion == XUI_DOCK_PANEL_REGION_RIGHT ) {
 					delta = lx - pData->fDragStartX;
 					if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_RIGHT ) delta = -delta;
@@ -4453,21 +4457,23 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				pData->fDragPendingValue = __xuiDockClampRegionDragSize(pWidget, pData,
 					pData->iDragRegion, pData->fDragStartRatio + delta);
 				delta = pData->fDragPendingValue - pData->fDragStartRatio;
-				if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_LEFT ) preview.fX += delta;
-				else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_RIGHT ) preview.fX -= delta;
-				else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_TOP ) preview.fY += delta;
-				else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) preview.fY -= delta;
+				if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_LEFT ) raw.x += delta;
+				else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_RIGHT ) raw.x -= delta;
+				else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_TOP ) raw.y += delta;
+				else if ( pData->iDragRegion == XUI_DOCK_PANEL_REGION_BOTTOM ) raw.y -= delta;
 			} else if ( n != NULL ) {
+				raw = __xuiDockLayoutFloatRect(pData, n->iLayoutDivider, preview);
 				if ( n->iOrientation == XUI_DOCK_ORIENTATION_VERTICAL ) {
-					preview.fX = __xuiDockClampNodeSplitterStart(pData, n,
-						pData->tDragStartRect.fX + lx - pData->fDragStartX,
+					raw.x = __xuiDockClampNodeSplitterStart(pData, n,
+						raw.x + lx - pData->fDragStartX,
 						&pData->fDragPendingValue);
 				} else {
-					preview.fY = __xuiDockClampNodeSplitterStart(pData, n,
-						pData->tDragStartRect.fY + ly - pData->fDragStartY,
+					raw.y = __xuiDockClampNodeSplitterStart(pData, n,
+						raw.y + ly - pData->fDragStartY,
 						&pData->fDragPendingValue);
 				}
 			}
+			preview = __xuiDockRect(raw.x, raw.y, raw.width, raw.height);
 			pData->tDragPendingRect = preview;
 			(void)__xuiDockShowAdorner(pWidget, pData, preview,
 				XUI_DRAG_ADORNER_RECT_FILL, pData->tColors.iSplitterActiveColor, 0.0f);
@@ -4504,8 +4510,7 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			pData->bDragFloating = 1;
 			pData->iDragInsertIndex = -1;
 			r = pData->tDragStartRect;
-			r.fX += dx;
-			r.fY += dy;
+			r = __xuiDockRect(r.fX + dx, r.fY + dy, r.fW, r.fH);
 			pData->tDragPendingRect = __xuiDockClampFloatRect(pWidget, w, r);
 			(void)__xuiDockShowAdorner(pWidget, pData, pData->tDragPendingRect,
 				XUI_DRAG_ADORNER_RECT_STROKE, pData->tColors.iFloatBorderColor, 1.5f);
@@ -4689,22 +4694,16 @@ static xui_rect_t __xuiDockResizeAutoHideRect(xui_widget pPanel, xui_dock_panel_
 	switch ( iRegion ) {
 	case XUI_DOCK_PANEL_REGION_LEFT:
 		extent = __xuiDockClampAutoHideExtent(pPanel, pData, pWin, iRegion, r.fW + dx);
-		r.fW = extent;
-		break;
+		return __xuiDockRect(r.fX, r.fY, extent, r.fH);
 	case XUI_DOCK_PANEL_REGION_RIGHT:
 		extent = __xuiDockClampAutoHideExtent(pPanel, pData, pWin, iRegion, r.fW - dx);
-		r.fX = right - extent;
-		r.fW = extent;
-		break;
+		return __xuiDockRect(right - extent, r.fY, extent, r.fH);
 	case XUI_DOCK_PANEL_REGION_TOP:
 		extent = __xuiDockClampAutoHideExtent(pPanel, pData, pWin, iRegion, r.fH + dy);
-		r.fH = extent;
-		break;
+		return __xuiDockRect(r.fX, r.fY, r.fW, extent);
 	case XUI_DOCK_PANEL_REGION_BOTTOM:
 		extent = __xuiDockClampAutoHideExtent(pPanel, pData, pWin, iRegion, r.fH - dy);
-		r.fY = bottom - extent;
-		r.fH = extent;
-		break;
+		return __xuiDockRect(r.fX, bottom - extent, r.fW, extent);
 	default:
 		break;
 	}
@@ -4935,8 +4934,8 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 			xui_dock_drop_info_t drop;
 			xui_dock_drop_info_t indicator;
 			int ret;
-			r.fX += pEvent->fX - pData->fDragStartX;
-			r.fY += pEvent->fY - pData->fDragStartY;
+			r = __xuiDockRect(r.fX + pEvent->fX - pData->fDragStartX,
+				r.fY + pEvent->fY - pData->fDragStartY, r.fW, r.fH);
 			pData->tDragPendingRect = __xuiDockClampFloatRect(w->pPanelWidget, w, r);
 			(void)__xuiDockShowAdorner(w->pPanelWidget, pData, pData->tDragPendingRect,
 				XUI_DRAG_ADORNER_RECT_STROKE, pData->tColors.iFloatBorderColor, 1.5f);
@@ -5095,8 +5094,8 @@ static int __xuiDockHostButtonRender(xui_widget pButton, xui_draw_context pDraw,
 	if ( ret != XUI_OK ) return ret;
 	icon.fW = __xuiDockMin(12.0f, __xuiDockMax(0.0f, rect.fW - 4.0f));
 	icon.fH = __xuiDockMin(12.0f, __xuiDockMax(0.0f, rect.fH - 4.0f));
-	icon.fX = (rect.fW - icon.fW) * 0.5f;
-	icon.fY = (rect.fH - icon.fH) * 0.5f;
+	icon = __xuiDockRect((rect.fW - icon.fW) * 0.5f,
+		(rect.fH - icon.fH) * 0.5f, icon.fW, icon.fH);
 	asset = __xuiDockHostButtonIsClose(pWin, pButton) ? "dock_pane_close" : "dock_pane_dock";
 	color = __xuiDockHostButtonIsClose(pWin, pButton) ? XUI_COLOR_RGBA(171, 72, 76, 255) :
 		pData->tColors.iActiveCaptionTextColor;
@@ -5222,8 +5221,8 @@ static int __xuiDockHostRender(xui_widget pHost, xui_draw_context pDraw, uint32_
 	if ( w->bHasIcon && w->pIconSurface != NULL && pProxy->drawSurface != NULL ) {
 		icon.fW = __xuiDockMin(16.0f, __xuiDockMax(0.0f, title.fH - 6.0f));
 		icon.fH = icon.fW;
-		icon.fX = title.fX + 8.0f;
-		icon.fY = title.fY + (title.fH - icon.fH) * 0.5f;
+		icon = __xuiDockRect(title.fX + 8.0f,
+			title.fY + (title.fH - icon.fH) * 0.5f, icon.fW, icon.fH);
 		ret = pProxy->drawSurface(pProxy, pDraw, w->pIconSurface, w->tIconSrc,
 			xuiInternalSnapRect(icon), XUI_COLOR_RGBA(255, 255, 255, 255), 0);
 		if ( ret != XUI_OK ) return ret;
