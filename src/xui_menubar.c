@@ -18,6 +18,7 @@ typedef struct xui_menubar_data_t {
 } xui_menubar_data_t;
 
 typedef struct xui_menubar_resolved_t {
+	uint32_t iActiveTextColor;
 	xui_font pFont;
 	xui_menubar_metrics_t tMetrics;
 	xui_menubar_colors_t tColors;
@@ -231,6 +232,8 @@ static void __xuiMenuBarResolve(xui_widget pWidget, xui_menubar_data_t* pData, x
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.item.hover_color", &pOut->tColors.iHoverColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.item.active_color", &pOut->tColors.iActiveColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.text.color", &pOut->tColors.iTextColor);
+	pOut->iActiveTextColor = XUI_COLOR_WHITE;
+	(void)__xuiMenuBarStyleColor(pWidget, "menubar.text.active_color", &pOut->iActiveTextColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.text.disabled_color", &pOut->tColors.iDisabledTextColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.focus.color", &pOut->tColors.iFocusColor);
 	if ( pOut->tMetrics.fHeight < 18.0f ) pOut->tMetrics.fHeight = 18.0f;
@@ -573,7 +576,7 @@ static int __xuiMenuBarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			iText = tResolved.tColors.iDisabledTextColor;
 		} else if ( i == pData->iOpen || i == pData->iActive ) {
 			iBack = tResolved.tColors.iActiveColor;
-			iText = XUI_COLOR_RGBA(255, 255, 255, 255);
+			iText = tResolved.iActiveTextColor;
 		} else if ( bHot ) {
 			iBack = tResolved.tColors.iHoverColor;
 		}
@@ -888,6 +891,7 @@ static void __xuiMenuBarRegisterStyleProperties(xui_context pContext, xui_widget
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.item.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.item.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.text.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);

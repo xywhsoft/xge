@@ -3,6 +3,9 @@
 #include "../src/xui_range_slider.c"
 #include "../src/xui_scrollbar.c"
 #include "../src/xui_virtual_joystick.c"
+#include "../src/xui_toolbar.c"
+#include "../src/xui_menubar.c"
+#include "../src/xui_statusbar.c"
 
 /* Record the colors actually submitted to the renderer, not just resolution. */
 static uint32_t g_colors[32768];
@@ -183,11 +186,56 @@ static void chrome_sliders(pixel_fixture_t* f)
 	xuiWidgetDestroy(joystick);
 }
 
+static void chrome_bars(pixel_fixture_t* f)
+{
+	xui_widget toolbar = NULL, menubar = NULL, statusbar = NULL;
+	xui_toolbar_item_t items[3] = {0};
+	xui_statusbar_item_t status = {0};
+	PIXEL_CHECK(xuiToolbarCreate(f->context, &toolbar, NULL) == XUI_OK);
+	PIXEL_CHECK(xuiMenuBarCreate(f->context, &menubar, NULL) == XUI_OK);
+	PIXEL_CHECK(xuiStatusBarCreate(f->context, &statusbar, NULL) == XUI_OK);
+	chrome_attach(f, toolbar, 300, 36);
+	chrome_attach(f, menubar, 300, 36);
+	chrome_attach(f, statusbar, 300, 36);
+	items[0].sText = "Run"; items[0].iState = XUI_TOOLBAR_ITEM_ENABLED;
+	items[0].pIcon = f->target; items[0].tIconSrc = (xui_rect_t){0, 0, 12, 12};
+	items[1].iType = XUI_TOOLBAR_ITEM_SEPARATOR;
+	items[2].sText = "Stop"; items[2].iState = XUI_TOOLBAR_ITEM_ENABLED;
+	PIXEL_CHECK(xuiToolbarSetItems(toolbar, items, 3) == XUI_OK);
+	__xuiToolbarGetData(toolbar)->iActive = 0;
+	chrome_key(f, toolbar, "toolbar.text.active_color", XUI_COLOR_WHITE, 0);
+	chrome_key(f, toolbar, "toolbar.icon.active_color", XUI_COLOR_WHITE, 0);
+	chrome_key(f, toolbar, "toolbar.separator.highlight_color", XUI_COLOR_RGBA(255, 255, 255, 112), 0);
+	PIXEL_CHECK(xuiWidgetSetRect(toolbar, (xui_rect_t){0, 0, 40, 36}) == XUI_OK);
+	__xuiToolbarGetData(toolbar)->bOverflowEnabled = 1;
+	__xuiToolbarGetData(toolbar)->bOverflowActive = 1;
+	chrome_key(f, toolbar, "toolbar.text.active_color", XUI_COLOR_WHITE, 0);
+	PIXEL_CHECK(__xuiToolbarGetData(toolbar)->iOverflowCount > 0);
+	PIXEL_CHECK(xuiMenuBarAddItem(menubar, "File", NULL, 1) == XUI_OK);
+	__xuiMenuBarGetData(menubar)->iActive = 0;
+	chrome_key(f, menubar, "menubar.text.active_color", XUI_COLOR_WHITE, 0);
+	status.sText = "Ready"; status.fWidth = 100;
+	status.iState = XUI_STATUSBAR_ITEM_ENABLED | XUI_STATUSBAR_ITEM_CLICKABLE;
+	PIXEL_CHECK(xuiStatusBarSetItems(statusbar, &status, 1) == XUI_OK);
+	__xuiStatusBarGetData(statusbar)->iActive = 0;
+	chrome_key(f, statusbar, "statusbar.text.active_color", XUI_COLOR_WHITE, 0);
+	chrome_inline(toolbar, "toolbar.focus.color", 0);
+	chrome_paint(f, toolbar, 0);
+	PIXEL_CHECK(chrome_count(160) == 0);
+	chrome_inline(statusbar, "statusbar.item.active_color", 0);
+	chrome_paint(f, statusbar, 0);
+	PIXEL_CHECK(chrome_count(235) == 0);
+	xuiWidgetDestroy(toolbar);
+	xuiWidgetDestroy(menubar);
+	xuiWidgetDestroy(statusbar);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
 	if (!pixel_init_proxy(&f, chrome_configure)) return 1;
 	chrome_sliders(&f);
+	chrome_bars(&f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_chrome_test");
 }

@@ -19,6 +19,7 @@ typedef struct xui_statusbar_data_t {
 } xui_statusbar_data_t;
 
 typedef struct xui_statusbar_resolved_t {
+	uint32_t iActiveTextColor;
 	xui_statusbar_metrics_t tMetrics;
 	xui_statusbar_colors_t tColors;
 	xui_font pFont;
@@ -33,6 +34,7 @@ static int __xuiStatusBarAlpha(uint32_t iColor)
 
 static uint32_t __xuiStatusBarColorAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0u ) return iColor;
 	if ( iAlpha > 255u ) iAlpha = 255u;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
@@ -242,6 +244,8 @@ static void __xuiStatusBarResolve(xui_widget pWidget, const xui_statusbar_data_t
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.item.active_color", &pOut->tColors.iActiveColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.focus.color", &pOut->tColors.iFocusColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.text.color", &pOut->tColors.iTextColor);
+	pOut->iActiveTextColor = XUI_COLOR_WHITE;
+	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.text.active_color", &pOut->iActiveTextColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.text.disabled_color", &pOut->tColors.iDisabledTextColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.progress.track_color", &pOut->tColors.iProgressTrackColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.progress.fill_color", &pOut->tColors.iProgressFillColor);
@@ -543,7 +547,7 @@ static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		if ( i == pData->iActive ) {
 			iFill = tResolved.tColors.iActiveColor;
 			iBorder = __xuiStatusBarColorAlpha(tResolved.tColors.iActiveColor, 235);
-			iText = XUI_COLOR_RGBA(255, 255, 255, 255);
+			iText = tResolved.iActiveTextColor;
 			bPressed = 1;
 		} else if ( i == pData->iHover ) {
 			iFill = tResolved.tColors.iHoverColor;
@@ -833,6 +837,7 @@ static void __xuiStatusBarRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.item.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.text.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.progress.track_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.progress.fill_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

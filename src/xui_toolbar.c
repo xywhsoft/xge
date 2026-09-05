@@ -29,6 +29,9 @@ typedef struct xui_toolbar_data_t {
 typedef struct xui_toolbar_resolved_t {
 	xui_toolbar_metrics_t tMetrics;
 	xui_toolbar_colors_t tColors;
+	uint32_t iActiveTextColor;
+	uint32_t iActiveIconColor;
+	uint32_t iSeparatorHighlightColor;
 	xui_font pFont;
 } xui_toolbar_resolved_t;
 
@@ -41,6 +44,7 @@ static int __xuiToolbarAlpha(uint32_t iColor)
 
 static uint32_t __xuiToolbarColorAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0u ) return iColor;
 	if ( iAlpha > 255u ) iAlpha = 255u;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
@@ -266,6 +270,12 @@ static void __xuiToolbarResolve(xui_widget pWidget, const xui_toolbar_data_t* pD
 	(void)__xuiToolbarStyleColor(pWidget, "toolbar.text.color", &pOut->tColors.iTextColor);
 	(void)__xuiToolbarStyleColor(pWidget, "toolbar.text.disabled_color", &pOut->tColors.iDisabledTextColor);
 	(void)__xuiToolbarStyleColor(pWidget, "toolbar.icon.color", &pOut->tColors.iIconColor);
+	pOut->iActiveTextColor = XUI_COLOR_WHITE;
+	pOut->iActiveIconColor = XUI_COLOR_WHITE;
+	pOut->iSeparatorHighlightColor = XUI_COLOR_RGBA(255, 255, 255, 112);
+	(void)__xuiToolbarStyleColor(pWidget, "toolbar.text.active_color", &pOut->iActiveTextColor);
+	(void)__xuiToolbarStyleColor(pWidget, "toolbar.icon.active_color", &pOut->iActiveIconColor);
+	(void)__xuiToolbarStyleColor(pWidget, "toolbar.separator.highlight_color", &pOut->iSeparatorHighlightColor);
 
 	if ( pOut->tMetrics.fItemWidth < 1.0f ) pOut->tMetrics.fItemWidth = 1.0f;
 	if ( pOut->tMetrics.fItemHeight < 1.0f ) pOut->tMetrics.fItemHeight = 1.0f;
@@ -507,7 +517,7 @@ static xui_rect_t __xuiToolbarInsetRect(xui_rect_t tRect, float fLeft, float fTo
 	return tRect;
 }
 
-static int __xuiToolbarDrawSeparator(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bVerticalToolbar, uint32_t iColor)
+static int __xuiToolbarDrawSeparator(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bVerticalToolbar, uint32_t iColor, uint32_t iHighlight)
 {
 	xui_rect_t tLine;
 	int iRet;
@@ -528,7 +538,7 @@ static int __xuiToolbarDrawSeparator(xui_proxy pProxy, xui_draw_context pDraw, x
 	} else {
 		tLine.fX += 1.0f;
 	}
-	return pProxy->drawRectFill(pProxy, pDraw, tLine, XUI_COLOR_RGBA(255, 255, 255, 112));
+	return __xuiToolbarDrawRectFill(pProxy, pDraw, tLine, iHighlight);
 }
 
 static int __xuiToolbarDrawOverflowDots(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -632,7 +642,7 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		if ( (pData->arrItems[i].tRect.fW <= 0.0f) || (pData->arrItems[i].tRect.fH <= 0.0f) ) continue;
 		if ( pData->arrItems[i].iType == XUI_TOOLBAR_ITEM_SEPARATOR ) {
-			iRet = __xuiToolbarDrawSeparator(pProxy, pDraw, pData->arrItems[i].tRect, bVertical, tResolved.tColors.iSeparatorColor);
+			iRet = __xuiToolbarDrawSeparator(pProxy, pDraw, pData->arrItems[i].tRect, bVertical, tResolved.tColors.iSeparatorColor, tResolved.iSeparatorHighlightColor);
 			if ( iRet != XUI_OK ) return iRet;
 			continue;
 		}
@@ -648,8 +658,8 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			iBorder = __xuiToolbarColorAlpha(tResolved.tColors.iBorderColor, 120);
 		} else if ( i == pData->iActive ) {
 			iFill = tResolved.tColors.iActiveColor;
-			iText = XUI_COLOR_RGBA(255, 255, 255, 255);
-			iIcon = XUI_COLOR_RGBA(255, 255, 255, 255);
+			iText = tResolved.iActiveTextColor;
+			iIcon = tResolved.iActiveIconColor;
 			iBorder = __xuiToolbarColorAlpha(tResolved.tColors.iActiveColor, 235);
 			bPressed = 1;
 		} else if ( (pData->arrItems[i].iState & XUI_TOOLBAR_ITEM_CHECKED) != 0 ) {
@@ -687,7 +697,7 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			__xuiToolbarInsetRect(pData->tOverflowRect, 2.0f, 3.0f, 2.0f, 3.0f);
 		if ( pData->bOverflowActive ) tDraw.fY += 1.0f;
 		iFill = pData->bOverflowActive ? tResolved.tColors.iActiveColor : tResolved.tColors.iHoverColor;
-		iText = pData->bOverflowActive ? XUI_COLOR_RGBA(255, 255, 255, 255) : tResolved.tColors.iTextColor;
+		iText = pData->bOverflowActive ? tResolved.iActiveTextColor : tResolved.tColors.iTextColor;
 		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tDraw), iFill);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiToolbarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tDraw), tResolved.tMetrics.fBorderWidth, __xuiToolbarColorAlpha(tResolved.tColors.iFocusColor, 160));
@@ -1015,6 +1025,9 @@ static void __xuiToolbarRegisterStyleProperties(xui_context pContext, xui_widget
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.icon.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.text.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.icon.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.separator.highlight_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.orientation", XUI_STYLE_VALUE_INT, iLayoutDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.item.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.item.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
