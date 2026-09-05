@@ -1,5 +1,6 @@
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 #define XUI_TREE_VIEW_DEFAULT_ITEM_HEIGHT 24.0f
@@ -9,11 +10,27 @@
 #define XUI_TREE_VIEW_ACTIVE_EXPANDER 1
 #define XUI_TREE_VIEW_ACTIVE_CHECK 2
 
+#ifndef XUI_TREE_VIEW_TEST_COUNT
+#define XUI_TREE_VIEW_TEST_COUNT(field, count) ((void)0)
+#endif
+
+typedef struct xui_tree_view_index_t {
+	int iParent;
+	int iFirstChild;
+	int iLastChild;
+	int iNextSibling;
+	int iVisible;
+} xui_tree_view_index_t;
+
 typedef struct xui_tree_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
 	xui_tree_view_node_t* arrNodes;
+	xui_tree_view_index_t* arrIndex;
+	xmap mapNodeIds;
 	int* arrVisible;
+	int iFirstRoot;
+	int iLastRoot;
 	int iNodeCount;
 	int iNodeCapacity;
 	int iVisibleCount;
@@ -135,33 +152,56 @@ static void __xuiTreeViewFreeNodeText(xui_tree_view_node_t* pNode)
 	}
 }
 
-static void __xuiTreeViewClearNodeStorage(xui_tree_view_data_t* pData)
+static void __xuiTreeViewInitNodeStorage(xui_tree_view_data_t* pData)
 {
-	int i;
-
-	if ( pData == NULL ) {
-		return;
-	}
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		__xuiTreeViewFreeNodeText(&pData->arrNodes[i]);
-	}
-	if ( pData->arrNodes != NULL ) {
-		xrtFree(pData->arrNodes);
-	}
-	if ( pData->arrVisible != NULL ) {
-		xrtFree(pData->arrVisible);
-	}
 	pData->arrNodes = NULL;
+	pData->arrIndex = NULL;
+	memset(&pData->mapNodeIds, 0, sizeof(pData->mapNodeIds));
 	pData->arrVisible = NULL;
+	pData->iFirstRoot = -1;
+	pData->iLastRoot = -1;
 	pData->iNodeCount = 0;
 	pData->iNodeCapacity = 0;
 	pData->iVisibleCount = 0;
 	pData->iVisibleCapacity = 0;
 }
 
+static void __xuiTreeViewResetNodes(xui_tree_view_data_t* pData)
+{
+	int i;
+	for ( i = 0; i < pData->iNodeCount; i++ ) {
+		__xuiTreeViewFreeNodeText(&pData->arrNodes[i]);
+	}
+	if ( pData->mapNodeIds.ValueSize != 0 ) xrtMapClear(&pData->mapNodeIds);
+	pData->iNodeCount = 0;
+	pData->iVisibleCount = 0;
+	pData->iFirstRoot = -1;
+	pData->iLastRoot = -1;
+}
+
+static void __xuiTreeViewClearNodeStorage(xui_tree_view_data_t* pData)
+{
+	if ( pData == NULL ) {
+		return;
+	}
+	__xuiTreeViewResetNodes(pData);
+	if ( pData->mapNodeIds.ValueSize != 0 ) xrtMapUnit(&pData->mapNodeIds);
+	if ( pData->arrNodes != NULL ) {
+		xrtFree(pData->arrNodes);
+	}
+	if ( pData->arrIndex != NULL ) {
+		xrtFree(pData->arrIndex);
+	}
+	if ( pData->arrVisible != NULL ) {
+		xrtFree(pData->arrVisible);
+	}
+	__xuiTreeViewInitNodeStorage(pData);
+}
+
 static void __xuiTreeViewDefaults(xui_tree_view_data_t* pData)
 {
 	memset(pData, 0, sizeof(*pData));
+	__xuiTreeViewInitNodeStorage(pData);
 	pData->iSelectedId = -1;
 	pData->iHoverVisible = -1;
 	pData->iFocusVisible = -1;
@@ -298,6 +338,7 @@ static void __xuiTreeViewResolve(xui_widget pWidget, xui_tree_view_data_t* pData
 static int __xuiTreeViewEnsureNodeCapacity(xui_tree_view_data_t* pData, int iCount)
 {
 	xui_tree_view_node_t* pNewNodes;
+	xui_tree_view_index_t* pNewIndex;
 	int iNewCapacity;
 
 	if ( pData == NULL || iCount < 0 ) {
@@ -306,15 +347,20 @@ static int __xuiTreeViewEnsureNodeCapacity(xui_tree_view_data_t* pData, int iCou
 	if ( iCount <= pData->iNodeCapacity ) {
 		return XUI_OK;
 	}
-	iNewCapacity = (pData->iNodeCapacity > 0) ? pData->iNodeCapacity * 2 : 16;
+	iNewCapacity = (pData->iNodeCapacity > 0) ? pData->iNodeCapacity : 16;
 	while ( iNewCapacity < iCount ) {
-		iNewCapacity *= 2;
+		iNewCapacity = (iNewCapacity > INT_MAX / 2) ? iCount : iNewCapacity * 2;
 	}
+	if ( (size_t)iNewCapacity > SIZE_MAX / sizeof(*pNewNodes) ||
+	     (size_t)iNewCapacity > SIZE_MAX / sizeof(*pNewIndex) ) return XUI_ERROR_OUT_OF_MEMORY;
 	pNewNodes = (xui_tree_view_node_t*)xrtRealloc(pData->arrNodes, (size_t)iNewCapacity * sizeof(*pNewNodes));
 	if ( pNewNodes == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	pData->arrNodes = pNewNodes;
+	pNewIndex = (xui_tree_view_index_t*)xrtRealloc(pData->arrIndex, (size_t)iNewCapacity * sizeof(*pNewIndex));
+	if ( pNewIndex == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->arrIndex = pNewIndex;
 	pData->iNodeCapacity = iNewCapacity;
 	return XUI_OK;
 }
@@ -330,10 +376,11 @@ static int __xuiTreeViewEnsureVisibleCapacity(xui_tree_view_data_t* pData, int i
 	if ( iCount <= pData->iVisibleCapacity ) {
 		return XUI_OK;
 	}
-	iNewCapacity = (pData->iVisibleCapacity > 0) ? pData->iVisibleCapacity * 2 : 16;
+	iNewCapacity = (pData->iVisibleCapacity > 0) ? pData->iVisibleCapacity : 16;
 	while ( iNewCapacity < iCount ) {
-		iNewCapacity *= 2;
+		iNewCapacity = (iNewCapacity > INT_MAX / 2) ? iCount : iNewCapacity * 2;
 	}
+	if ( (size_t)iNewCapacity > SIZE_MAX / sizeof(*pNewVisible) ) return XUI_ERROR_OUT_OF_MEMORY;
 	pNewVisible = (int*)xrtRealloc(pData->arrVisible, (size_t)iNewCapacity * sizeof(*pNewVisible));
 	if ( pNewVisible == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -345,32 +392,20 @@ static int __xuiTreeViewEnsureVisibleCapacity(xui_tree_view_data_t* pData, int i
 
 static int __xuiTreeViewFindNodeData(const xui_tree_view_data_t* pData, int iNodeId)
 {
-	int i;
+	const int* pIndex;
 
-	if ( (pData == NULL) || (iNodeId < 0) ) {
+	if ( (pData == NULL) || (iNodeId < 0) || (pData->iNodeCount == 0) ) {
 		return -1;
 	}
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		if ( pData->arrNodes[i].iId == iNodeId ) {
-			return i;
-		}
-	}
-	return -1;
+	XUI_TREE_VIEW_TEST_COUNT(iIdLookups, 1);
+	pIndex = (const int*)xrtMapConstGet(&pData->mapNodeIds, xuiXrtBytes(&iNodeId, sizeof(iNodeId)));
+	return (pIndex != NULL) ? *pIndex : -1;
 }
 
 static int __xuiTreeViewVisibleIndexData(const xui_tree_view_data_t* pData, int iNodeId)
 {
-	int i;
-
-	if ( (pData == NULL) || (iNodeId < 0) ) {
-		return -1;
-	}
-	for ( i = 0; i < pData->iVisibleCount; i++ ) {
-		if ( pData->arrNodes[pData->arrVisible[i]].iId == iNodeId ) {
-			return i;
-		}
-	}
-	return -1;
+	int iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
+	return (iNode >= 0) ? pData->arrIndex[iNode].iVisible : -1;
 }
 
 static int __xuiTreeViewNodeEnabledData(const xui_tree_view_data_t* pData, int iNode)
@@ -381,9 +416,14 @@ static int __xuiTreeViewNodeEnabledData(const xui_tree_view_data_t* pData, int i
 	return pData->arrNodes[iNode].bEnabled != 0;
 }
 
-static int __xuiTreeViewAppendNodeData(xui_tree_view_data_t* pData, const xui_tree_view_node_t* pSource, int bDefaultEnabled)
+static int __xuiTreeViewAppendNodeData(xui_tree_view_data_t* pData, const xui_tree_view_node_t* pSource)
 {
 	xui_tree_view_node_t* pNode;
+	xui_tree_view_node_t tNode;
+	xui_tree_view_index_t* pIndex;
+	int* pIdIndex;
+	int iParent;
+	int iPrevious;
 	int iRet;
 
 	if ( (pData == NULL) || (pSource == NULL) || (pSource->iId < 0) ) {
@@ -392,27 +432,57 @@ static int __xuiTreeViewAppendNodeData(xui_tree_view_data_t* pData, const xui_tr
 	if ( __xuiTreeViewFindNodeData(pData, pSource->iId) >= 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pSource->iParent >= 0) && (__xuiTreeViewFindNodeData(pData, pSource->iParent) < 0) ) {
+	iParent = __xuiTreeViewFindNodeData(pData, pSource->iParent);
+	if ( (pSource->iParent >= 0) && (iParent < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->iNodeCount == INT_MAX ) return XUI_ERROR_OUT_OF_MEMORY;
+	tNode = *pSource;
 	iRet = __xuiTreeViewEnsureNodeCapacity(pData, pData->iNodeCount + 1);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	pNode = &pData->arrNodes[pData->iNodeCount];
-	memset(pNode, 0, sizeof(*pNode));
-	*pNode = *pSource;
-	pNode->sText = __xuiTreeViewDupText(pSource->sText);
-	if ( pNode->sText == NULL ) {
+	/* Reserve all rows before publishing the node, so expanding cannot fail
+	 * halfway through a splice and leave the inverse index inconsistent. */
+	iRet = __xuiTreeViewEnsureVisibleCapacity(pData, pData->iNodeCount + 1);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (pData->mapNodeIds.ValueSize == 0) && !xrtMapInit(&pData->mapNodeIds, sizeof(int)) ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	(void)bDefaultEnabled;
-	pNode->bEnabled = pSource->bEnabled ? 1 : 0;
-	pNode->bExpanded = pSource->bExpanded ? 1 : 0;
+	tNode.sText = __xuiTreeViewDupText(tNode.sText);
+	if ( tNode.sText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	XUI_TREE_VIEW_TEST_COUNT(iIdInserts, 1);
+	pIdIndex = (int*)xrtMapGetOrAdd(&pData->mapNodeIds, xuiXrtBytes(&tNode.iId, sizeof(tNode.iId)), NULL);
+	if ( pIdIndex == NULL ) {
+		__xuiTreeViewFreeNodeText(&tNode);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	*pIdIndex = pData->iNodeCount;
+	pNode = &pData->arrNodes[pData->iNodeCount];
+	*pNode = tNode;
+	pNode->bEnabled = tNode.bEnabled ? 1 : 0;
+	pNode->bExpanded = tNode.bExpanded ? 1 : 0;
 	pNode->bHasChildren = 0;
-	pNode->bIconReserved = pSource->bIconReserved ? 1 : 0;
-	pNode->bCheckReserved = pSource->bCheckReserved ? 1 : 0;
-	pNode->bChecked = pSource->bChecked ? 1 : 0;
+	pNode->bIconReserved = tNode.bIconReserved ? 1 : 0;
+	pNode->bCheckReserved = tNode.bCheckReserved ? 1 : 0;
+	pNode->bChecked = tNode.bChecked ? 1 : 0;
+	pIndex = &pData->arrIndex[pData->iNodeCount];
+	pIndex->iParent = iParent;
+	pIndex->iFirstChild = -1;
+	pIndex->iLastChild = -1;
+	pIndex->iNextSibling = -1;
+	pIndex->iVisible = -1;
+	iPrevious = (iParent >= 0) ? pData->arrIndex[iParent].iLastChild : pData->iLastRoot;
+	if ( iPrevious >= 0 ) pData->arrIndex[iPrevious].iNextSibling = pData->iNodeCount;
+	if ( iParent >= 0 ) {
+		if ( iPrevious < 0 ) pData->arrIndex[iParent].iFirstChild = pData->iNodeCount;
+		pData->arrIndex[iParent].iLastChild = pData->iNodeCount;
+		pData->arrNodes[iParent].bHasChildren = 1;
+	} else {
+		if ( iPrevious < 0 ) pData->iFirstRoot = pData->iNodeCount;
+		pData->iLastRoot = pData->iNodeCount;
+	}
+	XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
 	pData->iNodeCount++;
 	return XUI_OK;
 }
@@ -501,76 +571,56 @@ static int __xuiTreeViewInvalidateHoverRows(xui_widget pWidget, xui_tree_view_da
 	return iRet;
 }
 
-static int __xuiTreeViewAppendVisibleNode(xui_tree_view_data_t* pData, int iNode, int iDepth)
+/* Thread through parent/sibling indices instead of recursing on tree depth. */
+static int __xuiTreeViewNextVisibleNode(const xui_tree_view_data_t* pData, int iNode, int iStopParent)
 {
-	int i;
-	int iRet;
-	int iId;
-
-	if ( (pData == NULL) || (iNode < 0) || (iNode >= pData->iNodeCount) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+	XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
+	if ( pData->arrNodes[iNode].bExpanded && (pData->arrIndex[iNode].iFirstChild >= 0) ) {
+		return pData->arrIndex[iNode].iFirstChild;
 	}
-	iRet = __xuiTreeViewEnsureVisibleCapacity(pData, pData->iVisibleCount + 1);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	while ( iNode != iStopParent ) {
+		XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
+		if ( pData->arrIndex[iNode].iNextSibling >= 0 ) return pData->arrIndex[iNode].iNextSibling;
+		iNode = pData->arrIndex[iNode].iParent;
 	}
-	pData->arrNodes[iNode].iDepth = iDepth;
-	pData->arrVisible[pData->iVisibleCount++] = iNode;
-	if ( pData->arrNodes[iNode].bExpanded == 0 ) {
-		return XUI_OK;
-	}
-	iId = pData->arrNodes[iNode].iId;
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		if ( pData->arrNodes[i].iParent == iId ) {
-			iRet = __xuiTreeViewAppendVisibleNode(pData, i, iDepth + 1);
-			if ( iRet != XUI_OK ) {
-				return iRet;
-			}
-		}
-	}
-	return XUI_OK;
+	return -1;
 }
 
-static void __xuiTreeViewRecomputeChildren(xui_tree_view_data_t* pData)
+static int __xuiTreeViewWriteVisibleNodes(xui_tree_view_data_t* pData, int iNode, int iStopParent, int iAt)
 {
-	int i;
 	int iParent;
+	while ( iNode >= 0 ) {
+		iParent = pData->arrIndex[iNode].iParent;
+		pData->arrNodes[iNode].iDepth = (iParent >= 0) ? pData->arrNodes[iParent].iDepth + 1 : 0;
+		pData->arrIndex[iNode].iVisible = iAt;
+		pData->arrVisible[iAt++] = iNode;
+		XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
+		iNode = __xuiTreeViewNextVisibleNode(pData, iNode, iStopParent);
+	}
+	return iAt;
+}
 
-	if ( pData == NULL ) {
-		return;
-	}
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		pData->arrNodes[i].bHasChildren = 0;
-	}
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		iParent = __xuiTreeViewFindNodeData(pData, pData->arrNodes[i].iParent);
-		if ( iParent >= 0 ) {
-			pData->arrNodes[iParent].bHasChildren = 1;
-		}
+static void __xuiTreeViewMoveVisibleTail(xui_tree_view_data_t* pData, int iFrom, int iTo)
+{
+	int i;
+	int iTail = pData->iVisibleCount - iFrom;
+	if ( iFrom == iTo ) return;
+	if ( pData->iActiveVisible >= iFrom ) pData->iActiveVisible += iTo - iFrom;
+	else if ( pData->iActiveVisible >= iTo ) pData->iActiveVisible = -1;
+	if ( iTail > 0 ) memmove(pData->arrVisible + iTo, pData->arrVisible + iFrom, (size_t)iTail * sizeof(int));
+	XUI_TREE_VIEW_TEST_COUNT(iVisibleMoves, iTail);
+	pData->iVisibleCount = iTo + iTail;
+	for ( i = iTo; i < pData->iVisibleCount; i++ ) {
+		pData->arrIndex[pData->arrVisible[i]].iVisible = i;
+		XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
 	}
 }
 
-static int __xuiTreeViewRebuildVisible(xui_widget pWidget, xui_tree_view_data_t* pData, int iFallbackNodeId)
+static int __xuiTreeViewFinishVisibleChange(xui_widget pWidget, xui_tree_view_data_t* pData, int iFallbackNodeId)
 {
-	int i;
 	int iVisible;
 	int iNode;
-	int iRet;
-
-	if ( pData == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pData->iVisibleCount = 0;
 	pData->iHoverVisible = -1;
-	__xuiTreeViewRecomputeChildren(pData);
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		if ( pData->arrNodes[i].iParent < 0 ) {
-			iRet = __xuiTreeViewAppendVisibleNode(pData, i, 0);
-			if ( iRet != XUI_OK ) {
-				return iRet;
-			}
-		}
-	}
 	iVisible = __xuiTreeViewVisibleIndexData(pData, pData->iSelectedId);
 	iNode = (iVisible >= 0) ? pData->arrVisible[iVisible] : -1;
 	if ( (iVisible < 0) || !__xuiTreeViewNodeEnabledData(pData, iNode) ) {
@@ -589,6 +639,88 @@ static int __xuiTreeViewRebuildVisible(xui_widget pWidget, xui_tree_view_data_t*
 		(void)__xuiTreeViewInvalidateRows(pWidget, pData);
 	}
 	return XUI_OK;
+}
+
+static int __xuiTreeViewRebuildVisible(xui_widget pWidget, xui_tree_view_data_t* pData, int iFallbackNodeId)
+{
+	int i;
+	int iRet = __xuiTreeViewEnsureVisibleCapacity(pData, pData->iNodeCount);
+	if ( iRet != XUI_OK ) return iRet;
+	XUI_TREE_VIEW_TEST_COUNT(iRebuilds, 1);
+	for ( i = 0; i < pData->iNodeCount; i++ ) {
+		pData->arrIndex[i].iVisible = -1;
+		XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
+	}
+	pData->iVisibleCount = __xuiTreeViewWriteVisibleNodes(pData, pData->iFirstRoot, -1, 0);
+	return __xuiTreeViewFinishVisibleChange(pWidget, pData, iFallbackNodeId);
+}
+
+static int __xuiTreeViewSetExpandedData(xui_widget pWidget, xui_tree_view_data_t* pData, int iNode, int bExpanded)
+{
+	int iVisible = pData->arrIndex[iNode].iVisible;
+	int iAt = iVisible + 1;
+	int iChild;
+	int iCount;
+	int iEnd;
+	bExpanded = bExpanded ? 1 : 0;
+	if ( (pData->arrNodes[iNode].bExpanded != bExpanded) && (iVisible >= 0) ) {
+		if ( bExpanded ) {
+			iCount = 0;
+			iChild = pData->arrIndex[iNode].iFirstChild;
+			while ( iChild >= 0 ) {
+				iCount++;
+				iChild = __xuiTreeViewNextVisibleNode(pData, iChild, iNode);
+			}
+			__xuiTreeViewMoveVisibleTail(pData, iAt, iAt + iCount);
+			(void)__xuiTreeViewWriteVisibleNodes(pData, pData->arrIndex[iNode].iFirstChild, iNode, iAt);
+		} else {
+			iEnd = iAt;
+			while ( iEnd < pData->iVisibleCount ) {
+				iChild = pData->arrVisible[iEnd];
+				XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
+				if ( pData->arrNodes[iChild].iDepth <= pData->arrNodes[iNode].iDepth ) break;
+				pData->arrIndex[iChild].iVisible = -1;
+				XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
+				iEnd++;
+			}
+			__xuiTreeViewMoveVisibleTail(pData, iEnd, iAt);
+		}
+	}
+	pData->arrNodes[iNode].bExpanded = bExpanded;
+	pData->iChangeCount++;
+	return __xuiTreeViewFinishVisibleChange(pWidget, pData, bExpanded ? -1 : pData->arrNodes[iNode].iId);
+}
+
+static int __xuiTreeViewAddNodeData(xui_widget pWidget, xui_tree_view_data_t* pData, const xui_tree_view_node_t* pSource)
+{
+	int iParent = __xuiTreeViewFindNodeData(pData, pSource->iParent);
+	int iPrevious = (iParent >= 0) ? pData->arrIndex[iParent].iLastChild : -1;
+	int iAt;
+	int iNode;
+	int iRet = __xuiTreeViewAppendNodeData(pData, pSource);
+	if ( iRet != XUI_OK ) return iRet;
+	iNode = pData->iNodeCount - 1;
+	if ( (iParent < 0) || ((pData->arrIndex[iParent].iVisible >= 0) && pData->arrNodes[iParent].bExpanded) ) {
+		iAt = pData->iVisibleCount;
+		if ( iParent >= 0 ) {
+			if ( iPrevious < 0 ) {
+				iAt = pData->arrIndex[iParent].iVisible + 1;
+			} else {
+				while ( pData->arrNodes[iPrevious].bExpanded && (pData->arrIndex[iPrevious].iLastChild >= 0) ) {
+					XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
+					iPrevious = pData->arrIndex[iPrevious].iLastChild;
+				}
+				iAt = pData->arrIndex[iPrevious].iVisible + 1;
+			}
+		}
+		__xuiTreeViewMoveVisibleTail(pData, iAt, iAt + 1);
+		pData->arrVisible[iAt] = iNode;
+		pData->arrIndex[iNode].iVisible = iAt;
+		pData->arrNodes[iNode].iDepth = (iParent >= 0) ? pData->arrNodes[iParent].iDepth + 1 : 0;
+		XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
+	}
+	pData->iChangeCount++;
+	return __xuiTreeViewFinishVisibleChange(pWidget, pData, -1);
 }
 
 static uint32_t __xuiTreeViewState(xui_widget pWidget)
@@ -933,8 +1065,11 @@ static int __xuiTreeViewPointerUp(xui_widget pWidget, xui_tree_view_data_t* pDat
 		return XUI_OK;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( (pData->iActiveVisible < 0) || (xuiGetPointerCapture(pContext) != pWidget) ) {
+	if ( xuiGetPointerCapture(pContext) != pWidget ) {
 		return XUI_OK;
+	}
+	if ( pData->iActiveVisible < 0 ) {
+		return xuiReleasePointerCapture(pContext, pWidget);
 	}
 	iRet = XUI_OK;
 	iVisible = __xuiTreeViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
@@ -942,9 +1077,7 @@ static int __xuiTreeViewPointerUp(xui_widget pWidget, xui_tree_view_data_t* pDat
 		iNode = pData->arrVisible[iVisible];
 		if ( __xuiTreeViewNodeEnabledData(pData, iNode) ) {
 			if ( (pData->iActivePart == XUI_TREE_VIEW_ACTIVE_EXPANDER) && (pData->arrNodes[iNode].bHasChildren != 0) ) {
-				pData->arrNodes[iNode].bExpanded = !pData->arrNodes[iNode].bExpanded;
-				pData->iChangeCount++;
-				iRet = __xuiTreeViewRebuildVisible(pWidget, pData, pData->arrNodes[iNode].bExpanded ? -1 : pData->arrNodes[iNode].iId);
+				iRet = __xuiTreeViewSetExpandedData(pWidget, pData, iNode, !pData->arrNodes[iNode].bExpanded);
 			} else if ( (pData->iActivePart == XUI_TREE_VIEW_ACTIVE_CHECK) && (pData->arrNodes[iNode].bCheckReserved != 0) ) {
 				pData->arrNodes[iNode].bChecked = !pData->arrNodes[iNode].bChecked;
 				pData->iChangeCount++;
@@ -974,9 +1107,7 @@ static int __xuiTreeViewDoubleClick(xui_widget pWidget, xui_tree_view_data_t* pD
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 	(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
 	if ( pData->arrNodes[iNode].bHasChildren != 0 ) {
-		pData->arrNodes[iNode].bExpanded = !pData->arrNodes[iNode].bExpanded;
-		pData->iChangeCount++;
-		return __xuiTreeViewRebuildVisible(pWidget, pData, pData->arrNodes[iNode].bExpanded ? -1 : pData->arrNodes[iNode].iId);
+		return __xuiTreeViewSetExpandedData(pWidget, pData, iNode, !pData->arrNodes[iNode].bExpanded);
 	}
 	return XUI_OK;
 }
@@ -1097,9 +1228,7 @@ static int __xuiTreeViewKeyDown(xui_widget pWidget, xui_tree_view_data_t* pData,
 		if ( iCurrent >= 0 ) {
 			iNode = pData->arrVisible[iCurrent];
 			if ( (pData->arrNodes[iNode].bHasChildren != 0) && (pData->arrNodes[iNode].bExpanded == 0) ) {
-				pData->arrNodes[iNode].bExpanded = 1;
-				pData->iChangeCount++;
-				(void)__xuiTreeViewRebuildVisible(pWidget, pData, -1);
+				(void)__xuiTreeViewSetExpandedData(pWidget, pData, iNode, 1);
 			} else if ( pData->arrNodes[iNode].bHasChildren != 0 ) {
 				iTarget = __xuiTreeViewFindEnabledVisible(pData, iCurrent + 1, 1);
 				if ( iTarget >= 0 ) {
@@ -1113,9 +1242,7 @@ static int __xuiTreeViewKeyDown(xui_widget pWidget, xui_tree_view_data_t* pData,
 		if ( iCurrent >= 0 ) {
 			iNode = pData->arrVisible[iCurrent];
 			if ( (pData->arrNodes[iNode].bHasChildren != 0) && (pData->arrNodes[iNode].bExpanded != 0) ) {
-				pData->arrNodes[iNode].bExpanded = 0;
-				pData->iChangeCount++;
-				(void)__xuiTreeViewRebuildVisible(pWidget, pData, pData->arrNodes[iNode].iId);
+				(void)__xuiTreeViewSetExpandedData(pWidget, pData, iNode, 0);
 			} else if ( pData->arrNodes[iNode].iParent >= 0 ) {
 				iParentVisible = __xuiTreeViewVisibleIndexData(pData, pData->arrNodes[iNode].iParent);
 				if ( iParentVisible >= 0 ) {
@@ -1897,13 +2024,10 @@ XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
 	}
 	iSelectedId = pData->iSelectedId;
 	fScroll = xuiTreeViewGetScroll(pWidget);
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		__xuiTreeViewFreeNodeText(&pData->arrNodes[i]);
-	}
-	pData->iNodeCount = 0;
-	pData->iVisibleCount = 0;
+	__xuiTreeViewResetNodes(pData);
 	pData->iHoverVisible = -1;
 	pData->iFocusVisible = -1;
+	pData->iActiveVisible = -1;
 	pData->iSelectedId = iSelectedId;
 	for ( i = 0; i < iCount; i++ ) {
 		memset(&tNode, 0, sizeof(tNode));
@@ -1915,7 +2039,7 @@ XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
 		if ( pData->onNode(pWidget, i, &tNode, pData->pAdapterUser) != XUI_OK ) {
 			continue;
 		}
-		(void)__xuiTreeViewAppendNodeData(pData, &tNode, 1);
+		(void)__xuiTreeViewAppendNodeData(pData, &tNode);
 	}
 	iRet = __xuiTreeViewRebuildVisible(pWidget, pData, -1);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1925,13 +2049,8 @@ XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
 XUI_API int xuiTreeViewClear(xui_widget pWidget)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
-	int i;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		__xuiTreeViewFreeNodeText(&pData->arrNodes[i]);
-	}
-	pData->iNodeCount = 0;
-	pData->iVisibleCount = 0;
+	__xuiTreeViewResetNodes(pData);
 	pData->iSelectedId = -1;
 	pData->iHoverVisible = -1;
 	pData->iFocusVisible = -1;
@@ -1957,18 +2076,13 @@ XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* 
 	/* Build a separate owned node/visible set. A malformed descriptor or an
 	 * allocation failure must leave the currently displayed tree untouched. */
 	tStaged = *pData;
-	tStaged.arrNodes = NULL;
-	tStaged.iNodeCount = 0;
-	tStaged.iNodeCapacity = 0;
-	tStaged.arrVisible = NULL;
-	tStaged.iVisibleCount = 0;
-	tStaged.iVisibleCapacity = 0;
+	__xuiTreeViewInitNodeStorage(&tStaged);
 	tStaged.iSelectedId = -1;
 	tStaged.iHoverVisible = -1;
 	tStaged.iFocusVisible = -1;
 	tStaged.iActiveVisible = -1;
 	for ( i = 0; i < iCount; i++ ) {
-		iRet = __xuiTreeViewAppendNodeData(&tStaged, &pNodes[i], 0);
+		iRet = __xuiTreeViewAppendNodeData(&tStaged, &pNodes[i]);
 		if ( iRet != XUI_OK ) {
 			__xuiTreeViewClearNodeStorage(&tStaged);
 			return iRet;
@@ -1980,16 +2094,7 @@ XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* 
 		return iRet;
 	}
 	tOld = *pData;
-	pData->arrNodes = tStaged.arrNodes;
-	pData->iNodeCount = tStaged.iNodeCount;
-	pData->iNodeCapacity = tStaged.iNodeCapacity;
-	pData->arrVisible = tStaged.arrVisible;
-	pData->iVisibleCount = tStaged.iVisibleCount;
-	pData->iVisibleCapacity = tStaged.iVisibleCapacity;
-	pData->iSelectedId = tStaged.iSelectedId;
-	pData->iHoverVisible = tStaged.iHoverVisible;
-	pData->iFocusVisible = tStaged.iFocusVisible;
-	pData->iActiveVisible = tStaged.iActiveVisible;
+	*pData = tStaged;
 	__xuiTreeViewClearNodeStorage(&tOld);
 	(void)xuiTreeViewSetScroll(pWidget, 0.0f);
 	(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
@@ -2001,7 +2106,6 @@ XUI_API int xuiTreeViewAddNode(xui_widget pWidget, int iId, int iParentId, const
 {
 	xui_tree_view_data_t* pData;
 	xui_tree_view_node_t tNode;
-	int iRet;
 
 	pData = __xuiTreeViewGetData(pWidget);
 	if ( (pData == NULL) || (iId < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2011,12 +2115,7 @@ XUI_API int xuiTreeViewAddNode(xui_widget pWidget, int iId, int iParentId, const
 	tNode.sText = sText;
 	tNode.bEnabled = 1;
 	tNode.bIconReserved = 1;
-	iRet = __xuiTreeViewAppendNodeData(pData, &tNode, 1);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTreeViewRebuildVisible(pWidget, pData, -1);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->iChangeCount++;
-	return XUI_OK;
+	return __xuiTreeViewAddNodeData(pWidget, pData, &tNode);
 }
 
 XUI_API int xuiTreeViewGetNodeCount(xui_widget pWidget)
@@ -2052,9 +2151,7 @@ XUI_API int xuiTreeViewSetNodeExpanded(xui_widget pWidget, int iNodeId, int bExp
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
 	if ( iNode < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->arrNodes[iNode].bExpanded = bExpanded ? 1 : 0;
-	pData->iChangeCount++;
-	return __xuiTreeViewRebuildVisible(pWidget, pData, bExpanded ? -1 : iNodeId);
+	return __xuiTreeViewSetExpandedData(pWidget, pData, iNode, bExpanded);
 }
 
 XUI_API int xuiTreeViewGetNodeExpanded(xui_widget pWidget, int iNodeId)
@@ -2078,7 +2175,7 @@ XUI_API int xuiTreeViewSetNodeEnabled(xui_widget pWidget, int iNodeId, int bEnab
 	if ( iNode < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->arrNodes[iNode].bEnabled = bEnabled ? 1 : 0;
 	pData->iChangeCount++;
-	return __xuiTreeViewRebuildVisible(pWidget, pData, -1);
+	return __xuiTreeViewFinishVisibleChange(pWidget, pData, -1);
 }
 
 XUI_API int xuiTreeViewGetNodeEnabled(xui_widget pWidget, int iNodeId)
