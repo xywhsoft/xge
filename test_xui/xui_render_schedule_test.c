@@ -918,6 +918,107 @@ static int __xuiPixelEquals(const unsigned char* pPixels, int iStride, int iX, i
 	return (pPixel[0] == r) && (pPixel[1] == g) && (pPixel[2] == b) && (pPixel[3] == a);
 }
 
+static int __xuiTestHideOnLayout(xui_widget pWidget, xui_rect_t tContent, void* pUser)
+{
+	xui_widget* ppHide = (xui_widget*)pUser;
+	(void)pWidget;
+	(void)tContent;
+	if ( *ppHide != NULL ) {
+		xui_widget pHide = *ppHide;
+		*ppHide = NULL;
+		return xuiWidgetSetVisible(pHide, 0);
+	}
+	return XUI_OK;
+}
+
+static int __xuiTestLayoutDamage(void)
+{
+	xui_render_schedule_test_state_t tState;
+	xui_surface_desc_t tSurfaceDesc;
+	xui_layout_t tLayout;
+	xui_context pContext = NULL;
+	xui_widget pRoot = NULL;
+	xui_widget pA = NULL;
+	xui_widget pB = NULL;
+	xui_widget pHide = NULL;
+	xui_surface pTarget = NULL;
+	int iFailed = 0;
+	memset(&tState, 0, sizeof(tState));
+	tState.tProxy = __xuiTestProxy();
+	XUI_TEST_CHECK(xuiCreate(&pContext) == XUI_OK &&
+		xuiSetProxy(pContext, &tState.tProxy) == XUI_OK &&
+		xuiSetViewportSize(pContext, 64, 64) == XUI_OK, "damage context");
+	XUI_TEST_CHECK(xuiWidgetCreate(pContext, &pRoot) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pA) == XUI_OK &&
+		xuiWidgetCreate(pContext, &pB) == XUI_OK, "damage widgets");
+	(void)xuiSetRootWidget(pContext, pRoot);
+	(void)xuiWidgetSetLayoutType(pRoot, XUI_LAYOUT_ROW);
+	(void)xuiWidgetSetLayoutCompleteCallback(pRoot, __xuiTestHideOnLayout, &pHide);
+	(void)xuiWidgetSetPreferredSize(pA, (xui_vec2_t){10, 10});
+	(void)xuiWidgetSetPreferredSize(pB, (xui_vec2_t){10, 10});
+	(void)xuiWidgetAddChild(pRoot, pA);
+	(void)xuiWidgetAddChild(pRoot, pB);
+	(void)xuiWidgetSetCacheRenderCallback(pRoot, __xuiRenderScheduleDraw, &tState);
+	(void)xuiWidgetSetCacheRenderCallback(pA, __xuiRenderScheduleDraw, &tState);
+	(void)xuiWidgetSetCacheRenderCallback(pB, __xuiRenderScheduleDraw, &tState);
+	(void)xuiWidgetSetStateId(pB, 1);
+	memset(&tSurfaceDesc, 0, sizeof(tSurfaceDesc));
+	tSurfaceDesc.iWidth = 64;
+	tSurfaceDesc.iHeight = 64;
+	tSurfaceDesc.iKind = XUI_SURFACE_KIND_TEXTURE;
+	tSurfaceDesc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
+	tSurfaceDesc.iFlags = XUI_SURFACE_USAGE_TARGET;
+	XUI_TEST_CHECK(tState.tProxy.surfaceCreate(&tState.tProxy, &pTarget, &tSurfaceDesc) == XUI_OK,
+		"damage target");
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "damage initial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 15, 5, 0, 255, 0, 255), "initial sibling position");
+	(void)xuiWidgetSetPreferredSize(pA, (xui_vec2_t){25, 10});
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "grow partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 15, 5, 255, 0, 0, 255), "old sibling pixels survived growth");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 5, 0, 255, 0, 255), "new sibling pixels missing after growth");
+	XUI_TEST_CHECK(xuiGetDamageRects(pContext, NULL, 0) == 0, "layout damage was queued again after composition");
+	(void)xuiWidgetSetPreferredSize(pA, (xui_vec2_t){5, 10});
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "shrink partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 5, 255, 0, 0, 255), "old sibling pixels survived shrink");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 10, 5, 0, 255, 0, 255), "new sibling pixels missing after shrink");
+	(void)xuiWidgetSetLayoutType(pRoot, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetRemoveFromParent(pB);
+	(void)xuiWidgetSetRect(pA, (xui_rect_t){5, 20, 5, 5});
+	(void)xuiWidgetSetOverflow(pA, XUI_OVERFLOW_VISIBLE);
+	(void)xuiWidgetSetRect(pB, (xui_rect_t){15, 0, 6, 6});
+	(void)xuiWidgetAddChild(pA, pB);
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "overflow partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 20, 21, 0, 255, 0, 255), "added overflow not drawn");
+	(void)xuiWidgetSetRect(pA, (xui_rect_t){15, 20, 5, 5});
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "parent move partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 20, 21, 255, 0, 0, 255), "moved overflow left stale pixels");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 21, 0, 255, 0, 255), "moved overflow not drawn");
+	(void)xuiWidgetSetOverflow(pA, XUI_OVERFLOW_CLIP);
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "clip partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 21, 255, 0, 0, 255), "clipped overflow left stale pixels");
+	tLayout = xuiWidgetGetLayout(pA);
+	tLayout.iOverflow = XUI_OVERFLOW_VISIBLE;
+	(void)xuiWidgetSetLayout(pA, &tLayout);
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "unclip partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 21, 0, 255, 0, 255), "unclipped overflow not drawn");
+	pHide = pA;
+	(void)xuiWidgetInvalidate(pA, XUI_WIDGET_DIRTY_LAYOUT);
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "hide partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 21, 255, 0, 0, 255), "hidden overflow left stale pixels");
+	XUI_TEST_CHECK(xuiGetDamageRects(pContext, NULL, 0) == 0, "hidden overflow damage missed the current frame");
+	(void)xuiWidgetSetVisible(pA, 1);
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "show partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 21, 0, 255, 0, 255), "shown overflow not drawn");
+	xuiWidgetDestroy(pA);
+	pA = pB = NULL;
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, NULL, 0) == XUI_OK, "destroy partial render");
+	XUI_TEST_CHECK(__xuiPixelEquals(pTarget->pPixels, 256, 30, 21, 255, 0, 0, 255), "destroyed overflow left stale pixels");
+cleanup:
+	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
+	if ( pContext != NULL ) xuiDestroy(pContext);
+	return !iFailed;
+}
+
 int main(void)
 {
 	xui_render_schedule_test_state_t tState;
@@ -1348,6 +1449,7 @@ cleanup:
 	if ( iFailed ) {
 		return 1;
 	}
+	if ( !__xuiTestLayoutDamage() ) return 1;
 	printf("xui_render_schedule_test passed\n");
 	return 0;
 }

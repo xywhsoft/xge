@@ -3083,6 +3083,7 @@ static int __xuiRenderOperation(xui_context pContext, xui_surface pTarget, const
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
+		xuiInternalStateDamageFlush(pContext);
 		if ( iRectCount > 0 ) {
 			pRenderRects = pRects;
 			iRenderRectCount = iRectCount;

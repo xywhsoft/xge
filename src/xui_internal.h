@@ -386,6 +386,8 @@ struct xui_widget_t {
 	int bInteractionCancelling;
 	uint32_t iPendingStateChanges;
 	xui_rect_t tPendingStateOldWorldRect;
+	xui_rect_t tPendingDamageWorldRect;
+	int bPendingDamageVisible;
 	int bPendingStateOldVisible;
 	int bPendingStateOldEnabled;
 	uint32_t iDirtyFlags;
@@ -478,6 +480,7 @@ void xuiInternalOperationEnter(xui_context pContext);
 void xuiInternalOperationLeave(xui_context pContext);
 int xuiInternalContextDestroyPending(xui_context pContext);
 void xuiInternalStateRecordBoundsTree(xui_widget pWidget);
+void xuiInternalStateDamageFlush(xui_context pContext);
 void xuiInternalStateRecordVisible(xui_widget pWidget);
 void xuiInternalStateRecordEnabled(xui_widget pWidget);
 void xuiInternalStateChangeFlush(xui_context pContext);

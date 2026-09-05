@@ -73,6 +73,10 @@ static void __xuiWidgetStateEnsureQueued(xui_widget pWidget, const xui_rect_t* p
 		*pOldWorldRect : xuiWidgetGetWorldRect(pWidget);
 	pWidget->bPendingStateOldVisible = __xuiWidgetEffectiveVisible(pWidget);
 	pWidget->bPendingStateOldEnabled = __xuiWidgetEffectiveEnabled(pWidget);
+	pWidget->tPendingDamageWorldRect = pWidget->tPendingStateOldWorldRect;
+	pWidget->bPendingDamageVisible = pWidget->bPendingStateOldVisible &&
+		__xuiWidgetAttachedToContext(pWidget) &&
+		pWidget->tPendingDamageWorldRect.fW > 0 && pWidget->tPendingDamageWorldRect.fH > 0;
 	pWidget->pStateChangeNext = NULL;
 	if ( pContext->pStateChangeTail != NULL ) {
 		pContext->pStateChangeTail->pStateChangeNext = pWidget;
@@ -103,6 +107,64 @@ void xuiInternalStateRecordBoundsTree(xui_widget pWidget)
 {
 	if ( !__xuiWidgetValid(pWidget) ) return;
 	__xuiWidgetStateRecordBoundsTreeAt(pWidget, xuiWidgetGetWorldRect(pWidget));
+}
+
+static void __xuiWidgetStateDamageBounds(xui_widget pWidget)
+{
+	xui_rect_t tWorldRect;
+	int bVisible;
+	int iRet = XUI_OK;
+	if ( !__xuiWidgetMemoryValid(pWidget) || pWidget->iPendingStateChanges == 0u ) return;
+	tWorldRect = xuiWidgetGetWorldRect(pWidget);
+	bVisible = __xuiWidgetEffectiveVisible(pWidget) && __xuiWidgetAttachedToContext(pWidget) &&
+		tWorldRect.fW > 0 && tWorldRect.fH > 0;
+	if ( pWidget->bPendingDamageVisible == bVisible &&
+		(!bVisible || __xuiWidgetRectEqual(pWidget->tPendingDamageWorldRect, tWorldRect)) ) return;
+	if ( pWidget->bPendingDamageVisible ) {
+		iRet = xuiInternalContextInvalidateRect(pWidget->pContext,
+			xuiInternalRectToDamage(pWidget->tPendingDamageWorldRect));
+	}
+	if ( bVisible && iRet == XUI_OK ) {
+		iRet = xuiInternalContextInvalidateRect(pWidget->pContext, xuiInternalRectToDamage(tWorldRect));
+	}
+	if ( iRet != XUI_OK ) (void)xuiInternalContextInvalidateAll(pWidget->pContext);
+	/* Keep event history intact, but do not re-damage a layout already composed. */
+	pWidget->tPendingDamageWorldRect = tWorldRect;
+	pWidget->bPendingDamageVisible = bVisible;
+}
+
+void xuiInternalStateDamageFlush(xui_context pContext)
+{
+	xui_widget pWidget;
+	if ( !xuiInternalContextIsValid(pContext) ) return;
+	for ( pWidget = pContext->pStateChangeHead; pWidget != NULL; pWidget = pWidget->pStateChangeNext ) {
+		__xuiWidgetStateDamageBounds(pWidget);
+	}
+}
+
+static void __xuiWidgetDamagePaintTree(xui_widget pWidget)
+{
+	xui_widget pScan;
+	xui_rect_t tRect;
+	if ( !__xuiWidgetEffectiveVisible(pWidget) || !__xuiWidgetAttachedToContext(pWidget) ) return;
+	/* A clip-policy change can reveal or remove pixels outside this widget. */
+	for ( pScan = pWidget; pScan != NULL; ) {
+		if ( pScan->bVisible ) {
+			tRect = xuiWidgetGetWorldRect(pScan);
+			if ( tRect.fW > 0 && tRect.fH > 0 &&
+				xuiInternalContextInvalidateRect(pWidget->pContext, xuiInternalRectToDamage(tRect)) != XUI_OK ) {
+				(void)xuiInternalContextInvalidateAll(pWidget->pContext);
+				return;
+			}
+			if ( pScan->pFirstChild != NULL ) {
+				pScan = pScan->pFirstChild;
+				continue;
+			}
+		}
+		while ( pScan != pWidget && pScan->pNextSibling == NULL ) pScan = pScan->pParent;
+		if ( pScan == pWidget ) break;
+		pScan = pScan->pNextSibling;
+	}
 }
 
 void xuiInternalStateRecordVisible(xui_widget pWidget)
@@ -159,6 +221,7 @@ void xuiInternalStateChangeFlush(xui_context pContext)
 		pContext->pStateChangeHead = pWidget->pStateChangeNext;
 		if ( pContext->pStateChangeHead == NULL ) pContext->pStateChangeTail = NULL;
 		pWidget->pStateChangeNext = NULL;
+		__xuiWidgetStateDamageBounds(pWidget);
 		iChanges = pWidget->iPendingStateChanges;
 		tOldWorldRect = pWidget->tPendingStateOldWorldRect;
 		bOldVisible = pWidget->bPendingStateOldVisible;
@@ -3686,7 +3749,7 @@ XUI_API int xuiWidgetAddChild(xui_widget pParent, xui_widget pChild)
 	return xuiWidgetInsertBefore(pParent, pChild, NULL);
 }
 
-XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_widget pBefore)
+static int __xuiWidgetInsertBeforeOperation(xui_widget pParent, xui_widget pChild, xui_widget pBefore)
 {
 	int iRet;
 
@@ -3702,6 +3765,7 @@ XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_wid
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	xuiInternalStateRecordBoundsTree(pChild);
 	if ( pBefore != NULL ) {
 		pChild->pNextSibling = pBefore;
 		pChild->pPrevSibling = pBefore->pPrevSibling;
@@ -3729,6 +3793,16 @@ XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_wid
 	return XUI_OK;
 }
 
+XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_widget pBefore)
+{
+	xui_context pContext = __xuiWidgetValid(pParent) ? pParent->pContext : NULL;
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiWidgetInsertBeforeOperation(pParent, pChild, pBefore);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
 static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
 {
 	xui_widget pParent;
@@ -3741,6 +3815,7 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
 	if ( pParent == NULL ) {
 		return XUI_OK;
 	}
+	xuiInternalStateRecordBoundsTree(pWidget);
 	xuiInternalContextDetachWidget(pWidget->pContext, pWidget);
 	if ( !__xuiWidgetValid(pWidget) || pWidget->pParent != pParent ) return XUI_OK;
 	tWorldRect = xuiWidgetGetWorldRect(pWidget);
@@ -3883,6 +3958,7 @@ XUI_API int xuiWidgetSetLayout(xui_widget pWidget, const xui_layout_t* pLayout)
 	if ( !__xuiWidgetValid(pWidget) || !__xuiLayoutStructValid(pLayout) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pWidget->tLayout.iOverflow != pLayout->iOverflow ) __xuiWidgetDamagePaintTree(pWidget);
 	pWidget->tLayout = *pLayout;
 	return __xuiWidgetLayoutChanged(pWidget);
 }
@@ -4130,6 +4206,7 @@ XUI_API int xuiWidgetSetOverflow(xui_widget pWidget, int iOverflow)
 	if ( pWidget->tLayout.iOverflow == iOverflow ) {
 		return XUI_OK;
 	}
+	__xuiWidgetDamagePaintTree(pWidget);
 	pWidget->tLayout.iOverflow = iOverflow;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
