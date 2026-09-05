@@ -9048,10 +9048,13 @@ XUI_API xui_widget xuiWidgetTooltipGetOwner(xui_context pContext);
 XUI_API xui_rect_t xuiWidgetTooltipGetRect(xui_context pContext);
 
 XUI_API xui_widget xuiOverlayRoot(xui_context pContext);
+/* Layer/z apply to the overlay root; descendants retain their own stacking order. */
 XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget pOverlay, int iLayer, int iZIndex);
 XUI_API int xuiOverlayDetach(xui_widget pOverlay);
+/* Raise within the existing layer/z group without changing explicit z values. */
 XUI_API int xuiOverlayBringToFront(xui_widget pOverlay);
 XUI_API xui_widget xuiOverlayGetOwner(xui_widget pOverlay);
+/* Return the highest visible overlay in paint order, or NULL. */
 XUI_API xui_widget xuiOverlayTop(xui_context pContext);
 
 XUI_API int xuiWidgetInvalidate(xui_widget pWidget, uint32_t iFlags);

@@ -5291,27 +5291,6 @@ XUI_API xui_widget xuiOverlayRoot(xui_context pContext)
 	return pRoot;
 }
 
-static int __xuiWidgetSetOverlayTreeLayer(xui_widget pWidget, int iLayer, int iZIndex)
-{
-	xui_widget pChild;
-	int iRet;
-
-	if ( pWidget == NULL ) {
-		return XUI_OK;
-	}
-	iRet = xuiWidgetSetLayer(pWidget, iLayer, iZIndex);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		iRet = __xuiWidgetSetOverlayTreeLayer(pChild, iLayer, iZIndex);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	return XUI_OK;
-}
-
 XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget pOverlay, int iLayer, int iZIndex)
 {
 	xui_widget pRoot;
@@ -5339,7 +5318,7 @@ XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget
 		iLayer = XUI_LAYER_FLOATING;
 	}
 	pOverlay->pOverlayOwner = pOwner;
-	iRet = __xuiWidgetSetOverlayTreeLayer(pOverlay, iLayer, iZIndex);
+	iRet = xuiWidgetSetLayer(pOverlay, iLayer, iZIndex);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -5358,8 +5337,6 @@ XUI_API int xuiOverlayDetach(xui_widget pOverlay)
 XUI_API int xuiOverlayBringToFront(xui_widget pOverlay)
 {
 	xui_widget pParent;
-	int iLayer;
-	int iZIndex;
 	int iRet;
 
 	if ( !__xuiWidgetValid(pOverlay) ) {
@@ -5372,9 +5349,7 @@ XUI_API int xuiOverlayBringToFront(xui_widget pOverlay)
 	if ( pParent->pLastChild == pOverlay ) {
 		return XUI_OK;
 	}
-	iLayer = pOverlay->tLayout.iLayer;
-	iZIndex = pOverlay->tLayout.iZIndex;
-	/* Reorder an attached overlay without running the detach lifecycle. */
+	/* Tree order breaks ties within the existing layer/z group. */
 	iRet = xuiInternalLayoutAttach(pParent, pOverlay, NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
@@ -5393,10 +5368,6 @@ XUI_API int xuiOverlayBringToFront(xui_widget pOverlay)
 	pParent->pLastChild = pOverlay;
 	__xuiWidgetStackingDirty(pParent);
 	__xuiWidgetBumpLayoutVersion(pParent);
-	iRet = __xuiWidgetSetOverlayTreeLayer(pOverlay, iLayer, iZIndex + 1);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
 	return xuiWidgetInvalidate(pParent,
 		XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -5408,10 +5379,18 @@ XUI_API xui_widget xuiOverlayGetOwner(xui_widget pOverlay)
 
 XUI_API xui_widget xuiOverlayTop(xui_context pContext)
 {
+	const xui_widget* children;
+	int count;
+	int i;
+
 	if ( !xuiInternalContextIsValid(pContext) || (pContext->pOverlayRoot == NULL) ) {
 		return NULL;
 	}
-	return pContext->pOverlayRoot->pLastChild;
+	if ( xuiInternalStackingChildren(pContext->pOverlayRoot, &children, &count) != XUI_OK ) return NULL;
+	for ( i = count - 1; i >= 0; --i ) {
+		if ( xuiWidgetGetEffectiveVisible(children[i]) ) return children[i];
+	}
+	return NULL;
 }
 
 static int __xuiTooltipDescEnabled(const xui_tooltip_desc_t* pDesc)
