@@ -11,6 +11,8 @@ typedef struct xui_property_grid_data_t {
 	xui_widget pWidget;
 	xui_widget pTableGrid;
 	xui_widget pTableView;
+	xui_widget_event_proc onTableKey;
+	void* pTableKeyUser;
 	xui_font pFont;
 	xui_table_view_column_t arrColumns[2];
 	xui_table_view_row_t arrRows[XUI_PROPERTY_GRID_VISIBLE_CAPACITY];
@@ -957,6 +959,60 @@ static int __xuiPropertyGridHitCell(xui_property_grid_data_t* pData, const xui_e
 	return xuiTableViewGetItemAt(pData->pTableView, fLocalX, fLocalY, pRow, pColumn) == XUI_OK;
 }
 
+static int __xuiPropertyGridTableKey(xui_widget pTable, const xui_event_t* pEvent, void* pUser)
+{
+	xui_property_grid_data_t* pData = (xui_property_grid_data_t*)pUser;
+	int iRow = -1;
+	int iColumn = -1;
+	int iCategory;
+	int iProperty;
+	int bExpanded;
+	int iStep;
+
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_TARGET && xuiWidgetGetEffectiveEnabled(pData->pWidget) &&
+	     !xuiTableGridIsEditing(pData->pTableGrid) ) {
+		(void)xuiTableViewGetSelectedCell(pTable, &iRow, &iColumn);
+		if ( iRow < 0 ) (void)xuiTableViewGetActiveCell(pTable, &iRow, &iColumn);
+		iCategory = __xuiPropertyGridVisibleRowCategory(pData, iRow);
+		if ( __xuiPropertyGridValidCategory(pData, iCategory) &&
+		     (pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN) ) {
+			/* Category cells span both columns; property names are not editable.
+			   Cross this boundary through the value column, not the name column. */
+			iStep = pEvent->iKey == XUI_KEY_DOWN ? 1 : -1;
+			for ( iRow += iStep; iRow >= 0 && iRow < pData->iVisibleCount; iRow += iStep ) {
+				iProperty = __xuiPropertyGridVisibleRowProperty(pData, iRow);
+				if ( __xuiPropertyGridValidProperty(pData, iProperty) ) {
+					if ( (pData->arrProperties[iProperty].iFlags & (XUI_PROPERTY_FLAG_DISABLED | XUI_PROPERTY_FLAG_READONLY)) != 0 ) continue;
+					(void)xuiPropertyGridSetSelected(pData->pWidget, iProperty);
+					__xuiPropertyGridNotifySelect(pData, iProperty);
+				} else {
+					(void)xuiTableViewSetSelectedCell(pTable, iRow, 0);
+				}
+				(void)xuiTableViewEnsureCellVisible(pTable, iRow, iProperty >= 0 ? 1 : 0);
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( __xuiPropertyGridValidCategory(pData, iCategory) &&
+		     (pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ||
+		      pEvent->iKey == XUI_KEY_LEFT || pEvent->iKey == XUI_KEY_RIGHT) ) {
+			bExpanded = pEvent->iKey == XUI_KEY_RIGHT ? 1 : pEvent->iKey == XUI_KEY_LEFT ? 0 : !pData->arrCategories[iCategory].bExpanded;
+			(void)xuiPropertyGridSetCategoryExpanded(pData->pWidget, iCategory, bExpanded);
+			/* Rebuilding rows must not move keyboard selection off the category. */
+			(void)xuiTableViewSetSelectedCell(pTable, iRow, 0);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ) {
+			iProperty = __xuiPropertyGridVisibleRowProperty(pData, iRow);
+			if ( __xuiPropertyGridValidProperty(pData, iProperty) ) {
+				(void)xuiPropertyGridBeginEdit(pData->pWidget, iProperty);
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+	}
+	return pData->onTableKey != NULL ? pData->onTableKey(pTable, pEvent, pData->pTableKeyUser) : XUI_OK;
+}
+
 static int __xuiPropertyGridEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_property_grid_data_t* pData;
@@ -1247,6 +1303,9 @@ static int __xuiPropertyGridInit(xui_widget pWidget, void* pTypeData, const void
 	pData->pTableView = xuiTableGridGetTableView(pData->pTableGrid);
 	(void)xuiTableGridSetContextMenu(pData->pTableGrid, __xuiPropertyGridContextProc, pData);
 	if ( pData->pTableView == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	iRet = xuiWidgetGetEventHandler(pData->pTableView, XUI_EVENT_KEY_DOWN, &pData->onTableKey, &pData->pTableKeyUser);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pTableView, XUI_EVENT_KEY_DOWN, __xuiPropertyGridTableKey, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiTableViewSetSelect(pData->pTableView, __xuiPropertyGridSelectProc, pData);
 	(void)xuiTableViewSetMergeProvider(pData->pTableView, __xuiPropertyGridMergeProc, pData);
 	pFrame = xuiTableViewGetFrameWidget(pData->pTableView);
@@ -1257,8 +1316,8 @@ static int __xuiPropertyGridInit(xui_widget pWidget, void* pTypeData, const void
 	(void)xuiTableGridSetDefaultMetrics(pData->pTableGrid, 120.0f, pData->fRowHeight, 0.0f);
 	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
 	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
+	(void)xuiWidgetSetFocusable(pWidget, 0);
+	(void)xuiWidgetSetTabStop(pWidget, 0);
 	(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
 	__xuiPropertyGridApplyStyle(pData);
 	__xuiPropertyGridSyncColumns(pData);

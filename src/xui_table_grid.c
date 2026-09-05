@@ -12,6 +12,12 @@
 #define XUI_TABLE_GRID_EDITOR_DATE	5
 #define XUI_TABLE_GRID_EDITOR_TEXTAREA	6
 
+typedef struct xui_table_grid_key_route_t {
+	xui_widget pGrid;
+	xui_widget_event_proc onKey;
+	void* pUser;
+} xui_table_grid_key_route_t;
+
 typedef struct xui_table_grid_data_t {
 	xui_widget pTable;
 	xui_widget pInput;
@@ -41,6 +47,7 @@ typedef struct xui_table_grid_data_t {
 	xui_table_grid_context_proc onContext;
 	void* pContextUser;
 	xui_table_grid_editor_config_t tEditorConfig;
+	xui_table_grid_key_route_t arrKeyRoutes[12];
 	int iEditMode;
 	int iEditingRow;
 	int iEditingColumn;
@@ -779,20 +786,17 @@ static void __xuiTableGridTextCancel(xui_widget pWidget, void* pUser)
 	(void)xuiTableGridEndEdit(pGrid, 0);
 }
 
-static int __xuiTableGridTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+static int __xuiTableGridFinishKey(xui_widget pWidget, const xui_event_t* pEvent)
 {
-	xui_table_grid_data_t* pData;
-	xui_widget pGrid;
-
-	(void)pWidget;
-	pData = (xui_table_grid_data_t*)pUser;
-	if ( (pData == NULL) || (pEvent == NULL) ) return XUI_OK;
-	if ( (pEvent->iType == XUI_EVENT_KEY_DOWN) && (pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE) && (pEvent->iKey == XUI_KEY_ESCAPE) ) {
-		pGrid = xuiPopupGetOwner(pData->pTextPopup);
-		(void)xuiTableGridEndEdit(pGrid, 0);
-		return XUI_EVENT_DISPATCH_STOP;
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_widget pTable = xuiTableGridGetTableView(pWidget);
+	if ( xuiTableGridEndEdit(pWidget, pEvent->iKey != XUI_KEY_ESCAPE) &&
+	     pEvent->iKey == XUI_KEY_TAB && !xuiInternalContextDestroyPending(pContext) &&
+	     xuiInternalWidgetIsValid(pTable) && xuiGetFocusWidget(pContext) == pTable ) {
+		/* EndEdit closes popups and restores the sole entry before traversing. */
+		(void)xuiFocusNext(pContext, (pEvent->iModifiers & XUI_MOD_SHIFT) == 0);
 	}
-	return XUI_OK;
+	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static int __xuiTableGridOpenTextArea(xui_widget pWidget, xui_table_grid_data_t* pData)
@@ -809,7 +813,7 @@ static int __xuiTableGridOpenTextArea(xui_widget pWidget, xui_table_grid_data_t*
 	}
 	(void)xuiTextEditSetText(pData->pTextEdit, pData->sOriginalValue);
 	(void)xuiPopupSetOwner(pData->pTextPopup, pWidget);
-	(void)xuiPopupSetFocusRestore(pData->pTextPopup, pWidget);
+	(void)xuiPopupSetFocusRestore(pData->pTextPopup, pData->pTable);
 	(void)xuiPopupSetAnchorRect(pData->pTextPopup, tAnchor);
 	(void)xuiPopupSetAnchor(pData->pTextPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
 	(void)xuiPopupSetDirection(pData->pTextPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
@@ -1013,13 +1017,9 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			return XUI_OK;
 		}
 		if ( pData->iEditingRow >= 0 ) {
-			if ( pEvent->iKey == XUI_KEY_ENTER ) {
-				(void)xuiTableGridEndEdit(pWidget, 1);
-				return XUI_EVENT_DISPATCH_STOP;
-			}
-			if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-				(void)xuiTableGridEndEdit(pWidget, 0);
-				return XUI_EVENT_DISPATCH_STOP;
+			if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_ESCAPE ||
+			     (pEvent->iKey == XUI_KEY_TAB && (pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0) ) {
+				return __xuiTableGridFinishKey(pWidget, pEvent);
 			}
 		}
 		if ( pData->iEditingRow < 0 ) {
@@ -1078,6 +1078,128 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		}
+	}
+	return XUI_OK;
+}
+
+static int __xuiTableGridKeyEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_table_grid_key_route_t tRoute = *(xui_table_grid_key_route_t*)pUser;
+	xui_table_grid_data_t* pData = __xuiTableGridGetData(tRoute.pGrid);
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_widget pTable;
+	xui_widget pDate;
+	xui_event_t tCommit;
+	int bTab;
+	int bMenu;
+	int iRejectCount;
+	int iRet;
+	int i;
+
+	if ( pData == NULL || pEvent == NULL ) return XUI_OK;
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) goto delegate;
+	if ( !xuiWidgetGetEffectiveEnabled(tRoute.pGrid) ) return XUI_OK;
+	pTable = pData->pTable;
+	if ( pWidget == pTable ) {
+		if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ) {
+			iRet = __xuiTableGridEvent(tRoute.pGrid, pEvent, NULL);
+			if ( iRet < 0 ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		goto delegate;
+	}
+	if ( pData->iEditingRow < 0 ) goto delegate;
+	bTab = pEvent->iKey == XUI_KEY_TAB && (pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0;
+	bMenu = pWidget == xuiComboBoxGetMenuWidget(pData->pCombo);
+	if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
+		if ( tRoute.onKey != NULL && (bMenu || pWidget == xuiDatePickerGetPanelWidget(pData->pDate) ||
+		     pWidget == xuiColorPickerGetPanelWidget(pData->pColor)) ) {
+			iRet = tRoute.onKey(pWidget, pEvent, tRoute.pUser);
+			if ( iRet < 0 ) return iRet;
+			if ( !xuiInternalWidgetIsValid(tRoute.pGrid) || xuiInternalContextDestroyPending(pContext) ) return XUI_EVENT_DISPATCH_STOP;
+		}
+		return __xuiTableGridFinishKey(tRoute.pGrid, pEvent);
+	}
+	if ( !bTab && pEvent->iKey != XUI_KEY_ENTER && !(bMenu && pEvent->iKey == XUI_KEY_SPACE) ) goto delegate;
+	/* Multiline values keep Shift+Enter; plain Enter completes the cell. */
+	if ( pWidget == pData->pTextEdit && !bTab && (pEvent->iModifiers & XUI_MOD_SHIFT) != 0 ) goto delegate;
+	if ( bMenu ) {
+		iRejectCount = pData->iRejectCount;
+		tCommit = *pEvent;
+		if ( bTab ) { tCommit.iKey = XUI_KEY_ENTER; tCommit.iModifiers = 0; }
+		iRet = tRoute.onKey != NULL ? tRoute.onKey(pWidget, &tCommit, tRoute.pUser) : XUI_OK;
+		if ( iRet < 0 ) return iRet;
+		pData = __xuiTableGridGetData(tRoute.pGrid);
+		if ( pData == NULL || xuiInternalContextDestroyPending(pContext) ) return XUI_EVENT_DISPATCH_STOP;
+		/* Re-selecting the same item does not emit ComboBox's change callback. */
+		if ( pData->iEditingRow >= 0 && pData->iRejectCount == iRejectCount ) {
+			(void)xuiTableGridEndEdit(tRoute.pGrid, xuiComboBoxGetSelected(pData->pCombo) >= 0);
+		}
+		if ( bTab && !xuiInternalContextDestroyPending(pContext) && xuiInternalWidgetIsValid(pTable) &&
+		     !xuiTableGridIsEditing(tRoute.pGrid) && xuiGetFocusWidget(pContext) == pTable ) {
+			(void)xuiFocusNext(pContext, (pEvent->iModifiers & XUI_MOD_SHIFT) == 0);
+		}
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pWidget == xuiDatePickerGetPanelWidget(pData->pDate) ) {
+		if ( !bTab ) goto delegate;
+		/* Commit the date draft through its existing callback. Date fields may
+		   need one Enter before the popup; invalid fields keep their focus. */
+		pDate = pData->pDate;
+		tCommit = *pEvent;
+		tCommit.iKey = XUI_KEY_ENTER;
+		tCommit.iModifiers = 0;
+		for ( i = 0; i < 2; i++ ) {
+			iRet = tRoute.onKey != NULL ? tRoute.onKey(pWidget, &tCommit, tRoute.pUser) : XUI_OK;
+			if ( iRet < 0 ) return iRet;
+			if ( !xuiInternalWidgetIsValid(tRoute.pGrid) || xuiInternalContextDestroyPending(pContext) ) return XUI_EVENT_DISPATCH_STOP;
+			if ( !xuiTableGridIsEditing(tRoute.pGrid) || !xuiDatePickerIsOpen(pDate) ) break;
+		}
+		if ( !xuiTableGridIsEditing(tRoute.pGrid) && xuiGetFocusWidget(pContext) == pTable ) {
+			(void)xuiFocusNext(pContext, (pEvent->iModifiers & XUI_MOD_SHIFT) == 0);
+		}
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pWidget == xuiColorPickerGetPanelWidget(pData->pColor) && tRoute.onKey != NULL ) {
+		tCommit = *pEvent;
+		tCommit.iKey = XUI_KEY_ENTER;
+		tCommit.iModifiers = 0;
+		/* A field consumes Enter even on failed validation. Only an unconsumed
+		   Enter at the panel level may finish the cell. */
+		for ( i = 0; i < (bTab ? 2 : 1); i++ ) {
+			iRet = tRoute.onKey(pWidget, &tCommit, tRoute.pUser);
+			if ( iRet < 0 ) return iRet;
+			if ( !xuiInternalWidgetIsValid(tRoute.pGrid) || xuiInternalContextDestroyPending(pContext) ) return XUI_EVENT_DISPATCH_STOP;
+			if ( (iRet & XUI_EVENT_DISPATCH_STOP) == 0 ) return __xuiTableGridFinishKey(tRoute.pGrid, pEvent);
+		}
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	return __xuiTableGridFinishKey(tRoute.pGrid, pEvent);
+delegate:
+	return tRoute.onKey != NULL ? tRoute.onKey(pWidget, pEvent, tRoute.pUser) : XUI_OK;
+}
+
+static int __xuiTableGridInitKeyboard(xui_widget pWidget, xui_table_grid_data_t* pData)
+{
+	xui_widget pFrame = xuiTableViewGetFrameWidget(pData->pTable);
+	xui_widget arrTargets[] = {pData->pTable, pData->pInput, pData->pNumeric,
+		xuiNumericInputGetInputWidget(pData->pNumeric), pData->pCombo, pData->pColor, pData->pDate,
+		pData->pTextEdit, xuiComboBoxGetMenuWidget(pData->pCombo),
+		xuiColorPickerGetPanelWidget(pData->pColor), xuiDatePickerGetPanelWidget(pData->pDate), pData->pTextPopup};
+	int i;
+	int iRet;
+	/* TableView navigation already scrolls its active cell into view. */
+	(void)xuiWidgetSetTabStop(xuiScrollFrameGetHScrollBarWidget(pFrame), 0);
+	(void)xuiWidgetSetTabStop(xuiScrollFrameGetVScrollBarWidget(pFrame), 0);
+	/* Preserve each owned control's navigation handler; callbacks run too late
+	   for keys already consumed by TableView, NumericInput, or popup fields. */
+	for ( i = 0; i < (int)(sizeof(arrTargets) / sizeof(arrTargets[0])); i++ ) {
+		pData->arrKeyRoutes[i].pGrid = pWidget;
+		iRet = xuiWidgetGetEventHandler(arrTargets[i], XUI_EVENT_KEY_DOWN,
+			&pData->arrKeyRoutes[i].onKey, &pData->arrKeyRoutes[i].pUser);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiWidgetSetEventHandler(arrTargets[i], XUI_EVENT_KEY_DOWN, __xuiTableGridKeyEvent, &pData->arrKeyRoutes[i]);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
@@ -1254,7 +1376,6 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	(void)xuiDatePickerSetCancel(pData->pDate, __xuiTableGridDateCancel, pData);
 	(void)xuiButtonSetClick(pData->pTextOk, __xuiTableGridTextOk, pData);
 	(void)xuiButtonSetClick(pData->pTextCancel, __xuiTableGridTextCancel, pData);
-	(void)xuiWidgetSetEventCallback(pData->pTextEdit, __xuiTableGridTextEditEvent, pData);
 	(void)xuiPopupSetFocusPolicy(pData->pTextPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pTextEdit);
 	(void)xuiWidgetSetLayoutType(pContent, XUI_LAYOUT_MANUAL);
 	(void)xuiWidgetAddChild(pContent, pData->pTextEdit);
@@ -1338,11 +1459,13 @@ static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* p
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTableGridCreateEditors(pWidget, pData, pDesc);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTableGridInitKeyboard(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
 	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_BLOCK);
 	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
+	(void)xuiWidgetSetFocusable(pWidget, 0);
+	(void)xuiWidgetSetTabStop(pWidget, 0);
 	(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
 	return __xuiTableGridInitEvents(pWidget);
 }
