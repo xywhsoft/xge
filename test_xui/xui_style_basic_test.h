@@ -8,7 +8,7 @@
 	++g_failures; printf("%s:%d: %s\n", __FILE__, __LINE__, #expr); \
 } } while (0)
 
-enum { BASIC_FILL, BASIC_STROKE, BASIC_LINE, BASIC_CIRCLE, BASIC_RING, BASIC_TEXT, BASIC_SURFACE, BASIC_TRIANGLE };
+enum { BASIC_FILL, BASIC_STROKE, BASIC_LINE, BASIC_CIRCLE, BASIC_RING, BASIC_TEXT, BASIC_SURFACE, BASIC_TRIANGLE, BASIC_SVG_FILL, BASIC_SVG_STROKE };
 typedef struct basic_draw_t { int kind; uint32_t color; } basic_draw_t;
 static basic_draw_t basic_draws[8192];
 static int basic_count;
@@ -39,6 +39,12 @@ static int basic_surface(xui_proxy p, xui_draw_context d, xui_surface s, xui_rec
 { basic_record(d, BASIC_SURFACE, c); return basic_proxy.drawSurface(p, d, s, a, b, c, flags); }
 static int basic_triangle(xui_proxy p, xui_draw_context d, xui_vec2_t a, xui_vec2_t b, xui_vec2_t c, uint32_t color)
 { basic_record(d, BASIC_TRIANGLE, color); return basic_proxy.drawTriangleFill(p, d, a, b, c, color); }
+static int basic_svg(xui_proxy p, xui_draw_context d, const char* path, xui_rect_t view, xui_rect_t target, const xui_path_style_t* style, float tolerance)
+{
+	basic_record(d, BASIC_SVG_FILL, style->iFillColor);
+	basic_record(d, BASIC_SVG_STROKE, style->iStrokeColor);
+	return basic_proxy.drawSvgPath(p, d, path, view, target, style, tolerance);
+}
 
 static void basic_configure(xui_proxy p)
 {
@@ -47,6 +53,7 @@ static void basic_configure(xui_proxy p)
 	p->drawLine = basic_line; p->drawCircleFill = basic_circle; p->drawCircleStroke = basic_ring;
 	p->drawText = basic_text; p->drawSurface = basic_surface;
 	p->drawTriangleFill = basic_triangle;
+	p->drawSvgPath = basic_svg;
 }
 
 static int basic_seen(int kind, uint32_t color)

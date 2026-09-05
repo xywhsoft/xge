@@ -89,6 +89,22 @@ static void input_cases(pixel_fixture_t* f)
 	PIXEL_CHECK(xuiWidgetSetInlineStyle(w, &p, 1) == XUI_OK);
 	basic_paint(f, w, 0); PIXEL_CHECK(basic_seen(BASIC_TEXT, dd.iColor) > 0);
 	PIXEL_CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
+	/* The vector glyph path uses SVG stroke color, not text or atlas tint. */
+	dd.iKind = XUI_INPUT_DECORATION_ICON; dd.iIcon = XUI_INPUT_ICON_SEARCH;
+	dd.iColor = dd.iHoverColor = dd.iActiveColor = dd.iDisabledColor = 0;
+	PIXEL_CHECK(xuiInputDecorationSet(w, decoration, &dd) == XUI_OK);
+	control_event(w, XUI_EVENT_POINTER_LEAVE, (xui_rect_t){0});
+	basic_case(f, w, "input.decoration.color", 0, BASIC_SVG_STROKE);
+	PIXEL_CHECK(xuiWidgetSetEnabled(w, 0) == XUI_OK);
+	basic_case(f, w, "input.decoration.disabled_color", 0, BASIC_SVG_STROKE);
+	PIXEL_CHECK(xuiWidgetSetEnabled(w, 1) == XUI_OK);
+	control_event(w, XUI_EVENT_POINTER_MOVE, xuiInputDecorationGetRect(w, decoration));
+	basic_case(f, w, "input.decoration.hover_color", 0, BASIC_SVG_STROKE);
+	control_event(w, XUI_EVENT_POINTER_DOWN, xuiInputDecorationGetRect(w, decoration));
+	basic_case(f, w, "input.decoration.active_color", 0, BASIC_SVG_STROKE);
+	control_event(w, XUI_EVENT_POINTER_UP, xuiInputDecorationGetRect(w, decoration));
+	control_event(w, XUI_EVENT_POINTER_LEAVE, (xui_rect_t){0});
+	basic_cached_case(f, w, "input.decoration.color", BASIC_SVG_STROKE);
 	PIXEL_CHECK(xuiInputGetColors(w, NULL, &color, NULL, NULL) == XUI_OK && color == d.iTextColor);
 	xuiWidgetDestroy(w);
 }
