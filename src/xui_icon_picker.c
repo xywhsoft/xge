@@ -66,6 +66,8 @@ typedef struct xui_icon_picker_data_t {
 	uint32_t iItemHoverColor;
 	uint32_t iItemSelectedColor;
 	uint32_t iItemFocusColor;
+	uint32_t iChildStyleHash;
+	int bChildStyleSynced;
 	int iChangeCount;
 	char sTooltip[256];
 } xui_icon_picker_data_t;
@@ -185,6 +187,87 @@ static void __xuiIconPickerDefaults(xui_icon_picker_data_t* pData)
 	pData->iItemHoverColor = XUI_COLOR_RGBA(220, 238, 251, 255);
 	pData->iItemSelectedColor = XUI_COLOR_RGBA(190, 220, 246, 255);
 	pData->iItemFocusColor = XUI_COLOR_RGBA(42, 126, 205, 255);
+}
+
+static void __xuiIconPickerStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
+{
+	xui_style_property_t tProperty;
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR )
+		*pColor = tProperty.tValue.iColor;
+}
+
+static void __xuiIconPickerResolve(xui_widget pWidget, const xui_icon_picker_data_t* pData, xui_icon_picker_data_t* pResolved)
+{
+	xui_style_property_t tProperty;
+	xui_font pFont;
+	*pResolved = *pData;
+	pResolved->pFont = pData->pFont != NULL ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.text.color", &pResolved->iTextColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.placeholder.color", &pResolved->iPlaceholderColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.text.disabled_color", &pResolved->iDisabledTextColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.background.color", &pResolved->iBackgroundColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.background.hover_color", &pResolved->iHoverBackgroundColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.background.open_color", &pResolved->iOpenBackgroundColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.background.disabled_color", &pResolved->iDisabledBackgroundColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.border.color", &pResolved->iBorderColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.border.hover_color", &pResolved->iHoverBorderColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.border.focus_color", &pResolved->iFocusBorderColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.arrow.color", &pResolved->iArrowColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.arrow.disabled_color", &pResolved->iDisabledArrowColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.button.color", &pResolved->iButtonColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.button.hover_color", &pResolved->iButtonHoverColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.button.open_color", &pResolved->iButtonOpenColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.popup.panel_color", &pResolved->iPopupPanelColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.popup.border_color", &pResolved->iPopupBorderColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.popup.shadow_color", &pResolved->iPopupShadowColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.item.hover_color", &pResolved->iItemHoverColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.item.selected_color", &pResolved->iItemSelectedColor);
+	__xuiIconPickerStyleColor(pWidget, "iconpicker.item.focus_color", &pResolved->iItemFocusColor);
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, "font.name", &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_STRING && tProperty.tValue.sText != NULL ) {
+		pFont = xuiFindFont(xuiWidgetGetContext(pWidget), tProperty.tValue.sText);
+		if ( pFont != NULL ) pResolved->pFont = pFont;
+	}
+	if ( xuiWidgetGetResolvedStyleProperty(pWidget, "iconpicker.border.width", &tProperty) == XUI_OK &&
+	     tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT && __xuiIconPickerFloatValid(tProperty.tValue.fFloat) )
+		pResolved->fBorderWidth = tProperty.tValue.fFloat;
+}
+
+static int __xuiIconPickerApplyPopupColors(xui_widget pWidget, xui_icon_picker_data_t* pData)
+{
+	xui_icon_picker_data_t tResolved;
+	int iRet;
+	__xuiIconPickerResolve(pWidget, pData, &tResolved);
+	if ( pData->pPopup != NULL ) {
+		iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor,
+			tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, 0u);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pFrame != NULL &&
+	     xuiScrollFrameGetBackgroundColor(pData->pFrame) != tResolved.iPopupPanelColor ) {
+		iRet = xuiScrollFrameSetBackgroundColor(pData->pFrame, tResolved.iPopupPanelColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pViewport != NULL )
+		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
+}
+
+static int __xuiIconPickerSyncStyle(xui_widget pWidget, xui_icon_picker_data_t* pData)
+{
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int iRet;
+	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
+	iRet = __xuiIconPickerApplyPopupColors(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iChildStyleHash = iHash;
+	pData->bChildStyleSynced = 1;
+	return XUI_OK;
 }
 
 static int __xuiIconPickerSetPlaceholderData(xui_icon_picker_data_t* pData, const char* sText)
@@ -492,6 +575,7 @@ static int __xuiIconPickerDrawChevron(xui_proxy pProxy, xui_draw_context pDraw, 
 static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_icon_picker_data_t* pData;
+	xui_icon_picker_data_t tResolved;
 	xui_proxy pProxy;
 	xui_icon pIcon;
 	xui_font pFont;
@@ -518,6 +602,9 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	if ( (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)__xuiIconPickerSyncCategory(pWidget, pData);
 	(void)__xuiIconPickerUpdateRects(pWidget, pData);
+	iRet = __xuiIconPickerSyncStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiIconPickerResolve(pWidget, pData, &tResolved);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	bEnabled = xuiWidgetGetEnabled(pWidget);
@@ -525,15 +612,15 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	bHover = (xuiWidgetGetInputState(pWidget) & XUI_WIDGET_STATE_HOVER) != 0u;
 	bFocus = (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ||
 	          xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pData->pViewport);
-	iBackground = !bEnabled ? pData->iDisabledBackgroundColor :
-	              bOpen ? pData->iOpenBackgroundColor :
-	              bHover ? pData->iHoverBackgroundColor : pData->iBackgroundColor;
-	iButton = bOpen ? pData->iButtonOpenColor :
-	          bHover ? pData->iButtonHoverColor : pData->iButtonColor;
-	iBorder = bFocus ? pData->iFocusBorderColor :
-	          bHover ? pData->iHoverBorderColor : pData->iBorderColor;
-	iTextColor = bEnabled ? pData->iTextColor : pData->iDisabledTextColor;
-	iArrow = bEnabled ? pData->iArrowColor : pData->iDisabledArrowColor;
+	iBackground = !bEnabled ? tResolved.iDisabledBackgroundColor :
+	              bOpen ? tResolved.iOpenBackgroundColor :
+	              bHover ? tResolved.iHoverBackgroundColor : tResolved.iBackgroundColor;
+	iButton = bOpen ? tResolved.iButtonOpenColor :
+	          bHover ? tResolved.iButtonHoverColor : tResolved.iButtonColor;
+	iBorder = bFocus ? tResolved.iFocusBorderColor :
+	          bHover ? tResolved.iHoverBorderColor : tResolved.iBorderColor;
+	iTextColor = bEnabled ? tResolved.iTextColor : tResolved.iDisabledTextColor;
+	iArrow = bEnabled ? tResolved.iArrowColor : tResolved.iDisabledArrowColor;
 	tRect = xuiWidgetGetContentRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
@@ -571,9 +658,9 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	} else {
 		tText = pData->tValueRect;
 		snprintf(sValue, sizeof(sValue), "%s", (pData->sPlaceholder != NULL) ? pData->sPlaceholder : "");
-		iTextColor = bEnabled ? pData->iPlaceholderColor : pData->iDisabledTextColor;
+		iTextColor = bEnabled ? tResolved.iPlaceholderColor : tResolved.iDisabledTextColor;
 	}
-	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	pFont = tResolved.pFont;
 	if ( sValue[0] != '\0' && tText.fW > 0.0f && pFont != NULL && pProxy->drawText != NULL ) {
 		iRet = pProxy->drawText(pProxy, pDraw, pFont, sValue, xuiInternalSnapRect(tText), iTextColor,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -581,8 +668,8 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	}
 	iRet = __xuiIconPickerDrawChevron(pProxy, pDraw, pData->tButtonRect, bOpen, iArrow);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( pProxy->drawRectStroke != NULL && pData->fBorderWidth > 0.0f ) {
-		return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), pData->fBorderWidth, iBorder);
+	if ( pProxy->drawRectStroke != NULL && tResolved.fBorderWidth > 0.0f ) {
+		return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), tResolved.fBorderWidth, iBorder);
 	}
 	return XUI_OK;
 }
@@ -591,6 +678,7 @@ static int __xuiIconPickerViewportRender(xui_widget pViewport, xui_draw_context 
 {
 	xui_widget pWidget;
 	xui_icon_picker_data_t* pData;
+	xui_icon_picker_data_t tResolved;
 	xui_proxy pProxy;
 	xui_icon pIcon;
 	xui_rect_t tViewport;
@@ -611,13 +699,14 @@ static int __xuiIconPickerViewportRender(xui_widget pViewport, xui_draw_context 
 	pData = __xuiIconPickerGetData(pWidget);
 	if ( (pViewport == NULL) || (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)__xuiIconPickerSyncCategory(pWidget, pData);
+	__xuiIconPickerResolve(pWidget, pData, &tResolved);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	tViewport = xuiWidgetGetRect(pViewport);
 	tViewport.fX = 0.0f;
 	tViewport.fY = 0.0f;
 	if ( pProxy->drawRectFill != NULL ) {
-		iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tViewport), pData->iPopupPanelColor);
+		iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tViewport), tResolved.iPopupPanelColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	fOffsetY = 0.0f;
@@ -636,15 +725,15 @@ static int __xuiIconPickerViewportRender(xui_widget pViewport, xui_draw_context 
 		tCell = xuiInternalSnapRect(tCell);
 		tFill = xuiInternalInsetRect(tCell, 1.0f);
 		if ( i == pData->iSelectedIndex && pProxy->drawRectFill != NULL ) {
-			iRet = pProxy->drawRectFill(pProxy, pDraw, tFill, pData->iItemSelectedColor);
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tFill, tResolved.iItemSelectedColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( i == pData->iHoverIndex && pProxy->drawRectFill != NULL ) {
-			iRet = pProxy->drawRectFill(pProxy, pDraw, tFill, pData->iItemHoverColor);
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tFill, tResolved.iItemHoverColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( i == pData->iFocusIndex && pProxy->drawRectStroke != NULL &&
 		     xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pViewport ) {
-			iRet = pProxy->drawRectStroke(pProxy, pDraw, tFill, 1.0f, pData->iItemFocusColor);
+			iRet = pProxy->drawRectStroke(pProxy, pDraw, tFill, 1.0f, tResolved.iItemFocusColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		pIcon = (pData->pCategory != NULL) ? xuiIconFindById(pData->pCategory, pData->arrIds[i]) : NULL;
@@ -1024,12 +1113,13 @@ static int __xuiIconPickerUpdate(xui_widget pWidget, float fDelta, void* pUser)
 			(void)xuiPopupApplyPlacement(pData->pPopup);
 		}
 	}
-	return XUI_OK;
+	return __xuiIconPickerSyncStyle(pWidget, pData);
 }
 
 static int __xuiIconPickerContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_icon_picker_data_t* pData;
+	xui_icon_picker_data_t tResolved;
 	xui_proxy pProxy;
 	xui_font_metrics_t tMetrics;
 	xui_font pFont;
@@ -1041,7 +1131,8 @@ static int __xuiIconPickerContentMeasure(xui_widget pWidget, xui_vec2_t tConstra
 	pSize->fX = 190.0f;
 	pSize->fY = 32.0f;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
-	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	__xuiIconPickerResolve(pWidget, pData, &tResolved);
+	pFont = tResolved.pFont;
 	if ( pProxy != NULL && pProxy->fontGetMetrics != NULL && pFont != NULL &&
 	     pProxy->fontGetMetrics(pProxy, pFont, &tMetrics) == XUI_OK ) {
 		pSize->fY = __xuiIconPickerMax(32.0f, tMetrics.fLineHeight + 12.0f);
@@ -1209,7 +1300,7 @@ static int __xuiIconPickerApplyPopup(xui_widget pWidget, xui_icon_picker_data_t*
 	iRet = xuiPopupSetOwner(pData->pPopup, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusRestore(pData->pPopup, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetContentSize(pData->pPopup, fOuterContentWidth, fVisibleHeight);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetColors(pData->pPopup, pData->iPopupPanelColor, pData->iPopupBorderColor, pData->iPopupShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
+	if ( iRet == XUI_OK ) iRet = __xuiIconPickerApplyPopupColors(pWidget, pData);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetMetrics(pData->pPopup, XUI_ICON_PICKER_POPUP_PADDING, 1.0f, 5.0f);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetClosePolicy(pData->pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pViewport);
@@ -1301,6 +1392,52 @@ static xui_icon_picker_data_t* __xuiIconPickerGetData(xui_widget pWidget)
 	return (xui_icon_picker_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static void __xuiIconPickerRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+	static const char* arrColors[] = {
+		"iconpicker.text.color",
+		"iconpicker.placeholder.color",
+		"iconpicker.text.disabled_color",
+		"iconpicker.background.color",
+		"iconpicker.background.hover_color",
+		"iconpicker.background.open_color",
+		"iconpicker.background.disabled_color",
+		"iconpicker.border.color",
+		"iconpicker.border.hover_color",
+		"iconpicker.border.focus_color",
+		"iconpicker.arrow.color",
+		"iconpicker.arrow.disabled_color",
+		"iconpicker.button.color",
+		"iconpicker.button.hover_color",
+		"iconpicker.button.open_color",
+		"iconpicker.popup.panel_color",
+		"iconpicker.popup.border_color",
+		"iconpicker.popup.shadow_color",
+		"iconpicker.item.hover_color",
+		"iconpicker.item.selected_color",
+		"iconpicker.item.focus_color",
+	};
+	xui_style_property_info_t tInfo;
+	size_t i;
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.pWidgetType = pType;
+	tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+	tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	for ( i = 0; i < sizeof(arrColors) / sizeof(arrColors[0]); ++i ) {
+		tInfo.sName = arrColors[i];
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
+	tInfo.sName = "iconpicker.border.width";
+	tInfo.iValueType = XUI_STYLE_VALUE_FLOAT;
+	tInfo.iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
+	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	tInfo.sName = "font.name";
+	tInfo.iValueType = XUI_STYLE_VALUE_STRING;
+	tInfo.iFlags = XUI_STYLE_PROPERTY_INHERITED;
+	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+}
+
 XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1324,6 +1461,7 @@ XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
 	__xuiIconPickerDefaultLayout(&tDesc.tLayout);
 	__xuiIconPickerDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
+	if ( iRet == XUI_OK ) __xuiIconPickerRegisterStyleProperties(pContext, pType);
 	return (iRet == XUI_OK) ? pType : NULL;
 }
 

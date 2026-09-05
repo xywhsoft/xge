@@ -43,6 +43,12 @@ static int triangle(xui_proxy p, xui_draw_context d, xui_vec2_t a, xui_vec2_t b,
 { record_color(color); return original.drawTriangleFill(p, d, a, b, c, color); }
 static int draw_text(xui_proxy p, xui_draw_context d, xui_font f, const char* s, xui_rect_t r, uint32_t c, uint32_t flags)
 { record_color(c); return original.drawText(p, d, f, s, r, c, flags); }
+static int draw_svg(xui_proxy p, xui_draw_context d, const char* path, xui_rect_t view, xui_rect_t rect, const xui_path_style_t* style, float tolerance)
+{
+    record_color(style->iFillColor);
+    record_color(style->iStrokeColor);
+    return original.drawSvgPath(p, d, path, view, rect, style, tolerance);
+}
 static void setup(void)
 {
     xuiTestProxyInit(&proxy);
@@ -54,6 +60,7 @@ static void setup(void)
     proxy.tProxy.drawCircleStroke = circle_stroke;
     proxy.tProxy.drawTriangleFill = triangle;
     proxy.tProxy.drawText = draw_text;
+    proxy.tProxy.drawSvgPath = draw_svg;
     CHECK(xuiCreate(&context) == XUI_OK);
     CHECK(xuiSetProxy(context, &proxy.tProxy) == XUI_OK);
     CHECK(proxy.tProxy.fontLoadMemory(&proxy.tProxy, &font, "test", 4, 14.0f, XUI_FONT_FORMAT_TTF) == XUI_OK);
