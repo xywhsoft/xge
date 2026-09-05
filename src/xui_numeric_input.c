@@ -229,6 +229,7 @@ static void __xuiNumericInputResolve(xui_widget pWidget, const xui_numeric_input
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.border.focus_color", &pResolved->iFocusBorderColor);
 	pResolved->iDisabledBorderColor = (__xuiNumericInputAlpha(pResolved->iBorderColor) > 120) ?
 		__xuiNumericInputColorWithAlpha(pResolved->iBorderColor, 120) : pResolved->iBorderColor;
+	(void)__xuiNumericInputStyleColor(pWidget, "input.border.disabled_color", &pResolved->iDisabledBorderColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.border.disabled_color", &pResolved->iDisabledBorderColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.error.background_color", &pResolved->iErrorBackgroundColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.error.border_color", &pResolved->iErrorBorderColor);
@@ -958,9 +959,29 @@ static int __xuiNumericInputCacheRender(xui_widget pWidget, xui_draw_context pDr
 	__xuiNumericInputResolve(pWidget, pData, &tResolved);
 	__xuiNumericInputUpdateRects(pWidget, pData, &tResolved, NULL);
 	if ( (pData->pInput != NULL) && (pData->iChildStyleHash != xuiWidgetGetStyleHash(pWidget)) ) {
+		xui_widget pInput = pData->pInput;
+		xui_widget_cache_render_proc onRender = NULL;
+		xui_draw_context pChildDraw = NULL;
+		void* pChildUser = NULL;
+		xui_rect_t tChildRect = xuiWidgetGetRect(pInput);
+		uint32_t iChildState = xuiWidgetGetStateId(pInput);
+		(void)xuiWidgetResolveStyle(pInput);
+		(void)xuiWidgetGetCacheRenderCallback(pInput, &onRender, &pChildUser);
+		if ( onRender != NULL && xuiWidgetGetVisible(pInput) && tChildRect.fW > 0 && tChildRect.fH > 0 ) {
+			int iEndRet;
+			/* The child cache was visited before its owner. Repaint it in this
+			 * frame instead of deferring an inline/class color change one frame. */
+			iRet = xuiWidgetUpdateBegin(pInput, iChildState, XUI_WIDGET_UPDATE_CLEAR, 0, &pChildDraw);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = onRender(pInput, pChildDraw, iChildState, pChildUser);
+			if ( !xuiInternalWidgetIsValid(pInput) ) return XUI_OK;
+			iEndRet = xuiWidgetUpdateEnd(pInput, iChildState, pChildDraw);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( iEndRet != XUI_OK ) return iEndRet;
+			(void)xuiWidgetClearDirty(pInput, XUI_WIDGET_DIRTY_CACHE);
+		}
+		if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_OK;
 		pData->iChildStyleHash = xuiWidgetGetStyleHash(pWidget);
-		(void)xuiWidgetResolveStyle(pData->pInput);
-		(void)xuiWidgetInvalidate(pData->pInput, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	iState = __xuiNumericInputState(pWidget, pData);
 	tRect = xuiWidgetGetRect(pWidget);

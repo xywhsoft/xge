@@ -122,6 +122,7 @@ static void numeric_cases(pixel_fixture_t* f)
 	PIXEL_CHECK(xuiWidgetSetEnabled(w, 0) == XUI_OK);
 	basic_case(f, w, "numeric_input.background.disabled_color", 0, BASIC_FILL);
 	basic_case(f, w, "numeric_input.border.disabled_color", 0, BASIC_STROKE);
+	basic_case(f, w, "input.border.disabled_color", 0, BASIC_STROKE);
 	basic_case(f, w, "numeric_input.spinner.icon_disabled_color", 0, BASIC_TRIANGLE);
 	basic_case_on(f, w, input, "numeric_input.text.disabled_color", 0, BASIC_TEXT);
 	PIXEL_CHECK(xuiWidgetSetEnabled(w, 1) == XUI_OK);
@@ -136,6 +137,7 @@ static void numeric_cases(pixel_fixture_t* f)
 	basic_case_on(f, w, input, "numeric_input.placeholder.color", 0, BASIC_TEXT);
 	PIXEL_CHECK(xuiInputSetText(input, "12") == XUI_OK);
 	basic_cached_case(f, w, "numeric_input.text.color", BASIC_TEXT);
+	basic_render(f); basic_render(f);
 	p = basic_color("numeric_input.text.color", 0x98765432u);
 	PIXEL_CHECK(xuiWidgetSetInlineStyle(w, &p, 1) == XUI_OK);
 	basic_render(f); PIXEL_CHECK(basic_seen(BASIC_TEXT, 0x98765432u) > 0);

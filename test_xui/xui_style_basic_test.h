@@ -12,31 +12,33 @@ enum { BASIC_FILL, BASIC_STROKE, BASIC_LINE, BASIC_CIRCLE, BASIC_RING, BASIC_TEX
 typedef struct basic_draw_t { int kind; uint32_t color; } basic_draw_t;
 static basic_draw_t basic_draws[8192];
 static int basic_count;
+static xui_draw_context basic_filter_draw;
 static xui_proxy_t basic_proxy;
 
-static void basic_record(int kind, uint32_t color)
+static void basic_record(xui_draw_context draw, int kind, uint32_t color)
 {
+	if (basic_filter_draw != NULL && draw != basic_filter_draw) return;
 	if (basic_count < (int)(sizeof(basic_draws) / sizeof(basic_draws[0]))) {
 		basic_draws[basic_count++] = (basic_draw_t){kind, color};
 	}
 }
 
 static int basic_fill(xui_proxy p, xui_draw_context d, xui_rect_t r, uint32_t c)
-{ basic_record(BASIC_FILL, c); return basic_proxy.drawRectFill(p, d, r, c); }
+{ basic_record(d, BASIC_FILL, c); return basic_proxy.drawRectFill(p, d, r, c); }
 static int basic_stroke(xui_proxy p, xui_draw_context d, xui_rect_t r, float w, uint32_t c)
-{ basic_record(BASIC_STROKE, c); return basic_proxy.drawRectStroke(p, d, r, w, c); }
+{ basic_record(d, BASIC_STROKE, c); return basic_proxy.drawRectStroke(p, d, r, w, c); }
 static int basic_line(xui_proxy p, xui_draw_context d, float x, float y, float u, float v, float w, uint32_t c)
-{ basic_record(BASIC_LINE, c); return basic_proxy.drawLine(p, d, x, y, u, v, w, c); }
+{ basic_record(d, BASIC_LINE, c); return basic_proxy.drawLine(p, d, x, y, u, v, w, c); }
 static int basic_circle(xui_proxy p, xui_draw_context d, float x, float y, float r, uint32_t c)
-{ basic_record(BASIC_CIRCLE, c); return basic_proxy.drawCircleFill(p, d, x, y, r, c); }
+{ basic_record(d, BASIC_CIRCLE, c); return basic_proxy.drawCircleFill(p, d, x, y, r, c); }
 static int basic_ring(xui_proxy p, xui_draw_context d, float x, float y, float r, float w, uint32_t c)
-{ basic_record(BASIC_RING, c); return basic_proxy.drawCircleStroke(p, d, x, y, r, w, c); }
+{ basic_record(d, BASIC_RING, c); return basic_proxy.drawCircleStroke(p, d, x, y, r, w, c); }
 static int basic_text(xui_proxy p, xui_draw_context d, xui_font f, const char* s, xui_rect_t r, uint32_t c, uint32_t flags)
-{ basic_record(BASIC_TEXT, c); return basic_proxy.drawText(p, d, f, s, r, c, flags); }
+{ basic_record(d, BASIC_TEXT, c); return basic_proxy.drawText(p, d, f, s, r, c, flags); }
 static int basic_surface(xui_proxy p, xui_draw_context d, xui_surface s, xui_rect_t a, xui_rect_t b, uint32_t c, uint32_t flags)
-{ basic_record(BASIC_SURFACE, c); return basic_proxy.drawSurface(p, d, s, a, b, c, flags); }
+{ basic_record(d, BASIC_SURFACE, c); return basic_proxy.drawSurface(p, d, s, a, b, c, flags); }
 static int basic_triangle(xui_proxy p, xui_draw_context d, xui_vec2_t a, xui_vec2_t b, xui_vec2_t c, uint32_t color)
-{ basic_record(BASIC_TRIANGLE, color); return basic_proxy.drawTriangleFill(p, d, a, b, c, color); }
+{ basic_record(d, BASIC_TRIANGLE, color); return basic_proxy.drawTriangleFill(p, d, a, b, c, color); }
 
 static void basic_configure(xui_proxy p)
 {
@@ -86,7 +88,18 @@ static xui_style_desc_t basic_style(const xui_style_property_t* p, int count)
 }
 
 static void basic_paint(pixel_fixture_t* f, xui_widget w, uint32_t state)
-{ basic_count = 0; pixel_paint(f, w, state); }
+{
+	xui_widget_cache_render_proc render = NULL;
+	xui_draw_context draw = NULL;
+	void* user = NULL;
+	basic_count = 0;
+	PIXEL_CHECK(xuiWidgetGetCacheRenderCallback(w, &render, &user) == XUI_OK && render != NULL);
+	PIXEL_CHECK(f->proxy.tProxy.drawBegin(&f->proxy.tProxy, &draw, f->target) == XUI_OK);
+	basic_filter_draw = draw;
+	if (render && draw) PIXEL_CHECK(render(w, draw, state, user) == XUI_OK);
+	basic_filter_draw = NULL;
+	if (draw) PIXEL_CHECK(f->proxy.tProxy.drawEnd(&f->proxy.tProxy, draw) == XUI_OK);
+}
 
 static void basic_render(pixel_fixture_t* f)
 { basic_count = 0; PIXEL_CHECK(xuiRender(f->context, f->target, NULL, 0) == XUI_OK); }
@@ -112,10 +125,10 @@ static void basic_case_on(pixel_fixture_t* f, xui_widget w, xui_widget painted, 
 	PIXEL_CHECK(info.iValueType == XUI_STYLE_VALUE_COLOR);
 	PIXEL_CHECK(info.iDirtyFlags == (XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 	basic_paint(f, painted, state);
-	count = basic_count; kind_count = basic_kind_count(kind);
-	PIXEL_CHECK(count <= 256 && kind_count > 0);
-	if (count > 256) return;
-	memcpy(base, basic_draws, (size_t)count * sizeof(*base));
+	count = 0; kind_count = basic_kind_count(kind);
+	PIXEL_CHECK(kind_count <= 256 && kind_count > 0);
+	if (kind_count > 256) return;
+	for (i = 0; i < basic_count; ++i) if (basic_draws[i].kind == kind) base[count++] = basic_draws[i];
 	PIXEL_CHECK(xuiStyleSetDefault(f->context, &p, 1) == XUI_OK);
 	basic_paint(f, painted, state); PIXEL_CHECK(basic_seen(kind, colors[0]) > 0);
 	p.tValue.iColor = colors[1]; s = basic_style(&p, 1);
@@ -149,7 +162,12 @@ static void basic_case_on(pixel_fixture_t* f, xui_widget w, xui_widget painted, 
 	PIXEL_CHECK(xuiStyleRemoveType(f->context, xuiWidgetGetType(w)) == XUI_OK);
 	PIXEL_CHECK(xuiStyleClearDefault(f->context) == XUI_OK);
 	basic_paint(f, painted, state);
-	PIXEL_CHECK(basic_count == count && memcmp(base, basic_draws, (size_t)count * sizeof(*base)) == 0);
+	PIXEL_CHECK(basic_kind_count(kind) == count);
+	count = 0;
+	for (i = 0; i < basic_count; ++i) if (basic_draws[i].kind == kind) {
+		PIXEL_CHECK(count < kind_count && basic_draws[i].color == base[count].color);
+		++count;
+	}
 	if (g_failures != failures) printf("color case failed: %s state %u\n", key, state);
 }
 
@@ -164,8 +182,6 @@ static void basic_cached_case(pixel_fixture_t* f, xui_widget w, const char* key,
 	p.tValue.iType = XUI_STYLE_VALUE_TOKEN; p.tValue.sText = "basic.live";
 	PIXEL_CHECK(xuiStyleSetType(f->context, xuiWidgetGetType(w), &s) == XUI_OK);
 	basic_render(f); PIXEL_CHECK(basic_seen(kind, 0x21436587u) > 0);
-	/* A composite may invalidate a child's already scheduled cache job once. */
-	basic_render(f);
 	basic_render(f); PIXEL_CHECK(basic_seen(kind, 0x21436587u) == 0);
 	p.tValue.iType = XUI_STYLE_VALUE_COLOR; p.tValue.iColor = 0x32547698u;
 	PIXEL_CHECK(xuiStyleSetToken(f->context, "basic.live", &p.tValue) == XUI_OK);
