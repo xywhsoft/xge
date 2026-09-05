@@ -36,6 +36,7 @@ typedef struct xui_virtual_joystick_data_t {
 	uint32_t iBaseColor;
 	uint32_t iBaseActiveColor;
 	uint32_t iKnobColor;
+	uint32_t iKnobBorderColor;
 	uint32_t iKnobActiveColor;
 	uint32_t iRippleColor;
 	uint32_t iFocusColor;
@@ -64,6 +65,7 @@ static float __xuiVirtualJoystickClamp(float fValue, float fMin, float fMax)
 
 static uint32_t __xuiVirtualJoystickColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0u ) return iColor;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
@@ -153,6 +155,8 @@ static void __xuiVirtualJoystickResolve(xui_widget pWidget, const xui_virtual_jo
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.base.color", &pResolved->iBaseColor);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.base.active_color", &pResolved->iBaseActiveColor);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.knob.color", &pResolved->iKnobColor);
+	pResolved->iKnobBorderColor = XUI_COLOR_RGBA(255, 255, 255, 170);
+	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.knob.border_color", &pResolved->iKnobBorderColor);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.knob.active_color", &pResolved->iKnobActiveColor);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.ripple.color", &pResolved->iRippleColor);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.focus.color", &pResolved->iFocusColor);
@@ -723,11 +727,11 @@ static int __xuiVirtualJoystickCacheRender(xui_widget pWidget, xui_draw_context 
 			iKnobColor);
 		if ( iRet != XUI_OK ) {
 			(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, iKnobColor, 0);
-			(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, XUI_COLOR_RGBA(255, 255, 255, 170), 1);
+			(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, tResolved.iKnobBorderColor, 1);
 		}
 	} else {
 		(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, iKnobColor, 0);
-		(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, XUI_COLOR_RGBA(255, 255, 255, 170), 1);
+		(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, tResolved.iKnobBorderColor, 1);
 	}
 	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && !bDisabled && (pProxy->drawRectStroke != NULL) &&
 	     (__xuiVirtualJoystickAlpha(tResolved.iFocusColor) != 0u) ) {
@@ -926,6 +930,7 @@ static void __xuiVirtualJoystickRegisterStyleProperties(xui_context pContext, xu
 	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.base.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.base.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.knob.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.knob.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.knob.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.ripple.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

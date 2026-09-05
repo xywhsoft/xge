@@ -174,6 +174,7 @@ static float __xuiScrollBarLargeStep(const xui_scrollbar_data_t* pData)
 
 static uint32_t __xuiScrollBarColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0u ) return iColor;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 

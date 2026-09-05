@@ -19,6 +19,7 @@ typedef struct xui_slider_data_t {
 	uint32_t iFillHoverColor;
 	uint32_t iFillActiveColor;
 	uint32_t iKnobColor;
+	uint32_t iDisabledKnobColor;
 	uint32_t iKnobBorderColor;
 	uint32_t iFocusColor;
 	uint32_t iDisabledColor;
@@ -81,6 +82,7 @@ static void __xuiSliderNormalizeRange(float* pMin, float* pMax)
 
 static uint32_t __xuiSliderColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
+	if ( (iColor & 0xffu) == 0u ) return iColor;
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
@@ -215,6 +217,8 @@ static void __xuiSliderResolve(xui_widget pWidget, const xui_slider_data_t* pDat
 	(void)__xuiSliderStyleColor(pWidget, "slider.fill.hover_color", &pResolved->iFillHoverColor);
 	(void)__xuiSliderStyleColor(pWidget, "slider.fill.active_color", &pResolved->iFillActiveColor);
 	(void)__xuiSliderStyleColor(pWidget, "slider.knob.color", &pResolved->iKnobColor);
+	pResolved->iDisabledKnobColor = XUI_COLOR_RGBA(232, 237, 244, 255);
+	(void)__xuiSliderStyleColor(pWidget, "slider.knob.disabled_color", &pResolved->iDisabledKnobColor);
 	(void)__xuiSliderStyleColor(pWidget, "slider.knob.border_color", &pResolved->iKnobBorderColor);
 	(void)__xuiSliderStyleColor(pWidget, "slider.focus.color", &pResolved->iFocusColor);
 	(void)__xuiSliderStyleColor(pWidget, "slider.disabled.color", &pResolved->iDisabledColor);
@@ -780,7 +784,7 @@ static int __xuiSliderCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	tContent = xuiWidgetGetContentRect(pWidget);
 	iTrackColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? __xuiSliderColorWithAlpha(tResolved.iDisabledColor, 72) : tResolved.iTrackColor;
 	iFillColor = __xuiSliderFillForState(&tResolved, iStateId);
-	iKnobColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? XUI_COLOR_RGBA(232, 237, 244, 255) : tResolved.iKnobColor;
+	iKnobColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledKnobColor : tResolved.iKnobColor;
 	iBorderColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? __xuiSliderColorWithAlpha(tResolved.iKnobBorderColor, 105) : tResolved.iKnobBorderColor;
 	fTrackRadius = (tResolved.fTrackRadius >= 0.0f) ? tResolved.fTrackRadius : (__xuiSliderMinFloat(pData->tTrackRect.fW, pData->tTrackRect.fH) * 0.5f);
 	iRet = __xuiSliderDrawTrackFill(pProxy, pDraw, pData->tTrackRect, fTrackRadius, iTrackColor);
@@ -994,6 +998,7 @@ static void __xuiSliderRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.fill.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.fill.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.knob.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.knob.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.knob.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiSliderRegisterStyleProperty(pContext, pType, "slider.disabled.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
