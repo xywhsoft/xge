@@ -45,6 +45,8 @@
 | P2-4 | MessageList 字素边界命中和行内 caret 索引 | `e905f7e` |
 | P2-5 | MessageList 持久布局、增量失效和可见范围索引 | `7c4de78` |
 | P2-4/P2-7 集成 | MessageList 使用显示行绘制，零宽字符、SHY 连字符、合字命中和复制保持原文偏移 | `f6c3101` |
+| P2-7 文本框集成 | TextEdit 共享显示投影和源偏移几何，中文双击按字形命中，独立 IME 布局及无字体选区操作 | `566a9aa` |
+| P2-7 文字控件集成 | Label/Hyperlink/MsgBox/MsgTip/Toast 使用显示行，保留原文、对齐及样式，移除消费者逐行临时分配 | `26b2d9a` |
 | P2-8 | TreeView ID/邻接/可见索引，消除全树平方扫描 | `cd43175` |
 | P2-10 基础语义 | 常规控件角色/状态/动作、密码保护、provider 生命周期及延迟合并通知 | `04f346a` |
 | P2-11 | TILED/DISPLAY_LIST 明确返回 unsupported | `d918a52` |
@@ -63,16 +65,25 @@
 
 以上内存数字是结构容量模型，不是进程 RSS；不含 allocator 额外开销、代理纹理/字体和调用者缓冲。RichEdit 还不含文档与共享 flow/proxy 容量。
 
-## 进行中的工作
+## 本批验收
 
-- P2-7 集成：TextEdit 的共享显示布局、源偏移几何及独立 IME 布局；Label/Hyperlink/MsgBox/MsgTip/Toast 的显示行绘制。
-- 所有本轮集成后的全量回归与主线 DLL 重建。
+- 本轮集成后的 `test_xui/run_all_tests.bat`：149 组通过，0 失败，全程没有失败重试。
+- 本批修复、相关回归与主线产物重建已完成；原报告中的全库清理、架构演进和跨平台专项验收并未全部完成，具体边界见末节。
+
+## 主线产物
+
+- 源码版本：`26b2d9a`；隔离回归区与主线的 `src`、头文件、源码清单、`lib` 和 `test_xui` 内容一致。
+- 从主线重新构建 `build/xge.dll` 与 `build/xge.lib`，没有复制隔离工作区的 DLL。DLL 构建时间为 2026-09-05 19:34:44，大小 7363361 B。
+- DLL SHA256：`BD020981A402E7F092C3E941417847E3F6DF9498B4CE6CDBDDCA8FB6053871B8`。
+- 交付 DLL 的导出检查、DPI 1.0/2.0 输入坐标回归通过；两组原生离屏读回矩阵再次验证 960 + 1280 张图。
+- 重编译 12 个相关范例：`xui_textedit`、`xui_richedit`、`xui_messagelist`、`xui_label`、`xui_msgbox`、`xui_msgtip`、`xui_toast`、`xui_hyperlink`、`xui_tablegrid`、`xui_propertygrid`、`xui_split_layout_dock_repro`、`xui_terminal`，均输出到 `build/`；这项是构建验证，不替代逐个真机交互验收。
 
 ## 验证记录
 
 - 主线 `21c2686`：`test_xui/run_all_tests.bat`，126 组通过，0 失败。
 - 对应主线 `bdea276` 的隔离集成版本：`test_xui/run_all_tests.bat`，136 组通过，0 失败，没有失败重试；后续提交继续单独验证。
 - 对应主线 `5c4822d` 的隔离集成版本：`test_xui/run_all_tests.bat`，140 组通过，0 失败，没有失败重试。
+- 对应主线 `26b2d9a` 的隔离集成版本：先通过五类文字控件原有回归，再运行 `test_xui/run_all_tests.bat`，149 组通过，0 失败，没有失败重试。回归区与主线产品源码、依赖及测试内容一致。
 - TableView provider：完整矩阵 996 cases / 11335 checks 通过，包含此前公共层根销毁崩溃的全部 RENDER 组合；原有表格/布局/缓存/生命周期测试与 2240 张原生像素联合回归通过。
 - 公共渲染生命周期：2092 项 Windows 与 ASan/UBSan 检查通过，覆盖 SELF/SUBTREE、多状态缓存、普通/overlay 根、销毁控件/父级/根/上下文、替换根及销毁后继；校验 drawEnd 先于 surfaceDestroy。
 - TextEdit 析构：7 类 Windows/ASan/UBSan 回归通过，包含直接销毁、控件作为根、回调销毁、滚动后销毁和 32 次重复创建销毁。
@@ -80,6 +91,8 @@
 - RichEdit：原始 flow 独立参考的 14620 次几何、4300 次光标、4050 次命中比较一致，另有 81 项表格共享边、编辑器和可访问性边界检查；10000 个内嵌 widget 首帧 39 次布局、22 次排列，离屏焦点/IME/多指针捕获保留。
 - Unicode：58 项功能夹具通过；UAX14 15.0 为 7653 项通过、1 项精确记录的上游例外，UAX29 15.1 为 1187 项全部通过；构造与 DPI 失败重试、至百万 cluster 的操作数预算均通过。
 - MessageList 显示集成：14 类夹具覆盖代理 shaping、fallback 和 DPI；786432 字节冷态映射 1114112 次操作，32 次暖态命中 shaping/measure/display 重建为 0；32769 行深处命中仅解码 3 个原文 scalar。
+- TextEdit 显示集成：849 项 Windows 与 ASan/UBSan 检查通过，覆盖 SHY/ZWSP/WJ/FEFF、合字、中文双击两侧、原文复制、撤销、分配失败重试、DPI、独立 IME 和无字体操作；13 组原有相关回归、62 个无障碍用例和 7 类析构 sanitizer 回归通过。
+- 五类文字控件：13054 项 Windows 与 ASan/UBSan 检查通过，包含代理 shaping/fallback、字面输出、原文偏移、对齐/裁剪/颜色/下划线、显示失败恢复；12 次 64 行回归中消费者绘制分配均为 0，原有五组控件测试通过。
 - TreeView adapter 补查：16 类 callback 场景通过，另通过原有 TreeView、65536 节点规模、公共回调生命周期和输入测试。
 - 容器像素修复：Window 955、SplitLayout 320、DockPanel 1688 项新增检查通过；联合验证原有窗口/停靠/分隔/布局/布局代际/缓存/滚动/弹层/复合焦点/TreeView adapter 测试及 960 张原生像素比对。
 - 基础控件像素修复：五组新回归分别 4960/186170/18937/31789/73970 项检查通过，九个控件原有测试及像素几何、弹层、PropertyGrid、callback lifetime、复合焦点、缓存调度联合回归通过；960 张原生像素再次比对通过。
@@ -92,7 +105,7 @@
 
 ## 未宣称完成的边界
 
-- P3-2 的全库像素类型/历史浮点字段重命名尚未完成；部分度量 API 仍接受浮点。
+- P1-7/P3-2 尚未完成全库浮点到像素转换清理与历史字段重命名；上表像素验证限定为对应控件族。文字显示投影修复不等价于这些控件的全部分数几何均已验证，部分度量 API 仍接受浮点。
 - 原生矩阵不是全部控件的全部状态覆盖；弹层翻转、编辑器选区/IME、多语言排版还需扩大自动化矩阵。
 - 虚拟 DPI 测试不等价于真实多显示器间 DPI 迁移，也不等价于所有 OS 输入后端实测。
 - 原生 accessibility 平台桥接、屏幕阅读器、虚拟集合语义和 live region 仍需专项验收。
