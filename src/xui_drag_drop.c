@@ -241,23 +241,78 @@ static int __xuiDragEffectValid(uint32_t iEffect, uint32_t iAllowed)
 		(iEffect & iAllowed) != 0u;
 }
 
+typedef struct xui_drag_dispatch_t {
+	struct xui_drag_dispatch_t* pPrevious;
+	uint64_t iSessionId;
+	uint64_t iRevision;
+	xui_widget pTarget;
+	int bNegotiating;
+} xui_drag_dispatch_t;
+
+typedef struct xui_drag_detach_t {
+	struct xui_drag_detach_t* pPrevious;
+	xui_widget pWidget;
+} xui_drag_detach_t;
+
+static int __xuiDragContextReady(xui_context pContext)
+{
+	return xuiInternalContextIsValid(pContext) &&
+		!pContext->bDestroyPending && !pContext->bDestroying;
+}
+
+static int __xuiDragCurrent(xui_context pContext, uint64_t iSessionId,
+	uint64_t iRevision)
+{
+	return __xuiDragContextReady(pContext) && pContext->bTransferActive &&
+		pContext->iDragSessionId == iSessionId && pContext->iDragRevision == iRevision;
+}
+
+static int __xuiDragContains(xui_widget pRoot, xui_widget pWidget)
+{
+	for ( ; pWidget != NULL; pWidget = pWidget->pParent ) {
+		if ( pWidget == pRoot ) return 1;
+	}
+	return 0;
+}
+
+static int __xuiDragWidgetAvailable(xui_context pContext, xui_widget pWidget)
+{
+	xui_drag_detach_t* pDetach;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) || pWidget->pContext != pContext ) return 0;
+	for ( pDetach = pContext->pDragDetach; pDetach != NULL; pDetach = pDetach->pPrevious ) {
+		if ( __xuiDragContains(pDetach->pWidget, pWidget) ) return 0;
+	}
+	return 1;
+}
+
 static xui_widget __xuiDragTargetAt(xui_context pContext, int iX, int iY)
 {
 	xui_widget pTarget;
 
 	pTarget = xuiHitTest(pContext, iX, iY, XUI_WIDGET_HIT_DEFAULT);
-	while ( pTarget != NULL && !pTarget->bDropEnabled ) pTarget = pTarget->pParent;
-	return pTarget;
+	while ( __xuiDragWidgetAvailable(pContext, pTarget) ) {
+		if ( pTarget->bDropEnabled ) return pTarget;
+		pTarget = pTarget->pParent;
+	}
+	return NULL;
 }
 
+static void __xuiDragClear(xui_context pContext, int bKeepEffect);
+
 static int __xuiDragDispatch(xui_context pContext, int iType,
-	xui_widget pTarget, xui_widget pRelated)
+	xui_widget pTarget, xui_widget pRelated, int bCancel)
 {
+	xui_drag_dispatch_t tDispatch;
 	xui_drag_event_data_t tDrag;
 	xui_event_t tEvent;
 	int iRet;
 
-	if ( pTarget == NULL ) return XUI_OK;
+	tDispatch.pPrevious = pContext->pDragDispatch;
+	tDispatch.iSessionId = pContext->iDragSessionId;
+	tDispatch.iRevision = pContext->iDragRevision;
+	tDispatch.pTarget = pTarget;
+	tDispatch.bNegotiating = (iType != XUI_EVENT_DRAG_LEAVE);
 	memset(&tDrag, 0, sizeof(tDrag));
 	tDrag.iSize = sizeof(tDrag);
 	tDrag.pData = pContext->pTransferData;
@@ -271,7 +326,7 @@ static int __xuiDragDispatch(xui_context pContext, int iType,
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iType = iType;
 	tEvent.pTarget = pTarget;
-	tEvent.pRelated = pRelated;
+	tEvent.pRelated = __xuiDragWidgetAvailable(pContext, pRelated) ? pRelated : NULL;
 	tEvent.fX = pContext->fPointerX;
 	tEvent.fY = pContext->fPointerY;
 	tEvent.iButtons = pContext->iPointerButtons;
@@ -279,10 +334,23 @@ static int __xuiDragDispatch(xui_context pContext, int iType,
 	tEvent.iPointerId = pContext->iInputPointerId;
 	tEvent.iPointerType = pContext->iInputPointerType;
 	tEvent.pData = &tDrag;
-	pContext->iDragEffect = XUI_DRAG_EFFECT_NONE;
-	pContext->bDragNegotiating = (iType != XUI_EVENT_DRAG_LEAVE);
-	iRet = xuiDispatchEvent(pContext, &tEvent);
-	pContext->bDragNegotiating = 0;
+	if ( bCancel ) {
+		/* Retire before LEAVE; the dispatch now owns the former session reference. */
+		pContext->pTransferData = NULL;
+		__xuiDragClear(pContext, 0);
+	} else {
+		iRet = xuiDataObjectAddRef(tDrag.pData);
+		if ( iRet != XUI_OK ) return iRet;
+		pContext->iDragEffect = XUI_DRAG_EFFECT_NONE;
+	}
+	pContext->pDragDispatch = &tDispatch;
+	iRet = XUI_OK;
+	if ( __xuiDragContextReady(pContext) && xuiInternalWidgetIsValid(pTarget) ) {
+		iRet = xuiDispatchEvent(pContext, &tEvent);
+	}
+	/* Restore the call stack, not the possibly replaced session's negotiation state. */
+	pContext->pDragDispatch = tDispatch.pPrevious;
+	xuiDataObjectRelease(tDrag.pData);
 	return iRet;
 }
 
@@ -290,6 +358,7 @@ static void __xuiDragClear(xui_context pContext, int bKeepEffect)
 {
 	xui_data_object pData = pContext->pTransferData;
 
+	pContext->iDragSessionId++;
 	pContext->pTransferData = NULL;
 	pContext->pDragSource = NULL;
 	pContext->pDropTarget = NULL;
@@ -299,15 +368,15 @@ static void __xuiDragClear(xui_context pContext, int bKeepEffect)
 	pContext->iDragEffect = XUI_DRAG_EFFECT_NONE;
 	pContext->bTransferActive = 0;
 	pContext->bTransferExternal = 0;
-	pContext->bDragNegotiating = 0;
+	pContext->bTransferDropping = 0;
 	if ( pData != NULL ) xuiDataObjectRelease(pData);
 }
 
-XUI_API int xuiDragBegin(xui_context pContext, xui_widget pSource,
+static int __xuiDragBeginOperation(xui_context pContext, xui_widget pSource,
 	xui_data_object pData, uint32_t iAllowedEffects, uint32_t iSuggestedEffect)
 {
-	if ( !xuiInternalContextIsValid(pContext) ||
-		!xuiInternalWidgetIsValid(pSource) || pSource->pContext != pContext ||
+	if ( !__xuiDragContextReady(pContext) ||
+		!__xuiDragWidgetAvailable(pContext, pSource) ||
 		!__xuiDataObjectValid(pData) ||
 		(iAllowedEffects & XUI_DRAG_EFFECT_MASK) == 0u ||
 		(iAllowedEffects & ~XUI_DRAG_EFFECT_MASK) != 0u ||
@@ -317,6 +386,7 @@ XUI_API int xuiDragBegin(xui_context pContext, xui_widget pSource,
 	}
 	if ( pContext->bTransferActive ) return XUI_ERROR_INVALID_STATE;
 	if ( xuiDataObjectAddRef(pData) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext->iDragSessionId++;
 	pContext->pTransferData = pData;
 	pContext->pDragSource = pSource;
 	pContext->iDragAllowedEffects = iAllowedEffects;
@@ -328,10 +398,26 @@ XUI_API int xuiDragBegin(xui_context pContext, xui_widget pSource,
 		pContext->fPointerY, pContext->iInputModifiers);
 }
 
+XUI_API int xuiDragBegin(xui_context pContext, xui_widget pSource,
+	xui_data_object pData, uint32_t iAllowedEffects, uint32_t iSuggestedEffect)
+{
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiDragBeginOperation(pContext, pSource, pData, iAllowedEffects, iSuggestedEffect);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
 XUI_API int xuiDragAccept(xui_context pContext, uint32_t iEffect)
 {
-	if ( !xuiInternalContextIsValid(pContext) || !pContext->bTransferActive ||
-		!pContext->bDragNegotiating ) return XUI_ERROR_INVALID_STATE;
+	xui_drag_dispatch_t* pDispatch;
+
+	if ( !__xuiDragContextReady(pContext) ) return XUI_ERROR_INVALID_STATE;
+	pDispatch = pContext->pDragDispatch;
+	if ( pDispatch == NULL || !pDispatch->bNegotiating ||
+		!__xuiDragCurrent(pContext, pDispatch->iSessionId, pDispatch->iRevision) ||
+		pContext->pDropTarget != pDispatch->pTarget ||
+		!__xuiDragWidgetAvailable(pContext, pDispatch->pTarget) ) return XUI_ERROR_INVALID_STATE;
 	if ( !__xuiDragEffectValid(iEffect, pContext->iDragAllowedEffects) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -339,72 +425,108 @@ XUI_API int xuiDragAccept(xui_context pContext, uint32_t iEffect)
 	return XUI_OK;
 }
 
-int xuiInternalDragTransferMove(xui_context pContext, int iX, int iY,
-	uint32_t iModifiers)
+static int __xuiDragMove(xui_context pContext, int iX, int iY,
+	uint32_t iModifiers, uint64_t iSessionId, uint64_t iRevision)
 {
 	xui_widget pOldTarget;
 	xui_widget pTarget;
 	int iRet;
 
-	if ( !xuiInternalContextIsValid(pContext) || !pContext->bTransferActive ) {
-		return XUI_OK;
-	}
 	pContext->fPointerX = iX;
 	pContext->fPointerY = iY;
 	pContext->iInputModifiers = iModifiers;
 	pOldTarget = pContext->pDropTarget;
 	pTarget = __xuiDragTargetAt(pContext, iX, iY);
+	if ( !__xuiDragCurrent(pContext, iSessionId, iRevision) ) return XUI_OK;
 	if ( pTarget != pOldTarget ) {
+		/* A nested cancel/move must not send LEAVE to this target again. */
+		pContext->pDropTarget = NULL;
 		if ( pOldTarget != NULL ) {
 			iRet = __xuiDragDispatch(pContext, XUI_EVENT_DRAG_LEAVE,
-				pOldTarget, pTarget);
+				pOldTarget, pTarget, 0);
 			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiDragCurrent(pContext, iSessionId, iRevision) ) return XUI_OK;
+			pTarget = __xuiDragTargetAt(pContext, iX, iY);
+			if ( !__xuiDragCurrent(pContext, iSessionId, iRevision) ) return XUI_OK;
 		}
 		pContext->pDropTarget = pTarget;
 		pContext->iDragEffect = XUI_DRAG_EFFECT_NONE;
 		if ( pTarget != NULL ) {
 			return __xuiDragDispatch(pContext, XUI_EVENT_DRAG_ENTER,
-				pTarget, pOldTarget);
+				pTarget, pOldTarget, 0);
 		}
 		return XUI_OK;
 	}
 	if ( pTarget != NULL ) {
-		return __xuiDragDispatch(pContext, XUI_EVENT_DRAG_OVER, pTarget, NULL);
+		return __xuiDragDispatch(pContext, XUI_EVENT_DRAG_OVER, pTarget, NULL, 0);
 	}
 	pContext->iDragEffect = XUI_DRAG_EFFECT_NONE;
 	return XUI_OK;
 }
 
+int xuiInternalDragTransferMove(xui_context pContext, int iX, int iY,
+	uint32_t iModifiers)
+{
+	int iRet = XUI_OK;
+	xuiInternalOperationEnter(pContext);
+	if ( __xuiDragContextReady(pContext) && pContext->bTransferActive ) {
+		uint64_t iRevision = ++pContext->iDragRevision;
+		iRet = __xuiDragMove(pContext, iX, iY, iModifiers,
+			pContext->iDragSessionId, iRevision);
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+static int __xuiDragDropOperation(xui_context pContext, int iX, int iY,
+	uint32_t iModifiers)
+{
+	uint64_t iSessionId;
+	uint64_t iRevision;
+	int iRet;
+
+	if ( !__xuiDragContextReady(pContext) || !pContext->bTransferActive ||
+		pContext->bTransferDropping ) {
+		return XUI_OK;
+	}
+	iSessionId = pContext->iDragSessionId;
+	iRevision = ++pContext->iDragRevision;
+	pContext->bTransferDropping = 1;
+	iRet = __xuiDragMove(pContext, iX, iY, iModifiers, iSessionId, iRevision);
+	if ( iRet != XUI_OK || !__xuiDragCurrent(pContext, iSessionId, iRevision) ) goto done;
+	if ( pContext->pDropTarget != NULL ) {
+		iRet = __xuiDragDispatch(pContext, XUI_EVENT_DROP,
+			pContext->pDropTarget, NULL, 0);
+		if ( iRet != XUI_OK || !__xuiDragCurrent(pContext, iSessionId, iRevision) ) goto done;
+	}
+	pContext->iDragLastEffect = pContext->iDragEffect;
+	__xuiDragClear(pContext, 1);
+done:
+	if ( pContext->iDragSessionId == iSessionId ) pContext->bTransferDropping = 0;
+	return iRet;
+}
+
 int xuiInternalDragTransferDrop(xui_context pContext, int iX, int iY,
 	uint32_t iModifiers)
 {
-	uint32_t iEffect;
 	int iRet;
-
-	if ( !xuiInternalContextIsValid(pContext) || !pContext->bTransferActive ) {
-		return XUI_OK;
-	}
-	iRet = xuiInternalDragTransferMove(pContext, iX, iY, iModifiers);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( pContext->pDropTarget != NULL ) {
-		iRet = __xuiDragDispatch(pContext, XUI_EVENT_DROP,
-			pContext->pDropTarget, NULL);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iEffect = pContext->iDragEffect;
-	pContext->iDragLastEffect = iEffect;
-	__xuiDragClear(pContext, 1);
-	return XUI_OK;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiDragDropOperation(pContext, iX, iY, iModifiers);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 void xuiInternalDragTransferCancel(xui_context pContext)
 {
 	if ( !xuiInternalContextIsValid(pContext) || !pContext->bTransferActive ) return;
+	xuiInternalOperationEnter(pContext);
 	if ( pContext->pDropTarget != NULL ) {
 		(void)__xuiDragDispatch(pContext, XUI_EVENT_DRAG_LEAVE,
-			pContext->pDropTarget, NULL);
+			pContext->pDropTarget, NULL, 1);
+	} else {
+		__xuiDragClear(pContext, 0);
 	}
-	__xuiDragClear(pContext, 0);
+	xuiInternalOperationLeave(pContext);
 }
 
 XUI_API int xuiDragCancel(xui_context pContext)
@@ -426,24 +548,36 @@ XUI_API uint32_t xuiDragGetEffect(xui_context pContext)
 		pContext->iDragLastEffect;
 }
 
-XUI_API int xuiDragExternalEvent(xui_context pContext, int iType,
+static int __xuiDragExternalEventOperation(xui_context pContext, int iType,
 	int iX, int iY, uint32_t iModifiers, xui_data_object pData,
 	uint32_t iAllowedEffects, uint32_t iSuggestedEffect, uint32_t* pEffect)
 {
 	int iRet = XUI_OK;
 
-	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiDragContextReady(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iType == XUI_DRAG_EXTERNAL_ENTER ) {
-		if ( pContext->bTransferActive ) xuiInternalDragTransferCancel(pContext);
+		uint64_t iSessionId = pContext->iDragSessionId;
+		/* Pin incoming data before cancellation, including a borrowed current payload. */
 		if ( !__xuiDataObjectValid(pData) ||
 			(iAllowedEffects & XUI_DRAG_EFFECT_MASK) == 0u ||
 			(iAllowedEffects & ~XUI_DRAG_EFFECT_MASK) != 0u ||
 			(iSuggestedEffect != 0u &&
 			 !__xuiDragEffectValid(iSuggestedEffect, iAllowedEffects)) ) {
-			return XUI_ERROR_INVALID_ARGUMENT;
+			iRet = XUI_ERROR_INVALID_ARGUMENT;
+		} else {
+			iRet = xuiDataObjectAddRef(pData);
 		}
-		iRet = xuiDataObjectAddRef(pData);
+		if ( pContext->bTransferActive ) {
+			iSessionId++;
+			xuiInternalDragTransferCancel(pContext);
+		}
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiDragContextReady(pContext) || pContext->iDragSessionId != iSessionId ) {
+			xuiDataObjectRelease(pData);
+			if ( pEffect != NULL ) *pEffect = XUI_DRAG_EFFECT_NONE;
+			return XUI_OK;
+		}
+		pContext->iDragSessionId++;
 		pContext->pTransferData = pData;
 		pContext->iDragAllowedEffects = iAllowedEffects;
 		pContext->iDragSuggestedEffect = iSuggestedEffect;
@@ -467,38 +601,44 @@ XUI_API int xuiDragExternalEvent(xui_context pContext, int iType,
 	} else {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pEffect != NULL ) *pEffect = xuiDragGetEffect(pContext);
+	if ( pEffect != NULL ) {
+		*pEffect = __xuiDragContextReady(pContext) ? xuiDragGetEffect(pContext) : XUI_DRAG_EFFECT_NONE;
+	}
+	return iRet;
+}
+
+XUI_API int xuiDragExternalEvent(xui_context pContext, int iType,
+	int iX, int iY, uint32_t iModifiers, xui_data_object pData,
+	uint32_t iAllowedEffects, uint32_t iSuggestedEffect, uint32_t* pEffect)
+{
+	int iRet;
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiDragExternalEventOperation(pContext, iType, iX, iY, iModifiers,
+		pData, iAllowedEffects, iSuggestedEffect, pEffect);
+	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
 
 void xuiInternalDragTransferDetachWidget(xui_context pContext, xui_widget pWidget)
 {
-	xui_widget pScan;
+	xui_drag_detach_t tDetach;
 
 	if ( !xuiInternalContextIsValid(pContext) || !pContext->bTransferActive ||
 		pWidget == NULL ) return;
-	for ( pScan = pContext->pDragSource; pScan != NULL; pScan = pScan->pParent ) {
-		if ( pScan == pWidget ) {
-			xuiInternalDragTransferCancel(pContext);
-			return;
-		}
+	xuiInternalOperationEnter(pContext);
+	tDetach.pPrevious = pContext->pDragDetach;
+	tDetach.pWidget = pWidget;
+	pContext->pDragDetach = &tDetach;
+	if ( __xuiDragContains(pWidget, pContext->pDragSource) ||
+		__xuiDragContains(pWidget, pContext->pDropTarget) ) {
+		xuiInternalDragTransferCancel(pContext);
 	}
-	for ( pScan = pContext->pDropTarget; pScan != NULL; pScan = pScan->pParent ) {
-		if ( pScan == pWidget ) {
-			xuiInternalDragTransferCancel(pContext);
-			return;
-		}
-	}
+	pContext->pDragDetach = tDetach.pPrevious;
+	xuiInternalOperationLeave(pContext);
 }
 
 void xuiInternalDragTransferShutdown(xui_context pContext)
 {
 	if ( pContext == NULL ) return;
-	if ( pContext->pTransferData != NULL ) {
-		xuiDataObjectRelease(pContext->pTransferData);
-		pContext->pTransferData = NULL;
-	}
-	pContext->bTransferActive = 0;
-	pContext->pDragSource = NULL;
-	pContext->pDropTarget = NULL;
+	__xuiDragClear(pContext, 0);
 }

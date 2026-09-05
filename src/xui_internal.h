@@ -217,13 +217,17 @@ struct xui_context_t {
 	xui_data_object pTransferData;
 	xui_widget pDragSource;
 	xui_widget pDropTarget;
+	uint64_t iDragSessionId;
+	uint64_t iDragRevision;
+	struct xui_drag_dispatch_t* pDragDispatch;
+	struct xui_drag_detach_t* pDragDetach;
 	uint32_t iDragAllowedEffects;
 	uint32_t iDragSuggestedEffect;
 	uint32_t iDragEffect;
 	uint32_t iDragLastEffect;
 	int bTransferActive;
 	int bTransferExternal;
-	int bDragNegotiating;
+	int bTransferDropping;
 	xui_widget pContextPressWidget;
 	xui_pointer_state_t arrPointerStates[XUI_POINTER_MAX];
 	int iPointerStateCount;
