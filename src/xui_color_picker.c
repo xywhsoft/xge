@@ -1012,14 +1012,12 @@ static int __xuiColorPickerDrawTrack(xui_proxy pProxy, xui_draw_context pDraw, x
 	return XUI_OK;
 }
 
-static int __xuiColorPickerSyncStyle(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiColorPickerSyncStyle(xui_widget pWidget)
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
 	xui_color_picker_data_t tResolved;
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	int iRet;
-	(void)fDelta;
-	(void)pUser;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
 	__xuiColorPickerResolve(pWidget, pData, &tResolved);
@@ -1064,8 +1062,6 @@ static int __xuiColorPickerCacheRender(xui_widget pWidget, xui_draw_context pDra
 	}
 	__xuiColorPickerResolve(pWidget, pData, &tResolved);
 	__xuiColorPickerUpdateOwnerRects(pWidget, pData);
-	iRet = __xuiColorPickerSyncStyle(pWidget, 0.0f, NULL);
-	if ( iRet != XUI_OK ) return iRet;
 	iState = __xuiColorPickerState(pWidget, pData);
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
@@ -2198,7 +2194,6 @@ XUI_API xui_widget_type xuiColorPickerGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiColorPickerDestroy;
 	tDesc.onContentMeasure = __xuiColorPickerContentMeasure;
 	tDesc.onCacheRender = __xuiColorPickerCacheRender;
-	tDesc.onUpdate = __xuiColorPickerSyncStyle;
 	__xuiColorPickerDefaultLayout(&tDesc.tLayout);
 	__xuiColorPickerDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
@@ -2206,6 +2201,7 @@ XUI_API xui_widget_type xuiColorPickerGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiColorPickerRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiColorPickerSyncStyle;
 	return pType;
 }
 

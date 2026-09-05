@@ -56,6 +56,7 @@ int main(void)
     attach(w);
     data = __xuiColorPickerGetData(w);
     test_colors(w, data, colors, sizeof(colors) / sizeof(colors[0]), resolved);
+    test_owner_colors(w, data, colors, 14, xuiColorPickerOpen, xuiColorPickerClose);
     phase = "colorpicker button states";
     CHECK(xuiColorPickerSetButtonColors(w, 0x912345ffu, 0x923456ffu, 0x934567ffu) == XUI_OK);
     inline_color(w, "colorpicker.button.color", 0xa12345ffu);
@@ -90,6 +91,8 @@ int main(void)
         CHECK(has_color(palette[0]) && has_color(palette[1]));
         inline_color(w, colors[i].key, 0);
         paint(); CHECK(!has_color(value));
+        inline_color(w, colors[i].key, 0xabcdef00u);
+        prepare_only(); CHECK(!has_color(value) && !has_color(0xabcdefffu));
         CHECK(xuiWidgetSetInlineStyle(w, NULL, 0) == XUI_OK);
         paint(); CHECK(has_color(before));
     }
@@ -114,5 +117,7 @@ int main(void)
         for (i = 0; i < 3; ++i) CHECK(xuiColorPickerGetPaletteColor(w, i) == palette[i]);
         CHECK(xuiColorPickerGetColor(w) == 0x1267ab00u);
     }
+    test_live_token(w, "colorpicker.popup.panel_color", data->iPopupPanelColor);
+    test_prepare_only(w, data->pPanel, "colorpicker.popup.text_color", data->iPopupTextColor);
     return finish();
 }
