@@ -112,10 +112,11 @@ static int __xuiScrollViewContentRect(xui_scroll_view_data_t* pData, float fView
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiScrollFrameGetOffset(pData->pFrame, &fOffsetX, &fOffsetY);
 	if ( iRet != XUI_OK ) return iRet;
-	pContent->fX = -fOffsetX;
-	pContent->fY = -fOffsetY;
-	pContent->fW = __xuiScrollViewMaxFloat(fContentW, fViewportW);
-	pContent->fH = __xuiScrollViewMaxFloat(fContentH, fViewportH);
+	/* Scrolling translates an already laid out pixel span; it must not resize it. */
+	*pContent = xuiInternalRectFromFloatNearest(0.0f, 0.0f,
+		__xuiScrollViewMaxFloat(fContentW, fViewportW), __xuiScrollViewMaxFloat(fContentH, fViewportH));
+	pContent->fX = xuiInternalSnapPixel(-fOffsetX);
+	pContent->fY = xuiInternalSnapPixel(-fOffsetY);
 	return XUI_OK;
 }
 

@@ -196,6 +196,8 @@ static void __xuiScrollFrameComputeShow(const xui_scroll_frame_data_t* pData, fl
 static void __xuiScrollFrameComputeRects(const xui_scroll_frame_data_t* pData, xui_rect_t tContent, xui_rect_t* pViewport, xui_rect_t* pHBar, xui_rect_t* pVBar, xui_rect_t* pCorner, int* pShowH, int* pShowV, int* pShowCorner)
 {
 	float fReserve;
+	float fViewportW;
+	float fViewportH;
 	int bShowH;
 	int bShowV;
 	int bShowCorner;
@@ -209,33 +211,21 @@ static void __xuiScrollFrameComputeRects(const xui_scroll_frame_data_t* pData, x
 	memset(&tCorner, 0, sizeof(tCorner));
 	fReserve = __xuiScrollFrameReserveSize(pData);
 	__xuiScrollFrameComputeShow(pData, tContent.fW, tContent.fH, &bShowH, &bShowV);
-	tViewport = tContent;
-	tViewport.fW = __xuiScrollFrameMaxFloat(0.0f, tContent.fW - (bShowV ? fReserve : 0.0f));
-	tViewport.fH = __xuiScrollFrameMaxFloat(0.0f, tContent.fH - (bShowH ? fReserve : 0.0f));
+	fViewportW = __xuiScrollFrameMaxFloat(0.0f, tContent.fW - (bShowV ? fReserve : 0.0f));
+	fViewportH = __xuiScrollFrameMaxFloat(0.0f, tContent.fH - (bShowH ? fReserve : 0.0f));
+	tViewport = xuiInternalRectFromFloatNearest(tContent.fX, tContent.fY, fViewportW, fViewportH);
 	if ( bShowH ) {
-		tHBar.fX = tViewport.fX;
-		tHBar.fY = tViewport.fY + tViewport.fH;
-		tHBar.fW = tViewport.fW;
-		tHBar.fH = fReserve;
-		if ( !bShowV ) {
-			tHBar.fW = tContent.fW;
-		}
+		tHBar = xuiInternalRectFromFloatNearest(tContent.fX, tContent.fY + fViewportH,
+			fViewportW, fReserve);
 	}
 	if ( bShowV ) {
-		tVBar.fX = tViewport.fX + tViewport.fW;
-		tVBar.fY = tViewport.fY;
-		tVBar.fW = fReserve;
-		tVBar.fH = tViewport.fH;
-		if ( !bShowH ) {
-			tVBar.fH = tContent.fH;
-		}
+		tVBar = xuiInternalRectFromFloatNearest(tContent.fX + fViewportW, tContent.fY,
+			fReserve, fViewportH);
 	}
 	bShowCorner = bShowH && bShowV && (pData->iCornerMode != XUI_SCROLL_FRAME_CORNER_NONE);
 	if ( bShowCorner ) {
-		tCorner.fX = tViewport.fX + tViewport.fW;
-		tCorner.fY = tViewport.fY + tViewport.fH;
-		tCorner.fW = fReserve;
-		tCorner.fH = fReserve;
+		tCorner = xuiInternalRectFromFloatNearest(tContent.fX + fViewportW,
+			tContent.fY + fViewportH, fReserve, fReserve);
 	}
 	if ( pViewport != NULL ) *pViewport = tViewport;
 	if ( pHBar != NULL ) *pHBar = tHBar;
@@ -407,10 +397,10 @@ static int __xuiScrollFrameCacheRender(xui_widget pWidget, xui_draw_context pDra
 			fStep = 2.0f;
 		}
 		for ( i = 1; i <= 3; i++ ) {
-			tGrip.fW = fStep * (float)i;
-			tGrip.fH = 1.0f;
-			tGrip.fX = pData->tCornerRect.fX + pData->tCornerRect.fW - tGrip.fW - 2.0f;
-			tGrip.fY = pData->tCornerRect.fY + pData->tCornerRect.fH - (float)i * 3.0f - 1.0f;
+			tGrip = xuiInternalRectFromFloatNearest(
+				pData->tCornerRect.fX + pData->tCornerRect.fW - fStep * (float)i - 2.0f,
+				pData->tCornerRect.fY + pData->tCornerRect.fH - (float)i * 3.0f - 1.0f,
+				fStep * (float)i, 1.0f);
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tGrip, pData->iGripColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}

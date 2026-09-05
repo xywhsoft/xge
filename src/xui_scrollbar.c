@@ -385,38 +385,24 @@ static xui_rect_t __xuiScrollBarButtonRect(const xui_scrollbar_data_t* pData, xu
 		return tRect;
 	}
 	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		tRect.fW = fButton;
-		if ( bEnd ) {
-			tRect.fX = tContent.fX + tContent.fW - fButton;
-		}
-	} else {
-		tRect.fH = fButton;
-		if ( bEnd ) {
-			tRect.fY = tContent.fY + tContent.fH - fButton;
-		}
+		return xuiInternalRectFromFloatNearest(bEnd ? tContent.fX + tContent.fW - fButton : tContent.fX,
+			tContent.fY, fButton, tContent.fH);
 	}
-	return xuiInternalSnapRect(tRect);
+	return xuiInternalRectFromFloatNearest(tContent.fX,
+		bEnd ? tContent.fY + tContent.fH - fButton : tContent.fY, tContent.fW, fButton);
 }
 
 static xui_rect_t __xuiScrollBarTrackRect(const xui_scrollbar_data_t* pData, xui_rect_t tContent)
 {
-	xui_rect_t tTrack;
 	float fButton;
 
-	tTrack = tContent;
 	fButton = __xuiScrollBarButtonSize(pData, tContent);
-	if ( fButton > 0.0f ) {
-		if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-			tTrack.fX += fButton;
-			tTrack.fW -= fButton * 2.0f;
-		} else {
-			tTrack.fY += fButton;
-			tTrack.fH -= fButton * 2.0f;
-		}
+	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
+		return xuiInternalRectFromFloatNearest(tContent.fX + fButton, tContent.fY,
+			tContent.fW - fButton * 2.0f, tContent.fH);
 	}
-	if ( tTrack.fW < 0.0f ) tTrack.fW = 0.0f;
-	if ( tTrack.fH < 0.0f ) tTrack.fH = 0.0f;
-	return xuiInternalSnapRect(tTrack);
+	return xuiInternalRectFromFloatNearest(tContent.fX, tContent.fY + fButton,
+		tContent.fW, tContent.fH - fButton * 2.0f);
 }
 
 static float __xuiScrollBarThumbLen(const xui_scrollbar_data_t* pData, float fTrackLen)
@@ -449,14 +435,12 @@ static float __xuiScrollBarThumbLen(const xui_scrollbar_data_t* pData, float fTr
 
 static xui_rect_t __xuiScrollBarThumbRect(const xui_scrollbar_data_t* pData, xui_rect_t tTrack)
 {
-	xui_rect_t tThumb;
 	float fTrackLen;
 	float fThumbLen;
 	float fTravel;
 	float fRange;
 	float fRate;
 
-	tThumb = tTrack;
 	fTrackLen = __xuiScrollBarAxisLen(pData, tTrack);
 	fThumbLen = __xuiScrollBarThumbLen(pData, fTrackLen);
 	fTravel = fTrackLen - fThumbLen;
@@ -464,13 +448,11 @@ static xui_rect_t __xuiScrollBarThumbRect(const xui_scrollbar_data_t* pData, xui
 	fRate = (fRange > 0.0f) ? ((pData->fValue - pData->fMin) / fRange) : 0.0f;
 	fRate = __xuiScrollBarClampFloat(fRate, 0.0f, 1.0f);
 	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		tThumb.fX = tTrack.fX + fTravel * fRate;
-		tThumb.fW = fThumbLen;
-	} else {
-		tThumb.fY = tTrack.fY + fTravel * fRate;
-		tThumb.fH = fThumbLen;
+		return xuiInternalRectFromFloatNearest(tTrack.fX + fTravel * fRate,
+			tTrack.fY, fThumbLen, tTrack.fH);
 	}
-	return xuiInternalSnapRect(tThumb);
+	return xuiInternalRectFromFloatNearest(tTrack.fX,
+		tTrack.fY + fTravel * fRate, tTrack.fW, fThumbLen);
 }
 
 static xui_rect_t __xuiScrollBarVisualCrossRect(const xui_scrollbar_data_t* pData, xui_rect_t tRect, xui_rect_t tBasis)
@@ -479,11 +461,11 @@ static xui_rect_t __xuiScrollBarVisualCrossRect(const xui_scrollbar_data_t* pDat
 
 	fSize = __xuiScrollBarVisualThickness(pData, tBasis);
 	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		tRect.fY += (tRect.fH - fSize) * 0.5f;
-		tRect.fH = fSize;
+		tRect = xuiInternalRectFromFloatNearest(tRect.fX,
+			tRect.fY + (tRect.fH - fSize) * 0.5f, tRect.fW, fSize);
 	} else {
-		tRect.fX += (tRect.fW - fSize) * 0.5f;
-		tRect.fW = fSize;
+		tRect = xuiInternalRectFromFloatNearest(tRect.fX + (tRect.fW - fSize) * 0.5f,
+			tRect.fY, fSize, tRect.fH);
 	}
 	if ( tRect.fW < 1.0f ) tRect.fW = 1.0f;
 	if ( tRect.fH < 1.0f ) tRect.fH = 1.0f;
@@ -512,19 +494,14 @@ static xui_rect_t __xuiScrollBarVisualTrackRect(const xui_scrollbar_data_t* pDat
 
 static xui_rect_t __xuiScrollBarButtonVisualRect(xui_rect_t tButton)
 {
-	xui_rect_t tRect;
 	float fSide;
 
-	tRect = tButton;
 	fSide = __xuiScrollBarMinFloat(tButton.fW, tButton.fH) - 4.0f;
 	if ( fSide < 8.0f ) {
 		fSide = __xuiScrollBarMinFloat(tButton.fW, tButton.fH);
 	}
-	tRect.fX = tButton.fX + (tButton.fW - fSide) * 0.5f;
-	tRect.fY = tButton.fY + (tButton.fH - fSide) * 0.5f;
-	tRect.fW = fSide;
-	tRect.fH = fSide;
-	return xuiInternalSnapRect(tRect);
+	return xuiInternalRectFromFloatNearest(tButton.fX + (tButton.fW - fSide) * 0.5f,
+		tButton.fY + (tButton.fH - fSide) * 0.5f, fSide, fSide);
 }
 
 static int __xuiScrollBarRectContains(xui_rect_t tRect, float fX, float fY)
