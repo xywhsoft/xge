@@ -794,24 +794,84 @@ static int __xuiInputDispatchPath(const xui_event_t* pSourceEvent, xui_widget* p
 	return XUI_OK;
 }
 
+xui_widget xuiInternalInputFocusParent(xui_widget pWidget)
+{
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return NULL;
+	return pWidget->pOverlayOwner != NULL ? pWidget->pOverlayOwner : pWidget->pParent;
+}
+
+int xuiInternalInputFocusContains(xui_widget pRoot, xui_widget pWidget)
+{
+	xui_widget pSlow = pWidget;
+	xui_widget pFast = pWidget;
+
+	for ( ; pWidget != NULL; pWidget = xuiInternalInputFocusParent(pWidget) ) {
+		if ( pWidget == pRoot ) return 1;
+		pSlow = xuiInternalInputFocusParent(pSlow);
+		pFast = xuiInternalInputFocusParent(xuiInternalInputFocusParent(pFast));
+		if ( pSlow != NULL && pSlow == pFast ) return 0;
+	}
+	return 0;
+}
+
+xui_widget xuiInternalInputModalRoot(xui_context pContext)
+{
+	xui_widget pScan;
+	xui_widget pModal = NULL;
+
+	if ( !xuiInternalContextIsValid(pContext) || pContext->pOverlayRoot == NULL ) return NULL;
+	/* Popup shells are overlay siblings; use the same layer/z/stable order as painting. */
+	for ( pScan = pContext->pOverlayRoot->pFirstChild; pScan != NULL; pScan = pScan->pNextSibling ) {
+		if ( !pScan->bModalFocus || !xuiWidgetGetEffectiveVisible(pScan) ) continue;
+		if ( pModal == NULL || pScan->tLayout.iLayer > pModal->tLayout.iLayer ||
+			(pScan->tLayout.iLayer == pModal->tLayout.iLayer &&
+			 pScan->tLayout.iZIndex >= pModal->tLayout.iZIndex) ) pModal = pScan;
+	}
+	return pModal;
+}
+
+int xuiInternalInputFocusAllowed(xui_context pContext, xui_widget pWidget)
+{
+	xui_widget pScan;
+	xui_widget pSlow = pWidget;
+	xui_widget pFast = pWidget;
+	xui_widget pModal;
+
+	if ( !xuiInternalContextIsValid(pContext) || pContext->bDestroyPending || pContext->bDestroying ||
+		!xuiInternalWidgetIsValid(pWidget) || pWidget->pContext != pContext ||
+		!xuiWidgetGetEffectiveFocusable(pWidget) ) return 0;
+	for ( pScan = pWidget; pScan != NULL; pScan = xuiInternalInputFocusParent(pScan) ) {
+		if ( !xuiWidgetGetEffectiveVisible(pScan) || !xuiWidgetGetEffectiveEnabled(pScan) ||
+			pScan->bInteractionCancelling ) return 0;
+		pSlow = xuiInternalInputFocusParent(pSlow);
+		pFast = xuiInternalInputFocusParent(xuiInternalInputFocusParent(pFast));
+		if ( pSlow != NULL && pSlow == pFast ) return 0;
+	}
+	pModal = xuiInternalInputModalRoot(pContext);
+	return pModal == NULL || xuiInternalInputFocusContains(pModal, pWidget);
+}
+
 static int __xuiInputFocusableForTab(xui_widget pWidget)
 {
 	return (pWidget != NULL) &&
 	       pWidget->bTabStop &&
-	       xuiWidgetGetEffectiveFocusable(pWidget);
+	       xuiInternalInputFocusAllowed(pWidget->pContext, pWidget);
 }
 
 static xui_widget __xuiInputFocusScopeRoot(xui_context pContext)
 {
 	xui_widget pScan;
+	xui_widget pModal = xuiInternalInputModalRoot(pContext);
 
-	if ( pContext->pFocusWidget != NULL ) {
+	if ( pContext->pFocusWidget != NULL &&
+		(pModal == NULL || xuiInternalInputFocusContains(pModal, pContext->pFocusWidget)) ) {
 		for ( pScan = pContext->pFocusWidget; pScan != NULL; pScan = pScan->pParent ) {
 			if ( pScan->bFocusScope ) {
 				return pScan;
 			}
 		}
 	}
+	if ( pModal != NULL ) return pModal;
 	return (pContext->pRoot != NULL) ? pContext->pRoot : pContext->pOverlayRoot;
 }
 
@@ -932,6 +992,8 @@ static xui_widget __xuiInputFocusNextInScope(xui_context pContext, int iForward)
 	}
 	if ( iCount <= 0 ) {
 		xrtFree(pItems);
+		if ( xuiInternalInputModalRoot(pContext) != NULL &&
+			xuiInternalInputFocusAllowed(pContext, pScope) ) return pScope;
 		return NULL;
 	}
 	__xuiInputSortFocusItems(pItems, iCount);
@@ -1182,6 +1244,10 @@ int xuiInternalInputCancelSubtree(xui_context pContext, xui_widget pWidget)
 	iRestorePointerId = pContext->iInputPointerId;
 	iRestorePointerType = pContext->iInputPointerType;
 	iResult = XUI_OK;
+	if ( pContext->onPopupSubtreeUnavailable != NULL ) {
+		pContext->onPopupSubtreeUnavailable(pContext, pWidget);
+		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
+	}
 	for ( i = 0; i < XUI_POINTER_MAX; i++ ) {
 		pState = &pContext->arrPointerStates[i];
 		if ( !pState->bAllocated ) continue;
@@ -1934,6 +2000,8 @@ static int __xuiInputDispatchFocusKeyBubble(xui_context pContext, xui_widget pTa
 	tEvent.iKey = iKey;
 	tEvent.iModifiers = iModifiers;
 	for ( pWidget = pTarget->pParent; pWidget != NULL; pWidget = pWidget->pParent ) {
+		if ( xuiInternalContextDestroyPending(pContext) || pTarget != pContext->pFocusWidget ||
+			!xuiInternalInputFocusAllowed(pContext, pTarget) ) break;
 		tEvent.iPhase = XUI_EVENT_PHASE_BUBBLE;
 		iRet = __xuiInputDispatchToWidget(pWidget, &tEvent);
 		if ( pFlags != NULL ) *pFlags = tEvent.iFlags;
@@ -2014,6 +2082,7 @@ static int __xuiInputKeyDownExOperation(xui_context pContext, int iKey, uint32_t
 	int iFlags;
 	xui_widget pOldFocus;
 	xui_widget pKeyTarget;
+	xui_widget pModal;
 	int iRet;
 	uint32_t iHotkeyResult;
 
@@ -2026,7 +2095,15 @@ static int __xuiInputKeyDownExOperation(xui_context pContext, int iKey, uint32_t
 	xuiInternalCaretBlinkReset(pContext);
 	iModifiers = __xuiInputNormalizeModifiers(iModifiers);
 	pContext->iInputModifiers = iModifiers;
+	pModal = xuiInternalInputModalRoot(pContext);
+	if ( pModal != NULL && !xuiInternalInputFocusAllowed(pContext, pContext->pFocusWidget) &&
+		(iKey != XUI_KEY_TAB || (iModifiers & XUI_MOD_CTRL) != 0u) ) {
+		/* Tab chooses its own first/last candidate; other keys need a safe modal target. */
+		if ( xuiInternalInputFocusAllowed(pContext, pModal) ) (void)xuiSetFocusWidget(pContext, pModal);
+		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
+	}
 	pKeyTarget = pContext->pFocusWidget;
+	if ( !xuiInternalInputFocusAllowed(pContext, pKeyTarget) ) pKeyTarget = NULL;
 	/* Focus target first. A focused editor can reserve any key for itself. */
 	iFlags = 0;
 	iRet = __xuiInputDispatchFocusKeyTarget(pContext, pKeyTarget, iKey, iModifiers, &iFlags);
@@ -2037,7 +2114,7 @@ static int __xuiInputKeyDownExOperation(xui_context pContext, int iKey, uint32_t
 		if ( pResult != NULL ) *pResult |= XUI_INPUT_RESULT_CONSUMED;
 		return XUI_OK;
 	}
-	if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
+	if ( xuiInternalContextDestroyPending(pContext) || xuiInternalInputModalRoot(pContext) != pModal ) return XUI_OK;
 	/* Global hotkeys run between the target and the ancestor bubble route. */
 	iHotkeyResult = 0u;
 	iRet = __xuiInputDispatchHotkeysEx(pContext, iKey, iModifiers, &iHotkeyResult);
@@ -2046,8 +2123,9 @@ static int __xuiInputKeyDownExOperation(xui_context pContext, int iKey, uint32_t
 	}
 	if ( pResult != NULL ) *pResult |= iHotkeyResult;
 	if ( (iHotkeyResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) return XUI_OK;
-	if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
-	if ( !xuiInternalWidgetIsValid(pKeyTarget) ) pKeyTarget = NULL;
+	if ( xuiInternalContextDestroyPending(pContext) || xuiInternalInputModalRoot(pContext) != pModal ) return XUI_OK;
+	if ( pKeyTarget != pContext->pFocusWidget ||
+		!xuiInternalInputFocusAllowed(pContext, pKeyTarget) ) pKeyTarget = NULL;
 	iFlags = 0;
 	iRet = __xuiInputDispatchFocusKeyBubble(pContext, pKeyTarget, iKey, iModifiers, &iFlags);
 	if ( iRet != XUI_OK ) {
@@ -2059,6 +2137,7 @@ static int __xuiInputKeyDownExOperation(xui_context pContext, int iKey, uint32_t
 		}
 		return XUI_OK;
 	}
+	if ( xuiInternalContextDestroyPending(pContext) || xuiInternalInputModalRoot(pContext) != pModal ) return XUI_OK;
 	if ( (iKey == XUI_KEY_TAB) && ((iModifiers & XUI_MOD_CTRL) == 0u) ) {
 		pOldFocus = pContext->pFocusWidget;
 		iRet = xuiFocusNext(pContext, ((iModifiers & XUI_MOD_SHIFT) == 0));
@@ -2764,6 +2843,7 @@ static int __xuiSetFocusWidgetOperation(xui_context pContext, xui_widget pWidget
 		     !xuiWidgetGetEffectiveFocusable(pWidget) ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
+		if ( !xuiInternalInputFocusAllowed(pContext, pWidget) ) return XUI_ERROR_INVALID_STATE;
 	}
 	pOldWidget = pContext->pFocusWidget;
 	if ( pOldWidget == pWidget ) {
@@ -2787,6 +2867,10 @@ static int __xuiSetFocusWidgetOperation(xui_context pContext, xui_widget pWidget
 	iRet = xuiInternalInputSyncIme(pContext);
 	if ( iRet != XUI_OK ) {
 		return iRet;
+	}
+	if ( xuiInternalContextDestroyPending(pContext) || pContext->pFocusWidget != pWidget ) return XUI_OK;
+	if ( pWidget != NULL && !xuiInternalInputFocusAllowed(pContext, pWidget) ) {
+		return xuiSetFocusWidget(pContext, NULL);
 	}
 	if ( pWidget != NULL ) {
 		iRet = __xuiInputSetWidgetFlag(pWidget, XUI_WIDGET_STATE_FOCUS, 1);

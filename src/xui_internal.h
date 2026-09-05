@@ -179,6 +179,8 @@ struct xui_context_t {
 	xui_widget pHoverWidget;
 	xui_widget pActiveWidget;
 	xui_widget pFocusWidget;
+	struct xui_popup_data_t* pPopupList;
+	void (*onPopupSubtreeUnavailable)(xui_context pContext, xui_widget pWidget);
 	xui_widget pPointerCaptureWidget;
 	xui_widget pDragWidget;
 	xui_widget pLastClickWidget;
@@ -379,6 +381,7 @@ struct xui_widget_t {
 	int bTabStop;
 	int iTabIndex;
 	int bFocusScope;
+	int bModalFocus;
 	int bDragEnabled;
 	int bDropEnabled;
 	int iImeMode;
@@ -511,6 +514,10 @@ void xuiInternalReportError(xui_context pContext, xui_widget pWidget, int iCode,
 void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget);
 int xuiInternalInputCancelSubtree(xui_context pContext, xui_widget pWidget);
 int xuiInternalInputCancelFocusSubtree(xui_context pContext, xui_widget pWidget);
+xui_widget xuiInternalInputModalRoot(xui_context pContext);
+xui_widget xuiInternalInputFocusParent(xui_widget pWidget);
+int xuiInternalInputFocusContains(xui_widget pRoot, xui_widget pWidget);
+int xuiInternalInputFocusAllowed(xui_context pContext, xui_widget pWidget);
 void xuiInternalWidgetDestroyFlush(xui_context pContext);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);

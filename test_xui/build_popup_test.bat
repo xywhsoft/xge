@@ -36,4 +36,6 @@ if %errorlevel% neq 0 (
 )
 
 echo [XUI] Tests passed: %OUT%
+call test_xui\build_popup_focus_test.bat
+if errorlevel 1 exit /b %errorlevel%
 endlocal
