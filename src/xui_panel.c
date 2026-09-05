@@ -8,6 +8,7 @@ typedef struct xui_panel_data_t {
 	xui_widget pTitle;
 	xui_widget pClient;
 	xui_font pFont;
+	uint32_t iChromeStyleVersion;
 	uint32_t iTitleColor;
 	uint32_t iDisabledTitleColor;
 	uint32_t iBackgroundColor;
@@ -241,6 +242,27 @@ static int __xuiPanelSyncResolved(xui_widget pWidget, xui_panel_data_t* pData, x
 	return __xuiPanelSyncChildren(pWidget, pData, pResolved);
 }
 
+static int __xuiPanelPreparePaint(xui_widget pWidget)
+{
+	xui_panel_data_t* pData = __xuiPanelGetData(pWidget);
+	xui_panel_resolved_t tResolved;
+	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pTitle == NULL ) return XUI_OK;
+	if ( pData->iChromeStyleVersion != pWidget->iStyleVersion ) {
+		/* Refresh the inherited title palette after a parent-only style change. */
+		iRet = xuiWidgetResolveStyle(pData->pHeader);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiWidgetResolveStyle(pData->pTitle);
+		if ( iRet != XUI_OK ) return iRet;
+		pData->iChromeStyleVersion = pWidget->iStyleVersion;
+	}
+	__xuiPanelResolve(pWidget, pData, &tResolved);
+	iRet = xuiLabelSetTextColor(pData->pTitle, tResolved.iTitleColor);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiLabelSetDisabledTextColor(pData->pTitle, tResolved.iDisabledTitleColor);
+}
+
 static int __xuiPanelDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( (iColor & 0xffu) == 0u ) {
@@ -282,10 +304,7 @@ static int __xuiPanelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiPanelSyncResolved(pWidget, pData, &tResolved);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
+	__xuiPanelResolve(pWidget, pData, &tResolved);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -547,6 +566,7 @@ static void __xuiPanelRegisterStyleProperties(xui_context pContext, xui_widget_t
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
 
+	pType->onPreparePaint = __xuiPanelPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiPanelRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);

@@ -14,6 +14,7 @@
 #include "../src/xui_inventory_grid.c"
 #include "../src/xui_step_bar.c"
 #include "../src/xui_tag_input.c"
+#include "../src/xui_panel.c"
 
 /* Record the colors actually submitted to the renderer, not just resolution. */
 static uint32_t g_colors[32768];
@@ -261,6 +262,8 @@ static void chrome_cached(pixel_fixture_t* f, xui_widget owner, xui_widget child
 	chrome_frame(f);
 	if (!chrome_count(token.iColor)) printf("cached child did not refresh: %s\n", key);
 	PIXEL_CHECK(chrome_count(token.iColor) > 0);
+	PIXEL_CHECK((xuiWidgetGetDirtyFlags(owner) & XUI_WIDGET_DIRTY_LAYOUT) == 0);
+	PIXEL_CHECK((xuiWidgetGetDirtyFlags(child) & XUI_WIDGET_DIRTY_LAYOUT) == 0);
 	chrome_frame(f);
 	PIXEL_CHECK(chrome_count(token.iColor) == 0);
 	token.iColor = 0x2e4f70ffu;
@@ -476,6 +479,34 @@ static void chrome_tags(pixel_fixture_t* f)
 	xuiWidgetDestroy(tags);
 }
 
+static void chrome_panel(pixel_fixture_t* f)
+{
+	xui_widget panel = NULL, title;
+	xui_panel_data_t* data;
+	PIXEL_CHECK(xuiPanelCreate(f->context, &panel, NULL) == XUI_OK);
+	chrome_attach(f, panel, 320, 200);
+	PIXEL_CHECK(xuiPanelSetTitle(panel, "Panel title") == XUI_OK);
+	PIXEL_CHECK(xuiPanelSetTitleColor(panel, 0x853557ffu) == XUI_OK);
+	PIXEL_CHECK(xuiPanelSetDisabledTitleColor(panel, 0x964668ffu) == XUI_OK);
+	PIXEL_CHECK(xuiLayout(f->context) == XUI_OK);
+	title = xuiPanelGetTitleWidget(panel);
+	data = __xuiPanelGetData(panel);
+	chrome_key(f, panel, "panel.background.color", data->iBackgroundColor, 0);
+	chrome_key(f, panel, "panel.header.color", data->iHeaderColor, 0);
+	chrome_key(f, panel, "panel.client.color", data->iClientColor, 0);
+	chrome_key(f, panel, "panel.border.color", data->iBorderColor, 0);
+	g_paint_widget = title;
+	chrome_key(f, panel, "text.color", 0x853557ffu, 0);
+	PIXEL_CHECK(xuiWidgetSetEnabled(title, 0) == XUI_OK);
+	chrome_key(f, panel, "text.disabled_color", 0x964668ffu, XUI_WIDGET_STATE_DISABLED);
+	PIXEL_CHECK(xuiWidgetSetEnabled(title, 1) == XUI_OK);
+	g_paint_widget = NULL;
+	chrome_cached(f, panel, title, "text.color", 0x853557ffu);
+	PIXEL_CHECK(xuiPanelGetTitleColor(panel) == 0x853557ffu);
+	PIXEL_CHECK(xuiPanelGetDisabledTitleColor(panel) == 0x964668ffu);
+	xuiWidgetDestroy(panel);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -489,6 +520,7 @@ int main(void)
 	chrome_inventory(&f);
 	chrome_steps(&f);
 	chrome_tags(&f);
+	chrome_panel(&f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_chrome_test");
 }
