@@ -273,6 +273,17 @@ static int __xuiSplitLayoutDividerIndex(xui_split_layout_data_t* pData, xui_widg
 	return -1;
 }
 
+static xui_rect_t __xuiSplitLayoutCenteredRect(const xui_split_layout_data_t* pData,
+	xui_rect_t tLayout, float fSize)
+{
+	if ( pData->iOrientation == XUI_ORIENTATION_VERTICAL ) {
+		return xuiInternalRectFromFloatNearest(tLayout.fX + (tLayout.fW - fSize) * 0.5f,
+			tLayout.fY, fSize, tLayout.fH);
+	}
+	return xuiInternalRectFromFloatNearest(tLayout.fX,
+		tLayout.fY + (tLayout.fH - fSize) * 0.5f, tLayout.fW, fSize);
+}
+
 static void __xuiSplitLayoutRefreshGeometry(xui_widget pSplit, xui_split_layout_data_t* pData)
 {
 	int i;
@@ -286,24 +297,9 @@ static void __xuiSplitLayoutRefreshGeometry(xui_widget pSplit, xui_split_layout_
 		}
 		if ( i + 1 < pData->iPaneCount && pData->arrDividers[i].pWidget != NULL ) {
 			xui_rect_t tLayout = xuiWidgetGetRect(pData->arrDividers[i].pWidget);
-			float fVisualInset = (__xuiSplitLayoutAxisSize(pData, tLayout) - pData->fResolvedDividerVisualSize) * 0.5f;
-			float fHitInset = (__xuiSplitLayoutAxisSize(pData, tLayout) - pData->fResolvedDividerHitSize) * 0.5f;
-			xui_rect_t tVisual = tLayout;
-			xui_rect_t tHit = tLayout;
-			if ( pData->iOrientation == XUI_ORIENTATION_VERTICAL ) {
-				tVisual.fX += fVisualInset;
-				tVisual.fW = pData->fResolvedDividerVisualSize;
-				tHit.fX += fHitInset;
-				tHit.fW = pData->fResolvedDividerHitSize;
-			} else {
-				tVisual.fY += fVisualInset;
-				tVisual.fH = pData->fResolvedDividerVisualSize;
-				tHit.fY += fHitInset;
-				tHit.fH = pData->fResolvedDividerHitSize;
-			}
 			pData->arrDividers[i].tLayoutRect = tLayout;
-			pData->arrDividers[i].tVisualRect = tVisual;
-			pData->arrDividers[i].tHitRect = tHit;
+			pData->arrDividers[i].tVisualRect = __xuiSplitLayoutCenteredRect(pData, tLayout, pData->fResolvedDividerVisualSize);
+			pData->arrDividers[i].tHitRect = __xuiSplitLayoutCenteredRect(pData, tLayout, pData->fResolvedDividerHitSize);
 		}
 	}
 }
@@ -769,7 +765,6 @@ static int __xuiSplitLayoutUpdateShadow(xui_widget pSplit, xui_split_layout_data
 	uint32_t iActive;
 	uint32_t iShadow;
 	float fAxis;
-	float fVisualStart;
 
 	if ( (pData->iActiveDivider < 0) || (pData->iActiveDivider >= pData->iPaneCount - 1) ) {
 		__xuiSplitLayoutHideShadow(pSplit, pData);
@@ -777,14 +772,18 @@ static int __xuiSplitLayoutUpdateShadow(xui_widget pSplit, xui_split_layout_data
 	}
 	__xuiSplitLayoutRefreshGeometry(pSplit, pData);
 	fAxis = __xuiSplitLayoutClampDragAxis(pData, pData->iActiveDivider, __xuiSplitLayoutDragAxis(pData));
-	fVisualStart = fAxis + (pData->fResolvedDividerSize - pData->fResolvedDividerVisualSize) * 0.5f;
 	tWorld = xuiWidgetGetWorldRect(pSplit);
+	/* Center on the pixel track just as the committed layout does. */
 	if ( pData->iOrientation == XUI_ORIENTATION_VERTICAL ) {
-		tShadow = (xui_rect_t){tWorld.fX + fVisualStart, tWorld.fY + pData->tContentRect.fY, pData->fResolvedDividerVisualSize, pData->tContentRect.fH};
+		tShadow = xuiInternalRectFromFloatNearest(fAxis, pData->tContentRect.fY,
+			pData->fResolvedDividerSize, pData->tContentRect.fH);
 	} else {
-		tShadow = (xui_rect_t){tWorld.fX + pData->tContentRect.fX, tWorld.fY + fVisualStart, pData->tContentRect.fW, pData->fResolvedDividerVisualSize};
+		tShadow = xuiInternalRectFromFloatNearest(pData->tContentRect.fX, fAxis,
+			pData->tContentRect.fW, pData->fResolvedDividerSize);
 	}
-	tShadow = xuiInternalSnapRect(tShadow);
+	tShadow = __xuiSplitLayoutCenteredRect(pData, tShadow, pData->fResolvedDividerVisualSize);
+	tShadow.fX += tWorld.fX;
+	tShadow.fY += tWorld.fY;
 	pData->tShadowRect = tShadow;
 	__xuiSplitLayoutResolveColors(pSplit, pData, &iDivider, &iHover, &iActive, &iShadow);
 	memset(&tPrimitive, 0, sizeof(tPrimitive));
