@@ -883,16 +883,28 @@ void xuiInternalOperationLeave(xui_context pContext)
 		return;
 	}
 	pContext->iOperationDepth--;
-	if ( (pContext->iOperationDepth > 0) || (pContext->iWidgetCallbackDepth > 0) ) {
+	if ( pContext->bDestroying ) return;
+	if ( (pContext->iOperationDepth > 0) || (pContext->iWidgetCallbackDepth > 0) ||
+	     (pContext->iDestroyFlushDepth > 0) ) {
 		return;
 	}
-	if ( pContext->bDestroyPending ) {
-		__xuiContextDestroyNow(pContext);
-		return;
-	}
-	xuiInternalWidgetDestroyFlush(pContext);
-	if ( __xuiContextValid(pContext) && pContext->bDestroyPending ) {
-		__xuiContextDestroyNow(pContext);
+	while ( __xuiContextValid(pContext) ) {
+		if ( pContext->bDestroyPending ) {
+			__xuiContextDestroyNow(pContext);
+			return;
+		}
+		if ( pContext->pStateChangeHead != NULL ) {
+			/* State callbacks are part of the operation that produced the change. */
+			pContext->iOperationDepth = 1;
+			xuiInternalStateChangeFlush(pContext);
+			pContext->iOperationDepth = 0;
+			continue;
+		}
+		if ( pContext->pDeferredDestroyHead != NULL ) {
+			xuiInternalWidgetDestroyFlush(pContext);
+			continue;
+		}
+		break;
 	}
 }
 
@@ -1594,6 +1606,8 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	}
 	pContext->bDestroying = 1;
 	pContext->bDestroyPending = 0;
+	pContext->pStateChangeHead = NULL;
+	pContext->pStateChangeTail = NULL;
 	if ( pContext->bHasProxy && pContext->tProxy.imeSetEnabled != NULL ) {
 		(void)pContext->tProxy.imeSetEnabled(&pContext->tProxy, 0);
 	}

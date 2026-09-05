@@ -230,6 +230,8 @@ struct xui_context_t {
 	uint64_t iInputPointerId;
 	int iInputPointerType;
 	xui_widget pDeferredDestroyHead;
+	xui_widget pStateChangeHead;
+	xui_widget pStateChangeTail;
 	int iDestroyFlushDepth;
 	int iWidgetCallbackDepth;
 	int iOperationDepth;
@@ -354,6 +356,7 @@ struct xui_widget_t {
 	xui_widget pPrevSibling;
 	xui_widget pNextSibling;
 	xui_widget pDeferredDestroyNext;
+	xui_widget pStateChangeNext;
 	int iChildCount;
 	xui_rect_t tRect;
 	xui_layout_t tLayout;
@@ -372,6 +375,10 @@ struct xui_widget_t {
 	int bMeasureValid;
 	int bArrangeValid;
 	int bDestroyPending;
+	uint32_t iPendingStateChanges;
+	xui_rect_t tPendingStateOldWorldRect;
+	int bPendingStateOldVisible;
+	int bPendingStateOldEnabled;
 	uint32_t iDirtyFlags;
 	uint32_t iSubtreeDirtyFlags;
 	uint32_t iInputState;
@@ -461,6 +468,10 @@ int xuiInternalContextIsValid(xui_context pContext);
 void xuiInternalOperationEnter(xui_context pContext);
 void xuiInternalOperationLeave(xui_context pContext);
 int xuiInternalContextDestroyPending(xui_context pContext);
+void xuiInternalStateRecordBoundsTree(xui_widget pWidget);
+void xuiInternalStateRecordVisible(xui_widget pWidget);
+void xuiInternalStateRecordEnabled(xui_widget pWidget);
+void xuiInternalStateChangeFlush(xui_context pContext);
 int xuiInternalLayoutCreateWidget(xui_widget pWidget);
 void xuiInternalLayoutDestroyWidget(xui_widget pWidget);
 int xuiInternalLayoutAttach(xui_widget pParent, xui_widget pChild, xui_widget pBefore);

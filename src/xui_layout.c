@@ -415,6 +415,7 @@ static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot)
 {
 	xlayout_result_t layout_result;
 	xui_widget child;
+	xui_rect_t rect;
 	xui_rect_t content;
 	int result;
 	if ( !widget->bVisible ) {
@@ -424,7 +425,12 @@ static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot)
 	if ( !xLayoutNodeGetResult(widget->pContext->pLayoutContext, widget->iLayoutNode, &layout_result) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	widget->tRect = __xuiLayoutLocalRect(widget, layout_result.rect, bSubtreeRoot);
+	rect = __xuiLayoutLocalRect(widget, layout_result.rect, bSubtreeRoot);
+	if ( (widget->tRect.fX != rect.fX) || (widget->tRect.fY != rect.fY) ||
+	     (widget->tRect.fW != rect.fW) || (widget->tRect.fH != rect.fH) ) {
+		xuiInternalStateRecordBoundsTree(widget);
+		widget->tRect = rect;
+	}
 	widget->tMeasuredSize.fX = xuiInternalSnapSize(layout_result.rect.width);
 	widget->tMeasuredSize.fY = xuiInternalSnapSize(layout_result.rect.height);
 	widget->bMeasureValid = 1;
