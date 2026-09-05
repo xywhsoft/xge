@@ -317,6 +317,8 @@ typedef struct xui_internal_accessibility_adapter_t {
 	int (*performAction)(xui_widget pWidget, int iAction, const void* pData);
 } xui_internal_accessibility_adapter_t;
 
+typedef int (*xui_internal_prepare_paint_proc)(xui_widget pWidget);
+
 struct xui_widget_type_t {
 	uint32_t iMagic;
 	xui_context pContext;
@@ -332,6 +334,8 @@ struct xui_widget_type_t {
 	xui_widget_layout_prepare_proc onLayoutPrepare;
 	xui_widget_layout_children_proc onLayoutChildren;
 	xui_widget_layout_complete_proc onLayoutComplete;
+	/* Sync dependent paint state before child caches; never draw or run layout here. */
+	xui_internal_prepare_paint_proc onPreparePaint;
 	xui_widget_cache_render_proc onCacheRender;
 	xui_widget_update_proc onUpdate;
 	xui_widget_cursor_proc onQueryCursor;

@@ -2151,6 +2151,16 @@ static xui_widget_cache_render_proc __xuiWidgetTypeCacheRender(xui_widget_type p
 	return NULL;
 }
 
+static xui_internal_prepare_paint_proc __xuiWidgetTypePreparePaint(xui_widget_type pType)
+{
+	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
+		if ( pType->onPreparePaint != NULL ) {
+			return pType->onPreparePaint;
+		}
+	}
+	return NULL;
+}
+
 static xui_widget_update_proc __xuiWidgetTypeUpdate(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
@@ -7080,10 +7090,21 @@ static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 {
 	xui_widget pChild;
 	xui_widget pNext;
+	xui_internal_prepare_paint_proc onPreparePaint;
 	int iRet;
 
 	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) || !pWidget->bVisible ) {
 		return;
+	}
+	onPreparePaint = __xuiWidgetTypePreparePaint(pWidget->pType);
+	if ( onPreparePaint != NULL ) {
+		iRet = onPreparePaint(pWidget);
+		if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) || !pWidget->bVisible ) return;
+		if ( iRet != XUI_OK ) {
+			xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_CACHE, 1,
+				"cache.dependencies", "The widget paint dependencies could not be prepared and were skipped.");
+			return;
+		}
 	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pNext ) {
 		pNext = pChild->pNextSibling;
