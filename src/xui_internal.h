@@ -611,6 +611,7 @@ void xuiInternalTooltipDetachWidget(xui_context pContext, xui_widget pWidget);
 int xuiInternalTooltipUpdate(xui_context pContext, float fDelta);
 int xuiInternalDragAdornerSet(xui_context pContext, xui_widget pOwner,
 	const xui_drag_adorner_primitive_t* pPrimitives, int iPrimitiveCount);
+int xuiInternalDragAdornerSetColor(xui_context pContext, xui_widget pOwner, int iIndex, uint32_t iColor);
 void xuiInternalDragAdornerHide(xui_context pContext, xui_widget pOwner);
 int xuiInternalDragTransferMove(xui_context pContext, int iX, int iY,
 	uint32_t iModifiers);

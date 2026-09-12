@@ -1497,7 +1497,13 @@ static void __xuiWindowRegisterStyleProperty(xui_context pContext, xui_widget_ty
 static int __xuiWindowPreparePaint(xui_widget pWidget)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	xui_context pContext = xuiWidgetGetContext(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pContext->pDragAdornerOwner == pWidget && pContext->iDragAdornerPrimitiveCount == 1 ) {
+		uint32_t iColor = pData->iActiveBorderColor;
+		(void)__xuiWindowStyleColor(pWidget, "window.border.active_color", &iColor);
+		(void)xuiInternalDragAdornerSetColor(pContext, pWidget, 0, iColor);
+	}
 	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
 	pData->iChromeStyleVersion = pWidget->iStyleVersion;
 	(void)xuiWidgetInvalidate(pData->pClient, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

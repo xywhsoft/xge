@@ -44,6 +44,8 @@ typedef struct xui_split_layout_data_t {
 	uint32_t iDividerHoverColor;
 	uint32_t iDividerActiveColor;
 	uint32_t iShadowColor;
+	uint32_t arrPaintColors[4];
+	int bPaintColorsReady;
 } xui_split_layout_data_t;
 
 static xui_thickness_t __xuiSplitLayoutThickness(float fLeft, float fTop, float fRight, float fBottom)
@@ -1310,10 +1312,33 @@ static void __xuiSplitLayoutRegisterStyleProperty(xui_context pContext, xui_widg
 	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
 }
 
+static int __xuiSplitLayoutPreparePaint(xui_widget pWidget)
+{
+	xui_split_layout_data_t* pData = __xuiSplitLayoutGetData(pWidget);
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	uint32_t arrColors[4];
+	int i;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiSplitLayoutResolveColors(pWidget, pData, &arrColors[0], &arrColors[1], &arrColors[2], &arrColors[3]);
+	if ( pData->bPaintColorsReady && memcmp(arrColors, pData->arrPaintColors, sizeof(arrColors)) == 0 ) return XUI_OK;
+	memcpy(pData->arrPaintColors, arrColors, sizeof(arrColors));
+	pData->bPaintColorsReady = 1;
+	for ( i = 0; i + 1 < pData->iPaneCount; ++i ) {
+		(void)xuiWidgetInvalidate(pData->arrDividers[i].pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	/* Retain the drag's constrained geometry; a palette change only replaces ink. */
+	if ( pContext->pDragAdornerOwner == pWidget && pContext->iDragAdornerPrimitiveCount == 1 &&
+		pContext->arrDragAdornerPrimitives[0].iColor != arrColors[3] ) {
+		return xuiInternalDragAdornerSetColor(pContext, pWidget, 0, arrColors[3]);
+	}
+	return XUI_OK;
+}
+
 static void __xuiSplitLayoutRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	uint32_t iPaintDirty;
 	uint32_t iLayoutDirty;
+	pType->onPreparePaint = __xuiSplitLayoutPreparePaint;
 
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;

@@ -5593,10 +5593,9 @@ static int __xuiDockPreparePaint(xui_widget pWidget)
 	if ( pData->pDragOverlayWidget != NULL )
 		(void)xuiWidgetInvalidate(pData->pDragOverlayWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( pContext->pDragAdornerOwner == pData->pWidget && pContext->iDragAdornerPrimitiveCount == 1 ) {
-		xui_drag_adorner_primitive_t tPrimitive = pContext->arrDragAdornerPrimitives[0];
-		tPrimitive.iColor = tPrimitive.iType == XUI_DRAG_ADORNER_RECT_FILL ?
+		uint32_t iColor = pContext->arrDragAdornerPrimitives[0].iType == XUI_DRAG_ADORNER_RECT_FILL ?
 			__xuiDockColors(pData)->iSplitterActiveColor : __xuiDockColors(pData)->iFloatBorderColor;
-		(void)xuiInternalDragAdornerSet(pContext, pData->pWidget, &tPrimitive, 1);
+		(void)xuiInternalDragAdornerSetColor(pContext, pData->pWidget, 0, iColor);
 	}
 	pData->bChromeColorsDirty = 0;
 	return XUI_OK;

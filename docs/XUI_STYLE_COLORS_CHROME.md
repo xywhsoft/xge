@@ -135,10 +135,13 @@ are a source inventory, not additional assertions in `xui_style_chrome_test`.
 | `src/xui_split_layout.c` | `splitlayout.divider.color`, `splitlayout.divider.hover_color`, `splitlayout.divider.active_color`, `splitlayout.shadow.color` |
 | `src/xui_window_frame.c` | Geometry helper; no independent chrome painter or color namespace |
 
-The earlier SplitLayout child-cache/drag-preview and Window drag-preview refresh
-leads were not implemented in this branch. The final scope freeze permits only
-the wrapper/documentation closeout after Panel. No new fix or runtime-coverage
-claim for those leads is included here; mainline integration owns any follow-up.
+Mainline also synchronizes SplitLayout divider caches and active SplitLayout/
+Window drag previews in the prepare-paint stage. The existing color keys work
+after caches are warm, including owner-only inline styles and API base changes.
+The private adorner color setter changes only paint state, retaining geometry,
+input capture and overlay ordering. DockPanel uses this same color-only path.
+`build_style_drag_test.bat` covers both split orientations and window move/resize
+previews, transparency, removal of styles, warm reuse and unchanged geometry.
 
 ## Verification
 

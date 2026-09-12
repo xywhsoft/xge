@@ -3567,6 +3567,16 @@ int xuiInternalDragAdornerSet(xui_context pContext, xui_widget pOwner,
 	return iRet;
 }
 
+int xuiInternalDragAdornerSetColor(xui_context pContext, xui_widget pOwner, int iIndex, uint32_t iColor)
+{
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiWidgetValid(pOwner) ||
+		pContext->pDragAdornerOwner != pOwner || !__xuiWidgetValid(pContext->pDragAdornerWidget) ||
+		iIndex < 0 || iIndex >= pContext->iDragAdornerPrimitiveCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pContext->arrDragAdornerPrimitives[iIndex].iColor == iColor ) return XUI_OK;
+	pContext->arrDragAdornerPrimitives[iIndex].iColor = iColor;
+	return xuiWidgetInvalidate(pContext->pDragAdornerWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 void xuiInternalDragAdornerHide(xui_context pContext, xui_widget pOwner)
 {
 	if ( !xuiInternalContextIsValid(pContext) ) return;
