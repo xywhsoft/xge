@@ -424,10 +424,151 @@ static void dock_drag_styles(void)
     xuiDestroy(c);
 }
 
+static int grid_cell(xui_widget widget, int row, int column, xui_table_view_cell_t* cell, void* user)
+{
+    (void)widget; (void)column; (void)user;
+    cell->sText = row == 0 ? "Content" : "One";
+    cell->iType = row == 0 ? XUI_TABLE_CELL_TYPE_TEXT : XUI_TABLE_CELL_TYPE_ENUM;
+    cell->bHasStyle = row == 0; cell->iBackgroundColor = 0xdabaccff;
+    cell->iTextColor = 0x3e5164ff; cell->iGridColor = 0x6789abff;
+    return XUI_OK;
+}
+static int grid_editor_config(xui_widget widget, int row, int column, int type,
+    xui_table_grid_editor_config_t* config, void* user)
+{
+    static const char* items[] = {"One", "Two"};
+    (void)widget; (void)row; (void)column; (void)user;
+    if (type == XUI_TABLE_CELL_TYPE_ENUM) { config->arrEnumItems = items; config->iEnumItemCount = 2; }
+    return 1;
+}
+static void table_grid_styles(void)
+{
+    xui_test_proxy_state_t proxy;
+    xui_context c = setup(&proxy);
+    xui_widget grid, table, input, viewport, combo;
+    xui_font font = NULL;
+    xui_table_grid_desc_t desc;
+    xui_table_view_column_t column;
+    xui_table_view_row_t rows[2];
+    xui_table_view_colors_t palette, current;
+    xui_style_property_t p;
+    xui_style_desc_t s;
+    uint32_t background, text, border, focus;
+    uint32_t layout_version, table_layout_version;
+    CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, NULL, 14, 0) == XUI_OK);
+    memset(&desc, 0, sizeof(desc)); memset(&column, 0, sizeof(column)); memset(rows, 0, sizeof(rows));
+    desc.iSize = sizeof(desc); desc.pFont = font;
+    column.sTitle = "Column"; column.fWidth = 320; rows[0].fHeight = rows[1].fHeight = 32;
+    desc.arrColumns = &column; desc.iColumnCount = 1; desc.arrRows = rows; desc.iRowCount = 2;
+    desc.onCell = grid_cell;
+    desc.onEditorConfig = grid_editor_config;
+    CHECK(xuiTableGridCreate(c, &grid, &desc) == XUI_OK);
+    CHECK(xuiSetRootWidget(c, grid) == XUI_OK);
+    table = xuiTableGridGetTableView(grid);
+    CHECK(xuiTableViewGetColors(table, &palette) == XUI_OK);
+    palette.iRowColor = 0x223344ff; palette.iGridColor = 0x446688ff;
+    palette.iTextColor = 0xddeeffff; palette.iFocusRingColor = 0x8899bbff;
+    CHECK(xuiTableGridSetColorStyle(grid, &palette) == XUI_OK);
+    paint(c); CHECK(seen(0xdabaccff));
+    viewport = xuiTableViewGetViewportWidget(table);
+    CHECK(xuiWidgetGetCacheRenderCallback(viewport, &frame_render_original, &frame_render_user) == XUI_OK);
+    CHECK(xuiWidgetSetCacheRenderCallback(viewport, count_frame_render, NULL) == XUI_OK);
+    paint(c); CHECK(frame_renders == 1);
+    paint(c); CHECK(frame_renders == 0);
+    layout_version = grid->iLayoutVersion; table_layout_version = table->iLayoutVersion;
+    p = prop("tableview.background.color", 0x972351ff);
+    CHECK(xuiStyleSetDefault(c, &p, 1) == XUI_OK);
+    paint_only(grid); paint_only(table); paint(c); CHECK(seen(p.tValue.iColor));
+    p = prop("tableview.row.alt_color", 0x159357ff); s = style(&p, 1);
+    CHECK(xuiStyleSetType(c, xuiTableViewGetType(c), &s) == XUI_OK);
+    paint_only(table); paint(c);
+    CHECK(frame_renders == 1 && seen(p.tValue.iColor) && seen(0xdabaccff));
+    p.tValue.iColor = 0x753951ff;
+    CHECK(xuiStyleSetType(c, xuiTableViewGetType(c), &s) == XUI_OK);
+    paint(c); CHECK(frame_renders == 1 && seen(p.tValue.iColor));
+    {
+        xui_style_value_t token = prop("unused", 0x459713ff).tValue;
+        p.tValue.iType = XUI_STYLE_VALUE_TOKEN; p.tValue.sText = "grid.row";
+        CHECK(xuiStyleSetToken(c, "grid.row", &token) == XUI_OK);
+        CHECK(xuiStyleSetClass(c, "grid-live", &s) == XUI_OK);
+        CHECK(xuiWidgetAddStyleClass(table, "grid-live") == XUI_OK);
+        paint_only(table); paint(c); CHECK(seen(token.iColor) && frame_renders == 1);
+        token.iColor = 0x731945ff;
+        CHECK(xuiStyleSetToken(c, "grid.row", &token) == XUI_OK);
+        paint(c); CHECK(seen(token.iColor) && frame_renders == 1);
+    }
+    p = prop("tableview.row.alt_color", 0);
+    CHECK(xuiWidgetSetInlineStyle(table, &p, 1) == XUI_OK);
+    paint_only(table); paint(c); CHECK(!seen(0x731945ff) && !seen(palette.iAltRowColor) && seen(0xdabaccff));
+    CHECK(xuiTableViewGetColors(table, &current) == XUI_OK && memcmp(&current, &palette, sizeof(palette)) == 0);
+    CHECK(xuiWidgetSetInlineStyle(table, NULL, 0) == XUI_OK);
+    xuiWidgetClearStyleClasses(table);
+    CHECK(xuiStyleRemoveType(c, xuiTableViewGetType(c)) == XUI_OK);
+    CHECK(xuiStyleClearDefault(c) == XUI_OK);
+    paint(c); CHECK(seen(palette.iAltRowColor) && seen(palette.iBackgroundColor) && seen(0xdabaccff));
+    CHECK(grid->iLayoutVersion == layout_version && table->iLayoutVersion == table_layout_version);
+    paint(c); CHECK(frame_renders == 0);
+    CHECK(xuiTableGridBeginEdit(grid, 0, 0) != 0);
+    input = xuiGetFocusWidget(c);
+    CHECK(xuiWidgetIsType(input, xuiInputGetType(c)));
+    CHECK(xuiInputGetColors(input, &background, &text, &border, &focus) == XUI_OK);
+    CHECK(background == palette.iRowColor && text == palette.iTextColor);
+    CHECK(border == palette.iGridColor && focus == palette.iFocusRingColor);
+    paint(c); CHECK(seen(background));
+    p = prop("input.background.color", 0x992255ff); s = style(&p, 1);
+    CHECK(xuiStyleSetType(c, xuiInputGetType(c), &s) == XUI_OK);
+    paint_only(input); paint(c); CHECK(seen(p.tValue.iColor));
+    p.tValue.iColor = 0x559922ff;
+    CHECK(xuiStyleSetType(c, xuiInputGetType(c), &s) == XUI_OK);
+    paint(c); CHECK(seen(p.tValue.iColor));
+    CHECK(xuiInputGetColors(input, &background, NULL, NULL, NULL) == XUI_OK);
+    CHECK(background == palette.iRowColor);
+    p.tValue.iColor = 0;
+    CHECK(xuiWidgetSetInlineStyle(input, &p, 1) == XUI_OK);
+    paint_only(input); paint(c); CHECK(!seen(0x559922ff) && !seen(background));
+    palette.iRowColor = 0x946235ff;
+    CHECK(xuiTableGridSetColorStyle(grid, &palette) == XUI_OK);
+    paint(c); CHECK(!seen(palette.iRowColor));
+    CHECK(xuiInputGetColors(input, &background, NULL, NULL, NULL) == XUI_OK && background == palette.iRowColor);
+    CHECK(xuiWidgetSetInlineStyle(input, NULL, 0) == XUI_OK);
+    CHECK(xuiStyleRemoveType(c, xuiInputGetType(c)) == XUI_OK);
+    paint(c); CHECK(seen(background));
+    CHECK(xuiTableGridEndEdit(grid, 0) != 0);
+    paint(c); CHECK(seen(0xdabaccff));
+    CHECK(xuiTableGridBeginEdit(grid, 1, 0) != 0);
+    for (combo = xuiWidgetGetFirstChild(grid); combo != NULL; combo = xuiWidgetGetNextSibling(combo))
+        if (xuiWidgetIsType(combo, xuiComboBoxGetType(c))) break;
+    CHECK(combo != NULL && xuiWidgetGetVisible(combo));
+    CHECK(xuiComboBoxGetColors(combo, &text, NULL, &background, NULL, &focus, NULL) == XUI_OK);
+    CHECK(background == palette.iRowColor && text == palette.iTextColor && focus == palette.iHoverColor);
+    paint(c);
+    CHECK(xuiComboBoxOpen(combo) == XUI_OK);
+    paint(c); CHECK(xuiComboBoxIsOpen(combo));
+    layout_version = grid->iLayoutVersion; table_layout_version = table->iLayoutVersion;
+    p = prop("combobox.background.open_color", 0x193754ff); s = style(&p, 1);
+    CHECK(xuiStyleSetType(c, xuiComboBoxGetType(c), &s) == XUI_OK);
+    paint_only(combo); paint(c); CHECK(seen(p.tValue.iColor) && xuiComboBoxIsOpen(combo));
+    p.tValue.iColor = 0x573419ff;
+    CHECK(xuiWidgetSetInlineStyle(combo, &p, 1) == XUI_OK);
+    paint(c); CHECK(seen(p.tValue.iColor));
+    p.tValue.iColor = 0;
+    CHECK(xuiWidgetSetInlineStyle(combo, &p, 1) == XUI_OK);
+    paint(c); CHECK(!seen(0x193754ff) && !seen(0x573419ff));
+    CHECK(xuiComboBoxGetColors(combo, NULL, NULL, &background, NULL, &focus, NULL) == XUI_OK);
+    CHECK(background == palette.iRowColor && focus == palette.iHoverColor);
+    CHECK(xuiWidgetSetInlineStyle(combo, NULL, 0) == XUI_OK);
+    CHECK(xuiStyleRemoveType(c, xuiComboBoxGetType(c)) == XUI_OK);
+    paint(c); CHECK(seen(focus) && xuiComboBoxIsOpen(combo));
+    CHECK(grid->iLayoutVersion == layout_version && table->iLayoutVersion == table_layout_version);
+    CHECK(xuiTableGridEndEdit(grid, 0) != 0);
+    xuiDestroy(c);
+    proxy.tProxy.fontDestroy(&proxy.tProxy, font);
+}
 int main(int argc, char** argv)
 {
     if (argc == 1 || strcmp(argv[1], "scroll") == 0) scroll_styles();
     if (argc == 1 || strcmp(argv[1], "dock") == 0) { dock_styles(); dock_drag_styles(); }
+    if (argc == 1 || strcmp(argv[1], "table") == 0) table_grid_styles();
     printf("style_containers: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

@@ -53,6 +53,21 @@ caches, and active detached drag visuals before framework cache traversal.
 Content icons keep their original white modulation; built-in chrome icon tints
 are themeable. Menus delegate to their actual Menu widgets and `menu.*` styles.
 
+## TableGrid
+
+TableGrid is a composite, not a TableView subtype. Use the real TableView
+returned by `xuiTableGridGetTableView` for named/class/inline `tableview.*`
+styles. Global defaults and TableView type styles apply directly to that child.
+No duplicate `tablegrid.*` keys or injected child inline styles are needed.
+The TableView paint preparation hook refreshes its viewport in the same pass.
+
+Editors retain their own `input.*`, `numericinput.*`, `combobox.*`, picker,
+`textedit.*`, `popup.*`, and `button.*` style cascades. The TableGrid API palette
+provides Input/ComboBox base colors instead of fixed white/blue editing chrome;
+stylesheet changes never rewrite those bases. Explicit cell colors and picker
+values remain content, not theme defaults. TableGrid itself has no painted
+surface or paint-color dependency to synchronize.
+
 ## Verification
 
 From the detached workspace in Windows PowerShell:
@@ -68,6 +83,12 @@ chrome, all three button states, active drag overlays, transparent/clear
 transitions, original icon modulation, and unchanged layout versions.
 The existing `dock_panel` regression passes; `dock_panel_pixel` passes 1688
 checks with no failures when rebuilt through `--regression <name>`.
+The `table` selection passes 179 checks: default/type/class/token/inline colors
+reach the actual TableView viewport; Input and an open ComboBox editor react
+to live styles, transparent overrides, and clearing. Raw palettes and explicit
+cell colors are preserved. Warm table frames perform zero viewport redraws and
+paint-only style changes leave the owner/table layout versions unchanged.
+The existing `table_grid` regression also passes when rebuilt from source.
 
 The standalone build uses current project sources, including
 `src/xui_accessibility.c`, rather than a prebuilt XGE DLL. Tests observe colors

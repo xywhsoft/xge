@@ -1259,6 +1259,15 @@ static int __xuiTableGridInitEvents(xui_widget pWidget)
 	return iRet;
 }
 
+static void __xuiTableGridApplyEditorColors(xui_table_grid_data_t* pData,
+	const xui_table_view_colors_t* pColors)
+{
+	(void)xuiInputSetColors(pData->pInput, pColors->iRowColor, pColors->iTextColor,
+		pColors->iGridColor, pColors->iFocusRingColor);
+	(void)xuiComboBoxSetColors(pData->pCombo, pColors->iTextColor, pColors->iDisabledTextColor,
+		pColors->iRowColor, pColors->iAltRowColor, pColors->iHoverColor, pColors->iDisabledColor);
+}
+
 static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t* pData, const xui_table_grid_desc_t* pDesc)
 {
 	xui_context pContext;
@@ -1271,6 +1280,7 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	xui_text_edit_desc_t tTextEdit;
 	xui_button_desc_t tButton;
 	xui_widget pContent;
+	xui_table_view_colors_t tColors;
 	int iRet;
 
 	pContext = xuiWidgetGetContext(pWidget);
@@ -1279,8 +1289,6 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tInput.pFont = pData->pFont;
 	tInput.iMaxLength = XUI_TABLE_GRID_VALUE_CAPACITY - 1;
 	tInput.iTextAlign = XUI_INPUT_ALIGN_LEFT;
-	tInput.iFocusBorderColor = XUI_COLOR_RGBA(47, 128, 237, 255);
-	tInput.iBorderColor = XUI_COLOR_RGBA(47, 128, 237, 255);
 	iRet = xuiInputCreate(pContext, &pData->pInput, &tInput);
 	if ( iRet != XUI_OK ) return iRet;
 
@@ -1301,6 +1309,8 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tCombo.fPopupMaxHeight = 180.0f;
 	iRet = xuiComboBoxCreate(pContext, &pData->pCombo, &tCombo);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( xuiTableViewGetColors(pData->pTable, &tColors) == XUI_OK )
+		__xuiTableGridApplyEditorColors(pData, &tColors);
 
 	memset(&tColor, 0, sizeof(tColor));
 	tColor.iSize = sizeof(tColor);
@@ -1684,10 +1694,11 @@ XUI_API int xuiTableGridSetScrollbarMode(xui_widget pWidget, int iMode)
 XUI_API int xuiTableGridSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iHeader, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText)
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
+	xui_table_view_colors_t tColors;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)xuiTableViewSetColors(pData->pTable, iBackground, iHeader, iRow, iSelected, iGrid, iText);
-	(void)xuiInputSetColors(pData->pInput, XUI_COLOR_RGBA(255, 255, 255, 255), iText, XUI_COLOR_RGBA(47, 128, 237, 255), XUI_COLOR_RGBA(47, 128, 237, 255));
-	(void)xuiComboBoxSetColors(pData->pCombo, iText, XUI_COLOR_RGBA(150, 160, 172, 255), XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(249, 252, 255, 255), XUI_COLOR_RGBA(238, 246, 255, 255), XUI_COLOR_RGBA(242, 245, 249, 255));
+	if ( xuiTableViewGetColors(pData->pTable, &tColors) == XUI_OK )
+		__xuiTableGridApplyEditorColors(pData, &tColors);
 	return XUI_OK;
 }
 
@@ -1696,8 +1707,7 @@ XUI_API int xuiTableGridSetColorStyle(xui_widget pWidget, const xui_table_view_c
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
 	if ( (pData == NULL) || (pColors == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)xuiTableViewSetColorStyle(pData->pTable, pColors);
-	(void)xuiInputSetColors(pData->pInput, XUI_COLOR_RGBA(255, 255, 255, 255), pColors->iTextColor, pColors->iFocusRingColor, pColors->iFocusRingColor);
-	(void)xuiComboBoxSetColors(pData->pCombo, pColors->iTextColor, pColors->iDisabledTextColor, XUI_COLOR_RGBA(255, 255, 255, 255), pColors->iAltRowColor, pColors->iHoverColor, pColors->iDisabledColor);
+	__xuiTableGridApplyEditorColors(pData, pColors);
 	return XUI_OK;
 }
 
