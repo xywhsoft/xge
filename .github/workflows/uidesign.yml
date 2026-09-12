@@ -11,6 +11,7 @@ on:
       - "lib/xrt/**"
       - "xui_sources.bat"
       - "build_dll.bat"
+      - "api-docs/**"
       - ".github/workflows/uidesign.yml"
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - "lib/xrt/**"
       - "xui_sources.bat"
       - "build_dll.bat"
+      - "api-docs/**"
       - ".github/workflows/uidesign.yml"
 
 jobs:
@@ -40,3 +42,16 @@ jobs:
         run: |
           set "PATH=C:\msys64\ucrt64\bin;%PATH%"
           call tools\UIDesign\test.bat
+
+  # API 注释门禁（纯 Python，不依赖编译器）：覆盖率统计 + 棘轮/新增 API 检查。
+  # 见 api-docs/SPEC.md 第 8 节；规则 4（语法编译）在本地 verify_batch.bat 执行。
+  api-docs:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: API comment coverage and lint gates
+        shell: cmd
+        run: |
+          python api-docs\tools\api_comment_coverage.py
+          python api-docs\tools\comment_lint.py

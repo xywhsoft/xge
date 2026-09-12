@@ -838,7 +838,8 @@ static int __xuiProxyXgeSurfaceCreate(xui_proxy pProxy, xui_surface* ppSurface, 
 	iKind = (pDesc->iKind != 0) ? pDesc->iKind : XUI_SURFACE_KIND_TEXTURE;
 	iFormat = (pDesc->iFormat != 0) ? pDesc->iFormat : XUI_SURFACE_FORMAT_RGBA8;
 	if ( (iKind != XUI_SURFACE_KIND_TEXTURE) || (iFormat != XUI_SURFACE_FORMAT_RGBA8) ||
-	     (pDesc->iWidth <= 0) || (pDesc->iHeight <= 0) ) {
+	     (pDesc->iWidth <= 0) || (pDesc->iHeight <= 0) ||
+	     ((pDesc->iFlags & XUI_SURFACE_COMPRESS_MASK) == XUI_SURFACE_COMPRESS_MASK) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pSurface = __xuiProxyXgeSurfaceAlloc(pDesc->iFlags);
@@ -848,7 +849,7 @@ static int __xuiProxyXgeSurfaceCreate(xui_proxy pProxy, xui_surface* ppSurface, 
 	if ( (pSurface->iFlags & XUI_SURFACE_USAGE_TARGET) != 0 ) {
 		iRet = xgeRenderTargetCreate(&pSurface->tTarget, pDesc->iWidth, pDesc->iHeight);
 	} else {
-		iRet = xgeTextureCreateRGBA(&pSurface->tTexture, pDesc->iWidth, pDesc->iHeight, NULL);
+		iRet = xgeTextureCreateRGBAEx(&pSurface->tTexture, pDesc->iWidth, pDesc->iHeight, NULL, pDesc->iFlags & XUI_SURFACE_COMPRESS_MASK);
 	}
 	if ( iRet != XGE_OK ) {
 		xrtFree(pSurface);
@@ -866,7 +867,8 @@ static int __xuiProxyXgeSurfaceCreateRGBA(xui_proxy pProxy, xui_surface* ppSurfa
 	int iRet;
 	xui_rect_i_t tRect;
 
-	if ( (pProxy == NULL) || (ppSurface == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
+	if ( (pProxy == NULL) || (ppSurface == NULL) || (iWidth <= 0) || (iHeight <= 0) ||
+	     ((iFlags & XUI_SURFACE_COMPRESS_MASK) == XUI_SURFACE_COMPRESS_MASK) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
@@ -892,7 +894,7 @@ static int __xuiProxyXgeSurfaceCreateRGBA(xui_proxy pProxy, xui_surface* ppSurfa
 			iRet = xgeTextureUpdateRGBA(&pSurface->tTarget.tTexture, tRect.iX, tRect.iY, tRect.iW, tRect.iH, pUploadPixels, iWidth * 4);
 		}
 	} else {
-		iRet = xgeTextureCreateRGBA(&pSurface->tTexture, iWidth, iHeight, pUploadPixels);
+		iRet = xgeTextureCreateRGBAEx(&pSurface->tTexture, iWidth, iHeight, pUploadPixels, iFlags & XUI_SURFACE_COMPRESS_MASK);
 	}
 	if ( pPacked != NULL ) {
 		xrtFree(pPacked);
@@ -922,7 +924,7 @@ static int __xuiProxyXgeSurfaceLoadFile(xui_proxy pProxy, xui_surface* ppSurface
 	if ( pSurface == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeTextureLoadEx(&pSurface->tTexture, sPath, __xuiProxyXgeImageFlags(iFlags));
+	iRet = xgeTextureLoadEx(&pSurface->tTexture, sPath, __xuiProxyXgeImageFlags(iFlags) | (iFlags & XUI_SURFACE_COMPRESS_MASK));
 	if ( iRet != XGE_OK ) {
 		xrtFree(pSurface);
 		return iRet;
@@ -948,7 +950,7 @@ static int __xuiProxyXgeSurfaceLoadMemory(xui_proxy pProxy, xui_surface* ppSurfa
 	if ( pSurface == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeTextureLoadMemoryEx(&pSurface->tTexture, pData, iSize, __xuiProxyXgeImageFlags(iFlags));
+	iRet = xgeTextureLoadMemoryEx(&pSurface->tTexture, pData, iSize, __xuiProxyXgeImageFlags(iFlags) | (iFlags & XUI_SURFACE_COMPRESS_MASK));
 	if ( iRet != XGE_OK ) {
 		xrtFree(pSurface);
 		return iRet;
@@ -973,7 +975,7 @@ static int __xuiProxyXgeSurfaceLoadSvgFile(xui_proxy pProxy, xui_surface* ppSurf
 	if ( pSurface == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeSvgTextureLoad(&pSurface->tTexture, sPath, iWidth, iHeight);
+	iRet = xgeSvgTextureLoadEx(&pSurface->tTexture, sPath, iWidth, iHeight, iFlags & XUI_SURFACE_COMPRESS_MASK);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pSurface);
 		return iRet;
@@ -998,7 +1000,7 @@ static int __xuiProxyXgeSurfaceLoadSvgMemory(xui_proxy pProxy, xui_surface* ppSu
 	if ( pSurface == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeSvgTextureLoadMemory(&pSurface->tTexture, pData, iSize, iWidth, iHeight);
+	iRet = xgeSvgTextureLoadMemoryEx(&pSurface->tTexture, pData, iSize, iWidth, iHeight, iFlags & XUI_SURFACE_COMPRESS_MASK);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pSurface);
 		return iRet;

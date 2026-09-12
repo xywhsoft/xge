@@ -4,6 +4,9 @@ typedef struct xge_texture_shadow_t {
 	int iFormat;
 	int iStride;
 	unsigned char* pPixels;
+	int iStorage;
+	int iSwizzle;
+	int bPackingDisabled;
 } xge_texture_shadow_t;
 
 typedef struct xge_texture_yuv420p_t {
@@ -30,7 +33,11 @@ static uint64_t __xgeTextureMemoryBytes(xge_texture pTexture)
 		return (uint64_t)pTexture->iWidth * (uint64_t)pTexture->iHeight + (uint64_t)iUVWidth * (uint64_t)iUVHeight * 2u;
 	}
 	if ( pTexture->iFormat == XGE_PIXEL_RGBA8 ) {
-		return (uint64_t)pTexture->iWidth * (uint64_t)pTexture->iHeight * 4u;
+		const xge_texture_shadow_t* pShadow = (const xge_texture_shadow_t*)pTexture->pBackend;
+		unsigned int iBytes = 4u;
+		if ( pShadow != NULL && pShadow->iStorage == XGE_TEXTURE_STORAGE_R8 ) iBytes = 1u;
+		else if ( pShadow != NULL && pShadow->iStorage >= XGE_TEXTURE_STORAGE_RG8 ) iBytes = 2u;
+		return (uint64_t)pTexture->iWidth * (uint64_t)pTexture->iHeight * iBytes;
 	}
 	return 0;
 }
@@ -66,6 +73,7 @@ static int __xgeTextureShadowSet(xge_texture pTexture, int iWidth, int iHeight, 
 	pShadow->iHeight = iHeight;
 	pShadow->iFormat = XGE_PIXEL_RGBA8;
 	pShadow->iStride = iWidth * 4;
+	pShadow->iStorage = XGE_TEXTURE_STORAGE_RGBA8;
 	pTexture->pBackend = pShadow;
 	return XGE_OK;
 }
@@ -318,12 +326,15 @@ static int __xgeTextureUploadYUV420PNow(xge_texture pTexture)
 	return XGE_OK;
 }
 
+#include "xge_texture_storage.h"
+
 static int __xgeTextureUploadNow(xge_texture pTexture)
 {
 	xge_texture_shadow_t* pShadow;
-	xge_graphics_mapping_t tMapping;
+	xge_texture_choice_t arrChoices[6];
 	GLuint iTexture;
 	int iRet;
+	int i, iCount;
 
 	if ( (pTexture == NULL) || (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -347,42 +358,49 @@ static int __xgeTextureUploadNow(xge_texture pTexture)
 		 (glTexImage2D == NULL) ) {
 		return XGE_ERROR_GPU_FAILED;
 	}
-	iRet = xgeGraphicsMappingGet(XGE_GPU_BACKEND_NONE, &tMapping);
-	if ( iRet < 0 ) {
-		return iRet;
-	}
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
-	glGenTextures(1, &iTexture);
-	glBindTexture(GL_TEXTURE_2D, iTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, tMapping.iRGBA8InternalFormat, pTexture->iWidth, pTexture->iHeight, 0, tMapping.iRGBAFormat, tMapping.iUnsignedByteType, pShadow->pPixels);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	pTexture->iBackendId = iTexture;
-	iRet = __xgeTextureApplySampler(pTexture);
-	if ( iRet != XGE_OK ) {
-		return iRet;
+	iCount = __xgeTextureChoices(pTexture, arrChoices);
+	for ( i = 0; i < iCount; i++ ) {
+		iRet = __xgeTextureNewGPU(pTexture, pShadow->pPixels, arrChoices[i], &iTexture);
+		if ( iRet == XGE_OK ) {
+			pTexture->iBackendId = iTexture;
+			__xgeTextureStorageCommit(pTexture, arrChoices[i]);
+			return XGE_OK;
+		}
+		if ( iRet != XGE_ERROR_UNSUPPORTED ) return iRet;
 	}
-	return XGE_OK;
+	return XGE_ERROR_GPU_FAILED;
 }
 
-static int __xgeTextureFallbackUse(xge_texture pTexture, int iOriginalError)
+static int __xgeTextureFallbackUse(xge_texture pTexture, int iOriginalError, uint32_t iFlags)
 {
+	xge_texture_shadow_t* pShadow;
 	int iRet;
 
 	if ( (pTexture == NULL) || (g_xge.tFallbackTexture.iRefCount <= 0) ) {
 		return iOriginalError;
 	}
-	iRet = xgeTextureFallbackGet(pTexture);
+	pShadow = (xge_texture_shadow_t*)g_xge.tFallbackTexture.pBackend;
+	if ( pShadow == NULL || pShadow->pPixels == NULL ) return iOriginalError;
+	iRet = xgeTextureCreateRGBAEx(pTexture, g_xge.tFallbackTexture.iWidth, g_xge.tFallbackTexture.iHeight, pShadow->pPixels, iFlags);
 	if ( iRet != XGE_OK ) {
 		return iOriginalError;
 	}
+	pTexture->iFlags |= XGE_TEXTURE_FALLBACK;
 	return XGE_OK;
 }
 
 int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const void* pPixels)
 {
+	return xgeTextureCreateRGBAEx(pTexture, iWidth, iHeight, pPixels, XGE_TEXTURE_COMPRESS_LOSSLESS);
+}
+
+int xgeTextureCreateRGBAEx(xge_texture pTexture, int iWidth, int iHeight, const void* pPixels, uint32_t iFlags)
+{
 	int iRet;
 
-	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
+	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ||
+	     ((iFlags & XGE_TEXTURE_COMPRESS_MASK) == XGE_TEXTURE_COMPRESS_MASK) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (pTexture->iRefCount != 0) || (pTexture->iBackendId != 0) ||
@@ -399,6 +417,7 @@ int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const vo
 	pTexture->iWidth = iWidth;
 	pTexture->iHeight = iHeight;
 	pTexture->iFormat = XGE_PIXEL_RGBA8;
+	pTexture->iFlags = iFlags & XGE_TEXTURE_COMPRESS_MASK;
 	pTexture->iRefCount = 1;
 	pTexture->tSampler = xgeSamplerDefault();
 	g_xge.iTextureCount++;
@@ -640,10 +659,15 @@ void xgeImageFree(xge_image pImage)
 
 int xgeTextureCreateFromImage(xge_texture pTexture, const xge_image_t* pImage)
 {
+	return xgeTextureCreateFromImageEx(pTexture, pImage, XGE_TEXTURE_COMPRESS_LOSSLESS);
+}
+
+int xgeTextureCreateFromImageEx(xge_texture pTexture, const xge_image_t* pImage, uint32_t iFlags)
+{
 	if ( (pTexture == NULL) || (pImage == NULL) || (pImage->pPixels == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	return xgeTextureCreateRGBA(pTexture, pImage->iWidth, pImage->iHeight, pImage->pPixels);
+	return xgeTextureCreateRGBAEx(pTexture, pImage->iWidth, pImage->iHeight, pImage->pPixels, iFlags);
 }
 
 int xgeTextureLoad(xge_texture pTexture, const char* sPath)
@@ -656,14 +680,15 @@ int xgeTextureLoadEx(xge_texture pTexture, const char* sPath, uint32_t iFlags)
 	xge_image_t objImage;
 	int iRet;
 
+	if ( (iFlags & XGE_TEXTURE_COMPRESS_MASK) == XGE_TEXTURE_COMPRESS_MASK ) return XGE_ERROR_INVALID_ARGUMENT;
 	iRet = xgeImageLoadEx(&objImage, sPath, iFlags);
 	if ( iRet != XGE_OK ) {
-		return __xgeTextureFallbackUse(pTexture, iRet);
+		return __xgeTextureFallbackUse(pTexture, iRet, iFlags);
 	}
-	iRet = xgeTextureCreateFromImage(pTexture, &objImage);
+	iRet = xgeTextureCreateFromImageEx(pTexture, &objImage, iFlags);
 	xgeImageFree(&objImage);
 	if ( iRet != XGE_OK ) {
-		return __xgeTextureFallbackUse(pTexture, iRet);
+		return __xgeTextureFallbackUse(pTexture, iRet, iFlags);
 	}
 	return iRet;
 }
@@ -678,14 +703,15 @@ int xgeTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, u
 	xge_image_t objImage;
 	int iRet;
 
+	if ( (iFlags & XGE_TEXTURE_COMPRESS_MASK) == XGE_TEXTURE_COMPRESS_MASK ) return XGE_ERROR_INVALID_ARGUMENT;
 	iRet = xgeImageLoadMemoryEx(&objImage, pData, iSize, iFlags);
 	if ( iRet != XGE_OK ) {
-		return __xgeTextureFallbackUse(pTexture, iRet);
+		return __xgeTextureFallbackUse(pTexture, iRet, iFlags);
 	}
-	iRet = xgeTextureCreateFromImage(pTexture, &objImage);
+	iRet = xgeTextureCreateFromImageEx(pTexture, &objImage, iFlags);
 	xgeImageFree(&objImage);
 	if ( iRet != XGE_OK ) {
-		return __xgeTextureFallbackUse(pTexture, iRet);
+		return __xgeTextureFallbackUse(pTexture, iRet, iFlags);
 	}
 	return iRet;
 }
@@ -704,57 +730,83 @@ int xgeTextureAddRef(xge_texture pTexture)
 int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride)
 {
 	xge_texture_shadow_t* pShadow;
-	const unsigned char* pSrc;
-	unsigned char* pDst;
-	unsigned char* pPacked;
-	int i;
-	int iCopyStride;
+	xge_texture_choice_t tChoice;
+	const unsigned char* pSrc = (const unsigned char*)pPixels;
+	const void* pUpload;
+	void* pPacked = NULL;
+	int i, iCopyStride, iRet;
+	GLint iBinding = 0, iAlignment = 4, iInternal;
+	GLenum iFormat, iType;
 
-	if ( (pTexture == NULL) || (pPixels == NULL) || (iX < 0) || (iY < 0) || (iWidth <= 0) || (iHeight <= 0) ) {
+	if ( pTexture == NULL || pPixels == NULL || iX < 0 || iY < 0 || iWidth <= 0 || iHeight <= 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_RGBA8) || !__xgeTextureHasShadow(pTexture) ) {
+	if ( pTexture->iFormat != XGE_PIXEL_RGBA8 || !__xgeTextureHasShadow(pTexture) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (iX > (pTexture->iWidth - iWidth)) || (iY > (pTexture->iHeight - iHeight)) ) {
+	if ( iWidth > pTexture->iWidth || iHeight > pTexture->iHeight ||
+	     iX > pTexture->iWidth - iWidth || iY > pTexture->iHeight - iHeight ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iCopyStride = iWidth * 4;
-	if ( iStride <= 0 ) {
-		iStride = iCopyStride;
-	}
-	if ( iStride < iCopyStride ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
+	if ( iStride <= 0 ) iStride = iCopyStride;
+	if ( iStride < iCopyStride || (size_t)(iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)iStride ) return XGE_ERROR_INVALID_ARGUMENT;
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
-	pSrc = (const unsigned char*)pPixels;
-	pDst = pShadow->pPixels + (iY * pShadow->iStride) + (iX * 4);
-	for ( i = 0; i < iHeight; i++ ) {
-		memcpy(pDst + (i * pShadow->iStride), pSrc + (i * iStride), (size_t)iCopyStride);
-	}
+	tChoice = (xge_texture_choice_t){pShadow->iStorage, pShadow->iSwizzle};
 	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
-		if ( (glBindTexture == NULL) || (glTexSubImage2D == NULL) ) {
-			return XGE_ERROR_GPU_FAILED;
+		if ( glBindTexture == NULL || glTexSubImage2D == NULL ) return XGE_ERROR_GPU_FAILED;
+		if ( !__xgeTexturePatchFits(tChoice, pSrc, iWidth, iHeight, iStride) ) goto promote;
+		pUpload = pSrc;
+		if ( tChoice.iStorage != XGE_TEXTURE_STORAGE_RGBA8 || iStride != iCopyStride ) {
+			pPacked = __xgeTexturePack(tChoice, pSrc, iWidth, iHeight, iStride);
+			if ( pPacked == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+			pUpload = pPacked;
 		}
-		pPacked = NULL;
-		if ( iStride != iCopyStride ) {
-			pPacked = (unsigned char*)xrtMalloc((size_t)iCopyStride * (size_t)iHeight);
-			if ( pPacked == NULL ) {
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			for ( i = 0; i < iHeight; i++ ) {
-				memcpy(pPacked + (i * iCopyStride), pSrc + (i * iStride), (size_t)iCopyStride);
-			}
-			pSrc = pPacked;
+		__xgeTextureGLFormat(tChoice.iStorage, &iInternal, &iFormat, &iType);
+		if ( glGetIntegerv != NULL ) {
+			glGetIntegerv(GL_TEXTURE_BINDING_2D, &iBinding);
+			glGetIntegerv(GL_UNPACK_ALIGNMENT, &iAlignment);
 		}
+		__xgeTextureClearGLErrors();
 		glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, iX, iY, iWidth, iHeight, GL_RGBA, GL_UNSIGNED_BYTE, pSrc);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		if ( pPacked != NULL ) {
-			xrtFree(pPacked);
-		}
+		if ( glPixelStorei != NULL ) glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, iX, iY, iWidth, iHeight, iFormat, iType, pUpload);
+		iRet = __xgeTextureGLError(glGetError != NULL ? glGetError() : GL_NO_ERROR);
+		if ( glPixelStorei != NULL ) glPixelStorei(GL_UNPACK_ALIGNMENT, iAlignment);
+		glBindTexture(GL_TEXTURE_2D, (GLuint)iBinding);
+		xrtFree(pPacked);
+		if ( iRet == XGE_ERROR_UNSUPPORTED && tChoice.iStorage != XGE_TEXTURE_STORAGE_RGBA8 ) goto promote;
+		if ( iRet != XGE_OK ) return iRet;
 	}
+	for ( i = 0; i < iHeight; i++ )
+		memcpy(pShadow->pPixels + (size_t)(iY + i) * (size_t)pShadow->iStride + (size_t)iX * 4u,
+		       pSrc + (size_t)i * (size_t)iStride, (size_t)iCopyStride);
 	return XGE_OK;
+
+promote:
+	{
+		/* One-way promotion preserves untouched pixels and the previous GPU/CPU
+		 * contents if allocation/upload fails. Never recompress on later updates. */
+		size_t iBytes = (size_t)pShadow->iStride * (size_t)pShadow->iHeight;
+		unsigned char* pMerged = (unsigned char*)xrtMalloc(iBytes);
+		GLuint iNew, iOld = (GLuint)pTexture->iBackendId;
+		if ( pMerged == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+		memcpy(pMerged, pShadow->pPixels, iBytes);
+		for ( i = 0; i < iHeight; i++ )
+			memcpy(pMerged + (size_t)(iY + i) * (size_t)pShadow->iStride + (size_t)iX * 4u,
+			       pSrc + (size_t)i * (size_t)iStride, (size_t)iCopyStride);
+		tChoice = (xge_texture_choice_t){XGE_TEXTURE_STORAGE_RGBA8, 0};
+		iRet = __xgeTextureNewGPU(pTexture, pMerged, tChoice, &iNew);
+		if ( iRet == XGE_OK ) {
+			pTexture->iBackendId = iNew;
+			glDeleteTextures(1, &iOld);
+			__xgeTextureStorageCommit(pTexture, tChoice);
+			pShadow->bPackingDisabled = 1;
+			xrtFree(pShadow->pPixels);
+			pShadow->pPixels = pMerged;
+		} else xrtFree(pMerged);
+		return iRet;
+	}
 }
 
 static int __xgeTextureCopyPlane(unsigned char* pDst, int iDstStride, int iWidth, int iHeight, const void* pSrcData, int iSrcStride)

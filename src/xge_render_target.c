@@ -89,7 +89,7 @@ int xgeRenderTargetCreate(xge_render_target pTarget, int iWidth, int iHeight)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pTarget, 0, sizeof(*pTarget));
-	iRet = xgeTextureCreateRGBA(&pTarget->tTexture, iWidth, iHeight, NULL);
+	iRet = xgeTextureCreateRGBAEx(&pTarget->tTexture, iWidth, iHeight, NULL, XGE_TEXTURE_COMPRESS_NONE);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}

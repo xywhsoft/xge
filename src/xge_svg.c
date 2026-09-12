@@ -565,7 +565,7 @@ static xge_svg_gaussian_renderer_t g_xgeSvgGaussianRenderer;
 static int __xgeSvgTagNameEquals(const char* pTag, const char* sName);
 static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, const char* sBaseDir);
 static int __xgeSvgRasterizeMemoryEx(const void* pData, int iSize, int iWidth, int iHeight, void* pPixels, int iStride, const char* sBaseDir);
-static int __xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight, const char* sBaseDir);
+static int __xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight, const char* sBaseDir, uint32_t iFlags);
 static int __xgeSvgColorNameEquals(const char* sText, const char* sName);
 static int __xgeSvgParseColor(const char* sText, uint32_t* pColor);
 static int __xgeSvgParseColorThorvg(const char* sText, uint32_t* pColor);
@@ -22156,11 +22156,17 @@ int xgeSvgRasterizeMemory(const void* pData, int iSize, int iWidth, int iHeight,
 
 int xgeSvgTextureLoad(xge_texture pTexture, const char* sURI, int iWidth, int iHeight)
 {
+	return xgeSvgTextureLoadEx(pTexture, sURI, iWidth, iHeight, XGE_TEXTURE_COMPRESS_LOSSLESS);
+}
+
+int xgeSvgTextureLoadEx(xge_texture pTexture, const char* sURI, int iWidth, int iHeight, uint32_t iFlags)
+{
 	xge_resource_t tResource;
 	char* sBaseDir;
 	int iRet;
 
-	if ( (pTexture == NULL) || (sURI == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
+	if ( (pTexture == NULL) || (sURI == NULL) || (iWidth <= 0) || (iHeight <= 0) ||
+	     ((iFlags & XGE_TEXTURE_COMPRESS_MASK) == XGE_TEXTURE_COMPRESS_MASK) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	sBaseDir = __xgeSvgUriBaseDir(sURI);
@@ -22172,19 +22178,20 @@ int xgeSvgTextureLoad(xge_texture pTexture, const char* sURI, int iWidth, int iH
 		xrtFree(sBaseDir);
 		return iRet;
 	}
-	iRet = __xgeSvgTextureLoadMemoryEx(pTexture, tResource.pData, tResource.iSize, iWidth, iHeight, sBaseDir);
+	iRet = __xgeSvgTextureLoadMemoryEx(pTexture, tResource.pData, tResource.iSize, iWidth, iHeight, sBaseDir, iFlags);
 	xgeResourceFree(&tResource);
 	xrtFree(sBaseDir);
 	return iRet;
 }
 
-static int __xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight, const char* sBaseDir)
+static int __xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight, const char* sBaseDir, uint32_t iFlags)
 {
 	unsigned char* pPixels;
 	int iStride;
 	int iRet;
 
-	if ( (pTexture == NULL) || (pData == NULL) || (iSize <= 0) || (iWidth <= 0) || (iHeight <= 0) ) {
+	if ( (pTexture == NULL) || (pData == NULL) || (iSize <= 0) || (iWidth <= 0) || (iHeight <= 0) ||
+	     ((iFlags & XGE_TEXTURE_COMPRESS_MASK) == XGE_TEXTURE_COMPRESS_MASK) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( iWidth > (INT32_MAX / 4) || iHeight > (INT32_MAX / (iWidth * 4)) ) {
@@ -22197,7 +22204,7 @@ static int __xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, 
 	}
 	iRet = __xgeSvgRasterizeMemoryEx(pData, iSize, iWidth, iHeight, pPixels, iStride, sBaseDir);
 	if ( iRet == XGE_OK ) {
-		iRet = xgeTextureCreateRGBA(pTexture, iWidth, iHeight, pPixels);
+		iRet = xgeTextureCreateRGBAEx(pTexture, iWidth, iHeight, pPixels, iFlags);
 	}
 	xrtFree(pPixels);
 	return iRet;
@@ -22205,5 +22212,10 @@ static int __xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, 
 
 int xgeSvgTextureLoadMemory(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight)
 {
-	return __xgeSvgTextureLoadMemoryEx(pTexture, pData, iSize, iWidth, iHeight, NULL);
+	return xgeSvgTextureLoadMemoryEx(pTexture, pData, iSize, iWidth, iHeight, XGE_TEXTURE_COMPRESS_LOSSLESS);
+}
+
+int xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight, uint32_t iFlags)
+{
+	return __xgeSvgTextureLoadMemoryEx(pTexture, pData, iSize, iWidth, iHeight, NULL, iFlags);
 }

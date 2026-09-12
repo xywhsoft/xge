@@ -153,6 +153,22 @@ typedef float GLclampf;
 #define GL_RGB8 0x8051
 #define GL_R8 0x8229
 #define GL_RGBA8 0x8058
+#define GL_RG 0x8227
+#define GL_RG8 0x822B
+#define GL_GREEN 0x1904
+#define GL_BLUE 0x1905
+#define GL_ALPHA 0x1906
+#define GL_RGB565 0x8D62
+#define GL_RGB5_A1 0x8057
+#define GL_RGBA4 0x8056
+#define GL_UNSIGNED_SHORT_5_6_5 0x8363
+#define GL_UNSIGNED_SHORT_5_5_5_1 0x8034
+#define GL_UNSIGNED_SHORT_4_4_4_4 0x8033
+#define GL_TEXTURE_BINDING_2D 0x8069
+#define GL_TEXTURE_SWIZZLE_R 0x8E42
+#define GL_TEXTURE_SWIZZLE_G 0x8E43
+#define GL_TEXTURE_SWIZZLE_B 0x8E44
+#define GL_TEXTURE_SWIZZLE_A 0x8E45
 
 /* 帧缓冲 */
 #define GL_FRAMEBUFFER 0x8D40
@@ -178,6 +194,10 @@ typedef float GLclampf;
 
 /* 错误 */
 #define GL_NO_ERROR 0
+#define GL_INVALID_ENUM 0x0500
+#define GL_INVALID_VALUE 0x0501
+#define GL_INVALID_OPERATION 0x0502
+#define GL_OUT_OF_MEMORY 0x0505
 
 /* ============================================================================
  * GL 函数指针类型定义

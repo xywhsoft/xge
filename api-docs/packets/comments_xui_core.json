@@ -1,0 +1,164 @@
+{
+ "xuiInputPointerMove": [
+  "/* 注入主指针移动事件（入队，经派发管线处理）。 */"
+ ],
+ "xuiInputPointerDown": [
+  "/* 注入主指针按下事件。 */"
+ ],
+ "xuiInputPointerUp": [
+  "/* 注入主指针释放事件。 */"
+ ],
+ "xuiInputPointerWheel": [
+  "/* 注入滚轮事件（X/Y 双向）。 */"
+ ],
+ "xuiInputPointerLeave": [
+  "/* 注入主指针离开视口事件。 */"
+ ],
+ "xuiInputPointerMoveEx": [
+  "/* 按指针 id 注入移动事件（多点/触控笔）。 */"
+ ],
+ "xuiInputPointerDownEx": [
+  "/* 按指针 id 注入按下事件。 */"
+ ],
+ "xuiInputPointerUpEx": [
+  "/* 按指针 id 注入释放事件。 */"
+ ],
+ "xuiInputPointerWheelEx": [
+  "/* 按指针 id 注入滚轮事件。 */"
+ ],
+ "xuiInputPointerCancelEx": [
+  "/* 按指针 id 注入取消事件（系统打断）。 */"
+ ],
+ "xuiInputCancelAllPointers": [
+  "/* 取消全部活跃指针（窗口失活时）。 */"
+ ],
+ "xuiInputSetModifiers": [
+  "/* 覆盖当前键盘修饰位。 */"
+ ],
+ "xuiInputGetModifiers": [
+  "/* 读取当前修饰位。 */"
+ ],
+ "xuiInputKeyDown": [
+  "/* 注入主键盘按下（键码经热键与焦点链派发）。 */"
+ ],
+ "xuiInputKeyUp": [
+  "/* 注入主键盘释放。 */"
+ ],
+ "xuiInputText": [
+  "/* 注入文本输入（UTF-8 码点串）。 */"
+ ],
+ "xuiInputKeyDownEx": [
+  "/* 注入带设备修饰的键盘按下。 */"
+ ],
+ "xuiInputKeyUpEx": [
+  "/* 注入带设备修饰的键盘释放。 */"
+ ],
+ "xuiInputTextEx": [
+  "/* 注入带来源标志的文本输入。 */"
+ ],
+ "xuiInputImeComposition": [
+  "/* 注入输入法组合串事件（更新预编辑）。 */"
+ ],
+ "xuiInputImeCompositionEx": [
+  "/* 注入带光标/候选区间的组合事件。 */"
+ ],
+ "xuiInputViewport": [
+  "/* 通知视口尺寸变更（派发 VIEWPORT 事件）。 */"
+ ],
+ "xuiInputDpi": [
+  "/* 通知 DPI 变更（级联尺寸与缓存失效）。 */"
+ ],
+ "xuiCreate": [
+  "/* 创建 XUI 上下文（根与覆盖根就绪；渲染前需 xuiSetProxy 绑定后端）。 */"
+ ],
+ "xuiDestroy": [
+  "/* 销毁上下文及全部控件树。 */"
+ ],
+ "xuiReportError": [
+  "/* 主动上报错误（走上下文错误回调链）。 */"
+ ],
+ "xuiCreateLanguage": [
+  "/* 创建自定义语言包（内建六种之外）。 */"
+ ],
+ "xuiLanguageSetText": [
+  "/* 设置语言包文本槽。 */"
+ ],
+ "xuiLanguageTouch": [
+  "/* 提升语言修订号（触发重译）。 */"
+ ],
+ "xuiTranslate": [
+  "/* 按文本 id 取当前语言译文（无翻译回落默认语言）。 */"
+ ],
+ "xuiUpdate": [
+  "/* 推进框架更新（时间驱动动画/延迟任务）。 */"
+ ],
+ "xuiRectFromFloatNearest": [
+  "/* 浮点矩形四舍五入为整数矩形。 */"
+ ],
+ "xuiInteractionPolicyDefault": [
+  "/* 输出默认交互策略。 */"
+ ],
+ "xuiInvalidateRect": [
+  "/* 声明上下文局部损伤矩形。 */"
+ ],
+ "xuiInvalidateAll": [
+  "/* 声明全视口损伤。 */"
+ ],
+ "xuiHasDamage": [
+  "/* 自上次渲染以来是否存在损伤。 */"
+ ],
+ "xuiRenderPrepare": [
+  "/* 渲染准备阶段：布局 + 绘制前同步钩子（onPreparePaint）+ 缓存重建。 */"
+ ],
+ "xuiRender": [
+  "/* 渲染上下文到代理目标（构建渲染树，按损伤列表合成）。 */"
+ ],
+ "xuiBuildRenderTree": [
+  "/* 仅构建渲染树（诊断/离线合成用）。 */"
+ ],
+ "xuiLayout": [
+  "/* 强制全树布局（正常由渲染准备驱动）。 */"
+ ],
+ "xuiPurgeCaches": [
+  "/* 立即清理超预算缓存（LRU）。 */"
+ ],
+ "xuiRegisterFont": [
+  "/* 按名注册字体到上下文（FindFont 可查）。 */"
+ ],
+ "xuiPollEvent": [
+  "/* 轮询一个待处理事件（外接事件循环用）；无事件返回非零。 */"
+ ],
+ "xuiDispatchPendingEvents": [
+  "/* 冲刷排队事件（统一派发，含内联队列）。 */"
+ ],
+ "xuiHitTest": [
+  "/* 视口坐标命中测试；返回命中控件（无则 NULL）。 */"
+ ],
+ "xuiReleasePointerCapture": [
+  "/* 释放主指针捕获。 */"
+ ],
+ "xuiReleasePointerCaptureEx": [
+  "/* 按指针 id 释放捕获。 */"
+ ],
+ "xuiFocusNext": [
+  "/* 焦点域内下一个 Tab 停靠控件。 */"
+ ],
+ "xuiCommandDispatch": [
+  "/* 派发命令事件（经 COMMAND 事件链路由）。 */"
+ ],
+ "xuiHasImeCandidateRect": [
+  "/* 当前是否持有候选框锚点。 */"
+ ],
+ "xuiQueryCursor": [
+  "/* 查询坐标处应显示的光标（经光标回调链）。 */"
+ ],
+ "xuiOpenFileDialog": [
+  "/* 一步打开文件选择对话框（模态；结果经 GetResultPath 读取）。 */"
+ ],
+ "xuiSaveFileDialog": [
+  "/* 一步打开保存文件对话框（覆盖确认）。 */"
+ ],
+ "xuiSelectFolderDialog": [
+  "/* 一步打开目录选择对话框。 */"
+ ]
+}

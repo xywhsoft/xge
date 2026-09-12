@@ -1632,7 +1632,10 @@ int xgeFontCacheGetStats(xge_font pFont, xge_font_cache_stats_t* pStats)
 	pStats->iAtlasCpuBytes = iPageBytes * (uint64_t)pFont->tAtlas.iPageCount;
 	pPages = (xge_glyph_atlas_page_t*)pFont->tAtlas.pPages;
 	for ( i = 0; (pPages != NULL) && (i < pFont->tAtlas.iPageCount); i++ ) {
-		if ( pPages[i].tTexture.iBackendId != 0 ) pStats->iAtlasGpuBytes += iPageBytes;
+		xge_texture_storage_info_t tStorage = {0};
+		tStorage.iSize = sizeof(tStorage);
+		if ( xgeTextureGetStorageInfo(&pPages[i].tTexture, &tStorage) == XGE_OK )
+			pStats->iAtlasGpuBytes += tStorage.iGpuBytes;
 	}
 	return XGE_OK;
 }

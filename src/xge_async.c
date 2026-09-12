@@ -205,7 +205,7 @@ int xgeAsyncPoll(xge_async_request pRequest)
 				*(xge_image)pRequest->pTarget = pPayload->tImage;
 				memset(&pPayload->tImage, 0, sizeof(pPayload->tImage));
 			} else if ( pRequest->iType == XGE_ASYNC_TEXTURE ) {
-				iResult = xgeTextureCreateFromImage((xge_texture)pRequest->pTarget, &pPayload->tImage);
+				iResult = xgeTextureCreateFromImageEx((xge_texture)pRequest->pTarget, &pPayload->tImage, pRequest->iFlags);
 			}
 		}
 		__xgeAsyncPayloadFree(pPayload);
