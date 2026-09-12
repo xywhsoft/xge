@@ -1,8 +1,8 @@
 # XUI Chrome Color Styles
 
-Scoped implementation and verification notes for the detached `chrome` worktree,
-based on `83940262da4ca3787315ffabb51cbb5fbd7a787b`. This is a companion to the
-mainline `docs/XUI_COLOR_STYLES.md`, not a claim of whole-repository coverage.
+Implementation and focused verification notes for widget chrome. This is a
+companion to [the global color reference](XUI_COLOR_STYLES.md), which records
+the complete integration results.
 
 ## Resolution Contract
 
@@ -103,9 +103,9 @@ Delegated controls keep their existing style namespaces:
   Its Image child keeps image-specific styling; arbitrary client content is not
   recolored by the panel chrome keys.
 - Core `tooltip.background.color`, `tooltip.border.color`, and
-  `tooltip.text.color` belong to the separate mainline Tooltip work. They govern
+  `tooltip.text.color` belong to the shared Tooltip implementation. They govern
   the core frame/default text, not the Inventory custom `onPaint` content palette.
-  This branch neither implements nor verifies those three core additions.
+  Those three keys are covered by the shared Tooltip tests.
 
 ## Explicit Content Exceptions
 
@@ -122,7 +122,7 @@ Delegated controls keep their existing style namespaces:
 
 ## Other Files Reviewed
 
-The following files were read but not modified by this branch. The listed keys
+The following files were also reviewed. The listed keys
 are a source inventory, not additional assertions in `xui_style_chrome_test`.
 
 | Source | Existing color entry points |
@@ -156,7 +156,7 @@ The wrapper can also be called from `test_xui` as
 the caller's directory with `popd`, preserves compiler/test exit codes, and does
 not run an older executable if compilation fails.
 
-- Latest detached-worktree result: `xui_style_chrome_test: 5194 checks, 0 failures`.
+- Focused result: `xui_style_chrome_test: 5194 checks, 0 failures`.
 - Compiler configuration: GCC, `-O1 -g -Wall -Wextra -Werror`, with existing
   unused-parameter, unused-function and cast-function-type exclusions.
 - The test includes 16 owned control implementations exactly once and links 23
@@ -178,28 +178,8 @@ not run an older executable if compilation fails.
 - Wrapper failure path: an invalid process-local `GCC_EXEC_PREFIX` produced
   compiler exit `1`; no `xui_style_chrome_test:` output followed, proving that the
   stale executable was not run. The environment was restored after the check.
-- `git diff --check` is part of the closeout. Whole-mainline regression remains
-  with the parent integration task and is not claimed by this focused test.
+- `git diff --check` is part of the closeout. The focused test does not replace
+  the complete integration suite recorded in the global color reference.
 
-## Integration Order
-
-The parent reports all control changes through `86b0b0c` already integrated into
-mainline `583d7d2b74df8fae246890431032e2d915b8db93`. Do not apply them twice.
-Only the final wrapper/documentation closeout commit needs adding to that state.
-The complete prior detached-worktree sequence is retained here for traceability:
-
-| Commit | Scope |
-| --- | --- |
-| `c9051fe2a7363faa018be9651964e16d0e5c7d72` | Slider, RangeSlider, ScrollBar, VirtualJoystick; focused test/wrapper |
-| `e951283633e606f4191cf9859f5215df4301d4e6` | Toolbar, MenuBar, StatusBar |
-| `d79ad80882b23cc74dd8d558a09b3188e4a51367` | Tabs, Accordion, Carousel, Window decorations and initial dependency refresh |
-| `bf3bef05a6e6c3585c41b4d22b85eec04b565d52` | Chart |
-| `6b2e7fb36467b31a6e367739cbebb0216e4278ce` | Inventory tooltip palette and refresh |
-| `f47261442509016d22e59c547d848f6fee23f9ea` | Imported core hook; equivalent to parent `4ca291ea2976c8aba061b661255e64b8b42dcd3f`, not a second core change |
-| `6d72252f0453aaef39351bb17b2868d0433c552f` | Replace initial Update-based color dependency refresh with prepare-paint hooks |
-| `8ee214654dbb2dd78f6896305e6c9aaa060efaa3` | StepBar |
-| `ba3f62d35921457559fd9f375f9a286411fc9c34` | TagInput child color synchronization and selection base preservation |
-| `86b0b0cf8c4f3e3600b703014834ba694daa746b` | Panel title palette synchronization and focused assertions |
-
-The final delivery response supplies the new closeout commit hash, which cannot
-be embedded in the document created by that same commit. No changes are pushed.
+See [the global color reference](XUI_COLOR_STYLES.md) for the integrated
+verification results and the shared paint-dependency contract.

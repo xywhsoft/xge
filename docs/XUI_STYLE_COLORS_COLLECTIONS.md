@@ -10,14 +10,14 @@ determined by the resolved property's value type, not by a nonzero value or alph
 both literal 0 and RGB with alpha 0 are valid transparent overrides.
 
 Every color key requests only CACHE | RENDER dirtiness. The private top-down
-onPreparePaint hook from core commit 4ca291e synchronizes ScrollFrame colors and
+onPreparePaint hook synchronizes ScrollFrame colors and
 invalidates the viewport before the framework prepares its children. No child
 cache callbacks, UpdateBegin/End, drawing-state mutation or layout work is used.
 Unchanged style hashes skip this synchronization. Geometry, row indexes, merges,
 text layouts and content measurements are not rebuilt for color changes.
 
 Explicit TableView cell/column/row colors retain their existing precedence.
-MessageList in this baseline has no per-sender/per-row color fields; handled
+MessageList has no per-sender/per-row color fields; handled
 onRenderNode callbacks retain complete control over explicit content colors.
 Timeline layer and span custom colors are tracked separately from default colors,
 including across record movement/removal. SetLayerColor(0) remains transparent;
@@ -25,12 +25,16 @@ SetSpanColor(0) retains its existing reset-to-default convention. Default spans
 react to theme/API changes even when created before the change. Blank key frames
 now paint iBlankKeyFrameColor instead of hardcoded white.
 
-TableView keys apply to true derived widget types. TableGrid and PropertyGrid in
-this baseline are composition-based widgets, not TableView subtypes. A TableView
-type style reaches their inner TableView; forwarding a container's class/inline
-styles belongs to those controls and is outside these changes. ScrollFrame,
+TableView keys apply to true derived widget types. TableGrid and PropertyGrid
+are composition-based widgets, not TableView subtypes. A TableView type style
+reaches their inner TableView. Their own color forwarding and PropertyGrid's
+role-aware overrides are documented in [Container colors](XUI_STYLE_COLORS_CONTAINERS.md).
+ScrollFrame,
 ScrollBar and context Menu/Popup have their own independent global style keys;
 these changes do not replace their APIs or overwrite custom content renderers.
+
+See [the global color reference](XUI_COLOR_STYLES.md) for the shared paint
+dependency contract and integrated verification results.
 
 ## Keys
 

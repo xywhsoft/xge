@@ -20,8 +20,8 @@ child rendering callbacks or clearing their dirty flags manually.
 The private `onPreparePaint` hook resolves the backing frame when the owner's
 resolved style changes, including local class/inline changes. This happens
 before child cache preparation, without an explicit `xuiStyleRefresh`, manual
-child drawing, or layout invalidation. It requires the shared core commit
-`4ca291e` (cherry-picked into this worktree as `883874b`).
+child drawing, or layout invalidation. The shared hook is part of the core;
+see [the global color reference](XUI_COLOR_STYLES.md) for its contract.
 
 Scrollbars delegate to the actual ScrollBar widgets returned by
 `xuiScrollFrameGetHScrollBarWidget` / `xuiScrollFrameGetVScrollBarWidget` (or
@@ -107,12 +107,12 @@ swatches. Its editors use the independent child style cascades described above.
 
 ## Verification
 
-From the detached workspace in Windows PowerShell:
+From the repository root in Windows PowerShell:
 
 ```powershell
 cmd /c test_xui\build_style_containers_test.bat
 cmd /c test_xui\build_style_containers_adapter_test.bat
-cmd /c test_xui\build_style_containers_adapter_test.bat collection D:\GIT\xge\test_xui
+cmd /c test_xui\build_style_containers_adapter_test.bat collection
 cmd /c test_xui\build_style_containers_test.bat --regression table_view
 cmd /c test_xui\build_style_containers_test.bat --regression table_view_index
 cmd /c test_xui\build_style_containers_test.bat --regression table_provider_lifetime
@@ -150,12 +150,10 @@ also checks unchanged API colors, row-index storage, merge generation, layout
 versions, and zero warm-frame repaint. The existing TableView, index,
 PropertyGrid and TableGrid regressions pass. The original provider lifetime
 test passes 996 cases / 11335 checks; the collection TableView test passes all
-29 color keys and its render/cache checks. The collection command above reads
-the existing shared test header from main (identical test-proxy declarations);
-after integration its optional include-directory argument can be omitted.
+29 color keys and its render/cache checks.
 
-The only compiler warning is the pre-existing DatePicker `snprintf` truncation
-warning at `src/xui_date_picker.c:576`.
+These standalone builds can report the pre-existing DatePicker `snprintf`
+truncation warning in `src/xui_date_picker.c`.
 
 The standalone build uses current project sources, including
 `src/xui_accessibility.c`, rather than a prebuilt XGE DLL. Tests observe colors

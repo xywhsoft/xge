@@ -176,11 +176,9 @@ color comparisons avoid repeated work on warm frames. ComboBox also checks owner
 cache dirtiness so a public base-color setter reaches its Input child even when
 the style hash is unchanged.
 
-This depends on core commit `4ca291e`. In the detached picker worktree that exact
-commit was cherry-picked as `4247d48`; main already has the original and must not
-cherry-pick the duplicate. Menu/Popup integration uses `e750822` and `cd8278c`.
-The latter makes menu color forwarding paint-only and updates the active popup.
-No shared Menu/Popup files were edited by the picker changes.
+Menu/Popup color forwarding is paint-only and updates the active popup. See
+[the global color reference](XUI_COLOR_STYLES.md) for the shared dependency
+contract and integrated verification results.
 
 ## Verification
 
@@ -195,18 +193,11 @@ Run from the repository root in Windows PowerShell with GCC on `PATH`:
 .\test_xui\build_style_pickers_test.bat -Legacy
 ```
 
-Before Menu/Popup commits are merged, the combined regression can be reproduced
-without changing either source file:
-
-```powershell
-.\test_xui\build_style_pickers_test.bat -OverlayRef cd8278c
-.\test_xui\build_style_pickers_test.bat -Legacy -OverlayRef cd8278c
-```
-
-`-OverlayRef` compiles only `src/xui_menu.c` and `src/xui_popup.c` from that Git
-revision via compiler standard input. All other sources, including core, come
-from the current checkout. After both integrations, the no-argument command tests
-the combined current sources. `-Family combobox` (or another family name from
+The optional `-OverlayRef` comparison argument compiles only `src/xui_menu.c`
+and `src/xui_popup.c` from a specified Git revision via compiler standard input.
+All other sources, including core, come from the current checkout. The
+no-argument command tests the combined current sources and is the integration
+entry point. `-Family combobox` (or another family name from
 the source filenames) narrows a local run. `-Legacy` runs the five existing
 behavioral suites instead of the new style suites.
 
@@ -257,7 +248,5 @@ working-directory independence. An invalid family returned a nonzero exit code
 through the BAT wrapper. The runner's discovery glob and documentation coverage
 of all 133 resolved color keys were checked without running the global suite.
 
-Integration status at main `81f1054`: the five original control commits and five
-prepaint follow-ups are already integrated. The remaining handoff contains only
-the BAT entry, its PowerShell builder changes, and this document; no control or
-core commit needs to be applied again.
+These implementation and test changes are integrated into mainline; no extra
+control or core patch is required. The default command uses current sources.

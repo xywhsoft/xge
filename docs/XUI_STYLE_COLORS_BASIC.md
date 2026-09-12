@@ -262,11 +262,8 @@ The expanded tables contain all 105 unique color keys registered by the scoped
 control sources, with no missing or extra keys. `git diff --check` also passes.
 The prepare-paint build reports the existing DatePicker `snprintf`
 format-truncation warning at this baseline; that unrelated source was not
-changed. Full-project integration regression is handled by the parent audit.
+changed. Full-project results are recorded in the global color reference.
 
-The private prepare-paint core dependency was cherry-picked from parent commit
-`4ca291e` as `1828aa0` in the basic worktree. It must not be integrated twice.
-NumericInput and Canvas were migrated to that hook in `a74e043`; the earlier
-manual child-cache redraw implementations in `eb82b7b` and `146f2ff` must not be
-used without this later correction. No manual shared-header/core changes are
-part of the basic-control patches beyond the explicitly imported dependency.
+NumericInput and Canvas use the private prepare-paint hook. They do not manually
+repaint child caches. See [the global color reference](XUI_COLOR_STYLES.md) for
+the shared dependency contract and integrated verification results.

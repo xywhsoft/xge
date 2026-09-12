@@ -167,26 +167,5 @@ FileDialog 的 window/list prepare 均显式寻找并调用父类型 hook；Wind
 
 核心全状态缓存和销毁保护由 `prepare_paint` 专项覆盖，交互/生命周期由原有各控件测试覆盖。这里没有替代主线完整回归，也不是 GPU 像素截图测试。
 
-## 集成序列
-
-业务提交按以下顺序摘取（早期 MsgBox 手工刷新实现由后续增量移除，不应只摘早期部分）：
-
-```text
-e750822 cd8278c 4177667 d41c520 f5be5c9
-77b38cc 1e39c7b 48614e1
-ad45cbb 9381e9f efd7a51
-```
-
-本页文档提交接在上述序列之后。主线已有的依赖副本请跳过：
-
-| 原主线提交 | 本 worktree 的副本 |
-| --- | --- |
-| `4ca291e`，core prepaint | `1318811` |
-| `8de114a`，含滚动条透明零修复 | `f05fcda` |
-| `9140f86` | `061c3b3` |
-| `4943e92`，Window chrome 依赖 | `90a0c4f` |
-| `faed550` | `4bd02ec` |
-| `b817c2b` | `2bab1a9` |
-| `4f5eac8`，含 Window prepaint | `957c84f` |
-
-共享源文件仅通过上述已授权依赖 cherry-pick 导入，没有手工编辑。业务写集限于六个所属源文件、本专项测试/wrapper 和本文档；未 push。
+以上实现已合入主线，无需额外应用控件补丁。整库验证和共用绘制依赖约定见
+[XUI 全局颜色样式](XUI_COLOR_STYLES.md)。
