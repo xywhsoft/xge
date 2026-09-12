@@ -1,4 +1,5 @@
 #include "xui_internal.h"
+#include "xui_table_view_paint.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -147,6 +148,7 @@ typedef struct xui_table_view_data_t {
 	uint32_t iPickerBorderColor;
 	uint32_t iPreparedStyleHash;
 	int bPaintStylePrepared;
+	xui_table_view_paint_adapter_t tPaintAdapter;
 } xui_table_view_data_t;
 
 static xui_table_view_data_t* __xuiTableViewGetData(xui_widget pWidget);
@@ -382,6 +384,9 @@ static void __xuiTableViewResolve(xui_widget pWidget, const xui_table_view_data_
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.text.color", &pOut->iTextColor);
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.text.disabled_color", &pOut->iDisabledTextColor);
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.focus.color", &pOut->iFocusRingColor);
+	/* The owner has already resolved its role palette and any child overrides. */
+	if ( pData->tPaintAdapter.bHasBackground ) pOut->iBackgroundColor = pData->tPaintAdapter.iBackgroundColor;
+	if ( pData->tPaintAdapter.bHasGrid ) pOut->iGridColor = pData->tPaintAdapter.iGridColor;
 	pOut->iPickerBackgroundColor = __xuiTableViewColorWithAlpha(pOut->iHeaderColor, (uint8_t)(__xuiTableViewAlpha(pOut->iHeaderColor) * 220 / 255));
 	pOut->iPickerBorderColor = __xuiTableViewColorWithAlpha(pOut->iGridColor, (uint8_t)(__xuiTableViewAlpha(pOut->iGridColor) * 220 / 255));
 	(void)__xuiTableViewStyleColor(pWidget, "tableview.text.selected_color", &pOut->iSelectedTextColor);
@@ -423,6 +428,25 @@ static int __xuiTableViewInvalidate(xui_widget pWidget, xui_table_view_data_t* p
 		iRet = xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return iRet;
+}
+
+int xuiInternalTableViewSetPaintAdapter(xui_widget pWidget, const xui_table_view_paint_adapter_t* pAdapter)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	xui_table_view_paint_adapter_t tAdapter = {0};
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pAdapter != NULL ) tAdapter = *pAdapter;
+	if ( pData->tPaintAdapter.bHasBackground == tAdapter.bHasBackground &&
+	     pData->tPaintAdapter.iBackgroundColor == tAdapter.iBackgroundColor &&
+	     pData->tPaintAdapter.bHasGrid == tAdapter.bHasGrid &&
+	     pData->tPaintAdapter.iGridColor == tAdapter.iGridColor &&
+	     pData->tPaintAdapter.bCellColorsPresent == tAdapter.bCellColorsPresent &&
+	     pData->tPaintAdapter.onCellBackground == tAdapter.onCellBackground &&
+	     pData->tPaintAdapter.onCellDecorations == tAdapter.onCellDecorations &&
+	     pData->tPaintAdapter.pUser == tAdapter.pUser ) return XUI_OK;
+	pData->tPaintAdapter = tAdapter;
+	pData->iCallbackGeneration++;
+	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiTableViewInvalidateViewportRect(xui_table_view_data_t* pData, xui_rect_t tRect)
@@ -1316,7 +1340,7 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 	if ( (iState & XUI_TABLE_CELL_SELECTED) != 0 ) {
 		iText = pResolved->iSelectedTextColor;
 	}
-	if ( pCell->bHasStyle && (__xuiTableViewAlpha(pCell->iTextColor) != 0) ) {
+	if ( pCell->bHasStyle && (pResolved->tPaintAdapter.bCellColorsPresent || __xuiTableViewAlpha(pCell->iTextColor) != 0) ) {
 		iText = pCell->iTextColor;
 	}
 	if ( (iColumn >= 0) && (iColumn < pData->iColumnCount) && pData->arrColumns[iColumn].bHasStyle && (__xuiTableViewAlpha(pData->arrColumns[iColumn].iTextColor) != 0) ) {
@@ -2330,18 +2354,26 @@ static int __xuiTableViewViewportRenderOperation(xui_widget pViewport, xui_draw_
 			if ( __xuiTableViewRowDisabled(pData, i) ) iBackground = tResolved.iDisabledColor;
 			if ( pData->arrRows != NULL && i < pData->iRowStateCount && pData->arrRows[i].bHasStyle && __xuiTableViewAlpha(pData->arrRows[i].iBackgroundColor) != 0 ) iBackground = pData->arrRows[i].iBackgroundColor;
 			if ( pData->arrColumns[j].bHasStyle && __xuiTableViewAlpha(pData->arrColumns[j].iBackgroundColor) != 0 ) iBackground = pData->arrColumns[j].iBackgroundColor;
-			if ( tCellData.bHasStyle && __xuiTableViewAlpha(tCellData.iBackgroundColor) != 0 ) iBackground = tCellData.iBackgroundColor;
+			if ( tCellData.bHasStyle && (tResolved.tPaintAdapter.bCellColorsPresent || __xuiTableViewAlpha(tCellData.iBackgroundColor) != 0) ) iBackground = tCellData.iBackgroundColor;
 			if ( (iState & XUI_TABLE_CELL_SELECTED) != 0 ) {
 				iBackground = tResolved.iSelectedColor;
 			} else if ( (iState & XUI_TABLE_CELL_HOVER) != 0 ) {
 				iBackground = tResolved.iHoverColor;
 			}
-			iRet = __xuiTableViewDrawFill(pProxy, pDraw, tCell, iBackground);
-			if ( iRet != XUI_OK ) return iRet;
+			iHandled = 0;
+			if ( tResolved.tPaintAdapter.onCellBackground != NULL ) {
+				iHandled = tResolved.tPaintAdapter.onCellBackground(pWidget, i, j, &tCellData, pDraw, tCell, iState, tResolved.tPaintAdapter.pUser);
+				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
+				if ( iHandled < 0 ) return iHandled;
+			}
+			if ( !iHandled ) {
+				iRet = __xuiTableViewDrawFill(pProxy, pDraw, tCell, iBackground);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 			iGrid = tResolved.iGridColor;
 			if ( pData->arrRows != NULL && i < pData->iRowStateCount && pData->arrRows[i].bHasStyle && __xuiTableViewAlpha(pData->arrRows[i].iGridColor) != 0 ) iGrid = pData->arrRows[i].iGridColor;
 			if ( pData->arrColumns[j].bHasStyle && __xuiTableViewAlpha(pData->arrColumns[j].iGridColor) != 0 ) iGrid = pData->arrColumns[j].iGridColor;
-			if ( tCellData.bHasStyle && __xuiTableViewAlpha(tCellData.iGridColor) != 0 ) iGrid = tCellData.iGridColor;
+			if ( tCellData.bHasStyle && (tResolved.tPaintAdapter.bCellColorsPresent || __xuiTableViewAlpha(tCellData.iGridColor) != 0) ) iGrid = tCellData.iGridColor;
 			if ( tCellData.onRender != NULL ) {
 				iHandled = tCellData.onRender(pWidget, i, j, &tCellData, pDraw, tCell, iState, tCellData.pRenderUser);
 				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
@@ -2375,11 +2407,17 @@ static int __xuiTableViewViewportRenderOperation(xui_widget pViewport, xui_draw_
 				iRet = pProxy->drawLine(pProxy, pDraw, tCell.fX + tCell.fW - 0.5f, tCell.fY, tCell.fX + tCell.fW - 0.5f, tCell.fY + tCell.fH, 1.0f, iGrid);
 				if ( iRet != XUI_OK ) return iRet;
 			}
-			if ( (iState & XUI_TABLE_CELL_INVALID) != 0 ) {
+			iHandled = 0;
+			if ( tResolved.tPaintAdapter.onCellDecorations != NULL ) {
+				iHandled = tResolved.tPaintAdapter.onCellDecorations(pWidget, i, j, &tCellData, pDraw, tCell, iState, tResolved.tPaintAdapter.pUser);
+				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
+				if ( iHandled < 0 ) return iHandled;
+			}
+			if ( !iHandled && (iState & XUI_TABLE_CELL_INVALID) != 0 ) {
 				iRet = __xuiTableViewDrawFill(pProxy, pDraw, (xui_rect_t){tCell.fX, tCell.fY, 3.0f, tCell.fH}, tResolved.iInvalidColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
-			if ( (iState & XUI_TABLE_CELL_DIRTY) != 0 && pProxy->drawTriangleFill != NULL ) {
+			if ( !iHandled && (iState & XUI_TABLE_CELL_DIRTY) != 0 && pProxy->drawTriangleFill != NULL ) {
 				(void)pProxy->drawTriangleFill(pProxy, pDraw,
 					(xui_vec2_t){tCell.fX + tCell.fW - 8.0f, tCell.fY},
 					(xui_vec2_t){tCell.fX + tCell.fW, tCell.fY},
