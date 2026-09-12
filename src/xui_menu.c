@@ -7,6 +7,9 @@
 #define XUI_MENU_TEXT_SAFETY_PAD 6.0f
 #define XUI_MENU_SUBMENU_HOVER_DELAY 0.20f
 
+/* Private bridge between these two overlay implementations, not a public API. */
+int xuiInternalPopupSetPanelColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow);
+
 typedef struct xui_menu_data_t {
 	xui_widget pPopup;
 	xui_widget pOwner;
@@ -85,8 +88,7 @@ static void __xuiMenuRegisterColors(xui_context pContext, xui_widget_type pType)
 static void __xuiMenuApplyPopupColors(xui_menu_data_t* pData, const xui_menu_colors_t* pColors)
 {
 	if ( pData->pPopup != NULL )
-		(void)xuiPopupSetColors(pData->pPopup, pColors->iPanelColor, pColors->iBorderColor,
-			pColors->iShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
+		(void)xuiInternalPopupSetPanelColors(pData->pPopup, pColors->iPanelColor, pColors->iBorderColor, pColors->iShadowColor);
 }
 
 static int __xuiMenuPreparePaint(xui_widget pWidget)

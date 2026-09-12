@@ -1026,8 +1026,13 @@ static int __xuiPopupPreparePaint(xui_widget pWidget)
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	uint32_t arrColors[10], iMask = 0;
+	xui_cache_policy_t tBackdropPolicy;
 	size_t i;
 	if ( pData == NULL || pData->pScrollView == NULL ) return XUI_OK;
+	tBackdropPolicy = xuiWidgetGetCachePolicy(pData->pBackdropVisual);
+	tBackdropPolicy.iPolicy = __xuiPopupAlpha(__xuiPopupStyleColor(pWidget, "popup.backdrop.color", pData->iBackdropColor)) != 0
+		? XUI_CACHE_POLICY_SELF : XUI_CACHE_POLICY_NONE;
+	(void)xuiWidgetSetCachePolicy(pData->pBackdropVisual, &tBackdropPolicy);
 	(void)xuiScrollViewGetColors(pData->pScrollView, &arrColors[0], &arrColors[1], &arrColors[2],
 		&arrColors[3], &arrColors[4], &arrColors[5]);
 	(void)xuiScrollViewGetButtonColors(pData->pScrollView, &arrColors[6], &arrColors[7]);
@@ -1084,7 +1089,7 @@ static void __xuiPopupDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 {
 	memset(pPolicy, 0, sizeof(*pPolicy));
 	pPolicy->iSize = sizeof(*pPolicy);
-	pPolicy->iPolicy = XUI_CACHE_POLICY_SELF;
+	pPolicy->iPolicy = XUI_CACHE_POLICY_NONE;
 	pPolicy->iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	pPolicy->iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
@@ -1245,6 +1250,7 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	(void)xuiWidgetSetOverflow(pData->pPanel, XUI_OVERFLOW_VISIBLE);
 	(void)xuiWidgetSetFocusable(pData->pPanel, 0);
 	(void)xuiWidgetSetTabStop(pData->pPanel, 0);
+	tPolicy.iPolicy = XUI_CACHE_POLICY_SELF;
 	(void)xuiWidgetSetCachePolicy(pData->pPanel, &tPolicy);
 	(void)xuiWidgetSetCacheRenderCallback(pData->pPanel, __xuiPopupPanelCacheRender, pData);
 	(void)xuiWidgetSetOverflow(pData->pScrollView, XUI_OVERFLOW_CLIP);
@@ -1797,6 +1803,19 @@ XUI_API xui_rect_t xuiPopupGetContentRect(xui_widget pWidget)
 	return tContent;
 }
 
+/* Menu uses this paint-only bridge from its dependency hook. */
+int xuiInternalPopupSetPanelColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPanelColor == iPanel && pData->iBorderColor == iBorder && pData->iShadowColor == iShadow ) return XUI_OK;
+	pData->iPanelColor = iPanel;
+	pData->iBorderColor = iBorder;
+	pData->iShadowColor = iShadow;
+	(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iBackdrop)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
@@ -1815,6 +1834,8 @@ XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBor
 	pData->iBackdropColor = iBackdrop;
 	if ( pData->bOpen && bShield != __xuiPopupShouldUseShield(pData) ) {
 		(void)xuiPopupApplyPlacement(pWidget);
+	} else if ( pData->bOpen ) {
+		(void)__xuiPopupEnsureModalFocus(pContext);
 	}
 	if ( !xuiInternalContextDestroyPending(pContext) && xuiInternalWidgetIsValid(pWidget) ) {
 		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
