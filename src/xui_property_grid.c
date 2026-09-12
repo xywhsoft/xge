@@ -1,4 +1,5 @@
 #include "xui_internal.h"
+#include "xui_table_view_paint.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,13 @@ typedef struct xui_property_grid_data_t {
 	float fCategoryHeight;
 	xui_rect_t tDescriptionRect;
 	xui_property_grid_style_t tStyle;
+	xui_property_grid_style_t tPaintStyle;
+	uint32_t iPaintStyleHash;
+	uint32_t iTableStyleHash;
+	int bPaintStyleValid;
+	int bPaintDependenciesDirty;
+	uint32_t iPreparedOwnerHash;
+	int bPaintDependenciesPrepared;
 	xui_property_grid_select_proc onSelect;
 	void* pSelectUser;
 	xui_property_grid_validate_proc onValidate;
@@ -48,10 +56,112 @@ typedef struct xui_property_grid_data_t {
 } xui_property_grid_data_t;
 
 static xui_property_grid_data_t* __xuiPropertyGridGetData(xui_widget pWidget);
+static int __xuiPropertyGridCellBackground(xui_widget, int, int, const xui_table_view_cell_t*, xui_draw_context_t*, xui_rect_t, int, void*);
+static int __xuiPropertyGridCellDecorations(xui_widget, int, int, const xui_table_view_cell_t*, xui_draw_context_t*, xui_rect_t, int, void*);
 
 static int __xuiPropertyGridAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
+}
+
+static const struct {
+	const char* sName;
+	size_t iOffset;
+	const char* sTableName;
+} __xuiPropertyGridColorProperties[] = {
+	{"propertygrid.background.color", offsetof(xui_property_grid_style_t, iBackgroundColor), "tableview.background.color"},
+	{"propertygrid.grid.color", offsetof(xui_property_grid_style_t, iGridColor), "tableview.grid.color"},
+	{"propertygrid.category.background_color", offsetof(xui_property_grid_style_t, iCategoryBackgroundColor), "tableview.header.color"},
+	{"propertygrid.category.hover_color", offsetof(xui_property_grid_style_t, iCategoryHoverColor), "tableview.row.hover_color"},
+	{"propertygrid.category.text_color", offsetof(xui_property_grid_style_t, iCategoryTextColor), "tableview.header.text_color"},
+	{"propertygrid.category.icon_color", offsetof(xui_property_grid_style_t, iCategoryIconColor), "tableview.header.text_color"},
+	{"propertygrid.name.background_color", offsetof(xui_property_grid_style_t, iNameBackgroundColor), "tableview.row.color"},
+	{"propertygrid.name.text_color", offsetof(xui_property_grid_style_t, iNameTextColor), "tableview.text.color"},
+	{"propertygrid.name.hover_color", offsetof(xui_property_grid_style_t, iNameHoverColor), "tableview.row.hover_color"},
+	{"propertygrid.value.background_color", offsetof(xui_property_grid_style_t, iValueBackgroundColor), "tableview.row.color"},
+	{"propertygrid.value.text_color", offsetof(xui_property_grid_style_t, iValueTextColor), "tableview.text.color"},
+	{"propertygrid.selected.color", offsetof(xui_property_grid_style_t, iSelectedColor), "tableview.row.selected_color"},
+	{"propertygrid.readonly.text_color", offsetof(xui_property_grid_style_t, iReadonlyTextColor), "tableview.text.disabled_color"},
+	{"propertygrid.invalid.color", offsetof(xui_property_grid_style_t, iInvalidColor), "tableview.cell.invalid_color"},
+	{"propertygrid.dirty.color", offsetof(xui_property_grid_style_t, iDirtyColor), "tableview.cell.dirty_color"}
+};
+
+static const xui_property_grid_style_t* __xuiPropertyGridColors(xui_property_grid_data_t* pData)
+{
+	xui_style_property_t tProperty;
+	uint32_t iHash = xuiWidgetGetStyleHash(pData->pWidget);
+	uint32_t iTableHash = xuiWidgetGetStyleHash(pData->pTableView);
+	size_t i;
+	if ( pData->bPaintStyleValid && pData->iPaintStyleHash == iHash && pData->iTableStyleHash == iTableHash ) return &pData->tPaintStyle;
+	pData->tPaintStyle = pData->tStyle;
+	for ( i = 0; i < sizeof(__xuiPropertyGridColorProperties) / sizeof(__xuiPropertyGridColorProperties[0]); ++i ) {
+		uint32_t* pColor = (uint32_t*)((char*)&pData->tPaintStyle + __xuiPropertyGridColorProperties[i].iOffset);
+		if ( xuiWidgetGetResolvedStyleProperty(pData->pTableView, __xuiPropertyGridColorProperties[i].sTableName, &tProperty) == XUI_OK &&
+		     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) *pColor = tProperty.tValue.iColor;
+		if ( xuiWidgetGetResolvedStyleProperty(pData->pWidget, __xuiPropertyGridColorProperties[i].sName, &tProperty) == XUI_OK &&
+		     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) {
+			*pColor = tProperty.tValue.iColor;
+		}
+		/* Local child overrides remain explicit; role colors beat shared table themes. */
+		if ( xuiWidgetGetInlineStyleProperty(pData->pTableView, __xuiPropertyGridColorProperties[i].sTableName, &tProperty) == XUI_OK &&
+		     xuiWidgetGetResolvedStyleProperty(pData->pTableView, __xuiPropertyGridColorProperties[i].sTableName, &tProperty) == XUI_OK &&
+		     tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) *pColor = tProperty.tValue.iColor;
+	}
+	pData->iPaintStyleHash = iHash;
+	pData->iTableStyleHash = iTableHash;
+	pData->bPaintStyleValid = 1;
+	pData->bPaintDependenciesDirty = 1;
+	return &pData->tPaintStyle;
+}
+
+static int __xuiPropertyGridPreparePaint(xui_widget pWidget)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	xui_table_view_paint_adapter_t tAdapter = {0};
+	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
+	int iRet;
+	if ( pData == NULL || pData->pTableGrid == NULL || pData->pTableView == NULL ) return XUI_OK;
+	if ( !pData->bPaintDependenciesPrepared || pData->iPreparedOwnerHash != iHash ) {
+		iRet = xuiWidgetResolveStyle(pData->pTableGrid);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetResolveStyle(pData->pTableView);
+		if ( iRet != XUI_OK ) return iRet;
+		pData->iPreparedOwnerHash = iHash;
+		pData->bPaintDependenciesPrepared = 1;
+	}
+	(void)__xuiPropertyGridColors(pData);
+	if ( !pData->bPaintDependenciesDirty ) return XUI_OK;
+	tAdapter.bHasBackground = 1;
+	tAdapter.iBackgroundColor = pData->tPaintStyle.iBackgroundColor;
+	tAdapter.bHasGrid = 1;
+	tAdapter.iGridColor = pData->tPaintStyle.iGridColor;
+	tAdapter.bCellColorsPresent = 1;
+	tAdapter.onCellBackground = __xuiPropertyGridCellBackground;
+	tAdapter.onCellDecorations = __xuiPropertyGridCellDecorations;
+	tAdapter.pUser = pData;
+	iRet = xuiInternalTableViewSetPaintAdapter(pData->pTableView, &tAdapter);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiWidgetInvalidate(pData->pTableView, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiWidgetInvalidate(xuiTableViewGetViewportWidget(pData->pTableView), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->bPaintDependenciesDirty = 0;
+	return XUI_OK;
+}
+
+static void __xuiPropertyGridRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+	xui_style_property_info_t tInfo;
+	size_t i;
+	for ( i = 0; i < sizeof(__xuiPropertyGridColorProperties) / sizeof(__xuiPropertyGridColorProperties[0]); ++i ) {
+		if ( xuiStyleFindProperty(pContext, __xuiPropertyGridColorProperties[i].sName) != 0 ) continue;
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.iSize = sizeof(tInfo);
+		tInfo.sName = __xuiPropertyGridColorProperties[i].sName;
+		tInfo.pWidgetType = pType;
+		tInfo.iValueType = XUI_STYLE_VALUE_COLOR;
+		tInfo.iDirtyFlags = XUI_STYLE_DIRTY_DEFAULT;
+		tInfo.iFlags = XUI_STYLE_PROPERTY_INHERITED;
+		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	}
 }
 
 static float __xuiPropertyGridMax(float fA, float fB)
@@ -442,6 +552,7 @@ static void __xuiPropertyGridApplyStyle(xui_property_grid_data_t* pData)
 		pData->tStyle.iGridColor,
 		pData->tStyle.iValueTextColor);
 	(void)xuiTableViewSetDisabledTextColor(pData->pTableView, pData->tStyle.iReadonlyTextColor);
+	(void)xuiWidgetInvalidate(pData->pTableView, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static void __xuiPropertyGridRebuildVisible(xui_property_grid_data_t* pData)
@@ -460,10 +571,8 @@ static void __xuiPropertyGridRebuildVisible(xui_property_grid_data_t* pData)
 		pData->arrRows[pData->iVisibleCount].fHeight = pData->fCategoryHeight;
 		pData->arrRows[pData->iVisibleCount].bSelected = 0;
 		pData->arrRows[pData->iVisibleCount].bDisabled = 0;
-		pData->arrRows[pData->iVisibleCount].bHasStyle = 1;
-		pData->arrRows[pData->iVisibleCount].iBackgroundColor = pData->tStyle.iCategoryBackgroundColor;
-		pData->arrRows[pData->iVisibleCount].iTextColor = pData->tStyle.iCategoryTextColor;
-		pData->arrRows[pData->iVisibleCount].iGridColor = pData->tStyle.iGridColor;
+		/* Category colors are resolved by the cell adapter, not cached in row data. */
+		pData->arrRows[pData->iVisibleCount].bHasStyle = 0;
 		pData->iVisibleCount++;
 		if ( pData->arrCategories[iCategory].bExpanded == 0 ) {
 			continue;
@@ -526,7 +635,56 @@ static void __xuiPropertyGridDrawCategoryArrow(xui_property_grid_data_t* pData, 
 		tB = (xui_vec2_t){fCX - 2.0f, fCY + fS};
 		tC = (xui_vec2_t){fCX + 4.0f, fCY};
 	}
-	(void)tProxy.drawTriangleFill(&tProxy, pDraw, tA, tB, tC, pData->tStyle.iCategoryIconColor);
+	(void)tProxy.drawTriangleFill(&tProxy, pDraw, tA, tB, tC, __xuiPropertyGridColors(pData)->iCategoryIconColor);
+}
+
+static int __xuiPropertyGridCellBackground(xui_widget pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser)
+{
+	xui_property_grid_data_t* pData = (xui_property_grid_data_t*)pUser;
+	const xui_property_grid_style_t* pColors = __xuiPropertyGridColors(pData);
+	xui_proxy_t tProxy;
+	uint32_t iColor;
+	int iRet;
+	(void)pWidget;
+	if ( __xuiPropertyGridValidCategory(pData, __xuiPropertyGridVisibleRowCategory(pData, iRow)) ) {
+		iColor = (iState & XUI_TABLE_CELL_HOVER) ? pColors->iCategoryHoverColor : pColors->iCategoryBackgroundColor;
+	} else if ( __xuiPropertyGridValidProperty(pData, __xuiPropertyGridVisibleRowProperty(pData, iRow)) ) {
+		if ( iColumn == 0 ) iColor = (iState & XUI_TABLE_CELL_HOVER) ? pColors->iNameHoverColor : pColors->iNameBackgroundColor;
+		else if ( iState & XUI_TABLE_CELL_SELECTED ) iColor = pColors->iSelectedColor;
+		else if ( iState & XUI_TABLE_CELL_HOVER ) iColor = pColors->iNameHoverColor;
+		else iColor = (pCell != NULL && pCell->bHasStyle) ? pCell->iBackgroundColor : pColors->iValueBackgroundColor;
+	} else return 0;
+	if ( xuiGetProxy(xuiWidgetGetContext(pData->pWidget), &tProxy) != XUI_OK ) return 0;
+	if ( tProxy.drawRectFill != NULL ) {
+		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect(tRect), iColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return 1;
+}
+
+static int __xuiPropertyGridCellDecorations(xui_widget pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser)
+{
+	xui_property_grid_data_t* pData = (xui_property_grid_data_t*)pUser;
+	const xui_property_grid_style_t* pColors = __xuiPropertyGridColors(pData);
+	xui_proxy_t tProxy;
+	int iRet;
+	(void)pWidget;
+	(void)iRow;
+	(void)iColumn;
+	(void)pCell;
+	if ( xuiGetProxy(xuiWidgetGetContext(pData->pWidget), &tProxy) != XUI_OK ) return 0;
+	if ( (iState & XUI_TABLE_CELL_INVALID) && tProxy.drawRectFill != NULL ) {
+		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect((xui_rect_t){tRect.fX, tRect.fY, 3.0f, tRect.fH}), pColors->iInvalidColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iState & XUI_TABLE_CELL_DIRTY) && tProxy.drawTriangleFill != NULL ) {
+		iRet = tProxy.drawTriangleFill(&tProxy, pDraw,
+			(xui_vec2_t){tRect.fX + tRect.fW - 8.0f, tRect.fY},
+			(xui_vec2_t){tRect.fX + tRect.fW, tRect.fY},
+			(xui_vec2_t){tRect.fX + tRect.fW, tRect.fY + 8.0f}, pColors->iDirtyColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return 1;
 }
 
 static int __xuiPropertyGridCategoryRenderer(xui_widget pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser)
@@ -535,13 +693,13 @@ static int __xuiPropertyGridCategoryRenderer(xui_widget pWidget, int iRow, int i
 	xui_property_grid_category_t* pCategory;
 	xui_proxy_t tProxy;
 	xui_rect_t tText;
-	uint32_t iBackground;
 	int iCategory;
 	int iRet;
 
 	(void)pWidget;
 	(void)iColumn;
 	(void)pCell;
+	(void)iState;
 	pData = (xui_property_grid_data_t*)pUser;
 	iCategory = __xuiPropertyGridVisibleRowCategory(pData, iRow);
 	if ( !__xuiPropertyGridValidCategory(pData, iCategory) ) {
@@ -551,21 +709,16 @@ static int __xuiPropertyGridCategoryRenderer(xui_widget pWidget, int iRow, int i
 		return 0;
 	}
 	pCategory = &pData->arrCategories[iCategory];
-	iBackground = ((iState & XUI_TABLE_CELL_HOVER) != 0) ? pData->tStyle.iCategoryHoverColor : pData->tStyle.iCategoryBackgroundColor;
-	if ( tProxy.drawRectFill != NULL ) {
-		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect(tRect), iBackground);
-		if ( iRet != XUI_OK ) return iRet;
-	}
 	__xuiPropertyGridDrawCategoryArrow(pData, pDraw, tRect, pCategory->bExpanded);
 	tText = tRect;
 	tText.fX += 24.0f;
 	tText.fW = __xuiPropertyGridMax(1.0f, tText.fW - 28.0f);
 	if ( (tProxy.drawText != NULL) && (pData->pFont != NULL) ) {
-		iRet = tProxy.drawText(&tProxy, pDraw, pData->pFont, pCategory->sName, xuiInternalSnapRect(tText), pData->tStyle.iCategoryTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = tProxy.drawText(&tProxy, pDraw, pData->pFont, pCategory->sName, xuiInternalSnapRect(tText), __xuiPropertyGridColors(pData)->iCategoryTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tProxy.drawLine != NULL ) {
-		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + tRect.fH - 0.5f, tRect.fX + tRect.fW, tRect.fY + tRect.fH - 0.5f, 1.0f, pData->tStyle.iGridColor);
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + tRect.fH - 0.5f, tRect.fX + tRect.fW, tRect.fY + tRect.fH - 0.5f, 1.0f, __xuiPropertyGridColors(pData)->iGridColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return 1;
@@ -577,7 +730,6 @@ static int __xuiPropertyGridNameRenderer(xui_widget pWidget, int iRow, int iColu
 	xui_property_grid_property_t* pProp;
 	xui_proxy_t tProxy;
 	xui_rect_t tText;
-	uint32_t iBackground;
 	uint32_t iText;
 	int iProperty;
 	int iRet;
@@ -585,6 +737,7 @@ static int __xuiPropertyGridNameRenderer(xui_widget pWidget, int iRow, int iColu
 	(void)pWidget;
 	(void)iColumn;
 	(void)pCell;
+	(void)iState;
 	pData = (xui_property_grid_data_t*)pUser;
 	iProperty = __xuiPropertyGridVisibleRowProperty(pData, iRow);
 	if ( !__xuiPropertyGridValidProperty(pData, iProperty) ) {
@@ -594,12 +747,7 @@ static int __xuiPropertyGridNameRenderer(xui_widget pWidget, int iRow, int iColu
 		return 0;
 	}
 	pProp = &pData->arrProperties[iProperty];
-	iBackground = ((iState & XUI_TABLE_CELL_HOVER) != 0) ? pData->tStyle.iNameHoverColor : pData->tStyle.iNameBackgroundColor;
-	if ( tProxy.drawRectFill != NULL ) {
-		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect(tRect), iBackground);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iText = ((pProp->iFlags & XUI_PROPERTY_FLAG_DISABLED) != 0) ? pData->tStyle.iReadonlyTextColor : pData->tStyle.iNameTextColor;
+	iText = ((pProp->iFlags & XUI_PROPERTY_FLAG_DISABLED) != 0) ? __xuiPropertyGridColors(pData)->iReadonlyTextColor : __xuiPropertyGridColors(pData)->iNameTextColor;
 	tText = tRect;
 	tText.fX += 8.0f;
 	tText.fW = __xuiPropertyGridMax(1.0f, tText.fW - 12.0f);
@@ -608,9 +756,9 @@ static int __xuiPropertyGridNameRenderer(xui_widget pWidget, int iRow, int iColu
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tProxy.drawLine != NULL ) {
-		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + tRect.fH - 0.5f, tRect.fX + tRect.fW, tRect.fY + tRect.fH - 0.5f, 1.0f, pData->tStyle.iGridColor);
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + tRect.fH - 0.5f, tRect.fX + tRect.fW, tRect.fY + tRect.fH - 0.5f, 1.0f, __xuiPropertyGridColors(pData)->iGridColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX + tRect.fW - 0.5f, tRect.fY, tRect.fX + tRect.fW - 0.5f, tRect.fY + tRect.fH, 1.0f, pData->tStyle.iGridColor);
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX + tRect.fW - 0.5f, tRect.fY, tRect.fX + tRect.fW - 0.5f, tRect.fY + tRect.fH, 1.0f, __xuiPropertyGridColors(pData)->iGridColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return 1;
@@ -624,9 +772,6 @@ static int __xuiPropertyGridValueRenderer(xui_widget pWidget, int iRow, int iCol
 	void* pRenderUser;
 	xui_proxy_t tProxy;
 	xui_rect_t tText;
-	xui_vec2_t tA;
-	xui_vec2_t tB;
-	xui_vec2_t tC;
 	const char* sText;
 	uint32_t iText;
 	int iProperty;
@@ -690,30 +835,19 @@ static int __xuiPropertyGridValueRenderer(xui_widget pWidget, int iRow, int iCol
 			}
 		}
 	}
-	iText = (pCell != NULL && __xuiPropertyGridAlpha(pCell->iTextColor) != 0) ? pCell->iTextColor : pData->tStyle.iValueTextColor;
+	iText = (pCell != NULL && pCell->bHasStyle) ? pCell->iTextColor : __xuiPropertyGridColors(pData)->iValueTextColor;
 	tText = (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 1.0f, __xuiPropertyGridMax(1.0f, tRect.fW - 16.0f), __xuiPropertyGridMax(1.0f, tRect.fH - 2.0f)};
 	if ( (tProxy.drawText != NULL) && (pData->pFont != NULL) && (__xuiPropertyGridAlpha(iText) != 0) ) {
 		iRet = tProxy.drawText(&tProxy, pDraw, pData->pFont, sText, xuiInternalSnapRect(tText), iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tProxy.drawLine != NULL ) {
-		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + tRect.fH - 0.5f, tRect.fX + tRect.fW, tRect.fY + tRect.fH - 0.5f, 1.0f, (pCell != NULL) ? pCell->iGridColor : pData->tStyle.iGridColor);
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + tRect.fH - 0.5f, tRect.fX + tRect.fW, tRect.fY + tRect.fH - 0.5f, 1.0f, (pCell != NULL) ? pCell->iGridColor : __xuiPropertyGridColors(pData)->iGridColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX + tRect.fW - 0.5f, tRect.fY, tRect.fX + tRect.fW - 0.5f, tRect.fY + tRect.fH, 1.0f, (pCell != NULL) ? pCell->iGridColor : pData->tStyle.iGridColor);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( ((iState & XUI_TABLE_CELL_INVALID) != 0) && tProxy.drawRectFill != NULL ) {
-		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect((xui_rect_t){tRect.fX, tRect.fY, 3.0f, tRect.fH}), XUI_COLOR_RGBA(218, 82, 82, 255));
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX + tRect.fW - 0.5f, tRect.fY, tRect.fX + tRect.fW - 0.5f, tRect.fY + tRect.fH, 1.0f, (pCell != NULL) ? pCell->iGridColor : __xuiPropertyGridColors(pData)->iGridColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( ((iState & XUI_TABLE_CELL_DIRTY) != 0) && tProxy.drawTriangleFill != NULL ) {
-		tA = (xui_vec2_t){tRect.fX + tRect.fW - 8.0f, tRect.fY};
-		tB = (xui_vec2_t){tRect.fX + tRect.fW, tRect.fY};
-		tC = (xui_vec2_t){tRect.fX + tRect.fW, tRect.fY + 8.0f};
-		iRet = tProxy.drawTriangleFill(&tProxy, pDraw, tA, tB, tC, XUI_COLOR_RGBA(245, 158, 11, 255));
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return 1;
+	return __xuiPropertyGridCellDecorations(pWidget, iRow, iColumn, pCell, pDraw, tRect, iState, pUser);
 }
 
 static int __xuiPropertyGridCellProc(xui_widget pWidget, int iRow, int iColumn, xui_table_view_cell_t* pCell, void* pUser)
@@ -738,9 +872,9 @@ static int __xuiPropertyGridCellProc(xui_widget pWidget, int iRow, int iColumn, 
 		pCell->onRender = __xuiPropertyGridCategoryRenderer;
 		pCell->pRenderUser = pData;
 		pCell->bHasStyle = 1;
-		pCell->iBackgroundColor = pData->tStyle.iCategoryBackgroundColor;
-		pCell->iTextColor = pData->tStyle.iCategoryTextColor;
-		pCell->iGridColor = pData->tStyle.iGridColor;
+		pCell->iBackgroundColor = __xuiPropertyGridColors(pData)->iCategoryBackgroundColor;
+		pCell->iTextColor = __xuiPropertyGridColors(pData)->iCategoryTextColor;
+		pCell->iGridColor = __xuiPropertyGridColors(pData)->iGridColor;
 		if ( iColumn > 0 ) {
 			pCell->sText = "";
 		}
@@ -758,12 +892,12 @@ static int __xuiPropertyGridCellProc(xui_widget pWidget, int iRow, int iColumn, 
 	                   ((pProp->iFlags & XUI_PROPERTY_FLAG_DISABLED) != 0) ||
 	                   ((iColumn == 1) && ((pProp->iFlags & XUI_PROPERTY_FLAG_READONLY) != 0));
 	pCell->bHasStyle = 1;
-	pCell->iBackgroundColor = (iColumn == 0) ? pData->tStyle.iNameBackgroundColor : pData->tStyle.iValueBackgroundColor;
-	pCell->iTextColor = (iColumn == 0) ? pData->tStyle.iNameTextColor : pData->tStyle.iValueTextColor;
+	pCell->iBackgroundColor = (iColumn == 0) ? __xuiPropertyGridColors(pData)->iNameBackgroundColor : __xuiPropertyGridColors(pData)->iValueBackgroundColor;
+	pCell->iTextColor = (iColumn == 0) ? __xuiPropertyGridColors(pData)->iNameTextColor : __xuiPropertyGridColors(pData)->iValueTextColor;
 	if ( (pProp->iFlags & (XUI_PROPERTY_FLAG_READONLY | XUI_PROPERTY_FLAG_DISABLED)) != 0 ) {
-		pCell->iTextColor = pData->tStyle.iReadonlyTextColor;
+		pCell->iTextColor = __xuiPropertyGridColors(pData)->iReadonlyTextColor;
 	}
-	pCell->iGridColor = pData->tStyle.iGridColor;
+	pCell->iGridColor = __xuiPropertyGridColors(pData)->iGridColor;
 	if ( iColumn == 0 ) {
 		pCell->onRender = __xuiPropertyGridNameRenderer;
 		pCell->pRenderUser = pData;
@@ -1089,7 +1223,7 @@ static int __xuiPropertyGridRender(xui_widget pWidget, xui_draw_context pDraw, u
 	}
 	tRect = xuiWidgetGetContentRect(pWidget);
 	if ( tProxy.drawRectFill != NULL ) {
-		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect(tRect), pData->tStyle.iBackgroundColor);
+		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect(tRect), __xuiPropertyGridColors(pData)->iBackgroundColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( ((pData->iDescriptionMode != XUI_PROPERTY_GRID_DESCRIPTION_PANEL) && (pData->iDescriptionMode != XUI_PROPERTY_GRID_DESCRIPTION_BOTH)) ||
@@ -1100,11 +1234,11 @@ static int __xuiPropertyGridRender(xui_widget pWidget, xui_draw_context pDraw, u
 	}
 	tRect = pData->tDescriptionRect;
 	if ( tProxy.drawRectFill != NULL ) {
-		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect(tRect), pData->tStyle.iNameBackgroundColor);
+		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect(tRect), __xuiPropertyGridColors(pData)->iNameBackgroundColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tProxy.drawLine != NULL ) {
-		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + 0.5f, tRect.fX + tRect.fW, tRect.fY + 0.5f, 1.0f, pData->tStyle.iGridColor);
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + 0.5f, tRect.fX + tRect.fW, tRect.fY + 0.5f, 1.0f, __xuiPropertyGridColors(pData)->iGridColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( !__xuiPropertyGridValidProperty(pData, pData->iSelectedProperty) || (pData->pFont == NULL) || (tProxy.drawText == NULL) ) {
@@ -1113,7 +1247,7 @@ static int __xuiPropertyGridRender(xui_widget pWidget, xui_draw_context pDraw, u
 	pProp = &pData->arrProperties[pData->iSelectedProperty];
 	sText = (pProp->sDescription[0] != '\0') ? pProp->sDescription : pProp->sName;
 	tText = (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 4.0f, __xuiPropertyGridMax(1.0f, tRect.fW - 16.0f), __xuiPropertyGridMax(1.0f, tRect.fH - 8.0f)};
-	return tProxy.drawText(&tProxy, pDraw, pData->pFont, sText, xuiInternalSnapRect(tText), pData->tStyle.iNameTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+	return tProxy.drawText(&tProxy, pDraw, pData->pFont, sText, xuiInternalSnapRect(tText), __xuiPropertyGridColors(pData)->iNameTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 }
 
 static int __xuiPropertyGridPrepare(xui_widget pWidget, void* pUser)
@@ -1365,6 +1499,8 @@ XUI_API xui_widget_type xuiPropertyGridGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "propertygrid");
 	if ( pType != NULL ) {
+		pType->onPreparePaint = __xuiPropertyGridPreparePaint;
+		__xuiPropertyGridRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1383,6 +1519,8 @@ XUI_API xui_widget_type xuiPropertyGridGetType(xui_context pContext)
 	if ( xuiWidgetRegisterType(pContext, &pType, &tDesc) != XUI_OK ) {
 		return NULL;
 	}
+	__xuiPropertyGridRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiPropertyGridPreparePaint;
 	return pType;
 }
 
@@ -1961,9 +2099,9 @@ XUI_API int xuiPropertyGridSetStyle(xui_widget pWidget, const xui_property_grid_
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	if ( (pData == NULL) || (pStyle == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->tStyle = *pStyle;
+	pData->bPaintStyleValid = 0;
 	__xuiPropertyGridApplyStyle(pData);
-	__xuiPropertyGridRebuildVisible(pData);
-	return XUI_OK;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiPropertyGridGetStyle(xui_widget pWidget, xui_property_grid_style_t* pStyle)
@@ -1985,9 +2123,9 @@ XUI_API int xuiPropertyGridSetColors(xui_widget pWidget, uint32_t iBackground, u
 	pData->tStyle.iSelectedColor = iSelected;
 	pData->tStyle.iGridColor = iGrid;
 	pData->tStyle.iValueTextColor = iText;
+	pData->bPaintStyleValid = 0;
 	__xuiPropertyGridApplyStyle(pData);
-	__xuiPropertyGridRebuildVisible(pData);
-	return XUI_OK;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiPropertyGridGetSelectCount(xui_widget pWidget)

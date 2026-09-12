@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "src/xui_dock_panel.c"
+#include "src/xui_property_grid.c"
 
 static int checks, failures;
 #define CHECK(e) do { ++checks; if (!(e)) { printf("FAIL %d: %s\n", __LINE__, #e); ++failures; } } while (0)
@@ -564,11 +565,232 @@ static void table_grid_styles(void)
     xuiDestroy(c);
     proxy.tProxy.fontDestroy(&proxy.tProxy, font);
 }
+static void property_styles(void)
+{
+    xui_test_proxy_state_t proxy;
+    xui_context c = setup(&proxy);
+    xui_widget grid, table, viewport;
+    xui_font font = NULL;
+    xui_property_desc_t item;
+    xui_property_grid_data_t* data;
+    xui_property_grid_style_t base, current;
+    xui_table_view_colors_t table_base, table_current;
+    xui_style_property_t props[15], p;
+    xui_style_desc_t s;
+    xui_table_grid_editor_config_t config;
+    const char* options[] = {"One", "Two"};
+    xui_rect_t before;
+    uint32_t owner_layout, table_layout, viewport_layout;
+    int category, property, choice, i, painted_keys[15] = {0};
+    CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, NULL, 14, 0) == XUI_OK);
+    CHECK(xuiPropertyGridCreate(c, &grid, NULL) == XUI_OK);
+    CHECK(xuiSetRootWidget(c, grid) == XUI_OK);
+    CHECK(xuiPropertyGridSetFont(grid, font) == XUI_OK);
+    category = xuiPropertyGridAddCategory(grid, "category", "Category", 1);
+    CHECK(category >= 0);
+    memset(&item, 0, sizeof(item));
+    item.sId = "name"; item.sName = "Name"; item.sValue = "Value";
+    item.iType = XUI_TABLE_CELL_TYPE_TEXT;
+    item.iFlags = XUI_PROPERTY_FLAG_INVALID | XUI_PROPERTY_FLAG_DIRTY;
+    property = xuiPropertyGridAddProperty(grid, category, &item);
+    CHECK(property >= 0);
+    item.sId = "choice"; item.sName = "Choice"; item.sValue = "One";
+    item.iType = XUI_TABLE_CELL_TYPE_ENUM;
+    choice = xuiPropertyGridAddProperty(grid, category, &item);
+    CHECK(choice >= 0);
+    memset(&config, 0, sizeof(config));
+    config.arrEnumItems = options; config.iEnumItemCount = 2;
+    CHECK(xuiPropertyGridSetEditorConfig(grid, choice, &config) == XUI_OK);
+    item.sId = "readonly"; item.sName = "Read only"; item.sValue = "Fixed";
+    item.iType = XUI_TABLE_CELL_TYPE_TEXT; item.iFlags = XUI_PROPERTY_FLAG_READONLY;
+    CHECK(xuiPropertyGridAddProperty(grid, category, &item) >= 0);
+    item.sId = "color"; item.sName = "Content color"; item.sValue = "#C8AB43FF";
+    item.iType = XUI_TABLE_CELL_TYPE_COLOR; item.iFlags = 0;
+    CHECK(xuiPropertyGridAddProperty(grid, category, &item) >= 0);
+    paint(c);
+    table = xuiPropertyGridGetTableView(grid);
+    viewport = xuiTableViewGetViewportWidget(table);
+    data = __xuiPropertyGridGetData(grid);
+    CHECK(xuiPropertyGridGetStyle(grid, &base) == XUI_OK);
+    CHECK(xuiTableViewGetColors(table, &table_base) == XUI_OK);
+    CHECK(xuiWidgetGetCacheRenderCallback(viewport, &frame_render_original, &frame_render_user) == XUI_OK);
+    CHECK(xuiWidgetSetCacheRenderCallback(viewport, count_frame_render, NULL) == XUI_OK);
+    paint(c); CHECK(frame_renders == 1);
+    paint(c); CHECK(frame_renders == 0);
+    before = xuiWidgetGetRect(viewport);
+    owner_layout = grid->iLayoutVersion; table_layout = table->iLayoutVersion; viewport_layout = viewport->iLayoutVersion;
+
+    for (i = 0; i < 15; ++i) props[i] = prop(__xuiPropertyGridColorProperties[i].sName, 0x701040ffu + (uint32_t)i * 0x00050200u);
+    CHECK(xuiStyleSetDefault(c, props, 15) == XUI_OK);
+    paint_only(grid); paint_only(table); paint(c);
+    CHECK(seen(props[2].tValue.iColor) && seen(props[4].tValue.iColor) && frame_renders == 1);
+    for (i = 0; i < 15; ++i) props[i].tValue.iColor += 0x10000000u;
+    s = style(props, 15);
+    CHECK(xuiStyleSetType(c, xuiPropertyGridGetType(c), &s) == XUI_OK);
+    paint_only(grid); paint(c);
+    for (i = 0; i < 15; ++i) {
+        const uint32_t* color = (const uint32_t*)((const char*)__xuiPropertyGridColors(data) + __xuiPropertyGridColorProperties[i].iOffset);
+        CHECK(*color == props[i].tValue.iColor);
+        painted_keys[i] |= seen(props[i].tValue.iColor);
+    }
+    CHECK(seen(props[0].tValue.iColor) && seen(props[1].tValue.iColor));
+    CHECK(seen(props[2].tValue.iColor) && seen(props[4].tValue.iColor));
+    CHECK(seen(props[5].tValue.iColor) && seen(props[6].tValue.iColor));
+    CHECK(seen(props[7].tValue.iColor) && seen(props[9].tValue.iColor));
+    CHECK(seen(props[10].tValue.iColor) && seen(props[12].tValue.iColor));
+    CHECK(seen(props[13].tValue.iColor) && seen(props[14].tValue.iColor));
+    CHECK(seen(0xc8ab43ff));
+    CHECK(!seen(XUI_COLOR_RGBA(218, 82, 82, 255)) && !seen(XUI_COLOR_RGBA(245, 158, 11, 255)));
+    CHECK(xuiPropertyGridGetStyle(grid, &current) == XUI_OK && memcmp(&base, &current, sizeof(base)) == 0);
+    paint(c); CHECK(frame_renders == 0);
+    {
+        xui_style_value_t token = prop("unused", 0x632497ff).tValue;
+        p = prop("propertygrid.category.text_color", 0);
+        p.tValue.iType = XUI_STYLE_VALUE_TOKEN; p.tValue.sText = "property.category";
+        s = style(&p, 1);
+        CHECK(xuiStyleSetToken(c, "property.category", &token) == XUI_OK);
+        CHECK(xuiStyleSetClass(c, "property-live", &s) == XUI_OK);
+        CHECK(xuiWidgetAddStyleClass(grid, "property-live") == XUI_OK);
+        paint_only(grid); paint(c); CHECK(seen(token.iColor) && frame_renders == 1);
+        token.iColor = 0x976243ff;
+        CHECK(xuiStyleSetToken(c, "property.category", &token) == XUI_OK);
+        paint(c); CHECK(seen(token.iColor) && frame_renders == 1);
+        paint(c); CHECK(frame_renders == 0);
+    }
+    CHECK(xuiPropertyGridSetSelected(grid, property) == XUI_OK);
+    paint(c); CHECK(seen(props[11].tValue.iColor));
+    painted_keys[11] |= seen(props[11].tValue.iColor);
+    p = prop("propertygrid.selected.color", 0x193765ff);
+    CHECK(xuiWidgetSetInlineStyle(grid, &p, 1) == XUI_OK);
+    paint_only(grid); paint(c); CHECK(seen(p.tValue.iColor) && !seen(props[11].tValue.iColor));
+    p.tValue.iColor = 0;
+    CHECK(xuiWidgetSetInlineStyle(grid, &p, 1) == XUI_OK);
+    paint(c); CHECK(!seen(0x193765ff) && !seen(props[11].tValue.iColor) && !seen(base.iSelectedColor));
+    paint(c); CHECK(frame_renders == 0);
+    p.tValue.iColor = 0x193765ff;
+    CHECK(xuiWidgetSetInlineStyle(grid, &p, 1) == XUI_OK);
+    paint(c); CHECK(seen(p.tValue.iColor));
+    {
+        xui_style_property_t table_props[3];
+        table_props[0] = prop("tableview.row.selected_color", 0xa16543ff);
+        table_props[1] = prop("tableview.cell.invalid_color", 0x43a165ff);
+        table_props[2] = prop("tableview.cell.dirty_color", 0x6543a1ff);
+        CHECK(xuiWidgetSetInlineStyle(table, table_props, 3) == XUI_OK);
+        paint_only(table); paint(c);
+        for (i = 0; i < 3; ++i) CHECK(seen(table_props[i].tValue.iColor));
+        CHECK(!seen(p.tValue.iColor) && !seen(props[13].tValue.iColor) && !seen(props[14].tValue.iColor));
+        CHECK(xuiTableViewGetColors(table, &table_current) == XUI_OK && memcmp(&table_base, &table_current, sizeof(table_base)) == 0);
+        paint(c); CHECK(frame_renders == 0);
+        CHECK(xuiWidgetSetInlineStyle(table, NULL, 0) == XUI_OK);
+        paint(c); CHECK(seen(p.tValue.iColor));
+        paint(c); CHECK(frame_renders == 0);
+    }
+    CHECK(xuiWidgetSetInlineStyle(grid, NULL, 0) == XUI_OK);
+    CHECK(xuiPropertyGridSetSelected(grid, -1) == XUI_OK);
+    paint(c);
+    {
+        xui_rect_t category_rect, name_rect, world = xuiWidgetGetWorldRect(viewport);
+        CHECK(xuiTableViewGetCellContentRect(table, 0, 0, &category_rect) == XUI_OK);
+        CHECK(xuiInputPointerMove(c, world.fX + 30, world.fY + category_rect.fH / 2, 0) == XUI_OK);
+        CHECK(xuiDispatchPendingEvents(c) == XUI_OK);
+        paint(c); CHECK(seen(props[3].tValue.iColor));
+        painted_keys[3] |= seen(props[3].tValue.iColor);
+        CHECK(xuiTableViewGetCellContentRect(table, 1, 0, &name_rect) == XUI_OK);
+        CHECK(xuiInputPointerMove(c, world.fX + 30, world.fY + name_rect.fY + name_rect.fH / 2, 0) == XUI_OK);
+        CHECK(xuiDispatchPendingEvents(c) == XUI_OK);
+        paint(c); CHECK(seen(props[8].tValue.iColor));
+        painted_keys[8] |= seen(props[8].tValue.iColor);
+        CHECK(xuiInputPointerMove(c, 639, 419, 0) == XUI_OK);
+        CHECK(xuiDispatchPendingEvents(c) == XUI_OK);
+        paint(c);
+    }
+    for (i = 0; i < 15; ++i) {
+        if (!painted_keys[i]) printf("Unpainted property: %s\n", props[i].sName);
+        CHECK(painted_keys[i]);
+    }
+    for (i = 0; i < 15; ++i) props[i].tValue.iColor = 0;
+    CHECK(xuiWidgetSetInlineStyle(grid, props, 15) == XUI_OK);
+    paint_only(grid); paint(c); CHECK(frame_renders == 1);
+    CHECK(!seen(base.iCategoryTextColor) && !seen(base.iNameTextColor) && !seen(base.iValueTextColor));
+    CHECK(!seen(base.iCategoryBackgroundColor) && !seen(base.iNameBackgroundColor) && !seen(base.iValueBackgroundColor));
+    CHECK(!seen(base.iGridColor));
+    CHECK(seen(0xc8ab43ff));
+    paint(c); CHECK(frame_renders == 0);
+    base.iCategoryBackgroundColor = 0x173957ff; base.iValueTextColor = 0x795317ff;
+    CHECK(xuiPropertyGridSetStyle(grid, &base) == XUI_OK);
+    paint_only(grid); paint_only(table); paint(c);
+    CHECK(!seen(base.iCategoryBackgroundColor) && !seen(base.iValueTextColor));
+    CHECK(xuiPropertyGridGetStyle(grid, &current) == XUI_OK && memcmp(&base, &current, sizeof(base)) == 0);
+    CHECK(xuiWidgetSetInlineStyle(grid, NULL, 0) == XUI_OK);
+    xuiWidgetClearStyleClasses(grid);
+    CHECK(xuiStyleRemoveType(c, xuiPropertyGridGetType(c)) == XUI_OK);
+    CHECK(xuiStyleClearDefault(c) == XUI_OK);
+    paint(c); CHECK(seen(base.iCategoryBackgroundColor) && seen(base.iValueTextColor));
+    paint(c); CHECK(frame_renders == 0);
+
+    {
+        xui_style_property_t mixed[4];
+        mixed[0] = prop("tableview.background.color", 0x153759ff);
+        mixed[1] = prop("tableview.grid.color", 0x597315ff);
+        mixed[2] = prop("propertygrid.background.color", 0x731559ff);
+        mixed[3] = prop("propertygrid.grid.color", 0x375915ff);
+        CHECK(xuiStyleSetDefault(c, mixed, 4) == XUI_OK);
+        paint_only(grid); paint_only(table); paint(c);
+        CHECK(seen(mixed[2].tValue.iColor) && seen(mixed[3].tValue.iColor));
+        CHECK(!seen(mixed[0].tValue.iColor) && !seen(mixed[1].tValue.iColor));
+        paint(c); CHECK(frame_renders == 0);
+        mixed[2].tValue.iColor = 0; mixed[3].tValue.iColor = 0;
+        CHECK(xuiStyleSetDefault(c, mixed, 4) == XUI_OK);
+        paint(c); CHECK(!seen(mixed[0].tValue.iColor) && !seen(mixed[1].tValue.iColor));
+        CHECK(xuiStyleSetDefault(c, mixed, 2) == XUI_OK);
+        paint(c); CHECK(seen(mixed[0].tValue.iColor) && seen(mixed[1].tValue.iColor));
+        paint(c); CHECK(frame_renders == 0);
+        CHECK(xuiStyleClearDefault(c) == XUI_OK);
+        paint(c); CHECK(seen(base.iBackgroundColor) && seen(base.iGridColor));
+        paint(c); CHECK(frame_renders == 0);
+    }
+    p = prop("tableview.text.color", 0x416385ff); s = style(&p, 1);
+    CHECK(xuiStyleSetType(c, xuiTableViewGetType(c), &s) == XUI_OK);
+    paint_only(table); paint(c); CHECK(seen(p.tValue.iColor) && !seen(base.iValueTextColor));
+    paint(c); CHECK(frame_renders == 0);
+    p.tValue.iColor = 0x856341ff;
+    CHECK(xuiWidgetSetInlineStyle(table, &p, 1) == XUI_OK);
+    paint(c); CHECK(seen(p.tValue.iColor) && frame_renders == 1);
+    paint(c); CHECK(frame_renders == 0);
+    CHECK(xuiWidgetSetInlineStyle(table, NULL, 0) == XUI_OK);
+    CHECK(xuiStyleRemoveType(c, xuiTableViewGetType(c)) == XUI_OK);
+    paint(c); CHECK(seen(base.iValueTextColor));
+    paint(c); CHECK(frame_renders == 0);
+    CHECK(xuiPropertyGridSetColors(grid, 0x354719ff, base.iCategoryBackgroundColor,
+        base.iValueBackgroundColor, base.iSelectedColor, base.iGridColor, base.iValueTextColor) == XUI_OK);
+    paint_only(grid); paint_only(table); paint(c); CHECK(seen(0x354719ff));
+    paint(c); CHECK(frame_renders == 0);
+    {
+        xui_rect_t after = xuiWidgetGetRect(viewport);
+        CHECK(memcmp(&before, &after, sizeof(before)) == 0);
+    }
+    CHECK(grid->iLayoutVersion == owner_layout && table->iLayoutVersion == table_layout && viewport->iLayoutVersion == viewport_layout);
+    {
+        xui_widget ordinary;
+        CHECK(xuiTableViewCreate(c, &ordinary, NULL) == XUI_OK);
+        CHECK(xuiSetRootWidget(c, ordinary) == XUI_OK);
+        paint(c);
+        for (i = 0; i < 15; ++i) props[i].tValue.iColor = 0x451973ffu + (uint32_t)i * 0x00010200u;
+        CHECK(xuiStyleSetDefault(c, props, 15) == XUI_OK);
+        paint(c);
+        for (i = 0; i < 15; ++i) CHECK(!seen(props[i].tValue.iColor));
+        xuiWidgetDestroy(grid);
+    }
+    xuiDestroy(c);
+    proxy.tProxy.fontDestroy(&proxy.tProxy, font);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1 || strcmp(argv[1], "scroll") == 0) scroll_styles();
     if (argc == 1 || strcmp(argv[1], "dock") == 0) { dock_styles(); dock_drag_styles(); }
     if (argc == 1 || strcmp(argv[1], "table") == 0) table_grid_styles();
+    if (argc == 1 || strcmp(argv[1], "property") == 0) property_styles();
     printf("style_containers: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
