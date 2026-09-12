@@ -31,8 +31,6 @@ struct xui_msgbox_t {
 	uint32_t arrBaseMuted[XUI_MSGBOX_BUTTON_CAPACITY];
 	uint32_t arrAppliedMuted[XUI_MSGBOX_BUTTON_CAPACITY];
 	int arrStyledMuted[XUI_MSGBOX_BUTTON_CAPACITY];
-	xui_widget_cache_render_proc onWindowRender;
-	void* pWindowRenderUser;
 	uint32_t iPaintStyleHash;
 	int bPaintReady;
 	int bHasColors;
@@ -84,6 +82,9 @@ static uint32_t __xuiMsgBoxColor(xui_msgbox pBox, const char* sName, uint32_t iB
 	return iBase;
 }
 
+static int __xuiMsgBoxPreparePaint(xui_widget pWidget);
+static int __xuiMsgBoxBackdropPreparePaint(xui_widget pWidget);
+
 static xui_widget_type __xuiMsgBoxEnsureType(xui_context pContext)
 {
 	static const char* arrNames[] = {
@@ -104,6 +105,7 @@ static xui_widget_type __xuiMsgBoxEnsureType(xui_context pContext)
 	if ( tDesc.pParent == NULL ) return NULL;
 	tDesc.iTypeDataSize = tDesc.pParent->iTypeDataSize;
 	if ( xuiWidgetRegisterType(pContext, &pType, &tDesc) != XUI_OK ) return NULL;
+	pType->onPreparePaint = __xuiMsgBoxPreparePaint;
 	memset(&tInfo, 0, sizeof(tInfo));
 	tInfo.iSize = sizeof(tInfo);
 	tInfo.pWidgetType = pType;
@@ -807,52 +809,37 @@ static int __xuiMsgBoxSyncPaint(xui_msgbox pBox)
 	uint32_t iHash;
 	if ( !__xuiMsgBoxValid(pBox) || pBox->pContent == NULL || pBox->pBackdrop == NULL ) return 0;
 	iHash = xuiWidgetGetStyleHash(pBox->pWindow);
+	__xuiMsgBoxStyleButtons(pBox);
 	if ( pBox->bPaintReady && pBox->iPaintStyleHash == iHash ) return 0;
 	pBox->iPaintStyleHash = iHash;
 	pBox->bPaintReady = 1;
-	__xuiMsgBoxStyleButtons(pBox);
 	(void)xuiWidgetInvalidate(pBox->pContent, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	(void)xuiWidgetInvalidate(pBox->pBackdrop, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	(void)xuiWidgetInvalidate(xuiWindowGetClientWidget(pBox->pWindow), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return 1;
 }
 
-/* A local class/inline change only dirties the window. Its children may already
- * have prepared before the window callback, so refresh the owned SELF caches. */
-static int __xuiMsgBoxRefreshCache(xui_widget pWidget)
+static int __xuiMsgBoxPreparePaint(xui_widget pWidget)
 {
-	xui_draw_context pDraw;
-	uint32_t iState;
-	int iRet, iEndRet;
-	if ( pWidget == NULL || !xuiWidgetGetVisible(pWidget) || pWidget->onCacheRender == NULL ||
-		pWidget->pActiveUpdateDraw != NULL ||
-		(pWidget->tCachePolicy.iPolicy != XUI_CACHE_POLICY_SELF &&
-		 !(pWidget->tCachePolicy.iPolicy == XUI_CACHE_POLICY_AUTO && pWidget->iChildCount == 0)) )
-		return XUI_OK;
-	iState = xuiWidgetGetStateId(pWidget);
-	iRet = xuiWidgetUpdateBegin(pWidget, iState, XUI_WIDGET_UPDATE_CLEAR, 0, &pDraw);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = pWidget->onCacheRender(pWidget, pDraw, iState, pWidget->pCacheRenderUser);
-	iEndRet = xuiWidgetUpdateEnd(pWidget, iState, pDraw);
-	if ( iRet == XUI_OK && iEndRet == XUI_OK )
-		xuiWidgetClearDirty(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE);
-	return iRet != XUI_OK ? iRet : iEndRet;
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_widget_type pParent = xuiWidgetFindType(pContext, "msgbox")->pParent;
+	int iRet;
+	/* The framework selects one hook; preserve Window's chrome dependencies. */
+	for ( ; pParent != NULL && pParent->onPreparePaint == NULL; pParent = pParent->pParent ) {}
+	if ( pParent != NULL ) {
+		iRet = pParent->onPreparePaint(pWidget);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !xuiInternalWidgetIsValid(pWidget) || xuiInternalContextDestroyPending(pContext) || !xuiWidgetGetVisible(pWidget) ) return XUI_OK;
+	}
+	(void)__xuiMsgBoxSyncPaint((xui_msgbox)pWidget->pUpdateUser);
+	return XUI_OK;
 }
 
-static int __xuiMsgBoxWindowRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiMsgBoxBackdropPreparePaint(xui_widget pWidget)
 {
-	xui_msgbox pBox = (xui_msgbox)pUser;
-	int bChanged, i, iRet;
-	if ( !__xuiMsgBoxValid(pBox) ) return XUI_ERROR_INVALID_ARGUMENT;
-	bChanged = __xuiMsgBoxSyncPaint(pBox);
-	iRet = pBox->onWindowRender(pWidget, pDraw, iStateId, pBox->pWindowRenderUser);
-	if ( iRet != XUI_OK || !bChanged ) return iRet;
-	iRet = __xuiMsgBoxRefreshCache(pBox->pContent);
-	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxRefreshCache(xuiWindowGetClientWidget(pWidget));
-	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxRefreshCache(pBox->pBackdrop);
-	for ( i = 0; iRet == XUI_OK && i < XUI_MSGBOX_BUTTON_CAPACITY; ++i )
-		iRet = __xuiMsgBoxRefreshCache(pBox->arrButtons[i]);
-	return iRet;
+	/* The backdrop is an earlier overlay sibling of its window. */
+	(void)__xuiMsgBoxSyncPaint((xui_msgbox)pWidget->pCacheRenderUser);
+	return XUI_OK;
 }
 
 static int __xuiMsgBoxClientRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1251,9 +1238,6 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	(void)xuiWidgetSetEventCallback(pBox->pWindow, __xuiMsgBoxWindowEvent, pBox);
 	pBox->pWindow->onUpdate = __xuiMsgBoxWindowUpdate;
 	pBox->pWindow->pUpdateUser = pBox;
-	pBox->onWindowRender = pBox->pWindow->onCacheRender;
-	pBox->pWindowRenderUser = pBox->pWindow->pCacheRenderUser;
-	(void)xuiWidgetSetCacheRenderCallback(pBox->pWindow, __xuiMsgBoxWindowRender, pBox);
 	(void)xuiWidgetSetCacheRenderCallback(xuiWindowGetClientWidget(pBox->pWindow), __xuiMsgBoxClientRender, pBox);
 	(void)xuiWidgetSetLayoutType(xuiWindowGetClientWidget(pBox->pWindow), XUI_LAYOUT_MANUAL);
 	(void)xuiWidgetSetFlowMode(xuiWindowGetClientWidget(pBox->pWindow), XUI_FLOW_ABSOLUTE);
@@ -1292,7 +1276,19 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 			return iRet;
 		}
 	}
-	iRet = xuiWidgetCreate(pContext, &pBox->pBackdrop);
+	{
+		xui_widget_type pBackdropType = xuiWidgetFindType(pContext, "msgbox-backdrop");
+		if ( pBackdropType == NULL ) {
+			xui_widget_type_desc_t tTypeDesc;
+			memset(&tTypeDesc, 0, sizeof(tTypeDesc));
+			tTypeDesc.iSize = sizeof(tTypeDesc);
+			tTypeDesc.sName = "msgbox-backdrop";
+			tTypeDesc.pParent = xuiWidgetGetBaseType();
+			iRet = xuiWidgetRegisterType(pContext, &pBackdropType, &tTypeDesc);
+			if ( iRet == XUI_OK ) pBackdropType->onPreparePaint = __xuiMsgBoxBackdropPreparePaint;
+		}
+		iRet = pBackdropType != NULL ? xuiWidgetCreateTyped(pContext, pBackdropType, &pBox->pBackdrop, NULL) : XUI_ERROR_NOT_INITIALIZED;
+	}
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
 		return iRet;

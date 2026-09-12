@@ -116,6 +116,28 @@ static int warm_frame(fixture_t* f)
 	return 0;
 }
 
+static int window_parent_colors(fixture_t* f, xui_widget window)
+{
+	xui_style_property_t p[2];
+	xui_widget close = xuiWindowGetCloseButtonWidget(window);
+	xui_widget client = xuiWindowGetClientWidget(window);
+	uint32_t base;
+	OK(xuiWindowGetColors(window, NULL, &base, NULL, NULL, NULL, NULL, NULL, NULL));
+	p[0] = color("window.close.icon_color", 0x396214ff);
+	p[1] = color("window.client.color", 0x694321ff);
+	OK(xuiWidgetSetInlineStyle(window, p, 2));
+	CHECK(paint_only(window) == 0);
+	CHECK(render(f) == 0 && fill(close, p[0].tValue.iColor) > 0 && fill(client, p[1].tValue.iColor) > 0);
+	CHECK(warm_frame(f) == 0);
+	p[0].tValue.iColor = p[1].tValue.iColor = 0;
+	OK(xuiWidgetSetInlineStyle(window, p, 2));
+	CHECK(render(f) == 0 && fill(close, 0x396214ff) == 0 && xuiTestSurfaceGetRectFillCount(cache(client)) == 0);
+	OK(xuiWidgetSetInlineStyle(window, NULL, 0));
+	CHECK(render(f) == 0 && fill(client, base) > 0);
+	CHECK(warm_frame(f) == 0);
+	return 0;
+}
+
 static int popup_colors(void)
 {
 	fixture_t f;
@@ -482,9 +504,19 @@ static int msgbox_colors(void)
 	CHECK(render(&f) == 0 && fill(client, base.iClientColor) > 0 && fill(backdrop, base.iBackdropColor) > 0);
 	OK(xuiButtonGetStateVisual(button, 0, &current, NULL, NULL));
 	CHECK(current == buttonBase && fill(button, buttonBase) > 0);
+	CHECK(warm_frame(&f) == 0);
+	CHECK(window_parent_colors(&f, window) == 0);
+	p[0] = color("msgbox.button.color", 0x876534ff);
+	OK(xuiWidgetSetInlineStyle(window, p, 1));
+	CHECK(render(&f) == 0 && fill(button, p[0].tValue.iColor) > 0);
+	OK(xuiButtonSetStateVisual(button, 0, 0x124638ff, 1, 0x615273ff));
+	CHECK(render(&f) == 0 && fill(button, p[0].tValue.iColor) > 0);
+	OK(xuiWidgetSetInlineStyle(window, NULL, 0));
+	CHECK(render(&f) == 0 && fill(button, 0x124638ff) > 0);
+	CHECK(warm_frame(&f) == 0);
 	xuiMsgBoxDestroy(box);
 	finish(&f);
-	puts("PASS msgbox composite rendered client/backdrop/text/icon/buttons, render-only inline/transparent refresh, clear restores API child palette");
+	puts("PASS msgbox composite caches, render-only transparent/clear, API edits, chained Window client/close hook, warm caches");
 	return 0;
 }
 
