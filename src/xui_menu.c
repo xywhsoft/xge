@@ -89,6 +89,16 @@ static void __xuiMenuApplyPopupColors(xui_menu_data_t* pData, const xui_menu_col
 			pColors->iShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
 }
 
+static int __xuiMenuPreparePaint(xui_widget pWidget)
+{
+	xui_menu_data_t* pData = __xuiMenuGetData(pWidget);
+	xui_menu_colors_t tColors;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiMenuResolveColors(pWidget, pData, &tColors);
+	__xuiMenuApplyPopupColors(pData, &tColors);
+	return XUI_OK;
+}
+
 static int __xuiMenuAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
@@ -515,8 +525,6 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	if ( iRet != XUI_OK ) return iRet;
 	pFont = __xuiMenuResolveFont(pWidget, pData);
 	__xuiMenuResolveColors(pWidget, pData, &tColors);
-	/* Menu caches prepare before their popup panel, including while already open. */
-	__xuiMenuApplyPopupColors(pData, &tColors);
 	tRect = (xui_rect_t){0.0f, 0.0f, pData->fContentW, pData->fContentH};
 	iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tRect, tColors.iPanelColor);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1300,6 +1308,7 @@ XUI_API xui_widget_type xuiMenuGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiMenuRegisterColors(pContext, pType);
+	pType->onPreparePaint = __xuiMenuPreparePaint;
 	return pType;
 }
 
