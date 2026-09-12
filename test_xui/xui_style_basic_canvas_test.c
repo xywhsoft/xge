@@ -17,6 +17,86 @@ static void stroke(xui_widget viewport)
 	}
 }
 
+typedef struct canvas_paint_probe_t {
+	xui_widget owner;
+	xui_widget_cache_render_proc original;
+	void* user;
+	int paints, destroy, fills, unexpected_fills;
+	uint32_t states, expected_color;
+} canvas_paint_probe_t;
+
+static int canvas_probe_paint(xui_widget viewport, xui_draw_context draw, uint32_t state, void* user)
+{
+	canvas_paint_probe_t* probe = user;
+	int start = basic_count, i, ret;
+	++probe->paints;
+	probe->states |= 1u << state;
+	if (probe->destroy) {
+		xuiWidgetDestroy(probe->owner);
+		probe->owner = NULL;
+		return XUI_OK;
+	}
+	ret = probe->original(viewport, draw, state, probe->user);
+	/* Count this viewport's paints, excluding its ScrollFrame background. */
+	for (i = start; i < basic_count; ++i) if (basic_draws[i].kind == BASIC_FILL) {
+		++probe->fills;
+		if (basic_draws[i].color != probe->expected_color) ++probe->unexpected_fills;
+	}
+	return ret;
+}
+
+static void canvas_probe_render(pixel_fixture_t* f, canvas_paint_probe_t* probe, uint32_t expected)
+{
+	probe->expected_color = expected;
+	probe->fills = probe->unexpected_fills = 0;
+	basic_render(f);
+	PIXEL_CHECK(probe->unexpected_fills == 0 && basic_open_draws == 0);
+}
+
+static void cache_lifecycle(pixel_fixture_t* f, xui_widget w, uint32_t base)
+{
+	xui_widget viewport = xuiCanvasGetViewportWidget(w);
+	xui_cache_policy_t policy = xuiWidgetGetCachePolicy(viewport);
+	canvas_paint_probe_t probe = {0};
+	xui_style_property_t p = basic_color("canvas.background.color", 0x76543287u);
+	xui_style_desc_t s = basic_style(&p, 1);
+	int i, paints;
+	probe.owner = w;
+	PIXEL_CHECK(xuiWidgetGetCacheRenderCallback(viewport, &probe.original, &probe.user) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetSetCacheRenderCallback(viewport, canvas_probe_paint, &probe) == XUI_OK);
+	policy.iFlags |= XUI_CACHE_UPDATE_ALL_STATES;
+	PIXEL_CHECK(xuiWidgetSetCachePolicy(viewport, &policy) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetSetCacheStateCount(viewport, 3) == XUI_OK);
+	for (i = 0; i < 3; ++i) PIXEL_CHECK(xuiWidgetSetCacheStateId(viewport, i, (uint32_t)i) == XUI_OK);
+	canvas_probe_render(f, &probe, base); PIXEL_CHECK(probe.paints == 3 && probe.states == 7 && probe.fills == 3);
+	paints = probe.paints;
+	canvas_probe_render(f, &probe, base); PIXEL_CHECK(probe.paints == paints && probe.fills == 0);
+	PIXEL_CHECK(xuiStyleSetDefault(f->context, &p, 1) == XUI_OK);
+	canvas_probe_render(f, &probe, p.tValue.iColor); PIXEL_CHECK(probe.paints == paints + 3 && probe.fills == 3);
+	paints = probe.paints;
+	p.tValue.iColor = 0x65432176u;
+	PIXEL_CHECK(xuiStyleSetClass(f->context, "canvas-live", &s) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetAddStyleClass(w, "canvas-live") == XUI_OK);
+	canvas_probe_render(f, &probe, p.tValue.iColor); PIXEL_CHECK(probe.paints == paints + 3 && probe.fills == 3);
+	paints = probe.paints;
+	p.tValue.iColor = 0;
+	PIXEL_CHECK(xuiStyleSetClass(f->context, "canvas-live", &s) == XUI_OK);
+	canvas_probe_render(f, &probe, 0); PIXEL_CHECK(probe.paints == paints + 3 && probe.fills == 0);
+	PIXEL_CHECK(xuiWidgetRemoveStyleClass(w, "canvas-live") == XUI_OK);
+	PIXEL_CHECK(xuiStyleRemoveClass(f->context, "canvas-live") == XUI_OK);
+	PIXEL_CHECK(xuiStyleClearDefault(f->context) == XUI_OK);
+	paints = probe.paints;
+	canvas_probe_render(f, &probe, base); PIXEL_CHECK(probe.paints == paints + 3 && probe.fills == 3);
+	paints = probe.paints;
+	/* A style change invalidates all slots, but destruction during the first
+	 * child paint must close its draw and stop the remaining slot updates. */
+	probe.destroy = 1; p.tValue.iColor = 0x12345678u;
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(w, &p, 1) == XUI_OK);
+	canvas_probe_render(f, &probe, p.tValue.iColor); PIXEL_CHECK(probe.owner == NULL && probe.paints == paints + 1);
+	paints = probe.paints;
+	canvas_probe_render(f, &probe, p.tValue.iColor); PIXEL_CHECK(probe.paints == paints && probe.fills == 0);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -85,6 +165,7 @@ int main(void)
 	basic_count = 0;
 	PIXEL_CHECK(xuiCanvasDrawRectFill(w, (xui_rect_t){0, 0, 10, 10}, 0xdeadbeefu) == XUI_OK);
 	PIXEL_CHECK(basic_seen(BASIC_FILL, 0xdeadbeefu) > 0);
+	cache_lifecycle(&f, w, d.iBackgroundColor);
 	pixel_cleanup(&f);
 	return pixel_result("xui_style_basic_canvas_test");
 }

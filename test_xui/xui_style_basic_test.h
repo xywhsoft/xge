@@ -12,6 +12,7 @@ enum { BASIC_FILL, BASIC_STROKE, BASIC_LINE, BASIC_CIRCLE, BASIC_RING, BASIC_TEX
 typedef struct basic_draw_t { int kind; uint32_t color; } basic_draw_t;
 static basic_draw_t basic_draws[8192];
 static int basic_count;
+static int basic_open_draws;
 static xui_draw_context basic_filter_draw;
 static xui_proxy_t basic_proxy;
 
@@ -45,10 +46,24 @@ static int basic_svg(xui_proxy p, xui_draw_context d, const char* path, xui_rect
 	basic_record(d, BASIC_SVG_STROKE, style->iStrokeColor);
 	return basic_proxy.drawSvgPath(p, d, path, view, target, style, tolerance);
 }
+static int basic_begin(xui_proxy p, xui_draw_context* d, xui_surface target)
+{
+	int ret = basic_proxy.drawBegin(p, d, target);
+	if (ret == XUI_OK) ++basic_open_draws;
+	return ret;
+}
+static int basic_end(xui_proxy p, xui_draw_context d)
+{
+	int ret = basic_proxy.drawEnd(p, d);
+	if (ret == XUI_OK) --basic_open_draws;
+	return ret;
+}
 
 static void basic_configure(xui_proxy p)
 {
 	basic_proxy = *p;
+	basic_open_draws = 0;
+	p->drawBegin = basic_begin; p->drawEnd = basic_end;
 	p->drawRectFill = basic_fill; p->drawRectStroke = basic_stroke;
 	p->drawLine = basic_line; p->drawCircleFill = basic_circle; p->drawCircleStroke = basic_ring;
 	p->drawText = basic_text; p->drawSurface = basic_surface;
