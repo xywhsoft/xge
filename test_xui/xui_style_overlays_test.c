@@ -62,7 +62,6 @@ static int render(fixture_t* f)
 	xui_rect_i_t full = {0, 0, 800, 600};
 	reset_draws(f->root);
 	reset_draws(f->context->pOverlayRoot);
-	OK(xuiUpdate(f->context, 0.0f));
 	OK(xuiRender(f->context, f->target, &full, 1));
 	return 0;
 }
@@ -103,6 +102,17 @@ static int paint_only(xui_widget widget)
 {
 	CHECK((xuiWidgetGetDirtyFlags(widget) & (XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_TREE)) == 0);
 	CHECK((xuiWidgetGetDirtyFlags(widget) & XUI_WIDGET_DIRTY_CACHE) != 0);
+	return 0;
+}
+
+static int warm_frame(fixture_t* f)
+{
+	xui_render_stats_t stats;
+	CHECK(render(f) == 0);
+	memset(&stats, 0, sizeof(stats));
+	stats.iSize = sizeof(stats);
+	OK(xuiGetRenderStats(f->context, &stats));
+	CHECK(stats.iUpdatedCaches == 0 && stats.iUpdatedWidgets == 0 && stats.iRecoveredErrors == 0);
 	return 0;
 }
 
@@ -168,8 +178,79 @@ static int popup_colors(void)
 	CHECK(render(&f) == 0 && fill(panel, token.iColor) > 0);
 	OK(xuiStyleClearDefault(f.context));
 	CHECK(render(&f) == 0 && fill(panel, base) > 0);
+	CHECK(warm_frame(&f) == 0);
 	finish(&f);
 	puts("PASS popup rendered palette, cache transitions, clear, token/default/type/inline, transparent zero, paint-only");
+	return 0;
+}
+
+static int popup_dependencies(void)
+{
+	fixture_t f;
+	xui_popup_desc_t desc;
+	xui_widget popup, scroll, frame, bar, backdrop;
+	xui_style_property_t p[6];
+	xui_rect_t before, after, world;
+	uint32_t palette[6], buttonBase, iconBase, cornerBase, gripBase;
+	CHECK(init(&f) == 0);
+	memset(&desc, 0, sizeof(desc));
+	desc.iSize = sizeof(desc);
+	desc.fContentWidth = 400;
+	desc.fContentHeight = 400;
+	desc.fMaxWidth = 180;
+	desc.fMaxHeight = 180;
+	desc.iOutsidePolicy = XUI_POPUP_OUTSIDE_IGNORE;
+	desc.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;
+	desc.iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
+	desc.fScrollbarSize = 16;
+	OK(xuiPopupCreate(f.context, &popup, &desc));
+	scroll = xuiPopupGetScrollViewWidget(popup);
+	frame = xuiPopupGetFrameWidget(popup);
+	bar = xuiScrollFrameGetVScrollBarWidget(frame);
+	backdrop = xuiWidgetGetFirstChild(popup);
+	OK(xuiScrollViewSetCornerMode(scroll, XUI_SCROLL_FRAME_CORNER_GRIP));
+	OK(xuiScrollViewSetButtonColors(scroll, 0x341256ff, 0x687453ff));
+	OK(xuiScrollViewSetCornerColors(scroll, 0x273456ff, 0x764382ff));
+	OK(xuiScrollViewGetButtonColors(scroll, &buttonBase, &iconBase));
+	OK(xuiScrollViewGetCornerColors(scroll, &cornerBase, &gripBase));
+	OK(xuiScrollViewGetColors(scroll, &palette[0], &palette[1], &palette[2], &palette[3], &palette[4], &palette[5]));
+	OK(xuiPopupSetOpen(popup, 1));
+	CHECK(render(&f) == 0);
+	before = xuiWidgetGetRect(popup);
+	CHECK(before.fW < 800 && before.fH < 600);
+	CHECK(fill(bar, buttonBase) > 0 && fill(frame, cornerBase) > 0 && fill(frame, gripBase) > 0);
+	p[0] = color("popup.backdrop.color", 0x13245677);
+	p[1] = color("popup.scrollbar.button.color", 0x682395ff);
+	p[2] = color("popup.scrollbar.button.icon_color", 0x976321ff);
+	p[3] = color("popup.scrollbar.corner.color", 0x645231ff);
+	p[4] = color("popup.scrollbar.grip.color", 0x956237ff);
+	p[5] = color("popup.scrollbar.thumb.color", 0x792345ff);
+	OK(xuiWidgetSetInlineStyle(popup, p, 6));
+	CHECK(paint_only(popup) == 0 && render(&f) == 0);
+	after = xuiWidgetGetRect(popup);
+	CHECK(memcmp(&before, &after, sizeof(before)) == 0);
+	world = xuiWidgetGetWorldRect(backdrop);
+	CHECK(world.fX == 0 && world.fY == 0 && world.fW == 800 && world.fH == 600);
+	CHECK(!xuiWidgetGetHitTestVisible(backdrop) && fill(backdrop, p[0].tValue.iColor) > 0);
+	CHECK(fill(bar, p[1].tValue.iColor) > 0 && fill(bar, p[2].tValue.iColor) > 0);
+	CHECK(fill(frame, p[3].tValue.iColor) > 0 && fill(frame, p[4].tValue.iColor) > 0);
+	CHECK(fill(bar, p[5].tValue.iColor) > 0);
+	CHECK(warm_frame(&f) == 0);
+	palette[1] = 0x182347ff;
+	OK(xuiScrollViewSetColors(scroll, palette[0], palette[1], palette[2], palette[3], palette[4], palette[5]));
+	OK(xuiScrollViewSetButtonColors(scroll, 0x387452ff, iconBase));
+	CHECK(render(&f) == 0 && fill(bar, p[5].tValue.iColor) > 0 && fill(bar, p[1].tValue.iColor) > 0);
+	p[0].tValue.iColor = p[1].tValue.iColor = p[2].tValue.iColor = 0;
+	p[3].tValue.iColor = p[4].tValue.iColor = p[5].tValue.iColor = 0;
+	OK(xuiWidgetSetInlineStyle(popup, p, 6));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetRectFillCount(cache(backdrop)) == 0);
+	CHECK(fill(frame, 0x645231ff) == 0 && fill(bar, 0x682395ff) == 0 && fill(bar, 0x792345ff) == 0);
+	OK(xuiWidgetSetInlineStyle(popup, NULL, 0));
+	CHECK(render(&f) == 0 && fill(bar, palette[1]) > 0 && fill(bar, 0x387452ff) > 0);
+	CHECK(fill(frame, cornerBase) > 0 && fill(frame, gripBase) > 0);
+	CHECK(warm_frame(&f) == 0);
+	finish(&f);
+	puts("PASS popup render-only backdrop without input shield, scrollbar buttons/corner/grip, transparent/clear/API edits, warm caches");
 	return 0;
 }
 
@@ -410,6 +491,7 @@ static int msgbox_colors(void)
 int main(void)
 {
 	CHECK(popup_colors() == 0);
+	CHECK(popup_dependencies() == 0);
 	CHECK(menu_colors() == 0);
 	CHECK(msgtip_colors() == 0);
 	CHECK(toast_colors() == 0);

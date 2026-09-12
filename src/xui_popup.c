@@ -8,6 +8,7 @@ typedef struct xui_popup_data_t {
 	xui_widget pOwner;
 	xui_widget pOwnerRestore;
 	xui_widget pPanel;
+	xui_widget pBackdropVisual;
 	xui_widget pScrollView;
 	xui_widget pContent;
 	xui_widget pFocusRestore;
@@ -57,6 +58,9 @@ typedef struct xui_popup_data_t {
 	uint32_t iActiveColor;
 	uint32_t iFocusColor;
 	uint32_t iDisabledColor;
+	uint32_t arrScrollBase[10], arrScrollApplied[10];
+	uint32_t iScrollStyleMask;
+	int bColorPaintReady;
 	uint32_t iColorStyleHash;
 } xui_popup_data_t;
 
@@ -93,7 +97,8 @@ static void __xuiPopupRegisterColors(xui_context pContext, xui_widget_type pType
 	static const char* arrNames[] = {
 		"popup.panel.color", "popup.border.color", "popup.shadow.color", "popup.backdrop.color",
 		"popup.scrollbar.track.color", "popup.scrollbar.thumb.color", "popup.scrollbar.hover.color",
-		"popup.scrollbar.active.color", "popup.scrollbar.focus.color", "popup.scrollbar.disabled.color"
+		"popup.scrollbar.active.color", "popup.scrollbar.focus.color", "popup.scrollbar.disabled.color",
+		"popup.scrollbar.button.color", "popup.scrollbar.button.icon_color", "popup.scrollbar.corner.color", "popup.scrollbar.grip.color"
 	};
 	xui_style_property_info_t tInfo;
 	size_t i;
@@ -500,7 +505,7 @@ static int __xuiPopupShouldUseShield(const xui_popup_data_t* pData)
 	if ( pData->iOwnerPolicy != XUI_POPUP_OWNER_PASSTHROUGH ) {
 		return 1;
 	}
-	return __xuiPopupAlpha(__xuiPopupStyleColor(pData->pWidget, "popup.backdrop.color", pData->iBackdropColor)) != 0u;
+	return __xuiPopupAlpha(pData->iBackdropColor) != 0u;
 }
 
 static int __xuiPopupArrange(xui_widget pWidget, xui_popup_data_t* pData, float fWindowW, float fWindowH)
@@ -536,6 +541,9 @@ static int __xuiPopupArrange(xui_widget pWidget, xui_popup_data_t* pData, float 
 	iRet = xuiWidgetSetRect(pWidget, xuiInternalSnapRect(tShell));
 	if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
 	iRet = xuiWidgetSetRect(pData->pPanel, xuiInternalSnapRect(tPanel));
+	if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
+	iRet = xuiWidgetSetRect(pData->pBackdropVisual,
+		xuiInternalSnapRect((xui_rect_t){-tShell.fX, -tShell.fY, fWindowW, fWindowH}));
 	if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
 	fInset = __xuiPopupMax(0.0f, pData->fPadding + pData->fBorderWidth);
 	tScroll.fX = fInset;
@@ -996,10 +1004,10 @@ static int __xuiPopupShellCacheRender(xui_widget pWidget, xui_draw_context pDraw
 
 	(void)iStateId;
 	pData = (xui_popup_data_t*)pUser;
-	if ( (pWidget == NULL) || (pData == NULL) || (pDraw == NULL) || !pData->bOpen || !pData->bShield ) {
+	if ( (pWidget == NULL) || (pData == NULL) || (pDraw == NULL) || !pData->bOpen || pWidget != pData->pBackdropVisual ) {
 		return XUI_OK;
 	}
-	iBackdrop = __xuiPopupStyleColor(pWidget, "popup.backdrop.color", pData->iBackdropColor);
+	iBackdrop = __xuiPopupStyleColor(pData->pWidget, "popup.backdrop.color", pData->iBackdropColor);
 	if ( __xuiPopupAlpha(iBackdrop) == 0u ) return XUI_OK;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) {
@@ -1009,24 +1017,47 @@ static int __xuiPopupShellCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iBackdrop);
 }
 
-static int __xuiPopupUpdate(xui_widget pWidget, float fDelta, void* pUser)
+static int __xuiPopupPreparePaint(xui_widget pWidget)
 {
+	static const char* arrNames[] = {"popup.scrollbar.track.color", "popup.scrollbar.thumb.color",
+		"popup.scrollbar.hover.color", "popup.scrollbar.active.color", "popup.scrollbar.focus.color",
+		"popup.scrollbar.disabled.color", "popup.scrollbar.button.color", "popup.scrollbar.button.icon_color",
+		"popup.scrollbar.corner.color", "popup.scrollbar.grip.color"};
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
-	(void)fDelta;
-	(void)pUser;
-	if ( pData == NULL || pData->pScrollView == NULL || pData->iColorStyleHash == iHash ) return XUI_OK;
+	uint32_t arrColors[10], iMask = 0;
+	size_t i;
+	if ( pData == NULL || pData->pScrollView == NULL ) return XUI_OK;
+	(void)xuiScrollViewGetColors(pData->pScrollView, &arrColors[0], &arrColors[1], &arrColors[2],
+		&arrColors[3], &arrColors[4], &arrColors[5]);
+	(void)xuiScrollViewGetButtonColors(pData->pScrollView, &arrColors[6], &arrColors[7]);
+	(void)xuiScrollViewGetCornerColors(pData->pScrollView, &arrColors[8], &arrColors[9]);
+	if ( pData->bColorPaintReady && pData->iColorStyleHash == iHash &&
+		memcmp(arrColors, pData->arrScrollApplied, sizeof(arrColors)) == 0 ) return XUI_OK;
+	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); ++i ) {
+		xui_style_property_t tProperty;
+		/* A direct child API edit becomes the new fallback, even while styled. */
+		if ( (pData->iScrollStyleMask & (1u << i)) && arrColors[i] == pData->arrScrollApplied[i] )
+			arrColors[i] = pData->arrScrollBase[i];
+		pData->arrScrollBase[i] = arrColors[i];
+		memset(&tProperty, 0, sizeof(tProperty));
+		tProperty.iSize = sizeof(tProperty);
+		if ( xuiWidgetGetResolvedStyleProperty(pWidget, arrNames[i], &tProperty) == XUI_OK &&
+			tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR ) {
+			arrColors[i] = tProperty.tValue.iColor;
+			iMask |= 1u << i;
+		}
+	}
+	pData->iScrollStyleMask = iMask;
+	pData->bColorPaintReady = 1;
 	pData->iColorStyleHash = iHash;
+	memcpy(pData->arrScrollApplied, arrColors, sizeof(arrColors));
 	(void)xuiScrollViewSetColors(pData->pScrollView,
-		__xuiPopupStyleColor(pWidget, "popup.scrollbar.track.color", pData->iTrackColor),
-		__xuiPopupStyleColor(pWidget, "popup.scrollbar.thumb.color", pData->iThumbColor),
-		__xuiPopupStyleColor(pWidget, "popup.scrollbar.hover.color", pData->iHoverColor),
-		__xuiPopupStyleColor(pWidget, "popup.scrollbar.active.color", pData->iActiveColor),
-		__xuiPopupStyleColor(pWidget, "popup.scrollbar.focus.color", pData->iFocusColor),
-		__xuiPopupStyleColor(pWidget, "popup.scrollbar.disabled.color", pData->iDisabledColor));
+		arrColors[0], arrColors[1], arrColors[2], arrColors[3], arrColors[4], arrColors[5]);
+	(void)xuiScrollViewSetButtonColors(pData->pScrollView, arrColors[6], arrColors[7]);
+	(void)xuiScrollViewSetCornerColors(pData->pScrollView, arrColors[8], arrColors[9]);
 	(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( pData->bOpen && pData->bShield != __xuiPopupShouldUseShield(pData) )
-		return __xuiPopupApplyPlacementData(pWidget, pData);
+	(void)xuiWidgetInvalidate(pData->pBackdropVisual, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
 }
 
@@ -1182,6 +1213,13 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 		return iRet;
 	}
 	pData->pContent = xuiScrollViewGetContentWidget(pData->pScrollView);
+	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pBackdropVisual);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pScrollView);
+		xuiWidgetDestroy(pData->pPanel);
+		pData->pScrollView = pData->pPanel = pData->pContent = NULL;
+		return iRet;
+	}
 	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
 	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
 	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
@@ -1192,6 +1230,14 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	(void)xuiWidgetSetEventCallback(pWidget, __xuiPopupEvent, pData);
 	(void)xuiWidgetSetCancelAction(pWidget, __xuiPopupCancelAction, pData);
 	__xuiPopupDefaultCachePolicy(&tPolicy);
+	/* A noninteractive full-viewport paint child keeps backdrop styles paint-only,
+	 * including popups whose outside policy does not require an input shield. */
+	(void)xuiWidgetSetFlowMode(pData->pBackdropVisual, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetFocusable(pData->pBackdropVisual, 0);
+	(void)xuiWidgetSetTabStop(pData->pBackdropVisual, 0);
+	(void)xuiWidgetSetHitTestVisible(pData->pBackdropVisual, 0);
+	(void)xuiWidgetSetCachePolicy(pData->pBackdropVisual, &tPolicy);
+	(void)xuiWidgetSetCacheRenderCallback(pData->pBackdropVisual, __xuiPopupShellCacheRender, pData);
 	(void)xuiWidgetSetCachePolicy(pWidget, &tPolicy);
 	(void)xuiWidgetSetCacheRenderCallback(pWidget, __xuiPopupShellCacheRender, pData);
 	(void)xuiWidgetSetLayoutType(pData->pPanel, XUI_LAYOUT_MANUAL);
@@ -1202,11 +1248,14 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	(void)xuiWidgetSetCachePolicy(pData->pPanel, &tPolicy);
 	(void)xuiWidgetSetCacheRenderCallback(pData->pPanel, __xuiPopupPanelCacheRender, pData);
 	(void)xuiWidgetSetOverflow(pData->pScrollView, XUI_OVERFLOW_CLIP);
-	iRet = xuiWidgetAddChild(pWidget, pData->pPanel);
+	iRet = xuiWidgetAddChild(pWidget, pData->pBackdropVisual);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pPanel);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pData->pPanel, pData->pScrollView);
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pData->pScrollView);
 		xuiWidgetDestroy(pData->pPanel);
+		xuiWidgetDestroy(pData->pBackdropVisual);
+		pData->pBackdropVisual = NULL;
 		pData->pScrollView = NULL;
 		pData->pPanel = NULL;
 		pData->pContent = NULL;
@@ -1288,7 +1337,6 @@ XUI_API xui_widget_type xuiPopupGetType(xui_context pContext)
 	tDesc.onInit = __xuiPopupInit;
 	tDesc.onDestroy = __xuiPopupDestroy;
 	tDesc.onCacheRender = __xuiPopupShellCacheRender;
-	tDesc.onUpdate = __xuiPopupUpdate;
 	__xuiPopupDefaultLayout(&tDesc.tLayout);
 	__xuiPopupDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
@@ -1296,6 +1344,7 @@ XUI_API xui_widget_type xuiPopupGetType(xui_context pContext)
 		return NULL;
 	}
 	pType->pAccessibleAdapter = &g_xuiPopupAccessible;
+	pType->onPreparePaint = __xuiPopupPreparePaint;
 	__xuiPopupRegisterColors(pContext, pType);
 	return pType;
 }
@@ -1769,6 +1818,7 @@ XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBor
 	}
 	if ( !xuiInternalContextDestroyPending(pContext) && xuiInternalWidgetIsValid(pWidget) ) {
 		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)xuiWidgetInvalidate(pData->pBackdropVisual, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	xuiInternalOperationLeave(pContext);
