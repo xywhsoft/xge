@@ -239,6 +239,7 @@ static int popup_dependencies(void)
 	OK(xuiPopupSetOpen(popup, 1));
 	CHECK(render(&f) == 0);
 	before = xuiWidgetGetRect(popup);
+	CHECK(cache(backdrop) == NULL && cache(popup) == NULL);
 	CHECK(before.fW < 800 && before.fH < 600);
 	CHECK(fill(bar, buttonBase) > 0 && fill(frame, cornerBase) > 0 && fill(frame, gripBase) > 0);
 	p[0] = color("popup.backdrop.color", 0x13245677);
@@ -254,6 +255,7 @@ static int popup_dependencies(void)
 	world = xuiWidgetGetWorldRect(backdrop);
 	CHECK(world.fX == 0 && world.fY == 0 && world.fW == 800 && world.fH == 600);
 	CHECK(!xuiWidgetGetHitTestVisible(backdrop) && fill(backdrop, p[0].tValue.iColor) > 0);
+	CHECK(cache(backdrop) != NULL && cache(popup) == NULL);
 	CHECK(fill(bar, p[1].tValue.iColor) > 0 && fill(bar, p[2].tValue.iColor) > 0);
 	CHECK(fill(frame, p[3].tValue.iColor) > 0 && fill(frame, p[4].tValue.iColor) > 0);
 	CHECK(fill(bar, p[5].tValue.iColor) > 0);
@@ -266,10 +268,15 @@ static int popup_dependencies(void)
 	p[3].tValue.iColor = p[4].tValue.iColor = p[5].tValue.iColor = 0;
 	OK(xuiWidgetSetInlineStyle(popup, p, 6));
 	CHECK(render(&f) == 0 && xuiTestSurfaceGetRectFillCount(cache(backdrop)) == 0);
+	CHECK(cache(backdrop) == NULL && cache(popup) == NULL);
 	CHECK(fill(frame, 0x645231ff) == 0 && fill(bar, 0x682395ff) == 0 && fill(bar, 0x792345ff) == 0);
 	OK(xuiWidgetSetInlineStyle(popup, NULL, 0));
 	CHECK(render(&f) == 0 && fill(bar, palette[1]) > 0 && fill(bar, 0x387452ff) > 0);
 	CHECK(fill(frame, cornerBase) > 0 && fill(frame, gripBase) > 0);
+	OK(xuiPopupSetColors(popup, 0x536781ff, 0x743561ff, 0, 0x27456188));
+	CHECK(render(&f) == 0 && cache(backdrop) != NULL && fill(backdrop, 0x27456188) > 0);
+	OK(xuiPopupSetColors(popup, 0x536781ff, 0x743561ff, 0, 0));
+	CHECK(render(&f) == 0 && cache(backdrop) == NULL);
 	CHECK(warm_frame(&f) == 0);
 	finish(&f);
 	puts("PASS popup render-only backdrop without input shield, scrollbar buttons/corner/grip, transparent/clear/API edits, warm caches");
