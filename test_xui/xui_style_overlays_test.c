@@ -527,6 +527,130 @@ static int msgbox_colors(void)
 	return 0;
 }
 
+static int custom_file_row(xui_widget widget, int index, xui_draw_context draw, xui_rect_t row, int state, void* user)
+{
+	xui_proxy proxy = xuiInternalContextGetProxy(xuiWidgetGetContext(widget));
+	int* calls = (int*)user;
+	(void)index;
+	(void)state;
+	++*calls;
+	return proxy->drawRectFill(proxy, draw, row, 0x254176ff) == XUI_OK ? 1 : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static int file_dialog_colors(void)
+{
+	static const char* keys[] = {"file_dialog.row.color", "file_dialog.row.hover_color",
+		"file_dialog.row.selected_color", "file_dialog.focus.color", "file_dialog.text.color",
+		"file_dialog.text.disabled_color", "file_dialog.text.selected_color", "file_dialog.icon.color"};
+	fixture_t f;
+	xui_file_dialog dialog;
+	xui_file_dialog_desc_t desc;
+	xui_widget window, list, viewport, path;
+	xui_style_property_t p[8];
+	xui_style_desc_t s;
+	xui_style_value_t token;
+	xui_rect_t item, world;
+	uint32_t base[8], current[8];
+	int enabled = 0, i, calls = 0;
+	CHECK(init(&f) == 0);
+	CHECK(xrtDirCreateAll("build/style_overlays_fixture"));
+	CHECK(xrtFileWriteAll("build/style_overlays_fixture/one.txt", (xbytesview){(const unsigned char*)"test", 4}));
+	memset(&token, 0, sizeof(token));
+	token.iSize = sizeof(token);
+	token.iType = XUI_STYLE_VALUE_COLOR;
+	token.iColor = 0x384721ff;
+	OK(xuiStyleSetToken(f.context, "theme.panel", &token));
+	memset(&desc, 0, sizeof(desc));
+	desc.iSize = sizeof(desc);
+	desc.sInitialDir = "build/style_overlays_fixture";
+	desc.sTitle = "Select file";
+	desc.pFont = f.font;
+	OK(xuiOpenFileDialog(f.context, &dialog, &desc));
+	window = xuiFileDialogGetWindowWidget(dialog);
+	list = xuiFileDialogGetFileListWidget(dialog);
+	viewport = xuiListViewGetViewportWidget(list);
+	path = xuiWidgetGetParent(xuiFileDialogGetPathBreadcrumbWidget(dialog));
+	CHECK(xuiWidgetIsType(window, xuiWindowGetType(f.context)) && xuiWidgetIsType(list, xuiListViewGetType(f.context)));
+	CHECK(xuiFileDialogGetEntryCount(dialog) == 1);
+	CHECK(render(&f) == 0);
+	CHECK(fill(path, token.iColor) > 0);
+	CHECK(warm_frame(&f) == 0);
+	CHECK(window_parent_colors(&f, window) == 0);
+	token.iColor = 0x765123ff;
+	OK(xuiStyleSetToken(f.context, "theme.panel", &token));
+	CHECK(paint_only(path) == 0 && render(&f) == 0 && fill(path, token.iColor) > 0);
+	token.iColor = 0x596127ff;
+	OK(xuiStyleSetToken(f.context, "theme.text", &token));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetLastTextColor(cache(viewport)) == token.iColor);
+	p[0] = color("file_dialog.text.color", 0x687154ff);
+	s = style(p, 1);
+	OK(xuiStyleSetType(f.context, xuiWidgetFindType(f.context, "file-dialog-list"), &s));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetLastTextColor(cache(viewport)) == p[0].tValue.iColor);
+	OK(xuiStyleRemoveType(f.context, xuiWidgetFindType(f.context, "file-dialog-list")));
+	token.iColor = 0x734125ff;
+	OK(xuiStyleSetToken(f.context, "theme.text", &token));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetLastTextColor(cache(viewport)) == token.iColor);
+	OK(xuiListViewGetColors(list, &base[0], &base[1], &base[2], &base[3], &base[4], &base[5], &base[6], &base[7]));
+	for ( i = 0; i < 8; ++i ) base[i] = 0x245167ff + (uint32_t)i * 0x10000000;
+	OK(xuiListViewSetColors(list, base[0], base[1], base[2], base[3], base[4], base[5], base[6], base[7]));
+	CHECK(render(&f) == 0 && fill(viewport, base[3]) > 0 && xuiTestSurfaceGetLastTextColor(cache(viewport)) == base[6]);
+	p[0] = color("listview.text.color", 0x432786ff);
+	OK(xuiWidgetSetInlineStyle(list, p, 1));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetLastTextColor(cache(viewport)) == p[0].tValue.iColor);
+	OK(xuiWidgetSetInlineStyle(list, NULL, 0));
+	for ( i = 0; i < 8; ++i ) p[i] = color(keys[i], 0x163752ff + (uint32_t)i * 0x10000000);
+	s = style(p, 8);
+	OK(xuiStyleSetClass(f.context, "overlay.files", &s));
+	OK(xuiWidgetAddStyleClass(list, "overlay.files"));
+	CHECK(paint_only(list) == 0 && render(&f) == 0 && fill(viewport, p[0].tValue.iColor) > 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(viewport)) == p[4].tValue.iColor);
+	CHECK(xuiTestSurfaceGetLastColor(cache(viewport)) == p[7].tValue.iColor);
+	world = xuiWidgetGetWorldRect(list);
+	item = xuiListViewGetItemRect(list, 0);
+	OK(xuiInputPointerMove(f.context, world.fX + item.fX + 12, world.fY + item.fY + 12, 0));
+	OK(xuiDispatchPendingEvents(f.context));
+	CHECK(render(&f) == 0 && xuiListViewGetHoverIndex(list) == 0 && fill(viewport, p[1].tValue.iColor) > 0);
+	OK(xuiListViewSetSelected(list, 0));
+	OK(xuiSetFocusWidget(f.context, list));
+	CHECK(render(&f) == 0 && fill(viewport, p[2].tValue.iColor) > 0 && fill(viewport, p[3].tValue.iColor) > 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(viewport)) == p[6].tValue.iColor);
+	OK(xuiListViewSetEnabledItems(list, &enabled, 1));
+	CHECK(render(&f) == 0 && xuiTestSurfaceGetLastTextColor(cache(viewport)) == p[5].tValue.iColor);
+	enabled = 1;
+	OK(xuiListViewSetEnabledItems(list, &enabled, 1));
+	OK(xuiListViewSetSelected(list, 0));
+	for ( i = 0; i < 8; ++i ) p[i].tValue.iColor = 0;
+	OK(xuiWidgetSetInlineStyle(list, p, 8));
+	CHECK(render(&f) == 0 && fill(viewport, 0x163752ff) == 0 && fill(viewport, 0x363752ff) == 0);
+	CHECK(xuiTestSurfaceGetLastTextColor(cache(viewport)) == 0 && xuiTestSurfaceGetLastColor(cache(viewport)) == 0);
+	OK(xuiListViewGetColors(list, &current[0], &current[1], &current[2], &current[3], &current[4], &current[5], &current[6], &current[7]));
+	CHECK(memcmp(base, current, sizeof(base)) == 0);
+	OK(xuiWidgetSetInlineStyle(list, NULL, 0));
+	OK(xuiWidgetRemoveStyleClass(list, "overlay.files"));
+	CHECK(render(&f) == 0 && fill(viewport, base[5]) > 0 && xuiTestSurfaceGetLastTextColor(cache(viewport)) == base[6]);
+	p[0] = color("file_dialog.path.background.color", 0x651234ff);
+	p[1] = color("file_dialog.path.border.color", 0x876521ff);
+	p[2] = color("file_dialog.row.selected_color", 0x521764ff);
+	OK(xuiWidgetSetInlineStyle(window, p, 3));
+	CHECK(paint_only(window) == 0 && render(&f) == 0);
+	CHECK(fill(path, p[0].tValue.iColor) > 0 && fill(path, p[1].tValue.iColor) > 0 && fill(viewport, p[2].tValue.iColor) > 0);
+	p[0].tValue.iColor = p[1].tValue.iColor = p[2].tValue.iColor = 0;
+	OK(xuiWidgetSetInlineStyle(window, p, 3));
+	CHECK(render(&f) == 0 && fill(path, 0x651234ff) == 0 && fill(path, 0x876521ff) == 0 && fill(viewport, 0x521764ff) == 0);
+	OK(xuiWidgetSetInlineStyle(window, NULL, 0));
+	CHECK(render(&f) == 0 && fill(path, 0x765123ff) > 0 && fill(viewport, base[5]) > 0);
+	CHECK(warm_frame(&f) == 0);
+	OK(xuiListViewSetItemRenderer(list, custom_file_row, &calls));
+	p[0] = color("file_dialog.row.color", 0x714236ff);
+	OK(xuiWidgetSetInlineStyle(list, p, 1));
+	CHECK(render(&f) == 0 && calls > 0 && fill(viewport, 0x254176ff) > 0 && fill(viewport, p[0].tValue.iColor) == 0);
+	CHECK(warm_frame(&f) == 0);
+	xuiFileDialogDestroy(dialog);
+	finish(&f);
+	puts("PASS file dialog theme tokens/path/8 row keys, cached root/list inline/transparent/clear, API/custom renderer, Window hook, warm caches");
+	return 0;
+}
+
 int main(void)
 {
 	CHECK(popup_colors() == 0);
@@ -535,6 +659,7 @@ int main(void)
 	CHECK(msgtip_colors() == 0);
 	CHECK(toast_colors() == 0);
 	CHECK(msgbox_colors() == 0);
+	CHECK(file_dialog_colors() == 0);
 	puts("PASS style_overlays");
 	return 0;
 }
