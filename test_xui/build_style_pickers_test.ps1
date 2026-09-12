@@ -1,7 +1,8 @@
 param(
     [ValidateSet('combobox', 'cascader', 'color_picker', 'date_picker', 'icon_picker')]
-    [string[]]$Family = @('combobox'),
-    [switch]$Legacy
+    [string[]]$Family = @('combobox', 'cascader', 'color_picker', 'date_picker', 'icon_picker'),
+    [switch]$Legacy,
+    [string]$OverlayRef
 )
 $ErrorActionPreference = 'Stop'
 Push-Location (Split-Path $PSScriptRoot -Parent)
@@ -30,6 +31,15 @@ try {
     $latestHeader = ($headers | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
     foreach ($source in $sources) {
         $object = "$out/$([IO.Path]::GetFileNameWithoutExtension($source)).o"
+        if ($OverlayRef -and $source -in @('src/xui_popup.c', 'src/xui_menu.c')) {
+            $overlaySource = & git show "${OverlayRef}:$source"
+            if ($LASTEXITCODE -ne 0) { throw "Cannot read ${OverlayRef}:$source" }
+            $object = "$out/$([IO.Path]::GetFileNameWithoutExtension($source))_overlay.o"
+            $overlaySource | & gcc @flags -Isrc -x c -c - -o $object
+            if ($LASTEXITCODE -ne 0) { throw "Overlay build failed: $source" }
+            $objects += $object
+            continue
+        }
         if (!(Test-Path $object) -or
             (Get-Item $source).LastWriteTimeUtc -gt (Get-Item $object).LastWriteTimeUtc -or
             $latestHeader -gt (Get-Item $object).LastWriteTimeUtc) {
@@ -39,6 +49,7 @@ try {
         $objects += $object
     }
     foreach ($name in $Family) {
+        Write-Host "[XUI] style_pickers: $name (legacy=$Legacy, overlay=$OverlayRef)"
         $test = "test_xui/xui_style_pickers_${name}_test.c"
         $extra = @()
         $suffix = ''
