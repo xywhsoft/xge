@@ -3364,7 +3364,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->iGeneration = 1;
 	pWidget->iDpiGeneration = pContext->iDpiGeneration;
 	pWidget->iResolvedStyleHash = __xuiStyleHashProps(NULL, 0);
-	pWidget->iResolvedStyleGeneration = pContext->iStyleGeneration;
+	pWidget->iResolvedStyleGeneration = 0;
 	pWidget->tCachePolicy.iSize = sizeof(pWidget->tCachePolicy);
 	pWidget->tCachePolicy.iPolicy = XUI_CACHE_POLICY_SELF;
 	pWidget->tCachePolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
@@ -7139,6 +7139,16 @@ static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 
 	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) || !pWidget->bVisible ) {
 		return;
+	}
+	/* Detached and newly created widgets can miss the context's style refresh. */
+	if ( pWidget->iResolvedStyleGeneration != pWidget->pContext->iStyleGeneration ) {
+		iRet = xuiWidgetResolveStyle(pWidget);
+		if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) || !pWidget->bVisible ) return;
+		if ( iRet != XUI_OK ) {
+			xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_CACHE, 1,
+				"cache.style", "The widget style could not be resolved before preparing its paint dependencies.");
+			return;
+		}
 	}
 	onPreparePaint = __xuiWidgetTypePreparePaint(pWidget->pType);
 	if ( onPreparePaint != NULL ) {

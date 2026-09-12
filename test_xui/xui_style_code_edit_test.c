@@ -5,14 +5,15 @@
 
 #define CHECK(e,m) do { if(!(e)) { printf("code editor style: %s (%d)\n",m,__LINE__); failed=1; goto cleanup; } } while(0)
 static uint32_t colors[4096];
+static xui_rect_t rects[4096];
 static int count;
 static int (*baseText)(xui_proxy,xui_draw_context,xui_font,const char*,xui_rect_t,uint32_t,uint32_t);
 static int (*baseFill)(xui_proxy,xui_draw_context,xui_rect_t,uint32_t);
 static int has(uint32_t c) { int i; for(i=0;i<count;i++) if(colors[i]==c) return 1; return 0; }
 static int text(xui_proxy p,xui_draw_context d,xui_font f,const char* s,xui_rect_t r,uint32_t c,uint32_t flags)
-{ if(count<4096) colors[count++]=c; return baseText(p,d,f,s,r,c,flags); }
+{ if(count<4096) { rects[count]=r; colors[count++]=c; } return baseText(p,d,f,s,r,c,flags); }
 static int fill(xui_proxy p,xui_draw_context d,xui_rect_t r,uint32_t c)
-{ if(count<4096) colors[count++]=c; return baseFill(p,d,r,c); }
+{ if(count<4096) { rects[count]=r; colors[count++]=c; } return baseFill(p,d,r,c); }
 static int signature(xui_widget w,int offset,xui_code_signature_help_t* help,void* user)
 {
 	static xui_code_signature_parameter_t parameter;
@@ -28,7 +29,8 @@ int main(void)
 	static const char* const keys[]={"codeedit.margin.background_color","codeedit.line_number.color",
 		"codeedit.line_number.active_color","codeedit.line_number.active_background_color",
 		"codeedit.marker.color","codeedit.fold.color","codeedit.assist.active_color",
-		"codeedit.assist.text.color","codeedit.assist.documentation.color","codeedit.diagnostic.info.color"};
+		"codeedit.assist.text.color","codeedit.assist.documentation.color","codeedit.diagnostic.info.color",
+		"popup.panel.color"};
 	xui_test_proxy_state_t proxy;
 	xui_context ctx=NULL;
 	xui_surface target=NULL;
@@ -37,7 +39,7 @@ int main(void)
 	xui_code_edit_desc_t desc;
 	xui_code_fold_range_t fold;
 	xui_code_diagnostic_t diagnostic;
-	xui_style_property_t props[10];
+	xui_style_property_t props[11];
 	xui_rect_i_t damage={0,0,640,480};
 	int i,failed=0;
 	xuiTestProxyInit(&proxy);
@@ -59,13 +61,13 @@ int main(void)
 	diagnostic.tRange=(xui_code_range_t){0,3}; diagnostic.iSeverity=XUI_CODE_DIAGNOSTIC_INFO; diagnostic.sMessage="Info";
 	CHECK(xuiCodeAnnotationSetDiagnostics(xuiCodeEditGetAnnotations(edit),&diagnostic,1)==XUI_OK,"diagnostic");
 	CHECK(xuiSetFocusWidget(ctx,edit)==XUI_OK && xuiLayout(ctx)==XUI_OK,"focus layout");
-	for(i=0;i<10;i++) {
+	for(i=0;i<11;i++) {
 		CHECK(xuiStyleFindProperty(ctx,keys[i])!=0,keys[i]);
 		memset(&props[i],0,sizeof(props[i])); props[i].iSize=sizeof(props[i]); props[i].sName=keys[i];
 		props[i].tValue.iSize=sizeof(props[i].tValue); props[i].tValue.iType=XUI_STYLE_VALUE_COLOR;
 		props[i].tValue.iColor=0x621324ffu+((uint32_t)i<<16);
 	}
-	CHECK(xuiStyleSetDefault(ctx,props,10)==XUI_OK,"default stylesheet");
+	CHECK(xuiStyleSetDefault(ctx,props,11)==XUI_OK,"default stylesheet");
 	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK,"render margins");
 	for(i=0;i<6;i++) CHECK(has(props[i].tValue.iColor),keys[i]);
 	CHECK(has(props[9].tValue.iColor),"diagnostic margin preserves info severity theme");
@@ -74,15 +76,27 @@ int main(void)
 	count=0;
 	CHECK(xuiLayout(ctx)==XUI_OK && xuiRender(ctx,target,&damage,1)==XUI_OK,"assist render");
 	for(i=6;i<9;i++) CHECK(has(props[i].tValue.iColor),keys[i]);
+	CHECK(has(props[10].tValue.iColor),"detached assist popup uses theme on its first visible frame");
 	count=0;
-	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && count==0,"warm editor and assist keep paint caches");
+	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK,"warm render");
+	if(count!=0) {
+		xui_render_stats_t stats={0};
+		stats.iSize=sizeof(stats);
+		(void)xuiGetRenderStats(ctx,&stats);
+		printf("warm updated widgets=%d caches=%d\n",stats.iUpdatedWidgets,stats.iUpdatedCaches);
+		printf("warm paint count=%d colors:",count);
+		for(i=0;i<count;i++) printf(" %08x@(%d,%d,%d,%d)",(unsigned)colors[i],
+			rects[i].fX,rects[i].fY,rects[i].fW,rects[i].fH);
+		puts("");
+	}
+	CHECK(count==0,"warm editor and assist keep paint caches");
 	props[7].tValue.iColor=0xb72745ffu;
-	CHECK(xuiStyleSetDefault(ctx,props,10)==XUI_OK,"live theme");
+	CHECK(xuiStyleSetDefault(ctx,props,11)==XUI_OK,"live theme");
 	count=0;
 	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK,"live assist render without update");
 	CHECK(has(props[7].tValue.iColor) && xuiCodeEditIsSignatureHelpOpen(edit),"open cached assist follows owner theme");
 	props[0].tValue.iColor=0; props[6].tValue.iColor=0;
-	CHECK(xuiStyleSetDefault(ctx,props,10)==XUI_OK,"transparent margins and assist");
+	CHECK(xuiStyleSetDefault(ctx,props,11)==XUI_OK,"transparent margins and assist");
 	count=0;
 	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && !has(0x621324ffu) && !has(0x681324ffu),"transparent colors suppress old fills without update");
 	CHECK(xuiStyleClearDefault(ctx)==XUI_OK,"clear");

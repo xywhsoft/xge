@@ -56,7 +56,7 @@ static int paint(xui_widget widget, xui_draw_context draw, uint32_t state, void*
 	return XUI_OK;
 }
 
-static void run_case(int mode, int overlay)
+static void run_case(int mode, int overlay, int initial_style)
 {
 	xui_test_proxy_state_t proxy;
 	fixture_t f = {0};
@@ -84,9 +84,17 @@ static void run_case(int mode, int overlay)
 	desc.sName = "test.prepare.derived"; desc.pParent = parent;
 	desc.onDestroy = NULL;
 	CHECK(xuiWidgetRegisterType(f.context, &derived, &desc) == XUI_OK);
+	info.iSize = sizeof(info); info.sName = "test.paint.color";
+	info.pWidgetType = parent; info.iValueType = XUI_STYLE_VALUE_COLOR;
+	info.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	CHECK(xuiStyleRegisterProperty(f.context, &info, NULL) == XUI_OK);
+	prop.iSize = sizeof(prop); prop.sName = "test.paint.color";
+	prop.tValue.iSize = sizeof(prop.tValue); prop.tValue.iType = XUI_STYLE_VALUE_COLOR;
+	prop.tValue.iColor = 0x314159ff;
+	if (initial_style == 2) CHECK(xuiStyleSetDefault(f.context, &prop, 1) == XUI_OK);
 	CHECK(xuiWidgetCreateTyped(f.context, derived, &f.owner, NULL) == XUI_OK);
 	xuiWidgetSetUserData(f.owner, &f);
-	CHECK(xuiWidgetAddChild(root, f.owner) == XUI_OK);
+	if (initial_style != 1) CHECK(xuiWidgetAddChild(root, f.owner) == XUI_OK);
 	CHECK(xuiWidgetSetRect(f.owner, (xui_rect_t){5, 8, 180, 80}) == XUI_OK);
 	CHECK(xuiWidgetSetLayoutType(f.owner, XUI_LAYOUT_MANUAL) == XUI_OK);
 	CHECK(xuiWidgetCreate(f.context, &f.child) == XUI_OK);
@@ -100,18 +108,16 @@ static void run_case(int mode, int overlay)
 	CHECK(xuiWidgetSetCacheStateId(f.child, 0, 0) == XUI_OK);
 	CHECK(xuiWidgetSetCacheStateId(f.child, 1, 1) == XUI_OK);
 	CHECK(xuiWidgetSetCacheStateId(f.child, 2, 2) == XUI_OK);
-	info.iSize = sizeof(info); info.sName = "test.paint.color";
-	info.pWidgetType = parent; info.iValueType = XUI_STYLE_VALUE_COLOR;
-	info.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
-	CHECK(xuiStyleRegisterProperty(f.context, &info, NULL) == XUI_OK);
+	if (initial_style == 1) {
+		CHECK(xuiStyleSetDefault(f.context, &prop, 1) == XUI_OK);
+		CHECK(xuiWidgetAddChild(root, f.owner) == XUI_OK);
+	}
 	CHECK(xuiRenderPrepare(f.context) == XUI_OK);
 	CHECK(f.prepares == 1);
 	if (!mode) {
-		CHECK(f.paints == 3 && f.painted == 0x123456ff);
+		CHECK(f.paints == 3 && f.painted == (initial_style ? 0x314159ffu : 0x123456ffu));
 		count = f.paints;
 		CHECK(xuiRenderPrepare(f.context) == XUI_OK && f.paints == count);
-		prop.iSize = sizeof(prop); prop.sName = "test.paint.color";
-		prop.tValue.iSize = sizeof(prop.tValue); prop.tValue.iType = XUI_STYLE_VALUE_COLOR;
 		prop.tValue.iColor = 0x876543ff;
 		CHECK(xuiStyleSetDefault(f.context, &prop, 1) == XUI_OK);
 		CHECK(xuiRenderPrepare(f.context) == XUI_OK && f.painted == prop.tValue.iColor && f.paints == count + 3);
@@ -142,7 +148,11 @@ int main(void)
 {
 	int mode, overlay;
 	for (mode = 0; mode < 4; ++mode)
-		for (overlay = 0; overlay < 2; ++overlay) run_case(mode, overlay);
+		for (overlay = 0; overlay < 2; ++overlay) run_case(mode, overlay, 0);
+	for (overlay = 0; overlay < 2; ++overlay) {
+		run_case(0, overlay, 1);
+		run_case(0, overlay, 2);
+	}
 	printf("xui_prepare_paint_test: %d failures\n", failures);
 	return failures != 0;
 }
