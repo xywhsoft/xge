@@ -133,10 +133,12 @@ static void fractionalDrawReference(xui_widget edit, xui_draw_context draw, cons
     xui_rich_edit_data_t* p = __xuiRichEditData(edit);
     xui_proxy proxy = xuiInternalContextGetProxy(xuiWidgetGetContext(edit));
     xui_rect_t content = __xuiRichEditContentRect(edit, p);
+    xui_rich_edit_colors_t colors;
     int i, start = p->iAnchor < p->iCaret ? p->iAnchor : p->iCaret;
     int end = p->iAnchor > p->iCaret ? p->iAnchor : p->iCaret;
-    if ((p->iBackgroundColor & 255) != 0)
-        proxy->drawRectFill(proxy, draw, xuiWidgetGetContentRect(edit), p->iBackgroundColor);
+    __xuiRichEditResolveColors(edit, p, &colors);
+    if ((colors.iBackground & 255) != 0)
+        proxy->drawRectFill(proxy, draw, xuiWidgetGetContentRect(edit), colors.iBackground);
     for (i = 0; i < 48; i++) {
         fractional_item_t block = {0};
         xui_rect_t r;
@@ -152,7 +154,7 @@ static void fractionalDrawReference(xui_widget edit, xui_draw_context draw, cons
         if (r.fY + r.fH < content.fY || r.fY > content.fY + content.fH ||
             r.fX + r.fW < content.fX || r.fX > content.fX + content.fW) continue;
         if ((f->background & 255) != 0) proxy->drawRectFill(proxy, draw, r, f->background);
-        if (end > f->start && start < f->end) proxy->drawRectFill(proxy, draw, r, p->iSelectionColor);
+        if (end > f->start && start < f->end) proxy->drawRectFill(proxy, draw, r, colors.iSelection);
     }
     for (i = 0; i < ref->count;) {
         const fractional_item_t* f = &ref->items[i];
@@ -175,7 +177,9 @@ static void fractionalDrawReference(xui_widget edit, xui_draw_context draw, cons
             xuiRichNodeGetInfo(f->node, &info);
             memcpy(text, info.sText + f->nodeStart, (size_t)(textEnd - f->nodeStart));
             text[textEnd - f->nodeStart] = 0;
-            proxy->drawText(proxy, draw, f->font, text, r, f->color,
+            uint32_t color = (f->color & 255) != 0 ? f->color :
+                (f->type == XUI_RICH_NODE_LINK ? colors.iLink : colors.iText);
+            proxy->drawText(proxy, draw, f->font, text, r, color,
                 XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
         }
         i = j;

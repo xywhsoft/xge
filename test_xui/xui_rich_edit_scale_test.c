@@ -26,14 +26,15 @@ static xui_draw_text_proc g_drawText;
 static xui_draw_rect_fill_proc g_fill;
 static unsigned g_shapeCalls, g_shapeBytes;
 static uint64_t g_trace;
-static struct trace_record { uint64_t hash; xui_rect_t rect; char text[80]; } g_records[16384], g_expected[16384];
-static int g_recordCount;
+static struct trace_record { uint64_t hash; xui_rect_t rect; uint32_t color; char text[80]; } g_records[16384], g_expected[16384];
+static int g_recordCount, g_expectedCount;
 
-static void recordDraw(xui_rect_t rect, const char* text)
+static void recordDraw(xui_rect_t rect, const char* text, uint32_t color)
 {
     if (g_recordCount >= 16384) return;
     g_records[g_recordCount].hash = g_trace;
     g_records[g_recordCount].rect = rect;
+    g_records[g_recordCount].color = color;
     snprintf(g_records[g_recordCount].text, 80, "%s", text);
     g_recordCount++;
 }
@@ -54,13 +55,13 @@ static int auditText(xui_proxy p, xui_draw_context d, xui_font font, const char*
     hashBytes(text, strlen(text) + 1);
     hashBytes(&font, sizeof(font)); hashBytes(&r, sizeof(r));
     hashBytes(&color, sizeof(color)); hashBytes(&flags, sizeof(flags));
-    recordDraw(r, text);
+    recordDraw(r, text, color);
     return g_drawText(p, d, font, text, r, color, flags);
 }
 static int auditFill(xui_proxy p, xui_draw_context d, xui_rect_t r, uint32_t color)
 {
     hashBytes(&r, sizeof(r)); hashBytes(&color, sizeof(color));
-    recordDraw(r, "<fill>");
+    recordDraw(r, "<fill>", color);
     return g_fill(p, d, r, color);
 }
 static void resetWork(void)
@@ -111,16 +112,18 @@ static int compareView(xui_widget edit, xui_draw_context draw)
     g_trace = 0; g_recordCount = 0;
     REQUIRE(__xuiRichEditRender(edit, draw, 0, NULL) == XUI_OK);
     memcpy(g_expected, g_records, sizeof(g_records));
-    j = g_recordCount; g_recordCount = 0;
+    j = g_expectedCount = g_recordCount; g_recordCount = 0;
     hash = g_trace; g_trace = 0;
     REQUIRE(auditReferenceRender(edit, draw, 0, NULL) == XUI_OK);
     if (hash != g_trace) {
         printf("draw mismatch: indexed=%d reference=%d scroll=%.4f\n", j, g_recordCount, p->fScrollY);
         for (i = 0; i < j && i < g_recordCount; i++) if (g_expected[i].hash != g_records[i].hash) {
-            printf("draw %d indexed=(%d %d %d %d) %s\n", i,
-                g_expected[i].rect.fX, g_expected[i].rect.fY, g_expected[i].rect.fW, g_expected[i].rect.fH, g_expected[i].text);
-            printf("draw %d reference=(%d %d %d %d) %s\n", i,
-                g_records[i].rect.fX, g_records[i].rect.fY, g_records[i].rect.fW, g_records[i].rect.fH, g_records[i].text);
+            printf("draw %d indexed=(%d %d %d %d) color=%08x %s\n", i,
+                g_expected[i].rect.fX, g_expected[i].rect.fY, g_expected[i].rect.fW, g_expected[i].rect.fH,
+                (unsigned)g_expected[i].color, g_expected[i].text);
+            printf("draw %d reference=(%d %d %d %d) color=%08x %s\n", i,
+                g_records[i].rect.fX, g_records[i].rect.fY, g_records[i].rect.fW, g_records[i].rect.fH,
+                (unsigned)g_records[i].color, g_records[i].text);
             break;
         }
     }
@@ -137,6 +140,52 @@ static int compareView(xui_widget edit, xui_draw_context draw)
             auditReferenceAtomicAt(edit, p, x, y, &rs, &re, &other));
         REQUIRE(s == rs && e == re && node == other);
     }
+cleanup:
+    return failed;
+}
+
+static int expectedTextColor(const char* prefix, uint32_t color)
+{
+    int i;
+    for (i = 0; i < g_expectedCount; ++i)
+        if (strcmp(g_expected[i].text, "<fill>") != 0 &&
+            strncmp(g_expected[i].text, prefix, strlen(prefix)) == 0 && g_expected[i].color == color) return 1;
+    return 0;
+}
+
+static int colorContractTest(xui_widget edit, xui_draw_context draw)
+{
+    xui_rich_edit_data_t* p = __xuiRichEditData(edit);
+    xui_style_property_t props[2] = {0};
+    int i, failed = 0;
+    REQUIRE(compareView(edit, draw) == 0);
+    REQUIRE(expectedTextColor("Rich", p->iTextColor));
+    REQUIRE(expectedTextColor("varied", XUI_COLOR_RGBA(20,92,170,255)));
+    REQUIRE(expectedTextColor("", 0x13579bff));
+    for (i = 0; i < 2; ++i) {
+        props[i].iSize = sizeof(props[i]);
+        props[i].sName = i ? "richedit.link.color" : "richedit.text.color";
+        props[i].tValue.iSize = sizeof(props[i].tValue);
+        props[i].tValue.iType = XUI_STYLE_VALUE_COLOR;
+        props[i].tValue.iColor = i ? 0x2468acff : 0x975321ff;
+    }
+    REQUIRE(xuiStyleSetDefault(xuiWidgetGetContext(edit), props, 2) == XUI_OK);
+    resetWork();
+    REQUIRE(compareView(edit, draw) == 0);
+    REQUIRE(g_work.LayoutBlock == 0 && g_work.IndexBlock == 0 && g_shapeCalls == 0);
+    REQUIRE(expectedTextColor("Rich", props[0].tValue.iColor));
+    REQUIRE(expectedTextColor("varied", props[1].tValue.iColor));
+    REQUIRE(expectedTextColor("", 0x13579bff));
+    props[0].tValue.iColor = props[1].tValue.iColor = 0;
+    REQUIRE(xuiStyleSetDefault(xuiWidgetGetContext(edit), props, 2) == XUI_OK);
+    REQUIRE(compareView(edit, draw) == 0);
+    REQUIRE(expectedTextColor("Rich", 0) && expectedTextColor("varied", 0));
+    REQUIRE(expectedTextColor("", 0x13579bff));
+    REQUIRE(xuiStyleClearDefault(xuiWidgetGetContext(edit)) == XUI_OK);
+    REQUIRE(compareView(edit, draw) == 0);
+    REQUIRE(expectedTextColor("Rich", p->iTextColor));
+    REQUIRE(expectedTextColor("varied", XUI_COLOR_RGBA(20,92,170,255)));
+    REQUIRE(expectedTextColor("", 0x13579bff));
 cleanup:
     return failed;
 }
@@ -256,12 +305,15 @@ static int scaleTest(int count, int columns)
         REQUIRE(xuiRichDocumentAppendWidget(doc, node, child, 80, 130, 17) != NULL);
         style.fFontSize = 35; style.iFlags = XUI_RICH_STYLE_SUPERSCRIPT;
         REQUIRE(xuiRichDocumentAppendLink(doc, node, "varied", "https://example.test", &style) != NULL);
+        style.iTextColor = 0x13579bff;
+        REQUIRE(xuiRichDocumentAppendText(doc, node, "explicit", &style) != NULL);
         para.iSize = sizeof(para); para.fSpaceBefore = 8; para.fSpaceAfter = 3;
         REQUIRE(xuiRichNodeSetParagraphStyle(doc, node, &para) == XUI_OK);
         REQUIRE(xuiLayout(context) == XUI_OK);
         REQUIRE(xuiWidgetGetParent(child) == edit);
         REQUIRE(xuiRichEditSetScroll(edit, 0, 0) == XUI_OK);
         REQUIRE(compareView(edit, draw) == 0);
+        REQUIRE(colorContractTest(edit, draw) == 0);
         REQUIRE(xuiRichEditSetScroll(edit, 0, p->fContentHeight * 0.8f) == XUI_OK);
         resetWork();
         REQUIRE(xuiLayout(context) == XUI_OK);
