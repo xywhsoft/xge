@@ -4851,6 +4851,8 @@ static uint32_t __xuiCodeEditDiagnosticColor(xui_widget pWidget, int iSeverity)
 static const char* __xuiCodeEditSyntaxColorProperty(int iTokenKind)
 {
 	switch ( iTokenKind ) {
+	case XUI_CODE_TOKEN_TEXT:
+	case XUI_CODE_TOKEN_IDENTIFIER: return "codeedit.text.color";
 	case XUI_CODE_TOKEN_KEYWORD: return "codeedit.syntax.keyword.color";
 	case XUI_CODE_TOKEN_TYPE: return "codeedit.syntax.type.color";
 	case XUI_CODE_TOKEN_NUMBER: return "codeedit.syntax.number.color";

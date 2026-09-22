@@ -9,11 +9,17 @@ static xui_rect_t rects[4096];
 static int count;
 static int (*baseText)(xui_proxy,xui_draw_context,xui_font,const char*,xui_rect_t,uint32_t,uint32_t);
 static int (*baseFill)(xui_proxy,xui_draw_context,xui_rect_t,uint32_t);
+static int (*baseSpans)(xui_proxy,xui_draw_context,xui_font,const char*,int,xui_rect_t,uint32_t,uint32_t,const xui_text_paint_span_t*,int);
 static int has(uint32_t c) { int i; for(i=0;i<count;i++) if(colors[i]==c) return 1; return 0; }
 static int text(xui_proxy p,xui_draw_context d,xui_font f,const char* s,xui_rect_t r,uint32_t c,uint32_t flags)
 { if(count<4096) { rects[count]=r; colors[count++]=c; } return baseText(p,d,f,s,r,c,flags); }
 static int fill(xui_proxy p,xui_draw_context d,xui_rect_t r,uint32_t c)
 { if(count<4096) { rects[count]=r; colors[count++]=c; } return baseFill(p,d,r,c); }
+static int spans(xui_proxy p,xui_draw_context d,xui_font f,const char* s,int size,xui_rect_t r,uint32_t c,uint32_t flags,const xui_text_paint_span_t* paints,int n)
+{
+	for(int i=0;i<n && count<4096;i++) { rects[count]=r; colors[count++]=paints[i].iColor; }
+	return baseSpans(p,d,f,s,size,r,c,flags,paints,n);
+}
 static int signature(xui_widget w,int offset,xui_code_signature_help_t* help,void* user)
 {
 	static xui_code_signature_parameter_t parameter;
@@ -45,6 +51,7 @@ int main(void)
 	xuiTestProxyInit(&proxy);
 	baseText=proxy.tProxy.drawText; proxy.tProxy.drawText=text;
 	baseFill=proxy.tProxy.drawRectFill; proxy.tProxy.drawRectFill=fill;
+	baseSpans=proxy.tProxy.drawTextSpans; proxy.tProxy.drawTextSpans=spans;
 	CHECK(xuiCreate(&ctx)==XUI_OK && xuiSetProxy(ctx,&proxy.tProxy)==XUI_OK,"context");
 	CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy,&font,"test.ttf",14,0)==XUI_OK,"font");
 	CHECK(xuiSetDefaultFont(ctx,font)==XUI_OK && xuiInputViewport(ctx,640,480)==XUI_OK,"viewport");
@@ -104,6 +111,15 @@ int main(void)
 	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK,"restore render without update");
 	CHECK(has(XUI_COLOR_RGBA(15,23,42,255)) && has(XUI_COLOR_RGBA(71,85,105,255)),"assist restores defaults");
 	CHECK(has(XUI_COLOR_RGBA(241,245,249,255)),"margin restores defaults");
+	CHECK(xuiCodeEditSetText(edit,"identifier")==XUI_OK,"identifier text");
+	props[0].sName="codeedit.text.color"; props[0].tValue.iColor=0x123abcffu;
+	CHECK(xuiStyleSetDefault(ctx,props,1)==XUI_OK,"identifier foreground theme");
+	count=0;
+	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && has(0x123abcffu),"identifier paint follows stylesheet");
+	props[0].tValue.iColor=0xcba321ffu;
+	CHECK(xuiStyleSetDefault(ctx,props,1)==XUI_OK,"identifier live theme");
+	count=0;
+	CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && has(0xcba321ffu),"existing identifier follows live theme");
 	puts("code editor global style colors passed");
 cleanup:
 	if(ctx) xuiDestroy(ctx);

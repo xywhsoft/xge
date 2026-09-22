@@ -3,6 +3,15 @@
 
 #include "../xui.h"
 
+#define XUI_TEXT_BREAK_FLAGS_DEFINED 1
+enum {
+    XUI_LB_GRAPHEME = 1, XUI_LB_NORMAL = 2, XUI_LB_EMERGENCY = 4,
+    XUI_LB_HARD = 8, XUI_LB_INVISIBLE = 16, XUI_LB_SOFT_HYPHEN = 32, XUI_LB_HYPHEN_USED = 64
+};
+/* Caller supplies bytes+1 zeroed boundary bytes. Shared by plain and rich text
+ * so style boundaries do not change Unicode line-break decisions. */
+int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundaries);
+
 /* Raw GetText/GetLine offsets always refer to the original UTF-8 source.
  * This borrowed, NUL-terminated display string omits SHY/ZWSP/WJ/FEFF and
  * adds '-' for a selected WORD soft-hyphen break. Valid until the next

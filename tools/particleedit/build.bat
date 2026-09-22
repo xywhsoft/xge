@@ -14,7 +14,7 @@ if errorlevel 1 (
   exit /b 1
 )
 if not exist "%TOOL%release" mkdir "%TOOL%release"
-gcc -std=c11 -O2 -Wall -Wextra -Werror -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0 -I. "%TOOL%src\main.c" "%TOOL%src\pe_document.c" "%TOOL%src\pe_fields.c" "%TOOL%src\pe_preview.c" "%TOOL%src\pe_ui.c" "%TOOL%src\pe_graph.c" "%TOOL%src\pe_exercise.c" -o "%TOOL%release\particleedit.exe" build\xge.lib -lm -lcomdlg32 -lshell32 -luser32
+gcc -std=c11 -O2 -Wall -Wextra -Werror -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0 -I. "%TOOL%src\main.c" "%TOOL%src\pe_document.c" "%TOOL%src\pe_fields.c" "%TOOL%src\pe_preview.c" "%TOOL%src\pe_ui.c" "%TOOL%src\pe_graph.c" "%TOOL%src\pe_exercise.c" "%TOOL%src\pe_theme.c" -o "%TOOL%release\particleedit.exe" build\xge.lib -lm -lcomdlg32 -lshell32 -luser32
 if errorlevel 1 (
   popd
   exit /b 1

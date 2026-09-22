@@ -53,6 +53,14 @@ caches, and active detached drag visuals before framework cache traversal.
 Content icons keep their original white modulation; built-in chrome icon tints
 are themeable. Menus delegate to their actual Menu widgets and `menu.*` styles.
 
+When `dockpanel.button.icon_color`, `dockpanel.button.disabled_color`, or
+`dockpanel.button.close_icon_color` is explicitly styled, the corresponding
+built-in pin/menu/close glyph uses the existing vector painter. The legacy
+atlas contains black pixels that cannot become light through multiplicative
+tinting. The vector path therefore paints the requested color (including alpha
+zero) on docked, floating and auto-hide chrome. Without a style override the
+legacy atlas path is unchanged; application-supplied window icons are unaffected.
+
 ## TableGrid
 
 TableGrid is a composite, not a TableView subtype. Use the real TableView

@@ -14,7 +14,12 @@ if errorlevel 1 (
   popd
   exit /b 1
 )
-"%TOOL%release\particleedit.exe" --preset 1 --exercise --frames 120
+"%TOOL%release\particleedit.exe" --preset 1 --exercise --frames 120 --theme dark
+if errorlevel 1 (
+  popd
+  exit /b 1
+)
+"%TOOL%release\particleedit.exe" --preset 1 --exercise --frames 120 --theme light
 set "RESULT=%errorlevel%"
 popd
 exit /b %RESULT%

@@ -8,6 +8,24 @@ static const char *preset_names[] = {"命中火花", "火焰与烟雾", "爆炸"
                                      "移动尾尘", "魔法光环",   "UI 彩纸"};
 static const char *channel_names[] = {"尺寸 × 生命周期", "速度 × 生命周期", "Alpha × 生命周期", "颜色渐变"};
 static const char *interpolation_names[] = {"线性 Linear", "阶梯 Step", "平滑 Hermite"};
+static const char *theme_names[] = {"夜晚 · Dark", "白天 · Light"};
+
+static void theme_select(xui_widget w, int index, int value, void *user)
+{
+	pe_app *a = user;
+	(void)value;
+	if (a->syncing)
+		return;
+	if (pe_theme_apply(a, index) == XUI_OK)
+		pe_theme_preferences_save(a);
+	else
+	{
+		a->syncing = 1;
+		xuiComboBoxSetSelected(w, a->theme);
+		a->syncing = 0;
+		pe_status(a, "主题切换失败");
+	}
+}
 
 static xui_widget panel(pe_app *a, xui_widget parent, int layout)
 {
@@ -41,14 +59,6 @@ static xui_widget button(pe_app *a, xui_widget parent, int command, const char *
 	d.iSize = sizeof(d);
 	d.sText = text;
 	d.pFont = a->font;
-	d.iTextColor = PE_TEXT;
-	d.iDisabledTextColor = PE_MUTED;
-	d.iDisabledColor = PE_BG;
-	d.iCheckedColor = PE_SELECTED;
-	d.iNormalColor = PE_PANEL;
-	d.iHoverColor = XUI_COLOR_RGBA(47, 65, 81, 255);
-	d.iActiveColor = PE_SELECTED;
-	d.iBorderColor = PE_LINE;
 	d.fBorderWidth = 1;
 	d.iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE;
 	if (xuiButtonCreate(a->ui, &w, &d) != XUI_OK)
@@ -77,7 +87,6 @@ static xui_widget label(pe_app *a, xui_widget parent, const char *text, int side
 	d.iSize = sizeof(d);
 	d.pFont = a->font;
 	d.sText = text;
-	d.iTextColor = PE_MUTED;
 	d.iTextFlags = XUI_TEXT_ALIGN_MIDDLE;
 	xuiLabelCreate(a->ui, &w, &d);
 	xuiWidgetAddChild(parent, w);
@@ -96,11 +105,6 @@ static xui_widget combo(pe_app *a, xui_widget parent, const char **items, int co
 	d.iSelected = 0;
 	d.fItemHeight = 30;
 	d.fPopupMaxHeight = 320;
-	d.iTextColor = d.iPopupTextColor = d.iPopupHoverTextColor = PE_TEXT;
-	d.iBackgroundColor = d.iPopupPanelColor = PE_PANEL;
-	d.iBorderColor = d.iPopupBorderColor = PE_LINE;
-	d.iArrowColor = PE_ACCENT;
-	d.iHoverBackgroundColor = d.iOpenBackgroundColor = d.iPopupHoverColor = PE_SELECTED;
 	xuiComboBoxCreate(a->ui, &w, &d);
 	xuiWidgetAddChild(parent, w);
 	xuiWidgetSetSizeMode(w, XUI_SIZE_FIXED, XUI_SIZE_FILL);
@@ -113,7 +117,7 @@ static int background(xui_widget w, xui_draw_context draw, uint32_t state, void 
 	pe_app *a = user;
 	xui_rect_t r = xuiWidgetGetRect(w);
 	(void)state;
-	return a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, 0, r.fW, r.fH}, PE_BG);
+	return a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, 0, r.fW, r.fH}, a->colors[PE_BG]);
 }
 static void canvas(pe_app *a, xui_widget w, xui_widget_cache_render_proc paint)
 {
@@ -151,24 +155,23 @@ static int preview_paint(xui_widget w, xui_draw_context draw, uint32_t state, vo
 	image.iColor = 0xffffffffu;
 	image.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
 	xgeDrawEx(&image);
-	a->proxy.drawRectStroke(&a->proxy, draw, dst, 1, PE_LINE);
+	a->proxy.drawRectStroke(&a->proxy, draw, dst, 1, a->colors[PE_LINE]);
 	snprintf(text, sizeof(text), "%s  %.3f s   |   %u 粒子   |   seed %llu",
 	         a->preview.tick != a->preview.target_tick ? "回放中"
 	         : a->preview.playing                      ? "播放"
 	                                                   : "暂停",
 	         a->preview.tick / (float)PE_HZ, stats.iLiveParticles, (unsigned long long)a->preview.seed);
-	a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, 0, r.fW, 30}, PE_BG);
-	a->proxy.drawText(&a->proxy, draw, a->font, text, (xui_rect_t){12, 0, r.fW - 20, 30}, PE_TEXT,
+	a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, 0, r.fW, 30}, a->colors[PE_BG]);
+	a->proxy.drawText(&a->proxy, draw, a->font, text, (xui_rect_t){12, 0, r.fW - 20, 30}, a->colors[PE_TEXT],
 	                  XUI_TEXT_ALIGN_MIDDLE);
-	a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, r.fH - 28, r.fW, 28}, PE_BG);
+	a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, r.fH - 28, r.fW, 28}, a->colors[PE_BG]);
 	a->proxy.drawText(&a->proxy, draw, a->font, "1000 × 680 舞台  ·  滚轮缩放 / 中键平移  ·  F 适合窗口",
-	                  (xui_rect_t){12, r.fH - 28, r.fW - 20, 28}, PE_MUTED, XUI_TEXT_ALIGN_MIDDLE);
+	                  (xui_rect_t){12, r.fH - 28, r.fW - 20, 28}, a->colors[PE_MUTED], XUI_TEXT_ALIGN_MIDDLE);
 	if (a->preview.message[0])
 	{
-		a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){8, 36, r.fW - 16, 55},
-		                      XUI_COLOR_RGBA(55, 40, 25, 245));
+		a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){8, 36, r.fW - 16, 55}, a->colors[PE_WARNING_BG]);
 		a->proxy.drawText(&a->proxy, draw, a->font, a->preview.message, (xui_rect_t){16, 38, r.fW - 32, 50},
-		                  XUI_COLOR_RGBA(244, 193, 111, 255), 0);
+		                  a->colors[PE_WARNING_TEXT], 0);
 	}
 	return XUI_OK;
 }
@@ -210,18 +213,6 @@ static int preview_event(xui_widget w, const xui_event_t *e, void *user)
 	xuiWidgetInvalidate(w, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_EVENT_DISPATCH_STOP;
 }
-static void style_editors(pe_app *a, xui_widget widget)
-{
-	xui_widget_type type = xuiWidgetGetType(widget);
-	if (type == xuiInputGetType(a->ui))
-		xuiInputSetColors(widget, PE_PANEL, PE_TEXT, PE_LINE, PE_ACCENT);
-	if (type == xuiNumericInputGetType(a->ui))
-		xuiNumericInputSetColors(widget, PE_PANEL, PE_TEXT, PE_LINE, PE_ACCENT);
-	if (type == xuiComboBoxGetType(a->ui))
-		xuiComboBoxSetColors(widget, PE_TEXT, PE_MUTED, PE_PANEL, PE_SELECTED, PE_SELECTED, PE_BG);
-	for (xui_widget child = xuiWidgetGetFirstChild(widget); child; child = xuiWidgetGetNextSibling(child))
-		style_editors(a, child);
-}
 static xui_widget property_grid(pe_app *a, xui_widget parent, int description)
 {
 	xui_widget w = NULL;
@@ -235,16 +226,7 @@ static xui_widget property_grid(pe_app *a, xui_widget parent, int description)
 	d.iDescriptionMode =
 	    description ? XUI_PROPERTY_GRID_DESCRIPTION_BOTH : XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP;
 	d.fDescriptionPanelHeight = description ? 72 : 0;
-	d.tStyle = (xui_property_grid_style_t){PE_PANEL,    PE_LINE,
-	                                       PE_BG,       PE_SELECTED,
-	                                       PE_TEXT,     PE_ACCENT,
-	                                       PE_PANEL,    PE_TEXT,
-	                                       PE_SELECTED, PE_PANEL,
-	                                       PE_TEXT,     PE_SELECTED,
-	                                       PE_MUTED,    XUI_COLOR_RGBA(239, 107, 99, 255),
-	                                       PE_ACCENT};
 	xuiPropertyGridCreate(a->ui, &w, &d);
-	style_editors(a, w);
 	xuiWidgetAddChild(parent, w);
 	dock_child(w, XUI_DOCK_FILL, 0, 0);
 	return w;
@@ -785,9 +767,9 @@ static int timeline_ruler(xui_widget w, int frame, xui_draw_context draw, xui_re
 	{
 		snprintf(text, sizeof(text), "%g s", frame / 60.f);
 		a->proxy.drawText(&a->proxy, draw, a->font, text, (xui_rect_t){rect.fX + 3, rect.fY, 64, rect.fH - 6},
-		                  PE_MUTED, XUI_TEXT_ALIGN_MIDDLE);
+		                  a->colors[PE_MUTED], XUI_TEXT_ALIGN_MIDDLE);
 		a->proxy.drawLine(&a->proxy, draw, rect.fX, rect.fY + rect.fH - 8, rect.fX, rect.fY + rect.fH, 1,
-		                  PE_MUTED);
+		                  a->colors[PE_MUTED]);
 	}
 	return 1;
 }
@@ -796,7 +778,7 @@ static int timeline_marker(xui_widget w, int layer, int frame, const xui_timelin
 {
 	pe_app *a = user;
 	float x = rect.fX, y = rect.fY + rect.fH * .5f;
-	uint32_t color = XUI_COLOR_RGBA(244, 181, 96, 255);
+	uint32_t color = a->colors[PE_BURST];
 	(void)w;
 	(void)layer;
 	(void)frame;
@@ -811,7 +793,6 @@ static int timeline_marker(xui_widget w, int layer, int frame, const xui_timelin
 
 int pe_ui_create(pe_app *a)
 {
-	xui_theme_t theme;
 	xui_dock_panel_desc_t dock = {0};
 	xui_list_view_desc_t list = {0};
 	xui_timeline_view_desc_t timeline = {0};
@@ -819,18 +800,6 @@ int pe_ui_create(pe_app *a)
 	const char *titles[] = {
 	    "实时预览", "发射器 / 模板", "发射器属性", "发射时间轴 · 60 fps", "生命周期曲线 / 渐变",
 	    "Burst 表", "预览设置"};
-	xuiThemeDefault(&theme);
-	theme.pFont = a->font;
-	theme.iTextColor = PE_TEXT;
-	theme.iBackgroundColor = PE_BG;
-	theme.iPanelColor = PE_PANEL;
-	theme.iBorderColor = PE_LINE;
-	theme.iAccentColor = PE_ACCENT;
-	theme.iSelectionColor = PE_SELECTED;
-	theme.iStateNormalColor = PE_PANEL;
-	theme.iStateHoverColor = PE_SELECTED;
-	theme.iStateActiveColor = PE_SELECTED;
-	xuiSetTheme(a->ui, &theme);
 	a->root = panel(a, NULL, XUI_LAYOUT_DOCK);
 	xuiSetRootWidget(a->ui, a->root);
 	canvas(a, a->root, background);
@@ -847,6 +816,8 @@ int pe_ui_create(pe_app *a)
 	button(a, a->header, PE_TEXTURE, "绑定纹理", 100);
 	button(a, a->header, PE_RELOAD, "重载资源", 100);
 	button(a, a->header, PE_HELP, "操作说明", 100);
+	a->theme_combo = combo(a, a->header, theme_names, PE_THEME_COUNT, 148);
+	xuiComboBoxSetSelect(a->theme_combo, theme_select, a);
 	a->transport = row(a, a->root, 42);
 	button(a, a->transport, PE_PLAY, "暂停", 64);
 	button(a, a->transport, PE_RESTART, "重播", 64);
@@ -863,21 +834,6 @@ int pe_ui_create(pe_app *a)
 		return XUI_ERROR_OUT_OF_MEMORY;
 	xuiWidgetAddChild(a->root, a->dock);
 	dock_child(a->dock, XUI_DOCK_FILL, 0, 0);
-	xui_dock_panel_colors_t colors;
-	xuiDockPanelGetColors(a->dock, &colors);
-	colors.iBackgroundColor = PE_BG;
-	colors.iPaneColor = colors.iClientColor = PE_PANEL;
-	colors.iCaptionColor = PE_BG;
-	colors.iCaptionTextColor = PE_MUTED;
-	colors.iTabColor = PE_BG;
-	colors.iActiveTabColor = PE_SELECTED;
-	colors.iTabTextColor = PE_MUTED;
-	colors.iActiveTabTextColor = PE_TEXT;
-	colors.iBorderColor = PE_LINE;
-	colors.iSplitterColor = PE_BG;
-	colors.iFloatTitleColor = PE_SELECTED;
-	colors.iFloatBorderColor = PE_ACCENT;
-	xuiDockPanelSetColors(a->dock, &colors);
 	for (int i = 0; i < PE_WIN_COUNT; ++i)
 		a->panels[i] = panel(a, NULL, XUI_LAYOUT_DOCK);
 	canvas(a, a->panels[PE_WIN_PREVIEW], preview_paint);
@@ -902,11 +858,6 @@ int pe_ui_create(pe_app *a)
 	list.pFont = a->font;
 	list.fItemHeight = 40;
 	list.iSelected = 0;
-	list.iBackgroundColor = list.iRowColor = PE_PANEL;
-	list.iTextColor = PE_TEXT;
-	list.iSelectedColor = PE_SELECTED;
-	list.iHoverColor = PE_BG;
-	list.iBorderColor = PE_LINE;
 	xuiListViewCreate(a->ui, &a->list, &list);
 	xuiWidgetAddChild(a->panels[PE_WIN_EMITTERS], a->list);
 	dock_child(a->list, XUI_DOCK_FILL, 0, 0);
@@ -936,22 +887,6 @@ int pe_ui_create(pe_app *a)
 	xuiTimeLineViewSetRenderers(a->timeline, NULL, timeline_ruler, timeline_marker, NULL, a);
 	xuiWidgetAddChild(a->panels[PE_WIN_TIMELINE], a->timeline);
 	dock_child(a->timeline, XUI_DOCK_FILL, 0, 0);
-	xui_timeline_view_colors_t tc;
-	xuiTimeLineViewGetColors(a->timeline, &tc);
-	tc.iBackgroundColor = PE_PANEL;
-	tc.iCornerColor = tc.iRulerColor = PE_BG;
-	tc.iLayerColor = PE_PANEL;
-	tc.iLayerAltColor = PE_BG;
-	tc.iGridColor = PE_LINE;
-	tc.iGridStrongColor = PE_LINE;
-	tc.iTextColor = PE_TEXT;
-	tc.iMutedTextColor = PE_MUTED;
-	tc.iSelectedColor = PE_SELECTED;
-	tc.iCurrentColor = PE_ACCENT;
-	tc.iSpanColor = PE_SELECTED;
-	tc.iSpanTextColor = PE_TEXT;
-	tc.iBorderColor = PE_LINE;
-	xuiTimeLineViewSetColors(a->timeline, &tc);
 	xuiTimeLineViewSetCurrentFrameCallbacks(a->timeline, NULL, timeline_frame, a);
 	xuiTimeLineViewSetLayerSelected(a->timeline, timeline_layer, a);
 	xuiTimeLineViewSetLayerCallbacks(a->timeline, timeline_layer_changing, timeline_layer_changed, a);
@@ -1011,7 +946,7 @@ int pe_ui_create(pe_app *a)
 	xuiDockPanelSetPaneActiveWindow(a->dock, a->property_pane, a->windows[PE_WIN_PROPERTIES]);
 	xuiDockPanelSaveState(a->dock, &a->default_layout);
 	a->refresh = 1;
-	return XUI_OK;
+	return pe_theme_init(a);
 }
 void pe_ui_refresh(pe_app *a)
 {

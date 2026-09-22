@@ -239,6 +239,8 @@ static void resize_and_public_semantics(void)
 	CHECK(line->iCellCount == 8 && !line->bOpen);
 	for (i = 0; i < 8; ++i) {
 		__xuiTerminalHistoryCellToPublic(line, i, &cell);
+		cell.iFgColor = __xuiTerminalResolveColor(data, cell.iFgColor, 1);
+		cell.iBgColor = __xuiTerminalResolveColor(data, cell.iBgColor, 0);
 		CHECK(same_cell(&cell, &expected[i]));
 	}
 	for (j = 0; j < 4; ++j) {

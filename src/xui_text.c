@@ -12,6 +12,12 @@
 
 #include "xui_text_break.inl"
 
+int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundaries)
+{
+    if (!text || bytes < 0 || !boundaries) return XUI_ERROR_INVALID_ARGUMENT;
+    return __xuiTextBreakMap(text, bytes, boundaries);
+}
+
 int xuiInternalTextNextHardLine(const char* sText, int iSize, int iStart, int* pEnd, int* pNext)
 {
 	struct LineBreakContext tContext;

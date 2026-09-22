@@ -39,6 +39,11 @@
 #define XUI_TERMINAL_MENU_TITLE_COUNT 6
 #define XUI_TERMINAL_HISTORY_INITIAL_VIEW 128
 #define XUI_TERMINAL_HISTORY_TEXT_STRIDE 32
+/* Internal color references: SGR truecolor is always opaque RGBA. Alpha-zero
+ * values can therefore retain default/indexed provenance without enlarging
+ * public cells or compressed history runs. Resolve only at paint/API edges. */
+#define XUI_TERMINAL_COLOR_DEFAULT 0u
+#define XUI_TERMINAL_COLOR_INDEX(i) (((uint32_t)(i) + 1u) << 8)
 #define XUI_TERMINAL_HISTORY_GLYPH_FLAGS (XUI_TERMINAL_CELL_WIDE | XUI_TERMINAL_CELL_WIDE_CONT | \
 	XUI_TERMINAL_CELL_COMBINING | XUI_TERMINAL_CELL_COMBINING_OVERFLOW)
 #ifndef XUI_TERMINAL_HISTORY_STEP
@@ -611,6 +616,14 @@ static int __xuiTerminalCodepointWidth(uint32_t iCodepoint)
 	return 1;
 }
 
+static uint32_t __xuiTerminalResolveColor(const xui_terminal_data_t* pData, uint32_t iColor, int bForeground)
+{
+	if ( (iColor & 0xffu) != 0u ) return iColor;
+	if ( iColor == XUI_TERMINAL_COLOR_DEFAULT ) return bForeground ? pData->iForegroundColor : pData->iBackgroundColor;
+	uint32_t iIndex = (iColor >> 8) - 1u;
+	return iIndex < 256u ? pData->arrPalette[iIndex] : iColor;
+}
+
 static xui_terminal_cell_t __xuiTerminalBlankCell(const xui_terminal_data_t* pData)
 {
 	xui_terminal_cell_t tCell;
@@ -618,8 +631,8 @@ static xui_terminal_cell_t __xuiTerminalBlankCell(const xui_terminal_data_t* pDa
 	memset(&tCell, 0, sizeof(tCell));
 	tCell.iSize = sizeof(tCell);
 	tCell.iCodepoint = ' ';
-	tCell.iFgColor = (pData != NULL) ? pData->iForegroundColor : XUI_COLOR_RGBA(220, 230, 240, 255);
-	tCell.iBgColor = (pData != NULL) ? pData->iBackgroundColor : XUI_COLOR_RGBA(18, 24, 32, 255);
+	tCell.iFgColor = XUI_TERMINAL_COLOR_DEFAULT;
+	tCell.iBgColor = XUI_TERMINAL_COLOR_DEFAULT;
 	tCell.iWidth = 1;
 	return tCell;
 }
@@ -2137,8 +2150,8 @@ static void __xuiTerminalRestoreCursorState(xui_terminal_data_t* pData)
 	if ( pData == NULL ) return;
 	pData->iCursorX = __xuiTerminalMin(__xuiTerminalMax(0, pData->iSavedCursorX), pData->iColumns - 1);
 	pData->iCursorY = __xuiTerminalMin(__xuiTerminalMax(0, pData->iSavedCursorY), pData->iRows - 1);
-	pData->iCurrentFg = pData->iSavedFg != 0u ? pData->iSavedFg : pData->iForegroundColor;
-	pData->iCurrentBg = pData->iSavedBg != 0u ? pData->iSavedBg : pData->iBackgroundColor;
+	pData->iCurrentFg = pData->iSavedFg;
+	pData->iCurrentBg = pData->iSavedBg;
 	pData->iCurrentFlags = pData->iSavedFlags;
 	pData->iCurrentLinkId = pData->iSavedLinkId;
 	pData->bWrapPending = 0;
@@ -2337,8 +2350,8 @@ static void __xuiTerminalApplySgr(xui_terminal_data_t* pData, const xui_terminal
 	for ( i = 0; i < count; i++ ) {
 		p = __xuiTerminalParam(pParser, i, 0);
 		if ( p == 0 ) {
-			pData->iCurrentFg = pData->iForegroundColor;
-			pData->iCurrentBg = pData->iBackgroundColor;
+			pData->iCurrentFg = XUI_TERMINAL_COLOR_DEFAULT;
+			pData->iCurrentBg = XUI_TERMINAL_COLOR_DEFAULT;
 			pData->iCurrentFlags = 0;
 		} else if ( p == 1 ) {
 			pData->iCurrentFlags |= XUI_TERMINAL_CELL_BOLD;
@@ -2367,23 +2380,23 @@ static void __xuiTerminalApplySgr(xui_terminal_data_t* pData, const xui_terminal
 		} else if ( p == 29 ) {
 			pData->iCurrentFlags &= ~XUI_TERMINAL_CELL_STRIKE;
 		} else if ( p >= 30 && p <= 37 ) {
-			pData->iCurrentFg = pData->arrPalette[p - 30];
+			pData->iCurrentFg = XUI_TERMINAL_COLOR_INDEX(p - 30);
 		} else if ( p == 39 ) {
-			pData->iCurrentFg = pData->iForegroundColor;
+			pData->iCurrentFg = XUI_TERMINAL_COLOR_DEFAULT;
 		} else if ( p >= 40 && p <= 47 ) {
-			pData->iCurrentBg = pData->arrPalette[p - 40];
+			pData->iCurrentBg = XUI_TERMINAL_COLOR_INDEX(p - 40);
 		} else if ( p == 49 ) {
-			pData->iCurrentBg = pData->iBackgroundColor;
+			pData->iCurrentBg = XUI_TERMINAL_COLOR_DEFAULT;
 		} else if ( p >= 90 && p <= 97 ) {
-			pData->iCurrentFg = pData->arrPalette[8 + p - 90];
+			pData->iCurrentFg = XUI_TERMINAL_COLOR_INDEX(8 + p - 90);
 		} else if ( p >= 100 && p <= 107 ) {
-			pData->iCurrentBg = pData->arrPalette[8 + p - 100];
+			pData->iCurrentBg = XUI_TERMINAL_COLOR_INDEX(8 + p - 100);
 		} else if ( (p == 38 || p == 48) && (i + 2 < count) && (__xuiTerminalParam(pParser, i + 1, 0) == 5) ) {
 			int idx = __xuiTerminalParam(pParser, i + 2, 0);
 			if ( idx < 0 ) idx = 0;
 			if ( idx > 255 ) idx = 255;
-			if ( p == 38 ) pData->iCurrentFg = pData->arrPalette[idx];
-			else pData->iCurrentBg = pData->arrPalette[idx];
+			if ( p == 38 ) pData->iCurrentFg = XUI_TERMINAL_COLOR_INDEX(idx);
+			else pData->iCurrentBg = XUI_TERMINAL_COLOR_INDEX(idx);
 			i += 2;
 		} else if ( (p == 38 || p == 48) && (i + 4 < count) && (__xuiTerminalParam(pParser, i + 1, 0) == 2) ) {
 			r = __xuiTerminalParam(pParser, i + 2, 0);
@@ -2890,8 +2903,8 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			pData->bBracketedPaste = 0;
 			pData->iScrollTop = 0;
 			pData->iScrollBottom = pData->iRows - 1;
-			pData->iCurrentFg = pData->iForegroundColor;
-			pData->iCurrentBg = pData->iBackgroundColor;
+			pData->iCurrentFg = XUI_TERMINAL_COLOR_DEFAULT;
+			pData->iCurrentBg = XUI_TERMINAL_COLOR_DEFAULT;
 			pData->iCurrentFlags = 0;
 			pData->iCurrentLinkId = 0;
 			(void)xuiTerminalClear(pWidget);
@@ -5059,17 +5072,6 @@ static xui_font __xuiTerminalStyleFont(xui_widget pWidget, xui_font pBaseFont)
 	return pBaseFont;
 }
 
-static uint32_t __xuiTerminalMapPaletteColor(uint32_t iColor, const uint32_t* arrOldPalette, const uint32_t* arrNewPalette)
-{
-	int i;
-
-	if ( (arrOldPalette == NULL) || (arrNewPalette == NULL) ) return iColor;
-	for ( i = 0; i < 256; i++ ) {
-		if ( arrOldPalette[i] == iColor ) return arrNewPalette[i];
-	}
-	return iColor;
-}
-
 static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* pData)
 {
 	xui_proxy pProxy;
@@ -5085,8 +5087,6 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	uint32_t iOldFocus;
 	uint32_t iOldDisabledFocus;
 	uint32_t iOldLink;
-	uint32_t iOldCurrentFg;
-	uint32_t iOldCurrentBg;
 	xui_font pOldFont;
 	float fOldCellWidth;
 	float fOldCellHeight;
@@ -5106,8 +5106,6 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	iOldFocus = pData->iFocusColor;
 	iOldDisabledFocus = pData->iDisabledFocusColor;
 	iOldLink = pData->iLinkHoverColor;
-	iOldCurrentFg = pData->iCurrentFg;
-	iOldCurrentBg = pData->iCurrentBg;
 	pOldFont = pData->pFont;
 	fOldCellWidth = pData->fCellWidth;
 	fOldCellHeight = pData->fCellHeight;
@@ -5180,16 +5178,6 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	if ( pData->fCursorHeight < 1.0f ) pData->fCursorHeight = 1.0f;
 	pData->fCursorHeight = (float)xuiInternalSnapSize(pData->fCursorHeight);
 
-	if ( iOldCurrentFg == iOldForeground ) {
-		pData->iCurrentFg = pData->iForegroundColor;
-	} else {
-		pData->iCurrentFg = __xuiTerminalMapPaletteColor(pData->iCurrentFg, arrOldPalette, pData->arrPalette);
-	}
-	if ( iOldCurrentBg == iOldBackground ) {
-		pData->iCurrentBg = pData->iBackgroundColor;
-	} else {
-		pData->iCurrentBg = __xuiTerminalMapPaletteColor(pData->iCurrentBg, arrOldPalette, pData->arrPalette);
-	}
 	if ( (pData->pMenu != NULL) && (pOldFont != pData->pFont) ) {
 		(void)xuiMenuSetFont(pData->pMenu, pData->pFont);
 	}
@@ -5402,9 +5390,9 @@ static int __xuiTerminalRenderCellRow(xui_proxy pProxy, xui_draw_context pDraw,
 	if ( pCells == NULL || iCellCount <= 0 ) return XUI_OK;
 	bHasSelection = __xuiTerminalSelectionColumns(pData, iLogicalLine, &iSelectionStart, &iSelectionEnd);
 	for ( x = 0; x < iCellCount; x++ ) {
-		iBg = pCells[x].iBgColor;
+		iBg = __xuiTerminalResolveColor(pData, pCells[x].iBgColor, 0);
 		if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u ) {
-			iBg = pCells[x].iFgColor;
+			iBg = __xuiTerminalResolveColor(pData, pCells[x].iFgColor, 1);
 		}
 		if ( iBg != pData->iBackgroundColor && __xuiTerminalAlpha(iBg) != 0 && pProxy != NULL && pProxy->drawRectFill != NULL ) {
 			tCellRect.fX = fX + (float)x * pData->fCellWidth;
@@ -5424,7 +5412,8 @@ static int __xuiTerminalRenderCellRow(xui_proxy pProxy, xui_draw_context pDraw,
 			     !pData->bLastCaretBlinkVisible ) continue;
 			iCellBytes = __xuiTerminalCellUtf8(&pCells[x], sCell, (int)sizeof(sCell));
 			if ( iCellBytes <= 0 ) continue;
-			iFg = ((pCells[x].iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u) ? pCells[x].iBgColor : pCells[x].iFgColor;
+			iFg = ((pCells[x].iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u) ?
+				__xuiTerminalResolveColor(pData, pCells[x].iBgColor, 0) : __xuiTerminalResolveColor(pData, pCells[x].iFgColor, 1);
 			if ( bHasSelection && x >= iSelectionStart && x < iSelectionEnd ) iFg = pData->iSelectionTextColor;
 			iCellWidth = (pCells[x].iWidth > 0) ? pCells[x].iWidth : 1;
 			tTextRect.fX = fX + (float)x * pData->fCellWidth;
@@ -5488,7 +5477,8 @@ static int __xuiTerminalRenderCellRow(xui_proxy pProxy, xui_draw_context pDraw,
 		tTextRect.fY = fY;
 		tTextRect.fW = (float)(x - iRunStart) * pData->fCellWidth;
 		tTextRect.fH = pData->fCellHeight;
-		if ( (iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u ) iFg = iBg;
+		iFg = (iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u ?
+			__xuiTerminalResolveColor(pData, iBg, 0) : __xuiTerminalResolveColor(pData, iFg, 1);
 		if ( bRunSelected ) iFg = pData->iSelectionTextColor;
 		iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 		if ( (iFlags & XUI_TERMINAL_CELL_UNDERLINE) != 0u ) iTextFlags |= XUI_TEXT_UNDERLINE;
@@ -5861,10 +5851,10 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iSearchHighlightColor = pData->iBaseSearchHighlightColor;
 	pData->iFocusColor = pData->iBaseFocusColor;
 	pData->iLinkHoverColor = pData->iBaseLinkHoverColor;
-	pData->iCurrentFg = pData->iForegroundColor;
-	pData->iCurrentBg = pData->iBackgroundColor;
-	pData->iSavedFg = pData->iForegroundColor;
-	pData->iSavedBg = pData->iBackgroundColor;
+	pData->iCurrentFg = XUI_TERMINAL_COLOR_DEFAULT;
+	pData->iCurrentBg = XUI_TERMINAL_COLOR_DEFAULT;
+	pData->iSavedFg = XUI_TERMINAL_COLOR_DEFAULT;
+	pData->iSavedBg = XUI_TERMINAL_COLOR_DEFAULT;
 	pData->iScrollbackLimit = (pDesc != NULL && pDesc->iScrollbackLimit > 0) ? pDesc->iScrollbackLimit : XUI_TERMINAL_DEFAULT_SCROLLBACK;
 	pData->iParseBudget = (pDesc != NULL && pDesc->iParseBudgetBytes > 0) ? pDesc->iParseBudgetBytes : XUI_TERMINAL_DEFAULT_PARSE_BUDGET;
 	pData->fBaseCellWidth = (pDesc != NULL) ? pDesc->fCellWidth : 0.0f;
@@ -6419,6 +6409,9 @@ XUI_API int xuiTerminalGetCell(xui_widget pWidget, int iColumn, int iRow, xui_te
 	if ( pData == NULL || pCell == NULL || iColumn < 0 || iRow < 0 || iColumn >= pData->iColumns || iRow >= pData->iRows ) return XUI_ERROR_INVALID_ARGUMENT;
 	pCells = __xuiTerminalScreenConst(pData);
 	*pCell = __xuiTerminalBufferRowConst(pData, pCells, iRow)[iColumn];
+	__xuiTerminalResolveStyle(pWidget, pData);
+	pCell->iFgColor = __xuiTerminalResolveColor(pData, pCell->iFgColor, 1);
+	pCell->iBgColor = __xuiTerminalResolveColor(pData, pCell->iBgColor, 0);
 	pCell->iSize = sizeof(*pCell);
 	return XUI_OK;
 }

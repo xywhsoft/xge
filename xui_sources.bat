@@ -2,3 +2,7 @@ set XUI_SRC=lib\xlayout\xlayout.c src\xui_core.c src\xui_widget.c src\xui_layout
 set XUI_SRC=src\xui_edit.c %XUI_SRC%
 set XUI_SRC=src\xui_drag_drop.c %XUI_SRC%
 set XUI_SRC=src\xui_accessibility.c %XUI_SRC%
+call xui_document_sources.bat
+set XUI_SRC=%XUI_DOCUMENT_SRC% %XUI_SRC%
+set XUI_SRC=src\xui_document_layout.c src\xui_document_renderer.c src\xui_document_view.c src\xui_document_editor.c %XUI_SRC%
+set XUI_SRC=src\xui_document_edit_adapter.c %XUI_SRC%

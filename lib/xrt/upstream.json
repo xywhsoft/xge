@@ -1,7 +1,10 @@
 {
-  "source_commit": "9bfc3c0f82e91dacc93d654f27fc72a21f1e784f",
+  "source_repository": "D:\\GIT\\xrt",
+  "source_branch": "master",
+  "source_commit": "5f995fe6572c1cdd096214dddc420a251330be02",
   "source_worktree_dirty": true,
-  "source_snapshot_sha256": "3efd5c88af8f8a54bac39b74d3e60b3b9fe7e46c4acb286a6966944d0522d44e",
-  "header_sha256": "e677e0bc7fd3db3a0aa9732ebee1d33813e80c9cc281bee298f8c7679af6abaa",
+  "source_snapshot_sha256": "e7a50daa28a6fc97847e35210d6bb5ef0096b87498274213e67e07f2734c1135",
+  "header_sha256": "f5b07d36959d1b84dbe88bf6a6b9fec77abe37f5a9052532f9074111a87a70ec",
+  "declaration_header_sha256": "1f84991a5279710e0506ed5d774236fedcc887cd88130a8bf9404eb1cdb162c5",
   "generation": "tools/amalgamate.py in isolated source snapshot"
 }

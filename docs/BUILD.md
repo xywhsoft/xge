@@ -13,6 +13,12 @@ build_dbg_test.bat
 
 `build_dll.bat` 生成 `build/xge.dll` 与 `build/xge.lib`；该 DLL 同时包含 XGE 和 XUI。`build_dbg_dll.bat` 生成带调试 API 的 `xgedbg` 变体。
 
+`build_dll.bat ide` 生成 `build/ide/xge.dll` 与 `build/ide/xge.lib`，额外启用
+`XGE_XRT_PROFILE_IDE` 的 XRT 服务，供 IDE 和 xllm/xwork/xcode 共用一个运行时。
+默认配置不受影响。第二个参数可以指定独立输出目录，例如
+`build_dll.bat ide D:\output\xge-ide`。应用和 AI 库也必须使用同一配置及匹配头文件；
+不要在宿主再次定义 `XRT_IMPLEMENTATION`。
+
 ## 推荐验证集
 
 在变更 XGE 核心后：

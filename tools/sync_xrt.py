@@ -36,14 +36,19 @@ def main() -> int:
         subprocess.run([sys.executable, "tools/amalgamate.py"], cwd=snapshot, check=True)
         subprocess.run([sys.executable, "tools/amalgamate.py", "--check"], cwd=snapshot, check=True)
         content = (snapshot / "single" / "xrt.h").read_bytes()
+        declarations = (snapshot / "single" / "xrt_decl.h").read_bytes()
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
         dirty = subprocess.check_output(["git", "status", "--porcelain", "--", "include", "src", "tools", "config", "LICENSE"], cwd=source, text=True)
-        record = {"source_commit": commit, "source_worktree_dirty": bool(dirty),
+        branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=source, text=True).strip()
+        record = {"source_repository": str(source), "source_branch": branch,
+                  "source_commit": commit, "source_worktree_dirty": bool(dirty),
                   "source_snapshot_sha256": digest.hexdigest(),
                   "header_sha256": hashlib.sha256(content).hexdigest(),
+                  "declaration_header_sha256": hashlib.sha256(declarations).hexdigest(),
                   "generation": "tools/amalgamate.py in isolated source snapshot"}
         target.mkdir(parents=True, exist_ok=True)
         (target / "xrt.h").write_bytes(content)
+        (target / "xrt_decl.h").write_bytes(declarations)
         (target / "upstream.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         print(f"Synced {len(content)} bytes; SHA256 {record['header_sha256']}")
     return 0

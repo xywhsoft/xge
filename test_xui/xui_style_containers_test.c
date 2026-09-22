@@ -10,6 +10,7 @@ static int checks, failures;
 
 static uint32_t colors[4096];
 static int color_count;
+static int styled_icon_vectors, styled_icon_surfaces;
 static xui_draw_rect_fill_proc fill_original;
 static xui_draw_rect_stroke_proc stroke_original;
 static xui_draw_surface_proc surface_original;
@@ -50,6 +51,7 @@ static void record(uint32_t color)
 static int capture_surface(xui_proxy p, xui_draw_context d, xui_surface surface,
     xui_rect_t src, xui_rect_t dst, uint32_t color, uint32_t flags)
 {
+    if (color == 0xa17352ff || color == 0x765432ff) ++styled_icon_surfaces;
     if (surface == content_icon) { content_icon_tint = color; ++content_icon_draws; }
     record(color);
     return surface_original(p, d, surface, src, dst, color, flags);
@@ -63,6 +65,7 @@ static int capture_text(xui_proxy p, xui_draw_context d, xui_font font,
 static int capture_line(xui_proxy p, xui_draw_context d, float x, float y,
     float x1, float y1, float width, uint32_t color)
 {
+    if (color == 0xa17352ff || color == 0x765432ff) ++styled_icon_vectors;
     record(color);
     return line_original(p, d, x, y, x1, y1, width, color);
 }
@@ -283,6 +286,7 @@ static void dock_styles(void)
     paint(c); CHECK(frame_renders == 0 && button_renders == 0);
     for (i = 0; i < (int)count; ++i) props[i] = prop(__xuiDockColorProperties[i].sName, 0x100020ffu + (uint32_t)i * 0x00050100u);
     props[count] = prop("dockpanel.button.close_icon_color", 0x765432ff);
+    styled_icon_vectors = styled_icon_surfaces = 0;
     s = style(props, (int)count + 1);
     CHECK(xuiStyleSetType(c, xuiDockPanelGetType(c), &s) == XUI_OK);
     paint_only(dock); paint(c);
@@ -294,6 +298,7 @@ static void dock_styles(void)
     CHECK(seen(props[17].tValue.iColor));
     CHECK(seen(props[22].tValue.iColor));
     CHECK(seen(props[count].tValue.iColor));
+    CHECK(styled_icon_vectors > 0 && styled_icon_surfaces == 0);
     CHECK(seen(props[18].tValue.iColor) && seen(props[19].tValue.iColor));
     CHECK(frame_renders == 1 && button_renders == 3);
     CHECK(content_icon_draws == 1 && content_icon_tint == XUI_COLOR_WHITE);
@@ -342,10 +347,12 @@ static void dock_styles(void)
     CHECK(xuiWidgetSetInlineStyle(dock, NULL, 0) == XUI_OK);
     paint(c); CHECK(seen(base.iActiveCaptionColor));
     props[0] = prop("dockpanel.button.icon_color", 0xa17352ff);
+    styled_icon_vectors = styled_icon_surfaces = 0;
     props[1] = prop("dockpanel.auto_hide.border_color", 0x375ae1ff);
     CHECK(xuiStyleSetDefault(c, props, 2) == XUI_OK);
     paint_only(dock); paint(c);
     CHECK(seen(props[0].tValue.iColor) && seen(props[1].tValue.iColor));
+    CHECK(styled_icon_vectors > 0 && styled_icon_surfaces == 0);
     CHECK(xuiStyleClearDefault(c) == XUI_OK);
     paint(c); CHECK(!seen(props[0].tValue.iColor) && !seen(props[1].tValue.iColor));
     paint(c); CHECK(frame_renders == 0 && button_renders == 0);

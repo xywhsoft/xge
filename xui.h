@@ -12870,4 +12870,6 @@ XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRec
 }
 #endif
 
+#include "xui_document.h"
+
 #endif /* XUI_H */

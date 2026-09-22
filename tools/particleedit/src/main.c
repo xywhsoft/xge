@@ -521,7 +521,7 @@ static int capture(pe_app *a)
 	free(pixels);
 	return result;
 }
-static int frame(void *user)
+static int frame_impl(void *user)
 {
 	pe_app *a = user;
 	int result;
@@ -604,11 +604,11 @@ static int frame(void *user)
 	         stats.iPeakParticles, (unsigned long long)stats.iDroppedParticles,
 	         (unsigned long long)stats.iCollisions, a->status_text);
 	xuiLabelSetText(a->status, status);
-	a->proxy.surfaceClear(&a->proxy, a->target, PE_BG);
+	a->proxy.surfaceClear(&a->proxy, a->target, a->colors[PE_BG]);
 	xui_rect_i_t full = {0, 0, a->width, a->height};
 	if ((result = xuiRender(a->ui, a->target, &full, 1)) != XUI_OK)
 		return result;
-	xgeClear(PE_BG);
+	xgeClear(a->colors[PE_BG]);
 	xui_rect_t rect = {0, 0, (float)a->width, (float)a->height};
 	if ((result = a->proxy.surfaceDraw(&a->proxy, a->target, rect, rect, 0xffffffffu,
 	                                   XUI_SURFACE_DRAW_SCREEN_SPACE)) != XUI_OK)
@@ -643,6 +643,14 @@ static int frame(void *user)
 		xgeRenderRequestAfter(1.0f / 60);
 	return XGE_OK;
 }
+static int frame(void *user)
+{
+	int result = frame_impl(user);
+	/* A callback error can end the native loop without becoming xgeRun's return value. */
+	if (result != XGE_OK)
+		((pe_app *)user)->error = 1;
+	return result;
+}
 static int init(pe_app *a)
 {
 	int result;
@@ -673,6 +681,7 @@ static int init(pe_app *a)
 	pe_ui_refresh(a);
 	xuiLayout(a->ui);
 	layout_init(a);
+	pe_theme_preferences_load(a);
 	const char *keys = "NOSZY";
 	for (int i = 0; keys[i]; ++i)
 		xuiHotKeyRegister(a->ui, a->root, keys[i], XUI_MOD_CTRL, hotkey, a);
@@ -717,6 +726,8 @@ int main(void)
 		return 1;
 	}
 	pe_doc_init(a->doc);
+	a->theme = PE_THEME_DARK;
+	a->colors = pe_theme_colors(a->theme);
 	a->zoom = 1;
 	a->key = 0;
 	a->burst = 0;
@@ -733,7 +744,7 @@ int main(void)
 		if (!strcmp(argument, "--help"))
 		{
 			puts("XGE Particle Editor\nUsage: particleedit.exe [file.json|file.xson] [--preset 0..6] "
-			     "[--frames N] [--capture file.png] [--exercise] [--curves]");
+			     "[--frames N] [--capture file.png] [--exercise] [--curves] [--theme dark|light]");
 			result = 0;
 			goto done;
 		}
@@ -742,7 +753,7 @@ int main(void)
 		else if (!strcmp(argument, "--curves"))
 			initial_curve = 1;
 		else if ((!strcmp(argument, "--frames") || !strcmp(argument, "--preset") ||
-		          !strcmp(argument, "--capture")) &&
+		          !strcmp(argument, "--capture") || !strcmp(argument, "--theme")) &&
 		         i + 1 < argc)
 		{
 			char value[PE_PATH];
@@ -756,6 +767,14 @@ int main(void)
 			{
 				if (!pe_parse_int(value, 0, 6, &preset))
 					goto done;
+			}
+			else if (!strcmp(argument, "--theme"))
+			{
+				if (strcmp(value, "dark") && strcmp(value, "light"))
+					goto done;
+				a->theme = !strcmp(value, "light") ? PE_THEME_LIGHT : PE_THEME_DARK;
+				a->colors = pe_theme_colors(a->theme);
+				a->theme_override = 1;
 			}
 			else if (!pe_path_absolute(value, a->capture, sizeof(a->capture)))
 				goto done;

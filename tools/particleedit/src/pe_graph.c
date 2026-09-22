@@ -56,19 +56,20 @@ int pe_curve_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *us
 	xge_particle_gradient_t *g = &a->doc->data.emitters[a->doc->selected].tColorOverLife;
 	char text[64];
 	(void)state;
-	p->drawRectFill(p, draw, (xui_rect_t){0, 0, size.fW, size.fH}, PE_BG);
-	p->drawRectFill(p, draw, r, XUI_COLOR_RGBA(16, 22, 33, 255));
+	p->drawRectFill(p, draw, (xui_rect_t){0, 0, size.fW, size.fH}, a->colors[PE_BG]);
+	p->drawRectFill(p, draw, r, a->colors[PE_CANVAS]);
 	for (int i = 0; i <= 4; ++i)
 	{
 		float x = r.fX + r.fW * i / 4.f, y = r.fY + r.fH * i / 4.f;
-		p->drawLine(p, draw, x, r.fY, x, r.fY + r.fH, 1, PE_LINE);
-		p->drawLine(p, draw, r.fX, y, r.fX + r.fW, y, 1, PE_LINE);
+		p->drawLine(p, draw, x, r.fY, x, r.fY + r.fH, 1, a->colors[PE_GRID]);
+		p->drawLine(p, draw, r.fX, y, r.fX + r.fW, y, 1, a->colors[PE_GRID]);
 		snprintf(text, sizeof(text), "%.2g", i / 4.f);
-		p->drawText(p, draw, a->font, text, (xui_rect_t){x - 16, r.fY + r.fH + 6, 46, 24}, PE_MUTED, 0);
+		p->drawText(p, draw, a->font, text, (xui_rect_t){x - 16, r.fY + r.fH + 6, 46, 24},
+		            a->colors[PE_MUTED], 0);
 		if (a->channel != 3)
 		{
 			snprintf(text, sizeof(text), "%.2g", a->curve_max - (a->curve_max - a->curve_min) * i / 4.f);
-			p->drawText(p, draw, a->font, text, (xui_rect_t){0, y - 10, 50, 24}, PE_MUTED,
+			p->drawText(p, draw, a->font, text, (xui_rect_t){0, y - 10, 50, 24}, a->colors[PE_MUTED],
 			            XUI_TEXT_ALIGN_RIGHT);
 		}
 	}
@@ -80,7 +81,7 @@ int pe_curve_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *us
 				p->drawRectFill(
 				    p, draw,
 				    (xui_rect_t){bar.fX + x, bar.fY + y, fminf(12, bar.fW - x), fminf(12, bar.fH - y)},
-				    ((x / 12 + y / 12) & 1) ? PE_LINE : PE_PANEL);
+				    a->colors[((x / 12 + y / 12) & 1) ? PE_CHECKER_A : PE_CHECKER_B]);
 		for (int i = 0; i < bar.fW; ++i)
 			p->drawRectFill(p, draw, (xui_rect_t){bar.fX + i, bar.fY, 1, bar.fH},
 			                xgeParticleGradientEval(g, i / fmaxf(1, bar.fW - 1), 0xffffffffu));
@@ -88,8 +89,10 @@ int pe_curve_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *us
 		{
 			float x = r.fX + g->arrKeys[i].fTime * r.fW, y = bar.fY + bar.fH;
 			p->drawTriangleFill(p, draw, (xui_vec2_t){x, y}, (xui_vec2_t){x - 7, y + 12},
-			                    (xui_vec2_t){x + 7, y + 12}, i == a->key ? PE_ACCENT : PE_TEXT);
-			p->drawLine(p, draw, x, bar.fY, x, y, 1, i == a->key ? PE_ACCENT : PE_MUTED);
+			                    (xui_vec2_t){x + 7, y + 12},
+			                    i == a->key ? a->colors[PE_ACCENT] : a->colors[PE_TEXT]);
+			p->drawLine(p, draw, x, bar.fY, x, y, 1,
+			            i == a->key ? a->colors[PE_ACCENT] : a->colors[PE_MUTED]);
 		}
 	}
 	else
@@ -99,13 +102,14 @@ int pe_curve_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *us
 		{
 			float next = xgeParticleCurveEval(c, i / 256.f, 1);
 			p->drawLine(p, draw, r.fX + r.fW * (i - 1) / 256.f, graph_y(a, r, last), r.fX + r.fW * i / 256.f,
-			            graph_y(a, r, next), 2, PE_ACCENT);
+			            graph_y(a, r, next), 2, a->colors[PE_CURVE]);
 			last = next;
 		}
 		for (int i = 0; i < c->iCount; ++i)
 		{
 			float x = r.fX + c->arrKeys[i].fTime * r.fW, y = graph_y(a, r, c->arrKeys[i].fValue);
-			p->drawCircleFill(p, draw, x, y, i == a->key ? 6 : 4, i == a->key ? PE_TEXT : PE_ACCENT);
+			p->drawCircleFill(p, draw, x, y, i == a->key ? 6 : 4,
+			                  i == a->key ? a->colors[PE_TEXT] : a->colors[PE_ACCENT]);
 			if (i == a->key && c->iInterpolation == XGE_PARTICLE_CURVE_HERMITE)
 			{
 				float dx = .08f * r.fW;
@@ -113,16 +117,16 @@ int pe_curve_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *us
 				float dy_out = c->arrKeys[i].fOutTangent * .08f * r.fH / (a->curve_max - a->curve_min);
 				if (i > 0)
 					p->drawLine(p, draw, x, y, clamp(x - dx, r.fX, r.fX + r.fW),
-					            clamp(y + dy_in, r.fY, r.fY + r.fH), 1, PE_MUTED);
+					            clamp(y + dy_in, r.fY, r.fY + r.fH), 1, a->colors[PE_MUTED]);
 				if (i + 1 < c->iCount)
 					p->drawLine(p, draw, x, y, clamp(x + dx, r.fX, r.fX + r.fW),
-					            clamp(y - dy_out, r.fY, r.fY + r.fH), 1, PE_MUTED);
+					            clamp(y - dy_out, r.fY, r.fY + r.fH), 1, a->colors[PE_MUTED]);
 			}
 		}
 	}
 	if (!key_count(a))
 		p->drawText(p, draw, a->font, "空轨道：默认值 1 / 白色；双击添加关键点",
-		            (xui_rect_t){r.fX + 8, r.fY + 8, r.fW - 16, 30}, PE_TEXT, 0);
+		            (xui_rect_t){r.fX + 8, r.fY + 8, r.fW - 16, 30}, a->colors[PE_TEXT], 0);
 	return XUI_OK;
 }
 static void curve_finish(pe_app *a, int commit)
@@ -270,7 +274,8 @@ void pe_timeline_sync(pe_app *a)
 		snprintf(label, sizeof(label), "%d  %s", i, e->sName[0] ? e->sName : "(未命名)");
 		xuiTimeLineViewAddLayer(a->timeline, label, &layer);
 		xuiTimeLineViewSetLayerVisible(a->timeline, layer, !a->preview.muted[i]);
-		xuiTimeLineViewSetLayerColor(a->timeline, layer, i == a->doc->selected ? PE_ACCENT : PE_MUTED);
+		xuiTimeLineViewSetLayerColor(a->timeline, layer,
+		                             i == a->doc->selected ? a->colors[PE_ACCENT] : a->colors[PE_MUTED]);
 		a->span_ids[i] = -1;
 		if (e->bAutomatic && e->fDelay > a->preview.range_seconds)
 			continue;
@@ -290,7 +295,7 @@ void pe_timeline_sync(pe_app *a)
 		xuiTimeLineViewAddSpan(a->timeline, layer, start, end, XUI_TIMELINE_SPAN_CUSTOM, label, &span);
 		a->span_ids[i] = span;
 		xuiTimeLineViewSetSpanColor(a->timeline, span,
-		                            i == a->doc->selected ? PE_SELECTED : XUI_COLOR_RGBA(57, 69, 93, 255));
+		                            a->colors[i == a->doc->selected ? PE_SELECTED : PE_SPAN]);
 		xuiTimeLineViewSetSpanUserData(a->timeline, span, (void *)(intptr_t)(i + 1));
 		for (int j = 0; e->bAutomatic && j < e->iBurstCount; ++j)
 		{

@@ -69,6 +69,7 @@
 #define XUI_TEXT_BREAK_TEST_COUNT(field, count) ((void)0)
 #endif
 
+#ifndef XUI_TEXT_BREAK_FLAGS_DEFINED
 enum {
 	XUI_LB_GRAPHEME = 1,
 	XUI_LB_NORMAL = 2,
@@ -78,6 +79,7 @@ enum {
 	XUI_LB_SOFT_HYPHEN = 32,
 	XUI_LB_HYPHEN_USED = 64
 };
+#endif
 
 static utf32_t __xuiTextBreakDecode(const void* pText, size_t iSize, size_t* pAt)
 {

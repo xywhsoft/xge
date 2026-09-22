@@ -16,6 +16,25 @@ tools\particleedit\release\particleedit.exe D:\project\effects\fire.xson
 
 当前平台为 Windows，使用系统微软雅黑字体，不复制或分发字体文件。默认窗口 1500 × 960；建议至少 1280 × 800。
 
+## 白天 / 夜晚主题
+
+顶部工具栏的“夜晚 · Dark / 白天 · Light”下拉框可即时换肤。两套配色采用类似 Visual Studio 的中性灰界面和蓝色强调色：夜晚为深灰面板，白天为浅灰工作区和白色内容面板。
+
+- ComboBox 下拉按钮常态透明，与输入区融为一体；悬停、展开、禁用、箭头及菜单分别使用主题配色。
+- Dock 标签、浮动窗口、时间轴、属性表、内嵌编辑器、ColorPicker、菜单、滚动条和提示均由全局样式统一配置。
+- 曲线画布、网格、关键点、Burst 标记和警告提示使用同一份语义调色板。渐变中的实际颜色、粒子纹理与材质不被换肤。
+- 粒子预览舞台保持独立的深色底色，便于在两套主题间比较同一效果；换肤不会改变粒子资产、播放进度、撤销历史，也不会重新创建属性编辑器。
+- 主题选择单独保存在 `%LOCALAPPDATA%\XGE\ParticleEdit\theme.txt`；测试运行不读写个人偏好。Windows 原生文件对话框与非客户区仍由系统主题管理。
+
+也可指定本次启动主题（不会自动覆盖已有偏好）：
+
+```bat
+tools\particleedit\release\particleedit.exe --theme light
+tools\particleedit\release\particleedit.exe --theme dark
+```
+
+实现集中在 `src/pe_theme.c`：两套语义调色板 → `pe.*` 颜色令牌 → 一份 `xuiStyleSetDefault` 全局样式表。初始化时注册所需控件类型，运行时使用 `xuiStyleBeginUpdate/EndUpdate` 批量替换令牌。不再递归调用子控件的 `SetColors`，也不在各个控件描述符里散落固定颜色。未来增加主题主要调整调色板；增加控件时补充对应的样式键映射。XUI 合同见 [全局颜色样式](../../docs/XUI_COLOR_STYLES.md)。
+
 ## 工作区
 
 | 面板 | 编辑与预览能力 |
@@ -129,12 +148,15 @@ tools\particleedit\release\particleedit.exe --preset 5 --curves --frames 180 --c
 
 `--exercise` 通过 XUI 的实际输入和控件编辑路径检查按钮、数值提交、枚举值、编辑中切换发射器、快捷键焦点隔离、曲线拖拽、时间轴区间 / Burst 拖拽与双击、播放头、Dock 浮动与恢复、固定种子回放和重复重建。不是只测试数据模型。原生文件选择框、操作系统保存确认框和交互式布局恢复还应按上面的操作流程人工验收。
 
+主题回归额外检查两套配色的 ComboBox 常态、悬停、展开和禁用状态的真实 GPU 像素；打开的菜单在切换后保持原实例并更新颜色；通过实际鼠标输入操作主题下拉框；未提交的属性文本、焦点、文档和播放头在换肤后保持不变。`test.bat` 分别以夜晚和白天主题启动交互回归。
+
 | 文件 | 职责 |
 | --- | --- |
 | `src/pe_document.*` | 纯 C 模型、事务历史、运行时格式、原子文件操作 |
 | `src/pe_fields.*` | 字段元数据、单位换算、严格值解析；界面和测试共用 |
 | `src/pe_preview.*` | 运行时世界、资源生命周期、增量 seek、离屏预览 |
 | `src/pe_ui.c` | XUI Dock / PropertyGrid / TimeLineView / ColorPicker 等控件装配 |
+| `src/pe_theme.*` | 两套调色板、全局样式 / 令牌、运行时换肤和独立偏好 |
 | `src/pe_graph.c` | 曲线 / 渐变图形编辑和时间轴领域交互 |
 | `src/main.c` | 应用生命周期、命令、文件对话框、关闭保护、布局持久化 |
 | `src/pe_exercise.c` | 原生 XUI 交互回归 |

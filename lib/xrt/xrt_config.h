@@ -51,6 +51,24 @@
 	#define XRT_MODULE_DEFLATE
 #endif
 
+/* IDE + xllm/xwork/xcode share the XRT instance exported by xge.dll. */
+#if defined(XGE_XRT_PROFILE_IDE)
+	#define XRT_MODULE_CODEC_BASE64
+	#define XRT_MODULE_CODEC_HEX
+	#define XRT_MODULE_CODEC_PERCENT
+	#define XRT_MODULE_FILE_TEMP
+	#define XRT_MODULE_PROCESS_RUN
+	#define XRT_MODULE_SEM
+	#define XRT_MODULE_XID
+	#define XRT_MODULE_NET_TCP_DIAL_SYNC
+	#define XRT_MODULE_TLS_STREAM_DIAL_FUTURE
+	#define XRT_MODULE_TLS_STREAM_FUTURE
+	#define XRT_MODULE_TLS_VERIFY
+	#define XRT_MODULE_X509_STORE_SYSTEM
+	#define XRT_MODULE_HTTP1_BODY
+	#define XRT_MODULE_CRYPTO_SHA256
+#endif
+
 #define XRT_MODULE_REGEX_CORE
 #define XRT_MODULE_REGEX_MATCH
 

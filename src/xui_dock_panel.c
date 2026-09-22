@@ -242,6 +242,13 @@ static uint32_t __xuiDockStyleColor(xui_dock_panel_data_t* pData, const char* sN
 	return iBase;
 }
 
+static int __xuiDockHasStyleColor(xui_dock_panel_data_t* pData, const char* sName)
+{
+	xui_style_property_t tProperty;
+	return xuiWidgetGetResolvedStyleProperty(pData->pWidget, sName, &tProperty) == XUI_OK &&
+		tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR;
+}
+
 static const xui_dock_panel_colors_t* __xuiDockColors(xui_dock_panel_data_t* pData)
 {
 	uint32_t iHash = xuiWidgetGetStyleHash(pData->pWidget);
@@ -851,6 +858,11 @@ static int __xuiDockDrawPaneButton(xui_widget pWidget, xui_proxy pProxy, xui_dra
 	icon = __xuiDockRect(r.fX + (r.fW - 16.0f) * 0.5f, r.fY + (r.fH - 15.0f) * 0.5f, 16.0f, 15.0f);
 	iconColor = __xuiDockStyleColor(pData, bEnabled ? "dockpanel.button.icon_color" : "dockpanel.button.disabled_color",
 		bEnabled ? XUI_COLOR_WHITE : XUI_COLOR_RGBA(255, 255, 255, 120));
+	/* Legacy atlas glyphs contain black RGB, which multiplication cannot recolor.
+	 * An explicit chrome style uses the existing vector glyph; unstyled assets stay unchanged. */
+	if ( __xuiDockHasStyleColor(pData, bEnabled ? "dockpanel.button.icon_color" : "dockpanel.button.disabled_color") ) {
+		return __xuiDockDrawPaneIconFallback(pProxy, pDraw, sAsset, icon, iconColor);
+	}
 	ret = __xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, sAsset, icon, iconColor);
 	if ( ret == XUI_OK ) return XUI_OK;
 	return __xuiDockDrawPaneIconFallback(pProxy, pDraw, sAsset, r,
@@ -5191,6 +5203,10 @@ static int __xuiDockHostButtonRender(xui_widget pButton, xui_draw_context pDraw,
 		"dockpanel.button.close_icon_color" : "dockpanel.button.icon_color",
 		__xuiDockHostButtonIsClose(pWin, pButton) ? XUI_COLOR_RGBA(171, 72, 76, 255) :
 		__xuiDockColors(pData)->iActiveCaptionTextColor);
+	if ( __xuiDockHasStyleColor(pData, __xuiDockHostButtonIsClose(pWin, pButton) ?
+		"dockpanel.button.close_icon_color" : "dockpanel.button.icon_color") ) {
+		return __xuiDockDrawPaneIconFallback(pProxy, pDraw, asset, icon, color);
+	}
 	ret = __xuiDockDrawBuiltinAsset(pWin->pPanelWidget, pProxy, pDraw, asset, icon, color);
 	if ( ret != XUI_OK ) ret = __xuiDockDrawPaneIconFallback(pProxy, pDraw, asset, icon, color);
 	return ret;
@@ -5494,8 +5510,12 @@ static int __xuiDockDrawAutoHide(xui_widget pWidget, xui_draw_context pDraw, xui
 			icon = __xuiDockRect(w->tAutoHideRect.fX + 3.0f, w->tAutoHideRect.fY + 3.0f, 16.0f, 15.0f);
 		}
 		if ( icon.fX + icon.fW <= w->tAutoHideRect.fX + w->tAutoHideRect.fW && icon.fY + icon.fH <= w->tAutoHideRect.fY + w->tAutoHideRect.fH ) {
-			ret = __xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, "dock_pane_dock", icon,
-				__xuiDockStyleColor(pData, "dockpanel.button.icon_color", XUI_COLOR_WHITE));
+			if ( __xuiDockHasStyleColor(pData, "dockpanel.button.icon_color") ) {
+				ret = __xuiDockDrawPaneIconFallback(pProxy, pDraw, "dock_pane_dock", icon,
+					__xuiDockStyleColor(pData, "dockpanel.button.icon_color", XUI_COLOR_WHITE));
+			} else {
+				ret = __xuiDockDrawBuiltinAsset(pWidget, pProxy, pDraw, "dock_pane_dock", icon, XUI_COLOR_WHITE);
+			}
 			if ( ret != XUI_OK ) ret = __xuiDockDrawPaneIconFallback(pProxy, pDraw, "dock_pane_dock", icon,
 				__xuiDockStyleColor(pData, "dockpanel.button.icon_color", __xuiDockColors(pData)->iButtonColor));
 			if ( ret != XUI_OK ) return ret;

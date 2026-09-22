@@ -63,6 +63,116 @@ static xui_widget find_type(xui_widget root, xui_widget_type type)
 	}
 	return NULL;
 }
+static int theme_paint(pe_app *a, unsigned char *pixels)
+{
+	xui_rect_i_t full = {0, 0, a->width, a->height};
+	int result = a->proxy.surfaceClear(&a->proxy, a->target, a->colors[PE_BG]);
+	if (result == XUI_OK)
+		result = xuiRender(a->ui, a->target, &full, 1);
+	if (result == XUI_OK)
+		result = a->proxy.surfaceReadRGBA(&a->proxy, a->target, pixels, a->width * 4);
+	return result;
+}
+static int theme_pixel(pe_app *a, const unsigned char *pixels, int x, int y, uint32_t expected)
+{
+	if (x < 0 || y < 0 || x >= a->width || y >= a->height)
+		return 0;
+	const unsigned char *p = pixels + ((size_t)y * a->width + x) * 4;
+	uint32_t actual = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+	if (actual != expected)
+		fprintf(stderr, "theme pixel (%d,%d): %08x != %08x\n", x, y, actual, expected);
+	return actual == expected;
+}
+static int theme_property(xui_widget w, const char *key, uint32_t color)
+{
+	xui_style_property_t p = {0};
+	return xuiWidgetGetResolvedStyleProperty(w, key, &p) == XUI_OK &&
+	       p.tValue.iType == XUI_STYLE_VALUE_COLOR && p.tValue.iColor == color;
+}
+static int exercise_theme(pe_app *a)
+{
+	int initial = a->theme, cursor = a->doc->cursor, frame = xuiTimeLineViewGetCurrentFrame(a->timeline);
+	int tick = a->preview.tick, target_tick = a->preview.target_tick, rebuild = a->rebuild,
+	    refresh = a->refresh;
+	unsigned revision = a->doc->revision;
+	pe_data data = a->doc->data;
+	xui_rect_t rect = xuiWidgetGetWorldRect(a->preset_combo), before = xuiWidgetGetRect(a->dock);
+	unsigned char *pixels = malloc((size_t)a->width * a->height * 4);
+	CHECK(pixels != NULL);
+	for (int theme = 0; theme < PE_THEME_COUNT; ++theme)
+	{
+		CHECK(pe_theme_apply(a, theme) == XUI_OK);
+		CHECK(xuiInputPointerMove(a->ui, a->width - 6, 50, 0) == XUI_OK);
+		CHECK(xuiDispatchPendingEvents(a->ui) == XUI_OK);
+		CHECK(theme_paint(a, pixels) == XUI_OK);
+		/* Read actual GPU pixels in the expand button, away from the chevron/border. */
+		CHECK(theme_pixel(a, pixels, rect.fX + rect.fW - 6, rect.fY + 5, a->colors[PE_FIELD]));
+		CHECK(theme_property(a->preset_combo, "combobox.button.color", 0));
+		CHECK(theme_property(a->properties, "propertygrid.name.text_color", a->colors[PE_TEXT]));
+		CHECK(theme_property(a->dock, "dockpanel.tab.active_color", a->colors[PE_ACTIVE]));
+		CHECK(theme_property(a->timeline, "timelineview.background.color", a->colors[PE_PANEL]));
+		CHECK(xuiInputPointerMove(a->ui, rect.fX + rect.fW - 6, rect.fY + 12, 0) == XUI_OK);
+		CHECK(xuiDispatchPendingEvents(a->ui) == XUI_OK);
+		CHECK(theme_paint(a, pixels) == XUI_OK);
+		CHECK(theme_pixel(a, pixels, rect.fX + rect.fW - 6, rect.fY + 5, a->colors[PE_HOVER]));
+		CHECK(xuiComboBoxOpen(a->preset_combo) == XUI_OK);
+		CHECK(theme_paint(a, pixels) == XUI_OK);
+		CHECK(theme_pixel(a, pixels, rect.fX + rect.fW - 6, rect.fY + 5, a->colors[PE_SELECTED]));
+		/* Recolor an already-open Menu and its cached Popup without replacing either. */
+		xui_widget menu = xuiComboBoxGetMenuWidget(a->preset_combo);
+		CHECK(pe_theme_apply(a, 1 - theme) == XUI_OK);
+		CHECK(theme_paint(a, pixels) == XUI_OK);
+		CHECK(xuiComboBoxIsOpen(a->preset_combo) && xuiComboBoxGetMenuWidget(a->preset_combo) == menu);
+		CHECK(theme_property(menu, "menu.panel.color", a->colors[PE_PANEL]));
+		CHECK(theme_pixel(a, pixels, rect.fX + rect.fW - 6, rect.fY + 5, a->colors[PE_SELECTED]));
+		xui_rect_t popup = xuiWidgetGetWorldRect(menu);
+		int quiet_row = (xuiComboBoxGetSelected(a->preset_combo) + 1) % 7;
+		xui_rect_t item = xuiMenuGetItemRect(menu, quiet_row);
+		CHECK(theme_pixel(a, pixels, popup.fX + item.fX + item.fW - 9, popup.fY + item.fY + item.fH / 2,
+		                  a->colors[PE_PANEL]));
+		CHECK(xuiComboBoxClose(a->preset_combo) == XUI_OK);
+		CHECK(xuiWidgetSetEnabled(a->preset_combo, 0) == XUI_OK);
+		CHECK(theme_paint(a, pixels) == XUI_OK);
+		CHECK(theme_pixel(a, pixels, rect.fX + rect.fW - 6, rect.fY + 5, a->colors[PE_BG]));
+		CHECK(xuiWidgetSetEnabled(a->preset_combo, 1) == XUI_OK);
+	}
+	/* Enter the theme selector by pointer, and click its Light menu item. */
+	CHECK(pe_theme_apply(a, PE_THEME_DARK) == XUI_OK);
+	CHECK(theme_paint(a, pixels) == XUI_OK);
+	xui_rect_t chooser = xuiWidgetGetWorldRect(a->theme_combo);
+	CHECK(input_click(a, chooser.fX + chooser.fW - 10, chooser.fY + 15) == XUI_OK);
+	CHECK(theme_paint(a, pixels) == XUI_OK);
+	xui_widget menu = xuiComboBoxGetMenuWidget(a->theme_combo);
+	xui_rect_t menu_rect = xuiWidgetGetWorldRect(menu), item = xuiMenuGetItemRect(menu, PE_THEME_LIGHT);
+	CHECK(input_click(a, menu_rect.fX + item.fX + 20, menu_rect.fY + item.fY + item.fH / 2) == XUI_OK);
+	CHECK(a->theme == PE_THEME_LIGHT && !xuiComboBoxIsOpen(a->theme_combo));
+	int property = xuiPropertyGridFindProperty(a->properties, "fRate");
+	CHECK(xuiPropertyGridBeginEdit(a->properties, property) == 1);
+	xui_widget editor = xuiGetFocusWidget(a->ui);
+	CHECK(editor && xuiInputSetText(editor, "91.25") == XUI_OK);
+	for (int theme = 0; theme < PE_THEME_COUNT; ++theme)
+	{
+		CHECK(pe_theme_apply(a, theme) == XUI_OK);
+		CHECK(theme_paint(a, pixels) == XUI_OK);
+		CHECK(xuiGetFocusWidget(a->ui) == editor && xuiPropertyGridIsEditing(a->properties));
+		CHECK(!strcmp(xuiInputGetText(editor), "91.25"));
+		CHECK(theme_property(editor, "input.text.color", a->colors[PE_TEXT]));
+	}
+	CHECK(xuiPropertyGridEndEdit(a->properties, 0) == 1);
+	CHECK(!memcmp(&data, &a->doc->data, sizeof(data)) && a->doc->cursor == cursor &&
+	      a->doc->revision == revision);
+	CHECK(a->preview.tick == tick && a->preview.target_tick == target_tick && a->rebuild == rebuild &&
+	      a->refresh == refresh);
+	CHECK(xuiTimeLineViewGetCurrentFrame(a->timeline) == frame);
+	xui_rect_t after = xuiWidgetGetRect(a->dock);
+	CHECK(!memcmp(&before, &after, sizeof(before)));
+	CHECK(pe_theme_apply(a, initial) == XUI_OK);
+	free(pixels);
+	return 1;
+failed:
+	free(pixels);
+	return 0;
+}
 static uint64_t particle_hash;
 static int hash_particle(const xge_particle_snapshot_t *particle, void *user)
 {
@@ -91,6 +201,7 @@ int pe_exercise(pe_app *a)
 	a->preview.solo = -1;
 	memset(a->preview.muted, 0, sizeof(a->preview.muted));
 	sync(a);
+	CHECK(exercise_theme(a));
 	CHECK(xuiDockPanelGetWindowCount(a->dock) == PE_WIN_COUNT);
 	CHECK(xuiPropertyGridGetPropertyCount(a->properties) == pe_field_count);
 	CHECK(xuiTimeLineViewGetLayerCount(a->timeline) == 1);

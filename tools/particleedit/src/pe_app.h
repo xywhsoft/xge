@@ -2,15 +2,8 @@
 #define PE_APP_H
 #include "pe_fields.h"
 #include "pe_preview.h"
+#include "pe_theme.h"
 #include "xui.h"
-
-#define PE_BG XUI_COLOR_RGBA(23, 28, 38, 255)
-#define PE_PANEL XUI_COLOR_RGBA(29, 36, 47, 255)
-#define PE_LINE XUI_COLOR_RGBA(51, 63, 78, 255)
-#define PE_TEXT XUI_COLOR_RGBA(221, 230, 240, 255)
-#define PE_MUTED XUI_COLOR_RGBA(150, 167, 186, 255)
-#define PE_ACCENT XUI_COLOR_RGBA(73, 201, 189, 255)
-#define PE_SELECTED XUI_COLOR_RGBA(41, 92, 106, 255)
 enum
 {
 	PE_WIN_PREVIEW,
@@ -76,7 +69,10 @@ struct pe_app
 	xui_font font;
 	xui_widget root, header, transport, status, dock;
 	xui_widget panels[PE_WIN_COUNT], list, properties, timeline, curve, key_grid, bursts, settings;
-	xui_widget channel_combo, interpolation_combo, preset_combo;
+	xui_widget channel_combo, interpolation_combo, preset_combo, theme_combo;
+	const uint32_t *colors;
+	int theme, theme_override;
+	char theme_path[PE_PATH];
 	xui_widget buttons[PE_COMMAND_COUNT];
 	pe_action actions[PE_COMMAND_COUNT];
 	int windows[PE_WIN_COUNT], bottom_pane, property_pane;
