@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_COLOR_PICKER
 #include "xui_internal.h"
 
 #include <math.h>
@@ -1095,7 +1097,7 @@ static int __xuiColorPickerCacheRender(xui_widget pWidget, xui_draw_context pDra
 	iRet = __xuiColorPickerDrawSwatch(pProxy, pDraw, pData->tSwatchRect, pData->iColor, __xuiColorPickerColorWithAlpha(iBorder, 190), &tResolved);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy->drawText != NULL) && (__xuiColorPickerAlpha(iText) != 0) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sHex, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sHex, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = __xuiColorPickerDrawChevron(pProxy, pDraw, pData->tButtonRect, (iState & XUI_COLOR_PICKER_STATE_OPEN) != 0u, iArrow);
@@ -1169,9 +1171,9 @@ static int __xuiColorPickerPanelRender(xui_widget pPanel, xui_draw_context pDraw
 
 	if ( pProxy->drawText != NULL ) {
 		tLabel = (xui_rect_t){pData->tOldRect.fX, pData->tOldRect.fY - 16.0f, pData->tOldRect.fW, 14.0f};
-		(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, "Old", tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText="Old", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		tLabel.fX = pData->tNewRect.fX;
-		(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, "New", tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText="New", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	iRet = __xuiColorPickerDrawSwatch(pProxy, pDraw, pData->tOldRect, pData->iOldColor, tResolved.iFieldBorderColor, &tResolved);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1188,7 +1190,7 @@ static int __xuiColorPickerPanelRender(xui_widget pPanel, xui_draw_context pDraw
 			tLabel = pData->arrFieldRect[i];
 			tLabel.fX -= 22.0f;
 			tLabel.fW = 18.0f;
-			(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, arrName[i], tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=arrName[i], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		iRet = __xuiColorPickerDrawFill(pProxy, pDraw, pData->arrFieldRect[i], tResolved.iFieldColor);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1211,9 +1213,7 @@ static int __xuiColorPickerPanelRender(xui_widget pPanel, xui_draw_context pDraw
 				snprintf(sText, sizeof(sText), "%d", arrValue[i]);
 			}
 			sText[sizeof(sText) - 1] = '\0';
-			(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, sText, pData->arrFieldRect[i],
-				(pData->iEditingChannel == i && pData->bEditSelectAll) ? tResolved.iSelectionTextColor : tResolved.iPopupTextColor,
-				XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->arrFieldRect[i], (pData->iEditingChannel == i && pData->bEditSelectAll) ? tResolved.iSelectionTextColor : tResolved.iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		fRate = (float)arrValue[i] / 255.0f;
 		iRet = __xuiColorPickerDrawTrack(pProxy, pDraw, pData->arrSliderRect[i], fRate, &tResolved);
@@ -1224,7 +1224,7 @@ static int __xuiColorPickerPanelRender(xui_widget pPanel, xui_draw_context pDraw
 		tLabel = pData->tHexRect;
 		tLabel.fX -= 22.0f;
 		tLabel.fW = 18.0f;
-		(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, "#", tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText="#", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLabel, tResolved.iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	iRet = __xuiColorPickerDrawFill(pProxy, pDraw, pData->tHexRect, tResolved.iFieldColor);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1240,9 +1240,7 @@ static int __xuiColorPickerPanelRender(xui_widget pPanel, xui_draw_context pDraw
 		(pData->bEditingHex && pData->bEditError) ? tResolved.iErrorBorderColor : (pData->bEditingHex ? tResolved.iAccentColor : tResolved.iFieldBorderColor));
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pProxy->drawText != NULL ) {
-		(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->bEditingHex ? pData->sEdit : (pData->sHex + 1), pData->tHexRect,
-			(pData->bEditingHex && pData->bEditSelectAll) ? tResolved.iSelectionTextColor : tResolved.iPopupTextColor,
-			XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->bEditingHex ? pData->sEdit : (pData->sHex + 1), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tHexRect, (pData->bEditingHex && pData->bEditSelectAll) ? tResolved.iSelectionTextColor : tResolved.iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 
 	if ( pProxy->drawRectFill != NULL && pData->iPaletteCount > 0 ) {
@@ -2662,3 +2660,5 @@ XUI_API int xuiColorPickerGetChangeCount(xui_widget pWidget)
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

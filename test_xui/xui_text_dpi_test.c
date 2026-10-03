@@ -42,12 +42,12 @@ static int textMetrics(xui_proxy pProxy, xui_font pFont, xui_font_metrics_t* pMe
 	return XUI_OK;
 }
 
-static int textShape(xui_proxy pProxy, xui_font pFont, const char* sText,
-	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape)
+static int textShape(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)
 {
+
 	int i, iRet;
 	g_iShapes++;
-	iRet = g_tBase.textShape(pProxy, pFont, sText, iTextSize, iFlags, pShape);
+	iRet = g_tBase.textShape(pProxy, pTextItem, pShape);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( g_iFailure == 2 ) return XUI_ERROR_BACKEND_FAILED;
 	pShape->fWidth = 0;
@@ -66,9 +66,11 @@ static int textShape(xui_proxy pProxy, xui_font pFont, const char* sText,
 	return XUI_OK;
 }
 
-static int textMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int textMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
-	int iRet = g_tBase.textMeasure(pProxy, pFont, sText, pSize);
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
+	int iRet = g_tBase.textMeasure(pProxy, pTextItem, pSize);
 	if ( iRet == XUI_OK ) pSize->fX += (float)strlen(sText) * 4 * (xuiGetVirtualDpi(g_pContext) - 1);
 	return iRet;
 }

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_SCROLL_FRAME
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1173,3 +1175,5 @@ XUI_API int xuiScrollFrameGetChangeCount(xui_widget pWidget)
 	xui_scroll_frame_data_t* pData = __xuiScrollFrameGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

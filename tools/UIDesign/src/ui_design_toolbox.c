@@ -173,7 +173,7 @@ static void __uiDesignToolboxScrollChanged(xui_widget pWidget, float fValue, voi
 
 static int __uiDesignToolboxDrawText(ui_design_app_t* pApp, xui_draw_context pDraw, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText != NULL ? sText : "", tRect, iColor, iFlags | XUI_TEXT_CLIP);
+	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText != NULL ? sText : "", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iFlags | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iColor, iFlags | XUI_TEXT_CLIP);
 }
 
 static int __uiDesignToolboxHit(ui_design_app_t* pApp, float fWorldX, float fWorldY, ui_design_toolbox_hit_t* pHit)

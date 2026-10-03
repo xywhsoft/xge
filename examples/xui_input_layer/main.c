@@ -200,7 +200,7 @@ static void __xuiInputRecordEvents(xui_input_demo_t* pDemo)
 
 static int __xuiInputDrawText(xui_input_demo_t* pDemo, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	return pDemo->tProxy.textDraw(&pDemo->tProxy, pDemo->pTarget, pDemo->pFont, sText, tRect, iColor, iFlags | XUI_TEXT_CLIP);
+	return pDemo->tProxy.textDraw(&pDemo->tProxy, pDemo->pTarget, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iFlags | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iColor, iFlags | XUI_TEXT_CLIP);
 }
 
 static int __xuiInputDrawButton(xui_input_demo_t* pDemo, xui_widget pWidget, const char* sName, int iClicks)

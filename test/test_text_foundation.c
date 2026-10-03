@@ -149,6 +149,7 @@ int main(void)
 	shape_desc.iSize = sizeof(shape_desc);
 	shape_desc.pFont = &font;
 	shape_desc.sText = text;
+	shape_desc.iTextSize = -1;
 	shape_desc.iFlags = XGE_TEXT_SHAPE_DEFAULT;
 	if ( (xgeTextShape(&shape_desc, &run) != XGE_OK) || (run.iGlyphCount != 7) ||
 	     (run.fWidth <= 0.0f) || (run.fHeight < metrics.fLineHeight * 2.0f) ) {
@@ -238,6 +239,7 @@ int main(void)
 	shape_desc.iSize = sizeof(shape_desc);
 	shape_desc.pFont = &cached_font;
 	shape_desc.sText = "ABC";
+	shape_desc.iTextSize = -1;
 	shape_desc.iFlags = XGE_TEXT_SHAPE_DEFAULT;
 	if ( (xgeTextShape(&shape_desc, &run) != XGE_OK) || (run.iGlyphCount != 3) || (run.fWidth <= 0.0f) ) {
 		printf("text foundation failed: cached shape\n");

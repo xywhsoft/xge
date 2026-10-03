@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TERMINAL
 #if defined(_WIN32) || defined(_WIN64)
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
@@ -5146,10 +5148,10 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pData->fCellWidth <= 0.0f && pProxy != NULL && pProxy->textMeasure != NULL ) {
-		if ( pProxy->textMeasure(pProxy, pData->pFont, "M", &tSize) == XUI_OK && tSize.fX > 0.0f ) {
+		if ( pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText="M", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK && tSize.fX > 0.0f ) {
 			pData->fCellWidth = tSize.fX;
 		}
-		if ( pProxy->textMeasure(pProxy, pData->pFont, "W", &tSize) == XUI_OK && tSize.fX > pData->fCellWidth ) {
+		if ( pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText="W", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK && tSize.fX > pData->fCellWidth ) {
 			pData->fCellWidth = tSize.fX;
 		}
 	}
@@ -5223,17 +5225,18 @@ static int __xuiTerminalLayoutComplete(xui_widget pWidget, xui_rect_t tContentRe
 	return XUI_OK;
 }
 
-static int __xuiTerminalDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiTerminalDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pDraw == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == '\0') ) {
 		return XUI_OK;
 	}
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiTerminalAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText,
-		xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH),
-		iColor, iFlags | XUI_TEXT_CLIP);
+	return pProxy->drawText(pProxy, pDraw, pTextItem, xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH), iColor, iFlags | XUI_TEXT_CLIP);
 }
 
 static int __xuiTerminalRenderSearchHighlightLine(xui_proxy pProxy, xui_draw_context pDraw, xui_terminal_data_t* pData, int iLogicalLine, float fX, float fY, float fWidth)
@@ -5422,13 +5425,12 @@ static int __xuiTerminalRenderCellRow(xui_proxy pProxy, xui_draw_context pDraw,
 			tTextRect.fH = pData->fCellHeight;
 			iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_UNDERLINE) != 0u ) iTextFlags |= XUI_TEXT_UNDERLINE;
-			iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sCell, tTextRect, iFg, iTextFlags);
+			iRet = __xuiTerminalDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sCell, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTextRect, iFg, iTextFlags);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_BOLD) != 0u ) {
 				xui_rect_t tBoldRect = tTextRect;
 				tBoldRect.fX += 1.0f;
-				iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sCell,
-					tBoldRect, iFg, iTextFlags);
+				iRet = __xuiTerminalDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sCell, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tBoldRect, iFg, iTextFlags);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_STRIKE) != 0u ) {
@@ -5483,13 +5485,12 @@ static int __xuiTerminalRenderCellRow(xui_proxy pProxy, xui_draw_context pDraw,
 		iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 		if ( (iFlags & XUI_TERMINAL_CELL_UNDERLINE) != 0u ) iTextFlags |= XUI_TEXT_UNDERLINE;
 		if ( (iFlags & XUI_TERMINAL_CELL_BLINK) == 0u || pData->bLastCaretBlinkVisible ) {
-			iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sRun, tTextRect, iFg, iTextFlags);
+			iRet = __xuiTerminalDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sRun, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTextRect, iFg, iTextFlags);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( (iFlags & XUI_TERMINAL_CELL_BOLD) != 0u ) {
 				xui_rect_t tBoldRect = tTextRect;
 				tBoldRect.fX += 1.0f;
-				iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, sRun,
-					tBoldRect, iFg, iTextFlags);
+				iRet = __xuiTerminalDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sRun, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tBoldRect, iFg, iTextFlags);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( (iFlags & XUI_TERMINAL_CELL_STRIKE) != 0u ) {
@@ -5705,8 +5706,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		}
 		tIme.fH = pData->fCellHeight;
 		if ( tIme.fW > 0.0f ) {
-			iRet = __xuiTerminalDrawText(pProxy, pDraw, pData->pFont, pData->sImeText,
-				tIme, pData->iForegroundColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP);
+			iRet = __xuiTerminalDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pData->sImeText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tIme, pData->iForegroundColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP);
 			if ( iRet != XUI_OK ) goto render_done;
 			if ( pProxy->drawRectFill != NULL ) {
 				xui_rect_t tUnderline = {tIme.fX, tIme.fY + tIme.fH - 1.0f,
@@ -7236,3 +7236,5 @@ XUI_API int xuiTerminalGetStats(xui_widget pWidget, xui_terminal_stats_t* pStats
 	pStats->iHistoryMemoryBytes = iHistoryBytes;
 	return XUI_OK;
 }
+
+#endif

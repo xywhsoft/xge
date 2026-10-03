@@ -566,8 +566,11 @@ static int __xuiButtonTestShapeCircleStroke(xui_proxy pProxy, xui_draw_context p
 
 
 
-static int __xuiButtonTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiButtonTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	xui_button_test_state_t* pState;
 
 	(void)tRect;
@@ -585,8 +588,11 @@ static int __xuiButtonTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui
 	return XUI_OK;
 }
 
-static int __xuiButtonTestTextMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int __xuiButtonTestTextMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	(void)pProxy;
 	if ( !__xuiButtonTestFontValid(pFont) || (sText == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -647,8 +653,11 @@ static void __xuiButtonTestFontDestroy(xui_proxy pProxy, xui_font pFont)
 	}
 }
 
-static int __xuiButtonTestTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiButtonTestTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	(void)pProxy;
 	(void)sText;
 	(void)tRect;

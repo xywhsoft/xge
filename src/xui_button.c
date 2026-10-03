@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_BUTTON
 #include "xui_internal.h"
 
 #include <string.h>
@@ -464,7 +466,7 @@ static xui_vec2_t __xuiButtonMeasureText(xui_widget pWidget, xui_font pFont, con
 	}
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) &&
-	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK) &&
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) &&
 	     (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
 		return tSize;
 	}
@@ -947,14 +949,7 @@ static int __xuiButtonCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	if ( bHasText ) {
 		iTextColor = ((iRenderState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 		if ( __xuiButtonColorAlpha(iTextColor) != 0 ) {
-			iRet = pProxy->drawText(
-				pProxy,
-				pDraw,
-				tResolved.pFont,
-				pData->sText,
-				bHasIcon ? tTextRect : xuiWidgetGetContentRect(pWidget),
-				iTextColor,
-				bHasIcon ? (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) : tResolved.iTextFlags);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((bHasIcon ? (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) : tResolved.iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, bHasIcon ? tTextRect : xuiWidgetGetContentRect(pWidget), iTextColor, bHasIcon ? (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) : tResolved.iTextFlags);
 			if ( iRet != XUI_OK ) {
 				return iRet;
 			}
@@ -1961,3 +1956,5 @@ XUI_API int xuiButtonGetClickCount(xui_widget pWidget)
 	pData = __xuiButtonGetData(pWidget);
 	return (pData != NULL) ? pData->iClickCount : 0;
 }
+
+#endif

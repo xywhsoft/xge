@@ -257,6 +257,7 @@ int xgeAsyncTextureLoad(xge_async_request pRequest, xge_texture pTexture, const 
 	return __xgeAsyncFinish(pRequest, iRet);
 }
 
+#if XGE_ENABLE_TEXT
 int xgeAsyncFontLoad(xge_async_request pRequest, xge_font pFont, const char* sPath, float fSize, xge_async_proc onComplete, void* pUser)
 {
 	int iRet;
@@ -276,6 +277,9 @@ int xgeAsyncFontLoad(xge_async_request pRequest, xge_font pFont, const char* sPa
 	return __xgeAsyncFinish(pRequest, iRet);
 }
 
+#endif
+
+#if XGE_ENABLE_AUDIO
 int xgeAsyncSoundLoad(xge_async_request pRequest, xge_sound pSound, const char* sPath, xge_async_proc onComplete, void* pUser)
 {
 	int iRet;
@@ -293,3 +297,5 @@ int xgeAsyncSoundLoad(xge_async_request pRequest, xge_sound pSound, const char* 
 	iRet = xgeSoundLoad(pSound, sPath);
 	return __xgeAsyncFinish(pRequest, iRet);
 }
+
+#endif

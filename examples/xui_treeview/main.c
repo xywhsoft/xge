@@ -196,7 +196,7 @@ static int __xuiTreeViewCustomRender(xui_widget pWidget, int iNodeId, int iVisib
 	if ( (iState & XUI_TREE_ITEM_DISABLED) != 0 ) iText = XUI_COLOR_RGBA(132, 146, 162, 210);
 	if ( pDemo->pFont != NULL && pProxy->drawText != NULL ) {
 		tText = (xui_rect_t){tRect.fX + 30.0f + (float)pNode->iDepth * 18.0f, tRect.fY, tRect.fW - 106.0f, tRect.fH};
-		(void)pProxy->drawText(pProxy, pDraw, pDemo->pFont, pNode->sText, tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=pNode->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	if ( pNode->bHasChildren || pNode->bChecked ) {
 		tBadge = (xui_rect_t){tRect.fX + tRect.fW - 64.0f, tRect.fY + 5.0f, 50.0f, 16.0f};
@@ -205,7 +205,7 @@ static int __xuiTreeViewCustomRender(xui_widget pWidget, int iNodeId, int iVisib
 			(void)pProxy->drawRectFill(pProxy, pDraw, tBadge, iBadge);
 		}
 		if ( pDemo->pFont != NULL && pProxy->drawText != NULL ) {
-			(void)pProxy->drawText(pProxy, pDraw, pDemo->pFont, pNode->bHasChildren ? "Group" : "Done", tBadge, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=pNode->bHasChildren ? "Group" : "Done", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tBadge, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 	}
 	return 1;

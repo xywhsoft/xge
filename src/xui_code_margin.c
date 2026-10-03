@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <string.h>
@@ -286,3 +288,5 @@ XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t t
 	}
 	return XUI_ERROR_UNSUPPORTED;
 }
+
+#endif

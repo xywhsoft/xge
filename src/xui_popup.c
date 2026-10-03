@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_POPUP
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1885,3 +1887,5 @@ XUI_API int xuiPopupGetChangeCount(xui_widget pWidget)
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

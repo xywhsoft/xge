@@ -75,6 +75,7 @@ static int frame(void* user)
 			xge_text_shape_desc_t desc;
 			xge_glyph_run_t run;
 			memset(&desc, 0, sizeof(desc));
+			desc.iSize = sizeof(desc);
 			desc.pFont = &font;
 			desc.sText = "Underlined Text";
 			desc.iTextSize = -1;

@@ -9,8 +9,8 @@ if errorlevel 1 (
 set "REPO=%~dp0..\.."
 gcc -fsyntax-only -Wall -I "%REPO%" "%~dp0verify_tu.c"
 if errorlevel 1 (
-    echo [FAIL] xge.h/xui.h syntax check failed
+    echo [FAIL] public headers syntax check failed
     exit /b 1
 )
-echo [OK] xge.h + xui.h syntax check passed
+echo [OK] public headers syntax check passed
 exit /b 0

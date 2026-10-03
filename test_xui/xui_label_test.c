@@ -539,8 +539,11 @@ static void __xuiLabelTestFontDestroy(xui_proxy pProxy, xui_font pFont)
 	xrtFree(pFont);
 }
 
-static int __xuiLabelTestTextMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int __xuiLabelTestTextMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	size_t iLen;
 
 	(void)pProxy;
@@ -556,8 +559,11 @@ static int __xuiLabelTestTextMeasure(xui_proxy pProxy, xui_font pFont, const cha
 	return XUI_OK;
 }
 
-static int __xuiLabelTestTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiLabelTestTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	xui_label_test_state_t* pState;
 
 	(void)pTarget;
@@ -733,8 +739,11 @@ static int __xuiLabelTestDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDr
 
 
 
-static int __xuiLabelTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiLabelTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	xui_label_test_state_t* pState;
 
 	if ( !__xuiLabelTestDrawValid(pDraw) || !__xuiLabelTestFontValid(pFont) ) {

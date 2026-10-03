@@ -8,13 +8,16 @@ static uint32_t colors[128];
 static int count;
 static int (*baseFill)(xui_proxy,xui_draw_context,xui_rect_t,uint32_t);
 static int (*baseStroke)(xui_proxy,xui_draw_context,xui_rect_t,float,uint32_t);
-static int (*baseText)(xui_proxy,xui_draw_context,xui_font,const char*,xui_rect_t,uint32_t,uint32_t);
+static xui_draw_text_proc baseText;
 static int fill(xui_proxy p,xui_draw_context d,xui_rect_t r,uint32_t c)
 { if(count<128) colors[count++]=c; return baseFill(p,d,r,c); }
 static int stroke(xui_proxy p,xui_draw_context d,xui_rect_t r,float w,uint32_t c)
 { if(count<128) colors[count++]=c; return baseStroke(p,d,r,w,c); }
-static int text(xui_proxy p,xui_draw_context d,xui_font f,const char* s,xui_rect_t r,uint32_t c,uint32_t flags)
-{ if(count<128) colors[count++]=c; return baseText(p,d,f,s,r,c,flags); }
+static int text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
+{
+    if(count<128) colors[count++]=c;
+    return baseText(p, d, pTextItem, r, c, flags);
+}
 static int has(uint32_t c) { int i; for(i=0;i<count;++i) if(colors[i]==c) return 1; return 0; }
 static xui_vec2_t measure_custom(xui_context ctx,xui_widget owner,void* user)
 { (void)ctx; (void)owner; (void)user; return (xui_vec2_t){80,24}; }

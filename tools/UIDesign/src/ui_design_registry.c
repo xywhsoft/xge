@@ -8029,7 +8029,7 @@ static int __uiDesignWidgetRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	iRet = tProxy.drawRectStroke(&tProxy, pDraw, tRect, 1.0f, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	tText = (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 4.0f, tRect.fW - 16.0f, 20.0f};
-	return tProxy.drawText(&tProxy, pDraw, xuiGetDefaultFont(xuiWidgetGetContext(pWidget)), pNode->sText, tText, XUI_COLOR_RGBA(72, 88, 108, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	return tProxy.drawText(&tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=xuiGetDefaultFont(xuiWidgetGetContext(pWidget)), .sText=pNode->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(72, 88, 108, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
 int uiDesignRegistryGetCount(void)

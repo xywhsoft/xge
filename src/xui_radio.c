@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_RADIO
 #include "xui_internal.h"
 
 #include <string.h>
@@ -132,6 +134,7 @@ static xui_radio_data_t* __xuiRadioGetData(xui_widget pWidget)
 	return (xui_radio_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+#if XUI_ENABLE_RADIO_GROUP
 static xui_radio_group_data_t* __xuiRadioGroupGetData(xui_widget pWidget)
 {
 	xui_context pContext;
@@ -148,6 +151,8 @@ static xui_radio_group_data_t* __xuiRadioGroupGetData(xui_widget pWidget)
 	return (xui_radio_group_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+
+#endif
 static int __xuiRadioStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
 {
 	xui_style_property_t tProperty;
@@ -319,7 +324,7 @@ static xui_vec2_t __xuiRadioMeasureText(xui_widget pWidget, xui_font pFont, cons
 	}
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) ) {
-		(void)pProxy->textMeasure(pProxy, pFont, sText, &tSize);
+		(void)pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize);
 	}
 	return tSize;
 }
@@ -539,7 +544,7 @@ static int __xuiRadioCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	}
 	tVisual = __xuiRadioVisual(&tResolved, iVisual);
 	if ( (tResolved.pFont != NULL) && (pData->sText != NULL) && (pData->sText[0] != '\0') && (pData->tTextRect.fW > 0.0f) && (__xuiRadioColorAlpha(tVisual.iTextColor) != 0) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sText, pData->tTextRect, tVisual.iTextColor, tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tTextRect, tVisual.iTextColor, tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return iRet;
 }
@@ -552,6 +557,7 @@ static void __xuiRadioNotify(xui_widget pWidget, xui_radio_data_t* pData)
 	}
 }
 
+#if XUI_ENABLE_RADIO_GROUP
 static xui_widget __xuiRadioFindGroup(xui_widget pWidget)
 {
 	xui_widget pParent;
@@ -592,12 +598,15 @@ static int __xuiRadioMoveGroupSelection(xui_widget pWidget, int iDirection)
 	return XUI_OK;
 }
 
+
+#endif
 static int __xuiRadioSetCheckedInternal(xui_widget pWidget, xui_radio_data_t* pData, int bChecked, int bNotify, int bFromGroup)
 {
 	xui_widget pGroup;
 	int iIndex;
 
 	bChecked = (bChecked != 0);
+#if XUI_ENABLE_RADIO_GROUP
 	if ( !bFromGroup ) {
 		pGroup = __xuiRadioFindGroup(pWidget);
 		if ( bChecked && (pGroup != NULL) ) {
@@ -610,6 +619,8 @@ static int __xuiRadioSetCheckedInternal(xui_widget pWidget, xui_radio_data_t* pD
 			}
 		}
 	}
+
+#endif
 	if ( pData->bChecked == bChecked ) {
 		return XUI_OK;
 	}
@@ -694,12 +705,15 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			(void)__xuiRadioSyncState(pWidget, pData);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
+#if XUI_ENABLE_RADIO_GROUP
 		if ( (pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_UP) ) {
 			return (__xuiRadioMoveGroupSelection(pWidget, -1) == XUI_ERROR_UNSUPPORTED) ? XUI_OK : XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( (pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_DOWN) ) {
 			return (__xuiRadioMoveGroupSelection(pWidget, 1) == XUI_ERROR_UNSUPPORTED) ? XUI_OK : XUI_EVENT_DISPATCH_STOP;
 		}
+
+#endif
 		break;
 	case XUI_EVENT_KEY_UP:
 		if ( pEvent->iKey == XUI_KEY_SPACE ) {
@@ -1176,6 +1190,7 @@ XUI_API uint32_t xuiRadioGetState(xui_widget pWidget)
 	return (pData != NULL) ? __xuiRadioComputeState(pWidget, pData) : 0;
 }
 
+#if XUI_ENABLE_RADIO_GROUP
 static int __xuiRadioGroupIsOption(xui_widget pWidget)
 {
 	xui_widget_type pCheckCardType;
@@ -1566,3 +1581,7 @@ XUI_API float xuiRadioGroupGetGap(xui_widget pGroup)
 	xui_radio_group_data_t* pData = __xuiRadioGroupGetData(pGroup);
 	return (pData != NULL) ? pData->fGap : 0.0f;
 }
+
+#endif
+
+#endif

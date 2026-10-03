@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_PANEL
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1037,3 +1039,5 @@ XUI_API uint32_t xuiPanelGetState(xui_widget pWidget)
 	}
 	return xuiWidgetGetInputState(pWidget) | (xuiWidgetGetEnabled(pWidget) ? 0u : XUI_WIDGET_STATE_DISABLED);
 }
+
+#endif

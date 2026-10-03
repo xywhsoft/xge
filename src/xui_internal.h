@@ -3,6 +3,7 @@
 
 #include "../xui.h"
 #include "xui_xrt_port.h"
+#include "xui_unicode_core.h"
 #include "../lib/xlayout/xlayout.h"
 
 #define XUI_CONTEXT_MAGIC 0x58554943u
@@ -30,19 +31,6 @@ typedef struct xui_resource_dependency_t xui_resource_dependency_t;
 typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
-typedef int (*xui_internal_text_read_proc)(void* pUser, int iOffset, unsigned char* pByte);
-
-typedef enum xui_internal_word_policy_t {
-	XUI_INTERNAL_WORD_NATURAL = 0,
-	XUI_INTERNAL_WORD_IDENTIFIER,
-	XUI_INTERNAL_WORD_TERMINAL
-} xui_internal_word_policy_t;
-
-typedef enum xui_internal_word_kind_t {
-	XUI_INTERNAL_WORD_SPACE = 0,
-	XUI_INTERNAL_WORD_TEXT,
-	XUI_INTERNAL_WORD_SYMBOL
-} xui_internal_word_kind_t;
 
 enum {
 	XUI_DRAG_ADORNER_RECT_FILL = 1,
@@ -289,6 +277,7 @@ struct xui_context_t {
 	int bStyleDirty;
 	xui_resource_t* pResources;
 	uint32_t iNextResourceGeneration;
+	uint64_t iResourceRegistryGeneration;
 	xmap mapIconCategories;
 	xarray arrIconCategories;
 	xui_icon_category pIconCategories;
@@ -575,33 +564,6 @@ int xuiInternalEditEmit(xui_widget pWidget, int iType, const char* sText,
 	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid);
 int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, int iTextSize,
 	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid);
-int xuiInternalTextGraphemeNextRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
-int xuiInternalTextGraphemePrevRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
-int xuiInternalTextGraphemeClampRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
-int xuiInternalTextGraphemeNext(const char* sText, int iLength, int iOffset);
-int xuiInternalTextGraphemePrev(const char* sText, int iLength, int iOffset);
-int xuiInternalTextGraphemeClamp(const char* sText, int iLength, int iOffset);
-int xuiInternalTextWordBoundaryRead(xui_internal_text_read_proc onRead, void* pUser,
-	int iLength, int iOffset, xui_internal_word_policy_t iPolicy);
-xui_internal_word_kind_t xuiInternalTextWordRangeRead(xui_internal_text_read_proc onRead,
-	void* pUser, int iLength, int iOffset, xui_internal_word_policy_t iPolicy,
-	int* pStart, int* pEnd);
-int xuiInternalTextWordPrevRead(xui_internal_text_read_proc onRead, void* pUser,
-	int iLength, int iOffset, xui_internal_word_policy_t iPolicy);
-int xuiInternalTextWordNextRead(xui_internal_text_read_proc onRead, void* pUser,
-	int iLength, int iOffset, xui_internal_word_policy_t iPolicy);
-int xuiInternalTextWordBoundary(const char* sText, int iLength, int iOffset,
-	xui_internal_word_policy_t iPolicy);
-xui_internal_word_kind_t xuiInternalTextWordRange(const char* sText, int iLength,
-	int iOffset, xui_internal_word_policy_t iPolicy, int* pStart, int* pEnd);
-int xuiInternalTextWordPrev(const char* sText, int iLength, int iOffset,
-	xui_internal_word_policy_t iPolicy);
-int xuiInternalTextWordNext(const char* sText, int iLength, int iOffset,
-	xui_internal_word_policy_t iPolicy);
-typedef void (*xui_internal_rich_change_proc)(xui_rich_document pDocument, const xui_rich_change_t* pChange, void* pUser);
-int xuiInternalRichDocumentAddObserver(xui_rich_document pDocument, xui_internal_rich_change_proc onChange, void* pUser);
-int xuiInternalRichDocumentRemoveObserver(xui_rich_document pDocument, xui_internal_rich_change_proc onChange, void* pUser);
-int xuiInternalRichDocumentNodeOffset(xui_rich_document pDocument, xui_rich_node pNode, int* pOffset);
 void xuiInternalContextPressCancel(xui_context pContext);
 int xuiInternalContextPressUpdate(xui_context pContext, float fDelta);
 int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);

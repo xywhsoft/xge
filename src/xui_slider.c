@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_SLIDER
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1292,3 +1294,5 @@ XUI_API int xuiSliderGetChangeCount(xui_widget pWidget)
 	xui_slider_data_t* pData = __xuiSliderGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

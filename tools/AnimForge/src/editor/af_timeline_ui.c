@@ -80,7 +80,7 @@ static int __tlRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStat
 					tTextRc.fY = rc.fY + 4.0f;
 					tTextRc.fW = 40.0f;
 					tTextRc.fH = 14.0f;
-					pProxy->drawText(pProxy, pDraw, pApp->pFontMono, sNum, tTextRc, AF_TL_COLOR_TEXT_DIM, 0);
+					pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFontMono, .sText=sNum, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((0) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTextRc, AF_TL_COLOR_TEXT_DIM, 0);
 				}
 			}
 		}
@@ -114,7 +114,7 @@ static int __tlRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStat
 				tNameRc.fY = fRowY + 3.0f;
 				tNameRc.fW = AF_TL_LAYER_WIDTH - AF_TL_ICON_WIDTH * 2 - 12.0f;
 				tNameRc.fH = 16.0f;
-				pProxy->drawText(pProxy, pDraw, pApp->pFontMono, pLayer->sName, tNameRc, AF_TL_COLOR_TEXT, 0);
+				pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFontMono, .sText=pLayer->sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((0) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tNameRc, AF_TL_COLOR_TEXT, 0);
 			}
 
 			/* Visibility icon (eye) */

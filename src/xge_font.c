@@ -1,4 +1,10 @@
 #ifndef XGE_NO_TEXT
+#if XGE_ENABLE_HARFBUZZ
+#include "../lib/harfbuzz/src/hb.h"
+#include "../lib/harfbuzz/src/hb-ot.h"
+#endif
+#include "xge_font_contours.inl"
+#include "xge_font_contour_raster.inl"
 typedef struct xge_glyph_cache_t {
 	xge_glyph_t tGlyph;
 	struct xge_glyph_cache_t* pNextGlyph;
@@ -45,6 +51,7 @@ struct xge_font_face_t {
 	uint32_t iOutlineBucketCount;
 	xge_glyph_outline_cache_t** ppOutlineBuckets;
 	stbtt_fontinfo tInfo;
+	xge_tt_source_t tContourSource; /* Immutable spans into retained SFNT bytes. */
 };
 
 typedef struct xge_font_instance_backend_t {
@@ -58,6 +65,9 @@ typedef struct xge_font_instance_backend_t {
 	float fUnderlineThickness;
 	float fStrikePosition;
 	float fStrikeThickness;
+#if XGE_ENABLE_HARFBUZZ
+	hb_font_t* pShapeFont; /* Borrows the retained face's immutable SFNT bytes. */
+#endif
 } xge_font_instance_backend_t;
 
 struct xge_font_family_t {
@@ -115,6 +125,54 @@ static xge_font_face __xgeFontFace(xge_font pFont)
 	return (pBackend != NULL) ? pBackend->pFace : NULL;
 }
 
+#if XGE_ENABLE_HARFBUZZ
+static hb_bool_t __xgeFontContourPoint(hb_font_t* font, void* font_data,
+	hb_codepoint_t glyph, unsigned point_index, hb_position_t* x, hb_position_t* y, void* user)
+{
+	xge_font_face face = font_data; xge_tt_point_t point; int x_scale, y_scale;
+	double px, py; unsigned upem = hb_face_get_upem(hb_font_get_face(font));
+	(void)user;
+	if (!face || !upem || !__xgeTTPoint(&face->tContourSource, glyph, point_index, &point)) return 0;
+	hb_font_get_scale(font, &x_scale, &y_scale);
+	px = floor(point.x * x_scale / upem + .5); py = floor(point.y * y_scale / upem + .5);
+	if (!isfinite(px) || !isfinite(py) || px < INT32_MIN || px > INT32_MAX || py < INT32_MIN || py > INT32_MAX) return 0;
+	*x = (hb_position_t)px; *y = (hb_position_t)py; return 1;
+}
+static hb_font_t* __xgeFontShapeFont(xge_font pFont)
+{
+	xge_font_instance_backend_t* backend = pFont ? pFont->pBackend : NULL;
+	xge_font_face face = backend ? backend->pFace : NULL;
+	hb_blob_t* blob;
+	hb_face_t* shape_face;
+	hb_font_t *font, *parent; hb_font_funcs_t* funcs;
+	if ( !face ) return NULL; /* A bitmap-only XRF has no OpenType tables. */
+	if ( backend->pShapeFont ) return backend->pShapeFont;
+	blob = hb_blob_create((const char*)face->pData, (unsigned)face->iDataSize,
+		HB_MEMORY_MODE_READONLY, NULL, NULL);
+	if ( blob == hb_blob_get_empty() ) return NULL;
+	shape_face = hb_face_create(blob, (unsigned)face->iFaceIndex);
+	hb_blob_destroy(blob);
+	if ( shape_face == hb_face_get_empty() ) return NULL;
+	font = hb_font_create(shape_face);
+	hb_face_destroy(shape_face);
+	if ( font == hb_font_get_empty() ) return NULL;
+	hb_ot_font_set_funcs(font);
+	/* Keep positions in design units, just like stb_truetype metrics. */
+	hb_font_set_scale(font, (int)hb_face_get_upem(hb_font_get_face(font)),
+		(int)hb_face_get_upem(hb_font_get_face(font)));
+	hb_font_make_immutable(font); parent = font;
+	font = hb_font_create_sub_font(parent); hb_font_destroy(parent);
+	if (font == hb_font_get_empty()) return NULL;
+	funcs = hb_font_funcs_create();
+	if (funcs == hb_font_funcs_get_empty()) { hb_font_destroy(font); return NULL; }
+	hb_font_funcs_set_glyph_contour_point_func(funcs, __xgeFontContourPoint, NULL, NULL);
+	hb_font_funcs_make_immutable(funcs); hb_font_set_funcs(font, funcs, face, NULL); hb_font_funcs_destroy(funcs);
+	hb_font_make_immutable(font);
+	backend->pShapeFont = font;
+	return font;
+}
+#endif
+
 static uint32_t __xgeFontHashU32(uint32_t iValue)
 {
 	iValue ^= iValue >> 16;
@@ -161,7 +219,11 @@ static int __xgeFontGlyphOutlineGet(xge_font pFont, int iGlyph, const stbtt_vert
 	pEntry = (xge_glyph_outline_cache_t*)xrtCalloc(1, sizeof(*pEntry));
 	if ( pEntry == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	pEntry->iGlyph = iGlyph;
-	pEntry->iVertexCount = stbtt_GetGlyphShape(&pFace->tInfo, iGlyph, &pEntry->pVertices);
+	if (pFace->tInfo.glyf) {
+		int result = __xgeTTOutline(&pFace->tContourSource, (uint32_t)iGlyph,
+			&pEntry->pVertices, &pEntry->iVertexCount);
+		if (result != 1) { xrtFree(pEntry); return result < 0 ? XGE_ERROR_OUT_OF_MEMORY : XGE_ERROR_RESOURCE_FAILED; }
+	} else pEntry->iVertexCount = stbtt_GetGlyphShape(&pFace->tInfo, iGlyph, &pEntry->pVertices);
 	if ( pEntry->iVertexCount < 0 ) {
 		xrtFree(pEntry);
 		return XGE_ERROR_RESOURCE_FAILED;
@@ -743,6 +805,15 @@ static void __xgeFontFaceReadMetadata(xge_font_face pFace)
 	uint32_t iLength;
 	uint16_t iSelection;
 	uint16_t iMacStyle;
+	{
+		const unsigned char *head, *maxp, *glyf, *loca;
+		uint32_t head_bytes, maxp_bytes, glyf_bytes, loca_bytes;
+		if (__xgeFontFaceTable(pFace, 0x68656164u, &head, &head_bytes) &&
+			__xgeFontFaceTable(pFace, 0x6d617870u, &maxp, &maxp_bytes) &&
+			__xgeFontFaceTable(pFace, 0x676c7966u, &glyf, &glyf_bytes) &&
+			__xgeFontFaceTable(pFace, 0x6c6f6361u, &loca, &loca_bytes))
+			__xgeTTSourceInit(&pFace->tContourSource, head, head_bytes, maxp, maxp_bytes, glyf, glyf_bytes, loca, loca_bytes);
+	}
 
 	pFace->iWeight = XGE_FONT_WEIGHT_NORMAL;
 	pFace->iStretch = XGE_FONT_STRETCH_NORMAL;
@@ -1491,6 +1562,9 @@ void xgeFontFree(xge_font pFont)
 	}
 	pBackend = (xge_font_instance_backend_t*)pFont->pBackend;
 	if ( pBackend != NULL ) {
+#if XGE_ENABLE_HARFBUZZ
+		hb_font_destroy(pBackend->pShapeFont);
+#endif
 		xgeFontFaceFree(pBackend->pFace);
 		xrtFree(pBackend);
 	}
@@ -1736,7 +1810,21 @@ int xgeFontGlyphRasterizeByIndex(xge_font pFont, int iGlyph, xge_glyph_bitmap_t*
 	pInfo = __xgeFontInfo(pFont);
 	if ( pInfo == NULL ) return XGE_ERROR_NOT_INITIALIZED;
 	memset(pBitmap, 0, sizeof(*pBitmap));
-	pPixels = stbtt_GetGlyphBitmap(pInfo, pFont->fScale, pFont->fScale, iGlyph, &iWidth, &iHeight, &iOffsetX, &iOffsetY);
+	if (pInfo->glyf) {
+		const stbtt_vertex* vertices; int vertex_count, x1, y1, result; stbtt__bitmap bitmap;
+		result = __xgeFontGlyphOutlineGet(pFont, iGlyph, &vertices, &vertex_count);
+		if (result != XGE_OK) return result;
+		stbtt_GetGlyphBitmapBox(pInfo, iGlyph, pFont->fScale, pFont->fScale, &iOffsetX, &iOffsetY, &x1, &y1);
+		iWidth = x1 - iOffsetX; iHeight = y1 - iOffsetY; pPixels = NULL;
+		if (iWidth < 0 || iHeight < 0 || (iHeight && (size_t)iWidth > SIZE_MAX / (size_t)iHeight)) return XGE_ERROR_RESOURCE_FAILED;
+		if (iWidth && iHeight) {
+			pPixels = xrtCalloc((size_t)iWidth, (size_t)iHeight);
+			if (!pPixels) return XGE_ERROR_OUT_OF_MEMORY;
+			bitmap = (stbtt__bitmap){iWidth, iHeight, iWidth, pPixels};
+			stbtt_Rasterize(&bitmap, .35f, (stbtt_vertex*)vertices, vertex_count,
+				pFont->fScale, pFont->fScale, 0, 0, iOffsetX, iOffsetY, 1, pInfo->userdata);
+		}
+	} else pPixels = stbtt_GetGlyphBitmap(pInfo, pFont->fScale, pFont->fScale, iGlyph, &iWidth, &iHeight, &iOffsetX, &iOffsetY);
 	if ( (pPixels == NULL) && (iWidth > 0) && (iHeight > 0) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
@@ -1983,6 +2071,15 @@ static xge_font __xgeFontResolveCodepoint(xge_font pFont, uint32_t iCodepoint, i
 
 static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int iSize)
 {
+#if XGE_ENABLE_HARFBUZZ
+	xge_text_shape_desc_t desc = {0}; xge_glyph_run_t run = {0}; xge_vec2_t size = {0};
+	if ( !pFont || !sText || iSize < 0 ) return size;
+	if ( !iSize ) { size.fY = pFont->fLineHeight; return size; }
+	desc.iSize = sizeof(desc); desc.pFont = pFont; desc.sText = sText;
+	desc.iTextSize = iSize; desc.iFlags = XGE_TEXT_SHAPE_DEFAULT;
+	if ( xgeTextShape(&desc, &run) == XGE_OK ) size = xgeGlyphRunMeasure(&run);
+	xgeGlyphRunFree(&run); return size;
+#else
 	xge_vec2_t tSize;
 	xge_glyph_metrics_t tMetrics;
 	xge_emoji_match_t tEmojiMatch;
@@ -2036,6 +2133,7 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 			iLineCount++;
 			continue;
 		}
+#if XGE_ENABLE_EMOJI
 		if ( (pEmojiPack == NULL) && __xgeEmojiMayStart(iCodepoint) ) {
 			pEmojiPack = __xgeEmojiDefaultAcquire();
 		}
@@ -2054,6 +2152,7 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 			pPreviousFont = NULL;
 			continue;
 		}
+#endif
 		pGlyphFont = __xgeFontResolveCodepoint(pFont, iCodepoint, &iGlyph);
 		if ( (pGlyphFont == NULL) || (xgeFontGlyphGetByIndex(pGlyphFont, iGlyph, &tMetrics) != XGE_OK) ) continue;
 		if ( pGlyphFont->fLineHeight > fLineHeight ) fLineHeight = pGlyphFont->fLineHeight;
@@ -2073,8 +2172,11 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 	}
 	if ( fLineRight > tSize.fX ) tSize.fX = fLineRight;
 	tSize.fY = fLineHeight * (float)iLineCount;
+#if XGE_ENABLE_EMOJI
 	xgeEmojiPackFree(pEmojiPack);
+#endif
 	return tSize;
+#endif
 }
 
 xge_vec2_t xgeTextMeasure(xge_font pFont, const char* sText)

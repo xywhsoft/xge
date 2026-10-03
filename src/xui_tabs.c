@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TABS
 #include "xui_internal.h"
 
 #include <string.h>
@@ -346,8 +348,11 @@ static int __xuiTabsDrawCircle(xui_proxy pProxy, xui_draw_context pDraw, float f
 	return __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f}, iColor);
 }
 
-static int __xuiTabsDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiTabsDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (sText == NULL) || (*sText == 0) || (pFont == NULL) ) {
 		return XUI_OK;
 	}
@@ -357,7 +362,7 @@ static int __xuiTabsDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font 
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiTabsAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags | XUI_TEXT_CLIP);
+	return pProxy->drawText(pProxy, pDraw, pTextItem, xuiInternalSnapRect(tRect), iColor, iFlags | XUI_TEXT_CLIP);
 }
 
 static int __xuiTabsButtonIndex(const xui_tabs_data_t* pData, xui_widget pButton)
@@ -1312,7 +1317,7 @@ static int __xuiTabsDrawVerticalText(xui_proxy pProxy, xui_draw_context pDraw, x
 		memcpy(sChar, sText, (size_t)iLen);
 		sChar[iLen] = 0;
 		tChar = (xui_rect_t){tRect.fX, fY, tRect.fW, fLine};
-		(void)__xuiTabsDrawText(pProxy, pDraw, pFont, sChar, tChar, iColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)__xuiTabsDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sChar, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tChar, iColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		fY += fLine;
 		sText += iLen;
 	}
@@ -1419,7 +1424,7 @@ static int __xuiTabsButtonRender(xui_widget pButton, xui_draw_context pDraw, uin
 	if ( __xuiTabsVertical(pData->iPlacement) ) {
 		iRet = __xuiTabsDrawVerticalText(pProxy, pDraw, pFont, pPage->sTitle, tLocal, iText);
 	} else {
-		iRet = __xuiTabsDrawText(pProxy, pDraw, pFont, pPage->sTitle, tLocal, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiTabsDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pPage->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLocal, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pPage->bDirty ) {
@@ -2511,3 +2516,5 @@ XUI_API int xuiTabsGetCloseCount(xui_widget pWidget)
 	pData = __xuiTabsGetData(pWidget);
 	return (pData != NULL) ? pData->iCloseCount : 0;
 }
+
+#endif

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if (XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)
 #include "xui_internal.h"
 
 #include <string.h>
@@ -243,3 +245,5 @@ XUI_API xui_vec2_t xuiScrollModelContentToScreen(const xui_scroll_model_t* pMode
 	}
 	return tPoint;
 }
+
+#endif

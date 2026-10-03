@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_FIND
 #include "xui_internal.h"
 #include "xui_xrt_port.h"
 
@@ -679,3 +681,5 @@ XUI_API void xuiFindFreeText(char* sText)
 {
 	xrtFree(sText);
 }
+
+#endif

@@ -947,6 +947,7 @@ static GLuint __xgeCompileShader(GLenum iType, const char* sSource)
 }
 
 // 初始化 MVP 纹理渲染器
+#if XGE_ENABLE_2D
 static int __xgeTextureRendererInit(void)
 {
 	GLuint iVS;
@@ -1070,6 +1071,8 @@ static int __xgeTextureRendererInit(void)
 	return XGE_OK;
 }
 
+#endif
+
 // RGBA 颜色转换为 OpenGL 浮点颜色
 static void __xgeColorToFloat(uint32_t iColor, float* pR, float* pG, float* pB, float* pA)
 {
@@ -1080,6 +1083,7 @@ static void __xgeColorToFloat(uint32_t iColor, float* pR, float* pG, float* pB, 
 }
 
 // 初始化 MVP Shape 渲染器
+#if XGE_ENABLE_2D
 static int __xgeShapeRendererInit(void)
 {
 	GLuint iVS;
@@ -1255,6 +1259,8 @@ static int __xgeShapeRendererInit(void)
 	g_xgeShapeRenderer.bInitialized = 1;
 	return XGE_OK;
 }
+
+#endif
 
 static xge_vec2_t __xgeVec2Make(float fX, float fY)
 {
@@ -1497,10 +1503,26 @@ static void __xgePlatformRuntimeUpdate(void)
 	g_xge.tPlatformRuntime.fDpiScale = (g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f;
 }
 
+#if XGE_ENABLE_3D
+static xatomic64 g_xge3d_context_serial, g_xge3d_context_thread;
+static xatomic32 g_xge3d_context_active;
+uint64_t __xge3dContext(void)
+{
+	return xrtThreadCurrentId() == xrtAtomic64Load(&g_xge3d_context_thread,XMEMORY_ACQUIRE) &&
+        xrtAtomic32Load(&g_xge3d_context_active,XMEMORY_ACQUIRE)
+		? xrtAtomic64Load(&g_xge3d_context_serial,XMEMORY_RELAXED) : 0;
+}
+#endif
+
 // Sokol 初始化回调
 static void __xgeSokolInit(void)
 {
 	g_xge.bSokolRunning = 1;
+#if XGE_ENABLE_3D
+	xrtAtomic64FetchAdd(&g_xge3d_context_serial,1,XMEMORY_RELAXED);
+	xrtAtomic64Store(&g_xge3d_context_thread,xrtThreadCurrentId(),XMEMORY_RELEASE);
+    xrtAtomic32Store(&g_xge3d_context_active,1,XMEMORY_RELEASE);
+#endif
 	g_xge.iWidth = sapp_width();
 	g_xge.iHeight = sapp_height();
 	g_xge.iFramebufferWidth = sapp_width();
@@ -1545,8 +1567,12 @@ static void __xgeSokolFrame(void)
 		g_xge.fOnDemandRenderDeadline = 0.0;
 		g_xge.bRenderRequested = 1;
 	}
+#if XGE_ENABLE_2D
 	__xgeRenderCommandReset();
+#endif
+#if XGE_ENABLE_2D
 	__xgeShapeAutoBatchReset();
+#endif
 	__xgeFrameStatsBeginFrame();
 	g_xge.fDelta = (float)sapp_frame_duration();
 	g_xge.iFrameCount++;
@@ -1631,9 +1657,14 @@ static void __xgeSokolCleanup(void)
 		__xgeDragDropPlatformUnit();
 		__xgeImeUninstallWin32();
 	#endif
+#if XGE_ENABLE_SHAPE_EX
 	__xgeShapeExRendererUnit();
+#endif
 	__xgeBuiltinRenderersReset();
 	g_xge.bSokolRunning = 0;
+#if XGE_ENABLE_3D
+    xrtAtomic32Store(&g_xge3d_context_active,0,XMEMORY_RELEASE);
+#endif
 	__xgePlatformRuntimeUpdate();
 }
 
@@ -2236,6 +2267,9 @@ sapp_desc __xgeMakeSokolDesc(void)
 
 static void __xgeEmojiGlobalClear(void);
 static void __xgeDragDropUnit(void);
+#if defined(_WIN32) || defined(_WIN64)
+static void __xgeWin32ClipboardOwnerRelease(void);
+#endif
 
 #include "xge_core.c"
 #if XGE_HAS_DEBUGMODE
@@ -2245,28 +2279,52 @@ static void __xgeDragDropUnit(void);
 #include "xge_drag_drop.c"
 #include "xge_miniprogram.c"
 #include "xge_egl.c"
+#if XGE_ENABLE_AUDIO
 #include "xge_audio.c"
+#endif
+#if XGE_ENABLE_EMOJI
 #include "xge_emoji.c"
+#endif
+#if XGE_ENABLE_TEXT
 #include "xge_font.c"
+#endif
 #include "xge_texture.c"
+#if XGE_ENABLE_2D
 #include "xge_command.c"
+#endif
 #include "xge_render.c"
+#if XGE_ENABLE_2D
 #include "xge_shape.c"
+#endif
+#if XGE_ENABLE_SHAPE_EX
 #include "xge_shape_ex_coverage.c"
 #include "xge_shape_ex_stroke.c"
 #include "xge_shape_ex.c"
+#endif
+#if XGE_ENABLE_TEXT
 #include "xge_text_run.c"
+#endif
+#if XGE_ENABLE_TEXT && XGE_ENABLE_SHAPE_EX
 #include "xge_text_vector.c"
+#endif
+#if XGE_ENABLE_SVG
 #include "xge_svg.c"
+#endif
+#if XGE_ENABLE_2D
 #include "xge_mesh.c"
+#endif
+#if XGE_ENABLE_2D
 #include "xge_sprite.c"
+#endif
 #include "xge_material.c"
 #include "xge_render_target.c"
 #include "xge_buffer.c"
+#if XGE_ENABLE_PARTICLES
 #include "xge_particle.c"
 #include "xge_particle_io.c"
 #include "xge_particle_resource.c"
 #include "xge_particle_render.c"
+#endif
 #include "xge_async.c"
 #include "xge_input.c"
 #if defined(_WIN32) || defined(_WIN64)

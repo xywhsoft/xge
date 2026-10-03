@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_HYPERLINK
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
@@ -431,7 +433,7 @@ static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 				continue;
 			}
 		}
-		iRet = pProxy->drawText(pProxy, pDraw, tDesc.pFont, sDisplay, tLineRect, iTextColor, iLineFlags);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iTextColor, iLineFlags);
 		if ( iRet != XUI_OK ) {
 			break;
 		}
@@ -1089,3 +1091,5 @@ XUI_API int xuiHyperlinkGetClickCount(xui_widget pWidget)
 	pData = __xuiHyperlinkGetData(pWidget);
 	return (pData != NULL) ? pData->iClickCount : 0;
 }
+
+#endif

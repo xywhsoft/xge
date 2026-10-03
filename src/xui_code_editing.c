@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
 #include <string.h>
@@ -390,3 +392,5 @@ XUI_API int xuiCodeEditingToggleLineComment(xui_code_document pDocument, xui_cod
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiCodeSelectionSetRange(pSelection, pDocument, iAnchor, iCaret);
 }
+
+#endif

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
 #include <stdarg.h>
@@ -8,6 +10,8 @@
 	(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_TREE)
 #define XUI_RENDER_SUBTREE_DIRTY_FLAGS \
 	(XUI_RENDER_CACHE_DIRTY_FLAGS | XUI_WIDGET_DIRTY_RENDER)
+
+static void __xuiWidgetSyncInactiveTree(xui_widget pWidget);
 
 static int __xuiWidgetMemoryValid(xui_widget pWidget)
 {
@@ -85,6 +89,31 @@ static void __xuiWidgetStateEnsureQueued(xui_widget pWidget, const xui_rect_t* p
 		pContext->pStateChangeHead = pWidget;
 	}
 	pContext->pStateChangeTail = pWidget;
+}
+
+/* A subtype destructor may destroy another widget while the outer widget is
+ * being freed. Remove each freed node from the pending state queue before its
+ * storage can be recycled; the next operation leave may still flush events. */
+static void __xuiWidgetStateUnqueue(xui_widget pWidget)
+{
+	xui_context pContext;
+	xui_widget* ppScan;
+	xui_widget pPrevious = NULL;
+	if ( !__xuiWidgetMemoryValid(pWidget) || pWidget->iPendingStateChanges == 0u ) return;
+	pContext = pWidget->pContext;
+	if ( !xuiInternalContextIsValid(pContext) ) return;
+	ppScan = &pContext->pStateChangeHead;
+	while ( *ppScan != NULL ) {
+		if ( *ppScan == pWidget ) {
+			*ppScan = pWidget->pStateChangeNext;
+			if ( pContext->pStateChangeTail == pWidget ) pContext->pStateChangeTail = pPrevious;
+			break;
+		}
+		pPrevious = *ppScan;
+		ppScan = &pPrevious->pStateChangeNext;
+	}
+	pWidget->pStateChangeNext = NULL;
+	pWidget->iPendingStateChanges = 0u;
 }
 
 static void __xuiWidgetStateRecordBoundsTreeAt(xui_widget pWidget, xui_rect_t tOldWorldRect)
@@ -2108,7 +2137,8 @@ static int __xuiWidgetTypeDescValid(xui_context pContext, const xui_widget_type_
 	     (pDesc->sName == NULL) || (pDesc->sName[0] == '\0') ) {
 		return 0;
 	}
-	if ( (pDesc->iFlags & ~(XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY)) != 0 ) {
+	if ( (pDesc->iFlags & ~(XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
+		XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE)) != 0 ) {
 		return 0;
 	}
 	pParent = (pDesc->pParent != NULL) ? pDesc->pParent : &g_xuiWidgetBaseType;
@@ -2769,6 +2799,7 @@ static int __xuiSetRootWidgetOperation(xui_context pContext, xui_widget pWidget)
 	if ( pWidget != NULL ) {
 		__xuiWidgetMarkDirtyOnly(pWidget, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_RENDER);
 	}
+	if ( __xuiWidgetValid(pOldRoot) ) __xuiWidgetSyncInactiveTree(pOldRoot);
 	return xuiInternalContextInvalidateAll(pContext);
 }
 
@@ -3634,6 +3665,7 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	xui_widget pChild;
 
 	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
+	__xuiWidgetStateUnqueue(pWidget);
 	if ( __xuiWidgetMemoryValid(pWidget->pEditDelegate) &&
 	     pWidget->pEditDelegate->pEditOwner == pWidget ) {
 		pWidget->pEditDelegate->pEditOwner = NULL;
@@ -3903,6 +3935,7 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
 	(void)__xuiWidgetRecomputeSubtreeEventMask(pWidget);
 	__xuiWidgetUpdateEventMasksToRoot(pParent);
 	(void)__xuiWidgetInvalidateWorldRect(pParent, tWorldRect, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+	if ( __xuiWidgetValid(pWidget) ) __xuiWidgetSyncInactiveTree(pWidget);
 	return XUI_OK;
 }
 
@@ -4002,6 +4035,11 @@ XUI_API xui_rect_t xuiWidgetGetWorldRect(xui_widget pWidget)
 		tRect.fY += pParent->tRect.fY;
 	}
 	return tRect;
+}
+
+XUI_API int xuiWidgetIsAttachedToContext(xui_widget pWidget)
+{
+	return __xuiWidgetAttachedToContext(pWidget);
 }
 
 XUI_API xui_rect_t xuiWidgetGetContentRect(xui_widget pWidget)
@@ -4730,6 +4768,8 @@ static int __xuiWidgetSetVisibleOperation(xui_widget pWidget, int bVisible)
 	}
 	if ( !bVisible ) {
 		xuiInternalContextDetachWidget(pWidget->pContext, pWidget);
+		if ( !__xuiWidgetValid(pWidget) ) return XUI_OK;
+		__xuiWidgetSyncInactiveTree(pWidget);
 		if ( !__xuiWidgetValid(pWidget) ) return XUI_OK;
 	}
 	return __xuiWidgetInvalidateWorldRect(pWidget, xuiWidgetGetWorldRect(pWidget), XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
@@ -5675,7 +5715,7 @@ static xui_vec2_t __xuiTooltipMeasure(xui_context pContext, xui_widget pOwner, c
 		pProxy = xuiInternalContextGetProxy(pContext);
 		pFont = xuiGetDefaultFont(pContext);
 		if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) && (pDesc->sText != NULL) ) {
-			if ( pProxy->textMeasure(pProxy, pFont, pDesc->sText, &tSize) != XUI_OK ) {
+			if ( pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pDesc->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) != XUI_OK ) {
 				tSize.fX = 0.0f;
 				tSize.fY = 0.0f;
 			}
@@ -5819,8 +5859,7 @@ static int __xuiTooltipCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tText.fY = tRect.fY + 3.0f;
 		tText.fW = tRect.fW - 12.0f;
 		tText.fH = tRect.fH - 6.0f;
-		return pProxy->drawText(pProxy, pDraw, pFont, pContext->tActiveTooltip.sText, tText,
-			tChrome.iTooltipTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		return pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pContext->tActiveTooltip.sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, tChrome.iTooltipTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -6074,21 +6113,35 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 	return XUI_OK;
 }
 
+static void __xuiWidgetSyncInactiveTree(xui_widget pWidget)
+{
+	xui_widget pChild;
+	xui_widget pNext;
+	int iRet;
+	if ( !__xuiWidgetValid(pWidget) ) return;
+	if ( pWidget->onUpdate != NULL &&
+		(pWidget->pType->iFlags & XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE) != 0 ) {
+		pWidget->pContext->iWidgetCallbackDepth++;
+		iRet = pWidget->onUpdate(pWidget, 0.0f, pWidget->pUpdateUser);
+		pWidget->pContext->iWidgetCallbackDepth--;
+		if ( iRet != XUI_OK ) {
+			xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_UPDATE, 1,
+				"widget.inactive", "The inactive widget sync failed and the remaining tree continued.");
+		}
+	}
+	if ( !__xuiWidgetValid(pWidget) ) return;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pNext ) {
+		pNext = pChild->pNextSibling;
+		__xuiWidgetSyncInactiveTree(pChild);
+	}
+}
+
 static void __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
 {
 	xui_widget pChild;
 	xui_widget pNext;
 	int iRet;
-
-	if ( pWidget == NULL ) {
-		return;
-	}
-	if ( !__xuiWidgetValid(pWidget) ) {
-		return;
-	}
-	if ( !pWidget->bVisible ) {
-		return;
-	}
+	if ( !__xuiWidgetValid(pWidget) || !pWidget->bVisible ) return;
 	if ( pWidget->onUpdate != NULL ) {
 		pWidget->pContext->iWidgetCallbackDepth++;
 		iRet = pWidget->onUpdate(pWidget, fDelta, pWidget->pUpdateUser);
@@ -6098,9 +6151,7 @@ static void __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
 				"widget.update", "The widget update failed and the remaining update tree continued.");
 		}
 	}
-	if ( !__xuiWidgetValid(pWidget) || !pWidget->bVisible ) {
-		return;
-	}
+	if ( !__xuiWidgetValid(pWidget) || !pWidget->bVisible ) return;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pNext ) {
 		pNext = pChild->pNextSibling;
 		__xuiWidgetUpdateTree(pChild, fDelta);
@@ -7619,3 +7670,5 @@ XUI_API int xuiDebugEventTrace(xui_context pContext, const xui_event_t* pEvent, 
 	sBuffer[iCapacity - 1] = '\0';
 	return XUI_OK;
 }
+
+#endif

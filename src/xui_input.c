@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
 #include <string.h>
@@ -3095,3 +3097,5 @@ XUI_API xui_widget xuiDebugWidgetInspectAt(xui_context pContext, float fX, float
 	}
 	return pWidget;
 }
+
+#endif

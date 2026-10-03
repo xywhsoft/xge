@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_FILE_DIALOG
 #include "xui_internal.h"
 
 #include <ctype.h>
@@ -565,7 +567,7 @@ static int __xuiFileDialogDrawFileItem(xui_widget pWidget, int iIndex, xui_draw_
 	if ( (iState & XUI_LIST_ITEM_DISABLED) != 0 ) iTextColor = iDisabled;
 	if ( pDialog->pFont != NULL ) {
 		tText = xuiInternalSnapRect((xui_rect_t){tRow.fX + 30.0f, tRow.fY, __xuiFileDialogMaxFloat(1.0f, tRow.fW - 38.0f), tRow.fH});
-		iRet = pProxy->drawText(pProxy, pDraw, pDialog->pFont, pEntry->sName != NULL ? pEntry->sName : "", tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDialog->pFont, .sText=pEntry->sName != NULL ? pEntry->sName : "", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return 1;
@@ -2361,3 +2363,5 @@ XUI_API int xuiFileDialogEntryIsDir(xui_file_dialog pDialog, int iIndex)
 	if ( !__xuiFileDialogValid(pDialog) || iIndex < 0 || iIndex >= pDialog->iEntryCount ) return 0;
 	return pDialog->arrEntries[iIndex].bDir;
 }
+
+#endif

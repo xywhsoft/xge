@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 #include "xui_xrt_port.h"
 
@@ -574,3 +576,5 @@ XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_anno
 	if ( pMatchCount != NULL ) *pMatchCount = iCount;
 	return XUI_OK;
 }
+
+#endif

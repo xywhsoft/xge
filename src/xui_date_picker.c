@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_DATE_PICKER
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -1244,7 +1246,7 @@ static int __xuiDatePickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	iRet = __xuiDatePickerDrawFill(pProxy, pDraw, pData->tButtonRect, iButton);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy->drawText != NULL) && (tResolved.pFont != NULL) && (__xuiDatePickerAlpha(iText) != 0) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sText, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = __xuiDatePickerDrawChevron(pProxy, pDraw, pData->tButtonRect, (iState & XUI_DATE_PICKER_STATE_OPEN) != 0u, iArrow);
@@ -1262,7 +1264,7 @@ static int __xuiDatePickerDrawButton(xui_proxy pProxy, xui_draw_context pDraw, x
 	iRet = __xuiDatePickerDrawStroke(pProxy, pDraw, tRect, bAccent ? 1.5f : 1.0f, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy->drawText != NULL) && (pFont != NULL) && (sText != NULL) ) {
-		return pProxy->drawText(pProxy, pDraw, pFont, sText, tRect, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		return pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -1351,7 +1353,7 @@ static int __xuiDatePickerDrawComboField(xui_date_picker_data_t* pData, const xu
 		(void)__xuiDatePickerDrawFill(pProxy, pDraw, tSelect, pResolved->iSelectionColor);
 	}
 	if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-		(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tText, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return __xuiDatePickerDrawChevron(pProxy, pDraw, tArrow, bOpen, pResolved->iPopupMutedTextColor);
 }
@@ -1412,7 +1414,7 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 		tRect.fY = pData->tCalendarRect[iPanel].fY + 34;
 		tRect.fH = 20;
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-			(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, arrWeek[(i + pData->iFirstDayOfWeek) % 7], tRect, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=arrWeek[(i + pData->iFirstDayOfWeek) % 7], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 	}
 	for ( i = 0; i < XUI_DATE_PICKER_CELL_COUNT; i++ ) {
@@ -1456,7 +1458,7 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 		}
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 			snprintf(sText, sizeof(sText), "%d", iDay);
-			(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tRect, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		(void)tDate;
 	}
@@ -1495,7 +1497,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 	fTitleY = tRect.fY + 7.0f;
 	if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 		snprintf(sText, sizeof(sText), "%s time", (__xuiDatePickerIsRange(pData->iMode) ? ((iPanel == 0) ? "Start" : "End") : "Select"));
-		(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, xuiInternalRectFromFloatNearest(tRect.fX + 8.0f, fTitleY, tRect.fW - 16.0f, 16.0f), pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalRectFromFloatNearest(tRect.fX + 8.0f, fTitleY, tRect.fW - 16.0f, 16.0f), pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
 	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
@@ -1505,7 +1507,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 	for ( i = 0; i < (pData->bShowSecond ? 3 : 2); i++ ) {
 		tRect = pData->arrTimeRect[iPanel][i];
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-			(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, arrName[i], (xui_rect_t){tRect.fX, tRect.fY - 18, tRect.fW, 16}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=arrName[i], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tRect.fX, tRect.fY - 18, tRect.fW, 16}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, tRect, "", pResolved->iPopupTextColor, pResolved->iFieldColor, ((pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i)) ? pResolved->iAccentColor : pResolved->iFieldBorderColor, (pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i));
 		if ( iRet != XUI_OK ) return iRet;
@@ -1518,7 +1520,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 			} else {
 				snprintf(sText, sizeof(sText), "%02d", arrValue[i]);
 			}
-			(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tRect, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 	}
 	return XUI_OK;
@@ -1564,7 +1566,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 			}
 			if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 				snprintf(sText, sizeof(sText), "%04lld", (long long)iValue);
-				(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		}
 	} else {
@@ -1579,7 +1581,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 			}
 			if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 				snprintf(sText, sizeof(sText), "%02d", i + 1);
-				(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		}
 	}
@@ -3377,3 +3379,5 @@ XUI_API int xuiDatePickerGetClearCount(xui_widget pWidget)
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	return (pData != NULL) ? pData->iClearCount : 0;
 }
+
+#endif

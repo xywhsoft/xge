@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
 #include <string.h>
@@ -499,3 +501,5 @@ XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, in
 	if ( iRet == XUI_OK ) *pHandled = 1;
 	return iRet;
 }
+
+#endif

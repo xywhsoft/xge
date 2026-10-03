@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_FLOW_GRAPH
 #include "../xui.h"
 #include "xui_xrt_port.h"
 
@@ -2239,3 +2241,5 @@ XUI_API int xuiFlowGraphGetEdgeDiagnosticCount(xui_flow_graph pGraph, const char
 	}
 	return iCount;
 }
+
+#endif

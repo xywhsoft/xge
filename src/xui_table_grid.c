@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TABLE_GRID
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -1908,3 +1910,5 @@ XUI_API int xuiTableGridGetChangeCount(xui_widget pWidget)
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

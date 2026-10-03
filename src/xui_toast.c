@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TOAST
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
@@ -849,7 +851,7 @@ static int __xuiToastDrawTextLayout(xui_toast pToast, xui_draw_context pDraw,
 		tLineRect.fY = tRect.fY + fOffsetY + tLine.fY;
 		tLineRect.fW = tRect.fW;
 		tLineRect.fH = tLine.fH;
-		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), iColor, iFlags);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tLineRect), iColor, iFlags);
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
@@ -1466,3 +1468,5 @@ XUI_API int xuiToastGetChangeCount(xui_toast pToast)
 {
 	return __xuiToastValid(pToast) ? pToast->iChangeCount : 0;
 }
+
+#endif

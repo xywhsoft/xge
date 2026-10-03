@@ -257,7 +257,7 @@ static int __uiDesignCanvasDrawGuideLabel(ui_design_app_t* pApp, xui_draw_contex
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tLabel, 1.0f, iColor);
 	if ( iRet != XUI_OK ) return iRet;
-	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText, (xui_rect_t){tLabel.fX + 6.0f, tLabel.fY, tLabel.fW - 12.0f, tLabel.fH}, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tLabel.fX + 6.0f, tLabel.fY, tLabel.fW - 12.0f, tLabel.fH}, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
 static int __uiDesignCanvasDrawLayoutGrid(ui_design_app_t* pApp, xui_draw_context pDraw, xui_rect_t tHost, int iRows, int iColumns, uint32_t iColor)
@@ -465,7 +465,7 @@ static int __uiDesignArtboardRender(xui_widget pWidget, xui_draw_context pDraw, 
 	iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tRect, 1.0f, XUI_COLOR_RGBA(132, 151, 174, 255));
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pApp->pSession->tModel.iNodeCount == 0 ) {
-		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "Empty artboard", (xui_rect_t){0.0f, tRect.fH * 0.5f - 18.0f, tRect.fW, 36.0f}, XUI_COLOR_RGBA(118, 136, 158, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="Empty artboard", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){0.0f, tRect.fH * 0.5f - 18.0f, tRect.fW, 36.0f}, XUI_COLOR_RGBA(118, 136, 158, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }

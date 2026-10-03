@@ -1,0 +1,5 @@
+html,body{margin:0;padding:0;background:#fff;overflow:hidden}
+#content{display:inline-block;vertical-align:top;color:#111}
+#content .katex-display{margin:0}
+#content svg{display:block;max-width:100%;height:auto}
+#content iframe{display:block;border:0;pointer-events:none}

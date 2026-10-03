@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_ICON_PICKER
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -662,8 +664,7 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	}
 	pFont = tResolved.pFont;
 	if ( sValue[0] != '\0' && tText.fW > 0.0f && pFont != NULL && pProxy->drawText != NULL ) {
-		iRet = pProxy->drawText(pProxy, pDraw, pFont, sValue, xuiInternalSnapRect(tText), iTextColor,
-			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sValue, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = __xuiIconPickerDrawChevron(pProxy, pDraw, pData->tButtonRect, bOpen, iArrow);
@@ -1955,3 +1956,5 @@ XUI_API int xuiIconPickerGetChangeCount(xui_widget pWidget)
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

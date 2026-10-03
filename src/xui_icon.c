@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1736,3 +1738,5 @@ XUI_API int xuiIconDrawByName(xui_painter pPainter, xui_icon_category pCategory,
 	pIcon = xuiIconFind(pCategory, sName);
 	return (pIcon != NULL) ? xuiIconDraw(pPainter, pIcon, tRect, pDesc) : XUI_ERROR_INVALID_ARGUMENT;
 }
+
+#endif

@@ -7,6 +7,10 @@
 | 目录 | 主题 |
 | --- | --- |
 | `examples/xge_shape` | 基础形状绘制。 |
+| [`examples/xge_3d`](../examples/xge_3d/README.md) | 相机、父子节点、共享网格和三维深度。 |
+| [`examples/xge_3d_scene`](../examples/xge_3d_scene/README.md) | GLB/glTF 共享模型放置、鼠标拾取与天空盒。 |
+| [`examples/xge_3d_lighting`](../examples/xge_3d_lighting/README.md) | 直接 PBR、太阳级联阴影、天空、静态 IBL 与应用昼夜参数。 |
+| [`examples/xge_3d_animation`](../examples/xge_3d_animation/README.md) | 六类独立外部动作、T/A 骨架离线重定向、蒙皮阴影和双层混合。 |
 | [`examples/xge_particles`](../examples/xge_particles/README.md) | 七个独立粒子程序：火花、火烟、爆炸、雨雪、尾尘、光环、彩纸。 |
 | `examples/xge_shape_ex`、`xge_shape_ex_*` | 路径、混合、特效、渐变、裁剪和绘制顺序。 |
 | `examples/xge_svg` | SVG 加载与绘制。 |

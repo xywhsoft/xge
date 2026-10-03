@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 #include "xui_xrt_port.h"
 
@@ -105,3 +107,5 @@ fail:
 	return XUI_ERROR_INVALID_ARGUMENT;
 #endif
 }
+
+#endif

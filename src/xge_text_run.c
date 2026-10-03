@@ -1,9 +1,21 @@
 #ifndef XGE_NO_TEXT
+#include "xge_text_context.h"
 typedef struct xge_glyph_run_backend_t {
 	int iFontCount;
 	int iFontCapacity;
 	xge_font* ppFonts;
 	xge_emoji_pack pEmojiPack;
+#if XGE_ENABLE_HARFBUZZ
+	int iGlyphCapacity, iCaretCapacity;
+	char* pGraphemeBreaks;
+	char* pContextGraphemeBreaks;
+	int iContextGraphemeBytes;
+	unsigned char* pScriptMap;
+	int iScriptMapBytes;
+	int bScriptsChecked;
+	const char *pFallbackUnitEnd, *pFallbackWordEnd;
+	xge_font pFallbackUnitFont; /* Borrowed during this synchronous shape call. */
+#endif
 } xge_glyph_run_backend_t;
 
 static int __xgeGlyphRunKeepFont(xge_glyph_run_backend_t* pBackend, xge_font pFont)
@@ -28,6 +40,7 @@ static int __xgeGlyphRunKeepFont(xge_glyph_run_backend_t* pBackend, xge_font pFo
 	return XGE_OK;
 }
 
+#if XGE_ENABLE_EMOJI
 static int __xgeGlyphRunKeepEmojiPack(xge_glyph_run_backend_t* pBackend, xge_emoji_pack pPack)
 {
 	if ( (pBackend == NULL) || (pPack == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -38,8 +51,66 @@ static int __xgeGlyphRunKeepEmojiPack(xge_glyph_run_backend_t* pBackend, xge_emo
 	return XGE_OK;
 }
 
+#endif
+#if XGE_ENABLE_HARFBUZZ
+#include "xge_text_opentype.c"
+#endif
+
+static float __xgeGlyphRunLineAdvance(const xge_glyph_run_t* run, int start)
+{
+	float advance = 0;
+	while ( start < run->iGlyphCount && !(run->pGlyphs[start].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) )
+		advance += run->pGlyphs[start++].fAdvanceX;
+	return advance;
+}
+static int __xgeGlyphRunVisualPositions(xge_glyph_run_t* run)
+{
+	int first = 0, rtl = (run->iFlags & XGE_TEXT_SHAPE_RTL) != 0;
+	float width = 0;
+	if ( !rtl ) {
+		float pen = 0; int i;
+		for ( i = 0; i < run->iGlyphCount; i++ ) {
+			run->pGlyphs[i].fVisualX = pen;
+			if ( run->pGlyphs[i].iFlags & XGE_GLYPH_POSITION_LINE_BREAK ) pen = 0;
+			else pen += run->pGlyphs[i].fAdvanceX;
+		}
+		return XGE_OK;
+	}
+	while ( first < run->iGlyphCount ) {
+		float total = __xgeGlyphRunLineAdvance(run, first), logical = 0;
+		int i = first;
+		if ( !isfinite(total) ) return XGE_ERROR_INVALID_STATE;
+		if ( total > width ) width = total;
+		while ( i < run->iGlyphCount && !(run->pGlyphs[i].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) ) {
+			int finish = i + 1, j; float advance = run->pGlyphs[i].fAdvanceX, pen;
+			while ( finish < run->iGlyphCount && !(run->pGlyphs[finish].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) &&
+			        run->pGlyphs[finish].iCluster == run->pGlyphs[i].iCluster && run->pGlyphs[finish].iClusterEnd == run->pGlyphs[i].iClusterEnd )
+				advance += run->pGlyphs[finish++].fAdvanceX;
+			pen = rtl ? total - logical - advance : logical;
+			for ( j = i; j < finish; j++ ) {
+				xge_glyph_position_t* glyph = &run->pGlyphs[j]; float right;
+				xge_glyph_metrics_t metrics;
+				glyph->fVisualX = pen;
+				if ( glyph->iItemKind == XGE_TEXT_ITEM_EMOJI ) right = pen + glyph->fOffsetX + glyph->fEmojiWidth;
+				else {
+					int result = xgeFontGlyphGetByIndex(glyph->pFont, glyph->iGlyph, &metrics);
+					if ( result != XGE_OK ) return result;
+					right = pen + glyph->fOffsetX + metrics.fX1;
+				}
+				if ( right > width ) width = right;
+				pen += glyph->fAdvanceX;
+			}
+			logical += advance; i = finish;
+		}
+		first = i < run->iGlyphCount ? i + 1 : i;
+	}
+	if ( rtl ) run->fWidth = width;
+	return XGE_OK;
+}
+
 int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 {
+	xge_text_shape_desc_t normalized;
 	xge_glyph_run_backend_t* pBackend;
 	xge_glyph_position_t* pPosition;
 	xge_glyph_metrics_t tMetrics;
@@ -74,9 +145,20 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 	if ( (pDesc == NULL) || (pRun == NULL) || (pDesc->iSize < sizeof(*pDesc)) ||
 	     (pDesc->pFont == NULL) || (pDesc->sText == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
 	memset(pRun, 0, sizeof(*pRun));
+#if !XGE_ENABLE_HARFBUZZ
+    if ((pDesc->iFlags & XGE_TEXT_SHAPE_RTL) || pDesc->sContext || pDesc->iScript || pDesc->sLanguage)
+		return XGE_ERROR_UNSUPPORTED;
+#endif
 	iTextSize = pDesc->iTextSize;
 	if ( iTextSize < -1 ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( iTextSize <= 0 ) iTextSize = (int)strlen(pDesc->sText);
+	if ( iTextSize < 0 ) {
+		size_t bytes = strlen(pDesc->sText);
+		if ( bytes > INT_MAX ) return XGE_ERROR_INVALID_ARGUMENT;
+		iTextSize = (int)bytes;
+	}
+	iRet = __xgeTextContextNormalize(pDesc, iTextSize, &normalized);
+	if (iRet != XGE_OK) return iRet;
+	pDesc = &normalized;
 	pRun->iSize = sizeof(*pRun);
 	pRun->iFlags = pDesc->iFlags;
 	pRun->iTextSize = iTextSize;
@@ -102,6 +184,9 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	pRun->pBackend = pBackend;
+#if XGE_ENABLE_HARFBUZZ
+	pBackend->iGlyphCapacity = iTextSize;
+#endif
 	sScan = pDesc->sText;
 	sEnd = pDesc->sText + iTextSize;
 	fLineWidth = 0.0f;
@@ -140,6 +225,7 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 			iLineCount++;
 			continue;
 		}
+#if XGE_ENABLE_EMOJI
 		if ( ((pDesc->iFlags & XGE_TEXT_SHAPE_EMOJI) != 0) &&
 		     (iEmojiPresentation != XGE_EMOJI_PRESENTATION_TEXT) &&
 		     (iEmojiPresentation != XGE_EMOJI_PRESENTATION_DISABLED) &&
@@ -197,6 +283,16 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 			pPreviousFont = NULL;
 			continue;
 		}
+#endif
+
+#if XGE_ENABLE_HARFBUZZ
+		iRet = __xgeGlyphRunOpenType(pDesc, pRun, sBefore, sEnd, &sScan, &fLineWidth, &fLineRight, &fMaxLineGap);
+		if ( iRet == XGE_OK ) {
+			iPreviousGlyph = -1; pPreviousFont = NULL;
+			continue;
+		}
+		if ( iRet != XGE_ERROR_NOT_FOUND ) { xgeGlyphRunFree(pRun); return iRet; }
+#endif
 		pGlyphFont = __xgeFontResolveCodepoint(pDesc->pFont, iCodepoint, &iGlyph);
 		if ( pGlyphFont == NULL ) continue;
 		iRet = xgeFontGlyphGetByIndex(pGlyphFont, iGlyph, &tMetrics);
@@ -231,6 +327,18 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 	if ( fLineRight > fMaxWidth ) fMaxWidth = fLineRight;
 	pRun->fWidth = fMaxWidth;
 	pRun->fHeight = pRun->fLineHeight * (float)iLineCount;
+	iRet = __xgeGlyphRunVisualPositions(pRun);
+	if ( iRet != XGE_OK ) { xgeGlyphRunFree(pRun); return iRet; }
+#if XGE_ENABLE_HARFBUZZ
+	/* These maps and borrowed source pointers only serve synchronous shaping.
+	 * Caret/hit/paint use the published glyphs and caret stops. Retained rows
+	 * must not each keep a full paragraph's temporary script map alive. */
+	xrtFree(pBackend->pGraphemeBreaks);pBackend->pGraphemeBreaks=NULL;
+	xrtFree(pBackend->pContextGraphemeBreaks);pBackend->pContextGraphemeBreaks=NULL;pBackend->iContextGraphemeBytes=0;
+	xrtFree(pBackend->pScriptMap);pBackend->pScriptMap=NULL;pBackend->iScriptMapBytes=0;
+	pBackend->pFallbackUnitEnd=pBackend->pFallbackWordEnd=NULL;
+	pBackend->pFallbackUnitFont=NULL;
+#endif
 	return XGE_OK;
 }
 
@@ -243,12 +351,40 @@ void xgeGlyphRunFree(xge_glyph_run_t* pRun)
 	pBackend = (xge_glyph_run_backend_t*)pRun->pBackend;
 	if ( pBackend != NULL ) {
 		for ( i = 0; i < pBackend->iFontCount; i++ ) xgeFontFree(pBackend->ppFonts[i]);
+#if XGE_ENABLE_EMOJI
 		xgeEmojiPackFree(pBackend->pEmojiPack);
+#endif
+#if XGE_ENABLE_HARFBUZZ
+		xrtFree(pBackend->pGraphemeBreaks);
+		xrtFree(pBackend->pContextGraphemeBreaks);
+		xrtFree(pBackend->pScriptMap);
+#endif
 		xrtFree(pBackend->ppFonts);
 		xrtFree(pBackend);
 	}
 	xrtFree(pRun->pGlyphs);
+	xrtFree(pRun->pCarets);
 	memset(pRun, 0, sizeof(*pRun));
+}
+
+size_t xgeGlyphRunRetainedBytes(const xge_glyph_run_t* run)
+{
+	xge_glyph_run_backend_t* backend;
+	size_t bytes=0;
+	if(!run)return 0;
+	backend=(xge_glyph_run_backend_t*)run->pBackend;
+	if(!backend)return 0;
+	bytes=sizeof(*backend)+(size_t)backend->iFontCapacity*sizeof(*backend->ppFonts);
+#if XGE_ENABLE_HARFBUZZ
+	if(run->pGlyphs)bytes+=(size_t)backend->iGlyphCapacity*sizeof(*run->pGlyphs);
+	if(run->pCarets)bytes+=(size_t)backend->iCaretCapacity*sizeof(*run->pCarets);
+	if(backend->pGraphemeBreaks)bytes+=(size_t)run->iTextSize;
+	if(backend->pContextGraphemeBreaks)bytes+=(size_t)backend->iContextGraphemeBytes;
+	if(backend->pScriptMap)bytes+=(size_t)backend->iScriptMapBytes;
+#else
+	if(run->pGlyphs)bytes+=(size_t)run->iTextSize*sizeof(*run->pGlyphs);
+#endif
+	return bytes;
 }
 
 xge_vec2_t xgeGlyphRunMeasure(const xge_glyph_run_t* pRun)
@@ -267,10 +403,40 @@ int xgeGlyphRunHitTest(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t
 	int iTargetLine;
 	int iLine;
 	int i;
+	int j;
+	float fAdvance;
+	double line;
 
-	if ( (pRun == NULL) || (pCluster == NULL) || (pTrailing == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
-	iTargetLine = (pRun->fLineHeight > 0.0f) ? (int)floorf(fY / pRun->fLineHeight) : 0;
-	if ( iTargetLine < 0 ) iTargetLine = 0;
+	if ( (pRun == NULL) || (pCluster == NULL) || (pTrailing == NULL) || !isfinite(fX) || !isfinite(fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+	line = (pRun->fLineHeight > 0.0f) ? floor((double)fY / pRun->fLineHeight) : 0;
+	iTargetLine = line <= 0 ? 0 : line >= INT_MAX ? INT_MAX : (int)line;
+	if ( pRun->iFlags & XGE_TEXT_SHAPE_RTL ) {
+		float nearest = INFINITY; int found = 0;
+		iLine = 0; *pCluster = (uint32_t)pRun->iTextSize; *pTrailing = 0;
+		for ( i = 0; i < pRun->iGlyphCount; i = j ) {
+			pPosition = &pRun->pGlyphs[i]; j = i + 1;
+			if ( pPosition->iFlags & XGE_GLYPH_POSITION_LINE_BREAK ) {
+				if ( iLine == iTargetLine ) {
+					if ( !found ) *pCluster = pPosition->iCluster;
+					return XGE_OK;
+				}
+				iLine++; continue;
+			}
+			fAdvance = pPosition->fAdvanceX;
+			while ( j < pRun->iGlyphCount && !(pRun->pGlyphs[j].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) &&
+			        pRun->pGlyphs[j].iCluster == pPosition->iCluster && pRun->pGlyphs[j].iClusterEnd == pPosition->iClusterEnd )
+				fAdvance += pRun->pGlyphs[j++].fAdvanceX;
+			if ( iLine == iTargetLine ) {
+				float left = pPosition->fVisualX, right = left + fAdvance;
+				float distance = fX < left ? left - fX : fX > right ? fX - right : 0;
+				if ( distance < nearest ) {
+					nearest = distance; found = 1; *pCluster = pPosition->iCluster;
+					*pTrailing = fX < left + fAdvance * .5f;
+				}
+			}
+		}
+		return XGE_OK;
+	}
 	fPenX = 0.0f;
 	iLine = 0;
 	for ( i = 0; i < pRun->iGlyphCount; i++ ) {
@@ -286,17 +452,25 @@ int xgeGlyphRunHitTest(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t
 			continue;
 		}
 		if ( iLine != iTargetLine ) continue;
-		if ( fX <= (fPenX + pPosition->fAdvanceX * 0.5f) ) {
+		fAdvance = pPosition->fAdvanceX;
+		for ( j = i + 1; j < pRun->iGlyphCount &&
+		      (pRun->pGlyphs[j].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) == 0 &&
+		      pRun->pGlyphs[j].iCluster == pPosition->iCluster &&
+		      pRun->pGlyphs[j].iClusterEnd == pPosition->iClusterEnd; j++ ) {
+			fAdvance += pRun->pGlyphs[j].fAdvanceX;
+		}
+		if ( fX <= (fPenX + fAdvance * 0.5f) ) {
 			*pCluster = pPosition->iCluster;
 			*pTrailing = 0;
 			return XGE_OK;
 		}
-		if ( fX <= (fPenX + pPosition->fAdvanceX) ) {
+		if ( fX <= (fPenX + fAdvance) ) {
 			*pCluster = pPosition->iCluster;
 			*pTrailing = 1;
 			return XGE_OK;
 		}
-		fPenX += pPosition->fAdvanceX;
+		fPenX += fAdvance;
+		i = j - 1;
 	}
 	*pCluster = (uint32_t)pRun->iTextSize;
 	*pTrailing = 0;
@@ -348,6 +522,56 @@ static uint32_t __xgeGlyphRunSpanColor(const xge_glyph_position_t* pPosition,
 	return iColor;
 }
 
+/* Crop destination and UV together: adjacent pieces sample the same atlas glyph
+ * and obey the caller's existing world transform and clip without changing either. */
+static void __xgeGlyphRunDrawPaint(const xge_glyph_run_t* pRun,
+	const xge_glyph_position_t* pPosition, const xge_draw_t* pDraw, float fClusterX, float fClusterAdvance,
+	uint32_t iColor, const xge_text_paint_span_t* pSpans, int iSpanCount)
+{
+	int iLow = 0, iHigh = pRun->iCaretCount, i;
+	float fLeft = pDraw->tDst.fX;
+	float fRight = fLeft + pDraw->tDst.fW;
+	uint32_t iStart = pPosition->iCluster;
+	int bRtl = (pRun->iFlags & XGE_TEXT_SHAPE_RTL) != 0;
+	float fCursor = bRtl ? fRight : fLeft;
+	if ( pSpans == NULL || iSpanCount <= 0 || pRun->pCarets == NULL || iHigh <= 0 ) {
+		xgeDrawEx(pDraw);
+		return;
+	}
+	while ( iLow < iHigh ) {
+		int iMid = iLow + (iHigh - iLow) / 2;
+		if ( pRun->pCarets[iMid].iTextOffset <= iStart ) iLow = iMid + 1;
+		else iHigh = iMid;
+	}
+	if ( iLow == pRun->iCaretCount || pRun->pCarets[iLow].iTextOffset >= pPosition->iClusterEnd ) {
+		xgeDrawEx(pDraw);
+		return;
+	}
+	for ( i = iLow; ; i++ ) {
+		xge_glyph_position_t tPart = *pPosition;
+		xge_draw_t tPartDraw = *pDraw;
+		int bLast = i == pRun->iCaretCount || pRun->pCarets[i].iTextOffset >= pPosition->iClusterEnd;
+		float fEnd = bLast ? (bRtl ? fLeft : fRight) : fClusterX +
+			(bRtl ? fClusterAdvance - pRun->pCarets[i].fAdvance : pRun->pCarets[i].fAdvance);
+		if ( fEnd > fRight ) fEnd = fRight;
+		if ( fEnd < pDraw->tDst.fX ) fEnd = pDraw->tDst.fX;
+		tPart.iCluster = iStart;
+		tPart.iClusterEnd = bLast ? pPosition->iClusterEnd : pRun->pCarets[i].iTextOffset;
+		if ( (bRtl && fEnd < fCursor) || (!bRtl && fEnd > fCursor) ) {
+			float fRatio = pDraw->tSrc.fW / pDraw->tDst.fW;
+			tPartDraw.tDst.fX = bRtl ? fEnd : fCursor;
+			tPartDraw.tDst.fW = fabsf(fEnd - fCursor);
+			tPartDraw.tSrc.fX += (tPartDraw.tDst.fX - pDraw->tDst.fX) * fRatio;
+			tPartDraw.tSrc.fW = tPartDraw.tDst.fW * fRatio;
+			tPartDraw.iColor = __xgeGlyphRunSpanColor(&tPart, iColor, pSpans, iSpanCount);
+			xgeDrawEx(&tPartDraw);
+		}
+		if ( bLast ) break;
+		fCursor = fEnd;
+		iStart = tPart.iClusterEnd;
+	}
+}
+
 static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float fY,
 	uint32_t iColor, uint32_t iFlags, const xge_text_paint_span_t* pSpans, int iSpanCount)
 {
@@ -357,8 +581,12 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 	xge_draw_t tDraw;
 	float fPenX;
 	float fPenY;
+	float fClusterX = 0.0f;
+	float fClusterAdvance = 0.0f, fDrawX, fOriginX;
 	xge_glyph_run_backend_t* pBackend;
 	int i;
+	int keep_x = (iFlags & XGE_DRAW_TEXT_SUBPIXEL_X) != 0;
+	iFlags &= ~XGE_DRAW_TEXT_SUBPIXEL_X; /* Never forward text-only flags to quads. */
 
 	if ( (pRun == NULL) || (pRun->pGlyphs == NULL) ) return;
 	pBackend = (xge_glyph_run_backend_t*)pRun->pBackend;
@@ -366,9 +594,10 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 	fPenX = fX;
 	fPenY = fY + pRun->fAscent;
 	if ( (iFlags & XGE_DRAW_SCREEN_SPACE) != 0 ) {
-		fPenX = __xgeTextSnapPixel(fPenX);
+		if (!keep_x) fPenX = __xgeTextSnapPixel(fPenX);
 		fPenY = __xgeTextSnapPixel(fPenY);
 	}
+	fOriginX = fPenX;
 	for ( i = 0; i < pRun->iGlyphCount; i++ ) {
 		pPosition = &pRun->pGlyphs[i];
 		if ( (pPosition->iFlags & XGE_GLYPH_POSITION_LINE_BREAK) != 0 ) {
@@ -376,10 +605,22 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 			fPenY += pRun->fLineHeight;
 			continue;
 		}
+		if ( i == 0 || (pRun->pGlyphs[i - 1].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) != 0 ||
+		     pRun->pGlyphs[i - 1].iCluster != pPosition->iCluster ||
+		     pRun->pGlyphs[i - 1].iClusterEnd != pPosition->iClusterEnd ) {
+			int j;
+			fClusterX = (pRun->iFlags & XGE_TEXT_SHAPE_RTL) ? fOriginX + pPosition->fVisualX : fPenX;
+			fClusterAdvance = pPosition->fAdvanceX;
+			for ( j = i + 1; j < pRun->iGlyphCount && !(pRun->pGlyphs[j].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) &&
+			      pRun->pGlyphs[j].iCluster == pPosition->iCluster && pRun->pGlyphs[j].iClusterEnd == pPosition->iClusterEnd; j++ )
+				fClusterAdvance += pRun->pGlyphs[j].fAdvanceX;
+		}
+		fDrawX = (pRun->iFlags & XGE_TEXT_SHAPE_RTL) ? fOriginX + pPosition->fVisualX : fPenX;
+#if XGE_ENABLE_EMOJI
 		if ( pPosition->iItemKind == XGE_TEXT_ITEM_EMOJI ) {
 			xge_rect_t tEmojiRect;
 			int iEmojiRet = XGE_ERROR_RESOURCE_FAILED;
-			tEmojiRect.fX = fPenX + pPosition->fOffsetX;
+			tEmojiRect.fX = fDrawX + pPosition->fOffsetX;
 			tEmojiRect.fY = fPenY + pPosition->fOffsetY;
 			tEmojiRect.fW = pPosition->fEmojiWidth;
 			tEmojiRect.fH = pPosition->fEmojiHeight;
@@ -394,6 +635,7 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 				continue;
 			}
 		}
+#endif
 		if ( xgeFontGlyphAtlasGetByIndex(pPosition->pFont, pPosition->iGlyph, &tGlyph) == XGE_OK &&
 		     (tGlyph.iPage >= 0) && (tGlyph.iWidth > 0) && (tGlyph.iHeight > 0) ) {
 			pPages = (xge_glyph_atlas_page_t*)pPosition->pFont->tAtlas.pPages;
@@ -407,7 +649,7 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 			tDraw.tSrc.fY = (float)tGlyph.iY;
 			tDraw.tSrc.fW = (float)tGlyph.iWidth;
 			tDraw.tSrc.fH = (float)tGlyph.iHeight;
-			tDraw.tDst.fX = fPenX + tGlyph.fOffsetX +
+			tDraw.tDst.fX = fDrawX + tGlyph.fOffsetX +
 				((pPosition->iItemKind == XGE_TEXT_ITEM_GLYPH) ? pPosition->fOffsetX : 0.0f);
 			tDraw.tDst.fY = fPenY + tGlyph.fOffsetY +
 				((pPosition->iItemKind == XGE_TEXT_ITEM_GLYPH) ? pPosition->fOffsetY : 0.0f);
@@ -415,7 +657,7 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 			tDraw.tDst.fH = (float)tGlyph.iHeight;
 			tDraw.iColor = __xgeGlyphRunSpanColor(pPosition, iColor, pSpans, iSpanCount);
 			tDraw.iFlags = iFlags;
-			xgeDrawEx(&tDraw);
+			__xgeGlyphRunDrawPaint(pRun, pPosition, &tDraw, fClusterX, fClusterAdvance, iColor, pSpans, iSpanCount);
 		}
 		fPenX += pPosition->fAdvanceX;
 	}
@@ -478,6 +720,25 @@ static void __xgeGlyphRunDecorationLine(float fX0, float fX1, float fY, const xg
 	else xgeShapeLine(fX0, fY, fX1, fY, fThickness, iColor);
 }
 
+static float __xgeGlyphRunRangeAdvance(const xge_glyph_run_t* pRun,
+	uint32_t iStart, uint32_t iEnd, uint32_t iByte, float fAdvance, int bRoundUp)
+{
+	int iLow = 0, iHigh = pRun->iCaretCount;
+	if ( iByte <= iStart ) return 0.0f;
+	if ( iByte >= iEnd ) return fAdvance;
+	if ( pRun->pCarets == NULL ) return bRoundUp ? fAdvance : 0.0f;
+	while ( iLow < iHigh ) {
+		int iMid = iLow + (iHigh - iLow) / 2;
+		if ( pRun->pCarets[iMid].iTextOffset < iByte ) iLow = iMid + 1;
+		else iHigh = iMid;
+	}
+	if ( iLow < pRun->iCaretCount && pRun->pCarets[iLow].iTextOffset == iByte ) return pRun->pCarets[iLow].fAdvance;
+	if ( bRoundUp ) return iLow < pRun->iCaretCount && pRun->pCarets[iLow].iTextOffset < iEnd
+		? pRun->pCarets[iLow].fAdvance : fAdvance;
+	return iLow > 0 && pRun->pCarets[iLow - 1].iTextOffset > iStart
+		? pRun->pCarets[iLow - 1].fAdvance : 0.0f;
+}
+
 void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags, const xge_text_decoration_t* pDecorations, int iDecorationCount)
 {
 	xge_font_metrics_t tMetrics;
@@ -489,12 +750,15 @@ void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, u
 	float fLineTop;
 	float fBaseline;
 	float fOffset;
+	float fAdvance;
+	float fLineAdvance;
 	uint32_t iGlyphEnd;
 	int iRangeStart;
 	int iRangeEnd;
 	int bSegment;
 	int i;
 	int j;
+	int iGroupEnd;
 
 	if ( pRun == NULL ) return;
 	xgeGlyphRunDraw(pRun, fX, fY, iColor, iFlags);
@@ -513,6 +777,7 @@ void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, u
 		}
 		fPenX = fX;
 		fLineTop = fY;
+		fLineAdvance = __xgeGlyphRunLineAdvance(pRun, 0);
 		fSegmentStart = fX;
 		fSegmentEnd = fX;
 		bSegment = 0;
@@ -527,7 +792,9 @@ void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, u
 					else fOffset = tMetrics.fUnderlinePosition;
 					if ( pDecoration->fOffset != 0.0f ) fOffset = pDecoration->fOffset;
 					__xgeGlyphRunDecorationLine(
-						fSegmentStart, fSegmentEnd, fBaseline + fOffset, pDecoration,
+						(pRun->iFlags & XGE_TEXT_SHAPE_RTL) ? fX + fLineAdvance - (fSegmentEnd - fX) : fSegmentStart,
+						(pRun->iFlags & XGE_TEXT_SHAPE_RTL) ? fX + fLineAdvance - (fSegmentStart - fX) : fSegmentEnd,
+						fBaseline + fOffset, pDecoration,
 						(pDecoration->iType == XGE_TEXT_DECORATION_STRIKE)
 							? tMetrics.fStrikeThickness : tMetrics.fUnderlineThickness
 					);
@@ -536,16 +803,25 @@ void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, u
 				if ( i < pRun->iGlyphCount ) {
 					fPenX = fX;
 					fLineTop += pRun->fLineHeight;
+					fLineAdvance = __xgeGlyphRunLineAdvance(pRun, i + 1);
 				}
 				continue;
 			}
 			pPosition = &pRun->pGlyphs[i];
+			fAdvance = pPosition->fAdvanceX;
+			for ( iGroupEnd = i + 1; iGroupEnd < pRun->iGlyphCount &&
+			      (pRun->pGlyphs[iGroupEnd].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) == 0 &&
+			      pRun->pGlyphs[iGroupEnd].iCluster == pPosition->iCluster &&
+			      pRun->pGlyphs[iGroupEnd].iClusterEnd == pPosition->iClusterEnd; iGroupEnd++ ) {
+				fAdvance += pRun->pGlyphs[iGroupEnd].fAdvanceX;
+			}
 			iGlyphEnd = (pPosition->iClusterEnd > pPosition->iCluster)
 				? pPosition->iClusterEnd : ((i + 1 < pRun->iGlyphCount)
 					? pRun->pGlyphs[i + 1].iCluster : (uint32_t)pRun->iTextSize);
 			if ( ((int)iGlyphEnd > iRangeStart) && ((int)pPosition->iCluster < iRangeEnd) ) {
 				if ( !bSegment ) {
-					fSegmentStart = fPenX;
+					fSegmentStart = fPenX + __xgeGlyphRunRangeAdvance(pRun,
+						pPosition->iCluster, iGlyphEnd, (uint32_t)iRangeStart, fAdvance, 0);
 					memset(&tMetrics, 0, sizeof(tMetrics));
 					if ( xgeFontGetMetrics(pPosition->pFont, &tMetrics) != XGE_OK ) {
 						tMetrics.fUnderlinePosition = 1.0f;
@@ -555,9 +831,11 @@ void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, u
 					}
 					bSegment = 1;
 				}
-				fSegmentEnd = fPenX + pPosition->fAdvanceX;
+				fSegmentEnd = fPenX + __xgeGlyphRunRangeAdvance(pRun,
+					pPosition->iCluster, iGlyphEnd, (uint32_t)iRangeEnd, fAdvance, 1);
 			}
-			fPenX += pPosition->fAdvanceX;
+			fPenX += fAdvance;
+			i = iGroupEnd - 1;
 		}
 	}
 }
@@ -565,6 +843,7 @@ void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, u
 
 int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun) { (void)pDesc; (void)pRun; return XGE_ERROR_UNSUPPORTED; }
 void xgeGlyphRunFree(xge_glyph_run_t* pRun) { if ( pRun != NULL ) memset(pRun, 0, sizeof(*pRun)); }
+size_t xgeGlyphRunRetainedBytes(const xge_glyph_run_t* pRun) { (void)pRun; return 0; }
 xge_vec2_t xgeGlyphRunMeasure(const xge_glyph_run_t* pRun) { xge_vec2_t t = {0.0f, 0.0f}; (void)pRun; return t; }
 int xgeGlyphRunHitTest(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t* pCluster, int* pTrailing) { (void)pRun; (void)fX; (void)fY; (void)pCluster; (void)pTrailing; return XGE_ERROR_UNSUPPORTED; }
 void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags) { (void)pRun; (void)fX; (void)fY; (void)iColor; (void)iFlags; }

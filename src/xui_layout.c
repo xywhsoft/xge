@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
 #include <math.h>
@@ -572,3 +574,5 @@ int xuiLayoutArrangeChild(xui_widget parent, xui_widget child, xui_rect_t rect)
 	return xLayoutArrangeChild(parent->pContext->pLayoutContext, parent->iLayoutNode,
 		child->iLayoutNode, global_rect) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 }
+
+#endif

@@ -1,9 +1,12 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TOOLBAR
 #include "xui_internal.h"
 
 #include <string.h>
 
 typedef struct xui_toolbar_data_t {
 	xui_toolbar_item_t arrItems[XUI_TOOLBAR_ITEM_CAPACITY];
+	char* arrOwnedTooltips[XUI_TOOLBAR_ITEM_CAPACITY];
 	xui_toolbar_metrics_t tMetrics;
 	xui_toolbar_colors_t tColors;
 	xui_toolbar_select_proc onSelect;
@@ -36,6 +39,26 @@ typedef struct xui_toolbar_resolved_t {
 } xui_toolbar_resolved_t;
 
 static xui_toolbar_data_t* __xuiToolbarGetData(xui_widget pWidget);
+
+static char* __xuiToolbarCopyTooltip(const char* sText)
+{
+	size_t iLength;
+	char* sCopy;
+	if ( sText == NULL || sText[0] == '\0' ) return NULL;
+	iLength = strlen(sText);
+	sCopy = (char*)xrtMalloc(iLength + 1u);
+	if ( sCopy != NULL ) memcpy(sCopy, sText, iLength + 1u);
+	return sCopy;
+}
+
+static void __xuiToolbarReleaseTooltips(xui_toolbar_data_t* pData)
+{
+	int i;
+	for ( i = 0; i < XUI_TOOLBAR_ITEM_CAPACITY; i++ ) {
+		xrtFree(pData->arrOwnedTooltips[i]);
+		pData->arrOwnedTooltips[i] = NULL;
+	}
+}
 
 static int __xuiToolbarAlpha(uint32_t iColor)
 {
@@ -159,7 +182,7 @@ static xui_vec2_t __xuiToolbarMeasureText(xui_widget pWidget, xui_font pFont, co
 	if ( (sText == NULL) || (sText[0] == '\0') ) return tSize;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
-	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK) &&
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) &&
 	     (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
 		return tSize;
 	}
@@ -598,8 +621,7 @@ static int __xuiToolbarDrawItemContent(xui_widget pWidget, xui_proxy pProxy, xui
 		}
 	}
 	if ( bHasText && (pResolved->pFont != NULL) && (pProxy->drawText != NULL) && (tText.fW > 0.0f) ) {
-		return pProxy->drawText(pProxy, pDraw, pResolved->pFont, pItem->sText, tText, iTextColor,
-			(bHasIcon ? XUI_TEXT_ALIGN_LEFT : XUI_TEXT_ALIGN_CENTER) | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		return pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=pItem->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | (((bHasIcon ? XUI_TEXT_ALIGN_LEFT : XUI_TEXT_ALIGN_CENTER) | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, (bHasIcon ? XUI_TEXT_ALIGN_LEFT : XUI_TEXT_ALIGN_CENTER) | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -975,7 +997,10 @@ static void __xuiToolbarDestroy(xui_widget pWidget, void* pTypeData, void* pUser
 		}
 		(void)xuiWidgetClearTooltip(pWidget);
 	}
-	if ( pData != NULL ) memset(pData, 0, sizeof(*pData));
+	if ( pData != NULL ) {
+		__xuiToolbarReleaseTooltips(pData);
+		memset(pData, 0, sizeof(*pData));
+	}
 }
 
 static xui_toolbar_data_t* __xuiToolbarGetData(xui_widget pWidget)
@@ -1124,22 +1149,34 @@ XUI_API int xuiToolbarIsOverflowEnabled(xui_widget pWidget)
 XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pItems, int iCount)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	xui_toolbar_item_t arrNew[XUI_TOOLBAR_ITEM_CAPACITY];
+	char* arrTooltips[XUI_TOOLBAR_ITEM_CAPACITY] = {0};
 	int i;
 
 	if ( (pData == NULL) || (iCount < 0) || (iCount > XUI_TOOLBAR_ITEM_CAPACITY) || ((iCount > 0) && (pItems == NULL)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memset(pData->arrItems, 0, sizeof(pData->arrItems));
+	memset(arrNew, 0, sizeof(arrNew));
 	for ( i = 0; i < iCount; i++ ) {
-		pData->arrItems[i] = pItems[i];
-		if ( !__xuiToolbarItemTypeValid(pData->arrItems[i].iType) ) pData->arrItems[i].iType = XUI_TOOLBAR_ITEM_BUTTON;
-		if ( pData->arrItems[i].sText == NULL ) pData->arrItems[i].sText = "";
-		if ( pData->arrItems[i].sTooltip == NULL ) pData->arrItems[i].sTooltip = "";
-		if ( pData->arrItems[i].iGroup < 0 ) pData->arrItems[i].iGroup = 0;
-		if ( pData->arrItems[i].iType == XUI_TOOLBAR_ITEM_SEPARATOR ) {
-			pData->arrItems[i].iState = 0;
+		arrNew[i] = pItems[i];
+		if ( !__xuiToolbarItemTypeValid(arrNew[i].iType) ) arrNew[i].iType = XUI_TOOLBAR_ITEM_BUTTON;
+		if ( arrNew[i].sText == NULL ) arrNew[i].sText = "";
+		if ( arrNew[i].iGroup < 0 ) arrNew[i].iGroup = 0;
+		if ( arrNew[i].iType == XUI_TOOLBAR_ITEM_SEPARATOR ) {
+			arrNew[i].iState = 0;
 		}
+		arrTooltips[i] = __xuiToolbarCopyTooltip(arrNew[i].sTooltip);
+		if ( arrNew[i].sTooltip != NULL && arrNew[i].sTooltip[0] != '\0' && arrTooltips[i] == NULL ) {
+			int j;
+			for ( j = 0; j <= i; j++ ) xrtFree(arrTooltips[j]);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		arrNew[i].sTooltip = arrTooltips[i] != NULL ? arrTooltips[i] : "";
 	}
+	(void)xuiWidgetClearTooltip(pWidget);
+	__xuiToolbarReleaseTooltips(pData);
+	memcpy(pData->arrItems, arrNew, sizeof(arrNew));
+	memcpy(pData->arrOwnedTooltips, arrTooltips, sizeof(arrTooltips));
 	pData->iItemCount = iCount;
 	pData->iHover = -1;
 	pData->iActive = -1;
@@ -1175,6 +1212,8 @@ XUI_API int xuiToolbarClear(xui_widget pWidget)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	(void)xuiWidgetClearTooltip(pWidget);
+	__xuiToolbarReleaseTooltips(pData);
 	memset(pData->arrItems, 0, sizeof(pData->arrItems));
 	pData->iItemCount = 0;
 	pData->iHover = -1;
@@ -1271,9 +1310,15 @@ XUI_API int xuiToolbarSetItemTooltip(xui_widget pWidget, int iIndex, const char*
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
 	const char* sValue = (sText != NULL) ? sText : "";
+	char* sCopy;
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->arrItems[iIndex].sTooltip != NULL && strcmp(pData->arrItems[iIndex].sTooltip, sValue) == 0 ) return XUI_OK;
-	pData->arrItems[iIndex].sTooltip = sValue;
+	sCopy = __xuiToolbarCopyTooltip(sValue);
+	if ( sValue[0] != '\0' && sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	(void)xuiWidgetClearTooltip(pWidget);
+	xrtFree(pData->arrOwnedTooltips[iIndex]);
+	pData->arrOwnedTooltips[iIndex] = sCopy;
+	pData->arrItems[iIndex].sTooltip = sCopy != NULL ? sCopy : "";
 	pData->iChangeCount++;
 	return XUI_OK;
 }
@@ -1475,3 +1520,5 @@ XUI_API int xuiToolbarGetChangeCount(xui_widget pWidget)
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_PROPERTY_GRID
 #include "xui_internal.h"
 #include "xui_table_view_paint.h"
 
@@ -714,7 +716,7 @@ static int __xuiPropertyGridCategoryRenderer(xui_widget pWidget, int iRow, int i
 	tText.fX += 24.0f;
 	tText.fW = __xuiPropertyGridMax(1.0f, tText.fW - 28.0f);
 	if ( (tProxy.drawText != NULL) && (pData->pFont != NULL) ) {
-		iRet = tProxy.drawText(&tProxy, pDraw, pData->pFont, pCategory->sName, xuiInternalSnapRect(tText), __xuiPropertyGridColors(pData)->iCategoryTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = tProxy.drawText(&tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pCategory->sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), __xuiPropertyGridColors(pData)->iCategoryTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tProxy.drawLine != NULL ) {
@@ -752,7 +754,7 @@ static int __xuiPropertyGridNameRenderer(xui_widget pWidget, int iRow, int iColu
 	tText.fX += 8.0f;
 	tText.fW = __xuiPropertyGridMax(1.0f, tText.fW - 12.0f);
 	if ( (tProxy.drawText != NULL) && (pData->pFont != NULL) ) {
-		iRet = tProxy.drawText(&tProxy, pDraw, pData->pFont, pProp->sName, xuiInternalSnapRect(tText), iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = tProxy.drawText(&tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pProp->sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tProxy.drawLine != NULL ) {
@@ -838,7 +840,7 @@ static int __xuiPropertyGridValueRenderer(xui_widget pWidget, int iRow, int iCol
 	iText = (pCell != NULL && pCell->bHasStyle) ? pCell->iTextColor : __xuiPropertyGridColors(pData)->iValueTextColor;
 	tText = (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 1.0f, __xuiPropertyGridMax(1.0f, tRect.fW - 16.0f), __xuiPropertyGridMax(1.0f, tRect.fH - 2.0f)};
 	if ( (tProxy.drawText != NULL) && (pData->pFont != NULL) && (__xuiPropertyGridAlpha(iText) != 0) ) {
-		iRet = tProxy.drawText(&tProxy, pDraw, pData->pFont, sText, xuiInternalSnapRect(tText), iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = tProxy.drawText(&tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tProxy.drawLine != NULL ) {
@@ -1247,7 +1249,7 @@ static int __xuiPropertyGridRender(xui_widget pWidget, xui_draw_context pDraw, u
 	pProp = &pData->arrProperties[pData->iSelectedProperty];
 	sText = (pProp->sDescription[0] != '\0') ? pProp->sDescription : pProp->sName;
 	tText = (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 4.0f, __xuiPropertyGridMax(1.0f, tRect.fW - 16.0f), __xuiPropertyGridMax(1.0f, tRect.fH - 8.0f)};
-	return tProxy.drawText(&tProxy, pDraw, pData->pFont, sText, xuiInternalSnapRect(tText), __xuiPropertyGridColors(pData)->iNameTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+	return tProxy.drawText(&tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), __xuiPropertyGridColors(pData)->iNameTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 }
 
 static int __xuiPropertyGridPrepare(xui_widget pWidget, void* pUser)
@@ -2139,3 +2141,5 @@ XUI_API int xuiPropertyGridGetToggleCount(xui_widget pWidget)
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	return (pData != NULL) ? pData->iToggleCount : 0;
 }
+
+#endif

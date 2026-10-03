@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_DOCK_PANEL
 #include "xui_internal.h"
 
 #include <string.h>
@@ -668,10 +670,13 @@ static int __xuiDockDrawEdgeRect(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 	return XUI_OK;
 }
 
-static int __xuiDockDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* text, xui_rect_t r, uint32_t c, uint32_t flags)
+static int __xuiDockDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (pProxy != NULL) && (pProxy->drawText != NULL) && (pFont != NULL) && (text != NULL) && (__xuiDockAlpha(c) != 0) && __xuiDockRectRenderable(r) ) {
-		return pProxy->drawText(pProxy, pDraw, pFont, text, xuiInternalSnapRect(r), c, flags);
+		return pProxy->drawText(pProxy, pDraw, pTextItem, xuiInternalSnapRect(r), c, flags);
 	}
 	return XUI_OK;
 }
@@ -746,8 +751,7 @@ static int __xuiDockPrepareAutoHideLabel(xui_proxy pProxy, xui_font pFont, xui_d
 	iRet = pProxy->surfaceClear(pProxy, pWin->pAutoHideLabelSurface, XUI_COLOR_RGBA(0, 0, 0, 0));
 	if ( iRet == XUI_OK ) {
 		tTextRect = __xuiDockRect(0.0f, 0.0f, (float)iWidth, (float)iHeight);
-		iRet = pProxy->textDraw(pProxy, pWin->pAutoHideLabelSurface, pFont, pWin->sTitle,
-			tTextRect, XUI_COLOR_WHITE, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->textDraw(pProxy, pWin->pAutoHideLabelSurface, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pWin->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTextRect, XUI_COLOR_WHITE, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	if ( iRet != XUI_OK ) {
 		__xuiDockReleaseAutoHideLabel(pProxy, pWin);
@@ -5338,8 +5342,7 @@ static int __xuiDockHostRender(xui_widget pHost, xui_draw_context pDraw, uint32_
 		text.fX = icon.fX + icon.fW + 6.0f;
 		text.fW = __xuiDockMax(0.0f, textRight - text.fX);
 	}
-	ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle, text,
-		titleTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	ret = __xuiDockDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=w->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, text, titleTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( ret != XUI_OK ) return ret;
 	return __xuiDockDrawRectStroke(pProxy, pDraw, r, borderWidth, borderColor);
 }
@@ -5373,9 +5376,7 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		ret = __xuiDockDrawFill(pProxy, pDraw, caption, c->iCaptionColor);
 		if ( ret != XUI_OK ) return ret;
 		if ( active != NULL ) {
-			ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, active->sTitle,
-				__xuiDockRect(caption.fX + 8.0f, caption.fY, __xuiDockMax(0.0f, textRight - caption.fX - 8.0f), caption.fH),
-				c->iCaptionTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			ret = __xuiDockDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=active->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, __xuiDockRect(caption.fX + 8.0f, caption.fY, __xuiDockMax(0.0f, textRight - caption.fX - 8.0f), caption.fH), c->iCaptionTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( ret != XUI_OK ) return ret;
 		}
 		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockRect(caption.fX, caption.fY + caption.fH - 1.0f, caption.fW, 1.0f), c->iBorderColor);
@@ -5437,7 +5438,7 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		close = w->tTabCloseRect;
 		textRight = tab.fX + tab.fW - m->fTabPaddingX;
 		if ( __xuiDockRectRenderable(close) && close.fX < textRight ) textRight = close.fX - 3.0f;
-		ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle, __xuiDockRect(tab.fX + m->fTabPaddingX, tab.fY, __xuiDockMax(0.0f, textRight - tab.fX - m->fTabPaddingX), tab.fH), text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		ret = __xuiDockDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=w->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, __xuiDockRect(tab.fX + m->fTabPaddingX, tab.fY, __xuiDockMax(0.0f, textRight - tab.fX - m->fTabPaddingX), tab.fH), text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( ret != XUI_OK ) return ret;
 		ret = __xuiDockDrawTabCloseButton(pProxy, pDraw, pData, close, text, pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE && pData->iHoverWindow == w->iWindow);
 		if ( ret != XUI_OK ) return ret;
@@ -5455,7 +5456,7 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 			xui_rect_t close = active->tTabCloseRect;
 			float textRight = activeTab.fX + activeTab.fW - m->fTabPaddingX;
 			if ( __xuiDockRectRenderable(close) && close.fX < textRight ) textRight = close.fX - 3.0f;
-			ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, active->sTitle, __xuiDockRect(activeTab.fX + m->fTabPaddingX, activeTab.fY + 2.0f, __xuiDockMax(0.0f, textRight - activeTab.fX - m->fTabPaddingX), __xuiDockMax(0.0f, activeTab.fH - 2.0f)), c->iActiveTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			ret = __xuiDockDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=active->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, __xuiDockRect(activeTab.fX + m->fTabPaddingX, activeTab.fY + 2.0f, __xuiDockMax(0.0f, textRight - activeTab.fX - m->fTabPaddingX), __xuiDockMax(0.0f, activeTab.fH - 2.0f)), c->iActiveTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( ret != XUI_OK ) return ret;
 			ret = __xuiDockDrawTabCloseButton(pProxy, pDraw, pData, close, c->iActiveTabTextColor, pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE && pData->iHoverWindow == active->iWindow);
 			if ( ret != XUI_OK ) return ret;
@@ -5526,7 +5527,7 @@ static int __xuiDockDrawAutoHide(xui_widget pWidget, xui_draw_context pDraw, xui
 		} else {
 			text = __xuiDockRect(w->tAutoHideRect.fX + 22.0f, w->tAutoHideRect.fY, __xuiDockMax(0.0f, w->tAutoHideRect.fW - 26.0f), w->tAutoHideRect.fH);
 			if ( text.fW > 8.0f ) {
-				ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle, text, __xuiDockColors(pData)->iTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				ret = __xuiDockDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=w->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, text, __xuiDockColors(pData)->iTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( ret != XUI_OK ) return ret;
 			}
 		}
@@ -7054,3 +7055,5 @@ XUI_API int xuiDockPanelGetWindowChangeCount(xui_widget pWidget)
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	return (pData != NULL) ? pData->iWindowChangeCount : 0;
 }
+
+#endif

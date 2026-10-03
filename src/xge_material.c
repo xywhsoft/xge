@@ -365,6 +365,7 @@ int xgeShaderVariantGet(xge_shader_variant_set pSet, uint32_t iKey, const xge_sh
 	return XGE_OK;
 }
 
+#if XGE_ENABLE_2D
 void xgeMaterialInit(xge_material pMaterial)
 {
 	if ( pMaterial == NULL ) {
@@ -664,3 +665,5 @@ int xgeSpriteBatchFlushMaterial(xge_sprite_batch batch, const xge_material_t* ma
 	if (result == XGE_OK) xgeSpriteBatchClear(batch);
 	return result;
 }
+
+#endif

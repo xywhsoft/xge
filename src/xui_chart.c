@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CHART
 #include "xui_internal.h"
 
 #include <math.h>
@@ -819,8 +821,11 @@ static int __xuiChartSeriesLodStride(xui_chart_data_t* pData, const xui_chart_se
 	return iStride;
 }
 
-static int __xuiChartDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiChartDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == 0) || ((iColor & 0xffu) == 0u) ) {
 		return XUI_OK;
 	}
@@ -828,7 +833,7 @@ static int __xuiChartDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font
 	if ( (tRect.fW <= 0) || (tRect.fH <= 0) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, tRect, iColor, iFlags);
+	return pProxy->drawText(pProxy, pDraw, pTextItem, tRect, iColor, iFlags);
 }
 
 static int __xuiChartDrawablePoint(float fX, float fY)
@@ -924,16 +929,16 @@ static int __xuiChartDrawAxes(xui_proxy pProxy, xui_draw_context pDraw, xui_char
 					snprintf(sText, sizeof(sText), "%d", iPoint + 1);
 					sLabel = sText;
 				}
-				iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sLabel, (xui_rect_t){tPlot.fX - 46.0f, __xuiChartMapY(pData, (double)iPoint) - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tPlot.fX - 46.0f, __xuiChartMapY(pData, (double)iPoint) - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 				fXValue = pData->fMinX + (pData->fMaxX - pData->fMinX) * (double)i / 4.0;
 				snprintf(sText, sizeof(sText), "%.1f", fXValue);
-				iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			} else {
 				double fYValue = pData->fMaxY - (pData->fMaxY - pData->fMinY) * (double)i / 4.0;
 				snprintf(sText, sizeof(sText), "%.1f", fYValue);
-				iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, (xui_rect_t){tPlot.fX - 46.0f, y - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tPlot.fX - 46.0f, y - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 				if ( pData->iXAxisType == XUI_CHART_AXIS_CATEGORY && iLabelSeries >= 0 ) {
 					int iPoint = (int)((double)(pData->arrSeries[iLabelSeries].iCount - 1) * (double)i / 4.0 + 0.5);
@@ -945,12 +950,12 @@ static int __xuiChartDrawAxes(xui_proxy pProxy, xui_draw_context pDraw, xui_char
 						snprintf(sText, sizeof(sText), "%d", iPoint + 1);
 						sLabel = sText;
 					}
-					iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sLabel, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+					iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 					if ( iRet != XUI_OK ) return iRet;
 				} else {
 					double fXValue = pData->fMinX + (pData->fMaxX - pData->fMinX) * (double)i / 4.0;
 					snprintf(sText, sizeof(sText), "%.1f", fXValue);
-					iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+					iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 					if ( iRet != XUI_OK ) return iRet;
 				}
 			}
@@ -1516,7 +1521,7 @@ static int __xuiChartDrawLegend(xui_widget pWidget, xui_proxy pProxy, xui_draw_c
 		uint32_t iColor = pData->arrSeries[i].bVisible ? pData->arrSeries[i].iColor : iHiddenColor;
 		int iRet = pProxy->drawRectFill(pProxy, pDraw, tSwatch, iColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, pData->arrSeries[i].sName, tText, pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pData->arrSeries[i].sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1741,7 +1746,7 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 		}
 		iRet = pProxy->drawRectFill(pProxy, pDraw, tTip, pData->iTooltipColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, tTip, pData->iTooltipTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTip, pData->iTooltipTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1784,7 +1789,7 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	bClipActive = 0;
 	iRet = pProxy->drawRectFill(pProxy, pDraw, tContent, pData->iBackgroundColor);
 	if ( iRet != XUI_OK ) goto cleanup;
-	iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, pData->sTitle, (xui_rect_t){tContent.fX + 8.0f, tContent.fY + 4.0f, tContent.fW - 16.0f, 24.0f}, pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pData->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tContent.fX + 8.0f, tContent.fY + 4.0f, tContent.fW - 16.0f, 24.0f}, pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( iRet != XUI_OK ) goto cleanup;
 	bHasPie = 0;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
@@ -3325,3 +3330,5 @@ XUI_API int xuiChartHitTest(xui_widget pWidget, float fX, float fY, xui_chart_hi
 	if ( __xuiChartHitSeries(pData, fX, fY, pHit) ) return XUI_OK;
 	return XUI_OK;
 }
+
+#endif

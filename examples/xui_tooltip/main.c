@@ -166,12 +166,14 @@ static xui_vec2_t __xuiTooltipEquipmentMeasure(xui_context pContext, xui_widget 
 	return (xui_vec2_t){310.0f, 226.0f};
 }
 
-static int __xuiTooltipDrawText(xui_tooltip_demo_t* pDemo, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiTooltipDrawText(xui_tooltip_demo_t* pDemo, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+
 	if ( (pDemo == NULL) || (pDraw == NULL) || (pFont == NULL) ) {
 		return XUI_OK;
 	}
-	return pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pFont, sText, tRect, iColor, iFlags | XUI_TEXT_CLIP);
+	return pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pTextItem, tRect, iColor, iFlags | XUI_TEXT_CLIP);
 }
 
 static int __xuiTooltipEquipmentPaint(xui_context pContext, xui_widget pOwner, xui_draw_context pDraw, xui_rect_t tRect, void* pUser)
@@ -210,21 +212,21 @@ static int __xuiTooltipEquipmentPaint(xui_context pContext, xui_widget pOwner, x
 	if ( iRet != XUI_OK ) return iRet;
 
 	tText = (xui_rect_t){tInner.fX + 54.0f, tInner.fY, tInner.fW - 54.0f, 23.0f};
-	iRet = __xuiTooltipDrawText(pDemo, pDraw, pDemo->pFont, "Storm Rune Blade", tText, XUI_COLOR_RGBA(255, 218, 96, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiTooltipDrawText(pDemo, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="Storm Rune Blade", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(255, 218, 96, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 	tText.fY += 23.0f;
 	tText.fH = 19.0f;
-	iRet = __xuiTooltipDrawText(pDemo, pDraw, pDemo->pSmallFont, "Rare one-hand sword", tText, XUI_COLOR_RGBA(156, 184, 216, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiTooltipDrawText(pDemo, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pSmallFont, .sText="Rare one-hand sword", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(156, 184, 216, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 
 	tLine = (xui_rect_t){tInner.fX, tInner.fY + 56.0f, tInner.fW, 1.0f};
 	iRet = pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tLine, XUI_COLOR_RGBA(70, 92, 118, 255));
 	if ( iRet != XUI_OK ) return iRet;
 	tText = (xui_rect_t){tInner.fX, tInner.fY + 66.0f, tInner.fW, 23.0f};
-	iRet = __xuiTooltipDrawText(pDemo, pDraw, pDemo->pFont, "Attack +128        Guard +36", tText, XUI_COLOR_RGBA(226, 236, 248, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiTooltipDrawText(pDemo, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="Attack +128        Guard +36", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(226, 236, 248, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 	tText.fY += 23.0f;
-	iRet = __xuiTooltipDrawText(pDemo, pDraw, pDemo->pFont, "Crit +12%          Speed +8%", tText, XUI_COLOR_RGBA(226, 236, 248, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiTooltipDrawText(pDemo, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="Crit +12%          Speed +8%", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(226, 236, 248, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 
 	tLine.fY = tInner.fY + 118.0f;
@@ -232,13 +234,13 @@ static int __xuiTooltipEquipmentPaint(xui_context pContext, xui_widget pOwner, x
 	if ( iRet != XUI_OK ) return iRet;
 	tText.fY = tInner.fY + 128.0f;
 	tText.fH = 22.0f;
-	iRet = __xuiTooltipDrawText(pDemo, pDraw, pDemo->pSmallFont, "12% chance: chain lightning on hit", tText, XUI_COLOR_RGBA(146, 218, 255, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiTooltipDrawText(pDemo, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pSmallFont, .sText="12% chance: chain lightning on hit", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(146, 218, 255, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 	tText.fY += 22.0f;
-	iRet = __xuiTooltipDrawText(pDemo, pDraw, pDemo->pSmallFont, "8% chance: restore energy after block", tText, XUI_COLOR_RGBA(168, 234, 188, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiTooltipDrawText(pDemo, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pSmallFont, .sText="8% chance: restore energy after block", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(168, 234, 188, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 	tText.fY += 22.0f;
-	return __xuiTooltipDrawText(pDemo, pDraw, pDemo->pSmallFont, "Set bonus: cooldown recovery +5%", tText, XUI_COLOR_RGBA(226, 178, 255, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	return __xuiTooltipDrawText(pDemo, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pSmallFont, .sText="Set bonus: cooldown recovery +5%", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, XUI_COLOR_RGBA(226, 178, 255, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 }
 
 static int __xuiTooltipDynamicResolve(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser)

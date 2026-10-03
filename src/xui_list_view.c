@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_LIST_VIEW
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1177,7 +1179,7 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		}
 		if ( (tResolved.pFont != NULL) && (__xuiListViewAlpha(iTextColor) != 0) ) {
 			tText = xuiInternalSnapRect((xui_rect_t){tRow.fX + tResolved.fPadding, tRow.fY, __xuiListViewMaxFloat(1.0f, tRow.fW - tResolved.fPadding * 2.0f), tRow.fH});
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, __xuiListViewText(pData->arrItems[i]), tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=__xuiListViewText(pData->arrItems[i]), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
@@ -1966,3 +1968,5 @@ XUI_API int xuiListViewGetChangeCount(xui_widget pWidget)
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

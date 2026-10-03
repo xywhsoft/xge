@@ -77,8 +77,9 @@ static int circle_stroke(xui_proxy p, xui_draw_context d, float x, float y, floa
 { record_color(d, c); return original.drawCircleStroke(p, d, x, y, r, w, c); }
 static int triangle(xui_proxy p, xui_draw_context d, xui_vec2_t a, xui_vec2_t b, xui_vec2_t c, uint32_t color)
 { record_color(d, color); return original.drawTriangleFill(p, d, a, b, c, color); }
-static int draw_text(xui_proxy p, xui_draw_context d, xui_font f, const char* s, xui_rect_t r, uint32_t c, uint32_t flags)
-{ record_color(d, c); return original.drawText(p, d, f, s, r, c, flags); }
+static int draw_text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
+{
+ record_color(d, c); return original.drawText(p, d, pTextItem, r, c, flags); }
 static int draw_svg(xui_proxy p, xui_draw_context d, const char* path, xui_rect_t view, xui_rect_t rect, const xui_path_style_t* style, float tolerance)
 {
     record_color(d, style->iFillColor);

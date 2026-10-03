@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_STEP_BAR
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -281,13 +283,16 @@ static const char* __xuiStepBarTitle(const xui_step_bar_data_t* pData, int iInde
 	return pData->arrTitles[iIndex];
 }
 
-static int __xuiStepBarDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiStepBarDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == '\0') ||
 	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags);
+	return pProxy->drawText(pProxy, pDraw, pTextItem, xuiInternalSnapRect(tRect), iColor, iFlags);
 }
 
 static int __xuiStepBarDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, uint32_t iColor)
@@ -357,8 +362,7 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 		tRect = tStep;
 		tRect.fX += 8.0f;
 		tRect.fW -= 14.0f + ((i < pResolved->iStepCount - 1) ? fArrowW : 0.0f);
-		iRet = __xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, sText, tRect, pResolved->iArrowTextColor,
-			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iArrowTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -421,9 +425,7 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
 			if ( (__xuiStepBarAlpha(pResolved->iPendingTextColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iPendingTextColor);
 			snprintf(sIndex, sizeof(sIndex), "%d", i + 1);
-			(void)__xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, sIndex,
-				(xui_rect_t){fX - fRadius, fLineY - fRadius, fRadius * 2.0f, fRadius * 2.0f},
-				pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sIndex, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){fX - fRadius, fLineY - fRadius, fRadius * 2.0f, fRadius * 2.0f}, pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		iTextColor = __xuiStepBarTextColor(pResolved, i);
 		fTextW = (tContent.fW < 152.0f) ? tContent.fW : 152.0f;
@@ -439,7 +441,7 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 		if ( pData != NULL ) {
 			pData->arrStepRect[i] = xuiInternalSnapRect((xui_rect_t){tText.fX, tContent.fY, tText.fW, tContent.fH});
 		}
-		iRet = __xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, __xuiStepBarTitle(pResolved, i), tText, iTextColor, iTextFlags);
+		iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=__xuiStepBarTitle(pResolved, i), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, iTextFlags);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -499,14 +501,11 @@ static int __xuiStepBarDrawVerticalDot(xui_widget pWidget, xui_proxy pProxy, xui
 			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
 			if ( (__xuiStepBarAlpha(pResolved->iPendingTextColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iPendingTextColor);
 			snprintf(sIndex, sizeof(sIndex), "%d", i + 1);
-			(void)__xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, sIndex,
-				(xui_rect_t){fLineX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f},
-				pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sIndex, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){fLineX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f}, pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		iTextColor = __xuiStepBarTextColor(pResolved, i);
 		tText = (xui_rect_t){fLineX + fRadius + 8.0f, fY - 15.0f, tContent.fW - (fLineX - tContent.fX) - fRadius - 10.0f, 30.0f};
-		iRet = __xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, __xuiStepBarTitle(pResolved, i), tText, iTextColor,
-			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=__xuiStepBarTitle(pResolved, i), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -977,3 +976,5 @@ XUI_API int xuiStepBarGetChangeCount(xui_widget pWidget)
 	pData = __xuiStepBarGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

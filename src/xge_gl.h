@@ -214,6 +214,18 @@ typedef void (APIENTRYP PFNGLREADPIXELSPROC)(GLint x, GLint y, GLsizei width, GL
 typedef void (APIENTRYP PFNGLBLENDFUNCPROC)(GLenum sfactor, GLenum dfactor);
 typedef void (APIENTRYP PFNGLBLENDEQUATIONPROC)(GLenum mode);
 typedef void (APIENTRYP PFNGLDEPTHFUNCPROC)(GLenum func);
+#if XGE_ENABLE_3D
+#if XGE3D_ENABLE_SHADOW
+typedef void (APIENTRYP PFNGLDRAWBUFFERSPROC)(GLsizei n, const GLenum *buffers);
+typedef void (APIENTRYP PFNGLREADBUFFERPROC)(GLenum buffer);
+#endif
+typedef void (APIENTRYP PFNGLDEPTHMASKPROC)(GLboolean flag);
+typedef void (APIENTRYP PFNGLCLEARDEPTHPROC)(GLdouble depth);
+typedef void (APIENTRYP PFNGLCLEARDEPTHFPROC)(GLfloat depth);
+typedef void (APIENTRYP PFNGLGETFLOATVPROC)(GLenum pname, GLfloat *data);
+typedef void (APIENTRYP PFNGLBLENDFUNCSEPARATEPROC)(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha);
+typedef void (APIENTRYP PFNGLBLENDEQUATIONSEPARATEPROC)(GLenum rgb, GLenum alpha);
+#endif
 typedef void (APIENTRYP PFNGLCULLFACEPROC)(GLenum mode);
 typedef void (APIENTRYP PFNGLFRONTFACEPROC)(GLenum mode);
 typedef GLenum (APIENTRYP PFNGLGETERRORPROC)(void);
@@ -242,6 +254,10 @@ typedef void (APIENTRYP PFNGLVERTEXATTRIBPOINTERPROC)(GLuint index, GLint size, 
 /* 绘制 */
 typedef void (APIENTRYP PFNGLDRAWARRAYSPROC)(GLenum mode, GLint first, GLsizei count);
 typedef void (APIENTRYP PFNGLDRAWELEMENTSPROC)(GLenum mode, GLsizei count, GLenum type, const void *indices);
+#if XGE_ENABLE_3D
+typedef void (APIENTRYP PFNGLDRAWARRAYSINSTANCEDPROC)(GLenum mode, GLint first, GLsizei count, GLsizei instances);
+typedef void (APIENTRYP PFNGLDRAWELEMENTSINSTANCEDPROC)(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instances);
+#endif
 
 /* 纹理 */
 typedef void (APIENTRYP PFNGLGENTEXTURESPROC)(GLsizei n, GLuint *textures);
@@ -287,6 +303,9 @@ typedef void (APIENTRYP PFNGLDELETEFRAMEBUFFERSPROC)(GLsizei n, const GLuint *fr
 typedef void (APIENTRYP PFNGLBINDFRAMEBUFFERPROC)(GLenum target, GLuint framebuffer);
 typedef void (APIENTRYP PFNGLFRAMEBUFFERTEXTURE2DPROC)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
 typedef GLenum (APIENTRYP PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
+#if XGE_ENABLE_3D
+typedef void (APIENTRYP PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)(GLenum target, GLenum attachment, GLenum pname, GLint *params);
+#endif
 typedef void (APIENTRYP PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint *renderbuffers);
 typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint *renderbuffers);
 typedef void (APIENTRYP PFNGLBINDRENDERBUFFERPROC)(GLenum target, GLuint renderbuffer);
@@ -308,6 +327,18 @@ extern PFNGLREADPIXELSPROC glReadPixels;
 extern PFNGLBLENDFUNCPROC glBlendFunc;
 extern PFNGLBLENDEQUATIONPROC glBlendEquation;
 extern PFNGLDEPTHFUNCPROC glDepthFunc;
+#if XGE_ENABLE_3D
+#if XGE3D_ENABLE_SHADOW
+extern PFNGLDRAWBUFFERSPROC glDrawBuffers;
+extern PFNGLREADBUFFERPROC glReadBuffer;
+#endif
+extern PFNGLDEPTHMASKPROC glDepthMask;
+extern PFNGLCLEARDEPTHPROC glClearDepth;
+extern PFNGLCLEARDEPTHFPROC glClearDepthf;
+extern PFNGLGETFLOATVPROC glGetFloatv;
+extern PFNGLBLENDFUNCSEPARATEPROC glBlendFuncSeparate;
+extern PFNGLBLENDEQUATIONSEPARATEPROC glBlendEquationSeparate;
+#endif
 extern PFNGLCULLFACEPROC glCullFace;
 extern PFNGLFRONTFACEPROC glFrontFace;
 extern PFNGLGETERRORPROC glGetError;
@@ -333,6 +364,10 @@ extern PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer;
 
 extern PFNGLDRAWARRAYSPROC glDrawArrays;
 extern PFNGLDRAWELEMENTSPROC glDrawElements;
+#if XGE_ENABLE_3D
+extern PFNGLDRAWARRAYSINSTANCEDPROC glDrawArraysInstanced;
+extern PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced;
+#endif
 
 extern PFNGLGENTEXTURESPROC glGenTextures;
 extern PFNGLDELETETEXTURESPROC glDeleteTextures;
@@ -373,6 +408,9 @@ extern PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers;
 extern PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer;
 extern PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D;
 extern PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus;
+#if XGE_ENABLE_3D
+extern PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC glGetFramebufferAttachmentParameteriv;
+#endif
 extern PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers;
 extern PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers;
 extern PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer;
@@ -413,6 +451,18 @@ PFNGLREADPIXELSPROC glReadPixels = NULL;
 PFNGLBLENDFUNCPROC glBlendFunc = NULL;
 PFNGLBLENDEQUATIONPROC glBlendEquation = NULL;
 PFNGLDEPTHFUNCPROC glDepthFunc = NULL;
+#if XGE_ENABLE_3D
+#if XGE3D_ENABLE_SHADOW
+PFNGLDRAWBUFFERSPROC glDrawBuffers = NULL;
+PFNGLREADBUFFERPROC glReadBuffer = NULL;
+#endif
+PFNGLDEPTHMASKPROC glDepthMask = NULL;
+PFNGLCLEARDEPTHPROC glClearDepth = NULL;
+PFNGLCLEARDEPTHFPROC glClearDepthf = NULL;
+PFNGLGETFLOATVPROC glGetFloatv = NULL;
+PFNGLBLENDFUNCSEPARATEPROC glBlendFuncSeparate = NULL;
+PFNGLBLENDEQUATIONSEPARATEPROC glBlendEquationSeparate = NULL;
+#endif
 PFNGLCULLFACEPROC glCullFace = NULL;
 PFNGLFRONTFACEPROC glFrontFace = NULL;
 PFNGLGETERRORPROC glGetError = NULL;
@@ -438,6 +488,10 @@ PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = NULL;
 
 PFNGLDRAWARRAYSPROC glDrawArrays = NULL;
 PFNGLDRAWELEMENTSPROC glDrawElements = NULL;
+#if XGE_ENABLE_3D
+PFNGLDRAWARRAYSINSTANCEDPROC glDrawArraysInstanced = NULL;
+PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced = NULL;
+#endif
 
 PFNGLGENTEXTURESPROC glGenTextures = NULL;
 PFNGLDELETETEXTURESPROC glDeleteTextures = NULL;
@@ -478,6 +532,9 @@ PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = NULL;
 PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = NULL;
 PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D = NULL;
 PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = NULL;
+#if XGE_ENABLE_3D
+PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC glGetFramebufferAttachmentParameteriv = NULL;
+#endif
 PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers = NULL;
 PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = NULL;
 PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = NULL;
@@ -501,6 +558,18 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	glBlendFunc = (PFNGLBLENDFUNCPROC)procLoad("glBlendFunc");
 	glBlendEquation = (PFNGLBLENDEQUATIONPROC)procLoad("glBlendEquation");
 	glDepthFunc = (PFNGLDEPTHFUNCPROC)procLoad("glDepthFunc");
+#if XGE_ENABLE_3D
+#if XGE3D_ENABLE_SHADOW
+	glDrawBuffers = (PFNGLDRAWBUFFERSPROC)procLoad("glDrawBuffers");
+	glReadBuffer = (PFNGLREADBUFFERPROC)procLoad("glReadBuffer");
+#endif
+	glDepthMask = (PFNGLDEPTHMASKPROC)procLoad("glDepthMask");
+	glClearDepth = (PFNGLCLEARDEPTHPROC)procLoad("glClearDepth");
+	glClearDepthf = (PFNGLCLEARDEPTHFPROC)procLoad("glClearDepthf");
+	glGetFloatv = (PFNGLGETFLOATVPROC)procLoad("glGetFloatv");
+	glBlendFuncSeparate = (PFNGLBLENDFUNCSEPARATEPROC)procLoad("glBlendFuncSeparate");
+	glBlendEquationSeparate = (PFNGLBLENDEQUATIONSEPARATEPROC)procLoad("glBlendEquationSeparate");
+#endif
 	glCullFace = (PFNGLCULLFACEPROC)procLoad("glCullFace");
 	glFrontFace = (PFNGLFRONTFACEPROC)procLoad("glFrontFace");
 	glGetError = (PFNGLGETERRORPROC)procLoad("glGetError");
@@ -526,6 +595,10 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 
 	glDrawArrays = (PFNGLDRAWARRAYSPROC)procLoad("glDrawArrays");
 	glDrawElements = (PFNGLDRAWELEMENTSPROC)procLoad("glDrawElements");
+#if XGE_ENABLE_3D
+    glDrawArraysInstanced = (PFNGLDRAWARRAYSINSTANCEDPROC)procLoad("glDrawArraysInstanced");
+    glDrawElementsInstanced = (PFNGLDRAWELEMENTSINSTANCEDPROC)procLoad("glDrawElementsInstanced");
+#endif
 
 	glGenTextures = (PFNGLGENTEXTURESPROC)procLoad("glGenTextures");
 	glDeleteTextures = (PFNGLDELETETEXTURESPROC)procLoad("glDeleteTextures");
@@ -566,6 +639,9 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)procLoad("glBindFramebuffer");
 	glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC)procLoad("glFramebufferTexture2D");
 	glCheckFramebufferStatus = (PFNGLCHECKFRAMEBUFFERSTATUSPROC)procLoad("glCheckFramebufferStatus");
+#if XGE_ENABLE_3D
+	glGetFramebufferAttachmentParameteriv = (PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)procLoad("glGetFramebufferAttachmentParameteriv");
+#endif
 	glGenRenderbuffers = (PFNGLGENRENDERBUFFERSPROC)procLoad("glGenRenderbuffers");
 	glDeleteRenderbuffers = (PFNGLDELETERENDERBUFFERSPROC)procLoad("glDeleteRenderbuffers");
 	glBindRenderbuffer = (PFNGLBINDRENDERBUFFERPROC)procLoad("glBindRenderbuffer");

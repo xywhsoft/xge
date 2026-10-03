@@ -1,4 +1,7 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
+#include <math.h>
 
 int doc_attributes_equal(const xui_doc_attributes_t* a, const xui_doc_attributes_t* b)
 {
@@ -6,7 +9,46 @@ int doc_attributes_equal(const xui_doc_attributes_t* a, const xui_doc_attributes
         a->iAlignment == b->iAlignment && a->iRowSpan == b->iRowSpan && a->iColumnSpan == b->iColumnSpan &&
         a->iListStart == b->iListStart && a->iTextColor == b->iTextColor && a->iBackgroundColor == b->iBackgroundColor &&
         a->fFontSize == b->fFontSize && a->fWidth == b->fWidth && a->fHeight == b->fHeight &&
-        a->fParagraphSpacing == b->fParagraphSpacing && !strcmp(a->sFontFamily, b->sFontFamily);
+        a->fParagraphSpacing == b->fParagraphSpacing && !strcmp(a->sFontFamily, b->sFontFamily) &&
+        doc_language_equal(a->sLanguage, b->sLanguage);
+}
+
+xui_doc_attributes_t doc_effective_text_attrs(const doc_state* state, const doc_node* node)
+{
+    xui_doc_attributes_t attrs = *node->attrs;
+    doc_node* parent = doc_index_get(state->index, node->parent);
+    int has_color = doc_text_color_set(&attrs);
+    int themed_link = !!(attrs.iMarks & XUI_DOC_LINK) && !has_color &&
+        !(attrs.iFlags & XUI_DOC_TEXT_COLOR_CURRENT);
+    for (; parent; parent = doc_index_get(state->index, parent->parent)) {
+        if (!themed_link && !has_color &&
+            (parent->attrs->iFlags & XUI_DOC_TEXT_COLOR_CURRENT))
+            attrs.iFlags |= XUI_DOC_TEXT_COLOR_CURRENT;
+        if (!themed_link && !has_color && doc_text_color_set(parent->attrs)) {
+            attrs.iTextColor = parent->attrs->iTextColor;
+            attrs.iFlags = (attrs.iFlags & ~XUI_DOC_TEXT_COLOR_EXPLICIT_ZERO) |
+                (parent->attrs->iFlags & XUI_DOC_TEXT_COLOR_EXPLICIT_ZERO);
+            has_color = 1;
+        }
+        if (!attrs.fFontSize && parent->attrs->fFontSize)
+            attrs.fFontSize = parent->attrs->fFontSize;
+        if (!attrs.sFontFamily[0] && parent->attrs->sFontFamily[0])
+            memcpy(attrs.sFontFamily, parent->attrs->sFontFamily,
+                sizeof(attrs.sFontFamily));
+        if (!attrs.sLanguage && parent->attrs->sLanguage)
+            attrs.sLanguage = parent->attrs->sLanguage;
+    }
+    return attrs;
+}
+
+uint32_t doc_effective_alignment(const doc_state* state, const doc_node* node)
+{
+    for (; node; node = doc_index_get(state->index, node->parent)) {
+        if (node->attrs->iAlignment ||
+            (node->attrs->iFlags & XUI_DOC_ALIGNMENT_EXPLICIT_LEFT))
+            return node->attrs->iAlignment;
+    }
+    return 0;
 }
 
 /* A table's cells cover a rectangular grid. Spans occupy following rows;
@@ -25,7 +67,7 @@ static int doc_validate_table(doc_state* s, doc_node* table)
             doc_node* cell = doc_index_get(s->index, doc_seq_get_id(row->children, cell_index));
             unsigned w, h;
             if (!cell || cell->kind != XUI_DOC_CELL) return XUI_DOC_ERROR_SCHEMA;
-            w = cell->attrs.iColumnSpan; h = cell->attrs.iRowSpan;
+            w = cell->attrs->iColumnSpan; h = cell->attrs->iRowSpan;
             if (!w || !h || h > row_count - row_index) return XUI_DOC_ERROR_SCHEMA;
             while (column < 1024 && occupied[column]) column++;
             if (w > 1024 - column) return XUI_DOC_ERROR_LIMIT;
@@ -44,6 +86,15 @@ static int doc_validate_table(doc_state* s, doc_node* table)
             occupied[k]--;
         }
     }
+    if (table->column_widths) {
+        unsigned column;
+        if (table->column_widths->size != (uint64_t)width * sizeof(float)) return XUI_DOC_ERROR_SCHEMA;
+        for (column = 0; column < width; column++) {
+            float value;
+            memcpy(&value, table->column_widths->data + column * sizeof(float), sizeof(value));
+            if (!isfinite(value) || value < 0 || value > 1000000) return XUI_DOC_ERROR_SCHEMA;
+        }
+    }
     return XUI_OK;
 }
 static int doc_validate_tree(doc_state* s, uint64_t id, uint64_t parent,
@@ -54,8 +105,16 @@ static int doc_validate_tree(doc_state* s, uint64_t id, uint64_t parent,
     int result;
     if (++*count > s->node_count || depth > DOC_MAX_DEPTH) return XUI_DOC_ERROR_SCHEMA;
     visited[*count - 1] = id;
-    if (!n || n->parent != parent || !doc_schema_attrs(n->kind, &n->attrs) ||
-        (!doc_text_kind(n->kind) && n->text)) return XUI_DOC_ERROR_SCHEMA;
+    if (!n || n->parent != parent || !doc_schema_attrs(n->kind, n->attrs) ||
+        (!doc_text_kind(n->kind) && n->text) ||
+        ((n->link_target || n->link_title) &&
+            (n->kind != XUI_DOC_IMAGE || !(n->attrs->iMarks & XUI_DOC_LINK))) ||
+        (n->kind != XUI_DOC_TABLE && n->column_widths) ||
+        (n->kind == XUI_DOC_EXTENSION ?
+            (!n->extension_version || ((n->extension_payload || n->extension_required) &&
+                (!n->info || !n->info->size))) :
+            (n->extension_payload || n->extension_version || n->extension_required)))
+        return XUI_DOC_ERROR_SCHEMA;
     if (n->kind == XUI_DOC_TABLE && (result = doc_validate_table(s, n)) != XUI_OK) return result;
     for (i = 0; i < doc_seq_size(n->children); i++) {
         uint64_t child_id = doc_seq_get_id(n->children, i);
@@ -124,3 +183,5 @@ int doc_schema_depth(doc_state* s, uint64_t id, unsigned depth)
     }
     return XUI_OK;
 }
+
+#endif

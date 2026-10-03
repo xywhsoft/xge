@@ -47,6 +47,15 @@ static void projectionFree(void* p)
 int xuiInternalContextIsValid(xui_context pContext) { return pContext == &g_tContext; }
 xui_proxy xuiInternalContextGetProxy(xui_context pContext) { return &g_tProxy; }
 
+/* The isolated context is deliberately not a DLL-owned Context. Keep its
+ * basic-only capability query local, like its validation/proxy callbacks. */
+static int projectionCaps(xui_context context, xui_proxy_caps_t* caps)
+{
+    if (context != &g_tContext || !caps) return XUI_ERROR_INVALID_ARGUMENT;
+    memset(caps, 0, sizeof(*caps)); caps->iSize = sizeof(*caps);
+    return XUI_OK;
+}
+#define xuiGetProxyCaps projectionCaps
 #define xrtMalloc projectionMalloc
 #define xrtCalloc projectionCalloc
 #define xrtRealloc projectionRealloc
@@ -54,6 +63,7 @@ xui_proxy xuiInternalContextGetProxy(xui_context pContext) { return &g_tProxy; }
 #define XUI_TEXT_TEST_COUNT(field, count) (g_tWork.field += (unsigned long long)(count))
 #define XUI_TEXT_BREAK_TEST_COUNT(field, count) (g_tWork.field += (unsigned long long)(count))
 #include "../src/xui_text.c"
+#undef xuiGetProxyCaps
 #undef xrtMalloc
 #undef xrtCalloc
 #undef xrtRealloc
@@ -70,9 +80,11 @@ static int projectionMetrics(xui_proxy pProxy, xui_font pFont, xui_font_metrics_
     return XUI_OK;
 }
 
-static int projectionShape(xui_proxy pProxy, xui_font pFont, const char* sText,
-    int iSize, uint32_t iFlags, xui_text_shape_t* pShape)
+static int projectionShape(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)
 {
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+    int iSize = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iTextSize : 0;
+
     int iAt = 0, iCount = 0;
     g_iShapes++;
     g_iShapeBytes += iSize;
@@ -124,7 +136,7 @@ static int projectionCases(void)
         if (xuiTextLayoutCreate(&g_tContext, &pLayout, &tDesc) != XUI_OK ||
             xuiTextLayoutGetLine(pLayout, 0, &tLine) != XUI_OK ||
             xuiInternalTextLayoutGetDisplayLine(pLayout, 0, &sDisplay, &iSize) != XUI_OK ||
-            xuiTextShape(&g_tContext, tDesc.pFont, sDisplay, iSize, XUI_TEXT_SHAPE_DEFAULT, &tShape) != XUI_OK) return 1;
+            xuiTextShape(&g_tContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=iSize, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tShape) != XUI_OK) return 1;
         printf("projection fixture=%d line=%g display=%g\n", i, tLine.fW, tShape.fWidth);
         if (tLine.fW != tShape.fWidth || xuiTextLayoutGetSize(pLayout).fX != tShape.fWidth) iFailed = 1;
         tDesc.fMaxWidth = tShape.fWidth;
@@ -182,7 +194,7 @@ static int projectionScale(void)
             CHECK(tLine.iTextOffset >= iPrevious && tLine.iTextOffset + tLine.iTextSize <= iBytes);
             iPrevious = tLine.iTextOffset + tLine.iTextSize;
             CHECK(xuiInternalTextLayoutGetDisplayLine(pLayout, j, &sDisplay, &iSize) == XUI_OK);
-            CHECK(xuiTextShape(&g_tContext, tDesc.pFont, sDisplay, iSize, XUI_TEXT_SHAPE_DEFAULT, &tShape) == XUI_OK);
+            CHECK(xuiTextShape(&g_tContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=iSize, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tShape) == XUI_OK);
             CHECK(tLine.fW == tShape.fWidth);
             xuiTextShapeFree(&tShape);
         }

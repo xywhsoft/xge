@@ -73,8 +73,7 @@ static int breakConformance(const char* sPath, int bGrapheme)
 	FILE* pFile = fopen(sPath, "rb");
 	char sLine[16384], sText[16384], sBreaks[16384];
 	int iEnds[4096], iExpected[4097];
-	uint32 iScalars[4096];
-	int iTotal = 0, iKnown = 0, iLine = 0;
+	int iTotal = 0, iLine = 0;
 	CHECK(pFile != NULL);
 	while ( fgets(sLine, sizeof(sLine), pFile) != NULL ) {
 		char* p = sLine;
@@ -91,7 +90,6 @@ static int breakConformance(const char* sPath, int bGrapheme)
 				uint32 iScalar = (uint32)strtoul(p, &sNext, 16);
 				CHECK(sNext != p && iCount < 4096 && iBytes + 4 <= (int)sizeof(sText));
 				iBytes += (int)xrtUtf8Encode(iScalar, sText + iBytes);
-				iScalars[iCount] = iScalar;
 				iEnds[iCount++] = iBytes;
 				p = sNext;
 			}
@@ -108,21 +106,70 @@ static int breakConformance(const char* sPath, int bGrapheme)
 			for ( j = iStart; j + 1 < iEnds[i]; j++ ) CHECK(sBreaks[j] ==
 				(bGrapheme ? GRAPHEMEBREAK_INSIDEACHAR : LINEBREAK_INSIDEACHAR));
 		}
-		/* Upstream 7.0's one documented XX -> AL exception. Assert it exactly,
-		 * including its sequence and mismatch count, rather than skipping a row. */
-		if ( !bGrapheme && iCount == 2 && iScalars[0] == 0x1f02cu && iScalars[1] == 0x1f3ffu ) {
-			CHECK(iMismatch == 1 && iExpected[1] == 0 && sBreaks[iEnds[0] - 1] == LINEBREAK_ALLOWBREAK);
-			iKnown++;
-		} else if ( iMismatch ) {
+		if ( iMismatch ) {
 			printf("conformance mismatch %s:%d count=%d\n", sPath, iLine, iMismatch);
 			fclose(pFile);
 			return 0;
 		}
+		if ( !bGrapheme ) {
+			unsigned char arrMap[16385] = {0};
+			char arrGraphemes[16384];
+			CHECK(__xuiTextBreakMap(sText, iBytes, arrMap) == XUI_OK && g_iLive == 0);
+			set_graphemebreaks(sText, (size_t)iBytes, arrGraphemes, __xuiTextBreakDecode);
+			for ( i = 1; i <= iBytes; i++ ) {
+				int bBoundary = arrGraphemes[i - 1] == GRAPHEMEBREAK_BREAK;
+				CHECK(!!(arrMap[i] & XUI_LB_GRAPHEME) == bBoundary);
+				CHECK(!!(arrMap[i] & XUI_LB_NORMAL) ==
+					(bBoundary && sBreaks[i - 1] != LINEBREAK_NOBREAK && sBreaks[i - 1] != LINEBREAK_INSIDEACHAR));
+				CHECK(!(arrMap[i] & XUI_LB_EMERGENCY) || bBoundary);
+			}
+		}
 		iTotal++;
 	}
 	fclose(pFile);
-	CHECK(iTotal == (bGrapheme ? 1187 : 7654) && iKnown == (bGrapheme ? 0 : 1));
-	printf("%s: %d passed, %d explicitly verified upstream exception\n", bGrapheme ? "UAX29 15.1" : "UAX14 15.0", iTotal - iKnown, iKnown);
+	CHECK(iTotal == (bGrapheme ? 766 : 19338));
+	printf("%s: %d passed, no exceptions; complete UTF8 bytes and actual XUI line/grapheme intersection checked\n", bGrapheme ? "UAX29 17.0" : "UAX14 17.0", iTotal);
+	return 1;
+}
+
+static int breakProperties(void)
+{
+	static const struct { const char* name; enum LineBreakClass value; } classes[] = {
+#define LB(c) { #c, LBP_##c }
+		LB(OP),LB(CL),LB(CP),LB(QU),LB(GL),LB(NS),LB(EX),LB(SY),LB(IS),LB(PR),LB(PO),LB(NU),
+		LB(AL),LB(HL),LB(ID),LB(IN),LB(HY),LB(BA),LB(BB),LB(B2),LB(ZW),LB(CM),LB(WJ),
+		LB(H2),LB(H3),LB(JL),LB(JV),LB(JT),LB(RI),LB(EB),LB(EM),LB(ZWJ),LB(AK),LB(AP),
+		LB(AS),LB(VF),LB(VI),LB(HH),LB(CB),LB(AI),LB(BK),LB(CJ),LB(CR),LB(LF),LB(NL),
+		LB(SA),LB(SG),LB(SP),LB(XX)
+#undef LB
+	};
+	FILE* file = fopen("test_xui/data/unicode-17/LineBreak.txt", "rb");
+	unsigned char* expected = (unsigned char*)xrtMalloc(0x110000u);
+	char line[1024]; unsigned rows = 0, cp, i;
+	CHECK(file && expected);
+	memset(expected, LBP_XX, 0x110000u);
+	while ( fgets(line, sizeof(line), file) ) {
+		char* next; char name[8]; unsigned first, last;
+		if ( line[0] == '#' || line[0] == '\r' || line[0] == '\n' ) continue;
+		first = (unsigned)strtoul(line, &next, 16); last = first;
+		if ( next[0] == '.' && next[1] == '.' ) last = (unsigned)strtoul(next + 2, &next, 16);
+		CHECK(next != line && first <= last && last < 0x110000u && sscanf(next, " ; %7[A-Z0-9]", name) == 1);
+		for ( i = 0; i < sizeof(classes) / sizeof(*classes) && strcmp(name, classes[i].name); i++ ) {}
+		CHECK(i < sizeof(classes) / sizeof(*classes));
+		for ( cp = first; cp <= last; cp++ ) expected[cp] = (unsigned char)classes[i].value;
+		rows++;
+	}
+	fclose(file);
+	for ( cp = 0; cp < 0x110000u; cp++ ) {
+		if ( get_char_lb_class_default(cp) != expected[cp] ) {
+			printf("LineBreak property mismatch U+%04x actual=%d official=%d\n", cp, get_char_lb_class_default(cp), expected[cp]);
+			xrtFree(expected); return 0;
+		}
+	}
+	xrtFree(expected);
+	CHECK(g_iLive == 0 && rows > 3000 && __xuiTextBreakClass(0xe31u) == LBP_CM &&
+		__xuiTextBreakClass(0xe01u) == LBP_AL && __xuiTextBreakClass(0x3041u) == LBP_NS);
+	puts("Unicode 17 Line_Break: all 1114112 codepoints match official data; SA mark/letter and strict CJ resolution passed");
 	return 1;
 }
 
@@ -162,7 +209,11 @@ static int breakScale(void)
 		"A\xc2\xa0" "B\xe2\x81\xa0", "\xf0\x9f\x91\xa8\xe2\x80\x8d\xf0\x9f\x91\xa9",
 		"e\xcc\x81", "\xcc\x81", "\xf0\x9f\x87\xa8", "(               ",
 		"ab\xc2\xad" "cd\xe2\x80\x8b", "\xd7\x90\xd7\x91 \xd8\xa8\xd8\xaa ",
-		"\xc2\xad\xe2\x81\xa0", "x\xe2\x80\xa8"
+		"\xc2\xad\xe2\x81\xa0", "x\xe2\x80\xa8",
+		/* Exercise the new lookahead/fixup states, long SP and CM runs. */
+		"\xe2\x80\x98\xe4\xb8\xad\xe2\x80\x99 ", " .12 ",
+		"\xe1\xac\x85\xe1\xac\x84\xe1\xac\x85", "-abc ",
+		"\xf0\x91\x80\x83\xf0\x91\x80\x85\xf0\x91\x81\x86"
 	};
 	int i, n;
 	for ( n = 256; n <= 65536; n *= 4 ) {
@@ -260,11 +311,30 @@ static int breakDisplay(void)
 	return 1;
 }
 
+static int breakMandatoryEnds(void)
+{
+    static const char* const controls[] = {"\n", "\r", "\r\n", "\v", "\f",
+        "\xc2\x85", "\xe2\x80\xa8", "\xe2\x80\xa9"};
+    unsigned sample;
+    for (sample = 0; sample < sizeof(controls) / sizeof(*controls); sample++) {
+        unsigned char map[16] = {0}; char text[16]; int end, next, i;
+        int length = (int)strlen(controls[sample]);
+        snprintf(text, sizeof(text), "A%sV", controls[sample]);
+        CHECK(xuiInternalTextBreakMap(text, (int)strlen(text), map) == XUI_OK &&
+            (map[1] & XUI_LB_HARD) && (map[1 + length] & XUI_LB_HARD_END));
+        for (i = 1; i < length; i++) CHECK(!(map[1 + i] & XUI_LB_HARD_END));
+        CHECK(!(map[2 + length] & XUI_LB_HARD_END) &&
+            xuiInternalTextNextHardLine(text, (int)strlen(text), 0, &end, &next) == XUI_OK &&
+            end == 1 && next == 1 + length && g_iLive == 0);
+    }
+    puts("Mandatory Unicode control start/end flags and hard-line scans, including one CRLF and non-forced EOF, passed");
+    return 1;
+}
 int main(void)
 {
-	if ( !breakConformance("test_xui/data/libunibreak/LineBreakTest.txt", 0) ||
-	     !breakConformance("test_xui/data/libunibreak/GraphemeBreakTest.txt", 1) ||
-	     !breakMalformed() || !breakDisplay() || !breakFailures() || !breakScale() ) return 1;
+	if ( !breakProperties() || !breakConformance("test_xui/data/unicode-17/LineBreakTest.txt", 0) ||
+	     !breakConformance("test_xui/data/unicode-17/GraphemeBreakTest.txt", 1) ||
+         !breakMandatoryEnds() || !breakMalformed() || !breakDisplay() || !breakFailures() || !breakScale() ) return 1;
 	puts("xui_text_break_index_test passed");
 	return 0;
 }

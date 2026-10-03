@@ -20,7 +20,8 @@ static void __xuiTextProjectionGap(xui_text_layout pLayout, xui_text_cluster_t* 
     }
 }
 
-static int __xuiTextShapeProjection(xui_text_layout pLayout)
+static int __xuiTextShapeProjection(xui_text_layout pLayout, int caret_fragments,
+    const char* language)
 {
     char* pWork = NULL;
     char* sDisplay;
@@ -35,8 +36,7 @@ static int __xuiTextShapeProjection(xui_text_layout pLayout)
         else if ( ((unsigned char)pLayout->sText[i] & 0xc0u) != 0x80u ) iFormats++;
     }
     if ( iDisplaySize == pLayout->iTextSize )
-        return xuiTextShape(pLayout->pContext, pLayout->tDesc.pFont, pLayout->sText,
-            pLayout->iTextSize, XUI_TEXT_SHAPE_DEFAULT, &pLayout->tShape);
+        return xuiTextShape(pLayout->pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=pLayout->sText, .iTextSize=pLayout->iTextSize, .sLanguage=language, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &pLayout->tShape);
     if ( (size_t)iDisplaySize + 1u > SIZE_MAX / 2u ||
          (size_t)iDisplaySize + 1u > SIZE_MAX / sizeof(*pSource) ) return XUI_ERROR_OUT_OF_MEMORY;
     pWork = (char*)xrtMalloc(((size_t)iDisplaySize + 1u) * 2u);
@@ -63,9 +63,17 @@ static int __xuiTextShapeProjection(xui_text_layout pLayout)
             pLayout->pBreaks[i] &= (unsigned char)~XUI_LB_GRAPHEME;
         if ( !(pLayout->pBreaks[i] & XUI_LB_INVISIBLE) ) iAt++;
     }
-    iRet = xuiTextShape(pLayout->pContext, pLayout->tDesc.pFont, sDisplay,
-        iDisplaySize, XUI_TEXT_SHAPE_DEFAULT, &pLayout->tShape);
+    iRet = xuiTextShape(pLayout->pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=sDisplay, .iTextSize=iDisplaySize, .sLanguage=language, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &pLayout->tShape);
     if ( iRet != XUI_OK ) goto done;
+    if (caret_fragments) {
+        iRet = xuiInternalTextShapeCaretFragments(sDisplay, iDisplaySize, &pLayout->tShape);
+        if (iRet != XUI_OK) goto done;
+    }
+    for (i = 0; i < pLayout->tShape.iCaretCount; i++) {
+        xui_text_caret_t* stop = &pLayout->tShape.pCarets[i];
+        if (stop->iTextOffset < 0 || stop->iTextOffset > iDisplaySize) { iRet = XUI_ERROR_INVALID_STATE; goto done; }
+        stop->iTextOffset = pSource[stop->iTextOffset];
+    }
     for ( i = 0; i < pLayout->tShape.iClusterCount; i++ ) {
         xui_text_cluster_t* p = &pLayout->tShape.pClusters[i];
         int iStart = p->iTextStart, iEnd = p->iTextEnd;

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_MSGTIP
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
@@ -495,7 +497,7 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 		tLineRect.fY = pTip->tTextRect.fY + tLine.fY;
 		tLineRect.fW = pTip->tTextRect.fW;
 		tLineRect.fH = tLine.fH;
-		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), __xuiMsgTipStyleColor(pTip, "msgtip.text.color", pTip->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tLineRect), __xuiMsgTipStyleColor(pTip, "msgtip.text.color", pTip->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
@@ -518,7 +520,7 @@ static int __xuiMsgTipDrawFallbackIcon(xui_msgtip pTip, xui_draw_context pDraw, 
 	if ( (pProxy->drawText != NULL) && (__xuiMsgTipFont(pTip) != NULL) ) {
 		tText = tIcon;
 		tText.fY -= 1.0f;
-		(void)pProxy->drawText(pProxy, pDraw, __xuiMsgTipFont(pTip), __xuiMsgTipIconFallbackText(pTip->iType), tText, __xuiMsgTipStyleColor(pTip, "msgtip.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=__xuiMsgTipFont(pTip), .sText=__xuiMsgTipIconFallbackText(pTip->iType), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, __xuiMsgTipStyleColor(pTip, "msgtip.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -1021,3 +1023,5 @@ XUI_API int xuiMsgTipGetChangeCount(xui_msgtip pTip)
 {
 	return __xuiMsgTipValid(pTip) ? pTip->iChangeCount : 0;
 }
+
+#endif

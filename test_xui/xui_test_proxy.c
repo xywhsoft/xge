@@ -20,8 +20,10 @@ struct xui_surface_t {
 	xui_rect_t tLastDst;
 	xui_rect_t tLastTextRect;
 	uint32_t iLastColor;
-	uint32_t arrRectFillCountColors[8];
-	int arrRectFillColorCounts[8];
+	/* Mixed Document messages use distinct selection colors after theme fills. */
+	uint32_t arrRectFillCountColors[32];
+	int arrRectFillColorCounts[32];
+	int arrRectFillLastOrders[32];
 	uint32_t iLastTextColor;
 	uint32_t iLastFlags;
 	uint32_t iLastTextFlags;
@@ -71,7 +73,9 @@ static int __xuiTestClipboardSetText(xui_proxy pProxy, const char* sText)
 	strncpy(pState->sClipboard, sText, sizeof(pState->sClipboard) - 1u);
 	pState->sClipboard[sizeof(pState->sClipboard) - 1u] = '\0';
 	pState->iClipboardRichSize = 0u;
+	pState->iClipboardDocumentSize = 0u;
 	pState->iClipboardHtmlSize = 0u;
+	pState->iClipboardPngSize = 0u;
 	return XUI_OK;
 }
 
@@ -105,7 +109,9 @@ static int __xuiTestClipboardSetItems(xui_proxy pProxy,
 	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pState->sClipboard[0] = 0;
 	pState->iClipboardRichSize = 0u;
+	pState->iClipboardDocumentSize = 0u;
 	pState->iClipboardHtmlSize = 0u;
+	pState->iClipboardPngSize = 0u;
 	for ( i = 0; i < iItemCount; i++ ) {
 		if ( pItems[i].sFormat == NULL || (pItems[i].pData == NULL && pItems[i].iDataSize != 0u) )
 			return XUI_ERROR_INVALID_ARGUMENT;
@@ -118,10 +124,18 @@ static int __xuiTestClipboardSetItems(xui_proxy pProxy,
 			if ( pItems[i].iDataSize > sizeof(pState->arrClipboardRich) ) return XUI_ERROR_BUFFER_TOO_SMALL;
 			if ( pItems[i].iDataSize > 0u ) memcpy(pState->arrClipboardRich, pItems[i].pData, pItems[i].iDataSize);
 			pState->iClipboardRichSize = pItems[i].iDataSize;
+		} else if ( strcmp(pItems[i].sFormat, XUI_CLIPBOARD_FORMAT_DOCUMENT_FRAGMENT) == 0 ) {
+			if ( pItems[i].iDataSize > sizeof(pState->arrClipboardDocument) ) return XUI_ERROR_BUFFER_TOO_SMALL;
+			if ( pItems[i].iDataSize > 0u ) memcpy(pState->arrClipboardDocument, pItems[i].pData, pItems[i].iDataSize);
+			pState->iClipboardDocumentSize = pItems[i].iDataSize;
 		} else if ( strcmp(pItems[i].sFormat, XUI_CLIPBOARD_FORMAT_HTML) == 0 ) {
 			if ( pItems[i].iDataSize > sizeof(pState->arrClipboardHtml) ) return XUI_ERROR_BUFFER_TOO_SMALL;
 			if ( pItems[i].iDataSize > 0u ) memcpy(pState->arrClipboardHtml, pItems[i].pData, pItems[i].iDataSize);
 			pState->iClipboardHtmlSize = pItems[i].iDataSize;
+		} else if ( strcmp(pItems[i].sFormat, XUI_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 ) {
+			if ( pItems[i].iDataSize > sizeof(pState->arrClipboardPng) ) return XUI_ERROR_BUFFER_TOO_SMALL;
+			if ( pItems[i].iDataSize > 0u ) memcpy(pState->arrClipboardPng, pItems[i].pData, pItems[i].iDataSize);
+			pState->iClipboardPngSize = pItems[i].iDataSize;
 		}
 	}
 	return XUI_OK;
@@ -140,8 +154,12 @@ static int __xuiTestClipboardGetData(xui_proxy pProxy, const char* sFormat,
 		pSource = pState->sClipboard; iSize = strlen(pState->sClipboard);
 	} else if ( strcmp(sFormat, XUI_CLIPBOARD_FORMAT_RICH_DOCUMENT) == 0 && pState->iClipboardRichSize > 0u ) {
 		pSource = pState->arrClipboardRich; iSize = pState->iClipboardRichSize;
+	} else if ( strcmp(sFormat, XUI_CLIPBOARD_FORMAT_DOCUMENT_FRAGMENT) == 0 && pState->iClipboardDocumentSize > 0u ) {
+		pSource = pState->arrClipboardDocument; iSize = pState->iClipboardDocumentSize;
 	} else if ( strcmp(sFormat, XUI_CLIPBOARD_FORMAT_HTML) == 0 && pState->iClipboardHtmlSize > 0u ) {
 		pSource = pState->arrClipboardHtml; iSize = pState->iClipboardHtmlSize;
+	} else if ( strcmp(sFormat, XUI_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 && pState->iClipboardPngSize > 0u ) {
+		pSource = pState->arrClipboardPng; iSize = pState->iClipboardPngSize;
 	} else return XUI_ERROR_FILE_NOT_FOUND;
 	if ( iSize > (size_t)INT_MAX ) return XUI_ERROR_BUFFER_TOO_SMALL;
 	if ( pData != NULL && iCapacity > 0u ) memcpy(pData, pSource, iCapacity < iSize ? iCapacity : iSize);
@@ -183,7 +201,9 @@ static int __xuiTestGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT |
 	               XUI_PROXY_CAP_MESH_TRIANGLES | XUI_PROXY_CAP_PATH_FILL |
 	               XUI_PROXY_CAP_PATH_STROKE | XUI_PROXY_CAP_PATH_DASH |
-	               XUI_PROXY_CAP_PATH_AA | XUI_PROXY_CAP_SVG_SURFACE;
+	               XUI_PROXY_CAP_PATH_AA | XUI_PROXY_CAP_SVG_SURFACE |
+	               XUI_PROXY_CAP_TEXT_CONTEXT | XUI_PROXY_CAP_TEXT_SCRIPT |
+	               XUI_PROXY_CAP_TEXT_LANGUAGE | XUI_PROXY_CAP_TEXT_RTL;
 	pCaps->iSurfaceFormat = XUI_SURFACE_FORMAT_RGBA8;
 	pCaps->iInternalAlpha = XUI_SURFACE_ALPHA_PREMULTIPLIED;
 	pCaps->tDefaultSampler.iMinFilter = XUI_SURFACE_FILTER_NEAREST;
@@ -300,9 +320,12 @@ static int __xuiTestSurfaceUpdateRGBA(xui_proxy pProxy, xui_surface pSurface, xu
 static int __xuiTestSurfaceReadRGBA(xui_proxy pProxy, xui_surface pSurface, void* pPixels, int iStride)
 {
 	(void)pProxy;
-	(void)pPixels;
-	(void)iStride;
-	return __xuiTestSurfaceValid(pSurface) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiTestSurfaceValid(pSurface) || pPixels == NULL ||
+		pSurface->tDesc.iWidth <= 0 || pSurface->tDesc.iHeight <= 0 ||
+		pSurface->tDesc.iWidth > INT_MAX / 4 ||
+		iStride < pSurface->tDesc.iWidth * 4 ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pPixels, 0, (size_t)iStride * (size_t)pSurface->tDesc.iHeight);
+	return XUI_OK;
 }
 
 static int __xuiTestSurfaceGetDesc(xui_proxy pProxy, xui_surface pSurface, xui_surface_desc_t* pDesc)
@@ -601,11 +624,13 @@ static int __xuiTestDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 	for ( iSlot = 0; iSlot < (int)(sizeof(pDraw->pTarget->arrRectFillCountColors) / sizeof(pDraw->pTarget->arrRectFillCountColors[0])); iSlot++ ) {
 		if ( pDraw->pTarget->arrRectFillCountColors[iSlot] == iColor ) {
 			pDraw->pTarget->arrRectFillColorCounts[iSlot]++;
+			pDraw->pTarget->arrRectFillLastOrders[iSlot] = pDraw->pTarget->iRectFillCount;
 			break;
 		}
 		if ( pDraw->pTarget->arrRectFillCountColors[iSlot] == 0u ) {
 			pDraw->pTarget->arrRectFillCountColors[iSlot] = iColor;
 			pDraw->pTarget->arrRectFillColorCounts[iSlot] = 1;
+			pDraw->pTarget->arrRectFillLastOrders[iSlot] = pDraw->pTarget->iRectFillCount;
 			break;
 		}
 	}
@@ -668,8 +693,11 @@ static int __xuiTestDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDraw, f
 
 
 
-static int __xuiTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	(void)pProxy;
 	(void)sText;
 	if ( !__xuiTestDrawValid(pDraw) || !__xuiTestFontValid(pFont) ) {
@@ -802,6 +830,10 @@ static int __xuiTestFontGetMetrics(xui_proxy pProxy, xui_font pFont, xui_font_me
 	pMetrics->fAscent = pFont->fSize * 0.8f;
 	pMetrics->fDescent = pFont->fSize * 0.2f;
 	pMetrics->fLineHeight = pFont->fSize;
+	pMetrics->fUnderlinePosition = pFont->fSize * .1f;
+	pMetrics->fUnderlineThickness = 1;
+	pMetrics->fStrikePosition = -pMetrics->fAscent * .35f;
+	pMetrics->fStrikeThickness = 1;
 	return XUI_OK;
 }
 
@@ -814,8 +846,11 @@ static void __xuiTestFontDestroy(xui_proxy pProxy, xui_font pFont)
 	}
 }
 
-static int __xuiTestTextMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int __xuiTestTextMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	int iLen;
 
 	(void)pProxy;
@@ -828,14 +863,14 @@ static int __xuiTestTextMeasure(xui_proxy pProxy, xui_font pFont, const char* sT
 	return XUI_OK;
 }
 
-static int __xuiTestDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont,
-	const char* sText, int iTextSize, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags,
-	const xui_text_paint_span_t* pSpans, int iSpanCount)
+static int __xuiTestDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags, const xui_text_paint_span_t* pSpans, int iSpanCount)
 {
+    int iTextSize = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iTextSize : 0;
+
 	(void)iTextSize;
 	if ( iSpanCount < 0 || (iSpanCount > 0 && pSpans == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iSpanCount > 0 ) iColor = pSpans[iSpanCount - 1].iColor;
-	return __xuiTestDrawText(pProxy, pDraw, pFont, sText, tRect, iColor, iFlags);
+	return __xuiTestDrawText(pProxy, pDraw, pTextItem, tRect, iColor, iFlags);
 }
 
 static int __xuiTestFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_font pSource, float fSize)
@@ -844,9 +879,13 @@ static int __xuiTestFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_font
 	return __xuiTestFontLoadFile(pProxy, ppFont, NULL, fSize, 0);
 }
 
-static int __xuiTestTextShape(xui_proxy pProxy, xui_font pFont, const char* sText,
-	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape)
+static int __xuiTestTextShape(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+    int iTextSize = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iTextSize : 0;
+    uint32_t iFlags = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iFlags : 0;
+
 	int iAt;
 	int iNext;
 	int iCount;
@@ -888,8 +927,11 @@ static int __xuiTestTextShape(xui_proxy pProxy, xui_font pFont, const char* sTex
 	return XUI_OK;
 }
 
-static int __xuiTestTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiTestTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	(void)pProxy;
 	(void)sText;
 	if ( !__xuiTestSurfaceValid(pTarget) || !__xuiTestFontValid(pFont) ) {
@@ -1034,6 +1076,7 @@ void xuiTestSurfaceReset(xui_surface pSurface)
 		pSurface->iRectFillCount = 0;
 		memset(pSurface->arrRectFillCountColors, 0, sizeof(pSurface->arrRectFillCountColors));
 		memset(pSurface->arrRectFillColorCounts, 0, sizeof(pSurface->arrRectFillColorCounts));
+		memset(pSurface->arrRectFillLastOrders, 0, sizeof(pSurface->arrRectFillLastOrders));
 		pSurface->iTextDrawCount = 0;
 		pSurface->iClearCount = 0;
 		memset(&pSurface->tLastRect, 0, sizeof(pSurface->tLastRect));
@@ -1071,6 +1114,17 @@ int xuiTestSurfaceGetRectFillColorCount(xui_surface pSurface, uint32_t iColor)
 			pSurface->arrRectFillColorCounts[iSlot] = 0;
 			return 0;
 		}
+	}
+	return 0;
+}
+
+int xuiTestSurfaceGetLastRectFillOrder(xui_surface pSurface, uint32_t iColor)
+{
+	int iSlot;
+	if ( !__xuiTestSurfaceValid(pSurface) ) return 0;
+	for ( iSlot = 0; iSlot < (int)(sizeof(pSurface->arrRectFillCountColors) / sizeof(pSurface->arrRectFillCountColors[0])); iSlot++ ) {
+		if ( pSurface->arrRectFillCountColors[iSlot] == iColor )
+			return pSurface->arrRectFillLastOrders[iSlot];
 	}
 	return 0;
 }

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_WINDOW
 #include "xui_internal.h"
 
 #include <string.h>
@@ -957,7 +959,7 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 			if ( tText.fW < 0.0f ) tText.fW = 0.0f;
 		}
 		if ( (tResolved.pFont != NULL) && (pProxy->drawText != NULL) && (pData->sTitle[0] != '\0') ) {
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sTitle, xuiInternalSnapRect(tText), iTitleText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), iTitleText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
@@ -2247,3 +2249,5 @@ XUI_API int xuiWindowGetCloseCount(xui_widget pWidget)
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
 	return (pData != NULL) ? pData->iCloseCount : 0;
 }
+
+#endif

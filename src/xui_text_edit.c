@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TEXT_EDIT
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
@@ -1859,8 +1861,7 @@ static int __xuiTextEditDrawLineNumbers(xui_widget pWidget, xui_draw_context pDr
 		if ( tLine.fW < 0.0f ) {
 			tLine.fW = 0.0f;
 		}
-		iRet = pProxy->drawText(pProxy, pDraw, pResolved->pFont, sNumber, tLine, pResolved->iLineNumberColor,
-			XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sNumber, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLine, pResolved->iLineNumberColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -2104,8 +2105,7 @@ static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDr
 	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
 	if ( (iLen == 0) && !pData->bImeActive && (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') &&
 	     (tResolved.pFont != NULL) && (pProxy->drawText != NULL) && (__xuiTextEditAlpha(tResolved.iPlaceholderColor) != 0) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sPlaceholder, tContent, tResolved.iPlaceholderColor,
-			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sPlaceholder, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tContent, tResolved.iPlaceholderColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( iLen > 0 && (tResolved.pFont != NULL) && (pProxy->drawText != NULL) ) {
@@ -2141,8 +2141,7 @@ static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDr
 			}
 			iText = ((iState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 			if ( (__xuiTextEditAlpha(iText) != 0) && (tLine.fW > 0.0f) && (tLine.fH > 0.0f) ) {
-				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sLineText, tLine, iText,
-					XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=sLineText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLine, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -4461,3 +4460,5 @@ XUI_API int xuiTextEditGetChangeCount(xui_widget pWidget)
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

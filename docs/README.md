@@ -5,7 +5,9 @@
 ## 使用文档
 
 - [构建与验证](BUILD.md)
+- [可裁剪构建与增量编译](BUILD_PROFILES.md)
 - [XGE 使用指南](XGE.md)
+- [3D C API](3D.md)
 - [低成本纹理存储优化](TEXTURE_STORAGE.md)
 - [2D 粒子系统](PARTICLES.md)
 - [XUI 使用指南](XUI.md)

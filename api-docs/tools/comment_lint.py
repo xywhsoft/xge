@@ -3,7 +3,7 @@
 """comment_lint.py —— 注释门禁（SPEC 第 8 节四条规则）
 
   1. 新增 API 无注释            → FAIL（对比 coverage.json 基线中不存在的 API）
-  2. 覆盖率棘轮下降              → FAIL（当前已注释数低于基线记录值）
+  2. 存续 API 丢失已有注释        → FAIL（删除的旧 API 不计入棘轮）
   3. 注释与声明间隔 >1 空行      → 告警（不判 FAIL）
   4. verify_batch.bat 语法失败   → FAIL（仅 --verify 时执行）
 
@@ -53,6 +53,20 @@ def gap_warnings(header: str):
     return warns
 
 
+def gate_failures(header: str, unique: list, baseline: dict) -> list[str]:
+    """Compare surviving API identities, so an intentional API removal is not a regression."""
+    base_all = set(baseline["all_apis"].get(header, []))
+    base_doc = set(baseline["documented_apis"].get(header, []))
+    current = {name: documented for name, _line, documented in unique}
+    failures = []
+    for name, documented in current.items():
+        if name not in base_all and not documented:
+            failures.append(f"gate1 {header}: new API without comment -> {name}")
+        if name in base_doc and not documented:
+            failures.append(f"gate2 {header}: documented API lost comment -> {name}")
+    return failures
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--report", action="store_true", help="报告模式：只打印，不返回失败码")
@@ -78,17 +92,14 @@ def main() -> int:
         print(f"== {header}: {len(cur_doc)}/{len(unique)} documented")
 
         if baseline:
-            base_all = set(baseline["all_apis"].get(header, []))
-            base_doc = len(baseline["documented_apis"].get(header, []))
-            # 规则 1：新增 API 必须带注释
-            for name, _ln, doc in unique:
-                if name not in base_all and not doc:
-                    fails.append(f"gate1 {header}: new API without comment -> {name}")
-            # 规则 2：棘轮
-            if len(cur_doc) < base_doc:
-                fails.append(f"gate2 {header}: documented {len(cur_doc)} < baseline {base_doc}")
-            elif len(cur_doc) > base_doc:
-                print(f"   [ratchet] coverage up {base_doc} -> {len(cur_doc)}, baseline can be refreshed")
+            fails.extend(gate_failures(header, unique, baseline))
+            base_doc = set(baseline["documented_apis"].get(header, []))
+            removed = base_doc - {name for name, _line, _doc in unique}
+            gained = cur_doc - base_doc
+            if removed:
+                print(f"   [migration] {len(removed)} documented APIs removed from this header")
+            if gained:
+                print(f"   [ratchet] {len(gained)} additional APIs documented; baseline can be refreshed")
         # 规则 3：间隔告警
         for w in gap_warnings(header):
             warns.append(f"gate3 {header}: comment gap >1 blank line -> {w}")

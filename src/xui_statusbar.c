@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_STATUSBAR
 #include "xui_internal.h"
 
 #include <string.h>
@@ -162,7 +164,7 @@ static xui_vec2_t __xuiStatusBarMeasureText(xui_widget pWidget, xui_font pFont, 
 	if ( (sText == NULL) || (sText[0] == '\0') ) return tSize;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
-	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK) &&
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) &&
 	     (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
 		return tSize;
 	}
@@ -571,7 +573,7 @@ static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 			tText = __xuiStatusBarInsetRect(pData->arrItems[i].tRect, tResolved.tMetrics.fItemPaddingX, 0.0f, tResolved.tMetrics.fItemPaddingX, 0.0f);
 			if ( bPressed ) tText.fY += 1.0f;
 			if ( tText.fW > 0.0f ) {
-				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->arrItems[i].sText, tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->arrItems[i].sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -1256,3 +1258,5 @@ XUI_API int xuiStatusBarGetChangeCount(xui_widget pWidget)
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

@@ -27,11 +27,12 @@ static int textLineEquals(xui_text_layout pLayout, int iLine, const char* sExpec
 }
 
 static int g_bFailMeasure;
-static int (*g_onMeasure)(xui_proxy, xui_font, const char*, xui_vec2_t*);
+static xui_text_measure_proc g_onMeasure;
 
-static int textMeasureMaybeFail(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int textMeasureMaybeFail(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
-	return g_bFailMeasure ? XUI_ERROR_BACKEND_FAILED : g_onMeasure(pProxy, pFont, sText, pSize);
+
+	return g_bFailMeasure ? XUI_ERROR_BACKEND_FAILED : g_onMeasure(pProxy, pTextItem, pSize);
 }
 
 int main(void)

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
 #include <string.h>
@@ -393,3 +395,5 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, iColumn);
 	return XUI_OK;
 }
+
+#endif

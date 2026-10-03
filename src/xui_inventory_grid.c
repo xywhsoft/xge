@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_INVENTORY_GRID
 #include "xui_internal.h"
 
 #include <math.h>
@@ -1193,15 +1195,18 @@ static int __xuiInventoryDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xu
 	return XUI_ERROR_NOT_INITIALIZED;
 }
 
-static int __xuiInventoryDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiInventoryDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (sText == NULL) || (sText[0] == '\0') || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiInventoryAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
 	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pDraw == NULL) || (pFont == NULL) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags | XUI_TEXT_CLIP);
+	return pProxy->drawText(pProxy, pDraw, pTextItem, xuiInternalSnapRect(tRect), iColor, iFlags | XUI_TEXT_CLIP);
 }
 
 static xui_vec2_t __xuiInventoryMeasureText(xui_proxy pProxy, xui_font pFont, const char* sText)
@@ -1213,7 +1218,7 @@ static xui_vec2_t __xuiInventoryMeasureText(xui_proxy pProxy, xui_font pFont, co
 	if ( (sText == NULL) || (sText[0] == '\0') || (pProxy == NULL) || (pProxy->textMeasure == NULL) || (pFont == NULL) ) {
 		return tSize;
 	}
-	(void)pProxy->textMeasure(pProxy, pFont, sText, &tSize);
+	(void)pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize);
 	return tSize;
 }
 
@@ -1353,14 +1358,14 @@ static int __xuiInventoryTooltipPaint(xui_context pContext, xui_widget pOwner, x
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	tText = (xui_rect_t){tRect.fX + 56.0f, tRect.fY + 9.0f, tRect.fW - 66.0f, 18.0f};
-	iRet = __xuiInventoryDrawText(pProxy, pDraw, pFont, pData->sTooltipTitle, tText, pData->tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->sTooltipTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pData->tColors.iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 	tText.fY += 19.0f;
-	iRet = __xuiInventoryDrawText(pProxy, pDraw, pFont, pData->sTooltipText, tText, pData->tColors.iMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->sTooltipText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pData->tColors.iMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
 	tText.fY = tRect.fY + tRect.fH - 23.0f;
 	tText.fH = 16.0f;
-	return __xuiInventoryDrawText(pProxy, pDraw, pFont, pData->sTooltipMeta, tText, pData->tColors.iHotkeyColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	return __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->sTooltipMeta, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pData->tColors.iHotkeyColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 }
 
 static int __xuiInventoryTooltipResolve(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser)
@@ -1530,7 +1535,7 @@ static int __xuiInventoryDrawSlot(xui_widget pWidget, xui_proxy pProxy, xui_draw
 	} else if ( pSlot->sText[0] != '\0' ) {
 		tText = xuiInternalInsetRect(tSlot, 5.0f);
 		iTextColor = ((iState & XUI_WIDGET_STATE_DISABLED) != 0u) ? pResolved->tColors.iMutedTextColor : pResolved->tColors.iTextColor;
-		iRet = __xuiInventoryDrawText(pProxy, pDraw, pResolved->pFont, pSlot->sText, tText, iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
+		iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=pSlot->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (((pSlot->iFlags & XUI_INVENTORY_SLOT_ANIMATION) != 0u) || (pSlot->pAnimation != NULL)) &&
@@ -1583,13 +1588,13 @@ static int __xuiInventoryDrawSlot(xui_widget pWidget, xui_proxy pProxy, xui_draw
 	}
 	if ( pSlot->sHotkey[0] != '\0' ) {
 		tText = (xui_rect_t){tSlot.fX + 4.0f, tSlot.fY + 2.0f, tSlot.fW - 8.0f, 14.0f};
-		iRet = __xuiInventoryDrawText(pProxy, pDraw, pResolved->pFont, pSlot->sHotkey, tText, pResolved->tColors.iHotkeyColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP);
+		iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=pSlot->sHotkey, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pResolved->tColors.iHotkeyColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pSlot->iCount > 1 ) {
 		snprintf(sCount, sizeof(sCount), "%d", pSlot->iCount);
 		tText = (xui_rect_t){tSlot.fX + 2.0f, tSlot.fY + tSlot.fH - 17.0f, tSlot.fW - 5.0f, 15.0f};
-		iRet = __xuiInventoryDrawText(pProxy, pDraw, pResolved->pFont, sCount, tText, pResolved->tColors.iCountColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM);
+		iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sCount, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pResolved->tColors.iCountColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (pSlot->iFlags & XUI_INVENTORY_SLOT_LOCKED) != 0u ) {
@@ -1659,13 +1664,13 @@ static int __xuiInventoryDrawDragPreview(xui_proxy pProxy, xui_draw_context pDra
 		if ( iRet != XUI_OK ) return iRet;
 	} else if ( pSlot->sText[0] != '\0' ) {
 		tText = xuiInternalInsetRect(tSlot, 5.0f);
-		iRet = __xuiInventoryDrawText(pProxy, pDraw, pResolved->pFont, pSlot->sText, tText, pResolved->tColors.iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
+		iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=pSlot->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pResolved->tColors.iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pSlot->iCount > 1 ) {
 		snprintf(sCount, sizeof(sCount), "%d", pSlot->iCount);
 		tText = (xui_rect_t){tSlot.fX + 2.0f, tSlot.fY + tSlot.fH - 17.0f, tSlot.fW - 5.0f, 15.0f};
-		iRet = __xuiInventoryDrawText(pProxy, pDraw, pResolved->pFont, sCount, tText, pResolved->tColors.iCountColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM);
+		iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sCount, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pResolved->tColors.iCountColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -3957,3 +3962,5 @@ XUI_API int xuiInventoryGridSaveXSONFile(xui_widget pWidget, const char* sPath)
 	xrtValueRelease(pValue);
 	return iRet;
 }
+
+#endif

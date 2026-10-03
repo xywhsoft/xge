@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_ACCORDION
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -349,7 +351,7 @@ static int __xuiAccordionDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiAccordionAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	return pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
 static void __xuiAccordionDefaultCachePolicy(xui_cache_policy_t* pPolicy)
@@ -1675,3 +1677,5 @@ XUI_API int xuiAccordionGetChangeCount(xui_widget pWidget)
 	pData = __xuiAccordionGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

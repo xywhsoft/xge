@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_FLOW_GRAPH
 #include "xui_internal.h"
 
 #include <math.h>
@@ -1338,7 +1340,7 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tBadgeRect, pData->arrExtraColors[XUI_FLOW_COLOR_DIAGNOSTIC_BADGE]);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( pProxy->drawText != NULL && pFont != NULL ) {
-				iRet = pProxy->drawText(pProxy, pDraw, pFont, sBadge, tBadgeRect, pData->arrExtraColors[XUI_FLOW_COLOR_DIAGNOSTIC_TEXT], XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sBadge, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tBadgeRect, pData->arrExtraColors[XUI_FLOW_COLOR_DIAGNOSTIC_TEXT], XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -1350,7 +1352,7 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tBadgeRect, pState->iRunBadgeColor);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( pProxy->drawText != NULL && pFont != NULL ) {
-				iRet = pProxy->drawText(pProxy, pDraw, pFont, pState->sRunBadge, tBadgeRect, pState->iRunBadgeTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pState->sRunBadge, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tBadgeRect, pState->iRunBadgeTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -1359,7 +1361,7 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			tTitleRect.fY = tNodeRect.fY + 8.0f;
 			tTitleRect.fW = tNodeRect.fW - 24.0f;
 			tTitleRect.fH = 22.0f;
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, tNode.sTitle, tTitleRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=tNode.sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTitleRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( (pProxy->drawText != NULL) && (pFont != NULL) && (tNode.sSummary != NULL) && (tNode.sSummary[0] != 0) ) {
@@ -1367,7 +1369,7 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			tSummaryRect.fY = tNodeRect.fY + 32.0f;
 			tSummaryRect.fW = tNodeRect.fW - 24.0f;
 			tSummaryRect.fH = 18.0f;
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, tNode.sSummary, tSummaryRect, pData->arrExtraColors[XUI_FLOW_COLOR_SUMMARY], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=tNode.sSummary, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tSummaryRect, pData->arrExtraColors[XUI_FLOW_COLOR_SUMMARY], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( (pProxy->drawText != NULL) && (pFont != NULL) && (tNode.sRunPreview != NULL) && (tNode.sRunPreview[0] != 0) ) {
@@ -1375,8 +1377,7 @@ static int __xuiFlowGraphWidgetDrawNodes(xui_widget pWidget, xui_proxy pProxy, x
 			tSummaryRect.fY = tNodeRect.fY + tNodeRect.fH - 24.0f;
 			tSummaryRect.fW = tNodeRect.fW - 24.0f;
 			tSummaryRect.fH = 16.0f;
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, tNode.sRunPreview, tSummaryRect,
-				__xuiFlowGraphWidgetNodeRunColor(pData, tNode.iRunState, pData->arrExtraColors[XUI_FLOW_COLOR_SUMMARY]), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=tNode.sRunPreview, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tSummaryRect, __xuiFlowGraphWidgetNodeRunColor(pData, tNode.iRunState, pData->arrExtraColors[XUI_FLOW_COLOR_SUMMARY]), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		iPortCount = xuiFlowGraphGetNodePortCount(pGraph, iNode);
@@ -2459,3 +2460,5 @@ XUI_API int xuiFlowGraphWidgetSelectAt(xui_widget pWidget, float fX, float fY, x
 {
 	return __xuiFlowGraphWidgetSelectAt(pWidget, fX, fY, 0u, pHit);
 }
+
+#endif

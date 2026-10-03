@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_INPUT
 #include "xui_internal.h"
 
 #include <ctype.h>
@@ -735,7 +737,7 @@ static xui_vec2_t __xuiInputMeasureText(xui_widget pWidget, xui_font pFont, cons
 	}
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
-	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK) &&
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) &&
 	     (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
 		return tSize;
 	}
@@ -1703,8 +1705,7 @@ static int __xuiInputDecorationDrawOne(xui_widget pWidget, xui_draw_context pDra
 		if ( (pProxy->drawText != NULL) && (pData->pFont != NULL) &&
 		     (pDecoration->sText != NULL) && (pDecoration->sText[0] != '\0') &&
 		     (__xuiInputAlpha(iColor) != 0) ) {
-			return pProxy->drawText(pProxy, pDraw, pData->pFont, pDecoration->sText, xuiInternalSnapRect(pDecoration->tRect), iColor,
-				XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			return pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pDecoration->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(pDecoration->tRect), iColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		return XUI_OK;
 	}
@@ -1961,8 +1962,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 			tText.fW -= fOffset;
 			iText = ((iState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 			if ( (__xuiInputAlpha(iText) != 0) && (tText.fW > 0.0f) && (tText.fH > 0.0f) ) {
-				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sDrawText, tText, iText,
-					XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=sDrawText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		} else if ( !pData->bImeComposing && (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') &&
@@ -1970,7 +1970,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 			uint32_t iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 			if ( pData->iTextAlign == XUI_INPUT_ALIGN_CENTER ) iFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 			if ( pData->iTextAlign == XUI_INPUT_ALIGN_RIGHT ) iFlags = XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sPlaceholder, tContent, tResolved.iPlaceholderColor, iFlags);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sPlaceholder, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tContent, tResolved.iPlaceholderColor, iFlags);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
@@ -3519,3 +3519,5 @@ XUI_API int xuiInputGetChangeCount(xui_widget pWidget)
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

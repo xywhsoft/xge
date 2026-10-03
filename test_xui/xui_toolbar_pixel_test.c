@@ -31,8 +31,9 @@ static xui_draw_surface_proc iconOriginal;
 static xui_draw_rect_fill_proc fillOriginal;
 static xui_draw_text_proc textOriginal;
 static xui_surface_draw_to_proc copyOriginal;
-static int measure(xui_proxy p, xui_font font, const char *s, xui_vec2_t *size)
+static int measure(xui_proxy p, const xui_text_item_t* pTextItem, xui_vec2_t *size)
 {
+    xui_font font=pTextItem->pFont;const char* s=pTextItem->sText;
     (void)p; (void)font; size->fX = strlen(s) * 5.25f + .25f; size->fY = 13.5f; return XUI_OK;
 }
 static int icon_capture(xui_proxy p, xui_draw_context draw, xui_surface source,
@@ -42,11 +43,12 @@ static int icon_capture(xui_proxy p, xui_draw_context draw, xui_surface source,
     for (i = 0; i < 2; ++i) if (source == icons[i]) { iconSeen[i] = dst; ++iconCalls; }
     return iconOriginal(p, draw, source, src, dst, color, flags);
 }
-static int text_capture(xui_proxy p, xui_draw_context draw, xui_font font,
-    const char *s, xui_rect_t r, uint32_t color, uint32_t flags)
+static int text_capture(xui_proxy p, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t color, uint32_t flags)
 {
+    const char* s = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
     if (strcmp(s, "Go") == 0) textSeen = r;
-    return textOriginal(p, draw, font, s, r, color, flags);
+    return textOriginal(p, draw, pTextItem, r, color, flags);
 }
 static int fill_capture(xui_proxy p, xui_draw_context draw, xui_rect_t r, uint32_t color)
 {

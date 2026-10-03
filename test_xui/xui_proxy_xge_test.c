@@ -97,7 +97,67 @@ static float __xuiTestTextVisualRight(xge_font pFont, const char* sText)
 			if ( fPenX > fRight ) fRight = fPenX;
 		}
 	}
-	return fRight;
+    return fRight;
+}
+
+static int __xuiTestTextSpansClip(xui_proxy pProxy, xui_font pFont)
+{
+    xui_surface_desc_t desc = {0};
+    xui_text_paint_span_t span = {0};
+    xui_surface target = NULL;
+    xui_draw_context draw = NULL;
+    xui_rect_t clip = {0, 0, 10, 32}, restored = {0};
+    unsigned char pixels[64 * 32 * 4];
+    int has_clip = 0, inside = 0, outside = 0, x, y, result;
+    const char* stage = "create";
+    desc.iKind = XUI_SURFACE_KIND_TEXTURE;
+    desc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
+    desc.iWidth = 64; desc.iHeight = 32;
+    desc.iFlags = XUI_SURFACE_ALPHA_PREMULTIPLIED | XUI_SURFACE_USAGE_TARGET;
+    result = pProxy->surfaceCreate(pProxy, &target, &desc);
+    if (result != XGE_OK) return 1;
+    stage = "clear";
+    result = pProxy->surfaceClear(pProxy, target, XUI_COLOR_RGBA(0, 0, 0, 0));
+    if (result == XGE_ERROR_NOT_INITIALIZED || result == XGE_ERROR_UNSUPPORTED) {
+        pProxy->surfaceDestroy(pProxy, target);
+        puts("xui_proxy_xge_test: span pixel clipping unavailable without a draw backend");
+        return 0;
+    }
+    if (result == XGE_OK) { stage = "begin"; result = pProxy->drawBegin(pProxy, &draw, target); }
+    if (result == XGE_OK) { stage = "clip set"; result = pProxy->drawClipSet(pProxy, draw, clip); }
+    span.iSize = sizeof(span); span.iStart = 0; span.iEnd = 4;
+    span.iColor = XUI_COLOR_RGBA(255, 20, 30, 255);
+    if (result == XGE_OK) {
+        stage = "spans";
+        result = pProxy->drawTextSpans(pProxy, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText="WWWW", .iTextSize=4, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){4, 0, 14, 26}, XUI_COLOR_WHITE, XUI_TEXT_CLIP, &span, 1);
+    }
+    if (result == XGE_OK) {
+        stage = "clip get";
+        result = pProxy->drawClipGet(pProxy, draw, &restored, &has_clip);
+    }
+    if (result == XGE_OK && (!has_clip || restored.fX != clip.fX ||
+        restored.fY != clip.fY || restored.fW != clip.fW ||
+        restored.fH != clip.fH)) result = XGE_ERROR_RESOURCE_FAILED;
+    if (draw != NULL) {
+        int end_result = pProxy->drawEnd(pProxy, draw);
+        stage = "end";
+        if (result == XGE_OK) result = end_result;
+    }
+    if (result == XGE_OK) { stage = "read";
+        result = pProxy->surfaceReadRGBA(pProxy, target, pixels, 64 * 4);
+    }
+    if (result == XGE_OK) for (y = 0; y < 32; y++) for (x = 0; x < 64; x++) {
+        if (pixels[((y * 64) + x) * 4 + 3] == 0) continue;
+        if (x >= 12 || x < 3) outside++;
+        else inside++;
+    }
+    pProxy->surfaceDestroy(pProxy, target);
+    if (result != XGE_OK || !inside || outside) {
+        printf("xui_proxy_xge_test failed: span clip stage=%s result=%d inside=%d outside=%d\n",
+            stage, result, inside, outside);
+        return 1;
+    }
+    return 0;
 }
 
 static int __xuiTestSurface(xui_proxy pProxy)
@@ -327,7 +387,7 @@ static int __xuiTestSurface(xui_proxy pProxy)
 			xgeUnit();
 			return 1;
 		}
-		iRet = pProxy->textMeasure(pProxy, pFont, "xui", &tTextSize);
+		iRet = pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText="xui", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tTextSize);
 		if ( (iRet != XGE_OK) || (tTextSize.fX <= 0.0f) || (tTextSize.fY <= 0.0f) ) {
 			printf("xui_proxy_xge_test failed: text measure ret=%d size=%f,%f\n", iRet, tTextSize.fX, tTextSize.fY);
 			pProxy->fontDestroy(pProxy, pFont);
@@ -353,9 +413,15 @@ static int __xuiTestSurface(xui_proxy pProxy)
 				xgeFontFree(&tRawFont);
 			}
 		}
-		iRet = pProxy->textDraw(pProxy, pSurface, pFont, "xui", tSrc, XUI_COLOR_WHITE, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->textDraw(pProxy, pSurface, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText="xui", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tSrc, XUI_COLOR_WHITE, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( __xuiTestStatusAllowed(iRet) == 0 ) {
 			printf("xui_proxy_xge_test failed: text draw ret=%d\n", iRet);
+			pProxy->fontDestroy(pProxy, pFont);
+			pProxy->surfaceDestroy(pProxy, pSurface);
+			xgeUnit();
+			return 1;
+		}
+		if ( __xuiTestTextSpansClip(pProxy, pFont) != 0 ) {
 			pProxy->fontDestroy(pProxy, pFont);
 			pProxy->surfaceDestroy(pProxy, pSurface);
 			xgeUnit();

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CHECK_CARD
 #include "xui_internal.h"
 
 #include <string.h>
@@ -642,3 +644,5 @@ XUI_API int xuiCheckCardGetChangeCount(xui_widget pWidget)
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

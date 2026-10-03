@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
 #include <stddef.h>
@@ -403,3 +405,5 @@ int xuiInternalAccessibilityEditAction(xui_widget pWidget, int iAction, const vo
 	}
 	return XUI_ERROR_UNSUPPORTED;
 }
+
+#endif

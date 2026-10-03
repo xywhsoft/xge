@@ -1,17 +1,21 @@
 # P2-7 Unicode line layout contract
 
+Current update: 2026-10-02. Runtime UAX #14 and extended graphemes both use
+Unicode 17.0.0. See `docs/XUI_DOCUMENT_LINE17.md` for the upgrade and current
+verification; the later original-commit sections below are historical evidence.
+
 ## Scope and modes
 
 The previous WORD wrapper saved only ASCII space/tab break opportunities.
 On overflow it split arbitrary shaping clusters, bypassing CJK kinsoku and
 NBSP/WJ, and scalar-only proxies could split combining/ZWJ sequences.
 
-- WORD selects libunibreak's Unicode 15.0 default/strict line opportunities,
-  intersected with Unicode 15.1 extended grapheme and shaping boundaries.
+- WORD selects libunibreak 8.0's Unicode 17 default/strict line opportunities,
+  intersected with the shared Unicode 17 extended-grapheme and shaping boundaries.
 - When no fitting normal opportunity exists, WORD may break alphabetic/Hebrew/
   numeric runs at the same common boundaries. This is explicit emergency
   tailoring, not an additional UAX #14 rule. It does not override punctuation,
-  GL/WJ, ZWJ, or grapheme prohibitions. UAX #14's own exceptions still apply.
+  GL/WJ, ZWJ, or grapheme prohibitions.
 - A protected unit wider than the width is kept intact and may overflow.
   An oversized final WORD unit ends with END, without a spurious empty line.
   Parentheses do not protect an entire expression: only the actual UAX #14
@@ -74,14 +78,17 @@ call test_xui\build_text_layout_test.bat
 call test_xui\build_text_dpi_test.bat
 ```
 
-The index test uses both pinned official conformance suites, checks the sole
-known line exception explicitly, and exercises malformed bytes/embedded NUL.
+The index test uses both pinned official Unicode 17 conformance suites:
+19,338 line and 766 grapheme records, without exceptions. It checks all
+1,114,112 Line_Break properties and the actual map intersection, and exercises
+malformed bytes/embedded NUL.
 Allocation failure is injected at every construction allocation, geometry is
 cleared and retried, and tracked outstanding allocations must reach zero.
-Twelve scale patterns grow from 256 to 65,536 repetitions, up to 1,048,576
+Seventeen scale patterns grow from 256 to 65,536 repetitions, up to 1,048,576
 clusters. They include long combining/RI/ZWJ runs, protected glue, OP plus long
 space runs, CJK, RTL, SHY, zero-width and mandatory-break inputs. Assertions
 bound actual decoder calls, byte visits, wrap iterations and binary probes;
+new quotation, numeric, orthographic-syllable and word-initial hyphen states;
 there is no wall-clock pass threshold. The earlier 256-case differential test
 still compares prefix lookups against legacy scans under the same new policy.
 

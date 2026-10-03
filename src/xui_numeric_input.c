@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_NUMERIC_INPUT
 #include "xui_internal.h"
 
 #include <ctype.h>
@@ -1678,3 +1680,5 @@ XUI_API int xuiNumericInputGetChangeCount(xui_widget pWidget)
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

@@ -1,6 +1,7 @@
 #ifndef XUI_H
 #define XUI_H
 
+#include "xui_config.h"
 #include <stddef.h>
 #include <stdint.h>
 #include "lib/xrt/xrt_config.h"
@@ -21,7 +22,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	10
+#define XUI_PROXY_VERSION	16
 
 typedef enum xui_result_t {
 /* 成功。 */
@@ -53,7 +54,9 @@ typedef enum xui_result_t {
 /* 目标条目不存在。 */
 	XUI_ERROR_NOT_FOUND = -13,
 /* 当前状态不允许该操作。 */
-	XUI_ERROR_INVALID_STATE = -14
+	XUI_ERROR_INVALID_STATE = -14,
+	/* 有界异步操作队列已满。 */
+	XUI_ERROR_LIMIT_EXCEEDED = -15
 } xui_result_t;
 
 /* 错误发生阶段（错误信息定位用）。 */
@@ -194,6 +197,17 @@ typedef enum xui_text_id_t {
 	XUI_TR_RICH_CHECK_LIST,
 	XUI_TR_RICH_INDENT,
 	XUI_TR_RICH_OUTDENT,
+	XUI_TR_RICH_HORIZONTAL_RULE,
+	XUI_TR_RICH_CODE_BLOCK,
+	/* DocumentEditor table context actions. */
+	XUI_TR_RICH_INSERT_ROW_BEFORE,
+	XUI_TR_RICH_INSERT_ROW_AFTER,
+	XUI_TR_RICH_DELETE_ROW,
+	XUI_TR_RICH_INSERT_COLUMN_BEFORE,
+	XUI_TR_RICH_INSERT_COLUMN_AFTER,
+	XUI_TR_RICH_DELETE_COLUMN,
+	XUI_TR_RICH_MERGE_CELLS,
+	XUI_TR_RICH_SPLIT_CELL,
 	XUI_TR_COUNT
 } xui_text_id_t;
 
@@ -246,6 +260,15 @@ typedef struct xui_language_text_t {
 #define XUI_PROXY_CAP_PATH_DASH		0x00002000u
 #define XUI_PROXY_CAP_PATH_AA		0x00004000u
 #define XUI_PROXY_CAP_SVG_SURFACE	0x00008000u
+/* Optional text-input capabilities apply equally to shaping, measurement
+ * and all three drawing callbacks. Their absence never permits dropping
+ * an explicitly requested language, script, context or RTL direction.
+ * A context without textShape uses isolated measurement and reports none. */
+#define XUI_PROXY_CAP_TEXT_CONTEXT	0x00010000u
+#define XUI_PROXY_CAP_TEXT_SCRIPT		0x00020000u
+#define XUI_PROXY_CAP_TEXT_LANGUAGE	0x00040000u
+#define XUI_PROXY_CAP_TEXT_RANGE		0x00100000u /* Whole-item shaping with a selected glyph range. */
+#define XUI_PROXY_CAP_TEXT_RTL		0x00080000u
 
 #define XUI_FONT_FORMAT_TTF		0x0001
 #define XUI_FONT_FORMAT_XRF		0x0002
@@ -258,99 +281,8 @@ typedef struct xui_language_text_t {
 #define XUI_TEXT_ALIGN_BOTTOM		0x0020
 #define XUI_TEXT_CLIP			0x0100
 #define XUI_TEXT_UNDERLINE		0x0200
-
-#define XUI_RICH_STYLE_BOLD		0x00000001u
-#define XUI_RICH_STYLE_ITALIC		0x00000002u
-#define XUI_RICH_STYLE_UNDERLINE	0x00000004u
-#define XUI_RICH_STYLE_STRIKEOUT	0x00000008u
-#define XUI_RICH_STYLE_CODE		0x00000010u
-#define XUI_RICH_STYLE_SUBSCRIPT	0x00000020u
-#define XUI_RICH_STYLE_SUPERSCRIPT	0x00000040u
-
-#define XUI_RICH_NODE_DOCUMENT		1
-#define XUI_RICH_NODE_PARAGRAPH		2
-#define XUI_RICH_NODE_TEXT		3
-#define XUI_RICH_NODE_INLINE_WIDGET	4
-#define XUI_RICH_NODE_HEADING		5
-#define XUI_RICH_NODE_BLOCK_QUOTE	6
-#define XUI_RICH_NODE_LIST_ITEM		7
-#define XUI_RICH_NODE_LINK		8
-#define XUI_RICH_NODE_IMAGE		9
-#define XUI_RICH_NODE_TABLE		10
-#define XUI_RICH_NODE_HORIZONTAL_RULE	11
-#define XUI_RICH_NODE_INLINE_IMAGE	12
-
-#define XUI_RICH_ALIGN_LEFT		0
-#define XUI_RICH_ALIGN_CENTER		1
-#define XUI_RICH_ALIGN_RIGHT		2
-#define XUI_RICH_ALIGN_JUSTIFY		3
-
-#define XUI_RICH_DIRECTION_AUTO		0
-#define XUI_RICH_DIRECTION_LTR		1
-#define XUI_RICH_DIRECTION_RTL		2
-
-#define XUI_RICH_LIST_NONE		0
-#define XUI_RICH_LIST_BULLET		1
-#define XUI_RICH_LIST_NUMBER		2
-#define XUI_RICH_LIST_CHECK		3
-
-#define XUI_RICH_COMMAND_UNDO		1
-#define XUI_RICH_COMMAND_REDO		2
-#define XUI_RICH_COMMAND_CUT		3
-#define XUI_RICH_COMMAND_COPY		4
-#define XUI_RICH_COMMAND_PASTE		5
-#define XUI_RICH_COMMAND_DELETE		6
-#define XUI_RICH_COMMAND_SELECT_ALL	7
-#define XUI_RICH_COMMAND_FIND		8
-#define XUI_RICH_COMMAND_REPLACE		9
-#define XUI_RICH_COMMAND_BOLD		10
-#define XUI_RICH_COMMAND_ITALIC		11
-#define XUI_RICH_COMMAND_UNDERLINE	12
-#define XUI_RICH_COMMAND_STRIKEOUT	13
-#define XUI_RICH_COMMAND_ALIGN_LEFT	20
-#define XUI_RICH_COMMAND_ALIGN_CENTER	21
-#define XUI_RICH_COMMAND_ALIGN_RIGHT	22
-#define XUI_RICH_COMMAND_ALIGN_JUSTIFY	23
-#define XUI_RICH_COMMAND_PARAGRAPH	30
-#define XUI_RICH_COMMAND_HEADING_1	31
-#define XUI_RICH_COMMAND_HEADING_2	32
-#define XUI_RICH_COMMAND_HEADING_3	33
-#define XUI_RICH_COMMAND_BLOCK_QUOTE	34
-#define XUI_RICH_COMMAND_BULLET_LIST	35
-#define XUI_RICH_COMMAND_NUMBER_LIST	36
-#define XUI_RICH_COMMAND_CHECK_LIST	37
-#define XUI_RICH_COMMAND_INDENT_LIST	38
-#define XUI_RICH_COMMAND_OUTDENT_LIST	39
-
-#define XUI_RICH_COMMAND_STATE_DISABLED	0
-#define XUI_RICH_COMMAND_STATE_OFF	1
-#define XUI_RICH_COMMAND_STATE_ON	2
-#define XUI_RICH_COMMAND_STATE_MIXED	3
-
-#define XUI_RICH_TOOLBAR_HISTORY	0x00000001u
-#define XUI_RICH_TOOLBAR_INLINE_FORMAT	0x00000002u
-#define XUI_RICH_TOOLBAR_ALIGNMENT	0x00000004u
-#define XUI_RICH_TOOLBAR_BLOCKS		0x00000008u
-#define XUI_RICH_TOOLBAR_LISTS		0x00000010u
-#define XUI_RICH_TOOLBAR_FIND		0x00000020u
-#define XUI_RICH_TOOLBAR_DEFAULT		0x0000003fu
-
-#define XUI_RICH_CHANGE_REPLACE		1
-#define XUI_RICH_CHANGE_STYLE		2
-#define XUI_RICH_CHANGE_PARAGRAPH	3
-#define XUI_RICH_CHANGE_OBJECT		4
-#define XUI_RICH_CHANGE_RESOURCE		5
-#define XUI_RICH_CHANGE_HISTORY		6
-#define XUI_RICH_CHANGE_RESET		7
-
-#define XUI_RICH_CHANGE_TEXT		0x0001u
-#define XUI_RICH_CHANGE_FORMAT		0x0002u
-#define XUI_RICH_CHANGE_STRUCTURE	0x0004u
-#define XUI_RICH_CHANGE_GEOMETRY		0x0008u
-#define XUI_RICH_CHANGE_RESOURCE_DATA	0x0010u
-
-#define XUI_RICH_AFFINITY_BEFORE	0
-#define XUI_RICH_AFFINITY_AFTER		1
+/* Paint one resolved RTL item; paragraph Bidi itemization is the caller's job. */
+#define XUI_TEXT_RTL			0x0400u
 
 #define XUI_TEXT_WRAP_NONE		0
 #define XUI_TEXT_WRAP_WORD		1
@@ -363,6 +295,11 @@ typedef struct xui_language_text_t {
 
 #define XUI_TEXT_SHAPE_KERNING		0x0001u
 #define XUI_TEXT_SHAPE_EMOJI		0x0002u
+/* Logical cluster order is unchanged; leading edges belong to the RTL item. */
+#define XUI_TEXT_SHAPE_RTL		0x0004u
+/* Optional owned paint payload. Backends may omit it; geometry still works. */
+#define XUI_TEXT_SHAPE_RETAIN_PAINT	0x0008u
+#define XUI_TEXT_SHAPE_RANGE		0x0010u /* Select [iRangeStart,iRangeEnd) after whole-item shaping. */
 #define XUI_TEXT_SHAPE_DEFAULT		(XUI_TEXT_SHAPE_KERNING | XUI_TEXT_SHAPE_EMOJI)
 
 #define XUI_TEXT_CLUSTER_LINE_BREAK	0x0001u
@@ -392,6 +329,8 @@ typedef struct xui_language_text_t {
 
 #define XUI_WIDGET_TYPE_DEFAULT_LAYOUT		0x00000001u
 #define XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY	0x00000002u
+/* Runs onUpdate once when this widget's tree is hidden or detached. */
+#define XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE	0x00000004u
 
 #define XUI_RESOURCE_SURFACE		1
 #define XUI_RESOURCE_FONT		2
@@ -565,6 +504,7 @@ typedef struct xui_language_text_t {
 #define XUI_ACCESSIBLE_ROLE_TAB_LIST		32
 #define XUI_ACCESSIBLE_ROLE_TAB			33
 #define XUI_ACCESSIBLE_ROLE_ROOT			34
+#define XUI_ACCESSIBLE_ROLE_CODE_BLOCK		35
 
 #define XUI_ACCESSIBLE_STATE_FOCUSABLE		0x00000001u
 #define XUI_ACCESSIBLE_STATE_FOCUSED		0x00000002u
@@ -1824,6 +1764,12 @@ typedef struct xui_font_metrics_t {
 	float fDescent;
 	float fLineGap;
 	float fLineHeight;
+	/* Signed decoration offsets from the baseline (positive below it).
+	 * A nonpositive thickness requests the renderer's default metrics. */
+	float fUnderlinePosition;
+	float fUnderlineThickness;
+	float fStrikePosition;
+	float fStrikeThickness;
 } xui_font_metrics_t;
 
 typedef struct xui_text_cluster_t {
@@ -1836,6 +1782,18 @@ typedef struct xui_text_cluster_t {
 	float fOffsetY;
 } xui_text_cluster_t;
 
+/* Optional interior Unicode-grapheme caret stops supplied by a shaper.
+ * Offsets are UTF-8 bytes in the shaped input, strictly increasing. Advance
+ * is measured from the containing cluster's leading edge; stops within that
+ * cluster must be nondecreasing and between zero and its fAdvance. If any
+ * stops are supplied for a cluster, supply all its interior grapheme stops.
+ * Omit the cluster's endpoints. */
+typedef struct xui_text_caret_t {
+	uint32_t iSize;
+	int iTextOffset;
+	float fAdvance;
+} xui_text_caret_t;
+
 typedef struct xui_text_shape_t {
 	uint32_t iSize;
 	uint32_t iFlags;
@@ -1847,6 +1805,17 @@ typedef struct xui_text_shape_t {
 	float fAscent;
 	float fDescent;
 	float fLineHeight;
+	/* Owned like pClusters; xuiTextShapeFree releases both arrays. A cluster
+	 * without supplied stops uses equal Unicode-grapheme subdivisions in
+	 * Document geometry, not an inferred font-specific caret position. */
+	int iCaretCount;
+	xui_text_caret_t* pCarets;
+	/* Optional immutable paint result in the original shaping input coordinates.
+	 * Caret subdivision does not change these coordinates. Free owns the payload;
+	 * iPaintBytes charges private storage, excluding shared fonts/atlas resources. */
+	void* pPaint;
+	size_t iPaintBytes;
+	void (*paintFree)(void* pPaint);
 } xui_text_shape_t;
 
 typedef struct xui_text_paint_span_t {
@@ -1855,6 +1824,36 @@ typedef struct xui_text_paint_span_t {
 	int iEnd;
 	uint32_t iColor;
 } xui_text_paint_span_t;
+
+/* Shared immutable input for shaping, measuring and drawing. Borrowed only
+ * during a synchronous callback; output clusters/carets are item-relative. */
+typedef struct xui_text_item_t {
+	uint32_t iSize; /* sizeof(xui_text_item_t). */
+	struct xui_font_t* pFont;
+	const char* sText; /* UTF-8 item bytes. */
+	int iTextSize; /* -1 NUL-terminated; 0 empty. */
+	uint32_t iFlags; /* XUI_TEXT_SHAPE_*; direction belongs to this input. */
+	const char* sContext; /* Valid full paragraph UTF-8; NULL uses sText. */
+	int iContextSize; /* -1 NUL-terminated; otherwise exact byte count. */
+	int iContextOffset; /* Item byte offset; matching bytes, scalar boundaries. */
+	uint32_t iScript; /* ISO 15924 tag; 0 resolves from the full context. */
+	const char* sLanguage; /* NUL BCP 47, <=255 bytes, syntax checked; NULL und. */
+	float fDrawOffsetX; /* Finite [-0.5,0.5] pixel pen offset; painting only, not shaping or clipping. */
+	/* RANGE shapes all sText bytes, then selects complete clusters. Output and
+	 * paint span offsets are relative to iRangeStart. A ligature interior or a
+	 * line break is unsupported. Unflagged items require all three fields zero.
+	 * pShape optionally borrows an immutable full-item retained result from the
+	 * same backend, font and shaping input, only during this callback. It never
+	 * transfers ownership. RANGE output may omit optional retained paint. */
+	int iRangeStart;
+	int iRangeEnd;
+	const xui_text_shape_t* pShape;
+	/* Optional RANGE paint colours for ordinary drawText/textDraw. Borrowed
+	 * synchronous spans use selected-range offsets. Geometry ignores colours.
+	 * Do not combine these with explicit drawTextSpans callback arguments. */
+	const xui_text_paint_span_t* pPaintSpans;
+	int iPaintSpanCount;
+} xui_text_item_t;
 
 /* 文本布局创建描述（文本/宽度/换行/省略）。 */
 typedef struct xui_text_layout_desc_t {
@@ -2052,8 +2051,6 @@ typedef struct xui_property_grid_property_t xui_property_grid_property_t;
 typedef struct xui_chart_point_t xui_chart_point_t;
 typedef struct xui_chart_hit_t xui_chart_hit_t;
 typedef struct xui_code_document_t xui_code_document_t;
-typedef struct xui_rich_document_t xui_rich_document_t;
-typedef struct xui_rich_node_t xui_rich_node_t;
 typedef struct xui_code_pos_t xui_code_pos_t;
 typedef struct xui_code_range_t xui_code_range_t;
 typedef struct xui_code_selection_t xui_code_selection_t;
@@ -3170,33 +3167,6 @@ typedef struct xui_text_edit_desc_t {
 	float fBorderWidth;
 	float fLineGap;
 } xui_text_edit_desc_t;
-
-/* 富文本编辑器创建描述。 */
-typedef struct xui_rich_edit_desc_t {
-	uint32_t iSize;
-	struct xui_rich_document_t* pDocument;
-	struct xui_font_t* pFont;
-	const char* sText;
-	int bOwnDocument;
-	int bReadonly;
-	int bWordWrap;
-	uint32_t iTextColor;
-	uint32_t iBackgroundColor;
-	uint32_t iBorderColor;
-	uint32_t iFocusBorderColor;
-	uint32_t iSelectionColor;
-	uint32_t iCursorColor;
-	uint32_t iFindResultColor;
-	uint32_t iFindActiveColor;
-	float fBorderWidth;
-	float fPadding;
-	float fLineGap;
-	float fParagraphGap;
-} xui_rich_edit_desc_t;
-
-struct xui_rich_change_t;
-typedef void (*xui_rich_edit_change_proc)(xui_widget_t* pWidget, struct xui_rich_document_t* pDocument,
-	const struct xui_rich_change_t* pChange, void* pUser);
 
 /* 按钮创建描述；全部字段有默认值，关键字段见各行注释。 */
 typedef struct xui_button_desc_t {
@@ -5353,8 +5323,6 @@ typedef xui_file_dialog_t* xui_file_dialog;
 typedef xui_msgtip_t* xui_msgtip;
 typedef xui_toast_t* xui_toast;
 typedef xui_code_document_t* xui_code_document;
-typedef xui_rich_document_t* xui_rich_document;
-typedef xui_rich_node_t* xui_rich_node;
 typedef xui_code_theme_t* xui_code_theme;
 typedef xui_code_command_map_t* xui_code_command_map;
 typedef xui_code_find_scope_t* xui_code_find_scope;
@@ -5368,7 +5336,6 @@ typedef xui_code_selection_model_t* xui_code_selection_model;
 typedef xui_icon_category_t* xui_icon_category;
 typedef xui_icon_t* xui_icon;
 typedef uint32_t xui_icon_id;
-typedef uint64_t xui_document_node_id_t;
 
 typedef int (*xui_data_provider_proc)(const char* sFormat, void* pOutput,
 	size_t iCapacity, size_t* pOutputSize, void* pUser);
@@ -5441,156 +5408,6 @@ typedef int (*xui_accessible_get_proc)(xui_widget_t* pWidget, int iIndex, xui_ac
 typedef int (*xui_accessible_action_proc)(xui_widget_t* pWidget, uint64_t iNodeId, int iAction, const void* pData, void* pUser);
 typedef void (*xui_accessibility_event_proc)(xui_context_t* pContext, xui_widget_t* pWidget,
 	const xui_accessibility_event_t* pEvent, void* pUser);
-
-typedef void (*xui_rich_edit_link_proc)(xui_widget_t* pWidget, xui_document_node_id_t iNodeId, const char* sUrl, void* pUser);
-
-#define XUI_RICH_EDIT_EVENT_SELECTION_CHANGED 1
-#define XUI_RICH_EDIT_EVENT_SCROLL_CHANGED 2
-#define XUI_RICH_EDIT_EVENT_OBJECT_ACTIVATE 3
-#define XUI_RICH_EDIT_EVENT_ZOOM_CHANGED 4
-
-typedef struct xui_rich_edit_event_t {
-	uint32_t iSize;
-	int iType;
-	int iAnchor;
-	int iCaret;
-	int iSelectionStart;
-	int iSelectionEnd;
-	float fScrollX;
-	float fScrollY;
-	float fZoom;
-	xui_document_node_id_t iNodeId;
-	int iNodeType;
-} xui_rich_edit_event_t;
-
-typedef void (*xui_rich_edit_event_proc)(xui_widget_t* pWidget, const xui_rich_edit_event_t* pEvent, void* pUser);
-
-typedef struct xui_rich_change_t {
-	uint32_t iSize;
-	uint32_t iVersion;
-	int iKind;
-	uint32_t iFlags;
-	int iOldStart;
-	int iOldEnd;
-	int iNewStart;
-	int iNewEnd;
-	xui_document_node_id_t iNodeId;
-} xui_rich_change_t;
-
-typedef struct xui_rich_text_style_t {
-	uint32_t iSize;
-	struct xui_font_t* pFont;
-	uint32_t iTextColor;
-	uint32_t iBackgroundColor;
-	uint32_t iFlags;
-	float fBaselineShift;
-	int iWeight;
-	int iSlant;
-	float fFontSize;
-} xui_rich_text_style_t;
-
-typedef struct xui_rich_paragraph_style_t {
-	uint32_t iSize;
-	int iAlign;
-	int iDirection;
-	int iListType;
-	int iListLevel;
-	int bListChecked;
-	int iHeadingLevel;
-	float fIndentLeft;
-	float fIndentRight;
-	float fFirstLineIndent;
-	float fLineHeight;
-	float fSpaceBefore;
-	float fSpaceAfter;
-	uint32_t iBackgroundColor;
-	uint32_t iBorderColor;
-} xui_rich_paragraph_style_t;
-
-/* 富文本图像描述。 */
-typedef struct xui_rich_image_desc_t {
-	uint32_t iSize;
-	struct xui_surface_t* pSurface;
-	const char* sSource;
-	const char* sAltText;
-	float fWidth;
-	float fHeight;
-	float fBaseline;
-	int iAlign;
-} xui_rich_image_desc_t;
-
-/* 富文本表格描述。 */
-typedef struct xui_rich_table_desc_t {
-	uint32_t iSize;
-	int iRows;
-	int iColumns;
-	float fWidth;
-	float fCellPadding;
-	float fBorderWidth;
-	uint32_t iBorderColor;
-	uint32_t iHeaderColor;
-	uint32_t iCellColor;
-} xui_rich_table_desc_t;
-
-typedef struct xui_rich_font_set_t {
-	uint32_t iSize;
-	struct xui_font_t* pNormal;
-	struct xui_font_t* pBold;
-	struct xui_font_t* pItalic;
-	struct xui_font_t* pBoldItalic;
-	struct xui_font_t* pHeading1;
-	struct xui_font_t* pHeading2;
-	struct xui_font_t* pHeading3;
-} xui_rich_font_set_t;
-
-typedef struct xui_document_position_t {
-	xui_document_node_id_t iNodeId;
-	int iByteOffset;
-	int iAffinity;
-} xui_document_position_t;
-
-typedef struct xui_document_range_t {
-	xui_document_position_t tAnchor;
-	xui_document_position_t tCaret;
-} xui_document_range_t;
-
-typedef struct xui_rich_node_info_t {
-	uint32_t iSize;
-	xui_document_node_id_t iId;
-	xui_document_node_id_t iParentId;
-	int iType;
-	const char* sText;
-	int iTextSize;
-	xui_widget pWidget;
-	float fWidth;
-	float fHeight;
-	float fBaseline;
-	xui_rich_text_style_t tStyle;
-	xui_rich_paragraph_style_t tParagraphStyle;
-	const char* sResource;
-	const char* sAltText;
-	struct xui_surface_t* pSurface;
-	int iRows;
-	int iColumns;
-	float fCellPadding;
-	float fBorderWidth;
-	uint32_t iBorderColor;
-	uint32_t iHeaderColor;
-	uint32_t iCellColor;
-} xui_rich_node_info_t;
-
-typedef struct xui_rich_fragment_t {
-	uint32_t iSize;
-	xui_document_node_id_t iNodeId;
-	int iStartOffset;
-	int iEndOffset;
-	int iDocumentStart;
-	int iDocumentEnd;
-	xui_rect_t tRect;
-	float fBaseline;
-	int iLine;
-	int iNodeType;
-} xui_rich_fragment_t;
 
 typedef struct xui_error_info_t {
 	uint32_t iSize;
@@ -5866,7 +5683,9 @@ typedef struct xui_clipboard_item_t {
 
 #define XUI_CLIPBOARD_FORMAT_TEXT_UTF8 "text/plain;charset=utf-8"
 #define XUI_CLIPBOARD_FORMAT_HTML "text/html"
+#define XUI_CLIPBOARD_FORMAT_IMAGE_PNG "image/png"
 #define XUI_CLIPBOARD_FORMAT_RICH_DOCUMENT "application/x-xui-rich-document+json;version=1"
+#define XUI_CLIPBOARD_FORMAT_DOCUMENT_FRAGMENT "application/x-xui-document-fragment;version=1"
 
 /* Replaces the clipboard atomically with every supplied representation. */
 typedef int (*xui_clipboard_set_items_proc)(xui_proxy pProxy,
@@ -5909,8 +5728,8 @@ typedef int (*xui_font_load_memory_proc)(xui_proxy pProxy, xui_font* ppFont, con
 typedef int (*xui_font_get_metrics_proc)(xui_proxy pProxy, xui_font pFont, xui_font_metrics_t* pMetrics);
 typedef void (*xui_font_destroy_proc)(xui_proxy pProxy, xui_font pFont);
 typedef int (*xui_font_create_sized_proc)(xui_proxy pProxy, xui_font* ppFont, xui_font pSource, float fSize);
-typedef int (*xui_text_measure_proc)(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize);
-typedef int (*xui_text_draw_proc)(xui_proxy pProxy, xui_surface pTarget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
+typedef int (*xui_text_measure_proc)(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize);
+typedef int (*xui_text_draw_proc)(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
 typedef int (*xui_draw_begin_proc)(xui_proxy pProxy, xui_draw_context* ppDraw, xui_surface pTarget);
 typedef int (*xui_draw_end_proc)(xui_proxy pProxy, xui_draw_context pDraw);
 typedef int (*xui_draw_clear_rect_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor);
@@ -5927,15 +5746,33 @@ typedef int (*xui_draw_rect_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw,
 typedef int (*xui_draw_rect_stroke_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor);
 typedef int (*xui_draw_circle_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, uint32_t iColor);
 typedef int (*xui_draw_circle_stroke_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, float fWidth, uint32_t iColor);
-typedef int (*xui_draw_text_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
-typedef int (*xui_draw_text_spans_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont,
-	const char* sText, int iTextSize, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags,
+typedef int (*xui_draw_text_proc)(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
+typedef int (*xui_draw_text_spans_proc)(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags,
 	const xui_text_paint_span_t* pSpans, int iSpanCount);
 typedef int (*xui_draw_clip_get_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip);
 typedef int (*xui_draw_clip_set_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect);
 typedef int (*xui_draw_clip_clear_proc)(xui_proxy pProxy, xui_draw_context pDraw);
-typedef int (*xui_text_shape_proc)(xui_proxy pProxy, xui_font pFont, const char* sText,
-	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape);
+typedef int (*xui_text_shape_proc)(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape);
+/* Paint an intact cluster range from a retained shape, without reshaping.
+ * Byte offsets refer to the original shape input. UNSUPPORTED must paint
+ * nothing (e.g. a cut inside a ligature); callers can use normal text drawing.
+ * This minimal contract accepts left/top placement, CLIP and UNDERLINE. */
+typedef int (*xui_draw_text_shape_range_proc)(xui_proxy pProxy, xui_draw_context pDraw,
+	const xui_text_shape_t* pShape, int iStart, int iEnd, xui_rect_t tRect,
+	uint32_t iColor, uint32_t iFlags);
+/* Query an intact retained cluster range without drawing. fX is ink/advance
+ * width, fY is height. Native RTL subsets rebase the selected cluster origin.
+ * UNSUPPORTED leaves output zero and selects reshaping. */
+typedef int (*xui_text_shape_range_measure_proc)(xui_proxy pProxy,
+	const xui_text_shape_t* pShape, int iStart, int iEnd, xui_vec2_t* pSize);
+/* Retained range painting with subpixel X and colour spans. Span offsets are
+ * in the complete original shape input, not rebased to the range. The offset
+ * is finite in [-0.5,0.5]. Unsupported requests submit no pixels. This callback
+ * can support colour independently of the ordinary string span callback. */
+typedef int (*xui_draw_text_shape_range_spans_proc)(xui_proxy pProxy, xui_draw_context pDraw,
+	const xui_text_shape_t* pShape, int iStart, int iEnd, xui_rect_t tRect,
+	uint32_t iColor, uint32_t iFlags, float fDrawOffsetX,
+	const xui_text_paint_span_t* pSpans, int iSpanCount);
 typedef int (*xui_zstd_decompress_proc)(xui_proxy pProxy, void* pOutput, int iOutputCapacity,
 	const void* pInput, int iInputSize, int* pOutputSize);
 typedef double (*xui_clock_seconds_proc)(xui_proxy pProxy);
@@ -6006,6 +5843,9 @@ struct xui_proxy_t {
 	xui_draw_clip_set_proc drawClipSet;
 	xui_draw_clip_clear_proc drawClipClear;
 	xui_text_shape_proc textShape;
+	xui_draw_text_shape_range_proc drawTextShapeRange;
+	xui_text_shape_range_measure_proc textShapeRangeMeasure;
+	xui_draw_text_shape_range_spans_proc drawTextShapeRangeSpans;
 	xui_clipboard_set_items_proc clipboardSetItems;
 	xui_clipboard_get_data_proc clipboardGetData;
 	xui_font_create_sized_proc fontCreateSized;
@@ -6015,6 +5855,7 @@ struct xui_proxy_t {
 };
 
 /* 创建 XUI 上下文（根与覆盖根就绪；渲染前需 xuiSetProxy 绑定后端）。 */
+#if XGE_ENABLE_XUI
 XUI_API int xuiCreate(xui_context* ppContext);
 /* 销毁上下文及全部控件树。 */
 XUI_API void xuiDestroy(xui_context pContext);
@@ -6221,6 +6062,9 @@ XUI_API int xuiResourceGetKind(xui_resource pResource);
 XUI_API void* xuiResourceGetHandle(xui_resource pResource);
 /* 读取资源修订号。 */
 XUI_API uint32_t xuiResourceGetGeneration(xui_resource pResource);
+/* Changes after a successful Set/Remove/Touch, including surface replacement.
+ * Views can compare this value between frames without retaining a resource. */
+XUI_API uint64_t xuiResourceGetRegistryGeneration(xui_context pContext);
 /* 资源引用计数加一。 */
 XUI_API int xuiResourceAddRef(xui_resource pResource);
 /* 资源引用计数减一，归零时释放。 */
@@ -6531,12 +6375,13 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 /* 按描述测量文本尺寸（不建布局对象）。 */
 XUI_API int xuiTextMeasureLayout(xui_context pContext, const xui_text_layout_desc_t* pDesc, xui_vec2_t* pSize);
 /* 经引擎代理整形文本（字形序列，供自绘）。 */
-XUI_API int xuiTextShape(xui_context pContext, xui_font pFont, const char* sText, int iTextSize,
-	uint32_t iFlags, xui_text_shape_t* pShape);
+XUI_API int xuiTextShape(xui_context pContext, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape);
 /* 释放整形输出的字形序列。 */
 XUI_API void xuiTextShapeFree(xui_text_shape_t* pShape);
+#endif
 
 /* 取文本标签控件类型。 */
+#if XUI_ENABLE_LABEL
 XUI_API xui_widget_type xuiLabelGetType(xui_context pContext);
 /* 创建文本标签。 */
 XUI_API int xuiLabelCreate(xui_context pContext, xui_widget* ppWidget, const xui_label_desc_t* pDesc);
@@ -6576,8 +6421,10 @@ XUI_API float xuiLabelGetLineGap(xui_widget pWidget);
 XUI_API int xuiLabelSetParagraphGap(xui_widget pWidget, float fParagraphGap);
 /* 读取段距。 */
 XUI_API float xuiLabelGetParagraphGap(xui_widget pWidget);
+#endif
 
 /* 取超链接控件类型。 */
+#if XUI_ENABLE_HYPERLINK
 XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext);
 /* 创建超链接文本。 */
 XUI_API int xuiHyperlinkCreate(xui_context pContext, xui_widget* ppWidget, const xui_hyperlink_desc_t* pDesc);
@@ -6637,8 +6484,10 @@ XUI_API float xuiHyperlinkGetParagraphGap(xui_widget pWidget);
 XUI_API uint32_t xuiHyperlinkGetState(xui_widget pWidget);
 /* 读取点击计数（测试用）。 */
 XUI_API int xuiHyperlinkGetClickCount(xui_widget pWidget);
+#endif
 
 /* 取面包屑控件类型。 */
+#if XUI_ENABLE_BREADCRUMB
 XUI_API xui_widget_type xuiBreadcrumbGetType(xui_context pContext);
 /* 创建面包屑导航。 */
 XUI_API int xuiBreadcrumbCreate(xui_context pContext, xui_widget* ppWidget, const xui_breadcrumb_desc_t* pDesc);
@@ -6704,8 +6553,10 @@ XUI_API int xuiBreadcrumbGetHoverIndex(xui_widget pWidget);
 XUI_API int xuiBreadcrumbGetActiveIndex(xui_widget pWidget);
 /* 读取点击计数（测试用）。 */
 XUI_API int xuiBreadcrumbGetClickCount(xui_widget pWidget);
+#endif
 
 /* 取图片控件类型。 */
+#if XUI_ENABLE_IMAGE
 XUI_API xui_widget_type xuiImageGetType(xui_context pContext);
 /* 创建图片控件。 */
 XUI_API int xuiImageCreate(xui_context pContext, xui_widget* ppWidget, const xui_image_desc_t* pDesc);
@@ -6741,8 +6592,10 @@ XUI_API int xuiImageSetCustomRect(xui_widget pWidget, float fX1, float fY1, floa
 XUI_API xui_rect_t xuiImageGetCustomRect(xui_widget pWidget);
 /* 读取实际绘制矩形（适配后）。 */
 XUI_API xui_rect_t xuiImageGetDrawRect(xui_widget pWidget);
+#endif
 
 /* 取二维码控件类型。 */
+#if XUI_ENABLE_QRCODE
 XUI_API xui_widget_type xuiQrCodeGetType(xui_context pContext);
 /* 创建自绘二维码控件。 */
 XUI_API int xuiQrCodeCreate(xui_context pContext, xui_widget* ppWidget, const xui_qrcode_desc_t* pDesc);
@@ -6782,8 +6635,10 @@ XUI_API int xuiQrCodeGetModuleCount(xui_widget pWidget);
 XUI_API int xuiQrCodeGetModule(xui_widget pWidget, int iX, int iY);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiQrCodeGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取面板控件类型。 */
+#if XUI_ENABLE_PANEL
 XUI_API xui_widget_type xuiPanelGetType(xui_context pContext);
 /* 创建面板（图标/标题/头部 + 内容容器）。 */
 XUI_API int xuiPanelCreate(xui_context pContext, xui_widget* ppWidget, const xui_panel_desc_t* pDesc);
@@ -6867,8 +6722,10 @@ XUI_API xui_rect_t xuiPanelGetTitleRect(xui_widget pWidget);
 XUI_API xui_rect_t xuiPanelGetClientRect(xui_widget pWidget);
 /* 读取控件状态位。 */
 XUI_API uint32_t xuiPanelGetState(xui_widget pWidget);
+#endif
 
 /* 取分隔线控件类型。 */
+#if XUI_ENABLE_SEPARATOR
 XUI_API xui_widget_type xuiSeparatorGetType(xui_context pContext);
 /* 创建分隔线（水平/垂直）。 */
 XUI_API int xuiSeparatorCreate(xui_context pContext, xui_widget* ppWidget, const xui_separator_desc_t* pDesc);
@@ -6894,8 +6751,10 @@ XUI_API int xuiSeparatorSetLineStyle(xui_widget pWidget, int iLineStyle);
 XUI_API int xuiSeparatorGetLineStyle(xui_widget pWidget);
 /* 读取线条矩形。 */
 XUI_API xui_rect_t xuiSeparatorGetLineRect(xui_widget pWidget);
+#endif
 
 /* 取进度条控件类型。 */
+#if XUI_ENABLE_PROGRESS
 XUI_API xui_widget_type xuiProgressGetType(xui_context pContext);
 /* 创建进度条（条形/环形）。 */
 XUI_API int xuiProgressCreate(xui_context pContext, xui_widget* ppWidget, const xui_progress_desc_t* pDesc);
@@ -6965,8 +6824,10 @@ XUI_API int xuiProgressSetFillPatchMode(xui_widget pWidget, int iMode);
 XUI_API int xuiProgressGetFillPatchMode(xui_widget pWidget);
 /* 读取填充区矩形。 */
 XUI_API xui_rect_t xuiProgressGetFillRect(xui_widget pWidget);
+#endif
 
 /* 取步骤条控件类型。 */
+#if XUI_ENABLE_STEP_BAR
 XUI_API xui_widget_type xuiStepBarGetType(xui_context pContext);
 /* 创建步骤条（完成/当前/待办三态）。 */
 XUI_API int xuiStepBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_step_bar_desc_t* pDesc);
@@ -7012,8 +6873,10 @@ XUI_API xui_rect_t xuiStepBarGetStepRect(xui_widget pWidget, int iIndex);
 XUI_API xui_rect_t xuiStepBarGetIndicatorRect(xui_widget pWidget, int iIndex);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiStepBarGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取图表控件类型。 */
+#if XUI_ENABLE_CHART
 XUI_API xui_widget_type xuiChartGetType(xui_context pContext);
 /* 创建图表（折线/柱状/饼/散点序列容器）。 */
 XUI_API int xuiChartCreate(xui_context pContext, xui_widget* ppWidget, const xui_chart_desc_t* pDesc);
@@ -7155,8 +7018,10 @@ XUI_API int xuiChartDataToPixel(xui_widget pWidget, double fX, double fY, xui_ve
 XUI_API int xuiChartPixelToData(xui_widget pWidget, float fX, float fY, double* pDataX, double* pDataY);
 /* 命中测试（序列/数据点/图例）。 */
 XUI_API int xuiChartHitTest(xui_widget pWidget, float fX, float fY, xui_chart_hit_t* pHit);
+#endif
 
 /* 创建空代码文档（行 piece 表 + 撤销栈）。 */
+#if XUI_ENABLE_CODE_EDIT
 XUI_API int xuiCodeDocumentCreate(xui_code_document* ppDocument);
 /* 释放代码文档。 */
 XUI_API void xuiCodeDocumentDestroy(xui_code_document pDocument);
@@ -7236,7 +7101,9 @@ XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, 
 XUI_API int xuiCodeLayoutHitTest(const xui_code_layout_desc_t* pDesc, float fX, float fY, xui_code_hit_t* pHit);
 /* 计算指定行/列的光标矩形。 */
 XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int iLine, int iColumn, xui_rect_t* pRect);
+#endif
 /* 单次查找（纯文本/正则由 flags）；区间限定。 */
+#if XUI_ENABLE_FIND
 XUI_API int xuiFindText(const char* sText, int iTextLength, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResult, char* sError, int iErrorCapacity);
 /* 收集区间内全部匹配。 */
 XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults, int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity);
@@ -7248,7 +7115,9 @@ XUI_API int xuiFindBuildReplacement(const char* sText, int iTextLength, const ch
 	char** psOutput, int* pOutputLength, char* sError, int iErrorCapacity);
 /* 释放查找族输出的文本。 */
 XUI_API void xuiFindFreeText(char* sText);
+#endif
 /* 创建跨编辑器查找域（多文件查找替换）。 */
+#if XUI_ENABLE_CODE_EDIT
 XUI_API int xuiCodeFindScopeCreate(xui_code_find_scope* ppScope);
 /* 释放查找域。 */
 XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope);
@@ -7762,12 +7631,14 @@ XUI_API int xuiCodeEditGetExpandTabs(xui_widget pWidget);
 XUI_API int xuiCodeEditOpenMenu(xui_widget pWidget, float fX, float fY);
 /* 读取最近一次错误原因；无错误返回 NULL。 */
 XUI_API const char* xuiCodeEditGetLastError(xui_widget pWidget);
+#endif
 
 /*
  * Common editing surface contract. Text-control offsets are UTF-8 byte offsets;
  * Terminal selection offsets encode line * columns + column. Caret rectangles
  * are widget-local. These APIs do not replace type-specific structured data APIs.
  */
+#if XGE_ENABLE_XUI
 XUI_API uint32_t xuiEditGetCapabilities(xui_widget pWidget);
 /* 注册编辑事件回调（文本变更/光标移动等，编辑适配器协议）。 */
 XUI_API int xuiEditSetEvent(xui_widget pWidget, xui_edit_event_proc onEvent, void* pUser);
@@ -7811,8 +7682,10 @@ XUI_API int xuiEditIsReadonly(xui_widget pWidget);
 XUI_API xui_rect_t xuiEditGetCaretRect(xui_widget pWidget);
 /* 在指定位置打开编辑上下文菜单。 */
 XUI_API int xuiEditOpenContextMenu(xui_widget pWidget, float fX, float fY);
+#endif
 
 /* 取输入框控件类型。 */
+#if XUI_ENABLE_INPUT
 XUI_API xui_widget_type xuiInputGetType(xui_context pContext);
 /* 创建单行输入框（密码/占位/清除钮/装饰）。 */
 XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_input_desc_t* pDesc);
@@ -7922,8 +7795,10 @@ XUI_API xui_rect_t xuiInputGetCursorRect(xui_widget pWidget);
 XUI_API uint32_t xuiInputGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiInputGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取标签输入控件类型。 */
+#if XUI_ENABLE_TAG_INPUT
 XUI_API xui_widget_type xuiTagInputGetType(xui_context pContext);
 /* 创建标签输入（标签块 + 内嵌输入框）。 */
 XUI_API int xuiTagInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_tag_input_desc_t* pDesc);
@@ -7989,8 +7864,10 @@ XUI_API xui_widget xuiTagInputGetInputWidget(xui_widget pWidget);
 XUI_API uint32_t xuiTagInputGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiTagInputGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取数值输入控件类型。 */
+#if XUI_ENABLE_NUMERIC_INPUT
 XUI_API xui_widget_type xuiNumericInputGetType(xui_context pContext);
 /* 创建数值输入（范围/步进/精度/微调器）。 */
 XUI_API int xuiNumericInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_numeric_input_desc_t* pDesc);
@@ -8086,8 +7963,10 @@ XUI_API int xuiNumericInputGetError(xui_widget pWidget);
 XUI_API uint32_t xuiNumericInputGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiNumericInputGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取多行文本编辑控件类型。 */
+#if XUI_ENABLE_TEXT_EDIT
 XUI_API xui_widget_type xuiTextEditGetType(xui_context pContext);
 /* 创建多行纯文本编辑。 */
 XUI_API int xuiTextEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_text_edit_desc_t* pDesc);
@@ -8209,249 +8088,10 @@ XUI_API int xuiTextEditGetLineCount(xui_widget pWidget);
 XUI_API uint32_t xuiTextEditGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiTextEditGetChangeCount(xui_widget pWidget);
-
-/* 创建空富文本文档（根节点为文档节点）。 */
-XUI_API int xuiRichDocumentCreate(xui_rich_document* ppDocument);
-/* 释放富文本文档（不释放内嵌 widget 与 surface，由各自体系持有）。 */
-XUI_API void xuiRichDocumentDestroy(xui_rich_document pDocument);
-/* 开始变更事务（合并通知与撤销项；与 EndTransaction 成对）。 */
-XUI_API int xuiRichDocumentBeginTransaction(xui_rich_document pDocument);
-/* 结束事务并通知观察者。 */
-XUI_API int xuiRichDocumentEndTransaction(xui_rich_document pDocument);
-/* 清空文档内容（保留根）。 */
-XUI_API int xuiRichDocumentClear(xui_rich_document pDocument);
-/* 取文档根节点。 */
-XUI_API xui_rich_node xuiRichDocumentGetRoot(xui_rich_document pDocument);
-/* 追加空段落并返回节点。 */
-XUI_API xui_rich_node xuiRichDocumentAppendParagraph(xui_rich_document pDocument);
-/* 追加指定类型块节点（标题/引用/列表项等）。 */
-XUI_API xui_rich_node xuiRichDocumentAppendBlock(xui_rich_document pDocument, int iNodeType, const xui_rich_paragraph_style_t* pStyle);
-/* 向段落追加带样式文本。 */
-XUI_API xui_rich_node xuiRichDocumentAppendText(xui_rich_document pDocument, xui_rich_node pParagraph, const char* sText, const xui_rich_text_style_t* pStyle);
-/* 向段落追加超链接文本。 */
-XUI_API xui_rich_node xuiRichDocumentAppendLink(xui_rich_document pDocument, xui_rich_node pParagraph, const char* sText, const char* sUrl, const xui_rich_text_style_t* pStyle);
-/* 向段落内嵌控件（尺寸与基线偏移由参数指定）。 */
-XUI_API xui_rich_node xuiRichDocumentAppendWidget(xui_rich_document pDocument, xui_rich_node pParagraph, xui_widget pWidget, float fWidth, float fHeight, float fBaseline);
-/* 向段落追加内联图像。 */
-XUI_API xui_rich_node xuiRichDocumentAppendInlineImage(xui_rich_document pDocument, xui_rich_node pParagraph, const xui_rich_image_desc_t* pDesc);
-/* 追加块级图像。 */
-XUI_API xui_rich_node xuiRichDocumentAppendImage(xui_rich_document pDocument, const xui_rich_image_desc_t* pDesc);
-/* 追加表格（行列由 desc 描述）。 */
-XUI_API xui_rich_node xuiRichDocumentAppendTable(xui_rich_document pDocument, const xui_rich_table_desc_t* pDesc);
-/* 追加水平分隔线。 */
-XUI_API xui_rich_node xuiRichDocumentAppendHorizontalRule(xui_rich_document pDocument);
-/* 在区间处插入块级图像。 */
-XUI_API xui_rich_node xuiRichDocumentInsertImage(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_image_desc_t* pDesc);
-/* 在区间处插入内联图像。 */
-XUI_API xui_rich_node xuiRichDocumentInsertInlineImage(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_image_desc_t* pDesc);
-/* 在区间处插入表格。 */
-XUI_API xui_rich_node xuiRichDocumentInsertTable(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_table_desc_t* pDesc);
-/* 在区间处插入分隔线。 */
-XUI_API xui_rich_node xuiRichDocumentInsertHorizontalRule(xui_rich_document pDocument, int iStart, int iEnd);
-/* 按节点 id 查找；不存在返回 NULL。 */
-XUI_API xui_rich_node xuiRichDocumentFindNode(xui_rich_document pDocument, xui_document_node_id_t iNodeId);
-/* 取节点首个子节点。 */
-XUI_API xui_rich_node xuiRichNodeGetFirstChild(xui_rich_node pNode);
-/* 取下一兄弟节点。 */
-XUI_API xui_rich_node xuiRichNodeGetNextSibling(xui_rich_node pNode);
-/* 输出节点信息（类型/文本/区间）。 */
-XUI_API int xuiRichNodeGetInfo(xui_rich_node pNode, xui_rich_node_info_t* pInfo);
-/* 替换文本类节点内容。 */
-XUI_API int xuiRichNodeSetText(xui_rich_document pDocument, xui_rich_node pNode, const char* sText);
-/* 覆盖文本类节点字符样式。 */
-XUI_API int xuiRichNodeSetStyle(xui_rich_document pDocument, xui_rich_node pNode, const xui_rich_text_style_t* pStyle);
-/* 覆盖段落样式。 */
-XUI_API int xuiRichNodeSetParagraphStyle(xui_rich_document pDocument, xui_rich_node pNode, const xui_rich_paragraph_style_t* pStyle);
-/* 设置图像类节点资源 URI 与替换文本。 */
-XUI_API int xuiRichNodeSetResource(xui_rich_document pDocument, xui_rich_node pNode, const char* sResource, const char* sAltText);
-/* 以 surface 直接设置图像内容（绕过资源加载）。 */
-XUI_API int xuiRichImageSetSurface(xui_rich_document pDocument, xui_rich_node pImage, xui_surface pSurface, float fWidth, float fHeight);
-/* 设置单元格文本与样式。 */
-XUI_API int xuiRichTableSetCellText(xui_rich_document pDocument, xui_rich_node pTable, int iRow, int iColumn, const char* sText, const xui_rich_text_style_t* pStyle);
-/* 读取单元格纯文本。 */
-XUI_API const char* xuiRichTableGetCellText(xui_rich_node pTable, int iRow, int iColumn);
-/* 输出单元格字符样式。 */
-XUI_API int xuiRichTableGetCellStyle(xui_rich_node pTable, int iRow, int iColumn, xui_rich_text_style_t* pStyle);
-/* 取单元格内嵌子文档（富单元格编辑用）。 */
-XUI_API int xuiRichTableGetCellDocument(xui_rich_document pDocument, xui_rich_node pTable,
-	int iRow, int iColumn, xui_rich_document* ppCellDocument);
-/* 调整表格行列数（保留左上内容）。 */
-XUI_API int xuiRichTableResize(xui_rich_document pDocument, xui_rich_node pTable, int iRows, int iColumns);
-/* 读取文档字符长度。 */
-XUI_API int xuiRichDocumentGetLength(xui_rich_document pDocument);
-/* 读取纯文本投影（文档持有，勿改）。 */
-XUI_API const char* xuiRichDocumentGetText(xui_rich_document pDocument);
-/* 替换区间为带样式文本。 */
-XUI_API int xuiRichDocumentReplace(xui_rich_document pDocument, int iStart, int iEnd, const char* sText, const xui_rich_text_style_t* pStyle);
-/* 对区间应用字符样式。 */
-XUI_API int xuiRichDocumentApplyStyle(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_text_style_t* pStyle);
-/* 按位设置/清除区间样式标志（粗体/斜体等）。 */
-XUI_API int xuiRichDocumentUpdateStyleFlags(xui_rich_document pDocument, int iStart, int iEnd, uint32_t iSetFlags, uint32_t iClearFlags);
-/* 对区间应用链接。 */
-XUI_API int xuiRichDocumentApplyLink(xui_rich_document pDocument, int iStart, int iEnd, const char* sUrl);
-/* 对区间所在段落应用段落样式。 */
-XUI_API int xuiRichDocumentApplyParagraphStyle(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_paragraph_style_t* pStyle);
-/* 转换区间所在块的节点类型。 */
-XUI_API int xuiRichDocumentSetBlockType(xui_rich_document pDocument, int iStart, int iEnd, int iNodeType);
-/* 克隆区间为独立片段文档。 */
-XUI_API int xuiRichDocumentCloneRange(xui_rich_document pDocument, int iStart, int iEnd, xui_rich_document* ppFragment);
-/* 以片段文档替换区间（粘贴语义）。 */
-XUI_API int xuiRichDocumentInsertDocument(xui_rich_document pDocument, int iStart, int iEnd, xui_rich_document pFragment);
-/* 字符偏移转文档位置（节点内偏移）。 */
-XUI_API int xuiRichDocumentOffsetToPosition(xui_rich_document pDocument, int iOffset, xui_document_position_t* pPosition);
-/* 文档位置转字符偏移。 */
-XUI_API int xuiRichDocumentPositionToOffset(xui_rich_document pDocument, const xui_document_position_t* pPosition, int* pOffset);
-/* 撤销上一次变更。 */
-XUI_API int xuiRichDocumentUndo(xui_rich_document pDocument);
-/* 重做上一次撤销。 */
-XUI_API int xuiRichDocumentRedo(xui_rich_document pDocument);
-/* 是否可撤销。 */
-XUI_API int xuiRichDocumentCanUndo(xui_rich_document pDocument);
-/* 是否可重做。 */
-XUI_API int xuiRichDocumentCanRedo(xui_rich_document pDocument);
-/* 读取文档版本号（变更自增）。 */
-XUI_API uint32_t xuiRichDocumentGetVersion(xui_rich_document pDocument);
-/* 输出最近一次变更描述。 */
-XUI_API int xuiRichDocumentGetLastChange(xui_rich_document pDocument, xui_rich_change_t* pChange);
-/* 序列化为 JSON；*ppText 由调用方持有，用 FreeSerialized 释放。 */
-XUI_API int xuiRichDocumentSerialize(xui_rich_document pDocument, int bPretty, char** ppText, size_t* pSize);
-/* 从 JSON 反序列化为文档。 */
-XUI_API int xuiRichDocumentDeserialize(const char* sText, size_t iSize, xui_rich_document* ppDocument);
-/* 导出 HTML；*ppText 用 FreeSerialized 释放。 */
-XUI_API int xuiRichDocumentExportHtml(xui_rich_document pDocument, char** ppText, size_t* pSize);
-/* 从 HTML 导入为文档。 */
-XUI_API int xuiRichDocumentImportHtml(const char* sText, size_t iSize, xui_rich_document* ppDocument);
-/* 导出 Markdown；*ppText 用 FreeSerialized 释放。 */
-XUI_API int xuiRichDocumentExportMarkdown(xui_rich_document pDocument, char** ppText, size_t* pSize);
-/* 从 Markdown 导入为文档。 */
-XUI_API int xuiRichDocumentImportMarkdown(const char* sText, size_t iSize, xui_rich_document* ppDocument);
-/* 释放 Serialize/Export 系列输出的文本。 */
-XUI_API void xuiRichDocumentFreeSerialized(char* sText);
-
-/* 取富文本编辑器控件类型。 */
-XUI_API xui_widget_type xuiRichEditGetType(xui_context pContext);
-/* 创建富文本编辑器；pDesc 为 NULL 时用默认描述（自动创建空文档）。 */
-XUI_API int xuiRichEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_rich_edit_desc_t* pDesc);
-/* 取编辑文档（无则自动创建空文档）。 */
-XUI_API xui_rich_document xuiRichEditGetDocument(xui_widget pWidget);
-/* 替换编辑文档；bOwnDocument 为真时文档由编辑器接管销毁。 */
-XUI_API int xuiRichEditSetDocument(xui_widget pWidget, xui_rich_document pDocument, int bOwnDocument);
-/* 注册内容变更回调。 */
-XUI_API int xuiRichEditSetChange(xui_widget pWidget, xui_rich_edit_change_proc onChange, void* pUser);
-/* 注册链接点击回调。 */
-XUI_API int xuiRichEditSetLinkClick(xui_widget pWidget, xui_rich_edit_link_proc onClick, void* pUser);
-/* 注册编辑器事件回调（光标/选区/编辑器状态）。 */
-XUI_API int xuiRichEditSetEvent(xui_widget pWidget, xui_rich_edit_event_proc onEvent, void* pUser);
-/* 设置选区（字符偏移）。 */
-XUI_API int xuiRichEditSetSelection(xui_widget pWidget, int iStart, int iEnd);
-/* 输出选区区间。 */
-XUI_API int xuiRichEditGetSelection(xui_widget pWidget, int* pStart, int* pEnd);
-/* 全选。 */
-XUI_API int xuiRichEditSelectAll(xui_widget pWidget);
-/* 在光标处插入文本（替换选区）。 */
-XUI_API int xuiRichEditInsertText(xui_widget pWidget, const char* sText);
-/* 对选区应用字符样式。 */
-XUI_API int xuiRichEditApplyStyle(xui_widget pWidget, const xui_rich_text_style_t* pStyle);
-/* 对选区应用链接。 */
-XUI_API int xuiRichEditApplyLink(xui_widget pWidget, const char* sUrl);
-/* 对选区所在段落应用段落样式。 */
-XUI_API int xuiRichEditApplyParagraphStyle(xui_widget pWidget, const xui_rich_paragraph_style_t* pStyle);
-/* 在光标处插入块级图像。 */
-XUI_API int xuiRichEditInsertImage(xui_widget pWidget, const xui_rich_image_desc_t* pDesc);
-/* 在光标处插入内联图像。 */
-XUI_API int xuiRichEditInsertInlineImage(xui_widget pWidget, const xui_rich_image_desc_t* pDesc);
-/* 在光标处插入表格。 */
-XUI_API int xuiRichEditInsertTable(xui_widget pWidget, const xui_rich_table_desc_t* pDesc);
-/* 在光标处插入分隔线。 */
-XUI_API int xuiRichEditInsertHorizontalRule(xui_widget pWidget);
-/* 进入表格单元格富文本编辑态。 */
-XUI_API int xuiRichEditBeginTableCellEdit(xui_widget pWidget, xui_document_node_id_t iTableId,
-	int iRow, int iColumn);
-/* 退出单元格编辑态（提交内容）。 */
-XUI_API int xuiRichEditEndTableCellEdit(xui_widget pWidget);
-/* 取单元格编辑器控件与位置。 */
-XUI_API xui_widget xuiRichEditGetTableCellEditor(xui_widget pWidget, xui_document_node_id_t* pTableId,
-	int* pRow, int* pColumn);
-/* 设置候选字体集（多字体回退渲染）。 */
-XUI_API int xuiRichEditSetFontSet(xui_widget pWidget, const xui_rich_font_set_t* pFonts);
-/* 输出候选字体集。 */
-XUI_API int xuiRichEditGetFontSet(xui_widget pWidget, xui_rich_font_set_t* pFonts);
-/* 执行编辑命令（加粗/斜体/对齐等）。 */
-XUI_API int xuiRichEditExecuteCommand(xui_widget pWidget, int iCommand, const void* pData);
-/* 查询命令状态（可用/选中）。 */
-XUI_API int xuiRichEditQueryCommand(xui_widget pWidget, int iCommand, int* pState);
-/* 以工具栏控件装配编辑命令按钮组。 */
-XUI_API int xuiRichEditSetupToolbar(xui_widget pWidget, xui_widget pToolbar, uint32_t iGroups);
-/* 同步工具栏按钮状态到当前选区。 */
-XUI_API int xuiRichEditSyncToolbar(xui_widget pWidget, xui_widget pToolbar);
-/* 触发工具栏第 iIndex 项对应命令。 */
-XUI_API int xuiRichEditExecuteToolbarItem(xui_widget pWidget, xui_widget pToolbar, int iIndex);
-/* 复制选区（含富文本私有剪贴板格式）。 */
-XUI_API int xuiRichEditCopy(xui_widget pWidget);
-/* 剪切选区。 */
-XUI_API int xuiRichEditCut(xui_widget pWidget);
-/* 粘贴（识别富文本私有格式，回落纯文本）。 */
-XUI_API int xuiRichEditPaste(xui_widget pWidget);
-/* 打开内建查找窗口。 */
-XUI_API int xuiRichEditOpenFind(xui_widget pWidget);
-/* 打开内建查找替换窗口。 */
-XUI_API int xuiRichEditOpenReplace(xui_widget pWidget);
-/* 取内建查找窗口控件；未创建返回 NULL。 */
-XUI_API xui_widget xuiRichEditGetFindWindow(xui_widget pWidget);
-/* 按选项查找下一处。 */
-XUI_API int xuiRichEditFindNext(xui_widget pWidget, const xui_find_options_t* pOptions);
-/* 按选项查找上一处。 */
-XUI_API int xuiRichEditFindPrevious(xui_widget pWidget, const xui_find_options_t* pOptions);
-/* 替换当前匹配。 */
-XUI_API int xuiRichEditReplaceCurrent(xui_widget pWidget, const xui_find_options_t* pOptions);
-/* 全部替换；*pReplaceCount 输出替换数。 */
-XUI_API int xuiRichEditReplaceAll(xui_widget pWidget, const xui_find_options_t* pOptions, int* pReplaceCount);
-/* 清除查找高亮。 */
-XUI_API int xuiRichEditClearFind(xui_widget pWidget);
-/* 读取当前查找结果数。 */
-XUI_API int xuiRichEditGetFindResultCount(xui_widget pWidget);
-/* 按索引输出查找结果。 */
-XUI_API int xuiRichEditGetFindResult(xui_widget pWidget, int iIndex, xui_find_result_t* pResult);
-/* 在指定位置打开编辑上下文菜单。 */
-XUI_API int xuiRichEditOpenMenu(xui_widget pWidget, float fX, float fY);
-/* 取上下文菜单控件；未创建返回 NULL。 */
-XUI_API xui_widget xuiRichEditGetMenuWidget(xui_widget pWidget);
-/* 撤销。 */
-XUI_API int xuiRichEditUndo(xui_widget pWidget);
-/* 重做。 */
-XUI_API int xuiRichEditRedo(xui_widget pWidget);
-/* 设置只读。 */
-XUI_API int xuiRichEditSetReadonly(xui_widget pWidget, int bReadonly);
-/* 读取只读标志。 */
-XUI_API int xuiRichEditIsReadonly(xui_widget pWidget);
-/* 开关自动换行。 */
-XUI_API int xuiRichEditSetWordWrap(xui_widget pWidget, int bWordWrap);
-/* 读取自动换行开关。 */
-XUI_API int xuiRichEditGetWordWrap(xui_widget pWidget);
-/* 直接设置滚动偏移。 */
-XUI_API int xuiRichEditSetScroll(xui_widget pWidget, float fScrollX, float fScrollY);
-/* 输出滚动偏移。 */
-XUI_API int xuiRichEditGetScroll(xui_widget pWidget, float* pScrollX, float* pScrollY);
-/* 相对滚动。 */
-XUI_API int xuiRichEditScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
-/* 设置缩放比例（1.0 原始大小）。 */
-XUI_API int xuiRichEditSetZoom(xui_widget pWidget, float fZoom);
-/* 读取缩放比例。 */
-XUI_API float xuiRichEditGetZoom(xui_widget pWidget);
-/* 取内部滚动模型（坐标变换用；控件持有）。 */
-XUI_API xui_scroll_model_t* xuiRichEditGetScrollModel(xui_widget pWidget);
-/* 取水平滚动条子控件；不可见时返回 NULL。 */
-XUI_API xui_widget xuiRichEditGetHScrollBarWidget(xui_widget pWidget);
-/* 取垂直滚动条子控件；不可见时返回 NULL。 */
-XUI_API xui_widget xuiRichEditGetVScrollBarWidget(xui_widget pWidget);
-/* 读取可见文本片段数（渲染行片段）。 */
-XUI_API int xuiRichEditGetFragmentCount(xui_widget pWidget);
-/* 按索引输出文本片段描述（诊断/测试用）。 */
-XUI_API int xuiRichEditGetFragment(xui_widget pWidget, int iIndex, xui_rich_fragment_t* pFragment);
-/* 读取光标矩形（世界坐标）。 */
-XUI_API xui_rect_t xuiRichEditGetCursorRect(xui_widget pWidget);
+#endif
 
 /* 取按钮控件类型。 */
+#if XUI_ENABLE_BUTTON
 XUI_API xui_widget_type xuiButtonGetType(xui_context pContext);
 /* 创建按钮；pDesc 为 NULL 时用默认描述。 */
 XUI_API int xuiButtonCreate(xui_context pContext, xui_widget* ppWidget, const xui_button_desc_t* pDesc);
@@ -8543,8 +8183,10 @@ XUI_API int xuiButtonGetBadgeSurface(xui_widget pWidget, xui_surface* ppSurface,
 XUI_API uint32_t xuiButtonGetState(xui_widget pWidget);
 /* 读取点击计数（测试用）。 */
 XUI_API int xuiButtonGetClickCount(xui_widget pWidget);
+#endif
 
 /* 取复选框控件类型。 */
+#if XUI_ENABLE_CHECKBOX
 XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext);
 /* 创建复选框。 */
 XUI_API int xuiCheckBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_checkbox_desc_t* pDesc);
@@ -8600,8 +8242,10 @@ XUI_API xui_rect_t xuiCheckBoxGetIndicatorRect(xui_widget pWidget);
 XUI_API xui_rect_t xuiCheckBoxGetTextRect(xui_widget pWidget);
 /* 读取控件状态位。 */
 XUI_API uint32_t xuiCheckBoxGetState(xui_widget pWidget);
+#endif
 
 /* 取勾选卡片控件类型。 */
+#if XUI_ENABLE_CHECK_CARD
 XUI_API xui_widget_type xuiCheckCardGetType(xui_context pContext);
 /* 创建勾选卡片（可选中卡片容器）。 */
 XUI_API int xuiCheckCardCreate(xui_context pContext, xui_widget* ppWidget, const xui_check_card_desc_t* pDesc);
@@ -8636,8 +8280,10 @@ XUI_API xui_rect_t xuiCheckCardGetCornerRect(xui_widget pWidget);
 XUI_API uint32_t xuiCheckCardGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiCheckCardGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取单选框控件类型。 */
+#if XUI_ENABLE_RADIO
 XUI_API xui_widget_type xuiRadioGetType(xui_context pContext);
 /* 创建单选框。 */
 XUI_API int xuiRadioCreate(xui_context pContext, xui_widget* ppWidget, const xui_radio_desc_t* pDesc);
@@ -8693,8 +8339,10 @@ XUI_API xui_rect_t xuiRadioGetIndicatorRect(xui_widget pWidget);
 XUI_API xui_rect_t xuiRadioGetTextRect(xui_widget pWidget);
 /* 读取控件状态位。 */
 XUI_API uint32_t xuiRadioGetState(xui_widget pWidget);
+#endif
 
 /* 取单选组控件类型。 */
+#if XUI_ENABLE_RADIO_GROUP
 XUI_API xui_widget_type xuiRadioGroupGetType(xui_context pContext);
 /* 创建单选组（组内互斥 + 布局排列）。 */
 XUI_API int xuiRadioGroupCreate(xui_context pContext, xui_widget* ppWidget, const xui_radio_group_desc_t* pDesc);
@@ -8724,8 +8372,10 @@ XUI_API int xuiRadioGroupGetOrientation(xui_widget pGroup);
 XUI_API int xuiRadioGroupSetGap(xui_widget pGroup, float fGap);
 /* 读取间距。 */
 XUI_API float xuiRadioGroupGetGap(xui_widget pGroup);
+#endif
 
 /* 取开关控件类型。 */
+#if XUI_ENABLE_TOGGLE
 XUI_API xui_widget_type xuiToggleGetType(xui_context pContext);
 /* 创建开关。 */
 XUI_API int xuiToggleCreate(xui_context pContext, xui_widget* ppWidget, const xui_toggle_desc_t* pDesc);
@@ -8801,8 +8451,10 @@ XUI_API xui_rect_t xuiToggleGetTextRect(xui_widget pWidget);
 XUI_API xui_rect_t xuiToggleGetInnerTextRect(xui_widget pWidget);
 /* 读取控件状态位。 */
 XUI_API uint32_t xuiToggleGetState(xui_widget pWidget);
+#endif
 
 /* 取滚动条控件类型。 */
+#if XUI_ENABLE_SCROLLBAR
 XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext);
 /* 创建独立滚动条（含按钮长按重复）。 */
 XUI_API int xuiScrollBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_scrollbar_desc_t* pDesc);
@@ -8864,8 +8516,10 @@ XUI_API int xuiScrollBarGetActivePart(xui_widget pWidget);
 XUI_API uint32_t xuiScrollBarGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiScrollBarGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取滑动条控件类型。 */
+#if XUI_ENABLE_SLIDER
 XUI_API xui_widget_type xuiSliderGetType(xui_context pContext);
 /* 创建滑动条（单滑块）。 */
 XUI_API int xuiSliderCreate(xui_context pContext, xui_widget* ppWidget, const xui_slider_desc_t* pDesc);
@@ -8911,12 +8565,14 @@ XUI_API xui_rect_t xuiSliderGetKnobRect(xui_widget pWidget);
 XUI_API uint32_t xuiSliderGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiSliderGetChangeCount(xui_widget pWidget);
+#endif
 
 #define XUI_RANGE_SLIDER_THUMB_NONE 0
 #define XUI_RANGE_SLIDER_THUMB_START 1
 #define XUI_RANGE_SLIDER_THUMB_END 2
 
 /* 取范围滑动条控件类型。 */
+#if XUI_ENABLE_RANGE_SLIDER
 XUI_API xui_widget_type xuiRangeSliderGetType(xui_context pContext);
 /* 创建范围滑动条（双滑块区间选择）。 */
 XUI_API int xuiRangeSliderCreate(xui_context pContext, xui_widget* ppWidget, const xui_range_slider_desc_t* pDesc);
@@ -8976,6 +8632,7 @@ XUI_API int xuiRangeSliderGetActiveThumb(xui_widget pWidget);
 XUI_API uint32_t xuiRangeSliderGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiRangeSliderGetChangeCount(xui_widget pWidget);
+#endif
 
 #define XUI_PAGE_ITEM_PREV 1
 #define XUI_PAGE_ITEM_FIRST 2
@@ -8985,6 +8642,7 @@ XUI_API int xuiRangeSliderGetChangeCount(xui_widget pWidget);
 #define XUI_PAGE_ITEM_NEXT 6
 
 /* 取分页器控件类型。 */
+#if XUI_ENABLE_PAGE
 XUI_API xui_widget_type xuiPageGetType(xui_context pContext);
 /* 创建分页器（页码导航条）。 */
 XUI_API int xuiPageCreate(xui_context pContext, xui_widget* ppWidget, const xui_page_desc_t* pDesc);
@@ -9036,8 +8694,10 @@ XUI_API int xuiPageGetActiveItem(xui_widget pWidget);
 XUI_API uint32_t xuiPageGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiPageGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取轮播控件类型。 */
+#if XUI_ENABLE_CAROUSEL
 XUI_API xui_widget_type xuiCarouselGetType(xui_context pContext);
 /* 创建轮播（分页滑动容器）。 */
 XUI_API int xuiCarouselCreate(xui_context pContext, xui_widget* ppWidget, const xui_carousel_desc_t* pDesc);
@@ -9097,8 +8757,10 @@ XUI_API int xuiCarouselGetHoverIndicator(xui_widget pWidget);
 XUI_API int xuiCarouselGetHoverArrow(xui_widget pWidget);
 /* 读取翻页计数（测试用）。 */
 XUI_API int xuiCarouselGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取虚拟摇杆控件类型。 */
+#if XUI_ENABLE_VIRTUAL_JOYSTICK
 XUI_API xui_widget_type xuiVirtualJoystickGetType(xui_context pContext);
 /* 创建虚拟摇杆（多点触控 + 按钮通道 + 涟漪反馈）。 */
 XUI_API int xuiVirtualJoystickCreate(xui_context pContext, xui_widget* ppWidget, const xui_virtual_joystick_desc_t* pDesc);
@@ -9146,8 +8808,10 @@ XUI_API int xuiVirtualJoystickGetChangeCount(xui_widget pWidget);
 XUI_API xui_rect_t xuiVirtualJoystickGetBaseRect(xui_widget pWidget);
 /* 读取滑块矩形。 */
 XUI_API xui_rect_t xuiVirtualJoystickGetKnobRect(xui_widget pWidget);
+#endif
 
 /* 取物品栏控件类型。 */
+#if XUI_ENABLE_INVENTORY_GRID
 XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext);
 /* 创建游戏物品栏（槽位网格 + 拖拽堆叠冷却）。 */
 XUI_API int xuiInventoryGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_inventory_grid_desc_t* pDesc);
@@ -9273,8 +8937,10 @@ XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue** ppValue);
 XUI_API int xuiInventoryGridExportXSON(xui_widget pWidget, char* sBuffer, int iCapacity);
 /* 导出并保存 XSON 文件。 */
 XUI_API int xuiInventoryGridSaveXSONFile(xui_widget pWidget, const char* sPath);
+#endif
 
 /* 取终端控件类型。 */
+#if XUI_ENABLE_TERMINAL
 XUI_API xui_widget_type xuiTerminalGetType(xui_context pContext);
 /* 创建终端模拟器（VT 解析 + 双缓冲屏 + 回滚）。 */
 XUI_API int xuiTerminalCreate(xui_context pContext, xui_widget* ppWidget, const xui_terminal_desc_t* pDesc);
@@ -9330,9 +8996,13 @@ XUI_API int xuiTerminalSetResizeCallback(xui_widget pWidget, xui_terminal_resize
 XUI_API int xuiTerminalSetTitleCallback(xui_widget pWidget, xui_terminal_title_proc onTitle, void* pUser);
 /* 注册超链接回调（OSC 8）。 */
 XUI_API int xuiTerminalSetLinkCallback(xui_widget pWidget, xui_terminal_link_proc onLink, void* pUser);
+#endif
 /* 注册内嵌图像回调。 */
+#if XGE_ENABLE_XUI
 XUI_API int xuiTerminalSetImageCallback(xui_widget pWidget, xui_terminal_image_proc onImage, void* pUser);
+#endif
 /* 设置 256 色调色板项。 */
+#if XUI_ENABLE_TERMINAL
 XUI_API int xuiTerminalSetPalette(xui_widget pWidget, int iIndex, uint32_t iColor);
 /* 读取调色板项。 */
 XUI_API uint32_t xuiTerminalGetPalette(xui_widget pWidget, int iIndex);
@@ -9394,11 +9064,15 @@ XUI_API int xuiTerminalDetachSession(xui_widget pWidget);
 XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_session_desc_t* pDesc);
 /* 创建子进程会话（管道接通 stdin/stdout）；Windows 专用。 */
 XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_terminal_process_desc_t* pDesc);
+#endif
 /* 按 SSH 描述拼装命令行到缓冲。 */
+#if XGE_ENABLE_XUI
 XUI_API int xuiTerminalBuildSshCommand(const xui_terminal_ssh_desc_t* pDesc, char* sBuffer, int iCapacity);
 /* 创建 SSH 远程会话（经 ssh 命令管道）。 */
 XUI_API xui_terminal_session_t* xuiTerminalCreateSshSession(const xui_terminal_ssh_desc_t* pDesc);
+#endif
 /* 销毁会话（终止进程/管道）。 */
+#if XUI_ENABLE_TERMINAL
 XUI_API void xuiTerminalSessionDestroy(xui_terminal_session_t* pSession);
 /* 向会话写入（终端输入方向）。 */
 XUI_API int xuiTerminalSessionWrite(xui_terminal_session_t* pSession, const void* pData, int iSize);
@@ -9416,8 +9090,10 @@ XUI_API int xuiTerminalSessionSetResizeCallback(xui_terminal_session_t* pSession
 XUI_API int xuiTerminalGetChangeCount(xui_widget pWidget);
 /* 输出运行统计（解析量/绘制量，诊断用）。 */
 XUI_API int xuiTerminalGetStats(xui_widget pWidget, xui_terminal_stats_t* pStats);
+#endif
 
 /* 取分割布局控件类型。 */
+#if XUI_ENABLE_SPLIT_LAYOUT
 XUI_API xui_widget_type xuiSplitLayoutGetType(xui_context pContext);
 /* 创建分割布局（多窗格 + 可拖分割条）。 */
 XUI_API int xuiSplitLayoutCreate(xui_context pContext, xui_widget* ppWidget, const xui_split_layout_desc_t* pDesc);
@@ -9487,8 +9163,10 @@ XUI_API int xuiSplitLayoutGetHoverDivider(xui_widget pWidget);
 XUI_API int xuiSplitLayoutGetActiveDivider(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiSplitLayoutGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取选项卡控件类型。 */
+#if XUI_ENABLE_TABS
 XUI_API xui_widget_type xuiTabsGetType(xui_context pContext);
 /* 创建选项卡（页签条 + 页面容器）。 */
 XUI_API int xuiTabsCreate(xui_context pContext, xui_widget* ppWidget, const xui_tabs_desc_t* pDesc);
@@ -9592,8 +9270,10 @@ XUI_API uint32_t xuiTabsGetState(xui_widget pWidget);
 XUI_API int xuiTabsGetChangeCount(xui_widget pWidget);
 /* 读取关闭计数。 */
 XUI_API int xuiTabsGetCloseCount(xui_widget pWidget);
+#endif
 
 /* 取手风琴控件类型。 */
+#if XUI_ENABLE_ACCORDION
 XUI_API xui_widget_type xuiAccordionGetType(xui_context pContext);
 /* 创建手风琴（可折叠分区容器）。 */
 XUI_API int xuiAccordionCreate(xui_context pContext, xui_widget* ppWidget, const xui_accordion_desc_t* pDesc);
@@ -9667,8 +9347,10 @@ XUI_API int xuiAccordionGetActiveIndex(xui_widget pWidget);
 XUI_API uint32_t xuiAccordionGetState(xui_widget pWidget);
 /* 读取变更计数（展开/收起自增，测试用）。 */
 XUI_API int xuiAccordionGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取虚拟窗口控件类型。 */
+#if XUI_ENABLE_WINDOW
 XUI_API xui_widget_type xuiWindowGetType(xui_context pContext);
 /* 创建 MDI 虚拟窗口（标题栏/拖动/缩放/折叠/最大化）。 */
 XUI_API int xuiWindowCreate(xui_context pContext, xui_widget* ppWidget, const xui_window_desc_t* pDesc);
@@ -9798,8 +9480,10 @@ XUI_API uint32_t xuiWindowGetState(xui_widget pWidget);
 XUI_API int xuiWindowGetChangeCount(xui_widget pWidget);
 /* 读取关闭请求计数。 */
 XUI_API int xuiWindowGetCloseCount(xui_widget pWidget);
+#endif
 
 /* 取停靠面板控件类型。 */
+#if XUI_ENABLE_DOCK_PANEL
 XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext);
 /* 创建停靠面板（窗槽/窗格/区域三级结构，MDI 布局宿主）。 */
 XUI_API int xuiDockPanelCreate(xui_context pContext, xui_widget* ppWidget, const xui_dock_panel_desc_t* pDesc);
@@ -9949,8 +9633,10 @@ XUI_API int xuiDockPanelGetChangeCount(xui_widget pWidget);
 XUI_API int xuiDockPanelGetLayoutChangeCount(xui_widget pWidget);
 /* 读取窗口集合变更计数。 */
 XUI_API int xuiDockPanelGetWindowChangeCount(xui_widget pWidget);
+#endif
 
 /* 创建消息框（模态对话框，内建四态图标）。 */
+#if XUI_ENABLE_MSGBOX
 XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_msgbox_desc_t* pDesc);
 /* 释放消息框。 */
 XUI_API void xuiMsgBoxDestroy(xui_msgbox pBox);
@@ -10024,8 +9710,10 @@ XUI_API int xuiMsgBoxGetWrapLineCount(xui_msgbox pBox);
 XUI_API int xuiMsgBoxGetResultCount(xui_msgbox pBox);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiMsgBoxGetChangeCount(xui_msgbox pBox);
+#endif
 
 /* 创建文件对话框（浏览/过滤/保存，组合式控件）。 */
+#if XUI_ENABLE_FILE_DIALOG
 XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
 /* 释放文件对话框。 */
 XUI_API void xuiFileDialogDestroy(xui_file_dialog pDialog);
@@ -10103,8 +9791,10 @@ XUI_API const char* xuiFileDialogGetEntryName(xui_file_dialog pDialog, int iInde
 XUI_API const char* xuiFileDialogGetEntryPath(xui_file_dialog pDialog, int iIndex);
 /* 按索引查询是否目录。 */
 XUI_API int xuiFileDialogEntryIsDir(xui_file_dialog pDialog, int iIndex);
+#endif
 
 /* 创建轻提示（非控件句柄式，宿主坐标显示）。 */
+#if XUI_ENABLE_MSGTIP
 XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_msgtip_desc_t* pDesc);
 /* 释放轻提示。 */
 XUI_API void xuiMsgTipDestroy(xui_msgtip pTip);
@@ -10158,8 +9848,10 @@ XUI_API int xuiMsgTipGetCloseCount(xui_msgtip pTip);
 XUI_API int xuiMsgTipGetExpireCount(xui_msgtip pTip);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiMsgTipGetChangeCount(xui_msgtip pTip);
+#endif
 
 /* 创建 Toast 通知中心（多实例排队，覆盖层显示）。 */
+#if XUI_ENABLE_TOAST
 XUI_API int xuiToastCreate(xui_context pContext, xui_toast* ppToast, const xui_toast_desc_t* pDesc);
 /* 释放通知中心。 */
 XUI_API void xuiToastDestroy(xui_toast pToast);
@@ -10213,8 +9905,10 @@ XUI_API int xuiToastGetExpireCount(xui_toast pToast);
 XUI_API int xuiToastGetDropCount(xui_toast pToast);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiToastGetChangeCount(xui_toast pToast);
+#endif
 
 /* 滚动模型重置为默认（纯数学状态，无 UI）。 */
+#if (XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)
 XUI_API void xuiScrollModelInit(xui_scroll_model_t* pModel);
 /* 设置视口矩形（可携带正偏移）。 */
 XUI_API int xuiScrollModelSetViewport(xui_scroll_model_t* pModel, xui_rect_t tViewport);
@@ -10244,8 +9938,10 @@ XUI_API xui_vec2_t xuiScrollModelScreenToContent(const xui_scroll_model_t* pMode
 XUI_API xui_vec2_t xuiScrollModelContentToViewport(const xui_scroll_model_t* pModel, float fX, float fY);
 /* 内容坐标转屏幕坐标。 */
 XUI_API xui_vec2_t xuiScrollModelContentToScreen(const xui_scroll_model_t* pModel, float fX, float fY);
+#endif
 
 /* 取滚动框架控件类型。 */
+#if XUI_ENABLE_SCROLL_FRAME
 XUI_API xui_widget_type xuiScrollFrameGetType(xui_context pContext);
 /* 创建滚动框架（视口 + 双滚动条 + 角块）。 */
 XUI_API int xuiScrollFrameCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_frame_desc_t* pDesc);
@@ -10337,8 +10033,10 @@ XUI_API int xuiScrollFrameIsVScrollBarVisible(xui_widget pWidget);
 XUI_API int xuiScrollFrameIsCornerVisible(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiScrollFrameGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取滚动视图控件类型。 */
+#if XUI_ENABLE_SCROLL_VIEW
 XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext);
 /* 创建滚动视图（框架 + 单内容容器）。 */
 XUI_API int xuiScrollViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_view_desc_t* pDesc);
@@ -10418,8 +10116,10 @@ XUI_API int xuiScrollViewGetCornerColors(xui_widget pWidget, uint32_t* pCorner, 
 XUI_API xui_rect_t xuiScrollViewGetViewportRect(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiScrollViewGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取画布控件类型。 */
+#if XUI_ENABLE_CANVAS
 XUI_API xui_widget_type xuiCanvasGetType(xui_context pContext);
 /* 创建自绘画布（带滚动视口与缓存位图）。 */
 XUI_API int xuiCanvasCreate(xui_context pContext, xui_widget* ppWidget, const xui_canvas_desc_t* pDesc);
@@ -10491,8 +10191,10 @@ XUI_API int xuiCanvasSetScrollbarMode(xui_widget pWidget, int iMode);
 XUI_API int xuiCanvasGetChangeCount(xui_widget pWidget);
 /* 读取累计绘制调用数（性能诊断）。 */
 XUI_API int xuiCanvasGetDrawCount(xui_widget pWidget);
+#endif
 
 /* 取列表视图控件类型。 */
+#if XUI_ENABLE_LIST_VIEW
 XUI_API xui_widget_type xuiListViewGetType(xui_context pContext);
 /* 创建虚拟化列表视图。 */
 XUI_API int xuiListViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_list_view_desc_t* pDesc);
@@ -10582,8 +10284,10 @@ XUI_API int xuiListViewGetFocusIndex(xui_widget pWidget);
 XUI_API int xuiListViewGetSelectCount(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiListViewGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取消息列表控件类型。 */
+#if XUI_ENABLE_MESSAGE_LIST
 XUI_API xui_widget_type xuiMessageListGetType(xui_context pContext);
 /* 创建会话消息列表（聊天气泡流）。 */
 XUI_API int xuiMessageListCreate(xui_context pContext, xui_widget* ppWidget, const xui_message_list_desc_t* pDesc);
@@ -10669,8 +10373,10 @@ XUI_API int xuiMessageListGetSelectCount(xui_widget pWidget);
 XUI_API int xuiMessageListGetClickCount(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiMessageListGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取树视图控件类型。 */
+#if XUI_ENABLE_TREE_VIEW
 XUI_API xui_widget_type xuiTreeViewGetType(xui_context pContext);
 /* 创建树视图（虚拟化行 + 展开状态）。 */
 XUI_API int xuiTreeViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_tree_view_desc_t* pDesc);
@@ -10777,8 +10483,10 @@ XUI_API int xuiTreeViewGetFocusIndex(xui_widget pWidget);
 XUI_API int xuiTreeViewGetSelectCount(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiTreeViewGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取表格视图控件类型。 */
+#if XUI_ENABLE_TABLE_VIEW
 XUI_API xui_widget_type xuiTableViewGetType(xui_context pContext);
 /* 创建虚拟化表格视图（列描述 + 行/适配器）。 */
 XUI_API int xuiTableViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_view_desc_t* pDesc);
@@ -10898,8 +10606,10 @@ XUI_API int xuiTableViewGetHoverCount(xui_widget pWidget);
 XUI_API int xuiTableViewGetColumnResizeCount(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiTableViewGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取数据网格控件类型。 */
+#if XUI_ENABLE_TABLE_GRID
 XUI_API xui_widget_type xuiTableGridGetType(xui_context pContext);
 /* 创建可编辑数据网格（包装 tableview + 单元格编辑器）。 */
 XUI_API int xuiTableGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_grid_desc_t* pDesc);
@@ -10957,8 +10667,10 @@ XUI_API int xuiTableGridGetCancelCount(xui_widget pWidget);
 XUI_API int xuiTableGridGetPickerCount(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiTableGridGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取时间轴控件类型。 */
+#if XUI_ENABLE_TIMELINE_VIEW
 XUI_API xui_widget_type xuiTimeLineViewGetType(xui_context pContext);
 /* 创建时间轴（图层 + 关键帧 + 区间，动画编辑器用）。 */
 XUI_API int xuiTimeLineViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_timeline_view_desc_t* pDesc);
@@ -11128,8 +10840,10 @@ XUI_API int xuiTimeLineViewGetSpanChangeCount(xui_widget pWidget);
 XUI_API int xuiTimeLineViewGetSelectionChangeCount(xui_widget pWidget);
 /* 读取点击计数（测试用）。 */
 XUI_API int xuiTimeLineViewGetClickCount(xui_widget pWidget);
+#endif
 
 /* 取属性网格控件类型。 */
+#if XUI_ENABLE_PROPERTY_GRID
 XUI_API xui_widget_type xuiPropertyGridGetType(xui_context pContext);
 /* 创建属性网格（类目/属性行 + 描述面板，基于 tablegrid）。 */
 XUI_API int xuiPropertyGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_property_grid_desc_t* pDesc);
@@ -11245,8 +10959,10 @@ XUI_API int xuiPropertyGridSetColors(xui_widget pWidget, uint32_t iBackground, u
 XUI_API int xuiPropertyGridGetSelectCount(xui_widget pWidget);
 /* 读取类目折叠计数。 */
 XUI_API int xuiPropertyGridGetToggleCount(xui_widget pWidget);
+#endif
 
 /* 取弹出层控件类型。 */
+#if XUI_ENABLE_POPUP
 XUI_API xui_widget_type xuiPopupGetType(xui_context pContext);
 /* 创建弹出层（锚定定位 + 关闭策略 + 焦点管理）。 */
 XUI_API int xuiPopupCreate(xui_context pContext, xui_widget* ppWidget, const xui_popup_desc_t* pDesc);
@@ -11356,8 +11072,10 @@ XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fBorder
 XUI_API int xuiPopupGetMetrics(xui_widget pWidget, float* pPadding, float* pBorderWidth, float* pShadowSize);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiPopupGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取菜单控件类型。 */
+#if XUI_ENABLE_MENU
 XUI_API xui_widget_type xuiMenuGetType(xui_context pContext);
 /* 创建上下文菜单（支持子菜单/快捷键/勾选）。 */
 XUI_API int xuiMenuCreate(xui_context pContext, xui_widget* ppWidget, const xui_menu_desc_t* pDesc);
@@ -11417,8 +11135,10 @@ XUI_API xui_widget xuiMenuGetPopupWidget(xui_widget pWidget);
 XUI_API xui_widget xuiMenuGetContentWidget(xui_widget pWidget);
 /* 取弹出宿主控件。 */
 XUI_API xui_widget xuiMenuGetOwner(xui_widget pWidget);
+#endif
 
 /* 取菜单栏控件类型。 */
+#if XUI_ENABLE_MENUBAR
 XUI_API xui_widget_type xuiMenuBarGetType(xui_context pContext);
 /* 创建菜单栏（顶部条 + 下拉菜单）。 */
 XUI_API int xuiMenuBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_menubar_desc_t* pDesc);
@@ -11476,8 +11196,10 @@ XUI_API int xuiMenuBarGetColors(xui_widget pWidget, xui_menubar_colors_t* pColor
 XUI_API int xuiMenuBarGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiMenuBarGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取工具栏控件类型。 */
+#if XUI_ENABLE_TOOLBAR
 XUI_API xui_widget_type xuiToolbarGetType(xui_context pContext);
 /* 创建工具栏（按钮组 + 分隔线 + 溢出菜单）。 */
 XUI_API int xuiToolbarCreate(xui_context pContext, xui_widget* ppWidget, const xui_toolbar_desc_t* pDesc);
@@ -11489,7 +11211,7 @@ XUI_API int xuiToolbarSetContextMenu(xui_widget pWidget, xui_toolbar_context_pro
 XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButtonSize, xui_toolbar_overflow_proc onOverflow, void* pUser);
 /* 读取溢出开关。 */
 XUI_API int xuiToolbarIsOverflowEnabled(xui_widget pWidget);
-/* 批量设置工具项。 */
+/* 批量设置工具项；提示文本由 Toolbar 复制，sText 仍由调用方保持有效。 */
 XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pItems, int iCount);
 /* 追加工具项（类型区分按钮/展开/自定义）。 */
 XUI_API int xuiToolbarAddItem(xui_widget pWidget, const char* sText, int iType, int iValue);
@@ -11515,7 +11237,7 @@ XUI_API int xuiToolbarSetItemSize(xui_widget pWidget, float fWidth, float fHeigh
 XUI_API int xuiToolbarSetItemGroup(xui_widget pWidget, int iIndex, int iGroup);
 /* 读取工具项分组。 */
 XUI_API int xuiToolbarGetItemGroup(xui_widget pWidget, int iIndex);
-/* 设置工具项提示文本。 */
+/* 设置工具项提示文本；Toolbar 复制字符串。 */
 XUI_API int xuiToolbarSetItemTooltip(xui_widget pWidget, int iIndex, const char* sText);
 /* 读取工具项提示。 */
 XUI_API const char* xuiToolbarGetItemTooltip(xui_widget pWidget, int iIndex);
@@ -11563,8 +11285,10 @@ XUI_API int xuiToolbarGetSelectCount(xui_widget pWidget);
 XUI_API int xuiToolbarGetOverflowSelectCount(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiToolbarGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取状态栏控件类型。 */
+#if XUI_ENABLE_STATUSBAR
 XUI_API xui_widget_type xuiStatusBarGetType(xui_context pContext);
 /* 创建状态栏（分区条目容器）。 */
 XUI_API int xuiStatusBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_statusbar_desc_t* pDesc);
@@ -11638,8 +11362,10 @@ XUI_API uint32_t xuiStatusBarGetState(xui_widget pWidget);
 XUI_API int xuiStatusBarGetSelectCount(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiStatusBarGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取组合框控件类型。 */
+#if XUI_ENABLE_COMBOBOX
 XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext);
 /* 创建组合框（下拉选择，可编辑模式含内嵌输入框）。 */
 XUI_API int xuiComboBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_combobox_desc_t* pDesc);
@@ -11757,8 +11483,10 @@ XUI_API xui_rect_t xuiComboBoxGetTextRect(xui_widget pWidget);
 XUI_API uint32_t xuiComboBoxGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiComboBoxGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取级联选择器控件类型。 */
+#if XUI_ENABLE_CASCADER
 XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext);
 /* 创建级联选择器（多列弹层逐级选择）。 */
 XUI_API int xuiCascaderCreate(xui_context pContext, xui_widget* ppWidget, const xui_cascader_desc_t* pDesc);
@@ -11868,8 +11596,10 @@ XUI_API xui_rect_t xuiCascaderGetTextRect(xui_widget pWidget);
 XUI_API uint32_t xuiCascaderGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiCascaderGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取颜色选择器控件类型。 */
+#if XUI_ENABLE_COLOR_PICKER
 XUI_API xui_widget_type xuiColorPickerGetType(xui_context pContext);
 /* 创建颜色选择器（弹层面板含饱和度/色相/透明度/Hex/预设）。 */
 XUI_API int xuiColorPickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_color_picker_desc_t* pDesc);
@@ -11973,8 +11703,10 @@ XUI_API int xuiColorPickerGetActivePart(xui_widget pWidget);
 XUI_API uint32_t xuiColorPickerGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiColorPickerGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取图标选择器控件类型。 */
+#if XUI_ENABLE_ICON_PICKER
 XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext);
 /* 创建图标选择器（弹层网格浏览图标类别）。 */
 XUI_API int xuiIconPickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_icon_picker_desc_t* pDesc);
@@ -12080,8 +11812,10 @@ XUI_API int xuiIconPickerGetFocusIndex(xui_widget pWidget);
 XUI_API uint32_t xuiIconPickerGetState(xui_widget pWidget);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiIconPickerGetChangeCount(xui_widget pWidget);
+#endif
 
 /* 取日期选择器控件类型。 */
+#if XUI_ENABLE_DATE_PICKER
 XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext);
 /* 创建日期选择器（日历弹层，支持时刻与范围模式）。 */
 XUI_API int xuiDatePickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_date_picker_desc_t* pDesc);
@@ -12227,8 +11961,10 @@ XUI_API int xuiDatePickerGetCommitCount(xui_widget pWidget);
 XUI_API int xuiDatePickerGetCancelCount(xui_widget pWidget);
 /* 读取清除计数。 */
 XUI_API int xuiDatePickerGetClearCount(xui_widget pWidget);
+#endif
 
 /* 设置根控件（原根子树由调用方处置）。 */
+#if XGE_ENABLE_XUI
 XUI_API int xuiSetRootWidget(xui_context pContext, xui_widget pWidget);
 /* 取根控件。 */
 XUI_API xui_widget xuiGetRootWidget(xui_context pContext);
@@ -12293,6 +12029,8 @@ XUI_API int xuiWidgetSetRect(xui_widget pWidget, xui_rect_t tRect);
 XUI_API xui_rect_t xuiWidgetGetRect(xui_widget pWidget);
 /* 读取世界坐标矩形（沿父链累计变换）。 */
 XUI_API xui_rect_t xuiWidgetGetWorldRect(xui_widget pWidget);
+/* 是否位于当前 context 的根或浮层树中；游离控件返回 0。 */
+XUI_API int xuiWidgetIsAttachedToContext(xui_widget pWidget);
 /* 读取内容区（矩形扣除内边距）。 */
 XUI_API xui_rect_t xuiWidgetGetContentRect(xui_widget pWidget);
 /* 覆盖布局描述（类型/对齐/间距等）。 */
@@ -12629,8 +12367,10 @@ XUI_API int xuiDebugWidgetTreeDump(xui_context pContext, xui_widget pRoot, char*
 XUI_API int xuiDebugLayoutSnapshot(xui_context pContext, char* sBuffer, int iCapacity);
 /* 把事件格式化为可读文本（事件日志用）。 */
 XUI_API int xuiDebugEventTrace(xui_context pContext, const xui_event_t* pEvent, char* sBuffer, int iCapacity);
+#endif
 
 /* 创建空流程图模型（节点/端口/边）。 */
+#if XUI_ENABLE_FLOW_GRAPH
 XUI_API int xuiFlowGraphCreate(xui_flow_graph* ppGraph);
 /* 释放流程图模型。 */
 XUI_API void xuiFlowGraphDestroy(xui_flow_graph pGraph);
@@ -12772,8 +12512,10 @@ XUI_API int xuiFlowGraphWidgetHitTest(xui_widget pWidget, float fX, float fY, xu
 XUI_API int xuiFlowGraphWidgetGetHoverHit(xui_widget pWidget, xui_flow_hit_t* pHit);
 /* 选择坐标处对象（命中即选中）。 */
 XUI_API int xuiFlowGraphWidgetSelectAt(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit);
+#endif
 
 /* 取工作流画布控件类型。 */
+#if XUI_ENABLE_WORKFLOW
 XUI_API xui_widget_type xuiWorkflowGetType(xui_context pContext);
 /* 创建工作流编辑器画布（包装流程图画布）。 */
 XUI_API int xuiWorkflowWidgetCreate(xui_context pContext, xui_widget* ppWidget, const xui_workflow_desc_t* pDesc);
@@ -12856,8 +12598,10 @@ XUI_API int xuiWorkflowGetNodeRunState(xui_workflow pWorkflow, const char* sNode
 XUI_API int xuiWorkflowSetEdgeRunState(xui_workflow pWorkflow, const xui_workflow_edge_run_state_t* pState);
 /* 输出连线运行态。 */
 XUI_API int xuiWorkflowGetEdgeRunState(xui_workflow pWorkflow, const char* sEdgeId, xui_workflow_edge_run_state_t* pState);
+#endif
 
 /* 取 XGE 引擎适配的渲染代理函数表（默认后端）。 */
+#if XGE_ENABLE_XUI
 XUI_API xui_proxy_t xuiProxyXge(void);
 /* Pumps keyboard, text and IME events without changing pointer state. */
 XUI_API int xuiProxyXgePumpKeyboard(xui_context pContext);
@@ -12865,6 +12609,74 @@ XUI_API int xuiProxyXgePumpKeyboard(xui_context pContext);
 XUI_API int xuiProxyXgePumpInput(xui_context pContext);
 /* 泵输入并按窗口矩形换算坐标（视口变换）。 */
 XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect);
+#endif
+
+/* 通用网页控件。Windows WebView2 后端须在构建时显式启用；普通构建
+ * 保留 API，并在初始化时返回 XUI_ERROR_UNSUPPORTED。 */
+typedef enum xui_webview_state_t {
+	XUI_WEBVIEW_CREATED = 0,
+	XUI_WEBVIEW_INITIALIZING = 1,
+	XUI_WEBVIEW_READY = 2,
+	XUI_WEBVIEW_FAILED = 3,
+	XUI_WEBVIEW_CLOSED = 4
+} xui_webview_state_t;
+
+typedef enum xui_webview_event_t {
+	XUI_WEBVIEW_EVENT_READY = 1,
+	XUI_WEBVIEW_EVENT_FAILED = 2,
+	XUI_WEBVIEW_EVENT_NAVIGATION_COMPLETE = 3,
+	XUI_WEBVIEW_EVENT_NAVIGATION_FAILED = 4,
+	XUI_WEBVIEW_EVENT_CLOSED = 5
+} xui_webview_event_t;
+
+/* 回调在初始化所用的 UI STA 线程执行。pWidget 在回调期间有效；
+ * 直接销毁控件不会再发回调。iNativeError 在 Windows 为 HRESULT。 */
+typedef void (*xui_webview_event_proc)(xui_widget pWidget, int iEvent,
+	int32_t iNativeError, void* pUser);
+typedef struct xui_webview_desc_t {
+	uint32_t iSize;
+	const char* sUserDataFolder; /* UTF-8；NULL 使用 WebView2 默认 profile。 */
+	xui_webview_event_proc onEvent;
+	void* pUser;
+} xui_webview_desc_t;
+
+typedef enum xui_web_local_access_t {
+	XUI_WEB_LOCAL_ACCESS_SAME_ORIGIN = 0,
+	XUI_WEB_LOCAL_ACCESS_SUBRESOURCE = 1,
+	XUI_WEB_LOCAL_ACCESS_ALL = 2
+} xui_web_local_access_t;
+
+/* 取得当前 XUI context 的 WebView 控件类型。 */
+#if XUI_ENABLE_WEBVIEW
+XUI_API xui_widget_type xuiWebViewGetType(xui_context pContext);
+/* 创建尚未初始化浏览器后端的 WebView 控件。 */
+XUI_API int xuiWebViewCreate(xui_context pContext, xui_widget* ppWidget,
+	const xui_webview_desc_t* pDesc);
+/* 在 UI STA 线程异步建立浏览器；就绪或失败由事件回调报告。 */
+XUI_API int xuiWebViewInitializeAsync(xui_widget pWidget);
+/* 将 XUI 焦点和浏览器原生键盘焦点一起转入 WebView。 */
+XUI_API int xuiWebViewFocus(xui_widget pWidget);
+/* 将已就绪的 WebView 导航到 UTF-8 URL。 */
+XUI_API int xuiWebViewNavigate(xui_widget pWidget, const char* sUrl);
+/* 载入指定长度的自包含 UTF-8 HTML。 */
+XUI_API int xuiWebViewLoadHtml(xui_widget pWidget, const char* sHtml, size_t iBytes);
+/* 页面缩放与宿主矩形独立；控件就绪后允许 0.25 到 5 倍缩放。 */
+XUI_API int xuiWebViewSetZoomFactor(xui_widget pWidget, double fFactor);
+/* 读取已就绪浏览器的页面缩放因子。 */
+XUI_API int xuiWebViewGetZoomFactor(xui_widget pWidget, double* pFactor);
+/* 为应用自有 DNS 主机名映射现存的 UTF-8 文件夹；导航到
+ * https://<host>/path 使用浏览器的本地资源装载。更改已有页面需重新导航。 */
+XUI_API int xuiWebViewMapLocalFolder(xui_widget pWidget, const char* sHost,
+	const char* sAbsoluteFolder, int iAccess);
+/* 撤销此前配置的本地资源主机映射。 */
+XUI_API int xuiWebViewUnmapLocalFolder(xui_widget pWidget, const char* sHost);
+/* 读取 CREATED、INITIALIZING、READY、FAILED 或 CLOSED 状态。 */
+XUI_API int xuiWebViewGetState(xui_widget pWidget);
+/* 读取最近一次 Windows WebView2 HRESULT；无错误时为零。 */
+XUI_API int32_t xuiWebViewGetNativeError(xui_widget pWidget);
+/* 关闭浏览器控制器和原生子窗口，终止该控件的网页会话。 */
+XUI_API int xuiWebViewClose(xui_widget pWidget);
+#endif
 
 #ifdef __cplusplus
 }

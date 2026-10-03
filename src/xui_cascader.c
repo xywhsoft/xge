@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CASCADER
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -1296,7 +1298,7 @@ static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, 
 		if ( (state & XUI_WIDGET_STATE_DISABLED) == 0u ) text = tResolved.iPlaceholderColor;
 	}
 	if ( pProxy->drawText != NULL ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sText, pData->tTextRect, text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tTextRect, text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pData->tClearRect.fW > 0.0f ) {
@@ -1388,7 +1390,7 @@ static int __xuiCascaderPanelRender(xui_widget pPanel, xui_draw_context pDraw, u
 				textRect = r;
 				textRect.fX += 14.0f;
 				textRect.fW = __xuiCascaderMax(0.0f, textRect.fW - 34.0f);
-				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, __xuiCascaderText(pData->arrItems[item].sText), textRect, text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=__xuiCascaderText(pData->arrItems[item].sText), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, textRect, text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( hasChildren ) {
@@ -2146,3 +2148,5 @@ XUI_API int xuiCascaderGetChangeCount(xui_widget pWidget)
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

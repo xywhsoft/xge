@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <ctype.h>
@@ -218,3 +220,5 @@ XUI_API int xuiCodeLexerCTokenizeDocumentRange(xui_code_document pDocument,
 	xrtFree(sRange);
 	return iRet;
 }
+
+#endif

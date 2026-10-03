@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
 #include <string.h>
@@ -252,3 +254,5 @@ XUI_API int xuiEditOpenContextMenu(xui_widget pWidget, float fX, float fY)
 }
 
 #undef XUI_EDIT_CALL0
+
+#endif

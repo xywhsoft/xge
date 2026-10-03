@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TAG_INPUT
 #include "xui_internal.h"
 
 #include <ctype.h>
@@ -203,7 +205,7 @@ static xui_vec2_t __xuiTagInputMeasureText(xui_widget pWidget, xui_font pFont, c
 	}
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
-	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK) ) {
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) ) {
 		return tSize;
 	}
 	tSize.fX = (float)strlen(sText) * 7.0f;
@@ -826,8 +828,7 @@ static int __xuiTagInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		tText.fX += tResolved.fTagPaddingX;
 		tText.fW -= tResolved.fTagPaddingX * 2.0f + 18.0f;
 		if ( tText.fW > 0.0f && tResolved.pFont != NULL ) {
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, tResolved.arrTags[i], tText, tResolved.iTagTextColor,
-				XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=tResolved.arrTags[i], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, tResolved.iTagTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		iCloseColor = (i == pData->iHoverClose || i == pData->iActiveClose) ? tResolved.iTagCloseHoverColor : tResolved.iTagCloseColor;
@@ -1768,3 +1769,5 @@ XUI_API int xuiTagInputGetChangeCount(xui_widget pWidget)
 	pData = __xuiTagInputGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

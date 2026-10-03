@@ -232,9 +232,7 @@ static int __afStageRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t 
 			pApp->tDoc.fStageWidth, pApp->tDoc.fStageHeight,
 			pApp->iCurrentFrame, pApp->tDoc.iFrameCount,
 			pApp->tView.fZoom * 100.0f);
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sInfo,
-			(xui_rect_t){rc.fX + 8.0f, rc.fY + rc.fH - 24.0f, rc.fW - 16.0f, 20.0f},
-			AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sInfo, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, rc.fY + rc.fH - 24.0f, rc.fW - 16.0f, 20.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -390,20 +388,14 @@ static int __afLibraryRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 			(xui_rect_t){rc.fX + 68.0f, rc.fY + 2.0f, 60.0f, 18.0f}, AF_COLOR_HIGHLIGHT);
 	}
 	if ( pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "Import",
-			(xui_rect_t){rc.fX + 4.0f, rc.fY + 2.0f, 60.0f, 18.0f},
-			AF_COLOR_TEXT, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "+ New",
-			(xui_rect_t){rc.fX + 68.0f, rc.fY + 2.0f, 60.0f, 18.0f},
-			AF_COLOR_TEXT, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="Import", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 4.0f, rc.fY + 2.0f, 60.0f, 18.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="+ New", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 68.0f, rc.fY + 2.0f, 60.0f, 18.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 
 	/* Header info */
 	if ( pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
 		snprintf(sText, sizeof(sText), "Symbols: %d  Res: %d", pApp->tDoc.iSymbolCount, pApp->tDoc.iResourceCount);
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-			(xui_rect_t){rc.fX + 132.0f, rc.fY + 2.0f, rc.fW - 136.0f, 18.0f},
-			AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 132.0f, rc.fY + 2.0f, rc.fW - 136.0f, 18.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	/* Symbol list */
 	fY = rc.fY + 24.0f;
@@ -431,9 +423,7 @@ static int __afLibraryRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 		/* Name */
 		if ( pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
 			snprintf(sText, sizeof(sText), "%s [%s]", pSym->sName, sType);
-			pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-				(xui_rect_t){rc.fX + 24.0f, fY, rc.fW - 32.0f, 16.0f},
-				AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+			pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 24.0f, fY, rc.fW - 32.0f, 16.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		}
 		fY += 20.0f;
 	}
@@ -448,9 +438,7 @@ static int __afLibraryRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 			af_resource_t* pRes = &pApp->tDoc.arrResources[i];
 			if ( pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
 				snprintf(sText, sizeof(sText), "%s (%dx%d)", pRes->sName, pRes->iWidth, pRes->iHeight);
-				pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-					(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 16.0f},
-					AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+				pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 16.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 			}
 			fY += 18.0f;
 		}
@@ -538,9 +526,7 @@ static int __afPropertyRender(xui_widget pWidget, xui_draw_context pDraw, uint32
 	}
 	fY = rc.fY + 4.0f;
 	if ( pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "Properties",
-			(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 16.0f},
-			AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="Properties", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 16.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		fY += 20.0f;
 	}
 	/* Show selected symbol properties */
@@ -549,52 +535,34 @@ static int __afPropertyRender(xui_widget pWidget, xui_draw_context pDraw, uint32
 		if ( pElem != NULL && pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
 			af_symbol_t* pSym = afDocFindSymbol(&pApp->tDoc, pElem->iSymbolId);
 			snprintf(sText, sizeof(sText), "Instance: %u", pElem->iInstanceId);
-			pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-				(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-				AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+			pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 			fY += 16.0f;
 			if ( pSym != NULL ) {
 				snprintf(sText, sizeof(sText), "Symbol: %s", pSym->sName);
-				pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-					(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-					AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+				pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 				fY += 16.0f;
 			}
 			snprintf(sText, sizeof(sText), "X: %.1f  Y: %.1f", pElem->fTx, pElem->fTy);
-			pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-				(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-				AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+			pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 			fY += 16.0f;
 			snprintf(sText, sizeof(sText), "W: %.1f  H: %.1f", pElem->fScaleX * 100.0f, pElem->fScaleY * 100.0f);
-			pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-				(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-				AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+			pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 			fY += 16.0f;
 			snprintf(sText, sizeof(sText), "Rot: %.1f  Alpha: %.0f%%", pElem->fRotation, pElem->fOpacity * 100.0f);
-			pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-				(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-				AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+			pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		}
 	} else if ( pApp->tDoc.iSymbolCount > 0 && pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
 		/* Show document properties when nothing selected */
 		snprintf(sText, sizeof(sText), "Stage: %.0f x %.0f", pApp->tDoc.fStageWidth, pApp->tDoc.fStageHeight);
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-			(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-			AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		fY += 16.0f;
 		snprintf(sText, sizeof(sText), "FPS: %.0f  Frames: %u", pApp->tDoc.fFrameRate, pApp->tDoc.iFrameCount);
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-			(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-			AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		fY += 16.0f;
 		snprintf(sText, sizeof(sText), "Layers: %d  Symbols: %d", pApp->tDoc.tTimeline.iLayerCount, pApp->tDoc.iSymbolCount);
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText,
-			(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-			AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	} else if ( pApp->tProxy.drawText != NULL && pApp->pFont != NULL ) {
-		pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "No selection",
-			(xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f},
-			AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="No selection", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rc.fX + 8.0f, fY, rc.fW - 16.0f, 14.0f}, AF_COLOR_TEXT_DIM, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -641,7 +609,7 @@ static int __afTimelineRender(xui_widget pWidget, xui_draw_context pDraw, uint32
 					snprintf(sNum, sizeof(sNum), "%d", f);
 					tRc.fX = fX + 2.0f; tRc.fY = rc.fY + 4.0f;
 					tRc.fW = 36.0f; tRc.fH = 14.0f;
-					pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFontMono, sNum, tRc, AF_COLOR_TEXT_DIM, 0);
+					pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFontMono, .sText=sNum, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((0) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRc, AF_COLOR_TEXT_DIM, 0);
 				}
 			}
 		}
@@ -664,7 +632,7 @@ static int __afTimelineRender(xui_widget pWidget, xui_draw_context pDraw, uint32
 		/* Layer name */
 		if ( pApp->tProxy.drawText != NULL && pApp->pFontMono != NULL ) {
 			xui_rect_t tRc = { rc.fX + 6.0f, fRowY + 3.0f, AF_TL_LAYER_WIDTH - 12.0f, 16.0f };
-			pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFontMono, pLayer->sName, tRc, AF_COLOR_TEXT, 0);
+			pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFontMono, .sText=pLayer->sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((0) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRc, AF_COLOR_TEXT, 0);
 		}
 		/* Row separator */
 		if ( pApp->tProxy.drawLine != NULL ) {

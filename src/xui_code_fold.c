@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <string.h>
@@ -222,3 +224,5 @@ XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_ran
 	}
 	return XUI_OK;
 }
+
+#endif

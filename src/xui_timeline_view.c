@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TIMELINE_VIEW
 #include "xui_internal.h"
 
 #include <math.h>
@@ -754,11 +756,14 @@ static int __xuiTimeLineDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float
 	return pProxy->drawLine(pProxy, pDraw, x0, y0, x1, y1, fWidth, iColor);
 }
 
-static int __xuiTimeLineDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiTimeLineDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == '\0') || (__xuiTimeLineAlpha(iColor) == 0) ||
 	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) return XUI_OK;
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags);
+	return pProxy->drawText(pProxy, pDraw, pTextItem, xuiInternalSnapRect(tRect), iColor, iFlags);
 }
 
 static xui_rect_t __xuiTimeLineLayerIconRect(const xui_timeline_view_data_t* pData, int iIcon, float fRowY, float fRowH)
@@ -863,9 +868,7 @@ static int __xuiTimeLineRenderLayers(xui_widget pWidget, xui_draw_context pDraw,
 		iRet = __xuiTimeLineDrawFill(pProxy, pDraw, (xui_rect_t){tRow.fX, tRow.fY, 3.0f, tRow.fH}, pData->arrLayerCustomColor[i] ? pData->arrLayers[i].iColor : pPaint->iLayerAccentColor);
 		if ( iRet != XUI_OK ) return iRet;
 		tText = xuiInternalSnapRect((xui_rect_t){tRow.fX + 10.0f, tRow.fY, __xuiTimeLineMax(0.0f, pData->fLayerHeaderWidth - 58.0f), tRow.fH});
-		iRet = __xuiTimeLineDrawText(pProxy, pDraw, pData->pFont, pData->arrLayers[i].sName, tText,
-			!xuiWidgetGetEnabled(pWidget) ? pPaint->tColors.iDisabledColor : (((iState & XUI_TIMELINE_STATE_HIDDEN) != 0) ? pPaint->tColors.iMutedTextColor : pPaint->tColors.iTextColor),
-			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiTimeLineDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pData->arrLayers[i].sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, !xuiWidgetGetEnabled(pWidget) ? pPaint->tColors.iDisabledColor : (((iState & XUI_TIMELINE_STATE_HIDDEN) != 0) ? pPaint->tColors.iMutedTextColor : pPaint->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pData->bShowLockFeature ) {
 			tIcon = __xuiTimeLineLayerIconRect(pData, XUI_TIMELINE_HIT_LAYER_LOCK, tRow.fY, tRow.fH);
@@ -911,7 +914,7 @@ static int __xuiTimeLineRenderRuler(xui_widget pWidget, xui_draw_context pDraw, 
 				continue;
 			}
 			snprintf(sText, sizeof(sText), "%d", iFrame + 1);
-			iRet = __xuiTimeLineDrawText(pProxy, pDraw, pData->pFont, sText, tTick, pPaint->tColors.iMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = __xuiTimeLineDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTick, pPaint->tColors.iMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		iRet = __xuiTimeLineDrawLine(pProxy, pDraw, fX, tRuler.fY + tRuler.fH - ((iFrame % 5) == 0 ? 9.0f : 5.0f), fX, tRuler.fY + tRuler.fH, 1.0f, ((iFrame % 5) == 0) ? pPaint->tColors.iGridStrongColor : pPaint->tColors.iGridColor);
@@ -1077,7 +1080,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 		}
 		iRet = __xuiTimeLineDrawRectFill(pProxy, pDraw, tSpan, (pData->arrSpanCustomColor[i] && pSpan->iColor != 0) ? pSpan->iColor : pPaint->tColors.iSpanColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiTimeLineDrawText(pProxy, pDraw, pData->pFont, pSpan->sLabel, (xui_rect_t){tSpan.fX + 6.0f, tSpan.fY, __xuiTimeLineMax(0.0f, tSpan.fW - 12.0f), tSpan.fH}, pPaint->tColors.iSpanTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiTimeLineDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pSpan->sLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tSpan.fX + 6.0f, tSpan.fY, __xuiTimeLineMax(0.0f, tSpan.fW - 12.0f), tSpan.fH}, pPaint->tColors.iSpanTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	for ( i = 0; i < pData->iSelectionCount; i++ ) {
@@ -3081,3 +3084,5 @@ XUI_API int xuiTimeLineViewGetClickCount(xui_widget pWidget)
 	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
 	return (pData != NULL) ? pData->iClickCount : 0;
 }
+
+#endif

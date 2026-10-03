@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <string.h>
@@ -120,3 +122,5 @@ XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set pProviders, x
 	if ( pProviders->onCommandEnabled == NULL ) return XUI_ERROR_UNSUPPORTED;
 	return pProviders->onCommandEnabled((xui_widget_t*)pWidget, iCommand, pEnabled, pProviders->pCommandEnabledUser);
 }
+
+#endif

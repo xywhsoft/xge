@@ -92,8 +92,11 @@ static int __xuiMsgTipTestPrefixOfFractionalText(const char* sText)
 	return memcmp(XUI_MSGTIP_TEST_FRACTIONAL_TEXT, sText, iLen) == 0;
 }
 
-static int __xuiMsgTipTestFractionalMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int __xuiMsgTipTestFractionalMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	static const float arrPrefixW[] = {
 		0.0f, 7.498f, 15.498f, 21.997f, 29.993f, 43.993f, 57.632f, 71.270f, 84.908f
 	};

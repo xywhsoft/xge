@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_PROGRESS
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -678,7 +680,7 @@ static xui_rect_t __xuiProgressTextVisualRect(xui_proxy pProxy, xui_font pFont, 
 	tText = tContent;
 	memset(&tSize, 0, sizeof(tSize));
 	if ( (pProxy == NULL) || (pProxy->textMeasure == NULL) ||
-	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) != XUI_OK) ||
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) != XUI_OK) ||
 	     (tSize.fX <= 0.0f) || (tSize.fY <= 0.0f) ) {
 		return tText;
 	}
@@ -792,7 +794,7 @@ static int __xuiProgressCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( (tResolved.pFont != NULL) && (pProxy->drawText != NULL) &&
 	     (pData->sDisplayText != NULL) && (pData->sDisplayText[0] != '\0') &&
 	     (__xuiProgressColorAlpha(tResolved.iTextColor) != 0) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sDisplayText, tContent, tResolved.iTextColor, tResolved.iTextFlags);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sDisplayText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((tResolved.iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tContent, tResolved.iTextColor, tResolved.iTextFlags);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -804,7 +806,7 @@ static int __xuiProgressCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		xui_rect_t tTextRect;
 		tTextRect = __xuiProgressTextVisualRect(pProxy, tResolved.pFont, pData->sDisplayText, tContent, tResolved.iTextFlags);
 		if ( __xuiProgressRectContains(tFill, tTextRect) ) {
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sDisplayText, tContent, tResolved.iFillTextColor, tResolved.iTextFlags);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sDisplayText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((tResolved.iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tContent, tResolved.iFillTextColor, tResolved.iTextFlags);
 			if ( iRet != XUI_OK ) {
 				return iRet;
 			}
@@ -1403,3 +1405,5 @@ XUI_API xui_rect_t xuiProgressGetFillRect(xui_widget pWidget)
 	__xuiProgressResolve(pWidget, pData, &tResolved);
 	return __xuiProgressFillRectFromData(pWidget, pData, tResolved.iFillDirection);
 }
+
+#endif

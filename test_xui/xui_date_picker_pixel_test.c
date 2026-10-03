@@ -4,9 +4,10 @@ typedef struct box_t { float x, y, w, h; } box_t;
 static xui_rect_t g_text[256];
 static int g_text_count;
 
-static int draw_text(xui_proxy proxy, xui_draw_context draw, xui_font font, const char* text,
-	xui_rect_t rect, uint32_t color, uint32_t flags)
+static int draw_text(xui_proxy proxy, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t rect, uint32_t color, uint32_t flags)
 {
+    const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if (text && text[0] && g_text_count < 256) g_text[g_text_count++] = rect;
 	return XUI_OK;
 }

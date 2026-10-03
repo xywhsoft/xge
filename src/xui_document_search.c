@@ -1,4 +1,7 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
+#include "xui_unicode_core.h"
 
 static xui_doc_position_t doc_plain_edge(doc_plain_projection* p, uint64_t id, int end)
 {
@@ -138,34 +141,361 @@ XUI_API int xuiDocumentSnapshotFind(xui_document_snapshot snapshot, uint32_t dom
 done:
     doc_free(prefix); doc_plain_projection_free(&p); return result;
 }
-XUI_API int xuiDocumentTxnReplaceAll(xui_document_transaction t, const char* pattern, uint64_t pattern_bytes,
-    const char* replacement, uint64_t replacement_bytes, const xui_doc_range_t* scope, uint64_t* replaced)
+static int doc_regex_error(int fallback)
 {
-    struct xui_doc_snapshot_t snapshot = {0}; xui_doc_range_t* matches = NULL; uint64_t count = 0, i;
+    const xerror* error = xrtGetError();
+    if (error && xrtErrorIs(error, XERR_MEMORY)) return XUI_ERROR_OUT_OF_MEMORY;
+    if (error && xrtErrorFind(error, "xrt.regex", XREGEX_ERROR_LIMIT))
+        return XUI_DOC_ERROR_LIMIT;
+    return fallback;
+}
+XUI_API int xuiDocumentSnapshotFindEx(xui_document_snapshot snapshot, uint32_t domain,
+    const char* pattern, uint64_t pattern_bytes, uint32_t flags,
+    const xui_doc_range_t* scope, xui_doc_range_t* matches,
+    uint64_t capacity, uint64_t* total)
+{
+    doc_plain_projection projection;
+    xregexconfig config;
+    xregex* regex = NULL;
+    xregexmatcher* matcher = NULL;
+    xstrview expression, text;
+    char* escaped = NULL;
+    uint64_t first = 0, last, count = 0;
+    size_t escaped_bytes = 0;
+    xregexresult state;
+    int result;
+    if (total) *total = 0;
+    if (flags & ~(XUI_DOC_FIND_REGEX | XUI_DOC_FIND_IGNORE_CASE |
+            XUI_DOC_FIND_WHOLE_WORD))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if (!flags) return xuiDocumentSnapshotFind(snapshot, domain, pattern,
+        pattern_bytes, scope, matches, capacity, total);
+    if (!snapshot || !total || (!matches && capacity) || !pattern_bytes ||
+            pattern_bytes > SIZE_MAX || !doc_utf8(pattern, pattern_bytes))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    expression = (xstrview){pattern, (size_t)pattern_bytes};
+    if (!(flags & XUI_DOC_FIND_REGEX)) {
+        escaped = xrtRegexEscape(expression, &escaped_bytes);
+        if (!escaped) return doc_regex_error(XUI_ERROR_OUT_OF_MEMORY);
+        expression = (xstrview){escaped, escaped_bytes};
+    }
+    xrtRegexConfigInit(&config);
+    if (flags & XUI_DOC_FIND_IGNORE_CASE) config.Flags |= XREGEX_IGNORE_CASE;
+    regex = xrtRegexCompileConfig(expression, &config);
+    xrtFree(escaped);
+    if (!regex) return doc_regex_error(XUI_ERROR_INVALID_ARGUMENT);
+    matcher = xrtRegexMatcherCreate(regex);
+    xrtRegexRelease(regex);
+    if (!matcher) return doc_regex_error(XUI_ERROR_OUT_OF_MEMORY);
+    result = doc_plain_project(snapshot, domain, &projection);
+    if (result != XUI_OK) { xrtRegexMatcherFree(matcher); return result; }
+    if ((flags & XUI_DOC_FIND_WHOLE_WORD) && projection.bytes > INT_MAX) {
+        result = XUI_DOC_ERROR_LIMIT; goto done_regex;
+    }
+    last = projection.bytes;
+    if (scope) {
+        result = doc_plain_project_position(&projection, &scope->tAnchor,
+            &first);
+        if (result == XUI_OK)
+            result = doc_plain_project_position(&projection, &scope->tCaret,
+                &last);
+        if (result != XUI_OK) goto done_regex;
+        if (first > last) { uint64_t swap = first; first = last; last = swap; }
+    }
+    text = (xstrview){projection.text + first, (size_t)(last - first)};
+    state = xrtRegexMatcherFind(matcher, text, 0);
+    while (state == XREGEX_MATCH) {
+        xregexcapture capture = {0};
+        uint64_t begin, end;
+        if (!xrtRegexMatcherCapture(matcher, 0, &capture) ||
+                !capture.Matched || capture.Span.Begin > capture.Span.End ||
+                capture.Span.End > text.Size) {
+            result = XUI_ERROR_INVALID_STATE; goto done_regex;
+        }
+        begin = first + capture.Span.Begin;
+        end = first + capture.Span.End;
+        if ((flags & XUI_DOC_FIND_WHOLE_WORD) &&
+            (!xuiInternalTextWordBoundary(projection.text, (int)projection.bytes,
+                (int)begin, XUI_INTERNAL_WORD_NATURAL) ||
+             !xuiInternalTextWordBoundary(projection.text, (int)projection.bytes,
+                (int)end, XUI_INTERNAL_WORD_NATURAL))) {
+            state = xrtRegexMatcherNext(matcher); continue;
+        }
+        if (count == UINT64_MAX) { result = XUI_DOC_ERROR_LIMIT; goto done_regex; }
+        if (count < capacity) {
+            matches[count].tAnchor = doc_plain_unproject(&projection, begin, 1);
+            matches[count].tCaret = begin == end ? matches[count].tAnchor :
+                doc_plain_unproject(&projection, end, 0);
+        }
+        count++;
+        state = xrtRegexMatcherNext(matcher);
+    }
+    if (state == XREGEX_ERROR) result = doc_regex_error(XUI_ERROR_INVALID_STATE);
+    else *total = count;
+done_regex:
+    xrtRegexMatcherFree(matcher);
+    doc_plain_projection_free(&projection);
+    return result;
+}
+static int doc_template_append(doc_allocator* allocator, char** output,
+    size_t* length, size_t* capacity, const char* data, size_t bytes)
+{
+    size_t needed, next;
+    char* grown;
+    if (bytes > SIZE_MAX - *length - 1) return XUI_DOC_ERROR_LIMIT;
+    needed = *length + bytes + 1;
+    if (needed > *capacity) {
+        next = *capacity ? *capacity : 32;
+        while (next < needed) {
+            if (next > SIZE_MAX / 2) { next = needed; break; }
+            next *= 2;
+        }
+        grown = doc_realloc(allocator, *output, next);
+        if (!grown) return XUI_ERROR_OUT_OF_MEMORY;
+        *output = grown; *capacity = next;
+    }
+    if (bytes) memcpy(*output + *length, data, bytes);
+    *length += bytes; (*output)[*length] = 0;
+    return XUI_OK;
+}
+static int doc_template_expand(doc_allocator* allocator, const xregex* regex,
+    const xregexmatcher* matcher, const char* replacement, size_t bytes,
+    doc_find_expansion* out)
+{
+    size_t i = 0, length = 0, capacity = 0;
+    char* output = NULL;
+    int result = XUI_OK;
+    while (i < bytes && result == XUI_OK) {
+        size_t start = i, index = 0;
+        xregexcapture capture = {0};
+        if (replacement[i] != '$') {
+            while (i < bytes && replacement[i] != '$') i++;
+            if (matcher) result = doc_template_append(allocator, &output,
+                &length, &capacity, replacement + start, i - start);
+            continue;
+        }
+        i++;
+        if (i == bytes) { result = XUI_ERROR_INVALID_ARGUMENT; break; }
+        if (replacement[i] == '$') {
+            if (matcher) result = doc_template_append(allocator, &output,
+                &length, &capacity, "$", 1);
+            i++; continue;
+        }
+        if (replacement[i] == '{') {
+            size_t name_begin = ++i;
+            while (i < bytes && replacement[i] != '}') i++;
+            if (i == name_begin || i == bytes) {
+                result = XUI_ERROR_INVALID_ARGUMENT; break;
+            }
+            index = xrtRegexCaptureIndex(regex,
+                (xstrview){replacement + name_begin, i - name_begin});
+            if (index == XRT_NPOS) { result = XUI_ERROR_INVALID_ARGUMENT; break; }
+            i++;
+        } else if (replacement[i] >= '0' && replacement[i] <= '9') {
+            do {
+                size_t digit = (size_t)(replacement[i] - '0');
+                if (index > (SIZE_MAX - digit) / 10) {
+                    result = XUI_ERROR_INVALID_ARGUMENT; break;
+                }
+                index = index * 10 + digit;
+                i++;
+            } while (i < bytes && replacement[i] >= '0' && replacement[i] <= '9');
+            if (result != XUI_OK) break;
+            if (index >= xrtRegexCaptureCount(regex)) {
+                result = XUI_ERROR_INVALID_ARGUMENT; break;
+            }
+        } else { result = XUI_ERROR_INVALID_ARGUMENT; break; }
+        if (matcher) {
+            if (!xrtRegexMatcherCapture(matcher, index, &capture)) {
+                result = XUI_ERROR_INVALID_STATE; break;
+            }
+            if (capture.Matched) result = doc_template_append(allocator,
+                &output, &length, &capacity, capture.Text.Data,
+                capture.Text.Size);
+        }
+    }
+    if (result == XUI_OK && matcher && !output)
+        result = doc_template_append(allocator, &output,
+            &length, &capacity, "", 0);
+    if (result == XUI_OK && out) { out->text = output; out->bytes = length; }
+    else doc_free(output);
+    return result;
+}
+void doc_find_expansions_free(doc_find_expansion* values, uint64_t count)
+{
+    uint64_t i;
+    if (!values) return;
+    for (i = 0; i < count; i++) doc_free(values[i].text);
+    doc_free(values);
+}
+static int doc_find_range_equal(const xui_doc_range_t* a,
+    const xui_doc_range_t* b)
+{
+    return a->tAnchor.iKind == b->tAnchor.iKind &&
+        a->tAnchor.iNodeId == b->tAnchor.iNodeId &&
+        a->tAnchor.iOffset == b->tAnchor.iOffset &&
+        a->tCaret.iKind == b->tCaret.iKind &&
+        a->tCaret.iNodeId == b->tCaret.iNodeId &&
+        a->tCaret.iOffset == b->tCaret.iOffset;
+}
+int doc_find_expand_matches(xui_document_snapshot snapshot, uint32_t domain,
+    const char* pattern, uint64_t pattern_bytes, uint32_t flags,
+    const xui_doc_range_t* scope, const xui_doc_range_t* matches,
+    uint64_t count, const char* replacement, uint64_t replacement_bytes,
+    doc_find_expansion** out)
+{
+    doc_plain_projection projection;
+    xregexconfig config;
+    xregex *regex = NULL;
+    xregexmatcher* matcher = NULL;
+    doc_find_expansion* values = NULL;
+    xstrview text;
+    xregexresult state;
+    uint64_t first = 0, last, index = 0;
+    int result, projected = 0;
+    if (out) *out = NULL;
+    if (!snapshot || !out || (!matches && count) || !pattern ||
+        !pattern_bytes || pattern_bytes > SIZE_MAX ||
+        (!replacement && replacement_bytes) || replacement_bytes > SIZE_MAX ||
+        !doc_utf8(replacement, replacement_bytes) ||
+        !(flags & XUI_DOC_FIND_REGEX) ||
+        (flags & ~(XUI_DOC_FIND_REGEX | XUI_DOC_FIND_IGNORE_CASE |
+            XUI_DOC_FIND_WHOLE_WORD))) return XUI_ERROR_INVALID_ARGUMENT;
+    xrtRegexConfigInit(&config);
+    if (flags & XUI_DOC_FIND_IGNORE_CASE) config.Flags |= XREGEX_IGNORE_CASE;
+    regex = xrtRegexCompileConfig(
+        (xstrview){pattern, (size_t)pattern_bytes}, &config);
+    if (!regex) return doc_regex_error(XUI_ERROR_INVALID_ARGUMENT);
+    result = doc_template_expand(snapshot->state->allocator, regex, NULL,
+        replacement ? replacement : "", (size_t)replacement_bytes, NULL);
+    if (result != XUI_OK) goto done_expand;
+    matcher = xrtRegexMatcherCreate(regex);
+    if (!matcher) { result = doc_regex_error(XUI_ERROR_OUT_OF_MEMORY); goto done_expand; }
+    result = doc_plain_project(snapshot, domain, &projection);
+    if (result != XUI_OK) goto done_expand;
+    projected = 1; last = projection.bytes;
+    if ((flags & XUI_DOC_FIND_WHOLE_WORD) && projection.bytes > INT_MAX) {
+        result = XUI_DOC_ERROR_LIMIT; goto done_expand;
+    }
+    if (scope) {
+        result = doc_plain_project_position(&projection, &scope->tAnchor, &first);
+        if (result == XUI_OK)
+            result = doc_plain_project_position(&projection, &scope->tCaret, &last);
+        if (result != XUI_OK) goto done_expand;
+        if (first > last) { uint64_t swap = first; first = last; last = swap; }
+    }
+    if (count > SIZE_MAX / sizeof(*values)) {
+        result = XUI_DOC_ERROR_LIMIT; goto done_expand;
+    }
+    if (count) {
+        values = doc_alloc(projection.allocator, (size_t)count * sizeof(*values));
+        if (!values) { result = XUI_ERROR_OUT_OF_MEMORY; goto done_expand; }
+    }
+    text = (xstrview){projection.text + first, (size_t)(last - first)};
+    state = xrtRegexMatcherFind(matcher, text, 0);
+    while (state == XREGEX_MATCH) {
+        xregexcapture capture = {0};
+        uint64_t begin, end;
+        xui_doc_range_t range;
+        if (!xrtRegexMatcherCapture(matcher, 0, &capture) ||
+            !capture.Matched || capture.Span.Begin > capture.Span.End ||
+            capture.Span.End > text.Size) {
+            result = XUI_ERROR_INVALID_STATE; goto done_expand;
+        }
+        begin = first + capture.Span.Begin; end = first + capture.Span.End;
+        if ((flags & XUI_DOC_FIND_WHOLE_WORD) &&
+            (!xuiInternalTextWordBoundary(projection.text, (int)projection.bytes,
+                (int)begin, XUI_INTERNAL_WORD_NATURAL) ||
+             !xuiInternalTextWordBoundary(projection.text, (int)projection.bytes,
+                (int)end, XUI_INTERNAL_WORD_NATURAL))) {
+            state = xrtRegexMatcherNext(matcher); continue;
+        }
+        range.tAnchor = doc_plain_unproject(&projection, begin, 1);
+        range.tCaret = begin == end ? range.tAnchor :
+            doc_plain_unproject(&projection, end, 0);
+        if (index >= count || !doc_find_range_equal(&range, &matches[index])) {
+            result = XUI_ERROR_INVALID_STATE; goto done_expand;
+        }
+        result = doc_template_expand(projection.allocator, regex, matcher,
+            replacement ? replacement : "", (size_t)replacement_bytes,
+            &values[index]);
+        if (result != XUI_OK) goto done_expand;
+        index++; state = xrtRegexMatcherNext(matcher);
+    }
+    if (state == XREGEX_ERROR) result = doc_regex_error(XUI_ERROR_INVALID_STATE);
+    else if (index != count) result = XUI_ERROR_INVALID_STATE;
+    else { *out = values; values = NULL; result = XUI_OK; }
+done_expand:
+    doc_find_expansions_free(values, count);
+    if (projected) doc_plain_projection_free(&projection);
+    xrtRegexMatcherFree(matcher);
+    xrtRegexRelease(regex);
+    return result;
+}
+XUI_API int xuiDocumentTxnReplaceAllEx(xui_document_transaction t,
+    const char* pattern, uint64_t pattern_bytes,
+    const char* replacement, uint64_t replacement_bytes, uint32_t flags,
+    const xui_doc_range_t* scope, uint64_t* replaced)
+{
+    struct xui_doc_snapshot_t snapshot = {0}; xui_doc_range_t* matches = NULL;
+    doc_find_expansion* expansions = NULL;
+    uint64_t count = 0, i;
     struct xui_doc_transaction_t native = {0}; xui_document_transaction target = t; int result = doc_txn_check(t, 0);
     if (replaced) *replaced = 0;
     if (result != XUI_OK) return result;
-    if (!replaced || !doc_utf8(replacement, replacement_bytes)) return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
+    if (!replaced || !doc_utf8(replacement, replacement_bytes) ||
+        (flags & ~(XUI_DOC_FIND_REGEX | XUI_DOC_FIND_IGNORE_CASE |
+            XUI_DOC_FIND_WHOLE_WORD | XUI_DOC_REPLACE_EXPAND)) ||
+        ((flags & XUI_DOC_REPLACE_EXPAND) && !(flags & XUI_DOC_FIND_REGEX)))
+        return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
     snapshot.identity = t->document->identity; snapshot.revision = t->base_revision; snapshot.state = t->draft;
-    result = xuiDocumentSnapshotFind(&snapshot, t->domain, pattern, pattern_bytes, scope, NULL, 0, &count);
-    if (result != XUI_OK || !count) return result == XUI_OK ? result : doc_txn_fail(t, result);
+    result = xuiDocumentSnapshotFindEx(&snapshot, t->domain, pattern,
+        pattern_bytes, flags & ~XUI_DOC_REPLACE_EXPAND, scope, NULL, 0, &count);
+    if (result != XUI_OK) return doc_txn_fail(t, result);
+    if (!count) {
+        if (flags & XUI_DOC_REPLACE_EXPAND) {
+            result = doc_find_expand_matches(&snapshot, t->domain, pattern,
+                pattern_bytes, flags & ~XUI_DOC_REPLACE_EXPAND, scope,
+                NULL, 0, replacement, replacement_bytes, &expansions);
+            doc_find_expansions_free(expansions, 0);
+        }
+        return result == XUI_OK ? XUI_OK : doc_txn_fail(t, result);
+    }
     if (count > SIZE_MAX / sizeof(*matches)) return doc_txn_fail(t, XUI_DOC_ERROR_LIMIT);
     matches = doc_alloc(t->document->allocator, (size_t)count * sizeof(*matches)); if (!matches) return doc_txn_fail(t, XUI_ERROR_OUT_OF_MEMORY);
-    result = xuiDocumentSnapshotFind(&snapshot, t->domain, pattern, pattern_bytes, scope, matches, count, &count);
+    result = xuiDocumentSnapshotFindEx(&snapshot, t->domain, pattern,
+        pattern_bytes, flags & ~XUI_DOC_REPLACE_EXPAND, scope, matches, count, &count);
+    if (result == XUI_OK && (flags & XUI_DOC_REPLACE_EXPAND))
+        result = doc_find_expand_matches(&snapshot, t->domain, pattern,
+            pattern_bytes, flags & ~XUI_DOC_REPLACE_EXPAND, scope,
+            matches, count, replacement, replacement_bytes, &expansions);
     /* Semantic Markdown replacements share one shadow tree and one source patch,
      * so an early reparse cannot invalidate later match node identities. */
     if (result == XUI_OK && t->draft->profile == XUI_DOCUMENT_MARKDOWN && t->domain == XUI_DOC_SEMANTIC) {
-        native.document = t->document; native.base_revision = t->base_revision; native.domain = t->domain; native.parsing = 1;
-        native.draft = doc_state_clone(t->draft); if (!native.draft) result = XUI_ERROR_OUT_OF_MEMORY; else target = &native;
+        result = doc_markdown_shadow_begin(t, &native);
+        if (result == XUI_OK) target = &native;
     }
     for (i = count; i > 0 && result == XUI_OK; i--) {
         xui_doc_position_t caret;
+        const char* value = expansions ? expansions[i - 1].text : replacement;
+        uint64_t value_bytes = expansions ? expansions[i - 1].bytes : replacement_bytes;
         if (t->domain == XUI_DOC_SOURCE)
-            result = doc_txn_source_patch(t, matches[i - 1].tAnchor.iOffset, matches[i - 1].tCaret.iOffset, replacement, replacement_bytes, 0);
-        else result = xuiDocumentTxnReplaceRange(target, &matches[i - 1], replacement, replacement_bytes, &caret);
+            result = doc_txn_source_patch(t, matches[i - 1].tAnchor.iOffset, matches[i - 1].tCaret.iOffset, value, value_bytes, 0);
+        else result = xuiDocumentTxnReplaceRange(target, &matches[i - 1], value, value_bytes, &caret);
     }
     if (result == XUI_OK && t->domain == XUI_DOC_SOURCE && t->parse_op_start < t->count) result = doc_markdown_parse(t);
-    if (result == XUI_OK && target == &native) result = doc_markdown_apply_paragraphs(t, native.draft, NULL, NULL);
+    if (target == &native) result = doc_markdown_shadow_end(t, &native, result, NULL, NULL);
     if (result == XUI_OK) *replaced = count;
-    doc_state_release(native.draft); doc_free(matches); return result == XUI_OK ? result : doc_txn_fail(t, result);
+    doc_find_expansions_free(expansions, count);
+    doc_free(matches); return result == XUI_OK ? result : doc_txn_fail(t, result);
 }
+XUI_API int xuiDocumentTxnReplaceAll(xui_document_transaction t,
+    const char* pattern, uint64_t pattern_bytes,
+    const char* replacement, uint64_t replacement_bytes,
+    const xui_doc_range_t* scope, uint64_t* replaced)
+{
+    return xuiDocumentTxnReplaceAllEx(t, pattern, pattern_bytes,
+        replacement, replacement_bytes, 0, scope, replaced);
+}
+
+#endif

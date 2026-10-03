@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -563,7 +565,7 @@ static float __xuiCodeEditColumnWidth(xui_widget pWidget, xui_code_edit_data_t* 
 	pFont = __xuiCodeEditResolveFont(pWidget, pData);
 	if ( pProxy != NULL && pProxy->textMeasure != NULL && pFont != NULL ) {
 		memset(&tSize, 0, sizeof(tSize));
-		if ( pProxy->textMeasure(pProxy, pFont, "M", &tSize) == XUI_OK && tSize.fX > 0.0f ) {
+		if ( pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText="M", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK && tSize.fX > 0.0f ) {
 			return (tSize.fX > 8.0f) ? tSize.fX : 8.0f;
 		}
 	}
@@ -962,7 +964,7 @@ static float __xuiCodeEditMeasureTextRange(xui_proxy pProxy, xui_font pFont, con
 	}
 	sMeasure[iLength] = '\0';
 	memset(&tSize, 0, sizeof(tSize));
-	iRet = pProxy->textMeasure(pProxy, pFont, sMeasure, &tSize);
+	iRet = pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sMeasure, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize);
 	if ( sMeasure != sSmall ) xrtFree(sMeasure);
 	if ( iRet != XUI_OK || tSize.fX < 0.0f ) return fFallbackWidth;
 	return tSize.fX;
@@ -1156,7 +1158,7 @@ static int __xuiCodeEditShapeText(xui_proxy pProxy, xui_font pFont, const char* 
 	int i;
 
 	if ( pProxy == NULL || pFont == NULL || sText == NULL || iTextSize < 0 || pShape == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pProxy->textShape != NULL ) return pProxy->textShape(pProxy, pFont, sText, iTextSize, XUI_TEXT_SHAPE_DEFAULT, pShape);
+	if ( pProxy->textShape != NULL ) return pProxy->textShape(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=iTextSize, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, pShape);
 	if ( pProxy->textMeasure == NULL ) return XUI_ERROR_UNSUPPORTED;
 	memset(pShape, 0, sizeof(*pShape));
 	pShape->iSize = sizeof(*pShape);
@@ -1180,7 +1182,7 @@ static int __xuiCodeEditShapeText(xui_proxy pProxy, xui_font pFont, const char* 
 		memcpy(sUtf8, sText + iAt, (size_t)iBytes);
 		sUtf8[iBytes] = '\0';
 		memset(&tSize, 0, sizeof(tSize));
-		if ( pProxy->textMeasure(pProxy, pFont, sUtf8, &tSize) != XUI_OK ) { xuiTextShapeFree(pShape); return XUI_ERROR_UNSUPPORTED; }
+		if ( pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sUtf8, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) != XUI_OK ) { xuiTextShapeFree(pShape); return XUI_ERROR_UNSUPPORTED; }
 		pShape->pClusters[i].iSize = sizeof(pShape->pClusters[i]);
 		pShape->pClusters[i].iTextStart = iAt;
 		pShape->pClusters[i].iTextEnd = iNext;
@@ -2409,15 +2411,10 @@ static int __xuiCodeEditAssistCacheRender(xui_widget pWidget, xui_draw_context p
 				tLabel.fY + 3.0f, fActive + 4.0f, tLabel.fH - 6.0f}),
 			pData->arrAssistColors[0]);
 	}
-	iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->sAssistLabel, tLabel,
-		pData->arrAssistColors[1],
-		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->sAssistLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLabel, pData->arrAssistColors[1], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->sAssistDocumentation != NULL && pData->sAssistDocumentation[0] != '\0' ) {
-		iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->sAssistDocumentation,
-			(xui_rect_t){tRect.fX + 8.0f, tRect.fY + 30.0f, tRect.fW - 16.0f, tRect.fH - 34.0f},
-			pData->arrAssistColors[2],
-			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->sAssistDocumentation, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 30.0f, tRect.fW - 16.0f, tRect.fH - 34.0f}, pData->arrAssistColors[2], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return iRet;
 }
@@ -4751,7 +4748,7 @@ static int __xuiCodeEditRenderLineText(xui_proxy pProxy, xui_draw_context pDraw,
 		sLine[i] = (ch < 32u) ? ' ' : (char)ch;
 	}
 	sLine[iLength] = '\0';
-	iRet = pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+	iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	if ( sLine != sSmall ) xrtFree(sLine);
 	return iRet;
 }
@@ -4966,10 +4963,7 @@ static int __xuiCodeEditRenderStyledLine(xui_widget pWidget, xui_proxy pProxy, x
 				}
 				tRect = (xui_rect_t){fTextX + 4.0f + pSegment->fX - pData->fScrollX,
 					fY, pSegment->tShape.fWidth, fLineHeight};
-				iRet = pProxy->drawTextSpans(pProxy, pDraw, pFont,
-					pLayout->sText + pSegment->iStart, pSegment->iEnd - pSegment->iStart,
-					tRect, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP,
-					arrSpans, iSpanCount);
+				iRet = pProxy->drawTextSpans(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pLayout->sText + pSegment->iStart, .iTextSize=pSegment->iEnd - pSegment->iStart, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP, arrSpans, iSpanCount);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			return XUI_OK;
@@ -8784,3 +8778,5 @@ XUI_API const char* xuiCodeEditGetLastError(xui_widget pWidget)
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	return (pData != NULL) ? pData->sError : "invalid codeedit widget";
 }
+
+#endif

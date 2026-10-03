@@ -26,9 +26,17 @@ text pixels and the middle panel changes between modes, saves
 on resource, rendering, pixel-validation or image-save failure. It does not
 exercise a physical Windows IME, assistive technology or interactive dialogs.
 
+`build\xui_document.exe --verify-image-placeholder` renders a missing Markdown
+image through the same XGE backend, checks the placeholder background and border
+pixels, and saves `artifacts/xui-document-rebuild/native-image-placeholder.png`.
+`--verify-async` checks that a pending Markdown edit changes the source editor
+before publication while the shared preview stays on the committed revision.
+
 See [the API and delivery notes](../../docs/XUI_DOCUMENT.md) for ownership,
 transactions, file saving, test commands and current limitations. In particular,
-the advanced-object provider callbacks are extension points; math and Mermaid
-are not yet typeset by a default provider. Live MD conservatively falls back to
-the whole source when the current parser cannot establish reliable container
-boundaries; this fallback is reported by the renderer statistics.
+the advanced-object provider callbacks are extension points. The optional
+Windows Document WebView2 provider typesets math and Mermaid and renders block
+HTML statically; it is separate from the basic public WebView widget. Live MD
+conservatively falls back to whole-source rendering when the current parser
+cannot establish reliable container boundaries; renderer statistics report
+this fallback.

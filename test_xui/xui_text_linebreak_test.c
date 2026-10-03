@@ -72,8 +72,10 @@ static const break_case_t g_tCases[] = {
 static const break_case_t* g_pCase;
 static int g_iDraw, g_iDrawFailed;
 
-static int breakMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int breakMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	const unsigned char* p = (const unsigned char*)sText;
 	pSize->fX = 0;
 	pSize->fY = 2;
@@ -81,9 +83,10 @@ static int breakMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui
 	return XUI_OK;
 }
 
-static int breakDraw(xui_proxy pProxy, xui_surface pTarget, xui_font pFont,
-	const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int breakDraw(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( g_iDraw >= g_pCase->iCount || strcmp(sText, g_pCase->sDraw[g_iDraw]) != 0 ) g_iDrawFailed = 1;
 	g_iDraw++;
 	return XUI_OK;
@@ -129,7 +132,7 @@ int main(void)
 				if ( !sExpected || xuiTextLayoutGetLine(pLayout, j, &tLine) != XUI_OK ||
 				     tLine.iTextOffset != (int)(sExpected - tDesc.sText) || tLine.iTextSize != iLen ||
 				     memcmp(xuiTextLayoutGetText(pLayout) + tLine.iTextOffset, g_pCase->sLines[j], (size_t)iLen) != 0 ) iOk = 0;
-				breakMeasure(&tState.tProxy, pFont, g_pCase->sDraw[j], &tExpectedSize);
+				breakMeasure(&tState.tProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=g_pCase->sDraw[j], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tExpectedSize);
 				if ( xuiTextLayoutGetLine(pLayout, j, &tLine) == XUI_OK && tLine.fW != tExpectedSize.fX ) iOk = 0;
 				if ( sExpected ) iAt = (int)(sExpected - tDesc.sText) + iLen;
 			}

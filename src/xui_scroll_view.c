@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_SCROLL_VIEW
 #include "xui_internal.h"
 
 #include <string.h>
@@ -690,3 +692,5 @@ XUI_API int xuiScrollViewGetChangeCount(xui_widget pWidget)
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

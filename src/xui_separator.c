@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_SEPARATOR
 #include "xui_internal.h"
 
 #include <string.h>
@@ -603,3 +605,5 @@ XUI_API xui_rect_t xuiSeparatorGetLineRect(xui_widget pWidget)
 	__xuiSeparatorResolve(pWidget, pData, &tResolved);
 	return __xuiSeparatorLineRectFromData(pWidget, &tResolved);
 }
+
+#endif

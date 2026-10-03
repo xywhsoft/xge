@@ -165,9 +165,7 @@ static int canvas_paint(xui_widget w, xui_draw_context draw, uint32_t state, voi
     snprintf(title, sizeof(title), "%s  /  %.0f x %.0f   |   %.0f%%", n.name,
              uid_num(e->document, n.id, "width", 800), uid_num(e->document, n.id, "height", 480),
              e->zoom * 100);
-    return e->proxy.drawText(&e->proxy, draw, e->host.font, title,
-                             (xui_rect_t){r.fX + 24, r.fY + 8, r.fW - 30, 30}, 0x41536AFFu,
-                             XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+    return e->proxy.drawText(&e->proxy, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=e->host.font, .sText=title, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){r.fX + 24, r.fY + 8, r.fW - 30, 30}, 0x41536AFFu, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 static int overlay_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *u) {
     uid_editor *e = u;

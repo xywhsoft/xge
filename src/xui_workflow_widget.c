@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_WORKFLOW
 #include "xui_internal.h"
 
 #include <string.h>
@@ -225,3 +227,5 @@ XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget)
 	pData = __xuiWorkflowWidgetGetData(pWidget);
 	return (pData != NULL) ? pData->pCanvas : NULL;
 }
+
+#endif

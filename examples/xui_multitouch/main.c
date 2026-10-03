@@ -269,16 +269,12 @@ static int __xuiMultiTouchRootRender(xui_widget pWidget, xui_draw_context pDraw,
 	if ( pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
 	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(246, 249, 253, 255));
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "XUI MultiTouch",
-		(xui_rect_t){28.0f, 22.0f, 240.0f, 26.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont,
-		"Touch with multiple fingers, or drag the mouse to verify the compatible single-pointer path.",
-		(xui_rect_t){28.0f, 50.0f, 760.0f, 24.0f}, XUI_COLOR_RGBA(74, 92, 118, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="XUI MultiTouch", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){28.0f, 22.0f, 240.0f, 26.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="Touch with multiple fingers, or drag the mouse to verify the compatible single-pointer path.", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){28.0f, 50.0f, 760.0f, 24.0f}, XUI_COLOR_RGBA(74, 92, 118, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	snprintf(sStatus, sizeof(sStatus), "active=%d down=%d move=%d up=%d cancel=%d touchEvents=%d mouseEvents=%d capture=%d",
 		pDemo->iActiveCount, pDemo->iDownCount, pDemo->iMoveCount, pDemo->iUpCount, pDemo->iCancelCount,
 		pDemo->iTouchEventCount, pDemo->iMouseEventCount, pDemo->bCaptureOK);
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, sStatus,
-		(xui_rect_t){28.0f, 452.0f, 800.0f, 24.0f}, XUI_COLOR_RGBA(59, 76, 100, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=sStatus, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){28.0f, 452.0f, 800.0f, 24.0f}, XUI_COLOR_RGBA(59, 76, 100, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	return XUI_OK;
 }
 
@@ -311,8 +307,7 @@ static int __xuiMultiTouchPadRender(xui_widget pWidget, xui_draw_context pDraw, 
 		(void)pDemo->tProxy.drawLine(&pDemo->tProxy, pDraw, 0.0f, fY, tRect.fW, fY, 1.0f, XUI_COLOR_RGBA(229, 235, 244, 255));
 	}
 	if ( pDemo->iActiveCount == 0 ) {
-		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "No active pointer",
-			(xui_rect_t){0.0f, tRect.fH * 0.5f - 14.0f, tRect.fW, 28.0f}, XUI_COLOR_RGBA(119, 139, 164, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="No active pointer", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){0.0f, tRect.fH * 0.5f - 14.0f, tRect.fW, 28.0f}, XUI_COLOR_RGBA(119, 139, 164, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	for ( i = 0; i < DEMO_POINT_MAX; i++ ) {
 		pPoint = &pDemo->arrPoints[i];
@@ -330,8 +325,7 @@ static int __xuiMultiTouchPadRender(xui_widget pWidget, xui_draw_context pDraw, 
 		(void)pDemo->tProxy.drawCircleFill(&pDemo->tProxy, pDraw, fX, fY, pPoint->bDown ? 22.0f : 14.0f, iColor);
 		(void)pDemo->tProxy.drawCircleStroke(&pDemo->tProxy, pDraw, fX, fY, pPoint->bDown ? 22.0f : 14.0f, 2.0f, XUI_COLOR_RGBA(255, 255, 255, 235));
 		snprintf(sLabel, sizeof(sLabel), "%s %llu", __xuiMultiTouchPointerTypeName(pPoint->iPointerType), (unsigned long long)pPoint->iPointerId);
-		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, sLabel,
-			(xui_rect_t){fX + 28.0f, fY - 13.0f, 160.0f, 26.0f}, XUI_COLOR_RGBA(37, 53, 75, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=sLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){fX + 28.0f, fY - 13.0f, 160.0f, 26.0f}, XUI_COLOR_RGBA(37, 53, 75, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }

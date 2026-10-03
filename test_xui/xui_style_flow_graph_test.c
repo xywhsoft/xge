@@ -8,14 +8,17 @@ static uint32_t seen[4096];
 static int count;
 static int (*baseFill)(xui_proxy,xui_draw_context,xui_rect_t,uint32_t);
 static int (*baseLine)(xui_proxy,xui_draw_context,float,float,float,float,float,uint32_t);
-static int (*baseText)(xui_proxy,xui_draw_context,xui_font,const char*,xui_rect_t,uint32_t,uint32_t);
+static xui_draw_text_proc baseText;
 static int has(uint32_t c) { int i; for(i=0;i<count;i++) if(seen[i]==c) return 1; return 0; }
 static int fill(xui_proxy p,xui_draw_context d,xui_rect_t r,uint32_t c)
 { if(count<4096) seen[count++]=c; return baseFill(p,d,r,c); }
 static int line(xui_proxy p,xui_draw_context d,float x,float y,float x2,float y2,float w,uint32_t c)
 { if(count<4096) seen[count++]=c; return baseLine(p,d,x,y,x2,y2,w,c); }
-static int text(xui_proxy p,xui_draw_context d,xui_font f,const char* s,xui_rect_t r,uint32_t c,uint32_t flags)
-{ if(count<4096) seen[count++]=c; return baseText(p,d,f,s,r,c,flags); }
+static int text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
+{
+    if(count<4096) seen[count++]=c;
+    return baseText(p, d, pTextItem, r, c, flags);
+}
 int main(void)
 {
 	static const char* const newKeys[]={

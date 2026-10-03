@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_VIRTUAL_JOYSTICK
 #include "xui_internal.h"
 
 #include <math.h>
@@ -1303,3 +1305,5 @@ XUI_API xui_rect_t xuiVirtualJoystickGetKnobRect(xui_widget pWidget)
 	pData = __xuiVirtualJoystickGetData(pWidget);
 	return (pData != NULL) ? pData->tKnobRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 }
+
+#endif

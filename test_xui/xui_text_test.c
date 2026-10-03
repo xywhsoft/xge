@@ -107,7 +107,7 @@ int main(void)
 	iRet = tProxy.fontGetMetrics(&tProxy, pFont, &tMetrics);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (tMetrics.fLineHeight > 0.0f), "font metrics failed");
 
-	iRet = tProxy.textMeasure(&tProxy, pFont, "alpha beta", &tMeasure);
+	iRet = tProxy.textMeasure(&tProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText="alpha beta", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tMeasure);
 	XUI_TEST_CHECK(iRet == XUI_OK, "text measure failed");
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -145,7 +145,7 @@ int main(void)
 	xuiTextLayoutDestroy(pLayout);
 	pLayout = NULL;
 
-	iRet = tProxy.textMeasure(&tProxy, pFont, "ab", &tMeasure);
+	iRet = tProxy.textMeasure(&tProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText="ab", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tMeasure);
 	XUI_TEST_CHECK(iRet == XUI_OK, "char measure failed");
 	tDesc.sText = "abcd";
 	tDesc.fMaxWidth = tMeasure.fX + 0.5f;

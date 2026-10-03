@@ -167,10 +167,10 @@ static int __xuiDockContentRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	ret = pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, (xui_rect_t){r.fX + 18.0f, r.fY + 18.0f, 120.0f, 8.0f}, __xuiDockColorMix(pContent->iAccent, 42));
 	if ( ret != XUI_OK ) return ret;
 	if ( r.fW > 36.0f ) {
-		ret = pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, pContent->sTitle, (xui_rect_t){r.fX + 18.0f, r.fY + 34.0f, r.fW - 36.0f, 24.0f}, XUI_COLOR_RGBA(32, 48, 68, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		ret = pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=pContent->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){r.fX + 18.0f, r.fY + 34.0f, r.fW - 36.0f, 24.0f}, XUI_COLOR_RGBA(32, 48, 68, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( ret != XUI_OK ) return ret;
 		if ( r.fH > 80.0f ) {
-			return pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, pContent->sText, (xui_rect_t){r.fX + 18.0f, r.fY + 64.0f, r.fW - 36.0f, r.fH - 80.0f}, XUI_COLOR_RGBA(84, 104, 126, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+			return pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=pContent->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){r.fX + 18.0f, r.fY + 64.0f, r.fW - 36.0f, r.fH - 80.0f}, XUI_COLOR_RGBA(84, 104, 126, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		}
 	}
 	return XUI_OK;

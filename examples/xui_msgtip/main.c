@@ -122,8 +122,8 @@ static int __xuiMsgTipRootRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(247, 251, 255, 255));
 	}
 	if ( pDemo->tProxy.drawText != NULL ) {
-		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "XUI MsgTip", (xui_rect_t){58.0f, 58.0f, 220.0f, 28.0f}, XUI_COLOR_RGBA(34, 52, 78, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "Click a button, then click the tip itself to close it.", (xui_rect_t){58.0f, 242.0f, 420.0f, 28.0f}, XUI_COLOR_RGBA(70, 88, 112, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="XUI MsgTip", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){58.0f, 58.0f, 220.0f, 28.0f}, XUI_COLOR_RGBA(34, 52, 78, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="Click a button, then click the tip itself to close it.", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){58.0f, 242.0f, 420.0f, 28.0f}, XUI_COLOR_RGBA(70, 88, 112, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }

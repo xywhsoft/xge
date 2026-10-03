@@ -3,6 +3,7 @@ param(
     [ValidateSet('style', 'regression', 'audit')][string]$Mode = 'style'
 )
 $ErrorActionPreference = 'Stop'
+$previousPath = $env:PATH
 Push-Location (Join-Path $PSScriptRoot '..')
 try {
     $outDir = Join-Path 'build' 'style_collections'
@@ -31,10 +32,35 @@ try {
         'src/xui_menu.c'
     )
     $out = Join-Path $outDir "$test.exe"
-    & gcc -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DEBUGMODE=0 -I. @extraFlags -o $out @sources -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lole32 -loleaut32 -luuid -limm32 -lwinmm -lavrt
+    $engineLibraries = @()
+    if ($Family -eq 'message') {
+        & cmd /c ensure_xge_dll.bat
+        if ($LASTEXITCODE -ne 0) { throw 'Engine build failed' }
+        # Expand the same ordered manifests as the release build. MessageList
+        # now needs private Document helpers and the browser's local stubs.
+        $manifest = @{}
+        foreach ($file in @('xui_document_sources.bat', 'xui_sources.bat')) {
+            foreach ($line in Get-Content -LiteralPath $file) {
+                if ($line -match '^set (XUI_DOCUMENT_SRC|XUI_SRC)=(.*)$') {
+                    $name=$Matches[1]; $value=$Matches[2]
+                    foreach ($key in @($manifest.Keys)) { $value=$value.Replace("%$key%",$manifest[$key]) }
+                    $manifest[$name]=$value
+                }
+            }
+        }
+        $sources = @("test_xui/$test.c") + $controlSources + @(
+            'test_xui/xui_test_proxy.c', 'test_xui/xui_test_xrt_impl.c'
+        ) + @($manifest['XUI_SRC'] -split '\s+' | Where-Object {
+            $_ -and $_ -notin @('src\xui_message_list.c','src\xui_proxy_xge.c')
+        })
+        $engineLibraries = @('build/xge.lib')
+        $env:PATH = (Join-Path (Get-Location) 'build') + ';' + $env:PATH
+    }
+    & gcc -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DEBUGMODE=0 -I. @extraFlags -o $out @sources @engineLibraries -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lole32 -loleaut32 -luuid -limm32 -lwinmm -lavrt
     if ($LASTEXITCODE -ne 0) { throw "Build failed: $Family" }
     & $out
     if ($LASTEXITCODE -ne 0) { throw "Test failed: $Family" }
 } finally {
+    $env:PATH = $previousPath
     Pop-Location
 }

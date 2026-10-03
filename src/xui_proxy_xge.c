@@ -1,5 +1,8 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 #include "../xge.h"
+#include "xui_text_item_internal.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef WIN32_LEAN_AND_MEAN
@@ -188,6 +191,8 @@ struct xui_surface_t {
 struct xui_font_t {
 	uint32_t iMagic;
 	uint32_t iFlags;
+	unsigned iPaintRefs;
+	int bDestroyPending;
 	xge_font_t tFont;
 	xge_font_t tFallbackFont;
 	int bHasFallback;
@@ -341,6 +346,7 @@ static int __xuiProxyXgeFontValid(xui_font pFont)
 {
 	return (pFont != NULL) &&
 	       (pFont->iMagic == XUI_PROXY_XGE_FONT_MAGIC) &&
+	       !pFont->bDestroyPending &&
 	       (pFont->tFont.iRefCount > 0);
 }
 
@@ -706,7 +712,11 @@ static int __xuiProxyXgeGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_SVG_SURFACE |
 	               XUI_PROXY_CAP_FONT_TTF |
 	               XUI_PROXY_CAP_FONT_XRF |
-	               XUI_PROXY_CAP_TEXT;
+	               XUI_PROXY_CAP_TEXT | XUI_PROXY_CAP_TEXT_RANGE;
+#ifdef XGE_ENABLE_HARFBUZZ
+	pCaps->iCaps |= XUI_PROXY_CAP_TEXT_CONTEXT | XUI_PROXY_CAP_TEXT_SCRIPT |
+		XUI_PROXY_CAP_TEXT_LANGUAGE | XUI_PROXY_CAP_TEXT_RTL;
+#endif
 	pCaps->iSurfaceFormat = XUI_SURFACE_FORMAT_RGBA8;
 	pCaps->iInternalAlpha = XUI_SURFACE_ALPHA_PREMULTIPLIED;
 	tSampler = xgeSamplerDefault();
@@ -959,6 +969,7 @@ static int __xuiProxyXgeSurfaceLoadMemory(xui_proxy pProxy, xui_surface* ppSurfa
 	return XGE_OK;
 }
 
+#if XGE_ENABLE_SVG
 static int __xuiProxyXgeSurfaceLoadSvgFile(xui_proxy pProxy, xui_surface* ppSurface, const char* sPath, int iWidth, int iHeight, uint32_t iFlags)
 {
 	xui_surface pSurface;
@@ -1009,6 +1020,8 @@ static int __xuiProxyXgeSurfaceLoadSvgMemory(xui_proxy pProxy, xui_surface* ppSu
 	return XGE_OK;
 }
 
+
+#endif
 static int __xuiProxyXgeSurfaceUpdateRGBA(xui_proxy pProxy, xui_surface pSurface, xui_rect_i_t tRect, const void* pPixels, int iStride)
 {
 	xge_texture pTexture;
@@ -1551,9 +1564,19 @@ static int __xuiProxyXgeFontGetMetrics(xui_proxy pProxy, xui_font pFont, xui_fon
 	pMetrics->fDescent = tMetrics.fDescent;
 	pMetrics->fLineGap = tMetrics.fLineGap;
 	pMetrics->fLineHeight = tMetrics.fLineHeight;
+	pMetrics->fUnderlinePosition = tMetrics.fUnderlinePosition;
+	pMetrics->fUnderlineThickness = tMetrics.fUnderlineThickness;
+	pMetrics->fStrikePosition = tMetrics.fStrikePosition;
+	pMetrics->fStrikeThickness = tMetrics.fStrikeThickness;
 	return XGE_OK;
 }
 
+static void __xuiProxyXgeFontRelease(xui_font pFont)
+{
+	xgeFontFree(&pFont->tFont);
+	if(pFont->bHasFallback)xgeFontFree(&pFont->tFallbackFont);
+	pFont->iMagic=0;xrtFree(pFont);
+}
 static void __xuiProxyXgeFontDestroy(xui_proxy pProxy, xui_font pFont)
 {
 	if ( pProxy == NULL ) {
@@ -1563,12 +1586,8 @@ static void __xuiProxyXgeFontDestroy(xui_proxy pProxy, xui_font pFont)
 	if ( !__xuiProxyXgeFontValid(pFont) ) {
 		return;
 	}
-	xgeFontFree(&pFont->tFont);
-	if ( pFont->bHasFallback ) {
-		xgeFontFree(&pFont->tFallbackFont);
-	}
-	pFont->iMagic = 0;
-	xrtFree(pFont);
+	pFont->bDestroyPending=1;
+	if(!pFont->iPaintRefs)__xuiProxyXgeFontRelease(pFont);
 }
 
 static int __xuiProxyXgeZstdDecompress(xui_proxy pProxy, void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize)
@@ -1588,7 +1607,13 @@ static int __xuiProxyXgeFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_
 	if ( pFont == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	iRet = xgeFontCreateSized(&pFont->tFont, &pSource->tFont, fSize);
 	if ( iRet != XGE_OK ) { xrtFree(pFont); return iRet; }
-	if ( pSource->bHasFallback && xgeFontCreateSized(&pFont->tFallbackFont, &pSource->tFallbackFont, fSize) == XGE_OK ) {
+	if ( pSource->bHasFallback ) {
+		iRet = xgeFontCreateSized(&pFont->tFallbackFont, &pSource->tFallbackFont, fSize);
+		if ( iRet != XGE_OK ) {
+			xgeFontFree(&pFont->tFont);
+			xrtFree(pFont);
+			return iRet;
+		}
 		xgeFontSetFallback(&pFont->tFont, &pFont->tFallbackFont);
 		pFont->bHasFallback = 1;
 	}
@@ -1598,36 +1623,50 @@ static int __xuiProxyXgeFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_
 	return XGE_OK;
 }
 
-static int __xuiProxyXgeTextMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int __xuiProxyXgeTextDesc(const xui_text_item_t* item, xge_text_shape_desc_t* desc)
 {
-	xge_vec2_t tSize;
-
-	if ( (pProxy == NULL) || !__xuiProxyXgeFontValid(pFont) || (sText == NULL) || (pSize == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	(void)pProxy;
-	tSize = xgeTextMeasure(&pFont->tFont, sText);
-	pSize->fX = (float)xuiInternalPixelCeil(tSize.fX);
-	pSize->fY = (float)xuiInternalPixelCeil(tSize.fY);
-	return XGE_OK;
+    xui_text_item_t normalized;int result=__xuiTextItemNormalize(item,&normalized);
+    if(result!=XUI_OK)return result;
+    if(!__xuiProxyXgeFontValid(normalized.pFont))return XGE_ERROR_INVALID_ARGUMENT;
+    memset(desc,0,sizeof(*desc));desc->iSize=sizeof(*desc);
+    desc->pFont=&normalized.pFont->tFont;desc->sText=normalized.sText;desc->iTextSize=normalized.iTextSize;
+    desc->sContext=normalized.sContext;desc->iContextSize=normalized.iContextSize;desc->iContextOffset=normalized.iContextOffset;
+    desc->iScript=normalized.iScript;desc->sLanguage=normalized.sLanguage;
+    if(normalized.iFlags & XUI_TEXT_SHAPE_KERNING)desc->iFlags|=XGE_TEXT_SHAPE_KERNING;
+    if(normalized.iFlags & XUI_TEXT_SHAPE_EMOJI)desc->iFlags|=XGE_TEXT_SHAPE_EMOJI;
+    if(normalized.iFlags & XUI_TEXT_SHAPE_RTL)desc->iFlags|=XGE_TEXT_SHAPE_RTL;
+    desc->iEmojiPresentation=XGE_EMOJI_PRESENTATION_AUTO;desc->iEmojiLinePolicy=XGE_EMOJI_LINE_STABLE;desc->fEmojiScale=1;
+    return XGE_OK;
+}
+static int __xuiProxyXgeTextRangeMeasure(xui_proxy,const xui_text_item_t*,xui_vec2_t*);
+static int __xuiProxyXgeTextRangeShape(xui_proxy,const xui_text_item_t*,xui_text_shape_t*);
+static int __xuiProxyXgeTextRangeDraw(xui_proxy,xui_draw_context,const xui_text_item_t*,xui_rect_t,uint32_t,uint32_t,const xui_text_paint_span_t*,int);
+static int __xuiProxyXgeTextRangeSurfaceDraw(xui_proxy,xui_surface,const xui_text_item_t*,xui_rect_t,uint32_t,uint32_t);
+static int __xuiProxyXgeTextMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
+{
+    xge_text_shape_desc_t desc;xge_glyph_run_t run={0};int result;
+    if(!pProxy || !pSize)return XGE_ERROR_INVALID_ARGUMENT;
+    memset(pSize,0,sizeof(*pSize));result=__xuiProxyXgeTextDesc(pTextItem,&desc);
+    if(result!=XGE_OK)return result;
+    if(pTextItem->iFlags & XUI_TEXT_SHAPE_RANGE)return __xuiProxyXgeTextRangeMeasure(pProxy,pTextItem,pSize);
+    result=xgeTextShape(&desc,&run);
+    if(result==XGE_OK){pSize->fX=(float)xuiInternalPixelCeil(run.fWidth);pSize->fY=(float)xuiInternalPixelCeil(run.fHeight);}
+    xgeGlyphRunFree(&run);return result;
 }
 
-static int __xuiProxyXgeTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiProxyXgeDrawBegin(xui_proxy,xui_draw_context*,xui_surface);
+static int __xuiProxyXgeDrawEnd(xui_proxy,xui_draw_context);
+static int __xuiProxyXgeDrawText(xui_proxy, xui_draw_context, const xui_text_item_t* pTextItem, xui_rect_t, uint32_t, uint32_t);
+static int __xuiProxyXgeTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	xge_pass_t tPass;
-	int iRet;
-
-	if ( pProxy == NULL || !__xuiProxyXgeSurfaceTargetValid(pTarget) ||
-	     !__xuiProxyXgeFontValid(pFont) || sText == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
-	iRet = __xuiProxyXgeTargetBegin(pProxy, pTarget, &tPass);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	xgeTextDrawRect(&pFont->tFont, sText, __xuiProxyXgeRect(tRect), iColor, __xuiProxyXgeTextFlags(iFlags));
-	return __xuiProxyXgeTargetEndDirty(&tPass, pTarget, XGE_OK);
+    xge_text_shape_desc_t desc;xui_draw_context draw;int result,ended;
+    if(!pProxy || !__xuiProxyXgeSurfaceTargetValid(pTarget))return XGE_ERROR_INVALID_ARGUMENT;
+    result=__xuiProxyXgeTextDesc(pTextItem,&desc);if(result!=XGE_OK)return result;
+    if(pTextItem->iFlags & XUI_TEXT_SHAPE_RANGE)return __xuiProxyXgeTextRangeSurfaceDraw(pProxy,pTarget,pTextItem,tRect,iColor,iFlags);
+    if(tRect.fW<=0 || tRect.fH<=0)return XGE_OK;
+    result=__xuiProxyXgeDrawBegin(pProxy,&draw,pTarget);if(result!=XGE_OK)return result;
+    result=__xuiProxyXgeDrawText(pProxy,draw,pTextItem,tRect,iColor,iFlags);
+    ended=__xuiProxyXgeDrawEnd(pProxy,draw);return result==XGE_OK?ended:result;
 }
 
 static int __xuiProxyXgeDrawBegin(xui_proxy pProxy, xui_draw_context* ppDraw, xui_surface pTarget)
@@ -1757,6 +1796,7 @@ static int __xuiProxyXgeDrawMeshTriangles(xui_proxy pProxy, xui_draw_context pDr
 	return iRet;
 }
 
+#if XGE_ENABLE_SHAPE_EX
 static int __xuiProxyXgePathAppend(xge_shape_ex pShape, const xui_path_command_t* pCommands, int iCommandCount)
 {
 	int i;
@@ -1876,6 +1916,8 @@ static int __xuiProxyXgeDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, co
 	return iRet;
 }
 
+
+#endif
 static int __xuiProxyXgeDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
 {
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
@@ -2001,36 +2043,33 @@ static int __xuiProxyXgeDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDra
 	return XGE_OK;
 }
 
-static int __xuiProxyXgeDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiProxyXgeDrawTextSpans(xui_proxy, xui_draw_context, const xui_text_item_t* pTextItem, xui_rect_t, uint32_t, uint32_t, const xui_text_paint_span_t*, int);
+static int __xuiProxyXgeDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || !__xuiProxyXgeFontValid(pFont) || (sText == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
-	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
-		return XGE_OK;
-	}
-	(void)pProxy;
-	xgeTextDrawRect(&pFont->tFont, sText, __xuiProxyXgeRect(tRect), iColor, __xuiProxyXgeTextFlags(iFlags));
-	__xuiProxyXgeDrawMarkDirty(pDraw);
-	return XGE_OK;
+    return __xuiProxyXgeDrawTextSpans(pProxy,pDraw,pTextItem,tRect,iColor,iFlags,NULL,0);
 }
 
-static int __xuiProxyXgeDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont,
-	const char* sText, int iTextSize, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags,
-	const xui_text_paint_span_t* pSpans, int iSpanCount)
+static int __xuiProxyXgeDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags, const xui_text_paint_span_t* pSpans, int iSpanCount)
 {
+
 	xge_text_shape_desc_t tDesc;
 	xge_glyph_run_t tRun;
 	xge_text_paint_span_t sSmall[16];
 	xge_text_paint_span_t* pXgeSpans;
+	xge_rect_t tOldClip;
+	xge_rect_t tClip;
+	int bOldClip = 0;
+	int bClip = 0;
 	int i;
 	int iRet;
+	float fTextX, fTextY;
 
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || !__xuiProxyXgeFontValid(pFont) ||
-	     (sText == NULL) || (iTextSize < 0) || (iSpanCount < 0) ||
-	     ((iSpanCount > 0) && (pSpans == NULL)) ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( iTextSize == 0 || tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
+    if(!pProxy || !__xuiProxyXgeDrawValid(pDraw) || iSpanCount<0 || (iSpanCount>0 && !pSpans))return XGE_ERROR_INVALID_ARGUMENT;
+    iRet=__xuiProxyXgeTextDesc(pTextItem,&tDesc);if(iRet!=XGE_OK)return iRet;
+    if(pTextItem->iFlags & XUI_TEXT_SHAPE_RANGE)return __xuiProxyXgeTextRangeDraw(pProxy,pDraw,pTextItem,tRect,iColor,iFlags,pSpans,iSpanCount);
+    if(!tDesc.iTextSize || tRect.fW<=0 || tRect.fH<=0 || !XGE_COLOR_GET_A(iColor))return XGE_OK;
+    /* Direction comes solely from the shared item, never from paint flags. */
+    iFlags=(iFlags & ~XUI_TEXT_RTL) | ((pTextItem->iFlags & XUI_TEXT_SHAPE_RTL)?XUI_TEXT_RTL:0);
 	pXgeSpans = sSmall;
 	if ( iSpanCount > (int)(sizeof(sSmall) / sizeof(sSmall[0])) ) {
 		pXgeSpans = (xge_text_paint_span_t*)xrtMalloc(sizeof(*pXgeSpans) * (size_t)iSpanCount);
@@ -2042,25 +2081,64 @@ static int __xuiProxyXgeDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, 
 		pXgeSpans[i].iEnd = pSpans[i].iEnd;
 		pXgeSpans[i].iColor = pSpans[i].iColor;
 	}
-	memset(&tDesc, 0, sizeof(tDesc));
-	memset(&tRun, 0, sizeof(tRun));
-	tDesc.iSize = sizeof(tDesc);
-	tDesc.pFont = &pFont->tFont;
-	tDesc.sText = sText;
-	tDesc.iTextSize = iTextSize;
-	tDesc.iFlags = XGE_TEXT_SHAPE_DEFAULT;
-	tDesc.iEmojiPresentation = XGE_EMOJI_PRESENTATION_AUTO;
-	tDesc.iEmojiLinePolicy = XGE_EMOJI_LINE_STABLE;
-	tDesc.fEmojiScale = 1.0f;
+	memset(&tRun,0,sizeof(tRun));
 	iRet = xgeTextShape(&tDesc, &tRun);
 	if ( iRet == XGE_OK ) {
-		xgeGlyphRunDrawSpans(&tRun, tRect.fX, tRect.fY, iColor,
-			XGE_DRAW_SCREEN_SPACE, pXgeSpans, iSpanCount);
+		if ( (iFlags & XUI_TEXT_CLIP) != 0 ) {
+			tOldClip = xgeClipGet();
+			bOldClip = tOldClip.fW > 0.0f && tOldClip.fH > 0.0f;
+			tClip = __xuiProxyXgeRect(tRect);
+			if ( bOldClip ) {
+				float fLeft = fmaxf(tClip.fX, tOldClip.fX);
+				float fTop = fmaxf(tClip.fY, tOldClip.fY);
+				float fRight = fminf(tClip.fX + tClip.fW, tOldClip.fX + tOldClip.fW);
+				float fBottom = fminf(tClip.fY + tClip.fH, tOldClip.fY + tOldClip.fH);
+				tClip.fX = fLeft;
+				tClip.fY = fTop;
+				tClip.fW = fRight - fLeft;
+				tClip.fH = fBottom - fTop;
+			}
+			if ( tClip.fW > 0.0f && tClip.fH > 0.0f ) {
+				xgeFlush();
+				xgeClipSet(tClip);
+				bClip = 1;
+			}
+		}
+		fTextX = (float)tRect.fX+pTextItem->fDrawOffsetX; fTextY = tRect.fY;
+		if ( (iFlags & XUI_TEXT_ALIGN_RIGHT) == XUI_TEXT_ALIGN_RIGHT ) fTextX += tRect.fW - tRun.fWidth;
+		else if ( iFlags & XUI_TEXT_ALIGN_CENTER ) fTextX += (tRect.fW - tRun.fWidth) * .5f;
+		if ( (iFlags & XUI_TEXT_ALIGN_BOTTOM) == XUI_TEXT_ALIGN_BOTTOM ) fTextY += tRect.fH - tRun.fHeight;
+		else if ( iFlags & XUI_TEXT_ALIGN_MIDDLE ) fTextY += (tRect.fH - tRun.fHeight) * .5f;
+		if ( (iFlags & XUI_TEXT_CLIP) == 0 || bClip ) {
+			/* Match the existing clipped-text submission boundaries even
+			 * when the caller's viewport clip needs no item-edge clip. */
+			if ( (iFlags & XUI_TEXT_CLIP) == 0 ) xgeFlush();
+			xgeGlyphRunDrawSpans(&tRun, fTextX, fTextY, iColor,
+				XGE_DRAW_SCREEN_SPACE | (pTextItem->fDrawOffsetX!=0 ? XGE_DRAW_TEXT_SUBPIXEL_X : 0), pXgeSpans, iSpanCount);
+			if ( iFlags & XUI_TEXT_UNDERLINE ) {
+				xge_font_metrics_t metrics; int first = 0;
+				if ( xgeFontGetMetrics(tDesc.pFont, &metrics) == XGE_OK ) {
+					float baseline = fTextY + tRun.fAscent;
+					while ( first < tRun.iGlyphCount ) {
+						float width = 0;
+						while ( first < tRun.iGlyphCount && !(tRun.pGlyphs[first].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) ) width += tRun.pGlyphs[first++].fAdvanceX;
+						xgeShapeLinePx(fTextX,baseline+metrics.fUnderlinePosition,fTextX+width,baseline+metrics.fUnderlinePosition,metrics.fUnderlineThickness,iColor);
+						if ( first < tRun.iGlyphCount ) first++;
+						baseline += tRun.fLineHeight;
+					}
+				}
+			}
+			if ( (iFlags & XUI_TEXT_CLIP) == 0 ) xgeFlush();
+		}
+		if ( bClip ) {
+			xgeFlush();
+			if ( bOldClip ) xgeClipSet(tOldClip);
+			else xgeClipClear();
+		}
 		xgeGlyphRunFree(&tRun);
 		__xuiProxyXgeDrawMarkDirty(pDraw);
 	}
 	if ( pXgeSpans != sSmall ) xrtFree(pXgeSpans);
-	(void)iFlags;
 	return iRet;
 }
 
@@ -2301,6 +2379,7 @@ static void __xuiProxyXgeImeTextWindow(int iLength, int iSelectionStart,
 	}
 }
 
+#if XUI_ENABLE_CODE_EDIT
 static int __xuiProxyXgeCodeDocumentBoundary(xui_code_document pDocument,
 	int iOffset, int iLength, int bForward)
 {
@@ -2316,6 +2395,8 @@ static int __xuiProxyXgeCodeDocumentBoundary(xui_code_document pDocument,
 	return iOffset;
 }
 
+
+#endif
 static int __xuiProxyXgeTextBoundary(const char* sText, int iOffset, int iLength,
 	int bForward)
 {
@@ -2328,6 +2409,7 @@ static int __xuiProxyXgeTextBoundary(const char* sText, int iOffset, int iLength
 	return iOffset;
 }
 
+#if XUI_ENABLE_POPUP && XUI_ENABLE_LIST_VIEW
 static void __xuiProxyXgeImeCandidateSelected(xui_widget pWidget, int iIndex, void* pUser)
 {
 	xui_proxy_xge_ime_ui_t* pUi;
@@ -2500,7 +2582,7 @@ static int __xuiProxyXgeImeCandidateSync(xui_context pContext)
 		arrItems[i] = arrText[i];
 		memset(&tMeasure, 0, sizeof(tMeasure));
 		if ( pProxy != NULL && pProxy->textMeasure != NULL && pFont != NULL &&
-		     pProxy->textMeasure(pProxy, pFont, arrItems[i], &tMeasure) == XUI_OK &&
+		     pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=arrItems[i], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tMeasure) == XUI_OK &&
 		     tMeasure.fX + 28.0f > fWidth ) fWidth = tMeasure.fX + 28.0f;
 	}
 	if ( fWidth > 480.0f ) fWidth = 480.0f;
@@ -2542,6 +2624,8 @@ cleanup:
 	return iRet;
 }
 
+
+#endif
 static void __xuiProxyXgeDetachIme(xui_context pContext)
 {
 	if ( g_xuiProxyXgeImeTextContext == pContext ) {
@@ -2575,7 +2659,9 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 	xui_context pContext;
 	xui_widget pFocus;
 	xui_code_document pDocument;
+#if XUI_ENABLE_CODE_EDIT
 	xui_code_selection_model pSelection;
+#endif
 	const char* sText;
 	int iDocumentLength;
 	int iWindowStart;
@@ -2591,7 +2677,9 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 	pContext = g_xuiProxyXgeImeTextContext;
 	if ( pContext == NULL || pSnapshot == NULL ) return XGE_ERROR_NOT_INITIALIZED;
 	pDocument = NULL;
+#if XUI_ENABLE_CODE_EDIT
 	pSelection = NULL;
+#endif
 	pFocus = xuiGetFocusWidget(pContext);
 	if ( pFocus == NULL || xuiWidgetGetImeMode(pFocus) == XUI_IME_DISABLED ) return XGE_ERROR_NOT_INITIALIZED;
 	sText = "";
@@ -2602,15 +2690,23 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 	iLocalEnd = 0;
 	iStart = 0;
 	iEnd = 0;
-	if ( xuiWidgetIsType(pFocus, xuiInputGetType(pContext)) ) {
+	if ( 0 ) {}
+#if XUI_ENABLE_INPUT
+	else if ( xuiWidgetIsType(pFocus, xuiInputGetType(pContext)) ) {
 		sText = xuiInputGetText(pFocus);
 		if ( xuiInputGetSelection(pFocus, &iStart, &iEnd) != XUI_OK ) return XGE_ERROR;
 		iDocumentLength = (sText != NULL) ? (int)strlen(sText) : 0;
-	} else if ( xuiWidgetIsType(pFocus, xuiTextEditGetType(pContext)) ) {
+	}
+#endif
+#if XUI_ENABLE_TEXT_EDIT
+	else if ( xuiWidgetIsType(pFocus, xuiTextEditGetType(pContext)) ) {
 		sText = xuiTextEditGetText(pFocus);
 		if ( xuiTextEditGetSelection(pFocus, &iStart, &iEnd) != XUI_OK ) return XGE_ERROR;
 		iDocumentLength = (sText != NULL) ? (int)strlen(sText) : 0;
-	} else if ( xuiWidgetIsType(pFocus, xuiCodeEditGetType(pContext)) ) {
+	}
+#endif
+#if XUI_ENABLE_CODE_EDIT
+	else if ( xuiWidgetIsType(pFocus, xuiCodeEditGetType(pContext)) ) {
 		pDocument = xuiCodeEditGetDocument(pFocus);
 		pSelection = xuiCodeEditGetSelection(pFocus);
 		if ( pDocument == NULL || pSelection == NULL ) return XGE_ERROR_NOT_INITIALIZED;
@@ -2635,7 +2731,9 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 			g_xuiProxyXgeImeSnapshotText, g_xuiProxyXgeImeSnapshotCapacity, NULL);
 		if ( iRet != XUI_OK ) return XGE_ERROR;
 		sText = g_xuiProxyXgeImeSnapshotText;
-	} else {
+	}
+#endif
+	else {
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	if ( pDocument == NULL ) {
@@ -2667,43 +2765,25 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 	pSnapshot->iSelectionEnd = iLocalEnd;
 	pSnapshot->iDocumentOffset = iWindowStart;
 	pSnapshot->iDocumentSize = iDocumentLength;
+#if XUI_ENABLE_CODE_EDIT
 	pSnapshot->iRevision = (pDocument != NULL) ? xuiCodeDocumentGetVersion(pDocument) : 0u;
+#endif
 	return XGE_OK;
 }
 
-static int __xuiProxyXgeTextShape(xui_proxy pProxy, xui_font pFont, const char* sText,
-	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape)
-{
-	xge_text_shape_desc_t tDesc;
-	xge_glyph_run_t tRun;
-	xui_text_cluster_t* pCluster;
-	uint32_t iXgeFlags = 0;
-	int i;
-	int iCount;
-	int iRet;
+#include "xui_proxy_xge_shape_paint.inl"
 
-	if ( (pProxy == NULL) || !__xuiProxyXgeFontValid(pFont) || (sText == NULL) ||
-	     (iTextSize < -1) || (pShape == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
-	(void)pProxy;
-	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
-	memset(pShape, 0, sizeof(*pShape));
-	pShape->iSize = sizeof(*pShape);
-	pShape->iFlags = iFlags;
-	pShape->iTextSize = iTextSize;
-	memset(&tDesc, 0, sizeof(tDesc));
-	tDesc.iSize = sizeof(tDesc);
-	tDesc.pFont = &pFont->tFont;
-	tDesc.sText = sText;
-	tDesc.iTextSize = iTextSize;
-	if ( (iFlags & XUI_TEXT_SHAPE_KERNING) != 0 ) iXgeFlags |= XGE_TEXT_SHAPE_KERNING;
-	if ( (iFlags & XUI_TEXT_SHAPE_EMOJI) != 0 ) iXgeFlags |= XGE_TEXT_SHAPE_EMOJI;
-	tDesc.iFlags = iXgeFlags;
-	tDesc.iEmojiPresentation = XGE_EMOJI_PRESENTATION_AUTO;
-	tDesc.iEmojiLinePolicy = XGE_EMOJI_LINE_STABLE;
-	tDesc.fEmojiScale = 1.0f;
-	memset(&tRun, 0, sizeof(tRun));
-	iRet = xgeTextShape(&tDesc, &tRun);
-	if ( iRet != XGE_OK ) return iRet;
+static int __xuiProxyXgeTextShape(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)
+{
+    xge_text_shape_desc_t tDesc;xge_glyph_run_t tRun={0};xui_text_cluster_t* pCluster;
+    const char* sText;
+    int i,iCount,iRet;
+    if(!pProxy || !pShape)return XGE_ERROR_INVALID_ARGUMENT;
+    memset(pShape,0,sizeof(*pShape));iRet=__xuiProxyXgeTextDesc(pTextItem,&tDesc);if(iRet!=XGE_OK)return iRet;
+    if(pTextItem->iFlags & XUI_TEXT_SHAPE_RANGE)return __xuiProxyXgeTextRangeShape(pProxy,pTextItem,pShape);
+    sText=tDesc.sText;
+    pShape->iSize=sizeof(*pShape);pShape->iFlags=pTextItem->iFlags;pShape->iTextSize=tDesc.iTextSize;
+    iRet=xgeTextShape(&tDesc,&tRun);if(iRet!=XGE_OK)return iRet;
 	pShape->fWidth = tRun.fWidth;
 	pShape->fHeight = tRun.fHeight;
 	pShape->fAscent = tRun.fAscent;
@@ -2730,6 +2810,11 @@ static int __xuiProxyXgeTextShape(xui_proxy pProxy, xui_font pFont, const char* 
 			pCluster->iSize = sizeof(*pCluster);
 			pCluster->iTextStart = (int)pGlyph->iCluster;
 			pCluster->iTextEnd = (int)pGlyph->iClusterEnd;
+			/* XGE deliberately omits CR before LF. XUI caret clusters still
+			 * cover the original CRLF bytes as one zero-width control. */
+			if ((pGlyph->iFlags & XGE_GLYPH_POSITION_LINE_BREAK) && pCluster->iTextStart > 0 &&
+				sText[pCluster->iTextStart] == '\n' && sText[pCluster->iTextStart - 1] == '\r')
+				pCluster->iTextStart--;
 			pCluster->fOffsetX = pGlyph->fOffsetX;
 			pCluster->fOffsetY = pGlyph->fOffsetY;
 		} else {
@@ -2740,9 +2825,34 @@ static int __xuiProxyXgeTextShape(xui_proxy pProxy, xui_font pFont, const char* 
 		if ( (pGlyph->iFlags & XGE_GLYPH_POSITION_LINE_BREAK) != 0 ) pCluster->iFlags |= XUI_TEXT_CLUSTER_LINE_BREAK;
 		if ( pGlyph->iItemKind == XGE_TEXT_ITEM_EMOJI ) pCluster->iFlags |= XUI_TEXT_CLUSTER_EMOJI;
 	}
-	xgeGlyphRunFree(&tRun);
+	if ( tRun.iCaretCount > 0 ) {
+		pShape->pCarets = xrtCalloc((size_t)tRun.iCaretCount, sizeof(*pShape->pCarets));
+		if ( !pShape->pCarets ) {
+			xrtFree(pShape->pClusters); xgeGlyphRunFree(&tRun);
+			memset(pShape, 0, sizeof(*pShape)); pShape->iSize = sizeof(*pShape);
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		pShape->iCaretCount = tRun.iCaretCount;
+		for ( i = 0; i < tRun.iCaretCount; i++ ) {
+			pShape->pCarets[i].iSize = sizeof(*pShape->pCarets);
+			pShape->pCarets[i].iTextOffset = (int)tRun.pCarets[i].iTextOffset;
+			pShape->pCarets[i].fAdvance = tRun.pCarets[i].fAdvance;
+		}
+	}
+	if((pTextItem->iFlags & XUI_TEXT_SHAPE_RETAIN_PAINT) && tRun.iGlyphCount){
+		xui_xge_shape_paint* paint=xrtCalloc(1,sizeof(*paint));
+		if(!paint || pTextItem->pFont->iPaintRefs==UINT_MAX){
+			xrtFree(paint);xgeGlyphRunFree(&tRun);xuiTextShapeFree(pShape);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		paint->run=tRun;paint->font=pTextItem->pFont;paint->font->iPaintRefs++;
+		pShape->pPaint=paint;pShape->paintFree=__xuiProxyXgeShapePaintFree;
+		pShape->iPaintBytes=sizeof(*paint)+xgeGlyphRunRetainedBytes(&tRun);
+	}else xgeGlyphRunFree(&tRun);
 	return XUI_OK;
 }
+
+#include "xui_proxy_xge_text_range.inl"
 
 static int __xuiProxyXgeBindImeTextClient(xui_context pContext)
 {
@@ -2763,6 +2873,7 @@ static int __xuiProxyXgeBindImeTextClient(xui_context pContext)
 		iRet = xgeImeSetTextClient(&tClient);
 		if ( iRet != XGE_OK && iRet != XGE_ERROR_UNSUPPORTED && iRet != XGE_ERROR_NOT_INITIALIZED ) return iRet;
 	}
+#if XUI_ENABLE_POPUP && XUI_ENABLE_LIST_VIEW
 	if ( xgeImeGetMode() == XGE_IME_MODE_FULL ) {
 		iRet = __xuiProxyXgeImeCandidateEnsure(pContext);
 		(void)xgeImeSetCandidatePresenterReady(iRet == XUI_OK);
@@ -2770,6 +2881,8 @@ static int __xuiProxyXgeBindImeTextClient(xui_context pContext)
 	} else {
 		(void)xgeImeSetCandidatePresenterReady(0);
 	}
+
+#endif
 	return XUI_OK;
 }
 
@@ -2912,11 +3025,15 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			break;
 		case XGE_EVENT_IME_CANDIDATE_START:
 		case XGE_EVENT_IME_CANDIDATE_UPDATE:
+#if XUI_ENABLE_POPUP && XUI_ENABLE_LIST_VIEW
 			iRet = __xuiProxyXgeImeCandidateSync(pContext);
 			if ( iRet != XUI_OK ) return iRet;
+#endif
 			break;
 		case XGE_EVENT_IME_CANDIDATE_END:
+#if XUI_ENABLE_POPUP && XUI_ENABLE_LIST_VIEW
 			__xuiProxyXgeImeCandidateClose(pContext);
+#endif
 			break;
 		default:
 			break;
@@ -2994,8 +3111,12 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.zstdDecompress = __xuiProxyXgeZstdDecompress;
 	tProxy.surfaceLoadFile = __xuiProxyXgeSurfaceLoadFile;
 	tProxy.surfaceLoadMemory = __xuiProxyXgeSurfaceLoadMemory;
+#if XGE_ENABLE_SVG
 	tProxy.surfaceLoadSvgFile = __xuiProxyXgeSurfaceLoadSvgFile;
+#endif
+#if XGE_ENABLE_SVG
 	tProxy.surfaceLoadSvgMemory = __xuiProxyXgeSurfaceLoadSvgMemory;
+#endif
 	tProxy.surfaceUpdateRGBA = __xuiProxyXgeSurfaceUpdateRGBA;
 	tProxy.surfaceReadRGBA = __xuiProxyXgeSurfaceReadRGBA;
 	tProxy.surfaceGetDesc = __xuiProxyXgeSurfaceGetDesc;
@@ -3029,8 +3150,12 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.drawSurface = __xuiProxyXgeDrawSurface;
 	tProxy.drawSurfaceQuad = __xuiProxyXgeDrawSurfaceQuad;
 	tProxy.drawMeshTriangles = __xuiProxyXgeDrawMeshTriangles;
+#if XGE_ENABLE_SHAPE_EX
 	tProxy.drawPath = __xuiProxyXgeDrawPath;
+#endif
+#if XGE_ENABLE_SHAPE_EX
 	tProxy.drawSvgPath = __xuiProxyXgeDrawSvgPath;
+#endif
 	tProxy.drawPoint = __xuiProxyXgeDrawPoint;
 	tProxy.drawLine = __xuiProxyXgeDrawLine;
 	tProxy.drawTriangleFill = __xuiProxyXgeDrawTriangleFill;
@@ -3045,8 +3170,13 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.drawClipSet = __xuiProxyXgeDrawClipSet;
 	tProxy.drawClipClear = __xuiProxyXgeDrawClipClear;
 	tProxy.textShape = __xuiProxyXgeTextShape;
+	tProxy.drawTextShapeRange = __xuiProxyXgeDrawTextShapeRange;
+	tProxy.textShapeRangeMeasure = __xuiProxyXgeTextShapeRangeMeasure;
+	tProxy.drawTextShapeRangeSpans = __xuiProxyXgeDrawTextShapeRangeSpans;
 	tProxy.fontCreateSized = __xuiProxyXgeFontCreateSized;
 	tProxy.clockSeconds = __xuiProxyXgeClockSeconds;
 	tProxy.requestFrame = __xuiProxyXgeRequestFrame;
 	return tProxy;
 }
+
+#endif

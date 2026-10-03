@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 #include "xui_builtin_atlas.h"
 
@@ -157,3 +159,5 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 	*ppSurface = pSurface;
 	return XUI_OK;
 }
+
+#endif

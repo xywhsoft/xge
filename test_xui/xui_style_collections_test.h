@@ -31,11 +31,13 @@ static xui_text_measure_proc gMeasure;
 static void collectionRecord(uint32_t c) { gDraws++; if ((c & 255u) && gColorCount < COUNT(gColors)) gColors[gColorCount++] = c; }
 static int collectionFill(xui_proxy p, xui_draw_context d, xui_rect_t r, uint32_t c) { collectionRecord(c); return gFill(p,d,r,c); }
 static int collectionStroke(xui_proxy p, xui_draw_context d, xui_rect_t r, float w, uint32_t c) { collectionRecord(c); return gStroke(p,d,r,w,c); }
-static int collectionText(xui_proxy p, xui_draw_context d, xui_font f, const char* s, xui_rect_t r, uint32_t c, uint32_t flags) { collectionRecord(c); return gText(p,d,f,s,r,c,flags); }
+static int collectionText(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags) {
+ collectionRecord(c); return gText(p, d, pTextItem, r, c, flags); }
 static int collectionLine(xui_proxy p, xui_draw_context d, float x, float y, float a, float b, float w, uint32_t c) { collectionRecord(c); return gLine(p,d,x,y,a,b,w,c); }
 static int collectionTriangle(xui_proxy p, xui_draw_context d, xui_vec2_t a, xui_vec2_t b, xui_vec2_t c, uint32_t color) { collectionRecord(color); return gTriangle(p,d,a,b,c,color); }
 static int collectionCircle(xui_proxy p, xui_draw_context d, float x, float y, float r, uint32_t c) { collectionRecord(c); return gCircle(p,d,x,y,r,c); }
-static int collectionMeasure(xui_proxy p, xui_font f, const char* s, xui_vec2_t* v) { gMeasures++; return gMeasure(p,f,s,v); }
+static int collectionMeasure(xui_proxy p, const xui_text_item_t* pTextItem, xui_vec2_t* v) {
+ gMeasures++; return gMeasure(p, pTextItem, v); }
 static int collectionSeen(uint32_t c) { int i; for(i=0;i<gColorCount;i++) if(gColors[i]==c) return 1; return 0; }
 
 static void collectionInit(void)

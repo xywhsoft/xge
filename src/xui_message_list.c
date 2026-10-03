@@ -1,6 +1,12 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_MESSAGE_LIST
 #include "xui_internal.h"
 #include "xui_text_internal.h"
+#include "xui_document_layout_internal.h"
+#include "xui_document_accessible_internal.h"
+#include "../xui_document_ui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -19,13 +25,44 @@ typedef struct xui_message_text_caret_t {
 	float fX;
 } xui_message_text_caret_t;
 
+typedef struct xui_message_accessible_document_node_t {
+	xui_doc_node_id iDocumentNodeId;
+	uint64_t iAccessibleId;
+	uint64_t iParentAccessibleId;
+	char* sValue;
+} xui_message_accessible_document_node_t;
+
+typedef struct xui_message_document_binding_t {
+	xui_widget pList;
+	xui_document pDocument;
+	xui_document_renderer pRenderer;
+	uint64_t iSubscription;
+	int iIndex;
+	int bNeedsSync;
+	xui_doc_range_t tSelection;
+	xui_doc_node_id iPressedNode;
+	xui_message_accessible_document_node_t* arrAccessibleNodes;
+	uint64_t iAccessibleNodeCount;
+	uint64_t iAccessibleIdentity;
+	uint64_t iAccessibleRevision;
+	xui_message_document_desc_t tDesc;
+	xui_font pResolvedFont;
+	uint32_t iResolvedTextColor;
+} xui_message_document_binding_t;
+
 typedef struct xui_message_node_data_t {
+	uint64_t iAccessibleId;
+	uint64_t iAccessibleDocumentId;
+	uint64_t iAccessibleDocumentRevision;
+	char* sAccessibleDocumentText;
 	char* sId;
 	char* sSender;
 	char* sTime;
 	char* sText;
 	char* sParentId;
 	char* sTitle;
+	xui_message_document_binding_t* pDocumentBinding;
+	int bDocumentSizeExact;
 	int iType;
 	int iFlags;
 	int iAuxiliaryKind;
@@ -57,11 +94,26 @@ typedef struct xui_message_node_data_t {
 	int bMeasureDirty;
 } xui_message_node_data_t;
 
+typedef struct xui_message_document_anchor_t {
+	xui_message_document_binding_t* pBinding;
+	xui_doc_position_t tPosition;
+	uint8_t* arrMeasuredPrefix;
+	size_t iPrefixCount;
+	size_t iOldBlockCount;
+	float fScreenY;
+	float fLineFraction;
+	int iNode;
+	int bPrefixApplied;
+} xui_message_document_anchor_t;
+
 typedef struct xui_message_list_data_t {
 	xui_message_node_data_t* arrNodes;
+	uint64_t iNextAccessibleId;
 	int iNodeCount;
 	int iNodeCapacity;
+	int iDocumentNodeCount;
 	xui_font pFont;
+	int bUseDefaultFont;
 	xui_message_list_metrics_t tMetrics;
 	xui_message_list_colors_t tColors;
 	xui_message_list_event_proc onEvent;
@@ -80,7 +132,18 @@ typedef struct xui_message_list_data_t {
 	int iSelectionAnchorOffset;
 	int iSelectionActiveNode;
 	int iSelectionActiveOffset;
+	xui_doc_position_t tSelectionAnchorDocument;
+	xui_doc_position_t tSelectionActiveDocument;
+	xui_doc_table_selection_t tTableSelection;
+	xui_doc_cell_hit_t tTableDragAnchor;
+	xui_doc_cell_hit_t tTableDragFocus;
+	int iTableSelectionNode;
+	int bTableSelecting;
+	xui_doc_node_id iPressedTaskNode;
+	int iPressedTaskMessage;
 	int bSelecting;
+	int iDocumentSelectionNode;
+	int bDocumentSelecting;
 	xui_widget pContextMenu;
 	int bLayoutValid;
 	int iLayoutDirtyFrom;
@@ -90,7 +153,40 @@ typedef struct xui_message_list_data_t {
 	xui_font pLayoutFont;
 	uint32_t iLayoutLanguageRevision;
 	uint32_t iLayoutDpiGeneration;
+	uint64_t iResourceRegistryGeneration;
+	uint64_t iLayoutResourceGeneration;
+	xui_message_document_anchor_t tPendingDocumentAnchor;
 } xui_message_list_data_t;
+
+static void __xuiMessageAccessibleClearText(xui_message_node_data_t* pNode)
+{
+	if ( pNode == NULL ) return;
+	xuiDocumentFreeBuffer(pNode->sAccessibleDocumentText);
+	pNode->sAccessibleDocumentText = NULL;
+	pNode->iAccessibleDocumentId = 0;
+	pNode->iAccessibleDocumentRevision = 0;
+}
+
+static void __xuiMessageAccessibleClearDocumentValues(xui_message_document_binding_t* pBinding)
+{
+	uint64_t i;
+	if ( pBinding == NULL ) return;
+	for ( i = 0; i < pBinding->iAccessibleNodeCount; i++ ) {
+		free(pBinding->arrAccessibleNodes[i].sValue);
+		pBinding->arrAccessibleNodes[i].sValue = NULL;
+	}
+	pBinding->iAccessibleRevision = 0;
+}
+
+static void __xuiMessageAccessibleFreeDocumentNodes(xui_message_document_binding_t* pBinding)
+{
+	if ( pBinding == NULL ) return;
+	__xuiMessageAccessibleClearDocumentValues(pBinding);
+	free(pBinding->arrAccessibleNodes);
+	pBinding->arrAccessibleNodes = NULL;
+	pBinding->iAccessibleNodeCount = 0;
+	pBinding->iAccessibleIdentity = 0;
+}
 
 typedef struct xui_message_paint_t {
     xui_message_list_colors_t tColors;
@@ -167,6 +263,269 @@ static void __xuiMessageRegisterStyleProperties(xui_context pContext, xui_widget
 }
 
 static int __xuiMessageNodeCanSelectText(const xui_message_node_data_t* pNode);
+static int __xuiMessageNodeCanSelect(const xui_message_node_data_t* pNode);
+static int __xuiMessageInvalidateAfterNodeUpdate(xui_widget pWidget, xui_message_list_data_t* pData, int iIndex);
+static int __xuiMessageHitDocument(xui_widget pWidget, xui_message_list_data_t* pData,
+	int iIndex, double fWorldX, double fWorldY, int bClamp, xui_doc_position_t* pPosition);
+static int __xuiMessageHitDocumentCell(xui_widget pWidget, xui_message_list_data_t* pData,
+	int iIndex, double fWorldX, double fWorldY, xui_doc_cell_hit_t* pCell);
+static int __xuiMessageHitDocumentTaskMarker(xui_widget pWidget,
+	xui_message_list_data_t* pData, int iIndex, double fWorldX,
+	double fWorldY, xui_doc_node_id* pItem);
+static void __xuiMessageCaptureDocumentAnchor(xui_widget pWidget,
+	xui_message_list_data_t* pData, xui_rect_t tContent,
+	xui_message_document_anchor_t* pAnchor, int bForce);
+
+static int __xuiMessageStyleAffectsMetrics(xui_message_document_binding_t* pBinding,
+	xui_document_change_set pChanges)
+{
+	xui_document_snapshot pAfter = NULL;
+	const uint32_t iColorFlags = XUI_DOC_TEXT_COLOR_EXPLICIT_ZERO |
+		XUI_DOC_BACKGROUND_COLOR_EXPLICIT_ZERO |
+		XUI_DOC_TEXT_COLOR_CURRENT | XUI_DOC_BACKGROUND_COLOR_CURRENT;
+	uint64_t i;
+	int bChanged = 0;
+	if ( pChanges == NULL || pBinding->pRenderer->snapshot == NULL ||
+	     xuiDocumentAcquireSnapshot(pBinding->pDocument, &pAfter) != XUI_OK ) return 0;
+	for ( i = 0; i < pChanges->count; i++ ) {
+		const xui_doc_operation_t* pOp = &pChanges->ops[i];
+		xui_doc_node_info_t tBefore = {0}, tAfter = {0};
+		const xui_doc_attributes_t *a, *b;
+		if ( !(pOp->iFlags & XUI_DOC_CHANGE_STYLE) ) continue;
+		tBefore.iSize = tAfter.iSize = sizeof(tBefore);
+		if ( xuiDocumentSnapshotGetNode(pBinding->pRenderer->snapshot,
+			pOp->iNodeId, &tBefore) != XUI_OK ||
+		     xuiDocumentSnapshotGetNode(pAfter, pOp->iNodeId, &tAfter) != XUI_OK )
+			{ bChanged = 1; break; }
+		a = &tBefore.tAttributes; b = &tAfter.tAttributes;
+		if ( tBefore.iKind != tAfter.iKind || a->iMarks != b->iMarks ||
+		     ((a->iFlags ^ b->iFlags) & ~iColorFlags) ||
+		     a->iHeadingLevel != b->iHeadingLevel ||
+		     a->iAlignment != b->iAlignment ||
+		     a->iRowSpan != b->iRowSpan || a->iColumnSpan != b->iColumnSpan ||
+		     a->iListStart != b->iListStart || a->fFontSize != b->fFontSize ||
+		     a->fWidth != b->fWidth || a->fHeight != b->fHeight ||
+		     a->fParagraphSpacing != b->fParagraphSpacing ||
+		     strcmp(a->sFontFamily, b->sFontFamily) )
+			{ bChanged = 1; break; }
+	}
+	xuiDocumentSnapshotRelease(pAfter);
+	return bChanged;
+}
+
+static size_t __xuiMessageDocumentFindBlock(xui_document_renderer pRenderer,
+	xui_doc_node_id iNodeId)
+{
+	xui_doc_node_info_t tNode = {0};
+	while ( iNodeId != 0 ) {
+		size_t* pIndex = xrtMapGet(&pRenderer->block_index,
+			xuiXrtBytes(&iNodeId, sizeof(iNodeId)));
+		if ( pIndex != NULL ) return *pIndex;
+		tNode.iSize = sizeof(tNode);
+		if ( xuiDocumentSnapshotGetNode(pRenderer->snapshot,
+			iNodeId, &tNode) != XUI_OK ) return SIZE_MAX;
+		iNodeId = tNode.iParentId;
+	}
+	return SIZE_MAX;
+}
+
+static int __xuiMessageInlineStyleSplits(xui_document_change_set pChanges)
+{
+	uint64_t i;
+	if ( pChanges == NULL || !(pChanges->flags & XUI_DOC_CHANGE_STYLE) ||
+	     !(pChanges->flags & XUI_DOC_CHANGE_STRUCTURE) ) return 0;
+	for ( i = 0; i < pChanges->count; i++ ) {
+		const xui_doc_operation_t* pOp = &pChanges->ops[i];
+		if ( !(pOp->iFlags & XUI_DOC_CHANGE_STRUCTURE) ) continue;
+		if ( pOp->iKind == XUI_DOC_OP_INSERT ) {
+			const xui_doc_operation_t* pNext = i + 1 < pChanges->count ?
+				&pChanges->ops[i + 1] : NULL;
+			if ( pNext == NULL || pNext->iKind != XUI_DOC_OP_SPLIT ||
+			     pNext->iParentId != 0 || pNext->iOtherNodeId != pOp->iNodeId ||
+			     pOp->iParentId == 0 ) return 0;
+		} else if ( pOp->iKind == XUI_DOC_OP_SPLIT ) {
+			const xui_doc_operation_t* pPrevious = i ? &pChanges->ops[i - 1] : NULL;
+			if ( pPrevious == NULL || pPrevious->iKind != XUI_DOC_OP_INSERT ||
+			     pOp->iParentId != 0 || pPrevious->iNodeId != pOp->iOtherNodeId )
+				return 0;
+		} else return 0;
+	}
+	return 1;
+}
+
+static void __xuiMessageDocumentChanged(xui_document pDocument, xui_document_change_set pChanges, void* pUser)
+{
+	xui_message_document_binding_t* pBinding = (xui_message_document_binding_t*)pUser;
+	xui_message_list_data_t* pData;
+	xui_document_snapshot pSnapshot = NULL;
+	xui_doc_position_t tMapped;
+	xui_message_document_anchor_t tAnchor = {0};
+	int iMapping;
+	int bSelectionMapFailed = 0;
+	int bSelectionAffected;
+	int bTableSelectionCleared = 0;
+	int iRet;
+	size_t i;
+	(void)pDocument;
+	if ( pBinding == NULL || pBinding->pList == NULL ) return;
+	pData = (xui_message_list_data_t*)xuiWidgetGetTypeData(pBinding->pList);
+	if ( pData == NULL || pBinding->iIndex < 0 || pBinding->iIndex >= pData->iNodeCount ||
+	     pData->arrNodes[pBinding->iIndex].pDocumentBinding != pBinding ) return;
+	bSelectionAffected = pData->iSelectionAnchorNode == pBinding->iIndex ||
+		pData->iSelectionActiveNode == pBinding->iIndex;
+	__xuiMessageAccessibleClearText(&pData->arrNodes[pBinding->iIndex]);
+	__xuiMessageAccessibleClearDocumentValues(pBinding);
+	/* Capture against the old renderer snapshot. A later layout cannot recover
+	 * the old visible line after an inline style split reflows that same block. */
+	if ( pData->tPendingDocumentAnchor.pBinding == pBinding ) {
+		tAnchor = pData->tPendingDocumentAnchor;
+		memset(&pData->tPendingDocumentAnchor, 0, sizeof(pData->tPendingDocumentAnchor));
+	} else if ( pData->tPendingDocumentAnchor.pBinding == NULL && pChanges != NULL &&
+	           (pChanges->flags & XUI_DOC_CHANGE_STYLE) &&
+	           !(pChanges->flags & (XUI_DOC_CHANGE_SOURCE | XUI_DOC_CHANGE_RESET)) &&
+	           __xuiMessageStyleAffectsMetrics(pBinding, pChanges) ) {
+		__xuiMessageCaptureDocumentAnchor(pBinding->pList, pData,
+			xuiWidgetGetContentRect(pBinding->pList), &tAnchor, 1);
+		if ( tAnchor.pBinding != pBinding ) {
+			xrtFree(tAnchor.arrMeasuredPrefix);
+			memset(&tAnchor, 0, sizeof(tAnchor));
+		}
+	}
+	if ( tAnchor.pBinding != NULL &&
+	     (pChanges == NULL ||
+	      xuiDocumentMapPosition(pChanges, &tAnchor.tPosition, &tMapped, &iMapping) != XUI_OK ||
+	      iMapping == XUI_DOC_MAP_DELETED) ) {
+		xrtFree(tAnchor.arrMeasuredPrefix);
+		memset(&tAnchor, 0, sizeof(tAnchor));
+	} else if ( tAnchor.pBinding != NULL ) tAnchor.tPosition = tMapped;
+	if ( pBinding->tSelection.tAnchor.iSize != 0 ) {
+		if ( xuiDocumentMapPosition(pChanges, &pBinding->tSelection.tAnchor, &tMapped, &iMapping) == XUI_OK )
+			pBinding->tSelection.tAnchor = tMapped;
+		else memset(&pBinding->tSelection, 0, sizeof(pBinding->tSelection));
+		if ( pBinding->tSelection.tAnchor.iSize != 0 ) {
+			if ( xuiDocumentMapPosition(pChanges, &pBinding->tSelection.tCaret, &tMapped, &iMapping) == XUI_OK )
+				pBinding->tSelection.tCaret = tMapped;
+			else memset(&pBinding->tSelection, 0, sizeof(pBinding->tSelection));
+		}
+	}
+	if ( pData->iSelectionAnchorNode == pBinding->iIndex &&
+	     pData->tSelectionAnchorDocument.iSize != 0 ) {
+		if ( xuiDocumentMapPosition(pChanges, &pData->tSelectionAnchorDocument, &tMapped, &iMapping) == XUI_OK )
+			pData->tSelectionAnchorDocument = tMapped;
+		else bSelectionMapFailed = 1;
+	}
+	if ( pData->iSelectionActiveNode == pBinding->iIndex &&
+	     pData->tSelectionActiveDocument.iSize != 0 ) {
+		if ( xuiDocumentMapPosition(pChanges, &pData->tSelectionActiveDocument, &tMapped, &iMapping) == XUI_OK )
+			pData->tSelectionActiveDocument = tMapped;
+		else bSelectionMapFailed = 1;
+	}
+	if ( bSelectionMapFailed ) {
+		pData->iSelectionAnchorNode = -1;
+		pData->iSelectionActiveNode = -1;
+		memset(&pData->tSelectionAnchorDocument, 0, sizeof(pData->tSelectionAnchorDocument));
+		memset(&pData->tSelectionActiveDocument, 0, sizeof(pData->tSelectionActiveDocument));
+		memset(&pBinding->tSelection, 0, sizeof(pBinding->tSelection));
+		pData->iDocumentSelectionNode = -1;
+		pData->bSelecting = 0;
+		pData->bDocumentSelecting = 0;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pBinding->pList)) == pBinding->pList )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pBinding->pList), pBinding->pList);
+	}
+	iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+	if ( iRet == XUI_OK ) iRet = xuiDocumentRendererSetSnapshot(pBinding->pRenderer, pSnapshot, pChanges);
+	if ( pData->iTableSelectionNode == pBinding->iIndex &&
+	     pData->tTableSelection.iTableId != 0 ) {
+		memset(&pData->tTableSelection, 0, sizeof(pData->tTableSelection));
+		memset(&pData->tTableDragAnchor, 0, sizeof(pData->tTableDragAnchor));
+		memset(&pData->tTableDragFocus, 0, sizeof(pData->tTableDragFocus));
+		pData->iTableSelectionNode = -1;
+		if ( pData->bTableSelecting &&
+		     xuiGetPointerCapture(xuiWidgetGetContext(pBinding->pList)) == pBinding->pList )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pBinding->pList), pBinding->pList);
+		pData->bTableSelecting = 0;
+		bTableSelectionCleared = 1;
+	}
+	if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+	if ( iRet == XUI_OK && tAnchor.pBinding != NULL ) {
+		/* Previously unmeasured styled predecessors must be settled as well as
+		 * the old measured prefix before resolving the mapped visible caret. */
+		if ( tAnchor.arrMeasuredPrefix != NULL && pChanges != NULL &&
+		     tAnchor.iOldBlockCount == pBinding->pRenderer->count ) {
+			if ( (pChanges->flags & XUI_DOC_CHANGE_STRUCTURE) &&
+			     !__xuiMessageInlineStyleSplits(pChanges) )
+				memset(tAnchor.arrMeasuredPrefix, 1, tAnchor.iPrefixCount);
+			for ( i = 0; i < pChanges->count; i++ ) {
+				size_t iBlock = __xuiMessageDocumentFindBlock(pBinding->pRenderer,
+					pChanges->ops[i].iNodeId);
+				if ( iBlock < tAnchor.iPrefixCount )
+					tAnchor.arrMeasuredPrefix[iBlock] = 1;
+			}
+		}
+		pData->tPendingDocumentAnchor = tAnchor;
+	} else xrtFree(tAnchor.arrMeasuredPrefix);
+	pBinding->bNeedsSync = iRet != XUI_OK;
+	pData->arrNodes[pBinding->iIndex].bMeasureDirty = 1;
+	if ( pBinding->iIndex < pData->iLayoutDirtyFrom ) pData->iLayoutDirtyFrom = pBinding->iIndex;
+	pData->iChangeCount++;
+	(void)xuiWidgetInvalidate(pBinding->pList, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xuiInternalAccessibilityQueue(pBinding->pList, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pBinding->pList, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	if ( bSelectionAffected || bTableSelectionCleared )
+		xuiInternalAccessibilityQueue(pBinding->pList, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+}
+
+static void __xuiMessageDocumentRendererDesc(xui_message_document_binding_t* pBinding,
+	xui_message_list_data_t* pData, xui_doc_renderer_desc_t* pDesc)
+{
+	xui_message_paint_t tPaint;
+	*pDesc = pBinding->tDesc.tRenderer;
+	if ( pDesc->iSize == 0 ) { memset(pDesc, 0, sizeof(*pDesc)); pDesc->iSize = sizeof(*pDesc); }
+	if ( pDesc->tFonts.normal == NULL ) pDesc->tFonts.normal = pData->bUseDefaultFont ?
+		xuiGetDefaultFont(xuiWidgetGetContext(pBinding->pList)) : pData->pFont;
+	if ( pDesc->iTextColor == 0 ) {
+		int iType = pData->arrNodes[pBinding->iIndex].iType;
+		__xuiMessageResolvePaint(pBinding->pList, pData, &tPaint);
+		pDesc->iTextColor = iType == XUI_MESSAGE_NODE_SELF ? tPaint.tColors.iSelfTextColor :
+			iType == XUI_MESSAGE_NODE_SYSTEM ? tPaint.tColors.iSystemTextColor : tPaint.tColors.iOtherTextColor;
+	}
+}
+
+static int __xuiMessageDocumentSync(xui_message_document_binding_t* pBinding)
+{
+	xui_document_snapshot pSnapshot = NULL;
+	xui_message_list_data_t* pData = (xui_message_list_data_t*)xuiWidgetGetTypeData(pBinding->pList);
+	xui_doc_renderer_desc_t tDesc;
+	xui_document_renderer pNext = NULL;
+	int iRet;
+	if ( pData != NULL && pBinding->iIndex >= 0 && pBinding->iIndex < pData->iNodeCount &&
+	     pData->arrNodes[pBinding->iIndex].pDocumentBinding == pBinding ) {
+		__xuiMessageDocumentRendererDesc(pBinding, pData, &tDesc);
+		if ( pBinding->pResolvedFont != tDesc.tFonts.normal ) {
+			iRet = xuiDocumentRendererCreate(xuiWidgetGetContext(pBinding->pList), &tDesc, &pNext);
+			if ( iRet == XUI_OK ) iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+			if ( iRet == XUI_OK ) iRet = xuiDocumentRendererSetSnapshot(pNext, pSnapshot, NULL);
+			if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+			if ( iRet != XUI_OK ) { xuiDocumentRendererRelease(pNext); return iRet; }
+			xuiDocumentRendererRelease(pBinding->pRenderer);
+			pBinding->pRenderer = pNext;
+			pData->arrNodes[pBinding->iIndex].bDocumentSizeExact = 0;
+			pBinding->pResolvedFont = tDesc.tFonts.normal;
+			pBinding->iResolvedTextColor = tDesc.iTextColor;
+			pBinding->bNeedsSync = 0;
+		} else if ( pBinding->iResolvedTextColor != tDesc.iTextColor ) {
+			/* Default text color is read during Draw, not text shaping. */
+			pBinding->pRenderer->desc.iTextColor = tDesc.iTextColor;
+			pBinding->iResolvedTextColor = tDesc.iTextColor;
+		}
+	}
+	if ( !pBinding->bNeedsSync ) return XUI_OK;
+	iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+	if ( iRet == XUI_OK ) iRet = xuiDocumentRendererSetSnapshot(pBinding->pRenderer, pSnapshot, NULL);
+	if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+	if ( iRet == XUI_OK ) pBinding->bNeedsSync = 0;
+	return iRet;
+}
 
 static xui_message_list_data_t* __xuiMessageListGetData(xui_widget pWidget)
 {
@@ -245,13 +604,16 @@ static int __xuiMessageDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, 
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
-static int __xuiMessageDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiMessageDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
 	if ( (pProxy == NULL) || (pDraw == NULL) || (pFont == NULL) || (pProxy->drawText == NULL) || (sText == NULL) || (sText[0] == 0) ||
 	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiMessageAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, tRect, iColor, iFlags);
+	return pProxy->drawText(pProxy, pDraw, pTextItem, tRect, iColor, iFlags);
 }
 
 static float __xuiMessageClamp(float fValue, float fMin, float fMax)
@@ -340,9 +702,21 @@ static int __xuiMessageMetricsValid(const xui_message_list_metrics_t* pMetrics)
 	       __xuiMessageFloatValid(pMetrics->fWheelStep);
 }
 
+static void __xuiMessageFreeDocumentBinding(xui_message_document_binding_t* pBinding)
+{
+	if ( pBinding == NULL ) return;
+	if ( pBinding->iSubscription != 0 ) xuiDocumentUnsubscribe(pBinding->pDocument, pBinding->iSubscription);
+	__xuiMessageAccessibleFreeDocumentNodes(pBinding);
+	xuiDocumentRendererRelease(pBinding->pRenderer);
+	xuiDocumentRelease(pBinding->pDocument);
+	free(pBinding);
+}
+
 static void __xuiMessageFreeNode(xui_message_node_data_t* pNode)
 {
 	if ( pNode == NULL ) return;
+	__xuiMessageAccessibleClearText(pNode);
+	__xuiMessageFreeDocumentBinding(pNode->pDocumentBinding);
 	if ( pNode->pTextLayout != NULL ) xuiTextLayoutDestroy(pNode->pTextLayout);
 	if ( pNode->pTitleLayout != NULL ) xuiTextLayoutDestroy(pNode->pTitleLayout);
 	if ( pNode->arrTextCarets != NULL ) xrtFree(pNode->arrTextCarets);
@@ -408,17 +782,37 @@ static void __xuiMessageClearData(xui_message_list_data_t* pData)
 {
 	int i;
 	if ( pData == NULL ) return;
+	pData->iPressedTaskNode = 0;
+	xrtFree(pData->tPendingDocumentAnchor.arrMeasuredPrefix);
+	memset(&pData->tPendingDocumentAnchor, 0, sizeof(pData->tPendingDocumentAnchor));
+	if ( pData->bDocumentSelecting && pData->iDocumentSelectionNode >= 0 &&
+	     pData->iDocumentSelectionNode < pData->iNodeCount &&
+	     pData->arrNodes[pData->iDocumentSelectionNode].pDocumentBinding != NULL ) {
+		xui_widget pWidget = pData->arrNodes[pData->iDocumentSelectionNode].pDocumentBinding->pList;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	}
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
 		__xuiMessageFreeNode(&pData->arrNodes[i]);
 	}
 	pData->iNodeCount = 0;
+	pData->iDocumentNodeCount = 0;
 	pData->iHover = -1;
 	pData->iSelected = -1;
 	pData->iSelectionAnchorNode = -1;
 	pData->iSelectionAnchorOffset = 0;
 	pData->iSelectionActiveNode = -1;
 	pData->iSelectionActiveOffset = 0;
+	memset(&pData->tSelectionAnchorDocument, 0, sizeof(pData->tSelectionAnchorDocument));
+	memset(&pData->tSelectionActiveDocument, 0, sizeof(pData->tSelectionActiveDocument));
 	pData->bSelecting = 0;
+	pData->iDocumentSelectionNode = -1;
+	pData->bDocumentSelecting = 0;
+	memset(&pData->tTableSelection, 0, sizeof(pData->tTableSelection));
+	memset(&pData->tTableDragAnchor, 0, sizeof(pData->tTableDragAnchor));
+	memset(&pData->tTableDragFocus, 0, sizeof(pData->tTableDragFocus));
+	pData->iTableSelectionNode = -1;
+	pData->bTableSelecting = 0;
 	pData->fScrollY = 0.0f;
 	pData->fContentHeight = 0.0f;
 	pData->bLayoutValid = 0;
@@ -429,7 +823,7 @@ static void __xuiMessageClearData(xui_message_list_data_t* pData)
 static xui_font __xuiMessageFont(xui_widget pWidget, xui_message_list_data_t* pData)
 {
 	if ( pData == NULL ) return NULL;
-	return (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	return pData->bUseDefaultFont ? xuiGetDefaultFont(xuiWidgetGetContext(pWidget)) : pData->pFont;
 }
 
 static xui_message_node_t __xuiMessagePublicNode(const xui_message_node_data_t* pNode)
@@ -458,7 +852,7 @@ static float __xuiMessageTextWidth(xui_widget pWidget, xui_font pFont, const cha
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) ) {
 		tSize = (xui_vec2_t){0.0f, 0.0f};
-		if ( pProxy->textMeasure(pProxy, pFont, __xuiMessageText(sText), &tSize) == XUI_OK ) {
+		if ( pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=__xuiMessageText(sText), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK ) {
 			return tSize.fX;
 		}
 	}
@@ -529,7 +923,22 @@ static int __xuiMessageMeasureNodeWrapped(xui_widget pWidget, xui_message_list_d
 	xui_message_node_data_t* pNode, float fMaxWidth, xui_vec2_t* pSize)
 {
 	xui_text_layout pLayout;
+	xui_doc_rect_t tDocumentSize;
+	int bExact;
 	int iRet;
+	if ( pNode->pDocumentBinding != NULL ) {
+		iRet = __xuiMessageDocumentSync(pNode->pDocumentBinding);
+		if ( iRet != XUI_OK ) return iRet;
+		fMaxWidth = __xuiMessageMax(1.0f, fMaxWidth);
+		iRet = xuiDocumentRendererLayout(pNode->pDocumentBinding->pRenderer, fMaxWidth, 0.0, 0.0);
+		if ( iRet == XUI_OK ) iRet = xuiDocumentRendererGetSize(pNode->pDocumentBinding->pRenderer, &tDocumentSize, &bExact);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !isfinite(tDocumentSize.height) || tDocumentSize.height < 0 || tDocumentSize.height > 100000000.0 ) return XUI_DOC_ERROR_LIMIT;
+		pNode->bDocumentSizeExact = bExact;
+		pSize->fX = fMaxWidth;
+		pSize->fY = (float)__xuiMessageMax(20.0f, (float)tDocumentSize.height);
+		return XUI_OK;
+	}
 
 	iRet = __xuiMessageEnsureNodeTextLayout(pWidget, pData, pNode, fMaxWidth, &pLayout);
 	if ( iRet == XUI_OK ) {
@@ -629,6 +1038,152 @@ static void __xuiMessageDirtyNode(xui_message_list_data_t* pData, int iIndex)
 	if ( iIndex < pData->iLayoutDirtyFrom ) pData->iLayoutDirtyFrom = iIndex;
 }
 
+static int __xuiMessageLayoutNodesForContent(xui_widget pWidget,
+	xui_message_list_data_t* pData, xui_rect_t tContent, int bUpdateScroll);
+
+/* The renderer's internal height index is a Fenwick tree. Keep this small
+ * lookup local so the MessageList audit can still link against the DLL. */
+static double __xuiMessageDocumentHeightBefore(xui_document_renderer pRenderer, size_t iIndex)
+{
+	double fHeight = 0;
+	for ( ; iIndex; iIndex -= iIndex & (~iIndex + 1) ) fHeight += pRenderer->heights[iIndex];
+	return fHeight;
+}
+
+static size_t __xuiMessageDocumentBlockAt(xui_document_renderer pRenderer, double fY)
+{
+	size_t iIndex = 0, iBit = 1;
+	double fTop = 0;
+	while ( iBit <= pRenderer->count / 2 ) iBit <<= 1;
+	for ( ; iBit; iBit >>= 1 ) {
+		size_t iNext = iIndex + iBit;
+		if ( iNext <= pRenderer->count && fTop + pRenderer->heights[iNext] <= fY ) {
+			fTop += pRenderer->heights[iNext];
+			iIndex = iNext;
+		}
+	}
+	return iIndex < pRenderer->count ? iIndex : pRenderer->count - 1;
+}
+
+static void __xuiMessageCaptureDocumentAnchor(xui_widget pWidget,
+	xui_message_list_data_t* pData, xui_rect_t tContent,
+	xui_message_document_anchor_t* pAnchor, int bForce)
+{
+	xui_message_node_data_t* pNode;
+	xui_document_renderer pRenderer;
+	xui_doc_rect_t tCaret;
+	float fLocalY, fTextScreenY;
+	int iIndex, bAll, bFrozen;
+	size_t i, iBlock;
+	memset(pAnchor, 0, sizeof(*pAnchor));
+	if ( pData->iDocumentNodeCount == 0 || pData->iLaidOutCount == 0 ||
+	     tContent.fH <= 0 || pData->fScrollY <= 0 ) return;
+	if ( pData->bAutoScroll && pData->fScrollY >=
+	     __xuiMessageMax(0.0f, pData->fContentHeight - pData->fLayoutHeight) - 0.5f ) return;
+	iIndex = __xuiMessageLowerBoundY(pData, pData->fScrollY);
+	if ( iIndex < 0 || iIndex >= pData->iLaidOutCount ) return;
+	pNode = &pData->arrNodes[iIndex];
+	if ( pNode->pDocumentBinding == NULL ||
+	     (pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+	      (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0) ) return;
+	bAll = !pData->bLayoutValid || pData->fLayoutWidth != tContent.fW ||
+		pData->pLayoutFont != __xuiMessageFont(pWidget, pData) ||
+		pData->iLayoutLanguageRevision != xuiGetLanguageRevision(xuiWidgetGetContext(pWidget)) ||
+		pData->iLayoutDpiGeneration != pWidget->pContext->iDpiGeneration;
+	if ( !bForce && !bAll && !pNode->bMeasureDirty &&
+	     pData->iLayoutResourceGeneration == xuiResourceGetRegistryGeneration(
+	     xuiWidgetGetContext(pWidget)) ) return;
+	fTextScreenY = pNode->tTextRect.fY - pData->fScrollY;
+	pAnchor->fScreenY = __xuiMessageMin(__xuiMessageMax(0.0f, tContent.fH - 1.0f),
+		__xuiMessageMax(__xuiMessageMin(20.0f, tContent.fH / 4.0f),
+			fTextScreenY + 4.0f));
+	fLocalY = pData->fScrollY + pAnchor->fScreenY - pNode->tTextRect.fY;
+	if ( fLocalY < 0 || fLocalY >= pNode->tTextRect.fH ) return;
+	pRenderer = pNode->pDocumentBinding->pRenderer;
+	if ( pRenderer == NULL || pRenderer->snapshot == NULL ) return;
+	bFrozen = pRenderer->freeze_dynamic_refresh;
+	pRenderer->freeze_dynamic_refresh = 1;
+	if ( xuiDocumentRendererHitTest(pRenderer,
+		__xuiMessageMin(45.0f, pNode->tTextRect.fW / 3.0f),
+		fLocalY, &pAnchor->tPosition) == XUI_OK &&
+	     xuiDocumentRendererGetCaretRect(pRenderer, &pAnchor->tPosition, &tCaret) == XUI_OK ) {
+		pAnchor->pBinding = pNode->pDocumentBinding;
+		pAnchor->iNode = iIndex;
+		pAnchor->fLineFraction = __xuiMessageClamp(
+			(float)((fLocalY - tCaret.y) / __xuiMessageMax(1.0f, (float)tCaret.height)),
+			0.0f, 0.99f);
+		if ( pRenderer->mode != XUI_DOC_SOURCE_TEXT && pRenderer->count ) {
+			iBlock = __xuiMessageDocumentBlockAt(pRenderer, fLocalY);
+			pAnchor->iPrefixCount = iBlock + 1;
+			pAnchor->iOldBlockCount = pRenderer->count;
+			pAnchor->arrMeasuredPrefix = (uint8_t*)xrtMalloc(pAnchor->iPrefixCount);
+			if ( pAnchor->arrMeasuredPrefix != NULL )
+				for ( i = 0; i < pAnchor->iPrefixCount; i++ )
+					pAnchor->arrMeasuredPrefix[i] = (uint8_t)(
+						pRenderer->blocks[i].ever_measured || pRenderer->blocks[i].object_dependent);
+		}
+	}
+	pRenderer->freeze_dynamic_refresh = bFrozen;
+}
+
+static int __xuiMessageApplyDocumentAnchor(xui_widget pWidget,
+	xui_message_list_data_t* pData, xui_rect_t tContent,
+	xui_message_document_anchor_t* pAnchor, int* pbChanged)
+{
+	xui_message_node_data_t* pNode;
+	xui_document_renderer pRenderer;
+	xui_doc_rect_t tCaret, tSize;
+	float fHeight, fScroll;
+	int bExact, iRet;
+	size_t i;
+	if ( pAnchor->pBinding == NULL ) return XUI_OK;
+	if ( pAnchor->iNode < 0 || pAnchor->iNode >= pData->iNodeCount ) return XUI_OK;
+	pNode = &pData->arrNodes[pAnchor->iNode];
+	if ( pNode->pDocumentBinding != pAnchor->pBinding ) return XUI_OK;
+	pRenderer = pNode->pDocumentBinding->pRenderer;
+	if ( pRenderer == NULL || pRenderer->snapshot == NULL ||
+	     pAnchor->tPosition.iDocumentId != pRenderer->snapshot->identity ||
+	     pAnchor->tPosition.iRevision != pRenderer->snapshot->revision ) return XUI_OK;
+	if ( !pAnchor->bPrefixApplied ) {
+		pAnchor->bPrefixApplied = 1;
+		if ( pAnchor->arrMeasuredPrefix != NULL &&
+		     pAnchor->iOldBlockCount == pRenderer->count ) {
+			for ( i = 0; i < pAnchor->iPrefixCount; i++ ) {
+				if ( !pAnchor->arrMeasuredPrefix[i] ) continue;
+				iRet = xuiDocumentRendererLayout(pRenderer,
+					__xuiMessageMax(1.0f, pNode->tTextRect.fW),
+					__xuiMessageDocumentHeightBefore(pRenderer, i), 1.0);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+		}
+	}
+	iRet = xuiDocumentRendererGetCaretRect(pRenderer, &pAnchor->tPosition, &tCaret);
+	if ( iRet != XUI_OK ) return XUI_OK;
+	iRet = xuiDocumentRendererGetSize(pRenderer, &tSize, &bExact);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !isfinite(tSize.height) || tSize.height < 0 || tSize.height > 100000000.0 )
+		return XUI_DOC_ERROR_LIMIT;
+	pNode->bDocumentSizeExact = bExact;
+	fHeight = __xuiMessageMax(20.0f, (float)tSize.height);
+	if ( fabsf(pNode->tMeasuredText.fY - fHeight) > 0.01f ) {
+		pNode->tMeasuredText.fY = fHeight;
+		if ( pAnchor->iNode < pData->iLayoutDirtyFrom )
+			pData->iLayoutDirtyFrom = pAnchor->iNode;
+		iRet = __xuiMessageLayoutNodesForContent(pWidget, pData, tContent, 1);
+		if ( iRet != XUI_OK ) return iRet;
+		*pbChanged = 1;
+	}
+	fScroll = pNode->tTextRect.fY + (float)tCaret.y +
+		pAnchor->fLineFraction * (float)tCaret.height - pAnchor->fScreenY;
+	fScroll = __xuiMessageClamp(fScroll, 0.0f,
+		__xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH));
+	if ( fabsf(pData->fScrollY - fScroll) > 0.25f ) {
+		pData->fScrollY = fScroll;
+		*pbChanged = 1;
+	}
+	return XUI_OK;
+}
+
 static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_list_data_t* pData,
 	xui_rect_t tContent, int bUpdateScroll)
 {
@@ -690,7 +1245,7 @@ static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_lis
 			fBubbleW = __xuiMessageMax(0.0f, fConversationLaneW - fAuxIndent);
 			iRet = __xuiMessageMeasureTitle(pWidget, pData, pNode, __xuiMessageAuxiliaryTitle(pWidget, pNode),
 				__xuiMessageMax(16.0f, fBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f - 20.0f), &pNode->tMeasuredTitle);
-			if ( iRet != XUI_OK && pFont != NULL ) return iRet;
+			if ( iRet != XUI_OK && (pFont != NULL || pNode->pDocumentBinding != NULL) ) return iRet;
 			if ( (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) == 0 )
 				iRet = __xuiMessageMeasureNodeWrapped(pWidget, pData, pNode,
 					__xuiMessageMax(16.0f, fBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f), &pNode->tMeasuredText);
@@ -698,7 +1253,7 @@ static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_lis
 			iRet = __xuiMessageMeasureNodeWrapped(pWidget, pData, pNode, fTextMax, &pNode->tMeasuredText);
 			pNode->fMetaWidth = __xuiMessageTextWidth(pWidget, pFont, pNode->sSender);
 		}
-		if ( iRet != XUI_OK && pFont != NULL ) return iRet;
+		if ( iRet != XUI_OK && (pFont != NULL || pNode->pDocumentBinding != NULL) ) return iRet;
 	}
 	fY = iStart > 0 ? pData->arrNodes[iStart - 1].fNextY : pData->tMetrics.fPaddingY;
 	iSelectable = iStart > 0 ? pData->arrNodes[iStart - 1].iSelectablePrefix : 0;
@@ -753,7 +1308,7 @@ static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_lis
 		fY += fRowH + pData->tMetrics.fNodeGap;
 	node_done:
 		pNode->fNextY = fY;
-		iSelectable += __xuiMessageNodeCanSelectText(pNode) ? 1 : 0;
+		iSelectable += __xuiMessageNodeCanSelect(pNode) ? 1 : 0;
 		pNode->iSelectablePrefix = iSelectable;
 		pNode->bMeasureDirty = 0;
 	}
@@ -776,7 +1331,75 @@ static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_lis
 
 static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* pData)
 {
-	return __xuiMessageLayoutNodesForContent(pWidget, pData, xuiWidgetGetContentRect(pWidget), 1);
+	xui_rect_t tContent = xuiWidgetGetContentRect(pWidget);
+	xui_doc_rect_t tSize;
+	xui_message_document_anchor_t tAnchor;
+	xui_message_node_data_t* pNode;
+	float fHeight;
+	int iRet, i, iFirst, iDirty, iPass, bExact, bChanged = 0, bAnchorChanged;
+	if ( pData->tPendingDocumentAnchor.pBinding != NULL ) {
+		tAnchor = pData->tPendingDocumentAnchor;
+		memset(&pData->tPendingDocumentAnchor, 0, sizeof(pData->tPendingDocumentAnchor));
+	} else __xuiMessageCaptureDocumentAnchor(pWidget, pData, tContent, &tAnchor, 0);
+	iRet = __xuiMessageLayoutNodesForContent(pWidget, pData, tContent, 1);
+	if ( iRet != XUI_OK ) goto cleanup;
+	if ( pData->iDocumentNodeCount == 0 ) goto cleanup;
+	for ( iPass = 0; iPass < 8; iPass++ ) {
+		bAnchorChanged = 0;
+		iRet = __xuiMessageApplyDocumentAnchor(pWidget, pData, tContent,
+			&tAnchor, &bAnchorChanged);
+		if ( iRet != XUI_OK ) goto cleanup;
+		if ( bAnchorChanged ) bChanged = 1;
+		iDirty = pData->iNodeCount;
+		iFirst = __xuiMessageLowerBoundY(pData, pData->fScrollY);
+		for ( i = iFirst; i < pData->iNodeCount; i++ ) {
+			pNode = &pData->arrNodes[i];
+			if ( pNode->tNodeRect.fY > pData->fScrollY + tContent.fH ) break;
+			if ( pNode->pDocumentBinding == NULL ||
+			     (pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+			      (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0) ) continue;
+			iRet = __xuiMessageDocumentSync(pNode->pDocumentBinding);
+			if ( iRet != XUI_OK ) goto cleanup;
+			if ( pNode->bDocumentSizeExact ) {
+				iRet = xuiDocumentRendererGetSize(pNode->pDocumentBinding->pRenderer,
+					&tSize, &bExact);
+				if ( iRet != XUI_OK ) goto cleanup;
+				if ( bExact ) continue;
+				pNode->bDocumentSizeExact = 0;
+			}
+			iRet = xuiDocumentRendererLayout(pNode->pDocumentBinding->pRenderer,
+				__xuiMessageMax(1.0f, pNode->tTextRect.fW),
+				__xuiMessageMax(0.0f, pData->fScrollY - pNode->tTextRect.fY),
+				__xuiMessageMax(0.0f, tContent.fH));
+			if ( iRet == XUI_OK ) iRet = xuiDocumentRendererGetSize(
+				pNode->pDocumentBinding->pRenderer, &tSize, &bExact);
+			if ( iRet != XUI_OK ) goto cleanup;
+			if ( !isfinite(tSize.height) || tSize.height < 0 || tSize.height > 100000000.0 )
+				{ iRet = XUI_DOC_ERROR_LIMIT; goto cleanup; }
+			pNode->bDocumentSizeExact = bExact;
+			fHeight = __xuiMessageMax(20.0f, (float)tSize.height);
+			if ( fabsf(pNode->tMeasuredText.fY - fHeight) > 0.01f ) {
+				pNode->tMeasuredText.fY = fHeight;
+				if ( i < iDirty ) iDirty = i;
+			}
+		}
+		if ( iDirty == pData->iNodeCount ) {
+			if ( !bAnchorChanged ) break;
+			continue;
+		}
+		if ( iDirty < pData->iLayoutDirtyFrom ) pData->iLayoutDirtyFrom = iDirty;
+		iRet = __xuiMessageLayoutNodesForContent(pWidget, pData, tContent, 1);
+		if ( iRet != XUI_OK ) goto cleanup;
+		bChanged = 1;
+	}
+	if ( bChanged ) {
+		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+cleanup:
+	if ( iRet == XUI_OK )
+		pData->iLayoutResourceGeneration = xuiResourceGetRegistryGeneration(xuiWidgetGetContext(pWidget));
+	xrtFree(tAnchor.arrMeasuredPrefix);
+	return iRet;
 }
 
 static int __xuiMessageInvalidate(xui_widget pWidget, xui_message_list_data_t* pData)
@@ -786,7 +1409,983 @@ static int __xuiMessageInvalidate(xui_widget pWidget, xui_message_list_data_t* p
 	if ( pData != NULL ) pData->iChangeCount++;
 	iRet = __xuiMessageLayoutNodes(pWidget, pData);
 	iPaintRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return iRet != XUI_OK ? iRet : iPaintRet;
+}
+
+static void __xuiMessageAccessibleFoldChanged(xui_widget pWidget,
+	const xui_message_node_data_t* pNode)
+{
+	if ( pNode->pDocumentBinding != NULL )
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+}
+
+static int __xuiMessageDocumentSelectionRange(const xui_message_list_data_t* pData,
+	int iNode, xui_doc_range_t* pRange);
+static int __xuiMessageGetTextSelectionForNode(const xui_message_list_data_t* pData,
+	int iNode, int* pStart, int* pEnd);
+static int __xuiMessageNodeCanSelect(const xui_message_node_data_t* pNode);
+static int __xuiMessageNodeCanSelectText(const xui_message_node_data_t* pNode);
+static void __xuiMessageSetTextSelection(xui_message_list_data_t* pData,
+	int iAnchorNode, int iAnchorOffset, int iActiveNode, int iActiveOffset);
+static int __xuiMessageAccessibleSelection(xui_message_list_data_t* pData,
+	int iNode, xui_accessible_node_t* pResult);
+
+typedef struct xui_message_accessible_id_map_t {
+	xui_doc_node_id iDocumentNodeId;
+	uint64_t iAccessibleId;
+} xui_message_accessible_id_map_t;
+
+static int __xuiMessageAccessibleIdMapCompare(const void* pA, const void* pB)
+{
+	const xui_message_accessible_id_map_t* pLeft = (const xui_message_accessible_id_map_t*)pA;
+	const xui_message_accessible_id_map_t* pRight = (const xui_message_accessible_id_map_t*)pB;
+	return pLeft->iDocumentNodeId < pRight->iDocumentNodeId ? -1 :
+		pLeft->iDocumentNodeId > pRight->iDocumentNodeId ? 1 : 0;
+}
+
+static uint64_t __xuiMessageAccessibleIdMapFind(const xui_message_accessible_id_map_t* arrMap,
+	uint64_t iCount, xui_doc_node_id iDocumentNodeId)
+{
+	uint64_t iLow = 0, iHigh = iCount;
+	while ( iLow < iHigh ) {
+		uint64_t iMid = iLow + (iHigh - iLow) / 2;
+		if ( arrMap[iMid].iDocumentNodeId < iDocumentNodeId ) iLow = iMid + 1;
+		else iHigh = iMid;
+	}
+	return iLow < iCount && arrMap[iLow].iDocumentNodeId == iDocumentNodeId ?
+		arrMap[iLow].iAccessibleId : 0;
+}
+
+static int __xuiMessageAccessibleBuildDocument(xui_message_list_data_t* pData,
+	xui_message_node_data_t* pNode)
+{
+	xui_message_document_binding_t* pBinding = pNode->pDocumentBinding;
+	xui_document_snapshot pSnapshot = NULL;
+	xui_doc_node_id* arrDocumentIds = NULL;
+	xui_message_accessible_document_node_t* arrNodes = NULL;
+	xui_message_accessible_id_map_t* arrOld = NULL;
+	xui_message_accessible_id_map_t* arrNew = NULL;
+	uint64_t iIdentity, iRevision, iCount = 0, iNext, i;
+	int iRet;
+	if ( pBinding == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	iIdentity = xuiDocumentSnapshotGetIdentity(pSnapshot);
+	iRevision = xuiDocumentSnapshotGetRevision(pSnapshot);
+	if ( pBinding->arrAccessibleNodes != NULL &&
+	     pBinding->iAccessibleIdentity == iIdentity &&
+	     pBinding->iAccessibleRevision == iRevision ) {
+		xuiDocumentSnapshotRelease(pSnapshot);
+		return XUI_OK;
+	}
+	iRet = doc_accessible_snapshot_ids(pSnapshot, &arrDocumentIds, &iCount);
+	if ( iRet != XUI_OK ) goto done;
+	if ( iCount > SIZE_MAX / sizeof(*arrNodes) ||
+	     iCount > SIZE_MAX / sizeof(*arrNew) ||
+	     pBinding->iAccessibleNodeCount > SIZE_MAX / sizeof(*arrOld) ) {
+		iRet = XUI_DOC_ERROR_LIMIT; goto done;
+	}
+	arrNodes = calloc((size_t)iCount, sizeof(*arrNodes));
+	arrNew = malloc((size_t)iCount * sizeof(*arrNew));
+	if ( !arrNodes || !arrNew ) { iRet = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+	if ( pBinding->iAccessibleIdentity == iIdentity && pBinding->iAccessibleNodeCount ) {
+		arrOld = malloc((size_t)pBinding->iAccessibleNodeCount * sizeof(*arrOld));
+		if ( !arrOld ) { iRet = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+		for ( i = 0; i < pBinding->iAccessibleNodeCount; i++ ) {
+			arrOld[i].iDocumentNodeId = pBinding->arrAccessibleNodes[i].iDocumentNodeId;
+			arrOld[i].iAccessibleId = pBinding->arrAccessibleNodes[i].iAccessibleId;
+		}
+		qsort(arrOld, (size_t)pBinding->iAccessibleNodeCount,
+			sizeof(*arrOld), __xuiMessageAccessibleIdMapCompare);
+	}
+	iNext = pData->iNextAccessibleId;
+	for ( i = 0; i < iCount; i++ ) {
+		uint64_t iAccessibleId = arrOld ? __xuiMessageAccessibleIdMapFind(arrOld,
+			pBinding->iAccessibleNodeCount, arrDocumentIds[i]) : 0;
+		if ( iAccessibleId == 0 ) {
+			if ( iNext == UINT64_MAX ) { iRet = XUI_DOC_ERROR_LIMIT; goto done; }
+			iAccessibleId = ++iNext;
+		}
+		arrNodes[i].iDocumentNodeId = arrDocumentIds[i];
+		arrNodes[i].iAccessibleId = iAccessibleId;
+		arrNew[i] = (xui_message_accessible_id_map_t){arrDocumentIds[i], iAccessibleId};
+	}
+	qsort(arrNew, (size_t)iCount, sizeof(*arrNew), __xuiMessageAccessibleIdMapCompare);
+	for ( i = 0; i < iCount; i++ ) {
+		doc_node* pDocumentNode = doc_index_get(pSnapshot->state->index, arrDocumentIds[i]);
+		if ( pDocumentNode == NULL ) { iRet = XUI_DOC_ERROR_SCHEMA; goto done; }
+		arrNodes[i].iParentAccessibleId = pDocumentNode->id == DOC_ROOT ?
+			pNode->iAccessibleId : __xuiMessageAccessibleIdMapFind(arrNew,
+				iCount, pDocumentNode->parent);
+		if ( arrNodes[i].iParentAccessibleId == 0 ) { iRet = XUI_DOC_ERROR_SCHEMA; goto done; }
+	}
+	__xuiMessageAccessibleFreeDocumentNodes(pBinding);
+	pBinding->arrAccessibleNodes = arrNodes;
+	pBinding->iAccessibleNodeCount = iCount;
+	pBinding->iAccessibleIdentity = iIdentity;
+	pBinding->iAccessibleRevision = iRevision;
+	pData->iNextAccessibleId = iNext;
+	arrNodes = NULL;
+done:
+	free(arrDocumentIds); free(arrOld); free(arrNew); free(arrNodes);
+	xuiDocumentSnapshotRelease(pSnapshot);
+	return iRet;
+}
+
+static int __xuiMessageAccessibleCount(xui_widget pWidget, void* pUser)
+{
+	xui_message_list_data_t* pData = (xui_message_list_data_t*)pUser;
+	uint64_t iCount = 1;
+	int i;
+	(void)pWidget;
+	if ( pData == NULL ) return 0;
+	for ( i = 0; i < pData->iNodeCount; i++ ) {
+		xui_message_node_data_t* pNode = &pData->arrNodes[i];
+		if ( ++iCount > INT_MAX ) return 0;
+		if ( pNode->pDocumentBinding != NULL &&
+		     !(pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+		       (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED)) ) {
+			if ( __xuiMessageAccessibleBuildDocument(pData, pNode) != XUI_OK ||
+			     pNode->pDocumentBinding->iAccessibleNodeCount > INT_MAX - iCount ) return 0;
+			iCount += pNode->pDocumentBinding->iAccessibleNodeCount;
+		}
+	}
+	return (int)iCount;
+}
+
+static int __xuiMessageAccessibleLocate(xui_message_list_data_t* pData,
+	int iIndex, int* pMessageIndex, uint64_t* pDocumentIndex)
+{
+	uint64_t iCursor = 1;
+	int i;
+	for ( i = 0; i < pData->iNodeCount; i++ ) {
+		xui_message_node_data_t* pNode = &pData->arrNodes[i];
+		if ( iCursor++ == (uint64_t)iIndex ) {
+			*pMessageIndex = i; *pDocumentIndex = UINT64_MAX;
+			return XUI_OK;
+		}
+		if ( pNode->pDocumentBinding != NULL &&
+		     !(pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+		       (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED)) ) {
+			int iRet = __xuiMessageAccessibleBuildDocument(pData, pNode);
+			uint64_t iCount;
+			if ( iRet != XUI_OK ) return iRet;
+			iCount = pNode->pDocumentBinding->iAccessibleNodeCount;
+			if ( (uint64_t)iIndex >= iCursor && (uint64_t)iIndex - iCursor < iCount ) {
+				*pMessageIndex = i; *pDocumentIndex = (uint64_t)iIndex - iCursor;
+				return XUI_OK;
+			}
+			iCursor += iCount;
+		}
+	}
+	return XUI_ERROR_NOT_FOUND;
+}
+
+static int __xuiMessageAccessibleBody(xui_message_node_data_t* pNode, const char** psValue)
+{
+	xui_document_snapshot pSnapshot = NULL;
+	xui_document pDocument;
+	char* sText = NULL;
+	uint64_t iBytes = 0, iIdentity, iRevision;
+	int iRet;
+	if ( pNode->pDocumentBinding == NULL ) {
+		*psValue = __xuiMessageText(pNode->sText);
+		return XUI_OK;
+	}
+	pDocument = pNode->pDocumentBinding->pDocument;
+	iIdentity = xuiDocumentGetIdentity(pDocument);
+	iRevision = xuiDocumentGetRevision(pDocument);
+	if ( pNode->sAccessibleDocumentText != NULL &&
+	     pNode->iAccessibleDocumentId == iIdentity &&
+	     pNode->iAccessibleDocumentRevision == iRevision ) {
+		*psValue = pNode->sAccessibleDocumentText;
+		return XUI_OK;
+	}
+	iRet = xuiDocumentAcquireSnapshot(pDocument, &pSnapshot);
+	if ( iRet == XUI_OK ) iRet = xuiDocumentSnapshotCopyPlainText(pSnapshot, &sText, &iBytes);
+	if ( pSnapshot != NULL ) {
+		iIdentity = xuiDocumentSnapshotGetIdentity(pSnapshot);
+		iRevision = xuiDocumentSnapshotGetRevision(pSnapshot);
+		xuiDocumentSnapshotRelease(pSnapshot);
+	}
+	if ( iRet != XUI_OK ) return iRet;
+	if ( memchr(sText, 0, (size_t)iBytes) != NULL ) {
+		xuiDocumentFreeBuffer(sText);
+		return XUI_DOC_ERROR_UNREPRESENTABLE;
+	}
+	__xuiMessageAccessibleClearText(pNode);
+	pNode->sAccessibleDocumentText = sText;
+	pNode->iAccessibleDocumentId = iIdentity;
+	pNode->iAccessibleDocumentRevision = iRevision;
+	*psValue = sText;
+	return XUI_OK;
+}
+
+static int __xuiMessageAccessibleGetDocument(xui_widget pWidget,
+	xui_message_list_data_t* pData, int iMessage, uint64_t iDocumentIndex,
+	xui_accessible_node_t* pResult)
+{
+	xui_message_node_data_t* pMessage = &pData->arrNodes[iMessage];
+	xui_message_document_binding_t* pBinding = pMessage->pDocumentBinding;
+	xui_message_accessible_document_node_t* pEntry;
+	xui_document_snapshot pSnapshot = NULL;
+	doc_node* pNode;
+	xui_doc_rect_t tNodeRect = {0};
+	xui_rect_t tWorld, tContent;
+	int bHasBounds = 0, iRet;
+	if ( pBinding == NULL || iDocumentIndex >= pBinding->iAccessibleNodeCount )
+		return XUI_ERROR_NOT_FOUND;
+	iRet = __xuiMessageLayoutNodes(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pBinding->iAccessibleIdentity != pSnapshot->identity ||
+	     pBinding->iAccessibleRevision != pSnapshot->revision ) {
+		xuiDocumentSnapshotRelease(pSnapshot);
+		return XUI_DOC_ERROR_STALE;
+	}
+	pEntry = &pBinding->arrAccessibleNodes[iDocumentIndex];
+	pNode = doc_index_get(pSnapshot->state->index, pEntry->iDocumentNodeId);
+	if ( pNode == NULL ) { xuiDocumentSnapshotRelease(pSnapshot); return XUI_DOC_ERROR_STALE; }
+	pResult->iId = pEntry->iAccessibleId;
+	pResult->iParentId = pEntry->iParentAccessibleId;
+	pResult->iRole = doc_accessible_role(pNode);
+	pResult->iState = XUI_ACCESSIBLE_STATE_READONLY;
+	pResult->sName = "";
+	pResult->sDescription = doc_string(pNode->title);
+	if ( pNode->id == DOC_ROOT ) {
+		pResult->sName = "Document";
+		iRet = __xuiMessageAccessibleBody(pMessage, &pResult->sValue);
+	} else {
+		if ( pEntry->sValue == NULL ) {
+			uint64_t iBytes = 0;
+			iRet = doc_accessible_snapshot_value(pSnapshot, pNode,
+				&pEntry->sValue, &iBytes);
+		}
+		if ( iRet == XUI_OK ) {
+			if ( pNode->kind == XUI_DOC_IMAGE ) {
+				pResult->sName = pEntry->sValue;
+				if ( pNode->attrs->iMarks & XUI_DOC_LINK )
+					pResult->sDescription = doc_string(pNode->link_target);
+			}
+			else if ( pNode->kind == XUI_DOC_TEXT &&
+			         (pNode->attrs->iMarks & XUI_DOC_LINK) ) {
+				pResult->sName = pEntry->sValue;
+				pResult->sDescription = doc_string(pNode->resource);
+				pResult->sValue = pEntry->sValue;
+			} else if ( pNode->kind == XUI_DOC_PARAGRAPH ||
+			            pNode->kind == XUI_DOC_HEADING ||
+			            pNode->kind == XUI_DOC_TEXT ||
+			            pNode->kind == XUI_DOC_CODE_BLOCK ||
+			            pNode->kind == XUI_DOC_FOOTNOTE_REF ||
+			            pNode->kind == XUI_DOC_LIST ||
+			            pNode->kind == XUI_DOC_LIST_ITEM ||
+			            pNode->kind == XUI_DOC_QUOTE ||
+			            pNode->kind == XUI_DOC_FOOTNOTE ||
+			            pNode->kind == XUI_DOC_TABLE ||
+			            pNode->kind == XUI_DOC_ROW ||
+			            pNode->kind == XUI_DOC_CELL ||
+			            pNode->kind == XUI_DOC_MATH ||
+			            pNode->kind == XUI_DOC_DIAGRAM ||
+			            pNode->kind == XUI_DOC_HTML ||
+			            pNode->kind == XUI_DOC_EXTENSION )
+				pResult->sValue = pEntry->sValue;
+		}
+	}
+	if ( iRet != XUI_OK ) { xuiDocumentSnapshotRelease(pSnapshot); return iRet; }
+	if ( pNode->kind == XUI_DOC_HEADING ) pResult->iLevel = (int)pNode->attrs->iHeadingLevel;
+	if ( pNode->kind == XUI_DOC_LIST_ITEM && (pNode->attrs->iFlags & XUI_DOC_TASK) &&
+	     (pNode->attrs->iFlags & XUI_DOC_CHECKED) )
+		pResult->iState |= XUI_ACCESSIBLE_STATE_CHECKED;
+	if ( pNode->kind == XUI_DOC_LIST_ITEM && (pNode->attrs->iFlags & XUI_DOC_TASK) &&
+	     pBinding->tDesc.onTaskToggle != NULL ) {
+		pResult->iState &= ~XUI_ACCESSIBLE_STATE_READONLY;
+		pResult->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE);
+	}
+	if ( pNode->kind == XUI_DOC_TABLE ) {
+		doc_node* pFirstRow = NULL;
+		uint64_t iRows = doc_seq_size(pNode->children), iColumns = 0, i;
+		pResult->iRowCount = iRows > INT_MAX ? INT_MAX : (int)iRows;
+		if ( iRows ) pFirstRow = doc_index_get(pSnapshot->state->index,
+			doc_seq_get_id(pNode->children, 0));
+		if ( pFirstRow != NULL ) for ( i = 0; i < doc_seq_size(pFirstRow->children); i++ ) {
+			doc_node* pCell = doc_index_get(pSnapshot->state->index,
+				doc_seq_get_id(pFirstRow->children, i));
+			if ( pCell != NULL ) iColumns += pCell->attrs->iColumnSpan ? pCell->attrs->iColumnSpan : 1;
+		}
+		pResult->iColumnCount = iColumns > INT_MAX ? INT_MAX : (int)iColumns;
+	}
+	if ( pNode->kind == XUI_DOC_CELL ) {
+		doc_table_cell_slot tSlot;
+		iRet = doc_table_locate_cell(pSnapshot->state, pNode->id, &tSlot);
+		if ( iRet != XUI_OK ) { xuiDocumentSnapshotRelease(pSnapshot); return iRet; }
+		pResult->iRow = tSlot.row > INT_MAX ? INT_MAX : (int)tSlot.row;
+		pResult->iColumn = tSlot.column > INT_MAX ? INT_MAX : (int)tSlot.column;
+		pResult->iRowCount = tSlot.row_span > INT_MAX ? INT_MAX : (int)tSlot.row_span;
+		pResult->iColumnCount = tSlot.column_span > INT_MAX ? INT_MAX : (int)tSlot.column_span;
+		if ( pData->iTableSelectionNode == iMessage &&
+		     pData->tTableSelection.iTableId == tSlot.table &&
+		     tSlot.row >= pData->tTableSelection.iRow &&
+		     tSlot.column >= pData->tTableSelection.iColumn &&
+		     (uint64_t)tSlot.row + tSlot.row_span <=
+			(uint64_t)pData->tTableSelection.iRow + pData->tTableSelection.iRows &&
+		     (uint64_t)tSlot.column + tSlot.column_span <=
+			(uint64_t)pData->tTableSelection.iColumn + pData->tTableSelection.iColumns)
+			pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+	}
+	if ( pNode->id == DOC_ROOT ) {
+		pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTABLE;
+		pResult->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION);
+		iRet = __xuiMessageAccessibleSelection(pData, iMessage, pResult);
+		if ( iRet != XUI_OK ) { xuiDocumentSnapshotRelease(pSnapshot); return iRet; }
+	} else if ( __xuiMessageNodeCanSelect(pMessage) &&
+	     doc_accessible_text_selectable_kind(pNode->kind) ) {
+		xui_doc_range_t tRange;
+		pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTABLE;
+		pResult->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION);
+		iRet = __xuiMessageDocumentSelectionRange(pData, iMessage, &tRange);
+		if ( iRet == XUI_OK ) {
+			int bSelected = 0;
+			iRet = doc_accessible_snapshot_selection_offsets(pSnapshot, pNode,
+				&tRange, &pResult->iTextStart, &pResult->iTextEnd, &bSelected);
+			if ( iRet != XUI_OK ) { xuiDocumentSnapshotRelease(pSnapshot); return iRet; }
+			if ( bSelected ) pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+		} else if ( iRet != XUI_ERROR_NOT_FOUND ) {
+			xuiDocumentSnapshotRelease(pSnapshot); return iRet;
+		}
+	} else if ( __xuiMessageNodeCanSelect(pMessage) &&
+	     doc_selectable_object_kind(pNode->kind) ) {
+		xui_doc_range_t tRange;
+		int bSelected = 0;
+		pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTABLE;
+		pResult->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION);
+		iRet = __xuiMessageDocumentSelectionRange(pData, iMessage, &tRange);
+		if ( iRet == XUI_OK ) {
+			iRet = doc_accessible_snapshot_object_selected(pSnapshot,
+				pNode, &tRange, &bSelected);
+			if ( iRet != XUI_OK ) { xuiDocumentSnapshotRelease(pSnapshot); return iRet; }
+			if ( bSelected ) pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+		} else if ( iRet != XUI_ERROR_NOT_FOUND ) {
+			xuiDocumentSnapshotRelease(pSnapshot); return iRet;
+		}
+	}
+	if ( pNode->id == DOC_ROOT ) {
+		tNodeRect = (xui_doc_rect_t){0, 0,
+			pMessage->tTextRect.fW, pMessage->tTextRect.fH};
+		bHasBounds = 1;
+	} else {
+		iRet = __xuiMessageDocumentSync(pBinding);
+		if ( iRet == XUI_OK ) {
+			if ( pNode->kind == XUI_DOC_CELL ) {
+				xui_doc_cell_hit_t tCell = {0};
+				tCell.iSize = sizeof(tCell);
+				iRet = xuiDocumentRendererGetCellRect(pBinding->pRenderer,
+					pNode->id, &tCell);
+				if ( iRet == XUI_OK ) tNodeRect = tCell.tBounds;
+			} else iRet = xuiDocumentRendererGetNodeRect(pBinding->pRenderer,
+				pNode->id, &tNodeRect);
+		}
+		if ( iRet == XUI_OK ) bHasBounds = 1;
+		else if ( iRet != XUI_ERROR_NOT_FOUND ) {
+			xuiDocumentSnapshotRelease(pSnapshot); return iRet;
+		}
+	}
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tContent = xuiWidgetGetContentRect(pWidget);
+	if ( bHasBounds ) {
+		pResult->tBounds = (xui_rect_t){
+			tWorld.fX + tContent.fX + pMessage->tTextRect.fX + (float)tNodeRect.x,
+			tWorld.fY + tContent.fY + pMessage->tTextRect.fY +
+				(float)tNodeRect.y - pData->fScrollY,
+			(float)tNodeRect.width, (float)tNodeRect.height};
+		pResult->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW);
+		if ( pResult->tBounds.fX + pResult->tBounds.fW <= tWorld.fX + tContent.fX ||
+		     pResult->tBounds.fX >= tWorld.fX + tContent.fX + tContent.fW ||
+		     pResult->tBounds.fY + pResult->tBounds.fH <= tWorld.fY + tContent.fY ||
+		     pResult->tBounds.fY >= tWorld.fY + tContent.fY + tContent.fH )
+			pResult->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	} else pResult->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	if ( pBinding->tDesc.onActivate && (pNode->kind == XUI_DOC_IMAGE ||
+	     (pNode->kind == XUI_DOC_TEXT && (pNode->attrs->iMarks & XUI_DOC_LINK)) ||
+	     pNode->kind == XUI_DOC_MATH || pNode->kind == XUI_DOC_DIAGRAM ||
+	     pNode->kind == XUI_DOC_HTML) )
+		pResult->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	xuiDocumentSnapshotRelease(pSnapshot);
+	return XUI_OK;
+}
+
+static int __xuiMessageAccessibleSelection(xui_message_list_data_t* pData,
+	int iNode, xui_accessible_node_t* pResult)
+{
+	xui_message_node_data_t* pNode = &pData->arrNodes[iNode];
+	uint64_t iAnchor, iCaret;
+	int iStart, iEnd, iRet;
+	if ( !__xuiMessageNodeCanSelect(pNode) ) return XUI_OK;
+	if ( pNode->pDocumentBinding != NULL ) {
+		xui_doc_range_t tRange;
+		xui_document_snapshot pSnapshot = NULL;
+		doc_plain_projection tProjection = {0};
+		iRet = __xuiMessageDocumentSelectionRange(pData, iNode, &tRange);
+		if ( iRet == XUI_ERROR_NOT_FOUND ) return XUI_OK;
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiDocumentAcquireSnapshot(pNode->pDocumentBinding->pDocument, &pSnapshot);
+		if ( iRet == XUI_OK ) iRet = doc_plain_project(pSnapshot, XUI_DOC_SEMANTIC, &tProjection);
+		if ( iRet == XUI_OK && tProjection.bytes > INT_MAX ) iRet = XUI_DOC_ERROR_LIMIT;
+		if ( iRet == XUI_OK ) iRet = doc_plain_project_position(&tProjection, &tRange.tAnchor, &iAnchor);
+		if ( iRet == XUI_OK ) iRet = doc_plain_project_position(&tProjection, &tRange.tCaret, &iCaret);
+		if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+		if ( iRet == XUI_OK ) {
+			if ( pData->iSelectionAnchorNode > pData->iSelectionActiveNode ) {
+				uint64_t iSwap = iAnchor; iAnchor = iCaret; iCaret = iSwap;
+			}
+			pResult->iTextStart = (int)iAnchor;
+			pResult->iTextEnd = (int)iCaret;
+			if ( iAnchor != iCaret ) pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+		}
+		doc_plain_projection_free(&tProjection);
+		return iRet;
+	}
+	if ( !__xuiMessageNodeCanSelectText(pNode) ) return XUI_OK;
+	if ( strlen(__xuiMessageText(pNode->sText)) > INT_MAX ) return XUI_DOC_ERROR_LIMIT;
+	if ( __xuiMessageGetTextSelectionForNode(pData, iNode, &iStart, &iEnd) ) {
+		if ( pData->iSelectionAnchorNode > pData->iSelectionActiveNode ||
+		     (pData->iSelectionAnchorNode == pData->iSelectionActiveNode &&
+		      pData->iSelectionAnchorOffset > pData->iSelectionActiveOffset) ) {
+			pResult->iTextStart = iEnd;
+			pResult->iTextEnd = iStart;
+		} else {
+			pResult->iTextStart = iStart;
+			pResult->iTextEnd = iEnd;
+		}
+		pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+	} else if ( pData->iSelectionAnchorNode == iNode &&
+	            pData->iSelectionActiveNode == iNode &&
+	            pData->iSelectionAnchorOffset == pData->iSelectionActiveOffset )
+		pResult->iTextStart = pResult->iTextEnd = pData->iSelectionAnchorOffset;
+	return XUI_OK;
+}
+
+static int __xuiMessageAccessibleGet(xui_widget pWidget, int iIndex,
+	xui_accessible_node_t* pResult, void* pUser)
+{
+	xui_message_list_data_t* pData = (xui_message_list_data_t*)pUser;
+	xui_message_node_data_t* pNode;
+	xui_rect_t tWorld, tContent, tRect;
+	uint64_t iDocumentIndex;
+	int iMessage, iRet;
+	if ( pData == NULL || pResult == NULL || iIndex < 0 )
+		return XUI_ERROR_NOT_FOUND;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	if ( iIndex == 0 ) {
+		pResult->iId = 1;
+		pResult->iRole = XUI_ACCESSIBLE_ROLE_LIST;
+		pResult->sName = xuiWidgetGetAccessibleName(pWidget) ?
+			xuiWidgetGetAccessibleName(pWidget) : "Messages";
+		pResult->tBounds = tWorld;
+		pResult->iState = XUI_ACCESSIBLE_STATE_READONLY;
+		return XUI_OK;
+	}
+	iRet = __xuiMessageAccessibleLocate(pData, iIndex, &iMessage, &iDocumentIndex);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iDocumentIndex != UINT64_MAX )
+		return __xuiMessageAccessibleGetDocument(pWidget, pData,
+			iMessage, iDocumentIndex, pResult);
+	iRet = __xuiMessageLayoutNodes(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pNode = &pData->arrNodes[iMessage];
+	if ( pNode->iAccessibleId < 2 ) return XUI_ERROR_INVALID_STATE;
+	pResult->iId = pNode->iAccessibleId;
+	pResult->iParentId = 1;
+	pResult->iRole = pNode->iType == XUI_MESSAGE_NODE_AUXILIARY ?
+		XUI_ACCESSIBLE_ROLE_GROUP : XUI_ACCESSIBLE_ROLE_LIST_ITEM;
+	pResult->sName = pNode->iType == XUI_MESSAGE_NODE_AUXILIARY ?
+		__xuiMessageAuxiliaryTitle(pWidget, pNode) :
+		pNode->sSender && pNode->sSender[0] ? pNode->sSender :
+		pNode->iType == XUI_MESSAGE_NODE_SYSTEM ? "System message" : "Message";
+	pResult->sDescription = __xuiMessageText(pNode->sTime);
+	pResult->iState = XUI_ACCESSIBLE_STATE_READONLY | XUI_ACCESSIBLE_STATE_SELECTABLE;
+	pResult->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW);
+	if ( iMessage == pData->iSelected ) pResult->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+	if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+	     (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSIBLE) ) {
+		int bCollapsed = (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0;
+		pResult->iState |= bCollapsed ? XUI_ACCESSIBLE_STATE_COLLAPSED : XUI_ACCESSIBLE_STATE_EXPANDED;
+		pResult->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE) |
+			XUI_ACCESSIBLE_ACTION_MASK(bCollapsed ? XUI_ACCESSIBLE_ACTION_EXPAND : XUI_ACCESSIBLE_ACTION_COLLAPSE);
+	}
+	if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+	     (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ) pResult->sValue = "";
+	else {
+		iRet = __xuiMessageAccessibleBody(pNode, &pResult->sValue);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	iRet = __xuiMessageAccessibleSelection(pData, iMessage, pResult);
+	if ( iRet != XUI_OK ) return iRet;
+	tContent = xuiWidgetGetContentRect(pWidget);
+	tRect = pNode->tNodeRect;
+	pResult->tBounds = (xui_rect_t){tWorld.fX + tContent.fX + tRect.fX,
+		tWorld.fY + tContent.fY + tRect.fY - pData->fScrollY, tRect.fW, tRect.fH};
+	if ( pResult->tBounds.fX + tRect.fW <= tWorld.fX + tContent.fX ||
+	     pResult->tBounds.fX >= tWorld.fX + tContent.fX + tContent.fW ||
+	     pResult->tBounds.fY + tRect.fH <= tWorld.fY + tContent.fY ||
+	     pResult->tBounds.fY >= tWorld.fY + tContent.fY + tContent.fH )
+		pResult->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	return XUI_OK;
+}
+
+static xui_doc_cell_hit_t __xuiMessageTableSlotHit(const doc_table_cell_slot* pSlot)
+{
+	xui_doc_cell_hit_t tHit = {0};
+	tHit.iSize = sizeof(tHit);
+	tHit.iTableId = pSlot->table;
+	tHit.iCellId = pSlot->cell;
+	tHit.iRow = pSlot->row;
+	tHit.iColumn = pSlot->column;
+	tHit.iRowSpan = pSlot->row_span;
+	tHit.iColumnSpan = pSlot->column_span;
+	return tHit;
+}
+
+static xui_doc_table_selection_t __xuiMessageTableRangeFromCells(
+	const xui_doc_cell_hit_t* pAnchor, const xui_doc_cell_hit_t* pFocus)
+{
+	xui_doc_table_selection_t tRange = {0};
+	uint32_t iEndRow, iEndColumn;
+	tRange.iSize = sizeof(tRange);
+	tRange.iTableId = pAnchor->iTableId;
+	tRange.iRow = pAnchor->iRow < pFocus->iRow ? pAnchor->iRow : pFocus->iRow;
+	tRange.iColumn = pAnchor->iColumn < pFocus->iColumn ? pAnchor->iColumn : pFocus->iColumn;
+	iEndRow = pAnchor->iRow + pAnchor->iRowSpan;
+	iEndColumn = pAnchor->iColumn + pAnchor->iColumnSpan;
+	if ( pFocus->iRow + pFocus->iRowSpan > iEndRow )
+		iEndRow = pFocus->iRow + pFocus->iRowSpan;
+	if ( pFocus->iColumn + pFocus->iColumnSpan > iEndColumn )
+		iEndColumn = pFocus->iColumn + pFocus->iColumnSpan;
+	tRange.iRows = iEndRow - tRange.iRow;
+	tRange.iColumns = iEndColumn - tRange.iColumn;
+	return tRange;
+}
+
+static int __xuiMessageSetDocumentTableSelectionAt(xui_widget pWidget,
+	xui_message_list_data_t* pData, int iMessage,
+	const xui_doc_table_selection_t* pSelection, int bInteraction)
+{
+	xui_message_node_data_t* pMessage;
+	xui_document_snapshot pSnapshot = NULL;
+	xui_doc_table_selection_t tExpanded;
+	doc_table_cell_slot tFirst, tLast;
+	int iRet;
+	if ( pData == NULL || iMessage < 0 || iMessage >= pData->iNodeCount )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	pMessage = &pData->arrNodes[iMessage];
+	if ( pMessage->pDocumentBinding == NULL ) return XUI_ERROR_NOT_FOUND;
+	if ( pSelection == NULL ) {
+		if ( pData->iTableSelectionNode != iMessage ||
+		     pData->tTableSelection.iTableId == 0 ) return XUI_OK;
+		memset(&pData->tTableSelection, 0, sizeof(pData->tTableSelection));
+		memset(&pData->tTableDragAnchor, 0, sizeof(pData->tTableDragAnchor));
+		memset(&pData->tTableDragFocus, 0, sizeof(pData->tTableDragFocus));
+		pData->iTableSelectionNode = -1;
+		pData->bTableSelecting = 0;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	if ( pSelection->iSize != sizeof(*pSelection) || !pSelection->iTableId ||
+	     !pSelection->iRows || !pSelection->iColumns ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiMessageNodeCanSelect(pMessage) ) return XUI_ERROR_UNSUPPORTED;
+	iRet = xuiDocumentAcquireSnapshot(pMessage->pDocumentBinding->pDocument, &pSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	tExpanded = *pSelection;
+	iRet = doc_table_expand_selection(pSnapshot->state, tExpanded.iTableId,
+		&tExpanded.iRow, &tExpanded.iColumn,
+		&tExpanded.iRows, &tExpanded.iColumns);
+	if ( iRet == XUI_OK ) iRet = doc_table_cell_at(pSnapshot->state,
+		tExpanded.iTableId, tExpanded.iRow, tExpanded.iColumn, &tFirst);
+	if ( iRet == XUI_OK ) iRet = doc_table_cell_at(pSnapshot->state,
+		tExpanded.iTableId, tExpanded.iRow + tExpanded.iRows - 1,
+		tExpanded.iColumn + tExpanded.iColumns - 1, &tLast);
+	xuiDocumentSnapshotRelease(pSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiMessageSetTextSelection(pData, -1, 0, -1, 0);
+	pData->iDocumentSelectionNode = -1;
+	pData->bSelecting = pData->bDocumentSelecting = 0;
+	pData->tTableSelection = tExpanded;
+	pData->tTableDragAnchor = __xuiMessageTableSlotHit(&tFirst);
+	pData->tTableDragFocus = __xuiMessageTableSlotHit(&tLast);
+	pData->iTableSelectionNode = iMessage;
+	if ( !bInteraction && xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	if ( !bInteraction ) return xuiMessageListSetSelected(pWidget, iMessage);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiMessageUpdateTableDrag(xui_widget pWidget,
+	xui_message_list_data_t* pData, double fWorldX, double fWorldY)
+{
+	xui_doc_cell_hit_t tCell = {0}, tAnchor;
+	xui_doc_table_selection_t tRange;
+	int iMessage, iRet;
+	if ( pData == NULL || !pData->bTableSelecting ) return XUI_ERROR_INVALID_STATE;
+	iMessage = pData->iTableSelectionNode;
+	if ( iMessage < 0 || iMessage >= pData->iNodeCount ) return XUI_ERROR_INVALID_STATE;
+	tCell.iSize = sizeof(tCell);
+	iRet = __xuiMessageHitDocumentCell(pWidget, pData, iMessage,
+		fWorldX, fWorldY, &tCell);
+	if ( iRet == XUI_ERROR_NOT_FOUND ) return XUI_OK;
+	if ( iRet != XUI_OK ) return iRet;
+	if ( tCell.iTableId != pData->tTableDragAnchor.iTableId ) return XUI_OK;
+	if ( tCell.iCellId == pData->tTableDragFocus.iCellId ) return XUI_OK;
+	tAnchor = pData->tTableDragAnchor;
+	tRange = __xuiMessageTableRangeFromCells(&tAnchor, &tCell);
+	if ( tRange.iRow == pData->tTableSelection.iRow &&
+	     tRange.iColumn == pData->tTableSelection.iColumn &&
+	     tRange.iRows == pData->tTableSelection.iRows &&
+	     tRange.iColumns == pData->tTableSelection.iColumns ) {
+		pData->tTableDragFocus = tCell;
+		return XUI_OK;
+	}
+	iRet = __xuiMessageSetDocumentTableSelectionAt(pWidget, pData,
+		iMessage, &tRange, 1);
+	if ( pData->iTableSelectionNode == iMessage &&
+	     pData->tTableSelection.iTableId == tAnchor.iTableId ) {
+		pData->tTableDragAnchor = tAnchor;
+		pData->tTableDragFocus = tCell;
+		pData->bTableSelecting = 1;
+	}
+	return iRet;
+}
+
+static int __xuiMessageExtendTableSelection(xui_widget pWidget,
+	xui_message_list_data_t* pData, int iKey)
+{
+	xui_document_snapshot pSnapshot = NULL;
+	xui_message_document_binding_t* pBinding;
+	doc_table_cell_slot tAnchor, tFocus, tTarget;
+	xui_doc_table_selection_t tRange;
+	xui_doc_cell_hit_t tAnchorHit, tTargetHit, tTargetRect = {0};
+	xui_rect_t tContent;
+	doc_node* pNode;
+	uint32_t iRow, iColumn;
+	float fTop, fBottom, fScroll;
+	int iMessage, bActive, bAtEdge = 0, iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	bActive = pData->tTableSelection.iTableId != 0;
+	iMessage = bActive ? pData->iTableSelectionNode : pData->iDocumentSelectionNode;
+	if ( iMessage < 0 || iMessage >= pData->iNodeCount ||
+	     !__xuiMessageNodeCanSelect(&pData->arrNodes[iMessage]) ) return XUI_ERROR_NOT_FOUND;
+	pBinding = pData->arrNodes[iMessage].pDocumentBinding;
+	if ( pBinding == NULL ) return XUI_ERROR_NOT_FOUND;
+	iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( bActive ) {
+		iRet = doc_table_locate_cell(pSnapshot->state,
+			pData->tTableDragAnchor.iCellId, &tAnchor);
+		if ( iRet == XUI_OK ) iRet = doc_table_locate_cell(pSnapshot->state,
+			pData->tTableDragFocus.iCellId, &tFocus);
+		if ( iRet != XUI_OK || tAnchor.table != pData->tTableSelection.iTableId ||
+		     tFocus.table != tAnchor.table ) {
+			iRet = doc_table_cell_at(pSnapshot->state,
+				pData->tTableSelection.iTableId, pData->tTableSelection.iRow,
+				pData->tTableSelection.iColumn, &tAnchor);
+			if ( iRet == XUI_OK ) iRet = doc_table_cell_at(pSnapshot->state,
+				pData->tTableSelection.iTableId,
+				pData->tTableSelection.iRow + pData->tTableSelection.iRows - 1,
+				pData->tTableSelection.iColumn + pData->tTableSelection.iColumns - 1,
+				&tFocus);
+		}
+	} else {
+		if ( pData->tSelectionActiveDocument.iSize == 0 ||
+		     pData->tSelectionActiveDocument.iKind == XUI_DOC_POSITION_SOURCE )
+			iRet = XUI_ERROR_NOT_FOUND;
+		else {
+			pNode = doc_index_get(pSnapshot->state->index,
+				pData->tSelectionActiveDocument.iNodeId);
+			while ( pNode != NULL && pNode->kind != XUI_DOC_CELL )
+				pNode = pNode->parent ? doc_index_get(pSnapshot->state->index,
+					pNode->parent) : NULL;
+			iRet = pNode != NULL ? doc_table_locate_cell(pSnapshot->state,
+				pNode->id, &tFocus) : XUI_ERROR_NOT_FOUND;
+			if ( iRet == XUI_OK ) tAnchor = tFocus;
+		}
+	}
+	if ( iRet != XUI_OK ) { xuiDocumentSnapshotRelease(pSnapshot); return iRet; }
+	iRow = tFocus.row; iColumn = tFocus.column;
+	if ( iKey == XUI_KEY_LEFT ) {
+		if ( iColumn == 0 ) bAtEdge = 1; else iColumn--;
+	} else if ( iKey == XUI_KEY_RIGHT ) {
+		iColumn += tFocus.column_span;
+		if ( iColumn >= tFocus.columns ) bAtEdge = 1;
+	} else if ( iKey == XUI_KEY_UP ) {
+		if ( iRow == 0 ) bAtEdge = 1; else iRow--;
+	} else if ( iKey == XUI_KEY_DOWN ) {
+		iRow += tFocus.row_span;
+		if ( iRow >= tFocus.rows ) bAtEdge = 1;
+	} else { xuiDocumentSnapshotRelease(pSnapshot); return XUI_ERROR_INVALID_ARGUMENT; }
+	if ( bAtEdge && bActive ) { xuiDocumentSnapshotRelease(pSnapshot); return XUI_OK; }
+	tTarget = tFocus;
+	if ( !bAtEdge ) iRet = doc_table_cell_at(pSnapshot->state,
+		tFocus.table, iRow, iColumn, &tTarget);
+	xuiDocumentSnapshotRelease(pSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	tAnchorHit = __xuiMessageTableSlotHit(&tAnchor);
+	tTargetHit = __xuiMessageTableSlotHit(&tTarget);
+	tRange = __xuiMessageTableRangeFromCells(&tAnchorHit, &tTargetHit);
+	iRet = __xuiMessageSetDocumentTableSelectionAt(pWidget, pData,
+		iMessage, &tRange, 1);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->tTableDragAnchor = tAnchorHit;
+	pData->tTableDragFocus = tTargetHit;
+	iRet = __xuiMessageLayoutNodes(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiMessageDocumentSync(pBinding);
+	if ( iRet != XUI_OK ) return iRet;
+	tTargetRect.iSize = sizeof(tTargetRect);
+	if ( xuiDocumentRendererGetCellRect(pBinding->pRenderer,
+	     tTarget.cell, &tTargetRect) != XUI_OK ) return XUI_OK;
+	tContent = xuiWidgetGetContentRect(pWidget);
+	fTop = pData->arrNodes[iMessage].tTextRect.fY + (float)tTargetRect.tBounds.y;
+	fBottom = fTop + (float)tTargetRect.tBounds.height;
+	fScroll = pData->fScrollY;
+	if ( fTop < fScroll ) fScroll = fTop;
+	else if ( fBottom > fScroll + tContent.fH ) fScroll = fBottom - tContent.fH;
+	return fScroll != pData->fScrollY ? xuiMessageListSetScroll(pWidget, fScroll) : XUI_OK;
+}
+
+static int __xuiMessageAccessibleDocumentAction(xui_widget pWidget,
+	xui_message_list_data_t* pData, int iMessage, uint64_t iDocumentIndex,
+	int iAction, const void* pPayload)
+{
+	xui_message_node_data_t* pMessage = &pData->arrNodes[iMessage];
+	xui_message_document_binding_t* pBinding = pMessage->pDocumentBinding;
+	xui_message_accessible_document_node_t* pEntry;
+	xui_document_snapshot pSnapshot = NULL;
+	doc_node* pNode;
+	int iRet;
+	if ( pBinding == NULL || iDocumentIndex >= pBinding->iAccessibleNodeCount )
+		return XUI_ERROR_NOT_FOUND;
+	pEntry = &pBinding->arrAccessibleNodes[iDocumentIndex];
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW ) {
+		xui_accessible_node_t tAccessible = {0};
+		xui_rect_t tWorld, tContent;
+		float fTop, fScroll;
+		tAccessible.iSize = sizeof(tAccessible);
+		iRet = __xuiMessageAccessibleGetDocument(pWidget, pData, iMessage,
+			iDocumentIndex, &tAccessible);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(
+			XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW)) ) return XUI_ERROR_UNSUPPORTED;
+		tWorld = xuiWidgetGetWorldRect(pWidget);
+		tContent = xuiWidgetGetContentRect(pWidget);
+		fTop = tWorld.fY + tContent.fY;
+		fScroll = pData->fScrollY;
+		if ( tAccessible.tBounds.fY < fTop || tAccessible.tBounds.fH > tContent.fH )
+			fScroll += tAccessible.tBounds.fY - fTop;
+		else if ( tAccessible.tBounds.fY + tAccessible.tBounds.fH > fTop + tContent.fH )
+			fScroll += tAccessible.tBounds.fY + tAccessible.tBounds.fH - fTop - tContent.fH;
+		return xuiMessageListSetScroll(pWidget, fScroll);
+	}
+	iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pBinding->iAccessibleIdentity != pSnapshot->identity ||
+	     pBinding->iAccessibleRevision != pSnapshot->revision ) {
+		xuiDocumentSnapshotRelease(pSnapshot);
+		return XUI_DOC_ERROR_STALE;
+	}
+	pNode = doc_index_get(pSnapshot->state->index, pEntry->iDocumentNodeId);
+	if ( pNode == NULL ) { xuiDocumentSnapshotRelease(pSnapshot); return XUI_DOC_ERROR_STALE; }
+	if ( iAction == XUI_ACCESSIBLE_ACTION_TOGGLE &&
+	     pNode->kind == XUI_DOC_LIST_ITEM && (pNode->attrs->iFlags & XUI_DOC_TASK) &&
+	     pBinding->tDesc.onTaskToggle != NULL ) {
+		void (*onToggle)(xui_widget, xui_doc_node_id, int, void*) =
+			pBinding->tDesc.onTaskToggle;
+		void* pUser = pBinding->tDesc.pUser;
+		xui_doc_node_id iTask = pNode->id;
+		int bChecked = (pNode->attrs->iFlags & XUI_DOC_CHECKED) == 0;
+		xuiDocumentSnapshotRelease(pSnapshot);
+		onToggle(pWidget, iTask, bChecked, pUser);
+		return XUI_OK;
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE && pBinding->tDesc.onActivate &&
+	     (pNode->kind == XUI_DOC_IMAGE ||
+	      (pNode->kind == XUI_DOC_TEXT && (pNode->attrs->iMarks & XUI_DOC_LINK)) ||
+	      pNode->kind == XUI_DOC_MATH || pNode->kind == XUI_DOC_DIAGRAM ||
+	      pNode->kind == XUI_DOC_HTML) ) {
+		pBinding->tDesc.onActivate(pWidget, pNode->id,
+			pNode->kind == XUI_DOC_IMAGE && (pNode->attrs->iMarks & XUI_DOC_LINK) ?
+				doc_string(pNode->link_target) : doc_string(pNode->resource),
+			pBinding->tDesc.pUser);
+		xuiDocumentSnapshotRelease(pSnapshot);
+		return XUI_OK;
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_SELECTION && pPayload == NULL &&
+	     pNode->kind == XUI_DOC_CELL && __xuiMessageNodeCanSelect(pMessage) ) {
+		doc_table_cell_slot tSlot;
+		xui_doc_table_selection_t tSelected = {0};
+		iRet = doc_table_locate_cell(pSnapshot->state, pNode->id, &tSlot);
+		xuiDocumentSnapshotRelease(pSnapshot);
+		if ( iRet != XUI_OK ) return iRet;
+		tSelected.iSize = sizeof(tSelected);
+		tSelected.iTableId = tSlot.table;
+		tSelected.iRow = tSlot.row;
+		tSelected.iColumn = tSlot.column;
+		tSelected.iRows = tSlot.row_span;
+		tSelected.iColumns = tSlot.column_span;
+		return __xuiMessageSetDocumentTableSelectionAt(pWidget, pData,
+			iMessage, &tSelected, 0);
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_SELECTION &&
+	     __xuiMessageNodeCanSelect(pMessage) ) {
+		xui_doc_range_t tRange = {0};
+		if ( doc_selectable_object_kind(pNode->kind) )
+			iRet = doc_accessible_snapshot_object_range(pSnapshot, pNode, &tRange);
+		else iRet = doc_accessible_snapshot_selection_range(pSnapshot, pNode,
+			(const xui_accessible_selection_t*)pPayload, &tRange);
+		xuiDocumentSnapshotRelease(pSnapshot);
+		if ( iRet != XUI_OK ) return iRet;
+		__xuiMessageSetTextSelection(pData, -1, 0, -1, 0);
+		pData->tSelectionAnchorDocument = tRange.tAnchor;
+		pData->tSelectionActiveDocument = tRange.tCaret;
+		pData->iSelectionAnchorNode = pData->iSelectionActiveNode = iMessage;
+		pData->iDocumentSelectionNode = iMessage;
+		pBinding->tSelection = tRange;
+		pData->bSelecting = pData->bDocumentSelecting = 0;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+		return xuiMessageListSetSelected(pWidget, iMessage);
+	}
+	xuiDocumentSnapshotRelease(pSnapshot);
+	return XUI_ERROR_UNSUPPORTED;
+}
+
+static int __xuiMessageAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pPayload, void* pUser)
+{
+	xui_message_list_data_t* pData = (xui_message_list_data_t*)pUser;
+	xui_message_node_data_t* pNode = NULL;
+	uint64_t iDocumentIndex = UINT64_MAX;
+	int i;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS && (iNodeId == 0 || iNodeId == 1) )
+		return xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	for ( i = 0; i < pData->iNodeCount; i++ )
+		if ( pData->arrNodes[i].iAccessibleId == iNodeId ) { pNode = &pData->arrNodes[i]; break; }
+	if ( pNode == NULL ) for ( i = 0; i < pData->iNodeCount && pNode == NULL; i++ ) {
+		xui_message_node_data_t* pCandidate = &pData->arrNodes[i];
+		int iBuild;
+		uint64_t j;
+		if ( pCandidate->pDocumentBinding == NULL ||
+		     (pCandidate->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+		      (pCandidate->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED)) ) continue;
+		iBuild = __xuiMessageAccessibleBuildDocument(pData, pCandidate);
+		if ( iBuild != XUI_OK ) return iBuild;
+		for ( j = 0; j < pCandidate->pDocumentBinding->iAccessibleNodeCount; j++ )
+			if ( pCandidate->pDocumentBinding->arrAccessibleNodes[j].iAccessibleId == iNodeId ) {
+				pNode = pCandidate; iDocumentIndex = j; break;
+			}
+		if ( pNode != NULL ) i--;
+	}
+	if ( pNode == NULL ) return XUI_ERROR_NOT_FOUND;
+	if ( iDocumentIndex != UINT64_MAX ) {
+		if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS )
+			return xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		if ( pNode->pDocumentBinding->arrAccessibleNodes[iDocumentIndex].iDocumentNodeId != DOC_ROOT ||
+		     iAction != XUI_ACCESSIBLE_ACTION_SET_SELECTION )
+			return __xuiMessageAccessibleDocumentAction(pWidget, pData,
+				i, iDocumentIndex, iAction, pPayload);
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS )
+		return xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW )
+		return xuiMessageListEnsureVisible(pWidget, i);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_SELECTION ) {
+		const xui_accessible_selection_t* pSelection = (const xui_accessible_selection_t*)pPayload;
+		int iAnchor = 0, iCaret = 0, iRet;
+		if ( pSelection != NULL && (pSelection->iSize < sizeof(*pSelection) ||
+		     pSelection->iAnchor < 0 || pSelection->iCaret < 0)) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( !__xuiMessageNodeCanSelect(pNode) )
+			return pSelection == NULL ? xuiMessageListSetSelected(pWidget, i) : XUI_ERROR_UNSUPPORTED;
+		if ( pNode->pDocumentBinding != NULL ) {
+			xui_document_snapshot pSnapshot = NULL;
+			doc_plain_projection tProjection = {0};
+			xui_doc_position_t tAnchor, tCaret;
+			const char* sValue = NULL;
+			iRet = __xuiMessageAccessibleBody(pNode, &sValue);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = xuiDocumentAcquireSnapshot(pNode->pDocumentBinding->pDocument, &pSnapshot);
+			if ( iRet == XUI_OK ) iRet = doc_plain_project(pSnapshot, XUI_DOC_SEMANTIC, &tProjection);
+			if ( iRet == XUI_OK && tProjection.bytes > INT_MAX ) iRet = XUI_DOC_ERROR_LIMIT;
+			if ( iRet == XUI_OK && pSelection != NULL &&
+			     ((uint64_t)pSelection->iAnchor > tProjection.bytes ||
+			      (uint64_t)pSelection->iCaret > tProjection.bytes)) iRet = XUI_ERROR_INVALID_ARGUMENT;
+			if ( iRet == XUI_OK ) {
+				iAnchor = pSelection ? pSelection->iAnchor : 0;
+				iCaret = pSelection ? pSelection->iCaret : (int)tProjection.bytes;
+				if ((iAnchor < (int)tProjection.bytes &&
+				     ((unsigned char)tProjection.text[iAnchor] & 0xc0u) == 0x80u) ||
+				    (iCaret < (int)tProjection.bytes &&
+				     ((unsigned char)tProjection.text[iCaret] & 0xc0u) == 0x80u))
+					iRet = XUI_DOC_ERROR_UTF8;
+			}
+			if ( iRet == XUI_OK ) {
+				tAnchor = doc_plain_unproject(&tProjection, (uint64_t)iAnchor, iAnchor <= iCaret);
+				tCaret = iAnchor == iCaret ? tAnchor :
+					doc_plain_unproject(&tProjection, (uint64_t)iCaret, iCaret < iAnchor);
+			}
+			doc_plain_projection_free(&tProjection);
+			if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+			if ( iRet != XUI_OK ) return iRet;
+			__xuiMessageSetTextSelection(pData, -1, 0, -1, 0);
+			pData->tSelectionAnchorDocument = tAnchor;
+			pData->tSelectionActiveDocument = tCaret;
+			pData->iSelectionAnchorNode = pData->iSelectionActiveNode = i;
+			pData->iDocumentSelectionNode = i;
+			pNode->pDocumentBinding->tSelection.tAnchor = tAnchor;
+			pNode->pDocumentBinding->tSelection.tCaret = tCaret;
+		} else if ( __xuiMessageNodeCanSelectText(pNode) ) {
+			const char* sValue = __xuiMessageText(pNode->sText);
+			size_t iBytes = strlen(sValue);
+			if ( iBytes > INT_MAX ) return XUI_DOC_ERROR_LIMIT;
+			iAnchor = pSelection ? pSelection->iAnchor : 0;
+			iCaret = pSelection ? pSelection->iCaret : (int)iBytes;
+			if ( (size_t)iAnchor > iBytes || (size_t)iCaret > iBytes )
+				return XUI_ERROR_INVALID_ARGUMENT;
+			if ( (iAnchor < (int)iBytes && ((unsigned char)sValue[iAnchor] & 0xc0u) == 0x80u) ||
+			     (iCaret < (int)iBytes && ((unsigned char)sValue[iCaret] & 0xc0u) == 0x80u) )
+				return XUI_DOC_ERROR_UTF8;
+			__xuiMessageSetTextSelection(pData, i, iAnchor, i, iCaret);
+			pData->iDocumentSelectionNode = -1;
+		} else if ( pSelection != NULL ) return XUI_ERROR_UNSUPPORTED;
+		pData->bSelecting = pData->bDocumentSelecting = 0;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+		return xuiMessageListSetSelected(pWidget, i);
+	}
+	if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+	     (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSIBLE) &&
+	     (iAction == XUI_ACCESSIBLE_ACTION_TOGGLE || iAction == XUI_ACCESSIBLE_ACTION_EXPAND ||
+	      iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE) ) {
+		int bCollapsed = (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0;
+		int bNext = iAction == XUI_ACCESSIBLE_ACTION_TOGGLE ? !bCollapsed :
+			iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE;
+		if ( bNext == bCollapsed ) return XUI_OK;
+		if ( bNext ) pNode->iFlags |= XUI_MESSAGE_NODE_FLAG_COLLAPSED;
+		else pNode->iFlags &= ~XUI_MESSAGE_NODE_FLAG_COLLAPSED;
+		__xuiMessageDirtyNode(pData, i);
+		{
+			int iRet = __xuiMessageInvalidate(pWidget, pData);
+			if ( iRet == XUI_OK ) __xuiMessageAccessibleFoldChanged(pWidget, pNode);
+			return iRet;
+		}
+	}
+	return XUI_ERROR_UNSUPPORTED;
 }
 
 static int __xuiMessageNotify(xui_widget pWidget, xui_message_list_data_t* pData, int iEvent, int iIndex, const xui_event_t* pInput)
@@ -840,9 +2439,73 @@ static int __xuiMessageGetIndexAtData(xui_widget pWidget, xui_message_list_data_
 
 static int __xuiMessageNodeCanSelectText(const xui_message_node_data_t* pNode)
 {
-	if ( pNode == NULL || pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) return 0;
+	if ( pNode == NULL || pNode->pDocumentBinding != NULL || pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) return 0;
 	if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY && (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0 ) return 0;
 	return pNode->sText != NULL && pNode->sText[0] != 0;
+}
+
+static int __xuiMessageNodeCanSelect(const xui_message_node_data_t* pNode)
+{
+	if ( pNode == NULL || pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) return 0;
+	if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY && (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0 ) return 0;
+	return pNode->pDocumentBinding != NULL || __xuiMessageNodeCanSelectText(pNode);
+}
+
+static int __xuiMessageDocumentBoundary(xui_message_document_binding_t* pBinding,
+	int bEnd, xui_doc_position_t* pPosition)
+{
+	xui_document_snapshot pSnapshot = NULL;
+	xui_doc_node_info_t tRoot = {0};
+	int iRet;
+	if ( pBinding == NULL || pPosition == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+	tRoot.iSize = sizeof(tRoot);
+	if ( iRet == XUI_OK ) iRet = xuiDocumentSnapshotGetNode(pSnapshot, XUI_DOCUMENT_ROOT, &tRoot);
+	if ( iRet == XUI_OK ) {
+		memset(pPosition, 0, sizeof(*pPosition));
+		pPosition->iSize = sizeof(*pPosition);
+		pPosition->iKind = XUI_DOC_POSITION_GAP;
+		pPosition->iDocumentId = xuiDocumentSnapshotGetIdentity(pSnapshot);
+		pPosition->iRevision = xuiDocumentSnapshotGetRevision(pSnapshot);
+		pPosition->iNodeId = XUI_DOCUMENT_ROOT;
+		pPosition->iOffset = bEnd ? tRoot.iChildCount : 0;
+		pPosition->iAffinity = bEnd ? XUI_DOC_BEFORE : XUI_DOC_AFTER;
+	}
+	if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+	return iRet;
+}
+
+static int __xuiMessageDocumentSelectionRange(const xui_message_list_data_t* pData,
+	int iNode, xui_doc_range_t* pRange)
+{
+	int iStart, iEnd;
+	int bForward;
+	xui_message_document_binding_t* pBinding;
+	int iRet;
+	if ( pData == NULL || pRange == NULL || iNode < 0 || iNode >= pData->iNodeCount ||
+	     pData->iSelectionAnchorNode < 0 || pData->iSelectionActiveNode < 0 ) return XUI_ERROR_NOT_FOUND;
+	pBinding = pData->arrNodes[iNode].pDocumentBinding;
+	if ( pBinding == NULL || !__xuiMessageNodeCanSelect(&pData->arrNodes[iNode]) ) return XUI_ERROR_NOT_FOUND;
+	bForward = pData->iSelectionAnchorNode <= pData->iSelectionActiveNode;
+	iStart = bForward ? pData->iSelectionAnchorNode : pData->iSelectionActiveNode;
+	iEnd = bForward ? pData->iSelectionActiveNode : pData->iSelectionAnchorNode;
+	if ( iNode < iStart || iNode > iEnd ) return XUI_ERROR_NOT_FOUND;
+	memset(pRange, 0, sizeof(*pRange));
+	if ( iNode == iStart &&
+	     (bForward ? pData->tSelectionAnchorDocument.iSize : pData->tSelectionActiveDocument.iSize) != 0 )
+		pRange->tAnchor = bForward ? pData->tSelectionAnchorDocument : pData->tSelectionActiveDocument;
+	else {
+		iRet = __xuiMessageDocumentBoundary(pBinding, 0, &pRange->tAnchor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( iNode == iEnd &&
+	     (bForward ? pData->tSelectionActiveDocument.iSize : pData->tSelectionAnchorDocument.iSize) != 0 )
+		pRange->tCaret = bForward ? pData->tSelectionActiveDocument : pData->tSelectionAnchorDocument;
+	else {
+		iRet = __xuiMessageDocumentBoundary(pBinding, 1, &pRange->tCaret);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
 }
 
 static int __xuiMessagePositionCompare(int iNodeA, int iOffsetA, int iNodeB, int iOffsetB)
@@ -862,6 +2525,7 @@ static int __xuiMessageGetTextSelectionForNode(const xui_message_list_data_t* pD
 	if ( pStart != NULL ) *pStart = 0;
 	if ( pEnd != NULL ) *pEnd = 0;
 	if ( (pData == NULL) || (iNode < 0) || (iNode >= pData->iNodeCount) ||
+	     pData->iSelectionAnchorNode < 0 || pData->iSelectionActiveNode < 0 ||
 	     __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) == 0 ) return 0;
 	if ( __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) <= 0 ) {
 		iStartNode = pData->iSelectionAnchorNode;
@@ -902,8 +2566,7 @@ static int __xuiMessageEnsureLineCarets(xui_widget pWidget, xui_message_list_dat
 	if ( iRet != XUI_OK ) return iRet;
 	sText = xuiTextLayoutGetText(pLayout) + pLine->iTextOffset;
 	memset(&tShape, 0, sizeof(tShape));
-	iRet = xuiTextShape(xuiWidgetGetContext(pWidget), __xuiMessageFont(pWidget, pData),
-		sDisplay, iDisplaySize, XUI_TEXT_SHAPE_DEFAULT, &tShape);
+	iRet = xuiTextShape(xuiWidgetGetContext(pWidget), &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=__xuiMessageFont(pWidget, pData), .sText=sDisplay, .iTextSize=iDisplaySize, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tShape);
 	if ( iRet != XUI_OK ) { xuiTextShapeFree(&tShape); return iRet; }
 	/* Layout lines already end at grapheme boundaries. Work on this line only,
 	 * including zero-width source boundaries that disappeared from its display. */
@@ -1038,56 +2701,58 @@ static int __xuiMessageHitTextOffset(xui_widget pWidget, xui_message_list_data_t
 	return 1;
 }
 
-static int __xuiMessageResolveSelectionOffset(xui_widget pWidget, xui_message_list_data_t* pData, float fX, float fY, int iAnchorNode, int* pNodeIndex, int* pOffset)
+static int __xuiMessageResolveSelectionEndpoint(xui_widget pWidget, xui_message_list_data_t* pData,
+	float fX, float fY, int iAnchorNode, int* pNodeIndex, int* pOffset,
+	xui_doc_position_t* pDocumentPosition)
 {
-	xui_rect_t tContent;
-	xui_rect_t tWorld;
-	xui_rect_t tText;
+	xui_rect_t tContent, tWorld, tText;
 	xui_message_node_data_t* pNode;
-	float fLocalX;
-	float fLocalY;
-	int iCandidate;
-	int iBefore;
-	int iAfter;
-	int iLength;
-	int i;
-	int bBeforeAnchor;
-	if ( pNodeIndex != NULL ) *pNodeIndex = -1;
-	if ( pOffset != NULL ) *pOffset = 0;
-	if ( pWidget == NULL || pData == NULL || iAnchorNode < 0 || iAnchorNode >= pData->iNodeCount ) return 0;
+	float fLocalX, fLocalY;
+	int iCandidate, iBefore, iAfter, i, iCount, bStart;
+	if ( pNodeIndex == NULL || pOffset == NULL || pDocumentPosition == NULL ||
+	     pWidget == NULL || pData == NULL || iAnchorNode < 0 || iAnchorNode >= pData->iNodeCount ) return 0;
+	*pNodeIndex = -1;
+	*pOffset = 0;
+	memset(pDocumentPosition, 0, sizeof(*pDocumentPosition));
 	if ( __xuiMessageLayoutNodes(pWidget, pData) != XUI_OK ) return 0;
 	tContent = xuiWidgetGetContentRect(pWidget);
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	fLocalX = fX - tWorld.fX - tContent.fX;
 	fLocalY = fY - tWorld.fY - tContent.fY + pData->fScrollY;
-	iCandidate = -1;
 	i = __xuiMessageLowerBoundY(pData, fLocalY);
-	iLength = i > 0 ? pData->arrNodes[i - 1].iSelectablePrefix : 0;
-	iBefore = __xuiMessageSelectableByCount(pData, iLength);
-	iAfter = __xuiMessageSelectableByCount(pData, iLength + 1);
+	iCount = i > 0 ? pData->arrNodes[i - 1].iSelectablePrefix : 0;
+	iBefore = __xuiMessageSelectableByCount(pData, iCount);
+	iAfter = __xuiMessageSelectableByCount(pData, iCount + 1);
+	iCandidate = -1;
 	if ( iAfter >= 0 ) {
 		pNode = &pData->arrNodes[iAfter];
-		if ( fLocalY >= pNode->tNodeRect.fY && fLocalY <= pNode->tNodeRect.fY + pNode->tNodeRect.fH ) {
-			iCandidate = iAfter;
-		}
+		if ( fLocalY >= pNode->tNodeRect.fY &&
+		     fLocalY <= pNode->tNodeRect.fY + pNode->tNodeRect.fH ) iCandidate = iAfter;
 	}
-	bBeforeAnchor = fLocalY < pData->arrNodes[iAnchorNode].tNodeRect.fY;
 	if ( iCandidate < 0 ) {
-		if ( bBeforeAnchor ) iCandidate = (iBefore >= 0) ? iBefore : iAfter;
-		else iCandidate = (iAfter >= 0) ? iAfter : iBefore;
+		if ( fLocalY < pData->arrNodes[iAnchorNode].tNodeRect.fY )
+			iCandidate = iBefore >= 0 ? iBefore : iAfter;
+		else iCandidate = iAfter >= 0 ? iAfter : iBefore;
 	}
 	if ( iCandidate < 0 ) return 0;
 	pNode = &pData->arrNodes[iCandidate];
-	iLength = (int)strlen(__xuiMessageText(pNode->sText));
-	if ( pNodeIndex != NULL ) *pNodeIndex = iCandidate;
-	if ( pOffset != NULL ) {
-		if ( iCandidate < iAnchorNode ) *pOffset = 0;
-		else if ( iCandidate > iAnchorNode ) *pOffset = iLength;
-		else {
-			tText = pNode->tTextRect;
-			* pOffset = (fLocalY <= tText.fY || fLocalX <= tText.fX) ? 0 : iLength;
-		}
+	tText = pNode->tTextRect;
+	bStart = iCandidate < iAnchorNode ||
+		(iCandidate == iAnchorNode && (fLocalY < tText.fY ||
+		(fLocalY <= tText.fY + tText.fH && fLocalX < tText.fX)));
+	*pNodeIndex = iCandidate;
+	if ( pNode->pDocumentBinding != NULL ) {
+		if ( fLocalY >= tText.fY && fLocalY <= tText.fY + tText.fH &&
+		     __xuiMessageHitDocument(pWidget, pData, iCandidate, fX, fY, 1,
+		         pDocumentPosition) == XUI_OK ) return 1;
+		return __xuiMessageDocumentBoundary(pNode->pDocumentBinding,
+			!bStart, pDocumentPosition) == XUI_OK;
 	}
+	if ( fLocalX >= tText.fX && fLocalX <= tText.fX + tText.fW &&
+	     fLocalY >= tText.fY && fLocalY <= tText.fY + tText.fH &&
+	     __xuiMessageHitTextOffset(pWidget, pData, fX, fY, pNodeIndex, pOffset) ) return 1;
+	*pNodeIndex = iCandidate;
+	*pOffset = bStart ? 0 : (int)strlen(__xuiMessageText(pNode->sText));
 	return 1;
 }
 
@@ -1098,6 +2763,13 @@ static void __xuiMessageSetTextSelection(xui_message_list_data_t* pData, int iAn
 	pData->iSelectionAnchorOffset = iAnchorOffset;
 	pData->iSelectionActiveNode = iActiveNode;
 	pData->iSelectionActiveOffset = iActiveOffset;
+	memset(&pData->tSelectionAnchorDocument, 0, sizeof(pData->tSelectionAnchorDocument));
+	memset(&pData->tSelectionActiveDocument, 0, sizeof(pData->tSelectionActiveDocument));
+	memset(&pData->tTableSelection, 0, sizeof(pData->tTableSelection));
+	memset(&pData->tTableDragAnchor, 0, sizeof(pData->tTableDragAnchor));
+	memset(&pData->tTableDragFocus, 0, sizeof(pData->tTableDragFocus));
+	pData->iTableSelectionNode = -1;
+	pData->bTableSelecting = 0;
 }
 
 static int __xuiMessagePointInRect(xui_rect_t tRect, float fX, float fY)
@@ -1110,11 +2782,14 @@ static int __xuiMessageAppendSelectionBytes(char** ppText, int* pLength, int* pC
 	char* sNew;
 	int iRequired;
 	int iCapacity;
-	if ( ppText == NULL || pLength == NULL || pCapacity == NULL || iLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppText == NULL || pLength == NULL || pCapacity == NULL || iLength < 0 ||
+	     (iLength > 0 && sText == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( *pLength < 0 || *pLength > INT_MAX - iLength - 1 ) return XUI_DOC_ERROR_LIMIT;
 	iRequired = *pLength + iLength + 1;
 	if ( iRequired > *pCapacity ) {
-		iCapacity = (*pCapacity > 0) ? *pCapacity * 2 : 128;
-		while ( iCapacity < iRequired ) iCapacity *= 2;
+		iCapacity = (*pCapacity > 0) ? *pCapacity : 128;
+		while ( iCapacity < iRequired )
+			iCapacity = iCapacity > INT_MAX / 2 ? iRequired : iCapacity * 2;
 		sNew = (char*)xrtMalloc((size_t)iCapacity);
 		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		if ( *ppText != NULL && *pLength > 0 ) memcpy(sNew, *ppText, (size_t)*pLength);
@@ -1186,6 +2861,74 @@ failed:
 	return iRet;
 }
 
+static int __xuiMessageBuildMixedSelectedText(xui_message_list_data_t* pData, char** ppText)
+{
+	char* sText = NULL;
+	int iLength = 0, iCapacity = 0, iStart, iEnd, i, iRet = XUI_OK;
+	if ( ppText != NULL ) *ppText = NULL;
+	if ( pData == NULL || ppText == NULL || pData->iSelectionAnchorNode < 0 ||
+	     pData->iSelectionActiveNode < 0 || pData->iSelectionAnchorNode >= pData->iNodeCount ||
+	     pData->iSelectionActiveNode >= pData->iNodeCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	iStart = pData->iSelectionAnchorNode < pData->iSelectionActiveNode ?
+		pData->iSelectionAnchorNode : pData->iSelectionActiveNode;
+	iEnd = pData->iSelectionAnchorNode > pData->iSelectionActiveNode ?
+		pData->iSelectionAnchorNode : pData->iSelectionActiveNode;
+	for ( i = iStart; i <= iEnd; i++ ) {
+		xui_message_node_data_t* pNode = &pData->arrNodes[i];
+		const char* sPart = NULL;
+		int iPartLength = 0;
+		char* sDocumentText = NULL;
+		if ( !__xuiMessageNodeCanSelect(pNode) ) continue;
+		if ( pNode->pDocumentBinding != NULL ) {
+			xui_document_snapshot pSnapshot = NULL;
+			xui_doc_range_t tRange;
+			uint64_t iBytes = 0;
+			iRet = __xuiMessageDocumentSelectionRange(pData, i, &tRange);
+			if ( iRet == XUI_OK ) iRet = xuiDocumentAcquireSnapshot(pNode->pDocumentBinding->pDocument, &pSnapshot);
+			if ( iRet == XUI_OK ) iRet = xuiDocumentSnapshotCopyRange(pSnapshot, &tRange,
+				&sDocumentText, &iBytes);
+			if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+			if ( iRet != XUI_OK ) { xuiDocumentFreeBuffer(sDocumentText); goto failed; }
+			if ( iBytes >= INT_MAX ) {
+				xuiDocumentFreeBuffer(sDocumentText);
+				iRet = XUI_DOC_ERROR_LIMIT;
+				goto failed;
+			}
+			sPart = sDocumentText;
+			iPartLength = (int)iBytes;
+		} else {
+			int iPartStart = 0, iPartEnd;
+			sPart = __xuiMessageText(pNode->sText);
+			iPartEnd = (int)strlen(sPart);
+			if ( i == pData->iSelectionAnchorNode ) iPartStart = pData->iSelectionAnchorOffset;
+			if ( i == pData->iSelectionActiveNode ) iPartEnd = pData->iSelectionActiveOffset;
+			if ( pData->iSelectionAnchorNode > pData->iSelectionActiveNode ) {
+				iPartStart = i == pData->iSelectionActiveNode ? pData->iSelectionActiveOffset : 0;
+				iPartEnd = i == pData->iSelectionAnchorNode ? pData->iSelectionAnchorOffset : (int)strlen(sPart);
+			}
+			if ( iPartStart < 0 ) iPartStart = 0;
+			if ( iPartEnd > (int)strlen(sPart) ) iPartEnd = (int)strlen(sPart);
+			if ( iPartEnd < iPartStart ) iPartEnd = iPartStart;
+			sPart += iPartStart;
+			iPartLength = iPartEnd - iPartStart;
+		}
+		if ( iPartLength > 0 ) {
+			if ( iLength > 0 ) iRet = __xuiMessageAppendSelectionBytes(&sText,
+				&iLength, &iCapacity, "\n", 1);
+			if ( iRet == XUI_OK ) iRet = __xuiMessageAppendSelectionBytes(&sText,
+				&iLength, &iCapacity, sPart, iPartLength);
+		}
+		xuiDocumentFreeBuffer(sDocumentText);
+		if ( iRet != XUI_OK ) goto failed;
+	}
+	if ( iLength == 0 ) { iRet = XUI_ERROR_INVALID_ARGUMENT; goto failed; }
+	*ppText = sText;
+	return XUI_OK;
+failed:
+	if ( sText != NULL ) xrtFree(sText);
+	return iRet;
+}
+
 static void __xuiMessageContextMenuSelect(xui_widget pMenu, int iIndex, int iValue, void* pUser)
 {
 	xui_widget pWidget = (xui_widget)pUser;
@@ -1214,6 +2957,9 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 {
 	xui_message_list_data_t* pData;
 	xui_message_node_data_t* pNode;
+	xui_message_document_binding_t* pBinding;
+	xui_doc_position_t tDocumentHit;
+	xui_doc_position_t tDocumentAnchor;
 	xui_rect_t tContent;
 	xui_rect_t tHeader;
 	xui_rect_t tWorld;
@@ -1239,6 +2985,46 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_HOVER, iIndex, pEvent);
 			bChanged = 1;
 		}
+		if ( pData->bTableSelecting ) {
+			int iRet = __xuiMessageUpdateTableDrag(pWidget, pData,
+				pEvent->fX, pEvent->fY);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( bChanged ) (void)xuiWidgetInvalidate(pWidget,
+				XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pData->bDocumentSelecting && pData->iDocumentSelectionNode >= 0 &&
+		     pData->iDocumentSelectionNode < pData->iNodeCount ) {
+			pBinding = pData->arrNodes[pData->iDocumentSelectionNode].pDocumentBinding;
+			if ( pBinding != NULL ) {
+				tContent = xuiWidgetGetContentRect(pWidget);
+				tWorld = xuiWidgetGetWorldRect(pWidget);
+				fMaxScroll = __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH);
+				fOldScroll = pData->fScrollY;
+				if ( pEvent->fY < tWorld.fY + tContent.fY + 12.0f ) pData->fScrollY -= pData->tMetrics.fWheelStep * 0.35f;
+				else if ( pEvent->fY > tWorld.fY + tContent.fY + tContent.fH - 12.0f ) pData->fScrollY += pData->tMetrics.fWheelStep * 0.35f;
+				pData->fScrollY = __xuiMessageClamp(pData->fScrollY, 0.0f, fMaxScroll);
+				if ( pData->fScrollY != fOldScroll ) bChanged = 1;
+			if ( __xuiMessageResolveSelectionEndpoint(pWidget, pData, pEvent->fX, pEvent->fY,
+				     pData->iSelectionAnchorNode, &iTextNode, &iTextOffset, &tDocumentHit) &&
+				     (pData->iSelectionActiveNode != iTextNode ||
+				      pData->iSelectionActiveOffset != iTextOffset ||
+				      pData->tSelectionActiveDocument.iNodeId != tDocumentHit.iNodeId ||
+				      pData->tSelectionActiveDocument.iOffset != tDocumentHit.iOffset ||
+				      pData->tSelectionActiveDocument.iAffinity != tDocumentHit.iAffinity) ) {
+					pData->iSelectionActiveNode = iTextNode;
+					pData->iSelectionActiveOffset = iTextOffset;
+					pData->tSelectionActiveDocument = tDocumentHit;
+					if ( iTextNode == pData->iDocumentSelectionNode )
+						pBinding->tSelection.tCaret = tDocumentHit;
+					pBinding->iPressedNode = 0;
+					bChanged = 1;
+					xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+				}
+			}
+			if ( bChanged ) return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( pData->bSelecting ) {
 			tContent = xuiWidgetGetContentRect(pWidget);
 			tWorld = xuiWidgetGetWorldRect(pWidget);
@@ -1250,12 +3036,17 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			if ( pData->fScrollY != fOldScroll ) bChanged = 1;
 		}
 		if ( pData->bSelecting &&
-		     (__xuiMessageHitTextOffset(pWidget, pData, pEvent->fX, pEvent->fY, &iTextNode, &iTextOffset) ||
-		      __xuiMessageResolveSelectionOffset(pWidget, pData, pEvent->fX, pEvent->fY, pData->iSelectionAnchorNode, &iTextNode, &iTextOffset)) ) {
-			if ( iTextNode != pData->iSelectionActiveNode || iTextOffset != pData->iSelectionActiveOffset ) {
+		     __xuiMessageResolveSelectionEndpoint(pWidget, pData, pEvent->fX, pEvent->fY,
+		         pData->iSelectionAnchorNode, &iTextNode, &iTextOffset, &tDocumentHit) ) {
+			if ( iTextNode != pData->iSelectionActiveNode || iTextOffset != pData->iSelectionActiveOffset ||
+			     pData->tSelectionActiveDocument.iNodeId != tDocumentHit.iNodeId ||
+			     pData->tSelectionActiveDocument.iOffset != tDocumentHit.iOffset ||
+			     pData->tSelectionActiveDocument.iAffinity != tDocumentHit.iAffinity ) {
 				pData->iSelectionActiveNode = iTextNode;
 				pData->iSelectionActiveOffset = iTextOffset;
+				pData->tSelectionActiveDocument = tDocumentHit;
 				bChanged = 1;
+				xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 			}
 		}
 		if ( bChanged ) return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1266,10 +3057,12 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 	} else if ( pEvent->iType == XUI_EVENT_POINTER_DOWN ) {
+		pData->iPressedTaskNode = 0;
 		iIndex = __xuiMessageGetIndexAtData(pWidget, pData, pEvent->fX, pEvent->fY);
 		if ( iIndex >= 0 ) {
 			pData->iSelected = iIndex;
 			pData->iSelectCount++;
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 			(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_SELECT, iIndex, pEvent);
 			pNode = &pData->arrNodes[iIndex];
 			tContent = xuiWidgetGetContentRect(pWidget);
@@ -1283,9 +3076,69 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 				pNode->iFlags ^= XUI_MESSAGE_NODE_FLAG_COLLAPSED;
 				__xuiMessageDirtyNode(pData, iIndex);
 				(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_TOGGLE, iIndex, pEvent);
-				return __xuiMessageInvalidate(pWidget, pData);
+				{
+					int iRet = __xuiMessageInvalidate(pWidget, pData);
+				if ( iRet == XUI_OK ) __xuiMessageAccessibleFoldChanged(pWidget, pNode);
+					return iRet;
+				}
+			}
+			if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT &&
+			     pNode->pDocumentBinding != NULL &&
+			     pNode->pDocumentBinding->tDesc.onTaskToggle != NULL ) {
+				xui_doc_node_id iTask = 0;
+				if ( __xuiMessageHitDocumentTaskMarker(pWidget, pData, iIndex,
+				     pEvent->fX, pEvent->fY, &iTask) == XUI_OK ) {
+					pData->iPressedTaskNode = iTask;
+					pData->iPressedTaskMessage = iIndex;
+					(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+					(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+					return XUI_EVENT_DISPATCH_STOP;
+				}
+			}
+			if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT &&
+			     (pEvent->iModifiers & XUI_MOD_ALT) && pNode->pDocumentBinding != NULL ) {
+				xui_doc_cell_hit_t tCell = {0};
+				tCell.iSize = sizeof(tCell);
+				if ( __xuiMessageHitDocumentCell(pWidget, pData, iIndex,
+				     pEvent->fX, pEvent->fY, &tCell) == XUI_OK ) {
+					xui_doc_table_selection_t tRange =
+						__xuiMessageTableRangeFromCells(&tCell, &tCell);
+					int iRet = __xuiMessageSetDocumentTableSelectionAt(pWidget,
+						pData, iIndex, &tRange, 1);
+					if ( iRet != XUI_OK ) return iRet;
+					pData->tTableDragAnchor = tCell;
+					pData->tTableDragFocus = tCell;
+					pData->bTableSelecting = 1;
+					(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+					(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+					return XUI_EVENT_DISPATCH_STOP;
+				}
+			}
+			if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT && pNode->pDocumentBinding != NULL &&
+			     __xuiMessageHitDocument(pWidget, pData, iIndex, pEvent->fX, pEvent->fY, 0, &tDocumentHit) == XUI_OK ) {
+				pBinding = pNode->pDocumentBinding;
+				tDocumentAnchor = (pEvent->iModifiers & XUI_MOD_SHIFT) != 0 &&
+					pData->iSelectionAnchorNode == iIndex &&
+					pData->tSelectionAnchorDocument.iSize != 0 ?
+					pData->tSelectionAnchorDocument : tDocumentHit;
+				__xuiMessageSetTextSelection(pData, -1, 0, -1, 0);
+				pData->tSelectionAnchorDocument = tDocumentAnchor;
+				pData->tSelectionActiveDocument = tDocumentHit;
+				pData->iSelectionAnchorNode = iIndex;
+				pData->iSelectionActiveNode = iIndex;
+				pBinding->tSelection.tAnchor = tDocumentAnchor;
+				pBinding->tSelection.tCaret = tDocumentHit;
+				pBinding->iPressedNode = (pEvent->iModifiers & XUI_MOD_SHIFT) == 0 ?
+					tDocumentHit.iNodeId : 0;
+				pData->iDocumentSelectionNode = iIndex;
+				pData->bDocumentSelecting = 1;
+				(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+				(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+				(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				return XUI_EVENT_DISPATCH_STOP;
 			}
 			if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT && __xuiMessageHitTextOffset(pWidget, pData, pEvent->fX, pEvent->fY, &iTextNode, &iTextOffset) ) {
+				pData->iDocumentSelectionNode = -1;
 				(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 				__xuiMessageSetTextSelection(pData, iTextNode, iTextOffset, iTextNode, iTextOffset);
 				pData->bSelecting = 1;
@@ -1295,6 +3148,72 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 	} else if ( pEvent->iType == XUI_EVENT_POINTER_UP || pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
+		if ( pData->iPressedTaskNode != 0 ) {
+			xui_doc_node_id iPressed = pData->iPressedTaskNode;
+			int iMessage = pData->iPressedTaskMessage;
+			pData->iPressedTaskNode = 0;
+			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+				(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+			if ( pEvent->iType == XUI_EVENT_POINTER_UP &&
+			     iMessage >= 0 && iMessage < pData->iNodeCount ) {
+				xui_doc_node_id iReleased = 0;
+				pBinding = pData->arrNodes[iMessage].pDocumentBinding;
+				if ( pBinding != NULL && pBinding->tDesc.onTaskToggle != NULL &&
+				     __xuiMessageHitDocumentTaskMarker(pWidget, pData, iMessage,
+				         pEvent->fX, pEvent->fY, &iReleased) == XUI_OK &&
+				     iReleased == iPressed ) {
+					xui_document_snapshot pSnapshot = NULL;
+					if ( xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot) == XUI_OK ) {
+						doc_node* pTask = doc_index_get(pSnapshot->state->index, iPressed);
+						if ( pTask != NULL && pTask->kind == XUI_DOC_LIST_ITEM &&
+						     (pTask->attrs->iFlags & XUI_DOC_TASK) ) {
+							void (*onToggle)(xui_widget, xui_doc_node_id, int, void*) =
+								pBinding->tDesc.onTaskToggle;
+							void* pCallbackUser = pBinding->tDesc.pUser;
+							int bChecked = (pTask->attrs->iFlags & XUI_DOC_CHECKED) == 0;
+							xuiDocumentSnapshotRelease(pSnapshot);
+							onToggle(pWidget, iPressed, bChecked, pCallbackUser);
+							return XUI_EVENT_DISPATCH_STOP;
+						}
+						xuiDocumentSnapshotRelease(pSnapshot);
+					}
+				}
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pData->bTableSelecting ) {
+			int iRet = pEvent->iType == XUI_EVENT_POINTER_UP ?
+				__xuiMessageUpdateTableDrag(pWidget, pData, pEvent->fX, pEvent->fY) : XUI_OK;
+			pData->bTableSelecting = 0;
+			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+				(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+			return iRet == XUI_OK ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
+		if ( pData->bDocumentSelecting ) {
+			int iDocumentIndex = pData->iDocumentSelectionNode;
+			pData->bDocumentSelecting = 0;
+			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+				(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+			if ( pEvent->iType == XUI_EVENT_POINTER_UP && iDocumentIndex >= 0 &&
+			     iDocumentIndex < pData->iNodeCount &&
+			     (pBinding = pData->arrNodes[iDocumentIndex].pDocumentBinding) != NULL &&
+			     pBinding->iPressedNode != 0 && pBinding->tDesc.onActivate != NULL &&
+			     __xuiMessageHitDocument(pWidget, pData, iDocumentIndex,
+			         pEvent->fX, pEvent->fY, 0, &tDocumentHit) == XUI_OK &&
+			     tDocumentHit.iNodeId == pBinding->iPressedNode ) {
+				xui_document_snapshot pSnapshot = NULL;
+				xui_doc_node_info_t tInfo = {0};
+				tInfo.iSize = sizeof(tInfo);
+				if ( xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot) == XUI_OK ) {
+					if ( xuiDocumentSnapshotGetNode(pSnapshot, tDocumentHit.iNodeId, &tInfo) == XUI_OK )
+						pBinding->tDesc.onActivate(pWidget, tDocumentHit.iNodeId,
+							tInfo.iKind == XUI_DOC_IMAGE && (tInfo.tAttributes.iMarks & XUI_DOC_LINK) ?
+								tInfo.sLinkTarget : tInfo.sResource, pBinding->tDesc.pUser);
+					xuiDocumentSnapshotRelease(pSnapshot);
+				}
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( pData->bSelecting || xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
 			pData->bSelecting = 0;
 			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) (void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
@@ -1327,6 +3246,7 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		if ( iIndex >= 0 ) {
 			pNode = &pData->arrNodes[iIndex];
 			pData->iSelected = iIndex;
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 			if ( __xuiMessageNodeCanSelectText(pNode) && __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) == 0 ) {
 				__xuiMessageSetTextSelection(pData, iIndex, 0, iIndex, (int)strlen(__xuiMessageText(pNode->sText)));
 			}
@@ -1349,6 +3269,19 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 	} else if ( pEvent->iType == XUI_EVENT_BOUNDS_CHANGED ) {
 		return __xuiMessageInvalidate(pWidget, pData);
 	} else if ( pEvent->iType == XUI_EVENT_KEY_DOWN ) {
+		if ( (pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT | XUI_MOD_SHIFT)) ==
+		     (XUI_MOD_ALT | XUI_MOD_SHIFT) &&
+		     (pEvent->iKey == XUI_KEY_LEFT || pEvent->iKey == XUI_KEY_RIGHT ||
+		      pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN) ) {
+			int iRet = __xuiMessageExtendTableSelection(pWidget, pData, pEvent->iKey);
+			return iRet == XUI_ERROR_NOT_FOUND ? XUI_OK :
+				iRet == XUI_OK ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
+		if ( pEvent->iKey == XUI_KEY_ESCAPE && pData->tTableSelection.iTableId != 0 ) {
+			int iRet = __xuiMessageSetDocumentTableSelectionAt(pWidget, pData,
+				pData->iTableSelectionNode, NULL, 0);
+			return iRet == XUI_OK ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
 		if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0 && (pEvent->iKey == 'c' || pEvent->iKey == 'C') ) {
 			(void)xuiMessageListCopySelection(pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1431,10 +3364,127 @@ static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data
 		}
 		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, iLine, &sDisplay, &iDisplaySize);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiMessageDrawText(pProxy, pDraw, pFont, sDisplay, tLineRect, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		iRet = __xuiMessageDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sDisplay, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
+}
+
+static int __xuiMessageHitDocument(xui_widget pWidget, xui_message_list_data_t* pData,
+	int iIndex, double fWorldX, double fWorldY, int bClamp, xui_doc_position_t* pPosition)
+{
+	xui_message_node_data_t* pNode;
+	xui_rect_t tWorld;
+	xui_rect_t tContent;
+	xui_rect_t tText;
+	double fX, fY;
+	int iRet;
+	if ( pData == NULL || pPosition == NULL || iIndex < 0 || iIndex >= pData->iNodeCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiMessageLayoutNodes(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pNode = &pData->arrNodes[iIndex];
+	if ( pNode->pDocumentBinding == NULL || !__xuiMessageNodeCanSelect(pNode) )
+		return XUI_ERROR_NOT_FOUND;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tContent = xuiWidgetGetContentRect(pWidget);
+	tText = pNode->tTextRect;
+	fX = fWorldX - tWorld.fX - tContent.fX - tText.fX;
+	fY = fWorldY - tWorld.fY - tContent.fY - tText.fY + pData->fScrollY;
+	if ( !bClamp && (fX < 0 || fY < 0 || fX >= tText.fW || fY >= tText.fH ||
+	     fWorldX < tWorld.fX + tContent.fX || fWorldY < tWorld.fY + tContent.fY ||
+	     fWorldX >= tWorld.fX + tContent.fX + tContent.fW ||
+	     fWorldY >= tWorld.fY + tContent.fY + tContent.fH) ) return XUI_ERROR_NOT_FOUND;
+	if ( bClamp ) {
+		fX = __xuiMessageClamp((float)fX, 0.0f, __xuiMessageMax(0.0f, tText.fW - 1.0f));
+		fY = __xuiMessageClamp((float)fY, 0.0f, __xuiMessageMax(0.0f, tText.fH - 1.0f));
+	}
+	iRet = __xuiMessageDocumentSync(pNode->pDocumentBinding);
+	return iRet == XUI_OK ? xuiDocumentRendererHitTest(pNode->pDocumentBinding->pRenderer,
+		fX, fY, pPosition) : iRet;
+}
+
+static int __xuiMessageHitDocumentCell(xui_widget pWidget, xui_message_list_data_t* pData,
+	int iIndex, double fWorldX, double fWorldY, xui_doc_cell_hit_t* pCell)
+{
+	xui_doc_position_t tPosition = {0};
+	xui_rect_t tWorld, tContent, tText;
+	int iRet;
+	if ( pCell == NULL || pCell->iSize != sizeof(*pCell) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiMessageHitDocument(pWidget, pData, iIndex, fWorldX, fWorldY, 0, &tPosition);
+	if ( iRet != XUI_OK ) return iRet;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tContent = xuiWidgetGetContentRect(pWidget);
+	tText = pData->arrNodes[iIndex].tTextRect;
+	return xuiDocumentRendererHitTestCell(pData->arrNodes[iIndex].pDocumentBinding->pRenderer,
+		fWorldX - tWorld.fX - tContent.fX - tText.fX,
+		fWorldY - tWorld.fY - tContent.fY - tText.fY + pData->fScrollY, pCell);
+}
+
+static int __xuiMessageHitDocumentTaskMarker(xui_widget pWidget,
+	xui_message_list_data_t* pData, int iIndex, double fWorldX,
+	double fWorldY, xui_doc_node_id* pItem)
+{
+	xui_message_node_data_t* pNode;
+	xui_rect_t tWorld, tContent, tText;
+	double fX, fY;
+	int iRet;
+	if ( pData == NULL || pItem == NULL || iIndex < 0 ||
+	     iIndex >= pData->iNodeCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pItem = 0;
+	iRet = __xuiMessageLayoutNodes(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pNode = &pData->arrNodes[iIndex];
+	if ( pNode->pDocumentBinding == NULL ) return XUI_ERROR_NOT_FOUND;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tContent = xuiWidgetGetContentRect(pWidget);
+	tText = pNode->tTextRect;
+	fX = fWorldX - tWorld.fX - tContent.fX - tText.fX;
+	fY = fWorldY - tWorld.fY - tContent.fY - tText.fY + pData->fScrollY;
+	if ( fX < 0 || fY < 0 || fX >= tText.fW || fY >= tText.fH ||
+	     fWorldX < tWorld.fX + tContent.fX ||
+	     fWorldY < tWorld.fY + tContent.fY ||
+	     fWorldX >= tWorld.fX + tContent.fX + tContent.fW ||
+	     fWorldY >= tWorld.fY + tContent.fY + tContent.fH )
+		return XUI_ERROR_NOT_FOUND;
+	iRet = __xuiMessageDocumentSync(pNode->pDocumentBinding);
+	return iRet == XUI_OK ? xuiDocumentRendererHitTaskMarker(
+		pNode->pDocumentBinding->pRenderer, fX, fY, pItem) : iRet;
+}
+
+static int __xuiMessageDrawDocument(xui_message_list_data_t* pData, int iIndex,
+	xui_message_node_data_t* pNode, xui_draw_context pDraw, xui_rect_t tRect, xui_rect_t tViewport,
+	uint32_t iDefaultSelectionColor)
+{
+	xui_message_document_binding_t* pBinding = pNode->pDocumentBinding;
+	xui_rect_t tClip;
+	xui_doc_range_t tSelection;
+	const xui_doc_range_t* pSelection = NULL;
+	uint32_t iSelectionColor;
+	int iRet;
+	if ( pBinding == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	tClip.fX = __xuiMessageMax(tRect.fX, tViewport.fX);
+	tClip.fY = __xuiMessageMax(tRect.fY, tViewport.fY);
+	tClip.fW = __xuiMessageMax(0.0f, __xuiMessageMin(tRect.fX + tRect.fW, tViewport.fX + tViewport.fW) - tClip.fX);
+	tClip.fH = __xuiMessageMax(0.0f, __xuiMessageMin(tRect.fY + tRect.fH, tViewport.fY + tViewport.fH) - tClip.fY);
+	if ( tClip.fW <= 0.0f || tClip.fH <= 0.0f ) return XUI_OK;
+	iRet = __xuiMessageDocumentSync(pBinding);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDocumentRendererLayout(pBinding->pRenderer, __xuiMessageMax(1.0f, tRect.fW),
+		__xuiMessageMax(0.0f, tClip.fY - tRect.fY), tClip.fH);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( __xuiMessageDocumentSelectionRange(pData, iIndex, &tSelection) == XUI_OK )
+		pSelection = &tSelection;
+	iSelectionColor = pBinding->tDesc.iSelectionColor ? pBinding->tDesc.iSelectionColor : iDefaultSelectionColor;
+	if ( pData->iTableSelectionNode == iIndex && pData->tTableSelection.iTableId ) {
+		pBinding->pRenderer->table_selection = pData->tTableSelection;
+		pBinding->pRenderer->table_selection_color = iSelectionColor;
+		pSelection = NULL;
+	}
+	iRet = xuiDocumentRendererDraw(pBinding->pRenderer, pDraw, tRect.fX, tRect.fY,
+		tClip, pSelection, iSelectionColor);
+	memset(&pBinding->pRenderer->table_selection, 0,
+		sizeof(pBinding->pRenderer->table_selection));
+	return iRet;
 }
 
 static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1494,7 +3544,9 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			tText = pNode->tTextRect;
 			tText.fX += tContent.fX;
 			tText.fY += tContent.fY - pData->fScrollY;
-			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, tPaint.tColors.iSystemTextColor, 1, tPaint.iTextSelectionColor);
+			iRet = pNode->pDocumentBinding != NULL ?
+				__xuiMessageDrawDocument(pData, i, pNode, pDraw, tText, tContent, tPaint.iTextSelectionColor) :
+				__xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, tPaint.tColors.iSystemTextColor, 1, tPaint.iTextSelectionColor);
 			if ( iRet != XUI_OK ) return iRet;
 			continue;
 		}
@@ -1505,7 +3557,7 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			tHeader.fX += tContent.fX;
 			tHeader.fY += tContent.fY - pData->fScrollY;
 			(void)__xuiMessageDrawFill(pProxy, pDraw, tHeader, tPaint.iAuxiliaryHeaderColor);
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? ">" : "v", (xui_rect_t){tHeader.fX + 7.0f, tHeader.fY, 12.0f, tHeader.fH}, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiMessageDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=(pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? ">" : "v", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tHeader.fX + 7.0f, tHeader.fY, 12.0f, tHeader.fH}, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			tText = (xui_rect_t){tHeader.fX + 23.0f, tHeader.fY + (tHeader.fH - pNode->tMeasuredTitle.fY) * 0.5f,
 				__xuiMessageMin(pNode->fTitleLayoutWidth, __xuiMessageMax(0.0f, tHeader.fW - 30.0f)), pNode->tMeasuredTitle.fY};
 			iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTitleLayout, -1, tText, tPaint.tColors.iMetaTextColor, 0, tPaint.iTextSelectionColor);
@@ -1514,7 +3566,9 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 				tText = pNode->tTextRect;
 				tText.fX += tContent.fX;
 				tText.fY += tContent.fY - pData->fScrollY;
-				iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, tPaint.tColors.iOtherTextColor, 0, tPaint.iTextSelectionColor);
+				iRet = pNode->pDocumentBinding != NULL ?
+					__xuiMessageDrawDocument(pData, i, pNode, pDraw, tText, tContent, tPaint.iTextSelectionColor) :
+					__xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, tPaint.tColors.iOtherTextColor, 0, tPaint.iTextSelectionColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			continue;
@@ -1538,16 +3592,18 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tMeta.fX = tBubble.fX;
 		tMeta.fW = tBubble.fW;
 		if ( pNode->iType == XUI_MESSAGE_NODE_SELF ) {
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiMessageDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=__xuiMessageText(pNode->sSender), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tMeta, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		} else {
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiMessageDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=__xuiMessageText(pNode->sSender), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tMeta, tPaint.tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, iBubbleColor);
 		(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, tPaint.tColors.iBorderColor);
 		tText = pNode->tTextRect;
 		tText.fX += tContent.fX;
 		tText.fY += tContent.fY - pData->fScrollY;
-		iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, iTextColor, 0, tPaint.iTextSelectionColor);
+		iRet = pNode->pDocumentBinding != NULL ?
+			__xuiMessageDrawDocument(pData, i, pNode, pDraw, tText, tContent, tPaint.iTextSelectionColor) :
+			__xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->pTextLayout, i, tText, iTextColor, 0, tPaint.iTextSelectionColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1561,7 +3617,7 @@ static int __xuiMessageInitContextMenu(xui_widget pWidget, xui_message_list_data
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pOwner = pWidget;
-	tDesc.pFont = pData->pFont;
+	tDesc.pFont = __xuiMessageFont(pWidget, pData);
 	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pContextMenu, &tDesc);
 	if ( iRet != XUI_OK ) {
 		pData->pContextMenu = NULL;
@@ -1580,9 +3636,12 @@ static int __xuiMessageInit(xui_widget pWidget, void* pTypeData, const void* pCr
 	pDesc = (const xui_message_list_desc_t*)pCreateData;
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiMessageDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(pData, 0, sizeof(*pData));
+	pData->iNextAccessibleId = 1;
 	__xuiMessageDefaultMetrics(&pData->tMetrics);
 	__xuiMessageDefaultColors(&pData->tColors);
-	pData->pFont = (pDesc != NULL && pDesc->pFont != NULL) ? pDesc->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	pData->bUseDefaultFont = pDesc == NULL || pDesc->pFont == NULL;
+	pData->pFont = pData->bUseDefaultFont ? xuiGetDefaultFont(xuiWidgetGetContext(pWidget)) : pDesc->pFont;
+	pData->iResourceRegistryGeneration = xuiResourceGetRegistryGeneration(xuiWidgetGetContext(pWidget));
 	if ( pDesc != NULL && pDesc->bHasMetrics ) {
 		if ( !__xuiMessageMetricsValid(&pDesc->tMetrics) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pData->tMetrics = pDesc->tMetrics;
@@ -1592,6 +3651,8 @@ static int __xuiMessageInit(xui_widget pWidget, void* pTypeData, const void* pCr
 	pData->iSelected = -1;
 	pData->iSelectionAnchorNode = -1;
 	pData->iSelectionActiveNode = -1;
+	pData->iDocumentSelectionNode = -1;
+	pData->iTableSelectionNode = -1;
 	pData->bAutoScroll = (pDesc == NULL) ? 1 : (pDesc->bAutoScroll ? 1 : 0);
 	if ( pDesc != NULL && pDesc->iNodeCount > 0 ) {
 		iRet = xuiMessageListSetNodes(pWidget, pDesc->arrNodes, pDesc->iNodeCount);
@@ -1603,7 +3664,9 @@ static int __xuiMessageInit(xui_widget pWidget, void* pTypeData, const void* pCr
 	if ( iRet != XUI_OK ) return iRet;
 	/* Clipboard remains available even if a platform cannot create a popup menu. */
 	(void)__xuiMessageInitContextMenu(pWidget, pData);
-	return XUI_OK;
+	return xuiWidgetSetAccessibilityProvider(pWidget,
+		__xuiMessageAccessibleCount, __xuiMessageAccessibleGet,
+		__xuiMessageAccessibleAction, pData);
 }
 
 static void __xuiMessageDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1622,6 +3685,22 @@ static void __xuiMessageDestroy(xui_widget pWidget, void* pTypeData, void* pUser
 	__xuiMessageClearData(pData);
 	if ( pData->arrNodes != NULL ) xrtFree(pData->arrNodes);
 	memset(pData, 0, sizeof(*pData));
+}
+
+static int __xuiMessageUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	uint64_t iGeneration;
+	int iRet;
+	(void)fDelta;
+	(void)pUser;
+	if ( pData == NULL || pData->iDocumentNodeCount == 0 ) return XUI_OK;
+	iGeneration = xuiResourceGetRegistryGeneration(xuiWidgetGetContext(pWidget));
+	if ( iGeneration == pData->iResourceRegistryGeneration ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK ) pData->iResourceRegistryGeneration = iGeneration;
+	return iRet;
 }
 
 static void __xuiMessageDefaultLayout(xui_layout_t* pLayout)
@@ -1665,6 +3744,7 @@ XUI_API xui_widget_type xuiMessageListGetType(xui_context pContext)
 	tDesc.iTypeDataSize = sizeof(xui_message_list_data_t);
 	tDesc.onInit = __xuiMessageInit;
 	tDesc.onDestroy = __xuiMessageDestroy;
+	tDesc.onUpdate = __xuiMessageUpdate;
 	tDesc.onContentMeasure = __xuiMessageContentMeasure;
 	tDesc.onCacheRender = __xuiMessageCacheRender;
 	__xuiMessageDefaultLayout(&tDesc.tLayout);
@@ -1711,6 +3791,9 @@ XUI_API int xuiMessageListSetNodes(xui_widget pWidget, const xui_message_node_t*
 	if ( (iCount < 0) || (iCount > 0 && pNodes == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiMessageListGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (uint64_t)iCount > UINT64_MAX - pData->iNextAccessibleId ) return XUI_DOC_ERROR_LIMIT;
+	if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 	__xuiMessageClearData(pData);
 	iRet = __xuiMessageReserve(pData, iCount);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1721,10 +3804,13 @@ XUI_API int xuiMessageListSetNodes(xui_widget pWidget, const xui_message_node_t*
 			__xuiMessageClearData(pData);
 			return iRet;
 		}
+		pData->arrNodes[i].iAccessibleId = ++pData->iNextAccessibleId;
 	}
 	pData->iNodeCount = iCount;
 	if ( pData->bAutoScroll ) (void)xuiMessageListScrollToEnd(pWidget);
-	return __xuiMessageInvalidate(pWidget, pData);
+	iRet = __xuiMessageInvalidate(pWidget, pData);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiMessageListAddNode(xui_widget pWidget, const xui_message_node_t* pNode)
@@ -1734,14 +3820,19 @@ XUI_API int xuiMessageListAddNode(xui_widget pWidget, const xui_message_node_t* 
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiMessageListGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iNodeCount == INT_MAX ) return XUI_DOC_ERROR_LIMIT;
+	if ( pData->iNextAccessibleId == UINT64_MAX ) return XUI_DOC_ERROR_LIMIT;
 	iRet = __xuiMessageReserve(pData, pData->iNodeCount + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiMessageCopyNode(&pData->arrNodes[pData->iNodeCount], pNode);
 	if ( iRet != XUI_OK ) return iRet;
+	pData->arrNodes[pData->iNodeCount].iAccessibleId = ++pData->iNextAccessibleId;
 	pData->iNodeCount++;
 	__xuiMessageDirtyNode(pData, pData->iNodeCount - 1);
 	if ( pData->bAutoScroll ) (void)xuiMessageListScrollToEnd(pWidget);
-	return __xuiMessageInvalidate(pWidget, pData);
+	iRet = __xuiMessageInvalidate(pWidget, pData);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	return iRet;
 }
 
 static int __xuiMessageFindNodeById(const xui_message_list_data_t* pData, const char* sId)
@@ -1752,6 +3843,210 @@ static int __xuiMessageFindNodeById(const xui_message_list_data_t* pData, const 
 		if ( strcmp(__xuiMessageText(pData->arrNodes[i].sId), sId) == 0 ) return i;
 	}
 	return -1;
+}
+
+XUI_API int xuiMessageListSetNodeDocument(xui_widget pWidget, const char* sId,
+	const xui_message_document_desc_t* pDesc)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	xui_message_document_binding_t* pBinding = NULL;
+	xui_message_document_binding_t* pOld;
+	xui_doc_renderer_desc_t tRendererDesc;
+	xui_document_snapshot pSnapshot = NULL;
+	float fOldScroll;
+	int iOldChanges;
+	int iIndex;
+	int bSelectionAffected;
+	int iRet;
+	if ( pData == NULL || sId == NULL ||
+	     (pDesc != NULL && (pDesc->iSize != sizeof(*pDesc) || pDesc->pDocument == NULL ||
+	     (pDesc->tRenderer.iSize != 0 && pDesc->tRenderer.iSize != sizeof(pDesc->tRenderer)))) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 ) return XUI_ERROR_NOT_FOUND;
+	if ( pDesc != NULL ) {
+		pBinding = (xui_message_document_binding_t*)calloc(1, sizeof(*pBinding));
+		if ( pBinding == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		pBinding->pList = pWidget;
+		pBinding->iIndex = iIndex;
+		pBinding->pDocument = pDesc->pDocument;
+		pBinding->tDesc = *pDesc;
+		xuiDocumentRetain(pBinding->pDocument);
+		__xuiMessageDocumentRendererDesc(pBinding, pData, &tRendererDesc);
+		pBinding->pResolvedFont = tRendererDesc.tFonts.normal;
+		pBinding->iResolvedTextColor = tRendererDesc.iTextColor;
+		iRet = xuiDocumentRendererCreate(xuiWidgetGetContext(pWidget), &tRendererDesc, &pBinding->pRenderer);
+		if ( iRet == XUI_OK ) iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
+		if ( iRet == XUI_OK ) iRet = xuiDocumentRendererSetSnapshot(pBinding->pRenderer, pSnapshot, NULL);
+		if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+		if ( iRet == XUI_OK ) iRet = xuiDocumentSubscribe(pBinding->pDocument,
+			__xuiMessageDocumentChanged, pBinding, &pBinding->iSubscription);
+		if ( iRet != XUI_OK ) { __xuiMessageFreeDocumentBinding(pBinding); return iRet; }
+	}
+	pOld = pData->arrNodes[iIndex].pDocumentBinding;
+	fOldScroll = pData->fScrollY;
+	iOldChanges = pData->iChangeCount;
+	pData->arrNodes[iIndex].pDocumentBinding = pBinding;
+	if ( pOld == NULL && pBinding != NULL ) pData->iDocumentNodeCount++;
+	else if ( pOld != NULL && pBinding == NULL ) pData->iDocumentNodeCount--;
+	__xuiMessageInvalidateNodeTextLayout(&pData->arrNodes[iIndex]);
+	iRet = __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData, iIndex);
+	if ( iRet != XUI_OK ) {
+		pData->arrNodes[iIndex].pDocumentBinding = pOld;
+		if ( pOld == NULL && pBinding != NULL ) pData->iDocumentNodeCount--;
+		else if ( pOld != NULL && pBinding == NULL ) pData->iDocumentNodeCount++;
+		__xuiMessageFreeDocumentBinding(pBinding);
+		__xuiMessageInvalidateNodeTextLayout(&pData->arrNodes[iIndex]);
+		__xuiMessageDirtyNode(pData, iIndex);
+		(void)__xuiMessageLayoutNodes(pWidget, pData);
+		pData->fScrollY = fOldScroll;
+		pData->iChangeCount = iOldChanges;
+		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iRet;
+	}
+	if ( pData->iPressedTaskNode != 0 &&
+	     pData->iPressedTaskMessage == iIndex ) {
+		pData->iPressedTaskNode = 0;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	}
+	bSelectionAffected = pData->iSelectionAnchorNode >= 0 && pData->iSelectionActiveNode >= 0 &&
+	     ((iIndex >= pData->iSelectionAnchorNode && iIndex <= pData->iSelectionActiveNode) ||
+	      (iIndex >= pData->iSelectionActiveNode && iIndex <= pData->iSelectionAnchorNode));
+	if ( pData->iTableSelectionNode == iIndex ) bSelectionAffected = 1;
+	if ( bSelectionAffected )
+		__xuiMessageSetTextSelection(pData, -1, 0, -1, 0);
+	if ( bSelectionAffected || pData->iDocumentSelectionNode == iIndex ) {
+		pData->iDocumentSelectionNode = -1;
+		pData->bSelecting = 0;
+		pData->bDocumentSelecting = 0;
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	}
+	if ( pOld != NULL && pData->tPendingDocumentAnchor.pBinding == pOld ) {
+		xrtFree(pData->tPendingDocumentAnchor.arrMeasuredPrefix);
+		memset(&pData->tPendingDocumentAnchor, 0,
+			sizeof(pData->tPendingDocumentAnchor));
+	}
+	__xuiMessageAccessibleClearText(&pData->arrNodes[iIndex]);
+	__xuiMessageFreeDocumentBinding(pOld);
+	if ( bSelectionAffected ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return XUI_OK;
+}
+
+XUI_API xui_document xuiMessageListGetNodeDocument(xui_widget pWidget, const char* sId)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex = __xuiMessageFindNodeById(pData, sId);
+	return iIndex < 0 || pData->arrNodes[iIndex].pDocumentBinding == NULL ? NULL :
+		pData->arrNodes[iIndex].pDocumentBinding->pDocument;
+}
+
+XUI_API int xuiMessageListGetNodeDocumentRenderStats(xui_widget pWidget,
+	const char* sId, xui_doc_renderer_stats_t* pStats)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	if ( pData == NULL || sId == NULL || pStats == NULL ||
+	     pStats->iSize != sizeof(*pStats) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 || pData->arrNodes[iIndex].pDocumentBinding == NULL )
+		return XUI_ERROR_NOT_FOUND;
+	return xuiDocumentRendererGetStats(
+		pData->arrNodes[iIndex].pDocumentBinding->pRenderer, pStats);
+}
+
+static int __xuiMessageInvalidateNodeDocumentLayout(xui_widget pWidget,
+	const char* sId, int bFonts)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	xui_message_document_anchor_t tAnchor;
+	int iIndex;
+	int iRet;
+	if ( pData == NULL || sId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 || pData->arrNodes[iIndex].pDocumentBinding == NULL )
+		return XUI_ERROR_NOT_FOUND;
+	if ( pData->tPendingDocumentAnchor.pBinding == NULL ) {
+		__xuiMessageCaptureDocumentAnchor(pWidget, pData,
+			xuiWidgetGetContentRect(pWidget), &tAnchor, 1);
+		if ( tAnchor.pBinding == pData->arrNodes[iIndex].pDocumentBinding )
+			pData->tPendingDocumentAnchor = tAnchor;
+		else xrtFree(tAnchor.arrMeasuredPrefix);
+	}
+	iRet = bFonts ? xuiDocumentRendererInvalidateFonts(
+		pData->arrNodes[iIndex].pDocumentBinding->pRenderer) :
+		xuiDocumentRendererInvalidateObjects(
+			pData->arrNodes[iIndex].pDocumentBinding->pRenderer);
+	if ( iRet != XUI_OK ) {
+		xrtFree(pData->tPendingDocumentAnchor.arrMeasuredPrefix);
+		memset(&pData->tPendingDocumentAnchor, 0, sizeof(pData->tPendingDocumentAnchor));
+		return iRet;
+	}
+	__xuiMessageDirtyNode(pData, iIndex);
+	pData->iChangeCount++;
+	return xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiMessageListInvalidateNodeDocumentObjects(xui_widget pWidget,
+	const char* sId)
+{
+	return __xuiMessageInvalidateNodeDocumentLayout(pWidget, sId, 0);
+}
+
+XUI_API int xuiMessageListInvalidateNodeDocumentFonts(xui_widget pWidget,
+	const char* sId)
+{
+	return __xuiMessageInvalidateNodeDocumentLayout(pWidget, sId, 1);
+}
+
+XUI_API int xuiMessageListHitNodeDocument(xui_widget pWidget, const char* sId,
+	double fWorldX, double fWorldY, xui_doc_position_t* pPosition)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 ) return XUI_ERROR_NOT_FOUND;
+	return __xuiMessageHitDocument(pWidget, pData, iIndex, fWorldX, fWorldY, 0, pPosition);
+}
+
+XUI_API int xuiMessageListGetNodeDocumentSelection(xui_widget pWidget, const char* sId,
+	xui_doc_range_t* pRange)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( pRange == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iIndex < 0 || pData->arrNodes[iIndex].pDocumentBinding == NULL ) return XUI_ERROR_NOT_FOUND;
+	return __xuiMessageDocumentSelectionRange(pData, iIndex, pRange);
+}
+
+XUI_API int xuiMessageListSetNodeDocumentTableSelection(xui_widget pWidget,
+	const char* sId, const xui_doc_table_selection_t* pSelection)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	if ( pData == NULL || sId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 ) return XUI_ERROR_NOT_FOUND;
+	return __xuiMessageSetDocumentTableSelectionAt(pWidget, pData,
+		iIndex, pSelection, 0);
+}
+
+XUI_API int xuiMessageListGetNodeDocumentTableSelection(xui_widget pWidget,
+	const char* sId, xui_doc_table_selection_t* pResult)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	if ( pData == NULL || sId == NULL || pResult == NULL ||
+	     pResult->iSize != sizeof(*pResult) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 || pData->arrNodes[iIndex].pDocumentBinding == NULL ||
+	     pData->iTableSelectionNode != iIndex ||
+	     pData->tTableSelection.iTableId == 0 ) return XUI_ERROR_NOT_FOUND;
+	*pResult = pData->tTableSelection;
+	return XUI_OK;
 }
 
 static int __xuiMessageAppendText(char** ppText, const char* sText)
@@ -1842,13 +4137,17 @@ XUI_API int xuiMessageListSetNodeTitle(xui_widget pWidget, const char* sId, cons
 XUI_API int xuiMessageListSetNodeCollapsed(xui_widget pWidget, const char* sId, int bCollapsed)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
-	int iIndex;
+	int iIndex, iOld, iRet;
 	if ( pData == NULL || sId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiMessageFindNodeById(pData, sId);
 	if ( iIndex < 0 || pData->arrNodes[iIndex].iType != XUI_MESSAGE_NODE_AUXILIARY ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOld = (pData->arrNodes[iIndex].iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0;
 	if ( bCollapsed ) pData->arrNodes[iIndex].iFlags |= XUI_MESSAGE_NODE_FLAG_COLLAPSED;
 	else pData->arrNodes[iIndex].iFlags &= ~XUI_MESSAGE_NODE_FLAG_COLLAPSED;
-	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData, iIndex);
+	iRet = __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData, iIndex);
+	if ( iRet == XUI_OK && iOld != (bCollapsed != 0) )
+		__xuiMessageAccessibleFoldChanged(pWidget, &pData->arrNodes[iIndex]);
+	return iRet;
 }
 
 XUI_API int xuiMessageListGetNodeCollapsed(xui_widget pWidget, const char* sId)
@@ -1864,9 +4163,12 @@ XUI_API int xuiMessageListGetNodeCollapsed(xui_widget pWidget, const char* sId)
 XUI_API int xuiMessageListClear(xui_widget pWidget)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiMessageClearData(pData);
-	return __xuiMessageInvalidate(pWidget, pData);
+	iRet = __xuiMessageInvalidate(pWidget, pData);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiMessageListGetNodeCount(xui_widget pWidget)
@@ -1891,6 +4193,7 @@ XUI_API int xuiMessageListSetSelected(xui_widget pWidget, int iIndex)
 	if ( iIndex < -1 || iIndex >= pData->iNodeCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iSelected = iIndex;
 	pData->iSelectCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1939,6 +4242,7 @@ XUI_API int xuiMessageListSetScroll(xui_widget pWidget, float fOffsetY)
 	if ( iRet != XUI_OK ) return iRet;
 	tContent = xuiWidgetGetContentRect(pWidget);
 	pData->fScrollY = __xuiMessageClamp(fOffsetY, 0.0f, __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH));
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1975,11 +4279,20 @@ XUI_API int xuiMessageListScrollToEnd(xui_widget pWidget)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
 	xui_rect_t tContent;
+	float fEnd;
+	int iPass;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiMessageLayoutNodes(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	tContent = xuiWidgetGetContentRect(pWidget);
+	for ( iPass = 0; iPass < 8; iPass++ ) {
+		fEnd = __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH);
+		if ( fabsf(pData->fScrollY - fEnd) <= 0.01f ) break;
+		pData->fScrollY = fEnd;
+		iRet = __xuiMessageLayoutNodes(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pData->fScrollY = __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -2003,6 +4316,7 @@ XUI_API int xuiMessageListSetFont(xui_widget pWidget, xui_font pFont)
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->pFont = pFont;
+	pData->bUseDefaultFont = pFont == NULL;
 	pData->bLayoutValid = 0;
 	return __xuiMessageInvalidate(pWidget, pData);
 }
@@ -2010,7 +4324,7 @@ XUI_API int xuiMessageListSetFont(xui_widget pWidget, xui_font pFont)
 XUI_API xui_font xuiMessageListGetFont(xui_widget pWidget)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
-	return (pData != NULL) ? pData->pFont : NULL;
+	return (pData != NULL) ? __xuiMessageFont(pWidget, pData) : NULL;
 }
 
 XUI_API int xuiMessageListSetMetrics(xui_widget pWidget, const xui_message_list_metrics_t* pMetrics)
@@ -2049,11 +4363,74 @@ XUI_API int xuiMessageListGetColors(xui_widget pWidget, xui_message_list_colors_
 XUI_API int xuiMessageListClearTextSelection(xui_widget pWidget)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int i;
+	int bHadSelection;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->iSelectionAnchorNode == -1 && pData->iSelectionActiveNode == -1 ) return XUI_OK;
+	bHadSelection = pData->iSelectionAnchorNode >= 0 || pData->iSelectionActiveNode >= 0 ||
+		pData->iDocumentSelectionNode >= 0 || pData->iTableSelectionNode >= 0;
 	__xuiMessageSetTextSelection(pData, -1, 0, -1, 0);
 	pData->bSelecting = 0;
+	pData->bDocumentSelecting = 0;
+	pData->iDocumentSelectionNode = -1;
+	for ( i = 0; i < pData->iNodeCount; i++ ) {
+		if ( pData->arrNodes[i].pDocumentBinding != NULL )
+			memset(&pData->arrNodes[i].pDocumentBinding->tSelection, 0,
+				sizeof(pData->arrNodes[i].pDocumentBinding->tSelection));
+	}
+	if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	if ( bHadSelection ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiMessageBuildAnySelectedText(xui_message_list_data_t* pData, char** ppText)
+{
+	int i, iStart, iEnd;
+	if ( pData == NULL || ppText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppText = NULL;
+	if ( pData->tTableSelection.iTableId != 0 ) {
+		xui_document_snapshot pSnapshot = NULL;
+		char* sMatrix = NULL;
+		char* sCopy;
+		uint64_t iBytes = 0;
+		xui_doc_table_selection_t* pSelected = &pData->tTableSelection;
+		int iRet;
+		if ( pData->iTableSelectionNode < 0 ||
+		     pData->iTableSelectionNode >= pData->iNodeCount ||
+		     pData->arrNodes[pData->iTableSelectionNode].pDocumentBinding == NULL )
+			return XUI_ERROR_INVALID_STATE;
+		iRet = xuiDocumentAcquireSnapshot(pData->arrNodes[
+			pData->iTableSelectionNode].pDocumentBinding->pDocument, &pSnapshot);
+		if ( iRet == XUI_OK ) iRet = xuiDocumentSnapshotCopyTableMatrix(pSnapshot,
+			pSelected->iTableId, pSelected->iRow, pSelected->iColumn,
+			pSelected->iRows, pSelected->iColumns, &sMatrix, &iBytes);
+		if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iBytes >= INT_MAX || memchr(sMatrix, 0, (size_t)iBytes) != NULL ) {
+			xuiDocumentFreeBuffer(sMatrix);
+			return iBytes >= INT_MAX ? XUI_DOC_ERROR_LIMIT : XUI_DOC_ERROR_UNREPRESENTABLE;
+		}
+		sCopy = (char*)xrtMalloc((size_t)iBytes + 1);
+		if ( sCopy == NULL ) { xuiDocumentFreeBuffer(sMatrix); return XUI_ERROR_OUT_OF_MEMORY; }
+		memcpy(sCopy, sMatrix, (size_t)iBytes);
+		sCopy[iBytes] = 0;
+		xuiDocumentFreeBuffer(sMatrix);
+		*ppText = sCopy;
+		return XUI_OK;
+	}
+	if ( pData->iSelectionAnchorNode >= 0 && pData->iSelectionActiveNode >= 0 &&
+	     pData->iSelectionAnchorNode < pData->iNodeCount &&
+	     pData->iSelectionActiveNode < pData->iNodeCount ) {
+		iStart = pData->iSelectionAnchorNode < pData->iSelectionActiveNode ?
+			pData->iSelectionAnchorNode : pData->iSelectionActiveNode;
+		iEnd = pData->iSelectionAnchorNode > pData->iSelectionActiveNode ?
+			pData->iSelectionAnchorNode : pData->iSelectionActiveNode;
+		for ( i = iStart; i <= iEnd; i++ ) {
+			if ( pData->arrNodes[i].pDocumentBinding != NULL )
+				return __xuiMessageBuildMixedSelectedText(pData, ppText);
+		}
+	}
+	return __xuiMessageBuildSelectedText(pData, ppText);
 }
 
 XUI_API int xuiMessageListGetSelectedText(xui_widget pWidget, char* sBuffer, int iCapacity)
@@ -2062,7 +4439,7 @@ XUI_API int xuiMessageListGetSelectedText(xui_widget pWidget, char* sBuffer, int
 	char* sText;
 	int iNeed;
 	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( __xuiMessageBuildSelectedText(pData, &sText) != XUI_OK ) {
+	if ( __xuiMessageBuildAnySelectedText(pData, &sText) != XUI_OK ) {
 		if ( sBuffer != NULL && iCapacity > 0 ) sBuffer[0] = 0;
 		return 0;
 	}
@@ -2082,7 +4459,7 @@ XUI_API int xuiMessageListCopySelection(xui_widget pWidget)
 	char* sText;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiMessageBuildSelectedText(pData, &sText);
+	iRet = __xuiMessageBuildAnySelectedText(pData, &sText);
 	if ( iRet != XUI_OK ) return iRet;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL || pProxy->clipboardSetText == NULL ) {
@@ -2312,29 +4689,52 @@ XUI_API int xuiMessageListImportText(xui_widget pWidget, const char* sText)
 		}
 		p = n;
 	}
+	if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget )
+		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	if ( (uint64_t)tImported.iNodeCount > UINT64_MAX - pData->iNextAccessibleId ) {
+		__xuiMessageDestroyTemporaryData(&tImported);
+		return XUI_DOC_ERROR_LIMIT;
+	}
 	arrOldNodes = pData->arrNodes;
 	iOldNodeCount = pData->iNodeCount;
+	xrtFree(pData->tPendingDocumentAnchor.arrMeasuredPrefix);
+	memset(&pData->tPendingDocumentAnchor, 0,
+		sizeof(pData->tPendingDocumentAnchor));
 	pData->arrNodes = NULL;
 	pData->iNodeCount = 0;
+	pData->iDocumentNodeCount = 0;
 	pData->iNodeCapacity = 0;
 	while ( iOldNodeCount > 0 ) __xuiMessageFreeNode(&arrOldNodes[--iOldNodeCount]);
 	if ( arrOldNodes != NULL ) xrtFree(arrOldNodes);
 	pData->arrNodes = tImported.arrNodes;
 	pData->iNodeCount = tImported.iNodeCount;
 	pData->iNodeCapacity = tImported.iNodeCapacity;
+	for ( iField = 0; iField < pData->iNodeCount; iField++ )
+		pData->arrNodes[iField].iAccessibleId = ++pData->iNextAccessibleId;
 	pData->iHover = -1;
 	pData->iSelected = -1;
 	pData->iSelectionAnchorNode = -1;
 	pData->iSelectionAnchorOffset = 0;
 	pData->iSelectionActiveNode = -1;
 	pData->iSelectionActiveOffset = 0;
+	memset(&pData->tSelectionAnchorDocument, 0, sizeof(pData->tSelectionAnchorDocument));
+	memset(&pData->tSelectionActiveDocument, 0, sizeof(pData->tSelectionActiveDocument));
 	pData->bSelecting = 0;
+	pData->iDocumentSelectionNode = -1;
+	pData->bDocumentSelecting = 0;
+	memset(&pData->tTableSelection, 0, sizeof(pData->tTableSelection));
+	memset(&pData->tTableDragAnchor, 0, sizeof(pData->tTableDragAnchor));
+	memset(&pData->tTableDragFocus, 0, sizeof(pData->tTableDragFocus));
+	pData->iTableSelectionNode = -1;
+	pData->bTableSelecting = 0;
 	pData->fScrollY = 0.0f;
 	pData->fContentHeight = 0.0f;
 	pData->bLayoutValid = 0;
 	pData->iLayoutDirtyFrom = 0;
 	pData->iLaidOutCount = 0;
-	return __xuiMessageInvalidate(pWidget, pData);
+	iRet = __xuiMessageInvalidate(pWidget, pData);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiMessageListSaveFile(xui_widget pWidget, const char* sPath)
@@ -2418,3 +4818,5 @@ XUI_API int xuiMessageListGetChangeCount(xui_widget pWidget)
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

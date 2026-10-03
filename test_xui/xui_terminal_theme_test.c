@@ -6,9 +6,12 @@
 #define CHECK(e) do { if (!(e)) { printf("terminal theme line %d: %s\n", __LINE__, #e); failed=1; goto cleanup; } } while (0)
 static uint32_t drawn[512];
 static int count;
-static int (*baseText)(xui_proxy,xui_draw_context,xui_font,const char*,xui_rect_t,uint32_t,uint32_t);
-static int text(xui_proxy p,xui_draw_context d,xui_font f,const char* s,xui_rect_t r,uint32_t c,uint32_t flags)
-{ if(count<512) drawn[count++]=c; return baseText(p,d,f,s,r,c,flags); }
+static xui_draw_text_proc baseText;
+static int text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
+{
+    if(count<512) drawn[count++]=c;
+    return baseText(p, d, pTextItem, r, c, flags);
+}
 static int has(uint32_t color)
 { for(int i=0;i<count;i++) if(drawn[i]==color) return 1; return 0; }
 static int write_text(xui_widget terminal,const char* value)

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_MSGBOX
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
@@ -914,7 +916,7 @@ static int __xuiMsgBoxDrawTextLayout(xui_msgbox pBox, xui_draw_context pDraw)
 		tLineRect.fY = pBox->tMessageRect.fY + tLine.fY;
 		tLineRect.fW = pBox->tMessageRect.fW;
 		tLineRect.fH = tLine.fH;
-		(void)pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tLineRect), __xuiMsgBoxColor(pBox, "msgbox.text.color", pBox->tColors.iMessageColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tLineRect), __xuiMsgBoxColor(pBox, "msgbox.text.color", pBox->tColors.iMessageColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
@@ -940,7 +942,7 @@ static int __xuiMsgBoxDrawIconFallback(xui_msgbox pBox, xui_draw_context pDraw, 
 	}
 	if ( pProxy->drawText != NULL ) {
 		tText = tIcon;
-		(void)pProxy->drawText(pProxy, pDraw, __xuiMsgBoxFont(pBox), __xuiMsgBoxIconFallbackText(pBox->iType), tText, __xuiMsgBoxColor(pBox, "msgbox.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=__xuiMsgBoxFont(pBox), .sText=__xuiMsgBoxIconFallbackText(pBox->iType), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, __xuiMsgBoxColor(pBox, "msgbox.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -1711,3 +1713,5 @@ XUI_API int xuiMsgBoxGetChangeCount(xui_msgbox pBox)
 {
 	return __xuiMsgBoxValid(pBox) ? pBox->iChangeCount : 0;
 }
+
+#endif

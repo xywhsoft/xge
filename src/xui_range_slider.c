@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_RANGE_SLIDER
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1418,3 +1420,5 @@ XUI_API int xuiRangeSliderGetChangeCount(xui_widget pWidget)
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

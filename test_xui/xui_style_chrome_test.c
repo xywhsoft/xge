@@ -39,8 +39,10 @@ static int chrome_ring(xui_proxy p, xui_draw_context d, float x, float y, float 
 { return chrome_record(c); }
 static int chrome_line(xui_proxy p, xui_draw_context d, float x, float y, float xx, float yy, float w, uint32_t c)
 { return chrome_record(c); }
-static int chrome_text(xui_proxy p, xui_draw_context d, xui_font f, const char* s, xui_rect_t r, uint32_t c, uint32_t flags)
-{ return chrome_record(c); }
+static int chrome_text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
+{
+
+ return chrome_record(c); }
 static int chrome_surface(xui_proxy p, xui_draw_context d, xui_surface s, xui_rect_t src, xui_rect_t dst, uint32_t c, uint32_t flags)
 { return chrome_record(c); }
 

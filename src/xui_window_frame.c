@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_WINDOW
 #include "xui_internal.h"
 
 static float __xuiWindowFrameMin(float a, float b)
@@ -164,3 +166,5 @@ xui_rect_t xuiInternalWindowFrameResize(xui_rect_t r, xui_rect_t bounds, uint32_
 	}
 	return __xuiWindowFrameClampFloat(x, y, w, h, bounds, fMinWidth, fMinHeight);
 }
+
+#endif

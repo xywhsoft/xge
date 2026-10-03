@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""api_comment_coverage.py —— XGE API 注释覆盖率统计（SPEC 第 2/6/8 节依据）
+"""api_comment_coverage.py —— 活跃公开头的 API 注释覆盖率统计。
 
 判定规则（SPEC 第 6 节）：API 声明行（含 XGE_API / XUI_API 的行）上方，
 向上跳过至多 1 个空行后的第一条非空行是 /* */ 块注释（含多行注释的
@@ -8,12 +8,13 @@
 宏行则视为未注释（归属消歧，防止把上一条 API 的注释记到本条头上）。
 
 模块聚类：取 API 名去掉 xge/xui 前缀后的驼峰首词（Shape+Ex 合并为
-ShapeEx；小写开头词如 dbg 单独成族）。xui.h 额外按 58 控件名单
-（与 PROGRESS.md 第 3.3 节同步维护）切分控件族 / 框架族。
+ShapeEx；小写开头词如 dbg 单独成族）。xui.h 额外按活跃控件名单
+切分控件族 / 框架族；旧 58 控件快照见 PROGRESS.md 第 3.3 节。
 
-输出：api-docs/coverage.json + stdout 摘要表。
-只读分析，不修改任何文件。
+默认更新 api-docs/coverage.json 基线；--no-write 只输出当前统计，供 CI
+在不覆盖已提交基线的前提下运行棘轮检查。
 """
+import argparse
 import json
 import re
 import subprocess
@@ -26,11 +27,13 @@ API_DOCS = REPO / "api-docs"
 HEADERS = {
     "xge.h": ("XGE_API", "xge"),
     "xui.h": ("XUI_API", "xui"),
+    "xui_document.h": ("XUI_API", "xui"),
+    "xui_document_ui.h": ("XUI_API", "xui"),
 }
 
-# 58 个控件类型名（来源：grep -h "tDesc.sName" src/xui_*.c，见 PROGRESS.md 3.3）
+# 公开控件 API 的归类名，随活跃头文件迁移维护。
 WIDGETS = [
-    "RichEdit", "accordion", "breadcrumb", "button", "canvas", "carousel",
+    "DocumentEditor", "DocumentView", "accordion", "breadcrumb", "button", "canvas", "carousel",
     "cascader", "chart", "checkbox", "checkcard", "codeedit", "colorpicker",
     "combobox", "datepicker", "flowgraph", "hyperlink", "iconpicker", "image",
     "input", "inventorygrid", "label", "listview", "menu", "menubar",
@@ -175,9 +178,14 @@ def build_report() -> dict:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-write", action="store_true",
+                        help="report current headers without replacing the committed baseline")
+    args = parser.parse_args()
     report = build_report()
     out = API_DOCS / "coverage.json"
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    if not args.no_write:
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     for fname, e in report["files"].items():
         print(f"== {fname}: {e['documented']}/{e['total_unique']} documented "
               f"({e['rate']*100:.1f}%)  [marker lines {e['total_marker_lines']}]")
@@ -187,7 +195,7 @@ def main() -> int:
             print(f"   framework: {f['documented']}/{f['total']}")
         for mod, m in e["modules"].items():
             print(f"   {mod:<16} {m['documented']:>4}/{m['total']:<4}")
-    print(f"[OK] coverage.json -> {out}")
+    print(f"[OK] {'current coverage inspected; baseline unchanged' if args.no_write else 'coverage.json -> ' + str(out)}")
     return 0
 
 

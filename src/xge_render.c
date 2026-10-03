@@ -1,3 +1,4 @@
+#if XGE_ENABLE_2D
 void xgeDraw(xge_texture pTexture, float fX, float fY)
 {
 	xge_draw_t tDraw;
@@ -456,6 +457,8 @@ static void __xgeDrawExImmediate(const xge_draw_t* pDraw)
 	__xgeFrameStatsAddDrawCall();
 }
 
+#endif
+
 static int __xgeRenderRectFinite(xge_rect_t tRect)
 {
 	return isfinite(tRect.fX) && isfinite(tRect.fY) &&
@@ -729,8 +732,8 @@ void xgeClipClear(void)
 }
 
 #if defined(_WIN32) || defined(_WIN64)
-#define XGE_WIN32_CLIPBOARD_RETRY_COUNT 10
-#define XGE_WIN32_CLIPBOARD_RETRY_DELAY_MS 1
+#define XGE_WIN32_CLIPBOARD_RETRY_COUNT 30
+#define XGE_WIN32_CLIPBOARD_RETRY_DELAY_MS 2
 
 static int __xgeWin32ClipboardCacheReserve(size_t iCapacity)
 {
@@ -748,20 +751,69 @@ static int __xgeWin32ClipboardCacheReserve(size_t iCapacity)
 	return 1;
 }
 
+static HWND g_xgeWin32ClipboardOwnerWindow = NULL;
+static struct {
+	unsigned char* png;
+	size_t size;
+	DWORD sequence;
+} g_xgeWin32ClipboardDibPngCache = {0};
+
+static void __xgeWin32ClipboardDibPngCacheClear(void)
+{
+	xrtFree(g_xgeWin32ClipboardDibPngCache.png);
+	memset(&g_xgeWin32ClipboardDibPngCache, 0,
+		sizeof(g_xgeWin32ClipboardDibPngCache));
+}
+
+static int __xgeWin32ClipboardDibPngCacheRead(void* data, size_t capacity, int* result)
+{
+	DWORD sequence;
+	if ( g_xgeWin32ClipboardDibPngCache.png == NULL ) return 0;
+	sequence = GetClipboardSequenceNumber();
+	if ( sequence == 0u || sequence != g_xgeWin32ClipboardDibPngCache.sequence ) {
+		__xgeWin32ClipboardDibPngCacheClear();
+		return 0;
+	}
+	*result = (int)g_xgeWin32ClipboardDibPngCache.size;
+	if ( data != NULL && capacity > 0u ) {
+		memcpy(data, g_xgeWin32ClipboardDibPngCache.png,
+			capacity < g_xgeWin32ClipboardDibPngCache.size ?
+			capacity : g_xgeWin32ClipboardDibPngCache.size);
+		if ( capacity >= g_xgeWin32ClipboardDibPngCache.size )
+			__xgeWin32ClipboardDibPngCacheClear();
+	}
+	return 1;
+}
+
+static void __xgeWin32ClipboardOwnerRelease(void)
+{
+	__xgeWin32ClipboardDibPngCacheClear();
+	if ( g_xgeWin32ClipboardOwnerWindow != NULL ) {
+		DestroyWindow(g_xgeWin32ClipboardOwnerWindow);
+		g_xgeWin32ClipboardOwnerWindow = NULL;
+	}
+}
+
 static HWND __xgeWin32ClipboardOwner(void)
 {
 	if ( g_xge.bSokolRunning ) {
-		return (HWND)sapp_win32_get_hwnd();
+		HWND window = (HWND)sapp_win32_get_hwnd();
+		if ( window != NULL ) return window;
 	}
-	return NULL;
+	if ( g_xgeWin32ClipboardOwnerWindow == NULL )
+		g_xgeWin32ClipboardOwnerWindow = CreateWindowExA(0, "STATIC", "XGE Clipboard",
+			WS_POPUP, 0, 0, 0, 0, NULL, NULL, GetModuleHandleA(NULL), NULL);
+	return g_xgeWin32ClipboardOwnerWindow;
 }
 
 static int __xgeWin32ClipboardOpen(void)
 {
+	HWND owner = __xgeWin32ClipboardOwner();
 	int iAttempt;
+	if ( owner == NULL ) return 0;
 
 	for ( iAttempt = 0; iAttempt < XGE_WIN32_CLIPBOARD_RETRY_COUNT; iAttempt++ ) {
-		if ( OpenClipboard(__xgeWin32ClipboardOwner()) ) {
+		if ( OpenClipboard(owner) ) {
 			return 1;
 		}
 		if ( iAttempt + 1 < XGE_WIN32_CLIPBOARD_RETRY_COUNT ) {
@@ -1030,10 +1082,70 @@ static HGLOBAL __xgeWin32ClipboardHtml(const void* pData, size_t iSize)
 	return hMemory;
 }
 
+/* A PNG remains the lossless clipboard format. Add a packed 32-bit DIBV5
+ * for Windows applications that only understand standard bitmap formats. */
+static HGLOBAL __xgeWin32ClipboardPngDibV5(const void* data, size_t size)
+{
+	static const unsigned char signature[8] = {137u, 80u, 78u, 71u, 13u, 10u, 26u, 10u};
+	xge_image_t image = {0};
+	BITMAPV5HEADER header;
+	HGLOBAL memory;
+	unsigned char* target;
+	size_t pixels_size;
+	int width = 0, height = 0, x, y;
+	if ( data == NULL || size < sizeof(signature) || size > (size_t)INT_MAX ||
+	     memcmp(data, signature, sizeof(signature)) != 0 ||
+	     xgeImageInfoMemory(data, (int)size, &width, &height) != XGE_OK ||
+	     width <= 0 || height <= 0 ||
+	     (uint64_t)width * (uint64_t)height > UINT64_C(16000000) ||
+	     xgeImageLoadMemoryEx(&image, data, (int)size,
+		XGE_IMAGE_STRAIGHT_ALPHA) != XGE_OK ) return NULL;
+	if ( image.iWidth != width || image.iHeight != height ) {
+		xgeImageFree(&image);
+		return NULL;
+	}
+	pixels_size = (size_t)width * (size_t)height * 4u;
+	memory = GlobalAlloc(GMEM_MOVEABLE, sizeof(header) + pixels_size);
+	if ( memory == NULL ) { xgeImageFree(&image); return NULL; }
+	target = (unsigned char*)GlobalLock(memory);
+	if ( target == NULL ) {
+		GlobalFree(memory); xgeImageFree(&image); return NULL;
+	}
+	memset(&header, 0, sizeof(header));
+	header.bV5Size = sizeof(header);
+	header.bV5Width = width;
+	header.bV5Height = -height;
+	header.bV5Planes = 1;
+	header.bV5BitCount = 32;
+	header.bV5Compression = BI_BITFIELDS;
+	header.bV5SizeImage = (DWORD)pixels_size;
+	header.bV5RedMask = 0x00ff0000u;
+	header.bV5GreenMask = 0x0000ff00u;
+	header.bV5BlueMask = 0x000000ffu;
+	header.bV5AlphaMask = 0xff000000u;
+	header.bV5CSType = 0x73524742u; /* LCS_sRGB, without a multi-character literal. */
+	memcpy(target, &header, sizeof(header));
+	for ( y = 0; y < height; y++ ) {
+		const unsigned char* source = (const unsigned char*)image.pPixels +
+			(size_t)y * (size_t)image.iStride;
+		unsigned char* row = target + sizeof(header) + (size_t)y * (size_t)width * 4u;
+		for ( x = 0; x < width; x++ ) {
+			row[4u * x] = source[4u * x + 2u];
+			row[4u * x + 1u] = source[4u * x + 1u];
+			row[4u * x + 2u] = source[4u * x];
+			row[4u * x + 3u] = source[4u * x + 3u];
+		}
+	}
+	GlobalUnlock(memory);
+	xgeImageFree(&image);
+	return memory;
+}
+
 static UINT __xgeWin32ClipboardFormat(const char* sFormat)
 {
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 ) return CF_UNICODETEXT;
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_HTML) == 0 ) return RegisterClipboardFormatA("HTML Format");
+	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 ) return RegisterClipboardFormatA("PNG");
 	return RegisterClipboardFormatA(sFormat);
 }
 
@@ -1044,12 +1156,15 @@ static int __xgeWin32ClipboardSetItems(const xge_clipboard_item_t* pItems, int i
 	size_t iTextSize = 0u;
 	DWORD iSequence;
 	int i;
+	int iNativeCount = iItemCount;
+	int iPngIndex = -1;
 	int bSuccess;
-	pNative = (xge_win32_clipboard_item_t*)xrtCalloc((size_t)iItemCount, sizeof(*pNative));
+	pNative = (xge_win32_clipboard_item_t*)xrtCalloc((size_t)iItemCount + 1u, sizeof(*pNative));
 	if ( pNative == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	for ( i = 0; i < iItemCount; i++ ) {
 		pNative[i].iFormat = __xgeWin32ClipboardFormat(pItems[i].sFormat);
 		if ( pNative[i].iFormat == 0u ) break;
+		if ( strcmp(pItems[i].sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 ) iPngIndex = i;
 		if ( strcmp(pItems[i].sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 ) {
 			pNative[i].hMemory = __xgeWin32ClipboardUtf8Text(pItems[i].pData, pItems[i].iDataSize);
 			sText = (const char*)pItems[i].pData; iTextSize = pItems[i].iDataSize;
@@ -1058,19 +1173,31 @@ static int __xgeWin32ClipboardSetItems(const xge_clipboard_item_t* pItems, int i
 		else pNative[i].hMemory = __xgeWin32ClipboardMemory(pItems[i].pData, pItems[i].iDataSize, 0);
 		if ( pNative[i].hMemory == NULL ) break;
 	}
+	if ( i == iItemCount && iPngIndex >= 0 ) {
+		HGLOBAL dib = __xgeWin32ClipboardPngDibV5(
+			pItems[iPngIndex].pData, pItems[iPngIndex].iDataSize);
+		if ( dib != NULL ) {
+			pNative[iNativeCount].iFormat = CF_DIBV5;
+			pNative[iNativeCount].hMemory = dib;
+			iNativeCount++;
+		}
+	}
 	if ( i != iItemCount || !__xgeWin32ClipboardOpen() ) {
-		for ( i = 0; i < iItemCount; i++ ) if ( pNative[i].hMemory != NULL ) GlobalFree(pNative[i].hMemory);
+		for ( i = 0; i < iNativeCount; i++ ) if ( pNative[i].hMemory != NULL ) GlobalFree(pNative[i].hMemory);
 		xrtFree(pNative);
 		return i != iItemCount ? XGE_ERROR_OUT_OF_MEMORY : XGE_ERROR_BACKEND_FAILED;
 	}
+	__xgeWin32ClipboardDibPngCacheClear();
 	bSuccess = EmptyClipboard() ? 1 : 0;
-	for ( i = 0; bSuccess && i < iItemCount; i++ ) {
-		if ( SetClipboardData(pNative[i].iFormat, pNative[i].hMemory) == NULL ) bSuccess = 0;
+	for ( i = 0; bSuccess && i < iNativeCount; i++ ) {
+		if ( SetClipboardData(pNative[i].iFormat, pNative[i].hMemory) == NULL ) {
+			if ( i < iItemCount ) bSuccess = 0;
+		}
 		else pNative[i].hMemory = NULL;
 	}
 	iSequence = bSuccess ? GetClipboardSequenceNumber() : 0u;
 	CloseClipboard();
-	for ( i = 0; i < iItemCount; i++ ) if ( pNative[i].hMemory != NULL ) GlobalFree(pNative[i].hMemory);
+	for ( i = 0; i < iNativeCount; i++ ) if ( pNative[i].hMemory != NULL ) GlobalFree(pNative[i].hMemory);
 	xrtFree(pNative);
 	if ( !bSuccess ) { (void)__xgeWin32ClipboardCacheInvalidate(); return XGE_ERROR_BACKEND_FAILED; }
 	if ( sText != NULL && __xgeWin32ClipboardCacheReserve(iTextSize + 1u) ) {
@@ -1080,6 +1207,174 @@ static int __xgeWin32ClipboardSetItems(const xge_clipboard_item_t* pItems, int i
 		g_xge.iClipboardCacheValid = 1;
 	} else (void)__xgeWin32ClipboardCacheInvalidate();
 	return XGE_OK;
+}
+
+typedef struct xge_win32_dib_channel_t {
+	DWORD mask;
+	DWORD scale;
+	unsigned shift;
+} xge_win32_dib_channel_t;
+
+static int __xgeWin32DibPrepareChannel(DWORD mask, xge_win32_dib_channel_t* channel)
+{
+	unsigned shift = 0;
+	if ( mask == 0u ) return 0;
+	channel->mask = mask;
+	while ( (mask & 1u) == 0u ) { mask >>= 1; shift++; }
+	if ( (mask & (mask + 1u)) != 0u ) return 0;
+	channel->scale = mask;
+	channel->shift = shift;
+	return 1;
+}
+
+static unsigned char __xgeWin32DibChannel(DWORD pixel, const xge_win32_dib_channel_t* channel)
+{
+	return (unsigned char)((((uint64_t)((pixel & channel->mask) >> channel->shift) * 255u) +
+		(uint64_t)channel->scale / 2u) / (uint64_t)channel->scale);
+}
+
+/* Clipboard DIBs have no BMP file header. Decode the common uncompressed
+ * 24/32-bit layouts here so XUI can continue to consume portable PNG bytes. */
+static int __xgeWin32DibToPng(const unsigned char* dib, size_t dib_size,
+	void** png, size_t* png_size)
+{
+	BITMAPINFOHEADER header;
+	DWORD red = 0x00ff0000u, green = 0x0000ff00u, blue = 0x000000ffu, alpha = 0u;
+	xge_win32_dib_channel_t channels[4] = {0};
+	uint64_t height, pixels_count, stride, raster_bytes;
+	size_t offset, extra_masks = 0u;
+	unsigned char* rgba;
+	int x, y, result;
+	if ( dib_size < sizeof(header) ) return XGE_ERROR_RESOURCE_FAILED;
+	memcpy(&header, dib, sizeof(header));
+	if ( header.biSize < sizeof(header) || header.biSize > dib_size ||
+	     header.biWidth <= 0 || header.biHeight == 0 || header.biHeight == LONG_MIN ||
+	     header.biPlanes != 1 ||
+	     (header.biBitCount != 24 && header.biBitCount != 32) ||
+	     (header.biCompression != BI_RGB && header.biCompression != BI_BITFIELDS) )
+		return XGE_ERROR_RESOURCE_FAILED;
+	if ( header.biBitCount == 24 && header.biCompression != BI_RGB )
+		return XGE_ERROR_RESOURCE_FAILED;
+	height = header.biHeight < 0 ? (uint64_t)-(int64_t)header.biHeight :
+		(uint64_t)header.biHeight;
+	pixels_count = (uint64_t)header.biWidth * height;
+	if ( pixels_count > UINT64_C(16000000) ||
+	     (uint64_t)header.biWidth > (uint64_t)INT_MAX / 4u )
+		return XGE_ERROR_BUFFER_TOO_SMALL;
+	stride = (((uint64_t)header.biWidth * header.biBitCount + 31u) / 32u) * 4u;
+	raster_bytes = stride * height;
+	offset = (size_t)header.biSize;
+	if ( header.biCompression == BI_BITFIELDS ) {
+		if ( header.biSize >= 52u ) {
+			memcpy(&red, dib + 40, sizeof(red));
+			memcpy(&green, dib + 44, sizeof(green));
+			memcpy(&blue, dib + 48, sizeof(blue));
+			if ( header.biSize >= 56u ) memcpy(&alpha, dib + 52, sizeof(alpha));
+		} else {
+			extra_masks = 3u * sizeof(DWORD);
+			if ( dib_size - offset < extra_masks ) return XGE_ERROR_RESOURCE_FAILED;
+			memcpy(&red, dib + offset, sizeof(red));
+			memcpy(&green, dib + offset + 4u, sizeof(green));
+			memcpy(&blue, dib + offset + 8u, sizeof(blue));
+		}
+		if ( !red || !green || !blue || ((red & green) | (red & blue) |
+		     (green & blue) | (alpha & (red | green | blue))) != 0u )
+			return XGE_ERROR_RESOURCE_FAILED;
+	}
+	if ( header.biBitCount == 32 &&
+	     (!__xgeWin32DibPrepareChannel(red, &channels[0]) ||
+	      !__xgeWin32DibPrepareChannel(green, &channels[1]) ||
+	      !__xgeWin32DibPrepareChannel(blue, &channels[2]) ||
+	      (alpha && !__xgeWin32DibPrepareChannel(alpha, &channels[3]))) )
+		return XGE_ERROR_RESOURCE_FAILED;
+	if ( header.biClrUsed > 256u || extra_masks > dib_size - offset )
+		return XGE_ERROR_RESOURCE_FAILED;
+	offset += extra_masks;
+	if ( (uint64_t)header.biClrUsed * sizeof(RGBQUAD) > dib_size - offset )
+		return XGE_ERROR_RESOURCE_FAILED;
+	offset += (size_t)header.biClrUsed * sizeof(RGBQUAD);
+	if ( raster_bytes > dib_size - offset ||
+	     (header.biSizeImage != 0u && header.biSizeImage < raster_bytes) )
+		return XGE_ERROR_RESOURCE_FAILED;
+	rgba = (unsigned char*)xrtMalloc((size_t)pixels_count * 4u);
+	if ( rgba == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	for ( y = 0; y < (int)height; y++ ) {
+		const unsigned char* row = dib + offset + (size_t)(header.biHeight < 0 ?
+			y : (int)height - 1 - y) * (size_t)stride;
+		unsigned char* target = rgba + (size_t)y * (size_t)header.biWidth * 4u;
+		for ( x = 0; x < header.biWidth; x++ ) {
+			if ( header.biBitCount == 24 ) {
+				target[4u * x] = row[3u * x + 2u];
+				target[4u * x + 1u] = row[3u * x + 1u];
+				target[4u * x + 2u] = row[3u * x];
+				target[4u * x + 3u] = 255u;
+			} else {
+				DWORD value;
+				memcpy(&value, row + 4u * x, sizeof(value));
+				target[4u * x] = __xgeWin32DibChannel(value, &channels[0]);
+				target[4u * x + 1u] = __xgeWin32DibChannel(value, &channels[1]);
+				target[4u * x + 2u] = __xgeWin32DibChannel(value, &channels[2]);
+				target[4u * x + 3u] = alpha ?
+					__xgeWin32DibChannel(value, &channels[3]) : 255u;
+			}
+		}
+	}
+	result = xgeImageEncodePNG(header.biWidth, (int)height, rgba,
+		header.biWidth * 4, png, png_size);
+	xrtFree(rgba);
+	return result;
+}
+
+static int __xgeWin32ClipboardGetPngFromDib(void* data, size_t capacity)
+{
+	UINT format;
+	HANDLE native;
+	const unsigned char* source;
+	unsigned char* copy;
+	SIZE_T bytes;
+	void* png = NULL;
+	size_t png_size = 0u;
+	DWORD sequence = GetClipboardSequenceNumber();
+	int result;
+	if ( __xgeWin32ClipboardDibPngCacheRead(data, capacity, &result) ) return result;
+	format = IsClipboardFormatAvailable(CF_DIBV5) ? CF_DIBV5 :
+		(IsClipboardFormatAvailable(CF_DIB) ? CF_DIB : 0u);
+	if ( format == 0u ) return XGE_ERROR_FILE_NOT_FOUND;
+	if ( !__xgeWin32ClipboardOpen() ) return XGE_ERROR_BACKEND_FAILED;
+	sequence = GetClipboardSequenceNumber();
+	native = GetClipboardData(format);
+	if ( native == NULL && format == CF_DIBV5 && IsClipboardFormatAvailable(CF_DIB) )
+		native = GetClipboardData(CF_DIB);
+	if ( native == NULL ) { CloseClipboard(); return XGE_ERROR_FILE_NOT_FOUND; }
+	bytes = GlobalSize(native);
+	if ( bytes < sizeof(BITMAPINFOHEADER) || bytes > (SIZE_T)128u * 1024u * 1024u ) {
+		CloseClipboard(); return XGE_ERROR_RESOURCE_FAILED;
+	}
+	source = (const unsigned char*)GlobalLock(native);
+	if ( source == NULL ) { CloseClipboard(); return XGE_ERROR_BACKEND_FAILED; }
+	copy = (unsigned char*)xrtMalloc((size_t)bytes);
+	if ( copy != NULL ) memcpy(copy, source, (size_t)bytes);
+	GlobalUnlock(native); CloseClipboard();
+	if ( copy == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	result = __xgeWin32DibToPng(copy, (size_t)bytes, &png, &png_size);
+	xrtFree(copy);
+	if ( result != XGE_OK ) return result;
+	if ( png_size > (size_t)INT_MAX ) result = XGE_ERROR_BUFFER_TOO_SMALL;
+	else {
+		result = (int)png_size;
+		if ( data != NULL && capacity > 0u ) memcpy(data, png,
+			capacity < png_size ? capacity : png_size);
+		if ( (data == NULL || capacity < png_size) && sequence != 0u &&
+		     png_size <= (size_t)16u * 1024u * 1024u &&
+		     GetClipboardSequenceNumber() == sequence ) {
+			g_xgeWin32ClipboardDibPngCache.png = (unsigned char*)png;
+			g_xgeWin32ClipboardDibPngCache.size = png_size;
+			g_xgeWin32ClipboardDibPngCache.sequence = sequence;
+			png = NULL;
+		}
+	}
+	xrtFree(png);
+	return result;
 }
 
 static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t iCapacity)
@@ -1098,11 +1393,22 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 		if ( pData != NULL && iCapacity > 0u ) memcpy(pData, sText, iCapacity < iTextSize ? iCapacity : iTextSize);
 		return (int)iTextSize;
 	}
+	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 &&
+	     __xgeWin32ClipboardDibPngCacheRead(pData, iCapacity, &iResult) ) return iResult;
 	iFormat = __xgeWin32ClipboardFormat(sFormat);
-	if ( iFormat == 0u || !IsClipboardFormatAvailable(iFormat) ) return XGE_ERROR_FILE_NOT_FOUND;
+	if ( iFormat == 0u ) return XGE_ERROR_FILE_NOT_FOUND;
+	if ( !IsClipboardFormatAvailable(iFormat) ) {
+		if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 )
+			return __xgeWin32ClipboardGetPngFromDib(pData, iCapacity);
+		return XGE_ERROR_FILE_NOT_FOUND;
+	}
 	if ( !__xgeWin32ClipboardOpen() ) return XGE_ERROR_BACKEND_FAILED;
 	hData = GetClipboardData(iFormat);
-	if ( hData == NULL ) { CloseClipboard(); return XGE_ERROR_FILE_NOT_FOUND; }
+	if ( hData == NULL ) {
+		CloseClipboard();
+		return strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 ?
+			__xgeWin32ClipboardGetPngFromDib(pData, iCapacity) : XGE_ERROR_FILE_NOT_FOUND;
+	}
 	pSource = (const unsigned char*)GlobalLock(hData);
 	if ( pSource == NULL ) { CloseClipboard(); return XGE_ERROR_BACKEND_FAILED; }
 	iSize = GlobalSize(hData);

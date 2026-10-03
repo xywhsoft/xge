@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TREE_VIEW
 #include "xui_internal.h"
 
 #include <limits.h>
@@ -1742,7 +1744,7 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		}
 		if ( (tResolved.pFont != NULL) && (__xuiTreeViewAlpha(iTextColor) != 0) ) {
 			tText = xuiInternalSnapRect((xui_rect_t){fTextX, tRow.fY, __xuiTreeViewMaxFloat(1.0f, tRow.fW - fTextX - tResolved.fPadding), tRow.fH});
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, __xuiTreeViewText(pNode->sText), tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=__xuiTreeViewText(pNode->sText), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
@@ -2629,3 +2631,5 @@ XUI_API int xuiTreeViewGetChangeCount(xui_widget pWidget)
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

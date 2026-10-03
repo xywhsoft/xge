@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_QRCODE
 #include "xui_internal.h"
 
 #include <stdlib.h>
@@ -1265,3 +1267,5 @@ XUI_API int xuiQrCodeGetChangeCount(xui_widget pWidget)
 	pData = __xuiQrCodeGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

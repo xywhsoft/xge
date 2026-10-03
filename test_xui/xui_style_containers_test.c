@@ -56,11 +56,11 @@ static int capture_surface(xui_proxy p, xui_draw_context d, xui_surface surface,
     record(color);
     return surface_original(p, d, surface, src, dst, color, flags);
 }
-static int capture_text(xui_proxy p, xui_draw_context d, xui_font font,
-    const char* text, xui_rect_t r, uint32_t color, uint32_t flags)
+static int capture_text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t color, uint32_t flags)
 {
+
     record(color);
-    return text_original(p, d, font, text, r, color, flags);
+    return text_original(p, d, pTextItem, r, color, flags);
 }
 static int capture_line(xui_proxy p, xui_draw_context d, float x, float y,
     float x1, float y1, float width, uint32_t color)

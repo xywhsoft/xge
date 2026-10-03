@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CAROUSEL
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1208,3 +1210,5 @@ XUI_API int xuiCarouselGetChangeCount(xui_widget pWidget)
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

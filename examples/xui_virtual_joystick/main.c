@@ -120,23 +120,18 @@ static int __xuiVirtualJoystickDemoRootRender(xui_widget pWidget, xui_draw_conte
 	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(229, 237, 247, 255));
 	tPanel = (xui_rect_t){28.0f, 22.0f, tRect.fW - 56.0f, tRect.fH - 44.0f};
 	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(247, 250, 254, 255));
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "XUI VirtualJoystick",
-		(xui_rect_t){48.0f, 40.0f, 300.0f, 26.0f}, XUI_COLOR_RGBA(35, 50, 72, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "Drag the joystick, touch it, or hold WASD / arrow keys.",
-		(xui_rect_t){48.0f, 68.0f, 500.0f, 24.0f}, XUI_COLOR_RGBA(82, 101, 126, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="XUI VirtualJoystick", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){48.0f, 40.0f, 300.0f, 26.0f}, XUI_COLOR_RGBA(35, 50, 72, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="Drag the joystick, touch it, or hold WASD / arrow keys.", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){48.0f, 68.0f, 500.0f, 24.0f}, XUI_COLOR_RGBA(82, 101, 126, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 
 	tCard = (xui_rect_t){430.0f, 120.0f, 270.0f, 250.0f};
 	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tCard, XUI_COLOR_RGBA(237, 243, 250, 255));
 	(void)pDemo->tProxy.drawRectStroke(&pDemo->tProxy, pDraw, tCard, 1.0f, XUI_COLOR_RGBA(145, 174, 210, 255));
 	snprintf(sText, sizeof(sText), "x=%.2f  y=%.2f", pDemo->tState.fX, pDemo->tState.fY);
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, sText,
-		(xui_rect_t){452.0f, 142.0f, 220.0f, 24.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){452.0f, 142.0f, 220.0f, 24.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	snprintf(sText, sizeof(sText), "magnitude=%.2f  angle=%.2f", pDemo->tState.fMagnitude, pDemo->tState.fAngle);
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, sText,
-		(xui_rect_t){452.0f, 170.0f, 230.0f, 24.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){452.0f, 170.0f, 230.0f, 24.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	snprintf(sText, sizeof(sText), "source=%s  changes=%d", __xuiVirtualJoystickDemoSourceName(pDemo->tState.iSource), pDemo->iChangeCount);
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, sText,
-		(xui_rect_t){452.0f, 198.0f, 230.0f, 24.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){452.0f, 198.0f, 230.0f, 24.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 
 	tAxis = (xui_rect_t){492.0f, 250.0f, 120.0f, 120.0f};
 	(void)pDemo->tProxy.drawCircleFill(&pDemo->tProxy, pDraw, tAxis.fX + 60.0f, tAxis.fY + 60.0f, 60.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
@@ -150,8 +145,7 @@ static int __xuiVirtualJoystickDemoRootRender(xui_widget pWidget, xui_draw_conte
 	(void)pDemo->tProxy.drawCircleStroke(&pDemo->tProxy, pDraw, fCenterX, fCenterY, 8.0f, 2.0f, XUI_COLOR_RGBA(255, 255, 255, 245));
 
 	snprintf(sText, sizeof(sText), "atlas=%d layout=%d channel=%d pointer=%d", pDemo->bAtlasOK, pDemo->bLayoutOK, pDemo->bChannelOK, pDemo->bPointerOK);
-	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, sText,
-		(xui_rect_t){48.0f, 444.0f, 660.0f, 24.0f}, XUI_COLOR_RGBA(58, 75, 99, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){48.0f, 444.0f, 660.0f, 24.0f}, XUI_COLOR_RGBA(58, 75, 99, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	(void)tKnob;
 	return XUI_OK;
 }

@@ -34,16 +34,18 @@ static float text_width(xui_font font, const char *s)
 {
     return strlen(s) * (font == wideFont ? 7.25f : 5.25f) + .25f;
 }
-static int measure(xui_proxy p, xui_font font, const char *s, xui_vec2_t *size)
+static int measure(xui_proxy p, const xui_text_item_t* pTextItem, xui_vec2_t *size)
 {
+    xui_font font=pTextItem->pFont;const char* s=pTextItem->sText;
     (void)p; size->fX = text_width(font, s); size->fY = 13.5f; return XUI_OK;
 }
-static int text_capture(xui_proxy p, xui_draw_context draw, xui_font font,
-    const char *s, xui_rect_t r, uint32_t color, uint32_t flags)
+static int text_capture(xui_proxy p, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t color, uint32_t flags)
 {
+    const char* s = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
     int i;
     for (i = 0; i < 4; ++i) if (strcmp(s, display[i]) == 0) { textSeen[i] = r; ++textCalls; }
-    return textOriginal(p, draw, font, s, r, color, flags);
+    return textOriginal(p, draw, pTextItem, r, color, flags);
 }
 static int copy_capture(xui_proxy p, xui_surface target, xui_surface source,
     xui_rect_t src, xui_rect_t dst, uint32_t color, uint32_t flags)

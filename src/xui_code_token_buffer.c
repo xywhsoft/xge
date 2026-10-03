@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <limits.h>
@@ -152,3 +154,5 @@ XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, ui
 	*pTokenCount = iCount;
 	return XUI_OK;
 }
+
+#endif

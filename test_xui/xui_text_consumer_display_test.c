@@ -94,9 +94,11 @@ static const test_case_t cases[] = {
 };
 static struct { char text[128]; xui_rect_t rect; uint32_t color, flags; } draws[128];
 static int drawCount, injectedDrawError;
-static int capture(xui_proxy p, xui_draw_context draw, xui_font font,
-    const char *text, xui_rect_t rect, uint32_t color, uint32_t flags)
+static int capture(xui_proxy p, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t rect, uint32_t color, uint32_t flags)
 {
+    xui_font font = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
     (void)p; (void)draw; (void)font;
     CHECK(drawCount < 128 && strlen(text) < 128);
     if (drawCount < 128) {

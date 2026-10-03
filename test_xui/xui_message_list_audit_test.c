@@ -45,6 +45,14 @@ static void auditLayoutDestroy(xui_text_layout pLayout)
 #define xuiInternalTextLayoutGetDisplayLine auditDisplayLine
 #define xrtRealloc auditMessageRealloc
 #include "../src/xui_message_list.c"
+
+static int auditResolveSelectionOffset(xui_widget widget, xui_message_list_data_t* data,
+    float x, float y, int anchor, int* node, int* offset)
+{
+    xui_doc_position_t document_position;
+    return __xuiMessageResolveSelectionEndpoint(widget, data, x, y,
+        anchor, node, offset, &document_position);
+}
 #undef xrtRealloc
 #undef xuiInternalTextLayoutGetDisplayLine
 #undef xuiTextLayoutCreate
@@ -61,14 +69,16 @@ static int g_iMeasureBytes;
 static int g_bLigature;
 static int g_bFailShape;
 
-static int auditShape(xui_proxy pProxy, xui_font pFont, const char* sText,
-    int iSize, uint32_t iFlags, xui_text_shape_t* pShape)
+static int auditShape(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)
 {
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+    int iSize = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iTextSize : 0;
+
     int iRet;
     g_iShapeCalls++;
     g_iShapeBytes += iSize < 0 ? (int)strlen(sText) : iSize;
     if (g_bFailShape) return XUI_ERROR_OUT_OF_MEMORY;
-    iRet = g_onShape(pProxy, pFont, sText, iSize, iFlags, pShape);
+    iRet = g_onShape(pProxy, pTextItem, pShape);
     if (iRet == XUI_OK && g_bLigature && pShape->iTextSize == 5 && memcmp(sText, "AffiB", 5) == 0) {
         pShape->pClusters[1].iTextEnd = 4;
         pShape->pClusters[1].fAdvance = 14;
@@ -85,11 +95,13 @@ static int auditShape(xui_proxy pProxy, xui_font pFont, const char* sText,
     return iRet;
 }
 
-static int auditMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int auditMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
     g_iMeasureCalls++;
     g_iMeasureBytes += (int)strlen(sText);
-    return g_onMeasure(pProxy, pFont, sText, pSize);
+    return g_onMeasure(pProxy, pTextItem, pSize);
 }
 
 #define CHECK(expr) do { if (!(expr)) { \
@@ -237,9 +249,11 @@ static xui_rect_t g_tDisplayRects[16], g_tSelectionRects[16];
 static int g_iDisplayDraws, g_iSelectionRects;
 static float g_fDisplayScale = 1;
 
-static int auditDisplayDraw(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont,
-    const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int auditDisplayDraw(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
+    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
     (void)pProxy; (void)pDraw; (void)pFont; (void)tRect; (void)iColor; (void)iFlags;
     if (g_iDisplayDraws < 16) {
         snprintf(g_sDisplayDraw[g_iDisplayDraws], sizeof(g_sDisplayDraw[0]), "%s", sText);
@@ -257,10 +271,10 @@ static int auditDisplayFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t
     return XUI_OK;
 }
 
-static int auditDisplayShape(xui_proxy pProxy, xui_font pFont, const char* sText,
-    int iSize, uint32_t iFlags, xui_text_shape_t* pShape)
+static int auditDisplayShape(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)
 {
-    int i, iRet = auditShape(pProxy, pFont, sText, iSize, iFlags, pShape);
+
+    int i, iRet = auditShape(pProxy, pTextItem, pShape);
     if (iRet == XUI_OK) {
         for (i = 0; i < pShape->iClusterCount; i++) pShape->pClusters[i].fAdvance *= g_fDisplayScale;
         pShape->fWidth *= g_fDisplayScale;
@@ -268,10 +282,12 @@ static int auditDisplayShape(xui_proxy pProxy, xui_font pFont, const char* sText
     return iRet;
 }
 
-static int auditDisplayMeasure(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize)
+static int auditDisplayMeasure(xui_proxy pProxy, const xui_text_item_t* pTextItem, xui_vec2_t* pSize)
 {
+    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
     int iBytes = (int)strlen(sText), iAt = 0, iScalars = 0;
-    int iRet = auditMeasure(pProxy, pFont, sText, pSize);
+    int iRet = auditMeasure(pProxy, pTextItem, pSize);
     while (iAt < iBytes) {
         uint32 iScalar;
         size_t iRead = 0;
@@ -387,7 +403,7 @@ static int auditDisplay(void)
                 xui_vec2_t tWidth;
                 xui_message_node_data_t* pNode = &pData->arrNodes[0];
                 CHECK(xuiTextLayoutGetLine(pNode->pTextLayout, iLine, &tLine) == XUI_OK);
-                CHECK(auditDisplayMeasure(&tState.tProxy, pFont, arrExpected[iLine], &tWidth) == XUI_OK);
+                CHECK(auditDisplayMeasure(&tState.tProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=arrExpected[iLine], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tWidth) == XUI_OK);
                 CHECK(tLine.fW == tWidth.fX);
                 if (arrExpected[iLine][0] != 0) CHECK(strcmp(g_sDisplayDraw[iDraw++], arrExpected[iLine]) == 0);
                 CHECK(__xuiMessageEnsureLineCarets(pWidget, pData, pNode, pNode->pTextLayout, iLine, &tLine) == XUI_OK);
@@ -460,7 +476,7 @@ static int auditDisplay(void)
             xui_text_shape_t tShape = {0};
             xui_message_node_data_t* pNode = &pData->arrNodes[0];
             float fWidth;
-            CHECK(xuiTextShape(pContext, pFont, arrJoined[iCase].sDisplay, -1, XUI_TEXT_SHAPE_DEFAULT, &tShape) == XUI_OK);
+            CHECK(xuiTextShape(pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=arrJoined[iCase].sDisplay, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tShape) == XUI_OK);
             fWidth = tShape.fWidth;
             xuiTextShapeFree(&tShape);
             CHECK(fWidth == arrJoined[iCase].fWidth);
@@ -728,11 +744,11 @@ static int auditLayouts(int iCount)
         tWorld.fY + tContent.fY + tRect.fY - 1 - pData->fScrollY) == -1);
     auditResetCounts();
     tRect = pData->arrNodes[iMid + 2].tNodeRect;
-    CHECK(__xuiMessageResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
+    CHECK(auditResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
         tWorld.fY + tContent.fY + tRect.fY + 1 - pData->fScrollY, 0, &iNode, &iOffset));
     CHECK(iNode == iMid + 3 && iOffset == (int)strlen(sText));
     CHECK(g_tSteps.HitNode <= 3 * (iLog + 1));
-    CHECK(__xuiMessageResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
+    CHECK(auditResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
         tWorld.fY + tContent.fY + tRect.fY + 1 - pData->fScrollY, iCount - 1, &iNode, &iOffset));
     CHECK(iNode == iMid + 1 && iOffset == 0);
     __xuiMessageSetTextSelection(pData, iMid, 0, iMid + 1, (int)strlen(sText));
@@ -793,7 +809,7 @@ static int auditLayouts(int iCount)
     tMetrics = pData->tMetrics;
     tMetrics.fNodeGap = 0;
     CHECK(xuiMessageListSetMetrics(pWidget, &tMetrics) == XUI_OK);
-    CHECK(__xuiMessageResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
+    CHECK(auditResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
         tWorld.fY + tContent.fY + pData->arrNodes[4].tNodeRect.fY - pData->fScrollY,
         iCount - 1, &iNode, &iOffset));
     CHECK(iNode == 4 && iOffset == 0);
@@ -830,7 +846,7 @@ static int auditLayouts(int iCount)
     arrNodes[iCount - 1].iType = XUI_MESSAGE_NODE_OTHER;
     CHECK(xuiMessageListSetNodes(pWidget, arrNodes, iCount) == XUI_OK);
     auditResetCounts();
-    CHECK(__xuiMessageResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
+    CHECK(auditResolveSelectionOffset(pWidget, pData, tWorld.fX - 10,
         tWorld.fY + tContent.fY + pData->arrNodes[iMid].tNodeRect.fY + 1, 0, &iNode, &iOffset));
     CHECK(iNode == iCount - 1 && iOffset == (int)strlen(sText));
     CHECK(g_tSteps.HitNode <= 3 * (iLog + 1));
@@ -896,6 +912,496 @@ cleanup:
     return iFailed;
 }
 
+static void auditDocumentImageDestroy(xui_context context, void* handle, void* user)
+{
+    xui_test_proxy_state_t* proxy = (xui_test_proxy_state_t*)user;
+    (void)context;
+    proxy->tProxy.surfaceDestroy(&proxy->tProxy, (xui_surface)handle);
+}
+
+static int auditDocumentImageSet(xui_context context, xui_test_proxy_state_t* proxy,
+    int height, xui_resource* resource)
+{
+    xui_resource_desc_t desc = {0};
+    xui_surface surface = NULL;
+    int result = xuiTestSurfaceCreate(proxy, &surface, 50, height, 0);
+    if (result != XUI_OK) return result;
+    desc.iSize = sizeof(desc);
+    desc.sName = "doc.anchor.image";
+    desc.iKind = XUI_RESOURCE_SURFACE;
+    desc.pHandle = surface;
+    desc.pUser = proxy;
+    desc.onDestroy = auditDocumentImageDestroy;
+    result = xuiResourceSet(context, resource, &desc);
+    if (result != XUI_OK) proxy->tProxy.surfaceDestroy(&proxy->tProxy, surface);
+    return result;
+}
+
+static int g_iAuditFormulaHeight = 40;
+static int auditDocumentFormulaMeasure(xui_document_snapshot snapshot, xui_doc_node_id node,
+    float width, float zoom, xui_vec2_t* size, float* baseline, void* user)
+{
+    xui_doc_node_info_t info = {0};
+    (void)width; (void)zoom; (void)user;
+    info.iSize = sizeof(info);
+    if (xuiDocumentSnapshotGetNode(snapshot, node, &info) != XUI_OK ||
+        info.iKind != XUI_DOC_MATH) return XUI_ERROR_UNSUPPORTED;
+    size->fX = 50;
+    size->fY = (float)g_iAuditFormulaHeight;
+    *baseline = size->fY * .75f;
+    return XUI_OK;
+}
+
+static int auditLazyDocumentMessage(void)
+{
+    xui_test_proxy_state_t proxy;
+    xui_context context = NULL;
+    xui_widget list = NULL;
+    xui_font font = NULL;
+    xui_font larger_font = NULL;
+    xui_document document = NULL;
+    xui_resource image_resource = NULL;
+    xui_doc_desc_t document_desc = {0};
+    xui_message_list_desc_t list_desc = {0};
+    xui_message_document_desc_t binding = {0};
+    xui_message_list_colors_t colors;
+    xui_message_node_t nodes[9] = {{0}};
+    xui_message_list_data_t* data;
+    xui_document_renderer previous_renderer;
+    xui_doc_renderer_stats_t stats = {0};
+    xui_doc_rect_t size;
+    xui_doc_position_t reading_before, reading_after;
+    xui_rect_t message_rect;
+    float tail_before, tail_after_top;
+    double image_height_before, formula_height_before;
+    const char* line = "An agent answer paragraph with enough words to wrap at this width.\n\n";
+    const char* image_line = "![alt](doc.anchor.image)\n\nFormula $x^2$ here.\n\n";
+    char* markdown = NULL;
+    size_t line_bytes = strlen(line);
+    size_t image_bytes = strlen(image_line);
+    uint64_t early_blocks, deep_blocks, shaped_before;
+    int i, exact, iFailed = 0;
+    xuiTestProxyInit(&proxy);
+    markdown = (char*)malloc(image_bytes + line_bytes * 2000u + 1u);
+    CHECK(markdown != NULL);
+    memcpy(markdown, image_line, image_bytes);
+    for (i = 0; i < 2000; i++) memcpy(markdown + image_bytes + line_bytes * (size_t)i, line, line_bytes);
+    markdown[image_bytes + line_bytes * 2000u] = 0;
+    CHECK(xuiCreate(&context) == XUI_OK);
+    CHECK(xuiSetProxy(context, &proxy.tProxy) == XUI_OK);
+    CHECK(proxy.tProxy.fontLoadMemory(&proxy.tProxy, &font, NULL, 0, 16.0f, 0) == XUI_OK);
+    CHECK(xuiSetDefaultFont(context, font) == XUI_OK);
+    CHECK(auditDocumentImageSet(context, &proxy, 40, &image_resource) == XUI_OK);
+    CHECK(xuiInputViewport(context, 480, 240) == XUI_OK);
+    document_desc.iSize = sizeof(document_desc);
+    document_desc.iProfile = XUI_DOCUMENT_MARKDOWN;
+    document_desc.iMarkdownDialect = XUI_MD_EXTENDED;
+    CHECK(xuiDocumentCreate(&document_desc, &document) == XUI_OK);
+    CHECK(xuiDocumentLoadMarkdown(document, markdown, image_bytes + line_bytes * 2000u) == XUI_OK);
+    for (i = 0; i < 9; i++) {
+        nodes[i].iSize = sizeof(nodes[i]);
+        nodes[i].iType = XUI_MESSAGE_NODE_OTHER;
+        nodes[i].sSender = "Agent";
+        nodes[i].sId = i == 7 ? "document" : i == 8 ? "tail" : "ordinary";
+        nodes[i].sText = "A preceding short message.";
+    }
+    list_desc.iSize = sizeof(list_desc);
+    list_desc.arrNodes = nodes;
+    list_desc.iNodeCount = 9;
+    CHECK(xuiMessageListCreate(context, &list, &list_desc) == XUI_OK);
+    CHECK(xuiSetRootWidget(context, list) == XUI_OK);
+    CHECK(xuiWidgetSetRect(list, (xui_rect_t){0, 0, 480, 240}) == XUI_OK);
+    CHECK(xuiMessageListSetAutoScroll(list, 0) == XUI_OK);
+    binding.iSize = sizeof(binding);
+    binding.pDocument = document;
+    binding.tRenderer.iSize = sizeof(binding.tRenderer);
+    binding.tRenderer.onObjectMeasure = auditDocumentFormulaMeasure;
+    CHECK(xuiMessageListSetNodeDocument(list, "document", &binding) == XUI_OK);
+    data = __xuiMessageListGetData(list);
+    stats.iSize = sizeof(stats);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK);
+    CHECK(stats.iBlocks >= 2000 && stats.iMeasuredBlocks == 0);
+    message_rect = xuiMessageListGetNodeRect(list, 7);
+    tail_before = xuiMessageListGetNodeRect(list, 8).fY;
+    CHECK(message_rect.fY > 240 && !data->arrNodes[7].bDocumentSizeExact);
+    CHECK(xuiMessageListSetScroll(list, message_rect.fY) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK);
+    early_blocks = stats.iMeasuredBlocks;
+    CHECK(early_blocks > 0 && early_blocks < 100);
+    tail_after_top = xuiMessageListGetNodeRect(list, 8).fY;
+    CHECK(tail_after_top > tail_before);
+    shaped_before = stats.iShapedBytes;
+    CHECK(xuiSetVirtualDpi(context, 1.5f) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK && stats.iShapedBytes > shaped_before);
+    CHECK(xuiSetVirtualDpi(context, 1.0f) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK);
+    previous_renderer = data->arrNodes[7].pDocumentBinding->pRenderer;
+    shaped_before = stats.iShapedBytes;
+    CHECK(xuiMessageListGetColors(list, &colors) == XUI_OK);
+    colors.iOtherTextColor = XUI_COLOR_RGBA(37, 81, 129, 255);
+    CHECK(xuiMessageListSetColors(list, &colors) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK && stats.iShapedBytes == shaped_before &&
+        data->arrNodes[7].pDocumentBinding->pRenderer == previous_renderer &&
+        data->arrNodes[7].pDocumentBinding->iResolvedTextColor == colors.iOtherTextColor &&
+        data->arrNodes[7].pDocumentBinding->pRenderer->desc.iTextColor == colors.iOtherTextColor);
+    previous_renderer = data->arrNodes[7].pDocumentBinding->pRenderer;
+    CHECK(proxy.tProxy.fontLoadMemory(&proxy.tProxy, &larger_font, NULL, 0, 21.0f, 0) == XUI_OK);
+    CHECK(xuiSetDefaultFont(context, larger_font) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK && stats.iShapedBytes > 0 &&
+        data->arrNodes[7].pDocumentBinding->pRenderer != previous_renderer &&
+        data->arrNodes[7].pDocumentBinding->pResolvedFont == larger_font);
+    CHECK(xuiSetDefaultFont(context, font) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0 &&
+        data->arrNodes[7].pDocumentBinding->pResolvedFont == font);
+    CHECK(xuiDocumentRendererGetSize(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &size, &exact) == XUI_OK && !exact);
+    CHECK(fabs(data->arrNodes[7].tMeasuredText.fY - size.height) < 1);
+    CHECK(xuiMessageListSetScroll(list, message_rect.fY + 20000) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_before) == XUI_OK);
+    CHECK(xuiSetDefaultFont(context, larger_font) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_after) == XUI_OK);
+    CHECK(reading_after.iNodeId == reading_before.iNodeId);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_before) == XUI_OK);
+    formula_height_before = data->arrNodes[7].pDocumentBinding->pRenderer->blocks[1].height;
+    g_iAuditFormulaHeight = 140;
+    CHECK(xuiMessageListInvalidateNodeDocumentObjects(list, "document") == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(data->arrNodes[7].pDocumentBinding->pRenderer->blocks[1].height > formula_height_before + 50);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_after) == XUI_OK);
+    CHECK(reading_after.iNodeId == reading_before.iNodeId);
+    CHECK(xuiSetDefaultFont(context, font) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_before) == XUI_OK);
+    image_height_before = data->arrNodes[7].pDocumentBinding->pRenderer->blocks[0].height;
+    CHECK(auditDocumentImageSet(context, &proxy, 140, &image_resource) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(data->arrNodes[7].pDocumentBinding->pRenderer->blocks[0].height > image_height_before + 50);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_after) == XUI_OK);
+    CHECK(reading_after.iNodeId == reading_before.iNodeId);
+    reading_before = reading_after;
+    image_height_before = data->arrNodes[7].pDocumentBinding->pRenderer->blocks[0].height;
+    CHECK(auditDocumentImageSet(context, &proxy, 20, &image_resource) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(data->arrNodes[7].pDocumentBinding->pRenderer->blocks[0].height < image_height_before - 50);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_after) == XUI_OK);
+    CHECK(reading_after.iNodeId == reading_before.iNodeId);
+    reading_before = reading_after;
+    formula_height_before = data->arrNodes[7].pDocumentBinding->pRenderer->blocks[1].height;
+    g_iAuditFormulaHeight = 30;
+    CHECK(xuiMessageListInvalidateNodeDocumentObjects(list, "document") == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(data->arrNodes[7].pDocumentBinding->pRenderer->blocks[1].height < formula_height_before - 50);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_after) == XUI_OK);
+    CHECK(reading_after.iNodeId == reading_before.iNodeId);
+    reading_before = reading_after;
+    CHECK(xuiSetVirtualDpi(context, 1.5f) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[7].pDocumentBinding->pRenderer, 24,
+        data->fScrollY + 20 - data->arrNodes[7].tTextRect.fY, &reading_after) == XUI_OK);
+    CHECK(reading_after.iNodeId == reading_before.iNodeId);
+    CHECK(xuiSetVirtualDpi(context, 1.0f) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK);
+    deep_blocks = stats.iMeasuredBlocks;
+    CHECK(deep_blocks > early_blocks && deep_blocks < 500);
+    CHECK(xuiMessageListGetNodeRect(list, 8).fY > tail_after_top);
+    CHECK(xuiDocumentRendererGetSize(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &size, &exact) == XUI_OK && !exact);
+    CHECK(fabs(data->arrNodes[7].tMeasuredText.fY - size.height) < 1);
+    CHECK(xuiMessageListScrollToEnd(list) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 8).fH > 0);
+    CHECK(fabsf(xuiMessageListGetScroll(list) -
+        (data->fContentHeight - xuiWidgetGetContentRect(list).fH)) < 1);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK && stats.iMeasuredBlocks < 500);
+    CHECK(xuiWidgetSetRect(list, (xui_rect_t){0, 0, 360, 240}) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH > 0);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &stats) == XUI_OK && stats.iMeasuredBlocks < 500);
+    CHECK(xuiDocumentRendererGetSize(data->arrNodes[7].pDocumentBinding->pRenderer,
+        &size, &exact) == XUI_OK && !exact);
+    CHECK(fabs(data->arrNodes[7].tMeasuredText.fY - size.height) < 1);
+    CHECK(xuiMessageListScrollToEnd(list) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 8).fH > 0);
+    CHECK(fabsf(xuiMessageListGetScroll(list) -
+        (data->fContentHeight - xuiWidgetGetContentRect(list).fH)) < 1);
+    CHECK(xuiMessageListSetNodeDocument(list, "document", NULL) == XUI_OK);
+    CHECK(data->iDocumentNodeCount == 0);
+    CHECK(xuiMessageListGetNodeRect(list, 7).fH < 200);
+    printf("MessageList Document lazy layout: blocks=%llu offscreen=0 first=%llu deep=%llu\n",
+        (unsigned long long)stats.iBlocks, (unsigned long long)early_blocks,
+        (unsigned long long)deep_blocks);
+cleanup:
+    if (context != NULL) xuiDestroy(context);
+    if (document != NULL) xuiDocumentRelease(document);
+    if (larger_font != NULL) proxy.tProxy.fontDestroy(&proxy.tProxy, larger_font);
+    if (font != NULL) proxy.tProxy.fontDestroy(&proxy.tProxy, font);
+    free(markdown);
+    return iFailed;
+}
+
+static xui_doc_position_t auditRichTextPosition(xui_document document, uint64_t node, uint64_t offset)
+{
+    xui_doc_position_t position = {0};
+    position.iSize = sizeof(position); position.iKind = XUI_DOC_POSITION_TEXT;
+    position.iDocumentId = xuiDocumentGetIdentity(document);
+    position.iRevision = xuiDocumentGetRevision(document);
+    position.iNodeId = node; position.iOffset = offset;
+    return position;
+}
+
+static int auditDocumentStyleReadingAnchor(void)
+{
+    xui_test_proxy_state_t proxy;
+    xui_context context = NULL; xui_widget list = NULL;
+    xui_font font = NULL; xui_document document = NULL;
+    xui_document_transaction txn = NULL;
+    xui_message_list_desc_t list_desc = {0};
+    xui_message_document_desc_t binding = {0};
+    xui_message_node_t node = {0};
+    xui_message_list_data_t* data;
+    xui_doc_node_desc_t desc = {0};
+    xui_doc_text_style_t style = {0}; xui_doc_range_t range;
+    xui_doc_position_t before, after;
+    xui_doc_renderer_stats_t stats_before = {0}, stats_after = {0};
+    uint64_t first_text = 0, paragraph, text_node, i;
+    const char* sentence = "Agent answer paragraph stays readable after restyling.";
+    float old_scroll, new_scroll;
+    int iFailed = 0;
+    xuiTestProxyInit(&proxy);
+    CHECK(xuiCreate(&context) == XUI_OK &&
+        xuiSetProxy(context, &proxy.tProxy) == XUI_OK &&
+        proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, "test.ttf", 16, 0) == XUI_OK &&
+        xuiSetDefaultFont(context, font) == XUI_OK &&
+        xuiInputViewport(context, 220, 120) == XUI_OK &&
+        xuiDocumentCreate(NULL, &document) == XUI_OK &&
+        xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK);
+    desc.iSize = sizeof(desc); desc.iKind = XUI_DOC_PARAGRAPH;
+    for (i = 0; i < 80; i++) {
+        CHECK(xuiDocumentTxnInsertNode(txn, 1, XUI_DOCUMENT_APPEND,
+            &desc, &paragraph) == XUI_OK);
+        desc.iKind = XUI_DOC_TEXT; desc.sText = sentence;
+        desc.iTextBytes = strlen(sentence);
+        CHECK(xuiDocumentTxnInsertNode(txn, paragraph, XUI_DOCUMENT_APPEND,
+            &desc, &text_node) == XUI_OK);
+        if (!i) first_text = text_node;
+        desc.iKind = XUI_DOC_PARAGRAPH; desc.sText = NULL; desc.iTextBytes = 0;
+    }
+    CHECK(xuiDocumentTxnCommit(txn, NULL) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    node.iSize = sizeof(node); node.iType = XUI_MESSAGE_NODE_OTHER;
+    node.sId = "rich"; node.sSender = "Agent"; node.sText = "";
+    list_desc.iSize = sizeof(list_desc); list_desc.arrNodes = &node;
+    list_desc.iNodeCount = 1;
+    CHECK(xuiMessageListCreate(context, &list, &list_desc) == XUI_OK &&
+        xuiSetRootWidget(context, list) == XUI_OK &&
+        xuiWidgetSetRect(list, (xui_rect_t){0, 0, 220, 120}) == XUI_OK &&
+        xuiMessageListSetAutoScroll(list, 0) == XUI_OK);
+    binding.iSize = sizeof(binding); binding.pDocument = document;
+    CHECK(xuiMessageListSetNodeDocument(list, "rich", &binding) == XUI_OK);
+    data = __xuiMessageListGetData(list);
+    CHECK(xuiMessageListSetScroll(list, data->arrNodes[0].tTextRect.fY + 800) == XUI_OK);
+    CHECK(xuiMessageListGetNodeRect(list, 0).fH > 0);
+    old_scroll = xuiMessageListGetScroll(list);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[0].pDocumentBinding->pRenderer, 24,
+        old_scroll + 20 - data->arrNodes[0].tTextRect.fY, &before) == XUI_OK &&
+        before.iKind == XUI_DOC_POSITION_TEXT && before.iNodeId != first_text);
+    range.tAnchor = auditRichTextPosition(document, first_text, 0);
+    range.tCaret = auditRichTextPosition(document, first_text, strlen(sentence));
+    style.iSize = sizeof(style); style.fFontSize = 48;
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK &&
+        xuiDocumentTxnSetTextStyle(txn, &range,
+            XUI_DOC_TEXT_STYLE_FONT_SIZE, &style) == XUI_OK &&
+        xuiDocumentTxnCommit(txn, NULL) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    CHECK(xuiMessageListGetNodeRect(list, 0).fH > 0);
+    new_scroll = xuiMessageListGetScroll(list);
+    CHECK(new_scroll > old_scroll + 30);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[0].pDocumentBinding->pRenderer, 24,
+        new_scroll + 20 - data->arrNodes[0].tTextRect.fY, &after) == XUI_OK &&
+        after.iNodeId == before.iNodeId);
+    before = after; old_scroll = new_scroll;
+    stats_before.iSize = stats_after.iSize = sizeof(stats_before);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[0].pDocumentBinding->pRenderer,
+        &stats_before) == XUI_OK);
+    range.tAnchor = auditRichTextPosition(document, first_text, 0);
+    range.tCaret = auditRichTextPosition(document, first_text, 20);
+    style.fFontSize = 32;
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK &&
+        xuiDocumentTxnSetTextStyle(txn, &range,
+            XUI_DOC_TEXT_STYLE_FONT_SIZE, &style) == XUI_OK &&
+        xuiDocumentTxnCommit(txn, NULL) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    CHECK(xuiMessageListGetNodeRect(list, 0).fH > 0);
+    new_scroll = xuiMessageListGetScroll(list);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[0].pDocumentBinding->pRenderer, 24,
+        new_scroll + 20 - data->arrNodes[0].tTextRect.fY, &after) == XUI_OK &&
+        after.iNodeId == before.iNodeId &&
+        xuiDocumentRendererGetStats(data->arrNodes[0].pDocumentBinding->pRenderer,
+            &stats_after) == XUI_OK &&
+        stats_after.iMeasuredBlocks <= stats_before.iMeasuredBlocks + 8);
+    printf("MessageList rich Document style and inline split preserve the reading paragraph: measured=%llu->%llu\n",
+        (unsigned long long)stats_before.iMeasuredBlocks,
+        (unsigned long long)stats_after.iMeasuredBlocks);
+cleanup:
+    if (txn) xuiDocumentTxnRelease(txn);
+    if (context) xuiDestroy(context);
+    if (document) xuiDocumentRelease(document);
+    if (font) proxy.tProxy.fontDestroy(&proxy.tProxy, font);
+    return iFailed;
+}
+
+static int auditDocumentSameParagraphStyleAnchor(void)
+{
+    char body[2501];
+    xui_test_proxy_state_t proxy;
+    xui_context context = NULL; xui_widget list = NULL;
+    xui_font font = NULL; xui_document document = NULL;
+    xui_document_transaction txn = NULL; xui_document_change_set changes = NULL;
+    xui_message_list_desc_t list_desc = {0};
+    xui_message_document_desc_t binding = {0};
+    xui_message_node_t node = {0};
+    xui_message_list_data_t* data;
+    xui_doc_node_desc_t desc = {0};
+    xui_doc_text_style_t style = {0}; xui_doc_range_t range;
+    xui_doc_position_t before, mapped; xui_doc_rect_t old_caret, new_caret;
+    xui_doc_renderer_stats_t stats_before = {0}, stats_after = {0};
+    uint64_t paragraph, text_node;
+    float old_scroll, new_scroll, old_screen, new_screen;
+    size_t i; int mapping, iFailed = 0;
+    for (i = 0; i < 500; i++) memcpy(body + i * 5, "word ", 5);
+    body[2500] = 0;
+    xuiTestProxyInit(&proxy);
+    CHECK(xuiCreate(&context) == XUI_OK &&
+        xuiSetProxy(context, &proxy.tProxy) == XUI_OK &&
+        proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, "test.ttf", 16, 0) == XUI_OK &&
+        xuiSetDefaultFont(context, font) == XUI_OK &&
+        xuiInputViewport(context, 220, 120) == XUI_OK &&
+        xuiDocumentCreate(NULL, &document) == XUI_OK &&
+        xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK);
+    desc.iSize = sizeof(desc); desc.iKind = XUI_DOC_PARAGRAPH;
+    CHECK(xuiDocumentTxnInsertNode(txn, 1, XUI_DOCUMENT_APPEND,
+        &desc, &paragraph) == XUI_OK);
+    desc.iKind = XUI_DOC_TEXT; desc.sText = body; desc.iTextBytes = 2500;
+    CHECK(xuiDocumentTxnInsertNode(txn, paragraph, XUI_DOCUMENT_APPEND,
+        &desc, &text_node) == XUI_OK &&
+        xuiDocumentTxnCommit(txn, NULL) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    node.iSize = sizeof(node); node.iType = XUI_MESSAGE_NODE_OTHER;
+    node.sId = "rich"; node.sSender = "Agent"; node.sText = "";
+    list_desc.iSize = sizeof(list_desc); list_desc.arrNodes = &node; list_desc.iNodeCount = 1;
+    CHECK(xuiMessageListCreate(context, &list, &list_desc) == XUI_OK &&
+        xuiSetRootWidget(context, list) == XUI_OK &&
+        xuiWidgetSetRect(list, (xui_rect_t){0, 0, 220, 120}) == XUI_OK &&
+        xuiMessageListSetAutoScroll(list, 0) == XUI_OK);
+    binding.iSize = sizeof(binding); binding.pDocument = document;
+    CHECK(xuiMessageListSetNodeDocument(list, "rich", &binding) == XUI_OK);
+    data = __xuiMessageListGetData(list);
+    CHECK(xuiMessageListSetScroll(list, data->arrNodes[0].tTextRect.fY + 1000) == XUI_OK &&
+        xuiMessageListGetNodeRect(list, 0).fH > 0);
+    old_scroll = xuiMessageListGetScroll(list);
+    CHECK(xuiDocumentRendererHitTest(data->arrNodes[0].pDocumentBinding->pRenderer, 24,
+        old_scroll + 20 - data->arrNodes[0].tTextRect.fY, &before) == XUI_OK);
+    CHECK(before.iNodeId == text_node && before.iOffset > 500 &&
+        xuiDocumentRendererGetCaretRect(data->arrNodes[0].pDocumentBinding->pRenderer,
+            &before, &old_caret) == XUI_OK);
+    old_screen = data->arrNodes[0].tTextRect.fY + (float)old_caret.y - old_scroll;
+    range.tAnchor = auditRichTextPosition(document, text_node, 0);
+    range.tCaret = auditRichTextPosition(document, text_node, 500);
+    style.iSize = sizeof(style); style.fFontSize = 48;
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK &&
+        xuiDocumentTxnSetTextStyle(txn, &range,
+            XUI_DOC_TEXT_STYLE_FONT_SIZE, &style) == XUI_OK &&
+        xuiDocumentTxnCommit(txn, &changes) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    CHECK(xuiDocumentMapPosition(changes, &before, &mapped, &mapping) == XUI_OK &&
+        mapping != XUI_DOC_MAP_DELETED);
+    xuiDocumentChangeSetRelease(changes); changes = NULL;
+    CHECK(xuiMessageListGetNodeRect(list, 0).fH > 0);
+    new_scroll = xuiMessageListGetScroll(list);
+    CHECK(new_scroll > old_scroll + 100 &&
+        xuiDocumentRendererGetCaretRect(data->arrNodes[0].pDocumentBinding->pRenderer,
+            &mapped, &new_caret) == XUI_OK);
+    new_screen = data->arrNodes[0].tTextRect.fY + (float)new_caret.y - new_scroll;
+    CHECK(fabsf(new_screen - old_screen) < 3);
+    old_screen = new_screen;
+    range.tAnchor = auditRichTextPosition(document, text_node, 0);
+    range.tCaret = auditRichTextPosition(document, text_node, 250);
+    style.fFontSize = 60;
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK &&
+        xuiDocumentTxnSetTextStyle(txn, &range,
+            XUI_DOC_TEXT_STYLE_FONT_SIZE, &style) == XUI_OK &&
+        xuiDocumentTxnCommit(txn, &changes) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    CHECK(xuiDocumentMapPosition(changes, &mapped, &before, &mapping) == XUI_OK &&
+        mapping != XUI_DOC_MAP_DELETED);
+    xuiDocumentChangeSetRelease(changes); changes = NULL;
+    range.tAnchor = auditRichTextPosition(document, text_node, 0);
+    range.tCaret = auditRichTextPosition(document, text_node, 250);
+    style.fFontSize = 36;
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK &&
+        xuiDocumentTxnSetTextStyle(txn, &range,
+            XUI_DOC_TEXT_STYLE_FONT_SIZE, &style) == XUI_OK &&
+        xuiDocumentTxnCommit(txn, &changes) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    CHECK(xuiDocumentMapPosition(changes, &before, &mapped, &mapping) == XUI_OK &&
+        mapping != XUI_DOC_MAP_DELETED);
+    xuiDocumentChangeSetRelease(changes); changes = NULL;
+    CHECK(xuiMessageListGetNodeRect(list, 0).fH > 0);
+    new_scroll = xuiMessageListGetScroll(list);
+    CHECK(xuiDocumentRendererGetCaretRect(data->arrNodes[0].pDocumentBinding->pRenderer,
+        &mapped, &new_caret) == XUI_OK);
+    new_screen = data->arrNodes[0].tTextRect.fY + (float)new_caret.y - new_scroll;
+    CHECK(fabsf(new_screen - old_screen) < 3);
+    old_scroll = new_scroll;
+    stats_before.iSize = stats_after.iSize = sizeof(stats_before);
+    CHECK(xuiDocumentRendererGetStats(data->arrNodes[0].pDocumentBinding->pRenderer,
+        &stats_before) == XUI_OK);
+    range.tAnchor = auditRichTextPosition(document, text_node, 0);
+    range.tCaret = auditRichTextPosition(document, text_node, 250);
+    style.iTextColor = XUI_COLOR_RGBA(27, 121, 188, 255);
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK &&
+        xuiDocumentTxnSetTextStyle(txn, &range,
+            XUI_DOC_TEXT_STYLE_COLOR, &style) == XUI_OK &&
+        xuiDocumentTxnCommit(txn, NULL) == XUI_OK);
+    xuiDocumentTxnRelease(txn); txn = NULL;
+    CHECK(xuiMessageListGetNodeRect(list, 0).fH > 0 &&
+        fabsf(xuiMessageListGetScroll(list) - old_scroll) < 1 &&
+        xuiDocumentRendererGetStats(data->arrNodes[0].pDocumentBinding->pRenderer,
+            &stats_after) == XUI_OK &&
+        stats_after.iShapedBytes == stats_before.iShapedBytes);
+    puts("MessageList rich Document same-paragraph and two unpublished style reflows preserve the visible text line; full-run color keeps shaping");
+cleanup:
+    if (changes) xuiDocumentChangeSetRelease(changes);
+    if (txn) xuiDocumentTxnRelease(txn);
+    if (context) xuiDestroy(context);
+    if (document) xuiDocumentRelease(document);
+    if (font) proxy.tProxy.fontDestroy(&proxy.tProxy, font);
+    return iFailed;
+}
+
 #define main messageListLegacyMain
 #include "xui_message_list_test.c"
 #undef main
@@ -913,6 +1419,12 @@ int main(int argc, char** argv)
     if (argc < 2 || strcmp(argv[1], "P2-5") == 0) {
         if (auditLayouts(128) || auditLayouts(1024) || auditLayouts(8192)) return 1;
         puts("xui_message_list_audit_test P2-5 passed");
+    }
+    if (argc < 2 || strcmp(argv[1], "DocumentLazy") == 0) {
+        if (auditLazyDocumentMessage()) return 1;
+    }
+    if (argc < 2 || strcmp(argv[1], "MessageStyle") == 0) {
+        if (auditDocumentStyleReadingAnchor() || auditDocumentSameParagraphStyleAnchor()) return 1;
     }
     if (messageListLegacyMain()) return 1;
     return 0;

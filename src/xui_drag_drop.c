@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
 #include <limits.h>
@@ -642,3 +644,5 @@ void xuiInternalDragTransferShutdown(xui_context pContext)
 	if ( pContext == NULL ) return;
 	__xuiDragClear(pContext, 0);
 }
+
+#endif

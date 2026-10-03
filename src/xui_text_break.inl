@@ -1,4 +1,4 @@
-/* Private libunibreak 7.0 inclusion. See lib/libunibreak/README.xui.md.
+/* Private libunibreak 8.0 inclusion. See lib/libunibreak/README.xui.md.
  * Keep upstream sources unmodified and their external names out of XUI's ABI. */
 #define unibreak_version __xuiUbVersion
 #define ub_get_next_char_utf8 __xuiUbNext8
@@ -11,7 +11,6 @@
 #define lb_prop_lang_map __xuiUbLanguages
 #define lb_init_break_context __xuiUbInit
 #define lb_process_next_char __xuiUbProcess
-#define lb_get_char_class __xuiUbClass
 #define set_linebreaks __xuiUbLineBreaks
 #define init_linebreak __xuiUbInitLine
 #define set_linebreaks_utf8 __xuiUbLine8
@@ -23,10 +22,6 @@
 #define ub_get_char_eaw_class __xuiUbEastAsianWidth
 #define ub_is_op_east_asian __xuiUbEastAsianOpen
 #define ub_is_extended_pictographic __xuiUbPictographic
-#define init_graphemebreak __xuiUbInitGrapheme
-#define set_graphemebreaks_utf8 __xuiUbGrapheme8
-#define set_graphemebreaks_utf16 __xuiUbGrapheme16
-#define set_graphemebreaks_utf32 __xuiUbGrapheme32
 
 #include "../lib/libunibreak/src/unibreakbase.c"
 #include "../lib/libunibreak/src/unibreakdef.c"
@@ -35,7 +30,13 @@
 #include "../lib/libunibreak/src/eastasianwidthdef.c"
 #include "../lib/libunibreak/src/emojidef.c"
 #include "../lib/libunibreak/src/linebreak.c"
-#include "../lib/libunibreak/src/graphemebreak.c"
+#include "../lib/libunibreak/src/graphemebreak.h"
+#include "xge_unicode_grapheme.h"
+
+static void set_graphemebreaks(const void* text, size_t size, char* map, get_next_char_t decode)
+{
+	__xgeGraphemeMap(text, size, map, decode);
+}
 
 #undef unibreak_version
 #undef ub_get_next_char_utf8
@@ -48,7 +49,6 @@
 #undef lb_prop_lang_map
 #undef lb_init_break_context
 #undef lb_process_next_char
-#undef lb_get_char_class
 #undef set_linebreaks
 #undef init_linebreak
 #undef set_linebreaks_utf8
@@ -60,10 +60,6 @@
 #undef ub_get_char_eaw_class
 #undef ub_is_op_east_asian
 #undef ub_is_extended_pictographic
-#undef init_graphemebreak
-#undef set_graphemebreaks_utf8
-#undef set_graphemebreaks_utf16
-#undef set_graphemebreaks_utf32
 
 #ifndef XUI_TEXT_BREAK_TEST_COUNT
 #define XUI_TEXT_BREAK_TEST_COUNT(field, count) ((void)0)
@@ -77,7 +73,8 @@ enum {
 	XUI_LB_HARD = 8,
 	XUI_LB_INVISIBLE = 16,
 	XUI_LB_SOFT_HYPHEN = 32,
-	XUI_LB_HYPHEN_USED = 64
+	XUI_LB_HYPHEN_USED = 64,
+	XUI_LB_HARD_END = 128
 };
 #endif
 
@@ -104,9 +101,14 @@ static int __xuiTextBreakLetter(enum LineBreakClass iClass)
 	return iClass == LBP_AL || iClass == LBP_HL || iClass == LBP_NU;
 }
 
+static enum LineBreakClass __xuiTextBreakClass(utf32_t iScalar)
+{
+	/* Default language with strict CJ handling, identical to the map pass. */
+	return resolve_lb_class(get_char_lb_class_default(iScalar), false, true, iScalar);
+}
+
 static int __xuiTextBreakMap(const char* sText, int iSize, unsigned char* pMap)
 {
-	struct LineBreakContext tContext;
 	enum LineBreakClass iPrevious = LBP_Undefined;
 	char* pWork;
 	size_t iAt = 0, i;
@@ -125,18 +127,26 @@ static int __xuiTextBreakMap(const char* sText, int iSize, unsigned char* pMap)
 		}
 	}
 	xrtFree(pWork);
-	__xuiUbInit(&tContext, 0, "-strict");
 	while ( iAt < (size_t)iSize ) {
 		size_t iStart = iAt, j;
 		utf32_t iScalar = __xuiTextBreakDecode(sText, (size_t)iSize, &iAt);
-		enum LineBreakClass iClass = resolve_lb_class(__xuiUbClass(&tContext, iScalar), &tContext);
+		/* Match the full engine's default-language, strict LB1 resolution.
+		 * In particular SA marks resolve to CM, using upstream category data. */
+		enum LineBreakClass iClass = __xuiTextBreakClass(iScalar);
 		XUI_TEXT_BREAK_TEST_COUNT(iProperties, 1);
 		/* Tailoring is class-based, never a hand-maintained punctuation list. */
 		if ( (pMap[iStart] & XUI_LB_GRAPHEME) && __xuiTextBreakLetter(iPrevious) &&
 		     __xuiTextBreakLetter(iClass) ) pMap[iStart] |= XUI_LB_EMERGENCY;
-		if ( iClass == LBP_BK || iClass == LBP_NL || iClass == LBP_CR || iClass == LBP_LF ) pMap[iStart] |= XUI_LB_HARD;
+		if ( iClass == LBP_BK || iClass == LBP_NL || iClass == LBP_CR || iClass == LBP_LF ) {
+			pMap[iStart] |= XUI_LB_HARD;
+			if ( !(iClass == LBP_CR && iAt < (size_t)iSize && sText[iAt] == '\n') )
+				pMap[iAt] |= XUI_LB_HARD_END;
+		}
 		if ( iScalar == 0xadu ) pMap[iAt] |= XUI_LB_SOFT_HYPHEN;
-		if ( iScalar == 0xadu || iScalar == 0x200bu || iScalar == 0x2060u || iScalar == 0xfeffu ) {
+        if ( iScalar == 0xadu || iScalar == 0x200bu || iScalar == 0x2060u || iScalar == 0xfeffu ||
+             iScalar == 0x61cu || iScalar == 0x200eu || iScalar == 0x200fu ||
+             (iScalar >= 0x202au && iScalar <= 0x202eu) ||
+             (iScalar >= 0x2066u && iScalar <= 0x2069u) ) {
 			for ( j = iStart; j < iAt; j++ ) pMap[j] |= XUI_LB_INVISIBLE;
 		}
 		if ( iClass != LBP_CM ) iPrevious = iClass;

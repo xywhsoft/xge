@@ -34,8 +34,9 @@ static int basic_circle(xui_proxy p, xui_draw_context d, float x, float y, float
 { basic_record(d, BASIC_CIRCLE, c); return basic_proxy.drawCircleFill(p, d, x, y, r, c); }
 static int basic_ring(xui_proxy p, xui_draw_context d, float x, float y, float r, float w, uint32_t c)
 { basic_record(d, BASIC_RING, c); return basic_proxy.drawCircleStroke(p, d, x, y, r, w, c); }
-static int basic_text(xui_proxy p, xui_draw_context d, xui_font f, const char* s, xui_rect_t r, uint32_t c, uint32_t flags)
-{ basic_record(d, BASIC_TEXT, c); return basic_proxy.drawText(p, d, f, s, r, c, flags); }
+static int basic_text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
+{
+ basic_record(d, BASIC_TEXT, c); return basic_proxy.drawText(p, d, pTextItem, r, c, flags); }
 static int basic_surface(xui_proxy p, xui_draw_context d, xui_surface s, xui_rect_t a, xui_rect_t b, uint32_t c, uint32_t flags)
 { basic_record(d, BASIC_SURFACE, c); return basic_proxy.drawSurface(p, d, s, a, b, c, flags); }
 static int basic_triangle(xui_proxy p, xui_draw_context d, xui_vec2_t a, xui_vec2_t b, xui_vec2_t c, uint32_t color)

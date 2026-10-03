@@ -299,7 +299,9 @@ int xgePassBegin(xge_pass pPass)
 	g_xge.iCurrentFramebufferId = iFramebuffer;
 	g_xge.iWidth = pTarget->iWidth;
 	g_xge.iHeight = pTarget->iHeight;
+#if XGE_ENABLE_2D
 	g_xge.tCamera = xgeCameraDefault((float)pTarget->iWidth, (float)pTarget->iHeight);
+#endif
 	g_xge.bViewportEnabled = 0;
 	memset(&g_xge.tViewportRect, 0, sizeof(g_xge.tViewportRect));
 	g_xge.bClipEnabled = 0;

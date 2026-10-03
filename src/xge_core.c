@@ -72,7 +72,9 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.iSceneMaxUpdates = 1;
 	g_xge.fSceneFixedStep = 1.0f / 60.0f;
 	g_xge.iImeMode = XGE_IME_MODE_COMPOSITION;
+#if XGE_ENABLE_2D
 	g_xge.tCamera = xgeCameraDefault((float)objDesc.iWidth, (float)objDesc.iHeight);
+#endif
 #ifndef XGE_NO_AUDIO
 	g_xge.tAudioListener.tForward.fZ = -1.0f;
 	g_xge.tAudioListener.tUp.fY = 1.0f;
@@ -94,17 +96,36 @@ void xgeUnit(void)
 	g_xge.bInitialized = 0;
 	g_xge.bRunning = 0;
 	__xgeSceneClear();
+#if XGE_ENABLE_2D
 	__xgeRenderThreadJoin();
+#endif
+#if XGE_ENABLE_2D
 	__xgeRenderCommandUnit();
+#endif
+#if XGE_ENABLE_2D
 	__xgeShapeAutoBatchReset();
+#endif
 	__xgeBuiltinRenderersReset();
 	__xgeTextureUploadQueueFree();
+#if XGE_ENABLE_EMOJI
 	__xgeEmojiGlobalClear();
+#endif
+#if XGE_ENABLE_SVG
 	xgeSvgCacheClear();
+#endif
 	xgeTextureFallbackClear();
+#if XGE_ENABLE_TEXT
 	xgeFontFallbackClear();
+#endif
+#if XGE_ENABLE_AUDIO
 	xgeSoundFallbackClear();
+#endif
+#if XGE_ENABLE_AUDIO
 	xgeAudioUnit();
+#endif
+	#if defined(_WIN32) || defined(_WIN64)
+		__xgeWin32ClipboardOwnerRelease();
+	#endif
 	if ( g_xge.sClipboardText != NULL ) {
 		xrtFree(g_xge.sClipboardText);
 		g_xge.sClipboardText = NULL;
@@ -228,8 +249,12 @@ static int __xgeFrameWithDelta(float fDelta)
 		return 0;
 	}
 	fFrameStart = xrtTimer();
+#if XGE_ENABLE_2D
 	__xgeRenderCommandReset();
+#endif
+#if XGE_ENABLE_2D
 	__xgeShapeAutoBatchReset();
+#endif
 	__xgeFrameStatsBeginFrame();
 	g_xge.iFrameCount++;
 	g_xge.tFrameStats.iFrameCount++;
@@ -448,7 +473,7 @@ int xgePlatformCapsGet(xge_platform_caps_t* pCaps)
 	pCaps->bRenderTarget = 1;
 	pCaps->bResourceProvider = 1;
 	pCaps->bThreadSafeSubmit = 0;
-	pCaps->bAudio = 1;
+	pCaps->bAudio = XGE_ENABLE_AUDIO;
 	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_SOKOL ) {
 		__xgePlatformCapsSokolTarget(pCaps);
 		pCaps->bWindow = 1;
@@ -1234,12 +1259,15 @@ int xgeBegin(void)
 
 int xgeFlush(void)
 {
+#if XGE_ENABLE_2D
 	int iRet;
+#endif
 
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	xgeTextureUploadFlush();
+#if XGE_ENABLE_2D
 	iRet = __xgeShapeAutoBatchFlush();
 	if ( iRet != XGE_OK ) {
 		return iRet;
@@ -1252,6 +1280,7 @@ int xgeFlush(void)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
+#endif
 	if ( (g_xge.bSokolRunning != 0) && (glFlush != NULL) ) {
 		glFlush();
 	}
@@ -1266,7 +1295,9 @@ int xgeRenderThreadSet(int bEnabled)
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( bEnabled == 0 ) {
-		__xgeRenderThreadJoin();
+	#if XGE_ENABLE_2D
+	__xgeRenderThreadJoin();
+#endif
 		g_xge.bRenderThreadEnabled = 0;
 		g_xge.bRenderThreadOwnsGLContext = 0;
 		return XGE_OK;
@@ -1349,7 +1380,9 @@ void xgeClear(uint32_t iColor)
 	xgeInvalidateRect(tRect);
 	g_xge.iSurfaceDirtyGeneration++;
 	if ( g_xge.bSokolRunning ) {
+#if XGE_ENABLE_2D
 		(void)__xgeShapeAutoBatchFlush();
+#endif
 		__xgeColorToFloat(iColor, &fR, &fG, &fB, &fA);
 		glClearColor(fR, fG, fB, fA);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -1423,6 +1456,7 @@ int xgeDepthTestGet(void)
 	return g_xge.bDepthTestEnabled;
 }
 
+#if XGE_ENABLE_2D
 xge_camera_t xgeCameraDefault(float fWidth, float fHeight)
 {
 	xge_camera_t tCamera;
@@ -1574,3 +1608,10 @@ static void __xgeCameraProjectVertex(float fX, float fY, float fZ, uint32_t iFla
 	}
 }
 
+
+#endif
+
+uint32_t xgeGetBuildFeatures(void)
+{
+	return XGE_FEATURES;
+}

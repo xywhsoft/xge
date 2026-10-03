@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <stdlib.h>
@@ -528,3 +530,5 @@ XUI_API int xuiCodeAnnotationTrackEdit(xui_code_annotation_store pStore, int iSt
 	pStore->iDiagnosticVersion++;
 	return XUI_OK;
 }
+
+#endif

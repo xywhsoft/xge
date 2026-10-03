@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <limits.h>
@@ -429,3 +431,5 @@ XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iL
 	*pVisibleCount = iCount;
 	return XUI_OK;
 }
+
+#endif

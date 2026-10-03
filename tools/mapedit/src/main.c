@@ -4183,7 +4183,7 @@ static void mapedit_draw_special_missing(mapedit_app_t* pApp, xui_draw_context p
 		(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, dst, bConfigured ? XUI_COLOR_RGBA(246, 218, 158, 205) : XUI_COLOR_RGBA(204, 232, 250, 205));
 		(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, dst, 1.0f, XUI_COLOR_RGBA(72, 150, 208, 230));
 		if ( bConfigured ) {
-			(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "!", dst, XUI_COLOR_RGBA(168, 82, 42, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="!", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, dst, XUI_COLOR_RGBA(168, 82, 42, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		return;
 	}
@@ -4191,7 +4191,7 @@ static void mapedit_draw_special_missing(mapedit_app_t* pApp, xui_draw_context p
 	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, dst, 1.0f, XUI_COLOR_RGBA(190, 140, 42, 220));
 	if ( dst.fW >= 18 && dst.fH >= 14 ) {
 		snprintf(sText, sizeof(sText), "%d", iTile);
-		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText, dst, XUI_COLOR_RGBA(96, 72, 24, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, dst, XUI_COLOR_RGBA(96, 72, 24, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 }
 
@@ -4324,8 +4324,7 @@ static void mapedit_draw_tag_marker(mapedit_app_t* pApp, xui_draw_context pDraw,
 	if ( cell.fW >= 28 && cell.fH >= 20 ) {
 		textRect = (xui_rect_t){cell.fX + 2, cell.fY + cell.fH - 15, cell.fW - 4, 13};
 		(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, textRect, XUI_COLOR_RGBA(245, 252, 255, 190));
-		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sValue, textRect,
-			XUI_COLOR_RGBA(31, 75, 112, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=sValue, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, textRect, XUI_COLOR_RGBA(31, 75, 112, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 }
 
@@ -4334,8 +4333,7 @@ static void mapedit_draw_zero_tile_cell(mapedit_app_t* pApp, xui_draw_context pD
 	if ( pApp == NULL || pDraw == NULL ) return;
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, cell, XUI_COLOR_RGBA(242, 248, 252, 235));
 	(void)pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, cell, 1.0f, XUI_COLOR_RGBA(98, 158, 108, 220));
-	(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "0", cell,
-		XUI_COLOR_RGBA(48, 112, 62, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="0", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, cell, XUI_COLOR_RGBA(48, 112, 62, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
 static void mapedit_draw_special_placeholder_cell(mapedit_app_t* pApp, xui_draw_context pDraw, xui_rect_t cell)
@@ -4412,12 +4410,9 @@ static void mapedit_draw_actor_overlay_marker(mapedit_app_t* pApp, xui_draw_cont
 	if ( pApp == NULL || pDraw == NULL ) return;
 	shadow = (cell.fW < 20 || cell.fH < 20) ? 0 : 1;
 	if ( shadow > 0 ) {
-		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "≈",
-			(xui_rect_t){cell.fX + shadow, cell.fY + shadow, cell.fW, cell.fH},
-			XUI_COLOR_RGBA(248, 252, 255, 210), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="≈", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){cell.fX + shadow, cell.fY + shadow, cell.fW, cell.fH}, XUI_COLOR_RGBA(248, 252, 255, 210), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
-	(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "≈", cell,
-		XUI_COLOR_RGBA(28, 118, 78, 245), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="≈", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, cell, XUI_COLOR_RGBA(28, 118, 78, 245), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
 static void mapedit_map_widget_scroll(mapedit_app_t* pApp, xui_widget pWidget, float* pScrollX, float* pScrollY)
@@ -4458,7 +4453,7 @@ static int mapedit_map_render(xui_widget pWidget, xui_draw_context pDraw, uint32
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, XUI_COLOR_RGBA(238, 243, 248, 255));
 	if ( pApp->tMap.pTiles == NULL ) {
-		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "未加载地图", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
+		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="未加载地图", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
 	}
 	mapedit_map_widget_scroll(pApp, pWidget, &scrollX, &scrollY);
 	scrollPixelX = (int)floorf(scrollX);
@@ -4589,7 +4584,7 @@ static int mapedit_tile_select_render(xui_widget pWidget, xui_draw_context pDraw
 			mapedit_tile_static_rows(pApp) * mapedit_view_cell(pApp, pWidget, 1)
 		};
 		(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, staticRect, XUI_COLOR_RGBA(235, 244, 250, 255));
-		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "当前地图未设置可用静态图块集", staticRect, XUI_COLOR_RGBA(104, 128, 148, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="当前地图未设置可用静态图块集", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, staticRect, XUI_COLOR_RGBA(104, 128, 148, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	for ( row = firstRow; row < lastRow; row++ ) {
 		for ( col = 0; col < MAPEDIT_TILES_PER_ROW; col++ ) {
@@ -4599,7 +4594,7 @@ static int mapedit_tile_select_render(xui_widget pWidget, xui_draw_context pDraw
 		xui_rect_t cell = (xui_rect_t){dx, dy, mapedit_view_cell(pApp, pWidget, 0), mapedit_view_cell(pApp, pWidget, 1)};
 		if ( tile == 0 ) {
 			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, cell, XUI_COLOR_RGBA(242, 248, 252, 235));
-			(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "0", cell, XUI_COLOR_RGBA(48, 112, 62, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="0", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, cell, XUI_COLOR_RGBA(48, 112, 62, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		} else if ( mapedit_tile_select_tile_selectable(pApp, tile) ) {
 			(void)mapedit_draw_tile_rect(pApp, pDraw, tile, cell);
 		} else if ( tile > special && tile < staticStart ) {
@@ -4645,7 +4640,7 @@ static int mapedit_simple_panel_render(xui_widget pWidget, xui_draw_context pDra
 	proxy = xuiProxyXge();
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)proxy.drawRectFill(&proxy, pDraw, r, XUI_COLOR_RGBA(250, 253, 255, 255));
-	return proxy.drawText(&proxy, pDraw, xuiGetDefaultFont(xuiWidgetGetContext(pWidget)), sText != NULL ? sText : "", (xui_rect_t){r.fX + 12, r.fY + 12, r.fW - 24, r.fH - 24}, XUI_COLOR_RGBA(54, 74, 96, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+	return proxy.drawText(&proxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=xuiGetDefaultFont(xuiWidgetGetContext(pWidget)), .sText=sText != NULL ? sText : "", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){r.fX + 12, r.fY + 12, r.fW - 24, r.fH - 24}, XUI_COLOR_RGBA(54, 74, 96, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 }
 
 static void mapedit_fit_dimensions(int iSourceW, int iSourceH, int iMaxW, int iMaxH, int* pWidth, int* pHeight)
@@ -4705,8 +4700,7 @@ static int mapedit_material_tooltip_paint(xui_context pContext, xui_widget pOwne
 	name[0] = 0;
 	if ( pApp->iMaterialTooltipIndex >= 0 ) mapedit_material_display_name(pApp, pApp->iMaterialTooltipIndex, name, sizeof(name));
 	textRect = (xui_rect_t){tRect.fX + 8, dst.fY + dst.fH + 6, tRect.fW - 16, 20};
-	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, name[0] ? name : "", textRect,
-		XUI_COLOR_RGBA(31, 75, 112, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText=name[0] ? name : "", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, textRect, XUI_COLOR_RGBA(31, 75, 112, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
 static int mapedit_material_tooltip_resolve(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser)
@@ -4759,7 +4753,7 @@ static int mapedit_material_view_render(xui_widget pWidget, xui_draw_context pDr
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, XUI_COLOR_RGBA(250, 253, 255, 255));
 	if ( pApp->pMaterialViewSurface == NULL || pApp->tMaterialViewDesc.iWidth <= 0 || pApp->tMaterialViewDesc.iHeight <= 0 ) {
-		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "选择素材预览", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="选择素材预览", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	src = (xui_rect_t){0, 0, pApp->tMaterialViewDesc.iWidth, pApp->tMaterialViewDesc.iHeight};
 	dst = (xui_rect_t){r.fX, r.fY, src.fW, src.fH};
@@ -4811,7 +4805,7 @@ static int mapedit_material_edit_source_render(xui_widget pWidget, xui_draw_cont
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, XUI_COLOR_RGBA(250, 253, 255, 255));
 	if ( pApp->pMaterialEditSourceSurface == NULL || pApp->tMaterialEditSourceDesc.iWidth <= 0 || pApp->tMaterialEditSourceDesc.iHeight <= 0 ) {
-		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "打开图片后选择图块", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="打开图片后选择图块", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	src = (xui_rect_t){0, 0, pApp->tMaterialEditSourceDesc.iWidth, pApp->tMaterialEditSourceDesc.iHeight};
 	(void)pApp->tProxy.drawSurface(&pApp->tProxy, pDraw, pApp->pMaterialEditSourceSurface, src, r, XUI_COLOR_WHITE, 0);
@@ -4958,7 +4952,7 @@ static int mapedit_map_passage_render(xui_widget pWidget, xui_draw_context pDraw
 	r = xuiWidgetGetContentRect(pWidget);
 	(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, r, XUI_COLOR_RGBA(248, 252, 255, 255));
 	if ( pApp->tMap.pTiles == NULL ) {
-		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "未加载地图", r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
+		return pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="未加载地图", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, r, XUI_COLOR_RGBA(64, 80, 96, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
 	}
 	scrollPixelX = (int)floorf(pApp->fMapPassageScrollX);
 	scrollPixelY = (int)floorf(pApp->fMapPassageScrollY);
@@ -5057,7 +5051,7 @@ static int mapedit_tile_panel_render(xui_widget pWidget, xui_draw_context pDraw,
 		} else if ( tile > special && tile < staticStart ) {
 			(void)pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, cell, XUI_COLOR_RGBA(224, 232, 238, 180));
 			if ( cellW >= 20 && cellH >= 16 ) {
-				(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, "-", cell, XUI_COLOR_RGBA(120, 136, 148, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pApp->pFont, .sText="-", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, cell, XUI_COLOR_RGBA(120, 136, 148, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		}
 		if ( pWidget == pApp->pTilesetPassageCanvas && tile > 0 && editable ) {

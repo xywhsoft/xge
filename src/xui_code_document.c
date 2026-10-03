@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
 #include <limits.h>
@@ -1306,3 +1308,5 @@ XUI_API const char* xuiCodeDocumentGetLastError(xui_code_document pDocument)
 	if ( pDocument == NULL ) return "invalid document";
 	return pDocument->sError;
 }
+
+#endif

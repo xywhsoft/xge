@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
 
 XUI_API int xuiDocumentSnapshotExportFile(xui_document_snapshot snapshot, const char* path, uint32_t format)
@@ -27,6 +29,7 @@ XUI_API int xuiDocumentSaveFile(xui_document document, const char* path, uint32_
 {
     xui_document_snapshot snapshot; int result;
     if (!document || (format != XUI_DOC_FILE_NATIVE && format != XUI_DOC_FILE_MARKDOWN)) return XUI_ERROR_INVALID_ARGUMENT;
+    if (document->pending || document->input_barrier) return XUI_DOC_ERROR_BUSY;
     result = xuiDocumentAcquireSnapshot(document, &snapshot); if (result != XUI_OK) return result;
     result = xuiDocumentSnapshotExportFile(snapshot, path, format);
     if (result == XUI_OK) result = xuiDocumentMarkSaved(document, snapshot);
@@ -47,9 +50,17 @@ XUI_API int xuiDocumentOpenFile(const char* path, uint32_t format, const xui_doc
         options.iSize = sizeof(options); options.iProfile = XUI_DOCUMENT_MARKDOWN; options.bDisableHistory = 1;
         result = xuiDocumentCreate(&options, &document);
         if (result == XUI_OK) result = xuiDocumentLoadMarkdown(document, (const char*)data, length);
-        if (result == XUI_OK) { document->disable_history = desc ? desc->bDisableHistory : 0; document->saved_state = document->state->content_id; }
+        if (result == XUI_OK) {
+            document->disable_history = desc ? desc->bDisableHistory : 0;
+            if (!document->disable_history) {
+                doc_memory_standby(document->state, 1); document->standby_history = 1;
+            }
+            document->saved_state = document->state->content_id;
+        }
     }
     xrtFree(data);
     if (result != XUI_OK) xuiDocumentRelease(document); else *out = document;
     return result;
 }
+
+#endif

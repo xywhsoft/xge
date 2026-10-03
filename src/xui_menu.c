@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_MENU
 #include "xui_internal.h"
 
 #include <ctype.h>
@@ -257,7 +259,7 @@ static xui_vec2_t __xuiMenuMeasureText(xui_widget pWidget, xui_font pFont, const
 		}
 	}
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
-	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK) &&
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) &&
 	     (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
 		return tSize;
 	}
@@ -602,8 +604,7 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			tItem.fH
 		};
 		if ( (pFont != NULL) && (pProxy->drawText != NULL) && (pData->arrItems[i].sText != NULL) ) {
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->arrItems[i].sText, tText, iTextColor,
-				XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->arrItems[i].sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( (pFont != NULL) && (pProxy->drawText != NULL) &&
@@ -614,8 +615,7 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 				__xuiMenuMax(1.0f, fShortcutW),
 				tItem.fH
 			};
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->arrItems[i].sShortcut, tShortcut, iShortcutColor,
-				XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->arrItems[i].sShortcut, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tShortcut, iShortcutColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( pData->arrItems[i].iType == XUI_MENU_ITEM_SUBMENU ) {
@@ -1665,3 +1665,5 @@ XUI_API xui_widget xuiMenuGetOwner(xui_widget pWidget)
 	}
 	return xuiPopupGetOwner(pData->pPopup);
 }
+
+#endif

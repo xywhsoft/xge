@@ -127,6 +127,12 @@
 typedef struct MD_MARK_tag MD_MARK;
 typedef struct MD_BLOCK_tag MD_BLOCK;
 typedef struct MD_CONTAINER_tag MD_CONTAINER;
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+typedef struct MD_XUI_QUOTE_PREFIX_tag MD_XUI_QUOTE_PREFIX;
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+typedef struct MD_XUI_LIST_INDENT_tag MD_XUI_LIST_INDENT;
+#endif
 typedef struct MD_REF_DEF_tag MD_REF_DEF;
 typedef struct MD_FOOTNOTE_DEF_tag MD_FOOTNOTE_DEF;
 
@@ -176,6 +182,12 @@ struct MD_CTX_tag {
     SZ size;
     MD_PARSER parser;
     void* userdata;
+#ifdef MD_XUI_SOURCE_BLOCK
+    OFF xui_line_beg, xui_line_end;
+#endif
+#ifdef MD_XUI_SOURCE_SPAN
+    OFF xui_span_beg, xui_span_end, xui_destination_beg, xui_destination_end;
+#endif
 
     /* When this is true, it allows some optimizations. */
     int doc_ends_with_newline;
@@ -191,6 +203,7 @@ struct MD_CTX_tag {
     /* Footnote definitions. */
     MD_LABEL_HASH_TABLE footnote_hashtable;
     unsigned next_footnote_index;   /* 1-based counter for sequential numbering */
+    MD_FOOTNOTE_DEF** footnote_by_index;  /* Set while emitting footnote bodies. */
 
     /* Stack of inline/span markers.
      * This is only used for parsing a single block contents but by storing it
@@ -260,6 +273,14 @@ struct MD_CTX_tag {
     MD_BLOCK* current_block;
     int n_block_bytes;
     int alloc_block_bytes;
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+    MD_XUI_QUOTE_PREFIX* xui_quote_prefixes;
+    unsigned n_xui_quote_prefixes, alloc_xui_quote_prefixes;
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    MD_XUI_LIST_INDENT* xui_list_indents;
+    unsigned n_xui_list_indents, alloc_xui_list_indents;
+#endif
 
     /* Pending count of blank lines not yet reported as MD_BLOCK_BLANK.
      * Used only with MD_FLAG_PRESERVEBLANKLINES. */
@@ -278,6 +299,7 @@ struct MD_CTX_tag {
     int html_block_type;    /* For checking closing raw HTML condition. */
     int last_line_has_list_loosening_effect;
     int consecutive_blank_lines;
+    int in_footnote_body;
 };
 
 enum MD_LINETYPE_tag {
@@ -303,6 +325,11 @@ struct MD_LINE_ANALYSIS_tag {
     OFF beg;
     OFF end;
     unsigned indent;        /* Indentation level. */
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+    OFF xui_code_indent_beg, xui_code_indent_end;
+    unsigned xui_code_start_column, xui_code_content_column;
+    unsigned xui_code_end_column, xui_code_flags;
+#endif
 };
 
 struct MD_LINE_tag {
@@ -315,6 +342,11 @@ struct MD_VERBATIMLINE_tag {
     OFF beg;
     OFF end;
     OFF indent;
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+    OFF xui_code_indent_beg, xui_code_indent_end;
+    unsigned xui_code_start_column, xui_code_content_column;
+    unsigned xui_code_end_column, xui_code_flags;
+#endif
 };
 
 
@@ -427,8 +459,15 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
 }
 
 
+#ifndef MD_XUI_CANCEL
+    #define MD_XUI_CANCEL() 0
+#endif
+
 #define MD_CHECK(func)                                                      \
     do {                                                                    \
+        ret = MD_XUI_CANCEL();                                              \
+        if(ret != 0)                                                        \
+            goto abort;                                                     \
         ret = (func);                                                       \
         if(ret != 0)                                                        \
             goto abort;                                                     \
@@ -472,6 +511,19 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
         }                                                                   \
     } while(0)
 
+#ifdef MD_XUI_SOURCE_SPAN
+    #define MD_XUI_SET_SPAN(beg, end, db, de) do { \
+        ctx->xui_span_beg = (beg); ctx->xui_span_end = (end); \
+        ctx->xui_destination_beg = (db); ctx->xui_destination_end = (de); \
+    } while(0)
+    #define MD_XUI_REPORT_SPAN(type, enter) \
+        MD_CHECK(MD_XUI_SOURCE_SPAN(type, ctx->xui_span_beg, ctx->xui_span_end, enter, \
+            ctx->xui_destination_beg, ctx->xui_destination_end))
+#else
+    #define MD_XUI_SET_SPAN(beg, end, db, de) do {} while(0)
+    #define MD_XUI_REPORT_SPAN(type, enter) do {} while(0)
+#endif
+
 #define MD_ENTER_SPAN(type, arg)                                            \
     do {                                                                    \
         ret = ctx->parser.enter_span((type), (arg), ctx->userdata);         \
@@ -479,10 +531,12 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
             MD_LOG("Aborted from enter_span() callback.");                  \
             goto abort;                                                     \
         }                                                                   \
+        MD_XUI_REPORT_SPAN(type, 1);                                         \
     } while(0)
 
 #define MD_LEAVE_SPAN(type, arg)                                            \
     do {                                                                    \
+        MD_XUI_REPORT_SPAN(type, 0);                                         \
         ret = ctx->parser.leave_span((type), (arg), ctx->userdata);         \
         if(ret != 0) {                                                      \
             MD_LOG("Aborted from leave_span() callback.");                  \
@@ -849,6 +903,25 @@ struct MD_UNICODE_FOLD_INFO_tag {
         info->n_codepoints = 1;
     }
 #endif
+
+/* XUI's Markdown writer uses the parser's own punctuation table when choosing
+ * emphasis boundaries, so its serialization follows the same Unicode rules. */
+int doc_md4c_unicode_punct(unsigned codepoint)
+{
+#if defined MD4C_USE_UTF16 || defined MD4C_USE_UTF8
+    return md_is_unicode_punct__(codepoint);
+#else
+    return ISPUNCT_(codepoint);
+#endif
+}
+int doc_md4c_unicode_whitespace(unsigned codepoint)
+{
+#if defined MD4C_USE_UTF16 || defined MD4C_USE_UTF8
+    return md_is_unicode_whitespace__(codepoint);
+#else
+    return ISWHITESPACE_(codepoint);
+#endif
+}
 
 
 #if defined MD4C_USE_UTF16
@@ -2012,10 +2085,15 @@ md_lookup_ref_def(MD_CTX* ctx, const CHAR* label, SZ label_size)
 
 struct MD_FOOTNOTE_DEF_tag {
     MD_LABEL_HASH_ENTRY entry;
+#ifdef MD_XUI_SOURCE_BLOCK
+    OFF xui_source_beg, xui_source_end;
+#endif
     unsigned int index;         /* 0 = unreferenced; 1-based order of first reference */
     unsigned int ref_count;     /* Number of references to this footnote. */
     MD_LINE* content_lines;     /* always heap-allocated; freed by md_free_footnote_defs */
     MD_SIZE n_content_lines;
+    unsigned body_prefix_cols;  /* Outer container columns before [^label]:. */
+    int content_starts_on_definition_line;
 };
 
 static int
@@ -2043,6 +2121,21 @@ md_is_footnote_label(MD_CTX* ctx, OFF beg, OFF* p_end)
  * was stored successfully.
  * Returns -1 on memory allocation error.
  */
+static int
+md_footnote_line_has_continuation_indent(MD_CTX* ctx, OFF off)
+{
+    OFF start = off, i;
+    unsigned trailing = 0;
+    while(start > 0 && CH(start - 1) != _T('\n') && CH(start - 1) != _T('\r'))
+        start--;
+    for(i = start; i < off; i++) {
+        if(CH(i) == _T(' ')) { if(trailing < 4) trailing++; }
+        else if(CH(i) == _T('\t')) trailing = 4;
+        else trailing = 0;
+    }
+    return trailing >= 4;
+}
+
 static int
 md_is_footnote_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 {
@@ -2081,15 +2174,15 @@ md_is_footnote_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 
     /* Count continuation lines. GitHub-style footnotes allow the rest of the
      * paragraph block to form the footnote body, including unindented lines.
-     *
-     * Blank lines cannot appear inside a paragraph block (they always trigger
-     * a block boundary), so we do not need to handle them here. Stop before a
-     * following line which itself starts a new footnote definition. */
+     * The document pass retains blank lines followed by an indented footnote
+     * continuation in this block; emission parses their block structure.
+     * Stop before a following line which starts a new definition. */
     n = 1;
     while(n < n_lines) {
         OFF def_off = lines[n].beg;
 
-        if(def_off + 3 < lines[n].end  &&  CH(def_off) == _T('[')  &&  CH(def_off+1) == _T('^')) {
+        if(!md_footnote_line_has_continuation_indent(ctx, def_off) &&
+           def_off + 3 < lines[n].end  &&  CH(def_off) == _T('[')  &&  CH(def_off+1) == _T('^')) {
             OFF tmp = def_off + 2;
 
             while(tmp < lines[n].end  &&  CH(tmp) != _T(']')  &&
@@ -2104,10 +2197,10 @@ md_is_footnote_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
         n++;
     }
 
-    /* Build content_lines array.
-     * Line 0 content starts after the "[^label]: " prefix.
-     * Lines 1..n-1 are stored verbatim (md4c strips indentation before
-     * handing us MD_LINE, so no further adjustment is needed). */
+    /* Build content_lines array. Line 0 content starts after the
+     * "[^label]: " prefix. Later MD_LINE offsets are already past all line
+     * indentation; body parsing recovers their physical prefixes so that
+     * four continuation columns can be removed without losing code indent. */
     n_content_lines = (off >= lines[0].end  &&  n > 1) ? n - 1 : n;
     content_lines = (MD_LINE*) malloc(n_content_lines * sizeof(MD_LINE));
     if(content_lines == NULL) {
@@ -2133,6 +2226,30 @@ md_is_footnote_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
     }
     def->content_lines = content_lines;
     def->n_content_lines = n_content_lines;
+    def->content_starts_on_definition_line = (n_content_lines == n);
+    {
+        OFF start = label_beg - 2, at;
+        unsigned columns = 0;
+        while(start > 0 && CH(start - 1) != _T('\n') && CH(start - 1) != _T('\r'))
+            start--;
+        for(at = start; at < label_beg - 2; at++) {
+            if(CH(at) == _T('\t')) columns = (columns + 4) & ~3u;
+            else columns++;
+        }
+        def->body_prefix_cols = columns;
+    }
+    content_lines = NULL;  /* The definition table owns it, including callback failure. */
+#ifdef MD_XUI_SOURCE_BLOCK
+    def->xui_source_beg = lines[0].beg;
+    while(def->xui_source_beg && CH(def->xui_source_beg - 1) != '\n' && CH(def->xui_source_beg - 1) != '\r') def->xui_source_beg--;
+    def->xui_source_end = lines[n - 1].end;
+    while(def->xui_source_end < ctx->size && CH(def->xui_source_end) != '\n' && CH(def->xui_source_end) != '\r') def->xui_source_end++;
+    if(def->xui_source_end < ctx->size && CH(def->xui_source_end) == '\r') def->xui_source_end++;
+    if(def->xui_source_end < ctx->size && CH(def->xui_source_end) == '\n') def->xui_source_end++;
+#endif
+#ifdef MD_XUI_FOOTNOTE_DEFINED
+    MD_CHECK(MD_XUI_FOOTNOTE_DEFINED(def->xui_source_beg, def->xui_source_end, label_beg, label_end));
+#endif
 
     return (int) n;
 
@@ -2430,6 +2547,9 @@ md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lin
     MD_SIZE line_index = 0;
     MD_SIZE tmp_line_index;
     MD_REF_DEF* def = NULL;
+#if defined(MD_XUI_SOURCE_REFERENCE) || defined(MD_XUI_REFERENCE_VALUES)
+    int xui_has_title = false;
+#endif
     int ret = 0;
 
     /* Link label. */
@@ -2469,6 +2589,9 @@ md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lin
         title_is_multiline = (tmp_line_index != title_contents_line_index);
         title_contents_line_index += line_index;
         line_index += tmp_line_index;
+#if defined(MD_XUI_SOURCE_REFERENCE) || defined(MD_XUI_REFERENCE_VALUES)
+        xui_has_title = true;
+#endif
     } else {
         /* Not a title. */
         title_is_multiline = false;
@@ -2518,6 +2641,16 @@ md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lin
     def->dest_end = dest_contents_end;
 
     /* Success. */
+#ifdef MD_XUI_SOURCE_REFERENCE
+    MD_CHECK(MD_XUI_SOURCE_REFERENCE(lines[0].beg, lines[line_index].end,
+        label_contents_beg, label_contents_end, dest_contents_beg, dest_contents_end,
+        title_contents_beg, title_contents_end, xui_has_title));
+#endif
+#ifdef MD_XUI_REFERENCE_VALUES
+    MD_CHECK(MD_XUI_REFERENCE_VALUES(def->entry.label, def->entry.label_size,
+        STR(def->dest_beg), def->dest_end - def->dest_beg,
+        def->title, def->title_size, xui_has_title));
+#endif
     return line_index + 1;
 
 abort:
@@ -2529,7 +2662,7 @@ abort:
 
 static int
 md_is_link_reference(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
-                     OFF beg, OFF end, MD_LINK_ATTR* attr)
+                     OFF beg, OFF end, int candidate_kind, MD_LINK_ATTR* attr)
 {
     const MD_REF_DEF* def;
     const MD_LINE* beg_line;
@@ -2537,18 +2670,29 @@ md_is_link_reference(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
     CHAR* label;
     SZ label_size;
     int ret = false;
+#ifdef MD_XUI_REFERENCE_CANDIDATE
+    OFF source_beg = beg, source_end = end;
+#else
+    MD_UNUSED(candidate_kind);
+#endif
 
     MD_ASSERT(CH(beg) == _T('[') || CH(beg) == _T('!'));
     MD_ASSERT(CH(end-1) == _T(']'));
 
+#ifndef MD_XUI_REFERENCE_CANDIDATE
     if(ctx->max_ref_def_output == 0)
         return false;
+#endif
 
     beg += (CH(beg) == _T('!') ? 2 : 1);
     end--;
 
     /* Find lines corresponding to the beg and end positions. */
+    if(n_lines == 0)
+        return false;
     beg_line = md_lookup_line(beg, lines, n_lines, NULL);
+    if(beg_line == NULL)
+        return false;
     is_multiline = (end > beg_line->end);
 
     if(is_multiline) {
@@ -2570,6 +2714,18 @@ md_is_link_reference(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
 
     if(is_multiline)
         free(label);
+
+#ifdef MD_XUI_REFERENCE_CANDIDATE
+    if(def == NULL) {
+        MD_SIZE first_line, last_line;
+        OFF label_beg, label_end, parsed_end;
+        OFF bracket_beg = CH(source_beg) == _T('!') ? source_beg + 1 : source_beg;
+        if(md_is_link_label(ctx, lines, n_lines, bracket_beg, &parsed_end,
+                           &first_line, &last_line, &label_beg, &label_end) && parsed_end == source_end)
+            MD_CHECK(MD_XUI_REFERENCE_CANDIDATE(candidate_kind,
+                source_beg, source_end, label_beg, label_end));
+    }
+#endif
 
     if(def != NULL) {
         /* See https://github.com/mity/md4c/issues/238 */
@@ -3889,12 +4045,20 @@ md_resolve_bracket_footnote(MD_CTX* ctx, MD_MARK* opener, MD_MARK* closer,
         return false;   /* empty label */
 
     def = md_lookup_footnote_def(ctx, STR(label_beg), label_end - label_beg);
-    if(def == NULL)
+    if(def == NULL) {
+#ifdef MD_XUI_REFERENCE_CANDIDATE
+        if(MD_XUI_REFERENCE_CANDIDATE(3, opener->beg, closer->end, label_beg, label_end) != 0)
+            return -1;
+#endif
         return false;
+    }
 
     /* Assign index on first reference. */
-    if(def->index == 0)
+    if(def->index == 0) {
         def->index = ++ctx->next_footnote_index;
+        if(ctx->footnote_by_index != NULL)
+            ctx->footnote_by_index[def->index] = def;
+    }
     def->ref_count++;
 
     /* Store the public callback details in the dummy mark after the opener. */
@@ -3902,6 +4066,13 @@ md_resolve_bracket_footnote(MD_CTX* ctx, MD_MARK* opener, MD_MARK* closer,
     MD_ASSERT(index_mark->ch == _T('D'));
     index_mark->beg = def->index;
     index_mark->end = def->ref_count;
+#ifdef MD_XUI_SOURCE_BLOCK
+    /* Keep the selected definition with this resolved reference. The
+     * definition array is reordered before footnote bodies are emitted. */
+    MD_ASSERT((opener + 2)->ch == _T('D'));
+    (opener + 2)->beg = def->xui_source_beg;
+    (opener + 2)->end = def->xui_source_end;
+#endif
 
     /* Mark as resolved. */
     opener->flags |= MD_MARK_OPENER | MD_MARK_RESOLVED | MD_MARK_BRACKET_FOOTNOTEREF;
@@ -3931,11 +4102,13 @@ md_resolve_bracket_link(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
         if(next_closer->beg > closer->end + 1) {
             /* Might be full reference link. */
             if(!(next_opener->flags & MD_MARK_BRACKET_HASNESTED))
-                is_link = md_is_link_reference(ctx, lines, n_lines, next_opener->beg, next_closer->end, &attr);
+                is_link = md_is_link_reference(ctx, lines, n_lines, next_opener->beg, next_closer->end,
+                    opener->ch == _T('!') ? 2 : 1, &attr);
         } else {
             /* Might be shortcut reference link. */
             if(!(opener->flags & MD_MARK_BRACKET_HASNESTED))
-                is_link = md_is_link_reference(ctx, lines, n_lines, opener->beg, closer->end, &attr);
+                is_link = md_is_link_reference(ctx, lines, n_lines, opener->beg, closer->end,
+                    opener->ch == _T('!') ? 2 : 1, &attr);
         }
 
         if(is_link < 0)
@@ -3993,7 +4166,8 @@ md_resolve_bracket_link(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
         if(!is_link) {
             /* Might be collapsed reference link. */
             if(!(opener->flags & MD_MARK_BRACKET_HASNESTED))
-                is_link = md_is_link_reference(ctx, lines, n_lines, opener->beg, closer->end, &attr);
+                is_link = md_is_link_reference(ctx, lines, n_lines, opener->beg, closer->end,
+                    opener->ch == _T('!') ? 2 : 1, &attr);
             if(is_link < 0)
                 return -1;
         }
@@ -4832,11 +5006,16 @@ abort:
 
 static int
 md_enter_leave_span_footnote_ref(MD_CTX* ctx, unsigned int id,
-                                 unsigned int ref_id, const CHAR* label, SZ label_size)
+                                 unsigned int ref_id, const CHAR* label, SZ label_size,
+                                 OFF definition_beg, OFF definition_end)
 {
     MD_ATTRIBUTE_BUILD label_build = { 0 };
     MD_SPAN_FOOTNOTE_REF_DETAIL det;
     int ret = 0;
+#ifndef MD_XUI_SOURCE_SPAN
+    MD_UNUSED(definition_beg);
+    MD_UNUSED(definition_end);
+#endif
 
     memset(&det, 0, sizeof(MD_SPAN_FOOTNOTE_REF_DETAIL));
     det.id = id;
@@ -4844,7 +5023,9 @@ md_enter_leave_span_footnote_ref(MD_CTX* ctx, unsigned int id,
     MD_CHECK(md_build_attribute(ctx, label, label_size, 0,
                                 &det.label, &label_build));
 
+    MD_XUI_SET_SPAN((OFF)(label - ctx->text) - 2, (OFF)(label - ctx->text), definition_beg, definition_end);
     MD_ENTER_SPAN(MD_SPAN_FOOTNOTE_REF, &det);
+    MD_XUI_SET_SPAN((OFF)(label - ctx->text) + label_size, (OFF)(label - ctx->text) + label_size + 1, UINT_MAX, UINT_MAX);
     MD_LEAVE_SPAN(MD_SPAN_FOOTNOTE_REF, &det);
 
 abort:
@@ -4887,6 +5068,7 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 
         /* If reached the mark, process it and move to next one. */
         if(off >= mark->beg) {
+            MD_XUI_SET_SPAN(mark->beg, mark->end, UINT_MAX, UINT_MAX);
             switch(mark->ch) {
                 case '\\':      /* Backslash escape. */
                     if(ISNEWLINE(mark->beg+1))
@@ -4913,11 +5095,13 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                     if(ctx->parser.flags & MD_FLAG_UNDERLINE) {
                         if(mark->flags & MD_MARK_OPENER) {
                             while(off < mark->end) {
+                                MD_XUI_SET_SPAN(off, off + 1, UINT_MAX, UINT_MAX);
                                 MD_ENTER_SPAN(MD_SPAN_U, NULL);
                                 off++;
                             }
                         } else {
                             while(off < mark->end) {
+                                MD_XUI_SET_SPAN(off, off + 1, UINT_MAX, UINT_MAX);
                                 MD_LEAVE_SPAN(MD_SPAN_U, NULL);
                                 off++;
                             }
@@ -4929,19 +5113,23 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                 case '*':       /* Emphasis, strong emphasis. */
                     if(mark->flags & MD_MARK_OPENER) {
                         if((mark->end - off) % 2) {
+                            MD_XUI_SET_SPAN(off, off + 1, UINT_MAX, UINT_MAX);
                             MD_ENTER_SPAN(MD_SPAN_EM, NULL);
                             off++;
                         }
                         while(off + 1 < mark->end) {
+                            MD_XUI_SET_SPAN(off, off + 2, UINT_MAX, UINT_MAX);
                             MD_ENTER_SPAN(MD_SPAN_STRONG, NULL);
                             off += 2;
                         }
                     } else {
                         while(off + 1 < mark->end) {
+                            MD_XUI_SET_SPAN(off, off + 2, UINT_MAX, UINT_MAX);
                             MD_LEAVE_SPAN(MD_SPAN_STRONG, NULL);
                             off += 2;
                         }
                         if((mark->end - off) % 2) {
+                            MD_XUI_SET_SPAN(off, off + 1, UINT_MAX, UINT_MAX);
                             MD_LEAVE_SPAN(MD_SPAN_EM, NULL);
                             off++;
                         }
@@ -5020,12 +5208,23 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                      * is guaranteed to be skipped by the off-advance below. */
                     if(opener->flags & MD_MARK_BRACKET_FOOTNOTEREF) {
                         MD_MARK* index_mark = (MD_MARK*) opener + 1;
+#ifdef MD_XUI_SOURCE_BLOCK
+                        MD_MARK* source_mark = (MD_MARK*) opener + 2;
+#endif
                         MD_ASSERT(mark->ch != ']');
                         MD_ASSERT(index_mark->ch == 'D');
+#ifdef MD_XUI_SOURCE_BLOCK
+                        MD_ASSERT(source_mark->ch == 'D');
+#endif
                         MD_CHECK(md_enter_leave_span_footnote_ref(ctx,
                                       (unsigned int) index_mark->beg,
                                       (unsigned int) index_mark->end,
-                                      STR(opener->end), closer->beg - opener->end));
+                                      STR(opener->end), closer->beg - opener->end,
+#ifdef MD_XUI_SOURCE_BLOCK
+                                      source_mark->beg, source_mark->end));
+#else
+                                      UINT_MAX, UINT_MAX));
+#endif
                         /* Redirect the opener's end past the whole [^label]
                          * so that the post-switch "off = mark->end" skips
                          * the label text and the closing ]. */
@@ -5057,6 +5256,7 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                     title_mark = opener+2;
                     MD_ASSERT(title_mark->ch == 'D');
 
+                    MD_XUI_SET_SPAN(mark->beg, mark->end, dest_mark->beg, dest_mark->end);
                     MD_CHECK(md_enter_leave_span_a(ctx, (mark->ch != ']'),
                                 (opener->ch == '!' ? MD_SPAN_IMG : MD_SPAN_A),
                                 STR(dest_mark->beg), dest_mark->end - dest_mark->beg, false,
@@ -5194,6 +5394,29 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                 }
 
                 MD_TEXT(break_type, _T("\n"), 1);
+#ifdef MD_XUI_SOURCE_BREAK
+                {
+                    OFF newline_beg = line->end;
+                    OFF newline_end;
+                    OFF marker_beg = UINT_MAX, marker_end = UINT_MAX;
+                    int break_kind;
+                    while(newline_beg < ctx->size && ISBLANK(newline_beg)) newline_beg++;
+                    newline_end = newline_beg;
+                    if(newline_end < ctx->size && CH(newline_end) == _T('\r')) newline_end++;
+                    if(newline_end < ctx->size && CH(newline_end) == _T('\n')) newline_end++;
+                    if(break_type == MD_TEXT_SOFTBR) break_kind = 1;
+                    else if(enforce_hardbreak) {
+                        break_kind = 2;
+                        if(newline_beg) { marker_beg = newline_beg - 1; marker_end = newline_beg; }
+                    } else if(ctx->parser.flags & MD_FLAG_HARD_SOFT_BREAKS) break_kind = 4;
+                    else {
+                        break_kind = 3;
+                        marker_beg = line->end; marker_end = newline_beg;
+                    }
+                    MD_CHECK(MD_XUI_SOURCE_BREAK(break_kind, line->end, marker_beg,
+                                                marker_end, newline_beg, newline_end));
+                }
+#endif
             }
 
             /* Move to the next line. */
@@ -5242,7 +5465,8 @@ md_analyze_table_alignment(MD_CTX* ctx, OFF beg, OFF end, MD_ALIGN* align, int n
 static int md_process_normal_block_contents(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines);
 
 static int
-md_process_table_cell(MD_CTX* ctx, MD_BLOCKTYPE cell_type, MD_ALIGN align, OFF beg, OFF end)
+md_process_table_cell(MD_CTX* ctx, MD_BLOCKTYPE cell_type, MD_ALIGN align, OFF beg, OFF end,
+                      int has_source)
 {
     MD_LINE line;
     MD_BLOCK_TD_DETAIL det;
@@ -5258,22 +5482,70 @@ md_process_table_cell(MD_CTX* ctx, MD_BLOCKTYPE cell_type, MD_ALIGN align, OFF b
     line.end = end;
 
     MD_ENTER_BLOCK(cell_type, &det);
+#ifdef MD_XUI_SOURCE_BLOCK
+    if(has_source)
+        MD_XUI_SOURCE_BLOCK(cell_type, beg, end, 1);
+#else
+    (void) has_source;
+#endif
     MD_CHECK(md_process_normal_block_contents(ctx, &line, 1));
+#ifdef MD_XUI_SOURCE_BLOCK
+    if(has_source)
+        MD_XUI_SOURCE_BLOCK(cell_type, beg, end, 0);
+#endif
     MD_LEAVE_BLOCK(cell_type, &det);
 
 abort:
     return ret;
 }
 
+#ifdef MD_XUI_SOURCE_TABLE_TOKEN
+/* The caller has already accepted this line as a table separator. Emit its
+ * exact punctuation after the table block exists, never during speculative
+ * line analysis. These values match xui_doc_table_token_kind/flags. */
+static int
+md_xui_emit_table_underline(MD_CTX* ctx, OFF beg, OFF end)
+{
+    OFF off = beg;
+    MD_SIZE column = 0, pipe = 0;
+    int ret = 0;
+    while(off < end) {
+        OFF cell_beg;
+        unsigned flags = 0;
+        if(CH(off) == _T('|')) {
+            MD_CHECK(MD_XUI_SOURCE_TABLE_TOKEN(1, 1, pipe++, off, off + 1, 0));
+            off++;
+        }
+        while(off < end && ISWHITESPACE(off)) off++;
+        if(off == end) break;
+        cell_beg = off;
+        if(CH(off) == _T(':')) { flags |= 1; off++; }
+        if(off == end || CH(off) != _T('-')) { ret = -1; goto abort; }
+        while(off < end && CH(off) == _T('-')) off++;
+        if(off < end && CH(off) == _T(':')) { flags |= 2; off++; }
+        MD_CHECK(MD_XUI_SOURCE_TABLE_TOKEN(2, 1, column++, cell_beg, off, flags));
+        while(off < end && ISWHITESPACE(off)) off++;
+        if(off < end && CH(off) != _T('|')) { ret = -1; goto abort; }
+    }
+abort:
+    return ret;
+}
+#endif
+
 static int
 md_process_table_row(MD_CTX* ctx, MD_BLOCKTYPE cell_type, OFF beg, OFF end,
-                     const MD_ALIGN* align, int col_count)
+                     const MD_ALIGN* align, int col_count, MD_SIZE row)
 {
     MD_LINE line;
     OFF* cell_begs = NULL;
     int i, j, k, n;
     int ret = 0;
     MD_MARK* mark = NULL;
+#ifdef MD_XUI_SOURCE_TABLE_TOKEN
+    MD_SIZE pipe = 0;
+#else
+    (void) row;
+#endif
 
     line.beg = beg;
     line.end = end;
@@ -5299,20 +5571,31 @@ md_process_table_row(MD_CTX* ctx, MD_BLOCKTYPE cell_type, OFF beg, OFF end,
         cell_begs[j++] = beg;
     for(i = ctx->table_cell_boundaries_head; i >= 0; i = ctx->marks[i].next) {
         mark = &ctx->marks[i];
-        for(k = 0; k < (int)(mark->end - mark->beg); k++)
+        for(k = 0; k < (int)(mark->end - mark->beg); k++) {
+#ifdef MD_XUI_SOURCE_TABLE_TOKEN
+            MD_CHECK(MD_XUI_SOURCE_TABLE_TOKEN(1, row, pipe++, mark->beg + k,
+                                              mark->beg + k + 1, 0));
+#endif
             cell_begs[j++] = mark->beg + k + 1;
+        }
     }
     if(mark == NULL || mark->end < end)
         cell_begs[j++] = end+1;
 
     /* Process cells. */
     MD_ENTER_BLOCK(MD_BLOCK_TR, NULL);
+#ifdef MD_XUI_SOURCE_BLOCK
+    MD_XUI_SOURCE_BLOCK(MD_BLOCK_TR, beg, end, 1);
+#endif
     for(i = 0; i < j-1 && i < col_count; i++)
-        MD_CHECK(md_process_table_cell(ctx, cell_type, align[i], cell_begs[i], cell_begs[i+1]-1));
+        MD_CHECK(md_process_table_cell(ctx, cell_type, align[i], cell_begs[i], cell_begs[i+1]-1, 1));
     /* Make sure we report enough table cells even if the current table contains
      * too few of them. */
     while(i < col_count)
-        MD_CHECK(md_process_table_cell(ctx, cell_type, align[i++], 0, 0));
+        MD_CHECK(md_process_table_cell(ctx, cell_type, align[i++], 0, 0, 0));
+#ifdef MD_XUI_SOURCE_BLOCK
+    MD_XUI_SOURCE_BLOCK(MD_BLOCK_TR, beg, end, 0);
+#endif
     MD_LEAVE_BLOCK(MD_BLOCK_TR, NULL);
 
 abort:
@@ -5346,14 +5629,17 @@ md_process_table_block_contents(MD_CTX* ctx, int col_count, const MD_LINE* lines
 
     MD_ENTER_BLOCK(MD_BLOCK_THEAD, NULL);
     MD_CHECK(md_process_table_row(ctx, MD_BLOCK_TH,
-                        lines[0].beg, lines[0].end, align, col_count));
+                        lines[0].beg, lines[0].end, align, col_count, 0));
     MD_LEAVE_BLOCK(MD_BLOCK_THEAD, NULL);
+#ifdef MD_XUI_SOURCE_TABLE_TOKEN
+    MD_CHECK(md_xui_emit_table_underline(ctx, lines[1].beg, lines[1].end));
+#endif
 
     if(n_lines > 2) {
         MD_ENTER_BLOCK(MD_BLOCK_TBODY, NULL);
         for(line_index = 2; line_index < n_lines; line_index++) {
             MD_CHECK(md_process_table_row(ctx, MD_BLOCK_TD,
-                     lines[line_index].beg, lines[line_index].end, align, col_count));
+                     lines[line_index].beg, lines[line_index].end, align, col_count, line_index));
         }
         MD_LEAVE_BLOCK(MD_BLOCK_TBODY, NULL);
     }
@@ -5375,6 +5661,20 @@ abort:
 #define MD_BLOCK_SETEXT_HEADER      0x08
 
 struct MD_BLOCK_tag {
+#ifdef MD_XUI_SOURCE_BLOCK
+    OFF xui_source_beg, xui_source_end;
+#endif
+#ifdef MD_XUI_SOURCE_MARKERS
+    OFF xui_mark_beg, xui_mark_end, xui_mark2_beg, xui_mark2_end;
+    OFF xui_mark_tail_end;
+    OFF xui_list_gap_end, xui_task_gap_end;
+#endif
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+    unsigned xui_quote_first, xui_quote_last;
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    unsigned xui_list_first, xui_list_last;
+#endif
     MD_BLOCKTYPE type  :  8;
     unsigned flags     :  8;
 
@@ -5404,7 +5704,30 @@ struct MD_CONTAINER_tag {
     unsigned contents_indent;
     OFF block_byte_off;
     OFF task_mark_off;
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    OFF xui_item_byte_off;
+#endif
+#ifdef MD_XUI_SOURCE_MARKERS
+    OFF xui_mark_beg, xui_mark_end;
+    OFF xui_list_gap_end, xui_task_gap_end;
+#endif
 };
+
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+struct MD_XUI_QUOTE_PREFIX_tag {
+    OFF offset;
+    unsigned next;
+};
+static int md_xui_emit_quote_prefixes(MD_CTX* ctx, const MD_BLOCK* block);
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+struct MD_XUI_LIST_INDENT_tag {
+    OFF beg, end;
+    unsigned start_column, content_column, end_column;
+    unsigned next;
+};
+static int md_xui_emit_list_indents(MD_CTX* ctx, const MD_BLOCK* block);
+#endif
 
 
 static int
@@ -5459,9 +5782,50 @@ abort:
     return ret;
 }
 
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+static int
+md_xui_emit_code_indents(MD_CTX* ctx, const MD_VERBATIMLINE* lines, MD_SIZE count)
+{
+    OFF local[48], *records = local;
+    MD_SIZE i;
+    int result;
+    if(count == 0)
+        return -1;
+#if SIZE_MAX <= UINT_MAX
+    if(count > SIZE_MAX / (6 * sizeof(*records)))
+        return -1;
+#endif
+    if(count > SIZEOF_ARRAY(local) / 6) {
+        records = malloc((size_t)count * 6 * sizeof(*records));
+        if(records == NULL)
+            return -1;
+    }
+    for(i = 0; i < count; i++) {
+        size_t slot = (size_t)i * 6;
+        const MD_VERBATIMLINE* line = &lines[i];
+        if((i & 4095u) == 0 && MD_XUI_CANCEL()) {
+            if(records != local) free(records);
+            return -1;
+        }
+        records[slot] = line->xui_code_indent_beg;
+        records[slot + 1] = line->xui_code_indent_end;
+        records[slot + 2] = line->xui_code_start_column;
+        records[slot + 3] = line->xui_code_content_column;
+        records[slot + 4] = line->xui_code_end_column;
+        records[slot + 5] = line->xui_code_flags;
+    }
+    result = MD_XUI_SOURCE_CODE_INDENTS(records, count);
+    if(records != local) free(records);
+    return result;
+}
+#endif
+
 static int
 md_process_code_block_contents(MD_CTX* ctx, int is_fenced, const MD_VERBATIMLINE* lines, MD_SIZE n_lines)
 {
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+    int ret = 0;
+#endif
     if(is_fenced) {
         /* Skip the first line in case of fenced code: It is the fence.
          * (Only the starting fence is present due to logic in md_analyze_line().) */
@@ -5481,12 +5845,26 @@ md_process_code_block_contents(MD_CTX* ctx, int is_fenced, const MD_VERBATIMLINE
     if(n_lines == 0)
         return 0;
 
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+    if(!is_fenced)
+        MD_CHECK(md_xui_emit_code_indents(ctx, lines, n_lines));
+#endif
+
     return md_process_verbatim_block_contents(ctx, MD_TEXT_CODE, lines, n_lines);
+
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+abort:
+    return ret;
+#endif
 }
 
 static int
 md_setup_fenced_code_detail(MD_CTX* ctx, const MD_BLOCK* block, MD_BLOCK_CODE_DETAIL* det,
-                            MD_ATTRIBUTE_BUILD* info_build, MD_ATTRIBUTE_BUILD* lang_build)
+                            MD_ATTRIBUTE_BUILD* info_build, MD_ATTRIBUTE_BUILD* lang_build
+#ifdef MD_XUI_SOURCE_FENCE_INFO
+                            , OFF* p_info_beg, OFF* p_info_end, OFF* p_lang_end
+#endif
+                            )
 {
     const MD_VERBATIMLINE* fence_line = (const MD_VERBATIMLINE*)(block + 1);
     OFF beg = fence_line->beg;
@@ -5514,6 +5892,11 @@ md_setup_fenced_code_detail(MD_CTX* ctx, const MD_BLOCK* block, MD_BLOCK_CODE_DE
     while(lang_end < end  &&  !ISWHITESPACE(lang_end))
         lang_end++;
     MD_CHECK(md_build_attribute(ctx, STR(beg), lang_end - beg, 0, &det->lang, lang_build));
+#ifdef MD_XUI_SOURCE_FENCE_INFO
+    *p_info_beg = beg;
+    *p_info_end = end;
+    *p_lang_end = lang_end;
+#endif
 
     det->fence_char = fence_ch;
 
@@ -5535,6 +5918,9 @@ md_process_leaf_block(MD_CTX* ctx, MD_BLOCK* block)
     int is_in_tight_list;
     int clean_fence_code_detail = false;
     int ret = 0;
+#ifdef MD_XUI_SOURCE_FENCE_INFO
+    OFF xui_info_beg = 0, xui_info_end = 0, xui_lang_end = 0;
+#endif
 
     /* For large tables check the table density: If it's too low, lets suppress
      * its interpretation as a table, as a safety measure against quadratic
@@ -5567,6 +5953,10 @@ md_process_leaf_block(MD_CTX* ctx, MD_BLOCK* block)
         is_in_tight_list = false;
     else
         is_in_tight_list = !ctx->containers[ctx->n_containers-1].is_loose;
+#ifdef MD_XUI_SOURCE_BLOCK
+    /* The document tree retains paragraphs even in tight lists. */
+    is_in_tight_list = false;
+#endif
 
     switch(block->type) {
         case MD_BLOCK_H:
@@ -5578,7 +5968,11 @@ md_process_leaf_block(MD_CTX* ctx, MD_BLOCK* block)
             if(block->data != 0) {
                 memset(&det.code, 0, sizeof(MD_BLOCK_CODE_DETAIL));
                 clean_fence_code_detail = true;
-                MD_CHECK(md_setup_fenced_code_detail(ctx, block, &det.code, &info_build, &lang_build));
+                MD_CHECK(md_setup_fenced_code_detail(ctx, block, &det.code, &info_build, &lang_build
+#ifdef MD_XUI_SOURCE_FENCE_INFO
+                    , &xui_info_beg, &xui_info_end, &xui_lang_end
+#endif
+                    ));
             }
             break;
 
@@ -5599,6 +5993,38 @@ md_process_leaf_block(MD_CTX* ctx, MD_BLOCK* block)
 
     if(!is_in_tight_list  ||  block->type != MD_BLOCK_P)
         MD_ENTER_BLOCK(block->type, (void*) &det);
+#ifdef MD_XUI_SOURCE_BLOCK
+    MD_XUI_SOURCE_BLOCK(block->type, block->xui_source_beg, block->xui_source_end, 1);
+#endif
+#ifdef MD_XUI_SOURCE_MARKERS
+    if(block->xui_mark_beg < block->xui_mark_end) {
+        int xui_kind = block->type == MD_BLOCK_H ?
+            (block->flags & MD_BLOCK_SETEXT_HEADER ? 2 : 1) :
+            block->type == MD_BLOCK_CODE ? 3 : block->type == MD_BLOCK_HR ? 4 : 0;
+        if(xui_kind)
+            MD_XUI_SOURCE_MARKERS(xui_kind, block->xui_mark_beg, block->xui_mark_end,
+                block->xui_mark2_beg, block->xui_mark2_end, block->xui_mark_tail_end, 0, 0);
+    }
+    if(block->type == MD_BLOCK_TABLE) {
+        const MD_LINE* table_lines = (const MD_LINE*)(block + 1);
+        /* XUI_DOC_BLOCK_SYNTAX_TABLE_UNDERLINE. */
+        MD_XUI_SOURCE_MARKERS(7, table_lines[1].beg, table_lines[1].end,
+            0, 0, 0, 0, 0);
+    }
+#endif
+#ifdef MD_XUI_SOURCE_FENCE_INFO
+    if(block->type == MD_BLOCK_CODE && block->data != 0)
+        MD_CHECK(MD_XUI_SOURCE_FENCE_INFO(xui_info_beg, xui_info_end, xui_lang_end));
+#endif
+#ifdef MD_XUI_SOURCE_HEADING_CONTENT
+    if(block->type == MD_BLOCK_H) {
+        const MD_LINE* heading_lines = (const MD_LINE*)(block + 1);
+        MD_SIZE count = block->n_lines;
+        /* md_end_current_block() has already removed the Setext underline. */
+        if(count == 0) { ret = -1; goto abort; }
+        MD_CHECK(MD_XUI_SOURCE_HEADING_CONTENT(heading_lines[0].beg, heading_lines[count-1].end));
+    }
+#endif
 
     /* Process the block contents accordingly to is type. */
     switch(block->type) {
@@ -5628,6 +6054,9 @@ md_process_leaf_block(MD_CTX* ctx, MD_BLOCK* block)
             break;
     }
 
+ #ifdef MD_XUI_SOURCE_BLOCK
+    MD_XUI_SOURCE_BLOCK(block->type, block->xui_source_beg, block->xui_source_end, 0);
+ #endif
     if(!is_in_tight_list  ||  block->type != MD_BLOCK_P)
         MD_LEAVE_BLOCK(block->type, (void*) &det);
 
@@ -5699,6 +6128,9 @@ md_process_all_blocks(MD_CTX* ctx)
 
         if(block->flags & MD_BLOCK_CONTAINER) {
             if(block->flags & MD_BLOCK_CONTAINER_CLOSER) {
+#ifdef MD_XUI_SOURCE_BLOCK
+                MD_XUI_SOURCE_BLOCK(block->type, block->xui_source_beg, block->xui_source_end, 0);
+#endif
                 MD_LEAVE_BLOCK(block->type, &det);
 
                 if(block->type == MD_BLOCK_UL || block->type == MD_BLOCK_OL ||
@@ -5708,6 +6140,29 @@ md_process_all_blocks(MD_CTX* ctx)
 
             if(block->flags & MD_BLOCK_CONTAINER_OPENER) {
                 MD_ENTER_BLOCK(block->type, &det);
+#ifdef MD_XUI_SOURCE_BLOCK
+                MD_XUI_SOURCE_BLOCK(block->type, block->xui_source_beg, block->xui_source_end, 1);
+#endif
+#ifdef MD_XUI_SOURCE_MARKERS
+                if(block->xui_mark_beg < block->xui_mark_end) {
+                    /* These values match XUI_DOC_BLOCK_SYNTAX_LIST_ITEM and
+                     * XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN in the wrapper build. */
+                    int xui_kind = block->type == MD_BLOCK_LI ? 5 :
+                        block->type == MD_BLOCK_QUOTE || block->type == MD_BLOCK_ADMONITION ? 6 : 0;
+                    if(xui_kind)
+                        MD_XUI_SOURCE_MARKERS(xui_kind, block->xui_mark_beg, block->xui_mark_end,
+                            block->xui_mark2_beg, block->xui_mark2_end, block->xui_mark_tail_end,
+                            block->xui_list_gap_end, block->xui_task_gap_end);
+                }
+#endif
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+                if(block->type == MD_BLOCK_QUOTE || block->type == MD_BLOCK_ADMONITION)
+                    MD_CHECK(md_xui_emit_quote_prefixes(ctx, block));
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+                if(block->type == MD_BLOCK_LI)
+                    MD_CHECK(md_xui_emit_list_indents(ctx, block));
+#endif
 
                 if(block->type == MD_BLOCK_UL || block->type == MD_BLOCK_OL) {
                     ctx->containers[ctx->n_containers].is_loose = (block->flags & MD_BLOCK_LOOSE_LIST) ? true : false;
@@ -5733,6 +6188,12 @@ md_process_all_blocks(MD_CTX* ctx)
     }
 
     ctx->n_block_bytes = 0;
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+    ctx->n_xui_quote_prefixes = 0;
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    ctx->n_xui_list_indents = 0;
+#endif
 
 abort:
     return ret;
@@ -5820,6 +6281,23 @@ md_start_new_block(MD_CTX* ctx, const MD_LINE_ANALYSIS* line)
     block->data = line->data;
     block->n_lines = 0;
 
+#ifdef MD_XUI_SOURCE_BLOCK
+    block->xui_source_beg = ctx->xui_line_beg;
+    block->xui_source_end = ctx->xui_line_end;
+#endif
+#ifdef MD_XUI_SOURCE_MARKERS
+    block->xui_mark_beg = block->xui_mark_end = 0;
+    block->xui_mark2_beg = block->xui_mark2_end = 0;
+    block->xui_mark_tail_end = 0;
+    block->xui_list_gap_end = block->xui_task_gap_end = 0;
+#endif
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+    block->xui_quote_first = block->xui_quote_last = UINT_MAX;
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    block->xui_list_first = block->xui_list_last = UINT_MAX;
+#endif
+
     ctx->current_block = block;
     return 0;
 }
@@ -5842,6 +6320,12 @@ md_consume_link_reference_definitions(MD_CTX* ctx)
     MD_SIZE n = 0;
     bool inject_hr = false;
     OFF ignored;
+#ifdef MD_XUI_SOURCE_BLOCK
+    OFF xui_hr_beg = 0, xui_hr_end = 0;
+#endif
+#ifdef MD_XUI_SOURCE_MARKERS
+    OFF xui_hr_marker_beg = 0, xui_hr_marker_end = 0;
+#endif
 
     while(n < n_lines) {
         int n_consumed = 0;
@@ -5878,6 +6362,17 @@ md_consume_link_reference_definitions(MD_CTX* ctx)
      * (https://github.com/mity/md4c/issues/414) */
     if(n < n_lines  &&  md_is_hr_line(ctx, lines[n].beg, &ignored, &ignored)) {
         inject_hr = true;
+#ifdef MD_XUI_SOURCE_MARKERS
+        xui_hr_marker_beg = lines[n].beg;
+        xui_hr_marker_end = lines[n].end;
+#endif
+#ifdef MD_XUI_SOURCE_BLOCK
+        xui_hr_beg = lines[n].beg;
+        while(xui_hr_beg && CH(xui_hr_beg - 1) != '\n' && CH(xui_hr_beg - 1) != '\r') xui_hr_beg--;
+        xui_hr_end = lines[n].end;
+        if(xui_hr_end < ctx->size && CH(xui_hr_end) == '\r') xui_hr_end++;
+        if(xui_hr_end < ctx->size && CH(xui_hr_end) == '\n') xui_hr_end++;
+#endif
         n++;    /* Remove one more line below. */
     }
 
@@ -5888,6 +6383,10 @@ md_consume_link_reference_definitions(MD_CTX* ctx)
         ctx->current_block = NULL;
     } else {
         /* Remove some initial lines from the block. */
+#ifdef MD_XUI_SOURCE_BLOCK
+        ctx->current_block->xui_source_beg = lines[n].beg;
+        while(ctx->current_block->xui_source_beg && CH(ctx->current_block->xui_source_beg - 1) != '\n' && CH(ctx->current_block->xui_source_beg - 1) != '\r') ctx->current_block->xui_source_beg--;
+#endif
         memmove(lines, lines + n, (n_lines - n) * sizeof(MD_LINE));
         ctx->current_block->n_lines -= n;
         ctx->n_block_bytes -= n * sizeof(MD_LINE);
@@ -5909,6 +6408,14 @@ md_consume_link_reference_definitions(MD_CTX* ctx)
 
         memset(hr_block, 0, sizeof(MD_BLOCK));
         hr_block->type = MD_BLOCK_HR;
+#ifdef MD_XUI_SOURCE_MARKERS
+        hr_block->xui_mark_beg = xui_hr_marker_beg;
+        hr_block->xui_mark_end = xui_hr_marker_end;
+#endif
+#ifdef MD_XUI_SOURCE_BLOCK
+        hr_block->xui_source_beg = xui_hr_beg;
+        hr_block->xui_source_end = xui_hr_end;
+#endif
     }
 
     return 0;
@@ -5925,9 +6432,10 @@ md_end_current_block(MD_CTX* ctx)
     /* Check whether there is a reference definition. (We do this here instead
      * of in md_analyze_line() because reference definition can take multiple
      * lines.) */
-    if(ctx->current_block->type == MD_BLOCK_P  ||
-       (ctx->current_block->type == MD_BLOCK_H  &&  (ctx->current_block->flags & MD_BLOCK_SETEXT_HEADER)))
-    {
+    if(!ctx->in_footnote_body &&
+       (ctx->current_block->type == MD_BLOCK_P ||
+        (ctx->current_block->type == MD_BLOCK_H &&
+         (ctx->current_block->flags & MD_BLOCK_SETEXT_HEADER)))) {
         MD_LINE* lines = (MD_LINE*) (ctx->current_block + 1);
         if(lines[0].beg < ctx->size  &&  CH(lines[0].beg) == _T('[')) {
             MD_CHECK(md_consume_link_reference_definitions(ctx));
@@ -5973,6 +6481,16 @@ md_add_line_into_current_block(MD_CTX* ctx, const MD_LINE_ANALYSIS* analysis)
         line->indent = analysis->indent;
         line->beg = analysis->beg;
         line->end = analysis->end;
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+        if(analysis->type == MD_LINE_INDENTEDCODE) {
+            line->xui_code_indent_beg = analysis->xui_code_indent_beg;
+            line->xui_code_indent_end = analysis->xui_code_indent_end;
+            line->xui_code_start_column = analysis->xui_code_start_column;
+            line->xui_code_content_column = analysis->xui_code_content_column;
+            line->xui_code_end_column = analysis->xui_code_end_column;
+            line->xui_code_flags = analysis->xui_code_flags;
+        }
+#endif
     } else {
         MD_LINE* line;
 
@@ -5984,6 +6502,9 @@ md_add_line_into_current_block(MD_CTX* ctx, const MD_LINE_ANALYSIS* analysis)
         line->end = analysis->end;
     }
     ctx->current_block->n_lines++;
+#ifdef MD_XUI_SOURCE_BLOCK
+    ctx->current_block->xui_source_end = ctx->xui_line_end;
+#endif
 
     return 0;
 }
@@ -6005,6 +6526,9 @@ md_flush_blank_lines(MD_CTX* ctx)
     block->flags = 0;
     block->data = ctx->n_blank_lines;
     block->n_lines = 0;
+#ifdef MD_XUI_SOURCE_BLOCK
+    block->xui_source_beg = block->xui_source_end = ctx->xui_line_beg;
+#endif
 
     ctx->n_blank_lines = 0;
     return 0;
@@ -6028,6 +6552,21 @@ md_push_container_bytes(MD_CTX* ctx, MD_BLOCKTYPE type, unsigned start,
     block->flags = flags;
     block->data = data;
     block->n_lines = start;
+#ifdef MD_XUI_SOURCE_MARKERS
+    block->xui_mark_beg = block->xui_mark_end = 0;
+    block->xui_mark2_beg = block->xui_mark2_end = 0;
+    block->xui_mark_tail_end = 0;
+#endif
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+    block->xui_quote_first = block->xui_quote_last = UINT_MAX;
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    block->xui_list_first = block->xui_list_last = UINT_MAX;
+#endif
+#ifdef MD_XUI_SOURCE_BLOCK
+    block->xui_source_beg = ctx->xui_line_beg;
+    block->xui_source_end = flags & MD_BLOCK_CONTAINER_CLOSER ? ctx->xui_line_beg : ctx->xui_line_end;
+#endif
 
 abort:
     return ret;
@@ -6476,6 +7015,187 @@ md_push_container(MD_CTX* ctx, const MD_CONTAINER* container)
     return 0;
 }
 
+#ifdef MD_XUI_SOURCE_MARKERS
+static void
+md_xui_container_marker(MD_CTX* ctx, const MD_CONTAINER* container)
+{
+    MD_BLOCK* block = (MD_BLOCK*) ((char*)ctx->block_bytes + ctx->n_block_bytes - sizeof(MD_BLOCK));
+    block->xui_mark_beg = container->xui_mark_beg;
+    block->xui_mark_end = container->xui_mark_end;
+    if(block->type == MD_BLOCK_LI) {
+        block->xui_list_gap_end = container->xui_list_gap_end;
+        block->xui_task_gap_end = container->xui_task_gap_end;
+    }
+    if(block->type == MD_BLOCK_LI && container->is_task) {
+        block->xui_mark2_beg = container->task_mark_off - 1;
+        block->xui_mark2_end = container->task_mark_off + 2;
+    }
+}
+#endif
+
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+static int
+md_xui_append_quote_prefix(MD_CTX* ctx, const MD_CONTAINER* container, OFF offset)
+{
+    MD_BLOCK* block;
+    unsigned index = ctx->n_xui_quote_prefixes;
+    if(index == UINT_MAX)
+        return -1;
+    if(index == ctx->alloc_xui_quote_prefixes) {
+        unsigned capacity = ctx->alloc_xui_quote_prefixes
+            ? ctx->alloc_xui_quote_prefixes + ctx->alloc_xui_quote_prefixes / 2 : 64;
+        MD_XUI_QUOTE_PREFIX* next;
+        if(capacity <= ctx->alloc_xui_quote_prefixes)
+            return -1;
+#if SIZE_MAX <= UINT_MAX
+        if(capacity > SIZE_MAX / sizeof(*next))
+            return -1;
+#endif
+        next = realloc(ctx->xui_quote_prefixes, (size_t)capacity * sizeof(*next));
+        if(next == NULL)
+            return -1;
+        ctx->xui_quote_prefixes = next;
+        ctx->alloc_xui_quote_prefixes = capacity;
+    }
+    if(container->block_byte_off >= (OFF)ctx->n_block_bytes)
+        return -1;
+    block = (MD_BLOCK*) ((char*)ctx->block_bytes + container->block_byte_off);
+    if(block->xui_quote_last == UINT_MAX)
+        block->xui_quote_first = index;
+    else
+        ctx->xui_quote_prefixes[block->xui_quote_last].next = index;
+    block->xui_quote_last = index;
+    ctx->xui_quote_prefixes[index].offset = offset;
+    ctx->xui_quote_prefixes[index].next = UINT_MAX;
+    ctx->n_xui_quote_prefixes++;
+    return 0;
+}
+
+static int
+md_xui_emit_quote_prefixes(MD_CTX* ctx, const MD_BLOCK* block)
+{
+    unsigned i, count = 0;
+    OFF local[16], *offsets = local;
+    int result;
+    if(block->xui_quote_first == UINT_MAX)
+        return -1;
+    for(i = block->xui_quote_first; i != UINT_MAX;
+        i = ctx->xui_quote_prefixes[i].next) {
+        if(i >= ctx->n_xui_quote_prefixes || count == UINT_MAX)
+            return -1;
+        count++;
+        if((count & 4095u) == 0 && MD_XUI_CANCEL())
+            return -1;
+    }
+#if SIZE_MAX <= UINT_MAX
+    if(count > SIZE_MAX / sizeof(*offsets))
+        return -1;
+#endif
+    if(count > SIZEOF_ARRAY(local)) {
+        offsets = malloc((size_t)count * sizeof(*offsets));
+        if(offsets == NULL)
+            return -1;
+    }
+    count = 0;
+    for(i = block->xui_quote_first; i != UINT_MAX;
+        i = ctx->xui_quote_prefixes[i].next)
+        offsets[count++] = ctx->xui_quote_prefixes[i].offset;
+    result = MD_XUI_SOURCE_QUOTE_PREFIXES(offsets, count);
+    if(offsets != local)
+        free(offsets);
+    return result;
+}
+#endif
+
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+static int
+md_xui_append_list_indent(MD_CTX* ctx, const MD_CONTAINER* container,
+                          OFF beg, OFF end, unsigned start_column,
+                          unsigned content_column, unsigned end_column)
+{
+    unsigned index = ctx->n_xui_list_indents;
+    MD_BLOCK* block;
+    if(index == UINT_MAX || beg >= end || end > ctx->size ||
+       start_column >= content_column || content_column > end_column ||
+       container->xui_item_byte_off >= (OFF)ctx->n_block_bytes)
+        return -1;
+    if(index == ctx->alloc_xui_list_indents) {
+        unsigned capacity = ctx->alloc_xui_list_indents
+            ? ctx->alloc_xui_list_indents + ctx->alloc_xui_list_indents / 2 : 64;
+        MD_XUI_LIST_INDENT* next;
+        if(capacity <= ctx->alloc_xui_list_indents)
+            return -1;
+#if SIZE_MAX <= UINT_MAX
+        if(capacity > SIZE_MAX / sizeof(*next))
+            return -1;
+#endif
+        next = realloc(ctx->xui_list_indents, (size_t)capacity * sizeof(*next));
+        if(next == NULL)
+            return -1;
+        ctx->xui_list_indents = next;
+        ctx->alloc_xui_list_indents = capacity;
+    }
+    block = (MD_BLOCK*) ((char*)ctx->block_bytes + container->xui_item_byte_off);
+    if(block->type != MD_BLOCK_LI)
+        return -1;
+    if(block->xui_list_last == UINT_MAX)
+        block->xui_list_first = index;
+    else
+        ctx->xui_list_indents[block->xui_list_last].next = index;
+    block->xui_list_last = index;
+    ctx->xui_list_indents[index].beg = beg;
+    ctx->xui_list_indents[index].end = end;
+    ctx->xui_list_indents[index].start_column = start_column;
+    ctx->xui_list_indents[index].content_column = content_column;
+    ctx->xui_list_indents[index].end_column = end_column;
+    ctx->xui_list_indents[index].next = UINT_MAX;
+    ctx->n_xui_list_indents++;
+    return 0;
+}
+
+static int
+md_xui_emit_list_indents(MD_CTX* ctx, const MD_BLOCK* block)
+{
+    unsigned i, count = 0;
+    OFF local[40], *records = local;
+    int result;
+    if(block->xui_list_first == UINT_MAX)
+        return 0;
+    for(i = block->xui_list_first; i != UINT_MAX;
+        i = ctx->xui_list_indents[i].next) {
+        if(i >= ctx->n_xui_list_indents || count == UINT_MAX)
+            return -1;
+        count++;
+        if((count & 4095u) == 0 && MD_XUI_CANCEL())
+            return -1;
+    }
+#if SIZE_MAX <= UINT_MAX
+    if(count > SIZE_MAX / (5 * sizeof(*records)))
+        return -1;
+#endif
+    if(count > SIZEOF_ARRAY(local) / 5) {
+        records = malloc((size_t)count * 5 * sizeof(*records));
+        if(records == NULL)
+            return -1;
+    }
+    count = 0;
+    for(i = block->xui_list_first; i != UINT_MAX;
+        i = ctx->xui_list_indents[i].next) {
+        size_t slot = (size_t)count * 5;
+        records[slot] = ctx->xui_list_indents[i].beg;
+        records[slot + 1] = ctx->xui_list_indents[i].end;
+        records[slot + 2] = ctx->xui_list_indents[i].start_column;
+        records[slot + 3] = ctx->xui_list_indents[i].content_column;
+        records[slot + 4] = ctx->xui_list_indents[i].end_column;
+        count++;
+    }
+    result = MD_XUI_SOURCE_LIST_INDENTS(records, count);
+    if(records != local)
+        free(records);
+    return result;
+}
+#endif
+
 static int
 md_enter_child_containers(MD_CTX* ctx, int n_children)
 {
@@ -6507,12 +7227,25 @@ md_enter_child_containers(MD_CTX* ctx, int n_children)
                                 c->task_mark_off,
                                 (c->is_task ? CH(c->task_mark_off) : 0),
                                 MD_BLOCK_CONTAINER_OPENER));
+#ifdef MD_XUI_SOURCE_MARKERS
+                md_xui_container_marker(ctx, c);
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+                c->xui_item_byte_off = ctx->n_block_bytes - sizeof(MD_BLOCK);
+#endif
                 break;
 
             case _T('>'):
                 MD_CHECK(md_push_container_bytes(ctx,
                                 (c->is_admonition ? MD_BLOCK_ADMONITION : MD_BLOCK_QUOTE),
                                 0, c->admonition_type, MD_BLOCK_CONTAINER_OPENER));
+#ifdef MD_XUI_SOURCE_MARKERS
+                md_xui_container_marker(ctx, c);
+#endif
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+                c->block_byte_off = ctx->n_block_bytes - sizeof(MD_BLOCK);
+                MD_CHECK(md_xui_append_quote_prefix(ctx, c, c->xui_mark_beg));
+#endif
                 break;
 
             default:
@@ -6587,6 +7320,10 @@ md_is_container_mark(MD_CTX* ctx, unsigned indent, OFF beg, OFF* p_end, MD_CONTA
         p_container->mark_indent = indent;
         p_container->contents_indent = indent + 1;
         *p_end = off;
+#ifdef MD_XUI_SOURCE_MARKERS
+        p_container->xui_mark_beg = beg;
+        p_container->xui_mark_end = off;
+#endif
         return true;
     }
 
@@ -6598,6 +7335,12 @@ md_is_container_mark(MD_CTX* ctx, unsigned indent, OFF beg, OFF* p_end, MD_CONTA
         p_container->mark_indent = indent;
         p_container->contents_indent = indent + 1;
         *p_end = off+1;
+#ifdef MD_XUI_SOURCE_MARKERS
+        p_container->xui_mark_beg = beg;
+        p_container->xui_mark_end = off + 1;
+        p_container->xui_list_gap_end = off + 1;
+        p_container->xui_task_gap_end = 0;
+#endif
         return true;
     }
 
@@ -6621,6 +7364,12 @@ md_is_container_mark(MD_CTX* ctx, unsigned indent, OFF beg, OFF* p_end, MD_CONTA
         p_container->mark_indent = indent;
         p_container->contents_indent = indent + off - beg + 1;
         *p_end = off+1;
+#ifdef MD_XUI_SOURCE_MARKERS
+        p_container->xui_mark_beg = beg;
+        p_container->xui_mark_end = off + 1;
+        p_container->xui_list_gap_end = off + 1;
+        p_container->xui_task_gap_end = 0;
+#endif
         return true;
     }
 
@@ -6645,7 +7394,45 @@ md_line_indentation(MD_CTX* ctx, unsigned total_indent, OFF beg, OFF* p_end)
     return indent - total_indent;
 }
 
-static const MD_LINE_ANALYSIS md_dummy_blank_line = { MD_LINE_BLANK, 0, 0, 0, 0, 0 };
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+/* Rewalk only the container prefix the parser already accepted. Recording
+ * here, after final lazy/blank/sibling decisions, excludes incidental spaces
+ * on lines that were not explicitly nested in this list item. */
+static int
+md_xui_record_list_indents(MD_CTX* ctx, OFF beg, int n_parents)
+{
+    OFF off = beg, indent_beg = beg;
+    unsigned total_indent = 0;
+    unsigned indent = md_line_indentation(ctx, total_indent, off, &off);
+    int i;
+    total_indent += indent;
+    for(i = 0; i < n_parents; i++) {
+        MD_CONTAINER* c = &ctx->containers[i];
+        if(c->ch == _T('>')) {
+            if(off >= ctx->size || CH(off) != _T('>'))
+                return -1;
+            off++;
+            total_indent++;
+            indent_beg = off;
+            indent = md_line_indentation(ctx, total_indent, off, &off);
+            total_indent += indent;
+            if(indent > 0)
+                indent--;
+        } else {
+            if(indent < c->contents_indent || indent_beg >= off)
+                return -1;
+            if(md_xui_append_list_indent(ctx, c, indent_beg, off,
+                 total_indent - indent, total_indent - indent + c->contents_indent,
+                 total_indent) != 0)
+                return -1;
+            indent -= c->contents_indent;
+        }
+    }
+    return 0;
+}
+#endif
+
+static const MD_LINE_ANALYSIS md_dummy_blank_line = { .type = MD_LINE_BLANK };
 
 /* Analyze type of the line and find some its properties. This serves as a
  * main input for determining type and boundaries of a block. */
@@ -6657,6 +7444,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
     int n_parents = 0;
     int n_brothers = 0;
     int n_children = 0;
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    int xui_explicit_parents;
+#endif
     MD_CONTAINER container = { 0 };
     int prev_line_has_list_loosening_effect = ctx->last_line_has_list_loosening_effect;
     OFF off = beg;
@@ -6677,6 +7467,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             off < ctx->size  &&  CH(off) == _T('>'))
         {
             /* Block quote mark. */
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+            MD_CHECK(md_xui_append_quote_prefix(ctx, c, off));
+#endif
             off++;
             total_indent++;
             line->indent = md_line_indentation(ctx, total_indent, off, &off);
@@ -6697,6 +7490,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
 
         n_parents++;
     }
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    xui_explicit_parents = n_parents;
+#endif
 
     if(off >= ctx->size  ||  ISNEWLINE(off)) {
         /* Blank line does not need any real indentation to be nested inside
@@ -6846,6 +7642,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                 line->indent = md_line_indentation(ctx, total_indent, off, &off);
                 total_indent += line->indent;
                 line->beg = off;
+#ifdef MD_XUI_SOURCE_MARKERS
+                container.xui_list_gap_end = off;
+#endif
 
                 /* Some of the following whitespace actually still belongs to the mark. */
                 if(off >= ctx->size || ISNEWLINE(off)) {
@@ -6894,6 +7693,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
 
                 line->beg = off;
                 line->data = container.ch;
+#ifdef MD_XUI_SOURCE_MARKERS
+                container.xui_list_gap_end = off;
+#endif
 
                 /* Some of the following whitespace actually still belongs to the mark. */
                 if(off >= ctx->size || ISNEWLINE(off)) {
@@ -7014,6 +7816,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                 while(off < ctx->size  &&  ISWHITESPACE(off))
                     off++;
                 line->beg = off;
+#ifdef MD_XUI_SOURCE_MARKERS
+                task_container->xui_task_gap_end = off;
+#endif
             }
         }
 
@@ -7056,6 +7861,35 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
 
     *p_end = off;
 
+#ifdef MD_XUI_SOURCE_CODE_INDENTS
+    if(line->type == MD_LINE_INDENTEDCODE) {
+        OFF raw_beg = line->beg;
+        while(raw_beg > beg && ISBLANK(raw_beg - 1)) raw_beg--;
+        line->xui_code_indent_beg = raw_beg;
+        line->xui_code_indent_end = line->beg;
+        line->xui_code_end_column = total_indent;
+        line->xui_code_flags = line->beg == line->end ? 1u : 0u;
+        if(line->xui_code_flags) {
+            line->xui_code_start_column = total_indent;
+            line->xui_code_content_column = UINT_MAX;
+        } else {
+            if(total_indent < line->indent ||
+               total_indent - line->indent < ctx->code_indent_offset)
+                return -1;
+            line->xui_code_start_column =
+                total_indent - line->indent - ctx->code_indent_offset;
+            line->xui_code_content_column =
+                line->xui_code_start_column + ctx->code_indent_offset;
+        }
+    }
+#endif
+
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    if(n_parents > 0 && xui_explicit_parents > 0)
+        MD_CHECK(md_xui_record_list_indents(ctx, beg,
+                 MIN(n_parents, xui_explicit_parents)));
+#endif
+
     /* If we belong to a list after seeing a blank line, the list is loose. */
     if(prev_line_has_list_loosening_effect  &&  line->type != MD_LINE_BLANK  &&  n_parents + n_brothers > 0) {
         MD_CONTAINER* c = &ctx->containers[n_parents + n_brothers - 1];
@@ -7080,6 +7914,12 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                     container.task_mark_off,
                     (container.is_task ? CH(container.task_mark_off) : 0),
                     MD_BLOCK_CONTAINER_OPENER));
+#ifdef MD_XUI_SOURCE_MARKERS
+        md_xui_container_marker(ctx, &container);
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+        ctx->containers[n_parents].xui_item_byte_off = ctx->n_block_bytes - sizeof(MD_BLOCK);
+#endif
         ctx->containers[n_parents].is_task = container.is_task;
         ctx->containers[n_parents].task_mark_off = container.task_mark_off;
     }
@@ -7121,6 +7961,19 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
 
     /* Blank line ends current leaf block. */
     if(line->type == MD_LINE_BLANK) {
+#ifdef MD_XUI_SOURCE_BLOCK
+        if(ctx->current_block && ctx->current_block->type == MD_BLOCK_CODE && line->beg < line->end)
+            ctx->current_block->xui_source_end = ctx->xui_line_end;
+#endif
+#ifdef MD_XUI_SOURCE_MARKERS
+        if(ctx->current_block && ctx->current_block->type == MD_BLOCK_CODE &&
+           ctx->current_block->data && line->beg < line->end) {
+            OFF end = line->beg;
+            while(end < line->end && CH(end) == CH(line->beg)) end++;
+            ctx->current_block->xui_mark2_beg = line->beg;
+            ctx->current_block->xui_mark2_end = end;
+        }
+#endif
         MD_CHECK(md_end_current_block(ctx));
         /* Count only genuinely empty lines: some non-blank lines (e.g. a closing
          * code fence) are internally retyped as MD_LINE_BLANK but still hold
@@ -7144,6 +7997,27 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
 
         /* Add our single-line block. */
         MD_CHECK(md_start_new_block(ctx, line));
+#ifdef MD_XUI_SOURCE_MARKERS
+        if(line->type == MD_LINE_ATXHEADER) {
+            OFF end = line->beg, beg = end;
+            while(beg > ctx->xui_line_beg && ISBLANK(beg-1)) beg--;
+            end = beg;
+            while(beg > ctx->xui_line_beg && CH(beg-1) == _T('#')) beg--;
+            ctx->current_block->xui_mark_beg = beg;
+            ctx->current_block->xui_mark_end = end;
+            end = line->end;
+            while(end < ctx->size && ISBLANK(end)) end++;
+            if(end < ctx->size && CH(end) == _T('#')) {
+                OFF closing = end;
+                while(end < ctx->size && CH(end) == _T('#')) end++;
+                ctx->current_block->xui_mark2_beg = closing;
+                ctx->current_block->xui_mark2_end = end;
+            }
+        } else {
+            ctx->current_block->xui_mark_beg = line->beg;
+            ctx->current_block->xui_mark_end = line->end;
+        }
+#endif
         MD_CHECK(md_add_line_into_current_block(ctx, line));
         MD_CHECK(md_end_current_block(ctx));
         *p_pivot_line = &md_dummy_blank_line;
@@ -7156,6 +8030,10 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
         ctx->current_block->type = MD_BLOCK_H;
         ctx->current_block->data = line->data;
         ctx->current_block->flags |= MD_BLOCK_SETEXT_HEADER;
+#ifdef MD_XUI_SOURCE_MARKERS
+        ctx->current_block->xui_mark_beg = line->beg;
+        ctx->current_block->xui_mark_end = line->end;
+#endif
         MD_CHECK(md_add_line_into_current_block(ctx, line));
         MD_CHECK(md_end_current_block(ctx));
         if(ctx->current_block == NULL) {
@@ -7188,6 +8066,15 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
     /* The current line may start a new block. */
     if(ctx->current_block == NULL) {
         MD_CHECK(md_start_new_block(ctx, line));
+#ifdef MD_XUI_SOURCE_MARKERS
+        if(line->type == MD_LINE_FENCEDCODE) {
+            OFF end = line->beg;
+            while(end < line->end && CH(end) == CH(line->beg)) end++;
+            ctx->current_block->xui_mark_beg = line->beg;
+            ctx->current_block->xui_mark_end = end;
+            ctx->current_block->xui_mark_tail_end = line->end;
+        }
+#endif
         *p_pivot_line = line;
     }
 
@@ -7198,19 +8085,21 @@ abort:
     return ret;
 }
 
-static int
-md_footnote_def_cmp_index(const void* a, const void* b)
+static OFF
+md_footnote_body_line_beg(MD_CTX* ctx, MD_FOOTNOTE_DEF* def, MD_SIZE index)
 {
-    const MD_FOOTNOTE_DEF* da = (const MD_FOOTNOTE_DEF*) a;
-    const MD_FOOTNOTE_DEF* db = (const MD_FOOTNOTE_DEF*) b;
-
-    /* Unreferenced defs (index == 0) always sort after referenced ones. */
-    if(da->index == 0  &&  db->index == 0) return 0;
-    if(da->index == 0) return +1;
-    if(db->index == 0) return -1;
-    if(da->index < db->index) return -1;
-    if(da->index > db->index) return +1;
-    return 0;
+    OFF beg = def->content_lines[index].beg, start = beg, at;
+    unsigned column = 0, target = def->body_prefix_cols + 4;
+    if(index == 0 && def->content_starts_on_definition_line)
+        return beg;
+    while(start > 0 && CH(start - 1) != _T('\n') && CH(start - 1) != _T('\r'))
+        start--;
+    for(at = start; at < beg && column < target; at++) {
+        if(CH(at) == _T('\t')) column = (column + 4) & ~3u;
+        else column++;
+    }
+    /* An unindented continuation in the first paragraph is lazy text. */
+    return column < target ? beg : at;
 }
 
 static int
@@ -7218,6 +8107,10 @@ md_process_footnote_def(MD_CTX* ctx, MD_FOOTNOTE_DEF* def)
 {
     MD_BLOCK_FOOTNOTE_DEF_DETAIL det;
     MD_ATTRIBUTE_BUILD label_build = { 0 };
+    const MD_LINE_ANALYSIS* pivot_line = &md_dummy_blank_line;
+    MD_LINE_ANALYSIS line_buf[2];
+    MD_LINE_ANALYSIS* line = &line_buf[0];
+    MD_SIZE index;
     int ret = 0;
 
     memset(&det, 0, sizeof(MD_BLOCK_FOOTNOTE_DEF_DETAIL));
@@ -7227,11 +8120,49 @@ md_process_footnote_def(MD_CTX* ctx, MD_FOOTNOTE_DEF* def)
                                 &det.label, &label_build));
 
     MD_ENTER_BLOCK(MD_BLOCK_FOOTNOTE_DEF, &det);
-    MD_CHECK(md_process_normal_block_contents(ctx, def->content_lines,
-                                              def->n_content_lines));
+#ifdef MD_XUI_SOURCE_BLOCK
+    MD_XUI_SOURCE_BLOCK(MD_BLOCK_FOOTNOTE_DEF, def->xui_source_beg, def->xui_source_end, 1);
+#endif
+    ctx->in_footnote_body = 1;
+    ctx->n_containers = 0;
+    ctx->n_blank_lines = 0;
+    ctx->last_line_has_list_loosening_effect = 0;
+    ctx->consecutive_blank_lines = 0;
+    ctx->code_fence_length = 0;
+    ctx->html_block_type = 0;
+    for(index = 0; index < def->n_content_lines; index++) {
+        OFF beg = md_footnote_body_line_beg(ctx, def, index), next;
+        if(line == pivot_line)
+            line = (line == &line_buf[0] ? &line_buf[1] : &line_buf[0]);
+#ifdef MD_XUI_SOURCE_BLOCK
+        ctx->xui_line_beg = def->content_lines[index].beg;
+        while(ctx->xui_line_beg > 0 && CH(ctx->xui_line_beg - 1) != _T('\n') &&
+              CH(ctx->xui_line_beg - 1) != _T('\r'))
+            ctx->xui_line_beg--;
+        ctx->xui_line_end = def->content_lines[index].end;
+        while(ctx->xui_line_end < ctx->size && CH(ctx->xui_line_end) != _T('\n') &&
+              CH(ctx->xui_line_end) != _T('\r'))
+            ctx->xui_line_end++;
+        if(ctx->xui_line_end < ctx->size && CH(ctx->xui_line_end) == _T('\r')) ctx->xui_line_end++;
+        if(ctx->xui_line_end < ctx->size && CH(ctx->xui_line_end) == _T('\n')) ctx->xui_line_end++;
+#endif
+        MD_CHECK(md_analyze_line(ctx, beg, &next, pivot_line, line));
+        MD_CHECK(md_process_line(ctx, &pivot_line, line));
+    }
+    MD_CHECK(md_end_current_block(ctx));
+#ifdef MD_XUI_SOURCE_BLOCK
+    /* Container closers use this line start as their source end. There is no
+     * next source line after the final footnote continuation. */
+    ctx->xui_line_beg = def->xui_source_end;
+#endif
+    MD_CHECK(md_leave_child_containers(ctx, 0));
+    MD_CHECK(md_flush_blank_lines(ctx));
+    MD_CHECK(md_process_all_blocks(ctx));
+    ctx->in_footnote_body = 0;
     MD_LEAVE_BLOCK(MD_BLOCK_FOOTNOTE_DEF, &det);
 
 abort:
+    ctx->in_footnote_body = 0;
     md_free_attribute(ctx, &label_build);
     return ret;
 }
@@ -7241,29 +8172,109 @@ abort:
 static int
 md_process_footnote_defs(MD_CTX* ctx)
 {
-    unsigned i;
+    size_t i, count = ctx->footnote_hashtable.n_defs;
+    MD_FOOTNOTE_DEF** by_index;
     int ret = 0;
 
-    if(ctx->footnote_hashtable.n_defs == 0  ||  ctx->next_footnote_index == 0)
+    if(count == 0  ||  ctx->next_footnote_index == 0)
         return 0;
 
-    /* Sort defs by index so we emit in reference order. */
-    qsort(ctx->footnote_hashtable.defs, ctx->footnote_hashtable.n_defs,
-          sizeof(MD_FOOTNOTE_DEF), md_footnote_def_cmp_index);
+    /* The hash table points into defs[], so sorting that array invalidates
+     * lookups from footnote bodies. Their references can also assign indices
+     * to previously unused definitions while this loop is running. */
+    if(count >= SIZE_MAX / sizeof(*by_index))
+        return -1;
+    by_index = (MD_FOOTNOTE_DEF**) malloc((count + 1) * sizeof(*by_index));
+    if(by_index == NULL) {
+        MD_LOG("malloc() failed.");
+        return -1;
+    }
+    memset(by_index, 0, (count + 1) * sizeof(*by_index));
+    for(i = 0; i < count; i++) {
+        MD_FOOTNOTE_DEF* def = &ctx->footnote_hashtable.footnote_defs[i];
+        if(def->index != 0)
+            by_index[def->index] = def;
+    }
+    ctx->footnote_by_index = by_index;
 
     MD_ENTER_BLOCK(MD_BLOCK_FOOTNOTE_DEF_SECTION, NULL);
 
-    for(i = 0; i < ctx->footnote_hashtable.n_defs; i++) {
-        MD_FOOTNOTE_DEF* def = &ctx->footnote_hashtable.footnote_defs[i];
-        if(def->index == 0)
-            break;
-        MD_CHECK(md_process_footnote_def(ctx, def));
+    for(i = 1; i <= ctx->next_footnote_index; i++) {
+        if(by_index[i] == NULL) {
+            ret = -1;
+            goto abort;
+        }
+        MD_CHECK(md_process_footnote_def(ctx, by_index[i]));
     }
 
     MD_LEAVE_BLOCK(MD_BLOCK_FOOTNOTE_DEF_SECTION, NULL);
 
 abort:
+    ctx->footnote_by_index = NULL;
+    free(by_index);
     return ret;
+}
+
+static int
+md_current_block_starts_footnote(MD_CTX* ctx)
+{
+    MD_LINE* lines;
+    OFF off, end;
+    if(!(ctx->parser.flags & MD_FLAG_FOOTNOTES) ||
+       ctx->current_block == NULL || ctx->current_block->type != MD_BLOCK_P ||
+       ctx->current_block->n_lines == 0)
+        return 0;
+    lines = (MD_LINE*)(ctx->current_block + 1);
+    off = lines[0].beg; end = lines[0].end;
+    if(off + 3 >= end || CH(off) != _T('[') || CH(off + 1) != _T('^'))
+        return 0;
+    off += 2;
+    if(!md_is_footnote_label(ctx, off, &off))
+        return 0;
+    return off + 1 < end && CH(off) == _T(']') && CH(off + 1) == _T(':');
+}
+
+static int
+md_next_line_continues_footnote(MD_CTX* ctx, OFF off)
+{
+    while(off < ctx->size) {
+        OFF content = off;
+        unsigned indent = md_line_indentation(ctx, 0, content, &content);
+        unsigned total_indent = indent;
+        int i;
+        /* Match the same container sequence as md_analyze_line(). List
+         * contents_indent is relative to the current quote/list level, so
+         * adding all list widths before scanning quotes is incorrect. */
+        for(i = 0; i < ctx->n_containers; i++) {
+            MD_CONTAINER* c = &ctx->containers[i];
+            if(c->ch == _T('>')) {
+                if(indent >= ctx->code_indent_offset || content >= ctx->size ||
+                   CH(content) != _T('>')) return 0;
+                content++;
+                total_indent++;
+                indent = md_line_indentation(ctx, total_indent, content, &content);
+                total_indent += indent;
+                if(indent > 0) indent--;
+            } else {
+                if(indent < c->contents_indent) {
+                    int j;
+                    /* A blank line can remain inside a list without its
+                     * indentation, but it cannot skip a quote marker. */
+                    if(content >= ctx->size || !ISNEWLINE(content)) return 0;
+                    for(j = i + 1; j < ctx->n_containers; j++)
+                        if(ctx->containers[j].ch == _T('>')) return 0;
+                    break;
+                }
+                indent -= c->contents_indent;
+            }
+        }
+        if(content < ctx->size && !ISNEWLINE(content))
+            return indent >= ctx->code_indent_offset;
+        off = content;
+        if(off < ctx->size && CH(off) == _T('\r')) off++;
+        if(off < ctx->size && CH(off) == _T('\n')) off++;
+    }
+    return 0;
 }
 
 static int
@@ -7276,15 +8287,35 @@ md_process_doc(MD_CTX *ctx)
     int ret = 0;
 
     MD_ENTER_BLOCK(MD_BLOCK_DOC, NULL);
+#ifdef MD_XUI_SOURCE_BLOCK
+    MD_XUI_SOURCE_BLOCK(MD_BLOCK_DOC, 0, ctx->size, 1);
+#endif
 
     while(off < ctx->size) {
         if(line == pivot_line)
             line = (line == &line_buf[0] ? &line_buf[1] : &line_buf[0]);
 
+#ifdef MD_XUI_SOURCE_BLOCK
+        ctx->xui_line_beg = ctx->xui_line_end = off;
+        while(ctx->xui_line_end < ctx->size && CH(ctx->xui_line_end) != '\n' && CH(ctx->xui_line_end) != '\r') ctx->xui_line_end++;
+        if(ctx->xui_line_end < ctx->size && CH(ctx->xui_line_end) == '\r') ctx->xui_line_end++;
+        if(ctx->xui_line_end < ctx->size && CH(ctx->xui_line_end) == '\n') ctx->xui_line_end++;
+#endif
         MD_CHECK(md_analyze_line(ctx, off, &off, pivot_line, line));
+        if(line->type == MD_LINE_BLANK && md_current_block_starts_footnote(ctx) &&
+           md_next_line_continues_footnote(ctx, off)) {
+            /* Keep this separator inside the definition. The next indented
+             * line stays a text continuation because the pivot remains TEXT. */
+            line->type = MD_LINE_TEXT;
+            ctx->consecutive_blank_lines = 0;
+            ctx->last_line_has_list_loosening_effect = 0;
+        }
         MD_CHECK(md_process_line(ctx, &pivot_line, line));
     }
 
+#ifdef MD_XUI_SOURCE_BLOCK
+    ctx->xui_line_beg = ctx->xui_line_end = ctx->size;
+#endif
     MD_CHECK(md_end_current_block(ctx));
 
     MD_CHECK(md_build_ref_def_hashtable(ctx));
@@ -7380,6 +8411,12 @@ md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userd
     free(ctx.marks);
     free(ctx.block_bytes);
     free(ctx.containers);
+#ifdef MD_XUI_SOURCE_QUOTE_PREFIXES
+    free(ctx.xui_quote_prefixes);
+#endif
+#ifdef MD_XUI_SOURCE_LIST_INDENTS
+    free(ctx.xui_list_indents);
+#endif
 
     return ret;
 }

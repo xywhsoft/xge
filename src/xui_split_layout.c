@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_SPLIT_LAYOUT
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1664,3 +1666,5 @@ XUI_API int xuiSplitLayoutGetChangeCount(xui_widget pWidget)
 	xui_split_layout_data_t* pData = __xuiSplitLayoutGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

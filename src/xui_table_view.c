@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TABLE_VIEW
 #include "xui_internal.h"
 #include "xui_table_view_paint.h"
 
@@ -1388,12 +1390,12 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 		iRet = __xuiTableViewDrawRectStroke(pProxy, pDraw, tButton, 1.0f, pResolved->iPickerBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( (pResolved->pFont != NULL) && (__xuiTableViewAlpha(iText) != 0) ) {
-			iRet = pProxy->drawText(pProxy, pDraw, pResolved->pFont, "...", tButton, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText="...", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tButton, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
 	if ( (pResolved->pFont != NULL) && (__xuiTableViewAlpha(iText) != 0) && (tText.fW > 0.0f) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, pResolved->pFont, __xuiTableViewText(sText), xuiInternalSnapRect(tText), iText, iFlags);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=__xuiTableViewText(sText), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), iText, iFlags);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -2196,7 +2198,7 @@ static int __xuiTableViewCacheRenderOperation(xui_widget pWidget, xui_draw_conte
 			}
 			if ( tResolved.pFont != NULL ) {
 				tText = (xui_rect_t){tVisible.fX + 8.0f, tVisible.fY, __xuiTableViewMaxFloat(1.0f, tVisible.fW - 18.0f), tVisible.fH};
-				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, __xuiTableViewText(pData->arrColumns[i].sTitle), xuiInternalSnapRect(tText), tResolved.iHeaderTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=__xuiTableViewText(pData->arrColumns[i].sTitle), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tText), tResolved.iHeaderTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( i == pData->iSortColumn ) {
@@ -3618,3 +3620,5 @@ XUI_API int xuiTableViewEnsureCellVisible(xui_widget pWidget, int iRow, int iCol
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
+
+#endif

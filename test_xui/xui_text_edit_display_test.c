@@ -14,11 +14,14 @@ void* __wrap_xrtMalloc(size_t size)
 }
 #define CHECK(e) do { checks++; if (!(e)) { failures++; printf("FAIL %d: %s\n", __LINE__, #e); } } while (0)
 
-static int shape(xui_proxy proxy, xui_font font, const char* text, int size, uint32_t flags, xui_text_shape_t* out)
+static int shape(xui_proxy proxy, const xui_text_item_t* pTextItem, xui_text_shape_t* out)
 {
+    const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+    int size = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iTextSize : 0;
+
     int ret, i, count = 0;
     shapes++;
-    ret = originalShape(proxy, font, text, size, flags, out);
+    ret = originalShape(proxy, pTextItem, out);
     if (ret != XUI_OK) return ret;
     for (i = 0; i < out->iClusterCount; i++) {
         xui_text_cluster_t cluster = out->pClusters[i];
@@ -35,12 +38,13 @@ static int shape(xui_proxy proxy, xui_font font, const char* text, int size, uin
     for (i = 0; i < count; i++) out->fWidth += out->pClusters[i].fAdvance;
     return XUI_OK;
 }
-static int draw_text(xui_proxy proxy, xui_draw_context draw, xui_font font,
-    const char* text, xui_rect_t rect, uint32_t color, uint32_t flags)
+static int draw_text(xui_proxy proxy, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t rect, uint32_t color, uint32_t flags)
 {
+    const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+
     if (draws < 16) snprintf(drawn[draws], sizeof(drawn[draws]), "%s", text);
     draws++;
-    return originalDraw(proxy, draw, font, text, rect, color, flags);
+    return originalDraw(proxy, draw, pTextItem, rect, color, flags);
 }
 
 static void run_case(const char* raw, int width, int wrap, const char* first,

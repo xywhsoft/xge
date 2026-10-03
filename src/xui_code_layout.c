@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <string.h>
@@ -469,3 +471,5 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
 	};
 	return XUI_OK;
 }
+
+#endif

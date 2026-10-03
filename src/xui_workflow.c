@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_WORKFLOW
 #include "../xui.h"
 #include "xui_xrt_port.h"
 
@@ -2295,3 +2297,5 @@ XUI_API int xuiWorkflowGetEdgeRunState(xui_workflow pWorkflow, const char* sEdge
 	pState->sPreview = pModel->sPreview;
 	return XUI_OK;
 }
+
+#endif

@@ -125,8 +125,8 @@ static int __xuiToastRootRender(xui_widget pWidget, xui_draw_context pDraw, uint
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(247, 251, 255, 255));
 	}
 	if ( pDemo->tProxy.drawText != NULL ) {
-		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "XUI Toast", (xui_rect_t){58.0f, 58.0f, 220.0f, 28.0f}, XUI_COLOR_RGBA(34, 52, 78, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "Queue, click callback, close button, and automatic timeout.", (xui_rect_t){58.0f, 245.0f, 520.0f, 28.0f}, XUI_COLOR_RGBA(70, 88, 112, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="XUI Toast", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){58.0f, 58.0f, 220.0f, 28.0f}, XUI_COLOR_RGBA(34, 52, 78, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pFont, .sText="Queue, click callback, close button, and automatic timeout.", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){58.0f, 245.0f, 520.0f, 28.0f}, XUI_COLOR_RGBA(70, 88, 112, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }

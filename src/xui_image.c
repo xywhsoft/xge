@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_IMAGE
 #include "xui_internal.h"
 
 #include <math.h>
@@ -653,3 +655,5 @@ XUI_API xui_rect_t xuiImageGetDrawRect(xui_widget pWidget)
 	__xuiImageResolve(pWidget, pData, &tResolved);
 	return __xuiImageDrawRectFromData(pWidget, &tResolved);
 }
+
+#endif

@@ -142,7 +142,7 @@ static int __xuiProxyFontDrawText(xui_proxy_font_demo_t* pDemo, xui_font pFont, 
 	xui_rect_t tRect;
 
 	__xuiProxyFontRect(fX, fY, fW, fH, &tRect);
-	return pDemo->tProxy.textDraw(&pDemo->tProxy, pDemo->pTarget, pFont, sText, tRect, iColor, iFlags | XUI_TEXT_CLIP);
+	return pDemo->tProxy.textDraw(&pDemo->tProxy, pDemo->pTarget, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iFlags | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iColor, iFlags | XUI_TEXT_CLIP);
 }
 
 static int __xuiProxyFontDrawPanel(xui_proxy_font_demo_t* pDemo, float fX, float fY, float fW, float fH)
@@ -206,7 +206,7 @@ static int __xuiProxyFontDrawAll(xui_proxy_font_demo_t* pDemo)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	iRet = pDemo->tProxy.textMeasure(&pDemo->tProxy, pDemo->pTtfFont, "Measured width", &tSize);
+	iRet = pDemo->tProxy.textMeasure(&pDemo->tProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDemo->pTtfFont, .sText="Measured width", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}

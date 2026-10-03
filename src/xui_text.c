@@ -1,7 +1,12 @@
+#include "../xui_config.h"
+#if XGE_ENABLE_XUI
 #include "xui_internal.h"
 #include "xui_text_internal.h"
+#include "xui_text_item_internal.h"
+#include "xui_text_display.h"
 
 #include <limits.h>
+#include <math.h>
 #include <string.h>
 
 #define XUI_TEXT_LAYOUT_MAGIC 0x58554954u
@@ -11,6 +16,7 @@
 #endif
 
 #include "xui_text_break.inl"
+#include "xui_text_carets.inl"
 
 int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundaries)
 {
@@ -20,16 +26,20 @@ int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundari
 
 int xuiInternalTextNextHardLine(const char* sText, int iSize, int iStart, int* pEnd, int* pNext)
 {
-	struct LineBreakContext tContext;
 	size_t iAt;
 	if ( sText == NULL || iSize < 0 || iStart < 0 || iStart > iSize || pEnd == NULL || pNext == NULL )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	__xuiUbInit(&tContext, 0, "-strict");
 	iAt = (size_t)iStart;
 	while ( iAt < (size_t)iSize ) {
 		size_t iBefore = iAt;
+		/* Printable ASCII cannot be a mandatory control; keep long source
+		 * and code-line scans on the allocation-free byte path. */
+		if ( (unsigned char)sText[iAt] >= 32 && (unsigned char)sText[iAt] < 128 ) {
+			iAt++;
+			continue;
+		}
 		utf32_t iScalar = __xuiTextBreakDecode(sText, (size_t)iSize, &iAt);
-		enum LineBreakClass iClass = __xuiUbClass(&tContext, iScalar);
+		enum LineBreakClass iClass = __xuiTextBreakClass(iScalar);
 		if ( iClass == LBP_BK || iClass == LBP_NL || iClass == LBP_CR || iClass == LBP_LF ) {
 			if ( iClass == LBP_CR && iAt < (size_t)iSize && sText[iAt] == '\n' ) iAt++;
 			*pEnd = (int)iBefore;
@@ -246,6 +256,60 @@ static int __xuiTextBuildBreakIndex(xui_text_layout pLayout)
 }
 
 #include "xui_text_projection.inl"
+
+int xuiInternalTextCopyDisplay(const char* text, int bytes, char* output)
+{
+    return __xuiTextCopyDisplay(text,bytes,output);
+}
+
+int xuiInternalTextShapeProjection(xui_context context, xui_font font,
+    const char* text, int bytes, const char* language, xui_text_shape_t* shape)
+{
+    struct xui_text_layout_t projection = {0}; int result;
+    if (!text || bytes < 0 || !shape) return XUI_ERROR_INVALID_ARGUMENT;
+    if (xuiInternalTextCopyDisplay(text, bytes, NULL) == bytes) {
+        uint32_t flags=XUI_TEXT_SHAPE_DEFAULT;
+        xui_proxy proxy=xuiInternalContextGetProxy(context);
+        int i;
+        /* Start with printable ASCII: no deletion/source remapping, BiDi or
+         * mandatory break. Other projections retain their existing paint path. */
+        if(proxy && proxy->drawTextShapeRange){
+            for(i=0;i<bytes;i++)if((unsigned char)text[i]<32 || (unsigned char)text[i]>126)break;
+            if(i==bytes)flags|=XUI_TEXT_SHAPE_RETAIN_PAINT;
+        }
+        result = xuiTextShape(context, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=font, .sText=text, .iTextSize=bytes, .sLanguage=language, .iFlags=flags}, shape);
+        if (result == XUI_OK) result = xuiInternalTextShapeCaretFragments(text, bytes, shape);
+        return result;
+    }
+    projection.pContext = context; projection.tDesc.pFont = font;
+    projection.sText = (char*)text; projection.iTextSize = bytes;
+    projection.pBreaks = xrtCalloc((size_t)bytes + 1, 1);
+    if (!projection.pBreaks) return XUI_ERROR_OUT_OF_MEMORY;
+    result = __xuiTextBreakMap(text, bytes, projection.pBreaks);
+    if (result == XUI_OK) result = __xuiTextShapeProjection(&projection, 1, language);
+    xrtFree(projection.pBreaks);
+    if (result == XUI_OK) *shape = projection.tShape;
+    else xuiTextShapeFree(&projection.tShape);
+    return result;
+}
+
+int xuiInternalTextDisplayGraphemes(const char* text, int bytes, unsigned char* boundaries)
+{
+    int count, i, at = 0; char* work;
+    if (!text || bytes < 0 || !boundaries) return XUI_ERROR_INVALID_ARGUMENT;
+    count = xuiInternalTextCopyDisplay(text, bytes, NULL);
+    if (count == bytes) return XUI_OK;
+    work = xrtMalloc((size_t)count * 2 + 1);
+    if (!work) return XUI_ERROR_OUT_OF_MEMORY;
+    xuiInternalTextCopyDisplay(text, bytes, work);
+    if (count) set_graphemebreaks(work, (size_t)count, work + count, __xuiTextBreakDecode);
+    for (i = 0; i < bytes; i++) {
+        if (at > 0 && at < count && work[count + at - 1] != GRAPHEMEBREAK_BREAK)
+            boundaries[i] &= (unsigned char)~XUI_LB_GRAPHEME;
+        if (!(boundaries[i] & XUI_LB_INVISIBLE)) at++;
+    }
+    xrtFree(work); return XUI_OK;
+}
 
 static int __xuiTextMeasureRange(xui_text_layout pLayout, const char* sStart, const char* sEnd, xui_vec2_t* pSize)
 {
@@ -666,32 +730,51 @@ static float __xuiTextVerticalOffset(xui_text_layout pLayout, xui_rect_t tRect, 
 XUI_API void xuiTextShapeFree(xui_text_shape_t* pShape)
 {
 	if ( pShape == NULL ) return;
+	if ( pShape->pPaint != NULL && pShape->paintFree != NULL ) pShape->paintFree(pShape->pPaint);
 	if ( pShape->pClusters != NULL ) xrtFree(pShape->pClusters);
+	if ( pShape->pCarets != NULL ) xrtFree(pShape->pCarets);
 	memset(pShape, 0, sizeof(*pShape));
 }
 
-XUI_API int xuiTextShape(xui_context pContext, xui_font pFont, const char* sText, int iTextSize,
-	uint32_t iFlags, xui_text_shape_t* pShape)
+XUI_API int xuiTextShape(xui_context pContext, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)
 {
+	xui_text_item_t normalized;
+	xui_font pFont;
+	const char* sText;
+	int iTextSize;
+	uint32_t iFlags;
 	xui_proxy pProxy;
 	xui_font_metrics_t tMetrics;
 	xui_vec2_t tSize;
+	xui_proxy_caps_t tCaps;
 	int iAt;
 	int iNext;
 	int iCount;
 	int i;
 	int iRet;
 
-	if ( !xuiInternalContextIsValid(pContext) || pFont == NULL || sText == NULL ||
-	     iTextSize < -1 || pShape == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	if ( !xuiInternalContextIsValid(pContext) || pShape == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(pShape, 0, sizeof(*pShape));
+	iRet = __xuiTextItemNormalize(pTextItem, &normalized);
+	if (iRet != XUI_OK) return iRet;
+	pFont=normalized.pFont;sText=normalized.sText;iTextSize=normalized.iTextSize;iFlags=normalized.iFlags;
 	pShape->iSize = sizeof(*pShape);
 	pShape->iFlags = iFlags;
 	pShape->iTextSize = iTextSize;
 	pProxy = xuiInternalContextGetProxy(pContext);
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	if ( pProxy->textShape != NULL ) return pProxy->textShape(pProxy, pFont, sText, iTextSize, iFlags, pShape);
+	iRet = xuiGetProxyCaps(pContext, &tCaps);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (normalized.sContext && !(tCaps.iCaps & XUI_PROXY_CAP_TEXT_CONTEXT)) ||
+	     (normalized.iScript && !(tCaps.iCaps & XUI_PROXY_CAP_TEXT_SCRIPT)) ||
+	     (normalized.sLanguage && !(tCaps.iCaps & XUI_PROXY_CAP_TEXT_LANGUAGE)) ||
+	     ((iFlags & XUI_TEXT_SHAPE_RTL) && !(tCaps.iCaps & XUI_PROXY_CAP_TEXT_RTL)) ||
+	     ((iFlags & XUI_TEXT_SHAPE_RANGE) && !(tCaps.iCaps & XUI_PROXY_CAP_TEXT_RANGE)) )
+		return XUI_ERROR_UNSUPPORTED;
+	if ( pProxy->textShape != NULL ) return pProxy->textShape(pProxy, &normalized, pShape);
+	/* Isolated measurements cannot supply contextual shaping. */
+	if ( (iFlags & (XUI_TEXT_SHAPE_RTL|XUI_TEXT_SHAPE_RANGE)) || pTextItem->sContext || pTextItem->iScript || pTextItem->sLanguage )
+		return XUI_ERROR_UNSUPPORTED;
 
 	memset(&tMetrics, 0, sizeof(tMetrics));
 	iRet = pProxy->fontGetMetrics(pProxy, pFont, &tMetrics);
@@ -723,7 +806,7 @@ XUI_API int xuiTextShape(xui_context pContext, xui_font pFont, const char* sText
 		}
 		memcpy(sMeasure, sText + iAt, (size_t)iBytes);
 		sMeasure[iBytes] = 0;
-		iRet = pProxy->textMeasure(pProxy, pFont, sMeasure, &tSize);
+		iRet = pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sMeasure, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize);
 		if ( sMeasure != sLocal ) xrtFree(sMeasure);
 		if ( iRet != XUI_OK ) { xuiTextShapeFree(pShape); return iRet; }
 		pShape->pClusters[i].fAdvance = tSize.fX;
@@ -783,7 +866,7 @@ static int __xuiTextLayoutCompute(xui_text_layout pLayout, xui_proxy pProxy)
 	if ( pLayout->tMetrics.fLineHeight <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiTextBuildBreakIndex(pLayout);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTextShapeProjection(pLayout);
+	iRet = __xuiTextShapeProjection(pLayout, 0, NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pLayout->tShape.fLineHeight > 0.0f ) {
 		pLayout->tMetrics.fAscent = pLayout->tShape.fAscent;
@@ -795,7 +878,7 @@ static int __xuiTextLayoutCompute(xui_text_layout pLayout, xui_proxy pProxy)
 			if ( (unsigned char)pLayout->sText[i] == 0xc2u && (unsigned char)pLayout->sText[i + 1] == 0xadu ) {
 				xui_text_shape_t tHyphen;
 				int j;
-				iRet = xuiTextShape(pLayout->pContext, pLayout->tDesc.pFont, "-", 1, XUI_TEXT_SHAPE_DEFAULT, &tHyphen);
+				iRet = xuiTextShape(pLayout->pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText="-", .iTextSize=1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tHyphen);
 				if ( iRet == XUI_OK ) {
 					for ( j = 0; j < tHyphen.iClusterCount; j++ ) pLayout->fHyphenWidth += tHyphen.pClusters[j].fAdvance;
 					if ( !__xuiTextFloatValid(pLayout->fHyphenWidth) ) iRet = XUI_ERROR_INVALID_ARGUMENT;
@@ -1046,7 +1129,7 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 				continue;
 			}
 		}
-		iRet = pProxy->textDraw(pProxy, pTarget, pLayout->tDesc.pFont, sDisplay, tLineRect, iColor, iLineFlags);
+		iRet = pProxy->textDraw(pProxy, pTarget, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=sDisplay, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iColor, iLineFlags);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -1073,3 +1156,5 @@ XUI_API int xuiTextMeasureLayout(xui_context pContext, const xui_text_layout_des
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
 }
+
+#endif

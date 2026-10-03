@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_PAGE
 #include "xui_internal.h"
 
 #include <stdio.h>
@@ -640,7 +642,7 @@ static int __xuiPageCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			uint32_t iTextColor;
 			iTextColor = __xuiPageItemTextColor(&tResolved, i, iStateId);
 			if ( __xuiPageColorAlpha(iTextColor) != 0 ) {
-				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, tResolved.arrItems[i].sText, tResolved.arrItems[i].tRect, iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=tResolved.arrItems[i].sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tResolved.arrItems[i].tRect, iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -1124,3 +1126,5 @@ XUI_API int xuiPageGetChangeCount(xui_widget pWidget)
 	xui_page_data_t* pData = __xuiPageGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

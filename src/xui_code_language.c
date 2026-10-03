@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <ctype.h>
@@ -390,3 +392,5 @@ XUI_API int xuiCodeLanguageFold(const xui_code_language_t* pLanguage, xui_code_d
 	if ( pLanguage->onFold != NULL ) return pLanguage->onFold(pDocument, pRanges, iRangeCapacity, pRangeCount, pLanguage->pUser);
 	return XUI_ERROR_UNSUPPORTED;
 }
+
+#endif

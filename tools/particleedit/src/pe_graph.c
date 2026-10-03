@@ -64,13 +64,11 @@ int pe_curve_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *us
 		p->drawLine(p, draw, x, r.fY, x, r.fY + r.fH, 1, a->colors[PE_GRID]);
 		p->drawLine(p, draw, r.fX, y, r.fX + r.fW, y, 1, a->colors[PE_GRID]);
 		snprintf(text, sizeof(text), "%.2g", i / 4.f);
-		p->drawText(p, draw, a->font, text, (xui_rect_t){x - 16, r.fY + r.fH + 6, 46, 24},
-		            a->colors[PE_MUTED], 0);
+		p->drawText(p, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=a->font, .sText=text, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((0) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){x - 16, r.fY + r.fH + 6, 46, 24}, a->colors[PE_MUTED], 0);
 		if (a->channel != 3)
 		{
 			snprintf(text, sizeof(text), "%.2g", a->curve_max - (a->curve_max - a->curve_min) * i / 4.f);
-			p->drawText(p, draw, a->font, text, (xui_rect_t){0, y - 10, 50, 24}, a->colors[PE_MUTED],
-			            XUI_TEXT_ALIGN_RIGHT);
+			p->drawText(p, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=a->font, .sText=text, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){0, y - 10, 50, 24}, a->colors[PE_MUTED], XUI_TEXT_ALIGN_RIGHT);
 		}
 	}
 	if (a->channel == 3)
@@ -125,8 +123,7 @@ int pe_curve_paint(xui_widget w, xui_draw_context draw, uint32_t state, void *us
 		}
 	}
 	if (!key_count(a))
-		p->drawText(p, draw, a->font, "空轨道：默认值 1 / 白色；双击添加关键点",
-		            (xui_rect_t){r.fX + 8, r.fY + 8, r.fW - 16, 30}, a->colors[PE_TEXT], 0);
+		p->drawText(p, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=a->font, .sText="空轨道：默认值 1 / 白色；双击添加关键点", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((0) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){r.fX + 8, r.fY + 8, r.fW - 16, 30}, a->colors[PE_TEXT], 0);
 	return XUI_OK;
 }
 static void curve_finish(pe_app *a, int commit)

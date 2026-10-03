@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CANVAS
 #include "xui_internal.h"
 
 #include <string.h>
@@ -849,7 +851,7 @@ static int __xuiCanvasDoText(xui_proxy pProxy, xui_draw_context pDraw, void* pUs
 	if ( (pArgs->sText[0] == '\0') || (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
 		return XUI_OK;
 	}
-	return (pProxy->drawText != NULL) ? pProxy->drawText(pProxy, pDraw, pArgs->pFont, pArgs->sText, pArgs->tRect, pArgs->iColor, pArgs->iFlags) : XUI_ERROR_UNSUPPORTED;
+	return (pProxy->drawText != NULL) ? pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pArgs->pFont, .sText=pArgs->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((pArgs->iFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pArgs->tRect, pArgs->iColor, pArgs->iFlags) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawText(xui_widget pWidget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
@@ -924,3 +926,5 @@ XUI_API int xuiCanvasGetDrawCount(xui_widget pWidget)
 	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
 	return (pData != NULL) ? pData->iDrawCount : 0;
 }
+
+#endif

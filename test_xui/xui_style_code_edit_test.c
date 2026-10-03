@@ -7,18 +7,20 @@
 static uint32_t colors[4096];
 static xui_rect_t rects[4096];
 static int count;
-static int (*baseText)(xui_proxy,xui_draw_context,xui_font,const char*,xui_rect_t,uint32_t,uint32_t);
+static xui_draw_text_proc baseText;
 static int (*baseFill)(xui_proxy,xui_draw_context,xui_rect_t,uint32_t);
-static int (*baseSpans)(xui_proxy,xui_draw_context,xui_font,const char*,int,xui_rect_t,uint32_t,uint32_t,const xui_text_paint_span_t*,int);
+static xui_draw_text_spans_proc baseSpans;
 static int has(uint32_t c) { int i; for(i=0;i<count;i++) if(colors[i]==c) return 1; return 0; }
-static int text(xui_proxy p,xui_draw_context d,xui_font f,const char* s,xui_rect_t r,uint32_t c,uint32_t flags)
-{ if(count<4096) { rects[count]=r; colors[count++]=c; } return baseText(p,d,f,s,r,c,flags); }
+static int text(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags)
+{
+ if(count<4096) { rects[count]=r; colors[count++]=c; } return baseText(p, d, pTextItem, r, c, flags); }
 static int fill(xui_proxy p,xui_draw_context d,xui_rect_t r,uint32_t c)
 { if(count<4096) { rects[count]=r; colors[count++]=c; } return baseFill(p,d,r,c); }
-static int spans(xui_proxy p,xui_draw_context d,xui_font f,const char* s,int size,xui_rect_t r,uint32_t c,uint32_t flags,const xui_text_paint_span_t* paints,int n)
+static int spans(xui_proxy p, xui_draw_context d, const xui_text_item_t* pTextItem, xui_rect_t r, uint32_t c, uint32_t flags, const xui_text_paint_span_t* paints, int n)
 {
+
 	for(int i=0;i<n && count<4096;i++) { rects[count]=r; colors[count++]=paints[i].iColor; }
-	return baseSpans(p,d,f,s,size,r,c,flags,paints,n);
+	return baseSpans(p, d, pTextItem, r, c, flags, paints, n);
 }
 static int signature(xui_widget w,int offset,xui_code_signature_help_t* help,void* user)
 {

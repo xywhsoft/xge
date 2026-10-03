@@ -162,16 +162,13 @@ static int preview_paint(xui_widget w, xui_draw_context draw, uint32_t state, vo
 	                                                   : "暂停",
 	         a->preview.tick / (float)PE_HZ, stats.iLiveParticles, (unsigned long long)a->preview.seed);
 	a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, 0, r.fW, 30}, a->colors[PE_BG]);
-	a->proxy.drawText(&a->proxy, draw, a->font, text, (xui_rect_t){12, 0, r.fW - 20, 30}, a->colors[PE_TEXT],
-	                  XUI_TEXT_ALIGN_MIDDLE);
+	a->proxy.drawText(&a->proxy, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=a->font, .sText=text, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){12, 0, r.fW - 20, 30}, a->colors[PE_TEXT], XUI_TEXT_ALIGN_MIDDLE);
 	a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){0, r.fH - 28, r.fW, 28}, a->colors[PE_BG]);
-	a->proxy.drawText(&a->proxy, draw, a->font, "1000 × 680 舞台  ·  滚轮缩放 / 中键平移  ·  F 适合窗口",
-	                  (xui_rect_t){12, r.fH - 28, r.fW - 20, 28}, a->colors[PE_MUTED], XUI_TEXT_ALIGN_MIDDLE);
+	a->proxy.drawText(&a->proxy, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=a->font, .sText="1000 × 680 舞台  ·  滚轮缩放 / 中键平移  ·  F 适合窗口", .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){12, r.fH - 28, r.fW - 20, 28}, a->colors[PE_MUTED], XUI_TEXT_ALIGN_MIDDLE);
 	if (a->preview.message[0])
 	{
 		a->proxy.drawRectFill(&a->proxy, draw, (xui_rect_t){8, 36, r.fW - 16, 55}, a->colors[PE_WARNING_BG]);
-		a->proxy.drawText(&a->proxy, draw, a->font, a->preview.message, (xui_rect_t){16, 38, r.fW - 32, 50},
-		                  a->colors[PE_WARNING_TEXT], 0);
+		a->proxy.drawText(&a->proxy, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=a->font, .sText=a->preview.message, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((0) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){16, 38, r.fW - 32, 50}, a->colors[PE_WARNING_TEXT], 0);
 	}
 	return XUI_OK;
 }
@@ -766,8 +763,7 @@ static int timeline_ruler(xui_widget w, int frame, xui_draw_context draw, xui_re
 	if (frame % step == 0)
 	{
 		snprintf(text, sizeof(text), "%g s", frame / 60.f);
-		a->proxy.drawText(&a->proxy, draw, a->font, text, (xui_rect_t){rect.fX + 3, rect.fY, 64, rect.fH - 6},
-		                  a->colors[PE_MUTED], XUI_TEXT_ALIGN_MIDDLE);
+		a->proxy.drawText(&a->proxy, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=a->font, .sText=text, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){rect.fX + 3, rect.fY, 64, rect.fH - 6}, a->colors[PE_MUTED], XUI_TEXT_ALIGN_MIDDLE);
 		a->proxy.drawLine(&a->proxy, draw, rect.fX, rect.fY + rect.fH - 8, rect.fX, rect.fY + rect.fH, 1,
 		                  a->colors[PE_MUTED]);
 	}

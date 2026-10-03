@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_BREADCRUMB
 #include "xui_internal.h"
 
 #include <string.h>
@@ -261,7 +263,7 @@ static xui_vec2_t __xuiBreadcrumbMeasureText(xui_proxy pProxy, xui_font pFont, c
 
 	tSize = (xui_vec2_t){0.0f, 16.0f};
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) && (sText != NULL) ) {
-		if ( pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK ) {
+		if ( pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK ) {
 			if ( tSize.fX < 0.0f ) tSize.fX = 0.0f;
 			if ( tSize.fY < 1.0f ) tSize.fY = 16.0f;
 			return tSize;
@@ -389,7 +391,7 @@ static int __xuiBreadcrumbDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui
 	     (sText == NULL) || (sText[0] == '\0') || (__xuiBreadcrumbAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	return pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
 static int __xuiBreadcrumbDrawIcon(xui_proxy pProxy, xui_draw_context pDraw, const xui_breadcrumb_data_t* pResolved, xui_rect_t tRect)
@@ -1132,3 +1134,5 @@ XUI_API int xuiBreadcrumbGetClickCount(xui_widget pWidget)
 	pData = __xuiBreadcrumbGetData(pWidget);
 	return (pData != NULL) ? pData->iClickCount : 0;
 }
+
+#endif

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_TOGGLE
 #include "xui_internal.h"
 
 #include <string.h>
@@ -329,7 +331,7 @@ static xui_vec2_t __xuiToggleMeasureText(xui_widget pWidget, xui_font pFont, con
 	}
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) ) {
-		(void)pProxy->textMeasure(pProxy, pFont, sText, &tSize);
+		(void)pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize);
 	}
 	return tSize;
 }
@@ -585,7 +587,7 @@ static int __xuiToggleDrawDefaultIndicator(xui_widget pWidget, xui_draw_context 
 				iInnerColor = pResolved->iDisabledTextColor;
 			}
 			if ( __xuiToggleColorAlpha(iInnerColor) != 0 ) {
-				iRet = pProxy->drawText(pProxy, pDraw, pResolved->pFont, sInnerText, pData->tInnerTextRect, iInnerColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sInnerText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tInnerTextRect, iInnerColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		}
 	}
@@ -656,7 +658,7 @@ static int __xuiToggleCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	}
 	tVisual = __xuiToggleVisual(&tResolved, iVisual);
 	if ( (tResolved.pFont != NULL) && (pData->sText != NULL) && (pData->sText[0] != '\0') && (pData->tTextRect.fW > 0.0f) && (__xuiToggleColorAlpha(tVisual.iTextColor) != 0) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sText, pData->tTextRect, tVisual.iTextColor, tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=pData->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tTextRect, tVisual.iTextColor, tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return iRet;
 }
@@ -1335,3 +1337,5 @@ XUI_API uint32_t xuiToggleGetState(xui_widget pWidget)
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
 	return (pData != NULL) ? __xuiToggleComputeState(pWidget, pData) : 0;
 }
+
+#endif

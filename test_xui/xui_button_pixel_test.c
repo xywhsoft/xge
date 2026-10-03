@@ -7,15 +7,18 @@ static int g_icon_count, g_badge_count, g_text_count;
 static int g_coverage[24][24];
 static int g_patch_width, g_patch_height;
 
-static int measure(xui_proxy proxy, xui_font font, const char* text, xui_vec2_t* size)
+static int measure(xui_proxy proxy, const xui_text_item_t* pTextItem, xui_vec2_t* size)
 {
+
+
 	*size = (xui_vec2_t){23.5f, 11.5f};
 	return XUI_OK;
 }
 
-static int draw_text(xui_proxy proxy, xui_draw_context draw, xui_font font,
-	const char* text, xui_rect_t rect, uint32_t color, uint32_t flags)
+static int draw_text(xui_proxy proxy, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t rect, uint32_t color, uint32_t flags)
 {
+
+
 	g_text_rect = rect;
 	g_text_count++;
 	return XUI_OK;

@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_SCROLLBAR
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1719,3 +1721,5 @@ XUI_API int xuiScrollBarGetChangeCount(xui_widget pWidget)
 	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

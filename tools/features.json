@@ -1,0 +1,336 @@
+{
+  "xui_sources": {
+    "lib/xlayout/xlayout.c": "XGE_ENABLE_XUI",
+    "src/xui_core.c": "XGE_ENABLE_XUI",
+    "src/xui_widget.c": "XGE_ENABLE_XUI",
+    "src/xui_layout.c": "XGE_ENABLE_XUI",
+    "src/xui_input.c": "XGE_ENABLE_XUI",
+    "src/xui_icon.c": "XGE_ENABLE_XUI",
+    "src/xui_assets.c": "XGE_ENABLE_XUI",
+    "src/xui_builtin_atlas.c": "XGE_ENABLE_XUI",
+    "src/xui_text.c": "XGE_ENABLE_XUI",
+    "src/xui_label.c": "XUI_ENABLE_LABEL",
+    "src/xui_hyperlink.c": "XUI_ENABLE_HYPERLINK",
+    "src/xui_breadcrumb.c": "XUI_ENABLE_BREADCRUMB",
+    "src/xui_image.c": "XUI_ENABLE_IMAGE",
+    "src/xui_qrcode.c": "XUI_ENABLE_QRCODE",
+    "src/xui_panel.c": "XUI_ENABLE_PANEL",
+    "src/xui_button.c": "XUI_ENABLE_BUTTON",
+    "src/xui_checkbox.c": "XUI_ENABLE_CHECKBOX",
+    "src/xui_check_card.c": "XUI_ENABLE_CHECK_CARD",
+    "src/xui_radio.c": "XUI_ENABLE_RADIO",
+    "src/xui_toggle.c": "XUI_ENABLE_TOGGLE",
+    "src/xui_progress.c": "XUI_ENABLE_PROGRESS",
+    "src/xui_step_bar.c": "XUI_ENABLE_STEP_BAR",
+    "src/xui_slider.c": "XUI_ENABLE_SLIDER",
+    "src/xui_range_slider.c": "XUI_ENABLE_RANGE_SLIDER",
+    "src/xui_page.c": "XUI_ENABLE_PAGE",
+    "src/xui_carousel.c": "XUI_ENABLE_CAROUSEL",
+    "src/xui_virtual_joystick.c": "XUI_ENABLE_VIRTUAL_JOYSTICK",
+    "src/xui_inventory_grid.c": "XUI_ENABLE_INVENTORY_GRID",
+    "src/xui_terminal.c": "XUI_ENABLE_TERMINAL",
+    "src/xui_separator.c": "XUI_ENABLE_SEPARATOR",
+    "src/xui_split_layout.c": "XUI_ENABLE_SPLIT_LAYOUT",
+    "src/xui_scroll_model.c": "(XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)",
+    "src/xui_scrollbar.c": "XUI_ENABLE_SCROLLBAR",
+    "src/xui_scroll_frame.c": "XUI_ENABLE_SCROLL_FRAME",
+    "src/xui_scroll_view.c": "XUI_ENABLE_SCROLL_VIEW",
+    "src/xui_canvas.c": "XUI_ENABLE_CANVAS",
+    "src/xui_popup.c": "XUI_ENABLE_POPUP",
+    "src/xui_menu.c": "XUI_ENABLE_MENU",
+    "src/xui_menubar.c": "XUI_ENABLE_MENUBAR",
+    "src/xui_toolbar.c": "XUI_ENABLE_TOOLBAR",
+    "src/xui_statusbar.c": "XUI_ENABLE_STATUSBAR",
+    "src/xui_accordion.c": "XUI_ENABLE_ACCORDION",
+    "src/xui_list_view.c": "XUI_ENABLE_LIST_VIEW",
+    "src/xui_table_view.c": "XUI_ENABLE_TABLE_VIEW",
+    "src/xui_table_grid.c": "XUI_ENABLE_TABLE_GRID",
+    "src/xui_tree_view.c": "XUI_ENABLE_TREE_VIEW",
+    "src/xui_tabs.c": "XUI_ENABLE_TABS",
+    "src/xui_window_frame.c": "XUI_ENABLE_WINDOW",
+    "src/xui_window.c": "XUI_ENABLE_WINDOW",
+    "src/xui_msgbox.c": "XUI_ENABLE_MSGBOX",
+    "src/xui_file_dialog.c": "XUI_ENABLE_FILE_DIALOG",
+    "src/xui_msgtip.c": "XUI_ENABLE_MSGTIP",
+    "src/xui_toast.c": "XUI_ENABLE_TOAST",
+    "src/xui_input_widget.c": "XUI_ENABLE_INPUT",
+    "src/xui_tag_input.c": "XUI_ENABLE_TAG_INPUT",
+    "src/xui_numeric_input.c": "XUI_ENABLE_NUMERIC_INPUT",
+    "src/xui_find.c": "XUI_ENABLE_FIND",
+    "src/xui_text_edit.c": "XUI_ENABLE_TEXT_EDIT",
+    "src/xui_combobox.c": "XUI_ENABLE_COMBOBOX",
+    "src/xui_cascader.c": "XUI_ENABLE_CASCADER",
+    "src/xui_color_picker.c": "XUI_ENABLE_COLOR_PICKER",
+    "src/xui_icon_picker.c": "XUI_ENABLE_ICON_PICKER",
+    "src/xui_date_picker.c": "XUI_ENABLE_DATE_PICKER",
+    "src/xui_property_grid.c": "XUI_ENABLE_PROPERTY_GRID",
+    "src/xui_dock_panel.c": "XUI_ENABLE_DOCK_PANEL",
+    "src/xui_chart.c": "XUI_ENABLE_CHART",
+    "src/xui_flow_graph.c": "XUI_ENABLE_FLOW_GRAPH",
+    "src/xui_flow_graph_widget.c": "XUI_ENABLE_FLOW_GRAPH",
+    "src/xui_workflow.c": "XUI_ENABLE_WORKFLOW",
+    "src/xui_workflow_widget.c": "XUI_ENABLE_WORKFLOW",
+    "src/xui_message_list.c": "XUI_ENABLE_MESSAGE_LIST",
+    "src/xui_timeline_view.c": "XUI_ENABLE_TIMELINE_VIEW",
+    "src/xui_code_document.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_selection.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_theme.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_fold_state.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_annotation.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_token_buffer.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_provider.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_margin.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_command.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_fold.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_editing.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_lexer_c.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_lexer.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_language.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_search.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_layout.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_code_edit.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui_proxy_xge.c": "XGE_ENABLE_XUI",
+    "src/xui_edit.c": "XGE_ENABLE_XUI",
+    "src/xui_drag_drop.c": "XGE_ENABLE_XUI",
+    "src/xui_accessibility.c": "XGE_ENABLE_XUI",
+    "src/xui_text_bidi.c": "XGE_ENABLE_XUI",
+    "src/xui_document_layout.c": "XUI_ENABLE_DOCUMENT_VIEW",
+    "src/xui_document_renderer.c": "XUI_ENABLE_DOCUMENT_VIEW",
+    "src/xui_document_image_resource.c": "XUI_ENABLE_DOCUMENT_VIEW",
+    "src/xui_document_image_async.c": "XUI_ENABLE_DOCUMENT_VIEW",
+    "src/xui_document_view.c": "XUI_ENABLE_DOCUMENT_VIEW",
+    "src/xui_document_editor.c": "XUI_ENABLE_DOCUMENT_EDITOR",
+    "src/xui_document_find_ui.c": "XUI_ENABLE_DOCUMENT_EDITOR",
+    "src/xui_document_toolbar.c": "XUI_ENABLE_DOCUMENT_EDITOR",
+    "src/xui_document_edit_adapter.c": "XUI_ENABLE_DOCUMENT_EDITOR",
+    "src/xui_document_html_interaction.c": "XUI_ENABLE_WEBVIEW",
+    "src/xui_document_web_provider.c": "XUI_ENABLE_WEBVIEW",
+    "src/xui_webview.c": "XUI_ENABLE_WEBVIEW",
+    "src/xui_document_store.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_schema.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_position.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_range.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_commands.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_markdown.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_reconcile.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_md4c.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_io.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_html.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_equivalent.c": "XUI_ENABLE_DOCUMENT",
+    "lib/md4c/entity.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_table.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_fragment.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_html_import.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_convert.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_markdown_edit.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_search.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_unicode.c": "XGE_ENABLE_XUI",
+    "src/xui_document_file.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_source.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_reference.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_memory.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_prepare.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_publish.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_incremental.c": "XUI_ENABLE_DOCUMENT"
+  },
+  "xui_requires": {
+    "XUI_ENABLE_CANVAS": [
+      "XUI_ENABLE_SCROLL_FRAME"
+    ],
+    "XUI_ENABLE_CASCADER": [
+      "XUI_ENABLE_POPUP"
+    ],
+    "XUI_ENABLE_CHECK_CARD": [
+      "XUI_ENABLE_RADIO_GROUP"
+    ],
+    "XUI_ENABLE_CODE_EDIT": [
+      "(XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)",
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_CHECKBOX",
+      "XUI_ENABLE_FIND",
+      "XUI_ENABLE_INPUT",
+      "XUI_ENABLE_LABEL",
+      "XUI_ENABLE_LIST_VIEW",
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_POPUP",
+      "XUI_ENABLE_SCROLLBAR",
+      "XUI_ENABLE_TABLE_VIEW",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_COLOR_PICKER": [
+      "XUI_ENABLE_POPUP"
+    ],
+    "XUI_ENABLE_COMBOBOX": [
+      "XUI_ENABLE_INPUT",
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_POPUP"
+    ],
+    "XUI_ENABLE_DATE_PICKER": [
+      "XUI_ENABLE_POPUP"
+    ],
+    "XUI_ENABLE_DOCK_PANEL": [
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_DOCUMENT_EDITOR": [
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_CHECKBOX",
+      "XUI_ENABLE_DOCUMENT",
+      "XUI_ENABLE_DOCUMENT_VIEW",
+      "XUI_ENABLE_INPUT",
+      "XUI_ENABLE_LABEL",
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_TABLE_VIEW",
+      "XUI_ENABLE_TOOLBAR",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_DOCUMENT_VIEW": [
+      "XUI_ENABLE_DOCUMENT",
+      "XUI_ENABLE_DOCUMENT_EDITOR"
+    ],
+    "XUI_ENABLE_FILE_DIALOG": [
+      "XUI_ENABLE_BREADCRUMB",
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_COMBOBOX",
+      "XUI_ENABLE_INPUT",
+      "XUI_ENABLE_LABEL",
+      "XUI_ENABLE_LIST_VIEW",
+      "XUI_ENABLE_MSGBOX",
+      "XUI_ENABLE_MSGTIP",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_ICON_PICKER": [
+      "XUI_ENABLE_POPUP",
+      "XUI_ENABLE_SCROLL_FRAME",
+      "XUI_ENABLE_SCROLL_VIEW"
+    ],
+    "XUI_ENABLE_INPUT": [
+      "XUI_ENABLE_MENU"
+    ],
+    "XUI_ENABLE_INVENTORY_GRID": [
+      "(XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)",
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_LABEL",
+      "XUI_ENABLE_NUMERIC_INPUT",
+      "XUI_ENABLE_POPUP"
+    ],
+    "XUI_ENABLE_LIST_VIEW": [
+      "XUI_ENABLE_SCROLL_FRAME"
+    ],
+    "XUI_ENABLE_MENU": [
+      "XUI_ENABLE_POPUP"
+    ],
+    "XUI_ENABLE_MENUBAR": [
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_POPUP"
+    ],
+    "XUI_ENABLE_MESSAGE_LIST": [
+      "XUI_ENABLE_DOCUMENT",
+      "XUI_ENABLE_DOCUMENT_EDITOR",
+      "XUI_ENABLE_DOCUMENT_VIEW",
+      "XUI_ENABLE_MENU"
+    ],
+    "XUI_ENABLE_MSGBOX": [
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_NUMERIC_INPUT": [
+      "XUI_ENABLE_INPUT"
+    ],
+    "XUI_ENABLE_PANEL": [
+      "XUI_ENABLE_IMAGE",
+      "XUI_ENABLE_LABEL"
+    ],
+    "XUI_ENABLE_POPUP": [
+      "XUI_ENABLE_SCROLL_VIEW"
+    ],
+    "XUI_ENABLE_PROPERTY_GRID": [
+      "XUI_ENABLE_SCROLL_FRAME",
+      "XUI_ENABLE_TABLE_GRID",
+      "XUI_ENABLE_TABLE_VIEW"
+    ],
+    "XUI_ENABLE_RADIO_GROUP": [
+      "XUI_ENABLE_CHECK_CARD",
+      "XUI_ENABLE_RADIO"
+    ],
+    "XUI_ENABLE_SCROLL_FRAME": [
+      "(XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)",
+      "XUI_ENABLE_SCROLLBAR"
+    ],
+    "XUI_ENABLE_SCROLL_VIEW": [
+      "XUI_ENABLE_SCROLL_FRAME"
+    ],
+    "XUI_ENABLE_TABLE_GRID": [
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_COLOR_PICKER",
+      "XUI_ENABLE_COMBOBOX",
+      "XUI_ENABLE_DATE_PICKER",
+      "XUI_ENABLE_INPUT",
+      "XUI_ENABLE_NUMERIC_INPUT",
+      "XUI_ENABLE_POPUP",
+      "XUI_ENABLE_SCROLL_FRAME",
+      "XUI_ENABLE_TABLE_VIEW",
+      "XUI_ENABLE_TEXT_EDIT"
+    ],
+    "XUI_ENABLE_TABLE_VIEW": [
+      "XUI_ENABLE_SCROLL_FRAME"
+    ],
+    "XUI_ENABLE_TABS": [
+      "XUI_ENABLE_MENU"
+    ],
+    "XUI_ENABLE_TAG_INPUT": [
+      "XUI_ENABLE_INPUT"
+    ],
+    "XUI_ENABLE_TERMINAL": [
+      "(XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)",
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_CHECKBOX",
+      "XUI_ENABLE_FIND",
+      "XUI_ENABLE_INPUT",
+      "XUI_ENABLE_LABEL",
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_TEXT_EDIT": [
+      "(XUI_ENABLE_SCROLLBAR || XUI_ENABLE_SCROLL_FRAME || XUI_ENABLE_SCROLL_VIEW || XUI_ENABLE_TABLE_VIEW || XUI_ENABLE_TREE_VIEW || XUI_ENABLE_LIST_VIEW || XUI_ENABLE_TEXT_EDIT || XUI_ENABLE_CODE_EDIT || XUI_ENABLE_DOCUMENT_VIEW || XUI_ENABLE_TERMINAL)",
+      "XUI_ENABLE_BUTTON",
+      "XUI_ENABLE_CHECKBOX",
+      "XUI_ENABLE_FIND",
+      "XUI_ENABLE_INPUT",
+      "XUI_ENABLE_LABEL",
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_SCROLLBAR",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_TIMELINE_VIEW": [
+      "XUI_ENABLE_MENU",
+      "XUI_ENABLE_SCROLL_FRAME"
+    ],
+    "XUI_ENABLE_TREE_VIEW": [
+      "XUI_ENABLE_SCROLL_FRAME"
+    ],
+    "XUI_ENABLE_WEBVIEW": [
+      "XUI_ENABLE_DOCUMENT",
+      "XUI_ENABLE_WINDOW"
+    ],
+    "XUI_ENABLE_WORKFLOW": [
+      "XUI_ENABLE_FLOW_GRAPH"
+    ]
+  },
+  "3d_sources": {
+    "src/xge3d_scene.c": "XGE_ENABLE_3D",
+    "src/xge3d_render.c": "XGE_ENABLE_3D",
+    "src/xge3d_model.c": "XGE3D_ENABLE_MODEL",
+    "src/xge3d_material.c": "XGE_ENABLE_3D",
+    "src/xge3d_spatial.c": "XGE_ENABLE_3D",
+    "src/xge3d_environment.c": "XGE_ENABLE_3D",
+    "src/xge3d_light.c": "XGE3D_ENABLE_LIGHTING",
+    "src/xge3d_shadow.c": "XGE3D_ENABLE_SHADOW",
+    "src/xge3d_ibl.c": "XGE3D_ENABLE_IBL",
+    "src/xge3d_skin.c": "XGE3D_ENABLE_ANIMATION",
+    "src/xge3d_animation.c": "XGE3D_ENABLE_ANIMATION",
+    "src/xge3d_terrain.c": "XGE3D_ENABLE_TERRAIN",
+    "src/xge3d_async.c": "XGE3D_ENABLE_ASYNC"
+  }
+}

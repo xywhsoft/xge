@@ -1,4 +1,4 @@
-#include "xui.h"
+#include "xui_document_ui.h"
 #include "xui_test_proxy.h"
 
 #include <stdio.h>
@@ -52,10 +52,17 @@ int main(void)
 	xui_context pContext = NULL;
 	xui_font pFont = NULL;
 	xui_widget pWidget = NULL;
+	xui_document pDocument = NULL;
 	xui_input_desc_t tInput;
 	xui_text_edit_desc_t tTextEdit;
 	xui_code_edit_desc_t tCodeEdit;
-	xui_rich_edit_desc_t tRichEdit;
+	xui_doc_editor_desc_t tDocumentEditor;
+	xui_doc_desc_t tMarkdown;
+	xui_document_snapshot pSnapshot = NULL;
+	xui_doc_command_state_t tCommand;
+	xui_doc_range_t tMatch;
+	char sSource[64];
+	uint64_t iSourceBytes;
 	xui_terminal_desc_t tTerminal;
 	xui_numeric_input_desc_t tNumeric;
 	xui_tag_input_desc_t tTag;
@@ -135,17 +142,69 @@ int main(void)
 		"code edit generic text");
 	__xuiEditContractDestroy(&pWidget);
 
-	memset(&tRichEdit, 0, sizeof(tRichEdit));
-	tRichEdit.iSize = sizeof(tRichEdit);
-	tRichEdit.sText = "rich";
-	tRichEdit.pFont = pFont;
-	XUI_TEST_CHECK(xuiRichEditCreate(pContext, &pWidget, &tRichEdit) == XUI_OK, "rich edit create");
-	XUI_TEST_CHECK((xuiEditGetCapabilities(pWidget) & (XUI_EDIT_CAP_STRUCTURED | XUI_EDIT_CAP_FIND)) ==
-		(XUI_EDIT_CAP_STRUCTURED | XUI_EDIT_CAP_FIND), "rich edit capabilities");
-	XUI_TEST_CHECK(xuiEditSetReadonly(pWidget, 1) == XUI_OK, "rich edit readonly");
-	XUI_TEST_CHECK(xuiEditSetText(pWidget, "updated") == XUI_OK && strcmp(xuiEditGetText(pWidget), "updated") == 0,
-		"rich edit programmatic text");
+	XUI_TEST_CHECK(xuiDocumentCreate(NULL, &pDocument) == XUI_OK, "document create");
+	memset(&tDocumentEditor, 0, sizeof(tDocumentEditor));
+	tDocumentEditor.iSize = sizeof(tDocumentEditor);
+	tDocumentEditor.tView.iSize = sizeof(tDocumentEditor.tView);
+	tDocumentEditor.tView.pDocument = pDocument;
+	tDocumentEditor.tView.tRenderer.iSize = sizeof(tDocumentEditor.tView.tRenderer);
+	tDocumentEditor.tView.tRenderer.tFonts.normal = pFont;
+	XUI_TEST_CHECK(xuiDocumentEditorCreate(pContext, &tDocumentEditor, &pWidget) == XUI_OK,
+		"document editor create");
+	XUI_TEST_CHECK(xuiDocumentEditorInsertText(pWidget, "rich", 4) == XUI_OK,
+		"document editor insert");
+	XUI_TEST_CHECK((xuiEditGetCapabilities(pWidget) &
+		(XUI_EDIT_CAP_TEXT | XUI_EDIT_CAP_SELECTION | XUI_EDIT_CAP_UNDO |
+		 XUI_EDIT_CAP_IME | XUI_EDIT_CAP_MULTILINE | XUI_EDIT_CAP_STRUCTURED)) ==
+		(XUI_EDIT_CAP_TEXT | XUI_EDIT_CAP_SELECTION | XUI_EDIT_CAP_UNDO |
+		 XUI_EDIT_CAP_IME | XUI_EDIT_CAP_MULTILINE | XUI_EDIT_CAP_STRUCTURED),
+		"document editor capabilities");
+	XUI_TEST_CHECK(xuiEditGetText(pWidget) != NULL && !strcmp(xuiEditGetText(pWidget), "rich\n"),
+		"document editor generic text");
+	memset(&tCommand, 0, sizeof(tCommand)); tCommand.iSize = sizeof(tCommand);
+	XUI_TEST_CHECK(xuiDocumentEditorQueryCommand(pWidget, XUI_DOC_EDIT_BOLD, &tCommand) == XUI_OK &&
+		tCommand.bEnabled, "document editor rich command");
+	XUI_TEST_CHECK(xuiDocumentViewFind(pWidget, "rich", 4, 0, 1, &tMatch) == XUI_OK,
+		"document editor find");
+	XUI_TEST_CHECK(xuiEditSetReadonly(pWidget, 1) == XUI_OK && xuiEditIsReadonly(pWidget),
+		"document editor readonly");
+	XUI_TEST_CHECK(xuiEditSetText(pWidget, "blocked") == XUI_ERROR_INVALID_STATE &&
+		!strcmp(xuiEditGetText(pWidget), "rich\n"), "readonly document editor blocks writes");
+	XUI_TEST_CHECK(xuiEditSetReadonly(pWidget, 0) == XUI_OK, "document editor writable");
+	XUI_TEST_CHECK(xuiEditSetText(pWidget, "updated") == XUI_OK &&
+		!strcmp(xuiEditGetText(pWidget), "updated\n"), "document editor generic text replacement");
+	XUI_TEST_CHECK(xuiEditCanUndo(pWidget) && xuiEditUndo(pWidget) == XUI_OK &&
+		!strcmp(xuiEditGetText(pWidget), "rich\n"), "document editor generic undo");
 	__xuiEditContractDestroy(&pWidget);
+	xuiDocumentRelease(pDocument); pDocument = NULL;
+
+	memset(&tMarkdown, 0, sizeof(tMarkdown));
+	tMarkdown.iSize = sizeof(tMarkdown); tMarkdown.iProfile = XUI_DOCUMENT_MARKDOWN;
+	XUI_TEST_CHECK(xuiDocumentCreate(&tMarkdown, &pDocument) == XUI_OK &&
+		xuiDocumentLoadMarkdown(pDocument, "# old\n", 6) == XUI_OK, "markdown document create");
+	tDocumentEditor.tView.pDocument = pDocument;
+	tDocumentEditor.iMode = XUI_DOC_SOURCE_TEXT;
+	XUI_TEST_CHECK(xuiDocumentEditorCreate(pContext, &tDocumentEditor, &pWidget) == XUI_OK,
+		"markdown source editor create");
+	XUI_TEST_CHECK(xuiEditGetText(pWidget) != NULL && !strcmp(xuiEditGetText(pWidget), "# old\n"),
+		"markdown generic source text");
+	XUI_TEST_CHECK(xuiEditSetText(pWidget, "# next\n") == XUI_OK,
+		"markdown generic source replacement");
+	XUI_TEST_CHECK(xuiDocumentAcquireSnapshot(pDocument, &pSnapshot) == XUI_OK &&
+		xuiDocumentSnapshotCopySource(pSnapshot, sSource, sizeof(sSource), &iSourceBytes) == XUI_OK &&
+		!strcmp(sSource, "# next\n"), "markdown source persisted");
+	xuiDocumentSnapshotRelease(pSnapshot); pSnapshot = NULL;
+	XUI_TEST_CHECK(xuiDocumentViewSetMode(pWidget, XUI_DOC_VISUAL) == XUI_OK &&
+		xuiDocumentViewFind(pWidget, "next", 4, 0, 1, &tMatch) == XUI_OK,
+		"markdown visual projection and find");
+	XUI_TEST_CHECK(xuiEditCanUndo(pWidget) && xuiEditUndo(pWidget) == XUI_OK,
+		"markdown shared history after mode switch");
+	XUI_TEST_CHECK(xuiDocumentAcquireSnapshot(pDocument, &pSnapshot) == XUI_OK &&
+		xuiDocumentSnapshotCopySource(pSnapshot, sSource, sizeof(sSource), &iSourceBytes) == XUI_OK &&
+		!strcmp(sSource, "# old\n"), "markdown source restored");
+	xuiDocumentSnapshotRelease(pSnapshot); pSnapshot = NULL;
+	__xuiEditContractDestroy(&pWidget);
+	xuiDocumentRelease(pDocument); pDocument = NULL;
 
 	memset(&tTerminal, 0, sizeof(tTerminal));
 	tTerminal.iSize = sizeof(tTerminal);
@@ -200,6 +259,8 @@ int main(void)
 
 cleanup:
 	__xuiEditContractDestroy(&pWidget);
+	if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
+	if ( pDocument != NULL ) xuiDocumentRelease(pDocument);
 	if ( pContext != NULL ) xuiDestroy(pContext);
 	if ( pFont != NULL && tProxyState.tProxy.fontDestroy != NULL ) {
 		tProxyState.tProxy.fontDestroy(&tProxyState.tProxy, pFont);

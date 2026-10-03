@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_COMBOBOX
 #include "xui_internal.h"
 
 #include <string.h>
@@ -1178,7 +1180,7 @@ static int __xuiComboBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		sText = "";
 	}
 	if ( (pProxy->drawText != NULL) && (__xuiComboBoxAlpha(iText) != 0) ) {
-		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sText, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tTextRect, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = __xuiComboBoxDrawChevron(pProxy, pDraw, tButton, (iState & XUI_COMBOBOX_STATE_OPEN) != 0, iArrow);
@@ -2078,3 +2080,5 @@ XUI_API int xuiComboBoxGetChangeCount(xui_widget pWidget)
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
+
+#endif

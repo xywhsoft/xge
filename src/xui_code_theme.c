@@ -1,3 +1,5 @@
+#include "../xui_config.h"
+#if XUI_ENABLE_CODE_EDIT
 #include "../xui.h"
 
 #include <string.h>
@@ -141,3 +143,5 @@ XUI_API int xuiCodeThemeCopy(xui_code_theme pDst, xui_code_theme pSrc)
 	memcpy(pDst, pSrc, sizeof(*pDst));
 	return XUI_OK;
 }
+
+#endif
