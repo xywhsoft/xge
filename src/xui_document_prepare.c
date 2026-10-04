@@ -17,7 +17,7 @@ struct xui_doc_prepare_t {
     int visual_delete_chain; /* Remaining prefix/suffix still use base source positions. */
     uint64_t visual_delete_left, visual_delete_right;
     doc_publish_plan* publication;
-    uint64_t identity, generation, patch_count, source_open_brackets;
+    uint64_t identity, generation, patch_count, source_open_brackets, source_storage_bytes;
     uint64_t previous_generation, patch_start, patch_end, patch_bytes;
     int single_patch; /* Immutable delta from the exact preceding projection. */
     unsigned utf8_bytes;
@@ -118,6 +118,7 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
          * Reconcile the entire input chain against the committed semantic base. */
         doc_seq_release(t->draft->source); t->draft->source = previous->source; doc_seq_retain(t->draft->source);
         t->draft->source_open_brackets = previous->source_open_brackets;
+        t->draft->source_storage_bytes = previous->source_storage_bytes;
         t->origin = previous->transaction.origin; t->group = previous->transaction.group;
         t->flags = previous->transaction.flags;
         p->patch_count += previous->patch_count;
@@ -160,6 +161,7 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
     }
     p->source = t->draft->source; doc_seq_retain(p->source);
     p->source_open_brackets = t->draft->source_open_brackets;
+    p->source_storage_bytes = t->draft->source_storage_bytes;
     p->generation = doc_prepare_generation();
     if (!p->generation) { xuiDocumentPrepareRelease(p); return XUI_DOC_ERROR_LIMIT; }
     /* Failed creation cannot supersede the current candidate. */
@@ -483,6 +485,7 @@ int doc_prepare_visual_text(xui_document d, const xui_doc_txn_desc_t* desc,
             doc_seq_release(shadow.draft->source); shadow.draft->source = (*out)->source;
             doc_seq_retain(shadow.draft->source);
             shadow.draft->source_open_brackets = (*out)->source_open_brackets;
+            shadow.draft->source_storage_bytes = (*out)->source_storage_bytes;
             (*out)->visual_expected = shadow.draft; doc_state_retain(shadow.draft);
             (*out)->visual_delete_chain = !bytes;
             (*out)->visual_delete_left = start;
@@ -631,6 +634,7 @@ int doc_prepare_visual_span(xui_document d, const xui_doc_txn_desc_t* desc,
             doc_seq_release(shadow.draft->source); shadow.draft->source = (*out)->source;
             doc_seq_retain(shadow.draft->source);
             shadow.draft->source_open_brackets = (*out)->source_open_brackets;
+            shadow.draft->source_storage_bytes = (*out)->source_storage_bytes;
             (*out)->visual_expected = shadow.draft; doc_state_retain(shadow.draft);
             (*out)->visual_parent = parent->id;
             (*out)->publication = doc_publish_plan_capture(d);
@@ -747,6 +751,7 @@ int doc_prepare_visual_continue(xui_document d, xui_document_prepare previous,
             doc_seq_release(shadow.draft->source); shadow.draft->source = (*out)->source;
             doc_seq_retain(shadow.draft->source);
             shadow.draft->source_open_brackets = (*out)->source_open_brackets;
+            shadow.draft->source_storage_bytes = (*out)->source_storage_bytes;
             (*out)->visual_expected = shadow.draft; doc_state_retain(shadow.draft);
             (*out)->visual_parent = previous->visual_parent;
             (*out)->visual_delete_chain = fast_delete;

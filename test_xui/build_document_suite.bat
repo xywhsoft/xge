@@ -17,6 +17,38 @@ call test_xui\build_document_quote_source_test.bat
 if errorlevel 1 exit /b 1
 call test_xui\build_document_quote_prefix_test.bat
 if errorlevel 1 exit /b 1
+call test_xui\build_document_footnote_prefix_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_tab_prefix_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_source_sharing_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_reference_sharing_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_source_compaction_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_definition_alignment_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_dependency_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_break_origin_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_front_matter_lines_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_object_break_origin_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_text_origin_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_quote_unwrap_source_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_quote_boundary_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_admonition_source_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_footnote_unwrap_source_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_unlist_source_test.bat
+if errorlevel 1 exit /b 1
 call test_xui\build_document_attribute_pool_scale_test.bat
 if %errorlevel% neq 0 exit /b 1
 call test_xui\build_document_footnote_perf_test.bat

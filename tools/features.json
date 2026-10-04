@@ -132,7 +132,8 @@
     "src/xui_document_memory.c": "XUI_ENABLE_DOCUMENT",
     "src/xui_document_prepare.c": "XUI_ENABLE_DOCUMENT",
     "src/xui_document_publish.c": "XUI_ENABLE_DOCUMENT",
-    "src/xui_document_incremental.c": "XUI_ENABLE_DOCUMENT"
+    "src/xui_document_incremental.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui_document_sequence_share.c": "XUI_ENABLE_DOCUMENT"
   },
   "xui_requires": {
     "XUI_ENABLE_CANVAS": [

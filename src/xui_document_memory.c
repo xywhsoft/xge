@@ -47,7 +47,7 @@ static void doc_memory_visit(void* pointer, unsigned owner, int add)
     switch (h->value.kind) {
     case DOC_MEMORY_SEQUENCE: {
         doc_sequence* p = pointer;
-        doc_memory_visit(p->left, owner, add); doc_memory_visit(p->right, owner, add); doc_memory_visit(p->blob, owner, add);
+        doc_memory_visit(p->left, owner, add); doc_memory_visit(p->right, owner, add); doc_memory_visit(p->blob, owner, add); doc_memory_visit(p->value, owner, add);
         break;
     }
     case DOC_MEMORY_NODE: {

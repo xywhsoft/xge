@@ -102,6 +102,17 @@ static int doc_reconcile_node(doc_reconcile* c, uint64_t fresh_id, uint64_t pare
     copy = doc_node_clone(a, n);
     if (!copy) return XUI_ERROR_OUT_OF_MEMORY;
     copy->id = id; copy->parent = parent;
+    /* Source edits already establish this logical node's identity. Preserve
+     * matching semantic text bytes too, including disjoint unchanged runs. */
+    {
+        doc_node* old = doc_index_get(c->old->index, id);
+        if (old && old->kind == copy->kind && (old->text || copy->text)) {
+            doc_sequence* shared = NULL;
+            result = doc_seq_reuse_bytes(a, old->text, copy->text, c->cancellation, &shared);
+            if (result != XUI_OK) { doc_node_release(copy); return result; }
+            doc_seq_release(copy->text); copy->text = shared;
+        }
+    }
     if (c->local) { copy->block_ordinal = c->block_ordinal; copy->block_shift_base = c->block_shift_base; }
     doc_seq_release(copy->children); copy->children = NULL;
     for (i = 0; i < doc_seq_size(n->children); i++) {
@@ -139,6 +150,7 @@ int doc_markdown_reconcile(xui_document_transaction t, doc_state** parsed)
     if (!c.result) { doc_free(c.candidates); return XUI_ERROR_OUT_OF_MEMORY; }
     c.result->source = c.parsed->source; doc_seq_retain(c.result->source);
     c.result->source_open_brackets = c.parsed->source_open_brackets;
+    c.result->source_storage_bytes = c.parsed->source_storage_bytes;
     c.result->references = c.parsed->references; doc_seq_retain(c.result->references);
     c.result->reference_values = c.parsed->reference_values; doc_seq_retain(c.result->reference_values);
     c.result->inline_syntax = c.parsed->inline_syntax; doc_seq_retain(c.result->inline_syntax);
@@ -416,6 +428,7 @@ int doc_markdown_accept(xui_document_transaction t, xui_document_transaction des
     if (!c.normalized.draft) return doc_txn_fail(t, XUI_ERROR_OUT_OF_MEMORY);
     doc_seq_release(c.normalized.draft->source); c.normalized.draft->source = c.parsed->source; doc_seq_retain(c.parsed->source);
     c.normalized.draft->source_open_brackets = c.parsed->source_open_brackets;
+    c.normalized.draft->source_storage_bytes = c.parsed->source_storage_bytes;
     doc_seq_release(c.normalized.draft->references); c.normalized.draft->references = c.parsed->references; doc_seq_retain(c.parsed->references);
     doc_seq_release(c.normalized.draft->reference_values); c.normalized.draft->reference_values = c.parsed->reference_values; doc_seq_retain(c.parsed->reference_values);
     doc_seq_release(c.normalized.draft->inline_syntax); c.normalized.draft->inline_syntax = c.parsed->inline_syntax; doc_seq_retain(c.parsed->inline_syntax);

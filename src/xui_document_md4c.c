@@ -12,6 +12,8 @@ static _Thread_local doc_md4c_block_markers_proc doc_md4c_block_markers;
 static _Thread_local doc_md4c_fence_info_proc doc_md4c_fence_info;
 static _Thread_local doc_md4c_heading_content_proc doc_md4c_heading_content;
 static _Thread_local doc_md4c_break_source_proc doc_md4c_break_source;
+static _Thread_local doc_md4c_text_source_proc doc_md4c_text_source;
+static _Thread_local doc_md4c_text_scope_proc doc_md4c_text_scope;
 static _Thread_local doc_md4c_quote_prefixes_proc doc_md4c_quote_prefixes;
 static _Thread_local doc_md4c_list_indents_proc doc_md4c_list_indents;
 static _Thread_local doc_md4c_code_indents_proc doc_md4c_code_indents;
@@ -23,10 +25,11 @@ static _Thread_local doc_md4c_candidate_source_proc doc_md4c_candidate_source;
 static _Thread_local doc_md4c_span_source_proc doc_md4c_span_source;
 static _Thread_local const atomic_int* doc_md4c_cancellation;
 static _Thread_local int* doc_md4c_footnotes;
-static int doc_md4c_note_footnote(MD_OFFSET beg, MD_OFFSET end, MD_OFFSET lb, MD_OFFSET le, void* user)
+static int doc_md4c_note_footnote(MD_OFFSET beg, MD_OFFSET end, MD_OFFSET lb, MD_OFFSET le,
+    const char* body, MD_SIZE body_size, void* user)
 {
     if (doc_md4c_footnotes) *doc_md4c_footnotes = 1;
-    return doc_md4c_footnote_source ? doc_md4c_footnote_source(beg, end, lb, le, user) : 0;
+    return doc_md4c_footnote_source ? doc_md4c_footnote_source(beg, end, lb, le, body, body_size, user) : 0;
 }
 static int doc_md4c_cancelled(void)
 {
@@ -47,7 +50,8 @@ static void* doc_md4c_realloc(void* previous, size_t bytes)
 #define free doc_free
 #define md_parse doc_md4c_upstream_parse
 #define MD_XUI_CANCEL() doc_md4c_cancelled()
-#define MD_XUI_FOOTNOTE_DEFINED(beg, end, lb, le) doc_md4c_note_footnote(beg, end, lb, le, ctx->userdata)
+#define MD_XUI_FOOTNOTE_DEFINED(beg, end, lb, le, body, body_size) \
+    doc_md4c_note_footnote(beg, end, lb, le, body, body_size, ctx->userdata)
 #define MD_XUI_REFERENCE_CANDIDATE(kind, beg, end, lb, le) \
     (doc_md4c_candidate_source ? doc_md4c_candidate_source(kind, beg, end, lb, le, ctx->userdata) : 0)
 #define MD_XUI_SOURCE_BLOCK(type, beg, end, enter) do { if (doc_md4c_block_source) doc_md4c_block_source(type, beg, end, enter, ctx->userdata); } while (0)
@@ -61,6 +65,10 @@ static void* doc_md4c_realloc(void* previous, size_t bytes)
 #define MD_XUI_SOURCE_BREAK(kind, trailing, marker_beg, marker_end, newline_beg, newline_end) \
     (doc_md4c_break_source ? doc_md4c_break_source(kind, trailing, marker_beg, marker_end, \
         newline_beg, newline_end, ctx->userdata) : 0)
+#define MD_XUI_SOURCE_TEXT(type, content_type, beg, end, size) \
+    (doc_md4c_text_source ? doc_md4c_text_source(type, content_type, beg, end, size, ctx->userdata) : 0)
+#define MD_XUI_TEXT_SCOPE(type, beg, end, enter) \
+    (doc_md4c_text_scope ? doc_md4c_text_scope(type, beg, end, enter, ctx->userdata) : 0)
 #define MD_XUI_SOURCE_QUOTE_PREFIXES(offsets, count) \
     (doc_md4c_quote_prefixes ? doc_md4c_quote_prefixes(offsets, count, ctx->userdata) : 0)
 #define MD_XUI_SOURCE_LIST_INDENTS(pairs, count) \
@@ -87,6 +95,8 @@ static void* doc_md4c_realloc(void* previous, size_t bytes)
 #undef MD_XUI_SOURCE_FENCE_INFO
 #undef MD_XUI_SOURCE_HEADING_CONTENT
 #undef MD_XUI_SOURCE_BREAK
+#undef MD_XUI_SOURCE_TEXT
+#undef MD_XUI_TEXT_SCOPE
 #undef MD_XUI_SOURCE_QUOTE_PREFIXES
 #undef MD_XUI_SOURCE_LIST_INDENTS
 #undef MD_XUI_SOURCE_CODE_INDENTS
@@ -129,7 +139,7 @@ int doc_md4c_parse(doc_allocator* allocator, const char* text, MD_SIZE size, con
     doc_md4c_reference_source_proc reference_source,
     doc_md4c_reference_values_proc reference_values,
     doc_md4c_footnote_source_proc footnote_source, doc_md4c_candidate_source_proc candidate_source,
-    doc_md4c_span_source_proc span_source,
+    doc_md4c_span_source_proc span_source, doc_md4c_text_source_proc text_source, doc_md4c_text_scope_proc text_scope,
     const atomic_int* cancellation, int* footnotes, void* user)
 {
     doc_allocator* previous = doc_md4c_allocator;
@@ -138,6 +148,8 @@ int doc_md4c_parse(doc_allocator* allocator, const char* text, MD_SIZE size, con
     doc_md4c_fence_info_proc previous_fence_info = doc_md4c_fence_info;
     doc_md4c_heading_content_proc previous_heading_content = doc_md4c_heading_content;
     doc_md4c_break_source_proc previous_break_source = doc_md4c_break_source;
+    doc_md4c_text_source_proc previous_text_source = doc_md4c_text_source;
+    doc_md4c_text_scope_proc previous_text_scope = doc_md4c_text_scope;
     doc_md4c_quote_prefixes_proc previous_quote_prefixes = doc_md4c_quote_prefixes;
     doc_md4c_list_indents_proc previous_list_indents = doc_md4c_list_indents;
     doc_md4c_code_indents_proc previous_code_indents = doc_md4c_code_indents;
@@ -156,6 +168,8 @@ int doc_md4c_parse(doc_allocator* allocator, const char* text, MD_SIZE size, con
     doc_md4c_fence_info = fence_info;
     doc_md4c_heading_content = heading_content;
     doc_md4c_break_source = break_source;
+    doc_md4c_text_source = text_source;
+    doc_md4c_text_scope = text_scope;
     doc_md4c_quote_prefixes = quote_prefixes;
     doc_md4c_list_indents = list_indents;
     doc_md4c_code_indents = code_indents;
@@ -176,6 +190,8 @@ int doc_md4c_parse(doc_allocator* allocator, const char* text, MD_SIZE size, con
     doc_md4c_fence_info = previous_fence_info;
     doc_md4c_heading_content = previous_heading_content;
     doc_md4c_break_source = previous_break_source;
+    doc_md4c_text_source = previous_text_source;
+    doc_md4c_text_scope = previous_text_scope;
     doc_md4c_quote_prefixes = previous_quote_prefixes;
     doc_md4c_list_indents = previous_list_indents;
     doc_md4c_code_indents = previous_code_indents;
@@ -263,13 +279,13 @@ int doc_md4c_reference_values_equal(doc_allocator* allocator, const char* before
     atomic_fetch_add(&allocator->markdown_parses, 1);
     atomic_fetch_add(&allocator->markdown_parsed_bytes, before_size);
     result = doc_md4c_parse(allocator, before, before_size, &parser, NULL, NULL, NULL, NULL, NULL,
-        NULL, NULL, NULL, NULL, NULL, doc_md4c_values_reference, NULL, NULL, NULL, cancellation, &footnotes, &values);
+        NULL, NULL, NULL, NULL, NULL, doc_md4c_values_reference, NULL, NULL, NULL, NULL, NULL, cancellation, &footnotes, &values);
     if (!result) {
         values.comparing = 1;
         atomic_fetch_add(&allocator->markdown_parses, 1);
         atomic_fetch_add(&allocator->markdown_parsed_bytes, after_size);
         result = doc_md4c_parse(allocator, after, after_size, &parser, NULL, NULL, NULL, NULL, NULL,
-            NULL, NULL, NULL, NULL, NULL, doc_md4c_values_reference, NULL, NULL, NULL, cancellation, &footnotes, &values);
+            NULL, NULL, NULL, NULL, NULL, doc_md4c_values_reference, NULL, NULL, NULL, NULL, NULL, cancellation, &footnotes, &values);
     }
     if (values.error) result = values.error;
     if (!result) *equal = values.equal && values.offset == values.size;

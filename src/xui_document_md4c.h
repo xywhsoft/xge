@@ -9,6 +9,10 @@ typedef int (*doc_md4c_fence_info_proc)(MD_OFFSET, MD_OFFSET, MD_OFFSET, void*);
 typedef int (*doc_md4c_heading_content_proc)(MD_OFFSET, MD_OFFSET, void*);
 typedef int (*doc_md4c_break_source_proc)(int, MD_OFFSET, MD_OFFSET,
     MD_OFFSET, MD_OFFSET, MD_OFFSET, void*);
+/* Parser-confirmed origin of one normalized text callback. */
+typedef int (*doc_md4c_text_source_proc)(MD_TEXTTYPE, MD_TEXTTYPE, MD_OFFSET, MD_OFFSET, MD_SIZE, void*);
+typedef int (*doc_md4c_text_scope_proc)(MD_TEXTTYPE, MD_OFFSET, MD_OFFSET, int, void*);
+/* Six entries per record: marker/end offsets, start/marker/content/end columns. */
 typedef int (*doc_md4c_quote_prefixes_proc)(const MD_OFFSET*, MD_SIZE, void*);
 typedef int (*doc_md4c_list_indents_proc)(const MD_OFFSET*, MD_SIZE, void*);
 typedef int (*doc_md4c_code_indents_proc)(const MD_OFFSET*, MD_SIZE, void*);
@@ -17,7 +21,8 @@ typedef int (*doc_md4c_reference_source_proc)(MD_OFFSET, MD_OFFSET, MD_OFFSET, M
     MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, int, void*);
 typedef int (*doc_md4c_reference_values_proc)(const char*, MD_SIZE, const char*, MD_SIZE,
     const char*, MD_SIZE, int, void*);
-typedef int (*doc_md4c_footnote_source_proc)(MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, void*);
+typedef int (*doc_md4c_footnote_source_proc)(MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET,
+    const char*, MD_SIZE, void*);
 typedef int (*doc_md4c_candidate_source_proc)(int, MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, void*);
 typedef int (*doc_md4c_span_source_proc)(MD_SPANTYPE, MD_OFFSET, MD_OFFSET, int, MD_OFFSET, MD_OFFSET, void*);
 int doc_md4c_parse(doc_allocator*, const char*, MD_SIZE, const MD_PARSER*, doc_md4c_block_source_proc,
@@ -26,7 +31,7 @@ int doc_md4c_parse(doc_allocator*, const char*, MD_SIZE, const MD_PARSER*, doc_m
     doc_md4c_code_indents_proc,
     doc_md4c_table_token_proc,
     doc_md4c_reference_source_proc, doc_md4c_reference_values_proc, doc_md4c_footnote_source_proc, doc_md4c_candidate_source_proc,
-    doc_md4c_span_source_proc,
+    doc_md4c_span_source_proc, doc_md4c_text_source_proc, doc_md4c_text_scope_proc,
     const atomic_int*, int*, void*);
 unsigned doc_md4c_dialect_flags(uint32_t);
 /* Compare every parsed link definition, including unused/duplicate definitions.

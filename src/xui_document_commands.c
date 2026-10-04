@@ -1555,6 +1555,7 @@ static int doc_command_list_cross_groups(doc_state* s, const xui_doc_range_t* ra
         if (groups->first_item == DOC_NONE || groups->last_item == DOC_NONE)
             return XUI_DOC_ERROR_SCHEMA;
     }
+    groups->parent = parent->id;
     groups->count = end - start + 1;
     if (groups->count > SIZE_MAX / sizeof(*groups->lists)) return XUI_DOC_ERROR_LIMIT;
     groups->lists = doc_alloc(s->allocator,
@@ -1800,6 +1801,7 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
     result = doc_command_list_edit_plan(t->draft, range, &plan);
     if (result == XUI_ERROR_UNSUPPORTED) {
         doc_list_cross_groups groups; uint64_t group, first_id, last_id, successor = 0;
+        uint64_t next[2] = {0}, previous[2] = {0};
         result = doc_command_list_cross_groups(t->draft, range, &groups);
         if (result != XUI_OK) return doc_txn_fail(t, result);
         result = doc_unlist_range_can(t->draft, range);
@@ -1812,6 +1814,27 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
             doc_node* parent = doc_index_get(t->draft->index, groups.parent);
             if (groups.parent_end < doc_seq_size(parent->children))
                 successor = doc_seq_get_id(parent->children, groups.parent_end);
+        }
+        /* Bookmark item boundaries by surviving child IDs before any group
+         * moves. Later groups can shift the final parent's gaps, and an
+         * endpoint can be inside a multi-block item rather than at its edge. */
+        for (i = 0; i < 2 && !groups.parent_gap; i++) {
+            const xui_doc_position_t* p = i ? &range->tCaret : &range->tAnchor;
+            doc_node* endpoint = doc_index_get(t->draft->index, p->iNodeId);
+            uint64_t j;
+            if (p->iKind != XUI_DOC_POSITION_GAP || endpoint->kind != XUI_DOC_LIST_ITEM) continue;
+            for (j = p->iOffset; j < doc_seq_size(endpoint->children); j++) {
+                doc_node* child = doc_index_get(t->draft->index, doc_seq_get_id(endpoint->children, j));
+                if (t->draft->profile != XUI_DOCUMENT_MARKDOWN || !doc_semantic_empty_paragraph(t->draft, child)) {
+                    next[i] = child->id; break;
+                }
+            }
+            for (j = p->iOffset; j-- > 0;) {
+                doc_node* child = doc_index_get(t->draft->index, doc_seq_get_id(endpoint->children, j));
+                if (t->draft->profile != XUI_DOCUMENT_MARKDOWN || !doc_semantic_empty_paragraph(t->draft, child)) {
+                    previous[i] = child->id; break;
+                }
+            }
         }
         *after = *range;
         for (group = 0; group < groups.count; group++) {
@@ -1847,6 +1870,17 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
                     groups.reverse ? groups.parent_start : end, XUI_DOC_POSITION_GAP);
             }
         }
+        if (result == XUI_OK) for (i = 0; i < 2; i++) if (next[i] || previous[i]) {
+            xui_doc_position_t* p = i ? &after->tCaret : &after->tAnchor;
+            doc_node* parent = doc_index_get(t->draft->index, groups.parent);
+            uint64_t at = doc_child_index(parent, next[i] ? next[i] : previous[i]);
+            if (at == DOC_NONE) { result = XUI_DOC_ERROR_SCHEMA; break; }
+            *p = i ? range->tCaret : range->tAnchor;
+            p->iNodeId = groups.parent;
+            p->iOffset = at + !next[i];
+        }
+        after->tAnchor.iAffinity = range->tAnchor.iAffinity;
+        after->tCaret.iAffinity = range->tCaret.iAffinity;
         doc_free(groups.lists);
         return result == XUI_OK ? XUI_OK : doc_txn_fail(t, result);
     }
@@ -1871,7 +1905,8 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
     }
     insert_at = plan.list_index + 1;
     for (i = 0; i < selected; i++) {
-        uint64_t item_id, first_id = 0;
+        uint64_t item_id, child_index = 0, empty_id;
+        uint64_t anchor_offset = insert_at, caret_offset = insert_at;
         list = doc_index_get(t->draft->index, plan.list);
         item_id = doc_seq_get_id(list->children, plan.first);
         item = doc_index_get(t->draft->index, item_id);
@@ -1879,7 +1914,7 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
             t->draft->profile != XUI_DOCUMENT_MARKDOWN) {
             memset(&desc, 0, sizeof(desc)); desc.iSize = sizeof(desc);
             desc.iKind = XUI_DOC_PARAGRAPH;
-            result = doc_txn_insert(t, plan.parent, insert_at++, &desc, &first_id);
+            result = doc_txn_insert(t, plan.parent, insert_at++, &desc, &empty_id);
             if (result != XUI_OK) return result;
         }
         while ((item = doc_index_get(t->draft->index, item_id)) &&
@@ -1892,18 +1927,29 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
                     doc_index_get(t->draft->index, child))) {
                 result = doc_txn_delete(t, child);
                 if (result != XUI_OK) return result;
+                child_index++;
                 continue;
             }
-            if (!first_id) first_id = child;
+            if (after->tAnchor.iNodeId == item_id && child_index < after->tAnchor.iOffset)
+                anchor_offset++;
+            if (after->tCaret.iNodeId == item_id && child_index < after->tCaret.iOffset)
+                caret_offset++;
+            child_index++;
             result = xuiDocumentTxnMoveNode(t, child, plan.parent, insert_at++);
             if (result != XUI_OK) return result;
         }
-        if (after->tAnchor.iNodeId == item_id)
-            after->tAnchor = doc_command_caret(t, first_id ? first_id : plan.parent,
-                first_id ? 0 : insert_at - !plan.first, XUI_DOC_POSITION_GAP);
-        if (after->tCaret.iNodeId == item_id)
-            after->tCaret = doc_command_caret(t, first_id ? first_id : plan.parent,
-                first_id ? 0 : insert_at - !plan.first, XUI_DOC_POSITION_GAP);
+        /* Item gaps describe boundaries between its blocks, not gaps inside
+         * the first promoted block (which can be a text-bearing CodeBlock).
+         * Count only surviving children and account for removal of the head
+         * wrapper. Keep endpoint affinity and direction from the input. */
+        if (after->tAnchor.iNodeId == item_id) {
+            after->tAnchor.iNodeId = plan.parent;
+            after->tAnchor.iOffset = anchor_offset - !plan.first;
+        }
+        if (after->tCaret.iNodeId == item_id) {
+            after->tCaret.iNodeId = plan.parent;
+            after->tCaret.iOffset = caret_offset - !plan.first;
+        }
         result = doc_txn_delete(t, item_id);
         if (result != XUI_OK) return result;
     }
@@ -1912,6 +1958,17 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
         result = doc_txn_delete(t, plan.list);
         if (result != XUI_OK) return result;
     }
+    if (t->draft->profile == XUI_DOCUMENT_MARKDOWN && moved) {
+        doc_node* parent = doc_index_get(t->draft->index, plan.parent);
+        if (parent && parent->kind == XUI_DOC_LIST_ITEM && doc_seq_size(parent->children) > 1) {
+            doc_node* outer = doc_index_get(t->draft->index, parent->parent);
+            xui_doc_attributes_t attrs;
+            if (!outer || outer->kind != XUI_DOC_LIST) return doc_txn_fail(t, XUI_DOC_ERROR_SCHEMA);
+            attrs = *outer->attrs; attrs.iFlags &= ~XUI_DOC_TIGHT;
+            result = xuiDocumentTxnSetAttributes(t, outer->id, &attrs);
+            if (result != XUI_OK) return result;
+        }
+    }
     if (plan.list_gap) {
         uint64_t start = plan.list_index + !!plan.first;
         after->tAnchor = doc_command_caret(t, plan.parent,
@@ -1919,6 +1976,8 @@ XUI_API int xuiDocumentTxnUnlistRange(xui_document_transaction t,
         after->tCaret = doc_command_caret(t, plan.parent,
             plan.reverse ? start : start + moved, XUI_DOC_POSITION_GAP);
     }
+    after->tAnchor.iAffinity = range->tAnchor.iAffinity;
+    after->tCaret.iAffinity = range->tCaret.iAffinity;
     return XUI_OK;
 }
 typedef struct doc_move_block_plan {
@@ -2554,7 +2613,7 @@ XUI_API int xuiDocumentTxnUnwrapQuote(xui_document_transaction t,
     const xui_doc_position_t* at, xui_doc_position_t* caret)
 {
     doc_node *quote, *parent, *child; uint64_t id, parent_id, index, count, i;
-    uint32_t parent_kind; int result;
+    uint32_t parent_kind; int result, loosen = 0;
     result = doc_txn_check(t, XUI_DOC_SEMANTIC); if (result != XUI_OK) return result;
     if (!at || !caret) return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
     result = doc_command_position(t, at);
@@ -2564,7 +2623,7 @@ XUI_API int xuiDocumentTxnUnwrapQuote(xui_document_transaction t,
         struct xui_doc_transaction_t shadow; xui_doc_position_t target;
         result = doc_markdown_shadow_begin(t, &shadow); if (result != XUI_OK) return result;
         result = xuiDocumentTxnUnwrapQuote(&shadow, at, &target);
-        return doc_markdown_shadow_end(t, &shadow, result, &target, caret);
+        return doc_markdown_shadow_end_unwrap_quote(t, &shadow, result, at, &target, caret);
     }
     quote = doc_index_get(t->draft->index, at->iNodeId);
     for (; quote && quote->kind != XUI_DOC_QUOTE;
@@ -2575,6 +2634,28 @@ XUI_API int xuiDocumentTxnUnwrapQuote(xui_document_transaction t,
     if (!parent || index == DOC_NONE) return doc_txn_fail(t, XUI_DOC_ERROR_SCHEMA);
     parent_id = parent->id; parent_kind = parent->kind;
     count = doc_seq_size(quote->children);
+    /* Blank separators hidden inside a quote become direct item separators
+     * after promotion. Reflect their list spacing in the desired tree before
+     * comparing it with Markdown; otherwise an ordinary unwrap is rejected. */
+    if (parent_kind == XUI_DOC_LIST_ITEM && count > 1) {
+        if (t->draft->profile == XUI_DOCUMENT_MARKDOWN) {
+            for (i = 1; i < count && !loosen; i++) {
+                doc_node_source_range left, right;
+                doc_node_source_range_get(t->draft, doc_index_get(t->draft->index,
+                    doc_seq_get_id(quote->children, i - 1)), &left);
+                doc_node_source_range_get(t->draft, doc_index_get(t->draft->index,
+                    doc_seq_get_id(quote->children, i)), &right);
+                result = doc_quote_items_have_blank_line(t->draft, left.syntax_start, right.syntax_start, &loosen);
+                if (result != XUI_OK && result != XUI_ERROR_UNSUPPORTED) return doc_txn_fail(t, result);
+            }
+        } else {
+            for (i = 1; i < count && !loosen; i++) {
+                doc_node* left = doc_index_get(t->draft->index, doc_seq_get_id(quote->children, i - 1));
+                doc_node* right = doc_index_get(t->draft->index, doc_seq_get_id(quote->children, i));
+                loosen = left && right && left->kind == XUI_DOC_PARAGRAPH && right->kind == XUI_DOC_PARAGRAPH;
+            }
+        }
+    }
     for (i = 0; i < count; i++) {
         quote = doc_index_get(t->draft->index, id);
         child = doc_index_get(t->draft->index, doc_seq_get_id(quote->children, 0));
@@ -2585,6 +2666,28 @@ XUI_API int xuiDocumentTxnUnwrapQuote(xui_document_transaction t,
     }
     result = xuiDocumentTxnDeleteNode(t, id);
     if (result != XUI_OK) return result;
+    /* Promotion can put the first/last paragraph directly beside an existing
+     * paragraph even when the quote had just one child. Those seams require
+     * paragraph separators and hence a loose Markdown list. */
+    if (parent_kind == XUI_DOC_LIST_ITEM && !loosen) {
+        parent = doc_index_get(t->draft->index, parent_id);
+        if (!parent) return doc_txn_fail(t, XUI_DOC_ERROR_SCHEMA);
+        for (i = index ? index : 1; i < doc_seq_size(parent->children) && i <= index + count; i++) {
+            doc_node* left = doc_index_get(t->draft->index, doc_seq_get_id(parent->children, i - 1));
+            doc_node* right = doc_index_get(t->draft->index, doc_seq_get_id(parent->children, i));
+            if (left && right && left->kind == XUI_DOC_PARAGRAPH && right->kind == XUI_DOC_PARAGRAPH) {
+                loosen = 1; break;
+            }
+        }
+    }
+    if (loosen) {
+        parent = doc_index_get(t->draft->index, parent_id);
+        doc_node* list = parent ? doc_index_get(t->draft->index, parent->parent) : NULL;
+        if (!list || list->kind != XUI_DOC_LIST) return doc_txn_fail(t, XUI_DOC_ERROR_SCHEMA);
+        xui_doc_attributes_t attrs = *list->attrs; attrs.iFlags &= ~XUI_DOC_TIGHT;
+        result = xuiDocumentTxnSetAttributes(t, list->id, &attrs);
+        if (result != XUI_OK) return result;
+    }
     *caret = at->iNodeId == id ?
         doc_command_caret(t, parent_id, index, XUI_DOC_POSITION_GAP) : *at;
     return XUI_OK;

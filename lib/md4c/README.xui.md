@@ -32,6 +32,11 @@ revealed after link definitions are consumed. List-item openers also carry the
 optional task checkbox; CommonMark leaves that range absent. A fenced block
 also carries the exact end of its opening source line, so XUI can expose the
 raw info-string tail including spaces and tabs without rescanning a long line.
+Recognized admonition quote openers also carry the original `[!TYPE]` as their
+secondary marker and the complete header-line ending as their private tail.
+Detection records these ranges before the header becomes a parser blank line;
+Document validates the raw case-insensitive type and whitespace/newline bounds.
+Ordinary quotes and literal tags in CommonMark/GFM have no such owned header.
 `MD_XUI_SOURCE_FENCE_INFO` reports the same fenced-code parser's significant
 info bounds after its ASCII-space trimming and the first language-token end
 after its whitespace split. It runs after the fenced block enters Document;
@@ -75,7 +80,13 @@ cooperative cancellation, not a hard deadline for individual scans or sorting.
 Footnote block extents are retained even when definitions are emitted in reference order.
 `MD_XUI_FOOTNOTE_DEFINED` reports the full source and label ranges of every
 definition, including unused ones, after the definition table takes ownership
-of its content lines. The span hook passes the parser-selected definition's
+of its lines. It also borrows the exact dedented body input used by block
+emission, with original line endings and trailing whitespace. The collector
+uses the same body-line start function as emission and polls cancellation
+during scanning/copying; callback errors release the temporary buffer and
+unwind through the parser's ordinary definition-table cleanup. Document saves
+the label/body as immutable derived metadata, including duplicate definitions.
+The span hook passes the parser-selected definition's
 source range for resolved footnote references. Callback failures unwind through
 the parser's normal cleanup path.
 Footnote emission keeps the definition array stable because label hash buckets
@@ -151,7 +162,16 @@ before dereferencing it. This defensive check follows the strict analyzer's
 reported path; it is not evidence that valid input previously reached it.
 Do not also compile `md4c.c` directly into the XUI source target.
 
+Footnote lookup does not consume the opening caret until a definition resolves.
+An unresolved `[^label]` can remain literal or act as an ordinary link label;
+adjacent `[reference]` syntax must not turn it into an unrequested wiki link.
+The same resolver is used by complete, cohort and local parses.
+
 `entity.c` supplies the named-entity table. `md4c-html.c` is retained as an
 upstream reference and is not part of the XUI target; Document exports HTML
 from its shared semantic tree. Parsing math or Mermaid source does not itself
 provide mathematical typesetting or diagram rendering.
+
+Footnote definition collection retains every four-column indented continuation as body input before independently parsing that body. Outer container matching still applies; indented HTML no longer interrupts the definition and becomes an unrelated outer block. SOURCE, full parse and native reload use this same path.
+
+List indentation callbacks begin with one parser-confirmed first-line record: marker/gap bounds plus logical start, consumed content and raw end columns. The adapter stores it in LIST_ITEM syntax_aux, leaving public continuation records unchanged. Task gaps are owned by the first line; extra indentation beyond an ordinary marker retains its literal code width. Source-preserving unlist copies body and untouched siblings, checks all ordered definition values, and verifies complete semantic equivalence before publishing.

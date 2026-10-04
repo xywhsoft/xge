@@ -41,7 +41,12 @@ def generate():
         binary.extend(packed)
         index = len(data['accessors'])
         data['bufferViews'].append({'buffer': 0, 'byteOffset': offset, 'byteLength': len(packed)})
-        data['accessors'].append({'bufferView': index, 'componentType': component, 'count': count, 'type': kind})
+        entry = {'bufferView': index, 'componentType': component, 'count': count, 'type': kind}
+        if kind in ['SCALAR', 'VEC3']:
+            width = 1 if kind == 'SCALAR' else 3
+            entry['min'] = [min(values[k::width]) for k in range(width)]
+            entry['max'] = [max(values[k::width]) for k in range(width)]
+        data['accessors'].append(entry)
         return index
 
     # All boxes belong to actual skin joints; different materials share a palette.
@@ -62,6 +67,7 @@ def generate():
     box(3, [0, -.10, 0], [.26, .25, .15], 0)
     box(3, [0, -.10, -.20], [.18, .21, .065], 2)  # Backpack.
     box(4, [0, .10, 0], [.14, .17, .135], 3)
+    box(4, [0, -.09, 0], [.055, .075, .055], 3)
     box(4, [0, .25, 0], [.155, .045, .15], 1)
     box(4, [0, .12, .139], [.10, .045, .012], 4)  # Visor, facing +Z.
     for arm, forearm, hand, thigh, shin, foot in [(5, 6, 7, 11, 12, 13), (8, 9, 10, 14, 15, 16)]:

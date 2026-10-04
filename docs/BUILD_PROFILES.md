@@ -22,7 +22,7 @@ python tools/build_profile.py ui-min --define XUI_ENABLE_IMAGE=0
 
 库和消费者必须使用相同配置。构建产物包含完整的 `xge_build_config.h`，编译应用时强制包含它，使用该目录的导入库并从同一目录运行，以避免加载其他配置的 DLL：
 
-3D 子模块可用 `XGE3D_ENABLE_MODEL/LIGHTING/SHADOW/IBL/ANIMATION/TERRAIN/ASYNC` 单独关闭。异步依赖 MODEL，动画依赖 MODEL，阴影依赖 LIGHTING，IBL 依赖 LIGHTING；显式冲突会报错。配置位掩码表示顶层模块，子模块列表与源码裁剪结果见 build-report.json。
+3D 子模块可用 `XGE3D_ENABLE_MODEL/LIGHTING/SHADOW/IBL/ANIMATION/TERRAIN/ASYNC/FOG` 单独关闭。异步依赖 MODEL，动画依赖 MODEL，阴影依赖 LIGHTING，IBL 依赖 LIGHTING；FOG 仅依赖 3D，可用于无光照配置。显式冲突会报错。配置位掩码表示顶层模块，子模块列表与源码裁剪结果见 build-report.json。
 
 ```bat
 gcc -O2 -DXGE_DLL -include build/3d/xge_build_config.h application.c build/3d/xge.lib -lm -o build/3d/application.exe

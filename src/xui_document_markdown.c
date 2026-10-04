@@ -9,7 +9,6 @@
 typedef struct doc_md_block {
     MD_BLOCKTYPE type;
     uint64_t id, paragraph;
-    uint64_t code_content_start;
     int fenced_code;
 } doc_md_block;
 typedef struct doc_md_span {
@@ -22,7 +21,14 @@ typedef struct doc_md_span {
 typedef struct doc_md_context {
     struct xui_doc_transaction_t build;
     const char* source;
-    uint64_t size, cursor, parser_offset, last_break_id;
+    uint64_t size, cursor, parser_offset, last_break_id, last_break_text_offset;
+    MD_TEXTTYPE last_break_type;
+    MD_TEXTTYPE pending_text_type, pending_content_type;
+    uint64_t pending_text_start, pending_text_end;
+    MD_SIZE pending_text_size;
+    int pending_text_source;
+    int html_scope;
+    uint64_t html_scope_start, html_scope_end, html_node, html_parent;
     doc_md_block blocks[DOC_MAX_DEPTH];
     doc_md_span spans[DOC_MAX_DEPTH];
     xui_doc_inline_syntax_t* syntax;
@@ -31,6 +37,8 @@ typedef struct doc_md_context {
     uint64_t candidate_count, candidate_capacity;
     doc_table_token_relative* table_tokens;
     uint64_t table_count, table_capacity, table_id;
+    uint64_t ordinary_syntax_count;
+    int footnote_section;
     unsigned block_count, span_count;
     int result;
 } doc_md_context;
@@ -144,6 +152,9 @@ static int doc_md_enter_block(MD_BLOCKTYPE type, void* detail, void* user)
     char* info = NULL;
     int result = XUI_OK;
     if (c->block_count >= DOC_MAX_DEPTH) return c->result = XUI_DOC_ERROR_LIMIT;
+    if (type == MD_BLOCK_FOOTNOTE_DEF_SECTION && !c->footnote_section) {
+        c->ordinary_syntax_count = c->syntax_count; c->footnote_section = 1;
+    }
     d.iSize = sizeof(d);
     switch (type) {
     case MD_BLOCK_DOC: break;
@@ -202,7 +213,6 @@ static int doc_md_enter_block(MD_BLOCKTYPE type, void* detail, void* user)
     c->blocks[c->block_count].type = type;
     c->blocks[c->block_count].id = id;
     c->blocks[c->block_count].paragraph = 0;
-    c->blocks[c->block_count].code_content_start = DOC_NONE;
     c->blocks[c->block_count].fenced_code = type == MD_BLOCK_CODE && ((MD_BLOCK_CODE_DETAIL*)detail)->fence_char != 0;
     c->block_count++;
     return 0;
@@ -244,16 +254,6 @@ static void doc_md_block_source(MD_BLOCKTYPE type, MD_OFFSET start, MD_OFFSET en
     n = doc_index_get(c->build.draft->index, doc_md_parent(c));
     if (enter) n->syntax_start = c->parser_offset + start;
     n->syntax_end = c->parser_offset + end;
-    if (enter && type == MD_BLOCK_CODE) {
-        doc_md_block* block = &c->blocks[c->block_count - 1];
-        uint64_t at = c->parser_offset + start;
-        if (block->fenced_code) {
-            while (at < c->size && c->source[at] != '\r' && c->source[at] != '\n') at++;
-            if (at < c->size && c->source[at] == '\r') at++;
-            if (at < c->size && c->source[at] == '\n') at++;
-        }
-        block->code_content_start = at;
-    }
     if (type == MD_BLOCK_DOC) n->syntax_start = 0;
 }
 static void doc_md_block_markers(int kind, MD_OFFSET first_start, MD_OFFSET first_end,
@@ -326,6 +326,28 @@ static void doc_md_block_markers(int kind, MD_OFFSET first_start, MD_OFFSET firs
             n->marker_tail_end = (uint32_t)(gap - base);
         }
     }
+    if (kind == XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN && n->info && n->info->size) {
+        uint64_t first = base + n->marker_secondary_start, last = base + n->marker_secondary_end;
+        uint64_t tail = c->parser_offset + fence_tail_end, at;
+        if (first < base + n->marker_primary_end || last - first != n->info->size + 3 ||
+            tail < last || tail > n->syntax_end || tail - base > UINT32_MAX ||
+            c->source[first] != '[' || c->source[first + 1] != '!' || c->source[last - 1] != ']') {
+            c->result = XUI_DOC_ERROR_FORMAT; return;
+        }
+        for (at = base + n->marker_primary_end; at < first; at++)
+            if (c->source[at] != ' ' && c->source[at] != '\t') { c->result = XUI_DOC_ERROR_FORMAT; return; }
+        for (at = 0; at < n->info->size; at++) {
+            unsigned char ch = (unsigned char)c->source[first + 2 + at];
+            if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';
+            if (ch != (unsigned char)n->info->data[at]) { c->result = XUI_DOC_ERROR_FORMAT; return; }
+        }
+        for (at = last; at < tail && c->source[at] != '\r' && c->source[at] != '\n'; at++)
+            if (c->source[at] != ' ' && c->source[at] != '\t') { c->result = XUI_DOC_ERROR_FORMAT; return; }
+        if (at < tail && c->source[at] == '\r') at++;
+        if (at < tail && c->source[at] == '\n') at++;
+        if (at != tail) { c->result = XUI_DOC_ERROR_FORMAT; return; }
+        n->marker_tail_end = (uint32_t)(tail - base);
+    }
 }
 static int doc_md_heading_content(MD_OFFSET start, MD_OFFSET end, void* user)
 {
@@ -388,22 +410,30 @@ static int doc_md_break_source(int kind, MD_OFFSET trailing, MD_OFFSET marker_be
 {
     doc_md_context* c = user;
     doc_node* n;
-    uint64_t base, at, end, line_end, marker_start = DOC_NONE, marker_finish = DOC_NONE;
+    uint64_t base, at, end, line_end, text_offset = c->last_break_text_offset;
+    uint64_t marker_start = DOC_NONE, marker_finish = DOC_NONE;
+    int projected;
     if (c->result) return c->result;
-    if (!c->last_break_id) return XUI_OK; /* Image alt text has no break node. */
+    if (!c->last_break_id) return XUI_OK;
     n = doc_index_get(c->build.draft->index, c->last_break_id);
     c->last_break_id = 0;
+    projected = n && doc_text_kind(n->kind);
     at = c->parser_offset + trailing;
     end = c->parser_offset + newline_beg;
     line_end = c->parser_offset + newline_end;
-    if (!n || (n->kind != XUI_DOC_SOFT_BREAK && n->kind != XUI_DOC_HARD_BREAK) ||
-        n->marker_kind || kind < XUI_DOC_BREAK_SOFT || kind > XUI_DOC_BREAK_HARD_FORCED ||
-        (n->kind == XUI_DOC_SOFT_BREAK) != (kind == XUI_DOC_BREAK_SOFT) ||
-        n->source_start == DOC_NONE || n->source_end != line_end ||
-        at < n->source_start || at > end || end >= line_end || line_end > c->size ||
-        line_end - n->source_start > UINT32_MAX)
+    if (marker_beg != UINT_MAX || marker_end != UINT_MAX) {
+        if (marker_beg == UINT_MAX || marker_end == UINT_MAX)
+            return c->result = XUI_DOC_ERROR_FORMAT;
+        marker_start = c->parser_offset + marker_beg;
+        marker_finish = c->parser_offset + marker_end;
+    }
+    base = marker_start != DOC_NONE && marker_start < at ? marker_start : at;
+    if (!n || (!projected && (n->kind != XUI_DOC_SOFT_BREAK && n->kind != XUI_DOC_HARD_BREAK)) ||
+        (!projected && n->marker_kind) || kind < XUI_DOC_BREAK_SOFT || kind > XUI_DOC_BREAK_HARD_FORCED ||
+        (c->last_break_type == MD_TEXT_SOFTBR) != (kind == XUI_DOC_BREAK_SOFT) ||
+        (projected && !doc_seq_equal_bytes(n->text, text_offset, "\n", 1)) ||
+        at > end || end >= line_end || line_end > c->size || line_end - base > UINT32_MAX)
         return c->result = XUI_DOC_ERROR_FORMAT;
-    base = n->source_start;
     while (at < end) {
         if (c->source[at] != ' ' && c->source[at] != '\t')
             return c->result = XUI_DOC_ERROR_FORMAT;
@@ -411,11 +441,7 @@ static int doc_md_break_source(int kind, MD_OFFSET trailing, MD_OFFSET marker_be
     }
     if (c->source[end] != '\r' && c->source[end] != '\n')
         return c->result = XUI_DOC_ERROR_FORMAT;
-    if (marker_beg != UINT_MAX || marker_end != UINT_MAX) {
-        if (marker_beg == UINT_MAX || marker_end == UINT_MAX)
-            return c->result = XUI_DOC_ERROR_FORMAT;
-        marker_start = c->parser_offset + marker_beg;
-        marker_finish = c->parser_offset + marker_end;
+    if (marker_start != DOC_NONE) {
         if (marker_start < base || marker_start >= marker_finish || marker_finish > end)
             return c->result = XUI_DOC_ERROR_FORMAT;
     }
@@ -428,6 +454,20 @@ static int doc_md_break_source(int kind, MD_OFFSET trailing, MD_OFFSET marker_be
             return c->result = XUI_DOC_ERROR_FORMAT;
     } else if (marker_start != DOC_NONE || marker_finish != DOC_NONE)
         return c->result = XUI_DOC_ERROR_FORMAT;
+    c->cursor = line_end;
+    if (projected) {
+        /* Image alt and other literal inline objects own text rather than a
+         * separate break node. Attach its normalized newline to the same
+         * parser-confirmed origin used by ordinary breaks. */
+        doc_md_range(c, n->id, base, line_end, 0);
+        doc_md_range(c, n->parent, base, line_end, 0);
+        return doc_md_segment(c, n->id, text_offset, 1, base, line_end, XUI_DOC_SOURCE_NORMALIZED);
+    }
+    /* The parser's synthetic newline callback can precede every text callback
+     * in an empty task first line. The previous text cursor belongs to another
+     * block then; only this parser-confirmed hook owns the break coordinates. */
+    n->source_start = base; n->source_end = line_end; n->source_exact = 0;
+    doc_md_range(c, n->parent, base, line_end, 0);
     n->marker_kind = (uint32_t)kind;
     n->marker_primary_start = (uint32_t)(c->parser_offset + trailing - base);
     n->marker_primary_end = (uint32_t)(end - base);
@@ -444,7 +484,10 @@ static int doc_md_quote_prefixes(const MD_OFFSET* offsets, MD_SIZE count, void* 
     doc_node* n;
     uint64_t base, previous = DOC_NONE;
     uint32_t* relative = NULL;
+    doc_quote_indent_relative* indents = NULL;
+    doc_blob *prefix_blob = NULL, *indent_blob = NULL;
     MD_SIZE i;
+    int result = XUI_OK;
     if (c->result) return c->result;
     if (!offsets || !count || !c->block_count) return c->result = XUI_DOC_ERROR_FORMAT;
     n = doc_index_get(c->build.draft->index, doc_md_parent(c));
@@ -453,31 +496,48 @@ static int doc_md_quote_prefixes(const MD_OFFSET* offsets, MD_SIZE count, void* 
         n->syntax_start == DOC_NONE) return c->result = XUI_DOC_ERROR_FORMAT;
     base = n->syntax_start;
 #if SIZE_MAX <= UINT_MAX
-    if (count - 1 > SIZE_MAX / sizeof(*relative))
+    if (count > SIZE_MAX / sizeof(*indents))
         return c->result = XUI_DOC_ERROR_LIMIT;
 #endif
     if (count > 1) {
         relative = doc_alloc(c->build.draft->allocator, (size_t)(count - 1) * sizeof(*relative));
         if (!relative) return c->result = XUI_ERROR_OUT_OF_MEMORY;
     }
+    indents = doc_alloc(c->build.draft->allocator, (size_t)count * sizeof(*indents));
+    if (!indents) { doc_free(relative); return c->result = XUI_ERROR_OUT_OF_MEMORY; }
     for (i = 0; i < count; i++) {
-        uint64_t at = c->parser_offset + offsets[i];
+        size_t slot = (size_t)i * 6;
+        uint64_t at = c->parser_offset + offsets[slot];
+        uint64_t end = c->parser_offset + offsets[slot + 1];
+        if (!(i & 4095u)) {
+            result = doc_txn_check(&c->build, 0); if (result != XUI_OK) goto done;
+        }
         if (at < base || at >= c->size || at - base > UINT32_MAX ||
             c->source[at] != '>' || (previous != DOC_NONE && at <= previous) ||
-            (i == 0 && at - base != n->marker_primary_start)) {
-            doc_free(relative); return c->result = XUI_DOC_ERROR_FORMAT;
+            (i == 0 && at - base != n->marker_primary_start) ||
+            end <= at || end > c->size || end - base > UINT32_MAX ||
+            offsets[slot + 2] > offsets[slot + 3] || offsets[slot + 3] >= offsets[slot + 4] ||
+            offsets[slot + 4] > offsets[slot + 5]) {
+            result = XUI_DOC_ERROR_FORMAT; goto done;
         }
         if (i) relative[i - 1] = (uint32_t)(at - base);
+        indents[i] = (doc_quote_indent_relative){(uint32_t)(at - base), (uint32_t)(end - base),
+            offsets[slot + 2], offsets[slot + 3], offsets[slot + 4], offsets[slot + 5]};
         previous = at;
     }
     if (count > 1) {
-        doc_blob* blob = doc_blob_new(c->build.draft->allocator, (const char*)relative,
+        prefix_blob = doc_blob_new(c->build.draft->allocator, (const char*)relative,
             (uint64_t)(count - 1) * sizeof(*relative));
-        doc_free(relative);
-        if (!blob) return c->result = XUI_ERROR_OUT_OF_MEMORY;
-        doc_blob_release(n->quote_prefixes); n->quote_prefixes = blob;
+        if (!prefix_blob) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
     }
-    return XUI_OK;
+    indent_blob = doc_blob_new(c->build.draft->allocator, (const char*)indents,
+        (uint64_t)count * sizeof(*indents));
+    if (!indent_blob) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    doc_blob_release(n->quote_prefixes); n->quote_prefixes = prefix_blob; prefix_blob = NULL;
+    doc_blob_release(n->syntax_aux); n->syntax_aux = indent_blob; indent_blob = NULL;
+done:
+    doc_free(relative); doc_free(indents); doc_blob_release(prefix_blob); doc_blob_release(indent_blob);
+    return c->result = result;
 }
 static int doc_md_list_indents(const MD_OFFSET* records, MD_SIZE count, void* user)
 {
@@ -493,6 +553,22 @@ static int doc_md_list_indents(const MD_OFFSET* records, MD_SIZE count, void* us
         n->marker_kind != XUI_DOC_BLOCK_SYNTAX_LIST_ITEM ||
         n->syntax_start == DOC_NONE) return c->result = XUI_DOC_ERROR_FORMAT;
     base = n->syntax_start;
+    {
+        doc_list_indent_relative first;
+        doc_blob* blob;
+        uint64_t beg = c->parser_offset + records[0], end = c->parser_offset + records[1];
+        if (beg < base || beg - base != n->marker_primary_start ||
+            end < beg || end > c->size || end - base != n->marker_tail_end ||
+            records[2] >= records[3] || records[3] > records[4])
+            return c->result = XUI_DOC_ERROR_FORMAT;
+        first = (doc_list_indent_relative){(uint32_t)(beg - base), (uint32_t)(end - base),
+            records[2], records[3], records[4]};
+        blob = doc_blob_new(c->build.draft->allocator, (const char*)&first, sizeof(first));
+        if (!blob) return c->result = XUI_ERROR_OUT_OF_MEMORY;
+        doc_blob_release(n->syntax_aux); n->syntax_aux = blob;
+        records += 5; count--;
+        if (!count) { doc_blob_release(n->list_indents); n->list_indents = NULL; return XUI_OK; }
+    }
 #if SIZE_MAX <= UINT_MAX
     if (count > SIZE_MAX / sizeof(*relative))
         return c->result = XUI_DOC_ERROR_LIMIT;
@@ -682,7 +758,8 @@ static int doc_md_reference_values(const char* label, MD_SIZE label_bytes, const
     return c->result = doc_reference_value_append(state, XUI_DOC_REFERENCE_LINK,
         label, label_bytes, destination, destination_bytes, title, title_bytes, has_title, c->build.cancellation);
 }
-static int doc_md_footnote_source(MD_OFFSET start, MD_OFFSET end, MD_OFFSET label_start, MD_OFFSET label_end, void* user)
+static int doc_md_footnote_source(MD_OFFSET start, MD_OFFSET end, MD_OFFSET label_start, MD_OFFSET label_end,
+    const char* body, MD_SIZE body_bytes, void* user)
 {
     doc_md_context* c = user; xui_doc_reference_definition_t range = {0};
     if (c->result) return c->result;
@@ -693,7 +770,8 @@ static int doc_md_footnote_source(MD_OFFSET start, MD_OFFSET end, MD_OFFSET labe
     range.iTitleStart = range.iTitleEnd = DOC_NONE;
     if (doc_md_store_definition(c, &range) != XUI_OK) return c->result;
     return c->result = doc_reference_value_append(c->build.draft, XUI_DOC_REFERENCE_FOOTNOTE,
-        NULL, 0, NULL, 0, NULL, 0, 0, c->build.cancellation);
+        c->source + range.iLabelStart, label_end - label_start,
+        body, body_bytes, NULL, 0, 0, c->build.cancellation);
 }
 static int doc_md_candidate_source(int kind, MD_OFFSET start, MD_OFFSET end,
     MD_OFFSET label_start, MD_OFFSET label_end, void* user)
@@ -874,6 +952,31 @@ static int doc_md_leave_span(MD_SPANTYPE type, void* detail, void* user)
     if (span->owns) { doc_free(span->href); doc_free(span->title); }
     return 0;
 }
+static int doc_md_text_scope(MD_TEXTTYPE type, MD_OFFSET beg, MD_OFFSET end, int enter, void* user)
+{
+    doc_md_context* c = user;
+    uint64_t start = c->parser_offset + beg, finish = c->parser_offset + end;
+    if (c->result) return c->result;
+    if (type != MD_TEXT_HTML || beg >= end || c->parser_offset > c->size || end > c->size - c->parser_offset ||
+        (enter && c->html_scope) || (!enter && (!c->html_scope || c->html_scope_start != start || c->html_scope_end != finish)))
+        return c->result = XUI_DOC_ERROR_FORMAT;
+    c->html_scope = enter;
+    if (enter) { c->html_scope_start = start; c->html_scope_end = finish; }
+    c->html_node = c->html_parent = 0;
+    return XUI_OK;
+}
+static int doc_md_text_source(MD_TEXTTYPE type, MD_TEXTTYPE content_type, MD_OFFSET beg, MD_OFFSET end, MD_SIZE size, void* user)
+{
+    doc_md_context* c = user;
+    if (c->result) return c->result;
+    if (c->pending_text_source || !size || beg > end || c->parser_offset > c->size ||
+        end > c->size - c->parser_offset) return c->result = XUI_DOC_ERROR_FORMAT;
+    c->pending_text_type = type; c->pending_text_size = size;
+    c->pending_content_type = content_type;
+    c->pending_text_start = c->parser_offset + beg; c->pending_text_end = c->parser_offset + end;
+    c->pending_text_source = 1;
+    return XUI_OK;
+}
 static int doc_md_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* user)
 {
     doc_md_context* c = user;
@@ -884,9 +987,21 @@ static int doc_md_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void
     char decoded[8];
     unsigned n, segment_kind = XUI_DOC_SOURCE_DIRECT;
     int exact = 1, result;
+    int projected_break = (type == MD_TEXT_BR || type == MD_TEXT_SOFTBR) && span->object;
+    MD_TEXTTYPE content_type = type;
     uintptr_t ptr = (uintptr_t)text, base = (uintptr_t)c->source;
-    if (type == MD_TEXT_BR || type == MD_TEXT_SOFTBR) c->last_break_id = 0;
-    if (ptr >= base && ptr - base <= c->size && size <= c->size - (ptr - base)) {
+    if (type == MD_TEXT_BR || type == MD_TEXT_SOFTBR) {
+        c->last_break_id = 0;
+        c->last_break_type = type;
+    }
+    if (c->pending_text_source) {
+        if (type != c->pending_text_type || size != c->pending_text_size)
+            return c->result = XUI_DOC_ERROR_FORMAT;
+        c->pending_text_source = 0;
+        content_type = c->pending_content_type;
+        start = c->pending_text_start; end = c->pending_text_end;
+        c->cursor = end; exact = 0; segment_kind = XUI_DOC_SOURCE_NORMALIZED;
+    } else if (ptr >= base && ptr - base <= c->size && size <= c->size - (ptr - base)) {
         start = ptr - base; end = start + size;
         if (start && type == MD_TEXT_NORMAL && size && ispunct((unsigned char)text[0])) {
             uint64_t p = start;
@@ -896,18 +1011,6 @@ static int doc_md_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void
         c->cursor = end;
     } else {
         exact = 0; segment_kind = XUI_DOC_SOURCE_NORMALIZED;
-        if ((type == MD_TEXT_CODE || type == MD_TEXT_BR || type == MD_TEXT_SOFTBR) && size == 1 && text[0] == '\n') {
-            if (type == MD_TEXT_CODE && c->block_count) {
-                doc_md_block* block = &c->blocks[c->block_count - 1];
-                if (block->type == MD_BLOCK_CODE && block->code_content_start != DOC_NONE &&
-                    c->cursor < block->code_content_start) c->cursor = block->code_content_start;
-            }
-            start = c->cursor;
-            while (c->cursor < c->size && c->source[c->cursor] != '\r' && c->source[c->cursor] != '\n') c->cursor++;
-            if (c->cursor < c->size && c->source[c->cursor] == '\r') c->cursor++;
-            if (c->cursor < c->size && c->source[c->cursor] == '\n') c->cursor++;
-            end = c->cursor;
-        }
     }
     if (type == MD_TEXT_ENTITY) {
         n = doc_md_entity(text, size, decoded);
@@ -915,8 +1018,13 @@ static int doc_md_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void
     } else if (type == MD_TEXT_NULLCHAR) {
         bytes = doc_md_utf8(0xfffd, decoded); text = decoded; exact = 0; segment_kind = XUI_DOC_SOURCE_NORMALIZED;
     }
+    if (projected_break && (bytes != 1 || text[0] != '\n')) return c->result = XUI_DOC_ERROR_FORMAT;
     parent = doc_md_inline_parent(c);
     if (!parent) return c->result;
+    if (c->html_scope && content_type == MD_TEXT_HTML && !id && c->html_node) {
+        if (parent != c->html_parent) return c->result = XUI_DOC_ERROR_FORMAT;
+        id = c->html_node;
+    }
     if (!id) {
         doc_node* p = doc_index_get(c->build.draft->index, parent);
         if (doc_text_kind(p->kind)) id = parent;
@@ -931,16 +1039,25 @@ static int doc_md_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void
         d.iSize = sizeof(d); d.iKind = XUI_DOC_TEXT;
         if (type == MD_TEXT_BR) d.iKind = XUI_DOC_HARD_BREAK;
         else if (type == MD_TEXT_SOFTBR) d.iKind = XUI_DOC_SOFT_BREAK;
-        else if (type == MD_TEXT_HTML) d.iKind = XUI_DOC_HTML;
+        else if (content_type == MD_TEXT_HTML) d.iKind = XUI_DOC_HTML;
         if (doc_text_kind(d.iKind)) { d.sText = text; d.iTextBytes = bytes; }
         d.tAttributes.iMarks = span->marks;
         if (span->marks & XUI_DOC_LINK) { d.sResource = span->href; d.sTitle = span->title; }
         if (doc_md_add(c, parent, &d, &id) != XUI_OK) return c->result;
     }
+    if (c->html_scope && content_type == MD_TEXT_HTML && !c->html_node) {
+        doc_node* html = doc_index_get(c->build.draft->index, id);
+        if (html && html->kind == XUI_DOC_HTML) { c->html_node = id; c->html_parent = parent; }
+    }
     if ((type == MD_TEXT_BR || type == MD_TEXT_SOFTBR) && id != parent) {
         doc_node* break_node = doc_index_get(c->build.draft->index, id);
         if (break_node && (break_node->kind == XUI_DOC_SOFT_BREAK ||
             break_node->kind == XUI_DOC_HARD_BREAK)) c->last_break_id = id;
+    }
+    if (projected_break) {
+        c->last_break_id = id;
+        c->last_break_text_offset = text_start;
+        return XUI_OK;
     }
     doc_md_range(c, id, start, end, exact);
     if (id != parent) doc_md_range(c, parent, start, end, 0);
@@ -951,34 +1068,67 @@ static int doc_md_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void
     }
     return doc_md_segment(c, id, text_start, bytes, start, end, segment_kind);
 }
+static int doc_md_raw_line_end(const char* source, uint64_t bytes, uint64_t start,
+    const atomic_int* cancellation, uint64_t* content_end, uint64_t* next)
+{
+    uint64_t end = start;
+    int result = cancellation ? atomic_load(cancellation) : XUI_OK;
+    if (result != XUI_OK) return result;
+    while (end < bytes && source[end] != '\r' && source[end] != '\n') {
+        if ((end & 4095) == 0 && cancellation && (result = atomic_load(cancellation)) != XUI_OK) return result;
+        end++;
+    }
+    *content_end = end;
+    if (end < bytes && source[end] == '\r') end++;
+    if (end < bytes && source[end] == '\n') end++;
+    *next = end; return XUI_OK;
+}
+int doc_markdown_front_matter_range(const char* source, uint64_t bytes, uint64_t offset,
+    const atomic_int* cancellation, doc_front_matter_range* out)
+{
+    uint64_t first_end, content_start, line, end, next;
+    int result;
+    out->content_start = out->content_end = DOC_NONE; out->syntax_end = offset;
+    result = cancellation ? atomic_load(cancellation) : XUI_OK;
+    if (result != XUI_OK) return result;
+    if (offset > bytes || bytes - offset < 4 || memcmp(source + offset, "---", 3) ||
+        (source[offset + 3] != '\r' && source[offset + 3] != '\n')) return XUI_OK;
+    result = doc_md_raw_line_end(source, bytes, offset, cancellation, &first_end, &content_start);
+    if (result != XUI_OK) return result;
+    if (first_end - offset != 3 || memcmp(source + offset, "---", 3) != 0 ||
+        content_start == first_end) return XUI_OK;
+    for (line = content_start; line < bytes; line = next) {
+        result = doc_md_raw_line_end(source, bytes, line, cancellation, &end, &next);
+        if (result != XUI_OK) return result;
+        if (end - line == 3 && (!memcmp(source + line, "---", 3) || !memcmp(source + line, "...", 3))) {
+            out->content_start = content_start; out->content_end = line; out->syntax_end = next;
+            break;
+        }
+    }
+    return XUI_OK;
+}
 static uint64_t doc_md_front_matter(doc_md_context* c, uint64_t offset)
 {
-    uint64_t first_end = offset, line, end;
+    doc_front_matter_range range;
     xui_doc_node_desc_t d = {0};
     uint64_t id;
-    while (first_end < c->size && c->source[first_end] != '\n') first_end++;
-    end = first_end;
-    if (end > offset && c->source[end - 1] == '\r') end--;
-    if (end - offset != 3 || memcmp(c->source + offset, "---", 3) != 0 || first_end == c->size) return offset;
-    line = first_end + 1;
-    while (line < c->size) {
-        end = line;
-        while (end < c->size && c->source[end] != '\n') end++;
-        { uint64_t trim = end; if (trim > line && c->source[trim - 1] == '\r') trim--;
-          if (trim - line == 3 && (memcmp(c->source + line, "---", 3) == 0 || memcmp(c->source + line, "...", 3) == 0)) {
-              d.iSize = sizeof(d); d.iKind = XUI_DOC_FRONT_MATTER;
-              d.sText = c->source + first_end + 1; d.iTextBytes = line - first_end - 1;
-              if (doc_md_add(c, DOC_ROOT, &d, &id) != XUI_OK) return offset;
-              doc_md_range(c, id, first_end + 1, line, 1);
-              if (doc_md_segment(c, id, 0, d.iTextBytes, first_end + 1, line, XUI_DOC_SOURCE_DIRECT) != XUI_OK) return offset;
-              doc_index_get(c->build.draft->index, id)->syntax_start = offset;
-              doc_index_get(c->build.draft->index, id)->syntax_end = end < c->size ? end + 1 : end;
-              return end < c->size ? end + 1 : end;
-          }
-        }
-        line = end < c->size ? end + 1 : end;
+    c->result = doc_markdown_front_matter_range(c->source, c->size, offset, c->build.cancellation, &range);
+    if (c->result != XUI_OK || range.content_start == DOC_NONE) return offset;
+    d.iSize = sizeof(d); d.iKind = XUI_DOC_FRONT_MATTER;
+    d.sText = c->source + range.content_start; d.iTextBytes = range.content_end - range.content_start;
+    if (doc_md_add(c, DOC_ROOT, &d, &id) != XUI_OK) return offset;
+    doc_md_range(c, id, range.content_start, range.content_end, 1);
+    if (doc_md_segment(c, id, 0, d.iTextBytes, range.content_start, range.content_end, XUI_DOC_SOURCE_DIRECT) != XUI_OK) return offset;
+    doc_index_get(c->build.draft->index, id)->syntax_start = offset;
+    doc_index_get(c->build.draft->index, id)->syntax_end = range.syntax_end;
+    {
+        doc_node* node = doc_index_get(c->build.draft->index, id);
+        node->marker_kind = XUI_DOC_BLOCK_SYNTAX_FRONT_MATTER;
+        node->marker_primary_start = 0; node->marker_primary_end = 3;
+        node->marker_secondary_start = (uint32_t)(range.content_end - offset);
+        node->marker_secondary_end = node->marker_secondary_start + 3;
     }
-    return offset;
+    return range.syntax_end;
 }
 static int doc_md_anchor_subtree(doc_state* state, uint64_t id, uint64_t ordinal,
     const atomic_int* cancellation)
@@ -1062,46 +1212,37 @@ int doc_markdown_source_blocks_ordered(doc_state* state, uint64_t limit)
 }
 /* Offsets in the returned tree are relative to the window. Only a real
  * document start recognizes BOM/front matter; the caller relocates fragments. */
-int doc_markdown_parse_window_with_suffix(xui_document_transaction t,
-    uint64_t start, uint64_t end, const char* suffix, uint64_t suffix_bytes,
-    doc_state** out)
+int doc_markdown_parse_input(xui_document_transaction t, uint64_t start,
+    const char* source, uint64_t parse_size, doc_state** out, uint64_t* ordinary_syntax)
 {
     doc_md_context c;
     MD_PARSER parser;
     doc_state* state;
-    char* source;
-    uint64_t size = end - start, parse_size, offset = 0;
+    uint64_t offset = 0;
     unsigned i;
     int result = doc_txn_check(t, 0);
     if (result != XUI_OK) return result;
     *out = NULL;
-    if ((suffix_bytes && !suffix) || end < start) return XUI_ERROR_INVALID_ARGUMENT;
-    if (size > UINT_MAX || suffix_bytes > UINT_MAX - size ||
-        size + suffix_bytes >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
-    parse_size = size + suffix_bytes;
+    if (!source) return XUI_ERROR_INVALID_ARGUMENT;
+    if (parse_size > UINT_MAX || parse_size >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
     atomic_fetch_add(&t->draft->allocator->markdown_parsed_bytes, parse_size);
-    source = doc_alloc(t->draft->allocator, (size_t)parse_size + 1);
-    if (!source) return XUI_ERROR_OUT_OF_MEMORY;
-    result = doc_seq_read(t->draft->source, start, source, size);
-    if (result != XUI_OK) { doc_free(source); return result; }
-    if (suffix_bytes) memcpy(source + size, suffix, (size_t)suffix_bytes);
-    source[parse_size] = 0;
     state = doc_state_new(t->draft->allocator, XUI_DOCUMENT_MARKDOWN);
-    if (!state) { doc_free(source); return XUI_ERROR_OUT_OF_MEMORY; }
+    if (!state) return XUI_ERROR_OUT_OF_MEMORY;
     {
         doc_node* root = doc_index_get(state->index, DOC_ROOT);
         xui_doc_attributes_t attrs = *root->attrs;
         attrs.sLanguage = doc_index_get(t->draft->index, DOC_ROOT)->attrs->sLanguage;
         result = doc_node_set_attrs(state->allocator, root, &attrs);
-        if (result != XUI_OK) { doc_state_release(state); doc_free(source); return result; }
+        if (result != XUI_OK) { doc_state_release(state); return result; }
     }
     state->source = t->draft->source; doc_seq_retain(state->source);
     state->source_open_brackets = t->draft->source_open_brackets;
+    state->source_storage_bytes = t->draft->source_storage_bytes;
     state->dialect = t->draft->dialect;
     memset(&c, 0, sizeof(c)); c.source = source; c.size = parse_size; c.spans[0].syntax_index = DOC_NONE;
     c.build.document = t->document; c.build.draft = state; c.build.domain = XUI_DOC_SEMANTIC; c.build.parsing = 1;
     c.build.cancellation = t->cancellation;
-    if (!start && size >= 3 && memcmp(source, "\xef\xbb\xbf", 3) == 0) offset = 3;
+    if (!start && parse_size >= 3 && memcmp(source, "\xef\xbb\xbf", 3) == 0) offset = 3;
     if (!start && state->dialect == XUI_MD_EXTENDED) offset = doc_md_front_matter(&c, offset);
     c.cursor = c.parser_offset = offset;
     memset(&parser, 0, sizeof(parser));
@@ -1112,7 +1253,8 @@ int doc_markdown_parse_window_with_suffix(xui_document_transaction t,
         doc_md_block_source, doc_md_block_markers, doc_md_fence_info, doc_md_heading_content, doc_md_break_source,
         doc_md_quote_prefixes, doc_md_list_indents, doc_md_code_indents,
         doc_md_table_token, doc_md_reference_source, doc_md_reference_values, doc_md_footnote_source, doc_md_candidate_source, doc_md_span_source,
-        t->cancellation, &state->markdown_footnotes, &c);
+        doc_md_text_source, doc_md_text_scope, t->cancellation, &state->markdown_footnotes, &c);
+    if (!result && (c.pending_text_source || c.html_scope)) result = XUI_DOC_ERROR_FORMAT;
     if (result || c.result || c.build.error) result = c.result ? c.result : (c.build.error ? c.build.error :
         (result == XUI_ERROR_OUT_OF_MEMORY || result == XUI_DOC_ERROR_CANCELLED || result == XUI_DOC_ERROR_STALE ? result : XUI_DOC_ERROR_FORMAT));
     if (result == XUI_OK && (doc_seq_size(state->references) % sizeof(xui_doc_reference_definition_t) ||
@@ -1142,9 +1284,33 @@ int doc_markdown_parse_window_with_suffix(xui_document_transaction t,
             result = doc_md_anchor_subtree(state, doc_seq_get_id(root->children, at), at, t->cancellation);
         if (result == XUI_OK) state->source_blocks_indexed = doc_markdown_source_blocks_ordered(state, parse_size);
     }
-    doc_free(c.syntax); doc_free(c.candidates); doc_free(c.table_tokens); doc_free(source);
+    if (ordinary_syntax) *ordinary_syntax = c.footnote_section ? c.ordinary_syntax_count : c.syntax_count;
+    doc_free(c.syntax); doc_free(c.candidates); doc_free(c.table_tokens);
     if (result != XUI_OK) { doc_state_release(state); return result; }
     *out = state; return XUI_OK;
+}
+int doc_markdown_parse_window_with_suffix(xui_document_transaction t,
+    uint64_t start, uint64_t end, const char* suffix, uint64_t suffix_bytes,
+    doc_state** out)
+{
+    uint64_t size, parse_size;
+    char* source; int result = doc_txn_check(t, 0);
+    if (result != XUI_OK) return result;
+    *out = NULL;
+    if ((suffix_bytes && !suffix) || end < start) return XUI_ERROR_INVALID_ARGUMENT;
+    size = end - start;
+    if (size > UINT_MAX || suffix_bytes > UINT_MAX - size || size + suffix_bytes >= SIZE_MAX)
+        return XUI_DOC_ERROR_LIMIT;
+    parse_size = size + suffix_bytes;
+    source = doc_alloc(t->draft->allocator, (size_t)parse_size + 1);
+    if (!source) return XUI_ERROR_OUT_OF_MEMORY;
+    result = doc_seq_read(t->draft->source, start, source, size);
+    if (result == XUI_OK) {
+        if (suffix_bytes) memcpy(source + size, suffix, (size_t)suffix_bytes);
+        source[parse_size] = 0;
+        result = doc_markdown_parse_input(t, start, source, parse_size, out, NULL);
+    }
+    doc_free(source); return result;
 }
 int doc_markdown_parse_window(xui_document_transaction t, uint64_t start, uint64_t end, doc_state** out)
 {
@@ -1161,8 +1327,23 @@ int doc_markdown_parse(xui_document_transaction t)
     result = doc_markdown_incremental(t, &state);
     if (result == XUI_ERROR_UNSUPPORTED) {
         result = doc_markdown_parse_window(t, 0, size, &state);
+        if (result == XUI_OK) result = doc_reference_values_reuse(t->draft, state, t->base, t->cancellation);
         if (result == XUI_OK && t->domain != XUI_DOC_SEMANTIC) result = doc_markdown_reconcile(t, &state);
+    } else if (result == XUI_OK && t->base &&
+        t->base->reference_values != t->draft->reference_values &&
+        state->reference_values != t->draft->reference_values) {
+        /* Incremental value replacement also needs the immutable origin:
+         * earlier SOURCE patches can temporarily remove a later moved value. */
+        result = doc_reference_values_reuse(t->draft, state, t->base, t->cancellation);
     }
+    /* Owner-side Prepare only builds immutable source paths. Coverage scans
+     * and copies run here, on the parsing worker, before any publication. The
+     * retained-payload bound accumulates new insertions and never subtracts
+     * removed bytes until a scan proves what storage is still reachable. */
+    if (result == XUI_OK && state->source_storage_bytes > 4096 &&
+        size <= (state->source_storage_bytes - 1) / 4)
+        result = doc_seq_compact_bytes(state->allocator, &state->source,
+            t->cancellation, &state->source_storage_bytes);
     if (result == XUI_OK) result = doc_txn_check(t, 0);
     if (result == XUI_OK && (state->node_count > t->draft->allocator->max_nodes || state->text_bytes > t->draft->allocator->max_bytes)) result = XUI_DOC_ERROR_LIMIT;
     if (result != XUI_OK) { doc_state_release(state); return doc_txn_fail(t, result); }
@@ -1205,6 +1386,8 @@ int doc_txn_source_patch(xui_document_transaction t, uint64_t start, uint64_t en
         added_brackets > UINT64_MAX - (t->draft->source_open_brackets - removed_brackets))
         return doc_txn_fail(t, XUI_DOC_ERROR_LIMIT);
     next_brackets = t->draft->source_open_brackets - removed_brackets + added_brackets;
+    if (bytes > UINT64_MAX - t->draft->source_storage_bytes)
+        return doc_txn_fail(t, XUI_DOC_ERROR_LIMIT);
     insert = doc_seq_text(t->draft->allocator, text, bytes);
     if (bytes && !insert) return doc_txn_fail(t, XUI_ERROR_OUT_OF_MEMORY);
     result = doc_seq_replace(t->draft->allocator, t->draft->source, start, end, insert, &source);
@@ -1213,6 +1396,7 @@ int doc_txn_source_patch(xui_document_transaction t, uint64_t start, uint64_t en
     if (parse) { before_source = t->draft->source; doc_seq_retain(before_source); }
     doc_seq_release(t->draft->source); t->draft->source = source;
     t->draft->source_open_brackets = next_brackets;
+    t->draft->source_storage_bytes += bytes;
     op.iKind = XUI_DOC_OP_SOURCE; op.iFlags = XUI_DOC_CHANGE_SOURCE | XUI_DOC_CHANGE_TEXT | XUI_DOC_CHANGE_STRUCTURE;
     op.iOffset = start; op.iOldLength = end - start; op.iNewLength = bytes;
     result = doc_txn_op(t, &op);

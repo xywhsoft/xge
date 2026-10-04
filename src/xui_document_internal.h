@@ -85,6 +85,7 @@ typedef struct doc_sequence {
     uint64_t priority, length, total;
     struct doc_sequence *left, *right;
     doc_blob* blob;
+    struct doc_sequence* value; /* Ordinal metadata owns an immutable byte rope. */
     uint64_t offset;
     xui_doc_node_id id;
     /* Packed inline syntax and top-level Markdown IDs use persistent source
@@ -102,7 +103,7 @@ typedef struct doc_node {
     doc_blob *column_widths; /* Table-only packed float widths; zero is automatic. */
     doc_blob *extension_payload; /* Opaque bytes; never interpreted by core. */
     doc_blob *quote_prefixes; /* Packed relative uint32 offsets after the opening '>'. */
-    doc_blob *syntax_aux; /* Table tokens, fenced info or indented-code lines. */
+    doc_blob *syntax_aux; /* Kind-specific table, fence, heading, code, quote or list-first-line metadata. */
     doc_blob *list_indents; /* Packed parser-confirmed relative ranges and logical columns. */
     uint32_t extension_version;
     int extension_required;
@@ -112,7 +113,8 @@ typedef struct doc_node {
      * source shift and avoid widening every text node for sparse markers. */
     uint32_t marker_primary_start, marker_primary_end;
     uint32_t marker_secondary_start, marker_secondary_end, marker_kind;
-    /* Fence: opening info tail. List: post-marker gap, or post-task gap when
+    /* Admonition quote: header line ending. Fence: opening info tail.
+     * List: post-marker gap, or post-task gap when
      * a checkbox is present (the first gap then ends at its '[' marker). */
     uint32_t marker_tail_end;
     /* Provenance remains shared when an unchanged Markdown block moves in the
@@ -128,9 +130,18 @@ typedef struct doc_node {
 typedef struct doc_table_token_relative {
     uint32_t start, end, row, ordinal, kind, flags;
 } doc_table_token_relative;
+/* LIST_ITEM syntax_aux holds one first-line record, including the marker and
+ * post-marker/task gap; list_indents holds only whitespace continuation records.
+ * Logical columns belong to the parser input, including dedented footnote bodies. */
 typedef struct doc_list_indent_relative {
     uint32_t start, end, start_column, content_column, end_column;
 } doc_list_indent_relative;
+/* Quote-owned indentation and the one optional logical space after '>'.
+ * Source offsets are relative to syntax_start; columns belong to the parser's
+ * current input line (which may start after a footnote's dedentation). */
+typedef struct doc_quote_indent_relative {
+    uint32_t marker, end, start_column, marker_column, content_column, end_column;
+} doc_quote_indent_relative;
 typedef struct doc_code_indent_relative {
     uint32_t start, end, start_column, content_column, end_column, flags;
 } doc_code_indent_relative;
@@ -154,10 +165,11 @@ typedef struct doc_state {
     doc_index* index;
     doc_sequence* source;
     doc_sequence* references; /* Packed xui_doc_reference_definition_t records. */
-    doc_sequence* reference_values; /* One typed immutable blob item per definition; footnotes are placeholders. */
+    doc_sequence* reference_values; /* Ordered immutable link fields or footnote label/dedented body. */
     doc_sequence* inline_syntax; /* Packed xui_doc_inline_syntax_t records. */
     doc_sequence* reference_candidates; /* Packed xui_doc_inline_syntax_t lookup attempts. */
     uint64_t node_count, text_bytes, payload_bytes, content_id;
+    uint64_t source_storage_bytes; /* Conservative retained source-Blob payload bound; scan only after sufficient churn. */
     uint64_t source_open_brackets; /* Exact raw '[' count for the MD4C reference-expansion guard. */
     uint32_t profile, dialect;
     int markdown_footnotes; /* Includes unused definitions, absent from the rendered tree. */
@@ -276,12 +288,16 @@ void doc_seq_retain(doc_sequence*);
 void doc_seq_release(doc_sequence*);
 doc_sequence* doc_seq_text(doc_allocator*, const char*, uint64_t);
 doc_sequence* doc_seq_id(doc_allocator*, uint64_t);
-doc_sequence* doc_seq_blob_item(doc_allocator*, uint64_t, doc_blob*);
-doc_blob* doc_seq_get_blob_item(doc_sequence*, uint64_t);
+doc_sequence* doc_seq_value_item(doc_allocator*, uint64_t, doc_sequence*);
+doc_sequence* doc_seq_get_value_item(doc_sequence*, uint64_t);
+doc_sequence* doc_seq_blob_range(doc_allocator*, doc_blob*, uint64_t, uint64_t);
+int doc_seq_reuse_bytes(doc_allocator*, doc_sequence*, doc_sequence*, const atomic_int*, doc_sequence**);
+int doc_seq_compact_bytes(doc_allocator*, doc_sequence**, const atomic_int*, uint64_t*);
 int doc_reference_value_append(doc_state*, uint32_t, const char*, uint64_t,
     const char*, uint64_t, const char*, uint64_t, int, const atomic_int*);
-int doc_reference_value_replace(doc_state*, uint64_t, doc_state*, uint64_t);
-int doc_reference_link_values_equal(doc_state*, doc_state*, const atomic_int*, int*);
+int doc_reference_value_replace(doc_state*, uint64_t, doc_state*, uint64_t, const atomic_int*);
+int doc_reference_values_equal(doc_state*, doc_state*, const atomic_int*, int*);
+int doc_reference_values_reuse(doc_state*, doc_state*, doc_state*, const atomic_int*);
 int doc_seq_replace(doc_allocator*, doc_sequence*, uint64_t, uint64_t, doc_sequence*, doc_sequence**);
 int doc_seq_read(doc_sequence*, uint64_t, void*, uint64_t);
 int doc_seq_read_syntax(doc_sequence*, uint64_t, xui_doc_inline_syntax_t*);
@@ -374,6 +390,11 @@ int doc_range_branch_plan_get(doc_state*, const doc_node*, const doc_node*,
 uint64_t doc_child_index(const doc_node*, uint64_t);
 int doc_markdown_parse(xui_document_transaction);
 int doc_markdown_parse_window(xui_document_transaction, uint64_t, uint64_t, doc_state**);
+int doc_markdown_parse_input(xui_document_transaction, uint64_t, const char*, uint64_t, doc_state**, uint64_t*);
+typedef struct doc_front_matter_range {
+    uint64_t content_start, content_end, syntax_end;
+} doc_front_matter_range;
+int doc_markdown_front_matter_range(const char*, uint64_t, uint64_t, const atomic_int*, doc_front_matter_range*);
 int doc_markdown_parse_window_with_suffix(xui_document_transaction, uint64_t, uint64_t,
     const char*, uint64_t, doc_state**);
 int doc_markdown_incremental(xui_document_transaction, doc_state**);
@@ -405,6 +426,8 @@ int doc_markdown_range(xui_document_transaction, const xui_doc_range_t*, const c
 int doc_markdown_apply_tree(xui_document_transaction, doc_state*, const xui_doc_position_t*, xui_doc_position_t*);
 int doc_markdown_shadow_begin(xui_document_transaction, struct xui_doc_transaction_t*);
 int doc_markdown_shadow_end(xui_document_transaction, struct xui_doc_transaction_t*, int, const xui_doc_position_t*, xui_doc_position_t*);
+int doc_markdown_shadow_end_unwrap_quote(xui_document_transaction, struct xui_doc_transaction_t*, int,
+    const xui_doc_position_t*, const xui_doc_position_t*, xui_doc_position_t*);
 int doc_markdown_shadow_end_list_split(xui_document_transaction, struct xui_doc_transaction_t*, int,
     const xui_doc_position_t*, const xui_doc_position_t*, xui_doc_position_t*);
 int doc_markdown_shadow_end_table_row(xui_document_transaction,

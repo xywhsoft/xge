@@ -110,7 +110,8 @@ enum xui_doc_block_syntax_kind {
     XUI_DOC_BLOCK_SYNTAX_LIST_ITEM,
     XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN,
     XUI_DOC_BLOCK_SYNTAX_TABLE_UNDERLINE,
-    XUI_DOC_BLOCK_SYNTAX_INDENTED_CODE
+    XUI_DOC_BLOCK_SYNTAX_INDENTED_CODE,
+    XUI_DOC_BLOCK_SYNTAX_FRONT_MATTER
 };
 typedef struct xui_doc_block_syntax_t {
     uint32_t iSize, iKind;
@@ -123,9 +124,14 @@ typedef struct xui_doc_block_syntax_t {
      * List item: bullet/number delimiter, its following raw horizontal
      * whitespace, optional task checkbox and its following whitespace.
      * Quote: the opening '>'; all explicit continuation prefixes are indexed.
+     * Admonition quotes additionally expose the original '[!TYPE]' header as
+     * their secondary marker, preserving its case and source spelling.
      * Table: the confirmed separator line, excluding its line ending.
      * Indented code: the first retained line's horizontal whitespace; all
      * retained lines, including internal blank lines, have indexed records.
+     * Front matter: the exact opening '---' and closing '---' or '...' markers.
+     * Their complete original line endings are available through GetSourceLine;
+     * the node's source range is its literal body, including original endings.
      * Absent secondary and non-fence tail endpoints are UINT64_MAX. */
     uint64_t iPrimaryStart, iPrimaryEnd, iSecondaryStart, iSecondaryEnd;
     uint64_t iFenceTailStart, iFenceTailEnd;

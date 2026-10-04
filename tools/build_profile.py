@@ -109,10 +109,12 @@ def main():
         loader = sdk / "build/native/x64/WebView2Loader.dll.lib"
         if not (include / "WebView2.h").is_file() or not loader.is_file():
             raise RuntimeError("Set WEBVIEW2_SDK_DIR to an extracted WebView2 SDK")
-        flags += ["-DXUI_ENABLE_WEBVIEW2", "-isystem", str(include)]
+        # GCC writes include paths into Make dependency files. Forward slashes
+        # keep Windows separators distinct from Make's character escapes.
+        flags += ["-DXUI_ENABLE_WEBVIEW2", "-isystem", include.as_posix()]
         if os.environ.get("XUI_WEBVIEW_TEST_EXPORTS") == "1":
             flags += ["-DXUI_WEBVIEW_TEST_EXPORTS"]
-        libs += [str(loader)]
+        libs += [loader.as_posix()]
     compiled = []
     reused = []
     link_objects = []

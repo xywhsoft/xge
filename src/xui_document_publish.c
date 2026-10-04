@@ -69,7 +69,7 @@ static int doc_charge_visit(doc_charge_map* m, void* pointer, unsigned owner, in
 #define VISIT(p) do { result = doc_charge_visit(m, (p), owner, add); if (result != XUI_OK) return result; } while (0)
     switch (h->value.kind) {
     case DOC_MEMORY_SEQUENCE: {
-        doc_sequence* p = pointer; VISIT(p->left); VISIT(p->right); VISIT(p->blob); break;
+        doc_sequence* p = pointer; VISIT(p->left); VISIT(p->right); VISIT(p->blob); VISIT(p->value); break;
     }
     case DOC_MEMORY_NODE: {
         doc_node* p = pointer; VISIT(doc_attribute_owner(p->attrs)); VISIT(p->text); VISIT(p->children); VISIT(p->provenance);
@@ -145,7 +145,7 @@ static int doc_charge_visit_delta(doc_charge_map* m, void* pointer, unsigned own
 #define VISIT_DELTA(p) do { result = doc_charge_visit_delta(m, (p), owner, add); if (result != XUI_OK) return result; } while (0)
     switch (h->value.kind) {
     case DOC_MEMORY_SEQUENCE: {
-        doc_sequence* p = pointer; VISIT_DELTA(p->left); VISIT_DELTA(p->right); VISIT_DELTA(p->blob); break;
+        doc_sequence* p = pointer; VISIT_DELTA(p->left); VISIT_DELTA(p->right); VISIT_DELTA(p->blob); VISIT_DELTA(p->value); break;
     }
     case DOC_MEMORY_NODE: {
         doc_node* p = pointer; VISIT_DELTA(doc_attribute_owner(p->attrs)); VISIT_DELTA(p->text); VISIT_DELTA(p->children); VISIT_DELTA(p->provenance);

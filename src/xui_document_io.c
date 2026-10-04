@@ -345,6 +345,7 @@ XUI_API int xuiDocumentDeserialize(const xui_doc_desc_t* desc, const char* data,
             t.document = d; t.domain = XUI_DOC_SOURCE; t.draft = d->state; doc_state_retain(t.draft);
             t.draft->source = doc_seq_text(d->allocator, source.Data, source.Size);
             t.draft->source_open_brackets = doc_source_open_bracket_count(source.Data, source.Size);
+            t.draft->source_storage_bytes = source.Size;
             if (source.Size && !t.draft->source) result = XUI_ERROR_OUT_OF_MEMORY;
             else result = doc_markdown_parse(&t);
             if (result == XUI_OK) { doc_state_release(d->state); d->state = t.draft; doc_state_retain(d->state); }

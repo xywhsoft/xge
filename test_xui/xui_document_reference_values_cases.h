@@ -16,6 +16,57 @@ static void* reference_values_cancel_alloc(void* user, size_t bytes)
 }
 static void reference_values_cancel_free(void* user, void* pointer)
 { reference_values_cancel_allocator* allocator = user; failing_free(&allocator->allocator, pointer); }
+static void footnote_cached_payload(xui_document_snapshot snapshot, uint64_t ordinal, const char* label, const char* body)
+{
+    doc_sequence* value = doc_seq_get_value_item(snapshot->state->reference_values, ordinal); uint64_t header[4];
+    char* bytes; size_t size = strlen(label) + strlen(body);
+    CHECK(doc_seq_get_id(snapshot->state->reference_values, ordinal) == XUI_DOC_REFERENCE_FOOTNOTE &&
+        value && doc_seq_size(value) >= sizeof(header) && doc_seq_read(value, 0, header, sizeof(header)) == XUI_OK);
+    CHECK(header[0] == strlen(label) && header[1] == strlen(body) && !header[2] && !header[3] &&
+        doc_seq_size(value) == sizeof(header) + size);
+    bytes = malloc(size ? size : 1); CHECK(bytes && doc_seq_read(value, sizeof(header), bytes, size) == XUI_OK &&
+        !memcmp(bytes, label, strlen(label)) && !memcmp(bytes + strlen(label), body, strlen(body)));
+    free(bytes);
+}
+static void markdown_footnote_cache_values(void)
+{
+    static const struct { const char* source; const char* body; } payloads[] = {
+        {"[^n]: plain &amp;  \n", "plain &amp;  \n"},
+        {"> [^n]: first\n>     second\n", "first\nsecond\n"},
+        {"[^n]: first\ncontinued\n", "first\ncontinued\n"},
+        {"[^n]:\n        code\n", "    code\n"},
+        {"[^n]:\n\t    code\n", "    code\n"},
+        {"[^n]: first\r\n    second\r    third\n", "first\r\nsecond\rthird\n"},
+        {"[^n]:", ""}, {"[^n]: body", "body"},
+        {"[^n]: intro\n\n    - one\n    - two\n", "intro\n\n- one\n- two\n"}
+    };
+    static const struct { const char* before; const char* after; int equal; } pairs[] = {
+        {"[^n]: same\n", "> [^n]: same\n", 1},
+        {"[^n]: first\n    second\n", "> > [^n]: first\n> >     second\n", 1},
+        {"[^n]: first\n[^n]: unused\n", "[^n]: first\n[^n]: changed\n", 0},
+        {"[^n]: first\n[^m]: second\n", "[^m]: second\n[^n]: first\n", 0},
+        {"[^n]: same\n", "[^N]: same\n", 0},
+        {"[^n]: &amp;\n", "[^n]: &\n", 0},
+        {"[^n]: same  \n", "[^n]: same\n", 0},
+        {"[^n]: same\n", "[^n]: same\r\n", 0},
+        {"[^n]:", "[^n]: other", 0}, {"[^n]: same\n", "", 0},
+        {"[^n]: first\n    second\n", "[^n]: first\n        second\n", 0}
+    };
+    unsigned i;
+    for (i = 0; i < sizeof(payloads) / sizeof(*payloads); i++) {
+        xui_document d = test_markdown_open(payloads[i].source); xui_document_snapshot s;
+        CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK); reference_cache_valid(s->state);
+        footnote_cached_payload(s, 0, "n", payloads[i].body); xuiDocumentRelease(d);
+        footnote_cached_payload(s, 0, "n", payloads[i].body); xuiDocumentSnapshotRelease(s);
+    }
+    for (i = 0; i < sizeof(pairs) / sizeof(*pairs); i++) {
+        xui_document a = test_markdown_open(pairs[i].before), b = test_markdown_open(pairs[i].after); int equal;
+        reference_cache_valid(a->state); reference_cache_valid(b->state);
+        CHECK(doc_reference_values_equal(a->state, b->state, NULL, &equal) == XUI_OK && equal == pairs[i].equal);
+        xuiDocumentRelease(a); xuiDocumentRelease(b);
+    }
+    puts("Footnote values: 9 literal parser-input payloads and 11 used/unused/duplicate/order/body/trivia comparisons passed");
+}
 static void markdown_reference_values_guard(void)
 {
     static const struct { const char* before; const char* after; int equal; } samples[] = {
@@ -51,7 +102,7 @@ static void markdown_reference_values_guard(void)
         reference_cache_valid(left->state); reference_cache_valid(right->state);
         cached_live = allocation.live; allocation.remaining = 0; equal = -1;
         parses = atomic_load(&left->state->allocator->markdown_parses);
-        CHECK(doc_reference_link_values_equal(left->state, right->state, NULL, &equal) == XUI_OK && equal == samples[sample].equal &&
+        CHECK(doc_reference_values_equal(left->state, right->state, NULL, &equal) == XUI_OK && equal == samples[sample].equal &&
             allocation.live == cached_live && atomic_load(&left->state->allocator->markdown_parses) == parses);
         allocation.remaining = -1; xuiDocumentRelease(left); xuiDocumentRelease(right); CHECK(allocation.live == baseline);
         equal = -1;
@@ -92,8 +143,8 @@ static void markdown_reference_values_guard(void)
             CHECK(xuiDocumentCreate(&desc, &left) == XUI_OK && xuiDocumentCreate(&desc, &right) == XUI_OK &&
                 xuiDocumentLoadMarkdown(left, large, bytes) == XUI_OK && xuiDocumentLoadMarkdown(right, altered, bytes) == XUI_OK);
             reference_cache_valid(left->state); reference_cache_valid(right->state);
-            CHECK(doc_reference_link_values_equal(left->state, right->state, NULL, &equal) == XUI_OK && !equal);
-            CHECK(doc_reference_link_values_equal(left->state, right->state, &cancellation, &equal) == XUI_DOC_ERROR_CANCELLED && !equal);
+            CHECK(doc_reference_values_equal(left->state, right->state, NULL, &equal) == XUI_OK && !equal);
+            CHECK(doc_reference_values_equal(left->state, right->state, &cancellation, &equal) == XUI_DOC_ERROR_CANCELLED && !equal);
             xuiDocumentRelease(left); xuiDocumentRelease(right); CHECK(allocation.live == baseline);
         }
         free(large); free(altered);
@@ -152,18 +203,18 @@ static void markdown_reference_cache_persistence(void)
                 (unsigned long long)last.iMarkdownIncrementalParses, (unsigned long long)first.iMarkdownIncrementalParses);
         CHECK(last.iMarkdownIncrementalParses == first.iMarkdownIncrementalParses + 1 && xuiDocumentAcquireSnapshot(d, &after) == XUI_OK);
         CHECK((saved == after->state->reference_values) == (cases[sample].changed < 0));
-        for (i = 0; i < 3; i++) CHECK((doc_seq_get_blob_item(saved, i) == doc_seq_get_blob_item(after->state->reference_values, i)) ==
+        for (i = 0; i < 3; i++) CHECK((doc_seq_get_value_item(saved, i) == doc_seq_get_value_item(after->state->reference_values, i)) ==
             ((int)i != cases[sample].changed));
         oracle = test_markdown_open(edited); CHECK(xuiDocumentAcquireSnapshot(oracle, &loaded) == XUI_OK);
         inc_snapshot_equal(after, loaded); xuiDocumentSnapshotRelease(loaded); xuiDocumentRelease(oracle);
-        CHECK(doc_reference_link_values_equal(before->state, after->state, NULL, &equal) == XUI_OK && equal == (cases[sample].changed < 0));
+        CHECK(doc_reference_values_equal(before->state, after->state, NULL, &equal) == XUI_OK && equal == (cases[sample].changed < 0));
         CHECK(xuiDocumentUndo(d, NULL) == XUI_OK && xuiDocumentAcquireSnapshot(d, &restored) == XUI_OK);
         reference_cache_snapshot_equal(before, restored); CHECK(restored->state->reference_values == saved); xuiDocumentSnapshotRelease(restored);
         CHECK(xuiDocumentRedo(d, NULL) == XUI_OK && xuiDocumentAcquireSnapshot(d, &restored) == XUI_OK);
         reference_cache_snapshot_equal(after, restored); CHECK(restored->state->reference_values == after->state->reference_values); xuiDocumentSnapshotRelease(restored);
         CHECK(xuiDocumentClearHistory(d) == XUI_OK);
         if (cases[sample].changed >= 0) {
-            doc_blob* old_blob = doc_seq_get_blob_item(saved, (uint64_t)cases[sample].changed);
+            doc_sequence* old_blob = doc_seq_get_value_item(saved, (uint64_t)cases[sample].changed);
             doc_allocation* owner = (doc_allocation*)old_blob - 1;
             xui_doc_memory_stats_t memory = {0}; memory.iSize = sizeof(memory);
             /* Snapshot reachability marks exist only while diagnostics run. */
@@ -180,13 +231,15 @@ static void markdown_reference_cache_persistence(void)
         uint64_t at = (uint64_t)(strstr(footnote, "note body") - footnote);
         CHECK(xuiDocumentAcquireSnapshot(d, &before) == XUI_OK);
         reference_cache_apply(d, at, 9, "longer note body");
-        CHECK(xuiDocumentAcquireSnapshot(d, &after) == XUI_OK && before->state->reference_values == after->state->reference_values);
+        CHECK(xuiDocumentAcquireSnapshot(d, &after) == XUI_OK && before->state->reference_values != after->state->reference_values &&
+            doc_seq_get_value_item(before->state->reference_values, 0) != doc_seq_get_value_item(after->state->reference_values, 0));
         oracle = test_markdown_open("plain body\n\n[^r]: longer note body\n\nuse [^r]\n");
         CHECK(xuiDocumentAcquireSnapshot(oracle, &loaded) == XUI_OK); inc_snapshot_equal(after, loaded);
         xuiDocumentSnapshotRelease(before); xuiDocumentSnapshotRelease(after); xuiDocumentSnapshotRelease(loaded);
         xuiDocumentRelease(d); xuiDocumentRelease(oracle);
     }
-    puts("Reference cache persistence: 9 body/offset/label/destination/title/unused edits, field-only blob replacement, full-load oracle, snapshot/undo/redo/ownership and footnote placeholder passed");
+    markdown_footnote_cache_values();
+    puts("Reference cache persistence: 9 body/offset/label/destination/title/unused edits, immutable byte-rope replacement, full-load oracle, snapshot/undo/redo/ownership and footnote body replacement passed");
 }
 #else
 static void markdown_reference_values_guard(void) {}

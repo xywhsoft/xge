@@ -6,7 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct doc_md_output { doc_allocator* allocator; char* data; uint64_t size, capacity; int error; char list_marker; } doc_md_output;
+typedef struct doc_md_source_copy { uint64_t source, output, bytes; } doc_md_source_copy;
+typedef struct doc_md_source_plan { doc_md_source_copy* copies; uint64_t count, capacity; } doc_md_source_plan;
+typedef struct doc_md_output {
+    doc_allocator* allocator; char* data; uint64_t size, capacity;
+    int error; char list_marker; doc_md_source_plan* plan;
+} doc_md_output;
 static void doc_md_write(doc_md_output* b, const char* text, uint64_t bytes)
 {
     uint64_t required, capacity; char* next;
@@ -22,6 +27,73 @@ static void doc_md_write(doc_md_output* b, const char* text, uint64_t bytes)
     }
     if (bytes) memcpy(b->data + b->size, text, (size_t)bytes);
     b->size += bytes; b->data[b->size] = 0;
+}
+/* Only writers with parser-confirmed source spans use this operation. The
+ * normal serializer has no retained spans and keeps its explicit rewrite.
+ * Ordered copies prove which source bytes must remain in the persistent
+ * SourceStore; this is not a text diff and never infers syntax from spelling. */
+static void doc_md_copy_source(doc_md_output* b, const char* text,
+    uint64_t source, uint64_t bytes)
+{
+    uint64_t output = b->size; doc_md_source_plan* plan = b->plan;
+    doc_md_write(b, text, bytes);
+    if (b->error || !bytes || !plan) return;
+    if (plan->count) {
+        doc_md_source_copy* previous = &plan->copies[plan->count - 1];
+        if (previous->source + previous->bytes == source &&
+            previous->output + previous->bytes == output) { previous->bytes += bytes; return; }
+    }
+    if (plan->count == plan->capacity) {
+        uint64_t capacity = plan->capacity ? plan->capacity * 2 : 16;
+        doc_md_source_copy* next;
+        if (capacity < plan->capacity || capacity > SIZE_MAX / sizeof(*next)) { b->error = XUI_DOC_ERROR_LIMIT; return; }
+        next = doc_realloc(b->allocator, plan->copies, (size_t)capacity * sizeof(*next));
+        if (!next) { b->error = XUI_ERROR_OUT_OF_MEMORY; return; }
+        plan->copies = next; plan->capacity = capacity;
+    }
+    plan->copies[plan->count++] = (doc_md_source_copy){source, output, bytes};
+}
+static int doc_md_apply_source_plan(xui_document_transaction t,
+    uint64_t start, uint64_t end, doc_md_output* output, int parse)
+{
+    doc_md_source_plan* plan = output->plan;
+    uint64_t i, old_cursor = start, new_cursor = 0;
+    int result;
+    if (output->error) return output->error;
+    if (!plan || !plan->count) return doc_txn_source_patch(t, start, end,
+        output->data ? output->data : "", output->size, parse);
+    /* Validate the complete proof before issuing any patches. Recheck copies
+     * in bounded chunks so cancellation cannot wait on an arbitrarily long
+     * preserved code line or hidden footnote. */
+    for (i = 0; i < plan->count; i++) {
+        const doc_md_source_copy* copy = &plan->copies[i]; uint64_t at;
+        if (copy->source < old_cursor || copy->source > end || copy->bytes > end - copy->source ||
+            copy->output < new_cursor || copy->output > output->size || copy->bytes > output->size - copy->output)
+            return XUI_DOC_ERROR_SCHEMA;
+        for (at = 0; at < copy->bytes; ) {
+            uint64_t bytes = copy->bytes - at > 16384 ? 16384 : copy->bytes - at;
+            result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+            if (!doc_seq_equal_bytes(t->draft->source, copy->source + at,
+                output->data + copy->output + at, bytes)) return XUI_DOC_ERROR_SCHEMA;
+            at += bytes;
+        }
+        old_cursor = copy->source + copy->bytes; new_cursor = copy->output + copy->bytes;
+    }
+    /* Descending offsets keep every edit in the original coordinate system.
+     * Only gaps between retained copies allocate new source payloads. Parse
+     * once, after the entire private candidate has been constructed. */
+    old_cursor = end; new_cursor = output->size;
+    for (i = plan->count; i; i--) {
+        const doc_md_source_copy* copy = &plan->copies[i - 1];
+        uint64_t old_end = copy->source + copy->bytes, new_end = copy->output + copy->bytes;
+        result = doc_txn_source_patch(t, old_end, old_cursor,
+            output->data + new_end, new_cursor - new_end, 0);
+        if (result != XUI_OK) return result;
+        old_cursor = copy->source; new_cursor = copy->output;
+    }
+    result = doc_txn_source_patch(t, start, old_cursor, output->data, new_cursor, 0);
+    if (result == XUI_OK && parse) result = doc_markdown_parse(t);
+    return result;
 }
 static void doc_md_escape(doc_md_output* b, const char* text, uint64_t bytes)
 {
@@ -766,29 +838,15 @@ static int doc_md_reference_fields_equal(doc_sequence* old_source,
 }
 /* Prefix writers copy every non-prefix byte verbatim. Compare all ordered
  * cached definition values, including unused duplicates and multiline fields,
- * instead of mistaking a newly inserted quote marker for title content.
- * Footnotes do not have value blobs: keep their complete spelling unchanged. */
+ * instead of mistaking a newly inserted quote marker for content. Footnote
+ * bodies use the exact dedentation used by the parser's body emission. */
 static int doc_md_quote_prefix_references(xui_document_transaction t,
     doc_state* old, doc_state* actual, int* equal)
 {
-    uint64_t i; int result = doc_txn_check(t, 0);
+    int result = doc_txn_check(t, 0);
     *equal = 0;
     if (result != XUI_OK) return result;
-    result = doc_reference_link_values_equal(old, actual, t->cancellation, equal);
-    if (result != XUI_OK || !*equal) return result;
-    for (i = 0; i < doc_seq_size(old->references); i += sizeof(xui_doc_reference_definition_t)) {
-        xui_doc_reference_definition_t a, b;
-        result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
-        result = doc_seq_read(old->references, i, &a, sizeof(a));
-        if (result == XUI_OK) result = doc_seq_read(actual->references, i, &b, sizeof(b));
-        if (result != XUI_OK) return result;
-        if (a.iKind != b.iKind || (a.iKind == XUI_DOC_REFERENCE_FOOTNOTE &&
-            !doc_md_source_spelling_equal(old->source, a.iSourceStart, a.iSourceEnd,
-                actual->source, b.iSourceStart, b.iSourceEnd))) {
-            *equal = 0; break;
-        }
-    }
-    return XUI_OK;
+    return doc_reference_values_equal(old, actual, t->cancellation, equal);
 }
 static int doc_md_container_gap_trivia(doc_sequence* source, uint64_t start, uint64_t end)
 {
@@ -995,7 +1053,7 @@ static int doc_md_reference_values_equal(xui_document_transaction t, doc_state* 
 {
     int result = doc_txn_check(t, 0); *equal = 0;
     if (result != XUI_OK) return result;
-    return doc_reference_link_values_equal(old, actual, t->cancellation, equal);
+    return doc_reference_values_equal(old, actual, t->cancellation, equal);
 }
 static int doc_md_list_split_references(xui_document_transaction t, doc_state* old, doc_state* actual,
     uint64_t tail_start, uint64_t tail_end, int reindented, int* equal)
@@ -2148,6 +2206,24 @@ static int doc_md_quote_prefix_position(doc_node* quote,
 /* Descend a single changed Quote/List/Item path from a root block to the
  * quote receiving a new child quote. Add its parser-recorded marker only to
  * selected physical lines; all other source bytes remain verbatim. */
+/* Four physical columns preserve indentation Tab stops through nested
+ * quote and footnote analysis. The two spaces are legal quote indent. */
+static int doc_md_quote_tab_padding(xui_document_transaction t, const char* source,
+    uint64_t source_base, uint64_t start, uint64_t end, unsigned* padding)
+{
+    uint64_t at; int leading = 1;
+    *padding = 0;
+    for (at = start; at < end; at++) {
+        char c = source[at - source_base];
+        if (!(at & 16383)) { int result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+        if (c == '\r' || c == '\n') leading = 1;
+        else if (leading) {
+            if (c == '\t') { *padding = 2; return XUI_OK; }
+            if (c != ' ' && c != '>') leading = 0;
+        }
+    }
+    return XUI_OK;
+}
 static int doc_md_nested_quote_prefix_patch(xui_document_transaction t,
     doc_state* old, doc_state* desired, doc_node* before, doc_node* after,
     uint64_t start, uint64_t end, const char* source,
@@ -2268,7 +2344,8 @@ static int doc_md_nested_quote_prefix_patch(xui_document_transaction t,
         (selected_start && (selected_start <= source_base ||
             (source[selected_start - 1 - source_base] != '\n' &&
                 source[selected_start - 1 - source_base] != '\r'))) ||
-        (source[selected_end - 1 - source_base] != '\n' &&
+        (selected_end != doc_seq_size(old->source) &&
+            source[selected_end - 1 - source_base] != '\n' &&
             source[selected_end - 1 - source_base] != '\r') ||
         old_quote->marker_kind != XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN ||
         (old_quote->quote_prefixes &&
@@ -2276,6 +2353,10 @@ static int doc_md_nested_quote_prefix_patch(xui_document_transaction t,
         return XUI_DOC_ERROR_UNREPRESENTABLE;
     marker_count = 1 + (old_quote->quote_prefixes ?
         old_quote->quote_prefixes->size / sizeof(uint32_t) : 0);
+    unsigned quote_padding;
+    result = doc_md_quote_tab_padding(t, source, source_base, selected_start,
+        selected_end, &quote_padding);
+    if (result != XUI_OK) return result;
     cursor = start;
     for (at = selected_start; at < selected_end;) {
         uint64_t line_end = at, marker, next;
@@ -2283,8 +2364,9 @@ static int doc_md_nested_quote_prefix_patch(xui_document_transaction t,
         if (result != XUI_OK) return result;
         while (line_end < selected_end && source[line_end - source_base] != '\n' &&
             source[line_end - source_base] != '\r') line_end++;
-        if (line_end == selected_end) return XUI_DOC_ERROR_UNREPRESENTABLE;
-        if (source[line_end++ - source_base] == '\r' &&
+        if (line_end == selected_end) {
+            if (selected_end != doc_seq_size(old->source)) return XUI_DOC_ERROR_UNREPRESENTABLE;
+        } else if (source[line_end++ - source_base] == '\r' &&
             line_end < selected_end && source[line_end - source_base] == '\n') line_end++;
         while (marker_index < marker_count) {
             result = doc_md_quote_prefix_position(old_quote, &quote_range,
@@ -2302,16 +2384,70 @@ static int doc_md_nested_quote_prefix_patch(xui_document_transaction t,
             if (result != XUI_OK || next < line_end)
                 return XUI_DOC_ERROR_UNREPRESENTABLE;
         }
-        doc_md_write(output, source + cursor - source_base, marker + 1 - cursor);
-        doc_md_write(output, " >", 2);
+        doc_md_copy_source(output, source + cursor - source_base, cursor, marker + 1 - cursor);
+        doc_md_write(output, quote_padding ? "   >" : " >", 2 + quote_padding);
         if (output->error) return output->error;
         cursor = marker + 1; marker_index++;
         at = line_end;
     }
-    doc_md_write(output, source + cursor - source_base, end - cursor);
+    doc_md_copy_source(output, source + cursor - source_base, cursor, end - cursor);
     if (output->error) return output->error;
     *raw_suffix = 1;
     return XUI_OK;
+}
+typedef struct doc_md_indent_boundary {
+    uint64_t byte, column;
+    unsigned tab_left, tab_right;
+} doc_md_indent_boundary;
+/* A continuation record may include indentation belonging to a child block
+ * or footnote body. Locate the item's content column, splitting one Tab into
+ * its left/right logical spaces when that column has no raw byte anchor. */
+static int doc_md_list_indent_content_boundary(xui_document_transaction t, const doc_list_indent_relative* indent,
+    uint64_t start, uint64_t end, const char* source, uint64_t source_base,
+    doc_md_indent_boundary* boundary)
+{
+    uint64_t line_start = start, at, column = 0, target;
+    memset(boundary, 0, sizeof(*boundary));
+    if (start < source_base || start >= end || indent->start_column >= indent->content_column ||
+        indent->content_column > indent->end_column) return XUI_DOC_ERROR_FORMAT;
+    while (line_start > source_base && source[line_start - 1 - source_base] != '\n' &&
+        source[line_start - 1 - source_base] != '\r') {
+        if (!(line_start & 16383)) { int result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+        line_start--;
+    }
+    if (!line_start && end >= 3 && !memcmp(source, "\xef\xbb\xbf", 3)) line_start = 3;
+    for (at = line_start; at < end; at++) {
+        char c = source[at - source_base];
+        if (!(at & 16383)) { int result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+        column = c == '\t' ? (column + 4) & ~(uint64_t)3 : column + 1;
+    }
+    /* The range includes a quote's optional space and can be shared by
+     * several list layers. start_column describes that layer, not the first
+     * raw byte. Body emission may also start at a dedented physical column. */
+    if (column < indent->end_column) return XUI_DOC_ERROR_FORMAT;
+    target = column - indent->end_column + indent->content_column;
+    column = 0;
+    for (at = line_start; at < start; at++) {
+        char c = source[at - source_base];
+        if (!(at & 16383)) { int result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+        column = c == '\t' ? (column + 4) & ~(uint64_t)3 : column + 1;
+    }
+    at = start;
+    while (at < end && column < target) {
+        char c = source[at - source_base]; uint64_t width;
+        if (!(at & 16383)) { int result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+        if (c != ' ' && c != '\t') return XUI_DOC_ERROR_FORMAT;
+        width = c == '\t' ? 4 - column % 4 : 1;
+        if (width > target - column) {
+            boundary->byte = at; boundary->column = target;
+            boundary->tab_left = (unsigned)(target - column);
+            boundary->tab_right = (unsigned)(width - boundary->tab_left);
+            return XUI_OK;
+        }
+        column += width; at++;
+    }
+    if (column != target) return XUI_DOC_ERROR_FORMAT;
+    boundary->byte = at; boundary->column = column; return XUI_OK;
 }
 /* Wrap complete children of one existing list item without serializing the
  * list. Continuation-indent records locate later child lines; for the first
@@ -2328,8 +2464,10 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
     uint64_t selected_start, selected_end, cursor, at;
     uint64_t indent_count, indent_cursor = 0;
     uint64_t blank_prefix_start = DOC_NONE, blank_prefix_end = DOC_NONE;
+    doc_md_indent_boundary inferred_boundary = {0};
     const char* inferred_prefix = NULL;
     uint64_t inferred_size = 0;
+    unsigned quote_padding = 0;
     char marker_prefix[4096];
     int result;
     if (!before || !after || before->id != after->id ||
@@ -2425,7 +2563,8 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
         uint64_t previous_end = item_range.syntax_start;
         for (i = 0; i < indent_count; i++) {
             doc_list_indent_relative indent;
-            uint64_t indent_start, indent_end, line_start;
+            doc_md_indent_boundary boundary;
+            uint64_t indent_start, indent_end, line_start, scan;
             memcpy(&indent, old_item->list_indents->data +
                 i * sizeof(indent), sizeof(indent));
             indent_start = item_range.syntax_start + indent.start;
@@ -2444,14 +2583,35 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
                 line_start--;
             if (line_start < selected_start || line_start >= indent_end)
                 continue;
-            blank_prefix_start = line_start;
-            blank_prefix_end = indent_end;
-            break;
+            result = doc_md_list_indent_content_boundary(t, &indent, indent_start,
+                indent_end, source, source_base, &boundary);
+            if (result != XUI_OK) return result;
+            if (blank_prefix_start == DOC_NONE) {
+                inferred_boundary = boundary;
+                blank_prefix_end = boundary.byte;
+                blank_prefix_start = line_start;
+            }
+            /* Keep later Tabs verbatim, including indented-code bytes in a
+             * hidden footnote. Two legal spaces before every new quote make
+             * its physical shift four columns, preserving all Tab stops and
+             * the common definition-body origin across selected lines. */
+            for (scan = boundary.byte + !!boundary.tab_right; scan < indent_end; scan++) {
+                if (!(scan & 16383)) { result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+                if (source[scan - source_base] == '\t') { quote_padding = 2; break; }
+            }
         }
     }
     if (blank_prefix_start != DOC_NONE) {
         inferred_prefix = source + blank_prefix_start - source_base;
         inferred_size = blank_prefix_end - blank_prefix_start;
+        if (inferred_boundary.tab_left) {
+            if (inferred_size > sizeof(marker_prefix) - inferred_boundary.tab_left)
+                return XUI_DOC_ERROR_UNREPRESENTABLE;
+            memcpy(marker_prefix, inferred_prefix, (size_t)inferred_size);
+            memset(marker_prefix + inferred_size, ' ', inferred_boundary.tab_left);
+            inferred_size += inferred_boundary.tab_left;
+            inferred_prefix = marker_prefix;
+        }
     } else if (selected_start == item_range.syntax_start &&
         old_item->marker_kind == XUI_DOC_BLOCK_SYNTAX_LIST_ITEM) {
         uint64_t marker = selected_start + old_item->marker_primary_start;
@@ -2481,6 +2641,7 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
     cursor = start;
     for (at = selected_start; at < selected_end;) {
         uint64_t line_end = at, insert = DOC_NONE, next;
+        doc_md_indent_boundary boundary = {0};
         result = doc_txn_check(t, 0);
         if (result != XUI_OK) return result;
         while (line_end < selected_end &&
@@ -2508,7 +2669,10 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
                 if (indent_start < at || indent_end > line_end ||
                     insert != DOC_NONE)
                     return XUI_DOC_ERROR_UNREPRESENTABLE;
-                insert = indent_end;
+                result = doc_md_list_indent_content_boundary(t, &indent, indent_start,
+                    indent_end, source, source_base, &boundary);
+                if (result != XUI_OK) return result;
+                insert = boundary.byte;
                 indent_cursor++;
             }
         }
@@ -2520,10 +2684,11 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
                     inferred_prefix[existing])
                 existing++;
             if (existing == line_bytes) {
-                doc_md_write(output, source + cursor - source_base,
-                    line_end - cursor);
+                doc_md_copy_source(output, source + cursor - source_base,
+                    cursor, line_end - cursor);
                 doc_md_write(output, inferred_prefix + existing,
                     prefix_bytes - existing);
+                doc_md_write(output, "  ", quote_padding);
                 doc_md_write(output, ">", 1);
                 if (output->error) return output->error;
                 cursor = line_end;
@@ -2535,10 +2700,11 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
                  source[at + existing - source_base] == '\t' ||
                  source[at + existing - source_base] == '>'))
                 return XUI_DOC_ERROR_UNREPRESENTABLE;
-            doc_md_write(output, source + cursor - source_base,
-                at + existing - cursor);
+            doc_md_copy_source(output, source + cursor - source_base,
+                cursor, at + existing - cursor);
             doc_md_write(output, inferred_prefix + existing,
                 prefix_bytes - existing);
+            doc_md_write(output, "  ", quote_padding);
             doc_md_write(output, "> ", 2);
             if (output->error) return output->error;
             cursor = at + existing;
@@ -2547,13 +2713,19 @@ static int doc_md_list_item_quote_patch(xui_document_transaction t,
         }
         if (insert == DOC_NONE || insert < cursor || insert > line_end)
             return XUI_DOC_ERROR_UNREPRESENTABLE;
-        doc_md_write(output, source + cursor - source_base, insert - cursor);
+        doc_md_copy_source(output, source + cursor - source_base, cursor, insert - cursor);
+        if (boundary.tab_left) doc_md_write(output, "   ", boundary.tab_left);
+        doc_md_write(output, "  ", quote_padding);
         doc_md_write(output, "> ", 2);
-        if (output->error) return output->error;
         cursor = insert;
+        if (boundary.tab_right) {
+            doc_md_write(output, "   ", boundary.tab_right);
+            cursor++;
+        }
+        if (output->error) return output->error;
         at = next;
     }
-    doc_md_write(output, source + cursor - source_base, end - cursor);
+    doc_md_copy_source(output, source + cursor - source_base, cursor, end - cursor);
     if (output->error) return output->error;
     *raw_suffix = 1;
     return XUI_OK;
@@ -2562,7 +2734,7 @@ int doc_markdown_apply_tree(xui_document_transaction t, doc_state* desired, cons
 {
     doc_state* old = t->draft; doc_node *before, *after;
     doc_state* reference_state = NULL;
-    doc_md_output output = {0}; char* source = NULL;
+    doc_md_output output = {0}; doc_md_source_plan source_plan = {0}; char* source = NULL;
     uint64_t prefix = 0, suffix = 0, ac, bc, i, start, end, source_base = 0, unused;
     unsigned char* referenced_items = NULL;
     doc_sequence *saved_references = NULL, *saved_source = NULL;
@@ -2661,6 +2833,7 @@ int doc_markdown_apply_tree(xui_document_transaction t, doc_state* desired, cons
         if (result != XUI_OK) goto done;
     }
     output.allocator = t->document->allocator;
+    output.plan = &source_plan;
     if (retain_container_prefix) {
         const char* ending = "\n"; uint64_t ending_bytes = 1;
         if (source[start - 1 - source_base] == '\n' && start >= 2 &&
@@ -2726,7 +2899,7 @@ int doc_markdown_apply_tree(xui_document_transaction t, doc_state* desired, cons
             xui_doc_reference_definition_t reference; uint64_t item;
             doc_seq_read(old->references, j, &reference, sizeof(reference));
             if (reference.iSourceStart >= end || reference.iSourceEnd <= start) continue;
-            if (reference.iKind != XUI_DOC_REFERENCE_LINK ||
+            if ((reference.iKind != XUI_DOC_REFERENCE_LINK && reference.iKind != XUI_DOC_REFERENCE_FOOTNOTE) ||
                 doc_md_reference_list_item(old, list, &reference, &item) != XUI_OK) {
                 result = XUI_DOC_ERROR_UNREPRESENTABLE; goto done;
             }
@@ -2829,8 +3002,7 @@ int doc_markdown_apply_tree(xui_document_transaction t, doc_state* desired, cons
         if (from < end) { result = XUI_DOC_ERROR_UNREPRESENTABLE; goto done; }
         result = doc_txn_source_patch(t, from, to, "", 0, 0); if (result != XUI_OK) goto done;
     }
-    result = doc_txn_source_patch(t, start, end, output.data ? output.data : "",
-        output.size, immediate_single_block);
+    result = doc_md_apply_source_plan(t, start, end, &output, immediate_single_block);
     if (result == XUI_OK && t->count > t->parse_op_start) result = doc_markdown_parse(t);
     /* A locally parsed block can be structurally valid yet differ from the
      * requested semantic edit (for example an inline image rewrite). The
@@ -2852,7 +3024,7 @@ int doc_markdown_apply_tree(xui_document_transaction t, doc_state* desired, cons
 done:
     doc_seq_release(saved_references); doc_seq_release(saved_source);
     doc_state_release(reference_state);
-    doc_free(referenced_items); doc_free(source); doc_free(output.data);
+    doc_free(referenced_items); doc_free(source); doc_free(output.data); doc_free(source_plan.copies);
     return result == XUI_OK ? result : doc_txn_fail(t, result);
 }
 static int doc_md_source_gap_trivia(xui_document_transaction t,
@@ -4376,6 +4548,938 @@ static int doc_markdown_code_language_source_patch(xui_document_transaction t,
     }
     doc_state_release(candidate.draft); doc_free(candidate.ops); doc_free(output.data); return result;
 }
+typedef struct doc_md_prefix_span { uint64_t start, end; } doc_md_prefix_span;
+typedef struct doc_md_prefix_spans { doc_md_prefix_span* data; uint64_t count, capacity; } doc_md_prefix_spans;
+static int doc_md_prefix_span_add(xui_document_transaction t, doc_md_prefix_spans* spans,
+    uint64_t start, uint64_t end)
+{
+    if (start >= end) return XUI_DOC_ERROR_FORMAT;
+    if (spans->count == spans->capacity) {
+        uint64_t capacity = spans->capacity ? spans->capacity * 2 : 16;
+        doc_md_prefix_span* next;
+        if (capacity < spans->capacity || capacity > SIZE_MAX / sizeof(*next)) return XUI_DOC_ERROR_LIMIT;
+        next = doc_realloc(t->draft->allocator, spans->data, (size_t)capacity * sizeof(*next));
+        if (!next) return XUI_ERROR_OUT_OF_MEMORY;
+        spans->data = next; spans->capacity = capacity;
+    }
+    spans->data[spans->count++] = (doc_md_prefix_span){start, end}; return XUI_OK;
+}
+/* Only descendant container markers can extend a line's indentation proof.
+ * A literal '>' or Tab inside fenced code is content and is never scanned as
+ * a prefix. Gather once, then merge the source-ordered spans in linear time. */
+static int doc_md_quote_child_prefixes(xui_document_transaction t, doc_node* node,
+    uint64_t excluded, doc_md_prefix_spans* spans, unsigned depth)
+{
+    uint64_t i; int result = doc_txn_check(t, 0); doc_node_source_range range;
+    if (result != XUI_OK) return result;
+    if (!node || depth >= DOC_MAX_DEPTH) return XUI_DOC_ERROR_SCHEMA;
+    if (node->kind != XUI_DOC_QUOTE && node->kind != XUI_DOC_LIST && node->kind != XUI_DOC_LIST_ITEM) return XUI_OK;
+    doc_node_source_range_get(t->draft, node, &range);
+    if (node->kind == XUI_DOC_QUOTE && node->id != excluded) {
+        if (!node->syntax_aux || node->syntax_aux->size % sizeof(doc_quote_indent_relative) ||
+            range.syntax_start == DOC_NONE) return XUI_ERROR_NOT_FOUND;
+        for (i = 0; i < node->syntax_aux->size / sizeof(doc_quote_indent_relative); i++) {
+            doc_quote_indent_relative record;
+            if (!(i & 4095u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+            memcpy(&record, node->syntax_aux->data + i * sizeof(record), sizeof(record));
+            result = doc_md_prefix_span_add(t, spans, range.syntax_start + record.marker, range.syntax_start + record.end);
+            if (result != XUI_OK) return result;
+        }
+    } else if (node->kind == XUI_DOC_LIST_ITEM) {
+        if (range.syntax_start == DOC_NONE || node->marker_kind != XUI_DOC_BLOCK_SYNTAX_LIST_ITEM ||
+            node->marker_tail_end <= node->marker_primary_start) return XUI_ERROR_NOT_FOUND;
+        result = doc_md_prefix_span_add(t, spans, range.syntax_start + node->marker_primary_start,
+            range.syntax_start + node->marker_tail_end);
+        if (result != XUI_OK) return result;
+    }
+    for (i = 0; i < doc_seq_size(node->children); i++) {
+        result = doc_md_quote_child_prefixes(t, doc_index_get(t->draft->index,
+            doc_seq_get_id(node->children, i)), excluded, spans, depth + 1);
+        if (result != XUI_OK) return result;
+    }
+    return XUI_OK;
+}
+static int doc_md_prefix_span_compare(const void* left, const void* right)
+{
+    const doc_md_prefix_span *a = left, *b = right;
+    return a->start < b->start ? -1 : a->start > b->start ? 1 : a->end < b->end ? -1 : a->end > b->end;
+}
+
+/* A prefix edit inside one resolved footnote changes that definition's body.
+ * Its ordered identity/label and every other definition still must match.
+ * The sparse prefix proof bounds the changed bytes; the complete desired
+ * semantic tree independently checks the newly parsed body before publish. */
+static int doc_md_unwrap_references(xui_document_transaction t, doc_node* quote,
+    doc_state* actual, int* equal)
+{
+    doc_state* old = t->draft;
+    doc_node* owner = doc_index_get(old->index, quote->parent);
+    doc_node_source_range range;
+    uint64_t count, i; int found = 0, result;
+    *equal = 0;
+    for (; owner && owner->id != DOC_ROOT && owner->kind != XUI_DOC_FOOTNOTE;
+        owner = doc_index_get(old->index, owner->parent)) {}
+    if (!owner || owner->kind != XUI_DOC_FOOTNOTE)
+        return doc_md_reference_values_equal(t, old, actual, equal);
+    doc_node_source_range_get(old, owner, &range);
+    if (range.syntax_start == DOC_NONE || range.syntax_end == DOC_NONE)
+        return XUI_OK;
+    count = doc_seq_size(old->reference_values);
+    if (doc_seq_size(old->references) % sizeof(xui_doc_reference_definition_t) ||
+        doc_seq_size(actual->references) % sizeof(xui_doc_reference_definition_t) ||
+        count != doc_seq_size(old->references) / sizeof(xui_doc_reference_definition_t) ||
+        doc_seq_size(actual->reference_values) != doc_seq_size(actual->references) / sizeof(xui_doc_reference_definition_t))
+        return XUI_DOC_ERROR_SCHEMA;
+    if (count != doc_seq_size(actual->reference_values)) return XUI_OK;
+    for (i = 0; i < count; i++) {
+        xui_doc_reference_definition_t a, b;
+        doc_sequence *left = doc_seq_get_value_item(old->reference_values, i),
+            *right = doc_seq_get_value_item(actual->reference_values, i);
+        uint64_t kind = doc_seq_get_id(old->reference_values, i), at, end;
+        result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+        if (doc_seq_read(old->references, i * sizeof(a), &a, sizeof(a)) != XUI_OK ||
+            doc_seq_read(actual->references, i * sizeof(b), &b, sizeof(b)) != XUI_OK ||
+            !left || !right || doc_seq_size(left) < 4 * sizeof(uint64_t) || doc_seq_size(right) < 4 * sizeof(uint64_t) ||
+            (kind != XUI_DOC_REFERENCE_LINK && kind != XUI_DOC_REFERENCE_FOOTNOTE) ||
+            kind != a.iKind || b.iKind != doc_seq_get_id(actual->reference_values, i)) return XUI_DOC_ERROR_SCHEMA;
+        if (a.iKind != b.iKind) return XUI_OK;
+        at = 0; end = doc_seq_size(left);
+        if (kind == XUI_DOC_REFERENCE_FOOTNOTE && a.iSourceStart == range.syntax_start && a.iSourceEnd == range.syntax_end) {
+            uint64_t lh[4], rh[4];
+            if (doc_seq_read(left, 0, lh, sizeof(lh)) != XUI_OK || doc_seq_read(right, 0, rh, sizeof(rh)) != XUI_OK)
+                return XUI_DOC_ERROR_SCHEMA;
+            if (lh[0] > doc_seq_size(left) - sizeof(lh) || rh[0] > doc_seq_size(right) - sizeof(rh) ||
+                lh[1] != doc_seq_size(left) - sizeof(lh) - lh[0] || rh[1] != doc_seq_size(right) - sizeof(rh) - rh[0] ||
+                lh[2] || rh[2] || lh[3] || rh[3]) return XUI_DOC_ERROR_SCHEMA;
+            if (found || lh[0] != rh[0] ||
+                !doc_md_source_spelling_equal(old->source, a.iSourceStart, a.iLabelEnd,
+                    actual->source, b.iSourceStart, b.iLabelEnd)) return XUI_OK;
+            found = 1; at = sizeof(lh); end = at + lh[0];
+        } else if (doc_seq_size(left) != doc_seq_size(right)) return XUI_OK;
+        if (left == right) continue;
+        while (at < end) {
+            uint64_t bytes = end - at > 16384 ? 16384 : end - at;
+            result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+            {
+                char a_bytes[16384], b_bytes[16384];
+                if (doc_seq_read(left, at, a_bytes, bytes) != XUI_OK || doc_seq_read(right, at, b_bytes, bytes) != XUI_OK)
+                    return XUI_DOC_ERROR_SCHEMA;
+                if (memcmp(a_bytes, b_bytes, (size_t)bytes)) return XUI_OK;
+            }
+            at += bytes;
+        }
+    }
+    *equal = found;
+    return XUI_OK;
+}
+
+/* A separator continues the enclosing containers without starting another
+ * list item. Every non-whitespace byte must be a recorded ancestor marker:
+ * quote markers remain '>', while list/task markers become equal-width spaces. */
+static int doc_md_unwrap_parent_marker(doc_state* state, doc_node* quote, uint64_t at)
+{
+    doc_node* parent = doc_index_get(state->index, quote->parent);
+    for (; parent && parent->id != DOC_ROOT; parent = doc_index_get(state->index, parent->parent)) {
+        doc_node_source_range range;
+        doc_node_source_range_get(state, parent, &range);
+        if (range.syntax_start == DOC_NONE || at < range.syntax_start) continue;
+        if (parent->kind == XUI_DOC_QUOTE && parent->marker_kind == XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN) {
+            uint64_t relative = at - range.syntax_start, lo = 0;
+            uint64_t hi = parent->quote_prefixes ? parent->quote_prefixes->size / sizeof(uint32_t) : 0;
+            if (relative == parent->marker_primary_start) return 1;
+            while (lo < hi) {
+                uint64_t mid = lo + (hi - lo) / 2; uint32_t value;
+                memcpy(&value, parent->quote_prefixes->data + mid * sizeof(value), sizeof(value));
+                if (value < relative) lo = mid + 1; else hi = mid;
+            }
+            if (parent->quote_prefixes && lo < parent->quote_prefixes->size / sizeof(uint32_t)) {
+                uint32_t value; memcpy(&value, parent->quote_prefixes->data + lo * sizeof(value), sizeof(value));
+                if (value == relative) return 1;
+            }
+        } else if (parent->kind == XUI_DOC_FOOTNOTE) {
+            uint64_t i;
+            for (i = 0; i < doc_seq_size(state->references); i += sizeof(xui_doc_reference_definition_t)) {
+                xui_doc_reference_definition_t ref;
+                if (doc_seq_read(state->references, i, &ref, sizeof(ref)) != XUI_OK) return 0;
+                if (ref.iKind == XUI_DOC_REFERENCE_FOOTNOTE && ref.iSourceStart == range.syntax_start &&
+                    ref.iSourceEnd == range.syntax_end && ref.iLabelStart >= 2 &&
+                    at >= ref.iLabelStart - 2 && at < ref.iLabelEnd + 2) return 2;
+            }
+        } else if (parent->kind == XUI_DOC_LIST_ITEM && parent->marker_kind == XUI_DOC_BLOCK_SYNTAX_LIST_ITEM) {
+            uint64_t relative = at - range.syntax_start;
+            if ((relative >= parent->marker_primary_start && relative < parent->marker_primary_end) ||
+                (relative >= parent->marker_secondary_start && relative < parent->marker_secondary_end)) return 2;
+        }
+    }
+    return 0;
+}
+static int doc_md_unwrap_separators(xui_document_transaction t, doc_node* quote,
+    uint64_t start, uint64_t cut, unsigned tab_left, uint64_t end,
+    const char* source, doc_md_output* front, doc_md_output* back, uint64_t* front_at)
+{
+    doc_md_output prefix = {0}; uint64_t i, bom = 0;
+    const char* front_eol = "\n", *back_eol = "\n"; uint64_t front_bytes = 1, back_bytes = 1;
+    int result = XUI_OK;
+    prefix.allocator = front->allocator = back->allocator = t->draft->allocator;
+    if (!start && end >= 3 && !memcmp(source, "\xef\xbb\xbf", 3)) bom = 3;
+    if (cut < start + bom) return XUI_ERROR_NOT_FOUND;
+    for (i = start + bom; i < cut; i++) {
+        char ch = source[i - start];
+        result = doc_txn_check(t, 0); if (result != XUI_OK) goto done;
+        if (ch != ' ' && ch != '\t') {
+            int kind = doc_md_unwrap_parent_marker(t->draft, quote, i);
+            if (kind == 1 && ch == '>') {}
+            else if (kind == 2 && (unsigned char)ch < 128) ch = ' ';
+            else { result = XUI_ERROR_NOT_FOUND; goto done; }
+        }
+        doc_md_write(&prefix, &ch, 1);
+    }
+    if (tab_left) doc_md_write(&prefix, "   ", tab_left);
+    if (prefix.error) { result = prefix.error; goto done; }
+    /* Preserve all old line endings. New blanks use the corresponding edge's
+     * local ending, including lone CR and mixed-ending documents. */
+    for (i = 0; i < end - start; i++) {
+        if (!(i & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+        if (source[i] == '\r' || source[i] == '\n') {
+            front_eol = source + i; front_bytes = source[i] == '\r' && i + 1 < end - start && source[i + 1] == '\n' ? 2 : 1;
+            break;
+        }
+    }
+    if (start) {
+        char previous[2];
+        result = doc_seq_read(t->draft->source, start - 1, previous, 1); if (result != XUI_OK) goto done;
+        if (previous[0] == '\r') { front_eol = "\r"; front_bytes = 1; }
+        else if (previous[0] == '\n') {
+            front_eol = "\n"; front_bytes = 1;
+            if (start >= 2) {
+                result = doc_seq_read(t->draft->source, start - 2, previous + 1, 1); if (result != XUI_OK) goto done;
+                if (previous[1] == '\r') { front_eol = "\r\n"; front_bytes = 2; }
+            }
+        }
+    }
+    back_eol = front_eol; back_bytes = front_bytes;
+    if (end > start && (source[end - start - 1] == '\r' || source[end - start - 1] == '\n')) {
+        back_eol = source + end - start - 1; back_bytes = 1;
+        if (source[end - start - 1] == '\n' && end - start > 1 && source[end - start - 2] == '\r') {
+            back_eol--; back_bytes = 2;
+        }
+    } else doc_md_write(back, back_eol, back_bytes);
+    doc_md_write(front, prefix.data, prefix.size); doc_md_write(front, front_eol, front_bytes);
+    doc_md_write(back, prefix.data, prefix.size); doc_md_write(back, back_eol, back_bytes);
+    *front_at = start + bom;
+    result = front->error ? front->error : back->error;
+done:
+    doc_free(prefix.data); return result;
+}
+/* Remove only the parser-confirmed indentation of one whole quote. Copy
+ * every child spelling and lazy continuation; split leading Tabs only when
+ * their logical width would change after the prefix is removed. */
+static int doc_md_unwrap_quote_source_patch(xui_document_transaction t, doc_state* desired,
+    const xui_doc_position_t* at)
+{
+    doc_node* quote = doc_index_get(t->draft->index, at->iNodeId);
+    doc_node_source_range range;
+    struct xui_doc_transaction_t candidate = {0}; doc_md_source_plan plan = {0};
+    doc_md_output output = {0}, front = {0}, back = {0}; doc_md_prefix_spans prefixes = {0}; char* source = NULL;
+    uint64_t start, end, source_size, count, i, cursor, prefix_cursor = 0, first_cut = 0, front_at = 0;
+    uint64_t header_end = 0, header_column = 0;
+    unsigned first_tab_left = 0, attempt; int result, equal, carry_prefix = 0;
+    for (; quote && quote->kind != XUI_DOC_QUOTE; quote = doc_index_get(t->draft->index, quote->parent)) {}
+    if (!quote || quote->marker_kind != XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN || !quote->syntax_aux ||
+        !quote->syntax_aux->size || quote->syntax_aux->size % sizeof(doc_quote_indent_relative))
+        return XUI_ERROR_NOT_FOUND;
+    count = quote->syntax_aux->size / sizeof(doc_quote_indent_relative);
+    doc_node_source_range_get(t->draft, quote, &range);
+    source_size = doc_seq_size(t->draft->source);
+    if (range.syntax_start == DOC_NONE || range.syntax_end == DOC_NONE ||
+        range.syntax_start >= range.syntax_end || range.syntax_end > source_size) return XUI_ERROR_NOT_FOUND;
+    start = range.syntax_start; end = range.syntax_end;
+    if (quote->info && quote->info->size) {
+        if (!quote->marker_secondary_end || quote->marker_secondary_start < quote->marker_primary_end ||
+            quote->marker_tail_end < quote->marker_secondary_end || quote->marker_tail_end > end - start)
+            return XUI_ERROR_NOT_FOUND;
+        header_end = range.syntax_start + quote->marker_tail_end;
+    }
+    while (start) {
+        char previous;
+        result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+        result = doc_seq_read(t->draft->source, start - 1, &previous, 1); if (result != XUI_OK) return result;
+        if (previous == '\r' || previous == '\n') break;
+        start--;
+    }
+    /* Explicit empty quote lines can follow the last child's syntax range. */
+    for (i = 0; i < count; i++) {
+        doc_quote_indent_relative record;
+        memcpy(&record, quote->syntax_aux->data + i * sizeof(record), sizeof(record));
+        if (record.end > source_size - range.syntax_start) return XUI_DOC_ERROR_FORMAT;
+        if (range.syntax_start + record.end > end) end = range.syntax_start + record.end;
+    }
+    if (end - start >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
+    result = doc_md_quote_child_prefixes(t, quote, quote->id, &prefixes, 0);
+    if (result != XUI_OK) goto done;
+    if (prefixes.count) qsort(prefixes.data, (size_t)prefixes.count, sizeof(*prefixes.data), doc_md_prefix_span_compare);
+    source = doc_alloc(t->draft->allocator, (size_t)(end - start) + 1);
+    if (!source) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    result = doc_seq_read(t->draft->source, start, source, end - start);
+    if (result != XUI_OK) goto done;
+    source[end - start] = 0; cursor = start;
+    output.allocator = t->draft->allocator; output.plan = &plan;
+    for (i = 0; i < count; i++) {
+        doc_quote_indent_relative record;
+        uint64_t marker, indent_end, line, p, column = 0, marker_column, target, cut, old_column, new_column;
+        unsigned tab_left = 0;
+        result = doc_txn_check(t, 0); if (result != XUI_OK) goto done;
+        memcpy(&record, quote->syntax_aux->data + i * sizeof(record), sizeof(record));
+        marker = range.syntax_start + record.marker; indent_end = range.syntax_start + record.end;
+        if (marker < cursor || marker >= indent_end || indent_end > end || source[marker - start] != '>') {
+            result = XUI_DOC_ERROR_FORMAT; goto done;
+        }
+        line = marker;
+        while (line > start && source[line - 1 - start] != '\r' && source[line - 1 - start] != '\n') {
+            if (!(line & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+            line--;
+        }
+        if (!line && end >= 3 && !memcmp(source, "\xef\xbb\xbf", 3)) line = 3;
+        for (p = line; p < marker; p++) {
+            if (!(p & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+            column = source[p - start] == '\t' ? (column + 4) & ~(uint64_t)3 : column + 1;
+        }
+        marker_column = column;
+        if (column < record.marker_column || record.start_column > record.marker_column ||
+            record.content_column <= record.marker_column || record.content_column > record.end_column) {
+            result = XUI_DOC_ERROR_FORMAT; goto done;
+        }
+        target = column - record.marker_column + record.start_column;
+        column = 0; cut = line;
+        while (cut < marker && column < target) {
+            uint64_t width = source[cut - start] == '\t' ? 4 - column % 4 : 1;
+            if (width > target - column) { tab_left = (unsigned)(target - column); break; }
+            column += width; cut++;
+        }
+        if (cut < cursor || column + tab_left != target) { result = XUI_ERROR_NOT_FOUND; goto done; }
+        if (!i) { first_cut = cut; first_tab_left = tab_left; }
+        for (p = cut; p < marker; p++) if (source[p - start] != ' ' && source[p - start] != '\t') {
+            result = XUI_ERROR_NOT_FOUND; goto done;
+        }
+        if (!i && header_end) {
+            /* The header is owned syntax, not a child paragraph. Remove its
+             * entire line. A list item opener on that line must survive and
+             * becomes the first body's prefix; other ancestors continue on
+             * the body's existing line. Never copy the normalized type. */
+            if (header_end < indent_end || header_end > end) { result = XUI_DOC_ERROR_FORMAT; goto done; }
+            for (p = start; p < cut; p++) {
+                if (!(p & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+                if (doc_md_unwrap_parent_marker(t->draft, quote, p) == 2) carry_prefix = 1;
+            }
+            if (count == 1 && quote->parent != DOC_ROOT) carry_prefix = 1;
+            if (carry_prefix) {
+                doc_md_copy_source(&output, source + cursor - start, cursor, cut - cursor);
+                if (tab_left) doc_md_write(&output, "   ", tab_left);
+                header_column = target;
+            } else if (!start && end >= 3 && !memcmp(source, "\xef\xbb\xbf", 3)) {
+                doc_md_copy_source(&output, source, 0, 3);
+            }
+            cursor = header_end;
+            if (output.error) { result = output.error; goto done; }
+            continue;
+        }
+        if (!carry_prefix) {
+            doc_md_copy_source(&output, source + cursor - start, cursor, cut - cursor);
+            if (tab_left) doc_md_write(&output, "   ", tab_left);
+        }
+        old_column = marker_column + 1; new_column = carry_prefix ? header_column : target;
+        carry_prefix = 0;
+        /* The physical line may start before a dedented parser input. */
+        target = marker_column - record.marker_column + record.content_column;
+        for (p = marker + 1; p < indent_end; p++) {
+            char ch = source[p - start]; uint64_t width, kept;
+            if (!(p & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+            if (ch != ' ' && ch != '\t') { result = XUI_DOC_ERROR_FORMAT; goto done; }
+            width = ch == '\t' ? 4 - old_column % 4 : 1;
+            kept = old_column + width > target ? old_column + width - (old_column > target ? old_column : target) : 0;
+            if (kept) {
+                if (kept == width && (ch != '\t' || width == 4 - new_column % 4))
+                    doc_md_copy_source(&output, source + p - start, p, 1);
+                else doc_md_write(&output, "    ", kept);
+                new_column += kept;
+            }
+            old_column += width;
+        }
+        if (old_column != marker_column - record.marker_column + record.end_column) {
+            result = XUI_ERROR_NOT_FOUND; goto done;
+        }
+        {
+            uint64_t extended = indent_end;
+            while (prefix_cursor < prefixes.count && prefixes.data[prefix_cursor].start <= extended) {
+                if (prefixes.data[prefix_cursor].end > extended) extended = prefixes.data[prefix_cursor].end;
+                prefix_cursor++;
+            }
+            if (extended > end) { result = XUI_DOC_ERROR_FORMAT; goto done; }
+            for (p = indent_end; p < extended; p++) {
+                char ch = source[p - start]; uint64_t width = ch == '\t' ? 4 - old_column % 4 : 1;
+                if (!(p & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+                if (ch == '\r' || ch == '\n') { result = XUI_DOC_ERROR_FORMAT; goto done; }
+                if (ch == '\t' && width != 4 - new_column % 4) doc_md_write(&output, "    ", width);
+                else doc_md_copy_source(&output, source + p - start, p, 1);
+                old_column += width; new_column += width;
+            }
+            indent_end = extended;
+        }
+        cursor = indent_end;
+        if (output.error) { result = output.error; goto done; }
+    }
+    if (carry_prefix) {
+        uint64_t ending = header_end;
+        if (ending > start && source[ending - 1 - start] == '\n') ending--;
+        if (ending > start && source[ending - 1 - start] == '\r') ending--;
+        doc_md_copy_source(&output, source + ending - start, ending, header_end - ending);
+    }
+    doc_md_copy_source(&output, source + cursor - start, cursor, end - cursor);
+    result = output.error;
+    /* Try the original minimal prefix patch first. If its semantics merge
+     * blocks, try the two edge separators independently and then together.
+     * Each attempt starts from the same committed draft and is fully parsed;
+     * never accept changed definitions or publish a failed attempt. */
+    for (attempt = 0; result == XUI_OK && attempt < 4; attempt++) {
+        result = doc_markdown_shadow_begin(t, &candidate);
+        if (result == XUI_OK && (attempt & 2)) result = doc_txn_source_patch(&candidate, end, end, back.data, back.size, 0);
+        if (result == XUI_OK) result = doc_md_apply_source_plan(&candidate, start, end, &output, 0);
+        if (result == XUI_OK && (attempt & 1)) result = doc_txn_source_patch(&candidate, front_at, front_at, front.data, front.size, 0);
+        if (result == XUI_OK) result = doc_markdown_parse(&candidate);
+        if (result == XUI_OK) result = doc_md_unwrap_references(t, quote, candidate.draft, &equal);
+        if (result != XUI_OK) break;
+        if (!equal) { result = XUI_ERROR_NOT_FOUND; break; }
+        if (doc_semantic_equal(desired, candidate.draft)) break;
+        doc_state_release(candidate.draft); doc_free(candidate.ops); memset(&candidate, 0, sizeof(candidate));
+        if (attempt == 3) { result = XUI_ERROR_NOT_FOUND; break; }
+        if (!attempt) result = doc_md_unwrap_separators(t, quote, start, first_cut, first_tab_left,
+            end, source, &front, &back, &front_at);
+    }
+    if (result == XUI_OK) {
+        for (i = 0; i < candidate.count && result == XUI_OK; i++) result = doc_txn_op(t, &candidate.ops[i]);
+        if (result == XUI_OK) {
+            doc_state_release(t->draft); t->draft = candidate.draft;
+            candidate.draft = NULL; t->parse_op_start = t->count;
+        }
+    }
+done:
+    doc_state_release(candidate.draft); doc_free(candidate.ops);
+    doc_free(source); doc_free(output.data); doc_free(plan.copies); doc_free(prefixes.data);
+    doc_free(front.data); doc_free(back.data); return result;
+}
+typedef struct doc_md_unlist_source_item {
+    doc_node* node;
+    doc_node_source_range range;
+    uint64_t start, end;
+    int empty;
+} doc_md_unlist_source_item;
+typedef struct doc_md_unlist_source_items {
+    doc_md_unlist_source_item* data;
+    uint64_t count, capacity;
+} doc_md_unlist_source_items;
+
+/* Recognize the semantic operation, rather than guessing it from text: each
+ * deleted item must promote its unchanged child subtrees to its list parent.
+ * The complete desired tree is independently compared after parsing. */
+static int doc_md_unlist_collect(xui_document_transaction t, doc_state* desired,
+    doc_node* node, doc_md_unlist_source_items* items, unsigned depth)
+{
+    uint64_t i, child_count; int result = doc_txn_check(t, 0);
+    if (result != XUI_OK) return result;
+    if (!node || depth >= DOC_MAX_DEPTH) return XUI_DOC_ERROR_SCHEMA;
+    child_count = doc_seq_size(node->children);
+    if (node->kind == XUI_DOC_LIST_ITEM && !doc_index_get(desired->index, node->id)) {
+        doc_node* list = doc_index_get(t->draft->index, node->parent);
+        doc_md_unlist_source_item item = {0};
+        item.empty = 1;
+        if (!list || list->kind != XUI_DOC_LIST || !node->syntax_aux ||
+            node->syntax_aux->size != sizeof(doc_list_indent_relative) ||
+            (node->list_indents && node->list_indents->size % sizeof(doc_list_indent_relative)))
+            return XUI_ERROR_NOT_FOUND;
+        for (i = 0; i < child_count; i++) {
+            uint64_t id = doc_seq_get_id(node->children, i);
+            doc_node *before = doc_index_get(t->draft->index, id), *after = doc_index_get(desired->index, id);
+            if (doc_semantic_empty_paragraph(t->draft, before) && !after) continue;
+            item.empty = 0;
+            if (!after || after->parent != list->parent ||
+                !doc_semantic_subtree_equal(t->draft, id, desired, id)) return XUI_ERROR_NOT_FOUND;
+        }
+        item.node = node; doc_node_source_range_get(t->draft, node, &item.range);
+        if (item.range.syntax_start == DOC_NONE || item.range.syntax_end == DOC_NONE ||
+            item.range.syntax_start >= item.range.syntax_end ||
+            item.range.syntax_end > doc_seq_size(t->draft->source)) return XUI_ERROR_NOT_FOUND;
+        item.start = item.range.syntax_start; item.end = item.range.syntax_end;
+        if (item.empty && item.end < doc_seq_size(t->draft->source)) {
+            char ch;
+            result = doc_seq_read(t->draft->source, item.end, &ch, 1); if (result != XUI_OK) return result;
+            if (ch == '\r' || ch == '\n') {
+                item.end++;
+                if (ch == '\r' && item.end < doc_seq_size(t->draft->source)) {
+                    result = doc_seq_read(t->draft->source, item.end, &ch, 1); if (result != XUI_OK) return result;
+                    if (ch == '\n') item.end++;
+                }
+            }
+        }
+        while (item.start) {
+            char ch;
+            result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+            result = doc_seq_read(t->draft->source, item.start - 1, &ch, 1); if (result != XUI_OK) return result;
+            if (ch == '\r' || ch == '\n') break;
+            item.start--;
+        }
+        if (items->count == items->capacity) {
+            uint64_t capacity = items->capacity ? items->capacity * 2 : 16;
+            doc_md_unlist_source_item* next;
+            if (capacity < items->capacity || capacity > SIZE_MAX / sizeof(*next)) return XUI_DOC_ERROR_LIMIT;
+            next = doc_realloc(t->draft->allocator, items->data, (size_t)capacity * sizeof(*next));
+            if (!next) return XUI_ERROR_OUT_OF_MEMORY;
+            items->data = next; items->capacity = capacity;
+        }
+        items->data[items->count++] = item;
+        return XUI_OK;
+    }
+    for (i = 0; i < child_count; i++) {
+        result = doc_md_unlist_collect(t, desired, doc_index_get(t->draft->index,
+            doc_seq_get_id(node->children, i)), items, depth + 1);
+        if (result != XUI_OK) return result;
+    }
+    return XUI_OK;
+}
+static int doc_md_unlist_item_compare(const void* left, const void* right)
+{
+    const doc_md_unlist_source_item *a = left, *b = right;
+    return a->start < b->start ? -1 : a->start > b->start;
+}
+
+/* A footnote opener can share the first item line, but subsequent body lines
+ * use four logical indentation columns rather than the label's byte width.
+ * Build inserted blank lines from the ancestor prefix before that opener. */
+static int doc_md_unlist_separators(xui_document_transaction t, doc_node* item,
+    uint64_t start, uint64_t cut, unsigned tab_left, uint64_t end,
+    const char* source, doc_md_output* front, doc_md_output* back, uint64_t* front_at)
+{
+    doc_node* owner = doc_index_get(t->draft->index, item->parent);
+    doc_node_source_range range; uint64_t i; int result, padding = 0;
+    for (; owner && owner->id != DOC_ROOT && owner->kind != XUI_DOC_FOOTNOTE;
+        owner = doc_index_get(t->draft->index, owner->parent)) {}
+    if (owner && owner->kind == XUI_DOC_FOOTNOTE) {
+        doc_node_source_range_get(t->draft, owner, &range);
+        for (i = 0; i < doc_seq_size(t->draft->references); i += sizeof(xui_doc_reference_definition_t)) {
+            xui_doc_reference_definition_t ref;
+            result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+            result = doc_seq_read(t->draft->references, i, &ref, sizeof(ref)); if (result != XUI_OK) return result;
+            if (ref.iKind == XUI_DOC_REFERENCE_FOOTNOTE && ref.iSourceStart == range.syntax_start &&
+                ref.iSourceEnd == range.syntax_end && ref.iLabelStart >= 2 &&
+                ref.iLabelStart - 2 >= start && ref.iLabelEnd + 2 <= cut) {
+                cut = ref.iLabelStart - 2; tab_left = 0; padding = 1; break;
+            }
+        }
+    }
+    result = doc_md_unwrap_separators(t, item, start, cut, tab_left, end, source, front, back, front_at);
+    if (result != XUI_OK || !padding) return result;
+    for (i = 0; i < 2; i++) {
+        doc_md_output *old = i ? back : front, padded = {0}; uint64_t eol = 1;
+        if (old->size >= 2 && old->data[old->size - 2] == '\r' && old->data[old->size - 1] == '\n') eol = 2;
+        padded.allocator = t->draft->allocator;
+        doc_md_write(&padded, old->data, old->size - eol); doc_md_write(&padded, "    ", 4);
+        doc_md_write(&padded, old->data + old->size - eol, eol);
+        doc_free(old->data); *old = padded;
+        if (old->error) return old->error;
+    }
+    return XUI_OK;
+}
+
+static int doc_md_unlist_boundary_blank(xui_document_transaction t, doc_node* item,
+    uint64_t at, int previous, int* blank)
+{
+    uint64_t size = doc_seq_size(t->draft->source); char ch; int result;
+    *blank = 1;
+    if (previous) {
+        if (!at) return XUI_OK;
+        result = doc_seq_read(t->draft->source, at - 1, &ch, 1); if (result != XUI_OK) return result;
+        if (ch == '\n') {
+            at--;
+            if (at) { result = doc_seq_read(t->draft->source, at - 1, &ch, 1); if (result != XUI_OK) return result; }
+        }
+        if (at && ch == '\r') at--;
+        while (at) {
+            result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+            result = doc_seq_read(t->draft->source, at - 1, &ch, 1); if (result != XUI_OK) return result;
+            if (ch == '\r' || ch == '\n') break;
+            if (ch != ' ' && ch != '\t' && !(ch == '>' && doc_md_unwrap_parent_marker(t->draft, item, at - 1) == 1)) {
+                *blank = 0; break;
+            }
+            at--;
+        }
+    } else {
+        while (at < size) {
+            result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+            result = doc_seq_read(t->draft->source, at, &ch, 1); if (result != XUI_OK) return result;
+            if (ch == '\r' || ch == '\n') break;
+            if (ch != ' ' && ch != '\t' && !(ch == '>' && doc_md_unwrap_parent_marker(t->draft, item, at) == 1)) {
+                *blank = 0; break;
+            }
+            at++;
+        }
+    }
+    return XUI_OK;
+}
+
+/* The output can already end in a separator added for the preceding selected
+ * item. Coalesce only new boundary blanks; retained source trivia stays copied. */
+static int doc_md_unlist_output_blank(const doc_md_output* output)
+{
+    uint64_t at = output->size;
+    if (!at || (output->data[at - 1] != '\r' && output->data[at - 1] != '\n')) return 0;
+    if (output->data[--at] == '\n' && at && output->data[at - 1] == '\r') at--;
+    while (at && output->data[at - 1] != '\r' && output->data[at - 1] != '\n') {
+        char ch = output->data[--at];
+        if (ch != ' ' && ch != '\t' && ch != '>') return 0;
+    }
+    return 1;
+}
+static int doc_md_unlist_body_blank(xui_document_transaction t, const doc_md_output* body, int* blank)
+{
+    uint64_t i; int result;
+    *blank = !!body->size;
+    for (i = 0; i < body->size; i++) {
+        char ch = body->data[i];
+        if (!(i & 16383)) { result = doc_txn_check(t, 0); if (result != XUI_OK) return result; }
+        if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n' && ch != '>') { *blank = 0; break; }
+    }
+    return XUI_OK;
+}
+static int doc_md_unlist_item_write(xui_document_transaction t,
+    const doc_md_unlist_source_item* item, const char* source, uint64_t source_base,
+    doc_md_output* output, uint64_t* first_cut, unsigned* first_tab_left)
+{
+    doc_node* node = item->node;
+    doc_md_prefix_spans prefixes = {0};
+    uint64_t count = 1 + (node->list_indents ? node->list_indents->size / sizeof(doc_list_indent_relative) : 0);
+    uint64_t i, cursor = item->start, prefix_cursor = 0; int result = XUI_OK, empty = item->empty;
+    if (empty) for (i = 0; i < doc_seq_size(t->draft->references); i += sizeof(xui_doc_reference_definition_t)) {
+        xui_doc_reference_definition_t ref;
+        result = doc_txn_check(t, 0); if (result != XUI_OK) goto done;
+        result = doc_seq_read(t->draft->references, i, &ref, sizeof(ref)); if (result != XUI_OK) goto done;
+        if (ref.iSourceStart >= item->range.syntax_start && ref.iSourceEnd <= item->range.syntax_end) { empty = 0; break; }
+    }
+    for (i = 0; i < doc_seq_size(node->children); i++) {
+        result = doc_md_quote_child_prefixes(t, doc_index_get(t->draft->index,
+            doc_seq_get_id(node->children, i)), node->id, &prefixes, 0);
+        if (result != XUI_OK) goto done;
+    }
+    if (prefixes.count) qsort(prefixes.data, (size_t)prefixes.count, sizeof(*prefixes.data), doc_md_prefix_span_compare);
+    for (i = 0; i < count; i++) {
+        doc_list_indent_relative record;
+        uint64_t beg, end, line, p, column = 0, delta, target, cut, content, old_column, new_column;
+        unsigned tab_left = 0;
+        result = doc_txn_check(t, 0); if (result != XUI_OK) goto done;
+        memcpy(&record, i ? node->list_indents->data + (i - 1) * sizeof(record) : node->syntax_aux->data, sizeof(record));
+        beg = item->range.syntax_start + record.start; end = item->range.syntax_start + record.end;
+        if (beg < cursor || beg >= end || end > item->end || record.start_column >= record.content_column ||
+            record.content_column > record.end_column) { result = XUI_ERROR_NOT_FOUND; goto done; }
+        line = beg;
+        while (line > item->start && source[line - 1 - source_base] != '\r' && source[line - 1 - source_base] != '\n') {
+            if (!(line & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+            line--;
+        }
+        if (!line && item->end >= 3 && !memcmp(source, "\xef\xbb\xbf", 3)) line = 3;
+        for (p = line; p < end; p++) {
+            if (!(p & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+            column = source[p - source_base] == '\t' ? (column + 4) & ~(uint64_t)3 : column + 1;
+        }
+        if (column < record.end_column) { result = XUI_ERROR_NOT_FOUND; goto done; }
+        delta = column - record.end_column;
+        target = delta + record.start_column; content = delta + record.content_column;
+        column = 0; cut = line;
+        while (cut < (i ? end : beg) && column < target) {
+            uint64_t width = source[cut - source_base] == '\t' ? 4 - column % 4 : 1;
+            if (width > target - column) { tab_left = (unsigned)(target - column); break; }
+            column += width; cut++;
+        }
+        if (cut < cursor || column + tab_left != target) { result = XUI_ERROR_NOT_FOUND; goto done; }
+        for (p = cut; p < beg; p++) if (source[p - source_base] != ' ' && source[p - source_base] != '\t') {
+            result = XUI_ERROR_NOT_FOUND; goto done;
+        }
+        if (!i) { *first_cut = cut; *first_tab_left = tab_left; }
+        doc_md_copy_source(output, source + cursor - source_base, cursor, cut - cursor);
+        if (tab_left) doc_md_write(output, "   ", tab_left);
+        if (empty) {
+            /* An item with no body/definitions owns its otherwise empty line.
+             * Retain enclosing markers and BOM, but do not leave root trivia
+             * in place of a deleted empty structural block. */
+            if (cut > line || tab_left) {
+                uint64_t eol = end;
+                while (eol < item->end && source[eol - source_base] != '\r' && source[eol - source_base] != '\n') eol++;
+                if (eol < item->end) {
+                    uint64_t bytes = source[eol - source_base] == '\r' && eol + 1 < item->end && source[eol + 1 - source_base] == '\n' ? 2 : 1;
+                    doc_md_copy_source(output, source + eol - source_base, eol, bytes);
+                }
+            }
+            result = output->error; goto done;
+        }
+        new_column = target; old_column = column;
+        p = cut;
+        if (!i) {
+            p = item->range.syntax_start + (node->marker_secondary_end ? node->marker_secondary_end : node->marker_primary_end);
+            if (p > end) { result = XUI_ERROR_NOT_FOUND; goto done; }
+            old_column = 0;
+            for (uint64_t k = line; k < p; k++) {
+                if (!(k & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+                old_column = source[k - source_base] == '\t' ? (old_column + 4) & ~(uint64_t)3 : old_column + 1;
+            }
+        }
+        for (; p < end; p++) {
+            char ch = source[p - source_base]; uint64_t width, kept;
+            if (!(p & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+            if (ch != ' ' && ch != '\t') { result = XUI_ERROR_NOT_FOUND; goto done; }
+            width = ch == '\t' ? 4 - old_column % 4 : 1;
+            kept = old_column + width > content ? old_column + width - (old_column > content ? old_column : content) : 0;
+            if (kept) {
+                if (kept == width && (ch != '\t' || width == 4 - new_column % 4))
+                    doc_md_copy_source(output, source + p - source_base, p, 1);
+                else doc_md_write(output, "    ", kept);
+                new_column += kept;
+            }
+            old_column += width;
+        }
+        if (old_column != delta + record.end_column) { result = XUI_ERROR_NOT_FOUND; goto done; }
+        {
+            uint64_t extended = end;
+            while (prefix_cursor < prefixes.count && prefixes.data[prefix_cursor].start <= extended) {
+                if (prefixes.data[prefix_cursor].end > extended) extended = prefixes.data[prefix_cursor].end;
+                prefix_cursor++;
+            }
+            if (extended > item->end) { result = XUI_ERROR_NOT_FOUND; goto done; }
+            for (p = end; p < extended; p++) {
+                char ch = source[p - source_base]; uint64_t width = ch == '\t' ? 4 - old_column % 4 : 1;
+                if (!(p & 16383u)) { result = doc_txn_check(t, 0); if (result != XUI_OK) goto done; }
+                if (ch == '\r' || ch == '\n') { result = XUI_ERROR_NOT_FOUND; goto done; }
+                if (ch == '\t' && width != 4 - new_column % 4) doc_md_write(output, "    ", width);
+                else doc_md_copy_source(output, source + p - source_base, p, 1);
+                old_column += width; new_column += width;
+            }
+            end = extended;
+        }
+        cursor = end;
+        if (output->error) { result = output->error; goto done; }
+    }
+    doc_md_copy_source(output, source + cursor - source_base, cursor, item->end - cursor);
+    result = output->error;
+done:
+    doc_free(prefixes.data); return result;
+}
+
+/* Surviving lists can become adjacent after several original containers
+ * disappear. Compare the final sibling wrappers, regardless of their old
+ * parents; only the later wrapper's parser-owned markers may change. */
+static int doc_md_unlist_empty_suffixes(xui_document_transaction t, doc_state* desired,
+    const doc_md_unlist_source_items* items, xui_document_transaction candidate)
+{
+    uint64_t i, previous_list = 0; int result;
+    for (i = items->count; i-- > 0;) {
+        doc_node *item = items->data[i].node, *list = doc_index_get(t->draft->index, item->parent);
+        uint64_t index = doc_child_index(list, item->id), j, suffix = index + 1, right_index;
+        doc_node *tail, *first, *parent, *left, *left_item;
+        doc_node_source_range range; uint64_t at; char replacement, marker, left_marker;
+        result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+        if (list->id == previous_list) continue;
+        previous_list = list->id;
+        if (suffix >= doc_seq_size(list->children)) continue;
+        first = doc_index_get(desired->index, doc_seq_get_id(list->children, suffix));
+        tail = first ? doc_index_get(desired->index, first->parent) : NULL;
+        if (!tail || tail->kind != XUI_DOC_LIST || tail->parent != list->parent ||
+            doc_child_index(tail, first->id) != 0) continue;
+        parent = doc_index_get(desired->index, tail->parent);
+        right_index = doc_child_index(parent, tail->id);
+        if (!right_index || right_index == DOC_NONE) continue;
+        left = doc_index_get(desired->index, doc_seq_get_id(parent->children, right_index - 1));
+        if (!left || left->kind != XUI_DOC_LIST || !doc_seq_size(left->children) ||
+            ((left->attrs->iFlags ^ tail->attrs->iFlags) & XUI_DOC_ORDERED)) continue;
+        left_item = doc_index_get(t->draft->index, doc_seq_get_id(left->children, 0));
+        first = doc_index_get(t->draft->index, first->id);
+        if (!first || !left_item || first->kind != XUI_DOC_LIST_ITEM || left_item->kind != XUI_DOC_LIST_ITEM)
+            return XUI_DOC_ERROR_UNREPRESENTABLE;
+        doc_node_source_range_get(t->draft, left_item, &range);
+        if (range.syntax_start == DOC_NONE || left_item->marker_primary_end <= left_item->marker_primary_start)
+            return XUI_DOC_ERROR_UNREPRESENTABLE;
+        at = range.syntax_start + left_item->marker_primary_end - 1;
+        result = doc_seq_read(t->draft->source, at, &left_marker, 1); if (result != XUI_OK) return result;
+        doc_node_source_range_get(t->draft, first, &range);
+        if (range.syntax_start == DOC_NONE || first->marker_primary_end <= first->marker_primary_start)
+            return XUI_DOC_ERROR_UNREPRESENTABLE;
+        at = range.syntax_start + first->marker_primary_end - 1;
+        result = doc_seq_read(t->draft->source, at, &marker, 1); if (result != XUI_OK) return result;
+        if (marker != left_marker) continue;
+        replacement = marker == '.' ? ')' : marker == ')' ? '.' : marker == '+' ? '-' : '+';
+        for (j = doc_seq_size(list->children); j-- > suffix;) {
+            doc_node* old = doc_index_get(t->draft->index, doc_seq_get_id(list->children, j));
+            doc_node* now = doc_index_get(desired->index, old->id); char ch;
+            result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
+            if (!now || now->parent != tail->id) return XUI_DOC_ERROR_UNREPRESENTABLE;
+            doc_node_source_range_get(t->draft, old, &range);
+            if (range.syntax_start == DOC_NONE || old->marker_primary_end <= old->marker_primary_start)
+                return XUI_DOC_ERROR_UNREPRESENTABLE;
+            at = range.syntax_start + old->marker_primary_end - 1;
+            result = doc_seq_read(t->draft->source, at, &ch, 1); if (result != XUI_OK) return result;
+            if (ch != marker) return XUI_DOC_ERROR_UNREPRESENTABLE;
+            result = doc_txn_source_patch(candidate, at, at + 1, &replacement, 1, 0); if (result != XUI_OK) return result;
+        }
+    }
+    return XUI_OK;
+}
+
+/* Tightness is derived from the remaining Markdown, including blank lines
+ * inside the items that survive. Unlisting the only loose item can make its
+ * head or suffix tight again. Normalize only wrappers affected by this
+ * promotion, then still require the complete requested semantic tree. */
+static int doc_md_unlist_list_affected(doc_state* old, const doc_node* list,
+    const doc_md_unlist_source_items* items, doc_state* desired)
+{
+    uint64_t i, j;
+    for (i = 0; i < items->count; i++) {
+        doc_node* ancestor = doc_index_get(old->index, items->data[i].node->parent);
+        for (; ancestor; ancestor = doc_index_get(old->index, ancestor->parent))
+            if (ancestor->id == list->id && ancestor->kind == XUI_DOC_LIST) return 1;
+        if (!doc_index_get(old->index, list->id) && doc_seq_size(list->children)) {
+            doc_node* original = doc_index_get(old->index, items->data[i].node->parent);
+            if (list->parent != original->parent) continue;
+            for (j = 0; j < doc_seq_size(list->children); j++) {
+                doc_node* child = doc_index_get(old->index, doc_seq_get_id(list->children, j));
+                if (!child || child->kind != XUI_DOC_LIST_ITEM || child->parent != original->id ||
+                    !doc_semantic_subtree_equal(old, child->id, desired, child->id)) break;
+            }
+            if (j == doc_seq_size(list->children)) return 1;
+        }
+    }
+    return 0;
+}
+static int doc_md_unlist_normalize_lists(xui_document_transaction t, xui_document_transaction shadow,
+    doc_state* actual, uint64_t desired_id, uint64_t actual_id, const doc_md_unlist_source_items* items, unsigned depth)
+{
+    doc_node* desired = doc_index_get(shadow->draft->index, desired_id);
+    doc_node* parsed = doc_index_get(actual->index, actual_id);
+    uint64_t i, children; int result = doc_txn_check(t, 0);
+    if (result != XUI_OK) return result;
+    if (depth >= DOC_MAX_DEPTH) return XUI_DOC_ERROR_LIMIT;
+    if (!desired || !parsed || desired->kind != parsed->kind) return XUI_ERROR_NOT_FOUND;
+    if (desired->kind == XUI_DOC_LIST && ((desired->attrs->iFlags ^ parsed->attrs->iFlags) & XUI_DOC_TIGHT)) {
+        xui_doc_attributes_t attrs;
+        if (!doc_md_unlist_list_affected(t->draft, desired, items, shadow->draft)) return XUI_ERROR_NOT_FOUND;
+        attrs = *desired->attrs;
+        attrs.iFlags = (attrs.iFlags & ~XUI_DOC_TIGHT) | (parsed->attrs->iFlags & XUI_DOC_TIGHT);
+        result = xuiDocumentTxnSetAttributes(shadow, desired_id, &attrs);
+        if (result != XUI_OK) return result;
+        desired = doc_index_get(shadow->draft->index, desired_id);
+    }
+    /* Inline segmentation need not match to reach the nested block wrappers.
+     * Full semantic equality below validates all inline data and attributes. */
+    if (desired->kind == XUI_DOC_PARAGRAPH || desired->kind == XUI_DOC_HEADING || doc_text_kind(desired->kind)) return XUI_OK;
+    children = doc_seq_size(desired->children);
+    if (children != doc_seq_size(parsed->children)) return XUI_ERROR_NOT_FOUND;
+    for (i = 0; i < children; i++) {
+        result = doc_md_unlist_normalize_lists(t, shadow, actual, doc_seq_get_id(desired->children, i),
+            doc_seq_get_id(parsed->children, i), items, depth + 1);
+        if (result != XUI_OK) return result;
+    }
+    return XUI_OK;
+}
+
+static int doc_md_unlist_source_patch(xui_document_transaction t, xui_document_transaction shadow)
+{
+    doc_state* desired = shadow->draft;
+    doc_md_unlist_source_items items = {0};
+    doc_md_source_plan plan = {0}; doc_md_output output = {0};
+    struct xui_doc_transaction_t candidate = {0};
+    char* source = NULL; uint64_t start, end, cursor, i; int result, equal;
+    result = doc_md_unlist_collect(t, desired, doc_index_get(t->draft->index, DOC_ROOT), &items, 0);
+    if (result != XUI_OK) goto done;
+    if (!items.count) { result = XUI_ERROR_NOT_FOUND; goto done; }
+    qsort(items.data, (size_t)items.count, sizeof(*items.data), doc_md_unlist_item_compare);
+    start = items.data[0].start; end = items.data[items.count - 1].end;
+    if (end <= start || end - start >= SIZE_MAX) { result = XUI_DOC_ERROR_LIMIT; goto done; }
+    source = doc_alloc(t->draft->allocator, (size_t)(end - start) + 1);
+    if (!source) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    result = doc_seq_read(t->draft->source, start, source, end - start); if (result != XUI_OK) goto done;
+    source[end - start] = 0; cursor = start; output.allocator = t->draft->allocator; output.plan = &plan;
+    for (i = 0; i < items.count; i++) {
+        doc_md_unlist_source_item* item = &items.data[i];
+        doc_node *list = doc_index_get(t->draft->index, item->node->parent),
+            *parent = doc_index_get(t->draft->index, list->parent);
+        doc_md_source_plan item_plan = {0};
+        doc_md_output body = {0}, front = {0}, back = {0};
+        uint64_t first_cut = 0, front_at = 0, index = doc_child_index(list, item->node->id);
+        uint64_t list_index = doc_child_index(parent, list->id);
+        unsigned tab_left = 0; int blank = 0, blank_body = 0;
+        if (item->start < cursor || index == DOC_NONE || list_index == DOC_NONE) { result = XUI_ERROR_NOT_FOUND; break; }
+        doc_md_copy_source(&output, source + cursor - start, cursor, item->start - cursor);
+        body.allocator = t->draft->allocator; body.plan = &item_plan;
+        result = doc_md_unlist_item_write(t, item, source, start, &body, &first_cut, &tab_left);
+        if (result == XUI_OK && item->empty) result = doc_md_unlist_body_blank(t, &body, &blank_body);
+        if (result == XUI_OK) result = doc_md_unlist_separators(t, item->node, item->start, first_cut,
+            tab_left, item->end, source + item->start - start, &front, &back, &front_at);
+        if (result == XUI_OK && (index || list_index) &&
+            !(i && items.data[i - 1].node->parent == item->node->parent &&
+                doc_child_index(list, items.data[i - 1].node->id) + 1 == index)) {
+            result = doc_md_unlist_boundary_blank(t, item->node, item->start, 1, &blank);
+            if (result == XUI_OK && !blank && !doc_md_unlist_output_blank(&output) &&
+                !blank_body) doc_md_write(&output, front.data, front.size);
+        }
+        if (result == XUI_OK) {
+            uint64_t at = 0, p;
+            for (p = 0; p < item_plan.count; p++) {
+                doc_md_source_copy* copy = &item_plan.copies[p];
+                doc_md_write(&output, body.data + at, copy->output - at);
+                doc_md_copy_source(&output, body.data + copy->output, copy->source, copy->bytes);
+                at = copy->output + copy->bytes;
+            }
+            doc_md_write(&output, body.data ? body.data + at : "", body.size - at);
+        }
+        if (result == XUI_OK && body.size && !doc_md_unlist_output_blank(&output) &&
+            (index + 1 < doc_seq_size(list->children) || list_index + 1 < doc_seq_size(parent->children))) {
+            result = doc_md_unlist_boundary_blank(t, item->node, item->end, 1, &blank);
+            if (result == XUI_OK && !blank) result = doc_md_unlist_boundary_blank(t, item->node, item->end, 0, &blank);
+            if (result == XUI_OK && !blank) doc_md_write(&output, back.data, back.size);
+        }
+        doc_free(body.data); doc_free(item_plan.copies); doc_free(front.data); doc_free(back.data);
+        if (result != XUI_OK) break;
+        cursor = item->end;
+    }
+    if (result == XUI_OK) doc_md_copy_source(&output, source + cursor - start, cursor, end - cursor);
+    if (result == XUI_OK) result = output.error;
+    if (result == XUI_OK) result = doc_markdown_shadow_begin(t, &candidate);
+    if (result == XUI_OK) result = doc_md_unlist_empty_suffixes(t, desired, &items, &candidate);
+    if (result == XUI_OK) result = doc_md_apply_source_plan(&candidate, start, end, &output, 0);
+    if (result == XUI_OK) result = doc_markdown_parse(&candidate);
+    if (result == XUI_OK) result = doc_md_unlist_normalize_lists(t, shadow, candidate.draft,
+        DOC_ROOT, DOC_ROOT, &items, 0);
+    if (result == XUI_OK) result = doc_md_unwrap_references(t, items.data[0].node, candidate.draft, &equal);
+    if (result == XUI_OK && (!equal || !doc_semantic_equal(desired, candidate.draft))) result = XUI_ERROR_NOT_FOUND;
+    if (result == XUI_OK) {
+        for (i = 0; i < candidate.count && result == XUI_OK; i++) result = doc_txn_op(t, &candidate.ops[i]);
+        if (result == XUI_OK) { doc_state_release(t->draft); t->draft = candidate.draft; candidate.draft = NULL; t->parse_op_start = t->count; }
+    }
+done:
+    /* Once promotion has been recognized, an unproven source candidate must
+     * not fall through to canonical whole-container serialization. */
+    if (result == XUI_ERROR_NOT_FOUND && items.count) result = XUI_DOC_ERROR_UNREPRESENTABLE;
+    doc_state_release(candidate.draft); doc_free(candidate.ops);
+    doc_free(items.data); doc_free(source); doc_free(output.data); doc_free(plan.copies); return result;
+}
+
+int doc_markdown_shadow_end_unwrap_quote(xui_document_transaction t,
+    struct xui_doc_transaction_t* shadow, int result, const xui_doc_position_t* at,
+    const xui_doc_position_t* target, xui_doc_position_t* caret)
+{
+    if (result == XUI_OK && shadow->count) {
+        result = doc_md_unwrap_quote_source_patch(t, shadow->draft, at);
+        if (result == XUI_ERROR_NOT_FOUND) result = doc_markdown_apply_tree(t, shadow->draft, NULL, NULL);
+        if (result == XUI_OK) result = doc_markdown_accept(t, shadow);
+    }
+    if (result == XUI_OK && target && caret) *caret = doc_markdown_resolve_caret(t, shadow->draft, *target);
+    doc_state_release(shadow->draft); doc_free(shadow->ops);
+    return result == XUI_OK ? result : doc_txn_fail(t, result);
+}
 int doc_markdown_shadow_end(xui_document_transaction t, struct xui_doc_transaction_t* shadow, int result,
     const xui_doc_position_t* target, xui_doc_position_t* caret)
 {
@@ -4710,11 +5814,11 @@ static int doc_md_quote_source_extent(xui_document_transaction t, doc_state* des
  * Preserve every existing byte in the selected span rather than regenerating
  * visible nodes and trying to reconstruct source-only definitions afterward.
  * A private complete parse must match both the desired tree and all ordered
- * link-definition values, including unused duplicates and multiline titles. */
+ * definition values, including unused duplicates and dedented footnote bodies. */
 static int doc_markdown_quote_range_source_patch(xui_document_transaction t,
     struct xui_doc_transaction_t* shadow, uint64_t quote_id)
 {
-    struct xui_doc_transaction_t candidate = {0}; doc_md_output output = {0};
+    struct xui_doc_transaction_t candidate = {0}; doc_md_output output = {0}; doc_md_source_plan source_plan = {0};
     doc_node* quote = doc_index_get(shadow->draft->index, quote_id);
     doc_state* old = t->draft; char* source = NULL;
     uint64_t start = DOC_NONE, end = 0, i, at, bytes, source_size;
@@ -4744,11 +5848,12 @@ static int doc_markdown_quote_range_source_patch(xui_document_transaction t,
         result = doc_txn_check(t, 0); if (result != XUI_OK) return result;
         result = doc_seq_read(old->references, i, &ref, sizeof(ref));
         if (result != XUI_OK) return result;
-        /* Used footnotes have visible bodies; unused bodies need a dedicated
-         * provenance comparison before moving their container prefixes. */
+        /* Never move a partial definition. Complete footnotes also have
+         * parser-confirmed body values, including definitions not emitted. */
         if (ref.iSourceStart < end && ref.iSourceEnd > start &&
             (ref.iSourceStart < start || ref.iSourceEnd > end ||
-                ref.iKind != XUI_DOC_REFERENCE_LINK)) return XUI_ERROR_NOT_FOUND;
+                (ref.iKind != XUI_DOC_REFERENCE_LINK &&
+                 ref.iKind != XUI_DOC_REFERENCE_FOOTNOTE))) return XUI_ERROR_NOT_FOUND;
     }
     bytes = end - start;
     source = doc_alloc(t->document->allocator, (size_t)bytes + 1);
@@ -4761,6 +5866,10 @@ static int doc_markdown_quote_range_source_patch(xui_document_transaction t,
         ending = "\r\n"; ending_bytes = 2;
     }
     output.allocator = t->document->allocator;
+    output.plan = &source_plan;
+    unsigned quote_padding;
+    result = doc_md_quote_tab_padding(t, source, 0, 0, bytes, &quote_padding);
+    if (result != XUI_OK) goto done;
     if (start && !bom_start)
         doc_md_write(&output, ending, ending_bytes);
     for (at = 0; at < bytes;) {
@@ -4773,8 +5882,8 @@ static int doc_markdown_quote_range_source_patch(xui_document_transaction t,
             next++;
         }
         if (next < bytes && source[next++] == '\r' && next < bytes && source[next] == '\n') next++;
-        doc_md_write(&output, "> ", 2);
-        doc_md_write(&output, source + at, next - at);
+        doc_md_write(&output, quote_padding ? "  > " : "> ", 2 + quote_padding);
+        doc_md_copy_source(&output, source + at, start + at, next - at);
         at = next;
     }
     if (end < source_size) {
@@ -4783,7 +5892,7 @@ static int doc_markdown_quote_range_source_patch(xui_document_transaction t,
         doc_md_write(&output, ending, ending_bytes);
     }
     result = output.error ? output.error : doc_markdown_shadow_begin(t, &candidate);
-    if (result == XUI_OK) result = doc_txn_source_patch(&candidate, start, end, output.data, output.size, 0);
+    if (result == XUI_OK) result = doc_md_apply_source_plan(&candidate, start, end, &output, 0);
     if (result == XUI_OK) result = doc_markdown_parse(&candidate);
     if (result == XUI_OK) result = doc_md_reference_values_equal(t, old, candidate.draft, &equal);
     if (result == XUI_OK && (!equal || !doc_semantic_equal(shadow->draft, candidate.draft)))
@@ -4800,7 +5909,7 @@ static int doc_markdown_quote_range_source_patch(xui_document_transaction t,
     }
 done:
     doc_state_release(candidate.draft); doc_free(candidate.ops);
-    doc_free(source); doc_free(output.data); return result;
+    doc_free(source); doc_free(output.data); doc_free(source_plan.copies); return result;
 }
 int doc_markdown_shadow_end_quote_range(xui_document_transaction t,
     struct xui_doc_transaction_t* shadow, int result, uint64_t quote,
@@ -4823,7 +5932,8 @@ int doc_markdown_shadow_end_range(xui_document_transaction t, struct xui_doc_tra
     const xui_doc_range_t* target, xui_doc_range_t* after)
 {
     if (result == XUI_OK && shadow->count) {
-        result = doc_markdown_heading_marker_patch(t, shadow);
+        result = doc_md_unlist_source_patch(t, shadow);
+        if (result == XUI_ERROR_NOT_FOUND) result = doc_markdown_heading_marker_patch(t, shadow);
         if (result == XUI_ERROR_NOT_FOUND)
             result = doc_markdown_apply_tree(t, shadow->draft, NULL, NULL);
     }

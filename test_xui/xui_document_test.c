@@ -5550,7 +5550,7 @@ static void markdown_container_syntax_markers(void)
     d = test_markdown_open("> [!NOTE]\n> body\n");
     CHECK(xuiDocumentAcquireSnapshot(d, &current) == XUI_OK);
     quote = find_kind(current, 1, XUI_DOC_QUOTE);
-    expect_block_marker(current, quote, XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN, 0, ">", 0, NULL);
+    expect_block_marker(current, quote, XUI_DOC_BLOCK_SYNTAX_QUOTE_OPEN, 0, ">", 2, "[!NOTE]");
     xuiDocumentSnapshotRelease(current); xuiDocumentRelease(d);
     d = test_markdown_open("```\n- [x] literal\n> literal\n```\n");
     CHECK(xuiDocumentAcquireSnapshot(d, &current) == XUI_OK);

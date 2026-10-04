@@ -349,6 +349,7 @@ static void prefix_editor(void)
     puts("Quote prefix editor: 80 actual DLL Query/CanExecute/Execute, full reload, SOURCE/LIVE/VISUAL shared history cases");
 }
 #endif
+#ifndef XUI_QUOTE_PREFIX_NO_MAIN
 int main(void)
 {
     prefix_matrix(); prefix_depth_and_compound(); prefix_failures();
@@ -360,3 +361,4 @@ int main(void)
 #endif
     return 0;
 }
+#endif

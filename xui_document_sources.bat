@@ -15,3 +15,5 @@ set XUI_DOCUMENT_SRC=%XUI_DOCUMENT_SRC% src\xui_document_memory.c
 set XUI_DOCUMENT_SRC=%XUI_DOCUMENT_SRC% src\xui_document_prepare.c
 set XUI_DOCUMENT_SRC=%XUI_DOCUMENT_SRC% src\xui_document_publish.c
 set XUI_DOCUMENT_SRC=%XUI_DOCUMENT_SRC% src\xui_document_incremental.c
+
+set XUI_DOCUMENT_SRC=%XUI_DOCUMENT_SRC% src\xui_document_sequence_share.c

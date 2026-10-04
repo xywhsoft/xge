@@ -1,6 +1,13 @@
 # Document 重构实施与验证记录
 
-日期：2026-10-02。平台：本机 Windows x64，GCC 16.1.0，实际 XGE DLL 与 GPU 后端。
+## 全局依赖更新与 caret 解析（本批验收通过）
+
+本批 K2/K4 已正式接入复杂脚注、容器内定义与首次定义激活的共同增量路径，并修复未定义脚注提前消费 caret、将普通链接误认成 Wiki 链接的全文解析错误。264 个 SOURCE/Prepare/Continue/原生重载场景、18 个独立文字/图片预期、2,432 个边界编辑差分和四个 RUNNING Continue 场景通过；SOURCE 2,200 OOM、Prepare 2,269 OOM/2,210 取消点均保持原子与无泄漏，包含首次定义。完整 Core、定义共享、来源回收、普通/碰撞 sanitizer、三个 analyzer、无宏 MD4C 与 652 CommonMark 语料通过，候选 18 条命令实际退出 0。11 项正式输入落地；实际 DLL 13 条专项命令通过，旧 caret 最小复现的独立加载、SOURCE 与提交均恢复成功。176 项正式输入在完整验收期间保持不变；完整 Windows、Linux Core/Renderer/View、两种 Web 构建、五个浏览器及生产边界全部退出 0，24 条完整批次命令和三张实际截图已核对。仍有完整输入扫描与临时缓冲、复杂边界全文回退；不宣称次线性增量、固定机器 P95 或 K4 整包完成，完整 CST/VISUAL/LIVE/流式/编辑/渲染/平台及原 13 包余项继续。详见 [全局依赖更新](XUI_DOCUMENT_GLOBAL_DEPENDENCIES.md)。
+
+下一项 K2 换行来源修复已有隔离候选：空任务首行和格式后 break 使用解析器确认的字节范围；432 独立黄金、6,000 边界差分、完整 Core/依赖、普通/碰撞 sanitizer、analyzer 和 652 语料通过。候选 16 条命令实际退出 0，180 输入冻结，拟落地 6 项；旧实际 DLL 用最终黄金驱动确认来源范围失败。正式修复尚未合入，先等待依赖批次完整验收终态。详见 [换行来源](XUI_DOCUMENT_BREAK_ORIGIN.md)。
+
+
+日期：2026-10-04。平台：本机 Windows x64，GCC 16.1.0，实际 XGE DLL 与 GPU 后端。
 
 首次可撤销大文档编辑计费验证：`xui_document_scale_test.c` 清空 10,000 段初始导入历史后，在实际 DLL Editor 首次插入一个字节，要求新历史独占、LiveBytes 增量均小于原 CurrentBytes 的 1%，新增分配少于 1,000 次，并继续验证 Undo/Redo 与可见区规模测试。实测 20,001 节点、原 CurrentBytes 12,336,504、首个历史步骤 1,592 字节、LiveBytes 增量 1,962 字节、19 次新增分配；独立 Core 的相同规模直接事务测得 18 次新增分配和相同历史/存活增量，并在 Undo/Redo 后核对文本。Windows 完整套件 `artifacts/xui-document-rebuild/validation-2026-09-30-first-undo-full-suite.log`、Linux Core ASan/UBSan 与 652 项 CommonMark `validation-2026-09-30-first-undo-linux-core.log` 均退出码零；专项实际 DLL 规模日志 `validation-2026-09-30-first-undo-scale-final2.log` 亦通过。这是存储与分配数量的规模门禁；CPU 时间尚未建立固定测试机 P95 门槛，真实 GPU/IME 响应与独立绘制参考仍需验收。
 
@@ -2608,3 +2615,100 @@ Windows 完整发布 `validation-2026-10-03-quote-source-full-suite.log`、最�
 ## 2026-10-03 嵌套引用定义值与结果选区
 
 240 个来源场景、80 个实际 DLL 编辑器、12 个深度场景和 20 个五次包裹复合事务已验证；5,139 个分配失败点和 2,413 个取消检查点保持旧文档与分配平衡。已有 Quote/ListItem 的多行链接定义及全部可见子块前缀、选区外脚注来源、Rich/Markdown 结果 GAP 重定位见 [实现与边界](XUI_DOCUMENT_QUOTE_PREFIX.md)。本批 Windows 完整发布、最终 DLL 与已修复公共复现、Linux Core/Renderer/View sanitizer、两份 GCC analyzer、生产接口边界和 5 项浏览器串行程序实际退出 0；三张新 PNG 已实际检查。652 项 CommonMark 为 parse/source/native-roundtrip。证据使用 validation-2026-10-03-quote-prefix-，最终 Native SHA256 为 3bf81a989e7d7d0c69e620fa8a335f10acf0e14194b8647c4b79a8473f72d9a0。选区内部未使用脚注定义的 -107 拒绝保留为下一项 K2 工作，源码/tree/syntax/revision/history 原子。通用 WebView Windows 基础承载、其他四后端暂缓，Document 私有渲染与独立 HTML 交互保留；整体 13 包目标继续。
+
+## 2026-10-04 脚注定义值、引用前缀与增量缓存
+
+对应 K2/E1/K4，详见 [脚注定义与引用前缀](XUI_DOCUMENT_FOOTNOTE_PREFIX.md)。当前源码先复现选区内未使用脚注的 -107 拒绝，修复后 288 个黄金来源、24 个五次包裹事务、至 124 层的 10 个深度场景、5,050 个 OOM、2,207 个取消点与 96 个实际 DLL 编辑器场景通过。独立字面 payload 对照涵盖所有已使用/未使用/重复脚注；增量与 Prepare 缓存差分通过。
+
+validation-2026-10-04-footnote-prefix- 前缀的 Windows 完整发布、Linux Core/Renderer/View ASan/UBSan、5 份 GCC analyzer、可选 WebView 测试及生产构建和 5 项浏览器串行程序均实际退出 0。652 CommonMark 为解析/来源/原生往返和增量差分，不是 HTML conformance。公式、Mermaid、HTML 三张新截图已实际查看；生产 20 项基础/provider 导出存在、14 项私有符号不导出；Document 审计 284 个公开函数且无旧 API。最终来源、检查、DLL 指纹与范围清单均独立保存。
+
+历史失败日志保留。完整 CST、其他复杂结构无损编辑、Tab 内部列边界、完整模式/异步行为、固定机器性能及真实平台仍按原 13 包继续；[剩余清单](XUI_DOCUMENT_REMAINING.md) 区分未实现和未完整验收。通用 WebView Windows 基础功能、四平台暂缓和 Document 私有渲染范围不变，长期目标保持 active。
+
+## 2026-10-04 引用 Tab 逻辑列与来源保护
+
+对应 K2/E1，408 字面黄金来源、17 个连续五次事务、20,919 OOM、4,019 分配触发取消和 136 实际 DLL Editor 场景通过。脚注样本 123 层通过，第 124 层触达既有 128 层 schema 限制而原子拒绝。完整 Windows 发布、Linux Core/Renderer/View ASan/UBSan、修改模块 GCC analyzer、可选 Web 测试/生产构建和 5 个浏览器程序均实际退出 0。三张新实际截图已查看，生产 284 API 审计与 14 私有符号边界通过。证据前缀 validation-2026-10-04-tab-prefix-，源码守护 82 项未变；652 CommonMark 为解析/来源/往返和增量差分，Linux UI 为无窗口代理。旧回退写回改变选区外实体及脚注代码第二次包裹的先失败记录保留。详见 [Tab 来源保护](XUI_DOCUMENT_TAB_PREFIX.md)。完整 CST、其他结构命令、性能、迁移和真实平台等原 13 包余项继续，整体目标 active。
+
+## 2026-10-04 来源补丁与定义持久共享
+
+本批 K2/K4/K3 把受检引用前缀的原来源复制区间转为真正稀疏补丁，保留 SourceStore payload；完整解析按精确有序值复用未变链接/脚注缓存，数量变化保留有序前后缀，覆盖仅隐藏定义的根节点。408 黄金来源及双 affinity 全字节映射分别在 Core/实际 DLL 通过，36 全源码/Prepare/continued 场景、80 行扩容、518/1,167 OOM、282/1,163 取消专项通过。4 KiB/128 KiB/1 MiB 正文的历史独占为 3,803/4,180/6,558 字节（按根/Quote/List 路径），旧 DLL 根层 128 KiB 为 266,036 字节。完整 Windows/Linux/Web、三个 analyzer 和生产边界均通过，三张新截图已查看。详见 [来源补丁与持久共享](XUI_DOCUMENT_SOURCE_SHARING.md)。本批未完成完整 CST、来源重排、其余结构或全平台/性能验收，原 13 包继续、目标 active。
+
+证据前缀 validation-2026-10-04-source-sharing-，源码守护 84 项保持，所有记录均实际终态。
+
+## 2026-10-04 取消引用的来源保真
+
+本批 K2/E1 为引用前缀补解析器逻辑列元数据，并将整块取消引用接入来源复制证明及稀疏补丁。实体、围栏及附加信息、表格、隐藏定义与非前缀 Tab 保留；子引用/列表的缩进 Tab 按原逻辑宽度调整。引用子块提升导致列表间距变化时同步目标语义。189 黄金来源、124 层单事务、8 Rich 等价、2,680 OOM、2,347 取消以及 189 实际 DLL VISUAL 编辑器场景通过；LIVE/SOURCE 明确拒绝结构命令，126 原子拒绝及三模式历史通过。4 KiB/128 KiB/1 MiB 隐藏正文 HistoryBytes 均 8,475。完整 Windows/Linux/Web、四个 analyzer、无宏 MD4C 和生产边界均实际退出 0。详见 [取消引用来源保真](XUI_DOCUMENT_QUOTE_UNWRAP_SOURCE.md)。相邻块分隔、提醒块头部、脚注内结构、LIVE 结构编辑、完整 CST 与其他原工作包尚未完成，本批不改变目标状态。
+
+证据前缀 validation-2026-10-04-quote-unwrap-；86 项冻结输入和全部实际命令终态已核对。
+
+## 2026-10-04 取消引用的相邻块分隔
+
+本批 K2/E1 补齐整块取消引用与相邻段落/HTML 的分隔。先尝试最小原来源补丁，仅在完整语义不符时尝试前/后/双端容器分隔；所有候选核对完整语义及有序定义值，失败不发布。348 个来源黄金用例分别在 Core/实际 DLL/Linux 通过，123 层父引用、双引用单事务、7 Rich 等价、6,205 OOM 与 6,157 取消通过；实际 DLL Editor 完成 360 VISUAL 执行、240 LIVE/SOURCE 原子拒绝及三模式历史。4 KiB/128 KiB/1 MiB 隐藏正文 HistoryBytes 均为 8,724。完整 Windows、Linux Core/Renderer/View、两个 analyzer、两种 Web 构建、五个串行浏览器和生产边界均实际退出 0。详见 [取消引用相邻块分隔](XUI_DOCUMENT_QUOTE_BOUNDARY.md)。提醒块、脚注内部结构、部分取消引用、完整 CST、LIVE 结构编辑及原设计其他余项继续；整体目标 active，未完成。
+
+证据前缀 validation-2026-10-04-quote-boundary-；88 项冻结输入与所有实际命令终态已核对。
+
+## 2026-10-04 提醒块头部来源与取消引用保真
+
+本批 K2/E1 补齐五种提醒块原始头部来源与整块取消引用保真。解析器在头部消隐前记录原始标签及行结束，复用 Quote secondary/tail；取消引用删除 owned header 与本层前缀，正文原字节和父列表首标记保留，无新增公共函数或旧 API 包装。1,470 来源黄金、36 空块、123 层父引用、双提醒单事务、35 Rich、3,267 OOM 与 3,219 取消分别通过 Core/实际 DLL/Linux；实际 DLL Editor 完成 1,530 VISUAL 执行与 1,020 LIVE/SOURCE 原子拒绝及三模式历史。4 KiB/128 KiB/1 MiB 隐藏正文 HistoryBytes 均为 8,821。完整 Windows、Linux Core/Renderer/View、三个 analyzer、无宏 MD4C、两种 Web 构建、五个串行浏览器及生产边界均实际退出 0，91 项冻结输入不变、三张截图已查看。详见 [提醒块来源保真](XUI_DOCUMENT_ADMONITION_SOURCE.md)。脚注内部取消提醒仍有实际退出 1 的源码改写探针；完整 CST、部分取消引用、LIVE 结构和原设计其他余项继续，整体目标 active，未完成。
+
+证据前缀 validation-2026-10-04-admonition-source-；91 项冻结输入和所有实际命令终态已核对。
+
+## 2026-10-04 脚注内部取消引用与正文块归属
+
+本批 K2/E1 补齐脚注内部整块取消引用的来源保护与缩进 HTML 正文归属。只允许所属脚注定义正文值改变，标签与其他全部有序定义值保持；原始正文、围栏和未操作来源通过复制证明保留。216 来源/映射黄金、12 来源位移与原生重载编辑、123 层父引用、双提醒单事务、2,943 OOM 与 2,907 取消分别通过 Core/实际 DLL/Linux；实际 DLL Editor 完成 216 VISUAL 执行、144 LIVE/SOURCE 原子拒绝及三模式历史。完整 Windows、Linux Core/Renderer/View、三个 analyzer、无宏 MD4C、两种 Web 构建、五个串行浏览器及生产边界均实际退出 0，93 项冻结输入不变、三张截图已查看。详见 [脚注内部来源保护](XUI_DOCUMENT_FOOTNOTE_UNWRAP_SOURCE.md)。取消列表仍有 8 个独立黄金全部失败的原始探针；其他脚注结构命令、部分选区、完整 CST、LIVE 结构与原设计余项继续，整体目标 active，未完成。
+
+证据前缀 validation-2026-10-04-footnote-unwrap-source-；93 项冻结输入与所有实际命令终态已核对。
+
+## 2026-10-04 取消列表来源与首行逻辑列（验收进行中）
+
+本批 K2/E1 修复取消列表的代码块无效 GAP、内部与跨列表边界、affinity/方向丢失，补齐受影响列表的来源派生 tightness 与跨空项最终包装分隔。1,428 来源黄金、1,248 内部间隙、432 跨列表和 720 跨空项场景分别在 Core/实际 DLL/Linux 通过；实际 DLL Editor 共 3,828 次 VISUAL 执行/选区/历史和 952 次 LIVE/SOURCE 原子拒绝通过。Core 常规 2,641 OOM/2,581 取消及跨空项 1,398 OOM/1,374 取消通过，实际 DLL 常规 2,641 OOM 通过。完整 Windows、Linux Core/Renderer/View sanitizer、四个 analyzer 和无宏 MD4C、两种 Web 构建、五个串行浏览器及生产边界全部实际退出 0；95 项冻结输入不变，三张新截图已查看。原始失败 DLL/源码与历史规模失败探针保留。详见 [取消列表选区与跨空边界](XUI_DOCUMENT_UNLIST_SELECTION.md)。所属脚注定义值缓存的局部共享仍未进入正式源码；1 MiB 正文历史独占 1,056,551。完整 CST、其他结构命令、LIVE 结构、三模式及原 13 包余项继续，整体目标 active，未完成。
+
+证据前缀 validation-2026-10-04-unlist-source-；此条不是工作包或整体目标完成声明。
+
+## 2026-10-04 定义值与语义文本持久字节共享
+
+本批 K2/K4/K3 已正式接入定义值和匹配语义文本的共同持久字节共享，补齐多处及长度变化编辑的字节证明和按 Blob 总覆盖度回收。48 个 SOURCE/Prepare/Continue 场景、4 个缓存/语义大删除场景及 Core 988 OOM/972 取消点通过；实际 DLL 专项和取消列表 Editor 回归通过。所属脚注取消列表的 4 KiB/128 KiB/1 MiB 正文 HistoryBytes 均为 8,133，旧 DLL 为 12,071/139,047/1,056,551。Windows 完整发布、Linux Core/Renderer/View sanitizer、八个修改模块 analyzer、两种修正 Web 构建、五个串行浏览器及生产边界均实际退出 0；28 条完整验收命令、102 项冻结输入不变和三张实际截图已核对。初次 features 缺项链接失败和修正记录保留。独立正式 DLL 探针仍确认 SourceStore 大删除欠账：源码仅 143/152 字节，历史及 Snapshot 清空后 Current 为 1,056,358/1,060,407。定义数量变化中段共享、SourceStore 回收、完整 CST/依赖失效/编辑及原 13 包余项继续，整体目标 active。详见 [持久字节共享](XUI_DOCUMENT_REFERENCE_VALUE_SHARING.md)。
+
+## 2026-10-04 来源存储回收
+
+本批 K3/K4 已正式完成 SourceStore 按来源存储上界触发的共同覆盖度回收，Prepare 的不可变输入与 Continue 统一维护上界，扫描与复制放在解析路径；共同回收同时处理稀疏小语义 Blob，并统一空 Markdown 根节点的 0..0 语法范围。42 个公开 SOURCE/Prepare/Continue/原生重载/删空/累计删除、96 存储块/192 补丁碎片、RUNNING 续接与释放 Document 后的独立快照验证通过；Prepare 362 OOM/340 取消、候选完整 Core/Linux sanitizer、六个 analyzer 和正式 DLL 十一条专项命令通过。原正式 DLL 仅余 143/152 字节源码的 Current 为 1,056,358/1,060,407，现为 7,919/11,968；碎片 Current 从 344,903 降至约 32–53 KiB。完整 Windows 发布、Linux Core/Renderer/View sanitizer、两种 Web 构建、五个串行浏览器和生产边界均实际退出 0；26 条完整批次命令、104 项冻结输入不变和三张实际截图已核对。旧 DLL 内存与空源码失败、候选碎片失败及测试私有根常量编译失败日志保留。定义数量变化中段共享、完整 CST/依赖失效/编辑及原 13 包余项继续，整体目标 active。详见 [来源存储回收](XUI_DOCUMENT_SOURCE_COMPACTION.md)。
+
+## 定义中段对齐与共享
+
+本批 K2/K4/K3 已正式接入定义中段的类型/完整字节对齐、重复标签共同输入池与不可变事务起点共享，完整和已修改缓存的增量解析统一接入，发布仍以新解析器的全部有序定义和来源为准。192 个公开编辑、24 个同大小双正文重排、128 交错重复值组及原生重载、RUNNING Continue、独立全文/缓存/内存集合、Undo/Redo 和释放 Document 后快照验证通过；Prepare 1,185 OOM/935 取消，双正文 SOURCE 1,809 OOM/1,797 私有取消通过，实际 DLL 执行公开 OOM 和 Prepare 取消。强制完整值及标签哈希全部为零的维护测试、普通/碰撞 Linux sanitizer、完整 Core/字节共享/来源回收及两个 analyzer 均通过。候选 16 条、实际 DLL 13 条命令实际退出 0；1 MiB 中段 History 从 1,054,980/1,057,823 降至 5,836/8,679，128 KiB 同大小双正文探针缓存历史从 263,782 降至 1,440。七项正式输入落地，106 项冻结输入保持不变；完整 Windows 发布、Linux Core/Renderer/View sanitizer、两种 Web 构建、五个串行浏览器和生产边界全部实际退出 0，22 条完整批次命令与三张实际截图已核对。旧 DLL、随机正文测试定位错误、合法 Undo 正文预算及候选歧义/增量路径失败记录保留。完整 CST/全局依赖失效/其他编辑与原 13 包余项继续，整体目标 active。详见 [定义中段对齐](XUI_DOCUMENT_DEFINITION_ALIGNMENT.md)。
+
+2026-10-05 状态：换行来源修复已正式合入 6 项输入，180 项正式来源/测试/构建输入保持冻结；实际 DLL 15 条、两种 Web 构建及浏览器/生产边界 13 条命令实际退出 0，公式/Mermaid/HTML 三张截图已查看。Windows 全套及 Linux Core/Renderer/View 仍在运行，本批尚未完成最终验收。先前全局依赖批次已完成 24 条完整验收，原 13 包余项和整体目标继续。
+
+下一项 front matter 正确性修复已形成隔离候选：统一识别 LF/CRLF/CR，并防止 opening 激活时单块窗口或依赖屏蔽漏掉关闭行。1,728 独立黄金、432 方言排除、1,336 边界差分及 222 OOM/88 取消检查点通过；完整 Core/既有换行/依赖、普通/碰撞 sanitizer、analyzer 和语料共 18 条命令退出 0。源代码/测试验证输入 181 项；仅套件入口补入后冻结 182 项、拟合入 7 项。旧实际 DLL 用最终 v5 驱动确认失败，新修复尚未合入。详见 [front matter 行结束](XUI_DOCUMENT_FRONT_MATTER_LINES.md)。
+
+2026-10-05 更新：正式换行来源批次 Linux Core/Renderer/View 已退出 0，Windows 全套保持原进程运行。front matter 最终 v7 隔离候选补齐 360 全局依赖/原生/三种 Continue 场景；182 冻结输入、7 项拟合入，12 条新普通/碰撞验证与 6 条同源 analyzer/语料复用，共 18 条接受的候选命令；旧实际 DLL 的最终 v7 驱动退出 1。候选尚未合入，原 13 包和整体目标 active。详见 [front matter 行结束](XUI_DOCUMENT_FRONT_MATTER_LINES.md)。
+
+
+本批换行来源修复已正式落地：432 独立原字节黄金、6,000 边界差分（5,618 增量）和既有依赖/失败原子专项通过；实际 DLL 15 条专项命令通过。Windows 完整发布、Linux Core/Renderer/View sanitizer、两种 Web 构建、五个串行浏览器及生产边界全部实际退出 0，21 条完整批次命令、180 项冻结输入不变及三张实际截图已核对。普通换行来源共用解析器确认范围；图片 alt 与代码块投影、完整 CST、其他编辑/渲染/平台原 13 包余项继续，整体目标 active。
+
+2026-10-05 正式状态：换行来源批次已完成 21 条完整验收；front matter 最新 v8 已合入 8 项输入，182 项正式来源/测试/构建输入冻结。原始行结束、增量全局范围与统一块语法查询候选的 18 条命令全部重新执行并退出 0。正式实际 DLL、Linux Core/Renderer/View、两种 Web 构建与相关静态检查已启动；Windows 完整套件将在实际 DLL 构建验证结束后启动。完整 CST 和原 13 包余项继续，整体目标 active。
+
+front matter 正式验收更新：实际 DLL 17 条、两种 Web 构建、五个串行浏览器及生产边界 13 条、两个修改模块静态检查均实际退出 0；公式、Mermaid、HTML 三张截图已查看。Windows 完整套件与 Linux Core/Renderer/View 正在运行，182 项正式输入不变，整体目标 active。
+
+2026-10-05 下一候选：文字对象的归一化换行已共用解析器确认来源；图片 alt 的 576 独立黄金、4,100 边界差分（3,837 增量）、327 OOM/146 取消点通过，普通/碰撞 ASan/UBSan、Core/既有专项、修改模块静态检查及语料共 17 条全新命令实际退出 0。最终 184 项、5 项拟合入，两个未用于手动编译的共同套件入口已准备，精确最终驱动的旧实际 DLL 运行退出 1。本候选未合入；front matter 正式批次继续保持 182 输入冻结，原 13 包和整体目标 active。详见 [文字对象换行来源](XUI_DOCUMENT_OBJECT_BREAK_ORIGIN.md)。
+
+front matter Linux Core、Renderer、View 已全部实际退出 0；Windows 完整套件保持原进程运行，182 项正式来源/测试/构建输入保持冻结。DLL、静态检查、Web 构建/运行及三张截图均通过，本批等待 Windows 完整终态后完成最终验收。图片 alt 下一候选已通过 17 条全新专项，尚未合入；原 13 包继续。
+
+front matter 本批已正式落地：CR/CRLF/LF 原字节识别、全局范围与增量激活共用统一内部判定，统一块语法查询返回开闭标记、原始行结束和语法位置映射。1,728 独立黄金、1,336 边界差分、360 全局依赖场景及 222 OOM/88 取消点通过；实际 DLL 17 条专项、Windows 完整套件、Linux Core/Renderer/View、两种 Web 构建和串行浏览器/生产边界共 22 条完整命令实际退出 0，182 项冻结输入不变及三张实际截图已核对。完整 CST、其他结构编辑、次线性更新、三模式、渲染与真实平台/IME/读屏/DPI/固定机器性能余项继续，原 13 包和整体目标 active。
+
+图片 alt 换行来源已正式合入：实际 DLL 19 条、两种 Web 构建、串行浏览器与生产边界 13 条以及修改模块静态检查均通过；公式、Mermaid、HTML 三张实际截图已查看。Windows 完整套件与 Linux Core/Renderer/View 正在运行，184 项正式输入保持冻结，原 13 包和整体目标 active。
+
+2026-10-05 下一隔离候选：代码/公式/HTML/Tab/NUL 归一化来源改由解析器确认，NUL 只替换一次并覆盖受保护的行内文字；1,512 独立黄金、9,244 边界差分（8,069 增量）、1,104 OOM/516 取消点通过。Core/既有专项、普通及碰撞 ASan/UBSan、修改模块分析、语料和独立无 hook 解析器共 24 条全新命令实际退出 0；186 最终输入、8 项拟合入，精确最终驱动在当前旧 DLL 编译 0/运行 1。本候选尚未合入；图片 alt 正式批次继续保持 184 输入冻结，原 13 包和整体目标 active。详见 [文字归一化来源](XUI_DOCUMENT_TEXT_ORIGIN.md)。
+
+文字归一化 v5 的 24 条基础来源验证保留，但新增独立 HTML 词法对象检查确认 9/18 场景失败：NUL 标签被分成四个对象而非两个。v5 已撤回合入资格，正式源码未受影响；v6 隔离工作继续补充完整 HTML 词法边界，图片 alt 正式批次仍保持 184 输入冻结，原 13 包和整体目标 active。
+
+图片 alt 正式批次 Linux Core、Renderer、View 已全部实际退出 0；实际 DLL 19 条、静态分析及 Web 构建/13 条运行和三张截图均通过。Windows 完整套件保持原进程运行，184 输入冻结；Linux Renderer/View 仍为无窗口代理，真实平台验收另列。文字归一化 v5 因独立 HTML 对象检查失败已撤回，v6 修复及验证继续，整体目标 active。
+
+文字归一化 v6 候选已补充完整 HTML 词法边界：含 NUL 的标签不再拆成多个对象，18 个独立对象场景通过；1,512 黄金、9,244 边界差分（8,069 增量）、1,640 OOM/762 取消点、Core/既有专项、普通和碰撞 sanitizer、分析、语料及无 hook 解析器共 26 条全新命令实际退出 0。189 验证输入和 186 最终输入已归档，8 项拟合入，精确最终驱动在当前旧 DLL 编译 0/运行 1。v5 撤回证据保留；v6 尚未合入，图片 alt 正式批次 184 输入冻结，原 13 包和整体目标 active。详见 [文字归一化来源](XUI_DOCUMENT_TEXT_ORIGIN.md)。
+
+文字对象换行来源本批已正式落地：图片 alt 与普通 break 共用解析器确认的原字节范围；576 独立黄金、4,100 边界差分（3,837 增量）、327 OOM/146 取消点通过。实际 DLL 19 条专项、Windows 完整套件、Linux Core/Renderer/View、两种 Web 构建、串行浏览器及生产边界共 21 条完整命令实际退出 0，184 项冻结输入不变及三张实际截图已核对。代码归一化来源、完整 CST、其他命令、模式、渲染与真实平台/IME/读屏/DPI/性能余项继续，原 13 包和整体目标 active。
+
+文字归一化 v6 已正式合入：实际 DLL 21 条专项、两个修改模块静态检查、两种 Web 构建和串行浏览器/生产边界 13 条全部实际退出 0；公式、Mermaid 和 HTML 三张截图已实际查看。Windows 完整套件和 Linux Core/Renderer/View 使用原进程继续运行，186 项输入保持冻结；整体目标 active，尚未完成整批验收。独立多行 HTML/代码空白探针另发现既有语义差距，后续在隔离目录修复。
+
+受保护行内内容的多行空白 v3 隔离候选已通过：2,304 独立黄金、6,608 边界差分（6,401 增量）、1,568 OOM/748 取消点，Core、普通/碰撞 sanitizer、静态检查、语料和 96 个无 hook 场景共 21 条全新命令实际退出 0。190 项验证输入归档，188 最终输入/6 项拟合入冻结；精确最终驱动在当前 v6 正式 DLL 编译 0/运行 1。正式 186 输入未改动，修复尚未合入，完整 CST 和原 13 包继续。详见 [多行空白](XUI_DOCUMENT_INLINE_WHITESPACE.md)。
+
+文字归一化 v6 已合入，实际 DLL 21 条、两个模块静态检查、两种 Web 构建/13 条运行及三张实际截图均通过；Linux Core、Renderer、View 三条全部实际退出 0。Windows 完整套件原进程继续运行。186 项正式输入当前散列与冻结值一致；一次 README 文档追加已逐字节恢复并归档，编译源码、头文件和测试未改动。Linux Renderer/View 是无窗口代理，真实平台验收仍待完成；整体目标 active。

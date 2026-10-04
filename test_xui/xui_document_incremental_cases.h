@@ -17,6 +17,7 @@ static void inc_tree_equal(xui_document_snapshot a, uint64_t ai, xui_document_sn
     CHECK(x.iKind == y.iKind && x.iChildCount == y.iChildCount && x.iTextBytes == y.iTextBytes);
     CHECK(!memcmp(&x.tAttributes, &y.tAttributes, sizeof(x.tAttributes)));
     CHECK(!strcmp(x.sResource, y.sResource) && !strcmp(x.sInfo, y.sInfo) && !strcmp(x.sTitle, y.sTitle));
+    CHECK(!strcmp(x.sLinkTarget, y.sLinkTarget) && !strcmp(x.sLinkTitle, y.sLinkTitle));
     if (x.iSourceStart != y.iSourceStart || x.iSourceEnd != y.iSourceEnd || x.bSourceExact != y.bSourceExact)
         fprintf(stderr, "source mismatch kind=%u/%u node=%llu/%llu source=%llu..%llu exact=%d versus %llu..%llu exact=%d syntax=%llu..%llu versus %llu..%llu\n",
             x.iKind, y.iKind, (unsigned long long)ai, (unsigned long long)bi,
@@ -30,10 +31,38 @@ static void inc_tree_equal(xui_document_snapshot a, uint64_t ai, xui_document_sn
     CHECK(xuiDocumentSnapshotCopyText(a, ai, xt, x.iTextBytes + 1, &i) == XUI_OK);
     CHECK(xuiDocumentSnapshotCopyText(b, bi, yt, y.iTextBytes + 1, &i) == XUI_OK && !memcmp(xt, yt, (size_t)x.iTextBytes));
     free(xt); free(yt);
-    if (x.iKind == XUI_DOC_HEADING || x.iKind == XUI_DOC_CODE_BLOCK) {
+    {
         xui_doc_block_syntax_t p = {0}, q = {0}; int pr, qr;
         p.iSize = q.iSize = sizeof(p);
         pr = xuiDocumentSnapshotGetBlockSyntax(a, ai, &p); qr = xuiDocumentSnapshotGetBlockSyntax(b, bi, &q);
+        CHECK(pr == qr && (pr != XUI_OK || !memcmp(&p, &q, sizeof(p))));
+        if (pr == XUI_OK) {
+            uint64_t at;
+            for (at = 0; at < p.iQuotePrefixCount; at++) {
+                uint64_t ps, pe, qs, qe;
+                CHECK(xuiDocumentSnapshotGetQuotePrefix(a, ai, at, &ps, &pe) == XUI_OK &&
+                    xuiDocumentSnapshotGetQuotePrefix(b, bi, at, &qs, &qe) == XUI_OK && ps == qs && pe == qe);
+            }
+            for (at = 0; at < p.iListIndentCount; at++) {
+                xui_doc_list_indent_t ps = {0}, qs = {0}; ps.iSize = qs.iSize = sizeof(ps);
+                CHECK(xuiDocumentSnapshotGetListContinuationIndent(a, ai, at, &ps) == XUI_OK &&
+                    xuiDocumentSnapshotGetListContinuationIndent(b, bi, at, &qs) == XUI_OK && !memcmp(&ps, &qs, sizeof(ps)));
+            }
+            for (at = 0; at < p.iCodeIndentCount; at++) {
+                xui_doc_code_indent_t ps = {0}, qs = {0}; ps.iSize = qs.iSize = sizeof(ps);
+                CHECK(xuiDocumentSnapshotGetCodeIndent(a, ai, at, &ps) == XUI_OK &&
+                    xuiDocumentSnapshotGetCodeIndent(b, bi, at, &qs) == XUI_OK && !memcmp(&ps, &qs, sizeof(ps)));
+            }
+            for (at = 0; at < p.iTableTokenCount; at++) {
+                xui_doc_table_token_t ps = {0}, qs = {0}; ps.iSize = qs.iSize = sizeof(ps);
+                CHECK(xuiDocumentSnapshotGetTableToken(a, ai, at, &ps) == XUI_OK &&
+                    xuiDocumentSnapshotGetTableToken(b, bi, at, &qs) == XUI_OK && !memcmp(&ps, &qs, sizeof(ps)));
+            }
+        }
+    }
+    if (x.iKind == XUI_DOC_SOFT_BREAK || x.iKind == XUI_DOC_HARD_BREAK) {
+        xui_doc_break_syntax_t p = {0}, q = {0}; int pr, qr; p.iSize = q.iSize = sizeof(p);
+        pr = xuiDocumentSnapshotGetBreakSyntax(a, ai, &p); qr = xuiDocumentSnapshotGetBreakSyntax(b, bi, &q);
         CHECK(pr == qr && (pr != XUI_OK || !memcmp(&p, &q, sizeof(p))));
     }
     for (i = 0; i < x.iSourceSegmentCount; i++) {
@@ -91,7 +120,13 @@ static uint64_t inc_case(const char* original, unsigned dialect, uint64_t at, ui
     } else {
         xui_document_transaction t; tx.iSize = sizeof(tx); tx.iDomain = XUI_DOC_SOURCE;
         CHECK(xuiDocumentBeginTransaction(d, &tx, &t) == XUI_OK);
-        CHECK(xuiDocumentTxnReplaceSource(t, at, at + removed, insert_text, added) == XUI_OK && xuiDocumentTxnCommit(t, NULL) == XUI_OK);
+        {
+            int result = xuiDocumentTxnReplaceSource(t, at, at + removed, insert_text, added);
+            if (result == XUI_OK) result = xuiDocumentTxnCommit(t, NULL);
+            if (result != XUI_OK) fprintf(stderr, "incremental edit failed result=%d at=%llu removed=%llu replacement=[%s] original=[%s]\n",
+                result, (unsigned long long)at, (unsigned long long)removed, insert_text, original);
+            CHECK(result == XUI_OK);
+        }
         xuiDocumentTxnRelease(t);
     }
     after = inc_stats(d); incremental = after.iMarkdownIncrementalParses - before.iMarkdownIncrementalParses;
@@ -187,10 +222,10 @@ static void incremental_markdown_differential(void)
         }
     }
     CHECK(incremental > cases / 2);
-    /* A local parser needs unchanged global definitions to resolve references
-     * in its edited block. Editing a footnote use still requires full parsing. */
+    /* Global cohorts also update footnote uses when an independent unrelated
+     * block can be retained; the complete-load oracle still checks every span. */
     CHECK(inc_case("[ref]: /global\n\nalpha target\n\ntail\n", XUI_MD_EXTENDED, 22, 6, "[ref]", 1) == 1);
-    CHECK(!inc_case("[^n]: unused\n\nalpha target\n\ntail\n", XUI_MD_EXTENDED, 20, 6, "[^n]", 1));
+    CHECK(inc_case("[^n]: unused\n\nalpha target\n\ntail\n", XUI_MD_EXTENDED, 20, 6, "[^n]", 1) == 1);
     {
         const char* unused = "alpha [ref] target\n\ntail\n\n[ref]: /u\n[^n]: unused\n";
         const char* used_elsewhere = "before[^n]\n\nalpha [ref] target\n\n[ref]: /u\n[^n]: note\n";
@@ -214,16 +249,16 @@ static void incremental_markdown_differential(void)
         CHECK(inc_case(many_earlier_notes, XUI_MD_EXTENDED,
             (uint64_t)(strstr(many_earlier_notes, "target") - many_earlier_notes),
             6, "longer plain", 1) == 1);
-        CHECK(!inc_case(earlier_formatted, XUI_MD_EXTENDED,
+        CHECK(inc_case(earlier_formatted, XUI_MD_EXTENDED,
             (uint64_t)(strstr(earlier_formatted, "target") - earlier_formatted),
-            6, "longer", 1));
+            6, "longer", 1) == 1);
         CHECK(!inc_case(reordered_notes, XUI_MD_EXTENDED,
             (uint64_t)(strstr(reordered_notes, "target") - reordered_notes),
             6, "longer", 0));
         CHECK(!inc_case(used_elsewhere, XUI_MD_EXTENDED,
             (uint64_t)(strstr(used_elsewhere, "[^n]") - used_elsewhere), 4, "[^new]", 0));
-        CHECK(!inc_case(new_use, XUI_MD_EXTENDED,
-            (uint64_t)(strstr(new_use, "target") - new_use), 6, "[^n]", 1));
+        CHECK(inc_case(new_use, XUI_MD_EXTENDED,
+            (uint64_t)(strstr(new_use, "target") - new_use), 6, "[^n]", 1) == 1);
         CHECK(!inc_case(remove_use, XUI_MD_EXTENDED,
             (uint64_t)(strstr(remove_use, "[^n]") - remove_use), 4, "plain", 0));
     }
@@ -287,10 +322,10 @@ static void incremental_markdown_differential(void)
     }
     CHECK(inc_case("before\r\n\r\nalpha target\r\n\r\ntail **span**\r\n", XUI_MD_EXTENDED, 16, 6, "new", 0) == 1);
     CHECK(inc_case("---\nkey: value\n---\n\nalpha target\n\ntail\n", XUI_MD_EXTENDED, 26, 6, "new", 1) == 1);
-    CHECK(!inc_case("before\n\nalpha\n\nbeta\n", XUI_MD_EXTENDED, 13, 1, "\r", 0));
-    CHECK(!inc_case("before\r\ralpha\r\rbeta\r", XUI_MD_EXTENDED, 8, 0, "\n", 1));
-    CHECK(!inc_case("[ref]\n\nalpha\n\ntail\n", XUI_MD_EXTENDED, 7, 5, "[ref]: /new", 1));
-    CHECK(!inc_case("[^n]\n\nalpha\n\ntail\n", XUI_MD_EXTENDED, 6, 5, "[^n]: new", 0));
+    CHECK(inc_case("before\n\nalpha\n\nbeta\n", XUI_MD_EXTENDED, 13, 1, "\r", 0) == 1);
+    CHECK(inc_case("before\r\ralpha\r\rbeta\r", XUI_MD_EXTENDED, 8, 0, "\n", 1) == 1);
+    CHECK(inc_case("[ref]\n\nalpha\n\ntail\n", XUI_MD_EXTENDED, 7, 5, "[ref]: /new", 1) == 1);
+    CHECK(inc_case("[^n]\n\nalpha\n\ntail\n", XUI_MD_EXTENDED, 6, 5, "[^n]: new", 0) == 1);
     {
         const char* candidates = "[missing]\n\nmiddle\n\n[other]\n";
         CHECK(inc_case(candidates, XUI_MD_EXTENDED,
@@ -315,7 +350,7 @@ static void incremental_reference_differential(void)
                 cases++;
             }
     }
-    CHECK(local > cases / 4 && local < cases);
+    CHECK(local > cases / 4 && local <= cases);
     printf("Markdown external-definition differential: %llu edits, %llu local; three dialects, full-load oracle and Undo/Redo passed\n",
         (unsigned long long)cases, (unsigned long long)local);
 }
@@ -387,7 +422,7 @@ static void incremental_unused_definition_edit(void)
                     1, replacements[i], (int)(cases & 1)); cases++;
             }
     }
-    CHECK(local > cases / 4 && local < cases);
+    CHECK(local > cases / 4 && local <= cases);
     printf("Markdown unused link-definition destination differential: %llu edits, %llu local; three dialects and full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
     puts("Markdown unused link-definition destination edit: standalone parse and full-load oracle passed");
@@ -404,7 +439,7 @@ static void incremental_unused_definition_variable_differential(void)
                 local += inc_case(source, dialect, (uint64_t)(destination - source + at),
                     1, replacements[r], (int)(cases & 1)); cases++;
             }
-    CHECK(local > cases / 4 && local < cases);
+    CHECK(local > cases / 4 && local <= cases);
     printf("Markdown unused variable-length definition differential: %llu edits, %llu local; three dialects and full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
 }
@@ -444,7 +479,7 @@ static void incremental_unused_footnote_body(void)
                 (uint64_t)(strstr(before, "plain body") - before + i),
                 1, replacements[r], (int)(cases & 1)); cases++;
         }
-    CHECK(local > cases / 5 && local < cases);
+    CHECK(local > cases / 5 && local <= cases);
     printf("Markdown unused footnote body edit: %llu edits, %llu local; full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
 }
@@ -512,7 +547,7 @@ static void incremental_used_footnote_body(void)
                 (uint64_t)(strstr(rich, "**bold** [ref] body") - rich + i),
                 1, replacements[r], (int)(cases & 1)); cases++;
         }
-    CHECK(local > cases / 3 && local < cases);
+    CHECK(local > cases / 3 && local <= cases);
     printf("Markdown used footnote body edit: %llu edits, %llu local; tree, syntax and full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
 }
@@ -720,14 +755,14 @@ static void incremental_used_footnote_prepare_batch_guard(void)
         xuiDocumentPreparePublish(d, p, NULL) == XUI_OK);
     xuiDocumentPrepareRelease(p);
     after = inc_stats(d);
-    CHECK(after.iMarkdownIncrementalParses == before.iMarkdownIncrementalParses);
+    CHECK(after.iMarkdownIncrementalParses == before.iMarkdownIncrementalParses + 1);
     oracle = test_markdown_open(edited);
     CHECK(xuiDocumentAcquireSnapshot(d, &actual) == XUI_OK &&
         xuiDocumentAcquireSnapshot(oracle, &expected) == XUI_OK);
     inc_snapshot_equal(actual, expected);
     xuiDocumentSnapshotRelease(actual); xuiDocumentSnapshotRelease(expected);
     xuiDocumentRelease(d); xuiDocumentRelease(oracle);
-    puts("Markdown cross-footnote Prepare batch: full parse matches oracle");
+    puts("Markdown cross-footnote Prepare batch: global cohort matches full-load oracle");
 }
 static void incremental_used_footnote_prepare_batch_failures(void)
 {
@@ -828,7 +863,7 @@ static void incremental_used_footnote_budget_guard(void)
         "\n\n[^n]: body [ note\n");
     CHECK(used < capacity);
     at = (uint64_t)(strstr(source, "body [") - source) + 5;
-    CHECK(inc_case(source, XUI_MD_EXTENDED, at, 1, "x", 0) == 0);
+    CHECK(inc_case(source, XUI_MD_EXTENDED, at, 1, "x", 0) == 1);
     free(source);
     puts("Markdown footnote same-length bracket-budget guard: full fallback and oracle match");
 }
@@ -903,7 +938,7 @@ static void incremental_single_use_definition_edit(void)
                     (uint64_t)(dest - repeated + at), 1, replacements[i], (int)(cases & 1)); cases++;
             }
     }
-    CHECK(local > cases / 4 && local < cases);
+    CHECK(local > cases / 4 && local <= cases);
     printf("Markdown single-block definition dependency differential: %llu edits, %llu local; three dialects and full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
 }
@@ -919,7 +954,7 @@ static void incremental_single_use_variable_differential(void)
                 local += inc_case(source, dialect, (uint64_t)(destination - source + at),
                     1, replacements[r], (int)(cases & 1)); cases++;
             }
-    CHECK(local > cases / 4 && local < cases);
+    CHECK(local > cases / 4 && local <= cases);
     printf("Markdown single-block variable-length definition differential: %llu edits, %llu local; three dialects and full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
     inc_definition_position_oracle(
@@ -955,7 +990,7 @@ static void incremental_multi_use_definition_differential(void)
                 local += inc_case(source, dialect, (uint64_t)(destination - source + at),
                     1, replacements[r], (int)(cases & 1)); cases++;
             }
-    CHECK(local > cases / 4 && local < cases);
+    CHECK(local > cases / 4 && local <= cases);
     printf("Markdown multi-block definition dependency differential: %llu edits, %llu local; three dialects and full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
     inc_definition_position_oracle(
@@ -1018,7 +1053,7 @@ static void incremental_label_change_differential(void)
                 local += inc_case(source, dialect, (uint64_t)(label - source + at),
                     1, replacements[r], (int)(cases & 1)); cases++;
             }
-    CHECK(local > cases / 5 && local < cases);
+    CHECK(local > cases / 5 && local <= cases);
     printf("Markdown link-definition label differential: %llu edits, %llu local; three dialects and full-load oracle passed\n",
         (unsigned long long)cases, (unsigned long long)local);
     inc_definition_position_oracle(
@@ -1717,7 +1752,7 @@ static void incremental_block_shift_fallback(void)
     before = inc_stats(d).iMarkdownIncrementalParses;
     CHECK(xuiDocumentBeginTransaction(d, &tx, &t) == XUI_OK);
     CHECK(xuiDocumentTxnReplaceSource(t, at, at + 2, "\n", 1) == XUI_OK && xuiDocumentTxnCommit(t, NULL) == XUI_OK);
-    xuiDocumentTxnRelease(t); CHECK(inc_stats(d).iMarkdownIncrementalParses == before);
+    xuiDocumentTxnRelease(t); CHECK(inc_stats(d).iMarkdownIncrementalParses == before + 1);
     oracle = test_markdown_open(merged);
     CHECK(xuiDocumentAcquireSnapshot(d, &versions[2]) == XUI_OK && xuiDocumentAcquireSnapshot(oracle, &expected) == XUI_OK);
     inc_snapshot_equal(versions[2], expected); xuiDocumentSnapshotRelease(expected); xuiDocumentRelease(oracle);
@@ -1946,7 +1981,7 @@ static void incremental_reference_budget(void)
     at = used; memcpy(source + used, "target\n\n", 8); used += 8;
     for (i = 0; i < 8000; i++) { memcpy(source + used, "padding\n\n", 9); used += 9; }
     source[used] = 0;
-    CHECK(used < 180000 && !inc_case(source, XUI_MD_GFM, at, 6, "longer", 0));
+    CHECK(used < 180000 && inc_case(source, XUI_MD_GFM, at, 6, "longer", 0) == 1);
     free(source);
     puts("Markdown local reference expansion budget: a larger full document retains the full parser result");
 }
@@ -1963,7 +1998,7 @@ static void incremental_global_reference_budget(void)
     memcpy(source + used, "[r] ", 4); used += 4;
     at = used; memcpy(source + used, "target\n\nlast\n", 13); used += 13;
     source[used] = 0;
-    CHECK(used < 180000 && !inc_case(source, XUI_MD_GFM, at, 6, "longer", 0));
+    CHECK(used < 180000 && inc_case(source, XUI_MD_GFM, at, 6, "longer", 0) == 1);
     free(source);
     puts("Markdown global reference expansion budget: earlier links can exhaust the full parser before a local block");
     {

@@ -2,14 +2,11 @@
 #if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
 
-/* A local grammar boundary is one top-level block delimited by unchanged
- * blank lines or document edges. Safe standalone link-definition value edits
- * can invalidate several independent blocks. Unused footnote-definition body
- * edits can update only source metadata; edits of footnote uses or rendered
- * transitive footnote dependencies and edits spanning blocks still use the
- * full parser.
- * Context-sensitive blocks also reparse
- * their following sibling to prove the edit did not consume it. */
+/* Local fast paths reparse a proven top-level grammar boundary or definition
+ * dependency. A shared cohort below handles complex definition containers,
+ * reference activation and transitive footnotes together while retaining
+ * unrelated source-bounded leaves. Changes crossing an omitted boundary
+ * continue through the complete parser. */
 static int doc_inc_kind(uint32_t kind)
 {
     return kind == XUI_DOC_PARAGRAPH || kind == XUI_DOC_HEADING || kind == XUI_DOC_RULE ||
@@ -1153,6 +1150,7 @@ static int doc_inc_unused_footnote_body(xui_document_transaction t, doc_state** 
     if (!state) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
     result = end == old_end ? XUI_OK :
         doc_inc_shift_definition_value(t, state, index, &expected, old_end, end, first);
+    if (result == XUI_OK) result = doc_reference_value_replace(state, index, fragment, 0, t->cancellation);
     if (result == XUI_OK) result = doc_inc_cancel(t);
     if (result == XUI_OK) {
         atomic_fetch_add(&old->allocator->markdown_incremental_parses, 1);
@@ -1794,6 +1792,8 @@ static int doc_inc_used_footnote_body(xui_document_transaction t, doc_state** ou
         index * sizeof(ref), (index + 1) * sizeof(ref), record, &next);
     if (result != XUI_OK) goto done;
     doc_seq_release(state->references); state->references = next; next = NULL;
+    result = doc_reference_value_replace(state, index, fragment, 0, t->cancellation);
+    if (result != XUI_OK) goto done;
     result = doc_inc_remove(t, state, old, old_id);
     if (result == XUI_OK)
         result = doc_markdown_reconcile_block(t, fragment, old_id, parsed_id,
@@ -1928,7 +1928,7 @@ static int doc_inc_definition_field(xui_document_transaction t, doc_state** out)
     result = new_ref_end == ref.iSourceEnd ? XUI_OK :
         doc_inc_shift_definition_value(t, state, index, &expected,
             ref.iSourceEnd, new_ref_end, first_shift);
-    if (result == XUI_OK) result = doc_reference_value_replace(state, index, fragment, 0);
+    if (result == XUI_OK) result = doc_reference_value_replace(state, index, fragment, 0, t->cancellation);
     if (result == XUI_OK && label_edit)
         result = doc_inc_label_blocks(t, state, &dependents);
     if (result == XUI_OK && dependents.count)
@@ -1951,7 +1951,7 @@ done:
     doc_free(suffix);
     doc_state_release(fragment); return result;
 }
-int doc_markdown_incremental(xui_document_transaction t, doc_state** out)
+static int doc_markdown_incremental_local(xui_document_transaction t, doc_state** out)
 {
     doc_state *old = t->draft, *fragment = NULL, *state = NULL;
     char* suffix = NULL; uint64_t suffix_bytes = 0;
@@ -1980,6 +1980,14 @@ int doc_markdown_incremental(xui_document_transaction t, doc_state** out)
     doc_node_source_range_get(old, block, &block_range);
     start = block_range.syntax_start; end = old_end = block_range.syntax_end;
     old_shift = doc_seq_source_shift(root->children, index);
+    /* An edit can turn the first thematic break into a front-matter opener.
+     * Its matching closer may be beyond this single-block parse window, so
+     * the prefix must be interpreted with complete document context. */
+    if (!start && old->dialect == XUI_MD_EXTENDED && doc_seq_size(old->source) > 3 &&
+        doc_inc_byte(old->source, 0) == '-' && doc_inc_byte(old->source, 1) == '-' &&
+        doc_inc_byte(old->source, 2) == '-' &&
+        (doc_inc_byte(old->source, 3) == '\r' || doc_inc_byte(old->source, 3) == '\n'))
+        return XUI_ERROR_UNSUPPORTED;
     for (i = t->parse_op_start; i < t->count; i++) {
         const xui_doc_operation_t* op = &t->ops[i];
         if (op->iKind != XUI_DOC_OP_SOURCE || op->iOffset < start || op->iOffset > end || op->iOldLength > end - op->iOffset)
@@ -2045,6 +2053,382 @@ int doc_markdown_incremental(xui_document_transaction t, doc_state** out)
     }
 done:
     doc_state_release(state); doc_state_release(fragment); return result;
+}
+
+/* A dependency cohort retains all definitions, possible reference uses and
+ * grammar-sensitive blocks in their original physical positions. Only
+ * unchanged, independently delimited paragraphs/headings without '[' can be
+ * omitted. Keeping input length, every newline and every possible reference
+ * use preserves MD4C's global expansion budget and transitive footnote order.
+ * This is not a sublinear source scan: it avoids reparsing unrelated inline
+ * bodies while the complete source and publication checks remain linear. */
+typedef struct doc_dep_block {
+    uint64_t id, old_start, old_end, start, end;
+    int omit;
+} doc_dep_block;
+typedef struct doc_dep_span {
+    xui_doc_inline_syntax_t value;
+    uint64_t index;
+    int old;
+} doc_dep_span;
+
+static int doc_dep_map(xui_document_transaction t, uint64_t* start, uint64_t* end)
+{
+    uint64_t i; int changed = 0;
+    for (i = t->parse_op_start; i < t->count; i++) {
+        const xui_doc_operation_t* op = &t->ops[i];
+        uint64_t finish;
+        if (op->iKind != XUI_DOC_OP_SOURCE || op->iOffset > UINT64_MAX - op->iOldLength)
+            return -1;
+        finish = op->iOffset + op->iOldLength;
+        /* Inclusive edges deliberately retain both neighboring blocks. */
+        if (!(finish < *start || op->iOffset > *end)) changed = 1;
+        if (*end <= op->iOffset) { /* Before the patch. */ }
+        else if (*start >= finish) {
+            *start = *start - op->iOldLength + op->iNewLength;
+            *end = *end - op->iOldLength + op->iNewLength;
+        } else {
+            if (*start > op->iOffset) *start = op->iOffset;
+            *end = *end >= finish ? *end - op->iOldLength + op->iNewLength : op->iOffset + op->iNewLength;
+        }
+    }
+    return changed;
+}
+static uint64_t doc_dep_omitted(doc_dep_block* blocks, uint64_t count,
+    uint64_t start, uint64_t end, int original)
+{
+    uint64_t lo = 0, hi = count;
+    if (start == DOC_NONE || end == DOC_NONE || start > end) return DOC_NONE;
+    while (lo < hi) {
+        uint64_t mid = lo + (hi - lo) / 2;
+        uint64_t stop = original ? blocks[mid].old_end : blocks[mid].end;
+        if (stop <= start) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo < count && blocks[lo].omit &&
+        start >= (original ? blocks[lo].old_start : blocks[lo].start) &&
+        end <= (original ? blocks[lo].old_end : blocks[lo].end)) return lo;
+    return DOC_NONE;
+}
+static int doc_dep_intersects(doc_dep_block* blocks, uint64_t count,
+    uint64_t start, uint64_t end)
+{
+    uint64_t i;
+    if (start == DOC_NONE || end == DOC_NONE) return 0;
+    if (start > end) return 1;
+    {
+        uint64_t lo = 0, hi = count;
+        while (lo < hi) {
+            uint64_t mid = lo + (hi - lo) / 2;
+            if (blocks[mid].end <= start) lo = mid + 1;
+            else hi = mid;
+        }
+        i = lo;
+    }
+    for (; i < count && blocks[i].start < end; i++) {
+        if (blocks[i].omit && start < blocks[i].end && end > blocks[i].start) return 1;
+    }
+    return 0;
+}
+static int doc_dep_tree_guard(xui_document_transaction t, doc_state* state,
+    uint64_t id, doc_dep_block* blocks, uint64_t count)
+{
+    doc_node* node = doc_index_get(state->index, id);
+    doc_node_source_range range; uint64_t i; int result = doc_inc_cancel(t);
+    if (result != XUI_OK) return result;
+    if (!node) return XUI_ERROR_UNSUPPORTED;
+    doc_node_source_range_get(state, node, &range);
+    if (doc_dep_intersects(blocks, count, range.source_start, range.source_end) ||
+        doc_dep_intersects(blocks, count, range.syntax_start, range.syntax_end))
+        return XUI_ERROR_UNSUPPORTED;
+    for (i = 0; i < doc_seq_size(node->provenance); i += sizeof(xui_doc_source_segment_t)) {
+        xui_doc_source_segment_t segment;
+        result = doc_seq_read(node->provenance, i, &segment, sizeof(segment));
+        if (result != XUI_OK) return result;
+        doc_source_resolve_segment(state, node, &segment);
+        if (doc_dep_intersects(blocks, count, segment.iSourceStart, segment.iSourceEnd))
+            return XUI_ERROR_UNSUPPORTED;
+    }
+    for (i = 0; i < doc_seq_size(node->children); i++) {
+        result = doc_dep_tree_guard(t, state, doc_seq_get_id(node->children, i), blocks, count);
+        if (result != XUI_OK) return result;
+    }
+    return XUI_OK;
+}
+/* Reanchor a borrowed unchanged subtree or a newly parsed subtree. Relative
+ * markers/provenance keep their immutable storage; the new root has no lazy
+ * shifts, so its block base carries the resolved old shift plus this edit. */
+static int doc_dep_graft(xui_document_transaction t, doc_state* source,
+    doc_state* target, uint64_t id, uint64_t ordinal, int64_t delta)
+{
+    doc_node* node = doc_index_get(source->index, id), *copy;
+    uint64_t i; int result = doc_inc_cancel(t);
+    int64_t shift;
+    if (result != XUI_OK) return result;
+    if (!node) return XUI_ERROR_UNSUPPORTED;
+    shift = doc_node_block_shift(source, node);
+    copy = doc_node_clone(target->allocator, node);
+    if (!copy) return XUI_ERROR_OUT_OF_MEMORY;
+    copy->block_ordinal = ordinal; copy->block_shift_base = -shift - delta;
+    for (i = 0; result == XUI_OK && i < doc_seq_size(copy->children); i++)
+        result = doc_dep_graft(t, source, target, doc_seq_get_id(copy->children, i), ordinal, delta);
+    if (result == XUI_OK) result = doc_state_set(target, copy);
+    doc_node_release(copy); return result;
+}
+static int doc_dep_append_id(doc_state* state, doc_sequence** ids, uint64_t id)
+{
+    doc_sequence* item = doc_seq_id(state->allocator, id), *next = NULL;
+    int result = item ? doc_seq_replace(state->allocator, *ids,
+        doc_seq_size(*ids), doc_seq_size(*ids), item, &next) : XUI_ERROR_OUT_OF_MEMORY;
+    doc_seq_release(item);
+    if (result == XUI_OK) { doc_seq_release(*ids); *ids = next; }
+    return result;
+}
+static int doc_dep_syntax(xui_document_transaction t, doc_state* fresh,
+    uint64_t ordinary, doc_dep_block* blocks, uint64_t count)
+{
+    doc_sequence *old_seq = t->draft->inline_syntax, *new_seq = fresh->inline_syntax, *sequence = NULL;
+    uint64_t old_count = doc_seq_size(old_seq) / sizeof(xui_doc_inline_syntax_t);
+    uint64_t new_count = doc_seq_size(new_seq) / sizeof(xui_doc_inline_syntax_t);
+    uint64_t *old_map = NULL, *new_map = NULL, at, kept = 0, oi = 0, ni = 0, size = 0;
+    doc_dep_span *old_spans = NULL, *merged = NULL;
+    int result = XUI_OK;
+    if (ordinary > new_count || old_count > UINT64_MAX - new_count ||
+        old_count + new_count > SIZE_MAX / sizeof(*merged)) return XUI_DOC_ERROR_LIMIT;
+    if (old_count) {
+        old_map = doc_alloc(fresh->allocator, (size_t)old_count * sizeof(*old_map));
+        old_spans = doc_alloc(fresh->allocator, (size_t)old_count * sizeof(*old_spans));
+        if (!old_map || !old_spans) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+        for (at = 0; at < old_count; at++) old_map[at] = DOC_NONE;
+    }
+    if (new_count) {
+        new_map = doc_alloc(fresh->allocator, (size_t)new_count * sizeof(*new_map));
+        if (!new_map) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    }
+    if (old_count + new_count) {
+        merged = doc_alloc(fresh->allocator, (size_t)(old_count + new_count) * sizeof(*merged));
+        if (!merged) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    }
+    for (at = 0; at < old_count; at++) {
+        xui_doc_inline_syntax_t span; uint64_t block; int64_t delta;
+        if ((result = doc_inc_cancel(t)) != XUI_OK) goto done;
+        result = doc_seq_read_syntax(old_seq, at, &span);
+        if (result != XUI_OK) goto done;
+        block = doc_dep_omitted(blocks, count, span.iSourceStart, span.iSourceEnd, 1);
+        if (block == DOC_NONE) continue;
+        if (span.iDefinitionIndex != DOC_NONE) { result = XUI_ERROR_UNSUPPORTED; goto done; }
+        delta = (int64_t)blocks[block].start - (int64_t)blocks[block].old_start;
+        if (span.iSourceStart != DOC_NONE) span.iSourceStart = (uint64_t)((int64_t)span.iSourceStart + delta);
+        if (span.iSourceEnd != DOC_NONE) span.iSourceEnd = (uint64_t)((int64_t)span.iSourceEnd + delta);
+        if (span.iContentStart != DOC_NONE) span.iContentStart = (uint64_t)((int64_t)span.iContentStart + delta);
+        if (span.iContentEnd != DOC_NONE) span.iContentEnd = (uint64_t)((int64_t)span.iContentEnd + delta);
+        old_spans[kept].value = span; old_spans[kept].index = at; old_spans[kept].old = 1; kept++;
+    }
+    while (oi < kept || ni < new_count) {
+        xui_doc_inline_syntax_t span; int take_old;
+        if ((result = doc_inc_cancel(t)) != XUI_OK) goto done;
+        if (ni < new_count) {
+            result = doc_seq_read_syntax(new_seq, ni, &span);
+            if (result != XUI_OK) goto done;
+            if (doc_dep_intersects(blocks, count, span.iSourceStart, span.iSourceEnd)) {
+                result = XUI_ERROR_UNSUPPORTED; goto done;
+            }
+        } else memset(&span, 0, sizeof(span));
+        /* Footnote syntax stays in parser first-use traversal order, after
+         * every ordinary block, even when definitions precede their uses. */
+        take_old = oi < kept && (ni >= ordinary || old_spans[oi].value.iSourceStart < span.iSourceStart);
+        if (take_old) {
+            merged[size] = old_spans[oi++]; old_map[merged[size].index] = size;
+        } else {
+            merged[size].value = span; merged[size].index = ni; merged[size].old = 0;
+            new_map[ni++] = size;
+        }
+        size++;
+    }
+    for (at = 0; at < size; at++) {
+        uint64_t parent = merged[at].value.iParentIndex;
+        if (parent != DOC_NONE) {
+            uint64_t* map = merged[at].old ? old_map : new_map;
+            uint64_t limit = merged[at].old ? old_count : new_count;
+            if (parent >= limit || map[parent] == DOC_NONE || map[parent] >= at) {
+                result = XUI_ERROR_UNSUPPORTED; goto done;
+            }
+            merged[at].value.iParentIndex = map[parent];
+        }
+    }
+    if (size) {
+        xui_doc_inline_syntax_t* values = doc_alloc(fresh->allocator, (size_t)size * sizeof(*values));
+        if (!values) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+        for (at = 0; at < size; at++) values[at] = merged[at].value;
+        sequence = doc_seq_text(fresh->allocator, (const char*)values, size * sizeof(*values));
+        doc_free(values);
+        if (!sequence) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    }
+    doc_seq_release(fresh->inline_syntax); fresh->inline_syntax = sequence; sequence = NULL;
+done:
+    doc_seq_release(sequence); doc_free(old_map); doc_free(new_map);
+    doc_free(old_spans); doc_free(merged); return result;
+}
+static int doc_markdown_dependency_cohort(xui_document_transaction t, doc_state** out)
+{
+    doc_state* old = t->draft, *fresh = NULL;
+    doc_node* root = doc_index_get(old->index, DOC_ROOT), *parsed_root, *copy = NULL;
+    uint64_t count = doc_seq_size(root->children), ordinary = count, i, j, omitted = 0;
+    uint64_t bytes = doc_seq_size(old->source), syntax_ordinary = 0, next_old = 0, ordinal = 0;
+    uint64_t front_end = 0;
+    doc_dep_block* blocks = NULL; char* masked = NULL; doc_sequence* children = NULL;
+    int result = XUI_ERROR_UNSUPPORTED;
+    *out = NULL;
+    if (t->domain != XUI_DOC_SOURCE || t->count <= t->parse_op_start || count < 2)
+        return result;
+    if (bytes > UINT_MAX || bytes >= SIZE_MAX || count > SIZE_MAX / sizeof(*blocks)) return XUI_DOC_ERROR_LIMIT;
+    while (ordinary && doc_index_get(old->index, doc_seq_get_id(root->children, ordinary - 1))->kind == XUI_DOC_FOOTNOTE)
+        ordinary--;
+    if (!ordinary) return XUI_ERROR_UNSUPPORTED;
+    blocks = doc_alloc(old->allocator, (size_t)ordinary * sizeof(*blocks));
+    if (!blocks) return XUI_ERROR_OUT_OF_MEMORY;
+    memset(blocks, 0, (size_t)ordinary * sizeof(*blocks));
+    masked = doc_alloc(old->allocator, (size_t)bytes + 1);
+    if (!masked) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    for (i = 0; i < bytes;) {
+        uint64_t chunk = bytes - i < 4096 ? bytes - i : 4096;
+        if ((result = doc_inc_cancel(t)) != XUI_OK) goto done;
+        result = doc_seq_read(old->source, i, masked + i, chunk);
+        if (result != XUI_OK) goto done;
+        i += chunk;
+    }
+    masked[bytes] = 0;
+    if (old->dialect == XUI_MD_EXTENDED) {
+        doc_front_matter_range front;
+        uint64_t offset = bytes >= 3 && !memcmp(masked, "\xef\xbb\xbf", 3) ? 3 : 0;
+        result = doc_markdown_front_matter_range(masked, bytes, offset, t->cancellation, &front);
+        if (result != XUI_OK) goto done;
+        if (front.content_start != DOC_NONE) front_end = front.syntax_end;
+    }
+    for (i = 0; i < ordinary; i++) {
+        doc_node* block = doc_index_get(old->index, doc_seq_get_id(root->children, i));
+        doc_node_source_range range; int changed;
+        if ((result = doc_inc_cancel(t)) != XUI_OK) goto done;
+        doc_node_source_range_get(old, block, &range);
+        blocks[i].id = block->id;
+        blocks[i].old_start = blocks[i].start = range.syntax_start;
+        blocks[i].old_end = blocks[i].end = range.syntax_end;
+        if (range.syntax_start == DOC_NONE || range.syntax_end == DOC_NONE || range.syntax_end < range.syntax_start)
+            { result = XUI_ERROR_UNSUPPORTED; goto done; }
+        if (i && blocks[i - 1].old_end > range.syntax_start)
+            { result = XUI_ERROR_UNSUPPORTED; goto done; }
+        changed = doc_dep_map(t, &blocks[i].start, &blocks[i].end);
+        if (changed < 0) { result = XUI_ERROR_UNSUPPORTED; goto done; }
+        if (blocks[i].start > blocks[i].end || blocks[i].end > bytes ||
+            (i && blocks[i - 1].end > blocks[i].start))
+            { result = XUI_ERROR_UNSUPPORTED; goto done; }
+        if (changed || blocks[i].start < front_end || blocks[i].end > bytes || blocks[i].end <= blocks[i].start ||
+            (block->kind != XUI_DOC_PARAGRAPH && block->kind != XUI_DOC_HEADING) ||
+            !doc_inc_boundaries(old->source, blocks[i].start, blocks[i].end, 0)) continue;
+        blocks[i].omit = 1;
+        for (j = blocks[i].start; j < blocks[i].end; j++) {
+            if ((j & 4095) == 0 && (result = doc_inc_cancel(t)) != XUI_OK) goto done;
+            if (masked[j] == '[') { blocks[i].omit = 0; break; }
+        }
+        for (j = 0; blocks[i].omit && j < doc_seq_size(old->references); j += sizeof(xui_doc_reference_definition_t)) {
+            xui_doc_reference_definition_t ref;
+            result = doc_seq_read(old->references, j, &ref, sizeof(ref));
+            if (result != XUI_OK) goto done;
+            if (ref.iSourceStart < range.syntax_end && ref.iSourceEnd > range.syntax_start) blocks[i].omit = 0;
+        }
+    }
+    /* Preserve immediate context on both sides of grammar-sensitive blocks.
+     * A changed parser construct can still cross these boundaries; the
+     * parsed source/provenance/definition guards below reject that candidate. */
+    for (i = 0; i < ordinary; i++) {
+        doc_node* block = doc_index_get(old->index, blocks[i].id);
+        if (doc_inc_context_kind(block->kind)) {
+            if (i) blocks[i - 1].omit = 0;
+            if (i + 1 < ordinary) blocks[i + 1].omit = 0;
+        }
+    }
+    for (i = 0; i < ordinary; i++) omitted += blocks[i].omit;
+    if (!omitted) { result = XUI_ERROR_UNSUPPORTED; goto done; }
+    for (i = 0; i < ordinary; i++) if (blocks[i].omit) {
+        for (j = blocks[i].start; j < blocks[i].end; j++) {
+            if ((j & 4095) == 0 && (result = doc_inc_cancel(t)) != XUI_OK) goto done;
+            if (masked[j] != '\r' && masked[j] != '\n') masked[j] = ' ';
+        }
+    }
+    result = doc_markdown_parse_input(t, 0, masked, bytes, &fresh, &syntax_ordinary);
+    if (result != XUI_OK) goto done;
+    parsed_root = doc_index_get(fresh->index, DOC_ROOT);
+    for (i = 0; i < doc_seq_size(parsed_root->children); i++) {
+        result = doc_dep_tree_guard(t, fresh, doc_seq_get_id(parsed_root->children, i), blocks, ordinary);
+        if (result != XUI_OK) goto done;
+    }
+    for (i = 0; i < doc_seq_size(fresh->references); i += sizeof(xui_doc_reference_definition_t)) {
+        xui_doc_reference_definition_t ref;
+        result = doc_seq_read(fresh->references, i, &ref, sizeof(ref));
+        if (result != XUI_OK) goto done;
+        if (doc_dep_intersects(blocks, ordinary, ref.iSourceStart, ref.iSourceEnd))
+            { result = XUI_ERROR_UNSUPPORTED; goto done; }
+    }
+    for (i = 0; i < doc_seq_size(fresh->reference_candidates) / sizeof(xui_doc_inline_syntax_t); i++) {
+        xui_doc_inline_syntax_t span;
+        result = doc_seq_read_syntax(fresh->reference_candidates, i, &span);
+        if (result != XUI_OK) goto done;
+        if (doc_dep_intersects(blocks, ordinary, span.iSourceStart, span.iSourceEnd))
+            { result = XUI_ERROR_UNSUPPORTED; goto done; }
+    }
+    result = doc_dep_syntax(t, fresh, syntax_ordinary, blocks, ordinary);
+    if (result != XUI_OK) goto done;
+    for (i = 0; i <= doc_seq_size(parsed_root->children); i++) {
+        doc_node* block = i < doc_seq_size(parsed_root->children) ?
+            doc_index_get(fresh->index, doc_seq_get_id(parsed_root->children, i)) : NULL;
+        uint64_t start = block && block->kind != XUI_DOC_FOOTNOTE ? block->syntax_start : DOC_NONE;
+        while (next_old < ordinary && (start == DOC_NONE || blocks[next_old].start < start)) {
+            doc_dep_block* keep = &blocks[next_old++];
+            if (!keep->omit) continue;
+            result = doc_dep_graft(t, old, fresh, keep->id, ordinal++,
+                (int64_t)keep->start - (int64_t)keep->old_start);
+            if (result == XUI_OK) result = doc_dep_append_id(fresh, &children, keep->id);
+            if (result != XUI_OK) goto done;
+        }
+        if (block) {
+            uint64_t id = block->id;
+            result = doc_dep_graft(t, fresh, fresh, id, ordinal++, 0);
+            if (result == XUI_OK) result = doc_dep_append_id(fresh, &children, id);
+            if (result != XUI_OK) goto done;
+        }
+    }
+    copy = doc_node_clone(fresh->allocator, parsed_root);
+    if (!copy) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    doc_seq_release(copy->children); copy->children = children; children = NULL;
+    copy->source_start = copy->source_end = DOC_NONE; copy->source_exact = 0;
+    copy->syntax_start = 0; copy->syntax_end = bytes;
+    for (i = 0; i < doc_seq_size(copy->children); i++) {
+        doc_node* block = doc_index_get(fresh->index, doc_seq_get_id(copy->children, i));
+        doc_node_source_range range;
+        if (block->kind == XUI_DOC_FRONT_MATTER) continue;
+        doc_node_source_range_with_children(copy->children, block, &range);
+        if (range.source_start != DOC_NONE && (copy->source_start == DOC_NONE || range.source_start < copy->source_start))
+            copy->source_start = range.source_start;
+        if (range.source_end != DOC_NONE && (copy->source_end == DOC_NONE || range.source_end > copy->source_end))
+            copy->source_end = range.source_end;
+    }
+    result = doc_state_set(fresh, copy);
+    if (result == XUI_OK) result = doc_reference_values_reuse(old, fresh, t->base, t->cancellation);
+    if (result == XUI_OK) result = doc_markdown_reconcile(t, &fresh);
+    if (result == XUI_OK) result = doc_inc_cancel(t);
+    if (result == XUI_OK) {
+        atomic_fetch_add(&old->allocator->markdown_incremental_parses, 1);
+        *out = fresh; fresh = NULL;
+    }
+done:
+    doc_node_release(copy); doc_seq_release(children); doc_state_release(fresh);
+    doc_free(masked); doc_free(blocks); return result;
+}
+int doc_markdown_incremental(xui_document_transaction t, doc_state** out)
+{
+    int result = doc_markdown_incremental_local(t, out);
+    if (result == XUI_ERROR_UNSUPPORTED) result = doc_markdown_dependency_cohort(t, out);
+    return result;
 }
 
 #endif

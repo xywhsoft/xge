@@ -36,6 +36,8 @@ Windows 完整发布、最终 DLL 专项、两个已修复公共 API 探针、Li
 
 新增实际 DLL 公共探针 `inside-footnote-final.log` 确认：选区内部的未使用脚注定义确实被识别为 FOOTNOTE，但增加引用层仍返回 `-107`；源码、语义树、来源语法、revision 与历史保持原样。该实际退出 1 的用例作为下一项 K2 工作，不计入本批通过。
 
+2026-10-04 更新：上述选区内未使用脚注问题已由 [脚注定义值与引用前缀批次](XUI_DOCUMENT_FOOTNOTE_PREFIX.md) 解决，并从当前源码保留先失败证据后重新验证。本文的 2026-10-03 退出 1 记录继续作为历史证据；不表示当前已验证的前缀路径仍有同一拒绝。
+
 通用 WebView 仅 Windows 基础网页承载，其他四平台后端预留。Document 私有公式、Mermaid、HTML 的脚本、测量、截图和独立 HTML 交互保留；不扩大通用 WebView 的公开通信范围。
 
 最终默认、Document 本地与 `build/quote-prefix-native-final/xge.dll` SHA256 一致：`3bf81a989e7d7d0c69e620fa8a335f10acf0e14194b8647c4b79a8473f72d9a0`。首个隔离 Native 构建也为该指纹；旧 DLL `2ffc4...` 及两个实际退出 1 的旧公共复现另存，历史封存包不重跑。93 个其他源码/脚本输入、公开头文件和 API 注释覆盖基线保持。首次导出检查未识别当前 objdump 的表格式而失败，修正后对非空完整导出表检查通过；该过程日志保留。最终差异与反向校验见 `changes.patch`、`diff-check-final.log`。

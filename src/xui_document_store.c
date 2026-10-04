@@ -327,6 +327,7 @@ void doc_seq_release(doc_sequence* p)
     doc_seq_release(p->left);
     doc_seq_release(p->right);
     doc_blob_release(p->blob);
+    doc_seq_release(p->value);
     doc_free(p);
 }
 static uint64_t doc_mix(uint64_t x)
@@ -357,7 +358,7 @@ static doc_sequence* doc_seq_clone(doc_allocator* a, const doc_sequence* src)
     /* Refcounts may change on snapshot readers. Copy only immutable fields. */
     memcpy(&p->priority, &src->priority, sizeof(*p) - offsetof(doc_sequence, priority));
     atomic_init(&p->refs, 1);
-    doc_seq_retain(p->left); doc_seq_retain(p->right); doc_blob_retain(p->blob);
+    doc_seq_retain(p->left); doc_seq_retain(p->right); doc_blob_retain(p->blob); doc_seq_retain(p->value);
     return p;
 }
 static void doc_seq_syntax_add(doc_sequence* p, int64_t source, int64_t index)
@@ -404,18 +405,29 @@ doc_sequence* doc_seq_id(doc_allocator* a, uint64_t id)
     if (p) { p->id = id; p->length = p->total = 1; }
     return p;
 }
-doc_sequence* doc_seq_blob_item(doc_allocator* a, uint64_t kind, doc_blob* blob)
+doc_sequence* doc_seq_value_item(doc_allocator* a, uint64_t kind, doc_sequence* value)
 {
     doc_sequence* p = doc_seq_id(a, kind);
-    if (p) { p->blob = blob; doc_blob_retain(blob); }
+    if (p) { p->value = value; doc_seq_retain(value); }
     return p;
 }
-doc_blob* doc_seq_get_blob_item(doc_sequence* p, uint64_t index)
+doc_sequence* doc_seq_blob_range(doc_allocator* a, doc_blob* blob, uint64_t offset, uint64_t bytes)
+{
+    doc_sequence* p;
+    if (!blob || !bytes || offset > blob->size || bytes > blob->size - offset) return NULL;
+    p = doc_seq_new(a);
+    if (p) {
+        p->blob = blob; doc_blob_retain(blob); p->offset = offset;
+        p->length = p->total = bytes;
+    }
+    return p;
+}
+doc_sequence* doc_seq_get_value_item(doc_sequence* p, uint64_t index)
 {
     while (p) {
         uint64_t left = doc_seq_size(p->left);
         if (index < left) p = p->left;
-        else if (index - left < p->length) return p->length == 1 ? p->blob : NULL;
+        else if (index - left < p->length) return p->length == 1 ? p->value : NULL;
         else { index -= left + p->length; p = p->right; }
     }
     return NULL;
@@ -837,6 +849,9 @@ doc_state* doc_state_new(doc_allocator* a, uint32_t profile)
     doc_allocator_retain(a);
     desc.iSize = sizeof(desc); desc.iKind = XUI_DOC_ROOT;
     root = doc_node_new(a, DOC_ROOT, 0, &desc);
+    /* Empty Markdown already has a valid zero-length concrete source. Match
+     * the parser's empty-root syntax range without creating edit history. */
+    if (root && profile == XUI_DOCUMENT_MARKDOWN) root->syntax_start = root->syntax_end = 0;
     if (!root || doc_state_set(p, root) != XUI_OK) { doc_node_release(root); doc_state_release(p); return NULL; }
     doc_node_release(root); return p;
 }
