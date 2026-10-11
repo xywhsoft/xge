@@ -20,29 +20,29 @@ static int __xgeRenderTargetEnsureFramebuffer(xge_render_target pTarget)
 	if ( pTarget->iFramebufferId != 0 ) {
 		return XGE_OK;
 	}
-	if ( (glGenFramebuffers == NULL) || (glDeleteFramebuffers == NULL) || (glBindFramebuffer == NULL) || (glFramebufferTexture2D == NULL) || (glCheckFramebufferStatus == NULL) ) {
+	if ( (xge_glGenFramebuffers == NULL) || (xge_glDeleteFramebuffers == NULL) || (xge_glBindFramebuffer == NULL) || (xge_glFramebufferTexture2D == NULL) || (xge_glCheckFramebufferStatus == NULL) ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	iStencilRenderbuffer = 0;
-	glGenFramebuffers(1, &iFramebuffer);
-	glBindFramebuffer(GL_FRAMEBUFFER, iFramebuffer);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint)pTarget->tTexture.iBackendId, 0);
-	if ( (glGenRenderbuffers != NULL) && (glDeleteRenderbuffers != NULL) && (glBindRenderbuffer != NULL) && (glRenderbufferStorage != NULL) && (glFramebufferRenderbuffer != NULL) ) {
-		glGenRenderbuffers(1, &iStencilRenderbuffer);
-		glBindRenderbuffer(GL_RENDERBUFFER, iStencilRenderbuffer);
-		glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, pTarget->iWidth, pTarget->iHeight);
-		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, iStencilRenderbuffer);
-		glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	xge_glGenFramebuffers(1, &iFramebuffer);
+	xge_glBindFramebuffer(GL_FRAMEBUFFER, iFramebuffer);
+	xge_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint)pTarget->tTexture.iBackendId, 0);
+	if ( (xge_glGenRenderbuffers != NULL) && (xge_glDeleteRenderbuffers != NULL) && (xge_glBindRenderbuffer != NULL) && (xge_glRenderbufferStorage != NULL) && (xge_glFramebufferRenderbuffer != NULL) ) {
+		xge_glGenRenderbuffers(1, &iStencilRenderbuffer);
+		xge_glBindRenderbuffer(GL_RENDERBUFFER, iStencilRenderbuffer);
+		xge_glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, pTarget->iWidth, pTarget->iHeight);
+		xge_glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, iStencilRenderbuffer);
+		xge_glBindRenderbuffer(GL_RENDERBUFFER, 0);
 	}
-	if ( glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE ) {
-		glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
+	if ( xge_glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE ) {
+		xge_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
 		if ( iStencilRenderbuffer != 0 ) {
-			glDeleteRenderbuffers(1, &iStencilRenderbuffer);
+			xge_glDeleteRenderbuffers(1, &iStencilRenderbuffer);
 		}
-		glDeleteFramebuffers(1, &iFramebuffer);
+		xge_glDeleteFramebuffers(1, &iFramebuffer);
 		return XGE_ERROR_GPU_FAILED;
 	}
-	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
+	xge_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
 	pTarget->iFramebufferId = iFramebuffer;
 	pTarget->iStencilRenderbufferId = iStencilRenderbuffer;
 	return XGE_OK;
@@ -139,7 +139,7 @@ int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrc
 	     (iSrcY > (g_xge.iHeight - pTarget->iHeight)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (g_xge.bSokolRunning == 0) || (glCopyTexSubImage2D == NULL) || (glActiveTexture == NULL) || (glBindTexture == NULL) ) {
+	if ( (g_xge.bSokolRunning == 0) || (xge_glCopyTexSubImage2D == NULL) || (xge_glActiveTexture == NULL) || (xge_glBindTexture == NULL) ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	iRet = xgeFlush();
@@ -151,13 +151,13 @@ int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrc
 		return iRet;
 	}
 	iGLY = g_xge.iHeight - iSrcY - pTarget->iHeight;
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, (GLuint)pTarget->tTexture.iBackendId);
-	glCopyTexSubImage2D(
+	xge_glActiveTexture(GL_TEXTURE0);
+	xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTarget->tTexture.iBackendId);
+	xge_glCopyTexSubImage2D(
 		GL_TEXTURE_2D, 0, 0, 0, iSrcX, iGLY,
 		pTarget->iWidth, pTarget->iHeight
 	);
-	glBindTexture(GL_TEXTURE_2D, 0);
+	xge_glBindTexture(GL_TEXTURE_2D, 0);
 	return XGE_OK;
 }
 
@@ -189,7 +189,7 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 		}
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	if ( glReadPixels == NULL ) {
+	if ( xge_glReadPixels == NULL ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	iRet = xgeFlush();
@@ -208,9 +208,9 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	iFramebuffer = (GLuint)(((pTarget->iFlags & XGE_RENDER_TARGET_WINDOW) != 0) ? 0 : pTarget->iFramebufferId);
-	glBindFramebuffer(GL_FRAMEBUFFER, iFramebuffer);
-	glReadPixels(0, 0, pTarget->iWidth, pTarget->iHeight, GL_RGBA, GL_UNSIGNED_BYTE, pTemp);
-	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
+	xge_glBindFramebuffer(GL_FRAMEBUFFER, iFramebuffer);
+	xge_glReadPixels(0, 0, pTarget->iWidth, pTarget->iHeight, GL_RGBA, GL_UNSIGNED_BYTE, pTemp);
+	xge_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
 	pDst = (unsigned char*)pPixels;
 	iCopyStride = pTarget->iWidth * 4;
 	for ( iRow = 0; iRow < pTarget->iHeight; iRow++ ) {
@@ -240,15 +240,15 @@ void xgeRenderTargetFree(xge_render_target pTarget)
 	}
 	iFramebuffer = (GLuint)pTarget->iFramebufferId;
 	iStencilRenderbuffer = (GLuint)pTarget->iStencilRenderbufferId;
-	if ( (iFramebuffer != 0) && (g_xge.bSokolRunning != 0) && (glDeleteFramebuffers != NULL) ) {
+	if ( (iFramebuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteFramebuffers != NULL) ) {
 		if ( g_xge.iCurrentFramebufferId == pTarget->iFramebufferId ) {
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			xge_glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			g_xge.iCurrentFramebufferId = 0;
 		}
-		glDeleteFramebuffers(1, &iFramebuffer);
+		xge_glDeleteFramebuffers(1, &iFramebuffer);
 	}
-	if ( (iStencilRenderbuffer != 0) && (g_xge.bSokolRunning != 0) && (glDeleteRenderbuffers != NULL) ) {
-		glDeleteRenderbuffers(1, &iStencilRenderbuffer);
+	if ( (iStencilRenderbuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteRenderbuffers != NULL) ) {
+		xge_glDeleteRenderbuffers(1, &iStencilRenderbuffer);
 	}
 	xgeTextureFree(&pTarget->tTexture);
 	memset(pTarget, 0, sizeof(*pTarget));
@@ -295,7 +295,7 @@ int xgePassBegin(xge_pass pPass)
 	pPass->bPrevClipEnabled = g_xge.bClipEnabled;
 	pPass->tPrevClipRect = g_xge.tClipRect;
 	iFramebuffer = ((pTarget->iFlags & XGE_RENDER_TARGET_WINDOW) != 0) ? 0 : pTarget->iFramebufferId;
-	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)iFramebuffer);
+	xge_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)iFramebuffer);
 	g_xge.iCurrentFramebufferId = iFramebuffer;
 	g_xge.iWidth = pTarget->iWidth;
 	g_xge.iHeight = pTarget->iHeight;
@@ -306,8 +306,8 @@ int xgePassBegin(xge_pass pPass)
 	memset(&g_xge.tViewportRect, 0, sizeof(g_xge.tViewportRect));
 	g_xge.bClipEnabled = 0;
 	memset(&g_xge.tClipRect, 0, sizeof(g_xge.tClipRect));
-	glViewport(0, 0, pTarget->iWidth, pTarget->iHeight);
-	if ( glDisable != NULL ) glDisable(GL_SCISSOR_TEST);
+	xge_glViewport(0, 0, pTarget->iWidth, pTarget->iHeight);
+	if ( xge_glDisable != NULL ) xge_glDisable(GL_SCISSOR_TEST);
 	if ( (pPass->iClearFlags & XGE_PASS_CLEAR_COLOR) != 0 ) {
 		xgeClear(pPass->iClearColor);
 	}
@@ -326,7 +326,7 @@ int xgePassEnd(xge_pass pPass)
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	iRet = xgeFlush();
-	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)pPass->iPrevFramebufferId);
+	xge_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)pPass->iPrevFramebufferId);
 	g_xge.iCurrentFramebufferId = pPass->iPrevFramebufferId;
 	g_xge.iWidth = pPass->iPrevWidth;
 	g_xge.iHeight = pPass->iPrevHeight;

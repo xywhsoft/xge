@@ -850,13 +850,14 @@ static int __xuiTestTextMeasure(xui_proxy pProxy, const xui_text_item_t* pTextIt
 {
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
     const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+	xui_test_proxy_state_t* pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
 
 	int iLen;
 
-	(void)pProxy;
 	if ( !__xuiTestFontValid(pFont) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pState != NULL ) pState->iTextMeasureCount++;
 	iLen = (sText != NULL) ? (int)strlen(sText) : 0;
 	pSize->fX = (float)iLen * pFont->fSize * 0.5f;
 	pSize->fY = pFont->fSize;
@@ -890,10 +891,12 @@ static int __xuiTestTextShape(xui_proxy pProxy, const xui_text_item_t* pTextItem
 	int iNext;
 	int iCount;
 	int i;
+	xui_test_proxy_state_t* pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
 	if ( !__xuiTestFontValid(pFont) || sText == NULL || iTextSize < -1 || pShape == NULL )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	(void)pProxy;
+	if ( pState != NULL ) pState->iTextShapeCount++;
 	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	if ( pState != NULL ) pState->iTextShapeBytes += (size_t)iTextSize;
 	memset(pShape, 0, sizeof(*pShape));
 	pShape->iSize = sizeof(*pShape);
 	pShape->iFlags = iFlags;
@@ -924,7 +927,49 @@ static int __xuiTestTextShape(xui_proxy pProxy, const xui_text_item_t* pTextItem
 		pShape->pClusters[i].fAdvance = pFont->fSize * 0.5f;
 		pShape->fWidth += pShape->pClusters[i].fAdvance;
 	}
+	if ( pState != NULL && pState->bRetainedText &&
+	     (iFlags & XUI_TEXT_SHAPE_RETAIN_PAINT) != 0 ) pShape->pPaint = pShape;
 	return XUI_OK;
+}
+
+static int __xuiTestDrawTextShapeRange(xui_proxy pProxy, xui_draw_context pDraw,
+	const xui_text_shape_t* pShape, int iStart, int iEnd, xui_rect_t tRect,
+	uint32_t iColor, uint32_t iFlags)
+{
+	xui_test_proxy_state_t* pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
+	if ( !__xuiTestDrawValid(pDraw) || pShape == NULL || pShape->pPaint == NULL ||
+	     iStart < 0 || iEnd < iStart || iEnd > pShape->iTextSize ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pState != NULL ) pState->iTextShapeRangeDrawCount++;
+	pDraw->pTarget->iDrawCount++;
+	pDraw->pTarget->iTextDrawCount++;
+	pDraw->pTarget->tLastTextRect = tRect;
+	pDraw->pTarget->iLastTextColor = iColor;
+	pDraw->pTarget->iLastTextFlags = iFlags;
+	return XUI_OK;
+}
+
+static int __xuiTestDrawTextShapeRangeSpans(xui_proxy pProxy,
+	xui_draw_context pDraw, const xui_text_shape_t* pShape,
+	int iStart, int iEnd, xui_rect_t tRect, uint32_t iColor,
+	uint32_t iFlags, float fDrawOffsetX,
+	const xui_text_paint_span_t* pSpans, int iSpanCount)
+{
+	int i;
+
+	if ( iSpanCount < 0 || (iSpanCount > 0 && pSpans == NULL) ||
+	     fDrawOffsetX < -0.5f || fDrawOffsetX > 0.5f ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < iSpanCount; i++ ) {
+		if ( pSpans[i].iSize < sizeof(pSpans[i]) ||
+		     pSpans[i].iStart < iStart || pSpans[i].iEnd < pSpans[i].iStart ||
+		     pSpans[i].iEnd > iEnd ||
+		     (i > 0 && pSpans[i].iStart < pSpans[i - 1].iEnd) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	return __xuiTestDrawTextShapeRange(pProxy, pDraw, pShape,
+		iStart, iEnd, tRect, iColor, iFlags);
 }
 
 static int __xuiTestTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
@@ -1219,4 +1264,41 @@ int xuiTestProxyGetSvgSurfaceLoadCount(xui_test_proxy_state_t* pState)
 int xuiTestProxyGetSurfaceDestroyCount(xui_test_proxy_state_t* pState)
 {
 	return (pState != NULL) ? pState->iSurfaceDestroyCount : 0;
+}
+
+void xuiTestProxyResetTextCounters(xui_test_proxy_state_t* pState)
+{
+	if ( pState == NULL ) return;
+	pState->iTextMeasureCount = 0;
+	pState->iTextShapeCount = 0;
+	pState->iTextShapeBytes = 0;
+	pState->iTextShapeRangeDrawCount = 0;
+}
+
+void xuiTestProxyEnableRetainedText(xui_test_proxy_state_t* pState)
+{
+	if ( pState == NULL ) return;
+	pState->bRetainedText = 1;
+	pState->tProxy.drawTextShapeRange = __xuiTestDrawTextShapeRange;
+	pState->tProxy.drawTextShapeRangeSpans = __xuiTestDrawTextShapeRangeSpans;
+}
+
+int xuiTestProxyGetTextMeasureCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iTextMeasureCount : 0;
+}
+
+int xuiTestProxyGetTextShapeCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iTextShapeCount : 0;
+}
+
+size_t xuiTestProxyGetTextShapeBytes(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iTextShapeBytes : 0u;
+}
+
+int xuiTestProxyGetTextShapeRangeDrawCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iTextShapeRangeDrawCount : 0;
 }

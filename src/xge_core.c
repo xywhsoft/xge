@@ -637,13 +637,13 @@ int xgeGpuCapsGet(xge_gpu_caps_t* pCaps)
 	sVersion = "";
 	sShading = "";
 	iMaxTextureSize = 0;
-	if ( (g_xge.bSokolRunning != 0) && (glGetString != NULL) ) {
-		sVendor = (const char*)glGetString(GL_VENDOR);
-		sRenderer = (const char*)glGetString(GL_RENDERER);
-		sVersion = (const char*)glGetString(GL_VERSION);
-		sShading = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
-		if ( glGetIntegerv != NULL ) {
-			glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+	if ( (g_xge.bSokolRunning != 0) && (xge_glGetString != NULL) ) {
+		sVendor = (const char*)xge_glGetString(GL_VENDOR);
+		sRenderer = (const char*)xge_glGetString(GL_RENDERER);
+		sVersion = (const char*)xge_glGetString(GL_VERSION);
+		sShading = (const char*)xge_glGetString(GL_SHADING_LANGUAGE_VERSION);
+		if ( xge_glGetIntegerv != NULL ) {
+			xge_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
 		}
 	}
 	pCaps->iMaxTextureSize = iMaxTextureSize;
@@ -1281,8 +1281,8 @@ int xgeFlush(void)
 		return iRet;
 	}
 #endif
-	if ( (g_xge.bSokolRunning != 0) && (glFlush != NULL) ) {
-		glFlush();
+	if ( (g_xge.bSokolRunning != 0) && (xge_glFlush != NULL) ) {
+		xge_glFlush();
 	}
 	return XGE_OK;
 }
@@ -1384,8 +1384,8 @@ void xgeClear(uint32_t iColor)
 		(void)__xgeShapeAutoBatchFlush();
 #endif
 		__xgeColorToFloat(iColor, &fR, &fG, &fB, &fA);
-		glClearColor(fR, fG, fB, fA);
-		glClear(GL_COLOR_BUFFER_BIT);
+		xge_glClearColor(fR, fG, fB, fA);
+		xge_glClear(GL_COLOR_BUFFER_BIT);
 	}
 }
 

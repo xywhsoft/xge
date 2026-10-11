@@ -1575,7 +1575,7 @@ static int __xuiWindowAccessibleAction(xui_widget pWidget, int iAction, const vo
 }
 
 static const xui_internal_accessibility_adapter_t g_xuiWindowAccessible = {
-	__xuiWindowAccessibleNode, __xuiWindowAccessibleAction
+	.getNode = __xuiWindowAccessibleNode, .performAction = __xuiWindowAccessibleAction
 };
 
 XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)

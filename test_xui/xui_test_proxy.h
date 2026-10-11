@@ -24,6 +24,11 @@ typedef struct xui_test_proxy_state_t {
 	int iZstdDecompressCount;
 	int iSvgSurfaceLoadCount;
 	int iSurfaceDestroyCount;
+	int iTextMeasureCount;
+	int iTextShapeCount;
+	size_t iTextShapeBytes;
+	int iTextShapeRangeDrawCount;
+	int bRetainedText;
 	double fClockSeconds;
 	float fLastFrameDelay;
 	int iFrameRequestCount;
@@ -61,5 +66,11 @@ int xuiTestProxyGetLastPathCommandCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetSurfaceLoadCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetSvgSurfaceLoadCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetSurfaceDestroyCount(xui_test_proxy_state_t* pState);
+void xuiTestProxyResetTextCounters(xui_test_proxy_state_t* pState);
+void xuiTestProxyEnableRetainedText(xui_test_proxy_state_t* pState);
+int xuiTestProxyGetTextMeasureCount(xui_test_proxy_state_t* pState);
+int xuiTestProxyGetTextShapeCount(xui_test_proxy_state_t* pState);
+size_t xuiTestProxyGetTextShapeBytes(xui_test_proxy_state_t* pState);
+int xuiTestProxyGetTextShapeRangeDrawCount(xui_test_proxy_state_t* pState);
 
 #endif /* XUI_TEST_PROXY_H */

@@ -6,7 +6,7 @@
 void d3_skin_free(d3_skin *skin)
 {
     if (!skin) return;
-    if (skin->texture && skin->context==__xge3dContext()) glDeleteTextures(1,&skin->texture);
+    if (skin->texture && skin->context==__xge3dContext()) xge_glDeleteTextures(1,&skin->texture);
     xge3dModelFree(skin->model);xrtArrayUnit(&skin->joints);xrtArrayUnit(&skin->inverse_bind);xrtArrayUnit(&skin->palette);xrtFree(skin);
 }
 int d3_skin_create(xge3d_model *model,size_t index,const xarray *nodes,d3_skin **out)
@@ -59,19 +59,19 @@ int d3_skin_upload(d3_skin *s,uint64_t *bytes)
     uint64_t context=__xge3dContext();
     if (!context) return XGE_ERROR_NOT_INITIALIZED;
     if (s->context && s->context!=context) return XGE_ERROR_INVALID_STATE;
-    glActiveTexture(GL_TEXTURE0+9);
+    xge_glActiveTexture(GL_TEXTURE0+9);
     if (!s->texture) {
-        glGenTextures(1,&s->texture);glBindTexture(GL_TEXTURE_2D,s->texture);
-        glTexImage2D(GL_TEXTURE_2D,0,0x8814,4,(GLsizei)s->palette.Count,0,GL_RGBA,GL_FLOAT,s->palette.Data);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+        xge_glGenTextures(1,&s->texture);xge_glBindTexture(GL_TEXTURE_2D,s->texture);
+        xge_glTexImage2D(GL_TEXTURE_2D,0,0x8814,4,(GLsizei)s->palette.Count,0,GL_RGBA,GL_FLOAT,s->palette.Data);
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
     } else {
-        glBindTexture(GL_TEXTURE_2D,s->texture);
+        xge_glBindTexture(GL_TEXTURE_2D,s->texture);
         if (s->uploaded_version==s->pose_version) return XGE_OK;
-        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,4,(GLsizei)s->palette.Count,GL_RGBA,GL_FLOAT,s->palette.Data);
+        xge_glTexSubImage2D(GL_TEXTURE_2D,0,0,0,4,(GLsizei)s->palette.Count,GL_RGBA,GL_FLOAT,s->palette.Data);
     }
-    if (!s->texture || glGetError()!=GL_NO_ERROR) {
-        if (s->texture) glDeleteTextures(1,&s->texture);
+    if (!s->texture || xge_glGetError()!=GL_NO_ERROR) {
+        if (s->texture) xge_glDeleteTextures(1,&s->texture);
         s->texture=0;return XGE_ERROR_GPU_FAILED;
     }
     s->context=context;s->uploaded_version=s->pose_version;if (bytes) *bytes+=s->palette.Count*sizeof(xge3d_mat4_t);return XGE_OK;

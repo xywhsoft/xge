@@ -302,8 +302,8 @@ static int __xgeRenderThreadFlushWithEGL(xge_context_t* pContext)
 	pContext->bRenderThreadGLCurrent = 1;
 	(void)xgeTextureUploadFlush();
 	iRet = __xgeRenderCommandFlush();
-	if ( glFlush != NULL ) {
-		glFlush();
+	if ( xge_glFlush != NULL ) {
+		xge_glFlush();
 	}
 	pContext->bRenderThreadGLCurrent = 0;
 	__xgeRenderThreadEGLSnapshot(pContext, &tEGL);

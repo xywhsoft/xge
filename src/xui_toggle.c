@@ -1000,7 +1000,7 @@ static int __xuiToggleAccessibleNode(xui_widget pWidget, xui_accessible_node_t* 
 	return XUI_OK;
 }
 
-static const xui_internal_accessibility_adapter_t g_xuiToggleAccessible = {__xuiToggleAccessibleNode, NULL};
+static const xui_internal_accessibility_adapter_t g_xuiToggleAccessible = {.getNode = __xuiToggleAccessibleNode, .performAction = NULL};
 
 XUI_API xui_widget_type xuiToggleGetType(xui_context pContext)
 {

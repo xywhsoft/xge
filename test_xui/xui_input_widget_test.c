@@ -234,6 +234,7 @@ int main(void)
 	const char* sNiHao;
 	const char* sEmojiText;
 	xui_rect_t tSelectionRect;
+	xui_rect_t tCursorRect;
 	xui_rect_t tTextRect;
 	xui_rect_t tWorldRect;
 	xui_rect_t tSearchRect;
@@ -489,10 +490,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode word layout");
 	iRet = __xuiInputWidgetRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode word render");
+	iRet = xuiInputSetSelection(pInput, 6, 6);
+	XUI_TEST_CHECK(iRet == XUI_OK, "position Unicode word cursor");
+	iRet = __xuiInputWidgetRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "Unicode cursor render");
 	tWorldRect = xuiWidgetGetWorldRect(pInput);
-	tTextRect = xuiInputGetTextRect(pInput);
-	iRet = __xuiInputWidgetDoubleClick(pContext, tWorldRect.fX + tTextRect.fX + 32.0f,
-		tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f);
+	tCursorRect = xuiInputGetCursorRect(pInput);
+	iRet = __xuiInputWidgetDoubleClick(pContext, tWorldRect.fX + tCursorRect.fX + 2.0f,
+		tWorldRect.fY + tCursorRect.fY + tCursorRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "double click Unicode word");
 	iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 6 && iEnd == 9,

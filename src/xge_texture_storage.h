@@ -36,8 +36,8 @@ static int __xgeTextureChoices(xge_texture pTexture, xge_texture_choice_t* pChoi
 	int iChoiceCount = 0;
 	int bSwizzle = __xgeTextureNativeSwizzle();
 	if ( iMode == XGE_TEXTURE_COMPRESS_NONE || pShadow->bPackingDisabled ||
-	     iCount < 64u || glGetError == NULL || glGetIntegerv == NULL ||
-	     glPixelStorei == NULL || (!bSwizzle && iMode != XGE_TEXTURE_COMPRESS_LOSSY) ) goto fallback;
+	     iCount < 64u || xge_glGetError == NULL || xge_glGetIntegerv == NULL ||
+	     xge_glPixelStorei == NULL || (!bSwizzle && iMode != XGE_TEXTURE_COMPRESS_LOSSY) ) goto fallback;
 	for ( i = 0; i < iCount; i++ ) {
 		const unsigned char* p = pShadow->pPixels + i * 4u;
 		bGray &= p[0] == p[1] && p[0] == p[2];
@@ -131,16 +131,16 @@ static void __xgeTextureSetSwizzle(int iSwizzle)
 	else if ( iSwizzle == XGE_SWIZZLE_GRAY_ALPHA ) a = GL_GREEN;
 	else if ( iSwizzle == XGE_SWIZZLE_WHITE_ALPHA ) r = g = b = GL_ONE;
 	else if ( iSwizzle == XGE_SWIZZLE_BLACK_ALPHA ) r = g = b = GL_ZERO;
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, r);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, g);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, b);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, a);
+	xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, r);
+	xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, g);
+	xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, b);
+	xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, a);
 }
 
 static void __xgeTextureClearGLErrors(void)
 {
 	int i;
-	if ( glGetError != NULL ) for ( i = 0; i < 16 && glGetError() != GL_NO_ERROR; i++ ) {}
+	if ( xge_glGetError != NULL ) for ( i = 0; i < 16 && xge_glGetError() != GL_NO_ERROR; i++ ) {}
 }
 
 static int __xgeTextureGLError(GLenum iError)
@@ -163,7 +163,7 @@ static int __xgeTextureNewGPU(xge_texture pTexture, const unsigned char* pPixels
 	xge_sampler_t tSampler = pTexture->tSampler;
 	int iRet;
 	*pId = 0;
-	if ( glGenTextures == NULL || glDeleteTextures == NULL || glBindTexture == NULL || glTexImage2D == NULL || glTexParameteri == NULL ) return XGE_ERROR_GPU_FAILED;
+	if ( xge_glGenTextures == NULL || xge_glDeleteTextures == NULL || xge_glBindTexture == NULL || xge_glTexImage2D == NULL || xge_glTexParameteri == NULL ) return XGE_ERROR_GPU_FAILED;
 	iRet = __xgeSamplerNormalize(&tSampler);
 	if ( iRet != XGE_OK ) return iRet;
 	if ( tChoice.iStorage != XGE_TEXTURE_STORAGE_RGBA8 ) {
@@ -172,32 +172,32 @@ static int __xgeTextureNewGPU(xge_texture pTexture, const unsigned char* pPixels
 		pUpload = pPacked;
 	}
 	__xgeTextureGLFormat(tChoice.iStorage, &iInternal, &iFormat, &iType);
-	if ( glGetIntegerv != NULL ) {
-		glGetIntegerv(GL_TEXTURE_BINDING_2D, &iBinding);
-		glGetIntegerv(GL_UNPACK_ALIGNMENT, &iAlignment);
+	if ( xge_glGetIntegerv != NULL ) {
+		xge_glGetIntegerv(GL_TEXTURE_BINDING_2D, &iBinding);
+		xge_glGetIntegerv(GL_UNPACK_ALIGNMENT, &iAlignment);
 	}
 	__xgeTextureClearGLErrors();
-	glGenTextures(1, &iTexture);
+	xge_glGenTextures(1, &iTexture);
 	if ( iTexture != 0 ) {
-		glBindTexture(GL_TEXTURE_2D, iTexture);
-		if ( glPixelStorei != NULL ) glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-		glTexImage2D(GL_TEXTURE_2D, 0, iInternal, pTexture->iWidth, pTexture->iHeight, 0, iFormat, iType, pUpload);
-		if ( glGetError != NULL ) iError = glGetError();
+		xge_glBindTexture(GL_TEXTURE_2D, iTexture);
+		if ( xge_glPixelStorei != NULL ) xge_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		xge_glTexImage2D(GL_TEXTURE_2D, 0, iInternal, pTexture->iWidth, pTexture->iHeight, 0, iFormat, iType, pUpload);
+		if ( xge_glGetError != NULL ) iError = xge_glGetError();
 		if ( iError == GL_NO_ERROR ) {
 			__xgeTextureSetSwizzle(tChoice.iSwizzle);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
-			if ( glGetError != NULL ) iError = glGetError();
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
+			if ( xge_glGetError != NULL ) iError = xge_glGetError();
 		}
-	} else iError = glGetError != NULL ? glGetError() : GL_OUT_OF_MEMORY;
-	if ( glPixelStorei != NULL ) glPixelStorei(GL_UNPACK_ALIGNMENT, iAlignment);
-	glBindTexture(GL_TEXTURE_2D, (GLuint)iBinding);
+	} else iError = xge_glGetError != NULL ? xge_glGetError() : GL_OUT_OF_MEMORY;
+	if ( xge_glPixelStorei != NULL ) xge_glPixelStorei(GL_UNPACK_ALIGNMENT, iAlignment);
+	xge_glBindTexture(GL_TEXTURE_2D, (GLuint)iBinding);
 	xrtFree(pPacked);
 	iRet = iTexture == 0 && iError == GL_NO_ERROR ? XGE_ERROR_GPU_FAILED : __xgeTextureGLError(iError);
 	if ( iRet != XGE_OK ) {
-		if ( iTexture != 0 ) glDeleteTextures(1, &iTexture);
+		if ( iTexture != 0 ) xge_glDeleteTextures(1, &iTexture);
 		__xgeTextureClearGLErrors();
 		return iRet;
 	}

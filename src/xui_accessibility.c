@@ -1,6 +1,8 @@
 #include "../xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_accessibility_text_internal.h"
+#include "xui_native_accessibility_internal.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -227,6 +229,41 @@ XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_acces
 	return iRet;
 }
 
+XUI_API int xuiInternalAccessibilityCreateTextRange(xui_widget widget, uint64_t id,
+	const xui_internal_accessible_text_request* request,
+	xui_internal_accessible_text_range** out)
+{
+	xui_context context;
+	const xui_internal_accessibility_adapter_t* adapter;
+	xui_internal_accessible_text_range* range = NULL;
+	uint32_t generation, mutation;
+	int result = XUI_ERROR_UNSUPPORTED;
+	if (!out) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	if (!request || !__xuiAccessibleValid(widget) || widget->bAccessibleQueryActive ||
+		widget->bAccessibleActionActive) return XUI_ERROR_INVALID_ARGUMENT;
+	context = widget->pContext;
+	xuiInternalOperationEnter(context);
+	widget->bAccessibleQueryActive = 1;
+	__xuiAccessibleDrain(context);
+	generation = widget->iAccessibleProviderGeneration;
+	mutation = widget->iAccessibleMutationGeneration;
+	if (__xuiAccessibleValid(widget)) {
+		adapter = __xuiAccessibleAdapter(widget);
+		if (adapter && adapter->createTextRange)
+			result = adapter->createTextRange(widget, id, request, &range);
+	}
+	__xuiAccessibleDrain(context);
+	if (!__xuiAccessibleValid(widget) || generation != widget->iAccessibleProviderGeneration ||
+		mutation != widget->iAccessibleMutationGeneration) result = XUI_ERROR_INVALID_STATE;
+	if (result == XUI_OK && !range) result = XUI_ERROR_INVALID_STATE;
+	if (result == XUI_OK && range) *out = range;
+	else if (range) range->ops->release(range);
+	widget->bAccessibleQueryActive = 0;
+	xuiInternalOperationLeave(context);
+	return result;
+}
+
 XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 	int iAction, const void* pData)
 {
@@ -292,6 +329,7 @@ XUI_API int xuiWidgetNotifyAccessibility(xui_widget pWidget, int iEventType, uin
 	tEvent.iType = iEventType;
 	tEvent.iNodeId = iNodeId;
 	tEvent.iRevision = pWidget->iAccessibilityRevision;
+	xuiInternalNativeAccessibilityNotify(pContext, pWidget, &tEvent);
 	if ( pContext->onAccessibilityEvent != NULL ) {
 		pContext->onAccessibilityEvent(pContext, pWidget, &tEvent, pContext->pAccessibilityEventUser);
 	}

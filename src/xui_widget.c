@@ -1,6 +1,7 @@
 #include "../xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_native_accessibility_internal.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -3665,6 +3666,7 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	xui_widget pChild;
 
 	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
+	xuiInternalNativeAccessibilityResetWidget(pWidget);
 	__xuiWidgetStateUnqueue(pWidget);
 	if ( __xuiWidgetMemoryValid(pWidget->pEditDelegate) &&
 	     pWidget->pEditDelegate->pEditOwner == pWidget ) {
@@ -5071,6 +5073,15 @@ static int __xuiInputImeRectEqual(xui_rect_t tA, xui_rect_t tB)
 	return (fDelta >= -fEpsilon && fDelta <= fEpsilon) ? 1 : 0;
 }
 
+void xuiInternalInputInvalidateImeOwner(xui_context pContext)
+{
+	static uint64_t nextOwner;
+	if ( !xuiInternalContextIsValid(pContext) ) return;
+	if ( ++nextOwner == 0 ) ++nextOwner;
+	pContext->iImeOwner = nextOwner;
+	if ( pContext->onImeFocusChanged != NULL ) pContext->onImeFocusChanged(pContext);
+}
+
 static int __xuiInputSyncIme(xui_context pContext, int bForceEnabled, int bForceRect)
 {
 	xui_widget pFocus;
@@ -5086,6 +5097,7 @@ static int __xuiInputSyncIme(xui_context pContext, int bForceEnabled, int bForce
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pFocus = pContext->pFocusWidget;
+	if ( bForceEnabled ) xuiInternalInputInvalidateImeOwner(pContext);
 	bOldEnabled = pContext->bImeEnabled;
 	bOldHasRect = pContext->bHasImeCandidateRect;
 	tOldRect = pContext->tImeCandidateRect;

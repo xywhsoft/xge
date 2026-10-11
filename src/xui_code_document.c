@@ -391,7 +391,8 @@ static int __xuiCodeDocumentFindLine(xui_code_document pDocument, int iOffset)
 }
 
 static int __xuiCodeDocumentUpdateLinesForReplace(xui_code_document pDocument,
-	int iStartLine, int iEndLine, int iOldSegmentEnd, int iDelta)
+	int iStartLine, int iEndLine, int iOldSegmentEnd, int iDelta,
+	int bInsertedLineBreak)
 {
 	xui_code_line_t* pLine;
 	int iNewSegmentEnd;
@@ -415,6 +416,22 @@ static int __xuiCodeDocumentUpdateLinesForReplace(xui_code_document pDocument,
 	iSuffixStart = iEndLine + 1;
 	iSuffixCount = pDocument->iLineCount - iSuffixStart;
 	iOldAffectedCount = iEndLine - iStartLine + 1;
+	if ( iStartLine == iEndLine && !bInsertedLineBreak &&
+	     (pDocument->iPendingLineShiftDelta == 0 ||
+	      pDocument->iPendingLineShiftStart == iSuffixStart) ) {
+		iStart = __xuiCodeDocumentLineField(pDocument, iStartLine, 0);
+		pLine = &pDocument->pLines[iStartLine];
+		pLine->iStart = iStart;
+		pLine->iEnd = iNewSegmentEnd;
+		pLine->iTextEnd = (iNewSegmentEnd > iStart &&
+			__xuiCodeDocumentByteAt(pDocument, iNewSegmentEnd - 1) == '\n') ?
+			iNewSegmentEnd - 1 : iNewSegmentEnd;
+		if ( iSuffixCount > 0 ) {
+			pDocument->iPendingLineShiftStart = iSuffixStart;
+			pDocument->iPendingLineShiftDelta += iDelta;
+		}
+		return XUI_OK;
+	}
 	iAffectedCount = 0;
 	for ( i = __xuiCodeDocumentLineField(pDocument, iStartLine, 0); i < iNewSegmentEnd; i++ ) {
 		if ( __xuiCodeDocumentByteAt(pDocument, i) == '\n' ) iAffectedCount++;
@@ -486,6 +503,7 @@ static int __xuiCodeDocumentReplaceRaw(xui_code_document pDocument,
 	int iStartLine;
 	int iEndLine;
 	int iOldSegmentEnd;
+	int bInsertedLineBreak;
 	int iRet;
 
 	if ( pDocument == NULL || sText == NULL || iTextLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -496,6 +514,7 @@ static int __xuiCodeDocumentReplaceRaw(xui_code_document pDocument,
 	iStartLine = __xuiCodeDocumentFindLine(pDocument, iStart);
 	iEndLine = __xuiCodeDocumentFindLine(pDocument, iEnd);
 	iOldSegmentEnd = __xuiCodeDocumentLineField(pDocument, iEndLine, 1);
+	bInsertedLineBreak = memchr(sText, '\n', (size_t)iTextLength) != NULL;
 	iRet = __xuiCodeDocumentMoveGap(pDocument, iStart);
 	if ( iRet != XUI_OK ) return iRet;
 	pDocument->iGapEnd += iEnd - iStart;
@@ -508,7 +527,8 @@ static int __xuiCodeDocumentReplaceRaw(xui_code_document pDocument,
 	pDocument->iLength = iNewLength;
 	pDocument->bSnapshotValid = 0;
 	iDelta = iTextLength - (iEnd - iStart);
-	iRet = __xuiCodeDocumentUpdateLinesForReplace(pDocument, iStartLine, iEndLine, iOldSegmentEnd, iDelta);
+	iRet = __xuiCodeDocumentUpdateLinesForReplace(pDocument, iStartLine,
+		iEndLine, iOldSegmentEnd, iDelta, bInsertedLineBreak);
 	if ( iRet != XUI_OK ) {
 		/* The text is already valid; recover the derived index deterministically. */
 		iRet = __xuiCodeDocumentRebuildLines(pDocument);

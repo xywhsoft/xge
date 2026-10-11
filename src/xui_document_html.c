@@ -5,21 +5,32 @@
 #include <ctype.h>
 
 typedef struct doc_html { char* text; size_t size, capacity; int error; } doc_html;
+/* Reserve before writing. Failed growth leaves the old buffer owned by b;
+ * the export boundary releases it and never publishes a partial result. */
+static int doc_html_reserve(doc_html* b, size_t extra)
+{
+    size_t needed, capacity; char* grown;
+    if (b->error) return 0;
+    if (b->size == SIZE_MAX || extra > SIZE_MAX - b->size - 1) {
+        b->error = XUI_DOC_ERROR_LIMIT; return 0;
+    }
+    needed = b->size + extra + 1;
+    if (b->capacity >= needed) return 1;
+    capacity = b->capacity ? b->capacity : 1024;
+    while (capacity < needed) {
+        if (capacity > SIZE_MAX / 2) { capacity = needed; break; }
+        capacity *= 2;
+    }
+    grown = malloc(capacity);
+    if (!grown) { b->error = XUI_ERROR_OUT_OF_MEMORY; return 0; }
+    if (b->size) memcpy(grown, b->text, b->size);
+    free(b->text);
+    b->text = grown; b->capacity = capacity;
+    return 1;
+}
 static void doc_html_add(doc_html* b, const char* text, size_t size)
 {
-    size_t capacity; char* p;
-    if (b->error) return;
-    if (size > SIZE_MAX - b->size - 1) { b->error = XUI_DOC_ERROR_LIMIT; return; }
-    if (b->capacity < b->size + size + 1) {
-        capacity = b->capacity ? b->capacity : 1024;
-        while (capacity < b->size + size + 1) {
-            if (capacity > SIZE_MAX / 2) { capacity = b->size + size + 1; break; }
-            capacity *= 2;
-        }
-        p = realloc(b->text, capacity);
-        if (!p) { b->error = XUI_ERROR_OUT_OF_MEMORY; return; }
-        b->text = p; b->capacity = capacity;
-    }
+    if (!doc_html_reserve(b, size)) return;
     if (size) memcpy(b->text + b->size, text, size);
     b->size += size; b->text[b->size] = 0;
 }
@@ -29,7 +40,7 @@ static void doc_html_escape(doc_html* b, const char* text, uint64_t size)
     uint64_t i, begin = 0;
     for (i = 0; i < size; i++) {
         const char* escape = text[i] == '&' ? "&amp;" : text[i] == '<' ? "&lt;" : text[i] == '>' ? "&gt;" :
-            text[i] == '"' ? "&quot;" : text[i] == '\'' ? "&#39;" : text[i] == 0 ? "&#xfffd;" : NULL;
+            text[i] == '"' ? "&quot;" : text[i] == '\'' ? "&#39;" : text[i] == '\r' ? "&#13;" : text[i] == 0 ? "&#xfffd;" : NULL;
         if (escape) { doc_html_add(b, text + begin, (size_t)(i - begin)); doc_html_put(b, escape); begin = i + 1; }
     }
     doc_html_add(b, text + begin, (size_t)(size - begin));
@@ -71,7 +82,44 @@ int doc_html_safe_url(const char* s, int image)
     scheme[i] = 0;
     return strcmp(scheme, "http") == 0 || strcmp(scheme, "https") == 0 || (!image && strcmp(scheme, "mailto") == 0);
 }
-static void doc_html_node(doc_html* b, doc_state* s, uint64_t id)
+static void doc_html_node(doc_html*, doc_state*, uint64_t, doc_sequence*, uint64_t, uint64_t);
+/* Text callback boundaries are provenance, not formatting boundaries. Export
+ * an equal sibling run through one set of tags without changing its nodes,
+ * source mappings, identities or history. Objects and different attributes
+ * remain explicit boundaries. */
+static int doc_html_same_run(const doc_node* a, const doc_node* b)
+{
+    return a && b && a->kind == XUI_DOC_TEXT && b->kind == XUI_DOC_TEXT &&
+        !doc_seq_size(a->children) && !doc_seq_size(b->children) &&
+        doc_attributes_equal(a->attrs, b->attrs) &&
+        !strcmp(doc_string(a->resource), doc_string(b->resource)) &&
+        !strcmp(doc_string(a->info), doc_string(b->info)) &&
+        !strcmp(doc_string(a->title), doc_string(b->title)) &&
+        !strcmp(doc_string(a->link_target), doc_string(b->link_target)) &&
+        !strcmp(doc_string(a->link_title), doc_string(b->link_title));
+}
+static void doc_html_children(doc_html* b, doc_state* s, doc_sequence* children)
+{
+    uint64_t at = 0, count = doc_seq_size(children);
+    while (at < count && !b->error) {
+        uint64_t end = at + 1, id = doc_seq_get_id(children, at);
+        doc_node* first = doc_index_get(s->index, id);
+        if (first && first->kind == XUI_DOC_TEXT && !doc_seq_size(first->text) &&
+            !doc_seq_size(first->children)) { at++; continue; }
+        if (first && first->kind == XUI_DOC_TEXT)
+            while (end < count) {
+                doc_node* next = doc_index_get(s->index, doc_seq_get_id(children, end));
+                if (next && next->kind == XUI_DOC_TEXT && !doc_seq_size(next->text) &&
+                    !doc_seq_size(next->children)) { end++; continue; }
+                if (!doc_html_same_run(first, next)) break;
+                end++;
+            }
+        doc_html_node(b, s, id, children, at, end);
+        at = end;
+    }
+}
+static void doc_html_node(doc_html* b, doc_state* s, uint64_t id,
+    doc_sequence* run, uint64_t begin, uint64_t end)
 {
     static const struct { uint32_t bit; const char *open, *close; } marks[] = {
         {XUI_DOC_BOLD, "<strong>", "</strong>"}, {XUI_DOC_ITALIC, "<em>", "</em>"},
@@ -254,7 +302,10 @@ static void doc_html_node(doc_html* b, doc_state* s, uint64_t id)
     }
     for (i = 0; i < sizeof(marks) / sizeof(marks[0]); i++) if (n->attrs->iMarks & marks[i].bit) doc_html_put(b, marks[i].open);
     doc_html_text(b, n->text);
-    for (i = 0; i < doc_seq_size(n->children); i++) doc_html_node(b, s, doc_seq_get_id(n->children, i));
+    if (n->kind == XUI_DOC_TEXT && run)
+        for (i = begin + 1; i < end; i++)
+            doc_html_text(b, doc_index_get(s->index, doc_seq_get_id(run, i))->text);
+    doc_html_children(b, s, n->children);
     for (i = sizeof(marks) / sizeof(marks[0]); i > 0; i--) if (n->attrs->iMarks & marks[i - 1].bit) doc_html_put(b, marks[i - 1].close);
     if (link) doc_html_put(b, "</a>");
     if (tag) { doc_html_put(b, "</"); doc_html_put(b, tag); doc_html_put(b, ">"); }
@@ -265,16 +316,14 @@ int doc_html_export_children(xui_document_snapshot s, uint64_t parent_id,
 {
     doc_html b = {0};
     doc_node* parent;
-    uint64_t i;
     if (out) *out = NULL;
     if (bytes) *bytes = 0;
     if (!s || !out || !bytes) return XUI_ERROR_INVALID_ARGUMENT;
     parent = doc_index_get(s->state->index, parent_id);
     if (!parent) return XUI_ERROR_NOT_FOUND;
     if (parent_id == DOC_ROOT && parent->attrs->sLanguage)
-        doc_html_node(&b, s->state, DOC_ROOT);
-    else for (i = 0; i < doc_seq_size(parent->children); i++)
-        doc_html_node(&b, s->state, doc_seq_get_id(parent->children, i));
+        doc_html_node(&b, s->state, DOC_ROOT, NULL, 0, 0);
+    else doc_html_children(&b, s->state, parent->children);
     if (!b.error && !b.text) doc_html_put(&b, "");
     if (b.error) { free(b.text); return b.error; }
     *out = b.text; *bytes = b.size; return XUI_OK;

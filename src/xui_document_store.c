@@ -411,6 +411,14 @@ doc_sequence* doc_seq_value_item(doc_allocator* a, uint64_t kind, doc_sequence* 
     if (p) { p->value = value; doc_seq_retain(value); }
     return p;
 }
+doc_sequence* doc_seq_keyed_value_item(doc_allocator* a, uint64_t key, doc_sequence* value)
+{
+    doc_sequence* p = doc_seq_value_item(a, key, value);
+    /* Only unique-key syntax forests use this constructor. General value
+     * lists may repeat their kind and retain allocation-based priorities. */
+    if (p) p->priority = doc_mix(key);
+    return p;
+}
 doc_sequence* doc_seq_blob_range(doc_allocator* a, doc_blob* blob, uint64_t offset, uint64_t bytes)
 {
     doc_sequence* p;
@@ -432,26 +440,69 @@ doc_sequence* doc_seq_get_value_item(doc_sequence* p, uint64_t index)
     }
     return NULL;
 }
-static int doc_seq_join(doc_allocator* a, doc_sequence* l, doc_sequence* r, doc_sequence** out)
+static int doc_seq_delta_sum(int64_t a, int64_t b, int64_t* out)
+{
+    if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b))
+        return XUI_DOC_ERROR_LIMIT;
+    *out = a + b; return XUI_OK;
+}
+static int doc_seq_delta_difference(int64_t a, int64_t b, int64_t* out)
+{
+    if ((b > 0 && a < INT64_MIN + b) || (b < 0 && a > INT64_MAX + b))
+        return XUI_DOC_ERROR_LIMIT;
+    *out = a - b; return XUI_OK;
+}
+static int doc_seq_apply_delta(doc_sequence* p, int64_t source, int64_t index)
+{
+    int64_t self_source, self_index, child_source, child_index;
+    int result = doc_seq_delta_sum(p->syntax_self_source, source, &self_source);
+    if (result == XUI_OK) result = doc_seq_delta_sum(p->syntax_self_index, index, &self_index);
+    if (result == XUI_OK) result = doc_seq_delta_sum(p->syntax_child_source, source, &child_source);
+    if (result == XUI_OK) result = doc_seq_delta_sum(p->syntax_child_index, index, &child_index);
+    if (result != XUI_OK) return result;
+    p->syntax_self_source = self_source; p->syntax_self_index = self_index;
+    p->syntax_child_source = child_source; p->syntax_child_index = child_index;
+    return XUI_OK;
+}
+/* Join in the selected root's displacement frame. Its untouched child stays
+ * shared; only the inserted side is translated into that frame. Pushing both
+ * children before a join needlessly copied the sibling subtree root. */
+static int doc_seq_join_displaced(doc_allocator* a,
+    doc_sequence* l, int64_t l_source, int64_t l_index,
+    doc_sequence* r, int64_t r_source, int64_t r_index, doc_sequence** out)
 {
     doc_sequence *p, *child = NULL;
-    int result;
+    int64_t source, index; int result, choose_left;
     *out = NULL;
-    if (!l || !r) { *out = l ? l : r; doc_seq_retain(*out); return XUI_OK; }
-    p = doc_seq_clone(a, l->priority <= r->priority ? l : r);
+    if (!l || !r) {
+        p = l ? l : r; source = l ? l_source : r_source; index = l ? l_index : r_index;
+        if (!p) return XUI_OK;
+        if (!source && !index) { doc_seq_retain(p); *out = p; return XUI_OK; }
+        p = doc_seq_clone(a, p); if (!p) return XUI_ERROR_OUT_OF_MEMORY;
+        result = doc_seq_apply_delta(p, source, index);
+        if (result != XUI_OK) { doc_seq_release(p); return result; }
+        *out = p; return XUI_OK;
+    }
+    choose_left = l->priority <= r->priority;
+    p = doc_seq_clone(a, choose_left ? l : r);
     if (!p) return XUI_ERROR_OUT_OF_MEMORY;
-    result = doc_seq_syntax_push(a, p);
-    if (result != XUI_OK) { doc_seq_release(p); return result; }
-    if (l->priority <= r->priority) {
-        result = doc_seq_join(a, p->right, r, &child);
+    result = doc_seq_apply_delta(p, choose_left ? l_source : r_source, choose_left ? l_index : r_index);
+    if (result == XUI_OK) result = doc_seq_delta_difference(choose_left ? r_source : l_source,
+        p->syntax_child_source, &source);
+    if (result == XUI_OK) result = doc_seq_delta_difference(choose_left ? r_index : l_index,
+        p->syntax_child_index, &index);
+    if (result == XUI_OK && choose_left) {
+        result = doc_seq_join_displaced(a, p->right, 0, 0, r, source, index, &child);
         if (result == XUI_OK) { doc_seq_release(p->right); p->right = child; }
-    } else {
-        result = doc_seq_join(a, l, p->left, &child);
+    } else if (result == XUI_OK) {
+        result = doc_seq_join_displaced(a, l, source, index, p->left, 0, 0, &child);
         if (result == XUI_OK) { doc_seq_release(p->left); p->left = child; }
     }
     if (result != XUI_OK) { doc_seq_release(p); return result; }
     doc_seq_measure(p); *out = p; return XUI_OK;
 }
+static int doc_seq_join(doc_allocator* a, doc_sequence* l, doc_sequence* r, doc_sequence** out)
+{ return doc_seq_join_displaced(a, l, 0, 0, r, 0, 0, out); }
 static int doc_seq_split(doc_allocator* a, doc_sequence* p, uint64_t at,
     doc_sequence** left, doc_sequence** right)
 {
@@ -863,6 +914,7 @@ doc_state* doc_state_clone(doc_state* src)
     memcpy(&p->allocator, &src->allocator, sizeof(*p) - offsetof(doc_state, allocator)); atomic_init(&p->refs, 1);
     doc_allocator_retain(p->allocator); doc_index_retain(p->index); doc_seq_retain(p->source);
     doc_seq_retain(p->references); doc_seq_retain(p->reference_values); doc_seq_retain(p->inline_syntax); doc_seq_retain(p->reference_candidates);
+    doc_seq_retain(p->reference_syntax); doc_seq_retain(p->source_syntax);
     return p;
 }
 void doc_state_retain(doc_state* p) { if (p) atomic_fetch_add(&p->refs, 1); }
@@ -872,6 +924,7 @@ void doc_state_release(doc_state* p)
     if (!p || atomic_fetch_sub(&p->refs, 1) != 1) return;
     a = p->allocator;
     doc_index_release(p->index); doc_seq_release(p->source); doc_seq_release(p->references); doc_seq_release(p->reference_values);
+    doc_seq_release(p->reference_syntax); doc_seq_release(p->source_syntax);
     doc_seq_release(p->inline_syntax); doc_seq_release(p->reference_candidates); doc_free(p); doc_allocator_release(a);
 }
 int doc_state_set(doc_state* s, doc_node* node)

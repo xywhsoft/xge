@@ -16,6 +16,16 @@ static int read_byte(void* user,int at,unsigned char* byte)
     *byte=at<reader->base?'x':reader->text[at-reader->base];
     return 1;
 }
+typedef struct reader64_t { const unsigned char* text; int64_t length, base; size_t bytes, reads; } reader64_t;
+static int read_byte64(void* user,int64_t at,unsigned char* byte)
+{
+    reader64_t* reader=user;
+    CHECK(at>=0 && at<reader->length);
+    reader->reads++;
+    *byte=at>=reader->base && (uint64_t)(at-reader->base)<reader->bytes ?
+        reader->text[at-reader->base] : '.';
+    return 1;
+}
 static uint32_t decode(const void* text,size_t length,size_t* at)
 {
     const unsigned char* bytes=text;
@@ -41,6 +51,7 @@ static int encode(unsigned cp,char* text)
 static void check_text(const char* text,int length,const unsigned char* boundaries)
 {
     char map[2048];reader_t reader={(const unsigned char*)text,length,0,0};int at;
+    reader64_t reader64={(const unsigned char*)text,length,0,(size_t)length,0};
     CHECK(length>0 && length<(int)sizeof(map));
     __xgeGraphemeMap(text,(size_t)length,map,decode);
     for(at=0;at<length;at++)CHECK((map[at]==XGE_GRAPHEME_BREAK)==!!boundaries[at+1]);
@@ -56,7 +67,37 @@ static void check_text(const char* text,int length,const unsigned char* boundari
         CHECK(xuiInternalTextGraphemePrev(text,length,at)==previous);
         CHECK(xuiInternalTextGraphemeNext(text,length,at)==next);
         CHECK(xuiInternalTextGraphemeClamp(text,length,at)==clamp);
+        CHECK(xuiInternalTextGraphemePrev64Read(read_byte64,&reader64,length,at)==previous);
+        CHECK(xuiInternalTextGraphemeNext64Read(read_byte64,&reader64,length,at)==next);
+        CHECK(xuiInternalTextGraphemeClamp64Read(read_byte64,&reader64,length,at)==clamp);
     }
+}
+static void stress64(void)
+{
+    static const unsigned char family[]="\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x91\xa9";
+    const int64_t bases[]={(int64_t)INT_MAX+137,INT64_C(1)<<40,INT64_MAX-(int64_t)sizeof(family)+1};
+    size_t i,j;
+    for(i=0;i<sizeof(bases)/sizeof(bases[0]);i++) {
+        reader64_t reader={family,bases[i]+((int64_t)sizeof(family)-1),bases[i],sizeof(family)-1,0};
+        CHECK(xuiInternalTextGraphemePrev64Read(read_byte64,&reader,reader.length,reader.length)==reader.base);
+        for(j=0;j<reader.bytes;j++) {
+            CHECK(xuiInternalTextGraphemeNext64Read(read_byte64,&reader,reader.length,reader.base+(int64_t)j)==reader.length);
+            CHECK(xuiInternalTextGraphemeClamp64Read(read_byte64,&reader,reader.length,reader.base+(int64_t)j)==reader.base);
+        }
+        CHECK(reader.reads<4096);
+        CHECK(xuiInternalTextGraphemeNext64Read(read_byte64,&reader,reader.length,reader.length)==reader.length);
+    }
+    for(i=0;i<3;i++) {
+        int64_t base=i==2?INT64_MAX-5:bases[i],a=-1,b=-1;
+        reader64_t reader={(const unsigned char*)"don't",base+5,base,5,0};
+        CHECK(xuiInternalTextWordRange64Read(read_byte64,&reader,reader.length,base+3,
+            XUI_INTERNAL_WORD_NATURAL,&a,&b)==XUI_INTERNAL_WORD_TEXT && a==base && b==base+5);
+        CHECK(!xuiInternalTextWordBoundary64Read(read_byte64,&reader,reader.length,base+3,XUI_INTERNAL_WORD_NATURAL));
+        CHECK(xuiInternalTextWordNext64Read(read_byte64,&reader,reader.length,base,XUI_INTERNAL_WORD_NATURAL)==base+5);
+        CHECK(xuiInternalTextWordPrev64Read(read_byte64,&reader,reader.length,base+5,XUI_INTERNAL_WORD_NATURAL)==base);
+        CHECK(reader.reads<4096);
+    }
+    puts("Unicode 64-bit navigation: INT_MAX+, 1TiB and INT64_MAX virtual offsets; bounded grapheme and natural-word queries passed");
 }
 static void corpus(const char* path)
 {
@@ -117,5 +158,5 @@ int main(int argc,char** argv)
         CHECK(!ferror(file) && fclose(file)==0);return 0;
     }
     corpus(argc>1?argv[1]:"test_xui/data/unicode-17/GraphemeBreakTest.txt");
-    malformed();stress();return 0;
+    malformed();stress();stress64();return 0;
 }

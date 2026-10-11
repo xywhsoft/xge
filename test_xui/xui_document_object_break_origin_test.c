@@ -19,7 +19,7 @@ static void alt_golden(xui_document_snapshot s, const char* source, unsigned fix
     xui_doc_source_segment_t segment = {0}; uint64_t i, id = find_kind(s, 1, XUI_DOC_IMAGE);
     int matched = 0;
     node.iSize = sizeof(node); CHECK(id && xuiDocumentSnapshotGetNode(s, id, &node) == XUI_OK);
-    expect_text(s, id, c->text_offset ? "word\nnext" : "\nbody");
+    expect_text(s, id, c->text_offset ? "word next" : " body");
     for (i = 0; i < node.iSourceSegmentCount; i++) {
         segment.iSize = sizeof(segment);
         CHECK(xuiDocumentSnapshotGetSourceSegment(s, id, i, &segment) == XUI_OK);

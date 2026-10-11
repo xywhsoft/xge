@@ -2290,7 +2290,7 @@ static int __xuiInputWidgetImeEnabled(xui_widget pWidget)
 }
 
 static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_composition_t* pComposition,
-	int iLegacyStart, int iLegacyLength)
+	int iLegacyStart, int iLegacyLength, uint32_t iRangeFlags)
 {
 	xui_event_t tEvent;
 	xui_widget pTarget;
@@ -2322,6 +2322,7 @@ static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_comp
 		return XUI_OK;
 	}
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_IME_COMPOSITION, pTarget, NULL, pContext);
+	tEvent.iFlags |= iRangeFlags;
 	tEvent.iTextSize = __xuiInputTextCopy(tEvent.sText, (int)sizeof(tEvent.sText), sText, iTextSize);
 	tEvent.iCompositionStart = iLegacyStart;
 	tEvent.iCompositionLength = iLegacyLength;
@@ -2345,7 +2346,19 @@ XUI_API int xuiInputImeCompositionEx(xui_context pContext, const xui_ime_composi
 	if ( iTextSize < 0 && pComposition->sText != NULL ) iTextSize = (int)strlen(pComposition->sText);
 	iLegacyLength = pComposition->bActive ? ((iTextSize > 0) ? iTextSize : 1) : 0;
 	return __xuiInputImeCompositionPush(pContext, pComposition,
-		pComposition->iSelectionStart, iLegacyLength);
+		pComposition->iSelectionStart, iLegacyLength, 0u);
+}
+
+int xuiInternalInputImeEditTextComposition(xui_context pContext,
+    const xui_ime_composition_t* pComposition)
+{
+    int bytes, legacy_length;
+    if (!pComposition) return XUI_ERROR_INVALID_ARGUMENT;
+    bytes = pComposition->iTextSize;
+    if (bytes < 0 && pComposition->sText) bytes = (int)strlen(pComposition->sText);
+    legacy_length = pComposition->bActive ? (bytes > 0 ? bytes : 1) : 0;
+    return __xuiInputImeCompositionPush(pContext, pComposition,
+        pComposition->iSelectionStart, legacy_length, XUI_INTERNAL_IME_EDIT_TEXT_RANGE);
 }
 
 XUI_API int xuiInputImeComposition(xui_context pContext, const char* sText, int iTextSize, int iCompositionStart, int iCompositionLength)
@@ -2367,7 +2380,7 @@ XUI_API int xuiInputImeComposition(xui_context pContext, const char* sText, int 
 	if ( tComposition.iSelectionStart > iTextSize ) tComposition.iSelectionStart = iTextSize;
 	tComposition.iSelectionEnd = tComposition.iSelectionStart;
 	return __xuiInputImeCompositionPush(pContext, &tComposition,
-		iCompositionStart, iCompositionLength);
+		iCompositionStart, iCompositionLength, 0u);
 }
 
 XUI_API int xuiInputViewport(xui_context pContext, int fWidth, int fHeight)

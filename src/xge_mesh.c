@@ -39,25 +39,25 @@ void xgeDrawQuad3D(xge_texture pTexture, const xge_vertex_t* pVertices, uint32_t
 		arrVertices[(i * 10) + 9] = fA;
 	}
 
-	glUseProgram(g_xgeQuad3DRenderer.iProgram);
-	glUniform2f(g_xgeQuad3DRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
-	glUniform1i(g_xgeQuad3DRenderer.iLocTexture, 0);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
-	glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
-	glBindBuffer(GL_ARRAY_BUFFER, g_xgeQuad3DRenderer.iVBO);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(4 * sizeof(float)));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
-	glEnableVertexAttribArray(2);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glUseProgram(0);
+	xge_glUseProgram(g_xgeQuad3DRenderer.iProgram);
+	xge_glUniform2f(g_xgeQuad3DRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+	xge_glUniform1i(g_xgeQuad3DRenderer.iLocTexture, 0);
+	xge_glActiveTexture(GL_TEXTURE0);
+	xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+	xge_glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, g_xgeQuad3DRenderer.iVBO);
+	xge_glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
+	xge_glEnableVertexAttribArray(0);
+	xge_glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(4 * sizeof(float)));
+	xge_glEnableVertexAttribArray(1);
+	xge_glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
+	xge_glEnableVertexAttribArray(2);
+	xge_glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
+	xge_glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, 0);
+	xge_glBindVertexArray(0);
+	xge_glBindTexture(GL_TEXTURE_2D, 0);
+	xge_glUseProgram(0);
 	__xgeFrameStatsAddDrawCall();
 }
 
@@ -141,19 +141,19 @@ static int __xgeMeshUpload(xge_mesh pMesh, uint32_t iDrawFlags)
 	}
 	iUsage = (pMesh->iFlags & XGE_MESH_DYNAMIC) != 0 ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW;
 	if ( pMesh->iVertexBufferId == 0 ) {
-		glGenBuffers(1, &iBuffer);
+		xge_glGenBuffers(1, &iBuffer);
 		pMesh->iVertexBufferId = iBuffer;
 	}
 	if ( pMesh->iIndexBufferId == 0 ) {
-		glGenBuffers(1, &iBuffer);
+		xge_glGenBuffers(1, &iBuffer);
 		pMesh->iIndexBufferId = iBuffer;
 	}
-	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)pMesh->iVertexBufferId);
-	glBufferData(GL_ARRAY_BUFFER, (size_t)pMesh->iVertexCount * 10u * sizeof(float), pPacked, iUsage);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)pMesh->iIndexBufferId);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (size_t)pMesh->iIndexCount * sizeof(uint16_t), pMesh->pIndices, iUsage);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, (GLuint)pMesh->iVertexBufferId);
+	xge_glBufferData(GL_ARRAY_BUFFER, (size_t)pMesh->iVertexCount * 10u * sizeof(float), pPacked, iUsage);
+	xge_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)pMesh->iIndexBufferId);
+	xge_glBufferData(GL_ELEMENT_ARRAY_BUFFER, (size_t)pMesh->iIndexCount * sizeof(uint16_t), pMesh->pIndices, iUsage);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, 0);
+	xge_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	xrtFree(pPacked);
 	return XGE_OK;
 }
@@ -206,12 +206,12 @@ void xgeMeshFree(xge_mesh pMesh)
 		return;
 	}
 	iBuffer = (GLuint)pMesh->iVertexBufferId;
-	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (glDeleteBuffers != NULL) ) {
-		glDeleteBuffers(1, &iBuffer);
+	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
+		xge_glDeleteBuffers(1, &iBuffer);
 	}
 	iBuffer = (GLuint)pMesh->iIndexBufferId;
-	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (glDeleteBuffers != NULL) ) {
-		glDeleteBuffers(1, &iBuffer);
+	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
+		xge_glDeleteBuffers(1, &iBuffer);
 	}
 	__xgeMeshFreeCPU(pMesh);
 	memset(pMesh, 0, sizeof(*pMesh));
@@ -231,25 +231,25 @@ void xgeMeshDraw(xge_mesh pMesh, xge_texture pTexture, uint32_t iFlags)
 	if ( __xgeMeshUpload(pMesh, iFlags) != XGE_OK ) {
 		return;
 	}
-	glUseProgram(g_xgeQuad3DRenderer.iProgram);
-	glUniform2f(g_xgeQuad3DRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
-	glUniform1i(g_xgeQuad3DRenderer.iLocTexture, 0);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
-	glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
-	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)pMesh->iVertexBufferId);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(4 * sizeof(float)));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
-	glEnableVertexAttribArray(2);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)pMesh->iIndexBufferId);
-	glDrawElements(GL_TRIANGLES, pMesh->iIndexCount, GL_UNSIGNED_SHORT, (void*)0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glUseProgram(0);
+	xge_glUseProgram(g_xgeQuad3DRenderer.iProgram);
+	xge_glUniform2f(g_xgeQuad3DRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+	xge_glUniform1i(g_xgeQuad3DRenderer.iLocTexture, 0);
+	xge_glActiveTexture(GL_TEXTURE0);
+	xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+	xge_glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, (GLuint)pMesh->iVertexBufferId);
+	xge_glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
+	xge_glEnableVertexAttribArray(0);
+	xge_glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(4 * sizeof(float)));
+	xge_glEnableVertexAttribArray(1);
+	xge_glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
+	xge_glEnableVertexAttribArray(2);
+	xge_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)pMesh->iIndexBufferId);
+	xge_glDrawElements(GL_TRIANGLES, pMesh->iIndexCount, GL_UNSIGNED_SHORT, (void*)0);
+	xge_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, 0);
+	xge_glBindVertexArray(0);
+	xge_glBindTexture(GL_TEXTURE_2D, 0);
+	xge_glUseProgram(0);
 	__xgeFrameStatsAddDrawCall();
 }

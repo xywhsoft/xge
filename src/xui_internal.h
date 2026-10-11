@@ -296,14 +296,21 @@ struct xui_context_t {
 	int iFontCount;
 	int iFontCapacity;
 	int bImeEnabled;
+	uint64_t iImeOwner;
+	void (*onImeFocusChanged)(xui_context pContext);
 	int bHasImeCandidateRect;
 	xui_rect_t tImeCandidateRect;
 	void (*onImeDetach)(xui_context pContext);
 };
 
+struct xui_internal_accessible_text_request;
+struct xui_internal_accessible_text_range;
 typedef struct xui_internal_accessibility_adapter_t {
 	int (*getNode)(xui_widget pWidget, xui_accessible_node_t* pNode);
 	int (*performAction)(xui_widget pWidget, int iAction, const void* pData);
+	int (*createTextRange)(xui_widget, uint64_t,
+		const struct xui_internal_accessible_text_request*,
+		struct xui_internal_accessible_text_range**);
 } xui_internal_accessibility_adapter_t;
 
 typedef int (*xui_internal_prepare_paint_proc)(xui_widget pWidget);
@@ -549,8 +556,18 @@ int xuiInternalStackingChildren(xui_widget pParent,
 	const xui_widget** ppChildren, int* pCount);
 void xuiInternalContextDestroyInput(xui_context pContext);
 int xuiInternalInputSyncIme(xui_context pContext);
+void xuiInternalInputInvalidateImeOwner(xui_context pContext);
 int xuiInternalInputRefreshIme(xui_context pContext);
 int xuiInternalInputRefreshImePosition(xui_context pContext);
+/* Native document snapshots use the generic edit projection, whereas direct
+ * DocumentEditor composition calls retain paragraph-local rich offsets. */
+#define XUI_INTERNAL_IME_EDIT_TEXT_RANGE 0x00000002u
+int xuiInternalInputImeEditTextComposition(xui_context pContext,
+    const xui_ime_composition_t* pComposition);
+#if XUI_ENABLE_DOCUMENT_EDITOR
+int xuiInternalDocumentImeText(xui_widget pWidget, const char** psText,
+    int* pLength, int* pStart, int* pEnd, uint64_t* pRevision);
+#endif
 int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSize);
 XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext));
 int xuiInternalClipboardReadText(xui_context pContext, char** psText, int* pTextSize);

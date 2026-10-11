@@ -4,6 +4,28 @@
 
 static int doc_reference_cancelled(const atomic_int* cancellation)
 { return cancellation ? atomic_load(cancellation) : XUI_OK; }
+/* Read the parser's dedented label without exposing the immutable value's
+ * storage format to source-edit planners. A NULL buffer queries the size. */
+int doc_reference_label_copy(doc_state* state, uint64_t index, char* buffer,
+    uint64_t capacity, uint64_t* bytes)
+{
+    doc_sequence* value; uint64_t header[4], size = sizeof(header), i, kind;
+    if (!bytes || index >= doc_seq_size(state->reference_values)) return XUI_DOC_ERROR_SCHEMA;
+    value = doc_seq_get_value_item(state->reference_values, index);
+    kind = doc_seq_get_id(state->reference_values, index);
+    if (!value || (kind != XUI_DOC_REFERENCE_LINK && kind != XUI_DOC_REFERENCE_FOOTNOTE) ||
+        doc_seq_read(value, 0, header, sizeof(header)) != XUI_OK || header[3] > 1 ||
+        (kind == XUI_DOC_REFERENCE_FOOTNOTE && (header[2] || header[3]))) return XUI_DOC_ERROR_SCHEMA;
+    for (i = 0; i < 3; i++) {
+        if (header[i] > UINT64_MAX - size) return XUI_DOC_ERROR_SCHEMA;
+        size += header[i];
+    }
+    if (size != doc_seq_size(value)) return XUI_DOC_ERROR_SCHEMA;
+    *bytes = header[0];
+    if (!buffer) return XUI_OK;
+    if (capacity < *bytes) return XUI_DOC_ERROR_LIMIT;
+    return doc_seq_read(value, sizeof(header), buffer, *bytes);
+}
 /* Values are derived metadata. Each ordinal has one item, so source-offset
  * shifts share the entire tree and field edits share unchanged interior byte ranges and copy ordinal paths. */
 int doc_reference_value_append(doc_state* state, uint32_t kind,
@@ -410,7 +432,8 @@ int doc_reference_values_reuse(doc_state* before, doc_state* after, doc_state* b
         old_count != doc_seq_size(before->references) / sizeof(xui_doc_reference_definition_t) ||
         new_count != doc_seq_size(after->references) / sizeof(xui_doc_reference_definition_t)) return XUI_DOC_ERROR_SCHEMA;
     if (base && base->reference_values == before->reference_values) base = NULL;
-    if (before->reference_values == after->reference_values || !new_count) return XUI_OK;
+    if (before->reference_values == after->reference_values || !new_count)
+        return doc_source_cst_reuse(before, after, base, cancellation);
     if (!old_count) return base ? doc_reference_values_reuse(base, after, NULL, cancellation) : XUI_OK;
     while (prefix < old_count && prefix < new_count) {
         result = doc_reference_item_equal(before->reference_values, prefix, after->reference_values, prefix, cancellation, &equal);
@@ -500,7 +523,9 @@ published:
 done:
     doc_seq_release(next); doc_seq_release(middle);
     if (c.pools) for (i = 0; i < c.count; i++) doc_seq_release(c.pools[i]);
-    doc_free(c.pools); doc_free(c.keys); doc_free(c.order); return result;
+    doc_free(c.pools); doc_free(c.keys); doc_free(c.order);
+    if (result == XUI_OK) result = doc_source_cst_reuse(before, after, base, cancellation);
+    return result;
 }
 
 #endif

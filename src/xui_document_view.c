@@ -3,6 +3,7 @@
 #include "xui_document_view_internal.h"
 #include "xui_document_accessible_internal.h"
 #include "xui_internal.h"
+#include "xui_native_accessibility_internal.h"
 #include <math.h>
 
 uint32_t doc_view_style_color(xui_widget widget, const char* name, uint32_t fallback)
@@ -217,6 +218,12 @@ static void doc_view_changed(xui_document document, xui_document_change_set chan
             v->find_scope.tAnchor = anchor; v->find_scope.tCaret = caret;
         } else doc_view_find_clear(v);
     }
+    doc_view_text_ranges_changed(v, changes);
+    /* Every committed change either publishes this input or supersedes it.
+     * The editor still owns its job until its coordinator retires it; this
+     * borrowed projection must stop referring to the old base before owner
+     * observers query the newly mapped ranges during notification. */
+    v->input = NULL; v->visual_input = NULL;
     doc_view_accessible_clear(v);
     memset(&v->table_selection, 0, sizeof(v->table_selection));
     v->table_selecting = 0;
@@ -270,10 +277,14 @@ XUI_API int xuiDocumentViewSetDocument(xui_widget widget, xui_document document)
     xuiDocumentSnapshotRelease(snapshot);
     if (result != XUI_OK) return result;
     xuiDocumentRetain(document);
+    doc_view_text_ranges_clear(v);
     doc_view_find_clear(v);
     doc_view_accessible_clear(v);
     if (v->document) { xuiDocumentUnsubscribe(v->document, v->subscription); xuiDocumentRelease(v->document); }
     v->document = document; v->subscription = subscription; v->scroll_x = v->scroll_y = 0; v->needs_sync = 0;
+    /* A different Document can reuse semantic ids. Disconnect its old OS
+     * providers before publishing any new selection or callback. */
+    xuiInternalNativeAccessibilityResetWidget(widget);
     doc_view_invalidate_edit(v); v->pending_edit_events |= 3;
     doc_view_reset_selection(v);
     if (v->onChanged) v->onChanged(document, NULL, v);
@@ -310,7 +321,7 @@ int doc_view_layout(doc_view_data* v)
     }
     return result == XUI_OK ? xuiDocumentRendererLayout(v->renderer, fmax(1, content.fW), v->scroll_y, fmax(1, content.fH)) : result;
 }
-static int doc_view_map_range(doc_view_data* v, uint32_t mode, xui_doc_range_t* range)
+int doc_view_map_range(doc_view_data* v, uint32_t mode, xui_doc_range_t* range)
 {
     unsigned i; int result, mapping;
     if (mode != XUI_DOC_VISUAL && v->renderer->snapshot->state->profile != XUI_DOCUMENT_MARKDOWN) return XUI_ERROR_UNSUPPORTED;
@@ -591,6 +602,9 @@ static int doc_view_rebuild_renderer(doc_view_data* v, float zoom, int prepare_o
     if (result != XUI_OK) { xuiDocumentRendererRelease(renderer); return result; }
     next_x = fmin(fmax(0, next_x), fmax(0, size.width - content.fW));
     next_y = fmin(fmax(0, next_y), fmax(0, size.height - content.fH));
+    #if XUI_ENABLE_DOCUMENT_EDITOR
+    doc_view_format_cache_clear(v);
+    #endif
     xuiDocumentRendererRelease(v->renderer); v->renderer = renderer; v->base_renderer = renderer->desc;
     v->scroll_x = next_x; v->scroll_y = next_y;
     v->desc.tRenderer = desc; doc_view_resolve_style(v);
@@ -921,7 +935,11 @@ int doc_view_measure(xui_widget widget, xui_vec2_t constraint, xui_vec2_t* size,
         result = xuiDocumentRendererSetActivePosition(v->renderer, &v->selection.tCaret);
         if (result != XUI_OK) return result;
     }
-    result = xuiDocumentRendererLayout(v->renderer, width, 0, v->desc.bAutoHeight ? 1e30 : 240);
+    /* Fixed-height measurement only reports the preferred widget size.
+     * Shaping a speculative viewport at document zero would change lazy
+     * predecessor heights behind the actual scrolled viewport's anchor. */
+    result = xuiDocumentRendererLayout(v->renderer, width,
+        v->desc.bAutoHeight ? 0 : v->scroll_y, v->desc.bAutoHeight ? 1e30 : 0);
     if (result != XUI_OK) return result;
     xuiDocumentRendererGetSize(v->renderer, &bounds, &exact);
     if (v->desc.bAutoHeight && bounds.height > 1000000000) return XUI_DOC_ERROR_LIMIT;
@@ -1219,6 +1237,7 @@ int doc_view_init(xui_widget widget, void* data, const void* create, void* user)
 void doc_view_destroy(xui_widget widget, void* data, void* user)
 {
     doc_view_data* v = data; (void)widget; (void)user;
+    doc_view_text_ranges_clear(v);
     if (v->document) { xuiDocumentUnsubscribe(v->document, v->subscription); xuiDocumentRelease(v->document); }
     doc_view_accessible_clear(v);
     doc_view_invalidate_edit(v);

@@ -99,6 +99,7 @@ def main():
     if not config_path.exists() or config_path.read_text() != config:
         config_path.write_text(config)
     libs = ["-lm"]
+    runtime_dependencies = []
     if windows:
         libs += ["-lws2_32", "-liphlpapi", "-lgdi32", "-luser32", "-lshell32", "-lole32", "-loleaut32", "-luuid", "-limm32", "-lwinmm", "-lavrt"]
     else:
@@ -107,7 +108,8 @@ def main():
         sdk = Path(os.environ.get("WEBVIEW2_SDK_DIR", ""))
         include = sdk / "build/native/include"
         loader = sdk / "build/native/x64/WebView2Loader.dll.lib"
-        if not (include / "WebView2.h").is_file() or not loader.is_file():
+        loader_runtime = sdk / "build/native/x64/WebView2Loader.dll"
+        if not (include / "WebView2.h").is_file() or not loader.is_file() or not loader_runtime.is_file():
             raise RuntimeError("Set WEBVIEW2_SDK_DIR to an extracted WebView2 SDK")
         # GCC writes include paths into Make dependency files. Forward slashes
         # keep Windows separators distinct from Make's character escapes.
@@ -115,6 +117,7 @@ def main():
         if os.environ.get("XUI_WEBVIEW_TEST_EXPORTS") == "1":
             flags += ["-DXUI_WEBVIEW_TEST_EXPORTS"]
         libs += [loader.as_posix()]
+        runtime_dependencies.append(loader_runtime)
     compiled = []
     reused = []
     link_objects = []
@@ -151,6 +154,9 @@ def main():
         if not cxx:
             raise RuntimeError("The existing optional HarfBuzz dependency requires g++")
         hb_flags = ["-std=c++17", "-O2", "-fno-exceptions", "-fno-rtti", "-ffunction-sections", "-fdata-sections", "-DNDEBUG", "-DHB_NO_BUFFER_SERIALIZE", "-DHB_NO_BUFFER_VERIFY", "-DHB_NO_DRAW", "-DHB_NO_OT_FETCH", "-DHB_NO_MMAP", "-DHB_NO_COLOR"]
+        if not windows:
+            # Linux uses the already linked pthread backend for HarfBuzz mutexes.
+            hb_flags += ["-DHAVE_PTHREAD=1"]
         compile_object("lib/harfbuzz/src/harfbuzz.cc", cxx, hb_flags + ([] if windows else ["-fPIC"]), shared=True)
     if windows:
         resource = objects / "xge_res.o"
@@ -185,9 +191,20 @@ def main():
             raise RuntimeError("strip not found")
         run([strip, "--strip-unneeded", library])
         link_record.write_text(link_key)
+    packaged_runtime = []
+    for dependency in runtime_dependencies:
+        target = out / dependency.name
+        expected = hashlib.sha256(dependency.read_bytes()).hexdigest()
+        if dependency.resolve() != target.resolve() and (
+                not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != expected):
+            shutil.copy2(dependency, target)
+        if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+            raise RuntimeError(f"Runtime dependency could not be packaged: {dependency.name}")
+        packaged_runtime.append({"source": str(dependency.resolve()), "path": str(target.resolve()),
+                                 "sha256": expected, "bytes": target.stat().st_size})
     report = {"profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
               "features": sorted(features), "sources": sources, "compiled": compiled, "reused": reused,
-              "linked": linked, "seconds": time.perf_counter() - started,
+              "linked": linked, "runtime_dependencies": packaged_runtime, "seconds": time.perf_counter() - started,
               "runtime_bytes": library.stat().st_size, "unstripped_bytes": unstripped.stat().st_size}
     (out / "build-report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(f"[XGE {args.profile}] {len(compiled)} compiled, {len(reused)} reused, {report['seconds']:.2f}s, {report['runtime_bytes']} runtime bytes", flush=True)

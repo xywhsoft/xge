@@ -60,7 +60,7 @@ static void norm_build(norm_case* c, unsigned fixture, unsigned eol, int native)
         }
     } else if (fixture == 11) {
         snprintf(body, sizeof(body), "a <i%s title=\"x\">b</i>%s", ending, ending);
-        start = 4; end = start + strlen(ending); c->kind = XUI_DOC_HTML; expected = "<i\ntitle=\"x\">";
+        start = 4; end = start + strlen(ending); c->kind = XUI_DOC_HTML; expected = "<i\n title=\"x\">";
         c->text_start = 2; c->text_end = 3;
     } else if (fixture == 12) {
         snprintf(body, sizeof(body), "$aa%sbb$%s", ending, ending);

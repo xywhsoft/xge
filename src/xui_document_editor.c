@@ -217,6 +217,9 @@ static void doc_editor_keep_bookmark(doc_editor_data* e, doc_editor_bookmark* b)
 }
 static int doc_editor_cancel_composition(doc_editor_data* e)
 {
+    xui_context context = xuiWidgetGetContext(e->view.widget);
+    if (xuiGetFocusWidget(context) == e->view.widget)
+        xuiInternalInputInvalidateImeOwner(context);
     e->composing = 0; xuiDocumentRendererRelease(e->projection); e->projection = NULL;
     return xuiWidgetInvalidate(e->view.widget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -293,7 +296,7 @@ static void doc_editor_reveal(doc_editor_data* e)
 {
     xui_doc_rect_t caret, size; int exact; xui_rect_t content = xuiWidgetGetContentRect(e->view.widget);
     if (content.fW <= 0 || content.fH <= 0) return;
-    if (doc_view_layout(&e->view) != XUI_OK || xuiDocumentRendererGetCaretRect(e->view.renderer, &e->view.selection.tCaret, &caret) != XUI_OK) return;
+    if (doc_view_layout(&e->view) != XUI_OK || doc_render_prepare_caret_viewport(e->view.renderer, &e->view.selection.tCaret, content.fH, &caret) != XUI_OK) return;
     if (caret.y < e->view.scroll_y) e->view.scroll_y = caret.y;
     else if (caret.y + caret.height > e->view.scroll_y + content.fH) e->view.scroll_y = fmax(0, caret.y + caret.height - content.fH);
     if (caret.x < e->view.scroll_x) e->view.scroll_x = caret.x;
@@ -342,6 +345,8 @@ static void doc_editor_retire_inputs(doc_editor_data* e)
 }
 static void doc_editor_forget_input(doc_editor_data* e)
 {
+    if (e->view.input) doc_view_text_ranges_input(&e->view, e->view.input, NULL);
+    if (e->view.visual_input) doc_view_text_ranges_visual(&e->view, e->view.visual_input, NULL);
     if (e->input) { e->input->next = e->retired; e->retired = e->input; e->input = NULL; }
     if (e->visual_input) {
         e->visual_input = 0; e->view.needs_sync = 1;
@@ -349,12 +354,13 @@ static void doc_editor_forget_input(doc_editor_data* e)
         if (xuiInternalWidgetIsValid(e->view.widget))
             xuiInternalAccessibilityQueue(e->view.widget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
     }
-    e->view.input = NULL; e->input_error = 0;
+    e->view.input = NULL; e->view.visual_input = NULL; e->input_error = 0;
     doc_view_invalidate_edit(&e->view); e->view.pending_edit_events |= 3;
     doc_editor_retire_inputs(e);
 }
 static void doc_editor_accept_input(doc_editor_data* e, doc_input_job* job)
 {
+    doc_view_text_ranges_input(&e->view, e->view.input, job->prepare);
     if (e->input) { e->input->next = e->retired; e->retired = e->input; }
     else e->input_start = e->view.selection;
     e->input = job; e->view.input = job->prepare; e->input_error = 0;
@@ -392,8 +398,8 @@ static int doc_editor_prepare_visual_text(doc_editor_data* e, const xui_doc_rang
     const char* text, uint64_t bytes, uint64_t group)
 {
     doc_input_job* job; xui_document_snapshot preview = NULL;
-    xui_doc_txn_desc_t desc = {0}; struct xui_doc_change_set_t change = {0};
-    xui_doc_operation_t op = {0}; xui_doc_position_t a = range->tAnchor, b = range->tCaret, preview_caret;
+    xui_doc_txn_desc_t desc = {0};
+    xui_doc_position_t a = range->tAnchor, b = range->tCaret, preview_caret;
     uint64_t source_caret; int result, order, same_node;
     if (e->input || e->view.document->pending) return XUI_DOC_ERROR_BUSY;
     if (a.iKind != XUI_DOC_POSITION_TEXT || b.iKind != XUI_DOC_POSITION_TEXT)
@@ -413,15 +419,7 @@ static int doc_editor_prepare_visual_text(doc_editor_data* e, const xui_doc_rang
         text, bytes, &job->prepare, &preview, &preview_caret, &source_caret);
     if (result != XUI_OK) { free(job); return result; }
     job->group = group;
-    op.iKind = XUI_DOC_OP_TEXT; op.iFlags = XUI_DOC_CHANGE_TEXT;
-    op.iNodeId = a.iNodeId; op.iOffset = a.iOffset;
-    op.iOldLength = same_node ? b.iOffset - a.iOffset : 0;
-    op.iNewLength = same_node ? bytes : 0;
-    change.before = e->view.renderer->snapshot->state; change.after = preview->state;
-    change.identity = preview->identity;
-    change.before_revision = change.after_revision = preview->revision;
-    change.flags = XUI_DOC_CHANGE_TEXT; change.ops = &op; change.count = 1;
-    result = xuiDocumentRendererSetSnapshot(e->view.renderer, preview, &change);
+    result = xuiDocumentRendererSetSnapshot(e->view.renderer, preview, doc_prepare_visual_change(job->prepare));
     xuiDocumentSnapshotRelease(preview);
     if (result != XUI_OK) {
         doc_input_retire(e->worker, job); return result;
@@ -431,9 +429,10 @@ static int doc_editor_prepare_visual_text(doc_editor_data* e, const xui_doc_rang
         e->view.needs_sync = 1; (void)doc_editor_sync(e);
         doc_input_retire(e->worker, job); return result;
     }
+    doc_view_text_ranges_visual(&e->view, NULL, job->prepare);
     e->input_start = e->view.selection; e->input = job; e->visual_input = 1;
     e->visual_source_caret = source_caret;
-    e->view.input = NULL; e->input_error = 0;
+    e->view.input = NULL; e->view.visual_input = job->prepare; e->input_error = 0;
     e->view.selection.tAnchor = e->view.selection.tCaret = preview_caret;
     e->input_end = e->view.selection;
     doc_view_find_invalidate(&e->view); doc_view_accessible_clear(&e->view);
@@ -446,7 +445,6 @@ static int doc_editor_continue_visual_text(doc_editor_data* e, const xui_doc_ran
     const char* text, uint64_t bytes, uint64_t group)
 {
     doc_input_job* job; xui_document_snapshot preview = NULL;
-    struct xui_doc_change_set_t change = {0}; xui_doc_operation_t op = {0};
     xui_doc_position_t a = range->tAnchor, b = range->tCaret;
     xui_doc_position_t current = e->view.selection.tCaret;
     uint64_t source_caret; int result;
@@ -465,14 +463,7 @@ static int doc_editor_continue_visual_text(doc_editor_data* e, const xui_doc_ran
         &job->prepare, &preview, &source_caret);
     if (result != XUI_OK) { free(job); return result == XUI_ERROR_UNSUPPORTED ? XUI_DOC_ERROR_BUSY : result; }
     job->group = group;
-    op.iKind = XUI_DOC_OP_TEXT; op.iFlags = XUI_DOC_CHANGE_TEXT;
-    op.iNodeId = a.iNodeId; op.iOffset = a.iOffset;
-    op.iOldLength = b.iOffset - a.iOffset; op.iNewLength = bytes;
-    change.before = e->view.renderer->snapshot->state; change.after = preview->state;
-    change.identity = preview->identity;
-    change.before_revision = change.after_revision = preview->revision;
-    change.flags = XUI_DOC_CHANGE_TEXT; change.ops = &op; change.count = 1;
-    result = xuiDocumentRendererSetSnapshot(e->view.renderer, preview, &change);
+    result = xuiDocumentRendererSetSnapshot(e->view.renderer, preview, doc_prepare_visual_change(job->prepare));
     xuiDocumentSnapshotRelease(preview);
     if (result != XUI_OK) { doc_input_retire(e->worker, job); return result; }
     result = doc_prepare_visual_attach(e->view.document, e->input->prepare, job->prepare);
@@ -480,6 +471,8 @@ static int doc_editor_continue_visual_text(doc_editor_data* e, const xui_doc_ran
         e->view.needs_sync = 1; (void)doc_editor_sync(e);
         doc_input_retire(e->worker, job); return result;
     }
+    doc_view_text_ranges_visual(&e->view, e->view.visual_input, job->prepare);
+    e->view.visual_input = job->prepare;
     e->input->next = e->retired; e->retired = e->input; e->input = job;
     e->visual_source_caret = source_caret; e->input_error = 0;
     e->view.selection.tAnchor = e->view.selection.tCaret = a;
@@ -716,6 +709,8 @@ XUI_API int xuiDocumentEditorRetryInput(xui_widget w)
     if (result != XUI_OK) { free(job); return result; }
     job->group = e->input->group;
     if (e->visual_input) {
+        doc_view_text_ranges_visual(&e->view, e->view.visual_input, job->prepare);
+        e->view.visual_input = job->prepare;
         e->input->next = e->retired; e->retired = e->input;
         e->input = job; e->input_error = 0;
         doc_editor_retire_inputs(e);
@@ -1159,6 +1154,29 @@ XUI_API int xuiDocumentEditorInsertText(xui_widget w, const char* text, uint64_t
     if (doc_editor_api_busy(e)) return XUI_DOC_ERROR_BUSY;
     e->action_time = xrtClock(); return doc_editor_insert_text(e, text, bytes, DOC_EDITOR_PROGRAM);
 }
+/* Inline marks affect Text/break atoms, never an image's alt field or a code
+ * block's literal payload. Gap carets can still start formatted text. */
+static int doc_editor_inline_format_available(doc_editor_data* e, int order)
+{
+    doc_state* state = e->view.renderer->snapshot->state;
+    if (!order) {
+        const xui_doc_position_t* caret = &e->view.selection.tCaret;
+        doc_node* node = doc_index_get(state->index, caret->iNodeId);
+        if (!node) return XUI_ERROR_INVALID_ARGUMENT;
+        if (caret->iKind == XUI_DOC_POSITION_TEXT)
+            return node->kind == XUI_DOC_TEXT || node->kind == XUI_DOC_SOFT_BREAK ||
+                node->kind == XUI_DOC_HARD_BREAK ? XUI_OK : XUI_ERROR_UNSUPPORTED;
+        return caret->iKind == XUI_DOC_POSITION_GAP &&
+            (doc_schema_child(node->kind, XUI_DOC_TEXT) ||
+             doc_schema_child(node->kind, XUI_DOC_PARAGRAPH)) ? XUI_OK : XUI_ERROR_UNSUPPORTED;
+    }
+    {
+        xui_doc_text_style_query_t style = {0}; int result;
+        style.iSize = sizeof(style);
+        result = xuiDocumentSnapshotQueryTextStyle(e->view.renderer->snapshot, &e->view.selection, &style);
+        return result != XUI_OK ? result : style.bHasText ? XUI_OK : XUI_ERROR_UNSUPPORTED;
+    }
+}
 static int doc_editor_set_marks(doc_editor_data* e, uint32_t set, uint32_t clear)
 {
     xui_document_transaction t = NULL; xui_doc_range_t after; int order, result;
@@ -1167,6 +1185,8 @@ static int doc_editor_set_marks(doc_editor_data* e, uint32_t set, uint32_t clear
     if (e->desc.bReadOnly || e->view.renderer->mode != XUI_DOC_VISUAL) return XUI_ERROR_UNSUPPORTED;
     result = doc_editor_sync(e); if (result != XUI_OK) return result;
     result = doc_render_compare(e->view.renderer, &e->view.selection.tAnchor, &e->view.selection.tCaret, &order);
+    if (result != XUI_OK) return result;
+    result = doc_editor_inline_format_available(e, order);
     if (result != XUI_OK) return result;
     doc_editor_break_group(e);
     if (!order) {
@@ -2105,12 +2125,14 @@ static int doc_editor_paste(doc_editor_data* e, unsigned kind)
     if (!proxy->clipboardGetText) return XUI_ERROR_UNSUPPORTED;
     e->in_clipboard = 1; bytes = proxy->clipboardGetText(proxy, query, sizeof(query));
     bytes = doc_editor_clipboard_result(e, w, epoch, bytes); if (bytes < 0) return bytes;
+    /* Empty clipboard content is a no-op, including a nonempty selection. */
+    if (!bytes) return XUI_OK;
     if ((uint64_t)bytes > e->view.document->max_bytes || bytes == INT_MAX) return XUI_DOC_ERROR_LIMIT;
     text = malloc((size_t)bytes + 1); if (!text) return XUI_ERROR_OUT_OF_MEMORY;
     e->in_clipboard = 1; read = proxy->clipboardGetText(proxy, text, bytes + 1);
     read = doc_editor_clipboard_result(e, w, epoch, read);
     if (read < 0) result = read;
-    else if (read > bytes) result = XUI_DOC_ERROR_STALE;
+    else if (!read || read > bytes) result = XUI_DOC_ERROR_STALE;
     else {
         result = doc_editor_paste_matrix(e, text, (uint64_t)read);
         if (result == XUI_ERROR_NOT_FOUND)
@@ -2584,6 +2606,11 @@ static int doc_editor_query_command(doc_editor_data* e, uint32_t command, xui_do
             doc_free(blocks);
         }
     }
+    if (mark && !state->iDisabledReason) {
+        result = doc_editor_inline_format_available(e, order);
+        if (result == XUI_ERROR_UNSUPPORTED) state->iDisabledReason = result;
+        else if (result != XUI_OK) return result;
+    }
     if (mark && e->view.selection.tAnchor.iKind != XUI_DOC_POSITION_SOURCE) {
         result = xuiDocumentSnapshotQueryMarks(e->view.renderer->snapshot, &e->view.selection, &common, &mixed);
         if (result != XUI_OK) return result;
@@ -3044,10 +3071,14 @@ static int doc_editor_composition(doc_editor_data* e, const xui_event_t* event)
     if (e->view.table_selection.iTableId) return XUI_ERROR_UNSUPPORTED;
     if (event->iTextSize < 0 || event->iTextSize >= XUI_EVENT_TEXT_CAPACITY || !doc_utf8(event->sText, (uint64_t)event->iTextSize)) return XUI_DOC_ERROR_UTF8;
     if (!e->composing) { e->composition_range = e->view.selection; doc_editor_break_group(e); }
-    /* Replacement offsets are UTF-8 offsets in the active paragraph/source
-     * projection. Never interpret them as whole-document flat rich offsets. */
+    /* Public replacement offsets use the active paragraph/source projection;
+     * native events use the shared edit projection and must be unprojected. */
     if (event->bCompositionReplacementRange) {
-        if (e->view.selection.tCaret.iKind == XUI_DOC_POSITION_SOURCE) {
+        if (event->iFlags & XUI_INTERNAL_IME_EDIT_TEXT_RANGE) {
+            result = doc_view_ime_range(&e->view, event->iCompositionReplacementStart,
+                event->iCompositionReplacementEnd, &e->composition_range);
+            if (result != XUI_OK) return result;
+        } else if (e->view.selection.tCaret.iKind == XUI_DOC_POSITION_SOURCE) {
             uint64_t length = doc_seq_size(doc_render_source(e->view.renderer));
             if (length > INT_MAX) return XUI_DOC_ERROR_LIMIT;
             if (event->iCompositionReplacementStart < 0 ||
@@ -3074,7 +3105,13 @@ static int doc_editor_composition(doc_editor_data* e, const xui_event_t* event)
         /* Keep preedit/range until the preceding undo unit can publish. A
          * deferred confirmation must not pick up a different replacement. */
         e->composing = 0; e->projection = NULL;
-        result = event->iTextSize ? doc_editor_replace(e, &range, event->sText, (uint64_t)event->iTextSize, DOC_EDITOR_ISOLATED) : XUI_OK;
+        /* A native empty commit replaces its captured nonempty range. END
+         * carries no replacement range, so cancellation still drops preedit. */
+        result = event->iTextSize ||
+            ((event->iFlags & XUI_INTERNAL_IME_EDIT_TEXT_RANGE) &&
+             event->bCompositionReplacementRange &&
+             event->iCompositionReplacementEnd > event->iCompositionReplacementStart) ?
+            doc_editor_replace(e, &range, event->sText, (uint64_t)event->iTextSize, DOC_EDITOR_ISOLATED) : XUI_OK;
         if (xuiInternalWidgetIsValid(w) && result != XUI_OK && epoch == e->input_epoch) {
             e->composing = composing; e->projection = projection;
         } else xuiDocumentRendererRelease(projection);

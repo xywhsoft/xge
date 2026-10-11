@@ -1,6 +1,30 @@
 # 统一 Document 实施与接入
 
-日期：2026-10-02。当前代理 ABI 为 15，Document 原生格式为 7；系统仍在实施，尚未满足整体重构方案的最终发布验收。下文较早批次的版本与限制按该批次记录，新增能力以文末最新记录为准。
+本批最终验收为 `document-v1-v1152-find-popup-acceptance.json`。新版 `document-find-popup-package-v1150/runnable.zip` 的普通与共享运行库各6项检查、仓库外独立解压6项检查及三个启动脚本均实际退出0；包内README保持验证时字节，本页随后补齐验收索引。高级范围继续冻结，整体长期目标仍未完成。
+
+2026-10-10，修复 DocumentEditor 原生查找/替换弹窗在缩小宿主窗口时超出 viewport 的问题；弹窗与内部控件按可用空间调整，窗口保持打开时查询与焦点保留。Windows/Linux 的 Rich、Source、Visual、Live 各四组真实窗口尺寸验证通过：每端2,472项检查、32张缩放/查找图像。当前运行库重新通过 Windows 全部21条基础命令（含基础WebView）、Linux 含五组原生扩展的30条外层命令，以及原有三个控件消费者。见[查找入口](XUI_DOCUMENT_NATIVE_FIND.md)、[缩放验证](XUI_DOCUMENT_NATIVE_RESIZE.md)。本批改动包含 editor 的 Find UI，内核、renderer、公开API与WebView后端源码未改；上述基础套件是本批实际重跑结果。真实IME、物理键鼠/GPU、多DPI、Windows剪贴板成功互通和其他平台发布仍待验收；HTML/CSS、Document动态网络资源、完整UIA等高级范围继续冻结。
+
+2026-10-10，修复原生编辑示例固定1280×780布局：绘制目标、viewport和输入映射随窗口尺寸更新，工具栏换行，窄窗口纵向排列三个视图。Windows/Linux的Rich与三种Markdown模式各完成四组真实窗口尺寸、2,228项检查和16张缩放图像，覆盖缩放后的原生指针命中、内容/revision与焦点保持、继续编辑和撤销重做；两端原示例四项检查、查找383项和文件/关闭2,682项复验通过。见[原生窗口缩放](XUI_DOCUMENT_NATIVE_RESIZE.md)，最终核对 `document-v1-v1138-native-resize-acceptance.json`。新版[运行包](XUI_DOCUMENT_RUN_PACKAGE.md)的普通/共享运行库两组检查与独立解压、启动脚本均通过；此前ZIP保持原字节。本批独立执行受影响入口，未重复未修改内核及全部基础套件。原生尺寸/指针队列自动验证已完成，真实IME、物理键鼠、多DPI、Windows剪贴板成功互通和其他平台发布仍待验收；高级范围继续冻结。
+
+2026-10-10，原生示例补齐 Find/Replace 按钮与 Ctrl+F/H 的使用说明；Rich、Markdown Source/Visual/Live 四模式在 Windows/Linux 各通过383项查找、替换、历史和焦点检查，各20张图像。新增按钮后的原示例四项检查与两端文件/关闭流程复验通过（各2,682项）。Windows运行包同时包含编辑器、原生消息和独立基础网页三个入口；普通/共享运行库两种包装各6项检查、仓库外解压后的6项检查与3个启动脚本均实际退出0。共享运行库遗漏DLL及加载器的失败证据保留，修复后重新验证。见[原生查找与替换](XUI_DOCUMENT_NATIVE_FIND.md)、[运行包说明](XUI_DOCUMENT_RUN_PACKAGE.md)，最终核对为 `document-v1-v1125-native-find-acceptance.json`。本批独立验证受影响入口，未重复未修改内核与全部基础套件；前批接受包保持原字节。真实IME/人工键鼠、Windows系统剪贴板成功互通、物理GPU和其他平台发布仍待验收；高级范围继续冻结。
+
+2026-10-10，补齐原生 Document 消息示例：Rich、Markdown 和共享草稿直接嵌入 MessageList，使用真实 XGE renderer。Windows与私有X11/Mesa两端各28项检查、各6张图像通过，覆盖命中拖选、中文输入同步、三模式/历史、消息追加后的行高与后续行位置、尾部滚动和窄逻辑视口；已直接查看当前两端图像，并修正示例列表与工具栏重叠。永久原生入口已注册基础套件，本批独立验证该入口，未重复全套基础/内核。见[原生消息接入与证据](XUI_DOCUMENT_NATIVE_MESSAGES.md)，最终核对 `document-v1-v1114-native-messages-acceptance.json`；前批[独立运行包](XUI_DOCUMENT_RUN_PACKAGE.md)保持原字节。真实IME/人工键鼠、Windows系统剪贴板成功交互、原生窗口缩放、物理GPU与完整平台发布仍待验收，高级范围继续冻结。
+
+2026-10-09，基础原生X11剪贴板修复已通过：Rich/GFM可视、Source/Live纯文本复制/剪切/粘贴支持完整字节传输；读取失败、超出单次协议预算和含不受支持对象的可视复制/剪切均明确返回错误，失败保持文档。最终34场景/493断言通过；Linux正常137全新/零复用构建及九组26条基础命令通过。Windows沿用18入口/3消费者和文件/关闭18子命令的完整基线；最后Linux专用改动在普通/WebView2配置的三个受影响单元中预处理结果相同，当前另补8项构建/接口/原生示例/WebView复验。Linux原生示例10项检查符合预期，8图像与此前核对版本一致。见[原生X11剪贴板范围与证据](XUI_DOCUMENT_X11_CLIPBOARD.md)，最终核对为`document-v1-v1073-x11-clipboard-acceptance.json`。
+
+当前基础实现与自动验收可供接入试用。X11文本跨进程、Linux原生XUI文件/关闭对话框与三模式基础输入队列已有私有显示自动证据；Windows系统剪贴板成功路径、真实IME/人工键鼠、桌面应用互通、物理GPU及其他平台仍待验证。HTML/CSS扩展、Document网络动态资源、完整UIA等高级范围继续冻结，整体长期目标保持未完成。下文旧批次的结果与待验描述对应记录时刻。
+
+最新原生示例：Linux系统字体/可配置回退和构建入口已落地，私有X11/Mesa软件OpenGL的四项原生检查与中文显示通过；Windows示例和关闭文件增量复验通过。内核库未改动，见[原生Linux运行与限制](XUI_DOCUMENT_LINUX_NATIVE.md)。下文Linux原生路径待验描述按原批次阅读，物理GPU/真实IME/系统剪贴板/人工交互仍未验收。
+
+最新平台补验：2026-10-09，当前主仓库源码在Linux完成正常137全新/零复用构建，新增永久基础入口的八组回归/25条命令全部通过；Windows产物未变。近期格式命令、Markdown候选回写及删除空白已有当前Linux基础证据，见[可运行入口与边界](XUI_DOCUMENT_LINUX_BASIC.md)。Linux原生GPU/真实IME/系统剪贴板、其他三平台和人工跨机器仍待验收。下文较早批次的Linux待验描述为历史状态。
+
+当前阶段：2026-10-09，[首个可用版本](XUI_DOCUMENT_V1.md)的基础实现已合入，137全新编译和自动基础验收已通过，可供试用；HTML/CSS转换、网络动态资源和完整UIA先冻结。实际文件对话框、窗口关闭保存/放弃/取消、待处理编辑保护及Windows Unicode/关闭消息已通过增量自动验证；真实物理IME与人工键鼠、跨机器验证尚未完成。以下旧批次状态按记录时刻阅读；基础套件和打开/保存示例见[使用说明](../examples/xui_document/README.md)。
+
+当前基础接续已完成：格式状态/GFM删除线、Markdown候选隔离、剪贴板失败/空内容保护及Markdown段首删除空格保留。当前运行库全部18个基础入口和3个原控件消费者复验通过，两个新永久回归包含32个剪贴板场景、216组段首删除及小规模分配失败原子性。见[基础剪贴板与删除契约](XUI_DOCUMENT_CLIPBOARD.md)、[格式命令证据](XUI_DOCUMENT_FORMAT_COMMANDS.md)。这些是首版正确性修复，高级功能保持冻结；本轮未复验Linux新改动、原生剪贴板成功交互或物理IME。
+
+最新删除空白补充已验证：TAB、段尾空格和格式旁Unicode空白保留，引用键补丁保持；当前全18基础入口/3消费者复验通过，永久删除入口已扩展33源码/594组合、8组分配预算扫描及折叠光标的完整语义前缀验证。最终240,513断言通过，详情见[删除空白与验收边界](XUI_DOCUMENT_WHITESPACE.md)。上段216组合为前批历史；高级冻结与人工/平台待验项保持。
+
+以下为2026-10-02批次记录。当时代理 ABI 为15，Document原生格式为7；该批尚未满足整体方案最终发布验收。下文较早批次的版本与限制按该批次记录，新增能力以最新记录为准。
 
 本次已经建立可运行的 C 实现：富文本与 Markdown 共用 Document、快照、根事务、历史、结构位置、表格节点、Renderer 和原生编辑控件。新 API 是独立设计，不通过旧 RichDocument/RichEdit 转调。旧实现、公开声明和独立旧测试已退出活动仓库与 DLL；仍须逐项补齐尚未迁移的旧行为和整体方案验收。
 

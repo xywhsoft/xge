@@ -36,7 +36,7 @@ static void memory_oracle_visit(memory_oracle* oracle, void* pointer, unsigned m
     }
     case DOC_MEMORY_STATE: {
         doc_state* p = pointer; WALK(p->index); WALK(p->source); WALK(p->references); WALK(p->reference_values);
-        WALK(p->inline_syntax); WALK(p->reference_candidates); break;
+        WALK(p->inline_syntax); WALK(p->reference_candidates); WALK(p->reference_syntax); WALK(p->source_syntax); break;
     }
     default: CHECK(header->value.kind == DOC_MEMORY_BLOB || header->value.kind == DOC_MEMORY_ATTRIBUTE); break;
     }

@@ -8330,14 +8330,14 @@ static int __xgeShapeExDrawStroke(xge_shape_ex pShape, xge_shape_ex pPathShape, 
 
 static int __xgeShapeExStencilAvailable(void)
 {
-	return (glEnable != NULL) &&
-		(glDisable != NULL) &&
-		(glClear != NULL) &&
-		(glClearStencil != NULL) &&
-		(glStencilFunc != NULL) &&
-		(glStencilOp != NULL) &&
-		(glStencilMask != NULL) &&
-		(glColorMask != NULL);
+	return (xge_glEnable != NULL) &&
+		(xge_glDisable != NULL) &&
+		(xge_glClear != NULL) &&
+		(xge_glClearStencil != NULL) &&
+		(xge_glStencilFunc != NULL) &&
+		(xge_glStencilOp != NULL) &&
+		(xge_glStencilMask != NULL) &&
+		(xge_glColorMask != NULL);
 }
 
 #define XGE_SHAPE_EX_STENCIL_BIT_COUNT 8
@@ -8379,9 +8379,9 @@ static int __xgeShapeExStencilClearBit(uint32_t iBit)
 	if ( iBit == 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	glStencilMask(iBit);
-	glStencilFunc(GL_ALWAYS, 0, iBit);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
+	xge_glStencilMask(iBit);
+	xge_glStencilFunc(GL_ALWAYS, 0, iBit);
+	xge_glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
 	return __xgeShapeExDrawStencilViewportPass();
 }
 
@@ -8390,9 +8390,9 @@ static int __xgeShapeExStencilSetBitViewport(uint32_t iBit)
 	if ( iBit == 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	glStencilMask(iBit);
-	glStencilFunc(GL_ALWAYS, (GLint)iBit, iBit);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	xge_glStencilMask(iBit);
+	xge_glStencilFunc(GL_ALWAYS, (GLint)iBit, iBit);
+	xge_glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	return __xgeShapeExDrawStencilViewportPass();
 }
 
@@ -8401,9 +8401,9 @@ static int __xgeShapeExStencilOrBitViewport(uint32_t iDestinationBit, uint32_t i
 	if ( (iDestinationBit == 0) || (iSourceBit == 0) || (iDestinationBit == iSourceBit) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	glStencilMask(iDestinationBit);
-	glStencilFunc(GL_EQUAL, (GLint)(iSourceBit | iDestinationBit), iSourceBit);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	xge_glStencilMask(iDestinationBit);
+	xge_glStencilFunc(GL_EQUAL, (GLint)(iSourceBit | iDestinationBit), iSourceBit);
+	xge_glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	return __xgeShapeExDrawStencilViewportPass();
 }
 
@@ -8412,9 +8412,9 @@ static int __xgeShapeExStencilSubtractBitViewport(uint32_t iDestinationBit, uint
 	if ( (iDestinationBit == 0) || (iSourceBit == 0) || (iDestinationBit == iSourceBit) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	glStencilMask(iDestinationBit);
-	glStencilFunc(GL_EQUAL, (GLint)(iDestinationBit | iSourceBit), iDestinationBit | iSourceBit);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
+	xge_glStencilMask(iDestinationBit);
+	xge_glStencilFunc(GL_EQUAL, (GLint)(iDestinationBit | iSourceBit), iDestinationBit | iSourceBit);
+	xge_glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
 	return __xgeShapeExDrawStencilViewportPass();
 }
 
@@ -8569,13 +8569,13 @@ static int __xgeShapeExStencilWriteGeometryBit(xge_shape_ex pClipShape, float fT
 	if ( (iDestinationBit == 0) || (iDestinationBit == iConditionBit) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	glStencilMask(iDestinationBit);
+	xge_glStencilMask(iDestinationBit);
 	if ( iConditionBit != 0 ) {
-		glStencilFunc(GL_EQUAL, (GLint)(iConditionBit | iDestinationBit), iConditionBit);
+		xge_glStencilFunc(GL_EQUAL, (GLint)(iConditionBit | iDestinationBit), iConditionBit);
 	} else {
-		glStencilFunc(GL_ALWAYS, (GLint)iDestinationBit, iDestinationBit);
+		xge_glStencilFunc(GL_ALWAYS, (GLint)iDestinationBit, iDestinationBit);
 	}
-	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	xge_glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	iRet = __xgeShapeExDrawStencilClipShapeGeometry(pClipShape, fTolerance, bScreenSpace, tParent);
 	if ( iRet != XGE_OK ) {
 		return iRet;
@@ -8681,14 +8681,14 @@ static int __xgeShapeExEndStencilClip(int bStencilApplied, int iRet)
 			iPreviousMask = 0;
 		}
 		g_xgeShapeExStencilActiveMask = iPreviousMask;
-		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		xge_glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		if ( iPreviousMask != 0 ) {
-			glStencilMask(0x00u);
-			glStencilFunc(GL_EQUAL, (GLint)iPreviousMask, iPreviousMask);
-			glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+			xge_glStencilMask(0x00u);
+			xge_glStencilFunc(GL_EQUAL, (GLint)iPreviousMask, iPreviousMask);
+			xge_glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 		} else {
-			glStencilMask(0xFFu);
-			glDisable(GL_STENCIL_TEST);
+			xge_glStencilMask(0xFFu);
+			xge_glDisable(GL_STENCIL_TEST);
 		}
 	}
 	return iRet;
@@ -8710,13 +8710,13 @@ static int __xgeShapeExPrepareStencilContext(int* pBitIndex, uint32_t* pPrevious
 	}
 	*pBitIndex = g_xgeShapeExStencilContextCount;
 	*pPreviousMask = g_xgeShapeExStencilActiveMask;
-	glEnable(GL_STENCIL_TEST);
+	xge_glEnable(GL_STENCIL_TEST);
 	if ( *pPreviousMask == 0 ) {
-		glStencilMask(0xFFu);
-		glClearStencil(0);
-		glClear(GL_STENCIL_BUFFER_BIT);
+		xge_glStencilMask(0xFFu);
+		xge_glClearStencil(0);
+		xge_glClear(GL_STENCIL_BUFFER_BIT);
 	}
-	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	xge_glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 	return XGE_OK;
 }
 
@@ -8727,14 +8727,14 @@ static int __xgeShapeExAbortStencilContext(uint32_t iPreviousMask, int iRet)
 	if ( iRet == XGE_OK ) {
 		iRet = iFlushRet;
 	}
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	xge_glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	if ( iPreviousMask != 0 ) {
-		glStencilMask(0x00u);
-		glStencilFunc(GL_EQUAL, (GLint)iPreviousMask, iPreviousMask);
-		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+		xge_glStencilMask(0x00u);
+		xge_glStencilFunc(GL_EQUAL, (GLint)iPreviousMask, iPreviousMask);
+		xge_glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 	} else {
-		glStencilMask(0xFFu);
-		glDisable(GL_STENCIL_TEST);
+		xge_glStencilMask(0xFFu);
+		xge_glDisable(GL_STENCIL_TEST);
 	}
 	return iRet;
 }
@@ -8755,10 +8755,10 @@ static int __xgeShapeExCommitStencilContext(int iBitIndex, uint32_t iPreviousMas
 	g_xgeShapeExStencilContextMasks[g_xgeShapeExStencilContextCount] = iPreviousMask;
 	g_xgeShapeExStencilContextCount++;
 	g_xgeShapeExStencilActiveMask = iPreviousMask | iResultBit;
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glStencilMask(0x00u);
-	glStencilFunc(GL_EQUAL, (GLint)g_xgeShapeExStencilActiveMask, g_xgeShapeExStencilActiveMask);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	xge_glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	xge_glStencilMask(0x00u);
+	xge_glStencilFunc(GL_EQUAL, (GLint)g_xgeShapeExStencilActiveMask, g_xgeShapeExStencilActiveMask);
+	xge_glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 	return XGE_OK;
 }
 
@@ -14256,7 +14256,7 @@ static void __xgeShapeExStencilSuspend(xge_shape_ex_stencil_state_t* pState)
 	g_xgeShapeExStencilActiveMask = 0;
 	g_xgeShapeExStencilContextCount = 0;
 	memset(g_xgeShapeExStencilContextMasks, 0, sizeof(g_xgeShapeExStencilContextMasks));
-	if ( glDisable != NULL ) glDisable(GL_STENCIL_TEST);
+	if ( xge_glDisable != NULL ) xge_glDisable(GL_STENCIL_TEST);
 }
 
 static void __xgeShapeExStencilResume(const xge_shape_ex_stencil_state_t* pState)
@@ -14266,14 +14266,14 @@ static void __xgeShapeExStencilResume(const xge_shape_ex_stencil_state_t* pState
 	g_xgeShapeExStencilContextCount = pState->iContextCount;
 	memcpy(g_xgeShapeExStencilContextMasks, pState->arrContextMasks, sizeof(g_xgeShapeExStencilContextMasks));
 	if ( g_xgeShapeExStencilActiveMask != 0 ) {
-		if ( glEnable != NULL ) glEnable(GL_STENCIL_TEST);
-		if ( glStencilMask != NULL ) glStencilMask(0u);
-		if ( glStencilFunc != NULL ) {
-			glStencilFunc(GL_EQUAL, (GLint)g_xgeShapeExStencilActiveMask, g_xgeShapeExStencilActiveMask);
+		if ( xge_glEnable != NULL ) xge_glEnable(GL_STENCIL_TEST);
+		if ( xge_glStencilMask != NULL ) xge_glStencilMask(0u);
+		if ( xge_glStencilFunc != NULL ) {
+			xge_glStencilFunc(GL_EQUAL, (GLint)g_xgeShapeExStencilActiveMask, g_xgeShapeExStencilActiveMask);
 		}
-		if ( glStencilOp != NULL ) glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-	} else if ( glDisable != NULL ) {
-		glDisable(GL_STENCIL_TEST);
+		if ( xge_glStencilOp != NULL ) xge_glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	} else if ( xge_glDisable != NULL ) {
+		xge_glDisable(GL_STENCIL_TEST);
 	}
 }
 
@@ -14412,10 +14412,10 @@ static int __xgeShapeExDrawSupersampledScanMesh(
 	}
 	iTargetWidth = iWidth * 2;
 	iTargetHeight = iHeight * 2;
-	if ( glGetIntegerv != NULL ) {
+	if ( xge_glGetIntegerv != NULL ) {
 		GLint iMaxTextureSize = 0;
 
-		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+		xge_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
 		if ( (iMaxTextureSize > 0) &&
 		     ((iTargetWidth > iMaxTextureSize) || (iTargetHeight > iMaxTextureSize)) ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
@@ -14725,9 +14725,9 @@ static int __xgeShapeExCompositeMask(
 		((iMethod == XGE_SHAPE_EX_MASK_ALPHA) ||
 		 (iMethod == XGE_SHAPE_EX_MASK_INV_ALPHA));
 	if ( (iWidth <= 0) || (iHeight <= 0) ) return XGE_OK;
-	if ( glGetIntegerv != NULL ) {
+	if ( xge_glGetIntegerv != NULL ) {
 		GLint iMaxTextureSize = 0;
-		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+		xge_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
 		if ( (iMaxTextureSize > 0) && ((iWidth > iMaxTextureSize) || (iHeight > iMaxTextureSize)) ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}
@@ -14775,7 +14775,7 @@ static int __xgeShapeExCompositeMask(
 		g_xgeShapeExStencilActiveMask = 0;
 		g_xgeShapeExStencilContextCount = 0;
 		memset(g_xgeShapeExStencilContextMasks, 0, sizeof(g_xgeShapeExStencilContextMasks));
-		if ( glDisable != NULL ) glDisable(GL_STENCIL_TEST);
+		if ( xge_glDisable != NULL ) xge_glDisable(GL_STENCIL_TEST);
 		if ( bAlphaMaskA8 ) g_xgeShapeExAlphaMaskTargetDepth++;
 		iRet = __xgeShapeExDrawToTarget(pMask, pMaskDraw, pMaskUser, tLocalParent);
 		if ( bAlphaMaskA8 ) g_xgeShapeExAlphaMaskTargetDepth--;
@@ -15138,9 +15138,9 @@ static int __xgeShapeExDrawGradientComposite(
 	iWidth = (int)(fRight - fLeft);
 	iHeight = (int)(fBottom - fTop);
 	if ( (iWidth <= 0) || (iHeight <= 0) ) return XGE_OK;
-	if ( glGetIntegerv != NULL ) {
+	if ( xge_glGetIntegerv != NULL ) {
 		GLint iMaxTextureSize = 0;
-		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+		xge_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
 		if ( (iMaxTextureSize > 0) && ((iWidth > iMaxTextureSize) || (iHeight > iMaxTextureSize)) ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}
@@ -15346,9 +15346,9 @@ static int __xgeShapeExCompositeBlend(
 	if ( (iWidth <= 0) || (iHeight <= 0) ) {
 		return XGE_OK;
 	}
-	if ( glGetIntegerv != NULL ) {
+	if ( xge_glGetIntegerv != NULL ) {
 		GLint iMaxTextureSize = 0;
-		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+		xge_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
 		if ( (iMaxTextureSize > 0) && ((iWidth > iMaxTextureSize) || (iHeight > iMaxTextureSize)) ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}
@@ -15420,8 +15420,8 @@ static int __xgeShapeExCompositeBlend(
 	}
 	if ( tStencilState.iContextCount > 0 || tStencilState.iActiveMask != 0 ) {
 		__xgeShapeExStencilResume(&tStencilState);
-	} else if ( glDisable != NULL ) {
-		glDisable(GL_STENCIL_TEST);
+	} else if ( xge_glDisable != NULL ) {
+		xge_glDisable(GL_STENCIL_TEST);
 	}
 	if ( bOldClip ) xgeClipSet(tOldClip);
 	else xgeClipClear();
@@ -17986,9 +17986,9 @@ static int __xgeShapeExSceneDrawEffects(xge_shape_ex_scene pScene, float fTolera
 	iWidth = (int)(fRight - fLeft);
 	iHeight = (int)(fBottom - fTop);
 	if ( (iWidth <= 0) || (iHeight <= 0) ) return XGE_OK;
-	if ( glGetIntegerv != NULL ) {
+	if ( xge_glGetIntegerv != NULL ) {
 		GLint iMaxTextureSize = 0;
-		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+		xge_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
 		if ( (iMaxTextureSize > 0) && ((iWidth > iMaxTextureSize) || (iHeight > iMaxTextureSize)) ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}

@@ -16,34 +16,34 @@ int xgeShaderCreate(xge_shader pShader, const char* sVertexSource, const char* s
 	iFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sFragmentSource);
 	if ( (iVS == 0) || (iFS == 0) ) {
 		if ( iVS != 0 ) {
-			glDeleteShader(iVS);
+			xge_glDeleteShader(iVS);
 		}
 		if ( iFS != 0 ) {
-			glDeleteShader(iFS);
+			xge_glDeleteShader(iFS);
 		}
 		return XGE_ERROR_GPU_FAILED;
 	}
-	pShader->iProgram = (uint32_t)glCreateProgram();
-	glAttachShader((GLuint)pShader->iProgram, iVS);
-	glAttachShader((GLuint)pShader->iProgram, iFS);
-	glLinkProgram((GLuint)pShader->iProgram);
-	glGetProgramiv((GLuint)pShader->iProgram, GL_LINK_STATUS, &bSuccess);
-	glDeleteShader(iVS);
-	glDeleteShader(iFS);
+	pShader->iProgram = (uint32_t)xge_glCreateProgram();
+	xge_glAttachShader((GLuint)pShader->iProgram, iVS);
+	xge_glAttachShader((GLuint)pShader->iProgram, iFS);
+	xge_glLinkProgram((GLuint)pShader->iProgram);
+	xge_glGetProgramiv((GLuint)pShader->iProgram, GL_LINK_STATUS, &bSuccess);
+	xge_glDeleteShader(iVS);
+	xge_glDeleteShader(iFS);
 	if ( bSuccess == 0 ) {
-		glGetProgramInfoLog((GLuint)pShader->iProgram, 512, NULL, arrLog);
+		xge_glGetProgramInfoLog((GLuint)pShader->iProgram, 512, NULL, arrLog);
 		__xgeLogError("backend", arrLog);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "material program link failed: %s", arrLog);
-		glDeleteProgram((GLuint)pShader->iProgram);
+		xge_glDeleteProgram((GLuint)pShader->iProgram);
 		memset(pShader, 0, sizeof(*pShader));
 		return XGE_ERROR_GPU_FAILED;
 	}
 	pShader->iRefCount = 1;
-	pShader->iLocResolution = glGetUniformLocation((GLuint)pShader->iProgram, "uResolution");
-	pShader->iLocTexture = glGetUniformLocation((GLuint)pShader->iProgram, "uTexture");
-	pShader->iLocTexture2 = glGetUniformLocation((GLuint)pShader->iProgram, "uTexture2");
-	pShader->iLocTexture3 = glGetUniformLocation((GLuint)pShader->iProgram, "uTexture3");
-	pShader->iLocColor = glGetUniformLocation((GLuint)pShader->iProgram, "uColor");
+	pShader->iLocResolution = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uResolution");
+	pShader->iLocTexture = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTexture");
+	pShader->iLocTexture2 = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTexture2");
+	pShader->iLocTexture3 = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTexture3");
+	pShader->iLocColor = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uColor");
 	return XGE_OK;
 }
 
@@ -67,8 +67,8 @@ void xgeShaderFree(xge_shader pShader)
 		pShader->iRefCount--;
 		return;
 	}
-	if ( (pShader->iProgram != 0) && (g_xge.bSokolRunning != 0) && (glDeleteProgram != NULL) ) {
-		glDeleteProgram((GLuint)pShader->iProgram);
+	if ( (pShader->iProgram != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteProgram != NULL) ) {
+		xge_glDeleteProgram((GLuint)pShader->iProgram);
 	}
 	memset(pShader, 0, sizeof(*pShader));
 }
@@ -78,14 +78,14 @@ static int __xgeShaderUniformLocation(xge_shader pShader, const char* sName, GLi
 	if ( (pShader == NULL) || (sName == NULL) || (pLocation == NULL) || (pShader->iProgram == 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (g_xge.bSokolRunning == 0) || (glGetUniformLocation == NULL) ) {
+	if ( (g_xge.bSokolRunning == 0) || (xge_glGetUniformLocation == NULL) ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	*pLocation = glGetUniformLocation((GLuint)pShader->iProgram, sName);
+	*pLocation = xge_glGetUniformLocation((GLuint)pShader->iProgram, sName);
 	if ( *pLocation < 0 ) {
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
-	glUseProgram((GLuint)pShader->iProgram);
+	xge_glUseProgram((GLuint)pShader->iProgram);
 	return XGE_OK;
 }
 
@@ -98,8 +98,8 @@ int xgeShaderUniform1i(xge_shader pShader, const char* sName, int iX)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	glUniform1i(iLoc, iX);
-	glUseProgram(0);
+	xge_glUniform1i(iLoc, iX);
+	xge_glUseProgram(0);
 	return XGE_OK;
 }
 
@@ -112,8 +112,8 @@ int xgeShaderUniform1f(xge_shader pShader, const char* sName, float fX)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	glUniform1f(iLoc, fX);
-	glUseProgram(0);
+	xge_glUniform1f(iLoc, fX);
+	xge_glUseProgram(0);
 	return XGE_OK;
 }
 
@@ -126,8 +126,8 @@ int xgeShaderUniform2f(xge_shader pShader, const char* sName, float fX, float fY
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	glUniform2f(iLoc, fX, fY);
-	glUseProgram(0);
+	xge_glUniform2f(iLoc, fX, fY);
+	xge_glUseProgram(0);
 	return XGE_OK;
 }
 
@@ -140,8 +140,8 @@ int xgeShaderUniform3f(xge_shader pShader, const char* sName, float fX, float fY
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	glUniform3f(iLoc, fX, fY, fZ);
-	glUseProgram(0);
+	xge_glUniform3f(iLoc, fX, fY, fZ);
+	xge_glUseProgram(0);
 	return XGE_OK;
 }
 
@@ -154,8 +154,8 @@ int xgeShaderUniform4f(xge_shader pShader, const char* sName, float fX, float fY
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	glUniform4f(iLoc, fX, fY, fZ, fW);
-	glUseProgram(0);
+	xge_glUniform4f(iLoc, fX, fY, fZ, fW);
+	xge_glUseProgram(0);
 	return XGE_OK;
 }
 
@@ -580,61 +580,61 @@ static int __xgeMaterialSubmit(const xge_material_t* pMaterial, xge_texture pTex
 	} else {
 		iOldBlend = XGE_MATERIAL_DEFAULT_BLEND;
 	}
-	glUseProgram((GLuint)pShader->iProgram);
+	xge_glUseProgram((GLuint)pShader->iProgram);
 	if ( pShader->iLocResolution >= 0 ) {
-		glUniform2f(pShader->iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+		xge_glUniform2f(pShader->iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
 	}
 	if ( pShader->iLocTexture >= 0 ) {
-		glUniform1i(pShader->iLocTexture, 0);
+		xge_glUniform1i(pShader->iLocTexture, 0);
 	}
 	if ( pShader->iLocTexture2 >= 0 ) {
-		glUniform1i(pShader->iLocTexture2, 1);
+		xge_glUniform1i(pShader->iLocTexture2, 1);
 	}
 	if ( pShader->iLocTexture3 >= 0 ) {
-		glUniform1i(pShader->iLocTexture3, 2);
+		xge_glUniform1i(pShader->iLocTexture3, 2);
 	}
 	if ( pShader->iLocColor >= 0 ) {
 		float fR, fG, fB, fA;
 		__xgeColorToFloat(pMaterial->iColor, &fR, &fG, &fB, &fA);
-		glUniform4f(pShader->iLocColor, fR, fG, fB, fA);
+		xge_glUniform4f(pShader->iLocColor, fR, fG, fB, fA);
 	}
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+	xge_glActiveTexture(GL_TEXTURE0);
+	xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
 	if ( pMaterial->pTexture2 != NULL ) {
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, (GLuint)pMaterial->pTexture2->iBackendId);
-		glActiveTexture(GL_TEXTURE0);
+		xge_glActiveTexture(GL_TEXTURE0 + 1);
+		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pMaterial->pTexture2->iBackendId);
+		xge_glActiveTexture(GL_TEXTURE0);
 	}
 	if ( pMaterial->pTexture3 != NULL ) {
-		glActiveTexture(GL_TEXTURE0 + 2);
-		glBindTexture(GL_TEXTURE_2D, (GLuint)pMaterial->pTexture3->iBackendId);
-		glActiveTexture(GL_TEXTURE0);
+		xge_glActiveTexture(GL_TEXTURE0 + 2);
+		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pMaterial->pTexture3->iBackendId);
+		xge_glActiveTexture(GL_TEXTURE0);
 	}
-	glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
-	glBindBuffer(GL_ARRAY_BUFFER, g_xgeQuad3DRenderer.iVBO);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(4 * sizeof(float)));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
-	glEnableVertexAttribArray(2);
-	if (bTriangles) glBufferData(GL_ARRAY_BUFFER, (size_t)iVertexCount * 10u * sizeof(float), pVertices, GL_DYNAMIC_DRAW);
-	else glBufferSubData(GL_ARRAY_BUFFER, 0, (size_t)iVertexCount * 10u * sizeof(float), pVertices);
-	glDrawArrays(bTriangles ? GL_TRIANGLES : GL_TRIANGLE_STRIP, 0, iVertexCount);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
+	xge_glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, g_xgeQuad3DRenderer.iVBO);
+	xge_glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
+	xge_glEnableVertexAttribArray(0);
+	xge_glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(4 * sizeof(float)));
+	xge_glEnableVertexAttribArray(1);
+	xge_glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
+	xge_glEnableVertexAttribArray(2);
+	if (bTriangles) xge_glBufferData(GL_ARRAY_BUFFER, (size_t)iVertexCount * 10u * sizeof(float), pVertices, GL_DYNAMIC_DRAW);
+	else xge_glBufferSubData(GL_ARRAY_BUFFER, 0, (size_t)iVertexCount * 10u * sizeof(float), pVertices);
+	xge_glDrawArrays(bTriangles ? GL_TRIANGLES : GL_TRIANGLE_STRIP, 0, iVertexCount);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, 0);
+	xge_glBindVertexArray(0);
 	if ( pMaterial->pTexture2 != NULL ) {
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0);
+		xge_glActiveTexture(GL_TEXTURE0 + 1);
+		xge_glBindTexture(GL_TEXTURE_2D, 0);
+		xge_glActiveTexture(GL_TEXTURE0);
 	}
 	if ( pMaterial->pTexture3 != NULL ) {
-		glActiveTexture(GL_TEXTURE0 + 2);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0);
+		xge_glActiveTexture(GL_TEXTURE0 + 2);
+		xge_glBindTexture(GL_TEXTURE_2D, 0);
+		xge_glActiveTexture(GL_TEXTURE0);
 	}
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glUseProgram(0);
+	xge_glBindTexture(GL_TEXTURE_2D, 0);
+	xge_glUseProgram(0);
 	if ( iOldBlend != XGE_MATERIAL_DEFAULT_BLEND ) {
 		xgeBlendSet(iOldBlend);
 	}

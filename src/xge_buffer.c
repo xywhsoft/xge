@@ -32,19 +32,19 @@ int xgeBufferUpload(xge_buffer pBuffer)
 	if ( g_xge.bSokolRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	if ( (glGenBuffers == NULL) || (glBindBuffer == NULL) || (glBufferData == NULL) ) {
+	if ( (xge_glGenBuffers == NULL) || (xge_glBindBuffer == NULL) || (xge_glBufferData == NULL) ) {
 		return XGE_ERROR_GPU_FAILED;
 	}
 	if ( pBuffer->iBackendId == 0 ) {
-		glGenBuffers(1, &iBuffer);
+		xge_glGenBuffers(1, &iBuffer);
 		if ( iBuffer == 0 ) {
 			return XGE_ERROR_GPU_FAILED;
 		}
 		pBuffer->iBackendId = iBuffer;
 	}
-	glBindBuffer(iTarget, (GLuint)pBuffer->iBackendId);
-	glBufferData(iTarget, pBuffer->iSize, pBuffer->pData, __xgeBufferUsage(pBuffer->iUsage));
-	glBindBuffer(iTarget, 0);
+	xge_glBindBuffer(iTarget, (GLuint)pBuffer->iBackendId);
+	xge_glBufferData(iTarget, pBuffer->iSize, pBuffer->pData, __xgeBufferUsage(pBuffer->iUsage));
+	xge_glBindBuffer(iTarget, 0);
 	return XGE_OK;
 }
 
@@ -103,12 +103,12 @@ int xgeBufferUpdate(xge_buffer pBuffer, int iOffset, const void* pData, int iSiz
 		if ( iTarget == 0 ) {
 			return XGE_ERROR_UNSUPPORTED;
 		}
-		if ( (glBindBuffer == NULL) || (glBufferSubData == NULL) ) {
+		if ( (xge_glBindBuffer == NULL) || (xge_glBufferSubData == NULL) ) {
 			return XGE_ERROR_GPU_FAILED;
 		}
-		glBindBuffer(iTarget, (GLuint)pBuffer->iBackendId);
-		glBufferSubData(iTarget, iOffset, iSize, pData);
-		glBindBuffer(iTarget, 0);
+		xge_glBindBuffer(iTarget, (GLuint)pBuffer->iBackendId);
+		xge_glBufferSubData(iTarget, iOffset, iSize, pData);
+		xge_glBindBuffer(iTarget, 0);
 	}
 	return XGE_OK;
 }
@@ -121,8 +121,8 @@ void xgeBufferFree(xge_buffer pBuffer)
 		return;
 	}
 	iBuffer = (GLuint)pBuffer->iBackendId;
-	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (glDeleteBuffers != NULL) ) {
-		glDeleteBuffers(1, &iBuffer);
+	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
+		xge_glDeleteBuffers(1, &iBuffer);
 	}
 	if ( pBuffer->pData != NULL ) {
 		xrtFree(pBuffer->pData);

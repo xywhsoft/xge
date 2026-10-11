@@ -1336,13 +1336,14 @@ static void image_resource_load(xui_context context, xui_test_proxy_state_t* pro
 }
 static int image_resource_await(xui_doc_image_request request, xui_resource* resource)
 {
-    unsigned i; int result;
-    for (i = 0; i < 5000; i++) {
+    int result; xdeadline deadline = xrtDeadlineAfter(5000000);
+    for (;;) {
         result = xuiDocumentImageResourcePoll(request, resource);
         if (result != XUI_DOC_ERROR_BUSY) return result;
-#ifdef _WIN32
-        Sleep(1);
-#endif
+        if (xrtDeadlineExpired(deadline)) break;
+        /* Give the decoder worker time on every platform. A fixed poll count
+         * without a yield can expire before the Linux worker is scheduled. */
+        xrtThreadYield();
     }
     CHECK(0 && "image worker did not finish");
     return XUI_DOC_ERROR_BUSY;

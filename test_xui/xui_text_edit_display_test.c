@@ -41,8 +41,14 @@ static int shape(xui_proxy proxy, const xui_text_item_t* pTextItem, xui_text_sha
 static int draw_text(xui_proxy proxy, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t rect, uint32_t color, uint32_t flags)
 {
     const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+    int size = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iTextSize : 0;
 
-    if (draws < 16) snprintf(drawn[draws], sizeof(drawn[draws]), "%s", text);
+    if (draws < 16) {
+        if (size < 0) size = text != NULL ? (int)strlen(text) : 0;
+        if (size >= (int)sizeof(drawn[draws])) size = (int)sizeof(drawn[draws]) - 1;
+        if (size > 0 && text != NULL) memcpy(drawn[draws], text, (size_t)size);
+        drawn[draws][size] = '\0';
+    }
     draws++;
     return originalDraw(proxy, draw, pTextItem, rect, color, flags);
 }
@@ -60,7 +66,7 @@ static void run_case(const char* raw, int width, int wrap, const char* first,
     xui_text_edit_data_t* data;
     xui_text_layout normal;
     xui_rect_t content;
-    int i, before, next, length = (int)strlen(raw);
+    int i, before, next, direct, length = (int)strlen(raw);
     xui_vec2_t measured;
     xuiTestProxyInit(&proxy);
     originalShape = proxy.tProxy.textShape; proxy.tProxy.textShape = shape;
@@ -77,7 +83,7 @@ static void run_case(const char* raw, int width, int wrap, const char* first,
     CHECK(xuiLayout(context) == XUI_OK);
     CHECK(xuiTextEditGetLineCount(edit) == (second != NULL ? 2 : 1));
     data = __xuiTextEditGetData(edit);
-    CHECK(data != NULL && data->tTextLayout.pLayout != NULL);
+    CHECK(data != NULL && (data->tTextLayout.pLayout != NULL || data->bDirectLayout));
     if (data == NULL || data->pLines == NULL) goto cleanup;
     CHECK(data->iLineCount == (second != NULL ? 2 : 1));
     CHECK(fabsf(data->pLines[0].fW - firstWidth) < 0.001f);
@@ -92,6 +98,8 @@ static void run_case(const char* raw, int width, int wrap, const char* first,
     measured = __xuiTextEditMeasureRange(edit, data, font, 0, data->pLines[0].iEnd);
     CHECK(measured.fX == firstWidth);
     content = __xuiTextEditTextContentRect(edit, data);
+    (void)__xuiTextEditCursorFromPoint(edit, data, content.fX + firstWidth + 1,
+        content.fY + data->fLineHeight * 0.5f);
     before = shapes;
     for (i = 0; i < 32; i++) {
         CHECK(__xuiTextEditCursorFromPoint(edit, data, content.fX + firstWidth + 1,
@@ -132,6 +140,9 @@ static void run_case(const char* raw, int width, int wrap, const char* first,
     CHECK(xuiTextEditUndo(edit) == XUI_OK);
     CHECK(strcmp(xuiTextEditGetText(edit), raw) == 0);
     CHECK(xuiLayout(context) == XUI_OK);
+    /* The optimized undo path may patch a direct line without invalidating its
+     * geometry. Force the dirty state required by this allocation rollback test. */
+    __xuiTextEditMarkLinesDirty(data);
     normal = data->tTextLayout.pLayout;
     failAllocation = 0;
     CHECK(__xuiTextEditBuildLines(edit, data, font, (float)width + 1) == XUI_ERROR_OUT_OF_MEMORY);
@@ -145,6 +156,7 @@ static void run_case(const char* raw, int width, int wrap, const char* first,
     CHECK(xuiSetFocusWidget(context, edit) == XUI_OK);
     CHECK(xuiTextEditSetSelection(edit, length, length) == XUI_OK);
     normal = data->tTextLayout.pLayout;
+    direct = data->bDirectLayout;
     CHECK(xuiInputImeComposition(context, "x\xC2\xAD" "y", -1, 0, 4) == XUI_OK);
     CHECK(xuiDispatchPendingEvents(context) == XUI_OK);
     CHECK(data->bImeActive);
@@ -152,7 +164,8 @@ static void run_case(const char* raw, int width, int wrap, const char* first,
     CHECK(__xuiTextEditCacheRender(edit, draw, 0, NULL) == XUI_OK);
     CHECK(data->tTextLayout.pLayout == normal);
     CHECK(data->tImeTextLayout.pLayout != NULL && data->tImeTextLayout.pLayout != normal);
-    CHECK(strcmp(xuiTextLayoutGetText(normal), raw) == 0);
+    if (normal != NULL) CHECK(strcmp(xuiTextLayoutGetText(normal), raw) == 0);
+    else CHECK(data->bDirectLayout == direct);
     CHECK(strcmp(xuiTextEditGetText(edit), raw) == 0);
     CHECK(__xuiTextEditImeRect(edit, NULL).fH > 0);
     CHECK(data->tTextLayout.pLayout == normal);

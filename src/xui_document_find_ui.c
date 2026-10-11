@@ -16,7 +16,7 @@ struct doc_find_ui {
     xui_widget selection_only, results, status;
     uint64_t count, revision, identity, language_revision;
     uint32_t mode;
-    int replace_mode, dirty, invalid_pattern;
+    int replace_mode, dirty, invalid_pattern, viewport_width, viewport_height;
     char position[48], preview[192];
 };
 
@@ -81,31 +81,74 @@ static void doc_find_ui_language(doc_find_ui* ui)
     else if (ui->count) doc_find_ui_status(ui, XUI_OK, ui->count, 0);
 }
 
+static xui_rect_t doc_find_ui_fit(doc_find_ui* ui, xui_rect_t rect)
+{
+    xui_size_t viewport = xuiGetViewportSize(xuiWidgetGetContext(ui->editor));
+    float margin_x = viewport.iW > 32 ? 16.0f : 0.0f;
+    float margin_y = viewport.iH > 32 ? 16.0f : 0.0f;
+    if (viewport.iW > 0) {
+        float last = viewport.iW - margin_x - rect.fW;
+        if (last < margin_x) last = margin_x;
+        if (rect.fX > last) rect.fX = last;
+        if (rect.fX < margin_x) rect.fX = margin_x;
+    }
+    if (viewport.iH > 0) {
+        float last = viewport.iH - margin_y - rect.fH;
+        if (last < margin_y) last = margin_y;
+        if (rect.fY > last) rect.fY = last;
+        if (rect.fY < margin_y) rect.fY = margin_y;
+    }
+    return rect;
+}
+
 static void doc_find_ui_layout(doc_find_ui* ui)
 {
+    xui_size_t viewport = xuiGetViewportSize(xuiWidgetGetContext(ui->editor));
     float options_y = ui->replace_mode ? 92.0f : 52.0f;
-    float y = options_y + 32.0f;
+    float y, table_height, scale;
     xui_rect_t rect = xuiWidgetGetRect(ui->window);
     rect.fW = 640; rect.fH = ui->replace_mode ? 388 : 348;
+    ui->viewport_width = viewport.iW; ui->viewport_height = viewport.iH;
+    if (viewport.iW > 32 && rect.fW > viewport.iW - 32) rect.fW = viewport.iW - 32;
+    if (viewport.iH > 32 && rect.fH > viewport.iH - 32) rect.fH = viewport.iH - 32;
+    rect = doc_find_ui_fit(ui, rect);
     (void)xuiWidgetSetRect(ui->window, rect);
-    (void)xuiWidgetSetRect(ui->find, (xui_rect_t){12, 12, 290, 28});
-    (void)xuiWidgetSetRect(ui->previous, (xui_rect_t){312, 12, 86, 28});
-    (void)xuiWidgetSetRect(ui->next, (xui_rect_t){404, 12, 80, 28});
-    (void)xuiWidgetSetRect(ui->all, (xui_rect_t){490, 12, 128, 28});
     (void)xuiWidgetSetVisible(ui->replacement, ui->replace_mode);
     (void)xuiWidgetSetVisible(ui->replace_one, ui->replace_mode);
     (void)xuiWidgetSetVisible(ui->replace_all, ui->replace_mode);
-    if (ui->replace_mode) {
-        (void)xuiWidgetSetRect(ui->replacement, (xui_rect_t){12, 52, 290, 28});
-        (void)xuiWidgetSetRect(ui->replace_one, (xui_rect_t){312, 52, 126, 28});
-        (void)xuiWidgetSetRect(ui->replace_all, (xui_rect_t){444, 52, 174, 28});
+    if (rect.fW >= 430) {
+        (void)xuiWidgetSetRect(ui->find, (xui_rect_t){12, 12, rect.fW - 350, 28});
+        (void)xuiWidgetSetRect(ui->previous, (xui_rect_t){rect.fW - 328, 12, 86, 28});
+        (void)xuiWidgetSetRect(ui->next, (xui_rect_t){rect.fW - 236, 12, 80, 28});
+        (void)xuiWidgetSetRect(ui->all, (xui_rect_t){rect.fW - 150, 12, 128, 28});
+        if (ui->replace_mode) {
+            (void)xuiWidgetSetRect(ui->replacement, (xui_rect_t){12, 52, rect.fW - 350, 28});
+            (void)xuiWidgetSetRect(ui->replace_one, (xui_rect_t){rect.fW - 328, 52, 126, 28});
+            (void)xuiWidgetSetRect(ui->replace_all, (xui_rect_t){rect.fW - 196, 52, 174, 28});
+        }
+    } else {
+        float third = (rect.fW - 38) / 3, half = (rect.fW - 32) / 2;
+        options_y = ui->replace_mode ? 172 : 92;
+        (void)xuiWidgetSetRect(ui->find, (xui_rect_t){12, 12, rect.fW - 26, 28});
+        (void)xuiWidgetSetRect(ui->previous, (xui_rect_t){12, 52, third, 28});
+        (void)xuiWidgetSetRect(ui->next, (xui_rect_t){18 + third, 52, third, 28});
+        (void)xuiWidgetSetRect(ui->all, (xui_rect_t){24 + 2 * third, 52, third, 28});
+        if (ui->replace_mode) {
+            (void)xuiWidgetSetRect(ui->replacement, (xui_rect_t){12, 92, rect.fW - 26, 28});
+            (void)xuiWidgetSetRect(ui->replace_one, (xui_rect_t){12, 132, half, 28});
+            (void)xuiWidgetSetRect(ui->replace_all, (xui_rect_t){18 + half, 132, half, 28});
+        }
     }
-    (void)xuiWidgetSetRect(ui->case_sensitive, (xui_rect_t){12, options_y, 150, 24});
-    (void)xuiWidgetSetRect(ui->whole_word, (xui_rect_t){168, options_y, 126, 24});
-    (void)xuiWidgetSetRect(ui->regex, (xui_rect_t){300, options_y, 110, 24});
-    (void)xuiWidgetSetRect(ui->selection_only, (xui_rect_t){416, options_y, 202, 24});
-    (void)xuiWidgetSetRect(ui->results, (xui_rect_t){12, y, 606, 194});
-    (void)xuiWidgetSetRect(ui->status, (xui_rect_t){12, y + 202, 606, 24});
+    scale = (rect.fW - 34) / 606.0f;
+    (void)xuiWidgetSetRect(ui->case_sensitive, (xui_rect_t){12, options_y, 150 * scale, 24});
+    (void)xuiWidgetSetRect(ui->whole_word, (xui_rect_t){12 + 156 * scale, options_y, 126 * scale, 24});
+    (void)xuiWidgetSetRect(ui->regex, (xui_rect_t){12 + 288 * scale, options_y, 110 * scale, 24});
+    (void)xuiWidgetSetRect(ui->selection_only, (xui_rect_t){12 + 404 * scale, options_y, 202 * scale, 24});
+    y = options_y + 32;
+    table_height = rect.fH - y - 70;
+    if (table_height < 1) table_height = 1;
+    (void)xuiWidgetSetRect(ui->results, (xui_rect_t){12, y, rect.fW - 34, table_height});
+    (void)xuiWidgetSetRect(ui->status, (xui_rect_t){12, y + table_height + 8, rect.fW - 34, 24});
 }
 
 static void doc_find_ui_readonly(doc_find_ui* ui)
@@ -520,6 +563,7 @@ int doc_find_ui_open(xui_widget editor, doc_find_ui** slot, int replace)
     doc_find_ui_readonly(ui);
     owner = xuiWidgetGetWorldRect(editor); rect = xuiWidgetGetRect(ui->window);
     rect.fX = owner.fX + 16; rect.fY = owner.fY + 16;
+    rect = doc_find_ui_fit(ui, rect);
     (void)xuiWidgetSetRect(ui->window, rect);
     (void)xuiWindowSetOpen(ui->window, 1);
     (void)xuiWindowBringToFront(ui->window);
@@ -532,8 +576,12 @@ int doc_find_ui_open(xui_widget editor, doc_find_ui** slot, int replace)
 void doc_find_ui_update(doc_find_ui* ui)
 {
     xui_document document;
+    xui_size_t viewport;
     if (!ui || !xuiInternalWidgetIsValid(ui->editor) ||
         !xuiInternalWidgetIsValid(ui->window)) return;
+    viewport = xuiGetViewportSize(xuiWidgetGetContext(ui->editor));
+    if (xuiWindowIsOpen(ui->window) && (viewport.iW != ui->viewport_width || viewport.iH != ui->viewport_height))
+        doc_find_ui_layout(ui);
     if (ui->language_revision != xuiGetLanguageRevision(xuiWidgetGetContext(ui->editor)))
         doc_find_ui_language(ui);
     doc_find_ui_readonly(ui);

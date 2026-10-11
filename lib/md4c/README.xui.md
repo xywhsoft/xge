@@ -3,6 +3,13 @@
 Source: https://github.com/mity/md4c
 
 Pinned revision: `b3c6223903c1df483cef926ba347e531248f0b92`.
+The local strikethrough scanner follows emphasis left/right flanking, as used
+by [GFM's strikethrough implementation](https://github.com/github/cmark-gfm/blob/master/extensions/strikethrough.c).
+One/two matching tildes can format part of a word; inner whitespace still
+prevents opening/closing, and runs of three or more remain literal. This fixes
+the previous outer-word-boundary restriction that prevented a visual strike
+command on an ordinary letter. Extended single-tilde subscripts retain their
+separate rules. This behavior correction is independent of the source hooks.
 See `LICENSE.md` for the MIT license. `md4c.c` has a guarded XUI integration
 patch (`MD_XUI_SOURCE_BLOCK`): record complete block byte ranges while grouping
 lines, report them beside block callbacks, and retain paragraph callbacks in
@@ -175,3 +182,48 @@ provide mathematical typesetting or diagram rendering.
 Footnote definition collection retains every four-column indented continuation as body input before independently parsing that body. Outer container matching still applies; indented HTML no longer interrupts the definition and becomes an unrelated outer block. SOURCE, full parse and native reload use this same path.
 
 List indentation callbacks begin with one parser-confirmed first-line record: marker/gap bounds plus logical start, consumed content and raw end columns. The adapter stores it in LIST_ITEM syntax_aux, leaving public continuation records unchanged. Task gaps are owned by the first line; extra indentation beyond an ordinary marker retains its literal code width. Source-preserving unlist copies body and untouched siblings, checks all ordered definition values, and verifies complete semantic equivalence before publishing.
+
+Quote records contain seven offsets/columns: marker, raw prefix end, logical
+start/marker/content/end columns, and the parser-confirmed raw indentation
+start. List records contain six: marker/continuation start, raw end, logical
+start/content/end columns, and raw indentation start (equal to continuation
+start for continuation records). The parser locates that last value within its
+already accepted whitespace prefix. It preserves a shared Tab byte and uses
+the actual dedented footnote input origin; Document never guesses the origin
+by counting a reconstructed physical line. The extra list value is stored
+only in the first-line blob, preserving compact continuation storage. These
+blobs are derived parser metadata; native Markdown loads rebuild them from
+the retained raw source. All added capture paths remain guarded for no-hook
+parser builds and use the ordinary cancellation/unwind path.
+
+A fenced-code continuation or closing-fence probe runs only when all of its
+enclosing containers explicitly match. If a quote/list ancestor ends, the
+original line is analyzed as an outer block. This matters because MD4C's
+closing-fence probe advances the output offset even on a partial match; using
+that offset outside the fence would drop literal backticks or mistake an
+outer opening fence for the previous block's closer. The same path serves
+complete and incremental parses and preserves strict raw-indentation checks.
+
+Document source capture also balances the existing DOC source enter event with a leave event after successful semantic DOC completion. The same parse supplies ordinary-body and definition CST collectors; the resulting immutable arenas belong to the existing Document state. This adds no second product parse or semantic node identities. With source hooks disabled, the upstream callback path is unchanged.
+# Raw table source slots
+
+`MD_XUI_SOURCE_TABLE_SLOT` reports accepted raw rows and all physical cells,
+including empty and semantically ignored extra cells, during the existing
+table parse. The cell descriptors share the semantic cell whitespace trim
+rule and include both raw and content endpoints. Document stores these in
+its ordinary/definition CST; no additional parser, source copy or semantic
+node is created. The upstream parser API and no-hook behavior are unchanged.
+
+# Brother item followed by a child container
+
+The accepted brother container is retained independently while scanning a child
+quote or list on the same line. Its own marker offsets, logical columns and task
+state open the new list item; the child scanner cannot overwrite them. Task
+recognition without a child updates this retained brother. This corrects marker
+ownership and prevents an inner checked task from marking its outer item as a
+task. The fix also applies to the no-hook upstream callback path.
+
+`MD_XUI_FOOTNOTE_INDENTS` reports the exact physical line prefixes removed
+by the same footnote body parser, including lazy continuations and nested
+containers. Visible nodes and hidden CST share these original offsets;
+Document never guesses continuation indentation from label length.

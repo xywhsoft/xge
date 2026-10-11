@@ -4,6 +4,7 @@
 
 /* Window-independent UTF-8 navigation shared by Document and XUI widgets. */
 typedef int (*xui_internal_text_read_proc)(void* user, int offset, unsigned char* byte);
+typedef int (*xui_internal_text_read64_proc)(void* user, int64_t offset, unsigned char* byte);
 
 typedef enum xui_internal_word_policy_t {
     XUI_INTERNAL_WORD_NATURAL = 0,
@@ -40,5 +41,20 @@ int xuiInternalTextWordPrev(const char* text, int length, int offset,
     xui_internal_word_policy_t policy);
 int xuiInternalTextWordNext(const char* text, int length, int offset,
     xui_internal_word_policy_t policy);
+
+/* Same Unicode boundary engine, with signed 64-bit offsets. Read callbacks
+ * are never called outside [0,length). No allocation or contiguous input is
+ * required, so Document piece stores can use this without narrowing offsets. */
+int64_t xuiInternalTextGraphemeNext64Read(xui_internal_text_read64_proc, void*, int64_t, int64_t);
+int64_t xuiInternalTextGraphemePrev64Read(xui_internal_text_read64_proc, void*, int64_t, int64_t);
+int64_t xuiInternalTextGraphemeClamp64Read(xui_internal_text_read64_proc, void*, int64_t, int64_t);
+int xuiInternalTextWordBoundary64Read(xui_internal_text_read64_proc, void*, int64_t, int64_t,
+    xui_internal_word_policy_t);
+xui_internal_word_kind_t xuiInternalTextWordRange64Read(xui_internal_text_read64_proc, void*,
+    int64_t, int64_t, xui_internal_word_policy_t, int64_t*, int64_t*);
+int64_t xuiInternalTextWordPrev64Read(xui_internal_text_read64_proc, void*, int64_t, int64_t,
+    xui_internal_word_policy_t);
+int64_t xuiInternalTextWordNext64Read(xui_internal_text_read64_proc, void*, int64_t, int64_t,
+    xui_internal_word_policy_t);
 
 #endif

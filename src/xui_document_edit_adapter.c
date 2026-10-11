@@ -3,21 +3,31 @@
 #include "xui_document_view_internal.h"
 #include "xui_document_accessible_internal.h"
 #include "xui_internal.h"
+#include "xui_accessibility_text_internal.h"
+#include "xui_unicode_core.h"
 #include "xui_document_image_resource_internal.h"
 #include <limits.h>
 #include <math.h>
 
 void doc_view_invalidate_edit(doc_view_data* v)
 {
+    doc_view_format_cache_clear(v);
+    doc_free(v->text_paragraph_edges); v->text_paragraph_edges = NULL;
+    v->text_paragraph_edge_count = 0;
     doc_plain_projection_free(&v->edit_projection);
     xuiDocumentSnapshotRelease(v->edit_snapshot); v->edit_snapshot = NULL;
 }
 static int doc_view_project_edit(doc_view_data* v)
 {
     int result = doc_view_sync(v); unsigned domain = v->renderer->mode != XUI_DOC_VISUAL ? XUI_DOC_SOURCE : XUI_DOC_SEMANTIC;
+    xui_doc_position_t input_origin = {0};
     if (result != XUI_OK) return result;
+    if (v->input) {
+        result = xuiDocumentPrepareSourcePosition(v->input, 0, XUI_DOC_AFTER, &input_origin);
+        if (result != XUI_OK) return result;
+    }
     if (v->edit_snapshot && v->edit_snapshot->revision == v->renderer->snapshot->revision &&
-        v->edit_projection.origin.iInputGeneration == (v->input ? v->selection.tCaret.iInputGeneration : 0) &&
+        v->edit_projection.origin.iInputGeneration == input_origin.iInputGeneration &&
         (v->edit_projection.origin.iKind == XUI_DOC_POSITION_SOURCE) == (domain == XUI_DOC_SOURCE)) return XUI_OK;
     doc_view_invalidate_edit(v);
     if (v->input) {
@@ -27,7 +37,7 @@ static int doc_view_project_edit(doc_view_data* v)
         p->text = doc_alloc(p->allocator, (size_t)bytes + 1); if (!p->text) return XUI_ERROR_OUT_OF_MEMORY;
         p->bytes = p->capacity = bytes;
         result = xuiDocumentPrepareCopySource(v->input, p->text, bytes + 1, &bytes);
-        if (result == XUI_OK) result = xuiDocumentPrepareSourcePosition(v->input, 0, XUI_DOC_AFTER, &p->origin);
+        if (result == XUI_OK) p->origin = input_origin;
     } else result = doc_plain_project(v->renderer->snapshot, domain, &v->edit_projection);
     if (result == XUI_OK) { v->edit_snapshot = v->renderer->snapshot; xuiDocumentSnapshotRetain(v->edit_snapshot); }
     return result;
@@ -61,6 +71,41 @@ static int doc_view_edit_get_selection(xui_widget w, int* first, int* last)
     if (result != XUI_OK) return result;
     if (a > INT_MAX || b > INT_MAX) return XUI_DOC_ERROR_LIMIT;
     *first = (int)a; *last = (int)b; return XUI_OK;
+}
+int xuiInternalDocumentImeText(xui_widget w, const char** text,
+    int* length, int* first, int* last, uint64_t* revision)
+{
+    doc_view_data* v = doc_view_get(w); int result;
+    if (!v || !text || !length || !first || !last || !revision)
+        return XUI_ERROR_INVALID_ARGUMENT;
+    result = doc_view_project_edit(v);
+    if (result == XUI_OK && v->edit_projection.bytes > INT_MAX) result = XUI_DOC_ERROR_LIMIT;
+    if (result == XUI_OK) result = doc_view_edit_get_selection(w, first, last);
+    if (result != XUI_OK) return result;
+    if (*first > *last) { int swap = *first; *first = *last; *last = swap; }
+    *text = v->edit_projection.text; *length = (int)v->edit_projection.bytes;
+    *revision = v->renderer->snapshot->revision;
+    return XUI_OK;
+}
+int doc_view_ime_range(doc_view_data* v, int first, int last, xui_doc_range_t* range)
+{
+    int result = doc_view_project_edit(v);
+    doc_plain_projection* p = &v->edit_projection;
+    if (result != XUI_OK) return result;
+    if (first < 0 || last < first || (uint64_t)last > p->bytes)
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if (((uint64_t)first < p->bytes && ((unsigned char)p->text[first] & 0xc0) == 0x80) ||
+        ((uint64_t)last < p->bytes && ((unsigned char)p->text[last] & 0xc0) == 0x80))
+        return XUI_DOC_ERROR_UTF8;
+    if (v->input) {
+        result = xuiDocumentPrepareSourcePosition(v->input, (uint64_t)first, XUI_DOC_AFTER, &range->tAnchor);
+        if (result == XUI_OK) result = xuiDocumentPrepareSourcePosition(v->input, (uint64_t)last,
+            first == last ? XUI_DOC_AFTER : XUI_DOC_BEFORE, &range->tCaret);
+    } else {
+        range->tAnchor = doc_plain_unproject(p, (uint64_t)first, 1);
+        range->tCaret = first == last ? range->tAnchor : doc_plain_unproject(p, (uint64_t)last, 0);
+    }
+    return result;
 }
 static int doc_view_edit_set_selection(xui_widget w, int first, int last)
 {
@@ -1290,9 +1335,15 @@ static int doc_view_accessible_action(xui_widget w, uint64_t id, int action, con
     }
     return XUI_ERROR_UNSUPPORTED;
 }
+#include "xui_document_accessible_text.inl"
+
 int doc_view_register_edit(xui_widget w, int editable)
 {
-    static const xui_internal_accessibility_adapter_t accessible = {xuiInternalAccessibilityEditNode, xuiInternalAccessibilityEditAction};
+    static const xui_internal_accessibility_adapter_t accessible = {
+        .getNode = xuiInternalAccessibilityEditNode,
+        .performAction = xuiInternalAccessibilityEditAction,
+        .createTextRange = doc_view_accessible_text_create
+    };
     static const xui_internal_edit_adapter_t view = {
         .iCapabilities = XUI_EDIT_CAP_TEXT | XUI_EDIT_CAP_SELECTION | XUI_EDIT_CAP_CLIPBOARD | XUI_EDIT_CAP_READONLY | XUI_EDIT_CAP_CARET_RECT | XUI_EDIT_CAP_MULTILINE | XUI_EDIT_CAP_STRUCTURED,
         .getText = doc_view_edit_text, .setSelection = doc_view_edit_set_selection, .getSelection = doc_view_edit_get_selection,

@@ -44,10 +44,11 @@ static int doc_text_caret(xui_document_transaction t, xui_doc_position_t* p)
     if (result == XUI_OK) *p = doc_command_caret(t, id, 0, XUI_DOC_POSITION_TEXT);
     return result;
 }
-static int doc_image_desc_valid(const xui_doc_image_desc_t* image)
+static int doc_image_desc_valid(const xui_doc_image_desc_t* image, int profile)
 {
     const char *title, *link_title;
-    if (!image || image->iSize != sizeof(*image) || !image->sResource || !*image->sResource ||
+    if (!image || image->iSize != sizeof(*image) || !image->sResource ||
+        (!*image->sResource && profile != XUI_DOCUMENT_MARKDOWN) ||
         (!image->sAlt && image->iAltBytes) || image->iAltBytes >= SIZE_MAX ||
         !isfinite(image->fWidth) || !isfinite(image->fHeight) ||
         image->fWidth < 0 || image->fWidth > DOC_MAX_LAYOUT_VALUE ||
@@ -62,14 +63,14 @@ static int doc_image_desc_valid(const xui_doc_image_desc_t* image)
         doc_utf8(link_title, strlen(link_title)) &&
         !memchr(image->sResource, '\n', strlen(image->sResource)) &&
         !memchr(image->sResource, '\r', strlen(image->sResource)) &&
-        !memchr(title, '\n', strlen(title)) && !memchr(title, '\r', strlen(title)) &&
+        (profile == XUI_DOCUMENT_MARKDOWN || (!memchr(title, '\n', strlen(title)) && !memchr(title, '\r', strlen(title)))) &&
         (!image->sLinkTarget || (!strchr(image->sLinkTarget, '\n') && !strchr(image->sLinkTarget, '\r'))) &&
-        !strchr(link_title, '\n') && !strchr(link_title, '\r') &&
+        (profile == XUI_DOCUMENT_MARKDOWN || (!strchr(link_title, '\n') && !strchr(link_title, '\r'))) &&
         (!image->iAltBytes || (!memchr(image->sAlt, 0, (size_t)image->iAltBytes) &&
             !memchr(image->sAlt, '\n', (size_t)image->iAltBytes) &&
             !memchr(image->sAlt, '\r', (size_t)image->iAltBytes)));
 }
-static int doc_image_link_set(xui_document_transaction t, xui_doc_node_id image_id,
+int doc_image_link_set(xui_document_transaction t, xui_doc_node_id image_id,
     const xui_doc_image_desc_t* image)
 {
     doc_node *node = doc_index_get(t->draft->index, image_id), *copy;
@@ -117,7 +118,7 @@ XUI_API int xuiDocumentTxnInsertImage(xui_document_transaction t, const xui_doc_
     doc_node *node, *parent; uint64_t parent_id, index, tail, id = 0; int result;
     if (image_id) *image_id = 0;
     result = doc_txn_check(t, XUI_DOC_SEMANTIC); if (result != XUI_OK) return result;
-    if (!range || !image_id || !caret || !doc_image_desc_valid(image))
+    if (!range || !image_id || !caret || !doc_image_desc_valid(image, t->draft->profile))
         return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
     result = doc_command_position(t, &range->tAnchor);
     if (result == XUI_OK) result = doc_command_position(t, &range->tCaret);
@@ -698,7 +699,7 @@ XUI_API int xuiDocumentTxnUpdateImage(xui_document_transaction t, xui_doc_node_i
     doc_blob *resource = NULL, *alt = NULL, *title = NULL;
     doc_node* node; xui_doc_attributes_t attrs; uint64_t old_alt_bytes; int result;
     result = doc_txn_check(t, XUI_DOC_SEMANTIC); if (result != XUI_OK) return result;
-    if (!doc_image_desc_valid(image)) return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
+    if (!doc_image_desc_valid(image, t->draft->profile)) return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
     node = doc_index_get(t->draft->index, image_id);
     if (!node || node->kind != XUI_DOC_IMAGE) return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
     if (t->draft->profile == XUI_DOCUMENT_MARKDOWN && (image->fWidth > 0 || image->fHeight > 0))
@@ -738,7 +739,7 @@ XUI_API int xuiDocumentTxnSplitBlock(xui_document_transaction t, const xui_doc_p
         struct xui_doc_transaction_t shadow; xui_doc_position_t target;
         result = doc_markdown_shadow_begin(t, &shadow); if (result != XUI_OK) return result;
         result = xuiDocumentTxnSplitBlock(&shadow, at, &target);
-        return doc_markdown_shadow_end(t, &shadow, result, &target, caret);
+        return doc_markdown_shadow_end_block_split(t, &shadow, result, at, &target, caret);
     }
     p = *at; n = doc_index_get(t->draft->index, p.iNodeId);
     if (p.iKind == XUI_DOC_POSITION_TEXT) {
@@ -769,7 +770,18 @@ XUI_API int xuiDocumentTxnSplitBlock(xui_document_transaction t, const xui_doc_p
     result = doc_txn_op(t, &split); if (result != XUI_OK) return result;
     n = doc_index_get(t->draft->index, tail);
     if (!n || n->kind != XUI_DOC_TEXT) {
-        result = doc_insert_empty(t, next, 0, XUI_DOC_TEXT, &new_text); if (result != XUI_OK) return result;
+        /* A split immediately before an inline break is still inside that
+         * break's styled run. The typing leaf must retain its marks and link
+         * fields, just as a split inside Text retains the right Text leaf.
+         * Object boundaries and a genuinely empty paragraph keep defaults. */
+        if (n && (n->kind == XUI_DOC_SOFT_BREAK || n->kind == XUI_DOC_HARD_BREAK)) {
+            memset(&desc, 0, sizeof(desc)); desc.iSize = sizeof(desc); desc.iKind = XUI_DOC_TEXT;
+            desc.tAttributes = *n->attrs;
+            desc.sResource = doc_string(n->resource); desc.sInfo = doc_string(n->info);
+            desc.sTitle = doc_string(n->title);
+            result = doc_txn_insert(t, next, 0, &desc, &new_text);
+        } else result = doc_insert_empty(t, next, 0, XUI_DOC_TEXT, &new_text);
+        if (result != XUI_OK) return result;
     }
     n = doc_index_get(t->draft->index, parent);
     if (n && n->kind == XUI_DOC_LIST_ITEM) {

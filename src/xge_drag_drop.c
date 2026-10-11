@@ -1368,6 +1368,11 @@ static void __xgeDragDropPlatformUnit(void)
 
 #else
 
+static int __xgeDragDropPlatformBegin(void)
+{
+	return XGE_ERROR_UNSUPPORTED;
+}
+
 static void __xgeDragDropPlatformInit(void)
 {
 #if !defined(SOKOL_DUMMY_BACKEND)

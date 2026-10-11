@@ -178,6 +178,48 @@ export ASAN_OPTIONS UBSAN_OPTIONS
 
 "$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
     -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_fence_boundary_sanitizer" \
+    test_xui/xui_document_fence_boundary_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_fence_boundary_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_fence_boundary_collision_sanitizer" \
+    test_xui/xui_document_fence_boundary_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_fence_boundary_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_inline_whitespace_sanitizer" \
+    test_xui/xui_document_inline_whitespace_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_inline_whitespace_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_inline_whitespace_collision_sanitizer" \
+    test_xui/xui_document_inline_whitespace_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_inline_whitespace_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_nested_image_sanitizer" \
+    test_xui/xui_document_nested_image_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_nested_image_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_nested_image_collision_sanitizer" \
+    test_xui/xui_document_nested_image_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_nested_image_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
     -o "$OUT_DIR/xui_document_quote_unwrap_source_sanitizer" \
     test_xui/xui_document_quote_unwrap_source_test.c "$@" test_xui/xui_test_xrt_impl.c \
     -lm -ldl -lpthread
@@ -211,6 +253,120 @@ export ASAN_OPTIONS UBSAN_OPTIONS
     -lm -ldl -lpthread
 "$OUT_DIR/xui_document_unlist_source_sanitizer"
 
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_image_field_source_sanitizer" \
+    test_xui/xui_document_image_field_source_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_image_field_source_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_image_field_source_collision_sanitizer" \
+    test_xui/xui_document_image_field_source_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_image_field_source_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_link_field_cst_sanitizer" \
+    test_xui/xui_document_link_field_cst_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_link_field_cst_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_link_field_cst_collision_sanitizer" \
+    test_xui/xui_document_link_field_cst_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_link_field_cst_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_link_command_fields_sanitizer" \
+    test_xui/xui_document_link_command_fields_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_link_command_fields_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_link_command_fields_collision_sanitizer" \
+    test_xui/xui_document_link_command_fields_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_link_command_fields_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_link_owner_fields_sanitizer" \
+    test_xui/xui_document_link_owner_fields_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_link_owner_fields_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_link_owner_fields_collision_sanitizer" \
+    test_xui/xui_document_link_owner_fields_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_link_owner_fields_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_unlink_fields_sanitizer" \
+    test_xui/xui_document_unlink_fields_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_unlink_fields_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_unlink_fields_collision_sanitizer" \
+    test_xui/xui_document_unlink_fields_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_unlink_fields_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_source_index_sanitizer" \
+    test_xui/xui_document_source_index_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_source_index_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_source_index_collision_sanitizer" \
+    test_xui/xui_document_source_index_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_source_index_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_prefix_binding_sanitizer" \
+    test_xui/xui_document_prefix_binding_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_prefix_binding_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_prefix_binding_collision_sanitizer" \
+    test_xui/xui_document_prefix_binding_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_prefix_binding_collision_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -I. \
+    -o "$OUT_DIR/xui_document_source_working_sanitizer" \
+    test_xui/xui_document_source_working_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_source_working_sanitizer"
+
+"$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+    -Wall -Wextra -Werror -Wno-unused-function -DXUI_DOC_REFERENCE_HASH_COLLISION_TEST -I. \
+    -o "$OUT_DIR/xui_document_source_working_collision_sanitizer" \
+    test_xui/xui_document_source_working_test.c "$@" test_xui/xui_test_xrt_impl.c \
+    -lm -ldl -lpthread
+"$OUT_DIR/xui_document_source_working_collision_sanitizer"
+
+python3 test_xui/build_document_cst_test.py --sanitizer --out-dir "$OUT_DIR/cst"
+
 if [ -n "$CORPUS" ]; then
     "$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
         -Wall -Wextra -Werror -Wno-unused-function -I. \
@@ -219,3 +375,11 @@ if [ -n "$CORPUS" ]; then
         -lm -ldl -lpthread
     "$OUT_DIR/xui_document_corpus_sanitizer" "$CORPUS"
 fi
+
+# Run the permanent lossless move matrix on fresh normal/collision kernels.
+for move_variant in normal collision; do
+    python3 test_xui/build_document_move_test.py --sanitize --variant "$move_variant" \
+        --out-dir "$OUT_DIR/moves-block-$move_variant"
+    python3 test_xui/build_document_container_move_test.py --sanitize --variant "$move_variant" \
+        --out-dir "$OUT_DIR/moves-container-$move_variant"
+done

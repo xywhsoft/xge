@@ -419,41 +419,41 @@ static void __xgeDrawExImmediate(const xge_draw_t* pDraw)
 			return;
 		}
 		pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
-		glUseProgram(g_xgeTextureRenderer.iYUVProgram);
-		glUniform2f(g_xgeTextureRenderer.iYUVLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
-		glUniform1i(g_xgeTextureRenderer.iYUVLocTexY, 0);
-		glUniform1i(g_xgeTextureRenderer.iYUVLocTexU, 1);
-		glUniform1i(g_xgeTextureRenderer.iYUVLocTexV, 2);
-		glUniform4f(g_xgeTextureRenderer.iYUVLocColor, fR, fG, fB, fA);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[0]);
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[1]);
-		glActiveTexture(GL_TEXTURE0 + 2);
-		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[2]);
+		xge_glUseProgram(g_xgeTextureRenderer.iYUVProgram);
+		xge_glUniform2f(g_xgeTextureRenderer.iYUVLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+		xge_glUniform1i(g_xgeTextureRenderer.iYUVLocTexY, 0);
+		xge_glUniform1i(g_xgeTextureRenderer.iYUVLocTexU, 1);
+		xge_glUniform1i(g_xgeTextureRenderer.iYUVLocTexV, 2);
+		xge_glUniform4f(g_xgeTextureRenderer.iYUVLocColor, fR, fG, fB, fA);
+		xge_glActiveTexture(GL_TEXTURE0);
+		xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[0]);
+		xge_glActiveTexture(GL_TEXTURE0 + 1);
+		xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[1]);
+		xge_glActiveTexture(GL_TEXTURE0 + 2);
+		xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[2]);
 	} else {
-		glUseProgram(g_xgeTextureRenderer.iProgram);
-		glUniform2f(g_xgeTextureRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
-		glUniform1i(g_xgeTextureRenderer.iLocTexture, 0);
-		glUniform4f(g_xgeTextureRenderer.iLocColor, fR, fG, fB, fA);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+		xge_glUseProgram(g_xgeTextureRenderer.iProgram);
+		xge_glUniform2f(g_xgeTextureRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+		xge_glUniform1i(g_xgeTextureRenderer.iLocTexture, 0);
+		xge_glUniform4f(g_xgeTextureRenderer.iLocColor, fR, fG, fB, fA);
+		xge_glActiveTexture(GL_TEXTURE0);
+		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
 	}
-	glBindVertexArray(g_xgeTextureRenderer.iVAO);
-	glBindBuffer(GL_ARRAY_BUFFER, g_xgeTextureRenderer.iVBO);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
+	xge_glBindVertexArray(g_xgeTextureRenderer.iVAO);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, g_xgeTextureRenderer.iVBO);
+	xge_glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
+	xge_glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	xge_glBindBuffer(GL_ARRAY_BUFFER, 0);
+	xge_glBindVertexArray(0);
 	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
-		glActiveTexture(GL_TEXTURE0 + 2);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0);
+		xge_glActiveTexture(GL_TEXTURE0 + 2);
+		xge_glBindTexture(GL_TEXTURE_2D, 0);
+		xge_glActiveTexture(GL_TEXTURE0 + 1);
+		xge_glBindTexture(GL_TEXTURE_2D, 0);
+		xge_glActiveTexture(GL_TEXTURE0);
 	}
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glUseProgram(0);
+	xge_glBindTexture(GL_TEXTURE_2D, 0);
+	xge_glUseProgram(0);
 	__xgeFrameStatsAddDrawCall();
 }
 
@@ -492,7 +492,7 @@ void xgeViewportSet(xge_rect_t tRect)
 	}
 	g_xge.bViewportEnabled = 1;
 	g_xge.tViewportRect = tRect;
-	if ( (g_xge.bSokolRunning == 0) || (glViewport == NULL) ) {
+	if ( (g_xge.bSokolRunning == 0) || (xge_glViewport == NULL) ) {
 		return;
 	}
 	iX = (GLint)__xgeRenderFloatToInt((double)tRect.fX);
@@ -500,7 +500,7 @@ void xgeViewportSet(xge_rect_t tRect)
 		(double)tRect.fY - (double)tRect.fH);
 	iW = (GLsizei)__xgeRenderFloatToInt((double)tRect.fW);
 	iH = (GLsizei)__xgeRenderFloatToInt((double)tRect.fH);
-	glViewport(iX, iY, iW, iH);
+	xge_glViewport(iX, iY, iW, iH);
 }
 
 xge_rect_t xgeViewportGet(void)
@@ -525,10 +525,10 @@ void xgeViewportClear(void)
 	g_xge.bViewportEnabled = 0;
 	memset(&g_xge.tViewportRect, 0, sizeof(g_xge.tViewportRect));
 	tRect = xgeViewportGet();
-	if ( (g_xge.bSokolRunning == 0) || (glViewport == NULL) ) {
+	if ( (g_xge.bSokolRunning == 0) || (xge_glViewport == NULL) ) {
 		return;
 	}
-	glViewport((GLint)tRect.fX, (GLint)tRect.fY, (GLsizei)tRect.fW, (GLsizei)tRect.fH);
+	xge_glViewport((GLint)tRect.fX, (GLint)tRect.fY, (GLsizei)tRect.fW, (GLsizei)tRect.fH);
 }
 
 static int __xgePixelRound(double fValue)
@@ -641,7 +641,7 @@ void xgeClipSet(xge_rect_t tRect)
 	}
 	g_xge.bClipEnabled = 1;
 	g_xge.tClipRect = tRect;
-	if ( (g_xge.bSokolRunning == 0) || (glScissor == NULL) ) {
+	if ( (g_xge.bSokolRunning == 0) || (xge_glScissor == NULL) ) {
 		return;
 	}
 	fLeft = floorf(tRect.fX);
@@ -689,8 +689,8 @@ void xgeClipSet(xge_rect_t tRect)
 	iY = (GLint)fScissorBottom;
 	iW = (GLsizei)(fRight - fLeft);
 	iH = (GLsizei)(fBottom - fTop);
-	glEnable(GL_SCISSOR_TEST);
-	glScissor(iX, iY, iW, iH);
+	xge_glEnable(GL_SCISSOR_TEST);
+	xge_glScissor(iX, iY, iW, iH);
 }
 
 void xgeClipSetPixels(xge_rect_i_t tRect)
@@ -725,10 +725,10 @@ void xgeClipClear(void)
 	(void)xgeFlush();
 	g_xge.bClipEnabled = 0;
 	memset(&g_xge.tClipRect, 0, sizeof(g_xge.tClipRect));
-	if ( (g_xge.bSokolRunning == 0) || (glDisable == NULL) ) {
+	if ( (g_xge.bSokolRunning == 0) || (xge_glDisable == NULL) ) {
 		return;
 	}
-	glDisable(GL_SCISSOR_TEST);
+	xge_glDisable(GL_SCISSOR_TEST);
 }
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -1388,7 +1388,11 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 	int iResult;
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 ) {
 		const char* sText = __xgeWin32ClipboardGetText();
-		size_t iTextSize = sText != NULL ? strlen(sText) : 0u;
+		size_t iTextSize;
+		/* The result-returning API must preserve read failure. The legacy
+		 * pointer API still exposes an empty string for its callers. */
+		if ( sText == NULL ) return XGE_ERROR_BACKEND_FAILED;
+		iTextSize = strlen(sText);
 		if ( iTextSize > (size_t)INT_MAX ) return XGE_ERROR_BUFFER_TOO_SMALL;
 		if ( pData != NULL && iCapacity > 0u ) memcpy(pData, sText, iCapacity < iTextSize ? iCapacity : iTextSize);
 		return (int)iTextSize;
@@ -1441,6 +1445,87 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 }
 #endif
 
+#if defined(_SAPP_LINUX)
+/* Keep Sokol's selection owner/event loop, but grow its text storage instead
+ * of accepting a successful write after the fixed buffer truncated it. */
+static int __xgeX11ClipboardReserve(size_t bytes)
+{
+	char* buffer;
+	if ( bytes >= (size_t)INT_MAX ) return XGE_ERROR_BUFFER_TOO_SMALL;
+	if ( !_sapp.clipboard.enabled || _sapp.clipboard.buffer == NULL ) return XGE_ERROR_UNSUPPORTED;
+	if ( bytes < (size_t)_sapp.clipboard.buf_size ) return XGE_OK;
+	buffer = (char*)xrtMalloc(bytes + 1u);
+	if ( buffer == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	memcpy(buffer, _sapp.clipboard.buffer, (size_t)_sapp.clipboard.buf_size);
+	_sapp_free(_sapp.clipboard.buffer);
+	_sapp.clipboard.buffer = buffer;
+	_sapp.clipboard.buf_size = (int)bytes + 1;
+	return XGE_OK;
+}
+
+static int __xgeX11ClipboardSetText(const char* text, size_t bytes)
+{
+	long words = XExtendedMaxRequestSize(_sapp.x11.display);
+	if ( words == 0 ) words = XMaxRequestSize(_sapp.x11.display);
+	/* Sokol serves one XChangeProperty request and has no INCR sender.
+	 * Leave room for its header, BIG-REQUESTS length and padding. */
+	if ( words <= 8 || bytes > (size_t)(words - 8) * 4u ) return XGE_ERROR_BUFFER_TOO_SMALL;
+	int result = __xgeX11ClipboardReserve(bytes);
+	if ( result != XGE_OK ) return result;
+	XSetSelectionOwner(_sapp.x11.display, _sapp.x11.CLIPBOARD, _sapp.x11.window, CurrentTime);
+	if ( XGetSelectionOwner(_sapp.x11.display, _sapp.x11.CLIPBOARD) != _sapp.x11.window )
+		return XGE_ERROR_BACKEND_FAILED;
+	memcpy(_sapp.clipboard.buffer, text, bytes + 1u);
+	return XGE_OK;
+}
+
+static int __xgeX11ClipboardGetText(const char** text)
+{
+	Window owner;
+	Atom property, actual_type;
+	XEvent event;
+	int actual_format, result;
+	unsigned long bytes, remaining;
+	unsigned char* data = NULL;
+	if ( !_sapp.clipboard.enabled || _sapp.clipboard.buffer == NULL ) return XGE_ERROR_UNSUPPORTED;
+	owner = XGetSelectionOwner(_sapp.x11.display, _sapp.x11.CLIPBOARD);
+	if ( owner == None ) { *text = ""; return 0; }
+	if ( owner == _sapp.x11.window ) {
+		*text = _sapp.clipboard.buffer;
+		return (int)strlen(*text);
+	}
+	property = XInternAtom(_sapp.x11.display, "SAPP_SELECTION", False);
+	XConvertSelection(_sapp.x11.display, _sapp.x11.CLIPBOARD, _sapp.x11.UTF8_STRING,
+		property, _sapp.x11.window, CurrentTime);
+	if ( !_sapp_x11_wait_for_event(SelectionNotify, 0.1, &event) ||
+		event.xselection.requestor != _sapp.x11.window ||
+		event.xselection.selection != _sapp.x11.CLIPBOARD ||
+		event.xselection.target != _sapp.x11.UTF8_STRING || event.xselection.property != property )
+		return XGE_ERROR_BACKEND_FAILED;
+	if ( XGetWindowProperty(_sapp.x11.display, _sapp.x11.window, property, 0, LONG_MAX,
+		True, AnyPropertyType, &actual_type, &actual_format, &bytes, &remaining, &data) != Success ) {
+		if ( data != NULL ) XFree(data);
+		return XGE_ERROR_BACKEND_FAILED;
+	}
+	/* Incremental transfers and unsupported types must fail before a caller
+ * changes its document; they must not be mistaken for cached/empty text. */
+	if ( actual_type != _sapp.x11.UTF8_STRING || actual_format != 8 || remaining ||
+		(bytes && (data == NULL || memchr(data, 0, (size_t)bytes))) ) {
+		if ( data != NULL ) XFree(data);
+		return XGE_ERROR_BACKEND_FAILED;
+	}
+	result = __xgeX11ClipboardReserve((size_t)bytes);
+	if ( result == XGE_OK ) {
+		if ( bytes ) memcpy(_sapp.clipboard.buffer, data, (size_t)bytes);
+		_sapp.clipboard.buffer[bytes] = 0;
+		*text = _sapp.clipboard.buffer;
+		result = (int)bytes;
+	}
+	if ( data != NULL ) XFree(data);
+	return result;
+}
+#endif
+
 int xgeClipboardSetItems(const xge_clipboard_item_t* pItems, int iItemCount)
 {
 	int i;
@@ -1453,14 +1538,28 @@ int xgeClipboardSetItems(const xge_clipboard_item_t* pItems, int iItemCount)
 	#if defined(_WIN32) || defined(_WIN64)
 		if ( g_xge.bInitialized ) return __xgeWin32ClipboardSetItems(pItems, iItemCount);
 	#endif
-	if ( iItemCount == 1 && strcmp(pItems[0].sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 && g_xge.bSokolRunning ) {
-		char* sText = (char*)xrtMalloc(pItems[0].iDataSize + 1u);
+	if ( g_xge.bSokolRunning ) for ( i = 0; i < iItemCount; i++ ) {
+		int result;
+		char* sText;
+		if ( strcmp(pItems[i].sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) != 0 ) continue;
+		if ( pItems[i].iDataSize >= (size_t)INT_MAX ||
+			(pItems[i].iDataSize && memchr(pItems[i].pData, 0, pItems[i].iDataSize)) )
+			return XGE_ERROR_INVALID_ARGUMENT;
+		sText = (char*)xrtMalloc(pItems[i].iDataSize + 1u);
 		if ( sText == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-		if ( pItems[0].iDataSize > 0u ) memcpy(sText, pItems[0].pData, pItems[0].iDataSize);
-		sText[pItems[0].iDataSize] = 0;
-		sapp_set_clipboard_string(sText);
+		if ( pItems[i].iDataSize > 0u ) memcpy(sText, pItems[i].pData, pItems[i].iDataSize);
+		sText[pItems[i].iDataSize] = 0;
+		#if defined(_SAPP_LINUX)
+			result = __xgeX11ClipboardSetText(sText, pItems[i].iDataSize);
+		#elif defined(_SAPP_MACOS) || defined(_SAPP_WIN32) || defined(_SAPP_EMSCRIPTEN)
+			if ( !_sapp.clipboard.enabled ) result = XGE_ERROR_UNSUPPORTED;
+			else if ( pItems[i].iDataSize >= (size_t)_sapp.clipboard.buf_size ) result = XGE_ERROR_BUFFER_TOO_SMALL;
+			else { sapp_set_clipboard_string(sText); result = XGE_OK; }
+		#else
+			result = XGE_ERROR_UNSUPPORTED;
+		#endif
 		xrtFree(sText);
-		return XGE_OK;
+		return result;
 	}
 	return XGE_ERROR_UNSUPPORTED;
 }
@@ -1472,8 +1571,17 @@ int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity)
 		if ( g_xge.bInitialized ) return __xgeWin32ClipboardGetData(sFormat, pData, iCapacity);
 	#endif
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 && g_xge.bSokolRunning ) {
-		const char* sText = sapp_get_clipboard_string();
-		size_t iSize = strlen(sText);
+		const char* sText;
+		size_t iSize;
+		#if defined(_SAPP_LINUX)
+			int result = __xgeX11ClipboardGetText(&sText);
+			if ( result < 0 ) return result;
+			iSize = (size_t)result;
+		#else
+			sText = sapp_get_clipboard_string();
+			if ( sText == NULL ) return XGE_ERROR_BACKEND_FAILED;
+			iSize = strlen(sText);
+		#endif
 		if ( iSize > (size_t)INT_MAX ) return XGE_ERROR_BUFFER_TOO_SMALL;
 		if ( pData != NULL && iCapacity > 0u ) memcpy(pData, sText, iCapacity < iSize ? iCapacity : iSize);
 		return (int)iSize;
@@ -1497,10 +1605,8 @@ void xgeClipboardSetText(const char* sText)
 			return;
 		}
 	#endif
-	if ( g_xge.bSokolRunning == 0 ) {
-		return;
-	}
-	sapp_set_clipboard_string(sText);
+	/* The result API already attempted the supported backend. Retrying through
+	 * Sokol's void API would hide failure and can truncate the old clipboard. */
 }
 
 const char* xgeClipboardGetText(void)
@@ -1515,6 +1621,11 @@ const char* xgeClipboardGetText(void)
 	if ( g_xge.bSokolRunning == 0 ) {
 		return "";
 	}
-	return sapp_get_clipboard_string();
+	#if defined(_SAPP_LINUX)
+		const char* text;
+		return __xgeX11ClipboardGetText(&text) >= 0 ? text : "";
+	#else
+		const char* text = sapp_get_clipboard_string();
+		return text != NULL ? text : "";
+	#endif
 }
-

@@ -1402,7 +1402,7 @@ static int __xuiScrollBarAccessibleAction(xui_widget pWidget, int iAction, const
 }
 
 static const xui_internal_accessibility_adapter_t g_xuiScrollBarAccessible = {
-	__xuiScrollBarAccessibleNode, __xuiScrollBarAccessibleAction
+	.getNode = __xuiScrollBarAccessibleNode, .performAction = __xuiScrollBarAccessibleAction
 };
 
 XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext)

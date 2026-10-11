@@ -12,27 +12,48 @@ typedef int (*doc_md4c_break_source_proc)(int, MD_OFFSET, MD_OFFSET,
 /* Parser-confirmed origin of one normalized text callback. */
 typedef int (*doc_md4c_text_source_proc)(MD_TEXTTYPE, MD_TEXTTYPE, MD_OFFSET, MD_OFFSET, MD_SIZE, void*);
 typedef int (*doc_md4c_text_scope_proc)(MD_TEXTTYPE, MD_OFFSET, MD_OFFSET, int, void*);
-/* Six entries per record: marker/end offsets, start/marker/content/end columns. */
+/* Hidden definition source scope: 1 begin, 0 completed, -1 aborted. Source
+ * callbacks continue; ordinary block/span/text callbacks are suppressed.
+ * Aborted scopes must be dropped, including a rejected begin callback. */
+typedef int (*doc_md4c_source_only_proc)(MD_OFFSET, MD_OFFSET, int, void*);
+/* Hidden syntax text stream, separate from the visible parser callbacks.
+ * Direct/entity bytes may point into parser input; normalized/synthetic bytes
+ * use the existing source-text hook for their confirmed original ranges. */
+typedef int (*doc_md4c_source_only_text_proc)(MD_TEXTTYPE, const MD_CHAR*, MD_SIZE, void*);
+/* Seven entries per quote: marker/end, logical columns and raw indent start. */
 typedef int (*doc_md4c_quote_prefixes_proc)(const MD_OFFSET*, MD_SIZE, void*);
 typedef int (*doc_md4c_list_indents_proc)(const MD_OFFSET*, MD_SIZE, void*);
+typedef int (*doc_md4c_footnote_indents_proc)(const MD_OFFSET*, MD_SIZE, void*);
+
 typedef int (*doc_md4c_code_indents_proc)(const MD_OFFSET*, MD_SIZE, void*);
 typedef int (*doc_md4c_table_token_proc)(int, MD_SIZE, MD_SIZE, MD_OFFSET, MD_OFFSET, unsigned, void*);
+/* Same parse, raw row/cell slots including empty and ignored physical cells.
+ * kind 1: row, ordinal is physical cell count; kind 2: raw cell ordinal.
+ * Both raw and whitespace-trimmed content endpoints are parser-confirmed. */
+typedef int (*doc_md4c_table_slot_proc)(int, MD_SIZE, MD_SIZE, MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, void*);
+typedef int (*doc_md4c_reference_phase_proc)(int, void*);
+
 typedef int (*doc_md4c_reference_source_proc)(MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET,
-    MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, int, void*);
+    MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, int,
+    MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET,
+    const MD_OFFSET*, MD_SIZE, void*);
 typedef int (*doc_md4c_reference_values_proc)(const char*, MD_SIZE, const char*, MD_SIZE,
     const char*, MD_SIZE, int, void*);
 typedef int (*doc_md4c_footnote_source_proc)(MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET,
     const char*, MD_SIZE, void*);
 typedef int (*doc_md4c_candidate_source_proc)(int, MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, void*);
-typedef int (*doc_md4c_span_source_proc)(MD_SPANTYPE, MD_OFFSET, MD_OFFSET, int, MD_OFFSET, MD_OFFSET, void*);
+typedef int (*doc_md4c_span_source_proc)(MD_SPANTYPE, MD_OFFSET, MD_OFFSET, int,
+    MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, MD_OFFSET, void*);
 int doc_md4c_parse(doc_allocator*, const char*, MD_SIZE, const MD_PARSER*, doc_md4c_block_source_proc,
     doc_md4c_block_markers_proc, doc_md4c_fence_info_proc, doc_md4c_heading_content_proc, doc_md4c_break_source_proc,
     doc_md4c_quote_prefixes_proc, doc_md4c_list_indents_proc,
     doc_md4c_code_indents_proc,
     doc_md4c_table_token_proc,
-    doc_md4c_reference_source_proc, doc_md4c_reference_values_proc, doc_md4c_footnote_source_proc, doc_md4c_candidate_source_proc,
-    doc_md4c_span_source_proc, doc_md4c_text_source_proc, doc_md4c_text_scope_proc,
-    const atomic_int*, int*, void*);
+    doc_md4c_table_slot_proc,
+    doc_md4c_reference_source_proc, doc_md4c_reference_phase_proc, doc_md4c_reference_values_proc, doc_md4c_footnote_source_proc, doc_md4c_candidate_source_proc,
+    doc_md4c_span_source_proc, doc_md4c_text_source_proc, doc_md4c_text_scope_proc, doc_md4c_source_only_proc,
+    doc_md4c_source_only_text_proc,
+    doc_md4c_footnote_indents_proc, const atomic_int*, int*, void*);
 unsigned doc_md4c_dialect_flags(uint32_t);
 /* Compare every parsed link definition, including unused/duplicate definitions.
  * The parser removes only container prefixes and merges multiline fields. */

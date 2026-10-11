@@ -147,13 +147,19 @@ static void source_syntax(xui_document_snapshot snapshot, uint64_t bytes, uint64
         xui_doc_inline_syntax_t span = {0}; span.iSize = sizeof(span);
         CHECK(xuiDocumentSnapshotGetInlineSyntax(snapshot, i, &span) == XUI_OK); (*spans)++;
         CHECK(span.iSourceStart >= previous_start); previous_start = span.iSourceStart;
-        CHECK(span.iKind >= XUI_DOC_SYNTAX_EMPHASIS && span.iKind <= XUI_DOC_SYNTAX_SUPERSCRIPT);
+        CHECK((span.iKind >= XUI_DOC_SYNTAX_EMPHASIS && span.iKind <= XUI_DOC_SYNTAX_SUPERSCRIPT) ||
+            span.iKind == XUI_DOC_SYNTAX_DESTINATION || span.iKind == XUI_DOC_SYNTAX_TITLE);
         CHECK(span.iSourceStart <= span.iContentStart && span.iContentStart <= span.iContentEnd);
         CHECK(span.iContentEnd <= span.iSourceEnd && span.iSourceEnd <= bytes);
         if (span.iParentIndex != UINT64_MAX) {
             xui_doc_inline_syntax_t parent = {0}; parent.iSize = sizeof(parent);
             CHECK(span.iParentIndex < i && xuiDocumentSnapshotGetInlineSyntax(snapshot, span.iParentIndex, &parent) == XUI_OK);
-            CHECK(parent.iContentStart <= span.iSourceStart && span.iSourceEnd <= parent.iContentEnd);
+            if (span.iKind == XUI_DOC_SYNTAX_DESTINATION || span.iKind == XUI_DOC_SYNTAX_TITLE) {
+                CHECK((parent.iKind == XUI_DOC_SYNTAX_LINK || parent.iKind == XUI_DOC_SYNTAX_IMAGE) &&
+                    parent.iDefinitionIndex == UINT64_MAX && !(parent.iFlags & XUI_DOC_SYNTAX_AUTOLINK));
+                CHECK(parent.iContentEnd < span.iSourceStart && span.iSourceEnd < parent.iSourceEnd);
+                CHECK(span.iDefinitionIndex == UINT64_MAX && !span.iFlags);
+            } else CHECK(parent.iContentStart <= span.iSourceStart && span.iSourceEnd <= parent.iContentEnd);
         }
         if (span.iDefinitionIndex != UINT64_MAX) {
             xui_doc_reference_definition_t def = {0}; def.iSize = sizeof(def); (*references)++;
@@ -814,6 +820,9 @@ static void dependency_growth_failure(void)
 }
 int main(int argc, char** argv)
 {
+    if (argc == 3 && !strcmp(argv[1], "--corpus-only")) {
+        corpus(argv[2]); return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "--growth-only")) {
         dependency_growth_failure(); return 0;
     }

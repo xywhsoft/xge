@@ -1047,7 +1047,7 @@ static int __xuiSliderAccessibleAction(xui_widget pWidget, int iAction, const vo
 }
 
 static const xui_internal_accessibility_adapter_t g_xuiSliderAccessible = {
-	__xuiSliderAccessibleNode, __xuiSliderAccessibleAction
+	.getNode = __xuiSliderAccessibleNode, .performAction = __xuiSliderAccessibleAction
 };
 
 XUI_API xui_widget_type xuiSliderGetType(xui_context pContext)

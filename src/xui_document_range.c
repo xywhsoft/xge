@@ -8,7 +8,7 @@ typedef struct doc_mark_collect {
     doc_mark_target* targets;
     uint64_t count, capacity;
     const xui_doc_position_t *first, *last;
-    int error;
+    int error, links;
 } doc_mark_collect;
 static void doc_collect_marks(doc_state* s, uint64_t id, doc_mark_collect* c)
 {
@@ -20,7 +20,9 @@ static void doc_collect_marks(doc_state* s, uint64_t id, doc_mark_collect* c)
     last.iOffset = doc_text_kind(n->kind) ? doc_seq_size(n->text) : doc_seq_size(n->children);
     doc_position_compare(s, &last, c->first, &before); doc_position_compare(s, &first, c->last, &after);
     if (before <= 0 || after >= 0) return;
-    if (n->kind == XUI_DOC_TEXT || n->kind == XUI_DOC_SOFT_BREAK || n->kind == XUI_DOC_HARD_BREAK) {
+    if (n->kind == XUI_DOC_TEXT || n->kind == XUI_DOC_SOFT_BREAK || n->kind == XUI_DOC_HARD_BREAK ||
+        (c->links && (n->kind == XUI_DOC_IMAGE ||
+            (n->kind == XUI_DOC_HTML && !(n->attrs->iFlags & XUI_DOC_BLOCK))))) {
         if (c->count == c->capacity) {
             uint64_t capacity = c->capacity ? c->capacity * 2 : 16; doc_mark_target* targets;
             if (capacity < c->capacity || capacity > SIZE_MAX / sizeof(*targets)) { c->error = XUI_DOC_ERROR_LIMIT; return; }
@@ -60,10 +62,58 @@ int doc_marks_range(xui_document_transaction t, const xui_doc_range_t* range, ui
     }
     doc_free(c.targets); return result == XUI_OK ? result : doc_txn_fail(t, result);
 }
+/* Use the same semantic collection as SetLink and QueryLink. Container GAP
+ * endpoints need the selected inline atoms' sources, not the next sibling's
+ * syntax or the whole paragraph's approximate source position. */
+int doc_link_source_targets(doc_state* state, const xui_doc_range_t* range,
+    doc_link_source_target** out, uint64_t* count)
+{
+    doc_mark_collect c = {0}; doc_link_source_target* targets = NULL;
+    uint64_t i, used = 0; int order, result;
+    *out = NULL; *count = 0;
+    result = doc_position_compare(state, &range->tAnchor, &range->tCaret, &order);
+    if (result != XUI_OK || !order) return XUI_ERROR_NOT_FOUND;
+    c.links = 1; c.first = order < 0 ? &range->tAnchor : &range->tCaret;
+    c.last = order < 0 ? &range->tCaret : &range->tAnchor;
+    doc_collect_marks(state, DOC_ROOT, &c); result = c.error;
+    if (result != XUI_OK) goto done;
+    if (!c.count) { result = XUI_ERROR_NOT_FOUND; goto done; }
+    /* Unlinked content requires structural wrapping, so field-only edits are
+     * not a complete representation of that semantic selection. */
+    for (i = 0; i < c.count; i++) {
+        doc_node* node = doc_index_get(state->index, c.targets[i].id);
+        if (node->kind == XUI_DOC_TEXT && c.targets[i].start == c.targets[i].end) continue;
+        if (!(node->attrs->iMarks & XUI_DOC_LINK)) { result = XUI_ERROR_NOT_FOUND; goto done; }
+    }
+    if (c.count > SIZE_MAX / sizeof(*targets)) { result = XUI_DOC_ERROR_LIMIT; goto done; }
+    targets = doc_alloc(state->allocator, (size_t)c.count * sizeof(*targets));
+    if (!targets) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+    for (i = 0; i < c.count && result == XUI_OK; i++) {
+        const doc_mark_target* target = &c.targets[i]; doc_node* node = doc_index_get(state->index, target->id);
+        doc_node_source_range source; uint64_t a, b; int quality;
+        doc_node_source_range_get(state, node, &source); a = source.source_start; b = source.source_end;
+        if (node->kind == XUI_DOC_TEXT) {
+            if (target->start == target->end) continue;
+            if (doc_source_map_text(state, node, target->start, XUI_DOC_AFTER, &a, &quality) != XUI_OK ||
+                doc_source_map_text(state, node, target->end, XUI_DOC_BEFORE, &b, &quality) != XUI_OK) {
+                result = XUI_ERROR_NOT_FOUND; break;
+            }
+        } else if (a == DOC_NONE || b == DOC_NONE) { a = source.syntax_start; b = source.syntax_end; }
+        if (a == DOC_NONE || b == DOC_NONE || a > b) { result = XUI_ERROR_NOT_FOUND; break; }
+        targets[used++] = (doc_link_source_target){node->id, a, b,
+            doc_string(node->kind == XUI_DOC_IMAGE ? node->link_target : node->resource),
+            doc_string(node->kind == XUI_DOC_IMAGE ? node->link_title : node->title)};
+    }
+    if (result == XUI_OK && !used) result = XUI_ERROR_NOT_FOUND;
+    if (result == XUI_OK) { *out = targets; *count = used; targets = NULL; }
+done:
+    doc_free(c.targets); doc_free(targets); return result;
+}
 static int doc_link_range_apply(xui_document_transaction t, const xui_doc_range_t* range,
     const char* uri, const char* title)
 {
     doc_mark_collect c = {0}; uint64_t i; int order, result;
+    c.links = 1;
     result = doc_position_compare(t->draft, &range->tAnchor, &range->tCaret, &order);
     if (result != XUI_OK) return doc_txn_fail(t, result);
     if (!order) return doc_txn_fail(t, XUI_ERROR_UNSUPPORTED);
@@ -95,10 +145,17 @@ static int doc_link_range_apply(xui_document_transaction t, const xui_doc_range_
                 result = doc_split_text(t, id, target->start, &tail);
                 if (result == XUI_OK) id = tail;
             }
+        } else if (node->kind == XUI_DOC_IMAGE || node->kind == XUI_DOC_HTML) {
+            /* Objects participate as complete inline atoms. Their payload is
+             * never split merely to attach a surrounding hyperlink. */
+            if (target->start || target->end != doc_seq_size(node->text))
+                result = XUI_ERROR_UNSUPPORTED;
+            else if (!!(node->attrs->iMarks & XUI_DOC_LINK) == !!*uri &&
+                !strcmp(doc_string(node->kind == XUI_DOC_IMAGE ? node->link_target : node->resource), uri) &&
+                !strcmp(doc_string(node->kind == XUI_DOC_IMAGE ? node->link_title : node->title), *uri ? title : ""))
+                continue;
         } else if (node->kind != XUI_DOC_SOFT_BREAK && node->kind != XUI_DOC_HARD_BREAK) {
             result = XUI_ERROR_UNSUPPORTED;
-        } else if (t->draft->profile == XUI_DOCUMENT_MARKDOWN) {
-            result = XUI_DOC_ERROR_UNREPRESENTABLE;
         }
         if (result != XUI_OK) break;
         node = doc_index_get(t->draft->index, id);
@@ -108,7 +165,11 @@ static int doc_link_range_apply(xui_document_transaction t, const xui_doc_range_
         result = xuiDocumentTxnSetAttributes(t, id, &attrs);
         if (result == XUI_OK) {
             node = doc_index_get(t->draft->index, id);
-            result = xuiDocumentTxnSetResource(t, id, *uri ? uri : "",
+            if (node->kind == XUI_DOC_IMAGE) {
+                xui_doc_image_desc_t image = {0};
+                image.sLinkTarget = uri; image.sLinkTitle = *uri ? title : "";
+                result = doc_image_link_set(t, id, &image);
+            } else result = xuiDocumentTxnSetResource(t, id, *uri ? uri : "",
                 doc_string(node->info), *uri ? title : "");
         }
     }
@@ -230,6 +291,7 @@ XUI_API int xuiDocumentSnapshotQueryLink(xui_document_snapshot snapshot, const x
 {
     doc_mark_collect c = {0}; int order, result, saw = 0, any = 0, all = 1, different = 0;
     int first_linked = 0; const char *uri = NULL, *title = NULL; uint64_t i;
+    c.links = 1;
     if (!snapshot || !range || !out || out->iSize != sizeof(*out)) return XUI_ERROR_INVALID_ARGUMENT;
     memset(out, 0, sizeof(*out)); out->iSize = sizeof(*out);
     result = xuiDocumentSnapshotComparePositions(snapshot, &range->tAnchor, &range->tCaret, &order);
@@ -242,8 +304,13 @@ XUI_API int xuiDocumentSnapshotQueryLink(xui_document_snapshot snapshot, const x
             uint64_t index = range->tCaret.iOffset ? range->tCaret.iOffset - 1 : 0;
             n = doc_index_get(snapshot->state->index, doc_seq_get_id(n->children, index));
         }
-        if (n && n->kind == XUI_DOC_TEXT && (n->attrs->iMarks & XUI_DOC_LINK)) {
-            out->bLinked = 1; out->sUri = doc_string(n->resource); out->sTitle = doc_string(n->title);
+        if (n && (n->kind == XUI_DOC_TEXT || n->kind == XUI_DOC_IMAGE ||
+            n->kind == XUI_DOC_SOFT_BREAK || n->kind == XUI_DOC_HARD_BREAK ||
+            (n->kind == XUI_DOC_HTML && !(n->attrs->iFlags & XUI_DOC_BLOCK))) &&
+            (n->attrs->iMarks & XUI_DOC_LINK)) {
+            out->bLinked = 1;
+            out->sUri = doc_string(n->kind == XUI_DOC_IMAGE ? n->link_target : n->resource);
+            out->sTitle = doc_string(n->kind == XUI_DOC_IMAGE ? n->link_title : n->title);
         }
         return XUI_OK;
     }
@@ -253,13 +320,15 @@ XUI_API int xuiDocumentSnapshotQueryLink(xui_document_snapshot snapshot, const x
     if (c.error) { doc_free(c.targets); return c.error; }
     for (i = 0; i < c.count; i++) {
         doc_node* n = doc_index_get(snapshot->state->index, c.targets[i].id);
+        const char* target = doc_string(n->kind == XUI_DOC_IMAGE ? n->link_target : n->resource);
+        const char* tip = doc_string(n->kind == XUI_DOC_IMAGE ? n->link_title : n->title);
         int linked = !!(n->attrs->iMarks & XUI_DOC_LINK);
         if (n->kind == XUI_DOC_TEXT && c.targets[i].start == c.targets[i].end) continue;
         if (!saw) {
-            first_linked = linked; uri = linked ? doc_string(n->resource) : NULL;
-            title = linked ? doc_string(n->title) : NULL;
+            first_linked = linked; uri = linked ? target : NULL;
+            title = linked ? tip : NULL;
         } else if (linked != first_linked || (linked &&
-            (strcmp(uri, doc_string(n->resource)) || strcmp(title, doc_string(n->title))))) different = 1;
+            (strcmp(uri, target) || strcmp(title, tip)))) different = 1;
         saw = 1; any |= linked; all &= linked;
     }
     out->bLinked = saw && any && all;

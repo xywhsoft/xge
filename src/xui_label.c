@@ -460,7 +460,7 @@ static int __xuiLabelAccessibleNode(xui_widget pWidget, xui_accessible_node_t* p
 	return XUI_OK;
 }
 
-static const xui_internal_accessibility_adapter_t g_xuiLabelAccessible = {__xuiLabelAccessibleNode, NULL};
+static const xui_internal_accessibility_adapter_t g_xuiLabelAccessible = {.getNode = __xuiLabelAccessibleNode, .performAction = NULL};
 
 XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 {

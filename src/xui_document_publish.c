@@ -82,7 +82,7 @@ static int doc_charge_visit(doc_charge_map* m, void* pointer, unsigned owner, in
     }
     case DOC_MEMORY_STATE: {
         doc_state* p = pointer; VISIT(p->index); VISIT(p->source); VISIT(p->references); VISIT(p->reference_values); VISIT(p->inline_syntax);
-        VISIT(p->reference_candidates); break;
+        VISIT(p->reference_candidates); VISIT(p->reference_syntax); VISIT(p->source_syntax); break;
     }
     default: assert(h->value.kind == DOC_MEMORY_BLOB || h->value.kind == DOC_MEMORY_ATTRIBUTE); break;
     }
@@ -158,7 +158,8 @@ static int doc_charge_visit_delta(doc_charge_map* m, void* pointer, unsigned own
     }
     case DOC_MEMORY_STATE: {
         doc_state* p = pointer; VISIT_DELTA(p->index); VISIT_DELTA(p->source);
-        VISIT_DELTA(p->references); VISIT_DELTA(p->reference_values); VISIT_DELTA(p->inline_syntax); VISIT_DELTA(p->reference_candidates); break;
+        VISIT_DELTA(p->references); VISIT_DELTA(p->reference_values); VISIT_DELTA(p->inline_syntax); VISIT_DELTA(p->reference_candidates);
+        VISIT_DELTA(p->reference_syntax); VISIT_DELTA(p->source_syntax); break;
     }
     default: assert(h->value.kind == DOC_MEMORY_BLOB || h->value.kind == DOC_MEMORY_ATTRIBUTE); break;
     }

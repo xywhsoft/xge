@@ -91,78 +91,78 @@ static const GLenum d3_caps[] = {GL_DEPTH_TEST,GL_BLEND,GL_CULL_FACE,GL_SCISSOR_
 
 static void d3_save(d3_state *s)
 {
-    glGetIntegerv(0x0BA2,s->viewport);
-    glGetIntegerv(0x8B8D,&s->program);
-    glGetIntegerv(0x85B5,&s->vao);
-    glGetIntegerv(0x8894,&s->buffer);
-    glGetIntegerv(0x8CA6,&s->draw_fbo);
-    glGetIntegerv(0x8CAA,&s->read_fbo);
-    glGetIntegerv(0x8CA7,&s->renderbuffer);
-    glGetIntegerv(0x84E0,&s->active_texture);
+    xge_glGetIntegerv(0x0BA2,s->viewport);
+    xge_glGetIntegerv(0x8B8D,&s->program);
+    xge_glGetIntegerv(0x85B5,&s->vao);
+    xge_glGetIntegerv(0x8894,&s->buffer);
+    xge_glGetIntegerv(0x8CA6,&s->draw_fbo);
+    xge_glGetIntegerv(0x8CAA,&s->read_fbo);
+    xge_glGetIntegerv(0x8CA7,&s->renderbuffer);
+    xge_glGetIntegerv(0x84E0,&s->active_texture);
     for (int i=0;i<D3_TEXTURE_UNITS;++i) {
-        glActiveTexture(GL_TEXTURE0+i);
-        glGetIntegerv(GL_TEXTURE_BINDING_2D,&s->texture[i]);
-        glGetIntegerv(0x8514,&s->cube[i]);
+        xge_glActiveTexture(GL_TEXTURE0+i);
+        xge_glGetIntegerv(GL_TEXTURE_BINDING_2D,&s->texture[i]);
+        xge_glGetIntegerv(0x8514,&s->cube[i]);
     }
-    glActiveTexture(GL_TEXTURE0);
+    xge_glActiveTexture(GL_TEXTURE0);
     const GLenum blend_parameters[]={0x80C9,0x80C8,0x80CB,0x80CA,0x8009,0x883D};
-    for (int i=0;i<6;++i) glGetIntegerv(blend_parameters[i],&s->blend[i]);
+    for (int i=0;i<6;++i) xge_glGetIntegerv(blend_parameters[i],&s->blend[i]);
     xge_graphics_mapping_t mapping;
     s->srgb=s->seamless=-1;
     if (xgeGraphicsMappingGet(XGE_GPU_BACKEND_NONE,&mapping)==XGE_OK && mapping.bOpenGLCore) {
-        glGetIntegerv(0x8DB9,&s->srgb);
-        glGetIntegerv(0x884F,&s->seamless);
+        xge_glGetIntegerv(0x8DB9,&s->srgb);
+        xge_glGetIntegerv(0x884F,&s->seamless);
     }
-    glGetIntegerv(0x0B74,&s->depth_func);
-    glGetIntegerv(0x0B72,&s->depth_mask);
-    glGetIntegerv(0x0B45,&s->cull_face);
-    glGetIntegerv(0x0B46,&s->front_face);
-    glGetIntegerv(0x0C23,s->color_mask);
-    glGetFloatv(0x0C22,s->clear_color);
-    glGetFloatv(0x0B73,&s->clear_depth);
-    for (int i=0;i<5;++i) glGetIntegerv(d3_caps[i],&s->enabled[i]);
+    xge_glGetIntegerv(0x0B74,&s->depth_func);
+    xge_glGetIntegerv(0x0B72,&s->depth_mask);
+    xge_glGetIntegerv(0x0B45,&s->cull_face);
+    xge_glGetIntegerv(0x0B46,&s->front_face);
+    xge_glGetIntegerv(0x0C23,s->color_mask);
+    xge_glGetFloatv(0x0C22,s->clear_color);
+    xge_glGetFloatv(0x0B73,&s->clear_depth);
+    for (int i=0;i<5;++i) xge_glGetIntegerv(d3_caps[i],&s->enabled[i]);
 }
 static void d3_clear_depth(float depth)
 {
-    if (glClearDepthf) glClearDepthf(depth);
-    else glClearDepth(depth);
+    if (xge_glClearDepthf) xge_glClearDepthf(depth);
+    else xge_glClearDepth(depth);
 }
 static void d3_restore(const d3_state *s)
 {
-    glBindFramebuffer(D3_DRAW_FRAMEBUFFER,s->draw_fbo);
-    glBindFramebuffer(D3_READ_FRAMEBUFFER,s->read_fbo);
-    glBindRenderbuffer(GL_RENDERBUFFER,s->renderbuffer);
-    glViewport(s->viewport[0],s->viewport[1],s->viewport[2],s->viewport[3]);
-    glUseProgram(s->program);
-    glBindVertexArray(s->vao);
-    glBindBuffer(GL_ARRAY_BUFFER,s->buffer);
+    xge_glBindFramebuffer(D3_DRAW_FRAMEBUFFER,s->draw_fbo);
+    xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,s->read_fbo);
+    xge_glBindRenderbuffer(GL_RENDERBUFFER,s->renderbuffer);
+    xge_glViewport(s->viewport[0],s->viewport[1],s->viewport[2],s->viewport[3]);
+    xge_glUseProgram(s->program);
+    xge_glBindVertexArray(s->vao);
+    xge_glBindBuffer(GL_ARRAY_BUFFER,s->buffer);
     for (int i=0;i<D3_TEXTURE_UNITS;++i) {
-        glActiveTexture(GL_TEXTURE0+i);
-        glBindTexture(GL_TEXTURE_2D,s->texture[i]);
-        glBindTexture(0x8513,s->cube[i]);
+        xge_glActiveTexture(GL_TEXTURE0+i);
+        xge_glBindTexture(GL_TEXTURE_2D,s->texture[i]);
+        xge_glBindTexture(0x8513,s->cube[i]);
     }
-    glActiveTexture(s->active_texture);
-    glBlendFuncSeparate(s->blend[0],s->blend[1],s->blend[2],s->blend[3]);
-    glBlendEquationSeparate(s->blend[4],s->blend[5]);
-    if (s->srgb>=0) { if (s->srgb) glEnable(0x8DB9); else glDisable(0x8DB9); }
-    if (s->seamless>=0) { if (s->seamless) glEnable(0x884F); else glDisable(0x884F); }
-    glDepthFunc(s->depth_func);
-    glDepthMask((GLboolean)s->depth_mask);
-    glCullFace(s->cull_face);
-    glFrontFace(s->front_face);
-    glColorMask((GLboolean)s->color_mask[0],(GLboolean)s->color_mask[1],
+    xge_glActiveTexture(s->active_texture);
+    xge_glBlendFuncSeparate(s->blend[0],s->blend[1],s->blend[2],s->blend[3]);
+    xge_glBlendEquationSeparate(s->blend[4],s->blend[5]);
+    if (s->srgb>=0) { if (s->srgb) xge_glEnable(0x8DB9); else xge_glDisable(0x8DB9); }
+    if (s->seamless>=0) { if (s->seamless) xge_glEnable(0x884F); else xge_glDisable(0x884F); }
+    xge_glDepthFunc(s->depth_func);
+    xge_glDepthMask((GLboolean)s->depth_mask);
+    xge_glCullFace(s->cull_face);
+    xge_glFrontFace(s->front_face);
+    xge_glColorMask((GLboolean)s->color_mask[0],(GLboolean)s->color_mask[1],
         (GLboolean)s->color_mask[2],(GLboolean)s->color_mask[3]);
-    glClearColor(s->clear_color[0],s->clear_color[1],s->clear_color[2],s->clear_color[3]);
+    xge_glClearColor(s->clear_color[0],s->clear_color[1],s->clear_color[2],s->clear_color[3]);
     d3_clear_depth(s->clear_depth);
     for (int i=0;i<5;++i) {
-        if (s->enabled[i]) glEnable(d3_caps[i]); else glDisable(d3_caps[i]);
+        if (s->enabled[i]) xge_glEnable(d3_caps[i]); else xge_glDisable(d3_caps[i]);
     }
 }
 static int d3_ready(void)
 {
     if (!__xge3dContext()) return XGE_ERROR_NOT_INITIALIZED;
-    return glDepthMask && glGetFloatv && glBlendFuncSeparate && glBlendEquationSeparate && glDrawArraysInstanced && glDrawElementsInstanced &&
-        glGetFramebufferAttachmentParameteriv && (glClearDepth || glClearDepthf)
+    return xge_glDepthMask && xge_glGetFloatv && xge_glBlendFuncSeparate && xge_glBlendEquationSeparate && xge_glDrawArraysInstanced && xge_glDrawElementsInstanced &&
+        xge_glGetFramebufferAttachmentParameteriv && (xge_glClearDepth || xge_glClearDepthf)
         ? XGE_OK : XGE_ERROR_UNSUPPORTED;
 }
 static void d3_mesh_attributes(void)
@@ -171,12 +171,12 @@ static void d3_mesh_attributes(void)
     const size_t offsets[]={offsetof(xge3d_vertex_t,position),offsetof(xge3d_vertex_t,normal),
         offsetof(xge3d_vertex_t,uv),offsetof(xge3d_vertex_t,tangent),offsetof(xge3d_vertex_t,uv1)};
     for (GLuint i=0;i<5;++i) {
-        glEnableVertexAttribArray(i);
-        glVertexAttribPointer(i,sizes[i],GL_FLOAT,GL_FALSE,sizeof(xge3d_vertex_t),(const void*)offsets[i]);
+        xge_glEnableVertexAttribArray(i);
+        xge_glVertexAttribPointer(i,sizes[i],GL_FLOAT,GL_FALSE,sizeof(xge3d_vertex_t),(const void*)offsets[i]);
     }
 #if XGE3D_ENABLE_ANIMATION
-    glEnableVertexAttribArray(5);glVertexAttribPointer(5,4,GL_UNSIGNED_SHORT,GL_FALSE,sizeof(xge3d_vertex_t),(const void*)offsetof(xge3d_vertex_t,joints));
-    glEnableVertexAttribArray(6);glVertexAttribPointer(6,4,GL_FLOAT,GL_FALSE,sizeof(xge3d_vertex_t),(const void*)offsetof(xge3d_vertex_t,weights));
+    xge_glEnableVertexAttribArray(5);xge_glVertexAttribPointer(5,4,GL_UNSIGNED_SHORT,GL_FALSE,sizeof(xge3d_vertex_t),(const void*)offsetof(xge3d_vertex_t,joints));
+    xge_glEnableVertexAttribArray(6);xge_glVertexAttribPointer(6,4,GL_FLOAT,GL_FALSE,sizeof(xge3d_vertex_t),(const void*)offsetof(xge3d_vertex_t,weights));
 #endif
 }
 static int d3_mesh_upload(xge3d_mesh *m, uint64_t *bytes)
@@ -186,21 +186,21 @@ static int d3_mesh_upload(xge3d_mesh *m, uint64_t *bytes)
     if (m->context && m->context!=__xge3dContext()) return XGE_ERROR_INVALID_STATE;
     if (m->vao) return XGE_OK;
     d3_state state; d3_save(&state);
-    glGenVertexArrays(1,&m->vao);glGenBuffers(1,&m->vbo);
-    glBindVertexArray(m->vao);glBindBuffer(GL_ARRAY_BUFFER,m->vbo);
+    xge_glGenVertexArrays(1,&m->vao);xge_glGenBuffers(1,&m->vbo);
+    xge_glBindVertexArray(m->vao);xge_glBindBuffer(GL_ARRAY_BUFFER,m->vbo);
     size_t vb=m->vertices.Count*sizeof(xge3d_vertex_t),ib=m->indices.Count*m->indices.ItemSize;
-    glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)vb,m->vertices.Data,GL_STATIC_DRAW);d3_mesh_attributes();
+    xge_glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)vb,m->vertices.Data,GL_STATIC_DRAW);d3_mesh_attributes();
     if (ib) {
-        glGenBuffers(1,&m->ibo);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,m->ibo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER,(GLsizeiptr)ib,m->indices.Data,GL_STATIC_DRAW);
+        xge_glGenBuffers(1,&m->ibo);
+        xge_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,m->ibo);
+        xge_glBufferData(GL_ELEMENT_ARRAY_BUFFER,(GLsizeiptr)ib,m->indices.Data,GL_STATIC_DRAW);
     }
-    GLenum error=glGetError();
+    GLenum error=xge_glGetError();
     m->context=__xge3dContext();
     if (!m->vao || !m->vbo || (ib && !m->ibo) || error!=GL_NO_ERROR) {
-        if (m->vao) glDeleteVertexArrays(1,&m->vao);
-        if (m->vbo) glDeleteBuffers(1,&m->vbo);
-        if (m->ibo) glDeleteBuffers(1,&m->ibo);
+        if (m->vao) xge_glDeleteVertexArrays(1,&m->vao);
+        if (m->vbo) xge_glDeleteBuffers(1,&m->vbo);
+        if (m->ibo) xge_glDeleteBuffers(1,&m->ibo);
         m->vao=m->vbo=m->ibo=0;
         result=XGE_ERROR_GPU_FAILED;
     } else if (bytes) *bytes+=vb+ib;
@@ -218,14 +218,14 @@ int d3_model_upload_step(xge3d_model *model,d3_upload_cursor *c,const xge3d_uplo
     if (!c->total) {*complete=1;return XGE_OK;}
     if (!budget->bytes || !budget->operations) return XGE_OK;
     int result=d3_ready();if (result!=XGE_OK) return result;
-    if (!glBufferSubData || !glTexSubImage2D) return XGE_ERROR_UNSUPPORTED;
+    if (!xge_glBufferSubData || !xge_glTexSubImage2D) return XGE_ERROR_UNSUPPORTED;
     uint64_t context=__xge3dContext();if (c->context && c->context!=context) return XGE_ERROR_INVALID_STATE;
     result=xgeFlush();if (result!=XGE_OK) return result;
     c->context=context;d3_state state;d3_save(&state);
     const GLenum unpack_keys[]={GL_UNPACK_ALIGNMENT,0x0CF2,0x0CF3,0x0CF4,0x88EF};GLint unpack[5];
-    for (int i=0;i<5;++i) glGetIntegerv(unpack_keys[i],&unpack[i]);
-    glPixelStorei(GL_UNPACK_ALIGNMENT,1);glPixelStorei(0x0CF2,0);glPixelStorei(0x0CF3,0);glPixelStorei(0x0CF4,0);glBindBuffer(0x88EC,0);
-    glActiveTexture(GL_TEXTURE0);
+    for (int i=0;i<5;++i) xge_glGetIntegerv(unpack_keys[i],&unpack[i]);
+    xge_glPixelStorei(GL_UNPACK_ALIGNMENT,1);xge_glPixelStorei(0x0CF2,0);xge_glPixelStorei(0x0CF3,0);xge_glPixelStorei(0x0CF4,0);xge_glBindBuffer(0x88EC,0);
+    xge_glActiveTexture(GL_TEXTURE0);
     while (c->stage<2) {
         if (c->resource>=d3_model_resource_count(model,c->stage)) {++c->stage;c->resource=c->offset=0;continue;}
         xge3d_texture *texture=c->stage==0 ? d3_model_resource(model,0,c->resource) : NULL;
@@ -239,46 +239,46 @@ int d3_model_upload_step(xge3d_model *model,d3_upload_cursor *c,const xge3d_uplo
         if (c->offset<total && remaining<min) {stats->min_next_bytes=min;break;}
         size_t transferred=0;
         if (texture) {
-            glBindTexture(GL_TEXTURE_2D,texture->id);
+            xge_glBindTexture(GL_TEXTURE_2D,texture->id);
             if (!texture->id) {
                 if (texture->width>0 && (texture->width>INT_MAX/4 || texture->height<=0)) {result=XGE_ERROR_INVALID_ARGUMENT;break;}
-                GLint maximum;glGetIntegerv(0x0D33,&maximum);
+                GLint maximum;xge_glGetIntegerv(0x0D33,&maximum);
                 if (texture->width>maximum || texture->height>maximum) {result=XGE_ERROR_UNSUPPORTED;break;}
-                texture->context=context;glGenTextures(1,&texture->id);glBindTexture(GL_TEXTURE_2D,texture->id);
-                glTexImage2D(GL_TEXTURE_2D,0,texture->srgb ? 0x8C43 : GL_RGBA8,texture->width,texture->height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
-                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,texture->sampler.min_filter);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,texture->sampler.mag_filter);
-                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,texture->sampler.wrap_u);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,texture->sampler.wrap_v);
+                texture->context=context;xge_glGenTextures(1,&texture->id);xge_glBindTexture(GL_TEXTURE_2D,texture->id);
+                xge_glTexImage2D(GL_TEXTURE_2D,0,texture->srgb ? 0x8C43 : GL_RGBA8,texture->width,texture->height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+                xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,texture->sampler.min_filter);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,texture->sampler.mag_filter);
+                xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,texture->sampler.wrap_u);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,texture->sampler.wrap_v);
                 if (!texture->id) result=XGE_ERROR_GPU_FAILED;
             } else if (c->offset<total) {
                 size_t row=(size_t)texture->width*4,y=c->offset/row,x=(c->offset%row)/4,width=texture->width-x,rows=1;
                 if (!x && remaining>=row) {rows=remaining/row;if (rows>(size_t)texture->height-y) rows=texture->height-y;}
                 else if (width>remaining/4) width=(size_t)(remaining/4);
                 transferred=width*rows*4;
-                glTexSubImage2D(GL_TEXTURE_2D,0,(GLint)x,(GLint)y,(GLsizei)width,(GLsizei)rows,GL_RGBA,GL_UNSIGNED_BYTE,texture->pixels.Data+c->offset);
-            } else {glGenerateMipmap(GL_TEXTURE_2D);++c->resource;c->offset=0;}
+                xge_glTexSubImage2D(GL_TEXTURE_2D,0,(GLint)x,(GLint)y,(GLsizei)width,(GLsizei)rows,GL_RGBA,GL_UNSIGNED_BYTE,texture->pixels.Data+c->offset);
+            } else {xge_glGenerateMipmap(GL_TEXTURE_2D);++c->resource;c->offset=0;}
         } else {
             if (!mesh->vao) {
-                mesh->context=context;glGenVertexArrays(1,&mesh->vao);glGenBuffers(1,&mesh->vbo);
-                glBindVertexArray(mesh->vao);glBindBuffer(GL_ARRAY_BUFFER,mesh->vbo);glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)vb,NULL,GL_STATIC_DRAW);d3_mesh_attributes();
-                if (mesh->indices.Count) {glGenBuffers(1,&mesh->ibo);glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,mesh->ibo);glBufferData(GL_ELEMENT_ARRAY_BUFFER,(GLsizeiptr)(total-vb),NULL,GL_STATIC_DRAW);}
+                mesh->context=context;xge_glGenVertexArrays(1,&mesh->vao);xge_glGenBuffers(1,&mesh->vbo);
+                xge_glBindVertexArray(mesh->vao);xge_glBindBuffer(GL_ARRAY_BUFFER,mesh->vbo);xge_glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)vb,NULL,GL_STATIC_DRAW);d3_mesh_attributes();
+                if (mesh->indices.Count) {xge_glGenBuffers(1,&mesh->ibo);xge_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,mesh->ibo);xge_glBufferData(GL_ELEMENT_ARRAY_BUFFER,(GLsizeiptr)(total-vb),NULL,GL_STATIC_DRAW);}
                 if (!mesh->vao || !mesh->vbo || (mesh->indices.Count && !mesh->ibo)) result=XGE_ERROR_GPU_FAILED;
             } else {
-                glBindVertexArray(mesh->vao);GLenum target=c->offset<vb ? GL_ARRAY_BUFFER : GL_ELEMENT_ARRAY_BUFFER;
-                glBindBuffer(target,c->offset<vb ? mesh->vbo : mesh->ibo);
+                xge_glBindVertexArray(mesh->vao);GLenum target=c->offset<vb ? GL_ARRAY_BUFFER : GL_ELEMENT_ARRAY_BUFFER;
+                xge_glBindBuffer(target,c->offset<vb ? mesh->vbo : mesh->ibo);
                 size_t end=c->offset<vb ? vb : total;transferred=end-c->offset;if (transferred>remaining) transferred=(size_t)remaining;
                 size_t offset=c->offset<vb ? c->offset : c->offset-vb;
                 const unsigned char *data=c->offset<vb ? mesh->vertices.Data : mesh->indices.Data;
-                glBufferSubData(target,(GLintptr)offset,(GLsizeiptr)transferred,data+offset);
+                xge_glBufferSubData(target,(GLintptr)offset,(GLsizeiptr)transferred,data+offset);
             }
         }
         ++stats->operations;
-        if (glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
+        if (xge_glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
         if (result!=XGE_OK) break;
         c->offset+=transferred;c->uploaded+=transferred;stats->upload_bytes+=transferred;
     }
     if (result==XGE_OK && c->stage==2) *complete=1;
-    for (int i=0;i<4;++i) glPixelStorei(unpack_keys[i],unpack[i]);
-    glBindBuffer(0x88EC,unpack[4]);
+    for (int i=0;i<4;++i) xge_glPixelStorei(unpack_keys[i],unpack[i]);
+    xge_glBindBuffer(0x88EC,unpack[4]);
     d3_restore(&state);return result;
 }
 #endif
@@ -293,9 +293,9 @@ void xge3dMeshFree(xge3d_mesh *m)
 {
     if (!m || --m->refs) return;
     if (m->context && m->context==__xge3dContext()) {
-        if (m->vao) glDeleteVertexArrays(1,&m->vao);
-        if (m->vbo) glDeleteBuffers(1,&m->vbo);
-        if (m->ibo) glDeleteBuffers(1,&m->ibo);
+        if (m->vao) xge_glDeleteVertexArrays(1,&m->vao);
+        if (m->vbo) xge_glDeleteBuffers(1,&m->vbo);
+        if (m->ibo) xge_glDeleteBuffers(1,&m->ibo);
     }
     xrtArrayUnit(&m->vertices); xrtArrayUnit(&m->indices);
 #if XGE3D_ENABLE_ANIMATION
@@ -399,8 +399,8 @@ static int d3_program_create(xge_shader_t *shader, const char *vertex, const cha
 
 static d3_instance_uniforms d3_instance_locations(GLuint program)
 {
-    return (d3_instance_uniforms){glGetUniformLocation(program,"instancePalette"),glGetUniformLocation(program,"instanceEnabled"),
-        glGetUniformLocation(program,"instanceOffset"),glGetUniformLocation(program,"instanceColumns"),glGetUniformLocation(program,"viewProjection")};
+    return (d3_instance_uniforms){xge_glGetUniformLocation(program,"instancePalette"),xge_glGetUniformLocation(program,"instanceEnabled"),
+        xge_glGetUniformLocation(program,"instanceOffset"),xge_glGetUniformLocation(program,"instanceColumns"),xge_glGetUniformLocation(program,"viewProjection")};
 }
 int xge3dRendererCreate(xge3d_renderer **out)
 {
@@ -414,19 +414,19 @@ int xge3dRendererCreate(xge3d_renderer **out)
     xrtArrayInit(&r->draws,sizeof(d3_draw));
     xrtArrayInit(&r->pass_draws,sizeof(d3_draw*));xrtArrayInit(&r->batches,sizeof(d3_batch));xrtArrayInit(&r->matrices,sizeof(xge3d_mat4_t));
     for (int i=0;i<D3_INSTANCE_PASSES;++i) xrtArrayInit(&r->instances[i].matrices,sizeof(xge3d_mat4_t));
-    glGetIntegerv(0x0D33,&r->texture_limit);
+    xge_glGetIntegerv(0x0D33,&r->texture_limit);
     r->context=__xge3dContext();
 #if XGE3D_ENABLE_ANIMATION
-    GLint size;glGetIntegerv(0x0D33,&size);r->max_joints=size<D3_MAX_JOINTS ? (size_t)size : D3_MAX_JOINTS;
+    GLint size;xge_glGetIntegerv(0x0D33,&size);r->max_joints=size<D3_MAX_JOINTS ? (size_t)size : D3_MAX_JOINTS;
 #endif
     result=d3_program_create(&r->shader,d3_vertex_shader,d3_fragment_shader);
     if (result==XGE_OK) result=d3_program_create(&r->sky_shader,d3_sky_vertex_shader,d3_sky_fragment_shader);
 #if XGE3D_ENABLE_SHADOW
-    if (result==XGE_OK && (!glDrawBuffers || !glReadBuffer)) result=XGE_ERROR_UNSUPPORTED;
+    if (result==XGE_OK && (!xge_glDrawBuffers || !xge_glReadBuffer)) result=XGE_ERROR_UNSUPPORTED;
     if (result==XGE_OK) result=d3_program_create(&r->depth_shader,d3_vertex_shader,d3_depth_fragment_shader);
 #endif
     if (result==XGE_OK) {
-        glGenVertexArrays(1,&r->sky_vao);
+        xge_glGenVertexArrays(1,&r->sky_vao);
         if (!r->sky_vao) result=XGE_ERROR_GPU_FAILED;
     }
     if (result!=XGE_OK) { xge3dRendererFree(r); return result; }
@@ -434,74 +434,74 @@ int xge3dRendererCreate(xge3d_renderer **out)
 #if XGE3D_ENABLE_SHADOW
     r->depth_instance_uniforms=d3_instance_locations(r->depth_shader.iProgram);
 #endif
-    r->sky_inverse=glGetUniformLocation(r->sky_shader.iProgram,"skyInverse");
-    r->sky_map=glGetUniformLocation(r->sky_shader.iProgram,"sky");
-    r->sky_exposure=glGetUniformLocation(r->sky_shader.iProgram,"exposure");
-    r->mvp=glGetUniformLocation(r->shader.iProgram,"mvp");
-    r->color=glGetUniformLocation(r->shader.iProgram,"color");
-    r->world=glGetUniformLocation(r->shader.iProgram,"world");
-    r->emissive=glGetUniformLocation(r->shader.iProgram,"emissive");
-    r->alpha_mode=glGetUniformLocation(r->shader.iProgram,"alphaMode");
-    r->alpha_cutoff=glGetUniformLocation(r->shader.iProgram,"alphaCutoff");
-    r->map_mask=glGetUniformLocation(r->shader.iProgram,"mapMask");
-    r->exposure=glGetUniformLocation(r->shader.iProgram,"exposure");
+    r->sky_inverse=xge_glGetUniformLocation(r->sky_shader.iProgram,"skyInverse");
+    r->sky_map=xge_glGetUniformLocation(r->sky_shader.iProgram,"sky");
+    r->sky_exposure=xge_glGetUniformLocation(r->sky_shader.iProgram,"exposure");
+    r->mvp=xge_glGetUniformLocation(r->shader.iProgram,"mvp");
+    r->color=xge_glGetUniformLocation(r->shader.iProgram,"color");
+    r->world=xge_glGetUniformLocation(r->shader.iProgram,"world");
+    r->emissive=xge_glGetUniformLocation(r->shader.iProgram,"emissive");
+    r->alpha_mode=xge_glGetUniformLocation(r->shader.iProgram,"alphaMode");
+    r->alpha_cutoff=xge_glGetUniformLocation(r->shader.iProgram,"alphaCutoff");
+    r->map_mask=xge_glGetUniformLocation(r->shader.iProgram,"mapMask");
+    r->exposure=xge_glGetUniformLocation(r->shader.iProgram,"exposure");
 #if XGE3D_ENABLE_FOG
-    r->fog_color=glGetUniformLocation(r->shader.iProgram,"fogColor");
-    r->fog_range=glGetUniformLocation(r->shader.iProgram,"fogRange");
-    r->fog_depth=glGetUniformLocation(r->shader.iProgram,"fogDepth");
+    r->fog_color=xge_glGetUniformLocation(r->shader.iProgram,"fogColor");
+    r->fog_range=xge_glGetUniformLocation(r->shader.iProgram,"fogRange");
+    r->fog_depth=xge_glGetUniformLocation(r->shader.iProgram,"fogDepth");
 #endif
 #if XGE3D_ENABLE_ANIMATION
-    r->skin_sampler=glGetUniformLocation(r->shader.iProgram,"jointPalette");r->skin_enabled=glGetUniformLocation(r->shader.iProgram,"skinEnabled");
+    r->skin_sampler=xge_glGetUniformLocation(r->shader.iProgram,"jointPalette");r->skin_enabled=xge_glGetUniformLocation(r->shader.iProgram,"skinEnabled");
 #if XGE3D_ENABLE_SHADOW
-    r->depth_skin_sampler=glGetUniformLocation(r->depth_shader.iProgram,"jointPalette");r->depth_skin_enabled=glGetUniformLocation(r->depth_shader.iProgram,"skinEnabled");
+    r->depth_skin_sampler=xge_glGetUniformLocation(r->depth_shader.iProgram,"jointPalette");r->depth_skin_enabled=xge_glGetUniformLocation(r->depth_shader.iProgram,"skinEnabled");
 #endif
 #endif
 #if XGE3D_ENABLE_IBL
-    r->ibl_irradiance=glGetUniformLocation(r->shader.iProgram,"irradianceMap");
-    r->ibl_prefiltered=glGetUniformLocation(r->shader.iProgram,"prefilteredMap");
-    r->ibl_brdf=glGetUniformLocation(r->shader.iProgram,"brdfMap");
-    r->ibl_intensity=glGetUniformLocation(r->shader.iProgram,"iblIntensity");
-    r->ibl_max_lod=glGetUniformLocation(r->shader.iProgram,"iblMaxLod");
+    r->ibl_irradiance=xge_glGetUniformLocation(r->shader.iProgram,"irradianceMap");
+    r->ibl_prefiltered=xge_glGetUniformLocation(r->shader.iProgram,"prefilteredMap");
+    r->ibl_brdf=xge_glGetUniformLocation(r->shader.iProgram,"brdfMap");
+    r->ibl_intensity=xge_glGetUniformLocation(r->shader.iProgram,"iblIntensity");
+    r->ibl_max_lod=xge_glGetUniformLocation(r->shader.iProgram,"iblMaxLod");
 #endif
 #if XGE3D_ENABLE_LIGHTING
-    r->camera_position=glGetUniformLocation(r->shader.iProgram,"cameraPosition");
-    r->light_count=glGetUniformLocation(r->shader.iProgram,"lightCount");
-    r->unlit=glGetUniformLocation(r->shader.iProgram,"unlit");
-    r->material_params=glGetUniformLocation(r->shader.iProgram,"materialParams");
+    r->camera_position=xge_glGetUniformLocation(r->shader.iProgram,"cameraPosition");
+    r->light_count=xge_glGetUniformLocation(r->shader.iProgram,"lightCount");
+    r->unlit=xge_glGetUniformLocation(r->shader.iProgram,"unlit");
+    r->material_params=xge_glGetUniformLocation(r->shader.iProgram,"materialParams");
     for (int i=0;i<8;++i) {
         char name[32];
-        snprintf(name,sizeof(name),"lightPosition[%d]",i); r->light_position[i]=glGetUniformLocation(r->shader.iProgram,name);
-        snprintf(name,sizeof(name),"lightDirection[%d]",i); r->light_direction[i]=glGetUniformLocation(r->shader.iProgram,name);
-        snprintf(name,sizeof(name),"lightColor[%d]",i); r->light_color[i]=glGetUniformLocation(r->shader.iProgram,name);
-        snprintf(name,sizeof(name),"lightCone[%d]",i); r->light_cone[i]=glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"lightPosition[%d]",i); r->light_position[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"lightDirection[%d]",i); r->light_direction[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"lightColor[%d]",i); r->light_color[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"lightCone[%d]",i); r->light_cone[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
     }
 #endif
 #if XGE3D_ENABLE_SHADOW
     GLuint dp=r->depth_shader.iProgram,sp=r->shader.iProgram;
-    r->depth_mvp=glGetUniformLocation(dp,"mvp"); r->depth_color=glGetUniformLocation(dp,"color");
-    r->depth_alpha=glGetUniformLocation(dp,"alphaMode"); r->depth_cutoff=glGetUniformLocation(dp,"alphaCutoff");
-    r->depth_map=glGetUniformLocation(dp,"baseMap"); r->depth_has_map=glGetUniformLocation(dp,"hasMap");
-    r->depth_uv=glGetUniformLocation(dp,"uvTransform"); r->depth_rotation=glGetUniformLocation(dp,"uvRotation");
-    r->depth_texcoord=glGetUniformLocation(dp,"texcoord");
-    r->shadow_atlas=glGetUniformLocation(sp,"shadowAtlas"); r->shadow_sun=glGetUniformLocation(sp,"sunIndex");
-    r->shadow_cascades=glGetUniformLocation(sp,"cascadeCount"); r->shadow_splits=glGetUniformLocation(sp,"cascadeSplits");
-    r->shadow_params=glGetUniformLocation(sp,"shadowParams"); r->shadow_texel=glGetUniformLocation(sp,"atlasTexel");
-    r->shadow_view_depth=glGetUniformLocation(sp,"viewDepth"); r->shadow_near=glGetUniformLocation(sp,"cameraNear");
+    r->depth_mvp=xge_glGetUniformLocation(dp,"mvp"); r->depth_color=xge_glGetUniformLocation(dp,"color");
+    r->depth_alpha=xge_glGetUniformLocation(dp,"alphaMode"); r->depth_cutoff=xge_glGetUniformLocation(dp,"alphaCutoff");
+    r->depth_map=xge_glGetUniformLocation(dp,"baseMap"); r->depth_has_map=xge_glGetUniformLocation(dp,"hasMap");
+    r->depth_uv=xge_glGetUniformLocation(dp,"uvTransform"); r->depth_rotation=xge_glGetUniformLocation(dp,"uvRotation");
+    r->depth_texcoord=xge_glGetUniformLocation(dp,"texcoord");
+    r->shadow_atlas=xge_glGetUniformLocation(sp,"shadowAtlas"); r->shadow_sun=xge_glGetUniformLocation(sp,"sunIndex");
+    r->shadow_cascades=xge_glGetUniformLocation(sp,"cascadeCount"); r->shadow_splits=xge_glGetUniformLocation(sp,"cascadeSplits");
+    r->shadow_params=xge_glGetUniformLocation(sp,"shadowParams"); r->shadow_texel=xge_glGetUniformLocation(sp,"atlasTexel");
+    r->shadow_view_depth=xge_glGetUniformLocation(sp,"viewDepth"); r->shadow_near=xge_glGetUniformLocation(sp,"cameraNear");
     for (int i=0;i<6;++i) {
         char name[32]; snprintf(name,sizeof(name),"shadowMatrix[%d]",i);
-        r->shadow_matrices[i]=glGetUniformLocation(sp,name);
+        r->shadow_matrices[i]=xge_glGetUniformLocation(sp,name);
     }
     for (int i=0;i<8;++i) {
         char name[32]; snprintf(name,sizeof(name),"lightMap[%d]",i);
-        r->shadow_light_map[i]=glGetUniformLocation(sp,name);
+        r->shadow_light_map[i]=xge_glGetUniformLocation(sp,name);
     }
 #endif
     for (int i=0;i<5;++i) {
         char name[32];
-        snprintf(name,sizeof(name),"maps[%d]",i); r->maps[i]=glGetUniformLocation(r->shader.iProgram,name);
-        snprintf(name,sizeof(name),"texcoord[%d]",i); r->texcoord[i]=glGetUniformLocation(r->shader.iProgram,name);
-        snprintf(name,sizeof(name),"uvTransform[%d]",i); r->uv_transform[i]=glGetUniformLocation(r->shader.iProgram,name);
-        snprintf(name,sizeof(name),"uvRotation[%d]",i); r->uv_rotation[i]=glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"maps[%d]",i); r->maps[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"texcoord[%d]",i); r->texcoord[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"uvTransform[%d]",i); r->uv_transform[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
+        snprintf(name,sizeof(name),"uvRotation[%d]",i); r->uv_rotation[i]=xge_glGetUniformLocation(r->shader.iProgram,name);
     }
     r->context=__xge3dContext();
     *out=r;
@@ -515,12 +515,12 @@ void xge3dRendererFree(xge3d_renderer *r)
     if (!r) return;
     if (r->context==__xge3dContext()) {
         xgeShaderFree(&r->shader); xgeShaderFree(&r->sky_shader);
-        if (r->sky_vao) glDeleteVertexArrays(1,&r->sky_vao);
-        for (int i=0;i<D3_INSTANCE_PASSES;++i) if (r->instances[i].texture) glDeleteTextures(1,&r->instances[i].texture);
+        if (r->sky_vao) xge_glDeleteVertexArrays(1,&r->sky_vao);
+        for (int i=0;i<D3_INSTANCE_PASSES;++i) if (r->instances[i].texture) xge_glDeleteTextures(1,&r->instances[i].texture);
 #if XGE3D_ENABLE_SHADOW
         xgeShaderFree(&r->depth_shader);
-        if (r->shadow_texture) glDeleteTextures(1,&r->shadow_texture);
-        if (r->shadow_fbo) glDeleteFramebuffers(1,&r->shadow_fbo);
+        if (r->shadow_texture) xge_glDeleteTextures(1,&r->shadow_texture);
+        if (r->shadow_fbo) xge_glDeleteFramebuffers(1,&r->shadow_fbo);
 #endif
     }
     xrtArrayUnit(&r->draws);
@@ -538,9 +538,9 @@ int xge3dTargetCreate(int width, int height, xge3d_target **out)
     int result=d3_ready();
     if (result!=XGE_OK) return result;
     GLint limit=0;
-    glGetIntegerv(0x0D33,&limit);
+    xge_glGetIntegerv(0x0D33,&limit);
     if (width>limit || height>limit) return XGE_ERROR_UNSUPPORTED;
-    glGetIntegerv(0x84E8,&limit);
+    xge_glGetIntegerv(0x84E8,&limit);
     if (width>limit || height>limit) return XGE_ERROR_UNSUPPORTED;
     xge3d_target *t=xrtMalloc(sizeof(*t));
     if (!t) return XGE_ERROR_OUT_OF_MEMORY;
@@ -548,13 +548,13 @@ int xge3dTargetCreate(int width, int height, xge3d_target **out)
     d3_state state; d3_save(&state);
     result=xgeTextureCreateRGBAEx(&t->texture,width,height,NULL,XGE_TEXTURE_COMPRESS_NONE);
     if (result==XGE_OK) {
-        glGenFramebuffers(1,&t->fbo); glBindFramebuffer(GL_FRAMEBUFFER,t->fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,t->texture.iBackendId,0);
-        glGenRenderbuffers(1,&t->depth); glBindRenderbuffer(GL_RENDERBUFFER,t->depth);
-        glRenderbufferStorage(GL_RENDERBUFFER,D3_DEPTH_COMPONENT24,width,height);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,t->depth);
-        if (!t->fbo || !t->depth || glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE ||
-            glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
+        xge_glGenFramebuffers(1,&t->fbo); xge_glBindFramebuffer(GL_FRAMEBUFFER,t->fbo);
+        xge_glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,t->texture.iBackendId,0);
+        xge_glGenRenderbuffers(1,&t->depth); xge_glBindRenderbuffer(GL_RENDERBUFFER,t->depth);
+        xge_glRenderbufferStorage(GL_RENDERBUFFER,D3_DEPTH_COMPONENT24,width,height);
+        xge_glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,t->depth);
+        if (!t->fbo || !t->depth || xge_glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE ||
+            xge_glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
     }
     if (result!=XGE_OK) xge3dTargetFree(t);
     d3_restore(&state);
@@ -565,8 +565,8 @@ void xge3dTargetFree(xge3d_target *t)
 {
     if (!t) return;
     if (t->context==__xge3dContext()) {
-        if (t->fbo) glDeleteFramebuffers(1,&t->fbo);
-        if (t->depth) glDeleteRenderbuffers(1,&t->depth);
+        if (t->fbo) xge_glDeleteFramebuffers(1,&t->fbo);
+        if (t->depth) xge_glDeleteRenderbuffers(1,&t->depth);
     } else t->texture.iBackendId=0; /* Never delete a reused name in a later context. */
     xgeTextureFree(&t->texture);
     xrtFree(t);
@@ -594,12 +594,12 @@ int xge3dTargetReadPixels(xge3d_target *t, void *rgba, size_t size, int stride)
     if (t->context!=__xge3dContext()) return XGE_ERROR_INVALID_STATE;
     int width=t->texture.iWidth, height=t->texture.iHeight;
     GLint framebuffer, pack;
-    glGetIntegerv(0x8CAA,&framebuffer); glGetIntegerv(0x0D05,&pack);
-    glBindFramebuffer(D3_READ_FRAMEBUFFER,t->fbo); glPixelStorei(0x0D05,1);
+    xge_glGetIntegerv(0x8CAA,&framebuffer); xge_glGetIntegerv(0x0D05,&pack);
+    xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,t->fbo); xge_glPixelStorei(0x0D05,1);
     for (int y=0;y<height;++y)
-        glReadPixels(0,height-1-y,width,1,GL_RGBA,GL_UNSIGNED_BYTE,(unsigned char*)rgba+(size_t)y*stride);
-    int result=glGetError()==GL_NO_ERROR ? XGE_OK : XGE_ERROR_GPU_FAILED;
-    glPixelStorei(0x0D05,pack); glBindFramebuffer(D3_READ_FRAMEBUFFER,framebuffer);
+        xge_glReadPixels(0,height-1-y,width,1,GL_RGBA,GL_UNSIGNED_BYTE,(unsigned char*)rgba+(size_t)y*stride);
+    int result=xge_glGetError()==GL_NO_ERROR ? XGE_OK : XGE_ERROR_GPU_FAILED;
+    xge_glPixelStorei(0x0D05,pack); xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,framebuffer);
     return result;
 }
 
@@ -655,28 +655,28 @@ static int d3_batches_prepare(xge3d_renderer *r,xge3d_mat4_t vp,int pass,const x
     if (!xrtArrayResize(&r->matrices,padded)) return XGE_ERROR_OUT_OF_MEMORY;
     if (padded>count) memset((xge3d_mat4_t*)r->matrices.Data+count,0,(padded-count)*sizeof(xge3d_mat4_t));
     size_t size=padded*sizeof(xge3d_mat4_t);
-    glActiveTexture(GL_TEXTURE0+10);
+    xge_glActiveTexture(GL_TEXTURE0+10);
     if (p->texture && p->columns==columns && p->rows==(int)rows && p->matrices.Count==padded && !memcmp(p->matrices.Data,r->matrices.Data,size)) {
-        glBindTexture(GL_TEXTURE_2D,p->texture);return XGE_OK;
+        xge_glBindTexture(GL_TEXTURE_2D,p->texture);return XGE_OK;
     }
     if (!xrtArrayResize(&p->matrices,padded)) return XGE_ERROR_OUT_OF_MEMORY;
     int resized=!p->texture || p->columns!=columns || p->rows!=(int)rows;
     GLuint texture=p->texture;
-    if (resized) glGenTextures(1,&texture);
-    glBindTexture(GL_TEXTURE_2D,texture);
+    if (resized) xge_glGenTextures(1,&texture);
+    xge_glBindTexture(GL_TEXTURE_2D,texture);
     if (resized) {
-        glTexImage2D(GL_TEXTURE_2D,0,0x8814,columns*4,(GLsizei)rows,0,GL_RGBA,GL_FLOAT,r->matrices.Data);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-    } else glTexSubImage2D(GL_TEXTURE_2D,0,0,0,columns*4,(GLsizei)rows,GL_RGBA,GL_FLOAT,r->matrices.Data);
-    if (!texture || glGetError()!=GL_NO_ERROR) {if (resized && texture) glDeleteTextures(1,&texture);p->matrices.Count=0;return XGE_ERROR_GPU_FAILED;}
-    if (resized && p->texture) glDeleteTextures(1,&p->texture);
+        xge_glTexImage2D(GL_TEXTURE_2D,0,0x8814,columns*4,(GLsizei)rows,0,GL_RGBA,GL_FLOAT,r->matrices.Data);
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    } else xge_glTexSubImage2D(GL_TEXTURE_2D,0,0,0,columns*4,(GLsizei)rows,GL_RGBA,GL_FLOAT,r->matrices.Data);
+    if (!texture || xge_glGetError()!=GL_NO_ERROR) {if (resized && texture) xge_glDeleteTextures(1,&texture);p->matrices.Count=0;return XGE_ERROR_GPU_FAILED;}
+    if (resized && p->texture) xge_glDeleteTextures(1,&p->texture);
     p->texture=texture;p->columns=columns;p->rows=(int)rows;memcpy(p->matrices.Data,r->matrices.Data,size);*bytes+=size;return XGE_OK;
 }
 static void d3_instance_bind(xge3d_renderer *r,d3_instance_uniforms u,xge3d_mat4_t vp,int pass,const d3_batch *batch)
 {
-    glUniform1i(u.sampler,10);glUniform1i(u.enabled,batch->count>1);glUniform1i(u.offset,(GLint)batch->offset);
-    glUniform1i(u.columns,r->instances[pass].columns ? r->instances[pass].columns : 1);glUniformMatrix4fv(u.vp,1,GL_FALSE,vp.m);
+    xge_glUniform1i(u.sampler,10);xge_glUniform1i(u.enabled,batch->count>1);xge_glUniform1i(u.offset,(GLint)batch->offset);
+    xge_glUniform1i(u.columns,r->instances[pass].columns ? r->instances[pass].columns : 1);xge_glUniformMatrix4fv(u.vp,1,GL_FALSE,vp.m);
 }
 
 static int d3_material_bind(xge3d_renderer *r, const xge3d_node_data *n, uint64_t *bytes)
@@ -684,34 +684,34 @@ static int d3_material_bind(xge3d_renderer *r, const xge3d_node_data *n, uint64_
     xge3d_material_desc_t fallback=xge3dMaterialDefault();
     fallback.unlit=1; /* A plain NodeSetColor mesh retains its flat-color path. */
     const xge3d_material_desc_t *m=n->material ? &n->material->desc : &fallback;
-    glUniform4f(r->color,m->base_color[0]*n->color[0],m->base_color[1]*n->color[1],
+    xge_glUniform4f(r->color,m->base_color[0]*n->color[0],m->base_color[1]*n->color[1],
         m->base_color[2]*n->color[2],m->base_color[3]*n->color[3]);
-    glUniform3f(r->emissive,m->emissive[0],m->emissive[1],m->emissive[2]);
-    glUniform1i(r->alpha_mode,m->alpha_mode); glUniform1f(r->alpha_cutoff,m->alpha_cutoff);
+    xge_glUniform3f(r->emissive,m->emissive[0],m->emissive[1],m->emissive[2]);
+    xge_glUniform1i(r->alpha_mode,m->alpha_mode); xge_glUniform1f(r->alpha_cutoff,m->alpha_cutoff);
 #if XGE3D_ENABLE_LIGHTING
-    glUniform1i(r->unlit,m->unlit);
-    glUniform4f(r->material_params,m->metallic,m->roughness,m->normal_scale,m->occlusion_strength);
+    xge_glUniform1i(r->unlit,m->unlit);
+    xge_glUniform4f(r->material_params,m->metallic,m->roughness,m->normal_scale,m->occlusion_strength);
 #endif
     int mask=0;
     for (int i=0;i<5;++i) {
         const xge3d_texture_binding_t *b=&m->maps[i];
-        glActiveTexture(GL_TEXTURE0+i);
+        xge_glActiveTexture(GL_TEXTURE0+i);
         if (b->texture) {
             int result=d3_texture_upload(b->texture,bytes);
             if (result!=XGE_OK) return result;
             mask|=1<<i;
-        } else glBindTexture(GL_TEXTURE_2D,0);
-        glUniform1i(r->maps[i],i); glUniform1i(r->texcoord[i],b->texcoord);
-        glUniform4f(r->uv_transform[i],b->offset[0],b->offset[1],b->scale[0],b->scale[1]);
-        glUniform1f(r->uv_rotation[i],b->rotation);
+        } else xge_glBindTexture(GL_TEXTURE_2D,0);
+        xge_glUniform1i(r->maps[i],i); xge_glUniform1i(r->texcoord[i],b->texcoord);
+        xge_glUniform4f(r->uv_transform[i],b->offset[0],b->offset[1],b->scale[0],b->scale[1]);
+        xge_glUniform1f(r->uv_rotation[i],b->rotation);
     }
-    glUniform1i(r->map_mask,mask);
-    if (m->double_sided) glDisable(GL_CULL_FACE); else glEnable(GL_CULL_FACE);
+    xge_glUniform1i(r->map_mask,mask);
+    if (m->double_sided) xge_glDisable(GL_CULL_FACE); else xge_glEnable(GL_CULL_FACE);
     if (m->alpha_mode==XGE3D_ALPHA_BLEND) {
-        glEnable(GL_BLEND); glDepthMask(GL_FALSE);
-        glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
-        glBlendEquationSeparate(GL_FUNC_ADD,GL_FUNC_ADD);
-    } else { glDisable(GL_BLEND); glDepthMask(GL_TRUE); }
+        xge_glEnable(GL_BLEND); xge_glDepthMask(GL_FALSE);
+        xge_glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
+        xge_glBlendEquationSeparate(GL_FUNC_ADD,GL_FUNC_ADD);
+    } else { xge_glDisable(GL_BLEND); xge_glDepthMask(GL_TRUE); }
     return XGE_OK;
 }
 
@@ -719,23 +719,23 @@ static int d3_material_bind(xge3d_renderer *r, const xge3d_node_data *n, uint64_
 static int d3_skin_bind(xge3d_scene *s,xge3d_node_data *node,GLint sampler,GLint enabled,uint64_t *bytes)
 {
     int result=d3_skin_update(s,node);if (result!=XGE_OK) return result;
-    glActiveTexture(GL_TEXTURE0+9);
+    xge_glActiveTexture(GL_TEXTURE0+9);
     if (node->skin) { result=d3_skin_upload(node->skin,bytes);if (result!=XGE_OK) return result; }
-    else glBindTexture(GL_TEXTURE_2D,0);
-    glUniform1i(sampler,9);glUniform1i(enabled,node->skin!=NULL);return XGE_OK;
+    else xge_glBindTexture(GL_TEXTURE_2D,0);
+    xge_glUniform1i(sampler,9);xge_glUniform1i(enabled,node->skin!=NULL);return XGE_OK;
 }
 #endif
 
 static void d3_mesh_draw(xge3d_mesh *m,size_t count,xge3d_render_stats_t *stats)
 {
-    glBindVertexArray(m->vao);
+    xge_glBindVertexArray(m->vao);
     if (count>1) {
-        if (m->indices.Count) glDrawElementsInstanced(GL_TRIANGLES,(GLsizei)m->indices.Count,m->index_bits==16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT,NULL,(GLsizei)count);
-        else glDrawArraysInstanced(GL_TRIANGLES,0,(GLsizei)m->vertices.Count,(GLsizei)count);
+        if (m->indices.Count) xge_glDrawElementsInstanced(GL_TRIANGLES,(GLsizei)m->indices.Count,m->index_bits==16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT,NULL,(GLsizei)count);
+        else xge_glDrawArraysInstanced(GL_TRIANGLES,0,(GLsizei)m->vertices.Count,(GLsizei)count);
         ++stats->instanced_draw_calls;stats->instances+=count;
-    } else if (m->indices.Count) glDrawElements(GL_TRIANGLES,(GLsizei)m->indices.Count,
+    } else if (m->indices.Count) xge_glDrawElements(GL_TRIANGLES,(GLsizei)m->indices.Count,
         m->index_bits==16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT,NULL);
-    else glDrawArrays(GL_TRIANGLES,0,(GLsizei)m->vertices.Count);
+    else xge_glDrawArrays(GL_TRIANGLES,0,(GLsizei)m->vertices.Count);
     ++stats->draw_calls;stats->triangles+=count*(m->indices.Count ? m->indices.Count : m->vertices.Count)/3;
 }
 
@@ -743,25 +743,25 @@ static void d3_mesh_draw(xge3d_mesh *m,size_t count,xge3d_render_stats_t *stats)
 static int d3_shadow_target(xge3d_renderer *r, int resolution)
 {
     if (r->shadow_resolution==resolution) return XGE_OK;
-    GLint limit; glGetIntegerv(0x0D33,&limit);
+    GLint limit; xge_glGetIntegerv(0x0D33,&limit);
     if (resolution>limit/3) return XGE_ERROR_UNSUPPORTED;
     GLuint texture=0,fbo=0;
-    glActiveTexture(GL_TEXTURE0+5); glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
-    glTexImage2D(GL_TEXTURE_2D,0,D3_DEPTH_COMPONENT24,3*resolution,2*resolution,0,0x1902,GL_UNSIGNED_INT,NULL);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-    glGenFramebuffers(1,&fbo); glBindFramebuffer(GL_FRAMEBUFFER,fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_TEXTURE_2D,texture,0);
-    GLenum none=GL_NONE; glDrawBuffers(1,&none); glReadBuffer(GL_NONE);
-    if (!texture || !fbo || glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE || glGetError()!=GL_NO_ERROR) {
-        if (texture) glDeleteTextures(1,&texture);
-        if (fbo) glDeleteFramebuffers(1,&fbo);
+    xge_glActiveTexture(GL_TEXTURE0+5); xge_glGenTextures(1,&texture); xge_glBindTexture(GL_TEXTURE_2D,texture);
+    xge_glTexImage2D(GL_TEXTURE_2D,0,D3_DEPTH_COMPONENT24,3*resolution,2*resolution,0,0x1902,GL_UNSIGNED_INT,NULL);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    xge_glGenFramebuffers(1,&fbo); xge_glBindFramebuffer(GL_FRAMEBUFFER,fbo);
+    xge_glFramebufferTexture2D(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_TEXTURE_2D,texture,0);
+    GLenum none=GL_NONE; xge_glDrawBuffers(1,&none); xge_glReadBuffer(GL_NONE);
+    if (!texture || !fbo || xge_glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE || xge_glGetError()!=GL_NO_ERROR) {
+        if (texture) xge_glDeleteTextures(1,&texture);
+        if (fbo) xge_glDeleteFramebuffers(1,&fbo);
         return XGE_ERROR_GPU_FAILED;
     }
-    if (r->shadow_texture) glDeleteTextures(1,&r->shadow_texture);
-    if (r->shadow_fbo) glDeleteFramebuffers(1,&r->shadow_fbo);
+    if (r->shadow_texture) xge_glDeleteTextures(1,&r->shadow_texture);
+    if (r->shadow_fbo) xge_glDeleteFramebuffers(1,&r->shadow_fbo);
     r->shadow_texture=texture; r->shadow_fbo=fbo; r->shadow_resolution=resolution; return XGE_OK;
 }
 
@@ -773,13 +773,13 @@ static int d3_shadow_render(xge3d_renderer *r,xge3d_scene *scene,const xge3d_ren
     if (result!=XGE_OK) return result;
     if (frame.count) {
         GLint draw_fbo,read_fbo,viewport[4];
-        glGetIntegerv(0x8CA6,&draw_fbo);glGetIntegerv(0x8CAA,&read_fbo);glGetIntegerv(0x0BA2,viewport);
+        xge_glGetIntegerv(0x8CA6,&draw_fbo);xge_glGetIntegerv(0x8CAA,&read_fbo);xge_glGetIntegerv(0x0BA2,viewport);
         result=d3_shadow_target(r,d->shadows->resolution); if (result!=XGE_OK) return result;
-        glBindFramebuffer(GL_FRAMEBUFFER,r->shadow_fbo); glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);
-        glDisable(GL_BLEND);glDepthMask(GL_TRUE);glDepthFunc(GL_LESS);d3_clear_depth(1);glClear(GL_DEPTH_BUFFER_BIT);
-        glUseProgram(r->depth_shader.iProgram);glUniform1i(r->depth_map,0);
+        xge_glBindFramebuffer(GL_FRAMEBUFFER,r->shadow_fbo); xge_glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);
+        xge_glDisable(GL_BLEND);xge_glDepthMask(GL_TRUE);xge_glDepthFunc(GL_LESS);d3_clear_depth(1);xge_glClear(GL_DEPTH_BUFFER_BIT);
+        xge_glUseProgram(r->depth_shader.iProgram);xge_glUniform1i(r->depth_map,0);
         for (int map=0;map<frame.count;++map) {
-            int size=r->shadow_resolution;glViewport(map%3*size,map/3*size,size,size);
+            int size=r->shadow_resolution;xge_glViewport(map%3*size,map/3*size,size,size);
             result=d3_batches_prepare(r,frame.matrices[map],map+1,d,&counts->upload_bytes);if (result!=XGE_OK) return result;
             for (size_t i=0;i<r->batches.Count;++i) {
                 d3_batch *batch=xrtArrayGet(&r->batches,i);d3_draw *draw=batch->draw;xge3d_node_data *n=draw->node;
@@ -792,34 +792,34 @@ static int d3_shadow_render(xge3d_renderer *r,xge3d_scene *scene,const xge3d_ren
                 (void)scene;
 #endif
                 result=d3_mesh_upload(draw->mesh,&counts->upload_bytes);if (result!=XGE_OK) return result;
-                glFrontFace(draw->determinant<0 ? GL_CW : GL_CCW);
-                if (m->double_sided) glDisable(GL_CULL_FACE);else glEnable(GL_CULL_FACE);
+                xge_glFrontFace(draw->determinant<0 ? GL_CW : GL_CCW);
+                if (m->double_sided) xge_glDisable(GL_CULL_FACE);else xge_glEnable(GL_CULL_FACE);
                 d3_instance_bind(r,r->depth_instance_uniforms,frame.matrices[map],map+1,batch);
-                xge3d_mat4_t mvp=d3_mul(frame.matrices[map],w);glUniformMatrix4fv(r->depth_mvp,1,GL_FALSE,mvp.m);
-                glUniform4f(r->depth_color,m->base_color[0],m->base_color[1],m->base_color[2],m->base_color[3]*n->color[3]);
-                glUniform1i(r->depth_alpha,m->alpha_mode);glUniform1f(r->depth_cutoff,m->alpha_cutoff);
-                const xge3d_texture_binding_t *b=&m->maps[0];glActiveTexture(GL_TEXTURE0);
+                xge3d_mat4_t mvp=d3_mul(frame.matrices[map],w);xge_glUniformMatrix4fv(r->depth_mvp,1,GL_FALSE,mvp.m);
+                xge_glUniform4f(r->depth_color,m->base_color[0],m->base_color[1],m->base_color[2],m->base_color[3]*n->color[3]);
+                xge_glUniform1i(r->depth_alpha,m->alpha_mode);xge_glUniform1f(r->depth_cutoff,m->alpha_cutoff);
+                const xge3d_texture_binding_t *b=&m->maps[0];xge_glActiveTexture(GL_TEXTURE0);
                 if (b->texture) { result=d3_texture_upload(b->texture,&counts->upload_bytes);if (result!=XGE_OK) return result; }
-                else glBindTexture(GL_TEXTURE_2D,0);
-                glUniform1i(r->depth_has_map,b->texture!=NULL);glUniform1i(r->depth_texcoord,b->texcoord);
-                glUniform4f(r->depth_uv,b->offset[0],b->offset[1],b->scale[0],b->scale[1]);glUniform1f(r->depth_rotation,b->rotation);
+                else xge_glBindTexture(GL_TEXTURE_2D,0);
+                xge_glUniform1i(r->depth_has_map,b->texture!=NULL);xge_glUniform1i(r->depth_texcoord,b->texcoord);
+                xge_glUniform4f(r->depth_uv,b->offset[0],b->offset[1],b->scale[0],b->scale[1]);xge_glUniform1f(r->depth_rotation,b->rotation);
                 d3_mesh_draw(draw->mesh,batch->count,counts);++counts->shadow_draw_calls;
             }
         }
-        glBindFramebuffer(D3_DRAW_FRAMEBUFFER,draw_fbo);glBindFramebuffer(D3_READ_FRAMEBUFFER,read_fbo);
-        glViewport(viewport[0],viewport[1],viewport[2],viewport[3]);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+        xge_glBindFramebuffer(D3_DRAW_FRAMEBUFFER,draw_fbo);xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,read_fbo);
+        xge_glViewport(viewport[0],viewport[1],viewport[2],viewport[3]);xge_glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
         counts->shadow_maps=frame.count;
     }
-    glUseProgram(r->shader.iProgram);glActiveTexture(GL_TEXTURE0+5);
-    glBindTexture(GL_TEXTURE_2D,frame.count ? r->shadow_texture : 0);glUniform1i(r->shadow_atlas,5);
-    for (int i=0;i<8;++i) glUniform1i(r->shadow_light_map[i],frame.light_map[i]);
-    glUniform1i(r->shadow_sun,frame.sun);glUniform1i(r->shadow_cascades,frame.cascades);
-    for (int i=0;i<frame.count;++i) glUniformMatrix4fv(r->shadow_matrices[i],1,GL_FALSE,frame.matrices[i].m);
-    glUniform4f(r->shadow_splits,frame.splits[0],frame.splits[1],frame.splits[2],frame.splits[3]);
-    if (d->shadows) glUniform4f(r->shadow_params,d->shadows->bias,d->shadows->normal_bias,d->shadows->filter_radius,d->shadows->blend);
-    if (frame.count) glUniform2f(r->shadow_texel,1.0f/(r->shadow_resolution*3),1.0f/(r->shadow_resolution*2));
-    const float *v=d->camera->view.m;glUniform4f(r->shadow_view_depth,-v[2],-v[6],-v[10],-v[14]);
-    glUniform1f(r->shadow_near,d->camera->near_z);return XGE_OK;
+    xge_glUseProgram(r->shader.iProgram);xge_glActiveTexture(GL_TEXTURE0+5);
+    xge_glBindTexture(GL_TEXTURE_2D,frame.count ? r->shadow_texture : 0);xge_glUniform1i(r->shadow_atlas,5);
+    for (int i=0;i<8;++i) xge_glUniform1i(r->shadow_light_map[i],frame.light_map[i]);
+    xge_glUniform1i(r->shadow_sun,frame.sun);xge_glUniform1i(r->shadow_cascades,frame.cascades);
+    for (int i=0;i<frame.count;++i) xge_glUniformMatrix4fv(r->shadow_matrices[i],1,GL_FALSE,frame.matrices[i].m);
+    xge_glUniform4f(r->shadow_splits,frame.splits[0],frame.splits[1],frame.splits[2],frame.splits[3]);
+    if (d->shadows) xge_glUniform4f(r->shadow_params,d->shadows->bias,d->shadows->normal_bias,d->shadows->filter_radius,d->shadows->blend);
+    if (frame.count) xge_glUniform2f(r->shadow_texel,1.0f/(r->shadow_resolution*3),1.0f/(r->shadow_resolution*2));
+    const float *v=d->camera->view.m;xge_glUniform4f(r->shadow_view_depth,-v[2],-v[6],-v[10],-v[14]);
+    xge_glUniform1f(r->shadow_near,d->camera->near_z);return XGE_OK;
 }
 #endif
 
@@ -851,60 +851,60 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     d3_state state; d3_save(&state);
     xge3d_render_stats_t counts={0};
     if (d->target) {
-        glBindFramebuffer(GL_FRAMEBUFFER,d->target->fbo);
-        glViewport(0,0,d->target->texture.iWidth,d->target->texture.iHeight);
+        xge_glBindFramebuffer(GL_FRAMEBUFFER,d->target->fbo);
+        xge_glViewport(0,0,d->target->texture.iWidth,d->target->texture.iHeight);
     }
     GLint depth_bits=0, depth_type=GL_NONE;
     GLenum attachment=d->target || state.draw_fbo ? GL_DEPTH_ATTACHMENT : 0x1801;
-    glGetFramebufferAttachmentParameteriv(D3_DRAW_FRAMEBUFFER,attachment,0x8CD0,&depth_type);
+    xge_glGetFramebufferAttachmentParameteriv(D3_DRAW_FRAMEBUFFER,attachment,0x8CD0,&depth_type);
     if (depth_type!=GL_NONE)
-        glGetFramebufferAttachmentParameteriv(D3_DRAW_FRAMEBUFFER,attachment,0x8216,&depth_bits);
+        xge_glGetFramebufferAttachmentParameteriv(D3_DRAW_FRAMEBUFFER,attachment,0x8216,&depth_bits);
     if (!depth_bits) { result=XGE_ERROR_UNSUPPORTED; goto done; }
-    glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS); glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE); glCullFace(GL_BACK);
-    if (state.srgb>=0) glDisable(0x8DB9); /* Shader writes final sRGB bytes. */
-    if (state.seamless>=0) glEnable(0x884F);
-    glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST); glDisable(GL_STENCIL_TEST);
-    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
-    glClearColor(d->clear_color[0],d->clear_color[1],d->clear_color[2],d->clear_color[3]);
+    xge_glEnable(GL_DEPTH_TEST); xge_glDepthFunc(GL_LESS); xge_glDepthMask(GL_TRUE);
+    xge_glEnable(GL_CULL_FACE); xge_glCullFace(GL_BACK);
+    if (state.srgb>=0) xge_glDisable(0x8DB9); /* Shader writes final sRGB bytes. */
+    if (state.seamless>=0) xge_glEnable(0x884F);
+    xge_glDisable(GL_BLEND); xge_glDisable(GL_SCISSOR_TEST); xge_glDisable(GL_STENCIL_TEST);
+    xge_glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+    xge_glClearColor(d->clear_color[0],d->clear_color[1],d->clear_color[2],d->clear_color[3]);
     d3_clear_depth(1);
     GLbitfield clear=0;
     if (d->clear_flags&XGE3D_CLEAR_COLOR) clear|=GL_COLOR_BUFFER_BIT;
     if (d->clear_flags&XGE3D_CLEAR_DEPTH) clear|=GL_DEPTH_BUFFER_BIT;
-    if (clear) glClear(clear);
+    if (clear) xge_glClear(clear);
     if (d->environment) {
         xge3d_mat4_t rotation=d->camera->view,inverse;
         rotation.m[12]=rotation.m[13]=rotation.m[14]=0;
         if (!d3_inverse(d3_mul(d->camera->projection,rotation),&inverse)) {
             result=XGE_ERROR_INVALID_ARGUMENT; goto done;
         }
-        glActiveTexture(GL_TEXTURE0);
+        xge_glActiveTexture(GL_TEXTURE0);
         result=d3_environment_upload(d->environment,&counts.upload_bytes);
         if (result!=XGE_OK) goto done;
-        glUseProgram(r->sky_shader.iProgram); glBindVertexArray(r->sky_vao);
-        glUniformMatrix4fv(r->sky_inverse,1,GL_FALSE,inverse.m); glUniform1i(r->sky_map,0);
-        glUniform1f(r->sky_exposure,d->exposure>0 ? d->exposure : 1);
-        glDisable(GL_CULL_FACE); glDepthMask(GL_FALSE); glDepthFunc(GL_LEQUAL);
-        glDrawArrays(GL_TRIANGLES,0,3);
-        glEnable(GL_CULL_FACE); glDepthMask(GL_TRUE); glDepthFunc(GL_LESS);
+        xge_glUseProgram(r->sky_shader.iProgram); xge_glBindVertexArray(r->sky_vao);
+        xge_glUniformMatrix4fv(r->sky_inverse,1,GL_FALSE,inverse.m); xge_glUniform1i(r->sky_map,0);
+        xge_glUniform1f(r->sky_exposure,d->exposure>0 ? d->exposure : 1);
+        xge_glDisable(GL_CULL_FACE); xge_glDepthMask(GL_FALSE); xge_glDepthFunc(GL_LEQUAL);
+        xge_glDrawArrays(GL_TRIANGLES,0,3);
+        xge_glEnable(GL_CULL_FACE); xge_glDepthMask(GL_TRUE); xge_glDepthFunc(GL_LESS);
         ++counts.draw_calls;
     }
     xge3d_mat4_t vp=d3_mul(d->camera->projection,d->camera->view);
     xge3d_mat4_t inverse_view;
     if (!d3_inverse(d->camera->view,&inverse_view)) { result=XGE_ERROR_INVALID_ARGUMENT; goto done; }
     xge3d_vec3_t eye={inverse_view.m[12],inverse_view.m[13],inverse_view.m[14]};
-    glUseProgram(r->shader.iProgram);
-    glUniform1f(r->exposure,d->exposure>0 ? d->exposure : 1);
+    xge_glUseProgram(r->shader.iProgram);
+    xge_glUniform1f(r->exposure,d->exposure>0 ? d->exposure : 1);
 #if XGE3D_ENABLE_FOG
-    glUniform4f(r->fog_color,d->fog ? d->fog->color.x : 0,d->fog ? d->fog->color.y : 0,d->fog ? d->fog->color.z : 0,d->fog!=NULL);
-    glUniform2f(r->fog_range,d->fog ? d->fog->start : 0,d->fog ? d->fog->end : 1);
+    xge_glUniform4f(r->fog_color,d->fog ? d->fog->color.x : 0,d->fog ? d->fog->color.y : 0,d->fog ? d->fog->color.z : 0,d->fog!=NULL);
+    xge_glUniform2f(r->fog_range,d->fog ? d->fog->start : 0,d->fog ? d->fog->end : 1);
     const float *fog_view=d->camera->view.m;
-    glUniform4f(r->fog_depth,-fog_view[2],-fog_view[6],-fog_view[10],-fog_view[14]);
+    xge_glUniform4f(r->fog_depth,-fog_view[2],-fog_view[6],-fog_view[10],-fog_view[14]);
 #endif
 #if XGE3D_ENABLE_LIGHTING
     if (d->camera->projection.m[15]!=0 && d->camera->projection.m[11]==0)
-        glUniform4f(r->camera_position,inverse_view.m[8],inverse_view.m[9],inverse_view.m[10],1);
-    else glUniform4f(r->camera_position,inverse_view.m[12],inverse_view.m[13],inverse_view.m[14],0);
+        xge_glUniform4f(r->camera_position,inverse_view.m[8],inverse_view.m[9],inverse_view.m[10],1);
+    else xge_glUniform4f(r->camera_position,inverse_view.m[12],inverse_view.m[13],inverse_view.m[14],0);
     int light_count=0;
 #if XGE3D_ENABLE_SHADOW
     d3_light lights[8];
@@ -924,13 +924,13 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
 #if XGE3D_ENABLE_SHADOW
         lights[light_count]=(d3_light){*light,{world.m[12],world.m[13],world.m[14]},direction};
 #endif
-        glUniform4f(r->light_position[light_count],world.m[12],world.m[13],world.m[14],(float)light->type);
-        glUniform4f(r->light_direction[light_count],direction.x,direction.y,direction.z,light->range);
-        glUniform4f(r->light_color[light_count],light->color.x*light->intensity,light->color.y*light->intensity,light->color.z*light->intensity,0);
-        glUniform2f(r->light_cone[light_count],cosf(light->inner_angle),cosf(light->outer_angle));
+        xge_glUniform4f(r->light_position[light_count],world.m[12],world.m[13],world.m[14],(float)light->type);
+        xge_glUniform4f(r->light_direction[light_count],direction.x,direction.y,direction.z,light->range);
+        xge_glUniform4f(r->light_color[light_count],light->color.x*light->intensity,light->color.y*light->intensity,light->color.z*light->intensity,0);
+        xge_glUniform2f(r->light_cone[light_count],cosf(light->inner_angle),cosf(light->outer_angle));
         ++light_count;
     }
-    glUniform1i(r->light_count,light_count);
+    xge_glUniform1i(r->light_count,light_count);
 #endif
     xrtArrayClear(&r->draws);
     for (size_t i=0;i<s->nodes.Count;++i) {
@@ -963,19 +963,19 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     result=d3_shadow_render(r,s,d,lights,light_count,&counts);if (result!=XGE_OK) goto done;
 #endif
 #if XGE3D_ENABLE_IBL
-    glActiveTexture(GL_TEXTURE0+6);
+    xge_glActiveTexture(GL_TEXTURE0+6);
     if (d->ibl_intensity>0) { result=d3_cube_upload(&d->environment->irradiance,&counts.upload_bytes);if (result!=XGE_OK) goto done; }
-    else glBindTexture(0x8513,0);
-    glActiveTexture(GL_TEXTURE0+7);
+    else xge_glBindTexture(0x8513,0);
+    xge_glActiveTexture(GL_TEXTURE0+7);
     if (d->ibl_intensity>0) { result=d3_cube_upload(&d->environment->prefiltered,&counts.upload_bytes);if (result!=XGE_OK) goto done; }
-    else glBindTexture(0x8513,0);
-    glActiveTexture(GL_TEXTURE0+8);
+    else xge_glBindTexture(0x8513,0);
+    xge_glActiveTexture(GL_TEXTURE0+8);
     if (d->ibl_intensity>0) { result=d3_texture_upload(d->environment->brdf,&counts.upload_bytes);if (result!=XGE_OK) goto done; }
-    else glBindTexture(GL_TEXTURE_2D,0);
-    glUseProgram(r->shader.iProgram);
-    glUniform1i(r->ibl_irradiance,6);glUniform1i(r->ibl_prefiltered,7);glUniform1i(r->ibl_brdf,8);
-    glUniform1f(r->ibl_intensity,d->ibl_intensity);
-    glUniform1f(r->ibl_max_lod,d->ibl_intensity>0 ? (float)d->environment->prefiltered.levels-1 : 0);
+    else xge_glBindTexture(GL_TEXTURE_2D,0);
+    xge_glUseProgram(r->shader.iProgram);
+    xge_glUniform1i(r->ibl_irradiance,6);xge_glUniform1i(r->ibl_prefiltered,7);xge_glUniform1i(r->ibl_brdf,8);
+    xge_glUniform1f(r->ibl_intensity,d->ibl_intensity);
+    xge_glUniform1f(r->ibl_max_lod,d->ibl_intensity>0 ? (float)d->environment->prefiltered.levels-1 : 0);
 #endif
     result=d3_batches_prepare(r,vp,0,d,&counts.upload_bytes);if (result!=XGE_OK) goto done;
     for (size_t i=0;i<r->batches.Count;++i) {
@@ -986,11 +986,11 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         if (result!=XGE_OK) goto done;
         xge3d_mat4_t mvp=d3_mul(vp,world);
         if (!d3_finite_matrix(&mvp)) { result=XGE_ERROR_INVALID_ARGUMENT; goto done; }
-        glFrontFace(draw->determinant<0 ? GL_CW : GL_CCW);
-        glUseProgram(r->shader.iProgram);
+        xge_glFrontFace(draw->determinant<0 ? GL_CW : GL_CCW);
+        xge_glUseProgram(r->shader.iProgram);
         d3_instance_bind(r,r->instance_uniforms,vp,0,batch);
-        glUniformMatrix4fv(r->mvp,1,GL_FALSE,mvp.m);
-        glUniformMatrix4fv(r->world,1,GL_FALSE,world.m);
+        xge_glUniformMatrix4fv(r->mvp,1,GL_FALSE,mvp.m);
+        xge_glUniformMatrix4fv(r->world,1,GL_FALSE,world.m);
 #if XGE3D_ENABLE_ANIMATION
         result=d3_skin_bind(s,n,r->skin_sampler,r->skin_enabled,&counts.upload_bytes);if (result!=XGE_OK) goto done;
 #endif
@@ -998,7 +998,7 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         if (result!=XGE_OK) goto done;
         d3_mesh_draw(draw->mesh,batch->count,&counts);
     }
-    if (glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
+    if (xge_glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
 done:
     d3_restore(&state);
     if (stats) *stats=counts;

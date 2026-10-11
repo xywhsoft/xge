@@ -34,7 +34,7 @@ int doc_semantic_empty_paragraph(doc_state* state, const doc_node* n)
     }
     return 1;
 }
-static int doc_semantic_node(doc_state* a, doc_node* an, doc_state* b, doc_node* bn)
+static int doc_semantic_node_mode(doc_state* a, doc_node* an, doc_state* b, doc_node* bn,int derived_footnotes)
 {
     uint64_t ai = 0, bi = 0, ao = 0, bo = 0, ac = doc_seq_size(an->children), bc = doc_seq_size(bn->children);
     if (an->kind != bn->kind || !doc_semantic_attrs(an, bn) || doc_seq_size(an->text) != doc_seq_size(bn->text) ||
@@ -42,6 +42,8 @@ static int doc_semantic_node(doc_state* a, doc_node* an, doc_state* b, doc_node*
     while (ai < ac || bi < bc) {
         doc_node *left = ai < ac ? doc_index_get(a->index, doc_seq_get_id(an->children, ai)) : NULL;
         doc_node *right = bi < bc ? doc_index_get(b->index, doc_seq_get_id(bn->children, bi)) : NULL;
+        if(derived_footnotes && an->kind==XUI_DOC_ROOT && left && left->kind==XUI_DOC_FOOTNOTE){ai++;continue;}
+        if(derived_footnotes && bn->kind==XUI_DOC_ROOT && right && right->kind==XUI_DOC_FOOTNOTE){bi++;continue;}
         if (left && left->kind == XUI_DOC_TEXT && !doc_seq_size(left->text)) { ai++; continue; }
         if (right && right->kind == XUI_DOC_TEXT && !doc_seq_size(right->text)) { bi++; continue; }
         if (a->profile == XUI_DOCUMENT_MARKDOWN && doc_semantic_empty_paragraph(a, left)) { ai++; continue; }
@@ -54,7 +56,7 @@ static int doc_semantic_node(doc_state* a, doc_node* an, doc_state* b, doc_node*
             if (ao == doc_seq_size(left->text)) { ai++; ao = 0; }
             if (bo == doc_seq_size(right->text)) { bi++; bo = 0; }
         } else {
-            if (ao || bo || !doc_semantic_node(a, left, b, right)) return 0;
+            if (ao || bo || !doc_semantic_node_mode(a, left, b, right,derived_footnotes)) return 0;
             ai++; bi++;
         }
     }
@@ -63,11 +65,47 @@ static int doc_semantic_node(doc_state* a, doc_node* an, doc_state* b, doc_node*
 int doc_semantic_subtree_equal(doc_state* a, uint64_t an, doc_state* b, uint64_t bn)
 {
     doc_node *left = doc_index_get(a->index, an), *right = doc_index_get(b->index, bn);
-    return left && right && doc_semantic_node(a, left, b, right);
+    return left && right && doc_semantic_node_mode(a, left, b, right,0);
 }
 int doc_semantic_equal(doc_state* a, doc_state* b)
 {
-    return doc_semantic_node(a, doc_index_get(a->index, DOC_ROOT), b, doc_index_get(b->index, DOC_ROOT));
+    return doc_semantic_node_mode(a, doc_index_get(a->index, DOC_ROOT), b, doc_index_get(b->index, DOC_ROOT),0);
 }
 
+doc_node* doc_semantic_find_root_footnote(doc_state* state,const doc_node* note)
+{
+    doc_node* root=doc_index_get(state->index,DOC_ROOT);doc_node* match=doc_index_get(state->index,note->id);uint64_t i;
+    if(match && match->parent==DOC_ROOT && match->kind==XUI_DOC_FOOTNOTE &&
+        !strcmp(doc_string(match->info),doc_string(note->info)))return match;
+    if(!root)return NULL;
+    for(i=0;i<doc_seq_size(root->children);i++){
+        match=doc_index_get(state->index,doc_seq_get_id(root->children,i));
+        if(match && match->kind==XUI_DOC_FOOTNOTE &&
+            !strcmp(doc_string(match->info),doc_string(note->info)))return match;
+    }
+    return NULL;
+}
+
+/* Markdown's rendered footnote section is derived from live references. A
+ * removal can drop or reorder definitions without removing their source.
+ * This is only an intent comparison: callers must separately prove that the
+ * source definitions are protected. Retained bodies still match by label;
+ * this path does not accept activation of a previously unprojected body. */
+int doc_semantic_markdown_projection_equal(doc_state* desired,doc_state* actual)
+{
+    doc_node *left,*right;uint64_t i;
+    if(doc_semantic_equal(desired,actual))return 1;
+    if(desired->profile!=XUI_DOCUMENT_MARKDOWN || actual->profile!=XUI_DOCUMENT_MARKDOWN)return 0;
+    left=doc_index_get(desired->index,DOC_ROOT);right=doc_index_get(actual->index,DOC_ROOT);
+    if(!left || !right || !doc_semantic_node_mode(desired,left,actual,right,1))return 0;
+    for(i=0;i<doc_seq_size(right->children);i++){
+        doc_node* node=doc_index_get(actual->index,doc_seq_get_id(right->children,i));doc_node* expected;
+        if(!node || node->kind!=XUI_DOC_FOOTNOTE)continue;
+        expected=doc_semantic_find_root_footnote(desired,node);
+        if(!expected || !doc_semantic_node_mode(desired,expected,actual,node,0))return 0;
+    }
+    return 1;
+}
+
+#include "xui_document_semantic_mapping.inl"
 #endif

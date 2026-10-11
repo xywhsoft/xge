@@ -100,6 +100,7 @@ XUI_API int xuiDocumentCreate(const xui_doc_desc_t* desc, xui_document* out)
     d->max_bytes = desc && desc->iMaxTextBytes ? desc->iMaxTextBytes : UINT64_C(256) * 1024 * 1024;
     d->max_nodes = desc && desc->iMaxNodes ? desc->iMaxNodes : 1000000;
     a->max_bytes = d->max_bytes; a->max_nodes = d->max_nodes;
+    a->max_syntax_records = desc && desc->iMaxSyntaxRecords ? desc->iMaxSyntaxRecords : DOC_DEFAULT_SYNTAX_RECORDS;
     d->state = doc_state_new(a, profile);
     if (d->state && profile == XUI_DOCUMENT_MARKDOWN) d->state->dialect = desc && desc->iMarkdownDialect ? desc->iMarkdownDialect : XUI_MD_EXTENDED;
     if (!d->state) { xuiDocumentRelease(d); return XUI_ERROR_OUT_OF_MEMORY; }
@@ -630,7 +631,8 @@ xui_document_change_set doc_change_create(doc_allocator* allocator, uint64_t ide
     atomic_init(&c->refs, 1); c->before = before; c->after = after;
     doc_state_retain(before); doc_state_retain(after);
     c->identity = identity; c->before_revision = revision; c->after_revision = revision + 1;
-    c->origin = origin; c->flags = flags; c->domain = domain; c->undo = undo; c->count = count;
+    c->origin = origin; c->flags = flags; c->domain = domain; c->undo = undo; c->count = count; c->input_generation = 0;
+    c->input_state = NULL; c->packed_ops = NULL; c->packed_op_start = 0;
     if (count) {
         c->ops = doc_alloc(allocator, (size_t)count * sizeof(*ops));
         if (!c->ops) { xuiDocumentChangeSetRelease(c); return NULL; }
@@ -641,17 +643,17 @@ xui_document_change_set doc_change_create(doc_allocator* allocator, uint64_t ide
 XUI_API void xuiDocumentChangeSetRetain(xui_document_change_set c) { if (c) atomic_fetch_add(&c->refs, 1); }
 XUI_API void xuiDocumentChangeSetRelease(xui_document_change_set c)
 {
-    doc_state *before, *after;
+    doc_state *before, *after, *input;
     if (!c || atomic_fetch_sub(&c->refs, 1) != 1) return;
-    before = c->before; after = c->after; doc_free(c->ops); doc_free(c);
-    doc_state_release(before); doc_state_release(after);
+    before = c->before; after = c->after; input = c->input_state; doc_free(c->ops); doc_free(c);
+    doc_state_release(before); doc_state_release(after); doc_state_release(input);
 }
 XUI_API int xuiDocumentChangeSetGetInfo(xui_document_change_set c, xui_doc_change_info_t* out)
 {
     if (!c || !out || out->iSize != sizeof(*out)) return XUI_ERROR_INVALID_ARGUMENT;
     out->iFlags = c->flags; out->iBeforeRevision = c->before_revision; out->iAfterRevision = c->after_revision;
     out->iOrigin = c->origin; out->iOperationCount = c->count; out->pOperations = c->ops; out->bUndo = c->undo;
-    out->iDomain = c->domain;
+    out->iDomain = c->domain; out->iInputGeneration = c->input_generation;
     return XUI_OK;
 }
 doc_history* doc_history_prepare(xui_document_transaction t, doc_history* old)
@@ -693,6 +695,7 @@ XUI_API int xuiDocumentTxnCommit(xui_document_transaction t, xui_document_change
     change = plan ? doc_publish_plan_change(plan) : doc_change_create(d->allocator, d->identity, d->revision,
         t->base, t->draft, t->ops, t->count, t->flags, t->domain, t->origin, 0);
     if (!change) return doc_txn_fail(t, XUI_ERROR_OUT_OF_MEMORY);
+    change->input_generation = t->input_generation;
     if (!d->disable_history) {
         h = plan ? doc_publish_plan_take_history(plan) : doc_history_prepare(t, d->undo);
         if (!h) { xuiDocumentChangeSetRelease(change); return doc_txn_fail(t, t->error ? t->error : XUI_ERROR_OUT_OF_MEMORY); }

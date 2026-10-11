@@ -441,7 +441,7 @@ static void mark_range(void)
 }
 static void markdown_semantic_validation(void)
 {
-    xui_doc_desc_t desc = {0}; xui_document d; xui_document_snapshot s; xui_document_transaction t;
+    xui_doc_desc_t desc = {0}; xui_document d; xui_document_snapshot s, before; xui_document_transaction t;
     xui_doc_range_t range = {0}; uint64_t text, revision; char source[128]; uint64_t n;
     desc.iSize = sizeof(desc); desc.iProfile = XUI_DOCUMENT_MARKDOWN;
     CHECK(xuiDocumentCreate(&desc, &d) == XUI_OK); CHECK(xuiDocumentLoadMarkdown(d, "word", 4) == XUI_OK);
@@ -457,12 +457,35 @@ static void markdown_semantic_validation(void)
     CHECK(xuiDocumentSnapshotCopySource(s, source, sizeof(source), &n) == XUI_OK && !strcmp(source, "**word**")); xuiDocumentSnapshotRelease(s);
     CHECK(xuiDocumentLoadMarkdown(d, "`code`", 6) == XUI_OK);
     CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK); text = find_kind(s, 1, XUI_DOC_TEXT); xuiDocumentSnapshotRelease(s);
+    CHECK(xuiDocumentClearHistory(d) == XUI_OK && xuiDocumentAcquireSnapshot(d, &before) == XUI_OK &&
+        xuiDocumentMarkSaved(d, before) == XUI_OK);
     revision = xuiDocumentGetRevision(d); CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK);
-    CHECK(xuiDocumentTxnReplaceText(t, text, 0, 4, "a`b", 3) == XUI_DOC_ERROR_UNREPRESENTABLE);
-    CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_DOC_ERROR_UNREPRESENTABLE); xuiDocumentTxnRelease(t);
-    CHECK(xuiDocumentGetRevision(d) == revision); CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
-    CHECK(xuiDocumentSnapshotCopySource(s, source, sizeof(source), &n) == XUI_OK && !strcmp(source, "`code`"));
-    xuiDocumentSnapshotRelease(s); xuiDocumentRelease(d);
+    CHECK(xuiDocumentTxnReplaceText(t, text, 0, 4, "a`b", 3) == XUI_OK);
+    CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_OK); xuiDocumentTxnRelease(t);
+    CHECK(xuiDocumentGetRevision(d) == revision + 1 && xuiDocumentIsDirty(d) && xuiDocumentCanUndo(d));
+    CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
+    CHECK(xuiDocumentSnapshotCopySource(s, source, sizeof(source), &n) == XUI_OK && n == 7 && !strcmp(source, "``a`b``"));
+    text = find_kind(s, XUI_DOCUMENT_ROOT, XUI_DOC_TEXT); expect_text(s, text, "a`b");
+    {
+        xui_doc_node_info_t node = {0}; node.iSize = sizeof(node);
+        CHECK(xuiDocumentSnapshotGetNode(s, text, &node) == XUI_OK && node.tAttributes.iMarks == XUI_DOC_CODE);
+    }
+    xuiDocumentSnapshotRelease(s);
+    CHECK(xuiDocumentSnapshotCopySource(before, source, sizeof(source), &n) == XUI_OK && n == 6 && !strcmp(source, "`code`"));
+    CHECK(xuiDocumentUndo(d, NULL) == XUI_OK && !xuiDocumentIsDirty(d) && !xuiDocumentCanUndo(d) && xuiDocumentCanRedo(d));
+    CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK &&
+        xuiDocumentSnapshotCopySource(s, source, sizeof(source), &n) == XUI_OK && !strcmp(source, "`code`"));
+    xuiDocumentSnapshotRelease(s);
+    CHECK(xuiDocumentRedo(d, NULL) == XUI_OK && xuiDocumentIsDirty(d) && xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
+    CHECK(xuiDocumentSnapshotCopySource(s, source, sizeof(source), &n) == XUI_OK && !strcmp(source, "``a`b``"));
+    text = find_kind(s, XUI_DOCUMENT_ROOT, XUI_DOC_TEXT); expect_text(s, text, "a`b"); xuiDocumentSnapshotRelease(s);
+    /* Invalid UTF-8 still poisons the transaction and cannot partially edit. */
+    revision = xuiDocumentGetRevision(d); CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK);
+    CHECK(xuiDocumentTxnReplaceText(t, text, 0, 3, "\xff", 1) == XUI_DOC_ERROR_UTF8);
+    CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_DOC_ERROR_UTF8); xuiDocumentTxnRelease(t);
+    CHECK(xuiDocumentGetRevision(d) == revision && xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
+    CHECK(xuiDocumentSnapshotCopySource(s, source, sizeof(source), &n) == XUI_OK && !strcmp(source, "``a`b``"));
+    xuiDocumentSnapshotRelease(s); xuiDocumentSnapshotRelease(before); xuiDocumentRelease(d);
 }
 static void structural_commands(void)
 {
@@ -6399,7 +6422,7 @@ static void markdown_nested_reference_patch(void)
     } cases[] = {
         {"- outer\n  - [unused]: /retain \"title\"\n\n    abcd\n",
             "  - [unused]: /retain \"title\"\n",
-            "- outer\n  - [unused]: /retain \"title\"\n\n    ab\n    \n    cd\n    \n", 0},
+            "- outer\n  - [unused]: /retain \"title\"\n\n    ab\n\n    cd\n", 0},
         {"> - [unused]: /retain \"title\"\n>\n>   abcd\n",
             "> - [unused]: /retain \"title\"\n", NULL, 0},
         {"- outer\n  > [unused]: /retain \"title\"\n  >\n  > abcd\n",
@@ -6673,13 +6696,13 @@ static void markdown_quote_reference_rewrite(void)
         uint64_t paragraphs;
     } cases[] = {
         {"> [unused]: /retain \"title\"\n>\n> abcd\n",
-            "> [unused]: /retain \"title\"\n>\n> ab\n> \n> cd\n> \n",
+            "> [unused]: /retain \"title\"\n>\n> ab\n>\n> cd\n",
             "> [unused]: /retain \"title\"\n", 2},
         {"> abcd\n>\n> [unused]: /retain \"title\"\n",
-            ">\n> [unused]: /retain \"title\"\n> ab\n> \n> cd\n> \n",
+            "> ab\n>\n> cd\n>\n> [unused]: /retain \"title\"\n",
             "> [unused]: /retain \"title\"\n", 2},
         {"> abcd\n>\n> [unused]: /retain \"title\"\n>\n> tail\n",
-            ">\n> [unused]: /retain \"title\"\n>\n> ab\n> \n> cd\n> \n> tail\n> \n",
+            "> ab\n>\n> cd\n>\n> [unused]: /retain \"title\"\n>\n> tail\n",
             "> [unused]: /retain \"title\"\n", 3},
         {"> [unused]: /retain \"title\"\r\n>\r\n> abcd\r\n",
             NULL, "> [unused]: /retain \"title\"\r\n", 2}
@@ -6761,18 +6784,18 @@ static void markdown_list_reference_rewrite(void)
         uint64_t items, target;
     } cases[] = {
         {"- [unused]: /retain \"title\"\n\n  abcd\n",
-            "- [unused]: /retain \"title\"\n\n  ab\n  \n  cd\n  \n",
+            "- [unused]: /retain \"title\"\n\n  ab\n\n  cd\n",
             "- [unused]: /retain \"title\"\n", 1, 0},
         {"1. [unused]: /retain \"title\"\n\n   abcd\n",
-            "1. [unused]: /retain \"title\"\n\n   ab\n   \n   cd\n   \n",
+            "1. [unused]: /retain \"title\"\n\n   ab\n\n   cd\n",
             "1. [unused]: /retain \"title\"\n", 1, 0},
         {"- [unused]: /retain \"title\"\n\n  abcd\n- tail\n",
-            "- [unused]: /retain \"title\"\n\n  ab\n  \n  cd\n  \n- tail\n  \n",
+            "- [unused]: /retain \"title\"\n\n  ab\n\n  cd\n- tail\n",
             "- [unused]: /retain \"title\"\n", 2, 0},
         {"- [unused]: /retain \"title\"\r\n\r\n  abcd\r\n",
             NULL, "- [unused]: /retain \"title\"\r\n", 1, 0},
         {"- first\n- [unused]: /retain \"title\"\n\n  abcd\n",
-            "- first\n  \n- [unused]: /retain \"title\"\n\n  ab\n  \n  cd\n  \n",
+            "- first\n- [unused]: /retain \"title\"\n\n  ab\n\n  cd\n",
             "- [unused]: /retain \"title\"\n", 2, 1},
         {"1. first\n2. [unused]: /retain \"title\"\n\n   abcd\n",
             NULL, "2. [unused]: /retain \"title\"\n", 2, 1}
@@ -6860,7 +6883,7 @@ static void markdown_trailing_list_reference_rewrite(void)
         unsigned flags; uint64_t items;
     } cases[] = {
         {"- abcd\n\n  [ref]: /target\n",
-            "- ab\n  \n  cd\n  \n\n  [ref]: /target\n",
+            "- ab\n\n  cd\n\n  [ref]: /target\n",
             "  [ref]: /target\n", 0, 1},
         {"- [ ] task\n\n  [ref]: /target\n\n  abcd\n",
             NULL, "  [ref]: /target\n", XUI_DOC_TASK, 1},
@@ -6935,13 +6958,13 @@ static void markdown_container_reference_failures(void)
         "- outer\n  - ab\n\n    [unused]: /retain \"title\"\n\n    cd\n"
     };
     const char* expected[] = {
-        "> [unused]: /retain \"title\"\n>\n> ab\n> \n> cd\n> \n",
-        "- [unused]: /retain \"title\"\n\n  ab\n  \n  cd\n  \n",
+        "> [unused]: /retain \"title\"\n>\n> ab\n>\n> cd\n",
+        "- [unused]: /retain \"title\"\n\n  ab\n\n  cd\n",
         NULL,
         NULL,
         NULL,
         NULL,
-        "- outer\n  - [unused]: /retain \"title\"\n\n    ab\n    \n    cd\n    \n",
+        "- outer\n  - [unused]: /retain \"title\"\n\n    ab\n\n    cd\n",
         NULL,
         NULL,
         NULL,
@@ -7941,7 +7964,7 @@ static void markdown_cross_block_source_patch(void)
                 "body[^n]\n\n  > [^n]: left &amp; JOIN\n  >\n  >     MORE &amp; right\n"},
             {"body[^n]\n\n[^n]: left [r] &amp; keep\n\n    [r]: /raw \"T\"\n\n    second &amp; right\n",
                 "JOIN\nMORE",
-                "body[^n]\n\n[^n]: left [r] &amp; JOIN\n\n    MORE &amp; right\n"}
+                "body[^n]\n\n[^n]: left [r] &amp; JOIN\n\n    MORE &amp; right\n\n    [r]: /raw \"T\"\n\n"}
         };
         unsigned sample;
         for (sample = 0; sample < sizeof(multiline) / sizeof(*multiline); sample++) {
@@ -7957,14 +7980,24 @@ static void markdown_cross_block_source_patch(void)
                 xui_document_snapshot source_snapshot;
                 xui_doc_range_t visible;
                 xui_doc_source_info_t source_info = {0};
-                uint64_t count = 0;
+                uint64_t count = 0; int quality;
+                xui_doc_position_t reference_position;
+                xui_doc_node_info_t reference_node = {0};
+                const char* reference_use = strstr(input, "[r]");
                 CHECK(xuiDocumentAcquireSnapshot(d, &source_snapshot) == XUI_OK);
                 source_info.iSize = sizeof(source_info);
                 CHECK(xuiDocumentSnapshotGetSourceInfo(source_snapshot,
                     &source_info) == XUI_OK &&
-                    source_info.iReferenceDefinitionCount == 1);
+                    source_info.iReferenceDefinitionCount == 2);
                 CHECK(xuiDocumentSnapshotFind(source_snapshot, XUI_DOC_SEMANTIC,
-                    "/raw", 4, NULL, &visible, 1, &count) == XUI_OK && count == 1);
+                    "/raw", 4, NULL, &visible, 1, &count) == XUI_OK && count == 0);
+                CHECK(reference_use && xuiDocumentSourceToPosition(source_snapshot,
+                    (uint64_t)(reference_use - input) + 1, &reference_position, &quality) == XUI_OK &&
+                    quality == XUI_DOC_MAP_EXACT && reference_position.iKind == XUI_DOC_POSITION_TEXT);
+                reference_node.iSize = sizeof(reference_node);
+                CHECK(xuiDocumentSnapshotGetNode(source_snapshot, reference_position.iNodeId,
+                    &reference_node) == XUI_OK && reference_node.tAttributes.iMarks == XUI_DOC_LINK &&
+                    !strcmp(reference_node.sResource, "/raw") && !strcmp(reference_node.sTitle, "T"));
                 xuiDocumentSnapshotRelease(source_snapshot);
             }
             range.tAnchor = test_find(d, "keep").tAnchor;
@@ -8286,9 +8319,9 @@ static void markdown_cross_block_source_patch(void)
             {"body[^n]\n\n[^n]: left &amp; keep\n\n    second &amp; right\n",
                 "body[^n]\n\n[^n]: left &amp; JOIN &amp; right\n"},
             {"body[^n]\n\n[^n]: left &amp; keep\n\n    [unused]: /raw \"T\"\n\n    second &amp; right\n",
-                "body[^n]\n\n[^n]: left &amp; JOIN &amp; right\n"},
+                "body[^n]\n\n[^n]: left &amp; JOIN &amp; right\n\n    [unused]: /raw \"T\"\n\n"},
             {"body[^n]\n\n[^n]: intro\n\n    > left &amp; keep\n    >\n    > [unused]: /raw \"T\"\n    >\n    > second &amp; right\n",
-                "body[^n]\n\n[^n]: intro\n\n    > left &amp; JOIN &amp; right\n"},
+                "body[^n]\n\n[^n]: intro\n\n    > left &amp; JOIN &amp; right\n    >\n    > [unused]: /raw \"T\"\n    >\n"},
             {"body[^n]\n\n[^n]: left &amp; keep\n\n    second &amp; right\n\n[other]: /raw \"T\"\n",
                 "body[^n]\n\n[^n]: left &amp; JOIN &amp; right\n\n[other]: /raw \"T\"\n"},
             {"body[^n]\r\n\r\n[^n]: left &amp; keep\r\n\r\n    second &amp; right\r\n",
@@ -8299,7 +8332,17 @@ static void markdown_cross_block_source_patch(void)
             xui_document_transaction t; xui_document_snapshot current, reloaded;
             xui_doc_range_t left = test_find(d, "keep"), right = test_find(d, "second"), range;
             xui_doc_position_t caret;
-            if (i == 1 || i == 2) CHECK(test_find(d, "unused").tAnchor.iNodeId);
+            if (i == 1 || i == 2) {
+                xui_doc_source_info_t source_info = {0}; xui_doc_range_t hidden;
+                xui_document_snapshot before; uint64_t count;
+                source_info.iSize = sizeof(source_info);
+                CHECK(xuiDocumentAcquireSnapshot(d, &before) == XUI_OK &&
+                    xuiDocumentSnapshotGetSourceInfo(before, &source_info) == XUI_OK &&
+                    source_info.iReferenceDefinitionCount == 2);
+                CHECK(xuiDocumentSnapshotFind(before, XUI_DOC_SEMANTIC, "unused", 6,
+                    NULL, &hidden, 1, &count) == XUI_OK && count == 0);
+                xuiDocumentSnapshotRelease(before);
+            }
             range.tAnchor = left.tAnchor; range.tCaret = right.tCaret;
             CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK);
             CHECK(xuiDocumentTxnReplaceRange(t, &range, "JOIN", 4, &caret) == XUI_OK);
@@ -8307,6 +8350,11 @@ static void markdown_cross_block_source_patch(void)
             test_source(d, footnotes[i].expected, 1);
             parsed = test_markdown_open(footnotes[i].expected);
             CHECK(xuiDocumentAcquireSnapshot(d, &current) == XUI_OK);
+            if (i == 1 || i == 2) {
+                xui_doc_source_info_t source_info = {0}; source_info.iSize = sizeof(source_info);
+                CHECK(xuiDocumentSnapshotGetSourceInfo(current, &source_info) == XUI_OK &&
+                    source_info.iReferenceDefinitionCount == 2);
+            }
             CHECK(xuiDocumentAcquireSnapshot(parsed, &reloaded) == XUI_OK);
             expect_same_syntax(current, reloaded);
             xuiDocumentSnapshotRelease(reloaded); xuiDocumentSnapshotRelease(current);
@@ -9225,12 +9273,16 @@ static void inline_source_syntax(void)
     {
         const char* forms = "[Foo][] [Foo] [x][foo] ![Foo][] [i](u) <https://x.test> https://y.test\n\n[foo]: <dest> \"\"\n";
         uint64_t i; d = test_markdown_open(forms); CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
-        CHECK(xuiDocumentSnapshotGetSourceInfo(s, &info) == XUI_OK && info.iInlineSyntaxCount == 7 && info.iReferenceDefinitionCount == 1);
-        for (i = 0; i < 7; i++) {
+        CHECK(xuiDocumentSnapshotGetSourceInfo(s, &info) == XUI_OK && info.iInlineSyntaxCount == 8 && info.iReferenceDefinitionCount == 1);
+        for (i = 0; i < 8; i++) {
             xui_doc_inline_syntax_t span = {0}; span.iSize = sizeof(span);
             CHECK(xuiDocumentSnapshotGetInlineSyntax(s, i, &span) == XUI_OK);
             CHECK(span.iDefinitionIndex == (i < 4 ? 0 : UINT64_MAX));
-            CHECK(!!(span.iFlags & XUI_DOC_SYNTAX_AUTOLINK) == (i >= 5));
+            CHECK(!!(span.iFlags & XUI_DOC_SYNTAX_AUTOLINK) == (i >= 6));
+            if (i == 5) CHECK(span.iKind == XUI_DOC_SYNTAX_DESTINATION && span.iParentIndex == 4 &&
+                span.iSourceStart == (uint64_t)(strstr(forms, "(u)") - forms) + 1 &&
+                span.iSourceEnd == span.iSourceStart + 1 && span.iContentStart == span.iSourceStart &&
+                span.iContentEnd == span.iSourceEnd);
         }
         CHECK(xuiDocumentSnapshotGetReferenceDefinition(s, 0, &definition) == XUI_OK);
         CHECK(definition.iTitleStart != UINT64_MAX && definition.iTitleStart == definition.iTitleEnd);

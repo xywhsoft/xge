@@ -2,6 +2,7 @@
 #if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
 #include "xui_document_css_named_colors.h"
+#include "xui_document_html_legacy_entities.h"
 #include "../lib/md4c/entity.h"
 #include <ctype.h>
 #include <math.h>
@@ -12,11 +13,16 @@
 /* Clipboard HTML is untrusted. This importer interprets a small structural
  * vocabulary, ignores active elements, and lets the normal Document schema
  * validate the resulting private Rich transaction before publication. */
+typedef struct doc_html_growing_cell {
+    uint64_t id, row;
+} doc_html_growing_cell;
 typedef struct doc_html_table_context {
     struct doc_html_table_context* previous;
     uint64_t id;
     float* widths;
     uint32_t count, capacity;
+    doc_html_growing_cell* growing;
+    size_t growing_count, growing_capacity;
 } doc_html_table_context;
 typedef struct doc_html_input {
     const char* html;
@@ -72,48 +78,127 @@ static int doc_html_buffer_codepoint(doc_html_buffer* b, unsigned c)
     }
     return doc_html_buffer_add(b, bytes, n);
 }
-static int doc_html_decode(const char* s, size_t n, char** out, size_t* length)
+/* HTML numeric references accept a digit prefix and an optional semicolon.
+ * Keep consuming digits after saturation: arbitrarily long values become the
+ * replacement character without overflowing unsigned or leaking their suffix. */
+static int doc_html_numeric_reference(const char* s, size_t n, size_t start,
+    size_t* end, unsigned* codepoint)
+{
+    static const unsigned short c1[32] = {
+        0x20ac, 0x0081, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
+        0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008d, 0x017d, 0x008f,
+        0x0090, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+        0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x009d, 0x017e, 0x0178
+    };
+    size_t at, digits;
+    unsigned value = 0, base = 10;
+    if (n - start < 3 || s[start + 1] != '#') return 0;
+    at = start + 2;
+    if (s[at] == 'x' || s[at] == 'X') { base = 16; at++; }
+    digits = at;
+    while (at < n) {
+        unsigned char ch = (unsigned char)s[at];
+        unsigned digit = ch >= '0' && ch <= '9' ? ch - '0' :
+            ch >= 'a' && ch <= 'f' ? ch - 'a' + 10 :
+            ch >= 'A' && ch <= 'F' ? ch - 'A' + 10 : 16;
+        if (digit >= base) break;
+        if (value > (0x10ffffu - digit) / base) value = 0x110000u;
+        else value = value * base + digit;
+        at++;
+    }
+    if (at == digits) return 0;
+    if (at < n && s[at] == ';') at++;
+    if (value >= 0x80 && value <= 0x9f) value = c1[value - 0x80];
+    *end = at; *codepoint = value; return 1;
+}
+
+static int doc_html_reference_alnum(unsigned char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9');
+}
+static int doc_html_legacy_name(const char* name)
+{
+    size_t low = 0, high = sizeof(doc_html_legacy_entities) /
+        sizeof(doc_html_legacy_entities[0]);
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        int order = strcmp(name, doc_html_legacy_entities[middle]);
+        if (!order) return 1;
+        if (order < 0) high = middle;
+        else low = middle + 1;
+    }
+    return 0;
+}
+/* Longest named match, bounded by the standard's 31-character name limit.
+ * The attribute exception applies to the longest match itself; it must not
+ * fall back to a shorter legacy prefix when followed by '=' or ASCII alnum. */
+static const ENTITY* doc_html_named_reference(const char* s, size_t n,
+    size_t start, int attribute, size_t* end)
+{
+    char name[34];
+    size_t at = start + 1, best_end = 0;
+    const ENTITY* best = NULL;
+    while (at < n && at - start < 32 &&
+        doc_html_reference_alnum((unsigned char)s[at])) {
+        size_t length;
+        const ENTITY* entity;
+        at++; length = at - start;
+        if (at < n && s[at] == ';') {
+            entity = entity_lookup(s + start, length + 1);
+            if (entity && strlen(entity->name) == length + 1) {
+                best = entity; best_end = at + 1;
+            }
+            break;
+        }
+        memcpy(name, s + start, length);
+        name[length] = ';'; name[length + 1] = 0;
+        if (doc_html_legacy_name(name)) {
+            entity = entity_lookup(name, length + 1);
+            if (entity && strlen(entity->name) == length + 1) {
+                best = entity; best_end = at;
+            }
+        }
+    }
+    if (best && attribute && s[best_end - 1] != ';' && best_end < n &&
+        (s[best_end] == '=' || doc_html_reference_alnum((unsigned char)s[best_end])))
+        return NULL;
+    if (best) *end = best_end;
+    return best;
+}
+
+static int doc_html_decode(const char* s, size_t n, int attribute, char** out, size_t* length)
 {
     doc_html_buffer b = {0}; size_t i = 0;
     int result = XUI_OK;
     *out = NULL; *length = 0;
     while (i < n && result == XUI_OK) {
-        size_t end;
+        size_t end; unsigned codepoint;
+        /* Normalize literal input before character-reference expansion.
+         * A CR produced by &#13; is semantic content and must remain a CR. */
+        if (s[i] == '\r') {
+            i++;
+            if (i < n && s[i] == '\n') i++;
+            result = doc_html_buffer_add(&b, "\n", 1);
+            continue;
+        }
         if (s[i] != '&') {
             size_t start = i++;
-            while (i < n && s[i] != '&') i++;
+            while (i < n && s[i] != '&' && s[i] != '\r') i++;
             result = doc_html_buffer_add(&b, s + start, i - start);
             continue;
         }
-        end = i + 1;
-        while (end < n && end - i <= 33 && s[end] != ';' && s[end] != '&' && s[end] != '<') end++;
-        if (end < n && s[end] == ';') {
-            if (i + 2 < end && s[i + 1] == '#') {
-                size_t j = i + 2; unsigned value = 0;
-                unsigned base = j < end && (s[j] == 'x' || s[j] == 'X') ? 16 : 10;
-                int valid = 1;
-                if (base == 16) j++;
-                if (j == end) valid = 0;
-                for (; valid && j < end; j++) {
-                    unsigned char ch = (unsigned char)s[j];
-                    unsigned digit = ch >= '0' && ch <= '9' ? ch - '0' :
-                        ch >= 'a' && ch <= 'f' ? ch - 'a' + 10 :
-                        ch >= 'A' && ch <= 'F' ? ch - 'A' + 10 : 16;
-                    if (digit >= base || value > (0x10ffffu - digit) / base) valid = 0;
-                    else value = value * base + digit;
-                }
-                if (valid) {
-                    result = doc_html_buffer_codepoint(&b, value);
-                    i = end + 1; continue;
-                }
-            } else {
-                const ENTITY* entity = entity_lookup(s + i, end - i + 1);
-                if (entity) {
-                    result = doc_html_buffer_codepoint(&b, entity->codepoints[0]);
-                    if (result == XUI_OK && entity->codepoints[1])
-                        result = doc_html_buffer_codepoint(&b, entity->codepoints[1]);
-                    i = end + 1; continue;
-                }
+        if (doc_html_numeric_reference(s, n, i, &end, &codepoint)) {
+            result = doc_html_buffer_codepoint(&b, codepoint);
+            i = end; continue;
+        }
+        {
+            const ENTITY* entity = doc_html_named_reference(s, n, i, attribute, &end);
+            if (entity) {
+                result = doc_html_buffer_codepoint(&b, entity->codepoints[0]);
+                if (result == XUI_OK && entity->codepoints[1])
+                    result = doc_html_buffer_codepoint(&b, entity->codepoints[1]);
+                i = end; continue;
             }
         }
         result = doc_html_buffer_add(&b, s + i, 1); i++;
@@ -223,7 +308,7 @@ static int doc_html_attr_read(const doc_html_input* p, const doc_html_tag* tag,
                 if ((unsigned char)tolower((unsigned char)p->html[start + j]) != (unsigned char)wanted[j]) break;
             if (j == i - start) {
                 size_t length;
-                return doc_html_decode(p->html + value_start, value_end - value_start, out, &length);
+                return doc_html_decode(p->html + value_start, value_end - value_start, 1, out, &length);
             }
         }
     }
@@ -267,6 +352,117 @@ static int doc_html_attr_u32_strict(const doc_html_input* p,
     if (result == XUI_OK) *out = (uint32_t)number;
     free(value);
     return result;
+}
+/* HTML table attributes use the integer parsing rules, not strict authoring
+ * syntax: skip ASCII whitespace, allow a sign, then consume the digit prefix.
+ * Saturating at the HTML bound avoids platform-dependent strtoul overflow.
+ * A negative zero is zero; a negative nonzero value is a parse error. */
+static int doc_html_table_integer(const char* value, uint32_t maximum,
+    uint32_t* out)
+{
+    const unsigned char* at = (const unsigned char*)value;
+    uint32_t number = 0;
+    int negative = 0;
+    while (doc_html_space(*at)) at++;
+    if (*at == '+' || *at == '-') { negative = *at == '-'; at++; }
+    if (*at < '0' || *at > '9') return 0;
+    while (*at >= '0' && *at <= '9') {
+        unsigned digit = *at++ - '0';
+        if (number > (maximum - digit) / 10u) number = maximum;
+        else number = number * 10u + digit;
+    }
+    if (negative && number) return 0;
+    *out = number;
+    return 1;
+}
+static int doc_html_attr_table_number(const doc_html_input* p,
+    const doc_html_tag* tag, const char* wanted, uint32_t maximum,
+    int allow_zero, uint32_t* out)
+{
+    char* value = NULL;
+    uint32_t number = 0;
+    int result = doc_html_attr_read(p, tag, wanted, &value);
+    *out = 1;
+    if (result == XUI_OK && value &&
+        doc_html_table_integer(value, maximum, &number) && (number || allow_zero))
+        *out = number;
+    free(value);
+    return result;
+}
+/* Zero row spans grow within the current row group. Positive values that
+ * exceed the native schema must fail explicitly, never silently become one. */
+static int doc_html_attr_rowspan(const doc_html_input* p,
+    const doc_html_tag* tag, uint32_t* out, int* grows)
+{
+    uint32_t number = 1;
+    int result = doc_html_attr_table_number(p, tag, "rowspan", 65534, 1, &number);
+    *out = 1; *grows = 0;
+    if (result != XUI_OK) return result;
+    if (number > 1024) return XUI_DOC_ERROR_LIMIT;
+    *grows = number == 0;
+    *out = number ? number : 1;
+    return XUI_OK;
+}
+static int doc_html_row_group(const char* name)
+{
+    return !strcmp(name, "thead") || !strcmp(name, "tbody") ||
+        !strcmp(name, "tfoot");
+}
+static int doc_html_growing_cell_add(doc_html_input* p, uint64_t row_id,
+    uint64_t cell_id)
+{
+    doc_html_table_context* table = p->table;
+    doc_node* row = doc_index_get(p->transaction->draft->index, row_id);
+    doc_node* parent;
+    uint64_t index;
+    if (!table || !row || row->parent != table->id)
+        return XUI_DOC_ERROR_SCHEMA;
+    parent = doc_index_get(p->transaction->draft->index, table->id);
+    if (!parent) return XUI_DOC_ERROR_SCHEMA;
+    index = doc_child_index(parent, row_id);
+    if (index == DOC_NONE) return XUI_DOC_ERROR_SCHEMA;
+    if (table->growing_count == table->growing_capacity) {
+        size_t capacity = table->growing_capacity ? table->growing_capacity : 8;
+        doc_html_growing_cell* cells;
+        if (table->growing_capacity) {
+            if (capacity > SIZE_MAX / 2) return XUI_DOC_ERROR_LIMIT;
+            capacity *= 2;
+        }
+        if (capacity > SIZE_MAX / sizeof(*cells)) return XUI_DOC_ERROR_LIMIT;
+        cells = doc_realloc(p->transaction->draft->allocator, table->growing,
+            capacity * sizeof(*cells));
+        if (!cells) return XUI_ERROR_OUT_OF_MEMORY;
+        table->growing = cells; table->growing_capacity = capacity;
+    }
+    table->growing[table->growing_count++] =
+        (doc_html_growing_cell){cell_id, index};
+    return XUI_OK;
+}
+static int doc_html_row_group_finish(doc_html_input* p)
+{
+    doc_html_table_context* table = p->table;
+    doc_node* parent;
+    uint64_t rows;
+    size_t i;
+    if (!table || !table->growing_count) return XUI_OK;
+    parent = doc_index_get(p->transaction->draft->index, table->id);
+    if (!parent) return XUI_DOC_ERROR_SCHEMA;
+    rows = doc_seq_size(parent->children);
+    for (i = 0; i < table->growing_count; i++) {
+        doc_html_growing_cell* entry = &table->growing[i];
+        doc_node* cell = doc_index_get(p->transaction->draft->index, entry->id);
+        xui_doc_attributes_t attrs;
+        int result;
+        if (!cell || cell->kind != XUI_DOC_CELL || entry->row >= rows)
+            return XUI_DOC_ERROR_SCHEMA;
+        if (rows - entry->row > 1024) return XUI_DOC_ERROR_LIMIT;
+        attrs = *cell->attrs;
+        attrs.iRowSpan = (uint32_t)(rows - entry->row);
+        result = xuiDocumentTxnSetAttributes(p->transaction, entry->id, &attrs);
+        if (result != XUI_OK) return result;
+    }
+    table->growing_count = 0;
+    return XUI_OK;
 }
 static int doc_html_css_name(const char* source, size_t bytes, const char* wanted)
 {
@@ -964,7 +1160,7 @@ static int doc_html_column(doc_html_input* p, const doc_html_tag* tag)
     float width = 0;
     int result;
     if (!table) return XUI_DOC_ERROR_SCHEMA;
-    result = doc_html_attr_number(p, tag, "span", 1, 1024, &span);
+    result = doc_html_attr_table_number(p, tag, "span", 1000, 0, &span);
     if (result != XUI_OK) return result;
     if (span > 1024 - table->count) return XUI_DOC_ERROR_LIMIT;
     result = doc_html_attr_read(p, tag, "style", &style);
@@ -1011,7 +1207,7 @@ static int doc_html_object_content(doc_html_input* p, const char* closing,
             int result;
             while (p->at < p->size && p->html[p->at] != '<') p->at++;
             result = doc_html_decode(p->html + start, p->at - start,
-                &decoded, &length);
+                 0, &decoded, &length);
             if (result == XUI_OK)
                 result = doc_html_buffer_add(body, decoded, length);
             free(decoded);
@@ -1201,7 +1397,7 @@ static int doc_html_parse_inline(doc_html_input* p, uint64_t parent,
             size_t start = p->at, length; char* decoded = NULL;
             int result;
             while (p->at < p->size && p->html[p->at] != '<') p->at++;
-            result = doc_html_decode(p->html + start, p->at - start, &decoded, &length);
+            result = doc_html_decode(p->html + start, p->at - start,  0, &decoded, &length);
             if (result == XUI_OK && length)
                 result = doc_html_insert(p, parent, XUI_DOC_TEXT, &attrs,
                     decoded, length, link, NULL, link_title, NULL);
@@ -1227,13 +1423,18 @@ static int doc_html_parse_inline(doc_html_input* p, uint64_t parent,
 static int doc_html_pre_content(doc_html_input* p, doc_html_buffer* text,
     char** language, char natural_language[256])
 {
+    int first_token = 1;
     while (p->at < p->size) {
         if (p->html[p->at] != '<') {
             size_t start = p->at, length; char* decoded = NULL;
             int result;
             while (p->at < p->size && p->html[p->at] != '<') p->at++;
-            result = doc_html_decode(p->html + start, p->at - start, &decoded, &length);
-            if (result == XUI_OK) result = doc_html_buffer_add(text, decoded, length);
+            result = doc_html_decode(p->html + start, p->at - start,  0, &decoded, &length);
+            if (result == XUI_OK) {
+                size_t skip = first_token && length && decoded[0] == '\n';
+                result = doc_html_buffer_add(text, decoded + skip, length - skip);
+                first_token = 0;
+            }
             free(decoded);
             if (result != XUI_OK) return result;
         } else {
@@ -1241,6 +1442,9 @@ static int doc_html_pre_content(doc_html_input* p, doc_html_buffer* text,
             int result = doc_html_tag_read(p, &tag);
             if (result != XUI_OK) return result;
             if (tag.closing && !strcmp(tag.name, "pre")) return XUI_OK;
+            /* A tag or comment consumes the first-token exception. A newline
+             * inside <code>, or following a comment, is real content. */
+            first_token = 0;
             if (!tag.closing && !strcmp(tag.name, "code") && !*language)
                 result = doc_html_attr_read(p, &tag, "data-language", language);
             if (!tag.closing && !strcmp(tag.name, "code") && tag.language[0])
@@ -1265,7 +1469,7 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
             size_t start = p->at, length, i; char* decoded = NULL;
             int result;
             while (p->at < p->size && p->html[p->at] != '<') p->at++;
-            result = doc_html_decode(p->html + start, p->at - start, &decoded, &length);
+            result = doc_html_decode(p->html + start, p->at - start,  0, &decoded, &length);
             if (result != XUI_OK) return result;
             for (i = 0; i < length && doc_html_space((unsigned char)decoded[i]); i++) {}
             if (length && (i < length || implicit)) {
@@ -1299,6 +1503,12 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
                 if (closing && !strcmp(tag.name, closing)) return XUI_OK;
                 if (closing) { p->at = before; return XUI_OK; }
                 continue;
+            }
+            /* A row-group end tag may be omitted before the next group.
+             * Leave its opening tag for the table-level caller. */
+            if (closing && doc_html_row_group(closing) &&
+                doc_html_row_group(tag.name)) {
+                p->at = before; return XUI_OK;
             }
             if (doc_html_active(tag.name)) {
                 result = tag.empty ? XUI_OK : doc_html_skip_active(p, tag.name);
@@ -1375,12 +1585,18 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
                 !strcmp(tag.name, "thead") || !strcmp(tag.name, "tbody") ||
                 !strcmp(tag.name, "tfoot")) {
                 xui_doc_attributes_t child_style;
+                int row_group = parent_kind == XUI_DOC_TABLE && p->table &&
+                    p->table->id == parent && doc_html_row_group(tag.name);
                 implicit = 0;
-                result = doc_html_tag_inherited_style(p, &tag,
-                    inherited, &child_style);
+                if (row_group) result = doc_html_row_group_finish(p);
+                if (result == XUI_OK)
+                    result = doc_html_tag_inherited_style(p, &tag,
+                        inherited, &child_style);
                 if (result == XUI_OK && !tag.empty)
                     result = doc_html_parse_blocks(p, parent,
                         parent_kind, tag.name, child_style, depth + 1);
+                if (result == XUI_OK && row_group)
+                    result = doc_html_row_group_finish(p);
             } else if (!strcmp(tag.name, "p") ||
                 (tag.name[0] == 'h' && tag.name[1] >= '1' &&
                 tag.name[1] <= '6' && !tag.name[2])) {
@@ -1446,6 +1662,7 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
                         tag.name, child_style, depth + 1);
                 if (kind == XUI_DOC_TABLE && p->table == &table) {
                     uint32_t column, columns = 0;
+                    if (result == XUI_OK) result = doc_html_row_group_finish(p);
                     p->table = table.previous;
                     if (result == XUI_OK)
                         columns = doc_table_column_count(p->transaction->draft,
@@ -1456,6 +1673,7 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
                             result = xuiDocumentTxnSetTableColumnWidth(
                                 p->transaction, block, column, table.widths[column]);
                     free(table.widths);
+                    doc_free(table.growing);
                 }
             } else if (!strcmp(tag.name, "li") && parent_kind == XUI_DOC_LIST) {
                 xui_doc_attributes_t attrs = {0};
@@ -1498,11 +1716,11 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
                 parent_kind == XUI_DOC_ROW) {
                 xui_doc_attributes_t attrs = {0}; uint64_t cell = 0;
                 xui_doc_attributes_t child_style;
-                result = doc_html_attr_number(p, &tag, "rowspan", 1, 1024,
-                    &attrs.iRowSpan);
+                int grows = 0;
+                result = doc_html_attr_rowspan(p, &tag, &attrs.iRowSpan, &grows);
                 if (result == XUI_OK)
-                    result = doc_html_attr_number(p, &tag, "colspan", 1,
-                        1024, &attrs.iColumnSpan);
+                    result = doc_html_attr_table_number(p, &tag, "colspan",
+                        1000, 0, &attrs.iColumnSpan);
                 if (result != XUI_OK) return result;
                 if (!strcmp(tag.name, "th")) attrs.iFlags |= XUI_DOC_HEADER;
                 result = doc_html_tag_cell_style(p, &tag,
@@ -1510,6 +1728,8 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
                 if (result == XUI_OK)
                     result = doc_html_insert(p, parent, XUI_DOC_CELL, &attrs,
                         NULL, 0, NULL, NULL, NULL, &cell);
+                if (result == XUI_OK && grows)
+                    result = doc_html_growing_cell_add(p, parent, cell);
                 if (result == XUI_OK && !tag.empty)
                     result = doc_html_parse_blocks(p, cell, XUI_DOC_CELL,
                         tag.name, child_style, depth + 1);

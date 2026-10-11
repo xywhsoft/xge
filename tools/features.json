@@ -2,6 +2,7 @@
   "xui_sources": {
     "lib/xlayout/xlayout.c": "XGE_ENABLE_XUI",
     "src/xui_core.c": "XGE_ENABLE_XUI",
+    "src/xui_native_accessibility.c": "XGE_ENABLE_XUI",
     "src/xui_widget.c": "XGE_ENABLE_XUI",
     "src/xui_layout.c": "XGE_ENABLE_XUI",
     "src/xui_input.c": "XGE_ENABLE_XUI",

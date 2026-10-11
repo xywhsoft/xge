@@ -39,6 +39,30 @@ call test_xui\build_document_object_break_origin_test.bat
 if errorlevel 1 exit /b 1
 call test_xui\build_document_text_origin_test.bat
 if errorlevel 1 exit /b 1
+call test_xui\build_document_fence_boundary_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_inline_whitespace_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_nested_image_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_image_field_source_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_link_field_cst_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_link_command_fields_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_link_owner_fields_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_unlink_fields_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_source_index_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_cst_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_prefix_binding_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_source_working_test.bat
+if errorlevel 1 exit /b 1
 call test_xui\build_document_quote_unwrap_source_test.bat
 if errorlevel 1 exit /b 1
 call test_xui\build_document_quote_boundary_test.bat
@@ -129,6 +153,16 @@ call test_xui\build_document_table_geometry_test.bat
 if %errorlevel% neq 0 exit /b 1
 call test_xui\build_document_editor_test.bat
 if %errorlevel% neq 0 exit /b 1
+call test_xui\build_document_accessible_text_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_visual_prepared_text_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_native_accessibility_test.bat
+if %errorlevel% neq 0 exit /b 1
+call test_xui\build_native_accessibility_xge_test.bat
+if errorlevel 1 exit /b 1
+call test_xui\build_document_join_editor_test.bat
+if errorlevel 1 exit /b 1
 call test\build_clipboard_win32_test.bat
 if %errorlevel% neq 0 exit /b 1
 call test_xui\build_document_dib_paste_test.bat
@@ -145,6 +179,19 @@ build\xui_document.exe --verify-async
 if %errorlevel% neq 0 exit /b 1
 build\xui_document.exe --verify-image-placeholder
 if %errorlevel% neq 0 exit /b 1
+rem The permanent move tests use fresh output directories on every suite run.
+if not defined XUI_DOCUMENT_MOVE_OUT_DIR set "XUI_DOCUMENT_MOVE_OUT_DIR=build\document\moves-%RANDOM%-%RANDOM%"
+python test_xui\build_document_move_test.py --variant normal --out-dir "%XUI_DOCUMENT_MOVE_OUT_DIR%\block-normal"
+if errorlevel 1 exit /b 1
+python test_xui\build_document_move_test.py --variant collision --out-dir "%XUI_DOCUMENT_MOVE_OUT_DIR%\block-collision"
+if errorlevel 1 exit /b 1
+python test_xui\build_document_container_move_test.py --variant normal --out-dir "%XUI_DOCUMENT_MOVE_OUT_DIR%\container-normal"
+if errorlevel 1 exit /b 1
+python test_xui\build_document_container_move_test.py --variant collision --out-dir "%XUI_DOCUMENT_MOVE_OUT_DIR%\container-collision"
+if errorlevel 1 exit /b 1
+python test_xui\build_document_editor_suite.py --build-dir build --out-dir "%XUI_DOCUMENT_MOVE_OUT_DIR%\editor-suite"
+if errorlevel 1 exit /b 1
+
 echo Document core, DLL, renderer, editor and native rendering checks passed.
 if "%~1"=="" echo CommonMark corpus was not supplied; its check was skipped.
 exit /b 0

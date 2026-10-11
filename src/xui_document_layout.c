@@ -218,7 +218,7 @@ void doc_render_block_reflow(doc_render_block* b)
     b->reflow = 1;
     b->cache_bytes = doc_render_block_cache_bytes(b);
 }
-static xui_font doc_layout_font(xui_document_renderer r, const xui_doc_attributes_t* a, uint32_t heading)
+xui_font doc_layout_text_font(xui_document_renderer r, const xui_doc_attributes_t* a, uint32_t heading)
 {
     xui_font source = r->desc.tFonts.normal, font = NULL; xui_font_metrics_t m = {0};
     float size = a->fFontSize; uint32_t marks = a->iMarks; size_t i;
@@ -246,7 +246,13 @@ static xui_font doc_layout_font(xui_document_renderer r, const xui_doc_attribute
 static int doc_layout_fragment(doc_render_block* b, const doc_fragment* f)
 {
     int result = doc_render_reserve((void**)&b->fragments, &b->fragment_capacity, b->fragment_count + 1, sizeof(*b->fragments));
-    if (result == XUI_OK) b->fragments[b->fragment_count++] = *f;
+    if (result == XUI_OK) {
+        b->fragments[b->fragment_count] = *f;
+        /* Standalone objects and empty cells own a row even when they never
+         * enter doc_layout_lines. Ordinary inline rows overwrite this below. */
+        b->fragments[b->fragment_count].line_end = b->fragment_count + 1;
+        b->fragment_count++;
+    }
     return result;
 }
 static int doc_layout_box(doc_render_block* b, uint64_t node, uint32_t kind, uint32_t color, double x, double y, double w, double h)
@@ -311,7 +317,7 @@ static int doc_layout_run(xui_document_renderer r, doc_render_block* b, doc_node
             run->base_offset != base_offset) return XUI_DOC_ERROR_STALE;
         if (n->kind == XUI_DOC_CODE_BLOCK || n->kind == XUI_DOC_DIAGRAM || n->kind == XUI_DOC_FRONT_MATTER)
             attrs.iMarks |= XUI_DOC_CODE;
-        font = doc_layout_font(r, &attrs, heading);
+        font = doc_layout_text_font(r, &attrs, heading);
         if (!font) return XUI_ERROR_UNSUPPORTED;
         if (font != run->font || !doc_language_equal(attrs.sLanguage, run->attrs.sLanguage)) return XUI_DOC_ERROR_STALE;
         run->attrs = attrs;
@@ -324,7 +330,7 @@ static int doc_layout_run(xui_document_renderer r, doc_render_block* b, doc_node
         run->bytes = bytes;
         run->base_offset = base_offset;
         if (n->kind == XUI_DOC_CODE_BLOCK || n->kind == XUI_DOC_DIAGRAM || n->kind == XUI_DOC_FRONT_MATTER) run->attrs.iMarks |= XUI_DOC_CODE;
-        run->font = doc_layout_font(r, &run->attrs, heading);
+        run->font = doc_layout_text_font(r, &run->attrs, heading);
         if (!run->font) return XUI_ERROR_UNSUPPORTED;
         run->text = malloc((size_t)bytes + 1); if (!run->text) return XUI_ERROR_OUT_OF_MEMORY;
         if (generated) memcpy(run->text, generated, (size_t)bytes); else doc_seq_read(n->text, 0, run->text, bytes);
@@ -1891,6 +1897,7 @@ static double doc_layout_lines(xui_document_renderer r, doc_render_block* b, siz
         }
         for (i = first; i < stop; i++) {
             doc_fragment* f = &b->fragments[i]; total += f->width;
+            f->line_end = stop;
             if (f->baseline > ascent) ascent = f->baseline;
             if (f->height - f->baseline > descent) descent = f->height - f->baseline;
         }
@@ -2576,7 +2583,7 @@ int doc_layout_block(xui_document_renderer r, doc_render_block* b, double width)
             return XUI_DOC_ERROR_STALE;
         attrs = doc_effective_text_attrs(r->snapshot->state, quote);
         attrs.iMarks |= XUI_DOC_BOLD;
-        b->admonition_font = doc_layout_font(r, &attrs, 0);
+        b->admonition_font = doc_layout_text_font(r, &attrs, 0);
         if (!b->admonition_font) return XUI_ERROR_UNSUPPORTED;
         if (r->proxy->fontGetMetrics)
             r->proxy->fontGetMetrics(r->proxy, b->admonition_font, &metrics);

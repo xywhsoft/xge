@@ -40,7 +40,7 @@ XUI_API int xuiDocumentSnapshotComparePositions(xui_document_snapshot s, const x
     return doc_position_compare(s->state, a, b, order);
 }
 
-static uint64_t doc_map_offset(uint64_t position, uint32_t affinity, uint64_t start,
+uint64_t doc_map_offset(uint64_t position, uint32_t affinity, uint64_t start,
     uint64_t old_length, uint64_t new_length, int* deleted)
 {
     if (position < start) return position;
@@ -309,13 +309,24 @@ XUI_API int xuiDocumentPositionToSource(xui_document_snapshot s, const xui_doc_p
 /* Resolve ancestry at an operation boundary, including subtrees moved earlier
  * in the same transaction. Looking only at the before/after trees loses the
  * deletion boundary when siblings or ancestors have also been edited. */
+static const xui_doc_operation_t* doc_map_operation(xui_document_change_set c,
+    uint64_t i, xui_doc_operation_t* buffer)
+{
+    uint64_t index = c->undo ? c->count - i - 1 : i;
+    if (!c->packed_ops) return &c->ops[index];
+    if (doc_seq_read(c->packed_ops, c->packed_op_start + index * sizeof(*buffer),
+            buffer, sizeof(*buffer)) != XUI_OK) return NULL;
+    return buffer;
+}
 static uint64_t doc_map_parent_at(xui_document_change_set c, uint64_t id, uint64_t applied)
 {
     doc_node* n = doc_index_get(c->before->index, id); uint64_t parent, i;
     if (!n) n = doc_index_get(c->after->index, id);
     parent = n ? n->parent : 0;
     for (i = 0; i < applied; i++) {
-        const xui_doc_operation_t* op = &c->ops[c->undo ? c->count - i - 1 : i];
+        xui_doc_operation_t buffer;
+        const xui_doc_operation_t* op = doc_map_operation(c, i, &buffer);
+        if (!op) return 0;
         if (op->iNodeId != id) continue;
         if (op->iKind == XUI_DOC_OP_MOVE) parent = c->undo ? op->iParentId : op->iOtherNodeId;
         else if (op->iKind == (uint32_t)(c->undo ? XUI_DOC_OP_DELETE : XUI_DOC_OP_INSERT)) parent = op->iParentId;
@@ -340,6 +351,25 @@ XUI_API int xuiDocumentMapPosition(xui_document_change_set c, const xui_doc_posi
     int deleted = 0;
     if (!c || !before || !after || !mapping || before->iSize != sizeof(*before)) return XUI_ERROR_INVALID_ARGUMENT;
     if (before->iDocumentId != c->identity || before->iRevision != c->before_revision) return XUI_DOC_ERROR_STALE;
+    if (before->iInputGeneration) {
+        xui_doc_position_t published = *before;
+        if (before->iInputGeneration != c->input_generation) return XUI_DOC_ERROR_STALE;
+        if (!c->undo && c->input_state && before->iKind != XUI_DOC_POSITION_SOURCE) {
+            int result, quality;
+            published.iInputGeneration = 0;
+            result = doc_semantic_map_position(c->input_state, c->after, &published,
+                &published, &quality);
+            if (result != XUI_OK) return result;
+            published.iRevision = c->after_revision;
+            *after = published; *mapping = quality; return XUI_OK;
+        }
+        if (c->undo || c->domain != XUI_DOC_SOURCE || before->iKind != XUI_DOC_POSITION_SOURCE ||
+            before->iNodeId != DOC_ROOT || before->iAffinity > XUI_DOC_AFTER ||
+            before->iOffset > doc_seq_size(c->after->source)) return XUI_ERROR_INVALID_ARGUMENT;
+        if (!doc_seq_boundary(c->after->source, before->iOffset)) return XUI_DOC_ERROR_UTF8;
+        published.iInputGeneration = 0; published.iRevision = c->after_revision;
+        *after = published; *mapping = XUI_DOC_MAP_EXACT; return XUI_OK;
+    }
     if (!doc_position_valid(c->before, before)) return XUI_ERROR_INVALID_ARGUMENT;
     input = *before; before = &input; /* The caller may map a position in place. */
     *after = *before; *mapping = XUI_DOC_MAP_EXACT;
@@ -378,7 +408,9 @@ XUI_API int xuiDocumentMapPosition(xui_document_change_set c, const xui_doc_posi
         }
     }
     for (i = 0; i < c->count; i++) {
-        const xui_doc_operation_t* op = &c->ops[c->undo ? c->count - i - 1 : i];
+        xui_doc_operation_t buffer;
+        const xui_doc_operation_t* op = doc_map_operation(c, i, &buffer);
+        if (!op) return XUI_ERROR_INVALID_STATE;
         if (op->iKind == (uint32_t)(c->undo ? XUI_DOC_OP_INSERT : XUI_DOC_OP_DELETE) &&
             doc_map_descendant_at(c, after->iNodeId, op->iNodeId, i)) {
             after->iNodeId = op->iParentId; after->iKind = XUI_DOC_POSITION_GAP; after->iOffset = op->iOffset;

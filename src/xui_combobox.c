@@ -1489,7 +1489,7 @@ static int __xuiComboBoxAccessibleAction(xui_widget pWidget, int iAction, const 
 }
 
 static const xui_internal_accessibility_adapter_t g_xuiComboBoxAccessible = {
-	__xuiComboBoxAccessibleNode, __xuiComboBoxAccessibleAction
+	.getNode = __xuiComboBoxAccessibleNode, .performAction = __xuiComboBoxAccessibleAction
 };
 
 XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)

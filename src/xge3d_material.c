@@ -16,7 +16,7 @@ int d3_texture_retain(xge3d_texture *t)
 void xge3dTextureFree(xge3d_texture *t)
 {
     if (!t || --t->refs) return;
-    if (t->id && t->context==__xge3dContext()) glDeleteTextures(1,&t->id);
+    if (t->id && t->context==__xge3dContext()) xge_glDeleteTextures(1,&t->id);
     xrtArrayUnit(&t->pixels); xrtFree(t);
 }
 int xge3dTextureCreate(const xge3d_texture_desc_t *d, xge3d_texture **out)
@@ -55,22 +55,22 @@ int d3_texture_upload(xge3d_texture *t, uint64_t *bytes)
     uint64_t context=__xge3dContext();
     if (!context) return XGE_ERROR_NOT_INITIALIZED;
     if (t->context && t->context!=context) return XGE_ERROR_INVALID_STATE;
-    if (t->id) { glBindTexture(GL_TEXTURE_2D,t->id); return XGE_OK; }
+    if (t->id) { xge_glBindTexture(GL_TEXTURE_2D,t->id); return XGE_OK; }
     GLint maximum, unpack;
-    glGetIntegerv(0x0D33,&maximum);
+    xge_glGetIntegerv(0x0D33,&maximum);
     if (t->width>maximum || t->height>maximum) return XGE_ERROR_UNSUPPORTED;
-    glGetIntegerv(GL_UNPACK_ALIGNMENT,&unpack); glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-    glGenTextures(1,&t->id); glBindTexture(GL_TEXTURE_2D,t->id);
-    glTexImage2D(GL_TEXTURE_2D,0,t->srgb ? 0x8C43 : GL_RGBA8,t->width,t->height,0,GL_RGBA,GL_UNSIGNED_BYTE,t->pixels.Data);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,t->sampler.min_filter);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,t->sampler.mag_filter);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,t->sampler.wrap_u);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,t->sampler.wrap_v);
-    if (t->sampler.min_filter>=0x2700 && t->sampler.min_filter<=0x2703) glGenerateMipmap(GL_TEXTURE_2D);
-    glPixelStorei(GL_UNPACK_ALIGNMENT,unpack);
-    GLenum error=glGetError();
+    xge_glGetIntegerv(GL_UNPACK_ALIGNMENT,&unpack); xge_glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+    xge_glGenTextures(1,&t->id); xge_glBindTexture(GL_TEXTURE_2D,t->id);
+    xge_glTexImage2D(GL_TEXTURE_2D,0,t->srgb ? 0x8C43 : GL_RGBA8,t->width,t->height,0,GL_RGBA,GL_UNSIGNED_BYTE,t->pixels.Data);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,t->sampler.min_filter);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,t->sampler.mag_filter);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,t->sampler.wrap_u);
+    xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,t->sampler.wrap_v);
+    if (t->sampler.min_filter>=0x2700 && t->sampler.min_filter<=0x2703) xge_glGenerateMipmap(GL_TEXTURE_2D);
+    xge_glPixelStorei(GL_UNPACK_ALIGNMENT,unpack);
+    GLenum error=xge_glGetError();
     if (!t->id || error!=GL_NO_ERROR) {
-        if (t->id) glDeleteTextures(1,&t->id);
+        if (t->id) xge_glDeleteTextures(1,&t->id);
         t->id=0; return XGE_ERROR_GPU_FAILED;
     }
     t->context=context;

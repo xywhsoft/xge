@@ -1,3 +1,9 @@
+#include "xge_ime_owner_internal.h"
+
+void xgeInternalImeSetFocusOwner(uint64_t owner) { g_xge.iImeFocusOwner = owner; }
+void xgeInternalImeSetSnapshotOwner(uint64_t owner) { g_xge.iImeSnapshotOwner = owner; }
+uint64_t xgeInternalInputImeOwner(void) { return g_xge.iInputImeOwner; }
+
 static void __xgeInputQueueItemFree(xge_input_queue_item_t* pItem)
 {
 	if ( pItem == NULL ) return;
@@ -36,7 +42,7 @@ static int __xgeInputEventQueueReserve(int iCapacity)
 	return 1;
 }
 
-static int __xgeInputEventQueuePush(const xge_input_event_t* pEvent)
+static int __xgeInputEventQueuePushOwned(const xge_input_event_t* pEvent, uint64_t owner)
 {
 	xge_input_queue_item_t* pItem;
 	const char* sText;
@@ -54,6 +60,7 @@ static int __xgeInputEventQueuePush(const xge_input_event_t* pEvent)
 	pItem->tEvent = *pEvent;
 	pItem->tEvent.iSize = sizeof(pItem->tEvent);
 	pItem->tEvent.iSequence = ++g_xge.iInputEventSequence;
+	pItem->iImeOwner = owner;
 	if ( pItem->tEvent.fTime <= 0.0 ) pItem->tEvent.fTime = xrtTimer();
 	sText = pEvent->sText;
 	iTextSize = pEvent->iTextSize;
@@ -85,6 +92,11 @@ static int __xgeInputEventQueuePush(const xge_input_event_t* pEvent)
 	}
 	g_xge.iInputEventQueueCount++;
 	return 1;
+}
+
+static int __xgeInputEventQueuePush(const xge_input_event_t* pEvent)
+{
+	return __xgeInputEventQueuePushOwned(pEvent, 0);
 }
 
 static void __xgeInputEventQueueReset(void)
@@ -129,9 +141,9 @@ static int __xgeImeQueueReserve(int iCapacity)
 	return 1;
 }
 
-static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
+static int __xgeImeQueuePushOwnedRange(int iType, const char* sText, int iTextSize,
 	int iCursor, int iSelectStart, int iSelectEnd,
-	int bReplacementRange, int iReplacementStart, int iReplacementEnd)
+	int bReplacementRange, int iReplacementStart, int iReplacementEnd, uint64_t owner)
 {
 	xge_ime_queue_item_t* pItem;
 	xge_input_event_t tInput;
@@ -151,7 +163,7 @@ static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
 	tInput.bReplacementRange = bReplacementRange != 0;
 	tInput.iReplacementStart = iReplacementStart;
 	tInput.iReplacementEnd = iReplacementEnd;
-	if ( !__xgeInputEventQueuePush(&tInput) ) return 0;
+	if ( !__xgeInputEventQueuePushOwned(&tInput, owner) ) return 0;
 	sCopy = (char*)xrtMalloc((size_t)iTextSize + 1u);
 	if ( sCopy == NULL ) return 0;
 	if ( iTextSize > 0 ) memcpy(sCopy, sText, (size_t)iTextSize);
@@ -172,6 +184,15 @@ static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
 	pItem->iReplacementEnd = iReplacementEnd;
 	pItem->sText = sCopy;
 	return 1;
+}
+
+static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
+	int iCursor, int iSelectStart, int iSelectEnd,
+	int bReplacementRange, int iReplacementStart, int iReplacementEnd)
+{
+	return __xgeImeQueuePushOwnedRange(iType, sText, iTextSize,
+		iCursor, iSelectStart, iSelectEnd, bReplacementRange,
+		iReplacementStart, iReplacementEnd, g_xge.iImeFocusOwner);
 }
 
 static int __xgeImeQueuePush(int iType, const char* sText, int iTextSize,
@@ -317,9 +338,11 @@ int xgeInputEventGet(xge_input_event_t* pEvent)
 	memset(pEvent, 0, sizeof(*pEvent));
 	pEvent->iSize = sizeof(*pEvent);
 	pEvent->sText = "";
+	g_xge.iInputImeOwner = 0;
 	if ( g_xge.iInputEventQueueCount <= 0 ) return 0;
 	pItem = &g_xge.pInputEventQueue[g_xge.iInputEventQueueHead];
 	*pEvent = pItem->tEvent;
+	g_xge.iInputImeOwner = pItem->iImeOwner;
 	iType = pEvent->iType;
 	iCodepoint = pEvent->iCodepoint;
 	iTextSize = pItem->tEvent.iTextSize;

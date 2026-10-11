@@ -171,10 +171,10 @@ static void __xgeTextureYUV420PFree(xge_texture pTexture)
 		return;
 	}
 	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
-	if ( glDeleteTextures != NULL ) {
+	if ( xge_glDeleteTextures != NULL ) {
 		for ( i = 0; i < 3; i++ ) {
 			if ( pYUV->iPlaneTexture[i] != 0 ) {
-				glDeleteTextures(1, &pYUV->iPlaneTexture[i]);
+				xge_glDeleteTextures(1, &pYUV->iPlaneTexture[i]);
 				pYUV->iPlaneTexture[i] = 0;
 			}
 		}
@@ -253,7 +253,7 @@ static int __xgeTextureApplySampler(xge_texture pTexture)
 	if ( (g_xge.bSokolRunning == 0) && (g_xge.bRenderThreadGLCurrent == 0) ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	if ( (glBindTexture == NULL) || (glTexParameteri == NULL) ) {
+	if ( (xge_glBindTexture == NULL) || (xge_glTexParameteri == NULL) ) {
 		return XGE_ERROR_GPU_FAILED;
 	}
 	tSampler = pTexture->tSampler;
@@ -269,20 +269,20 @@ static int __xgeTextureApplySampler(xge_texture pTexture)
 			if ( pYUV->iPlaneTexture[i] == 0 ) {
 				return XGE_ERROR_INVALID_ARGUMENT;
 			}
-			glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
+			xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
+			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
 		}
 	} else {
-		glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
+		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
+		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
+		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
+		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
 	}
-	glBindTexture(GL_TEXTURE_2D, 0);
+	xge_glBindTexture(GL_TEXTURE_2D, 0);
 	pTexture->tSampler = tSampler;
 	return XGE_OK;
 }
@@ -305,19 +305,19 @@ static int __xgeTextureUploadYUV420PNow(xge_texture pTexture)
 	if ( !__xgeTextureHasYUV420P(pTexture) ) {
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
-	if ( (glGenTextures == NULL) || (glBindTexture == NULL) || (glTexImage2D == NULL) ) {
+	if ( (xge_glGenTextures == NULL) || (xge_glBindTexture == NULL) || (xge_glTexImage2D == NULL) ) {
 		return XGE_ERROR_GPU_FAILED;
 	}
 	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
-	glGenTextures(3, pYUV->iPlaneTexture);
-	if ( glPixelStorei != NULL ) {
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	xge_glGenTextures(3, pYUV->iPlaneTexture);
+	if ( xge_glPixelStorei != NULL ) {
+		xge_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	}
 	for ( i = 0; i < 3; i++ ) {
-		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, pYUV->iPlaneWidth[i], pYUV->iPlaneHeight[i], 0, GL_RED, GL_UNSIGNED_BYTE, pYUV->pPlane[i]);
+		xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
+		xge_glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, pYUV->iPlaneWidth[i], pYUV->iPlaneHeight[i], 0, GL_RED, GL_UNSIGNED_BYTE, pYUV->pPlane[i]);
 	}
-	glBindTexture(GL_TEXTURE_2D, 0);
+	xge_glBindTexture(GL_TEXTURE_2D, 0);
 	pTexture->iBackendId = pYUV->iPlaneTexture[0];
 	iRet = __xgeTextureApplySampler(pTexture);
 	if ( iRet != XGE_OK ) {
@@ -354,8 +354,8 @@ static int __xgeTextureUploadNow(xge_texture pTexture)
 	if ( !__xgeTextureHasShadow(pTexture) ) {
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
-	if ( (glGenTextures == NULL) || (glBindTexture == NULL) ||
-		 (glTexImage2D == NULL) ) {
+	if ( (xge_glGenTextures == NULL) || (xge_glBindTexture == NULL) ||
+		 (xge_glTexImage2D == NULL) ) {
 		return XGE_ERROR_GPU_FAILED;
 	}
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
@@ -830,7 +830,7 @@ int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int i
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
 	tChoice = (xge_texture_choice_t){pShadow->iStorage, pShadow->iSwizzle};
 	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
-		if ( glBindTexture == NULL || glTexSubImage2D == NULL ) return XGE_ERROR_GPU_FAILED;
+		if ( xge_glBindTexture == NULL || xge_glTexSubImage2D == NULL ) return XGE_ERROR_GPU_FAILED;
 		if ( !__xgeTexturePatchFits(tChoice, pSrc, iWidth, iHeight, iStride) ) goto promote;
 		pUpload = pSrc;
 		if ( tChoice.iStorage != XGE_TEXTURE_STORAGE_RGBA8 || iStride != iCopyStride ) {
@@ -839,17 +839,17 @@ int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int i
 			pUpload = pPacked;
 		}
 		__xgeTextureGLFormat(tChoice.iStorage, &iInternal, &iFormat, &iType);
-		if ( glGetIntegerv != NULL ) {
-			glGetIntegerv(GL_TEXTURE_BINDING_2D, &iBinding);
-			glGetIntegerv(GL_UNPACK_ALIGNMENT, &iAlignment);
+		if ( xge_glGetIntegerv != NULL ) {
+			xge_glGetIntegerv(GL_TEXTURE_BINDING_2D, &iBinding);
+			xge_glGetIntegerv(GL_UNPACK_ALIGNMENT, &iAlignment);
 		}
 		__xgeTextureClearGLErrors();
-		glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
-		if ( glPixelStorei != NULL ) glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, iX, iY, iWidth, iHeight, iFormat, iType, pUpload);
-		iRet = __xgeTextureGLError(glGetError != NULL ? glGetError() : GL_NO_ERROR);
-		if ( glPixelStorei != NULL ) glPixelStorei(GL_UNPACK_ALIGNMENT, iAlignment);
-		glBindTexture(GL_TEXTURE_2D, (GLuint)iBinding);
+		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+		if ( xge_glPixelStorei != NULL ) xge_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		xge_glTexSubImage2D(GL_TEXTURE_2D, 0, iX, iY, iWidth, iHeight, iFormat, iType, pUpload);
+		iRet = __xgeTextureGLError(xge_glGetError != NULL ? xge_glGetError() : GL_NO_ERROR);
+		if ( xge_glPixelStorei != NULL ) xge_glPixelStorei(GL_UNPACK_ALIGNMENT, iAlignment);
+		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)iBinding);
 		xrtFree(pPacked);
 		if ( iRet == XGE_ERROR_UNSUPPORTED && tChoice.iStorage != XGE_TEXTURE_STORAGE_RGBA8 ) goto promote;
 		if ( iRet != XGE_OK ) return iRet;
@@ -875,7 +875,7 @@ promote:
 		iRet = __xgeTextureNewGPU(pTexture, pMerged, tChoice, &iNew);
 		if ( iRet == XGE_OK ) {
 			pTexture->iBackendId = iNew;
-			glDeleteTextures(1, &iOld);
+			xge_glDeleteTextures(1, &iOld);
 			__xgeTextureStorageCommit(pTexture, tChoice);
 			pShadow->bPackingDisabled = 1;
 			xrtFree(pShadow->pPixels);
@@ -932,17 +932,17 @@ int xgeTextureUpdateYUV420P(xge_texture pTexture, const void* pY, int iStrideY, 
 		return iRet;
 	}
 	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
-		if ( (glBindTexture == NULL) || (glTexSubImage2D == NULL) ) {
+		if ( (xge_glBindTexture == NULL) || (xge_glTexSubImage2D == NULL) ) {
 			return XGE_ERROR_GPU_FAILED;
 		}
-		if ( glPixelStorei != NULL ) {
-			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		if ( xge_glPixelStorei != NULL ) {
+			xge_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		}
 		for ( i = 0; i < 3; i++ ) {
-			glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pYUV->iPlaneWidth[i], pYUV->iPlaneHeight[i], GL_RED, GL_UNSIGNED_BYTE, pYUV->pPlane[i]);
+			xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
+			xge_glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pYUV->iPlaneWidth[i], pYUV->iPlaneHeight[i], GL_RED, GL_UNSIGNED_BYTE, pYUV->pPlane[i]);
 		}
-		glBindTexture(GL_TEXTURE_2D, 0);
+		xge_glBindTexture(GL_TEXTURE_2D, 0);
 	}
 	return XGE_OK;
 }
@@ -1226,8 +1226,8 @@ void xgeTextureFree(xge_texture pTexture)
 		__xgeTextureYUV420PFree(pTexture);
 	} else {
 		iTexture = (GLuint)pTexture->iBackendId;
-		if ( (iTexture != 0) && (glDeleteTextures != NULL) ) {
-			glDeleteTextures(1, &iTexture);
+		if ( (iTexture != 0) && (xge_glDeleteTextures != NULL) ) {
+			xge_glDeleteTextures(1, &iTexture);
 		}
 		__xgeTextureShadowFree(pTexture);
 	}

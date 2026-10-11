@@ -38,6 +38,7 @@ typedef struct doc_fragment {
     double x, y, width, height, baseline;
     double hyphen_width;
     size_t bidi_start, bidi_end; /* Private paragraph UTF-8 projection. */
+    size_t line_end; /* Exclusive logical fragment end of the actual visual row. */
     uint8_t bidi_level, bidi_active, bidi_base;
 } doc_fragment;
 static inline uint32_t doc_fragment_paint_run(const doc_fragment* fragment)
@@ -284,6 +285,9 @@ struct xui_document_renderer_t {
     uint32_t find_result_color, find_active_color;
 };
 int doc_render_reserve(void**, size_t*, size_t, size_t);
+/* Shared effective font/foreground rules for layout and text attributes. */
+xui_font doc_layout_text_font(xui_document_renderer, const xui_doc_attributes_t*, uint32_t);
+uint32_t doc_render_text_foreground(xui_document_renderer, const xui_doc_attributes_t*);
 void doc_render_block_free(doc_render_block*);
 void doc_render_block_reflow(doc_render_block*);
 size_t doc_render_block_cache_bytes(const doc_render_block*);
@@ -302,6 +306,7 @@ int doc_layout_line_extend(xui_document_renderer, doc_render_block*, double,
     double, uint64_t); /* Cover a document X or code-byte offset. */
 int doc_render_cover_x(xui_document_renderer, double, double, double);
 double doc_render_height_before(xui_document_renderer, size_t);
+int doc_render_prepare_caret_viewport(xui_document_renderer, const xui_doc_position_t*, double, xui_doc_rect_t*);
 void doc_render_set_height(xui_document_renderer, size_t, double);
 size_t doc_render_block_at(xui_document_renderer, double);
 size_t doc_render_find(xui_document_renderer, uint64_t);
@@ -309,6 +314,9 @@ int doc_render_inline_style_splits(xui_document_change_set);
 int doc_render_metric_style_change(xui_document_change_set);
 int doc_render_materialize(xui_document_renderer, size_t);
 doc_sequence* doc_render_source(xui_document_renderer);
+int doc_render_live_partition(xui_document_renderer, uint64_t, uint64_t*, uint64_t*, uint64_t*);
+int doc_render_live_base_to_input(xui_document_renderer, uint64_t, uint64_t*);
+int doc_render_live_input_to_base(xui_document_renderer, uint64_t, uint64_t*);
 int doc_render_live_position_source(xui_document_renderer, const xui_doc_position_t*, uint64_t*);
 int doc_render_compare(xui_document_renderer, const xui_doc_position_t*, const xui_doc_position_t*, int*);
 int doc_render_copy_range(xui_document_renderer, const xui_doc_range_t*, char**, uint64_t*);

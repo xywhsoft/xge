@@ -1,8 +1,10 @@
 #include "../xui_config.h"
 #if XUI_ENABLE_INPUT
 #include "xui_internal.h"
+#include "xui_text_internal.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,19 +35,32 @@ struct xui_input_decoration_t {
 	xui_rect_t tRect;
 };
 
+typedef struct xui_input_history_t {
+	char* sRemoved;
+	char* sInserted;
+	int iStart;
+	int iRemovedLength;
+	int iInsertedLength;
+	int iBeforeCursor;
+	int iBeforeSelectStart;
+	int iBeforeSelectEnd;
+	float fBeforeScrollX;
+	int iAfterCursor;
+	int iAfterSelectStart;
+	int iAfterSelectEnd;
+	float fAfterScrollX;
+} xui_input_history_t;
+
 typedef struct xui_input_data_t {
 	char* sText;
 	int iTextCapacity;
+	int iTextLength;
 	char* sPlaceholder;
 	int iPlaceholderCapacity;
 	char* sDisplay;
 	int iDisplayCapacity;
 	char* sScratch;
 	int iScratchCapacity;
-	char* sUndoText;
-	int iUndoCapacity;
-	char* sRedoText;
-	int iRedoCapacity;
 	char* sImeText;
 	int iImeTextCapacity;
 	char* sImeDisplay;
@@ -53,6 +68,14 @@ typedef struct xui_input_data_t {
 	char* sFocusText;
 	int iFocusTextCapacity;
 	char* arrMenuTitle[XUI_INPUT_MENU_COUNT];
+	xui_text_shape_t tTextShape;
+	double* pTextShapeAdvances;
+	xui_internal_text_chunk_cache_t tTextChunks;
+	xui_font pTextShapeFont;
+	uint32_t iTextVersion;
+	uint32_t iTextShapeVersion;
+	uint32_t iTextShapeDpiGeneration;
+	int bTextShapeValid;
 	xui_widget pMenu;
 	xui_input_decoration pLeadingDecoration;
 	xui_input_decoration pTrailingDecoration;
@@ -86,14 +109,12 @@ typedef struct xui_input_data_t {
 	int bPassword;
 	int bReadonly;
 	int bError;
+	xui_input_history_t tUndo;
+	xui_input_history_t tRedo;
 	int bCanUndo;
-	int iUndoCursor;
-	int iUndoSelectStart;
-	int iUndoSelectEnd;
 	int bCanRedo;
-	int iRedoCursor;
-	int iRedoSelectStart;
-	int iRedoSelectEnd;
+	int bUndoInsertGroup;
+	int iUndoInsertEnd;
 	uint32_t iTextColor;
 	uint32_t iPlaceholderColor;
 	uint32_t iDisabledTextColor;
@@ -563,7 +584,7 @@ static int __xuiInputSetSelectionData(xui_input_data_t* pData, int iStart, int i
 	if ( (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iLen = (int)strlen(pData->sText);
+	iLen = pData->iTextLength;
 	iStart = __xuiInputUtf8Clamp(pData->sText, iLen, iStart);
 	iEnd = __xuiInputUtf8Clamp(pData->sText, iLen, iEnd);
 	pData->iSelectStart = iStart;
@@ -582,6 +603,64 @@ static int __xuiInputClearSelectionData(xui_input_data_t* pData)
 	pData->iSelectEnd = pData->iCursor;
 	pData->iAnchor = pData->iCursor;
 	return XUI_OK;
+}
+
+static void __xuiInputTextShapeClear(xui_input_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	xuiTextShapeFree(&pData->tTextShape);
+	if ( pData->pTextShapeAdvances != NULL ) xrtFree(pData->pTextShapeAdvances);
+	pData->pTextShapeAdvances = NULL;
+	pData->pTextShapeFont = NULL;
+	pData->iTextShapeVersion = 0;
+	pData->iTextShapeDpiGeneration = 0;
+	pData->bTextShapeValid = 0;
+	xuiInternalTextChunkCacheClear(&pData->tTextChunks);
+}
+
+static void __xuiInputFullShapeClear(xui_input_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	xuiTextShapeFree(&pData->tTextShape);
+	if ( pData->pTextShapeAdvances != NULL ) xrtFree(pData->pTextShapeAdvances);
+	pData->pTextShapeAdvances = NULL;
+	pData->pTextShapeFont = NULL;
+	pData->iTextShapeVersion = 0;
+	pData->iTextShapeDpiGeneration = 0;
+	pData->bTextShapeValid = 0;
+}
+
+static void __xuiInputTextShapeDirty(xui_input_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	__xuiInputTextShapeClear(pData);
+	pData->iTextVersion++;
+	if ( pData->iTextVersion == 0 ) pData->iTextVersion = 1;
+}
+
+static void __xuiInputTextShapePatch(xui_widget pWidget, xui_input_data_t* pData,
+	int iStart, int iOldEnd, int iNewEnd)
+{
+	int iRet;
+	if ( pData == NULL ) return;
+	__xuiInputFullShapeClear(pData);
+	pData->iTextVersion++;
+	if ( pData->iTextVersion == 0 ) pData->iTextVersion = 1;
+	if ( !pData->tTextChunks.bValid || pWidget == NULL ) return;
+	iRet = xuiInternalTextChunkCachePatch(xuiWidgetGetContext(pWidget),
+		&pData->tTextChunks, pData->sText, pData->iTextLength,
+		iStart, iOldEnd, iNewEnd);
+	if ( iRet != XUI_OK ) xuiInternalTextChunkCacheClear(&pData->tTextChunks);
+}
+
+static int __xuiInputTextChunkEnsure(xui_widget pWidget, xui_input_data_t* pData,
+	xui_font pFont)
+{
+	if ( pWidget == NULL || pData == NULL || pFont == NULL || pData->sText == NULL ||
+	     pData->bPassword || pData->bImeComposing ) return XUI_ERROR_UNSUPPORTED;
+	return xuiInternalTextChunkCacheEnsure(xuiWidgetGetContext(pWidget),
+		&pData->tTextChunks, pFont, pData->sText, pData->iTextLength,
+		pWidget->pContext->iDpiGeneration);
 }
 
 static int __xuiInputAssignTextBytes(xui_input_data_t* pData, const char* sText, int iSize)
@@ -608,10 +687,12 @@ static int __xuiInputAssignTextBytes(xui_input_data_t* pData, const char* sText,
 		memcpy(pData->sText, sText, (size_t)iSize);
 	}
 	pData->sText[iSize] = '\0';
+	pData->iTextLength = iSize;
 	pData->iCursor = __xuiInputUtf8Clamp(pData->sText, iSize, pData->iCursor);
 	pData->iAnchor = __xuiInputUtf8Clamp(pData->sText, iSize, pData->iAnchor);
 	pData->iSelectStart = __xuiInputUtf8Clamp(pData->sText, iSize, pData->iSelectStart);
 	pData->iSelectEnd = __xuiInputUtf8Clamp(pData->sText, iSize, pData->iSelectEnd);
+	__xuiInputTextShapeDirty(pData);
 	return XUI_OK;
 }
 
@@ -625,7 +706,7 @@ static int __xuiInputBuildDisplayRange(xui_input_data_t* pData, int iStart, int 
 	if ( (pData == NULL) || (pData->sText == NULL) || (psText == NULL) || (pCapacity == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iLen = (int)strlen(pData->sText);
+	iLen = pData->iTextLength;
 	iStart = __xuiInputUtf8Clamp(pData->sText, iLen, iStart);
 	iEnd = __xuiInputUtf8Clamp(pData->sText, iLen, iEnd);
 	if ( iEnd < iStart ) {
@@ -665,7 +746,7 @@ static const char* __xuiInputDisplayAll(xui_input_data_t* pData)
 	if ( !pData->bPassword ) {
 		return pData->sText;
 	}
-	iLen = (int)strlen(pData->sText);
+	iLen = pData->iTextLength;
 	if ( __xuiInputBuildDisplayRange(pData, 0, iLen, &pData->sDisplay, &pData->iDisplayCapacity) != XUI_OK ) {
 		return "";
 	}
@@ -695,7 +776,7 @@ static const char* __xuiInputImeDisplay(xui_input_data_t* pData)
 	if ( pData == NULL || !pData->bImeComposing || pData->sText == NULL ) {
 		return __xuiInputDisplayAll(pData);
 	}
-	iTextLength = (int)strlen(pData->sText);
+	iTextLength = pData->iTextLength;
 	iImeLength = (pData->sImeText != NULL) ? (int)strlen(pData->sImeText) : 0;
 	if ( pData->iImeAnchorStart < 0 ) pData->iImeAnchorStart = 0;
 	if ( pData->iImeAnchorEnd < pData->iImeAnchorStart ) pData->iImeAnchorEnd = pData->iImeAnchorStart;
@@ -746,10 +827,162 @@ static xui_vec2_t __xuiInputMeasureText(xui_widget pWidget, xui_font pFont, cons
 	return tSize;
 }
 
+static int __xuiInputTextShapeEnsure(xui_widget pWidget, xui_input_data_t* pData, xui_font pFont)
+{
+	xui_text_item_t tItem;
+	double fAdvance;
+	uint32_t iDpiGeneration;
+	int i;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || pFont == NULL || pData->sText == NULL ||
+	     pData->bPassword || pData->bImeComposing || pData->iTextLength <= 0 ) {
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	iDpiGeneration = pWidget->pContext->iDpiGeneration;
+	if ( pData->bTextShapeValid && pData->pTextShapeFont == pFont &&
+	     pData->iTextShapeVersion == pData->iTextVersion &&
+	     pData->iTextShapeDpiGeneration == iDpiGeneration ) return XUI_OK;
+	__xuiInputTextShapeClear(pData);
+	memset(&tItem, 0, sizeof(tItem));
+	tItem.iSize = sizeof(tItem);
+	tItem.pFont = pFont;
+	tItem.sText = pData->sText;
+	tItem.iTextSize = pData->iTextLength;
+	tItem.iFlags = XUI_TEXT_SHAPE_DEFAULT | XUI_TEXT_SHAPE_RETAIN_PAINT;
+	iRet = xuiTextShape(xuiWidgetGetContext(pWidget), &tItem, &pData->tTextShape);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalTextShapeCaretFragments(pData->sText, pData->iTextLength, &pData->tTextShape);
+	if ( iRet != XUI_OK ) {
+		__xuiInputTextShapeClear(pData);
+		return iRet;
+	}
+	if ( pData->tTextShape.iClusterCount <= 0 ||
+	     (size_t)pData->tTextShape.iClusterCount >= SIZE_MAX / sizeof(*pData->pTextShapeAdvances) ) {
+		__xuiInputTextShapeClear(pData);
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	pData->pTextShapeAdvances = (double*)xrtMalloc(
+		((size_t)pData->tTextShape.iClusterCount + 1u) * sizeof(*pData->pTextShapeAdvances));
+	if ( pData->pTextShapeAdvances == NULL ) {
+		__xuiInputTextShapeClear(pData);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pData->pTextShapeAdvances[0] = 0.0;
+	for ( i = 0; i < pData->tTextShape.iClusterCount; i++ ) {
+		const xui_text_cluster_t* pCluster = &pData->tTextShape.pClusters[i];
+		if ( !isfinite(pCluster->fAdvance) || pCluster->fAdvance < 0.0f || pCluster->iTextStart < 0 ||
+		     pCluster->iTextEnd <= pCluster->iTextStart || pCluster->iTextEnd > pData->iTextLength ||
+		     (i > 0 && pCluster->iTextStart != pData->tTextShape.pClusters[i - 1].iTextEnd) ) {
+			__xuiInputTextShapeClear(pData);
+			return XUI_ERROR_INVALID_STATE;
+		}
+		fAdvance = pData->pTextShapeAdvances[i] + (double)pCluster->fAdvance;
+		if ( fAdvance < pData->pTextShapeAdvances[i] ) {
+			__xuiInputTextShapeClear(pData);
+			return XUI_ERROR_INVALID_STATE;
+		}
+		pData->pTextShapeAdvances[i + 1] = fAdvance;
+	}
+	pData->pTextShapeFont = pFont;
+	pData->iTextShapeVersion = pData->iTextVersion;
+	pData->iTextShapeDpiGeneration = iDpiGeneration;
+	pData->bTextShapeValid = 1;
+	return XUI_OK;
+}
+
+static int __xuiInputTextShapeAdvance(xui_widget pWidget, xui_input_data_t* pData,
+	xui_font pFont, int iOffset, float* pAdvance)
+{
+	int iLo;
+	int iHi;
+	int iRet;
+	if ( pAdvance == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pAdvance = 0.0f;
+	if ( __xuiInputTextChunkEnsure(pWidget, pData, pFont) == XUI_OK )
+		return xuiInternalTextChunkCacheAdvance(&pData->tTextChunks, iOffset, pAdvance);
+	iRet = __xuiInputTextShapeEnsure(pWidget, pData, pFont);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iOffset <= 0 ) return XUI_OK;
+	if ( iOffset >= pData->iTextLength ) {
+		*pAdvance = (float)pData->pTextShapeAdvances[pData->tTextShape.iClusterCount];
+		return XUI_OK;
+	}
+	iLo = 0;
+	iHi = pData->tTextShape.iClusterCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( pData->tTextShape.pClusters[iMid].iTextEnd <= iOffset ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	*pAdvance = (float)pData->pTextShapeAdvances[iLo];
+	return XUI_OK;
+}
+
+static int __xuiInputTextShapeHitTest(xui_widget pWidget, xui_input_data_t* pData,
+	xui_font pFont, float fAdvance, int bGlyph, int* pOffset)
+{
+	int iLo;
+	int iHi;
+	int iRet;
+	if ( pOffset == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pOffset = 0;
+	if ( __xuiInputTextChunkEnsure(pWidget, pData, pFont) == XUI_OK )
+		return xuiInternalTextChunkCacheHitTest(&pData->tTextChunks,
+			fAdvance, bGlyph, pOffset);
+	iRet = __xuiInputTextShapeEnsure(pWidget, pData, pFont);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( fAdvance <= 0.0f ) return XUI_OK;
+	if ( (double)fAdvance >= pData->pTextShapeAdvances[pData->tTextShape.iClusterCount] ) {
+		*pOffset = pData->iTextLength;
+		return XUI_OK;
+	}
+	iLo = 0;
+	iHi = pData->tTextShape.iClusterCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( pData->pTextShapeAdvances[iMid + 1] <= (double)fAdvance ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	if ( iLo >= pData->tTextShape.iClusterCount ) {
+		*pOffset = pData->iTextLength;
+	} else {
+		double fLeft = pData->pTextShapeAdvances[iLo];
+		double fRight = pData->pTextShapeAdvances[iLo + 1];
+		*pOffset = (bGlyph || (double)fAdvance < (fLeft + fRight) * 0.5) ?
+			pData->tTextShape.pClusters[iLo].iTextStart : pData->tTextShape.pClusters[iLo].iTextEnd;
+	}
+	return XUI_OK;
+}
+
+static xui_vec2_t __xuiInputMeasureCurrent(xui_widget pWidget, xui_input_data_t* pData,
+	xui_font pFont, const char* sDisplay)
+{
+	xui_vec2_t tSize;
+	if ( __xuiInputTextChunkEnsure(pWidget, pData, pFont) == XUI_OK ) {
+		tSize.fX = xuiInternalTextChunkCacheWidth(&pData->tTextChunks);
+		tSize.fY = pData->tTextChunks.iChunkCount > 0 ?
+			pData->tTextChunks.pChunks[0].tShape.fHeight : 0.0f;
+		return tSize;
+	}
+	if ( !pData->bPassword && !pData->bImeComposing &&
+	     __xuiInputTextShapeEnsure(pWidget, pData, pFont) == XUI_OK ) {
+		tSize.fX = (float)pData->pTextShapeAdvances[pData->tTextShape.iClusterCount];
+		tSize.fY = pData->tTextShape.fHeight;
+		return tSize;
+	}
+	return __xuiInputMeasureText(pWidget, pFont, sDisplay);
+}
+
 static float __xuiInputMeasurePrefix(xui_widget pWidget, xui_input_data_t* pData, xui_font pFont, int iEnd)
 {
 	const char* sPrefix;
 	xui_vec2_t tSize;
+	float fAdvance;
+
+	if ( __xuiInputTextShapeAdvance(pWidget, pData, pFont, iEnd, &fAdvance) == XUI_OK ) {
+		return fAdvance;
+	}
 
 	sPrefix = __xuiInputDisplayPrefix(pData, iEnd);
 	tSize = __xuiInputMeasureText(pWidget, pFont, sPrefix);
@@ -961,7 +1194,7 @@ static void __xuiInputEnsureCursorVisible(xui_widget pWidget, xui_input_data_t* 
 	}
 	sDisplay = __xuiInputDisplayAll(pData);
 	if ( pData->bImeComposing ) sDisplay = __xuiInputImeDisplay(pData);
-	tDisplaySize = __xuiInputMeasureText(pWidget, tResolved.pFont, sDisplay);
+	tDisplaySize = __xuiInputMeasureCurrent(pWidget, pData, tResolved.pFont, sDisplay);
 	if ( tDisplaySize.fX <= tContent.fW ) {
 		pData->fScrollX = 0.0f;
 		return;
@@ -1002,7 +1235,7 @@ static xui_rect_t __xuiInputCalculateCursorRect(xui_widget pWidget, xui_input_da
 	tContent = xuiWidgetGetContentRect(pWidget);
 	sDisplay = __xuiInputDisplayAll(pData);
 	if ( pData->bImeComposing ) sDisplay = __xuiInputImeDisplay(pData);
-	tDisplaySize = __xuiInputMeasureText(pWidget, tResolved.pFont, sDisplay);
+	tDisplaySize = __xuiInputMeasureCurrent(pWidget, pData, tResolved.pFont, sDisplay);
 	fOffset = (tDisplaySize.fX <= tContent.fW && pData->fScrollX <= 0.0f) ? __xuiInputAlignOffset(pData, tContent.fW, tDisplaySize.fX) : 0.0f;
 	fCursorX = tContent.fX + fOffset + (pData->bImeComposing ?
 		__xuiInputMeasureDisplayPrefix(pWidget, pData, tResolved.pFont, sDisplay,
@@ -1068,64 +1301,143 @@ static void __xuiInputNotifyChange(xui_widget pWidget, xui_input_data_t* pData)
 		pData->iSelectEnd, 0, 0, !pData->bError);
 }
 
-static int __xuiInputRecordUndo(xui_input_data_t* pData)
+static void __xuiInputHistoryFree(xui_input_history_t* pState)
 {
-	int iRet;
+	if ( pState == NULL ) return;
+	xrtFree(pState->sRemoved);
+	xrtFree(pState->sInserted);
+	memset(pState, 0, sizeof(*pState));
+}
 
-	if ( pData == NULL ) {
+static int __xuiInputHistoryCopy(char** psCopy, const char* sText, int iLength)
+{
+	char* sCopy;
+	if ( psCopy == NULL || iLength < 0 || (iLength > 0 && sText == NULL) )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xuiInputStringSet(&pData->sUndoText, &pData->iUndoCapacity, pData->sText);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	pData->iUndoCursor = pData->iCursor;
-	pData->iUndoSelectStart = pData->iSelectStart;
-	pData->iUndoSelectEnd = pData->iSelectEnd;
-	pData->bCanUndo = 1;
-	pData->bCanRedo = 0;
+	*psCopy = NULL;
+	if ( iLength == 0 ) return XUI_OK;
+	sCopy = (char*)xrtMalloc((size_t)iLength);
+	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memcpy(sCopy, sText, (size_t)iLength);
+	*psCopy = sCopy;
 	return XUI_OK;
 }
 
-static int __xuiInputRecordRedo(xui_input_data_t* pData)
+static int __xuiInputHistoryBegin(xui_input_data_t* pData,
+	xui_input_history_t* pState, int iStart, int iEnd,
+	const char* sInserted, int iInsertedLength)
 {
 	int iRet;
-
-	if ( pData == NULL ) {
+	if ( pData == NULL || pState == NULL || pData->sText == NULL ||
+	     iStart < 0 || iEnd < iStart || iEnd > pData->iTextLength ||
+	     iInsertedLength < 0 || (iInsertedLength > 0 && sInserted == NULL) )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xuiInputStringSet(&pData->sRedoText, &pData->iRedoCapacity, pData->sText);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	pData->iRedoCursor = pData->iCursor;
-	pData->iRedoSelectStart = pData->iSelectStart;
-	pData->iRedoSelectEnd = pData->iSelectEnd;
-	pData->bCanRedo = 1;
+	memset(pState, 0, sizeof(*pState));
+	pState->iStart = iStart;
+	pState->iRemovedLength = iEnd - iStart;
+	pState->iInsertedLength = iInsertedLength;
+	pState->iBeforeCursor = pData->iCursor;
+	pState->iBeforeSelectStart = pData->iSelectStart;
+	pState->iBeforeSelectEnd = pData->iSelectEnd;
+	pState->fBeforeScrollX = pData->fScrollX;
+	iRet = __xuiInputHistoryCopy(&pState->sRemoved,
+		pData->sText + iStart, pState->iRemovedLength);
+	if ( iRet == XUI_OK ) iRet = __xuiInputHistoryCopy(&pState->sInserted,
+		sInserted, iInsertedLength);
+	if ( iRet != XUI_OK ) __xuiInputHistoryFree(pState);
+	return iRet;
+}
+
+static void __xuiInputHistoryFinish(xui_input_data_t* pData,
+	xui_input_history_t* pState)
+{
+	if ( pData == NULL || pState == NULL ) return;
+	pState->iAfterCursor = pData->iCursor;
+	pState->iAfterSelectStart = pData->iSelectStart;
+	pState->iAfterSelectEnd = pData->iSelectEnd;
+	pState->fAfterScrollX = pData->fScrollX;
+}
+
+static void __xuiInputHistoryClear(xui_input_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	__xuiInputHistoryFree(&pData->tUndo);
+	__xuiInputHistoryFree(&pData->tRedo);
+	pData->bCanUndo = 0;
+	pData->bCanRedo = 0;
+	pData->bUndoInsertGroup = 0;
+	pData->iUndoInsertEnd = 0;
+}
+
+static void __xuiInputHistoryCommit(xui_input_data_t* pData,
+	xui_input_history_t* pState)
+{
+	if ( pData == NULL || pState == NULL ) return;
+	__xuiInputHistoryFree(&pData->tUndo);
+	pData->tUndo = *pState;
+	memset(pState, 0, sizeof(*pState));
+	__xuiInputHistoryFree(&pData->tRedo);
+	pData->bCanUndo = 1;
+	pData->bCanRedo = 0;
+}
+
+static int __xuiInputHistoryCoalesceInsert(xui_input_data_t* pData,
+	const char* sText, int iTextSize)
+{
+	char* sInserted;
+	if ( pData == NULL || sText == NULL || iTextSize <= 0 || !pData->bCanUndo )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->tUndo.iRemovedLength != 0 ||
+	     pData->tUndo.iStart + pData->tUndo.iInsertedLength != pData->iUndoInsertEnd )
+		return XUI_ERROR_INVALID_STATE;
+	sInserted = (char*)xrtRealloc(pData->tUndo.sInserted,
+		(size_t)pData->tUndo.iInsertedLength + (size_t)iTextSize);
+	if ( sInserted == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memcpy(sInserted + pData->tUndo.iInsertedLength, sText, (size_t)iTextSize);
+	pData->tUndo.sInserted = sInserted;
+	pData->tUndo.iInsertedLength += iTextSize;
 	return XUI_OK;
 }
 
 static int __xuiInputSetTextInternal(xui_widget pWidget, xui_input_data_t* pData, const char* sText, int bNotify, int bUndo)
 {
+	xui_input_history_t tHistory;
+	const char* sNewText;
+	int iNewLength;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	sNewText = (sText != NULL) ? sText : "";
+	iNewLength = (int)strlen(sNewText);
+	if ( pData->iMaxLength > 0 && iNewLength > pData->iMaxLength )
+		iNewLength = __xuiInputUtf8ClampBytes(sNewText, pData->iMaxLength);
+	memset(&tHistory, 0, sizeof(tHistory));
 	if ( bUndo ) {
-		iRet = __xuiInputRecordUndo(pData);
+		iRet = __xuiInputHistoryBegin(pData, &tHistory, 0,
+			pData->iTextLength, sNewText, iNewLength);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 	}
-	pData->iCursor = (sText != NULL) ? (int)strlen(sText) : 0;
-	iRet = __xuiInputAssignTextBytes(pData, sText, -1);
+	pData->iCursor = iNewLength;
+	iRet = __xuiInputAssignTextBytes(pData, sNewText, iNewLength);
 	if ( iRet != XUI_OK ) {
+		__xuiInputHistoryFree(&tHistory);
 		return iRet;
 	}
-	pData->iCursor = (int)strlen(pData->sText);
+	pData->iCursor = pData->iTextLength;
 	(void)__xuiInputClearSelectionData(pData);
 	__xuiInputEnsureCursorVisible(pWidget, pData);
+	if ( bUndo ) {
+		__xuiInputHistoryFinish(pData, &tHistory);
+		__xuiInputHistoryCommit(pData, &tHistory);
+	} else {
+		__xuiInputHistoryClear(pData);
+	}
+	pData->bUndoInsertGroup = 0;
+	pData->iUndoInsertEnd = 0;
 	if ( bNotify ) {
 		__xuiInputNotifyChange(pWidget, pData);
 	}
@@ -1153,6 +1465,7 @@ static int __xuiInputDecorationClick(xui_widget pWidget, xui_input_data_t* pData
 
 static int __xuiInputDeleteRange(xui_widget pWidget, xui_input_data_t* pData, int iStart, int iEnd, int bNotify, int bUndo)
 {
+	xui_input_history_t tHistory;
 	int iLen;
 	int iMove;
 	int iRet;
@@ -1160,7 +1473,7 @@ static int __xuiInputDeleteRange(xui_widget pWidget, xui_input_data_t* pData, in
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iLen = (int)strlen(pData->sText);
+	iLen = pData->iTextLength;
 	iStart = __xuiInputUtf8Clamp(pData->sText, iLen, iStart);
 	iEnd = __xuiInputUtf8Clamp(pData->sText, iLen, iEnd);
 	if ( iStart > iEnd ) {
@@ -1171,17 +1484,26 @@ static int __xuiInputDeleteRange(xui_widget pWidget, xui_input_data_t* pData, in
 	if ( iStart == iEnd ) {
 		return XUI_OK;
 	}
+	memset(&tHistory, 0, sizeof(tHistory));
 	if ( bUndo ) {
-		iRet = __xuiInputRecordUndo(pData);
+		iRet = __xuiInputHistoryBegin(pData, &tHistory, iStart, iEnd, NULL, 0);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 	}
 	iMove = iLen - iEnd + 1;
 	memmove(pData->sText + iStart, pData->sText + iEnd, (size_t)iMove);
+	pData->iTextLength = iLen - (iEnd - iStart);
+	__xuiInputTextShapePatch(pWidget, pData, iStart, iEnd, iStart);
 	pData->iCursor = iStart;
 	(void)__xuiInputClearSelectionData(pData);
 	__xuiInputEnsureCursorVisible(pWidget, pData);
+	if ( bUndo ) {
+		__xuiInputHistoryFinish(pData, &tHistory);
+		__xuiInputHistoryCommit(pData, &tHistory);
+	}
+	pData->bUndoInsertGroup = 0;
+	pData->iUndoInsertEnd = 0;
 	if ( bNotify ) {
 		__xuiInputNotifyChange(pWidget, pData);
 	}
@@ -1190,12 +1512,16 @@ static int __xuiInputDeleteRange(xui_widget pWidget, xui_input_data_t* pData, in
 
 static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, const char* sInsert, int iInsertSize)
 {
+	xui_input_history_t tHistory;
+	xui_input_history_t* pGroupedHistory;
 	int iStart;
 	int iEnd;
 	int iLen;
 	int iSelected;
 	int iAllowed;
 	int iNewLen;
+	int bGroupable;
+	int bReuseUndo;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (sInsert == NULL) || pData->bReadonly ) {
@@ -1208,7 +1534,7 @@ static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, con
 		return XUI_OK;
 	}
 	__xuiInputSelectionRange(pData, &iStart, &iEnd);
-	iLen = (int)strlen(pData->sText);
+	iLen = pData->iTextLength;
 	iSelected = iEnd - iStart;
 	if ( pData->iMaxLength > 0 ) {
 		iAllowed = pData->iMaxLength - (iLen - iSelected);
@@ -1222,26 +1548,52 @@ static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, con
 			return XUI_OK;
 		}
 	}
-	iRet = __xuiInputRecordUndo(pData);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
 	iNewLen = iLen - iSelected + iInsertSize;
 	iRet = __xuiInputTextReserve(&pData->sText, &pData->iTextCapacity, iNewLen + 1);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	bGroupable = iSelected == 0 &&
+		xuiInternalTextGraphemeNext(sInsert, iInsertSize, 0) == iInsertSize;
+	bReuseUndo = bGroupable && pData->bUndoInsertGroup &&
+		pData->iUndoInsertEnd == iStart;
+	memset(&tHistory, 0, sizeof(tHistory));
+	pGroupedHistory = NULL;
+	if ( bReuseUndo ) {
+		iRet = __xuiInputHistoryCoalesceInsert(pData, sInsert, iInsertSize);
+		if ( iRet != XUI_OK ) return iRet;
+		pGroupedHistory = &pData->tUndo;
+	} else {
+		iRet = __xuiInputHistoryBegin(pData, &tHistory, iStart, iEnd,
+			sInsert, iInsertSize);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	memmove(pData->sText + iStart + iInsertSize, pData->sText + iEnd, (size_t)(iLen - iEnd + 1));
 	memcpy(pData->sText + iStart, sInsert, (size_t)iInsertSize);
+	pData->iTextLength = iNewLen;
+	__xuiInputTextShapePatch(pWidget, pData, iStart, iEnd, iStart + iInsertSize);
 	pData->iCursor = iStart + iInsertSize;
 	(void)__xuiInputClearSelectionData(pData);
 	__xuiInputEnsureCursorVisible(pWidget, pData);
+	pData->bUndoInsertGroup = bGroupable;
+	pData->iUndoInsertEnd = bGroupable ? pData->iCursor : 0;
+	if ( pGroupedHistory != NULL ) {
+		__xuiInputHistoryFinish(pData, pGroupedHistory);
+	} else {
+		__xuiInputHistoryFinish(pData, &tHistory);
+		__xuiInputHistoryCommit(pData, &tHistory);
+	}
 	__xuiInputNotifyChange(pWidget, pData);
 	return __xuiInputInvalidateText(pWidget);
 }
 
 static int __xuiInputMoveSelectionToCursor(xui_widget pWidget, xui_input_data_t* pData, int iTarget)
 {
+	xui_input_history_t tHistory;
+	char* sHistoryInserted;
+	int iHistoryStart;
+	int iHistoryEnd;
+	int iHistorySize;
 	int iStart;
 	int iEnd;
 	int iLen;
@@ -1260,7 +1612,7 @@ static int __xuiInputMoveSelectionToCursor(xui_widget pWidget, xui_input_data_t*
 	if ( iEnd <= iStart ) {
 		return XUI_OK;
 	}
-	iLen = (int)strlen(pData->sText);
+	iLen = pData->iTextLength;
 	iTarget = __xuiInputUtf8Clamp(pData->sText, iLen, iTarget);
 	if ( (iTarget >= iStart) && (iTarget <= iEnd) ) {
 		return XUI_OK;
@@ -1272,7 +1624,28 @@ static int __xuiInputMoveSelectionToCursor(xui_widget pWidget, xui_input_data_t*
 	}
 	memcpy(pData->sScratch, pData->sText + iStart, (size_t)iSelected);
 	pData->sScratch[iSelected] = '\0';
-	iRet = __xuiInputRecordUndo(pData);
+	if ( iTarget < iStart ) {
+		iHistoryStart = iTarget;
+		iHistoryEnd = iEnd;
+	} else {
+		iHistoryStart = iStart;
+		iHistoryEnd = iTarget;
+	}
+	iHistorySize = iHistoryEnd - iHistoryStart;
+	sHistoryInserted = (char*)xrtMalloc((size_t)iHistorySize);
+	if ( sHistoryInserted == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( iTarget < iStart ) {
+		memcpy(sHistoryInserted, pData->sText + iStart, (size_t)iSelected);
+		memcpy(sHistoryInserted + iSelected, pData->sText + iTarget,
+			(size_t)(iStart - iTarget));
+	} else {
+		memcpy(sHistoryInserted, pData->sText + iEnd, (size_t)(iTarget - iEnd));
+		memcpy(sHistoryInserted + (iTarget - iEnd), pData->sText + iStart,
+			(size_t)iSelected);
+	}
+	iRet = __xuiInputHistoryBegin(pData, &tHistory, iHistoryStart,
+		iHistoryEnd, sHistoryInserted, iHistorySize);
+	xrtFree(sHistoryInserted);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -1281,8 +1654,13 @@ static int __xuiInputMoveSelectionToCursor(xui_widget pWidget, xui_input_data_t*
 	iNewStart = (iTarget > iEnd) ? (iTarget - iSelected) : iTarget;
 	memmove(pData->sText + iNewStart + iSelected, pData->sText + iNewStart, (size_t)(iLen - iSelected - iNewStart + 1));
 	memcpy(pData->sText + iNewStart, pData->sScratch, (size_t)iSelected);
+	__xuiInputTextShapeDirty(pData);
 	(void)__xuiInputSetSelectionData(pData, iNewStart, iNewStart + iSelected);
 	__xuiInputEnsureCursorVisible(pWidget, pData);
+	__xuiInputHistoryFinish(pData, &tHistory);
+	__xuiInputHistoryCommit(pData, &tHistory);
+	pData->bUndoInsertGroup = 0;
+	pData->iUndoInsertEnd = 0;
 	__xuiInputNotifyChange(pWidget, pData);
 	return __xuiInputInvalidateText(pWidget);
 }
@@ -1347,9 +1725,11 @@ static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iLen = (int)strlen(pData->sText);
+	iLen = pData->iTextLength;
 	iOldStart = pData->iSelectStart;
 	iOldEnd = pData->iSelectEnd;
+	pData->bUndoInsertGroup = 0;
+	pData->iUndoInsertEnd = 0;
 	iNewCursor = __xuiInputUtf8Clamp(pData->sText, iLen, iNewCursor);
 	if ( bExtend ) {
 		iAnchor = __xuiInputHasSelectionData(pData) ? pData->iAnchor : pData->iCursor;
@@ -1395,13 +1775,16 @@ static int __xuiInputCursorFromPoint(xui_widget pWidget, xui_input_data_t* pData
 	__xuiInputResolve(pWidget, pData, &tResolved);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	sDisplay = __xuiInputDisplayAll(pData);
-	tDisplaySize = __xuiInputMeasureText(pWidget, tResolved.pFont, sDisplay);
+	tDisplaySize = __xuiInputMeasureCurrent(pWidget, pData, tResolved.pFont, sDisplay);
 	fOffset = (tDisplaySize.fX <= tContent.fW) ? __xuiInputAlignOffset(pData, tContent.fW, tDisplaySize.fX) : 0.0f;
 	fQuery = fX - tContent.fX - fOffset + pData->fScrollX;
 	if ( fQuery <= 0.0f ) {
 		return 0;
 	}
-	iLen = (int)strlen(pData->sText);
+	if ( __xuiInputTextShapeHitTest(pWidget, pData, tResolved.pFont, fQuery, 0, &iPos) == XUI_OK ) {
+		return iPos;
+	}
+	iLen = pData->iTextLength;
 	iPos = 0;
 	fPrev = 0.0f;
 	while ( iPos < iLen ) {
@@ -1836,7 +2219,10 @@ static int __xuiInputFirstVisibleByte(xui_widget pWidget, xui_input_data_t* pDat
 	if ( (pData == NULL) || (pData->sText == NULL) || (pData->fScrollX <= 0.0f) ) {
 		return 0;
 	}
-	iLen = (int)strlen(pData->sText);
+	if ( __xuiInputTextShapeHitTest(pWidget, pData, pFont, pData->fScrollX, 1, &iPos) == XUI_OK ) {
+		return iPos;
+	}
+	iLen = pData->iTextLength;
 	iPos = 0;
 	while ( iPos < iLen ) {
 		iNext = __xuiInputUtf8Next(pData->sText, iLen, iPos);
@@ -1870,6 +2256,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	float fImeX1;
 	int iLen;
 	int iDrawStart;
+	int bChunked;
 	int iRet;
 
 	(void)iStateId;
@@ -1925,8 +2312,10 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	pData->tTextRect = tContent;
 	__xuiInputEnsureCursorVisible(pWidget, pData);
 	sDisplay = pData->bImeComposing ? __xuiInputImeDisplay(pData) : __xuiInputDisplayAll(pData);
-	iLen = (sDisplay != NULL) ? (int)strlen(sDisplay) : 0;
-	tDisplaySize = __xuiInputMeasureText(pWidget, tResolved.pFont, sDisplay);
+	iLen = (!pData->bImeComposing && !pData->bPassword) ? pData->iTextLength :
+		((sDisplay != NULL) ? (int)strlen(sDisplay) : 0);
+	tDisplaySize = __xuiInputMeasureCurrent(pWidget, pData, tResolved.pFont, sDisplay);
+	bChunked = pData->tTextChunks.bValid && !pData->bPassword && !pData->bImeComposing;
 	fOffset = (tDisplaySize.fX <= tContent.fW && pData->fScrollX <= 0.0f) ? __xuiInputAlignOffset(pData, tContent.fW, tDisplaySize.fX) : 0.0f;
 	if ( !pData->bImeComposing ) {
 		iRet = __xuiInputDrawSelection(pWidget, pDraw, pProxy, pData, &tResolved, tContent, fOffset);
@@ -1948,7 +2337,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 
 	if ( (tResolved.pFont != NULL) && (pProxy->drawText != NULL) ) {
 		if ( iLen > 0 ) {
-			if ( !pData->bImeComposing && tDisplaySize.fX > tContent.fW ) {
+			if ( !bChunked && !pData->bImeComposing && tDisplaySize.fX > tContent.fW ) {
 				iDrawStart = __xuiInputFirstVisibleByte(pWidget, pData, tResolved.pFont);
 				(void)__xuiInputBuildDisplayRange(pData, iDrawStart, iLen, &pData->sDisplay, &pData->iDisplayCapacity);
 				sDrawText = pData->sDisplay;
@@ -1956,13 +2345,35 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 				iDrawStart = 0;
 				sDrawText = sDisplay;
 			}
-			(void)iDrawStart;
 			tText = tContent;
 			tText.fX += fOffset;
 			tText.fW -= fOffset;
 			iText = ((iState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 			if ( (__xuiInputAlpha(iText) != 0) && (tText.fW > 0.0f) && (tText.fH > 0.0f) ) {
-				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=sDrawText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = XUI_ERROR_UNSUPPORTED;
+				if ( bChunked ) {
+					iRet = xuiInternalTextChunkCacheDraw(pProxy, pDraw,
+						&pData->tTextChunks, tContent,
+						tContent.fX + fOffset - pData->fScrollX,
+						tContent.fY, tContent.fH, iText,
+						XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				}
+				if ( iRet == XUI_ERROR_UNSUPPORTED && !bChunked &&
+				     !pData->bPassword && !pData->bImeComposing &&
+				     pProxy->drawTextShapeRange != NULL &&
+				     __xuiInputTextShapeEnsure(pWidget, pData, tResolved.pFont) == XUI_OK &&
+				     pData->tTextShape.pPaint != NULL ) {
+					iRet = pProxy->drawTextShapeRange(pProxy, pDraw, &pData->tTextShape,
+						iDrawStart, pData->iTextLength, tText, iText,
+						XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				}
+				if ( iRet == XUI_ERROR_UNSUPPORTED ) {
+					iRet = pProxy->drawText(pProxy, pDraw,
+						&(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont,
+						.sText=sDrawText, .iTextSize=(int)strlen(sDrawText),
+						.iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)},
+						tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				}
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		} else if ( !pData->bImeComposing && (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') &&
@@ -2020,7 +2431,7 @@ static int __xuiInputUpdateMenu(xui_widget pWidget, xui_input_data_t* pData)
 	bHasSelection = __xuiInputHasSelectionData(pData);
 	bReadonly = pData->bReadonly;
 	bCanCopy = bHasSelection && !pData->bPassword;
-	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
+	iLen = pData->iTextLength;
 	bAllSelected = bHasSelection && (pData->iSelectStart == 0 || pData->iSelectEnd == 0) &&
 	               (pData->iSelectStart == iLen || pData->iSelectEnd == iLen);
 	iEnabled = XUI_MENU_ITEM_ENABLED;
@@ -2114,7 +2525,7 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
+	iLen = pData->iTextLength;
 	iKey = pEvent->iKey;
 	bShift = ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0);
 	bCtrl = ((pEvent->iModifiers & XUI_MOD_CTRL) != 0);
@@ -2437,7 +2848,7 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		}
 		if ( pEvent->bCompositionActive ) {
 			if ( pEvent->bCompositionReplacementRange ) {
-				iTextSize = (int)strlen(pData->sText);
+				iTextSize = pData->iTextLength;
 				pData->iImeAnchorStart = __xuiInputUtf8Clamp(pData->sText, iTextSize,
 					pEvent->iCompositionReplacementStart);
 				pData->iImeAnchorEnd = __xuiInputUtf8Clamp(pData->sText, iTextSize,
@@ -2467,7 +2878,7 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		}
 		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
 			if ( pEvent->bCompositionReplacementRange ) {
-				iTextSize = (int)strlen(pData->sText);
+				iTextSize = pData->iTextLength;
 				pData->iImeAnchorStart = __xuiInputUtf8Clamp(pData->sText, iTextSize,
 					pEvent->iCompositionReplacementStart);
 				pData->iImeAnchorEnd = __xuiInputUtf8Clamp(pData->sText, iTextSize,
@@ -2626,7 +3037,7 @@ static int __xuiInputInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	iRet = __xuiInputAssignTextBytes(pData, (pDesc != NULL) ? pDesc->sText : "", -1);
 	if ( iRet != XUI_OK ) return iRet;
-	pData->iCursor = (int)strlen(pData->sText);
+	pData->iCursor = pData->iTextLength;
 	(void)__xuiInputClearSelectionData(pData);
 	iRet = __xuiInputStringSet(&pData->sPlaceholder, &pData->iPlaceholderCapacity, (pDesc != NULL) ? pDesc->sPlaceholder : "");
 	if ( iRet != XUI_OK ) return iRet;
@@ -2696,12 +3107,13 @@ static void __xuiInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	pData->pTrailingDecoration = NULL;
 	pData->pHoverDecoration = NULL;
 	pData->pActiveDecoration = NULL;
+	__xuiInputTextShapeClear(pData);
 	if ( pData->sText != NULL ) xrtFree(pData->sText);
 	if ( pData->sPlaceholder != NULL ) xrtFree(pData->sPlaceholder);
 	if ( pData->sDisplay != NULL ) xrtFree(pData->sDisplay);
 	if ( pData->sScratch != NULL ) xrtFree(pData->sScratch);
-	if ( pData->sUndoText != NULL ) xrtFree(pData->sUndoText);
-	if ( pData->sRedoText != NULL ) xrtFree(pData->sRedoText);
+	__xuiInputHistoryFree(&pData->tUndo);
+	__xuiInputHistoryFree(&pData->tRedo);
 	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
 	if ( pData->sImeDisplay != NULL ) xrtFree(pData->sImeDisplay);
 	if ( pData->sFocusText != NULL ) xrtFree(pData->sFocusText);
@@ -2777,7 +3189,7 @@ static int __xuiInputAccessibleNode(xui_widget pWidget, xui_accessible_node_t* p
 }
 
 static const xui_internal_accessibility_adapter_t g_xuiInputAccessible = {
-	__xuiInputAccessibleNode, xuiInternalAccessibilityEditAction
+	.getNode = __xuiInputAccessibleNode, .performAction = xuiInternalAccessibilityEditAction
 };
 
 XUI_API xui_widget_type xuiInputGetType(xui_context pContext)
@@ -2844,8 +3256,7 @@ XUI_API int xuiInputSetText(xui_widget pWidget, const char* sText)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bCanUndo = 0;
-	pData->bCanRedo = 0;
+	__xuiInputHistoryClear(pData);
 	return __xuiInputSetTextInternal(pWidget, pData, sText, 0, 0);
 }
 
@@ -2892,9 +3303,12 @@ XUI_API xui_font xuiInputGetFont(xui_widget pWidget)
 XUI_API int xuiInputSetMaxLength(xui_widget pWidget, int iMaxLength)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	int iOldMaxLength;
 	if ( (pData == NULL) || (iMaxLength < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldMaxLength = pData->iMaxLength;
 	pData->iMaxLength = iMaxLength;
 	(void)__xuiInputAssignTextBytes(pData, pData->sText, -1);
+	if ( iOldMaxLength != iMaxLength ) __xuiInputHistoryClear(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	return __xuiInputInvalidateText(pWidget);
 }
@@ -2926,6 +3340,7 @@ XUI_API int xuiInputSetPassword(xui_widget pWidget, int bPassword)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	bChanged = pData->bPassword != (bPassword != 0);
 	pData->bPassword = (bPassword != 0);
+	if ( bChanged ) __xuiInputTextShapeDirty(pData);
 	__xuiInputSyncImeMode(pWidget, pData);
 	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return __xuiInputInvalidatePaint(pWidget);
@@ -2981,6 +3396,8 @@ XUI_API int xuiInputSetSelection(xui_widget pWidget, int iStart, int iEnd)
 	int iOldStart;
 	int iOldEnd;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->bUndoInsertGroup = 0;
+	pData->iUndoInsertEnd = 0;
 	iOldStart = pData->iSelectStart;
 	iOldEnd = pData->iSelectEnd;
 	iRet = __xuiInputSetSelectionData(pData, iStart, iEnd);
@@ -3004,7 +3421,7 @@ XUI_API int xuiInputSelectAll(xui_widget pWidget)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xuiInputSetSelection(pWidget, 0, (int)strlen(pData->sText));
+	return xuiInputSetSelection(pWidget, 0, pData->iTextLength);
 }
 
 XUI_API int xuiInputHasSelection(xui_widget pWidget)
@@ -3046,48 +3463,102 @@ XUI_API int xuiInputDeleteSelection(xui_widget pWidget)
 	return __xuiInputDeleteRange(pWidget, pData, iStart, iEnd, 1, 1);
 }
 
-XUI_API int xuiInputUndo(xui_widget pWidget)
+static int __xuiInputApplyHistoryState(xui_widget pWidget,
+	xui_input_data_t* pData, const xui_input_history_t* pState, int bRedo)
 {
-	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	const char* sInsert;
+	int iRemoveLength;
+	int iInsertLength;
+	int iOldEnd;
+	int iNewLength;
+	int iLen;
 	int iRet;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !pData->bCanUndo ) return XUI_OK;
-	iRet = __xuiInputRecordRedo(pData);
+
+	if ( pWidget == NULL || pData == NULL || pState == NULL || pData->sText == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	iRemoveLength = bRedo ? pState->iRemovedLength : pState->iInsertedLength;
+	iInsertLength = bRedo ? pState->iInsertedLength : pState->iRemovedLength;
+	sInsert = bRedo ? pState->sInserted : pState->sRemoved;
+	if ( pState->iStart < 0 || iRemoveLength < 0 || iInsertLength < 0 ||
+	     pState->iStart + iRemoveLength > pData->iTextLength ||
+	     (iInsertLength > 0 && sInsert == NULL) ) return XUI_ERROR_INVALID_STATE;
+	iNewLength = pData->iTextLength - iRemoveLength + iInsertLength;
+	iRet = __xuiInputTextReserve(&pData->sText, &pData->iTextCapacity,
+		iNewLength + 1);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiInputAssignTextBytes(pData, pData->sUndoText, -1);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->iCursor = pData->iUndoCursor;
-	pData->iSelectStart = pData->iUndoSelectStart;
-	pData->iSelectEnd = pData->iUndoSelectEnd;
+	iOldEnd = pState->iStart + iRemoveLength;
+	memmove(pData->sText + pState->iStart + iInsertLength,
+		pData->sText + iOldEnd,
+		(size_t)(pData->iTextLength - iOldEnd + 1));
+	if ( iInsertLength > 0 ) memcpy(pData->sText + pState->iStart,
+		sInsert, (size_t)iInsertLength);
+	pData->iTextLength = iNewLength;
+	__xuiInputTextShapePatch(pWidget, pData, pState->iStart,
+		iOldEnd, pState->iStart + iInsertLength);
+	iLen = pData->iTextLength;
+	pData->iCursor = __xuiInputUtf8Clamp(pData->sText, iLen,
+		bRedo ? pState->iAfterCursor : pState->iBeforeCursor);
+	pData->iSelectStart = __xuiInputUtf8Clamp(pData->sText, iLen,
+		bRedo ? pState->iAfterSelectStart : pState->iBeforeSelectStart);
+	pData->iSelectEnd = __xuiInputUtf8Clamp(pData->sText, iLen,
+		bRedo ? pState->iAfterSelectEnd : pState->iBeforeSelectEnd);
 	pData->iAnchor = pData->iSelectStart;
-	pData->bCanUndo = 0;
+	pData->fScrollX = bRedo ? pState->fAfterScrollX : pState->fBeforeScrollX;
+	pData->bUndoInsertGroup = 0;
+	pData->iUndoInsertEnd = 0;
 	__xuiInputEnsureCursorVisible(pWidget, pData);
 	__xuiInputNotifyChange(pWidget, pData);
 	return __xuiInputInvalidateText(pWidget);
 }
 
+XUI_API int xuiInputUndo(xui_widget pWidget)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	xui_input_history_t tUndo;
+	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !pData->bCanUndo ) return XUI_OK;
+	tUndo = pData->tUndo;
+	memset(&pData->tUndo, 0, sizeof(pData->tUndo));
+	pData->bCanUndo = 0;
+	iRet = __xuiInputApplyHistoryState(pWidget, pData, &tUndo, 0);
+	if ( iRet == XUI_OK ) {
+		__xuiInputHistoryFree(&pData->tRedo);
+		pData->tRedo = tUndo;
+		memset(&tUndo, 0, sizeof(tUndo));
+		pData->bCanRedo = 1;
+	} else {
+		pData->tUndo = tUndo;
+		memset(&tUndo, 0, sizeof(tUndo));
+		pData->bCanUndo = 1;
+	}
+	__xuiInputHistoryFree(&tUndo);
+	return iRet;
+}
+
 XUI_API int xuiInputRedo(xui_widget pWidget)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	xui_input_history_t tRedo;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !pData->bCanRedo ) return XUI_OK;
-	iRet = __xuiInputStringSet(&pData->sUndoText, &pData->iUndoCapacity, pData->sText);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->iUndoCursor = pData->iCursor;
-	pData->iUndoSelectStart = pData->iSelectStart;
-	pData->iUndoSelectEnd = pData->iSelectEnd;
-	pData->bCanUndo = 1;
-	iRet = __xuiInputAssignTextBytes(pData, pData->sRedoText, -1);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->iCursor = pData->iRedoCursor;
-	pData->iSelectStart = pData->iRedoSelectStart;
-	pData->iSelectEnd = pData->iRedoSelectEnd;
-	pData->iAnchor = pData->iSelectStart;
+	tRedo = pData->tRedo;
+	memset(&pData->tRedo, 0, sizeof(pData->tRedo));
 	pData->bCanRedo = 0;
-	__xuiInputEnsureCursorVisible(pWidget, pData);
-	__xuiInputNotifyChange(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	iRet = __xuiInputApplyHistoryState(pWidget, pData, &tRedo, 1);
+	if ( iRet == XUI_OK ) {
+		__xuiInputHistoryFree(&pData->tUndo);
+		pData->tUndo = tRedo;
+		memset(&tRedo, 0, sizeof(tRedo));
+		pData->bCanUndo = 1;
+	} else {
+		pData->tRedo = tRedo;
+		memset(&tRedo, 0, sizeof(tRedo));
+		pData->bCanRedo = 1;
+	}
+	__xuiInputHistoryFree(&tRedo);
+	return iRet;
 }
 
 XUI_API int xuiInputCanUndo(xui_widget pWidget)

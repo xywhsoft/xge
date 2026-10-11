@@ -183,6 +183,14 @@ XUI_API int xuiDocumentRendererGetCellRect(xui_document_renderer renderer, xui_d
 XUI_API int xuiDocumentRendererGetNodeRect(xui_document_renderer renderer, xui_doc_node_id node, xui_doc_rect_t* out);
 /* Read a position's document-space caret rectangle. */
 XUI_API int xuiDocumentRendererGetCaretRect(xui_document_renderer renderer, const xui_doc_position_t* position, xui_doc_rect_t* rect);
+/* Logical content of the visual row containing position, using caret affinity
+ * at wraps. Includes explicit breaks (and SOURCE row terminators), but excludes
+ * synthetic plaintext paragraph/cell separators. Parallel table cells remain
+ * separate rows. Output uses the renderer's position domain/generation and is
+ * unchanged on failure. Only layout needed to locate the row is prepared;
+ * querying a lazy horizontal row does not shape its unseen suffix. */
+XUI_API int xuiDocumentRendererGetLineRange(xui_document_renderer renderer,
+    const xui_doc_position_t* position, xui_doc_range_t* range);
 /* Selection geometry in document coordinates, in document order. Adjacent
  * fragments on one visual row are merged; grapheme clusters and objects are
  * indivisible, matching Draw. Materializes the range's blocks, including

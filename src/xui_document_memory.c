@@ -73,6 +73,7 @@ static void doc_memory_visit(void* pointer, unsigned owner, int add)
         doc_memory_visit(p->index, owner, add); doc_memory_visit(p->source, owner, add);
         doc_memory_visit(p->references, owner, add); doc_memory_visit(p->reference_values, owner, add); doc_memory_visit(p->inline_syntax, owner, add);
         doc_memory_visit(p->reference_candidates, owner, add);
+        doc_memory_visit(p->reference_syntax, owner, add); doc_memory_visit(p->source_syntax, owner, add);
         break;
     }
     default: break; /* Blob and interned attributes have no owned edges. */

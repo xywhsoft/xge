@@ -585,6 +585,7 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 	float fClusterAdvance = 0.0f, fDrawX, fOriginX;
 	xge_glyph_run_backend_t* pBackend;
 	int i;
+	int screen_space = (iFlags & XGE_DRAW_SCREEN_SPACE) != 0;
 	int keep_x = (iFlags & XGE_DRAW_TEXT_SUBPIXEL_X) != 0;
 	iFlags &= ~XGE_DRAW_TEXT_SUBPIXEL_X; /* Never forward text-only flags to quads. */
 
@@ -593,7 +594,7 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 	__xgeGlyphRunPrepareAtlas(pRun);
 	fPenX = fX;
 	fPenY = fY + pRun->fAscent;
-	if ( (iFlags & XGE_DRAW_SCREEN_SPACE) != 0 ) {
+	if ( screen_space ) {
 		if (!keep_x) fPenX = __xgeTextSnapPixel(fPenX);
 		fPenY = __xgeTextSnapPixel(fPenY);
 	}
@@ -653,6 +654,14 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 				((pPosition->iItemKind == XGE_TEXT_ITEM_GLYPH) ? pPosition->fOffsetX : 0.0f);
 			tDraw.tDst.fY = fPenY + tGlyph.fOffsetY +
 				((pPosition->iItemKind == XGE_TEXT_ITEM_GLYPH) ? pPosition->fOffsetY : 0.0f);
+			/* The atlas contains already-rasterized integer pixel coverage. Keep
+			 * default UI text on the pixel grid so fractional advances do not make
+			 * individual glyphs shimmer between columns. Callers that explicitly
+			 * request XGE_DRAW_TEXT_SUBPIXEL_X retain fractional X placement. */
+			if ( screen_space ) {
+				if ( !keep_x ) tDraw.tDst.fX = __xgeTextSnapPixel(tDraw.tDst.fX);
+				tDraw.tDst.fY = __xgeTextSnapPixel(tDraw.tDst.fY);
+			}
 			tDraw.tDst.fW = (float)tGlyph.iWidth;
 			tDraw.tDst.fH = (float)tGlyph.iHeight;
 			tDraw.iColor = __xgeGlyphRunSpanColor(pPosition, iColor, pSpans, iSpanCount);

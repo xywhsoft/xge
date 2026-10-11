@@ -1,6 +1,7 @@
 #include "../xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_native_accessibility_internal.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -1643,6 +1644,7 @@ static void __xuiContextDestroyNow(xui_context pContext)
 		return;
 	}
 	pContext->bDestroying = 1;
+	xuiInternalNativeAccessibilityDetach(pContext);
 	pContext->bDestroyPending = 0;
 	pContext->pStateChangeHead = NULL;
 	pContext->pStateChangeTail = NULL;

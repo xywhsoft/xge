@@ -11,6 +11,9 @@ struct xui_doc_prepare_t {
     doc_allocator* allocator;
     struct xui_doc_transaction_t transaction;
     doc_sequence *source, *operations; /* Immutable input, even while Run mutates the builder. */
+    doc_sequence* input_lineage; /* Generation/log-prefix metadata, not content or history. */
+    doc_sequence* visual_operations; /* Immutable complete semantic operation log. */
+    xui_document_change_set visual_change; /* Exact last delta for renderer reuse. */
     doc_state* visual_expected; /* The provisional VISUAL tree must match the parsed result. */
     doc_sequence *visual_edits, *visual_text; /* Persistent semantic/source edit map. */
     uint64_t visual_node, visual_parent, visual_caret_text, visual_caret_source;
@@ -23,6 +26,7 @@ struct xui_doc_prepare_t {
     unsigned utf8_bytes;
     char utf8[3]; /* A validated, incomplete final code point; never source/tree. */
 };
+static int doc_prepare_lineage_append(xui_document_prepare);
 static atomic_uint_fast64_t doc_prepare_sequence = 0;
 static uint64_t doc_prepare_generation(void)
 {
@@ -44,7 +48,9 @@ XUI_API void xuiDocumentPrepareRelease(xui_document_prepare p)
     doc_state_release(p->transaction.base); doc_state_release(p->transaction.draft);
     doc_state_release(p->visual_expected);
     doc_free(p->transaction.ops); doc_seq_release(p->source); doc_seq_release(p->operations);
+    doc_seq_release(p->input_lineage);
     doc_seq_release(p->visual_edits); doc_seq_release(p->visual_text);
+    doc_seq_release(p->visual_operations); xuiDocumentChangeSetRelease(p->visual_change);
     doc_free(p); doc_allocator_release(a);
 }
 static void doc_prepare_cancel(xui_document_prepare p, int reason)
@@ -123,8 +129,11 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
         t->flags = previous->transaction.flags;
         p->patch_count += previous->patch_count;
         p->operations = previous->operations; doc_seq_retain(p->operations);
+        p->input_lineage = previous->input_lineage; doc_seq_retain(p->input_lineage);
         if (!count && previous->visual_expected) {
             p->visual_expected = previous->visual_expected; doc_state_retain(p->visual_expected);
+            p->visual_operations = previous->visual_operations; doc_seq_retain(p->visual_operations);
+            p->visual_change = previous->visual_change; xuiDocumentChangeSetRetain(p->visual_change);
             p->visual_edits = previous->visual_edits; doc_seq_retain(p->visual_edits);
             p->visual_text = previous->visual_text; doc_seq_retain(p->visual_text);
             p->visual_node = previous->visual_node;
@@ -164,6 +173,9 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
     p->source_storage_bytes = t->draft->source_storage_bytes;
     p->generation = doc_prepare_generation();
     if (!p->generation) { xuiDocumentPrepareRelease(p); return XUI_DOC_ERROR_LIMIT; }
+    t->input_generation = p->generation;
+    result = doc_prepare_lineage_append(p);
+    if (result != XUI_OK) { xuiDocumentPrepareRelease(p); return result; }
     /* Failed creation cannot supersede the current candidate. */
     if (attach) {
         d->next_prepare = p->generation; doc_prepare_invalidate(d, NULL, XUI_DOC_ERROR_STALE);
@@ -256,6 +268,31 @@ static int doc_prepare_visual_plain_block_source_safe(doc_sequence* source,
     }
     return newlines >= 2 ? XUI_OK : XUI_ERROR_UNSUPPORTED;
 }
+static int doc_prepare_visual_record(xui_document_prepare p, xui_document_prepare previous,
+    xui_document_transaction shadow)
+{
+    doc_sequence *insert = NULL, *operations = NULL;
+    xui_document_change_set change = NULL;
+    doc_sequence* old = previous ? previous->visual_operations : NULL;
+    uint64_t before = doc_seq_size(old), bytes = shadow->count * sizeof(*shadow->ops);
+    int result;
+    if (bytes > SIZE_MAX - before) return XUI_DOC_ERROR_LIMIT;
+    if (bytes) {
+        insert = doc_seq_text(p->allocator, (const char*)shadow->ops, bytes);
+        if (!insert) return XUI_ERROR_OUT_OF_MEMORY;
+        result = doc_seq_replace(p->allocator, old, before, before, insert, &operations);
+        doc_seq_release(insert);
+        if (result != XUI_OK) return result;
+    } else { operations = old; doc_seq_retain(operations); }
+    change = doc_change_create(p->allocator, p->identity, p->transaction.base_revision,
+        previous ? previous->visual_expected : p->transaction.base, p->visual_expected,
+        shadow->ops, shadow->count, shadow->flags, XUI_DOC_SEMANTIC, p->transaction.origin, 0);
+    if (!change) { doc_seq_release(operations); return XUI_ERROR_OUT_OF_MEMORY; }
+    change->after_revision = change->before_revision;
+    p->visual_operations = operations; p->visual_change = change; return XUI_OK;
+}
+xui_document_change_set doc_prepare_visual_change(xui_document_prepare p)
+{ return p ? p->visual_change : NULL; }
 typedef struct doc_visual_edit_t {
     uint64_t text_start, text_old, text_new;
     uint64_t source_start, source_old, source_new;
@@ -491,8 +528,11 @@ int doc_prepare_visual_text(xui_document d, const xui_doc_txn_desc_t* desc,
             (*out)->visual_delete_left = start;
             (*out)->visual_delete_right = end;
             *source_caret = from + used;
-            (*out)->publication = doc_publish_plan_capture(d);
-            if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
+            result = doc_prepare_visual_record(*out, NULL, &shadow);
+            if (result == XUI_OK) {
+                (*out)->publication = doc_publish_plan_capture(d);
+                if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
+            }
         }
         if (result != XUI_OK) {
             xuiDocumentPrepareRelease(*out); *out = NULL;
@@ -637,8 +677,11 @@ int doc_prepare_visual_span(xui_document d, const xui_doc_txn_desc_t* desc,
             shadow.draft->source_storage_bytes = (*out)->source_storage_bytes;
             (*out)->visual_expected = shadow.draft; doc_state_retain(shadow.draft);
             (*out)->visual_parent = parent->id;
-            (*out)->publication = doc_publish_plan_capture(d);
-            if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
+            result = doc_prepare_visual_record(*out, NULL, &shadow);
+            if (result == XUI_OK) {
+                (*out)->publication = doc_publish_plan_capture(d);
+                if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
+            }
         }
         if (result == XUI_OK) {
             *caret = target; *source_caret = from + used;
@@ -758,8 +801,11 @@ int doc_prepare_visual_continue(xui_document d, xui_document_prepare previous,
             (*out)->visual_delete_left = left;
             (*out)->visual_delete_right = right;
             *next_source_caret = from + used;
-            (*out)->publication = doc_publish_plan_capture(d);
-            if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
+            result = doc_prepare_visual_record(*out, previous, &shadow);
+            if (result == XUI_OK) {
+                (*out)->publication = doc_publish_plan_capture(d);
+                if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
+            }
         }
         if (result != XUI_OK) {
             xuiDocumentPrepareRelease(*out); *out = NULL;
@@ -882,6 +928,11 @@ XUI_API int xuiDocumentPrepareRun(xui_document_prepare p)
     if (result == XUI_OK && p->visual_expected &&
         !doc_semantic_equal(p->visual_expected, p->transaction.draft)) result = XUI_DOC_ERROR_UNREPRESENTABLE;
     if (result == XUI_OK && p->publication) result = doc_publish_plan_build(p->publication, &p->transaction, p->identity);
+    if (result == XUI_OK && p->publication && p->visual_expected) {
+        xui_document_change_set change = doc_publish_plan_change(p->publication);
+        change->input_state = p->visual_expected; doc_state_retain(change->input_state);
+        xuiDocumentChangeSetRelease(change);
+    }
     if (result == XUI_OK) result = doc_txn_check(&p->transaction, 0);
     atomic_store(&p->result, result);
     atomic_store(&p->state, result == XUI_OK ? XUI_DOC_PREPARE_READY : XUI_DOC_PREPARE_FAILED);
@@ -947,6 +998,8 @@ XUI_API int xuiDocumentPrepareSourcePosition(xui_document_prepare p, uint64_t of
     at->iDocumentId = p->identity; at->iRevision = p->transaction.base_revision; at->iInputGeneration = p->generation;
     at->iOffset = offset; at->iAffinity = affinity; return XUI_OK;
 }
+#include "xui_document_input_mapping.inl"
+#include "xui_document_prepared_semantic.inl"
 XUI_API int xuiDocumentPreparePublish(xui_document d, xui_document_prepare p, xui_document_change_set* out)
 {
     struct xui_doc_transaction_t t;

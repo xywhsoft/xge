@@ -9,7 +9,7 @@ mkdir -p build
     -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type \
     -DXGE_DEBUGMODE=0 -I. -o "$OUT" \
     test_xui/xui_drag_drop_reentry_test.c test_xui/xui_test_xrt_impl.c \
-    lib/xlayout/xlayout.c src/xui_core.c src/xui_widget.c src/xui_layout.c \
+    lib/xlayout/xlayout.c src/xui_core.c src/xui_native_accessibility.c src/xui_widget.c src/xui_layout.c \
     src/xui_input.c src/xui_edit.c src/xui_drag_drop.c src/xui_accessibility.c src/xui_text.c \
     src/xui_assets.c src/xui_builtin_atlas.c src/xui_unicode.c -lm -ldl -lpthread
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 "$OUT" "$@"

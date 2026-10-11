@@ -21105,10 +21105,10 @@ static int __xgeSvgDrawFilterItem(
 	if ( (iWidth <= 0) || (iHeight <= 0) ) {
 		return XGE_OK;
 	}
-	if ( glGetIntegerv != NULL ) {
+	if ( xge_glGetIntegerv != NULL ) {
 		GLint iMaxTextureSize = 0;
 
-		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+		xge_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
 		if ( (iMaxTextureSize > 0) && ((iWidth > iMaxTextureSize) || (iHeight > iMaxTextureSize)) ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}

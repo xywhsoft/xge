@@ -935,7 +935,7 @@ static int __xuiRadioAccessibleNode(xui_widget pWidget, xui_accessible_node_t* p
 	return XUI_OK;
 }
 
-static const xui_internal_accessibility_adapter_t g_xuiRadioAccessible = {__xuiRadioAccessibleNode, NULL};
+static const xui_internal_accessibility_adapter_t g_xuiRadioAccessible = {.getNode = __xuiRadioAccessibleNode, .performAction = NULL};
 
 XUI_API xui_widget_type xuiRadioGetType(xui_context pContext)
 {

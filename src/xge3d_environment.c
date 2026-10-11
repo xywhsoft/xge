@@ -5,7 +5,7 @@
 #if XGE_ENABLE_3D
 void d3_cube_free(d3_cube *c)
 {
-    if (c->id && c->context==__xge3dContext()) glDeleteTextures(1,&c->id);
+    if (c->id && c->context==__xge3dContext()) xge_glDeleteTextures(1,&c->id);
     xrtArrayUnit(&c->pixels); memset(c,0,sizeof(*c));
 }
 int d3_cube_copy(d3_cube *c,const xge3d_cube_level_t *levels,size_t count,int srgb)
@@ -61,27 +61,27 @@ int d3_cube_upload(d3_cube *e, uint64_t *bytes)
     uint64_t context=__xge3dContext();
     if (!context) return XGE_ERROR_NOT_INITIALIZED;
     if (e->context && e->context!=context) return XGE_ERROR_INVALID_STATE;
-    if (e->id) { glBindTexture(0x8513,e->id); return XGE_OK; }
+    if (e->id) { xge_glBindTexture(0x8513,e->id); return XGE_OK; }
     GLint maximum,unpack;
-    glGetIntegerv(0x851C,&maximum);
+    xge_glGetIntegerv(0x851C,&maximum);
     if (e->size>maximum) return XGE_ERROR_UNSUPPORTED;
-    glGetIntegerv(GL_UNPACK_ALIGNMENT,&unpack); glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-    glGenTextures(1,&e->id); glBindTexture(0x8513,e->id);
+    xge_glGetIntegerv(GL_UNPACK_ALIGNMENT,&unpack); xge_glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+    xge_glGenTextures(1,&e->id); xge_glBindTexture(0x8513,e->id);
     int size=e->size;size_t offset=0;
     for (int l=0;l<e->levels;++l) {
-        for (int f=0;f<6;++f) glTexImage2D(0x8515+f,l,e->srgb ? 0x8C43 : GL_RGBA8,
+        for (int f=0;f<6;++f) xge_glTexImage2D(0x8515+f,l,e->srgb ? 0x8C43 : GL_RGBA8,
             size,size,0,GL_RGBA,GL_UNSIGNED_BYTE,e->pixels.Data+offset+(size_t)f*size*size*4);
         offset+=(size_t)size*size*24;size=size>1 ? size/2 : 1;
     }
-    glTexParameteri(0x8513,0x813D,e->levels-1);
-    glTexParameteri(0x8513,GL_TEXTURE_MIN_FILTER,e->levels>1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
-    glTexParameteri(0x8513,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-    glTexParameteri(0x8513,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-    glTexParameteri(0x8513,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-    glTexParameteri(0x8513,0x8072,GL_CLAMP_TO_EDGE);
-    glPixelStorei(GL_UNPACK_ALIGNMENT,unpack);
-    if (!e->id || glGetError()!=GL_NO_ERROR) {
-        if (e->id) glDeleteTextures(1,&e->id);
+    xge_glTexParameteri(0x8513,0x813D,e->levels-1);
+    xge_glTexParameteri(0x8513,GL_TEXTURE_MIN_FILTER,e->levels>1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+    xge_glTexParameteri(0x8513,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    xge_glTexParameteri(0x8513,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    xge_glTexParameteri(0x8513,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    xge_glTexParameteri(0x8513,0x8072,GL_CLAMP_TO_EDGE);
+    xge_glPixelStorei(GL_UNPACK_ALIGNMENT,unpack);
+    if (!e->id || xge_glGetError()!=GL_NO_ERROR) {
+        if (e->id) xge_glDeleteTextures(1,&e->id);
         e->id=0; return XGE_ERROR_GPU_FAILED;
     }
     e->context=context;

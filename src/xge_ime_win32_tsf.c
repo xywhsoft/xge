@@ -34,6 +34,7 @@ typedef struct xge_tsf_text_store_t {
 	LONG iSelectionStart;
 	LONG iSelectionEnd;
 	int iDocumentOffset;
+	uint64_t iImeOwner;
 	LONG iCompositionStart;
 	LONG iCompositionEnd;
 	WCHAR* sCompositionOriginal;
@@ -76,6 +77,7 @@ typedef struct xge_win32_ime_state_t {
 	int bImmReplacementRange;
 	int iImmReplacementStart;
 	int iImmReplacementEnd;
+	uint64_t iImmOwner;
 	ITfThreadMgrEx* pThreadMgr;
 	ITfDocumentMgr* pDocumentMgr;
 	ITfContext* pContext;
@@ -499,6 +501,7 @@ static int __xgeTsfStoreApplyClientSnapshot(xge_tsf_text_store_t* pStore,
 	pStore->iSelectionStart = iNewSelectionStart;
 	pStore->iSelectionEnd = iNewSelectionEnd;
 	pStore->iDocumentOffset = pSnapshot->iDocumentOffset;
+	pStore->iImeOwner = g_xge.iImeSnapshotOwner;
 	pStore->bTextChanged = 0;
 	pStore->bEndPending = 0;
 	pStore->bHasCompositionRange = 0;
@@ -526,6 +529,7 @@ static int __xgeTsfRefreshTextClient(void)
 	if ( g_xgeWin32Ime.tTextStore.bComposing ) return XGE_OK;
 	memset(&tSnapshot, 0, sizeof(tSnapshot));
 	tSnapshot.iSize = sizeof(tSnapshot);
+	g_xge.iImeSnapshotOwner = 0;
 	iRet = g_xgeWin32Ime.tTextClient.onSnapshot(g_xgeWin32Ime.tTextClient.pUser, &tSnapshot);
 	if ( iRet != XGE_OK ) return iRet;
 	if ( tSnapshot.iSize != 0u && tSnapshot.iSize < sizeof(tSnapshot) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -557,9 +561,9 @@ static void __xgeTsfStoreEmitUpdate(xge_tsf_text_store_t* pStore)
 	iCursor = __xgeTsfUtf8Offset(pStore->sText + iStart, (int)(__xgeTsfClampLong(pStore->iSelectionEnd, iStart, iEnd) - iStart));
 	iSelectionStart = __xgeTsfUtf8Offset(pStore->sText + iStart, (int)(__xgeTsfClampLong(pStore->iSelectionStart, iStart, iEnd) - iStart));
 	iSelectionEnd = iCursor;
-	(void)__xgeImeQueuePushRange(XGE_EVENT_IME_UPDATE, sText, iTextLength,
+	(void)__xgeImeQueuePushOwnedRange(XGE_EVENT_IME_UPDATE, sText, iTextLength,
 		iCursor, iSelectionStart, iSelectionEnd,
-		pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
+		pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd, pStore->iImeOwner);
 	if ( sText != NULL ) xrtFree(sText);
 }
 
@@ -580,13 +584,17 @@ static void __xgeTsfStoreEmitCommit(xge_tsf_text_store_t* pStore)
 	     pStore->iCompositionOriginalLength == iEnd - iStart &&
 	     (iEnd == iStart || memcmp(pStore->sText + iStart,
 	       pStore->sCompositionOriginal, sizeof(WCHAR) * (size_t)(iEnd - iStart)) == 0) ) return;
-	if ( !pStore->bHasCompositionRange && iEnd <= iStart ) return;
+	/* A direct TSF replacement can delete text without starting composition.
+	 * Its empty result still commits the captured original replacement range. */
+	if ( !pStore->bHasCompositionRange && iEnd <= iStart &&
+	     (!pStore->bHasReplacementRange ||
+	      pStore->iReplacementEnd <= pStore->iReplacementStart) ) return;
 	sText = NULL;
 	iTextLength = 0;
 	if ( __xgeTsfWideToUtf8(pStore->sText + iStart, (int)(iEnd - iStart), &sText, &iTextLength) ) {
-		(void)__xgeImeQueuePushRange(XGE_EVENT_IME_COMMIT, sText, iTextLength,
+		(void)__xgeImeQueuePushOwnedRange(XGE_EVENT_IME_COMMIT, sText, iTextLength,
 			iTextLength, iTextLength, iTextLength,
-			pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
+			pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd, pStore->iImeOwner);
 	}
 	if ( sText != NULL ) xrtFree(sText);
 }
@@ -615,10 +623,11 @@ static void __xgeTsfStoreFlushEvents(xge_tsf_text_store_t* pStore)
 				g_xgeWin32Ime.bImmReplacementRange = 1;
 				g_xgeWin32Ime.iImmReplacementStart = pStore->iReplacementStart;
 				g_xgeWin32Ime.iImmReplacementEnd = pStore->iReplacementEnd;
+				g_xgeWin32Ime.iImmOwner = pStore->iImeOwner;
 			}
 		} else {
 			__xgeTsfStoreEmitCommit(pStore);
-			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+			(void)__xgeImeQueuePushOwnedRange(XGE_EVENT_IME_END, "", 0, 0, 0, 0, 0, 0, 0, pStore->iImeOwner);
 		}
 		pStore->bComposing = 0;
 		pStore->bEndPending = 0;
@@ -1075,10 +1084,11 @@ static HRESULT STDMETHODCALLTYPE __xgeTsfCompositionStart(ITfContextOwnerComposi
 			g_xgeWin32Ime.bImmReplacementRange = 1;
 			g_xgeWin32Ime.iImmReplacementStart = pStore->iReplacementStart;
 			g_xgeWin32Ime.iImmReplacementEnd = pStore->iReplacementEnd;
+			g_xgeWin32Ime.iImmOwner = pStore->iImeOwner;
 		}
 	} else {
-		(void)__xgeImeQueuePushRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0,
-			pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
+		(void)__xgeImeQueuePushOwnedRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0,
+			pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd, pStore->iImeOwner);
 	}
 	if ( pStore->iLockType == 0 && pStore->bTextChanged ) {
 		__xgeTsfStoreEmitUpdate(pStore);
@@ -1646,20 +1656,21 @@ static void __xgeImeQueuePushImmRange(int iType, const char* sText, int iTextLen
 	int iStart;
 	int iEnd;
 
-	if ( pStore->bHasReplacementRange ) {
+	if ( g_xgeWin32Ime.bTsfInitialized && pStore->bHasReplacementRange ) {
 		g_xgeWin32Ime.bImmReplacementRange = 1;
 		g_xgeWin32Ime.iImmReplacementStart = pStore->iReplacementStart;
 		g_xgeWin32Ime.iImmReplacementEnd = pStore->iReplacementEnd;
+		g_xgeWin32Ime.iImmOwner = pStore->iImeOwner;
 	}
-	bRange = pStore->bHasReplacementRange || g_xgeWin32Ime.bImmReplacementRange;
-	iStart = pStore->bHasReplacementRange ? pStore->iReplacementStart :
+	bRange = (g_xgeWin32Ime.bTsfInitialized && pStore->bHasReplacementRange) || g_xgeWin32Ime.bImmReplacementRange;
+	iStart = (g_xgeWin32Ime.bTsfInitialized && pStore->bHasReplacementRange) ? pStore->iReplacementStart :
 		g_xgeWin32Ime.iImmReplacementStart;
-	iEnd = pStore->bHasReplacementRange ? pStore->iReplacementEnd :
+	iEnd = (g_xgeWin32Ime.bTsfInitialized && pStore->bHasReplacementRange) ? pStore->iReplacementEnd :
 		g_xgeWin32Ime.iImmReplacementEnd;
 
-	(void)__xgeImeQueuePushRange(iType, sText, iTextLength,
+	(void)__xgeImeQueuePushOwnedRange(iType, sText, iTextLength,
 		iCursor, iSelectionStart, iSelectionEnd,
-		bRange, iStart, iEnd);
+		bRange, iStart, iEnd, g_xgeWin32Ime.iImmOwner);
 }
 
 static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam, int* pHandled)
@@ -1674,8 +1685,11 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 	/* Native mode leaves the complete IMM lifecycle to DefWindowProc/Sokol.
 	 * Committed text returns through the ordinary WM_CHAR input route. */
 	if ( g_xgeWin32Ime.iMode == XGE_IME_MODE_NATIVE ) return 0;
+	if (iMessage == WM_IME_COMPOSITION && !g_xgeWin32Ime.bImmComposing)
+		g_xgeWin32Ime.iImmOwner = g_xge.iImeFocusOwner;
 	switch ( iMessage ) {
 	case WM_IME_STARTCOMPOSITION:
+		g_xgeWin32Ime.iImmOwner = g_xge.iImeFocusOwner;
 		g_xgeWin32Ime.bImmComposing = 1;
 		g_xgeWin32Ime.bImmFallbackActive = 0;
 		g_xgeWin32Ime.bImmFallbackCommitted = 0;
@@ -1683,7 +1697,7 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 		g_xgeWin32Ime.bImmReplacementRange = 0;
 		__xgeImeWin32ApplyImmCandidateRect();
 		if ( !g_xgeWin32Ime.bTsfInitialized ) {
-			(void)__xgeImeQueuePush(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
+			__xgeImeQueuePushImmRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
 			*pHandled = 1;
 		}
 		break;
@@ -1706,7 +1720,7 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 						g_xgeWin32Ime.bImmFallbackCommitted =
 							g_xgeWin32Ime.tTextStore.bComposing ? 1 : 0;
 					} else {
-						(void)__xgeImeQueuePush(XGE_EVENT_IME_COMMIT, sText, iTextLength,
+						__xgeImeQueuePushImmRange(XGE_EVENT_IME_COMMIT, sText, iTextLength,
 							iTextLength, iTextLength, iTextLength);
 					}
 					*pHandled = 1;
@@ -1718,14 +1732,14 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 					g_xgeWin32Ime.bImmComposing = 1;
 				}
 				if ( !g_xgeWin32Ime.bTsfInitialized ) {
-					(void)__xgeImeQueuePush(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
+					__xgeImeQueuePushImmRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
 				}
 				iCursorUtf16 = ImmGetCompositionStringW(hImc, GCS_CURSORPOS, NULL, 0);
 				sText = NULL;
 				iCursorUtf8 = 0;
 				iTextLength = __xgeImeReadImmString(hImc, GCS_COMPSTR, (int)iCursorUtf16, &sText, &iCursorUtf8);
 				if ( !g_xgeWin32Ime.bTsfInitialized ) {
-					(void)__xgeImeQueuePush(XGE_EVENT_IME_UPDATE, sText, iTextLength,
+					__xgeImeQueuePushImmRange(XGE_EVENT_IME_UPDATE, sText, iTextLength,
 						iCursorUtf8, iCursorUtf8, iCursorUtf8);
 					*pHandled = 1;
 				} else if ( iTextLength > 0 &&
@@ -1746,9 +1760,9 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 		break;
 	case WM_IME_ENDCOMPOSITION:
 		if ( !g_xgeWin32Ime.bTsfInitialized && g_xgeWin32Ime.bImmComposing ) {
-			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+			__xgeImeQueuePushImmRange(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
 		} else if ( g_xgeWin32Ime.bImmFallbackActive ) {
-			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+			__xgeImeQueuePushImmRange(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
 			g_xgeWin32Ime.bImmFallbackEnded = 1;
 		}
 		g_xgeWin32Ime.bImmComposing = 0;
@@ -1757,7 +1771,7 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 		break;
 	case WM_KILLFOCUS:
 		if ( !g_xgeWin32Ime.bTsfInitialized && g_xgeWin32Ime.bImmComposing ) {
-			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+			__xgeImeQueuePushImmRange(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
 		}
 		g_xgeWin32Ime.bImmComposing = 0;
 		g_xgeWin32Ime.bImmFallbackActive = 0;

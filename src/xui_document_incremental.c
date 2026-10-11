@@ -118,6 +118,51 @@ static int doc_inc_boundaries(doc_sequence* source, uint64_t start, uint64_t end
     }
     return 0;
 }
+/* Dependency cohorts keep neighboring grammar and validate the parsed tree,
+ * definitions and provenance. A physical line containing only horizontal
+ * whitespace is therefore a separator too; local fragment windows retain
+ * their stricter indentation-context check above. */
+static int doc_inc_cohort_boundaries(xui_document_transaction t, uint64_t start, uint64_t end)
+{
+    doc_sequence* source=t->draft->source;
+    uint64_t at,size=doc_seq_size(source);unsigned char buffer[512];int result;
+    if(start>end || end>size || (start && start<size && doc_inc_byte(source,start)=='\n' &&
+       doc_inc_byte(source,start-1)=='\r'))return XUI_ERROR_UNSUPPORTED;
+    if(start){
+        at=doc_inc_previous_line(source,start);
+        if(at==DOC_NONE)return XUI_ERROR_UNSUPPORTED;
+        while(at){
+            uint64_t from=at>sizeof(buffer)?at-sizeof(buffer):0,i=at-from;
+            if((result=doc_inc_cancel(t))!=XUI_OK)return result;
+            result=doc_seq_read(source,from,buffer,i);if(result!=XUI_OK)return result;
+            while(i){
+                unsigned char c=buffer[--i];
+                if(c=='\r' || c=='\n')goto preceding_blank;
+                if(c!=' ' && c!='\t'){
+                    if(from+i==2 && buffer[i]==0xbf && doc_inc_byte(source,0)==0xef &&
+                       doc_inc_byte(source,1)==0xbb)goto preceding_blank;
+                    return XUI_ERROR_UNSUPPORTED;
+                }
+            }
+            at=from;
+        }
+    }
+preceding_blank:
+    if(end==size)return XUI_OK;
+    if(!end || doc_inc_previous_line(source,end)==DOC_NONE ||
+       (doc_inc_byte(source,end)=='\n' && doc_inc_byte(source,end-1)=='\r'))return XUI_ERROR_UNSUPPORTED;
+    for(at=end;at<size;){
+        uint64_t count=size-at<sizeof(buffer)?size-at:sizeof(buffer),i;
+        if((result=doc_inc_cancel(t))!=XUI_OK)return result;
+        result=doc_seq_read(source,at,buffer,count);if(result!=XUI_OK)return result;
+        for(i=0;i<count;i++){
+            if(buffer[i]=='\r' || buffer[i]=='\n')return XUI_OK;
+            if(buffer[i]!=' ' && buffer[i]!='\t')return XUI_ERROR_UNSUPPORTED;
+        }
+        at+=count;
+    }
+    return XUI_OK;
+}
 static int doc_inc_range_equal(uint64_t old, uint64_t parsed, uint64_t removed, uint64_t added)
 {
     return old == DOC_NONE ? parsed == DOC_NONE : old >= removed && old - removed + added == parsed;
@@ -803,6 +848,13 @@ static int doc_inc_definition_budget_safe(xui_document_transaction t, doc_state*
     if (brackets && maximum > (budget - 1) / brackets) return XUI_ERROR_UNSUPPORTED;
     return XUI_OK;
 }
+static int doc_inc_forest(xui_document_transaction t,doc_state* state,uint64_t start,
+    uint64_t old_end,uint64_t new_end,doc_state* fragment)
+{
+    int result=doc_source_forest_splice(state,start,old_end,new_end,fragment,t->cancellation);
+    /* A definition inside a larger ordinary owner must reparse that owner. */
+    return result==XUI_DOC_ERROR_UNREPRESENTABLE?XUI_ERROR_UNSUPPORTED:result;
+}
 static int doc_inc_reparse_changed_definition(xui_document_transaction t,
     doc_state* old, doc_state* state, uint64_t index, doc_node* block,
     const char* suffix, uint64_t suffix_bytes, int check_global)
@@ -859,6 +911,8 @@ static int doc_inc_reparse_changed_definition(xui_document_transaction t,
     if (doc_inc_definition_container_kind(block->kind) &&
         !doc_inc_definition_shape_equal(state, block->id, fragment,
             fresh->id, range.syntax_start)) goto done;
+    result=doc_inc_forest(t,state,range.syntax_start,range.syntax_end,range.syntax_end,fragment);
+    if(result!=XUI_OK)goto done;
     was_indexed = state->source_blocks_indexed && fragment->source_blocks_indexed;
     id = fresh->id;
     result = doc_inc_shift(t, fragment, id, 0, range.syntax_start);
@@ -1068,8 +1122,11 @@ static int doc_inc_definition_value_blocks(xui_document_transaction t,
     return XUI_OK;
 }
 /* A footnote definition without a rendered footnote has no semantic subtree.
- * A body-only edit can therefore update its source range and shift following
- * coordinates after a standalone parse proves the definition still exists.
+ * A body-only edit can update its source range and shift following coordinates
+ * only when both source versions contain this definition alone. A nested link
+ * definition participates in global resolution even if its footnote is hidden;
+ * changing or removing it needs the dependency cohort's complete definition
+ * table, values, syntax and dependent blocks rebuilt together.
  * The root must have no footnotes, since appended footnote nodes are ordered
  * by reference rather than by source and need a separate reconciliation. */
 static int doc_inc_unused_footnote_body(xui_document_transaction t, doc_state** out)
@@ -1104,6 +1161,15 @@ static int doc_inc_unused_footnote_body(xui_document_transaction t, doc_state** 
         }
     }
     if (index == DOC_NONE) return XUI_ERROR_UNSUPPORTED;
+    for (at = 0; at < count; at += sizeof(ref)) {
+        xui_doc_reference_definition_t other;
+        if (at / sizeof(ref) == index) continue;
+        if ((result = doc_inc_cancel(t)) != XUI_OK) return result;
+        result = doc_seq_read(old->references, at, &other, sizeof(other));
+        if (result != XUI_OK) return result;
+        if (other.iSourceStart < ref.iSourceEnd && other.iSourceEnd > ref.iSourceStart)
+            return XUI_ERROR_UNSUPPORTED;
+    }
     if (doc_seq_size(root->children)) {
         doc_node* last = doc_index_get(old->index,
             doc_seq_get_id(root->children, doc_seq_size(root->children) - 1));
@@ -1131,6 +1197,12 @@ static int doc_inc_unused_footnote_body(xui_document_transaction t, doc_state** 
         doc_seq_size(doc_index_get(fragment->index, DOC_ROOT)->children) ||
         doc_seq_size(fragment->inline_syntax) ||
         doc_seq_size(fragment->reference_candidates)) goto done;
+    {
+        int lookups=0;
+        result=doc_source_cst_has_lookups(fragment,0,t->cancellation,&lookups);
+        if(result!=XUI_OK)goto done;
+        if(lookups){result=XUI_ERROR_UNSUPPORTED;goto done;}
+    }
     result = doc_seq_read(fragment->references, 0, &parsed, sizeof(parsed));
     if (result != XUI_OK) goto done;
     result = XUI_ERROR_UNSUPPORTED;
@@ -1151,6 +1223,8 @@ static int doc_inc_unused_footnote_body(xui_document_transaction t, doc_state** 
     result = end == old_end ? XUI_OK :
         doc_inc_shift_definition_value(t, state, index, &expected, old_end, end, first);
     if (result == XUI_OK) result = doc_reference_value_replace(state, index, fragment, 0, t->cancellation);
+    if (result == XUI_OK) result = doc_source_cst_replace(state, index, fragment, 0, t->cancellation);
+    if(result==XUI_OK)result=doc_inc_forest(t,state,ref.iSourceStart,old_end,end,fragment);
     if (result == XUI_OK) result = doc_inc_cancel(t);
     if (result == XUI_OK) {
         atomic_fetch_add(&old->allocator->markdown_incremental_parses, 1);
@@ -1794,6 +1868,9 @@ static int doc_inc_used_footnote_body(xui_document_transaction t, doc_state** ou
     doc_seq_release(state->references); state->references = next; next = NULL;
     result = doc_reference_value_replace(state, index, fragment, 0, t->cancellation);
     if (result != XUI_OK) goto done;
+    result = doc_source_cst_replace(state, index, fragment, 0, t->cancellation);
+    if(result==XUI_OK)result=doc_inc_forest(t,state,ref.iSourceStart,old_end,end,fragment);
+    if (result != XUI_OK) goto done;
     result = doc_inc_remove(t, state, old, old_id);
     if (result == XUI_OK)
         result = doc_markdown_reconcile_block(t, fragment, old_id, parsed_id,
@@ -1929,6 +2006,8 @@ static int doc_inc_definition_field(xui_document_transaction t, doc_state** out)
         doc_inc_shift_definition_value(t, state, index, &expected,
             ref.iSourceEnd, new_ref_end, first_shift);
     if (result == XUI_OK) result = doc_reference_value_replace(state, index, fragment, 0, t->cancellation);
+    if (result == XUI_OK) result = doc_source_cst_replace(state, index, fragment, 0, t->cancellation);
+    if(result==XUI_OK)result=doc_inc_forest(t,state,ref.iSourceStart,ref.iSourceEnd,new_ref_end,fragment);
     if (result == XUI_OK && label_edit)
         result = doc_inc_label_blocks(t, state, &dependents);
     if (result == XUI_OK && dependents.count)
@@ -2037,6 +2116,7 @@ static int doc_markdown_incremental_local(xui_document_transaction t, doc_state*
     state = doc_state_clone(old);
     if (!state) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
     result = doc_inc_shift_definitions(t, state, old_end, end);
+    if(result==XUI_OK)result=doc_inc_forest(t,state,start,old_end,end,fragment);
     if (result == XUI_OK) result = doc_inc_remove(t, state, old, block->id);
     if (result == XUI_OK) result = doc_markdown_reconcile_block(t, fragment, block->id, id,
         state, index, old_shift, &id);
@@ -2323,8 +2403,10 @@ static int doc_markdown_dependency_cohort(xui_document_transaction t, doc_state*
             (i && blocks[i - 1].end > blocks[i].start))
             { result = XUI_ERROR_UNSUPPORTED; goto done; }
         if (changed || blocks[i].start < front_end || blocks[i].end > bytes || blocks[i].end <= blocks[i].start ||
-            (block->kind != XUI_DOC_PARAGRAPH && block->kind != XUI_DOC_HEADING) ||
-            !doc_inc_boundaries(old->source, blocks[i].start, blocks[i].end, 0)) continue;
+            (block->kind != XUI_DOC_PARAGRAPH && block->kind != XUI_DOC_HEADING)) continue;
+        result=doc_inc_cohort_boundaries(t,blocks[i].start,blocks[i].end);
+        if(result==XUI_ERROR_UNSUPPORTED)continue;
+        if(result!=XUI_OK)goto done;
         blocks[i].omit = 1;
         for (j = blocks[i].start; j < blocks[i].end; j++) {
             if ((j & 4095) == 0 && (result = doc_inc_cancel(t)) != XUI_OK) goto done;
@@ -2385,6 +2467,9 @@ static int doc_markdown_dependency_cohort(xui_document_transaction t, doc_state*
         while (next_old < ordinary && (start == DOC_NONE || blocks[next_old].start < start)) {
             doc_dep_block* keep = &blocks[next_old++];
             if (!keep->omit) continue;
+            result=doc_source_forest_graft(fresh,old,keep->old_start,keep->old_end,keep->start,t->cancellation);
+            if(result==XUI_DOC_ERROR_UNREPRESENTABLE)result=XUI_ERROR_UNSUPPORTED;
+            if(result!=XUI_OK)goto done;
             result = doc_dep_graft(t, old, fresh, keep->id, ordinal++,
                 (int64_t)keep->start - (int64_t)keep->old_start);
             if (result == XUI_OK) result = doc_dep_append_id(fresh, &children, keep->id);
@@ -2414,6 +2499,9 @@ static int doc_markdown_dependency_cohort(xui_document_transaction t, doc_state*
     }
     result = doc_state_set(fresh, copy);
     if (result == XUI_OK) result = doc_reference_values_reuse(old, fresh, t->base, t->cancellation);
+    /* Dependency cohorts rebuild/graft ordinary grammar too. Preserve exact
+     * grammar subtrees with their verified raw-base shift, before reconcile. */
+    if (result == XUI_OK) result = doc_source_forest_reuse(old, fresh, t->cancellation);
     if (result == XUI_OK) result = doc_markdown_reconcile(t, &fresh);
     if (result == XUI_OK) result = doc_inc_cancel(t);
     if (result == XUI_OK) {

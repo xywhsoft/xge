@@ -13,20 +13,19 @@ struct xui_code_selection_model_t {
 
 #define XUI_CODE_SELECTION_EXTRA_INITIAL 4
 
+static int __xuiCodeSelectionUnicodeRead(void* pUser, int iOffset,
+	unsigned char* pByte);
+
 static int __xuiCodeSelectionClamp(xui_code_document pDocument, int iOffset)
 {
 	int iLength;
-	int iLine;
-	int iColumn;
-	int iClamped;
 
 	if ( pDocument == NULL ) return 0;
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iOffset < 0 ) return 0;
 	if ( iOffset > iLength ) return iLength;
-	if ( xuiCodeDocumentOffsetToLineColumn(pDocument, iOffset, &iLine, &iColumn) != XUI_OK ) return iOffset;
-	if ( xuiCodeDocumentLineColumnToOffset(pDocument, iLine, iColumn, &iClamped) != XUI_OK ) return iOffset;
-	return iClamped;
+	return xuiInternalTextGraphemeClampRead(__xuiCodeSelectionUnicodeRead,
+		pDocument, iLength, iOffset);
 }
 
 static int __xuiCodeSelectionUnicodeRead(void* pUser, int iOffset, unsigned char* pByte)
@@ -156,7 +155,7 @@ XUI_API int xuiCodeSelectionSetRange(xui_code_selection_model pSelection, xui_co
 	pSelection->tPrimary.iSize = sizeof(pSelection->tPrimary);
 	pSelection->tPrimary.iAnchorOffset = __xuiCodeSelectionClamp(pDocument, iAnchorOffset);
 	pSelection->tPrimary.iCaretOffset = __xuiCodeSelectionClamp(pDocument, iCaretOffset);
-	xuiCodeDocumentOffsetToLineColumn(pDocument, pSelection->tPrimary.iCaretOffset, NULL, &pSelection->tPrimary.iPreferredColumn);
+	pSelection->tPrimary.iPreferredColumn = -1;
 	pSelection->tPrimary.iFlags = 0;
 	if ( pSelection->tPrimary.iCaretOffset < pSelection->tPrimary.iAnchorOffset ) {
 		pSelection->tPrimary.iFlags |= XUI_CODE_SELECTION_REVERSED;
@@ -301,12 +300,8 @@ XUI_API int xuiCodeSelectionSelectLine(xui_code_selection_model pSelection, xui_
 
 XUI_API int xuiCodeSelectionGotoOffset(xui_code_selection_model pSelection, xui_code_document pDocument, int iOffset, int bExtend)
 {
-	int iColumn;
-
 	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	xuiCodeDocumentOffsetToLineColumn(pDocument, iOffset, NULL, &iColumn);
-	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, iColumn);
+	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, -1);
 	return XUI_OK;
 }
 
@@ -390,9 +385,7 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 	default:
 		return XUI_ERROR_UNSUPPORTED;
 	}
-	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	xuiCodeDocumentOffsetToLineColumn(pDocument, iOffset, NULL, &iColumn);
-	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, iColumn);
+	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, -1);
 	return XUI_OK;
 }
 

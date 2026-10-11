@@ -1,8 +1,16 @@
 #include "../xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_native_accessibility_internal.h"
 #include "../xge.h"
+#include "xge_ime_owner_internal.h"
 #include "xui_text_item_internal.h"
+#if XUI_ENABLE_DOCUMENT_EDITOR
+#include "../xui_document_ui.h"
+#endif
+#if defined(__linux__) && XUI_ENABLE_DOCUMENT
+#include "xui_document_internal.h"
+#endif
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef WIN32_LEAN_AND_MEAN
@@ -726,38 +734,35 @@ static int __xuiProxyXgeGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 
 static int __xuiProxyXgeClipboardSetText(xui_proxy pProxy, const char* sText)
 {
+	xge_clipboard_item_t tItem;
 	if ( pProxy == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
-	xgeClipboardSetText(sText);
-	return XGE_OK;
+	if ( sText == NULL ) sText = "";
+	tItem.sFormat = XGE_CLIPBOARD_FORMAT_TEXT_UTF8;
+	tItem.pData = sText;
+	tItem.iDataSize = strlen(sText);
+	/* Cut must not delete text when the native clipboard rejects the copy. */
+	return xgeClipboardSetItems(&tItem, 1);
 }
 
 static int __xuiProxyXgeClipboardGetText(xui_proxy pProxy, char* sText, int iCapacity)
 {
-	const char* sSource;
-	size_t iLength;
-	size_t iCopy;
+	int iLength;
+	int iCopy;
 
 	if ( (pProxy == NULL) || (sText == NULL) || (iCapacity <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
-	sSource = xgeClipboardGetText();
-	if ( sSource == NULL ) {
-		sSource = "";
-	}
-	iLength = strlen(sSource);
+	iLength = xgeClipboardGetData(XGE_CLIPBOARD_FORMAT_TEXT_UTF8,
+		sText, (size_t)iCapacity - 1u);
+	if ( iLength < 0 ) { sText[0] = 0; return iLength; }
 	iCopy = iLength;
-	if ( iCopy >= (size_t)iCapacity ) {
-		iCopy = (size_t)iCapacity - 1u;
-	}
-	if ( iCopy > 0u ) {
-		memcpy(sText, sSource, iCopy);
-	}
+	if ( iCopy >= iCapacity ) iCopy = iCapacity - 1;
 	sText[iCopy] = 0;
-	return (int)iLength;
+	return iLength;
 }
 
 static int __xuiProxyXgeClipboardSetItems(xui_proxy pProxy,
@@ -767,6 +772,25 @@ static int __xuiProxyXgeClipboardSetItems(xui_proxy pProxy,
 	int i;
 	int iRet;
 	if ( pProxy == NULL || pItems == NULL || iItemCount <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
+	#if defined(__linux__) && XUI_ENABLE_DOCUMENT
+		if ( iItemCount > 64 ) return XGE_ERROR_INVALID_ARGUMENT;
+		for ( i = 0; i < iItemCount; i++ ) {
+			xui_document_fragment fragment = NULL;
+			int result, hasObjects;
+			if ( pItems[i].sFormat == NULL || pItems[i].pData == NULL ||
+				pItems[i].iDataSize == 0u || strcmp(pItems[i].sFormat,
+					XUI_CLIPBOARD_FORMAT_DOCUMENT_FRAGMENT) != 0 ) continue;
+			/* X11 currently publishes text only. A whole image paragraph can
+			 * project to a newline, so inspect its native structure rather than
+			 * treating a nonempty string as successful object preservation. */
+			result = xuiDocumentFragmentDeserialize(pItems[i].pData,
+				(uint64_t)pItems[i].iDataSize, &fragment);
+			hasObjects = result == XUI_OK && doc_fragment_has_opaque_objects(fragment);
+			xuiDocumentFragmentRelease(fragment);
+			if ( result == XUI_ERROR_OUT_OF_MEMORY || result == XUI_DOC_ERROR_LIMIT ) return result;
+			if ( hasObjects ) return XUI_ERROR_UNSUPPORTED;
+		}
+	#endif
 	pXgeItems = (xge_clipboard_item_t*)xrtMalloc((size_t)iItemCount * sizeof(*pXgeItems));
 	if ( pXgeItems == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	for ( i = 0; i < iItemCount; i++ ) {
@@ -2062,6 +2086,8 @@ static int __xuiProxyXgeDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, 
 	int bClip = 0;
 	int i;
 	int iRet;
+	int iTextWidth;
+	int iTextHeight;
 	float fTextX, fTextY;
 
     if(!pProxy || !__xuiProxyXgeDrawValid(pDraw) || iSpanCount<0 || (iSpanCount>0 && !pSpans))return XGE_ERROR_INVALID_ARGUMENT;
@@ -2084,6 +2110,8 @@ static int __xuiProxyXgeDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, 
 	memset(&tRun,0,sizeof(tRun));
 	iRet = xgeTextShape(&tDesc, &tRun);
 	if ( iRet == XGE_OK ) {
+		iTextWidth = xuiInternalPixelCeil(tRun.fWidth);
+		iTextHeight = xuiInternalPixelCeil(tRun.fHeight);
 		if ( (iFlags & XUI_TEXT_CLIP) != 0 ) {
 			tOldClip = xgeClipGet();
 			bOldClip = tOldClip.fW > 0.0f && tOldClip.fH > 0.0f;
@@ -2104,11 +2132,20 @@ static int __xuiProxyXgeDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, 
 				bClip = 1;
 			}
 		}
-		fTextX = (float)tRect.fX+pTextItem->fDrawOffsetX; fTextY = tRect.fY;
-		if ( (iFlags & XUI_TEXT_ALIGN_RIGHT) == XUI_TEXT_ALIGN_RIGHT ) fTextX += tRect.fW - tRun.fWidth;
-		else if ( iFlags & XUI_TEXT_ALIGN_CENTER ) fTextX += (tRect.fW - tRun.fWidth) * .5f;
-		if ( (iFlags & XUI_TEXT_ALIGN_BOTTOM) == XUI_TEXT_ALIGN_BOTTOM ) fTextY += tRect.fH - tRun.fHeight;
-		else if ( iFlags & XUI_TEXT_ALIGN_MIDDLE ) fTextY += (tRect.fH - tRun.fHeight) * .5f;
+		/* XUI rectangles are integer half-open pixel bounds. Align the rasterized
+		 * pixel extent, not the fractional logical advance: snapping a fractional
+		 * origin afterwards can otherwise push the last glyph column outside the
+		 * unchanged right or bottom clip edge. */
+		fTextX = (float)tRect.fX + pTextItem->fDrawOffsetX;
+		fTextY = (float)tRect.fY;
+		if ( (iFlags & XUI_TEXT_ALIGN_RIGHT) == XUI_TEXT_ALIGN_RIGHT )
+			fTextX += (float)(tRect.fW - iTextWidth);
+		else if ( iFlags & XUI_TEXT_ALIGN_CENTER )
+			fTextX += (float)xuiInternalPixelFloor((float)(tRect.fW - iTextWidth) * 0.5f);
+		if ( (iFlags & XUI_TEXT_ALIGN_BOTTOM) == XUI_TEXT_ALIGN_BOTTOM )
+			fTextY += (float)(tRect.fH - iTextHeight);
+		else if ( iFlags & XUI_TEXT_ALIGN_MIDDLE )
+			fTextY += (float)xuiInternalPixelFloor((float)(tRect.fH - iTextHeight) * 0.5f);
 		if ( (iFlags & XUI_TEXT_CLIP) == 0 || bClip ) {
 			/* Match the existing clipped-text submission boundaries even
 			 * when the caller's viewport clip needs no item-edge clip. */
@@ -2276,6 +2313,12 @@ static xui_context g_xuiProxyXgeImeTextContext;
 static xui_proxy_xge_ime_ui_t g_xuiProxyXgeImeUi;
 static char* g_xuiProxyXgeImeSnapshotText;
 static int g_xuiProxyXgeImeSnapshotCapacity;
+
+static void __xuiProxyXgeImeFocusChanged(xui_context context)
+{
+	if (g_xuiProxyXgeImeTextContext == context)
+		xgeInternalImeSetFocusOwner(context->iImeOwner);
+}
 
 static int __xuiProxyXgeImeSnapshotReserve(int iCapacity)
 {
@@ -2631,6 +2674,8 @@ static void __xuiProxyXgeDetachIme(xui_context pContext)
 	if ( g_xuiProxyXgeImeTextContext == pContext ) {
 		(void)xgeImeSetCandidatePresenterReady(0);
 		(void)xgeImeSetTextClient(NULL);
+		pContext->onImeFocusChanged = NULL;
+		xgeInternalImeSetFocusOwner(0);
 		g_xuiProxyXgeImeTextContext = NULL;
 	}
 	if ( g_xuiProxyXgeImeUi.pContext == pContext ) {
@@ -2672,6 +2717,8 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 	int iRet;
 	int iStart;
 	int iEnd;
+	uint64_t iDocumentRevision = 0;
+	uint64_t iOwner;
 
 	(void)pUser;
 	pContext = g_xuiProxyXgeImeTextContext;
@@ -2681,6 +2728,7 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 	pSelection = NULL;
 #endif
 	pFocus = xuiGetFocusWidget(pContext);
+	iOwner = pContext->iImeOwner;
 	if ( pFocus == NULL || xuiWidgetGetImeMode(pFocus) == XUI_IME_DISABLED ) return XGE_ERROR_NOT_INITIALIZED;
 	sText = "";
 	iDocumentLength = 0;
@@ -2733,6 +2781,13 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 		sText = g_xuiProxyXgeImeSnapshotText;
 	}
 #endif
+	#if XUI_ENABLE_DOCUMENT_EDITOR
+	else if (xuiWidgetIsType(pFocus, xuiDocumentEditorGetType(pContext))) {
+		iRet = xuiInternalDocumentImeText(pFocus, &sText, &iDocumentLength,
+			&iStart, &iEnd, &iDocumentRevision);
+		if (iRet != XUI_OK) return iRet == XUI_ERROR_OUT_OF_MEMORY ? XGE_ERROR_OUT_OF_MEMORY : XGE_ERROR_UNSUPPORTED;
+	}
+	#endif
 	else {
 		return XGE_ERROR_UNSUPPORTED;
 	}
@@ -2760,7 +2815,7 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 	memset(pSnapshot, 0, sizeof(*pSnapshot));
 	pSnapshot->iSize = sizeof(*pSnapshot);
 	pSnapshot->sText = (sText != NULL) ? sText : "";
-	pSnapshot->iTextSize = (int)strlen(pSnapshot->sText);
+	pSnapshot->iTextSize = iWindowEnd - iWindowStart;
 	pSnapshot->iSelectionStart = iLocalStart;
 	pSnapshot->iSelectionEnd = iLocalEnd;
 	pSnapshot->iDocumentOffset = iWindowStart;
@@ -2768,6 +2823,10 @@ static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pS
 #if XUI_ENABLE_CODE_EDIT
 	pSnapshot->iRevision = (pDocument != NULL) ? xuiCodeDocumentGetVersion(pDocument) : 0u;
 #endif
+	if (iDocumentRevision) pSnapshot->iRevision = (uint32_t)iDocumentRevision;
+	if (pContext->iImeOwner != iOwner || xuiGetFocusWidget(pContext) != pFocus)
+		return XGE_ERROR_NOT_INITIALIZED;
+	xgeInternalImeSetSnapshotOwner(iOwner);
 	return XGE_OK;
 }
 
@@ -2857,16 +2916,29 @@ static int __xuiProxyXgeTextShape(xui_proxy pProxy, const xui_text_item_t* pText
 static int __xuiProxyXgeBindImeTextClient(xui_context pContext)
 {
 	xge_ime_text_client_t tClient;
+	xui_context previous = NULL;
 	int iRet;
 
 	if ( pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( g_xuiProxyXgeImeTextContext != pContext ) {
 		if ( g_xuiProxyXgeImeTextContext != NULL ) {
+			xui_ime_composition_t cancel = {0};
+			previous = g_xuiProxyXgeImeTextContext;
+			xuiInternalOperationEnter(previous);
+			cancel.iSize = sizeof(cancel); cancel.sText = "";
+			(void)xuiInputImeCompositionEx(previous, &cancel);
+			xuiInternalInputInvalidateImeOwner(previous);
+			previous->onImeFocusChanged = NULL;
 			(void)xgeImeSetCandidatePresenterReady(0);
-			(void)xuiInternalContextSetImeDetach(g_xuiProxyXgeImeTextContext, NULL);
+			(void)xuiInternalContextSetImeDetach(previous, NULL);
 		}
 		g_xuiProxyXgeImeTextContext = pContext;
+		pContext->onImeFocusChanged = __xuiProxyXgeImeFocusChanged;
+		xuiInternalInputInvalidateImeOwner(pContext);
+		__xuiProxyXgeImeFocusChanged(pContext);
 		(void)xuiInternalContextSetImeDetach(pContext, __xuiProxyXgeDetachIme);
+		if (previous) xuiInternalOperationLeave(previous);
+		if (xuiInternalContextDestroyPending(pContext)) return XUI_OK;
 		memset(&tClient, 0, sizeof(tClient));
 		tClient.iSize = sizeof(tClient);
 		tClient.onSnapshot = __xuiProxyXgeImeTextSnapshot;
@@ -2884,6 +2956,17 @@ static int __xuiProxyXgeBindImeTextClient(xui_context pContext)
 
 #endif
 	return XUI_OK;
+}
+
+static int __xuiProxyXgeImeComposition(xui_context context,
+    const xui_ime_composition_t* composition)
+{
+#if XUI_ENABLE_DOCUMENT_EDITOR
+    xui_widget focus = xuiGetFocusWidget(context);
+    if (focus && xuiWidgetIsType(focus, xuiDocumentEditorGetType(context)))
+        return xuiInternalInputImeEditTextComposition(context, composition);
+#endif
+    return xuiInputImeCompositionEx(context, composition);
 }
 
 static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
@@ -2904,11 +2987,20 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 	__xuiProxyXgeApplyInteractionPolicy(pContext);
 	iRet = __xuiProxyXgeBindImeTextClient(pContext);
 	if ( iRet != XUI_OK ) return iRet;
+	if (xuiInternalContextDestroyPending(pContext)) return XUI_OK;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if (iRet != XUI_OK || xuiInternalContextDestroyPending(pContext)) return iRet;
 	iModifiers = __xuiProxyXgeInputModifiers();
 	iRet = xuiInputSetModifiers(pContext, iModifiers);
 	if ( iRet != XUI_OK ) return iRet;
 	memset(&tInput, 0, sizeof(tInput));
 	while ( (iRet = xgeInputEventGet(&tInput)) > 0 ) {
+		/* Copy provenance before callbacks can consume another engine event. */
+		uint64_t owner = xgeInternalInputImeOwner();
+		if ((tInput.iFlags & XGE_INPUT_EVENT_FLAG_NATIVE_IME) &&
+			(tInput.iType == XGE_EVENT_IME_START || tInput.iType == XGE_EVENT_IME_UPDATE ||
+			 tInput.iType == XGE_EVENT_IME_COMMIT || tInput.iType == XGE_EVENT_IME_END) &&
+			(!owner || owner != pContext->iImeOwner)) continue;
 		bUpdateCursor = 0;
 		iModifiers = __xuiProxyXgeMapModifiers(tInput.iModifiers);
 		iRet = xuiInputSetModifiers(pContext, iModifiers);
@@ -2938,7 +3030,12 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			iRet = xuiInputPointerLeave(pContext);
 			break;
 		case XGE_EVENT_WINDOW_BLUR:
-			iRet = xuiInputCancelAllPointers(pContext);
+			memset(&tComposition, 0, sizeof(tComposition));
+			tComposition.iSize = sizeof(tComposition);
+			tComposition.sText = "";
+			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
+			xuiInternalInputInvalidateImeOwner(pContext);
+			if (iRet == XUI_OK) iRet = xuiInputCancelAllPointers(pContext);
 			if ( iRet == XUI_OK ) iRet = xuiInputPointerLeave(pContext);
 			break;
 		case XGE_EVENT_WINDOW_FOCUS:
@@ -2988,7 +3085,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			tComposition.bReplacementRange = tInput.bReplacementRange;
 			tComposition.iReplacementStart = tInput.iReplacementStart;
 			tComposition.iReplacementEnd = tInput.iReplacementEnd;
-			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
 			break;
 		case XGE_EVENT_IME_UPDATE:
 			memset(&tComposition, 0, sizeof(tComposition));
@@ -3002,7 +3099,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			tComposition.bReplacementRange = tInput.bReplacementRange;
 			tComposition.iReplacementStart = tInput.iReplacementStart;
 			tComposition.iReplacementEnd = tInput.iReplacementEnd;
-			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
 			break;
 		case XGE_EVENT_IME_COMMIT:
 			memset(&tComposition, 0, sizeof(tComposition));
@@ -3015,13 +3112,13 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			tComposition.bReplacementRange = tInput.bReplacementRange;
 			tComposition.iReplacementStart = tInput.iReplacementStart;
 			tComposition.iReplacementEnd = tInput.iReplacementEnd;
-			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
 			break;
 		case XGE_EVENT_IME_END:
 			memset(&tComposition, 0, sizeof(tComposition));
 			tComposition.iSize = sizeof(tComposition);
 			tComposition.sText = "";
-			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
 			break;
 		case XGE_EVENT_IME_CANDIDATE_START:
 		case XGE_EVENT_IME_CANDIDATE_UPDATE:
@@ -3046,6 +3143,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 		}
 		iRet = xuiDispatchPendingEvents(pContext);
 		if ( iRet != XUI_OK ) return iRet;
+		if (xuiInternalContextDestroyPending(pContext)) return XUI_OK;
 	}
 	if ( iRet < 0 ) return iRet;
 	iModifiers = __xuiProxyXgeInputModifiers();
@@ -3064,18 +3162,26 @@ XUI_API int xuiProxyXgePumpKeyboard(xui_context pContext)
 XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect)
 {
 	xui_size_t tViewport;
+	int result;
 
-	if ( pContext == NULL || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	if (!xuiInternalContextIsValid(pContext) || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f) return XUI_ERROR_INVALID_ARGUMENT;
+	xuiInternalOperationEnter(pContext);
 	tViewport = xuiGetViewportSize(pContext);
 	g_xuiProxyXgeInputTransform.pContext = pContext;
 	g_xuiProxyXgeInputTransform.tWindowRect = tWindowRect;
 	g_xuiProxyXgeInputTransform.tViewport = tViewport;
 	g_xuiProxyXgeInputTransform.bValid = 1;
+	/* Readscreen providers use the same viewport transform as input. Missing
+	 * platform support does not prevent the existing input pump from running. */
+	(void)xuiInternalNativeAccessibilityBind(pContext, xgePlatformNativeHandle(), tWindowRect);
 	if ( g_xuiProxyXgeDragContext != pContext ) {
 		g_xuiProxyXgeDragContext = pContext;
 		(void)xgeDragEventCallbackSet(__xuiProxyXgeDragEvent, pContext);
 	}
-	return __xuiProxyXgePumpQueuedInput(pContext, tWindowRect, tViewport);
+	result = xuiInternalContextDestroyPending(pContext) ? XUI_OK :
+		__xuiProxyXgePumpQueuedInput(pContext, tWindowRect, tViewport);
+	xuiInternalOperationLeave(pContext);
+	return result;
 }
 
 XUI_API int xuiProxyXgePumpInput(xui_context pContext)

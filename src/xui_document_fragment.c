@@ -300,6 +300,28 @@ const char* doc_fragment_single_image_resource(xui_document_fragment fragment)
     return image && image->kind == XUI_DOC_IMAGE ? doc_string(image->resource) : NULL;
 }
 
+#if defined(__linux__)
+static int doc_fragment_node_has_opaque_objects(doc_state* state, const doc_node* node)
+{
+    uint64_t i;
+    if (!node) return 0;
+    if (node->kind == XUI_DOC_IMAGE || node->kind == XUI_DOC_RULE ||
+        node->kind == XUI_DOC_HTML || node->kind == XUI_DOC_MATH ||
+        node->kind == XUI_DOC_DIAGRAM || node->kind == XUI_DOC_EXTENSION) return 1;
+    for (i = 0; i < doc_seq_size(node->children); i++)
+        if (doc_fragment_node_has_opaque_objects(state,
+            doc_index_get(state->index, doc_seq_get_id(node->children, i)))) return 1;
+    return 0;
+}
+/* Includes whole-block and mixed selections. Plain text may retain a block
+ * newline or image alt text without preserving the selected object. */
+int doc_fragment_has_opaque_objects(xui_document_fragment fragment)
+{
+    return fragment && doc_fragment_node_has_opaque_objects(fragment->snapshot->state,
+        doc_index_get(fragment->snapshot->state->index, DOC_ROOT));
+}
+#endif
+
 static int doc_fragment_create(xui_document_snapshot snapshot,
     unsigned depth, xui_document_fragment* out)
 {

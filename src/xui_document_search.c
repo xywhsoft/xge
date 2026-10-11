@@ -7,6 +7,13 @@ static xui_doc_position_t doc_plain_edge(doc_plain_projection* p, uint64_t id, i
 {
     doc_node* n = doc_index_get(p->state->index, id); xui_doc_position_t result = p->origin;
     while (doc_seq_size(n->children)) n = doc_index_get(p->state->index, doc_seq_get_id(n->children, end ? doc_seq_size(n->children) - 1 : 0));
+    if (n->kind == XUI_DOC_SOFT_BREAK || n->kind == XUI_DOC_HARD_BREAK ||
+        doc_selectable_object_kind(n->kind)) {
+        doc_node* parent = doc_index_get(p->state->index, n->parent);
+        result.iNodeId = parent->id; result.iKind = XUI_DOC_POSITION_GAP;
+        result.iOffset = doc_child_index(parent, n->id) + (end ? 1 : 0);
+        return result;
+    }
     result.iNodeId = n->id; result.iKind = doc_text_kind(n->kind) ? XUI_DOC_POSITION_TEXT : XUI_DOC_POSITION_GAP;
     result.iOffset = end ? doc_seq_size(n->text) : 0; return result;
 }
@@ -86,6 +93,10 @@ int doc_plain_project(xui_document_snapshot snapshot, uint32_t domain, doc_plain
 xui_doc_position_t doc_plain_unproject(const doc_plain_projection* p, uint64_t offset, int after)
 {
     uint64_t lo = 0, hi = p->count; xui_doc_position_t result = p->origin;
+    if (result.iKind == XUI_DOC_POSITION_SOURCE) {
+        result.iOffset = offset < p->bytes ? offset : p->bytes;
+        result.iAffinity = after ? XUI_DOC_AFTER : XUI_DOC_BEFORE; return result;
+    }
     while (lo < hi) { uint64_t mid = lo + (hi - lo) / 2; if (p->spans[mid].start < offset || (after && p->spans[mid].start == offset)) lo = mid + 1; else hi = mid; }
     if (lo) {
         const doc_plain_span* span = &p->spans[lo - 1];
@@ -98,6 +109,14 @@ int doc_plain_project_position(const doc_plain_projection* p, const xui_doc_posi
 {
     uint64_t i; int order;
     if (!position || position->iDocumentId != p->origin.iDocumentId || position->iRevision != p->origin.iRevision) return XUI_DOC_ERROR_STALE;
+    if (p->origin.iInputGeneration) {
+        if (position->iInputGeneration != p->origin.iInputGeneration) return XUI_DOC_ERROR_STALE;
+        if (position->iKind != XUI_DOC_POSITION_SOURCE) return XUI_DOC_ERROR_DOMAIN;
+        if (position->iSize != sizeof(*position) || position->iNodeId != DOC_ROOT ||
+            position->iAffinity > XUI_DOC_AFTER || position->iOffset > p->bytes) return XUI_ERROR_INVALID_ARGUMENT;
+        if (position->iOffset < p->bytes && ((unsigned char)p->text[position->iOffset] & 0xc0) == 0x80) return XUI_DOC_ERROR_UTF8;
+        *out = position->iOffset; return XUI_OK;
+    }
     if (!doc_position_valid(p->state, position)) return XUI_ERROR_INVALID_ARGUMENT;
     if ((position->iKind == XUI_DOC_POSITION_SOURCE) != (p->origin.iKind == XUI_DOC_POSITION_SOURCE)) return XUI_DOC_ERROR_DOMAIN;
     for (i = 0; i < p->count; i++) {

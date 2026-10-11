@@ -30,6 +30,9 @@ int doc_text_style_valid(uint32_t fields, const xui_doc_text_style_t* style);
 #define DOC_BUILD_PARSE 1
 #define DOC_BUILD_SEMANTIC 2
 #define DOC_DEFAULT_HISTORY_BYTES (UINT64_C(64) * 1024 * 1024)
+/* Grammar includes fields and delimiters in addition to semantic nodes.
+ * Keep its default independent of caller node limits; capacity grows on demand. */
+#define DOC_DEFAULT_SYNTAX_RECORDS UINT64_C(8000000)
 #define DOC_ATTR_BUCKETS 256
 
 typedef struct doc_attribute {
@@ -58,6 +61,7 @@ typedef struct doc_allocator {
     uint64_t memory_buckets[8], history_record_bytes;
     uint64_t snapshot_count, snapshot_handle_bytes;
     struct xui_doc_snapshot_t* snapshots;
+    uint64_t max_syntax_records; /* Immutable per-input grammar budget, separate from semantic nodes. */
 } doc_allocator;
 typedef struct doc_find_expansion {
     char* text;
@@ -136,12 +140,26 @@ typedef struct doc_table_token_relative {
 typedef struct doc_list_indent_relative {
     uint32_t start, end, start_column, content_column, end_column;
 } doc_list_indent_relative;
+/* First-line marker fields retain the same layout as a continuation record;
+ * only this record additionally owns whitespace before the marker. Do not
+ * duplicate that value in every continuation-line blob. */
+typedef struct doc_list_first_indent_relative {
+    uint32_t start, end, start_column, content_column, end_column;
+    uint32_t indent_start;
+} doc_list_first_indent_relative;
 /* Quote-owned indentation and the one optional logical space after '>'.
  * Source offsets are relative to syntax_start; columns belong to the parser's
- * current input line (which may start after a footnote's dedentation). */
+ * current input line (which may start after a footnote's dedentation).
+ * indent_start can point to a Tab shared with an ancestor; marker still
+ * identifies the exact '>' byte independently. */
 typedef struct doc_quote_indent_relative {
     uint32_t marker, end, start_column, marker_column, content_column, end_column;
+    uint32_t indent_start;
 } doc_quote_indent_relative;
+/* Exact physical prefixes removed by the parser before analyzing a footnote body. */
+typedef struct doc_footnote_indent_relative {
+    uint32_t start, end;
+} doc_footnote_indent_relative;
 typedef struct doc_code_indent_relative {
     uint32_t start, end, start_column, content_column, end_column, flags;
 } doc_code_indent_relative;
@@ -154,6 +172,33 @@ typedef struct doc_heading_content_relative {
 typedef struct doc_node_source_range {
     uint64_t source_start, source_end, syntax_start, syntax_end;
 } doc_node_source_range;
+
+/* Concrete syntax is immutable metadata in the same state as content. Raw
+ * ranges are relative to a reference definition, so moving that definition
+ * shares its entire arena. No semantic NodeId or duplicate source bytes. */
+enum { DOC_CST_SCOPE = 1, DOC_CST_BLOCK, DOC_CST_INLINE, DOC_CST_TEXT,
+    DOC_CST_MARKER, DOC_CST_FIELD, DOC_CST_INDENT, DOC_CST_BREAK, DOC_CST_OPAQUE };
+enum { DOC_CST_INLINE_CANDIDATE=8u, DOC_CST_INLINE_REFERENCE=2048u };
+enum { DOC_CST_FIELD_LABEL=1, DOC_CST_FIELD_DESTINATION, DOC_CST_FIELD_TITLE,
+    DOC_CST_FIELD_HEADING, DOC_CST_FIELD_FENCE_INFO, DOC_CST_FIELD_FENCE_LANGUAGE,
+    DOC_CST_FIELD_CANDIDATE_LABEL, DOC_CST_FIELD_DEFINITION, DOC_CST_FIELD_WHITESPACE,
+    DOC_CST_FIELD_TABLE_ROW, DOC_CST_FIELD_TABLE_CELL };
+enum { DOC_CST_MARKER_OPEN=1u, DOC_CST_MARKER_CLOSE=2u, DOC_CST_MARKER_TABLE=4u,
+    DOC_CST_INDENT_QUOTE=16u, DOC_CST_INDENT_LIST_FIRST=32u,
+    DOC_CST_INDENT_LIST_CONTINUE=64u, DOC_CST_INDENT_CODE=128u,
+    DOC_CST_BREAK_TRAILING=256u, DOC_CST_BREAK_MARKER=512u,
+    DOC_CST_BREAK_ENDING=1024u, DOC_CST_MARKER_TAIL=4096u,
+    DOC_CST_INDENT_DEFINITION=32768u, DOC_CST_MARKER_SEPARATOR=65536u };
+#define DOC_CST_BLOCK_FRONT_MATTER UINT32_C(0x80000000)
+/* Source-only block separators; no semantic NodeId or visible blank node. */
+#define DOC_CST_BLOCK_TRIVIA UINT32_C(0x80000001)
+#define DOC_CST_FIELD_FRONT_MATTER UINT32_C(0x80000000)
+typedef struct doc_source_cst_record {
+    uint32_t kind, detail, flags, reserved;
+    uint64_t parent, start, end;
+    uint32_t metadata[4];
+} doc_source_cst_record;
+typedef struct doc_source_cst_header { uint64_t source_bytes, count; } doc_source_cst_header;
 typedef struct doc_index {
     atomic_uint refs;
     unsigned level;
@@ -166,6 +211,8 @@ typedef struct doc_state {
     doc_sequence* source;
     doc_sequence* references; /* Packed xui_doc_reference_definition_t records. */
     doc_sequence* reference_values; /* Ordered immutable link fields or footnote label/dedented body. */
+    doc_sequence* reference_syntax; /* Sorted value items keyed by definition ordinal + 1; relative CST arenas. */
+    doc_sequence* source_syntax; /* Source-ordered ordinary block arenas; relative CST bytes and lazy base shifts. */
     doc_sequence* inline_syntax; /* Packed xui_doc_inline_syntax_t records. */
     doc_sequence* reference_candidates; /* Packed xui_doc_inline_syntax_t lookup attempts. */
     uint64_t node_count, text_bytes, payload_bytes, content_id;
@@ -176,6 +223,36 @@ typedef struct doc_state {
     int block_shifts; /* Root child source offsets require normalization on full projection. */
     int source_blocks_indexed; /* Every source-position candidate fits ordered root block bounds. */
 } doc_state;
+/* Set only on an unpublished parsed state or transaction draft; snapshots
+ * remain immutable. Keys name the current state's definition ordinals. */
+/* Unpublished-state ordinary CST forest primitives. Each arena has the same
+ * grammar record layout as definition syntax. They allocate no semantic IDs. */
+int doc_source_forest_build(doc_state*, const doc_source_cst_record*, uint64_t, uint64_t, const atomic_int*);
+int doc_source_forest_build_parsed(doc_state*, const doc_source_cst_record*, uint64_t,
+    uint64_t, const atomic_int*);
+int doc_source_forest_reuse(doc_state*, doc_state*, const atomic_int*);
+int doc_source_forest_graft(doc_state*, doc_state*, uint64_t, uint64_t, uint64_t, const atomic_int*);
+uint64_t doc_source_forest_count(const doc_state*);
+int doc_source_forest_info(doc_state*, uint64_t, uint64_t*, doc_source_cst_header*);
+int doc_source_forest_read(doc_state*, uint64_t, uint64_t, doc_source_cst_record*);
+int doc_source_forest_splice(doc_state*, uint64_t, uint64_t, uint64_t, doc_state*, const atomic_int*);
+int doc_source_cst_set(doc_state*, uint64_t, const doc_source_cst_record*, uint64_t, const atomic_int*);
+int doc_source_cst_set_parsed(doc_state*, uint64_t, const doc_source_cst_record*, uint64_t, uint64_t, const atomic_int*);
+int doc_source_cst_info(doc_state*, uint64_t, doc_source_cst_header*);
+int doc_source_cst_read(doc_state*, uint64_t, uint64_t, doc_source_cst_record*);
+/* Borrowed grammar cursor valid while its immutable state remains alive.
+ * Ordinary blocks and hidden definitions use the same lookup/read path. */
+typedef struct doc_source_cursor {
+    doc_sequence* value;
+    doc_source_cst_header header;
+    uint64_t base, root;
+} doc_source_cursor;
+int doc_source_cursor_block(doc_state*, uint32_t, uint64_t, uint64_t,
+    const atomic_int*, doc_source_cursor*);
+int doc_source_cursor_read(const doc_source_cursor*, uint64_t, doc_source_cst_record*);
+int doc_source_cst_replace(doc_state*, uint64_t, doc_state*, uint64_t, const atomic_int*);
+int doc_source_cst_has_lookups(doc_state*, uint64_t, const atomic_int*, int*);
+int doc_source_cst_reuse(doc_state*, doc_state*, doc_state*, const atomic_int*);
 typedef struct doc_range_branch_plan {
     uint64_t ancestor, left_child, right_child;
     uint64_t target_parent, target_index;
@@ -221,7 +298,7 @@ struct xui_doc_snapshot_t {
 struct xui_doc_transaction_t {
     xui_document document;
     doc_state *base, *draft;
-    uint64_t base_revision, origin, group;
+    uint64_t base_revision, origin, group, input_generation;
     uint32_t domain, flags;
     xui_doc_operation_t* ops;
     uint64_t count, capacity, parse_op_start;
@@ -233,10 +310,13 @@ struct xui_doc_transaction_t {
 struct xui_doc_change_set_t {
     atomic_uint refs;
     doc_state *before, *after;
-    uint64_t identity, before_revision, after_revision, origin;
+    doc_state* input_state; /* Retained semantic input accepted by publication. */
+    uint64_t identity, before_revision, after_revision, origin, input_generation;
     uint32_t flags, domain;
     xui_doc_operation_t* ops;
     uint64_t count;
+    doc_sequence* packed_ops; /* Borrowed immutable log, for stack mapping only. */
+    uint64_t packed_op_start;
     int undo;
 };
 
@@ -261,6 +341,9 @@ void doc_prepare_invalidate(xui_document, xui_document_prepare, int);
 doc_sequence* doc_prepare_source_store(xui_document_prepare);
 int doc_prepare_source_delta(xui_document_prepare, xui_document_prepare, uint64_t*, uint64_t*, uint64_t*);
 int doc_prepare_position_valid(xui_document_prepare, const xui_doc_position_t*);
+int doc_semantic_map_position(doc_state*, doc_state*, const xui_doc_position_t*, xui_doc_position_t*, int*);
+xui_document_change_set doc_prepare_visual_change(xui_document_prepare);
+uint64_t doc_map_offset(uint64_t, uint32_t, uint64_t, uint64_t, uint64_t, int*);
 int doc_prepare_preview(xui_document, xui_document_prepare, const xui_doc_source_patch_t*, xui_document_prepare*);
 void doc_history_retain(doc_history*);
 void doc_history_release(doc_history*);
@@ -289,6 +372,8 @@ void doc_seq_release(doc_sequence*);
 doc_sequence* doc_seq_text(doc_allocator*, const char*, uint64_t);
 doc_sequence* doc_seq_id(doc_allocator*, uint64_t);
 doc_sequence* doc_seq_value_item(doc_allocator*, uint64_t, doc_sequence*);
+/* Unique syntax keys give deterministic treap shape across parse allocations. */
+doc_sequence* doc_seq_keyed_value_item(doc_allocator*, uint64_t, doc_sequence*);
 doc_sequence* doc_seq_get_value_item(doc_sequence*, uint64_t);
 doc_sequence* doc_seq_blob_range(doc_allocator*, doc_blob*, uint64_t, uint64_t);
 int doc_seq_reuse_bytes(doc_allocator*, doc_sequence*, doc_sequence*, const atomic_int*, doc_sequence**);
@@ -296,6 +381,7 @@ int doc_seq_compact_bytes(doc_allocator*, doc_sequence**, const atomic_int*, uin
 int doc_reference_value_append(doc_state*, uint32_t, const char*, uint64_t,
     const char*, uint64_t, const char*, uint64_t, int, const atomic_int*);
 int doc_reference_value_replace(doc_state*, uint64_t, doc_state*, uint64_t, const atomic_int*);
+int doc_reference_label_copy(doc_state*, uint64_t, char*, uint64_t, uint64_t*);
 int doc_reference_values_equal(doc_state*, doc_state*, const atomic_int*, int*);
 int doc_reference_values_reuse(doc_state*, doc_state*, doc_state*, const atomic_int*);
 int doc_seq_replace(doc_allocator*, doc_sequence*, uint64_t, uint64_t, doc_sequence*, doc_sequence**);
@@ -401,7 +487,9 @@ int doc_markdown_incremental(xui_document_transaction, doc_state**);
 int doc_markdown_reconcile(xui_document_transaction, doc_state**);
 int doc_markdown_reconcile_block(xui_document_transaction, doc_state*, uint64_t, uint64_t,
     doc_state*, uint64_t, int64_t, uint64_t*);
-int doc_markdown_accept(xui_document_transaction, xui_document_transaction);
+/* Derived footer acceptance requires a verified protected-definition source plan. */
+#define DOC_MD_ACCEPT_DERIVED_FOOTNOTES 1u
+int doc_markdown_accept(xui_document_transaction,xui_document_transaction,unsigned flags);
 int doc_markdown_text(xui_document_transaction, uint64_t, uint64_t, uint64_t, const char*, uint64_t, xui_doc_position_t*);
 int doc_prepare_visual_text(xui_document, const xui_doc_txn_desc_t*, uint64_t, uint64_t, uint64_t,
     const char*, uint64_t, xui_document_prepare*, xui_document_snapshot*, uint64_t*);
@@ -415,18 +503,28 @@ int doc_prepare_visual_position_source(xui_document, xui_document_prepare,
 int doc_prepare_visual_attach(xui_document, xui_document_prepare, xui_document_prepare);
 int doc_markdown_attributes(xui_document_transaction, uint64_t, const xui_doc_attributes_t*);
 int doc_markdown_marks(xui_document_transaction, const xui_doc_range_t*, uint32_t, uint32_t);
+int doc_image_link_set(xui_document_transaction, xui_doc_node_id, const xui_doc_image_desc_t*);
+typedef struct doc_link_source_target {
+    uint64_t node_id, source_start, source_end;
+    const char *uri, *title;
+} doc_link_source_target;
+int doc_link_source_targets(doc_state*, const xui_doc_range_t*, doc_link_source_target**, uint64_t*);
 int doc_markdown_link(xui_document_transaction, const xui_doc_range_t*, const char*, const char*);
 int doc_markdown_link_patch(xui_document_transaction, const xui_doc_range_t*, const char*, const char*, doc_state*);
 int doc_markdown_image_patch(xui_document_transaction, uint64_t, doc_state*);
+int doc_markdown_text_source_patch(xui_document_transaction, uint64_t, uint64_t,
+    uint64_t, const char*, uint64_t, doc_state*);
 int doc_markdown_image_insert_patch(xui_document_transaction, const xui_doc_range_t*, uint64_t, doc_state*);
 int doc_markdown_shadow_end_image(xui_document_transaction, struct xui_doc_transaction_t*, int, uint64_t);
 int doc_markdown_shadow_end_insert_image(xui_document_transaction, struct xui_doc_transaction_t*, int,
     const xui_doc_range_t*, uint64_t, const xui_doc_position_t*, xui_doc_position_t*);
 int doc_markdown_range(xui_document_transaction, const xui_doc_range_t*, const char*, uint64_t, xui_doc_position_t*);
-int doc_markdown_apply_tree(xui_document_transaction, doc_state*, const xui_doc_position_t*, xui_doc_position_t*);
+int doc_markdown_apply_tree(xui_document_transaction, doc_state*, const xui_doc_position_t*, xui_doc_position_t*, unsigned);
 int doc_markdown_shadow_begin(xui_document_transaction, struct xui_doc_transaction_t*);
 int doc_markdown_shadow_end(xui_document_transaction, struct xui_doc_transaction_t*, int, const xui_doc_position_t*, xui_doc_position_t*);
 int doc_markdown_shadow_end_unwrap_quote(xui_document_transaction, struct xui_doc_transaction_t*, int,
+    const xui_doc_position_t*, const xui_doc_position_t*, xui_doc_position_t*);
+int doc_markdown_shadow_end_block_split(xui_document_transaction, struct xui_doc_transaction_t*, int,
     const xui_doc_position_t*, const xui_doc_position_t*, xui_doc_position_t*);
 int doc_markdown_shadow_end_list_split(xui_document_transaction, struct xui_doc_transaction_t*, int,
     const xui_doc_position_t*, const xui_doc_position_t*, xui_doc_position_t*);
@@ -477,6 +575,8 @@ int doc_find_expand_matches(xui_document_snapshot, uint32_t, const char*,
 void doc_find_expansions_free(doc_find_expansion*, uint64_t);
 int doc_split_text(xui_document_transaction, uint64_t, uint64_t, uint64_t*);
 int doc_semantic_equal(doc_state*, doc_state*);
+int doc_semantic_markdown_projection_equal(doc_state* desired,doc_state* actual);
+doc_node* doc_semantic_find_root_footnote(doc_state*,const doc_node*);
 int doc_semantic_subtree_equal(doc_state*, uint64_t, doc_state*, uint64_t);
 int doc_semantic_empty_paragraph(doc_state*, const doc_node*);
 int doc_copy_subtree_apply(xui_document_transaction, doc_state*, uint64_t,
@@ -485,5 +585,8 @@ int doc_html_export_children(xui_document_snapshot, uint64_t, char**, uint64_t*)
 int doc_html_safe_url(const char*, int);
 int doc_html_import_document(const char*, uint64_t, xui_document*, unsigned*);
 const char* doc_fragment_single_image_resource(xui_document_fragment);
+#if defined(__linux__)
+int doc_fragment_has_opaque_objects(xui_document_fragment);
+#endif
 
 #endif

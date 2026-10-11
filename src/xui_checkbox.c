@@ -853,7 +853,7 @@ static int __xuiCheckBoxAccessibleNode(xui_widget pWidget, xui_accessible_node_t
 	return XUI_OK;
 }
 
-static const xui_internal_accessibility_adapter_t g_xuiCheckBoxAccessible = {__xuiCheckBoxAccessibleNode, NULL};
+static const xui_internal_accessibility_adapter_t g_xuiCheckBoxAccessible = {.getNode = __xuiCheckBoxAccessibleNode, .performAction = NULL};
 
 XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext)
 {

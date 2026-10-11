@@ -1320,7 +1320,7 @@ static int __xuiPopupAccessibleAction(xui_widget pWidget, int iAction, const voi
 }
 
 static const xui_internal_accessibility_adapter_t g_xuiPopupAccessible = {
-	__xuiPopupAccessibleNode, __xuiPopupAccessibleAction
+	.getNode = __xuiPopupAccessibleNode, .performAction = __xuiPopupAccessibleAction
 };
 
 XUI_API xui_widget_type xuiPopupGetType(xui_context pContext)

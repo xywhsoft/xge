@@ -17,6 +17,7 @@ typedef struct xui_doc_transaction_t* xui_document_transaction;
 typedef struct xui_doc_change_set_t* xui_document_change_set;
 typedef struct xui_doc_prepare_t* xui_document_prepare;
 typedef struct xui_doc_fragment_t* xui_document_fragment;
+typedef struct xui_doc_source_index_t* xui_document_source_index;
 typedef uint64_t xui_doc_node_id;
 #define XUI_DOCUMENT_ROOT UINT64_C(1)
 #define XUI_DOCUMENT_APPEND UINT64_MAX
@@ -220,7 +221,11 @@ enum xui_doc_inline_syntax_kind {
     XUI_DOC_SYNTAX_FOOTNOTE_REF, XUI_DOC_SYNTAX_HIGHLIGHT,
     XUI_DOC_SYNTAX_SUBSCRIPT, XUI_DOC_SYNTAX_SUPERSCRIPT,
     XUI_DOC_SYNTAX_CANDIDATE_LINK, XUI_DOC_SYNTAX_CANDIDATE_IMAGE,
-    XUI_DOC_SYNTAX_CANDIDATE_FOOTNOTE
+    XUI_DOC_SYNTAX_CANDIDATE_FOOTNOTE,
+    /* Inline link/image suffix fields. Parent is LINK or IMAGE; Source includes
+     * the field delimiters and Content contains the raw value. References use
+     * iDefinitionIndex on the parent instead; autolinks have no suffix fields. */
+    XUI_DOC_SYNTAX_DESTINATION, XUI_DOC_SYNTAX_TITLE
 };
 enum xui_doc_inline_syntax_flags { XUI_DOC_SYNTAX_AUTOLINK = 1u };
 typedef struct xui_doc_inline_syntax_t {
@@ -246,6 +251,150 @@ typedef struct xui_doc_source_info_t {
     uint32_t iSize;
     uint64_t iInlineSyntaxCount, iReferenceDefinitionCount, iReferenceCandidateCount;
 } xui_doc_source_info_t;
+
+/* Immutable source ownership index, derived from one Markdown snapshot. It
+ * retains that snapshot, never creates content/history, and does not reparse.
+ * Records join semantic source ranges, parser inline syntax, definitions and
+ * unresolved candidates. Tokens partition every original byte exactly once.
+ * Embedded payloads can be opaque; a byte partition alone is not a claim that
+ * every embedded language or unused definition body has a complete CST. */
+enum xui_doc_source_record_kind {
+    XUI_DOC_SOURCE_RECORD_ROOT = 1, XUI_DOC_SOURCE_RECORD_NODE,
+    XUI_DOC_SOURCE_RECORD_INLINE, XUI_DOC_SOURCE_RECORD_DEFINITION,
+    XUI_DOC_SOURCE_RECORD_CANDIDATE,
+    XUI_DOC_SOURCE_RECORD_SYNTAX /* Parser syntax without a semantic NodeId. */
+};
+/* SYNTAX record iDetail. iOriginIndex is its definition ordinal, or the
+ * source-ordered ordinary arena ordinal when SYNTAX_DOCUMENT is set. Both
+ * refer to the retained snapshot. Field content endpoints exclude delimiters. */
+enum xui_doc_source_syntax_record_kind {
+    XUI_DOC_SOURCE_SYNTAX_SCOPE = 1, XUI_DOC_SOURCE_SYNTAX_BLOCK,
+    XUI_DOC_SOURCE_SYNTAX_INLINE, XUI_DOC_SOURCE_SYNTAX_TEXT,
+    XUI_DOC_SOURCE_SYNTAX_MARKER, XUI_DOC_SOURCE_SYNTAX_FIELD,
+    XUI_DOC_SOURCE_SYNTAX_INDENT, XUI_DOC_SOURCE_SYNTAX_BREAK,
+    XUI_DOC_SOURCE_SYNTAX_OPAQUE
+};
+enum xui_doc_source_record_flags {
+    XUI_DOC_SOURCE_RECORD_UNMAPPED = 1u, XUI_DOC_SOURCE_RECORD_OPAQUE = 2u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_OPEN = 4u, XUI_DOC_SOURCE_RECORD_SYNTAX_CLOSE = 8u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_TABLE = 16u, XUI_DOC_SOURCE_RECORD_SYNTAX_CANDIDATE = 32u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_QUOTE_INDENT = 64u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_LIST_FIRST_INDENT = 128u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_LIST_CONTINUATION_INDENT = 256u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_CODE_INDENT = 512u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_BREAK_TRAILING = 1024u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_BREAK_MARKER = 2048u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_BREAK_ENDING = 4096u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_REFERENCE = 8192u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_TAIL = 16384u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_FENCE_INFO = 32768u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_FENCE_LANGUAGE = 65536u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_DEFINITION_PREFIX = 131072u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_DEFINITION_SEPARATOR = 262144u,
+    XUI_DOC_SOURCE_RECORD_SYNTAX_DOCUMENT = 524288u /* Ordinary source arena owner. */
+};
+typedef struct xui_doc_source_record_t {
+    uint32_t iSize, iKind, iDetail, iFlags;
+    /* Source-index parent, never a NodeId. Root has UINT64_MAX. Mapped child
+     * ranges are contained by their parent; source ancestry can differ from
+     * semantic ancestry, for example with relocated footnote projections. */
+    uint64_t iParentIndex, iNodeId, iOriginIndex;
+    uint64_t iSourceStart, iSourceEnd, iContentStart, iContentEnd;
+} xui_doc_source_record_t;
+enum xui_doc_source_token_kind {
+    XUI_DOC_SOURCE_TOKEN_CONTENT = 1, XUI_DOC_SOURCE_TOKEN_INLINE_MARKER,
+    XUI_DOC_SOURCE_TOKEN_BLOCK_MARKER, XUI_DOC_SOURCE_TOKEN_FIELD_CONTENT,
+    XUI_DOC_SOURCE_TOKEN_REFERENCE_SYNTAX, XUI_DOC_SOURCE_TOKEN_REFERENCE_LABEL,
+    XUI_DOC_SOURCE_TOKEN_REFERENCE_DESTINATION, XUI_DOC_SOURCE_TOKEN_REFERENCE_TITLE,
+    XUI_DOC_SOURCE_TOKEN_HORIZONTAL_SPACE, XUI_DOC_SOURCE_TOKEN_LINE_ENDING,
+    XUI_DOC_SOURCE_TOKEN_BOM, XUI_DOC_SOURCE_TOKEN_HTML,
+    XUI_DOC_SOURCE_TOKEN_HTML_COMMENT, XUI_DOC_SOURCE_TOKEN_UNCLASSIFIED,
+    XUI_DOC_SOURCE_TOKEN_OPAQUE, XUI_DOC_SOURCE_TOKEN_FENCE_INFO,
+    XUI_DOC_SOURCE_TOKEN_CONTAINER_INDENT, XUI_DOC_SOURCE_TOKEN_LIST_GAP,
+    XUI_DOC_SOURCE_TOKEN_CODE_INDENT, XUI_DOC_SOURCE_TOKEN_TABLE,
+    XUI_DOC_SOURCE_TOKEN_BREAK_MARKER,
+    XUI_DOC_SOURCE_TOKEN_SCOPE /* Binding only: an enclosing source record. */
+};
+enum xui_doc_source_token_flags {
+    XUI_DOC_SOURCE_TOKEN_PARSER_CONFIRMED = 1u,
+    XUI_DOC_SOURCE_TOKEN_OPAQUE_PAYLOAD = 2u
+};
+typedef struct xui_doc_source_token_t {
+    uint32_t iSize, iKind, iDetail, iFlags;
+    uint64_t iSourceStart, iSourceEnd, iRecordIndex, iNodeId;
+    /* Semantic provenance, if present. DIRECT text offsets are narrowed to
+     * this token; decoded/normalized segments retain the complete text range.
+     * Their original source interval remains available even if markers split
+     * the token. Definition-only syntax retains its original interval and
+     * optional segment kind, but has no semantic text offsets. Otherwise
+     * absent provenance uses UINT64_MAX endpoints. */
+    uint64_t iTextStart, iTextEnd, iOriginalSourceStart, iOriginalSourceEnd;
+    uint32_t iSegmentKind, iSegmentFlags;
+} xui_doc_source_token_t;
+/* Bindings preserve overlapping roles, including zero-length syntax anchors.
+ * Unlike partition tokens, a binding retains its complete original range.
+ * Quote/list-first indentation includes parser-owned whitespace before the
+ * marker. A partly consumed Tab byte can occur in multiple container ranges;
+ * each binding's logical columns identify its per-container consumption. */
+enum xui_doc_source_binding_origin {
+    XUI_DOC_SOURCE_BINDING_RANGE = 0, XUI_DOC_SOURCE_BINDING_PROVENANCE,
+    XUI_DOC_SOURCE_BINDING_BLOCK_PRIMARY, XUI_DOC_SOURCE_BINDING_BLOCK_SECONDARY,
+    XUI_DOC_SOURCE_BINDING_FENCE_TAIL, XUI_DOC_SOURCE_BINDING_FENCE_INFO,
+    XUI_DOC_SOURCE_BINDING_FENCE_LANGUAGE, XUI_DOC_SOURCE_BINDING_LIST_MARKER_GAP,
+    XUI_DOC_SOURCE_BINDING_TASK_MARKER_GAP, XUI_DOC_SOURCE_BINDING_QUOTE_PREFIX,
+    XUI_DOC_SOURCE_BINDING_QUOTE_INDENT, XUI_DOC_SOURCE_BINDING_LIST_FIRST_INDENT,
+    XUI_DOC_SOURCE_BINDING_LIST_CONTINUATION_INDENT, XUI_DOC_SOURCE_BINDING_CODE_INDENT,
+    XUI_DOC_SOURCE_BINDING_TABLE_TOKEN, XUI_DOC_SOURCE_BINDING_INLINE_OPEN,
+    XUI_DOC_SOURCE_BINDING_INLINE_CLOSE, XUI_DOC_SOURCE_BINDING_INLINE_FIELD,
+    XUI_DOC_SOURCE_BINDING_REFERENCE_LABEL, XUI_DOC_SOURCE_BINDING_REFERENCE_DESTINATION,
+    XUI_DOC_SOURCE_BINDING_REFERENCE_TITLE, XUI_DOC_SOURCE_BINDING_BREAK_TRAILING,
+    XUI_DOC_SOURCE_BINDING_BREAK_HARD_MARKER, XUI_DOC_SOURCE_BINDING_BREAK_LINE_ENDING,
+    XUI_DOC_SOURCE_BINDING_DEFINITION_SYNTAX, XUI_DOC_SOURCE_BINDING_DOCUMENT_SYNTAX
+};
+enum xui_doc_source_binding_metadata {
+    XUI_DOC_SOURCE_BINDING_COLUMNS = 1u, XUI_DOC_SOURCE_BINDING_TABLE = 2u,
+    XUI_DOC_SOURCE_BINDING_SOURCE_ONLY = 4u
+};
+typedef struct xui_doc_source_binding_t {
+    uint32_t iSize, iOriginKind;
+    xui_doc_source_token_t tRange;
+    /* Ordinal in the retained node's provenance/indent/table vector. For
+     * DEFINITION_SYNTAX it is the definition's concrete syntax ordinal, with
+     * the definition ordinal in the enclosing record's iOriginIndex.
+     * DOCUMENT_SYNTAX uses an ordinary arena's syntax ordinal, with that
+     * source-ordered arena ordinal in the enclosing record's iOriginIndex.
+     * SOURCE_ONLY has original ranges and optional segment kind but no
+     * semantic text offsets. Other unsupported ordinals are UINT64_MAX. */
+    uint64_t iOriginIndex;
+    uint32_t iMetadata, iMarkerFlags, iRow, iOrdinal;
+    /* Parser logical columns, not byte offsets. Columns belong to the parser
+     * input containing this record (footnote bodies can be dedented input).
+     * A partly consumed Tab may have end > content. Unsupported columns and
+     * blank-code content columns are UINT64_MAX. */
+    uint64_t iStartColumn, iMarkerColumn, iContentColumn, iEndColumn;
+} xui_doc_source_binding_t;
+/* Nonzero stops traversal and returns XUI_DOC_ERROR_CANCELLED. The borrowed
+ * binding pointer lasts only for the callback; copying its fields is safe. */
+typedef int (*xui_doc_source_binding_proc)(void* user, uint64_t ordinal,
+    const xui_doc_source_binding_t* binding);
+typedef int (*xui_doc_source_cancel_proc)(void* user);
+typedef struct xui_doc_source_index_desc_t {
+    uint32_t iSize, iReserved;
+    /* Peak working allocations, including headers but excluding the retained
+     * snapshot. 0 selects 64 MiB; UINT64_MAX removes this additional cap. */
+    uint64_t iMaxWorkingBytes;
+    /* Called only during construction; return nonzero to cancel. The caller
+     * may build on a worker thread. Callback storage is not retained. */
+    xui_doc_source_cancel_proc onCancel;
+    void* pCancelUser;
+} xui_doc_source_index_desc_t;
+typedef struct xui_doc_source_index_info_t {
+    uint32_t iSize, iReserved;
+    uint64_t iDocumentId, iRevision, iSourceBytes, iRecordCount, iTokenCount;
+    uint64_t iUnclassifiedBytes, iOpaqueBytes;
+    uint64_t iAllocatedBytes, iPeakWorkingBytes, iBuildSteps, iSourceBytesRead, iAnnotationCount;
+    uint64_t iBindingCount;
+} xui_doc_source_index_info_t;
 enum xui_doc_node_flags {
     XUI_DOC_ORDERED = 1u, XUI_DOC_TASK = 2u, XUI_DOC_CHECKED = 4u,
     XUI_DOC_HEADER = 8u, XUI_DOC_BLOCK = 16u, XUI_DOC_TIGHT = 32u,
@@ -268,12 +417,16 @@ typedef struct xui_doc_desc_t {
     uint64_t iHistoryMaxBytes; /* 0 selects 64 MiB; UINT64_MAX removes the byte cap. */
     int bDisableHistory;
     uint64_t iMaxTextBytes;  /* 0 selects 256 MiB. */
-    uint64_t iMaxNodes;      /* 0 selects 1,000,000. */
+    uint64_t iMaxNodes;      /* Semantic nodes; 0 selects 1,000,000. */
     xui_doc_alloc_proc onAlloc;
     xui_doc_free_proc onFree;
     void* pAllocatorUser;   /* Must outlive every handle/snapshot/prepare using it.
                             * Callbacks must be thread-safe when readers release
                             * snapshots or prepare runs on worker threads. */
+    uint64_t iMaxSyntaxRecords; /* Records collected in one Markdown parser input or arena;
+                                * independent of semantic nodes. 0 selects 8,000,000.
+                                * Storage grows with actual input, not the configured cap.
+                                * Retained document storage is diagnosed separately. */
 } xui_doc_desc_t;
 
 typedef struct xui_doc_attributes_t {
@@ -406,7 +559,7 @@ typedef struct xui_doc_position_t {
     uint64_t iOffset;
     uint32_t iAffinity;
     uint32_t iReserved;
-    uint64_t iInputGeneration; /* 0 for committed content; otherwise a prepare SOURCE projection. */
+    uint64_t iInputGeneration; /* 0 for committed content; otherwise an exact Prepare input projection. */
 } xui_doc_position_t;
 typedef struct xui_doc_range_t { xui_doc_position_t tAnchor, tCaret; } xui_doc_range_t;
 
@@ -440,6 +593,7 @@ typedef struct xui_doc_change_info_t {
     uint64_t iBeforeRevision;
     uint64_t iAfterRevision;
     uint64_t iOrigin;
+    uint64_t iInputGeneration; /* Prepare publication only; ordinary writes and Undo/Redo use zero. */
     uint64_t iOperationCount;
     const xui_doc_operation_t* pOperations;
     int bUndo;
@@ -546,6 +700,38 @@ XUI_API int xuiDocumentSnapshotGetReferenceDefinition(xui_document_snapshot snap
  * brackets, and parent/definition are UINT64_MAX. Full-reference forms may
  * expose more than one candidate because fallback lookup is also possible. */
 XUI_API int xuiDocumentSnapshotGetReferenceCandidate(xui_document_snapshot snapshot, uint64_t index, xui_doc_inline_syntax_t* out);
+/* Construction publishes only a complete index. Failure clears *out and
+ * leaves source, revision, identities, save point and history unchanged. */
+XUI_API int xuiDocumentSnapshotCreateSourceIndex(xui_document_snapshot snapshot,
+    const xui_doc_source_index_desc_t* desc, xui_document_source_index* out);
+XUI_API void xuiDocumentSourceIndexRetain(xui_document_source_index index);
+XUI_API void xuiDocumentSourceIndexRelease(xui_document_source_index index);
+XUI_API int xuiDocumentSourceIndexGetInfo(xui_document_source_index index,
+    xui_doc_source_index_info_t* out);
+XUI_API int xuiDocumentSourceIndexGetRecord(xui_document_source_index index,
+    uint64_t ordinal, xui_doc_source_record_t* out);
+XUI_API int xuiDocumentSourceIndexGetToken(xui_document_source_index index,
+    uint64_t ordinal, xui_doc_source_token_t* out);
+XUI_API int xuiDocumentSourceIndexGetBinding(xui_document_source_index index,
+    uint64_t ordinal, xui_doc_source_binding_t* out);
+/* Visit every overlapping complete binding in source/ordinal order without
+ * allocation. [start,end) excludes anchors at end. start == end is a caret:
+ * visit ranges containing start and zero-length anchors exactly at start;
+ * EOF has anchors only. Bounds beyond EOF or start > end are invalid.
+ * *visited (optional) counts callbacks, including the one stopping traversal.
+ * Calls retain the index during callbacks; nested read/query calls are safe.
+ * The caller must own a reference when entering the function. */
+XUI_API int xuiDocumentSourceIndexVisitBindings(xui_document_source_index index,
+    uint64_t start, uint64_t end, xui_doc_source_binding_proc onBinding,
+    void* user, uint64_t* visited);
+/* Binary search the unique token containing offset. EOF returns NOT_FOUND;
+ * an offset beyond EOF is invalid. Failure writes UINT64_MAX to *ordinal. */
+XUI_API int xuiDocumentSourceIndexFindToken(xui_document_source_index index,
+    uint64_t offset, uint64_t* ordinal);
+/* Read original bytes through the retained snapshot, also after Document and
+ * the caller's snapshot have been released. No whole-source copy is needed. */
+XUI_API int xuiDocumentSourceIndexReadSource(xui_document_source_index index,
+    uint64_t offset, void* buffer, uint64_t bytes);
 /* Copy functions report the required byte length (without a terminator).
  * A NULL buffer queries the length. A supplied buffer needs length+1 bytes. */
 XUI_API int xuiDocumentSnapshotCopyText(xui_document_snapshot snapshot, xui_doc_node_id node, char* buffer, uint64_t capacity, uint64_t* length);
@@ -714,7 +900,7 @@ XUI_API int xuiDocumentTxnSetExtensionPayload(xui_document_transaction transacti
 #endif
 typedef struct xui_doc_image_desc_t {
     uint32_t iSize;
-    const char* sResource; /* Nonempty UTF-8 URI or registered surface name. */
+    const char* sResource; /* Non-NULL UTF-8 URI or surface name; empty is valid only for Markdown. */
     const char* sAlt;      /* UTF-8 text; may be NULL only when iAltBytes is zero. */
     uint64_t iAltBytes;
     const char* sTitle;    /* Optional UTF-8 title. */
@@ -1105,6 +1291,35 @@ XUI_API int xuiDocumentPrepareReadSource(xui_document_prepare prepare, uint64_t 
 /* A candidate position is rejected by committed Snapshot/Transaction APIs.
  * It is meaningful only with this exact document/base revision/generation. */
 XUI_API int xuiDocumentPrepareSourcePosition(xui_document_prepare prepare, uint64_t offset, uint32_t affinity, xui_doc_position_t* position);
+/* Map a SOURCE position between retained immutable candidate generations.
+ * NULL from/to selects their shared committed base; at least one is non-NULL.
+ * Non-NULL handles must be on one continuation lineage, with identical
+ * document identity/base revision. Skipped generations and reverse mapping
+ * use the recorded patch log; deleted interiors return MAP_DELETED.
+ * Queries allocate nothing, remain valid after cancellation/supersession and
+ * support concurrent Run. They do not publish or change history. Failures
+ * preserve both outputs; position and output may be the same address.
+ * After publication, MapPosition on its ChangeSet maps that exact candidate
+ * generation to the committed source without applying the patches twice. */
+XUI_API int xuiDocumentPrepareMapSourcePosition(xui_document_prepare from,
+    xui_document_prepare to, const xui_doc_position_t* position,
+    xui_doc_position_t* output, int* mapping);
+/* Create a TEXT/GAP position in the immutable semantic preview of a VISUAL
+ * input. Source-only preparations return UNSUPPORTED. Snapshot/Transaction
+ * APIs reject tagged input positions; the exact Prepare owns their meaning. */
+XUI_API int xuiDocumentPrepareSemanticPosition(xui_document_prepare prepare,
+    uint64_t node, uint32_t kind, uint64_t offset, uint32_t affinity,
+    xui_doc_position_t* position);
+/* General input mapping. SOURCE uses the same source-patch rules above;
+ * TEXT/GAP uses the actual semantic transaction log of VISUAL previews.
+ * NULL denotes the shared committed base. Retained handles, continuation
+ * lineage validation, no-allocation queries, concurrent Run and atomic failure
+ * follow MapSourcePosition. Deleted semantic interiors collapse with quality
+ * MAP_DELETED. The publishing ChangeSet maps its exact input generation to
+ * the parsed committed tree, including repartitioned text and object gaps. */
+XUI_API int xuiDocumentPrepareMapPosition(xui_document_prepare from,
+    xui_document_prepare to, const xui_doc_position_t* position,
+    xui_doc_position_t* output, int* mapping);
 /* Cooperative cancellation; already-started publication wins. Cancel requests
  * do not wait for a worker or detach the document's pending handle. */
 XUI_API void xuiDocumentPrepareCancel(xui_document_prepare prepare);

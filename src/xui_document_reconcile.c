@@ -153,6 +153,8 @@ int doc_markdown_reconcile(xui_document_transaction t, doc_state** parsed)
     c.result->source_storage_bytes = c.parsed->source_storage_bytes;
     c.result->references = c.parsed->references; doc_seq_retain(c.result->references);
     c.result->reference_values = c.parsed->reference_values; doc_seq_retain(c.result->reference_values);
+    c.result->reference_syntax = c.parsed->reference_syntax; doc_seq_retain(c.result->reference_syntax);
+    c.result->source_syntax = c.parsed->source_syntax; doc_seq_retain(c.result->source_syntax);
     c.result->inline_syntax = c.parsed->inline_syntax; doc_seq_retain(c.result->inline_syntax);
     c.result->reference_candidates = c.parsed->reference_candidates; doc_seq_retain(c.result->reference_candidates);
     c.result->dialect = c.parsed->dialect;
@@ -412,25 +414,69 @@ static int doc_reconcile_preserve(doc_reconcile* source, uint64_t wanted, uint64
     return doc_projection_node(&c, wanted, parsed);
 }
 
-int doc_markdown_accept(xui_document_transaction t, xui_document_transaction desired)
+/* The parser already recorded dependency changes. Normalize only this private
+ * intent's footer membership/order, retaining surviving IDs; its operations
+ * are discarded so the published change map contains no duplicate deletion. */
+static int doc_projection_footnotes(xui_document_transaction intent,doc_state* parsed)
+{
+    doc_node* root=doc_index_get(intent->draft->index,DOC_ROOT);
+    doc_node* actual=doc_index_get(parsed->index,DOC_ROOT);uint64_t i,base=0,ordinal=0;
+    int seen=0,result;
+    for(i=0;i<doc_seq_size(root->children);i++){
+        doc_node* node=doc_index_get(intent->draft->index,doc_seq_get_id(root->children,i));
+        if(!node)return XUI_DOC_ERROR_SCHEMA;
+        if(node->kind==XUI_DOC_FOOTNOTE)seen=1;
+        else{if(seen)return XUI_DOC_ERROR_UNREPRESENTABLE;base++;}
+    }
+    for(i=doc_seq_size(root->children);i>base;i--){
+        doc_node* node=doc_index_get(intent->draft->index,doc_seq_get_id(root->children,i-1));
+        if(!doc_semantic_find_root_footnote(parsed,node)){
+            result=doc_txn_delete(intent,node->id);if(result!=XUI_OK)return result;
+        }
+    }
+    for(i=0;i<doc_seq_size(actual->children);i++){
+        doc_node* node=doc_index_get(parsed->index,doc_seq_get_id(actual->children,i));doc_node* wanted;uint64_t at;
+        if(!node || node->kind!=XUI_DOC_FOOTNOTE)continue;
+        result=doc_txn_check(intent,0);if(result!=XUI_OK)return result;
+        wanted=doc_semantic_find_root_footnote(intent->draft,node);
+        if(!wanted)return XUI_DOC_ERROR_UNREPRESENTABLE;
+        root=doc_index_get(intent->draft->index,DOC_ROOT);at=doc_child_index(root,wanted->id);
+        result=xuiDocumentTxnMoveNode(intent,wanted->id,DOC_ROOT,base+ordinal+(at<base+ordinal?1:0));
+        if(result!=XUI_OK)return result;
+        ordinal++;
+    }
+    return XUI_OK;
+}
+int doc_markdown_accept(xui_document_transaction t, xui_document_transaction desired,unsigned flags)
 {
     doc_semantic_projection c = {0};
+    struct xui_doc_transaction_t intent={0};
     uint64_t i;
     int result;
-    if (!doc_semantic_equal(desired->draft, t->draft)) return doc_txn_fail(t, XUI_DOC_ERROR_UNREPRESENTABLE);
     c.desired = desired->draft; c.parsed = t->draft;
+    if(!doc_semantic_equal(c.desired,c.parsed)){
+        if(!(flags&DOC_MD_ACCEPT_DERIVED_FOOTNOTES) ||
+            !doc_semantic_markdown_projection_equal(c.desired,c.parsed))return doc_txn_fail(t,XUI_DOC_ERROR_UNREPRESENTABLE);
+        result=doc_markdown_shadow_begin(desired,&intent);if(result!=XUI_OK)return doc_txn_fail(t,result);
+        result=doc_projection_footnotes(&intent,c.parsed);
+        if(result==XUI_OK && !doc_semantic_equal(intent.draft,c.parsed))result=XUI_DOC_ERROR_UNREPRESENTABLE;
+        if(result!=XUI_OK)goto done;
+        c.desired=intent.draft;
+    }
     c.reuse_shared = 1;
     c.normalized.cancellation = t->cancellation;
     result = doc_projection_same_root_ids(&c, &c.retain_root_shifts);
-    if (result != XUI_OK) return doc_txn_fail(t, result);
+    if (result != XUI_OK) goto done;
     c.normalized.document = t->document; c.normalized.domain = XUI_DOC_SEMANTIC; c.normalized.parsing = DOC_BUILD_SEMANTIC;
     c.normalized.draft = doc_state_clone(c.desired);
-    if (!c.normalized.draft) return doc_txn_fail(t, XUI_ERROR_OUT_OF_MEMORY);
+    if (!c.normalized.draft) {result=XUI_ERROR_OUT_OF_MEMORY;goto done;}
     doc_seq_release(c.normalized.draft->source); c.normalized.draft->source = c.parsed->source; doc_seq_retain(c.parsed->source);
     c.normalized.draft->source_open_brackets = c.parsed->source_open_brackets;
     c.normalized.draft->source_storage_bytes = c.parsed->source_storage_bytes;
     doc_seq_release(c.normalized.draft->references); c.normalized.draft->references = c.parsed->references; doc_seq_retain(c.parsed->references);
     doc_seq_release(c.normalized.draft->reference_values); c.normalized.draft->reference_values = c.parsed->reference_values; doc_seq_retain(c.parsed->reference_values);
+    doc_seq_release(c.normalized.draft->reference_syntax); c.normalized.draft->reference_syntax = c.parsed->reference_syntax; doc_seq_retain(c.parsed->reference_syntax);
+    doc_seq_release(c.normalized.draft->source_syntax); c.normalized.draft->source_syntax = c.parsed->source_syntax; doc_seq_retain(c.parsed->source_syntax);
     doc_seq_release(c.normalized.draft->inline_syntax); c.normalized.draft->inline_syntax = c.parsed->inline_syntax; doc_seq_retain(c.parsed->inline_syntax);
     doc_seq_release(c.normalized.draft->reference_candidates); c.normalized.draft->reference_candidates = c.parsed->reference_candidates;
     doc_seq_retain(c.parsed->reference_candidates);
@@ -445,7 +491,9 @@ int doc_markdown_accept(xui_document_transaction t, xui_document_transaction des
         doc_state_release(t->draft); t->draft = c.normalized.draft; c.normalized.draft = NULL;
         t->parse_op_start = t->count;
     }
+done:
     doc_state_release(c.normalized.draft); doc_free(c.normalized.ops);
+    doc_state_release(intent.draft);doc_free(intent.ops);
     return result == XUI_OK ? result : doc_txn_fail(t, result);
 }
 

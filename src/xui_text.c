@@ -293,6 +293,566 @@ int xuiInternalTextShapeProjection(xui_context context, xui_font font,
     return result;
 }
 
+static void __xuiTextChunkFree(xui_internal_text_chunk_t* pChunk)
+{
+	if ( pChunk == NULL ) return;
+	xuiTextShapeFree(&pChunk->tShape);
+	xrtFree(pChunk->sText);
+	xrtFree(pChunk->pAdvances);
+	memset(pChunk, 0, sizeof(*pChunk));
+}
+
+void xuiInternalTextChunkCacheClear(xui_internal_text_chunk_cache_t* pCache)
+{
+	int i;
+	if ( pCache == NULL ) return;
+	for ( i = 0; i < pCache->iChunkCount; i++ ) __xuiTextChunkFree(&pCache->pChunks[i]);
+	xrtFree(pCache->pChunks);
+	xrtFree(pCache->pChunkAdvances);
+	memset(pCache, 0, sizeof(*pCache));
+}
+
+static int __xuiTextChunkReserve(xui_internal_text_chunk_cache_t* pCache, int iNeed)
+{
+	xui_internal_text_chunk_t* pChunks;
+	int iCapacity;
+	if ( pCache == NULL || iNeed < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNeed <= pCache->iChunkCapacity ) return XUI_OK;
+	iCapacity = pCache->iChunkCapacity > 0 ? pCache->iChunkCapacity : 8;
+	while ( iCapacity < iNeed ) {
+		if ( iCapacity > INT_MAX / 2 ) return XUI_ERROR_OUT_OF_MEMORY;
+		iCapacity *= 2;
+	}
+	pChunks = (xui_internal_text_chunk_t*)xrtRealloc(pCache->pChunks,
+		(size_t)iCapacity * sizeof(*pChunks));
+	if ( pChunks == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memset(pChunks + pCache->iChunkCapacity, 0,
+		(size_t)(iCapacity - pCache->iChunkCapacity) * sizeof(*pChunks));
+	pCache->pChunks = pChunks;
+	pCache->iChunkCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static int __xuiTextChunkBoundaryAtOrAfter(const char* sText, int iTextSize,
+	int iStart, int iTarget)
+{
+	int iAt = iStart;
+	int iNext;
+	if ( iTarget > iTextSize ) iTarget = iTextSize;
+	while ( iAt < iTarget ) {
+		iNext = xuiInternalTextGraphemeNext(sText, iTextSize, iAt);
+		if ( iNext <= iAt || iNext > iTextSize ) return iTextSize;
+		iAt = iNext;
+	}
+	return iAt;
+}
+
+static int __xuiTextChunkCanShapeIsolated(const char* sText, int iTextSize)
+{
+	int i;
+	if ( sText == NULL || iTextSize < 0 ) return 0;
+	for ( i = 0; i < iTextSize; i++ ) {
+		unsigned char iByte = (unsigned char)sText[i];
+		if ( iByte < 0x20u || iByte > 0x7eu ) return 0;
+	}
+	return 1;
+}
+
+static int __xuiTextChunkBuildOne(xui_context pContext, xui_font pFont,
+	const char* sText, int iTextSize, int iStart, int iLimit, int bContext,
+	xui_internal_text_chunk_t* pChunk)
+{
+	xui_text_item_t tItem;
+	double fAdvance;
+	int iTarget;
+	int iWindowEnd;
+	int iCoreBytes;
+	int i;
+	int iRet;
+	if ( pContext == NULL || pFont == NULL || sText == NULL || pChunk == NULL ||
+	     iStart < 0 || iStart >= iLimit || iLimit > iTextSize ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pChunk, 0, sizeof(*pChunk));
+	iTarget = __xuiTextChunkBoundaryAtOrAfter(sText, iTextSize, iStart,
+		iStart + XUI_INTERNAL_TEXT_CHUNK_BYTES);
+	if ( iTarget > iLimit ) iTarget = iLimit;
+	if ( iTarget <= iStart ) iTarget = iLimit;
+	iWindowEnd = __xuiTextChunkBoundaryAtOrAfter(sText, iTextSize, iTarget,
+		iTarget + XUI_INTERNAL_TEXT_CHUNK_LOOKAHEAD);
+	if ( iWindowEnd < iTarget ) iWindowEnd = iTarget;
+	pChunk->sText = (char*)xrtMalloc((size_t)(iWindowEnd - iStart) + 1u);
+	if ( pChunk->sText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memcpy(pChunk->sText, sText + iStart, (size_t)(iWindowEnd - iStart));
+	pChunk->sText[iWindowEnd - iStart] = '\0';
+	memset(&tItem, 0, sizeof(tItem));
+	tItem.iSize = sizeof(tItem);
+	tItem.pFont = pFont;
+	tItem.sText = pChunk->sText;
+	tItem.iTextSize = iWindowEnd - iStart;
+	tItem.iFlags = XUI_TEXT_SHAPE_DEFAULT | XUI_TEXT_SHAPE_RETAIN_PAINT;
+	if ( bContext ) {
+		tItem.sContext = sText;
+		tItem.iContextSize = iTextSize;
+		tItem.iContextOffset = iStart;
+	}
+	iRet = xuiTextShape(pContext, &tItem, &pChunk->tShape);
+	if ( iRet != XUI_OK ) {
+		__xuiTextChunkFree(pChunk);
+		return iRet;
+	}
+	iRet = xuiInternalTextShapeCaretFragments(pChunk->sText,
+		iWindowEnd - iStart, &pChunk->tShape);
+	if ( iRet != XUI_OK ) {
+		__xuiTextChunkFree(pChunk);
+		return iRet;
+	}
+	iCoreBytes = iTarget - iStart;
+	if ( iTarget < iLimit ) {
+		int iChosen = 0;
+		for ( i = 0; i < pChunk->tShape.iClusterCount; i++ ) {
+			const xui_text_cluster_t* pCluster = &pChunk->tShape.pClusters[i];
+			if ( pCluster->iTextEnd > iCoreBytes ) break;
+			iChosen = pCluster->iTextEnd;
+		}
+		if ( iChosen <= 0 && pChunk->tShape.iClusterCount > 0 )
+			iChosen = pChunk->tShape.pClusters[0].iTextEnd;
+		if ( iChosen > 0 ) iCoreBytes = iChosen;
+	}
+	if ( iCoreBytes <= 0 || iStart + iCoreBytes > iLimit ) {
+		__xuiTextChunkFree(pChunk);
+		return XUI_ERROR_INVALID_STATE;
+	}
+	pChunk->pAdvances = (double*)xrtMalloc(
+		((size_t)pChunk->tShape.iClusterCount + 1u) * sizeof(*pChunk->pAdvances));
+	if ( pChunk->pAdvances == NULL ) {
+		__xuiTextChunkFree(pChunk);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pChunk->pAdvances[0] = 0.0;
+	pChunk->iCoreClusterCount = 0;
+	for ( i = 0; i < pChunk->tShape.iClusterCount; i++ ) {
+		const xui_text_cluster_t* pCluster = &pChunk->tShape.pClusters[i];
+		if ( !isfinite(pCluster->fAdvance) || pCluster->fAdvance < 0.0f ||
+		     pCluster->iTextStart < 0 || pCluster->iTextEnd <= pCluster->iTextStart ||
+		     pCluster->iTextEnd > iWindowEnd - iStart ) {
+			__xuiTextChunkFree(pChunk);
+			return XUI_ERROR_INVALID_STATE;
+		}
+		fAdvance = pChunk->pAdvances[i] + (double)pCluster->fAdvance;
+		if ( fAdvance < pChunk->pAdvances[i] ) {
+			__xuiTextChunkFree(pChunk);
+			return XUI_ERROR_INVALID_STATE;
+		}
+		pChunk->pAdvances[i + 1] = fAdvance;
+		if ( pCluster->iTextEnd <= iCoreBytes ) pChunk->iCoreClusterCount = i + 1;
+		else if ( pCluster->iTextStart < iCoreBytes ) {
+			__xuiTextChunkFree(pChunk);
+			return XUI_ERROR_UNSUPPORTED;
+		}
+	}
+	if ( pChunk->iCoreClusterCount <= 0 ) {
+		__xuiTextChunkFree(pChunk);
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	pChunk->iStart = iStart;
+	pChunk->iEnd = iStart + iCoreBytes;
+	pChunk->iShapeStart = iStart;
+	pChunk->iShapeEnd = iWindowEnd;
+	pChunk->fWidth = (float)pChunk->pAdvances[pChunk->iCoreClusterCount];
+	return XUI_OK;
+}
+
+static int __xuiTextChunkBuildRange(xui_context pContext,
+	xui_internal_text_chunk_cache_t* pCache, xui_font pFont,
+	const char* sText, int iTextSize, int iStart, int iEnd, int bContext)
+{
+	xui_internal_text_chunk_t tChunk;
+	int iAt = iStart;
+	int iRet;
+	while ( iAt < iEnd ) {
+		iRet = __xuiTextChunkBuildOne(pContext, pFont, sText, iTextSize,
+			iAt, iEnd, bContext, &tChunk);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __xuiTextChunkReserve(pCache, pCache->iChunkCount + 1);
+		if ( iRet != XUI_OK ) {
+			__xuiTextChunkFree(&tChunk);
+			return iRet;
+		}
+		pCache->pChunks[pCache->iChunkCount++] = tChunk;
+		iAt = tChunk.iEnd;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTextChunkRebuildAdvances(xui_internal_text_chunk_cache_t* pCache)
+{
+	double* pAdvances;
+	int i;
+	if ( pCache == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pAdvances = (double*)xrtRealloc(pCache->pChunkAdvances,
+		((size_t)pCache->iChunkCount + 1u) * sizeof(*pAdvances));
+	if ( pAdvances == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pCache->pChunkAdvances = pAdvances;
+	pAdvances[0] = 0.0;
+	for ( i = 0; i < pCache->iChunkCount; i++ )
+		pAdvances[i + 1] = pAdvances[i] + (double)pCache->pChunks[i].fWidth;
+	return XUI_OK;
+}
+
+int xuiInternalTextChunkCacheEnsure(xui_context pContext,
+	xui_internal_text_chunk_cache_t* pCache, xui_font pFont,
+	const char* sText, int iTextSize, uint32_t iDpiGeneration)
+{
+	xui_proxy_caps_t tCaps;
+	int bContext = 0;
+	int iRet;
+	if ( pContext == NULL || pCache == NULL || pFont == NULL || sText == NULL ||
+	     iTextSize < XUI_INTERNAL_TEXT_CHUNK_THRESHOLD ) return XUI_ERROR_UNSUPPORTED;
+	if ( pCache->bValid && pCache->pFont == pFont && pCache->iTextSize == iTextSize &&
+	     pCache->iDpiGeneration == iDpiGeneration ) return XUI_OK;
+	if ( xuiInternalTextCopyDisplay(sText, iTextSize, NULL) != iTextSize )
+		return XUI_ERROR_UNSUPPORTED;
+	xuiInternalTextChunkCacheClear(pCache);
+	memset(&tCaps, 0, sizeof(tCaps));
+	tCaps.iSize = sizeof(tCaps);
+	if ( xuiGetProxyCaps(pContext, &tCaps) == XUI_OK )
+		bContext = (tCaps.iCaps & XUI_PROXY_CAP_TEXT_CONTEXT) != 0;
+	if ( !bContext && !__xuiTextChunkCanShapeIsolated(sText, iTextSize) )
+		return XUI_ERROR_UNSUPPORTED;
+	iRet = __xuiTextChunkBuildRange(pContext, pCache, pFont, sText, iTextSize,
+		0, iTextSize, bContext);
+	if ( iRet == XUI_OK ) iRet = __xuiTextChunkRebuildAdvances(pCache);
+	if ( iRet != XUI_OK ) {
+		xuiInternalTextChunkCacheClear(pCache);
+		return iRet;
+	}
+	pCache->iTextSize = iTextSize;
+	pCache->pFont = pFont;
+	pCache->iDpiGeneration = iDpiGeneration;
+	pCache->bValid = 1;
+	return XUI_OK;
+}
+
+static int __xuiTextChunkFindOffset(const xui_internal_text_chunk_cache_t* pCache,
+	int iOffset)
+{
+	int iLo = 0;
+	int iHi = pCache->iChunkCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( pCache->pChunks[iMid].iEnd < iOffset ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	if ( iLo >= pCache->iChunkCount ) return pCache->iChunkCount - 1;
+	return iLo;
+}
+
+int xuiInternalTextChunkCachePatch(xui_context pContext,
+	xui_internal_text_chunk_cache_t* pCache, const char* sText, int iTextSize,
+	int iEditStart, int iOldEnd, int iNewEnd)
+{
+	xui_internal_text_chunk_cache_t tBuilt;
+	xui_internal_text_chunk_t* pCombined;
+	xui_proxy_caps_t tCaps;
+	int iOldSize;
+	int iDelta;
+	int iFirst;
+	int iLast;
+	int iRegionStart;
+	int iRegionEnd;
+	int iTailCount;
+	int iCombinedCount;
+	int bContext = 0;
+	int i;
+	int iRet;
+	if ( pContext == NULL || pCache == NULL || sText == NULL || !pCache->bValid )
+		return XUI_ERROR_INVALID_STATE;
+	iOldSize = pCache->iTextSize;
+	if ( iEditStart < 0 || iOldEnd < iEditStart || iOldEnd > iOldSize ||
+	     iNewEnd < iEditStart || iNewEnd > iTextSize ||
+	     iTextSize != iOldSize + iNewEnd - iOldEnd ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iTextSize < XUI_INTERNAL_TEXT_CHUNK_THRESHOLD ||
+	     xuiInternalTextCopyDisplay(sText + iEditStart,
+		iNewEnd - iEditStart, NULL) != iNewEnd - iEditStart ) {
+		xuiInternalTextChunkCacheClear(pCache);
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	iDelta = iNewEnd - iOldEnd;
+	iFirst = __xuiTextChunkFindOffset(pCache, iEditStart);
+	iLast = __xuiTextChunkFindOffset(pCache, iOldEnd);
+	if ( iFirst > 0 ) iFirst--;
+	if ( iLast + 1 < pCache->iChunkCount ) iLast++;
+	iRegionStart = pCache->pChunks[iFirst].iStart;
+	iRegionEnd = pCache->pChunks[iLast].iEnd + iDelta;
+	if ( iRegionEnd < iRegionStart || iRegionEnd > iTextSize ) return XUI_ERROR_INVALID_STATE;
+	memset(&tCaps, 0, sizeof(tCaps));
+	tCaps.iSize = sizeof(tCaps);
+	if ( xuiGetProxyCaps(pContext, &tCaps) == XUI_OK )
+		bContext = (tCaps.iCaps & XUI_PROXY_CAP_TEXT_CONTEXT) != 0;
+	if ( !bContext && !__xuiTextChunkCanShapeIsolated(sText + iEditStart,
+	     iNewEnd - iEditStart) ) {
+		xuiInternalTextChunkCacheClear(pCache);
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	memset(&tBuilt, 0, sizeof(tBuilt));
+	iRet = __xuiTextChunkBuildRange(pContext, &tBuilt, pCache->pFont,
+		sText, iTextSize, iRegionStart, iRegionEnd, bContext);
+	if ( iRet != XUI_OK ) {
+		xuiInternalTextChunkCacheClear(&tBuilt);
+		return iRet;
+	}
+	iTailCount = pCache->iChunkCount - iLast - 1;
+	iCombinedCount = iFirst + tBuilt.iChunkCount + iTailCount;
+	pCombined = (xui_internal_text_chunk_t*)xrtCalloc(
+		(size_t)(iCombinedCount > 0 ? iCombinedCount : 1), sizeof(*pCombined));
+	if ( pCombined == NULL ) {
+		xuiInternalTextChunkCacheClear(&tBuilt);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	if ( iFirst > 0 ) memcpy(pCombined, pCache->pChunks,
+		(size_t)iFirst * sizeof(*pCombined));
+	if ( tBuilt.iChunkCount > 0 ) memcpy(pCombined + iFirst, tBuilt.pChunks,
+		(size_t)tBuilt.iChunkCount * sizeof(*pCombined));
+	if ( iTailCount > 0 ) {
+		memcpy(pCombined + iFirst + tBuilt.iChunkCount,
+			pCache->pChunks + iLast + 1, (size_t)iTailCount * sizeof(*pCombined));
+		for ( i = iFirst + tBuilt.iChunkCount; i < iCombinedCount; i++ ) {
+			pCombined[i].iStart += iDelta;
+			pCombined[i].iEnd += iDelta;
+			pCombined[i].iShapeStart += iDelta;
+			pCombined[i].iShapeEnd += iDelta;
+		}
+	}
+	for ( i = iFirst; i <= iLast; i++ ) __xuiTextChunkFree(&pCache->pChunks[i]);
+	xrtFree(pCache->pChunks);
+	xrtFree(pCache->pChunkAdvances);
+	xrtFree(tBuilt.pChunks);
+	xrtFree(tBuilt.pChunkAdvances);
+	pCache->pChunks = pCombined;
+	pCache->pChunkAdvances = NULL;
+	pCache->iChunkCount = iCombinedCount;
+	pCache->iChunkCapacity = iCombinedCount;
+	pCache->iTextSize = iTextSize;
+	iRet = __xuiTextChunkRebuildAdvances(pCache);
+	if ( iRet != XUI_OK ) {
+		xuiInternalTextChunkCacheClear(pCache);
+		return iRet;
+	}
+	pCache->bValid = 1;
+	return XUI_OK;
+}
+
+int xuiInternalTextChunkCacheAdvance(const xui_internal_text_chunk_cache_t* pCache,
+	int iOffset, float* pAdvance)
+{
+	const xui_internal_text_chunk_t* pChunk;
+	int iChunk;
+	int iLocal;
+	int iLo;
+	int iHi;
+	if ( pCache == NULL || pAdvance == NULL || !pCache->bValid ||
+	     pCache->pChunkAdvances == NULL ) return XUI_ERROR_UNSUPPORTED;
+	*pAdvance = 0.0f;
+	if ( iOffset <= 0 ) return XUI_OK;
+	if ( iOffset >= pCache->iTextSize ) {
+		*pAdvance = (float)pCache->pChunkAdvances[pCache->iChunkCount];
+		return XUI_OK;
+	}
+	iChunk = __xuiTextChunkFindOffset(pCache, iOffset);
+	pChunk = &pCache->pChunks[iChunk];
+	iLocal = iOffset - pChunk->iStart;
+	iLo = 0;
+	iHi = pChunk->iCoreClusterCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( pChunk->tShape.pClusters[iMid].iTextEnd <= iLocal ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	*pAdvance = (float)(pCache->pChunkAdvances[iChunk] + pChunk->pAdvances[iLo]);
+	return XUI_OK;
+}
+
+int xuiInternalTextChunkCacheHitTest(const xui_internal_text_chunk_cache_t* pCache,
+	float fAdvance, int bGlyph, int* pOffset)
+{
+	const xui_internal_text_chunk_t* pChunk;
+	double fLocal;
+	int iChunk;
+	int iLo;
+	int iHi;
+	if ( pCache == NULL || pOffset == NULL || !pCache->bValid ||
+	     pCache->pChunkAdvances == NULL ) return XUI_ERROR_UNSUPPORTED;
+	*pOffset = 0;
+	if ( fAdvance <= 0.0f ) return XUI_OK;
+	if ( (double)fAdvance >= pCache->pChunkAdvances[pCache->iChunkCount] ) {
+		*pOffset = pCache->iTextSize;
+		return XUI_OK;
+	}
+	iLo = 0;
+	iHi = pCache->iChunkCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( pCache->pChunkAdvances[iMid + 1] <= (double)fAdvance ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	iChunk = iLo;
+	pChunk = &pCache->pChunks[iChunk];
+	fLocal = (double)fAdvance - pCache->pChunkAdvances[iChunk];
+	iLo = 0;
+	iHi = pChunk->iCoreClusterCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( pChunk->pAdvances[iMid + 1] <= fLocal ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	if ( iLo >= pChunk->iCoreClusterCount ) *pOffset = pChunk->iEnd;
+	else {
+		double fLeft = pChunk->pAdvances[iLo];
+		double fRight = pChunk->pAdvances[iLo + 1];
+		*pOffset = pChunk->iStart +
+			((bGlyph || fLocal < (fLeft + fRight) * 0.5) ?
+			 pChunk->tShape.pClusters[iLo].iTextStart :
+			 pChunk->tShape.pClusters[iLo].iTextEnd);
+	}
+	return XUI_OK;
+}
+
+float xuiInternalTextChunkCacheWidth(const xui_internal_text_chunk_cache_t* pCache)
+{
+	if ( pCache == NULL || !pCache->bValid || pCache->pChunkAdvances == NULL ) return 0.0f;
+	return (float)pCache->pChunkAdvances[pCache->iChunkCount];
+}
+
+static int __xuiInternalTextChunkCacheDraw(xui_proxy pProxy,
+	xui_draw_context pDraw,
+	const xui_internal_text_chunk_cache_t* pCache, xui_rect_t tViewport,
+	float fOriginX, float fY, float fHeight, uint32_t iColor, uint32_t iFlags,
+	const xui_text_paint_span_t* pSpans, int iSpanCount)
+{
+	xui_text_paint_span_t arrLocal[16];
+	xui_text_paint_span_t* pLocal = arrLocal;
+	xui_rect_t tOldClip;
+	xui_rect_t tClip;
+	int bOldClip = 0;
+	int iRet;
+	int iRestore;
+	int iFirst;
+	int iSpan;
+	int i;
+	if ( pProxy == NULL || pDraw == NULL || pCache == NULL || !pCache->bValid ||
+	     pProxy->drawClipGet == NULL ||
+	     pProxy->drawClipSet == NULL || pProxy->drawClipClear == NULL ) return XUI_ERROR_UNSUPPORTED;
+	if ( iSpanCount < 0 || (iSpanCount > 0 && pSpans == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iSpanCount > 0 && pProxy->drawTextShapeRangeSpans == NULL ) return XUI_ERROR_UNSUPPORTED;
+	if ( iSpanCount == 0 && pProxy->drawTextShapeRange == NULL ) return XUI_ERROR_UNSUPPORTED;
+	for ( i = 0; i < iSpanCount; i++ ) {
+		if ( pSpans[i].iSize < sizeof(pSpans[i]) || pSpans[i].iStart < 0 ||
+		     pSpans[i].iEnd < pSpans[i].iStart ||
+		     pSpans[i].iEnd > pCache->iTextSize ||
+		     (i > 0 && pSpans[i].iStart < pSpans[i - 1].iEnd) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( tViewport.fW <= 0.0f || tViewport.fH <= 0.0f ) return XUI_OK;
+	if ( iSpanCount > (int)(sizeof(arrLocal) / sizeof(arrLocal[0])) ) {
+		pLocal = (xui_text_paint_span_t*)xrtMalloc(
+			(size_t)iSpanCount * sizeof(*pLocal));
+		if ( pLocal == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	iRet = pProxy->drawClipGet(pProxy, pDraw, &tOldClip, &bOldClip);
+	if ( iRet != XUI_OK ) goto cleanup;
+	tClip = tViewport;
+	if ( bOldClip ) {
+		float fLeft = fmaxf(tClip.fX, tOldClip.fX);
+		float fTop = fmaxf(tClip.fY, tOldClip.fY);
+		float fRight = fminf(tClip.fX + tClip.fW, tOldClip.fX + tOldClip.fW);
+		float fBottom = fminf(tClip.fY + tClip.fH, tOldClip.fY + tOldClip.fH);
+		tClip = (xui_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
+	}
+	if ( tClip.fW <= 0.0f || tClip.fH <= 0.0f ) {
+		iRet = XUI_OK;
+		goto cleanup;
+	}
+	iRet = pProxy->drawClipSet(pProxy, pDraw, tClip);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iRet = XUI_OK;
+	iFirst = 0;
+	if ( fOriginX < tViewport.fX ) {
+		int iLo = 0;
+		int iHi = pCache->iChunkCount;
+		while ( iLo < iHi ) {
+			int iMid = iLo + (iHi - iLo) / 2;
+			if ( fOriginX + (float)pCache->pChunkAdvances[iMid + 1] < tViewport.fX )
+				iLo = iMid + 1;
+			else iHi = iMid;
+		}
+		iFirst = iLo;
+	}
+	for ( i = iFirst; i < pCache->iChunkCount; i++ ) {
+		const xui_internal_text_chunk_t* pChunk = &pCache->pChunks[i];
+		float fChunkX = fOriginX + (float)pCache->pChunkAdvances[i];
+		float fChunkRight = fOriginX + (float)pCache->pChunkAdvances[i + 1];
+		xui_rect_t tRect;
+		int iLocalCount = 0;
+		if ( fChunkRight < tViewport.fX ) continue;
+		if ( fChunkX > tViewport.fX + tViewport.fW ) break;
+		if ( pChunk->tShape.pPaint == NULL ) {
+			iRet = XUI_ERROR_UNSUPPORTED;
+			break;
+		}
+		tRect = (xui_rect_t){fChunkX, fY,
+			pChunk->fWidth > 0.0f ? pChunk->fWidth : 1.0f, fHeight};
+		if ( iSpanCount > 0 ) {
+			for ( iSpan = 0; iSpan < iSpanCount; iSpan++ ) {
+				int iStart = pSpans[iSpan].iStart;
+				int iEnd = pSpans[iSpan].iEnd;
+				if ( iEnd <= pChunk->iStart ) continue;
+				if ( iStart >= pChunk->iEnd ) break;
+				if ( iStart < pChunk->iStart ) iStart = pChunk->iStart;
+				if ( iEnd > pChunk->iEnd ) iEnd = pChunk->iEnd;
+				if ( iEnd <= iStart ) continue;
+				pLocal[iLocalCount] = pSpans[iSpan];
+				pLocal[iLocalCount].iStart = iStart - pChunk->iStart;
+				pLocal[iLocalCount].iEnd = iEnd - pChunk->iStart;
+				iLocalCount++;
+			}
+			iRet = pProxy->drawTextShapeRangeSpans(pProxy, pDraw,
+				&pChunk->tShape, 0, pChunk->iEnd - pChunk->iStart,
+				tRect, iColor, iFlags & ~XUI_TEXT_CLIP, 0.0f,
+				pLocal, iLocalCount);
+		} else {
+			iRet = pProxy->drawTextShapeRange(pProxy, pDraw, &pChunk->tShape,
+				0, pChunk->iEnd - pChunk->iStart, tRect, iColor,
+				iFlags & ~XUI_TEXT_CLIP);
+		}
+		if ( iRet != XUI_OK ) break;
+	}
+	iRestore = bOldClip ? pProxy->drawClipSet(pProxy, pDraw, tOldClip) :
+		pProxy->drawClipClear(pProxy, pDraw);
+	if ( iRet == XUI_OK ) iRet = iRestore;
+
+cleanup:
+	if ( pLocal != arrLocal ) xrtFree(pLocal);
+	return iRet;
+}
+
+int xuiInternalTextChunkCacheDraw(xui_proxy pProxy, xui_draw_context pDraw,
+	const xui_internal_text_chunk_cache_t* pCache, xui_rect_t tViewport,
+	float fOriginX, float fY, float fHeight, uint32_t iColor, uint32_t iFlags)
+{
+	return __xuiInternalTextChunkCacheDraw(pProxy, pDraw, pCache, tViewport,
+		fOriginX, fY, fHeight, iColor, iFlags, NULL, 0);
+}
+
+int xuiInternalTextChunkCacheDrawSpans(xui_proxy pProxy,
+	xui_draw_context pDraw, const xui_internal_text_chunk_cache_t* pCache,
+	xui_rect_t tViewport, float fOriginX, float fY, float fHeight,
+	uint32_t iColor, uint32_t iFlags,
+	const xui_text_paint_span_t* pSpans, int iSpanCount)
+{
+	return __xuiInternalTextChunkCacheDraw(pProxy, pDraw, pCache, tViewport,
+		fOriginX, fY, fHeight, iColor, iFlags, pSpans, iSpanCount);
+}
+
 int xuiInternalTextDisplayGraphemes(const char* text, int bytes, unsigned char* boundaries)
 {
     int count, i, at = 0; char* work;
@@ -1059,6 +1619,90 @@ int xuiInternalTextLayoutLineAdvance(xui_text_layout pLayout, int iLine, int iOf
 		pLayout->sText + iOffset, &tSize);
 	if ( iRet == XUI_OK ) *pAdvance = tSize.fX;
 	return iRet;
+}
+
+int xuiInternalTextLayoutLineHitTest(xui_text_layout pLayout, int iLine,
+	float fAdvance, int bGlyph, int* pOffset)
+{
+	const xui_text_line_t* pLine;
+	const xui_text_cluster_t* pClusters;
+	double fBase;
+	int iFirst;
+	int iLast;
+	int iLo;
+	int iHi;
+	int iCluster;
+	int iGroupFirst;
+	int iGroupLast;
+	int iStart;
+	int iEnd;
+	int iRet;
+
+	if ( pOffset == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pOffset = 0;
+	iRet = __xuiTextLayoutEnsureDpi(pLayout);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iLine < 0 || iLine >= pLayout->iLineCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	pLine = &pLayout->pLines[iLine];
+	iStart = pLine->iTextOffset;
+	iEnd = iStart + pLine->iTextSize;
+	*pOffset = iStart;
+	if ( fAdvance <= 0.0f || iEnd <= iStart ) return XUI_OK;
+	if ( fAdvance >= pLine->fW ) {
+		*pOffset = iEnd;
+		return XUI_OK;
+	}
+	if ( pLayout->pClusterAdvances == NULL || pLayout->tShape.pClusters == NULL ) {
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	pClusters = pLayout->tShape.pClusters;
+	iFirst = __xuiTextClusterAfter(pLayout, iStart, 0);
+	iLo = iFirst;
+	iHi = pLayout->tShape.iClusterCount;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		if ( pClusters[iMid].iTextStart < iEnd ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	iLast = iLo;
+	if ( iFirst >= iLast ) {
+		*pOffset = iEnd;
+		return XUI_OK;
+	}
+	fBase = pLayout->pClusterAdvances[iFirst];
+	iLo = iFirst;
+	iHi = iLast;
+	while ( iLo < iHi ) {
+		int iMid = iLo + (iHi - iLo) / 2;
+		double fRight = pLayout->pClusterAdvances[iMid + 1] - fBase;
+		if ( fRight <= (double)fAdvance ) iLo = iMid + 1;
+		else iHi = iMid;
+	}
+	iCluster = iLo;
+	if ( iCluster >= iLast ) {
+		*pOffset = iEnd;
+		return XUI_OK;
+	}
+	iGroupFirst = iCluster;
+	while ( iGroupFirst > iFirst && pLayout->pBreaks != NULL &&
+	       !(pLayout->pBreaks[pClusters[iGroupFirst].iTextStart] & XUI_LB_GRAPHEME) ) {
+		iGroupFirst--;
+	}
+	iGroupLast = iCluster;
+	while ( iGroupLast + 1 < iLast && pLayout->pBreaks != NULL &&
+	       !(pLayout->pBreaks[pClusters[iGroupLast].iTextEnd] & XUI_LB_GRAPHEME) ) {
+		iGroupLast++;
+	}
+	{
+		double fLeft = pLayout->pClusterAdvances[iGroupFirst] - fBase;
+		double fRight = pLayout->pClusterAdvances[iGroupLast + 1] - fBase;
+		int iBefore = pClusters[iGroupFirst].iTextStart;
+		int iAfter = pClusters[iGroupLast].iTextEnd;
+		if ( iBefore < iStart ) iBefore = iStart;
+		if ( iAfter > iEnd ) iAfter = iEnd;
+		*pOffset = (bGlyph || (double)fAdvance < (fLeft + fRight) * 0.5) ? iBefore : iAfter;
+	}
+	return XUI_OK;
 }
 
 int xuiInternalTextLayoutNextCaret(xui_text_layout pLayout, int iOffset, int iLimit, int* pNext)

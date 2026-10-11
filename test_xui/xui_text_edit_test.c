@@ -214,12 +214,18 @@ int main(void)
 	xui_rect_t tScrollBarRect;
 	xui_rect_t tScrollBarWorld;
 	xui_rect_t tScrollBarThumb;
+	xui_rect_t tIncrementalCursor;
+	xui_rect_t tRebuiltCursor;
 	char sLongPaste[12001];
 	float fScrollX;
 	float fScrollY;
+	float fScrollBeforeX;
 	float fScrollBeforeY;
 	int iStart;
 	int iEnd;
+	int iWrapInitialLines;
+	int iWrapIncrementalLines;
+	int iWrapRebuiltLines;
 	int iReplaceCount;
 	int iFailed;
 	int iRet;
@@ -354,6 +360,83 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "cursor to beginning");
 	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_DELETE, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "cd") == 0, "ctrl delete word delete");
+
+	xuiWidgetSetRect(pTextEdit, (xui_rect_t){24.0f, 24.0f, 48.0f, 150.0f});
+	iRet = xuiTextEditSetLineNumbers(pTextEdit, 0, 44.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow hide line numbers");
+	iRet = xuiTextEditSetWordWrap(pTextEdit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow enable wrap");
+	iRet = xuiTextEditSetText(pTextEdit, "tail");
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow set text");
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow cursor");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow update");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow render");
+	iWrapInitialLines = xuiTextEditGetLineCount(pTextEdit);
+	iRet = xuiTestProxySetClipboardText(&tState,
+		"aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa ");
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow clipboard text");
+	iRet = xuiTextEditPaste(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow incremental paste");
+	iWrapIncrementalLines = xuiTextEditGetLineCount(pTextEdit);
+	XUI_TEST_CHECK(iWrapIncrementalLines > iWrapInitialLines,
+		"wrapped reflow changes visual line count incrementally");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow incremental render");
+	tIncrementalCursor = xuiTextEditGetCursorRect(pTextEdit);
+	iRet = xuiTextEditSetWordWrap(pTextEdit, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow disable wrap for rebuild");
+	iRet = xuiTextEditSetWordWrap(pTextEdit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow restore wrap for rebuild");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow rebuild layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow rebuild update");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow rebuild render");
+	iWrapRebuiltLines = xuiTextEditGetLineCount(pTextEdit);
+	tRebuiltCursor = xuiTextEditGetCursorRect(pTextEdit);
+	XUI_TEST_CHECK(iWrapIncrementalLines == iWrapRebuiltLines,
+		"wrapped incremental line count matches full rebuild");
+	XUI_TEST_CHECK(tIncrementalCursor.fX == tRebuiltCursor.fX &&
+		tIncrementalCursor.fY == tRebuiltCursor.fY &&
+		tIncrementalCursor.fH == tRebuiltCursor.fH,
+		"wrapped incremental cursor matches full rebuild");
+	iWrapInitialLines = iWrapRebuiltLines;
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 30);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow delete selection");
+	iRet = xuiTextEditDeleteSelection(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow incremental delete");
+	iWrapIncrementalLines = xuiTextEditGetLineCount(pTextEdit);
+	XUI_TEST_CHECK(iWrapIncrementalLines < iWrapInitialLines,
+		"wrapped reflow delete reduces visual lines incrementally");
+	tIncrementalCursor = xuiTextEditGetCursorRect(pTextEdit);
+	iRet = xuiTextEditSetWordWrap(pTextEdit, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped delete disable wrap for rebuild");
+	iRet = xuiTextEditSetWordWrap(pTextEdit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped delete restore wrap for rebuild");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped delete rebuild layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped delete rebuild update");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped delete rebuild render");
+	iWrapRebuiltLines = xuiTextEditGetLineCount(pTextEdit);
+	tRebuiltCursor = xuiTextEditGetCursorRect(pTextEdit);
+	XUI_TEST_CHECK(iWrapIncrementalLines == iWrapRebuiltLines,
+		"wrapped delete line count matches full rebuild");
+	XUI_TEST_CHECK(tIncrementalCursor.fX == tRebuiltCursor.fX &&
+		tIncrementalCursor.fY == tRebuiltCursor.fY &&
+		tIncrementalCursor.fH == tRebuiltCursor.fH,
+		"wrapped delete cursor matches full rebuild");
+	xuiWidgetSetRect(pTextEdit, (xui_rect_t){24.0f, 24.0f, 320.0f, 150.0f});
+	iRet = xuiTextEditSetLineNumbers(pTextEdit, 1, 44.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wrapped reflow restore line numbers");
+
 	iRet = xuiTextEditSetText(pTextEdit, "ab \xE4\xBD\xA0\xE5\xA5\xBD cd");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set Unicode word text");
 	iRet = xuiLayout(pContext);
@@ -527,6 +610,16 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollBarGetValue(pHScrollBar) == fScrollX && xuiScrollBarGetValue(pVScrollBar) == fScrollY, "textedit scrollbar values");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "textedit scrollbar layout");
+	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	fScrollBeforeX = fScrollX;
+	iRet = __xuiTextEditTestClick(pContext,
+		tWorldRect.fX + tTextRect.fX + tTextRect.fW * 0.5f,
+		tWorldRect.fY + tTextRect.fY + 8.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "textedit horizontally scrolled click");
+	iRet = xuiTextEditGetScroll(pTextEdit, &fScrollX, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == fScrollBeforeX,
+		"textedit pointer down preserves horizontal scroll");
 	tScrollBarWorld = xuiWidgetGetWorldRect(pVScrollBar);
 	tScrollBarThumb = xuiScrollBarGetThumbRect(pVScrollBar);
 	pHitWidget = xuiHitTest(pContext, tScrollBarWorld.fX + tScrollBarThumb.fX + tScrollBarThumb.fW * 0.5f, tScrollBarWorld.fY + tScrollBarThumb.fY + tScrollBarThumb.fH * 0.5f, XUI_WIDGET_HIT_DEFAULT);

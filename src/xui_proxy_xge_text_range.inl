@@ -87,7 +87,8 @@ static int __xuiProxyXgeRangeDrawAcquired(xui_proxy proxy,xui_draw_context draw,
     const xui_text_item_t* item,const xui_text_shape_t* shape,xui_vec2_t size,
     xui_rect_t rect,uint32_t color,uint32_t flags,const xui_text_paint_span_t* spans,int count)
 {
-    xui_text_paint_span_t small[16],*mapped=small;xui_rect_t placed=rect;int i,result;
+    xui_text_paint_span_t small[16],*mapped=small;xui_rect_t placed=rect;
+    int i,result,width,height;
     if(count<0 || (count && !spans))return XUI_ERROR_INVALID_ARGUMENT;
     if(item->iPaintSpanCount){
         if(count)return XUI_ERROR_INVALID_ARGUMENT;
@@ -104,10 +105,13 @@ static int __xuiProxyXgeRangeDrawAcquired(xui_proxy proxy,xui_draw_context draw,
         mapped=xrtMalloc((size_t)count*sizeof(*mapped));if(!mapped)return XUI_ERROR_OUT_OF_MEMORY;
     }
     for(i=0;i<count;i++){mapped[i]=spans[i];mapped[i].iStart+=item->iRangeStart;mapped[i].iEnd+=item->iRangeStart;}
-    if((flags & XUI_TEXT_ALIGN_RIGHT)==XUI_TEXT_ALIGN_RIGHT)placed.fX+=rect.fW-size.fX;
-    else if(flags & XUI_TEXT_ALIGN_CENTER)placed.fX+=(rect.fW-size.fX)*.5f;
-    if((flags & XUI_TEXT_ALIGN_BOTTOM)==XUI_TEXT_ALIGN_BOTTOM)placed.fY+=rect.fH-size.fY;
-    else if(flags & XUI_TEXT_ALIGN_MIDDLE)placed.fY+=(rect.fH-size.fY)*.5f;
+    width=xuiInternalPixelCeil(size.fX);height=xuiInternalPixelCeil(size.fY);
+    if((flags & XUI_TEXT_ALIGN_RIGHT)==XUI_TEXT_ALIGN_RIGHT)placed.fX+=rect.fW-width;
+    else if(flags & XUI_TEXT_ALIGN_CENTER)
+        placed.fX+=xuiInternalPixelFloor((float)(rect.fW-width)*.5f);
+    if((flags & XUI_TEXT_ALIGN_BOTTOM)==XUI_TEXT_ALIGN_BOTTOM)placed.fY+=rect.fH-height;
+    else if(flags & XUI_TEXT_ALIGN_MIDDLE)
+        placed.fY+=xuiInternalPixelFloor((float)(rect.fH-height)*.5f);
     flags &= XUI_TEXT_CLIP|XUI_TEXT_UNDERLINE;
     if(item->iFlags & XUI_TEXT_SHAPE_RTL)flags|=XUI_TEXT_RTL;
     result=__xuiProxyXgeDrawTextShapeRangeSpansClip(proxy,draw,shape,item->iRangeStart,item->iRangeEnd,

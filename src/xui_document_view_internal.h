@@ -1,11 +1,14 @@
 #ifndef XUI_DOCUMENT_VIEW_INTERNAL_H
 #define XUI_DOCUMENT_VIEW_INTERNAL_H
 #include "xui_document_layout_internal.h"
+typedef struct doc_accessible_text_range doc_accessible_text_range;
+typedef struct doc_format_cache doc_format_cache;
 typedef struct doc_view_data {
     xui_widget widget;
     xui_document document;
     xui_document_renderer renderer;
     xui_document_prepare input; /* Borrowed from the editor coordinator. */
+    xui_document_prepare visual_input; /* Borrowed immutable semantic input. */
     xui_doc_view_desc_t desc;
     xui_doc_renderer_desc_t base_renderer; /* Unthemed fallback palette and metrics. */
     int uses_default_font;
@@ -32,6 +35,10 @@ typedef struct doc_view_data {
     int replaying_input; /* Replayed pointer events must not reacquire OS focus/capture. */
     doc_plain_projection edit_projection;
     xui_document_snapshot edit_snapshot;
+    uint64_t* text_paragraph_edges; /* Derived from the current edit projection. */
+    uint64_t text_paragraph_edge_count;
+    doc_format_cache* text_formats; /* Disposable effective-format boundary index. */
+    doc_accessible_text_range* accessible_ranges;
     xui_doc_node_id* accessible_ids;
     char** accessible_text;
     uint64_t accessible_count, accessible_identity, accessible_revision;
@@ -39,6 +46,11 @@ typedef struct doc_view_data {
 } doc_view_data;
 doc_view_data* doc_view_get(xui_widget);
 int doc_view_sync(doc_view_data*);
+int doc_view_map_range(doc_view_data*, uint32_t, xui_doc_range_t*);
+void doc_view_text_ranges_clear(doc_view_data*);
+void doc_view_text_ranges_changed(doc_view_data*, xui_document_change_set);
+void doc_view_text_ranges_input(doc_view_data*, xui_document_prepare, xui_document_prepare);
+void doc_view_text_ranges_visual(doc_view_data*, xui_document_prepare, xui_document_prepare);
 void doc_view_find_invalidate(doc_view_data*);
 void doc_view_find_query_clear(doc_view_data*);
 int doc_view_refresh_resources(doc_view_data*);
@@ -60,5 +72,7 @@ int doc_view_update(xui_widget, float, void*);
 int doc_view_drag_autoscroll(doc_view_data*, double);
 int doc_view_register_edit(xui_widget, int);
 void doc_view_invalidate_edit(doc_view_data*);
+int doc_view_ime_range(doc_view_data*, int, int, xui_doc_range_t*);
+void doc_view_format_cache_clear(doc_view_data*);
 void doc_view_accessible_clear(doc_view_data*);
 #endif

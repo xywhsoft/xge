@@ -292,7 +292,7 @@ doc_sequence* doc_render_source(xui_document_renderer r)
 {
     return r->input ? doc_prepare_source_store(r->input) : r->snapshot->state->source;
 }
-static int doc_render_live_base_to_input(xui_document_renderer r, uint64_t base, uint64_t* input)
+int doc_render_live_base_to_input(xui_document_renderer r, uint64_t base, uint64_t* input)
 {
     uint64_t old_size = doc_seq_size(r->snapshot->state->source);
     uint64_t new_size = doc_seq_size(doc_render_source(r));
@@ -306,11 +306,11 @@ static int doc_render_live_base_to_input(xui_document_renderer r, uint64_t base,
     }
     return XUI_OK;
 }
-static int doc_render_live_input_to_base(xui_document_renderer r, uint64_t input, uint64_t* base)
+int doc_render_live_input_to_base(xui_document_renderer r, uint64_t input, uint64_t* base)
 {
     uint64_t old_size = doc_seq_size(r->snapshot->state->source);
     uint64_t new_size = doc_seq_size(doc_render_source(r));
-    if (r->live_pending_full || input < r->live_start) { *base = input; return XUI_OK; }
+    if (!r->input || r->live_pending_full || input < r->live_start) { *base = input; return XUI_OK; }
     if (input < r->live_end) return XUI_DOC_ERROR_STALE;
     if (new_size >= old_size) {
         if (input < new_size - old_size) return XUI_DOC_ERROR_STALE;
@@ -753,10 +753,59 @@ static int doc_render_collect_live(xui_document_renderer r)
             result = doc_render_collect_source_range(r, starts[i].start, r->live_end);
             r->live_rows = r->count - r->live_first;
         }
-        else result = doc_render_collect(r, starts[i].node, 0);
+        else {
+            size_t first = r->count, j;
+            result = doc_render_collect(r, starts[i].node, 0);
+            /* Keep the same source partition on every inactive block. Its
+             * trailing trivia belongs to this block, independently of the
+             * nearest-text approximation used by source caret mapping. */
+            for (j = first; j < r->count; j++) {
+                r->blocks[j].source_start = starts[i].start;
+                r->blocks[j].source_end = starts[i + 1].start;
+            }
+        }
     }
 done:
     free(starts); return result;
+}
+int doc_render_live_partition(xui_document_renderer r, uint64_t offset,
+    uint64_t* node, uint64_t* first, uint64_t* last)
+{
+    size_t index; doc_render_block* block; doc_node* n;
+    uint64_t base = offset, start, stop; int result;
+    if (!r || !r->snapshot || !node || !first || !last ||
+        r->mode != XUI_DOC_LIVE_MARKDOWN || r->live_fallback) return XUI_ERROR_UNSUPPORTED;
+    if (r->input) {
+        size_t begin, low, high;
+        result = doc_render_live_input_to_base(r, offset, &base);
+        if (result != XUI_OK) return result;
+        /* Active rows have candidate offsets; inactive blocks have base
+         * offsets. Search only the applicable inactive side so a longer
+         * candidate cannot make the mixed directory non-monotonic. */
+        begin = base < r->live_start ? 0 : r->live_first + r->live_rows;
+        low = begin; high = base < r->live_start ? r->live_first : r->count;
+        while (low < high) {
+            size_t mid = low + (high - low) / 2;
+            if (r->blocks[mid].source_start <= base) low = mid + 1;
+            else high = mid;
+        }
+        index = low > begin ? low - 1 : SIZE_MAX;
+    } else index = doc_render_source_at(r, base);
+    block = index == SIZE_MAX ? NULL : doc_render_block_at_index(r, index);
+    if (!block || block->source_line || base < block->source_start ||
+        base > block->source_end) return XUI_ERROR_NOT_FOUND;
+    start = block->source_start; stop = block->source_end;
+    if (r->input) {
+        result = doc_render_live_base_to_input(r, start, &start);
+        if (result == XUI_OK) result = doc_render_live_base_to_input(r, stop, &stop);
+        if (result != XUI_OK) return result;
+    }
+    n = doc_index_get(r->snapshot->state->index, block->node);
+    while (n && n->parent != DOC_ROOT && n->parent)
+        n = doc_index_get(r->snapshot->state->index, n->parent);
+    if (!n || n->parent != DOC_ROOT) return XUI_DOC_ERROR_SCHEMA;
+    *node = n->id; *first = start; *last = stop;
+    return XUI_OK;
 }
 static size_t doc_render_live_row_at(xui_document_renderer r, uint64_t offset)
 {
@@ -1717,6 +1766,28 @@ XUI_API int xuiDocumentRendererLayout(xui_document_renderer r, double width, dou
     }
     return XUI_OK;
 }
+/* Resolve the block coverage above a revealed caret before choosing its
+ * viewport. Numeric scrolling through estimated heights can otherwise keep
+ * measuring unrelated predecessor blocks and moving the target again. */
+int doc_render_prepare_caret_viewport(xui_document_renderer r,
+    const xui_doc_position_t* position, double height, xui_doc_rect_t* caret)
+{
+    size_t index; double covered; int result;
+    result = xuiDocumentRendererGetCaretRect(r, position, caret);
+    if (result != XUI_OK || r->mode == XUI_DOC_SOURCE_TEXT || !r->count)
+        return result;
+    index = doc_render_block_at(r, caret->y);
+    covered = fmax(0, caret->y - doc_render_height_before(r, index));
+    while (index && covered < height + 128) {
+        doc_render_block* block = doc_render_block_at_index(r, --index);
+        if (!block) return XUI_ERROR_NOT_FOUND;
+        result = doc_render_materialize_visible(r, index, block,
+            height + 128 - covered);
+        if (result != XUI_OK) return result;
+        covered += block->height;
+    }
+    return xuiDocumentRendererGetCaretRect(r, position, caret);
+}
 XUI_API int xuiDocumentRendererGetSize(xui_document_renderer r, xui_doc_rect_t* size, int* exact)
 {
     size_t i; int result;
@@ -1912,31 +1983,42 @@ static int doc_render_empty_wrap_edge(xui_document_renderer renderer,
      * when the following oversized glyph wraps onto a later row. */
     return 0;
 }
+static size_t doc_render_caret_downstream(xui_document_renderer renderer,
+    const doc_render_block* block, const doc_fragment* chosen,
+    const xui_doc_position_t* position, size_t first, size_t end,
+    int* empty, int* after)
+{
+    const doc_fragment *head = &block->fragments[first], *tail = &block->fragments[end - 1];
+    *empty = end - first == 1 && chosen->kind == XUI_DOC_TEXT &&
+        chosen->start == chosen->end && !(chosen->flags & DOC_TRAILING_LINE) &&
+        position->iAffinity == XUI_DOC_AFTER && doc_render_empty_wrap_edge(renderer,
+            block, first, &renderer->stats.iCaretFragmentsExamined);
+    if (position->iNodeId == head->node && position->iOffset == head->start)
+        *after = 0;
+    else if (position->iNodeId == tail->node && position->iOffset == tail->end)
+        *after = tail->end > tail->start || end - first > 1;
+    else *after = position->iAffinity == XUI_DOC_AFTER;
+    if ((*empty || (*after && position->iNodeId == tail->node &&
+        position->iOffset == tail->end)) && position->iAffinity == XUI_DOC_AFTER)
+        return doc_render_downstream_row(renderer, block, end,
+            &renderer->stats.iCaretFragmentsExamined);
+    return SIZE_MAX;
+}
 static xui_doc_rect_t doc_render_grapheme_caret(xui_document_renderer renderer,
     const doc_render_block* block,
     const doc_fragment* chosen, const xui_doc_position_t* position, double top)
 {
-    size_t first, end;
-    const doc_fragment *head, *tail;
+    size_t first, end, next;
+    const doc_fragment *head;
     xui_doc_rect_t rect;
     int after, empty;
     doc_render_grapheme(block, (size_t)(chosen - block->fragments), &first, &end);
     renderer->stats.iCaretFragmentsExamined += doc_render_grapheme_visits(block, first, end);
-    head = &block->fragments[first]; tail = &block->fragments[end - 1];
-    empty = end - first == 1 && chosen->kind == XUI_DOC_TEXT &&
-        chosen->start == chosen->end && !(chosen->flags & DOC_TRAILING_LINE) &&
-        position->iAffinity == XUI_DOC_AFTER && doc_render_empty_wrap_edge(renderer,
-            block, first, &renderer->stats.iCaretFragmentsExamined);
+    head = &block->fragments[first];
+    next = doc_render_caret_downstream(renderer, block, chosen, position,
+        first, end, &empty, &after);
     rect = doc_render_grapheme_rect(block, first, end, top);
-    if (position->iNodeId == head->node && position->iOffset == head->start)
-        after = 0;
-    else if (position->iNodeId == tail->node && position->iOffset == tail->end)
-        after = tail->end > tail->start || end - first > 1;
-    else after = position->iAffinity == XUI_DOC_AFTER;
-    if ((empty || (after && position->iNodeId == tail->node &&
-        position->iOffset == tail->end)) && position->iAffinity == XUI_DOC_AFTER) {
-        size_t next = doc_render_downstream_row(renderer, block, end,
-            &renderer->stats.iCaretFragmentsExamined);
+    {
         if (next != SIZE_MAX) {
             size_t next_first, next_end;
             doc_render_grapheme(block, next, &next_first, &next_end);
@@ -2650,27 +2732,161 @@ static int doc_render_visible(xui_rect_t rect, xui_rect_t clip)
 {
     return rect.fX <= clip.fX + clip.fW && rect.fX + rect.fW >= clip.fX && rect.fY <= clip.fY + clip.fH && rect.fY + rect.fH >= clip.fY;
 }
+static int doc_render_fragment_range(xui_document_renderer r, const doc_fragment* f,
+    xui_doc_range_t* out)
+{
+    if (f->run == UINT32_MAX && (doc_selectable_object_kind(f->kind) ||
+        f->kind == XUI_DOC_SOFT_BREAK || f->kind == XUI_DOC_HARD_BREAK)) {
+        doc_node* object = doc_index_get(r->snapshot->state->index, f->node);
+        doc_node* parent = object ? doc_index_get(r->snapshot->state->index, object->parent) : NULL;
+        uint64_t index = parent ? doc_child_index(parent, f->node) : DOC_NONE;
+        if (index == DOC_NONE) return XUI_DOC_ERROR_SCHEMA;
+        doc_render_position(r, parent->id, index, &out->tAnchor);
+        doc_render_position(r, parent->id, index + 1, &out->tCaret);
+    } else {
+        doc_render_position(r, f->node, f->start, &out->tAnchor);
+        doc_render_position(r, f->node, f->end, &out->tCaret);
+    }
+    out->tCaret.iAffinity = XUI_DOC_BEFORE;
+    return XUI_OK;
+}
 static int doc_render_selected(xui_document_renderer r, const doc_fragment* f, const xui_doc_range_t* range)
 {
-    xui_doc_position_t start, end; const xui_doc_position_t *a, *b; int order, left, right;
+    xui_doc_range_t fragment; const xui_doc_position_t *a, *b; int order, left, right;
     if (!range || range->tAnchor.iRevision != r->snapshot->revision ||
         range->tCaret.iRevision != r->snapshot->revision) return 0;
     if (doc_render_compare(r, &range->tAnchor, &range->tCaret, &order) != XUI_OK || !order) return 0;
     a = order < 0 ? &range->tAnchor : &range->tCaret; b = order < 0 ? &range->tCaret : &range->tAnchor;
-    if (f->run == UINT32_MAX && doc_selectable_object_kind(f->kind)) {
-        doc_node* object = doc_index_get(r->snapshot->state->index, f->node);
-        doc_node* parent = object ? doc_index_get(r->snapshot->state->index, object->parent) : NULL;
-        uint64_t index = parent ? doc_child_index(parent, f->node) : DOC_NONE;
-        if (index == DOC_NONE) return 0;
-        doc_render_position(r, parent->id, index, &start);
-        doc_render_position(r, parent->id, index + 1, &end);
-    } else {
-        if (!f->end) return 0;
-        doc_render_position(r, f->node, f->start, &start);
-        doc_render_position(r, f->node, f->end, &end);
+    if (doc_render_fragment_range(r, f, &fragment) != XUI_OK) return 0;
+    return doc_render_compare(r, a, &fragment.tCaret, &left) == XUI_OK && left < 0 &&
+        doc_render_compare(r, b, &fragment.tAnchor, &right) == XUI_OK && right > 0;
+}
+/* Resolve the same structural insertion carrier used by GetCaretRect. Row
+ * membership comes from layout indices, never from overlapping glyph bounds. */
+static int doc_render_line_position(xui_document_renderer r, const doc_render_block* block,
+    const xui_doc_position_t* position, xui_doc_position_t* out)
+{
+    doc_state* state = r->snapshot->state; doc_node* node; uint64_t count;
+    *out = *position;
+    if (position->iKind == XUI_DOC_POSITION_SOURCE &&
+        r->mode == XUI_DOC_LIVE_MARKDOWN && !block->source_line) {
+        uint64_t base = position->iOffset; int mapping, result;
+        if (r->input) {
+            result = doc_render_live_input_to_base(r, base, &base);
+            if (result != XUI_OK) return result;
+        }
+        return xuiDocumentSourceToPositionEx(r->snapshot, base, position->iAffinity, out, &mapping);
     }
-    return doc_render_compare(r, a, &end, &left) == XUI_OK && left < 0 &&
-        doc_render_compare(r, b, &start, &right) == XUI_OK && right > 0;
+    if (out->iKind != XUI_DOC_POSITION_GAP) return XUI_OK;
+    node = doc_index_get(state->index, out->iNodeId);
+    if (!node) return XUI_DOC_ERROR_STALE;
+    count = doc_seq_size(node->children);
+    if (out->iAffinity == XUI_DOC_BEFORE && out->iOffset &&
+        out->iOffset <= count && block->visual_fragments) {
+        doc_node* previous = doc_index_get(state->index,
+            doc_seq_get_id(node->children, out->iOffset - 1));
+        if (previous && doc_selectable_object_kind(previous->kind)) {
+            out->iNodeId = previous->id; out->iOffset = 0;
+            return XUI_OK;
+        }
+    }
+    if (count && !(out->iNodeId == DOC_ROOT && out->iOffset == count && block->virtual_gap)) {
+        int end = out->iOffset == count;
+        node = doc_index_get(state->index,
+            doc_seq_get_id(node->children, end ? count - 1 : out->iOffset));
+        while (node && doc_seq_size(node->children))
+            node = doc_index_get(state->index, doc_seq_get_id(node->children,
+                end ? doc_seq_size(node->children) - 1 : 0));
+        if (!node) return XUI_DOC_ERROR_STALE;
+        if (end && node->kind == XUI_DOC_HARD_BREAK) {
+            node = doc_index_get(state->index, node->parent);
+            if (!node) return XUI_DOC_ERROR_STALE;
+            out->iNodeId = node->id; out->iOffset = doc_seq_size(node->children);
+        } else {
+            out->iNodeId = node->id;
+            out->iKind = doc_text_kind(node->kind) ? XUI_DOC_POSITION_TEXT : XUI_DOC_POSITION_GAP;
+            out->iOffset = end ? doc_seq_size(node->text) : 0;
+        }
+    }
+    return XUI_OK;
+}
+static int doc_render_horizontal_row_range(xui_document_renderer r,
+    const doc_render_block* block, xui_doc_range_t* out)
+{
+    xui_doc_range_t range;
+    uint64_t start = block->source_line ? block->source_start : block->text_start;
+    uint64_t stop = block->source_line ? block->source_end : block->text_end;
+    if (block->source_line && stop < doc_seq_size(doc_render_source(r))) {
+        char bytes[2] = {0}; uint64_t remaining = doc_seq_size(doc_render_source(r)) - stop;
+        int result = doc_seq_read(doc_render_source(r), stop, bytes, remaining > 1 ? 2 : 1);
+        if (result != XUI_OK) return result;
+        if (bytes[0] == '\r') stop += bytes[1] == '\n' ? 2 : 1;
+        else if (bytes[0] == '\n') stop++;
+    }
+    doc_render_position(r, block->node, start, &range.tAnchor);
+    doc_render_position(r, block->node, stop, &range.tCaret);
+    range.tCaret.iAffinity = XUI_DOC_BEFORE;
+    *out = range; return XUI_OK;
+}
+XUI_API int xuiDocumentRendererGetLineRange(xui_document_renderer r,
+    const xui_doc_position_t* position, xui_doc_range_t* out)
+{
+    xui_doc_rect_t caret; xui_doc_position_t carrier; xui_doc_range_t range, fragment;
+    doc_render_block* block; doc_fragment* chosen;
+    size_t index, first, end, next, low, high; int result, empty, after;
+    if (!r || !r->snapshot || !position || !out) return XUI_ERROR_INVALID_ARGUMENT;
+    result = doc_render_refresh_resources(r); if (result != XUI_OK) return result;
+    { int order; result = doc_render_compare(r, position, position, &order); if (result != XUI_OK) return result; }
+    if (position->iDocumentId != r->snapshot->identity || position->iRevision != r->snapshot->revision)
+        return XUI_DOC_ERROR_STALE;
+    /* Unwrapped row bounds do not require the caret's X. In particular an
+     * EOF/middle query must not shape a multi-megabyte horizontal suffix. */
+    index = SIZE_MAX;
+    if (position->iKind == XUI_DOC_POSITION_SOURCE) {
+        if (r->mode == XUI_DOC_SOURCE_TEXT || r->live_fallback ||
+            (r->mode == XUI_DOC_LIVE_MARKDOWN && !r->live_rows))
+            index = doc_render_source_at(r, position->iOffset);
+        else if (r->mode == XUI_DOC_LIVE_MARKDOWN && r->live_rows &&
+            position->iOffset >= r->live_start && (position->iOffset < r->live_end ||
+            (position->iOffset == r->live_end && r->live_end == doc_seq_size(doc_render_source(r)))))
+            index = r->live_first + doc_render_live_row_at(r, position->iOffset);
+    } else if (position->iKind == XUI_DOC_POSITION_TEXT)
+        index = doc_render_find_text(r, position->iNodeId, position->iOffset, position->iAffinity);
+    block = index == SIZE_MAX ? NULL : doc_render_block_at_index(r, index);
+    if (block && (block->source_line || block->line_lazy))
+        return doc_render_horizontal_row_range(r, block, out);
+    result = xuiDocumentRendererGetCaretRect(r, position, &caret);
+    if (result != XUI_OK) return result;
+    if (!r->count) { range.tAnchor = range.tCaret = *position; *out = range; return XUI_OK; }
+    index = doc_render_block_at(r, caret.y + caret.height * .5);
+    block = doc_render_block_at_index(r, index);
+    if (!block) return XUI_ERROR_NOT_FOUND;
+    /* These rows never soft-wrap. Their logical bounds are already known,
+     * including a horizontally unshaped suffix of arbitrarily large size. */
+    if (block->source_line || block->line_lazy) {
+        return doc_render_horizontal_row_range(r, block, out);
+    }
+    result = doc_render_line_position(r, block, position, &carrier);
+    if (result != XUI_OK) return result;
+    chosen = doc_render_caret_fragment(r, block, &carrier);
+    if (!chosen) return XUI_ERROR_NOT_FOUND;
+    doc_render_grapheme(block, (size_t)(chosen - block->fragments), &first, &end);
+    next = doc_render_caret_downstream(r, block, chosen, &carrier, first, end, &empty, &after);
+    if (next != SIZE_MAX) first = next;
+    end = block->fragments[first].line_end;
+    if (end <= first || end > block->fragment_count) return XUI_ERROR_INVALID_STATE;
+    low = 0; high = first;
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        if (block->fragments[middle].line_end < end) low = middle + 1;
+        else high = middle;
+    }
+    first = low;
+    result = doc_render_fragment_range(r, &block->fragments[first], &range);
+    if (result == XUI_OK) result = doc_render_fragment_range(r, &block->fragments[end - 1], &fragment);
+    if (result != XUI_OK) return result;
+    range.tCaret = fragment.tCaret;
+    *out = range; return XUI_OK;
 }
 static int doc_render_grapheme_selected(xui_document_renderer r,
     const doc_render_block* block, size_t first, size_t end,
@@ -2895,7 +3111,7 @@ static int doc_render_quote_rails(xui_document_renderer r, doc_render_block* blo
     }
     return XUI_OK;
 }
-static uint32_t doc_render_foreground(const xui_document_renderer r,
+uint32_t doc_render_text_foreground(const xui_document_renderer r,
     const xui_doc_attributes_t* attrs)
 {
     if (doc_text_color_set(attrs)) return attrs->iTextColor;
@@ -2989,7 +3205,7 @@ static int doc_render_group_decorations(xui_document_renderer r,
         size_t end = doc_render_paint_run_end(block, group, i), head, tail;
         const doc_fragment *a = &block->fragments[i], *z = &block->fragments[end - 1];
         const doc_render_run* run = &block->runs[doc_fragment_paint_run(a)];
-        uint32_t marks = run->attrs.iMarks, color = doc_render_foreground(r, &run->attrs);
+        uint32_t marks = run->attrs.iMarks, color = doc_render_text_foreground(r, &run->attrs);
         xui_doc_rect_t left, right;
         r->stats.iDrawFragmentsExamined += end - i > 1 ? 2 : 1;
         if ((marks & (XUI_DOC_UNDERLINE | XUI_DOC_LINK | XUI_DOC_STRIKE)) &&
@@ -3123,7 +3339,7 @@ static int doc_render_group_plain_text(xui_document_renderer r,
         if (visible < 0) return XUI_ERROR_INVALID_STATE;
         if (!visible) continue;
         run = &block->runs[doc_fragment_paint_run(&block->fragments[i])];
-        next = doc_render_foreground(r, &run->attrs);
+        next = doc_render_text_foreground(r, &run->attrs);
         if (!found) { color = next; found = 1; }
         else if (color != next) { uniform = 0; break; }
     }
@@ -3148,7 +3364,7 @@ static int doc_render_group_plain_text(xui_document_renderer r,
             r->stats.iDrawFragmentsExamined += tail - head;
             if (!visible) continue;
             run = &block->runs[doc_fragment_paint_run(&block->fragments[head])];
-            next = doc_render_foreground(r, &run->attrs);
+            next = doc_render_text_foreground(r, &run->attrs);
             if (!found) { color = next; found = 1; }
             else if (color != next) {
                 double boundary = ox + block->fragments[head].x;
@@ -3167,7 +3383,7 @@ static int doc_render_group_plain_text(xui_document_renderer r,
         if (visible < 0) return XUI_ERROR_INVALID_STATE;
         if (!visible) continue;
         run = &block->runs[doc_fragment_paint_run(&block->fragments[i])];
-        next = doc_render_foreground(r, &run->attrs);
+        next = doc_render_text_foreground(r, &run->attrs);
         if (!found) { color = next; found = 1; }
         else if (color != next) {
             double boundary = ox + block->fragments[i].x;
@@ -3219,7 +3435,7 @@ static int doc_render_draw_paint_group(xui_document_renderer r,
         if (group->display_ends) length = group->display_ends[end - group->first_fragment - 1] - (uint32_t)at;
         r->stats.iDrawFragmentsExamined += end - i > 1 ? 2 : 1;
         if (length) spans[count++] = (xui_text_paint_span_t){sizeof(*spans),
-            (int)at, (int)(at + length), doc_render_foreground(r, &run->attrs)};
+            (int)at, (int)(at + length), doc_render_text_foreground(r, &run->attrs)};
         at += length; i = end;
     }
     result=doc_render_group_text(r,block,group,draw,rect,r->desc.iTextColor,
@@ -3278,7 +3494,7 @@ XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context dr
                 doc_node* node = doc_index_get(r->snapshot->state->index, box->node);
                 if (node && (node->attrs->iFlags & XUI_DOC_BACKGROUND_COLOR_CURRENT)) {
                     xui_doc_attributes_t attrs = doc_effective_text_attrs(r->snapshot->state, node);
-                    color = doc_render_foreground(r, &attrs);
+                    color = doc_render_text_foreground(r, &attrs);
                 } else if (node && !color && !doc_background_color_set(node->attrs)) {
                     if (box->kind == XUI_DOC_CELL)
                         color = node->attrs->iFlags & XUI_DOC_HEADER ?
@@ -3334,7 +3550,7 @@ XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context dr
                 if (f->run != UINT32_MAX || f->kind == XUI_DOC_SOFT_BREAK || f->kind == XUI_DOC_HARD_BREAK) {
                     const xui_doc_attributes_t* attrs = &b->runs[f->run != UINT32_MAX ? f->run : f->break_style_run].attrs;
                     uint32_t color = attrs->iFlags & XUI_DOC_BACKGROUND_COLOR_CURRENT ?
-                        doc_render_foreground(r, attrs) :
+                        doc_render_text_foreground(r, attrs) :
                         doc_background_color_set(attrs) ? attrs->iBackgroundColor :
                         attrs->iMarks & XUI_DOC_HIGHLIGHT ? r->desc.iHighlightColor : 0;
                     if (color) background = color;
@@ -3377,7 +3593,7 @@ XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context dr
             if (f->run == UINT32_MAX) {
                 if (f->kind == XUI_DOC_SOFT_BREAK && doc_render_visible(rect, clip)) {
                     const doc_render_run* run = &b->runs[f->break_style_run];
-                    result = doc_render_run_decorations(r, run, draw, rect, doc_render_foreground(r, &run->attrs));
+                    result = doc_render_run_decorations(r, run, draw, rect, doc_render_text_foreground(r, &run->attrs));
                     if (result != XUI_OK) break;
                 }
                 if (doc_render_visible(rect, clip) && f->kind != XUI_DOC_HARD_BREAK && f->kind != XUI_DOC_SOFT_BREAK && f->kind != XUI_DOC_PARAGRAPH && f->kind != XUI_DOC_HEADING && f->kind != XUI_DOC_CELL && f->kind != XUI_DOC_ROOT && f->kind != XUI_DOC_QUOTE) {
@@ -3397,7 +3613,7 @@ XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context dr
             } else {
                 doc_render_run* run = &b->runs[f->run]; uint64_t text_end = f->end; double width = f->width;
                 int projected = !!(f->flags & DOC_FORMATTED);
-                uint32_t color = doc_render_foreground(r, &run->attrs);
+                uint32_t color = doc_render_text_foreground(r, &run->attrs);
                 while (end < end_fragment) {
                     doc_fragment* next = &b->fragments[end];
                     if (next->run != f->run || (!doc_render_fragment_text(b, next) && !(next->flags & DOC_INVISIBLE)) ||
