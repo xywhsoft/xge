@@ -1,0 +1,1296 @@
+#ifndef XRT_VALUE_H
+#define XRT_VALUE_H
+
+#include <xrt/core.h>
+
+
+
+#if defined(XRT_FEATURE_VALUE) && !defined(XRT_FEATURE_HASH64)
+	#error "XRT_FEATURE_VALUE requires XRT_FEATURE_HASH64"
+#endif
+
+#if defined(XRT_FEATURE_VALUE_CONTAINER) && !defined(XRT_FEATURE_VALUE)
+	#error "XRT_FEATURE_VALUE_CONTAINER requires XRT_FEATURE_VALUE"
+#endif
+
+#if defined(XRT_FEATURE_VALUE_CONTAINER) && !defined(XRT_FEATURE_PTR_ARRAY)
+	#error "XRT_FEATURE_VALUE_CONTAINER requires XRT_FEATURE_PTR_ARRAY"
+#endif
+
+#if defined(XRT_FEATURE_VALUE_CONTAINER) && !defined(XRT_FEATURE_INT_MAP)
+	#error "XRT_FEATURE_VALUE_CONTAINER requires XRT_FEATURE_INT_MAP"
+#endif
+
+#if defined(XRT_FEATURE_VALUE_CONTAINER) && !defined(XRT_FEATURE_MAP)
+	#error "XRT_FEATURE_VALUE_CONTAINER requires XRT_FEATURE_MAP"
+#endif
+
+#if defined(XRT_FEATURE_VALUE_CONTAINER) && !defined(XRT_FEATURE_SET)
+	#error "XRT_FEATURE_VALUE_CONTAINER requires XRT_FEATURE_SET"
+#endif
+
+#if defined(XRT_FEATURE_VALUE_GRAPH) && !defined(XRT_FEATURE_VALUE_CONTAINER)
+	#error "XRT_FEATURE_VALUE_GRAPH requires XRT_FEATURE_VALUE_CONTAINER"
+#endif
+
+#if defined(XRT_FEATURE_VALUE_COLLECTION) && !defined(XRT_FEATURE_VALUE_CONTAINER)
+	#error "XRT_FEATURE_VALUE_COLLECTION requires XRT_FEATURE_VALUE_CONTAINER"
+#endif
+
+
+
+#define XRT_VALUE_DEPTH_MAX 256u
+
+
+
+#if defined(XRT_FEATURE_VALUE)
+
+/* 动态值类型保持紧凑稳定，语言运行时类型在独立模块扩展。 */
+typedef enum xvaluetype {
+	XVALUE_INVALID = -1,
+	XVALUE_NULL = 0,
+	XVALUE_BOOL,
+	XVALUE_INT,
+	XVALUE_FLOAT,
+	XVALUE_STRING,
+	XVALUE_BYTES,
+	XVALUE_TIME,
+	XVALUE_POINTER,
+	XVALUE_HANDLE,
+	XVALUE_ARRAY,
+	XVALUE_INT_MAP,
+	XVALUE_SET,
+	XVALUE_OBJECT,
+	XVALUE_UINT,
+	/* Unicode scalar value. Appended to preserve all published type ids. */
+	XVALUE_CHAR
+} xvaluetype;
+
+
+
+/* 动态值结构保持不透明，所有权通过 Retain、Release 和 Take 系列表达。 */
+typedef struct xvalue xvalue;
+
+/* Physical shell/backing identities for quiescent ownership inspection.
+ * Returning a reference does not retain the value. A shell owns one backing
+ * reference; the backing (not every alias shell) owns each element slot.
+ * Plain scalars are leaves. Opaque handles fail closed unless their producer
+ * binds a complete strong-edge adapter before publishing the value. */
+typedef bool (*xvalueownershiptrace)(const xvalue* pValue,
+	xrtownershipvisitor pVisit, ptr pContext);
+
+
+
+
+/*
+	语义值哈希器只借用已经绑定 TypeId 的容器值。回调可以通过只读 Value API
+	观察该值及其字段，也可以递归哈希字段，但不得修改、保留或释放输入值。
+	可通过线程错误报告失败；公开 Hash/Set 键边界忽略失败返回值。
+*/
+typedef uint64 (*xvalueidentityhash)(const xvalue* pValue, ptr pUserData);
+
+
+
+
+/*
+	语义值相等器只借用同一 TypeId 和同一策略域中的两个容器值。回调可以
+	递归比较字段，但不得修改、保留或释放任一输入值。
+	可通过线程错误报告失败；无错误的 false 是普通不相等结果。
+*/
+typedef bool (*xvalueidentityequal)(
+	const xvalue* pLeft,
+	const xvalue* pRight,
+	ptr pUserData
+);
+
+
+
+/* 句柄克隆器创建独立句柄；失败时必须设置错误且不得在输出中遗留资源。 */
+typedef bool (*xvaluehandleclone)(ptr pHandle, ptr* pClone, ptr pUserData);
+
+
+
+/* 句柄释放器销毁 Value 独占的一个句柄。 */
+typedef void (*xvaluehandledrop)(ptr pHandle, ptr pUserData);
+
+
+
+/* 句柄哈希器必须与相等器成对提供、保持一致且不得重入父 Value。
+ * 哈希/相等回调可通过线程错误报告失败；调用边界忽略失败返回值，
+ * 保留原始错误，且不得据此插入或移除集合元素。成功保留原先错误。 */
+typedef uint64 (*xvaluehandlehash)(ptr pHandle, ptr pUserData);
+
+
+
+/* 句柄相等器只借用两个句柄，必须与哈希器成对提供且不得重入父 Value。 */
+typedef bool (*xvaluehandleequal)(ptr pLeft, ptr pRight, ptr pUserData);
+
+
+
+/* 句柄策略是静态不可变描述，其生命周期必须覆盖全部关联值。 */
+typedef struct xvaluehandleops {
+	xvaluehandleclone Clone;
+	xvaluehandledrop Drop;
+	xvaluehandlehash Hash;
+	xvaluehandleequal Equal;
+} xvaluehandleops;
+
+
+
+/*
+	Object finalizers borrow the last live object shell before its owned fields
+	are released.  The callback may inspect or mutate fields, but it must not
+	retain, clone or release the borrowed object itself.  A finalizer is attached
+	to the shared object backing and therefore runs exactly once, when the final
+	backing owner is released.
+*/
+typedef void (*xvalueobjectfinalizer)(xvalue* pObject, ptr pUserData);
+typedef void (*xvalueobjectfinalizerrelease)(ptr pUserData);
+
+/* Explicit resident lifecycle family, not inferred from a non-NULL tracer.
+ * Bind only on an unpublished, prepared object. The producer certifies that
+ * these exact callbacks and all context mutations participate in this domain,
+ * and that the traced lifetime keeps callback/type code resident. A collector
+ * must independently authorize this exact immutable descriptor identity.
+ * Finalization borrows a REAL plan-held shell, disarms the physical backing's
+ * duty before user code, and preserves that decision across abort. Field/code
+ * owners survive until every semantic finalizer and revalidation have ended.
+ * FinalizeChecked is the same duty as the terminal void Finalize, but returns
+ * its explicit outcome: false remains failure even without a diagnostic.
+ * The adapter invokes only FinalizeChecked; terminal RC release invokes only
+ * Finalize. Both must preserve the producer's language failure semantics. */
+typedef struct xvalueobjectownershipv1 {
+	size_t size;
+	xvalueobjectfinalizer Finalize;
+	xrtownershiptrace FinalizerTrace;
+	xvalueobjectfinalizerrelease FinalizerRelease;
+	xrtownershiptrace LifetimeTrace;
+	xvalueobjectfinalizerrelease LifetimeRelease;
+	bool (*FinalizeChecked)(xvalue* pObject, ptr pUserData);
+} xvalueobjectownershipv1;
+
+
+
+XRT_EXTERN_C_BEGIN
+
+XRT_API xrtownershipref xrtValueOwnership(const xvalue* pValue);
+/* Under the caller's exclusive ownership freeze, recognize this XRT instance's
+ * ordinary Value shells/container backings, without invoking foreign callbacks.
+ * Returns a resident adapter or NULL (unknown/custom/unstable is refusal).
+ * Custom handle/identity/finalizer/lifetime policies and borrowed blob payloads
+ * are NOT certified here. Their code and hidden owning state need an explicit
+ * additional protocol; having a Trace callback is not certification.
+ * Claim temporarily makes WeakRefLock return null without declaring expiry;
+ * abort Restore permits promotion again. Clear commits that quarantine.
+ * Containers are cleared by physical backing, never by COW shell mutation.
+ * Caller must pin/admit the ENTIRE transitive graph before any Clear, even
+ * when only one of its nodes uses this adapter. Methods obey core's V1 rules. */
+XRT_API const xrtownershipadapterv1* xrtValueOwnershipAdapterV1(xrtownershipref Reference);
+XRT_API bool xrtValueObjectOwnershipBindV1(xvalue* pObject, const xvalueobjectownershipv1* pPolicy);
+/* Authorize the immutable, context-free identity callbacks while the matching
+ * class lifetime keeps their code. Ordinary IdentityBind alone is NOT enough
+ * for collector admission. COW/deep copies carry this backing certificate. */
+XRT_API bool xrtValueObjectIdentityBindV1(xvalue* pObject, xvalueidentityhash pHash,
+	xvalueidentityequal pEqual, const xvalueobjectownershipv1* pExpectedPolicy);
+XRT_API const xrtownershipadapterv1* xrtValueObjectOwnershipAdapterV1(
+	xrtownershipref Reference, const xvalueobjectownershipv1* pExpectedPolicy);
+/* Synchronous, callback-scoped read access to an exact certified lifecycle
+ * family. Right may be NULL; otherwise both objects must match ExpectedPolicy.
+ * Prepared construction objects are allowed, but finalizing, claimed, cleared,
+ * dead or reentrant receivers are refused BEFORE the visitor is called.
+ * The caller owns live shells throughout the call. Each distinct receiver is
+ * BUSY and each distinct physical backing is pinned until the visitor returns:
+ * direct slot writes/retain/clone/release of receivers are refused; independent
+ * COW aliases may detach, without invalidating the borrowed original slots.
+ * Views, lifetime contexts and field values are borrowed only during Visit;
+ * never retain a view, release/mutate borrowed fields, or escape via longjmp.
+ * This protects shell/slot reentrancy, not transitive payload mutations or
+ * concurrent operations on the SAME object. Normal caller synchronization is
+ * still required. This read does not authorize collector admission or a host.
+ * false is explicit failure even without a diagnostic; true with a new error
+ * is failure too. Only success restores the prior diagnostic. No allocation
+ * or producer policy callback is required by the read boundary itself. */
+typedef struct xvalueobjectreadv1 xvalueobjectreadv1;
+typedef bool (*xvalueobjectreadvisitv1)(const xvalueobjectreadv1* pLeft,
+	const xvalueobjectreadv1* pRight, ptr pContext);
+XRT_API bool xrtValueObjectReadV1(const xvalue* pLeft, const xvalue* pRight,
+	const xvalueobjectownershipv1* pExpectedPolicy, xvalueobjectreadvisitv1 pVisit, ptr pContext);
+XRT_API const void* xrtValueObjectReadLifetimeV1(const xvalueobjectreadv1* pView);
+XRT_API uint64 xrtValueObjectReadTypeIdV1(const xvalueobjectreadv1* pView);
+/* Exact byte key, including embedded NUL. A missing field returns NULL without
+ * an error; NULL data with a nonzero key size is an invalid argument. */
+XRT_API const xvalue* xrtValueObjectReadGetV1(const xvalueobjectreadv1* pView, xstrview Key);
+/* Borrowed discovery anchors for this instance's live, explicitly certified
+ * Object backings. Policy identity is exact; COW/deep-clone backings are each
+ * visited once, with their shared Lifetime UserData (possibly NULL). Ordinary
+ * objects and other policies are not enrolled. Enrollment/removal allocates
+ * nothing and changes NO reference count or owning graph edge.
+ *
+ * Caller holds exclusive whole-domain Freeze throughout enumeration and the
+ * subsequent snapshot/pin transaction. Visitor must remain read-only: it may
+ * collect/filter anchors, but must not mutate/release nodes or invoke their
+ * callbacks. Anchors are NOT internal slots and must never be subtracted from
+ * StrongCount. They are not pins, roots, reverse strong edges or unload proof.
+ * A running/finalizing backing may be discovered but must still be refused by
+ * snapshot admission; discovery is not lifecycle certification. Clear removes
+ * enrollment before Lifetime context retirement. false stops enumeration;
+ * prior visitor effects are not rolled back, so discard partial anchor lists.
+ * This is internal collector support, not automatic cycle collection. */
+typedef bool (*xvalueobjectownershipdiscoverv1)(xrtownershipref Reference,
+	const void* pLifetimeContext, ptr pContext);
+XRT_API bool xrtValueObjectOwnershipDiscoverV1(const xvalueobjectownershipv1* pExpectedPolicy,
+	xvalueobjectownershipdiscoverv1 pVisit, ptr pContext);
+/* Authorize a known resident Handle bridge, before any policy callback. The
+ * expected immutable Ops/Trace must cover the complete coordinated payload;
+ * identity hooks and non-NULL UserData are independently refused. This does
+ * not authorize the child: the collector still admits its whole graph.
+ * Clear quarantines; Finish detaches and drops the actual payload outside
+ * Freeze/mutation. Unknown native policy must not be passed as "expected". */
+XRT_API const xrtownershipadapterv1* xrtValueHandleOwnershipAdapterV1(
+	xrtownershipref Reference, const xvaluehandleops* pExpectedOps,
+	xvalueownershiptrace pExpectedTrace);
+XRT_API bool xrtValueHandleOwnershipBind(xvalue* pValue, xvalueownershiptrace pTrace);
+/* A handle adapter covers both its payload and handle UserData. Non-NULL
+ * semantic IdentityUserData remains opaque and is rejected independently. */
+/* Explicitly opt a privately owned handle into phased terminal Drop. Its
+ * immutable Ops/Trace and code lifetime must self-coordinate payload changes
+ * and activity: Drop runs after this shell reaches zero, outside this entry's
+ * mutation scope. An enclosing caller scope is never suspended. Clone carries
+ * the same contract. Trace-only Bind stays conservative; neither form grants
+ * graph collection admission or certifies an unknown native payload. */
+XRT_API bool xrtValueHandleOwnershipBindPhased(xvalue* pValue, xvalueownershiptrace pTrace);
+
+
+
+/* 返回进程期不可变的 null 单例。 */
+XRT_API xvalue* xrtValueNull(void);
+
+
+
+/* 返回进程期不可变的布尔单例。 */
+XRT_API xvalue* xrtValueBool(bool bValue);
+
+
+
+/* 创建不可变的 64 位整数值。 */
+XRT_API xvalue* xrtValueInt(int64 iValue);
+
+
+
+/* 创建不可变的 64 位无符号整数值。 */
+XRT_API xvalue* xrtValueUInt(uint64 iValue);
+
+
+
+/* 创建不可变的 Unicode 标量值；代理项和超出 Unicode 范围的值失败。 */
+XRT_API xvalue* xrtValueChar(uint32 iValue);
+
+
+
+/* 创建不可变的双精度浮点值。 */
+XRT_API xvalue* xrtValueFloat(double fValue);
+
+
+
+/* 复制字节并创建带末尾零但允许内嵌零的字符串值。 */
+XRT_API xvalue* xrtValueString(xstrview Text);
+
+
+
+/* 接管 XRT 字符串并清空独立来源槽；来源槽不得位于被接管内存中。 */
+XRT_API xvalue* xrtValueStringTake(str* pText, size_t iSize);
+
+
+
+/* 复制任意字节并创建二进制值。 */
+XRT_API xvalue* xrtValueBytes(xbytesview Data);
+
+
+
+/* 接管 XRT 二进制块并清空独立来源槽；来源槽不得位于被接管内存中。 */
+XRT_API xvalue* xrtValueBytesTake(bytes* pData, size_t iSize);
+
+
+
+/* 创建使用 Unix Epoch 毫秒表示的时间值。 */
+XRT_API xvalue* xrtValueTime(xtime Time);
+
+
+
+/* 创建不拥有目标生命周期的裸指针值。 */
+XRT_API xvalue* xrtValuePointer(ptr pPointer);
+
+
+
+/* 接管句柄并清空独立来源槽；Hash 和 Equal 必须同时提供或同时省略。 */
+XRT_API xvalue* xrtValueHandleTake(
+	ptr* pHandle,
+	const xvaluehandleops* pOps,
+	ptr pUserData
+);
+
+
+
+/* 增加值外壳引用并返回原指针。 */
+XRT_API xvalue* xrtValueRetain(const xvalue* pValue);
+
+
+
+/* 释放值外壳引用，允许传入空指针。 */
+XRT_API void xrtValueRelease(xvalue* pValue);
+
+
+
+/* 标量增加引用，容器创建共享 backing 的独立 COW 外壳。 */
+XRT_API xvalue* xrtValueClone(const xvalue* pValue);
+
+
+
+/* 为动态 Value 创建一个拥有独立生命周期的弱引用值。 */
+XRT_API xvalue* xrtValueWeakRef(const xvalue* pTarget);
+
+
+
+/* 判断值是否是由 xrtValueWeakRef 创建的弱引用。 */
+XRT_API bool xrtValueIsWeakRef(const xvalue* pValue);
+
+
+
+/* 判断弱引用目标是否已经结束强生命周期。 */
+XRT_API bool xrtValueWeakRefExpired(const xvalue* pWeak);
+
+
+
+/* 尝试提升弱引用；过期时返回进程期 null 单例。 */
+XRT_API xvalue* xrtValueWeakRefLock(const xvalue* pWeak);
+
+
+
+/* 返回值类型，空指针返回 INVALID。 */
+XRT_API xvaluetype xrtValueType(const xvalue* pValue);
+
+
+
+/* 返回调用者绑定的不透明语义类型身份；未绑定或空指针返回零。 */
+XRT_API uint64 xrtValueTypeId(const xvalue* pValue);
+
+
+
+/*
+	把非零语义类型身份一次性绑定到非静态值外壳。
+	重复绑定同一身份成功，冲突身份失败；身份随 Clone 和 DeepClone 传播。
+	TypeId 本身不改变相等、哈希或序列化语义；只有随后显式绑定的值身份
+	策略参与相等和哈希。
+*/
+XRT_API bool xrtValueTypeIdBind(xvalue* pValue, uint64 iTypeId);
+
+
+
+/* 仅在值外壳唯一拥有时，把既有语义类型身份替换为新的非零身份。 */
+XRT_API bool xrtValueTypeIdRebind(xvalue* pValue, uint64 iTypeId);
+
+
+
+
+/*
+	为已经绑定 TypeId 的非静态容器一次性绑定成对的值身份策略。
+	重复绑定同一策略域成功，冲突策略失败；策略函数和用户数据的生命周期
+	必须覆盖该值及其全部 Clone/DeepClone。具有完整策略的容器可以作为
+	Value Set 键，且 xrtValueEqual 优先使用同一策略域的语义相等规则。
+*/
+XRT_API bool xrtValueIdentityBind(
+	xvalue* pValue,
+	xvalueidentityhash pHash,
+	xvalueidentityequal pEqual,
+	ptr pUserData
+);
+
+
+
+/* 返回稳定的类型名称。 */
+XRT_API cstr xrtValueTypeName(xvaluetype Type);
+
+
+
+/* 判断值是否具有指定类型。 */
+XRT_API bool xrtValueIs(const xvalue* pValue, xvaluetype Type);
+
+
+
+/* 判断值是否为整数或浮点数。 */
+XRT_API bool xrtValueIsNumber(const xvalue* pValue);
+
+
+
+/* 判断值是否为四种基础容器之一。 */
+XRT_API bool xrtValueIsContainer(const xvalue* pValue);
+
+
+
+/* 按 xlang 语义返回值的真值。 */
+XRT_API bool xrtValueTruthy(const xvalue* pValue);
+
+
+
+/* 精确读取布尔值，类型不匹配时失败。 */
+XRT_API bool xrtValueGetBool(const xvalue* pValue, bool* pResult);
+
+
+
+/* 精确读取整数值，类型不匹配时失败。 */
+XRT_API bool xrtValueGetInt(const xvalue* pValue, int64* pResult);
+
+
+
+/* 精确读取无符号整数值，类型不匹配时失败。 */
+XRT_API bool xrtValueGetUInt(const xvalue* pValue, uint64* pResult);
+
+
+
+/* 精确读取 Unicode 标量值，类型不匹配时失败。 */
+XRT_API bool xrtValueGetChar(const xvalue* pValue, uint32* pResult);
+
+
+
+/* 精确读取浮点值，类型不匹配时失败。 */
+XRT_API bool xrtValueGetFloat(const xvalue* pValue, double* pResult);
+
+
+
+/* 借用字符串视图，值释放后视图失效。 */
+XRT_API bool xrtValueGetString(const xvalue* pValue, xstrview* pResult);
+
+
+
+/* 借用二进制视图，值释放后视图失效。 */
+XRT_API bool xrtValueGetBytes(const xvalue* pValue, xbytesview* pResult);
+
+
+
+/* 精确读取时间值。 */
+XRT_API bool xrtValueGetTime(const xvalue* pValue, xtime* pResult);
+
+
+
+/* 精确读取不拥有目标的裸指针。 */
+XRT_API bool xrtValueGetPointer(const xvalue* pValue, ptr* pResult);
+
+
+
+/* 借用句柄及其策略数据。 */
+XRT_API bool xrtValueGetHandle(
+	const xvalue* pValue,
+	ptr* pHandle,
+	const xvaluehandleops** pOps,
+	ptr* pUserData
+);
+
+
+
+/* 取走句柄资源并把所有共享外壳可见的资源状态清空；策略仍保留到值释放。 */
+XRT_API bool xrtValueTakeHandle(xvalue* pValue, ptr* pHandle);
+
+
+
+/* 为可哈希标量或显式身份容器计算一致哈希；指针和句柄哈希只在当前进程内有效。 */
+/* 哈希失败时输出保持不变；回调返回零但未报告错误是合法结果。 */
+XRT_API bool xrtValueHash(const xvalue* pValue, uint64* pHash);
+
+
+
+/* 按数值与标量内容判断相等；不可比较句柄和容器报告类型错误。 */
+XRT_API bool xrtValueScalarEqual(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+XRT_EXTERN_C_END
+
+#endif
+
+
+
+#if defined(XRT_FEATURE_VALUE_CONTAINER)
+
+#include <xrt/array.h>
+#include <xrt/map.h>
+#include <xrt/set.h>
+
+
+
+/* 通用迭代键区分数组索引、稀疏整数键、对象字符串键和无键集合。 */
+typedef enum xvaluekeytype {
+	XVALUE_KEY_NONE = 0,
+	XVALUE_KEY_INDEX,
+	XVALUE_KEY_INT,
+	XVALUE_KEY_STRING
+} xvaluekeytype;
+
+
+
+/* 迭代键只在下一次推进或迭代结束前有效。 */
+typedef struct xvaluekey {
+	xvaluekeytype Type;
+	union {
+		size_t Index;
+		int64 Integer;
+		xstrview String;
+	};
+} xvaluekey;
+
+
+
+/* 迭代器持有 backing 快照；活动迭代器必须先 End 才能再次 Begin。 */
+typedef struct xvalueiter {
+	ptr Backing;
+	xvaluetype Type;
+	int Direction;
+	size_t Index;
+	union {
+		xmapiter Map;
+		xintmapiter IntMap;
+		xsetiter Set;
+		/* Keep object-only bookkeeping in the pre-existing iterator-state
+		 * storage. xintmapiter remains the largest union member, so adding the
+		 * finalizer shell here does not change xvalueiter's public ABI. Map is
+		 * first so State.Map and State.Object.Map have identical addresses. */
+		struct {
+			xmapiter Map;
+			xvalue* FinalizerOwner;
+		} Object;
+	} State;
+} xvalueiter;
+
+
+
+/* 三态推进结果显式区分元素、正常结束和迭代错误。 */
+typedef enum xvalueiterresult {
+	XVALUE_ITER_ERROR = -1,
+	XVALUE_ITER_END = 0,
+	XVALUE_ITER_ITEM = 1
+} xvalueiterresult;
+
+/* Opaque, reference-owned snapshot cursor. Unlike the stack-compatible
+ * xvalueiter, its storage and physical references can be pinned independently
+ * by an ownership plan. The inline iteration state is not a second owner. */
+typedef struct xvaluecursor xvaluecursor;
+
+
+
+XRT_EXTERN_C_BEGIN
+
+
+
+/* 创建空的稠密动态值数组。 */
+XRT_API xvalue* xrtValueArray(void);
+
+
+
+/* 创建空的 int64 键稀疏映射。 */
+XRT_API xvalue* xrtValueIntMap(void);
+
+
+
+/* 创建空的可哈希动态值集合。 */
+XRT_API xvalue* xrtValueSet(void);
+
+
+
+/* 创建保持首次插入顺序的字符串键对象。 */
+XRT_API xvalue* xrtValueObject(void);
+
+
+
+/* 创建保持首次插入顺序、最终按逆插入顺序释放拥有值的字符串键对象。 */
+XRT_API xvalue* xrtValueObjectLifo(void);
+
+
+
+/*
+	Bind one finalizer to a unique Object backing.  Finalizer-backed objects keep
+	reference identity: Clone may share the backing, but a later COW split is
+	rejected so one logical object can never acquire two finalization duties.
+*/
+XRT_API bool xrtValueObjectFinalizerBind(
+	xvalue* pObject,
+	xvalueobjectfinalizer pFinalizer,
+	ptr pUserData
+);
+
+/* Consuming publication: success returns the same owned object; failure
+ * releases exactly the input owner and returns NULL. The proposed callback
+ * and borrowed context are never installed on failure. Any existing finalizer
+ * may run during rollback. Preserve the binding error (or preexisting primary
+ * error) across those callbacks. This does not pin callback code, allocate,
+ * undo earlier publication by the caller, or consume the borrowed context. */
+XRT_API xvalue* xrtValueObjectFinalizerBindTake(
+	xvalue* pObject, xvalueobjectfinalizer pFinalizer, ptr pUserData);
+
+
+
+/* Describe the actual strong slots owned by the already-bound finalizer
+ * context. Bind once, before publication, with a unique shell AND backing.
+ * The callback receives FinalizerUserData, not a fabricated Value shell.
+ * A NULL context needs no adapter. This is metadata, not a code lifetime pin. */
+XRT_API bool xrtValueObjectFinalizerOwnershipBind(
+	xvalue* pObject, xrtownershiptrace pTrace);
+
+/* Atomically bind a finalizer and transfer its context to a unique shell AND
+ * backing. No allocation. On failure the object is unchanged and the caller
+ * still owns context; no callback runs. A non-NULL context requires Trace.
+ * Release runs once, AFTER finalization and ALL backing field destruction.
+ * Callbacks are copied, not their descriptor storage. Release must itself be
+ * resident if it releases the last code lease; XRT never pins callback code.
+ * A NULL context is permitted and Release is still called exactly once. */
+XRT_API bool xrtValueObjectFinalizerBindOwned(xvalue* pObject,
+	xvalueobjectfinalizer pFinalizer, ptr pUserData,
+	xrtownershiptrace pTrace, xvalueobjectfinalizerrelease pRelease);
+
+/* Prepare an owned lifecycle BEFORE publishing a new reference-identity
+ * object. The same unique-shell/backing and context-transfer rules as BindOwned
+ * apply. Context/Trace are owned immediately and Release still follows all
+ * fields, but Finalizer is disarmed until Commit. Releasing an uncommitted
+ * object (possibly through its last native alias/cursor) only drops fields and
+ * context. Clone/cursors keep the same duty; no COW split duplicates it.
+ * Both operations allocate nothing. This is NOT a concurrent mutation API or
+ * a graph collection safepoint; callers serialize lifecycle/field mutations.
+ * Concurrent Retain/Release of independently owned aliases remains valid. */
+XRT_API bool xrtValueObjectFinalizerPrepareOwned(xvalue* pObject,
+	xvalueobjectfinalizer pFinalizer, ptr pUserData,
+	xrtownershiptrace pTrace, xvalueobjectfinalizerrelease pRelease);
+/* Commit exactly once after successful construction. Borrows one live object
+ * owner and permits shared shells/backings/cursors created after preparation.
+ * Failure leaves the pending/committed duty and all owners unchanged; nothing
+ * is consumed or invoked. Unprepared, repeated or finalizing commits fail. */
+XRT_API bool xrtValueObjectFinalizerCommit(xvalue* pObject);
+
+/* Transfer an immutable, shareable lifetime context to a unique Object shell
+ * AND backing. This is independent of finalizer identity: shallow Clone keeps
+ * the backing, while COW/deep-clone backings retain one shared lifetime node.
+ * Its Count is the number of owning backings and Trace describes context's
+ * actual edges exactly once. No fields or finalization duties are duplicated.
+ * Release runs once after the last such backing's fields/finalizer context.
+ * A non-NULL context requires Trace; Release is mandatory even for NULL data.
+ * Callbacks must stay callable (Release must be resident if dropping code).
+ * Allocation/uniqueness failure leaves object/context unchanged, with no
+ * callback. A second binding refuses. Context mutation and graph inspection
+ * still require external synchronization; this does not add a safepoint. */
+XRT_API bool xrtValueObjectLifetimeBindOwned(xvalue* pObject, ptr pUserData,
+    xrtownershiptrace pTrace, xvalueobjectfinalizerrelease pRelease);
+
+/* Prepare construction without a user finalizer. The unique object remains
+ * an ordinary COW value; a split copies pending state into the new backing.
+ * This state owns no context: use LifetimeBindOwned for copyable capabilities.
+ * Commit accepts this preparation or FinalizerPrepareOwned, exactly once and
+ * without allocation, including after native aliases/cursors were published.
+ * Failed construction without a finalizer only releases fields and lifetime.
+ * FinalizerCommit remains strict: it requires an actual owned finalizer duty.
+ * All preparation/commit/field mutations are externally serialized. */
+XRT_API bool xrtValueObjectConstructionPrepare(xvalue* pObject);
+XRT_API bool xrtValueObjectConstructionCommit(xvalue* pObject);
+
+/* 返回任一基础容器的元素数。 */
+XRT_API size_t xrtValueCount(const xvalue* pValue);
+
+
+
+/* 返回 Array、Set 或 Object 的当前预留容量；IntMap 不承诺连续容量。 */
+XRT_API size_t xrtValueCapacity(const xvalue* pValue);
+
+
+
+/* 保证容器至少可容纳指定数量的元素。 */
+XRT_API bool xrtValueReserve(xvalue* pValue, size_t iCapacity);
+
+
+
+/* 释放容器多余容量，保留现有元素。 */
+XRT_API bool xrtValueTrim(xvalue* pValue);
+
+
+
+/* 释放 IntMap 空闲节点池页并返回实际释放页数。 */
+XRT_API size_t xrtValueIntMapTrim(xvalue* pMap, size_t iRetainEmpty);
+
+
+
+/* 清空容器并释放其中持有的全部值引用。 */
+XRT_API bool xrtValueClear(xvalue* pValue);
+
+
+
+/* 把现有数组元素的正负索引解析为 0 基位置，失败时保持输出不变。 */
+XRT_API bool xrtValueArrayResolve(
+	const xvalue* pArray,
+	int64 iIndex,
+	size_t* pResolved
+);
+
+
+
+/* 返回数组指定 0 基索引处借用的值。 */
+XRT_API xvalue* xrtValueArrayGet(const xvalue* pArray, size_t iIndex);
+
+
+
+/* 支持负数倒序索引，越界时返回空指针。 */
+XRT_API xvalue* xrtValueArrayAt(const xvalue* pArray, int64 iIndex);
+
+
+
+/* 返回已经沿 COW 路径分离的可变子容器，标量子项报告类型错误。 */
+XRT_API xvalue* xrtValueArrayEdit(xvalue* pArray, size_t iIndex);
+
+
+
+/* 增加引用后向数组末尾加入值。 */
+XRT_API bool xrtValueArrayAppend(xvalue* pArray, const xvalue* pItem);
+
+
+
+/* 成功时把来源引用移交给数组并清空来源。 */
+XRT_API bool xrtValueArrayAppendTake(xvalue* pArray, xvalue** pItem);
+
+
+
+/* 无论成功失败都消费临时值，适合单行构造与加入。 */
+XRT_API bool xrtValueArrayAppendNew(xvalue* pArray, xvalue* pItem);
+
+
+
+/* 增加引用后在指定位置插入值。 */
+XRT_API bool xrtValueArrayInsert(xvalue* pArray, size_t iIndex, const xvalue* pItem);
+
+
+
+/* 成功时把来源引用移交到指定插入位置。 */
+XRT_API bool xrtValueArrayInsertTake(xvalue* pArray, size_t iIndex, xvalue** pItem);
+
+
+
+/* 无论成功失败都消费临时值并在指定位置插入。 */
+XRT_API bool xrtValueArrayInsertNew(xvalue* pArray, size_t iIndex, xvalue* pItem);
+
+
+
+/* 增加引用后替换旧值；同一指针是引用平衡的成功无操作。 */
+XRT_API bool xrtValueArraySet(xvalue* pArray, size_t iIndex, const xvalue* pItem);
+
+
+
+/* 成功时把来源引用移交到指定位置。 */
+XRT_API bool xrtValueArraySetTake(xvalue* pArray, size_t iIndex, xvalue** pItem);
+
+
+
+/* 无论成功失败都消费临时值并替换指定位置。 */
+XRT_API bool xrtValueArraySetNew(xvalue* pArray, size_t iIndex, xvalue* pItem);
+
+
+
+/* 删除数组区间并释放其中的值。 */
+XRT_API bool xrtValueArrayRemove(xvalue* pArray, size_t iIndex, size_t iCount);
+
+
+
+/* 从数组移交指定值，调用方获得一个引用。 */
+XRT_API xvalue* xrtValueArrayTake(xvalue* pArray, size_t iIndex);
+
+
+
+/* 从数组末尾移交一个值。 */
+XRT_API xvalue* xrtValueArrayPop(xvalue* pArray);
+
+
+
+/* 交换两个数组元素。 */
+XRT_API bool xrtValueArraySwap(xvalue* pArray, size_t iLeft, size_t iRight);
+
+
+
+/* 返回稀疏整数键借用的值，缺失是正常结果。 */
+XRT_API xvalue* xrtValueIntMapGet(const xvalue* pMap, int64 iKey);
+
+
+
+/* 返回已经沿 COW 路径分离的可变子容器，标量子项报告类型错误。 */
+XRT_API xvalue* xrtValueIntMapEdit(xvalue* pMap, int64 iKey);
+
+
+
+/* 增加引用后设置整数键值；同一指针是引用平衡的成功无操作。 */
+XRT_API bool xrtValueIntMapSet(xvalue* pMap, int64 iKey, const xvalue* pItem);
+
+
+
+/* 成功时把来源引用移交到整数键。 */
+XRT_API bool xrtValueIntMapSetTake(xvalue* pMap, int64 iKey, xvalue** pItem);
+
+
+
+/* 无论成功失败都消费临时值并设置整数键。 */
+XRT_API bool xrtValueIntMapSetNew(xvalue* pMap, int64 iKey, xvalue* pItem);
+
+
+
+/* 判断整数键是否存在。 */
+XRT_API bool xrtValueIntMapHas(const xvalue* pMap, int64 iKey);
+
+
+
+/* 删除整数键并释放对应值。 */
+XRT_API bool xrtValueIntMapRemove(xvalue* pMap, int64 iKey);
+
+
+
+/* 移交整数键对应值，缺失时返回空指针。 */
+XRT_API xvalue* xrtValueIntMapTake(xvalue* pMap, int64 iKey);
+
+
+
+/* 返回对象字符串键借用的值，键按完整字节匹配。 */
+XRT_API xvalue* xrtValueObjectGet(const xvalue* pObject, xstrview Key);
+
+
+
+/* 按首次插入顺序返回借用的键和值；替换已有键不会改变顺序。 */
+XRT_API xvalue* xrtValueObjectAt(
+	const xvalue* pObject,
+	size_t iIndex,
+	xstrview* pKey
+);
+
+
+
+/* 返回已经沿 COW 路径分离的可变子容器，标量子项报告类型错误。 */
+XRT_API xvalue* xrtValueObjectEdit(xvalue* pObject, xstrview Key);
+
+
+
+/* 增加引用后设置对象键值；同一指针不分离且保留首次键位置。 */
+XRT_API bool xrtValueObjectSet(
+	xvalue* pObject,
+	xstrview Key,
+	const xvalue* pItem
+);
+
+
+
+/* 成功时把来源引用移交到对象键。 */
+XRT_API bool xrtValueObjectSetTake(
+	xvalue* pObject,
+	xstrview Key,
+	xvalue** pItem
+);
+
+
+
+/* 无论成功失败都消费临时值并设置对象键。 */
+XRT_API bool xrtValueObjectSetNew(
+	xvalue* pObject,
+	xstrview Key,
+	xvalue* pItem
+);
+
+/* Consume the new owner on both outcomes. Publish the field before releasing
+ * its former owner OUTSIDE the mutation and receiver BUSY fence. The receiver
+ * is pinned through retirement; old-value callbacks may observe/mutate the
+ * committed object and release independently owned back-references to it.
+ * Failure preserves the field and its first diagnostic. Unlike SetNew, this
+ * operation does not forbid receiver reentry from the old-value destructor. */
+XRT_API bool xrtValueObjectSetNewPostCommit(
+	xvalue* pObject,
+	xstrview Key,
+	xvalue* pItem
+);
+
+/* Compiler/host-private field transaction. Preparation pins the actual
+ * receiver and a COW observation, copies its field storage (NOT a language
+ * object/clone/finalization duty), and leaves the receiver unchanged. SetTake
+ * changes only prepared storage, consuming the item only on success.
+ * Records and receiver access are caller-serialized; tables remain borrowed.
+ * Call Free outside freeze/mutation: it may run retired-field cleanup.
+ * Failed preparation only releases temporary pins while the borrowed receiver
+ * still protects its original fields and lifetime; no producer cleanup runs.
+ * No record or snapshot is a proof that a default object is private. */
+typedef struct xvalueobjectfieldsv1 xvalueobjectfieldsv1;
+typedef enum xvalueobjectfieldsresultv1 {
+	XVALUE_OBJECT_FIELDS_ERROR_V1 = -1,
+	XVALUE_OBJECT_FIELDS_BUSY_V1 = 0,
+	XVALUE_OBJECT_FIELDS_COMMITTED_V1 = 1,
+	XVALUE_OBJECT_FIELDS_SHARED_V1 = 2
+} xvalueobjectfieldsresultv1;
+XRT_API xvalueobjectfieldsv1* xrtValueObjectFieldsPrepareV1(xvalue* pObject);
+XRT_API bool xrtValueObjectFieldsSetTakeV1(xvalueobjectfieldsv1* pFields,
+	xstrview Key, xvalue** ppItem);
+/* A real unique record with exactly three owned Value slots. Borrowed under
+ * caller-owned freeze; this is not a synthetic root or extra owning slot. */
+XRT_API xrtownershipref xrtValueObjectFieldsOwnershipV1(const xvalueobjectfieldsv1* pFields);
+/* Nonblocking ONE freeze: admit the complete physical graph before Count/
+ * Trace, verify receiver privacy and unchanged observations, and preflight
+ * combined planned Value-container cycles. Only then swap all prepared field stores without
+ * allocation, release, producer callbacks or failure. Preserve the original
+ * class lifetime/identity and its one finalization duty. Free later retires
+ * old fields outside freeze. Ordinary COW aliases keep their old backing.
+ * Every supplied internal slot MUST be a real independently owned reference;
+ * each record's own unique owner is supplied automatically, once. An anchor
+ * is not an internal slot. Admission is mandatory, read-only and resident.
+ * SHARED/BUSY leave every receiver unchanged and do not set an error. Unknown
+ * participants, changed receivers, misuse/cycles/OOM return ERROR, also before
+ * any receiver write. This does not perform or infer a language clone. */
+XRT_API xvalueobjectfieldsresultv1 xrtValueObjectFieldsCommitV1(
+	xvalueobjectfieldsv1* const* ppFields, size_t iCount,
+	const xrtownershipref* pInternalSlots, size_t iInternalSlotCount,
+	xrtownershipadmitproc pAdmit, ptr pContext);
+/* Same single-freeze transaction. On SHARED only, return the first shared
+ * receiver's record index in caller order. The entire batch remains unchanged.
+ * Other outcomes leave the output untouched. The index is an observation,
+ * not a retained reference, mutation authority or inferred clone capability. */
+XRT_API xvalueobjectfieldsresultv1 xrtValueObjectFieldsCommitV2(
+	xvalueobjectfieldsv1* const* ppFields, size_t iCount,
+	const xrtownershipref* pInternalSlots, size_t iInternalSlotCount,
+	xrtownershipadmitproc pAdmit, ptr pContext, size_t* piSharedIndex);
+XRT_API void xrtValueObjectFieldsFreeV1(xvalueobjectfieldsv1* pFields);
+
+
+
+/* 判断对象键是否存在。 */
+XRT_API bool xrtValueObjectHas(const xvalue* pObject, xstrview Key);
+
+
+
+/* 删除对象键并释放对应值。 */
+XRT_API bool xrtValueObjectRemove(xvalue* pObject, xstrview Key);
+
+
+
+/* 移交对象键对应值，缺失时返回空指针。 */
+XRT_API xvalue* xrtValueObjectTake(xvalue* pObject, xstrview Key);
+
+
+
+/* 增加引用后把可哈希标量或显式身份容器加入集合。 */
+XRT_API bool xrtValueSetAdd(xvalue* pSet, const xvalue* pItem);
+
+
+
+/* 成功时消费来源引用；重复元素同样视为成功。 */
+XRT_API bool xrtValueSetAddTake(xvalue* pSet, xvalue** pItem);
+
+
+
+/* 无论成功失败都消费临时值并尝试加入集合。 */
+XRT_API bool xrtValueSetAddNew(xvalue* pSet, xvalue* pItem);
+
+
+
+/* 判断等价值是否在集合中。 */
+XRT_API bool xrtValueSetHas(const xvalue* pSet, const xvalue* pItem);
+
+
+
+/* 删除等价值并释放集合持有的引用。 */
+XRT_API bool xrtValueSetRemove(xvalue* pSet, const xvalue* pItem);
+
+
+
+/* 移交集合中的规范值，缺失时返回空指针。 */
+XRT_API xvalue* xrtValueSetTake(xvalue* pSet, const xvalue* pItem);
+
+
+
+/* 启动稳定顺序快照；输出不得覆盖 Value，且不能已处于活动状态。 */
+XRT_API bool xrtValueIterBegin(const xvalue* pValue, xvalueiter* pIterator);
+
+
+
+/* 启动稳定逆序快照；输出不得覆盖 Value，且不能已处于活动状态。 */
+XRT_API bool xrtValueIterRBegin(const xvalue* pValue, xvalueiter* pIterator);
+
+
+
+/* 创建按稳定正序推进的拥有式快照迭代器；调用方必须 Destroy。 */
+XRT_API xvalueiter* xrtValueIterCreate(const xvalue* pValue);
+
+
+
+/* 创建按稳定逆序推进的拥有式快照迭代器；调用方必须 Destroy。 */
+XRT_API xvalueiter* xrtValueIterRCreate(const xvalue* pValue);
+
+
+
+/* 返回下一借用值及其键；键输出不得覆盖迭代器，正常结束返回空指针。 */
+XRT_API xvalue* xrtValueIterNext(xvalueiter* pIterator, xvaluekey* pKey);
+
+
+
+/* 三态推进快照；成功项写入借用值，正常结束不设置错误。 */
+XRT_API xvalueiterresult xrtValueIterAdvance(
+	xvalueiter* pIterator,
+	xvaluekey* pKey,
+	xvalue** ppValue
+);
+
+
+
+/* 结束迭代并释放 backing 快照。 */
+XRT_API void xrtValueIterEnd(xvalueiter* pIterator);
+
+
+
+/* 结束并释放拥有式迭代器；允许传入空指针。 */
+XRT_API void xrtValueIterDestroy(xvalueiter* pIterator);
+
+/* Borrowed physical ownership view of one uniquely owned iterator. Its one
+ * strong slot is the retained backing snapshot, NOT the source Value shell,
+ * current element or borrowed key. Stack and heap iterators have one owner;
+ * an active iterator must not be copied into another owning slot. NULL has an
+ * empty view; a zero-initialized/ended iterator is a unique empty node. The
+ * caller guarantees lifetime and whole-graph quiescence through inspection;
+ * concurrent advance/end/destroy and concurrent mutation are not supported. */
+XRT_API xrtownershipref xrtValueIterOwnership(const xvalueiter* pIterator);
+
+/* Managed snapshot cursors retain backing and, for finalizer-backed identity
+ * objects, the actual source shell. An ordinary COW source is not retained.
+ * Existing stack/unique-heap iterator ABI and lifecycle remain unchanged. */
+XRT_API xvaluecursor* xrtValueCursorCreate(const xvalue* pValue);
+XRT_API xvaluecursor* xrtValueCursorRCreate(const xvalue* pValue);
+XRT_API xvaluecursor* xrtValueCursorRetain(xvaluecursor* pCursor);
+XRT_API void xrtValueCursorRelease(xvaluecursor* pCursor);
+/* Caller owns a reference through the call and serializes advances. Item and
+ * key outputs borrow the snapshot, valid until next advance or last release.
+ * Count/Trace/admission refuse an in-flight advance, including its error tail. */
+XRT_API xvalueiterresult xrtValueCursorAdvance(xvaluecursor* pCursor,
+	xvaluekey* pKey, xvalue** ppValue);
+XRT_API xrtownershipref xrtValueCursorOwnership(const xvaluecursor* pCursor);
+/* Exact Ops identity is checked before data. Hold/Drop are actual references;
+ * Clear detaches only, Finish releases outside freeze. Children, including a
+ * finalizer-backed shell, still require independent lifecycle admission. */
+XRT_API const xrtownershipadapterv1* xrtValueCursorOwnershipAdapterV1(xrtownershipref Reference);
+
+
+
+XRT_EXTERN_C_END
+
+#endif
+
+
+
+#if defined(XRT_FEATURE_VALUE_COLLECTION)
+
+/* 映射批量合并时对已有键采用明确且互斥的处理策略。 */
+typedef enum xvaluemergepolicy {
+	XVALUE_MERGE_KEEP = 0,
+	XVALUE_MERGE_REPLACE,
+	XVALUE_MERGE_ERROR
+} xvaluemergepolicy;
+
+
+
+XRT_EXTERN_C_BEGIN
+
+
+
+/* 失败原子地把来源数组全部追加到目标数组，允许来源与目标相同。 */
+XRT_API bool xrtValueArrayExtend(
+	xvalue* pTarget,
+	const xvalue* pSource
+);
+
+
+
+/* 创建按左右顺序连接的新数组。 */
+XRT_API xvalue* xrtValueArrayConcat(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+/* 按冲突策略失败原子地合并两个整数键映射。 */
+XRT_API bool xrtValueIntMapMerge(
+	xvalue* pTarget,
+	const xvalue* pSource,
+	xvaluemergepolicy Policy
+);
+
+
+
+/* 按冲突策略失败原子地合并两个对象，并保留目标已有键位置。 */
+XRT_API bool xrtValueObjectMerge(
+	xvalue* pTarget,
+	const xvalue* pSource,
+	xvaluemergepolicy Policy
+);
+
+
+
+/* 失败原子地把来源集合中的缺失元素追加到目标集合。 */
+XRT_API bool xrtValueSetMerge(
+	xvalue* pTarget,
+	const xvalue* pSource
+);
+
+
+
+/* 创建两个集合的并集，结果先保持左集合顺序。 */
+XRT_API xvalue* xrtValueSetUnion(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+/* 创建两个集合的交集，结果保持左集合顺序。 */
+XRT_API xvalue* xrtValueSetIntersection(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+/* 创建左集合相对右集合的差集。 */
+XRT_API xvalue* xrtValueSetDifference(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+/* 创建两个集合的对称差集，右侧独有元素追加在左侧独有元素之后。 */
+XRT_API xvalue* xrtValueSetSymmetricDifference(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+/* 判断左集合是否为右集合的子集，可选择严格子集。 */
+XRT_API bool xrtValueSetIsSubset(
+	const xvalue* pLeft,
+	const xvalue* pRight,
+	bool bProper
+);
+
+
+
+/* 判断左集合是否为右集合的超集，可选择严格超集。 */
+XRT_API bool xrtValueSetIsSuperset(
+	const xvalue* pLeft,
+	const xvalue* pRight,
+	bool bProper
+);
+
+
+
+/* 判断两个集合是否没有任何共同元素。 */
+XRT_API bool xrtValueSetIsDisjoint(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+/* 判断两个集合是否拥有相同的可哈希元素。 */
+XRT_API bool xrtValueSetEqual(
+	const xvalue* pLeft,
+	const xvalue* pRight
+);
+
+
+
+XRT_EXTERN_C_END
+
+#endif
+
+
+
+#if defined(XRT_FEATURE_VALUE_GRAPH)
+
+XRT_EXTERN_C_BEGIN
+
+
+
+/*
+	深度复制完整无环值图，并保留重复子值的共享身份。
+	不可变标量只增加引用，Handle 必须提供 Clone 策略。
+*/
+XRT_API xvalue* xrtValueDeepClone(const xvalue* pValue);
+
+/* Optional resident extension of the same acyclic graph copier. No Handle
+ * ABI/global registry is changed. Captured handle fields may be inspected
+ * only after matching the exact immutable Ops identity; never dereference
+ * an unknown handle. During Copy the entire active source path is BUSY.
+ * Return 0 with a NULL output to use the ordinary Handle policy, 1 with an
+ * independently owned output on success, or -1 on failure. The copier owns
+ * any non-NULL output even on failure. Callbacks must not mutate/retain/drop
+ * any source graph node, nor retain the synchronous continuation capability.
+ * Next reuses the SAME identity memo and depth/cycle checks; it is the only
+ * permitted recursive entry. Independent nested GraphCopy calls do not
+ * preserve aliases and must not be used as the continuation. Next returns
+ * an owned value; unused results may be released. The traversal separately
+ * pins completed memo targets until it ends, even if an adapter declines. */
+typedef struct xvaluegraphnextv1 xvaluegraphnextv1;
+typedef int (*xvaluegraphhandlecopyv1)(const xvaluehandleops* pOps,
+	ptr pHandle, ptr pHandleUser, uint64 iTypeId, xvaluegraphnextv1* pNext,
+	xvalue** pTarget, ptr pUserData);
+/* Optional object schema projection before ordinary traversal. TypeId is
+ * captured before the source is guarded. Select object fields through the
+ * current capability, then recurse only through Next; excluded fields are
+ * never visited. The same 0/1/-1 and output-ownership contract applies. */
+typedef int (*xvaluegraphobjectcopyv1)(uint64 iTypeId,
+	xvaluegraphnextv1* pNext, xvalue** pTarget, ptr pUserData);
+/* Exact nominal sequence policies for data projection. Only the matching
+ * IntMap/Set identity is written as an Array, in its ordinary iteration order.
+ * Untyped/unlisted containers retain their representation. A listed identity
+ * on the wrong physical type fails closed. A HANDLE with a listed identity
+ * must be authenticated by CopyHandle and projected to an Array: refusal,
+ * missing adaptation, or another output type fails closed, never retains the
+ * opaque source. The wire rule itself uses no registry or item callback.
+ * The immutable table is borrowed only for the synchronous copy. */
+typedef struct xvaluegraphsequencev1 {
+	uint64 TypeId;
+	xvaluetype Type; /* XVALUE_INT_MAP or XVALUE_SET */
+} xvaluegraphsequencev1;
+enum {
+	/* Data snapshots copy container data, not logical identities/lifecycle.
+	 * Unhandled opaque handles are retained, NOT cloned: the downstream
+	 * serializer/consumer still owns its unsupported-value policy. */
+	XVALUE_GRAPH_COPY_DATA_V1 = 1u
+};
+typedef struct xvaluegraphcopyv1 {
+	size_t Size;
+	uint32 Flags;
+	xvaluegraphhandlecopyv1 CopyHandle;
+	ptr UserData;
+	xvaluegraphobjectcopyv1 CopyObject;
+	const xvaluegraphsequencev1* Sequences;
+	size_t SequenceCount; /* requires XVALUE_GRAPH_COPY_DATA_V1 */
+} xvaluegraphcopyv1;
+XRT_API xvalue* xrtValueGraphCopyV1(const xvalue* pValue,
+	const xvaluegraphcopyv1* pConfig);
+XRT_API xvalue* xrtValueGraphNextV1(xvaluegraphnextv1* pNext,
+	const xvalue* pChild);
+/* Borrow one field of the current object without exposing an unguarded
+ * source shell. NULL means absent (unchanged error), or failure (new error).
+ * The edge must not be retained/released/mutated; pass it directly to Next. */
+XRT_API xvalue* xrtValueGraphObjectGetV1(xvaluegraphnextv1* pNext,
+	xstrview Key);
+
+
+
+/*
+	按数值和容器内容递归判断结构相等，不要求两侧共享拓扑一致。
+	两个不同 Handle 只有在同一策略域提供 Equal 时才可比较。
+*/
+XRT_API bool xrtValueEqual(const xvalue* pLeft, const xvalue* pRight);
+
+
+
+XRT_EXTERN_C_END
+
+#endif
+
+#endif

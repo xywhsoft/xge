@@ -384,7 +384,7 @@ int xgeParticleDefinitionParse(xge_particle_definition *out, const char *text, s
 	*out = NULL;
 	if (!text || !size || size > 1024u * 1024u)
 		goto invalid;
-	root = xson ? xrtXsonParse((xstrview){text, size}) : xrtJsonParse((xstrview){text, size});
+	root = xson ? xrtXlonParse((xstrview){text, size}) : xrtJsonParse((xstrview){text, size});
 	if (!root)
 	{
 		if (error && capacity)
@@ -617,7 +617,7 @@ int xgeParticleDefinitionStringify(xge_particle_definition definition, int xson,
 	if (!xp_put(root, "version", xrtValueInt(1)) ||
 	    !xrtValueObjectSetTake(root, XRT_STR_LITERAL("emitters"), &emitters))
 		goto done;
-	*out = xson ? xrtXsonStringify(root, true, size) : xrtJsonStringify(root, true, size);
+	*out = xson ? xrtXlonStringify(root, true, size) : xrtJsonStringify(root, true, size);
 	if (*out)
 		result = XGE_OK;
 done:

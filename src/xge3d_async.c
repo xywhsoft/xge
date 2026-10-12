@@ -1,3 +1,4 @@
+#include "xge_clock.h"
 #include "xge3d_internal.h"
 #include <limits.h>
 #if XGE3D_ENABLE_ASYNC
@@ -160,7 +161,7 @@ int xge3dLoaderPump(xge3d_loader *l,const xge3d_upload_budget_t *budget,xge3d_up
     if (out) memset(out,0,sizeof(*out));
     if (!d3_owner(l)) return XGE_ERROR_INVALID_STATE;
     if (!budget) return XGE_ERROR_INVALID_ARGUMENT;
-    xge3d_upload_stats_t stats={0};uint64_t now=xrtClock(),deadline=budget->microseconds ? (UINT64_MAX-now<budget->microseconds ? UINT64_MAX : now+budget->microseconds) : 0;
+    xge3d_upload_stats_t stats={0};uint64_t now=xgeClockMicroseconds(),deadline=budget->microseconds ? (UINT64_MAX-now<budget->microseconds ? UINT64_MAX : now+budget->microseconds) : 0;
     xrtMutexLock(&l->mutex);d3_collect(l);xrtMutexUnlock(&l->mutex);
     /* Only this creating thread changes the array; the worker publishes under
      * the mutex without removing jobs during a partially completed pump. */

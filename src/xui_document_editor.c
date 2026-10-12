@@ -1,3 +1,4 @@
+#include "xge_clock.h"
 #include "../xui_config.h"
 #if XUI_ENABLE_DOCUMENT_EDITOR
 #include "xui_document_view_internal.h"
@@ -651,7 +652,7 @@ XUI_API int xuiDocumentEditorGetPendingWork(xui_widget w, xui_doc_editor_pending
 XUI_API int xuiDocumentEditorFlush(xui_widget w)
 {
     doc_editor_data* e = doc_editor_get(w); unsigned budget = 64; int result = XUI_OK;
-    uint64_t started = xrtClock();
+    uint64_t started = xgeClockMicroseconds();
     if (!e) return XUI_ERROR_INVALID_ARGUMENT;
     if (e->draining || e->in_clipboard || e->committing || e->view.document->writer || e->view.document->notifying) return XUI_DOC_ERROR_BUSY;
     if (e->event_error) return e->event_error;
@@ -683,13 +684,13 @@ XUI_API int xuiDocumentEditorFlush(xui_widget w)
             e->desc.onError(w, result, e->desc.pUser); if (!xuiInternalWidgetIsValid(w)) return result;
         }
         result = XUI_OK;
-        if (xrtClock() - started >= 4000) break;
+        if (xgeClockMicroseconds() - started >= 4000) break;
     }
     if (!e->events && !e->stream_open &&
         e->view.document->input_barrier == e->origin) e->view.document->input_barrier = 0;
     if (result == XUI_OK) {
         if (e->events) result = XUI_DOC_ERROR_BUSY;
-        else if (e->input && xrtClock() - started >= 4000) { doc_input_schedule(e->worker, e->input); result = XUI_DOC_ERROR_BUSY; }
+        else if (e->input && xgeClockMicroseconds() - started >= 4000) { doc_input_schedule(e->worker, e->input); result = XUI_DOC_ERROR_BUSY; }
         else result = doc_editor_flush_input(e);
     }
     if (!xuiInternalWidgetIsValid(w)) return result;
@@ -883,7 +884,7 @@ XUI_API int xuiDocumentEditorSetTableColumnWidth(xui_widget w, xui_doc_node_id t
     if (!e || !isfinite(width) || width < 0 || width > 1000000) return XUI_ERROR_INVALID_ARGUMENT;
     if (doc_editor_api_busy(e)) return XUI_DOC_ERROR_BUSY;
     doc_editor_cancel_composition(e); doc_editor_break_group(e);
-    doc_editor_cancel_resize(e, 1); e->action_time = xrtClock();
+    doc_editor_cancel_resize(e, 1); e->action_time = xgeClockMicroseconds();
     return doc_editor_apply_column_width(e, table, column, width, 0, 0);
 }
 static int doc_editor_resize_hit(doc_editor_data* e, double x, double y,
@@ -1152,7 +1153,7 @@ XUI_API int xuiDocumentEditorInsertText(xui_widget w, const char* text, uint64_t
     doc_editor_data* e = doc_editor_get(w);
     if (!e || !doc_utf8(text, bytes)) return XUI_ERROR_INVALID_ARGUMENT;
     if (doc_editor_api_busy(e)) return XUI_DOC_ERROR_BUSY;
-    e->action_time = xrtClock(); return doc_editor_insert_text(e, text, bytes, DOC_EDITOR_PROGRAM);
+    e->action_time = xgeClockMicroseconds(); return doc_editor_insert_text(e, text, bytes, DOC_EDITOR_PROGRAM);
 }
 /* Inline marks affect Text/break atoms, never an image's alt field or a code
  * block's literal payload. Gap carets can still start formatted text. */
@@ -2674,7 +2675,7 @@ XUI_API int xuiDocumentEditorSetParagraphSpacing(xui_widget w, float spacing, in
     if (result != XUI_OK) return result;
     if (!state.bEnabled) return state.iDisabledReason;
     doc_editor_cancel_composition(e); doc_editor_break_group(e);
-    e->action_time = xrtClock(); range = e->view.selection;
+    e->action_time = xgeClockMicroseconds(); range = e->view.selection;
     style.iSize = sizeof(style); style.fParagraphSpacing = use_default ? 0 : spacing;
     style.bSpacingExplicit = !use_default;
     result = doc_editor_begin(e, &t, 0); if (result != XUI_OK) return result;
@@ -3060,7 +3061,7 @@ XUI_API int xuiDocumentEditorExecute(xui_widget w, uint32_t command)
         if (result != XUI_OK) return result;
         if (!state.bEnabled) return state.iDisabledReason;
     }
-    e->action_time = xrtClock(); return doc_editor_execute(e, command, 0);
+    e->action_time = xgeClockMicroseconds(); return doc_editor_execute(e, command, 0);
 }
 static int doc_editor_composition(doc_editor_data* e, const xui_event_t* event)
 {
@@ -3655,7 +3656,7 @@ static int doc_editor_handle_event(doc_editor_data* e, const xui_event_t* event,
 }
 static int doc_editor_event(xui_widget w, const xui_event_t* event, void* user)
 {
-    doc_editor_data* e = doc_editor_get(w); int result, ordered, queued = 0; uint64_t received = xrtClock(); (void)user;
+    doc_editor_data* e = doc_editor_get(w); int result, ordered, queued = 0; uint64_t received = xgeClockMicroseconds(); (void)user;
     if (!e || !event) return XUI_ERROR_INVALID_ARGUMENT;
     ordered = doc_editor_ordered_event(event);
     if (e->events && event->iType == XUI_EVENT_POINTER_MOVE && !e->event_dragging) return XUI_OK;

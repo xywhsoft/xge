@@ -44,7 +44,7 @@
 #define XRT_MODULE_VALUE
 #define XRT_MODULE_VALUE_COLLECTION
 #define XRT_MODULE_VALUE_GRAPH
-#define XRT_MODULE_XSON
+#define XRT_MODULE_XLON
 #define XRT_MODULE_REGEX_CORE
 #define XRT_MODULE_REGEX_MATCH
 #endif
@@ -61,8 +61,12 @@
 	#define XRT_MODULE_DEFLATE
 #endif
 
-/* IDE + xllm/xwork/xcode share the XRT instance exported by xge.dll. */
+/* IDE extensions and XGE share the runtime exported by xge.dll. */
 #if defined(XGE_XRT_PROFILE_IDE)
+	#define XWORK_MODULE_XWORK
+	#include "extlibs/xwork/include/xwork/features.h"
+	#include "extlibs/xllm-session/include/xllm-session/features.h"
+	#include "extlibs/xllm/include/xllm/features.h"
 	#define XRT_MODULE_CODEC_HEX
 	#define XRT_MODULE_CODEC_PERCENT
 	#define XRT_MODULE_FILE_TEMP

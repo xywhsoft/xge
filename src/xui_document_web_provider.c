@@ -1,3 +1,4 @@
+#include "xge_clock.h"
 #include "../xui_config.h"
 #if XUI_ENABLE_WEBVIEW
 /* Optional, application-owned static math/Mermaid/HTML renderer. The Document
@@ -64,7 +65,7 @@ static int doc_web_timed_out(xui_doc_web_provider provider,
     uint64_t started)
 {
     /* xrtClock counts microseconds; the public option is milliseconds. */
-    return xrtClock() - started >= (uint64_t)provider->timeout_ms * 1000u;
+    return xgeClockMicroseconds() - started >= (uint64_t)provider->timeout_ms * 1000u;
 }
 
 static xstrview doc_web_view(const char* text, size_t bytes)
@@ -224,7 +225,7 @@ static void doc_web_fail_provider(xui_doc_web_provider provider,
     const char* reason, int retryable)
 {
     size_t i;
-    uint64_t now = xrtClock();
+    uint64_t now = xgeClockMicroseconds();
     if (provider->failed) return;
     if (retryable && provider->healthy_since &&
             now - provider->healthy_since >= DOC_WEB_HEALTHY_RESET_US)
@@ -281,7 +282,7 @@ static void doc_web_message(xui_widget widget, const char* source,
             doc_web_fail_provider(provider,
                 "Document renderer assets are incomplete", 0);
         else {
-            provider->healthy_since = xrtClock();
+            provider->healthy_since = xgeClockMicroseconds();
         }
         if (provider->page_ready && provider->recovering) {
             size_t i;
@@ -321,7 +322,7 @@ static void doc_web_message(xui_widget widget, const char* source,
             provider->active->baseline = baseline;
             provider->stage = DOC_WEB_WAIT_PAINT;
             provider->stage_frames = 0;
-            provider->stage_started = xrtClock();
+            provider->stage_started = xgeClockMicroseconds();
         } else {
             doc_web_active_finish(provider, 0);
         }
@@ -557,7 +558,7 @@ static void doc_web_restart_worker(xui_doc_web_provider provider)
     provider->recovering = 1;
     provider->restart_at = 0;
     provider->restart_attempts++;
-    provider->startup_started = xrtClock();
+    provider->startup_started = xgeClockMicroseconds();
     result = doc_web_start_worker(provider);
     if (result != XUI_OK && !provider->failed)
         doc_web_fail_provider(provider,
@@ -585,7 +586,7 @@ XUI_API int xuiDocumentWebProviderCreate(const xui_doc_web_provider_desc_t* desc
     provider->palette_generation = 1;
     provider->timeout_ms = desc->iTimeoutMs ? desc->iTimeoutMs :
         DOC_WEB_DEFAULT_TIMEOUT_MS;
-    provider->startup_started = xrtClock();
+    provider->startup_started = xgeClockMicroseconds();
     provider->assets_folder = malloc(strlen(desc->sAssetsFolder) + 1);
     if (provider->assets_folder) strcpy(provider->assets_folder, desc->sAssetsFolder);
     if (desc->sUserDataFolder) {
@@ -670,7 +671,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
     xui_surface_desc_t surface_desc = {0};
     if (!provider) return XUI_ERROR_INVALID_ARGUMENT;
     if (provider->failed) {
-        if (provider->restart_at && xrtClock() >= provider->restart_at)
+        if (provider->restart_at && xgeClockMicroseconds() >= provider->restart_at)
             doc_web_restart_worker(provider);
         return XUI_OK;
     }
@@ -762,7 +763,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
         }
         provider->stage = DOC_WEB_WAIT_CAPTURE;
         provider->stage_frames = 0;
-        provider->stage_started = xrtClock();
+        provider->stage_started = xgeClockMicroseconds();
         return XUI_OK;
     }
     if (provider->stage == DOC_WEB_WAIT_RENDER) {
@@ -784,7 +785,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
             return XUI_OK;
         }
         provider->stage = DOC_WEB_WAIT_RENDER;
-        provider->stage_started = xrtClock();
+        provider->stage_started = xgeClockMicroseconds();
     }
     return XUI_OK;
 }

@@ -1,3 +1,4 @@
+#include "xge_clock.h"
 #include "xge3d_internal.h"
 #include "xge_gl.h"
 #include <limits.h>
@@ -234,7 +235,7 @@ int d3_model_upload_step(xge3d_model *model,d3_upload_cursor *c,const xge3d_uplo
         size_t total=texture ? texture->pixels.Count : vb+mesh->indices.Count*mesh->indices.ItemSize;
         int mip=texture && texture->sampler.min_filter>=0x2700 && texture->sampler.min_filter<=0x2703;
         if (c->offset==total && !mip) {++c->resource;c->offset=0;continue;}
-        if (stats->operations>=budget->operations || (deadline && xrtClock()>=deadline)) break;
+        if (stats->operations>=budget->operations || (deadline && xgeClockMicroseconds()>=deadline)) break;
         uint64_t remaining=budget->bytes-stats->upload_bytes,min=texture ? 4 : 1;
         if (c->offset<total && remaining<min) {stats->min_next_bytes=min;break;}
         size_t transferred=0;

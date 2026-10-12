@@ -1,0 +1,261 @@
+#ifndef XRT_ERROR_H
+#define XRT_ERROR_H
+
+#include <xrt/core.h>
+
+
+
+/* 跨模块稳定的错误类别。 */
+typedef enum xerrkind {
+	XERR_NONE = 0,
+	XERR_ARGUMENT,
+	XERR_TYPE,
+	XERR_VALUE,
+	XERR_RANGE,
+	XERR_STATE,
+	XERR_MEMORY,
+	XERR_IO,
+	XERR_NOT_FOUND,
+	XERR_EXISTS,
+	XERR_PERMISSION,
+	XERR_AGAIN,
+	XERR_TIMEOUT,
+	XERR_CANCELLED,
+	XERR_CLOSED,
+	XERR_PROTOCOL,
+	XERR_UNSUPPORTED,
+	XERR_INTERNAL
+} xerrkind;
+
+
+
+/* 错误对象由 XRT 管理，对外保持不可变。 */
+typedef struct xerror xerror;
+
+
+
+/* 描述一个完整错误，所有字符串在创建时复制。 */
+typedef struct xerrordesc {
+	xerrkind Kind;
+	int32 Code;
+	int32 SystemCode;
+	cstr Domain;
+	cstr Operation;
+	cstr Message;
+	cstr Data;
+	const xerror* Cause;
+} xerrordesc;
+
+
+
+/* 可选的源码位置；零值表示调用方没有提供对应信息。 */
+typedef struct xerrorlocation {
+	cstr File;
+	int32 Line;
+	int32 Column;
+} xerrorlocation;
+
+/* Exact immutable diagnostic text. Views are borrowed only during Build;
+ * every field is copied with its byte size, including embedded NUL. NULL/0
+ * is empty; NULL/nonzero is invalid. No view or caller buffer is retained. */
+typedef struct xerrordescview {
+	xerrkind Kind;
+	int32 Code;
+	int32 SystemCode;
+	xstrview Domain;
+	xstrview Operation;
+	xstrview Message;
+	xstrview Data;
+	const xerror* Cause;
+} xerrordescview;
+
+typedef struct xerrorlocationview {
+	xstrview File;
+	int32 Line;
+	int32 Column;
+} xerrorlocationview;
+
+
+
+/* 错误处理器只借用错误对象，保存时必须增加引用。 */
+typedef void (*xerrorhandler)(const xerror* pError, ptr pUserData);
+
+
+
+XRT_EXTERN_C_BEGIN
+
+
+
+/* 从完整描述创建一个错误对象。 */
+XRT_API xerror* xrtErrorBuild(const xerrordesc* pDesc);
+
+
+
+/* 从完整描述和可选源码位置创建一个错误对象。 */
+XRT_API xerror* xrtErrorBuildAt(
+	const xerrordesc* pDesc,
+	const xerrorlocation* pLocation
+);
+
+/* One allocation for the immutable object and all five copied, terminated
+ * byte spans. Failure retains no input or cause. Size arithmetic is checked
+ * before allocation/copy. The C-string Build APIs adapt to this same core. */
+XRT_API xerror* xrtErrorBuildView(const xerrordescview* pDesc);
+XRT_API xerror* xrtErrorBuildViewAt(
+	const xerrordescview* pDesc,
+	const xerrorlocationview* pLocation
+);
+
+
+
+/* 创建一个常用错误对象。 */
+XRT_API xerror* xrtErrorCreate(xerrkind Kind, cstr sDomain, int32 iCode, cstr sMessage);
+
+
+
+/* 创建带有原因链的错误对象。 */
+XRT_API xerror* xrtErrorWrap(const xerror* pCause, xerrkind Kind, cstr sDomain, int32 iCode, cstr sMessage);
+
+
+
+/* 增加错误对象引用并返回原指针。 */
+XRT_API xerror* xrtErrorRef(const xerror* pError);
+
+
+
+/* 释放错误对象引用。 */
+XRT_API void xrtErrorFree(xerror* pError);
+
+/* Borrowed physical ownership view. Immutable cause is one owning edge;
+ * inline diagnostic text is not a separate reference-counted node. Static
+ * immortal errors and NULL have an empty view. See xrtOwnershipInspect. */
+XRT_API xrtownershipref xrtErrorOwnership(const xerror* pError);
+/* Exact resident immutable Error/Cause DAG, with real pins and no user code.
+ * Clear keeps immutable cause owners until last Drop. Static errors are empty
+ * references. Caller still needs whole-domain Freeze and child admission. */
+XRT_API const xrtownershipadapterv1* xrtErrorOwnershipAdapterV1(xrtownershipref Reference);
+
+
+
+/* 返回错误的通用类别。 */
+XRT_API xerrkind xrtErrorKind(const xerror* pError);
+
+
+
+/* 返回错误所属的稳定域。 */
+XRT_API cstr xrtErrorDomain(const xerror* pError);
+
+
+
+/* 返回模块定义的错误代码。 */
+XRT_API int32 xrtErrorCode(const xerror* pError);
+
+
+
+/* 返回操作系统或外部库错误代码。 */
+XRT_API int32 xrtErrorSystemCode(const xerror* pError);
+
+
+
+/* 返回发生错误的操作名称。 */
+XRT_API cstr xrtErrorOperation(const xerror* pError);
+
+
+
+/* 返回错误消息。 */
+XRT_API cstr xrtErrorMessage(const xerror* pError);
+
+
+
+/* 返回可选的机器可读附加数据。 */
+XRT_API cstr xrtErrorData(const xerror* pError);
+
+
+
+/* 返回可选的源码文件名。 */
+XRT_API cstr xrtErrorFile(const xerror* pError);
+
+/* Exact borrowed immutable spans, valid while the error is alive. NULL error
+ * yields empty views. C-string getters above remain explicit C interop:
+ * they terminate at the first NUL, whereas these sizes retain every byte. */
+XRT_API xstrview xrtErrorDomainView(const xerror* pError);
+XRT_API xstrview xrtErrorOperationView(const xerror* pError);
+XRT_API xstrview xrtErrorMessageView(const xerror* pError);
+XRT_API xstrview xrtErrorDataView(const xerror* pError);
+XRT_API xstrview xrtErrorFileView(const xerror* pError);
+
+
+
+/* 返回一基源码行号；零表示未知。 */
+XRT_API int32 xrtErrorLine(const xerror* pError);
+
+
+
+/* 返回一基源码列号；零表示未知。 */
+XRT_API int32 xrtErrorColumn(const xerror* pError);
+
+
+
+/* 返回借用的原因错误。 */
+XRT_API const xerror* xrtErrorCause(const xerror* pError);
+
+
+
+/* 沿原因链查找指定通用类别，返回借用的错误对象。 */
+XRT_API const xerror* xrtErrorIs(const xerror* pError, xerrkind Kind);
+
+
+
+/* 沿原因链查找完全匹配的错误域和代码，返回借用的错误对象。 */
+XRT_API const xerror* xrtErrorFind(const xerror* pError, cstr sDomain, int32 iCode);
+
+
+
+/* 返回当前执行上下文借用的错误对象。 */
+XRT_API const xerror* xrtGetError(void);
+
+
+
+/* 取走当前执行上下文的错误对象。 */
+XRT_API xerror* xrtTakeError(void);
+
+
+
+/* 将错误对象设置到当前执行上下文，函数会增加引用。 */
+XRT_API void xrtSetError(const xerror* pError);
+
+
+
+/* 将错误对象所有权转移到当前执行上下文，调用后不得继续使用原引用。 */
+XRT_API void xrtSetErrorTake(xerror* pError);
+
+
+
+/* 创建常用错误并直接设置到当前执行上下文。 */
+XRT_API void xrtSetErrorInfo(
+	xerrkind Kind,
+	cstr sDomain,
+	int32 iCode,
+	cstr sMessage
+);
+
+
+
+/* 设置无分配的通用错误；NONE 清除错误，无效类别设置参数错误。 */
+XRT_API void xrtSetErrorKind(xerrkind Kind);
+
+
+
+/* 清除当前执行上下文的错误。 */
+XRT_API void xrtClearError(void);
+
+
+
+/* 设置进程级错误通知处理器。 */
+XRT_API void xrtSetErrorHandler(xerrorhandler pHandler, ptr pUserData);
+
+
+
+XRT_EXTERN_C_END
+
+#endif

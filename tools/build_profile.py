@@ -68,6 +68,8 @@ def main():
     flags += ["-D" + d for d in args.define]
     if args.profile == "ide":
         flags += ["-DXGE_XRT_PROFILE_IDE"]
+        flags += ["-include", "lib/xrt/xrt_config.h", "-Ilib/xrt", "-Ilib/xrt/include"]
+        flags += [f"-Ilib/xrt/extlibs/{p}/include" for p in ("xllm", "xllm-session", "xwork")]
     if not windows:
         flags += ["-fPIC"]
     manifest = json.loads((ROOT / "tools/features.json").read_text())
@@ -89,6 +91,10 @@ def main():
     source_probe = '#include "xge_config.h"\n' + "".join(f"#if {guard}\nXGE_SOURCE_{i}\n#endif\n" for i, (_, guard) in enumerate(selections))
     selected = run([cc, *flags, "-E", "-P", "-x", "c", "-"], input=source_probe, text=True, capture_output=True).stdout
     sources += [selections[int(i)][0] for i in re.findall(r"^XGE_SOURCE_(\d+)$", selected, re.M)]
+    if args.profile == "ide":
+        for product in ("xllm", "xllm-session", "xwork"):
+            extension = json.loads((ROOT / f"lib/xrt/extlibs/{product}/config/modules.json").read_text())
+            sources += ["lib/xrt/" + source for module in extension["modules"] for source in module["sources"]]
     config = "#ifndef XGE_BUILD_CONFIG_H\n#define XGE_BUILD_CONFIG_H\n"
     config += f"#define XGE_BUILD_PROFILE {PROFILES[args.profile]}\n"
     config += "".join(f"#define {name} {int(name in features)}\n" for name in sorted(names))
