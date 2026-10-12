@@ -3,31 +3,27 @@ name: UIDesign
 on:
   push:
     paths:
-      - "tools/UIDesign/**"
+      - "apps/UIDesign/**"
       - "src/**"
-      - "xui.h"
-      - "xui_document.h"
-      - "xui_document_ui.h"
-      - "xge.h"
-      - "xge.c"
-      - "lib/xrt/**"
-      - "xui_sources.bat"
-      - "build_dll.bat"
-      - "api-docs/**"
+      - "include/**"
+      - "single/xge.c"
+      - "extlibs/xrt/**"
+      - "tools/build/xui_sources.bat"
+      - "tools/build/build_dll.bat"
+      - "config/**"
+      - "docs/api-audit/**"
       - ".github/workflows/uidesign.yml"
   pull_request:
     paths:
-      - "tools/UIDesign/**"
+      - "apps/UIDesign/**"
       - "src/**"
-      - "xui.h"
-      - "xui_document.h"
-      - "xui_document_ui.h"
-      - "xge.h"
-      - "xge.c"
-      - "lib/xrt/**"
-      - "xui_sources.bat"
-      - "build_dll.bat"
-      - "api-docs/**"
+      - "include/**"
+      - "single/xge.c"
+      - "extlibs/xrt/**"
+      - "tools/build/xui_sources.bat"
+      - "tools/build/build_dll.bat"
+      - "config/**"
+      - "docs/api-audit/**"
       - ".github/workflows/uidesign.yml"
 
 jobs:
@@ -45,10 +41,10 @@ jobs:
         shell: cmd
         run: |
           set "PATH=C:\msys64\ucrt64\bin;%PATH%"
-          call tools\UIDesign\test.bat
+          call apps\UIDesign\test.bat
 
   # API 注释门禁（纯 Python，不依赖编译器）：覆盖率统计 + 棘轮/新增 API 检查。
-  # 见 api-docs/SPEC.md 第 8 节；规则 4（语法编译）在本地 verify_batch.bat 执行。
+  # 见 docs/api-audit/SPEC.md 第 8 节；规则 4（语法编译）在本地 verify_batch.bat 执行。
   api-docs:
     runs-on: windows-latest
     timeout-minutes: 5
@@ -57,5 +53,5 @@ jobs:
       - name: API comment coverage and lint gates
         shell: cmd
         run: |
-          python api-docs\tools\api_comment_coverage.py --no-write
-          python api-docs\tools\comment_lint.py
+          python docs\api-audit\tools\api_comment_coverage.py --no-write
+          python docs\api-audit\tools\comment_lint.py

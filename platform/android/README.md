@@ -2,7 +2,7 @@
 
 此目录提供 XGE 的 Android NativeActivity 接入文件。它通过 Sokol Android 入口构建 `libxge_android.so`，使用 OpenGL ES 3；当前 Android 接入以 `XGE_NO_AUDIO` 构建。
 
-完整的发布前验证要求见根目录 [平台说明](../../docs/PLATFORM.md)。
+完整的发布前验证要求见根目录 [平台说明](../../docs/guide/PLATFORM.md)。
 
 ## 构建
 
@@ -16,7 +16,7 @@ cmake -S platform/android -B build/android \
 cmake --build build/android
 ```
 
-Windows 可运行 `build_android_ndk.bat`。要构建调试 APK，运行 `build_android_apk.bat`；再用 `run_android_apk.bat` 安装并启动。需要已配置 Android NDK、SDK、Gradle 和设备或模拟器。
+Windows 可运行 `platform\android\build_android_ndk.bat`。要构建调试 APK，运行 `platform\android\build_android_apk.bat`；再用 `platform\android\run_android_apk.bat` 安装并启动。需要已配置 Android NDK、SDK、Gradle 和设备或模拟器。
 
 ## 应用入口
 

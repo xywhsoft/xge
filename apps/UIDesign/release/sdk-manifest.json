@@ -1,0 +1,26 @@
+﻿{
+    "format":  "xui.uidesign.sdk",
+    "version":  1,
+    "requiredExports":  [
+                            "xuiProxyXgePumpInput",
+                            "xuiHotKeyRegister",
+                            "xuiDockPanelSaveState",
+                            "xuiDockPanelLoadState",
+                            "xuiTabsCreate",
+                            "xgeRenderRequest",
+                            "xgeRenderRequestAfter",
+                            "xgePlatformNativeHandle",
+                            "xrtFileWriteAtomic"
+                        ],
+    "sha256":  {
+                   "include/xge.h":  "E7EE5E0AE3C4146BC98A26E7808FAFD24456BB9B0547FB2AE91F5CDA00322766",
+                   "include/xui.h":  "7315808CD9DD3192571B8FCE9D6DEE025A48E3C89B0C6325D535452246B41429",
+                   "extlibs/xrt/xrt.h":  "0F556BC77B24EDAB635E740C66E30962507081A8B8AE6420803333A1D10A6990",
+                   "extlibs/xrt/xrt_config.h":  "B756334BB810255D4A2FDE3B5DF6029A497326C88F9E50C8A91C6821D6CEC0AC",
+                   "src/xui/core/xui_xrt_port.h":  "2D73D0C6D5BF0830D257F43DA841B2367CFA9153CCD7CE8EB069F5487BF0DF9F",
+                   "build/xge.lib":  "255F62D42A1E3A9D120B0B8B44E6A4A0B66CA80472C60B8BBC10CB99167BBBCD",
+                   "build/xge.dll":  "50EF613836DD8E9E568CF1F9DEE2A72984F21BD00B59978A80C3190C8B86F64D",
+                   "apps/UIDesign/release/xge.dll":  "50EF613836DD8E9E568CF1F9DEE2A72984F21BD00B59978A80C3190C8B86F64D",
+                   "apps/UIDesign/release/xui_uidesign.exe":  "8E22692F52F2FA7AD44BB16EBC5D58D50669C702BE92C2E91D6CA675A14B24EF"
+               }
+}

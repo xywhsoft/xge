@@ -1,0 +1,67 @@
+# 构建与验证
+
+## Windows / MinGW-w64
+
+需要 `gcc` 与 `windres` 在 `PATH` 中。所有脚本在仓库根目录执行，并把结果写入本地 `build/` 目录。
+
+```bat
+tools\build\build_dll.bat
+tools\test\build_test.bat
+tools\build\build_dbg_dll.bat
+tools\test\build_dbg_test.bat
+```
+
+`tools\build\build_dll.bat` 生成 `build/xge.dll` 与 `build/xge.lib`；该 DLL 同时包含 XGE 和 XUI。`tools\build\build_dbg_dll.bat` 生成带调试 API 的 `xgedbg` 变体。
+
+`tools\build\build_dll.bat ide` 生成 `build/ide/xge.dll` 与 `build/ide/xge.lib`，额外启用
+`XGE_XRT_PROFILE_IDE` 的 XRT 服务，供 IDE 和 xllm/xwork/xcode 共用一个运行时。
+默认配置不受影响。第二个参数可以指定独立输出目录，例如
+`tools\build\build_dll.bat ide D:\output\xge-ide`。应用和 AI 库也必须使用同一配置及匹配头文件；
+不要在宿主再次定义 `XRT_IMPLEMENTATION`。
+
+## 推荐验证集
+
+在变更 XGE 核心后：
+
+```bat
+tools\test\build_test.bat
+tools\test\build_dbg_test.bat
+tests\xge\build_input_event_queue_test.bat
+tests\xge\build_native_input_coordinates_test.bat
+tests\xge\build_clipboard_win32_test.bat
+tests\xge\build_zstd_resource_test.bat
+tests\xge\build_particle_test.bat
+tests\xge\build_particle_dll_test.bat
+tests\xge\build_particle_render_test.bat
+tests\xge\build_texture_storage_test.bat
+tests\xge\build_texture_storage_render_test.bat
+```
+
+粒子 CPU 测试独立编译模拟器与 XRT，并启用分配失败/泄漏检查；DLL 测试和 GPU 像素测试使用 `build/xge.dll`，更改源码后应先重建 DLL。范例用 `examples\xge\xge_particles\build.bat` 构建，详见 [粒子文档](PARTICLES.md)。
+
+纹理存储测试分别覆盖可注入故障的后端退避和真实 GPU 像素对比，详见 [纹理存储文档](TEXTURE_STORAGE.md)。
+
+在变更 XUI 后，至少执行：
+
+```bat
+tests\xui\build_context_test.bat
+tests\xui\build_widget_test.bat
+tests\xui\build_layout_test.bat
+tests\xui\build_input_test.bat
+tests\xui\build_text_test.bat
+```
+
+每个 `tests/xui/build_*.bat` 都可独立构建并运行一个 XUI 回归测试。需要观察实际界面时，运行相应 `examples/xui/xui_*/build.bat`；范例默认持续运行，支持的 `--frames` 和 `--seconds` 参数见其命令行帮助。
+
+## 源码集成
+
+应用可链接本脚本生成的 DLL/导入库，也可把 `single/xge.c` 与 `tools/build/xui_sources.bat` 列出的实现文件纳入自己的 C 构建。两种方式都应：
+
+- 使用 `xge.h` 和（需要界面时）`xui.h`；
+- 为 DLL 使用与构建脚本一致的 `XGE_DLL` / `XUI_DLL` 宏；
+- 链接脚本列出的系统库；
+- 不把 `src/` 中的私有实现文件当作稳定 API。
+
+## 生成目录
+
+`build/`、`artifacts/` 以及根目录下由测试临时写入的图像均可重新生成，已由 `.gitignore` 排除。发布源包不应包含这些目录。

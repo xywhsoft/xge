@@ -3,3 +3,10 @@
 /*.png
 /*.svg
 /manifest_*.json
+**/__pycache__/
+*.py[cod]
+*.o
+*.obj
+*.dll
+*.exe
+**/release/

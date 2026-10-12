@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "profiles": {
+    "default": { "id": 0 },
+    "core": { "id": 1 },
+    "2d": { "id": 2 },
+    "3d": { "id": 3 },
+    "ui-min": { "id": 4 },
+    "full-dev": { "id": 5 },
+    "ide": { "id": 0, "xrt_profile": "ide" }
+  }
+}

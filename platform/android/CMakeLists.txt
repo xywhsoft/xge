@@ -2,12 +2,13 @@ cmake_minimum_required(VERSION 3.18)
 project(xge_android C)
 
 add_library(xge_android SHARED
-	../../xge.c
+	../../single/xge.c
 	xge_android_main.c
 )
 
 target_include_directories(xge_android PRIVATE
 	../..
+	../../include
 )
 
 target_compile_definitions(xge_android PRIVATE

@@ -2,8 +2,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
-#include "../../lib/sokol/sokol_app.h"
-#include "../../xge.h"
+#include "../../extlibs/sokol/sokol_app.h"
+#include "xge.h"
 
 extern sapp_desc __xgeMakeSokolDesc(void);
 
