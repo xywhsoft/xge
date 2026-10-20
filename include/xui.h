@@ -2888,6 +2888,9 @@ typedef void (*xui_scroll_view_change_proc)(xui_widget_t* pWidget, float fOffset
 typedef void (*xui_list_view_select_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
 typedef int (*xui_list_view_context_proc)(xui_widget_t* pWidget, int iIndex, float fX, float fY, void* pUser);
 typedef int (*xui_list_view_item_proc)(xui_widget_t* pWidget, int iIndex, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+/* UI-thread, read-only provider. Text is borrowed until the next provider call;
+ * NULL means empty. Do not mutate/destroy the list from this callback. */
+typedef const char* (*xui_list_view_text_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
 typedef void (*xui_message_list_event_proc)(xui_widget_t* pWidget, const xui_message_list_event_t* pEvent, void* pUser);
 typedef int (*xui_message_list_node_renderer_proc)(xui_widget_t* pWidget, int iIndex, const xui_message_node_t* pNode, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 typedef void (*xui_tree_view_select_proc)(xui_widget_t* pWidget, int iNodeId, void* pUser);
@@ -10218,6 +10221,12 @@ XUI_API int xuiListViewSetContextMenu(xui_widget pWidget, xui_list_view_context_
 XUI_API int xuiListViewSetItemRenderer(xui_widget pWidget, xui_list_view_item_proc onRender, void* pUser);
 /* 以字符串数组批量设置条目。 */
 XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int iCount);
+/* Virtual rows: no per-row text/storage allocation in single-selection mode.
+ * onText may be NULL for custom renderers. Caller owns provider data through
+ * replacement or widget destruction. Rebind (even at the same count) to notify
+ * content changes. Multi-selection/enabled arrays are allocated only on demand.
+ * Switching from owned SetItems releases its old copied strings synchronously. */
+XUI_API int xuiListViewSetVirtualItems(xui_widget pWidget, int iCount, xui_list_view_text_proc onText, void* pUser);
 /* 按位数组设置条目启用状态。 */
 XUI_API int xuiListViewSetEnabledItems(xui_widget pWidget, const int* arrEnabled, int iCount);
 /* 读取条目数。 */
