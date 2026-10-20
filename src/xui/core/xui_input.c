@@ -2319,6 +2319,7 @@ static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_comp
 	if ( iTextSize >= (int)sizeof(tEvent.sText) ) return XUI_ERROR_BUFFER_TOO_SMALL;
 	pTarget = pContext->pFocusWidget;
 	if ( !__xuiInputWidgetImeEnabled(pTarget) ) {
+		if ( !pComposition->bActive ) pContext->bImeCompositionActive = 0;
 		return XUI_OK;
 	}
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_IME_COMPOSITION, pTarget, NULL, pContext);
@@ -2333,7 +2334,14 @@ static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_comp
 	tEvent.bCompositionReplacementRange = pComposition->bReplacementRange != 0;
 	tEvent.iCompositionReplacementStart = pComposition->iReplacementStart;
 	tEvent.iCompositionReplacementEnd = pComposition->iReplacementEnd;
-	return __xuiInputPushEvent(pContext, &tEvent);
+	tEvent.iCompositionAttribute = pComposition->iAttribute;
+	{
+		int iRet = __xuiInputPushEvent(pContext, &tEvent);
+		if ( iRet == XUI_OK ) {
+			pContext->bImeCompositionActive = pComposition->bActive != 0;
+		}
+		return iRet;
+	}
 }
 
 XUI_API int xuiInputImeCompositionEx(xui_context pContext, const xui_ime_composition_t* pComposition)

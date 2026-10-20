@@ -1,6 +1,16 @@
 #include "xge_ime_owner_internal.h"
 
-void xgeInternalImeSetFocusOwner(uint64_t owner) { g_xge.iImeFocusOwner = owner; }
+#if defined(_WIN32) || defined(_WIN64)
+static void __xgeImeWin32AbortComposition(void);
+#endif
+
+void xgeInternalImeSetFocusOwner(uint64_t owner)
+{
+#if defined(_WIN32) || defined(_WIN64)
+	if ( g_xge.iImeFocusOwner != owner ) __xgeImeWin32AbortComposition();
+#endif
+	g_xge.iImeFocusOwner = owner;
+}
 void xgeInternalImeSetSnapshotOwner(uint64_t owner) { g_xge.iImeSnapshotOwner = owner; }
 uint64_t xgeInternalInputImeOwner(void) { return g_xge.iInputImeOwner; }
 
@@ -141,9 +151,10 @@ static int __xgeImeQueueReserve(int iCapacity)
 	return 1;
 }
 
-static int __xgeImeQueuePushOwnedRange(int iType, const char* sText, int iTextSize,
+static int __xgeImeQueuePushOwnedRangeAttribute(int iType, const char* sText, int iTextSize,
 	int iCursor, int iSelectStart, int iSelectEnd,
-	int bReplacementRange, int iReplacementStart, int iReplacementEnd, uint64_t owner)
+	int bReplacementRange, int iReplacementStart, int iReplacementEnd,
+	int iAttribute, uint64_t owner)
 {
 	xge_ime_queue_item_t* pItem;
 	xge_input_event_t tInput;
@@ -151,6 +162,12 @@ static int __xgeImeQueuePushOwnedRange(int iType, const char* sText, int iTextSi
 
 	if ( sText == NULL ) sText = "";
 	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	if ( iTextSize < 0 || iTextSize > (1024 * 1024) ) return 0;
+	if ( !__xgeImeQueueReserve(g_xge.iImeQueueCount + 1) ) return 0;
+	sCopy = (char*)xrtMalloc((size_t)iTextSize + 1u);
+	if ( sCopy == NULL ) return 0;
+	if ( iTextSize > 0 ) memcpy(sCopy, sText, (size_t)iTextSize);
+	sCopy[iTextSize] = '\0';
 	memset(&tInput, 0, sizeof(tInput));
 	tInput.iSize = sizeof(tInput);
 	tInput.iType = iType;
@@ -163,12 +180,8 @@ static int __xgeImeQueuePushOwnedRange(int iType, const char* sText, int iTextSi
 	tInput.bReplacementRange = bReplacementRange != 0;
 	tInput.iReplacementStart = iReplacementStart;
 	tInput.iReplacementEnd = iReplacementEnd;
-	if ( !__xgeInputEventQueuePushOwned(&tInput, owner) ) return 0;
-	sCopy = (char*)xrtMalloc((size_t)iTextSize + 1u);
-	if ( sCopy == NULL ) return 0;
-	if ( iTextSize > 0 ) memcpy(sCopy, sText, (size_t)iTextSize);
-	sCopy[iTextSize] = '\0';
-	if ( !__xgeImeQueueReserve(g_xge.iImeQueueCount + 1) ) {
+	tInput.iAttribute = iAttribute;
+	if ( !__xgeInputEventQueuePushOwned(&tInput, owner) ) {
 		xrtFree(sCopy);
 		return 0;
 	}
@@ -182,8 +195,18 @@ static int __xgeImeQueuePushOwnedRange(int iType, const char* sText, int iTextSi
 	pItem->bReplacementRange = bReplacementRange != 0;
 	pItem->iReplacementStart = iReplacementStart;
 	pItem->iReplacementEnd = iReplacementEnd;
+	pItem->iAttribute = iAttribute;
 	pItem->sText = sCopy;
 	return 1;
+}
+
+static int __xgeImeQueuePushOwnedRange(int iType, const char* sText, int iTextSize,
+	int iCursor, int iSelectStart, int iSelectEnd,
+	int bReplacementRange, int iReplacementStart, int iReplacementEnd, uint64_t owner)
+{
+	return __xgeImeQueuePushOwnedRangeAttribute(iType, sText, iTextSize,
+		iCursor, iSelectStart, iSelectEnd, bReplacementRange,
+		iReplacementStart, iReplacementEnd, XGE_IME_ATTRIBUTE_NONE, owner);
 }
 
 static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
@@ -449,6 +472,7 @@ int xgeImeEventGet(xge_ime_event_t* pEvent)
 	pEvent->bReplacementRange = pItem->bReplacementRange;
 	pEvent->iReplacementStart = pItem->iReplacementStart;
 	pEvent->iReplacementEnd = pItem->iReplacementEnd;
+	pEvent->iAttribute = pItem->iAttribute;
 	g_xge.iImeQueueCount--;
 	if ( g_xge.iImeQueueCount > 0 ) {
 		memmove(g_xge.pImeQueue, g_xge.pImeQueue + 1, sizeof(*g_xge.pImeQueue) * (size_t)g_xge.iImeQueueCount);
@@ -472,6 +496,7 @@ int xgeImeSetEnabled(int bEnabled)
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
+	if ( !bEnabled ) __xgeImeWin32AbortComposition();
 	g_xgeWin32Ime.bEnabled = bEnabled ? 1 : 0;
 	__xgeTsfSetFocus(g_xgeWin32Ime.bEnabled && GetFocus() == g_xgeWin32Ime.hWnd);
 	return XGE_OK;
@@ -493,6 +518,7 @@ int xgeImeSetMode(int iMode)
 	}
 #if defined(_WIN32) || defined(_WIN64)
 	if ( g_xge.bInitialized == 0 ) return XGE_ERROR_NOT_INITIALIZED;
+	if ( g_xge.iImeMode != iMode ) __xgeImeWin32AbortComposition();
 	g_xge.iImeMode = iMode;
 	if ( !g_xge.bSokolRunning ) return XGE_OK;
 	g_xgeWin32Ime.iMode = iMode;

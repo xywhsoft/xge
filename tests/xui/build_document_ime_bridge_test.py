@@ -28,7 +28,7 @@ def main():
         parser.error('Use the normal runtime; the standalone WebView build has a different link dependency set.')
     objects = [runtime/'obj'/(p.replace('/', '_')+'.o') for p in build['sources'] if p != 'single/xge.c']
     if 'XGE_ENABLE_HARFBUZZ' in build['features']:
-        objects.append(root/'build/shared/obj/lib_harfbuzz_src_harfbuzz.cc.o')
+        objects.append(root/'build/shared/obj/extlibs_harfbuzz_src_harfbuzz.cc.o')
     for obj in objects:
         record = json.loads(obj.with_suffix('.json').read_text(encoding='utf-8'))
         for path, stamp in record['deps'].items():

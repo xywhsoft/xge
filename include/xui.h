@@ -5510,6 +5510,16 @@ typedef int (*xui_tooltip_resolve_proc)(xui_context pContext, xui_widget pWidget
 
 #define XUI_EVENT_TEXT_CAPACITY 4096
 
+/* Platform IME display attribute for the current marked-text range. */
+#define XUI_IME_ATTRIBUTE_NONE			0
+#define XUI_IME_ATTRIBUTE_INPUT			1
+#define XUI_IME_ATTRIBUTE_TARGET_CONVERTED	2
+#define XUI_IME_ATTRIBUTE_CONVERTED		3
+#define XUI_IME_ATTRIBUTE_TARGET_NOT_CONVERTED	4
+#define XUI_IME_ATTRIBUTE_INPUT_ERROR		5
+#define XUI_IME_ATTRIBUTE_FIXED_CONVERTED	6
+#define XUI_IME_ATTRIBUTE_OTHER			7
+
 /*
  * Marked text supplied by a platform IME. All offsets use UTF-8 bytes in
  * sText. bActive distinguishes an empty active composition from composition
@@ -5527,6 +5537,7 @@ typedef struct xui_ime_composition_t {
 	int bReplacementRange;
 	int iReplacementStart;
 	int iReplacementEnd;
+	int iAttribute;
 } xui_ime_composition_t;
 
 struct xui_event_t {
@@ -5567,6 +5578,7 @@ struct xui_event_t {
 	int bCompositionReplacementRange;
 	int iCompositionReplacementStart;
 	int iCompositionReplacementEnd;
+	int iCompositionAttribute;
 };
 
 /* Context-wide desktop interaction parameters. All distances are pixels. */

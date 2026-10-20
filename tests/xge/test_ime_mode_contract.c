@@ -18,6 +18,9 @@ int main(void)
 {
 	xge_desc_t tDesc;
 	xge_input_event_t tEvent;
+	xge_ime_event_t tImeEvent;
+	xge_tsf_text_store_t* pStore;
+	ITfContext* pSavedContext;
 	int bHandled;
 	int iFailed;
 
@@ -48,6 +51,62 @@ int main(void)
 	memset(&tEvent, 0, sizeof(tEvent));
 	TEST_CHECK(xgeInputEventGet(&tEvent) == 1, "composition fallback end event");
 	TEST_CHECK(tEvent.iType == XGE_EVENT_IME_END, "composition fallback end type");
+
+	/* Losing the logical text owner must recover even when the TIP omitted END. */
+	pStore = &g_xgeWin32Ime.tTextStore;
+	pSavedContext = g_xgeWin32Ime.pContext;
+	g_xgeWin32Ime.pContext = NULL;
+	g_xge.iImeFocusOwner = 41u;
+	pStore->iImeOwner = 41u;
+	pStore->bComposing = 1;
+	pStore->iAttribute = XGE_IME_ATTRIBUTE_INPUT_ERROR;
+	xgeInternalImeSetFocusOwner(42u);
+	TEST_CHECK(!pStore->bComposing && !pStore->bEndPending,
+		"owner change clears stale TSF composition");
+	TEST_CHECK(pStore->iAttribute == XGE_IME_ATTRIBUTE_NONE,
+		"owner change clears stale display attribute");
+	memset(&tEvent, 0, sizeof(tEvent));
+	TEST_CHECK(xgeInputEventGet(&tEvent) == 1 &&
+		tEvent.iType == XGE_EVENT_IME_END,
+		"owner change publishes composition end");
+	TEST_CHECK(xgeInternalInputImeOwner() == 41u,
+		"composition end keeps the stale owner's identity");
+	g_xgeWin32Ime.pContext = pSavedContext;
+
+	/* Invalid marked text is dismissed by the next real key, even if the TIP
+	 * never sends another update or end notification. Modifier keys alone do
+	 * not disturb the composition. */
+	g_xgeWin32Ime.pContext = NULL;
+	pStore->iImeOwner = 42u;
+	pStore->bComposing = 1;
+	pStore->iAttribute = XGE_IME_ATTRIBUTE_INPUT_ERROR;
+	__xgeTsfRecoverErrorComposition(WM_KEYDOWN, VK_SHIFT);
+	TEST_CHECK(pStore->bComposing, "modifier preserves erroneous composition");
+	__xgeTsfRecoverErrorComposition(WM_KEYDOWN, 'A');
+	TEST_CHECK(!pStore->bComposing &&
+		pStore->iAttribute == XGE_IME_ATTRIBUTE_NONE,
+		"next input clears erroneous composition");
+	memset(&tEvent, 0, sizeof(tEvent));
+	TEST_CHECK(xgeInputEventGet(&tEvent) == 1 &&
+		tEvent.iType == XGE_EVENT_IME_END,
+		"error recovery publishes composition end");
+	g_xgeWin32Ime.pContext = pSavedContext;
+
+	/* Display attributes must survive both the ordered and legacy IME queues. */
+	TEST_CHECK(__xgeImeQueuePushOwnedRangeAttribute(XGE_EVENT_IME_UPDATE,
+		"bad", 3, 3, 3, 3, 0, 0, 0,
+		XGE_IME_ATTRIBUTE_INPUT_ERROR, 42u), "queue attributed update");
+	memset(&tEvent, 0, sizeof(tEvent));
+	TEST_CHECK(xgeInputEventGet(&tEvent) == 1 &&
+		tEvent.iAttribute == XGE_IME_ATTRIBUTE_INPUT_ERROR,
+		"ordered input preserves IME error attribute");
+	TEST_CHECK(__xgeImeQueuePushOwnedRangeAttribute(XGE_EVENT_IME_UPDATE,
+		"bad", 3, 3, 3, 3, 0, 0, 0,
+		XGE_IME_ATTRIBUTE_INPUT_ERROR, 42u), "queue legacy attributed update");
+	memset(&tImeEvent, 0, sizeof(tImeEvent));
+	TEST_CHECK(xgeImeEventGet(&tImeEvent) == 1 &&
+		tImeEvent.iAttribute == XGE_IME_ATTRIBUTE_INPUT_ERROR,
+		"legacy queue preserves IME error attribute");
 
 cleanup:
 	xgeUnit();

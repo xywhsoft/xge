@@ -296,6 +296,7 @@ struct xui_context_t {
 	int iFontCount;
 	int iFontCapacity;
 	int bImeEnabled;
+	int bImeCompositionActive;
 	uint64_t iImeOwner;
 	void (*onImeFocusChanged)(xui_context pContext);
 	int bHasImeCandidateRect;

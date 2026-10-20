@@ -461,6 +461,16 @@ typedef struct xge_texture_storage_info_t {
 #define XGE_IME_MODE_COMPOSITION	1
 #define XGE_IME_MODE_FULL		2
 
+/* Native IME display attribute for the current marked-text range. */
+#define XGE_IME_ATTRIBUTE_NONE			0
+#define XGE_IME_ATTRIBUTE_INPUT			1
+#define XGE_IME_ATTRIBUTE_TARGET_CONVERTED	2
+#define XGE_IME_ATTRIBUTE_CONVERTED		3
+#define XGE_IME_ATTRIBUTE_TARGET_NOT_CONVERTED	4
+#define XGE_IME_ATTRIBUTE_INPUT_ERROR		5
+#define XGE_IME_ATTRIBUTE_FIXED_CONVERTED	6
+#define XGE_IME_ATTRIBUTE_OTHER			7
+
 
 
 #define XGE_KEY_MOD_SHIFT	0x0001
@@ -1586,6 +1596,7 @@ typedef struct xge_ime_event_t {
 	int bReplacementRange;
 	int iReplacementStart;
 	int iReplacementEnd;
+	int iAttribute;
 } xge_ime_event_t;
 
 /*
@@ -1624,6 +1635,7 @@ typedef struct xge_input_event_t {
 	int bReplacementRange;
 	int iReplacementStart;
 	int iReplacementEnd;
+	int iAttribute;
 } xge_input_event_t;
 
 /*

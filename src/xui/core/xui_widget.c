@@ -5076,7 +5076,16 @@ static int __xuiInputImeRectEqual(xui_rect_t tA, xui_rect_t tB)
 void xuiInternalInputInvalidateImeOwner(xui_context pContext)
 {
 	static uint64_t nextOwner;
+	xui_ime_composition_t tComposition;
 	if ( !xuiInternalContextIsValid(pContext) ) return;
+	if ( pContext->bImeCompositionActive ) {
+		memset(&tComposition, 0, sizeof(tComposition));
+		tComposition.iSize = sizeof(tComposition);
+		tComposition.sText = "";
+		/* Clear marked text before rotating the owner. A delayed native END then
+		 * becomes harmless instead of leaving the focused editor input-locked. */
+		(void)xuiInputImeCompositionEx(pContext, &tComposition);
+	}
 	if ( ++nextOwner == 0 ) ++nextOwner;
 	pContext->iImeOwner = nextOwner;
 	if ( pContext->onImeFocusChanged != NULL ) pContext->onImeFocusChanged(pContext);

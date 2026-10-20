@@ -128,6 +128,7 @@ typedef struct xge_ime_queue_item_t {
 	int bReplacementRange;
 	int iReplacementStart;
 	int iReplacementEnd;
+	int iAttribute;
 	char* sText;
 } xge_ime_queue_item_t;
 

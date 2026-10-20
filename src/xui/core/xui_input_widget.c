@@ -95,6 +95,7 @@ typedef struct xui_input_data_t {
 	int iImeCursor;
 	int iImeSelectionStart;
 	int iImeSelectionEnd;
+	int iImeAttribute;
 	int iDragAnchor;
 	int bDragging;
 	int bPressPending;
@@ -762,6 +763,7 @@ static void __xuiInputImeReset(xui_input_data_t* pData)
 	pData->iImeCursor = 0;
 	pData->iImeSelectionStart = 0;
 	pData->iImeSelectionEnd = 0;
+	pData->iImeAttribute = XUI_IME_ATTRIBUTE_NONE;
 	if ( pData->sImeText != NULL ) pData->sImeText[0] = '\0';
 	if ( pData->sImeDisplay != NULL ) pData->sImeDisplay[0] = '\0';
 }
@@ -2395,7 +2397,8 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		if ( fImeX1 > fImeX0 ) {
 			iRet = __xuiInputDrawRectFill(pProxy, pDraw,
 				(xui_rect_t){fImeX0, tContent.fY + tContent.fH - 2.0f, fImeX1 - fImeX0, 1.0f},
-				tResolved.iCursorColor);
+				pData->iImeAttribute == XUI_IME_ATTRIBUTE_INPUT_ERROR ?
+				XUI_COLOR_RGBA(220, 38, 38, 255) : tResolved.iCursorColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
@@ -2867,6 +2870,7 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			if ( iTextSize > 0 ) memcpy(pData->sImeText, pEvent->sText, (size_t)iTextSize);
 			pData->sImeText[iTextSize] = '\0';
 			pData->bImeComposing = 1;
+			pData->iImeAttribute = pEvent->iCompositionAttribute;
 			pData->iImeCursor = __xuiInputUtf8Clamp(pData->sImeText, iTextSize, pEvent->iCompositionCursor);
 			pData->iImeSelectionStart = __xuiInputUtf8Clamp(pData->sImeText, iTextSize, pEvent->iCompositionSelectionStart);
 			pData->iImeSelectionEnd = __xuiInputUtf8Clamp(pData->sImeText, iTextSize, pEvent->iCompositionSelectionEnd);

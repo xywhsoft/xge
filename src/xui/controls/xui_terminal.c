@@ -291,6 +291,7 @@ typedef struct xui_terminal_data_t {
 	int bBracketedPaste;
 	int bLigaturesEnabled;
 	int bImeActive;
+	int iImeAttribute;
 	int bFullCacheDirty;
 	int bCacheRendered;
 	int bSelectAll;
@@ -4915,12 +4916,14 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 			pData->bImeActive = 1;
+			pData->iImeAttribute = pEvent->iCompositionAttribute;
 			(void)xuiInternalEditEmitSized(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED,
 				pData->sImeText, pEvent->iTextSize, 0, 0, 0, pEvent->iTextSize, 1);
 			__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		pData->bImeActive = 0;
+		pData->iImeAttribute = XUI_IME_ATTRIBUTE_NONE;
 		(void)__xuiTerminalImeSetText(pData, NULL, 0);
 		if ( pEvent->iTextSize > 0 ) {
 			(void)__xuiTerminalEmitInput(pWidget, pData,
@@ -4951,6 +4954,7 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		if ( pEvent->iType == XUI_EVENT_BLUR ) {
 			pData->bImeActive = 0;
+			pData->iImeAttribute = XUI_IME_ATTRIBUTE_NONE;
 			pData->bSelecting = 0;
 			pData->bMouseCaptured = 0;
 			pData->iMouseButton = 0;
@@ -5713,7 +5717,8 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 					tIme.fW, 1.0f};
 				iRet = pProxy->drawRectFill(pProxy, pDraw,
 					xuiInternalRectFromFloatNearest(tUnderline.fX, tUnderline.fY, tUnderline.fW, tUnderline.fH),
-					pData->iCursorColor);
+					pData->iImeAttribute == XUI_IME_ATTRIBUTE_INPUT_ERROR ?
+					XUI_COLOR_RGBA(220, 38, 38, 255) : pData->iCursorColor);
 				if ( iRet != XUI_OK ) goto render_done;
 			}
 		}

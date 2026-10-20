@@ -3085,6 +3085,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			tComposition.bReplacementRange = tInput.bReplacementRange;
 			tComposition.iReplacementStart = tInput.iReplacementStart;
 			tComposition.iReplacementEnd = tInput.iReplacementEnd;
+			tComposition.iAttribute = tInput.iAttribute;
 			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
 			break;
 		case XGE_EVENT_IME_UPDATE:
@@ -3099,6 +3100,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			tComposition.bReplacementRange = tInput.bReplacementRange;
 			tComposition.iReplacementStart = tInput.iReplacementStart;
 			tComposition.iReplacementEnd = tInput.iReplacementEnd;
+			tComposition.iAttribute = tInput.iAttribute;
 			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
 			break;
 		case XGE_EVENT_IME_COMMIT:
@@ -3112,6 +3114,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			tComposition.bReplacementRange = tInput.bReplacementRange;
 			tComposition.iReplacementStart = tInput.iReplacementStart;
 			tComposition.iReplacementEnd = tInput.iReplacementEnd;
+			tComposition.iAttribute = tInput.iAttribute;
 			iRet = __xuiProxyXgeImeComposition(pContext, &tComposition);
 			break;
 		case XGE_EVENT_IME_END:

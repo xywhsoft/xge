@@ -103,6 +103,26 @@ static int __xuiInputWidgetDispatchImePreedit(xui_context pContext, const char* 
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiInputWidgetDispatchImeAttribute(xui_context pContext,
+	const char* sText, int iAttribute)
+{
+	xui_ime_composition_t tComposition;
+	int iRet;
+
+	memset(&tComposition, 0, sizeof(tComposition));
+	tComposition.iSize = sizeof(tComposition);
+	tComposition.sText = sText;
+	tComposition.iTextSize = (int)strlen(sText);
+	tComposition.bActive = 1;
+	tComposition.iCursor = tComposition.iTextSize;
+	tComposition.iSelectionStart = tComposition.iTextSize;
+	tComposition.iSelectionEnd = tComposition.iTextSize;
+	tComposition.iAttribute = iAttribute;
+	iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiInputWidgetDispatchImeRange(xui_context pContext, const char* sText,
 	int bActive, int iStart, int iEnd)
 {
@@ -558,6 +578,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "raise max length for IME");
 	iRet = xuiInputSetText(pInput, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear before IME");
+	iRet = __xuiInputWidgetDispatchImeAttribute(pContext, "invalid",
+		XUI_IME_ATTRIBUTE_INPUT_ERROR);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME error preedit");
+	iRet = __xuiInputWidgetRender(pContext, pTarget);
+	pInputCache = xuiWidgetGetCacheSurface(pInput, xuiWidgetGetStateId(pInput));
+	XUI_TEST_CHECK(iRet == XUI_OK && pInputCache != NULL &&
+		xuiTestSurfaceGetRectFillColorCount(pInputCache,
+		XUI_COLOR_RGBA(220, 38, 38, 255)) > 0,
+		"IME input error renders a red underline");
+	iRet = xuiWidgetSetImeCandidateRect(pInput, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "rotate IME owner after missing native end");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "missing IME end recovery dispatch");
+	iRet = __xuiInputWidgetDispatchText(pContext, 'x');
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "x") == 0,
+		"ordinary input resumes after missing IME end");
+	iRet = xuiInputSetText(pInput, "");
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear after missing IME end recovery");
 	iRet = __xuiInputWidgetDispatchImePreedit(pContext, "nihao");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "") == 0, "IME preedit does not commit text");
 	iRet = __xuiInputWidgetRender(pContext, pTarget);

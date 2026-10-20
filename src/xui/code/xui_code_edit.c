@@ -132,6 +132,7 @@ typedef struct xui_code_edit_data_t {
 	int iImeCursor;
 	int iImeSelectionStart;
 	int iImeSelectionEnd;
+	int iImeAttribute;
 	char* sImeComposition;
 	int iImeCompositionCapacity;
 	char* sInlineCompletion;
@@ -371,6 +372,7 @@ static void __xuiCodeEditImeReset(xui_code_edit_data_t* pData)
 	pData->iImeCursor = 0;
 	pData->iImeSelectionStart = 0;
 	pData->iImeSelectionEnd = 0;
+	pData->iImeAttribute = XUI_IME_ATTRIBUTE_NONE;
 	if ( pData->sImeComposition != NULL ) pData->sImeComposition[0] = '\0';
 }
 
@@ -3428,6 +3430,7 @@ static int __xuiCodeEditImeComposition(xui_widget pWidget, xui_code_edit_data_t*
 		}
 		memset(&tSelection, 0, sizeof(tSelection));
 		pData->bImeComposing = 1;
+		pData->iImeAttribute = pEvent->iCompositionAttribute;
 		__xuiCodeEditSetError(pData, "");
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
@@ -3441,11 +3444,17 @@ static int __xuiCodeEditImeComposition(xui_widget pWidget, xui_code_edit_data_t*
 		__xuiCodeEditImeSetReplacementRange(pData, pEvent);
 		iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
 			pData->iImeAnchorStart, pData->iImeAnchorEnd);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			__xuiCodeEditImeReset(pData);
+			return iRet;
+		}
 	} else if ( pData->bImeComposing ) {
 		iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
 			pData->iImeAnchorStart, pData->iImeAnchorEnd);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			__xuiCodeEditImeReset(pData);
+			return iRet;
+		}
 	}
 	__xuiCodeEditImeReset(pData);
 	iRet = __xuiCodeEditCommitText(pWidget, pData, pEvent->sText);
@@ -5867,6 +5876,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	uint32_t iFindActiveColor;
 	uint32_t iCaretColor;
 	uint32_t iImeColor;
+	uint32_t iImeErrorColor;
 	uint32_t iInlineCompletionColor;
 	int iLineCount;
 	int iMarginCount;
@@ -5932,6 +5942,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	iFindActiveColor = __xuiCodeEditColor(pWidget, "codeedit.find.active_color", XUI_COLOR_RGBA(255, 183, 77, 190));
 	iCaretColor = __xuiCodeEditColor(pWidget, "codeedit.caret.color", XUI_COLOR_RGBA(15, 23, 42, 255));
 	iImeColor = __xuiCodeEditColor(pWidget, "codeedit.ime.color", XUI_COLOR_RGBA(37, 99, 235, 255));
+	iImeErrorColor = __xuiCodeEditColor(pWidget, "codeedit.ime.error_color", XUI_COLOR_RGBA(220, 38, 38, 255));
 	iInlineCompletionColor = __xuiCodeEditColor(pWidget, "codeedit.inline_completion.color", XUI_COLOR_RGBA(100, 116, 139, 170));
 	iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, tRect.fW, tRect.fH}, iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
@@ -6185,7 +6196,8 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 					}
 					if ( iRet == XUI_OK && fImeWidth > 0.0f ) {
 						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-							(xui_rect_t){fImeAnchorX, fCaretLineY + fLineHeight - 2.0f, fImeWidth, 1.0f}, iImeColor);
+							(xui_rect_t){fImeAnchorX, fCaretLineY + fLineHeight - 2.0f, fImeWidth, 1.0f},
+							pData->iImeAttribute == XUI_IME_ATTRIBUTE_INPUT_ERROR ? iImeErrorColor : iImeColor);
 					}
 					tCaret.fX = fImeAnchorX + fImeCursorX;
 				}
@@ -6249,6 +6261,7 @@ static void __xuiCodeEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.minimap.divider_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.caret.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.ime.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.ime.error_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.whitespace.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.diagnostic.error.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.diagnostic.warning.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);

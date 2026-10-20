@@ -130,6 +130,7 @@ typedef struct xui_text_edit_data_t {
 	int iImeCursor;
 	int iImeSelectionStart;
 	int iImeSelectionEnd;
+	int iImeAttribute;
 	int bDragging;
 	int bPressPending;
 	int bPressInsideSelection;
@@ -384,6 +385,7 @@ static void __xuiTextEditImeReset(xui_text_edit_data_t* pData)
 	pData->iImeCursor = 0;
 	pData->iImeSelectionStart = 0;
 	pData->iImeSelectionEnd = 0;
+	pData->iImeAttribute = XUI_IME_ATTRIBUTE_NONE;
 	if ( pData->sImeText != NULL ) pData->sImeText[0] = '\0';
 }
 
@@ -2685,7 +2687,9 @@ static int __xuiTextEditDrawImeUnderlineLine(xui_widget pWidget, xui_draw_contex
 	tUnderline.fW = fX1 - fX0;
 	tUnderline.fH = 1.0f;
 	if ( tUnderline.fY < tContent.fY || tUnderline.fY >= tContent.fY + tContent.fH ) return XUI_OK;
-	return __xuiTextEditDrawRectFill(pProxy, pDraw, tUnderline, pResolved->iCursorColor);
+	return __xuiTextEditDrawRectFill(pProxy, pDraw, tUnderline,
+		pData->iImeAttribute == XUI_IME_ATTRIBUTE_INPUT_ERROR ?
+		XUI_COLOR_RGBA(220, 38, 38, 255) : pResolved->iCursorColor);
 }
 
 static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId,
@@ -3388,14 +3392,14 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 				if ( pData->iImeAnchorEnd < pData->iImeAnchorStart ) {
 					pData->iImeAnchorEnd = pData->iImeAnchorStart;
 				}
-				pData->bImeActive = 1;
 			} else if ( !pData->bImeActive ) {
 				__xuiTextEditSelectionRange(pData, &pData->iImeAnchorStart, &pData->iImeAnchorEnd);
-				pData->bImeActive = 1;
 			}
 			if ( __xuiTextEditImeSetText(pData, pEvent->sText, pEvent->iTextSize) != XUI_OK ) {
 				return XUI_EVENT_DISPATCH_STOP;
 			}
+			pData->bImeActive = 1;
+			pData->iImeAttribute = pEvent->iCompositionAttribute;
 			pData->iImeCursor = pEvent->iCompositionCursor;
 			pData->iImeSelectionStart = pEvent->iCompositionSelectionStart;
 			pData->iImeSelectionEnd = pEvent->iCompositionSelectionEnd;
