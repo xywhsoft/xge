@@ -20,7 +20,7 @@ typedef struct d3_draw {
     float depth;
     int transparent;
     xge3d_aabb_t bounds;
-    int in_frustum;
+    int in_frustum, main_visible, shadow_visible;
     float determinant;
 } d3_draw;
 typedef struct d3_batch { d3_draw *draw;size_t count,offset; } d3_batch;
@@ -32,6 +32,9 @@ typedef struct d3_instance_uniforms { GLint sampler,enabled,offset,columns,vp; }
 #define D3_INSTANCE_PASSES 1
 #endif
 struct xge3d_renderer {
+    xge3d_renderer_options_t options;xge3d_render_profile_t profile;
+    GLuint queries[16];uint64_t pending_queries[8],sequence,last_gpu_ns,last_gpu_sample;
+    int active_query;
     xge_shader_t shader, sky_shader;
     GLuint sky_vao;
     GLint sky_inverse, sky_map, sky_exposure;
@@ -185,6 +188,7 @@ static int d3_mesh_upload(xge3d_mesh *m, uint64_t *bytes)
     int result=d3_ready();
     if (result!=XGE_OK) return result;
     if (m->context && m->context!=__xge3dContext()) return XGE_ERROR_INVALID_STATE;
+    if (m->prepare_partial) return XGE_ERROR_INVALID_STATE;
     if (m->vao) return XGE_OK;
     d3_state state; d3_save(&state);
     xge_glGenVertexArrays(1,&m->vao);xge_glGenBuffers(1,&m->vbo);
@@ -210,6 +214,92 @@ static int d3_mesh_upload(xge3d_mesh *m, uint64_t *bytes)
 }
 
 #if XGE3D_ENABLE_ASYNC
+int xge3dMeshPrepare(xge3d_mesh *m,const xge3d_upload_budget_t *budget,xge3d_upload_stats_t *out)
+{
+    xge3d_upload_stats_t stats={0};if(out)*out=stats;
+    if(!m||!budget)return XGE_ERROR_INVALID_ARGUMENT;
+    uint64_t context=__xge3dContext();if(m->context&&m->context!=context)return XGE_ERROR_INVALID_STATE;
+    if(m->vao&&!m->prepare_partial){stats.completed=1;if(out)*out=stats;return XGE_OK;}
+    if(!budget->bytes||!budget->operations)return XGE_OK;
+    int result=d3_ready();if(result!=XGE_OK)return result;
+    if(!xge_glBufferSubData)return XGE_ERROR_UNSUPPORTED;
+    result=xgeFlush();if(result!=XGE_OK)return result;
+    uint64_t now=xgeClockMicroseconds(),deadline=budget->microseconds?(UINT64_MAX-now<budget->microseconds?UINT64_MAX:now+budget->microseconds):0;
+    size_t vb=m->vertices.Count*m->vertices.ItemSize,ib=m->indices.Count*m->indices.ItemSize,total=vb+ib;
+    d3_state state;d3_save(&state);
+    while(stats.operations<budget->operations&&(!deadline||xgeClockMicroseconds()<deadline)){
+        size_t transferred=0;
+        if(!m->vao){
+            m->context=context;m->prepare_partial=1;m->prepare_offset=0;
+            xge_glGenVertexArrays(1,&m->vao);xge_glGenBuffers(1,&m->vbo);
+            xge_glBindVertexArray(m->vao);xge_glBindBuffer(GL_ARRAY_BUFFER,m->vbo);
+            xge_glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)vb,NULL,GL_STATIC_DRAW);d3_mesh_attributes();
+            if(ib){xge_glGenBuffers(1,&m->ibo);xge_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,m->ibo);xge_glBufferData(GL_ELEMENT_ARRAY_BUFFER,(GLsizeiptr)ib,NULL,GL_STATIC_DRAW);}
+            if(!m->vao||!m->vbo||(ib&&!m->ibo))result=XGE_ERROR_GPU_FAILED;
+        }else if(m->prepare_offset<total){
+            uint64_t remaining=budget->bytes-stats.upload_bytes;if(!remaining){stats.min_next_bytes=1;break;}
+            int vertex=m->prepare_offset<vb;size_t base=vertex?0:vb,end=vertex?vb:total;
+            transferred=end-m->prepare_offset;if(transferred>remaining)transferred=(size_t)remaining;
+            xge_glBindVertexArray(m->vao);GLenum target=vertex?GL_ARRAY_BUFFER:GL_ELEMENT_ARRAY_BUFFER;
+            xge_glBindBuffer(target,vertex?m->vbo:m->ibo);
+            const unsigned char *data=vertex?m->vertices.Data:m->indices.Data;
+            xge_glBufferSubData(target,(GLintptr)(m->prepare_offset-base),(GLsizeiptr)transferred,data+m->prepare_offset-base);
+        }else break;
+        ++stats.operations;if(xge_glGetError()!=GL_NO_ERROR)result=XGE_ERROR_GPU_FAILED;
+        if(result!=XGE_OK){break;}m->prepare_offset+=transferred;stats.upload_bytes+=transferred;
+    }
+    if(result!=XGE_OK){if(m->vao)xge_glDeleteVertexArrays(1,&m->vao);if(m->vbo)xge_glDeleteBuffers(1,&m->vbo);if(m->ibo)xge_glDeleteBuffers(1,&m->ibo);m->vao=m->vbo=m->ibo=0;m->context=0;m->prepare_offset=0;m->prepare_partial=0;stats.failed=1;}
+    else if(m->vao&&m->prepare_offset==total){m->prepare_partial=0;stats.completed=1;}
+    d3_restore(&state);if(out)*out=stats;return result;
+}
+int xge3dTexturePrepare(xge3d_texture *texture,const xge3d_upload_budget_t *budget,
+    xge3d_upload_stats_t *out)
+{
+    xge3d_upload_stats_t stats={0};if(out)*out=stats;
+    if(!texture||!budget)return XGE_ERROR_INVALID_ARGUMENT;
+    uint64_t context=__xge3dContext();if(texture->context&&texture->context!=context)return XGE_ERROR_INVALID_STATE;
+    if(texture->id&&!texture->prepare_partial){stats.completed=1;if(out)*out=stats;return XGE_OK;}
+    if(!budget->bytes||!budget->operations)return XGE_OK;
+    if(budget->bytes<4){stats.min_next_bytes=4;if(out)*out=stats;return XGE_OK;}
+    int result=d3_ready();if(result!=XGE_OK)return result;
+    if(!xge_glTexSubImage2D)return XGE_ERROR_UNSUPPORTED;
+    result=xgeFlush();if(result!=XGE_OK)return result;
+    uint64_t now=xgeClockMicroseconds(),deadline=budget->microseconds?(UINT64_MAX-now<budget->microseconds?UINT64_MAX:now+budget->microseconds):0;
+    d3_state state;d3_save(&state);
+    const GLenum unpack_keys[]={GL_UNPACK_ALIGNMENT,0x0CF2,0x0CF3,0x0CF4,0x88EF};GLint unpack[5];
+    for(int i=0;i<5;++i)xge_glGetIntegerv(unpack_keys[i],&unpack[i]);
+    xge_glPixelStorei(GL_UNPACK_ALIGNMENT,1);xge_glPixelStorei(0x0CF2,0);xge_glPixelStorei(0x0CF3,0);xge_glPixelStorei(0x0CF4,0);xge_glBindBuffer(0x88EC,0);xge_glActiveTexture(GL_TEXTURE0);
+    size_t total=texture->pixels.Count;
+    while(stats.operations<budget->operations&&(!deadline||xgeClockMicroseconds()<deadline)){
+        size_t transferred=0;
+        if(!texture->id){
+            GLint maximum;xge_glGetIntegerv(0x0D33,&maximum);
+            if(texture->width>maximum||texture->height>maximum){result=XGE_ERROR_UNSUPPORTED;break;}
+            texture->context=context;texture->prepare_partial=1;texture->prepare_offset=0;
+            xge_glGenTextures(1,&texture->id);xge_glBindTexture(GL_TEXTURE_2D,texture->id);
+            xge_glTexImage2D(GL_TEXTURE_2D,0,texture->srgb?0x8C43:GL_RGBA8,texture->width,texture->height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+            xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,texture->sampler.min_filter);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,texture->sampler.mag_filter);
+            xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,texture->sampler.wrap_u);xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,texture->sampler.wrap_v);
+            if(!texture->id)result=XGE_ERROR_GPU_FAILED;
+        }else if(texture->prepare_offset<total){
+            uint64_t remaining=budget->bytes-stats.upload_bytes;if(remaining<4){stats.min_next_bytes=4;break;}
+            size_t row=(size_t)texture->width*4,y=texture->prepare_offset/row,x=(texture->prepare_offset%row)/4,width=texture->width-x,rows=1;
+            if(!x&&remaining>=row){rows=(size_t)(remaining/row);if(rows>(size_t)texture->height-y)rows=texture->height-y;}
+            else if(width>remaining/4)width=(size_t)(remaining/4);
+            transferred=width*rows*4;xge_glBindTexture(GL_TEXTURE_2D,texture->id);
+            xge_glTexSubImage2D(GL_TEXTURE_2D,0,(GLint)x,(GLint)y,(GLsizei)width,(GLsizei)rows,GL_RGBA,GL_UNSIGNED_BYTE,texture->pixels.Data+texture->prepare_offset);
+        }else{
+            if(texture->sampler.min_filter>=0x2700&&texture->sampler.min_filter<=0x2703){xge_glBindTexture(GL_TEXTURE_2D,texture->id);xge_glGenerateMipmap(GL_TEXTURE_2D);++stats.operations;}
+            if(xge_glGetError()!=GL_NO_ERROR){result=XGE_ERROR_GPU_FAILED;break;}
+            texture->prepare_partial=0;stats.completed=1;break;
+        }
+        ++stats.operations;if(xge_glGetError()!=GL_NO_ERROR)result=XGE_ERROR_GPU_FAILED;
+        if(result!=XGE_OK){break;}texture->prepare_offset+=transferred;stats.upload_bytes+=transferred;
+    }
+    if(result!=XGE_OK){if(texture->id)xge_glDeleteTextures(1,&texture->id);texture->id=0;texture->context=0;texture->prepare_offset=0;texture->prepare_partial=0;stats.failed=1;}
+    for(int i=0;i<4;++i){xge_glPixelStorei(unpack_keys[i],unpack[i]);}xge_glBindBuffer(0x88EC,unpack[4]);d3_restore(&state);
+    if(out){*out=stats;}return result;
+}
 /* Private resources are not exposed until this cursor completes. Bytes count
  * transferred CPU payload, operations count storage, transfer or mip work. */
 int d3_model_upload_step(xge3d_model *model,d3_upload_cursor *c,const xge3d_upload_budget_t *budget,
@@ -304,6 +394,17 @@ void xge3dMeshFree(xge3d_mesh *m)
 #endif
     xrtFree(m);
 }
+int d3_mesh_detach_gpu(xge3d_mesh *m)
+{
+    if(!m||m->refs!=1)return XGE_ERROR_INVALID_STATE;
+    if(m->vao||m->vbo||m->ibo){
+        if(!__xge3dContext()||m->context!=__xge3dContext())return XGE_ERROR_INVALID_STATE;
+        if(m->vao)xge_glDeleteVertexArrays(1,&m->vao);
+        if(m->vbo)xge_glDeleteBuffers(1,&m->vbo);
+        if(m->ibo)xge_glDeleteBuffers(1,&m->ibo);
+    }
+    m->vao=m->vbo=m->ibo=0;m->context=0;m->prepare_offset=0;m->prepare_partial=0;return XGE_OK;
+}
 int xge3dMeshCreate(const xge3d_mesh_desc_t *d, xge3d_mesh **out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
@@ -362,6 +463,16 @@ int xge3dMeshCreate(const xge3d_mesh_desc_t *d, xge3d_mesh **out)
     *out=m;
     return XGE_OK;
 }
+int xge3dMeshResourceInfo(const xge3d_mesh *mesh,xge3d_resource_info_t *out)
+{
+    if(!mesh||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_resource_info_t){.size=sizeof(*out),.vertices=mesh->vertices.Count,.indices=mesh->indices.Count,.references=mesh->refs};
+    out->cpu_payload_bytes=mesh->vertices.Count*sizeof(xge3d_vertex_t)+mesh->indices.Count*(mesh->index_bits/8);
+    if(mesh->vbo)out->gpu_payload_bytes+=mesh->vertices.Count*sizeof(xge3d_vertex_t);
+    if(mesh->ibo){out->gpu_payload_bytes+=mesh->indices.Count*(mesh->index_bits/8);}return XGE_OK;
+}
+int xge3dMeshAddRef(xge3d_mesh *mesh)
+{return !mesh?XGE_ERROR_INVALID_ARGUMENT:d3_mesh_retain(mesh)?XGE_OK:XGE_ERROR_INVALID_STATE;}
 int xge3dMeshUpdate(xge3d_mesh *m, const xge3d_mesh_desc_t *desc)
 {
     if (!m) return XGE_ERROR_INVALID_ARGUMENT;
@@ -372,6 +483,7 @@ int xge3dMeshUpdate(xge3d_mesh *m, const xge3d_mesh_desc_t *desc)
     xge3d_mesh previous=*m;
     uint32_t refs=m->refs;
     *m=*next; m->refs=refs;m->version=previous.version+1;
+    xrtAtomic64FetchAdd(&d3_geometry_version,1,XMEMORY_RELEASE);
     *next=previous; next->refs=1;
     xge3dMeshFree(next);
     return XGE_OK;
@@ -411,7 +523,7 @@ int xge3dRendererCreate(xge3d_renderer **out)
     if (result!=XGE_OK) return result;
     xge3d_renderer *r=xrtMalloc(sizeof(*r));
     if (!r) return XGE_ERROR_OUT_OF_MEMORY;
-    memset(r,0,sizeof(*r));
+    memset(r,0,sizeof(*r));r->options=xge3dRendererOptionsDefault();r->active_query=-1;
     xrtArrayInit(&r->draws,sizeof(d3_draw));
     xrtArrayInit(&r->pass_draws,sizeof(d3_draw*));xrtArrayInit(&r->batches,sizeof(d3_batch));xrtArrayInit(&r->matrices,sizeof(xge3d_mat4_t));
     for (int i=0;i<D3_INSTANCE_PASSES;++i) xrtArrayInit(&r->instances[i].matrices,sizeof(xge3d_mat4_t));
@@ -515,6 +627,7 @@ void xge3dRendererFree(xge3d_renderer *r)
 {
     if (!r) return;
     if (r->context==__xge3dContext()) {
+        if(r->queries[0]&&xge_glDeleteQueries)xge_glDeleteQueries(16,r->queries);
         xgeShaderFree(&r->shader); xgeShaderFree(&r->sky_shader);
         if (r->sky_vao) xge_glDeleteVertexArrays(1,&r->sky_vao);
         for (int i=0;i<D3_INSTANCE_PASSES;++i) if (r->instances[i].texture) xge_glDeleteTextures(1,&r->instances[i].texture);
@@ -549,6 +662,7 @@ int xge3dTargetCreate(int width, int height, xge3d_target **out)
     d3_state state; d3_save(&state);
     result=xgeTextureCreateRGBAEx(&t->texture,width,height,NULL,XGE_TEXTURE_COMPRESS_NONE);
     if (result==XGE_OK) {
+        t->texture.iFlags |= XGE_TEXTURE_ORIGIN_BOTTOM_LEFT | XGE_TEXTURE_RENDER_TARGET;
         xge_glGenFramebuffers(1,&t->fbo); xge_glBindFramebuffer(GL_FRAMEBUFFER,t->fbo);
         xge_glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,t->texture.iBackendId,0);
         xge_glGenRenderbuffers(1,&t->depth); xge_glBindRenderbuffer(GL_RENDERBUFFER,t->depth);
@@ -632,6 +746,7 @@ static int d3_batches_prepare(xge3d_renderer *r,xge3d_mat4_t vp,int pass,const x
     for (size_t i=0;i<r->draws.Count;++i) {
         d3_draw *d=xrtArrayGet(&r->draws,i);
         if (fabsf(d->determinant)<1e-12f || (pass && d->transparent)) continue;
+        if(pass?!d->shadow_visible:!d->main_visible)continue;
         if (!desc->disable_culling && (pass ? !d3_frustum_box(vp,d->bounds) : !d->in_frustum)) continue;
         if (!xrtArrayPush(&r->pass_draws,&d)) return XGE_ERROR_OUT_OF_MEMORY;
     }
@@ -828,6 +943,8 @@ static int d3_shadow_render(xge3d_renderer *r,xge3d_scene *scene,const xge3d_ren
 xge3d_fog_settings_t xge3dFogDefault(void)
 { return (xge3d_fog_settings_t){{.57f,.73f,.85f},60,300}; }
 #endif
+#include "xge3d_profile.inc"
+
 int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d, xge3d_render_stats_t *stats)
 {
     if (stats) memset(stats,0,sizeof(*stats));
@@ -849,6 +966,8 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         return XGE_ERROR_INVALID_STATE;
     int result=xgeFlush();
     if (result!=XGE_OK) return result;
+    uint64_t profile_start=xgeClockMicroseconds(),collect_start=0,submit_start=0;
+    memset(&r->profile,0,sizeof(r->profile));r->profile.size=sizeof(r->profile);d3_profile_begin(r);
     d3_state state; d3_save(&state);
     xge3d_render_stats_t counts={0};
     if (d->target) {
@@ -906,30 +1025,42 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     if (d->camera->projection.m[15]!=0 && d->camera->projection.m[11]==0)
         xge_glUniform4f(r->camera_position,inverse_view.m[8],inverse_view.m[9],inverse_view.m[10],1);
     else xge_glUniform4f(r->camera_position,inverse_view.m[12],inverse_view.m[13],inverse_view.m[14],0);
-    int light_count=0;
-#if XGE3D_ENABLE_SHADOW
-    d3_light lights[8];
-#endif
-    for (size_t i=0;i<s->nodes.Count;++i) {
+    collect_start=xgeClockMicroseconds();
+    int light_count=0;d3_light lights[8];double scores[8]={0};
+    for(size_t i=0;i<s->nodes.Count;++i){
         xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,i),*p=n;
-        if (!n->has_light || !n->light.intensity) continue;
-        for (;p && p->visible;p=d3_node(s,p->parent)) {}
-        if (p) continue;
-        if (light_count==XGE3D_MAX_LIGHTS) { result=XGE_ERROR_UNSUPPORTED; goto done; }
-        xge3d_mat4_t world;
-        result=xge3dNodeGetWorldMatrix(s,n->handle,&world); if (result!=XGE_OK) goto done;
+        if(!n->has_light||!n->light.intensity||!(n->render_layers&r->options.render_layers))continue;
+        for(;p&&p->visible;p=p->parent_node){}if(p)continue;
+        ++r->profile.candidate_lights;xge3d_mat4_t world;
+        result=xge3dNodeGetWorldMatrix(s,n->handle,&world);if(result)goto done;
         const xge3d_light_desc_t *light=&n->light;
+        xge3d_vec3_t position={world.m[12],world.m[13],world.m[14]};
+        if(light->type!=XGE3D_LIGHT_DIRECTIONAL&&light->range>0){
+            xge3d_vec3_t radius={light->range,light->range,light->range};
+            if(!d3_frustum_box(vp,(xge3d_aabb_t){d3_sub(position,radius),d3_add(position,radius)}))continue;}
+        double dx=(double)position.x-eye.x,dy=(double)position.y-eye.y,dz=(double)position.z-eye.z;
+        double score=light->type==XGE3D_LIGHT_DIRECTIONAL?light->intensity:light->intensity/(1+dx*dx+dy*dy+dz*dz);
+        int slot=light_count;
+        if(light_count==(int)r->options.max_lights){slot=0;for(int j=1;j<light_count;++j){
+                int a=lights[j].desc.type==XGE3D_LIGHT_DIRECTIONAL,b=lights[slot].desc.type==XGE3D_LIGHT_DIRECTIONAL;
+                if(a<b||(a==b&&scores[j]<scores[slot]))slot=j;}
+            int a=light->type==XGE3D_LIGHT_DIRECTIONAL,b=lights[slot].desc.type==XGE3D_LIGHT_DIRECTIONAL;
+            if(a<b||(a==b&&score<=scores[slot]))continue;}
+        else ++light_count;
         xge3d_vec3_t q=light->direction,direction={world.m[0]*q.x+world.m[4]*q.y+world.m[8]*q.z,
             world.m[1]*q.x+world.m[5]*q.y+world.m[9]*q.z,world.m[2]*q.x+world.m[6]*q.y+world.m[10]*q.z};
-        if (light->type!=XGE3D_LIGHT_POINT && !d3_normalize(&direction)) { result=XGE_ERROR_INVALID_ARGUMENT; goto done; }
-#if XGE3D_ENABLE_SHADOW
-        lights[light_count]=(d3_light){*light,{world.m[12],world.m[13],world.m[14]},direction};
-#endif
-        xge_glUniform4f(r->light_position[light_count],world.m[12],world.m[13],world.m[14],(float)light->type);
-        xge_glUniform4f(r->light_direction[light_count],direction.x,direction.y,direction.z,light->range);
-        xge_glUniform4f(r->light_color[light_count],light->color.x*light->intensity,light->color.y*light->intensity,light->color.z*light->intensity,0);
-        xge_glUniform2f(r->light_cone[light_count],cosf(light->inner_angle),cosf(light->outer_angle));
-        ++light_count;
+        if(light->type!=XGE3D_LIGHT_POINT&&!d3_normalize(&direction)){result=XGE_ERROR_INVALID_ARGUMENT;goto done;}
+        lights[slot]=(d3_light){*light,position,direction};scores[slot]=score;
+    }
+    r->profile.selected_lights=(uint32_t)light_count;r->profile.skipped_lights=r->profile.candidate_lights-(uint32_t)light_count;
+    int shadow_suns=0,shadow_spots=0;
+    for(int i=0;i<light_count;++i){d3_light *l=&lights[i];
+        if(l->desc.casts_shadow){if(l->desc.type==XGE3D_LIGHT_DIRECTIONAL){if(shadow_suns++)l->desc.casts_shadow=0;}
+            else if(l->desc.type==XGE3D_LIGHT_SPOT){if(shadow_spots++>=2)l->desc.casts_shadow=0;}}
+        xge_glUniform4f(r->light_position[i],l->position.x,l->position.y,l->position.z,(float)l->desc.type);
+        xge_glUniform4f(r->light_direction[i],l->direction.x,l->direction.y,l->direction.z,l->desc.range);
+        xge_glUniform4f(r->light_color[i],l->desc.color.x*l->desc.intensity,l->desc.color.y*l->desc.intensity,l->desc.color.z*l->desc.intensity,0);
+        xge_glUniform2f(r->light_cone[i],cosf(l->desc.inner_angle),cosf(l->desc.outer_angle));
     }
     xge_glUniform1i(r->light_count,light_count);
 #endif
@@ -937,9 +1068,12 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     for (size_t i=0;i<s->nodes.Count;++i) {
         xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,i), *p=n;
         if (!n->mesh) continue;
-        for (;p && p->visible;p=d3_node(s,p->parent)) {}
+        for (;p && p->visible;p=p->parent_node) {}
         if (p) continue;
         d3_draw draw={0}; draw.node=n;
+        draw.main_visible=(n->render_layers&r->options.render_layers)!=0;
+        draw.shadow_visible=(n->shadow_layers&r->options.shadow_layers)!=0;
+        if(!draw.main_visible&&!draw.shadow_visible)continue;
         result=xge3dNodeGetWorldMatrix(s,n->handle,&draw.world);
         if (result!=XGE_OK) goto done;
         draw.mesh=n->mesh;
@@ -952,7 +1086,7 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         draw.determinant=d3_dot((xge3d_vec3_t){w[0],w[1],w[2]},d3_cross((xge3d_vec3_t){w[4],w[5],w[6]},(xge3d_vec3_t){w[8],w[9],w[10]}));
         if (!isfinite(draw.determinant)) {result=XGE_ERROR_INVALID_ARGUMENT;goto done;}
         result=d3_node_bounds(s,n,&draw.bounds);if (result!=XGE_OK) goto done;
-        draw.in_frustum=d->disable_culling || d3_frustum_box(vp,draw.bounds);
+        draw.in_frustum=draw.main_visible&&(d->disable_culling || d3_frustum_box(vp,draw.bounds));
         if (draw.in_frustum) ++counts.visible_meshes;else ++counts.culled_meshes;
         draw.transparent=n->material && n->material->desc.alpha_mode==XGE3D_ALPHA_BLEND;
         xge3d_mat4_t view_world=d3_mul(d->camera->view,draw.world);
@@ -960,9 +1094,13 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         if (!xrtArrayPush(&r->draws,&draw)) { result=XGE_ERROR_OUT_OF_MEMORY; goto done; }
     }
     xrtArraySort(&r->draws,d3_draw_compare);
+    if(!collect_start)collect_start=profile_start;
+    r->profile.collect_cpu_us=xgeClockMicroseconds()-collect_start;
+    uint64_t shadow_start=xgeClockMicroseconds();
 #if XGE3D_ENABLE_SHADOW
     result=d3_shadow_render(r,s,d,lights,light_count,&counts);if (result!=XGE_OK) goto done;
 #endif
+    r->profile.shadow_cpu_us=xgeClockMicroseconds()-shadow_start;submit_start=xgeClockMicroseconds();
 #if XGE3D_ENABLE_IBL
     xge_glActiveTexture(GL_TEXTURE0+6);
     if (d->ibl_intensity>0) { result=d3_cube_upload(&d->environment->irradiance,&counts.upload_bytes);if (result!=XGE_OK) goto done; }
@@ -1001,7 +1139,9 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     }
     if (xge_glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
 done:
-    d3_restore(&state);
+    d3_profile_end(r);d3_restore(&state);
+    if(submit_start)r->profile.submit_cpu_us=xgeClockMicroseconds()-submit_start;
+    r->profile.total_cpu_us=xgeClockMicroseconds()-profile_start;
     if (stats) *stats=counts;
     return result;
 }

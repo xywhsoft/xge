@@ -3722,6 +3722,9 @@ XGE_API int xge3dNodeSetParent(xge3d_scene *scene, xge3d_node_t node, xge3d_node
 XGE_API int xge3dNodeSetTransform(xge3d_scene *scene, xge3d_node_t node, const xge3d_transform_t *transform);
 /* Exact affine matrices preserve imported transforms, including shear. */
 XGE_API int xge3dNodeSetMatrix(xge3d_scene *scene, xge3d_node_t node, const xge3d_mat4_t *matrix);
+/* Parent-local matrix; root translations are relative to the scene origin.
+ * Does not decompose imported affine transforms; failure leaves output intact. */
+XGE_API int xge3dNodeGetLocalMatrix(xge3d_scene *scene,xge3d_node_t node,xge3d_mat4_t *out);
 XGE_API int xge3dNodeGetWorldMatrix(xge3d_scene *scene, xge3d_node_t node, xge3d_mat4_t *out);
 XGE_API int xge3dNodeSetVisible(xge3d_scene *scene, xge3d_node_t node, int visible);
 /* Mesh creation copies CPU data, uploading once if a context is active;
@@ -3778,6 +3781,11 @@ XGE_API int xge3dMaterialCreate(const xge3d_material_desc_t *desc, xge3d_materia
 XGE_API void xge3dMaterialFree(xge3d_material *material);
 XGE_API int xge3dMaterialGetDesc(const xge3d_material *material, xge3d_material_desc_t *out);
 XGE_API int xge3dNodeSetMaterial(xge3d_scene *scene, xge3d_node_t node, xge3d_material *material);
+/* Apply to mesh nodes under root, including imported multi-primitive children.
+ * Unrelated scene nodes are unchanged. Validation/allocation failure publishes
+ * no changes; NULL assigns the default material to the selected mesh nodes,
+ * rather than restoring the imported model's original material. */
+XGE_API int xge3dNodeSetMaterialTree(xge3d_scene *scene,xge3d_node_t root,xge3d_material *material);
 XGE_API int xge3dNodeSetColor(xge3d_scene *scene, xge3d_node_t node, const float rgba[4]);
 /* Copies all faces on the CPU; first render uploads once. Release uploaded
  * environments on their context thread before xgeUnit. */
@@ -3813,6 +3821,22 @@ typedef struct xge3d_model_info_t {
 XGE_API int xge3dModelLoad(const char *uri, xge3d_model **out);
 XGE_API int xge3dModelLoadMemory(const void *data, size_t size, const char *base_uri, xge3d_model **out);
 XGE_API void xge3dModelFree(xge3d_model *model);
+/* Consume one owned model reference on the graphics thread. Shared models
+ * simply release that reference and return a NULL token. An exclusive model
+ * becomes unavailable for new instances/borrows and is transferred to token.
+ * Step releases ownership of shared resources and detaches exclusive GPU
+ * objects in bounded record groups; it retains CPU payload for later cleanup.
+ * A driver call cannot be preempted. Zero operations makes no progress.
+ * Once complete, Free may run on a CPU worker (source-provider destructors
+ * must support that thread). Free of an incomplete token is synchronous and
+ * restricted to its creating graphics thread, for final shutdown only. */
+typedef struct xge3d_model_retirement xge3d_model_retirement;
+typedef struct xge3d_release_budget_t {size_t operations;uint64_t microseconds;} xge3d_release_budget_t;
+typedef struct xge3d_retirement_info_t {uint32_t size;size_t operations,total_operations;int completed;} xge3d_retirement_info_t;
+XGE_API int xge3dModelRetireBegin(xge3d_model **owned,xge3d_model_retirement **out);
+XGE_API int xge3dModelRetireStep(xge3d_model_retirement *token,const xge3d_release_budget_t *budget,int *completed);
+XGE_API int xge3dModelRetireInfo(const xge3d_model_retirement *token,xge3d_retirement_info_t *out);
+XGE_API int xge3dModelRetireFree(xge3d_model_retirement *token);
 XGE_API xge3d_model_info_t xge3dModelInfo(const xge3d_model *model);
 /* Borrowed material; valid while the model or its instance remains alive. */
 XGE_API const xge3d_material *xge3dModelMaterial(const xge3d_model *model, size_t index);
@@ -3842,6 +3866,23 @@ typedef struct xge3d_upload_budget_t { uint64_t bytes,microseconds;uint32_t oper
 typedef struct xge3d_upload_stats_t {
     uint64_t upload_bytes,min_next_bytes;uint32_t operations,completed,failed;
 } xge3d_upload_stats_t;
+/* Context-thread prewarming of an independently created material texture.
+ * Uploads whole RGBA pixels in bounded chunks; allocation and mip generation
+ * each count as an operation. bytes counts transferred base-level pixels.
+ * completed==1 permits rendering; do not publish a partially prepared texture
+ * to a material/node. Zero budgets make no progress; an already ready texture
+ * reports completion without another upload. microseconds is a soft limit
+ * checked between GL operations, not a preemption of a driver call.
+ * Saves/restores GL bindings and unpack state, including pixel-unpack buffers. */
+XGE_API int xge3dTexturePrepare(xge3d_texture *texture,const xge3d_upload_budget_t *budget,
+    xge3d_upload_stats_t *out_stats);
+/* Prewarm a CPU-created mesh on its GPU owner thread. Storage allocation and
+ * each partial transfer count as operations; bytes counts transferred payload.
+ * Zero budgets do nothing. Only publish after completed==1; rendering a partial
+ * mesh fails instead of drawing uninitialized storage. Bindings are restored.
+ * CPU data stays immutable; MeshUpdate replaces any pending preparation. */
+XGE_API int xge3dMeshPrepare(xge3d_mesh *mesh,const xge3d_upload_budget_t *budget,
+    xge3d_upload_stats_t *out_stats);
 /* One xrt CPU worker per loader; 0 max_requests selects 64 (max 1024).
  * Capacity includes cancelled jobs until their CPU cleanup ends. URI is copied.
  * All public loader calls use its creating thread. Default IO is plain files
@@ -3855,16 +3896,18 @@ XGE_API int xge3dLoaderFree(xge3d_loader *loader);
 XGE_API int xge3dLoaderRequest(xge3d_loader *loader,const char *uri,xge3d_request_t *out_request);
 XGE_API int xge3dLoaderStatus(xge3d_loader *loader,xge3d_request_t request,xge3d_request_info_t *out_info);
 /* Pump on the GPU context thread: hard byte/operation caps, soft time limit
- * checked between operations. 0 bytes or operations pauses GPU work; 0 time
- * disables the clock limit. Large buffers/textures upload in pieces. A texture
+ * checked between operations. 0 bytes pauses uploads; 0 operations pauses all
+ * GPU work. Cancelled models retire within the operation/time budget even
+ * when bytes is 0. 0 time disables the clock limit. Large buffers/textures upload in pieces. A texture
  * pixel needs >=4 bytes, reported through min_next_bytes when blocked. Bytes
  * count transferred pixels/vertices/indices, not storage or generated mip data.
  * A job failure appears in Status and out_stats.failed; other jobs can proceed.
  * Models with no GPU resources can become READY without a context. */
 XGE_API int xge3dLoaderPump(xge3d_loader *loader,const xge3d_upload_budget_t *budget,xge3d_upload_stats_t *out_stats);
-/* Cancel is idempotent, prevents publication immediately and releases any GPU
- * partial upload on the owner thread. CPU cleanup may finish later. Release
- * also invalidates the handle, so stale results cannot reach a reused slot. */
+/* Cancel is idempotent and prevents publication immediately. Pump retires GPU
+ * partial uploads on the owner; the worker reclaims CPU payload outside locks.
+ * Continue pumping (bytes may be 0), or Free at final shutdown. Release also
+ * invalidates the handle, so stale results cannot reach a reused slot. */
 XGE_API int xge3dLoaderCancel(xge3d_loader *loader,xge3d_request_t request);
 XGE_API int xge3dLoaderRelease(xge3d_loader *loader,xge3d_request_t request);
 /* Only READY can transfer a complete model. Success invalidates the request;
@@ -3887,7 +3930,7 @@ typedef struct xge3d_root_motion_t { xge3d_vec3_t translation;xge3d_quat_t rotat
 #define XGE3D_ROOT_Z 4u
 #define XGE3D_ROOT_ROTATION 8u
 /* Clips retain source data, including independent motion-only glTF files.
- * Animator borrows scene; free it before destroying scene. Two override layers
+ * Animator borrows scene; free it before destroying scene. Up to eight layers
  * blend TRS against the asset rest pose. Different source rigs require offline
  * retargeting; runtime name/index binding does not adjust bone lengths or axes. */
 XGE_API int xge3dClipFromModel(xge3d_model *model, size_t animation, xge3d_clip **out);
@@ -3951,6 +3994,148 @@ XGE_API int xge3dCameraIntersectsAabb(const xge3d_camera_t *camera, const xge3d_
  * is a count-only call and returns OK. This is conservative broad phase. */
 XGE_API int xge3dSceneQueryAabb(xge3d_scene *scene, const xge3d_aabb_t *box,
     xge3d_node_t *nodes, size_t capacity, size_t *out_count);
+/* Foundation additions are separate from legacy descriptors to preserve ABI. */
+typedef struct xge3d_work_budget_t { size_t nodes; uint64_t microseconds; } xge3d_work_budget_t;
+typedef struct xge3d_query_filter_t { uint32_t layers; int include_hidden; } xge3d_query_filter_t;
+typedef struct xge3d_scene_stats_t {
+    uint32_t size;
+    uint64_t world_updates, bounds_updates, spatial_builds, spatial_refits,
+        query_tree_visits, query_mesh_tests, destroyed_nodes;
+    size_t nodes, spatial_bytes;
+} xge3d_scene_stats_t;
+typedef struct xge3d_renderer_options_t {
+    uint32_t size, render_layers, shadow_layers, max_lights;
+    int profiling; /* Optional nonblocking GPU timestamps where supported. */
+} xge3d_renderer_options_t;
+typedef struct xge3d_render_profile_t {
+    uint32_t size;
+    uint64_t total_cpu_us, collect_cpu_us, shadow_cpu_us, submit_cpu_us, gpu_ns;
+    uint64_t gpu_sample; /* Render-call sequence of the completed GPU sample. */
+    uint32_t candidate_lights, selected_lights, skipped_lights;
+    int gpu_available; /* 0 means unsupported, disabled, or no completed sample. */
+} xge3d_render_profile_t;
+typedef struct xge3d_resource_info_t {
+    uint32_t size;
+    uint64_t cpu_payload_bytes, gpu_payload_bytes;
+    size_t vertices, indices, textures;
+    uint32_t references;
+} xge3d_resource_info_t;
+/* Payload estimates, not allocator overhead or actual driver/VRAM residency. */
+XGE_API int xge3dMeshResourceInfo(const xge3d_mesh *mesh, xge3d_resource_info_t *out);
+XGE_API int xge3dTextureResourceInfo(const xge3d_texture *texture, xge3d_resource_info_t *out);
+XGE_API int xge3dSceneStats(xge3d_scene *scene, xge3d_scene_stats_t *out, int reset);
+/* Exact query output order is unspecified. Hidden visual geometry can be queried
+ * independently; this does not create physics or gameplay collision objects. */
+XGE_API int xge3dSceneQueryAabbEx(xge3d_scene *scene, const xge3d_aabb_t *box,
+    const xge3d_query_filter_t *filter, xge3d_node_t *nodes, size_t capacity, size_t *out_count);
+XGE_API int xge3dSceneRaycastEx(xge3d_scene *scene, const xge3d_ray_t *ray,
+    float max_distance, const xge3d_query_filter_t *filter, xge3d_hit_t *out);
+XGE_API int xge3dScenePrepareSpatial(xge3d_scene *scene);
+/* Layers apply to this node, visibility still inherits through the hierarchy. */
+XGE_API int xge3dNodeSetLayers(xge3d_scene *scene, xge3d_node_t node,
+    uint32_t render_layers, uint32_t query_layers, uint32_t shadow_layers);
+/* Hide and lock a subtree, then remove at most budget.nodes leaf nodes. Zero
+ * nodes pauses; time is a soft limit between nodes. Continue with the same root
+ * until completed=1. All borrowed subtree handles become unusable immediately.
+ * GPU resources must be retired on their context thread. SceneFree drains it. */
+XGE_API int xge3dNodeDestroyStep(xge3d_scene *scene, xge3d_node_t root,
+    const xge3d_work_budget_t *budget, int *completed);
+XGE_API xge3d_renderer_options_t xge3dRendererOptionsDefault(void);
+XGE_API int xge3dRendererSetOptions(xge3d_renderer *renderer, const xge3d_renderer_options_t *options);
+XGE_API int xge3dRendererProfile(const xge3d_renderer *renderer, xge3d_render_profile_t *out);
+/* Preallocate the shadow atlas explicitly (0 means no atlas). One allocation is
+ * one soft-budget operation; a driver allocation cannot be preempted. */
+#if XGE3D_ENABLE_ASYNC
+XGE_API int xge3dRendererPrepare(xge3d_renderer *renderer, int shadow_resolution,
+    const xge3d_upload_budget_t *budget, xge3d_upload_stats_t *out);
+#endif
+XGE_API int xge3dMeshAddRef(xge3d_mesh *mesh);
+XGE_API int xge3dMaterialAddRef(xge3d_material *material);
+XGE_API int xge3dTextureAddRef(xge3d_texture *texture);
+#if XGE3D_ENABLE_MODEL
+typedef struct xge3d_instance_builder xge3d_instance_builder;
+/* Retained asset storage for admission budgets. Includes encoded source,
+ * glTF parser allocations/external buffers, container capacities, meshes,
+ * materials and texture pixels. GPU required includes the full mip chain.
+ * Excludes temporary decode peaks, scene instances/animators, allocator and
+ * driver overhead. Shared resources are conservatively counted per asset.
+ * Query immutable loaded assets without concurrent mutation/retirement. */
+typedef struct xge3d_asset_memory_t {
+    size_t size;
+    uint64_t cpu_storage_bytes, gpu_required_bytes, source_bytes, parser_bytes;
+} xge3d_asset_memory_t;
+/* Shared quota for live XRT heap requests made by bounded model/clip loads,
+ * including parser, decoder scratch, queued results and retained allocations.
+ * Charges follow blocks across threads and survive scope/owner destruction.
+ * Not RSS/VRAM: excludes pool backing, allocator/OS/driver overhead, instance
+ * and animator allocations outside a load, and external allocator callbacks.
+ * Realloc reserves old+new until the old block is released. Zero-byte requests
+ * cost one byte. Default loaders/legacy synchronous loads remain unlimited. */
+typedef struct xallocationbudget xge3d_decode_budget;
+typedef struct xge3d_decode_budget_info_t {
+    size_t size;
+    uint64_t limit,live_bytes,peak_bytes,live_allocations,rejections;
+} xge3d_decode_budget_info_t;
+XGE_API int xge3dDecodeBudgetCreate(uint64_t bytes,xge3d_decode_budget **out);
+XGE_API void xge3dDecodeBudgetFree(xge3d_decode_budget *budget);
+XGE_API int xge3dDecodeBudgetInfo(xge3d_decode_budget *budget,xge3d_decode_budget_info_t *out);
+XGE_API int xge3dDecodeBudgetSetLimit(xge3d_decode_budget *budget,uint64_t bytes);
+XGE_API int xge3dModelLoadBudget(const char *uri,xge3d_decode_budget *budget,xge3d_model **out);
+XGE_API int xge3dModelLoadMemoryBudget(const void *data,size_t size,const char *base_uri,
+    xge3d_decode_budget *budget,xge3d_model **out);
+#if XGE3D_ENABLE_ANIMATION
+XGE_API int xge3dClipLoadBudget(const char *uri,size_t animation,xge3d_decode_budget *budget,xge3d_clip **out);
+#endif
+XGE_API int xge3dModelMemoryInfo(const xge3d_model *model, xge3d_asset_memory_t *out);
+#if XGE3D_ENABLE_ASYNC
+/* Owner thread, only while loader has no requests. Retains budget; NULL
+ * removes it. The shared quota must cover retained models and decode scratch.
+ * An exhausted quota fails the request without allocating the denied block. */
+XGE_API int xge3dLoaderSetDecodeBudget(xge3d_loader *loader,xge3d_decode_budget *budget);
+/* Available from CPU_READY through READY, before Take. Cached CPU admission
+ * footprint; does not expose a model pointer or start GPU work. */
+XGE_API int xge3dLoaderMemoryInfo(xge3d_loader *loader, xge3d_request_t request,
+    xge3d_asset_memory_t *out);
+#endif
+#if XGE3D_ENABLE_ANIMATION
+/* Includes retained source model and decoded track capacities. Two clips
+ * sharing one source model each include it: conservative, never deduplicated. */
+XGE_API int xge3dClipMemoryInfo(const xge3d_clip *clip, xge3d_asset_memory_t *out);
+#endif
+XGE_API int xge3dModelAddRef(xge3d_model *model);
+XGE_API int xge3dModelResourceInfo(const xge3d_model *model, xge3d_resource_info_t *out);
+/* Staging remains hidden. Take publishes the whole instance; failures never
+ * publish a partial instance. Free cancels synchronously, suitable for shutdown. */
+XGE_API int xge3dModelInstanceBegin(xge3d_scene *scene, xge3d_model *model,
+    xge3d_node_t parent, xge3d_instance_builder **out);
+XGE_API int xge3dModelInstanceStep(xge3d_instance_builder *builder,
+    const xge3d_work_budget_t *budget, int *completed);
+XGE_API int xge3dModelInstanceTake(xge3d_instance_builder *builder, xge3d_node_t *out);
+XGE_API void xge3dModelInstanceFree(xge3d_instance_builder *builder);
+#endif
+#if XGE3D_ENABLE_ANIMATION
+#define XGE3D_ANIMATION_MAX_LAYERS 8
+#define XGE3D_ANIMATION_OVERRIDE 0
+#define XGE3D_ANIMATION_ADDITIVE 1
+typedef struct xge3d_skin_binding_t {
+    const xge3d_node_t *joints;
+    const xge3d_mat4_t *inverse_bind; /* NULL selects identity. */
+    size_t count;
+} xge3d_skin_binding_t;
+/* Explicit joint order follows the mesh's vertex indices. Copies bindings,
+ * validates all joints/weights; failure preserves the old skin. NULL unbinds.
+ * Multiple meshes may use the SAME joint nodes without extra animators. */
+XGE_API int xge3dNodeBindSkin(xge3d_scene *scene, xge3d_node_t node, const xge3d_skin_binding_t *binding);
+#if XGE3D_ENABLE_ASYNC
+XGE_API int xge3dNodePrepareSkin(xge3d_scene *scene, xge3d_node_t node,
+    const xge3d_upload_budget_t *budget, xge3d_upload_stats_t *out);
+#endif
+XGE_API int xge3dAnimatorSetLayerMode(xge3d_animator *animator, int layer, int mode);
+/* Source-model node indices. Postprocess after Update, before rendering; the
+ * next Update resamples the clip. No gameplay or IK policy is implicit. */
+XGE_API int xge3dAnimatorGetPose(xge3d_animator *animator, size_t node, xge3d_transform_t *out);
+XGE_API int xge3dAnimatorSetPose(xge3d_animator *animator, size_t node, const xge3d_transform_t *pose);
+#endif
 XGE_API int xge3dTransformMatrix(const xge3d_transform_t *transform, xge3d_mat4_t *out);
 XGE_API int xge3dCameraPerspective(xge3d_camera_t *out, float fov_y, float aspect, float near_z, float far_z);
 XGE_API int xge3dCameraOrthographic(xge3d_camera_t *out, float width, float height, float near_z, float far_z);

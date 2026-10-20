@@ -12,6 +12,7 @@
 #define XGE_GL_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -419,6 +420,20 @@ extern PFNGLFRAMEBUFFERRENDERBUFFERPROC xge_glFramebufferRenderbuffer;
  * GL 加载函数
  * ============================================================================ */
 
+#if XGE_ENABLE_3D
+/* Optional desktop 3.3 timestamps; absent on GLES/WebGL without this path. */
+typedef void (APIENTRYP D3GLGENQUERIESPROC)(GLsizei,GLuint*);
+typedef void (APIENTRYP D3GLDELETEQUERIESPROC)(GLsizei,const GLuint*);
+typedef void (APIENTRYP D3GLQUERYCOUNTERPROC)(GLuint,GLenum);
+typedef void (APIENTRYP D3GLGETQUERYOBJECTIVPROC)(GLuint,GLenum,GLint*);
+typedef void (APIENTRYP D3GLGETQUERYOBJECTUI64VPROC)(GLuint,GLenum,uint64_t*);
+extern D3GLGENQUERIESPROC xge_glGenQueries;
+extern D3GLDELETEQUERIESPROC xge_glDeleteQueries;
+extern D3GLQUERYCOUNTERPROC xge_glQueryCounter;
+extern D3GLGETQUERYOBJECTIVPROC xge_glGetQueryObjectiv;
+extern D3GLGETQUERYOBJECTUI64VPROC xge_glGetQueryObjectui64v;
+#endif
+
 typedef void* (*XgeGLLoadProc)(const char *name);
 
 /**
@@ -438,6 +453,13 @@ int xge_gl_load(XgeGLLoadProc procLoad);
 
 #ifdef XGE_GL_IMPL
 
+#if XGE_ENABLE_3D
+D3GLGENQUERIESPROC xge_glGenQueries;
+D3GLDELETEQUERIESPROC xge_glDeleteQueries;
+D3GLQUERYCOUNTERPROC xge_glQueryCounter;
+D3GLGETQUERYOBJECTIVPROC xge_glGetQueryObjectiv;
+D3GLGETQUERYOBJECTUI64VPROC xge_glGetQueryObjectui64v;
+#endif
 PFNGLVIEWPORTPROC xge_glViewport = NULL;
 PFNGLCLEARPROC xge_glClear = NULL;
 PFNGLCLEARCOLORPROC xge_glClearColor = NULL;
@@ -591,6 +613,13 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	xge_glEnableVertexAttribArray = (PFNGLENABLEVERTEXATTRIBARRAYPROC)procLoad("glEnableVertexAttribArray");
 	xge_glVertexAttribPointer = (PFNGLVERTEXATTRIBPOINTERPROC)procLoad("glVertexAttribPointer");
 
+#if XGE_ENABLE_3D
+    xge_glGenQueries=(D3GLGENQUERIESPROC)procLoad("glGenQueries");
+    xge_glDeleteQueries=(D3GLDELETEQUERIESPROC)procLoad("glDeleteQueries");
+    xge_glQueryCounter=(D3GLQUERYCOUNTERPROC)procLoad("glQueryCounter");
+    xge_glGetQueryObjectiv=(D3GLGETQUERYOBJECTIVPROC)procLoad("glGetQueryObjectiv");
+    xge_glGetQueryObjectui64v=(D3GLGETQUERYOBJECTUI64VPROC)procLoad("glGetQueryObjectui64v");
+#endif
 	xge_glDrawArrays = (PFNGLDRAWARRAYSPROC)procLoad("glDrawArrays");
 	xge_glDrawElements = (PFNGLDRAWELEMENTSPROC)procLoad("glDrawElements");
 #if XGE_ENABLE_3D

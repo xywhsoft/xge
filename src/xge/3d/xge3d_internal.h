@@ -10,6 +10,11 @@ typedef struct xge3d_node_data {
     xge3d_node_t handle, parent;
     xge3d_mat4_t local, world;
     uint64_t version;
+    size_t dense_index;
+    struct xge3d_node_data *parent_node, *first_child, *next_sibling, *previous_sibling, *retire_cursor;
+    int world_dirty, retiring, spatial_queued;
+    int spatial_leaf;
+    uint32_t render_layers, query_layers, shadow_layers;
     xge3d_dvec3_t global_position;
     xge3d_aabb_t bounds;
     uint64_t bounds_version, mesh_version;
@@ -20,6 +25,7 @@ typedef struct xge3d_node_data {
     float color[4];
 #if XGE3D_ENABLE_ANIMATION
     struct d3_skin *skin;
+    xarray skin_users; /* Borrowed d3_skin* registrations; owner-thread only. */
 #endif
 #if XGE3D_ENABLE_LIGHTING
     int has_light;
@@ -29,6 +35,7 @@ typedef struct xge3d_node_data {
     xge3d_model *model;
     xge3d_node_t instance_root;
     size_t source_node;
+    xarray instance_nodes;
 #endif
 } xge3d_node_data;
 typedef struct d3_lods { size_t count;xge3d_lod_t levels[3];uint64_t versions[3]; } d3_lods;
@@ -39,7 +46,24 @@ struct xge3d_scene {
     xge3d_dvec3_t origin;
     xslotmap slots;
     xarray nodes, scratch;
+    xarray spatial_tree, spatial_items, spatial_pending, query_stack;
+    uint64_t spatial_geometry_version;
+    int spatial_rebuild, spatial_root;
+    size_t retiring_count;
+    xge3d_scene_stats_t stats;
 };
+typedef struct d3_spatial_branch {
+    xge3d_aabb_t box;
+    int left, right, parent;
+    xge3d_node_t node;
+} d3_spatial_branch;
+typedef struct d3_spatial_item { xge3d_aabb_t box; xge3d_node_t node; } d3_spatial_item;
+extern xatomic64 d3_geometry_version;
+void d3_node_dirty(xge3d_scene *scene,xge3d_node_data *node);
+void d3_spatial_dirty(xge3d_scene *scene,xge3d_node_data *node);
+void d3_detach(xge3d_scene *scene,xge3d_node_data *node);
+void d3_attach(xge3d_scene *scene,xge3d_node_data *node,xge3d_node_data *parent);
+xge3d_node_data *d3_subtree_next(xge3d_node_data *node,xge3d_node_data *root);
 
 typedef struct d3_joint_bounds { xge3d_aabb_t box;int valid; } d3_joint_bounds;
 struct xge3d_mesh {
@@ -51,6 +75,7 @@ struct xge3d_mesh {
     uint32_t refs, vao, vbo, ibo;
     int index_bits;
     uint64_t context, version;
+    size_t prepare_offset;int prepare_partial;
 };
 int d3_node_bounds(xge3d_scene *scene,xge3d_node_data *node,xge3d_aabb_t *out);
 int d3_frustum_box(xge3d_mat4_t matrix,xge3d_aabb_t box);
@@ -96,7 +121,11 @@ static inline xge3d_mat4_t d3_mul(xge3d_mat4_t a, xge3d_mat4_t b)
     return r;
 }
 static inline xge3d_node_data *d3_node(xge3d_scene *s, xge3d_node_t h)
-{ return s && h.scene == s->id ? xrtSlotMapGet(&s->slots, h.slot) : NULL; }
+{
+    xge3d_node_data *n=s && h.scene==s->id ? xrtSlotMapGet(&s->slots,h.slot) : NULL;
+    if(n && s->retiring_count) for(xge3d_node_data *p=n;p;p=p->parent.slot?xrtSlotMapGet(&s->slots,p->parent.slot):NULL) if(p->retiring)return NULL;
+    return n;
+}
 
 static inline xge3d_vec3_t d3_point(xge3d_mat4_t m, xge3d_vec3_t p)
 { return (xge3d_vec3_t){m.m[0]*p.x+m.m[4]*p.y+m.m[8]*p.z+m.m[12],
@@ -136,6 +165,7 @@ struct xge3d_texture {
     xge3d_sampler_t sampler;
     uint32_t refs, id;
     uint64_t context;
+    size_t prepare_offset;int prepare_partial;
 };
 struct xge3d_material {
     uint32_t refs;
@@ -147,6 +177,8 @@ int d3_material_retain(xge3d_material *material);
 #if XGE3D_ENABLE_MODEL
 struct cgltf_data *d3_model_data(const xge3d_model *model);
 int d3_model_retain(xge3d_model *model);
+int d3_mesh_detach_gpu(xge3d_mesh *mesh);
+int d3_texture_detach_gpu(xge3d_texture *texture);
 typedef struct d3_model_io {
     int (*load)(const char *uri,xge_resource_t *out,void *user);
     int (*cancelled)(void *user);void *user;
@@ -165,11 +197,14 @@ int d3_model_upload_step(xge3d_model *model,d3_upload_cursor *cursor,const xge3d
 #define D3_MAX_JOINTS 256
 typedef struct d3_skin {
     xge3d_model *model;
+    xge3d_scene *scene;
+    xge3d_node_t owner;
+    int dirty;
     xarray joints, inverse_bind, palette;
     uint64_t version, pose_version, uploaded_version, context;
     uint32_t texture;
 } d3_skin;
-int d3_skin_create(xge3d_model *model,size_t index,const xarray *nodes,d3_skin **out);
+int d3_skin_create(xge3d_scene *scene,xge3d_node_data *owner,xge3d_model *model,size_t index,const xarray *nodes,d3_skin **out);
 void d3_skin_free(d3_skin *skin);
 int d3_skin_update(xge3d_scene *scene,xge3d_node_data *node);
 int d3_skin_upload(d3_skin *skin,uint64_t *bytes);

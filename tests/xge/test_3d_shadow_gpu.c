@@ -83,7 +83,7 @@ static int frame(void *user)
     CHECK(xge3dNodeCreate(s,(xge3d_node_t){0},&second)==XGE_OK && xge3dNodeSetTransform(s,second,&t)==XGE_OK && xge3dNodeSetLight(s,second,&ld)==XGE_OK);
     CHECK(render(r,s,&draw,&stats)>=0 && stats.shadow_maps==2);
     CHECK(xge3dNodeCreate(s,(xge3d_node_t){0},&third)==XGE_OK && xge3dNodeSetLight(s,third,&ld)==XGE_OK);
-    CHECK(xge3dRender(r,s,&draw,NULL)==XGE_ERROR_UNSUPPORTED);
+    CHECK(xge3dRender(r,s,&draw,&stats)==XGE_OK && stats.shadow_maps==2);
     CHECK(xge3dNodeSetLight(s,third,NULL)==XGE_OK && render(r,s,&draw,&stats)>=0);
     failed=0;puts("3D shadows GPU: 1-4 cascades, visible receiver/caster, shared meshes, alpha mask, PCF, spot projection, invalid settings and resize recovery passed");
 done:

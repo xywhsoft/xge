@@ -519,6 +519,8 @@ static void* __xgeFileReadCandidate(const char* sPath, size_t* pSize)
 	iSize = 0;
 	pData = xrtFileReadAll(sPath, &iSize);
 	if ( (pData == NULL) || (iSize == 0u) ) {
+		/* An empty read is a resource failure, not a stale previous error. */
+		if ( pData != NULL ) xrtSetErrorKind(XERR_IO);
 		xrtFree(pData);
 		return NULL;
 	}
@@ -549,14 +551,17 @@ static void* __xgeFileGetAll(const char* sPath, size_t* pSize)
 	sFullPath = NULL;
 	{
 		str sAppPath = xrtPathAppDir();
+		if ( sAppPath == NULL && xrtErrorKind(xrtGetError()) == XERR_MEMORY ) return NULL;
 		sFullPath = sAppPath != NULL ? xrtPathJoin(sAppPath, sPath) : NULL;
 		xrtFree(sAppPath);
+		if ( sFullPath == NULL && xrtErrorKind(xrtGetError()) == XERR_MEMORY ) return NULL;
 		if ( sFullPath != NULL ) {
 			pData = __xgeFileReadCandidate((const char*)sFullPath, pSize);
 			xrtFree(sFullPath);
 			if ( pData != NULL ) {
 				return pData;
 			}
+			if ( xrtErrorKind(xrtGetError()) == XERR_MEMORY ) return NULL;
 		}
 	}
 

@@ -1,9 +1,69 @@
 #include "xge3d_internal.h"
+#include "xge_clock.h"
 
 #if XGE_ENABLE_3D
 
 /* Scene mutation is serialized by the application, like the GPU context. */
 static uint64_t d3_next_scene;
+
+void d3_detach(xge3d_scene *s,xge3d_node_data *n)
+{
+    (void)s;
+    if(n->previous_sibling)n->previous_sibling->next_sibling=n->next_sibling;
+    else if(n->parent_node)n->parent_node->first_child=n->next_sibling;
+    if(n->next_sibling)n->next_sibling->previous_sibling=n->previous_sibling;
+    n->parent_node=n->next_sibling=n->previous_sibling=NULL;n->parent=(xge3d_node_t){0};
+}
+void d3_attach(xge3d_scene *s,xge3d_node_data *n,xge3d_node_data *parent)
+{
+    (void)s;n->parent_node=parent;n->parent=parent?parent->handle:(xge3d_node_t){0};
+    if(parent){n->next_sibling=parent->first_child;if(n->next_sibling)n->next_sibling->previous_sibling=n;parent->first_child=n;}
+}
+static xge3d_node_data *d3_subtree_after(xge3d_node_data *n,xge3d_node_data *root)
+{
+    while(n!=root&&!n->next_sibling)n=n->parent_node;
+    return n==root?NULL:n->next_sibling;
+}
+xge3d_node_data *d3_subtree_next(xge3d_node_data *n,xge3d_node_data *root)
+{return n->first_child?n->first_child:d3_subtree_after(n,root);}
+void d3_spatial_dirty(xge3d_scene *s,xge3d_node_data *n)
+{
+    if(n->spatial_leaf<0||n->spatial_queued||s->spatial_rebuild)return;
+    if(!xrtArrayPush(&s->spatial_pending,&n->handle)){s->spatial_rebuild=1;return;}
+    n->spatial_queued=1;
+}
+void d3_node_dirty(xge3d_scene *s,xge3d_node_data *root)
+{
+    for(xge3d_node_data *n=root;n;){
+        if(n->world_dirty){n=d3_subtree_after(n,root);continue;}
+        n->world_dirty=1;n->bounds_version=0;d3_spatial_dirty(s,n);
+#if XGE3D_ENABLE_ANIMATION
+        if(n->skin)n->skin->dirty=1;
+        for(size_t i=0;i<n->skin_users.Count;++i){d3_skin *skin=*(d3_skin**)xrtArrayGet(&n->skin_users,i);skin->dirty=1;
+            xge3d_node_data *owner=xrtSlotMapGet(&s->slots,skin->owner.slot);if(owner){owner->bounds_version=0;d3_spatial_dirty(s,owner);}}
+#endif
+        n=d3_subtree_next(n,root);
+    }
+}
+static void d3_destroy_one(xge3d_scene *s,xge3d_node_data *n)
+{
+    d3_detach(s,n);s->spatial_rebuild=1;
+#if XGE3D_ENABLE_ANIMATION
+    for(size_t i=0;i<n->skin_users.Count;++i){d3_skin *skin=*(d3_skin**)xrtArrayGet(&n->skin_users,i);skin->dirty=1;
+        xge3d_node_data *owner=xrtSlotMapGet(&s->slots,skin->owner.slot);if(owner){owner->bounds_version=0;d3_spatial_dirty(s,owner);}}
+    d3_skin_free(n->skin);xrtArrayUnit(&n->skin_users);
+#endif
+    if(n->retiring)--s->retiring_count;
+    xrtSlotMapRemove(&s->slots,n->handle.slot,NULL);
+    size_t at=n->dense_index,last=s->nodes.Count-1;
+    if(at!=last){xge3d_node_data *moved=*(xge3d_node_data**)xrtArrayGet(&s->nodes,last);moved->dense_index=at;}
+    xrtArrayRemoveSwap(&s->nodes,at);
+    xge3dMeshFree(n->mesh);d3_lods_free(n->lods);xge3dMaterialFree(n->material);
+#if XGE3D_ENABLE_MODEL
+    xrtArrayUnit(&n->instance_nodes);xge3dModelFree(n->model);
+#endif
+    ++s->stats.destroyed_nodes;xrtFree(n);++s->version;
+}
 
 int xge3dSceneCreate(xge3d_scene **out)
 {
@@ -16,6 +76,9 @@ int xge3dSceneCreate(xge3d_scene **out)
     xrtSlotMapInit(&s->slots);
     xrtArrayInit(&s->nodes, sizeof(xge3d_node_data*));
     xrtArrayInit(&s->scratch, sizeof(xge3d_node_data*));
+    xrtArrayInit(&s->spatial_tree,sizeof(d3_spatial_branch));xrtArrayInit(&s->spatial_items,sizeof(d3_spatial_item));
+    xrtArrayInit(&s->spatial_pending,sizeof(xge3d_node_t));xrtArrayInit(&s->query_stack,sizeof(int));
+    s->spatial_root=-1;s->spatial_rebuild=1;
     s->id = ++d3_next_scene;
     s->version = 1;
     *out = s;
@@ -25,21 +88,11 @@ int xge3dSceneCreate(xge3d_scene **out)
 void xge3dSceneFree(xge3d_scene *s)
 {
     if (!s) return;
-    for (size_t i=0; i<s->nodes.Count; ++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes, i);
-        xge3dMeshFree(n->mesh);
-        d3_lods_free(n->lods);
-        xge3dMaterialFree(n->material);
-#if XGE3D_ENABLE_ANIMATION
-        d3_skin_free(n->skin);
-#endif
-#if XGE3D_ENABLE_MODEL
-        xge3dModelFree(n->model);
-#endif
-        xrtFree(n);
-    }
+    while(s->nodes.Count){xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,s->nodes.Count-1);
+        while(n->first_child){n=n->first_child;}d3_destroy_one(s,n);}
     xrtArrayUnit(&s->nodes);
     xrtArrayUnit(&s->scratch);
+    xrtArrayUnit(&s->spatial_tree);xrtArrayUnit(&s->spatial_items);xrtArrayUnit(&s->spatial_pending);xrtArrayUnit(&s->query_stack);
     xrtSlotMapUnit(&s->slots);
     xrtFree(s);
 }
@@ -60,8 +113,12 @@ int xge3dRelativePosition(xge3d_dvec3_t origin,xge3d_dvec3_t global,xge3d_vec3_t
 }
 void d3_set_local(xge3d_scene *s,xge3d_node_data *n,xge3d_mat4_t matrix)
 {
-    n->local=matrix;
+    /* A public root-local assignment reanchors its double translation even
+     * when the float matrix is unchanged. SetGlobalPosition overrides it. */
     if (!n->parent.slot) n->global_position=(xge3d_dvec3_t){s->origin.x+matrix.m[12],s->origin.y+matrix.m[13],s->origin.z+matrix.m[14]};
+    if(!memcmp(&n->local,&matrix,sizeof(matrix)))return;
+    d3_node_dirty(s,n);
+    n->local=matrix;
     ++s->version;
 }
 int xge3dSceneSetOrigin(xge3d_scene *s,xge3d_dvec3_t origin)
@@ -74,7 +131,7 @@ int xge3dSceneSetOrigin(xge3d_scene *s,xge3d_dvec3_t origin)
     s->origin=origin;
     for (size_t i=0;i<s->nodes.Count;++i) {
         xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,i);xge3d_vec3_t p;
-        if (!n->parent.slot) {xge3dRelativePosition(origin,n->global_position,&p);n->local.m[12]=p.x;n->local.m[13]=p.y;n->local.m[14]=p.z;}
+        if (!n->parent.slot) {d3_node_dirty(s,n);xge3dRelativePosition(origin,n->global_position,&p);n->local.m[12]=p.x;n->local.m[13]=p.y;n->local.m[14]=p.z;}
     }
     ++s->version;return XGE_OK;
 }
@@ -105,6 +162,13 @@ int xge3dNodeCreate(xge3d_scene *s, xge3d_node_t parent, xge3d_node_t *out)
     n->parent = parent;
     n->global_position=s->origin;
     n->visible = 1;
+    n->world_dirty=1;n->spatial_leaf=-1;n->render_layers=n->query_layers=n->shadow_layers=UINT32_MAX;
+#if XGE3D_ENABLE_ANIMATION
+    xrtArrayInit(&n->skin_users,sizeof(d3_skin*));
+#endif
+#if XGE3D_ENABLE_MODEL
+    xrtArrayInit(&n->instance_nodes,sizeof(xge3d_node_t));
+#endif
     for (int i=0; i<4; ++i) n->color[i]=1;
     n->handle = (xge3d_node_t){xrtSlotMapInsert(&s->slots, n), s->id};
     if (!n->handle.slot || !xrtArrayPush(&s->nodes, &n)) {
@@ -120,7 +184,8 @@ int xge3dNodeCreate(xge3d_scene *s, xge3d_node_t parent, xge3d_node_t *out)
         xrtFree(n);
         return XGE_ERROR_OUT_OF_MEMORY;
     }
-    ++s->version;
+    n->dense_index=s->nodes.Count-1;d3_attach(s,n,d3_node(s,parent));
+    ++s->version;s->spatial_rebuild=1;
     *out = n->handle;
     return XGE_OK;
 }
@@ -135,7 +200,8 @@ int xge3dNodeSetParent(xge3d_scene *s, xge3d_node_t node, xge3d_node_t parent)
     }
     for (; p; p = d3_node(s, p->parent))
         if (p == n) return XGE_ERROR_INVALID_ARGUMENT;
-    n->parent = parent;
+    if(n->parent.slot==parent.slot&&n->parent.scene==parent.scene)return XGE_OK;
+    d3_node_dirty(s,n);d3_detach(s,n);d3_attach(s,n,d3_node(s,parent));
     if (!parent.slot) n->global_position=(xge3d_dvec3_t){s->origin.x+n->local.m[12],s->origin.y+n->local.m[13],s->origin.z+n->local.m[14]};
     ++s->version;
     return XGE_OK;
@@ -174,20 +240,26 @@ int xge3dNodeSetTransform(xge3d_scene *s, xge3d_node_t node, const xge3d_transfo
     return result == XGE_OK ? xge3dNodeSetMatrix(s, node, &m) : result;
 }
 
+int xge3dNodeGetLocalMatrix(xge3d_scene *s,xge3d_node_t node,xge3d_mat4_t *out)
+{
+    xge3d_node_data *n=d3_node(s,node);
+    if(!n||!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=n->local;return XGE_OK;
+}
 int xge3dNodeGetWorldMatrix(xge3d_scene *s, xge3d_node_t node, xge3d_mat4_t *out)
 {
     xge3d_node_data *n = d3_node(s, node), *p=n;
     if (!n || !out) return XGE_ERROR_INVALID_ARGUMENT;
     xrtArrayClear(&s->scratch);
     /* An explicit walk handles deep hierarchies without recursive C calls. */
-    while (p && p->version != s->version) {
+    while (p && p->world_dirty) {
         if (!xrtArrayPush(&s->scratch, &p)) return XGE_ERROR_OUT_OF_MEMORY;
         p = d3_node(s, p->parent);
     }
     for (size_t i=s->scratch.Count; i>0; --i) {
         xge3d_node_data *child=*(xge3d_node_data**)xrtArrayGet(&s->scratch, i-1);
         child->world = p ? d3_mul(p->world, child->local) : child->local;
-        child->version = s->version;
+        child->version = ++s->version;child->world_dirty=0;++s->stats.world_updates;
         p = child;
     }
     *out = n->world;
@@ -213,6 +285,7 @@ int xge3dNodeSetMesh(xge3d_scene *s, xge3d_node_t node, xge3d_mesh *mesh)
     xge3dMeshFree(n->mesh);
     d3_lods_free(n->lods);n->lods=NULL;
     n->mesh=mesh;
+    n->bounds_version=0;s->spatial_rebuild=1;
     ++s->version;
     return XGE_OK;
 }
@@ -244,7 +317,7 @@ int xge3dNodeSetLods(xge3d_scene *s,xge3d_node_t node,const xge3d_lod_t *levels,
             lods->levels[lods->count++]=levels[i];
         }
     }
-    d3_lods_free(n->lods);n->lods=lods;++s->version;return XGE_OK;
+    d3_lods_free(n->lods);n->lods=lods;n->bounds_version=0;d3_spatial_dirty(s,n);++s->version;return XGE_OK;
 }
 
 int xge3dNodeSetColor(xge3d_scene *s, xge3d_node_t node, const float rgba[4])
@@ -266,38 +339,54 @@ int xge3dNodeSetMaterial(xge3d_scene *s, xge3d_node_t node, xge3d_material *mate
     return XGE_OK;
 }
 
-int xge3dNodeDestroy(xge3d_scene *s, xge3d_node_t node)
+int xge3dNodeSetMaterialTree(xge3d_scene *s,xge3d_node_t handle,xge3d_material *material)
 {
-    xge3d_node_data *root = d3_node(s, node);
-    if (!root) return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_node_data *root=d3_node(s,handle);if(!root)return XGE_ERROR_INVALID_ARGUMENT;
     xrtArrayClear(&s->scratch);
-    for (size_t i=0; i<s->nodes.Count; ++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes, i), *p=n;
-        for (; p && p!=root; p=d3_node(s, p->parent)) {}
-        if (p && !xrtArrayPush(&s->scratch, &n)) return XGE_ERROR_OUT_OF_MEMORY;
+    for(xge3d_node_data *n=root;n;n=d3_subtree_next(n,root)){
+        if(n->mesh&&n->material!=material&&!xrtArrayPush(&s->scratch,&n))return XGE_ERROR_OUT_OF_MEMORY;
     }
-    for (size_t i=0; i<s->scratch.Count; ++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->scratch, i);
-        xrtSlotMapRemove(&s->slots, n->handle.slot, NULL);
-        /* Remove by pointer: ancestors can be released before their descendants. */
-        for (size_t j=0; j<s->nodes.Count; ++j)
-            if (*(xge3d_node_data**)xrtArrayGet(&s->nodes, j)==n) {
-                xrtArrayRemoveSwap(&s->nodes, j);
-                break;
-            }
-        xge3dMeshFree(n->mesh);
-        d3_lods_free(n->lods);
-        xge3dMaterialFree(n->material);
-#if XGE3D_ENABLE_ANIMATION
-        d3_skin_free(n->skin);
-#endif
-#if XGE3D_ENABLE_MODEL
-        xge3dModelFree(n->model);
-#endif
-        xrtFree(n);
-    }
-    ++s->version;
+    if(material&&(uint64_t)s->scratch.Count>UINT32_MAX-material->refs)return XGE_ERROR_INVALID_STATE;
+    for(size_t i=0;i<s->scratch.Count;++i){xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->scratch,i);
+        if(material){++material->refs;}xge3dMaterialFree(n->material);n->material=material;
+    }return XGE_OK;
+}
+
+int xge3dNodeDestroy(xge3d_scene *s,xge3d_node_t node)
+{
+    xge3d_node_data *root=d3_node(s,node);if(!root)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_node_data *n=root;
+    while(n){while(n->first_child)n=n->first_child;
+        xge3d_node_data *parent=n==root?NULL:n->parent_node;d3_destroy_one(s,n);n=parent;}
     return XGE_OK;
+}
+int xge3dNodeDestroyStep(xge3d_scene *s,xge3d_node_t handle,const xge3d_work_budget_t *budget,int *completed)
+{
+    if(!completed){return XGE_ERROR_INVALID_ARGUMENT;}*completed=0;
+    xge3d_node_data *root=s&&handle.scene==s->id?xrtSlotMapGet(&s->slots,handle.slot):NULL;
+    if(!root||!budget)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!root->retiring){if(!d3_node(s,handle))return XGE_ERROR_INVALID_STATE;
+        root->retiring=1;root->visible=0;root->retire_cursor=root;++s->retiring_count;}
+    uint64_t start=xgeClockMicroseconds();size_t count=0;
+    while(count<budget->nodes){
+        if(count&&budget->microseconds&&xgeClockMicroseconds()-start>=budget->microseconds)break;
+        xge3d_node_data *n=root->retire_cursor;while(n->first_child)n=n->first_child;
+        int last=n==root; xge3d_node_data *parent=n->parent_node;
+        if(!last)root->retire_cursor=parent;
+        d3_destroy_one(s,n);++count;if(last){*completed=1;break;}
+    }return XGE_OK;
+}
+int xge3dSceneStats(xge3d_scene *s,xge3d_scene_stats_t *out,int reset)
+{
+    if(!s||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    *out=s->stats;out->size=sizeof(*out);out->nodes=s->nodes.Count;
+    out->spatial_bytes=s->spatial_tree.Count*sizeof(d3_spatial_branch)+s->spatial_items.Count*sizeof(d3_spatial_item);
+    if(reset){memset(&s->stats,0,sizeof(s->stats));}return XGE_OK;
+}
+int xge3dNodeSetLayers(xge3d_scene *s,xge3d_node_t handle,uint32_t render,uint32_t query,uint32_t shadow)
+{
+    xge3d_node_data *n=d3_node(s,handle);if(!n)return XGE_ERROR_INVALID_ARGUMENT;
+    n->render_layers=render;n->query_layers=query;n->shadow_layers=shadow;return XGE_OK;
 }
 
 int xge3dCameraPerspective(xge3d_camera_t *out, float fov, float aspect, float near_z, float far_z)

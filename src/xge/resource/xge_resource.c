@@ -242,8 +242,17 @@ int xgeResourceLoad(const char* sURI, xge_resource_t* pResource)
 
 	pData = __xgeFileGetAll(sURI, &iSize);
 	if ( pData == NULL ) {
-		__xgeLogFormat(XGE_LOG_WARN, "resource", "resource file not found: %s", sURI);
-		return XGE_ERROR_FILE_NOT_FOUND;
+		xerrkind Kind = xrtErrorKind(xrtGetError());
+		if ( Kind == XERR_MEMORY ) {
+			__xgeLogFormat(XGE_LOG_WARN, "resource", "resource memory exhausted or allocation quota reached: %s", sURI);
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		if ( Kind == XERR_NOT_FOUND ) {
+			__xgeLogFormat(XGE_LOG_WARN, "resource", "resource file not found: %s", sURI);
+			return XGE_ERROR_FILE_NOT_FOUND;
+		}
+		__xgeLogFormat(XGE_LOG_WARN, "resource", "resource read failed: %s", sURI);
+		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	if ( iSize > (size_t)INT32_MAX ) {
 		xrtFree(pData);

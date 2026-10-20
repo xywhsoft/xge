@@ -5,11 +5,14 @@
 typedef struct d3_request {
     xge3d_request_t handle;xge3d_request_state_t state;int result,running,released;
     char *uri;xge3d_model *model;d3_upload_cursor upload;xatomic32 cancelled;
+    xge3d_model_retirement *retirement;int retire_ready;
     struct xge3d_loader *loader;
+    xge3d_asset_memory_t memory;
 } d3_request;
 struct xge3d_loader {
     uint64_t id,owner;size_t capacity;uint32_t flags;int stopping;
     xmutex mutex;xcond condition;xthread *worker;xslotmap slots;xarray requests;
+    xge3d_decode_budget *budget;
 };
 static xatomic64 d3_loader_ids;
 static int d3_owner(const xge3d_loader *l)
@@ -21,14 +24,14 @@ static void d3_request_remove(xge3d_loader *l,d3_request *r)
     for (size_t i=0;i<l->requests.Count;++i) if (*(d3_request**)xrtArrayGet(&l->requests,i)==r) {xrtArrayRemove(&l->requests,i,1);break;}
 }
 static void d3_request_free(d3_request *r)
-{xge3dModelFree(r->model);xrtFree(r->uri);xrtFree(r);}
+{xge3dModelRetireFree(r->retirement);xge3dModelFree(r->model);xrtFree(r->uri);xrtFree(r);}
 /* Only the owner changes the array. Released CPU work keeps its private job
  * alive until cleanup ends; a later Request/Pump collects the empty job. */
 static void d3_collect(xge3d_loader *l)
 {
     for (size_t i=0;i<l->requests.Count;) {
         d3_request *r=*(d3_request**)xrtArrayGet(&l->requests,i);
-        if (r->released && !r->running) {xrtArrayRemove(&l->requests,i,1);d3_request_free(r);}
+        if (r->released && !r->running&&!r->model&&!r->retirement) {xrtArrayRemove(&l->requests,i,1);d3_request_free(r);}
         else ++i;
     }
 }
@@ -50,8 +53,11 @@ static int32 d3_loader_worker(void *user)
 {
     xge3d_loader *l=user;
     for (;;) {
-        xrtMutexLock(&l->mutex);d3_request *r=NULL;
+        xrtMutexLock(&l->mutex);d3_request *r=NULL;int cleanup=0;
         while (!l->stopping && !r) {
+            for(size_t i=0;i<l->requests.Count;++i){d3_request *p=*(d3_request**)xrtArrayGet(&l->requests,i);
+                if(d3_request_cancelled(p)&&((p->retire_ready&&p->retirement)||(!p->upload.context&&p->model))){r=p;cleanup=1;break;}}
+            if(r)break;
             for (size_t i=0;i<l->requests.Count;++i) {
                 d3_request *p=*(d3_request**)xrtArrayGet(&l->requests,i);
                 if (p->state==XGE3D_REQUEST_QUEUED) {r=p;break;}
@@ -59,9 +65,20 @@ static int32 d3_loader_worker(void *user)
             if (!r) xrtCondWait(&l->condition,&l->mutex);
         }
         if (l->stopping) {xrtMutexUnlock(&l->mutex);break;}
+        if(cleanup){xge3d_model *garbage=r->model;xge3d_model_retirement *retirement=r->retirement;
+            r->model=NULL;r->retirement=NULL;r->retire_ready=0;r->running=1;xrtMutexUnlock(&l->mutex);
+            xge3dModelRetireFree(retirement);xge3dModelFree(garbage);
+            xrtMutexLock(&l->mutex);r->running=0;xrtMutexUnlock(&l->mutex);continue;
+        }
         r->running=1;r->state=XGE3D_REQUEST_LOADING;xrtMutexUnlock(&l->mutex);
         d3_model_io io={d3_request_read,d3_request_cancelled,r};xge3d_model *model=NULL;
-        int result=d3_model_load_io(r->uri,&io,&model);
+        xallocationscope scope={0};int scoped=l->budget&&xrtAllocationBudgetEnter(l->budget,&scope);
+        int result=l->budget&&!scoped?XGE_ERROR_INVALID_STATE:d3_model_load_io(r->uri,&io,&model);
+        int quota_failed=scope.Rejections!=0;if(scoped)xrtAllocationBudgetLeave(&scope);
+        if(result&&quota_failed)result=XGE_ERROR_OUT_OF_MEMORY;
+        xge3d_asset_memory_t memory={.size=sizeof(memory)};
+        if(!result&&model)result=xge3dModelMemoryInfo(model,&memory);
+        if(result&&model){xge3dModelFree(model);model=NULL;}
         if (d3_request_cancelled(r)) {xge3dModelFree(model);model=NULL;}
         xrtMutexLock(&l->mutex);
         if (d3_request_cancelled(r)) {
@@ -71,6 +88,7 @@ static int32 d3_loader_worker(void *user)
             r->state=XGE3D_REQUEST_CANCELLED;r->result=XGE_ERROR;
         } else {
             r->result=result;r->model=model;model=NULL;
+            r->memory=memory;
             r->state=result==XGE_OK ? XGE3D_REQUEST_CPU_READY : XGE3D_REQUEST_FAILED;
             if (r->model) r->upload.total=d3_model_upload_bytes(r->model);
         }
@@ -103,7 +121,16 @@ int xge3dLoaderFree(xge3d_loader *l)
     xrtCondSignal(&l->condition);xrtMutexUnlock(&l->mutex);
     xrtThreadWait(l->worker);xrtThreadDestroy(l->worker);
     for (size_t i=0;i<l->requests.Count;++i) d3_request_free(*(d3_request**)xrtArrayGet(&l->requests,i));
-    xrtArrayUnit(&l->requests);xrtSlotMapUnit(&l->slots);xrtCondUnit(&l->condition);xrtMutexUnit(&l->mutex);xrtFree(l);return XGE_OK;
+    xrtArrayUnit(&l->requests);xrtSlotMapUnit(&l->slots);xrtCondUnit(&l->condition);xrtMutexUnit(&l->mutex);xrtAllocationBudgetFree(l->budget);xrtFree(l);return XGE_OK;
+}
+int xge3dLoaderSetDecodeBudget(xge3d_loader *l,xge3d_decode_budget *budget)
+{
+    if(!d3_owner(l))return XGE_ERROR_INVALID_STATE;
+    xrtMutexLock(&l->mutex);d3_collect(l);int result=XGE_OK;
+    if(l->requests.Count)result=XGE_ERROR_INVALID_STATE;
+    else if(budget&&!xrtAllocationBudgetAddRef(budget))result=XGE_ERROR_OUT_OF_MEMORY;
+    else{xge3d_decode_budget *old=l->budget;l->budget=budget;xrtAllocationBudgetFree(old);}
+    xrtMutexUnlock(&l->mutex);return result;
 }
 int xge3dLoaderRequest(xge3d_loader *l,const char *uri,xge3d_request_t *out)
 {
@@ -129,21 +156,29 @@ int xge3dLoaderStatus(xge3d_loader *l,xge3d_request_t h,xge3d_request_info_t *ou
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     memset(out,0,sizeof(*out));if (!d3_owner(l)) return XGE_ERROR_INVALID_STATE;
     xrtMutexLock(&l->mutex);d3_request *r=d3_request_get(l,h);
-    if (r) *out=(xge3d_request_info_t){r->state,r->result,r->running,r->upload.uploaded,r->upload.total};
+    if (r) *out=(xge3d_request_info_t){r->state,r->result,r->running||(r->state==XGE3D_REQUEST_CANCELLED&&(r->model||r->retirement)),r->upload.uploaded,r->upload.total};
     xrtMutexUnlock(&l->mutex);return r ? XGE_OK : XGE_ERROR_INVALID_ARGUMENT;
+}
+int xge3dLoaderMemoryInfo(xge3d_loader *l,xge3d_request_t h,xge3d_asset_memory_t *out)
+{
+    if(!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_owner(l))return XGE_ERROR_INVALID_STATE;
+    xrtMutexLock(&l->mutex);d3_request *r=d3_request_get(l,h);int result=XGE_ERROR_INVALID_STATE;
+    if(r&&(r->state==XGE3D_REQUEST_CPU_READY||r->state==XGE3D_REQUEST_UPLOADING||r->state==XGE3D_REQUEST_READY)){*out=r->memory;result=XGE_OK;}
+    xrtMutexUnlock(&l->mutex);return result;
 }
 int xge3dLoaderCancel(xge3d_loader *l,xge3d_request_t h)
 {
     if (!d3_owner(l)) return XGE_ERROR_INVALID_STATE;
-    xrtMutexLock(&l->mutex);d3_request *r=d3_request_get(l,h);xge3d_model *model=NULL;
-    if (r) {xrtAtomic32Store(&r->cancelled,1,XMEMORY_RELEASE);r->state=XGE3D_REQUEST_CANCELLED;r->result=XGE_ERROR;model=r->model;r->model=NULL;}
-    xrtMutexUnlock(&l->mutex);xge3dModelFree(model);return r ? XGE_OK : XGE_ERROR_INVALID_ARGUMENT;
+    xrtMutexLock(&l->mutex);d3_request *r=d3_request_get(l,h);
+    if (r) {xrtAtomic32Store(&r->cancelled,1,XMEMORY_RELEASE);r->state=XGE3D_REQUEST_CANCELLED;r->result=XGE_ERROR;xrtCondSignal(&l->condition);}
+    xrtMutexUnlock(&l->mutex);return r ? XGE_OK : XGE_ERROR_INVALID_ARGUMENT;
 }
 int xge3dLoaderRelease(xge3d_loader *l,xge3d_request_t h)
 {
     int result=xge3dLoaderCancel(l,h);if (result!=XGE_OK) return result;
     xrtMutexLock(&l->mutex);d3_request *r=d3_request_get(l,h);r->released=1;xrtSlotMapRemove(&l->slots,h.slot,NULL);
-    int discard=!r->running;if (discard) d3_request_remove(l,r);
+    int discard=!r->running&&!r->model&&!r->retirement;if (discard) d3_request_remove(l,r);
     xrtMutexUnlock(&l->mutex);if (discard) d3_request_free(r);return XGE_OK;
 }
 int xge3dLoaderTake(xge3d_loader *l,xge3d_request_t h,xge3d_model **out)
@@ -163,6 +198,22 @@ int xge3dLoaderPump(xge3d_loader *l,const xge3d_upload_budget_t *budget,xge3d_up
     if (!budget) return XGE_ERROR_INVALID_ARGUMENT;
     xge3d_upload_stats_t stats={0};uint64_t now=xgeClockMicroseconds(),deadline=budget->microseconds ? (UINT64_MAX-now<budget->microseconds ? UINT64_MAX : now+budget->microseconds) : 0;
     xrtMutexLock(&l->mutex);d3_collect(l);xrtMutexUnlock(&l->mutex);
+    /* Cancellation invalidates handles immediately. GPU ownership is retired
+     * here on the owner, while the worker reclaims the detached CPU payload. */
+    for(size_t i=0;i<l->requests.Count;++i){
+        if(stats.operations>=budget->operations||(deadline&&xgeClockMicroseconds()>=deadline))break;
+        d3_request *r=*(d3_request**)xrtArrayGet(&l->requests,i);xge3d_model *model=NULL;xge3d_model_retirement *token=NULL;
+        xrtMutexLock(&l->mutex);
+        if(d3_request_cancelled(r)&&!r->running&&!r->retire_ready&&r->upload.context){model=r->model;r->model=NULL;token=r->retirement;}
+        xrtMutexUnlock(&l->mutex);
+        if(model){int result=xge3dModelRetireBegin(&model,&token);xrtMutexLock(&l->mutex);r->model=model;r->retirement=token;xrtMutexUnlock(&l->mutex);if(result)return result;}
+        if(!token)continue;
+        xge3d_retirement_info_t before={.size=sizeof(before)},after={.size=sizeof(after)};xge3dModelRetireInfo(token,&before);
+        uint64_t current=xgeClockMicroseconds();if(deadline&&current>=deadline)break;
+        xge3d_release_budget_t b={budget->operations-stats.operations,deadline?deadline-current:0};int complete=0,result=xge3dModelRetireStep(token,&b,&complete);
+        xge3dModelRetireInfo(token,&after);stats.operations+=after.operations-before.operations;if(result)return result;
+        if(complete){xrtMutexLock(&l->mutex);r->retire_ready=1;xrtCondSignal(&l->condition);xrtMutexUnlock(&l->mutex);}
+    }
     /* Only this creating thread changes the array; the worker publishes under
      * the mutex without removing jobs during a partially completed pump. */
     size_t index=0;
@@ -179,8 +230,7 @@ int xge3dLoaderPump(xge3d_loader *l,const xge3d_upload_budget_t *budget,xge3d_up
         if (result!=XGE_OK) {r->state=XGE3D_REQUEST_FAILED;r->result=result;++stats.failed;}
         else if (complete) {r->state=XGE3D_REQUEST_READY;++stats.completed;}
         else if (r->upload.context) r->state=XGE3D_REQUEST_UPLOADING;
-        xge3d_model *failed=result!=XGE_OK ? r->model : NULL;if (failed) r->model=NULL;
-        xrtMutexUnlock(&l->mutex);xge3dModelFree(failed);
+        xrtMutexUnlock(&l->mutex);
     }
     if (out) *out=stats;
     return XGE_OK;

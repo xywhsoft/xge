@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 import subprocess
 import sys
-ROOT=Path(__file__).resolve().parents[2]
+ROOT=Path(__file__).resolve().parents[3]
 def run(args):subprocess.run([str(a) for a in args],cwd=ROOT,check=True)
 def main():
     p=argparse.ArgumentParser(description=__doc__)

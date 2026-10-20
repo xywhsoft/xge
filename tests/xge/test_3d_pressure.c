@@ -68,7 +68,7 @@ static int cycle(bench *b)
     int kind=b->cycles%4;int result=XGE_OK;
     if (!b->job.slot && !b->hold) {
         const char *path=kind==2 ? (b->cycles%8==2 ? "artifacts/xge-3d/fixtures/rig-a.gltf" : "artifacts/xge-3d/fixtures/rig-b.gltf") : "artifacts/xge-3d/fixtures/async.gltf";
-        b->requested=xrtClock();result=xge3dLoaderRequest(b->loader,path,&b->job);if (result!=XGE_OK) return result;
+        b->requested=integration_clock();result=xge3dLoaderRequest(b->loader,path,&b->job);if (result!=XGE_OK) return result;
         if (!kind) {
             xge3d_request_t stale=b->job;result=xge3dLoaderRelease(b->loader,b->job);b->job=(xge3d_request_t){0};
             xge3d_request_info_t info;if (result!=XGE_OK || xge3dLoaderStatus(b->loader,stale,&info)!=XGE_ERROR_INVALID_ARGUMENT) return XGE_ERROR_INVALID_STATE;
@@ -93,7 +93,7 @@ static int cycle(bench *b)
         if (kind==1) ++b->texture;else ++b->vertex;++b->cycles;return result;
     }
     if (info.state!=XGE3D_REQUEST_READY) return XGE_OK;
-    uint64_t load=xrtClock()-b->requested;b->total_load+=load;if (load>b->max_load) b->max_load=load;
+    uint64_t load=integration_clock()-b->requested;b->total_load+=load;if (load>b->max_load) b->max_load=load;
     xge3d_model *model=NULL;result=xge3dLoaderTake(b->loader,b->job,&model);b->job=(xge3d_request_t){0};
     int rig=b->cycles%8==2 ? 0 : 1;
     for (int i=0;i<2 && result==XGE_OK;++i) {
@@ -114,13 +114,13 @@ static int measure(bench *b)
     xge3d_shadow_settings_t shadows=xge3dShadowDefault();shadows.cascades=2;shadows.resolution=1024;shadows.distance=40;shadows.depth_padding=12;shadows.bias=.005f;shadows.normal_bias=.08f;
     xge3d_render_desc_t desc={&camera,d->target,{0,0,0,1},3,d->sky};desc.shadows=&shadows;desc.exposure=1;
     desc.disable_culling=(mode&1)!=0;desc.disable_instancing=(mode&2)!=0;
-    sample s={0};s.mode=mode;uint64_t now=xrtClock();s.interval=now-b->last;b->last=now;
+    sample s={0};s.mode=mode;uint64_t now=integration_clock();s.interval=now-b->last;b->last=now;
     if (!xrtArrayPush(&b->samples,&s)) return XGE_ERROR_OUT_OF_MEMORY;
     collect_queries(b,0);pending_query *q=NULL;
     for (int i=0;i<4;++i) if (!b->queries[i].pending) {q=&b->queries[i];break;}
     if (q) b->begin(0x88BF,q->id);
-    xge3d_render_stats_t stats;now=xrtClock();result=xge3dRender(d->renderer,d->scene,&desc,&stats);
-    s.cpu=xrtClock()-now;s.draws=stats.draw_calls;s.upload=stats.upload_bytes;
+    xge3d_render_stats_t stats;now=integration_clock();result=xge3dRender(d->renderer,d->scene,&desc,&stats);
+    s.cpu=integration_clock()-now;s.draws=stats.draw_calls;s.upload=stats.upload_bytes;
     if (q) {b->end(0x88BF);q->pending=1;q->sample=b->samples.Count-1;}
     *(sample*)xrtArrayGet(&b->samples,b->samples.Count-1)=s;++b->serial;
     return result;
@@ -139,17 +139,17 @@ static int pressure_frame(void *user)
             printf("GPU: %s | %s | %s\n",string(0x1F00),string(0x1F01),string(0x1F02));
             fflush(stdout);
             for (int i=0;i<4;++i) b->gen(1,&b->queries[i].id);
-            REQUIRE(xge3dLoaderCreate(NULL,&b->loader)==XGE_OK);b->last=xrtClock();b->phase=1;
+            REQUIRE(xge3dLoaderCreate(NULL,&b->loader)==XGE_OK);b->last=integration_clock();b->phase=1;
         }
         return 0;
     }
     if (b->phase==1) {
         REQUIRE(measure(b)==XGE_OK);
-        if (b->serial==320) {collect_queries(b,1);b->phase=2;b->last=xrtClock();}
+        if (b->serial==320) {collect_queries(b,1);b->phase=2;b->last=integration_clock();}
         return 0;
     }
-    uint64_t now=xrtClock();sample s={.mode=4,.interval=now-b->last};b->last=now;
-    REQUIRE(cycle(b)==XGE_OK && frame(&b->app)==0);s.cpu=xrtClock()-now;
+    uint64_t now=integration_clock();sample s={.mode=4,.interval=now-b->last};b->last=now;
+    REQUIRE(cycle(b)==XGE_OK && frame(&b->app)==0);s.cpu=integration_clock()-now;
     REQUIRE(xrtArrayPush(&b->samples,&s));
     if (b->cycles && b->cycles%100==0 && !b->hold && !b->job.slot) REQUIRE(memory_sample(b));
     if (b->cycles<b->limit) return 0;
@@ -184,7 +184,7 @@ int main(int argc,char **argv)
     }
     xge_desc_t desc={0};desc.iWidth=640;desc.iHeight=480;desc.sTitle="XGE 3D pressure/performance verification";
     if (result==XGE_OK) result=xgeInit(&desc);
-    b.app.start=xrtClock();if (result==XGE_OK) result=xgeRun(pressure_frame,&b);
+    b.app.start=integration_clock();if (result==XGE_OK) result=xgeRun(pressure_frame,&b);
     xge3dLoaderFree(b.loader);destroy_extra(&b);release(&b.app);xrtArrayUnit(&b.samples);xgeUnit();
     if (fclose(b.file)) result=XGE_ERROR;
     return result==XGE_OK && !b.failed ? 0 : 1;

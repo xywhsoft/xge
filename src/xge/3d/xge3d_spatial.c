@@ -1,4 +1,6 @@
 #include "xge3d_internal.h"
+#include <stdlib.h>
+#include <limits.h>
 
 #if XGE_ENABLE_3D
 static int d3_box_valid(const xge3d_aabb_t *b)
@@ -35,8 +37,11 @@ int d3_node_bounds(xge3d_scene *s,xge3d_node_data *n,xge3d_aabb_t *out)
     if (!n->mesh) return XGE_ERROR_NOT_FOUND;
     int lod_changed=0;
     if (n->lods) for (size_t i=0;i<n->lods->count;++i) if (n->lods->versions[i]!=n->lods->levels[i].mesh->version) lod_changed=1;
-    if (!lod_changed && n->bounds_version==s->version && n->mesh_version==n->mesh->version) {*out=n->bounds;return XGE_OK;}
     xge3d_mat4_t world;int result=xge3dNodeGetWorldMatrix(s,n->handle,&world);if (result!=XGE_OK) return result;
+#if XGE3D_ENABLE_ANIMATION
+    if(n->skin&&n->skin->dirty){n->bounds_version=0;result=d3_skin_update(s,n);if(result)return result;}
+#endif
+    if (!lod_changed && n->bounds_version==n->version && n->mesh_version==n->mesh->version) {*out=n->bounds;return XGE_OK;}
     xge3d_aabb_t box={0};int found=0;
 #if XGE3D_ENABLE_ANIMATION
     if (n->skin) {
@@ -58,16 +63,15 @@ int d3_node_bounds(xge3d_scene *s,xge3d_node_data *n,xge3d_aabb_t *out)
         }
     }
     if (n->lods) for (size_t i=0;i<n->lods->count;++i) n->lods->versions[i]=n->lods->levels[i].mesh->version;
-    n->bounds=box;n->bounds_version=s->version;n->mesh_version=n->mesh->version;*out=box;return XGE_OK;
+    n->bounds=box;n->bounds_version=n->version;n->mesh_version=n->mesh->version;*out=box;++s->stats.bounds_updates;return XGE_OK;
 }
 int xge3dNodeGetBounds(xge3d_scene *scene,xge3d_node_t node,int descendants,xge3d_aabb_t *out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out=(xge3d_aabb_t){0};xge3d_node_data *root=d3_node(scene,node);if (!root) return XGE_ERROR_INVALID_ARGUMENT;
     int found=0;
-    for (size_t i=0;i<scene->nodes.Count;++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&scene->nodes,i),*p=n;if (!n->mesh) continue;
-        if (descendants) {for (;p && p!=root;p=d3_node(scene,p->parent)) {}if (!p) continue;}else if (n!=root) continue;
+    for(xge3d_node_data *n=root;n;n=descendants?d3_subtree_next(n,root):NULL){
+        if(!n->mesh||!d3_node(scene,n->handle))continue;
         xge3d_aabb_t box;int result=d3_node_bounds(scene,n,&box);if (result!=XGE_OK) {*out=(xge3d_aabb_t){0};return result;}
         if (!found) {*out=box;found=1;}else {d3_bounds_point(out,box.min);d3_bounds_point(out,box.max);}
     }
@@ -132,18 +136,9 @@ int xge3dRayTriangle(const xge3d_ray_t *r,const xge3d_vec3_t v[3],float max,xge3
     if (!isfinite(distance) || distance<0 || distance>max || !d3_normalize(&out->normal)) {memset(out,0,sizeof(*out));return XGE_ERROR_NOT_FOUND;}
     out->distance=(float)distance;out->position=d3_add(r->origin,d3_scale(direction,out->distance));return XGE_OK;
 }
+#include "xge3d_spatial_index.inc"
 int xge3dSceneQueryAabb(xge3d_scene *s,const xge3d_aabb_t *box,xge3d_node_t *nodes,size_t capacity,size_t *count)
-{
-    if (!count) return XGE_ERROR_INVALID_ARGUMENT;
-    *count=0;if (!s || !d3_box_valid(box) || (capacity && !nodes)) return XGE_ERROR_INVALID_ARGUMENT;
-    for (size_t i=0;i<s->nodes.Count;++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,i),*p=n;if (!n->mesh) continue;
-        for (;p && p->visible;p=d3_node(s,p->parent)) {}if (p) continue;
-        xge3d_aabb_t bounds;int result=d3_node_bounds(s,n,&bounds);if (result!=XGE_OK) return result;
-        if (xge3dAabbIntersects(box,&bounds)) {if (*count<capacity) nodes[*count]=n->handle;++*count;}
-    }
-    return nodes && *count>capacity ? XGE_ERROR_BUFFER_TOO_SMALL : XGE_OK;
-}
+{return xge3dSceneQueryAabbEx(s,box,NULL,nodes,capacity,count);}
 int xge3dCameraScreenRay(const xge3d_camera_t *camera, float x, float y,
     float width, float height, xge3d_ray_t *out)
 {
@@ -174,7 +169,7 @@ static size_t d3_index(const xge3d_mesh_desc_t *mesh, size_t i)
     return mesh->index_bits==16 ? ((const uint16_t*)mesh->indices)[i] : ((const uint32_t*)mesh->indices)[i];
 }
 
-int xge3dSceneRaycast(xge3d_scene *scene, const xge3d_ray_t *ray, float max_distance, xge3d_hit_t *out)
+int xge3dSceneRaycastEx(xge3d_scene *scene, const xge3d_ray_t *ray, float max_distance, const xge3d_query_filter_t *filter, xge3d_hit_t *out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     memset(out,0,sizeof(*out));
@@ -184,14 +179,14 @@ int xge3dSceneRaycast(xge3d_scene *scene, const xge3d_ray_t *ray, float max_dist
     if (!d3_normalize(&direction)) return XGE_ERROR_INVALID_ARGUMENT;
     float nearest=max_distance;
     int found=0;
-    for (size_t i=0;i<scene->nodes.Count;++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&scene->nodes,i), *p=n;
-        if (!n->mesh) continue;
-        for (;p && p->visible;p=d3_node(scene,p->parent)) {}
-        if (p) continue;
-        xge3d_aabb_t bounds;float entry;
-        int result=d3_node_bounds(scene,n,&bounds);if (result!=XGE_OK) {memset(out,0,sizeof(*out));return result;}
-        if (xge3dRayAabb(ray,&bounds,nearest,&entry)==XGE_ERROR_NOT_FOUND) continue;
+    int prepared=xge3dScenePrepareSpatial(scene);if(prepared)return prepared;
+    int stack[64],top=0;if(scene->spatial_root>=0)stack[top++]=scene->spatial_root;
+    while(top){d3_spatial_branch *branch=xrtArrayGet(&scene->spatial_tree,(size_t)stack[--top]);float entry;
+        ++scene->stats.query_tree_visits;
+        if(xge3dRayAabb(ray,&branch->box,nearest,&entry)==XGE_ERROR_NOT_FOUND)continue;
+        if(branch->left>=0){stack[top++]=branch->left;stack[top++]=branch->right;continue;}
+        xge3d_node_data *n=d3_node(scene,branch->node);if(!d3_query_accept(scene,n,filter))continue;
+        ++scene->stats.query_mesh_tests;int result;
         xge3d_mat4_t world;
         result=xge3dNodeGetWorldMatrix(scene,n->handle,&world);
         if (result!=XGE_OK) { memset(out,0,sizeof(*out)); return result; }
@@ -238,4 +233,6 @@ int xge3dSceneRaycast(xge3d_scene *scene, const xge3d_ray_t *ray, float max_dist
     }
     return found ? XGE_OK : XGE_ERROR_NOT_FOUND;
 }
+int xge3dSceneRaycast(xge3d_scene *s,const xge3d_ray_t *ray,float distance,xge3d_hit_t *out)
+{return xge3dSceneRaycastEx(s,ray,distance,NULL,out);}
 #endif

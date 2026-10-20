@@ -7,6 +7,8 @@
 #include "xui.h"
 #endif
 
+static uint64_t integration_clock(void) { return (uint64_t)(xrtTimer()*1000000.0); }
+
 /* Geometry copies and movement rules are application data, outside XGE. */
 typedef struct triangle {xge3d_vec3_t p[3];int walkable;} triangle;
 typedef struct demo {
@@ -220,7 +222,7 @@ static int frame(void *user)
         if (info.state==XGE3D_REQUEST_FAILED) {result=info.result;goto fail;}
         if (info.state==XGE3D_REQUEST_READY) {if ((result=take_model(d,i))!=XGE_OK) goto fail;d->loaded[i]=1;++d->ready;}
     }
-    if (d->ready<15 && xrtClock()-d->start>10000000) {result=XGE_ERROR_INVALID_STATE;goto fail;}
+    if (d->ready<15 && integration_clock()-d->start>10000000) {result=XGE_ERROR_INVALID_STATE;goto fail;}
     if (d->ready==15) {
         if (!d->triangles.Count && (result=export_geometry(d))!=XGE_OK) goto fail;
         if (d->frame==30) {
@@ -312,7 +314,7 @@ int main(int argc,char **argv)
     }
     xge_desc_t desc={0};desc.iWidth=640;desc.iHeight=480;desc.sTitle="XGE 3D integration - click action, Escape exits";
     if (result==XGE_OK) result=xgeInit(&desc);
-    d.start=xrtClock();
+    d.start=integration_clock();
     if (result==XGE_OK) result=xgeRun(frame,&d);
     if (result!=XGE_OK) fprintf(stderr,"integration startup/run failed: %d\n",result);
     release(&d);xgeUnit();return result==XGE_OK && !d.failed ? 0 : 1;

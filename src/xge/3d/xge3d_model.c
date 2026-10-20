@@ -1,8 +1,11 @@
 #include "xge3d_internal.h"
+#include "xge_clock.h"
 #if XGE3D_ENABLE_MODEL
 #define CGLTF_IMPLEMENTATION
 #include "extlibs/cgltf/cgltf.h"
 #include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 typedef struct d3_primitive {
     xge3d_mesh *mesh;
@@ -11,16 +14,23 @@ typedef struct d3_primitive {
 typedef struct d3_mesh_range { size_t first, count; } d3_mesh_range;
 struct xge3d_model {
     uint32_t refs;
+    int retiring;
     size_t truncated_weight_vertices;
     cgltf_data *data;
     xge_resource_t source;
     xarray primitives, ranges, images, materials, textures;
     xmap texture_cache;
+    uint64_t parser_bytes, buffer_bytes;
 };
+typedef union d3_gltf_allocation { max_align_t alignment; size_t bytes; } d3_gltf_allocation;
 static void *d3_gltf_alloc(void *user, cgltf_size size)
-{ (void)user; return size<=INT_MAX ? xrtMalloc(size) : NULL; }
+{
+    if(size>INT_MAX-sizeof(d3_gltf_allocation))return NULL;
+    d3_gltf_allocation *p=xrtMalloc(sizeof(*p)+size);if(!p)return NULL;
+    p->bytes=sizeof(*p)+size;((xge3d_model*)user)->parser_bytes+=p->bytes;return p+1;
+}
 static void d3_gltf_free(void *user, void *data)
-{ (void)user; xrtFree(data); }
+{if(data){d3_gltf_allocation *p=(d3_gltf_allocation*)data-1;((xge3d_model*)user)->parser_bytes-=p->bytes;xrtFree(p);}}
 static int d3_gltf_result(cgltf_result result)
 {
     if (result==cgltf_result_success) return XGE_OK;
@@ -74,8 +84,9 @@ static int d3_blob(const char *base, const char *uri, void **out, size_t *size,c
     xgeResourceFree(&resource);
     return result;
 }
-static int d3_buffers(cgltf_data *data, const char *base,const d3_model_io *io)
+static int d3_buffers(xge3d_model *m, const char *base,const d3_model_io *io)
 {
+    cgltf_data *data=m->data;
     for (size_t i=0;i<data->buffers_count;++i) {
         if (d3_cancelled(io)) return XGE_ERROR;
         cgltf_buffer *b=&data->buffers[i];
@@ -86,7 +97,9 @@ static int d3_buffers(cgltf_data *data, const char *base,const d3_model_io *io)
         } else {
             size_t size=0;
             int result=d3_blob(base,b->uri,&b->data,&size,io);
-            b->data_free_method=cgltf_data_free_method_memory_free;
+            /* d3_blob uses the ordinary allocator, not the parser header.
+             * ModelFree owns these buffers, including partially loaded ones. */
+            b->data_free_method=cgltf_data_free_method_none;m->buffer_bytes+=size;
             if (result!=XGE_OK) return result;
             if (size<b->size) return XGE_ERROR_RESOURCE_FAILED;
         }
@@ -404,7 +417,52 @@ void xge3dModelFree(xge3d_model *m)
         xge3dTextureFree(*(xge3d_texture**)xrtArrayGet(&m->textures,i));
     xrtArrayUnit(&m->materials); xrtArrayUnit(&m->textures); xrtMapUnit(&m->texture_cache);
     xrtArrayUnit(&m->primitives); xrtArrayUnit(&m->ranges); xrtArrayUnit(&m->images);
+    if(m->data)for(size_t i=0;i<m->data->buffers_count;++i)
+        if(m->data->buffers[i].uri)xrtFree(m->data->buffers[i].data);
     cgltf_free(m->data); xgeResourceFree(&m->source); xrtFree(m);
+}
+struct xge3d_model_retirement {xge3d_model *model;uint64_t owner;size_t phase,index,operations,total;int completed;};
+int xge3dModelRetireBegin(xge3d_model **owned,xge3d_model_retirement **out)
+{
+    if(!out){return XGE_ERROR_INVALID_ARGUMENT;}*out=NULL;
+    if(!owned){return XGE_ERROR_INVALID_ARGUMENT;}if(!*owned)return XGE_OK;
+    if(!__xge3dContext())return XGE_ERROR_INVALID_STATE;
+    xge3d_model *m=*owned;if(m->retiring)return XGE_ERROR_INVALID_STATE;
+    if(m->refs>1){xge3dModelFree(m);*owned=NULL;return XGE_OK;}
+    xge3d_model_retirement *r=xrtMalloc(sizeof(*r));if(!r)return XGE_ERROR_OUT_OF_MEMORY;
+    memset(r,0,sizeof(*r));r->model=m;r->owner=xrtThreadCurrentId();r->total=m->materials.Count+m->primitives.Count+m->textures.Count;
+    m->retiring=1;*owned=NULL;*out=r;return XGE_OK;
+}
+int xge3dModelRetireStep(xge3d_model_retirement *r,const xge3d_release_budget_t *budget,int *completed)
+{
+    if(!completed){return XGE_ERROR_INVALID_ARGUMENT;}*completed=0;
+    if(!r||!budget)return XGE_ERROR_INVALID_ARGUMENT;
+    if(r->owner!=xrtThreadCurrentId()||!__xge3dContext())return XGE_ERROR_INVALID_STATE;
+    if(r->completed){*completed=1;return XGE_OK;}
+    uint64_t begin=xgeClockMicroseconds();size_t work=0;xge3d_model *m=r->model;
+    while(r->phase<3){size_t count=r->phase==0?m->materials.Count:r->phase==1?m->primitives.Count:m->textures.Count;
+        if(r->index==count){++r->phase;r->index=0;continue;}
+        if(work==budget->operations||(work&&budget->microseconds&&xgeClockMicroseconds()-begin>=budget->microseconds))break;
+        int result=XGE_OK;
+        if(r->phase==0){xge3d_material **p=xrtArrayGet(&m->materials,r->index);xge3dMaterialFree(*p);*p=NULL;}
+        else if(r->phase==1){d3_primitive *p=xrtArrayGet(&m->primitives,r->index);
+            if(p->mesh&&p->mesh->refs>1){xge3dMeshFree(p->mesh);p->mesh=NULL;}else if(p->mesh)result=d3_mesh_detach_gpu(p->mesh);
+        }else{xge3d_texture **p=xrtArrayGet(&m->textures,r->index);
+            if(*p&&(*p)->refs>1){xge3dTextureFree(*p);*p=NULL;}else if(*p)result=d3_texture_detach_gpu(*p);
+        }
+        if(result){return result;}++r->index;++work;++r->operations;
+    }
+    r->completed=r->phase==3;*completed=r->completed;return XGE_OK;
+}
+int xge3dModelRetireInfo(const xge3d_model_retirement *r,xge3d_retirement_info_t *out)
+{
+    if(!r||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_retirement_info_t){.size=sizeof(*out),.operations=r->operations,.total_operations=r->total,.completed=r->completed};return XGE_OK;
+}
+int xge3dModelRetireFree(xge3d_model_retirement *r)
+{
+    if(!r){return XGE_OK;}if(!r->completed&&r->owner!=xrtThreadCurrentId())return XGE_ERROR_INVALID_STATE;
+    xge3dModelFree(r->model);xrtFree(r);return XGE_OK;
 }
 static int d3_model_load(xge_resource_t *source, const char *uri, xge3d_model **out,const d3_model_io *io)
 {
@@ -415,13 +473,13 @@ static int d3_model_load(xge_resource_t *source, const char *uri, xge3d_model **
     xrtArrayInit(&m->images,sizeof(xge_image_t));
     xrtArrayInit(&m->materials,sizeof(xge3d_material*));
     xrtArrayInit(&m->textures,sizeof(xge3d_texture*)); xrtMapInit(&m->texture_cache,sizeof(void*));
-    cgltf_options options={0}; options.memory.alloc_func=d3_gltf_alloc; options.memory.free_func=d3_gltf_free;
-    int result=d3_cancelled(io) ? XGE_ERROR : d3_gltf_result(cgltf_parse(&options,m->source.pData,(size_t)m->source.iSize,&m->data));
+    cgltf_options options={0}; options.memory.alloc_func=d3_gltf_alloc; options.memory.free_func=d3_gltf_free;options.memory.user_data=m;
+    const char *stage="parse";int result=d3_cancelled(io) ? XGE_ERROR : d3_gltf_result(cgltf_parse(&options,m->source.pData,(size_t)m->source.iSize,&m->data));
     if (result!=XGE_OK) goto done;
-    result=d3_buffers(m->data,uri,io); if (result!=XGE_OK) goto done;
-    result=d3_validate(m->data); if (result!=XGE_OK) goto done;
-    result=d3_images(m,uri,io); if (result!=XGE_OK) goto done;
-    result=d3_materials(m); if (result!=XGE_OK) goto done;
+    stage="buffers";result=d3_buffers(m,uri,io); if (result!=XGE_OK) goto done;
+    stage="validate";result=d3_validate(m->data); if (result!=XGE_OK) goto done;
+    stage="images";result=d3_images(m,uri,io); if (result!=XGE_OK) goto done;
+    stage="materials";result=d3_materials(m); if (result!=XGE_OK) goto done;stage="geometry";
     for (size_t i=0;i<m->data->meshes_count;++i) {
         cgltf_mesh *mesh=&m->data->meshes[i];
         d3_mesh_range range={m->primitives.Count,mesh->primitives_count};
@@ -464,7 +522,7 @@ static int d3_model_load(xge_resource_t *source, const char *uri, xge3d_model **
     }
 #endif
 done:
-    if (result==XGE_OK) *out=m; else xge3dModelFree(m);
+    if (result==XGE_OK) *out=m; else {if(getenv("XGE3D_MODEL_TRACE"))fprintf(stderr,"MODEL_LOAD stage=%s result=%d uri=%s\n",stage,result,uri?uri:"");xge3dModelFree(m);}
     return result;
 }
 int xge3dModelLoad(const char *uri, xge3d_model **out)
@@ -518,19 +576,19 @@ xge3d_model_info_t xge3dModelInfo(const xge3d_model *m)
     return m ? (xge3d_model_info_t){m->data->nodes_count,m->primitives.Count,m->data->materials_count,
         m->data->animations_count,m->data->skins_count,m->truncated_weight_vertices} : (xge3d_model_info_t){0};
 }
-struct cgltf_data *d3_model_data(const xge3d_model *m) { return m ? m->data : NULL; }
-int d3_model_retain(xge3d_model *m) { if (!m || m->refs==UINT32_MAX) return 0;++m->refs;return 1; }
+struct cgltf_data *d3_model_data(const xge3d_model *m) { return m&&!m->retiring ? m->data : NULL; }
+int d3_model_retain(xge3d_model *m) { if (!m || m->retiring || m->refs==UINT32_MAX) return 0;++m->refs;return 1; }
 #if XGE3D_ENABLE_ANIMATION
 size_t xge3dModelSkinJointNode(const xge3d_model *m,size_t skin,size_t joint)
 {
-    if (!m || skin>=m->data->skins_count || joint>=m->data->skins[skin].joints_count) return SIZE_MAX;
+    if (!m || m->retiring || skin>=m->data->skins_count || joint>=m->data->skins[skin].joints_count) return SIZE_MAX;
     return cgltf_node_index(m->data,m->data->skins[skin].joints[joint]);
 }
 #endif
 const char *xge3dModelNodeName(const xge3d_model *m, size_t index)
-{ return m && index<m->data->nodes_count ? m->data->nodes[index].name : NULL; }
+{ return m && !m->retiring && index<m->data->nodes_count ? m->data->nodes[index].name : NULL; }
 const xge3d_material *xge3dModelMaterial(const xge3d_model *m, size_t index)
-{ return m && index<m->data->materials_count ? *(xge3d_material**)xrtArrayConstGet(&m->materials,index) : NULL; }
+{ return m && !m->retiring && index<m->data->materials_count ? *(xge3d_material**)xrtArrayConstGet(&m->materials,index) : NULL; }
 static int d3_selected(const cgltf_data *data, const cgltf_node *node)
 {
     while (node->parent) node=node->parent;
@@ -539,86 +597,5 @@ static int d3_selected(const cgltf_data *data, const cgltf_node *node)
     for (size_t i=0;i<scene->nodes_count;++i) if (scene->nodes[i]==node) return 1;
     return 0;
 }
-int xge3dModelInstantiate(xge3d_scene *s, xge3d_model *m, xge3d_node_t parent, xge3d_node_t *out)
-{
-    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
-    *out=(xge3d_node_t){0};
-    if (!s || !m || m->refs==UINT32_MAX) return XGE_ERROR_INVALID_ARGUMENT;
-    xge3d_node_t root;
-    int result=xge3dNodeCreate(s,parent,&root); if (result!=XGE_OK) return result;
-    xarray nodes; xrtArrayInit(&nodes,sizeof(xge3d_node_t));
-    if (!xrtArrayResize(&nodes,m->data->nodes_count)) { result=XGE_ERROR_OUT_OF_MEMORY; goto done; }
-    if (nodes.Count) memset(nodes.Data,0,nodes.Count*nodes.ItemSize);
-    for (size_t i=0;i<nodes.Count;++i) {
-        cgltf_node *source=&m->data->nodes[i];
-        if (!d3_selected(m->data,source)) continue;
-        xge3d_node_t *node=xrtArrayGet(&nodes,i);
-        result=xge3dNodeCreate(s,root,node); if (result!=XGE_OK) goto done;
-        xge3d_mat4_t matrix; cgltf_node_transform_local(source,matrix.m);
-        result=xge3dNodeSetMatrix(s,*node,&matrix); if (result!=XGE_OK) goto done;
-        xge3d_node_data *n=d3_node(s,*node); n->instance_root=root; n->source_node=i;
-#if XGE3D_ENABLE_LIGHTING
-        if (source->light) {
-            const cgltf_light *l=source->light;
-            xge3d_light_desc_t desc=xge3dLightDefault((int)l->type-1);
-            desc.color=(xge3d_vec3_t){l->color[0],l->color[1],l->color[2]};
-            desc.intensity=l->intensity; desc.range=l->range;
-            desc.inner_angle=l->spot_inner_cone_angle; desc.outer_angle=l->spot_outer_cone_angle;
-            result=xge3dNodeSetLight(s,*node,&desc); if (result!=XGE_OK) goto done;
-        }
-#endif
-        if (!source->mesh) continue;
-        d3_mesh_range *range=xrtArrayGet(&m->ranges,cgltf_mesh_index(m->data,source->mesh));
-        for (size_t j=0;j<range->count;++j) {
-            xge3d_node_t primitive_node=*node;
-            if (range->count>1) {
-                result=xge3dNodeCreate(s,*node,&primitive_node); if (result!=XGE_OK) goto done;
-                d3_node(s,primitive_node)->instance_root=root;
-                d3_node(s,primitive_node)->source_node=SIZE_MAX;
-            }
-            d3_primitive *p=xrtArrayGet(&m->primitives,range->first+j);
-            result=xge3dNodeSetMesh(s,primitive_node,p->mesh); if (result!=XGE_OK) goto done;
-            result=xge3dNodeSetMaterial(s,primitive_node,p->material); if (result!=XGE_OK) goto done;
-        }
-    }
-#if XGE3D_ENABLE_ANIMATION
-    for (size_t i=0;i<s->nodes.Count;++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,i);
-        if (!n->mesh || n->instance_root.slot!=root.slot || n->instance_root.scene!=root.scene) continue;
-        size_t source_index=n->source_node;
-        if (source_index==SIZE_MAX) source_index=d3_node(s,n->parent)->source_node;
-        const cgltf_node *source=&m->data->nodes[source_index];
-        if (source->skin) {
-            result=d3_skin_create(m,cgltf_skin_index(m->data,source->skin),&nodes,&n->skin);
-            if (result!=XGE_OK) goto done;
-        }
-    }
-#endif
-    for (size_t i=0;i<nodes.Count;++i) {
-        cgltf_node *source=&m->data->nodes[i]; xge3d_node_t *node=xrtArrayGet(&nodes,i);
-        if (node->slot && source->parent) {
-            xge3d_node_t *p=xrtArrayGet(&nodes,cgltf_node_index(m->data,source->parent));
-            result=xge3dNodeSetParent(s,*node,*p); if (result!=XGE_OK) goto done;
-        }
-    }
-    if (!d3_model_retain(m)) {result=XGE_ERROR_INVALID_STATE;goto done;}
-    d3_node(s,root)->model=m; *out=root;
-done:
-    xrtArrayUnit(&nodes);
-    if (result!=XGE_OK) xge3dNodeDestroy(s,root);
-    return result;
-}
-int xge3dModelInstanceNode(xge3d_scene *s, xge3d_node_t root, size_t index, xge3d_node_t *out)
-{
-    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
-    *out=(xge3d_node_t){0}; xge3d_node_data *r=d3_node(s,root);
-    if (!r || !r->model || index>=r->model->data->nodes_count) return XGE_ERROR_INVALID_ARGUMENT;
-    for (size_t i=0;i<s->nodes.Count;++i) {
-        xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,i);
-        if (n->instance_root.slot==root.slot && n->instance_root.scene==root.scene && n->source_node==index) {
-            *out=n->handle; return XGE_OK;
-        }
-    }
-    return XGE_ERROR_NOT_FOUND;
-}
+#include "xge3d_instance.inc"
 #endif

@@ -3,6 +3,19 @@
 #include <limits.h>
 
 #if XGE_ENABLE_3D
+int xge3dTextureResourceInfo(const xge3d_texture *texture,xge3d_resource_info_t *out)
+{
+    if(!texture||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_resource_info_t){.size=sizeof(*out),.references=texture->refs,.textures=1};
+    out->cpu_payload_bytes=(uint64_t)texture->width*texture->height*4;
+    if(texture->id){int width=texture->width,height=texture->height;out->gpu_payload_bytes=out->cpu_payload_bytes;
+        if(!texture->prepare_partial&&texture->sampler.min_filter>=0x2700)while(width>1||height>1){width=width>1?width/2:1;height=height>1?height/2:1;out->gpu_payload_bytes+=(uint64_t)width*height*4;}}
+    return XGE_OK;
+}
+int xge3dTextureAddRef(xge3d_texture *texture)
+{return !texture?XGE_ERROR_INVALID_ARGUMENT:d3_texture_retain(texture)?XGE_OK:XGE_ERROR_INVALID_STATE;}
+int xge3dMaterialAddRef(xge3d_material *material)
+{return !material?XGE_ERROR_INVALID_ARGUMENT:d3_material_retain(material)?XGE_OK:XGE_ERROR_INVALID_STATE;}
 static int d3_filter(int f, int min)
 { return f==GL_NEAREST || f==GL_LINEAR || (min && f>=0x2700 && f<=0x2703); }
 static int d3_wrap(int w)
@@ -18,6 +31,12 @@ void xge3dTextureFree(xge3d_texture *t)
     if (!t || --t->refs) return;
     if (t->id && t->context==__xge3dContext()) xge_glDeleteTextures(1,&t->id);
     xrtArrayUnit(&t->pixels); xrtFree(t);
+}
+int d3_texture_detach_gpu(xge3d_texture *t)
+{
+    if(!t||t->refs!=1)return XGE_ERROR_INVALID_STATE;
+    if(t->id){if(!__xge3dContext()||t->context!=__xge3dContext())return XGE_ERROR_INVALID_STATE;xge_glDeleteTextures(1,&t->id);}
+    t->id=0;t->context=0;t->prepare_offset=0;t->prepare_partial=0;return XGE_OK;
 }
 int xge3dTextureCreate(const xge3d_texture_desc_t *d, xge3d_texture **out)
 {
@@ -55,6 +74,7 @@ int d3_texture_upload(xge3d_texture *t, uint64_t *bytes)
     uint64_t context=__xge3dContext();
     if (!context) return XGE_ERROR_NOT_INITIALIZED;
     if (t->context && t->context!=context) return XGE_ERROR_INVALID_STATE;
+    if (t->prepare_partial) return XGE_ERROR_INVALID_STATE;
     if (t->id) { xge_glBindTexture(GL_TEXTURE_2D,t->id); return XGE_OK; }
     GLint maximum, unpack;
     xge_glGetIntegerv(0x0D33,&maximum);

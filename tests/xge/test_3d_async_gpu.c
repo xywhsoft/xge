@@ -7,13 +7,13 @@ static int failed=1;
 static unsigned char pixels[2][128*128*4];
 static int wait_cpu(xge3d_loader *l,xge3d_request_t h,xge3d_request_info_t *info)
 {
-    uint64_t end=xrtClock()+5000000;
+    double end=xrtTimer()+5.0;
     do {
         if (xge3dLoaderStatus(l,h,info)!=XGE_OK) return 0;
         if (info->state==XGE3D_REQUEST_CPU_READY) return 1;
         if (info->state==XGE3D_REQUEST_FAILED) return 0;
         xrtSleep(1);
-    } while (xrtClock()<end);
+    } while (xrtTimer()<end);
     return 0;
 }
 /* Exercise app-owned GL interoperability without reaching into the engine. */

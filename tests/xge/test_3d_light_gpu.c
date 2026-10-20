@@ -90,7 +90,9 @@ static int frame(void *user)
     }
     CHECK(center(r,s,&draw)>=0);
     xge3d_node_t overflow; CHECK(xge3dNodeCreate(s,(xge3d_node_t){0},&overflow)==XGE_OK && xge3dNodeSetLight(s,overflow,&ld)==XGE_OK);
-    CHECK(xge3dRender(r,s,&draw,NULL)==XGE_ERROR_UNSUPPORTED);
+    CHECK(xge3dRender(r,s,&draw,NULL)==XGE_OK);
+    xge3d_render_profile_t profile={.size=sizeof(profile)};
+    CHECK(xge3dRendererProfile(r,&profile)==XGE_OK && profile.selected_lights==XGE3D_MAX_LIGHTS && profile.skipped_lights==1);
     CHECK(xge3dNodeSetVisible(s,overflow,0)==XGE_OK && center(r,s,&draw)>=0);
     failed=0; puts("3D lights GPU: directional PBR reference, no-light/backlight, inverse square/range, spot cone, normal scale, metallic/roughness maps, mirrored scale and light limit passed");
 done:
