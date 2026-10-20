@@ -163,6 +163,8 @@ typedef struct xge_input_queue_item_t {
 #endif
 
 #ifndef XGE_NO_AUDIO
+	/* Compile the bundled C Vorbis backend before miniaudio detects codecs. */
+	#include "extlibs/stb/stb_vorbis.c"
 	#ifndef MINIAUDIO_IMPLEMENTATION
 		#define MINIAUDIO_IMPLEMENTATION
 	#endif

@@ -203,6 +203,7 @@ typedef struct xge_texture_storage_info_t {
 #define XGE_FONT_FALLBACK			0x0001
 #define XGE_FONT_SIZE_EM			0x0002
 #define XGE_SOUND_FALLBACK			0x80000000u
+#define XGE_SOUND_CLIP                  0x40000000u
 
 #define XGE_RENDER_TARGET_WINDOW	0x0001
 #define XGE_RENDER_TARGET_TEXTURE	0x0002
@@ -1236,6 +1237,25 @@ typedef struct xge_audio_group_t {
 	void* pBackend;
 } xge_audio_group_t, *xge_audio_group;
 
+typedef struct xge_audio_clip xge_audio_clip;
+typedef struct xge_audio_clip_info_t {
+    uint32_t channels, sample_rate;
+    uint64_t frames, bytes;
+} xge_audio_clip_info_t;
+typedef struct xge_audio_clip_decode_t {
+    const void *data;
+    size_t bytes;
+    uint64_t max_decoded_bytes; /* 0: 64 MiB; maximum 512 MiB. */
+    int (*cancelled)(void *user); /* Optional; polled between decoder reads. */
+    void *user;
+} xge_audio_clip_decode_t;
+typedef struct xge_sound_clip_desc_t {
+    xge_audio_clip *clip;
+    uint64_t first_frame, frame_count; /* 0 count: remainder of clip. */
+    int spatial; /* 0 disables engine spatialization. */
+    xge_audio_group group; /* Borrowed; must outlive the sound. */
+} xge_sound_clip_desc_t;
+
 typedef struct xge_audio_listener_t {
 	xge_vec3_t tPosition;
 	xge_vec3_t tForward;
@@ -2034,6 +2054,18 @@ XGE_API int xgeAudioInit(void);
 XGE_API void xgeAudioUnit(void);
 /* 音频引擎是否已初始化。 */
 XGE_API int xgeAudioIsReady(void);
+/* Immutable interleaved float PCM. Decode/info/samples/ref/free need no window,
+ * audio device or engine init and may run on CPU workers with owned references.
+ * Decode copies its input; error sets *out=NULL. Cancellation reports INVALID_STATE. */
+XGE_API int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t *desc,xge_audio_clip **out);
+XGE_API xge_audio_clip_info_t xgeAudioClipInfo(const xge_audio_clip *clip);
+XGE_API const float *xgeAudioClipSamples(const xge_audio_clip *clip); /* Borrowed. */
+XGE_API int xgeAudioClipAddRef(xge_audio_clip *clip);
+XGE_API void xgeAudioClipFree(xge_audio_clip *clip);
+/* Audio control thread; sound must be zero initialized/freed. Independent
+ * cursor/loop per sound, shared clip retained until sound free. No file IO,
+ * fallback or device/global listener changes; trim range uses source PCM frames. */
+XGE_API int xgeSoundFromClip(xge_sound sound,const xge_sound_clip_desc_t *desc);
 /* 设置引擎总音量 [0,1]。 */
 XGE_API void xgeAudioSetVolume(float fVolume);
 /* 读取引擎总音量。 */

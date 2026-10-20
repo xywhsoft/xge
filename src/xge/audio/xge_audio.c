@@ -1,4 +1,5 @@
 #ifndef XGE_NO_AUDIO
+#include "xge_audio_clip.inc"
 static xge_sound __xgeAudioAsSound(void* pObject)
 {
 	return (xge_sound)pObject;
@@ -355,6 +356,11 @@ void xgeSoundFree(xge_sound pSound)
 	}
 	if ( pSound->pBackend != NULL ) {
 		ma_sound_uninit((ma_sound*)pSound->pBackend);
+		if ( pSound->iFlags & XGE_SOUND_CLIP ) {
+			__xge_clip_sound* pClipSound = (__xge_clip_sound*)pSound->pBackend;
+			ma_audio_buffer_ref_uninit(&pClipSound->buffer);
+			xgeAudioClipFree(pClipSound->clip);
+		}
 		xrtFree(pSound->pBackend);
 	}
 	memset(pSound, 0, sizeof(*pSound));
@@ -512,6 +518,12 @@ int xgeStreamIsPlaying(xge_stream pStream)
 	return xgeSoundIsPlaying((xge_sound)pStream);
 }
 #else
+int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t* d,xge_audio_clip** out) { (void)d;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED; }
+xge_audio_clip_info_t xgeAudioClipInfo(const xge_audio_clip* c) { (void)c;return (xge_audio_clip_info_t){0}; }
+const float* xgeAudioClipSamples(const xge_audio_clip* c) { (void)c;return NULL; }
+int xgeAudioClipAddRef(xge_audio_clip* c) { (void)c;return XGE_ERROR_UNSUPPORTED; }
+void xgeAudioClipFree(xge_audio_clip* c) { (void)c; }
+int xgeSoundFromClip(xge_sound s,const xge_sound_clip_desc_t* d) { (void)s;(void)d;return XGE_ERROR_UNSUPPORTED; }
 int xgeAudioInit(void) { return XGE_ERROR_UNSUPPORTED; }
 void xgeAudioUnit(void) {}
 int xgeAudioIsReady(void) { return 0; }
