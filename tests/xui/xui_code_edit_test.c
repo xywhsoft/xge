@@ -426,6 +426,7 @@ int main(void)
 	xui_dock_panel_desc_t tDockDesc;
 	xui_dock_window_info_t tDockInfo;
 	xui_code_selection_t tSelection;
+	xui_code_edit_text_hit_t tTextHit;
 	xui_code_style_t tStyle;
 	xui_style_property_t tProperty;
 	xui_style_property_t arrStyleProperties[2];
@@ -483,12 +484,14 @@ int main(void)
 	uint32_t iDiagnosticColor;
 	uint32_t iCompletionVersion;
 	float fTextOriginX;
+	float fLineNumberX;
 	float fPointerCharWidth;
 	float fDiagnosticX;
 	float fDiagnosticY;
 	float fImeInitialX;
 	float fScrollX;
 	float fScrollY;
+	float fScrollBefore;
 	float fInlineContentHeightBefore;
 	float fInlineContentHeightAfter;
 	float fToyTextOriginX;
@@ -626,6 +629,22 @@ int main(void)
 	XUI_TEST_CHECK(iCustomMarginCallbackCount > 0, "custom margin render callback");
 	iRet = xuiCodeMarginModelGetTotalWidth(xuiCodeEditGetMargins(pCodeEdit), &fTextOriginX);
 	XUI_TEST_CHECK(iRet == XUI_OK, "diagnostic text origin");
+	fLineNumberX = 20.0f;
+	iMarginCount = xuiCodeMarginModelGetCount(xuiCodeEditGetMargins(pCodeEdit));
+	for ( iLine = 0; iLine < iMarginCount; iLine++ ) {
+		iRet = xuiCodeMarginModelGet(xuiCodeEditGetMargins(pCodeEdit), iLine, &tMargin);
+		XUI_TEST_CHECK(iRet == XUI_OK, "margin cursor geometry");
+		if ( tMargin.iKind == XUI_CODE_MARGIN_LINE_NUMBER ) {
+			fLineNumberX += tMargin.fWidth * 0.5f;
+			break;
+		}
+		fLineNumberX += tMargin.fWidth;
+	}
+	XUI_TEST_CHECK(iLine < iMarginCount, "line number margin found");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, (int)fLineNumberX, 39) == XUI_CURSOR_ARROW,
+		"codeedit margin uses arrow cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, (int)(20.0f + fTextOriginX + 8.0f), 39) == XUI_CURSOR_IBEAM,
+		"codeedit text area uses ibeam cursor");
 	fDiagnosticX = 20.0f + fTextOriginX + 4.0f + fPointerCharWidth * 5.0f;
 	fDiagnosticY = 30.0f + 4.0f + 18.0f + 9.0f;
 	memset(&tDiagnosticHit, 0, sizeof(tDiagnosticHit));
@@ -696,6 +715,17 @@ int main(void)
 	XUI_TEST_CHECK(pHScrollBar != NULL && pVScrollBar != NULL, "codeedit initial internal scrollbars");
 	XUI_TEST_CHECK(xuiWidgetGetParent(pHScrollBar) == pCodeEdit && xuiWidgetGetParent(pVScrollBar) == pCodeEdit, "codeedit initial scrollbar parent");
 	XUI_TEST_CHECK(!xuiWidgetGetVisible(pHScrollBar) && !xuiWidgetGetVisible(pVScrollBar), "codeedit scrollbars hidden for short content");
+	iRet = __xuiCodeEditPointerDown(pContext, fLineNumberX, 39.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit line gutter pointer down");
+	iRet = __xuiCodeEditPointerMove(pContext, fLineNumberX, 57.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit line gutter pointer move");
+	iRet = xuiCodeDocumentGetLineRange(xuiCodeEditGetDocument(pCodeEdit), 2, &iLine, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit line gutter expected range");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == iLine,
+		"codeedit gutter drag selects complete lines");
+	iRet = __xuiCodeEditPointerUp(pContext, fLineNumberX, 57.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit line gutter pointer up");
 	iMarginCount = xuiCodeCommandMapGetCount(xuiCodeEditGetCommandMap(pCodeEdit));
 	XUI_TEST_CHECK(iMarginCount > 0, "command map defaults");
 	iCustomMarginCallbackCount = 0;
@@ -1292,6 +1322,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel event");
 	iRet = xuiCodeEditGetScroll(pCodeEdit, &fScrollX, &fScrollY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == 32.0f && fScrollY == 48.0f, "wheel updates scroll");
+	iRet = xuiCodeEditSetText(pCodeEdit,
+		"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n"
+		"a\nb\nc\nd\ne\nf\ng\nh\ni\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "scrolled click regression text");
+	iRet = xuiCodeEditSetScroll(pCodeEdit, 160.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scrolled click regression setup");
+	iRet = xuiCodeEditGetScroll(pCodeEdit, &fScrollBefore, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollBefore > 0.0f,
+		"scrolled click regression offset established");
+	memset(&tTextHit, 0, sizeof(tTextHit));
+	tTextHit.iSize = sizeof(tTextHit);
+	iRet = xuiCodeEditHitTestText(pCodeEdit,
+		20.0f + fTextOriginX + 4.0f + 56.0f, 30.0f + 9.0f, &tTextHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tTextHit.iByteOffset > 0,
+		"scrolled click regression hit test");
+	iRet = __xuiCodeEditPointerDown(pContext,
+		20.0f + fTextOriginX + 4.0f + 56.0f, 30.0f + 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scrolled click regression pointer down");
+	iRet = xuiCodeSelectionGetState(xuiCodeEditGetSelection(pCodeEdit), &tSelection);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSelection.iCaretOffset == tTextHit.iByteOffset,
+		"scrolled click regression caret matches hit");
+	iRet = xuiCodeEditGetScroll(pCodeEdit, &fScrollX, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == fScrollBefore,
+		"scrolled click preserves horizontal scroll");
+	iRet = __xuiCodeEditPointerUp(pContext,
+		20.0f + fTextOriginX + 4.0f + 56.0f, 30.0f + 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scrolled click regression pointer up");
 	iRet = xuiCodeEditSetText(pCodeEdit, "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "caret follow text");
 	iRet = xuiCodeEditSetScroll(pCodeEdit, 160.0f, 0.0f);
@@ -1943,6 +2000,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiCodeEditGetHScrollBarWidget(pToyEdit)) &&
 		tHorizontalRect.fX + tHorizontalRect.fW == tMinimapRect.fX,
 		"horizontal scrollbar ends flush at minimap");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f),
+		(int)(30.0f + tMinimapRect.fY + tMinimapRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"codeedit minimap uses arrow cursor");
 	(void)xuiWidgetInvalidate(pToyEdit, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	iRet = xuiRender(pContext, pTarget, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "minimap render");

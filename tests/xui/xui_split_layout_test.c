@@ -121,6 +121,8 @@ int main(void)
 	float fVisualSize;
 	float fHitSize;
 	float fDragBefore;
+	float fDragDelta;
+	float fExpectedSize;
 	float fX;
 	float fY;
 	int iChanged;
@@ -442,6 +444,73 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pNestedSplit, 0), fDragBefore + 22.0f),
 		"xge proxy nested horizontal drag follows pointer");
+
+	iRet = xuiSplitLayoutSetPaneMode(pNestedSplit, 0, XUI_SPLIT_PANE_GROW);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMode(pNestedSplit, 1, XUI_SPLIT_PANE_GROW);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneWeight(pNestedSplit, 0, 1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneWeight(pNestedSplit, 1, 1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pNestedSplit, 0, 20.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pNestedSplit, 1, 30.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "horizontal grow panes prepare");
+	tWorld = xuiWidgetGetWorldRect(pNestedSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pNestedSplit, 0);
+	fDragBefore = xuiSplitLayoutGetPaneRect(pNestedSplit, 0).fH;
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_DOWN,
+		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_MOVE,
+		fX * 2.0f, (fY + 4.0f) * 2.0f, XGE_MOUSE_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_UP,
+		fX * 2.0f, (fY + 4.0f) * 2.0f, 0u, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneRect(pNestedSplit, 0).fH, fDragBefore + 4.0f),
+		"small horizontal grow drag does not reverse after commit");
+
+	iRet = xuiSplitLayoutSetOrientation(pNestedSplit, XUI_ORIENTATION_VERTICAL);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneWeight(pNestedSplit, 0, 1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneWeight(pNestedSplit, 1, 1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pNestedSplit, 0, 40.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pNestedSplit, 1, 60.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "vertical grow panes prepare");
+	tWorld = xuiWidgetGetWorldRect(pNestedSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pNestedSplit, 0);
+	fDragBefore = xuiSplitLayoutGetPaneRect(pNestedSplit, 0).fW;
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_DOWN,
+		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_MOVE,
+		(fX + 28.0f) * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_UP,
+		(fX + 28.0f) * 2.0f, fY * 2.0f, 0u, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneRect(pNestedSplit, 0).fW, fDragBefore + 28.0f),
+		"vertical grow panes commit at preview position");
+
+	tPane0 = xuiSplitLayoutGetPaneRect(pNestedSplit, 0);
+	tPane1 = xuiSplitLayoutGetPaneRect(pNestedSplit, 1);
+	fExpectedSize = tPane0.fW + tPane1.fW - 60.0f;
+	fDragDelta = tPane1.fW;
+	tWorld = xuiWidgetGetWorldRect(pNestedSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pNestedSplit, 0);
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_DOWN,
+		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_MOVE,
+		(fX + fDragDelta) * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_UP,
+		(fX + fDragDelta) * 2.0f, fY * 2.0f, 0u, 0u);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneRect(pNestedSplit, 0).fW, fExpectedSize) &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneRect(pNestedSplit, 1).fW, 60.0f),
+		"grow panes commit at the clamped preview limit");
 
 cleanup:
 	if ( pTarget != NULL ) {

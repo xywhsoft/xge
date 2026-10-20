@@ -132,6 +132,9 @@ typedef struct xui_text_edit_data_t {
 	int iImeSelectionEnd;
 	int iImeAttribute;
 	int bDragging;
+	int bLineSelecting;
+	int iLineSelectAnchorStart;
+	int iLineSelectAnchorEnd;
 	int bPressPending;
 	int bPressInsideSelection;
 	int bMovingSelection;
@@ -507,13 +510,7 @@ static xui_text_edit_data_t* __xuiTextEditGetData(xui_widget pWidget)
 	return (xui_text_edit_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
-static int __xuiTextEditQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
-{
-	(void)iX;
-	(void)iY;
-	(void)pUser;
-	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
-}
+static int __xuiTextEditQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser);
 
 static int __xuiTextEditStyleColor(xui_widget pWidget, const char* sName, const char* sFallback, uint32_t* pColor)
 {
@@ -678,6 +675,34 @@ static xui_rect_t __xuiTextEditLineNumberRect(xui_widget pWidget, const xui_text
 	}
 	tContent.fW = fLineNumberWidth;
 	return tContent;
+}
+
+static int __xuiTextEditLineNumberHit(xui_widget pWidget, xui_text_edit_data_t* pData,
+	float fX, float fY)
+{
+	xui_text_edit_data_t tResolved;
+	xui_rect_t tWorld;
+	xui_rect_t tGutter;
+
+	if ( pWidget == NULL || pData == NULL ) return 0;
+	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tGutter = __xuiTextEditLineNumberRect(pWidget, &tResolved);
+	return tGutter.fW > 0.0f && tGutter.fH > 0.0f &&
+		fX >= tWorld.fX + tGutter.fX && fX < tWorld.fX + tGutter.fX + tGutter.fW &&
+		fY >= tWorld.fY + tGutter.fY && fY < tWorld.fY + tGutter.fY + tGutter.fH;
+}
+
+static int __xuiTextEditQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	xui_text_edit_data_t* pData;
+
+	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_CURSOR_NOT_ALLOWED;
+	pData = (xui_text_edit_data_t*)pUser;
+	if ( pData == NULL ) pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_CURSOR_IBEAM;
+	if ( __xuiTextEditLineNumberHit(pWidget, pData, (float)iX, (float)iY) ) return XUI_CURSOR_ARROW;
+	return XUI_CURSOR_IBEAM;
 }
 
 static void __xuiTextEditSelectionRange(xui_text_edit_data_t* pData, int* pStart, int* pEnd)
@@ -2415,6 +2440,95 @@ static int __xuiTextEditAutoScrollPointer(xui_widget pWidget, xui_text_edit_data
 	return xuiTextEditSetScroll(pWidget, pData->fScrollX + fDeltaX, pData->fScrollY + fDeltaY);
 }
 
+static int __xuiTextEditAutoScrollLinePointer(xui_widget pWidget,
+	xui_text_edit_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_text_edit_data_t tResolved;
+	xui_rect_t tWorld;
+	xui_rect_t tContent;
+	float fTop;
+	float fBottom;
+	float fDeltaY;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
+	fTop = tWorld.fY + tContent.fY;
+	fBottom = fTop + tContent.fH;
+	fDeltaY = 0.0f;
+	if ( pEvent->fY < fTop ) fDeltaY = pEvent->fY - fTop;
+	else if ( pEvent->fY > fBottom ) fDeltaY = pEvent->fY - fBottom;
+	if ( fDeltaY == 0.0f ) return XUI_OK;
+	return xuiTextEditSetScroll(pWidget, pData->fScrollX, pData->fScrollY + fDeltaY);
+}
+
+static int __xuiTextEditLineSelectionBoundsAtY(xui_widget pWidget,
+	xui_text_edit_data_t* pData, float fWorldY, int* pStart, int* pEnd)
+{
+	xui_text_edit_data_t tResolved;
+	xui_rect_t tWorld;
+	xui_rect_t tContent;
+	float fLineY;
+	int iLine;
+	int iFirst;
+	int iAfter;
+	int iPhysicalLine;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || pStart == NULL || pEnd == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->iLineCount <= 0 || pData->fLineHeight <= 0.0f ) return XUI_ERROR_INVALID_STATE;
+	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
+	fLineY = fWorldY - tWorld.fY - tContent.fY + pData->fScrollY;
+	iLine = (fLineY <= 0.0f) ? 0 : (int)(fLineY / pData->fLineHeight);
+	if ( iLine >= pData->iLineCount ) iLine = pData->iLineCount - 1;
+	iPhysicalLine = pData->pLines[iLine].iPhysicalLine;
+	iFirst = iLine;
+	while ( iFirst > 0 && pData->pLines[iFirst - 1].iPhysicalLine == iPhysicalLine ) iFirst--;
+	iAfter = iLine + 1;
+	while ( iAfter < pData->iLineCount && pData->pLines[iAfter].iPhysicalLine == iPhysicalLine ) iAfter++;
+	*pStart = pData->pLines[iFirst].iStart;
+	*pEnd = (iAfter < pData->iLineCount) ? pData->pLines[iAfter].iStart : pData->iTextLength;
+	return XUI_OK;
+}
+
+static int __xuiTextEditApplyLineSelection(xui_widget pWidget,
+	xui_text_edit_data_t* pData, int iStart, int iEnd, int bBegin)
+{
+	int iOldStart;
+	int iOldEnd;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( bBegin ) {
+		pData->iLineSelectAnchorStart = iStart;
+		pData->iLineSelectAnchorEnd = iEnd;
+	}
+	iOldStart = pData->iSelectStart;
+	iOldEnd = pData->iSelectEnd;
+	if ( iStart < pData->iLineSelectAnchorStart ) {
+		iRet = __xuiTextEditSetSelectionData(pData, pData->iLineSelectAnchorEnd, iStart);
+	} else {
+		iRet = __xuiTextEditSetSelectionData(pData, pData->iLineSelectAnchorStart, iEnd);
+	}
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->iSelectStart != iOldStart || pData->iSelectEnd != iOldEnd ) {
+		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED,
+			pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
+	}
+	(void)__xuiTextEditUpdateCursorRect(pWidget, pData);
+	return __xuiTextEditInvalidatePaint(pWidget);
+}
+
 static int __xuiTextEditDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiTextEditAlpha(iColor) == 0 ) {
@@ -3279,9 +3393,17 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			(void)xuiSetFocusWidget(pContext, pWidget);
 			(void)xuiSetPointerCapture(pContext, pWidget);
 			pData->bDragging = 0;
+			pData->bLineSelecting = 0;
 			pData->bPressPending = 0;
 			pData->bPressInsideSelection = 0;
 			pData->bMovingSelection = 0;
+			if ( __xuiTextEditLineNumberHit(pWidget, pData, pEvent->fX, pEvent->fY) ) {
+				if ( __xuiTextEditLineSelectionBoundsAtY(pWidget, pData, pEvent->fY, &iStart, &iEnd) == XUI_OK ) {
+					pData->bLineSelecting = 1;
+					(void)__xuiTextEditApplyLineSelection(pWidget, pData, iStart, iEnd, 1);
+				}
+				return XUI_EVENT_DISPATCH_STOP;
+			}
 			tWorld = xuiWidgetGetWorldRect(pWidget);
 			iCursor = __xuiTextEditCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY);
 			__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
@@ -3300,6 +3422,18 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		break;
 	case XUI_EVENT_POINTER_MOVE:
+		if ( pData->bLineSelecting ) {
+			if ( (pEvent->iButtons & XUI_POINTER_BUTTON_LEFT) == 0 ) {
+				pData->bLineSelecting = 0;
+				(void)xuiReleasePointerCapture(pContext, pWidget);
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			(void)__xuiTextEditAutoScrollLinePointer(pWidget, pData, pEvent);
+			if ( __xuiTextEditLineSelectionBoundsAtY(pWidget, pData, pEvent->fY, &iStart, &iEnd) == XUI_OK ) {
+				(void)__xuiTextEditApplyLineSelection(pWidget, pData, iStart, iEnd, 0);
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( pData->bPressPending ) {
 			fDX = pEvent->fX - pData->fPressX;
 			fDY = pEvent->fY - pData->fPressY;
@@ -3326,6 +3460,7 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		break;
 	case XUI_EVENT_POINTER_UP:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
+			pData->bLineSelecting = 0;
 			if ( pData->bMovingSelection ) {
 				tWorld = xuiWidgetGetWorldRect(pWidget);
 				iCursor = __xuiTextEditCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY);
@@ -3346,12 +3481,16 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->bDragging = 0;
+		pData->bLineSelecting = 0;
 		pData->bPressPending = 0;
 		pData->bPressInsideSelection = 0;
 		pData->bMovingSelection = 0;
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
+			if ( __xuiTextEditLineNumberHit(pWidget, pData, pEvent->fX, pEvent->fY) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
 			tWorld = xuiWidgetGetWorldRect(pWidget);
 			/* Select the glyph under the pointer, not the nearest insertion boundary. */
 			iCursor = __xuiTextEditOffsetFromPoint(pWidget, pData, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY, 1);

@@ -200,7 +200,8 @@ static void __xuiMenuDefaultColors(xui_menu_colors_t* pColors)
 	pColors->iDangerTextColor = XUI_COLOR_RGBA(184, 54, 54, 255);
 	pColors->iMarkColor = XUI_COLOR_RGBA(37, 94, 145, 255);
 	pColors->iSeparatorColor = XUI_COLOR_RGBA(202, 218, 232, 255);
-	pColors->iFocusColor = XUI_COLOR_RGBA(54, 148, 224, 255);
+	/* Menus use the active item highlight for keyboard focus by default. */
+	pColors->iFocusColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
 
 static xui_font __xuiMenuResolveFont(xui_widget pWidget, xui_menu_data_t* pData)

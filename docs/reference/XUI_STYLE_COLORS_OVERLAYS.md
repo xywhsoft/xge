@@ -56,7 +56,7 @@
 | `menu.shortcut.color` | 快捷键提示 |
 | `menu.mark.color` | 勾选、单选、子菜单标记 |
 | `menu.separator.color` | 分隔线 |
-| `menu.focus.color` | 焦点框 |
+| `menu.focus.color` | 焦点框；默认透明，仅在显式设置非透明颜色后显示 |
 
 不注册会覆盖 API 调色板的固定浅色默认值，因此 picker 经 `xuiMenuSetColors` 传来的已解析配色保持有效。显式 `menu.*` 规则覆盖相应 API 字段；独立的 `popup.*` 规则仍可覆盖 popup 自身 chrome。打开菜单的面板与文本在同一次 render 中刷新，清除样式恢复调用方调色板。
 

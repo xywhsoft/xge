@@ -295,6 +295,7 @@ static int menu_colors(void)
 	CHECK(init(&f) == 0);
 	OK(xuiMenuCreate(f.context, &menu, NULL));
 	OK(xuiMenuGetColors(menu, &base));
+	CHECK(base.iFocusColor == 0);
 	base.iPanelColor = 0x123456ff;
 	base.iHoverColor = 0x345678ff;
 	base.iTextColor = 0x456789ff;
@@ -307,6 +308,7 @@ static int menu_colors(void)
 	OK(xuiMenuOpenAt(menu, NULL, 30, 30));
 	panel = xuiPopupGetPanelWidget(xuiMenuGetPopupWidget(menu));
 	CHECK(render(&f) == 0 && fill(panel, base.iPanelColor) > 0 && fill(menu, base.iPanelColor) > 0);
+	CHECK(fill(menu, 0x3694e0ff) == 0);
 	p[0] = color("menu.panel.color", 0x817263ff);
 	p[1] = color("menu.border.color", 0x786543ff);
 	p[2] = color("menu.item.hover_color", 0x681723ff);
@@ -337,7 +339,7 @@ static int menu_colors(void)
 	OK(xuiWidgetRemoveStyleClass(menu, "overlay.menu"));
 	CHECK(render(&f) == 0 && fill(menu, base.iPanelColor) > 0 && fill(panel, base.iPanelColor) > 0);
 	finish(&f);
-	puts("PASS menu rendered text/hover/focus/chrome, open popup render-only refresh, class/inline/clear, API palette preservation");
+	puts("PASS menu default transparent focus, explicit focus style, text/hover/chrome, open popup render-only refresh, class/inline/clear, API palette preservation");
 	return 0;
 }
 

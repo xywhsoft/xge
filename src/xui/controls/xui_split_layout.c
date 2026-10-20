@@ -808,10 +808,13 @@ static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t
 	float fAfterEnd;
 	float fNewBefore;
 	float fNewAfter;
-	float fPairSize;
 	float fTotalWeight;
 	float fBeforeWeight;
 	float fAfterWeight;
+	float fBeforeFlexible;
+	float fAfterFlexible;
+	float fPairFlexible;
+	float fWeightRatio;
 	int iDivider;
 	int bChanged;
 
@@ -855,10 +858,21 @@ static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t
 			bChanged = 1;
 		}
 	} else {
-		fPairSize = fNewBefore + fNewAfter;
+		/* Fraction tracks start at min_size and distribute only the remaining
+		 * space by weight. Convert the requested pixel sizes back to that same
+		 * flexible-space basis so the committed divider matches the preview. */
+		fBeforeFlexible = __xuiSplitLayoutMaxFloat(0.0f,
+			fNewBefore - __xuiSplitLayoutPaneMin(pBefore));
+		fAfterFlexible = __xuiSplitLayoutMaxFloat(0.0f,
+			fNewAfter - __xuiSplitLayoutPaneMin(pAfter));
+		fPairFlexible = fBeforeFlexible + fAfterFlexible;
 		fTotalWeight = ((pBefore->fWeight > 0.0f) ? pBefore->fWeight : 1.0f) + ((pAfter->fWeight > 0.0f) ? pAfter->fWeight : 1.0f);
-		if ( fPairSize > 0.0f ) {
-			fBeforeWeight = fTotalWeight * (fNewBefore / fPairSize);
+		if ( fPairFlexible > 0.0001f ) {
+			fWeightRatio = fBeforeFlexible / fPairFlexible;
+			/* SplitLayout weights must remain positive. A pane at its minimum
+			 * therefore keeps a negligible share which rounds to the same pixel. */
+			fWeightRatio = __xuiSplitLayoutClampFloat(fWeightRatio, 0.000001f, 0.999999f);
+			fBeforeWeight = fTotalWeight * fWeightRatio;
 			fAfterWeight = fTotalWeight - fBeforeWeight;
 		} else {
 			fBeforeWeight = fTotalWeight * 0.5f;

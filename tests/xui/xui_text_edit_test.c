@@ -307,6 +307,28 @@ int main(void)
 	XUI_TEST_CHECK(xuiTextEditGetLineNumberWidth(pTextEdit) == 44.0f, "line number width");
 	tTextRect = xuiTextEditGetTextRect(pTextEdit);
 	XUI_TEST_CHECK(tTextRect.fX >= 50.0f, "line number gutter shifts text rect");
+	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorldRect.fX + tTextRect.fX - 22.0f), (int)(tWorldRect.fY + tTextRect.fY + 8.0f)) == XUI_CURSOR_ARROW,
+		"textedit line number gutter uses arrow cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorldRect.fX + tTextRect.fX + 8.0f), (int)(tWorldRect.fY + tTextRect.fY + 8.0f)) == XUI_CURSOR_IBEAM,
+		"textedit text area uses ibeam cursor");
+	iRet = xuiTextEditSetText(pTextEdit, "one\ntwo\nthree");
+	XUI_TEST_CHECK(iRet == XUI_OK, "line gutter selection text");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "line gutter selection layout");
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	iRet = __xuiTextEditTestDrag(pContext,
+		tWorldRect.fX + tTextRect.fX - 22.0f, tWorldRect.fY + tTextRect.fY + 8.0f,
+		tWorldRect.fX + tTextRect.fX - 22.0f, tWorldRect.fY + tTextRect.fY + 24.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "textedit gutter drag");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 8,
+		"textedit gutter drag selects complete lines");
+	iRet = xuiTextEditSetText(pTextEdit, "one\ntwo");
+	if ( iRet == XUI_OK ) iRet = xuiTextEditSetSelection(pTextEdit, 7, 7);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore initial text after gutter selection");
 
 	iRet = xuiSetFocusWidget(pContext, pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pTextEdit, "focus textedit");
@@ -624,6 +646,10 @@ int main(void)
 	tScrollBarThumb = xuiScrollBarGetThumbRect(pVScrollBar);
 	pHitWidget = xuiHitTest(pContext, tScrollBarWorld.fX + tScrollBarThumb.fX + tScrollBarThumb.fW * 0.5f, tScrollBarWorld.fY + tScrollBarThumb.fY + tScrollBarThumb.fH * 0.5f, XUI_WIDGET_HIT_DEFAULT);
 	XUI_TEST_CHECK(pHitWidget == pVScrollBar, "textedit vertical scrollbar thumb hit");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tScrollBarWorld.fX + tScrollBarThumb.fX + tScrollBarThumb.fW * 0.5f),
+		(int)(tScrollBarWorld.fY + tScrollBarThumb.fY + tScrollBarThumb.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"textedit scrollbar uses arrow cursor");
 	iRet = xuiInputPointerDown(pContext, tScrollBarWorld.fX + tScrollBarThumb.fX + tScrollBarThumb.fW * 0.5f, tScrollBarWorld.fY + tScrollBarThumb.fY + tScrollBarThumb.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "textedit vertical scrollbar thumb down input");
 	iRet = xuiDispatchPendingEvents(pContext);

@@ -1405,6 +1405,14 @@ static const xui_internal_accessibility_adapter_t g_xuiScrollBarAccessible = {
 	.getNode = __xuiScrollBarAccessibleNode, .performAction = __xuiScrollBarAccessibleAction
 };
 
+static int __xuiScrollBarQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_ARROW : XUI_CURSOR_NOT_ALLOWED;
+}
+
 XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1430,6 +1438,7 @@ XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext)
 	tDesc.onContentMeasure = __xuiScrollBarContentMeasure;
 	tDesc.onCacheRender = __xuiScrollBarCacheRender;
 	tDesc.onUpdate = __xuiScrollBarUpdate;
+	tDesc.onQueryCursor = __xuiScrollBarQueryCursor;
 	__xuiScrollBarDefaultLayout(&tDesc.tLayout);
 	__xuiScrollBarDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

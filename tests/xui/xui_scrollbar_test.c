@@ -149,6 +149,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, 20, 20) == XUI_CURSOR_ARROW,
+		"scrollbar uses arrow cursor");
 	iRet = xuiUpdate(pContext, 0.016f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiScrollBarRender(pContext, pTarget);
