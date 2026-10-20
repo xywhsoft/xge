@@ -171,6 +171,10 @@ typedef struct xge_build_info_t {
 
 #define XGE_TEXTURE_FALLBACK		0x0001
 #define XGE_TEXTURE_UPLOAD_QUEUED	0x0002
+/* Engine-owned storage metadata; public image coordinates remain top-left. */
+#define XGE_TEXTURE_ORIGIN_BOTTOM_LEFT 0x0004
+#define XGE_TEXTURE_RENDER_TARGET      0x0008
+#define XGE_TEXTURE_COORDINATE_CONTRACT 2
 /* Texture creation policy; zero/default selects cheap, exact channel packing.
  * These bits may also be combined with XGE_IMAGE_* in texture load flags. */
 #define XGE_TEXTURE_COMPRESS_LOSSLESS 0x00000000u
@@ -238,6 +242,17 @@ typedef struct xge_texture_storage_info_t {
 #define XGE_BLEND_LUMINOSITY	18
 
 #define XGE_MATERIAL_DEFAULT_BLEND	-1
+
+/* Custom GLSL receives primary-native UVs. These helpers map those UVs to
+ * independently oriented secondary samplers. Place after GLSL precision lines.
+ * Uniforms are supplied automatically by xgeMaterialDraw / batch flush. */
+#define XGE_GLSL_MATERIAL_UV \
+	"uniform vec4 uTextureUVTransform;\n" \
+	"uniform vec4 uTexture2UVTransform;\n" \
+	"uniform vec4 uTexture3UVTransform;\n" \
+	"vec2 xgeMaterialUV1(vec2 p){return p*uTextureUVTransform.xy+uTextureUVTransform.zw;}\n" \
+	"vec2 xgeMaterialUV2(vec2 p){return p*uTexture2UVTransform.xy+uTexture2UVTransform.zw;}\n" \
+	"vec2 xgeMaterialUV3(vec2 p){return p*uTexture3UVTransform.xy+uTexture3UVTransform.zw;}\n"
 #define XGE_SHADER_DEFINE_MAX		8
 #define XGE_SHADER_DEFINE_NAME_MAX	32
 
@@ -252,6 +267,8 @@ typedef struct xge_texture_storage_info_t {
 #define XGE_DRAW_SCREEN_SPACE	0x0004
 /* Glyph-run painting only: keep fractional X origin; baseline still snaps. */
 #define XGE_DRAW_TEXT_SUBPIXEL_X	0x0008
+/* Explicit low-level/legacy escape hatch: source rectangles and UVs are native. */
+#define XGE_DRAW_RAW_UV           0x0010
 #define XGE_NINE_PATCH_STRETCH	0
 #define XGE_NINE_PATCH_TILE		1
 
@@ -967,6 +984,7 @@ struct xge_shader_t {
 	int iLocTexture2;
 	int iLocTexture3;
 	int iLocColor;
+	int iLocTextureUVTransform[3];
 	void* pBackend;
 };
 
@@ -1035,6 +1053,11 @@ struct xge_texture_t {
 	xge_sampler_t tSampler;
 	void* pBackend;
 };
+
+/* NativeUV = LogicalUV * scale + offset. Logical (0,0) is the image top-left. */
+typedef struct xge_texture_uv_transform_t {
+	float fScaleU, fScaleV, fOffsetU, fOffsetV;
+} xge_texture_uv_transform_t;
 
 struct xge_render_target_t {
 	int iWidth;
@@ -2312,7 +2335,12 @@ XGE_API void xgeTextureFallbackClear(void);
 XGE_API int xgeTextureUploadQueue(xge_texture pTexture);
 /* 立即冲刷全部待上传纹理队列。 */
 XGE_API int xgeTextureUploadFlush(void);
-/* 读回纹理所辖像素（自 CPU 影子副本读取，不回读 GPU）。 */
+/* SDK 3 image-coordinate contract; compare with XGE_TEXTURE_COORDINATE_CONTRACT. */
+XGE_API int xgeTextureCoordinateContract(void);
+/* Inspect native storage mapping; never needed for standard image drawing. */
+XGE_API xge_texture_uv_transform_t xgeTextureUVTransform(const xge_texture_t* pTexture);
+XGE_API xge_vec2_t xgeTextureMapUV(const xge_texture_t* pTexture, xge_vec2_t tUV);
+/* 读回 top-down CPU 影子副本；GPU 渲染目标须用 xgeRenderTargetReadPixels。 */
 XGE_API int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride);
 /* 纹理引用计数减一，归零时释放。 */
 XGE_API void xgeTextureFree(xge_texture pTexture);
@@ -2324,9 +2352,9 @@ XGE_API int xgeRenderTargetCreate(xge_render_target pTarget, int iWidth, int iHe
 XGE_API int xgeRenderTargetResize(xge_render_target pTarget, int iWidth, int iHeight);
 /* 把窗口帧缓冲指定区域捕获为渲染目标内容（截图/审计用）。 */
 XGE_API int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrcY);
-/* 读回渲染目标像素（RGBA8，行距 iStride 字节）。 */
+/* 读回 top-down straight RGBA8（左上原点，行距 iStride 字节）。 */
 XGE_API int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStride);
-/* 取渲染目标关联纹理（可直接采样）。 */
+/* 取逻辑图片纹理；直接绘制即可，不要为渲染目标添加 FLIP_Y。 */
 XGE_API xge_texture xgeRenderTargetTexture(xge_render_target pTarget);
 /* 释放渲染目标。 */
 XGE_API void xgeRenderTargetFree(xge_render_target pTarget);

@@ -1,3 +1,49 @@
+int xgeTextureCoordinateContract(void)
+{
+	return XGE_TEXTURE_COORDINATE_CONTRACT;
+}
+
+xge_texture_uv_transform_t xgeTextureUVTransform(const xge_texture_t* pTexture)
+{
+	xge_texture_uv_transform_t t = {1.0f, 1.0f, 0.0f, 0.0f};
+	if ( pTexture && (pTexture->iFlags & XGE_TEXTURE_ORIGIN_BOTTOM_LEFT) ) {
+		t.fScaleV = -1.0f;
+		t.fOffsetV = 1.0f;
+	}
+	return t;
+}
+
+xge_vec2_t xgeTextureMapUV(const xge_texture_t* pTexture, xge_vec2_t tUV)
+{
+	xge_texture_uv_transform_t t = xgeTextureUVTransform(pTexture);
+	return (xge_vec2_t){tUV.fX * t.fScaleU + t.fOffsetU, tUV.fY * t.fScaleV + t.fOffsetV};
+}
+
+static xge_vec2_t __xgeTextureDrawUV(const xge_texture_t* pTexture, xge_vec2_t tUV, uint32_t iFlags)
+{
+	if ( iFlags & XGE_DRAW_FLIP_X ) tUV.fX = 1.0f - tUV.fX;
+	if ( iFlags & XGE_DRAW_FLIP_Y ) tUV.fY = 1.0f - tUV.fY;
+	return (iFlags & XGE_DRAW_RAW_UV) ? tUV : xgeTextureMapUV(pTexture, tUV);
+}
+
+/* Mirror within the selected logical rectangle, then map both endpoints. */
+static void __xgeTextureDrawRectUV(const xge_draw_t* pDraw, const xge_texture_t* pTexture,
+	float* pU0, float* pV0, float* pU1, float* pV1)
+{
+	float fW = pDraw->tSrc.fW ? pDraw->tSrc.fW : (float)pTexture->iWidth;
+	float fH = pDraw->tSrc.fH ? pDraw->tSrc.fH : (float)pTexture->iHeight;
+	xge_vec2_t a = {pDraw->tSrc.fX / pTexture->iWidth, pDraw->tSrc.fY / pTexture->iHeight};
+	xge_vec2_t b = {(pDraw->tSrc.fX + fW) / pTexture->iWidth, (pDraw->tSrc.fY + fH) / pTexture->iHeight};
+	float tmp;
+	if ( pDraw->iFlags & XGE_DRAW_FLIP_X ) { tmp = a.fX; a.fX = b.fX; b.fX = tmp; }
+	if ( pDraw->iFlags & XGE_DRAW_FLIP_Y ) { tmp = a.fY; a.fY = b.fY; b.fY = tmp; }
+	if ( !(pDraw->iFlags & XGE_DRAW_RAW_UV) ) {
+		a = xgeTextureMapUV(pTexture, a);
+		b = xgeTextureMapUV(pTexture, b);
+	}
+	*pU0 = a.fX; *pV0 = a.fY; *pU1 = b.fX; *pV1 = b.fY;
+}
+
 typedef struct xge_texture_shadow_t {
 	int iWidth;
 	int iHeight;
@@ -838,6 +884,17 @@ int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int i
 			if ( pPacked == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 			pUpload = pPacked;
 		}
+		if ( pTexture->iFlags & XGE_TEXTURE_ORIGIN_BOTTOM_LEFT ) {
+			/* Only the explicit CPU upload copies rows; drawing never copies pixels. */
+			if ( tChoice.iStorage != XGE_TEXTURE_STORAGE_RGBA8 ) { xrtFree(pPacked); return XGE_ERROR_UNSUPPORTED; }
+			xrtFree(pPacked);
+			pPacked = xrtMalloc((size_t)iCopyStride * (size_t)iHeight);
+			if ( !pPacked ) return XGE_ERROR_OUT_OF_MEMORY;
+			for ( i = 0; i < iHeight; ++i )
+				memcpy((unsigned char*)pPacked + (size_t)i * (size_t)iCopyStride,
+					pSrc + (size_t)(iHeight - 1 - i) * (size_t)iStride, (size_t)iCopyStride);
+			pUpload = pPacked;
+		}
 		__xgeTextureGLFormat(tChoice.iStorage, &iInternal, &iFormat, &iType);
 		if ( xge_glGetIntegerv != NULL ) {
 			xge_glGetIntegerv(GL_TEXTURE_BINDING_2D, &iBinding);
@@ -846,7 +903,9 @@ int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int i
 		__xgeTextureClearGLErrors();
 		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
 		if ( xge_glPixelStorei != NULL ) xge_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-		xge_glTexSubImage2D(GL_TEXTURE_2D, 0, iX, iY, iWidth, iHeight, iFormat, iType, pUpload);
+		xge_glTexSubImage2D(GL_TEXTURE_2D, 0, iX,
+			(pTexture->iFlags & XGE_TEXTURE_ORIGIN_BOTTOM_LEFT) ? pTexture->iHeight - iY - iHeight : iY,
+			iWidth, iHeight, iFormat, iType, pUpload);
 		iRet = __xgeTextureGLError(xge_glGetError != NULL ? xge_glGetError() : GL_NO_ERROR);
 		if ( xge_glPixelStorei != NULL ) xge_glPixelStorei(GL_UNPACK_ALIGNMENT, iAlignment);
 		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)iBinding);
@@ -1172,6 +1231,10 @@ int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride)
 
 	if ( (pTexture == NULL) || (pPixels == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	/* GPU rendering does not update the CPU shadow. Do not return a stale screenshot. */
+	if ( (pTexture->iFlags & XGE_TEXTURE_RENDER_TARGET) && g_xge.bSokolRunning ) {
+		return XGE_ERROR_INVALID_STATE;
 	}
 	if ( (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_RGBA8) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;

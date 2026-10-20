@@ -20971,7 +20971,7 @@ static int __xgeSvgGaussianPass(
 		tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)pSrc->iWidth, (float)pSrc->iHeight};
 		tDraw.tDst = (xge_rect_t){0.0f, 0.0f, (float)pDst->iWidth, (float)pDst->iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeMaterialDraw(&tMaterial, &tDraw);
 		xgeMaterialFree(&tMaterial);
 	}
@@ -21277,7 +21277,7 @@ static int __xgeSvgDrawFilterItem(
 			tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)iWidth, (float)iHeight};
 			tDraw.tDst = (xge_rect_t){fLeft, fTop, (float)iWidth, (float)iHeight};
 			tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 			xgeDrawEx(&tDraw);
 			iRet = xgeFlush();
 		}

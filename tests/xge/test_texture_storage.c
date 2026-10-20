@@ -159,9 +159,9 @@ int main(void)
 	unsigned char pixels[81 * 4], readback[81 * 4], patch[24];
 	int k, before;
 	GLuint id;
-	glGenTextures = mock_gen; glDeleteTextures = mock_delete; glBindTexture = mock_bind;
-	glTexImage2D = mock_image; glTexSubImage2D = mock_sub_image; glTexParameteri = mock_parameter;
-	glGetError = mock_get_error; glGetIntegerv = mock_get_integer; glPixelStorei = mock_pixel_store;
+	xge_glGenTextures = mock_gen; xge_glDeleteTextures = mock_delete; xge_glBindTexture = mock_bind;
+	xge_glTexImage2D = mock_image; xge_glTexSubImage2D = mock_sub_image; xge_glTexParameteri = mock_parameter;
+	xge_glGetError = mock_get_error; xge_glGetIntegerv = mock_get_integer; xge_glPixelStorei = mock_pixel_store;
 	g_xge.bSokolRunning = 1;
 	g_xge.tGraphicsBackend.iType = XGE_GPU_BACKEND_OPENGL33;
 	for ( k = 0; k < 6; k++ ) {
@@ -292,6 +292,27 @@ int main(void)
 	CHECK(info(&texture).iStorage == XGE_TEXTURE_STORAGE_YUV420P && info(&texture).iGpuBytes == 0);
 	CHECK(info(&texture).iCpuBytes == 131); xgeTextureFree(&texture);
 	g_xge.bSokolRunning = 1;
+	/* Deferred render-target uploads convert the top-down CPU shadow once.
+	 * Drawing/sampling never performs this copy. */
+	{
+		xge_render_target_t target = {0};
+		g_xge.bSokolRunning = 0;
+		fill(pixels, 0);
+		CHECK(xgeRenderTargetCreate(&target, 9, 9) == XGE_OK);
+		CHECK(xgeTextureUpdateRGBA(&target.tTexture, 0, 0, 9, 9, pixels, 36) == XGE_OK);
+		CHECK(xgeTextureReadPixels(&target.tTexture, readback, 36) == XGE_OK);
+		CHECK(memcmp(pixels, readback, sizeof(pixels)) == 0);
+		g_xge.bSokolRunning = 1;
+		CHECK(__xgeTextureUploadNow(&target.tTexture) == XGE_OK);
+		mock_sample(&target.tTexture, readback);
+		for ( k = 0; k < 9; ++k ) CHECK(memcmp(readback + k*36, pixels + (8-k)*36, 36) == 0);
+		CHECK(xgeTextureReadPixels(&target.tTexture, readback, 36) == XGE_ERROR_INVALID_STATE);
+		CHECK(xgeTextureUpdateRGBA(&target.tTexture, 1, 2, 1, 2, pixels, 36) == XGE_OK);
+		mock_sample(&target.tTexture, readback);
+		CHECK(memcmp(readback + (6*9+1)*4, pixels, 4) == 0);
+		CHECK(memcmp(readback + (5*9+1)*4, pixels+36, 4) == 0);
+		xgeRenderTargetFree(&target);
+	}
 	CHECK(g_xge.iTextureMemoryBytes == 0 && g_xge.iTextureCount == 0);
 	for ( k = 1; k <= (int)mock_next; k++ ) CHECK(mock_textures[k].pixels == NULL);
 	printf("PASS texture storage: %d checks (packing, fallback, updates, canonical readback, state, lifetime)\n", checks);

@@ -171,6 +171,17 @@ static int __xgeTextureNewGPU(xge_texture pTexture, const unsigned char* pPixels
 		if ( pPacked == NULL ) return XGE_ERROR_UNSUPPORTED; /* Optional scratch only. */
 		pUpload = pPacked;
 	}
+	if ( (pTexture->iFlags & XGE_TEXTURE_ORIGIN_BOTTOM_LEFT) && pPixels ) {
+		/* Render-target CPU shadows use the same top-down convention as images. */
+		if ( tChoice.iStorage != XGE_TEXTURE_STORAGE_RGBA8 ) { xrtFree(pPacked); return XGE_ERROR_UNSUPPORTED; }
+		size_t stride = (size_t)pTexture->iWidth * 4u;
+		pPacked = xrtMalloc(stride * (size_t)pTexture->iHeight);
+		if ( !pPacked ) return XGE_ERROR_OUT_OF_MEMORY;
+		for ( int y = 0; y < pTexture->iHeight; ++y )
+			memcpy((unsigned char*)pPacked + (size_t)y * stride,
+				pPixels + (size_t)(pTexture->iHeight - 1 - y) * stride, stride);
+		pUpload = pPacked;
+	}
 	__xgeTextureGLFormat(tChoice.iStorage, &iInternal, &iFormat, &iType);
 	if ( xge_glGetIntegerv != NULL ) {
 		xge_glGetIntegerv(GL_TEXTURE_BINDING_2D, &iBinding);

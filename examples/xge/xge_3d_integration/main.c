@@ -268,7 +268,7 @@ static int frame(void *user)
     xge_pass_t pass;xgePassInit(&pass,&d->composite,XGE_PASS_CLEAR_COLOR,XGE_COLOR_RGBA(0,0,0,255));
     if ((result=xgePassBegin(&pass))!=XGE_OK) goto fail;
     xge_draw_t blit={0};blit.pTexture=(xge_texture)xge3dTargetTexture(d->target);blit.tSrc=(xge_rect_t){0,0,640,480};blit.tDst=blit.tSrc;
-    blit.iFlags=XGE_DRAW_FLIP_Y;blit.iColor=XGE_COLOR_RGBA(255,255,255,255);xgeDrawEx(&blit);
+    blit.iFlags=0;blit.iColor=XGE_COLOR_RGBA(255,255,255,255);xgeDrawEx(&blit);
 #if XGE_ENABLE_XUI && XUI_ENABLE_BUTTON
     result=d->proxy.surfaceDraw(&d->proxy,d->ui_target,(xui_rect_t){0,0,280,44},(xui_rect_t){8,8,280,44},XUI_COLOR_RGBA(255,255,255,255),0);
 #endif

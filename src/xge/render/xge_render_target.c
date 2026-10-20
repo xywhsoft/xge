@@ -93,6 +93,7 @@ int xgeRenderTargetCreate(xge_render_target pTarget, int iWidth, int iHeight)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
+	pTarget->tTexture.iFlags |= XGE_TEXTURE_ORIGIN_BOTTOM_LEFT | XGE_TEXTURE_RENDER_TARGET;
 	pTarget->iWidth = iWidth;
 	pTarget->iHeight = iHeight;
 	pTarget->iFlags = XGE_RENDER_TARGET_TEXTURE;

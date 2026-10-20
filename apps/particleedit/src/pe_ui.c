@@ -153,7 +153,7 @@ static int preview_paint(xui_widget w, xui_draw_context draw, uint32_t state, vo
 	image.tSrc = (xge_rect_t){0, 0, PE_STAGE_W, PE_STAGE_H};
 	image.tDst = (xge_rect_t){dst.fX, dst.fY, dst.fW, dst.fH};
 	image.iColor = 0xffffffffu;
-	image.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+	image.iFlags = XGE_DRAW_SCREEN_SPACE;
 	xgeDrawEx(&image);
 	a->proxy.drawRectStroke(&a->proxy, draw, dst, 1, a->colors[PE_LINE]);
 	snprintf(text, sizeof(text), "%s  %.3f s   |   %u 粒子   |   seed %llu",

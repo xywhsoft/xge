@@ -329,10 +329,6 @@ void xgeNinePatchDraw(const xge_nine_patch_t* pPatch, xge_rect_t tDst, uint32_t 
 
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw)
 {
-	float fSrcX;
-	float fSrcY;
-	float fSrcW;
-	float fSrcH;
 	float fU0;
 	float fV0;
 	float fU1;
@@ -359,30 +355,7 @@ static void __xgeDrawExImmediate(const xge_draw_t* pDraw)
 		return;
 	}
 
-	fSrcX = pDraw->tSrc.fX;
-	fSrcY = pDraw->tSrc.fY;
-	fSrcW = pDraw->tSrc.fW;
-	fSrcH = pDraw->tSrc.fH;
-	if ( fSrcW == 0.0f ) {
-		fSrcW = (float)pTexture->iWidth;
-	}
-	if ( fSrcH == 0.0f ) {
-		fSrcH = (float)pTexture->iHeight;
-	}
-	fU0 = fSrcX / (float)pTexture->iWidth;
-	fV0 = fSrcY / (float)pTexture->iHeight;
-	fU1 = (fSrcX + fSrcW) / (float)pTexture->iWidth;
-	fV1 = (fSrcY + fSrcH) / (float)pTexture->iHeight;
-	if ( (pDraw->iFlags & XGE_DRAW_FLIP_X) != 0 ) {
-		float fTmp = fU0;
-		fU0 = fU1;
-		fU1 = fTmp;
-	}
-	if ( (pDraw->iFlags & XGE_DRAW_FLIP_Y) != 0 ) {
-		float fTmp = fV0;
-		fV0 = fV1;
-		fV1 = fTmp;
-	}
+	__xgeTextureDrawRectUV(pDraw, pTexture, &fU0, &fV0, &fU1, &fV1);
 
 	fLocalX[0] = -pDraw->tOrigin.fX;
 	fLocalY[0] = -pDraw->tOrigin.fY;

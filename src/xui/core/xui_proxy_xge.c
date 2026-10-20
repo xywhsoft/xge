@@ -517,20 +517,12 @@ static void __xuiProxyXgeSurfaceVertexCopy(xge_vertex_t* pDst, const xui_surface
 	}
 }
 
-static int __xuiProxyXgeSurfaceIsTarget(xui_surface pSurface)
-{
-	return __xuiProxyXgeSurfaceValid(pSurface) &&
-	       ((pSurface->iFlags & XUI_SURFACE_USAGE_TARGET) != 0);
-}
-
 static uint32_t __xuiProxyXgeSurfaceDrawFlags(xui_surface pSurface, uint32_t iFlags)
 {
 	uint32_t iDrawFlags;
 
 	iDrawFlags = __xuiProxyXgeDrawFlags(iFlags);
-	if ( __xuiProxyXgeSurfaceIsTarget(pSurface) ) {
-		iDrawFlags ^= XGE_DRAW_FLIP_Y;
-	}
+	(void)pSurface;
 	return iDrawFlags;
 }
 
@@ -553,9 +545,7 @@ static xge_rect_t __xuiProxyXgeSurfaceSourceRect(xui_surface pSurface, xui_rect_
 	if ( tRet.fH == 0.0f ) {
 		tRet.fH = (float)iHeight;
 	}
-	if ( __xuiProxyXgeSurfaceIsTarget(pSurface) ) {
-		tRet.fY = (float)iHeight - (tRet.fY + tRet.fH);
-	}
+
 	return tRet;
 }
 
@@ -570,9 +560,7 @@ static void __xuiProxyXgeSurfaceVertexMapUV(xui_surface pSurface, xge_vertex_t* 
 	}
 	bFlipX = ((iFlags & XUI_SURFACE_DRAW_FLIP_X) != 0);
 	bFlipY = ((iFlags & XUI_SURFACE_DRAW_FLIP_Y) != 0);
-	if ( __xuiProxyXgeSurfaceIsTarget(pSurface) ) {
-		bFlipY = !bFlipY;
-	}
+	(void)pSurface;
 	if ( !bFlipX && !bFlipY ) {
 		return;
 	}

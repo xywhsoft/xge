@@ -13555,6 +13555,7 @@ static int __xgeShapeExBlendRendererEnsure(void)
 		"in vec2 vUV;\n"
 		"uniform sampler2D uTexture;\n"
 		"uniform sampler2D uTexture2;\n"
+		XGE_GLSL_MATERIAL_UV
 		"uniform sampler2D uTexture3;\n"
 		"uniform int uBlendMode;\n"
 		"uniform int uBlendSource;\n"
@@ -13675,7 +13676,7 @@ static int __xgeShapeExBlendRendererEnsure(void)
 		"}\n"
 		"void main() {\n"
 		"  vec4 src = texture(uTexture, vUV);\n"
-		"  vec4 dst = texture(uTexture2, vUV);\n"
+		"  vec4 dst = texture(uTexture2, xgeMaterialUV2(vUV));\n"
 		"  vec3 Dc = dst.rgb;\n"
 		"  float Da = dst.a;\n"
 		"  vec3 sourceColor = src.a > 0.0 ? src.rgb / src.a : vec3(0.0);\n"
@@ -13687,7 +13688,7 @@ static int __xgeShapeExBlendRendererEnsure(void)
 		"    sourceCoverage = baseAlpha > 0.0 ? clamp(src.a / baseAlpha, 0.0, 1.0) : 0.0;\n"
 		"    Sc = sourceCoverage > 0.0 ? src.rgb / sourceCoverage : vec3(0.0);\n"
 		"  } else if (uBlendSource == 2) {\n"
-		"    geometryCoverage = texture(uTexture3, vUV).a;\n"
+		"    geometryCoverage = texture(uTexture3, xgeMaterialUV3(vUV)).a;\n"
 		"    float gradientAlpha = geometryCoverage > 0.000001 ? clamp(src.a / geometryCoverage, 0.0, 1.0) : 0.0;\n"
 		"    vec3 gradientPremul = geometryCoverage > 0.000001 ? clamp(src.rgb / geometryCoverage, vec3(0.0), ONE) : vec3(0.0);\n"
 		"    Sc = gradientPremul + Dc * (1.0 - gradientAlpha);\n"
@@ -13808,6 +13809,7 @@ static int __xgeShapeExMaskRendererEnsure(void)
 		"in vec2 vUV;\n"
 		"uniform sampler2D uTexture;\n"
 		"uniform sampler2D uTexture2;\n"
+		XGE_GLSL_MATERIAL_UV
 		"uniform int uMaskMethod;\n"
 		"uniform int uQuantizeMatting;\n"
 		"uniform int uAlphaMaskA8;\n"
@@ -13820,7 +13822,7 @@ static int __xgeShapeExMaskRendererEnsure(void)
 		"}\n"
 		"void main() {\n"
 		"  vec4 src = texture(uTexture, vUV);\n"
-		"  vec4 mask = texture(uTexture2, vUV);\n"
+		"  vec4 mask = texture(uTexture2, xgeMaterialUV2(vUV));\n"
 		"  vec4 outColor = src;\n"
 		"  if (uQuantizeMatting != 0 && uMaskMethod >= 1 && uMaskMethod <= 4) {\n"
 		"    vec4 srcByte = byteSample(src);\n"
@@ -13901,6 +13903,7 @@ static int __xgeShapeExGradientRendererEnsure(void)
 		"in vec2 vUV;\n"
 		"uniform sampler2D uTexture;\n"
 		"uniform sampler2D uTexture2;\n"
+		XGE_GLSL_MATERIAL_UV
 		"uniform vec4 uBounds;\n"
 		"uniform vec2 uMaskUVSize;\n"
 		"uniform vec3 uSampleRow0;\n"
@@ -14459,12 +14462,12 @@ static int __xgeShapeExDrawSupersampledScanMesh(
 		memset(&tDraw, 0, sizeof(tDraw));
 		tDraw.pTexture = xgeRenderTargetTexture(pTarget);
 		tDraw.tSrc = (xge_rect_t){
-			0.0f, (float)(pTarget->iHeight - iTargetHeight),
+			0.0f, 0.0f,
 			(float)iTargetWidth, (float)iTargetHeight
 		};
 		tDraw.tDst = (xge_rect_t){fLeft, fTop, (float)iWidth, (float)iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeDrawEx(&tDraw);
 		iRet = xgeFlush();
 	}
@@ -14656,7 +14659,7 @@ static int __xgeShapeExDrawStrokeUnionComposite(
 	tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)iWidth, (float)iHeight};
 	tDraw.tDst = tFrame;
 	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 	if ( bViewport ) xgeViewportClear();
 	xgeMaterialDraw(&tMaterial, &tDraw);
 	xgeMaterialFree(&tMaterial);
@@ -14811,7 +14814,7 @@ static int __xgeShapeExCompositeMask(
 		tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)iWidth, (float)iHeight};
 		tDraw.tDst = (xge_rect_t){fLeft, fTop, (float)iWidth, (float)iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeMaterialDraw(&tMaterial, &tDraw);
 		xgeMaterialFree(&tMaterial);
 		iRet = xgeFlush();
@@ -15260,11 +15263,11 @@ static int __xgeShapeExDrawGradientComposite(
 		memset(&tDraw, 0, sizeof(tDraw));
 		tDraw.pTexture = xgeRenderTargetTexture(pMask);
 		tDraw.tSrc = (xge_rect_t){
-			0.0f, (float)(pMask->iHeight - iHeight), (float)iWidth, (float)iHeight
+			0.0f, 0.0f, (float)iWidth, (float)iHeight
 		};
 		tDraw.tDst = (xge_rect_t){fLeft, fTop, (float)iWidth, (float)iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeMaterialDraw(&tMaterial, &tDraw);
 		xgeMaterialFree(&tMaterial);
 		iRet = xgeFlush();
@@ -15451,7 +15454,7 @@ static int __xgeShapeExCompositeBlend(
 		tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)iWidth, (float)iHeight};
 		tDraw.tDst = (xge_rect_t){fLeft, fTop, (float)iWidth, (float)iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeMaterialDraw(&tMaterial, &tDraw);
 		xgeMaterialFree(&tMaterial);
 		iRet = xgeFlush();
@@ -17679,6 +17682,7 @@ static int __xgeShapeExEffectRendererEnsure(void)
 		"in vec2 vUV;\n"
 		"uniform sampler2D uTexture;\n"
 		"uniform sampler2D uTexture2;\n"
+		XGE_GLSL_MATERIAL_UV
 		"uniform vec2 uTextureSize;\n"
 		"uniform vec2 uOffset;\n"
 		"uniform vec4 uShadowColor;\n"
@@ -17695,7 +17699,7 @@ static int __xgeShapeExEffectRendererEnsure(void)
 		"  vec2 shadowUV = vUV + sampleOffset;\n"
 		"  float blurAlpha8 = 0.0;\n"
 		"  if (shadowUV.x >= 0.0 && shadowUV.x < 1.0 && shadowUV.y >= 0.0 && shadowUV.y < 1.0) {\n"
-		"    blurAlpha8 = shadowToU8(texture(uTexture2, shadowUV)).a;\n"
+		"    blurAlpha8 = shadowToU8(texture(uTexture2, xgeMaterialUV2(shadowUV))).a;\n"
 		"  }\n"
 		"  vec4 color8 = shadowToU8(uShadowColor);\n"
 		"  vec4 shadow8 = shadowAlphaBlend8(vec4(color8.rgb, 255.0), blurAlpha8);\n"
@@ -17766,7 +17770,7 @@ static int __xgeShapeExEffectBlurPass(
 		tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)pSrc->iWidth, (float)pSrc->iHeight};
 		tDraw.tDst = (xge_rect_t){0.0f, 0.0f, (float)pDst->iWidth, (float)pDst->iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeMaterialDraw(&tMaterial, &tDraw);
 		xgeMaterialFree(&tMaterial);
 	}
@@ -17825,7 +17829,7 @@ static int __xgeShapeExEffectColorPass(xge_render_target pDst, xge_render_target
 		tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)pSrc->iWidth, (float)pSrc->iHeight};
 		tDraw.tDst = (xge_rect_t){0.0f, 0.0f, (float)pDst->iWidth, (float)pDst->iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeMaterialDraw(&tMaterial, &tDraw);
 		xgeMaterialFree(&tMaterial);
 	}
@@ -17867,7 +17871,7 @@ static int __xgeShapeExEffectShadowPass(xge_render_target pDst, xge_render_targe
 		tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)pSource->iWidth, (float)pSource->iHeight};
 		tDraw.tDst = (xge_rect_t){0.0f, 0.0f, (float)pDst->iWidth, (float)pDst->iHeight};
 		tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 		xgeMaterialDraw(&tMaterial, &tDraw);
 		xgeMaterialFree(&tMaterial);
 	}
@@ -17915,7 +17919,7 @@ static int __xgeShapeExEffectOutputDraw(void* pUser, xge_shape_ex_matrix_t tLoca
 	tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)pContext->iWidth, (float)pContext->iHeight};
 	tDraw.tDst = tDraw.tSrc;
 	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 	iOldBlend = xgeBlendGet();
 	xgeBlendSet(XGE_BLEND_ALPHA);
 	xgeDrawEx(&tDraw);
@@ -18144,7 +18148,7 @@ static int __xgeShapeExSceneDrawEffects(xge_shape_ex_scene pScene, float fTolera
 			tDraw.tSrc = (xge_rect_t){0.0f, 0.0f, (float)iWidth, (float)iHeight};
 			tDraw.tDst = (xge_rect_t){fLeft, fTop, (float)iWidth, (float)iHeight};
 			tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
+			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 			xgeBlendSet(iOutputBlend);
 			xgeDrawEx(&tDraw);
 			iRet = xgeFlush();

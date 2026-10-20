@@ -44,6 +44,9 @@ int xgeShaderCreate(xge_shader pShader, const char* sVertexSource, const char* s
 	pShader->iLocTexture2 = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTexture2");
 	pShader->iLocTexture3 = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTexture3");
 	pShader->iLocColor = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uColor");
+	pShader->iLocTextureUVTransform[0] = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTextureUVTransform");
+	pShader->iLocTextureUVTransform[1] = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTexture2UVTransform");
+	pShader->iLocTextureUVTransform[2] = xge_glGetUniformLocation((GLuint)pShader->iProgram, "uTexture3UVTransform");
 	return XGE_OK;
 }
 
@@ -467,10 +470,6 @@ void xgeMaterialSetBlend(xge_material pMaterial, int iBlend)
 
 static void __xgeDrawBuildVertices10(const xge_draw_t* pDraw, xge_texture pTexture, float* pVertices, uint32_t iColor)
 {
-	float fSrcX;
-	float fSrcY;
-	float fSrcW;
-	float fSrcH;
 	float fU0;
 	float fV0;
 	float fU1;
@@ -489,30 +488,7 @@ static void __xgeDrawBuildVertices10(const xge_draw_t* pDraw, xge_texture pTextu
 	xge_vec2_t tScreen;
 	xge_vec2_t tWorld;
 
-	fSrcX = pDraw->tSrc.fX;
-	fSrcY = pDraw->tSrc.fY;
-	fSrcW = pDraw->tSrc.fW;
-	fSrcH = pDraw->tSrc.fH;
-	if ( fSrcW == 0.0f ) {
-		fSrcW = (float)pTexture->iWidth;
-	}
-	if ( fSrcH == 0.0f ) {
-		fSrcH = (float)pTexture->iHeight;
-	}
-	fU0 = fSrcX / (float)pTexture->iWidth;
-	fV0 = fSrcY / (float)pTexture->iHeight;
-	fU1 = (fSrcX + fSrcW) / (float)pTexture->iWidth;
-	fV1 = (fSrcY + fSrcH) / (float)pTexture->iHeight;
-	if ( (pDraw->iFlags & XGE_DRAW_FLIP_X) != 0 ) {
-		float fTmp = fU0;
-		fU0 = fU1;
-		fU1 = fTmp;
-	}
-	if ( (pDraw->iFlags & XGE_DRAW_FLIP_Y) != 0 ) {
-		float fTmp = fV0;
-		fV0 = fV1;
-		fV1 = fTmp;
-	}
+	__xgeTextureDrawRectUV(pDraw, pTexture, &fU0, &fV0, &fU1, &fV1);
 	fU[0] = fU0; fV[0] = fV0;
 	fU[1] = fU1; fV[1] = fV0;
 	fU[2] = fU0; fV[2] = fV1;
@@ -583,6 +559,18 @@ static int __xgeMaterialSubmit(const xge_material_t* pMaterial, xge_texture pTex
 	xge_glUseProgram((GLuint)pShader->iProgram);
 	if ( pShader->iLocResolution >= 0 ) {
 		xge_glUniform2f(pShader->iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+	}
+	{
+		const xge_texture_t* arrTextures[3] = {pTexture, pMaterial->pTexture2, pMaterial->pTexture3};
+		xge_texture_uv_transform_t base = xgeTextureUVTransform(pTexture);
+		for ( int i = 0; i < 3; ++i ) {
+			if ( pShader->iLocTextureUVTransform[i] >= 0 ) {
+				xge_texture_uv_transform_t t = xgeTextureUVTransform(arrTextures[i]);
+				float su = t.fScaleU / base.fScaleU, sv = t.fScaleV / base.fScaleV;
+				xge_glUniform4f(pShader->iLocTextureUVTransform[i], su, sv,
+					t.fOffsetU - base.fOffsetU * su, t.fOffsetV - base.fOffsetV * sv);
+			}
+		}
 	}
 	if ( pShader->iLocTexture >= 0 ) {
 		xge_glUniform1i(pShader->iLocTexture, 0);

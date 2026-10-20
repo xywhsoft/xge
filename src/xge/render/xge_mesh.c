@@ -31,8 +31,9 @@ void xgeDrawQuad3D(xge_texture pTexture, const xge_vertex_t* pVertices, uint32_t
 		arrVertices[(i * 10) + 1] = fY;
 		arrVertices[(i * 10) + 2] = pVertices[i].fZ;
 		arrVertices[(i * 10) + 3] = fW;
-		arrVertices[(i * 10) + 4] = pVertices[i].fU;
-		arrVertices[(i * 10) + 5] = pVertices[i].fV;
+		xge_vec2_t tUV = __xgeTextureDrawUV(pTexture, (xge_vec2_t){pVertices[i].fU, pVertices[i].fV}, iFlags);
+		arrVertices[(i * 10) + 4] = tUV.fX;
+		arrVertices[(i * 10) + 5] = tUV.fY;
 		arrVertices[(i * 10) + 6] = fR;
 		arrVertices[(i * 10) + 7] = fG;
 		arrVertices[(i * 10) + 8] = fB;
@@ -100,7 +101,7 @@ static int __xgeMeshSetCPU(xge_mesh pMesh, const xge_vertex_t* pVertices, int iV
 	return XGE_OK;
 }
 
-static int __xgeMeshUpload(xge_mesh pMesh, uint32_t iDrawFlags)
+static int __xgeMeshUpload(xge_mesh pMesh, xge_texture pTexture, uint32_t iDrawFlags)
 {
 	float* pPacked;
 	xge_vertex_t* pVertices;
@@ -132,8 +133,9 @@ static int __xgeMeshUpload(xge_mesh pMesh, uint32_t iDrawFlags)
 		pPacked[(i * 10) + 1] = fY;
 		pPacked[(i * 10) + 2] = pVertices[i].fZ;
 		pPacked[(i * 10) + 3] = pVertices[i].fW <= 0.0f ? 1.0f : pVertices[i].fW;
-		pPacked[(i * 10) + 4] = pVertices[i].fU;
-		pPacked[(i * 10) + 5] = pVertices[i].fV;
+		xge_vec2_t tUV = __xgeTextureDrawUV(pTexture, (xge_vec2_t){pVertices[i].fU, pVertices[i].fV}, iDrawFlags);
+		pPacked[(i * 10) + 4] = tUV.fX;
+		pPacked[(i * 10) + 5] = tUV.fY;
 		pPacked[(i * 10) + 6] = fR;
 		pPacked[(i * 10) + 7] = fG;
 		pPacked[(i * 10) + 8] = fB;
@@ -228,7 +230,7 @@ void xgeMeshDraw(xge_mesh pMesh, xge_texture pTexture, uint32_t iFlags)
 	if ( __xgeQuad3DRendererInit() != XGE_OK ) {
 		return;
 	}
-	if ( __xgeMeshUpload(pMesh, iFlags) != XGE_OK ) {
+	if ( __xgeMeshUpload(pMesh, pTexture, iFlags) != XGE_OK ) {
 		return;
 	}
 	xge_glUseProgram(g_xgeQuad3DRenderer.iProgram);
