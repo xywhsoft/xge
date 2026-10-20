@@ -2,11 +2,17 @@
   "source_repository": "D:\\GIT\\xrt",
   "source_branch": "master",
   "source_commit": "13332753c01fd4074e5937c3858cc060dc7e3008",
-  "source_worktree_dirty": false,
-  "source_snapshot_sha256": "f5e5f37ac6ef78b842e3bdaf894463777a9fa8f0570d6c3d86cf2bb704287976",
-  "header_sha256": "bc0c58d250581509f20a5ba1781c0553056d157d0def07c0596db7dc3909b80c",
-  "declaration_header_sha256": "cc4b2f276b2561bec52a959d20c1d247f82b25a2fd8fb955674d0ed5ade285d8",
+  "source_worktree_dirty": true,
+  "source_snapshot_sha256": "9d0af9bd3405e147c3587f98bf37afc466daabff66e59f96ae7fb1f659a53c36",
+  "header_sha256": "b6f22576c415a0d223c0460dfcab8bfcf9ba1579ce86c79a454d9f1e6e97d9bc",
+  "declaration_header_sha256": "5ec7a40850b79d42b1db03dca77a0a3a9237d74e3587688e6e14cb5ce3681f6a",
   "generation": "tools/amalgamate.py in isolated source snapshot",
+  "snapshot_mode": "immutable_base_with_explicit_overlays",
+  "overlay_files": {
+    "include/xrt/memory.h": "8bb8ae6ce6cd5955ce2a6fa79a5f198a2574c069f4d4ff241700bddb6f90e782",
+    "src/internal/xrt_memory.h": "926e29399aa9c2c7eea915bf53bd7d32a2437eb7ea44395f506be962384e69ca",
+    "src/memory/heap.c": "34161317cb08cf802bef65f993b40c52ec19e8b70b17abf9fb9fe58e081861a4"
+  },
   "extensions": [
     "xllm",
     "xllm-session",

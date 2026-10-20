@@ -5596,6 +5596,34 @@ static inline bool xrtMemRangesOverlap(
 
 XRT_EXTERN_C_BEGIN
 
+/* Shared quota for live requested heap bytes (not process RSS, pool backing,
+ * allocator overhead, or allocations made directly by external libraries).
+ * Objects/blocks retain the quota through cross-thread ownership transfers. */
+typedef struct xallocationbudget xallocationbudget;
+typedef struct xallocationscope {
+	struct xallocationscope* Previous;
+	xallocationbudget* Budget;
+	uint64 Owner;
+	uint64 Rejections;
+} xallocationscope;
+typedef struct xallocationbudgetinfo {
+	size_t Size, Limit, LiveBytes, PeakBytes, LiveCount;
+	uint64 Rejections;
+} xallocationbudgetinfo;
+XRT_API bool xrtAllocationBudgetCreate(size_t iLimit, xallocationbudget** ppBudget);
+XRT_API bool xrtAllocationBudgetAddRef(xallocationbudget* pBudget);
+XRT_API void xrtAllocationBudgetFree(xallocationbudget* pBudget);
+XRT_API bool xrtAllocationBudgetInfo(xallocationbudget* pBudget, xallocationbudgetinfo* pInfo);
+XRT_API bool xrtAllocationBudgetSetLimit(xallocationbudget* pBudget, size_t iLimit);
+/* Zero-initialize scope, pair every successful Enter with Leave on the same
+ * native thread, in LIFO order, before thread exit. Nested scopes are allowed.
+ * Only the innermost quota charges new allocations. Realloc of a charged
+ * block stays in its original quota, even outside that scope; it reserves
+ * the complete destination before copying/freeing the old block. Failure
+ * leaves the old allocation intact. Free may run on any thread. */
+XRT_API bool xrtAllocationBudgetEnter(xallocationbudget* pBudget, xallocationscope* pScope);
+XRT_API bool xrtAllocationBudgetLeave(xallocationscope* pScope);
+
 
 
 /* 在首次分配前替换进程级底层分配器。 */
@@ -43661,6 +43689,7 @@ typedef struct xrt_heap_header {
 	uint16 Flags;
 	size_t Size;
 	ptr Allocation;
+	xallocationbudget* Budget;
 	#if defined(XRT_FEATURE_MEMORY_DEBUG)
 		struct xrt_heap_header* DebugPrev;
 		struct xrt_heap_header* DebugNext;
@@ -50767,7 +50796,7 @@ extern "C"
 #endif
 
     /* tdefl_init() compression flags logically OR'd together (low 12 bits contain the max. number of probes per dictionary search): */
-    /* TDEFL_DEFAULT_MAX_PROBES: The compressor defaults to 128 dictionary probes per dictionary search. 0=Huffman only, 1=Huffman+LZ (fastests/xge/crap compression), 4095=Huffman+LZ (slowest/best compression). */
+    /* TDEFL_DEFAULT_MAX_PROBES: The compressor defaults to 128 dictionary probes per dictionary search. 0=Huffman only, 1=Huffman+LZ (fastest/crap compression), 4095=Huffman+LZ (slowest/best compression). */
     enum
     {
         TDEFL_HUFFMAN_ONLY = 0,
@@ -64272,6 +64301,117 @@ static bool __xrtHeapCacheTlsReady = false;
 /* 前置声明供调试所有权解析在初始化实现之前使用。 */
 static void __xrtHeapEnsure(void);
 
+/* The public scope is caller-owned and must be left before its stack frame
+ * or thread ends. Budget objects themselves outlive scopes through block refs. */
+struct xallocationbudget {
+	xrt_spinlock Lock;
+	size_t Refs;
+	xallocationbudgetinfo Info;
+};
+#if !defined(__TINYC__)
+static XRT_THREAD_LOCAL xallocationscope* __xrtBudgetScope;
+static xallocationscope* __xrtBudgetTop(void) { return __xrtBudgetScope; }
+static bool __xrtBudgetSetTop(xallocationscope* p) { __xrtBudgetScope=p;return true; }
+#elif defined(_WIN32) || defined(_WIN64)
+static DWORD __xrtBudgetTls=TLS_OUT_OF_INDEXES;
+static volatile LONG __xrtBudgetTlsState;
+static xrt_local_slot __xrtBudgetSlot;
+static xallocationscope* __xrtBudgetTop(void)
+{return InterlockedCompareExchange(&__xrtBudgetTlsState,0,0)==2?(xallocationscope*)TlsGetValue(__xrtBudgetTls):NULL;}
+static bool __xrtBudgetSetTop(xallocationscope* p)
+{
+	if(InterlockedCompareExchange(&__xrtBudgetTlsState,1,0)==0){
+		__xrtBudgetTls=__xrtLocalSlotAlloc(&__xrtBudgetSlot,NULL,XRT_LOCAL_BORROWED,false);
+		InterlockedExchange(&__xrtBudgetTlsState,__xrtBudgetTls==TLS_OUT_OF_INDEXES?3:2);
+	}
+	while(InterlockedCompareExchange(&__xrtBudgetTlsState,0,0)==1)Sleep(0);
+	return InterlockedCompareExchange(&__xrtBudgetTlsState,0,0)==2&&TlsSetValue(__xrtBudgetTls,p);
+}
+#else
+static pthread_key_t __xrtBudgetTls;
+static pthread_once_t __xrtBudgetTlsOnce=PTHREAD_ONCE_INIT;
+static bool __xrtBudgetTlsReady;
+static void __xrtBudgetTlsInit(void) {__xrtBudgetTlsReady=pthread_key_create(&__xrtBudgetTls,NULL)==0;}
+static xallocationscope* __xrtBudgetTop(void)
+{pthread_once(&__xrtBudgetTlsOnce,__xrtBudgetTlsInit);return __xrtBudgetTlsReady?(xallocationscope*)pthread_getspecific(__xrtBudgetTls):NULL;}
+static bool __xrtBudgetSetTop(xallocationscope* p)
+{pthread_once(&__xrtBudgetTlsOnce,__xrtBudgetTlsInit);return __xrtBudgetTlsReady&&pthread_setspecific(__xrtBudgetTls,p)==0;}
+#endif
+static uint64 __xrtBudgetOwner(void)
+{
+#if defined(_WIN32) || defined(_WIN64)
+	return (uint64)GetCurrentThreadId();
+#else
+	return __xrtNativeThreadId(pthread_self());
+#endif
+}
+static void __xrtBudgetDrop(xallocationbudget* p)
+{
+	if(!p)return;
+	__xrtSpinLock(&p->Lock);bool destroy=--p->Refs==0;__xrtSpinUnlock(&p->Lock);
+	if(destroy)__xrtBackingFree(p);
+}
+static bool __xrtBudgetCharge(xallocationbudget* p,size_t bytes)
+{
+	if(!p)return true;
+	if(!bytes)bytes=1;
+	__xrtSpinLock(&p->Lock);
+	bool ok=bytes<=p->Info.Limit-p->Info.LiveBytes&&p->Refs<SIZE_MAX&&p->Info.LiveCount<SIZE_MAX;
+	if(ok){p->Info.LiveBytes+=bytes;++p->Info.LiveCount;++p->Refs;if(p->Info.LiveBytes>p->Info.PeakBytes)p->Info.PeakBytes=p->Info.LiveBytes;}
+	else ++p->Info.Rejections;
+	__xrtSpinUnlock(&p->Lock);
+	if(!ok){xallocationscope* scope=__xrtBudgetTop();if(scope)++scope->Rejections;__xrtErrorSetOutOfMemory();}
+	return ok;
+}
+static void __xrtBudgetUncharge(xallocationbudget* p,size_t bytes)
+{
+	if(!p)return;
+	if(!bytes)bytes=1;
+	__xrtSpinLock(&p->Lock);p->Info.LiveBytes-=bytes;--p->Info.LiveCount;
+	bool destroy=--p->Refs==0;__xrtSpinUnlock(&p->Lock);if(destroy)__xrtBackingFree(p);
+}
+XRT_API bool xrtAllocationBudgetCreate(size_t limit,xallocationbudget** out)
+{
+	if(!out){__xrtErrorSetInvalidArgument();return false;}*out=NULL;
+	if(!limit){__xrtErrorSetInvalidArgument();return false;}__xrtHeapEnsure();
+	xallocationbudget* p=(xallocationbudget*)__xrtBackingAlloc(sizeof(*p));if(!p){__xrtErrorSetOutOfMemory();return false;}
+	memset(p,0,sizeof(*p));p->Refs=1;p->Info.Size=sizeof(p->Info);p->Info.Limit=limit;*out=p;return true;
+}
+XRT_API void xrtAllocationBudgetFree(xallocationbudget* p) {__xrtBudgetDrop(p);}
+XRT_API bool xrtAllocationBudgetAddRef(xallocationbudget* p)
+{
+	if(!p){__xrtErrorSetInvalidArgument();return false;}
+	__xrtSpinLock(&p->Lock);bool ok=p->Refs<SIZE_MAX;if(ok)++p->Refs;__xrtSpinUnlock(&p->Lock);
+	if(!ok)__xrtErrorSetOutOfMemory();
+	return ok;
+}
+XRT_API bool xrtAllocationBudgetInfo(xallocationbudget* p,xallocationbudgetinfo* out)
+{
+	if(!p||!out||out->Size!=sizeof(*out)){__xrtErrorSetInvalidArgument();return false;}
+	__xrtSpinLock(&p->Lock);*out=p->Info;__xrtSpinUnlock(&p->Lock);return true;
+}
+XRT_API bool xrtAllocationBudgetSetLimit(xallocationbudget* p,size_t limit)
+{
+	if(!p||!limit){__xrtErrorSetInvalidArgument();return false;}
+	__xrtSpinLock(&p->Lock);bool ok=limit>=p->Info.LiveBytes;if(ok)p->Info.Limit=limit;__xrtSpinUnlock(&p->Lock);
+	if(!ok)__xrtErrorSetInvalidArgument();
+	return ok;
+}
+XRT_API bool xrtAllocationBudgetEnter(xallocationbudget* p,xallocationscope* scope)
+{
+	if(!p||!scope||scope->Owner||scope->Budget||scope->Previous||scope->Rejections){__xrtErrorSetInvalidArgument();return false;}
+	__xrtSpinLock(&p->Lock);bool ok=p->Refs<SIZE_MAX;if(ok)++p->Refs;__xrtSpinUnlock(&p->Lock);
+	if(!ok){__xrtErrorSetOutOfMemory();return false;}
+	scope->Previous=__xrtBudgetTop();scope->Budget=p;scope->Owner=__xrtBudgetOwner();
+	if(!__xrtBudgetSetTop(scope)){memset(scope,0,sizeof(*scope));__xrtBudgetDrop(p);__xrtErrorSetOutOfMemory();return false;}return true;
+}
+XRT_API bool xrtAllocationBudgetLeave(xallocationscope* scope)
+{
+	if(!scope||scope!=__xrtBudgetTop()||scope->Owner!=__xrtBudgetOwner()){__xrtErrorSetInvalidArgument();return false;}
+	if(!__xrtBudgetSetTop(scope->Previous)){__xrtErrorSetInvalidArgument();return false;}
+	xallocationbudget* p=scope->Budget;memset(scope,0,sizeof(*scope));__xrtBudgetDrop(p);return true;
+}
+
 #if defined(__TINYC__) && !defined(_WIN32) && !defined(_WIN64)
 static pthread_once_t __xrtHeapOnce = PTHREAD_ONCE_INIT;
 #endif
@@ -64396,6 +64536,7 @@ static void __xrtHeapWriteHeader(xrt_heap_header* pHeader, uint16 iClass, uint16
 	pHeader->Flags = iFlags;
 	pHeader->Size = iSize;
 	pHeader->Allocation = NULL;
+	pHeader->Budget = NULL;
 	#if defined(XRT_FEATURE_MEMORY_DEBUG)
 		pHeader->DebugPrev = NULL;
 		pHeader->DebugNext = NULL;
@@ -64938,18 +65079,23 @@ static ptr __xrtHeapAllocBacking(size_t iSize, bool bZero, cstr sFile, uint32 iL
 
 
 /* 执行公共分配和清零的共同路径。 */
-static ptr __xrtHeapAlloc(size_t iSize, bool bZero, cstr sFile, uint32 iLine)
+static ptr __xrtHeapAllocCharged(size_t iSize, bool bZero, cstr sFile, uint32 iLine,xallocationbudget* pBudget)
 {
 	uint16 iClass;
-
+	if(!__xrtBudgetCharge(pBudget,iSize))return NULL;
 	__xrtHeapEnsure();
 	iClass = __xrtHeapClass(iSize);
+	ptr pMemory;
 	if ( iClass == XRT_HEAP_CLASS_BACKING ) {
-		return __xrtHeapAllocBacking(iSize, bZero, sFile, iLine);
+		pMemory=__xrtHeapAllocBacking(iSize, bZero, sFile, iLine);
+	}else{
+		pMemory=__xrtHeapAllocPooled(iClass, iSize, bZero, sFile, iLine);
 	}
-
-	return __xrtHeapAllocPooled(iClass, iSize, bZero, sFile, iLine);
+	if(pMemory)__xrtHeapHeader(pMemory)->Budget=pBudget;else __xrtBudgetUncharge(pBudget,iSize);
+	return pMemory;
 }
+static ptr __xrtHeapAlloc(size_t iSize, bool bZero, cstr sFile, uint32 iLine)
+{xallocationscope* scope=__xrtBudgetTop();return __xrtHeapAllocCharged(iSize,bZero,sFile,iLine,scope?scope->Budget:NULL);}
 
 
 
@@ -65007,6 +65153,7 @@ static bool __xrtHeapFree(ptr pMemory, cstr sFile, uint32 iLine)
 		size_t iSize = pHeader->Size;
 		uint16 iClass = pHeader->Class;
 		size_t iCapacity = __xrtHeapClassCapacity(iClass);
+		xallocationbudget* pBudget=pHeader->Budget;
 		int iDisposition = __xrtMemDebugFree(pHeader, pMemory, iCapacity, sFile, iLine);
 
 		if ( iDisposition == XRT_MEMDEBUG_FREE_INVALID ) {
@@ -65014,6 +65161,7 @@ static bool __xrtHeapFree(ptr pMemory, cstr sFile, uint32 iLine)
 		}
 		__xrtMemStatsBlockFree(iSize, iClass, true);
 		if ( iDisposition == XRT_MEMDEBUG_FREE_CONSUMED ) {
+			__xrtBudgetUncharge(pBudget,iSize);
 			return true;
 		}
 
@@ -65021,12 +65169,14 @@ static bool __xrtHeapFree(ptr pMemory, cstr sFile, uint32 iLine)
 			pHeader->Magic = 0;
 		#endif
 		__xrtHeapReturn(iClass, pNode);
+		__xrtBudgetUncharge(pBudget,iSize);
 		return true;
 	}
 	if ( (pHeader->Flags & XRT_HEAP_FLAG_BACKING) != 0 ) {
 		size_t iSize = pHeader->Size;
 		uint16 iClass = pHeader->Class;
 		ptr pAllocation = pHeader->Allocation;
+		xallocationbudget* pBudget=pHeader->Budget;
 		size_t iCapacity = (iSize != 0 ? iSize : 1) + __xrtMemDebugTailSize();
 		int iDisposition = __xrtMemDebugFree(pHeader, pMemory, iCapacity, sFile, iLine);
 
@@ -65035,10 +65185,12 @@ static bool __xrtHeapFree(ptr pMemory, cstr sFile, uint32 iLine)
 		}
 		__xrtMemStatsBlockFree(iSize, iClass, false);
 		if ( iDisposition == XRT_MEMDEBUG_FREE_CONSUMED ) {
+			__xrtBudgetUncharge(pBudget,iSize);
 			return true;
 		}
 		pHeader->Magic = 0;
 		__xrtBackingFree(pAllocation);
+		__xrtBudgetUncharge(pBudget,iSize);
 		return true;
 	}
 
@@ -65091,6 +65243,13 @@ static ptr __xrtHeapRealloc(ptr pMemory, size_t iSize, cstr sFile, uint32 iLine)
 	}
 	if ( __xrtMemDebugShouldFailAlloc() ) {
 		return NULL;
+	}
+	xallocationscope* scope=__xrtBudgetTop();
+	xallocationbudget* pBudget=pHeader->Budget?pHeader->Budget:scope?scope->Budget:NULL;
+	if(pBudget){
+		pNewMemory=__xrtHeapAllocCharged(iSize,false,sFile,iLine,pBudget);if(!pNewMemory)return NULL;
+		iCopySize=pHeader->Size<iSize?pHeader->Size:iSize;if(iCopySize)memcpy(pNewMemory,pMemory,iCopySize);
+		__xrtHeapFree(pMemory,sFile,iLine);__xrtMemDebugRealloc(pNewMemory,iSize,sFile,iLine);return pNewMemory;
 	}
 	iNewClass = __xrtHeapClass(iSize);
 	if ( ((pHeader->Flags & XRT_HEAP_FLAG_POOLED) != 0) && (pHeader->Class == iNewClass) ) {
