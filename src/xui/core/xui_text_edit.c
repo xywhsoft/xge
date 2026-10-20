@@ -1278,6 +1278,27 @@ static int __xuiTextEditBuildLines(xui_widget pWidget, xui_text_edit_data_t* pDa
 	pData->bLinesDirty = 1;
 	__xuiTextEditPaintCacheClear(pData);
 	iTextSize = pData->iTextLength;
+	if ( iTextSize == 0 ) {
+		iRet = __xuiTextEditLineReserve(pData, 1);
+		if ( iRet != XUI_OK ) return iRet;
+		pData->fLineHeight = __xuiTextEditLineHeight(pWidget, pFont, pData->fLineGap);
+		pData->pLines[0].iStart = 0;
+		pData->pLines[0].iEnd = 0;
+		pData->pLines[0].iPhysicalLine = 1;
+		pData->pLines[0].fY = 0.0f;
+		pData->pLines[0].fW = 0.0f;
+		xuiTextLayoutDestroy(pData->tTextLayout.pLayout);
+		pData->tTextLayout.pLayout = NULL;
+		pData->tTextLayout.pFont = pFont;
+		pData->tTextLayout.iDpiGeneration = iDpi;
+		pData->iLineCount = 1;
+		pData->bDirectLayout = 1;
+		pData->fContentWidth = 0.0f;
+		pData->fContentHeight = pData->fLineHeight;
+		pData->fLastLayoutWidth = fWrapWidth;
+		pData->bLinesDirty = 0;
+		return XUI_OK;
+	}
 	if ( !pData->bWordWrap && iTextSize >= XUI_INTERNAL_TEXT_CHUNK_THRESHOLD &&
 	     memchr(pData->sText, '\r', (size_t)iTextSize) == NULL &&
 	     memchr(pData->sText, '\n', (size_t)iTextSize) == NULL &&

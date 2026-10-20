@@ -88,9 +88,103 @@ cleanup:
 	return !iFailed;
 }
 
+static int empty_edit_font_metrics(xui_proxy proxy, xui_font font, xui_font_metrics_t* metrics)
+{
+	(void)proxy;
+	(void)font;
+	memset(metrics, 0, sizeof(*metrics));
+	metrics->fAscent = 12;
+	metrics->fDescent = 4;
+	metrics->fLineHeight = 16;
+	return XUI_OK;
+}
+
+static int closed_window_empty_text_edit_first_paint(void)
+{
+	xui_proxy_t proxy = __xuiTestProxy();
+	struct xui_font_t font = {0};
+	xui_context context = NULL;
+	xui_widget root = NULL;
+	xui_widget window = NULL;
+	xui_widget client;
+	xui_widget toolbar = NULL;
+	xui_widget edit = NULL;
+	xui_surface target = NULL;
+	xui_surface_desc_t surface_desc = {0};
+	xui_window_desc_t window_desc = {0};
+	xui_text_edit_desc_t edit_desc = {0};
+	xui_rect_t edit_world;
+	int x;
+	int y;
+	int iFailed = 0;
+
+	proxy.fontGetMetrics = empty_edit_font_metrics;
+	XUI_TEST_CHECK(xuiCreate(&context) == XUI_OK &&
+		xuiSetProxy(context, &proxy) == XUI_OK &&
+		xuiSetViewportSize(context, 320, 200) == XUI_OK,
+		"closed window context");
+	XUI_TEST_CHECK(xuiWidgetCreate(context, &root) == XUI_OK &&
+		xuiSetRootWidget(context, root) == XUI_OK,
+		"closed window root");
+	window_desc.iSize = sizeof(window_desc);
+	window_desc.sTitle = "Closed window";
+	window_desc.bClosed = 1;
+	window_desc.bHideCollapse = 1;
+	window_desc.bHideMaximize = 1;
+	XUI_TEST_CHECK(xuiWindowCreate(context, &window, &window_desc) == XUI_OK,
+		"closed window create");
+	(void)xuiWidgetSetRect(window, (xui_rect_t){10, 10, 300, 160});
+	client = xuiWindowGetClientWidget(window);
+	XUI_TEST_CHECK(client != NULL && xuiWidgetSetLayoutType(client, XUI_LAYOUT_COLUMN) == XUI_OK,
+		"closed window client");
+	XUI_TEST_CHECK(xuiWidgetCreate(context, &toolbar) == XUI_OK,
+		"closed window toolbar");
+	(void)xuiWidgetSetLayoutType(toolbar, XUI_LAYOUT_ROW);
+	(void)xuiWidgetSetSizeMode(toolbar, XUI_SIZE_FILL, XUI_SIZE_FIXED);
+	(void)xuiWidgetSetPreferredSize(toolbar, (xui_vec2_t){0, 36});
+	edit_desc.iSize = sizeof(edit_desc);
+	edit_desc.pFont = &font;
+	edit_desc.sPlaceholder = "Empty input";
+	XUI_TEST_CHECK(xuiTextEditCreate(context, &edit, &edit_desc) == XUI_OK,
+		"closed window text edit");
+	(void)xuiWidgetSetSizeMode(edit, XUI_SIZE_FIXED, XUI_SIZE_FILL);
+	(void)xuiWidgetSetPreferredSize(edit, (xui_vec2_t){180, 0});
+	XUI_TEST_CHECK(xuiWidgetAddChild(toolbar, edit) == XUI_OK &&
+		xuiWindowAddChild(window, toolbar) == XUI_OK &&
+		xuiWidgetAddChild(root, window) == XUI_OK,
+		"closed window attach tree");
+	XUI_TEST_CHECK(xuiWindowSetOpen(window, 1) == XUI_OK,
+		"closed window open");
+
+	surface_desc.iWidth = 320;
+	surface_desc.iHeight = 200;
+	surface_desc.iKind = XUI_SURFACE_KIND_TEXTURE;
+	surface_desc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
+	surface_desc.iFlags = XUI_SURFACE_USAGE_TARGET | XUI_SURFACE_ALPHA_PREMULTIPLIED;
+	XUI_TEST_CHECK(proxy.surfaceCreate(&proxy, &target, &surface_desc) == XUI_OK,
+		"closed window target");
+	XUI_TEST_CHECK(xuiRender(context, target, NULL, 0) == XUI_OK,
+		"closed window first render");
+	XUI_TEST_CHECK(xuiTextEditGetLineCount(edit) == 1,
+		"empty text edit must retain one caret line");
+	edit_world = xuiWidgetGetWorldRect(edit);
+	x = edit_world.fX + edit_world.fW / 2;
+	y = edit_world.fY + edit_world.fH / 2;
+	XUI_TEST_CHECK(edit_world.fW > 0 && edit_world.fH > 0,
+		"closed window text edit arranged");
+	XUI_TEST_CHECK(__xuiPixelEquals(target->pPixels, 320 * 4, x, y, 255, 255, 255, 255),
+		"empty text edit missing on first visible frame");
+
+cleanup:
+	if (target != NULL) proxy.surfaceDestroy(&proxy, target);
+	if (context != NULL) xuiDestroy(context);
+	return !iFailed;
+}
+
 int main(void)
 {
 	if (!cache_transitions()) return 1;
+	if (!closed_window_empty_text_edit_first_paint()) return 1;
 	puts("xui_cache_transition_test: passed");
 	return 0;
 }
