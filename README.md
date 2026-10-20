@@ -2,13 +2,15 @@
 
 XGE 是一个 C 语言图形与应用界面库。它提供窗口与渲染循环、2D 图形和文本、资源与输入，以及建立在 XGE 上的保留式 XUI 控件库。
 
-当前公开版本为 **2.0.0**。[`include/xge.h`](include/xge.h) 和 [`include/xui.h`](include/xui.h) 是公开 API 权威；本文档和范例说明如何使用这些 API，不承诺未在头文件中声明的内部实现细节。
+当前公开版本为 **3.0.0**。[`include/xge.h`](include/xge.h) 和 [`include/xui.h`](include/xui.h) 是公开 API 权威；本文档和范例说明如何使用这些 API，不承诺未在头文件中声明的内部实现细节。
 
+图片方向与升级指南： [XGE 3 coordinate contract](docs/guide/TEXTURE_COORDINATES.md).
 ## 快速入口
 
 - [构建与验证](docs/guide/BUILD.md)：Windows 构建、测试与输出位置。
 - [XGE 使用指南](docs/guide/XGE.md)：运行时、绘制、资源、输入与生命周期。
 - [2D 粒子系统](docs/guide/PARTICLES.md)：独立 CPU 模拟、配置、批渲染与七个经典场景范例。
+- [通用 3D 基础增强](docs/guide/FOUNDATION.md)：增量场景、空间索引、分步装配与回收、共享蒙皮、动画混合和 SDK 验收。
 - [XUI 使用指南](docs/guide/XUI.md)：控件、布局、事件和范例选择。
 - [范例索引](docs/guide/EXAMPLES.md)：按功能选择可运行范例。
 - [平台说明](docs/guide/PLATFORM.md)：Windows、Android、iOS 和 Web 的当前入口。

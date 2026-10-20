@@ -1615,3 +1615,13 @@ uint32_t xgeGetBuildFeatures(void)
 {
 	return XGE_FEATURES;
 }
+int xgeGetBuildInfo(xge_build_info_t *out)
+{
+    if(!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge_build_info_t){sizeof(*out),XGE_VERSION_MAJOR,XGE_VERSION_MINOR,XGE_VERSION_PATCH,
+        XGE_FOUNDATION_API_REVISION,XGE_FEATURES,XGE_BUILD_ABI_FINGERPRINT};return XGE_OK;
+}
+int xgeCheckBuildCompatibility(uint64_t fingerprint,uint32_t features)
+{
+    return features==XGE_FEATURES&&(!fingerprint||fingerprint==XGE_BUILD_ABI_FINGERPRINT)?XGE_OK:XGE_ERROR_UNSUPPORTED;
+}

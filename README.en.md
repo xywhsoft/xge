@@ -2,8 +2,9 @@
 
 XGE is a C graphics and application-UI library. It provides a window and render loop, 2D drawing and text, resources and input, plus the retained-mode XUI widget library.
 
-The current public version is **2.0.0**. [`include/xge.h`](include/xge.h) and [`include/xui.h`](include/xui.h) are the authoritative public API. Documentation and examples explain use of the declared API; private implementation details are not part of the contract.
+The current public version is **3.0.0**. [`include/xge.h`](include/xge.h) and [`include/xui.h`](include/xui.h) are the authoritative public API. Documentation and examples explain use of the declared API; private implementation details are not part of the contract.
 
+Image coordinates and migration: [XGE 3 coordinate contract](docs/guide/TEXTURE_COORDINATES.md).
 ## Start here
 
 - [Build and verification](docs/guide/BUILD.md)

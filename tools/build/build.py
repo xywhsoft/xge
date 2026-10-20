@@ -108,10 +108,17 @@ def main():
             extension = json.loads((ROOT / f"extlibs/xrt/extlibs/{product}/config/modules.json").read_text())
             sources += ["extlibs/xrt/" + source for module in extension["modules"] for source in module["sources"]]
     config = "#ifndef XGE_BUILD_CONFIG_H\n#define XGE_BUILD_CONFIG_H\n"
+    api_major = int(re.search(r"#define\s+XGE_VERSION_MAJOR\s+(\d+)", (ROOT / "include/xge.h").read_text(encoding="utf-8")).group(1))
+    config += f"#define XGE_BUILD_API_MAJOR {api_major}\n"
     config += f"#define XGE_BUILD_PROFILE {PROFILES[args.profile]}\n"
     config += "".join(f"#define {name} {int(name in features)}\n" for name in sorted(names))
     if args.profile == "ide":
         config += "#define XGE_XRT_PROFILE_IDE\n"
+    abi_inputs = config + "".join((ROOT / path).read_text(encoding="utf-8") for path in
+        ("include/xge.h", "include/xui.h", "include/xge_config.h", "include/xui_config.h", "extlibs/xrt/xrt.h"))
+    abi_value = hashlib.sha256((abi_inputs + version + str(int(args.debug))).encode()).hexdigest()[:16]
+    config += f"#define XGE_BUILD_ABI_FINGERPRINT UINT64_C(0x{abi_value})\n"
+    flags += [f"-DXGE_BUILD_ABI_FINGERPRINT=0x{abi_value}ULL"]
     config += "#endif\n"
     config_path = out / "xge_build_config.h"
     if not config_path.exists() or config_path.read_text() != config:
@@ -224,7 +231,7 @@ def main():
             raise RuntimeError(f"Runtime dependency could not be packaged: {dependency.name}")
         packaged_runtime.append({"source": str(dependency.resolve()), "path": str(target.resolve()),
                                  "sha256": expected, "bytes": target.stat().st_size})
-    report = {"profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
+    report = {"api_major": api_major, "profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
               "features": sorted(features), "sources": sources, "compiled": compiled, "reused": reused,
               "linked": linked, "runtime_dependencies": packaged_runtime, "seconds": time.perf_counter() - started,
               "runtime_bytes": library.stat().st_size, "unstripped_bytes": unstripped.stat().st_size}

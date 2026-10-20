@@ -17,9 +17,22 @@ extern "C" {
 #define FALSE 0
 #endif
 
-#define XGE_VERSION_MAJOR	2
+#define XGE_VERSION_MAJOR	3
 #define XGE_VERSION_MINOR	0
 #define XGE_VERSION_PATCH	0
+#define XGE_FOUNDATION_API_REVISION 1u
+/* Generated SDKs supply a public-header/configuration fingerprint. */
+#ifndef XGE_BUILD_ABI_FINGERPRINT
+#define XGE_BUILD_ABI_FINGERPRINT UINT64_C(0)
+#endif
+typedef struct xge_build_info_t {
+    uint32_t size, api_major, api_minor, api_patch, foundation_revision, features;
+    uint64_t abi_fingerprint;
+} xge_build_info_t;
+
+#if defined(XGE_BUILD_API_MAJOR) && XGE_BUILD_API_MAJOR != XGE_VERSION_MAJOR
+#error "XGE headers and prebuilt SDK have different API versions; rebuild or select the matching SDK"
+#endif
 
 #if !defined(XGE_DEBUG) && !defined(XGE_RELEASE)
 	#if defined(NDEBUG)
@@ -1703,6 +1716,9 @@ typedef int (*xge_scene_proc)(void* pUser);
 XGE_API int xgeInit(const xge_desc_t* pDesc);
 /* Compiled feature bits; compare with XGE_FEATURES in the consumer. */
 XGE_API uint32_t xgeGetBuildFeatures(void);
+/* Set size=sizeof(*out). A zero expected fingerprint checks features only. */
+XGE_API int xgeGetBuildInfo(xge_build_info_t *out);
+XGE_API int xgeCheckBuildCompatibility(uint64_t fingerprint, uint32_t features);
 /* 关闭引擎并释放全局资源（主循环结束后调用）。 */
 XGE_API void xgeUnit(void);
 /* 释放引擎 API 输出的堆块（如 xgeFontBuildXRFMemory 的产物）。 */
