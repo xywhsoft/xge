@@ -203,6 +203,16 @@ struct xrtownershipops {
 	bool (*Count)(const void* pData, size_t* pCount);
 	bool (*Trace)(const void* pData, xrtownershipvisitor pVisit, ptr pContext);
 };
+/* Independent resident capability for a known participant's transient native
+ * execution. Call Busy only under the entire graph's ownership freeze, after
+ * exact Ops identity admission. It is read-only: no Count/Trace, user code,
+ * allocation, locking or reference changes. true defers snapshot admission;
+ * false is NOT lifecycle certification and never admits an opaque resource. */
+typedef struct xrtownershipquiescencev1 {
+	size_t size;
+	const xrtownershipops* Ops;
+	bool (*Busy)(const void* pData);
+} xrtownershipquiescencev1;
 /* Separate, explicitly admitted lifecycle protocol. Never read an extension
  * past xrtownershipops: existing native descriptors contain only two entries.
  * The resolver certifies complete mutation-domain participation, including
@@ -255,6 +265,25 @@ typedef struct xrtownershippreparationv1 {
 	bool (*Ready)(const void* pData);
 	xrtownershipprepareresult (*Prepare)(const void* pData, const void* pToken);
 } xrtownershippreparationv1;
+
+/* Optional completion after Clear, distinct from semantic preparation.
+ * Exact Adapter identity and permanent code are admitted with this descriptor.
+ * Step runs outside freeze/mutation with all plan pins retained. BUSY makes
+ * no owning-edge change or semantic notification and never waits for another
+ * participant: the collector must try other duties, then retry. READY is
+ * idempotent; FAILED is explicit even without an allocated diagnostic.
+ * A consumer of this descriptor MUST use Step, not the V1 bool Finish slot,
+ * to distinguish an unfinished dependency from a cleanup failure. */
+typedef enum xrtownershipfinishresult {
+	XRT_OWNERSHIP_FINISH_FAILED = -1,
+	XRT_OWNERSHIP_FINISH_BUSY = 0,
+	XRT_OWNERSHIP_FINISH_READY = 1
+} xrtownershipfinishresult;
+typedef struct xrtownershipfinishv1 {
+	size_t size;
+	const xrtownershipadapterv1* Adapter;
+	xrtownershipfinishresult (*Step)(const void* pData, const void* pToken);
+} xrtownershipfinishv1;
 typedef struct xrtownershipresult {
 	size_t NodeCount;
 	size_t EdgeCount;

@@ -264,6 +264,60 @@ XRT_API xcancel* xrtTaskGroupCancelToken(const xtaskgroup* pGroup);
 /* 关闭并取消仍活动的项，随后以延迟回收方式释放任务组。 */
 XRT_API void xrtTaskGroupDestroy(xtaskgroup* pGroup);
 
+/* Borrowed physical graph, requiring whole-graph freeze and resident code.
+ * Counts include the owned cancel observer, active-list rights, Future
+ * registrations and every real temporary pin. Busy callbacks/reservations
+ * refuse inspection. This view alone grants no collection or unload right. */
+XRT_API xrtownershipref xrtTaskGroupOwnership(const xtaskgroup* pGroup);
+/* Exact resident group/item operations, including private Start reservation
+ * and waiter publication. Whole-graph freeze only; no Count/Trace or callback.
+ * These descriptors do not weaken the physical views or lifecycle adapters. */
+XRT_API const xrtownershipquiescencev1* xrtTaskGroupOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtTaskGroupItemOwnershipQuiescenceV1Get(void);
+XRT_API const xfuturewatchownershipv1* xrtTaskGroupWatchPolicyV1Get(void);
+XRT_API const xcancelwatchownershipv1* xrtTaskGroupCancelPolicyV1Get(void);
+/* Pending Done owns one actual group producer reference, released exactly
+ * once before terminal notification. Dropping Done does not cancel the group.
+ * Admit this identity explicitly when inspecting/collecting that Future. */
+XRT_API const xfutureproducerownershipv1* xrtTaskGroupProducerPolicyV1Get(void);
+
+/* Group and real active-item lifecycle admission under whole-graph freeze.
+ * No early close, cancel or Unwatch. All semantic finalizers precede Clear;
+ * the mandatory exact completion detaches only actual owned rights afterward.
+ * Use with Future V5 and Cancel Watch V2/Token V3, and independently admit every
+ * transitive node. Unknown references leave the completion output unchanged. */
+XRT_API const xrtownershipadapterv1* xrtTaskGroupOwnershipAdapterV1(xrtownershipref Reference,
+	const xrtownershipfinishv1** ppCompletion);
+
+/* V2 adds normal Close/drain preparation, without cancellation or invented
+ * completion. A normally completed item remains an honest physical anchor
+ * while a plan pin owns it; V1 keeps its active-item refusal boundary.
+ * Prepare runs outside freeze, with the whole graph independently admitted,
+ * claimed unreachable and pinned. Semantic callbacks/finally finish normally
+ * before Clear; completion still requires all transitive pins until READY.
+ * Both mandatory outputs are unchanged on refusal. Group/Item identities
+ * are distinct from V1; never replace descriptors in an existing plan. */
+XRT_API const xrtownershipadapterv1* xrtTaskGroupOwnershipAdapterV2(xrtownershipref Reference,
+	const xrtownershippreparationv1** ppPreparation, const xrtownershipfinishv1** ppCompletion);
+
+typedef struct xtaskgroupwaitv1 {
+	size_t size;
+	xpromise* Output;
+	size_t Count;
+} xtaskgroupwaitv1;
+typedef bool (*xtaskgroupwaitvisitorv1)(xfuture* pSource, ptr pContext);
+/* Borrowed ALL-terminal dependencies of a closed, stable, pending group.
+ * Caller holds the entire physical graph's exclusive freeze and one same
+ * unreachable claim on the group AND every active item. Ordered duplicate
+ * sources are visited once per real item, without allocation or new refs.
+ * A NULL visitor queries metadata only. The visitor is collector code: no
+ * mutation, retain, semantic callback, waiting or reentrant group operations;
+ * private analysis scratch is allowed. Invalid state is checked before any
+ * visit; visitor refusal leaves output unchanged (its own scratch may change).
+ * This fact neither proves a cycle nor grants cancellation/collection. */
+XRT_API bool xrtTaskGroupWaitV1(xrtownershipref Reference, const void* pToken,
+	xtaskgroupwaitv1* pWait, xtaskgroupwaitvisitorv1 pVisit, ptr pContext);
+
 
 
 XRT_EXTERN_C_END
@@ -281,6 +335,18 @@ XRT_EXTERN_C_END
 
 /* 任务池对外保持不透明；销毁期间调用方必须停止其他并发访问。 */
 typedef struct xtaskpool xtaskpool;
+
+/* One pool-owned context reference, shared by all workers. Exit borrows it
+ * once on each REAL worker, after accepted work/finalizer tails and outside
+ * locks or ownership mutation. Drop(Data,NULL) consumes it once after actual
+ * thread joins. Policy/ Ops are immutable resident code. The context's own
+ * graph node still requires independent admission; it is never an RC guess. */
+typedef struct xtaskpoolworkerexitownershipv1 {
+	size_t size;
+	void (*Exit)(ptr pData);
+	xfuturefreeproc Drop;
+	const xrtownershipops* Ops;
+} xtaskpoolworkerexitownershipv1;
 
 
 
@@ -318,6 +384,25 @@ XRT_EXTERN_C_BEGIN
 /* 创建有界工作线程池；配置为空或字段为零时使用对应默认值。 */
 XRT_API xtaskpool* xrtTaskPoolCreate(const xtaskpoolconfig* pConfig);
 
+/* Success consumes one existing Data reference. Failure consumes none and
+ * invokes neither Exit nor Drop, including partial native-thread startup.
+ * Close/Wait retain their original DRAIN semantics; they do not stop workers
+ * needed by accepted native resources. Exit errors belong to the context's
+ * checked reporting protocol, not the job counters or physical join status. */
+XRT_API xtaskpool* xrtTaskPoolCreateOwnedExitV1(const xtaskpoolconfig* pConfig,
+	ptr pData, const xtaskpoolworkerexitownershipv1* pPolicy);
+
+/* Nonblocking, resource-aware stop/join after Close/Cancel. OK means actual
+ * thread joins, TIMEOUT means busy (including accepted resources, entries and
+ * exit callbacks), ERROR means invalid state/operational failure. Busy does
+ * not set an error. Stop starts only after all accepted work/drop/finalizer
+ * tails AND resource credits drain, then forbids NEW resource credits. It
+ * never cancels work or consumes the creator. Native Get/Wait and Destroy
+ * remain available after join. Same-pool workers cannot join themselves.
+ * Poll outside ownership freeze/mutation; concurrent control polls may be
+ * conservatively busy. The caller owns a real reference through return. */
+XRT_API xwaitresult xrtTaskPoolTryJoinV1(xtaskpool* pPool);
+
 /* A borrowed view of the real pool owner slot. Create contributes one actual
  * reference; successful Destroy consumes it once. Collector Hold/Release pins
  * keep the terminal shell alive after joined worker resources are retired.
@@ -338,6 +423,16 @@ XRT_API xrtownershipref xrtTaskPoolOwnership(const xtaskpool* pPool);
  * caller's owner reference. ppPreparation changes only on success. */
 XRT_API const xrtownershipadapterv1* xrtTaskPoolOwnershipAdapterV1(
     xrtownershipref Reference, const xrtownershippreparationv1** ppPreparation);
+/* V1 refuses a live exit context. V2 matches its exact registered policy
+ * identity BEFORE Count/Trace. Equal policy copies are not authority. On
+ * unknown/busy input ppPreparation is unchanged; plain pools still work. */
+XRT_API const xrtownershipadapterv1* xrtTaskPoolOwnershipAdapterV2(
+	xrtownershipref Reference, const xtaskpoolworkerexitownershipv1* const* pPolicies,
+	size_t iPolicyCount, const xrtownershippreparationv1** ppPreparation);
+/* Exact native transition capability; does not relax Count/Trace admission.
+ * Queued opaque jobs and retained resources still require their own policies.
+ * The immutable descriptor and callback reside with this XRT instance. */
+XRT_API const xrtownershipquiescencev1* xrtTaskPoolOwnershipQuiescenceV1Get(void);
 
 
 

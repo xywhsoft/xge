@@ -6,9 +6,21 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <shlobj.h>
+#endif
+
 #define XUI_FILE_DIALOG_MAGIC 0x58464447u
 #define XUI_FILE_DIALOG_ENTRY_GROW 32
 #define XUI_FILE_DIALOG_FILTER_GROW 8
+#define XUI_FILE_DIALOG_ROOT_GROW 16
 #define XUI_FILE_DIALOG_DOUBLE_SELECT_SECONDS 0.55
 #define XUI_FILE_DIALOG_ICON_FOLDER "file_dialog_folder"
 #define XUI_FILE_DIALOG_ICON_FILE "file_dialog_file"
@@ -17,12 +29,43 @@
 #define XUI_FILE_DIALOG_ICON_SCRIPT "file_dialog_script"
 #define XUI_FILE_DIALOG_ICON_UP "file_dialog_up"
 #define XUI_FILE_DIALOG_ICON_REFRESH "file_dialog_refresh"
+#define XUI_FILE_DIALOG_ICON_USER "file_dialog_user"
+#define XUI_FILE_DIALOG_ICON_DOCUMENTS "file_dialog_documents"
+#define XUI_FILE_DIALOG_ICON_PICTURES "file_dialog_pictures"
+#define XUI_FILE_DIALOG_ICON_MUSIC "file_dialog_music"
+#define XUI_FILE_DIALOG_ICON_VIDEOS "file_dialog_videos"
+#define XUI_FILE_DIALOG_ICON_DOWNLOADS "file_dialog_downloads"
+#define XUI_FILE_DIALOG_ICON_DESKTOP "file_dialog_desktop"
+#define XUI_FILE_DIALOG_ICON_COMPUTER "file_dialog_computer"
+#define XUI_FILE_DIALOG_ICON_DRIVE "file_dialog_drive"
+
+enum {
+	XUI_FILE_DIALOG_ROOT_USER = 1,
+	XUI_FILE_DIALOG_ROOT_DOCUMENTS,
+	XUI_FILE_DIALOG_ROOT_PICTURES,
+	XUI_FILE_DIALOG_ROOT_MUSIC,
+	XUI_FILE_DIALOG_ROOT_VIDEOS,
+	XUI_FILE_DIALOG_ROOT_DOWNLOADS,
+	XUI_FILE_DIALOG_ROOT_DESKTOP,
+	XUI_FILE_DIALOG_ROOT_COMPUTER = 100,
+	XUI_FILE_DIALOG_ROOT_DRIVE_FIRST = 1000
+};
 
 typedef struct xui_file_dialog_entry_t {
 	char* sName;
 	char* sPath;
 	int bDir;
 } xui_file_dialog_entry_t;
+
+typedef struct xui_file_dialog_root_t {
+	int iNodeId;
+	int iParentId;
+	char* sName;
+	char* sPath;
+	const char* sIconAsset;
+	int bExpanded;
+	int bShowInRoot;
+} xui_file_dialog_root_t;
 
 struct xui_file_dialog_t {
 	uint32_t iMagic;
@@ -69,8 +112,9 @@ struct xui_file_dialog_t {
 	int iFilterCount;
 	int iFilterCapacity;
 	int iSelectedFilter;
-	char** arrRootItems;
+	xui_file_dialog_root_t* arrRoots;
 	int iRootCount;
+	int iRootCapacity;
 	xui_file_dialog_entry_t* arrEntries;
 	char** arrEntryItems;
 	int iEntryCount;
@@ -87,6 +131,8 @@ struct xui_file_dialog_t {
 	float fHeight;
 	double fLastSelectTime;
 };
+
+static int __xuiFileDialogRefreshInternal(xui_file_dialog pDialog, int bRefreshRoots);
 
 static int __xuiFileDialogValid(xui_file_dialog pDialog)
 {
@@ -238,6 +284,7 @@ static int __xuiFileDialogWindowPreparePaint(xui_widget pWidget)
 		pDialog->iWindowStyleHash = iHash;
 		__xuiFileDialogResolveChildren(pWidget);
 		(void)xuiWidgetInvalidate(pDialog->pPathBar, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)xuiWidgetInvalidate(xuiTreeViewGetViewportWidget(pDialog->pRootList), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		(void)xuiWidgetInvalidate(xuiListViewGetViewportWidget(pDialog->pFileList), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_OK;
@@ -613,15 +660,13 @@ static void __xuiFileDialogFreeRootItems(xui_file_dialog pDialog)
 		return;
 	}
 	for ( i = 0; i < pDialog->iRootCount; i++ ) {
-		if ( pDialog->arrRootItems[i] != NULL ) {
-			xrtFree(pDialog->arrRootItems[i]);
-		}
+		if ( pDialog->arrRoots[i].sName != NULL ) xrtFree(pDialog->arrRoots[i].sName);
+		if ( pDialog->arrRoots[i].sPath != NULL ) xrtFree(pDialog->arrRoots[i].sPath);
 	}
-	if ( pDialog->arrRootItems != NULL ) {
-		xrtFree(pDialog->arrRootItems);
-	}
-	pDialog->arrRootItems = NULL;
+	if ( pDialog->arrRoots != NULL ) xrtFree(pDialog->arrRoots);
+	pDialog->arrRoots = NULL;
 	pDialog->iRootCount = 0;
+	pDialog->iRootCapacity = 0;
 }
 
 static void __xuiFileDialogFreeFilters(xui_file_dialog pDialog)
@@ -901,28 +946,318 @@ static int __xuiFileDialogSetSelectedName(xui_file_dialog pDialog, int iIndex)
 	return __xuiFileDialogSetNameText(pDialog, pDialog->arrEntries[iIndex].sName);
 }
 
+static int __xuiFileDialogEnsureRootCapacity(xui_file_dialog pDialog, int iNeed)
+{
+	xui_file_dialog_root_t* arrRoots;
+	int iCapacity;
+
+	if ( !__xuiFileDialogValid(pDialog) || iNeed < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNeed <= pDialog->iRootCapacity ) return XUI_OK;
+	iCapacity = pDialog->iRootCapacity > 0 ? pDialog->iRootCapacity : XUI_FILE_DIALOG_ROOT_GROW;
+	while ( iCapacity < iNeed ) iCapacity += XUI_FILE_DIALOG_ROOT_GROW;
+	arrRoots = (xui_file_dialog_root_t*)xrtRealloc(pDialog->arrRoots,
+		sizeof(*arrRoots) * (size_t)iCapacity);
+	if ( arrRoots == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pDialog->arrRoots = arrRoots;
+	memset(pDialog->arrRoots + pDialog->iRootCapacity, 0,
+		sizeof(*arrRoots) * (size_t)(iCapacity - pDialog->iRootCapacity));
+	pDialog->iRootCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static int __xuiFileDialogAddRoot(xui_file_dialog pDialog, int iNodeId, int iParentId,
+	const char* sName, const char* sPath, const char* sIconAsset, int bExpanded, int bShowInRoot)
+{
+	xui_file_dialog_root_t* pRoot;
+	int iRet;
+
+	if ( !__xuiFileDialogValid(pDialog) || iNodeId < 0 || sName == NULL || sIconAsset == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiFileDialogEnsureRootCapacity(pDialog, pDialog->iRootCount + 1);
+	if ( iRet != XUI_OK ) return iRet;
+	pRoot = &pDialog->arrRoots[pDialog->iRootCount];
+	memset(pRoot, 0, sizeof(*pRoot));
+	pRoot->sName = __xuiFileDialogDup(sName);
+	pRoot->sPath = __xuiFileDialogDup(sPath);
+	if ( pRoot->sName == NULL || pRoot->sPath == NULL ) {
+		if ( pRoot->sName != NULL ) xrtFree(pRoot->sName);
+		if ( pRoot->sPath != NULL ) xrtFree(pRoot->sPath);
+		memset(pRoot, 0, sizeof(*pRoot));
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pRoot->iNodeId = iNodeId;
+	pRoot->iParentId = iParentId;
+	pRoot->sIconAsset = sIconAsset;
+	pRoot->bExpanded = bExpanded ? 1 : 0;
+	pRoot->bShowInRoot = bShowInRoot ? 1 : 0;
+	pDialog->iRootCount++;
+	return XUI_OK;
+}
+
+static xui_file_dialog_root_t* __xuiFileDialogFindRoot(xui_file_dialog pDialog, int iNodeId, int* pIndex)
+{
+	int i;
+	if ( !__xuiFileDialogValid(pDialog) ) return NULL;
+	for ( i = 0; i < pDialog->iRootCount; ++i ) {
+		if ( pDialog->arrRoots[i].iNodeId == iNodeId ) {
+			if ( pIndex != NULL ) *pIndex = i;
+			return &pDialog->arrRoots[i];
+		}
+	}
+	return NULL;
+}
+
 static int __xuiFileDialogRootProc(str sPath, size_t iSize, int bDir, ptr pData, ptr Param)
 {
 	xui_file_dialog pDialog = (xui_file_dialog)Param;
-	char** pItems;
+	int iParentId;
+	int iNodeId;
 
 	(void)iSize;
 	(void)bDir;
 	(void)pData;
-	if ( !__xuiFileDialogValid(pDialog) ) {
-		return TRUE;
+	if ( !__xuiFileDialogValid(pDialog) ) return TRUE;
+#if defined(_WIN32)
+	iParentId = XUI_FILE_DIALOG_ROOT_COMPUTER;
+#else
+	iParentId = -1;
+#endif
+	iNodeId = XUI_FILE_DIALOG_ROOT_DRIVE_FIRST + pDialog->iRootCount;
+	return __xuiFileDialogAddRoot(pDialog, iNodeId, iParentId, (const char*)sPath,
+		(const char*)sPath, XUI_FILE_DIALOG_ICON_DRIVE, 0, 1) != XUI_OK;
+}
+
+#if defined(_WIN32)
+static char* __xuiFileDialogKnownFolder(const KNOWNFOLDERID* pId)
+{
+	PWSTR sWide = NULL;
+	char* sPath = NULL;
+	if ( pId != NULL && SUCCEEDED(SHGetKnownFolderPath(pId, KF_FLAG_DEFAULT, NULL, &sWide)) && sWide != NULL ) {
+		sPath = xrtUtf16To8((const uint16*)sWide, NULL);
 	}
-	pItems = (char**)xrtRealloc(pDialog->arrRootItems, sizeof(char*) * (size_t)(pDialog->iRootCount + 1));
-	if ( pItems == NULL ) {
-		return TRUE;
+	if ( sWide != NULL ) CoTaskMemFree(sWide);
+	return sPath;
+}
+
+static char* __xuiFileDialogKnownFolderOrFallback(const KNOWNFOLDERID* pId,
+	const char* sProfile, const char* sFallback)
+{
+	char* sPath = __xuiFileDialogKnownFolder(pId);
+	if ( sPath == NULL && sProfile != NULL && sFallback != NULL )
+		sPath = xrtPathJoin(sProfile, sFallback);
+	return sPath;
+}
+#endif
+
+static int __xuiFileDialogBuildRoots(xui_file_dialog pDialog)
+{
+	xdirroots tRoots;
+	size_t i;
+	int iRet = XUI_OK;
+
+	if ( !__xuiFileDialogValid(pDialog) ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiFileDialogFreeRootItems(pDialog);
+#if defined(_WIN32)
+	{
+		static const struct {
+			int iNodeId;
+			int iTranslation;
+			const KNOWNFOLDERID* pFolderId;
+			const char* sFallback;
+			const char* sIcon;
+		} arrKnown[] = {
+			{XUI_FILE_DIALOG_ROOT_DOCUMENTS, XUI_TR_FILE_DOCUMENTS, &FOLDERID_Documents, "Documents", XUI_FILE_DIALOG_ICON_DOCUMENTS},
+			{XUI_FILE_DIALOG_ROOT_PICTURES, XUI_TR_FILE_PICTURES, &FOLDERID_Pictures, "Pictures", XUI_FILE_DIALOG_ICON_PICTURES},
+			{XUI_FILE_DIALOG_ROOT_MUSIC, XUI_TR_FILE_MUSIC, &FOLDERID_Music, "Music", XUI_FILE_DIALOG_ICON_MUSIC},
+			{XUI_FILE_DIALOG_ROOT_VIDEOS, XUI_TR_FILE_VIDEOS, &FOLDERID_Videos, "Videos", XUI_FILE_DIALOG_ICON_VIDEOS},
+			{XUI_FILE_DIALOG_ROOT_DOWNLOADS, XUI_TR_FILE_DOWNLOADS, &FOLDERID_Downloads, "Downloads", XUI_FILE_DIALOG_ICON_DOWNLOADS},
+			{XUI_FILE_DIALOG_ROOT_DESKTOP, XUI_TR_FILE_DESKTOP, &FOLDERID_Desktop, "Desktop", XUI_FILE_DIALOG_ICON_DESKTOP}
+		};
+		char* sProfile = __xuiFileDialogKnownFolder(&FOLDERID_Profile);
+		if ( sProfile == NULL ) sProfile = xrtPathHome();
+		if ( sProfile != NULL ) {
+			iRet = __xuiFileDialogAddRoot(pDialog, XUI_FILE_DIALOG_ROOT_USER, -1,
+				xuiTranslate(pDialog->pContext, XUI_TR_FILE_USER), sProfile,
+				XUI_FILE_DIALOG_ICON_USER, 1, 0);
+			for ( i = 0; i < sizeof(arrKnown) / sizeof(arrKnown[0]) && iRet == XUI_OK; ++i ) {
+				char* sPath = __xuiFileDialogKnownFolderOrFallback(arrKnown[i].pFolderId,
+					sProfile, arrKnown[i].sFallback);
+				if ( sPath != NULL ) {
+					iRet = __xuiFileDialogAddRoot(pDialog, arrKnown[i].iNodeId,
+						XUI_FILE_DIALOG_ROOT_USER,
+						xuiTranslate(pDialog->pContext, arrKnown[i].iTranslation), sPath,
+						arrKnown[i].sIcon, 0, 0);
+					xrtFree(sPath);
+				}
+			}
+			xrtFree(sProfile);
+		}
+		if ( iRet == XUI_OK ) {
+			iRet = __xuiFileDialogAddRoot(pDialog, XUI_FILE_DIALOG_ROOT_COMPUTER, -1,
+				xuiTranslate(pDialog->pContext, XUI_TR_FILE_THIS_PC), "",
+				XUI_FILE_DIALOG_ICON_COMPUTER, 1, 0);
+		}
 	}
-	pDialog->arrRootItems = pItems;
-	pDialog->arrRootItems[pDialog->iRootCount] = __xuiFileDialogDup((const char*)sPath);
-	if ( pDialog->arrRootItems[pDialog->iRootCount] == NULL ) {
-		return TRUE;
+#endif
+	memset(&tRoots, 0, sizeof(tRoots));
+	if ( iRet == XUI_OK && xrtDirRoots(&tRoots) ) {
+		for ( i = 0; i < tRoots.Count; ++i ) {
+			if ( __xuiFileDialogRootProc(tRoots.Items[i], strlen(tRoots.Items[i]), TRUE,
+				NULL, pDialog) ) {
+				iRet = XUI_ERROR_OUT_OF_MEMORY;
+				break;
+			}
+		}
+		xrtDirRootsFree(&tRoots);
 	}
-	pDialog->iRootCount++;
-	return FALSE;
+	return iRet;
+}
+
+static int __xuiFileDialogSyncRootTree(xui_file_dialog pDialog)
+{
+	xui_tree_view_node_t* arrNodes;
+	int i;
+	int iRet;
+
+	if ( !__xuiFileDialogValid(pDialog) || pDialog->pRootList == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	arrNodes = pDialog->iRootCount > 0 ? (xui_tree_view_node_t*)xrtCalloc(
+		(size_t)pDialog->iRootCount, sizeof(*arrNodes)) : NULL;
+	if ( pDialog->iRootCount > 0 && arrNodes == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	for ( i = 0; i < pDialog->iRootCount; ++i ) {
+		xui_file_dialog_root_t* pRoot = &pDialog->arrRoots[i];
+		arrNodes[i].iId = pRoot->iNodeId;
+		arrNodes[i].iParent = pRoot->iParentId;
+		arrNodes[i].sText = pRoot->sName;
+		arrNodes[i].bExpanded = pRoot->bExpanded;
+		arrNodes[i].bEnabled = 1;
+		arrNodes[i].bIconReserved = 1;
+	}
+	iRet = xuiTreeViewSetNodes(pDialog->pRootList, arrNodes, pDialog->iRootCount);
+	if ( arrNodes != NULL ) xrtFree(arrNodes);
+	return iRet;
+}
+
+static int __xuiFileDialogSyncRootSelection(xui_file_dialog pDialog)
+{
+	int iSelected = -1;
+	int i;
+	if ( !__xuiFileDialogValid(pDialog) || pDialog->pRootList == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < pDialog->iRootCount; ++i ) {
+		xui_file_dialog_root_t* pRoot = &pDialog->arrRoots[i];
+		if ( pRoot->sPath[0] != 0 && pDialog->sCurrentDir != NULL &&
+			strcmp(pRoot->sPath, pDialog->sCurrentDir) == 0 ) {
+			iSelected = pRoot->iNodeId;
+			break;
+		}
+	}
+	return xuiTreeViewSetSelected(pDialog->pRootList, iSelected);
+}
+
+static int __xuiFileDialogDrawRootExpander(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tRect, int bExpanded, uint32_t iColor)
+{
+	xui_vec2_t tA, tB, tC;
+	float fCX, fCY;
+	if ( pProxy->drawTriangleFill == NULL || (iColor & 0xffu) == 0u ) return XUI_OK;
+	fCX = tRect.fX + tRect.fW * 0.5f;
+	fCY = tRect.fY + tRect.fH * 0.5f;
+	if ( bExpanded ) {
+		tA = (xui_vec2_t){fCX - 4.0f, fCY - 2.0f};
+		tB = (xui_vec2_t){fCX + 4.0f, fCY - 2.0f};
+		tC = (xui_vec2_t){fCX, fCY + 3.0f};
+	} else {
+		tA = (xui_vec2_t){fCX - 2.0f, fCY - 4.0f};
+		tB = (xui_vec2_t){fCX - 2.0f, fCY + 4.0f};
+		tC = (xui_vec2_t){fCX + 3.0f, fCY};
+	}
+	return pProxy->drawTriangleFill(pProxy, pDraw, tA, tB, tC, iColor);
+}
+
+static int __xuiFileDialogDrawRootItem(xui_widget pWidget, int iNodeId, int iVisible,
+	const xui_tree_view_node_t* pNode, xui_draw_context pDraw, xui_rect_t tRow,
+	int iState, void* pUser)
+{
+	xui_file_dialog pDialog = (xui_file_dialog)pUser;
+	xui_file_dialog_root_t* pRoot;
+	xui_proxy pProxy;
+	xui_surface pAtlas;
+	xui_rect_t tFill, tExpander, tIcon, tIconSrc, tText;
+	float fIndent = 18.0f, fPadding = 6.0f;
+	float fTextX;
+	uint32_t iFocus, iRow, iHover, iSelected, iText, iDisabled, iExpander;
+	int iRet;
+
+	(void)iVisible;
+	if ( !__xuiFileDialogValid(pDialog) || pWidget == NULL || pNode == NULL || pDraw == NULL ) return 0;
+	pRoot = __xuiFileDialogFindRoot(pDialog, iNodeId, NULL);
+	if ( pRoot == NULL ) return 0;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	if ( pProxy == NULL || pProxy->drawSurface == NULL || pProxy->drawText == NULL ||
+		pProxy->drawRectFill == NULL ) return 0;
+	if ( xuiBuiltinAssetGetAtlas(xuiWidgetGetContext(pWidget), &pAtlas) != XUI_OK ||
+		xuiBuiltinAssetGetRect(pRoot->sIconAsset, &tIconSrc) != XUI_OK ) return 0;
+	(void)xuiTreeViewGetMetrics(pWidget, NULL, &fIndent, &fPadding, NULL);
+	(void)xuiTreeViewGetColors(pWidget, NULL, NULL, &iFocus, &iRow, &iHover,
+		&iSelected, &iText, &iDisabled);
+	(void)xuiTreeViewGetDecorationColors(pWidget, &iExpander, NULL, NULL);
+	iRow = __xuiFileDialogStyleColor(pWidget, "treeview.row.color", iRow);
+	iHover = __xuiFileDialogStyleColor(pWidget, "treeview.row.hover_color", iHover);
+	iSelected = __xuiFileDialogStyleColor(pWidget, "treeview.row.selected_color", iSelected);
+	iFocus = __xuiFileDialogStyleColor(pWidget, "treeview.focus.color", iFocus);
+	iText = __xuiFileDialogStyleColor(pWidget, "treeview.text.color", iText);
+	iDisabled = __xuiFileDialogStyleColor(pWidget, "treeview.text.disabled_color", iDisabled);
+	iExpander = __xuiFileDialogStyleColor(pWidget, "treeview.expander.color", iExpander);
+	if ( (iRow & 0xffu) != 0u ) {
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tRow, iRow);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) {
+		tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f,
+			__xuiFileDialogMaxFloat(1.0f, tRow.fW - 6.0f),
+			__xuiFileDialogMaxFloat(1.0f, tRow.fH - 4.0f)});
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tFill, iSelected);
+		if ( iRet != XUI_OK ) return iRet;
+		iText = __xuiFileDialogStyleColor(pWidget, "treeview.text.selected_color", XUI_COLOR_WHITE);
+	} else if ( (iState & XUI_TREE_ITEM_HOVER) != 0 ) {
+		tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f,
+			__xuiFileDialogMaxFloat(1.0f, tRow.fW - 6.0f),
+			__xuiFileDialogMaxFloat(1.0f, tRow.fH - 4.0f)});
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tFill, iHover);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iState & XUI_TREE_ITEM_FOCUS) != 0 &&
+		xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget &&
+		pProxy->drawRectStroke != NULL ) {
+		tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f,
+			__xuiFileDialogMaxFloat(1.0f, tRow.fW - 6.0f),
+			__xuiFileDialogMaxFloat(1.0f, tRow.fH - 4.0f)});
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tFill, 1.0f, iFocus);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	tExpander = xuiInternalSnapRect((xui_rect_t){tRow.fX + fPadding +
+		(float)pNode->iDepth * fIndent, tRow.fY + (tRow.fH - 14.0f) * 0.5f,
+		14.0f, 14.0f});
+	if ( (iState & XUI_TREE_ITEM_HAS_CHILDREN) != 0 ) {
+		iRet = __xuiFileDialogDrawRootExpander(pProxy, pDraw, tExpander,
+			(iState & XUI_TREE_ITEM_EXPANDED) != 0, iExpander);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	tIcon = xuiInternalSnapRect((xui_rect_t){tExpander.fX + tExpander.fW + 4.0f,
+		tRow.fY + (tRow.fH - 16.0f) * 0.5f, 16.0f, 16.0f});
+	iRet = pProxy->drawSurface(pProxy, pDraw, pAtlas, tIconSrc, tIcon, XUI_COLOR_WHITE, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (iState & XUI_TREE_ITEM_DISABLED) != 0 ) iText = iDisabled;
+	fTextX = tIcon.fX + tIcon.fW + 5.0f;
+	tText = xuiInternalSnapRect((xui_rect_t){fTextX, tRow.fY,
+		__xuiFileDialogMaxFloat(1.0f, tRow.fW - fTextX - fPadding), tRow.fH});
+	iRet = pProxy->drawText(pProxy, pDraw,
+		&(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pDialog->pFont,
+		.sText=pRoot->sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT},
+		tText, iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	return 1;
 }
 
 static int __xuiFileDialogScanProc(str sDir, size_t iDirSize, str sName, size_t iNameSize, str sPath, size_t iPathSize, int bDir, ptr pData, ptr Param)
@@ -1381,13 +1716,15 @@ static int __xuiFileDialogCommitSavePath(xui_file_dialog pDialog, const char* sP
 	return __xuiFileDialogFinishWithPath(pDialog, sPath);
 }
 
-static void __xuiFileDialogRootSelect(xui_widget pWidget, int iIndex, void* pUser)
+static void __xuiFileDialogRootSelect(xui_widget pWidget, int iNodeId, void* pUser)
 {
 	xui_file_dialog pDialog = (xui_file_dialog)pUser;
+	xui_file_dialog_root_t* pRoot;
 	(void)pWidget;
-	if ( __xuiFileDialogValid(pDialog) && iIndex >= 0 && iIndex < pDialog->iRootCount ) {
-		(void)xuiFileDialogSetDirectory(pDialog, pDialog->arrRootItems[iIndex]);
-	}
+	if ( !__xuiFileDialogValid(pDialog) ) return;
+	pRoot = __xuiFileDialogFindRoot(pDialog, iNodeId, NULL);
+	if ( pRoot != NULL && pRoot->sPath != NULL && pRoot->sPath[0] != 0 )
+		(void)xuiFileDialogSetDirectory(pDialog, pRoot->sPath);
 }
 
 static void __xuiFileDialogFileSelect(xui_widget pWidget, int iIndex, void* pUser)
@@ -1416,6 +1753,22 @@ static void __xuiFileDialogFileSelect(xui_widget pWidget, int iIndex, void* pUse
 	}
 }
 
+static int __xuiFileDialogRootContext(xui_widget pWidget, int iNodeId, int iVisibleIndex,
+	float fX, float fY, void* pUser)
+{
+	xui_file_dialog pDialog = (xui_file_dialog)pUser;
+	xui_file_dialog_root_t* pRoot;
+	int iIndex = -1;
+
+	(void)pWidget;
+	(void)iVisibleIndex;
+	if ( !__xuiFileDialogValid(pDialog) || pDialog->onContext == NULL ) return XUI_OK;
+	pRoot = __xuiFileDialogFindRoot(pDialog, iNodeId, &iIndex);
+	if ( pRoot == NULL || pRoot->sPath == NULL || pRoot->sPath[0] == 0 ) return XUI_OK;
+	return pDialog->onContext(pDialog, iIndex, pRoot->sPath, 1,
+		fX, fY, pDialog->pContextUser);
+}
+
 static int __xuiFileDialogListContext(xui_widget pWidget, int iIndex, float fX, float fY, void* pUser)
 {
 	xui_file_dialog pDialog = (xui_file_dialog)pUser;
@@ -1423,12 +1776,7 @@ static int __xuiFileDialogListContext(xui_widget pWidget, int iIndex, float fX, 
 	int bDirectory = 0;
 
 	if ( !__xuiFileDialogValid(pDialog) || pDialog->onContext == NULL ) return XUI_OK;
-	if ( pWidget == pDialog->pRootList ) {
-		if ( iIndex >= 0 && iIndex < pDialog->iRootCount ) {
-			sPath = pDialog->arrRootItems[iIndex];
-			bDirectory = 1;
-		}
-	} else if ( iIndex >= 0 && iIndex < pDialog->iEntryCount ) {
+	if ( pWidget == pDialog->pFileList && iIndex >= 0 && iIndex < pDialog->iEntryCount ) {
 		pDialog->iSelectedEntry = iIndex;
 		sPath = pDialog->arrEntries[iIndex].sPath;
 		bDirectory = pDialog->arrEntries[iIndex].bDir;
@@ -1745,6 +2093,7 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	xui_input_desc_t tInput;
 	xui_button_desc_t tButton;
 	xui_list_view_desc_t tList;
+	xui_tree_view_desc_t tTree;
 	xui_combobox_desc_t tCombo;
 	xui_breadcrumb_desc_t tBreadcrumb;
 	xui_msgtip_desc_t tTip;
@@ -1861,12 +2210,19 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pContext, &pDialog->pOkButton, &tButton);
 	tButton.sText = xuiTranslate(pContext, XUI_TR_FILE_CANCEL);
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pContext, &pDialog->pCancelButton, &tButton);
+	memset(&tTree, 0, sizeof(tTree));
+	tTree.iSize = sizeof(tTree);
+	tTree.pFont = pDialog->pFont;
+	tTree.fItemHeight = 26.0f;
+	tTree.fIndent = 17.0f;
+	tTree.fPadding = 5.0f;
+	tTree.iSelectedId = -1;
+	if ( iRet == XUI_OK ) iRet = xuiTreeViewCreate(pContext, &pDialog->pRootList, &tTree);
 	memset(&tList, 0, sizeof(tList));
 	tList.iSize = sizeof(tList);
 	tList.pFont = pDialog->pFont;
 	tList.iSelectionMode = XUI_SELECTION_SINGLE;
 	tList.fItemHeight = 24.0f;
-	if ( iRet == XUI_OK ) iRet = xuiListViewCreate(pContext, &pDialog->pRootList, &tList);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetCreateTyped(pContext, pListType, &pDialog->pFileList, &tList);
 	memset(&tTip, 0, sizeof(tTip));
 	tTip.iSize = sizeof(tTip);
@@ -1900,7 +2256,7 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	(void)xuiWidgetSetPreferredSize(pDialog->pPathLabel, (xui_vec2_t){58.0f, 32.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pNameLabel, (xui_vec2_t){58.0f, 28.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pPathBar, (xui_vec2_t){0.0f, 32.0f});
-	(void)xuiWidgetSetPreferredSize(pDialog->pRootList, (xui_vec2_t){132.0f, 0.0f});
+	(void)xuiWidgetSetPreferredSize(pDialog->pRootList, (xui_vec2_t){168.0f, 0.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pFilterCombo, (xui_vec2_t){210.0f, 28.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pUpButton, (xui_vec2_t){32.0f, 32.0f});
 	(void)xuiWidgetSetPreferredSize(pDialog->pRefreshButton, (xui_vec2_t){32.0f, 32.0f});
@@ -1948,10 +2304,11 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	(void)xuiInputSetChange(pDialog->pNameInput, __xuiFileDialogNameChange, pDialog);
 	(void)xuiBreadcrumbSetClick(pDialog->pPathBreadcrumb, __xuiFileDialogBreadcrumbClick, pDialog);
 	(void)xuiComboBoxSetSelect(pDialog->pFilterCombo, __xuiFileDialogFilterSelect, pDialog);
-	(void)xuiListViewSetSelect(pDialog->pRootList, __xuiFileDialogRootSelect, pDialog);
+	(void)xuiTreeViewSetSelect(pDialog->pRootList, __xuiFileDialogRootSelect, pDialog);
 	(void)xuiListViewSetSelect(pDialog->pFileList, __xuiFileDialogFileSelect, pDialog);
-	(void)xuiListViewSetContextMenu(pDialog->pRootList, __xuiFileDialogListContext, pDialog);
+	(void)xuiTreeViewSetContextMenu(pDialog->pRootList, __xuiFileDialogRootContext, pDialog);
 	(void)xuiListViewSetContextMenu(pDialog->pFileList, __xuiFileDialogListContext, pDialog);
+	(void)xuiTreeViewSetItemRenderer(pDialog->pRootList, __xuiFileDialogDrawRootItem, pDialog);
 	(void)xuiListViewSetItemRenderer(pDialog->pFileList, __xuiFileDialogDrawFileItem, pDialog);
 	(void)xuiListViewGetColors(pDialog->pFileList, &pDialog->arrListBase[0], &pDialog->arrListBase[1],
 		&pDialog->arrListBase[2], &pDialog->arrListBase[3], &pDialog->arrListBase[4], &pDialog->arrListBase[5],
@@ -2127,7 +2484,7 @@ XUI_API int xuiFileDialogSetFilter(xui_file_dialog pDialog, const char* sFilter)
 		(void)xuiComboBoxSetItems(pDialog->pFilterCombo, (const char**)pDialog->arrFilterNames, pDialog->iFilterCount);
 		(void)xuiComboBoxSetSelected(pDialog->pFilterCombo, pDialog->iSelectedFilter);
 	}
-	return xuiFileDialogRefresh(pDialog);
+	return __xuiFileDialogRefreshInternal(pDialog, 0);
 }
 
 XUI_API const char* xuiFileDialogGetFilter(xui_file_dialog pDialog)
@@ -2183,9 +2540,8 @@ XUI_API int xuiFileDialogGoUp(xui_file_dialog pDialog)
 	return iRet;
 }
 
-XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
+static int __xuiFileDialogRefreshInternal(xui_file_dialog pDialog, int bRefreshRoots)
 {
-	xdirroots tRoots;
 	xdir tDir;
 	xdirentry tEntry;
 	xdirnext iNext;
@@ -2194,25 +2550,27 @@ XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
 	size_t i;
 	int bDir;
 	int iRet;
-	int iRootCount;
 
 	if ( !__xuiFileDialogValid(pDialog) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	__xuiFileDialogFreeRootItems(pDialog);
-	memset(&tRoots, 0, sizeof(tRoots));
-	if ( xrtDirRoots(&tRoots) ) {
-		for ( i = 0; i < tRoots.Count; i++ )
-			(void)__xuiFileDialogRootProc(tRoots.Items[i], strlen(tRoots.Items[i]), TRUE, NULL, pDialog);
-		xrtDirRootsFree(&tRoots);
+	if ( bRefreshRoots || pDialog->iRootCount == 0 ) {
+		iRet = __xuiFileDialogBuildRoots(pDialog);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __xuiFileDialogSyncRootTree(pDialog);
+		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)xuiListViewSetItems(pDialog->pRootList, (const char**)pDialog->arrRootItems, pDialog->iRootCount);
-	iRootCount = pDialog->iRootCount;
+	iRet = __xuiFileDialogSyncRootSelection(pDialog);
+	if ( iRet != XUI_OK ) return iRet;
 	__xuiFileDialogClearEntries(pDialog);
 	__xuiFileDialogClearSelection(pDialog);
 	if ( pDialog->sCurrentDir == NULL || pDialog->sCurrentDir[0] == 0 ) {
-		for ( iRet = 0; iRet < iRootCount; iRet++ ) {
-			(void)__xuiFileDialogAddEntry(pDialog, pDialog->arrRootItems[iRet], pDialog->arrRootItems[iRet], 1);
+		for ( i = 0; i < (size_t)pDialog->iRootCount; ++i ) {
+			xui_file_dialog_root_t* pRoot = &pDialog->arrRoots[i];
+			if ( pRoot->bShowInRoot && pRoot->sPath[0] != 0 ) {
+				iRet = __xuiFileDialogAddEntry(pDialog, pRoot->sName, pRoot->sPath, 1);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 		}
 	} else {
 		tDir = xrtDirOpen(pDialog->sCurrentDir, 0u);
@@ -2241,6 +2599,11 @@ XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
 	(void)xuiListViewSetItems(pDialog->pFileList, (const char**)pDialog->arrEntryItems, pDialog->iEntryCount);
 	(void)xuiListViewSetSelected(pDialog->pFileList, -1);
 	return XUI_OK;
+}
+
+XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
+{
+	return __xuiFileDialogRefreshInternal(pDialog, 1);
 }
 
 XUI_API int xuiFileDialogSelectIndex(xui_file_dialog pDialog, int iIndex)

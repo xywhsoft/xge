@@ -27,6 +27,7 @@
 #include <xrt/pattern.h>
 #include <xrt/regex.h>
 #include <xrt/codec.h>
+#include <xrt/crc32.h>
 #include <xrt/html.h>
 #include <xrt/websocket.h>
 #include <xrt/websocket_stream.h>
@@ -58,6 +59,7 @@
 #include <xrt/sync.h>
 #include <xrt/cancel.h>
 #include <xrt/channel.h>
+#include <xrt/channel_subscribe.h>
 #include <xrt/coroutine.h>
 #include <xrt/future.h>
 #include <xrt/future_bridge.h>

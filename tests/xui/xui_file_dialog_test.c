@@ -100,6 +100,32 @@ static int __xuiFileDialogClickWidget(xui_context pContext, xui_widget pWidget)
 	return __xuiFileDialogClick(pContext, tWorld.fX + tWorld.fW * 0.5f, tWorld.fY + tWorld.fH * 0.5f);
 }
 
+#if defined(_WIN32)
+static int __xuiFileDialogFindTreeText(xui_widget pTree, const char* sText)
+{
+	int i;
+	for ( i = 0; i < xuiTreeViewGetVisibleCount(pTree); ++i ) {
+		const xui_tree_view_node_t* pNode = xuiTreeViewGetVisibleNode(pTree, i);
+		if ( pNode != NULL && pNode->sText != NULL && strcmp(pNode->sText, sText) == 0 ) return i;
+	}
+	return -1;
+}
+
+static int __xuiFileDialogClickTreeItem(xui_context pContext, xui_widget pTree, int iVisible)
+{
+	xui_rect_t tWorld;
+	xui_rect_t tItem;
+	int iRet;
+	if ( pTree == NULL || iVisible < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiLayout(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	tWorld = xuiWidgetGetWorldRect(pTree);
+	tItem = xuiTreeViewGetItemRect(pTree, iVisible);
+	return __xuiFileDialogClick(pContext, tWorld.fX + tItem.fX + tItem.fW * 0.75f,
+		tWorld.fY + tItem.fY + tItem.fH * 0.5f);
+}
+#endif
+
 static int __xuiFileDialogSendKey(xui_context pContext, int iKey)
 {
 	int iRet;
@@ -124,9 +150,12 @@ int main(void)
 	xui_context pContext = NULL;
 	xui_font pFont = NULL;
 	xui_widget pRoot = NULL;
+	xui_widget pRootTree = NULL;
+	xui_widget pRootViewport = NULL;
 	xui_widget pBreadcrumb = NULL;
 	xui_file_dialog pDialog = NULL;
 	xui_surface pTarget = NULL;
+	xui_surface pRootCache = NULL;
 	xui_file_dialog_desc_t tDesc;
 	xui_file_dialog_test_result_t tResult;
 	xui_rect_i_t tFullRect;
@@ -145,6 +174,13 @@ int main(void)
 	int iRet;
 	int iIndex;
 	int iBulk;
+	float fRootItemHeight;
+#if defined(_WIN32)
+	int iUser;
+	int iThisPc;
+	int iDrive;
+	int iUserChildren;
+#endif
 	char sBulkName[64];
 	str sBulkPath;
 
@@ -202,6 +238,41 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL && xuiFileDialogIsOpen(pDialog), "open dialog");
 	XUI_TEST_CHECK(xuiFileDialogGetWindowWidget(pDialog) != NULL, "window getter");
 	XUI_TEST_CHECK(xuiFileDialogGetRootListWidget(pDialog) != NULL, "root list getter");
+	pRootTree = xuiFileDialogGetRootListWidget(pDialog);
+	XUI_TEST_CHECK(xuiWidgetIsType(pRootTree, xuiTreeViewGetType(pContext)), "root navigation uses tree view");
+	XUI_TEST_CHECK(xuiTreeViewGetVisibleCount(pRootTree) > 0, "root tree has visible nodes");
+#if defined(_WIN32)
+	iUser = __xuiFileDialogFindTreeText(pRootTree, xuiTranslate(pContext, XUI_TR_FILE_USER));
+	iThisPc = __xuiFileDialogFindTreeText(pRootTree, xuiTranslate(pContext, XUI_TR_FILE_THIS_PC));
+	XUI_TEST_CHECK(iUser >= 0 && iThisPc >= 0, "windows user and this pc groups");
+	{
+		const xui_tree_view_node_t* pUserNode = xuiTreeViewGetVisibleNode(pRootTree, iUser);
+		const xui_tree_view_node_t* pComputerNode = xuiTreeViewGetVisibleNode(pRootTree, iThisPc);
+		iDrive = -1;
+		iUserChildren = 0;
+		for ( iIndex = 0; iIndex < xuiTreeViewGetVisibleCount(pRootTree); ++iIndex ) {
+			const xui_tree_view_node_t* pNode = xuiTreeViewGetVisibleNode(pRootTree, iIndex);
+			if ( pNode != NULL && pUserNode != NULL && pNode->iParent == pUserNode->iId ) iUserChildren++;
+			if ( pNode != NULL && pComputerNode != NULL && pNode->iParent == pComputerNode->iId && iDrive < 0 ) iDrive = iIndex;
+		}
+		XUI_TEST_CHECK(iUserChildren == 6, "windows user group has six known folders");
+		XUI_TEST_CHECK(iDrive >= 0, "this pc group has a drive");
+	}
+	iRet = __xuiFileDialogClickTreeItem(pContext, pRootTree, iThisPc);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0,
+		"this pc group is not navigable");
+	{
+		const xui_tree_view_node_t* pDriveNode = xuiTreeViewGetVisibleNode(pRootTree, iDrive);
+		char sDrive[32];
+		XUI_TEST_CHECK(pDriveNode != NULL && pDriveNode->sText != NULL, "drive node text");
+		snprintf(sDrive, sizeof(sDrive), "%s", pDriveNode->sText);
+		iRet = __xuiFileDialogClickTreeItem(pContext, pRootTree, iDrive);
+		XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), sDrive) == 0,
+			"drive node navigates to root");
+		iRet = xuiFileDialogSetDirectory(pDialog, (const char*)sFixture);
+		XUI_TEST_CHECK(iRet == XUI_OK, "restore fixture after drive navigation");
+	}
+#endif
 	XUI_TEST_CHECK(xuiFileDialogGetFileListWidget(pDialog) != NULL, "file list getter");
 	XUI_TEST_CHECK(xuiFileDialogGetPathBreadcrumbWidget(pDialog) != NULL, "path breadcrumb getter");
 	XUI_TEST_CHECK(xuiFileDialogGetFilterComboWidget(pDialog) != NULL, "filter combo getter");
@@ -244,6 +315,17 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetFileListWidget(pDialog)).fH >= 72.0f, "resized file list height");
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dialog render");
+	pRootViewport = xuiTreeViewGetViewportWidget(pRootTree);
+	XUI_TEST_CHECK(pRootViewport != NULL, "root tree viewport");
+	pRootCache = xuiWidgetGetCacheSurface(pRootViewport, xuiWidgetGetStateId(pRootViewport));
+	XUI_TEST_CHECK(pRootCache != NULL, "root tree viewport cache");
+	fRootItemHeight = 0.0f;
+	XUI_TEST_CHECK(xuiTreeViewGetMetrics(pRootTree, &fRootItemHeight, NULL, NULL, NULL) == XUI_OK &&
+		fRootItemHeight > 0.0f, "root tree item height");
+	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pRootCache) > 0 &&
+		xuiTestSurfaceGetTextDrawCount(pRootCache) <=
+			(int)(xuiWidgetGetWorldRect(pRootViewport).fH / fRootItemHeight) + 2,
+		"root custom renderer must not fall through to default rendering");
 	pBreadcrumb = xuiFileDialogGetPathBreadcrumbWidget(pDialog);
 	XUI_TEST_CHECK(xuiBreadcrumbGetItemCount(pBreadcrumb) >= 2, "breadcrumb items");
 	tWorld = xuiWidgetGetWorldRect(pBreadcrumb);

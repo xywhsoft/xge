@@ -1426,6 +1426,22 @@ XRT_API xnetresult xrtNetSocketSendBatch(xnetsocket Socket,
 */
 
 /* 初始化网络端口默认配置。 */
+/* Immutable metadata for a backend compiled into this product. The Name is
+ * resident static text, not owned by the caller. AUTO resolves the same driver
+ * preference as Create, without initializing a port or probing the OS. */
+typedef struct xnetportbackendinfo {
+	xnetportbackend Backend;
+	cstr Name;
+	uint32 Capabilities;
+} xnetportbackendinfo;
+
+/* False for an unknown/uncompiled backend or NULL output. Failure leaves the
+ * output unchanged. Both outcomes preserve the ambient error, allocate no
+ * memory and perform no OS calls. Compiled support is NOT runtime availability
+ * (kernel version, permissions and resource limits are checked by Create). */
+XRT_API bool xrtNetPortBackendInfo(xnetportbackend Backend,
+	xnetportbackendinfo* pInfo);
+
 XRT_API void xrtNetPortConfigInit(xnetportconfig* pConfig);
 
 
@@ -1626,6 +1642,9 @@ XRT_API xnetresult xrtNetPortWait(xnetport* pPort,
 
 /* 初始化兼顾吞吐与内存占用的 Engine 默认配置。 */
 XRT_API void xrtNetEngineConfigInit(xnetengineconfig* pConfig);
+/* Validate the same scalar/capacity/buffer constraints as Create, without
+ * allocation, port initialization or retaining caller storage. NULL is invalid. */
+XRT_API bool xrtNetEngineConfigValidate(const xnetengineconfig* pConfig);
 
 
 
@@ -1637,6 +1656,37 @@ XRT_API void xrtNetCompletionInit(xnetcompletion* pCompletion,
 
 /* 创建停止状态的 Engine；Worker 线程和端口在 Start 时建立。 */
 XRT_API xnetengine* xrtNetEngineCreate(const xnetengineconfig* pConfig);
+
+/* One context owner belongs to the engine, not to each worker. Exit executes
+ * once on every actual worker at the end of EACH run, after accepted task and
+ * timer cleanup and outside locks/mutation. Drop(Data,NULL) consumes the one
+ * context only after all threads and native resources have retired. Stopping
+ * for restart keeps the context. Policies/Ops must remain resident; the data
+ * node still requires independent ownership admission. Failed creation does
+ * not consume the caller's context. */
+typedef struct xnetengineworkerexitownershipv1 {
+	size_t size;
+	void (*Exit)(ptr pData);
+	void (*Drop)(ptr pData, ptr pContext);
+	const xrtownershipops* Ops;
+} xnetengineworkerexitownershipv1;
+XRT_API xnetengine* xrtNetEngineCreateOwnedExitV1(const xnetengineconfig* pConfig,
+	ptr pData, const xnetengineworkerexitownershipv1* pPolicy);
+
+/* Copy creation settings and the complete buffer configuration. BufferPool in
+ * the returned settings points ONLY to the caller's pBufferPool, never into
+ * the engine. Backend is the requested selector, not an actual started port;
+ * Workers and capacities retain their requested values. Both outputs are
+ * required and remain unchanged on failure. */
+XRT_API bool xrtNetEngineGetConfig(const xnetengine* pEngine,
+	xnetengineconfig* pConfig, xnetbufpoolconfig* pBufferPool);
+
+/* Snapshot an actual started worker's port without exposing a raw-port duty.
+ * Serialized by the lifecycle gate against start/stop/retirement; failure
+ * leaves pInfo unchanged. Names are immutable resident strings. The runtime
+ * capability mask can be narrower than the compiled driver's declaration. */
+XRT_API bool xrtNetEngineBackendInfo(const xnetengine* pEngine,
+	uint32 iWorker, xnetportbackendinfo* pInfo);
 
 
 
@@ -1656,10 +1706,22 @@ XRT_API bool xrtNetEngineDestroy(xnetengine* pEngine);
  * Native OS exit/code-unload proof remains a separate host responsibility.
  * Rejection leaves the preparation output and ambient error unchanged. */
 XRT_API xrtownershipref xrtNetEngineOwnership(const xnetengine* pEngine);
+/* Frozen exact-identity transition capability, no context-policy dispatch.
+ * BUSY covers active workers/submissions, lifecycle joins and native exit
+ * tails. It does not admit borrowed work, raw ports or opaque buffer owners. */
+XRT_API const xrtownershipquiescencev1* xrtNetEngineOwnershipQuiescenceV1Get(void);
 XRT_API const xrtownershipadapterv1* xrtNetEngineOwnershipAdapterV1(
 	xrtownershipref Reference,
 	const xnettaskownershipv1* const* pTaskPolicies, size_t iTaskPolicyCount,
 	const xnettimerownershipv1* const* pTimerPolicies, size_t iTimerPolicyCount,
+	const xrtownershippreparationv1** ppPreparation);
+/* V1 rejects engines with an exit context. V2 additionally admits the exact
+ * immutable exit-policy identity before following that owned context edge. */
+XRT_API const xrtownershipadapterv1* xrtNetEngineOwnershipAdapterV2(
+	xrtownershipref Reference,
+	const xnettaskownershipv1* const* pTaskPolicies, size_t iTaskPolicyCount,
+	const xnettimerownershipv1* const* pTimerPolicies, size_t iTimerPolicyCount,
+	const xnetengineworkerexitownershipv1* const* pExitPolicies, size_t iExitPolicyCount,
 	const xrtownershippreparationv1** ppPreparation);
 XRT_API bool xrtNetEnginePostOwnedV1(xnetengine* pEngine, uint64 iAffinity,
 	ptr pData, const xnettaskownershipv1* pPolicy);
@@ -1689,6 +1751,15 @@ XRT_API bool xrtNetEngineStart(xnetengine* pEngine);
 	任务链不收敛或仍有外借池块时返回失败，但 Engine 仍进入可重启的停止状态。
 */
 XRT_API bool xrtNetEngineStop(xnetengine* pEngine);
+
+/* Nonwaiting, nonconsuming stop. Serialize with Start/Stop/Destroy/TryDestroy
+ * and other TryStop calls. Live objects/Pin keep RUNNING and return BUSY.
+ * Otherwise close admission and progress STOPPING across calls; READY means
+ * all worker cleanup, native joins and run resources have finished and the
+ * engine may restart. BUSY/READY preserve the ambient error; ERROR keeps the
+ * creator/context and pending stop available for explicit retry. NULL is READY.
+ * A worker can request stop, but cannot report its own join as READY. */
+XRT_API xnetretireresult xrtNetEngineTryStop(xnetengine* pEngine);
 
 
 

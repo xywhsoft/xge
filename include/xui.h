@@ -159,6 +159,14 @@ typedef enum xui_text_id_t {
 	XUI_TR_FILE_FOLDER,
 	XUI_TR_FILE_SELECT_FOLDER_FIRST,
 	XUI_TR_FILE_OVERWRITE_MESSAGE_FMT,
+	XUI_TR_FILE_USER,
+	XUI_TR_FILE_DOCUMENTS,
+	XUI_TR_FILE_PICTURES,
+	XUI_TR_FILE_MUSIC,
+	XUI_TR_FILE_VIDEOS,
+	XUI_TR_FILE_DOWNLOADS,
+	XUI_TR_FILE_DESKTOP,
+	XUI_TR_FILE_THIS_PC,
 /* 时间轴上下文命令文案。 */
 	XUI_TR_TIMELINE_ADD_LAYER,
 	XUI_TR_TIMELINE_DELETE_LAYER,
@@ -9770,7 +9778,7 @@ XUI_API int xuiFileDialogGetResult(xui_file_dialog pDialog);
 XUI_API const char* xuiFileDialogGetResultPath(xui_file_dialog pDialog);
 /* 取对话框窗口控件。 */
 XUI_API xui_widget xuiFileDialogGetWindowWidget(xui_file_dialog pDialog);
-/* 取根位置列表控件。 */
+/* 取根位置导航树控件（TreeView）。 */
 XUI_API xui_widget xuiFileDialogGetRootListWidget(xui_file_dialog pDialog);
 /* 取文件列表控件。 */
 XUI_API xui_widget xuiFileDialogGetFileListWidget(xui_file_dialog pDialog);
