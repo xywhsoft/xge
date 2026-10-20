@@ -1774,7 +1774,7 @@ XGE_API void xgeQuit(void);
  * veto/defer (for example, while an asynchronous save confirmation is open).
  * xgeQuit remains unconditional and bypasses this callback. */
 typedef int (*xge_quit_request_proc)(void* pUser);
-/* 注册退出请求拦截回调（返回非 0 可阻止退出）。 */
+/* 注册退出请求回调：返回 0 阻止退出，返回非 0 允许退出。xgeQuit 不经过此回调。 */
 XGE_API void xgeSetQuitRequestCallback(xge_quit_request_proc proc, void* pUser);
 /* 请求退出主循环（触发退出请求回调）。 */
 XGE_API int xgeRequestQuit(void);

@@ -12016,7 +12016,7 @@ XUI_API void xuiWidgetSetUserData(xui_widget pWidget, void* pUser);
 /* 读取实例用户指针。 */
 XUI_API void* xuiWidgetGetUserData(xui_widget pWidget);
 
-/* 追加子控件（从原父级自动迁移；此后由本控件持有）。 */
+/* 追加尚无父级的子控件；迁移现有子控件须先调用 xuiWidgetRemoveFromParent。此后由本控件持有。 */
 XUI_API int xuiWidgetAddChild(xui_widget pParent, xui_widget pChild);
 /* 在 pBefore 之前插入子控件。 */
 XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_widget pBefore);
