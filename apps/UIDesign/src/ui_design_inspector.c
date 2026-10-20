@@ -8,10 +8,17 @@
 
 #define UI_DESIGN_INSPECTOR_SPLIT_MIN 150.0f
 #define UI_DESIGN_INSPECTOR_GAP 6.0f
-#define UI_DESIGN_COMPLEX_EDITOR_W 760.0f
-#define UI_DESIGN_COMPLEX_EDITOR_H 520.0f
+#define UI_DESIGN_COMPLEX_EDITOR_W 1080.0f
+#define UI_DESIGN_COMPLEX_EDITOR_H 700.0f
 
 #define UI_DESIGN_COUNT_OF(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+static int __uiDesignComplexEditorApply(ui_design_app_t* pApp);
+static void __uiDesignComplexEditorRefreshMembers(ui_design_app_t* pApp);
+static void __uiDesignComplexEditorRefreshDetails(ui_design_app_t* pApp);
+static void __uiDesignComplexEditorRefreshPreview(ui_design_app_t* pApp);
+static void __uiDesignComplexEditorCancel(xui_widget pWidget, void* pUser);
+static int __uiDesignComplexValidateCapacity(ui_design_app_t* pApp, int iRow, int iColumn, const char* sValue);
 
 #define UI_DESIGN_TREE_MENU_COPY 1
 #define UI_DESIGN_TREE_MENU_CUT 2
@@ -1182,7 +1189,9 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		return;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.columns") ) {
-		if ( iColumn == 1 ) {
+		if ( iColumn == 0 || iColumn == 3 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		} else if ( iColumn == 1 ) {
 			pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
 			__uiDesignComplexColumnSetRange(pConfig, 1.0f, 10000.0f, 0);
 		} else if ( iColumn == 2 ) {
@@ -1284,6 +1293,7 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		return;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.properties") ) {
+		if ( iColumn == 7 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
 		if ( iColumn == 2 || iColumn == 4 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
 		if ( iColumn == 3 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexPropertyTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexPropertyTypeEnum), 0);
 		if ( iColumn == 8 || iColumn == 14 || iColumn == 15 || iColumn == 19 || iColumn == 29 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
@@ -1903,6 +1913,8 @@ static float __uiDesignComplexFloatOrDefault(const char* sText, float fDefault)
 
 static int __uiDesignComplexTableCellTypeFromText(const char* sText, int iDefault)
 {
+	char* sEnd;
+	long iValue;
 	if ( sText == NULL || sText[0] == '\0' ) return iDefault;
 	if ( __uiDesignComplexTextEqualsNoCase(sText, "text") ) return XUI_TABLE_CELL_TYPE_TEXT;
 	if ( __uiDesignComplexTextEqualsNoCase(sText, "int") || __uiDesignComplexTextEqualsNoCase(sText, "integer") ) return XUI_TABLE_CELL_TYPE_INT;
@@ -1918,12 +1930,17 @@ static int __uiDesignComplexTableCellTypeFromText(const char* sText, int iDefaul
 	if ( __uiDesignComplexTextEqualsNoCase(sText, "custom") ) return XUI_TABLE_CELL_TYPE_CUSTOM;
 	if ( __uiDesignComplexTextEqualsNoCase(sText, "file") ) return XUI_TABLE_CELL_TYPE_FILE;
 	if ( __uiDesignComplexTextEqualsNoCase(sText, "image") ) return XUI_TABLE_CELL_TYPE_IMAGE;
+	iValue = strtol(sText, &sEnd, 10);
+	if ( sEnd != sText && *sEnd == '\0' && iValue >= XUI_TABLE_CELL_TYPE_TEXT && iValue <= XUI_TABLE_CELL_TYPE_IMAGE ) return (int)iValue;
 	return iDefault;
 }
 
 static int __uiDesignComplexDefaultTableCellType(const char* sTitle, int iColumn, int bGrid)
 {
 	if ( bGrid && sTitle != NULL ) {
+		if ( __uiDesignComplexContainsNoCase(sTitle, "color") || __uiDesignComplexContainsNoCase(sTitle, "colour") ) return XUI_TABLE_CELL_TYPE_COLOR;
+		if ( __uiDesignComplexContainsNoCase(sTitle, "visible") || __uiDesignComplexContainsNoCase(sTitle, "enabled") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "checked") ) return XUI_TABLE_CELL_TYPE_BOOL;
 		if ( iColumn > 0 &&
 		     (__uiDesignComplexContainsNoCase(sTitle, "width") ||
 		      __uiDesignComplexContainsNoCase(sTitle, "height") ||
@@ -1933,16 +1950,7 @@ static int __uiDesignComplexDefaultTableCellType(const char* sTitle, int iColumn
 		      __uiDesignComplexContainsNoCase(sTitle, "value")) ) {
 			return XUI_TABLE_CELL_TYPE_FLOAT;
 		}
-		if ( __uiDesignComplexContainsNoCase(sTitle, "visible") ||
-		     __uiDesignComplexContainsNoCase(sTitle, "enabled") ||
-		     __uiDesignComplexContainsNoCase(sTitle, "checked") ) {
-			return XUI_TABLE_CELL_TYPE_BOOL;
-		}
-		if ( __uiDesignComplexContainsNoCase(sTitle, "color") || __uiDesignComplexContainsNoCase(sTitle, "colour") ) {
-			return XUI_TABLE_CELL_TYPE_COLOR;
-		}
 	}
-	if ( bGrid && iColumn > 0 ) return XUI_TABLE_CELL_TYPE_FLOAT;
 	return XUI_TABLE_CELL_TYPE_TEXT;
 }
 
@@ -1977,6 +1985,7 @@ static int __uiDesignComplexEditorSelectedRow(ui_design_app_t* pApp)
 	int iRow;
 
 	if ( (pApp == NULL) || (pApp->pComplexEditorGrid == NULL) ) return -1;
+	if ( pApp->bComplexEditorCollection ) return pApp->iComplexEditorSelected;
 	pTable = xuiTableGridGetTableView(pApp->pComplexEditorGrid);
 	if ( pTable == NULL ) return -1;
 	iRow = xuiTableViewGetSelectedRow(pTable);
@@ -2125,6 +2134,10 @@ static void __uiDesignComplexGridSet(xui_widget pWidget, int iRow, int iColumn, 
 		return;
 	}
 	__uiDesignComplexCopy(pApp->arrComplexEditorCellText[iRow][iColumn], UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY, sValue);
+	pApp->bComplexEditorModified = 1;
+	__uiDesignComplexEditorRefreshMembers(pApp);
+	(void)__uiDesignComplexEditorApply(pApp);
+	pApp->bComplexEditorRefreshDetails = 1;
 	if ( __uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "style.inlineProperties") && iColumn == 1 ) {
 		__uiDesignComplexEditorRefreshGrid(pApp);
 	}
@@ -2228,9 +2241,16 @@ static int __uiDesignComplexGridValidate(xui_widget pWidget, int iRow, int iColu
 	(void)pWidget;
 	pApp = (ui_design_app_t*)pUser;
 	if ( (pApp == NULL) || (iRow < 0) || (iColumn < 0) || (iColumn >= pApp->iComplexEditorColumnCount) ) return 0;
+	if ( sValue != NULL && (strlen(sValue) >= UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY ||
+	     strchr(sValue, '\n') != NULL || strchr(sValue, '\r') != NULL ||
+	     (pApp->cComplexEditorDelimiter != 0 && strchr(sValue, pApp->cComplexEditorDelimiter) != NULL)) ) {
+		(void)xuiLabelSetText(pApp->pComplexEditorMessage, "Value is too long or contains a reserved row/field separator.");
+		return 0;
+	}
 	iCellType = __uiDesignComplexCellType(pApp, iRow, iColumn);
 	__uiDesignComplexCopy(sWork, sizeof(sWork), sValue);
 	__uiDesignComplexTrim(sWork);
+	if ( !__uiDesignComplexValidateCapacity(pApp, iRow, iColumn, sValue) ) return 0;
 	if ( sWork[0] == '\0' ) {
 		if ( !pApp->arrComplexEditorColumnRequired[iColumn] ) return 1;
 		for ( i = 0; i < pApp->iComplexEditorColumnCount; ++i ) {
@@ -2692,7 +2712,7 @@ static void __uiDesignComplexEditorLoadStructured(ui_design_app_t* pApp, const u
 
 	if ( (pApp == NULL) || (pSchema == NULL) ) return;
 	memset(pApp->arrComplexEditorRows, 0, sizeof(pApp->arrComplexEditorRows));
-	memset(pApp->arrComplexEditorCellText, 0, sizeof(pApp->arrComplexEditorCellText));
+	memset(pApp->arrComplexEditorCellText, 0, UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS * sizeof(*pApp->arrComplexEditorCellText));
 	pApp->iComplexEditorRowCount = 0;
 	pApp->cComplexEditorDelimiter = pSchema->cDelimiter;
 	__uiDesignComplexEditorSetupColumns(pApp, pNode, sId, pSchema);
@@ -2739,7 +2759,7 @@ static void __uiDesignComplexEditorLoadStructured(ui_design_app_t* pApp, const u
 	__uiDesignComplexEditorRefreshGrid(pApp);
 }
 
-static void __uiDesignComplexEditorSerializeStructured(ui_design_app_t* pApp, char* sBuffer, int iCapacity)
+static int __uiDesignComplexEditorSerializeStructured(ui_design_app_t* pApp, char* sBuffer, int iCapacity)
 {
 	int iLength;
 	int iRow;
@@ -2747,9 +2767,9 @@ static void __uiDesignComplexEditorSerializeStructured(ui_design_app_t* pApp, ch
 	int iLast;
 	int bNeedNewline;
 
-	if ( (sBuffer == NULL) || (iCapacity <= 0) ) return;
+	if ( (sBuffer == NULL) || (iCapacity <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	sBuffer[0] = '\0';
-	if ( pApp == NULL ) return;
+	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iLength = 0;
 	bNeedNewline = 0;
 	for ( iRow = 0; iRow < pApp->iComplexEditorRowCount; ++iRow ) {
@@ -2758,18 +2778,330 @@ static void __uiDesignComplexEditorSerializeStructured(ui_design_app_t* pApp, ch
 			if ( pApp->arrComplexEditorCellText[iRow][iColumn][0] != '\0' ) iLast = iColumn;
 		}
 		if ( iLast < 0 ) continue;
-		if ( bNeedNewline ) (void)__uiDesignComplexAppend(sBuffer, iCapacity, &iLength, "\n");
+		if ( bNeedNewline && !__uiDesignComplexAppend(sBuffer, iCapacity, &iLength, "\n") ) return XUI_ERROR_BUFFER_TOO_SMALL;
 		for ( iColumn = 0; iColumn <= iLast; ++iColumn ) {
 			if ( iColumn > 0 ) {
 				char sDelim[2];
 				sDelim[0] = (pApp->cComplexEditorDelimiter != 0) ? pApp->cComplexEditorDelimiter : '|';
 				sDelim[1] = '\0';
-				(void)__uiDesignComplexAppend(sBuffer, iCapacity, &iLength, sDelim);
+				if ( !__uiDesignComplexAppend(sBuffer, iCapacity, &iLength, sDelim) ) return XUI_ERROR_BUFFER_TOO_SMALL;
 			}
-			(void)__uiDesignComplexAppend(sBuffer, iCapacity, &iLength, pApp->arrComplexEditorCellText[iRow][iColumn]);
+			if ( !__uiDesignComplexAppend(sBuffer, iCapacity, &iLength, pApp->arrComplexEditorCellText[iRow][iColumn]) ) return XUI_ERROR_BUFFER_TOO_SMALL;
 		}
 		bNeedNewline = 1;
 	}
+	return XUI_OK;
+}
+
+static int __uiDesignComplexValidateCapacity(ui_design_app_t* pApp, int iRow, int iColumn, const char* sValue)
+{
+	char sPrevious[UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY];
+	char sSerialized[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
+	int iRet;
+	if ( iRow < 0 || iRow >= pApp->iComplexEditorRowCount ) return 0;
+	__uiDesignComplexCopy(sPrevious, sizeof(sPrevious), pApp->arrComplexEditorCellText[iRow][iColumn]);
+	__uiDesignComplexCopy(pApp->arrComplexEditorCellText[iRow][iColumn], UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY, sValue);
+	iRet = __uiDesignComplexEditorSerializeStructured(pApp, sSerialized, sizeof(sSerialized));
+	__uiDesignComplexCopy(pApp->arrComplexEditorCellText[iRow][iColumn], UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY, sPrevious);
+	if ( iRet != XUI_OK ) (void)xuiLabelSetText(pApp->pComplexEditorMessage, "Collection exceeds the document property size limit.");
+	return iRet == XUI_OK;
+}
+
+static void __uiDesignComplexSummary(const ui_design_node_t* pNode, const char* sId,
+	const char* sValue, int bChinese, char* sBuffer, size_t iCapacity)
+{
+	ui_design_complex_schema_t tSchema = __uiDesignComplexSchema(pNode, sId);
+	const char* sCursor = sValue != NULL ? sValue : "";
+	const char* sUnit = bChinese ? "\u4e2a\u9879\u76ee" : "items";
+	char sLine[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
+	char* arrFields[UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS];
+	int iCount = 0;
+	if ( __uiDesignComplexEquals(sId, "data.columns") || __uiDesignComplexEquals(sId, "data.configFields") )
+		sUnit = bChinese ? "\u4e2a\u5b57\u6bb5" : "fields";
+	else if ( __uiDesignComplexEquals(sId, "data.rows") ) sUnit = bChinese ? "\u884c\u6570\u636e" : "rows";
+	else if ( __uiDesignComplexEquals(sId, "data.nodes") ) sUnit = bChinese ? "\u4e2a\u8282\u70b9" : "nodes";
+	else if ( __uiDesignComplexEquals(sId, "data.properties") ) sUnit = bChinese ? "\u4e2a\u5c5e\u6027" : "properties";
+	while ( __uiDesignComplexNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		__uiDesignComplexTrim(sLine);
+		if ( !sLine[0] ) continue;
+		if ( tSchema.bExplodeCommaRows && strchr(sLine, '|') == NULL ) {
+			int i, n = __uiDesignComplexSplit(sLine, ',', arrFields, UI_DESIGN_COUNT_OF(arrFields), 1);
+			for ( i = 0; i < n; ++i ) if ( arrFields[i][0] ) ++iCount;
+		} else ++iCount;
+	}
+	snprintf(sBuffer, iCapacity, "%d %s", iCount, sUnit);
+}
+
+static void __uiDesignComplexEditorDestroyPreview(ui_design_app_t* pApp)
+{
+	ui_design_node_t* pNode = pApp->pComplexPreviewNode;
+	if ( pNode == NULL ) return;
+	if ( pNode->pWidget != NULL ) xuiWidgetDestroy(pNode->pWidget);
+	uiDesignAppReleaseNodeRuntime(pApp, pNode);
+	uiDesignNodeReleaseStorage(pNode);
+	free(pNode);
+	pApp->pComplexPreviewNode = NULL;
+}
+
+static void __uiDesignComplexPreviewLayer(xui_widget pWidget)
+{
+	xui_widget pChild;
+	(void)xuiWidgetSetLayer(pWidget, XUI_LAYER_FLOATING, XUI_WINDOW_Z_TOPMOST);
+	for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) )
+		__uiDesignComplexPreviewLayer(pChild);
+}
+
+static void __uiDesignComplexEditorRefreshPreview(ui_design_app_t* pApp)
+{
+	ui_design_node_t* pSource;
+	ui_design_node_t* pPreview;
+	const ui_design_control_desc_t* pDesc;
+	xui_rect_t tHost;
+	int i, iRet;
+	if ( pApp->iComplexEditorNodeId <= 0 || pApp->pComplexEditorPreview == NULL ) return;
+	pSource = uiDesignModelGetNode(&pApp->pSession->tModel, pApp->iComplexEditorNodeId);
+	if ( pSource == NULL ) return;
+	pDesc = uiDesignRegistryFind(pSource->iType);
+	/* Popups manage an overlay lifetime, so their preview remains on the artboard. */
+	if ( pSource->iType == UI_DESIGN_NODE_POPUP ||
+	     pSource->iType == UI_DESIGN_NODE_MENU ) return;
+	if ( pDesc == NULL || pDesc->onCreate == NULL || pDesc->onApply == NULL ) return;
+	if ( pApp->pComplexPreviewNode == NULL ) pApp->pComplexPreviewNode = calloc(1, sizeof(*pSource));
+	pPreview = pApp->pComplexPreviewNode;
+	if ( pPreview == NULL ) return;
+	pPreview->iId = -1;
+	pPreview->iType = pSource->iType;
+	pPreview->bEnabled = pSource->bEnabled;
+	pPreview->bVisible = 1;
+	pPreview->bChecked = pSource->bChecked;
+	__uiDesignComplexCopy(pPreview->sText, sizeof(pPreview->sText), pSource->sText);
+	uiDesignNodeClearProperties(pPreview);
+	for ( i = 0; i < pSource->iPropertyCount; ++i ) {
+		if ( uiDesignNodeSetProperty(pPreview, pSource->arrProperties[i].sId, pSource->arrProperties[i].sValue) != XUI_OK ) return;
+	}
+	tHost = xuiWidgetGetRect(pApp->pComplexEditorPreview);
+	pPreview->tRect = (xui_rect_t){8, 8, tHost.fW - 16, tHost.fH - 16};
+	if ( uiDesignNodeEnsureRuntime(pPreview) != XUI_OK ) return;
+	if ( pPreview->pWidget == NULL ) {
+		iRet = pDesc->onCreate(pApp, pPreview, &pPreview->pWidget);
+		if ( iRet != XUI_OK ) { __uiDesignComplexEditorDestroyPreview(pApp); return; }
+		(void)xuiWidgetAddChild(pApp->pComplexEditorPreview, pPreview->pWidget);
+	}
+	(void)pDesc->onApply(pApp, pPreview);
+	(void)xuiWidgetSetRect(pPreview->pWidget, pPreview->tRect);
+	(void)xuiWidgetSetSizeMode(pPreview->pWidget, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
+	(void)xuiWidgetSetFlowMode(pPreview->pWidget, XUI_FLOW_ABSOLUTE);
+	__uiDesignComplexPreviewLayer(pPreview->pWidget);
+	(void)xuiWidgetSetHitTestVisible(pPreview->pWidget, 0);
+}
+
+static int __uiDesignComplexEditorApply(ui_design_app_t* pApp)
+{
+	char sValue[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
+	const char* sText;
+	int iRet, iRow, iColumn;
+	if ( pApp == NULL || pApp->iComplexEditorNodeId <= 0 || pApp->bSyncingComplexEditor || !pApp->bComplexEditorModified ) return XUI_OK;
+	if ( pApp->bComplexEditorStructured ) {
+		for ( iRow = 0; iRow < pApp->iComplexEditorRowCount; ++iRow ) {
+			for ( iColumn = 0; iColumn < pApp->iComplexEditorColumnCount; ++iColumn ) {
+				if ( !__uiDesignComplexGridValidate(NULL, iRow, iColumn, pApp->arrComplexEditorCellText[iRow][iColumn], 0, pApp) ) {
+					(void)xuiLabelSetText(pApp->pComplexEditorMessage, "Correct the invalid member property before applying.");
+					return XUI_ERROR_INVALID_ARGUMENT;
+				}
+			}
+		}
+		iRet = __uiDesignComplexEditorSerializeStructured(pApp, sValue, sizeof(sValue));
+		if ( iRet != XUI_OK ) {
+			(void)xuiLabelSetText(pApp->pComplexEditorMessage, "Collection exceeds the document property size limit. No data was truncated.");
+			return iRet;
+		}
+		sText = sValue;
+	} else sText = xuiTextEditGetText(pApp->pComplexEditorText);
+	if ( sText == NULL ) sText = "";
+	if ( strcmp(sText, pApp->sComplexEditorApplied) == 0 ) return XUI_OK;
+	iRet = uiDesignAppSetNodeProperty(pApp, pApp->iComplexEditorNodeId, pApp->sComplexEditorPropertyId, sText);
+	if ( iRet != XUI_OK ) return iRet;
+	__uiDesignComplexCopy(pApp->sComplexEditorApplied, sizeof(pApp->sComplexEditorApplied), sText);
+	(void)xuiLabelSetText(pApp->pComplexEditorMessage, "");
+	__uiDesignComplexEditorRefreshPreview(pApp);
+	return XUI_OK;
+}
+
+static void __uiDesignComplexEditorRefreshMembers(ui_design_app_t* pApp)
+{
+	int iRow, iColumn, iName = 0;
+	char sSummary[96];
+	if ( pApp == NULL || !pApp->bComplexEditorCollection || pApp->pComplexEditorMembers == NULL ) return;
+	for ( iColumn = 0; iColumn < pApp->iComplexEditorColumnCount; ++iColumn ) {
+		const char* sTitle = pApp->arrComplexEditorColumnTitle[iColumn];
+		if ( __uiDesignComplexTextEqualsNoCase(sTitle, "Title") || __uiDesignComplexTextEqualsNoCase(sTitle, "Name") ||
+		     __uiDesignComplexTextEqualsNoCase(sTitle, "Text") ) { iName = iColumn; break; }
+	}
+	for ( iRow = 0; iRow < pApp->iComplexEditorRowCount; ++iRow ) {
+		const char* sName = pApp->arrComplexEditorCellText[iRow][iName];
+		snprintf(pApp->arrComplexEditorMemberText[iRow], sizeof(pApp->arrComplexEditorMemberText[iRow]),
+			"%d. %s", iRow + 1, sName[0] ? sName : "(new member)");
+		pApp->arrComplexEditorMembers[iRow] = pApp->arrComplexEditorMemberText[iRow];
+	}
+	pApp->bSyncingComplexEditor = 1;
+	(void)xuiListViewSetItems(pApp->pComplexEditorMembers, pApp->arrComplexEditorMembers, pApp->iComplexEditorRowCount);
+	if ( pApp->iComplexEditorSelected >= pApp->iComplexEditorRowCount ) pApp->iComplexEditorSelected = pApp->iComplexEditorRowCount - 1;
+	(void)xuiListViewSetSelected(pApp->pComplexEditorMembers, pApp->iComplexEditorSelected);
+	pApp->bSyncingComplexEditor = 0;
+	snprintf(sSummary, sizeof(sSummary), "Members (%d)", pApp->iComplexEditorRowCount);
+	(void)xuiLabelSetText(pApp->pComplexEditorMembersTitle, sSummary);
+	(void)xuiWidgetSetEnabled(pApp->pComplexEditorDelete, pApp->iComplexEditorSelected >= 0);
+	(void)xuiWidgetSetEnabled(pApp->pComplexEditorUp, pApp->iComplexEditorSelected > 0);
+	(void)xuiWidgetSetEnabled(pApp->pComplexEditorDown, pApp->iComplexEditorSelected >= 0 && pApp->iComplexEditorSelected + 1 < pApp->iComplexEditorRowCount);
+}
+
+static const char* __uiDesignComplexMemberValue(ui_design_app_t* pApp, int iRow, int iColumn)
+{
+	const char* sValue = pApp->arrComplexEditorCellText[iRow][iColumn];
+	ui_design_node_t* pNode = uiDesignModelGetNode(&pApp->pSession->tModel, pApp->iComplexEditorNodeId);
+	if ( sValue[0] || !__uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "data.columns") ) return sValue;
+	switch ( iColumn ) {
+	case 1: return iRow == 0 ? "130" : "92";
+	case 2:
+		{
+			int iType = __uiDesignComplexDefaultTableCellType(pApp->arrComplexEditorCellText[iRow][0], iRow, pNode && pNode->iType == UI_DESIGN_NODE_TABLEGRID);
+			if ( iType >= 0 && iType < UI_DESIGN_COUNT_OF(g_arrComplexPropertyTypeEnum) ) return g_arrComplexPropertyTypeEnum[iType].sText;
+			return "text";
+		}
+	case 3: return pApp->arrComplexEditorCellText[iRow][0];
+	case 4: case 5: return "true";
+	case 6: return "left";
+	case 7: return "24";
+	case 8: return "0";
+	default: return sValue;
+	}
+}
+
+static void __uiDesignComplexEditorRefreshDetails(ui_design_app_t* pApp)
+{
+	static const char* arrColumnNames[] = {"Field title", "Width", "Data type", "Identifier", "Visible", "Resizable",
+		"Alignment", "Minimum width", "Maximum width", "Background color", "Text color", "Grid color"};
+	int iRow = pApp->iComplexEditorSelected;
+	int iColumn, iProperty, iCategory, iType;
+	int bFields = __uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "data.columns");
+	char sDescription[256];
+	xui_property_desc_t tProperty;
+	xui_table_grid_editor_config_t tConfig;
+	pApp->bComplexEditorRefreshDetails = 0;
+	if ( !pApp->bComplexEditorCollection || pApp->pComplexEditorDetails == NULL ) return;
+	pApp->bSyncingComplexEditor = 1;
+	(void)xuiPropertyGridClear(pApp->pComplexEditorDetails);
+	if ( iRow >= 0 && iRow < pApp->iComplexEditorRowCount ) {
+		iCategory = xuiPropertyGridAddCategory(pApp->pComplexEditorDetails, "member", "Member Properties", 1);
+		for ( iColumn = 0; iColumn < pApp->iComplexEditorColumnCount; ++iColumn ) {
+			memset(&tProperty, 0, sizeof(tProperty));
+			iType = __uiDesignComplexCellType(pApp, iRow, iColumn);
+			tProperty.sId = pApp->arrComplexEditorColumnId[iColumn];
+			tProperty.sName = bFields && iColumn < UI_DESIGN_COUNT_OF(arrColumnNames) ? arrColumnNames[iColumn] : pApp->arrComplexEditorColumnTitle[iColumn];
+			snprintf(sDescription, sizeof(sDescription), "%s%s", tProperty.sName,
+				pApp->arrComplexEditorColumnRequired[iColumn] ? " (required)." : " (optional; empty uses the control default).");
+			if ( bFields && iColumn == 8 ) snprintf(sDescription, sizeof(sDescription), "Maximum field width. Zero means no upper limit.");
+			tProperty.sDescription = sDescription;
+			tProperty.iType = iType;
+			tProperty.sValue = __uiDesignComplexMemberValue(pApp, iRow, iColumn);
+			tProperty.sDefaultValue = tProperty.sValue;
+			iProperty = xuiPropertyGridAddProperty(pApp->pComplexEditorDetails, iCategory, &tProperty);
+			memset(&tConfig, 0, sizeof(tConfig));
+			tConfig.fMin = -1000000000.0f;
+			tConfig.fMax = 1000000000.0f;
+			tConfig.iPrecision = iType == XUI_TABLE_CELL_TYPE_INT ? 0 : 2;
+			tConfig.fStep = 1;
+			tConfig.bNullable = !pApp->arrComplexEditorColumnRequired[iColumn];
+			(void)__uiDesignComplexGridEditorConfig(NULL, iRow, iColumn, iType, &tConfig, pApp);
+			if ( tConfig.arrEnumItemData != NULL && !tConfig.bEnumUseValue )
+				tConfig.iEnumSelected = __uiDesignComplexEnumIndex(tConfig.arrEnumItemData, tConfig.iEnumItemCount, tProperty.sValue);
+			(void)xuiPropertyGridSetEditorConfig(pApp->pComplexEditorDetails, iProperty, &tConfig);
+		}
+	}
+	pApp->bSyncingComplexEditor = 0;
+}
+
+static int __uiDesignComplexDetailsValidate(xui_widget pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser)
+{
+	ui_design_app_t* pApp = pUser;
+	int i;
+	(void)pWidget; (void)iProperty;
+	if ( pApp->bSyncingComplexEditor ) return 1;
+	for ( i = 0; i < pApp->iComplexEditorColumnCount; ++i ) {
+		if ( strcmp(sId, pApp->arrComplexEditorColumnId[i]) == 0 )
+			return __uiDesignComplexGridValidate(NULL, pApp->iComplexEditorSelected, i, sValue, iType, pApp);
+	}
+	return 0;
+}
+
+static int __uiDesignComplexDetailsRender(xui_widget pWidget, int iProperty, int iColumn,
+	const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser)
+{
+	ui_design_app_t* pApp = pUser;
+	xui_text_item_t tText = {0};
+	(void)pWidget; (void)iProperty; (void)iColumn; (void)iState;
+	if ( pCell == NULL || (pCell->sText != NULL && pCell->sText[0]) ) return 0;
+	tText.iSize = sizeof(tText);
+	tText.pFont = pApp->pFont;
+	tText.sText = "(default)";
+	tText.iTextSize = -1;
+	tText.iFlags = XUI_TEXT_SHAPE_DEFAULT;
+	tRect.fX += 8;
+	tRect.fW -= 16;
+	(void)pApp->tProxy.drawText(&pApp->tProxy, pDraw, &tText, tRect, XUI_COLOR_RGBA(108, 120, 134, 255),
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	return 1;
+}
+
+static void __uiDesignComplexDetailsChange(xui_widget pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser)
+{
+	ui_design_app_t* pApp = pUser;
+	int i;
+	(void)pWidget; (void)iProperty;
+	if ( pApp->bSyncingComplexEditor ) return;
+	for ( i = 0; i < pApp->iComplexEditorColumnCount; ++i ) {
+		if ( strcmp(sId, pApp->arrComplexEditorColumnId[i]) == 0 ) {
+			__uiDesignComplexGridSet(NULL, pApp->iComplexEditorSelected, i, sValue, iType, pApp);
+			break;
+		}
+	}
+}
+
+static int __uiDesignComplexEditorFinishEdit(ui_design_app_t* pApp)
+{
+	int iRet;
+	if ( pApp->bComplexEditorCollection ) {
+		iRet = xuiPropertyGridEndEdit(pApp->pComplexEditorDetails, 1);
+		if ( iRet <= 0 || xuiPropertyGridIsEditing(pApp->pComplexEditorDetails) ) return XUI_ERROR_INVALID_ARGUMENT;
+	} else {
+		iRet = xuiTableGridEndEdit(pApp->pComplexEditorGrid, 1);
+		if ( iRet <= 0 || xuiTableGridIsEditing(pApp->pComplexEditorGrid) ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	return __uiDesignComplexEditorApply(pApp);
+}
+
+static void __uiDesignComplexMemberSelect(xui_widget pWidget, int iIndex, void* pUser)
+{
+	ui_design_app_t* pApp = pUser;
+	if ( pApp->bSyncingComplexEditor || iIndex == pApp->iComplexEditorSelected ) return;
+	if ( __uiDesignComplexEditorFinishEdit(pApp) != XUI_OK ) {
+		pApp->bSyncingComplexEditor = 1;
+		(void)xuiListViewSetSelected(pWidget, pApp->iComplexEditorSelected);
+		pApp->bSyncingComplexEditor = 0;
+		return;
+	}
+	pApp->iComplexEditorSelected = iIndex;
+	__uiDesignComplexEditorRefreshDetails(pApp);
+	__uiDesignComplexEditorRefreshMembers(pApp);
+}
+
+static void __uiDesignComplexTextChange(xui_widget pWidget, const char* sText, void* pUser)
+{
+	ui_design_app_t* pApp = pUser;
+	(void)pWidget; (void)sText;
+	if ( pApp->bSyncingComplexEditor ) return;
+	pApp->bComplexEditorModified = 1;
+	(void)__uiDesignComplexEditorApply(pApp);
 }
 
 static void __uiDesignComplexEditorSetStructuredVisible(ui_design_app_t* pApp)
@@ -2779,7 +3111,11 @@ static void __uiDesignComplexEditorSetStructuredVisible(ui_design_app_t* pApp)
 	if ( pApp == NULL ) return;
 	bStructured = pApp->bComplexEditorStructured;
 	if ( pApp->pComplexEditorText != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorText, !bStructured);
-	if ( pApp->pComplexEditorGrid != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorGrid, bStructured);
+	if ( pApp->pComplexEditorGrid != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorGrid, bStructured && !pApp->bComplexEditorCollection);
+	if ( pApp->pComplexEditorMembers != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorMembers, pApp->bComplexEditorCollection);
+	if ( pApp->pComplexEditorDetails != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorDetails, pApp->bComplexEditorCollection);
+	if ( pApp->pComplexEditorMembersTitle != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorMembersTitle, pApp->bComplexEditorCollection);
+	if ( pApp->pComplexEditorDetailsTitle != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorDetailsTitle, pApp->bComplexEditorCollection);
 	if ( pApp->pComplexEditorAdd != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorAdd, bStructured);
 	if ( pApp->pComplexEditorDelete != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorDelete, bStructured);
 	if ( pApp->pComplexEditorUp != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorUp, bStructured);
@@ -2912,13 +3248,22 @@ static void __uiDesignComplexEditorAddRow(xui_widget pWidget, void* pUser)
 	(void)pWidget;
 	pApp = (ui_design_app_t*)pUser;
 	if ( (pApp == NULL) || !pApp->bComplexEditorStructured || pApp->iComplexEditorRowCount >= UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS ) return;
-	(void)xuiTableGridEndEdit(pApp->pComplexEditorGrid, 1);
+	if ( __uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "data.columns") && pApp->iComplexEditorRowCount >= UI_DESIGN_RUNTIME_TABLE_COLUMNS ) {
+		(void)xuiLabelSetText(pApp->pComplexEditorMessage, "The table supports at most 16 fields.");
+		return;
+	}
+	if ( __uiDesignComplexEditorFinishEdit(pApp) != XUI_OK ) return;
 	iRow = pApp->iComplexEditorRowCount++;
 	pApp->arrComplexEditorRows[iRow].fHeight = 24.0f;
 	for ( i = 0; i < pApp->iComplexEditorColumnCount; ++i ) {
 		__uiDesignComplexEditorDefaultCell(pApp, iRow, i, pApp->arrComplexEditorCellText[iRow][i], UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY);
 	}
+	pApp->iComplexEditorSelected = iRow;
+	pApp->bComplexEditorModified = 1;
+	if ( __uiDesignComplexEditorApply(pApp) != XUI_OK ) { --pApp->iComplexEditorRowCount; pApp->iComplexEditorSelected = iRow - 1; }
 	__uiDesignComplexEditorRefreshGrid(pApp);
+	__uiDesignComplexEditorRefreshMembers(pApp);
+	__uiDesignComplexEditorRefreshDetails(pApp);
 	pTable = xuiTableGridGetTableView(pApp->pComplexEditorGrid);
 	if ( pTable != NULL ) {
 		(void)xuiTableViewSetSelectedRow(pTable, iRow);
@@ -2936,7 +3281,7 @@ static void __uiDesignComplexEditorDeleteRow(xui_widget pWidget, void* pUser)
 	(void)pWidget;
 	pApp = (ui_design_app_t*)pUser;
 	if ( (pApp == NULL) || !pApp->bComplexEditorStructured ) return;
-	(void)xuiTableGridEndEdit(pApp->pComplexEditorGrid, 1);
+	if ( __uiDesignComplexEditorFinishEdit(pApp) != XUI_OK ) return;
 	iRow = __uiDesignComplexEditorSelectedRow(pApp);
 	if ( iRow < 0 ) iRow = pApp->iComplexEditorRowCount - 1;
 	if ( iRow < 0 ) return;
@@ -2945,12 +3290,12 @@ static void __uiDesignComplexEditorDeleteRow(xui_widget pWidget, void* pUser)
 		memcpy(pApp->arrComplexEditorCellText[i], pApp->arrComplexEditorCellText[i + 1], sizeof(pApp->arrComplexEditorCellText[i]));
 	}
 	if ( pApp->iComplexEditorRowCount > 0 ) --pApp->iComplexEditorRowCount;
-	if ( pApp->iComplexEditorRowCount == 0 ) {
-		pApp->iComplexEditorRowCount = 1;
-		pApp->arrComplexEditorRows[0].fHeight = 24.0f;
-		memset(pApp->arrComplexEditorCellText[0], 0, sizeof(pApp->arrComplexEditorCellText[0]));
-	}
+	pApp->iComplexEditorSelected = iRow < pApp->iComplexEditorRowCount ? iRow : pApp->iComplexEditorRowCount - 1;
+	pApp->bComplexEditorModified = 1;
+	(void)__uiDesignComplexEditorApply(pApp);
 	__uiDesignComplexEditorRefreshGrid(pApp);
+	__uiDesignComplexEditorRefreshMembers(pApp);
+	__uiDesignComplexEditorRefreshDetails(pApp);
 	pTable = xuiTableGridGetTableView(pApp->pComplexEditorGrid);
 	if ( pTable != NULL ) {
 		if ( iRow >= pApp->iComplexEditorRowCount ) iRow = pApp->iComplexEditorRowCount - 1;
@@ -2967,7 +3312,7 @@ static void __uiDesignComplexEditorMoveRow(ui_design_app_t* pApp, int iDelta)
 	int iTarget;
 
 	if ( (pApp == NULL) || !pApp->bComplexEditorStructured ) return;
-	(void)xuiTableGridEndEdit(pApp->pComplexEditorGrid, 1);
+	if ( __uiDesignComplexEditorFinishEdit(pApp) != XUI_OK ) return;
 	iRow = __uiDesignComplexEditorSelectedRow(pApp);
 	iTarget = iRow + iDelta;
 	if ( iRow < 0 || iTarget < 0 || iTarget >= pApp->iComplexEditorRowCount ) return;
@@ -2977,7 +3322,12 @@ static void __uiDesignComplexEditorMoveRow(ui_design_app_t* pApp, int iDelta)
 	memcpy(pApp->arrComplexEditorCellText[iRow], pApp->arrComplexEditorCellText[iTarget], sizeof(arrCells));
 	pApp->arrComplexEditorRows[iTarget] = tRow;
 	memcpy(pApp->arrComplexEditorCellText[iTarget], arrCells, sizeof(arrCells));
+	pApp->iComplexEditorSelected = iTarget;
+	pApp->bComplexEditorModified = 1;
+	(void)__uiDesignComplexEditorApply(pApp);
 	__uiDesignComplexEditorRefreshGrid(pApp);
+	__uiDesignComplexEditorRefreshMembers(pApp);
+	__uiDesignComplexEditorRefreshDetails(pApp);
 	pTable = xuiTableGridGetTableView(pApp->pComplexEditorGrid);
 	if ( pTable != NULL ) {
 		(void)xuiTableViewSetSelectedRow(pTable, iTarget);
@@ -3000,45 +3350,97 @@ static void __uiDesignComplexEditorMoveDown(xui_widget pWidget, void* pUser)
 static void __uiDesignComplexEditorClose(ui_design_app_t* pApp)
 {
 	if ( pApp == NULL ) return;
+	__uiDesignComplexEditorDestroyPreview(pApp);
 	if ( pApp->pComplexEditorWindow != NULL ) {
 		(void)xuiWindowSetOpen(pApp->pComplexEditorWindow, 0);
 	}
 	pApp->iComplexEditorNodeId = 0;
 	pApp->sComplexEditorPropertyId[0] = '\0';
 	pApp->bComplexEditorStructured = 0;
+	pApp->bComplexEditorCollection = 0;
+	pApp->bComplexEditorRefreshDetails = 0;
+	if ( pApp->pComplexEditorBlocker != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorBlocker, 0);
+	(void)xuiSetFocusWidget(pApp->pContext, pApp->pPropertyGrid);
+	uiDesignAppUpdateCommandUI(pApp);
 }
 
 static void __uiDesignComplexEditorWindowClose(xui_widget pWidget, void* pUser)
 {
 	(void)pWidget;
-	__uiDesignComplexEditorClose((ui_design_app_t*)pUser);
+	__uiDesignComplexEditorCancel(pWidget, pUser);
+}
+
+static int __uiDesignComplexEditorKey(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE && pEvent->iKey == XUI_KEY_ESCAPE ) {
+		__uiDesignComplexEditorCancel(pWidget, pUser);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	return XUI_OK;
 }
 
 static void __uiDesignComplexEditorCancel(xui_widget pWidget, void* pUser)
 {
+	ui_design_app_t* pApp = pUser;
+	int bModified;
 	(void)pWidget;
-	__uiDesignComplexEditorClose((ui_design_app_t*)pUser);
+	if ( pApp == NULL || pApp->iComplexEditorNodeId <= 0 ) return;
+	bModified = pApp->bComplexEditorModified;
+	(void)xuiPropertyGridEndEdit(pApp->pComplexEditorDetails, 0);
+	(void)xuiTableGridEndEdit(pApp->pComplexEditorGrid, 0);
+	__uiDesignComplexEditorClose(pApp);
+	if ( bModified ) (void)uiDesignAppRollbackHistoryTransaction(pApp);
+	else uiDesignAppCancelHistoryTransaction(pApp);
 }
 
 static void __uiDesignComplexEditorOk(xui_widget pWidget, void* pUser)
 {
 	ui_design_app_t* pApp;
-	const char* sText;
-	char sStructured[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
 
 	(void)pWidget;
 	pApp = (ui_design_app_t*)pUser;
 	if ( (pApp == NULL) || (pApp->iComplexEditorNodeId <= 0) || (pApp->sComplexEditorPropertyId[0] == '\0') ) return;
-	if ( pApp->bComplexEditorStructured ) {
-		(void)xuiTableGridEndEdit(pApp->pComplexEditorGrid, 1);
-		__uiDesignComplexEditorSerializeStructured(pApp, sStructured, sizeof(sStructured));
-		sText = sStructured;
-	} else {
-		sText = xuiTextEditGetText(pApp->pComplexEditorText);
-	}
-	if ( sText == NULL ) sText = "";
-	(void)uiDesignAppCommandSetNodeProperty(pApp, pApp->iComplexEditorNodeId, pApp->sComplexEditorPropertyId, sText);
+	if ( __uiDesignComplexEditorFinishEdit(pApp) != XUI_OK ) return;
+	if ( uiDesignAppCommitHistoryTransaction(pApp) != XUI_OK ) return;
 	__uiDesignComplexEditorClose(pApp);
+}
+
+static int __uiDesignComplexEditorClientLayout(xui_widget pWidget, xui_rect_t tContent, void* pUser)
+{
+	ui_design_app_t* pApp = pUser;
+	float fW = tContent.fW - 24, fH = tContent.fH - 24;
+	float fMembers = fW * 0.23f, fDetails = fW * 0.36f;
+	float fPreviewX = fMembers + fDetails + 36;
+	float fBodyH = fH - 88;
+	xui_widget arrButtons[] = {pApp->pComplexEditorAdd, pApp->pComplexEditorDelete, pApp->pComplexEditorUp, pApp->pComplexEditorDown};
+	int i;
+	#define ARRANGE(widget, x, y, w, h) (void)xuiLayoutArrangeChild(pWidget, widget, (xui_rect_t){tContent.fX + (x), tContent.fY + (y), (w), (h)})
+	ARRANGE(pApp->pComplexEditorMembersTitle, 12, 12, fMembers, 26);
+	ARRANGE(pApp->pComplexEditorDetailsTitle, fMembers + 24, 12, fDetails, 26);
+	ARRANGE(pApp->pComplexEditorPreviewTitle, fPreviewX, 12, fW - fPreviewX + 12, 26);
+	for ( i = 0; i < 4; ++i ) {
+		float fButtonW = (fMembers - 18) / 4;
+		ARRANGE(arrButtons[i], 12 + i * (fButtonW + 6), 44, fButtonW, 32);
+	}
+	ARRANGE(pApp->pComplexEditorMembers, 12, 84, fMembers, fBodyH - 46);
+	ARRANGE(pApp->pComplexEditorDetails, fMembers + 24, 44, fDetails, fBodyH - 6);
+	ARRANGE(pApp->pComplexEditorPreview, fPreviewX, 44, fW - fPreviewX + 12, fBodyH - 6);
+	if ( !pApp->bComplexEditorCollection ) {
+		float fGridW = fW * 0.65f;
+		ARRANGE(pApp->pComplexEditorGrid, 12, 84, fGridW, fBodyH - 46);
+		ARRANGE(pApp->pComplexEditorText, 12, 44, fGridW, fBodyH - 6);
+		ARRANGE(pApp->pComplexEditorPreviewTitle, fGridW + 24, 12, fW - fGridW - 12, 26);
+		ARRANGE(pApp->pComplexEditorPreview, fGridW + 24, 44, fW - fGridW - 12, fBodyH - 6);
+	}
+	ARRANGE(pApp->pComplexEditorMessage, 12, fH - 36, fW - 216, 38);
+	ARRANGE(pApp->pComplexEditorOk, fW - 184, fH - 34, 84, 34);
+	ARRANGE(pApp->pComplexEditorCancel, fW - 88, fH - 34, 100, 34);
+	#undef ARRANGE
+	if ( pApp->pComplexPreviewNode && pApp->pComplexPreviewNode->pWidget ) {
+		xui_rect_t tPreview = xuiWidgetGetRect(pApp->pComplexEditorPreview);
+		(void)xuiWidgetSetRect(pApp->pComplexPreviewNode->pWidget, (xui_rect_t){8, 8, tPreview.fW - 16, tPreview.fH - 16});
+	}
+	return XUI_OK;
 }
 
 static void __uiDesignComplexEditorLayout(ui_design_app_t* pApp)
@@ -3052,35 +3454,13 @@ static void __uiDesignComplexEditorLayout(ui_design_app_t* pApp)
 	if ( tRoot.fH <= 0.0f ) tRoot.fH = UI_DESIGN_TARGET_H;
 	tWindow.fW = UI_DESIGN_COMPLEX_EDITOR_W;
 	tWindow.fH = UI_DESIGN_COMPLEX_EDITOR_H;
+	if ( tWindow.fW > tRoot.fW - 24 ) tWindow.fW = tRoot.fW - 24;
+	if ( tWindow.fH > tRoot.fH - 24 ) tWindow.fH = tRoot.fH - 24;
 	tWindow.fX = tRoot.fX + (tRoot.fW - tWindow.fW) * 0.5f;
 	tWindow.fY = tRoot.fY + (tRoot.fH - tWindow.fH) * 0.5f;
 	if ( tWindow.fX < tRoot.fX + 12.0f ) tWindow.fX = tRoot.fX + 12.0f;
 	if ( tWindow.fY < tRoot.fY + 12.0f ) tWindow.fY = tRoot.fY + 12.0f;
 	(void)xuiWidgetSetRect(pApp->pComplexEditorWindow, tWindow);
-	if ( pApp->pComplexEditorText != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorText, (xui_rect_t){12.0f, 12.0f, 736.0f, 416.0f});
-	}
-	if ( pApp->pComplexEditorAdd != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorAdd, (xui_rect_t){12.0f, 12.0f, 76.0f, 28.0f});
-	}
-	if ( pApp->pComplexEditorDelete != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorDelete, (xui_rect_t){96.0f, 12.0f, 76.0f, 28.0f});
-	}
-	if ( pApp->pComplexEditorUp != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorUp, (xui_rect_t){180.0f, 12.0f, 76.0f, 28.0f});
-	}
-	if ( pApp->pComplexEditorDown != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorDown, (xui_rect_t){264.0f, 12.0f, 76.0f, 28.0f});
-	}
-	if ( pApp->pComplexEditorGrid != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorGrid, (xui_rect_t){12.0f, 48.0f, 736.0f, 380.0f});
-	}
-	if ( pApp->pComplexEditorOk != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorOk, (xui_rect_t){556.0f, 444.0f, 84.0f, 30.0f});
-	}
-	if ( pApp->pComplexEditorCancel != NULL ) {
-		(void)xuiWidgetSetRect(pApp->pComplexEditorCancel, (xui_rect_t){652.0f, 444.0f, 96.0f, 30.0f});
-	}
 	__uiDesignComplexEditorSetStructuredVisible(pApp);
 }
 
@@ -3090,11 +3470,16 @@ static int __uiDesignComplexEditorEnsure(ui_design_app_t* pApp)
 	xui_text_edit_desc_t tText;
 	xui_table_grid_desc_t tGrid;
 	xui_button_desc_t tButton;
+	xui_list_view_desc_t tList;
+	xui_property_grid_desc_t tDetails;
+	xui_label_desc_t tLabel;
 	xui_widget pClient;
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pApp->pComplexEditorWindow != NULL ) return XUI_OK;
+	pApp->arrComplexEditorCellText = calloc(UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS, sizeof(*pApp->arrComplexEditorCellText));
+	if ( pApp->arrComplexEditorCellText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	memset(&tWindow, 0, sizeof(tWindow));
 	tWindow.iSize = sizeof(tWindow);
 	tWindow.sTitle = "Edit Property";
@@ -3103,22 +3488,24 @@ static int __uiDesignComplexEditorEnsure(ui_design_app_t* pApp)
 	tWindow.bTopMost = 1;
 	tWindow.bHideCollapse = 1;
 	tWindow.bHideMaximize = 1;
-	tWindow.bNotResizable = 1;
-	tWindow.fTitleBarHeight = 28.0f;
+	tWindow.fTitleBarHeight = 34.0f;
 	tWindow.fBorderWidth = 1.0f;
-	tWindow.fButtonSize = 18.0f;
-	tWindow.fMinWidth = UI_DESIGN_COMPLEX_EDITOR_W;
-	tWindow.fMinHeight = UI_DESIGN_COMPLEX_EDITOR_H;
+	tWindow.fButtonSize = 24.0f;
+	tWindow.fMinWidth = 800;
+	tWindow.fMinHeight = 480;
 	iRet = xuiWindowCreate(pApp->pContext, &pApp->pComplexEditorWindow, &tWindow);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWindowSetClose(pApp->pComplexEditorWindow, __uiDesignComplexEditorWindowClose, pApp);
+	(void)xuiWidgetSetEventHandler(pApp->pComplexEditorWindow, XUI_EVENT_KEY_DOWN, __uiDesignComplexEditorKey, pApp);
 	pClient = xuiWindowGetClientWidget(pApp->pComplexEditorWindow);
 	if ( pClient != NULL ) {
 		(void)xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_MANUAL);
 		(void)xuiWidgetSetFlowMode(pClient, XUI_FLOW_ABSOLUTE);
 		(void)xuiWidgetSetPadding(pClient, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
 		(void)xuiWidgetSetGap(pClient, 0.0f);
+		(void)xuiWidgetSetLayoutChildrenCallback(pClient, __uiDesignComplexEditorClientLayout, pApp);
 	}
+	(void)xuiWidgetSetFocusScope(pApp->pComplexEditorWindow, 1);
 	memset(&tText, 0, sizeof(tText));
 	tText.iSize = sizeof(tText);
 	tText.pFont = pApp->pFont;
@@ -3135,6 +3522,7 @@ static int __uiDesignComplexEditorEnsure(ui_design_app_t* pApp)
 	tText.iLineNumberBackgroundColor = XUI_COLOR_RGBA(243, 247, 252, 255);
 	tText.iLineNumberBorderColor = XUI_COLOR_RGBA(210, 222, 236, 255);
 	iRet = xuiTextEditCreate(pApp->pContext, &pApp->pComplexEditorText, &tText);
+	(void)xuiTextEditSetChange(pApp->pComplexEditorText, __uiDesignComplexTextChange, pApp);
 	memset(&tGrid, 0, sizeof(tGrid));
 	tGrid.iSize = sizeof(tGrid);
 	tGrid.onCount = __uiDesignComplexGridCount;
@@ -3163,17 +3551,60 @@ static int __uiDesignComplexEditorEnsure(ui_design_app_t* pApp)
 	tGrid.tColors.iTextColor = XUI_COLOR_RGBA(34, 47, 66, 255);
 	tGrid.tColors.iFocusRingColor = XUI_COLOR_RGBA(49, 126, 214, 255);
 	if ( iRet == XUI_OK ) iRet = xuiTableGridCreate(pApp->pContext, &pApp->pComplexEditorGrid, &tGrid);
+	memset(&tList, 0, sizeof(tList));
+	tList.iSize = sizeof(tList);
+	tList.pFont = pApp->pFont;
+	tList.fItemHeight = 32;
+	tList.fPadding = 8;
+	tList.fBorderWidth = 1;
+	tList.iSelected = -1;
+	tList.iBackgroundColor = XUI_COLOR_WHITE;
+	tList.iTextColor = XUI_COLOR_RGBA(34, 47, 66, 255);
+	tList.iSelectedColor = XUI_COLOR_RGBA(204, 225, 249, 255);
+	tList.iBorderColor = XUI_COLOR_RGBA(166, 188, 214, 255);
+	if ( iRet == XUI_OK ) iRet = xuiListViewCreate(pApp->pContext, &pApp->pComplexEditorMembers, &tList);
+	(void)xuiListViewSetSelect(pApp->pComplexEditorMembers, __uiDesignComplexMemberSelect, pApp);
+	memset(&tDetails, 0, sizeof(tDetails));
+	tDetails.iSize = sizeof(tDetails);
+	tDetails.pFont = pApp->pFont;
+	tDetails.fNameWidth = 164;
+	tDetails.fRowHeight = 32;
+	tDetails.fCategoryHeight = 30;
+	tDetails.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_PANEL;
+	tDetails.fDescriptionPanelHeight = 76;
+	tDetails.iEditMode = XUI_TABLE_GRID_EDIT_QUICK;
+	tDetails.iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
+	if ( iRet == XUI_OK ) iRet = xuiPropertyGridCreate(pApp->pContext, &pApp->pComplexEditorDetails, &tDetails);
+	(void)xuiPropertyGridSetValidate(pApp->pComplexEditorDetails, __uiDesignComplexDetailsValidate, pApp);
+	(void)xuiPropertyGridSetChange(pApp->pComplexEditorDetails, __uiDesignComplexDetailsChange, pApp);
+	(void)xuiPropertyGridSetGlobalRenderer(pApp->pComplexEditorDetails, __uiDesignComplexDetailsRender, pApp);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pApp->pContext, &pApp->pComplexEditorPreview);
+	(void)xuiWidgetSetLayoutType(pApp->pComplexEditorPreview, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetSetOverflow(pApp->pComplexEditorPreview, XUI_OVERFLOW_HIDDEN);
+	(void)xuiWidgetSetHitTestVisible(pApp->pComplexEditorPreview, 0);
+	memset(&tLabel, 0, sizeof(tLabel));
+	tLabel.iSize = sizeof(tLabel);
+	tLabel.pFont = pApp->pFont;
+	tLabel.sText = "Members";
+	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pApp->pContext, &pApp->pComplexEditorMembersTitle, &tLabel);
+	tLabel.sText = "Properties";
+	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pApp->pContext, &pApp->pComplexEditorDetailsTitle, &tLabel);
+	tLabel.sText = "Preview";
+	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pApp->pContext, &pApp->pComplexEditorPreviewTitle, &tLabel);
+	tLabel.sText = "";
+	tLabel.iTextColor = XUI_COLOR_RGBA(180, 40, 40, 255);
+	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pApp->pContext, &pApp->pComplexEditorMessage, &tLabel);
 	memset(&tButton, 0, sizeof(tButton));
 	tButton.iSize = sizeof(tButton);
 	tButton.pFont = pApp->pFont;
 	tButton.sText = "Add";
 	tButton.fBorderWidth = 1.0f;
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pApp->pContext, &pApp->pComplexEditorAdd, &tButton);
-	tButton.sText = "Delete";
+	tButton.sText = "Del";
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pApp->pContext, &pApp->pComplexEditorDelete, &tButton);
-	tButton.sText = "Up";
+	tButton.sText = "\u2191";
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pApp->pContext, &pApp->pComplexEditorUp, &tButton);
-	tButton.sText = "Down";
+	tButton.sText = "\u2193";
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pApp->pContext, &pApp->pComplexEditorDown, &tButton);
 	tButton.sText = "OK";
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pApp->pContext, &pApp->pComplexEditorOk, &tButton);
@@ -3184,10 +3615,19 @@ static int __uiDesignComplexEditorEnsure(ui_design_app_t* pApp)
 	(void)xuiButtonSetClick(pApp->pComplexEditorDelete, __uiDesignComplexEditorDeleteRow, pApp);
 	(void)xuiButtonSetClick(pApp->pComplexEditorUp, __uiDesignComplexEditorMoveUp, pApp);
 	(void)xuiButtonSetClick(pApp->pComplexEditorDown, __uiDesignComplexEditorMoveDown, pApp);
+	(void)xuiWidgetSetTooltipText(pApp->pComplexEditorUp, "Move up");
+	(void)xuiWidgetSetTooltipText(pApp->pComplexEditorDown, "Move down");
 	(void)xuiButtonSetClick(pApp->pComplexEditorOk, __uiDesignComplexEditorOk, pApp);
 	(void)xuiButtonSetClick(pApp->pComplexEditorCancel, __uiDesignComplexEditorCancel, pApp);
 	iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorText);
 	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorGrid);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorMembers);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorDetails);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorPreview);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorMembersTitle);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorDetailsTitle);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorPreviewTitle);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorMessage);
 	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorAdd);
 	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorDelete);
 	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorUp);
@@ -3195,6 +3635,11 @@ static int __uiDesignComplexEditorEnsure(ui_design_app_t* pApp)
 	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorOk);
 	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pApp->pComplexEditorWindow, pApp->pComplexEditorCancel);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pApp->pRoot, pApp->pComplexEditorWindow);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pApp->pContext, &pApp->pComplexEditorBlocker);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pApp->pRoot, pApp->pComplexEditorBlocker);
+	(void)xuiWidgetSetLayer(pApp->pComplexEditorBlocker, XUI_LAYER_FLOATING, XUI_WINDOW_Z_TOPMOST - 1);
+	(void)xuiWidgetSetFlowMode(pApp->pComplexEditorBlocker, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetVisible(pApp->pComplexEditorBlocker, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	__uiDesignComplexEditorLayout(pApp);
 	return XUI_OK;
@@ -3211,6 +3656,7 @@ static int __uiDesignComplexEditorOpen(ui_design_app_t* pApp, const char* sId)
 	int iRet;
 
 	if ( (pApp == NULL) || (sId == NULL) || (sId[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pApp->iComplexEditorNodeId > 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNode = uiDesignModelGetSelected(&pApp->pSession->tModel);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pDesc = uiDesignRegistryFind(pNode->iType);
@@ -3218,25 +3664,72 @@ static int __uiDesignComplexEditorOpen(ui_design_app_t* pApp, const char* sId)
 	if ( (pDef != NULL) && (pDef->iEditorKind != UI_DESIGN_PROPERTY_COMPLEX) ) return XUI_OK;
 	iRet = __uiDesignComplexEditorEnsure(pApp);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = uiDesignAppBeginHistoryTransaction(pApp, UI_DESIGN_COMMAND_NONE, "Edit Collection");
+	if ( iRet != XUI_OK ) return iRet;
 	pApp->iComplexEditorNodeId = pNode->iId;
 	snprintf(pApp->sComplexEditorPropertyId, sizeof(pApp->sComplexEditorPropertyId), "%s", sId);
 	pApp->sComplexEditorPropertyId[sizeof(pApp->sComplexEditorPropertyId) - 1] = '\0';
-	snprintf(sTitle, sizeof(sTitle), "Edit %s", (pDef != NULL && pDef->sName != NULL) ? pDef->sName : sId);
+	snprintf(sTitle, sizeof(sTitle), "%s - %s #%d", (pDef != NULL && pDef->sName != NULL) ? pDef->sName : sId,
+		pDesc != NULL ? pDesc->sTitle : "Control", pNode->iId);
 	sTitle[sizeof(sTitle) - 1] = '\0';
 	(void)xuiWindowSetTitle(pApp->pComplexEditorWindow, sTitle);
 	sValue = uiDesignNodeGetProperty(pNode, sId, (pDef != NULL) ? pDef->sDefaultValue : "");
 	tSchema = __uiDesignComplexSchema(pNode, sId);
 	pApp->bComplexEditorStructured = tSchema.bStructured;
+	pApp->bComplexEditorCollection = tSchema.bStructured && !__uiDesignComplexEquals(sId, "data.rows");
+	pApp->bComplexEditorModified = 0;
+	pApp->bSyncingComplexEditor = 1;
+	__uiDesignComplexCopy(pApp->sComplexEditorApplied, sizeof(pApp->sComplexEditorApplied), sValue);
 	if ( pApp->bComplexEditorStructured ) {
 		__uiDesignComplexEditorLoadStructured(pApp, pNode, sId, &tSchema, sValue);
 	} else {
 		(void)xuiTextEditSetText(pApp->pComplexEditorText, sValue);
 	}
+	if ( sValue == NULL || sValue[0] == '\0' ) pApp->iComplexEditorRowCount = 0;
+	pApp->iComplexEditorSelected = pApp->iComplexEditorRowCount > 0 ? 0 : -1;
+	pApp->bSyncingComplexEditor = 0;
+	(void)xuiLabelSetText(pApp->pComplexEditorMessage, "");
 	__uiDesignComplexEditorLayout(pApp);
+	__uiDesignComplexEditorRefreshMembers(pApp);
+	__uiDesignComplexEditorRefreshDetails(pApp);
+	(void)xuiWidgetSetRect(pApp->pComplexEditorBlocker, xuiWidgetGetRect(pApp->pRoot));
+	(void)xuiWidgetSetVisible(pApp->pComplexEditorBlocker, 1);
 	(void)xuiWindowSetOpen(pApp->pComplexEditorWindow, 1);
 	(void)xuiWindowBringToFront(pApp->pComplexEditorWindow);
-	(void)xuiSetFocusWidget(pApp->pContext, pApp->bComplexEditorStructured ? pApp->pComplexEditorGrid : pApp->pComplexEditorText);
+	(void)xuiLayout(pApp->pContext);
+	__uiDesignComplexEditorRefreshPreview(pApp);
+	(void)xuiSetFocusWidget(pApp->pContext, pApp->bComplexEditorCollection ? pApp->pComplexEditorMembers :
+		pApp->bComplexEditorStructured ? pApp->pComplexEditorGrid : pApp->pComplexEditorText);
+	uiDesignAppUpdateCommandUI(pApp);
 	return XUI_OK;
+}
+
+void uiDesignInspectorUpdateComplexEditor(ui_design_app_t* pApp)
+{
+	if ( pApp == NULL || pApp->iComplexEditorNodeId <= 0 ) return;
+	(void)xuiWidgetSetRect(pApp->pComplexEditorBlocker, xuiWidgetGetRect(pApp->pRoot));
+	if ( pApp->bComplexEditorRefreshDetails && !xuiPropertyGridIsEditing(pApp->pComplexEditorDetails) )
+		__uiDesignComplexEditorRefreshDetails(pApp);
+}
+
+void uiDesignInspectorCloseComplexEditor(ui_design_app_t* pApp)
+{
+	if ( pApp == NULL ) return;
+	if ( pApp->iComplexEditorNodeId > 0 ) __uiDesignComplexEditorCancel(NULL, pApp);
+	else __uiDesignComplexEditorDestroyPreview(pApp);
+}
+
+int uiDesignInspectorShowCollectionDemo(ui_design_app_t* pApp)
+{
+	int iId, iRet;
+	iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_TABLEGRID, 100, 100, &iId);
+	if ( iRet == XUI_OK ) iRet = uiDesignAppSetNodeRect(pApp, iId, (xui_rect_t){100, 100, 480, 300});
+	if ( iRet == XUI_OK ) iRet = uiDesignAppSetNodeProperty(pApp, iId, "data.columns",
+		"Name|150|text|name|true|true|left|24|0\nWidth|96|float|width|true|true|right|24|300\nVisible|96|bool|visible|true|true|center|24|0");
+	if ( iRet == XUI_OK ) iRet = uiDesignAppSetNodeProperty(pApp, iId, "data.rows", "Button,118,true\nLabel,180,true\nPanel,320,false");
+	if ( iRet == XUI_OK ) iRet = uiDesignAppSelectNode(pApp, iId);
+	if ( iRet == XUI_OK ) iRet = __uiDesignComplexEditorOpen(pApp, "data.columns");
+	return iRet;
 }
 
 static int __uiDesignInspectorAction(xui_widget pWidget, int iProperty, const char* sId, xui_rect_t tWorldRect, void* pUser)
@@ -3244,7 +3737,21 @@ static int __uiDesignInspectorAction(xui_widget pWidget, int iProperty, const ch
 	(void)pWidget;
 	(void)iProperty;
 	(void)tWorldRect;
-	return __uiDesignComplexEditorOpen((ui_design_app_t*)pUser, sId);
+	return __uiDesignComplexEditorOpen((ui_design_app_t*)pUser, sId) == XUI_OK;
+}
+
+static int __uiDesignInspectorAddCollectionProperty(ui_design_app_t* pApp, const ui_design_node_t* pNode,
+	int iCategory, const char* sId, const char* sName, const char* sDescription, const char* sValue, const char* sDefault)
+{
+	char sSummary[96], sDefaultSummary[96];
+	int iProperty;
+	int bChinese = xuiGetLanguage(pApp->pContext) == XUI_LANGUAGE_ZH;
+	__uiDesignComplexSummary(pNode, sId, sValue, bChinese, sSummary, sizeof(sSummary));
+	__uiDesignComplexSummary(pNode, sId, sDefault, bChinese, sDefaultSummary, sizeof(sDefaultSummary));
+	iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, sId, sName, sDescription,
+		XUI_TABLE_CELL_TYPE_CUSTOM, sSummary, sDefaultSummary);
+	(void)xuiPropertyGridSetAction(pApp->pPropertyGrid, iProperty, __uiDesignInspectorAction, pApp);
+	return iProperty;
 }
 
 static int __uiDesignInspectorAddLayoutProperties(ui_design_app_t* pApp, const ui_design_node_t* pNode, int iCategory)
@@ -3258,6 +3765,10 @@ static int __uiDesignInspectorAddLayoutProperties(ui_design_app_t* pApp, const u
 	for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrLayoutProperties); i++ ) {
 		pDef = &g_arrLayoutProperties[i];
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
+		if ( pDef->iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
+			(void)__uiDesignInspectorAddCollectionProperty(pApp, pNode, iCategory, pDef->sId, pDef->sName, pDef->sDescription, sValue, pDef->sDefaultValue);
+			continue;
+		}
 		iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->sDefaultValue);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
@@ -3280,6 +3791,10 @@ static int __uiDesignInspectorAddCommonWidgetProperties(ui_design_app_t* pApp, c
 	for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrCommonWidgetProperties); i++ ) {
 		pDef = &g_arrCommonWidgetProperties[i];
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
+		if ( pDef->iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
+			(void)__uiDesignInspectorAddCollectionProperty(pApp, pNode, iCategory, pDef->sId, pDef->sName, pDef->sDescription, sValue, pDef->sDefaultValue);
+			continue;
+		}
 		iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->sDefaultValue);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
@@ -3381,6 +3896,10 @@ static int __uiDesignInspectorAddControlProperties(ui_design_app_t* pApp, const 
 		iCategory = __uiDesignInspectorEnsureCategory(pApp->pPropertyGrid, pDef->sCategory, pDef->sCategory);
 		if ( iCategory < 0 ) return XUI_ERROR;
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
+		if ( pDef->iEditorKind == UI_DESIGN_PROPERTY_COMPLEX || pDef->iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
+			(void)__uiDesignInspectorAddCollectionProperty(pApp, pNode, iCategory, pDef->sId, pDef->sName, pDef->sDescription, sValue, pDef->sDefaultValue);
+			continue;
+		}
 		iProperty = __uiDesignInspectorAddMetadataProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->sDefaultValue);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
@@ -3862,6 +4381,7 @@ static int __uiDesignInspectorTreeEvent(xui_widget pWidget, const xui_event_t* p
 static int __uiDesignInspectorExerciseOneComplex(ui_design_app_t* pApp, ui_design_node_t* pNode, const char* sPropertyId, int bRequireStructured)
 {
 	xui_table_grid_editor_config_t tEditorConfig;
+	ui_design_complex_schema_t tSchema;
 	const char* sValue;
 	float fCheck;
 	int iRet;
@@ -3874,6 +4394,9 @@ static int __uiDesignInspectorExerciseOneComplex(ui_design_app_t* pApp, ui_desig
 			uiDesignNodeTypeName(pNode->iType), pNode->iId, sPropertyId, iRet);
 		return iRet;
 	}
+	if ( pApp->bComplexEditorCollection &&
+	     (xuiListViewGetItemCount(pApp->pComplexEditorMembers) != pApp->iComplexEditorRowCount ||
+	      xuiPropertyGridGetPropertyCount(pApp->pComplexEditorDetails) != pApp->iComplexEditorColumnCount) ) return XUI_ERROR;
 	if ( __uiDesignComplexIsTableRowEditor(pNode, sPropertyId) ) {
 		if ( pApp->iComplexEditorColumnCount < 3 ||
 		     strcmp(pApp->arrComplexEditorColumnTitle[0], "Name") != 0 ||
@@ -3910,12 +4433,138 @@ static int __uiDesignInspectorExerciseOneComplex(ui_design_app_t* pApp, ui_desig
 		}
 	}
 	__uiDesignComplexEditorOk(NULL, pApp);
+	if ( pApp->iComplexEditorNodeId > 0 ) {
+		printf("xui_uidesign exercise-complex-commit-failed type=%s property=%s\n", uiDesignNodeTypeName(pNode->iType), sPropertyId);
+		__uiDesignComplexEditorCancel(NULL, pApp);
+		return XUI_ERROR;
+	}
 	sValue = uiDesignNodeGetProperty(pNode, sPropertyId, "");
-	if ( bRequireStructured && (sValue == NULL || (strchr(sValue, '|') == NULL && strchr(sValue, ',') == NULL)) ) {
+	tSchema = __uiDesignComplexSchema(pNode, sPropertyId);
+	if ( bRequireStructured && (sValue == NULL ||
+	     (strchr(sValue, '|') == NULL && strchr(sValue, ',') == NULL &&
+	      !(tSchema.bCascaderPathRows && sValue[0] != '\0'))) ) {
 		printf("xui_uidesign exercise-complex-serialize-failed type=%s id=%d property=%s\n",
 			uiDesignNodeTypeName(pNode->iType), pNode->iId, sPropertyId);
 		return XUI_ERROR;
 	}
+	return XUI_OK;
+}
+
+int uiDesignInspectorExerciseCollectionEditors(ui_design_app_t* pApp)
+{
+	ui_design_node_t* pNode = NULL;
+	const xui_table_view_column_t* pColumn;
+	xui_widget pFocus;
+	char sBefore[UI_DESIGN_PROPERTY_VALUE_CAPACITY], sSummary[96];
+	int i, iId, iUndo, iOldSelection = pApp->pSession->tModel.iSelectedId;
+	#define COLLECTION_CHECK(condition) do { if ( !(condition) ) { \
+		printf("xui_uidesign collection-test-failed line=%d\n", __LINE__); \
+		uiDesignInspectorCloseComplexEditor(pApp); return XUI_ERROR; } } while (0)
+	for ( i = 0; i < pApp->pSession->tModel.iNodeCount; ++i ) {
+		if ( pApp->pSession->tModel.arrNodes[i].iType == UI_DESIGN_NODE_TABLEGRID ) { pNode = &pApp->pSession->tModel.arrNodes[i]; break; }
+	}
+	COLLECTION_CHECK(pNode != NULL);
+	iId = pNode->iId;
+	__uiDesignComplexCopy(sBefore, sizeof(sBefore), uiDesignNodeGetProperty(pNode, "data.columns", ""));
+	COLLECTION_CHECK(uiDesignAppSelectNode(pApp, iId) == XUI_OK);
+	iUndo = pApp->pSession->iUndoCount;
+	i = xuiPropertyGridFindProperty(pApp->pPropertyGrid, "data.columns");
+	COLLECTION_CHECK(i >= 0 && strstr(xuiPropertyGridGetValue(pApp->pPropertyGrid, i), "fields") != NULL);
+	COLLECTION_CHECK(xuiPropertyGridBeginEdit(pApp->pPropertyGrid, i) > 0);
+	COLLECTION_CHECK(pApp->bComplexEditorCollection && pApp->pComplexPreviewNode != NULL);
+	COLLECTION_CHECK(xuiPropertyGridGetPropertyCount(pApp->pComplexEditorDetails) == 12);
+	__uiDesignComplexSummary(pNode, "data.columns", "Name,Width,Height", 1, sSummary, sizeof(sSummary));
+	COLLECTION_CHECK(strcmp(sSummary, "3 \u4e2a\u5b57\u6bb5") == 0);
+	__uiDesignComplexEditorOk(NULL, pApp);
+	COLLECTION_CHECK(pApp->iComplexEditorNodeId == 0 && pApp->pSession->iUndoCount == iUndo);
+	COLLECTION_CHECK(strcmp(sBefore, uiDesignNodeGetProperty(pNode, "data.columns", "")) == 0);
+
+	COLLECTION_CHECK(__uiDesignComplexEditorOpen(pApp, "data.columns") == XUI_OK);
+	i = xuiPropertyGridFindProperty(pApp->pComplexEditorDetails, "c1");
+	COLLECTION_CHECK(xuiPropertyGridBeginEdit(pApp->pComplexEditorDetails, i) > 0);
+	pFocus = xuiGetFocusWidget(pApp->pContext);
+	COLLECTION_CHECK(xuiInputSetText(pFocus, "Live field") == XUI_OK);
+	COLLECTION_CHECK(xuiPropertyGridEndEdit(pApp->pComplexEditorDetails, 1) > 0);
+	COLLECTION_CHECK(strstr(uiDesignNodeGetProperty(pNode, "data.columns", ""), "Live field") != NULL);
+	pColumn = xuiTableViewGetColumn(xuiTableGridGetTableView(pApp->pComplexPreviewNode->pWidget), 0);
+	COLLECTION_CHECK(pColumn != NULL && strcmp(pColumn->sTitle, "Live field") == 0);
+	COLLECTION_CHECK(!__uiDesignComplexDetailsValidate(NULL, i, "c1", "Bad|field", XUI_TABLE_CELL_TYPE_TEXT, pApp));
+	__uiDesignComplexEditorCancel(NULL, pApp);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
+	COLLECTION_CHECK(pNode != NULL && strcmp(sBefore, uiDesignNodeGetProperty(pNode, "data.columns", "")) == 0);
+	COLLECTION_CHECK(pApp->pSession->iUndoCount == iUndo);
+
+	COLLECTION_CHECK(__uiDesignComplexEditorOpen(pApp, "data.columns") == XUI_OK);
+	i = pApp->iComplexEditorRowCount;
+	__uiDesignComplexEditorAddRow(NULL, pApp);
+	COLLECTION_CHECK(pApp->iComplexEditorRowCount == i + 1 && pApp->iComplexEditorSelected == i);
+	__uiDesignComplexEditorMoveUp(NULL, pApp);
+	COLLECTION_CHECK(pApp->iComplexEditorSelected == i - 1);
+	__uiDesignComplexEditorDeleteRow(NULL, pApp);
+	COLLECTION_CHECK(pApp->iComplexEditorRowCount == i);
+	while ( pApp->iComplexEditorRowCount > 0 ) {
+		int iPrevious = pApp->iComplexEditorRowCount;
+		__uiDesignComplexEditorDeleteRow(NULL, pApp);
+		COLLECTION_CHECK(pApp->iComplexEditorRowCount == iPrevious - 1);
+	}
+	COLLECTION_CHECK(xuiListViewGetItemCount(pApp->pComplexEditorMembers) == 0);
+	COLLECTION_CHECK(xuiPropertyGridGetPropertyCount(pApp->pComplexEditorDetails) == 0);
+	COLLECTION_CHECK(xuiTableViewGetColumnCount(xuiTableGridGetTableView(pApp->pComplexPreviewNode->pWidget)) == 0);
+	__uiDesignComplexEditorCancel(NULL, pApp);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
+	COLLECTION_CHECK(strcmp(sBefore, uiDesignNodeGetProperty(pNode, "data.columns", "")) == 0);
+
+	COLLECTION_CHECK(__uiDesignComplexEditorOpen(pApp, "data.columns") == XUI_OK);
+	__uiDesignComplexGridSet(NULL, 0, 0, "Committed field", XUI_TABLE_CELL_TYPE_TEXT, pApp);
+	__uiDesignComplexGridSet(NULL, 0, 1, "177", XUI_TABLE_CELL_TYPE_FLOAT, pApp);
+	__uiDesignComplexEditorOk(NULL, pApp);
+	COLLECTION_CHECK(pApp->iComplexEditorNodeId == 0);
+	COLLECTION_CHECK(pApp->pSession->iUndoCount == iUndo + 1 || pApp->pSession->iUndoCount == UI_DESIGN_HISTORY_LIMIT);
+	COLLECTION_CHECK(uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO) == XUI_OK);
+	pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
+	COLLECTION_CHECK(strcmp(sBefore, uiDesignNodeGetProperty(pNode, "data.columns", "")) == 0);
+	COLLECTION_CHECK(__uiDesignComplexDefaultTableCellType("Text", 1, 1) == XUI_TABLE_CELL_TYPE_TEXT);
+	COLLECTION_CHECK(__uiDesignComplexDefaultTableCellType("Type", 2, 1) == XUI_TABLE_CELL_TYPE_TEXT);
+	(void)uiDesignAppSelectNode(pApp, iOldSelection);
+	printf("xui_uidesign collection-test passed: summary, member-properties, live-preview, add/delete/reorder/clear, cancel, no-op, undo, validation\n");
+	#undef COLLECTION_CHECK
+	return XUI_OK;
+}
+
+int uiDesignInspectorExerciseCollectionCatalog(ui_design_app_t* pApp)
+{
+	int i, j, iId, iRet, iCount = 0;
+	ui_design_node_t* pNode;
+	const ui_design_control_desc_t* pDesc;
+	iRet = uiDesignInspectorShowCollectionDemo(pApp);
+	if ( iRet != XUI_OK ) return iRet;
+	__uiDesignComplexEditorCancel(NULL, pApp);
+	iRet = uiDesignInspectorExerciseCollectionEditors(pApp);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < uiDesignRegistryGetCount(); ++i ) {
+		pDesc = uiDesignRegistryGetAt(i);
+		(void)uiDesignModelClearSelection(&pApp->pSession->tModel);
+		iRet = uiDesignAppAddNodeAt(pApp, pDesc->iType, 2400 + i * 4, 1500, &iId);
+		if ( iRet != XUI_OK ) return iRet;
+		pNode = uiDesignModelGetNode(&pApp->pSession->tModel, iId);
+		for ( j = 0; j < pDesc->iPropertyCount; ++j ) {
+			const ui_design_property_def_t* pDef = &pDesc->pProperties[j];
+			if ( pDef->iEditorKind != UI_DESIGN_PROPERTY_COMPLEX ) continue;
+			iRet = __uiDesignComplexEditorOpen(pApp, pDef->sId);
+			if ( iRet != XUI_OK || !pApp->bComplexEditorStructured ||
+			     (pApp->bComplexEditorCollection && pApp->iComplexEditorRowCount > 0 &&
+			      xuiPropertyGridGetPropertyCount(pApp->pComplexEditorDetails) != pApp->iComplexEditorColumnCount) ) {
+				printf("xui_uidesign collection-catalog-failed type=%s property=%s ret=%d\n", pDesc->sTypeName, pDef->sId, iRet);
+				uiDesignInspectorCloseComplexEditor(pApp);
+				return XUI_ERROR;
+			}
+			if ( strcmp(pDef->sId, "data.properties") == 0 && pApp->iComplexEditorColumnCount != 31 ) return XUI_ERROR;
+			__uiDesignComplexEditorCancel(NULL, pApp);
+			++iCount;
+		}
+		(void)pNode;
+	}
+	printf("xui_uidesign collection-catalog passed editors=%d\n", iCount);
 	return XUI_OK;
 }
 

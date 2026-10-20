@@ -12,9 +12,9 @@ extern "C" {
 #define UI_DESIGN_TARGET_W 1440
 #define UI_DESIGN_TARGET_H 900
 #define UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS 128
-#define UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS 24
+#define UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS 40
 #define UI_DESIGN_COMPLEX_EDITOR_COLUMN_CAPACITY 40
-#define UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY 192
+#define UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY UI_DESIGN_PROPERTY_VALUE_CAPACITY
 #define UI_DESIGN_STATUS_CAPACITY 160
 
 typedef enum ui_design_command_t {
@@ -124,6 +124,15 @@ typedef struct ui_design_app_t {
 	xui_widget pComplexEditorWindow;
 	xui_widget pComplexEditorText;
 	xui_widget pComplexEditorGrid;
+	xui_widget pComplexEditorMembers;
+	xui_widget pComplexEditorDetails;
+	xui_widget pComplexEditorPreview;
+	xui_widget pComplexEditorMembersTitle;
+	xui_widget pComplexEditorDetailsTitle;
+	xui_widget pComplexEditorPreviewTitle;
+	xui_widget pComplexEditorMessage;
+	xui_widget pComplexEditorBlocker;
+	ui_design_node_t* pComplexPreviewNode;
 	xui_widget pComplexEditorAdd;
 	xui_widget pComplexEditorDelete;
 	xui_widget pComplexEditorUp;
@@ -203,6 +212,14 @@ typedef struct ui_design_app_t {
 	int iComplexEditorNodeId;
 	char sComplexEditorPropertyId[UI_DESIGN_PROPERTY_ID_CAPACITY];
 	int bComplexEditorStructured;
+	int bComplexEditorCollection;
+	int bSyncingComplexEditor;
+	int bComplexEditorRefreshDetails;
+	int bComplexEditorModified;
+	int iComplexEditorSelected;
+	char sComplexEditorApplied[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
+	char arrComplexEditorMemberText[UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS][UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY + 32];
+	const char* arrComplexEditorMembers[UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS];
 	char cComplexEditorDelimiter;
 	int iComplexEditorRowCount;
 	int iComplexEditorColumnCount;
@@ -217,13 +234,15 @@ typedef struct ui_design_app_t {
 	const xui_combobox_item_t* arrComplexEditorColumnEnumItems[UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS];
 	int arrComplexEditorColumnEnumCount[UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS];
 	int arrComplexEditorColumnEnumUseValue[UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS];
-	char arrComplexEditorCellText[UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS][UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS][UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY];
+	char (*arrComplexEditorCellText)[UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS][UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY];
 	xui_table_view_column_t arrComplexEditorColumns[UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS];
 	xui_table_view_row_t arrComplexEditorRows[UI_DESIGN_COMPLEX_EDITOR_MAX_ROWS];
 	int iFrame;
 	int iMaxFrames;
 	double fMaxSeconds;
 	int bExercise;
+	int bCollectionDemo;
+	int bCollectionExercise;
 	int bExerciseSeeded;
 	int bPreviewRunner;
 	int bPreviewDeleteFile;
@@ -248,6 +267,8 @@ int uiDesignAppToggleNodeSelection(ui_design_app_t* pApp, int iId);
 int uiDesignAppAddNodeAt(ui_design_app_t* pApp, ui_design_node_type_t iType, float fDesignX, float fDesignY, int* pId);
 int uiDesignAppCreateNodeWidget(ui_design_app_t* pApp, ui_design_node_t* pNode);
 int uiDesignAppSyncNodeWidget(ui_design_app_t* pApp, ui_design_node_t* pNode);
+void uiDesignAppReleaseNodeRuntime(ui_design_app_t* pApp, ui_design_node_t* pNode);
+int uiDesignAppRollbackHistoryTransaction(ui_design_app_t* pApp);
 int uiDesignAppSetNodeRect(ui_design_app_t* pApp, int iId, xui_rect_t tRect);
 int uiDesignAppSetNodeText(ui_design_app_t* pApp, int iId, const char* sText);
 int uiDesignAppSetNodeChecked(ui_design_app_t* pApp, int iId, int bChecked);

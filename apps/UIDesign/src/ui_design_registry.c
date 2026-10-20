@@ -2455,6 +2455,12 @@ static const char* __uiDesignText(const ui_design_node_t* pNode, const char* sId
 	return uiDesignNodeGetProperty(pNode, sId, sDefault);
 }
 
+static int __uiDesignEmptyCollection(const ui_design_node_t* pNode, const char* sId)
+{
+	const char* sValue = uiDesignNodeGetProperty(pNode, sId, "\1");
+	return sValue != NULL && sValue[0] == '\0';
+}
+
 static int __uiDesignHasProperty(const ui_design_node_t* pNode, const char* sId)
 {
 	int i;
@@ -3394,7 +3400,7 @@ static int __uiDesignParseTextLines(ui_design_node_t* pNode, const char* sProper
 		if ( sLine[0] == 0 ) continue;
 		ppItems[iCount++] = __uiDesignTextPoolAdd(pNode, sLine);
 	}
-	if ( iCount == 0 && ppDefaultItems != NULL ) {
+	if ( iCount == 0 && ppDefaultItems != NULL && !__uiDesignEmptyCollection(pNode, sPropertyId) ) {
 		for ( i = 0; i < iDefaultCount && iCount < iCapacity; ++i ) {
 			ppItems[iCount++] = __uiDesignTextPoolAdd(pNode, ppDefaultItems[i]);
 		}
@@ -3459,7 +3465,7 @@ static int __uiDesignBuildComboBoxItems(ui_design_node_t* pNode, xui_combobox_it
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultItems) && iCount < iCapacity; ++i ) {
 			memset(&pItems[iCount], 0, sizeof(pItems[iCount]));
 			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, g_arrDefaultItems[i]);
@@ -3499,7 +3505,7 @@ static int __uiDesignBuildListViewItems(ui_design_node_t* pNode, const char** pp
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultItems) && iCount < iCapacity; ++i ) {
 			ppItems[iCount] = __uiDesignTextPoolAdd(pNode, g_arrDefaultItems[i]);
 			pEnabled[iCount] = 1;
@@ -3555,7 +3561,7 @@ static int __uiDesignBuildColorPalette(const ui_design_node_t* pNode, uint32_t* 
 		if ( sLine[0] == 0 ) continue;
 		pColors[iCount++] = __uiDesignParseColorText(sLine, XUI_COLOR_RGBA(49, 126, 214, 255));
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.palette") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultPalette) && iCount < iCapacity; ++i ) {
 			pColors[iCount++] = g_arrDefaultPalette[i];
 		}
@@ -3948,7 +3954,7 @@ static int __uiDesignBuildChartSeriesDefs(ui_design_node_t* pNode, ui_design_cha
 		pSeries[iCount].iValueMaxColor = __uiDesignParseColorText(__uiDesignField(arrFields, iFieldCount, 14, ""), pSeries[iCount].iColor);
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.seriesList") ) {
 		memset(&pSeries[0], 0, sizeof(pSeries[0]));
 		pSeries[0].sId = __uiDesignTextPoolAdd(pNode, "s1");
 		pSeries[0].sName = __uiDesignTextPoolAdd(pNode, "Series");
@@ -4697,7 +4703,7 @@ static int __uiDesignBuildTableColumns(ui_design_node_t* pNode, xui_table_view_c
 		pNode->arrRuntimeTableColumnType[iCount] = iType;
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.columns") ) {
 		const char* arrDefaultTitles[] = {"Name", "Width", "Height"};
 		for ( i = 0; i < 3 && iCount < iCapacity; ++i ) {
 			sTitle = __uiDesignTextPoolAdd(pNode, arrDefaultTitles[i]);
@@ -4745,7 +4751,7 @@ static int __uiDesignBuildTableRows(ui_design_node_t* pNode, xui_table_view_row_
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.rows") ) {
 		for ( iCount = 0; iCount < 3 && iCount < iCapacity; ++iCount ) {
 			pRows[iCount].fHeight = fRowHeight;
 			for ( i = 0; i < iColumnCount && i < 3 && i < UI_DESIGN_RUNTIME_TABLE_COLUMNS; ++i ) {
@@ -4891,7 +4897,7 @@ static int __uiDesignBuildBreadcrumbItems(ui_design_node_t* pNode, xui_breadcrum
 		arrExplicit[iCount] = (iFieldCount > 1);
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultBreadcrumbItems) && iCount < iCapacity; ++i ) {
 			pItems[iCount] = g_arrDefaultBreadcrumbItems[i];
 			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, g_arrDefaultBreadcrumbItems[i].sText);
@@ -4957,7 +4963,7 @@ static int __uiDesignBuildTabsItems(struct ui_design_app_t* pApp, ui_design_node
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultTabs) && iCount < iCapacity; ++i ) {
 			ppTitles[iCount] = __uiDesignTextPoolAdd(pNode, g_arrDefaultTabs[i]);
 			pEnabled[iCount] = g_arrDefaultEnabled[i];
@@ -4997,7 +5003,7 @@ static int __uiDesignBuildAccordionSections(ui_design_node_t* pNode, xui_accordi
 		pSections[iCount].bDisabled = (iFieldCount > 2) ? __uiDesignParseBoolText(arrFields[2], 0) : 0;
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.sections") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultAccordionSections) && iCount < iCapacity; ++i ) {
 			pSections[iCount] = g_arrDefaultAccordionSections[i];
 			pSections[iCount].sTitle = __uiDesignTextPoolAdd(pNode, g_arrDefaultAccordionSections[i].sTitle);
@@ -5069,7 +5075,7 @@ static int __uiDesignBuildMenuBarItems(ui_design_node_t* pNode, xui_menubar_item
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultMenuBarItems) && iCount < iCapacity; ++i ) {
 			pItems[iCount] = g_arrDefaultMenuBarItems[i];
 			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, g_arrDefaultMenuBarItems[i].sText);
@@ -5177,7 +5183,7 @@ static int __uiDesignBuildToolbarItems(struct ui_design_app_t* pApp, ui_design_n
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultToolbarItems) && iCount < iCapacity; ++i ) {
 			pItems[iCount] = g_arrDefaultToolbarItems[i];
 			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, g_arrDefaultToolbarItems[i].sText);
@@ -5285,7 +5291,7 @@ static int __uiDesignBuildStatusBarItems(ui_design_node_t* pNode, xui_statusbar_
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultStatusItems) && iCount < iCapacity; ++i ) {
 			pItems[iCount] = g_arrDefaultStatusItems[i];
 			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, g_arrDefaultStatusItems[i].sText);
@@ -5389,7 +5395,7 @@ static int __uiDesignBuildMenuItems(ui_design_node_t* pNode, xui_menu_item_t* pI
 		__uiDesignFillMenuItemFromFields(pNode, &pItems[iCount], arrFields, iFieldCount, 0, iCount + 1);
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultMenuItems) && iCount < iCapacity; ++i ) {
 			pItems[iCount] = g_arrDefaultMenuItems[i];
 			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, g_arrDefaultMenuItems[i].sText);
@@ -5463,7 +5469,7 @@ static int __uiDesignBuildMessageNodes(ui_design_node_t* pNode, xui_message_node
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.messages") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultMessages) && iCount < iCapacity; ++i ) {
 			pNodes[iCount++] = g_arrDefaultMessages[i];
 		}
@@ -5722,7 +5728,7 @@ static int __uiDesignBuildCascaderItems(ui_design_node_t* pNode, xui_cascader_it
 			(void)__uiDesignCascaderAddPath(pNode, pItems, &iCount, iCapacity, sLine);
 		}
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.items") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultCascaderItems) && iCount < iCapacity; ++i ) {
 			pItems[iCount] = g_arrDefaultCascaderItems[i];
 			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, g_arrDefaultCascaderItems[i].sText);
@@ -6237,7 +6243,7 @@ static int __uiDesignApplyPropertyGridData(ui_design_node_t* pNode)
 			++iPropertyCount;
 		}
 	}
-	if ( iPropertyCount == 0 ) {
+	if ( iPropertyCount == 0 && !__uiDesignEmptyCollection(pNode, "data.properties") ) {
 		xui_property_desc_t tDefault;
 		int iGeneral;
 
@@ -6734,7 +6740,7 @@ static int __uiDesignApplyTimelineData(ui_design_node_t* pNode)
 			}
 		}
 	}
-	if ( iLayerCount == 0 ) {
+	if ( iLayerCount == 0 && !__uiDesignEmptyCollection(pNode, "data.timelineLayers") && !__uiDesignEmptyCollection(pNode, "data.layers") ) {
 		iLayer = __uiDesignTimelineEnsureLayer(pNode->pWidget, arrLayerNames, &iLayerCount, UI_DESIGN_COUNT_OF(arrLayerNames), "Layer 1");
 		if ( iLayer >= 0 ) {
 			(void)xuiTimeLineViewSetFrame(pNode->pWidget, iLayer, 0, XUI_TIMELINE_FRAME_KEY, NULL);
@@ -6888,7 +6894,7 @@ static int __uiDesignApplyRadioGroupOptions(struct ui_design_app_t* pApp, ui_des
 		}
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.options") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultRadioOptions) && iCount < UI_DESIGN_COUNT_OF(arrOptions); ++i ) {
 			arrOptions[iCount] = __uiDesignTextPoolAdd(pNode, g_arrDefaultRadioOptions[i]);
 			arrEnabled[iCount] = 1;
@@ -12114,7 +12120,7 @@ static int __uiDesignBuildFileDialogRoots(ui_design_node_t* pNode,
 		if ( pRoots[iCount].bSelected && pRoots[iCount].bEnabled && pSelectedIndex != NULL ) *pSelectedIndex = iCount;
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.roots") ) {
 		sInitialDir = __uiDesignText(pNode, "text.initialDir", ".");
 		pRoots[0].sLabel = __uiDesignTextPoolAdd(pNode, "Project");
 		pRoots[0].sPath = __uiDesignTextPoolAdd(pNode, sInitialDir);
@@ -12164,7 +12170,7 @@ static int __uiDesignBuildFileDialogEntries(ui_design_node_t* pNode,
 		if ( pEntries[iCount].bSelected && pEntries[iCount].bEnabled && pSelectedIndex != NULL ) *pSelectedIndex = iCount;
 		++iCount;
 	}
-	if ( iCount == 0 ) {
+	if ( iCount == 0 && !__uiDesignEmptyCollection(pNode, "data.entries") ) {
 		pEntries[0].sName = __uiDesignTextPoolAdd(pNode, "scene.ui");
 		pEntries[0].sKind = __uiDesignTextPoolAdd(pNode, "file");
 		pEntries[0].sSize = __uiDesignTextPoolAdd(pNode, "14 KB");
@@ -14231,7 +14237,7 @@ static void __uiDesignApplyGenericLayout(ui_design_node_t* pNode)
 
 	if ( (pNode == NULL) || (pNode->pWidget == NULL) ) return;
 	pWidget = pNode->pWidget;
-	(void)xuiWidgetSetLayoutType(pWidget, __uiDesignInt(pNode, "layout.type", XUI_LAYOUT_MANUAL));
+	(void)xuiWidgetSetLayoutType(pWidget, __uiDesignInt(pNode, "layout.type", xuiWidgetGetLayoutType(pWidget)));
 	(void)xuiWidgetSetSizeMode(pWidget, __uiDesignInt(pNode, "layout.widthMode", XUI_SIZE_FIXED), __uiDesignInt(pNode, "layout.heightMode", XUI_SIZE_FIXED));
 	(void)xuiWidgetSetFlowMode(pWidget, __uiDesignInt(pNode, "layout.flowMode", XUI_FLOW_BLOCK));
 	(void)xuiWidgetSetDock(pWidget, __uiDesignInt(pNode, "layout.dock", 0));
@@ -14577,7 +14583,7 @@ static void __uiDesignApplyInventoryDefaults(ui_design_app_t* pApp, ui_design_no
 	if ( iSlotCount < iSlotDataCount ) iSlotCount = iSlotDataCount;
 	(void)xuiInventoryGridSetSlotCount(pNode->pWidget, iSlotCount);
 	(void)xuiInventoryGridClearAll(pNode->pWidget);
-	if ( iSlotDataCount == 0 ) {
+	if ( iSlotDataCount == 0 && !__uiDesignEmptyCollection(pNode, "data.slots") ) {
 		for ( i = 0; i < UI_DESIGN_COUNT_OF(g_arrDefaultInventorySlots) && i < iSlotCount; i++ ) {
 			(void)xuiInventoryGridSetSlot(pNode->pWidget, i, &g_arrDefaultInventorySlots[i]);
 		}

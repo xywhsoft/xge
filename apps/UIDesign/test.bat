@@ -77,6 +77,9 @@ if not "!RESULT!"=="0" goto cleanup
 "%TOOL_DIR%\release\xui_uidesign.exe" --preview "%FIXTURE%" --frames 2
 set RESULT=!ERRORLEVEL!
 if not "!RESULT!"=="0" goto cleanup
+"%TOOL_DIR%\release\xui_uidesign.exe" --collection-exercise --frames 3
+set RESULT=!ERRORLEVEL!
+if not "!RESULT!"=="0" goto cleanup
 "%TOOL_DIR%\release\xui_uidesign.exe" --exercise --frames 12
 set RESULT=!ERRORLEVEL!
 if not "!RESULT!"=="0" goto cleanup

@@ -41,6 +41,25 @@ cancelled close/exit, external file conflicts, layout recovery, and SDK hashes.
 
 ## Readability and input
 
+Complex properties show collection summaries such as `3 fields` or `8 items`.
+Their edit action opens a movable, resizable XUI window with a member list,
+a property grid for the selected member, and a live control preview. Field
+definitions expose title, width, data type, identifier, visibility, resizing,
+alignment, width limits and colors. Empty optional values display `(default)`.
+Tabular row data keeps its spreadsheet-style editor.
+
+Member edits, additions, deletions and reordering update the design surface
+immediately after the property is committed. OK records the entire dialog as
+one undo operation; Cancel, Escape or the close button restores the original
+document. Confirming without changes adds no undo entry. Explicitly empty
+collections stay empty instead of being repopulated with sample items.
+The dialog validates values and the document property size limit before
+writing, and its working buffers are allocated only when first opened.
+
+Open the field-editor sample with `release/xui_uidesign.exe --collection-demo`.
+Run `release/xui_uidesign.exe --collection-exercise --frames 3` for member edit,
+preview, cancellation, undo and registered-editor regression checks.
+
 The default font is Microsoft YaHei at **18 px**, with taller menus, toolbox
 items, tree rows and property rows. Font lookup uses the executable directory
 and the Windows directory, not the shell's current working directory:

@@ -39,6 +39,7 @@ static void __uiDesignUsage(void)
 	printf("       xui_uidesign --generate INPUT.json OUTPUT.c\n");
 	printf("       --font FILE --font-size 14..24 (default: Chinese-capable font, 18px)\n");
 	printf("       --workspace FILE --screenshot FILE --workbench-exercise\n");
+	printf("       --collection-demo opens the field collection editor\n");
 	printf("       no duration option means run until the window is closed.\n");
 }
 
@@ -188,6 +189,10 @@ static int __uiDesignParseArgs(ui_design_app_t* pApp, int argc, char** argv)
 			if ( pApp->fMaxSeconds <= 0.0 ) return XGE_ERROR_INVALID_ARGUMENT;
 		} else if ( strcmp(argv[i], "--exercise") == 0 ) {
 			pApp->bExercise = 1;
+		} else if ( strcmp(argv[i], "--collection-demo") == 0 ) {
+			pApp->bCollectionDemo = 1;
+		} else if ( strcmp(argv[i], "--collection-exercise") == 0 ) {
+			pApp->bCollectionExercise = 1;
 		} else if ( strcmp(argv[i], "--workbench-exercise") == 0 ) {
 			pApp->bWorkbenchExercise = 1;
 		} else if ( strcmp(argv[i], "--workspace") == 0 ) {
@@ -974,7 +979,7 @@ static int __uiDesignAppNodeIsDescendantOf(const ui_design_model_t* pModel, int 
 	return 0;
 }
 
-static void __uiDesignAppReleaseNodeRuntime(ui_design_app_t* pApp, ui_design_node_t* pNode)
+void uiDesignAppReleaseNodeRuntime(ui_design_app_t* pApp, ui_design_node_t* pNode)
 {
 	int j;
 
@@ -1116,7 +1121,7 @@ int uiDesignAppDeleteNode(ui_design_app_t* pApp, int iId)
 			xuiWidgetDestroy(pModel->arrNodes[iRead].pWidget);
 		}
 		pModel->arrNodes[iRead].pWidget = NULL;
-		__uiDesignAppReleaseNodeRuntime(pApp, &pModel->arrNodes[iRead]);
+		uiDesignAppReleaseNodeRuntime(pApp, &pModel->arrNodes[iRead]);
 		uiDesignNodeReleaseStorage(&pModel->arrNodes[iRead]);
 	}
 	iWrite = 0;
@@ -1545,7 +1550,7 @@ static int __uiDesignAppFinishPropertyEdit(ui_design_app_t* pApp)
 	int ret;
 	if ( pApp->pPropertyGrid == NULL || !xuiPropertyGridIsEditing(pApp->pPropertyGrid) ) return XUI_OK;
 	ret = xuiPropertyGridEndEdit(pApp->pPropertyGrid, 1);
-	if ( ret != XUI_OK || xuiPropertyGridIsEditing(pApp->pPropertyGrid) ) {
+	if ( ret <= 0 || xuiPropertyGridIsEditing(pApp->pPropertyGrid) ) {
 		uiDesignAppSetStatus(pApp, "Finish or correct the current property before continuing");
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -1608,7 +1613,7 @@ static void __uiDesignAppClearNodeRuntime(ui_design_app_t* pApp)
 			xuiWidgetDestroy(pNode->pWidget);
 		}
 		pNode->pWidget = NULL;
-		__uiDesignAppReleaseNodeRuntime(pApp, pNode);
+		uiDesignAppReleaseNodeRuntime(pApp, pNode);
 	}
 }
 
@@ -1928,6 +1933,21 @@ void uiDesignAppCancelHistoryTransaction(ui_design_app_t* pApp)
 	pApp->pSession->sHistoryTransactionBefore = NULL;
 	pApp->pSession->iHistoryTransactionCommand = UI_DESIGN_COMMAND_NONE;
 	pApp->pSession->sHistoryTransactionName[0] = '\0';
+}
+
+int uiDesignAppRollbackHistoryTransaction(ui_design_app_t* pApp)
+{
+	char* sBefore;
+	int iRet;
+
+	if ( pApp == NULL || pApp->pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	sBefore = pApp->pSession->sHistoryTransactionBefore;
+	pApp->pSession->sHistoryTransactionBefore = NULL;
+	iRet = sBefore != NULL ? __uiDesignAppRestoreSnapshot(pApp, sBefore) : XUI_OK;
+	free(sBefore);
+	pApp->pSession->iHistoryTransactionCommand = UI_DESIGN_COMMAND_NONE;
+	pApp->pSession->sHistoryTransactionName[0] = '\0';
+	return iRet;
 }
 
 static int __uiDesignAppBeginImmediateUndo(ui_design_app_t* pApp, char** ppBefore)
@@ -10599,6 +10619,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		if ( pTabsNode != NULL && pTabsNode->pWidget != NULL ) {
 			fScrollBeforeLayout = xuiTabsGetScroll(pTabsNode->pWidget);
 			(void)xuiWidgetArrange(pTabsNode->pWidget, pTabsNode->tRect);
+			(void)xuiLayout(pApp->pContext);
 			if ( iTabsChild != 0 ) {
 				ui_design_node_t* pTabsChildNode = uiDesignModelGetNode(&pApp->pSession->tModel, iTabsChild);
 				if ( pTabsChildNode != NULL && pTabsChildNode->pWidget != NULL &&
@@ -11073,6 +11094,8 @@ static int __uiDesignCreateAssets(ui_design_app_t* pApp)
 	 * control preview is allowed to open an owned popup. */
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pApp->pContext);
 	if ( iRet == XUI_OK && pApp->bExercise ) iRet = __uiDesignSeedExercise(pApp);
+	if ( iRet == XUI_OK && pApp->bCollectionDemo ) iRet = uiDesignInspectorShowCollectionDemo(pApp);
+	if ( iRet == XUI_OK && pApp->bCollectionExercise ) iRet = uiDesignInspectorExerciseCollectionCatalog(pApp);
 	if ( iRet == XUI_OK ) {
 		sSnapshot = NULL;
 		iRet = __uiDesignCaptureSnapshot(pApp, &sSnapshot);
@@ -11087,10 +11110,13 @@ static void __uiDesignDestroyAssets(ui_design_app_t* pApp)
 	int i;
 	if ( pApp == NULL ) return;
 	uiDesignWorkbenchShutdown(pApp);
+	uiDesignInspectorCloseComplexEditor(pApp);
 	if ( pApp->pSession ) __uiDesignAppClearNodeRuntime(pApp);
 	if ( pApp->pFileDialog ) xuiFileDialogDestroy(pApp->pFileDialog);
 	if ( pApp->pUnsavedBox ) xuiMsgBoxDestroy(pApp->pUnsavedBox);
 	if ( pApp->pContext ) { xuiDestroy(pApp->pContext); pApp->pContext = NULL; }
+	free(pApp->arrComplexEditorCellText);
+	pApp->arrComplexEditorCellText = NULL;
 	for ( i = 0; i < pApp->iSessionCount; ++i ) uiDesignSessionDestroy(pApp->arrSessions[i]);
 	pApp->pSession = NULL;
 	pApp->iSessionCount = 0;
@@ -11258,6 +11284,7 @@ static int __uiDesignFrame(void* pUser)
 	if ( iRet != XUI_OK ) return __uiDesignFrameFail("handleInput", iRet);
 	iRet = xuiDispatchPendingEvents(pApp->pContext);
 	if ( iRet != XUI_OK ) return __uiDesignFrameFail("dispatchEvents", iRet);
+	uiDesignInspectorUpdateComplexEditor(pApp);
 	iRet = xuiLayout(pApp->pContext);
 	if ( iRet != XUI_OK ) return __uiDesignFrameFail("layout", iRet);
 	iRet = xuiUpdate(pApp->pContext, xgeGetDelta());
