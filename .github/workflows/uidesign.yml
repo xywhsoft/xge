@@ -39,6 +39,11 @@ jobs:
           install: mingw-w64-ucrt-x86_64-gcc
       - name: Build and test UIDesign
         shell: cmd
+        env:
+          # Hosted Windows runners have no interactive desktop/WGL pixel format.
+          # Keep compilation, model/session, codegen and SDK checks in CI; the
+          # actual window/GPU smoke suite remains enabled by default locally.
+          UIDESIGN_SKIP_WINDOW_TESTS: "1"
         run: |
           set "PATH=C:\msys64\ucrt64\bin;%PATH%"
           call apps\UIDesign\test.bat

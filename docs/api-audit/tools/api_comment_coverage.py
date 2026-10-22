@@ -84,6 +84,11 @@ def module_of(name: str, prefix: str) -> tuple:
     return (tokens[0], False, None)
 
 
+CONDITIONAL_DIRECTIVE = re.compile(
+    r"^#\s*(?:if|ifdef|ifndef|elif|else|endif)\b"
+)
+
+
 def documented(lines, idx: int) -> bool:
     """声明行 idx 上方是否挂有块注释（见文件头判定规则）。"""
     blanks = 0
@@ -96,7 +101,12 @@ def documented(lines, idx: int) -> bool:
                 return False
             j -= 1
             continue
-        return ("/*" in s) or s.startswith("*")
+        # Feature guards wrap many public declarations. They do not break the
+        # association between the declaration and the contract above the guard.
+        if CONDITIONAL_DIRECTIVE.match(s):
+            j -= 1
+            continue
+        return s.startswith("/*") or s.startswith("*")
     return False
 
 

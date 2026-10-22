@@ -62,7 +62,7 @@ if not "!RESULT!"=="0" goto cleanup
 set RESULT=!ERRORLEVEL!
 if not "!RESULT!"=="0" goto cleanup
 
-echo [UIDESIGN-TEST] Checking CLI generation and runtime smoke tests...
+echo [UIDESIGN-TEST] Checking CLI generation...
 "%TOOL_DIR%\release\xui_uidesign.exe" --generate "%FIXTURE%" "%GENERATED_CLI%"
 set RESULT=!ERRORLEVEL!
 if not "!RESULT!"=="0" goto cleanup
@@ -71,6 +71,11 @@ gcc -std=c11 -Wall -Wextra -Werror -DXGE_DLL -DXUI_DLL @config/includes.rsp -fsy
 set RESULT=!ERRORLEVEL!
 popd >nul
 if not "!RESULT!"=="0" goto cleanup
+if /I "%UIDESIGN_SKIP_WINDOW_TESTS%"=="1" (
+	echo [UIDESIGN-TEST] Window/GPU smoke tests skipped by explicit request.
+	goto sdk_manifest
+)
+echo [UIDESIGN-TEST] Checking window/GPU runtime smoke tests...
 "%TOOL_DIR%\release\xui_uidesign.exe" --frames 2
 set RESULT=!ERRORLEVEL!
 if not "!RESULT!"=="0" goto cleanup
@@ -92,6 +97,7 @@ if not "!RESULT!"=="0" goto cleanup
 "%TOOL_DIR%\release\xui_uidesign.exe" --seconds 2
 set RESULT=!ERRORLEVEL!
 if not "!RESULT!"=="0" goto cleanup
+:sdk_manifest
 powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOL_DIR%\tools\sdk_manifest.ps1" -Verify
 set RESULT=!ERRORLEVEL!
 

@@ -704,14 +704,20 @@ XUI_API int xuiDocumentSnapshotGetReferenceCandidate(xui_document_snapshot snaps
  * leaves source, revision, identities, save point and history unchanged. */
 XUI_API int xuiDocumentSnapshotCreateSourceIndex(xui_document_snapshot snapshot,
     const xui_doc_source_index_desc_t* desc, xui_document_source_index* out);
+/* 增加不可变源码索引的引用计数。 */
 XUI_API void xuiDocumentSourceIndexRetain(xui_document_source_index index);
+/* 释放一个源码索引引用。 */
 XUI_API void xuiDocumentSourceIndexRelease(xui_document_source_index index);
+/* 读取源码索引的版本、长度与各类记录数量。 */
 XUI_API int xuiDocumentSourceIndexGetInfo(xui_document_source_index index,
     xui_doc_source_index_info_t* out);
+/* 按序号读取一条源码记录。 */
 XUI_API int xuiDocumentSourceIndexGetRecord(xui_document_source_index index,
     uint64_t ordinal, xui_doc_source_record_t* out);
+/* 按序号读取一个源码令牌。 */
 XUI_API int xuiDocumentSourceIndexGetToken(xui_document_source_index index,
     uint64_t ordinal, xui_doc_source_token_t* out);
+/* 按序号读取一条源码到文档对象的绑定。 */
 XUI_API int xuiDocumentSourceIndexGetBinding(xui_document_source_index index,
     uint64_t ordinal, xui_doc_source_binding_t* out);
 /* Visit every overlapping complete binding in source/ordinal order without

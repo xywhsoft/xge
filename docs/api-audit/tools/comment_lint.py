@@ -45,7 +45,9 @@ def gap_warnings(header: str):
             if s == "":
                 blanks += 1
                 continue
-            if "/*" in s or s.startswith("*"):
+            if cov.CONDITIONAL_DIRECTIVE.match(s):
+                continue
+            if s.startswith("/*") or s.startswith("*"):
                 found = True
             break
         if found and blanks > 1:
