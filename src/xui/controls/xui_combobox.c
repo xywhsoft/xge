@@ -501,7 +501,9 @@ static int __xuiComboBoxApplyMenuColors(xui_widget pWidget, xui_combobox_data_t*
 	tColors.iDangerTextColor = tResolved.iPopupTextColor;
 	tColors.iMarkColor = tResolved.iArrowColor;
 	tColors.iSeparatorColor = tResolved.iPopupSeparatorColor;
-	tColors.iFocusColor = tResolved.iFocusBorderColor;
+	/* The popup already owns the outer border. Keep the embedded menu focus
+	 * frame transparent so opening the combobox does not produce a double box. */
+	tColors.iFocusColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	if ( xuiMenuGetColors(pData->pMenu, &tOldColors) == XUI_OK &&
 	     memcmp(&tColors, &tOldColors, sizeof(tColors)) == 0 ) return XUI_OK;
 	return xuiMenuSetColors(pData->pMenu, &tColors);

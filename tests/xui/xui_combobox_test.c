@@ -158,6 +158,7 @@ int main(void)
 	xui_combobox_desc_t tDesc;
 	xui_combobox_desc_t tEditDesc;
 	xui_combobox_item_t arrItems[5];
+	xui_menu_colors_t tMenuColors;
 	xui_rect_t tButton;
 	xui_rect_t tInputRect;
 	xui_rect_t tInputWorld;
@@ -362,6 +363,11 @@ int main(void)
 	pMenu = xuiComboBoxGetMenuWidget(pCombo);
 	pPopup = xuiComboBoxGetPopupWidget(pCombo);
 	XUI_TEST_CHECK(pMenu != NULL && pPopup != NULL && xuiGetFocusWidget(pContext) == pMenu, "menu popup focus");
+	memset(&tMenuColors, 0, sizeof(tMenuColors));
+	tMenuColors.iSize = sizeof(tMenuColors);
+	iRet = xuiMenuGetColors(pMenu, &tMenuColors);
+	XUI_TEST_CHECK(iRet == XUI_OK && (tMenuColors.iFocusColor & 0xffu) == 0u,
+		"combobox popup menu has no implicit focus frame");
 	XUI_TEST_CHECK((xuiMenuGetItemState(pMenu, 0) & XUI_MENU_ITEM_DEFAULT) == 0u, "selected item has no default focus frame");
 	iState = xuiComboBoxGetState(pCombo);
 	XUI_TEST_CHECK((iState & XUI_COMBOBOX_STATE_OPEN) != 0u, "open state");
