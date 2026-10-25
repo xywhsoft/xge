@@ -11,6 +11,7 @@ static void stroke(xui_widget viewport)
 		void* user = NULL;
 		xui_event_t e = {0};
 		e.iType = types[i]; e.iButton = XUI_POINTER_BUTTON_LEFT;
+		e.iButtons = (i < 2) ? XUI_POINTER_BUTTON_LEFT : 0;
 		e.fX = world.fX + 10 + i * 2; e.fY = world.fY + 10 + i * 2;
 		PIXEL_CHECK(xuiWidgetGetEventHandler(viewport, e.iType, &proc, &user) == XUI_OK && proc != NULL);
 		if (proc) (void)proc(viewport, &e, user);

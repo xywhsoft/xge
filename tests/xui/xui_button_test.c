@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -911,6 +912,34 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch space up");
 	XUI_TEST_CHECK(xuiButtonGetClickCount(pButton) == 2 && iClickCount == 2, "keyboard click");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space down before blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiButtonGetState(pButton) & XUI_WIDGET_STATE_ACTIVE) != 0,
+	               "active before blur");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during keyboard press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiButtonGetState(pButton) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "blur cancels keyboard active");
+	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space up after blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiButtonGetClickCount(pButton) == 2 && iClickCount == 2,
+	               "blurred keyboard press does not click");
+	iRet = xuiButtonSetIconLayout(pButton, XUI_BUTTON_ICON_LEFT, NAN, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan icon size");
+	iRet = xuiButtonSetStateVisual(pButton, 0, XUI_COLOR_WHITE, INFINITY, XUI_COLOR_RGBA(0, 0, 0, 255));
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite state border");
+	iRet = xuiButtonSetBorder(pButton, NAN, XUI_COLOR_RGBA(0, 0, 0, 255));
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan border");
+	iRet = xuiButtonSetBadgeOffset(pButton, INFINITY, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite badge offset");
+	iRet = xuiButtonSetBadgeSize(pButton, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan badge size");
+	tPatch.tSlice.fLeft = -1;
+	iRet = xuiButtonSetPatch(pButton, 0, &tPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative patch slice");
 
 	iRet = xuiWidgetSetEnabled(pButton, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");

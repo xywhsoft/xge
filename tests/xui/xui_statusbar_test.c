@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,6 +18,8 @@ typedef struct xui_statusbar_test_events_t {
 	int iSelectCount;
 	int iLastIndex;
 	int iLastValue;
+	int bClearOnSelect;
+	int iClearResult;
 } xui_statusbar_test_events_t;
 
 static int __xuiStatusBarNear(float fA, float fB)
@@ -36,6 +39,9 @@ static void __xuiStatusBarSelect(xui_widget pWidget, int iIndex, int iValue, voi
 		pEvents->iSelectCount++;
 		pEvents->iLastIndex = iIndex;
 		pEvents->iLastValue = iValue;
+		if ( pEvents->bClearOnSelect ) {
+			pEvents->iClearResult = xuiStatusBarClear(pWidget);
+		}
 	}
 }
 
@@ -120,6 +126,8 @@ int main(void)
 	xui_statusbar_metrics_t tMetrics;
 	xui_statusbar_colors_t tColors;
 	xui_statusbar_item_t arrItems[7];
+	xui_statusbar_item_t arrInvalid[2];
+	const xui_statusbar_item_t* pFirstItem;
 	xui_rect_t tItem0;
 	xui_rect_t tItem1;
 	xui_rect_t tFlex;
@@ -239,13 +247,52 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiStatusBarNear(xuiStatusBarGetItemRect(pStatusBar, 0).fW, 80.0f), "set width");
 	iRet = xuiStatusBarSetItemFlex(pStatusBar, 3, 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set flex");
+	iRet = xuiStatusBarSetItemWidth(pStatusBar, 0, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiStatusBarGetItem(pStatusBar, 0)->fWidth == 80.0f, "nan width rejected");
+	iRet = xuiStatusBarSetItemFlex(pStatusBar, 3, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiStatusBarGetItem(pStatusBar, 3)->fFlex == 2.0f, "infinite flex rejected");
+	iRet = xuiStatusBarSetProgress(pStatusBar, 1, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiStatusBarGetProgress(pStatusBar, 1) == 0.0f, "nan progress rejected");
 	iRet = xuiStatusBarGetMetrics(pStatusBar, &tMetrics);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMetrics.fHeight == 28.0f, "metrics get");
+	tMetrics.fGap = NAN;
+	iRet = xuiStatusBarSetMetrics(pStatusBar, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan metrics rejected");
 	iRet = xuiStatusBarGetColors(pStatusBar, &tColors);
 	XUI_TEST_CHECK(iRet == XUI_OK && tColors.iTextColor != 0u, "colors get");
 	XUI_TEST_CHECK((xuiStatusBarGetState(pStatusBar) & XUI_WIDGET_STATE_FOCUS) != 0u, "state focus");
 	XUI_TEST_CHECK(xuiStatusBarGetSelectCount(pStatusBar) == tEvents.iSelectCount, "select count");
 	XUI_TEST_CHECK(xuiStatusBarGetChangeCount(pStatusBar) > 0, "change count");
+
+	arrInvalid[0] = *xuiStatusBarGetItem(pStatusBar, 0);
+	arrInvalid[1] = *xuiStatusBarGetItem(pStatusBar, 1);
+	arrInvalid[1].iType = 99;
+	iRet = xuiStatusBarSetItems(pStatusBar, arrInvalid, 2);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiStatusBarGetItemCount(pStatusBar) == 7, "invalid setitems preserves prior items");
+	iBefore = xuiStatusBarGetItemCount(pStatusBar);
+	XUI_TEST_CHECK(xuiStatusBarAddProgress(pStatusBar, XUI_STATUSBAR_SECTION_LEFT, NAN, 1.0f, 0.0f, 20.0f) == -1 && xuiStatusBarGetItemCount(pStatusBar) == iBefore, "nan add progress rejected without mutation");
+	XUI_TEST_CHECK(xuiStatusBarAddFlexibleSpacer(pStatusBar, XUI_STATUSBAR_SECTION_LEFT, INFINITY) == -1 && xuiStatusBarGetItemCount(pStatusBar) == iBefore, "infinite flex spacer rejected without mutation");
+
+	tItem0 = xuiStatusBarGetItemRect(pStatusBar, 0);
+	iRet = __xuiStatusBarDispatchDown(pContext, 20.0f + tItem0.fX + 2.0f, 260.0f + tItem0.fY + 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == 0 && xuiGetPointerCapture(pContext) == pStatusBar, "pointer press captured");
+	iRet = xuiWidgetSetEnabled(pStatusBar, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable during press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == -1 && xuiGetPointerCapture(pContext) != pStatusBar, "disable cancels press and capture");
+	iRet = xuiWidgetSetEnabled(pStatusBar, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable statusbar");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch reenable");
+
+	pFirstItem = xuiStatusBarGetItem(pStatusBar, 0);
+	iRet = xuiStatusBarSetItems(pStatusBar, pFirstItem, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetItemCount(pStatusBar) == 1 && strcmp(xuiStatusBarGetItem(pStatusBar, 0)->sText, "Busy") == 0, "setitems supports self alias");
+	tEvents.bClearOnSelect = 1;
+	tEvents.iClearResult = XUI_ERROR_INVALID_STATE;
+	iRet = __xuiStatusBarClickItem(pContext, pStatusBar, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iClearResult == XUI_OK, "select callback clear");
+	XUI_TEST_CHECK(xuiStatusBarGetItemCount(pStatusBar) == 0 && xuiStatusBarGetHoverIndex(pStatusBar) == -1 && xuiStatusBarGetActiveIndex(pStatusBar) == -1, "select reentry preserves cleared state");
 
 cleanup:
 	if ( pContext != NULL ) {

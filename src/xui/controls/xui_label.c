@@ -300,7 +300,7 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	}
 	tSize = xuiTextLayoutGetSize(pLayout);
 	iLineCount = xuiTextLayoutGetLineCount(pLayout);
-	iLineFlags = (tDesc.iFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE)) | XUI_TEXT_ALIGN_TOP;
+	iLineFlags = (tDesc.iFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE | XUI_TEXT_RTL)) | XUI_TEXT_ALIGN_TOP;
 	fOffsetY = __xuiLabelVerticalOffset(tContent, tSize, tDesc.iFlags);
 	for ( iLine = 0; iLine < iLineCount; iLine++ ) {
 		iRet = xuiTextLayoutGetLine(pLayout, iLine, &tLine);

@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -21,12 +22,17 @@ int main(void)
 	xui_widget pArrow;
 	xui_widget pDot;
 	xui_widget pVertical;
+	xui_widget pInvalid;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_step_bar_desc_t tDesc;
+	xui_step_bar_desc_t tInvalidDesc;
 	const char* arrTitles[3];
 	xui_rect_t tRect;
 	xui_rect_i_t tFullRect;
+	float fBarHeight;
+	float fDotRadius;
+	float fLineWidth;
 	int iFailed;
 	int iRet;
 
@@ -35,6 +41,7 @@ int main(void)
 	pArrow = NULL;
 	pDot = NULL;
 	pVertical = NULL;
+	pInvalid = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -102,7 +109,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 	iRet = xuiStepBarSetMetrics(pArrow, 32.0f, 10.0f, 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
+	iRet = xuiStepBarGetMetrics(pArrow, &fBarHeight, &fDotRadius, &fLineWidth);
+	XUI_TEST_CHECK(iRet == XUI_OK && fBarHeight == 32.0f && fDotRadius == 10.0f && fLineWidth == 2.0f, "get metrics");
+	iRet = xuiStepBarSetMetrics(pArrow, NAN, 11.0f, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan metrics");
+	iRet = xuiStepBarSetMetrics(pArrow, 33.0f, INFINITY, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metrics");
+	iRet = xuiStepBarGetMetrics(pArrow, &fBarHeight, &fDotRadius, &fLineWidth);
+	XUI_TEST_CHECK(iRet == XUI_OK && fBarHeight == 32.0f && fDotRadius == 10.0f && fLineWidth == 2.0f, "invalid metrics preserve state");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fDotRadius = NAN;
+	iRet = xuiStepBarCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nan descriptor");
+	iRet = xuiStepBarSetSteps(pArrow, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetCurrent(pArrow) == 0, "clear steps resets current");
+	iRet = xuiStepBarSetCurrent(pArrow, 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "empty step bar rejects nonzero current");
+	iRet = xuiStepBarSetCurrent(pArrow, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "empty step bar accepts zero current");
+	iRet = xuiStepBarSetSteps(pArrow, arrTitles, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore steps");
 	XUI_TEST_CHECK(xuiStepBarGetChangeCount(pArrow) >= 3, "change count");
+	iRet = xuiStepBarSetMetrics(pDot, 32.0f, 100.0f, 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set oversized horizontal dot radius");
+	xuiWidgetSetRect(pDot, (xui_rect_t){20.0f, 80.0f, 20.0f, 3.0f});
+	iRet = xuiStepBarSetMetrics(pVertical, 32.0f, 100.0f, 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set oversized vertical dot radius");
+	xuiWidgetSetRect(pVertical, (xui_rect_t){20.0f, 170.0f, 3.0f, 20.0f});
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 320, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -116,12 +149,14 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pVertical, 0) != NULL, "vertical cache");
 	tRect = xuiStepBarGetStepRect(pDot, 1);
 	XUI_TEST_CHECK(tRect.fW > 0.0f && tRect.fH > 0.0f, "dot step rect");
-	tRect = xuiStepBarGetStepRect(pDot, 0);
-	XUI_TEST_CHECK(tRect.fX >= 0.0f && tRect.fW > 0.0f, "dot first text safe rect");
-	tRect = xuiStepBarGetStepRect(pDot, 2);
-	XUI_TEST_CHECK((tRect.fX + tRect.fW) <= 460.0f && tRect.fW > 0.0f, "dot last text safe rect");
+	tRect = xuiStepBarGetIndicatorRect(pDot, 0);
+	XUI_TEST_CHECK(tRect.fX >= 0.0f && tRect.fY >= 0.0f &&
+	               tRect.fX + tRect.fW <= 20.0f && tRect.fY + tRect.fH <= 3.0f,
+	               "horizontal indicator stays inside tiny content");
 	tRect = xuiStepBarGetIndicatorRect(pVertical, 1);
-	XUI_TEST_CHECK(tRect.fW > 0.0f && tRect.fH > 0.0f, "vertical indicator rect");
+	XUI_TEST_CHECK(tRect.fX >= 0.0f && tRect.fY >= 0.0f &&
+	               tRect.fX + tRect.fW <= 3.0f && tRect.fY + tRect.fH <= 20.0f,
+	               "vertical indicator stays inside tiny content");
 
 cleanup:
 	if ( pTarget != NULL ) {

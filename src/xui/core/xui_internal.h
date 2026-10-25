@@ -527,6 +527,7 @@ int xuiInternalLayoutArrangeChild(xui_widget pParent, xui_widget pChild, xui_rec
 int xuiInternalEnsureLayout(xui_context pContext);
 int xuiInternalContextHasProxy(xui_context pContext);
 xui_proxy xuiInternalContextGetProxy(xui_context pContext);
+void xuiInternalUtf8TrimIncomplete(char* sText);
 int xuiInternalSetInteractionPolicy(xui_context pContext, const xui_interaction_policy_t* pPolicy, int bUserSet);
 void xuiInternalCaretBlinkUpdate(xui_context pContext, float fDelta);
 void xuiInternalCaretBlinkReset(xui_context pContext);

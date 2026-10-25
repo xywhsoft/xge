@@ -2,6 +2,7 @@
 #if XUI_ENABLE_BUTTON
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 #define XUI_BUTTON_VISUAL_NORMAL	0
@@ -119,6 +120,16 @@ static int __xuiButtonBadgeAnchorValid(int iAnchor)
 	       (iAnchor == XUI_BUTTON_BADGE_TEXT_TOP_RIGHT);
 }
 
+static int __xuiButtonFloatValid(float fValue)
+{
+	return isfinite(fValue);
+}
+
+static int __xuiButtonNonNegativeFloatValid(float fValue)
+{
+	return __xuiButtonFloatValid(fValue) && fValue >= 0.0f;
+}
+
 static int __xuiButtonDescValid(const xui_button_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -127,7 +138,7 @@ static int __xuiButtonDescValid(const xui_button_desc_t* pDesc)
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
-	if ( pDesc->fBorderWidth < 0.0f ) {
+	if ( !__xuiButtonNonNegativeFloatValid(pDesc->fBorderWidth) ) {
 		return 0;
 	}
 	return 1;
@@ -144,10 +155,10 @@ static int __xuiButtonPatchValid(const xui_nine_patch_t* pPatch)
 	if ( (pPatch->pSurface == NULL) ||
 	     (pPatch->tSrc.fW < 0.0f) ||
 	     (pPatch->tSrc.fH < 0.0f) ||
-	     (pPatch->tSlice.fLeft < 0.0f) ||
-	     (pPatch->tSlice.fTop < 0.0f) ||
-	     (pPatch->tSlice.fRight < 0.0f) ||
-	     (pPatch->tSlice.fBottom < 0.0f) ) {
+	     !__xuiButtonNonNegativeFloatValid(pPatch->tSlice.fLeft) ||
+	     !__xuiButtonNonNegativeFloatValid(pPatch->tSlice.fTop) ||
+	     !__xuiButtonNonNegativeFloatValid(pPatch->tSlice.fRight) ||
+	     !__xuiButtonNonNegativeFloatValid(pPatch->tSlice.fBottom) ) {
 		return 0;
 	}
 	if ( (pPatch->iMode != XUI_NINE_PATCH_STRETCH) &&
@@ -236,7 +247,8 @@ static int __xuiButtonStyleFloat(xui_widget pWidget, const char* sName, float* p
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiButtonNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -1037,7 +1049,10 @@ static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
+		(void)__xuiButtonSyncState(pWidget, pData);
+		return XUI_OK;
 	case XUI_EVENT_BLUR:
+		pData->bKeyboardActive = 0;
 		(void)__xuiButtonSyncState(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
@@ -1647,7 +1662,9 @@ XUI_API int xuiButtonSetIconLayout(xui_widget pWidget, int iPlacement, float fIc
 {
 	xui_button_data_t* pData;
 
-	if ( !__xuiButtonIconPlacementValid(iPlacement) || (fIconSize < 0.0f) || (fGap < 0.0f) ) {
+	if ( !__xuiButtonIconPlacementValid(iPlacement) ||
+	     !__xuiButtonNonNegativeFloatValid(fIconSize) ||
+	     !__xuiButtonNonNegativeFloatValid(fGap) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiButtonGetData(pWidget);
@@ -1698,7 +1715,7 @@ XUI_API int xuiButtonSetStateVisual(xui_widget pWidget, uint32_t iState, uint32_
 	xui_button_data_t* pData;
 	int iIndex;
 
-	if ( fBorderWidth < 0.0f ) {
+	if ( !__xuiButtonNonNegativeFloatValid(fBorderWidth) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiButtonGetData(pWidget);
@@ -1733,7 +1750,7 @@ XUI_API int xuiButtonSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t 
 	xui_button_data_t* pData;
 	int i;
 
-	if ( fBorderWidth < 0.0f ) {
+	if ( !__xuiButtonNonNegativeFloatValid(fBorderWidth) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiButtonGetData(pWidget);
@@ -1866,6 +1883,9 @@ XUI_API int xuiButtonSetBadgeOffset(xui_widget pWidget, float fX, float fY)
 {
 	xui_button_data_t* pData;
 
+	if ( !__xuiButtonFloatValid(fX) || !__xuiButtonFloatValid(fY) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pData = __xuiButtonGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1892,7 +1912,7 @@ XUI_API int xuiButtonSetBadgeSize(xui_widget pWidget, float fSize)
 {
 	xui_button_data_t* pData;
 
-	if ( fSize <= 0.0f ) {
+	if ( !__xuiButtonFloatValid(fSize) || fSize <= 0.0f ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiButtonGetData(pWidget);

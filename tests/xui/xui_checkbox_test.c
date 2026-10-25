@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -132,8 +133,31 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch key up");
 	XUI_TEST_CHECK(xuiCheckBoxGetChecked(pCheck) == 1 && iChanged == 2, "keyboard space toggles");
+	iRet = xuiCheckBoxSetChecked(pCheck, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset before blur");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "key down before blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiCheckBoxGetState(pCheck) & XUI_WIDGET_STATE_ACTIVE) != 0,
+	               "active before blur");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during keyboard press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiCheckBoxGetState(pCheck) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "blur cancels keyboard active");
+	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "key up after blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetChecked(pCheck) == 0 && iChanged == 2,
+	               "blurred keyboard press does not toggle");
 	iRet = xuiCheckBoxSetChecked(pCheck, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetChecked(pCheck) == 1, "set checked");
+	iRet = xuiCheckBoxSetIndicatorSize(pCheck, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiCheckBoxGetIndicatorSize(pCheck) == 20.0f,
+	               "reject nan indicator size");
+	iRet = xuiCheckBoxSetGap(pCheck, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiCheckBoxGetGap(pCheck) == 10.0f,
+	               "reject infinite gap");
 
 	iRet = xuiBuiltinAssetGetAtlas(pContext, &pAtlas);
 	XUI_TEST_CHECK(iRet == XUI_OK && pAtlas != NULL, "builtin atlas available");

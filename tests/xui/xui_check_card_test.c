@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -186,6 +187,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckCardGetChecked(pStandalone) && iChanged == 1, "standalone toggles on");
 	iRet = __xuiCheckCardClick(pContext, pStandalone);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 2, "standalone toggles off");
+	iRet = xuiSetFocusWidget(pContext, pStandalone);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus standalone");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space down before blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiCheckCardGetState(pStandalone) & XUI_WIDGET_STATE_ACTIVE) != 0,
+	               "active before blur");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during keyboard press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiCheckCardGetState(pStandalone) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "blur cancels keyboard active");
+	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space up after blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 2,
+	               "blurred keyboard press does not toggle");
 
 	iRet = __xuiCheckCardClick(pContext, pCard[0]);
 	XUI_TEST_CHECK(iRet == XUI_OK, "group click");
@@ -198,6 +216,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
 	iRet = xuiCheckCardGetMetrics(pStandalone, &fBorder, &fCheckedBorder, &fCorner, &fFocus);
 	XUI_TEST_CHECK(iRet == XUI_OK && fBorder == 1.0f && fCheckedBorder == 2.0f && fCorner == 18.0f && fFocus == 3.0f, "get metrics");
+	iRet = xuiCheckCardSetMetrics(pStandalone, NAN, 2.0f, 18.0f, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan metrics");
+	iRet = xuiCheckCardGetMetrics(pStandalone, &fBorder, &fCheckedBorder, &fCorner, &fFocus);
+	XUI_TEST_CHECK(iRet == XUI_OK && fBorder == 1.0f && fCheckedBorder == 2.0f && fCorner == 18.0f && fFocus == 3.0f,
+	               "invalid metrics preserve state");
 	iRet = xuiCheckCardSetColors(pStandalone, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(250, 252, 252, 255), XUI_COLOR_RGBA(244, 248, 248, 255), XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(220, 220, 220, 255), XUI_COLOR_RGBA(120, 210, 205, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(255, 255, 255, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 

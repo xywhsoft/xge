@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 #define XUI_HYPERLINK_VISUAL_NORMAL	0
@@ -31,6 +32,11 @@ typedef struct xui_hyperlink_data_t {
 	float fParagraphGap;
 } xui_hyperlink_data_t;
 
+static int __xuiHyperlinkNonNegativeFloatValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f;
+}
+
 static int __xuiHyperlinkWrapModeValid(int iWrapMode)
 {
 	return (iWrapMode == XUI_TEXT_WRAP_NONE) ||
@@ -49,7 +55,8 @@ static int __xuiHyperlinkDescValid(const xui_hyperlink_desc_t* pDesc)
 	if ( !__xuiHyperlinkWrapModeValid(pDesc->iWrapMode) ) {
 		return 0;
 	}
-	if ( (pDesc->fLineGap < 0.0f) || (pDesc->fParagraphGap < 0.0f) ) {
+	if ( !__xuiHyperlinkNonNegativeFloatValid(pDesc->fLineGap) ||
+	     !__xuiHyperlinkNonNegativeFloatValid(pDesc->fParagraphGap) ) {
 		return 0;
 	}
 	return 1;
@@ -142,7 +149,8 @@ static int __xuiHyperlinkStyleFloat(xui_widget pWidget, const char* sName, float
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiHyperlinkNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -270,10 +278,10 @@ static void __xuiHyperlinkResolve(xui_widget pWidget, xui_hyperlink_data_t* pDat
 	if ( !__xuiHyperlinkWrapModeValid(iWrapMode) ) {
 		iWrapMode = XUI_TEXT_WRAP_NONE;
 	}
-	if ( fLineGap < 0.0f ) {
+	if ( !__xuiHyperlinkNonNegativeFloatValid(fLineGap) ) {
 		fLineGap = 0.0f;
 	}
-	if ( fParagraphGap < 0.0f ) {
+	if ( !__xuiHyperlinkNonNegativeFloatValid(fParagraphGap) ) {
 		fParagraphGap = 0.0f;
 	}
 	iVisual = __xuiHyperlinkVisualIndexFromStateId(iStateId);
@@ -398,7 +406,7 @@ static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	}
 	tSize = xuiTextLayoutGetSize(pLayout);
 	iLineCount = xuiTextLayoutGetLineCount(pLayout);
-	iLineFlags = (tDesc.iFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE)) | XUI_TEXT_ALIGN_TOP;
+	iLineFlags = (tDesc.iFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE | XUI_TEXT_RTL)) | XUI_TEXT_ALIGN_TOP;
 	fOffsetY = __xuiHyperlinkVerticalOffset(tContent, tSize, tDesc.iFlags);
 	for ( iLine = 0; iLine < iLineCount; iLine++ ) {
 		iRet = xuiTextLayoutGetLine(pLayout, iLine, &tLine);
@@ -492,7 +500,10 @@ static int __xuiHyperlinkEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
+		(void)__xuiHyperlinkSyncState(pWidget, pData);
+		return XUI_OK;
 	case XUI_EVENT_BLUR:
+		pData->bKeyboardActive = 0;
 		(void)__xuiHyperlinkSyncState(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
@@ -1024,7 +1035,7 @@ XUI_API int xuiHyperlinkSetLineGap(xui_widget pWidget, float fLineGap)
 {
 	xui_hyperlink_data_t* pData;
 
-	if ( fLineGap < 0.0f ) {
+	if ( !__xuiHyperlinkNonNegativeFloatValid(fLineGap) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiHyperlinkGetData(pWidget);
@@ -1050,7 +1061,7 @@ XUI_API int xuiHyperlinkSetParagraphGap(xui_widget pWidget, float fParagraphGap)
 {
 	xui_hyperlink_data_t* pData;
 
-	if ( fParagraphGap < 0.0f ) {
+	if ( !__xuiHyperlinkNonNegativeFloatValid(fParagraphGap) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiHyperlinkGetData(pWidget);

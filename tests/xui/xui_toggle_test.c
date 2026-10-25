@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -182,6 +183,34 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch key up");
 	XUI_TEST_CHECK(xuiToggleGetChecked(pToggle) == 1 && iChanged == 2, "keyboard space toggles");
+	iRet = xuiToggleSetChecked(pToggle, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset before blur");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "key down before blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiToggleGetState(pToggle) & XUI_WIDGET_STATE_ACTIVE) != 0,
+	               "active before blur");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during keyboard press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiToggleGetState(pToggle) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "blur cancels keyboard active");
+	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "key up after blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 0 && iChanged == 2,
+	               "blurred keyboard press does not toggle");
+	iRet = xuiToggleSetInnerTextMetrics(pToggle, NAN, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan inner padding");
+	iRet = xuiToggleSetTrackSize(pToggle, INFINITY, 24.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiToggleGetTrackWidth(pToggle) == 44.0f,
+	               "reject infinite track width");
+	iRet = xuiToggleSetThumbSize(pToggle, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiToggleGetThumbSize(pToggle) == 15.0f,
+	               "reject nan thumb size");
+	iRet = xuiToggleSetGap(pToggle, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiToggleGetGap(pToggle) == 10.0f,
+	               "reject infinite gap");
 	iRet = xuiToggleSetColors(pToggle, XUI_COLOR_RGBA(24, 166, 113, 255), XUI_COLOR_RGBA(215, 230, 224, 255), XUI_COLOR_RGBA(194, 222, 211, 255), XUI_COLOR_RGBA(24, 166, 113, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 

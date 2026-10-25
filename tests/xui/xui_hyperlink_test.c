@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -141,6 +142,15 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pNormalCache) == XUI_COLOR_RGBA(20, 92, 210, 255), "normal color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pHoverCache) == XUI_COLOR_RGBA(8, 128, 230, 255), "hover color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pActiveCache) == XUI_COLOR_RGBA(6, 60, 160, 255), "active color cache");
+	iRet = xuiHyperlinkSetTextFlags(pLink, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE |
+		XUI_TEXT_CLIP | XUI_TEXT_RTL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "rtl flags set");
+	xuiTestProxyResetTextCounters(&tState);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "rtl render");
+	XUI_TEST_CHECK((tState.iLastTextShapeFlags & XUI_TEXT_SHAPE_RTL) != 0 &&
+	               (tState.iLastTextDrawItemFlags & XUI_TEXT_SHAPE_RTL) != 0,
+	               "rtl shaping flags");
 
 	iRet = xuiInputPointerMove(pContext, 30.0f, 30.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer move");
@@ -177,6 +187,25 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch enter default");
 	XUI_TEST_CHECK(xuiHyperlinkGetClickCount(pLink) == 3 && iClickCount == 3, "enter default click");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space down before blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) != 0,
+	               "active before blur");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during keyboard press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "blur cancels keyboard active");
+	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space up after blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 3 && iClickCount == 3,
+	               "blurred keyboard press does not click");
+	iRet = xuiHyperlinkSetLineGap(pLink, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan line gap");
+	iRet = xuiHyperlinkSetParagraphGap(pLink, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite paragraph gap");
 
 	iRet = xuiWidgetSetEnabled(pLink, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");

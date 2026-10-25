@@ -1,6 +1,8 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -76,6 +78,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pBar;
+	xui_widget pInvalid;
 	xui_surface pTarget;
 	xui_surface pCache;
 	xui_scrollbar_desc_t tDesc;
@@ -100,6 +103,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pBar = NULL;
+	pInvalid = NULL;
 	pTarget = NULL;
 	pCache = NULL;
 	iChanged = 0;
@@ -132,6 +136,10 @@ int main(void)
 	tDesc.iButtonMode = XUI_SCROLLBAR_BUTTONS_ON;
 	iRet = xuiScrollBarCreate(pContext, &pBar, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pBar != NULL, "scrollbar create");
+	tDesc.fValue = NAN;
+	iRet = xuiScrollBarCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nan descriptor");
+	tDesc.fValue = 50.0f;
 	iRet = xuiWidgetAddChild(pRoot, pBar);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add scrollbar");
 	xuiWidgetSetRect(pBar, (xui_rect_t){10.0f, 10.0f, 20.0f, 140.0f});
@@ -144,6 +152,16 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollBarGetOrientation(pBar) == XUI_ORIENTATION_VERTICAL, "vertical orientation");
 	iRet = xuiScrollBarGetMetrics(pBar, &fThickness, &fMinThumbSize, &fButtonSize);
 	XUI_TEST_CHECK(iRet == XUI_OK && fThickness == 0.0f && fMinThumbSize == 18.0f && fButtonSize == 0.0f, "default metrics");
+	iRet = xuiScrollBarSetValue(pBar, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiScrollBarGetValue(pBar) == 50.0f, "reject nan value and preserve state");
+	iRet = xuiScrollBarSetRange(pBar, 0.0f, INFINITY, 25.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite range");
+	iRet = xuiScrollBarSetPage(pBar, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite page");
+	iRet = xuiScrollBarSetSteps(pBar, NAN, 25.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan steps");
+	iRet = xuiScrollBarSetMetrics(pBar, 0.0f, INFINITY, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metrics");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 240, 220, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -300,6 +318,21 @@ int main(void)
 	(void)xuiInputPointerUp(pContext, fStartX, fStartY, XUI_POINTER_BUTTON_LEFT, 0);
 	(void)xuiDispatchPendingEvents(pContext);
 
+	iRet = xuiSetFocusWidget(pContext, pBar);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus before blur drag");
+	iRet = xuiInputPointerDown(pContext, fStartX, fStartY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "blur drag down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pBar, "blur drag capture");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during scrollbar drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+	               xuiScrollBarGetActivePart(pBar) == XUI_SCROLLBAR_PART_NONE,
+	               "blur cancels scrollbar drag capture");
+	(void)xuiInputPointerUp(pContext, fStartX, fStartY, XUI_POINTER_BUTTON_LEFT, 0);
+	(void)xuiDispatchPendingEvents(pContext);
+
 	iRet = xuiScrollBarSetMode(pBar, XUI_SCROLLBAR_MODE_COMPACT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set compact mode");
 	iRet = xuiScrollBarSetButtonMode(pBar, XUI_SCROLLBAR_BUTTONS_OFF);
@@ -340,8 +373,39 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clamp value");
 	iRet = xuiScrollBarGetRange(pBar, &fMin, &fMax, &fPage);
 	XUI_TEST_CHECK(iRet == XUI_OK && fMin == 0.0f && fMax == 100.0f && fPage == 0.0f && xuiScrollBarGetValue(pBar) == 100.0f, "range normalization");
+	iRet = xuiScrollBarSetRange(pBar, -FLT_MAX, FLT_MAX, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set wide finite range");
+	iRet = xuiScrollBarSetValue(pBar, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set wide range midpoint");
+	tTrack = xuiScrollBarGetTrackRect(pBar);
+	tThumb = xuiScrollBarGetThumbRect(pBar);
+	XUI_TEST_CHECK(tThumb.fX >= tTrack.fX && tThumb.fY >= tTrack.fY &&
+	               tThumb.fX + tThumb.fW <= tTrack.fX + tTrack.fW &&
+	               tThumb.fY + tThumb.fH <= tTrack.fY + tTrack.fH,
+	               "wide range thumb geometry remains finite");
+	iRet = xuiScrollBarSetRange(pBar, FLT_MAX, FLT_MAX, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "normalize maximum equal range");
+	iRet = xuiScrollBarGetRange(pBar, &fMin, &fMax, &fPage);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(fMin) && isfinite(fMax) && fMin < fMax, "maximum equal range remains finite");
+	iRet = xuiScrollBarSetRange(pBar, 0.0f, 100.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary range");
+	iRet = xuiScrollBarSetValue(pBar, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary value");
+	iRet = __xuiScrollBarRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before disable drag");
+	tThumb = xuiScrollBarGetThumbRect(pBar);
+	fStartX = 10.0f + tThumb.fX + tThumb.fW * 0.5f;
+	fStartY = 166.0f + tThumb.fY + tThumb.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fStartX, fStartY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable drag down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pBar, "disable drag capture");
 	iRet = xuiWidgetSetEnabled(pBar, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+	               xuiScrollBarGetActivePart(pBar) == XUI_SCROLLBAR_PART_NONE,
+	               "disable cancels scrollbar drag capture");
 	XUI_TEST_CHECK((xuiScrollBarGetState(pBar) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");
 	iRet = __xuiScrollBarClick(pContext, 20.0f, 172.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiScrollBarGetValue(pBar) == 100.0f && xuiGetPointerCapture(pContext) == NULL, "disabled ignores pointer");

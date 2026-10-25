@@ -2,6 +2,7 @@
 #if XUI_ENABLE_PROGRESS
 #include "xui_internal.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -21,8 +22,12 @@ typedef struct xui_progress_data_t {
 	int iFillPatchMode;
 	xui_nine_patch_t tTrackPatch;
 	xui_nine_patch_t tFillPatch;
+	uint32_t iTrackSurfaceGeneration;
+	uint32_t iFillSurfaceGeneration;
 	int bHasTrackPatch;
 	int bHasFillPatch;
+	int bTrackSurfaceGenerationValid;
+	int bFillSurfaceGenerationValid;
 	int bTemplateString;
 } xui_progress_data_t;
 
@@ -67,6 +72,32 @@ static int __xuiProgressPatchModeValid(int iMode)
 	       (iMode == XUI_PROGRESS_FILL_REVEAL);
 }
 
+static int __xuiProgressFloatValid(float fValue)
+{
+	return isfinite(fValue);
+}
+
+static int __xuiProgressPatchValid(const xui_nine_patch_t* pPatch)
+{
+	if ( pPatch == NULL ) {
+		return 1;
+	}
+	if ( (pPatch->iSize != 0) && (pPatch->iSize < sizeof(*pPatch)) ) {
+		return 0;
+	}
+	if ( (pPatch->pSurface == NULL) ||
+	     (pPatch->tSrc.fW < 0) ||
+	     (pPatch->tSrc.fH < 0) ||
+	     (pPatch->tSlice.fLeft < 0) ||
+	     (pPatch->tSlice.fTop < 0) ||
+	     (pPatch->tSlice.fRight < 0) ||
+	     (pPatch->tSlice.fBottom < 0) ) {
+		return 0;
+	}
+	return (pPatch->iMode == XUI_NINE_PATCH_STRETCH) ||
+	       (pPatch->iMode == XUI_NINE_PATCH_TILE);
+}
+
 static int __xuiProgressDescValid(const xui_progress_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -75,10 +106,19 @@ static int __xuiProgressDescValid(const xui_progress_desc_t* pDesc)
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
+	if ( !__xuiProgressFloatValid(pDesc->fMin) ||
+	     !__xuiProgressFloatValid(pDesc->fMax) ||
+	     !__xuiProgressFloatValid(pDesc->fValue) ) {
+		return 0;
+	}
 	if ( (pDesc->iFillDirection != 0) && !__xuiProgressDirectionValid(pDesc->iFillDirection) ) {
 		return 0;
 	}
 	if ( (pDesc->iFillPatchMode != 0) && !__xuiProgressPatchModeValid(pDesc->iFillPatchMode) ) {
+		return 0;
+	}
+	if ( (pDesc->bHasTrackPatch && !__xuiProgressPatchValid(&pDesc->tTrackPatch)) ||
+	     (pDesc->bHasFillPatch && !__xuiProgressPatchValid(&pDesc->tFillPatch)) ) {
 		return 0;
 	}
 	return 1;
@@ -95,15 +135,28 @@ static void __xuiProgressNormalizeRange(float* pMin, float* pMax)
 	}
 	if ( (*pMax) == (*pMin) ) {
 		*pMax = (*pMin) + 1.0f;
+		if ( !isfinite(*pMax) || (*pMax == *pMin) ) {
+			*pMax = nextafterf(*pMin, INFINITY);
+			if ( !isfinite(*pMax) ) {
+				*pMax = *pMin;
+				*pMin = nextafterf(*pMax, -INFINITY);
+			}
+		}
 	}
 }
 
 static float __xuiProgressRateData(const xui_progress_data_t* pData)
 {
+	double fRate;
+
 	if ( (pData == NULL) || (pData->fMax == pData->fMin) ) {
 		return 0.0f;
 	}
-	return __xuiProgressClampFloat((pData->fValue - pData->fMin) / (pData->fMax - pData->fMin), 0.0f, 1.0f);
+	fRate = ((double)pData->fValue - (double)pData->fMin) /
+		((double)pData->fMax - (double)pData->fMin);
+	if ( fRate <= 0.0 ) return 0.0f;
+	if ( fRate >= 1.0 ) return 1.0f;
+	return (float)fRate;
 }
 
 static int __xuiProgressTemplateIsDynamic(const char* sTextTemplate)
@@ -150,10 +203,17 @@ static int __xuiProgressAppend(char** psText, size_t* pLength, size_t* pCapacity
 	size_t iCapacity;
 
 	if ( iTextLength == 0u ) return XUI_OK;
+	if ( iTextLength > SIZE_MAX - *pLength - 1u ) return XUI_ERROR_OUT_OF_MEMORY;
 	iNeed = *pLength + iTextLength + 1u;
 	if ( iNeed > *pCapacity ) {
 		iCapacity = *pCapacity > 0u ? *pCapacity : 64u;
-		while ( iCapacity < iNeed ) iCapacity *= 2u;
+		while ( iCapacity < iNeed ) {
+			if ( iCapacity > SIZE_MAX / 2u ) {
+				iCapacity = iNeed;
+				break;
+			}
+			iCapacity *= 2u;
+		}
 		sNew = (char*)xrtRealloc(*psText, iCapacity);
 		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		*psText = sNew;
@@ -230,18 +290,15 @@ fail:
 	return NULL;
 }
 
-static int __xuiProgressSetDisplayText(xui_progress_data_t* pData)
+static int __xuiProgressBuildDisplayText(const xui_progress_data_t* pData, char** psText)
 {
 	char* sNew;
 	double fPercent;
 
-	if ( pData == NULL ) {
+	if ( (pData == NULL) || (psText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pData->sDisplayText != NULL ) {
-		xrtFree(pData->sDisplayText);
-		pData->sDisplayText = NULL;
-	}
+	*psText = NULL;
 	if ( pData->sTextTemplate == NULL ) {
 		return XUI_OK;
 	}
@@ -254,13 +311,15 @@ static int __xuiProgressSetDisplayText(xui_progress_data_t* pData)
 	if ( sNew == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	pData->sDisplayText = sNew;
+	*psText = sNew;
 	return XUI_OK;
 }
 
 static int __xuiProgressSetTextTemplateData(xui_progress_data_t* pData, const char* sTextTemplate)
 {
+	xui_progress_data_t tCandidate;
 	char* sNewTemplate;
+	char* sNewDisplay;
 	int iRet;
 
 	if ( pData == NULL ) {
@@ -270,15 +329,23 @@ static int __xuiProgressSetTextTemplateData(xui_progress_data_t* pData, const ch
 	if ( (sTextTemplate != NULL) && (sNewTemplate == NULL) ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
+	tCandidate = *pData;
+	tCandidate.sTextTemplate = sNewTemplate;
+	tCandidate.bTemplateString = __xuiProgressTemplateIsDynamic(sNewTemplate);
+	iRet = __xuiProgressBuildDisplayText(&tCandidate, &sNewDisplay);
+	if ( iRet != XUI_OK ) {
+		if ( sNewTemplate != NULL ) xrtFree(sNewTemplate);
+		return iRet;
+	}
 	if ( pData->sTextTemplate != NULL ) {
 		xrtFree(pData->sTextTemplate);
 	}
-	pData->sTextTemplate = sNewTemplate;
-	pData->bTemplateString = __xuiProgressTemplateIsDynamic(pData->sTextTemplate);
-	iRet = __xuiProgressSetDisplayText(pData);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( pData->sDisplayText != NULL ) {
+		xrtFree(pData->sDisplayText);
 	}
+	pData->sTextTemplate = sNewTemplate;
+	pData->sDisplayText = sNewDisplay;
+	pData->bTemplateString = tCandidate.bTemplateString;
 	return XUI_OK;
 }
 
@@ -611,6 +678,41 @@ static void __xuiProgressNormalizePatch(xui_nine_patch_t* pPatch)
 	}
 }
 
+static int __xuiProgressReadSurfaceGeneration(xui_widget pWidget, xui_surface pSurface, uint32_t* pGeneration)
+{
+	xui_proxy pProxy;
+
+	if ( (pWidget == NULL) || (pSurface == NULL) || (pGeneration == NULL) ) {
+		return 0;
+	}
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	return (pProxy != NULL) && (pProxy->surfaceGetGeneration != NULL) &&
+		(pProxy->surfaceGetGeneration(pProxy, pSurface, pGeneration) == XUI_OK);
+}
+
+static int __xuiProgressUpdatePatchGeneration(xui_widget pWidget, int bHasPatch,
+	const xui_nine_patch_t* pPatch, uint32_t* pGeneration, int* pGenerationValid)
+{
+	uint32_t iGeneration;
+	int bValid;
+
+	if ( !bHasPatch || (pPatch == NULL) || (pPatch->pSurface == NULL) ) {
+		*pGenerationValid = 0;
+		return 0;
+	}
+	bValid = __xuiProgressReadSurfaceGeneration(pWidget, pPatch->pSurface, &iGeneration);
+	if ( !bValid ) {
+		*pGenerationValid = 0;
+		return 0;
+	}
+	if ( *pGenerationValid && (*pGeneration == iGeneration) ) {
+		return 0;
+	}
+	*pGeneration = iGeneration;
+	*pGenerationValid = 1;
+	return 1;
+}
+
 static xui_rect_t __xuiProgressContentRect(xui_widget pWidget)
 {
 	xui_rect_t tContent;
@@ -863,6 +965,12 @@ static int __xuiProgressInit(xui_widget pWidget, void* pTypeData, const void* pC
 		__xuiProgressNormalizePatch(&pData->tFillPatch);
 		pData->bHasFillPatch = 1;
 	}
+	pData->bTrackSurfaceGenerationValid = __xuiProgressReadSurfaceGeneration(pWidget,
+		pData->bHasTrackPatch ? pData->tTrackPatch.pSurface : NULL,
+		&pData->iTrackSurfaceGeneration);
+	pData->bFillSurfaceGenerationValid = __xuiProgressReadSurfaceGeneration(pWidget,
+		pData->bHasFillPatch ? pData->tFillPatch.pSurface : NULL,
+		&pData->iFillSurfaceGeneration);
 	iRet = __xuiProgressSetTextTemplateData(pData, (pDesc != NULL) ? pDesc->sText : NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
@@ -870,6 +978,29 @@ static int __xuiProgressInit(xui_widget pWidget, void* pTypeData, const void* pC
 	(void)xuiWidgetSetFocusable(pWidget, 0);
 	(void)xuiWidgetSetTabStop(pWidget, 0);
 	return XUI_OK;
+}
+
+static int __xuiProgressUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_progress_data_t* pData;
+	int bTrackChanged;
+	int bFillChanged;
+
+	(void)fDelta;
+	pData = (xui_progress_data_t*)pUser;
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	bTrackChanged = __xuiProgressUpdatePatchGeneration(pWidget,
+		pData->bHasTrackPatch, &pData->tTrackPatch,
+		&pData->iTrackSurfaceGeneration, &pData->bTrackSurfaceGenerationValid);
+	bFillChanged = __xuiProgressUpdatePatchGeneration(pWidget,
+		pData->bHasFillPatch, &pData->tFillPatch,
+		&pData->iFillSurfaceGeneration, &pData->bFillSurfaceGenerationValid);
+	if ( !bTrackChanged && !bFillChanged ) {
+		return XUI_OK;
+	}
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static void __xuiProgressDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -974,6 +1105,7 @@ XUI_API xui_widget_type xuiProgressGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiProgressDestroy;
 	tDesc.onContentMeasure = __xuiProgressContentMeasure;
 	tDesc.onCacheRender = __xuiProgressCacheRender;
+	tDesc.onUpdate = __xuiProgressUpdate;
 	__xuiProgressDefaultLayout(&tDesc.tLayout);
 	__xuiProgressDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
@@ -1002,20 +1134,33 @@ XUI_API int xuiProgressCreate(xui_context pContext, xui_widget* ppWidget, const 
 XUI_API int xuiProgressSetRange(xui_widget pWidget, float fMin, float fMax)
 {
 	xui_progress_data_t* pData;
+	xui_progress_data_t tCandidate;
+	char* sNewDisplay;
 	int iRet;
 
 	pData = __xuiProgressGetData(pWidget);
-	if ( pData == NULL ) {
+	if ( (pData == NULL) || !__xuiProgressFloatValid(fMin) || !__xuiProgressFloatValid(fMax) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiProgressNormalizeRange(&fMin, &fMax);
-	pData->fMin = fMin;
-	pData->fMax = fMax;
-	pData->fValue = __xuiProgressClampFloat(pData->fValue, pData->fMin, pData->fMax);
-	iRet = __xuiProgressSetDisplayText(pData);
+	tCandidate = *pData;
+	tCandidate.fMin = fMin;
+	tCandidate.fMax = fMax;
+	tCandidate.fValue = __xuiProgressClampFloat(pData->fValue, fMin, fMax);
+	if ( (pData->fMin == tCandidate.fMin) &&
+	     (pData->fMax == tCandidate.fMax) &&
+	     (pData->fValue == tCandidate.fValue) ) {
+		return XUI_OK;
+	}
+	iRet = __xuiProgressBuildDisplayText(&tCandidate, &sNewDisplay);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	if ( pData->sDisplayText != NULL ) xrtFree(pData->sDisplayText);
+	pData->sDisplayText = sNewDisplay;
+	pData->fMin = tCandidate.fMin;
+	pData->fMax = tCandidate.fMax;
+	pData->fValue = tCandidate.fValue;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1039,21 +1184,27 @@ XUI_API int xuiProgressGetRange(xui_widget pWidget, float* pMin, float* pMax)
 XUI_API int xuiProgressSetValue(xui_widget pWidget, float fValue)
 {
 	xui_progress_data_t* pData;
+	xui_progress_data_t tCandidate;
+	char* sNewDisplay;
 	int iRet;
 
 	pData = __xuiProgressGetData(pWidget);
-	if ( pData == NULL ) {
+	if ( (pData == NULL) || !__xuiProgressFloatValid(fValue) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	fValue = __xuiProgressClampFloat(fValue, pData->fMin, pData->fMax);
 	if ( pData->fValue == fValue ) {
 		return XUI_OK;
 	}
-	pData->fValue = fValue;
-	iRet = __xuiProgressSetDisplayText(pData);
+	tCandidate = *pData;
+	tCandidate.fValue = fValue;
+	iRet = __xuiProgressBuildDisplayText(&tCandidate, &sNewDisplay);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	if ( pData->sDisplayText != NULL ) xrtFree(pData->sDisplayText);
+	pData->sDisplayText = sNewDisplay;
+	pData->fValue = fValue;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1275,6 +1426,9 @@ XUI_API int xuiProgressSetTrackPatch(xui_widget pWidget, const xui_nine_patch_t*
 {
 	xui_progress_data_t* pData;
 
+	if ( !__xuiProgressPatchValid(pPatch) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pData = __xuiProgressGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1283,9 +1437,12 @@ XUI_API int xuiProgressSetTrackPatch(xui_widget pWidget, const xui_nine_patch_t*
 		pData->tTrackPatch = *pPatch;
 		__xuiProgressNormalizePatch(&pData->tTrackPatch);
 		pData->bHasTrackPatch = 1;
+		pData->bTrackSurfaceGenerationValid = __xuiProgressReadSurfaceGeneration(pWidget,
+			pData->tTrackPatch.pSurface, &pData->iTrackSurfaceGeneration);
 	} else {
 		memset(&pData->tTrackPatch, 0, sizeof(pData->tTrackPatch));
 		pData->bHasTrackPatch = 0;
+		pData->bTrackSurfaceGenerationValid = 0;
 	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1323,6 +1480,9 @@ XUI_API int xuiProgressSetFillPatch(xui_widget pWidget, const xui_nine_patch_t* 
 {
 	xui_progress_data_t* pData;
 
+	if ( !__xuiProgressPatchValid(pPatch) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pData = __xuiProgressGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1331,9 +1491,12 @@ XUI_API int xuiProgressSetFillPatch(xui_widget pWidget, const xui_nine_patch_t* 
 		pData->tFillPatch = *pPatch;
 		__xuiProgressNormalizePatch(&pData->tFillPatch);
 		pData->bHasFillPatch = 1;
+		pData->bFillSurfaceGenerationValid = __xuiProgressReadSurfaceGeneration(pWidget,
+			pData->tFillPatch.pSurface, &pData->iFillSurfaceGeneration);
 	} else {
 		memset(&pData->tFillPatch, 0, sizeof(pData->tFillPatch));
 		pData->bHasFillPatch = 0;
+		pData->bFillSurfaceGenerationValid = 0;
 	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }

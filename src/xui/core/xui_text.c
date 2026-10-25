@@ -18,6 +18,30 @@
 #include "xui_text_break.inl"
 #include "xui_text_carets.inl"
 
+void xuiInternalUtf8TrimIncomplete(char* sText)
+{
+	size_t iLength;
+	size_t iStart;
+	size_t iExpected;
+	unsigned char iLead;
+
+	if ( sText == NULL || sText[0] == '\0' ) return;
+	iLength = strlen(sText);
+	iStart = iLength - 1u;
+	while ( iStart > 0u && (((unsigned char)sText[iStart] & 0xc0u) == 0x80u) ) {
+		iStart--;
+	}
+	iLead = (unsigned char)sText[iStart];
+	if ( iLead < 0x80u ) iExpected = 1u;
+	else if ( (iLead & 0xe0u) == 0xc0u ) iExpected = 2u;
+	else if ( (iLead & 0xf0u) == 0xe0u ) iExpected = 3u;
+	else if ( (iLead & 0xf8u) == 0xf0u ) iExpected = 4u;
+	else iExpected = 1u;
+	if ( iExpected > iLength - iStart ) {
+		sText[iStart] = '\0';
+	}
+}
+
 int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundaries)
 {
     if (!text || bytes < 0 || !boundaries) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1740,7 +1764,7 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	iMergedFlags = __xuiTextMergeFlags(pLayout->tDesc.iFlags, iFlags);
-	iLineFlags = (iMergedFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE)) | XUI_TEXT_ALIGN_TOP;
+	iLineFlags = (iMergedFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE | XUI_TEXT_RTL)) | XUI_TEXT_ALIGN_TOP;
 	fOffsetY = __xuiTextVerticalOffset(pLayout, tRect, iMergedFlags);
 	for ( i = 0; i < pLayout->iLineCount; i++ ) {
 		const char* sDisplay;

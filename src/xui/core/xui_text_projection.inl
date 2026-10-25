@@ -30,13 +30,15 @@ static int __xuiTextShapeProjection(xui_text_layout pLayout, int caret_fragments
     xui_text_cluster_t* pClusters;
     int i, iDisplaySize = 0, iFormats = 0, iAt = 0, iCount = 0;
     int iRet, bOrdered = 1;
+    uint32_t iShapeFlags = XUI_TEXT_SHAPE_DEFAULT |
+        ((pLayout->tDesc.iFlags & XUI_TEXT_RTL) ? XUI_TEXT_SHAPE_RTL : 0);
     for ( i = 0; i < pLayout->iTextSize; i++ ) {
         XUI_TEXT_BREAK_TEST_COUNT(iMap, 1);
         if ( !(pLayout->pBreaks[i] & XUI_LB_INVISIBLE) ) iDisplaySize++;
         else if ( ((unsigned char)pLayout->sText[i] & 0xc0u) != 0x80u ) iFormats++;
     }
     if ( iDisplaySize == pLayout->iTextSize )
-        return xuiTextShape(pLayout->pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=pLayout->sText, .iTextSize=pLayout->iTextSize, .sLanguage=language, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &pLayout->tShape);
+        return xuiTextShape(pLayout->pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=pLayout->sText, .iTextSize=pLayout->iTextSize, .sLanguage=language, .iFlags=iShapeFlags}, &pLayout->tShape);
     if ( (size_t)iDisplaySize + 1u > SIZE_MAX / 2u ||
          (size_t)iDisplaySize + 1u > SIZE_MAX / sizeof(*pSource) ) return XUI_ERROR_OUT_OF_MEMORY;
     pWork = (char*)xrtMalloc(((size_t)iDisplaySize + 1u) * 2u);
@@ -63,7 +65,7 @@ static int __xuiTextShapeProjection(xui_text_layout pLayout, int caret_fragments
             pLayout->pBreaks[i] &= (unsigned char)~XUI_LB_GRAPHEME;
         if ( !(pLayout->pBreaks[i] & XUI_LB_INVISIBLE) ) iAt++;
     }
-    iRet = xuiTextShape(pLayout->pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=sDisplay, .iTextSize=iDisplaySize, .sLanguage=language, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &pLayout->tShape);
+    iRet = xuiTextShape(pLayout->pContext, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=sDisplay, .iTextSize=iDisplaySize, .sLanguage=language, .iFlags=iShapeFlags}, &pLayout->tShape);
     if ( iRet != XUI_OK ) goto done;
     if (caret_fragments) {
         iRet = xuiInternalTextShapeCaretFragments(sDisplay, iDisplaySize, &pLayout->tShape);

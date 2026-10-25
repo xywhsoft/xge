@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -174,6 +175,23 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch space up");
 	XUI_TEST_CHECK(xuiRadioGroupGetSelectedIndex(pGroup) == 2 && xuiRadioGetChecked(pRadio[2]) == 1, "space selects option 2");
+	iRet = xuiSetFocusWidget(pContext, pRadio[0]);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus option 0 before blur");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space down before blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiRadioGetState(pRadio[0]) & XUI_WIDGET_STATE_ACTIVE) != 0,
+	               "active before blur");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during keyboard press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && (xuiRadioGetState(pRadio[0]) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "blur cancels keyboard active");
+	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "space up after blur");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedIndex(pGroup) == 2,
+	               "blurred keyboard press does not select");
 
 	iRet = xuiRadioGroupSetSelectedIndex(pGroup, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedRadio(pGroup) == pRadio[1], "set selected index");
@@ -185,6 +203,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGetIndicatorSize(pRadio[1]) == 20.0f, "set radio size");
 	iRet = xuiRadioSetGap(pRadio[1], 11.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGetGap(pRadio[1]) == 11.0f, "set radio gap");
+	iRet = xuiRadioSetIndicatorSize(pRadio[1], NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiRadioGetIndicatorSize(pRadio[1]) == 20.0f,
+	               "reject nan indicator size");
+	iRet = xuiRadioSetGap(pRadio[1], INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiRadioGetGap(pRadio[1]) == 11.0f,
+	               "reject infinite radio gap");
+	iRet = xuiRadioGroupSetGap(pGroup, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiRadioGroupGetGap(pGroup) == 10.0f,
+	               "reject nan group gap");
 	iRet = xuiRadioSetColors(pRadio[1], XUI_COLOR_RGBA(24, 166, 113, 255), XUI_COLOR_RGBA(156, 181, 170, 255), XUI_COLOR_RGBA(72, 196, 146, 255), XUI_COLOR_RGBA(24, 166, 113, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set radio colors");
 

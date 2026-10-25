@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -169,6 +170,10 @@ int main(void)
 
 	iRet = xuiSeparatorSetThickness(pSeparator, -1.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid thickness");
+	iRet = xuiSeparatorSetThickness(pSeparator, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan thickness");
+	iRet = xuiSeparatorSetThickness(pSeparator, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "infinite thickness");
 	iRet = xuiSeparatorSetLineStyle(pSeparator, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid line style");
 

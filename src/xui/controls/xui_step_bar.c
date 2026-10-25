@@ -2,6 +2,7 @@
 #if XUI_ENABLE_STEP_BAR
 #include "xui_internal.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -47,6 +48,24 @@ static int __xuiStepBarAlpha(uint32_t iColor)
 	return (int)(iColor & 0xffu);
 }
 
+static int __xuiStepBarNonNegativeFloatValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f;
+}
+
+static void __xuiStepBarFormatArrowTitle(char* sText, size_t iCapacity, int iIndex, const char* sTitle)
+{
+	int iWritten;
+
+	if ( sText == NULL || iCapacity == 0u ) return;
+	iWritten = snprintf(sText, iCapacity, "%d.%s", iIndex + 1, (sTitle != NULL) ? sTitle : "");
+	if ( iWritten < 0 ) {
+		sText[0] = '\0';
+	} else if ( (size_t)iWritten >= iCapacity ) {
+		xuiInternalUtf8TrimIncomplete(sText);
+	}
+}
+
 static int __xuiStepBarDescValid(const xui_step_bar_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -61,7 +80,9 @@ static int __xuiStepBarDescValid(const xui_step_bar_desc_t* pDesc)
 	if ( (pDesc->iStyle != 0) && !__xuiStepBarStyleValid(pDesc->iStyle) ) {
 		return 0;
 	}
-	if ( (pDesc->fBarHeight < 0.0f) || (pDesc->fDotRadius < 0.0f) || (pDesc->fLineWidth < 0.0f) ) {
+	if ( !__xuiStepBarNonNegativeFloatValid(pDesc->fBarHeight) ||
+	     !__xuiStepBarNonNegativeFloatValid(pDesc->fDotRadius) ||
+	     !__xuiStepBarNonNegativeFloatValid(pDesc->fLineWidth) ) {
 		return 0;
 	}
 	return 1;
@@ -207,7 +228,8 @@ static int __xuiStepBarStyleFloat(xui_widget pWidget, const char* sName, float* 
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiStepBarNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -358,7 +380,7 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 				(void)pProxy->drawLine(pProxy, pDraw, tB.fX, tB.fY, tC.fX, tC.fY, 1.0f, pResolved->iBackgroundColor);
 			}
 		}
-		snprintf(sText, sizeof(sText), "%d.%s", i + 1, __xuiStepBarTitle(pResolved, i));
+		__xuiStepBarFormatArrowTitle(sText, sizeof(sText), i, __xuiStepBarTitle(pResolved, i));
 		tRect = tStep;
 		tRect.fX += 8.0f;
 		tRect.fW -= 14.0f + ((i < pResolved->iStepCount - 1) ? fArrowW : 0.0f);
@@ -389,7 +411,12 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 	pData = __xuiStepBarGetData(pWidget);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	fRadius = (pResolved->fDotRadius > 0.0f) ? pResolved->fDotRadius : 11.0f;
-	fLineY = tContent.fY + fRadius + 4.0f;
+	if ( fRadius > tContent.fW * 0.5f ) fRadius = tContent.fW * 0.5f;
+	if ( fRadius > tContent.fH * 0.5f ) fRadius = tContent.fH * 0.5f;
+	if ( (tContent.fH >= 4.0f) && (fRadius > (tContent.fH - 4.0f) * 0.5f) ) fRadius = (tContent.fH - 4.0f) * 0.5f;
+	if ( fRadius < 0.0f ) fRadius = 0.0f;
+	fLineY = (tContent.fH >= fRadius * 2.0f + 4.0f) ?
+		tContent.fY + fRadius + 4.0f : tContent.fY + tContent.fH * 0.5f;
 	fColW = (pResolved->iStepCount > 1) ? (tContent.fW - fRadius * 2.0f) / (float)(pResolved->iStepCount - 1) : 0.0f;
 	fPrevX = tContent.fX + fRadius;
 	for ( i = 1; i < pResolved->iStepCount; i++ ) {
@@ -465,7 +492,12 @@ static int __xuiStepBarDrawVerticalDot(xui_widget pWidget, xui_proxy pProxy, xui
 	pData = __xuiStepBarGetData(pWidget);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	fRadius = (pResolved->fDotRadius > 0.0f) ? pResolved->fDotRadius : 11.0f;
-	fLineX = tContent.fX + fRadius + 4.0f;
+	if ( fRadius > tContent.fH * 0.5f ) fRadius = tContent.fH * 0.5f;
+	if ( fRadius > tContent.fW * 0.5f ) fRadius = tContent.fW * 0.5f;
+	if ( (tContent.fW >= 4.0f) && (fRadius > (tContent.fW - 4.0f) * 0.5f) ) fRadius = (tContent.fW - 4.0f) * 0.5f;
+	if ( fRadius < 0.0f ) fRadius = 0.0f;
+	fLineX = (tContent.fW >= fRadius * 2.0f + 4.0f) ?
+		tContent.fX + fRadius + 4.0f : tContent.fX + tContent.fW * 0.5f;
 	fRowH = (pResolved->iStepCount > 1) ? (tContent.fH - fRadius * 2.0f) / (float)(pResolved->iStepCount - 1) : 0.0f;
 	fPrevY = tContent.fY + fRadius;
 	for ( i = 1; i < pResolved->iStepCount; i++ ) {
@@ -806,7 +838,9 @@ XUI_API int xuiStepBarSetCurrent(xui_widget pWidget, int iCurrent)
 	xui_step_bar_data_t* pData;
 
 	pData = __xuiStepBarGetData(pWidget);
-	if ( pData == NULL || iCurrent < 0 || (pData->iStepCount > 0 && iCurrent >= pData->iStepCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || iCurrent < 0 ||
+	     (pData->iStepCount > 0 && iCurrent >= pData->iStepCount) ||
+	     (pData->iStepCount == 0 && iCurrent != 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iCurrent == iCurrent ) return XUI_OK;
 	pData->iCurrent = iCurrent;
 	pData->iChangeCount++;
@@ -932,7 +966,10 @@ XUI_API int xuiStepBarSetMetrics(xui_widget pWidget, float fBarHeight, float fDo
 	xui_step_bar_data_t* pData;
 
 	pData = __xuiStepBarGetData(pWidget);
-	if ( pData == NULL || fBarHeight < 0.0f || fDotRadius < 0.0f || fLineWidth < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL ||
+	     !__xuiStepBarNonNegativeFloatValid(fBarHeight) ||
+	     !__xuiStepBarNonNegativeFloatValid(fDotRadius) ||
+	     !__xuiStepBarNonNegativeFloatValid(fLineWidth) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( fBarHeight > 0.0f ) pData->fBarHeight = fBarHeight;
 	if ( fDotRadius > 0.0f ) pData->fDotRadius = fDotRadius;
 	if ( fLineWidth > 0.0f ) pData->fLineWidth = fLineWidth;

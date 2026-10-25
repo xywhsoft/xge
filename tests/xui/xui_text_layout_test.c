@@ -62,6 +62,7 @@ int main(void)
 	xui_context pContext = NULL;
 	xui_font pFont = NULL;
 	xui_text_layout pLayout = NULL;
+	xui_surface pTarget = NULL;
 	xui_text_layout_desc_t tDesc;
 	xui_text_line_t tLine;
 	xui_vec2_t tSize;
@@ -81,6 +82,22 @@ int main(void)
 	tDesc.fLineGap = 1;
 	tDesc.fParagraphGap = 3;
 	CHECK(xuiTextLayoutCreate(pContext, &pLayout, &tDesc) == XUI_OK);
+	/* Layout measurement and drawing must use the same RTL shaping mode. */
+	tDesc.sText = "\xd7\x90\xd7\x91";
+	tDesc.iTextSize = -1;
+	tDesc.fMaxWidth = XUI_LAYOUT_UNBOUNDED;
+	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	tDesc.iWrapMode = XUI_TEXT_WRAP_NONE;
+	tDesc.iFlags = XUI_TEXT_RTL | XUI_TEXT_CLIP;
+	xuiTestProxyResetTextCounters(&tState);
+	CHECK(xuiTextLayoutReset(pLayout, &tDesc) == XUI_OK);
+	CHECK((tState.iLastTextShapeFlags & XUI_TEXT_SHAPE_RTL) != 0);
+	CHECK(xuiTestSurfaceCreate(&tState, &pTarget, 64, 32, XUI_SURFACE_USAGE_TARGET) == XUI_OK);
+	CHECK(xuiTextLayoutDraw(pLayout, pTarget, (xui_rect_t){0.0f, 0.0f, 64.0f, 32.0f},
+		XUI_COLOR_WHITE, 0) == XUI_OK);
+	CHECK((tState.iLastTextDrawItemFlags & XUI_TEXT_SHAPE_RTL) != 0);
+	tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
+	pTarget = NULL;
 	for ( iMode = 0; iMode < 2; iMode++ ) {
 		if ( iMode == 1 ) {
 			xuiTextLayoutDestroy(pLayout);
@@ -176,6 +193,7 @@ int main(void)
 	CHECK(tSize.fX == 1 && tSize.fY == 5);
 
 cleanup:
+	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	if ( pLayout != NULL ) xuiTextLayoutDestroy(pLayout);
 	if ( pFont != NULL ) tState.tProxy.fontDestroy(&tState.tProxy, pFont);
 	if ( pContext != NULL ) xuiDestroy(pContext);

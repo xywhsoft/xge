@@ -216,12 +216,18 @@ static int __xuiTestGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 static int __xuiTestSurfaceCreate(xui_proxy pProxy, xui_surface* ppSurface, const xui_surface_desc_t* pDesc)
 {
 	xui_surface pSurface;
+	xui_test_proxy_state_t* pState;
 
-	(void)pProxy;
 	if ( (ppSurface == NULL) || (pDesc == NULL) || (pDesc->iWidth <= 0) || (pDesc->iHeight <= 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppSurface = NULL;
+	pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
+	if ( (pState != NULL) && (pState->iFailNextSurfaceCreate != 0) ) {
+		int iError = pState->iFailNextSurfaceCreate;
+		pState->iFailNextSurfaceCreate = 0;
+		return iError;
+	}
 	pSurface = (xui_surface)xrtCalloc(1, sizeof(*pSurface));
 	if ( pSurface == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -354,7 +360,10 @@ static int __xuiTestSurfaceDraw(xui_proxy pProxy, xui_surface pSurface, xui_rect
 
 static int __xuiTestSurfaceClear(xui_proxy pProxy, xui_surface pTarget, uint32_t iColor)
 {
-	(void)pProxy;
+	xui_test_proxy_state_t* pState;
+
+	pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
+	if ( (pState != NULL) && pState->bSurfaceClearUnsupported ) return XUI_ERROR_UNSUPPORTED;
 	if ( !__xuiTestSurfaceValid(pTarget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -470,13 +479,18 @@ static int __xuiTestDrawBegin(xui_proxy pProxy, xui_draw_context* ppDraw, xui_su
 
 static int __xuiTestDrawEnd(xui_proxy pProxy, xui_draw_context pDraw)
 {
-	(void)pProxy;
+	xui_test_proxy_state_t* pState;
+	int iError;
+
 	if ( !__xuiTestDrawValid(pDraw) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
+	iError = (pState != NULL) ? pState->iFailNextDrawEnd : 0;
+	if ( pState != NULL ) pState->iFailNextDrawEnd = 0;
 	pDraw->iMagic = 0;
 	xrtFree(pDraw);
-	return XUI_OK;
+	return (iError != 0) ? iError : XUI_OK;
 }
 
 static int __xuiTestDrawClearRect(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -698,10 +712,12 @@ static int __xuiTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
     const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
 
-	(void)pProxy;
 	(void)sText;
 	if ( !__xuiTestDrawValid(pDraw) || !__xuiTestFontValid(pFont) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pProxy != NULL && pProxy->pUser != NULL ) {
+		((xui_test_proxy_state_t*)pProxy->pUser)->iLastTextDrawItemFlags = pTextItem->iFlags;
 	}
 	pDraw->pTarget->iDrawCount++;
 	pDraw->pTarget->iTextDrawCount++;
@@ -895,6 +911,7 @@ static int __xuiTestTextShape(xui_proxy pProxy, const xui_text_item_t* pTextItem
 	if ( !__xuiTestFontValid(pFont) || sText == NULL || iTextSize < -1 || pShape == NULL )
 		return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pState != NULL ) pState->iTextShapeCount++;
+	if ( pState != NULL ) pState->iLastTextShapeFlags = iFlags;
 	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
 	if ( pState != NULL ) pState->iTextShapeBytes += (size_t)iTextSize;
 	memset(pShape, 0, sizeof(*pShape));
@@ -977,10 +994,12 @@ static int __xuiTestTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_te
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
     const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
 
-	(void)pProxy;
 	(void)sText;
 	if ( !__xuiTestSurfaceValid(pTarget) || !__xuiTestFontValid(pFont) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pProxy != NULL && pProxy->pUser != NULL ) {
+		((xui_test_proxy_state_t*)pProxy->pUser)->iLastTextDrawItemFlags = pTextItem->iFlags;
 	}
 	pTarget->iDrawCount++;
 	pTarget->iTextDrawCount++;
@@ -1091,6 +1110,24 @@ void xuiTestProxyEnableFrameClock(xui_test_proxy_state_t* pState, double fClockS
 void xuiTestProxySetClockSeconds(xui_test_proxy_state_t* pState, double fClockSeconds)
 {
 	if ( pState != NULL ) pState->fClockSeconds = fClockSeconds;
+}
+
+void xuiTestProxyFailNextSurfaceCreate(xui_test_proxy_state_t* pState, int iError)
+{
+	if ( pState == NULL ) return;
+	pState->iFailNextSurfaceCreate = iError;
+}
+
+void xuiTestProxyFailNextDrawEnd(xui_test_proxy_state_t* pState, int iError)
+{
+	if ( pState == NULL ) return;
+	pState->iFailNextDrawEnd = iError;
+}
+
+void xuiTestProxySetSurfaceClearUnsupported(xui_test_proxy_state_t* pState, int bUnsupported)
+{
+	if ( pState == NULL ) return;
+	pState->bSurfaceClearUnsupported = bUnsupported ? 1 : 0;
 }
 
 int xuiTestProxySetClipboardText(xui_test_proxy_state_t* pState, const char* sText)
@@ -1272,6 +1309,8 @@ void xuiTestProxyResetTextCounters(xui_test_proxy_state_t* pState)
 	pState->iTextMeasureCount = 0;
 	pState->iTextShapeCount = 0;
 	pState->iTextShapeBytes = 0;
+	pState->iLastTextShapeFlags = 0;
+	pState->iLastTextDrawItemFlags = 0;
 	pState->iTextShapeRangeDrawCount = 0;
 }
 

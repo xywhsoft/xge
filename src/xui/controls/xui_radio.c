@@ -2,6 +2,7 @@
 #if XUI_ENABLE_RADIO
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 #define XUI_RADIO_VISUAL_NORMAL	0
@@ -81,14 +82,23 @@ static uint32_t __xuiRadioColorAlpha(uint32_t iColor)
 	return iColor & 0xffu;
 }
 
+static int __xuiRadioNonNegativeFloatValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f;
+}
+
 static int __xuiRadioDescValid(const xui_radio_desc_t* pDesc)
 {
-	return (pDesc == NULL) || (pDesc->iSize >= sizeof(*pDesc));
+	return (pDesc == NULL) ||
+		(pDesc->iSize >= sizeof(*pDesc) &&
+		 __xuiRadioNonNegativeFloatValid(pDesc->fIndicatorSize) &&
+		 __xuiRadioNonNegativeFloatValid(pDesc->fGap));
 }
 
 static int __xuiRadioGroupDescValid(const xui_radio_group_desc_t* pDesc)
 {
-	return (pDesc == NULL) || (pDesc->iSize >= sizeof(*pDesc));
+	return (pDesc == NULL) ||
+		(pDesc->iSize >= sizeof(*pDesc) && __xuiRadioNonNegativeFloatValid(pDesc->fGap));
 }
 
 static int __xuiRadioTextSet(xui_radio_data_t* pData, const char* sText)
@@ -176,7 +186,8 @@ static int __xuiRadioStyleFloat(xui_widget pWidget, const char* sName, float* pV
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiRadioNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -672,7 +683,10 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
+		(void)__xuiRadioSyncState(pWidget, pData);
+		return XUI_OK;
 	case XUI_EVENT_BLUR:
+		pData->bKeyboardActive = 0;
 		(void)__xuiRadioSyncState(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
@@ -1087,7 +1101,7 @@ XUI_API uint32_t xuiRadioGetDisabledTextColor(xui_widget pWidget)
 XUI_API int xuiRadioSetIndicatorSize(xui_widget pWidget, float fSize)
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
-	if ( (pData == NULL) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fIndicatorSize = fSize;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1101,7 +1115,7 @@ XUI_API float xuiRadioGetIndicatorSize(xui_widget pWidget)
 XUI_API int xuiRadioSetGap(xui_widget pWidget, float fGap)
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
-	if ( (pData == NULL) || (fGap < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiRadioNonNegativeFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fGap = fGap;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1570,7 +1584,7 @@ XUI_API int xuiRadioGroupGetOrientation(xui_widget pGroup)
 XUI_API int xuiRadioGroupSetGap(xui_widget pGroup, float fGap)
 {
 	xui_radio_group_data_t* pData = __xuiRadioGroupGetData(pGroup);
-	if ( (pData == NULL) || (fGap < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiRadioNonNegativeFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fGap = fGap;
 	__xuiRadioGroupApplyLayout(pGroup, pData);
 	return xuiWidgetInvalidate(pGroup, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);

@@ -2,6 +2,7 @@
 #if XUI_ENABLE_CHECKBOX
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 #define XUI_CHECKBOX_VISUAL_NORMAL	0
@@ -66,9 +67,17 @@ static uint32_t __xuiCheckBoxColorAlpha(uint32_t iColor)
 	return iColor & 0x000000ffu;
 }
 
+static int __xuiCheckBoxNonNegativeFloatValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f;
+}
+
 static int __xuiCheckBoxDescValid(const xui_checkbox_desc_t* pDesc)
 {
-	return (pDesc == NULL) || (pDesc->iSize >= sizeof(*pDesc));
+	return (pDesc == NULL) ||
+		(pDesc->iSize >= sizeof(*pDesc) &&
+		 __xuiCheckBoxNonNegativeFloatValid(pDesc->fIndicatorSize) &&
+		 __xuiCheckBoxNonNegativeFloatValid(pDesc->fGap));
 }
 
 static int __xuiCheckBoxTextSet(xui_checkbox_data_t* pData, const char* sText)
@@ -137,7 +146,8 @@ static int __xuiCheckBoxStyleFloat(xui_widget pWidget, const char* sName, float*
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiCheckBoxNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -582,7 +592,10 @@ static int __xuiCheckBoxEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
+		(void)__xuiCheckBoxSyncState(pWidget, pData);
+		return XUI_OK;
 	case XUI_EVENT_BLUR:
+		pData->bKeyboardActive = 0;
 		(void)__xuiCheckBoxSyncState(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
@@ -1031,7 +1044,7 @@ XUI_API uint32_t xuiCheckBoxGetDisabledTextColor(xui_widget pWidget)
 XUI_API int xuiCheckBoxSetIndicatorSize(xui_widget pWidget, float fSize)
 {
 	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
-	if ( (pData == NULL) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fIndicatorSize = fSize;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1045,7 +1058,7 @@ XUI_API float xuiCheckBoxGetIndicatorSize(xui_widget pWidget)
 XUI_API int xuiCheckBoxSetGap(xui_widget pWidget, float fGap)
 {
 	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
-	if ( (pData == NULL) || (fGap < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiCheckBoxNonNegativeFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fGap = fGap;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }

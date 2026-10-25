@@ -2,6 +2,8 @@
 #if XUI_ENABLE_SLIDER
 #include "xui_internal.h"
 
+#include <float.h>
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -33,12 +35,21 @@ typedef struct xui_slider_data_t {
 	xui_rect_t tKnobRect;
 } xui_slider_data_t;
 
+static int __xuiSliderOrientationValid(int iOrientation);
+
 static int __xuiSliderDescValid(const xui_slider_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
 		return 1;
 	}
-	return (pDesc->iSize == 0) || (pDesc->iSize >= sizeof(*pDesc));
+	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
+	if ( !isfinite(pDesc->fMin) || !isfinite(pDesc->fMax) || !isfinite(pDesc->fValue) ) return 0;
+	if ( !isfinite(pDesc->fStep) || pDesc->fStep < 0.0f ||
+	     !isfinite(pDesc->fPageStep) || pDesc->fPageStep < 0.0f ) return 0;
+	if ( !isfinite(pDesc->fTrackSize) || pDesc->fTrackSize < 0.0f ||
+	     !isfinite(pDesc->fKnobSize) || pDesc->fKnobSize < 0.0f ||
+	     !isfinite(pDesc->fTrackRadius) || pDesc->fTrackRadius < -1.0f ) return 0;
+	return __xuiSliderOrientationValid(pDesc->iOrientation);
 }
 
 static int __xuiSliderOrientationValid(int iOrientation)
@@ -79,6 +90,13 @@ static void __xuiSliderNormalizeRange(float* pMin, float* pMax)
 	}
 	if ( (*pMax) == (*pMin) ) {
 		*pMax = (*pMin) + 1.0f;
+		if ( !isfinite(*pMax) || (*pMax == *pMin) ) {
+			*pMax = nextafterf(*pMin, INFINITY);
+			if ( !isfinite(*pMax) ) {
+				*pMax = *pMin;
+				*pMin = nextafterf(*pMax, -INFINITY);
+			}
+		}
 	}
 }
 
@@ -115,22 +133,22 @@ static uint32_t __xuiSliderLighten(uint32_t iColor, int iAmount)
 
 static float __xuiSliderRateFromData(const xui_slider_data_t* pData)
 {
-	float fRange;
+	double fRate;
 
-	if ( pData == NULL ) {
+	if ( pData == NULL || pData->fMax == pData->fMin ) {
 		return 0.0f;
 	}
-	fRange = pData->fMax - pData->fMin;
-	if ( fRange <= 0.0f ) {
-		return 0.0f;
-	}
-	return __xuiSliderClampFloat((pData->fValue - pData->fMin) / fRange, 0.0f, 1.0f);
+	fRate = ((double)pData->fValue - (double)pData->fMin) /
+		((double)pData->fMax - (double)pData->fMin);
+	if ( fRate <= 0.0 ) return 0.0f;
+	if ( fRate >= 1.0 ) return 1.0f;
+	return (float)fRate;
 }
 
 static float __xuiSliderSmallStep(const xui_slider_data_t* pData)
 {
-	float fRange;
-	float fStep;
+	double fRange;
+	double fStep;
 
 	if ( pData == NULL ) {
 		return 1.0f;
@@ -138,18 +156,19 @@ static float __xuiSliderSmallStep(const xui_slider_data_t* pData)
 	if ( pData->fStep > 0.0f ) {
 		return pData->fStep;
 	}
-	fRange = pData->fMax - pData->fMin;
+	fRange = (double)pData->fMax - (double)pData->fMin;
 	fStep = (fRange > 0.0f) ? (fRange * 0.01f) : 1.0f;
 	if ( (fRange >= 1.0f) && (fStep < 1.0f) ) {
 		fStep = 1.0f;
 	}
-	return (fStep > 0.0f) ? fStep : 1.0f;
+	if ( fStep > (double)FLT_MAX ) fStep = (double)FLT_MAX;
+	return (fStep > 0.0) ? (float)fStep : 1.0f;
 }
 
 static float __xuiSliderPageStep(const xui_slider_data_t* pData)
 {
-	float fRange;
-	float fStep;
+	double fRange;
+	double fStep;
 
 	if ( pData == NULL ) {
 		return 1.0f;
@@ -157,12 +176,13 @@ static float __xuiSliderPageStep(const xui_slider_data_t* pData)
 	if ( pData->fPageStep > 0.0f ) {
 		return pData->fPageStep;
 	}
-	fRange = pData->fMax - pData->fMin;
+	fRange = (double)pData->fMax - (double)pData->fMin;
 	fStep = (fRange > 0.0f) ? (fRange * 0.10f) : __xuiSliderSmallStep(pData);
 	if ( (fRange >= 1.0f) && (fStep < 1.0f) ) {
 		fStep = 1.0f;
 	}
-	return (fStep > 0.0f) ? fStep : 1.0f;
+	if ( fStep > (double)FLT_MAX ) fStep = (double)FLT_MAX;
+	return (fStep > 0.0) ? (float)fStep : 1.0f;
 }
 
 static xui_slider_data_t* __xuiSliderGetData(xui_widget pWidget)
@@ -204,7 +224,8 @@ static int __xuiSliderStyleFloat(xui_widget pWidget, const char* sName, float* p
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -403,7 +424,7 @@ static void __xuiSliderUpdateRects(xui_widget pWidget, xui_slider_data_t* pData,
 static float __xuiSliderValueFromLocalPoint(const xui_slider_data_t* pData, float fLocalX, float fLocalY)
 {
 	float fRate;
-	float fRange;
+	double fValue;
 
 	if ( pData == NULL ) {
 		return 0.0f;
@@ -414,13 +435,16 @@ static float __xuiSliderValueFromLocalPoint(const xui_slider_data_t* pData, floa
 		fRate = (pData->tTrackRect.fH > 0.0f) ? (1.0f - ((fLocalY - pData->tTrackRect.fY) / pData->tTrackRect.fH)) : 0.0f;
 	}
 	fRate = __xuiSliderClampFloat(fRate, 0.0f, 1.0f);
-	fRange = pData->fMax - pData->fMin;
-	return pData->fMin + fRange * fRate;
+	fValue = (double)pData->fMin +
+		((double)pData->fMax - (double)pData->fMin) * (double)fRate;
+	if ( fValue <= (double)pData->fMin ) return pData->fMin;
+	if ( fValue >= (double)pData->fMax ) return pData->fMax;
+	return (float)fValue;
 }
 
 static int __xuiSliderSetValueInternal(xui_widget pWidget, xui_slider_data_t* pData, float fValue, int bNotify)
 {
-	if ( (pWidget == NULL) || (pData == NULL) ) {
+	if ( (pWidget == NULL) || (pData == NULL) || !isfinite(fValue) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	fValue = __xuiSliderClampFloat(fValue, pData->fMin, pData->fMax);
@@ -639,12 +663,17 @@ static int __xuiSliderEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		pData->bDragging = 0;
 		return __xuiSliderSyncState(pWidget, pData);
 	case XUI_EVENT_FOCUS:
+		return __xuiSliderSyncState(pWidget, pData);
 	case XUI_EVENT_BLUR:
+		__xuiSliderCancelDrag(pWidget, pData);
 		return __xuiSliderSyncState(pWidget, pData);
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiSliderKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+			__xuiSliderCancelDrag(pWidget, pData);
+		}
 		iRet = __xuiSliderSyncState(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1114,7 +1143,7 @@ XUI_API int xuiSliderSetRange(xui_widget pWidget, float fMin, float fMax)
 	xui_slider_data_t* pData;
 
 	pData = __xuiSliderGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !isfinite(fMin) || !isfinite(fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiSliderNormalizeRange(&fMin, &fMax);
 	pData->fMin = fMin;
 	pData->fMax = fMax;
@@ -1135,7 +1164,7 @@ XUI_API int xuiSliderGetRange(xui_widget pWidget, float* pMin, float* pMax)
 XUI_API int xuiSliderSetValue(xui_widget pWidget, float fValue)
 {
 	xui_slider_data_t* pData = __xuiSliderGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !isfinite(fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
 	return __xuiSliderSetValueInternal(pWidget, pData, fValue, 0);
 }
 
@@ -1154,7 +1183,8 @@ XUI_API float xuiSliderGetRate(xui_widget pWidget)
 XUI_API int xuiSliderSetStep(xui_widget pWidget, float fStep, float fPageStep)
 {
 	xui_slider_data_t* pData = __xuiSliderGetData(pWidget);
-	if ( (pData == NULL) || (fStep < 0.0f) || (fPageStep < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fStep) || !isfinite(fPageStep) ||
+	     (fStep < 0.0f) || (fPageStep < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fStep = fStep;
 	pData->fPageStep = fPageStep;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
@@ -1189,7 +1219,8 @@ XUI_API int xuiSliderGetOrientation(xui_widget pWidget)
 XUI_API int xuiSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize, float fTrackRadius)
 {
 	xui_slider_data_t* pData = __xuiSliderGetData(pWidget);
-	if ( (pData == NULL) || (fTrackSize < 0.0f) || (fKnobSize < 0.0f) || (fTrackRadius < -1.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fTrackSize) || !isfinite(fKnobSize) || !isfinite(fTrackRadius) ||
+	     (fTrackSize < 0.0f) || (fKnobSize < 0.0f) || (fTrackRadius < -1.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fTrackSize = (fTrackSize > 0.0f) ? fTrackSize : 4.0f;
 	pData->fKnobSize = (fKnobSize > 0.0f) ? fKnobSize : 14.0f;
 	pData->fTrackRadius = fTrackRadius;

@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -18,6 +19,28 @@ typedef struct xui_accordion_test_events_t {
 	int iLastIndex;
 	int iLastId;
 } xui_accordion_test_events_t;
+
+static xui_style_value_t __xuiAccordionStyleFloat(float fValue)
+{
+	xui_style_value_t tValue;
+
+	memset(&tValue, 0, sizeof(tValue));
+	tValue.iSize = sizeof(tValue);
+	tValue.iType = XUI_STYLE_VALUE_FLOAT;
+	tValue.fFloat = fValue;
+	return tValue;
+}
+
+static xui_style_property_t __xuiAccordionStyleProp(const char* sName, xui_style_value_t tValue)
+{
+	xui_style_property_t tProp;
+
+	memset(&tProp, 0, sizeof(tProp));
+	tProp.iSize = sizeof(tProp);
+	tProp.sName = sName;
+	tProp.tValue = tValue;
+	return tProp;
+}
 
 static int __xuiAccordionNear(float fA, float fB)
 {
@@ -71,6 +94,37 @@ static int __xuiAccordionDispatchClick(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiAccordionDispatchPress(xui_context pContext, xui_widget pAccordion, int iSection, float* pX, float* pY)
+{
+	xui_widget pHeader;
+	xui_rect_t tWorld;
+	float fX;
+	float fY;
+	int iRet;
+
+	pHeader = xuiAccordionGetHeaderWidget(pAccordion, iSection);
+	if ( pHeader == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	tWorld = xuiWidgetGetWorldRect(pHeader);
+	fX = tWorld.fX + tWorld.fW * 0.5f;
+	fY = tWorld.fY + tWorld.fH * 0.5f;
+	iRet = xuiInputPointerMove(pContext, fX, fY, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK && pX != NULL ) *pX = fX;
+	if ( iRet == XUI_OK && pY != NULL ) *pY = fY;
+	return iRet;
+}
+
+static int __xuiAccordionDispatchRelease(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiAccordionAddFixedChild(xui_context pContext, xui_widget pAccordion, int iSection, float fHeight)
 {
 	xui_widget pChild;
@@ -96,10 +150,13 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pAccordion;
+	xui_widget pInvalid;
 	xui_widget pClient;
 	xui_surface pTarget;
 	xui_surface pHeaderCache;
 	xui_accordion_desc_t tDesc;
+	xui_accordion_desc_t tInvalidDesc;
+	xui_style_property_t tStyle;
 	xui_rect_t tWorld;
 	xui_rect_t tHeader;
 	xui_rect_t tClient0;
@@ -110,12 +167,18 @@ int main(void)
 	float fHeaderHeight;
 	float fSpacing;
 	float fPadding;
+	float fPressX;
+	float fPressY;
+	char sLongTitle[68];
+	char sExpectedTitle[64];
+	int i;
 	int iFailed;
 	int iRet;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pAccordion = NULL;
+	pInvalid = NULL;
 	pTarget = NULL;
 	pHeaderCache = NULL;
 	iFailed = 0;
@@ -143,6 +206,15 @@ int main(void)
 	tDesc.fHeaderHeight = 30.0f;
 	tDesc.fSpacing = 6.0f;
 	tDesc.fContentPadding = 10.0f;
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fHeaderHeight = NAN;
+	iRet = xuiAccordionCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nonfinite descriptor metric");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.iSectionCount = 1;
+	tInvalidDesc.arrSections = NULL;
+	iRet = xuiAccordionCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject missing descriptor sections");
 	iRet = xuiAccordionCreate(pContext, &pAccordion, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pAccordion != NULL, "accordion create");
 	iRet = xuiWidgetAddChild(pRoot, pAccordion);
@@ -157,6 +229,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "section 1 add");
 	iRet = xuiAccordionAddSection(pAccordion, "Locked", 103, 1, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "section 2 add");
+	sLongTitle[0] = 'A';
+	for ( i = 0; i < 21; i++ ) {
+		sLongTitle[1 + i * 3] = (char)0xe4;
+		sLongTitle[2 + i * 3] = (char)0xb8;
+		sLongTitle[3 + i * 3] = (char)0xad;
+	}
+	sLongTitle[64] = '\0';
+	sExpectedTitle[0] = 'A';
+	for ( i = 0; i < 20; i++ ) {
+		sExpectedTitle[1 + i * 3] = (char)0xe4;
+		sExpectedTitle[2 + i * 3] = (char)0xb8;
+		sExpectedTitle[3 + i * 3] = (char)0xad;
+	}
+	sExpectedTitle[61] = '\0';
+	iRet = xuiAccordionSetSectionTitle(pAccordion, 1, sLongTitle);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiAccordionGetSectionTitle(pAccordion, 1), sExpectedTitle) == 0, "title truncation keeps whole utf8 codepoints");
+	iRet = xuiAccordionSetSectionTitle(pAccordion, 1, "Advanced");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore section title");
 	iRet = xuiAccordionSetSectionEnabled(pAccordion, 2, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "section disabled");
 	iRet = __xuiAccordionAddFixedChild(pContext, pAccordion, 0, 24.0f);
@@ -220,6 +310,19 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
 	iRet = xuiAccordionGetMetrics(pAccordion, &fHeaderHeight, &fSpacing, &fPadding);
 	XUI_TEST_CHECK(iRet == XUI_OK && fHeaderHeight == 32.0f && fSpacing == 5.0f && fPadding == 9.0f, "get metrics");
+	iRet = xuiAccordionSetMetrics(pAccordion, NAN, 5.0f, 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan metric");
+	iRet = xuiAccordionSetMetrics(pAccordion, 32.0f, INFINITY, 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metric");
+	iRet = xuiAccordionGetMetrics(pAccordion, &fHeaderHeight, &fSpacing, &fPadding);
+	XUI_TEST_CHECK(iRet == XUI_OK && fHeaderHeight == 32.0f && fSpacing == 5.0f && fPadding == 9.0f, "invalid metrics preserve state");
+	tStyle = __xuiAccordionStyleProp("accordion.header.height", __xuiAccordionStyleFloat(NAN));
+	iRet = xuiWidgetSetInlineStyle(pAccordion, &tStyle, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid style metric");
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiAccordionNear(xuiAccordionGetHeaderRect(pAccordion, 0).fH, 32.0f), "ignore invalid style metric");
+	iRet = xuiWidgetSetInlineStyle(pAccordion, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear invalid style");
 	iRet = xuiAccordionSetColors(pAccordion,
 		XUI_COLOR_RGBA(245, 252, 248, 255),
 		XUI_COLOR_RGBA(219, 242, 234, 255),
@@ -247,8 +350,69 @@ int main(void)
 	XUI_TEST_CHECK((xuiAccordionGetState(pAccordion) & XUI_WIDGET_STATE_FOCUS) != 0, "focus state");
 	XUI_TEST_CHECK(xuiAccordionGetChangeCount(pAccordion) >= 3, "change count");
 
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before capture tests");
+	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0) && xuiAccordionGetActiveIndex(pAccordion) == 0, "header press captures header");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "escape cancels header capture");
+	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release after escape");
+
+	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0), "blur capture acquired");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear accordion focus");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "blur cancels header capture");
+	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release after blur");
+
+	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0), "section disable capture acquired");
+	iRet = xuiAccordionSetSectionEnabled(pAccordion, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "section disable cancels header capture");
+	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release after section disable");
+	iRet = xuiAccordionSetSectionEnabled(pAccordion, 0, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore section enabled");
+
+	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0), "widget disable capture acquired");
+	iRet = xuiWidgetSetEnabled(pAccordion, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable accordion");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "widget disable cancels header capture");
+	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release after widget disable");
+	iRet = xuiWidgetSetEnabled(pAccordion, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore accordion enabled");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch accordion enabled");
+
+	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0), "widget hide capture acquired");
+	iRet = xuiWidgetSetVisible(pAccordion, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide accordion");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "widget hide cancels header capture");
+	iRet = xuiWidgetSetVisible(pAccordion, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore accordion visible");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch accordion visible");
+	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release after widget hide");
+
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before clear capture");
+	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0), "clear capture acquired");
 	iRet = xuiAccordionClear(pAccordion);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pAccordion) == 0, "clear");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pAccordion) == 0 && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "clear cancels header capture");
+	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release after clear");
 
 cleanup:
 	if ( pTarget != NULL ) {

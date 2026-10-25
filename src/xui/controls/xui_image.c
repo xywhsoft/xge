@@ -14,9 +14,11 @@ typedef struct xui_image_data_t {
 	xui_image_rect_t tSrc;
 	xui_image_rect_t tDst;
 	uint32_t iColor;
+	uint32_t iSurfaceGeneration;
 	int iMode;
 	int iAlignX;
 	int iAlignY;
+	int bSurfaceGenerationValid;
 } xui_image_data_t;
 
 static uint32_t __xuiImageColorAlpha(uint32_t iColor)
@@ -120,6 +122,18 @@ static int __xuiImageStyleInt(xui_widget pWidget, const char* sName, int* pValue
 static xui_proxy __xuiImageProxy(xui_widget pWidget)
 {
 	return xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+}
+
+static int __xuiImageReadSurfaceGeneration(xui_widget pWidget, xui_surface pSurface, uint32_t* pGeneration)
+{
+	xui_proxy pProxy;
+
+	if ( (pWidget == NULL) || (pSurface == NULL) || (pGeneration == NULL) ) {
+		return 0;
+	}
+	pProxy = __xuiImageProxy(pWidget);
+	return (pProxy != NULL) && (pProxy->surfaceGetGeneration != NULL) &&
+		(pProxy->surfaceGetGeneration(pProxy, pSurface, pGeneration) == XUI_OK);
 }
 
 static int __xuiImageSurfaceDesc(xui_widget pWidget, xui_surface pSurface, xui_surface_desc_t* pDesc)
@@ -340,9 +354,35 @@ static int __xuiImageInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 		pData->iAlignX = pDesc->iAlignX;
 		pData->iAlignY = pDesc->iAlignY;
 	}
+	pData->bSurfaceGenerationValid = __xuiImageReadSurfaceGeneration(pWidget,
+		pData->pSurface, &pData->iSurfaceGeneration);
 	(void)xuiWidgetSetFocusable(pWidget, 0);
 	(void)xuiWidgetSetTabStop(pWidget, 0);
 	return XUI_OK;
+}
+
+static int __xuiImageUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_image_data_t* pData;
+	uint32_t iGeneration;
+	int bValid;
+
+	(void)fDelta;
+	pData = (xui_image_data_t*)pUser;
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	bValid = __xuiImageReadSurfaceGeneration(pWidget, pData->pSurface, &iGeneration);
+	if ( !bValid ) {
+		pData->bSurfaceGenerationValid = 0;
+		return XUI_OK;
+	}
+	if ( pData->bSurfaceGenerationValid && pData->iSurfaceGeneration == iGeneration ) {
+		return XUI_OK;
+	}
+	pData->iSurfaceGeneration = iGeneration;
+	pData->bSurfaceGenerationValid = 1;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static void __xuiImageDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -431,6 +471,7 @@ XUI_API xui_widget_type xuiImageGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiImageDestroy;
 	tDesc.onContentMeasure = __xuiImageContentMeasure;
 	tDesc.onCacheRender = __xuiImageCacheRender;
+	tDesc.onUpdate = __xuiImageUpdate;
 	__xuiImageDefaultLayout(&tDesc.tLayout);
 	__xuiImageDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
@@ -468,6 +509,8 @@ XUI_API int xuiImageSetSurface(xui_widget pWidget, xui_surface pSurface)
 		return XUI_OK;
 	}
 	pData->pSurface = pSurface;
+	pData->bSurfaceGenerationValid = __xuiImageReadSurfaceGeneration(pWidget,
+		pData->pSurface, &pData->iSurfaceGeneration);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

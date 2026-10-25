@@ -27,6 +27,8 @@ typedef struct xui_test_proxy_state_t {
 	int iTextMeasureCount;
 	int iTextShapeCount;
 	size_t iTextShapeBytes;
+	uint32_t iLastTextShapeFlags;
+	uint32_t iLastTextDrawItemFlags;
 	int iTextShapeRangeDrawCount;
 	int bRetainedText;
 	double fClockSeconds;
@@ -37,11 +39,17 @@ typedef struct xui_test_proxy_state_t {
 	int iDrawClipClearCount;
 	xui_rect_t tLastDrawClip;
 	int bLastDrawClipActive;
+	int iFailNextSurfaceCreate;
+	int iFailNextDrawEnd;
+	int bSurfaceClearUnsupported;
 } xui_test_proxy_state_t;
 
 void xuiTestProxyInit(xui_test_proxy_state_t* pState);
 void xuiTestProxyEnableFrameClock(xui_test_proxy_state_t* pState, double fClockSeconds);
 void xuiTestProxySetClockSeconds(xui_test_proxy_state_t* pState, double fClockSeconds);
+void xuiTestProxyFailNextSurfaceCreate(xui_test_proxy_state_t* pState, int iError);
+void xuiTestProxyFailNextDrawEnd(xui_test_proxy_state_t* pState, int iError);
+void xuiTestProxySetSurfaceClearUnsupported(xui_test_proxy_state_t* pState, int bUnsupported);
 int xuiTestProxySetClipboardText(xui_test_proxy_state_t* pState, const char* sText);
 const char* xuiTestProxyGetClipboardText(xui_test_proxy_state_t* pState);
 int xuiTestSurfaceCreate(xui_test_proxy_state_t* pState, xui_surface* ppSurface, int iWidth, int iHeight, uint32_t iFlags);

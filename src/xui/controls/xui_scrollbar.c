@@ -2,6 +2,8 @@
 #if XUI_ENABLE_SCROLLBAR
 #include "xui_internal.h"
 
+#include <float.h>
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -52,12 +54,26 @@ typedef struct xui_scrollbar_data_t {
 	xui_rect_t tIncreaseRect;
 } xui_scrollbar_data_t;
 
+static int __xuiScrollBarOrientationValid(int iOrientation);
+static int __xuiScrollBarModeValid(int iMode);
+static int __xuiScrollBarButtonModeValid(int iButtonMode);
+
 static int __xuiScrollBarDescValid(const xui_scrollbar_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
 		return 1;
 	}
-	return (pDesc->iSize == 0) || (pDesc->iSize >= sizeof(*pDesc));
+	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
+	if ( !isfinite(pDesc->fMin) || !isfinite(pDesc->fMax) || !isfinite(pDesc->fValue) ||
+	     !isfinite(pDesc->fPage) || pDesc->fPage < 0.0f ) return 0;
+	if ( !isfinite(pDesc->fSmallStep) || pDesc->fSmallStep < 0.0f ||
+	     !isfinite(pDesc->fLargeStep) || pDesc->fLargeStep < 0.0f ) return 0;
+	if ( !isfinite(pDesc->fThickness) || pDesc->fThickness < 0.0f ||
+	     !isfinite(pDesc->fMinThumbSize) || pDesc->fMinThumbSize < 0.0f ||
+	     !isfinite(pDesc->fButtonSize) || pDesc->fButtonSize < 0.0f ) return 0;
+	return __xuiScrollBarOrientationValid(pDesc->iOrientation) &&
+	       __xuiScrollBarModeValid(pDesc->iMode) &&
+	       __xuiScrollBarButtonModeValid(pDesc->iButtonMode);
 }
 
 static int __xuiScrollBarOrientationValid(int iOrientation)
@@ -118,24 +134,31 @@ static void __xuiScrollBarNormalizeRange(float* pMin, float* pMax, float* pPage)
 	}
 	if ( (*pMax) == (*pMin) ) {
 		*pMax = (*pMin) + 1.0f;
+		if ( !isfinite(*pMax) || (*pMax == *pMin) ) {
+			*pMax = nextafterf(*pMin, INFINITY);
+			if ( !isfinite(*pMax) ) {
+				*pMax = *pMin;
+				*pMin = nextafterf(*pMax, -INFINITY);
+			}
+		}
 	}
 	if ( (*pPage) < 0.0f ) {
 		*pPage = 0.0f;
 	}
 }
 
-static float __xuiScrollBarRange(const xui_scrollbar_data_t* pData)
+static double __xuiScrollBarRange(const xui_scrollbar_data_t* pData)
 {
 	if ( pData == NULL ) {
 		return 0.0f;
 	}
-	return (pData->fMax > pData->fMin) ? (pData->fMax - pData->fMin) : 0.0f;
+	return (pData->fMax > pData->fMin) ? ((double)pData->fMax - (double)pData->fMin) : 0.0;
 }
 
 static float __xuiScrollBarSmallStep(const xui_scrollbar_data_t* pData)
 {
-	float fRange;
-	float fStep;
+	double fRange;
+	double fStep;
 
 	if ( pData == NULL ) {
 		return 1.0f;
@@ -157,7 +180,8 @@ static float __xuiScrollBarSmallStep(const xui_scrollbar_data_t* pData)
 	if ( (fRange > 0.0f) && (fStep > fRange) ) {
 		fStep = fRange;
 	}
-	return (fStep > 0.0f) ? fStep : 1.0f;
+	if ( fStep > (double)FLT_MAX ) fStep = (double)FLT_MAX;
+	return (fStep > 0.0) ? (float)fStep : 1.0f;
 }
 
 static float __xuiScrollBarLargeStep(const xui_scrollbar_data_t* pData)
@@ -224,7 +248,8 @@ static int __xuiScrollBarStyleFloat(xui_widget pWidget, const char* sName, float
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -411,9 +436,9 @@ static xui_rect_t __xuiScrollBarTrackRect(const xui_scrollbar_data_t* pData, xui
 
 static float __xuiScrollBarThumbLen(const xui_scrollbar_data_t* pData, float fTrackLen)
 {
-	float fRange;
-	float fTotal;
-	float fLen;
+	double fRange;
+	double fTotal;
+	double fLen;
 
 	if ( (pData == NULL) || (fTrackLen <= 0.0f) ) {
 		return 0.0f;
@@ -424,7 +449,7 @@ static float __xuiScrollBarThumbLen(const xui_scrollbar_data_t* pData, float fTr
 	}
 	if ( pData->fPage > 0.0f ) {
 		fTotal = fRange + pData->fPage;
-		fLen = (fTotal > 0.0f) ? (fTrackLen * (pData->fPage / fTotal)) : pData->fMinThumbSize;
+		fLen = (fTotal > 0.0) ? ((double)fTrackLen * ((double)pData->fPage / fTotal)) : (double)pData->fMinThumbSize;
 	} else {
 		fLen = pData->fMinThumbSize;
 	}
@@ -434,7 +459,7 @@ static float __xuiScrollBarThumbLen(const xui_scrollbar_data_t* pData, float fTr
 	if ( fLen > fTrackLen ) {
 		fLen = fTrackLen;
 	}
-	return fLen;
+	return (float)fLen;
 }
 
 static xui_rect_t __xuiScrollBarThumbRect(const xui_scrollbar_data_t* pData, xui_rect_t tTrack)
@@ -442,21 +467,22 @@ static xui_rect_t __xuiScrollBarThumbRect(const xui_scrollbar_data_t* pData, xui
 	float fTrackLen;
 	float fThumbLen;
 	float fTravel;
-	float fRange;
-	float fRate;
+	double fRange;
+	double fRate;
 
 	fTrackLen = __xuiScrollBarAxisLen(pData, tTrack);
 	fThumbLen = __xuiScrollBarThumbLen(pData, fTrackLen);
 	fTravel = fTrackLen - fThumbLen;
 	fRange = __xuiScrollBarRange(pData);
-	fRate = (fRange > 0.0f) ? ((pData->fValue - pData->fMin) / fRange) : 0.0f;
-	fRate = __xuiScrollBarClampFloat(fRate, 0.0f, 1.0f);
+	fRate = (fRange > 0.0) ? (((double)pData->fValue - (double)pData->fMin) / fRange) : 0.0;
+	if ( fRate < 0.0 ) fRate = 0.0;
+	if ( fRate > 1.0 ) fRate = 1.0;
 	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		return xuiInternalRectFromFloatNearest(tTrack.fX + fTravel * fRate,
+		return xuiInternalRectFromFloatNearest(tTrack.fX + fTravel * (float)fRate,
 			tTrack.fY, fThumbLen, tTrack.fH);
 	}
 	return xuiInternalRectFromFloatNearest(tTrack.fX,
-		tTrack.fY + fTravel * fRate, tTrack.fW, fThumbLen);
+		tTrack.fY + fTravel * (float)fRate, tTrack.fW, fThumbLen);
 }
 
 static xui_rect_t __xuiScrollBarVisualCrossRect(const xui_scrollbar_data_t* pData, xui_rect_t tRect, xui_rect_t tBasis)
@@ -610,7 +636,7 @@ static int __xuiScrollBarSetParts(xui_widget pWidget, xui_scrollbar_data_t* pDat
 
 static int __xuiScrollBarSetValueInternal(xui_widget pWidget, xui_scrollbar_data_t* pData, float fValue, int bNotify)
 {
-	if ( (pWidget == NULL) || (pData == NULL) ) {
+	if ( (pWidget == NULL) || (pData == NULL) || !isfinite(fValue) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	fValue = __xuiScrollBarClampFloat(fValue, pData->fMin, pData->fMax);
@@ -628,7 +654,13 @@ static int __xuiScrollBarSetValueInternal(xui_widget pWidget, xui_scrollbar_data
 
 static int __xuiScrollBarStepValue(xui_widget pWidget, xui_scrollbar_data_t* pData, float fStep)
 {
-	return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fValue + fStep, 1);
+	double fValue;
+
+	if ( pData == NULL || !isfinite(fStep) ) return XUI_ERROR_INVALID_ARGUMENT;
+	fValue = (double)pData->fValue + (double)fStep;
+	if ( fValue <= (double)pData->fMin ) return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fMin, 1);
+	if ( fValue >= (double)pData->fMax ) return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fMax, 1);
+	return __xuiScrollBarSetValueInternal(pWidget, pData, (float)fValue, 1);
 }
 
 static void __xuiScrollBarStopRepeat(xui_scrollbar_data_t* pData)
@@ -748,7 +780,8 @@ static int __xuiScrollBarDragValue(xui_widget pWidget, xui_scrollbar_data_t* pDa
 	float fTrackLen;
 	float fThumbLen;
 	float fTravel;
-	float fRange;
+	double fRange;
+	double fValue;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -764,7 +797,11 @@ static int __xuiScrollBarDragValue(xui_widget pWidget, xui_scrollbar_data_t* pDa
 		return XUI_OK;
 	}
 	fMouse = __xuiScrollBarEventAxis(pWidget, pData, pEvent);
-	return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fDragStartValue + ((fMouse - pData->fDragStartMouse) / fTravel) * fRange, 1);
+	fValue = (double)pData->fDragStartValue +
+		((double)fMouse - (double)pData->fDragStartMouse) / (double)fTravel * fRange;
+	if ( fValue <= (double)pData->fMin ) return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fMin, 1);
+	if ( fValue >= (double)pData->fMax ) return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fMax, 1);
+	return __xuiScrollBarSetValueInternal(pWidget, pData, (float)fValue, 1);
 }
 
 static void __xuiScrollBarCancelDrag(xui_widget pWidget, xui_scrollbar_data_t* pData)
@@ -990,7 +1027,9 @@ static int __xuiScrollBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		__xuiScrollBarStopRepeat(pData);
 		return __xuiScrollBarSetParts(pWidget, pData, pData->iHoverPart, XUI_SCROLLBAR_PART_NONE);
 	case XUI_EVENT_FOCUS:
+		return __xuiScrollBarSyncState(pWidget, pData);
 	case XUI_EVENT_BLUR:
+		__xuiScrollBarCancelDrag(pWidget, pData);
 		return __xuiScrollBarSyncState(pWidget, pData);
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiScrollBarKeyDown(pWidget, pData, pEvent);
@@ -1479,7 +1518,7 @@ XUI_API int xuiScrollBarSetRange(xui_widget pWidget, float fMin, float fMax, flo
 	xui_scrollbar_data_t* pData;
 
 	pData = __xuiScrollBarGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !isfinite(fMin) || !isfinite(fMax) || !isfinite(fPage) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiScrollBarNormalizeRange(&fMin, &fMax, &fPage);
 	if ( pData->fMin == fMin && pData->fMax == fMax && pData->fPage == fPage ) return XUI_OK;
 	pData->fMin = fMin;
@@ -1503,7 +1542,7 @@ XUI_API int xuiScrollBarGetRange(xui_widget pWidget, float* pMin, float* pMax, f
 XUI_API int xuiScrollBarSetPage(xui_widget pWidget, float fPage)
 {
 	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
-	if ( (pData == NULL) || (fPage < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fPage) || (fPage < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fPage == fPage ) return XUI_OK;
 	pData->fPage = fPage;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
@@ -1519,7 +1558,7 @@ XUI_API float xuiScrollBarGetPage(xui_widget pWidget)
 XUI_API int xuiScrollBarSetValue(xui_widget pWidget, float fValue)
 {
 	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !isfinite(fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
 	return __xuiScrollBarSetValueInternal(pWidget, pData, fValue, 0);
 }
 
@@ -1532,7 +1571,8 @@ XUI_API float xuiScrollBarGetValue(xui_widget pWidget)
 XUI_API int xuiScrollBarSetSteps(xui_widget pWidget, float fSmallStep, float fLargeStep)
 {
 	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
-	if ( (pData == NULL) || (fSmallStep < 0.0f) || (fLargeStep < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fSmallStep) || !isfinite(fLargeStep) ||
+	     (fSmallStep < 0.0f) || (fLargeStep < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fSmallStep == fSmallStep && pData->fLargeStep == fLargeStep ) return XUI_OK;
 	pData->fSmallStep = fSmallStep;
 	pData->fLargeStep = fLargeStep;
@@ -1598,7 +1638,8 @@ XUI_API int xuiScrollBarGetButtonMode(xui_widget pWidget)
 XUI_API int xuiScrollBarSetMetrics(xui_widget pWidget, float fThickness, float fMinThumbSize, float fButtonSize)
 {
 	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
-	if ( (pData == NULL) || (fThickness < 0.0f) || (fMinThumbSize < 0.0f) || (fButtonSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fThickness) || !isfinite(fMinThumbSize) || !isfinite(fButtonSize) ||
+	     (fThickness < 0.0f) || (fMinThumbSize < 0.0f) || (fButtonSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fThickness = (fThickness > 0.0f) ? fThickness : 10.0f;
 	fMinThumbSize = (fMinThumbSize > 0.0f) ? fMinThumbSize : 20.0f;
 	if ( pData->fThickness == fThickness && pData->fMinThumbSize == fMinThumbSize &&

@@ -1,6 +1,8 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -57,11 +59,13 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pProgress;
+	xui_widget pInvalid;
 	xui_surface pCache;
 	xui_surface pPatchSurface;
 	xui_font pFont;
 	xui_progress_desc_t tDesc;
 	xui_nine_patch_t tPatch;
+	xui_nine_patch_t tInvalidPatch;
 	xui_style_property_t arrStyle[3];
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
@@ -73,6 +77,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pProgress = NULL;
+	pInvalid = NULL;
 	pPatchSurface = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -140,6 +145,18 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pCache) == XUI_COLOR_WHITE, "full fill text color");
 	iRet = xuiProgressSetValue(pProgress, 40.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "40%") == 0, "dynamic text update");
+	iRet = xuiProgressSetRange(pProgress, -FLT_MAX, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide finite range");
+	iRet = xuiProgressSetValue(pProgress, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(xuiProgressGetRate(pProgress)) && xuiProgressGetRate(pProgress) == 0.5f, "wide range rate finite");
+	iRet = xuiProgressSetRange(pProgress, FLT_MAX, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "equal maximum range normalized");
+	iRet = xuiProgressGetRange(pProgress, &fMin, &fMax);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(fMin) && isfinite(fMax) && fMin < fMax, "equal maximum range remains finite");
+	iRet = xuiProgressSetRange(pProgress, 0.0f, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore range");
+	iRet = xuiProgressSetValue(pProgress, 40.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore value");
 
 	iRet = xuiProgressSetFillDirection(pProgress, XUI_PROGRESS_RIGHT_TO_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "right-to-left");
@@ -202,11 +219,39 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) >= 2, "patch draw count");
 	XUI_TEST_CHECK(__xuiProgressRectEq(xuiTestSurfaceGetLastSrc(pCache), 8.0f, 0.0f, 8.0f, 8.0f), "reveal patch src");
 	XUI_TEST_CHECK(__xuiProgressRectEq(xuiTestSurfaceGetLastDst(pCache), 50.0f, 0.0f, 50.0f, 20.0f), "reveal patch dst");
+	{
+		int iDrawCount = xuiTestSurfaceGetDrawCount(pCache);
+		iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pPatchSurface,
+			(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+		XUI_TEST_CHECK(iRet == XUI_OK, "patch surface update");
+		iRet = xuiUpdate(pContext, 0.016f);
+		XUI_TEST_CHECK(iRet == XUI_OK, "update after patch surface update");
+		iRet = xuiRenderPrepare(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK, "render after patch surface update");
+		XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) > iDrawCount, "patch generation invalidates progress cache");
+	}
 
 	iRet = xuiProgressSetFillDirection(pProgress, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid direction");
 	iRet = xuiProgressSetFillPatchMode(pProgress, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid patch mode");
+	iRet = xuiProgressSetRange(pProgress, NAN, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan range rejected");
+	iRet = xuiProgressSetValue(pProgress, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiProgressGetValue(pProgress) == 50.0f, "infinite value rejected");
+	tInvalidPatch = tPatch;
+	tInvalidPatch.tSrc.fW = -1;
+	iRet = xuiProgressSetTrackPatch(pProgress, &tInvalidPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative patch source rejected");
+	XUI_TEST_CHECK(xuiProgressHasTrackPatch(pProgress), "invalid track patch preserves prior state");
+	tInvalidPatch = tPatch;
+	tInvalidPatch.tSlice.fLeft = -1;
+	iRet = xuiProgressSetFillPatch(pProgress, &tInvalidPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative patch slice rejected");
+	XUI_TEST_CHECK(xuiProgressHasFillPatch(pProgress), "invalid fill patch preserves prior state");
+	tDesc.fMin = NAN;
+	iRet = xuiProgressCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "nan descriptor rejected");
 
 cleanup:
 	if ( pContext != NULL ) {

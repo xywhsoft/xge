@@ -2,6 +2,7 @@
 #if XUI_ENABLE_CHECK_CARD
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 typedef struct xui_check_card_data_t {
@@ -29,13 +30,25 @@ typedef struct xui_check_card_data_t {
 	xui_rect_t tCornerRect;
 } xui_check_card_data_t;
 
+static int __xuiCheckCardNonNegativeFloatValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f;
+}
+
 static int __xuiCheckCardDescValid(const xui_check_card_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) return 1;
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
-	if ( (pDesc->fBorderWidth < 0.0f) ||
-	     (pDesc->fCheckedBorderWidth < 0.0f) || (pDesc->fCornerSize < 0.0f) ||
-	     (pDesc->fFocusWidth < 0.0f) || (pDesc->fMinWidth < 0.0f) || (pDesc->fMinHeight < 0.0f) ) return 0;
+	if ( !__xuiCheckCardNonNegativeFloatValid(pDesc->fBorderWidth) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->fCheckedBorderWidth) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->fCornerSize) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->fFocusWidth) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->fMinWidth) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->fMinHeight) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->tPadding.fLeft) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->tPadding.fTop) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->tPadding.fRight) ||
+	     !__xuiCheckCardNonNegativeFloatValid(pDesc->tPadding.fBottom) ) return 0;
 	return 1;
 }
 
@@ -84,7 +97,8 @@ static int __xuiCheckCardStyleFloat(xui_widget pWidget, const char* sName, float
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiCheckCardNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -195,9 +209,12 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
+		(void)__xuiCheckCardSyncState(pWidget, pData);
+		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_BLUR:
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		pData->bKeyboardActive = 0;
 		(void)__xuiCheckCardSyncState(pWidget, pData);
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_POINTER_DOWN:
@@ -220,6 +237,7 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
+		pData->bKeyboardActive = 0;
 		return __xuiCheckCardSyncState(pWidget, pData);
 	case XUI_EVENT_KEY_DOWN:
 		if ( (pEvent->iKey == XUI_KEY_SPACE) || (pEvent->iKey == XUI_KEY_ENTER) ) {
@@ -568,7 +586,10 @@ XUI_API xui_widget xuiCheckCardGetRadioGroup(xui_widget pWidget)
 XUI_API int xuiCheckCardSetMetrics(xui_widget pWidget, float fBorderWidth, float fCheckedBorderWidth, float fCornerSize, float fFocusWidth)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
-	if ( (pData == NULL) || (fBorderWidth < 0.0f) || (fCheckedBorderWidth < 0.0f) || (fCornerSize < 0.0f) || (fFocusWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiCheckCardNonNegativeFloatValid(fBorderWidth) ||
+	     !__xuiCheckCardNonNegativeFloatValid(fCheckedBorderWidth) ||
+	     !__xuiCheckCardNonNegativeFloatValid(fCornerSize) ||
+	     !__xuiCheckCardNonNegativeFloatValid(fFocusWidth) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fBorderWidth = fBorderWidth; pData->fCheckedBorderWidth = fCheckedBorderWidth; pData->fCornerSize = fCornerSize; pData->fFocusWidth = fFocusWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }

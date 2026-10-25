@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -728,6 +729,17 @@ int main(void)
 	pTopLeftCache = xuiWidgetGetCacheSurface(pTopLeft, xuiWidgetGetStateId(pTopLeft));
 	XUI_TEST_CHECK(pTopLeftCache != NULL && pTopLeftCache->iDrawCount > 0, "cache surface top-left");
 	XUI_TEST_CHECK(__xuiImageRectEq(pTopLeftCache->tLastDst, 0.0f, 0.0f, 64.0f, 32.0f), "desc start dst");
+	{
+		int iDrawCount = pCache->iDrawCount;
+		iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pSource,
+			(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+		XUI_TEST_CHECK(iRet == XUI_OK, "source surface update");
+		iRet = xuiUpdate(pContext, 0.016f);
+		XUI_TEST_CHECK(iRet == XUI_OK, "update after source surface update");
+		iRet = xuiRenderPrepare(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK, "render prepare after source surface update");
+		XUI_TEST_CHECK(pCache->iDrawCount > iDrawCount, "source generation invalidates image cache");
+	}
 
 	iRet = xuiImageSetSourceRect(pImage, 8.0f, 4.0f, 32.0f, 20.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "source rect");
@@ -788,6 +800,14 @@ int main(void)
 
 	tRect = xuiImageGetDrawRect(pImage);
 	XUI_TEST_CHECK(__xuiImageRectEq(tRect, 5.0f, 7.0f, 30.0f, 20.0f), "draw rect get");
+	tRect = xuiImageGetSource(pImage);
+	iRet = xuiImageSetSourceRect(pImage, NAN, 0.0f, 10.0f, 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject non-finite source");
+	XUI_TEST_CHECK(__xuiImageRectEq(xuiImageGetSource(pImage), tRect.fX, tRect.fY, tRect.fW, tRect.fH),
+	               "invalid source preserves state");
+	iRet = xuiImageSetCustomRect(pImage, 0.0f, 0.0f, INFINITY, 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiImageGetMode(pImage) == XUI_IMAGE_CUSTOM,
+	               "reject non-finite custom rect");
 	iRet = xuiImageSetSurface(pImage, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiImageGetSurface(pImage) == NULL, "surface clear");
 

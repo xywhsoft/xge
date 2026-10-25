@@ -2,6 +2,8 @@
 #if XUI_ENABLE_RANGE_SLIDER
 #include "xui_internal.h"
 
+#include <float.h>
+#include <math.h>
 #include <string.h>
 
 typedef struct xui_range_slider_data_t {
@@ -36,12 +38,24 @@ typedef struct xui_range_slider_data_t {
 	xui_rect_t tEndKnobRect;
 } xui_range_slider_data_t;
 
+static int __xuiRangeSliderOrientationValid(int iOrientation);
+
 static int __xuiRangeSliderDescValid(const xui_range_slider_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
 		return 1;
 	}
-	return (pDesc->iSize == 0) || (pDesc->iSize >= sizeof(*pDesc));
+	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
+	if ( !isfinite(pDesc->fMin) || !isfinite(pDesc->fMax) ||
+	     !isfinite(pDesc->fStart) || !isfinite(pDesc->fEnd) ) return 0;
+	if ( !isfinite(pDesc->fStep) || pDesc->fStep < 0.0f ||
+	     !isfinite(pDesc->fPageStep) || pDesc->fPageStep < 0.0f ) return 0;
+	if ( !isfinite(pDesc->fMinInterval) || pDesc->fMinInterval < 0.0f ||
+	     !isfinite(pDesc->fMaxInterval) || pDesc->fMaxInterval < 0.0f ) return 0;
+	if ( pDesc->fMaxInterval > 0.0f && pDesc->fMinInterval > pDesc->fMaxInterval ) return 0;
+	if ( !isfinite(pDesc->fTrackSize) || pDesc->fTrackSize < 0.0f ||
+	     !isfinite(pDesc->fKnobSize) || pDesc->fKnobSize < 0.0f ) return 0;
+	return __xuiRangeSliderOrientationValid(pDesc->iOrientation);
 }
 
 static int __xuiRangeSliderOrientationValid(int iOrientation)
@@ -82,32 +96,39 @@ static void __xuiRangeSliderNormalizeRange(float* pMin, float* pMax)
 	}
 	if ( (*pMax) == (*pMin) ) {
 		*pMax = (*pMin) + 1.0f;
+		if ( !isfinite(*pMax) || (*pMax == *pMin) ) {
+			*pMax = nextafterf(*pMin, INFINITY);
+			if ( !isfinite(*pMax) ) {
+				*pMax = *pMin;
+				*pMin = nextafterf(*pMax, -INFINITY);
+			}
+		}
 	}
 }
 
-static float __xuiRangeSliderEffectiveMinInterval(float fMinInterval, float fMin, float fMax)
+static double __xuiRangeSliderEffectiveMinInterval(float fMinInterval, float fMin, float fMax)
 {
-	float fRange;
+	double fRange;
 
-	fRange = fMax - fMin;
-	if ( fRange < 0.0f ) fRange = 0.0f;
+	fRange = (double)fMax - (double)fMin;
+	if ( fRange < 0.0 ) fRange = 0.0;
 	if ( fMinInterval <= 0.0f ) return 0.0f;
-	if ( fMinInterval > fRange ) return fRange;
-	return fMinInterval;
+	if ( (double)fMinInterval > fRange ) return fRange;
+	return (double)fMinInterval;
 }
 
-static float __xuiRangeSliderEffectiveMaxInterval(float fMaxInterval, float fMinInterval, float fMin, float fMax)
+static double __xuiRangeSliderEffectiveMaxInterval(float fMaxInterval, float fMinInterval, float fMin, float fMax)
 {
-	float fRange;
-	float fMinEffective;
+	double fRange;
+	double fMinEffective;
 
-	fRange = fMax - fMin;
-	if ( fRange < 0.0f ) fRange = 0.0f;
+	fRange = (double)fMax - (double)fMin;
+	if ( fRange < 0.0 ) fRange = 0.0;
 	fMinEffective = __xuiRangeSliderEffectiveMinInterval(fMinInterval, fMin, fMax);
 	if ( fMaxInterval <= 0.0f ) return fRange;
-	if ( fMaxInterval < fMinEffective ) return fMinEffective;
-	if ( fMaxInterval > fRange ) return fRange;
-	return fMaxInterval;
+	if ( (double)fMaxInterval < fMinEffective ) return fMinEffective;
+	if ( (double)fMaxInterval > fRange ) return fRange;
+	return (double)fMaxInterval;
 }
 
 static uint32_t __xuiRangeSliderColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
@@ -143,22 +164,22 @@ static uint32_t __xuiRangeSliderLighten(uint32_t iColor, int iAmount)
 
 static float __xuiRangeSliderRateFromValue(const xui_range_slider_data_t* pData, float fValue)
 {
-	float fRange;
+	double fRate;
 
-	if ( pData == NULL ) {
+	if ( pData == NULL || pData->fMax == pData->fMin ) {
 		return 0.0f;
 	}
-	fRange = pData->fMax - pData->fMin;
-	if ( fRange <= 0.0f ) {
-		return 0.0f;
-	}
-	return __xuiRangeSliderClampFloat((fValue - pData->fMin) / fRange, 0.0f, 1.0f);
+	fRate = ((double)fValue - (double)pData->fMin) /
+		((double)pData->fMax - (double)pData->fMin);
+	if ( fRate <= 0.0 ) return 0.0f;
+	if ( fRate >= 1.0 ) return 1.0f;
+	return (float)fRate;
 }
 
 static float __xuiRangeSliderSmallStep(const xui_range_slider_data_t* pData)
 {
-	float fRange;
-	float fStep;
+	double fRange;
+	double fStep;
 
 	if ( pData == NULL ) {
 		return 1.0f;
@@ -166,18 +187,19 @@ static float __xuiRangeSliderSmallStep(const xui_range_slider_data_t* pData)
 	if ( pData->fStep > 0.0f ) {
 		return pData->fStep;
 	}
-	fRange = pData->fMax - pData->fMin;
+	fRange = (double)pData->fMax - (double)pData->fMin;
 	fStep = (fRange > 0.0f) ? (fRange * 0.01f) : 1.0f;
 	if ( (fRange >= 1.0f) && (fStep < 1.0f) ) {
 		fStep = 1.0f;
 	}
-	return (fStep > 0.0f) ? fStep : 1.0f;
+	if ( fStep > (double)FLT_MAX ) fStep = (double)FLT_MAX;
+	return (fStep > 0.0) ? (float)fStep : 1.0f;
 }
 
 static float __xuiRangeSliderPageStep(const xui_range_slider_data_t* pData)
 {
-	float fRange;
-	float fStep;
+	double fRange;
+	double fStep;
 
 	if ( pData == NULL ) {
 		return 1.0f;
@@ -185,12 +207,13 @@ static float __xuiRangeSliderPageStep(const xui_range_slider_data_t* pData)
 	if ( pData->fPageStep > 0.0f ) {
 		return pData->fPageStep;
 	}
-	fRange = pData->fMax - pData->fMin;
+	fRange = (double)pData->fMax - (double)pData->fMin;
 	fStep = (fRange > 0.0f) ? (fRange * 0.10f) : __xuiRangeSliderSmallStep(pData);
 	if ( (fRange >= 1.0f) && (fStep < 1.0f) ) {
 		fStep = 1.0f;
 	}
-	return (fStep > 0.0f) ? fStep : 1.0f;
+	if ( fStep > (double)FLT_MAX ) fStep = (double)FLT_MAX;
+	return (fStep > 0.0) ? (float)fStep : 1.0f;
 }
 
 static xui_range_slider_data_t* __xuiRangeSliderGetData(xui_widget pWidget)
@@ -232,7 +255,8 @@ static int __xuiRangeSliderStyleFloat(xui_widget pWidget, const char* sName, flo
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -428,7 +452,7 @@ static void __xuiRangeSliderUpdateRects(xui_widget pWidget, xui_range_slider_dat
 static float __xuiRangeSliderValueFromLocalPoint(const xui_range_slider_data_t* pData, float fLocalX, float fLocalY)
 {
 	float fRate;
-	float fRange;
+	double fValue;
 
 	if ( pData == NULL ) {
 		return 0.0f;
@@ -439,8 +463,11 @@ static float __xuiRangeSliderValueFromLocalPoint(const xui_range_slider_data_t* 
 		fRate = (pData->tTrackRect.fH > 0.0f) ? (1.0f - ((fLocalY - pData->tTrackRect.fY) / pData->tTrackRect.fH)) : 0.0f;
 	}
 	fRate = __xuiRangeSliderClampFloat(fRate, 0.0f, 1.0f);
-	fRange = pData->fMax - pData->fMin;
-	return pData->fMin + fRange * fRate;
+	fValue = (double)pData->fMin +
+		((double)pData->fMax - (double)pData->fMin) * (double)fRate;
+	if ( fValue <= (double)pData->fMin ) return pData->fMin;
+	if ( fValue >= (double)pData->fMax ) return pData->fMax;
+	return (float)fValue;
 }
 
 static int __xuiRangeSliderNearestThumb(const xui_range_slider_data_t* pData, float fLocalX, float fLocalY)
@@ -475,11 +502,13 @@ static int __xuiRangeSliderNearestThumb(const xui_range_slider_data_t* pData, fl
 
 static void __xuiRangeSliderNormalizeValues(float* pStart, float* pEnd, float fMin, float fMax, float fMinInterval, float fMaxInterval)
 {
-	float fCenter;
-	float fInterval;
-	float fTargetInterval;
-	float fMinEffective;
-	float fMaxEffective;
+	double fCenter;
+	double fInterval;
+	double fTargetInterval;
+	double fMinEffective;
+	double fMaxEffective;
+	double fStart;
+	double fEnd;
 	float fSwap;
 
 	*pStart = __xuiRangeSliderClampFloat(*pStart, fMin, fMax);
@@ -491,7 +520,9 @@ static void __xuiRangeSliderNormalizeValues(float* pStart, float* pEnd, float fM
 	}
 	fMinEffective = __xuiRangeSliderEffectiveMinInterval(fMinInterval, fMin, fMax);
 	fMaxEffective = __xuiRangeSliderEffectiveMaxInterval(fMaxInterval, fMinInterval, fMin, fMax);
-	fInterval = *pEnd - *pStart;
+	fStart = (double)*pStart;
+	fEnd = (double)*pEnd;
+	fInterval = fEnd - fStart;
 	fTargetInterval = fInterval;
 	if ( fTargetInterval < fMinEffective ) {
 		fTargetInterval = fMinEffective;
@@ -500,25 +531,29 @@ static void __xuiRangeSliderNormalizeValues(float* pStart, float* pEnd, float fM
 		fTargetInterval = fMaxEffective;
 	}
 	if ( fTargetInterval != fInterval ) {
-		fCenter = (*pStart + *pEnd) * 0.5f;
-		*pStart = fCenter - fTargetInterval * 0.5f;
-		*pEnd = *pStart + fTargetInterval;
-		if ( *pStart < fMin ) {
-			*pStart = fMin;
-			*pEnd = fMin + fTargetInterval;
+		fCenter = fStart + fInterval * 0.5;
+		fStart = fCenter - fTargetInterval * 0.5;
+		fEnd = fStart + fTargetInterval;
+		if ( fStart < (double)fMin ) {
+			fStart = (double)fMin;
+			fEnd = (double)fMin + fTargetInterval;
 		}
-		if ( *pEnd > fMax ) {
-			*pEnd = fMax;
-			*pStart = fMax - fTargetInterval;
+		if ( fEnd > (double)fMax ) {
+			fEnd = (double)fMax;
+			fStart = (double)fMax - fTargetInterval;
 		}
-		*pStart = __xuiRangeSliderClampFloat(*pStart, fMin, fMax);
-		*pEnd = __xuiRangeSliderClampFloat(*pEnd, fMin, fMax);
+		if ( fStart < (double)fMin ) fStart = (double)fMin;
+		if ( fStart > (double)fMax ) fStart = (double)fMax;
+		if ( fEnd < (double)fMin ) fEnd = (double)fMin;
+		if ( fEnd > (double)fMax ) fEnd = (double)fMax;
+		*pStart = (float)fStart;
+		*pEnd = (float)fEnd;
 	}
 }
 
 static int __xuiRangeSliderSetValuesInternal(xui_widget pWidget, xui_range_slider_data_t* pData, float fStart, float fEnd, int bNotify)
 {
-	if ( (pWidget == NULL) || (pData == NULL) ) {
+	if ( (pWidget == NULL) || (pData == NULL) || !isfinite(fStart) || !isfinite(fEnd) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiRangeSliderNormalizeValues(&fStart, &fEnd, pData->fMin, pData->fMax, pData->fMinInterval, pData->fMaxInterval);
@@ -538,12 +573,12 @@ static int __xuiRangeSliderSetThumbValueInternal(xui_widget pWidget, xui_range_s
 {
 	float fStart;
 	float fEnd;
-	float fMaxInterval;
-	float fMinInterval;
-	float fLower;
-	float fUpper;
+	double fMaxInterval;
+	double fMinInterval;
+	double fLower;
+	double fUpper;
 
-	if ( (pWidget == NULL) || (pData == NULL) ) {
+	if ( (pWidget == NULL) || (pData == NULL) || !isfinite(fValue) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	fStart = pData->fStart;
@@ -551,15 +586,15 @@ static int __xuiRangeSliderSetThumbValueInternal(xui_widget pWidget, xui_range_s
 	fMinInterval = __xuiRangeSliderEffectiveMinInterval(pData->fMinInterval, pData->fMin, pData->fMax);
 	fMaxInterval = __xuiRangeSliderEffectiveMaxInterval(pData->fMaxInterval, pData->fMinInterval, pData->fMin, pData->fMax);
 	if ( iThumb == XUI_RANGE_SLIDER_THUMB_START ) {
-		fLower = __xuiRangeSliderMaxFloat(pData->fMin, fEnd - fMaxInterval);
-		fUpper = fEnd - fMinInterval;
+		fLower = fmax((double)pData->fMin, (double)fEnd - fMaxInterval);
+		fUpper = (double)fEnd - fMinInterval;
 		if ( fUpper < fLower ) fUpper = fLower;
-		fStart = __xuiRangeSliderClampFloat(fValue, fLower, fUpper);
+		fStart = __xuiRangeSliderClampFloat(fValue, (float)fLower, (float)fUpper);
 	} else if ( iThumb == XUI_RANGE_SLIDER_THUMB_END ) {
-		fLower = fStart + fMinInterval;
-		fUpper = __xuiRangeSliderMinFloat(pData->fMax, fStart + fMaxInterval);
+		fLower = (double)fStart + fMinInterval;
+		fUpper = fmin((double)pData->fMax, (double)fStart + fMaxInterval);
 		if ( fUpper < fLower ) fLower = fUpper;
-		fEnd = __xuiRangeSliderClampFloat(fValue, fLower, fUpper);
+		fEnd = __xuiRangeSliderClampFloat(fValue, (float)fLower, (float)fUpper);
 	} else {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -801,12 +836,17 @@ static int __xuiRangeSliderEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 		pData->bDragging = 0;
 		return __xuiRangeSliderSyncState(pWidget, pData);
 	case XUI_EVENT_FOCUS:
+		return __xuiRangeSliderSyncState(pWidget, pData);
 	case XUI_EVENT_BLUR:
+		__xuiRangeSliderCancelDrag(pWidget, pData);
 		return __xuiRangeSliderSyncState(pWidget, pData);
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiRangeSliderKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+			__xuiRangeSliderCancelDrag(pWidget, pData);
+		}
 		iRet = __xuiRangeSliderSyncState(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1182,7 +1222,7 @@ XUI_API int xuiRangeSliderSetRange(xui_widget pWidget, float fMin, float fMax)
 	xui_range_slider_data_t* pData;
 
 	pData = __xuiRangeSliderGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !isfinite(fMin) || !isfinite(fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiRangeSliderNormalizeRange(&fMin, &fMax);
 	pData->fMin = fMin;
 	pData->fMax = fMax;
@@ -1202,7 +1242,7 @@ XUI_API int xuiRangeSliderGetRange(xui_widget pWidget, float* pMin, float* pMax)
 XUI_API int xuiRangeSliderSetValues(xui_widget pWidget, float fStart, float fEnd)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !isfinite(fStart) || !isfinite(fEnd) ) return XUI_ERROR_INVALID_ARGUMENT;
 	return __xuiRangeSliderSetValuesInternal(pWidget, pData, fStart, fEnd, 0);
 }
 
@@ -1242,7 +1282,8 @@ XUI_API float xuiRangeSliderGetEndRate(xui_widget pWidget)
 XUI_API int xuiRangeSliderSetStep(xui_widget pWidget, float fStep, float fPageStep)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
-	if ( (pData == NULL) || (fStep < 0.0f) || (fPageStep < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fStep) || !isfinite(fPageStep) ||
+	     (fStep < 0.0f) || (fPageStep < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fStep = fStep;
 	pData->fPageStep = fPageStep;
 	return XUI_OK;
@@ -1263,7 +1304,8 @@ XUI_API int xuiRangeSliderSetIntervalLimits(xui_widget pWidget, float fMinInterv
 	int iRet;
 
 	pData = __xuiRangeSliderGetData(pWidget);
-	if ( (pData == NULL) || (fMinInterval < 0.0f) || (fMaxInterval < 0.0f) ) {
+	if ( (pData == NULL) || !isfinite(fMinInterval) || !isfinite(fMaxInterval) ||
+	     (fMinInterval < 0.0f) || (fMaxInterval < 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (fMaxInterval > 0.0f) && (fMinInterval > fMaxInterval) ) {
@@ -1305,7 +1347,8 @@ XUI_API int xuiRangeSliderGetOrientation(xui_widget pWidget)
 XUI_API int xuiRangeSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
-	if ( (pData == NULL) || (fTrackSize < 0.0f) || (fKnobSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fTrackSize) || !isfinite(fKnobSize) ||
+	     (fTrackSize < 0.0f) || (fKnobSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fTrackSize = (fTrackSize > 0.0f) ? fTrackSize : 4.0f;
 	pData->fKnobSize = (fKnobSize > 0.0f) ? fKnobSize : 14.0f;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

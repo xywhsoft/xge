@@ -1,6 +1,8 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -67,6 +69,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pSlider;
+	xui_widget pInvalid;
 	xui_surface pTarget;
 	xui_slider_desc_t tDesc;
 	xui_rect_t tTrack;
@@ -89,6 +92,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pSlider = NULL;
+	pInvalid = NULL;
 	pTarget = NULL;
 	iChanged = 0;
 	iFailed = 0;
@@ -117,6 +121,10 @@ int main(void)
 	tDesc.iOrientation = XUI_ORIENTATION_HORIZONTAL;
 	iRet = xuiSliderCreate(pContext, &pSlider, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pSlider != NULL, "slider create");
+	tDesc.fValue = NAN;
+	iRet = xuiSliderCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nan descriptor");
+	tDesc.fValue = 25.0f;
 	iRet = xuiWidgetAddChild(pRoot, pSlider);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add slider");
 	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 140.0f, 30.0f});
@@ -155,6 +163,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set step");
 	iRet = xuiSliderGetStep(pSlider, &fStep, &fPageStep);
 	XUI_TEST_CHECK(iRet == XUI_OK && fStep == 5.0f && fPageStep == 20.0f, "get step");
+	iRet = xuiSliderSetStep(pSlider, NAN, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan step");
+	iRet = xuiSliderSetMetrics(pSlider, 6.0f, INFINITY, -1.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metrics");
+	iRet = xuiSliderSetValue(pSlider, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && __xuiSliderNear(xuiSliderGetValue(pSlider), 25.0f), "reject nan value and preserve state");
+	iRet = xuiSliderSetRange(pSlider, 0.0f, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite range");
 
 	iChanged = 0;
 	iRet = xuiSliderSetValue(pSlider, 0.0f);
@@ -237,6 +253,21 @@ int main(void)
 	(void)xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
 	(void)xuiDispatchPendingEvents(pContext);
 
+	iRet = xuiSetFocusWidget(pContext, pSlider);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus before blur drag");
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "blur drag down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pSlider, "blur drag capture");
+	iRet = xuiSetFocusWidget(pContext, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear focus during drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+	               (xuiSliderGetState(pSlider) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "blur cancels drag capture");
+	(void)xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	(void)xuiDispatchPendingEvents(pContext);
+
 	iRet = xuiSliderSetOrientation(pSlider, XUI_ORIENTATION_VERTICAL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetOrientation(pSlider) == XUI_ORIENTATION_VERTICAL, "set vertical");
 	xuiWidgetSetRect(pSlider, (xui_rect_t){30.0f, 70.0f, 30.0f, 140.0f});
@@ -257,8 +288,36 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clamp value");
 	iRet = xuiSliderGetRange(pSlider, &fMin, &fMax);
 	XUI_TEST_CHECK(iRet == XUI_OK && fMin == 0.0f && fMax == 100.0f && xuiSliderGetValue(pSlider) == 100.0f, "range clamp");
+	iRet = xuiSliderSetRange(pSlider, -FLT_MAX, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set wide finite range");
+	iRet = xuiSliderSetValue(pSlider, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(xuiSliderGetRate(pSlider)) && __xuiSliderNear(xuiSliderGetRate(pSlider), 0.5f), "wide range finite midpoint rate");
+	iRet = xuiSliderSetRange(pSlider, FLT_MAX, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "normalize maximum equal range");
+	iRet = xuiSliderGetRange(pSlider, &fMin, &fMax);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(fMin) && isfinite(fMax) && fMin < fMax, "maximum equal range remains finite");
+	iRet = xuiSliderSetRange(pSlider, 0.0f, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary range");
+	iRet = xuiSliderSetValue(pSlider, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary value");
+	iRet = xuiWidgetSetEnabled(pSlider, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable before disable drag");
+	iRet = __xuiSliderRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before disable drag");
+	tKnob = xuiSliderGetKnobRect(pSlider);
+	tWorld = xuiWidgetGetWorldRect(pSlider);
+	fX = tWorld.fX + tKnob.fX + tKnob.fW * 0.5f;
+	fY = tWorld.fY + tKnob.fY + tKnob.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable drag down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pSlider, "disable drag capture");
 	iRet = xuiWidgetSetEnabled(pSlider, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+	               (xuiSliderGetState(pSlider) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "disable cancels drag capture");
 	XUI_TEST_CHECK((xuiSliderGetState(pSlider) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");
 	iRet = __xuiSliderClick(pContext, tWorld.fX + tTrack.fX + tTrack.fW * 0.5f, tWorld.fY + tTrack.fY + tTrack.fH);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetValue(pSlider) == 100.0f && xuiGetPointerCapture(pContext) == NULL, "disabled ignores pointer");

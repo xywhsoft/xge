@@ -2,6 +2,7 @@
 #if XUI_ENABLE_ACCORDION
 #include "xui_internal.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -120,10 +121,15 @@ static int __xuiAccordionDescValid(const xui_accordion_desc_t* pDesc)
 	if ( (pDesc->iSectionCount < 0) || (pDesc->iSectionCount > XUI_ACCORDION_SECTION_CAPACITY) ) {
 		return 0;
 	}
+	if ( (pDesc->iSectionCount > 0) && (pDesc->arrSections == NULL) ) {
+		return 0;
+	}
 	if ( (pDesc->iMode != 0) && !__xuiAccordionModeValid(pDesc->iMode) ) {
 		return 0;
 	}
-	if ( (pDesc->fHeaderHeight < 0.0f) || (pDesc->fSpacing < 0.0f) || (pDesc->fContentPadding < 0.0f) ) {
+	if ( !isfinite(pDesc->fHeaderHeight) || (pDesc->fHeaderHeight < 0.0f) ||
+	     !isfinite(pDesc->fSpacing) || (pDesc->fSpacing < 0.0f) ||
+	     !isfinite(pDesc->fContentPadding) || (pDesc->fContentPadding < 0.0f) ) {
 		return 0;
 	}
 	return 1;
@@ -139,6 +145,7 @@ static void __xuiAccordionSetTitle(xui_accordion_section_t* pSection, const char
 	}
 	(void)snprintf(pSection->sTitle, sizeof(pSection->sTitle), "%s", sTitle);
 	pSection->sTitle[sizeof(pSection->sTitle) - 1] = '\0';
+	xuiInternalUtf8TrimIncomplete(pSection->sTitle);
 }
 
 static xui_accordion_data_t* __xuiAccordionGetData(xui_widget pWidget)
@@ -185,6 +192,7 @@ static int __xuiAccordionStyleFloat(xui_widget pWidget, const char* sName, float
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) &&
 	     (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) &&
 	     (tProperty.tValue.fFloat >= 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
@@ -543,6 +551,20 @@ static int __xuiAccordionSetActive(xui_widget pAccordion, xui_accordion_data_t* 
 	return xuiWidgetInvalidate(pAccordion, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int __xuiAccordionCancelPress(xui_widget pAccordion, xui_accordion_data_t* pData)
+{
+	xui_context pContext;
+	xui_widget pCapture;
+
+	if ( (pAccordion == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pAccordion);
+	pCapture = xuiGetPointerCapture(pContext);
+	if ( __xuiAccordionHeaderIndex(pData, pCapture) >= 0 ) {
+		(void)xuiReleasePointerCapture(pContext, pCapture);
+	}
+	return __xuiAccordionSetActive(pAccordion, pData, -1);
+}
+
 static int __xuiAccordionSetExpandedInternal(xui_widget pAccordion, xui_accordion_data_t* pData, int iIndex, int bExpanded, int bNotify)
 {
 	int i;
@@ -618,8 +640,10 @@ static int __xuiAccordionHeaderEvent(xui_widget pHeader, const xui_event_t* pEve
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
 	case XUI_EVENT_POINTER_MOVE:
-		if ( __xuiAccordionSectionEnabled(pData, iIndex) ) {
+		if ( __xuiAccordionSectionEnabled(pData, iIndex) && __xuiAccordionRectContains(tLocal, fX, fY) ) {
 			(void)__xuiAccordionSetHover(pAccordion, pData, iIndex);
+		} else if ( pData->iHoverIndex == iIndex ) {
+			(void)__xuiAccordionSetHover(pAccordion, pData, -1);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_LEAVE:
@@ -637,10 +661,7 @@ static int __xuiAccordionHeaderEvent(xui_widget pHeader, const xui_event_t* pEve
 		break;
 	case XUI_EVENT_POINTER_UP:
 		if ( pData->iActiveIndex == iIndex ) {
-			(void)__xuiAccordionSetActive(pAccordion, pData, -1);
-			if ( xuiGetPointerCapture(xuiWidgetGetContext(pAccordion)) == pHeader ) {
-				(void)xuiReleasePointerCapture(xuiWidgetGetContext(pAccordion), pHeader);
-			}
+			(void)__xuiAccordionCancelPress(pAccordion, pData);
 			if ( __xuiAccordionRectContains(tLocal, fX, fY) ) {
 				(void)__xuiAccordionClickSection(pAccordion, pData, iIndex);
 			}
@@ -649,7 +670,7 @@ static int __xuiAccordionHeaderEvent(xui_widget pHeader, const xui_event_t* pEve
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		if ( pData->iActiveIndex == iIndex ) {
-			(void)__xuiAccordionSetActive(pAccordion, pData, -1);
+			(void)__xuiAccordionCancelPress(pAccordion, pData);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
@@ -711,16 +732,22 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		} else if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-			(void)__xuiAccordionSetActive(pWidget, pData, -1);
-			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
-				(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-			}
+			(void)__xuiAccordionCancelPress(pWidget, pData);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_FOCUS:
-	case XUI_EVENT_BLUR:
 	case XUI_EVENT_ENABLED_CHANGED:
+	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( ((pEvent->iType == XUI_EVENT_ENABLED_CHANGED) && !xuiWidgetGetEnabled(pWidget)) ||
+		     ((pEvent->iType == XUI_EVENT_VISIBLE_CHANGED) && !xuiWidgetGetVisible(pWidget)) ) {
+			(void)__xuiAccordionSetHover(pWidget, pData, -1);
+			(void)__xuiAccordionCancelPress(pWidget, pData);
+		}
+		(void)__xuiAccordionSyncSections(pWidget, pData);
+		return XUI_EVENT_DISPATCH_STOP;
+	case XUI_EVENT_BLUR:
+		(void)__xuiAccordionCancelPress(pWidget, pData);
 		(void)__xuiAccordionSyncSections(pWidget, pData);
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
@@ -1163,10 +1190,12 @@ static int __xuiAccordionInit(xui_widget pWidget, void* pTypeData, const void* p
 			}
 		}
 	}
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiAccordionEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiAccordionEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiAccordionEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiAccordionEvent, NULL);
+	iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiAccordionEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiAccordionEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiAccordionEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiAccordionEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiAccordionEvent, NULL);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiAccordionSyncSections(pWidget, pData);
 }
 
@@ -1174,10 +1203,10 @@ static void __xuiAccordionDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 {
 	xui_accordion_data_t* pData;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_accordion_data_t*)pTypeData;
 	if ( pData != NULL ) {
+		(void)__xuiAccordionCancelPress(pWidget, pData);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -1302,6 +1331,7 @@ XUI_API int xuiAccordionClear(xui_widget pWidget)
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	(void)__xuiAccordionCancelPress(pWidget, pData);
 	for ( i = 0; i < pData->iSectionCount; i++ ) {
 		if ( pData->arrSections[i].pSection != NULL ) {
 			xuiWidgetDestroy(pData->arrSections[i].pSection);
@@ -1440,6 +1470,10 @@ XUI_API int xuiAccordionSetExpanded(xui_widget pWidget, int iIndex, int bExpande
 	xui_accordion_data_t* pData;
 
 	pData = __xuiAccordionGetData(pWidget);
+	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iSectionCount) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	(void)__xuiAccordionCancelPress(pWidget, pData);
 	return __xuiAccordionSetExpandedInternal(pWidget, pData, iIndex, bExpanded, 0);
 }
 
@@ -1458,6 +1492,9 @@ XUI_API int xuiAccordionSetSectionEnabled(xui_widget pWidget, int iIndex, int bE
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iSectionCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !bEnabled && (pData->iActiveIndex == iIndex) ) {
+		(void)__xuiAccordionCancelPress(pWidget, pData);
+	}
 	pData->arrSections[iIndex].bEnabled = bEnabled ? 1 : 0;
 	if ( !pData->arrSections[iIndex].bEnabled ) {
 		if ( pData->iHoverIndex == iIndex ) pData->iHoverIndex = -1;
@@ -1480,10 +1517,13 @@ XUI_API int xuiAccordionSetMode(xui_widget pWidget, int iMode)
 	xui_accordion_data_t* pData;
 	int i;
 	int bKeepFound;
+	int bChanged;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || !__xuiAccordionModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
+	(void)__xuiAccordionCancelPress(pWidget, pData);
 	pData->iMode = iMode;
+	bChanged = 0;
 	if ( iMode == XUI_ACCORDION_MODE_SINGLE ) {
 		bKeepFound = 0;
 		for ( i = 0; i < pData->iSectionCount; i++ ) {
@@ -1493,10 +1533,12 @@ XUI_API int xuiAccordionSetMode(xui_widget pWidget, int iMode)
 					pData->iSelected = i;
 				} else {
 					pData->arrSections[i].bExpanded = 0;
+					bChanged = 1;
 				}
 			}
 		}
 	}
+	if ( bChanged ) pData->iChangeCount++;
 	return __xuiAccordionSyncSections(pWidget, pData);
 }
 
@@ -1531,7 +1573,12 @@ XUI_API int xuiAccordionSetMetrics(xui_widget pWidget, float fHeaderHeight, floa
 	xui_accordion_data_t* pData;
 
 	pData = __xuiAccordionGetData(pWidget);
-	if ( (pData == NULL) || (fHeaderHeight < 18.0f) || (fSpacing < 0.0f) || (fContentPadding < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fHeaderHeight) || (fHeaderHeight < 18.0f) ||
+	     !isfinite(fSpacing) || (fSpacing < 0.0f) ||
+	     !isfinite(fContentPadding) || (fContentPadding < 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	(void)__xuiAccordionCancelPress(pWidget, pData);
 	pData->fHeaderHeight = fHeaderHeight;
 	pData->fSpacing = fSpacing;
 	pData->fContentPadding = fContentPadding;

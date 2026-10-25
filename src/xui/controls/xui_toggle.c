@@ -2,6 +2,7 @@
 #if XUI_ENABLE_TOGGLE
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 #define XUI_TOGGLE_VISUAL_NORMAL	0
@@ -81,9 +82,21 @@ static uint32_t __xuiToggleColorAlpha(uint32_t iColor)
 	return iColor & 0xffu;
 }
 
+static int __xuiToggleNonNegativeFloatValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f;
+}
+
 static int __xuiToggleDescValid(const xui_toggle_desc_t* pDesc)
 {
-	return (pDesc == NULL) || (pDesc->iSize >= sizeof(*pDesc));
+	return (pDesc == NULL) ||
+		(pDesc->iSize >= sizeof(*pDesc) &&
+		 __xuiToggleNonNegativeFloatValid(pDesc->fTrackWidth) &&
+		 __xuiToggleNonNegativeFloatValid(pDesc->fTrackHeight) &&
+		 __xuiToggleNonNegativeFloatValid(pDesc->fThumbSize) &&
+		 __xuiToggleNonNegativeFloatValid(pDesc->fGap) &&
+		 __xuiToggleNonNegativeFloatValid(pDesc->fInnerTextPadding) &&
+		 __xuiToggleNonNegativeFloatValid(pDesc->fInnerTextGap));
 }
 
 static int __xuiToggleStringSet(char** ppText, int* pCapacity, const char* sText)
@@ -174,7 +187,8 @@ static int __xuiToggleStyleFloat(xui_widget pWidget, const char* sName, float* p
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiToggleNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -725,7 +739,10 @@ static int __xuiToggleEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
+		(void)__xuiToggleSyncState(pWidget, pData);
+		return XUI_OK;
 	case XUI_EVENT_BLUR:
+		pData->bKeyboardActive = 0;
 		(void)__xuiToggleSyncState(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
@@ -1129,7 +1146,8 @@ XUI_API int xuiToggleSetInnerTextMetrics(xui_widget pWidget, float fPadding, flo
 	xui_toggle_data_t* pData;
 
 	pData = __xuiToggleGetData(pWidget);
-	if ( (pData == NULL) || (fPadding < 0.0f) || (fGap < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiToggleNonNegativeFloatValid(fPadding) ||
+	     !__xuiToggleNonNegativeFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fInnerTextPadding = fPadding;
 	pData->fInnerTextGap = fGap;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1202,7 +1220,8 @@ XUI_API uint32_t xuiToggleGetDisabledTextColor(xui_widget pWidget)
 XUI_API int xuiToggleSetTrackSize(xui_widget pWidget, float fWidth, float fHeight)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
-	if ( (pData == NULL) || (fWidth <= 0.0f) || (fHeight <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fWidth) || !isfinite(fHeight) ||
+	     (fWidth <= 0.0f) || (fHeight <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fTrackWidth = fWidth;
 	pData->fTrackHeight = fHeight;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1223,7 +1242,7 @@ XUI_API float xuiToggleGetTrackHeight(xui_widget pWidget)
 XUI_API int xuiToggleSetThumbSize(xui_widget pWidget, float fSize)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
-	if ( (pData == NULL) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fThumbSize = fSize;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1237,7 +1256,7 @@ XUI_API float xuiToggleGetThumbSize(xui_widget pWidget)
 XUI_API int xuiToggleSetGap(xui_widget pWidget, float fGap)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
-	if ( (pData == NULL) || (fGap < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiToggleNonNegativeFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fGap = fGap;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }

@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -39,10 +40,13 @@ int main(void)
 	xui_widget pViewport;
 	xui_surface pTarget;
 	xui_surface pCanvasSurface;
+	xui_surface pOldSurface;
 	xui_canvas_desc_t tDesc;
+	xui_canvas_desc_t tInvalidDesc;
 	xui_rect_t tViewportWorld;
 	xui_vec2_t tMeasured;
 	xui_mesh_vertex_t arrVertices[3];
+	xui_surface_vertex_t arrQuad[4];
 	uint32_t arrIndices[3];
 	float fWidth;
 	float fHeight;
@@ -51,6 +55,7 @@ int main(void)
 	int bPenEnabled;
 	float fPenWidth;
 	uint32_t iPenColor;
+	int iDrawCount;
 	int iRet;
 	int iFailed;
 
@@ -73,6 +78,23 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 360.0f, 240.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
+
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.fCanvasWidth = NAN;
+	iRet = xuiCanvasCreate(pContext, &pCanvas, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCanvas == NULL, "reject NaN canvas descriptor");
+	tInvalidDesc.fCanvasWidth = INFINITY;
+	iRet = xuiCanvasCreate(pContext, &pCanvas, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCanvas == NULL, "reject infinite canvas descriptor");
+	tInvalidDesc.fCanvasWidth = 32768.0f;
+	iRet = xuiCanvasCreate(pContext, &pCanvas, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCanvas == NULL, "reject oversized canvas descriptor");
+	tInvalidDesc.fCanvasWidth = 320.0f;
+	tInvalidDesc.fCanvasHeight = 240.0f;
+	tInvalidDesc.fWheelStep = NAN;
+	iRet = xuiCanvasCreate(pContext, &pCanvas, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCanvas == NULL, "reject NaN canvas metric");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -110,9 +132,26 @@ int main(void)
 	XUI_TEST_CHECK(xuiCanvasGetFrameWidget(pCanvas) != NULL && xuiCanvasGetViewportWidget(pCanvas) != NULL, "child accessors");
 	pCanvasSurface = xuiCanvasGetSurface(pCanvas);
 	XUI_TEST_CHECK(pCanvasSurface != NULL, "surface accessor");
+	pOldSurface = pCanvasSurface;
+	xuiTestProxyFailNextSurfaceCreate(&tState, XUI_ERROR_OUT_OF_MEMORY);
+	iRet = xuiCanvasSetCanvasSize(pCanvas, 300.0f, 220.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY, "resize propagates surface creation failure");
+	iRet = xuiCanvasGetCanvasSize(pCanvas, &fWidth, &fHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fWidth, 480.0f) && __xuiCanvasNear(fHeight, 320.0f), "failed resize preserves dimensions");
+	XUI_TEST_CHECK(xuiCanvasGetSurface(pCanvas) == pOldSurface, "failed resize preserves surface");
 
 	iRet = xuiCanvasClear(pCanvas, XUI_COLOR_RGBA(250, 250, 250, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetLastColor(pCanvasSurface) == XUI_COLOR_RGBA(250, 250, 250, 255), "clear");
+	xuiTestProxySetSurfaceClearUnsupported(&tState, 1);
+	iDrawCount = xuiCanvasGetDrawCount(pCanvas);
+	iRet = xuiCanvasClear(pCanvas, XUI_COLOR_RGBA(245, 245, 245, 255));
+	xuiTestProxySetSurfaceClearUnsupported(&tState, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCanvasGetDrawCount(pCanvas) == iDrawCount + 1, "fallback clear counts once");
+	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pCanvasSurface) == XUI_COLOR_RGBA(245, 245, 245, 255), "fallback clear color");
+	xuiTestProxyFailNextDrawEnd(&tState, XUI_ERROR_UNSUPPORTED);
+	iDrawCount = xuiCanvasGetDrawCount(pCanvas);
+	iRet = xuiCanvasDrawPoint(pCanvas, 2.0f, 3.0f, 1.0f, XUI_COLOR_WHITE);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && xuiCanvasGetDrawCount(pCanvas) == iDrawCount, "draw end failure is propagated");
 	iRet = xuiCanvasDrawRectFill(pCanvas, (xui_rect_t){20.0f, 24.0f, 80.0f, 50.0f}, XUI_COLOR_RGBA(230, 80, 90, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCanvasGetDrawCount(pCanvas) >= 2, "rect fill");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCanvasSurface, XUI_COLOR_RGBA(230, 80, 90, 255)) == 1, "rect color count");
@@ -120,6 +159,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "line");
 	iRet = xuiCanvasDrawCircleStroke(pCanvas, 150.0f, 90.0f, 24.0f, 3.0f, XUI_COLOR_RGBA(30, 160, 110, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "circle stroke");
+	XUI_TEST_CHECK(xuiCanvasDrawPoint(pCanvas, NAN, 1.0f, 1.0f, XUI_COLOR_WHITE) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN point");
+	XUI_TEST_CHECK(xuiCanvasDrawLine(pCanvas, 0.0f, 0.0f, INFINITY, 1.0f, 1.0f, XUI_COLOR_WHITE) == XUI_ERROR_INVALID_ARGUMENT, "reject infinite line");
+	XUI_TEST_CHECK(xuiCanvasDrawCircleFill(pCanvas, 1.0f, 1.0f, -1.0f, XUI_COLOR_WHITE) == XUI_ERROR_INVALID_ARGUMENT, "reject negative circle radius");
+	XUI_TEST_CHECK(xuiCanvasDrawRectFill(pCanvas, (xui_rect_t){0, 0, -1, 1}, XUI_COLOR_WHITE) == XUI_ERROR_INVALID_ARGUMENT, "reject negative rectangle");
+	XUI_TEST_CHECK(xuiCanvasSetPen(pCanvas, 1, NAN, XUI_COLOR_WHITE) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN pen width");
+	memset(arrQuad, 0, sizeof(arrQuad));
+	arrQuad[2].fU = NAN;
+	XUI_TEST_CHECK(xuiCanvasDrawSurfaceQuad(pCanvas, pTarget, arrQuad, 0) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN surface quad");
 
 	arrVertices[0] = (xui_mesh_vertex_t){220.0f, 34.0f, XUI_COLOR_RGBA(40, 80, 180, 255)};
 	arrVertices[1] = (xui_mesh_vertex_t){280.0f, 110.0f, XUI_COLOR_RGBA(40, 180, 120, 255)};
@@ -129,6 +176,13 @@ int main(void)
 	arrIndices[2] = 2;
 	iRet = xuiCanvasDrawMeshTriangles(pCanvas, arrVertices, 3, arrIndices, 3, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestProxyGetMeshDrawCount(&tState) == 1, "mesh");
+	XUI_TEST_CHECK(xuiCanvasDrawMeshTriangles(pCanvas, arrVertices, 3, arrIndices, 2, 0) == XUI_ERROR_INVALID_ARGUMENT, "reject partial mesh triangle");
+	arrIndices[2] = 3;
+	XUI_TEST_CHECK(xuiCanvasDrawMeshTriangles(pCanvas, arrVertices, 3, arrIndices, 3, 0) == XUI_ERROR_INVALID_ARGUMENT, "reject out of range mesh index");
+	arrIndices[2] = 2;
+	arrVertices[1].fX = NAN;
+	XUI_TEST_CHECK(xuiCanvasDrawMeshTriangles(pCanvas, arrVertices, 3, arrIndices, 3, 0) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN mesh vertex");
+	arrVertices[1].fX = 280.0f;
 
 	iRet = xuiCanvasSetOffset(pCanvas, 120.0f, 80.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set offset");
@@ -163,6 +217,51 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "pen up input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "pen release");
+
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "pen disable down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport, "pen disable capture");
+	iRet = xuiCanvasSetPen(pCanvas, 0, 0.0f, iPenColor);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "disabling pen cancels capture");
+	iRet = xuiCanvasSetPen(pCanvas, 1, 5.0f, iPenColor);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable pen");
+
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lost button down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport, "lost button capture");
+	iRet = xuiInputPointerMove(pContext, tViewportWorld.fX + 24.0f, tViewportWorld.fY + 24.0f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lost button move input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "lost button move cancels capture");
+
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable widget down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport, "disable widget capture");
+	iRet = xuiWidgetSetEnabled(pCanvas, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable canvas");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "disabled canvas cancels capture");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCanvas, 1) == XUI_OK, "enable canvas");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch enabled canvas");
+
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "viewport mutation down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport, "viewport mutation capture");
+	iRet = xuiCanvasSetViewportHint(pCanvas, 181.0f, 141.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "viewport mutation cancels capture");
+
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide widget down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport, "hide widget capture");
+	iRet = xuiWidgetSetVisible(pCanvas, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide canvas");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "hidden canvas cancels capture");
 
 cleanup:
 	if ( pContext != NULL ) {

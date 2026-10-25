@@ -2,6 +2,7 @@
 #if XUI_ENABLE_SEPARATOR
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 typedef struct xui_separator_data_t {
@@ -43,6 +44,11 @@ static int __xuiSeparatorLineStyleValid(int iLineStyle)
 	       (iLineStyle == XUI_SEPARATOR_DASH_DOT);
 }
 
+static int __xuiSeparatorThicknessValid(float fThickness)
+{
+	return isfinite(fThickness) && fThickness >= 0.0f;
+}
+
 static int __xuiSeparatorDescValid(const xui_separator_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -51,7 +57,7 @@ static int __xuiSeparatorDescValid(const xui_separator_desc_t* pDesc)
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
-	if ( pDesc->fThickness < 0.0f ) {
+	if ( !__xuiSeparatorThicknessValid(pDesc->fThickness) ) {
 		return 0;
 	}
 	if ( !__xuiSeparatorOrientationValid(pDesc->iOrientation) ||
@@ -109,7 +115,8 @@ static int __xuiSeparatorStyleFloat(xui_widget pWidget, const char* sName, float
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiSeparatorThicknessValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -153,7 +160,7 @@ static void __xuiSeparatorResolve(xui_widget pWidget, const xui_separator_data_t
 	if ( __xuiSeparatorStyleInt(pWidget, "separator.line_style", &iValue) && __xuiSeparatorLineStyleValid(iValue) ) {
 		pResolved->iLineStyle = iValue;
 	}
-	if ( pResolved->fThickness < 0.0f ) {
+	if ( !__xuiSeparatorThicknessValid(pResolved->fThickness) ) {
 		pResolved->fThickness = 0.0f;
 	}
 }
@@ -491,7 +498,7 @@ XUI_API int xuiSeparatorSetThickness(xui_widget pWidget, float fThickness)
 {
 	xui_separator_data_t* pData;
 
-	if ( fThickness < 0.0f ) {
+	if ( !__xuiSeparatorThicknessValid(fThickness) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiSeparatorGetData(pWidget);
