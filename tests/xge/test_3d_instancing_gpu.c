@@ -50,6 +50,12 @@ static int frame(void *user)
     /* The renderer owns palettes, while meshes own independent VAOs. */
     xge3dRendererFree(r);r=NULL;CHECK(xge3dRendererCreate(&r)==XGE_OK);draw.disable_instancing=0;
     CHECK(xge3dRender(r,s,&draw,&batched)==XGE_OK && xge3dTargetReadPixels(target,pixels,sizeof(pixels),640)==XGE_OK && !memcmp(pixels,baseline,sizeof(pixels)));
+    /* Mixed cast/receive flags must split main batches and filter casters. */
+    for(int i=0;i<120;++i)CHECK(!xge3dNodeSetShadowFlags(s,nodes[i],i%3==0?XGE3D_SHADOW_CAST:i%3==1?XGE3D_SHADOW_RECEIVE:3));
+    CHECK(!xge3dRender(r,s,&draw,&batched)&&!xge3dTargetReadPixels(target,baseline,sizeof(baseline),640));
+    draw.disable_instancing=1;CHECK(!xge3dRender(r,s,&draw,&individual)&&!xge3dTargetReadPixels(target,pixels,sizeof(pixels),640)&&!memcmp(pixels,baseline,sizeof(pixels)));
+    CHECK(batched.draw_calls<individual.draw_calls&&individual.shadow_draw_calls==81);draw.disable_instancing=0;
+    for(int i=0;i<120;++i)CHECK(!xge3dNodeSetShadowFlags(s,nodes[i],3));
     /* Application LOD uses the same selected mesh in color and depth passes. */
     for (int i=1;i<120;++i) CHECK(xge3dNodeSetVisible(s,nodes[i],0)==XGE_OK);
     xge3d_lod_t level={triangle,5};CHECK(xge3dNodeSetLods(s,nodes[0],&level,1)==XGE_OK);

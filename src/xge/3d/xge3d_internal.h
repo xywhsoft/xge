@@ -7,6 +7,13 @@
 #include <string.h>
 
 typedef struct xge3d_node_data {
+#if XGE3D_ENABLE_SCENE
+    char *name;void *user_data;
+#endif
+#if XGE3D_ENABLE_COLLISION
+    xge3d_shape_t *collider;
+    int collision_leaf,collision_queued;
+#endif
     xge3d_node_t handle, parent;
     xge3d_mat4_t local, world;
     uint64_t version;
@@ -15,6 +22,9 @@ typedef struct xge3d_node_data {
     int world_dirty, retiring, spatial_queued;
     int spatial_leaf;
     uint32_t render_layers, query_layers, shadow_layers;
+#if XGE3D_ENABLE_SHADOW
+    uint32_t shadow_flags;
+#endif
     xge3d_dvec3_t global_position;
     xge3d_aabb_t bounds;
     uint64_t bounds_version, mesh_version;
@@ -42,6 +52,11 @@ typedef struct d3_lods { size_t count;xge3d_lod_t levels[3];uint64_t versions[3]
 void d3_lods_free(d3_lods *lods);
 
 struct xge3d_scene {
+#if XGE3D_ENABLE_COLLISION
+    xarray collision_tree,collision_items,collision_pending;
+    uint64_t collision_geometry_version,collision_tests;
+    int collision_rebuild,collision_root;
+#endif
     uint64_t id, version;
     xge3d_dvec3_t origin;
     xslotmap slots;
@@ -61,12 +76,20 @@ typedef struct d3_spatial_item { xge3d_aabb_t box; xge3d_node_t node; } d3_spati
 extern xatomic64 d3_geometry_version;
 void d3_node_dirty(xge3d_scene *scene,xge3d_node_data *node);
 void d3_spatial_dirty(xge3d_scene *scene,xge3d_node_data *node);
+#if XGE3D_ENABLE_COLLISION
+struct d3_triangle_bvh;
+void d3_collision_dirty(xge3d_scene *scene,xge3d_node_data *node);
+void d3_triangle_bvh_free(struct d3_triangle_bvh *bvh);
+#endif
 void d3_detach(xge3d_scene *scene,xge3d_node_data *node);
 void d3_attach(xge3d_scene *scene,xge3d_node_data *node,xge3d_node_data *parent);
 xge3d_node_data *d3_subtree_next(xge3d_node_data *node,xge3d_node_data *root);
 
 typedef struct d3_joint_bounds { xge3d_aabb_t box;int valid; } d3_joint_bounds;
 struct xge3d_mesh {
+#if XGE3D_ENABLE_COLLISION
+    struct d3_triangle_bvh *collision_bvh;
+#endif
     xarray vertices, indices;
 #if XGE3D_ENABLE_ANIMATION
     xarray joint_bounds;
@@ -177,6 +200,10 @@ int d3_material_retain(xge3d_material *material);
 #if XGE3D_ENABLE_MODEL
 struct cgltf_data *d3_model_data(const xge3d_model *model);
 int d3_model_retain(xge3d_model *model);
+#if XGE3D_ENABLE_CACHE
+int d3_model_share_textures(xge3d_model *model,int (*intern)(xge3d_texture *,xge3d_texture **,void *),void *user);
+int d3_model_cache_bytes(const xge3d_model *model,uint64_t *cpu,uint64_t *gpu);
+#endif
 int d3_mesh_detach_gpu(xge3d_mesh *mesh);
 int d3_texture_detach_gpu(xge3d_texture *texture);
 typedef struct d3_model_io {

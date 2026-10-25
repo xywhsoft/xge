@@ -353,6 +353,9 @@
     ]
   },
   "3d_sources": {
+    "src/xge/3d/xge3d_nodes.c": "XGE3D_ENABLE_SCENE",
+    "src/xge/3d/xge3d_collision.c": "XGE3D_ENABLE_COLLISION",
+    "src/xge/3d/xge3d_cache.c": "XGE3D_ENABLE_CACHE",
     "src/xge/3d/xge3d_scene.c": "XGE_ENABLE_3D",
     "src/xge/3d/xge3d_render.c": "XGE_ENABLE_3D",
     "src/xge/3d/xge3d_model.c": "XGE3D_ENABLE_MODEL",

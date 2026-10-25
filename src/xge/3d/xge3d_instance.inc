@@ -121,6 +121,9 @@ int xge3dModelInstanceStep(xge3d_instance_builder *b,const xge3d_work_budget_t *
             if(!d3_selected(b->model->data,source)){++b->source;continue;}
             xge3d_node_t *node=xrtArrayGet(&b->nodes,b->source);result=xge3dNodeCreate(b->scene,b->root,node);if(result)break;
             xge3d_node_data *n=d3_node(b->scene,*node);n->instance_root=b->root;n->source_node=b->source;
+#if XGE3D_ENABLE_SCENE
+            result=xge3dNodeSetName(b->scene,*node,source->name);if(result)break;
+#endif
             xge3d_mat4_t matrix;cgltf_node_transform_local(source,matrix.m);result=xge3dNodeSetMatrix(b->scene,*node,&matrix);if(result)break;
 #if XGE3D_ENABLE_LIGHTING
             if(source->light){const cgltf_light *l=source->light;xge3d_light_desc_t d=xge3dLightDefault((int)l->type-1);

@@ -52,6 +52,13 @@ static int frame(void *user)
         CHECK(shade>=0 && shade<lit-60 && stats.shadow_maps==(uint32_t)c && stats.shadow_draw_calls==(uint32_t)c*2);
         CHECK(stats.upload_bytes==0);
     }
+    uint32_t flags=0;CHECK(!xge3dNodeGetShadowFlags(s,blocker,&flags)&&flags==3);
+    CHECK(xge3dNodeSetShadowFlags(s,blocker,8)==XGE_ERROR_INVALID_ARGUMENT&&!xge3dNodeGetShadowFlags(s,blocker,&flags)&&flags==3);
+    CHECK(!xge3dNodeSetShadowFlags(s,blocker,XGE3D_SHADOW_RECEIVE)&&abs(render(r,s,&draw,&stats)-lit)<=2&&stats.shadow_draw_calls==4);
+    CHECK(!xge3dNodeSetShadowFlags(s,blocker,3)&&!xge3dNodeSetShadowFlags(s,receiver,XGE3D_SHADOW_CAST)&&abs(render(r,s,&draw,&stats)-lit)<=2);
+    CHECK(!xge3dNodeSetShadowFlags(s,receiver,3)&&render(r,s,&draw,&stats)<lit-60);
+    CHECK(!xge3dNodeSetLayers(s,blocker,UINT32_MAX,UINT32_MAX,0)&&abs(render(r,s,&draw,&stats)-lit)<=2);
+    CHECK(!xge3dNodeSetLayers(s,blocker,UINT32_MAX,UINT32_MAX,UINT32_MAX));
     CHECK(xge3dNodeSetVisible(s,blocker,0)==XGE_OK && abs(render(r,s,&draw,&stats)-lit)<=2);
     CHECK(xge3dNodeSetVisible(s,blocker,1)==XGE_OK && material(s,blocker,.25f,1)==XGE_OK);
     CHECK(abs(render(r,s,&draw,&stats)-lit)<=2);

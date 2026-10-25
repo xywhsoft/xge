@@ -11,7 +11,6 @@ static const char d3_sky_fragment_shader[] =
     "void main(){\n"
     " vec4 a=skyInverse*vec4(ndc,-1.0,1.0),b=skyInverse*vec4(ndc,1.0,1.0);\n"
     " vec3 c=texture(sky,b.xyz/b.w-a.xyz/a.w).rgb*exposure;\n"
-    " c=mix(12.92*c,1.055*pow(max(c,vec3(0.0)),vec3(1.0/2.4))-0.055,step(vec3(0.0031308),c));\n"
     " frag=vec4(c,1.0);\n"
     "}\n";
 static const char d3_vertex_shader[] =
@@ -58,7 +57,7 @@ static const char d3_fragment_shader[] =
     "uniform samplerCube irradianceMap,prefilteredMap;uniform sampler2D brdfMap;uniform float iblIntensity,iblMaxLod;\n"
 #endif
 #if XGE3D_ENABLE_SHADOW
-    "uniform sampler2D shadowAtlas; uniform mat4 shadowMatrix[6]; uniform int lightMap[8],sunIndex,cascadeCount;\n"
+    "uniform sampler2D shadowAtlas; uniform mat4 shadowMatrix[6]; uniform int lightMap[8],sunIndex,cascadeCount,receiveShadows;\n"
     "uniform vec4 cascadeSplits,shadowParams,viewDepth; uniform vec2 atlasTexel; uniform float cameraNear;\n"
 #endif
 #endif
@@ -68,9 +67,6 @@ static const char d3_fragment_shader[] =
     " vec2 p=(texcoord[i]==0?vUV0:vUV1)*uvTransform[i].zw;\n"
     " float c=cos(uvRotation[i]),s=sin(uvRotation[i]);\n"
     " return vec2(c*p.x-s*p.y,s*p.x+c*p.y)+uvTransform[i].xy;\n"
-    "}\n"
-    "vec3 srgb(vec3 c){\n"
-    " return mix(12.92*c,1.055*pow(max(c,vec3(0.0)),vec3(1.0/2.4))-0.055,step(vec3(0.0031308),c));\n"
     "}\n"
 #if XGE3D_ENABLE_LIGHTING
 #if XGE3D_ENABLE_SHADOW
@@ -85,7 +81,7 @@ static const char d3_fragment_shader[] =
     " }return sum/9.0;\n"
     "}\n"
     "float shadowVisibility(int light,vec3 N){\n"
-    " int map=lightMap[light];if(map<0) return 1.0;vec3 p=vPosition+N*shadowParams.y;\n"
+    " int map=lightMap[light];if(map<0 || receiveShadows==0) return 1.0;vec3 p=vPosition+N*shadowParams.y;\n"
     " if(light!=sunIndex) return shadowSample(map,p);\n"
     " float depth=dot(viewDepth,vec4(vPosition,1.0)); if(depth>cascadeSplits[cascadeCount-1]) return 1.0;\n"
     " int c=0;for(int i=0;i<3;++i){if(c+1<cascadeCount && depth>cascadeSplits[c]) ++c;}\n"
@@ -154,7 +150,43 @@ static const char d3_fragment_shader[] =
 #if XGE3D_ENABLE_FOG
     " if(fogColor.w>0.5) lit=mix(lit,fogColor.rgb,clamp((dot(fogDepth,vec4(vPosition,1.0))-fogRange.x)/(fogRange.y-fogRange.x),0.0,1.0));\n"
 #endif
-    " frag=vec4(srgb(lit*exposure),alphaMode==2?base.a:1.0);\n"
+    " frag=vec4(lit*exposure,alphaMode==2?base.a:1.0);\n"
+    "}\n";
+
+/* Intermediate pixels are linear associated RGBA. Public targets remain
+ * display-encoded associated RGBA, matching the existing 2D texture contract. */
+static const char d3_composite_fragment_shader[] =
+    "#ifdef GL_ES\nprecision highp float;\n#endif\n"
+    "in vec2 ndc;out vec4 frag;uniform sampler2D image;uniform int importing;\n"
+#if XGE3D_ENABLE_FXAA
+    "uniform int antialiasing;\n"
+#endif
+    "vec3 encode(vec3 x){x=clamp(x,0.0,1.0);return mix(12.92*x,1.055*pow(x,vec3(1.0/2.4))-0.055,step(vec3(0.0031308),x));}\n"
+    "vec3 decode(vec3 x){return mix(x/12.92,pow((x+0.055)/1.055,vec3(2.4)),step(vec3(0.04045),x));}\n"
+    "vec4 display(vec2 uv){vec4 c=texture(image,uv);return vec4(c.a>0.0?encode(c.rgb/c.a)*c.a:vec3(0.0),c.a);}\n"
+#if XGE3D_ENABLE_FXAA
+    "float luma(vec4 c){return dot(c.rgb,vec3(0.299,0.587,0.114))+c.a*0.25;}\n"
+    "vec4 fxaa(vec2 uv,vec4 m){\n"
+    " vec2 px=1.0/vec2(textureSize(image,0));\n"
+    " float a=luma(display(uv+px*vec2(-1,-1))),b=luma(display(uv+px*vec2(1,-1)));\n"
+    " float c=luma(display(uv+px*vec2(-1,1))),d=luma(display(uv+px*vec2(1,1))),e=luma(m);\n"
+    " float lo=min(e,min(min(a,b),min(c,d))),hi=max(e,max(max(a,b),max(c,d)));\n"
+    " if(hi-lo<max(0.0312,hi*0.125))return m;\n"
+    " vec2 dir=vec2(-((a+b)-(c+d)),(a+c)-(b+d));\n"
+    " float reduce=max((a+b+c+d)*0.03125,0.0078125);\n"
+    " dir=clamp(dir/(min(abs(dir.x),abs(dir.y))+reduce),vec2(-8.0),vec2(8.0))*px;\n"
+    " vec4 p=0.5*(display(uv+dir*(1.0/3.0-0.5))+display(uv+dir*(2.0/3.0-0.5)));\n"
+    " vec4 q=p*0.5+0.25*(display(uv-dir*0.5)+display(uv+dir*0.5));\n"
+    " float l=luma(q);return l<lo||l>hi?p:q;\n"
+    "}\n"
+#endif
+    "void main(){vec2 uv=ndc*0.5+0.5;vec4 c=texture(image,uv);\n"
+    " if(importing!=0){frag=vec4(c.a>0.0?decode(clamp(c.rgb/c.a,0.0,1.0))*c.a:vec3(0.0),c.a);return;}\n"
+    " c=display(uv);\n"
+#if XGE3D_ENABLE_FXAA
+    " if(antialiasing!=0)c=fxaa(uv,c);\n"
+#endif
+    " frag=c;\n"
     "}\n";
 
 #if XGE3D_ENABLE_SHADOW

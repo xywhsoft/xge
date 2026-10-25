@@ -84,20 +84,23 @@ def main():
     del sparse_skin['accessors'][3]['bufferView'];sparse_skin['accessors'][3]['sparse']={'count':2,'indices':{'bufferView':4,'componentType':5121},'values':{'bufferView':5}}
     write('skin-sparse.gltf',sparse_skin)
     # Separate animation-only sources, with compact node indices and shared names.
-    for kind in ['linear','step','cubic','rotation','cubic-rotation']:
+    for kind in ['linear','step','cubic','rotation','cubic-rotation','scale','instant']:
         rotation='rotation' in kind;cubic='cubic' in kind
         keys=[0,0,0,1,0,0,1,0] if rotation else [1,0,0,3,0,0]
+        if kind=='scale':keys=[1,1,1,3,3,3]
+        if kind=='instant':keys=[2,0,0]
         if cubic:
             keys=[0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0] if rotation else [0,0,0,1,0,0,2,0,0,0,0,0,3,0,0,0,0,0]
-        motion_bytes=struct.pack('<2f',0,1)+struct.pack('<%df'%len(keys),*keys)
+        times=[0] if kind=='instant' else [0,1];offset=len(times)*4
+        motion_bytes=struct.pack('<%df'%len(times),*times)+struct.pack('<%df'%len(keys),*keys)
         motion={'asset':{'version':'2.0'},'scene':0,'scenes':[{'nodes':[0]}],
                 'nodes':[{'name':'Root','children':[1]},{'name':'Tip','translation':[1,0,0]}],
                 'buffers':[{'byteLength':len(motion_bytes),'uri':'data:application/octet-stream;base64,'+base64.b64encode(motion_bytes).decode()}],
-                'bufferViews':[{'buffer':0,'byteLength':8},{'buffer':0,'byteOffset':8,'byteLength':len(motion_bytes)-8}],
-                'accessors':[{'bufferView':0,'componentType':5126,'type':'SCALAR','count':2},
-                             {'bufferView':1,'componentType':5126,'type':'VEC4' if rotation else 'VEC3','count':6 if cubic else 2}],
+                'bufferViews':[{'buffer':0,'byteLength':offset},{'buffer':0,'byteOffset':offset,'byteLength':len(motion_bytes)-offset}],
+                'accessors':[{'bufferView':0,'componentType':5126,'type':'SCALAR','count':len(times)},
+                             {'bufferView':1,'componentType':5126,'type':'VEC4' if rotation else 'VEC3','count':6 if cubic else len(times)}],
                 'animations':[{'name':kind,'samplers':[{'input':0,'output':1,'interpolation':'CUBICSPLINE' if cubic else 'STEP' if kind=='step' else 'LINEAR'}],
-                               'channels':[{'sampler':0,'target':{'node':1,'path':'rotation' if rotation else 'translation'}}]}]}
+                               'channels':[{'sampler':0,'target':{'node':1,'path':'rotation' if rotation else 'scale' if kind=='scale' else 'translation'}}]}]}
         write('motion-'+kind+'.gltf',motion)
     write('external.gltf',model)
     embedded=copy.deepcopy(model)

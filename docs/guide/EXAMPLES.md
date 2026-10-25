@@ -12,6 +12,9 @@
 | [`examples/xge/xge_3d_lighting`](../../examples/xge/xge_3d_lighting/README.md) | 直接 PBR、太阳级联阴影、天空、静态 IBL 与应用昼夜参数。 |
 | [`examples/xge/xge_3d_animation`](../../examples/xge/xge_3d_animation/README.md) | 六类独立外部动作、T/A 骨架离线重定向、蒙皮阴影和双层混合。 |
 | [`examples/xge/xge_3d_walk`](../../examples/xge/xge_3d_walk/README.md) | 天空盒、随机岛屿、海天线、距离雾、骨骼角色行走/跳跃及第三人称相机。 |
+| [`examples/xge/xge_3d_core`](../../examples/xge/xge_3d_core/README.md) | 模型缓存复用、胶囊碰撞扫掠、场景描述表、名称查找和子树克隆。 |
+| [`examples/xge/xge_3d_render_quality`](../../examples/xge/xge_3d_render_quality/README.md) | 线性透明合成、FXAA 对照与节点阴影投射/接收开关。 |
+| [`examples/xge/xge_3d_playback`](../../examples/xge/xge_3d_playback/README.md) | 自动动画过渡、连续打断、手臂加法叠加、整体/分层暂停及播放完成状态。 |
 | [`examples/xge/xge_particles`](../../examples/xge/xge_particles/README.md) | 七个独立粒子程序：火花、火烟、爆炸、雨雪、尾尘、光环、彩纸。 |
 | `examples/xge/xge_shape_ex`、`xge_shape_ex_*` | 路径、混合、特效、渐变、裁剪和绘制顺序。 |
 | `examples/xge/xge_svg` | SVG 加载与绘制。 |

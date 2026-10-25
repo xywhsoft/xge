@@ -28,6 +28,9 @@ xge3d_node_data *d3_subtree_next(xge3d_node_data *n,xge3d_node_data *root)
 {return n->first_child?n->first_child:d3_subtree_after(n,root);}
 void d3_spatial_dirty(xge3d_scene *s,xge3d_node_data *n)
 {
+#if XGE3D_ENABLE_COLLISION
+    d3_collision_dirty(s,n);
+#endif
     if(n->spatial_leaf<0||n->spatial_queued||s->spatial_rebuild)return;
     if(!xrtArrayPush(&s->spatial_pending,&n->handle)){s->spatial_rebuild=1;return;}
     n->spatial_queued=1;
@@ -47,6 +50,13 @@ void d3_node_dirty(xge3d_scene *s,xge3d_node_data *root)
 }
 static void d3_destroy_one(xge3d_scene *s,xge3d_node_data *n)
 {
+#if XGE3D_ENABLE_SCENE
+    xrtFree(n->name);
+#endif
+#if XGE3D_ENABLE_COLLISION
+    s->collision_rebuild=1;
+    if(n->collider){xge3dMeshFree(n->collider->mesh);xrtFree(n->collider);}
+#endif
     d3_detach(s,n);s->spatial_rebuild=1;
 #if XGE3D_ENABLE_ANIMATION
     for(size_t i=0;i<n->skin_users.Count;++i){d3_skin *skin=*(d3_skin**)xrtArrayGet(&n->skin_users,i);skin->dirty=1;
@@ -65,6 +75,19 @@ static void d3_destroy_one(xge3d_scene *s,xge3d_node_data *n)
     ++s->stats.destroyed_nodes;xrtFree(n);++s->version;
 }
 
+#if XGE3D_ENABLE_SHADOW
+int xge3dNodeSetShadowFlags(xge3d_scene *s,xge3d_node_t h,uint32_t flags)
+{
+    xge3d_node_data *n=d3_node(s,h);
+    if(!n||(flags&~(XGE3D_SHADOW_CAST|XGE3D_SHADOW_RECEIVE)))return XGE_ERROR_INVALID_ARGUMENT;
+    n->shadow_flags=flags;return XGE_OK;
+}
+int xge3dNodeGetShadowFlags(xge3d_scene *s,xge3d_node_t h,uint32_t *out)
+{
+    xge3d_node_data *n=d3_node(s,h);if(!n||!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=n->shadow_flags;return XGE_OK;
+}
+#endif
 int xge3dSceneCreate(xge3d_scene **out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
@@ -73,6 +96,10 @@ int xge3dSceneCreate(xge3d_scene **out)
     xge3d_scene *s = xrtMalloc(sizeof(*s));
     if (!s) return XGE_ERROR_OUT_OF_MEMORY;
     memset(s, 0, sizeof(*s));
+#if XGE3D_ENABLE_COLLISION
+    xrtArrayInit(&s->collision_tree,sizeof(d3_spatial_branch));xrtArrayInit(&s->collision_items,sizeof(d3_spatial_item));
+    xrtArrayInit(&s->collision_pending,sizeof(xge3d_node_t));s->collision_rebuild=1;s->collision_root=-1;
+#endif
     xrtSlotMapInit(&s->slots);
     xrtArrayInit(&s->nodes, sizeof(xge3d_node_data*));
     xrtArrayInit(&s->scratch, sizeof(xge3d_node_data*));
@@ -94,6 +121,9 @@ void xge3dSceneFree(xge3d_scene *s)
     xrtArrayUnit(&s->scratch);
     xrtArrayUnit(&s->spatial_tree);xrtArrayUnit(&s->spatial_items);xrtArrayUnit(&s->spatial_pending);xrtArrayUnit(&s->query_stack);
     xrtSlotMapUnit(&s->slots);
+#if XGE3D_ENABLE_COLLISION
+    xrtArrayUnit(&s->collision_tree);xrtArrayUnit(&s->collision_items);xrtArrayUnit(&s->collision_pending);
+#endif
     xrtFree(s);
 }
 
@@ -158,7 +188,13 @@ int xge3dNodeCreate(xge3d_scene *s, xge3d_node_t parent, xge3d_node_t *out)
     xge3d_node_data *n = xrtMalloc(sizeof(*n));
     if (!n) return XGE_ERROR_OUT_OF_MEMORY;
     memset(n, 0, sizeof(*n));
+#if XGE3D_ENABLE_COLLISION
+    n->collision_leaf=-1;
+#endif
     n->local = n->world = d3_identity();
+#if XGE3D_ENABLE_SHADOW
+    n->shadow_flags=XGE3D_SHADOW_CAST|XGE3D_SHADOW_RECEIVE;
+#endif
     n->parent = parent;
     n->global_position=s->origin;
     n->visible = 1;

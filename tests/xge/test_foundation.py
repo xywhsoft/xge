@@ -23,6 +23,8 @@ def main():
                    "-Wno-missing-field-initializers", "-DXGE_DLL", "-DXUI_DLL", "-include",
                    profile / "xge_build_config.h", f"tests/xge/test_3d_{name}.c",
                    profile / "xge.lib", "-lm", "-o", exe]
+        if name == "mesh_prepare_gpu":
+            command.insert(1,"-Wno-cast-function-type") # Win32 GetProcAddress function-pointer casts.
         started = time.perf_counter()
         compiled = subprocess.run([str(x) for x in command], cwd=ROOT, capture_output=True, text=True)
         result = subprocess.run([str(exe)], cwd=ROOT, capture_output=True, text=True, timeout=180) if compiled.returncode == 0 else compiled

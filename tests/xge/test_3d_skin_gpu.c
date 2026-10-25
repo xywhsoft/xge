@@ -55,6 +55,11 @@ static int frame(void *user)
     xge3d_shadow_settings_t shadows=xge3dShadowDefault();shadows.resolution=512;shadows.cascades=1;shadows.distance=10;shadows.depth_padding=5;draw.shadows=&shadows;
     CHECK(xge3dRender(r,s,&draw,&stats)==XGE_OK && stats.shadow_draw_calls==3 && stats.upload_bytes==0);
     CHECK(xge3dTargetReadPixels(target,pixels,sizeof(pixels),512)==XGE_OK && pixels[(64*128+76)*4]<lit-60);
+    xge3d_node_t skinned;CHECK(!xge3dModelInstanceNode(s,roots[0],1,&skinned));
+    CHECK(!xge3dNodeSetShadowFlags(s,skinned,XGE3D_SHADOW_RECEIVE)&&!xge3dRender(r,s,&draw,&stats)&&stats.shadow_draw_calls==2);
+    CHECK(!xge3dNodeSetShadowFlags(s,skinned,3)&&!xge3dNodeSetShadowFlags(s,receiver,XGE3D_SHADOW_CAST)&&!xge3dRender(r,s,&draw,&stats));
+    CHECK(!xge3dTargetReadPixels(target,pixels,sizeof(pixels),512)&&abs(pixels[(64*128+76)*4]-lit)<=2);
+    CHECK(!xge3dNodeSetShadowFlags(s,receiver,3));
     layer.time=0;CHECK(xge3dAnimatorSetLayer(animators[0],0,clip,&layer)==XGE_OK && xge3dAnimatorUpdate(animators[0],0)==XGE_OK);
     CHECK(xge3dRender(r,s,&draw,&stats)==XGE_OK && stats.upload_bytes==128);
     CHECK(xge3dTargetReadPixels(target,pixels,sizeof(pixels),512)==XGE_OK && abs(pixels[(64*128+76)*4]-lit)<=2);

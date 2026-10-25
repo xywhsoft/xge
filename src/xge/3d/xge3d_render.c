@@ -26,6 +26,14 @@ typedef struct d3_draw {
 typedef struct d3_batch { d3_draw *draw;size_t count,offset; } d3_batch;
 typedef struct d3_instance_palette { xarray matrices;GLuint texture;int columns,rows; } d3_instance_palette;
 typedef struct d3_instance_uniforms { GLint sampler,enabled,offset,columns,vp; } d3_instance_uniforms;
+typedef struct d3_compositor {
+    xge_shader_t shader;GLuint fbo,color,input,depth;
+    int width,height;GLenum depth_format;GLint image,importing;
+#if XGE3D_ENABLE_FXAA
+    GLint antialiasing;int mode;
+#endif
+} d3_compositor;
+typedef struct d3_output {GLint fbo,viewport[4],read_buffer;int shared_depth,srgb;} d3_output;
 #if XGE3D_ENABLE_SHADOW
 #define D3_INSTANCE_PASSES 7
 #else
@@ -33,6 +41,7 @@ typedef struct d3_instance_uniforms { GLint sampler,enabled,offset,columns,vp; }
 #endif
 struct xge3d_renderer {
     xge3d_renderer_options_t options;xge3d_render_profile_t profile;
+    d3_compositor composite;
     GLuint queries[16];uint64_t pending_queries[8],sequence,last_gpu_ns,last_gpu_sample;
     int active_query;
     xge_shader_t shader, sky_shader;
@@ -62,6 +71,7 @@ struct xge3d_renderer {
     GLint depth_mvp, depth_color, depth_alpha, depth_cutoff, depth_map, depth_has_map, depth_uv, depth_rotation, depth_texcoord;
     GLint shadow_atlas, shadow_matrices[6], shadow_light_map[8], shadow_sun, shadow_cascades;
     GLint shadow_splits, shadow_params, shadow_texel, shadow_view_depth, shadow_near;
+    GLint receive_shadows;
 #endif
 #if XGE3D_ENABLE_IBL
     GLint ibl_irradiance, ibl_prefiltered, ibl_brdf, ibl_intensity, ibl_max_lod;
@@ -166,7 +176,7 @@ static int d3_ready(void)
 {
     if (!__xge3dContext()) return XGE_ERROR_NOT_INITIALIZED;
     return xge_glDepthMask && xge_glGetFloatv && xge_glBlendFuncSeparate && xge_glBlendEquationSeparate && xge_glDrawArraysInstanced && xge_glDrawElementsInstanced &&
-        xge_glGetFramebufferAttachmentParameteriv && (xge_glClearDepth || xge_glClearDepthf)
+        xge_glGetFramebufferAttachmentParameteriv && xge_glBlitFramebuffer && xge_glReadBuffer && (xge_glClearDepth || xge_glClearDepthf)
         ? XGE_OK : XGE_ERROR_UNSUPPORTED;
 }
 static void d3_mesh_attributes(void)
@@ -383,6 +393,9 @@ int d3_mesh_retain(xge3d_mesh *m)
 void xge3dMeshFree(xge3d_mesh *m)
 {
     if (!m || --m->refs) return;
+#if XGE3D_ENABLE_COLLISION
+    d3_triangle_bvh_free(m->collision_bvh);
+#endif
     if (m->context && m->context==__xge3dContext()) {
         if (m->vao) xge_glDeleteVertexArrays(1,&m->vao);
         if (m->vbo) xge_glDeleteBuffers(1,&m->vbo);
@@ -515,6 +528,7 @@ static d3_instance_uniforms d3_instance_locations(GLuint program)
     return (d3_instance_uniforms){xge_glGetUniformLocation(program,"instancePalette"),xge_glGetUniformLocation(program,"instanceEnabled"),
         xge_glGetUniformLocation(program,"instanceOffset"),xge_glGetUniformLocation(program,"instanceColumns"),xge_glGetUniformLocation(program,"viewProjection")};
 }
+#include "xge3d_composite.inc"
 int xge3dRendererCreate(xge3d_renderer **out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
@@ -534,6 +548,7 @@ int xge3dRendererCreate(xge3d_renderer **out)
 #endif
     result=d3_program_create(&r->shader,d3_vertex_shader,d3_fragment_shader);
     if (result==XGE_OK) result=d3_program_create(&r->sky_shader,d3_sky_vertex_shader,d3_sky_fragment_shader);
+    if (result==XGE_OK) result=d3_program_create(&r->composite.shader,d3_sky_vertex_shader,d3_composite_fragment_shader);
 #if XGE3D_ENABLE_SHADOW
     if (result==XGE_OK && (!xge_glDrawBuffers || !xge_glReadBuffer)) result=XGE_ERROR_UNSUPPORTED;
     if (result==XGE_OK) result=d3_program_create(&r->depth_shader,d3_vertex_shader,d3_depth_fragment_shader);
@@ -550,6 +565,11 @@ int xge3dRendererCreate(xge3d_renderer **out)
     r->sky_inverse=xge_glGetUniformLocation(r->sky_shader.iProgram,"skyInverse");
     r->sky_map=xge_glGetUniformLocation(r->sky_shader.iProgram,"sky");
     r->sky_exposure=xge_glGetUniformLocation(r->sky_shader.iProgram,"exposure");
+    r->composite.image=xge_glGetUniformLocation(r->composite.shader.iProgram,"image");
+    r->composite.importing=xge_glGetUniformLocation(r->composite.shader.iProgram,"importing");
+#if XGE3D_ENABLE_FXAA
+    r->composite.antialiasing=xge_glGetUniformLocation(r->composite.shader.iProgram,"antialiasing");
+#endif
     r->mvp=xge_glGetUniformLocation(r->shader.iProgram,"mvp");
     r->color=xge_glGetUniformLocation(r->shader.iProgram,"color");
     r->world=xge_glGetUniformLocation(r->shader.iProgram,"world");
@@ -597,6 +617,7 @@ int xge3dRendererCreate(xge3d_renderer **out)
     r->depth_uv=xge_glGetUniformLocation(dp,"uvTransform"); r->depth_rotation=xge_glGetUniformLocation(dp,"uvRotation");
     r->depth_texcoord=xge_glGetUniformLocation(dp,"texcoord");
     r->shadow_atlas=xge_glGetUniformLocation(sp,"shadowAtlas"); r->shadow_sun=xge_glGetUniformLocation(sp,"sunIndex");
+    r->receive_shadows=xge_glGetUniformLocation(sp,"receiveShadows");
     r->shadow_cascades=xge_glGetUniformLocation(sp,"cascadeCount"); r->shadow_splits=xge_glGetUniformLocation(sp,"cascadeSplits");
     r->shadow_params=xge_glGetUniformLocation(sp,"shadowParams"); r->shadow_texel=xge_glGetUniformLocation(sp,"atlasTexel");
     r->shadow_view_depth=xge_glGetUniformLocation(sp,"viewDepth"); r->shadow_near=xge_glGetUniformLocation(sp,"cameraNear");
@@ -629,6 +650,7 @@ void xge3dRendererFree(xge3d_renderer *r)
     if (r->context==__xge3dContext()) {
         if(r->queries[0]&&xge_glDeleteQueries)xge_glDeleteQueries(16,r->queries);
         xgeShaderFree(&r->shader); xgeShaderFree(&r->sky_shader);
+        d3_composite_free(&r->composite);xgeShaderFree(&r->composite.shader);
         if (r->sky_vao) xge_glDeleteVertexArrays(1,&r->sky_vao);
         for (int i=0;i<D3_INSTANCE_PASSES;++i) if (r->instances[i].texture) xge_glDeleteTextures(1,&r->instances[i].texture);
 #if XGE3D_ENABLE_SHADOW
@@ -726,6 +748,10 @@ static int d3_draw_compare(const void *a, const void *b)
     const xge3d_node_data *xn=x->node,*yn=y->node;
     if (x->mesh!=y->mesh) return (uintptr_t)x->mesh<(uintptr_t)y->mesh ? -1 : 1;
     if (xn->material!=yn->material) return (uintptr_t)xn->material<(uintptr_t)yn->material ? -1 : 1;
+#if XGE3D_ENABLE_SHADOW
+    if ((xn->shadow_flags&XGE3D_SHADOW_RECEIVE)!=(yn->shadow_flags&XGE3D_SHADOW_RECEIVE))
+        return (xn->shadow_flags&XGE3D_SHADOW_RECEIVE)?1:-1;
+#endif
     int color=memcmp(xn->color,yn->color,sizeof(xn->color));if (color) return color;
     return (x->determinant<0)-(y->determinant<0);
 }
@@ -804,6 +830,9 @@ static int d3_material_bind(xge3d_renderer *r, const xge3d_node_data *n, uint64_
         m->base_color[2]*n->color[2],m->base_color[3]*n->color[3]);
     xge_glUniform3f(r->emissive,m->emissive[0],m->emissive[1],m->emissive[2]);
     xge_glUniform1i(r->alpha_mode,m->alpha_mode); xge_glUniform1f(r->alpha_cutoff,m->alpha_cutoff);
+#if XGE3D_ENABLE_SHADOW
+    xge_glUniform1i(r->receive_shadows,(n->shadow_flags&XGE3D_SHADOW_RECEIVE)!=0);
+#endif
 #if XGE3D_ENABLE_LIGHTING
     xge_glUniform1i(r->unlit,m->unlit);
     xge_glUniform4f(r->material_params,m->metallic,m->roughness,m->normal_scale,m->occlusion_strength);
@@ -970,6 +999,7 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     memset(&r->profile,0,sizeof(r->profile));r->profile.size=sizeof(r->profile);d3_profile_begin(r);
     d3_state state; d3_save(&state);
     xge3d_render_stats_t counts={0};
+    d3_output output={0};int composite_started=0;
     if (d->target) {
         xge_glBindFramebuffer(GL_FRAMEBUFFER,d->target->fbo);
         xge_glViewport(0,0,d->target->texture.iWidth,d->target->texture.iHeight);
@@ -980,13 +1010,16 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     if (depth_type!=GL_NONE)
         xge_glGetFramebufferAttachmentParameteriv(D3_DRAW_FRAMEBUFFER,attachment,0x8216,&depth_bits);
     if (!depth_bits) { result=XGE_ERROR_UNSUPPORTED; goto done; }
+    result=d3_composite_begin(r,d,&output,&state);if(result!=XGE_OK)goto done;composite_started=1;
     xge_glEnable(GL_DEPTH_TEST); xge_glDepthFunc(GL_LESS); xge_glDepthMask(GL_TRUE);
     xge_glEnable(GL_CULL_FACE); xge_glCullFace(GL_BACK);
     if (state.srgb>=0) xge_glDisable(0x8DB9); /* Shader writes final sRGB bytes. */
     if (state.seamless>=0) xge_glEnable(0x884F);
     xge_glDisable(GL_BLEND); xge_glDisable(GL_SCISSOR_TEST); xge_glDisable(GL_STENCIL_TEST);
     xge_glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
-    xge_glClearColor(d->clear_color[0],d->clear_color[1],d->clear_color[2],d->clear_color[3]);
+    float clear_alpha=fminf(1,fmaxf(0,d->clear_color[3]));
+    xge_glClearColor(d3_decode_clear(d->clear_color[0],clear_alpha),d3_decode_clear(d->clear_color[1],clear_alpha),
+        d3_decode_clear(d->clear_color[2],clear_alpha),clear_alpha);
     d3_clear_depth(1);
     GLbitfield clear=0;
     if (d->clear_flags&XGE3D_CLEAR_COLOR) clear|=GL_COLOR_BUFFER_BIT;
@@ -1053,10 +1086,14 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         lights[slot]=(d3_light){*light,position,direction};scores[slot]=score;
     }
     r->profile.selected_lights=(uint32_t)light_count;r->profile.skipped_lights=r->profile.candidate_lights-(uint32_t)light_count;
+#if XGE3D_ENABLE_SHADOW
     int shadow_suns=0,shadow_spots=0;
+#endif
     for(int i=0;i<light_count;++i){d3_light *l=&lights[i];
+#if XGE3D_ENABLE_SHADOW
         if(l->desc.casts_shadow){if(l->desc.type==XGE3D_LIGHT_DIRECTIONAL){if(shadow_suns++)l->desc.casts_shadow=0;}
             else if(l->desc.type==XGE3D_LIGHT_SPOT){if(shadow_spots++>=2)l->desc.casts_shadow=0;}}
+#endif
         xge_glUniform4f(r->light_position[i],l->position.x,l->position.y,l->position.z,(float)l->desc.type);
         xge_glUniform4f(r->light_direction[i],l->direction.x,l->direction.y,l->direction.z,l->desc.range);
         xge_glUniform4f(r->light_color[i],l->desc.color.x*l->desc.intensity,l->desc.color.y*l->desc.intensity,l->desc.color.z*l->desc.intensity,0);
@@ -1073,6 +1110,9 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         d3_draw draw={0}; draw.node=n;
         draw.main_visible=(n->render_layers&r->options.render_layers)!=0;
         draw.shadow_visible=(n->shadow_layers&r->options.shadow_layers)!=0;
+#if XGE3D_ENABLE_SHADOW
+        draw.shadow_visible=draw.shadow_visible&&(n->shadow_flags&XGE3D_SHADOW_CAST)!=0;
+#endif
         if(!draw.main_visible&&!draw.shadow_visible)continue;
         result=xge3dNodeGetWorldMatrix(s,n->handle,&draw.world);
         if (result!=XGE_OK) goto done;
@@ -1138,7 +1178,9 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
         d3_mesh_draw(draw->mesh,batch->count,&counts);
     }
     if (xge_glGetError()!=GL_NO_ERROR) result=XGE_ERROR_GPU_FAILED;
+    if(result==XGE_OK)result=d3_composite_end(r,&output);
 done:
+    if(composite_started||output.shared_depth)d3_composite_detach(r,&output);
     d3_profile_end(r);d3_restore(&state);
     if(submit_start)r->profile.submit_cpu_us=xgeClockMicroseconds()-submit_start;
     r->profile.total_cpu_us=xgeClockMicroseconds()-profile_start;

@@ -111,7 +111,9 @@ static int frame(void *user)
     t.position.z=-.1f; CHECK(xge3dNodeSetTransform(scene,far_node,&t)==XGE_OK);
     draw.clear_color[2]=0; draw.clear_color[3]=0;
     CHECK(xge3dRender(renderer,scene,&draw,NULL)==XGE_OK && xge3dTargetReadPixels(target,pixels,sizeof(pixels),512)==XGE_OK);
-    CHECK(pixel(128,0,64,192));
+    float alpha=128.f/255,combined=alpha+(1-alpha)*alpha;
+    CHECK(pixel((int)lroundf(color_factor(255,alpha/combined)*combined),0,
+        (int)lroundf(color_factor(255,alpha*(1-alpha)/combined)*combined),(int)lroundf(combined*255)));
     CHECK(xgeImageSavePNGEx("artifacts/xge-3d/p2-alpha.png",128,128,pixels,512,XGE_IMAGE_PREMULTIPLIED)==XGE_OK);
     failed=0;
     puts("3D materials GPU: copied straight pixels, sRGB roundtrip and linear factors, alpha mask, double sides and back-to-front blend order passed");

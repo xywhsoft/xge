@@ -597,5 +597,26 @@ static int d3_selected(const cgltf_data *data, const cgltf_node *node)
     for (size_t i=0;i<scene->nodes_count;++i) if (scene->nodes[i]==node) return 1;
     return 0;
 }
+#if XGE3D_ENABLE_CACHE
+int d3_model_share_textures(xge3d_model *m,int (*intern)(xge3d_texture *,xge3d_texture **,void *),void *user)
+{
+    for(size_t i=0;i<m->textures.Count;++i){xge3d_texture **slot=xrtArrayGet(&m->textures,i),*old=*slot,*shared=NULL;int result=intern(old,&shared,user);if(result)return result;if(shared==old)continue;
+        size_t references=1;for(size_t j=0;j<m->materials.Count;++j){xge3d_material *material=*(xge3d_material**)xrtArrayGet(&m->materials,j);for(int k=0;k<5;++k)references+=material->desc.maps[k].texture==old;}
+        size_t retained=0;for(;retained<references;++retained)if(!d3_texture_retain(shared))break;
+        if(retained!=references){while(retained--)xge3dTextureFree(shared);return XGE_ERROR_INVALID_STATE;}
+        for(size_t j=0;j<m->materials.Count;++j){xge3d_material *material=*(xge3d_material**)xrtArrayGet(&m->materials,j);for(int k=0;k<5;++k)if(material->desc.maps[k].texture==old){material->desc.maps[k].texture=shared;xge3dTextureFree(old);}}
+        xmapiter it;xrtMapIterBegin(&m->texture_cache,&it);void **value;while((value=xrtMapIterNext(&it,NULL)))if(*value==old)*value=shared;xrtMapIterEnd(&it);
+        *slot=shared;xge3dTextureFree(old);
+    }return XGE_OK;
+}
+int d3_model_cache_bytes(const xge3d_model *m,uint64_t *cpu,uint64_t *gpu)
+{
+    xge3d_asset_memory_t info={.size=sizeof(info)};int result=xge3dModelMemoryInfo(m,&info);if(result)return result;
+    *cpu=info.cpu_storage_bytes;*gpu=info.gpu_required_bytes;
+    for(size_t i=0;i<m->textures.Count;++i){xge3d_texture *t=*(xge3d_texture**)xrtArrayConstGet(&m->textures,i);*cpu-=sizeof(*t)+(uint64_t)t->pixels.Capacity*t->pixels.ItemSize;
+        int w=t->width,h=t->height;*gpu-=(uint64_t)w*h*4;if(t->sampler.min_filter>=0x2700)while(w>1||h>1){w=w>1?w/2:1;h=h>1?h/2:1;*gpu-=(uint64_t)w*h*4;}}
+    return XGE_OK;
+}
+#endif
 #include "xge3d_instance.inc"
 #endif

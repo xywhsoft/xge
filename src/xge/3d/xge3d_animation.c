@@ -5,11 +5,17 @@
 #if XGE3D_ENABLE_ANIMATION
 typedef struct d3_track { size_t node;int path,interpolation; xarray times,values; } d3_track;
 struct xge3d_clip { uint32_t refs; xge3d_model *model; const char *name; float duration; xarray tracks; };
-typedef struct d3_layer { xge3d_clip *clip; double time;float speed,weight;int loop,started; xarray targets,mask,events; } d3_layer;
+typedef struct d3_layer {
+    xge3d_clip *clip;double time;float speed,weight;int loop,started;xarray targets,mask,events;
+    float fade_from,fade_to;double fade_time,fade_duration;int paused,stopping;
+} d3_layer;
+typedef struct d3_channel_pose {xge3d_transform_t value;float weights[3];} d3_channel_pose;
+typedef struct d3_transition {d3_layer previous;xarray snapshot;double time,duration;} d3_transition;
 struct xge3d_animator {
     xge3d_scene *scene; xge3d_node_t root; xge3d_model *model;
     xarray nodes,rest,pose,published,matrices; d3_layer layers[XGE3D_ANIMATION_MAX_LAYERS];int modes[XGE3D_ANIMATION_MAX_LAYERS];
     xarray events,pending_events;size_t event_read,root_node;uint32_t root_flags;xge3d_root_motion_t root_motion;
+    d3_transition transitions[XGE3D_ANIMATION_MAX_LAYERS];xarray blend;int paused;
 };
 static xge3d_quat_t d3_quat_normalize(xge3d_quat_t q)
 {
@@ -108,10 +114,13 @@ const char *xge3dClipNodeName(const xge3d_clip *c,size_t node) {return c ? xge3d
 
 static void d3_layer_free(d3_layer *layer)
 {xge3dClipFree(layer->clip);xrtArrayUnit(&layer->targets);xrtArrayUnit(&layer->mask);xrtArrayUnit(&layer->events);memset(layer,0,sizeof(*layer));}
+static void d3_transition_free(d3_transition *t)
+{d3_layer_free(&t->previous);xrtArrayUnit(&t->snapshot);memset(t,0,sizeof(*t));}
 void xge3dAnimatorFree(xge3d_animator *a)
 {
     if (!a) return;
-    for (int i=0;i<XGE3D_ANIMATION_MAX_LAYERS;++i) d3_layer_free(&a->layers[i]);
+    for (int i=0;i<XGE3D_ANIMATION_MAX_LAYERS;++i){d3_layer_free(&a->layers[i]);d3_transition_free(&a->transitions[i]);}
+    xrtArrayUnit(&a->blend);
     xrtArrayUnit(&a->nodes);xrtArrayUnit(&a->rest);xrtArrayUnit(&a->pose);xrtArrayUnit(&a->published);xrtArrayUnit(&a->matrices);
     xrtArrayUnit(&a->events);xrtArrayUnit(&a->pending_events);xge3dModelFree(a->model);xrtFree(a);
 }
@@ -122,6 +131,7 @@ int xge3dAnimatorCreate(xge3d_scene *scene,xge3d_node_t root,xge3d_animator **ou
     xge3d_animator *a=xrtMalloc(sizeof(*a));if (!a) return XGE_ERROR_OUT_OF_MEMORY;
     memset(a,0,sizeof(*a));a->scene=scene;a->root=root;
     a->root_node=SIZE_MAX;a->root_motion.rotation.w=1;
+    xrtArrayInit(&a->blend,sizeof(d3_channel_pose));
     if (!d3_model_retain(n->model)) {xrtFree(a);return XGE_ERROR_INVALID_STATE;}
     a->model=n->model;xrtArrayInit(&a->nodes,sizeof(xge3d_node_t));xrtArrayInit(&a->rest,sizeof(xge3d_transform_t));xrtArrayInit(&a->pose,sizeof(xge3d_transform_t));xrtArrayInit(&a->published,sizeof(xge3d_transform_t));
     xrtArrayInit(&a->matrices,sizeof(xge3d_mat4_t));
@@ -150,10 +160,8 @@ static size_t d3_target_name(const cgltf_data *data,const char *name)
     }
     return found;
 }
-int xge3dAnimatorSetLayer(xge3d_animator *a,int index,xge3d_clip *clip,const xge3d_animation_layer_t *d)
+static int d3_layer_bind(xge3d_animator *a,xge3d_clip *clip,const xge3d_animation_layer_t *d,d3_layer *out)
 {
-    if (!a || index<0 || index>=XGE3D_ANIMATION_MAX_LAYERS) return XGE_ERROR_INVALID_ARGUMENT;
-    if (!clip) {d3_layer_free(&a->layers[index]);return XGE_OK;}
     xge3d_animation_layer_t fallback=xge3dAnimationLayerDefault();if (!d) d=&fallback;
     cgltf_data *source=d3_model_data(clip->model),*target=d3_model_data(a->model);
     if (!isfinite(d->time) || d->time<0 || !isfinite(d->speed) || d->speed<0 || !isfinite(d->weight) || d->weight<0 || d->weight>1 ||
@@ -181,14 +189,20 @@ int xge3dAnimatorSetLayer(xge3d_animator *a,int index,xge3d_clip *clip,const xge
     layer.clip=clip;++clip->refs;layer.time=d->time;layer.speed=d->speed;layer.weight=d->weight;layer.loop=!!d->loop;
     layer.time=layer.loop && clip->duration>0 ? fmod(layer.time,clip->duration) : fmin(layer.time,clip->duration);layer.started=1;
     xrtArrayInit(&layer.events,sizeof(xge3d_animation_event_t));
-    d3_layer_free(&a->layers[index]);a->layers[index]=layer;return XGE_OK;
+    *out=layer;return XGE_OK;
 done:
     d3_layer_free(&layer);return result;
+}
+int xge3dAnimatorSetLayer(xge3d_animator *a,int index,xge3d_clip *clip,const xge3d_animation_layer_t *d)
+{
+    if(!a||index<0||index>=XGE3D_ANIMATION_MAX_LAYERS)return XGE_ERROR_INVALID_ARGUMENT;
+    d3_layer layer={0};int result=clip?d3_layer_bind(a,clip,d,&layer):XGE_OK;if(result)return result;
+    d3_layer_free(&a->layers[index]);d3_transition_free(&a->transitions[index]);a->layers[index]=layer;return XGE_OK;
 }
 int xge3dAnimatorSetLayerWeight(xge3d_animator *a,int layer,float weight)
 {
     if (!a || layer<0 || layer>=XGE3D_ANIMATION_MAX_LAYERS || !isfinite(weight) || weight<0 || weight>1) return XGE_ERROR_INVALID_ARGUMENT;
-    a->layers[layer].weight=weight;return XGE_OK;
+    a->layers[layer].weight=weight;a->layers[layer].fade_duration=0;a->layers[layer].stopping=0;return XGE_OK;
 }
 float xge3dAnimatorLayerTime(const xge3d_animator *a,int layer)
 {return a && layer>=0 && layer<XGE3D_ANIMATION_MAX_LAYERS ? (float)a->layers[layer].time : 0;}
@@ -293,33 +307,38 @@ static const d3_track *d3_root_track(const d3_layer *l,size_t node,int path)
     }
     return NULL;
 }
-static int d3_root_delta(xge3d_animator *a,const double next[XGE3D_ANIMATION_MAX_LAYERS],const double cycles[XGE3D_ANIMATION_MAX_LAYERS],xge3d_root_motion_t *out)
+#include "xge3d_playback.inc"
+static int d3_root_delta(xge3d_animator *a,const double next[2][XGE3D_ANIMATION_MAX_LAYERS],const double cycles[2][XGE3D_ANIMATION_MAX_LAYERS],
+    const float means[2][XGE3D_ANIMATION_MAX_LAYERS],xge3d_root_motion_t *out)
 {
     *out=a->root_motion;if (!a->root_flags) return XGE_OK;
     for (int path=cgltf_animation_path_type_translation;path<=cgltf_animation_path_type_rotation;++path) {
-        const d3_track *tracks[XGE3D_ANIMATION_MAX_LAYERS];float weights[XGE3D_ANIMATION_MAX_LAYERS]={0};
+        const d3_track *tracks[2][XGE3D_ANIMATION_MAX_LAYERS];float weights[2][XGE3D_ANIMATION_MAX_LAYERS]={{0}};
         for (int i=0;i<XGE3D_ANIMATION_MAX_LAYERS;++i) {
-            tracks[i]=d3_root_track(&a->layers[i],a->root_node,path);
-            if (tracks[i]) weights[i]=a->layers[i].weight*((float*)a->layers[i].mask.Data)[a->root_node];
+            const d3_layer *sources[]={&a->layers[i],&a->transitions[i].previous};
+            for(int source=0;source<2;++source){tracks[source][i]=d3_root_track(sources[source],a->root_node,path);
+                if(tracks[source][i])weights[source][i]=means[source][i]*((float*)sources[source]->mask.Data)[a->root_node];
+                else if(source&&a->transitions[i].snapshot.Count)weights[source][i]=means[source][i]*((d3_channel_pose*)a->transitions[i].snapshot.Data)[a->root_node].weights[path-1];}
         }
         float remaining=1;
-        for(int i=XGE3D_ANIMATION_MAX_LAYERS-1;i>=0;--i){float weight=weights[i];weights[i]*=remaining;
+        for(int i=XGE3D_ANIMATION_MAX_LAYERS-1;i>=0;--i){float weight=fminf(1,weights[0][i]+weights[1][i]);weights[0][i]*=remaining;weights[1][i]*=remaining;
             if(a->modes[i]==XGE3D_ANIMATION_OVERRIDE)remaining*=1-weight;}
-        for (int i=0;i<XGE3D_ANIMATION_MAX_LAYERS;++i) if (tracks[i] && weights[i]>0) {
-            float old[4]={0},value[4]={0},first[4]={0},last[4]={0};const d3_layer *l=&a->layers[i];
-            d3_sample(tracks[i],(float)l->time,old);d3_sample(tracks[i],(float)next[i],value);
-            d3_sample(tracks[i],0,first);d3_sample(tracks[i],l->clip->duration,last);
+        for(int i=0;i<XGE3D_ANIMATION_MAX_LAYERS;++i)for(int source=1;source>=0;--source)if(tracks[source][i]&&weights[source][i]>0){
+            float old[4]={0},value[4]={0},first[4]={0},last[4]={0};const d3_layer *l=source?&a->transitions[i].previous:&a->layers[i];
+            const d3_track *track=tracks[source][i];float weight=weights[source][i];double loops=cycles[source][i];
+            d3_sample(track,(float)l->time,old);d3_sample(track,(float)next[source][i],value);
+            d3_sample(track,0,first);d3_sample(track,l->clip->duration,last);
             if (path==cgltf_animation_path_type_translation) {
                 float *position=&out->translation.x;
                 for (int k=0;k<3;++k) if (a->root_flags&(1u<<k))
-                    position[k]=(float)(position[k]+weights[i]*((double)value[k]-old[k]+cycles[i]*((double)last[k]-first[k])));
+                    position[k]=(float)(position[k]+weight*((double)value[k]-old[k]+loops*((double)last[k]-first[k])));
             } else if (a->root_flags&XGE3D_ROOT_ROTATION) {
-                if (cycles[i]>1e18) return XGE_ERROR_UNSUPPORTED;
+                if (loops>1e18) return XGE_ERROR_UNSUPPORTED;
                 xge3d_quat_t rotation;
-                if (!cycles[i]) rotation=d3_quat_delta(old,value);
+                if (!loops) rotation=d3_quat_delta(old,value);
                 else rotation=d3_quat_mul(d3_quat_delta(first,value),d3_quat_mul(
-                    d3_quat_power(d3_quat_delta(first,last),(uint64_t)cycles[i]-1),d3_quat_delta(old,last)));
-                rotation=d3_slerp((xge3d_quat_t){0,0,0,1},rotation,weights[i]);
+                    d3_quat_power(d3_quat_delta(first,last),(uint64_t)loops-1),d3_quat_delta(old,last)));
+                rotation=d3_slerp((xge3d_quat_t){0,0,0,1},rotation,weight);
                 out->rotation=d3_quat_mul(rotation,out->rotation);
             }
         }
@@ -335,37 +354,20 @@ int xge3dAnimatorUpdate(xge3d_animator *a,float delta)
     if (!a || !isfinite(delta) || delta<0) return XGE_ERROR_INVALID_ARGUMENT;
     if (!d3_node(a->scene,a->root)) return XGE_ERROR_INVALID_STATE;
     for (size_t i=0;i<a->nodes.Count;++i) {xge3d_node_t n=((xge3d_node_t*)a->nodes.Data)[i];if (n.slot && !d3_node(a->scene,n)) return XGE_ERROR_INVALID_STATE;}
+    if(a->paused)return XGE_OK;
     memcpy(a->pose.Data,a->rest.Data,a->rest.Count*a->rest.ItemSize);
-    double next_time[XGE3D_ANIMATION_MAX_LAYERS]={0},cycles[XGE3D_ANIMATION_MAX_LAYERS]={0};xrtArrayResize(&a->events,0);
+    double next_time[2][XGE3D_ANIMATION_MAX_LAYERS]={{0}},cycles[2][XGE3D_ANIMATION_MAX_LAYERS]={{0}};
+    float means[2][XGE3D_ANIMATION_MAX_LAYERS]={{0}},weights[XGE3D_ANIMATION_MAX_LAYERS]={0};xrtArrayResize(&a->events,0);
     for (int layer=0;layer<XGE3D_ANIMATION_MAX_LAYERS;++layer) {
         d3_layer *l=&a->layers[layer];if (!l->clip) continue;
-        double time=l->time+(double)delta*l->speed;float duration=l->clip->duration;
-        if (l->loop && duration>0) {cycles[layer]=floor(time/duration);time=fmod(time,duration);}else time=fmin(time,duration);
-        next_time[layer]=time;
-        int result=d3_events(a,layer,time,cycles[layer]);if (result!=XGE_OK) return result;
-        for (size_t i=0;i<l->clip->tracks.Count;++i) {
-            const d3_track *track=xrtArrayConstGet(&l->clip->tracks,i);size_t node=((size_t*)l->targets.Data)[i];
-            xge3d_transform_t *pose=xrtArrayGet(&a->pose,node);float weight=l->weight*((float*)l->mask.Data)[node],value[4]={0};
-            if (weight<=0) continue;
-            d3_sample(track,(float)time,value);
-            if(a->modes[layer]==XGE3D_ANIMATION_ADDITIVE){
-                const xge3d_transform_t *rest=xrtArrayConstGet(&a->rest,node);
-                if(track->path==cgltf_animation_path_type_rotation){xge3d_quat_t q;memcpy(&q,value,sizeof(q));
-                    xge3d_quat_t inverse={-rest->rotation.x,-rest->rotation.y,-rest->rotation.z,rest->rotation.w};
-                    xge3d_quat_t delta_q=d3_quat_mul(inverse,q);
-                    pose->rotation=d3_quat_mul(pose->rotation,d3_slerp((xge3d_quat_t){0,0,0,1},delta_q,weight));
-                }else if(track->path==cgltf_animation_path_type_translation){
-                    pose->position=d3_add(pose->position,d3_scale(d3_sub((xge3d_vec3_t){value[0],value[1],value[2]},rest->position),weight));
-                }else for(int k=0;k<3;++k){float reference=(&rest->scale.x)[k];
-                    if(fabsf(reference)<1e-12f){if(fabsf(value[k])>1e-12f)return XGE_ERROR_INVALID_ARGUMENT;}
-                    else (&pose->scale.x)[k]*=1+weight*(value[k]/reference-1);}
-                continue;
-            }
-            if (track->path==cgltf_animation_path_type_rotation) {xge3d_quat_t q;memcpy(&q,value,sizeof(q));pose->rotation=d3_slerp(pose->rotation,q,weight);}
-            else {xge3d_vec3_t v={value[0],value[1],value[2]};xge3d_vec3_t *dest=track->path==cgltf_animation_path_type_translation ? &pose->position : &pose->scale;*dest=d3_add(d3_scale(*dest,1-weight),d3_scale(v,weight));}
-        }
+        double step=l->paused?0:delta;const d3_transition *t=&a->transitions[layer];
+        d3_playback_advance(l,step,&next_time[0][layer],&cycles[0][layer]);
+        d3_playback_advance(&t->previous,step,&next_time[1][layer],&cycles[1][layer]);
+        float average[2];d3_playback_mean(l,t,step,average);means[0][layer]=average[0];means[1][layer]=average[1];weights[layer]=d3_layer_gain(l,step);
+        int result=(!l->paused&&!l->stopping)?d3_events(a,layer,next_time[0][layer],cycles[0][layer]):XGE_OK;if(result)return result;
+        result=d3_playback_pose(a,layer,next_time[0][layer],next_time[1][layer],weights[layer],d3_transition_alpha(t,step));if(result)return result;
     }
-    xge3d_root_motion_t motion;int result=d3_root_delta(a,next_time,cycles,&motion);if (result!=XGE_OK) return result;
+    xge3d_root_motion_t motion;int result=d3_root_delta(a,next_time,cycles,means,&motion);if (result!=XGE_OK) return result;
     cgltf_data *data=d3_model_data(a->model);
     for (size_t i=0;i<a->nodes.Count;++i) {
         xge3d_node_t handle=((xge3d_node_t*)a->nodes.Data)[i];if (!handle.slot || data->nodes[i].has_matrix) continue;
@@ -378,7 +380,11 @@ int xge3dAnimatorUpdate(xge3d_animator *a,float delta)
     if (a->events.Count) memcpy((xge3d_animation_event_t*)a->pending_events.Data+pending,a->events.Data,a->events.Count*sizeof(xge3d_animation_event_t));
     a->root_motion=motion;
     memcpy(a->published.Data,a->pose.Data,a->pose.Count*a->pose.ItemSize);
-    for (int i=0;i<XGE3D_ANIMATION_MAX_LAYERS;++i) if (a->layers[i].clip) {a->layers[i].time=next_time[i];a->layers[i].started=0;}
+    for(int i=0;i<XGE3D_ANIMATION_MAX_LAYERS;++i){d3_layer *l=&a->layers[i];d3_transition *t=&a->transitions[i];if(!l->clip||l->paused)continue;
+        l->time=next_time[0][i];l->started=0;l->weight=weights[i];
+        if(l->fade_duration>0){l->fade_time=fmin(l->fade_duration,l->fade_time+delta);if(l->fade_time>=l->fade_duration)l->fade_duration=0;}
+        if(t->duration>0){t->time=fmin(t->duration,t->time+delta);t->previous.time=next_time[1][i];if(t->time>=t->duration)d3_transition_free(t);}
+        if(l->stopping&&!l->fade_duration){d3_layer_free(l);d3_transition_free(t);}}
     for (size_t i=0;i<a->nodes.Count;++i) {
         xge3d_node_t handle=((xge3d_node_t*)a->nodes.Data)[i];if (!handle.slot || data->nodes[i].has_matrix) continue;
         xge3d_mat4_t matrix=*(xge3d_mat4_t*)xrtArrayGet(&a->matrices,i);

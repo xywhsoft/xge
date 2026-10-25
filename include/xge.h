@@ -3653,6 +3653,12 @@ XGE_API xge3d_light_desc_t xge3dLightDefault(int type);
 XGE_API int xge3dNodeSetLight(xge3d_scene *scene, xge3d_node_t node, const xge3d_light_desc_t *light);
 #endif
 #if XGE3D_ENABLE_SHADOW
+#define XGE3D_SHADOW_CAST 1u
+#define XGE3D_SHADOW_RECEIVE 2u
+/* Per mesh node, not inherited; defaults to CAST|RECEIVE. Shadow layers still
+ * filter casting. Receiving does not affect unlit materials or indirect light. */
+XGE_API int xge3dNodeSetShadowFlags(xge3d_scene *scene, xge3d_node_t node, uint32_t flags);
+XGE_API int xge3dNodeGetShadowFlags(xge3d_scene *scene, xge3d_node_t node, uint32_t *out);
 #define XGE3D_MAX_CASCADES 4
 #define XGE3D_MAX_SHADOW_SPOTS 2
 typedef struct xge3d_shadow_settings_t {
@@ -3673,7 +3679,7 @@ XGE_API xge3d_fog_settings_t xge3dFogDefault(void);
 typedef struct xge3d_render_desc_t {
     const xge3d_camera_t *camera;
     xge3d_target *target; /* NULL: current framebuffer and viewport. */
-    float clear_color[4];
+    float clear_color[4]; /* Display-encoded premultiplied RGBA, as in 2D. */
     uint32_t clear_flags;
     xge3d_environment *environment; /* Borrowed for this call; NULL has no sky. */
     float exposure; /* 0 selects 1; otherwise a positive linear multiplier. */
@@ -3846,11 +3852,19 @@ XGE_API int xge3dTargetResize(xge3d_target *target, int width, int height);
 XGE_API void xge3dTargetFree(xge3d_target *target);
 /* Borrowed texture: do not modify/free it; valid until resize or target free. */
 XGE_API const xge_texture_t *xge3dTargetTexture(const xge3d_target *target);
-/* Top-down RGBA8 readback; stride >= width*4 and storage >= stride*height. */
+/* Top-down display-encoded premultiplied RGBA8. stride >= width*4 and storage
+ * >= stride*height. Use XGE_IMAGE_PREMULTIPLIED when encoding a PNG. */
 XGE_API int xge3dTargetReadPixels(xge3d_target *target, void *rgba, size_t size, int stride);
 /* 使用给定相机、目标和环境描述渲染场景并可返回统计。 */
 XGE_API int xge3dRender(xge3d_renderer *renderer, xge3d_scene *scene,
     const xge3d_render_desc_t *desc, xge3d_render_stats_t *stats);
+#if XGE3D_ENABLE_FXAA
+#define XGE3D_AA_NONE 0
+#define XGE3D_AA_FXAA 1
+/* Default NONE. FXAA filters the final 3D image only, before later 2D/UI draws.
+ * Geometry draw statistics exclude the compositor's fullscreen passes. */
+XGE_API int xge3dRendererSetAntialiasing(xge3d_renderer *renderer, int mode);
+#endif
 #if XGE3D_ENABLE_MODEL
 typedef struct xge3d_model_info_t {
     size_t node_count, primitive_count, material_count, animation_count, skin_count;
@@ -4009,6 +4023,27 @@ XGE_API int xge3dAnimatorSetLayer(xge3d_animator *animator, int layer, xge3d_cli
 XGE_API int xge3dAnimatorSetLayerWeight(xge3d_animator *animator, int layer, float weight);
 /* 返回动画层当前剪辑时间。 */
 XGE_API float xge3dAnimatorLayerTime(const xge3d_animator *animator, int layer);
+typedef struct xge3d_playback_info_t {
+    uint32_t size;
+    float time,duration,speed,weight,target_weight,fade_remaining;
+    int active,paused,finished,loop,mode,transitioning,stopping;
+} xge3d_playback_info_t;
+/* Cross-fades a layer, retaining clips and copying bindings/masks. Zero seconds
+ * replaces immediately. NULL clip fades to zero, then clears the layer. Normal
+ * transitions advance both clips; interruption freezes their current blend as
+ * a bounded source snapshot. Only the incoming clip emits new events.
+ * Global/per-layer pause freezes both playback and real-time fade clocks. */
+XGE_API int xge3dAnimatorPlay(xge3d_animator *animator,int layer,xge3d_clip *clip,
+    const xge3d_animation_layer_t *desc,float fade_seconds);
+/* Fade gain without changing the clip. Zero weight still advances/emits events,
+ * as SetLayerWeight does; use Play(NULL) to stop/release after a fade. */
+XGE_API int xge3dAnimatorFadeLayer(xge3d_animator *animator,int layer,float weight,float seconds);
+XGE_API int xge3dAnimatorSetPaused(xge3d_animator *animator,int paused);
+XGE_API int xge3dAnimatorSetLayerPaused(xge3d_animator *animator,int layer,int paused);
+/* Initialize size. Finished means a non-looping clip reached its endpoint;
+ * it holds that pose until replaced/stopped. Empty layers are not finished.
+ * State reflects successful updates/configuration, pose publishes on Update. */
+XGE_API int xge3dAnimatorGetPlayback(const xge3d_animator *animator,int layer,xge3d_playback_info_t *out);
 /* 推进全部动画层并发布新的节点姿态、事件和根运动。 */
 XGE_API int xge3dAnimatorUpdate(xge3d_animator *animator, float delta_seconds);
 /* Up to 1024 events are copied in ascending clip-time order per layer. The
@@ -4139,7 +4174,7 @@ typedef struct xge3d_instance_builder xge3d_instance_builder;
 /* Retained asset storage for admission budgets. Includes encoded source,
  * glTF parser allocations/external buffers, container capacities, meshes,
  * materials and texture pixels. GPU required includes the full mip chain.
- * Excludes temporary decode peaks, scene instances/animators, allocator and
+ * Excludes temporary decode peaks, scene instances/animators/collision indexes, allocator and
  * driver overhead. Shared resources are conservatively counted per asset.
  * Query immutable loaded assets without concurrent mutation/retirement. */
 typedef struct xge3d_asset_memory_t {
@@ -4233,6 +4268,134 @@ XGE_API int xge3dAnimatorSetLayerMode(xge3d_animator *animator, int layer, int m
 XGE_API int xge3dAnimatorGetPose(xge3d_animator *animator, size_t node, xge3d_transform_t *out);
 /* 在当前更新周期覆盖指定源节点的动画姿态。 */
 XGE_API int xge3dAnimatorSetPose(xge3d_animator *animator, size_t node, const xge3d_transform_t *pose);
+#endif
+#if XGE3D_ENABLE_CACHE
+typedef struct xge3d_cache xge3d_cache;
+#define XGE3D_CACHE_RESOURCE_PROVIDERS 1u
+typedef struct xge3d_cache_desc_t {
+    uint32_t size, flags; size_t max_models, max_requests;
+    uint64_t cpu_bytes, gpu_bytes; /* Soft resident cache targets; 0 unlimited. */
+    xge3d_decode_budget *decode_budget; /* Optional hard load quota, retained. */
+} xge3d_cache_desc_t;
+typedef struct xge3d_cache_stats_t {
+    /* Unique retained asset storage. Excludes cache bookkeeping, pending decode
+     * jobs, scene instances/collision indexes, allocator and driver overhead. */
+    uint32_t size; size_t models, textures, requests, pending;
+    uint64_t cpu_storage_bytes,gpu_required_bytes,hits,misses,coalesced,evictions,shared_textures;
+    int over_budget; /* Live client references/requests are never forcibly evicted. */
+} xge3d_cache_stats_t;
+XGE_API xge3d_cache_desc_t xge3dCacheDefault(void);
+/* Explicit owner-thread object; no hidden global cache and no cross-context
+ * GPU reuse. Local file keys are absolute lexical paths (not symlink identity).
+ * Provider URIs are exact strings. The provider registry must remain stable
+ * until CacheFree completes. The worker is created lazily on first Request. */
+XGE_API int xge3dCacheCreate(const xge3d_cache_desc_t *desc,xge3d_cache **out);
+XGE_API int xge3dCacheFree(xge3d_cache *cache);
+/* Returns an owned model reference. Shared models/materials/textures are treated
+ * as immutable; instance node colors/material overrides remain independent. */
+XGE_API int xge3dCacheLoad(xge3d_cache *cache,const char *uri,xge3d_model **out);
+/* Remove unused entries to meet soft targets. Clear removes all UNUSED entries.
+ * Budgets exclude decode peaks, instances, allocator and driver overhead. */
+XGE_API int xge3dCacheTrim(xge3d_cache *cache);
+XGE_API int xge3dCacheClear(xge3d_cache *cache);
+XGE_API int xge3dCacheStats(xge3d_cache *cache,xge3d_cache_stats_t *out);
+#if XGE3D_ENABLE_ASYNC
+typedef struct xge3d_cache_request_t {uint64_t slot,cache;} xge3d_cache_request_t;
+/* Same-key requests share ONE loader job. Each request has independent
+ * cancellation/lifetime. Last-subscriber cancellation cancels underlying work.
+ * Failed keys may be requested again; earlier failed requests remain terminal. */
+XGE_API int xge3dCacheRequest(xge3d_cache *cache,const char *uri,xge3d_cache_request_t *out);
+XGE_API int xge3dCacheStatus(xge3d_cache *cache,xge3d_cache_request_t request,xge3d_request_info_t *out);
+XGE_API int xge3dCacheCancel(xge3d_cache *cache,xge3d_cache_request_t request);
+XGE_API int xge3dCacheRelease(xge3d_cache *cache,xge3d_cache_request_t request);
+XGE_API int xge3dCacheTake(xge3d_cache *cache,xge3d_cache_request_t request,xge3d_model **out);
+XGE_API int xge3dCachePump(xge3d_cache *cache,const xge3d_upload_budget_t *budget,xge3d_upload_stats_t *out);
+#endif
+#endif
+#if XGE3D_ENABLE_COLLISION
+#define XGE3D_SHAPE_SPHERE 0
+#define XGE3D_SHAPE_BOX 1
+#define XGE3D_SHAPE_CAPSULE 2
+#define XGE3D_SHAPE_MESH 3
+typedef struct xge3d_shape_t {
+    int type;
+    xge3d_vec3_t center, half_extents;
+    float radius, half_height; /* Capsule's segment follows local Y; excludes caps. */
+    xge3d_mesh *mesh; /* Static, undeformed triangles. Retained by a collider. */
+} xge3d_shape_t;
+typedef struct xge3d_collision_filter_t {
+    uint32_t layers;
+    xge3d_node_t exclude; /* Zero selects none; excludes the entire subtree. */
+} xge3d_collision_filter_t;
+typedef struct xge3d_collision_hit_t {
+    xge3d_node_t node;
+    xge3d_vec3_t position, normal;
+    float fraction, distance; /* Sweep fraction [0,1], movement length in metres. */
+    size_t triangle; /* SIZE_MAX for primitive colliders. */
+    int started_overlapping;
+} xge3d_collision_hit_t;
+typedef struct xge3d_collision_stats_t { size_t colliders, triangle_bvh_bytes;uint64_t triangle_tests; } xge3d_collision_stats_t;
+/* Default sphere radius .5. Explicit colliders ignore render visibility and use
+ * NodeSetLayers' query layers. Affine transforms apply to the complete shape. */
+XGE_API xge3d_shape_t xge3dShapeDefault(int type);
+XGE_API int xge3dNodeSetCollider(xge3d_scene *scene,xge3d_node_t node,const xge3d_shape_t *shape);
+/* Borrowed mesh in the returned shape; NULL binding is reported NOT_FOUND. */
+XGE_API int xge3dNodeGetCollider(xge3d_scene *scene,xge3d_node_t node,xge3d_shape_t *out);
+/* Convex query shape: sphere/box/capsule. World transform must be nonsingular
+ * affine. Short output returns a prefix and BUFFER_TOO_SMALL; NULL/0 counts. */
+XGE_API int xge3dSceneOverlapShape(xge3d_scene *scene,const xge3d_shape_t *shape,const xge3d_mat4_t *world,
+    const xge3d_collision_filter_t *filter,xge3d_node_t *nodes,size_t capacity,size_t *count);
+/* Linear translation only; initial overlap returns fraction 0. Contact positions
+ * are surface witnesses; initial-overlap normals are a fallback, not an EPA
+ * penetration solution. Near-touch tolerance is 1e-5 m. No rigid-body solver. */
+XGE_API int xge3dSceneSweepShape(xge3d_scene *scene,const xge3d_shape_t *shape,const xge3d_mat4_t *world,
+    xge3d_vec3_t motion,const xge3d_collision_filter_t *filter,xge3d_collision_hit_t *out);
+XGE_API int xge3dSceneCollisionRaycast(xge3d_scene *scene,const xge3d_ray_t *ray,float max_distance,
+    const xge3d_collision_filter_t *filter,xge3d_collision_hit_t *out);
+XGE_API int xge3dSceneCollisionStats(xge3d_scene *scene,xge3d_collision_stats_t *out);
+#endif
+#if XGE3D_ENABLE_SCENE
+#define XGE3D_CLONE_USER_DATA 1u
+/* Matrix getters preserve exact affine transforms. TRS getter rejects singular
+ * or sheared matrices with UNSUPPORTED and leaves output unchanged. */
+XGE_API int xge3dNodeGetTransform(xge3d_scene *scene,xge3d_node_t node,xge3d_transform_t *out);
+XGE_API int xge3dNodeGetParent(xge3d_scene *scene,xge3d_node_t node,xge3d_node_t *out);
+/* Zero parent enumerates scene roots. Order is unspecified; stale handles fail. */
+XGE_API size_t xge3dNodeChildCount(xge3d_scene *scene,xge3d_node_t parent);
+XGE_API xge3d_node_t xge3dNodeChildAt(xge3d_scene *scene,xge3d_node_t parent,size_t index);
+XGE_API int xge3dNodeSetName(xge3d_scene *scene,xge3d_node_t node,const char *name);
+/* Borrowed until rename/delete. NULL means unnamed or invalid. UTF-8 byte match. */
+XGE_API const char *xge3dNodeName(xge3d_scene *scene,xge3d_node_t node);
+XGE_API int xge3dNodeFind(xge3d_scene *scene,xge3d_node_t root,const char *name,xge3d_node_t *out);
+/* Borrowed application pointer, never freed by XGE. Clone clears it by default. */
+XGE_API int xge3dNodeSetUserData(xge3d_scene *scene,xge3d_node_t node,void *data);
+XGE_API void *xge3dNodeUserData(xge3d_scene *scene,xge3d_node_t node);
+/* Copies hierarchy, names, matrices, layers, LOD, colliders and model/skin
+ * bindings; shares immutable assets. Skin joints must be inside the subtree.
+ * New skins/animators are independent; create an Animator for the cloned model.
+ * Failure rolls back all new nodes. Local matrices are preserved on reparent. */
+XGE_API int xge3dNodeClone(xge3d_scene *scene,xge3d_node_t source,xge3d_node_t parent,uint32_t flags,xge3d_node_t *out);
+#define XGE3D_SCENE_NODE_HIDDEN 1u
+typedef struct xge3d_scene_node_desc_t {
+    const char *name; size_t parent; /* SIZE_MAX means the returned scene root. */
+    xge3d_transform_t transform;
+    xge3d_mesh *mesh; xge3d_material *material; uint32_t flags;
+#if XGE3D_ENABLE_MODEL
+    const char *model_uri;
+#endif
+} xge3d_scene_node_desc_t;
+typedef struct xge3d_scene_desc_t {
+    const xge3d_scene_node_desc_t *nodes; size_t count;
+#if XGE3D_ENABLE_MODEL
+    /* Returns an owned model reference; caller is invoked before staging nodes. */
+    int (*load_model)(const char *uri,xge3d_model **out,void *user); void *user;
+#endif
+} xge3d_scene_desc_t;
+XGE_API xge3d_scene_node_desc_t xge3dSceneNodeDefault(void);
+/* Declarative C data, not a new file format. Parent indices must precede child;
+ * supports existing glTF through a resolver (e.g. CacheLoad). Host parses its
+ * chosen file format. Failure removes the staged hierarchy and releases assets. */
+XGE_API int xge3dSceneLoad(xge3d_scene *scene,xge3d_node_t parent,const xge3d_scene_desc_t *desc,xge3d_node_t *out_root);
 #endif
 /* 将 TRS 变换转换为 4x4 仿射矩阵。 */
 XGE_API int xge3dTransformMatrix(const xge3d_transform_t *transform, xge3d_mat4_t *out);

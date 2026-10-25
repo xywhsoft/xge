@@ -216,8 +216,8 @@ typedef void (APIENTRYP PFNGLDEPTHFUNCPROC)(GLenum func);
 #if XGE_ENABLE_3D
 #if XGE3D_ENABLE_SHADOW
 typedef void (APIENTRYP PFNGLDRAWBUFFERSPROC)(GLsizei n, const GLenum *buffers);
-typedef void (APIENTRYP PFNGLREADBUFFERPROC)(GLenum buffer);
 #endif
+typedef void (APIENTRYP PFNGLREADBUFFERPROC)(GLenum buffer);
 typedef void (APIENTRYP PFNGLDEPTHMASKPROC)(GLboolean flag);
 typedef void (APIENTRYP PFNGLCLEARDEPTHPROC)(GLdouble depth);
 typedef void (APIENTRYP PFNGLCLEARDEPTHFPROC)(GLfloat depth);
@@ -304,6 +304,7 @@ typedef void (APIENTRYP PFNGLFRAMEBUFFERTEXTURE2DPROC)(GLenum target, GLenum att
 typedef GLenum (APIENTRYP PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
 #if XGE_ENABLE_3D
 typedef void (APIENTRYP PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)(GLenum target, GLenum attachment, GLenum pname, GLint *params);
+typedef void (APIENTRYP PFNGLBLITFRAMEBUFFERPROC)(GLint sx0,GLint sy0,GLint sx1,GLint sy1,GLint dx0,GLint dy0,GLint dx1,GLint dy1,GLbitfield mask,GLenum filter);
 #endif
 typedef void (APIENTRYP PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint *renderbuffers);
 typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint *renderbuffers);
@@ -329,8 +330,8 @@ extern PFNGLDEPTHFUNCPROC xge_glDepthFunc;
 #if XGE_ENABLE_3D
 #if XGE3D_ENABLE_SHADOW
 extern PFNGLDRAWBUFFERSPROC xge_glDrawBuffers;
-extern PFNGLREADBUFFERPROC xge_glReadBuffer;
 #endif
+extern PFNGLREADBUFFERPROC xge_glReadBuffer;
 extern PFNGLDEPTHMASKPROC xge_glDepthMask;
 extern PFNGLCLEARDEPTHPROC xge_glClearDepth;
 extern PFNGLCLEARDEPTHFPROC xge_glClearDepthf;
@@ -409,6 +410,7 @@ extern PFNGLFRAMEBUFFERTEXTURE2DPROC xge_glFramebufferTexture2D;
 extern PFNGLCHECKFRAMEBUFFERSTATUSPROC xge_glCheckFramebufferStatus;
 #if XGE_ENABLE_3D
 extern PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC xge_glGetFramebufferAttachmentParameteriv;
+extern PFNGLBLITFRAMEBUFFERPROC xge_glBlitFramebuffer;
 #endif
 extern PFNGLGENRENDERBUFFERSPROC xge_glGenRenderbuffers;
 extern PFNGLDELETERENDERBUFFERSPROC xge_glDeleteRenderbuffers;
@@ -474,8 +476,8 @@ PFNGLDEPTHFUNCPROC xge_glDepthFunc = NULL;
 #if XGE_ENABLE_3D
 #if XGE3D_ENABLE_SHADOW
 PFNGLDRAWBUFFERSPROC xge_glDrawBuffers = NULL;
-PFNGLREADBUFFERPROC xge_glReadBuffer = NULL;
 #endif
+PFNGLREADBUFFERPROC xge_glReadBuffer = NULL;
 PFNGLDEPTHMASKPROC xge_glDepthMask = NULL;
 PFNGLCLEARDEPTHPROC xge_glClearDepth = NULL;
 PFNGLCLEARDEPTHFPROC xge_glClearDepthf = NULL;
@@ -554,6 +556,7 @@ PFNGLFRAMEBUFFERTEXTURE2DPROC xge_glFramebufferTexture2D = NULL;
 PFNGLCHECKFRAMEBUFFERSTATUSPROC xge_glCheckFramebufferStatus = NULL;
 #if XGE_ENABLE_3D
 PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC xge_glGetFramebufferAttachmentParameteriv = NULL;
+PFNGLBLITFRAMEBUFFERPROC xge_glBlitFramebuffer = NULL;
 #endif
 PFNGLGENRENDERBUFFERSPROC xge_glGenRenderbuffers = NULL;
 PFNGLDELETERENDERBUFFERSPROC xge_glDeleteRenderbuffers = NULL;
@@ -581,8 +584,8 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 #if XGE_ENABLE_3D
 #if XGE3D_ENABLE_SHADOW
 	xge_glDrawBuffers = (PFNGLDRAWBUFFERSPROC)procLoad("glDrawBuffers");
-	xge_glReadBuffer = (PFNGLREADBUFFERPROC)procLoad("glReadBuffer");
 #endif
+	xge_glReadBuffer = (PFNGLREADBUFFERPROC)procLoad("glReadBuffer");
 	xge_glDepthMask = (PFNGLDEPTHMASKPROC)procLoad("glDepthMask");
 	xge_glClearDepth = (PFNGLCLEARDEPTHPROC)procLoad("glClearDepth");
 	xge_glClearDepthf = (PFNGLCLEARDEPTHFPROC)procLoad("glClearDepthf");
@@ -668,6 +671,7 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	xge_glCheckFramebufferStatus = (PFNGLCHECKFRAMEBUFFERSTATUSPROC)procLoad("glCheckFramebufferStatus");
 #if XGE_ENABLE_3D
 	xge_glGetFramebufferAttachmentParameteriv = (PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)procLoad("glGetFramebufferAttachmentParameteriv");
+	xge_glBlitFramebuffer = (PFNGLBLITFRAMEBUFFERPROC)procLoad("glBlitFramebuffer");
 #endif
 	xge_glGenRenderbuffers = (PFNGLGENRENDERBUFFERSPROC)procLoad("glGenRenderbuffers");
 	xge_glDeleteRenderbuffers = (PFNGLDELETERENDERBUFFERSPROC)procLoad("glDeleteRenderbuffers");
