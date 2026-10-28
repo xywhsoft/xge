@@ -18,6 +18,7 @@ typedef struct xui_breadcrumb_test_events_t {
 	int iClickCount;
 	int iLastIndex;
 	int iLastValue;
+	int iContextCount;
 } xui_breadcrumb_test_events_t;
 
 typedef struct xui_breadcrumb_destroy_test_t {
@@ -61,12 +62,14 @@ static void __xuiBreadcrumbTestClick(xui_widget pWidget, int iIndex, int iValue,
 static int __xuiBreadcrumbTestContext(xui_widget pWidget, int iIndex, int iValue,
 	float fX, float fY, void* pUser)
 {
+	xui_breadcrumb_test_events_t* pEvents = (xui_breadcrumb_test_events_t*)pUser;
+
 	(void)pWidget;
 	(void)iIndex;
 	(void)iValue;
 	(void)fX;
 	(void)fY;
-	(void)pUser;
+	if ( pEvents != NULL ) pEvents->iContextCount++;
 	return XUI_OK;
 }
 
@@ -178,6 +181,9 @@ int main(void)
 	xui_rect_t tRect;
 	xui_rect_t tWorld;
 	xui_rect_t tOldRect;
+	xui_vec2_t tIntrinsic;
+	xui_vec2_t tMeasured;
+	xui_event_t tEvent;
 	xui_style_property_t tStyle;
 	xui_accessible_node_t tAccessible;
 	float fGap;
@@ -261,6 +267,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "breadcrumb add");
 	iRet = xuiBreadcrumbSetClick(pBreadcrumb, __xuiBreadcrumbTestClick, &tEvents);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set click");
+	iRet = xuiBreadcrumbSetContextMenu(pBreadcrumb, __xuiBreadcrumbTestContext, &tEvents);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set context menu");
 
 	XUI_TEST_CHECK(xuiBreadcrumbGetItemCount(pBreadcrumb) == 3, "item count");
 	XUI_TEST_CHECK(strcmp(xuiBreadcrumbGetItemText(pBreadcrumb, 1), "Console") == 0, "item text");
@@ -269,6 +277,20 @@ int main(void)
 	XUI_TEST_CHECK(strcmp(xuiBreadcrumbGetSeparator(pBreadcrumb), "/") == 0, "separator default");
 	XUI_TEST_CHECK(__xuiBreadcrumbTestSetItemsOomPreserves(pBreadcrumb),
 		"failed item replacement preserves breadcrumb state");
+	iRet = xuiWidgetMeasureContent(pBreadcrumb,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tIntrinsic);
+	XUI_TEST_CHECK(iRet == XUI_OK && tIntrinsic.fX > 0.0f && tIntrinsic.fY >= 32.0f,
+		"breadcrumb intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pBreadcrumb,
+		(xui_vec2_t){tIntrinsic.fX + 100.0f, tIntrinsic.fY + 100.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == tIntrinsic.fX &&
+		tMeasured.fY == tIntrinsic.fY,
+		"roomy constraints do not stretch content measure");
+	iRet = xuiWidgetMeasureContent(pBreadcrumb,
+		(xui_vec2_t){tIntrinsic.fX * 0.5f, 16.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX <= tIntrinsic.fX * 0.5f &&
+		tMeasured.fY <= 16.0f,
+		"tight constraints clamp content measure");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 180, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -290,6 +312,38 @@ int main(void)
 	XUI_TEST_CHECK(xuiBreadcrumbGetSeparatorRect(pBreadcrumb, 0).fW > 0.0f, "separator rect");
 
 	tWorld = xuiWidgetGetWorldRect(pBreadcrumb);
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorld.fX + tRect.fX + tRect.fW * 0.5f),
+		(int)(tWorld.fY + tRect.fY + tRect.fH * 0.5f)) == XUI_CURSOR_HAND,
+		"clickable breadcrumb item uses hand cursor");
+	tRect = xuiBreadcrumbGetItemRect(pBreadcrumb, 2);
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorld.fX + tRect.fX + tRect.fW * 0.5f),
+		(int)(tWorld.fY + tRect.fY + tRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"non-clickable breadcrumb item uses arrow cursor");
+	iRet = xuiBreadcrumbSetItem(pBreadcrumb, 2, "Visits", 1, 30);
+	XUI_TEST_CHECK(iRet == XUI_OK, "temporarily enable last item");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestSurfaceGetLastTextColor(xuiWidgetGetCacheSurface(pBreadcrumb, 0)) ==
+			XUI_COLOR_RGBA(135, 148, 164, 255),
+		"enabled breadcrumb uses normal item color");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable breadcrumb parent");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch inherited disable");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestSurfaceGetLastTextColor(xuiWidgetGetCacheSurface(pBreadcrumb, 0)) ==
+			XUI_COLOR_RGBA(88, 102, 121, 255),
+		"inherited disable uses disabled item color");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore breadcrumb parent");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch inherited enable");
+	iRet = xuiBreadcrumbSetItem(pBreadcrumb, 2, "Visits", 0, 30);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore non-clickable last item");
+	tRect = xuiBreadcrumbGetItemRect(pBreadcrumb, 1);
 	iRet = __xuiBreadcrumbTestClickAt(pContext, tWorld.fX + tRect.fX + tRect.fW * 0.5f, tWorld.fY + tRect.fY + tRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "click dispatch");
 	XUI_TEST_CHECK(tEvents.iClickCount == 1 && tEvents.iLastIndex == 1 && tEvents.iLastValue == 20, "click callback");
@@ -338,10 +392,26 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
 		xuiBreadcrumbGetActiveIndex(pBreadcrumb) == -1, "hide cancels pointer press");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_MOVE;
+	tEvent.pTarget = pBreadcrumb;
+	tEvent.fX = (int)fPressX;
+	tEvent.fY = (int)fPressY;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiBreadcrumbGetHoverIndex(pBreadcrumb) == -1,
+		"hidden breadcrumb ignores direct pointer event");
+	tEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iContextCount == 0,
+		"hidden breadcrumb ignores direct context event");
 	iRet = xuiWidgetSetVisible(pBreadcrumb, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore breadcrumb visible");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch breadcrumb visible");
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iContextCount == 1,
+		"restored breadcrumb accepts context event");
 	iRet = __xuiBreadcrumbTestReleaseAt(pContext, fPressX, fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iClickCount == 1, "release after hide stays cancelled");
 
@@ -401,6 +471,23 @@ int main(void)
 		XUI_TEST_CHECK(pCache != NULL && xuiTestSurfaceGetDrawCount(pCache) > 0,
 			"separator icon generation invalidates cache");
 	}
+	iRet = xuiBreadcrumbSetSeparatorIcon(pBreadcrumb, pIcon,
+		(xui_rect_t){0, 0, 0, 0}, 6.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiBreadcrumbGetSeparatorIconSize(pBreadcrumb) == 6.0f,
+		"set separator icon with implicit source");
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestSurfaceGetLastSrc(xuiWidgetGetCacheSurface(pBreadcrumb, 0)).fW == 12 &&
+		xuiTestSurfaceGetLastSrc(xuiWidgetGetCacheSurface(pBreadcrumb, 0)).fH == 12,
+		"implicit separator source uses full surface");
+	iRet = xuiBreadcrumbSetSeparatorIcon(pBreadcrumb, pIcon,
+		(xui_rect_t){0, 0, 0, 0}, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiBreadcrumbGetSeparatorIconSize(pBreadcrumb) == 0.0f,
+		"zero separator icon size restores default");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiBreadcrumbGetSeparatorRect(pBreadcrumb, 0).fW == 12,
+		"default separator icon size restored");
 
 	tOldRect = xuiBreadcrumbGetItemRect(pBreadcrumb, 1);
 	tStyle = __xuiBreadcrumbTestStyleProperty("breadcrumb.gap",

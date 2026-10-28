@@ -6673,7 +6673,8 @@ XUI_API int xuiBreadcrumbGetItemValue(xui_widget pWidget, int iIndex);
 XUI_API int xuiBreadcrumbSetSeparator(xui_widget pWidget, const char* sSeparator);
 /* 读取分隔符文本；返回值为控件持有的只读借用字符串。 */
 XUI_API const char* xuiBreadcrumbGetSeparator(xui_widget pWidget);
-/* 以借用 surface 设置分隔符图标；调用方须保证其生命周期覆盖控件使用期。 */
+/* 以借用 surface 设置分隔符图标；源矩形宽高为 0 时使用整张 surface，
+ * fIconSize 为 0 时使用默认显示尺寸。调用方须保证其生命周期覆盖控件使用期。 */
 XUI_API int xuiBreadcrumbSetSeparatorIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc, float fIconSize);
 /* 读取分隔符图标 surface。 */
 XUI_API xui_surface xuiBreadcrumbGetSeparatorIcon(xui_widget pWidget);
