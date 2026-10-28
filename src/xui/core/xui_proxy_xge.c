@@ -709,7 +709,7 @@ static int __xuiProxyXgeGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_FONT_TTF |
 	               XUI_PROXY_CAP_FONT_XRF |
 	               XUI_PROXY_CAP_TEXT | XUI_PROXY_CAP_TEXT_RANGE;
-#ifdef XGE_ENABLE_HARFBUZZ
+#if XGE_ENABLE_HARFBUZZ
 	pCaps->iCaps |= XUI_PROXY_CAP_TEXT_CONTEXT | XUI_PROXY_CAP_TEXT_SCRIPT |
 		XUI_PROXY_CAP_TEXT_LANGUAGE | XUI_PROXY_CAP_TEXT_RTL;
 #endif

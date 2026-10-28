@@ -1,9 +1,11 @@
 #include "xui_config.h"
 #if XUI_ENABLE_INPUT
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,6 +106,7 @@ typedef struct xui_input_data_t {
 	int iPressCursor;
 	float fPressX;
 	float fPressY;
+	xui_pointer_owner_t tPointerOwner;
 	float fScrollX;
 	int iMaxLength;
 	int iTextAlign;
@@ -154,6 +157,7 @@ static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int
 static int __xuiInputSetSelectionData(xui_input_data_t* pData, int iStart, int iEnd);
 static int __xuiInputSyncCursor(xui_widget pWidget, xui_input_data_t* pData);
 static xui_input_decoration __xuiInputDecorationHit(xui_widget pWidget, xui_input_data_t* pData, float fWorldX, float fWorldY);
+static int __xuiInputDecorationBelongs(xui_input_data_t* pData, xui_input_decoration pDecoration);
 
 static int __xuiInputMenuTextId(int iCommand)
 {
@@ -187,7 +191,8 @@ static int __xuiInputDescValid(const xui_input_desc_t* pDesc)
 	if ( (pDesc->iMaxLength < 0) || !__xuiInputAlignValid(pDesc->iTextAlign) ) {
 		return 0;
 	}
-	if ( pDesc->fBorderWidth < 0.0f ) {
+	if ( !isfinite(pDesc->fBorderWidth) || pDesc->fBorderWidth < 0.0f ||
+	     pDesc->fBorderWidth > XUI_LAYOUT_UNBOUNDED ) {
 		return 0;
 	}
 	return 1;
@@ -223,7 +228,10 @@ static int __xuiInputDecorationDescValid(const xui_input_decoration_desc_t* pDes
 	     !__xuiInputDecorationVisibleModeValid(pDesc->iVisibleMode) ) {
 		return 0;
 	}
-	if ( (pDesc->fWidth < 0.0f) || (pDesc->fPadding < 0.0f) ) {
+	if ( !isfinite(pDesc->fWidth) || !isfinite(pDesc->fPadding) ||
+	     (pDesc->fWidth < 0.0f) || (pDesc->fPadding < 0.0f) ||
+	     (pDesc->fWidth > XUI_LAYOUT_UNBOUNDED) ||
+	     (pDesc->fPadding > XUI_LAYOUT_UNBOUNDED) ) {
 		return 0;
 	}
 	return 1;
@@ -258,6 +266,18 @@ static int __xuiInputTextReserve(char** psText, int* pCapacity, int iCapacity)
 	return XUI_OK;
 }
 
+static int __xuiInputStringSize(const char* sText, int* pSize)
+{
+	size_t iSize;
+
+	if ( pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sText == NULL ) sText = "";
+	iSize = strlen(sText);
+	if ( iSize > (size_t)INT_MAX ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	*pSize = (int)iSize;
+	return XUI_OK;
+}
+
 static int __xuiInputStringSet(char** psText, int* pCapacity, const char* sText)
 {
 	int iNeed;
@@ -266,12 +286,15 @@ static int __xuiInputStringSet(char** psText, int* pCapacity, const char* sText)
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iNeed = (int)strlen(sText) + 1;
+	iRet = __xuiInputStringSize(sText, &iNeed);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iNeed == INT_MAX ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	iNeed++;
 	iRet = __xuiInputTextReserve(psText, pCapacity, iNeed);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	memcpy(*psText, sText, (size_t)iNeed);
+	memmove(*psText, sText, (size_t)iNeed);
 	return XUI_OK;
 }
 
@@ -385,8 +408,7 @@ static int __xuiInputSelectWordAt(xui_widget pWidget, xui_input_data_t* pData, i
 	if ( iKind == XUI_INTERNAL_WORD_SPACE ) {
 		return __xuiInputMoveCursor(pWidget, pData, iCursor, 0);
 	}
-	(void)__xuiInputSetSelectionData(pData, iStart, iEnd);
-	return __xuiInputSyncCursor(pWidget, pData);
+	return xuiInputSetSelection(pWidget, iStart, iEnd);
 }
 
 static int __xuiInputUtf8Encode(uint32_t iCodepoint, char* sText)
@@ -435,11 +457,18 @@ static xui_input_data_t* __xuiInputGetData(xui_widget pWidget)
 	return (xui_input_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiInputAlive(xui_context pContext, xui_widget pWidget,
+	const xui_input_data_t* pExpected)
+{
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		xuiInternalWidgetIsValid(pWidget) && __xuiInputGetData(pWidget) == pExpected;
+}
+
 static int __xuiInputQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
 {
 	xui_input_data_t* pData;
 
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		return XUI_CURSOR_NOT_ALLOWED;
 	}
 	pData = (xui_input_data_t*)pUser;
@@ -675,8 +704,10 @@ static int __xuiInputAssignTextBytes(xui_input_data_t* pData, const char* sText,
 		sText = "";
 		iSize = 0;
 	} else if ( iSize < 0 ) {
-		iSize = (int)strlen(sText);
+		iRet = __xuiInputStringSize(sText, &iSize);
+		if ( iRet != XUI_OK ) return iRet;
 	}
+	if ( iSize == INT_MAX ) return XUI_ERROR_BUFFER_TOO_SMALL;
 	if ( (pData->iMaxLength > 0) && (iSize > pData->iMaxLength) ) {
 		iSize = __xuiInputUtf8ClampBytes(sText, pData->iMaxLength);
 	}
@@ -685,7 +716,7 @@ static int __xuiInputAssignTextBytes(xui_input_data_t* pData, const char* sText,
 		return iRet;
 	}
 	if ( iSize > 0 ) {
-		memcpy(pData->sText, sText, (size_t)iSize);
+		memmove(pData->sText, sText, (size_t)iSize);
 	}
 	pData->sText[iSize] = '\0';
 	pData->iTextLength = iSize;
@@ -1289,15 +1320,23 @@ static int __xuiInputSyncCursor(xui_widget pWidget, xui_input_data_t* pData)
 
 static void __xuiInputNotifyChange(xui_widget pWidget, xui_input_data_t* pData)
 {
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	xui_context pContext;
+	xui_input_change_proc onChange;
+	void* pChangeUser;
+
 	if ( pData == NULL ) {
 		return;
 	}
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	pData->iChangeCount++;
-	if ( pData->onChange != NULL ) {
-		pData->onChange(pWidget, (pData->sText != NULL) ? pData->sText : "", pData->pChangeUser);
+	onChange = pData->onChange;
+	pChangeUser = pData->pChangeUser;
+	if ( onChange != NULL ) {
+		onChange(pWidget, (pData->sText != NULL) ? pData->sText : "", pChangeUser);
 	}
+	if ( !__xuiInputAlive(pContext, pWidget, pData) ) return;
 	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_TEXT_CHANGED,
 		(pData->sText != NULL) ? pData->sText : "", pData->iSelectStart,
 		pData->iSelectEnd, 0, 0, !pData->bError);
@@ -1412,7 +1451,8 @@ static int __xuiInputSetTextInternal(xui_widget pWidget, xui_input_data_t* pData
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	sNewText = (sText != NULL) ? sText : "";
-	iNewLength = (int)strlen(sNewText);
+	iRet = __xuiInputStringSize(sNewText, &iNewLength);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->iMaxLength > 0 && iNewLength > pData->iMaxLength )
 		iNewLength = __xuiInputUtf8ClampBytes(sNewText, pData->iMaxLength);
 	memset(&tHistory, 0, sizeof(tHistory));
@@ -1423,7 +1463,6 @@ static int __xuiInputSetTextInternal(xui_widget pWidget, xui_input_data_t* pData
 			return iRet;
 		}
 	}
-	pData->iCursor = iNewLength;
 	iRet = __xuiInputAssignTextBytes(pData, sNewText, iNewLength);
 	if ( iRet != XUI_OK ) {
 		__xuiInputHistoryFree(&tHistory);
@@ -1431,6 +1470,7 @@ static int __xuiInputSetTextInternal(xui_widget pWidget, xui_input_data_t* pData
 	}
 	pData->iCursor = pData->iTextLength;
 	(void)__xuiInputClearSelectionData(pData);
+	__xuiInputImeReset(pData);
 	__xuiInputEnsureCursorVisible(pWidget, pData);
 	if ( bUndo ) {
 		__xuiInputHistoryFinish(pData, &tHistory);
@@ -1440,26 +1480,32 @@ static int __xuiInputSetTextInternal(xui_widget pWidget, xui_input_data_t* pData
 	}
 	pData->bUndoInsertGroup = 0;
 	pData->iUndoInsertEnd = 0;
-	if ( bNotify ) {
-		__xuiInputNotifyChange(pWidget, pData);
+	if ( !bNotify ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	}
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
-	return __xuiInputInvalidateText(pWidget);
+	iRet = __xuiInputInvalidateText(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( bNotify ) __xuiInputNotifyChange(pWidget, pData);
+	return XUI_OK;
 }
 
 static int __xuiInputDecorationClick(xui_widget pWidget, xui_input_data_t* pData, xui_input_decoration pDecoration)
 {
+	xui_context pContext;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pDecoration == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	pContext = xuiWidgetGetContext(pWidget);
 	iRet = XUI_OK;
 	if ( pDecoration->iKind == XUI_INPUT_DECORATION_CLEAR ) {
 		iRet = __xuiInputSetTextInternal(pWidget, pData, "", 1, 1);
 	}
-	if ( (iRet == XUI_OK) && (pDecoration->onClick != NULL) ) {
+	if ( iRet != XUI_OK || !__xuiInputAlive(pContext, pWidget, pData) ||
+	     !__xuiInputDecorationBelongs(pData, pDecoration) ) return iRet;
+	if ( pDecoration->onClick != NULL ) {
 		pDecoration->onClick(pWidget, pDecoration, pDecoration->pUser);
 	}
 	return iRet;
@@ -1506,10 +1552,10 @@ static int __xuiInputDeleteRange(xui_widget pWidget, xui_input_data_t* pData, in
 	}
 	pData->bUndoInsertGroup = 0;
 	pData->iUndoInsertEnd = 0;
-	if ( bNotify ) {
-		__xuiInputNotifyChange(pWidget, pData);
-	}
-	return __xuiInputInvalidateText(pWidget);
+	iRet = __xuiInputInvalidateText(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( bNotify ) __xuiInputNotifyChange(pWidget, pData);
+	return XUI_OK;
 }
 
 static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, const char* sInsert, int iInsertSize)
@@ -1585,8 +1631,10 @@ static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, con
 		__xuiInputHistoryFinish(pData, &tHistory);
 		__xuiInputHistoryCommit(pData, &tHistory);
 	}
+	iRet = __xuiInputInvalidateText(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
 	__xuiInputNotifyChange(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	return XUI_OK;
 }
 
 static int __xuiInputMoveSelectionToCursor(xui_widget pWidget, xui_input_data_t* pData, int iTarget)
@@ -1663,8 +1711,10 @@ static int __xuiInputMoveSelectionToCursor(xui_widget pWidget, xui_input_data_t*
 	__xuiInputHistoryCommit(pData, &tHistory);
 	pData->bUndoInsertGroup = 0;
 	pData->iUndoInsertEnd = 0;
+	iRet = __xuiInputInvalidateText(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
 	__xuiInputNotifyChange(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	return XUI_OK;
 }
 
 static int __xuiInputCopySelection(xui_widget pWidget, xui_input_data_t* pData)
@@ -1723,6 +1773,7 @@ static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int
 	int iAnchor;
 	int iOldStart;
 	int iOldEnd;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1743,11 +1794,13 @@ static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int
 		pData->iCursor = iNewCursor;
 		(void)__xuiInputClearSelectionData(pData);
 	}
+	iRet = __xuiInputSyncCursor(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->iSelectStart != iOldStart || pData->iSelectEnd != iOldEnd ) {
 		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED,
 			pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
 	}
-	return __xuiInputSyncCursor(pWidget, pData);
+	return XUI_OK;
 }
 
 static int __xuiInputEditSetText(xui_widget pWidget, const char* sText)
@@ -1858,7 +1911,7 @@ static int __xuiInputDecorationCanClick(xui_widget pWidget, xui_input_data_t* pD
 	if ( (pWidget == NULL) || (pData == NULL) || (pDecoration == NULL) ) {
 		return 0;
 	}
-	if ( !xuiWidgetGetEnabled(pWidget) || pData->bReadonly ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || pData->bReadonly ) {
 		return 0;
 	}
 	return (pDecoration->iKind == XUI_INPUT_DECORATION_CLEAR) || (pDecoration->onClick != NULL);
@@ -2054,7 +2107,7 @@ static uint32_t __xuiInputDecorationState(xui_widget pWidget, xui_input_data_t* 
 	uint32_t iState;
 
 	iState = 0u;
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iState |= XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( pData != NULL && pDecoration != NULL ) {
@@ -2479,7 +2532,9 @@ static int __xuiInputUpdateMenu(xui_widget pWidget, xui_input_data_t* pData)
 
 static void __xuiInputMenuSelect(xui_widget pMenu, int iIndex, int iValue, void* pUser)
 {
+	xui_context pContext;
 	xui_widget pInput;
+	xui_input_data_t* pData;
 
 	(void)pMenu;
 	(void)iIndex;
@@ -2487,7 +2542,11 @@ static void __xuiInputMenuSelect(xui_widget pMenu, int iIndex, int iValue, void*
 	if ( pInput == NULL ) {
 		return;
 	}
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pInput), pInput);
+	pData = __xuiInputGetData(pInput);
+	if ( pData == NULL ) return;
+	pContext = xuiWidgetGetContext(pInput);
+	if ( xuiSetFocusWidget(pContext, pInput) != XUI_OK ||
+	     !__xuiInputAlive(pContext, pInput, pData) ) return;
 	switch ( iValue ) {
 	case XUI_INPUT_MENU_UNDO:
 		(void)xuiInputUndo(pInput);
@@ -2518,16 +2577,19 @@ static void __xuiInputMenuSelect(xui_widget pMenu, int iIndex, int iValue, void*
 static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, const xui_event_t* pEvent)
 {
 	const xui_edit_behavior_t* pBehavior;
+	xui_context pContext;
 	int iLen;
 	int iStart;
 	int iEnd;
 	int iKey;
 	int bShift;
 	int bCtrl;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	pContext = xuiWidgetGetContext(pWidget);
 	iLen = pData->iTextLength;
 	iKey = pEvent->iKey;
 	bShift = ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0);
@@ -2578,7 +2640,11 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 	case XUI_KEY_ESCAPE:
 		if ( pBehavior != NULL && pBehavior->iEscapeBehavior != XUI_EDIT_ESCAPE_DEFAULT ) {
 			if ( pBehavior->iEscapeBehavior == XUI_EDIT_ESCAPE_REVERT && pData->sFocusText != NULL && !pData->bReadonly ) {
-				(void)__xuiInputSetTextInternal(pWidget, pData, pData->sFocusText, 1, 0);
+				iRet = __xuiInputSetTextInternal(pWidget, pData, pData->sFocusText, 1, 0);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+					return XUI_EVENT_DISPATCH_STOP;
+				}
 			}
 			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_CANCEL, pData->sText,
 				pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
@@ -2632,6 +2698,18 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 	return XUI_OK;
 }
 
+static int __xuiInputCancelPointer(xui_widget pWidget, xui_input_data_t* pData)
+{
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->bDragging = 0;
+	pData->bPressPending = 0;
+	pData->bPressInsideSelection = 0;
+	pData->bMovingSelection = 0;
+	pData->pActiveDecoration = NULL;
+	return xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget), pWidget,
+		&pData->tPointerOwner);
+}
+
 static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_input_data_t* pData;
@@ -2647,8 +2725,11 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	int iStart;
 	int iEnd;
 	int bInsideSelection;
+	int bMovingSelection;
+	int bPressPending;
 	float fDX;
 	float fDY;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) {
@@ -2659,6 +2740,15 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->tPointerOwner.bActive &&
+	     (pEvent->iType == XUI_EVENT_POINTER_ENTER ||
+	      pEvent->iType == XUI_EVENT_POINTER_LEAVE ||
+	      pEvent->iType == XUI_EVENT_POINTER_DOWN ||
+	      pEvent->iType == XUI_EVENT_POINTER_MOVE ||
+	      pEvent->iType == XUI_EVENT_POINTER_UP) &&
+	     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+		return XUI_OK;
+	}
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
 		pDecoration = __xuiInputDecorationHit(pWidget, pData, pEvent->fX, pEvent->fY);
@@ -2673,31 +2763,61 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	case XUI_EVENT_BLUR:
 		if ( pEvent->iType == XUI_EVENT_FOCUS ) {
 			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
-			(void)__xuiInputStringSet(&pData->sFocusText, &pData->iFocusTextCapacity, pData->sText);
-			if ( pBehavior != NULL && pBehavior->bSelectAllOnFocus ) (void)xuiInputSelectAll(pWidget);
+			iRet = __xuiInputStringSet(&pData->sFocusText, &pData->iFocusTextCapacity, pData->sText);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( pBehavior != NULL && pBehavior->bSelectAllOnFocus ) {
+				iRet = xuiInputSelectAll(pWidget);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+					return XUI_EVENT_DISPATCH_STOP;
+				}
+			}
 		}
 		if ( pEvent->iType == XUI_EVENT_BLUR ) {
 			const xui_edit_behavior_t* pBehavior = xuiInternalEditBehavior(pWidget);
+			int bCommit = pBehavior != NULL && pBehavior->bCommitOnBlur;
+			iRet = __xuiInputCancelPointer(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) return XUI_OK;
 			__xuiInputImeReset(pData);
 			pData->pHoverDecoration = NULL;
-			pData->pActiveDecoration = NULL;
-			if ( pBehavior != NULL && pBehavior->bCommitOnBlur ) {
-				(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT, pData->sText,
-					pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
-			}
+			(void)__xuiInputDecorationSyncPadding(pWidget, pData);
+			iRet = __xuiInputInvalidateText(pWidget);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( bCommit ) (void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT,
+				pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+			return XUI_OK;
 		}
 		(void)__xuiInputDecorationSyncPadding(pWidget, pData);
 		return __xuiInputInvalidateText(pWidget);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			iRet = __xuiInputCancelPointer(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) return XUI_OK;
+			pData->pHoverDecoration = NULL;
+			if ( pData->bImeComposing ) __xuiInputImeReset(pData);
+		}
 		return __xuiInputInvalidatePaint(pWidget);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
-			(void)xuiSetFocusWidget(pContext, pWidget);
+			if ( pData->tPointerOwner.bActive ) return XUI_EVENT_DISPATCH_STOP;
+			iRet = xuiSetFocusWidget(pContext, pWidget);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
 			(void)__xuiInputDecorationSyncPadding(pWidget, pData);
 			pDecoration = __xuiInputDecorationHit(pWidget, pData, pEvent->fX, pEvent->fY);
 			if ( __xuiInputDecorationCanClick(pWidget, pData, pDecoration) ) {
-				(void)xuiSetPointerCapture(pContext, pWidget);
+				iRet = xuiInternalPointerOwnerBegin(pContext, pWidget, pEvent,
+					&pData->tPointerOwner);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+					return XUI_EVENT_DISPATCH_STOP;
+				}
 				pData->bDragging = 0;
 				pData->bPressPending = 0;
 				pData->bPressInsideSelection = 0;
@@ -2707,7 +2827,12 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 				(void)__xuiInputInvalidatePaint(pWidget);
 				return XUI_EVENT_DISPATCH_STOP;
 			}
-			(void)xuiSetPointerCapture(pContext, pWidget);
+			iRet = xuiInternalPointerOwnerBegin(pContext, pWidget, pEvent,
+				&pData->tPointerOwner);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
 			pData->bDragging = 0;
 			pData->bPressPending = 0;
 			pData->bPressInsideSelection = 0;
@@ -2724,7 +2849,15 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 				pData->fPressY = pEvent->fY;
 			} else {
 				pData->bDragging = 1;
-				(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0));
+				iRet = __xuiInputHitSetCursor(pWidget, pData, pEvent,
+					((pEvent->iModifiers & XUI_MOD_SHIFT) != 0));
+				if ( iRet != XUI_OK ) {
+					(void)__xuiInputCancelPointer(pWidget, pData);
+					return iRet;
+				}
+				if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+					return XUI_EVENT_DISPATCH_STOP;
+				}
 				pData->iDragAnchor = pData->iAnchor;
 			}
 			return XUI_EVENT_DISPATCH_STOP;
@@ -2761,34 +2894,54 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		break;
 	case XUI_EVENT_POINTER_UP:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
+			if ( !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return XUI_OK;
 			if ( pData->pActiveDecoration != NULL ) {
 				pActiveDecoration = pData->pActiveDecoration;
 				pDecoration = __xuiInputDecorationHit(pWidget, pData, pEvent->fX, pEvent->fY);
 				pData->pActiveDecoration = NULL;
 				pData->pHoverDecoration = pDecoration;
-				(void)xuiReleasePointerCapture(pContext, pWidget);
+				iRet = xuiInternalPointerOwnerEnd(pContext, pWidget, pEvent,
+					&pData->tPointerOwner);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+					return XUI_EVENT_DISPATCH_STOP;
+				}
+				iRet = __xuiInputInvalidatePaint(pWidget);
+				if ( iRet != XUI_OK ) return iRet;
 				if ( pDecoration == pActiveDecoration ) {
 					(void)__xuiInputDecorationClick(pWidget, pData, pActiveDecoration);
 				}
-				(void)__xuiInputInvalidatePaint(pWidget);
 				return XUI_EVENT_DISPATCH_STOP;
 			}
-			if ( pData->bMovingSelection ) {
+			bMovingSelection = pData->bMovingSelection;
+			bPressPending = pData->bPressPending;
+			iCursor = 0;
+			if ( bMovingSelection ) {
 				tWorld = xuiWidgetGetWorldRect(pWidget);
 				iCursor = __xuiInputCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX);
-				(void)__xuiInputMoveSelectionToCursor(pWidget, pData, iCursor);
-			} else if ( pData->bPressPending ) {
-				(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, 0);
 			}
 			pData->bPressPending = 0;
 			pData->bPressInsideSelection = 0;
 			pData->bMovingSelection = 0;
 			pData->bDragging = 0;
-			(void)xuiReleasePointerCapture(pContext, pWidget);
+			iRet = xuiInternalPointerOwnerEnd(pContext, pWidget, pEvent,
+				&pData->tPointerOwner);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			if ( bMovingSelection ) {
+				(void)__xuiInputMoveSelectionToCursor(pWidget, pData, iCursor);
+			} else if ( bPressPending ) {
+				(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, 0);
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
+		if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
 		pData->bDragging = 0;
 		pData->bPressPending = 0;
 		pData->bPressInsideSelection = 0;
@@ -2805,14 +2958,26 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		(void)__xuiInputSelectWordAt(pWidget, pData, iCursor);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
-		(void)xuiSetFocusWidget(pContext, pWidget);
+		iRet = xuiSetFocusWidget(pContext, pWidget);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		pData->bDragging = 0;
 		pData->bPressPending = 0;
 		pData->bPressInsideSelection = 0;
 		pData->bMovingSelection = 0;
-		(void)xuiReleasePointerCapture(pContext, pWidget);
+		iRet = __xuiInputCancelPointer(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( pEvent->iKey != XUI_KEY_CONTEXT_MENU && !__xuiInputHasSelectionData(pData) ) {
-			(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, 0);
+			iRet = __xuiInputHitSetCursor(pWidget, pData, pEvent, 0);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
 		}
 		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
 			tWorld = xuiWidgetGetWorldRect(pWidget);
@@ -2864,8 +3029,14 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			}
 			iTextSize = pEvent->iTextSize;
 			if ( iTextSize < 0 ) iTextSize = (int)strlen(pEvent->sText);
-			if ( __xuiInputTextReserve(&pData->sImeText, &pData->iImeTextCapacity, iTextSize + 1) != XUI_OK ) {
-				return XUI_ERROR_OUT_OF_MEMORY;
+			iRet = __xuiInputTextReserve(&pData->sImeText,
+				&pData->iImeTextCapacity, iTextSize + 1);
+			if ( iRet != XUI_OK ) {
+				__xuiInputImeReset(pData);
+				(void)__xuiInputInvalidatePaint(pWidget);
+				(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED,
+					"", pData->iSelectStart, pData->iSelectEnd, 0, 0, 0);
+				return iRet;
 			}
 			if ( iTextSize > 0 ) memcpy(pData->sImeText, pEvent->sText, (size_t)iTextSize);
 			pData->sImeText[iTextSize] = '\0';
@@ -2875,10 +3046,12 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			pData->iImeSelectionStart = __xuiInputUtf8Clamp(pData->sImeText, iTextSize, pEvent->iCompositionSelectionStart);
 			pData->iImeSelectionEnd = __xuiInputUtf8Clamp(pData->sImeText, iTextSize, pEvent->iCompositionSelectionEnd);
 			if ( pData->iImeSelectionEnd < pData->iImeSelectionStart ) pData->iImeSelectionEnd = pData->iImeSelectionStart;
+			iRet = __xuiInputInvalidatePaint(pWidget);
+			if ( iRet != XUI_OK ) return iRet;
 			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED, pData->sImeText,
 				pData->iSelectStart, pData->iSelectEnd, pData->iImeAnchorStart,
 				pData->iImeAnchorStart + iTextSize, 1);
-			return __xuiInputInvalidatePaint(pWidget) == XUI_OK ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
 			if ( pEvent->bCompositionReplacementRange ) {
@@ -2895,13 +3068,19 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 				(void)__xuiInputSetSelectionData(pData, pData->iImeAnchorStart, pData->iImeAnchorEnd);
 			}
 			__xuiInputImeReset(pData);
-			(void)__xuiInputInsertText(pWidget, pData, pEvent->sText, pEvent->iTextSize);
+			iRet = __xuiInputInsertText(pWidget, pData, pEvent->sText, pEvent->iTextSize);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
 		} else {
 			__xuiInputImeReset(pData);
+			iRet = __xuiInputInvalidatePaint(pWidget);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMPOSITION_CHANGED, "",
 			pData->iSelectStart, pData->iSelectEnd, 0, 0, 1);
-		return __xuiInputInvalidatePaint(pWidget) == XUI_OK ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+		return XUI_EVENT_DISPATCH_STOP;
 	default:
 		break;
 	}
@@ -3126,9 +3305,7 @@ static void __xuiInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 			xrtFree(pData->arrMenuTitle[i]);
 		}
 	}
-	if ( (pWidget != NULL) && (xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget) ) {
-		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-	}
+	if ( pWidget != NULL ) (void)__xuiInputCancelPointer(pWidget, pData);
 	memset(pData, 0, sizeof(*pData));
 }
 
@@ -3236,10 +3413,11 @@ XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiInputDescValid(pDesc) ) {
+	if ( ppWidget == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
+	if ( !__xuiInputDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiInputGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -3260,7 +3438,6 @@ XUI_API int xuiInputSetText(xui_widget pWidget, const char* sText)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	__xuiInputHistoryClear(pData);
 	return __xuiInputSetTextInternal(pWidget, pData, sText, 0, 0);
 }
 
@@ -3290,11 +3467,16 @@ XUI_API const char* xuiInputGetPlaceholder(xui_widget pWidget)
 XUI_API int xuiInputSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	xui_font pNewFont;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->pFont = pFont;
+	pNewFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	if ( pData->pFont == pNewFont ) return XUI_OK;
 	if ( pData->pMenu != NULL ) {
-		(void)xuiMenuSetFont(pData->pMenu, pFont);
+		iRet = xuiMenuSetFont(pData->pMenu, pNewFont);
+		if ( iRet != XUI_OK ) return iRet;
 	}
+	pData->pFont = pNewFont;
 	return __xuiInputInvalidateText(pWidget);
 }
 
@@ -3308,12 +3490,24 @@ XUI_API int xuiInputSetMaxLength(xui_widget pWidget, int iMaxLength)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	int iOldMaxLength;
+	int iOldTextLength;
+	int iRet;
 	if ( (pData == NULL) || (iMaxLength < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iOldMaxLength = pData->iMaxLength;
+	if ( iOldMaxLength == iMaxLength ) return XUI_OK;
+	iOldTextLength = pData->iTextLength;
 	pData->iMaxLength = iMaxLength;
-	(void)__xuiInputAssignTextBytes(pData, pData->sText, -1);
-	if ( iOldMaxLength != iMaxLength ) __xuiInputHistoryClear(pData);
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	iRet = __xuiInputAssignTextBytes(pData, pData->sText, pData->iTextLength);
+	if ( iRet != XUI_OK ) {
+		pData->iMaxLength = iOldMaxLength;
+		return iRet;
+	}
+	__xuiInputHistoryClear(pData);
+	if ( pData->iTextLength != iOldTextLength ) {
+		__xuiInputImeReset(pData);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
 	return __xuiInputInvalidateText(pWidget);
 }
 
@@ -3344,7 +3538,10 @@ XUI_API int xuiInputSetPassword(xui_widget pWidget, int bPassword)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	bChanged = pData->bPassword != (bPassword != 0);
 	pData->bPassword = (bPassword != 0);
-	if ( bChanged ) __xuiInputTextShapeDirty(pData);
+	if ( bChanged ) {
+		__xuiInputTextShapeDirty(pData);
+		if ( pData->bPassword && pData->bImeComposing ) __xuiInputImeReset(pData);
+	}
 	__xuiInputSyncImeMode(pWidget, pData);
 	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return __xuiInputInvalidatePaint(pWidget);
@@ -3359,12 +3556,26 @@ XUI_API int xuiInputIsPassword(xui_widget pWidget)
 XUI_API int xuiInputSetReadonly(xui_widget pWidget, int bReadonly)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	xui_context pContext;
 	int bChanged;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	bChanged = pData->bReadonly != (bReadonly != 0);
+	if ( !bChanged ) return XUI_OK;
 	pData->bReadonly = (bReadonly != 0);
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->bReadonly ) {
+		iRet = __xuiInputCancelPointer(pWidget, pData);
+		if ( iRet != XUI_OK ) {
+			pData->bReadonly = 0;
+			return iRet;
+		}
+		if ( !__xuiInputAlive(pContext, pWidget, pData) ) return XUI_OK;
+		pData->pHoverDecoration = NULL;
+		if ( pData->bImeComposing ) __xuiInputImeReset(pData);
+	}
 	__xuiInputSyncImeMode(pWidget, pData);
-	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	return __xuiInputInvalidatePaint(pWidget);
 }
 
@@ -3378,13 +3589,16 @@ XUI_API int xuiInputSetError(xui_widget pWidget, int bError)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	int bNewError;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	bNewError = (bError != 0);
 	if ( pData->bError == bNewError ) return XUI_OK;
 	pData->bError = bNewError;
+	iRet = __xuiInputInvalidatePaint(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_VALIDATION_CHANGED,
 		pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
-	return __xuiInputInvalidatePaint(pWidget);
+	return XUI_OK;
 }
 
 XUI_API int xuiInputGetError(xui_widget pWidget)
@@ -3406,11 +3620,13 @@ XUI_API int xuiInputSetSelection(xui_widget pWidget, int iStart, int iEnd)
 	iOldEnd = pData->iSelectEnd;
 	iRet = __xuiInputSetSelectionData(pData, iStart, iEnd);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiInputSyncCursor(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->iSelectStart != iOldStart || pData->iSelectEnd != iOldEnd ) {
 		(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_SELECTION_CHANGED,
 			pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
 	}
-	return __xuiInputSyncCursor(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiInputGetSelection(xui_widget pWidget, int* pStart, int* pEnd)
@@ -3511,8 +3727,7 @@ static int __xuiInputApplyHistoryState(xui_widget pWidget,
 	pData->bUndoInsertGroup = 0;
 	pData->iUndoInsertEnd = 0;
 	__xuiInputEnsureCursorVisible(pWidget, pData);
-	__xuiInputNotifyChange(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	return XUI_OK;
 }
 
 XUI_API int xuiInputUndo(xui_widget pWidget)
@@ -3537,7 +3752,11 @@ XUI_API int xuiInputUndo(xui_widget pWidget)
 		pData->bCanUndo = 1;
 	}
 	__xuiInputHistoryFree(&tUndo);
-	return iRet;
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiInputInvalidateText(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiInputNotifyChange(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiInputRedo(xui_widget pWidget)
@@ -3562,7 +3781,11 @@ XUI_API int xuiInputRedo(xui_widget pWidget)
 		pData->bCanRedo = 1;
 	}
 	__xuiInputHistoryFree(&tRedo);
-	return iRet;
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiInputInvalidateText(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiInputNotifyChange(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiInputCanUndo(xui_widget pWidget)
@@ -3650,7 +3873,8 @@ XUI_API int xuiInputGetExtendedColors(xui_widget pWidget, uint32_t* pPlaceholder
 XUI_API int xuiInputSetBorderWidth(xui_widget pWidget, float fBorderWidth)
 {
 	xui_input_data_t* pData;
-	if ( fBorderWidth < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !isfinite(fBorderWidth) || fBorderWidth < 0.0f ||
+	     fBorderWidth > XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fBorderWidth = fBorderWidth;
@@ -3980,7 +4204,7 @@ XUI_API uint32_t xuiInputGetState(xui_widget pWidget)
 	uint32_t iState;
 	if ( pData == NULL ) return 0u;
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iState |= XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( pData->bError ) {

@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_native_accessibility_internal.h"
+#include "xui_accessibility_text_internal.h"
 #include "xui_internal.h"
 #if defined(_WIN32)
 #define COBJMACROS
@@ -10,6 +11,7 @@
 #include <oleauto.h>
 #include <uiautomation.h>
 #include <stddef.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,6 +28,15 @@ struct native_node {
     IValueProvider value;
     IInvokeProvider invoke;
     IToggleProvider toggle;
+    IRangeValueProvider range;
+    ISelectionItemProvider selection_item;
+    IExpandCollapseProvider expand;
+    IScrollItemProvider scroll_item;
+    ITextProvider text;
+    ISelectionProvider selection;
+    IWindowProvider window;
+    IGridProvider grid;
+    IGridItemProvider grid_item;
     LONG refs;
     native_bridge* bridge;
     xui_widget widget;
@@ -50,9 +61,11 @@ static LONG next_serial;
 static LRESULT (WINAPI *uia_return)(HWND, WPARAM, LPARAM, IRawElementProviderSimple*);
 static HRESULT (WINAPI *uia_host)(HWND, IRawElementProviderSimple**);
 static HRESULT (WINAPI *uia_event)(IRawElementProviderSimple*, EVENTID);
+static HRESULT (WINAPI *uia_property)(IRawElementProviderSimple*, PROPERTYID, VARIANT, VARIANT);
 static HRESULT (WINAPI *uia_structure)(IRawElementProviderSimple*, enum StructureChangeType, int*, int);
 static HRESULT (WINAPI *uia_disconnect)(IRawElementProviderSimple*);
 static BOOL (WINAPI *uia_listening)(void);
+static HRESULT (WINAPI *uia_not_supported)(IUnknown**);
 static BOOL (WINAPI *subclass_set)(HWND, SUBCLASSPROC, UINT_PTR, DWORD_PTR);
 static BOOL (WINAPI *subclass_remove)(HWND, SUBCLASSPROC, UINT_PTR);
 static LRESULT (WINAPI *subclass_default)(HWND, UINT, WPARAM, LPARAM);
@@ -62,6 +75,15 @@ static IRawElementProviderFragmentRootVtbl root_vtbl;
 static IValueProviderVtbl value_vtbl;
 static IInvokeProviderVtbl invoke_vtbl;
 static IToggleProviderVtbl toggle_vtbl;
+static IRangeValueProviderVtbl range_vtbl;
+static ISelectionItemProviderVtbl selection_item_vtbl;
+static IExpandCollapseProviderVtbl expand_vtbl;
+static IScrollItemProviderVtbl scroll_item_vtbl;
+static ITextProviderVtbl text_vtbl;
+static ISelectionProviderVtbl selection_vtbl;
+static IWindowProviderVtbl window_vtbl;
+static IGridProviderVtbl grid_vtbl;
+static IGridItemProviderVtbl grid_item_vtbl;
 
 #define NODE(type, member, p) ((native_node*)((char*)(p) - offsetof(native_node, member)))
 static ULONG native_addref(native_node* n) { return (ULONG)InterlockedIncrement(&n->refs); }
@@ -82,6 +104,15 @@ static HRESULT native_query(native_node* n, REFIID iid, void** out)
     else if (IsEqualIID(iid, &IID_IValueProvider)) *out = &n->value;
     else if (IsEqualIID(iid, &IID_IInvokeProvider)) *out = &n->invoke;
     else if (IsEqualIID(iid, &IID_IToggleProvider)) *out = &n->toggle;
+    else if (IsEqualIID(iid, &IID_IRangeValueProvider)) *out = &n->range;
+    else if (IsEqualIID(iid, &IID_ISelectionItemProvider)) *out = &n->selection_item;
+    else if (IsEqualIID(iid, &IID_IExpandCollapseProvider)) *out = &n->expand;
+    else if (IsEqualIID(iid, &IID_IScrollItemProvider)) *out = &n->scroll_item;
+    else if (IsEqualIID(iid, &IID_ITextProvider)) *out = &n->text;
+    else if (IsEqualIID(iid, &IID_ISelectionProvider)) *out = &n->selection;
+    else if (IsEqualIID(iid, &IID_IWindowProvider)) *out = &n->window;
+    else if (IsEqualIID(iid, &IID_IGridProvider)) *out = &n->grid;
+    else if (IsEqualIID(iid, &IID_IGridItemProvider)) *out = &n->grid_item;
     else return E_NOINTERFACE;
     native_addref(n); return S_OK;
 }
@@ -95,6 +126,15 @@ UNKNOWN_METHODS(IRawElementProviderFragmentRoot, root, root)
 UNKNOWN_METHODS(IValueProvider, value, value)
 UNKNOWN_METHODS(IInvokeProvider, invoke, invoke)
 UNKNOWN_METHODS(IToggleProvider, toggle, toggle)
+UNKNOWN_METHODS(IRangeValueProvider, range, range)
+UNKNOWN_METHODS(ISelectionItemProvider, selection_item, selection_item)
+UNKNOWN_METHODS(IExpandCollapseProvider, expand, expand)
+UNKNOWN_METHODS(IScrollItemProvider, scroll_item, scroll_item)
+UNKNOWN_METHODS(ITextProvider, text, text)
+UNKNOWN_METHODS(ISelectionProvider, selection, selection)
+UNKNOWN_METHODS(IWindowProvider, window, window)
+UNKNOWN_METHODS(IGridProvider, grid, grid)
+UNKNOWN_METHODS(IGridItemProvider, grid_item, grid_item)
 
 static HRESULT native_begin(native_node* n, xui_context* context)
 {
@@ -134,6 +174,11 @@ static native_node* provider(native_bridge* b, xui_widget w, uint64_t id, int ho
     n->simple.lpVtbl = &simple_vtbl; n->fragment.lpVtbl = &fragment_vtbl;
     n->root.lpVtbl = &root_vtbl; n->value.lpVtbl = &value_vtbl;
     n->invoke.lpVtbl = &invoke_vtbl; n->toggle.lpVtbl = &toggle_vtbl;
+    n->range.lpVtbl = &range_vtbl; n->selection_item.lpVtbl = &selection_item_vtbl;
+    n->expand.lpVtbl = &expand_vtbl; n->scroll_item.lpVtbl = &scroll_item_vtbl;
+    n->text.lpVtbl = &text_vtbl;
+    n->selection.lpVtbl = &selection_vtbl; n->window.lpVtbl = &window_vtbl;
+    n->grid.lpVtbl = &grid_vtbl; n->grid_item.lpVtbl = &grid_item_vtbl;
     n->refs = 1; n->bridge = b; InterlockedIncrement(&b->refs);
     n->widget = w; n->id = id; n->host = host;
     n->serial = InterlockedIncrement(&next_serial);
@@ -167,13 +212,65 @@ static int control_type(int role)
     case XUI_ACCESSIBLE_ROLE_TABLE: return UIA_TableControlTypeId;
     case XUI_ACCESSIBLE_ROLE_CELL: return UIA_DataItemControlTypeId;
     case XUI_ACCESSIBLE_ROLE_CHECKBOX: return UIA_CheckBoxControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_SWITCH: return UIA_CheckBoxControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_RADIO_BUTTON: return UIA_RadioButtonControlTypeId;
     case XUI_ACCESSIBLE_ROLE_LIST: return UIA_ListControlTypeId;
     case XUI_ACCESSIBLE_ROLE_LIST_ITEM: return UIA_ListItemControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_TREE: return UIA_TreeControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_TREE_ITEM: return UIA_TreeItemControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_MENU: return UIA_MenuControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_MENU_ITEM: return UIA_MenuItemControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_DIALOG: case XUI_ACCESSIBLE_ROLE_WINDOW: return UIA_WindowControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_COMBOBOX: return UIA_ComboBoxControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_SLIDER: return UIA_SliderControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_SCROLLBAR: return UIA_ScrollBarControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_PROGRESS: return UIA_ProgressBarControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_TOOLBAR: return UIA_ToolBarControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_TAB_LIST: return UIA_TabControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_TAB: return UIA_TabItemControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_SEPARATOR: return UIA_SeparatorControlTypeId;
     case XUI_ACCESSIBLE_ROLE_TEXT: case XUI_ACCESSIBLE_ROLE_HEADING:
     case XUI_ACCESSIBLE_ROLE_PARAGRAPH: case XUI_ACCESSIBLE_ROLE_CODE_BLOCK: return UIA_TextControlTypeId;
     case XUI_ACCESSIBLE_ROLE_BUTTON: return UIA_ButtonControlTypeId;
+    case XUI_ACCESSIBLE_ROLE_EMBEDDED_OBJECT: case XUI_ACCESSIBLE_ROLE_ROOT: return UIA_PaneControlTypeId;
     default: return UIA_GroupControlTypeId;
     }
+}
+static native_node* focused_node(native_bridge* b, xui_context context)
+{
+    xui_widget widget = xuiGetFocusWidget(context);
+    native_node* result;
+    int i, count;
+    if (!widget) return NULL;
+    result = widget_root(b, widget);
+    count = xuiWidgetGetAccessibleNodeCount(widget);
+    for (i = 1; i < count; i++) {
+        xui_accessible_node_t node = {0};
+        native_node* candidate;
+        node.iSize = sizeof(node);
+        if (xuiWidgetGetAccessibleNode(widget, i, &node) != XUI_OK) break;
+        if (!(node.iState & XUI_ACCESSIBLE_STATE_FOCUSED)) continue;
+        candidate = provider(b, widget, node.iId, 0);
+        if (candidate) result = candidate;
+    }
+    return result;
+}
+static int text_pattern_supported(native_node* n)
+{
+    xui_internal_accessible_text_request request = {0};
+    xui_internal_accessible_text_range* range = NULL;
+    int result;
+    if (n->host || !n->widget) return 0;
+    request.kind = XUI_INTERNAL_TEXT_DOCUMENT;
+    result = xuiInternalAccessibilityCreateTextRange(n->widget, n->id, &request, &range);
+    if (range) range->ops->release(range);
+    return result == XUI_OK;
+}
+static int selection_container_role(int role)
+{
+    return role == XUI_ACCESSIBLE_ROLE_LIST || role == XUI_ACCESSIBLE_ROLE_TREE ||
+        role == XUI_ACCESSIBLE_ROLE_TABLE || role == XUI_ACCESSIBLE_ROLE_TAB_LIST ||
+        role == XUI_ACCESSIBLE_ROLE_RADIO_GROUP;
 }
 static HRESULT STDMETHODCALLTYPE options(IRawElementProviderSimple* p, enum ProviderOptions* out)
 { (void)p; if (!out) return E_POINTER;
@@ -191,8 +288,33 @@ static HRESULT STDMETHODCALLTYPE patterns(IRawElementProviderSimple* p, PATTERNI
             hr = native_query(n, &IID_IValueProvider, (void**)out);
         else if (id == UIA_InvokePatternId && (a.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE)))
             hr = native_query(n, &IID_IInvokeProvider, (void**)out);
-        else if (id == UIA_TogglePatternId && a.iRole == XUI_ACCESSIBLE_ROLE_CHECKBOX)
+        else if (id == UIA_TogglePatternId &&
+            (a.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE)))
             hr = native_query(n, &IID_IToggleProvider, (void**)out);
+        else if (id == UIA_RangeValuePatternId && a.tRange.iSize >= sizeof(a.tRange))
+            hr = native_query(n, &IID_IRangeValueProvider, (void**)out);
+        else if (id == UIA_SelectionItemPatternId &&
+            ((a.iState & XUI_ACCESSIBLE_STATE_SELECTABLE) ||
+             (a.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION))))
+            hr = native_query(n, &IID_ISelectionItemProvider, (void**)out);
+        else if (id == UIA_ExpandCollapsePatternId &&
+            (a.iActions & (XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+                           XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE))))
+            hr = native_query(n, &IID_IExpandCollapseProvider, (void**)out);
+        else if (id == UIA_ScrollItemPatternId &&
+            (a.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW)))
+            hr = native_query(n, &IID_IScrollItemProvider, (void**)out);
+        else if (id == UIA_TextPatternId && text_pattern_supported(n))
+            hr = native_query(n, &IID_ITextProvider, (void**)out);
+        else if (id == UIA_SelectionPatternId && selection_container_role(a.iRole))
+            hr = native_query(n, &IID_ISelectionProvider, (void**)out);
+        else if (id == UIA_WindowPatternId &&
+            (a.iRole == XUI_ACCESSIBLE_ROLE_WINDOW || a.iRole == XUI_ACCESSIBLE_ROLE_DIALOG))
+            hr = native_query(n, &IID_IWindowProvider, (void**)out);
+        else if (id == UIA_GridPatternId && a.iRole == XUI_ACCESSIBLE_ROLE_TABLE)
+            hr = native_query(n, &IID_IGridProvider, (void**)out);
+        else if (id == UIA_GridItemPatternId && a.iRole == XUI_ACCESSIBLE_ROLE_CELL)
+            hr = native_query(n, &IID_IGridItemProvider, (void**)out);
     }
     return native_end(context, hr);
 }
@@ -216,11 +338,14 @@ static HRESULT STDMETHODCALLTYPE property(IRawElementProviderSimple* p, PROPERTY
     case UIA_IsEnabledPropertyId: out->vt = VT_BOOL; out->boolVal = (a.iState & XUI_ACCESSIBLE_STATE_DISABLED) ? VARIANT_FALSE : VARIANT_TRUE; break;
     case UIA_IsOffscreenPropertyId: out->vt = VT_BOOL; out->boolVal = (!IsWindowVisible(n->bridge->window) || (a.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN)) ? VARIANT_TRUE : VARIANT_FALSE; break;
     case UIA_IsPasswordPropertyId: out->vt = VT_BOOL; out->boolVal = (a.iState & XUI_ACCESSIBLE_STATE_PROTECTED) ? VARIANT_TRUE : VARIANT_FALSE; break;
-    case UIA_HasKeyboardFocusPropertyId: case UIA_IsKeyboardFocusablePropertyId: {
-        native_node* root = n->widget ? widget_root(n->bridge, n->widget) : NULL;
-        uint32_t flag = id == UIA_HasKeyboardFocusPropertyId ? XUI_ACCESSIBLE_STATE_FOCUSED : XUI_ACCESSIBLE_STATE_FOCUSABLE;
-        out->vt = VT_BOOL; out->boolVal = root == n && (a.iState & flag) ? VARIANT_TRUE : VARIANT_FALSE; break;
-    }
+    case UIA_HasKeyboardFocusPropertyId:
+        out->vt = VT_BOOL;
+        out->boolVal = focused_node(n->bridge, context) == n ? VARIANT_TRUE : VARIANT_FALSE;
+        break;
+    case UIA_IsKeyboardFocusablePropertyId:
+        out->vt = VT_BOOL;
+        out->boolVal = (a.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) ? VARIANT_TRUE : VARIANT_FALSE;
+        break;
     default: break;
     }
     if (SUCCEEDED(hr) && text) { out->vt = VT_BSTR; out->bstrVal = wide(text); if (!out->bstrVal) hr = E_OUTOFMEMORY; }
@@ -331,7 +456,7 @@ static HRESULT action_result(int result)
     if (result == XUI_OK) return S_OK;
     if (result == XUI_ERROR_OUT_OF_MEMORY) return E_OUTOFMEMORY;
     if (result == XUI_ERROR_UNSUPPORTED) return (HRESULT)UIA_E_NOTSUPPORTED;
-        if (result == XUI_ERROR_NOT_FOUND) return (HRESULT)UIA_E_ELEMENTNOTAVAILABLE;
+    if (result == XUI_ERROR_NOT_FOUND) return (HRESULT)UIA_E_ELEMENTNOTAVAILABLE;
     return E_INVALIDARG;
 }
 static HRESULT act(native_node* n, int action, const void* data)
@@ -345,7 +470,10 @@ static HRESULT STDMETHODCALLTYPE set_focus(IRawElementProviderFragment* p)
 {
     native_node* n = NODE(IRawElementProviderFragment, fragment, p); xui_context context; HRESULT hr;
     hr = native_begin(n, &context); if (FAILED(hr)) return hr;
-    if (n->host) n = widget_root(n->bridge, xuiGetFocusWidget(context) ? xuiGetFocusWidget(context) : xuiGetRootWidget(context));
+    if (n->host) {
+        n = focused_node(n->bridge, context);
+        if (!n) n = widget_root(n->bridge, xuiGetRootWidget(context));
+    }
     hr = n ? act(n, XUI_ACCESSIBLE_ACTION_FOCUS, NULL) : (HRESULT)UIA_E_ELEMENTNOTAVAILABLE;
     return native_end(context, hr);
 }
@@ -363,7 +491,7 @@ static HRESULT STDMETHODCALLTYPE get_focus(IRawElementProviderFragmentRoot* p, I
     if (!out) return E_POINTER;
     *out = NULL;
     hr = native_begin(n, &context); if (FAILED(hr)) return hr;
-    hr = fragment_out(widget_root(n->bridge, xuiGetFocusWidget(context)), out);
+    hr = fragment_out(focused_node(n->bridge, context), out);
     return native_end(context, hr);
 }
 static HRESULT STDMETHODCALLTYPE from_point(IRawElementProviderFragmentRoot* p, double x, double y, IRawElementProviderFragment** out)
@@ -442,15 +570,159 @@ static HRESULT STDMETHODCALLTYPE toggle_state(IToggleProvider* p, enum ToggleSta
     if (!out) return E_POINTER;
     *out = ToggleState_Off;
     hr = native_begin(n, &context); if (FAILED(hr)) return hr;
-    hr = read_node(n, &a); if (SUCCEEDED(hr)) *out = a.iState & XUI_ACCESSIBLE_STATE_CHECKED ? ToggleState_On : ToggleState_Off;
+	hr = read_node(n, &a);
+	if (SUCCEEDED(hr)) {
+		if (a.iState & XUI_ACCESSIBLE_STATE_MIXED) *out = ToggleState_Indeterminate;
+		else *out = a.iState & XUI_ACCESSIBLE_STATE_CHECKED ? ToggleState_On : ToggleState_Off;
+	}
     return native_end(context, hr);
 }
+static HRESULT STDMETHODCALLTYPE range_set(IRangeValueProvider* p, double value)
+{
+    native_node* n = NODE(IRangeValueProvider, range, p); xui_context context; HRESULT hr;
+    xui_accessible_value_t data = {0};
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    data.iSize = sizeof(data); data.iType = XUI_ACCESSIBLE_VALUE_NUMBER; data.fNumber = value;
+    return native_end(context, act(n, XUI_ACCESSIBLE_ACTION_SET_VALUE, &data));
+}
+static HRESULT range_get(IRangeValueProvider* p, double* out, int field)
+{
+    native_node* n = NODE(IRangeValueProvider, range, p); xui_context context;
+    xui_accessible_node_t a; HRESULT hr;
+    if (!out) return E_POINTER;
+    *out = 0;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    hr = read_node(n, &a);
+    if (SUCCEEDED(hr) && a.tRange.iSize < sizeof(a.tRange)) hr = (HRESULT)UIA_E_NOTSUPPORTED;
+    if (SUCCEEDED(hr)) {
+        if (field == 0) *out = a.tRange.fValue;
+        else if (field == 1) *out = a.tRange.fMax;
+        else if (field == 2) *out = a.tRange.fMin;
+        else if (field == 3) *out = a.tRange.fPageStep;
+        else *out = a.tRange.fStep;
+    }
+    return native_end(context, hr);
+}
+static HRESULT STDMETHODCALLTYPE range_value(IRangeValueProvider* p, double* out)
+{ return range_get(p, out, 0); }
+static HRESULT STDMETHODCALLTYPE range_readonly(IRangeValueProvider* p, BOOL* out)
+{
+    native_node* n = NODE(IRangeValueProvider, range, p); xui_context context;
+    xui_accessible_node_t a; HRESULT hr;
+    if (!out) return E_POINTER;
+    *out = TRUE;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    hr = read_node(n, &a);
+    if (SUCCEEDED(hr)) *out = !(a.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_VALUE));
+    return native_end(context, hr);
+}
+static HRESULT STDMETHODCALLTYPE range_max(IRangeValueProvider* p, double* out)
+{ return range_get(p, out, 1); }
+static HRESULT STDMETHODCALLTYPE range_min(IRangeValueProvider* p, double* out)
+{ return range_get(p, out, 2); }
+static HRESULT STDMETHODCALLTYPE range_large(IRangeValueProvider* p, double* out)
+{ return range_get(p, out, 3); }
+static HRESULT STDMETHODCALLTYPE range_small(IRangeValueProvider* p, double* out)
+{ return range_get(p, out, 4); }
+static HRESULT STDMETHODCALLTYPE selection_item_select(ISelectionItemProvider* p)
+{
+    native_node* n = NODE(ISelectionItemProvider, selection_item, p); xui_context context; HRESULT hr;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    return native_end(context, act(n, XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL));
+}
+static HRESULT STDMETHODCALLTYPE selection_item_add(ISelectionItemProvider* p)
+{ (void)p; return (HRESULT)UIA_E_INVALIDOPERATION; }
+static HRESULT STDMETHODCALLTYPE selection_item_remove(ISelectionItemProvider* p)
+{ (void)p; return (HRESULT)UIA_E_INVALIDOPERATION; }
+static HRESULT STDMETHODCALLTYPE selection_item_selected(ISelectionItemProvider* p, BOOL* out)
+{
+    native_node* n = NODE(ISelectionItemProvider, selection_item, p); xui_context context;
+    xui_accessible_node_t a; HRESULT hr;
+    if (!out) return E_POINTER;
+    *out = FALSE;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    hr = read_node(n, &a);
+    if (SUCCEEDED(hr)) *out = (a.iState & XUI_ACCESSIBLE_STATE_SELECTED) ? TRUE : FALSE;
+    return native_end(context, hr);
+}
+static HRESULT STDMETHODCALLTYPE selection_item_container(ISelectionItemProvider* p,
+    IRawElementProviderSimple** out)
+{
+    native_node* n = NODE(ISelectionItemProvider, selection_item, p); xui_context context;
+    xui_accessible_node_t a; native_node* parent; HRESULT hr;
+    if (!out) return E_POINTER;
+    *out = NULL;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    hr = read_node(n, &a);
+    if (SUCCEEDED(hr)) {
+        parent = parent_node(n, &a);
+        if (parent) { *out = &parent->simple; native_addref(parent); }
+    }
+    return native_end(context, hr);
+}
+static HRESULT STDMETHODCALLTYPE expand_action(IExpandCollapseProvider* p)
+{
+    native_node* n = NODE(IExpandCollapseProvider, expand, p); xui_context context; HRESULT hr;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    return native_end(context, act(n, XUI_ACCESSIBLE_ACTION_EXPAND, NULL));
+}
+static HRESULT STDMETHODCALLTYPE collapse_action(IExpandCollapseProvider* p)
+{
+    native_node* n = NODE(IExpandCollapseProvider, expand, p); xui_context context; HRESULT hr;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    return native_end(context, act(n, XUI_ACCESSIBLE_ACTION_COLLAPSE, NULL));
+}
+static HRESULT STDMETHODCALLTYPE expand_state(IExpandCollapseProvider* p, enum ExpandCollapseState* out)
+{
+    native_node* n = NODE(IExpandCollapseProvider, expand, p); xui_context context;
+    xui_accessible_node_t a; HRESULT hr;
+    if (!out) return E_POINTER;
+    *out = ExpandCollapseState_LeafNode;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    hr = read_node(n, &a);
+    if (SUCCEEDED(hr)) {
+        if (a.iState & XUI_ACCESSIBLE_STATE_EXPANDED) *out = ExpandCollapseState_Expanded;
+        else if (a.iState & XUI_ACCESSIBLE_STATE_COLLAPSED) *out = ExpandCollapseState_Collapsed;
+    }
+    return native_end(context, hr);
+}
+static HRESULT STDMETHODCALLTYPE scroll_item_action(IScrollItemProvider* p)
+{
+    native_node* n = NODE(IScrollItemProvider, scroll_item, p); xui_context context; HRESULT hr;
+    hr = native_begin(n, &context); if (FAILED(hr)) return hr;
+    return native_end(context, act(n, XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW, NULL));
+}
+#include "xui_native_accessibility_patterns.inl"
+#include "xui_native_accessibility_text.inl"
 static IRawElementProviderSimpleVtbl simple_vtbl = {simple_query, simple_addref, simple_release, options, patterns, property, host_provider};
 static IRawElementProviderFragmentVtbl fragment_vtbl = {fragment_query, fragment_addref, fragment_release, navigate, runtime_id, bounds, embedded, set_focus, fragment_root};
 static IRawElementProviderFragmentRootVtbl root_vtbl = {root_query, root_addref, root_release, from_point, get_focus};
 static IValueProviderVtbl value_vtbl = {value_query, value_addref, value_release, set_value, get_value, value_readonly};
 static IInvokeProviderVtbl invoke_vtbl = {invoke_query, invoke_addref, invoke_release, invoke_action};
 static IToggleProviderVtbl toggle_vtbl = {toggle_query, toggle_addref, toggle_release, toggle_action, toggle_state};
+static IRangeValueProviderVtbl range_vtbl = {range_query, range_addref, range_release,
+    range_set, range_value, range_readonly, range_max, range_min, range_large, range_small};
+static ISelectionItemProviderVtbl selection_item_vtbl = {selection_item_query,
+    selection_item_addref, selection_item_release, selection_item_select,
+    selection_item_add, selection_item_remove, selection_item_selected, selection_item_container};
+static IExpandCollapseProviderVtbl expand_vtbl = {expand_query, expand_addref, expand_release,
+    expand_action, collapse_action, expand_state};
+static IScrollItemProviderVtbl scroll_item_vtbl = {scroll_item_query, scroll_item_addref,
+    scroll_item_release, scroll_item_action};
+static ITextProviderVtbl text_vtbl = {text_query, text_addref, text_release,
+    text_get_selection, text_get_visible_ranges, text_range_from_child,
+    text_range_from_point, text_document_range, text_supported_selection};
+static ISelectionProviderVtbl selection_vtbl = {selection_query, selection_addref,
+    selection_release, selection_get, selection_multiple, selection_required};
+static IWindowProviderVtbl window_vtbl = {window_query, window_addref, window_release,
+    window_visual_set, window_close, window_wait, window_can_maximize,
+    window_can_minimize, window_modal, window_visual, window_interaction,
+    window_topmost};
+static IGridProviderVtbl grid_vtbl = {grid_query, grid_addref, grid_release,
+    grid_get_item, grid_row_count, grid_column_count};
+static IGridItemProviderVtbl grid_item_vtbl = {grid_item_query, grid_item_addref,
+    grid_item_release, grid_item_row, grid_item_column, grid_item_row_span,
+    grid_item_column_span, grid_item_containing_grid};
 
 static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
 {
@@ -476,14 +748,17 @@ XUI_API int xuiInternalNativeAccessibilityBind(xui_context context, void* native
         _Static_assert(sizeof(address) == sizeof(target), "Windows function pointer size"); \
         memcpy(&target, &address, sizeof(target)); } while (0)
         LOAD(uia, uia_return, "UiaReturnRawElementProvider"); LOAD(uia, uia_host, "UiaHostProviderFromHwnd");
-        LOAD(uia, uia_event, "UiaRaiseAutomationEvent"); LOAD(uia, uia_structure, "UiaRaiseStructureChangedEvent");
+        LOAD(uia, uia_event, "UiaRaiseAutomationEvent");
+        LOAD(uia, uia_property, "UiaRaiseAutomationPropertyChangedEvent");
+        LOAD(uia, uia_structure, "UiaRaiseStructureChangedEvent");
         LOAD(uia, uia_disconnect, "UiaDisconnectProvider"); LOAD(uia, uia_listening, "UiaClientsAreListening");
+        LOAD(uia, uia_not_supported, "UiaGetReservedNotSupportedValue");
         LOAD(common, subclass_set, "SetWindowSubclass"); LOAD(common, subclass_remove, "RemoveWindowSubclass");
         LOAD(common, subclass_default, "DefSubclassProc");
 #undef LOAD
     }
-    if (!uia_return || !uia_host || !uia_event || !uia_structure || !uia_disconnect ||
-        !uia_listening || !subclass_set || !subclass_remove || !subclass_default) { CoUninitialize(); return XUI_ERROR_UNSUPPORTED; }
+    if (!uia_return || !uia_host || !uia_event || !uia_property || !uia_structure || !uia_disconnect ||
+        !uia_listening || !uia_not_supported || !subclass_set || !subclass_remove || !subclass_default) { CoUninitialize(); return XUI_ERROR_UNSUPPORTED; }
     /* A single XGE HWND presents one active context. Switching invalidates the
      * old providers before installing the successor, without touching callbacks. */
     for (b = bridges; b;) { native_bridge* next = b->next;
@@ -509,7 +784,9 @@ XUI_API void xuiInternalNativeAccessibilityDetach(xui_context context)
         b->context = NULL; uia_return(b->window, 0, 0, NULL);
         n = b->nodes; b->nodes = b->host = NULL;
         while (n) { native_node* next = n->next; n->widget = NULL; uia_disconnect(&n->simple); native_release(n); n = next; }
-        CoUninitialize(); bridge_release(b); break;
+        CoUninitialize(); bridge_release(b);
+        if (!bridges) owner_thread = 0;
+        break;
     }
 }
 XUI_API void xuiInternalNativeAccessibilityResetWidget(xui_widget widget)
@@ -524,16 +801,120 @@ XUI_API void xuiInternalNativeAccessibilityResetWidget(xui_widget widget)
         }
     }
 }
+static native_node* event_node(native_bridge* bridge, xui_widget widget,
+    const xui_accessibility_event_t* event)
+{
+    int i, count;
+    if (event->iType == XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED)
+        return focused_node(bridge, bridge->context);
+    if (event->iNodeId <= 1) return widget_root(bridge, widget);
+    count = xuiWidgetGetAccessibleNodeCount(widget);
+    for (i = 0; i < count; i++) {
+        xui_accessible_node_t node = {0}; node.iSize = sizeof(node);
+        if (xuiWidgetGetAccessibleNode(widget, i, &node) != XUI_OK) break;
+        if (node.iId == event->iNodeId) return provider(bridge, widget, node.iId, 0);
+    }
+    return NULL;
+}
+static void raise_property(native_node* node, PROPERTYID property_id, VARIANT* value)
+{
+    VARIANT old_value;
+    VariantInit(&old_value);
+    (void)uia_property(&node->simple, property_id, old_value, *value);
+}
+static void raise_text_property(native_node* node, PROPERTYID property_id, const char* text)
+{
+    VARIANT value;
+    VariantInit(&value); value.vt = VT_BSTR; value.bstrVal = wide(text);
+    if (value.bstrVal) raise_property(node, property_id, &value);
+    VariantClear(&value);
+}
+static void raise_int_property(native_node* node, PROPERTYID property_id, LONG value_number)
+{
+    VARIANT value;
+    VariantInit(&value); value.vt = VT_I4; value.lVal = value_number;
+    raise_property(node, property_id, &value);
+}
+static void raise_bool_property(native_node* node, PROPERTYID property_id, int value_number)
+{
+    VARIANT value;
+    VariantInit(&value); value.vt = VT_BOOL;
+    value.boolVal = value_number ? VARIANT_TRUE : VARIANT_FALSE;
+    raise_property(node, property_id, &value);
+}
+static void raise_double_property(native_node* node, PROPERTYID property_id, double value_number)
+{
+    VARIANT value;
+    VariantInit(&value); value.vt = VT_R8; value.dblVal = value_number;
+    raise_property(node, property_id, &value);
+}
+static void raise_semantic_event(native_node* node, const xui_accessibility_event_t* event)
+{
+    xui_accessible_node_t accessible = {0};
+    HRESULT hr;
+    if (event->iType == XUI_ACCESSIBLE_EVENT_TREE_CHANGED) {
+        (void)uia_structure(&node->simple, StructureChangeType_ChildrenInvalidated, NULL, 0);
+        return;
+    }
+    if (event->iType == XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED) {
+        (void)uia_event(&node->simple, UIA_AutomationFocusChangedEventId);
+        return;
+    }
+    if (event->iType == XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED) {
+        (void)uia_event(&node->simple, UIA_LayoutInvalidatedEventId);
+        return;
+    }
+    if (event->iType == XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED) {
+        (void)uia_event(&node->simple, UIA_Selection_InvalidatedEventId);
+        return;
+    }
+    accessible.iSize = sizeof(accessible);
+    hr = read_node(node, &accessible);
+    if (FAILED(hr)) return;
+    if (event->iType == XUI_ACCESSIBLE_EVENT_NODE_CHANGED) {
+        raise_text_property(node, UIA_NamePropertyId, accessible.sName);
+        if (node->bridge->context)
+            raise_text_property(node, UIA_HelpTextPropertyId, accessible.sDescription);
+    } else if (event->iType == XUI_ACCESSIBLE_EVENT_VALUE_CHANGED) {
+        if (accessible.tRange.iSize >= sizeof(accessible.tRange))
+            raise_double_property(node, UIA_RangeValueValuePropertyId, accessible.tRange.fValue);
+        else if (!(accessible.iState & XUI_ACCESSIBLE_STATE_PROTECTED))
+            raise_text_property(node, UIA_ValueValuePropertyId, accessible.sValue);
+        if (node->bridge->context &&
+            (accessible.iRole == XUI_ACCESSIBLE_ROLE_TEXTBOX ||
+             accessible.iRole == XUI_ACCESSIBLE_ROLE_DOCUMENT))
+            (void)uia_event(&node->simple, UIA_Text_TextChangedEventId);
+    } else if (event->iType == XUI_ACCESSIBLE_EVENT_STATE_CHANGED) {
+        raise_bool_property(node, UIA_IsEnabledPropertyId,
+            !(accessible.iState & XUI_ACCESSIBLE_STATE_DISABLED));
+        if (node->bridge->context &&
+            (accessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE)))
+            raise_int_property(node, UIA_ToggleToggleStatePropertyId,
+                (accessible.iState & XUI_ACCESSIBLE_STATE_MIXED) ? ToggleState_Indeterminate :
+                (accessible.iState & XUI_ACCESSIBLE_STATE_CHECKED) ? ToggleState_On : ToggleState_Off);
+        if (node->bridge->context &&
+            (accessible.iActions & (XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+                                    XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE))))
+            raise_int_property(node, UIA_ExpandCollapseExpandCollapseStatePropertyId,
+                (accessible.iState & XUI_ACCESSIBLE_STATE_EXPANDED) ? ExpandCollapseState_Expanded :
+                (accessible.iState & XUI_ACCESSIBLE_STATE_COLLAPSED) ? ExpandCollapseState_Collapsed :
+                ExpandCollapseState_LeafNode);
+        if (node->bridge->context && (accessible.iState & XUI_ACCESSIBLE_STATE_SELECTABLE))
+            raise_bool_property(node, UIA_SelectionItemIsSelectedPropertyId,
+                (accessible.iState & XUI_ACCESSIBLE_STATE_SELECTED) != 0);
+    }
+}
 XUI_API void xuiInternalNativeAccessibilityNotify(xui_context context, xui_widget widget, const xui_accessibility_event_t* event)
 {
-    native_bridge* b; native_node* n;
+    native_bridge* b;
     if (!uia_listening || !uia_listening()) return;
     for (b = bridges; b; b = b->next) if (b->context == context) {
-        for (n = b->nodes; n; n = n->next) if (n->widget == widget && (!event->iNodeId || event->iNodeId == n->id)) {
-            if (event->iType == XUI_ACCESSIBLE_EVENT_TREE_CHANGED) uia_structure(&n->simple, StructureChangeType_ChildrenInvalidated, NULL, 0);
-            else if (event->iType == XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED) uia_event(&n->simple, UIA_AutomationFocusChangedEventId);
-            else if (event->iType == XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED) uia_event(&n->simple, UIA_LayoutInvalidatedEventId);
-        }
+        native_node* node = event_node(b, widget, event);
+        if (!node) return;
+        native_addref(node);
+        raise_semantic_event(node, event);
+        native_release(node);
+        return;
     }
 }
 #else

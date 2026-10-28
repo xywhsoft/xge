@@ -11,7 +11,7 @@
 
 static int __xuiAccessibleValid(xui_widget pWidget)
 {
-	return xuiInternalWidgetIsValid(pWidget) &&
+	return pWidget != NULL && pWidget->pContext != NULL && xuiInternalWidgetIsValid(pWidget) &&
 		!xuiInternalContextDestroyPending(pWidget->pContext) && !pWidget->pContext->bDestroying;
 }
 
@@ -56,8 +56,10 @@ static int __xuiAccessibleRole(xui_widget pWidget)
 	static const struct { const char* sType; int iRole; } roles[] = {
 		{"label", XUI_ACCESSIBLE_ROLE_TEXT}, {"hyperlink", XUI_ACCESSIBLE_ROLE_LINK},
 		{"image", XUI_ACCESSIBLE_ROLE_IMAGE}, {"separator", XUI_ACCESSIBLE_ROLE_SEPARATOR},
+		{"webview", XUI_ACCESSIBLE_ROLE_EMBEDDED_OBJECT},
 		{"panel", XUI_ACCESSIBLE_ROLE_GROUP}, {"radiogroup", XUI_ACCESSIBLE_ROLE_RADIO_GROUP},
 		{"listview", XUI_ACCESSIBLE_ROLE_LIST}, {"messagelist", XUI_ACCESSIBLE_ROLE_LIST},
+		{"inventorygrid", XUI_ACCESSIBLE_ROLE_LIST},
 		{"treeview", XUI_ACCESSIBLE_ROLE_TREE}, {"menu", XUI_ACCESSIBLE_ROLE_MENU},
 		{"menubar", XUI_ACCESSIBLE_ROLE_MENU}, {"toolbar", XUI_ACCESSIBLE_ROLE_TOOLBAR},
 		{"tableview", XUI_ACCESSIBLE_ROLE_TABLE}, {"tablegrid", XUI_ACCESSIBLE_ROLE_TABLE},
@@ -100,7 +102,7 @@ XUI_API int xuiWidgetSetAccessibilityProvider(xui_widget pWidget,
 static int __xuiAccessibleSetText(xui_widget pWidget, char** psTarget, const char* sText)
 {
 	char* sCopy = NULL;
-	if ( !__xuiAccessibleValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiAccessibleValid(pWidget) || psTarget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( sText != NULL && sText[0] != 0 ) {
 		size_t iLength = strlen(sText) + 1;
 		sCopy = (char*)xrtMalloc(iLength);
@@ -206,15 +208,27 @@ XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_acces
 		iMutation != pWidget->iAccessibleMutationGeneration ) iRet = XUI_ERROR_INVALID_ARGUMENT;
 	if ( iRet == XUI_OK ) {
 		xui_widget pFocusTarget = __xuiAccessibleEditTarget(pWidget);
+		int bRootNode = pWidget->onAccessibleGet == NULL || iIndex == 0;
 		if ( tNode.sName == NULL ) tNode.sName = pWidget->sAccessibleName;
 		if ( tNode.sDescription == NULL ) tNode.sDescription = pWidget->sAccessibleDescription;
-		if ( xuiInternalInputFocusAllowed(pContext, pFocusTarget) ) {
-			tNode.iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
-			if ( pWidget->onAccessibleGet == NULL || pWidget->onAccessibleAction != NULL || tNode.iId <= 1 )
+		if ( (tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) == 0 &&
+		     xuiInternalInputFocusAllowed(pContext, pFocusTarget) ) {
+			if ( bRootNode ||
+			     (tNode.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS)) != 0 )
+				tNode.iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
+			if ( bRootNode &&
+			     (pWidget->onAccessibleGet == NULL || pWidget->onAccessibleAction != NULL || tNode.iId <= 1) )
 				tNode.iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
 		}
-		if ( pContext->pFocusWidget == pWidget || (pFocusTarget != NULL && pContext->pFocusWidget == pFocusTarget) )
+		if ( (tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) == 0 &&
+		     bRootNode &&
+		     (pContext->pFocusWidget == pWidget ||
+		      (pFocusTarget != NULL && pContext->pFocusWidget == pFocusTarget)) )
 			tNode.iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		if ( (tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0 ) {
+			tNode.iActions = 0;
+			tNode.iState &= ~(XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_FOCUSED);
+		}
 		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) tNode.iState |= XUI_ACCESSIBLE_STATE_DISABLED;
 		if ( !xuiWidgetGetEffectiveVisible(pWidget) ) tNode.iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 		if ( !__xuiAccessibleCanAct(pWidget) ) {

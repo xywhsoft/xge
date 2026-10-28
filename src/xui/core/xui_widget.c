@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_native_accessibility_internal.h"
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -1383,6 +1384,18 @@ static void __xuiWidgetMarkDirtyOnly(xui_widget pWidget, uint32_t iFlags)
 	xuiInternalContextBumpGeneration(pWidget->pContext);
 }
 
+static void __xuiWidgetMarkDescendantPaintDirty(xui_widget pWidget, uint32_t iFlags)
+{
+	xui_widget pChild;
+
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		pChild->iDirtyFlags |= iFlags;
+		pChild->iSubtreeDirtyFlags |= iFlags;
+		__xuiWidgetBumpGeneration(pChild);
+		__xuiWidgetMarkDescendantPaintDirty(pChild, iFlags);
+	}
+}
+
 void xuiInternalWidgetSyncDpi(xui_widget pWidget)
 {
 	if ( !__xuiWidgetValid(pWidget) || pWidget->iDpiGeneration == pWidget->pContext->iDpiGeneration ) return;
@@ -2190,6 +2203,24 @@ static xui_internal_prepare_paint_proc __xuiWidgetTypePreparePaint(xui_widget_ty
 		}
 	}
 	return NULL;
+}
+
+static xui_internal_parent_changed_proc __xuiWidgetTypeParentChanged(xui_widget_type pType)
+{
+	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
+		if ( pType->onParentChanged != NULL ) return pType->onParentChanged;
+	}
+	return NULL;
+}
+
+static void __xuiWidgetNotifyParentChanged(xui_widget pWidget,
+	xui_widget pOldParent, xui_widget pNewParent)
+{
+	xui_internal_parent_changed_proc onParentChanged;
+
+	if ( !__xuiWidgetValid(pWidget) || pOldParent == pNewParent ) return;
+	onParentChanged = __xuiWidgetTypeParentChanged(pWidget->pType);
+	if ( onParentChanged != NULL ) onParentChanged(pWidget, pOldParent, pNewParent);
 }
 
 static xui_widget_update_proc __xuiWidgetTypeUpdate(xui_widget_type pType)
@@ -3872,6 +3903,7 @@ static int __xuiWidgetInsertBeforeOperation(xui_widget pParent, xui_widget pChil
 	__xuiWidgetBumpLayoutVersion(pParent);
 	__xuiWidgetUpdateEventMasksToRoot(pParent);
 	(void)xuiWidgetInvalidate(pParent, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+	__xuiWidgetNotifyParentChanged(pChild, NULL, pParent);
 	return XUI_OK;
 }
 
@@ -3937,6 +3969,7 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
 	(void)__xuiWidgetRecomputeSubtreeEventMask(pWidget);
 	__xuiWidgetUpdateEventMasksToRoot(pParent);
 	(void)__xuiWidgetInvalidateWorldRect(pParent, tWorldRect, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+	__xuiWidgetNotifyParentChanged(pWidget, pParent, NULL);
 	if ( __xuiWidgetValid(pWidget) ) __xuiWidgetSyncInactiveTree(pWidget);
 	return XUI_OK;
 }
@@ -4812,6 +4845,8 @@ static int __xuiWidgetSetEnabledOperation(xui_widget pWidget, int bEnabled)
 	}
 	xuiInternalStateRecordEnabled(pWidget);
 	pWidget->bEnabled = bEnabled;
+	__xuiWidgetMarkDescendantPaintDirty(pWidget,
+		XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( !bEnabled ) {
 		xuiInternalContextDetachWidget(pWidget->pContext, pWidget);
 		if ( !__xuiWidgetValid(pWidget) ) return XUI_OK;
@@ -5400,6 +5435,44 @@ XUI_API xui_widget xuiOverlayRoot(xui_context pContext)
 	pContext->pOverlayRoot = pRoot;
 	(void)xuiInternalContextInvalidateAll(pContext);
 	return pRoot;
+}
+
+int xuiInternalWidgetSetTreeLayer(xui_widget pWidget, int iLayer, int iZIndex)
+{
+	xui_widget pChild;
+	int iRet;
+
+	if ( pWidget == NULL ) return XUI_OK;
+	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiWidgetSetLayer(pWidget, iLayer, iZIndex);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		iRet = xuiInternalWidgetSetTreeLayer(pChild, iLayer, iZIndex);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+int xuiInternalOverlayNextZ(xui_context pContext, int iLayer)
+{
+	xui_widget pRoot;
+	xui_widget pChild;
+	int iChildLayer;
+	int iChildZ;
+	int iNextZ = 0;
+
+	if ( !xuiInternalContextIsValid(pContext) ) return 0;
+	pRoot = pContext->pOverlayRoot;
+	if ( pRoot == NULL ) return 0;
+	for ( pChild = pRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !xuiWidgetGetEffectiveVisible(pChild) ||
+			xuiWidgetGetLayer(pChild, &iChildLayer, &iChildZ) != XUI_OK ||
+			iChildLayer != iLayer ) continue;
+		if ( iChildZ >= iNextZ ) {
+			iNextZ = (iChildZ < INT_MAX - 1) ? (iChildZ + 1) : (INT_MAX - 1);
+		}
+	}
+	return iNextZ;
 }
 
 XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget pOverlay, int iLayer, int iZIndex)

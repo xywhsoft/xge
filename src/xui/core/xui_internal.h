@@ -31,6 +31,7 @@ typedef struct xui_resource_dependency_t xui_resource_dependency_t;
 typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
+struct xui_menu_data_t;
 
 enum {
 	XUI_DRAG_ADORNER_RECT_FILL = 1,
@@ -169,7 +170,10 @@ struct xui_context_t {
 	xui_widget pActiveWidget;
 	xui_widget pFocusWidget;
 	struct xui_popup_data_t* pPopupList;
+	struct xui_menu_data_t* pMenuList;
+	struct xui_menubar_data_t* pMenuBarList;
 	void (*onPopupSubtreeUnavailable)(xui_context pContext, xui_widget pWidget);
+	void (*onMenuUnavailable)(xui_context pContext, xui_widget pMenu);
 	xui_widget pPointerCaptureWidget;
 	xui_widget pDragWidget;
 	xui_widget pLastClickWidget;
@@ -315,6 +319,8 @@ typedef struct xui_internal_accessibility_adapter_t {
 } xui_internal_accessibility_adapter_t;
 
 typedef int (*xui_internal_prepare_paint_proc)(xui_widget pWidget);
+typedef void (*xui_internal_parent_changed_proc)(xui_widget pWidget,
+	xui_widget pOldParent, xui_widget pNewParent);
 
 struct xui_widget_type_t {
 	uint32_t iMagic;
@@ -336,6 +342,8 @@ struct xui_widget_type_t {
 	xui_widget_cache_render_proc onCacheRender;
 	xui_widget_update_proc onUpdate;
 	xui_widget_cursor_proc onQueryCursor;
+	/* Internal structural hook. Implementations must not mutate the widget tree. */
+	xui_internal_parent_changed_proc onParentChanged;
 	const xui_internal_accessibility_adapter_t* pAccessibleAdapter;
 	xui_layout_t tLayout;
 	xui_cache_policy_t tCachePolicy;
@@ -549,6 +557,17 @@ xui_widget xuiInternalInputModalRoot(xui_context pContext);
 xui_widget xuiInternalInputFocusParent(xui_widget pWidget);
 int xuiInternalInputFocusContains(xui_widget pRoot, xui_widget pWidget);
 int xuiInternalInputFocusAllowed(xui_context pContext, xui_widget pWidget);
+#if XUI_ENABLE_POPUP
+xui_widget xuiInternalPopupPointerPassthroughOwner(xui_context pContext,
+	xui_widget pHit, float fX, float fY);
+int xuiInternalPopupPrepareOwnerPress(xui_context pContext,
+	xui_widget pTarget, float fX, float fY);
+int xuiInternalPopupSetSizing(xui_widget pWidget, float fContentWidth,
+	float fContentHeight, float fMaxWidth, float fMaxHeight);
+#endif
+#if XUI_ENABLE_MENU
+int xuiInternalMenuIsLive(xui_context pContext, xui_widget pWidget);
+#endif
 void xuiInternalWidgetDestroyFlush(xui_context pContext);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);
@@ -583,6 +602,9 @@ int xuiInternalEditEmit(xui_widget pWidget, int iType, const char* sText,
 	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid);
 int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, int iTextSize,
 	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid);
+/* Commit an in-panel ColorPicker field without closing its popup. Returns
+ * INVALID_ARGUMENT when the draft is malformed so composite editors can keep focus. */
+int xuiInternalColorPickerCommitPendingEdit(xui_widget pWidget);
 void xuiInternalContextPressCancel(xui_context pContext);
 int xuiInternalContextPressUpdate(xui_context pContext, float fDelta);
 int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);
@@ -617,6 +639,14 @@ xui_rect_t xuiInternalWindowFrameResize(xui_rect_t tRect, xui_rect_t tBounds,
 	uint32_t iEdges, float fDX, float fDY, float fMinWidth, float fMinHeight);
 
 int xuiInternalWidgetIsValid(xui_widget pWidget);
+int xuiInternalIconCategoryBelongsToContext(xui_icon_category pCategory, xui_context pContext);
+uint32_t xuiInternalFlowGraphGetGeometryRevision(xui_flow_graph pGraph);
+void xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSecond);
+int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
+	const char* sNodeId, xvalue* pConfig, const xui_flow_port_desc_t* pPorts,
+	int iPortCount, int bReplaceDynamicPorts, const char* sSummary);
+int xuiInternalWidgetSetTreeLayer(xui_widget pWidget, int iLayer, int iZIndex);
+int xuiInternalOverlayNextZ(xui_context pContext, int iLayer);
 
 static int xuiInternalPixelFloor(float fValue)
 {

@@ -294,8 +294,12 @@ static inline xregexresult xuiXrtRegexFindAt(xui_xrt_regex_t* pRegex, const char
 	xregexresult iResult;
 	if ( pRegex == NULL || pSpan == NULL ) return XREGEX_ERROR;
 	iResult = xrtRegexMatcherFind(pRegex->pMatcher, xuiXrtText(sText, iSize), iStart);
-	if ( iResult == XREGEX_MATCH && xrtRegexMatcherCapture(pRegex->pMatcher, 0u, &tCapture) )
+	if ( iResult == XREGEX_MATCH ) {
+		if ( !xrtRegexMatcherCapture(pRegex->pMatcher, 0u, &tCapture) || !tCapture.Matched ||
+		     tCapture.Span.Begin < iStart || tCapture.Span.End < tCapture.Span.Begin ||
+		     tCapture.Span.End > iSize ) return XREGEX_ERROR;
 		*pSpan = tCapture.Span;
+	}
 	return iResult;
 }
 

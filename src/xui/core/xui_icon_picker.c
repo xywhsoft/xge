@@ -1,7 +1,9 @@
 #include "xui_config.h"
 #if XUI_ENABLE_ICON_PICKER
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
+#include <float.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -27,6 +29,8 @@ typedef struct xui_icon_picker_data_t {
 	int iSelectedIndex;
 	int iHoverIndex;
 	int iFocusIndex;
+	int iActiveIndex;
+	xui_pointer_owner_t tPointerOwner;
 	int iTextMode;
 	int iVisibleRows;
 	int iVisibleColumns;
@@ -72,11 +76,21 @@ typedef struct xui_icon_picker_data_t {
 	int bChildStyleSynced;
 	int iChangeCount;
 	char sTooltip[256];
+	char sAccessibleValue[256];
 } xui_icon_picker_data_t;
 
 static xui_icon_picker_data_t* __xuiIconPickerGetData(xui_widget pWidget);
 static int __xuiIconPickerApplyPopup(xui_widget pWidget, xui_icon_picker_data_t* pData);
 static int __xuiIconPickerSyncCategory(xui_widget pWidget, xui_icon_picker_data_t* pData);
+static int __xuiIconPickerInvalidate(xui_widget pWidget, xui_icon_picker_data_t* pData);
+static void __xuiIconPickerDestroy(xui_widget pWidget, void* pTypeData, void* pUser);
+
+static int __xuiIconPickerAlive(xui_context pContext, xui_widget pWidget,
+	const xui_icon_picker_data_t* pExpected)
+{
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		xuiInternalWidgetIsValid(pWidget) && __xuiIconPickerGetData(pWidget) == pExpected;
+}
 
 static float __xuiIconPickerMin(float fA, float fB)
 {
@@ -96,6 +110,11 @@ static uint32_t __xuiIconPickerAlpha(uint32_t iColor)
 static int __xuiIconPickerFloatValid(float fValue)
 {
 	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
+}
+
+static int __xuiIconPickerCoordinateValid(float fValue)
+{
+	return (fValue == fValue) && (fValue >= -FLT_MAX) && (fValue <= FLT_MAX);
 }
 
 static int __xuiIconPickerTextModeValid(int iMode)
@@ -120,9 +139,14 @@ static int __xuiIconPickerThicknessValid(xui_thickness_t tValue)
 
 static int __xuiIconPickerDescValid(const xui_icon_picker_desc_t* pDesc)
 {
+	float fCellWidth;
+	float fCellHeight;
+	float fIconPadding;
+
 	if ( pDesc == NULL ) return 1;
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
-	if ( (pDesc->iVisibleRows < 0) || (pDesc->iVisibleColumns < 0) ) return 0;
+	if ( (pDesc->iVisibleRows < 0) || (pDesc->iVisibleRows > 1024) ||
+	     (pDesc->iVisibleColumns < 0) || (pDesc->iVisibleColumns > 1024) ) return 0;
 	if ( !__xuiIconPickerTextModeValid(pDesc->iTextMode) && (pDesc->iTextMode != 0) ) return 0;
 	if ( !__xuiIconPickerPlacementValid(pDesc->iPopupPlacement) ) return 0;
 	if ( !__xuiIconPickerFloatValid(pDesc->fCellWidth) ||
@@ -132,7 +156,12 @@ static int __xuiIconPickerDescValid(const xui_icon_picker_desc_t* pDesc)
 	     !__xuiIconPickerFloatValid(pDesc->fGapY) ||
 	     !__xuiIconPickerFloatValid(pDesc->fBorderWidth) ||
 	     !__xuiIconPickerFloatValid(pDesc->fScrollbarSize) ) return 0;
+	if ( pDesc->fScrollbarSize > 8.0f ) return 0;
 	if ( !__xuiIconPickerThicknessValid(pDesc->tValuePadding) ) return 0;
+	fCellWidth = (pDesc->fCellWidth > 0.0f) ? pDesc->fCellWidth : XUI_ICON_PICKER_DEFAULT_CELL_W;
+	fCellHeight = (pDesc->fCellHeight > 0.0f) ? pDesc->fCellHeight : XUI_ICON_PICKER_DEFAULT_CELL_H;
+	fIconPadding = (pDesc->fIconPadding > 0.0f) ? pDesc->fIconPadding : XUI_ICON_PICKER_DEFAULT_ICON_PAD;
+	if ( fIconPadding * 2.0f >= fCellWidth || fIconPadding * 2.0f >= fCellHeight ) return 0;
 	return 1;
 }
 
@@ -156,6 +185,7 @@ static void __xuiIconPickerDefaults(xui_icon_picker_data_t* pData)
 	pData->iSelectedIndex = -1;
 	pData->iHoverIndex = -1;
 	pData->iFocusIndex = -1;
+	pData->iActiveIndex = -1;
 	pData->iTextMode = XUI_ICON_PICKER_TEXT_ID;
 	pData->iVisibleRows = XUI_ICON_PICKER_DEFAULT_ROWS;
 	pData->iVisibleColumns = XUI_ICON_PICKER_DEFAULT_COLUMNS;
@@ -243,32 +273,49 @@ static void __xuiIconPickerResolve(xui_widget pWidget, const xui_icon_picker_dat
 static int __xuiIconPickerApplyPopupColors(xui_widget pWidget, xui_icon_picker_data_t* pData)
 {
 	xui_icon_picker_data_t tResolved;
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pFrame;
+	xui_widget pViewport;
 	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pFrame = pData->pFrame;
+	pViewport = pData->pViewport;
 	__xuiIconPickerResolve(pWidget, pData, &tResolved);
-	if ( pData->pPopup != NULL ) {
-		iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor,
+	if ( pPopup != NULL ) {
+		iRet = xuiPopupSetColors(pPopup, tResolved.iPopupPanelColor,
 			tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, 0u);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
-	if ( pData->pFrame != NULL &&
-	     xuiScrollFrameGetBackgroundColor(pData->pFrame) != tResolved.iPopupPanelColor ) {
-		iRet = xuiScrollFrameSetBackgroundColor(pData->pFrame, tResolved.iPopupPanelColor);
+	if ( pFrame != NULL &&
+	     xuiScrollFrameGetBackgroundColor(pFrame) != tResolved.iPopupPanelColor ) {
+		iRet = xuiScrollFrameSetBackgroundColor(pFrame, tResolved.iPopupPanelColor);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
+	if ( pViewport != NULL ) {
+		iRet = xuiWidgetInvalidate(pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( pData->pViewport != NULL )
-		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
 }
 
 static int __xuiIconPickerSyncStyle(xui_widget pWidget)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
 	iRet = __xuiIconPickerApplyPopupColors(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	pData->iChildStyleHash = iHash;
 	pData->bChildStyleSynced = 1;
 	return XUI_OK;
@@ -288,10 +335,13 @@ static int __xuiIconPickerSetPlaceholderData(xui_icon_picker_data_t* pData, cons
 
 static int __xuiIconPickerApplyCategoryData(xui_icon_picker_data_t* pData, xui_icon_category pCategory)
 {
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pCategory == pData->pCategory ) return XUI_OK;
-	if ( pCategory != NULL && xuiIconCategoryAddRef(pCategory) != XUI_OK ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pCategory != NULL ) {
+		iRet = xuiIconCategoryAddRef(pCategory);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pData->pCategory != NULL ) {
 		(void)xuiIconCategoryRelease(pData->pCategory);
@@ -320,7 +370,7 @@ static void __xuiIconPickerApplyDesc(xui_icon_picker_data_t* pData, const xui_ic
 		pData->tValuePadding = pDesc->tValuePadding;
 	}
 	if ( pDesc->fBorderWidth > 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
-	if ( pDesc->fScrollbarSize > 0.0f ) pData->fScrollbarSize = __xuiIconPickerMin(pDesc->fScrollbarSize, 8.0f);
+	if ( pDesc->fScrollbarSize > 0.0f ) pData->fScrollbarSize = pDesc->fScrollbarSize;
 	if ( __xuiIconPickerAlpha(pDesc->iTextColor) ) pData->iTextColor = pDesc->iTextColor;
 	if ( __xuiIconPickerAlpha(pDesc->iPlaceholderColor) ) pData->iPlaceholderColor = pDesc->iPlaceholderColor;
 	if ( __xuiIconPickerAlpha(pDesc->iDisabledTextColor) ) pData->iDisabledTextColor = pDesc->iDisabledTextColor;
@@ -377,20 +427,25 @@ static int __xuiIconPickerReserveIds(xui_icon_picker_data_t* pData, int iNeeded)
 static int __xuiIconPickerSyncCategory(xui_widget pWidget, xui_icon_picker_data_t* pData)
 {
 	xui_icon pIcon;
+	xui_icon_id iOldSelectedId;
 	uint32_t iGeneration;
+	uint32_t iSlotCount;
+	uint32_t iSlot;
 	int iCount;
 	int iRet;
-	int i;
+	int iInvalidateRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iGeneration = (pData->pCategory != NULL) ? xuiIconCategoryGetGeneration(pData->pCategory) : 0u;
 	iCount = (pData->pCategory != NULL) ? xuiIconCategoryGetIconCount(pData->pCategory) : 0;
 	if ( iGeneration == pData->iCategoryGeneration && iCount == pData->iIconCount ) return XUI_OK;
+	iOldSelectedId = pData->iSelectedId;
 	iRet = __xuiIconPickerReserveIds(pData, iCount);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iIconCount = 0;
-	for ( i = 0; i < iCount; i++ ) {
-		pIcon = xuiIconCategoryGetIconAt(pData->pCategory, i);
+	iSlotCount = (pData->pCategory != NULL) ? xuiIconCategoryGetIconSlotCount(pData->pCategory) : 0u;
+	for ( iSlot = 0u; iSlot < iSlotCount; ++iSlot ) {
+		pIcon = xuiIconFindById(pData->pCategory, (xui_icon_id)(iSlot + 1u));
 		if ( pIcon != NULL ) {
 			pData->arrIds[pData->iIconCount++] = xuiIconGetId(pIcon);
 		}
@@ -400,11 +455,17 @@ static int __xuiIconPickerSyncCategory(xui_widget pWidget, xui_icon_picker_data_
 	if ( pData->iSelectedIndex < 0 ) pData->iSelectedId = XUI_ICON_ID_INVALID;
 	if ( pData->iFocusIndex >= pData->iIconCount ) pData->iFocusIndex = pData->iIconCount - 1;
 	if ( pData->iHoverIndex >= pData->iIconCount ) pData->iHoverIndex = -1;
-	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( pData->pViewport != NULL ) {
-		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iInvalidateRet = xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet == XUI_OK ) iRet = iInvalidateRet;
 	}
-	return XUI_OK;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	if ( iOldSelectedId != pData->iSelectedId ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+	return iRet;
 }
 
 static float __xuiIconPickerGridWidth(const xui_icon_picker_data_t* pData)
@@ -416,7 +477,7 @@ static float __xuiIconPickerGridWidth(const xui_icon_picker_data_t* pData)
 static int __xuiIconPickerTotalRows(const xui_icon_picker_data_t* pData)
 {
 	if ( (pData == NULL) || (pData->iVisibleColumns <= 0) || (pData->iIconCount <= 0) ) return 0;
-	return (pData->iIconCount + pData->iVisibleColumns - 1) / pData->iVisibleColumns;
+	return ((pData->iIconCount - 1) / pData->iVisibleColumns) + 1;
 }
 
 static float __xuiIconPickerVisibleHeight(const xui_icon_picker_data_t* pData)
@@ -485,7 +546,7 @@ static uint32_t __xuiIconPickerState(xui_widget pWidget, xui_icon_picker_data_t*
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ||
 	     xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pData->pViewport ) {
 		iState |= XUI_WIDGET_STATE_FOCUS;
@@ -498,7 +559,19 @@ static uint32_t __xuiIconPickerState(xui_widget pWidget, xui_icon_picker_data_t*
 
 static int __xuiIconPickerSyncState(xui_widget pWidget, xui_icon_picker_data_t* pData)
 {
-	return xuiWidgetSetStateId(pWidget, __xuiIconPickerState(pWidget, pData));
+	xui_context pContext;
+	uint32_t iState;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	iState = __xuiIconPickerState(pWidget, pData);
+	if ( xuiWidgetGetStateId(pWidget) == iState ) return XUI_OK;
+	iRet = xuiWidgetSetStateId(pWidget, iState);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	return __xuiIconPickerInvalidate(pWidget, pData);
 }
 
 static int __xuiIconPickerFormatValue(xui_widget pWidget, xui_icon_picker_data_t* pData, xui_icon pIcon, char* sBuffer, int iCapacity)
@@ -535,6 +608,7 @@ static int __xuiIconPickerFormatValue(xui_widget pWidget, xui_icon_picker_data_t
 	default:
 		break;
 	}
+	xuiInternalUtf8TrimIncomplete(sBuffer);
 	return XUI_OK;
 }
 
@@ -580,6 +654,7 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 {
 	xui_icon_picker_data_t* pData;
 	xui_icon_picker_data_t tResolved;
+	xui_context pContext;
 	xui_proxy pProxy;
 	xui_icon pIcon;
 	xui_font pFont;
@@ -604,12 +679,15 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	(void)pUser;
 	pData = __xuiIconPickerGetData(pWidget);
 	if ( (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiIconPickerSyncCategory(pWidget, pData);
-	(void)__xuiIconPickerUpdateRects(pWidget, pData);
+	pContext = xuiWidgetGetContext(pWidget);
+	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiIconPickerUpdateRects(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	__xuiIconPickerResolve(pWidget, pData, &tResolved);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	bEnabled = xuiWidgetGetEnabled(pWidget);
+	bEnabled = xuiWidgetGetEffectiveEnabled(pWidget);
 	bOpen = (pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup));
 	bHover = (xuiWidgetGetInputState(pWidget) & XUI_WIDGET_STATE_HOVER) != 0u;
 	bFocus = (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ||
@@ -635,7 +713,11 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	pIcon = (pData->pCategory != NULL && pData->iSelectedId != XUI_ICON_ID_INVALID) ?
 	        xuiIconFindById(pData->pCategory, pData->iSelectedId) : NULL;
 	sValue[0] = '\0';
-	if ( pIcon != NULL ) (void)__xuiIconPickerFormatValue(pWidget, pData, pIcon, sValue, (int)sizeof(sValue));
+	if ( pIcon != NULL ) {
+		iRet = __xuiIconPickerFormatValue(pWidget, pData, pIcon, sValue, (int)sizeof(sValue));
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	if ( pIcon != NULL ) {
 		if ( sValue[0] != '\0' ) {
 			fGap = 7.0f;
@@ -699,7 +781,8 @@ static int __xuiIconPickerViewportRender(xui_widget pViewport, xui_draw_context 
 	pWidget = (xui_widget)pUser;
 	pData = __xuiIconPickerGetData(pWidget);
 	if ( (pViewport == NULL) || (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiIconPickerSyncCategory(pWidget, pData);
+	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	__xuiIconPickerResolve(pWidget, pData, &tResolved);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
@@ -711,7 +794,8 @@ static int __xuiIconPickerViewportRender(xui_widget pViewport, xui_draw_context 
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	fOffsetY = 0.0f;
-	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
+	iRet = xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
+	if ( iRet != XUI_OK ) return iRet;
 	fRowStride = pData->fCellHeight + pData->fGapY;
 	iStartRow = (fRowStride > 0.0f) ? (int)(fOffsetY / fRowStride) : 0;
 	if ( iStartRow < 0 ) iStartRow = 0;
@@ -762,13 +846,14 @@ static int __xuiIconPickerHitWorld(xui_icon_picker_data_t* pData, float fX, floa
 	int iRow;
 	int iIndex;
 
-	if ( (pData == NULL) || (pData->pViewport == NULL) || (pData->pFrame == NULL) ) return -1;
+	if ( (pData == NULL) || (pData->pViewport == NULL) || (pData->pFrame == NULL) ||
+	     !__xuiIconPickerCoordinateValid(fX) || !__xuiIconPickerCoordinateValid(fY) ) return -1;
 	tWorld = xuiWidgetGetWorldRect(pData->pViewport);
 	if ( fX < tWorld.fX || fY < tWorld.fY ||
 	     fX >= tWorld.fX + tWorld.fW || fY >= tWorld.fY + tWorld.fH ) return -1;
 	fOffsetX = 0.0f;
 	fOffsetY = 0.0f;
-	(void)xuiScrollFrameGetOffset(pData->pFrame, &fOffsetX, &fOffsetY);
+	if ( xuiScrollFrameGetOffset(pData->pFrame, &fOffsetX, &fOffsetY) != XUI_OK ) return -1;
 	fLocalX = fX - tWorld.fX + fOffsetX;
 	fLocalY = fY - tWorld.fY + fOffsetY;
 	fStrideX = pData->fCellWidth + pData->fGapX;
@@ -786,13 +871,18 @@ static int __xuiIconPickerHitWorld(xui_icon_picker_data_t* pData, float fX, floa
 
 static int __xuiIconPickerInvalidate(xui_widget pWidget, xui_icon_picker_data_t* pData)
 {
+	int iRet;
+	int iViewportRet;
+
+	iRet = XUI_OK;
 	if ( pWidget != NULL ) {
-		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	if ( pData != NULL && pData->pViewport != NULL ) {
-		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iViewportRet = xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet == XUI_OK ) iRet = iViewportRet;
 	}
-	return XUI_OK;
+	return iRet;
 }
 
 static int __xuiIconPickerSetHover(xui_widget pWidget, xui_icon_picker_data_t* pData, int iIndex)
@@ -807,14 +897,25 @@ static int __xuiIconPickerSetHover(xui_widget pWidget, xui_icon_picker_data_t* p
 
 static int __xuiIconPickerSetFocusIndex(xui_widget pWidget, xui_icon_picker_data_t* pData, int iIndex)
 {
+	xui_context pContext;
+	int iOldIndex;
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	if ( pData->iIconCount <= 0 ) iIndex = -1;
 	if ( iIndex < -1 ) iIndex = -1;
 	if ( iIndex >= pData->iIconCount ) iIndex = pData->iIconCount - 1;
 	if ( pData->iFocusIndex == iIndex ) return XUI_OK;
+	iOldIndex = pData->iFocusIndex;
 	pData->iFocusIndex = iIndex;
 	if ( iIndex >= 0 ) {
-		(void)xuiScrollFrameEnsureRectVisible(pData->pFrame, __xuiIconPickerItemContentRect(pData, iIndex));
+		iRet = xuiScrollFrameEnsureRectVisible(pData->pFrame, __xuiIconPickerItemContentRect(pData, iIndex));
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+		if ( iRet != XUI_OK ) {
+			pData->iFocusIndex = iOldIndex;
+			return iRet;
+		}
 	}
 	return __xuiIconPickerInvalidate(pWidget, pData);
 }
@@ -835,9 +936,11 @@ static int __xuiIconPickerSetSelectedInternal(xui_widget pWidget, xui_icon_picke
 {
 	xui_icon_id iOldId;
 	int iIndex;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiIconPickerSyncCategory(pWidget, pData);
+	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	iIndex = __xuiIconPickerFindIndex(pData, iId);
 	if ( iId != XUI_ICON_ID_INVALID && iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iOldId = pData->iSelectedId;
@@ -845,19 +948,37 @@ static int __xuiIconPickerSetSelectedInternal(xui_widget pWidget, xui_icon_picke
 	pData->iSelectedId = iId;
 	pData->iSelectedIndex = iIndex;
 	pData->iFocusIndex = iIndex;
-	(void)__xuiIconPickerInvalidate(pWidget, pData);
+	iRet = __xuiIconPickerInvalidate(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->iSelectedId = iOldId;
+		pData->iSelectedIndex = __xuiIconPickerFindIndex(pData, iOldId);
+		pData->iFocusIndex = pData->iSelectedIndex;
+		return iRet;
+	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( bNotify ) __xuiIconPickerNotify(pWidget, pData, iOldId, iId);
 	return XUI_OK;
 }
 
 static int __xuiIconPickerCommitIndex(xui_widget pWidget, xui_icon_picker_data_t* pData, int iIndex)
 {
+	xui_context pContext;
+	xui_icon_id iOldId;
+	xui_icon_id iNewId;
 	int iRet;
 
 	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iIconCount ) return XUI_OK;
-	iRet = __xuiIconPickerSetSelectedInternal(pWidget, pData, pData->arrIds[iIndex], 1);
+	pContext = xuiWidgetGetContext(pWidget);
+	iOldId = pData->iSelectedId;
+	iNewId = pData->arrIds[iIndex];
+	iRet = __xuiIconPickerSetSelectedInternal(pWidget, pData, iNewId, 0);
 	if ( iRet != XUI_OK ) return iRet;
-	return xuiIconPickerClose(pWidget);
+	iRet = xuiIconPickerClose(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	__xuiIconPickerNotify(pWidget, pData, iOldId, iNewId);
+	return XUI_OK;
 }
 
 static void __xuiIconPickerFrameChanged(xui_widget pFrame, float fOffsetX, float fOffsetY, void* pUser)
@@ -882,8 +1003,15 @@ static int __xuiIconPickerViewportKeyDown(xui_widget pWidget, xui_icon_picker_da
 	int iCurrent;
 	int iTarget;
 	int iPage;
+	int iRet;
 
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
+	if ( pEvent->iKey == XUI_KEY_F4 ||
+	     (((pEvent->iModifiers & XUI_MOD_ALT) != 0u) &&
+	      (pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN)) ) {
+		iRet = xuiIconPickerToggle(pWidget);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
 	iCurrent = pData->iFocusIndex;
 	if ( iCurrent < 0 && pData->iIconCount > 0 ) iCurrent = 0;
 	iTarget = iCurrent;
@@ -899,19 +1027,19 @@ static int __xuiIconPickerViewportKeyDown(xui_widget pWidget, xui_icon_picker_da
 	case XUI_KEY_END: iTarget = pData->iIconCount - 1; break;
 	case XUI_KEY_ENTER:
 	case XUI_KEY_SPACE:
-		(void)__xuiIconPickerCommitIndex(pWidget, pData, pData->iFocusIndex);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiIconPickerCommitIndex(pWidget, pData, pData->iFocusIndex);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_ESCAPE:
-		(void)xuiIconPickerClose(pWidget);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = xuiIconPickerClose(pWidget);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	default:
 		return XUI_OK;
 	}
 	if ( pData->iIconCount > 0 ) {
 		if ( iTarget < 0 ) iTarget = 0;
 		if ( iTarget >= pData->iIconCount ) iTarget = pData->iIconCount - 1;
-		(void)__xuiIconPickerSetFocusIndex(pWidget, pData, iTarget);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiIconPickerSetFocusIndex(pWidget, pData, iTarget);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	return XUI_OK;
 }
@@ -920,37 +1048,86 @@ static int __xuiIconPickerViewportEvent(xui_widget pViewport, const xui_event_t*
 {
 	xui_widget pWidget;
 	xui_icon_picker_data_t* pData;
+	xui_context pContext;
+	int iActiveIndex;
 	int iIndex;
+	int iRet;
 
 	pWidget = (xui_widget)pUser;
 	pData = __xuiIconPickerGetData(pWidget);
 	if ( pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_MOVE:
 		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
+			if ( pData->tPointerOwner.bActive &&
+			     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+				return XUI_OK;
+			}
 			iIndex = __xuiIconPickerHitWorld(pData, pEvent->fX, pEvent->fY);
 			return __xuiIconPickerSetHover(pWidget, pData, iIndex);
 		}
 		break;
 	case XUI_EVENT_POINTER_LEAVE:
+		if ( pData->tPointerOwner.bActive &&
+		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
+		return __xuiIconPickerSetHover(pWidget, pData, -1);
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
+		if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
+		pData->iActiveIndex = -1;
 		return __xuiIconPickerSetHover(pWidget, pData, -1);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE || pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_OK;
+		if ( pData->tPointerOwner.bActive ) {
+			return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
+				XUI_EVENT_DISPATCH_STOP : XUI_OK;
+		}
 		iIndex = __xuiIconPickerHitWorld(pData, pEvent->fX, pEvent->fY);
 		if ( iIndex >= 0 ) {
-			(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pViewport);
-			(void)__xuiIconPickerSetFocusIndex(pWidget, pData, iIndex);
-			(void)__xuiIconPickerCommitIndex(pWidget, pData, iIndex);
+			iRet = xuiSetFocusWidget(pContext, pViewport);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiIconPickerSetFocusIndex(pWidget, pData, iIndex);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			pData->iActiveIndex = iIndex;
+			iRet = xuiInternalPointerOwnerBegin(pContext, pViewport, pEvent,
+				&pData->tPointerOwner);
+			if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) {
+				pData->iActiveIndex = -1;
+				return iRet;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
+	case XUI_EVENT_POINTER_UP:
+		if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE || pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
+		if ( !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return XUI_OK;
+		iActiveIndex = pData->iActiveIndex;
+		pData->iActiveIndex = -1;
+		iIndex = __xuiIconPickerHitWorld(pData, pEvent->fX, pEvent->fY);
+		iRet = xuiInternalPointerOwnerEnd(pContext, pViewport, pEvent,
+			&pData->tPointerOwner);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiIconPickerInvalidate(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iActiveIndex >= 0 && iActiveIndex == iIndex ) {
+			iRet = __xuiIconPickerCommitIndex(pWidget, pData, iIndex);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
+		return (iActiveIndex >= 0) ? (int)XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiIconPickerViewportKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
-		(void)__xuiIconPickerSyncState(pWidget, pData);
-		return __xuiIconPickerInvalidate(pWidget, pData);
+		return __xuiIconPickerSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_WHEEL:
 		return XUI_OK;
 	default:
@@ -984,6 +1161,7 @@ static int __xuiIconPickerTooltipResolve(xui_context pContext, xui_widget pViewp
 		snprintf(pData->sTooltip, sizeof(pData->sTooltip), "%u  %s",
 			(unsigned)xuiIconGetId(pIcon), (sName != NULL) ? sName : "");
 	}
+	xuiInternalUtf8TrimIncomplete(pData->sTooltip);
 	memset(pDesc, 0, sizeof(*pDesc));
 	pDesc->iSize = sizeof(*pDesc);
 	pDesc->iType = XUI_TOOLTIP_TEXT;
@@ -1003,38 +1181,57 @@ static void __xuiIconPickerPopupChanged(xui_widget pPopup, int bOpen, void* pUse
 	pData = __xuiIconPickerGetData(pWidget);
 	if ( pData == NULL ) return;
 	if ( !bOpen ) {
+		pData->iActiveIndex = -1;
+		if ( pData->pViewport != NULL ) {
+			(void)xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
+				pData->pViewport, &pData->tPointerOwner);
+		}
 		pData->iHoverIndex = -1;
 		pData->iFocusIndex = pData->iSelectedIndex;
 	}
 	(void)__xuiIconPickerSyncState(pWidget, pData);
-	(void)__xuiIconPickerInvalidate(pWidget, pData);
 }
 
 static int __xuiIconPickerPointerDown(xui_widget pWidget, xui_icon_picker_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_context pContext;
+	int iRet;
+
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
-	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
-	(void)xuiIconPickerToggle(pWidget);
-	return XUI_EVENT_DISPATCH_STOP;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	iRet = xuiSetFocusWidget(pContext, pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	iRet = xuiIconPickerToggle(pWidget);
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiIconPickerKeyDown(xui_widget pWidget, xui_icon_picker_data_t* pData, const xui_event_t* pEvent)
 {
-	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	int iRet;
+
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_OK;
+	if ( pEvent->iKey == XUI_KEY_F4 ||
+	     (((pEvent->iModifiers & XUI_MOD_ALT) != 0u) &&
+	      (pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN)) ) {
+		iRet = xuiIconPickerToggle(pWidget);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
 	switch ( pEvent->iKey ) {
 	case XUI_KEY_ENTER:
 	case XUI_KEY_SPACE:
-		(void)xuiIconPickerToggle(pWidget);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = xuiIconPickerToggle(pWidget);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_UP:
 	case XUI_KEY_DOWN:
-		(void)xuiIconPickerOpen(pWidget);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = xuiIconPickerOpen(pWidget);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_ESCAPE:
 		if ( xuiIconPickerIsOpen(pWidget) ) {
-			(void)xuiIconPickerClose(pWidget);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = xuiIconPickerClose(pWidget);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	default:
@@ -1046,10 +1243,14 @@ static int __xuiIconPickerKeyDown(xui_widget pWidget, xui_icon_picker_data_t* pD
 static int __xuiIconPickerEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_icon_picker_data_t* pData;
+	xui_context pContext;
+	xui_widget pPopup;
+	int iRet;
 
 	(void)pUser;
 	pData = __xuiIconPickerGetData(pWidget);
 	if ( pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_DOWN:
 		return __xuiIconPickerPointerDown(pWidget, pData, pEvent);
@@ -1063,22 +1264,27 @@ static int __xuiIconPickerEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
-		(void)__xuiIconPickerSyncState(pWidget, pData);
-		return __xuiIconPickerInvalidate(pWidget, pData);
+		return __xuiIconPickerSyncState(pWidget, pData);
 	case XUI_EVENT_BOUNDS_CHANGED:
-		(void)__xuiIconPickerUpdateRects(pWidget, pData);
+		iRet = __xuiIconPickerUpdateRects(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
 		if ( xuiIconPickerIsOpen(pWidget) ) {
-			(void)__xuiIconPickerApplyPopup(pWidget, pData);
-			(void)xuiPopupApplyPlacement(pData->pPopup);
+			iRet = __xuiIconPickerApplyPopup(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+			pPopup = pData->pPopup;
+			iRet = xuiPopupApplyPlacement(pPopup);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		return XUI_OK;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
-			(void)xuiIconPickerClose(pWidget);
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			iRet = xuiIconPickerClose(pWidget);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 		}
-		(void)__xuiIconPickerSyncState(pWidget, pData);
-		return __xuiIconPickerInvalidate(pWidget, pData);
+		return __xuiIconPickerSyncState(pWidget, pData);
 	default:
 		break;
 	}
@@ -1100,18 +1306,26 @@ static void __xuiIconPickerCancelAction(xui_widget pWidget, void* pUser)
 static int __xuiIconPickerUpdate(xui_widget pWidget, float fDelta, void* pUser)
 {
 	xui_icon_picker_data_t* pData;
+	xui_context pContext;
+	xui_widget pPopup;
 	uint32_t iGeneration;
+	int iRet;
 
 	(void)fDelta;
 	(void)pUser;
 	pData = __xuiIconPickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	iGeneration = (pData->pCategory != NULL) ? xuiIconCategoryGetGeneration(pData->pCategory) : 0u;
 	if ( iGeneration != pData->iCategoryGeneration ) {
-		(void)__xuiIconPickerSyncCategory(pWidget, pData);
+		iRet = __xuiIconPickerSyncCategory(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
 		if ( xuiIconPickerIsOpen(pWidget) ) {
-			(void)__xuiIconPickerApplyPopup(pWidget, pData);
-			(void)xuiPopupApplyPlacement(pData->pPopup);
+			iRet = __xuiIconPickerApplyPopup(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+			pPopup = pData->pPopup;
+			return xuiPopupApplyPlacement(pPopup);
 		}
 	}
 	return XUI_OK;
@@ -1202,16 +1416,17 @@ static int __xuiIconPickerInitViewport(xui_widget pWidget, xui_icon_picker_data_
 	tPolicy.iPolicy = XUI_CACHE_POLICY_SELF;
 	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	tPolicy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	(void)xuiWidgetSetLayoutType(pData->pViewport, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pData->pViewport, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetFocusable(pData->pViewport, 1);
-	(void)xuiWidgetSetTabStop(pData->pViewport, 0);
-	(void)xuiWidgetSetImeMode(pData->pViewport, XUI_IME_DISABLED);
-	(void)xuiWidgetSetCachePolicy(pData->pViewport, &tPolicy);
-	iRet = xuiWidgetSetCacheRenderCallback(pData->pViewport, __xuiIconPickerViewportRender, pWidget);
+	iRet = xuiWidgetSetLayoutType(pData->pViewport, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pViewport, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pData->pViewport, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pData->pViewport, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetImeMode(pData->pViewport, XUI_IME_DISABLED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCachePolicy(pData->pViewport, &tPolicy);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCacheRenderCallback(pData->pViewport, __xuiIconPickerViewportRender, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pViewport, XUI_EVENT_POINTER_MOVE, __xuiIconPickerViewportEvent, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pViewport, XUI_EVENT_POINTER_LEAVE, __xuiIconPickerViewportEvent, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pViewport, XUI_EVENT_POINTER_DOWN, __xuiIconPickerViewportEvent, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pViewport, XUI_EVENT_POINTER_UP, __xuiIconPickerViewportEvent, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pViewport, XUI_EVENT_POINTER_WHEEL, __xuiIconPickerViewportEvent, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pViewport, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiIconPickerViewportEvent, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pViewport, XUI_EVENT_KEY_DOWN, __xuiIconPickerViewportEvent, pWidget);
@@ -1251,11 +1466,13 @@ static int __xuiIconPickerCreatePopup(xui_widget pWidget, xui_icon_picker_data_t
 	if ( pData->pPanel == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	pPopupScroll = xuiPopupGetScrollViewWidget(pData->pPopup);
 	if ( pPopupScroll != NULL ) {
-		(void)xuiScrollViewSetScrollbarPolicy(pPopupScroll, XUI_SCROLLBAR_POLICY_HIDDEN, XUI_SCROLLBAR_POLICY_HIDDEN);
+		iRet = xuiScrollViewSetScrollbarPolicy(pPopupScroll, XUI_SCROLLBAR_POLICY_HIDDEN, XUI_SCROLLBAR_POLICY_HIDDEN);
+		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)xuiWidgetSetLayoutType(pData->pPanel, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pData->pPanel, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetOverflow(pData->pPanel, XUI_OVERFLOW_VISIBLE);
+	iRet = xuiWidgetSetLayoutType(pData->pPanel, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pPanel, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pData->pPanel, XUI_OVERFLOW_VISIBLE);
+	if ( iRet != XUI_OK ) return iRet;
 	memset(&tFrameDesc, 0, sizeof(tFrameDesc));
 	tFrameDesc.iSize = sizeof(tFrameDesc);
 	tFrameDesc.iPolicyX = XUI_SCROLLBAR_POLICY_HIDDEN;
@@ -1281,6 +1498,11 @@ static int __xuiIconPickerCreatePopup(xui_widget pWidget, xui_icon_picker_data_t
 
 static int __xuiIconPickerApplyPopup(xui_widget pWidget, xui_icon_picker_data_t* pData)
 {
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pPanel;
+	xui_widget pFrame;
+	xui_widget pViewport;
 	xui_rect_t tFrame;
 	float fGridWidth;
 	float fVisibleHeight;
@@ -1289,41 +1511,96 @@ static int __xuiIconPickerApplyPopup(xui_widget pWidget, xui_icon_picker_data_t*
 	int bNeedScrollbar;
 	int iRet;
 
-	if ( pWidget == NULL || pData == NULL || pData->pPopup == NULL || pData->pFrame == NULL ) {
+	if ( pWidget == NULL || pData == NULL || pData->pPopup == NULL || pData->pPanel == NULL ||
+	     pData->pFrame == NULL || pData->pViewport == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	(void)__xuiIconPickerSyncCategory(pWidget, pData);
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pPanel = pData->pPanel;
+	pFrame = pData->pFrame;
+	pViewport = pData->pViewport;
+	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	fGridWidth = __xuiIconPickerGridWidth(pData);
 	fVisibleHeight = __xuiIconPickerVisibleHeight(pData);
 	fContentHeight = __xuiIconPickerContentHeight(pData);
 	bNeedScrollbar = __xuiIconPickerNeedScrollbar(pData);
 	fOuterContentWidth = fGridWidth + (bNeedScrollbar ? pData->fScrollbarSize : 0.0f);
-	iRet = xuiPopupSetOwner(pData->pPopup, pWidget);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusRestore(pData->pPopup, pWidget);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetContentSize(pData->pPopup, fOuterContentWidth, fVisibleHeight);
-	if ( iRet == XUI_OK ) iRet = __xuiIconPickerApplyPopupColors(pWidget, pData);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetMetrics(pData->pPopup, XUI_ICON_PICKER_POPUP_PADDING, 1.0f, 5.0f);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetClosePolicy(pData->pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pViewport);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetGap(pData->pPopup, 2.0f);
+	iRet = xuiPopupSetOwner(pPopup, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetFocusRestore(pPopup, pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetContentSize(pPopup, fOuterContentWidth, fVisibleHeight);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = __xuiIconPickerApplyPopupColors(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetMetrics(pPopup, XUI_ICON_PICKER_POPUP_PADDING, 1.0f, 5.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetClosePolicy(pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetFocusPolicy(pPopup, XUI_POPUP_FOCUS_CUSTOM, pViewport);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetGap(pPopup, 2.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	if ( pData->iPopupPlacement == XUI_ICON_PICKER_POPUP_TOP ) {
-		(void)xuiPopupSetAnchor(pData->pPopup, XUI_POPUP_ANCHOR_TOP_LEFT);
-		(void)xuiPopupSetDirection(pData->pPopup, XUI_POPUP_DIRECTION_RIGHT_UP);
+		iRet = xuiPopupSetAnchor(pPopup, XUI_POPUP_ANCHOR_TOP_LEFT);
+		if ( iRet == XUI_OK && __xuiIconPickerAlive(pContext, pWidget, pData) )
+			iRet = xuiPopupSetDirection(pPopup, XUI_POPUP_DIRECTION_RIGHT_UP);
 	} else {
-		(void)xuiPopupSetAnchor(pData->pPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
-		(void)xuiPopupSetDirection(pData->pPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
+		iRet = xuiPopupSetAnchor(pPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
+		if ( iRet == XUI_OK && __xuiIconPickerAlive(pContext, pWidget, pData) )
+			iRet = xuiPopupSetDirection(pPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
 	}
-	(void)xuiPopupClearAnchorRect(pData->pPopup);
-	(void)xuiWidgetSetRect(pData->pPanel, (xui_rect_t){0.0f, 0.0f, fOuterContentWidth, fVisibleHeight});
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupClearAnchorRect(pPopup);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiWidgetSetRect(pPanel, (xui_rect_t){0.0f, 0.0f, fOuterContentWidth, fVisibleHeight});
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	tFrame = (xui_rect_t){0.0f, 0.0f, fOuterContentWidth, fVisibleHeight};
-	(void)xuiWidgetSetRect(pData->pFrame, tFrame);
-	(void)xuiScrollFrameSetScrollbarPolicy(pData->pFrame, XUI_SCROLLBAR_POLICY_HIDDEN,
+	iRet = xuiWidgetSetRect(pFrame, tFrame);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiScrollFrameSetScrollbarPolicy(pFrame, XUI_SCROLLBAR_POLICY_HIDDEN,
 		bNeedScrollbar ? XUI_SCROLLBAR_POLICY_AUTO : XUI_SCROLLBAR_POLICY_HIDDEN);
-	(void)xuiScrollFrameSetMetrics(pData->pFrame, pData->fScrollbarSize, 18.0f, 0.0f);
-	(void)xuiScrollFrameSetWheelStep(pData->pFrame, pData->fCellHeight + pData->fGapY);
-	(void)xuiScrollFrameSetContentSize(pData->pFrame, fGridWidth, fContentHeight);
-	(void)xuiWidgetArrangeChild(pData->pPanel, pData->pFrame, tFrame);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiScrollFrameSetMetrics(pFrame, pData->fScrollbarSize, 18.0f, 0.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiScrollFrameSetWheelStep(pFrame, pData->fCellHeight + pData->fGapY);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiScrollFrameSetContentSize(pFrame, fGridWidth, fContentHeight);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	return xuiWidgetArrangeChild(pPanel, pFrame, tFrame);
+}
+
+static int __xuiIconPickerRefreshPopup(xui_widget pWidget, xui_icon_picker_data_t* pData)
+{
+	xui_context pContext;
+	xui_widget pPopup;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	iRet = __xuiIconPickerApplyPopup(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	pPopup = pData->pPopup;
+	if ( pPopup != NULL && xuiPopupIsOpen(pPopup) ) return xuiPopupApplyPlacement(pPopup);
 	return XUI_OK;
 }
 
@@ -1337,44 +1614,65 @@ static int __xuiIconPickerInit(xui_widget pWidget, void* pTypeData, const void* 
 	pData = (xui_icon_picker_data_t*)pTypeData;
 	pDesc = (const xui_icon_picker_desc_t*)pCreateData;
 	if ( pWidget == NULL || pData == NULL || !__xuiIconPickerDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDesc != NULL && pDesc->pCategory != NULL &&
+	     !xuiInternalIconCategoryBelongsToContext(pDesc->pCategory, xuiWidgetGetContext(pWidget)) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	__xuiIconPickerDefaults(pData);
 	iRet = __xuiIconPickerSetPlaceholderData(pData, (pDesc != NULL) ? pDesc->sPlaceholder : "");
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto fail;
 	__xuiIconPickerApplyDesc(pData, pDesc);
 	if ( pDesc != NULL && pDesc->pCategory != NULL ) {
 		iRet = __xuiIconPickerApplyCategoryData(pData, pDesc->pCategory);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) goto fail;
 	}
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	(void)xuiWidgetSetImeMode(pWidget, XUI_IME_DISABLED);
-	(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
-	iRet = __xuiIconPickerInitEvents(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetImeMode(pWidget, XUI_IME_DISABLED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiIconPickerInitEvents(pWidget);
+	if ( iRet != XUI_OK ) goto fail;
 	iRet = __xuiIconPickerCreatePopup(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto fail;
 	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto fail;
 	if ( pData->iSelectedId != XUI_ICON_ID_INVALID && pData->iSelectedIndex < 0 ) {
 		pData->iSelectedId = XUI_ICON_ID_INVALID;
 	}
-	(void)__xuiIconPickerUpdateRects(pWidget, pData);
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
-	return __xuiIconPickerSyncState(pWidget, pData);
+	iRet = __xuiIconPickerUpdateRects(pWidget, pData);
+	if ( iRet == XUI_OK ) iRet = __xuiIconPickerApplyPopup(pWidget, pData);
+	if ( iRet == XUI_OK ) iRet = __xuiIconPickerSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+fail:
+	__xuiIconPickerDestroy(pWidget, pData, NULL);
+	return iRet;
 }
 
 static void __xuiIconPickerDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
 	xui_icon_picker_data_t* pData;
+	xui_widget pPopup;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_icon_picker_data_t*)pTypeData;
 	if ( pData == NULL ) return;
-	if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
+	if ( pData->pViewport != NULL ) {
+		(void)xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
+			pData->pViewport, &pData->tPointerOwner);
+	}
+	pPopup = pData->pPopup;
+	pData->pPopup = NULL;
+	pData->pPanel = NULL;
+	pData->pFrame = NULL;
+	pData->pViewport = NULL;
+	if ( xuiInternalWidgetIsValid(pPopup) ) {
+		(void)xuiPopupSetChange(pPopup, NULL, NULL);
+		xuiWidgetDestroy(pPopup);
+	}
 	if ( pData->pCategory != NULL ) (void)xuiIconCategoryRelease(pData->pCategory);
 	if ( pData->arrIds != NULL ) xrtFree(pData->arrIds);
 	if ( pData->sPlaceholder != NULL ) xrtFree(pData->sPlaceholder);
@@ -1392,6 +1690,74 @@ static xui_icon_picker_data_t* __xuiIconPickerGetData(xui_widget pWidget)
 	if ( pType == NULL || !xuiWidgetIsType(pWidget, pType) ) return NULL;
 	return (xui_icon_picker_data_t*)xuiWidgetGetTypeData(pWidget);
 }
+
+static int __xuiIconPickerAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_icon_picker_data_t* pData;
+	xui_icon pIcon;
+	const char* sValue;
+
+	pData = __xuiIconPickerGetData(pWidget);
+	if ( (pData == NULL) || (pNode == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_COMBOBOX;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_READONLY;
+	pNode->iState |= xuiIconPickerIsOpen(pWidget) ? XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED;
+	pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_VALUE);
+	pNode->sName = (pData->sPlaceholder != NULL) ? pData->sPlaceholder : "";
+	pData->sAccessibleValue[0] = '\0';
+	pIcon = (pData->pCategory != NULL && pData->iSelectedId != XUI_ICON_ID_INVALID) ?
+		xuiIconFindById(pData->pCategory, pData->iSelectedId) : NULL;
+	if ( pIcon != NULL ) {
+		sValue = xuiIconGetDisplayName(pIcon);
+		if ( sValue == NULL || sValue[0] == '\0' ) sValue = xuiIconGetName(pIcon);
+		if ( sValue != NULL && sValue[0] != '\0' ) {
+			snprintf(pData->sAccessibleValue, sizeof(pData->sAccessibleValue), "%s", sValue);
+			xuiInternalUtf8TrimIncomplete(pData->sAccessibleValue);
+		} else {
+			snprintf(pData->sAccessibleValue, sizeof(pData->sAccessibleValue), "%u", (unsigned)pData->iSelectedId);
+		}
+	}
+	pNode->sValue = pData->sAccessibleValue;
+	return XUI_OK;
+}
+
+static int __xuiIconPickerAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	xui_icon_picker_data_t* pData;
+	const xui_accessible_value_t* pValue;
+	xui_icon pIcon;
+	xui_icon_id iId;
+
+	pData = __xuiIconPickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_EXPAND ) return xuiIconPickerOpen(pWidget);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE ) return xuiIconPickerClose(pWidget);
+	if ( iAction != XUI_ACCESSIBLE_ACTION_SET_VALUE ) return XUI_ERROR_UNSUPPORTED;
+	pValue = (const xui_accessible_value_t*)pPayload;
+	if ( pValue == NULL || pValue->iSize < sizeof(*pValue) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pValue->iType == XUI_ACCESSIBLE_VALUE_NUMBER ) {
+		if ( pValue->fNumber != pValue->fNumber ||
+		     pValue->fNumber < 0.0 || pValue->fNumber > (double)UINT32_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+		iId = (xui_icon_id)pValue->fNumber;
+		if ( (double)iId != pValue->fNumber ) return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiIconPickerSetSelectedInternal(pWidget, pData, iId, 1);
+	}
+	if ( pValue->iType == XUI_ACCESSIBLE_VALUE_TEXT ) {
+		if ( pValue->sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pValue->sText[0] == '\0' ) return __xuiIconPickerSetSelectedInternal(pWidget, pData, XUI_ICON_ID_INVALID, 1);
+		pIcon = (pData->pCategory != NULL) ? xuiIconFind(pData->pCategory, pValue->sText) : NULL;
+		if ( pIcon == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiIconPickerSetSelectedInternal(pWidget, pData, xuiIconGetId(pIcon), 1);
+	}
+	return XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiIconPickerAccessible = {
+	.getNode = __xuiIconPickerAccessibleNode,
+	.performAction = __xuiIconPickerAccessibleAction
+};
 
 static void __xuiIconPickerRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
@@ -1447,7 +1813,12 @@ XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
 
 	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "iconpicker");
-	if ( pType != NULL ) return pType;
+	if ( pType != NULL ) {
+		__xuiIconPickerRegisterStyleProperties(pContext, pType);
+		pType->onPreparePaint = __xuiIconPickerSyncStyle;
+		pType->pAccessibleAdapter = &g_xuiIconPickerAccessible;
+		return pType;
+	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "iconpicker";
@@ -1465,6 +1836,7 @@ XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
 	if ( iRet == XUI_OK ) {
 		__xuiIconPickerRegisterStyleProperties(pContext, pType);
 		pType->onPreparePaint = __xuiIconPickerSyncStyle;
+		pType->pAccessibleAdapter = &g_xuiIconPickerAccessible;
 	}
 	return (iRet == XUI_OK) ? pType : NULL;
 }
@@ -1473,8 +1845,13 @@ XUI_API int xuiIconPickerCreate(xui_context pContext, xui_widget* ppWidget, cons
 {
 	xui_widget_type pType;
 
-	if ( ppWidget == NULL || !__xuiIconPickerDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiIconPickerDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDesc != NULL && pDesc->pCategory != NULL &&
+	     !xuiInternalIconCategoryBelongsToContext(pDesc->pCategory, pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiIconPickerGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
@@ -1501,20 +1878,77 @@ XUI_API int xuiIconPickerSetFormatter(xui_widget pWidget, xui_icon_picker_format
 XUI_API int xuiIconPickerSetCategory(xui_widget pWidget, xui_icon_category pCategory)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	xui_icon_category pOldCategory;
+	xui_icon_id iOldSelectedId;
+	int iOldFocusIndex;
+	int iOldHoverIndex;
+	int iNewCount;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)xuiIconPickerClose(pWidget);
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( pCategory != NULL && !xuiInternalIconCategoryBelongsToContext(pCategory, pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pCategory == pData->pCategory ) {
+		iRet = __xuiIconPickerSyncCategory(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		return __xuiIconPickerRefreshPopup(pWidget, pData);
+	}
+	iNewCount = (pCategory != NULL) ? xuiIconCategoryGetIconCount(pCategory) : 0;
+	iRet = __xuiIconPickerReserveIds(pData, iNewCount);
+	if ( iRet != XUI_OK ) return iRet;
+	pOldCategory = pData->pCategory;
+	if ( pOldCategory != NULL ) {
+		iRet = xuiIconCategoryAddRef(pOldCategory);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	iOldSelectedId = pData->iSelectedId;
+	iOldFocusIndex = pData->iFocusIndex;
+	iOldHoverIndex = pData->iHoverIndex;
+	iRet = xuiIconPickerClose(pWidget);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) {
+		if ( pOldCategory != NULL ) (void)xuiIconCategoryRelease(pOldCategory);
+		return (iRet == XUI_OK) ? XUI_OK : iRet;
+	}
+	if ( iRet != XUI_OK ) goto release_old_category;
 	iRet = __xuiIconPickerApplyCategoryData(pData, pCategory);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto release_old_category;
 	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto rollback_category;
 	pData->iSelectedId = XUI_ICON_ID_INVALID;
 	pData->iSelectedIndex = -1;
 	pData->iFocusIndex = -1;
 	pData->iHoverIndex = -1;
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
-	return __xuiIconPickerInvalidate(pWidget, pData);
+	pData->iActiveIndex = -1;
+	iRet = __xuiIconPickerRefreshPopup(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) {
+		if ( pOldCategory != NULL ) (void)xuiIconCategoryRelease(pOldCategory);
+		return (iRet == XUI_OK) ? XUI_OK : iRet;
+	}
+	if ( iRet != XUI_OK ) goto rollback_category;
+	iRet = __xuiIconPickerInvalidate(pWidget, pData);
+	if ( iRet == XUI_OK ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+	if ( pOldCategory != NULL ) (void)xuiIconCategoryRelease(pOldCategory);
+	return iRet;
+
+rollback_category:
+	(void)__xuiIconPickerApplyCategoryData(pData, pOldCategory);
+	(void)__xuiIconPickerSyncCategory(pWidget, pData);
+	pData->iSelectedId = iOldSelectedId;
+	pData->iSelectedIndex = __xuiIconPickerFindIndex(pData, iOldSelectedId);
+	pData->iFocusIndex = iOldFocusIndex;
+	pData->iHoverIndex = iOldHoverIndex;
+	pData->iActiveIndex = -1;
+	(void)__xuiIconPickerRefreshPopup(pWidget, pData);
+release_old_category:
+	if ( pOldCategory != NULL ) (void)xuiIconCategoryRelease(pOldCategory);
+	return iRet;
 }
 
 XUI_API xui_icon_category xuiIconPickerGetCategory(xui_widget pWidget)
@@ -1550,9 +1984,15 @@ XUI_API int xuiIconPickerClearSelection(xui_widget pWidget)
 XUI_API int xuiIconPickerSetTextMode(xui_widget pWidget, int iMode)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	int iOldMode;
+	int iRet;
 	if ( pData == NULL || !__xuiIconPickerTextModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldMode = pData->iTextMode;
 	pData->iTextMode = iMode;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->iTextMode = iOldMode;
+	else xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiIconPickerGetTextMode(xui_widget pWidget)
@@ -1564,11 +2004,23 @@ XUI_API int xuiIconPickerGetTextMode(xui_widget pWidget)
 XUI_API int xuiIconPickerSetPlaceholder(xui_widget pWidget, const char* sText)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	char* sNew;
+	char* sOld;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiIconPickerSetPlaceholderData(pData, sText);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	sNew = __xuiIconPickerDup(sText);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	sOld = pData->sPlaceholder;
+	pData->sPlaceholder = sNew;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->sPlaceholder = sOld;
+		xrtFree(sNew);
+		return iRet;
+	}
+	if ( sOld != NULL ) xrtFree(sOld);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API const char* xuiIconPickerGetPlaceholder(xui_widget pWidget)
@@ -1580,11 +2032,25 @@ XUI_API const char* xuiIconPickerGetPlaceholder(xui_widget pWidget)
 XUI_API int xuiIconPickerSetGrid(xui_widget pWidget, int iRows, int iColumns)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	int iOldRows;
+	int iOldColumns;
+	int iRet;
 	if ( pData == NULL || iRows <= 0 || iColumns <= 0 || iRows > 1024 || iColumns > 1024 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iVisibleRows == iRows && pData->iVisibleColumns == iColumns ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	iOldRows = pData->iVisibleRows;
+	iOldColumns = pData->iVisibleColumns;
 	pData->iVisibleRows = iRows;
 	pData->iVisibleColumns = iColumns;
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
-	if ( xuiIconPickerIsOpen(pWidget) ) (void)xuiPopupApplyPlacement(pData->pPopup);
+	iRet = __xuiIconPickerRefreshPopup(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) {
+		pData->iVisibleRows = iOldRows;
+		pData->iVisibleColumns = iOldColumns;
+		(void)__xuiIconPickerRefreshPopup(pWidget, pData);
+		return iRet;
+	}
 	return __xuiIconPickerInvalidate(pWidget, pData);
 }
 
@@ -1600,12 +2066,27 @@ XUI_API int xuiIconPickerGetGrid(xui_widget pWidget, int* pRows, int* pColumns)
 XUI_API int xuiIconPickerSetCellSize(xui_widget pWidget, float fWidth, float fHeight)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	float fOldWidth;
+	float fOldHeight;
+	int iRet;
 	if ( pData == NULL || fWidth <= 0.0f || fHeight <= 0.0f ||
-	     !__xuiIconPickerFloatValid(fWidth) || !__xuiIconPickerFloatValid(fHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
+	     !__xuiIconPickerFloatValid(fWidth) || !__xuiIconPickerFloatValid(fHeight) ||
+	     pData->fIconPadding * 2.0f >= fWidth || pData->fIconPadding * 2.0f >= fHeight ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fCellWidth == fWidth && pData->fCellHeight == fHeight ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	fOldWidth = pData->fCellWidth;
+	fOldHeight = pData->fCellHeight;
 	pData->fCellWidth = fWidth;
 	pData->fCellHeight = fHeight;
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
-	if ( xuiIconPickerIsOpen(pWidget) ) (void)xuiPopupApplyPlacement(pData->pPopup);
+	iRet = __xuiIconPickerRefreshPopup(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) {
+		pData->fCellWidth = fOldWidth;
+		pData->fCellHeight = fOldHeight;
+		(void)__xuiIconPickerRefreshPopup(pWidget, pData);
+		return iRet;
+	}
 	return __xuiIconPickerInvalidate(pWidget, pData);
 }
 
@@ -1621,14 +2102,31 @@ XUI_API int xuiIconPickerGetCellSize(xui_widget pWidget, float* pWidth, float* p
 XUI_API int xuiIconPickerSetSpacing(xui_widget pWidget, float fGapX, float fGapY, float fIconPadding)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	float fOldGapX;
+	float fOldGapY;
+	float fOldIconPadding;
+	int iRet;
 	if ( pData == NULL || !__xuiIconPickerFloatValid(fGapX) || !__xuiIconPickerFloatValid(fGapY) ||
 	     !__xuiIconPickerFloatValid(fIconPadding) || fIconPadding * 2.0f >= pData->fCellWidth ||
 	     fIconPadding * 2.0f >= pData->fCellHeight ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fGapX == fGapX && pData->fGapY == fGapY && pData->fIconPadding == fIconPadding ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	fOldGapX = pData->fGapX;
+	fOldGapY = pData->fGapY;
+	fOldIconPadding = pData->fIconPadding;
 	pData->fGapX = fGapX;
 	pData->fGapY = fGapY;
 	pData->fIconPadding = fIconPadding;
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
-	if ( xuiIconPickerIsOpen(pWidget) ) (void)xuiPopupApplyPlacement(pData->pPopup);
+	iRet = __xuiIconPickerRefreshPopup(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) {
+		pData->fGapX = fOldGapX;
+		pData->fGapY = fOldGapY;
+		pData->fIconPadding = fOldIconPadding;
+		(void)__xuiIconPickerRefreshPopup(pWidget, pData);
+		return iRet;
+	}
 	return __xuiIconPickerInvalidate(pWidget, pData);
 }
 
@@ -1645,10 +2143,18 @@ XUI_API int xuiIconPickerGetSpacing(xui_widget pWidget, float* pGapX, float* pGa
 XUI_API int xuiIconPickerSetValuePadding(xui_widget pWidget, xui_thickness_t tPadding)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_thickness_t tOldPadding;
+	int iRet;
 	if ( pData == NULL || !__xuiIconPickerThicknessValid(tPadding) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tOldPadding = pData->tValuePadding;
 	pData->tValuePadding = tPadding;
-	(void)__xuiIconPickerUpdateRects(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiIconPickerUpdateRects(pWidget, pData);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->tValuePadding = tOldPadding;
+		(void)__xuiIconPickerUpdateRects(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API xui_thickness_t xuiIconPickerGetValuePadding(xui_widget pWidget)
@@ -1660,11 +2166,21 @@ XUI_API xui_thickness_t xuiIconPickerGetValuePadding(xui_widget pWidget)
 XUI_API int xuiIconPickerSetPopupPlacement(xui_widget pWidget, int iPlacement)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	int iOldPlacement;
+	int iRet;
 	if ( pData == NULL || !__xuiIconPickerPlacementValid(iPlacement) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPopupPlacement == iPlacement ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	iOldPlacement = pData->iPopupPlacement;
 	pData->iPopupPlacement = iPlacement;
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
-	if ( xuiIconPickerIsOpen(pWidget) ) return xuiPopupApplyPlacement(pData->pPopup);
-	return XUI_OK;
+	iRet = __xuiIconPickerRefreshPopup(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) {
+		pData->iPopupPlacement = iOldPlacement;
+		(void)__xuiIconPickerRefreshPopup(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiIconPickerGetPopupPlacement(xui_widget pWidget)
@@ -1676,38 +2192,73 @@ XUI_API int xuiIconPickerGetPopupPlacement(xui_widget pWidget)
 XUI_API int xuiIconPickerOpen(xui_widget pWidget)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pFrame;
+	xui_widget pViewport;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) return XUI_OK;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
 	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiIconPickerApplyPopup(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	pPopup = pData->pPopup;
+	pFrame = pData->pFrame;
+	pViewport = pData->pViewport;
 	pData->iHoverIndex = -1;
 	pData->iFocusIndex = (pData->iSelectedIndex >= 0) ? pData->iSelectedIndex :
 		((pData->iIconCount > 0) ? 0 : -1);
-	iRet = xuiPopupSetOpen(pData->pPopup, 1);
+	iRet = xuiPopupSetOpen(pPopup, 1);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	if ( pData->iFocusIndex >= 0 ) {
-		(void)xuiScrollFrameEnsureRectVisible(pData->pFrame,
+		iRet = xuiScrollFrameEnsureRectVisible(pFrame,
 			__xuiIconPickerItemContentRect(pData, pData->iFocusIndex));
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+		if ( iRet != XUI_OK ) goto fail_open;
 	}
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pViewport);
-	(void)__xuiIconPickerSyncState(pWidget, pData);
-	return __xuiIconPickerInvalidate(pWidget, pData);
+	iRet = xuiSetFocusWidget(pContext, pViewport);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) goto fail_open;
+	iRet = __xuiIconPickerSyncState(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) goto fail_open;
+	return XUI_OK;
+
+fail_open:
+	(void)xuiPopupSetOpen(pPopup, 0);
+	if ( __xuiIconPickerAlive(pContext, pWidget, pData) ) (void)__xuiIconPickerSyncState(pWidget, pData);
+	return iRet;
 }
 
 XUI_API int xuiIconPickerClose(xui_widget pWidget)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pViewport;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pPopup == NULL ) return XUI_OK;
-	iRet = xuiPopupSetOpen(pData->pPopup, 0);
-	(void)__xuiIconPickerSyncState(pWidget, pData);
-	(void)__xuiIconPickerInvalidate(pWidget, pData);
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pViewport = pData->pViewport;
+	pData->iActiveIndex = -1;
+	if ( pViewport != NULL ) {
+		iRet = xuiInternalPointerOwnerCancel(pContext, pViewport,
+			&pData->tPointerOwner);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
+	iRet = xuiPopupSetOpen(pPopup, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = __xuiIconPickerSyncState(pWidget, pData);
 	return iRet;
 }
 
@@ -1726,9 +2277,11 @@ XUI_API int xuiIconPickerEnsureVisible(xui_widget pWidget, xui_icon_id iId)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
 	int iIndex;
+	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiIconPickerSyncCategory(pWidget, pData);
+	iRet = __xuiIconPickerSyncCategory(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	iIndex = __xuiIconPickerFindIndex(pData, iId);
 	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	return xuiScrollFrameEnsureRectVisible(pData->pFrame, __xuiIconPickerItemContentRect(pData, iIndex));
@@ -1737,12 +2290,27 @@ XUI_API int xuiIconPickerEnsureVisible(xui_widget pWidget, xui_icon_id iId)
 XUI_API int xuiIconPickerSetMetrics(xui_widget pWidget, float fBorderWidth, float fScrollbarSize)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	float fOldBorderWidth;
+	float fOldScrollbarSize;
+	int iRet;
 	if ( pData == NULL || !__xuiIconPickerFloatValid(fBorderWidth) ||
-	     fScrollbarSize <= 0.0f || !__xuiIconPickerFloatValid(fScrollbarSize) ) return XUI_ERROR_INVALID_ARGUMENT;
+	     fScrollbarSize <= 0.0f || fScrollbarSize > 8.0f ||
+	     !__xuiIconPickerFloatValid(fScrollbarSize) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fBorderWidth == fBorderWidth && pData->fScrollbarSize == fScrollbarSize ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	fOldBorderWidth = pData->fBorderWidth;
+	fOldScrollbarSize = pData->fScrollbarSize;
 	pData->fBorderWidth = fBorderWidth;
-	pData->fScrollbarSize = __xuiIconPickerMin(fScrollbarSize, 8.0f);
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
-	if ( xuiIconPickerIsOpen(pWidget) ) (void)xuiPopupApplyPlacement(pData->pPopup);
+	pData->fScrollbarSize = fScrollbarSize;
+	iRet = __xuiIconPickerRefreshPopup(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) {
+		pData->fBorderWidth = fOldBorderWidth;
+		pData->fScrollbarSize = fOldScrollbarSize;
+		(void)__xuiIconPickerRefreshPopup(pWidget, pData);
+		return iRet;
+	}
 	return __xuiIconPickerInvalidate(pWidget, pData);
 }
 
@@ -1844,14 +2412,38 @@ XUI_API int xuiIconPickerGetButtonColors(xui_widget pWidget, uint32_t* pButton, 
 XUI_API int xuiIconPickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iHover, uint32_t iSelected, uint32_t iFocus)
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
+	xui_context pContext;
+	uint32_t arrOldColors[6];
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPopupPanelColor == iPanel && pData->iPopupBorderColor == iBorder &&
+	     pData->iPopupShadowColor == iShadow && pData->iItemHoverColor == iHover &&
+	     pData->iItemSelectedColor == iSelected && pData->iItemFocusColor == iFocus ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	arrOldColors[0] = pData->iPopupPanelColor;
+	arrOldColors[1] = pData->iPopupBorderColor;
+	arrOldColors[2] = pData->iPopupShadowColor;
+	arrOldColors[3] = pData->iItemHoverColor;
+	arrOldColors[4] = pData->iItemSelectedColor;
+	arrOldColors[5] = pData->iItemFocusColor;
 	pData->iPopupPanelColor = iPanel;
 	pData->iPopupBorderColor = iBorder;
 	pData->iPopupShadowColor = iShadow;
 	pData->iItemHoverColor = iHover;
 	pData->iItemSelectedColor = iSelected;
 	pData->iItemFocusColor = iFocus;
-	(void)__xuiIconPickerApplyPopup(pWidget, pData);
+	iRet = __xuiIconPickerApplyPopup(pWidget, pData);
+	if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
+	if ( iRet != XUI_OK ) {
+		pData->iPopupPanelColor = arrOldColors[0];
+		pData->iPopupBorderColor = arrOldColors[1];
+		pData->iPopupShadowColor = arrOldColors[2];
+		pData->iItemHoverColor = arrOldColors[3];
+		pData->iItemSelectedColor = arrOldColors[4];
+		pData->iItemFocusColor = arrOldColors[5];
+		(void)__xuiIconPickerApplyPopup(pWidget, pData);
+		return iRet;
+	}
 	return __xuiIconPickerInvalidate(pWidget, pData);
 }
 

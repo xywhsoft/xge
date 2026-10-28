@@ -88,6 +88,12 @@ static int __xuiIconValid(xui_icon pIcon)
 	       __xuiIconContextValid(pIcon->pContext);
 }
 
+int xuiInternalIconCategoryBelongsToContext(xui_icon_category pCategory, xui_context pContext)
+{
+	return __xuiIconCategoryValid(pCategory) && __xuiIconContextValid(pContext) &&
+		pCategory->pContext == pContext;
+}
+
 static int __xuiIconFloatPositive(float fValue)
 {
 	return (fValue == fValue) && (fValue > 0.0f) && (fValue < XUI_CONTEXT_MAX_VIEWPORT);

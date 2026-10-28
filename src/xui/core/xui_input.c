@@ -554,6 +554,24 @@ static int __xuiInputSetHoverWidget(xui_context pContext, xui_widget pWidget)
 	return XUI_OK;
 }
 
+static int __xuiInputWidgetActiveForOtherPointer(xui_context pContext, xui_widget pWidget)
+{
+	xui_pointer_state_t* pState;
+	int i;
+
+	if ( (pContext == NULL) || (pWidget == NULL) ) return 0;
+	for ( i = 0; i < XUI_POINTER_MAX; i++ ) {
+		pState = &pContext->arrPointerStates[i];
+		if ( !pState->bAllocated ||
+		     ((pState->iPointerId == pContext->iInputPointerId) &&
+		      (pState->iPointerType == pContext->iInputPointerType)) ) {
+			continue;
+		}
+		if ( pState->pActiveWidget == pWidget ) return 1;
+	}
+	return 0;
+}
+
 static int __xuiInputSetActiveWidget(xui_context pContext, xui_widget pWidget, int iButton)
 {
 	xui_widget pOldWidget;
@@ -563,7 +581,8 @@ static int __xuiInputSetActiveWidget(xui_context pContext, xui_widget pWidget, i
 	if ( (pOldWidget == pWidget) && (pContext->iActiveButton == iButton) ) {
 		return XUI_OK;
 	}
-	if ( pOldWidget != NULL ) {
+	if ( (pOldWidget != NULL) &&
+	     !__xuiInputWidgetActiveForOtherPointer(pContext, pOldWidget) ) {
 		iRet = __xuiInputSetWidgetFlag(pOldWidget, XUI_WIDGET_STATE_ACTIVE, 0);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -1507,6 +1526,11 @@ static int __xuiInputPointerDownCurrent(xui_context pContext, int fX, int fY, in
 		return iRet;
 	}
 	pHitWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
+	#if XUI_ENABLE_POPUP
+	iRet = xuiInternalPopupPrepareOwnerPress(pContext, pHitWidget, (float)fX, (float)fY);
+	if ( iRet != XUI_OK || xuiInternalContextDestroyPending(pContext) ) return iRet;
+	pHitWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
+	#endif
 	iRet = __xuiInputSetHoverWidget(pContext, pHitWidget);
 	if ( iRet != XUI_OK ) {
 		return iRet;
@@ -1641,6 +1665,11 @@ static int __xuiInputPointerWheelCurrent(xui_context pContext, int fX, int fY, f
 		fWheelY = fSwap;
 	}
 	pHitWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
+	#if XUI_ENABLE_POPUP
+	iRet = xuiInternalPopupPrepareOwnerPress(pContext, pHitWidget, (float)fX, (float)fY);
+	if ( iRet != XUI_OK || xuiInternalContextDestroyPending(pContext) ) return iRet;
+	pHitWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
+	#endif
 	iRet = __xuiInputSetHoverWidget(pContext, pHitWidget);
 	if ( iRet != XUI_OK ) {
 		return iRet;
@@ -2623,6 +2652,9 @@ XUI_API int xuiDispatchPendingEvents(xui_context pContext)
 static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, uint32_t iFlags)
 {
 	xui_widget pHit;
+	#if XUI_ENABLE_POPUP
+	xui_widget pPassthroughRoot;
+	#endif
 	xui_rect_t tViewportClip;
 	int bHasViewportClip;
 	int iRet;
@@ -2656,6 +2688,21 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 		return NULL;
 	}
 	if ( (pHit != NULL) && (pHit != pContext->pOverlayRoot) ) {
+		#if XUI_ENABLE_POPUP
+		pPassthroughRoot = xuiInternalPopupPointerPassthroughOwner(pContext,
+			pHit, (float)fX, (float)fY);
+		if ( pPassthroughRoot != NULL ) {
+			iRet = __xuiInputHitTestWidget(pContext, pPassthroughRoot,
+				fX, fY, iFlags, tViewportClip, bHasViewportClip, &pHit);
+			if ( iRet != XUI_OK ) {
+				xuiInternalReportError(pContext, pPassthroughRoot, iRet,
+					XUI_ERROR_STAGE_INPUT, 1, "hit_test.popup_owner",
+					"The popup owner subtree could not be hit tested.");
+				return NULL;
+			}
+			if ( pHit != NULL ) return pHit;
+		}
+		#endif
 		return pHit;
 	}
 	iRet = __xuiInputHitTestWidget(pContext, pContext->pRoot,
