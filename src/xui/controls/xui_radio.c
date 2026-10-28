@@ -79,6 +79,7 @@ typedef struct xui_radio_group_data_t {
 
 static int __xuiRadioSetCheckedInternal(xui_widget pWidget, xui_radio_data_t* pData, int bChecked, int bNotify, int bFromGroup);
 static int __xuiRadioGroupSelectRadioInternal(xui_widget pGroup, xui_widget pRadio, int bNotify);
+static int __xuiRadioGroupIsOption(xui_widget pWidget);
 static int __xuiRadioGroupIndexOf(xui_widget pGroup, xui_widget pRadio);
 static xui_widget __xuiRadioGroupRadioAt(xui_widget pGroup, int iIndex);
 static int __xuiRadioGroupReconcileIndex(xui_widget pGroup, xui_radio_group_data_t* pData);
@@ -88,9 +89,30 @@ static uint32_t __xuiRadioColorAlpha(uint32_t iColor)
 	return iColor & 0xffu;
 }
 
+static int __xuiRadioFloatValid(float fValue)
+{
+	return isfinite(fValue) &&
+	       fValue >= -XUI_LAYOUT_UNBOUNDED &&
+	       fValue <= XUI_LAYOUT_UNBOUNDED;
+}
+
 static int __xuiRadioNonNegativeFloatValid(float fValue)
 {
-	return isfinite(fValue) && fValue >= 0.0f;
+	return __xuiRadioFloatValid(fValue) && fValue >= 0.0f;
+}
+
+static int __xuiRadioSourceRectValid(xui_rect_t tRect)
+{
+	return __xuiRadioFloatValid(tRect.fX) &&
+	       __xuiRadioFloatValid(tRect.fY) &&
+	       __xuiRadioNonNegativeFloatValid(tRect.fW) &&
+	       __xuiRadioNonNegativeFloatValid(tRect.fH);
+}
+
+static int __xuiRadioRectEqual(xui_rect_t tA, xui_rect_t tB)
+{
+	return tA.fX == tB.fX && tA.fY == tB.fY &&
+	       tA.fW == tB.fW && tA.fH == tB.fH;
 }
 
 static int __xuiRadioDescValid(const xui_radio_desc_t* pDesc)
@@ -283,6 +305,8 @@ static void __xuiRadioResolve(xui_widget pWidget, xui_radio_data_t* pData, xui_r
 	(void)__xuiRadioStyleFloat(pWidget, "choice.indicator.gap", &pResolved->fGap);
 	(void)__xuiRadioStyleFloat(pWidget, "choice.focus.width", &pResolved->fFocusWidth);
 	(void)__xuiRadioStyleFloat(pWidget, "radio.dot.scale", &pResolved->fDotScale);
+	if ( pResolved->fDotScale < 0.0f ) pResolved->fDotScale = 0.0f;
+	if ( pResolved->fDotScale > 1.0f ) pResolved->fDotScale = 1.0f;
 	iTextFlags = (int)pResolved->iTextFlags;
 	if ( __xuiRadioStyleInt(pWidget, "text.flags", &iTextFlags) ) {
 		pResolved->iTextFlags = (uint32_t)iTextFlags | XUI_TEXT_CLIP;
@@ -295,9 +319,6 @@ static uint32_t __xuiRadioComputeState(xui_widget pWidget, xui_radio_data_t* pDa
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
-		iState |= XUI_WIDGET_STATE_DISABLED;
-	}
 	if ( (pData != NULL) && pData->bChecked ) {
 		iState |= XUI_RADIO_STATE_CHECKED;
 	}
@@ -363,22 +384,25 @@ static xui_vec2_t __xuiRadioMeasureText(xui_widget pWidget, xui_font pFont,
 static void __xuiRadioLayoutContent(xui_widget pWidget, xui_radio_data_t* pData, xui_radio_data_t* pResolved)
 {
 	xui_rect_t tContent;
-	xui_vec2_t tTextSize;
 	float fSize;
-	float fLineH;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
 	fSize = pResolved->fIndicatorSize;
 	if ( fSize < 1.0f ) fSize = 1.0f;
 	if ( fSize > tContent.fH ) fSize = tContent.fH;
-	tTextSize = __xuiRadioMeasureText(pWidget, pResolved->pFont,
-		pData->sText, pResolved->iTextFlags);
-	fLineH = (tTextSize.fY > fSize) ? tTextSize.fY : fSize;
-	if ( fLineH > tContent.fH ) fLineH = tContent.fH;
-	pData->tIndicatorRect = xuiInternalRectFromFloatNearest(tContent.fX,
-		tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
-	pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX + fSize + pResolved->fGap,
-		tContent.fY, tContent.fW - fSize - pResolved->fGap, tContent.fH);
+	if ( (pResolved->iTextFlags & XUI_TEXT_RTL) != 0 ) {
+		pData->tIndicatorRect = xuiInternalRectFromFloatNearest(
+			tContent.fX + tContent.fW - fSize,
+			tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
+		pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX,
+			tContent.fY, tContent.fW - fSize - pResolved->fGap, tContent.fH);
+	} else {
+		pData->tIndicatorRect = xuiInternalRectFromFloatNearest(tContent.fX,
+			tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
+		pData->tTextRect = xuiInternalRectFromFloatNearest(
+			tContent.fX + fSize + pResolved->fGap, tContent.fY,
+			tContent.fW - fSize - pResolved->fGap, tContent.fH);
+	}
 }
 
 static int __xuiRadioContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -491,10 +515,11 @@ static int __xuiRadioDrawDefaultIndicator(xui_proxy pProxy, xui_draw_context pDr
 	int iRet;
 
 	tVisual = __xuiRadioVisual(pResolved, iVisual);
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XUI_OK;
 	fCX = tRect.fX + tRect.fW * 0.5f;
 	fCY = tRect.fY + tRect.fH * 0.5f;
 	fRadius = ((tRect.fW < tRect.fH) ? tRect.fW : tRect.fH) * 0.5f - 0.5f;
-	if ( fRadius < 1.0f ) fRadius = 1.0f;
+	if ( fRadius <= 0.0f ) return XUI_OK;
 	iRet = XUI_OK;
 	if ( __xuiRadioColorAlpha(tVisual.iFillColor) != 0 ) {
 		iRet = pProxy->drawCircleFill(pProxy, pDraw, fCX, fCY, fRadius, tVisual.iFillColor);
@@ -502,10 +527,12 @@ static int __xuiRadioDrawDefaultIndicator(xui_proxy pProxy, xui_draw_context pDr
 	if ( (iRet == XUI_OK) && (tVisual.fBorderWidth > 0.0f) && (__xuiRadioColorAlpha(tVisual.iBorderColor) != 0) ) {
 		iRet = pProxy->drawCircleStroke(pProxy, pDraw, fCX, fCY, fRadius, tVisual.fBorderWidth, tVisual.iBorderColor);
 	}
-	if ( (iRet == XUI_OK) && bChecked && (__xuiRadioColorAlpha(tVisual.iDotColor) != 0) ) {
+	if ( (iRet == XUI_OK) && bChecked && pResolved->fDotScale > 0.0f &&
+	     (__xuiRadioColorAlpha(tVisual.iDotColor) != 0) ) {
 		fDotRadius = fRadius * pResolved->fDotScale;
-		if ( fDotRadius < 2.0f ) fDotRadius = 2.0f;
-		iRet = pProxy->drawCircleFill(pProxy, pDraw, fCX, fCY, fDotRadius, tVisual.iDotColor);
+		if ( fDotRadius > 0.0f ) {
+			iRet = pProxy->drawCircleFill(pProxy, pDraw, fCX, fCY, fDotRadius, tVisual.iDotColor);
+		}
 	}
 	return iRet;
 }
@@ -550,10 +577,7 @@ static int __xuiRadioCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	__xuiRadioResolve(pWidget, pData, &tResolved);
-	iRenderState = iStateId;
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
-		iRenderState = XUI_WIDGET_STATE_DISABLED | (pData->bChecked ? XUI_RADIO_STATE_CHECKED : 0);
-	}
+	iRenderState = __xuiRadioStateId(iStateId);
 	iVisual = __xuiRadioStateVisual(iRenderState);
 	bChecked = ((iRenderState & XUI_RADIO_STATE_CHECKED) != 0);
 	__xuiRadioLayoutContent(pWidget, pData, &tResolved);
@@ -562,14 +586,25 @@ static int __xuiRadioCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	if ( ((iRenderState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iRenderState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiRadioColorAlpha(tResolved.iFocusColor) != 0) ) {
+	if ( ((iRenderState & XUI_WIDGET_STATE_FOCUS) != 0) &&
+	     ((iRenderState & XUI_WIDGET_STATE_DISABLED) == 0) &&
+	     (tResolved.fFocusWidth > 0.0f) &&
+	     (tIndicator.fW > 0.0f) && (tIndicator.fH > 0.0f) &&
+	     (__xuiRadioColorAlpha(tResolved.iFocusColor) != 0) ) {
+		float fFocusRadius;
+		float fFocusWidth;
+
+		fFocusRadius = (tIndicator.fW < tIndicator.fH ?
+			tIndicator.fW : tIndicator.fH) * 0.5f + 2.0f;
+		fFocusWidth = tResolved.fFocusWidth;
+		if ( fFocusWidth > fFocusRadius ) fFocusWidth = fFocusRadius;
 		iRet = pProxy->drawCircleStroke(
 			pProxy,
 			pDraw,
 			tIndicator.fX + tIndicator.fW * 0.5f,
 			tIndicator.fY + tIndicator.fH * 0.5f,
-			(tIndicator.fW < tIndicator.fH ? tIndicator.fW : tIndicator.fH) * 0.5f + 2.0f,
-			tResolved.fFocusWidth,
+			fFocusRadius,
+			fFocusWidth,
 			tResolved.iFocusColor);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -613,10 +648,10 @@ int xuiInternalRadioGroupMoveSelection(xui_widget pWidget, int iDirection)
 	xui_context pContext;
 	xui_widget pGroup;
 	xui_widget pCandidate;
+	xui_widget pChild;
+	xui_widget pWrap;
 	int iCurrent;
-	int iCount;
 	int iIndex;
-	int iStep;
 
 	if ( !xuiInternalWidgetIsValid(pWidget) || (iDirection != -1 && iDirection != 1) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -626,21 +661,32 @@ int xuiInternalRadioGroupMoveSelection(xui_widget pWidget, int iDirection)
 	if ( pGroup == NULL ) return XUI_ERROR_UNSUPPORTED;
 	iCurrent = __xuiRadioGroupIndexOf(pGroup, pWidget);
 	if ( iCurrent < 0 ) return XUI_ERROR_UNSUPPORTED;
-	iCount = 0;
-	while ( __xuiRadioGroupRadioAt(pGroup, iCount) != NULL ) iCount++;
-	if ( iCount <= 1 ) return XUI_OK;
-	for ( iStep = 1; iStep < iCount; iStep++ ) {
-		iIndex = (iCurrent + iDirection * iStep + iCount) % iCount;
-		pCandidate = __xuiRadioGroupRadioAt(pGroup, iIndex);
-		if ( (pCandidate != NULL) && xuiWidgetGetEnabled(pCandidate) && xuiWidgetGetVisible(pCandidate) ) {
-			iIndex = __xuiRadioGroupSelectRadioInternal(pGroup, pCandidate, 1);
-			if ( iIndex != XUI_OK ) return iIndex;
-			if ( xuiInternalContextIsValid(pContext) && xuiInternalWidgetIsValid(pCandidate) &&
-			     xuiWidgetGetContext(pCandidate) == pContext && __xuiRadioFindGroup(pCandidate) == pGroup ) {
-				return xuiSetFocusWidget(pContext, pCandidate);
+	pCandidate = NULL;
+	pWrap = NULL;
+	iIndex = 0;
+	for ( pChild = xuiWidgetGetFirstChild(pGroup); pChild != NULL;
+	     pChild = xuiWidgetGetNextSibling(pChild) ) {
+		if ( !__xuiRadioGroupIsOption(pChild) ) continue;
+		if ( xuiWidgetGetEffectiveEnabled(pChild) &&
+		     xuiWidgetGetEffectiveVisible(pChild) ) {
+			if ( iDirection > 0 ) {
+				if ( pWrap == NULL ) pWrap = pChild;
+				if ( pCandidate == NULL && iIndex > iCurrent ) pCandidate = pChild;
+			} else {
+				pWrap = pChild;
+				if ( iIndex < iCurrent ) pCandidate = pChild;
 			}
-			return XUI_OK;
 		}
+		iIndex++;
+	}
+	if ( pCandidate == NULL ) pCandidate = pWrap;
+	if ( pCandidate == NULL || pCandidate == pWidget ) return XUI_OK;
+	iIndex = __xuiRadioGroupSelectRadioInternal(pGroup, pCandidate, 1);
+	if ( iIndex != XUI_OK ) return iIndex;
+	if ( xuiInternalContextIsValid(pContext) && xuiInternalWidgetIsValid(pCandidate) &&
+	     xuiWidgetGetContext(pCandidate) == pContext &&
+	     __xuiRadioFindGroup(pCandidate) == pGroup ) {
+		return xuiSetFocusWidget(pContext, pCandidate);
 	}
 	return XUI_OK;
 }
@@ -696,7 +742,8 @@ static void __xuiRadioDefaultAction(xui_widget pWidget, void* pUser)
 
 	(void)pUser;
 	pData = __xuiRadioGetData(pWidget);
-	if ( pData == NULL ) {
+	if ( pData == NULL || !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return;
 	}
 	(void)__xuiRadioSetCheckedInternal(pWidget, pData, 1, 1, 0);
@@ -718,7 +765,8 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		pData->bKeyboardActive = 0;
 		iRet = xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
 		if ( iRet != XUI_OK ) return iRet;
@@ -764,8 +812,9 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			if ( iRet == XUI_OK ) iRet = __xuiRadioSyncState(pWidget, pData);
 			if ( iRet != XUI_OK ) {
 				(void)xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+				return iRet;
 			}
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
@@ -776,7 +825,8 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			if ( iRet == XUI_OK && __xuiRadioDataAlive(pWidget, pData) ) {
 				iRet = __xuiRadioSyncState(pWidget, pData);
 			}
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
@@ -788,23 +838,29 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 			iRet = __xuiRadioSetCheckedInternal(pWidget, pData, 1, 1, 0);
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_DOWN:
 		if ( (pEvent->pTarget == pWidget) && pEvent->iKey == XUI_KEY_SPACE ) {
 			pData->bKeyboardActive = 1;
 			iRet = __xuiRadioSyncState(pWidget, pData);
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 #if XUI_ENABLE_RADIO_GROUP
 		if ( (pEvent->pTarget == pWidget) && ((pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_UP)) ) {
 			iRet = xuiInternalRadioGroupMoveSelection(pWidget, -1);
-			return (iRet == XUI_ERROR_UNSUPPORTED) ? XUI_OK : (iRet | XUI_EVENT_DISPATCH_STOP);
+			if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_OK;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( (pEvent->pTarget == pWidget) && ((pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_DOWN)) ) {
 			iRet = xuiInternalRadioGroupMoveSelection(pWidget, 1);
-			return (iRet == XUI_ERROR_UNSUPPORTED) ? XUI_OK : (iRet | XUI_EVENT_DISPATCH_STOP);
+			if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_OK;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 
 #endif
@@ -815,9 +871,12 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 				pData->bKeyboardActive = 0;
 				iRet = __xuiRadioSyncState(pWidget, pData);
 				if ( iRet == XUI_OK ) iRet = __xuiRadioSetCheckedInternal(pWidget, pData, 1, 1, 0);
-				return iRet | XUI_EVENT_DISPATCH_STOP;
+				if ( iRet != XUI_OK ) return iRet;
+				return XUI_EVENT_DISPATCH_STOP;
 			}
-			return __xuiRadioSyncState(pWidget, pData) | XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiRadioSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	default:
@@ -1086,6 +1145,7 @@ XUI_API int xuiRadioCreate(xui_context pContext, xui_widget* ppWidget, const xui
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !__xuiRadioDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiRadioGetType(pContext);
 	if ( pType == NULL ) {
@@ -1221,7 +1281,8 @@ XUI_API int xuiRadioSetIndicatorSize(xui_widget pWidget, float fSize)
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
 	int iRet;
-	if ( (pData == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiRadioNonNegativeFloatValid(fSize) ||
+	     (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fIndicatorSize == fSize ) return XUI_OK;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1287,10 +1348,11 @@ XUI_API int xuiRadioSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheck
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
 	int iRet;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !__xuiRadioSourceRectValid(tUncheckedSrc) ||
+	     !__xuiRadioSourceRectValid(tCheckedSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pUncheckedSurface == pUncheckedSurface && pData->pCheckedSurface == pCheckedSurface &&
-	     memcmp(&pData->tUncheckedSrc, &tUncheckedSrc, sizeof(tUncheckedSrc)) == 0 &&
-	     memcmp(&pData->tCheckedSrc, &tCheckedSrc, sizeof(tCheckedSrc)) == 0 ) return XUI_OK;
+	     __xuiRadioRectEqual(pData->tUncheckedSrc, tUncheckedSrc) &&
+	     __xuiRadioRectEqual(pData->tCheckedSrc, tCheckedSrc) ) return XUI_OK;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pUncheckedSurface = pUncheckedSurface;
@@ -1353,9 +1415,9 @@ static int __xuiRadioGroupIsOption(xui_widget pWidget)
 {
 	xui_widget_type pCheckCardType;
 
-	if ( pWidget == NULL ) return 0;
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 0;
 	if ( __xuiRadioGetData(pWidget) != NULL ) return 1;
-	pCheckCardType = xuiCheckCardGetType(xuiWidgetGetContext(pWidget));
+	pCheckCardType = xuiWidgetFindType(xuiWidgetGetContext(pWidget), "checkcard");
 	return (pCheckCardType != NULL) && xuiWidgetIsType(pWidget, pCheckCardType);
 }
 
@@ -1364,7 +1426,7 @@ static int __xuiRadioGroupIsCheckCard(xui_widget pWidget)
 	xui_widget_type pCheckCardType;
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) return 0;
-	pCheckCardType = xuiCheckCardGetType(xuiWidgetGetContext(pWidget));
+	pCheckCardType = xuiWidgetFindType(xuiWidgetGetContext(pWidget), "checkcard");
 	return (pCheckCardType != NULL) && xuiWidgetIsType(pWidget, pCheckCardType);
 }
 
@@ -1714,13 +1776,19 @@ static void __xuiRadioGroupDestroy(xui_widget pWidget, void* pTypeData, void* pU
 
 static int __xuiRadioGroupAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
 {
-	if ( (__xuiRadioGroupGetData(pWidget) == NULL) || (pNode == NULL) ) {
+	xui_radio_group_data_t* pData;
+
+	pData = __xuiRadioGroupGetData(pWidget);
+	if ( (pData == NULL) || (pNode == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pNode->iRole = XUI_ACCESSIBLE_ROLE_RADIO_GROUP;
 	pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
 		xuiWidgetGetAccessibleName(pWidget) : "Radio group";
 	pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+	if ( pData->iOrientation == XUI_RADIO_GROUP_VERTICAL ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_VERTICAL;
+	}
 	return XUI_OK;
 }
 
@@ -1766,6 +1834,7 @@ XUI_API int xuiRadioGroupCreate(xui_context pContext, xui_widget* ppWidget, cons
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !__xuiRadioGroupDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiRadioGroupGetType(pContext);
 	if ( pType == NULL ) {
@@ -1885,7 +1954,8 @@ XUI_API int xuiRadioGroupSetSelectedIndex(xui_widget pGroup, int iIndex)
 
 	pData = __xuiRadioGroupGetData(pGroup);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iIndex < 0 ) {
+	if ( iIndex < -1 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iIndex == -1 ) {
 		return __xuiRadioGroupSelectRadioInternal(pGroup, NULL, 1);
 	}
 	pRadio = __xuiRadioGroupRadioAt(pGroup, iIndex);
@@ -1941,6 +2011,7 @@ XUI_API int xuiRadioGroupSetOrientation(xui_widget pGroup, int iOrientation)
 		(iOrientation == XUI_RADIO_GROUP_HORIZONTAL) ? XUI_LAYOUT_ROW : XUI_LAYOUT_COLUMN);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iOrientation = iOrientation;
+	xuiInternalAccessibilityQueue(pGroup, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	return XUI_OK;
 }
 

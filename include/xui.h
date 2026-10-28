@@ -8538,7 +8538,7 @@ XUI_API int xuiRadioGroupAddRadio(xui_widget pGroup, xui_widget pRadio);
 XUI_API int xuiRadioGroupAddCheckCard(xui_widget pGroup, xui_widget pCard);
 /* 按描述创建并添加单选框；*ppRadio 可空输出句柄。 */
 XUI_API int xuiRadioGroupAddOption(xui_widget pGroup, xui_widget* ppRadio, const xui_radio_desc_t* pDesc);
-/* 按索引设置选中（清除其余）。 */
+/* 按索引设置选中（清除其余）；传入 -1 清除组内选择。 */
 XUI_API int xuiRadioGroupSetSelectedIndex(xui_widget pGroup, int iIndex);
 /* 读取选中索引（未选 -1）。 */
 XUI_API int xuiRadioGroupGetSelectedIndex(xui_widget pGroup);

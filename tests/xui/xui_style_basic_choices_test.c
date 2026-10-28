@@ -25,6 +25,44 @@ static void choice_cases(pixel_fixture_t* f, xui_widget w, int radio)
 	basic_cached_case(f, w, "choice.background.color", fill);
 }
 
+static xui_style_property_t choice_float(const char* key, float value)
+{
+	xui_style_property_t p = {0};
+	p.iSize = sizeof(p);
+	p.sName = key;
+	p.tValue.iSize = sizeof(p.tValue);
+	p.tValue.iType = XUI_STYLE_VALUE_FLOAT;
+	p.tValue.fFloat = value;
+	return p;
+}
+
+static void radio_state_cases(pixel_fixture_t* f, xui_widget radio)
+{
+	const uint32_t normal = 0x182736ffu;
+	const uint32_t disabled = 0x394857ffu;
+	const uint32_t dot = 0x5a6978ffu;
+	xui_style_property_t p[2];
+
+	p[0] = basic_color("choice.background.color", normal);
+	p[1] = basic_color("choice.background.disabled_color", disabled);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(radio, p, 2) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetSetEnabled(radio, 0) == XUI_OK);
+	basic_paint(f, radio, 0);
+	PIXEL_CHECK(basic_seen(BASIC_CIRCLE, normal) > 0);
+	PIXEL_CHECK(basic_seen(BASIC_CIRCLE, disabled) == 0);
+	basic_paint(f, radio, XUI_WIDGET_STATE_DISABLED);
+	PIXEL_CHECK(basic_seen(BASIC_CIRCLE, disabled) > 0);
+	PIXEL_CHECK(xuiWidgetSetEnabled(radio, 1) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(radio, NULL, 0) == XUI_OK);
+
+	p[0] = basic_color("radio.dot.color", dot);
+	p[1] = choice_float("radio.dot.scale", 0.0f);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(radio, p, 2) == XUI_OK);
+	basic_paint(f, radio, XUI_RADIO_STATE_CHECKED);
+	PIXEL_CHECK(basic_seen(BASIC_CIRCLE, dot) == 0);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(radio, NULL, 0) == XUI_OK);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -47,6 +85,7 @@ int main(void)
 	PIXEL_CHECK(xuiToggleCreate(f.context, &toggle, &td) == XUI_OK);
 	basic_attach(&f, checkbox); basic_attach(&f, radio); basic_attach(&f, toggle);
 	choice_cases(&f, checkbox, 0); choice_cases(&f, radio, 1);
+	radio_state_cases(&f, radio);
 	for (i = 0; i < sizeof(keys) / sizeof(*keys); ++i) basic_case(&f, toggle, keys[i], states[i], kinds[i]);
 	basic_case(&f, toggle, "choice.focus.color", XUI_WIDGET_STATE_FOCUS, BASIC_STROKE);
 	basic_case(&f, toggle, "choice.accent.color", XUI_TOGGLE_STATE_CHECKED, BASIC_FILL);
