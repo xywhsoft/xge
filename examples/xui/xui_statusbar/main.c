@@ -244,13 +244,18 @@ static void __xuiStatusBarRunChecks(xui_statusbar_demo_t* pDemo, int bExerciseIn
 	xui_rect_t tProgress;
 	xui_rect_t tFlex;
 	xui_rect_t tCenter;
+	xui_rect_t tRight;
 
 	pDemo->bCreateOK = (pDemo->pRoot != NULL) && (pDemo->pStatusBar != NULL) && (xuiStatusBarGetItemCount(pDemo->pStatusBar) == 7);
 	tReady = xuiStatusBarGetItemRect(pDemo->pStatusBar, 0);
 	tProgress = xuiStatusBarGetItemRect(pDemo->pStatusBar, pDemo->iProgressIndex);
 	tFlex = xuiStatusBarGetItemRect(pDemo->pStatusBar, 3);
 	tCenter = xuiStatusBarGetItemRect(pDemo->pStatusBar, 4);
-	pDemo->bLayoutOK = (tProgress.fX > tReady.fX) && (tFlex.fW > 0.0f) && (tCenter.fX > 190.0f) && (tCenter.fX < 250.0f);
+	tRight = xuiStatusBarGetItemRect(pDemo->pStatusBar, 5);
+	pDemo->bLayoutOK = (tReady.fW > 0.0f) && (tProgress.fX > tReady.fX) &&
+		(tFlex.fW > 0.0f) && (tFlex.fX + tFlex.fW <= tCenter.fX) &&
+		(tCenter.fW > 0.0f) && (tCenter.fX + tCenter.fW <= tRight.fX) &&
+		(tRight.fW > 0.0f);
 	if ( pDemo->iProgressIndex >= 0 ) {
 		(void)xuiStatusBarSetProgress(pDemo->pStatusBar, pDemo->iProgressIndex, 128.0f);
 		pDemo->bProgressOK = (xuiStatusBarGetProgress(pDemo->pStatusBar, pDemo->iProgressIndex) == 100.0f);

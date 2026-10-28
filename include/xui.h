@@ -5047,6 +5047,9 @@ typedef struct xui_toolbar_desc_t {
 	int bOverflowEnabled;
 } xui_toolbar_desc_t;
 
+/* 状态栏条目。fWidth 与 fFlex 须为 [0, XUI_LAYOUT_UNBOUNDED] 内的有限值；
+ * fWidth 为 0 且 fFlex 大于 0 时，条目按权重分配其分区获得的剩余宽度。
+ * 进度值须有限。tRect 为布局输出，创建及批量设置时会被忽略。 */
 typedef struct xui_statusbar_item_t {
 	const char* sText;
 	int iType;
@@ -5062,6 +5065,9 @@ typedef struct xui_statusbar_item_t {
 	void* pUser;
 } xui_statusbar_item_t;
 
+/* 状态栏度量。所有浮点值均须有限且位于 [0, XUI_LAYOUT_UNBOUNDED]，
+ * fHeight 与 fProgressHeight 还必须大于 0；内边距、间距和边框的组合
+ * 几何不得超过 XUI_LAYOUT_UNBOUNDED。 */
 typedef struct xui_statusbar_metrics_t {
 	uint32_t iSize;
 	float fHeight;
@@ -11531,7 +11537,7 @@ XUI_API int xuiStatusBarAddText(xui_widget pWidget, int iSection, const char* sT
 XUI_API int xuiStatusBarAddProgress(xui_widget pWidget, int iSection, float fMin, float fMax, float fValue, float fWidth);
 /* 追加固定宽度占位。 */
 XUI_API int xuiStatusBarAddSpacer(xui_widget pWidget, int iSection, float fWidth);
-/* 追加弹性占位（加权撑开）。 */
+/* 向任意分区追加弹性占位；剩余宽度先按各分区权重分配，再在分区内按权重分配。 */
 XUI_API int xuiStatusBarAddFlexibleSpacer(xui_widget pWidget, int iSection, float fWeight);
 /* 清空全部条目。 */
 XUI_API int xuiStatusBarClear(xui_widget pWidget);
@@ -11549,7 +11555,7 @@ XUI_API int xuiStatusBarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnab
 XUI_API int xuiStatusBarIsItemEnabled(xui_widget pWidget, int iIndex);
 /* 设置条目可点。 */
 XUI_API int xuiStatusBarSetItemClickable(xui_widget pWidget, int iIndex, int bClickable);
-/* 读取可点标志。 */
+/* 读取可点能力标志；禁用状态不改变该标志，但会阻止实际激活。 */
 XUI_API int xuiStatusBarIsItemClickable(xui_widget pWidget, int iIndex);
 /* 设置条目文本（控件复制字符串）。 */
 XUI_API int xuiStatusBarSetItemText(xui_widget pWidget, int iIndex, const char* sText);
@@ -11575,7 +11581,7 @@ XUI_API int xuiStatusBarGetActiveIndex(xui_widget pWidget);
 XUI_API int xuiStatusBarSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
 XUI_API xui_font xuiStatusBarGetFont(xui_widget pWidget);
-/* 以结构体设置度量组。 */
+/* 以结构体设置度量组；取值与组合边界见 xui_statusbar_metrics_t。 */
 XUI_API int xuiStatusBarSetMetrics(xui_widget pWidget, const xui_statusbar_metrics_t* pMetrics);
 /* 输出度量组。 */
 XUI_API int xuiStatusBarGetMetrics(xui_widget pWidget, xui_statusbar_metrics_t* pMetrics);

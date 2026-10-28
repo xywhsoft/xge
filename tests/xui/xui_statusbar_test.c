@@ -20,6 +20,9 @@ typedef struct xui_statusbar_test_events_t {
 	int iLastValue;
 	int bClearOnSelect;
 	int iClearResult;
+	int iContextCount;
+	int iContextIndex;
+	int iContextValue;
 } xui_statusbar_test_events_t;
 
 typedef struct xui_statusbar_destroy_events_t {
@@ -56,6 +59,21 @@ static void __xuiStatusBarDestroySelect(xui_widget pWidget, int iIndex, int iVal
 	(void)iValue;
 	if ( pEvents != NULL ) pEvents->iCount++;
 	(void)xuiWidgetDestroy(pWidget);
+}
+
+static int __xuiStatusBarContext(xui_widget pWidget, int iIndex, int iValue,
+	float fX, float fY, void* pUser)
+{
+	xui_statusbar_test_events_t* pEvents = (xui_statusbar_test_events_t*)pUser;
+	(void)pWidget;
+	(void)fX;
+	(void)fY;
+	if ( pEvents != NULL ) {
+		pEvents->iContextCount++;
+		pEvents->iContextIndex = iIndex;
+		pEvents->iContextValue = iValue;
+	}
+	return XUI_OK;
 }
 
 static int __xuiStatusBarLayoutRender(xui_context pContext, xui_surface pTarget)
@@ -143,6 +161,7 @@ int main(void)
 	xui_statusbar_item_t arrItems[7];
 	xui_statusbar_item_t arrInvalid[2];
 	xui_accessible_node_t tNode;
+	xui_event_t tContextEvent;
 	const xui_statusbar_item_t* pFirstItem;
 	xui_rect_t tItem0;
 	xui_rect_t tItem1;
@@ -166,6 +185,7 @@ int main(void)
 	memset(&tDestroy, 0, sizeof(tDestroy));
 	tEvents.iLastIndex = -1;
 	tEvents.iLastValue = -1;
+	tEvents.iContextIndex = -1;
 	memset(arrItems, 0, sizeof(arrItems));
 	xuiTestProxyInit(&tState);
 
@@ -219,6 +239,8 @@ int main(void)
 	(void)xuiWidgetSetRect(pStatusBar, (xui_rect_t){20.0f, 260.0f, 460.0f, 28.0f});
 	iRet = xuiStatusBarSetSelect(pStatusBar, __xuiStatusBarSelect, &tEvents);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
+	iRet = xuiStatusBarSetContextMenu(pStatusBar, __xuiStatusBarContext, &tEvents);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 320, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -252,12 +274,64 @@ int main(void)
 		tNode.iRole == XUI_ACCESSIBLE_ROLE_PROGRESS && tNode.tRange.iSize == sizeof(tNode.tRange) &&
 		tNode.tRange.fMin == 0.0 && tNode.tRange.fMax == 100.0 && tNode.tRange.fValue == 100.0,
 		"progress accessibility range");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pStatusBar, 5, &tNode) == XUI_OK &&
+		tNode.iRole == XUI_ACCESSIBLE_ROLE_BUTTON &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u && tNode.iActions == 0u,
+		"disabled clickable item preserves button role without actions");
+
+	memset(&tContextEvent, 0, sizeof(tContextEvent));
+	tWorld = xuiWidgetGetWorldRect(pStatusBar);
+	tContextEvent.iSize = sizeof(tContextEvent);
+	tContextEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	tContextEvent.pTarget = pStatusBar;
+	tContextEvent.iButton = XUI_POINTER_BUTTON_RIGHT;
+	tContextEvent.fX = tWorld.fX + tItem1.fX + 2.0f;
+	tContextEvent.fY = tWorld.fY + tItem1.fY + 2.0f;
+	iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iContextCount == 1 &&
+		tEvents.iContextIndex == 1 && tEvents.iContextValue == 0,
+		"context menu identifies non-clickable status item");
 
 	iRet = __xuiStatusBarClickItem(pContext, pStatusBar, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == 1 && tEvents.iLastIndex == 0 && tEvents.iLastValue == 10, "click select");
 	iBefore = tEvents.iSelectCount;
 	iRet = __xuiStatusBarClickItem(pContext, pStatusBar, 6);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore, "disabled click ignored");
+
+	tWorld = xuiWidgetGetWorldRect(pStatusBar);
+	tItem0 = xuiStatusBarGetItemRect(pStatusBar, 0);
+	tCenter = xuiStatusBarGetItemRect(pStatusBar, 4);
+	iBefore = tEvents.iSelectCount;
+	iRet = __xuiStatusBarDispatchMove(pContext,
+		tWorld.fX + tItem0.fX + 2.0f, tWorld.fY + tItem0.fY + 2.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarDispatchDown(pContext,
+		tWorld.fX + tItem0.fX + 2.0f, tWorld.fY + tItem0.fY + 2.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarDispatchMove(pContext,
+		tWorld.fX + tCenter.fX + 2.0f, tWorld.fY + tCenter.fY + 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == 0 &&
+		xuiStatusBarGetHoverIndex(pStatusBar) == -1 && tEvents.iSelectCount == iBefore,
+		"dragging outside pressed item clears pressed hover");
+	iRet = __xuiStatusBarDispatchMove(pContext,
+		tWorld.fX + tItem0.fX + 2.0f, tWorld.fY + tItem0.fY + 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == 0 &&
+		xuiStatusBarGetHoverIndex(pStatusBar) == 0,
+		"dragging back into pressed item restores pressed hover");
+	iRet = __xuiStatusBarDispatchUp(pContext,
+		tWorld.fX + tItem0.fX + 2.0f, tWorld.fY + tItem0.fY + 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore + 1,
+		"release after re-entry activates pressed item once");
+	iBefore = tEvents.iSelectCount;
+	iRet = __xuiStatusBarDispatchDown(pContext,
+		tWorld.fX + tItem0.fX + 2.0f, tWorld.fY + tItem0.fY + 2.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarDispatchMove(pContext,
+		tWorld.fX + tCenter.fX + 2.0f, tWorld.fY + tCenter.fY + 2.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarDispatchUp(pContext,
+		tWorld.fX + tCenter.fX + 2.0f, tWorld.fY + tCenter.fY + 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore &&
+		xuiStatusBarGetActiveIndex(pStatusBar) == -1,
+		"release over another item cancels original press");
 
 	tWorld = xuiWidgetGetWorldRect(pStatusBar);
 	tItem0 = xuiStatusBarGetItemRect(pStatusBar, 0);
@@ -329,6 +403,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetProgress(pStatusBar, 1) == 0.0f, "progress clamp low");
 	iRet = xuiStatusBarSetItemEnabled(pStatusBar, 6, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarIsItemEnabled(pStatusBar, 6), "enable item");
+	XUI_TEST_CHECK(xuiStatusBarSetItemEnabled(pStatusBar, 6, 0) == XUI_OK &&
+		xuiStatusBarIsItemClickable(pStatusBar, 6),
+		"clickable capability is independent from enabled state");
+	XUI_TEST_CHECK(xuiStatusBarSetItemEnabled(pStatusBar, 6, 1) == XUI_OK,
+		"restore enabled item");
 	iRet = xuiStatusBarSetItemClickable(pStatusBar, 1, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarIsItemClickable(pStatusBar, 1), "progress clickable");
 	strcpy(sMutableText, "Busy");
@@ -341,6 +420,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiStatusBarNear(xuiStatusBarGetItemRect(pStatusBar, 0).fW, 80.0f), "set width");
 	iRet = xuiStatusBarSetItemFlex(pStatusBar, 3, 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set flex");
+	XUI_TEST_CHECK(xuiStatusBarSetItemFlex(pStatusBar, 4, 1.0f) == XUI_OK &&
+		xuiStatusBarSetItemFlex(pStatusBar, 5, 1.0f) == XUI_OK &&
+		xuiStatusBarGetItemRect(pStatusBar, 3).fW > 0 &&
+		xuiStatusBarGetItemRect(pStatusBar, 4).fW > 0 &&
+		xuiStatusBarGetItemRect(pStatusBar, 5).fW > 0,
+		"flex items distribute remaining width in every section");
+	XUI_TEST_CHECK(xuiStatusBarSetItemWidth(pStatusBar, 4, 82.0f) == XUI_OK &&
+		xuiStatusBarSetItemWidth(pStatusBar, 5, 58.0f) == XUI_OK,
+		"restore fixed section widths");
 	iRet = xuiStatusBarSetItemWidth(pStatusBar, 0, NAN);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiStatusBarGetItem(pStatusBar, 0)->fWidth == 80.0f, "nan width rejected");
 	iRet = xuiStatusBarSetItemFlex(pStatusBar, 3, INFINITY);
@@ -352,6 +440,14 @@ int main(void)
 	tMetrics.fGap = NAN;
 	iRet = xuiStatusBarSetMetrics(pStatusBar, &tMetrics);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan metrics rejected");
+	iRet = xuiStatusBarGetMetrics(pStatusBar, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "metrics restored for geometry validation");
+	tMetrics.fGap = XUI_LAYOUT_UNBOUNDED;
+	XUI_TEST_CHECK(xuiStatusBarSetMetrics(pStatusBar, &tMetrics) == XUI_ERROR_INVALID_ARGUMENT,
+		"combined metric overflow rejected");
+	XUI_TEST_CHECK(xuiStatusBarSetItemWidth(pStatusBar, 0,
+		XUI_LAYOUT_UNBOUNDED * 2.0f) == XUI_ERROR_INVALID_ARGUMENT,
+		"out-of-range item width rejected");
 	iRet = xuiStatusBarGetColors(pStatusBar, &tColors);
 	XUI_TEST_CHECK(iRet == XUI_OK && tColors.iTextColor != 0u, "colors get");
 	XUI_TEST_CHECK((xuiStatusBarGetState(pStatusBar) & XUI_WIDGET_STATE_FOCUS) != 0u, "state focus");
@@ -376,6 +472,22 @@ int main(void)
 	XUI_TEST_CHECK(xuiStatusBarAddFlexibleSpacer(pStatusBar, XUI_STATUSBAR_SECTION_LEFT, INFINITY) == -1 && xuiStatusBarGetItemCount(pStatusBar) == iBefore, "infinite flex spacer rejected without mutation");
 	XUI_TEST_CHECK(xuiStatusBarAddText(pStatusBar, 99, "Bad", 20.0f, 0, 0) == -1 &&
 		xuiStatusBarGetItemCount(pStatusBar) == iBefore, "invalid add section rejected");
+
+	(void)xuiWidgetSetRect(pStatusBar, (xui_rect_t){20.0f, 260.0f, 40.0f, 28.0f});
+	(void)xuiStatusBarGetItemRect(pStatusBar, 4);
+	iRet = xuiStatusBarSetHoverIndex(pStatusBar, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetHoverIndex(pStatusBar) == -1,
+		"programmatic hover ignores fully clipped item");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pStatusBar, 3, &tNode) == XUI_OK &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0u && tNode.iActions == 0u &&
+		xuiWidgetPerformAccessibleAction(pStatusBar, 6u,
+			XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL) == XUI_ERROR_INVALID_STATE,
+		"clipped item exposes no accessibility actions");
+	(void)xuiWidgetSetRect(pStatusBar, (xui_rect_t){20.0f, 260.0f, 460.0f, 28.0f});
+	iRet = __xuiStatusBarLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore layout after clipping test");
 
 	tItem0 = xuiStatusBarGetItemRect(pStatusBar, 0);
 	iRet = __xuiStatusBarDispatchDown(pContext, 20.0f + tItem0.fX + 2.0f, 260.0f + tItem0.fY + 2.0f);

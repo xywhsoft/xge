@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -36,6 +37,16 @@ typedef struct xui_statusbar_resolved_t {
 static xui_statusbar_data_t* __xuiStatusBarGetData(xui_widget pWidget);
 static int __xuiStatusBarMetricsValid(const xui_statusbar_metrics_t* pMetrics);
 static int __xuiStatusBarColorsValid(const xui_statusbar_colors_t* pColors);
+
+static void __xuiStatusBarMarkChanged(xui_statusbar_data_t* pData)
+{
+	if ( pData != NULL && pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
+}
+
+static void __xuiStatusBarIncrementCount(int* pCount)
+{
+	if ( pCount != NULL && *pCount < INT_MAX ) (*pCount)++;
+}
 
 static char* __xuiStatusBarCopyString(const char* sText)
 {
@@ -72,11 +83,6 @@ static uint32_t __xuiStatusBarColorAlpha(uint32_t iColor, uint32_t iAlpha)
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
-static float __xuiStatusBarMax(float fA, float fB)
-{
-	return (fA > fB) ? fA : fB;
-}
-
 static int __xuiStatusBarSectionValid(int iSection)
 {
 	return (iSection == XUI_STATUSBAR_SECTION_LEFT) ||
@@ -98,7 +104,8 @@ static int __xuiStatusBarFloatValid(float fValue)
 
 static int __xuiStatusBarNonNegativeFloatValid(float fValue)
 {
-	return __xuiStatusBarFloatValid(fValue) && fValue >= 0.0f;
+	return __xuiStatusBarFloatValid(fValue) && fValue >= 0.0f &&
+	       fValue <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static int __xuiStatusBarItemValid(const xui_statusbar_item_t* pItem)
@@ -160,17 +167,35 @@ static int __xuiStatusBarDescValid(const xui_statusbar_desc_t* pDesc)
 
 static int __xuiStatusBarMetricsValid(const xui_statusbar_metrics_t* pMetrics)
 {
+	double fHorizontal;
+	double fVertical;
+	double fItemHorizontal;
+	double fItemVertical;
+
 	if ( pMetrics == NULL ) return 0;
 	if ( (pMetrics->iSize != 0) && (pMetrics->iSize < sizeof(*pMetrics)) ) return 0;
-	if ( !__xuiStatusBarFloatValid(pMetrics->fHeight) || (pMetrics->fHeight <= 0.0f) ||
+	if ( !__xuiStatusBarNonNegativeFloatValid(pMetrics->fHeight) || (pMetrics->fHeight <= 0.0f) ||
 	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fPaddingX) ||
 	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fPaddingY) ||
 	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fGap) ||
 	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fItemPaddingX) ||
 	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fItemPaddingY) ||
-	     !__xuiStatusBarFloatValid(pMetrics->fProgressHeight) || (pMetrics->fProgressHeight <= 0.0f) ||
+	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fProgressHeight) || (pMetrics->fProgressHeight <= 0.0f) ||
 	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fBorderWidth) ||
 	     !__xuiStatusBarNonNegativeFloatValid(pMetrics->fTopBorderWidth) ) {
+		return 0;
+	}
+	fHorizontal = (double)pMetrics->fPaddingX * 2.0 +
+		(double)pMetrics->fGap * (double)(XUI_STATUSBAR_ITEM_CAPACITY - 1);
+	fVertical = (double)pMetrics->fPaddingY * 2.0;
+	fItemHorizontal = (double)pMetrics->fItemPaddingX * 2.0;
+	fItemVertical = (double)pMetrics->fItemPaddingY * 2.0;
+	if ( fHorizontal > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fVertical > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fItemHorizontal > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fItemVertical > (double)XUI_LAYOUT_UNBOUNDED ||
+	     (double)pMetrics->fBorderWidth * 2.0 > (double)XUI_LAYOUT_UNBOUNDED ||
+	     (double)pMetrics->fTopBorderWidth + 1.0 > (double)XUI_LAYOUT_UNBOUNDED ) {
 		return 0;
 	}
 	return 1;
@@ -238,6 +263,7 @@ static xui_vec2_t __xuiStatusBarMeasureText(xui_widget pWidget, xui_font pFont, 
 {
 	xui_vec2_t tSize;
 	xui_proxy pProxy;
+	double fFallbackWidth;
 
 	tSize.fX = 0.0f;
 	tSize.fY = 16.0f;
@@ -249,7 +275,11 @@ static xui_vec2_t __xuiStatusBarMeasureText(xui_widget pWidget, xui_font pFont, 
 	     __xuiStatusBarNonNegativeFloatValid(tSize.fY) ) {
 		return tSize;
 	}
-	tSize.fX = (float)strlen(sText) * 7.0f;
+	fFallbackWidth = (double)strlen(sText) * 7.0;
+	if ( fFallbackWidth > (double)XUI_LAYOUT_UNBOUNDED ) {
+		fFallbackWidth = (double)XUI_LAYOUT_UNBOUNDED;
+	}
+	tSize.fX = (float)fFallbackWidth;
 	tSize.fY = 16.0f;
 	return tSize;
 }
@@ -305,21 +335,23 @@ static xui_font __xuiStatusBarStyleFont(xui_widget pWidget, xui_font pBaseFont)
 
 static void __xuiStatusBarResolve(xui_widget pWidget, const xui_statusbar_data_t* pData, xui_statusbar_resolved_t* pOut)
 {
+	xui_statusbar_metrics_t tMetrics;
+
 	memset(pOut, 0, sizeof(*pOut));
-	pOut->tMetrics = pData->tMetrics;
-	pOut->tMetrics.iSize = sizeof(pOut->tMetrics);
+	tMetrics = pData->tMetrics;
+	tMetrics.iSize = sizeof(tMetrics);
 	pOut->tColors = pData->tColors;
 	pOut->tColors.iSize = sizeof(pOut->tColors);
 	pOut->pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.height", &pOut->tMetrics.fHeight);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.padding.x", &pOut->tMetrics.fPaddingX);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.padding.y", &pOut->tMetrics.fPaddingY);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.gap", &pOut->tMetrics.fGap);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.item.padding.x", &pOut->tMetrics.fItemPaddingX);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.item.padding.y", &pOut->tMetrics.fItemPaddingY);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.progress.height", &pOut->tMetrics.fProgressHeight);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.border.width", &pOut->tMetrics.fBorderWidth);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.top_border.width", &pOut->tMetrics.fTopBorderWidth);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.height", &tMetrics.fHeight);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.padding.x", &tMetrics.fPaddingX);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.padding.y", &tMetrics.fPaddingY);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.gap", &tMetrics.fGap);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.item.padding.x", &tMetrics.fItemPaddingX);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.item.padding.y", &tMetrics.fItemPaddingY);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.progress.height", &tMetrics.fProgressHeight);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.border.width", &tMetrics.fBorderWidth);
+	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.top_border.width", &tMetrics.fTopBorderWidth);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.background.color", &pOut->tColors.iBackgroundColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.border.color", &pOut->tColors.iBorderColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.highlight.color", &pOut->tColors.iHighlightColor);
@@ -334,43 +366,69 @@ static void __xuiStatusBarResolve(xui_widget pWidget, const xui_statusbar_data_t
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.progress.track_color", &pOut->tColors.iProgressTrackColor);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.progress.fill_color", &pOut->tColors.iProgressFillColor);
 	pOut->pFont = __xuiStatusBarStyleFont(pWidget, pOut->pFont);
-	if ( pOut->tMetrics.fHeight <= 0.0f ) pOut->tMetrics.fHeight = 1.0f;
-	if ( pOut->tMetrics.fProgressHeight <= 0.0f ) pOut->tMetrics.fProgressHeight = 1.0f;
+	if ( tMetrics.fHeight <= 0.0f ) tMetrics.fHeight = 1.0f;
+	if ( tMetrics.fProgressHeight <= 0.0f ) tMetrics.fProgressHeight = 1.0f;
+	pOut->tMetrics = __xuiStatusBarMetricsValid(&tMetrics) ? tMetrics : pData->tMetrics;
+	pOut->tMetrics.iSize = sizeof(pOut->tMetrics);
 }
 
-static float __xuiStatusBarItemWidth(xui_widget pWidget, const xui_statusbar_item_t* pItem, const xui_statusbar_resolved_t* pResolved)
+static int __xuiStatusBarItemWidth(xui_widget pWidget, const xui_statusbar_item_t* pItem,
+	const xui_statusbar_resolved_t* pResolved, double* pWidth)
 {
 	xui_vec2_t tSize;
-	float fWidth;
+	double fWidth;
 
-	if ( (pItem == NULL) || (pResolved == NULL) ) return 0.0f;
-	if ( pItem->fWidth > 0.0f ) return pItem->fWidth;
-	if ( pItem->fFlex > 0.0f ) return 0.0f;
-	if ( pItem->iType == XUI_STATUSBAR_ITEM_PROGRESS ) return 92.0f;
-	if ( pItem->iType == XUI_STATUSBAR_ITEM_SPACER ) return 12.0f;
-	fWidth = 36.0f;
-	if ( (pItem->sText != NULL) && (pItem->sText[0] != '\0') ) {
-		tSize = __xuiStatusBarMeasureText(pWidget, pResolved->pFont, pItem->sText);
-		fWidth = tSize.fX + pResolved->tMetrics.fItemPaddingX * 2.0f;
+	if ( pWidget == NULL || pItem == NULL || pResolved == NULL || pWidth == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	return __xuiStatusBarMax(fWidth, 12.0f);
+	if ( pItem->fWidth > 0.0f ) fWidth = pItem->fWidth;
+	else if ( pItem->fFlex > 0.0f ) fWidth = 0.0;
+	else if ( pItem->iType == XUI_STATUSBAR_ITEM_PROGRESS ) fWidth = 92.0;
+	else if ( pItem->iType == XUI_STATUSBAR_ITEM_SPACER ) fWidth = 12.0;
+	else {
+		fWidth = 36.0;
+		if ( pItem->sText != NULL && pItem->sText[0] != '\0' ) {
+			tSize = __xuiStatusBarMeasureText(pWidget, pResolved->pFont, pItem->sText);
+			fWidth = (double)tSize.fX + (double)pResolved->tMetrics.fItemPaddingX * 2.0;
+		}
+		if ( fWidth < 12.0 ) fWidth = 12.0;
+	}
+	if ( fWidth < 0.0 || fWidth > (double)XUI_LAYOUT_UNBOUNDED ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	*pWidth = fWidth;
+	return XUI_OK;
 }
 
-static float __xuiStatusBarMeasureSection(xui_widget pWidget, xui_statusbar_data_t* pData, const xui_statusbar_resolved_t* pResolved, int iSection)
+static int __xuiStatusBarMeasureSection(xui_widget pWidget, const xui_statusbar_data_t* pData,
+	const xui_statusbar_resolved_t* pResolved, int iSection, double* pWidth, double* pFlex)
 {
-	float fTotal;
+	double fItemWidth;
+	double fTotal;
+	double fFlex;
 	int iCount;
+	int iRet;
 	int i;
 
-	fTotal = 0.0f;
+	if ( pWidget == NULL || pData == NULL || pResolved == NULL ||
+	     pWidth == NULL || pFlex == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	fTotal = 0.0;
+	fFlex = 0.0;
 	iCount = 0;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		if ( pData->arrItems[i].iSection != iSection ) continue;
-		if ( iCount > 0 ) fTotal += pResolved->tMetrics.fGap;
-		fTotal += __xuiStatusBarItemWidth(pWidget, &pData->arrItems[i], pResolved);
+		if ( iCount > 0 ) fTotal += (double)pResolved->tMetrics.fGap;
+		iRet = __xuiStatusBarItemWidth(pWidget, &pData->arrItems[i], pResolved, &fItemWidth);
+		if ( iRet != XUI_OK ) return iRet;
+		fTotal += fItemWidth;
+		if ( pData->arrItems[i].fFlex > 0.0f && pData->arrItems[i].fWidth <= 0.0f ) {
+			fFlex += pData->arrItems[i].fFlex;
+		}
 		iCount++;
 	}
-	return fTotal;
+	*pWidth = fTotal;
+	*pFlex = fFlex;
+	return XUI_OK;
 }
 
 static int __xuiStatusBarSectionCount(const xui_statusbar_data_t* pData, int iSection)
@@ -386,24 +444,45 @@ static int __xuiStatusBarSectionCount(const xui_statusbar_data_t* pData, int iSe
 	return iCount;
 }
 
-static int __xuiStatusBarLayoutSection(xui_widget pWidget, xui_statusbar_data_t* pData, const xui_statusbar_resolved_t* pResolved, int iSection, float fStart, float fEnd)
+static int __xuiStatusBarRectFromDouble(double fX, double fY, double fW, double fH,
+	xui_rect_t* pRect)
 {
-	xui_rect_t tRect;
-	float fTotal;
-	float fFixed;
-	float fFlexTotal;
-	float fFlexExtra;
-	float fCursor;
-	float fWidth;
-	float fAvailable;
+	double fRight;
+	double fBottom;
+	double fBound = (double)XUI_LAYOUT_UNBOUNDED;
+
+	if ( pRect == NULL || fW < 0.0 || fH < 0.0 ||
+	     fX < -fBound || fX > fBound || fY < -fBound || fY > fBound ||
+	     fW > fBound || fH > fBound ) return XUI_ERROR_INVALID_ARGUMENT;
+	fRight = fX + fW;
+	fBottom = fY + fH;
+	if ( fRight < -fBound || fRight > fBound ||
+	     fBottom < -fBound || fBottom > fBound ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pRect = xuiInternalRectFromFloatNearest((float)fX, (float)fY, (float)fW, (float)fH);
+	return XUI_OK;
+}
+
+static int __xuiStatusBarLayoutSection(xui_widget pWidget, const xui_statusbar_data_t* pData,
+	const xui_statusbar_resolved_t* pResolved, xui_rect_t* arrRects, int iSection,
+	double fStart, double fEnd, double fY, double fHeight)
+{
+	double fFixed;
+	double fFlexTotal;
+	double fFlexExtra;
+	double fCursor;
+	double fWidth;
+	double fAvailable;
+	double fVisibleStart;
+	double fVisibleEnd;
 	int iCount;
+	int iRet;
 	int i;
 
-	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pWidget == NULL || pData == NULL || pResolved == NULL || arrRects == NULL ||
+	     fEnd < fStart || fHeight < 0.0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	fAvailable = fEnd - fStart;
-	if ( fAvailable < 0.0f ) fAvailable = 0.0f;
-	fFixed = 0.0f;
-	fFlexTotal = 0.0f;
+	fFixed = 0.0;
+	fFlexTotal = 0.0;
 	iCount = 0;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		if ( pData->arrItems[i].iSection != iSection ) continue;
@@ -411,46 +490,34 @@ static int __xuiStatusBarLayoutSection(xui_widget pWidget, xui_statusbar_data_t*
 		if ( pData->arrItems[i].fFlex > 0.0f && pData->arrItems[i].fWidth <= 0.0f ) {
 			fFlexTotal += pData->arrItems[i].fFlex;
 		} else {
-			fFixed += __xuiStatusBarItemWidth(pWidget, &pData->arrItems[i], pResolved);
+			iRet = __xuiStatusBarItemWidth(pWidget, &pData->arrItems[i], pResolved, &fWidth);
+			if ( iRet != XUI_OK ) return iRet;
+			fFixed += fWidth;
 		}
 		iCount++;
 	}
-	fTotal = fFixed;
-	fFlexExtra = 0.0f;
+	fFlexExtra = 0.0;
 	if ( (fFlexTotal > 0.0f) && (fAvailable > fFixed) ) {
 		fFlexExtra = fAvailable - fFixed;
-		fTotal = fAvailable;
 	}
-	if ( iSection == XUI_STATUSBAR_SECTION_RIGHT ) {
-		fCursor = fEnd - fTotal;
-	} else if ( iSection == XUI_STATUSBAR_SECTION_CENTER ) {
-		fCursor = (fStart + fEnd - fTotal) * 0.5f;
-	} else {
-		fCursor = fStart;
-	}
-	if ( fCursor < fStart ) fCursor = fStart;
-	tRect = xuiWidgetGetRect(pWidget);
-	tRect.fX = 0.0f;
-	tRect.fY = 0.0f;
-	tRect = __xuiStatusBarInsetRect(tRect, 0.0f, pResolved->tMetrics.fPaddingY, 0.0f, pResolved->tMetrics.fPaddingY);
+	fCursor = fStart;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		if ( pData->arrItems[i].iSection != iSection ) continue;
 		if ( pData->arrItems[i].fFlex > 0.0f && pData->arrItems[i].fWidth <= 0.0f && (fFlexTotal > 0.0f) ) {
 			fWidth = fFlexExtra * (pData->arrItems[i].fFlex / fFlexTotal);
 		} else {
-			fWidth = __xuiStatusBarItemWidth(pWidget, &pData->arrItems[i], pResolved);
+			iRet = __xuiStatusBarItemWidth(pWidget, &pData->arrItems[i], pResolved, &fWidth);
+			if ( iRet != XUI_OK ) return iRet;
 		}
-		pData->arrItems[i].tRect = tRect;
-		pData->arrItems[i].tRect.fX = fCursor;
-		pData->arrItems[i].tRect.fW = fWidth;
-		if ( pData->arrItems[i].tRect.fX < fStart ) {
-			pData->arrItems[i].tRect.fW -= fStart - pData->arrItems[i].tRect.fX;
-			pData->arrItems[i].tRect.fX = fStart;
-		}
-		if ( (pData->arrItems[i].tRect.fX + pData->arrItems[i].tRect.fW) > fEnd ) {
-			pData->arrItems[i].tRect.fW = fEnd - pData->arrItems[i].tRect.fX;
-		}
-		if ( pData->arrItems[i].tRect.fW < 0.0f ) pData->arrItems[i].tRect.fW = 0.0f;
+		fVisibleStart = fCursor > fStart ? fCursor : fStart;
+		if ( fVisibleStart > fEnd ) fVisibleStart = fEnd;
+		fVisibleEnd = fCursor + fWidth;
+		if ( fVisibleEnd < fStart ) fVisibleEnd = fStart;
+		if ( fVisibleEnd > fEnd ) fVisibleEnd = fEnd;
+		if ( fVisibleEnd < fVisibleStart ) fVisibleEnd = fVisibleStart;
+		iRet = __xuiStatusBarRectFromDouble(fVisibleStart, fY,
+			fVisibleEnd - fVisibleStart, fHeight, &arrRects[i]);
+		if ( iRet != XUI_OK ) return iRet;
 		fCursor += fWidth + pResolved->tMetrics.fGap;
 	}
 	return XUI_OK;
@@ -458,49 +525,75 @@ static int __xuiStatusBarLayoutSection(xui_widget pWidget, xui_statusbar_data_t*
 
 static int __xuiStatusBarLayoutItems(xui_widget pWidget, xui_statusbar_data_t* pData, const xui_statusbar_resolved_t* pResolved)
 {
-	xui_rect_t tRect;
-	float fStart;
-	float fEnd;
-	float fAvailable;
-	float fLeftWidth;
-	float fCenterWidth;
-	float fRightWidth;
-	float fRightStart;
-	float fCenterStart;
-	float fCenterEnd;
-	float fCenterMaxStart;
-	float fCenterMinStart;
-	float fCenterIdeal;
-	float fLeftEnd;
+	xui_rect_t arrRects[XUI_STATUSBAR_ITEM_CAPACITY];
+	xui_rect_t tContent;
+	double fStart;
+	double fEnd;
+	double fY;
+	double fHeight;
+	double fAvailable;
+	double fLeftWidth;
+	double fCenterWidth;
+	double fRightWidth;
+	double fLeftFlex;
+	double fCenterFlex;
+	double fRightFlex;
+	double fFlexTotal;
+	double fSectionGaps;
+	double fMinimumTotal;
+	double fExtra;
+	double fRightStart;
+	double fCenterStart;
+	double fCenterEnd;
+	double fCenterMaxStart;
+	double fCenterMinStart;
+	double fCenterIdeal;
+	double fLeftEnd;
 	int bHasLeft;
 	int bHasCenter;
 	int bHasRight;
-	int bLeftFlex;
+	int iSectionCount;
+	int bSelectionChanged;
+	int iRet;
 	int i;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0; i < pData->iItemCount; i++ ) {
-		memset(&pData->arrItems[i].tRect, 0, sizeof(pData->arrItems[i].tRect));
+	if ( !__xuiStatusBarMetricsValid(&pResolved->tMetrics) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tContent = xuiInternalSnapRect(xuiWidgetGetContentRect(pWidget));
+	if ( tContent.fX < -(int)XUI_LAYOUT_UNBOUNDED || tContent.fX > (int)XUI_LAYOUT_UNBOUNDED ||
+	     tContent.fY < -(int)XUI_LAYOUT_UNBOUNDED || tContent.fY > (int)XUI_LAYOUT_UNBOUNDED ||
+	     tContent.fW > (int)XUI_LAYOUT_UNBOUNDED || tContent.fH > (int)XUI_LAYOUT_UNBOUNDED ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	tRect = xuiWidgetGetRect(pWidget);
-	fStart = pResolved->tMetrics.fPaddingX;
-	fEnd = tRect.fW - pResolved->tMetrics.fPaddingX;
+	memset(arrRects, 0, sizeof(arrRects));
+	fStart = (double)tContent.fX + (double)pResolved->tMetrics.fPaddingX;
+	fEnd = (double)tContent.fX + (double)tContent.fW - (double)pResolved->tMetrics.fPaddingX;
 	if ( fEnd < fStart ) fEnd = fStart;
+	fY = (double)tContent.fY + (double)pResolved->tMetrics.fPaddingY;
+	fHeight = (double)tContent.fH - (double)pResolved->tMetrics.fPaddingY * 2.0;
+	if ( fHeight < 0.0 ) fHeight = 0.0;
 	fAvailable = fEnd - fStart;
 	bHasLeft = __xuiStatusBarSectionCount(pData, XUI_STATUSBAR_SECTION_LEFT) > 0;
 	bHasCenter = __xuiStatusBarSectionCount(pData, XUI_STATUSBAR_SECTION_CENTER) > 0;
 	bHasRight = __xuiStatusBarSectionCount(pData, XUI_STATUSBAR_SECTION_RIGHT) > 0;
-	bLeftFlex = 0;
-	for ( i = 0; i < pData->iItemCount; i++ ) {
-		if ( pData->arrItems[i].iSection == XUI_STATUSBAR_SECTION_LEFT &&
-		     pData->arrItems[i].fFlex > 0.0f && pData->arrItems[i].fWidth <= 0.0f ) {
-			bLeftFlex = 1;
-			break;
-		}
+	iRet = __xuiStatusBarMeasureSection(pWidget, pData, pResolved,
+		XUI_STATUSBAR_SECTION_LEFT, &fLeftWidth, &fLeftFlex);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarMeasureSection(pWidget, pData, pResolved,
+		XUI_STATUSBAR_SECTION_CENTER, &fCenterWidth, &fCenterFlex);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarMeasureSection(pWidget, pData, pResolved,
+		XUI_STATUSBAR_SECTION_RIGHT, &fRightWidth, &fRightFlex);
+	if ( iRet != XUI_OK ) return iRet;
+	iSectionCount = bHasLeft + bHasCenter + bHasRight;
+	fSectionGaps = iSectionCount > 1 ?
+		(double)pResolved->tMetrics.fGap * (double)(iSectionCount - 1) : 0.0;
+	fMinimumTotal = fLeftWidth + fCenterWidth + fRightWidth + fSectionGaps;
+	fFlexTotal = fLeftFlex + fCenterFlex + fRightFlex;
+	if ( fMinimumTotal <= fAvailable && fFlexTotal > 0.0 ) {
+		fExtra = fAvailable - fMinimumTotal;
+		fLeftWidth += fExtra * (fLeftFlex / fFlexTotal);
+		fCenterWidth += fExtra * (fCenterFlex / fFlexTotal);
+		fRightWidth += fExtra * (fRightFlex / fFlexTotal);
 	}
-	fLeftWidth = __xuiStatusBarMeasureSection(pWidget, pData, pResolved, XUI_STATUSBAR_SECTION_LEFT);
-	fCenterWidth = __xuiStatusBarMeasureSection(pWidget, pData, pResolved, XUI_STATUSBAR_SECTION_CENTER);
-	fRightWidth = __xuiStatusBarMeasureSection(pWidget, pData, pResolved, XUI_STATUSBAR_SECTION_RIGHT);
 	if ( fRightWidth > fAvailable ) fRightWidth = fAvailable;
 	fRightStart = fEnd - fRightWidth;
 	fCenterEnd = fRightStart - ((bHasCenter && bHasRight) ? pResolved->tMetrics.fGap : 0.0f);
@@ -508,24 +601,40 @@ static int __xuiStatusBarLayoutItems(xui_widget pWidget, xui_statusbar_data_t* p
 	if ( fCenterWidth > fCenterEnd - fStart ) fCenterWidth = fCenterEnd - fStart;
 	if ( fCenterWidth < 0.0f ) fCenterWidth = 0.0f;
 	fCenterMaxStart = fCenterEnd - fCenterWidth;
-	fCenterMinStart = fStart + __xuiStatusBarMax(0.0f, fLeftWidth) +
+	fCenterMinStart = fStart + fLeftWidth +
 		((bHasLeft && bHasCenter) ? pResolved->tMetrics.fGap : 0.0f);
 	if ( fCenterMinStart > fCenterMaxStart ) fCenterMinStart = fCenterMaxStart;
 	fCenterIdeal = (fStart + fEnd - fCenterWidth) * 0.5f;
 	fCenterStart = fCenterIdeal;
 	if ( fCenterStart < fCenterMinStart ) fCenterStart = fCenterMinStart;
 	if ( fCenterStart > fCenterMaxStart ) fCenterStart = fCenterMaxStart;
-	if ( bLeftFlex && fCenterIdeal < fCenterMinStart ) fCenterStart = fCenterMaxStart;
 	if ( fCenterStart < fStart ) fCenterStart = fStart;
-	if ( bHasCenter ) {
-		fLeftEnd = fCenterStart - (bHasLeft ? pResolved->tMetrics.fGap : 0.0f);
-	} else {
-		fLeftEnd = fRightStart - ((bHasLeft && bHasRight) ? pResolved->tMetrics.fGap : 0.0f);
+	fLeftEnd = fStart + fLeftWidth;
+	if ( fMinimumTotal > fAvailable ) {
+		fLeftEnd = bHasCenter ? fCenterStart - (bHasLeft ? pResolved->tMetrics.fGap : 0.0f) :
+			fRightStart - ((bHasLeft && bHasRight) ? pResolved->tMetrics.fGap : 0.0f);
 	}
 	if ( fLeftEnd < fStart ) fLeftEnd = fStart;
-	if ( bHasLeft ) (void)__xuiStatusBarLayoutSection(pWidget, pData, pResolved, XUI_STATUSBAR_SECTION_LEFT, fStart, fLeftEnd);
-	if ( bHasCenter ) (void)__xuiStatusBarLayoutSection(pWidget, pData, pResolved, XUI_STATUSBAR_SECTION_CENTER, fCenterStart, fCenterStart + fCenterWidth);
-	if ( bHasRight ) (void)__xuiStatusBarLayoutSection(pWidget, pData, pResolved, XUI_STATUSBAR_SECTION_RIGHT, fRightStart, fEnd);
+	if ( fLeftEnd > fEnd ) fLeftEnd = fEnd;
+	if ( bHasLeft ) iRet = __xuiStatusBarLayoutSection(pWidget, pData, pResolved, arrRects,
+		XUI_STATUSBAR_SECTION_LEFT, fStart, fLeftEnd, fY, fHeight);
+	if ( iRet == XUI_OK && bHasCenter ) iRet = __xuiStatusBarLayoutSection(pWidget, pData,
+		pResolved, arrRects, XUI_STATUSBAR_SECTION_CENTER, fCenterStart,
+		fCenterStart + fCenterWidth, fY, fHeight);
+	if ( iRet == XUI_OK && bHasRight ) iRet = __xuiStatusBarLayoutSection(pWidget, pData,
+		pResolved, arrRects, XUI_STATUSBAR_SECTION_RIGHT, fRightStart, fEnd, fY, fHeight);
+	if ( iRet != XUI_OK ) return iRet;
+	bSelectionChanged = 0;
+	if ( pData->iHover >= 0 &&
+	     (pData->iHover >= pData->iItemCount || arrRects[pData->iHover].fW <= 0 ||
+	      arrRects[pData->iHover].fH <= 0) ) {
+		pData->iHover = -1;
+		bSelectionChanged = 1;
+	}
+	for ( i = 0; i < pData->iItemCount; i++ ) pData->arrItems[i].tRect = arrRects[i];
+	if ( bSelectionChanged ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
 	return XUI_OK;
 }
 
@@ -537,6 +646,35 @@ static int __xuiStatusBarIndexAt(xui_statusbar_data_t* pData, float fX, float fY
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		if ( __xuiStatusBarItemInteractive(&pData->arrItems[i]) &&
 		     __xuiStatusBarRectContains(pData->arrItems[i].tRect, fX, fY) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xuiStatusBarVisualIndexAt(xui_statusbar_data_t* pData, float fX, float fY)
+{
+	int i;
+
+	if ( pData == NULL ) return -1;
+	for ( i = 0; i < pData->iItemCount; i++ ) {
+		if ( pData->arrItems[i].iType != XUI_STATUSBAR_ITEM_SPACER &&
+		     pData->arrItems[i].tRect.fW > 0 && pData->arrItems[i].tRect.fH > 0 &&
+		     __xuiStatusBarRectContains(pData->arrItems[i].tRect, fX, fY) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xuiStatusBarFirstVisibleItem(xui_statusbar_data_t* pData)
+{
+	int i;
+
+	if ( pData == NULL ) return -1;
+	for ( i = 0; i < pData->iItemCount; i++ ) {
+		if ( pData->arrItems[i].iType != XUI_STATUSBAR_ITEM_SPACER &&
+		     pData->arrItems[i].tRect.fW > 0 && pData->arrItems[i].tRect.fH > 0 ) {
 			return i;
 		}
 	}
@@ -584,22 +722,47 @@ static int __xuiStatusBarNextInteractive(xui_statusbar_data_t* pData, int iCurre
 	return -1;
 }
 
+static int __xuiStatusBarInvalidateLocalRect(xui_widget pWidget, xui_rect_t tRect)
+{
+	xui_rect_t tWidget;
+	int64_t iContentW;
+	int64_t iContentH;
+	int64_t iLeft;
+	int64_t iTop;
+	int64_t iRight;
+	int64_t iBottom;
+
+	if ( pWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW <= 0 || tRect.fH <= 0 ) return XUI_OK;
+	tWidget = xuiWidgetGetRect(pWidget);
+	iContentW = tWidget.fW > 0 ? (int64_t)tWidget.fW : 0;
+	iContentH = tWidget.fH > 0 ? (int64_t)tWidget.fH : 0;
+	iLeft = (int64_t)tRect.fX - 2;
+	iTop = (int64_t)tRect.fY - 2;
+	iRight = (int64_t)tRect.fX + (int64_t)tRect.fW + 2;
+	iBottom = (int64_t)tRect.fY + (int64_t)tRect.fH + 2;
+	if ( iLeft < 0 ) iLeft = 0;
+	if ( iTop < 0 ) iTop = 0;
+	if ( iRight > iContentW ) iRight = iContentW;
+	if ( iBottom > iContentH ) iBottom = iContentH;
+	tRect = (xui_rect_t){
+		(int)iLeft,
+		(int)iTop,
+		(int)(iRight > iLeft ? iRight - iLeft : 0),
+		(int)(iBottom > iTop ? iBottom - iTop : 0)
+	};
+	if ( tRect.fW <= 0 || tRect.fH <= 0 ) return XUI_OK;
+	return xuiWidgetInvalidateRect(pWidget, tRect,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiStatusBarInvalidateItem(xui_widget pWidget, xui_statusbar_data_t* pData, int iIndex)
 {
-	xui_rect_t tRect;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
 		return XUI_OK;
 	}
-	tRect = pData->arrItems[iIndex].tRect;
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		return XUI_OK;
-	}
-	tRect.fX -= 2.0f;
-	tRect.fY -= 2.0f;
-	tRect.fW += 4.0f;
-	tRect.fH += 4.0f;
-	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiStatusBarInvalidateLocalRect(pWidget, pData->arrItems[iIndex].tRect);
 }
 
 static int __xuiStatusBarSetHover(xui_widget pWidget, xui_statusbar_data_t* pData, int iIndex)
@@ -608,7 +771,9 @@ static int __xuiStatusBarSetHover(xui_widget pWidget, xui_statusbar_data_t* pDat
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) || !__xuiStatusBarItemInteractive(&pData->arrItems[iIndex]) ) {
+	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) ||
+	     !__xuiStatusBarItemInteractive(&pData->arrItems[iIndex]) ||
+	     pData->arrItems[iIndex].tRect.fW <= 0 || pData->arrItems[iIndex].tRect.fH <= 0 ) {
 		iIndex = -1;
 	}
 	if ( pData->iHover == iIndex ) return XUI_OK;
@@ -651,6 +816,7 @@ static int __xuiStatusBarSelect(xui_widget pWidget, xui_statusbar_data_t* pData,
 	xui_statusbar_select_proc onSelect;
 	void* pSelectUser;
 	int iValue;
+	int iOldSelectCount;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ||
@@ -658,10 +824,11 @@ static int __xuiStatusBarSelect(xui_widget pWidget, xui_statusbar_data_t* pData,
 	     !__xuiStatusBarItemInteractive(&pData->arrItems[iIndex]) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pData->iSelectCount++;
+	iOldSelectCount = pData->iSelectCount;
+	__xuiStatusBarIncrementCount(&pData->iSelectCount);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
-		pData->iSelectCount--;
+		pData->iSelectCount = iOldSelectCount;
 		return iRet;
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
@@ -691,11 +858,14 @@ static int __xuiStatusBarDrawProgress(xui_proxy pProxy, xui_draw_context pDraw, 
 	float fRatio;
 	double fRange;
 	double fValue;
+	float fProgressHeight;
 	int iRet;
 
 	tTrack = __xuiStatusBarInsetRect(tRect, pResolved->tMetrics.fItemPaddingX, 0.0f, pResolved->tMetrics.fItemPaddingX, 0.0f);
-	tTrack.fY += (tTrack.fH - pResolved->tMetrics.fProgressHeight) * 0.5f;
-	tTrack.fH = pResolved->tMetrics.fProgressHeight;
+	fProgressHeight = pResolved->tMetrics.fProgressHeight;
+	if ( fProgressHeight > tTrack.fH ) fProgressHeight = (float)tTrack.fH;
+	tTrack.fY += (tTrack.fH - fProgressHeight) * 0.5f;
+	tTrack.fH = fProgressHeight;
 	if ( tTrack.fW <= 0.0f || tTrack.fH <= 0.0f ) return XUI_OK;
 	iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tTrack), pResolved->tColors.iProgressTrackColor);
 	if ( iRet != XUI_OK ) return iRet;
@@ -734,7 +904,8 @@ static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	pData = __xuiStatusBarGetData(pWidget);
 	if ( (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiStatusBarResolve(pWidget, pData, &tResolved);
-	(void)__xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	tRect = xuiWidgetGetRect(pWidget);
@@ -744,12 +915,15 @@ static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	if ( iRet != XUI_OK ) return iRet;
 	if ( tResolved.tMetrics.fTopBorderWidth > 0.0f ) {
 		tLine = (xui_rect_t){0.0f, 0.0f, tRect.fW, tResolved.tMetrics.fTopBorderWidth};
+		if ( tLine.fH > tRect.fH ) tLine.fH = tRect.fH;
 		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), tResolved.tColors.iBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 		tLine.fY += tResolved.tMetrics.fTopBorderWidth;
-		tLine.fH = 1.0f;
-		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), tResolved.tColors.iHighlightColor);
-		if ( iRet != XUI_OK ) return iRet;
+		tLine.fH = tLine.fY < tRect.fH ? 1.0f : 0.0f;
+		if ( tLine.fH > 0.0f ) {
+			iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), tResolved.tColors.iHighlightColor);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 	}
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		if ( (pData->arrItems[i].tRect.fW <= 0.0f) || (pData->arrItems[i].tRect.fH <= 0.0f) ||
@@ -761,7 +935,7 @@ static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		iText = ((pData->arrItems[i].iState & XUI_STATUSBAR_ITEM_ENABLED) != 0u) ?
 			tResolved.tColors.iTextColor : tResolved.tColors.iDisabledTextColor;
 		bPressed = 0;
-		if ( i == pData->iActive ) {
+		if ( i == pData->iActive && i == pData->iHover ) {
 			iFill = tResolved.tColors.iActiveColor;
 			iBorder = __xuiStatusBarColorAlpha(tResolved.tColors.iActiveColor, 235);
 			iText = tResolved.iActiveTextColor;
@@ -800,9 +974,13 @@ static int __xuiStatusBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 {
 	xui_statusbar_data_t* pData;
 	xui_statusbar_resolved_t tResolved;
-	float fLeft;
-	float fCenter;
-	float fRight;
+	double fLeft;
+	double fCenter;
+	double fRight;
+	double fUnusedFlex;
+	double fWidth;
+	int iSectionCount;
+	int iRet;
 
 	(void)tConstraint;
 	(void)pUser;
@@ -810,11 +988,23 @@ static int __xuiStatusBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	pData = __xuiStatusBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiStatusBarResolve(pWidget, pData, &tResolved);
-	fLeft = __xuiStatusBarMeasureSection(pWidget, pData, &tResolved, XUI_STATUSBAR_SECTION_LEFT);
-	fCenter = __xuiStatusBarMeasureSection(pWidget, pData, &tResolved, XUI_STATUSBAR_SECTION_CENTER);
-	fRight = __xuiStatusBarMeasureSection(pWidget, pData, &tResolved, XUI_STATUSBAR_SECTION_RIGHT);
-	pSize->fX = tResolved.tMetrics.fPaddingX * 2.0f + fLeft + fCenter + fRight + tResolved.tMetrics.fGap * 2.0f;
-	pSize->fY = tResolved.tMetrics.fHeight;
+	iRet = __xuiStatusBarMeasureSection(pWidget, pData, &tResolved,
+		XUI_STATUSBAR_SECTION_LEFT, &fLeft, &fUnusedFlex);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarMeasureSection(pWidget, pData, &tResolved,
+		XUI_STATUSBAR_SECTION_CENTER, &fCenter, &fUnusedFlex);
+	if ( iRet == XUI_OK ) iRet = __xuiStatusBarMeasureSection(pWidget, pData, &tResolved,
+		XUI_STATUSBAR_SECTION_RIGHT, &fRight, &fUnusedFlex);
+	if ( iRet != XUI_OK ) return iRet;
+	iSectionCount = (__xuiStatusBarSectionCount(pData, XUI_STATUSBAR_SECTION_LEFT) > 0) +
+		(__xuiStatusBarSectionCount(pData, XUI_STATUSBAR_SECTION_CENTER) > 0) +
+		(__xuiStatusBarSectionCount(pData, XUI_STATUSBAR_SECTION_RIGHT) > 0);
+	fWidth = (double)tResolved.tMetrics.fPaddingX * 2.0 + fLeft + fCenter + fRight;
+	if ( iSectionCount > 1 ) {
+		fWidth += (double)tResolved.tMetrics.fGap * (double)(iSectionCount - 1);
+	}
+	if ( fWidth > (double)XUI_LAYOUT_UNBOUNDED ) fWidth = (double)XUI_LAYOUT_UNBOUNDED;
+	pSize->fX = xuiInternalSnapSize((float)fWidth);
+	pSize->fY = xuiInternalSnapSize(tResolved.tMetrics.fHeight);
 	return XUI_OK;
 }
 
@@ -837,7 +1027,8 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	pData = __xuiStatusBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiStatusBarResolve(pWidget, pData, &tResolved);
-	(void)__xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	pContext = xuiWidgetGetContext(pWidget);
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	fLocalX = pEvent->fX - tWorld.fX;
@@ -850,14 +1041,20 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
 			return XUI_OK;
 		}
+		if ( pData->iActive >= 0 ) {
+			iIndex = iIndex == pData->iActive ? pData->iActive : -1;
+		}
 		iRet = __xuiStatusBarSetHover(pWidget, pData, iIndex);
 		if ( iRet != XUI_OK ) return iRet;
 		return (pData->iActive >= 0) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_LEAVE:
-		if ( pData->iActive < 0 ) {
-			return __xuiStatusBarSetHover(pWidget, pData, -1);
+		if ( pData->tPointerOwner.bActive &&
+		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
 		}
-		return XUI_OK;
+		iRet = __xuiStatusBarSetHover(pWidget, pData, -1);
+		if ( iRet != XUI_OK ) return iRet;
+		return pData->iActive >= 0 ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
 		if ( !xuiWidgetGetEnabled(pWidget) || !bLeftButton || (iIndex < 0) ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive ) {
@@ -908,25 +1105,35 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		pData->iActive = -1;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_CONTEXT_MENU: {
+		xui_statusbar_context_proc onContext;
+		void* pContextUser;
 		xui_rect_t tAnchor = tWorld;
 		float fX;
 		float fY;
+		int iContextIndex;
+		int iValue;
 		if ( pData->onContext == NULL ) break;
 		if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
-			iIndex = (pData->iHover >= 0) ? pData->iHover : __xuiStatusBarFirstInteractive(pData);
-			if ( iIndex >= 0 ) {
-				tAnchor = pData->arrItems[iIndex].tRect;
+			iContextIndex = (pData->iHover >= 0) ? pData->iHover :
+				__xuiStatusBarFirstVisibleItem(pData);
+			if ( iContextIndex >= 0 ) {
+				tAnchor = pData->arrItems[iContextIndex].tRect;
 				tAnchor.fX += tWorld.fX;
 				tAnchor.fY += tWorld.fY;
 			}
-		} else if ( iIndex >= 0 ) {
-			iRet = __xuiStatusBarSetHover(pWidget, pData, iIndex);
-			if ( iRet != XUI_OK ) return iRet;
+		} else {
+			iContextIndex = __xuiStatusBarVisualIndexAt(pData, fLocalX, fLocalY);
+			if ( iContextIndex >= 0 &&
+			     __xuiStatusBarItemInteractive(&pData->arrItems[iContextIndex]) ) {
+				iRet = __xuiStatusBarSetHover(pWidget, pData, iContextIndex);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 		}
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
-		return pData->onContext(pWidget, iIndex,
-			(iIndex >= 0) ? pData->arrItems[iIndex].iValue : 0,
-			fX, fY, pData->pContextUser);
+		onContext = pData->onContext;
+		pContextUser = pData->pContextUser;
+		iValue = iContextIndex >= 0 ? pData->arrItems[iContextIndex].iValue : 0;
+		return onContext(pWidget, iContextIndex, iValue, fX, fY, pContextUser);
 	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
@@ -1069,10 +1276,12 @@ static int __xuiStatusBarAccessibleGet(xui_widget pWidget, int iIndex,
 	xui_rect_t tWorld;
 	xui_rect_t tItem;
 	int iItem;
+	int iRet;
 
 	if ( pData == NULL || pNode == NULL || iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiStatusBarResolve(pWidget, pData, &tResolved);
-	(void)__xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	if ( iIndex == 0 ) {
 		pNode->iId = 1;
@@ -1096,7 +1305,8 @@ static int __xuiStatusBarAccessibleGet(xui_widget pWidget, int iIndex,
 	pNode->iId = (uint64_t)iItem + 2u;
 	pNode->iParentId = 1;
 	pNode->iRole = pItem->iType == XUI_STATUSBAR_ITEM_PROGRESS ? XUI_ACCESSIBLE_ROLE_PROGRESS :
-		(__xuiStatusBarItemInteractive(pItem) ? XUI_ACCESSIBLE_ROLE_BUTTON : XUI_ACCESSIBLE_ROLE_TEXT);
+		((pItem->iState & XUI_STATUSBAR_ITEM_CLICKABLE) != 0u ?
+		 XUI_ACCESSIBLE_ROLE_BUTTON : XUI_ACCESSIBLE_ROLE_TEXT);
 	pNode->sName = (pItem->sText != NULL && pItem->sText[0] != '\0') ? pItem->sText :
 		(pItem->iType == XUI_STATUSBAR_ITEM_PROGRESS ? "Progress" : "Status");
 	tItem = pItem->tRect;
@@ -1113,7 +1323,7 @@ static int __xuiStatusBarAccessibleGet(xui_widget pWidget, int iIndex,
 		pNode->tRange.fMin = pItem->fMin;
 		pNode->tRange.fMax = pItem->fMax;
 	}
-	if ( __xuiStatusBarItemInteractive(pItem) ) {
+	if ( __xuiStatusBarItemInteractive(pItem) && tItem.fW > 0 && tItem.fH > 0 ) {
 		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_SELECTABLE;
 		if ( iItem == pData->iHover ) {
 			pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
@@ -1143,13 +1353,15 @@ static int __xuiStatusBarAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 	}
 	if ( iNodeId < 2 || iNodeId > (uint64_t)pData->iItemCount + 1u ) return XUI_ERROR_NOT_FOUND;
 	iItem = (int)iNodeId - 2;
+	if ( pData->arrItems[iItem].iType == XUI_STATUSBAR_ITEM_SPACER ) return XUI_ERROR_NOT_FOUND;
 	__xuiStatusBarResolve(pWidget, pData, &tResolved);
-	(void)__xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiStatusBarItemInteractive(&pData->arrItems[iItem]) ) return XUI_ERROR_INVALID_STATE;
+	if ( pData->arrItems[iItem].tRect.fW <= 0 || pData->arrItems[iItem].tRect.fH <= 0 ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
 	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS ) {
-		if ( pData->arrItems[iItem].tRect.fW <= 0.0f || pData->arrItems[iItem].tRect.fH <= 0.0f ) {
-			return XUI_ERROR_INVALID_STATE;
-		}
 		iRet = __xuiStatusBarSetHover(pWidget, pData, iItem);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( __xuiStatusBarGetData(pWidget) != pData ) return XUI_OK;
@@ -1379,7 +1591,7 @@ XUI_API int xuiStatusBarSetItems(xui_widget pWidget, const xui_statusbar_item_t*
 	pData->iItemCount = iCount;
 	pData->iHover = -1;
 	pData->iActive = -1;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		memcpy(pData->arrItems, arrOld, sizeof(arrOld));
@@ -1425,7 +1637,7 @@ static int __xuiStatusBarAddItem(xui_widget pWidget, const xui_statusbar_item_t*
 		if ( pItem->fValue < pItem->fMin ) pItem->fValue = pItem->fMin;
 		if ( pItem->fValue > pItem->fMax ) pItem->fValue = pItem->fMax;
 	}
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		xrtFree(pData->arrOwnedTexts[iIndex]);
@@ -1517,7 +1729,7 @@ XUI_API int xuiStatusBarClear(xui_widget pWidget)
 	pData->iItemCount = 0;
 	pData->iHover = -1;
 	pData->iActive = -1;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		memcpy(pData->arrItems, arrOld, sizeof(arrOld));
@@ -1565,7 +1777,7 @@ XUI_API xui_rect_t xuiStatusBarGetItemRect(xui_widget pWidget, int iIndex)
 	memset(&tRect, 0, sizeof(tRect));
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return tRect;
 	__xuiStatusBarResolve(pWidget, pData, &tResolved);
-	(void)__xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiStatusBarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return tRect;
 	return pData->arrItems[iIndex].tRect;
 }
 
@@ -1575,7 +1787,7 @@ XUI_API int xuiStatusBarGetItemAt(xui_widget pWidget, float fX, float fY)
 	xui_statusbar_resolved_t tResolved;
 	if ( pData == NULL ) return -1;
 	__xuiStatusBarResolve(pWidget, pData, &tResolved);
-	(void)__xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiStatusBarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return -1;
 	return __xuiStatusBarIndexAt(pData, fX, fY);
 }
 
@@ -1604,7 +1816,7 @@ XUI_API int xuiStatusBarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnab
 		pData->arrItems[iIndex].iState &= ~XUI_STATUSBAR_ITEM_ENABLED;
 		if ( pData->iHover == iIndex ) pData->iHover = -1;
 	}
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].iState = iOldState;
@@ -1649,7 +1861,7 @@ XUI_API int xuiStatusBarSetItemClickable(xui_widget pWidget, int iIndex, int bCl
 		pData->arrItems[iIndex].iState &= ~XUI_STATUSBAR_ITEM_CLICKABLE;
 		if ( pData->iHover == iIndex ) pData->iHover = -1;
 	}
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].iState = iOldState;
@@ -1666,7 +1878,7 @@ XUI_API int xuiStatusBarIsItemClickable(xui_widget pWidget, int iIndex)
 {
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return 0;
-	return __xuiStatusBarItemInteractive(&pData->arrItems[iIndex]);
+	return (pData->arrItems[iIndex].iState & XUI_STATUSBAR_ITEM_CLICKABLE) != 0u;
 }
 
 XUI_API int xuiStatusBarSetItemText(xui_widget pWidget, int iIndex, const char* sText)
@@ -1687,7 +1899,7 @@ XUI_API int xuiStatusBarSetItemText(xui_widget pWidget, int iIndex, const char* 
 	iOldChangeCount = pData->iChangeCount;
 	pData->arrOwnedTexts[iIndex] = sCopy;
 	pData->arrItems[iIndex].sText = sCopy != NULL ? sCopy : "";
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrOwnedTexts[iIndex] = sOld;
@@ -1708,7 +1920,7 @@ XUI_API int xuiStatusBarSetItemValue(xui_widget pWidget, int iIndex, int iValue)
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->arrItems[iIndex].iValue == iValue ) return XUI_OK;
 	pData->arrItems[iIndex].iValue = iValue;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
@@ -1731,7 +1943,7 @@ XUI_API int xuiStatusBarSetItemWidth(xui_widget pWidget, int iIndex, float fWidt
 	fOldWidth = pData->arrItems[iIndex].fWidth;
 	iOldChangeCount = pData->iChangeCount;
 	pData->arrItems[iIndex].fWidth = fWidth;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].fWidth = fOldWidth;
@@ -1756,7 +1968,7 @@ XUI_API int xuiStatusBarSetItemFlex(xui_widget pWidget, int iIndex, float fFlex)
 	iOldChangeCount = pData->iChangeCount;
 	pData->arrItems[iIndex].fFlex = fFlex;
 	if ( fFlex > 0.0f ) pData->arrItems[iIndex].fWidth = 0.0f;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].fFlex = fOldFlex;
@@ -1784,7 +1996,7 @@ XUI_API int xuiStatusBarSetProgress(xui_widget pWidget, int iIndex, float fValue
 	fOldValue = pItem->fValue;
 	iOldChangeCount = pData->iChangeCount;
 	pItem->fValue = fValue;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pItem->fValue = fOldValue;
@@ -1798,7 +2010,8 @@ XUI_API int xuiStatusBarSetProgress(xui_widget pWidget, int iIndex, float fValue
 XUI_API float xuiStatusBarGetProgress(xui_widget pWidget, int iIndex)
 {
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
-	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return 0.0f;
+	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ||
+	     pData->arrItems[iIndex].iType != XUI_STATUSBAR_ITEM_PROGRESS ) return 0.0f;
 	return pData->arrItems[iIndex].fValue;
 }
 
@@ -1811,7 +2024,12 @@ XUI_API int xuiStatusBarGetHoverIndex(xui_widget pWidget)
 XUI_API int xuiStatusBarSetHoverIndex(xui_widget pWidget, int iIndex)
 {
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
+	xui_statusbar_resolved_t tResolved;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiStatusBarResolve(pWidget, pData, &tResolved);
+	iRet = __xuiStatusBarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiStatusBarSetHover(pWidget, pData, iIndex);
 }
 
@@ -1832,7 +2050,7 @@ XUI_API int xuiStatusBarSetFont(xui_widget pWidget, xui_font pFont)
 	pOldFont = pData->pFont;
 	iOldChangeCount = pData->iChangeCount;
 	pData->pFont = pFont;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->pFont = pOldFont;
@@ -1863,7 +2081,7 @@ XUI_API int xuiStatusBarSetMetrics(xui_widget pWidget, const xui_statusbar_metri
 	tOld = pData->tMetrics;
 	iOldChangeCount = pData->iChangeCount;
 	pData->tMetrics = tNew;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->tMetrics = tOld;
@@ -1897,7 +2115,7 @@ XUI_API int xuiStatusBarSetColors(xui_widget pWidget, const xui_statusbar_colors
 	tOld = pData->tColors;
 	iOldChangeCount = pData->iChangeCount;
 	pData->tColors = tNew;
-	pData->iChangeCount++;
+	__xuiStatusBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->tColors = tOld;
