@@ -2,6 +2,7 @@
 #if XUI_ENABLE_INVENTORY_GRID
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -149,6 +150,13 @@ static int __xuiInventoryMinInt(int iA, int iB)
 	return (iA < iB) ? iA : iB;
 }
 
+static void __xuiInventoryIncrementCounter(int* pValue)
+{
+	if ( (pValue != NULL) && (*pValue < INT_MAX) ) {
+		(*pValue)++;
+	}
+}
+
 static int __xuiInventoryFloatValid(float fValue)
 {
 	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
@@ -293,6 +301,11 @@ static int __xuiInventoryWidgetAlive(xui_widget pWidget)
 static int __xuiInventoryDataAlive(xui_widget pWidget, const xui_inventory_grid_data_t* pData)
 {
 	return (pData != NULL) && (__xuiInventoryGetData(pWidget) == pData);
+}
+
+static int __xuiInventoryCanInteract(xui_widget pWidget)
+{
+	return xuiWidgetGetEffectiveEnabled(pWidget) && xuiWidgetGetEffectiveVisible(pWidget);
 }
 
 static int __xuiInventoryLayoutValid(const xui_inventory_grid_layout_t* pLayout)
@@ -575,7 +588,11 @@ static int __xuiInventoryComputeColumns(const xui_inventory_grid_data_t* pData, 
 		return 1;
 	}
 	if ( pStyle->tLayout.iColumns > 0 ) {
-		return pStyle->tLayout.iColumns;
+		iColumns = pStyle->tLayout.iColumns;
+		if ( (pData->iSlotCount > 0) && (iColumns > pData->iSlotCount) ) {
+			iColumns = pData->iSlotCount;
+		}
+		return iColumns;
 	}
 	fUnit = pStyle->tLayout.fSlotSize + pStyle->tLayout.fSlotGap;
 	if ( fUnit <= 0.0f ) {
@@ -1145,13 +1162,18 @@ static void __xuiInventorySortIndices(xui_inventory_sort_context_t* pSort, int* 
 static int __xuiInventorySetHover(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot)
 {
 	int iOldSlot;
+	int iRet;
 
 	if ( (pData == NULL) || (pData->iHoverSlot == iSlot) ) {
 		return XUI_OK;
 	}
 	iOldSlot = pData->iHoverSlot;
 	pData->iHoverSlot = iSlot;
-	return __xuiInventoryInvalidateHoverSlots(pWidget, pData, iOldSlot, iSlot);
+	iRet = __xuiInventoryInvalidateHoverSlots(pWidget, pData, iOldSlot, iSlot);
+	if ( iRet != XUI_OK ) {
+		pData->iHoverSlot = iOldSlot;
+	}
+	return iRet;
 }
 
 static void __xuiInventoryNotifySelect(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot)
@@ -1159,7 +1181,7 @@ static void __xuiInventoryNotifySelect(xui_widget pWidget, xui_inventory_grid_da
 	if ( pData == NULL ) {
 		return;
 	}
-	pData->iSelectCount++;
+	__xuiInventoryIncrementCounter(&pData->iSelectCount);
 	if ( pData->onSelect != NULL ) {
 		pData->onSelect(pWidget, iSlot, pData->pSelectUser);
 	}
@@ -1170,7 +1192,7 @@ static void __xuiInventoryNotifyActivate(xui_widget pWidget, xui_inventory_grid_
 	if ( pData == NULL ) {
 		return;
 	}
-	pData->iActivateCount++;
+	__xuiInventoryIncrementCounter(&pData->iActivateCount);
 	if ( pData->onActivate != NULL ) {
 		pData->onActivate(pWidget, iSlot, iButton, pData->pActivateUser);
 	}
@@ -1233,7 +1255,7 @@ static int __xuiInventorySetCurrentInternal(xui_widget pWidget, xui_inventory_gr
 	if ( iSlot >= 0 ) {
 		pData->iAnchorSlot = iSlot;
 	}
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	if ( bNotify ) {
 		__xuiInventoryNotifySelect(pWidget, pData, iSlot);
@@ -1271,7 +1293,7 @@ static int __xuiInventorySelectRange(xui_widget pWidget, xui_inventory_grid_data
 		}
 	}
 	pData->iCurrent = iTo;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	if ( bNotify ) {
@@ -1304,7 +1326,7 @@ static int __xuiInventorySelectSlot(xui_widget pWidget, xui_inventory_grid_data_
 		pData->arrSlots[iSlot].iFlags |= XUI_INVENTORY_SLOT_SELECTED;
 		pData->iCurrent = iSlot;
 		pData->iAnchorSlot = iSlot;
-		pData->iChangeCount++;
+		__xuiInventoryIncrementCounter(&pData->iChangeCount);
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 		if ( bNotify ) __xuiInventoryNotifySelect(pWidget, pData, iSlot);
@@ -1331,7 +1353,7 @@ static int __xuiInventorySelectSlot(xui_widget pWidget, xui_inventory_grid_data_
 	}
 	pData->iCurrent = iSlot;
 	pData->iAnchorSlot = iSlot;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	if ( bNotify ) __xuiInventoryNotifySelect(pWidget, pData, iSlot);
@@ -2108,7 +2130,14 @@ static int __xuiInventoryPointerMove(xui_widget pWidget, xui_inventory_grid_data
 	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) {
 		return XUI_OK;
 	}
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return __xuiInventorySetHover(pWidget, pData, -1);
+	if ( !__xuiInventoryCanInteract(pWidget) ) {
+		if ( pData->bPointerDown ) {
+			iRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		}
+		return __xuiInventorySetHover(pWidget, pData, -1);
+	}
 	if ( pData->bPointerDown && !__xuiInventoryPointerMatches(pData, pEvent) ) {
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -2129,11 +2158,16 @@ static int __xuiInventoryPointerMove(xui_widget pWidget, xui_inventory_grid_data
 				bCanDrag = pData->onDrag(pWidget, pData->iActiveSlot, pData->pDragUser);
 			}
 			if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			if ( !__xuiInventoryCanInteract(pWidget) ) {
+				iRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
+				return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+			}
 			if ( bCanDrag && __xuiInventoryPointerMatches(pData, pEvent) &&
-			     (pData->iActiveSlot >= 0) && (pData->iActiveSlot < pData->iSlotCount) ) {
+			     (pData->iActiveSlot >= 0) && (pData->iActiveSlot < pData->iSlotCount) &&
+			     __xuiInventorySlotEnabled(&pData->arrSlots[pData->iActiveSlot]) ) {
 				pData->bDragging = 1;
 				pData->iDragSource = pData->iActiveSlot;
-				pData->iDragCount++;
+				__xuiInventoryIncrementCounter(&pData->iDragCount);
 			}
 		}
 		if ( pData->bDragging ) {
@@ -2163,24 +2197,34 @@ static int __xuiInventoryPointerDown(xui_widget pWidget, xui_inventory_grid_data
 	int iRet;
 	int iCleanupRet;
 
-	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ||
+	     !__xuiInventoryCanInteract(pWidget) ) {
 		return XUI_OK;
 	}
 	if ( pData->bPointerDown && !__xuiInventoryPointerMatches(pData, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	pContext = xuiWidgetGetContext(pWidget);
-	iRet = __xuiInventoryHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
-	if ( iRet != XUI_OK ) return iRet;
 	if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT ) {
 		iRet = xuiSetFocusWidget(pContext, pWidget);
-		if ( iRet != XUI_OK || !__xuiInventoryDataAlive(pWidget, pData) ) return iRet;
-		if ( tHit.iSlot < 0 ) {
-			iRet = __xuiInventorySetHover(pWidget, pData, -1);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !__xuiInventoryCanInteract(pWidget) ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		iRet = __xuiInventoryHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( (tHit.iSlot < 0) || !__xuiInventorySlotEnabled(&pData->arrSlots[tHit.iSlot]) ) {
+			iRet = __xuiInventorySetHover(pWidget, pData, tHit.iSlot);
 			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iRet = xuiSetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType, pWidget);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !__xuiInventoryCanInteract(pWidget) ||
+		     (tHit.iSlot < 0) || (tHit.iSlot >= pData->iSlotCount) ) {
+			iCleanupRet = xuiReleasePointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType, pWidget);
+			return (iCleanupRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iCleanupRet;
+		}
 		pData->bPointerDown = 1;
 		pData->bDragging = 0;
 		pData->iActiveSlot = tHit.iSlot;
@@ -2210,12 +2254,27 @@ static int __xuiInventoryPointerDown(xui_widget pWidget, xui_inventory_grid_data
 				return (iCleanupRet != XUI_OK) ? iCleanupRet : iRet;
 			}
 			if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			if ( !__xuiInventoryCanInteract(pWidget) ) {
+				iCleanupRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
+				return (iCleanupRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iCleanupRet;
+			}
+			if ( (pData->iActiveSlot < 0) || (pData->iActiveSlot >= pData->iSlotCount) ||
+			     !__xuiInventorySlotEnabled(&pData->arrSlots[pData->iActiveSlot]) ) {
+				iCleanupRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
+				return (iCleanupRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iCleanupRet;
+			}
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iButton == XUI_POINTER_BUTTON_RIGHT ) {
 		iRet = xuiSetFocusWidget(pContext, pWidget);
-		if ( iRet != XUI_OK || !__xuiInventoryDataAlive(pWidget, pData) ) return iRet;
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !__xuiInventoryCanInteract(pWidget) ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		iRet = __xuiInventoryHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
+		if ( iRet != XUI_OK ) return iRet;
 		if ( tHit.iSlot >= 0 ) {
 			iRet = __xuiInventorySelectSlot(pWidget, pData, tHit.iSlot, 0, 1);
 			if ( iRet != XUI_OK ) return iRet;
@@ -2243,6 +2302,10 @@ static int __xuiInventoryPointerUp(xui_widget pWidget, xui_inventory_grid_data_t
 		return XUI_OK;
 	}
 	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || !__xuiInventoryPointerMatches(pData, pEvent) ) return XUI_OK;
+	if ( !__xuiInventoryCanInteract(pWidget) ) {
+		iRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
 	iFrom = pData->iDragSource;
 	iTo = pData->iDropTarget;
 	iMode = pData->iDropMode;
@@ -2261,11 +2324,12 @@ static int __xuiInventoryPointerUp(xui_widget pWidget, xui_inventory_grid_data_t
 		iAccept = onDrop(pWidget, iFrom, iTo, iMode, pDropUser);
 		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 		if ( iAccept ) {
-			pData->iDropCount++;
-			pData->iChangeCount++;
+			__xuiInventoryIncrementCounter(&pData->iDropCount);
+			__xuiInventoryIncrementCounter(&pData->iChangeCount);
 		}
 	}
-	if ( !bDragging && (tHit.iSlot >= 0) && (tHit.iSlot == iActiveSlot) ) {
+	if ( !bDragging && (tHit.iSlot >= 0) && (tHit.iSlot == iActiveSlot) &&
+	     __xuiInventorySlotEnabled(&pData->arrSlots[tHit.iSlot]) ) {
 		__xuiInventoryNotifyActivate(pWidget, pData, tHit.iSlot, pEvent->iButton);
 	}
 	return XUI_EVENT_DISPATCH_STOP;
@@ -2280,12 +2344,16 @@ static int __xuiInventoryContextMenu(xui_widget pWidget, xui_inventory_grid_data
 	float fY;
 	int iRet;
 
-	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ||
+	     !__xuiInventoryCanInteract(pWidget) ) {
 		return XUI_OK;
 	}
 	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	if ( !__xuiInventoryCanInteract(pWidget) ) {
+		return XUI_EVENT_DISPATCH_STOP;
+	}
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSlot = -1;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
@@ -2305,9 +2373,15 @@ static int __xuiInventoryContextMenu(xui_widget pWidget, xui_inventory_grid_data
 		iRet = __xuiInventorySelectSlot(pWidget, pData, tHit.iSlot, 0, 1);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !__xuiInventoryCanInteract(pWidget) ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( tHit.iSlot >= pData->iSlotCount ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 	}
 	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
-	pData->iContextCount++;
+	__xuiInventoryIncrementCounter(&pData->iContextCount);
 	if ( pData->onContext != NULL ) {
 		pData->onContext(pWidget, tHit.iSlot, fX, fY, pData->pContextUser);
 	}
@@ -2339,7 +2413,7 @@ static int __xuiInventoryMoveFocus(xui_widget pWidget, xui_inventory_grid_data_t
 	iRet = __xuiInventoryPrepareVisualChange(pWidget, pData, iSlot);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iCurrent = iSlot;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	return XUI_OK;
 }
@@ -2385,7 +2459,7 @@ static int __xuiInventorySelectAll(xui_widget pWidget, xui_inventory_grid_data_t
 	}
 	pData->iCurrent = iNotifySlot;
 	if ( pData->iAnchorSlot < 0 ) pData->iAnchorSlot = iNotifySlot;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( bNotify && iNotifySlot >= 0 ) __xuiInventoryNotifySelect(pWidget, pData, iNotifySlot);
 	return XUI_OK;
@@ -2487,6 +2561,28 @@ static int __xuiInventoryGamepadFindColumnTarget(xui_inventory_grid_data_t* pDat
 	return -1;
 }
 
+static int __xuiInventoryKeyMoveVertical(xui_widget pWidget, xui_inventory_grid_data_t* pData,
+	int iStepRows, uint32_t iModifiers)
+{
+	int iColumns;
+	int iColumn;
+	int iTarget;
+	int iRet;
+
+	if ( (pData == NULL) || (pData->iSlotCount <= 0) || (iStepRows == 0) ) return XUI_OK;
+	iColumns = pData->iResolvedColumns;
+	if ( (iColumns <= 0) || (pData->iCurrent < 0) ) {
+		return __xuiInventoryKeyMove(pWidget, pData, (iStepRows < 0) ? -1 : 1, iModifiers);
+	}
+	iColumn = pData->iCurrent % iColumns;
+	iTarget = pData->iCurrent + (iStepRows * iColumns);
+	iTarget = __xuiInventoryGamepadFindColumnTarget(pData, iTarget, iColumn, iColumns,
+		iStepRows, 0, 1);
+	if ( iTarget < 0 ) return XUI_EVENT_DISPATCH_STOP;
+	iRet = __xuiInventoryMoveKeyboard(pWidget, pData, iTarget, iModifiers);
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+}
+
 static int __xuiInventoryGamepadSetTarget(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iTarget, uint32_t iModifiers)
 {
 	if ( (pWidget == NULL) || (pData == NULL) ) {
@@ -2556,11 +2652,13 @@ static int __xuiInventoryGamepadMoveVertical(xui_widget pWidget, xui_inventory_g
 	int iColumn;
 	int iTarget;
 	int iStepRows;
+	int bWrap;
+	int bSkipDisabled;
 
 	if ( (pData == NULL) || (pData->iSlotCount <= 0) ) {
 		return XUI_OK;
 	}
-	if ( (pData->tGamepadProfile.iFlags & XUI_INVENTORY_GAMEPAD_WRAP_COLUMNS) == 0u || pData->iCurrent < 0 ) {
+	if ( pData->iCurrent < 0 ) {
 		return __xuiInventoryGamepadMoveLinear(pWidget, pData, iDelta, iModifiers);
 	}
 	iColumns = pData->iResolvedColumns;
@@ -2569,13 +2667,18 @@ static int __xuiInventoryGamepadMoveVertical(xui_widget pWidget, xui_inventory_g
 	}
 	iColumn = pData->iCurrent % iColumns;
 	iStepRows = (iDelta >= 0) ? 1 : -1;
+	bWrap = ((pData->tGamepadProfile.iFlags & XUI_INVENTORY_GAMEPAD_WRAP_COLUMNS) != 0u);
+	bSkipDisabled = ((pData->tGamepadProfile.iFlags & XUI_INVENTORY_GAMEPAD_SKIP_DISABLED) != 0u);
 	iTarget = pData->iCurrent + (iStepRows * iColumns);
 	if ( iTarget < 0 ) {
+		if ( !bWrap ) return XUI_OK;
 		iTarget = __xuiInventoryGamepadLastColumnSlot(pData, iColumn, iColumns);
 	} else if ( iTarget >= pData->iSlotCount ) {
+		if ( !bWrap ) return XUI_OK;
 		iTarget = iColumn;
 	}
-	iTarget = __xuiInventoryGamepadFindColumnTarget(pData, iTarget, iColumn, iColumns, iStepRows, 1, (pData->tGamepadProfile.iFlags & XUI_INVENTORY_GAMEPAD_SKIP_DISABLED) != 0u);
+	iTarget = __xuiInventoryGamepadFindColumnTarget(pData, iTarget, iColumn, iColumns,
+		iStepRows, bWrap, bSkipDisabled);
 	return __xuiInventoryGamepadSetTarget(pWidget, pData, iTarget, iModifiers);
 }
 
@@ -2592,20 +2695,22 @@ static int __xuiInventoryGamepadOpenContext(xui_widget pWidget, xui_inventory_gr
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iSlot = pData->iCurrent;
-	if ( (iSlot < 0) || (iSlot >= pData->iSlotCount) || !__xuiInventorySlotEnabled(&pData->arrSlots[iSlot]) ) {
+	if ( (iSlot < 0) || (iSlot >= pData->iSlotCount) ) {
 		return XUI_OK;
 	}
 	if ( !__xuiInventorySelected(&pData->arrSlots[iSlot]) ) {
 		iRet = __xuiInventorySelectSlot(pWidget, pData, iSlot, 0u, 1);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_OK;
+		if ( !__xuiInventoryCanInteract(pWidget) ) return XUI_OK;
+		if ( iSlot >= pData->iSlotCount ) return XUI_OK;
 	}
 	iRet = xuiInventoryGridGetSlotRect(pWidget, iSlot, &tSlot);
 	if ( iRet != XUI_OK ) return iRet;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	fX = tWorld.fX + tSlot.fX + tSlot.fW * 0.5f;
 	fY = tWorld.fY + tSlot.fY + tSlot.fH * 0.5f;
-	pData->iContextCount++;
+	__xuiInventoryIncrementCounter(&pData->iContextCount);
 	if ( pData->onContext != NULL ) {
 		pData->onContext(pWidget, iSlot, fX, fY, pData->pContextUser);
 	}
@@ -2621,7 +2726,8 @@ static int __xuiInventoryKeyDown(xui_widget pWidget, xui_inventory_grid_data_t* 
 	int iTarget;
 	int iRet;
 
-	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ||
+	     !__xuiInventoryCanInteract(pWidget) ) {
 		return XUI_OK;
 	}
 	__xuiInventoryResolve(pWidget, pData, &tResolved);
@@ -2641,9 +2747,9 @@ static int __xuiInventoryKeyDown(xui_widget pWidget, xui_inventory_grid_data_t* 
 	case XUI_KEY_RIGHT:
 		return __xuiInventoryKeyMove(pWidget, pData, 1, pEvent->iModifiers);
 	case XUI_KEY_UP:
-		return __xuiInventoryKeyMove(pWidget, pData, -pData->iResolvedColumns, pEvent->iModifiers);
+		return __xuiInventoryKeyMoveVertical(pWidget, pData, -1, pEvent->iModifiers);
 	case XUI_KEY_DOWN:
-		return __xuiInventoryKeyMove(pWidget, pData, pData->iResolvedColumns, pEvent->iModifiers);
+		return __xuiInventoryKeyMoveVertical(pWidget, pData, 1, pEvent->iModifiers);
 	case XUI_KEY_PAGE_UP:
 	case XUI_KEY_PAGE_DOWN:
 		tViewport = xuiWidgetGetContentRect(pWidget);
@@ -2693,10 +2799,13 @@ static int __xuiInventoryWheel(xui_widget pWidget, xui_inventory_grid_data_t* pD
 	float fDY;
 	int iRet;
 
-	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ||
+	     !__xuiInventoryCanInteract(pWidget) ) {
 		return XUI_OK;
 	}
 	__xuiInventoryResolve(pWidget, pData, &tResolved);
+	iRet = __xuiInventorySyncLayout(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	fDX = -pEvent->fWheelX * tResolved.tLayout.fWheelStep;
 	fDY = -pEvent->fWheelY * tResolved.tLayout.fWheelStep;
 	if ( fDX == 0.0f && fDY == 0.0f ) return XUI_OK;
@@ -2713,7 +2822,7 @@ static int __xuiInventoryWheel(xui_widget pWidget, xui_inventory_grid_data_t* pD
 			(void)xuiScrollModelSetOffset(&pData->tScroll, fOldX, fOldY);
 			return iRet;
 		}
-		pData->iChangeCount++;
+		__xuiInventoryIncrementCounter(&pData->iChangeCount);
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -2745,7 +2854,7 @@ static int __xuiInventoryEventBody(xui_widget pWidget, const xui_event_t* pEvent
 	case XUI_EVENT_POINTER_UP:
 		return __xuiInventoryPointerUp(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
-		if ( xuiWidgetGetEffectiveEnabled(pWidget) &&
+		if ( __xuiInventoryCanInteract(pWidget) &&
 		     (pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0) ) {
 			xui_inventory_hit_t tHit;
 			iRet = __xuiInventoryHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
@@ -2772,7 +2881,7 @@ static int __xuiInventoryEventBody(xui_widget pWidget, const xui_event_t* pEvent
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
 	case XUI_EVENT_BOUNDS_CHANGED:
-		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		if ( !__xuiInventoryCanInteract(pWidget) ) {
 			iRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
@@ -2956,8 +3065,8 @@ static int __xuiInventoryCommitSplitPopupInternal(xui_widget pWidget, xui_invent
 		return iRet;
 	}
 	pData->iSplitCount = iCount;
-	pData->iSplitCommitCount++;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iSplitCommitCount);
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	if ( pData->onSplit != NULL ) {
 		pData->onSplit(pWidget, iSlot, iCount, pData->pSplitUser);
 	}
@@ -3289,7 +3398,7 @@ static int __xuiInventoryAccessibleGet(xui_widget pWidget, int iIndex,
 	     tSlot.fX >= tViewport.fX + tViewport.fW || tSlot.fY >= tViewport.fY + tViewport.fH ) {
 		pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 	}
-	if ( !bControlDisabled && __xuiInventorySlotEnabled(pSlot) ) {
+	if ( !bControlDisabled && !bControlOffscreen && __xuiInventorySlotEnabled(pSlot) ) {
 		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS) |
 			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW) |
 			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
@@ -3309,7 +3418,9 @@ static int __xuiInventoryAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 
 	(void)pPayload;
 	if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_ERROR_INVALID_STATE;
+	if ( !__xuiInventoryCanInteract(pWidget) ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
 	if ( iNodeId == 0 || iNodeId == 1 ) {
 		return iAction == XUI_ACCESSIBLE_ACTION_FOCUS ?
 			xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget) : XUI_ERROR_UNSUPPORTED;
@@ -3323,12 +3434,18 @@ static int __xuiInventoryAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS ) {
 		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( iRet != XUI_OK || !__xuiInventoryDataAlive(pWidget, pData) ) return iRet;
+		if ( !__xuiInventoryCanInteract(pWidget) ) {
+			return XUI_ERROR_INVALID_STATE;
+		}
 		return __xuiInventoryMoveFocus(pWidget, pData, iSlot);
 	}
 	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_SELECTION ) {
 		if ( pData->tLayout.iSelectionMode == XUI_INVENTORY_SELECTION_NONE ) return XUI_ERROR_UNSUPPORTED;
 		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( iRet != XUI_OK || !__xuiInventoryDataAlive(pWidget, pData) ) return iRet;
+		if ( !__xuiInventoryCanInteract(pWidget) ) {
+			return XUI_ERROR_INVALID_STATE;
+		}
 		return __xuiInventorySelectSlot(pWidget, pData, iSlot, 0u, 1);
 	}
 	if ( iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE ) {
@@ -3401,7 +3518,7 @@ static int __xuiInventorySetSlotCountInternal(xui_widget pWidget, xui_inventory_
 	if ( pData->iAnchorSlot >= iSlotCount ) pData->iAnchorSlot = -1;
 	if ( pData->iDragSource >= iSlotCount ) pData->iDragSource = -1;
 	if ( pData->iDropTarget >= iSlotCount ) pData->iDropTarget = -1;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	__xuiInventoryClearVisibleRange(&pData->tLastPaintRange);
 	pData->iLastPaintSlotCount = 0;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
@@ -3816,7 +3933,7 @@ XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inv
 	pData->arrSlots[iSlot] = tSlot;
 	bSelectionChanged = __xuiInventoryNormalizeSelectionState(pData,
 		__xuiInventorySelected(&tSlot) ? iSlot : -1);
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	if ( bSelectionChanged ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
@@ -3879,7 +3996,7 @@ XUI_API int xuiInventoryGridClearAll(xui_widget pWidget)
 	pData->iAnchorSlot = -1;
 	pData->iDragSource = -1;
 	pData->iDropTarget = -1;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalOperationLeave(pContext);
@@ -3948,7 +4065,7 @@ XUI_API int xuiInventoryGridSetSelected(xui_widget pWidget, int iSlot, int bSele
 		pData->arrSlots[iSlot].iFlags &= ~XUI_INVENTORY_SLOT_SELECTED;
 		if ( pData->iCurrent == iSlot ) pData->iCurrent = -1;
 	}
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	if ( bNotify ) {
@@ -3985,7 +4102,7 @@ XUI_API int xuiInventoryGridClearSelection(xui_widget pWidget)
 	(void)__xuiInventoryClearSelectionData(pData);
 	pData->iCurrent = -1;
 	pData->iAnchorSlot = -1;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	return XUI_OK;
@@ -4021,7 +4138,7 @@ XUI_API int xuiInventoryGridSetLayout(xui_widget pWidget, const xui_inventory_gr
 			pData->iAnchorSlot = iKeepSelected;
 		}
 	}
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	return XUI_OK;
@@ -4446,13 +4563,14 @@ static int __xuiInventoryGamepadButtonBody(xui_widget pWidget, int iButton, int 
 	pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( (iButton == 0) || !bPressed ) return XUI_OK;
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
+	if ( !__xuiInventoryCanInteract(pWidget) ) return XUI_OK;
 	__xuiInventoryResolve(pWidget, pData, &tResolved);
 	iRet = __xuiInventorySyncLayout(pWidget, pData, &tResolved);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_OK;
+	if ( !__xuiInventoryCanInteract(pWidget) ) return XUI_OK;
 	pProfile = &pData->tGamepadProfile;
 	if ( iButton == pProfile->iLeftButton ) {
 		return __xuiInventoryGamepadMoveHorizontal(pWidget, pData, -1, iModifiers);
@@ -4786,7 +4904,7 @@ XUI_API int xuiInventoryGridSetSlotAnimation(xui_widget pWidget, int iSlot, xui_
 	pData->arrSlots[iSlot].iAnimationTint = iResolvedTint;
 	if ( pAnimation != NULL ) pData->arrSlots[iSlot].iFlags |= XUI_INVENTORY_SLOT_ANIMATION;
 	else pData->arrSlots[iSlot].iFlags &= ~XUI_INVENTORY_SLOT_ANIMATION;
-	pData->iChangeCount++;
+	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
