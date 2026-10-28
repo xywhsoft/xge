@@ -11,6 +11,7 @@
 #define XUI_QRCODE_MAX_BLOCKS		5
 #define XUI_QRCODE_DEFAULT_SIZE		160.0f
 #define XUI_QRCODE_DEFAULT_PADDING	8.0f
+#define XUI_QRCODE_QUIET_ZONE_MODULES	4
 
 typedef struct xui_qrcode_matrix_t {
 	uint8_t arrModules[XUI_QRCODE_MAX_MODULES];
@@ -874,6 +875,52 @@ static int __xuiQrCodeSurfaceSource(xui_widget pWidget, xui_surface pSurface, xu
 	return XUI_OK;
 }
 
+static int __xuiQrCodeLayoutField(xui_rect_t tContent, int iModuleCount, float fPadding,
+	xui_rect_t* pField, float* pModuleSize)
+{
+	float fAvailable;
+	float fRequiredMargin;
+	float fQrSize;
+	int iModuleSize;
+
+	if ( (iModuleCount <= 0) || (pField == NULL) || (pModuleSize == NULL) ) {
+		return 0;
+	}
+	fAvailable = (tContent.fW < tContent.fH) ? tContent.fW : tContent.fH;
+	if ( (fAvailable <= 0.0f) || (fAvailable <= fPadding * 2.0f) ) {
+		return 0;
+	}
+	iModuleSize = (int)(fAvailable /
+		(float)(iModuleCount + XUI_QRCODE_QUIET_ZONE_MODULES * 2));
+	{
+		int iPaddedModuleSize = (int)((fAvailable - fPadding * 2.0f) /
+			(float)iModuleCount);
+		if ( iPaddedModuleSize < iModuleSize ) {
+			iModuleSize = iPaddedModuleSize;
+		}
+	}
+	while ( iModuleSize >= 1 ) {
+		fQrSize = (float)(iModuleSize * iModuleCount);
+		fRequiredMargin = (float)(iModuleSize * XUI_QRCODE_QUIET_ZONE_MODULES);
+		if ( fPadding > fRequiredMargin ) {
+			fRequiredMargin = fPadding;
+		}
+		pField->fX = (float)xuiInternalSnapPixel(tContent.fX + (tContent.fW - fQrSize) * 0.5f);
+		pField->fY = (float)xuiInternalSnapPixel(tContent.fY + (tContent.fH - fQrSize) * 0.5f);
+		pField->fW = fQrSize;
+		pField->fH = fQrSize;
+		if ( (pField->fX - tContent.fX >= fRequiredMargin) &&
+		     (pField->fY - tContent.fY >= fRequiredMargin) &&
+		     (tContent.fX + tContent.fW - pField->fX - pField->fW >= fRequiredMargin) &&
+		     (tContent.fY + tContent.fH - pField->fY - pField->fH >= fRequiredMargin) ) {
+			*pModuleSize = (float)iModuleSize;
+			return 1;
+		}
+		iModuleSize--;
+	}
+	return 0;
+}
+
 static int __xuiQrCodeCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_qrcode_data_t* pData;
@@ -884,7 +931,6 @@ static int __xuiQrCodeCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	xui_rect_t tModule;
 	xui_rect_t tIcon;
 	xui_rect_t tIconSrc;
-	float fAvailable;
 	float fModuleSize;
 	float fQrSize;
 	float fIconSize;
@@ -916,21 +962,11 @@ static int __xuiQrCodeCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	if ( tResolved.iModuleCount <= 0 || __xuiQrCodeAlpha(tResolved.iForegroundColor) == 0 ) {
 		return XUI_OK;
 	}
-	fAvailable = (tContent.fW < tContent.fH) ? tContent.fW : tContent.fH;
-	fAvailable -= tResolved.fPadding * 2.0f;
-	if ( fAvailable <= 0.0f ) {
+	if ( !__xuiQrCodeLayoutField(tContent, tResolved.iModuleCount, tResolved.fPadding,
+		&tField, &fModuleSize) ) {
 		return XUI_OK;
 	}
-	fModuleSize = (float)((int)(fAvailable / (float)tResolved.iModuleCount));
-	if ( fModuleSize < 1.0f ) {
-		fModuleSize = fAvailable / (float)tResolved.iModuleCount;
-	}
-	fQrSize = fModuleSize * (float)tResolved.iModuleCount;
-	tField = xuiInternalSnapRect((xui_rect_t){
-		tContent.fX + (tContent.fW - fQrSize) * 0.5f,
-		tContent.fY + (tContent.fH - fQrSize) * 0.5f,
-		fQrSize,
-		fQrSize});
+	fQrSize = tField.fW;
 	for ( iY = 0; iY < tResolved.iModuleCount; iY++ ) {
 		iRunStart = -1;
 		for ( iX = 0; iX <= tResolved.iModuleCount; iX++ ) {
@@ -941,8 +977,8 @@ static int __xuiQrCodeCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 				tModule = xuiInternalSnapRect((xui_rect_t){
 					tField.fX + (float)iRunStart * fModuleSize,
 					tField.fY + (float)iY * fModuleSize,
-					(float)(iX - iRunStart) * fModuleSize + 0.01f,
-					fModuleSize + 0.01f});
+					(float)(iX - iRunStart) * fModuleSize,
+					fModuleSize});
 				iRet = pProxy->drawRectFill(pProxy, pDraw, tModule, tResolved.iForegroundColor);
 				if ( iRet != XUI_OK ) return iRet;
 				iRunStart = -1;

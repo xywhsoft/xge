@@ -1987,7 +1987,8 @@ typedef struct xui_image_desc_t {
 } xui_image_desc_t;
 
 /* 二维码创建描述。sValue 会被复制；pIconSurface 为借用资源，调用方须保证
- * 其生命周期覆盖控件。当前编码使用 QR byte mode 与 M 级纠错。 */
+ * 其生命周期覆盖控件。当前编码使用 QR byte mode 与 M 级纠错。绘制始终
+ * 保留至少 4 个完整模块的标准静区，fPadding 是附加的最小像素边距。 */
 typedef struct xui_qrcode_desc_t {
 	uint32_t iSize;
 	const char* sValue;
@@ -6770,7 +6771,7 @@ XUI_API uint32_t xuiQrCodeGetForegroundColor(xui_widget pWidget);
 XUI_API int xuiQrCodeSetBackgroundColor(xui_widget pWidget, uint32_t iColor);
 /* 读取背景色。 */
 XUI_API uint32_t xuiQrCodeGetBackgroundColor(xui_widget pWidget);
-/* 设置静区边距。 */
+/* 设置最小像素边距；实际静区不会小于 4 个完整二维码模块。 */
 XUI_API int xuiQrCodeSetPadding(xui_widget pWidget, float fPadding);
 /* 读取边距。 */
 XUI_API float xuiQrCodeGetPadding(xui_widget pWidget);

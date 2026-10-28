@@ -14,6 +14,55 @@
 		} \
 	} while ( 0 )
 
+static xui_draw_rect_fill_proc g_xuiQrCodeDrawRectFill;
+static uint32_t g_xuiQrCodeTraceColor;
+static xui_rect_t g_xuiQrCodeTraceBounds;
+static xui_rect_t g_xuiQrCodeTraceFirstRect;
+static int g_xuiQrCodeTraceCount;
+static int g_xuiQrCodeTraceIntegral;
+
+static void __xuiQrCodeTraceReset(uint32_t iColor)
+{
+	g_xuiQrCodeTraceColor = iColor;
+	memset(&g_xuiQrCodeTraceBounds, 0, sizeof(g_xuiQrCodeTraceBounds));
+	memset(&g_xuiQrCodeTraceFirstRect, 0, sizeof(g_xuiQrCodeTraceFirstRect));
+	g_xuiQrCodeTraceCount = 0;
+	g_xuiQrCodeTraceIntegral = 1;
+}
+
+static int __xuiQrCodeNearInteger(float fValue)
+{
+	return fabsf(fValue - floorf(fValue + 0.5f)) < 0.001f;
+}
+
+static int __xuiQrCodeTraceRectFill(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tRect, uint32_t iColor)
+{
+	if ( (g_xuiQrCodeTraceColor != 0u) && (iColor == g_xuiQrCodeTraceColor) ) {
+		float fRight = tRect.fX + tRect.fW;
+		float fBottom = tRect.fY + tRect.fH;
+		if ( g_xuiQrCodeTraceCount == 0 ) {
+			g_xuiQrCodeTraceBounds = tRect;
+			g_xuiQrCodeTraceFirstRect = tRect;
+		} else {
+			float fBoundsRight = g_xuiQrCodeTraceBounds.fX + g_xuiQrCodeTraceBounds.fW;
+			float fBoundsBottom = g_xuiQrCodeTraceBounds.fY + g_xuiQrCodeTraceBounds.fH;
+			if ( tRect.fX < g_xuiQrCodeTraceBounds.fX ) g_xuiQrCodeTraceBounds.fX = tRect.fX;
+			if ( tRect.fY < g_xuiQrCodeTraceBounds.fY ) g_xuiQrCodeTraceBounds.fY = tRect.fY;
+			if ( fRight > fBoundsRight ) fBoundsRight = fRight;
+			if ( fBottom > fBoundsBottom ) fBoundsBottom = fBottom;
+			g_xuiQrCodeTraceBounds.fW = fBoundsRight - g_xuiQrCodeTraceBounds.fX;
+			g_xuiQrCodeTraceBounds.fH = fBoundsBottom - g_xuiQrCodeTraceBounds.fY;
+		}
+		if ( !__xuiQrCodeNearInteger(tRect.fX) || !__xuiQrCodeNearInteger(tRect.fY) ||
+		     !__xuiQrCodeNearInteger(tRect.fW) || !__xuiQrCodeNearInteger(tRect.fH) ) {
+			g_xuiQrCodeTraceIntegral = 0;
+		}
+		g_xuiQrCodeTraceCount++;
+	}
+	return g_xuiQrCodeDrawRectFill(pProxy, pDraw, tRect, iColor);
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -28,6 +77,7 @@ int main(void)
 	xui_qrcode_desc_t tInvalidDesc;
 	xui_accessible_node_t tNode;
 	xui_rect_i_t tFullRect;
+	xui_rect_t tContentRect;
 	xallocationbudget* pBudget;
 	xallocationscope tScope;
 	char sLongValue[512];
@@ -53,6 +103,9 @@ int main(void)
 	pBudget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
+	g_xuiQrCodeDrawRectFill = tState.tProxy.drawRectFill;
+	tState.tProxy.drawRectFill = __xuiQrCodeTraceRectFill;
+	__xuiQrCodeTraceReset(0u);
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -119,6 +172,21 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) == 1, "short value version");
 	XUI_TEST_CHECK(strcmp(xuiQrCodeGetValue(pQrCode), "hello") == 0, "value getter");
 	XUI_TEST_CHECK(xuiQrCodeGetChangeCount(pQrCode) >= 2, "change count");
+	iRet = xuiQrCodeSetValue(pQrCode, "12345678901234");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) == 1,
+		"version 1-M accepts fourteen byte payload");
+	iChangeCount = xuiQrCodeGetChangeCount(pQrCode);
+	iRet = xuiQrCodeSetValue(pQrCode, "123456789012345");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_BUFFER_TOO_SMALL &&
+		xuiQrCodeGetChangeCount(pQrCode) == iChangeCount &&
+		strcmp(xuiQrCodeGetValue(pQrCode), "12345678901234") == 0,
+		"version 1-M rejects fifteen byte payload without mutation");
+	iRet = xuiQrCodeSetValue(pQrCode, "\xe4\xb8\xad\xe6\x96\x87\xf0\x9f\x99\x82");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiQrCodeGetValue(pQrCode), "\xe4\xb8\xad\xe6\x96\x87\xf0\x9f\x99\x82") == 0,
+		"UTF-8 payload is preserved as byte-mode data");
+	iRet = xuiQrCodeSetValue(pQrCode, "hello");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore value after payload boundaries");
 	memset(&tNode, 0, sizeof(tNode));
 	tNode.iSize = sizeof(tNode);
 	iRet = xuiWidgetGetAccessibleNode(pQrCode, 0, &tNode);
@@ -190,6 +258,7 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
 	tFullRect = (xui_rect_i_t){0, 0, 260, 220};
+	__xuiQrCodeTraceReset(XUI_COLOR_RGBA(18, 112, 214, 255));
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	pCache = xuiWidgetGetCacheSurface(pQrCode, 0);
@@ -203,6 +272,52 @@ int main(void)
 	}
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) < iDarkModules,
 		"dark module runs are batched");
+	tContentRect = xuiWidgetGetContentRect(pQrCode);
+	XUI_TEST_CHECK(g_xuiQrCodeTraceCount > 0 && g_xuiQrCodeTraceIntegral,
+		"modules render on integral pixel boundaries");
+	XUI_TEST_CHECK(g_xuiQrCodeTraceFirstRect.fX == tContentRect.fX + 27.0f &&
+		g_xuiQrCodeTraceFirstRect.fY == tContentRect.fY + 27.0f &&
+		g_xuiQrCodeTraceFirstRect.fW == 42.0f && g_xuiQrCodeTraceFirstRect.fH == 6.0f,
+		"configured padding preserves four-module quiet zone");
+	XUI_TEST_CHECK(g_xuiQrCodeTraceBounds.fX >= tContentRect.fX + 24.0f &&
+		g_xuiQrCodeTraceBounds.fY >= tContentRect.fY + 24.0f &&
+		g_xuiQrCodeTraceBounds.fX + g_xuiQrCodeTraceBounds.fW <=
+			tContentRect.fX + tContentRect.fW - 24.0f &&
+		g_xuiQrCodeTraceBounds.fY + g_xuiQrCodeTraceBounds.fH <=
+			tContentRect.fY + tContentRect.fH - 24.0f,
+		"all modules remain inside quiet zone");
+
+	iRet = xuiQrCodeSetPadding(pQrCode, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear padding for minimum-size render");
+	iRet = xuiWidgetSetRect(pQrCode, (xui_rect_t){20.0f, 20.0f, 28.0f, 28.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set undersized qrcode rect");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout undersized qrcode");
+	__xuiQrCodeTraceReset(XUI_COLOR_RGBA(18, 112, 214, 255));
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_xuiQrCodeTraceCount == 0,
+		"undersized qrcode does not render subpixel modules");
+	iRet = xuiWidgetSetRect(pQrCode, (xui_rect_t){20.0f, 20.0f, 29.0f, 29.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum qrcode rect");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout minimum qrcode");
+	__xuiQrCodeTraceReset(XUI_COLOR_RGBA(18, 112, 214, 255));
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_xuiQrCodeTraceCount > 0 &&
+		g_xuiQrCodeTraceFirstRect.fX == 4.0f && g_xuiQrCodeTraceFirstRect.fY == 4.0f &&
+		g_xuiQrCodeTraceFirstRect.fW == 7.0f && g_xuiQrCodeTraceFirstRect.fH == 1.0f,
+		"minimum qrcode uses one-pixel modules and four-pixel quiet zone");
+	iRet = xuiQrCodeSetPadding(pQrCode, 6.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore qrcode padding");
+	iRet = xuiWidgetSetRect(pQrCode, (xui_rect_t){20.0f, 20.0f, 180.0f, 180.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore qrcode rect");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout restored qrcode");
+	__xuiQrCodeTraceReset(0u);
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render restored qrcode");
+	pCache = xuiWidgetGetCacheSurface(pQrCode, 0);
+	XUI_TEST_CHECK(pCache != NULL, "restored cache surface");
 	iDirtyFlags = xuiWidgetGetDirtyFlags(pQrCode);
 	iChangeCount = xuiQrCodeGetChangeCount(pQrCode);
 	iRet = xuiQrCodeSetValue(pQrCode, "hello");
