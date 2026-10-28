@@ -11076,9 +11076,9 @@ XUI_API xui_widget xuiPropertyGridGetTableGrid(xui_widget pWidget);
 XUI_API xui_widget xuiPropertyGridGetTableView(xui_widget pWidget);
 /* 清空全部类目与属性。 */
 XUI_API int xuiPropertyGridClear(xui_widget pWidget);
-/* 添加类目（可折叠分组）；返回类目索引。 */
+/* 添加类目（可折叠分组）；返回类目索引。id 必须完整装入固定容量，显示名称仅按完整 UTF-8 字素截断。 */
 XUI_API int xuiPropertyGridAddCategory(xui_widget pWidget, const char* sId, const char* sName, int bExpanded);
-/* 向类目添加属性行（类型驱动编辑器）。 */
+/* 向类目添加属性行（类型驱动编辑器）。id 必须完整装入固定容量，名称、说明和值仅按完整 UTF-8 字素截断。 */
 XUI_API int xuiPropertyGridAddProperty(xui_widget pWidget, int iCategory, const xui_property_desc_t* pDesc);
 /* 按类目 id 查索引；不存在返回 -1。 */
 XUI_API int xuiPropertyGridFindCategory(xui_widget pWidget, const char* sId);
@@ -11100,7 +11100,7 @@ XUI_API int xuiPropertyGridGetPropertyCount(xui_widget pWidget);
 XUI_API int xuiPropertyGridGetVisibleCount(xui_widget pWidget);
 /* 可见行号转属性索引。 */
 XUI_API int xuiPropertyGridGetVisibleProperty(xui_widget pWidget, int iVisible);
-/* 以文本设置属性值。 */
+/* 以文本设置属性值；超长文本仅按完整 UTF-8 字素截断。 */
 XUI_API int xuiPropertyGridSetValue(xui_widget pWidget, int iProperty, const char* sValue);
 /* 以文本读取属性值；返回控件持有的借用字符串，后续修改、清空或销毁后失效。 */
 XUI_API const char* xuiPropertyGridGetValue(xui_widget pWidget, int iProperty);
@@ -11125,7 +11125,7 @@ XUI_API int xuiPropertyGridSetPropertyFlags(xui_widget pWidget, int iProperty, i
 /* 读取属性行标志。 */
 XUI_API int xuiPropertyGridGetPropertyFlags(xui_widget pWidget, int iProperty);
 /* 覆盖属性编辑器配置（下拉选项等）。数组、字符串和调色板内容会被复制；
- * pUser 仍是借用的应用数据。 */
+ * pUser 仍是借用的应用数据。枚举索引、值枚举数据、日期范围和默认区间跨度必须自洽。 */
 XUI_API int xuiPropertyGridSetEditorConfig(xui_widget pWidget, int iProperty, const xui_table_grid_editor_config_t* pConfig);
 /* 为属性注册自绘回调。 */
 XUI_API int xuiPropertyGridSetRenderer(xui_widget pWidget, int iProperty, xui_property_grid_render_proc onRender, void* pUser);
@@ -11141,11 +11141,11 @@ XUI_API int xuiPropertyGridEndEdit(xui_widget pWidget, int bCommit);
 XUI_API int xuiPropertyGridSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
 XUI_API xui_font xuiPropertyGridGetFont(xui_widget pWidget);
-/* 设置度量（名称列宽/行高/类目高）。 */
+/* 设置度量（名称列宽/行高/类目高）；0 保留当前值，组合后的最大模型几何不得超过布局上限。 */
 XUI_API int xuiPropertyGridSetMetrics(xui_widget pWidget, float fNameWidth, float fRowHeight, float fCategoryHeight);
 /* 输出度量。 */
 XUI_API int xuiPropertyGridGetMetrics(xui_widget pWidget, float* pNameWidth, float* pRowHeight, float* pCategoryHeight);
-/* 设置描述面板模式（高度）。 */
+/* 设置描述面板模式（高度）；面板参与布局时，组合后的最大模型几何不得超过布局上限。 */
 XUI_API int xuiPropertyGridSetDescriptionMode(xui_widget pWidget, int iMode, float fPanelHeight);
 /* 读取描述面板模式。 */
 XUI_API int xuiPropertyGridGetDescriptionMode(xui_widget pWidget);
@@ -11177,7 +11177,7 @@ XUI_API int xuiPropertyGridSetContextMenu(xui_widget pWidget, xui_property_grid_
 XUI_API int xuiPropertyGridSetStyle(xui_widget pWidget, const xui_property_grid_style_t* pStyle);
 /* 输出样式组。 */
 XUI_API int xuiPropertyGridGetStyle(xui_widget pWidget, xui_property_grid_style_t* pStyle);
-/* 批量设置六色。 */
+/* 批量设置六色；iText 同时应用于类目图标、类目名称、属性名称和值文本。 */
 XUI_API int xuiPropertyGridSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iCategory, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
 /* 读取选择计数（测试用）。 */
 XUI_API int xuiPropertyGridGetSelectCount(xui_widget pWidget);
