@@ -2,6 +2,7 @@
 #if XUI_ENABLE_WINDOW
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 typedef struct xui_window_data_t {
@@ -220,11 +221,24 @@ static int __xuiWindowRectEqual(xui_rect_t tA, xui_rect_t tB)
 
 static void __xuiWindowCopyTitle(char* sDst, size_t iCapacity, const char* sTitle)
 {
+	size_t iSourceSize;
+	int iTextSize;
+	int iAt;
+	int iNext;
+
 	if ( sDst == NULL || iCapacity == 0u ) return;
 	if ( sTitle == NULL ) sTitle = "";
-	strncpy(sDst, sTitle, iCapacity - 1u);
-	sDst[iCapacity - 1u] = '\0';
-	xuiInternalUtf8TrimIncomplete(sDst);
+	iSourceSize = strlen(sTitle);
+	iTextSize = (iSourceSize > (size_t)INT_MAX) ? INT_MAX : (int)iSourceSize;
+	iAt = 0;
+	while ( iAt < iTextSize ) {
+		iNext = xuiInternalTextGraphemeNext(sTitle, iTextSize, iAt);
+		if ( iNext <= iAt ) iNext = iAt + 1;
+		if ( (size_t)iNext >= iCapacity ) break;
+		iAt = iNext;
+	}
+	if ( iAt > 0 ) memmove(sDst, sTitle, (size_t)iAt);
+	sDst[iAt] = '\0';
 }
 
 static int __xuiWindowRectContains(xui_rect_t tRect, float fX, float fY)
@@ -573,6 +587,9 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 	if ( (pWidget == NULL) || (pData == NULL) || !pData->bOpen ) {
 		return XUI_OK;
 	}
+	if ( !xuiWidgetGetEffectiveVisible(pWidget) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
 	pContext = xuiWidgetGetContext(pWidget);
 	iRet = __xuiWindowDeactivateInTree(xuiGetRootWidget(pContext), pWidget);
 	if ( iRet != XUI_OK ) return iRet;
@@ -608,7 +625,8 @@ static xui_widget __xuiWindowFindActiveInTree(xui_widget pRoot)
 		return NULL;
 	}
 	pData = __xuiWindowGetData(pRoot);
-	if ( (pData != NULL) && pData->bOpen && pData->bActive ) {
+	if ( (pData != NULL) && pData->bOpen && pData->bActive &&
+	     xuiWidgetGetEffectiveVisible(pRoot) && xuiWidgetGetEffectiveEnabled(pRoot) ) {
 		return pRoot;
 	}
 	for ( pChild = pRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
@@ -1131,8 +1149,18 @@ static int __xuiWindowPrepare(xui_widget pWidget, void* pUser)
 	xui_window_data_t* pData = (xui_window_data_t*)pUser;
 	xui_window_resolved_t tResolved;
 	xui_thickness_t tPadding;
+	xui_rect_t tRect;
+	xui_rect_t tParent;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bMaximized ) {
+		tRect = xuiWidgetGetRect(pWidget);
+		tParent = __xuiWindowParentRect(pWidget);
+		if ( !__xuiWindowRectEqual(tRect, tParent) ) {
+			iRet = __xuiWindowApplyRect(pWidget, pData, tParent);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
 	__xuiWindowResolve(pWidget, pData, &tResolved);
 	tPadding.fLeft = xuiInternalSnapPixel(tResolved.fBorderWidth);
 	tPadding.fTop = xuiInternalSnapPixel(tResolved.fBorderWidth + (pData->bShowTitleBar ? tResolved.fTitleBarHeight : 0.0f));
@@ -1339,6 +1367,15 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 			fX, fY, pData->pContextUser);
 	}
 	case XUI_EVENT_KEY_DOWN:
+		if ( pData->bActive && pData->bShowClose &&
+		     xuiWidgetGetEffectiveEnabled(pWidget) &&
+		     xuiWidgetGetEffectiveVisible(pWidget) &&
+		     pEvent->iKey == XUI_KEY_F4 &&
+		     (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
+			iRet = __xuiWindowRequestClose(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( (pEvent->iKey == XUI_KEY_ESCAPE) && (pData->iInteractionEdges != 0) ) {
 			__xuiWindowCancelInteraction(pWidget, pData, 1);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1350,6 +1387,17 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_BLUR:
+		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return XUI_EVENT_DISPATCH_STOP;
+	case XUI_EVENT_ENABLED_CHANGED:
+	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			__xuiWindowCancelInteraction(pWidget, pData, 1);
+			__xuiWindowCancelButtonPress(pWidget, pData, 1);
+			pData->bActive = 0;
+		}
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
@@ -1935,7 +1983,8 @@ static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pDa
 	}
 	bOpen = bOpen ? 1 : 0;
 	if ( pData->bOpen == bOpen ) {
-		if ( bOpen && bRaise ) {
+		if ( bOpen && bRaise && xuiWidgetGetEffectiveVisible(pWidget) &&
+		     xuiWidgetGetEffectiveEnabled(pWidget) ) {
 			return __xuiWindowActivate(pWidget, pData, 1);
 		}
 		return XUI_OK;
@@ -1955,13 +2004,15 @@ static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pDa
 		pData->bOpen = 1;
 		iRet = xuiWidgetSetVisible(pWidget, 1);
 		if ( iRet != XUI_OK ) goto open_failed;
-		iRet = xuiWidgetSetEnabled(pWidget, 1);
-		if ( iRet != XUI_OK ) goto open_failed;
 		iRet = xuiOverlayAttach(xuiWidgetGetContext(pWidget), NULL, pWidget, iOpenLayer, iOpenZ);
 		if ( iRet != XUI_OK ) goto open_failed;
-		iRet = __xuiWindowActivate(pWidget, pData, bRaise);
-		if ( !__xuiWindowDataAlive(pWidget, pData) ) return iRet;
-		if ( iRet != XUI_OK ) goto open_failed;
+		if ( xuiWidgetGetEffectiveEnabled(pWidget) ) {
+			iRet = __xuiWindowActivate(pWidget, pData, bRaise);
+			if ( !__xuiWindowDataAlive(pWidget, pData) ) return iRet;
+			if ( iRet != XUI_OK ) goto open_failed;
+		} else {
+			pData->bActive = 0;
+		}
 		pData->iChangeCount++;
 		return XUI_OK;
 	open_failed:

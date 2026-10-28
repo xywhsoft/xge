@@ -141,6 +141,7 @@ int main(void)
 	int iZTop;
 	int iFailed;
 	int iChangeBefore;
+	int iCloseBefore;
 	int iRet;
 
 	memset(&tEvents, 0, sizeof(tEvents));
@@ -206,8 +207,31 @@ int main(void)
 		strlen(xuiWindowGetTitle(pMain)) == XUI_WINDOW_TITLE_CAPACITY - 2u &&
 		xuiWindowGetTitle(pMain)[XUI_WINDOW_TITLE_CAPACITY - 2] == '\0',
 		"title truncation preserves UTF-8 boundary");
+	memset(sLongTitle, 'a', XUI_WINDOW_TITLE_CAPACITY - 2u);
+	memcpy(sLongTitle + XUI_WINDOW_TITLE_CAPACITY - 2u, "e\xCC\x81", 4u);
+	iRet = xuiWindowSetTitle(pMain, sLongTitle);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strlen(xuiWindowGetTitle(pMain)) == XUI_WINDOW_TITLE_CAPACITY - 2u,
+		"title truncation preserves grapheme boundary");
 	iRet = xuiWindowSetTitle(pMain, "Main Window");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore title after UTF-8 truncation");
+	iRet = xuiWidgetSetEnabled(pMain, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWindowSetOpen(pMain, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWindowSetOpen(pMain, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWidgetGetEnabled(pMain) &&
+		!xuiWindowIsActive(pMain), "reopening preserves disabled state");
+	iRet = xuiWidgetSetEnabled(pMain, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore main enabled state");
+	iRet = xuiWindowBringToFront(pMain);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pMain, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsActive(pMain) &&
+		xuiWindowGetActive(pContext) != pMain &&
+		xuiWindowBringToFront(pMain) == XUI_ERROR_INVALID_STATE,
+		"disabled window leaves active state");
+	iRet = xuiWidgetSetEnabled(pMain, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore enabled state after active-state test");
 	iRet = __xuiWindowAddFixedChild(pContext, pMain);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add child to client");
 
@@ -311,6 +335,22 @@ int main(void)
 	XUI_TEST_CHECK(xuiWindowIsTopMost(pTop) && xuiWindowGetActive(pContext) == pFrameless, "active latest");
 	XUI_TEST_CHECK(xuiWindowIsCollapsed(pCollapsed) && !xuiWidgetGetVisible(xuiWindowGetClientWidget(pCollapsed)), "collapsed hides client");
 	XUI_TEST_CHECK(xuiWindowGetState(pTop) & XUI_WINDOW_STATE_TOPMOST, "state topmost");
+	tRect = xuiWidgetGetRect(pMain);
+	iRet = xuiWindowSetMaximized(pMain, 1);
+	if ( iRet == XUI_OK ) iRet = xuiInputViewport(pContext, 700, 460);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tWorld = xuiWidgetGetRect(pMain);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiWindowNear(tWorld.fW, 700.0f) &&
+		__xuiWindowNear(tWorld.fH, 460.0f), "maximized window follows viewport growth");
+	iRet = xuiInputViewport(pContext, 640, 420);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiWindowSetMaximized(pMain, 0);
+	tWorld = xuiWidgetGetRect(pMain);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiWindowNear(tWorld.fX, tRect.fX) &&
+		__xuiWindowNear(tWorld.fY, tRect.fY) && __xuiWindowNear(tWorld.fW, tRect.fW) &&
+		__xuiWindowNear(tWorld.fH, tRect.fH), "viewport resize preserves maximize restore rect");
 
 	/* Window Z changes must not affect Column order when only one child resyncs. */
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -544,10 +584,25 @@ int main(void)
 		tWorld.fY + tButton.fY + tButton.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore close button after capture cancellation");
 
+	iCloseBefore = tEvents.iCloseCount;
+	iRet = xuiWindowBringToFront(pMain);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_F4, XUI_MOD_ALT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsOpen(pMain) &&
+		tEvents.iCloseCount == iCloseBefore + 1 &&
+		xuiWindowGetCloseCount(pMain) == iCloseBefore + 1,
+		"alt-f4 closes active window");
+	iRet = xuiWindowSetOpen(pMain, 1);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reopen after alt-f4");
+
 	tWorld = xuiWidgetGetWorldRect(pMain);
 	tButton = xuiWindowGetCloseButtonRect(pMain);
+	iCloseBefore = tEvents.iCloseCount;
 	iRet = __xuiWindowDispatchClick(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f);
-	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsOpen(pMain) && tEvents.iCloseCount == 1 && xuiWindowGetCloseCount(pMain) == 1, "close button");
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsOpen(pMain) &&
+		tEvents.iCloseCount == iCloseBefore + 1 &&
+		xuiWindowGetCloseCount(pMain) == iCloseBefore + 1, "close button");
 	iRet = xuiWindowSetOpen(pMain, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWindowIsOpen(pMain), "reopen");
 	XUI_TEST_CHECK(xuiWindowGetChangeCount(pMain) >= 5, "change count");
