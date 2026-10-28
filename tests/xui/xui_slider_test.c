@@ -98,6 +98,7 @@ int main(void)
 	xui_rect_t tWorld;
 	xui_accessible_node_t tAccessible;
 	xui_accessible_value_t tAccessibleValue;
+	xui_event_t tEvent;
 	xui_slider_destroy_test_t tDestroyState;
 	float fMin;
 	float fMax;
@@ -110,6 +111,7 @@ int main(void)
 	float fY;
 	float fExpected;
 	float fOwnedValue;
+	int iChangeCount;
 	int iChanged;
 	int iFailed;
 	int iRet;
@@ -507,7 +509,67 @@ int main(void)
 	iRet = __xuiSliderClick(pContext, tWorld.fX + tTrack.fX + tTrack.fW * 0.5f, tWorld.fY + tTrack.fY + tTrack.fH);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetValue(pSlider) == 100.0f && xuiGetPointerCapture(pContext) == NULL, "disabled ignores pointer");
 	iRet = xuiWidgetSetEnabled(pSlider, 1);
-	XUI_TEST_CHECK(iRet == XUI_OK, "enable before tiny geometry");
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable before hidden state test");
+	iRet = xuiSliderSetOrientation(pSlider, XUI_ORIENTATION_HORIZONTAL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "horizontal before hidden state test");
+	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 180.0f, 30.0f});
+	iRet = xuiSliderSetValue(pSlider, 50.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "value before hidden state test");
+	iRet = __xuiSliderRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before hidden state test");
+	tKnob = xuiSliderGetKnobRect(pSlider);
+	tWorld = xuiWidgetGetWorldRect(pSlider);
+	fX = tWorld.fX + tKnob.fX + tKnob.fW * 0.5f;
+	fY = tWorld.fY + tKnob.fY + tKnob.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hidden state drag down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pSlider,
+		"hidden state drag capture");
+	iRet = xuiWidgetSetVisible(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide slider ancestor");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		(xuiSliderGetState(pSlider) & XUI_WIDGET_STATE_ACTIVE) == 0,
+		"hidden ancestor cancels slider drag capture");
+	fOwnedValue = xuiSliderGetValue(pSlider);
+	iChangeCount = xuiSliderGetChangeCount(pSlider);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pSlider;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch key to hidden slider");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_WHEEL;
+	tEvent.pTarget = pSlider;
+	tEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tEvent.fX = fX;
+	tEvent.fY = fY;
+	tEvent.fWheelY = 1.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetValue(pSlider) == fOwnedValue &&
+		xuiSliderGetChangeCount(pSlider) == iChangeCount,
+		"hidden slider ignores direct key and wheel input");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSlider, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0u &&
+		tAccessible.iActions == 0u,
+		"hidden slider is offscreen and inert");
+	iRet = xuiWidgetPerformAccessibleAction(pSlider, 1u,
+		XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	XUI_TEST_CHECK(iRet != XUI_OK, "hidden slider rejects accessibility action");
+	iRet = xuiWidgetSetVisible(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "show slider ancestor");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch visible slider state");
+	XUI_TEST_CHECK(xuiWidgetGetVisible(pRoot) != 0,
+		"slider ancestor restored before tiny geometry");
 	iRet = xuiSliderSetOrientation(pSlider, XUI_ORIENTATION_HORIZONTAL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "horizontal before tiny geometry");
 	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 5.0f, 5.0f});

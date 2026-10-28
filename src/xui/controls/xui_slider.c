@@ -4,6 +4,7 @@
 #include "xui_slider_common.h"
 
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -174,6 +175,19 @@ static int __xuiSliderDataAlive(xui_widget pWidget, const xui_slider_data_t* pDa
 	if ( (pData == NULL) || (__xuiSliderGetData(pWidget) != pData) ) return 0;
 	pContext = xuiWidgetGetContext(pWidget);
 	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext);
+}
+
+static int __xuiSliderCanInteract(xui_widget pWidget)
+{
+	return xuiWidgetGetEffectiveEnabled(pWidget) &&
+	       xuiWidgetGetEffectiveVisible(pWidget);
+}
+
+static void __xuiSliderIncrementCounter(int* pValue)
+{
+	if ( (pValue != NULL) && (*pValue < INT_MAX) ) {
+		(*pValue)++;
+	}
 }
 
 static int __xuiSliderPointerMatches(const xui_slider_data_t* pData,
@@ -378,7 +392,7 @@ static int __xuiSliderSetValueInternal(xui_widget pWidget, xui_slider_data_t* pD
 	}
 	pData->fValue = fValue;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
-	pData->iChangeCount++;
+	__xuiSliderIncrementCounter(&pData->iChangeCount);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	onChange = pData->onChange;
@@ -498,8 +512,7 @@ static int __xuiSliderPointerDown(xui_widget pWidget, xui_slider_data_t* pData, 
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
 		return XUI_OK;
 	}
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
-	     !xuiWidgetGetEffectiveVisible(pWidget) ||
+	if ( !__xuiSliderCanInteract(pWidget) ||
 	     !__xuiSliderPointerInside(pWidget, pEvent) ) {
 		return XUI_OK;
 	}
@@ -510,7 +523,7 @@ static int __xuiSliderPointerDown(xui_widget pWidget, xui_slider_data_t* pData, 
 	iRet = xuiSetFocusWidget(pContext, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+	if ( !__xuiSliderCanInteract(pWidget) ) {
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	fDragOffset = __xuiSliderGrabOffset(pWidget, pData, pEvent);
@@ -522,7 +535,7 @@ static int __xuiSliderPointerDown(xui_widget pWidget, xui_slider_data_t* pData, 
 	pData->iActivePointerType = pEvent->iPointerType;
 	pData->fDragOffset = fDragOffset;
 	pData->bDragging = 1;
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+	if ( !__xuiSliderCanInteract(pWidget) ) {
 		__xuiSliderCancelDrag(pWidget, pData);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -537,7 +550,7 @@ static int __xuiSliderPointerDown(xui_widget pWidget, xui_slider_data_t* pData, 
 		return iRet;
 	}
 	if ( !__xuiSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+	if ( !__xuiSliderCanInteract(pWidget) ) {
 		__xuiSliderCancelDrag(pWidget, pData);
 	}
 	return XUI_EVENT_DISPATCH_STOP;
@@ -552,16 +565,14 @@ static int __xuiSliderPointerMove(xui_widget pWidget, xui_slider_data_t* pData, 
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( (pData->bDragging != 0) &&
 	     (xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget) ) {
-		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
-		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		if ( !__xuiSliderCanInteract(pWidget) ) {
 			__xuiSliderCancelDrag(pWidget, pData);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iRet = __xuiSliderSetValueFromEvent(pWidget, pData, pEvent, 1);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
-		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		if ( !__xuiSliderCanInteract(pWidget) ) {
 			__xuiSliderCancelDrag(pWidget, pData);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
@@ -583,10 +594,14 @@ static int __xuiSliderPointerUp(xui_widget pWidget, xui_slider_data_t* pData, co
 	bWasDragging = (pData->bDragging != 0) ||
 		(xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget);
 	if ( bWasDragging ) {
-		if ( xuiWidgetGetEffectiveEnabled(pWidget) &&
-		     xuiWidgetGetEffectiveVisible(pWidget) ) {
+		if ( __xuiSliderCanInteract(pWidget) ) {
 			iRet = __xuiSliderSetValueFromEvent(pWidget, pData, pEvent, 1);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) {
+				if ( __xuiSliderDataAlive(pWidget, pData) ) {
+					__xuiSliderCancelDrag(pWidget, pData);
+				}
+				return iRet;
+			}
 			if ( !__xuiSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 		}
 	}
@@ -599,7 +614,7 @@ static int __xuiSliderWheel(xui_widget pWidget, xui_slider_data_t* pData, const 
 	float fDelta;
 	int iRet;
 
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( !__xuiSliderCanInteract(pWidget) ) {
 		return XUI_OK;
 	}
 	fDelta = (__xuiSliderAbsFloat(pEvent->fWheelY) >= __xuiSliderAbsFloat(pEvent->fWheelX)) ? pEvent->fWheelY : pEvent->fWheelX;
@@ -618,7 +633,7 @@ static int __xuiSliderKeyDown(xui_widget pWidget, xui_slider_data_t* pData, cons
 	float fValue;
 	int iRet;
 
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( !__xuiSliderCanInteract(pWidget) ) {
 		return XUI_OK;
 	}
 	switch ( pEvent->iKey ) {
@@ -709,7 +724,7 @@ static int __xuiSliderEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		return __xuiSliderKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		if ( !__xuiSliderCanInteract(pWidget) ) {
 			__xuiSliderCancelDrag(pWidget, pData);
 		}
 		iRet = __xuiSliderSyncState(pWidget, pData);

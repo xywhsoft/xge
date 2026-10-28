@@ -88,6 +88,24 @@ typedef struct xui_range_slider_destroy_test_t {
 	xui_widget* ppWidget;
 } xui_range_slider_destroy_test_t;
 
+typedef struct xui_range_slider_accessibility_test_t {
+	xui_widget pWidget;
+	int iBoundsEvents;
+	int iValueEvents;
+} xui_range_slider_accessibility_test_t;
+
+static void __xuiRangeSliderAccessibilityEvent(xui_context pContext,
+	xui_widget pWidget, const xui_accessibility_event_t* pEvent, void* pUser)
+{
+	xui_range_slider_accessibility_test_t* pState =
+		(xui_range_slider_accessibility_test_t*)pUser;
+
+	(void)pContext;
+	if ( pState == NULL || pEvent == NULL || pWidget != pState->pWidget ) return;
+	if ( pEvent->iType == XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED ) pState->iBoundsEvents++;
+	if ( pEvent->iType == XUI_ACCESSIBLE_EVENT_VALUE_CHANGED ) pState->iValueEvents++;
+}
+
 static void __xuiRangeSliderDestroyOnChange(xui_widget pWidget, float fStart,
 	float fEnd, void* pUser)
 {
@@ -146,7 +164,9 @@ int main(void)
 	xui_rect_t tWorld;
 	xui_accessible_node_t tAccessible;
 	xui_accessible_value_t tAccessibleValue;
+	xui_event_t tEvent;
 	xui_range_slider_destroy_test_t tDestroyState;
+	xui_range_slider_accessibility_test_t tAccessibilityState;
 	float fMin;
 	float fMax;
 	float fStart;
@@ -162,6 +182,7 @@ int main(void)
 	float fY;
 	float fOwnedStart;
 	float fOwnedEnd;
+	int iChangeCount;
 	int iChanged;
 	int iFailed;
 	int iRet;
@@ -175,6 +196,7 @@ int main(void)
 	iChanged = 0;
 	iFailed = 0;
 	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	memset(&tAccessibilityState, 0, sizeof(tAccessibilityState));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -214,6 +236,10 @@ int main(void)
 	tDesc.fKnobSize = 0.0f;
 	iRet = xuiWidgetAddChild(pRoot, pSlider);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add range slider");
+	tAccessibilityState.pWidget = pSlider;
+	iRet = xuiSetAccessibilityEventCallback(pContext,
+		__xuiRangeSliderAccessibilityEvent, &tAccessibilityState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set range slider accessibility callback");
 	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 180.0f, 30.0f});
 	iRet = xuiRangeSliderSetChange(pSlider, __xuiRangeSliderChanged, &iChanged);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set change callback");
@@ -282,8 +308,14 @@ int main(void)
 	XUI_TEST_CHECK(tFill.fX > tTrack.fX && tFill.fW > 0.0f && tFill.fX + tFill.fW < tTrack.fX + tTrack.fW, "fill geometry");
 	XUI_TEST_CHECK(tStartKnob.fX < tEndKnob.fX && tStartKnob.fW > 10.0f && tStartKnob.fH == tStartKnob.fW, "knob geometry");
 
+	tAccessibilityState.iBoundsEvents = 0;
+	tAccessibilityState.iValueEvents = 0;
 	iRet = xuiRangeSliderSetValues(pSlider, 50.0f, 50.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "overlap thumbs");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessibilityState.iBoundsEvents == 1 &&
+		tAccessibilityState.iValueEvents == 1,
+		"range value change reports virtual thumb bounds");
 	iRet = xuiWidgetPerformAccessibleAction(pSlider, 3u,
 		XUI_ACCESSIBLE_ACTION_FOCUS, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "activate overlapping end thumb");
@@ -679,9 +711,100 @@ int main(void)
 	XUI_TEST_CHECK((xuiRangeSliderGetState(pSlider) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");
 	iRet = __xuiRangeSliderClick(pContext, tWorld.fX + tTrack.fX + tTrack.fW * 0.5f, tWorld.fY + tTrack.fY + tTrack.fH);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == 0.0f && xuiRangeSliderGetEnd(pSlider) == 100.0f && xuiGetPointerCapture(pContext) == NULL, "disabled ignores pointer");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSlider, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u &&
+		tAccessible.iActions == 0u,
+		"disabled range root is inert");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSlider, 2, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u &&
+		tAccessible.iActions == 0u,
+		"disabled range thumb is inert");
+	iRet = xuiWidgetPerformAccessibleAction(pSlider, 3u,
+		XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	XUI_TEST_CHECK(iRet != XUI_OK,
+		"disabled range rejects accessibility action");
 
 	iRet = xuiWidgetSetEnabled(pSlider, 1);
-	XUI_TEST_CHECK(iRet == XUI_OK, "enable before tiny geometry test");
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable before hidden state test");
+	iRet = xuiRangeSliderSetOrientation(pSlider, XUI_ORIENTATION_HORIZONTAL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "horizontal before hidden state test");
+	iRet = xuiRangeSliderSetMetrics(pSlider, 6.0f, 18.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore metrics before hidden state test");
+	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set values before hidden state test");
+	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 180.0f, 30.0f});
+	iRet = __xuiRangeSliderRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before hidden state test");
+	tStartKnob = xuiRangeSliderGetStartKnobRect(pSlider);
+	tWorld = xuiWidgetGetWorldRect(pSlider);
+	fX = tWorld.fX + tStartKnob.fX + tStartKnob.fW * 0.5f;
+	fY = tWorld.fY + tStartKnob.fY + tStartKnob.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hidden state drag down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pSlider,
+		"hidden state drag capture");
+	iRet = xuiWidgetSetVisible(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide range slider ancestor");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		(xuiRangeSliderGetState(pSlider) & XUI_WIDGET_STATE_ACTIVE) == 0,
+		"hidden ancestor cancels range drag capture");
+	fStart = xuiRangeSliderGetStart(pSlider);
+	fEnd = xuiRangeSliderGetEnd(pSlider);
+	iChangeCount = xuiRangeSliderGetChangeCount(pSlider);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pSlider;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch key to hidden range slider");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_WHEEL;
+	tEvent.pTarget = pSlider;
+	tEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tEvent.fX = fX;
+	tEvent.fY = fY;
+	tEvent.fWheelY = 1.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiRangeSliderGetStart(pSlider) == fStart &&
+		xuiRangeSliderGetEnd(pSlider) == fEnd &&
+		xuiRangeSliderGetChangeCount(pSlider) == iChangeCount,
+		"hidden range slider ignores direct key and wheel input");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSlider, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0u &&
+		tAccessible.iActions == 0u,
+		"hidden range root is offscreen and inert");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSlider, 2, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0u &&
+		tAccessible.iActions == 0u,
+		"hidden range thumb is offscreen and inert");
+	iRet = xuiWidgetPerformAccessibleAction(pSlider, 3u,
+		XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	XUI_TEST_CHECK(iRet != XUI_OK,
+		"hidden range rejects accessibility action");
+	iRet = xuiWidgetSetVisible(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "show range slider ancestor");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch visible range state");
+	XUI_TEST_CHECK(xuiWidgetGetVisible(pRoot) != 0,
+		"range slider ancestor restored before tiny geometry test");
 	iRet = xuiRangeSliderSetOrientation(pSlider, XUI_ORIENTATION_HORIZONTAL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "horizontal tiny geometry orientation");
 	iRet = xuiRangeSliderSetMetrics(pSlider, 6.0f, 18.0f);
