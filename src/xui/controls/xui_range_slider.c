@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_RANGE_SLIDER
 #include "xui_internal.h"
+#include "xui_slider_common.h"
 
 #include <float.h>
 #include <math.h>
@@ -42,11 +43,8 @@ typedef struct xui_range_slider_data_t {
 	uint64_t iActivePointerId;
 	int iActivePointerType;
 	int iActiveThumb;
+	float fDragOffset;
 	int iChangeCount;
-	xui_rect_t tTrackRect;
-	xui_rect_t tFillRect;
-	xui_rect_t tStartKnobRect;
-	xui_rect_t tEndKnobRect;
 } xui_range_slider_data_t;
 
 static int __xuiRangeSliderOrientationValid(int iOrientation);
@@ -64,8 +62,8 @@ static int __xuiRangeSliderDescValid(const xui_range_slider_desc_t* pDesc)
 	if ( !isfinite(pDesc->fMinInterval) || pDesc->fMinInterval < 0.0f ||
 	     !isfinite(pDesc->fMaxInterval) || pDesc->fMaxInterval < 0.0f ) return 0;
 	if ( pDesc->fMaxInterval > 0.0f && pDesc->fMinInterval > pDesc->fMaxInterval ) return 0;
-	if ( !isfinite(pDesc->fTrackSize) || pDesc->fTrackSize < 0.0f ||
-	     !isfinite(pDesc->fKnobSize) || pDesc->fKnobSize < 0.0f ) return 0;
+	if ( !xuiSliderCommonMetricValid(pDesc->fTrackSize, 0.0f) ||
+	     !xuiSliderCommonMetricValid(pDesc->fKnobSize, 0.0f) ) return 0;
 	return __xuiRangeSliderOrientationValid(pDesc->iOrientation);
 }
 
@@ -76,45 +74,22 @@ static int __xuiRangeSliderOrientationValid(int iOrientation)
 
 static float __xuiRangeSliderClampFloat(float fValue, float fMin, float fMax)
 {
-	if ( fValue < fMin ) return fMin;
-	if ( fValue > fMax ) return fMax;
-	return fValue;
+	return xuiSliderCommonClamp(fValue, fMin, fMax);
 }
 
 static float __xuiRangeSliderAbsFloat(float fValue)
 {
-	return (fValue < 0.0f) ? -fValue : fValue;
-}
-
-static float __xuiRangeSliderMinFloat(float fA, float fB)
-{
-	return (fA < fB) ? fA : fB;
+	return xuiSliderCommonAbs(fValue);
 }
 
 static float __xuiRangeSliderMaxFloat(float fA, float fB)
 {
-	return (fA > fB) ? fA : fB;
+	return xuiSliderCommonMax(fA, fB);
 }
 
 static void __xuiRangeSliderNormalizeRange(float* pMin, float* pMax)
 {
-	float fSwap;
-
-	if ( (*pMax) < (*pMin) ) {
-		fSwap = *pMin;
-		*pMin = *pMax;
-		*pMax = fSwap;
-	}
-	if ( (*pMax) == (*pMin) ) {
-		*pMax = (*pMin) + 1.0f;
-		if ( !isfinite(*pMax) || (*pMax == *pMin) ) {
-			*pMax = nextafterf(*pMin, INFINITY);
-			if ( !isfinite(*pMax) ) {
-				*pMax = *pMin;
-				*pMin = nextafterf(*pMax, -INFINITY);
-			}
-		}
-	}
+	xuiSliderCommonNormalizeRange(pMin, pMax);
 }
 
 static double __xuiRangeSliderEffectiveMinInterval(float fMinInterval, float fMin, float fMax)
@@ -175,56 +150,20 @@ static uint32_t __xuiRangeSliderLighten(uint32_t iColor, int iAmount)
 
 static float __xuiRangeSliderRateFromValue(const xui_range_slider_data_t* pData, float fValue)
 {
-	double fRate;
-
-	if ( pData == NULL || pData->fMax == pData->fMin ) {
-		return 0.0f;
-	}
-	fRate = ((double)fValue - (double)pData->fMin) /
-		((double)pData->fMax - (double)pData->fMin);
-	if ( fRate <= 0.0 ) return 0.0f;
-	if ( fRate >= 1.0 ) return 1.0f;
-	return (float)fRate;
+	return pData != NULL ?
+		xuiSliderCommonRate(pData->fMin, pData->fMax, fValue) : 0.0f;
 }
 
 static float __xuiRangeSliderSmallStep(const xui_range_slider_data_t* pData)
 {
-	double fRange;
-	double fStep;
-
-	if ( pData == NULL ) {
-		return 1.0f;
-	}
-	if ( pData->fStep > 0.0f ) {
-		return pData->fStep;
-	}
-	fRange = (double)pData->fMax - (double)pData->fMin;
-	fStep = (fRange > 0.0f) ? (fRange * 0.01f) : 1.0f;
-	if ( (fRange >= 1.0f) && (fStep < 1.0f) ) {
-		fStep = 1.0f;
-	}
-	if ( fStep > (double)FLT_MAX ) fStep = (double)FLT_MAX;
-	return (fStep > 0.0) ? (float)fStep : 1.0f;
+	return pData != NULL ? xuiSliderCommonStep(pData->fMin, pData->fMax,
+		pData->fStep, 0.01) : 1.0f;
 }
 
 static float __xuiRangeSliderPageStep(const xui_range_slider_data_t* pData)
 {
-	double fRange;
-	double fStep;
-
-	if ( pData == NULL ) {
-		return 1.0f;
-	}
-	if ( pData->fPageStep > 0.0f ) {
-		return pData->fPageStep;
-	}
-	fRange = (double)pData->fMax - (double)pData->fMin;
-	fStep = (fRange > 0.0f) ? (fRange * 0.10f) : __xuiRangeSliderSmallStep(pData);
-	if ( (fRange >= 1.0f) && (fStep < 1.0f) ) {
-		fStep = 1.0f;
-	}
-	if ( fStep > (double)FLT_MAX ) fStep = (double)FLT_MAX;
-	return (fStep > 0.0) ? (float)fStep : 1.0f;
+	return pData != NULL ? xuiSliderCommonStep(pData->fMin, pData->fMax,
+		pData->fPageStep, 0.10) : 1.0f;
 }
 
 static xui_range_slider_data_t* __xuiRangeSliderGetData(xui_widget pWidget)
@@ -285,7 +224,7 @@ static int __xuiRangeSliderStyleFloat(xui_widget pWidget, const char* sName, flo
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	     xuiSliderCommonMetricValid(tProperty.tValue.fFloat, 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -316,7 +255,7 @@ static uint32_t __xuiRangeSliderBaseState(xui_widget pWidget, const xui_range_sl
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iState |= XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) {
@@ -359,53 +298,17 @@ static int __xuiRangeSliderRectContains(xui_rect_t tRect, float fX, float fY)
 	       (fY < (tRect.fY + tRect.fH));
 }
 
-/* Geometry shared by the track, fill and knobs stays in float until output. */
-typedef struct xui_range_slider_rect_t {
-	float fX, fY, fW, fH;
-} xui_range_slider_rect_t;
+typedef struct xui_range_slider_geometry_t {
+	xui_slider_common_rect_t tTrack;
+	xui_slider_common_rect_t tFill;
+	xui_slider_common_rect_t tStartKnob;
+	xui_slider_common_rect_t tEndKnob;
+} xui_range_slider_geometry_t;
 
-static xui_range_slider_rect_t __xuiRangeSliderTrackRect(const xui_range_slider_data_t* pData, xui_rect_t tContent)
+static xui_slider_common_rect_t __xuiRangeSliderFillRect(
+	const xui_range_slider_data_t* pData, xui_slider_common_rect_t tTrack)
 {
-	xui_range_slider_rect_t tTrack;
-	float fCrossSize;
-	float fInset;
-
-	if ( (pData == NULL) || (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return (xui_range_slider_rect_t){0};
-	}
-	tTrack = (xui_range_slider_rect_t){tContent.fX, tContent.fY, tContent.fW, tContent.fH};
-	fCrossSize = (pData->fTrackSize > 0.0f) ? pData->fTrackSize : 4.0f;
-	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		if ( fCrossSize > tContent.fH ) fCrossSize = tContent.fH;
-		fInset = __xuiRangeSliderMinFloat(pData->fKnobSize * 0.5f, tContent.fW * 0.5f);
-		tTrack.fX = tContent.fX + fInset;
-		tTrack.fW = tContent.fW - fInset * 2.0f;
-		if ( tTrack.fW < 1.0f ) {
-			tTrack.fX = tContent.fX + tContent.fW * 0.5f - 0.5f;
-			tTrack.fW = 1.0f;
-		}
-		tTrack.fY = tContent.fY + (tContent.fH - fCrossSize) * 0.5f;
-		tTrack.fH = fCrossSize;
-	} else {
-		if ( fCrossSize > tContent.fW ) fCrossSize = tContent.fW;
-		fInset = __xuiRangeSliderMinFloat(pData->fKnobSize * 0.5f, tContent.fH * 0.5f);
-		tTrack.fY = tContent.fY + fInset;
-		tTrack.fH = tContent.fH - fInset * 2.0f;
-		if ( tTrack.fH < 1.0f ) {
-			tTrack.fY = tContent.fY + tContent.fH * 0.5f - 0.5f;
-			tTrack.fH = 1.0f;
-		}
-		tTrack.fX = tContent.fX + (tContent.fW - fCrossSize) * 0.5f;
-		tTrack.fW = fCrossSize;
-	}
-	if ( tTrack.fW < 0.0f ) tTrack.fW = 0.0f;
-	if ( tTrack.fH < 0.0f ) tTrack.fH = 0.0f;
-	return tTrack;
-}
-
-static xui_rect_t __xuiRangeSliderFillRect(const xui_range_slider_data_t* pData, xui_range_slider_rect_t tTrack)
-{
-	xui_range_slider_rect_t tFill;
+	xui_slider_common_rect_t tFill;
 	float fStartRate;
 	float fEndRate;
 	float fA;
@@ -428,81 +331,31 @@ static xui_rect_t __xuiRangeSliderFillRect(const xui_range_slider_data_t* pData,
 		tFill.fY = tTrack.fY + tTrack.fH * (1.0f - fB);
 		tFill.fH = tTrack.fH * (fB - fA);
 	}
-	return xuiInternalRectFromFloatNearest(tFill.fX, tFill.fY, tFill.fW, tFill.fH);
+	return tFill;
 }
 
-static xui_rect_t __xuiRangeSliderKnobRectForValue(const xui_range_slider_data_t* pData, xui_rect_t tContent, xui_range_slider_rect_t tTrack, float fValue)
-{
-	xui_range_slider_rect_t tRect;
-	float fRate;
-	float fSize;
-	float fCenter;
-
-	memset(&tRect, 0, sizeof(tRect));
-	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return (xui_rect_t){0};
-	}
-	fRate = __xuiRangeSliderRateFromValue(pData, fValue);
-	fSize = (pData->fKnobSize > 0.0f) ? pData->fKnobSize : 14.0f;
-	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		if ( fSize > tContent.fH ) fSize = tContent.fH;
-		if ( fSize > tContent.fW ) fSize = tContent.fW;
-		fCenter = tTrack.fX + tTrack.fW * fRate;
-		tRect.fX = fCenter - fSize * 0.5f;
-		tRect.fY = tContent.fY + (tContent.fH - fSize) * 0.5f;
-		tRect.fW = fSize;
-		tRect.fH = fSize;
-		if ( tRect.fX < tContent.fX ) tRect.fX = tContent.fX;
-		if ( tRect.fX + tRect.fW > tContent.fX + tContent.fW ) tRect.fX = tContent.fX + tContent.fW - tRect.fW;
-	} else {
-		if ( fSize > tContent.fW ) fSize = tContent.fW;
-		if ( fSize > tContent.fH ) fSize = tContent.fH;
-		fCenter = tTrack.fY + tTrack.fH * (1.0f - fRate);
-		tRect.fX = tContent.fX + (tContent.fW - fSize) * 0.5f;
-		tRect.fY = fCenter - fSize * 0.5f;
-		tRect.fW = fSize;
-		tRect.fH = fSize;
-		if ( tRect.fY < tContent.fY ) tRect.fY = tContent.fY;
-		if ( tRect.fY + tRect.fH > tContent.fY + tContent.fH ) tRect.fY = tContent.fY + tContent.fH - tRect.fH;
-	}
-	return xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH);
-}
-
-static void __xuiRangeSliderUpdateRects(xui_widget pWidget, xui_range_slider_data_t* pData, const xui_range_slider_data_t* pResolved)
+static void __xuiRangeSliderComputeGeometry(xui_widget pWidget,
+	const xui_range_slider_data_t* pResolved,
+	xui_range_slider_geometry_t* pGeometry)
 {
 	xui_rect_t tContent;
-	xui_range_slider_rect_t tTrack;
 
+	memset(pGeometry, 0, sizeof(*pGeometry));
 	tContent = xuiWidgetGetContentRect(pWidget);
-	tTrack = __xuiRangeSliderTrackRect(pResolved, tContent);
-	pData->tTrackRect = xuiInternalRectFromFloatNearest(tTrack.fX, tTrack.fY, tTrack.fW, tTrack.fH);
-	pData->tFillRect = __xuiRangeSliderFillRect(pResolved, tTrack);
-	pData->tStartKnobRect = __xuiRangeSliderKnobRectForValue(pResolved, tContent, tTrack, pResolved->fStart);
-	pData->tEndKnobRect = __xuiRangeSliderKnobRectForValue(pResolved, tContent, tTrack, pResolved->fEnd);
+	pGeometry->tTrack = xuiSliderCommonTrackRect(tContent,
+		pResolved->fTrackSize, pResolved->fKnobSize, pResolved->iOrientation);
+	pGeometry->tFill = __xuiRangeSliderFillRect(pResolved, pGeometry->tTrack);
+	pGeometry->tStartKnob = xuiSliderCommonKnobRect(tContent,
+		pGeometry->tTrack, pResolved->fKnobSize, pResolved->iOrientation,
+		__xuiRangeSliderRateFromValue(pResolved, pResolved->fStart));
+	pGeometry->tEndKnob = xuiSliderCommonKnobRect(tContent,
+		pGeometry->tTrack, pResolved->fKnobSize, pResolved->iOrientation,
+		__xuiRangeSliderRateFromValue(pResolved, pResolved->fEnd));
 }
 
-static float __xuiRangeSliderValueFromLocalPoint(const xui_range_slider_data_t* pData, float fLocalX, float fLocalY)
-{
-	float fRate;
-	double fValue;
-
-	if ( pData == NULL ) {
-		return 0.0f;
-	}
-	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		fRate = (pData->tTrackRect.fW > 0.0f) ? ((fLocalX - pData->tTrackRect.fX) / pData->tTrackRect.fW) : 0.0f;
-	} else {
-		fRate = (pData->tTrackRect.fH > 0.0f) ? (1.0f - ((fLocalY - pData->tTrackRect.fY) / pData->tTrackRect.fH)) : 0.0f;
-	}
-	fRate = __xuiRangeSliderClampFloat(fRate, 0.0f, 1.0f);
-	fValue = (double)pData->fMin +
-		((double)pData->fMax - (double)pData->fMin) * (double)fRate;
-	if ( fValue <= (double)pData->fMin ) return pData->fMin;
-	if ( fValue >= (double)pData->fMax ) return pData->fMax;
-	return (float)fValue;
-}
-
-static int __xuiRangeSliderNearestThumb(const xui_range_slider_data_t* pData, float fLocalX, float fLocalY)
+static int __xuiRangeSliderNearestThumb(
+	const xui_range_slider_data_t* pData,
+	const xui_range_slider_geometry_t* pGeometry, float fLocalX, float fLocalY)
 {
 	float fStartCenter;
 	float fEndCenter;
@@ -511,33 +364,65 @@ static int __xuiRangeSliderNearestThumb(const xui_range_slider_data_t* pData, fl
 	int bStartHit;
 	int bEndHit;
 
-	if ( pData == NULL ) {
+	if ( (pData == NULL) || (pGeometry == NULL) ) {
 		return XUI_RANGE_SLIDER_THUMB_NONE;
 	}
-	bStartHit = __xuiRangeSliderRectContains(pData->tStartKnobRect, fLocalX, fLocalY);
-	bEndHit = __xuiRangeSliderRectContains(pData->tEndKnobRect, fLocalX, fLocalY);
+	bStartHit = xuiSliderCommonRectContains(pGeometry->tStartKnob,
+		fLocalX, fLocalY);
+	bEndHit = xuiSliderCommonRectContains(pGeometry->tEndKnob,
+		fLocalX, fLocalY);
 	if ( bStartHit && bEndHit ) {
 		return pData->iActiveThumb == XUI_RANGE_SLIDER_THUMB_START ?
 			XUI_RANGE_SLIDER_THUMB_START : XUI_RANGE_SLIDER_THUMB_END;
 	}
-	if ( bStartHit ) {
-		return XUI_RANGE_SLIDER_THUMB_START;
-	}
-	if ( bEndHit ) {
-		return XUI_RANGE_SLIDER_THUMB_END;
-	}
+	if ( bStartHit ) return XUI_RANGE_SLIDER_THUMB_START;
+	if ( bEndHit ) return XUI_RANGE_SLIDER_THUMB_END;
 	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
-		fStartCenter = pData->tStartKnobRect.fX + pData->tStartKnobRect.fW * 0.5f;
-		fEndCenter = pData->tEndKnobRect.fX + pData->tEndKnobRect.fW * 0.5f;
+		fStartCenter = pGeometry->tStartKnob.fX +
+			pGeometry->tStartKnob.fW * 0.5f;
+		fEndCenter = pGeometry->tEndKnob.fX +
+			pGeometry->tEndKnob.fW * 0.5f;
 		fDistanceStart = __xuiRangeSliderAbsFloat(fLocalX - fStartCenter);
 		fDistanceEnd = __xuiRangeSliderAbsFloat(fLocalX - fEndCenter);
 	} else {
-		fStartCenter = pData->tStartKnobRect.fY + pData->tStartKnobRect.fH * 0.5f;
-		fEndCenter = pData->tEndKnobRect.fY + pData->tEndKnobRect.fH * 0.5f;
+		fStartCenter = pGeometry->tStartKnob.fY +
+			pGeometry->tStartKnob.fH * 0.5f;
+		fEndCenter = pGeometry->tEndKnob.fY +
+			pGeometry->tEndKnob.fH * 0.5f;
 		fDistanceStart = __xuiRangeSliderAbsFloat(fLocalY - fStartCenter);
 		fDistanceEnd = __xuiRangeSliderAbsFloat(fLocalY - fEndCenter);
 	}
-	return (fDistanceStart <= fDistanceEnd) ? XUI_RANGE_SLIDER_THUMB_START : XUI_RANGE_SLIDER_THUMB_END;
+	return (fDistanceStart <= fDistanceEnd) ?
+		XUI_RANGE_SLIDER_THUMB_START : XUI_RANGE_SLIDER_THUMB_END;
+}
+
+static int __xuiRangeSliderGrabInfo(xui_widget pWidget,
+	const xui_range_slider_data_t* pData, const xui_event_t* pEvent,
+	float* pOffset)
+{
+	xui_range_slider_data_t tResolved;
+	xui_range_slider_geometry_t tGeometry;
+	xui_slider_common_rect_t tKnob;
+	xui_rect_t tWorld;
+	float fLocalX;
+	float fLocalY;
+	int iThumb;
+
+	__xuiRangeSliderResolve(pWidget, pData, &tResolved);
+	__xuiRangeSliderComputeGeometry(pWidget, &tResolved, &tGeometry);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	fLocalX = pEvent->fX - tWorld.fX;
+	fLocalY = pEvent->fY - tWorld.fY;
+	iThumb = __xuiRangeSliderNearestThumb(pData, &tGeometry, fLocalX, fLocalY);
+	tKnob = iThumb == XUI_RANGE_SLIDER_THUMB_START ?
+		tGeometry.tStartKnob : tGeometry.tEndKnob;
+	*pOffset = 0.0f;
+	if ( xuiSliderCommonRectContains(tKnob, fLocalX, fLocalY) ) {
+		*pOffset = pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ?
+			fLocalX - (tKnob.fX + tKnob.fW * 0.5f) :
+			fLocalY - (tKnob.fY + tKnob.fH * 0.5f);
+	}
+	return iThumb;
 }
 
 static int __xuiRangeSliderSetActiveThumb(xui_widget pWidget,
@@ -666,23 +551,34 @@ static int __xuiRangeSliderSetThumbValueInternal(xui_widget pWidget, xui_range_s
 static int __xuiRangeSliderSetValueFromEvent(xui_widget pWidget, xui_range_slider_data_t* pData, const xui_event_t* pEvent, int iThumb, int bNotify)
 {
 	xui_range_slider_data_t tResolved;
+	xui_range_slider_geometry_t tGeometry;
 	xui_rect_t tWorld;
 	float fLocalX;
 	float fLocalY;
+	float fCurrent;
 	float fValue;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiRangeSliderResolve(pWidget, pData, &tResolved);
-	__xuiRangeSliderUpdateRects(pWidget, pData, &tResolved);
+	__xuiRangeSliderComputeGeometry(pWidget, &tResolved, &tGeometry);
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	fLocalX = pEvent->fX - tWorld.fX;
 	fLocalY = pEvent->fY - tWorld.fY;
 	if ( iThumb == XUI_RANGE_SLIDER_THUMB_NONE ) {
-		iThumb = __xuiRangeSliderNearestThumb(pData, fLocalX, fLocalY);
+		iThumb = __xuiRangeSliderNearestThumb(pData, &tGeometry,
+			fLocalX, fLocalY);
 	}
-	fValue = __xuiRangeSliderValueFromLocalPoint(pData, fLocalX, fLocalY);
+	if ( pData->iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
+		fLocalX -= pData->fDragOffset;
+	} else {
+		fLocalY -= pData->fDragOffset;
+	}
+	fCurrent = iThumb == XUI_RANGE_SLIDER_THUMB_START ?
+		pData->fStart : pData->fEnd;
+	fValue = xuiSliderCommonValueFromPoint(fCurrent, pData->fMin, pData->fMax,
+		pData->iOrientation, tGeometry.tTrack, fLocalX, fLocalY);
 	{
 		int iRet = __xuiRangeSliderSetActiveThumb(pWidget, pData, iThumb);
 		if ( iRet != XUI_OK ) return iRet;
@@ -708,6 +604,7 @@ static void __xuiRangeSliderCancelDrag(xui_widget pWidget, xui_range_slider_data
 	pData->bPointerActive = 0;
 	pData->iActivePointerId = 0;
 	pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
+	pData->fDragOffset = 0.0f;
 	(void)__xuiRangeSliderSyncState(pWidget, pData);
 	if ( bPointerActive && xuiInternalContextIsValid(pContext) &&
 	     xuiGetPointerCaptureEx(pContext, iPointerId, iPointerType) == pWidget ) {
@@ -744,12 +641,16 @@ static int __xuiRangeSliderPointerInside(xui_widget pWidget, const xui_event_t* 
 static int __xuiRangeSliderPointerDown(xui_widget pWidget, xui_range_slider_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_context pContext;
+	float fDragOffset;
+	int iThumb;
 	int iRet;
 
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
 		return XUI_OK;
 	}
-	if ( !xuiWidgetGetEnabled(pWidget) || !__xuiRangeSliderPointerInside(pWidget, pEvent) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ||
+	     !__xuiRangeSliderPointerInside(pWidget, pEvent) ) {
 		return XUI_OK;
 	}
 	if ( pData->bPointerActive ) {
@@ -759,22 +660,43 @@ static int __xuiRangeSliderPointerDown(xui_widget pWidget, xui_range_slider_data
 	iRet = xuiSetFocusWidget(pContext, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiRangeSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	iThumb = __xuiRangeSliderGrabInfo(pWidget, pData, pEvent, &fDragOffset);
 	iRet = xuiSetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiRangeSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 	pData->bPointerActive = 1;
 	pData->iActivePointerId = pEvent->iPointerId;
 	pData->iActivePointerType = pEvent->iPointerType;
+	pData->fDragOffset = fDragOffset;
 	pData->bDragging = 1;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		__xuiRangeSliderCancelDrag(pWidget, pData);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	iRet = __xuiRangeSliderSetActiveThumb(pWidget, pData, iThumb);
+	if ( iRet != XUI_OK ) {
+		__xuiRangeSliderCancelDrag(pWidget, pData);
+		return iRet;
+	}
 	iRet = __xuiRangeSliderSyncState(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		__xuiRangeSliderCancelDrag(pWidget, pData);
 		return iRet;
 	}
-	iRet = __xuiRangeSliderSetValueFromEvent(pWidget, pData, pEvent, XUI_RANGE_SLIDER_THUMB_NONE, 1);
+	iRet = __xuiRangeSliderSetValueFromEvent(pWidget, pData, pEvent, iThumb, 1);
 	if ( iRet != XUI_OK ) {
 		__xuiRangeSliderCancelDrag(pWidget, pData);
 		return iRet;
+	}
+	if ( !__xuiRangeSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		__xuiRangeSliderCancelDrag(pWidget, pData);
 	}
 	return XUI_EVENT_DISPATCH_STOP;
 }
@@ -788,8 +710,18 @@ static int __xuiRangeSliderPointerMove(xui_widget pWidget, xui_range_slider_data
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( (pData->bDragging != 0) &&
 	     (xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			__xuiRangeSliderCancelDrag(pWidget, pData);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		iRet = __xuiRangeSliderSetValueFromEvent(pWidget, pData, pEvent, pData->iActiveThumb, 1);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiRangeSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			__xuiRangeSliderCancelDrag(pWidget, pData);
+		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	return __xuiRangeSliderSyncState(pWidget, pData);
@@ -809,9 +741,13 @@ static int __xuiRangeSliderPointerUp(xui_widget pWidget, xui_range_slider_data_t
 	bWasDragging = (pData->bDragging != 0) ||
 		(xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget);
 	if ( bWasDragging ) {
-		iRet = __xuiRangeSliderSetValueFromEvent(pWidget, pData, pEvent, pData->iActiveThumb, 1);
-		if ( iRet != XUI_OK ) return iRet;
-		if ( !__xuiRangeSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( xuiWidgetGetEffectiveEnabled(pWidget) &&
+		     xuiWidgetGetEffectiveVisible(pWidget) ) {
+			iRet = __xuiRangeSliderSetValueFromEvent(pWidget, pData, pEvent,
+				pData->iActiveThumb, 1);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiRangeSliderDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		}
 	}
 	__xuiRangeSliderCancelDrag(pWidget, pData);
 	return bWasDragging ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -820,6 +756,7 @@ static int __xuiRangeSliderPointerUp(xui_widget pWidget, xui_range_slider_data_t
 static int __xuiRangeSliderWheel(xui_widget pWidget, xui_range_slider_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_range_slider_data_t tResolved;
+	xui_range_slider_geometry_t tGeometry;
 	xui_rect_t tWorld;
 	float fLocalX;
 	float fLocalY;
@@ -827,27 +764,30 @@ static int __xuiRangeSliderWheel(xui_widget pWidget, xui_range_slider_data_t* pD
 	int iThumb;
 	int iRet;
 
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		return XUI_OK;
 	}
 	fDelta = (__xuiRangeSliderAbsFloat(pEvent->fWheelY) >= __xuiRangeSliderAbsFloat(pEvent->fWheelX)) ? pEvent->fWheelY : pEvent->fWheelX;
-	if ( fDelta == 0.0f ) {
+	if ( !isfinite(fDelta) || fDelta == 0.0f ) {
 		return XUI_OK;
 	}
 	iThumb = pData->iActiveThumb;
 	if ( iThumb == XUI_RANGE_SLIDER_THUMB_NONE ) {
 		__xuiRangeSliderResolve(pWidget, pData, &tResolved);
-		__xuiRangeSliderUpdateRects(pWidget, pData, &tResolved);
+		__xuiRangeSliderComputeGeometry(pWidget, &tResolved, &tGeometry);
 		tWorld = xuiWidgetGetWorldRect(pWidget);
 		fLocalX = pEvent->fX - tWorld.fX;
 		fLocalY = pEvent->fY - tWorld.fY;
-		iThumb = __xuiRangeSliderNearestThumb(pData, fLocalX, fLocalY);
+		iThumb = __xuiRangeSliderNearestThumb(pData, &tGeometry,
+			fLocalX, fLocalY);
 	}
 	iRet = __xuiRangeSliderSetActiveThumb(pWidget, pData, iThumb);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiRangeSliderSetThumbValueInternal(pWidget, pData, iThumb,
-		(iThumb == XUI_RANGE_SLIDER_THUMB_START ? pData->fStart : pData->fEnd) +
-		fDelta * __xuiRangeSliderSmallStep(pData), 1);
+		xuiSliderCommonValueWithDelta(
+			iThumb == XUI_RANGE_SLIDER_THUMB_START ? pData->fStart : pData->fEnd,
+			pData->fMin, pData->fMax,
+			(double)fDelta * (double)__xuiRangeSliderSmallStep(pData)), 1);
 	if ( iRet != XUI_OK ) return iRet;
 	return XUI_EVENT_DISPATCH_STOP;
 }
@@ -858,7 +798,7 @@ static int __xuiRangeSliderKeyDown(xui_widget pWidget, xui_range_slider_data_t* 
 	int iRet;
 	float fValue;
 
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		return XUI_OK;
 	}
 	iThumb = (pData->iActiveThumb != XUI_RANGE_SLIDER_THUMB_NONE) ? pData->iActiveThumb : XUI_RANGE_SLIDER_THUMB_END;
@@ -896,14 +836,16 @@ static int __xuiRangeSliderKeyDown(xui_widget pWidget, xui_range_slider_data_t* 
 		iRet = __xuiRangeSliderSetActiveThumb(pWidget, pData, iThumb);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiRangeSliderSetThumbValueInternal(pWidget, pData, iThumb,
-			fValue - __xuiRangeSliderPageStep(pData), 1);
+			xuiSliderCommonValueWithDelta(fValue, pData->fMin, pData->fMax,
+				-(double)__xuiRangeSliderPageStep(pData)), 1);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_PAGE_UP:
 		iRet = __xuiRangeSliderSetActiveThumb(pWidget, pData, iThumb);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiRangeSliderSetThumbValueInternal(pWidget, pData, iThumb,
-			fValue + __xuiRangeSliderPageStep(pData), 1);
+			xuiSliderCommonValueWithDelta(fValue, pData->fMin, pData->fMax,
+				(double)__xuiRangeSliderPageStep(pData)), 1);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_LEFT:
@@ -911,7 +853,8 @@ static int __xuiRangeSliderKeyDown(xui_widget pWidget, xui_range_slider_data_t* 
 		iRet = __xuiRangeSliderSetActiveThumb(pWidget, pData, iThumb);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiRangeSliderSetThumbValueInternal(pWidget, pData, iThumb,
-			fValue - __xuiRangeSliderSmallStep(pData), 1);
+			xuiSliderCommonValueWithDelta(fValue, pData->fMin, pData->fMax,
+				-(double)__xuiRangeSliderSmallStep(pData)), 1);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_RIGHT:
@@ -919,7 +862,8 @@ static int __xuiRangeSliderKeyDown(xui_widget pWidget, xui_range_slider_data_t* 
 		iRet = __xuiRangeSliderSetActiveThumb(pWidget, pData, iThumb);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiRangeSliderSetThumbValueInternal(pWidget, pData, iThumb,
-			fValue + __xuiRangeSliderSmallStep(pData), 1);
+			xuiSliderCommonValueWithDelta(fValue, pData->fMin, pData->fMax,
+				(double)__xuiRangeSliderSmallStep(pData)), 1);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
@@ -967,6 +911,7 @@ static int __xuiRangeSliderEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 			pData->bPointerActive = 0;
 			pData->iActivePointerId = 0;
 			pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
+			pData->fDragOffset = 0.0f;
 			return __xuiRangeSliderSyncState(pWidget, pData);
 		}
 		return XUI_OK;
@@ -1036,9 +981,14 @@ static int __xuiRangeSliderCacheRender(xui_widget pWidget, xui_draw_context pDra
 {
 	xui_range_slider_data_t* pData;
 	xui_range_slider_data_t tResolved;
+	xui_range_slider_geometry_t tGeometry;
 	xui_proxy pProxy;
 	xui_rect_t tContent;
 	xui_rect_t tFocus;
+	xui_rect_t tTrack;
+	xui_rect_t tFill;
+	xui_rect_t tStartKnob;
+	xui_rect_t tEndKnob;
 	uint32_t iTrackColor;
 	uint32_t iFillColor;
 	uint32_t iKnobColor;
@@ -1055,24 +1005,28 @@ static int __xuiRangeSliderCacheRender(xui_widget pWidget, xui_draw_context pDra
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	__xuiRangeSliderResolve(pWidget, pData, &tResolved);
-	__xuiRangeSliderUpdateRects(pWidget, pData, &tResolved);
+	__xuiRangeSliderComputeGeometry(pWidget, &tResolved, &tGeometry);
+	tTrack = xuiSliderCommonOutputRect(tGeometry.tTrack);
+	tFill = xuiSliderCommonOutputRect(tGeometry.tFill);
+	tStartKnob = xuiSliderCommonOutputRect(tGeometry.tStartKnob);
+	tEndKnob = xuiSliderCommonOutputRect(tGeometry.tEndKnob);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	iTrackColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? __xuiRangeSliderColorWithAlpha(tResolved.iDisabledColor, 72) : tResolved.iTrackColor;
 	iFillColor = __xuiRangeSliderFillForState(&tResolved, iStateId);
 	iKnobColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledKnobColor : tResolved.iKnobColor;
 	iBorderColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? __xuiRangeSliderColorWithAlpha(tResolved.iKnobBorderColor, 105) : tResolved.iKnobBorderColor;
-	iRet = __xuiRangeSliderDrawRectFill(pProxy, pDraw, pData->tTrackRect, iTrackColor);
+	iRet = __xuiRangeSliderDrawRectFill(pProxy, pDraw, tTrack, iTrackColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiRangeSliderDrawRectFill(pProxy, pDraw, pData->tFillRect, iFillColor);
+	iRet = __xuiRangeSliderDrawRectFill(pProxy, pDraw, tFill, iFillColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->iActiveThumb == XUI_RANGE_SLIDER_THUMB_START ) {
-		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tEndKnobRect, iKnobColor, iBorderColor);
+		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, tEndKnob, iKnobColor, iBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tStartKnobRect, iKnobColor, iBorderColor);
+		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, tStartKnob, iKnobColor, iBorderColor);
 	} else {
-		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tStartKnobRect, iKnobColor, iBorderColor);
+		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, tStartKnob, iKnobColor, iBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tEndKnobRect, iKnobColor, iBorderColor);
+		iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, tEndKnob, iKnobColor, iBorderColor);
 	}
 	if ( iRet != XUI_OK ) return iRet;
 	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && ((iStateId & XUI_WIDGET_STATE_DISABLED) == 0) ) {
@@ -1103,6 +1057,8 @@ static int __xuiRangeSliderContentMeasure(xui_widget pWidget, xui_vec2_t tConstr
 	fCross = __xuiRangeSliderMaxFloat(tResolved.fKnobSize, tResolved.fTrackSize);
 	if ( fCross < 18.0f ) fCross = 18.0f;
 	fLong = __xuiRangeSliderMaxFloat(tResolved.fKnobSize * 8.0f, 144.0f);
+	if ( fCross > XUI_LAYOUT_UNBOUNDED ) fCross = XUI_LAYOUT_UNBOUNDED;
+	if ( fLong > XUI_LAYOUT_UNBOUNDED ) fLong = XUI_LAYOUT_UNBOUNDED;
 	if ( tResolved.iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
 		*pSize = (xui_vec2_t){fLong, fCross};
 	} else {
@@ -1194,6 +1150,7 @@ static int __xuiRangeSliderAccessibleGet(xui_widget pWidget, int iIndex,
 {
 	xui_range_slider_data_t* pData = (xui_range_slider_data_t*)pUser;
 	xui_range_slider_data_t tResolved;
+	xui_range_slider_geometry_t tGeometry;
 	xui_rect_t tWorld;
 	xui_rect_t tKnob;
 	char* sValue;
@@ -1226,9 +1183,10 @@ static int __xuiRangeSliderAccessibleGet(xui_widget pWidget, int iIndex,
 	}
 	iThumb = iIndex == 1 ? XUI_RANGE_SLIDER_THUMB_START : XUI_RANGE_SLIDER_THUMB_END;
 	__xuiRangeSliderResolve(pWidget, pData, &tResolved);
-	__xuiRangeSliderUpdateRects(pWidget, pData, &tResolved);
+	__xuiRangeSliderComputeGeometry(pWidget, &tResolved, &tGeometry);
 	tKnob = iThumb == XUI_RANGE_SLIDER_THUMB_START ?
-		pData->tStartKnobRect : pData->tEndKnobRect;
+		xuiSliderCommonOutputRect(tGeometry.tStartKnob) :
+		xuiSliderCommonOutputRect(tGeometry.tEndKnob);
 	sValue = iThumb == XUI_RANGE_SLIDER_THUMB_START ?
 		pData->sAccessibleStartValue : pData->sAccessibleEndValue;
 	(void)snprintf(sValue, 48u, "%.9g",
@@ -1302,9 +1260,11 @@ static int __xuiRangeSliderAccessibleAction(xui_widget pWidget, uint64_t iNodeId
 		if ( fValue < fMin || fValue > fMax ) return XUI_ERROR_INVALID_ARGUMENT;
 	} else if ( iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ||
 	            iAction == XUI_ACCESSIBLE_ACTION_DECREMENT ) {
-		fValue = (iThumb == XUI_RANGE_SLIDER_THUMB_START ? pData->fStart : pData->fEnd) +
+		fValue = xuiSliderCommonValueWithDelta(
+			iThumb == XUI_RANGE_SLIDER_THUMB_START ? pData->fStart : pData->fEnd,
+			pData->fMin, pData->fMax,
 			(iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ? 1.0 : -1.0) *
-			(double)__xuiRangeSliderSmallStep(pData);
+			(double)__xuiRangeSliderSmallStep(pData));
 	} else {
 		return XUI_ERROR_UNSUPPORTED;
 	}
@@ -1669,8 +1629,9 @@ XUI_API int xuiRangeSliderSetMetrics(xui_widget pWidget, float fTrackSize, float
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
 	int iRet;
-	if ( (pData == NULL) || !isfinite(fTrackSize) || !isfinite(fKnobSize) ||
-	     (fTrackSize < 0.0f) || (fKnobSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !xuiSliderCommonMetricValid(fTrackSize, 0.0f) ||
+	     !xuiSliderCommonMetricValid(fKnobSize, 0.0f) )
+		return XUI_ERROR_INVALID_ARGUMENT;
 	fTrackSize = (fTrackSize > 0.0f) ? fTrackSize : 4.0f;
 	fKnobSize = (fKnobSize > 0.0f) ? fKnobSize : 14.0f;
 	if ( pData->fTrackSize == fTrackSize && pData->fKnobSize == fKnobSize ) return XUI_OK;
@@ -1740,17 +1701,18 @@ static xui_rect_t __xuiRangeSliderGetComputedRect(xui_widget pWidget, int iWhich
 {
 	xui_range_slider_data_t* pData;
 	xui_range_slider_data_t tResolved;
+	xui_range_slider_geometry_t tGeometry;
 	xui_rect_t tZero;
 
 	memset(&tZero, 0, sizeof(tZero));
 	pData = __xuiRangeSliderGetData(pWidget);
 	if ( pData == NULL ) return tZero;
 	__xuiRangeSliderResolve(pWidget, pData, &tResolved);
-	__xuiRangeSliderUpdateRects(pWidget, pData, &tResolved);
-	if ( iWhich == 1 ) return pData->tTrackRect;
-	if ( iWhich == 2 ) return pData->tFillRect;
-	if ( iWhich == 3 ) return pData->tStartKnobRect;
-	if ( iWhich == 4 ) return pData->tEndKnobRect;
+	__xuiRangeSliderComputeGeometry(pWidget, &tResolved, &tGeometry);
+	if ( iWhich == 1 ) return xuiSliderCommonOutputRect(tGeometry.tTrack);
+	if ( iWhich == 2 ) return xuiSliderCommonOutputRect(tGeometry.tFill);
+	if ( iWhich == 3 ) return xuiSliderCommonOutputRect(tGeometry.tStartKnob);
+	if ( iWhich == 4 ) return xuiSliderCommonOutputRect(tGeometry.tEndKnob);
 	return tZero;
 }
 

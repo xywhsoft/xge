@@ -26,6 +26,11 @@ static int __xuiRangeSliderNear(float fA, float fB)
 	return fD < 0.02f;
 }
 
+static int __xuiRangeSliderNearWithin(float fA, float fB, float fTolerance)
+{
+	return fabsf(fA - fB) <= fTolerance;
+}
+
 static int __xuiRangeSliderPixel(float fValue)
 {
 	return (int)floorf(fValue + 0.5f);
@@ -201,6 +206,12 @@ int main(void)
 	iRet = xuiRangeSliderCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nan descriptor");
 	tDesc.fStart = 25.0f;
+	tDesc.fKnobSize = FLT_MAX;
+	pInvalid = pRoot;
+	iRet = xuiRangeSliderCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject out-of-layout-range descriptor metric");
+	tDesc.fKnobSize = 0.0f;
 	iRet = xuiWidgetAddChild(pRoot, pSlider);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add range slider");
 	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 180.0f, 30.0f});
@@ -314,6 +325,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan step");
 	iRet = xuiRangeSliderSetMetrics(pSlider, 6.0f, INFINITY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metrics");
+	iRet = xuiRangeSliderSetMetrics(pSlider, 6.0f, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject out-of-layout-range metrics");
+	iRet = xuiRangeSliderGetMetrics(pSlider, &fTrackSize, &fKnobSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && fTrackSize == 6.0f && fKnobSize == 18.0f,
+		"invalid metrics preserve state");
 	iRet = xuiRangeSliderSetValues(pSlider, NAN, 75.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && __xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 25.0f), "reject nan values and preserve state");
 	iRet = xuiRangeSliderSetRange(pSlider, 0.0f, INFINITY);
@@ -330,6 +346,15 @@ int main(void)
 	XUI_TEST_CHECK(tTrack.fH == 8.0f, "style track size");
 	iRet = xuiWidgetSetInlineStyle(pSlider, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear inline style");
+	arrStyle[0] = __xuiRangeSliderStyleProp("rangeslider.track.size",
+		__xuiRangeSliderStyleFloat(FLT_MAX));
+	iRet = xuiWidgetSetInlineStyle(pSlider, arrStyle, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set out-of-layout-range style metric");
+	tTrack = xuiRangeSliderGetTrackRect(pSlider);
+	XUI_TEST_CHECK(tTrack.fH == 6.0f,
+		"out-of-layout-range style metric is ignored");
+	iRet = xuiWidgetSetInlineStyle(pSlider, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear invalid inline style");
 
 	iRet = xuiRangeSliderSetIntervalLimits(pSlider, 10.0f, 40.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set interval limits");
@@ -359,6 +384,34 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render before pointer");
 	tTrack = xuiRangeSliderGetTrackRect(pSlider);
 	tWorld = xuiWidgetGetWorldRect(pSlider);
+	tStartKnob = xuiRangeSliderGetStartKnobRect(pSlider);
+	fX = tWorld.fX + tStartKnob.fX + 1.0f;
+	fY = tWorld.fY + tStartKnob.fY + tStartKnob.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, __xuiRangeSliderPixel(fX),
+		__xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "edge grab pointer down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 20.0f),
+		"edge grab preserves horizontal thumb value");
+	fExpected = 20.0f + 1200.0f / tTrack.fW;
+	iRet = xuiInputPointerMove(pContext, __xuiRangeSliderPixel(fX) + 12,
+		__xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "edge grab pointer move input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNearWithin(
+		xuiRangeSliderGetStart(pSlider), fExpected, 0.75f),
+		"edge grab preserves horizontal pointer offset");
+	iRet = xuiInputPointerUp(pContext, __xuiRangeSliderPixel(fX) + 12,
+		__xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "edge grab pointer up input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"edge grab releases pointer");
+	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset values after edge grab");
+	iChanged = 0;
 	fX = tWorld.fX + tTrack.fX + tTrack.fW * 0.10f;
 	fY = tWorld.fY + tTrack.fY + tTrack.fH * 0.5f;
 	fExpected = 100.0f * ((float)(__xuiRangeSliderPixel(fX) - tWorld.fX - tTrack.fX) / (float)tTrack.fW);
@@ -515,6 +568,33 @@ int main(void)
 	tFill = xuiRangeSliderGetFillRect(pSlider);
 	tWorld = xuiWidgetGetWorldRect(pSlider);
 	XUI_TEST_CHECK(tTrack.fH > 110.0f && tFill.fY > tTrack.fY && tFill.fH > 0.0f, "vertical geometry");
+	tStartKnob = xuiRangeSliderGetStartKnobRect(pSlider);
+	fX = tWorld.fX + tStartKnob.fX + tStartKnob.fW * 0.5f;
+	fY = tWorld.fY + tStartKnob.fY + tStartKnob.fH - 1.0f;
+	iRet = xuiInputPointerDown(pContext, __xuiRangeSliderPixel(fX),
+		__xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "vertical edge grab pointer down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 20.0f),
+		"edge grab preserves vertical thumb value");
+	fExpected = 20.0f + 1200.0f / tTrack.fH;
+	iRet = xuiInputPointerMove(pContext, __xuiRangeSliderPixel(fX),
+		__xuiRangeSliderPixel(fY) - 12, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "vertical edge grab pointer move input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNearWithin(
+		xuiRangeSliderGetStart(pSlider), fExpected, 0.75f),
+		"edge grab preserves vertical pointer offset");
+	iRet = xuiInputPointerUp(pContext, __xuiRangeSliderPixel(fX),
+		__xuiRangeSliderPixel(fY) - 12, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "vertical edge grab pointer up input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"vertical edge grab releases pointer");
+	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset values after vertical edge grab");
 	iRet = __xuiRangeSliderClick(pContext, tWorld.fX + tTrack.fX + tTrack.fW * 0.5f, tWorld.fY + tTrack.fY);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetEnd(pSlider) > 95.0f, "vertical top high end");
 
@@ -533,6 +613,43 @@ int main(void)
 	               isfinite(xuiRangeSliderGetEndRate(pSlider)) &&
 	               xuiRangeSliderGetStartRate(pSlider) == 0.0f && xuiRangeSliderGetEndRate(pSlider) == 1.0f,
 	               "wide range finite endpoint rates");
+	iRet = xuiRangeSliderSetStep(pSlider, FLT_MAX, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set wide finite steps");
+	iRet = xuiWidgetPerformAccessibleAction(pSlider, 3u,
+		XUI_ACCESSIBLE_ACTION_FOCUS, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus wide range end thumb");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_UP, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide range end key input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetEnd(pSlider) == FLT_MAX &&
+		isfinite(xuiRangeSliderGetEnd(pSlider)),
+		"wide range key step saturates at maximum");
+	iRet = xuiWidgetPerformAccessibleAction(pSlider, 3u,
+		XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetEnd(pSlider) == FLT_MAX,
+		"wide range accessibility increment saturates at maximum");
+	tWorld = xuiWidgetGetWorldRect(pSlider);
+	iRet = xuiInputPointerWheel(pContext, tWorld.fX + tWorld.fW * 0.5f,
+		tWorld.fY + tWorld.fH * 0.5f, 0.0f, 1.0f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide range wheel input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetEnd(pSlider) == FLT_MAX,
+		"wide range wheel step saturates at maximum");
+	iRet = xuiWidgetPerformAccessibleAction(pSlider, 2u,
+		XUI_ACCESSIBLE_ACTION_FOCUS, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus wide range start thumb");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide range start key input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == -FLT_MAX &&
+		isfinite(xuiRangeSliderGetStart(pSlider)),
+		"wide range key step saturates at minimum");
+	iRet = xuiWidgetPerformAccessibleAction(pSlider, 2u,
+		XUI_ACCESSIBLE_ACTION_DECREMENT, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == -FLT_MAX,
+		"wide range accessibility decrement saturates at minimum");
+	iRet = xuiRangeSliderSetStep(pSlider, 5.0f, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary steps");
 	iRet = xuiRangeSliderSetRange(pSlider, FLT_MAX, FLT_MAX);
 	XUI_TEST_CHECK(iRet == XUI_OK, "normalize maximum equal range");
 	iRet = xuiRangeSliderGetRange(pSlider, &fMin, &fMax);
@@ -562,6 +679,33 @@ int main(void)
 	XUI_TEST_CHECK((xuiRangeSliderGetState(pSlider) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");
 	iRet = __xuiRangeSliderClick(pContext, tWorld.fX + tTrack.fX + tTrack.fW * 0.5f, tWorld.fY + tTrack.fY + tTrack.fH);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == 0.0f && xuiRangeSliderGetEnd(pSlider) == 100.0f && xuiGetPointerCapture(pContext) == NULL, "disabled ignores pointer");
+
+	iRet = xuiWidgetSetEnabled(pSlider, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable before tiny geometry test");
+	iRet = xuiRangeSliderSetOrientation(pSlider, XUI_ORIENTATION_HORIZONTAL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "horizontal tiny geometry orientation");
+	iRet = xuiRangeSliderSetMetrics(pSlider, 6.0f, 18.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore metrics before tiny geometry test");
+	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set tiny geometry values");
+	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 5.0f, 5.0f});
+	tTrack = xuiRangeSliderGetTrackRect(pSlider);
+	tStartKnob = xuiRangeSliderGetStartKnobRect(pSlider);
+	tEndKnob = xuiRangeSliderGetEndKnobRect(pSlider);
+	XUI_TEST_CHECK(tTrack.fW == 0.0f &&
+		tStartKnob.fX >= 0.0f && tStartKnob.fY >= 0.0f &&
+		tStartKnob.fX + tStartKnob.fW <= 5.0f &&
+		tStartKnob.fY + tStartKnob.fH <= 5.0f &&
+		tEndKnob.fX >= 0.0f && tEndKnob.fY >= 0.0f &&
+		tEndKnob.fX + tEndKnob.fW <= 5.0f &&
+		tEndKnob.fY + tEndKnob.fH <= 5.0f,
+		"tiny range slider keeps empty travel and bounded knobs");
+	tWorld = xuiWidgetGetWorldRect(pSlider);
+	iRet = __xuiRangeSliderClick(pContext, tWorld.fX + 2.0f, tWorld.fY + 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 20.0f) &&
+		__xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider), 80.0f),
+		"tiny range slider without thumb travel preserves values");
 
 	xuiWidgetSetRect(pSlider, (xui_rect_t){10.0f, 10.0f, 0.0f, 0.0f});
 	tTrack = xuiRangeSliderGetTrackRect(pSlider);

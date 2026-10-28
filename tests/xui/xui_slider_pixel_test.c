@@ -60,7 +60,7 @@ int main(void)
 				for (ki = 0; ki < sizeof(knobs) / sizeof(knobs[0]); ki++) {
 					float axis = (float)lengths[li], cross = (float)crosses[ci];
 					float inset = fminf(knobs[ki], axis) * 0.5f;
-					float length = fmaxf(1, axis - inset * 2);
+					float length = fmaxf(0, axis - inset * 2);
 					float origin = (axis - length) * 0.5f;
 					float thickness = fminf(4.5f, cross), offset = (cross - thickness) * 0.5f;
 					PIXEL_CHECK(xuiSliderSetMetrics(slider, 4.5f, knobs[ki], 1.5f) == XUI_OK);
