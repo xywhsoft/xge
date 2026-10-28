@@ -1444,6 +1444,9 @@ size_t set_linebreaks(
     struct LineBreakContext lbCtx;
     size_t posCur = 0;
     size_t posLast = 0;
+    enum PendingRule pendingBefore;
+    size_t pendingPosBefore;
+    char pendingOrigBefore;
 
     --posLast;  /* To be ++'d later */
     ch = get_next_char(s, len, &posCur);
@@ -1473,6 +1476,13 @@ size_t set_linebreaks(
         {
             break;
         }
+        /* Resolving the previous lookahead may establish a new pending rule
+         * for this same character.  Keep the previous rule's fixup data
+         * separate so its rollback cannot overwrite or invalidate the new
+         * rule's position. */
+        pendingBefore = lbCtx.ePending;
+        pendingPosBefore = lbCtx.posPending;
+        pendingOrigBefore = lbCtx.cPendingOrigBrk;
         lbCtx.posLast = posLast;
         brks[posLast] = (char)lb_process_next_char(&lbCtx, ch);
 
@@ -1487,9 +1497,17 @@ size_t set_linebreaks(
         /* Fix-up (revert) due to a pending lookahead break */
         if (lbCtx.fPendingRevert)
         {
-            brks[lbCtx.posPending] = lbCtx.cPendingOrigBrk;
+            assert(pendingBefore != PENDING_NONE && pendingPosBefore < len);
+            if (pendingBefore != PENDING_NONE && pendingPosBefore < len)
+            {
+                brks[pendingPosBefore] = pendingOrigBefore;
+            }
             lbCtx.fPendingRevert = false;
+        }
+        if (pendingBefore != PENDING_NONE && lbCtx.ePending == PENDING_NONE)
+        {
             lbCtx.posPending = INVALID_POS;
+            lbCtx.cPendingOrigBrk = LINEBREAK_UNDEFINED;
         }
     }
 
