@@ -702,6 +702,22 @@ int main(void)
 		"invalid image descriptor clears output");
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
+	tDesc.iMode = XUI_IMAGE_NATURAL;
+	tDesc.iAlignX = XUI_ALIGN_CENTER;
+	tDesc.iAlignY = XUI_ALIGN_CENTER;
+	tDesc.tSrc.fX = (int)XUI_LAYOUT_UNBOUNDED + 1024;
+	pInvalid = pRoot;
+	iRet = xuiImageCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"out-of-range source descriptor clears output");
+	tDesc.tSrc.fX = 0;
+	tDesc.tDst.fW = (int)XUI_LAYOUT_UNBOUNDED + 1024;
+	pInvalid = pRoot;
+	iRet = xuiImageCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"out-of-range destination descriptor clears output");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
 	tDesc.pSurface = pSource;
 	tDesc.iColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	tDesc.iAlignX = XUI_ALIGN_CENTER;
@@ -825,6 +841,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject non-finite source");
 	XUI_TEST_CHECK(__xuiImageRectEq(xuiImageGetSource(pImage), tRect.fX, tRect.fY, tRect.fW, tRect.fH),
 	               "invalid source preserves state");
+	iRet = xuiImageSetSource(pImage,
+		(xui_rect_t){(int)XUI_LAYOUT_UNBOUNDED + 1024, 0, 10, 10});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		__xuiImageRectEq(xuiImageGetSource(pImage), tRect.fX, tRect.fY, tRect.fW, tRect.fH),
+		"source setter rejects out-of-range coordinates without mutation");
 	iRet = xuiImageSetCustomRect(pImage, 0.0f, 0.0f, INFINITY, 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiImageGetMode(pImage) == XUI_IMAGE_CUSTOM,
 	               "reject non-finite custom rect");
