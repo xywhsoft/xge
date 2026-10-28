@@ -102,6 +102,10 @@ int main(void)
 	float fFrameHintHeight;
 	float fSmallStep;
 	float fLargeStep;
+	float fMaxX;
+	float fMaxY;
+	float fRejectedX;
+	float fRejectedY;
 	int iChanged;
 	int iFailed;
 	int iReset;
@@ -147,6 +151,10 @@ int main(void)
 	tDesc.fWheelStep = 20.0f;
 	tDesc.fViewportWidth = 140.0f;
 	tDesc.fViewportHeight = 110.0f;
+	pInvalid = (xui_widget)(void*)1;
+	iRet = xuiScrollViewCreate(NULL, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject invalid context");
 	iRet = xuiScrollViewCreate(pContext, &pView, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pView != NULL, "scrollview create");
 	tInvalidDesc = tDesc;
@@ -196,6 +204,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(tMeasured.fX, 140.0f) && __xuiScrollViewNear(tMeasured.fY, 110.0f), "scrollview extent does not change desired viewport");
 	iRet = xuiScrollViewSetContentSize(pView, 300.0f, 220.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore scrollview content extent");
+	iRet = xuiScrollViewSetContentSize(pView, XUI_LAYOUT_UNBOUNDED,
+		XUI_LAYOUT_UNBOUNDED);
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewSetOffset(pView,
+		XUI_LAYOUT_UNBOUNDED - 512.0f, XUI_LAYOUT_UNBOUNDED - 512.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewScrollBy(pView,
+		XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED);
+	if ( iRet == XUI_OK ) iRet = xuiScrollModelGetMaxOffset(
+		xuiScrollViewGetModel(pView), &fMaxX, &fMaxY);
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewGetOffset(pView, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX == fMaxX && fOffsetY == fMaxY,
+		"wide relative scroll saturates at the content boundary");
+	iRet = xuiScrollViewSetContentSize(pView, 300.0f, 220.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewSetOffset(pView, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary scrollview after wide scroll");
 	iRet = xuiWidgetAddChild(pRoot, pView);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add scrollview");
 	xuiWidgetSetRect(pView, (xui_rect_t){20.0f, 20.0f, 140.0f, 110.0f});
@@ -243,6 +265,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set offset");
 	tContentRect = xuiWidgetGetRect(pContent);
 	XUI_TEST_CHECK(__xuiScrollViewNear(tContentRect.fX, -50.0f) && __xuiScrollViewNear(tContentRect.fY, -40.0f), "content shifted");
+	iRet = xuiScrollViewScrollBy(pView, 15.0f, 10.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewGetOffset(pView, &fOffsetX, &fOffsetY);
+	tContentRect = xuiWidgetGetRect(pContent);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(fOffsetX, 65.0f) &&
+		__xuiScrollViewNear(fOffsetY, 50.0f) &&
+		__xuiScrollViewNear(tContentRect.fX, -fOffsetX) &&
+		__xuiScrollViewNear(tContentRect.fY, -fOffsetY),
+		"relative scroll synchronizes the content container");
+	iRet = xuiScrollViewScrollBy(pView, INFINITY, 0.0f);
+	if ( iRet == XUI_ERROR_INVALID_ARGUMENT ) iRet = xuiScrollViewGetOffset(
+		pView, &fRejectedX, &fRejectedY);
+	tContentRect = xuiWidgetGetRect(pContent);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(fRejectedX, fOffsetX) &&
+		__xuiScrollViewNear(fRejectedY, fOffsetY) &&
+		__xuiScrollViewNear(tContentRect.fX, -fOffsetX) &&
+		__xuiScrollViewNear(tContentRect.fY, -fOffsetY),
+		"invalid relative scroll leaves model and content unchanged");
 
 	iRet = xuiScrollViewEnsureChildVisible(pView, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject unrelated ensure-visible widget");
