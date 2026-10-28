@@ -771,7 +771,9 @@ rollback_growth:
 
 static void __xuiSplitLayoutHideShadow(xui_widget pSplit, xui_split_layout_data_t* pData)
 {
-	(void)pData;
+	if ( pData != NULL ) {
+		pData->tShadowRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	}
 	xuiInternalDragAdornerHide(xuiWidgetGetContext(pSplit), pSplit);
 }
 
@@ -897,13 +899,13 @@ static int __xuiSplitLayoutUpdateShadow(xui_widget pSplit, xui_split_layout_data
 	return xuiInternalDragAdornerSet(xuiWidgetGetContext(pSplit), pSplit, &tPrimitive, 1);
 }
 
-static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t* pData)
+static int __xuiSplitLayoutCommitAxis(xui_widget pSplit, xui_split_layout_data_t* pData,
+	int iDivider, float fAxis)
 {
 	xui_split_layout_pane_t* pBefore;
 	xui_split_layout_pane_t* pAfter;
 	xui_rect_t tBeforeRect;
 	xui_rect_t tAfterRect;
-	float fAxis;
 	float fBeforeStart;
 	float fAfterEnd;
 	float fNewBefore;
@@ -915,10 +917,8 @@ static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t
 	float fAfterFlexible;
 	float fPairFlexible;
 	float fWeightRatio;
-	int iDivider;
 	int bChanged;
 
-	iDivider = pData->iActiveDivider;
 	if ( (iDivider < 0) || (iDivider >= pData->iPaneCount - 1) ) {
 		return XUI_OK;
 	}
@@ -927,7 +927,7 @@ static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t
 	if ( (pBefore->pWidget == NULL) || (pAfter->pWidget == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	fAxis = __xuiSplitLayoutClampDragAxis(pData, iDivider, __xuiSplitLayoutDragAxis(pData));
+	fAxis = __xuiSplitLayoutClampDragAxis(pData, iDivider, fAxis);
 	tBeforeRect = xuiWidgetGetRect(pBefore->pWidget);
 	tAfterRect = xuiWidgetGetRect(pAfter->pWidget);
 	fBeforeStart = __xuiSplitLayoutAxisStart(pData, tBeforeRect);
@@ -1001,20 +1001,23 @@ static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t
 	return xuiWidgetInvalidate(pSplit, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t* pData)
+{
+	return __xuiSplitLayoutCommitAxis(pSplit, pData, pData->iActiveDivider,
+		__xuiSplitLayoutDragAxis(pData));
+}
+
 static int __xuiSplitLayoutSetDividerAxis(xui_widget pSplit, xui_split_layout_data_t* pData, int iDivider, float fAxis)
 {
-	int iRet;
-
 	if ( (pSplit == NULL) || (pData == NULL) || (iDivider < 0) || (iDivider >= pData->iPaneCount - 1) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iActiveDivider >= 0 ) {
+		__xuiSplitLayoutCancelActiveDrag(pSplit, pData, 1);
+		if ( !__xuiSplitLayoutWidgetAlive(pSplit) ) return XUI_OK;
+		pData = __xuiSplitLayoutGetData(pSplit);
+		if ( pData == NULL || iDivider >= pData->iPaneCount - 1 ) return XUI_ERROR_INVALID_STATE;
+	}
 	__xuiSplitLayoutRefreshGeometry(pSplit, pData);
-	pData->iActiveDivider = iDivider;
-	pData->fDragOffset = 0.0f;
-	pData->fDragCurrentMouse = fAxis;
-	iRet = __xuiSplitLayoutCommitDrag(pSplit, pData);
-	if ( !__xuiSplitLayoutWidgetAlive(pSplit) ) return iRet;
-	pData->iActiveDivider = -1;
-	__xuiSplitLayoutSyncAllDividerStates(pSplit, pData);
-	return iRet;
+	return __xuiSplitLayoutCommitAxis(pSplit, pData, iDivider, fAxis);
 }
 
 static int __xuiSplitLayoutEqualizeDivider(xui_widget pSplit, xui_split_layout_data_t* pData, int iDivider)
@@ -1305,9 +1308,23 @@ static int __xuiSplitLayoutDividerEvent(xui_widget pDivider, const xui_event_t* 
 		}
 		return XUI_OK;
 	case XUI_EVENT_FOCUS:
+		__xuiSplitLayoutSyncAllDividerStates(pSplit, pData);
+		return xuiWidgetInvalidate(pDivider, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_BLUR:
+		if ( pData->iActiveDivider == iDivider ) {
+			__xuiSplitLayoutCancelActiveDrag(pSplit, pData, 1);
+		}
+		__xuiSplitLayoutSyncAllDividerStates(pSplit, pData);
+		return xuiWidgetInvalidate(pDivider, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( !xuiWidgetGetEffectiveEnabled(pDivider) ||
+		     !xuiWidgetGetEffectiveVisible(pDivider) ) {
+			if ( pData->iActiveDivider >= 0 ) {
+				__xuiSplitLayoutCancelActiveDrag(pSplit, pData, 1);
+			}
+			pData->iHoverDivider = -1;
+		}
 		__xuiSplitLayoutSyncAllDividerStates(pSplit, pData);
 		return xuiWidgetInvalidate(pDivider, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_KEY_DOWN:

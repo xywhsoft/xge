@@ -387,6 +387,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "shadow up input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiSplitLayoutGetActiveDivider(pSplit) == -1, "shadow release");
+	tShadow = xuiSplitLayoutGetShadowRect(pSplit);
+	XUI_TEST_CHECK(tShadow.fX == 0.0f && tShadow.fY == 0.0f &&
+	               tShadow.fW == 0.0f && tShadow.fH == 0.0f,
+	               "shadow geometry clears when deferred drag ends");
 	iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render after shadow commit");
 	XUI_TEST_CHECK(iChanged == 1, "shadow commit callback");
@@ -687,8 +691,9 @@ int main(void)
 	tDivider = xuiSplitLayoutGetDividerLayoutRect(pMultiSplit, 0);
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iSize = sizeof(tEvent);
-	tEvent.iType = XUI_EVENT_POINTER_DOUBLE_CLICK;
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
 	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
 	tEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
 	tEvent.fX = (int)(tWorld.fX + tHit.fX + 1.0f);
 	tEvent.fY = (int)(tWorld.fY + tHit.fY + tHit.fH * 0.5f);
@@ -696,10 +701,26 @@ int main(void)
 	XUI_TEST_CHECK((float)tEvent.fX < tWorld.fX + tDivider.fX,
 		"equalize test point uses expanded divider hit target");
 	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pMultiSplit) == 0 &&
+		xuiGetPointerCapture(pContext) != NULL,
+		"second-click pointer down starts a deferred drag before double-click dispatch");
+	tEvent.iType = XUI_EVENT_POINTER_DOUBLE_CLICK;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
 	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 2 &&
-		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pMultiSplit, 0), 136.0f),
-		"double-click equalizes from the full divider hit target");
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pMultiSplit, 0), 136.0f) &&
+		xuiSplitLayoutGetActiveDivider(pMultiSplit) == -1 &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"double-click equalizes from the full hit target and ends its pending drag");
+	tShadow = xuiSplitLayoutGetShadowRect(pMultiSplit);
+	XUI_TEST_CHECK(tShadow.fX == 0.0f && tShadow.fY == 0.0f &&
+	               tShadow.fW == 0.0f && tShadow.fH == 0.0f,
+	               "double-click equalize clears the deferred preview geometry");
+	tEvent.iType = XUI_EVENT_POINTER_UP;
+	tEvent.iButtons = 0u;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 2,
+		"pointer up after double-click cannot commit a second change");
 	pDividerWidget = NULL;
 	for ( pDividerWidget = xuiWidgetGetFirstChild(pMultiSplit); pDividerWidget != NULL;
 	      pDividerWidget = xuiWidgetGetNextSibling(pDividerWidget) ) {
