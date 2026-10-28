@@ -18,8 +18,45 @@ typedef struct xui_carousel_test_state_t {
 	int iChanges;
 	int iOld;
 	int iNew;
+	int iEscapes;
 	int bDestroyOnChange;
 } xui_carousel_test_state_t;
+
+static xui_style_value_t __xuiCarouselStyleBool(int bValue)
+{
+	xui_style_value_t tValue;
+
+	memset(&tValue, 0, sizeof(tValue));
+	tValue.iSize = sizeof(tValue);
+	tValue.iType = XUI_STYLE_VALUE_BOOL;
+	tValue.iInt = bValue ? 1 : 0;
+	return tValue;
+}
+
+static xui_style_property_t __xuiCarouselStyleProp(const char* sName,
+	xui_style_value_t tValue)
+{
+	xui_style_property_t tProp;
+
+	memset(&tProp, 0, sizeof(tProp));
+	tProp.iSize = sizeof(tProp);
+	tProp.sName = sName;
+	tProp.tValue = tValue;
+	return tProp;
+}
+
+static int __xuiCarouselRootEvent(xui_widget pWidget, const xui_event_t* pEvent,
+	void* pUser)
+{
+	xui_carousel_test_state_t* pState = (xui_carousel_test_state_t*)pUser;
+
+	(void)pWidget;
+	if ( pState != NULL && pEvent != NULL &&
+	     pEvent->iType == XUI_EVENT_KEY_DOWN && pEvent->iKey == XUI_KEY_ESCAPE ) {
+		pState->iEscapes++;
+	}
+	return XUI_OK;
+}
 
 static void __xuiCarouselTestChanged(xui_widget pWidget, int iOldIndex, int iNewIndex, void* pUser)
 {
@@ -42,24 +79,29 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pCarousel;
+	xui_widget pInvalid;
 	xui_widget pChild;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_carousel_desc_t tDesc;
 	xui_carousel_desc_t tInvalidDesc;
 	xui_accessible_node_t tAccessible;
+	xui_style_property_t tStyle;
 	xui_rect_t tWorld;
 	xui_rect_i_t tFullRect;
 	int bAuto;
 	float fInterval;
 	int iChangeBefore;
 	int iCallbackBefore;
+	int iEscapeBefore;
+	int iCurrentBefore;
 	int iFailed;
 	int iRet;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pCarousel = NULL;
+	pInvalid = NULL;
 	pChild = NULL;
 	pTarget = NULL;
 	pFont = NULL;
@@ -83,6 +125,13 @@ int main(void)
 	(void)xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 520.0f, 320.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
+	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_KEY_DOWN,
+		__xuiCarouselRootEvent, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "root key handler");
+	pInvalid = pRoot;
+	iRet = xuiCarouselCreate(NULL, &pInvalid, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject invalid context");
 
 	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
 	tInvalidDesc.iSize = sizeof(tInvalidDesc);
@@ -95,6 +144,11 @@ int main(void)
 	tInvalidDesc.fIndicatorGap = INFINITY;
 	iRet = xuiCarouselCreate(pContext, &pCarousel, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCarousel == NULL, "reject infinite descriptor metric");
+	tInvalidDesc.fIndicatorGap = 0.0f;
+	tInvalidDesc.fIndicatorSize = XUI_LAYOUT_UNBOUNDED;
+	iRet = xuiCarouselCreate(pContext, &pCarousel, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCarousel == NULL,
+		"reject descriptor metric that can overflow indicator geometry");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -150,6 +204,11 @@ int main(void)
 	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_HOME, 0) == XUI_OK &&
 		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0,
 		"home selects first page");
+	iEscapeBefore = tState.iEscapes;
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		tState.iEscapes == iEscapeBefore + 1,
+		"idle escape bubbles to the parent scope");
 	iChangeBefore = tState.iChanges;
 	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pCarousel, 4u,
 		XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_OK &&
@@ -185,9 +244,27 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && bAuto && fInterval >= 0.09f, "get autoplay");
 	iRet = xuiUpdate(pContext, 0.11f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 1, "auto advance");
+	XUI_TEST_CHECK(xuiCarouselSetAutoPlay(pCarousel, 0, 0.0f) == XUI_OK &&
+		xuiCarouselSetCurrent(pCarousel, 0, 0) == XUI_OK,
+		"prepare style autoplay default interval");
+	tStyle = __xuiCarouselStyleProp("carousel.auto.enabled",
+		__xuiCarouselStyleBool(1));
+	XUI_TEST_CHECK(xuiWidgetSetInlineStyle(pCarousel, &tStyle, 1) == XUI_OK,
+		"enable autoplay through style");
+	XUI_TEST_CHECK(xuiUpdate(pContext, 2.9f) == XUI_OK &&
+		xuiCarouselGetCurrent(pCarousel) == 0,
+		"style autoplay waits for its default interval");
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.2f) == XUI_OK &&
+		xuiCarouselGetCurrent(pCarousel) == 1,
+		"style autoplay uses the API default interval");
+	XUI_TEST_CHECK(xuiWidgetSetInlineStyle(pCarousel, NULL, 0) == XUI_OK,
+		"clear autoplay style");
 	iRet = xuiCarouselSetMetrics(pCarousel, 34.0f, 8.0f, 6.0f, 18.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
 	XUI_TEST_CHECK(xuiCarouselSetMetrics(pCarousel, NAN, 8.0f, 6.0f, 18.0f) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN metrics");
+	XUI_TEST_CHECK(xuiCarouselSetMetrics(pCarousel, 34.0f,
+		XUI_LAYOUT_UNBOUNDED, 6.0f, 18.0f) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject metrics that can overflow indicator geometry");
 	XUI_TEST_CHECK(xuiCarouselSetAutoPlay(pCarousel, 1, INFINITY) == XUI_ERROR_INVALID_ARGUMENT, "reject infinite autoplay interval");
 	XUI_TEST_CHECK(xuiCarouselSetPageCount(pCarousel, 0) == XUI_ERROR_INVALID_ARGUMENT, "reject zero page count");
 	XUI_TEST_CHECK(xuiCarouselSetPageCount(pCarousel, XUI_CAROUSEL_MAX_PAGES + 1) == XUI_ERROR_INVALID_ARGUMENT, "reject excessive page count");
@@ -227,6 +304,16 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetSetVisible(pCarousel, 0) == XUI_OK, "hide carousel");
 	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch hidden carousel");
 	XUI_TEST_CHECK(xuiUpdate(pContext, 0.11f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0, "hidden carousel pauses autoplay");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pCarousel, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0,
+		"hidden carousel accessibility root is offscreen");
+	iCurrentBefore = xuiCarouselGetCurrent(pCarousel);
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pCarousel, tAccessible.iId,
+		XUI_ACCESSIBLE_ACTION_INCREMENT, NULL) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiCarouselGetCurrent(pCarousel) == iCurrentBefore,
+		"hidden carousel rejects accessibility navigation");
 	XUI_TEST_CHECK(xuiWidgetSetVisible(pCarousel, 1) == XUI_OK, "show carousel");
 	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch shown carousel");
 

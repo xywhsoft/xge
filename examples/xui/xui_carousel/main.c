@@ -229,6 +229,7 @@ static int __xuiCarouselDemoCreateUi(xui_carousel_demo_t* pDemo)
 	tDesc.pFont = pDemo->pFont;
 	tDesc.iPageCount = DEMO_PAGE_COUNT;
 	tDesc.iCurrent = 0;
+	tDesc.bLoop = 1;
 	tDesc.bAutoPlay = 1;
 	tDesc.fAutoInterval = 2.5f;
 	tDesc.fArrowSize = 36.0f;
