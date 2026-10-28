@@ -38,6 +38,21 @@ static int replacement_cell(xui_widget table, int row, int column, xui_table_vie
     cell->sText = "replacement";
     return 1;
 }
+static int replacement_format(xui_widget table, int row, int column,
+    const xui_table_view_cell_t* cell, char* text, int capacity, void* user)
+{
+    (void)table; (void)row; (void)column; (void)cell; (void)user;
+    if (capacity > 0) snprintf(text, (size_t)capacity, "replacement");
+    return 1;
+}
+static int replacement_render(xui_widget table, int row, int column,
+    const xui_table_view_cell_t* cell, xui_draw_context draw,
+    xui_rect_t rect, int state, void* user)
+{
+    (void)table; (void)row; (void)column; (void)cell;
+    (void)draw; (void)rect; (void)state; (void)user;
+    return 0;
+}
 
 static void probe(xui_widget table, fixture_t* f, int callback)
 {
@@ -63,8 +78,8 @@ static void probe(xui_widget table, fixture_t* f, int callback)
         break;
     case ADAPTER: f->nestedResult = xuiTableViewSetAdapter(table, replacement_count, replacement_cell, f); break;
     case REFRESH: f->nestedResult = xuiTableViewRefresh(table); break;
-    case CHANGE_RENDERER: f->nestedResult = xuiTableViewSetCellRenderer(table, NULL, NULL); break;
-    case CHANGE_FORMATTER: f->nestedResult = xuiTableViewSetColumnFormatter(table, 0, NULL, NULL); break;
+    case CHANGE_RENDERER: f->nestedResult = xuiTableViewSetCellRenderer(table, replacement_render, f); break;
+    case CHANGE_FORMATTER: f->nestedResult = xuiTableViewSetColumnFormatter(table, 0, replacement_format, f); break;
     case READ_OTHER: f->nestedResult = xuiTableViewGetCellContentRect(table, 3, 1, &rect); break;
     case READ_SAME: f->nestedResult = xuiTableViewGetCellContentRect(table, 0, 0, &rect); break;
     case DESTROY_SELF:
@@ -257,7 +272,7 @@ static int run_case(int callback, int action, int path, int warm)
         if (action == COLUMNS) CHECK(xuiTableViewGetColumnCount(f.table) == 1 && xuiTableViewGetColumnWidth(f.table, 0) == 137);
         if (action == ADAPTER) {
             CHECK(xuiTableViewGetRowCount(f.table) == 2);
-            CHECK(xuiTableViewGetModel(f.table)->fContentHeight == (path == METRICS ? 42 : 40));
+            CHECK(xuiTableViewGetModel(f.table)->fContentHeight == 40);
         }
         if (action == ROWS) CHECK(xuiTableViewGetCellContentRect(f.table, 2, 0, &rect) == XUI_OK && rect.fH == 41);
         if (action == COLUMNS || action == ROWS || action == ADAPTER || action == REFRESH) CHECK(f.nestedResult == XUI_OK);
@@ -294,6 +309,7 @@ static void event_resize(xui_widget table, int column, float width, void* user)
     fixture_t* f = user;
     ++f->resizeCalls;
     if (f->invalidated) ++f->stale;
+    probe(table, f, COUNT);
 }
 
 static int event_context(xui_widget table, int part, int row, int column, float x, float y, void* user)
@@ -347,7 +363,7 @@ static void event_case(int kind, int action, int callback)
     CHECK(f.stale == 0);
     CHECK(f.selectCalls == (action == LIVE && (kind == 0 || kind == 1) ? 1 : 0));
     CHECK(f.contextCalls == (action == LIVE && (kind == 0 || kind == 3) ? 1 : 0));
-    CHECK(f.resizeCalls == (action == LIVE && kind == 2 ? 1 : 0));
+    CHECK(f.resizeCalls == (kind == 2 ? 1 : 0));
     if (!f.destroyed) CHECK(xuiTableViewGetSelectedRow(f.table) ==
         (kind == 3 || (action == LIVE && (kind == 0 || kind == 1)) ? 0 : -1));
 cleanup:

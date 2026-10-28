@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,6 +18,7 @@ typedef struct xui_carousel_test_state_t {
 	int iChanges;
 	int iOld;
 	int iNew;
+	int bDestroyOnChange;
 } xui_carousel_test_state_t;
 
 static void __xuiCarouselTestChanged(xui_widget pWidget, int iOldIndex, int iNewIndex, void* pUser)
@@ -29,6 +31,7 @@ static void __xuiCarouselTestChanged(xui_widget pWidget, int iOldIndex, int iNew
 		pState->iChanges++;
 		pState->iOld = iOldIndex;
 		pState->iNew = iNewIndex;
+		if ( pState->bDestroyOnChange ) xuiWidgetDestroy(pWidget);
 	}
 }
 
@@ -43,9 +46,14 @@ int main(void)
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_carousel_desc_t tDesc;
+	xui_carousel_desc_t tInvalidDesc;
+	xui_accessible_node_t tAccessible;
+	xui_rect_t tWorld;
 	xui_rect_i_t tFullRect;
 	int bAuto;
 	float fInterval;
+	int iChangeBefore;
+	int iCallbackBefore;
 	int iFailed;
 	int iRet;
 
@@ -76,12 +84,25 @@ int main(void)
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
 
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.iPageCount = 1;
+	tInvalidDesc.fAutoInterval = NAN;
+	pCarousel = pRoot;
+	iRet = xuiCarouselCreate(pContext, &pCarousel, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCarousel == NULL, "reject NaN descriptor interval");
+	tInvalidDesc.fAutoInterval = 0.0f;
+	tInvalidDesc.fIndicatorGap = INFINITY;
+	iRet = xuiCarouselCreate(pContext, &pCarousel, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCarousel == NULL, "reject infinite descriptor metric");
+
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iPageCount = 4;
 	tDesc.iCurrent = 2;
 	tDesc.pFont = pFont;
 	tDesc.fAutoInterval = 0.1f;
+	tDesc.bShowIndicators = 1;
 	iRet = xuiCarouselCreate(pContext, &pCarousel, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCarousel != NULL, "carousel create");
 	(void)xuiWidgetSetRect(pCarousel, (xui_rect_t){20.0f, 20.0f, 460.0f, 260.0f});
@@ -92,20 +113,60 @@ int main(void)
 
 	XUI_TEST_CHECK(xuiCarouselGetPageCount(pCarousel) == 4, "page count");
 	XUI_TEST_CHECK(xuiCarouselGetCurrent(pCarousel) == 2, "initial current");
+	XUI_TEST_CHECK(xuiCarouselGetLoop(pCarousel) == 0, "descriptor loop false honored");
 	XUI_TEST_CHECK(xuiCarouselGetPageWidget(pCarousel, 0) != NULL, "page widget 0");
 	XUI_TEST_CHECK(xuiCarouselGetPageWidget(pCarousel, 3) != NULL, "page widget 3");
 	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiCarouselGetPageWidget(pCarousel, 2)) != 0, "current page visible");
 	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiCarouselGetPageWidget(pCarousel, 0)) == 0, "inactive page hidden");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pCarousel) == 5 &&
+		xuiWidgetGetAccessibleNode(pCarousel, 0, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_GROUP &&
+		strcmp(tAccessible.sValue, "Page 3 of 4") == 0,
+		"carousel accessibility root");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pCarousel, 3, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_BUTTON &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_SELECTED) != 0,
+		"carousel accessibility current page");
 
 	iRet = xuiWidgetCreate(pContext, &pChild);
 	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "child create");
+	XUI_TEST_CHECK(xuiWidgetSetFocusable(pChild, 1) == XUI_OK &&
+		xuiWidgetSetTabStop(pChild, 1) == XUI_OK, "child focusable");
 	iRet = xuiCarouselAddPageChild(pCarousel, 1, pChild);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetParent(pChild) == xuiCarouselGetPageWidget(pCarousel, 1), "add page child");
+	XUI_TEST_CHECK(xuiCarouselSetCurrent(pCarousel, 1, 0) == XUI_OK, "select child page");
+	XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pChild) == XUI_OK, "focus page child");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_RIGHT, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 1,
+		"page child arrow does not navigate carousel");
+	XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pCarousel) == XUI_OK, "focus carousel");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_END, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 3,
+		"end selects last page");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_HOME, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0,
+		"home selects first page");
+	iChangeBefore = tState.iChanges;
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pCarousel, 4u,
+		XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_OK &&
+		xuiCarouselGetCurrent(pCarousel) == 2 && tState.iChanges == iChangeBefore + 1,
+		"accessibility selects page");
+	tState.iChanges = 0;
+	tState.iOld = -1;
+	tState.iNew = -1;
 	pChild = NULL;
 
 	iRet = xuiCarouselNext(pCarousel, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 3, "next");
 	XUI_TEST_CHECK(tState.iChanges == 1 && tState.iOld == 2 && tState.iNew == 3, "next callback");
+	iRet = xuiCarouselNext(pCarousel, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 3, "descriptor non-loop end");
+	iRet = xuiCarouselSetLoop(pCarousel, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetLoop(pCarousel) == 1, "enable loop");
 	iRet = xuiCarouselNext(pCarousel, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0, "loop next");
 	iRet = xuiCarouselPrev(pCarousel, 1);
@@ -126,6 +187,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 1, "auto advance");
 	iRet = xuiCarouselSetMetrics(pCarousel, 34.0f, 8.0f, 6.0f, 18.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
+	XUI_TEST_CHECK(xuiCarouselSetMetrics(pCarousel, NAN, 8.0f, 6.0f, 18.0f) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN metrics");
+	XUI_TEST_CHECK(xuiCarouselSetAutoPlay(pCarousel, 1, INFINITY) == XUI_ERROR_INVALID_ARGUMENT, "reject infinite autoplay interval");
+	XUI_TEST_CHECK(xuiCarouselSetPageCount(pCarousel, 0) == XUI_ERROR_INVALID_ARGUMENT, "reject zero page count");
+	XUI_TEST_CHECK(xuiCarouselSetPageCount(pCarousel, XUI_CAROUSEL_MAX_PAGES + 1) == XUI_ERROR_INVALID_ARGUMENT, "reject excessive page count");
 	iRet = xuiCarouselSetColors(pCarousel,
 		XUI_COLOR_RGBA(255, 82, 36, 255),
 		XUI_COLOR_RGBA(20, 20, 20, 120),
@@ -145,6 +210,127 @@ int main(void)
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pCarousel, 0) != NULL, "carousel cache");
+
+	iRet = xuiCarouselSetCurrent(pCarousel, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset before autoplay state tests");
+	iRet = xuiCarouselSetAutoPlay(pCarousel, 1, 0.1f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable autoplay state tests");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCarousel, 0) == XUI_OK, "disable carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch disabled carousel");
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.11f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0, "disabled carousel pauses autoplay");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCarousel, 1) == XUI_OK, "enable carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch enabled carousel");
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.05f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0, "enabled carousel restarts autoplay interval");
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.06f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 1, "enabled carousel advances after interval");
+	iRet = xuiCarouselSetCurrent(pCarousel, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset before hidden autoplay test");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pCarousel, 0) == XUI_OK, "hide carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch hidden carousel");
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.11f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0, "hidden carousel pauses autoplay");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pCarousel, 1) == XUI_OK, "show carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch shown carousel");
+
+	XUI_TEST_CHECK(xuiCarouselSetAutoPlay(pCarousel, 0, 0.0f) == XUI_OK, "disable autoplay for pointer tests");
+	XUI_TEST_CHECK(xuiCarouselSetArrowsOnHover(pCarousel, 0) == XUI_OK, "show arrows for pointer tests");
+	XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK, "layout pointer tests");
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, &tFullRect, 1) == XUI_OK, "render pointer tests");
+	tWorld = xuiWidgetGetWorldRect(pCarousel);
+	XUI_TEST_CHECK(xuiCarouselSetLoop(pCarousel, 0) == XUI_OK &&
+		xuiCarouselSetCurrent(pCarousel, 0, 0) == XUI_OK, "prepare unavailable previous arrow");
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, &tFullRect, 1) == XUI_OK,
+		"render unavailable previous arrow");
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext, tWorld.fX + 35, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"unavailable previous arrow is not interactive");
+	XUI_TEST_CHECK(xuiInputPointerUp(pContext, tWorld.fX + 35, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"release unavailable previous arrow");
+	XUI_TEST_CHECK(xuiCarouselSetLoop(pCarousel, 1) == XUI_OK, "restore loop for pointer tests");
+	iChangeBefore = tState.iChanges;
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 35), (int)(tWorld.fY + tWorld.fH / 2),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pCarousel,
+		"first touch owns carousel arrow press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 35), (int)(tWorld.fY + tWorld.fH / 2),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tWorld.fX + 36),
+		(int)(tWorld.fY + tWorld.fH / 2), 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tWorld.fX + 35),
+		(int)(tWorld.fY + tWorld.fH / 2), XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0 &&
+		tState.iChanges == iChangeBefore &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pCarousel,
+		"unrelated touch move and release preserve carousel press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 35), (int)(tWorld.fY + tWorld.fH / 2),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 3 &&
+		tState.iChanges == iChangeBefore + 1 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch activates carousel arrow once");
+	iRet = xuiInputPointerDown(pContext, tWorld.fX + 35, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "metric mutation pointer down");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == pCarousel, "metric mutation capture");
+	XUI_TEST_CHECK(xuiCarouselSetMetrics(pCarousel, 35.0f, 8.0f, 6.0f, 18.0f) == XUI_OK, "mutate metrics while pressed");
+	XUI_TEST_CHECK(xuiGetPointerCapture(pContext) == NULL, "metric mutation cancels capture");
+
+	iRet = xuiInputPointerDown(pContext, tWorld.fX + 35, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lost button pointer down");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == pCarousel, "lost button capture");
+	XUI_TEST_CHECK(xuiInputPointerMove(pContext, tWorld.fX + 36, tWorld.fY + tWorld.fH / 2, 0) == XUI_OK, "lost button pointer move");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "lost button cancels capture");
+
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext, tWorld.fX + 35, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK, "disable pointer down");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == pCarousel, "disable pointer capture");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCarousel, 0) == XUI_OK, "disable pressed carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "disable cancels pointer capture");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCarousel, 1) == XUI_OK, "reenable pressed carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch reenabled pressed carousel");
+
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext, tWorld.fX + 35, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK, "hide pointer down");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == pCarousel, "hide pointer capture");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pCarousel, 0) == XUI_OK, "hide pressed carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "hide cancels pointer capture");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pCarousel, 1) == XUI_OK, "restore pressed carousel");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch restored pressed carousel");
+	XUI_TEST_CHECK(xuiCarouselSetCurrent(pCarousel, 3, 0) == XUI_OK, "select last before shrink");
+	iChangeBefore = xuiCarouselGetChangeCount(pCarousel);
+	iCallbackBefore = tState.iChanges;
+	XUI_TEST_CHECK(xuiCarouselSetPageCount(pCarousel, 2) == XUI_OK &&
+		xuiCarouselGetCurrent(pCarousel) == 1 &&
+		xuiCarouselGetChangeCount(pCarousel) == iChangeBefore + 1 &&
+		tState.iChanges == iCallbackBefore && xuiWidgetGetAccessibleNodeCount(pCarousel) == 3,
+		"page shrink clamps selection without user callback");
+	XUI_TEST_CHECK(xuiCarouselSetPageCount(pCarousel, 4) == XUI_OK &&
+		xuiCarouselSetCurrent(pCarousel, 0, 0) == XUI_OK,
+		"restore pages after shrink");
+	XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK, "layout reentrant callback test");
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, &tFullRect, 1) == XUI_OK, "render reentrant callback test");
+	tWorld = xuiWidgetGetWorldRect(pCarousel);
+	iChangeBefore = tState.iChanges;
+	tState.bDestroyOnChange = 1;
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext, tWorld.fX + tWorld.fW - 36, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK, "reentrant callback pointer down");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == pCarousel, "reentrant callback capture");
+	XUI_TEST_CHECK(xuiInputPointerUp(pContext, tWorld.fX + tWorld.fW - 36, tWorld.fY + tWorld.fH / 2,
+		XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK, "reentrant callback pointer up");
+	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch reentrant callback");
+	XUI_TEST_CHECK(tState.iChanges == iChangeBefore + 1 && xuiGetPointerCapture(pContext) == NULL, "destroying callback completes safely");
 
 cleanup:
 	if ( pTarget != NULL ) {

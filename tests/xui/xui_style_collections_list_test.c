@@ -12,7 +12,8 @@ static const collection_key_t keys[]={
 static void resolve(xui_widget w,void* b,void* e) { __xuiListViewResolve(w,b,e); }
 int main(void)
 {
-    xui_widget w; xui_list_view_data_t* d; xui_list_view_desc_t desc={0}; const char* items[50]; int i;
+    xui_widget w; xui_list_view_data_t* d; xui_list_view_desc_t desc={0};
+    xui_style_property_t metric={0}; const char* items[50]; float baseHeight; int i;
     for(i=0;i<COUNT(items);i++) items[i]="list row";
     collectionInit(); desc.iSize=sizeof(desc); desc.arrItems=items; desc.iItemCount=COUNT(items); desc.iSelected=0;
     CHECK(xuiListViewCreate(gContext,&w,&desc)==XUI_OK); d=__xuiListViewGetData(w);
@@ -28,5 +29,12 @@ int main(void)
     collectionRender(); CHECK(collectionSeen(COLOR_C)); CHECK(!collectionSeen(COLOR_D));
     CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); collectionRender(); CHECK(collectionSeen(COLOR_D));
     collectionInline(w,"listview.scrollbar.thumb_color",0); collectionRender(); CHECK(!collectionSeen(COLOR_D));
+    baseHeight=xuiListViewGetItemHeight(w);
+    metric.iSize=sizeof(metric); metric.sName="listview.item.height";
+    metric.tValue.iSize=sizeof(metric.tValue); metric.tValue.iType=XUI_STYLE_VALUE_FLOAT; metric.tValue.fFloat=37.0f;
+    CHECK(xuiWidgetSetInlineStyle(w,&metric,1)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
+    CHECK(xuiListViewGetItemHeight(w)==37.0f);
+    CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
+    CHECK(xuiListViewGetItemHeight(w)==baseHeight);
     collectionDone(); puts("style_collections list: PASS"); return 0;
 }

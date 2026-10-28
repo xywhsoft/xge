@@ -350,7 +350,7 @@ static int setup_stalled_assets_provider(void)
     wrote = fwrite(page, 1, sizeof(page) - 1, file) == sizeof(page) - 1;
     if (fclose(file) != 0 || !wrote) return 0;
     return replace_web_provider_with_timeout(
-        "build\\webview\\stalled-document-assets", 1000);
+        "build\\webview\\stalled-document-assets", 3000);
 }
 
 static int setup_dark_view(void)
@@ -378,7 +378,7 @@ static int setup(void)
     xui_doc_web_provider_desc_t provider_desc = {0};
     char folder[MAX_PATH];
     char temp[MAX_PATH];
-    DWORD length = GetFullPathNameA("res\\xui_document_web", MAX_PATH,
+    DWORD length = GetFullPathNameA("res\\xui\\document_web", MAX_PATH,
         folder, NULL);
     DWORD temp_length = GetTempPathA(MAX_PATH, temp);
     int written;
@@ -525,7 +525,10 @@ static int frame(void* user)
         result = 2; xgeQuit(); return XGE_ERROR;
     }
     if (phase < 12 && (stats.bWorkerFailed || stats.sWorkerError[0])) {
-        fprintf(stderr, "Document web provider worker failed during object tests\xge\n");
+        fprintf(stderr, "Document web provider worker failed during object tests: "
+            "phase=%d queued=%u ready=%u failed=%u drawn=%u error=%s\n",
+            phase, stats.iQueued, stats.iReady, stats.iFailed, stats.iDrawn,
+            stats.sWorkerError);
         result = 2; xgeQuit(); return XGE_ERROR;
     }
     if (stats.iFailed && phase < 8) {
@@ -928,7 +931,9 @@ static int frame(void* user)
         message_invalidations = 0;
         phase = 15;
     } else if (phase == 15 && stats.bWorkerFailed) {
-        fprintf(stderr, "Document web provider stalled page became worker failure\n");
+        fprintf(stderr, "Document web provider stalled page became worker failure: "
+            "queued=%u failed=%u updates=%d error=%s\n", stats.iQueued,
+            stats.iFailed, worker_timeout_updates, stats.sWorkerError);
         result = 2; xgeQuit(); return XGE_ERROR;
     } else if (phase == 15 && stats.iFailed >= 1 &&
             stats.iQueued == 0 && !stats.sWorkerError[0] &&
@@ -948,7 +953,7 @@ static int frame(void* user)
             "failed=%u queued=%u heading=%d detail=%d pixels=%zu updates=%d\n",
             stats.iFailed, stats.iQueued, worker_timeout_heading_draws,
             worker_timeout_detail_draws, red, worker_timeout_updates);
-        if (!replace_web_provider("res\\xui_document_web")) {
+        if (!replace_web_provider("res\\xui\\document_web")) {
             fprintf(stderr, "Document web provider decode test setup failed\n");
             result = 2; xgeQuit(); return XGE_ERROR;
         }
@@ -1072,7 +1077,7 @@ static int frame(void* user)
             "ready=%u drawn=%u failed=%u math-draws=%d\n",
             stats.iReady, stats.iDrawn, stats.iFailed,
             message_math_draws);
-        if (!replace_web_provider("res\\xui_document_web")) {
+        if (!replace_web_provider("res\\xui\\document_web")) {
             fprintf(stderr, "Document web provider process failure setup failed\n");
             result = 2; xgeQuit(); return XGE_ERROR;
         }

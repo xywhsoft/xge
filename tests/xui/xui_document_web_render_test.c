@@ -95,7 +95,7 @@ static void on_webview(xui_widget widget, int event, int32_t error, void* user)
 static int setup(void)
 {
     xui_webview_desc_t desc = {0};
-    DWORD length = GetFullPathNameA("res\\xui_document_web", MAX_PATH,
+    DWORD length = GetFullPathNameA("res\\xui\\document_web", MAX_PATH,
         folder, NULL);
     if (!length || length >= MAX_PATH) return 0;
     desc.iSize = sizeof(desc);

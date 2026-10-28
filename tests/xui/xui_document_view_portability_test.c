@@ -14,7 +14,7 @@
 int xgeImageInfoMemory(const void* data, int size, int* width, int* height)
 {
     (void)data; (void)size; (void)width; (void)height;
-    fprintf(stderr, "unexpected XGE image probe in headless DocumentView tests\xge\n");
+    fprintf(stderr, "unexpected XGE image probe in headless DocumentView tests\n");
     abort();
 }
 int xgeImageEncodePNGEx(int width, int height, const void* pixels,
@@ -22,7 +22,7 @@ int xgeImageEncodePNGEx(int width, int height, const void* pixels,
 {
     (void)width; (void)height; (void)pixels; (void)stride;
     (void)flags; (void)data; (void)size;
-    fprintf(stderr, "unexpected XGE PNG encode in headless DocumentView tests\xge\n");
+    fprintf(stderr, "unexpected XGE PNG encode in headless DocumentView tests\n");
     abort();
 }
 
@@ -50,6 +50,190 @@ static void render_view(xui_context context, xui_surface target,
             (cache && xuiTestSurfaceGetTextDrawCount(cache) > 0));
     }
     (void)proxy;
+}
+
+typedef struct document_view_activate_probe {
+    int count;
+    xui_doc_node_id node;
+} document_view_activate_probe;
+
+static void document_view_activate(xui_widget view, xui_doc_node_id node,
+    const char* resource, void* user)
+{
+    document_view_activate_probe* probe = user;
+    (void)view;
+    CHECK(resource && !strcmp(resource, "/target"));
+    probe->count++;
+    probe->node = node;
+}
+
+static int document_view_find_text_x(xui_widget view, xui_doc_node_id text,
+    int from_right, xui_doc_position_t* position)
+{
+    int x, begin = from_right ? 300 : 2, end = from_right ? 1 : 301;
+    int step = from_right ? -1 : 1;
+    for (x = begin; x != end; x += step) {
+        xui_doc_position_t hit = {0};
+        if (xuiDocumentViewHitTest(view, x, 20, &hit) == XUI_OK &&
+            hit.iNodeId == text && hit.iKind == XUI_DOC_POSITION_TEXT) {
+            if (position) *position = hit;
+            return x;
+        }
+    }
+    return -1;
+}
+
+static void document_view_pointer_ownership(xui_context context,
+    xui_surface target, xui_test_proxy_state_t* proxy)
+{
+    xui_document document;
+    xui_document_transaction txn;
+    xui_doc_node_desc_t node = {0};
+    xui_doc_view_desc_t desc = {0};
+    xui_doc_range_t before = {0}, after = {0};
+    xui_doc_position_t first = {0}, last = {0};
+    xui_widget view;
+    xui_event_t pointer = {0};
+    xui_doc_node_id paragraph, text;
+    document_view_activate_probe probe = {0};
+    int left, right;
+
+    CHECK(xuiDocumentCreate(NULL, &document) == XUI_OK);
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &txn) == XUI_OK);
+    node.iSize = sizeof(node); node.iKind = XUI_DOC_PARAGRAPH;
+    CHECK(xuiDocumentTxnInsertNode(txn, XUI_DOCUMENT_ROOT,
+        XUI_DOCUMENT_APPEND, &node, &paragraph) == XUI_OK);
+    node.iKind = XUI_DOC_TEXT;
+    node.sText = "pointer ownership and linked document text";
+    node.iTextBytes = strlen(node.sText);
+    node.tAttributes.iMarks = XUI_DOC_LINK;
+    node.sResource = "/target";
+    CHECK(xuiDocumentTxnInsertNode(txn, paragraph,
+        XUI_DOCUMENT_APPEND, &node, &text) == XUI_OK);
+    CHECK(xuiDocumentTxnCommit(txn, NULL) == XUI_OK);
+    xuiDocumentTxnRelease(txn);
+
+    desc.iSize = sizeof(desc); desc.pDocument = document;
+    CHECK(xuiDocumentViewCreate(context, &desc, &view) == XUI_OK);
+    render_view(context, target, proxy, view);
+    left = document_view_find_text_x(view, text, 0, &first);
+    right = document_view_find_text_x(view, text, 1, &last);
+    CHECK(left >= 0 && right > left && last.iOffset > first.iOffset);
+    CHECK(xuiQueryCursor(context, left, 20) == XUI_CURSOR_IBEAM);
+
+    pointer.iSize = sizeof(pointer); pointer.pTarget = view;
+    pointer.iPointerId = 11; pointer.iPointerType = XUI_POINTER_TYPE_TOUCH;
+    pointer.iButton = XUI_POINTER_BUTTON_LEFT;
+    pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.fX = (float)left; pointer.fY = 20;
+    pointer.iType = XUI_EVENT_POINTER_DOWN;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 11, XUI_POINTER_TYPE_TOUCH) == view &&
+        xuiDocumentViewGetSelection(view, &before) == XUI_OK);
+
+    pointer.iPointerId = 12; pointer.fX = (float)right;
+    pointer.iType = XUI_EVENT_POINTER_MOVE;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiDocumentViewGetSelection(view, &after) == XUI_OK &&
+        after.tAnchor.iOffset == before.tAnchor.iOffset &&
+        after.tCaret.iOffset == before.tCaret.iOffset &&
+        xuiGetPointerCaptureEx(context, 11, XUI_POINTER_TYPE_TOUCH) == view);
+    pointer.iType = XUI_EVENT_POINTER_CAPTURE_LOST;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 11, XUI_POINTER_TYPE_TOUCH) == view);
+    pointer.iType = XUI_EVENT_POINTER_UP; pointer.iButtons = 0;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 11, XUI_POINTER_TYPE_TOUCH) == view);
+
+    pointer.iPointerId = 11; pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.iType = XUI_EVENT_POINTER_MOVE;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiDocumentViewGetSelection(view, &after) == XUI_OK &&
+        after.tCaret.iOffset != before.tCaret.iOffset);
+    pointer.iType = XUI_EVENT_POINTER_UP; pointer.iButtons = 0;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 11, XUI_POINTER_TYPE_TOUCH) == NULL);
+
+    pointer.iPointerId = 13; pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.fX = (float)left; pointer.iType = XUI_EVENT_POINTER_DOWN;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 13, XUI_POINTER_TYPE_TOUCH) == view);
+    CHECK(xuiDocumentViewSetSelection(view, &after) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 13, XUI_POINTER_TYPE_TOUCH) == NULL);
+    xuiWidgetDestroy(view);
+
+    desc.bDisableSelection = 1;
+    desc.onActivate = document_view_activate;
+    desc.pUser = &probe;
+    CHECK(xuiDocumentViewCreate(context, &desc, &view) == XUI_OK);
+    render_view(context, target, proxy, view);
+    left = document_view_find_text_x(view, text, 0, NULL);
+    CHECK(left >= 0 && xuiQueryCursor(context, left, 20) == XUI_CURSOR_HAND);
+    pointer.pTarget = view; pointer.iPointerId = 21;
+    pointer.iPointerType = XUI_POINTER_TYPE_TOUCH;
+    pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.fX = (float)left; pointer.fY = 20;
+    pointer.iType = XUI_EVENT_POINTER_DOWN;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 21, XUI_POINTER_TYPE_TOUCH) == NULL);
+    pointer.iPointerId = 22; pointer.iButtons = 0;
+    pointer.iType = XUI_EVENT_POINTER_UP;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK && probe.count == 0);
+    pointer.iPointerId = 21;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        probe.count == 1 && probe.node == text);
+    xuiWidgetDestroy(view);
+    xuiDocumentRelease(document);
+    puts("DocumentView pointer ownership, capture cancellation and cursor semantics passed");
+}
+
+static void document_editor_queued_pointer_ownership(xui_context context,
+    xui_surface target, xui_test_proxy_state_t* proxy)
+{
+    xui_doc_desc_t md = {0};
+    xui_doc_editor_desc_t desc = {0};
+    xui_document document;
+    xui_widget editor;
+    xui_event_t pointer = {0};
+    const char* source = "queued pointer input\n";
+    md.iSize = sizeof(md); md.iProfile = XUI_DOCUMENT_MARKDOWN;
+    CHECK(xuiDocumentCreate(&md, &document) == XUI_OK &&
+        xuiDocumentLoadMarkdown(document, source, strlen(source)) == XUI_OK);
+    desc.iSize = sizeof(desc); desc.iMode = XUI_DOC_SOURCE_TEXT;
+    desc.tView.iSize = sizeof(desc.tView); desc.tView.pDocument = document;
+    CHECK(xuiDocumentEditorCreate(context, &desc, &editor) == XUI_OK);
+    render_view(context, target, proxy, editor);
+    CHECK(xuiDocumentEditorAppendStreamSource(editor, "tail", 4, 0) == XUI_OK);
+
+    pointer.iSize = sizeof(pointer); pointer.pTarget = editor;
+    pointer.iPointerType = XUI_POINTER_TYPE_TOUCH;
+    pointer.iPointerId = 31; pointer.iButton = XUI_POINTER_BUTTON_LEFT;
+    pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.fX = 20; pointer.fY = 20;
+    pointer.iType = XUI_EVENT_POINTER_DOWN;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 31, XUI_POINTER_TYPE_TOUCH) == editor);
+    pointer.iPointerId = 32; pointer.iButtons = 0;
+    pointer.iType = XUI_EVENT_POINTER_UP;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 31, XUI_POINTER_TYPE_TOUCH) == editor);
+    pointer.iType = XUI_EVENT_POINTER_CAPTURE_LOST;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 31, XUI_POINTER_TYPE_TOUCH) == editor);
+    CHECK(xuiDocumentEditorCancelInput(editor) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 31, XUI_POINTER_TYPE_TOUCH) == NULL);
+
+    CHECK(xuiDocumentEditorAppendStreamSource(editor, "tail", 4, 0) == XUI_OK);
+    pointer.iPointerId = 33; pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.iType = XUI_EVENT_POINTER_DOWN;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 33, XUI_POINTER_TYPE_TOUCH) == editor);
+    pointer.iButtons = 0; pointer.iType = XUI_EVENT_POINTER_UP;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
+        xuiGetPointerCaptureEx(context, 33, XUI_POINTER_TYPE_TOUCH) == NULL);
+    CHECK(xuiDocumentEditorCancelInput(editor) == XUI_OK);
+    xuiWidgetDestroy(editor); xuiDocumentRelease(document);
+    puts("DocumentEditor queued pointer ownership and cancellation passed");
 }
 
 #include "xui_document_grapheme_editor_cases.h"
@@ -118,6 +302,8 @@ int main(void)
     CHECK(xuiSetDefaultFont(context, font) == XUI_OK);
     CHECK(xuiTestSurfaceCreate(&proxy, &target, 320, 200,
         XUI_SURFACE_USAGE_TARGET) == XUI_OK);
+    document_view_pointer_ownership(context, target, &proxy);
+    document_editor_queued_pointer_ownership(context, target, &proxy);
     source_selection_collapse_prefix(context);
     document_cross_node_grapheme_editor(context, &proxy);
     document_unicode_control_editor(context, &proxy);

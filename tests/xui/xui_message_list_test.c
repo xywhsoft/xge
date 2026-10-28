@@ -1,6 +1,9 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
+#include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -24,6 +27,21 @@ static void __xuiMessageListEvent(xui_widget pWidget, const xui_message_list_eve
 	if ( pEvent->iEvent == XUI_MESSAGE_EVENT_SCROLL ) pCounts[2]++;
 }
 
+typedef struct xui_message_list_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_message_list_destroy_state_t;
+
+static void __xuiMessageListDestroyOnSelect(xui_widget pWidget,
+	const xui_message_list_event_t* pEvent, void* pUser)
+{
+	xui_message_list_destroy_state_t* pState = (xui_message_list_destroy_state_t*)pUser;
+	if ( pEvent == NULL || pState == NULL || pEvent->iEvent != XUI_MESSAGE_EVENT_SELECT ) return;
+	pState->iCount++;
+	(void)xuiWidgetDestroy(pWidget);
+	if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+}
+
 static int __xuiMessageListRender(xui_context pContext, xui_surface pTarget)
 {
 	xui_rect_i_t tFullRect;
@@ -41,6 +59,15 @@ static int __xuiMessageListClick(xui_context pContext, float fX, float fY)
 	return iRet;
 }
 
+static int __xuiMessageListKey(xui_context pContext, int iKey)
+{
+	int iRet = xuiInputKeyDown(pContext, iKey, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyUp(pContext, iKey, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
+}
+
 int main(void)
 {
 	xui_message_node_t arrNodes[5];
@@ -52,6 +79,7 @@ int main(void)
 	xui_widget pMessageView;
 	xui_widget pHeader;
 	xui_widget pFooter;
+	xui_widget pProbe;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_rect_t tContent;
@@ -64,11 +92,16 @@ int main(void)
 	xui_vec2_t tDesiredBefore;
 	xui_vec2_t tDesiredAfter;
 	xui_message_list_metrics_t tMetrics;
+	xui_message_list_desc_t tInvalidDesc;
+	xui_message_list_destroy_state_t tDestroy;
 	const xui_message_node_t* pNode;
+	const xui_message_node_t* pDialogNode;
 	char sBuffer[2048];
 	const char* sRoundTripPath;
 	int arrEvents[3];
 	int iNeed;
+	int iSelectionNeedBefore;
+	int iClicksBefore;
 	int iFailed;
 	int iRet;
 
@@ -79,12 +112,14 @@ int main(void)
 	pMessageView = NULL;
 	pHeader = NULL;
 	pFooter = NULL;
+	pProbe = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
 	sRoundTripPath = "build/xui_message_list_roundtrip.tmp";
 	memset(arrEvents, 0, sizeof(arrEvents));
 	memset(arrNodes, 0, sizeof(arrNodes));
+	memset(&tDestroy, 0, sizeof(tDestroy));
 	xuiTestProxyInit(&tState);
 
 	arrNodes[0].iSize = sizeof(arrNodes[0]);
@@ -122,6 +157,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pFont != NULL, "test font create");
 	iRet = xuiSetDefaultFont(pContext, pFont);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set default font");
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.bHasMetrics = 1;
+	tInvalidDesc.tMetrics.iSize = sizeof(tInvalidDesc.tMetrics);
+	tInvalidDesc.tMetrics.fPaddingX = NAN;
+	pProbe = (xui_widget)(uintptr_t)1;
+	iRet = xuiMessageListCreate(pContext, &pProbe, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"invalid descriptor clears create output");
 	iRet = xuiInputViewport(pContext, 460.0f, 360.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport");
 	iRet = xuiWidgetCreate(pContext, &pRoot);
@@ -138,10 +182,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "event callback");
 	iRet = xuiMessageListSetNodes(pDialog, arrNodes, 3);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set nodes");
+	{
+		xui_message_node_t tInvalidNode = arrNodes[0];
+		tInvalidNode.iSize = sizeof(tInvalidNode.iSize);
+		XUI_TEST_CHECK(xuiMessageListSetNodes(pDialog, &tInvalidNode, 1) == XUI_ERROR_INVALID_ARGUMENT &&
+			xuiMessageListGetNodeCount(pDialog) == 3,
+			"undersized node descriptor preserves current messages");
+	}
 	XUI_TEST_CHECK(xuiMessageListGetNodeCount(pDialog) == 3, "node count");
 	XUI_TEST_CHECK(xuiMessageListGetNode(pDialog, 0)->iType == XUI_MESSAGE_NODE_OTHER, "other node");
 	XUI_TEST_CHECK(xuiMessageListGetNode(pDialog, 1)->iType == XUI_MESSAGE_NODE_SYSTEM, "system node");
 	XUI_TEST_CHECK(xuiMessageListGetNode(pDialog, 2)->iType == XUI_MESSAGE_NODE_SELF, "self node");
+	pDialogNode = xuiMessageListGetNode(pDialog, 0);
+	XUI_TEST_CHECK(pDialogNode != NULL && strcmp(pDialogNode->sId, "m1") == 0,
+		"message node snapshot");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 460, 360, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -161,6 +215,14 @@ int main(void)
 	XUI_TEST_CHECK(tRect.fH > 52.0f, "wrapped node rect");
 	tOtherBubble = xuiMessageListGetBubbleRect(pDialog, 0);
 	tSelfBubble = xuiMessageListGetBubbleRect(pDialog, 2);
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorld.fX + tContent.fX + tOtherBubble.fX + tMetrics.fBubblePaddingX + 2.0f),
+		(int)(tWorld.fY + tContent.fY + tOtherBubble.fY + tMetrics.fBubblePaddingY + 2.0f)) == XUI_CURSOR_IBEAM,
+		"message text uses I-beam cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorld.fX + tContent.fX + tMetrics.fPaddingX + tMetrics.fAvatarSize * 0.5f),
+		(int)(tWorld.fY + tContent.fY + tOtherBubble.fY + 2.0f)) == XUI_CURSOR_ARROW,
+		"message avatar lane uses arrow cursor");
 	XUI_TEST_CHECK(tOtherBubble.fX == tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap,
 		"other message starts after the left avatar lane");
 	XUI_TEST_CHECK(tSelfBubble.fX + tSelfBubble.fW == tContent.fW - tMetrics.fPaddingX - tMetrics.fAvatarSize - tMetrics.fAvatarGap,
@@ -189,11 +251,32 @@ int main(void)
 	XUI_TEST_CHECK(tOtherBubble.fW <= tContent.fW - (tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap) * 2.0f &&
 		tSelfBubble.fW <= tContent.fW - (tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap) * 2.0f,
 		"resized bubbles remain inside the center lane");
+	{
+		float fOldScroll = xuiMessageListGetScroll(pDialog);
+		XUI_TEST_CHECK(xuiMessageListSetScroll(pDialog, NAN) == XUI_ERROR_INVALID_ARGUMENT &&
+			xuiMessageListSetScroll(pDialog, FLT_MAX) == XUI_ERROR_INVALID_ARGUMENT &&
+			xuiMessageListScrollBy(pDialog, NAN) == XUI_ERROR_INVALID_ARGUMENT &&
+			xuiMessageListGetScroll(pDialog) == fOldScroll,
+			"invalid scroll values preserve state");
+	}
 	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
 	iRet = xuiInputPointerDown(pContext, tWorld.fX + tRect.fX + 13.0f, tWorld.fY + tRect.fY + 10.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "selection down");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "selection down dispatch");
+	XUI_TEST_CHECK(xuiGetPointerCapture(pContext) == pDialog, "selection captures pointer");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pDialog, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) != pDialog,
+		"disabling message list releases pointer capture");
+	XUI_TEST_CHECK(xuiInputPointerUp(pContext, tWorld.fX + tRect.fX + 13.0f,
+		tWorld.fY + tRect.fY + 10.0f, XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK, "reset pointer after disabling message list");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pDialog, 1) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK, "restore message list enabled state");
+	iRet = xuiInputPointerDown(pContext, tWorld.fX + tRect.fX + 13.0f,
+		tWorld.fY + tRect.fY + 10.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"selection down after re-enable");
 	iRet = xuiInputPointerMove(pContext, tWorld.fX + tRect.fX + 110.0f, tWorld.fY + tRect.fY + 10.0f, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "selection move");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -205,6 +288,57 @@ int main(void)
 	XUI_TEST_CHECK(xuiMessageListGetSelectedText(pDialog, NULL, 0) > 1, "selected text");
 	iRet = xuiMessageListCopySelection(pDialog);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestProxyGetClipboardText(&tState)[0] != 0, "copy selected text");
+	XUI_TEST_CHECK(xuiMessageListClearTextSelection(pDialog) == XUI_OK,
+		"clear selection before multi-touch drag");
+	tWorld = xuiWidgetGetWorldRect(pDialog);
+	tContent = xuiWidgetGetContentRect(pDialog);
+	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
+	iRet = xuiInputPointerDownEx(pContext, 1501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tContent.fX + tRect.fX + 13.0f),
+		(int)(tWorld.fY + tContent.fY + tRect.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	iSelectionNeedBefore = xuiMessageListGetSelectedText(pDialog, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1501u, XUI_POINTER_TYPE_TOUCH) == pDialog,
+		"message selection captures exact owner touch");
+	iRet = xuiInputPointerDownEx(pContext, 1502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tContent.fX + tRect.fX + 32.0f),
+		(int)(tWorld.fY + tContent.fY + tRect.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 1502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tContent.fX + tRect.fX + 110.0f),
+		(int)(tWorld.fY + tContent.fY + tRect.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tContent.fX + tRect.fX + 110.0f),
+		(int)(tWorld.fY + tContent.fY + tRect.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiMessageListGetSelectedText(pDialog, NULL, 0) == iSelectionNeedBefore &&
+		xuiGetPointerCaptureEx(pContext, 1501u, XUI_POINTER_TYPE_TOUCH) == pDialog &&
+		xuiGetPointerCaptureEx(pContext, 1502u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot change message selection or release owner");
+	iRet = xuiInputPointerMoveEx(pContext, 1501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tContent.fX + tRect.fX + 110.0f),
+		(int)(tWorld.fY + tContent.fY + tRect.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMessageListGetSelectedText(pDialog, NULL, 0) > 1,
+		"message owner touch extends text selection");
+	iRet = xuiInputPointerUpEx(pContext, 1501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tContent.fX + tRect.fX + 110.0f),
+		(int)(tWorld.fY + tContent.fY + tRect.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"message owner touch releases text selection capture");
+	XUI_TEST_CHECK(xuiMessageListClearTextSelection(pDialog) == XUI_OK,
+		"clear multi-touch selection before cross-node drag");
 	tContent = xuiWidgetGetContentRect(pDialog);
 	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
 	iRet = xuiInputPointerDown(pContext,
@@ -235,6 +369,22 @@ int main(void)
 	iRet = __xuiMessageListClick(pContext, tWorld.fX + tRect.fX + 12.0f, tWorld.fY + tRect.fY + 12.0f - xuiMessageListGetScroll(pDialog));
 	XUI_TEST_CHECK(iRet == XUI_OK, "click node");
 	XUI_TEST_CHECK(xuiMessageListGetSelected(pDialog) == 0 && arrEvents[0] > 0, "select event");
+	XUI_TEST_CHECK(xuiMessageListSetSelected(pDialog, -1) == XUI_OK &&
+		xuiSetFocusWidget(pContext, pDialog) == XUI_OK,
+		"prepare keyboard navigation");
+	XUI_TEST_CHECK(__xuiMessageListKey(pContext, XUI_KEY_DOWN) == XUI_OK &&
+		xuiMessageListGetSelected(pDialog) == 0,
+		"keyboard Down selects first message");
+	XUI_TEST_CHECK(__xuiMessageListKey(pContext, XUI_KEY_END) == XUI_OK &&
+		xuiMessageListGetSelected(pDialog) == 2,
+		"keyboard End selects last message");
+	XUI_TEST_CHECK(__xuiMessageListKey(pContext, XUI_KEY_UP) == XUI_OK &&
+		xuiMessageListGetSelected(pDialog) == 1,
+		"keyboard Up moves message selection");
+	iClicksBefore = arrEvents[1];
+	XUI_TEST_CHECK(__xuiMessageListKey(pContext, XUI_KEY_ENTER) == XUI_OK &&
+		arrEvents[1] == iClicksBefore + 1,
+		"keyboard Enter activates selected message");
 
 	iNeed = xuiMessageListExportText(pDialog, sBuffer, sizeof(sBuffer));
 	XUI_TEST_CHECK(iNeed > 0 && strstr(sBuffer, "MESSAGELIST2") != NULL && strstr(sBuffer, "mobile layout") != NULL, "export");
@@ -269,6 +419,10 @@ int main(void)
 	tContent = xuiWidgetGetContentRect(pDialog);
 	tWorld = xuiWidgetGetWorldRect(pDialog);
 	tRect = xuiMessageListGetBubbleRect(pDialog, 3);
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorld.fX + tContent.fX + tRect.fX + 12.0f),
+		(int)(tWorld.fY + tContent.fY + tRect.fY + 12.0f - xuiMessageListGetScroll(pDialog))) == XUI_CURSOR_HAND,
+		"collapsible auxiliary header uses hand cursor");
 	XUI_TEST_CHECK(tRect.fX == tMetrics.fPaddingX + tMetrics.fAvatarSize + tMetrics.fAvatarGap + 12.0f &&
 		tRect.fX + tRect.fW <= tContent.fW - tMetrics.fPaddingX - tMetrics.fAvatarSize - tMetrics.fAvatarGap,
 		"auxiliary message stays inside the center lane");
@@ -320,8 +474,15 @@ int main(void)
 	arrNodes[4].sId = "layout-message";
 	arrNodes[4].sSender = "Layout";
 	arrNodes[4].sText = "A message list is a viewport. Its document extent must never become its requested layout size.";
+	pDialogNode = xuiMessageListGetNode(pDialog, 0);
+	XUI_TEST_CHECK(pDialogNode != NULL && strcmp(pDialogNode->sId, "m1") == 0,
+		"message node snapshot before cross-control query");
 	XUI_TEST_CHECK(xuiMessageListSetNodes(pMessageView, &arrNodes[4], 1) == XUI_OK,
 		"layout message seed");
+	XUI_TEST_CHECK(xuiMessageListGetNode(pMessageView, 0) != NULL,
+		"second message list node query");
+	XUI_TEST_CHECK(strcmp(pDialogNode->sId, "m1") == 0,
+		"message node snapshots are isolated per control");
 	XUI_TEST_CHECK(xuiWidgetMeasureContent(pMessageView,
 		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tDesiredBefore) == XUI_OK,
 		"message desired size before append");
@@ -355,6 +516,28 @@ int main(void)
 		xuiWidgetGetRect(pFooter).fW == tFooterBefore.fW &&
 		xuiWidgetGetRect(pFooter).fH == tFooterBefore.fH,
 		"message content displaced the footer");
+
+	XUI_TEST_CHECK(xuiMessageListCreate(pContext, &pProbe, NULL) == XUI_OK && pProbe != NULL,
+		"destroy callback probe create");
+	XUI_TEST_CHECK(xuiWidgetAddChild(pRoot, pProbe) == XUI_OK &&
+		xuiWidgetSetRect(pProbe, (xui_rect_t){10.0f, 230.0f, 300.0f, 100.0f}) == XUI_OK &&
+		xuiMessageListSetNodes(pProbe, &arrNodes[0], 1) == XUI_OK,
+		"destroy callback probe setup");
+	tDestroy.ppWidget = &pProbe;
+	XUI_TEST_CHECK(xuiMessageListSetEvent(pProbe, __xuiMessageListDestroyOnSelect, &tDestroy) == XUI_OK &&
+		xuiLayout(pContext) == XUI_OK, "destroy callback registration");
+	tWorld = xuiWidgetGetWorldRect(pProbe);
+	tContent = xuiWidgetGetContentRect(pProbe);
+	tRect = xuiMessageListGetNodeRect(pProbe, 0);
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext,
+		tWorld.fX + tContent.fX + tRect.fX + 4.0f,
+		tWorld.fY + tContent.fY + tRect.fY + 4.0f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && pProbe == NULL && tDestroy.iCount == 1,
+		"event callback may destroy message list safely");
+	XUI_TEST_CHECK(xuiInputPointerUp(pContext, 10.0f, 10.0f,
+		XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"input remains usable after message list destruction");
 
 cleanup:
 	remove(sRoundTripPath);

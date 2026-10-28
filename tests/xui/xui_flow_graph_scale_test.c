@@ -25,6 +25,7 @@ static int add_port(xui_flow_graph pGraph, int iNode, const char* sId, int iDire
 	tPort.sTitle = sId;
 	tPort.iDirection = iDirection;
 	tPort.iKind = XUI_FLOW_PORT_CONTROL;
+	tPort.bMulti = (iDirection == XUI_FLOW_PORT_INPUT) ? 1 : 0;
 	return xuiFlowGraphAddPort(pGraph, iNode, &tPort, NULL);
 }
 

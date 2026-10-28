@@ -1,6 +1,7 @@
 #include "xui_document_ui.h"
 #include "../src/xui/accessibility/xui_accessibility_text_internal.h"
 #include "xui_test_proxy.h"
+#include "xui_test_time.h"
 #include "../extlibs/xrt/xrt.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,8 +22,8 @@ typedef struct visual_allocator {
 } visual_allocator;
 static void wait_flag(atomic_int* flag)
 {
-    xdeadline deadline=xrtDeadlineAfter(30000000);
-    while(!atomic_load(flag)){CHECK(!xrtDeadlineExpired(deadline));xrtThreadYield();}
+    xui_test_deadline_t deadline=xuiTestDeadlineAfterUs(30000000);
+    while(!atomic_load(flag)){CHECK(!xuiTestDeadlineExpired(deadline));xrtThreadYield();}
 }
 static void* allocate(void* user,size_t bytes)
 {
@@ -69,8 +70,8 @@ static xui_doc_prepare_info_t pending(visual_fixture* f)
 }
 static int flush(visual_fixture* f)
 {
-    xdeadline deadline=xrtDeadlineAfter(30000000);int result;
-    do{result=xuiDocumentEditorFlush(f->editor);CHECK(!xrtDeadlineExpired(deadline));xrtThreadYield();}
+    xui_test_deadline_t deadline=xuiTestDeadlineAfterUs(30000000);int result;
+    do{result=xuiDocumentEditorFlush(f->editor);CHECK(!xuiTestDeadlineExpired(deadline));xrtThreadYield();}
     while(result==XUI_DOC_ERROR_BUSY);return result;
 }
 static void source(visual_fixture* f,const char* expected)

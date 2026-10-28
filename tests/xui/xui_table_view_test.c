@@ -30,6 +30,53 @@ typedef struct table_test_data_t {
 	float fContextY;
 } table_test_data_t;
 
+typedef struct table_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} table_destroy_state_t;
+
+static void __xuiTableTestDestroyWidget(xui_widget pWidget, table_destroy_state_t* pState)
+{
+	if ( pState == NULL ) return;
+	pState->iCount++;
+	(void)xuiWidgetDestroy(pWidget);
+	if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+}
+
+static void __xuiTableTestDestroyOnSelect(xui_widget pWidget, int iRow, int iColumn, int iMode, void* pUser)
+{
+	(void)iRow; (void)iColumn; (void)iMode;
+	__xuiTableTestDestroyWidget(pWidget, (table_destroy_state_t*)pUser);
+}
+
+static void __xuiTableTestDestroyOnSort(xui_widget pWidget, int iColumn, int bDescending, void* pUser)
+{
+	(void)iColumn; (void)bDescending;
+	__xuiTableTestDestroyWidget(pWidget, (table_destroy_state_t*)pUser);
+}
+
+static void __xuiTableTestDestroyOnResize(xui_widget pWidget, int iColumn, float fWidth, void* pUser)
+{
+	(void)iColumn; (void)fWidth;
+	__xuiTableTestDestroyWidget(pWidget, (table_destroy_state_t*)pUser);
+}
+
+static int __xuiTableTestDestroyOnContext(xui_widget pWidget, int iPart, int iRow, int iColumn, float fX, float fY, void* pUser)
+{
+	(void)iPart; (void)iRow; (void)iColumn; (void)fX; (void)fY;
+	__xuiTableTestDestroyWidget(pWidget, (table_destroy_state_t*)pUser);
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiTableTestDestroyOnRender(xui_widget pWidget, int iColumn,
+	const xui_table_view_column_t* pColumn, xui_draw_context pDraw,
+	xui_rect_t tRect, int iState, void* pUser)
+{
+	(void)iColumn; (void)pColumn; (void)pDraw; (void)tRect; (void)iState;
+	__xuiTableTestDestroyWidget(pWidget, (table_destroy_state_t*)pUser);
+	return 1;
+}
+
 static int __xuiTableTestCount(xui_widget pWidget, void* pUser)
 {
 	table_test_data_t* pData;
@@ -181,16 +228,134 @@ static int __xuiTableTestClick(xui_context pContext, float fX, float fY)
 	return iRet;
 }
 
+static int __xuiTableTestCreateTemporary(xui_context pContext, xui_widget pRoot,
+	xui_widget* ppTable)
+{
+	xui_table_view_column_t arrColumns[2];
+	xui_table_view_row_t arrRows[2];
+	xui_table_view_desc_t tDesc;
+	int iRet;
+
+	memset(arrColumns, 0, sizeof(arrColumns));
+	arrColumns[0].sTitle = "A";
+	arrColumns[0].fWidth = 72.0f;
+	arrColumns[1].sTitle = "B";
+	arrColumns[1].fWidth = 72.0f;
+	memset(arrRows, 0, sizeof(arrRows));
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.arrColumns = arrColumns;
+	tDesc.iColumnCount = 2;
+	tDesc.arrRows = arrRows;
+	tDesc.iRowCount = 2;
+	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	iRet = xuiTableViewCreate(pContext, ppTable, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, *ppTable);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(*ppTable, (xui_rect_t){390.0f, 20.0f, 190.0f, 110.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	return iRet;
+}
+
+static int __xuiTableTestCallbackDestruction(xui_context pContext, xui_widget pRoot,
+	xui_surface pTarget)
+{
+	table_destroy_state_t tDestroy;
+	xui_widget pTable = NULL;
+	xui_rect_t tWorld;
+	xui_rect_t tViewport;
+	xui_rect_t tCell;
+	xui_event_t tContext;
+	float fHeaderY;
+	float fResizeX;
+	int iFailed = 0;
+	int iRet;
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	iRet = __xuiTableTestCreateTemporary(pContext, pRoot, &pTable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable != NULL, "select destroy setup");
+	tDestroy.ppWidget = &pTable;
+	XUI_TEST_CHECK(xuiTableViewSetSelect(pTable, __xuiTableTestDestroyOnSelect, &tDestroy) == XUI_OK, "select destroy callback");
+	tWorld = xuiWidgetGetWorldRect(pTable);
+	XUI_TEST_CHECK(xuiTableViewGetCellRect(pTable, 0, 0, &tCell) == XUI_OK, "select destroy cell");
+	iRet = xuiInputPointerDown(pContext, tWorld.fX + tCell.fX + 8.0f,
+		tWorld.fY + tCell.fY + 8.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable == NULL && tDestroy.iCount == 1, "select callback may destroy table");
+	(void)xuiInputPointerUp(pContext, 0, 0, XUI_POINTER_BUTTON_LEFT, 0u);
+	(void)xuiDispatchPendingEvents(pContext);
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	iRet = __xuiTableTestCreateTemporary(pContext, pRoot, &pTable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable != NULL, "sort destroy setup");
+	tDestroy.ppWidget = &pTable;
+	XUI_TEST_CHECK(xuiTableViewSetSort(pTable, __xuiTableTestDestroyOnSort, &tDestroy) == XUI_OK, "sort destroy callback");
+	tWorld = xuiWidgetGetWorldRect(pTable);
+	tViewport = xuiTableViewGetViewportRect(pTable);
+	fHeaderY = tWorld.fY + tViewport.fY - 10.0f;
+	iRet = __xuiTableTestClick(pContext, tWorld.fX + tViewport.fX + 10.0f, fHeaderY);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable == NULL && tDestroy.iCount == 1, "sort callback may destroy table");
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	iRet = __xuiTableTestCreateTemporary(pContext, pRoot, &pTable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable != NULL, "resize destroy setup");
+	tDestroy.ppWidget = &pTable;
+	XUI_TEST_CHECK(xuiTableViewSetColumnResize(pTable, __xuiTableTestDestroyOnResize, &tDestroy) == XUI_OK, "resize destroy callback");
+	tWorld = xuiWidgetGetWorldRect(pTable);
+	tViewport = xuiTableViewGetViewportRect(pTable);
+	fHeaderY = tWorld.fY + tViewport.fY - 10.0f;
+	fResizeX = tWorld.fX + tViewport.fX + xuiTableViewGetColumnWidth(pTable, 0);
+	iRet = xuiInputPointerDown(pContext, fResizeX, fHeaderY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext, fResizeX + 8.0f, fHeaderY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable == NULL && tDestroy.iCount == 1, "resize callback may destroy table");
+	(void)xuiInputPointerUp(pContext, 0, 0, XUI_POINTER_BUTTON_LEFT, 0u);
+	(void)xuiDispatchPendingEvents(pContext);
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	iRet = __xuiTableTestCreateTemporary(pContext, pRoot, &pTable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable != NULL, "context destroy setup");
+	tDestroy.ppWidget = &pTable;
+	XUI_TEST_CHECK(xuiTableViewSetContextMenu(pTable, __xuiTableTestDestroyOnContext, &tDestroy) == XUI_OK, "context destroy callback");
+	tWorld = xuiWidgetGetWorldRect(pTable);
+	XUI_TEST_CHECK(xuiTableViewGetCellRect(pTable, 0, 0, &tCell) == XUI_OK, "context destroy cell");
+	memset(&tContext, 0, sizeof(tContext));
+	tContext.iSize = sizeof(tContext);
+	tContext.iType = XUI_EVENT_CONTEXT_MENU;
+	tContext.pTarget = pTable;
+	tContext.fX = tWorld.fX + tCell.fX + 8.0f;
+	tContext.fY = tWorld.fY + tCell.fY + 8.0f;
+	iRet = xuiDispatchEvent(pContext, &tContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable == NULL && tDestroy.iCount == 1, "context callback may destroy table");
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	iRet = __xuiTableTestCreateTemporary(pContext, pRoot, &pTable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable != NULL, "renderer destroy setup");
+	tDestroy.ppWidget = &pTable;
+	XUI_TEST_CHECK(xuiTableViewSetHeaderRenderer(pTable, __xuiTableTestDestroyOnRender, &tDestroy) == XUI_OK, "renderer destroy callback");
+	iRet = __xuiTableTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTable == NULL && tDestroy.iCount == 1, "renderer callback may destroy table");
+
+cleanup:
+	if ( pTable != NULL ) (void)xuiWidgetDestroy(pTable);
+	return !iFailed;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pTable;
+	xui_widget pInvalid;
 	xui_surface pTarget;
 	xui_table_view_column_t arrColumns[6];
+	xui_table_view_column_t tBadColumn;
 	xui_table_view_row_t arrRows[72];
+	xui_table_view_row_t tBadRow;
 	xui_table_view_desc_t tDesc;
+	xui_table_view_desc_t tBadDesc;
+	xui_accessible_node_t tAccessible;
 	table_test_data_t tData;
 	xui_rect_t tCell;
 	xui_rect_t tMerged;
@@ -201,9 +366,19 @@ int main(void)
 	float fOffsetY;
 	float fHeaderY;
 	float fResizeX;
+	float fWidthBefore;
+	float fMetricColumn;
+	float fMetricRow;
+	float fMetricHeader;
+	union { uint32_t iBits; float fValue; } tNaN;
 	int iRow;
 	int iColumn;
+	int iActiveRow;
+	int iActiveColumn;
 	int iDescending;
+	int iChangeBefore;
+	int iSortBefore;
+	int iSelectBefore;
 	int iFailed;
 	int iRet;
 	int i;
@@ -212,6 +387,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pTable = NULL;
+	pInvalid = NULL;
 	pTarget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
@@ -242,6 +418,14 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 620.0f, 360.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
+
+	memset(&tBadDesc, 0, sizeof(tBadDesc));
+	tBadDesc.iSize = sizeof(tBadDesc);
+	tBadDesc.iColumnCount = 1;
+	pInvalid = (xui_widget)1;
+	iRet = xuiTableViewCreate(pContext, &pInvalid, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"invalid descriptor clears output");
 
 	memset(arrColumns, 0, sizeof(arrColumns));
 	arrColumns[0].sTitle = "Name";
@@ -283,8 +467,11 @@ int main(void)
 	tDesc.fDefaultRowHeight = 22.0f;
 	tDesc.fHeaderHeight = 25.0f;
 	tDesc.iSelectionMode = XUI_TABLE_VIEW_SELECTION_CELL;
+	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
 	iRet = xuiTableViewCreate(pContext, &pTable, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTable != NULL, "tableview create");
+	XUI_TEST_CHECK(xuiTableViewGetScrollbarMode(pTable) == XUI_SCROLLBAR_MODE_FULL,
+	               "descriptor scrollbar mode honored");
 	iRet = xuiWidgetAddChild(pRoot, pTable);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add table");
 	xuiWidgetSetRect(pTable, (xui_rect_t){24.0f, 18.0f, 330.0f, 178.0f});
@@ -320,6 +507,72 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollFrameIsHScrollBarVisible(xuiTableViewGetFrameWidget(pTable)), "h scrollbar visible");
 	XUI_TEST_CHECK(xuiScrollFrameIsVScrollBarVisible(xuiTableViewGetFrameWidget(pTable)), "v scrollbar visible");
 
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pTable) == tData.iRows * 6 + 1 &&
+		xuiWidgetGetAccessibleNode(pTable, 0, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_TABLE &&
+		tAccessible.iRowCount == tData.iRows && tAccessible.iColumnCount == 6,
+		"table accessibility root and dimensions");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTable, 1, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_CELL &&
+		strcmp(tAccessible.sName, "R00 C0") == 0 &&
+		tAccessible.iRow == 0 && tAccessible.iColumn == 0 &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_SELECTABLE) != 0,
+		"table accessibility cell metadata");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTable, 3, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_CHECKED) != 0,
+		"table accessibility bool state");
+	iSelectBefore = tData.iSelectCallbackCount;
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pTable, 2u,
+		XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_OK &&
+		xuiTableViewGetSelectedCell(pTable, &iRow, &iColumn) == XUI_OK &&
+		iRow == 0 && iColumn == 0 && tData.iSelectCallbackCount == iSelectBefore + 1,
+		"table accessibility selection action");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTable, 25, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0 &&
+		tAccessible.iActions == 0 &&
+		xuiWidgetPerformAccessibleAction(pTable, 26u,
+			XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_ERROR_INVALID_STATE,
+		"disabled table row rejects accessibility action");
+	XUI_TEST_CHECK(xuiTableViewSetSelectedCell(pTable, -1, -1) == XUI_OK,
+		"reset accessibility selection");
+
+	tNaN.iBits = 0x7fc00000u;
+	tBadColumn = arrColumns[0];
+	tBadColumn.fWidth = tNaN.fValue;
+	fWidthBefore = xuiTableViewGetColumnWidth(pTable, 0);
+	iChangeBefore = xuiTableViewGetChangeCount(pTable);
+	iRet = xuiTableViewSetColumns(pTable, &tBadColumn, 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiTableViewGetColumnCount(pTable) == 6 &&
+		xuiTableViewGetColumnWidth(pTable, 0) == fWidthBefore &&
+		xuiTableViewGetChangeCount(pTable) == iChangeBefore,
+		"invalid column update is transactional");
+	memset(&tBadRow, 0, sizeof(tBadRow));
+	tBadRow.fHeight = tNaN.fValue;
+	iRet = xuiTableViewSetRows(pTable, &tBadRow, 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTableViewGetRowCount(pTable) == tData.iRows,
+		"invalid row update is transactional");
+	XUI_TEST_CHECK(xuiTableViewGetDefaultMetrics(pTable, &fMetricColumn, &fMetricRow, &fMetricHeader) == XUI_OK,
+		"read base metrics");
+	iRet = xuiTableViewSetDefaultMetrics(pTable, tNaN.fValue, fMetricRow, fMetricHeader);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid metrics rejected");
+	iRet = xuiTableViewSetDefaultMetrics(pTable, fMetricColumn, fMetricRow, XUI_LAYOUT_UNBOUNDED);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiTableViewGetDefaultMetrics(pTable, NULL, NULL, &fMetricHeader) == XUI_OK &&
+		fMetricHeader == 25.0f, "header plus border extent rejected transactionally");
+	iChangeBefore = xuiTableViewGetChangeCount(pTable);
+	iRet = xuiTableViewSetColumnWidth(pTable, 0, fWidthBefore);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetChangeCount(pTable) == iChangeBefore,
+		"idempotent column width update");
+
 	iRet = xuiTableViewGetCellContentRect(pTable, 2, 2, &tMerged);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMerged.fW > arrColumns[1].fWidth && tMerged.fH > arrColumns[2].fWidth * 0.1f, "merged content rect");
 
@@ -332,10 +585,15 @@ int main(void)
 
 	iRet = xuiTableViewGetCellRect(pTable, 2, 1, &tCell);
 	XUI_TEST_CHECK(iRet == XUI_OK, "merged cell rect");
+	iSelectBefore = tData.iSelectCallbackCount;
 	iRet = __xuiTableTestClick(pContext, tTableWorld.fX + tCell.fX + 12.0f, tTableWorld.fY + tCell.fY + 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "cell click");
 	iRet = xuiTableViewGetSelectedCell(pTable, &iRow, &iColumn);
-	XUI_TEST_CHECK(iRet == XUI_OK && iRow == 2 && iColumn == 1 && tData.iSelectCallbackCount == 1, "cell selected");
+	XUI_TEST_CHECK(iRet == XUI_OK && iRow == 2 && iColumn == 1 &&
+		tData.iSelectCallbackCount == iSelectBefore + 1, "cell selected");
+	iRet = xuiTableViewGetActiveCell(pTable, &iActiveRow, &iActiveColumn);
+	XUI_TEST_CHECK(iRet == XUI_OK && iActiveRow == -1 && iActiveColumn == -1,
+		"cell press state clears on pointer up");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pTable, "click focus");
 	memset(&tContextEvent, 0, sizeof(tContextEvent));
 	tContextEvent.iSize = sizeof(tContextEvent);
@@ -360,8 +618,16 @@ int main(void)
 
 	tViewport = xuiTableViewGetViewportRect(pTable);
 	fHeaderY = tTableWorld.fY + tViewport.fY - 12.0f;
-	iRet = __xuiTableTestClick(pContext, tTableWorld.fX + tViewport.fX + 12.0f, fHeaderY);
-	XUI_TEST_CHECK(iRet == XUI_OK, "header click");
+	iSortBefore = xuiTableViewGetSortCount(pTable);
+	iRet = xuiInputPointerDown(pContext, tTableWorld.fX + tViewport.fX + 12.0f,
+		fHeaderY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetSortCount(pTable) == iSortBefore,
+		"header press does not sort before release");
+	iRet = xuiInputPointerUp(pContext, tTableWorld.fX + tViewport.fX + 12.0f,
+		fHeaderY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "header release");
 	XUI_TEST_CHECK(xuiTableViewGetSortColumn(pTable, &iDescending) == 0 && iDescending == 0 && tData.iSortCallbackCount == 1, "sort column");
 
 	fResizeX = tTableWorld.fX + tViewport.fX + xuiTableViewGetColumnWidth(pTable, 0);
@@ -373,6 +639,52 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetColumnWidth(pTable, 0) > 100.0f && tData.iResizeCallbackCount > 0, "column resize");
 
+	fResizeX = tTableWorld.fX + tViewport.fX + xuiTableViewGetColumnWidth(pTable, 0);
+	fWidthBefore = xuiTableViewGetColumnWidth(pTable, 0);
+	iRet = xuiInputPointerDownEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)fResizeX, (int)fHeaderY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pTable,
+		"resize captures exact touch pointer");
+	iRet = xuiInputPointerMoveEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fResizeX + 30.0f), (int)fHeaderY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fResizeX + 30.0f), (int)fHeaderY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetColumnWidth(pTable, 0) == fWidthBefore &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pTable,
+		"unrelated touch cannot resize or release capture");
+	iRet = xuiInputPointerMoveEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fResizeX + 12.0f), (int)fHeaderY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fResizeX + 12.0f), (int)fHeaderY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetColumnWidth(pTable, 0) > fWidthBefore &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch completes resize");
+
+	iSortBefore = xuiTableViewGetSortCount(pTable);
+	iRet = xuiInputPointerDownEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tTableWorld.fX + tViewport.fX + 12.0f), (int)fHeaderY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH) == pTable,
+		"header press captures exact touch pointer");
+	iRet = xuiTableViewSetColumns(pTable, arrColumns, 6);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"column replacement cancels active header press");
+	iRet = xuiInputPointerUpEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tTableWorld.fX + tViewport.fX + 12.0f), (int)fHeaderY,
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetSortCount(pTable) == iSortBefore,
+		"cancelled header press cannot sort on release");
+
 	iRet = xuiTableViewSetSelectedRow(pTable, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetSelectionMode(pTable) == XUI_TABLE_VIEW_SELECTION_ROW, "row selection mode");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
@@ -382,12 +694,32 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetSelectedRow(pTable) == 5, "keyboard skips disabled row");
 
+	iSelectBefore = xuiTableViewGetSelectCount(pTable);
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 0) == XUI_OK, "disable table ancestor");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTable, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0 &&
+		tAccessible.iActions == 0 &&
+		xuiWidgetPerformAccessibleAction(pTable, 1u,
+			XUI_ACCESSIBLE_ACTION_FOCUS, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+		"disabled table rejects accessibility actions");
+	iRet = xuiTableViewGetCellRect(pTable, 6, 1, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disabled ancestor target cell");
+	iRet = __xuiTableTestClick(pContext, tTableWorld.fX + tCell.fX + 8.0f,
+		tTableWorld.fY + tCell.fY + 8.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetSelectCount(pTable) == iSelectBefore &&
+		xuiTableViewGetSelectedRow(pTable) == 5, "disabled ancestor blocks table interaction");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 1) == XUI_OK, "restore table ancestor");
+
 	iRet = xuiTableViewEnsureCellVisible(pTable, 63, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ensure visible");
 	iRet = xuiTableViewGetOffset(pTable, &fOffsetX, &fOffsetY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX > 0.0f && fOffsetY > 0.0f, "ensure scrolls");
 	iRet = __xuiTableTestRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetFirstVisible(pTable) > 0 && xuiTableViewGetPaintVisibleCount(pTable) > 0, "visible counters");
+	XUI_TEST_CHECK(__xuiTableTestCallbackDestruction(pContext, pRoot, pTarget),
+		"table callbacks tolerate widget destruction");
 
 cleanup:
 	if ( pContext != NULL ) {

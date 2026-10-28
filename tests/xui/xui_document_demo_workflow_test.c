@@ -3,6 +3,7 @@
 #define main document_demo_original_main
 #include "../examples/xui/xui_document/main.c"
 #undef main
+#include "xui_test_time.h"
 
 static demo app;
 static const char* destination;
@@ -33,7 +34,7 @@ static int ui_key(int key)
 }
 static int ui_wait_edit(xui_widget editor)
 {
-    xdeadline deadline = xrtDeadlineAfter(5000000);
+    xui_test_deadline_t deadline = xuiTestDeadlineAfterUs(5000000);
     do {
         xui_doc_editor_pending_work_t pending = {0}; int r;
         r = xuiUpdate(app.context, .016f);
@@ -44,7 +45,7 @@ static int ui_wait_edit(xui_widget editor)
         if (!pending.bHasInput && !pending.iQueuedEvents &&
             !xuiDocumentHasPrepare(xuiDocumentViewGetDocument(editor))) return pending.iResult;
         xrtThreadYield();
-    } while (!xrtDeadlineExpired(deadline));
+    } while (!xuiTestDeadlineExpired(deadline));
     return XUI_DOC_ERROR_BUSY;
 }
 static int ui_shortcut(int key)

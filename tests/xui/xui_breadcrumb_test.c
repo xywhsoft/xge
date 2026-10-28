@@ -20,6 +20,11 @@ typedef struct xui_breadcrumb_test_events_t {
 	int iLastValue;
 } xui_breadcrumb_test_events_t;
 
+typedef struct xui_breadcrumb_destroy_test_t {
+	xui_widget pVictim;
+	int iDestroyCount;
+} xui_breadcrumb_destroy_test_t;
+
 static xui_style_value_t __xuiBreadcrumbTestStyleFloat(float fValue)
 {
 	xui_style_value_t tValue;
@@ -51,6 +56,46 @@ static void __xuiBreadcrumbTestClick(xui_widget pWidget, int iIndex, int iValue,
 	pEvents->iClickCount++;
 	pEvents->iLastIndex = iIndex;
 	pEvents->iLastValue = iValue;
+}
+
+static int __xuiBreadcrumbTestContext(xui_widget pWidget, int iIndex, int iValue,
+	float fX, float fY, void* pUser)
+{
+	(void)pWidget;
+	(void)iIndex;
+	(void)iValue;
+	(void)fX;
+	(void)fY;
+	(void)pUser;
+	return XUI_OK;
+}
+
+static void __xuiBreadcrumbTestDestroyClick(xui_widget pWidget, int iIndex, int iValue, void* pUser)
+{
+	xui_breadcrumb_destroy_test_t* pState = (xui_breadcrumb_destroy_test_t*)pUser;
+
+	(void)iIndex;
+	(void)iValue;
+	if ( pState == NULL ) return;
+	pState->iDestroyCount++;
+	pState->pVictim = NULL;
+	xuiWidgetDestroy(pWidget);
+}
+
+static int __xuiBreadcrumbTestDestroyOnBlur(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_breadcrumb_destroy_test_t* pState = (xui_breadcrumb_destroy_test_t*)pUser;
+	xui_widget pVictim;
+
+	(void)pWidget;
+	if ( pState == NULL || pEvent == NULL || pEvent->iType != XUI_EVENT_BLUR || pState->pVictim == NULL ) {
+		return XUI_OK;
+	}
+	pVictim = pState->pVictim;
+	pState->pVictim = NULL;
+	pState->iDestroyCount++;
+	xuiWidgetDestroy(pVictim);
+	return XUI_OK;
 }
 
 static int __xuiBreadcrumbTestClickAt(xui_context pContext, float fX, float fY)
@@ -93,6 +138,29 @@ static int __xuiBreadcrumbTestReleaseAt(xui_context pContext, float fX, float fY
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiBreadcrumbTestSetItemsOomPreserves(xui_widget pBreadcrumb)
+{
+	xallocationbudget* pBudget = NULL;
+	xallocationscope tScope;
+	xui_breadcrumb_item_t arrReplacement[2] = {
+		{"Replacement", 1, 1}, {"Other", 1, 2}
+	};
+	int iRet;
+
+	if ( pBreadcrumb == NULL ) return 0;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiBreadcrumbSetItems(pBreadcrumb, arrReplacement, 2);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	return iRet == XUI_ERROR_OUT_OF_MEMORY && xuiBreadcrumbGetItemCount(pBreadcrumb) == 3 &&
+		strcmp(xuiBreadcrumbGetItemText(pBreadcrumb, 0), "Workspace") == 0;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -111,12 +179,14 @@ int main(void)
 	xui_rect_t tWorld;
 	xui_rect_t tOldRect;
 	xui_style_property_t tStyle;
+	xui_accessible_node_t tAccessible;
 	float fGap;
 	float fPaddingX;
 	float fPaddingY;
 	float fPressX;
 	float fPressY;
 	int iFailed;
+	int iMeasureCount;
 	int iRet;
 
 	pContext = NULL;
@@ -152,16 +222,19 @@ int main(void)
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iItemCount = 1;
+	pInvalid = pRoot;
 	iRet = xuiBreadcrumbCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
 		"reject missing descriptor items");
 	tDesc.iItemCount = 0;
 	tDesc.fGap = NAN;
+	pInvalid = pRoot;
 	iRet = xuiBreadcrumbCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
 		"reject non-finite descriptor metric");
 	tDesc.fGap = 0.0f;
 	tDesc.tSeparatorIconSrc.fW = -1;
+	pInvalid = pRoot;
 	iRet = xuiBreadcrumbCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
 		"reject negative descriptor source size");
@@ -194,6 +267,8 @@ int main(void)
 	XUI_TEST_CHECK(xuiBreadcrumbGetItemClickable(pBreadcrumb, 2) == 0, "disabled item");
 	XUI_TEST_CHECK(xuiBreadcrumbGetItemValue(pBreadcrumb, 1) == 20, "item value");
 	XUI_TEST_CHECK(strcmp(xuiBreadcrumbGetSeparator(pBreadcrumb), "/") == 0, "separator default");
+	XUI_TEST_CHECK(__xuiBreadcrumbTestSetItemsOomPreserves(pBreadcrumb),
+		"failed item replacement preserves breadcrumb state");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 180, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -203,6 +278,13 @@ int main(void)
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pBreadcrumb, 0) != NULL, "cache surface");
+	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
+	XUI_TEST_CHECK(iMeasureCount == 4, "breadcrumb measures each item and separator once");
+	iRet = xuiWidgetInvalidate(pBreadcrumb, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate breadcrumb cache");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestProxyGetTextMeasureCount(&tState) == iMeasureCount,
+		"cache rebuild reuses breadcrumb text measurements");
 	tRect = xuiBreadcrumbGetItemRect(pBreadcrumb, 1);
 	XUI_TEST_CHECK(tRect.fW > 0.0f && tRect.fH > 0.0f, "item rect");
 	XUI_TEST_CHECK(xuiBreadcrumbGetSeparatorRect(pBreadcrumb, 0).fW > 0.0f, "separator rect");
@@ -355,6 +437,169 @@ int main(void)
 	iRet = __xuiBreadcrumbTestReleaseAt(pContext, fPressX, fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iClickCount == 1,
 		"release after geometry mutation stays cancelled");
+
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pBreadcrumb) == 5,
+		"breadcrumb accessibility exposes root and items");
+	iRet = xuiWidgetGetAccessibleNode(pBreadcrumb, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_GROUP &&
+		tAccessible.iColumnCount == 4, "breadcrumb accessibility root");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pBreadcrumb, 2, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_LINK &&
+		strcmp(tAccessible.sName, "Console") == 0 &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE)) != 0,
+		"clickable breadcrumb accessibility item");
+	iRet = xuiWidgetPerformAccessibleAction(pBreadcrumb, 3u, XUI_ACCESSIBLE_ACTION_FOCUS, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pBreadcrumb,
+		"accessibility focuses breadcrumb item");
+	iRet = xuiWidgetPerformAccessibleAction(pBreadcrumb, 3u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iClickCount == 2 && tEvents.iLastIndex == 1,
+		"accessibility activates breadcrumb item");
+	iRet = xuiWidgetPerformAccessibleAction(pBreadcrumb, 4u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE,
+		"non-clickable breadcrumb item rejects accessibility activation");
+	tRect = xuiBreadcrumbGetItemRect(pBreadcrumb, 0);
+	tWorld = xuiWidgetGetWorldRect(pBreadcrumb);
+	fPressX = tWorld.fX + tRect.fX + tRect.fW * 0.5f;
+	fPressY = tWorld.fY + tRect.fY + tRect.fH * 0.5f;
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)fPressX, (int)fPressY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pBreadcrumb &&
+		xuiBreadcrumbGetActiveIndex(pBreadcrumb) == 0,
+		"first touch owns breadcrumb press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		(int)fPressX, (int)fPressY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH, (int)fPressX, (int)fPressY,
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iClickCount == 2 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pBreadcrumb &&
+		xuiBreadcrumbGetActiveIndex(pBreadcrumb) == 0,
+		"unrelated touch cannot click or release breadcrumb press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)fPressX, (int)fPressY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iClickCount == 3 &&
+		tEvents.iLastIndex == 0 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL &&
+		xuiBreadcrumbGetActiveIndex(pBreadcrumb) == -1,
+		"owning touch commits breadcrumb click once");
+
+	{
+		xui_widget pContextBreadcrumb = NULL;
+		xui_breadcrumb_item_t arrContextItems[2] = {
+			{"Parent", 0, 1}, {"Current", 0, 2}
+		};
+		xui_breadcrumb_desc_t tContextDesc;
+
+		memset(&tContextDesc, 0, sizeof(tContextDesc));
+		tContextDesc.iSize = sizeof(tContextDesc);
+		tContextDesc.pItems = arrContextItems;
+		tContextDesc.iItemCount = 2;
+		iRet = xuiBreadcrumbCreate(pContext, &pContextBreadcrumb, &tContextDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pContextBreadcrumb != NULL,
+			"context-only breadcrumb create");
+		(void)xuiWidgetSetRect(pContextBreadcrumb, (xui_rect_t){20, 125, 240, 36});
+		iRet = xuiWidgetAddChild(pRoot, pContextBreadcrumb);
+		XUI_TEST_CHECK(iRet == XUI_OK, "context-only breadcrumb add");
+		iRet = xuiBreadcrumbSetContextMenu(pContextBreadcrumb,
+			__xuiBreadcrumbTestContext, NULL);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetTabStop(pContextBreadcrumb),
+			"context-only breadcrumb remains keyboard focusable");
+		iRet = xuiWidgetPerformAccessibleAction(pContextBreadcrumb, 2u,
+			XUI_ACCESSIBLE_ACTION_FOCUS, NULL);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pContextBreadcrumb,
+			"context-only breadcrumb item supports accessibility focus");
+		iRet = xuiWidgetPerformAccessibleAction(pContextBreadcrumb, 2u,
+			XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE,
+			"context-only breadcrumb item does not expose activation");
+		xuiWidgetDestroy(pContextBreadcrumb);
+	}
+
+	{
+		xui_breadcrumb_destroy_test_t tDestroy;
+		xui_widget pDestroyBreadcrumb = NULL;
+		xui_breadcrumb_item_t tDestroyItem = {"Destroy", 1, 77};
+		xui_breadcrumb_desc_t tDestroyDesc;
+		xui_rect_t tDestroyRect;
+		xui_rect_t tDestroyWorld;
+
+		memset(&tDestroy, 0, sizeof(tDestroy));
+		memset(&tDestroyDesc, 0, sizeof(tDestroyDesc));
+		tDestroyDesc.iSize = sizeof(tDestroyDesc);
+		tDestroyDesc.pItems = &tDestroyItem;
+		tDestroyDesc.iItemCount = 1;
+		iRet = xuiBreadcrumbCreate(pContext, &pDestroyBreadcrumb, &tDestroyDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pDestroyBreadcrumb != NULL, "destroy callback breadcrumb create");
+		tDestroy.pVictim = pDestroyBreadcrumb;
+		(void)xuiWidgetSetRect(pDestroyBreadcrumb, (xui_rect_t){20, 80, 180, 36});
+		iRet = xuiWidgetAddChild(pRoot, pDestroyBreadcrumb);
+		XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback breadcrumb add");
+		iRet = xuiBreadcrumbSetClick(pDestroyBreadcrumb, __xuiBreadcrumbTestDestroyClick, &tDestroy);
+		XUI_TEST_CHECK(iRet == XUI_OK, "set destroying breadcrumb callback");
+		iRet = xuiLayout(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK, "layout destroy callback breadcrumb");
+		tDestroyRect = xuiBreadcrumbGetItemRect(pDestroyBreadcrumb, 0);
+		tDestroyWorld = xuiWidgetGetWorldRect(pDestroyBreadcrumb);
+		iRet = __xuiBreadcrumbTestClickAt(pContext,
+			tDestroyWorld.fX + tDestroyRect.fX + tDestroyRect.fW / 2,
+			tDestroyWorld.fY + tDestroyRect.fY + tDestroyRect.fH / 2);
+		XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iDestroyCount == 1 && tDestroy.pVictim == NULL,
+			"click callback may destroy breadcrumb");
+	}
+
+	{
+		xui_breadcrumb_destroy_test_t tDestroy;
+		xui_widget pFocusTrap = NULL;
+		xui_widget pDestroyBreadcrumb = NULL;
+		xui_breadcrumb_item_t tDestroyItem = {"Focus destroy", 1, 88};
+		xui_breadcrumb_desc_t tDestroyDesc;
+		xui_rect_t tDestroyRect;
+		xui_rect_t tDestroyWorld;
+
+		memset(&tDestroy, 0, sizeof(tDestroy));
+		memset(&tDestroyDesc, 0, sizeof(tDestroyDesc));
+		tDestroyDesc.iSize = sizeof(tDestroyDesc);
+		tDestroyDesc.pItems = &tDestroyItem;
+		tDestroyDesc.iItemCount = 1;
+		iRet = xuiWidgetCreate(pContext, &pFocusTrap);
+		XUI_TEST_CHECK(iRet == XUI_OK && pFocusTrap != NULL, "focus trap create");
+		(void)xuiWidgetSetFocusable(pFocusTrap, 1);
+		(void)xuiWidgetSetTabStop(pFocusTrap, 1);
+		(void)xuiWidgetSetRect(pFocusTrap, (xui_rect_t){220, 80, 80, 36});
+		iRet = xuiWidgetAddChild(pRoot, pFocusTrap);
+		XUI_TEST_CHECK(iRet == XUI_OK, "focus trap add");
+		iRet = xuiBreadcrumbCreate(pContext, &pDestroyBreadcrumb, &tDestroyDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pDestroyBreadcrumb != NULL, "focus destroy breadcrumb create");
+		tDestroy.pVictim = pDestroyBreadcrumb;
+		(void)xuiWidgetSetRect(pDestroyBreadcrumb, (xui_rect_t){320, 80, 180, 36});
+		iRet = xuiWidgetAddChild(pRoot, pDestroyBreadcrumb);
+		XUI_TEST_CHECK(iRet == XUI_OK, "focus destroy breadcrumb add");
+		iRet = xuiWidgetSetEventHandler(pFocusTrap, XUI_EVENT_BLUR,
+			__xuiBreadcrumbTestDestroyOnBlur, &tDestroy);
+		XUI_TEST_CHECK(iRet == XUI_OK, "focus trap blur handler");
+		iRet = xuiSetFocusWidget(pContext, pFocusTrap);
+		XUI_TEST_CHECK(iRet == XUI_OK, "focus trap focus");
+		iRet = xuiDispatchPendingEvents(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK, "focus trap dispatch");
+		iRet = xuiLayout(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK, "layout focus destroy breadcrumb");
+		tDestroyRect = xuiBreadcrumbGetItemRect(pDestroyBreadcrumb, 0);
+		tDestroyWorld = xuiWidgetGetWorldRect(pDestroyBreadcrumb);
+		iRet = __xuiBreadcrumbTestPressAt(pContext,
+			tDestroyWorld.fX + tDestroyRect.fX + tDestroyRect.fW / 2,
+			tDestroyWorld.fY + tDestroyRect.fY + tDestroyRect.fH / 2);
+		XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iDestroyCount == 1 && tDestroy.pVictim == NULL,
+			"focus callback may destroy pressed breadcrumb");
+	}
 
 cleanup:
 	if ( pIcon != NULL ) {

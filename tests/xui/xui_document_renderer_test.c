@@ -1,5 +1,6 @@
 #include "xui_document_ui.h"
 #include "xui_test_proxy.h"
+#include "xui_test_time.h"
 #include "xge.h"
 #include <stdio.h>
 #include <string.h>
@@ -1336,11 +1337,11 @@ static void image_resource_load(xui_context context, xui_test_proxy_state_t* pro
 }
 static int image_resource_await(xui_doc_image_request request, xui_resource* resource)
 {
-    int result; xdeadline deadline = xrtDeadlineAfter(5000000);
+    int result; xui_test_deadline_t deadline = xuiTestDeadlineAfterUs(5000000);
     for (;;) {
         result = xuiDocumentImageResourcePoll(request, resource);
         if (result != XUI_DOC_ERROR_BUSY) return result;
-        if (xrtDeadlineExpired(deadline)) break;
+        if (xuiTestDeadlineExpired(deadline)) break;
         /* Give the decoder worker time on every platform. A fixed poll count
          * without a yield can expire before the Linux worker is scheduled. */
         xrtThreadYield();

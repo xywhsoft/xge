@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -33,6 +34,82 @@ typedef struct xui_terminal_test_state_t {
 	char sTitle[128];
 	char sLink[256];
 } xui_terminal_test_state_t;
+
+typedef struct xui_terminal_destroy_test_state_t {
+	xui_widget* ppWidget;
+	int iCalls;
+} xui_terminal_destroy_test_state_t;
+
+typedef struct xui_terminal_session_destroy_test_state_t {
+	xui_terminal_session_t** ppSession;
+	int iCalls;
+} xui_terminal_session_destroy_test_state_t;
+
+static xui_terminal_destroy_test_state_t* g_pTerminalClipboardDestroyState;
+
+static void __xuiTerminalTestDestroyWidget(xui_widget pWidget, xui_terminal_destroy_test_state_t* pState)
+{
+	if ( pState == NULL ) return;
+	pState->iCalls++;
+	if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+	xuiWidgetDestroy(pWidget);
+}
+
+static void __xuiTerminalTestDestroyOnInput(xui_widget pWidget, const uint8_t* pData, int iSize, void* pUser)
+{
+	(void)pData;
+	(void)iSize;
+	__xuiTerminalTestDestroyWidget(pWidget, (xui_terminal_destroy_test_state_t*)pUser);
+}
+
+static void __xuiTerminalTestDestroyOnResize(xui_widget pWidget, int iColumns, int iRows, void* pUser)
+{
+	(void)iColumns;
+	(void)iRows;
+	__xuiTerminalTestDestroyWidget(pWidget, (xui_terminal_destroy_test_state_t*)pUser);
+}
+
+static void __xuiTerminalTestDestroyOnTitle(xui_widget pWidget, const char* sTitle, void* pUser)
+{
+	(void)sTitle;
+	__xuiTerminalTestDestroyWidget(pWidget, (xui_terminal_destroy_test_state_t*)pUser);
+}
+
+static void __xuiTerminalTestDestroySessionOnResize(xui_terminal_session_t* pSession, int iColumns, int iRows, void* pUser)
+{
+	xui_terminal_session_destroy_test_state_t* pState = (xui_terminal_session_destroy_test_state_t*)pUser;
+
+	(void)iColumns;
+	(void)iRows;
+	if ( pState == NULL ) return;
+	pState->iCalls++;
+	if ( pState->ppSession != NULL ) *pState->ppSession = NULL;
+	xuiTerminalSessionDestroy(pSession);
+}
+
+static int __xuiTerminalTestDestroyOnClipboardRead(xui_proxy pProxy, char* sText, int iCapacity)
+{
+	xui_test_proxy_state_t* pProxyState;
+	xui_widget pWidget;
+	int iLength;
+
+	if ( pProxy == NULL || pProxy->pUser == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxyState = (xui_test_proxy_state_t*)pProxy->pUser;
+	iLength = (int)strlen(pProxyState->sClipboard);
+	if ( sText != NULL && iCapacity > 0 ) {
+		int iCopy = (iLength < iCapacity - 1) ? iLength : iCapacity - 1;
+		if ( iCopy > 0 ) memcpy(sText, pProxyState->sClipboard, (size_t)iCopy);
+		sText[iCopy] = '\0';
+	}
+	if ( g_pTerminalClipboardDestroyState != NULL &&
+	     g_pTerminalClipboardDestroyState->ppWidget != NULL ) {
+		pWidget = *g_pTerminalClipboardDestroyState->ppWidget;
+		if ( pWidget != NULL ) {
+			__xuiTerminalTestDestroyWidget(pWidget, g_pTerminalClipboardDestroyState);
+		}
+	}
+	return iLength;
+}
 
 static void __xuiTerminalTestInput(xui_widget pWidget, const uint8_t* pData, int iSize, void* pUser)
 {
@@ -196,6 +273,35 @@ static int __xuiTerminalTestClickMenuItem(xui_context pContext, xui_widget pMenu
 	return __xuiTerminalTestClick(pContext, tWorld.fX + tItem.fX + tItem.fW * 0.5f, tWorld.fY + tItem.fY + tItem.fH * 0.5f);
 }
 
+static int __xuiTerminalTestCreateDisposable(xui_context pContext, xui_widget pRoot,
+	xui_font pFont, xui_widget* ppWidget)
+{
+	xui_terminal_desc_t tDesc;
+	int iRet;
+
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppWidget = NULL;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = pFont;
+	tDesc.iColumns = 10;
+	tDesc.iRows = 4;
+	tDesc.iScrollbackLimit = 8;
+	tDesc.iParseBudgetBytes = 64;
+	tDesc.fCellWidth = 8.0f;
+	tDesc.fCellHeight = 16.0f;
+	tDesc.fPadding = 4.0f;
+	iRet = xuiTerminalCreate(pContext, ppWidget, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pRoot, *ppWidget);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(*ppWidget);
+		*ppWidget = NULL;
+		return iRet;
+	}
+	return xuiWidgetSetRect(*ppWidget, (xui_rect_t){150.0f, 10.0f, 120.0f, 80.0f});
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tProxyState;
@@ -203,18 +309,25 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pTerminal;
+	xui_widget pDisposable;
+	xui_widget pBadTerminal;
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pCache;
 	xui_font pFont;
 	const xui_menu_item_t* pItem;
 	xui_terminal_desc_t tDesc;
+	xui_terminal_desc_t tBadDesc;
 	xui_terminal_cell_t tCell;
 	xui_terminal_stats_t tStats;
 	xui_terminal_session_desc_t tSessionDesc;
 	xui_terminal_process_desc_t tProcessDesc;
+	xui_terminal_ssh_desc_t tSshDesc;
 	xui_terminal_session_t* pSession;
+	xui_terminal_destroy_test_state_t tDestroyState;
+	xui_terminal_session_destroy_test_state_t tSessionDestroyState;
 	xui_style_property_t arrStyle[6];
+	xui_event_t tPointer;
 	xui_rect_t tCursorRect;
 	xui_rect_t tTextRect;
 	xui_rect_t tContent;
@@ -223,6 +336,7 @@ int main(void)
 	uint32_t iStyledForeground;
 	uint32_t iStyledPaletteRed;
 	char sBuffer[2048];
+	char sSmallBuffer[8];
 	int iFailed;
 	int iRet;
 	int iLine;
@@ -245,16 +359,22 @@ int main(void)
 	memset(&tProxyState, 0, sizeof(tProxyState));
 	memset(&tState, 0, sizeof(tState));
 	memset(&tDesc, 0, sizeof(tDesc));
+	memset(&tBadDesc, 0, sizeof(tBadDesc));
 	memset(&tStats, 0, sizeof(tStats));
 	memset(&tProcessDesc, 0, sizeof(tProcessDesc));
+	memset(&tSshDesc, 0, sizeof(tSshDesc));
 	pContext = NULL;
 	pRoot = NULL;
 	pTerminal = NULL;
+	pDisposable = NULL;
+	pBadTerminal = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
 	pCache = NULL;
 	pFont = NULL;
 	pSession = NULL;
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	memset(&tSessionDestroyState, 0, sizeof(tSessionDestroyState));
 	iFailed = 0;
 	iStyledForeground = XUI_COLOR_RGBA(210, 211, 212, 255);
 	iStyledPaletteRed = XUI_COLOR_RGBA(101, 102, 103, 255);
@@ -286,14 +406,35 @@ int main(void)
 	tDesc.fCellWidth = 8.0f;
 	tDesc.fCellHeight = 16.0f;
 	tDesc.fPadding = 4.0f;
+	tBadDesc = tDesc;
+	tBadDesc.iSize = sizeof(uint32_t);
+	iRet = xuiTerminalCreate(pContext, &pBadTerminal, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pBadTerminal == NULL,
+		"terminal rejects undersized descriptor");
+	tBadDesc = tDesc;
+	tBadDesc.iColumns = 1001;
+	iRet = xuiTerminalCreate(pContext, &pBadTerminal, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pBadTerminal == NULL,
+		"terminal rejects oversized dimensions");
+	tBadDesc = tDesc;
+	tBadDesc.fCellWidth = NAN;
+	iRet = xuiTerminalCreate(pContext, &pBadTerminal, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pBadTerminal == NULL,
+		"terminal rejects non-finite metrics");
 	iRet = xuiTerminalCreate(pContext, &pTerminal, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTerminal != NULL, "terminal create");
+	pBadTerminal = pTerminal;
+	iRet = xuiTerminalCreate(NULL, &pBadTerminal, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pBadTerminal == NULL,
+		"terminal clears output on invalid context");
 	(void)xuiWidgetSetRect(pTerminal, (xui_rect_t){10.0f, 10.0f, 120.0f, 80.0f});
 	(void)xuiWidgetAddChild(pRoot, pTerminal);
 	(void)xuiTerminalSetInputCallback(pTerminal, __xuiTerminalTestInput, &tState);
 	(void)xuiTerminalSetResizeCallback(pTerminal, __xuiTerminalTestResize, &tState);
 	(void)xuiTerminalSetTitleCallback(pTerminal, __xuiTerminalTestTitle, &tState);
 	(void)xuiTerminalSetLinkCallback(pTerminal, __xuiTerminalTestLink, &tState);
+	iRet = xuiTerminalSetImageCallback(pTerminal, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "terminal image protocol is explicitly unsupported");
 
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "terminal.background.color") != 0u, "terminal background style registered");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "terminal.palette.1") != 0u, "terminal palette style registered");
@@ -339,6 +480,32 @@ int main(void)
 		"terminal metrics resolve to stable pixel grid");
 	iRet = xuiTerminalSetMetrics(pTerminal, 8.0f, 16.0f, 4.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal metrics restore");
+	iRet = xuiTerminalSetMetrics(pTerminal, NAN, 16.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "terminal rejects NaN metric");
+	iRet = xuiTerminalGetMetrics(pTerminal, &fCellWidth, &fCellHeight, &fPadding);
+	XUI_TEST_CHECK(iRet == XUI_OK && fCellWidth == 8.0f && fCellHeight == 16.0f && fPadding == 4.0f,
+		"invalid metric leaves state unchanged");
+	iRet = xuiTerminalWrite(pTerminal, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal accepts empty write");
+	iRet = xuiTerminalSerializeText(pTerminal, NULL, -1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "terminal rejects negative serialize capacity");
+	iRet = xuiTerminalGetSelectionText(pTerminal, NULL, -1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "terminal rejects negative selection capacity");
+	iRet = xuiTerminalGetLinkAt(pTerminal, 0, 0, NULL, -1, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "terminal rejects negative link capacity");
+	iRet = xuiTerminalFindNext(pTerminal, "x", 0x80000000u, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "terminal rejects unknown search flags");
+	iRet = xuiTerminalOpenMenu(pTerminal, NAN, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "terminal rejects non-finite menu position");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal cursor query layout");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, 20, 20) == XUI_CURSOR_IBEAM,
+		"enabled terminal uses text cursor");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQueryCursor(pContext, 20, 20) == XUI_CURSOR_ARROW,
+		"disabled terminal subtree is skipped by cursor hit testing");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore terminal ancestor enabled state");
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal style restore clear");
 	XUI_TEST_CHECK(xuiTerminalGetPalette(pTerminal, 1) == XUI_COLOR_RGBA(205, 49, 49, 255), "terminal palette restores base");
@@ -646,6 +813,22 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strstr(tState.sInput, "\x1b[<0;1;1M") != NULL &&
 		strstr(tState.sInput, "\x1b[<32;2;1M") != NULL &&
 		strstr(tState.sInput, "\x1b[<0;2;1m") != NULL, "terminal SGR mouse protocol");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
+	iRet = xuiInputPointerDown(pContext,
+		(int)(tWorld.fX + tContent.fX + 4.0f + 1.0f),
+		(int)(tWorld.fY + tContent.fY + 4.0f + 1.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pTerminal,
+		"terminal application mouse reacquires capture");
+	iRet = xuiInputPointerMove(pContext,
+		(int)(tWorld.fX + tContent.fX + 4.0f + 8.0f + 1.0f),
+		(int)(tWorld.fY + tContent.fY + 4.0f + 1.0f), 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		strstr(tState.sInput, "\x1b[<0;2;1m") != NULL,
+		"terminal application mouse lost button releases remote and local capture");
 	iRet = xuiInputPointerWheel(pContext,
 		(int)(tWorld.fX + tContent.fX + 4.0f + 8.0f + 1.0f),
 		(int)(tWorld.fY + tContent.fY + 4.0f + 1.0f), 0.0f, 1.0f, 0);
@@ -663,6 +846,25 @@ int main(void)
 	iRet = xuiTerminalWriteText(pTerminal, "\x1b[?1002l\x1b[?1006l\x1b[?1004l");
 	if ( iRet == XUI_OK ) iRet = xuiTerminalFlush(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable terminal application input modes");
+	iRet = xuiWidgetCreate(pContext, &pBadTerminal);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pTerminal, pBadTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadTerminal != NULL, "terminal descendant create");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.iType = XUI_EVENT_TEXT;
+	tPointer.pTarget = pBadTerminal;
+	tPointer.iTextSize = 1;
+	tPointer.sText[0] = 'z';
+	iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iInputSize == 0,
+		"terminal ignores bubbled descendant text input");
+	if ( pBadTerminal != NULL ) {
+		(void)xuiWidgetRemoveFromParent(pBadTerminal);
+		xuiWidgetDestroy(pBadTerminal);
+		pBadTerminal = NULL;
+	}
 
 	iRet = xuiTerminalSelectAll(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select all");
@@ -1022,6 +1224,8 @@ int main(void)
 	tSessionDesc.pResizeUser = &tState;
 	pSession = xuiTerminalCreateFakeSession(&tSessionDesc);
 	XUI_TEST_CHECK(pSession != NULL, "fake session create");
+	iRet = xuiTerminalSessionResize(pSession, 32768, 4);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "session rejects oversized terminal dimensions");
 	iRet = xuiTerminalAttachSession(pTerminal, pSession);
 	XUI_TEST_CHECK(iRet == XUI_OK, "attach session");
 	XUI_TEST_CHECK(tState.iSessionResizeCount > 0 && tState.iSessionLastCols == xuiTerminalGetColumns(pTerminal) && tState.iSessionLastRows == xuiTerminalGetRows(pTerminal), "session initial resize callback");
@@ -1046,7 +1250,61 @@ int main(void)
 	xuiTerminalSessionDestroy(pSession);
 	pSession = NULL;
 
+	memset(&tSessionDesc, 0, sizeof(tSessionDesc));
+	tSessionDesc.iSize = sizeof(tSessionDesc);
+	tSessionDesc.onResize = __xuiTerminalTestDestroySessionOnResize;
+	tSessionDestroyState.ppSession = &pSession;
+	tSessionDesc.pResizeUser = &tSessionDestroyState;
+	pSession = xuiTerminalCreateFakeSession(&tSessionDesc);
+	XUI_TEST_CHECK(pSession != NULL, "self-destroying fake session create");
+	iRet = xuiTerminalAttachSession(pTerminal, pSession);
+	XUI_TEST_CHECK(iRet == XUI_OK && pSession == NULL && tSessionDestroyState.iCalls == 1,
+		"session resize callback may destroy attached session");
+
+	memset(&tProcessDesc, 0, sizeof(tProcessDesc));
+	tProcessDesc.iSize = sizeof(tProcessDesc);
+	tProcessDesc.sCommandLine = "cmd.exe /d /c exit 0";
+	tProcessDesc.iFlags = 0x80000000u;
+	XUI_TEST_CHECK(xuiTerminalCreateProcessSession(&tProcessDesc) == NULL,
+		"process session rejects unknown flags");
+	tProcessDesc.iFlags = 0u;
+	tProcessDesc.iColumns = -1;
+	XUI_TEST_CHECK(xuiTerminalCreateProcessSession(&tProcessDesc) == NULL,
+		"process session rejects negative columns");
+	tProcessDesc.iColumns = 80;
+	tProcessDesc.iRows = 32768;
+	XUI_TEST_CHECK(xuiTerminalCreateProcessSession(&tProcessDesc) == NULL,
+		"process session rejects oversized rows");
+
+	tSshDesc.iSize = sizeof(tSshDesc);
+	tSshDesc.sHost = "example.com";
+	tSshDesc.sUser = "alice";
+	tSshDesc.iPort = 2222;
+	tSshDesc.sCommand = "echo \"ok\"";
+	tSshDesc.sIdentityFile = "C:\\keys\\id key";
+	tSshDesc.sExtraOptions = "-o BatchMode=yes";
+	tSshDesc.sExecutable = "C:\\Program Files\\OpenSSH\\ssh.exe";
+	tSshDesc.iFlags = XUI_TERMINAL_SSH_FORCE_TTY;
+	iLength = xuiTerminalBuildSshCommand(&tSshDesc, NULL, 0);
+	XUI_TEST_CHECK(iLength > 0, "query SSH command size");
+	iRet = xuiTerminalBuildSshCommand(&tSshDesc, sBuffer, (int)sizeof(sBuffer));
+	XUI_TEST_CHECK(iRet == iLength && iRet == (int)strlen(sBuffer) &&
+		strcmp(sBuffer, "\"C:\\Program Files\\OpenSSH\\ssh.exe\" -t -p \"2222\" -i \"C:\\keys\\id key\" -o BatchMode=yes \"alice@example.com\" \"echo \\\"ok\\\"\"") == 0,
+		"build quoted SSH command");
+	memset(sSmallBuffer, 'x', sizeof(sSmallBuffer));
+	iRet = xuiTerminalBuildSshCommand(&tSshDesc, sSmallBuffer, (int)sizeof(sSmallBuffer));
+	XUI_TEST_CHECK(iRet == iLength && sSmallBuffer[sizeof(sSmallBuffer) - 1u] == '\0',
+		"SSH command reports required size and terminates short buffer");
+	tSshDesc.iFlags = 0x80000000u;
+	XUI_TEST_CHECK(xuiTerminalBuildSshCommand(&tSshDesc, sBuffer, (int)sizeof(sBuffer)) == XUI_ERROR_INVALID_ARGUMENT,
+		"SSH command rejects unknown flags");
+	tSshDesc.iFlags = 0u;
+	tSshDesc.iProcessFlags = 0x80000000u;
+	XUI_TEST_CHECK(xuiTerminalCreateSshSession(&tSshDesc) == NULL,
+		"SSH session rejects unknown process flags before launch");
+
 #if defined(_WIN32) || defined(_WIN64)
+	memset(&tProcessDesc, 0, sizeof(tProcessDesc));
 	tProcessDesc.iSize = sizeof(tProcessDesc);
 	tProcessDesc.sCommandLine = "cmd.exe /d /c echo xuiok";
 	tProcessDesc.onResize = __xuiTerminalTestSessionResize;
@@ -1097,6 +1355,63 @@ int main(void)
 	pSession = NULL;
 #endif
 
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear before multipointer selection");
+	iRet = xuiTerminalClearScrollback(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear history before multipointer selection");
+	iRet = xuiTerminalWriteText(pTerminal, "abcdef");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTerminalFlush(pTerminal) == XUI_OK,
+		"write multipointer selection text");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multipointer terminal layout");
+	tWorld = xuiWidgetGetWorldRect(pTerminal);
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.pTarget = pTerminal;
+	tPointer.iType = XUI_EVENT_POINTER_DOWN;
+	tPointer.iPointerId = 1001;
+	tPointer.iPointerType = XUI_POINTER_TYPE_TOUCH;
+	tPointer.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = tWorld.fX + 4.5f;
+	tPointer.fY = tWorld.fY + 12.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1001, XUI_POINTER_TYPE_TOUCH) == pTerminal,
+		"terminal touch owns selection capture");
+	tPointer.iPointerId = 1002;
+	tPointer.fX = tWorld.fX + 20.5f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1001, XUI_POINTER_TYPE_TOUCH) == pTerminal &&
+		xuiGetPointerCaptureEx(pContext, 1002, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"second touch cannot steal terminal selection");
+	tPointer.iType = XUI_EVENT_POINTER_CAPTURE_LOST;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1001, XUI_POINTER_TYPE_TOUCH) == pTerminal,
+		"unrelated terminal capture loss is ignored");
+	tPointer.iType = XUI_EVENT_POINTER_MOVE;
+	tPointer.iPointerId = 1001;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = tWorld.fX + 36.5f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK,
+		"owning touch extends terminal selection");
+	iRet = xuiTerminalGetSelectionRange(pTerminal, &iLine, &iColumn, &iCursorX, &iCursorY);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == iCursorX && iColumn == 0 && iCursorY == 4,
+		"terminal multipointer selection range");
+	iRet = xuiReleasePointerCaptureEx(pContext, 1001, XUI_POINTER_TYPE_TOUCH, pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"matching terminal capture loss cancels selection gesture");
+	tPointer.iType = XUI_EVENT_POINTER_DOWN;
+	tPointer.iPointerId = 1002;
+	tPointer.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = tWorld.fX + 12.5f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1002, XUI_POINTER_TYPE_TOUCH) == pTerminal,
+		"new touch can select after owning capture loss");
+	iRet = xuiReleasePointerCaptureEx(pContext, 1002, XUI_POINTER_TYPE_TOUCH, pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"terminal releases replacement touch capture");
+
 	tWidgetPadding = (xui_thickness_t){3, 5, 7, 9};
 	iRet = xuiWidgetSetPadding(pTerminal, tWidgetPadding);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal widget content padding set");
@@ -1130,7 +1445,65 @@ int main(void)
 	pCache = xuiWidgetGetCacheSurface(pTerminal, xuiWidgetGetStateId(pTerminal));
 	XUI_TEST_CHECK(pCache != NULL && xuiTestSurfaceGetTextDrawCount(pCache) > 0, "terminal render text");
 
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	iRet = __xuiTerminalTestCreateDisposable(pContext, pRoot, pFont, &pDisposable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable != NULL, "create disposable input terminal");
+	tDestroyState.ppWidget = &pDisposable;
+	iRet = xuiTerminalSetInputCallback(pDisposable, __xuiTerminalTestDestroyOnInput, &tDestroyState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set self-destroying terminal input callback");
+	iRet = xuiTerminalInputText(pDisposable, "x");
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable == NULL && tDestroyState.iCalls == 1,
+		"terminal input callback may destroy widget");
+
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	iRet = __xuiTerminalTestCreateDisposable(pContext, pRoot, pFont, &pDisposable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable != NULL, "create disposable title terminal");
+	tDestroyState.ppWidget = &pDisposable;
+	iRet = xuiTerminalSetTitleCallback(pDisposable, __xuiTerminalTestDestroyOnTitle, &tDestroyState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set self-destroying terminal title callback");
+	iRet = xuiTerminalWriteText(pDisposable, "\x1b]0;destroy-title\aunparsed-tail");
+	XUI_TEST_CHECK(iRet == XUI_OK, "queue self-destroying terminal title");
+	iRet = xuiTerminalFlush(pDisposable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable == NULL && tDestroyState.iCalls == 1,
+		"terminal title callback may destroy widget during parsing");
+
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	iRet = __xuiTerminalTestCreateDisposable(pContext, pRoot, pFont, &pDisposable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable != NULL, "create disposable resize terminal");
+	tDestroyState.ppWidget = &pDisposable;
+	iRet = xuiTerminalSetResizeCallback(pDisposable, __xuiTerminalTestDestroyOnResize, &tDestroyState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set self-destroying terminal resize callback");
+	iRet = xuiTerminalResize(pDisposable, 11, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable == NULL && tDestroyState.iCalls == 1,
+		"terminal resize callback may destroy widget");
+
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	iRet = __xuiTerminalTestCreateDisposable(pContext, pRoot, pFont, &pDisposable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable != NULL, "create disposable menu terminal");
+	tDestroyState.ppWidget = &pDisposable;
+	g_pTerminalClipboardDestroyState = &tDestroyState;
+	tProxyState.onClipboardGetText = __xuiTerminalTestDestroyOnClipboardRead;
+	iRet = xuiTerminalOpenMenu(pDisposable, 10.0f, 10.0f);
+	tProxyState.onClipboardGetText = NULL;
+	g_pTerminalClipboardDestroyState = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && pDisposable == NULL && tDestroyState.iCalls == 1,
+		"terminal menu clipboard callback may destroy widget");
+
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	iRet = __xuiTerminalTestCreateDisposable(pContext, pRoot, pFont, &pDisposable);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDisposable != NULL, "create disposable menu title terminal");
+	tDestroyState.ppWidget = &pDisposable;
+	g_pTerminalClipboardDestroyState = &tDestroyState;
+	tProxyState.onClipboardGetText = __xuiTerminalTestDestroyOnClipboardRead;
+	iRet = xuiTerminalSetMenuTitle(pDisposable, XUI_TERMINAL_MENU_COPY, "Copy custom");
+	tProxyState.onClipboardGetText = NULL;
+	g_pTerminalClipboardDestroyState = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && pDisposable == NULL && tDestroyState.iCalls == 1,
+		"terminal menu title clipboard callback may destroy widget");
+
 cleanup:
+	tProxyState.onClipboardGetText = NULL;
+	g_pTerminalClipboardDestroyState = NULL;
 	if ( pSession != NULL ) xuiTerminalSessionDestroy(pSession);
 	if ( pTarget != NULL ) tProxyState.tProxy.surfaceDestroy(&tProxyState.tProxy, pTarget);
 	if ( pContext != NULL ) xuiDestroy(pContext);

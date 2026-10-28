@@ -38,12 +38,12 @@ static int capture_range(xui_proxy p,xui_draw_context d,const xui_text_shape_t* 
 }
 static unsigned scalar_bytes(unsigned char c)
 {return c<0x80?1:c<0xe0?2:c<0xf0?3:4;}
-static void literal(xui_proxy p,xui_draw_context draw,xui_font font,unsigned cp,double x,double y,uint32_t color)
+static void literal(xui_proxy p,xui_draw_context draw,xui_font font,unsigned cp,double x,double y,uint32_t color,int subpixel)
 {
     char text[]={(char)(0xe0|cp>>12),(char)(0x80|((cp>>6)&63)),(char)(0x80|(cp&63)),0};
     xui_rect_t rect={(int)floor(x+.5),(int)floor(y+.5),W,H-(int)floor(y+.5)};
     CHECK(original.drawText(p,draw,&(xui_text_item_t){.iSize=sizeof(xui_text_item_t),.pFont=font,.sText=text,.iTextSize=3,
-        .iFlags=XUI_TEXT_SHAPE_DEFAULT,.fDrawOffsetX=(float)(x-rect.fX)},rect,color,0)==XUI_OK);
+		.iFlags=XUI_TEXT_SHAPE_DEFAULT,.fDrawOffsetX=subpixel?(float)(x-rect.fX):0},rect,color,0)==XUI_OK);
 }
 static xui_doc_position_t position(xui_document_snapshot snapshot,unsigned form,uint64_t leaf,
     unsigned local,unsigned source,uint32_t affinity)
@@ -58,13 +58,16 @@ static xui_doc_position_t position(xui_document_snapshot snapshot,unsigned form,
 }
 static void equal_pixels(xui_proxy p,xui_surface* targets,unsigned direction,unsigned form,unsigned control,unsigned pass,float size)
 {
-    unsigned char actual[W*H*4],expected[W*H*4];unsigned ink=0;
+	unsigned char actual[W*H*4],expected[W*H*4];unsigned ink=0,differences=0;
     CHECK(p->surfaceReadRGBA(p,targets[0],actual,W*4)==XUI_OK && p->surfaceReadRGBA(p,targets[1],expected,W*4)==XUI_OK);
     for(unsigned i=0;i<sizeof(actual);i++){
-        if(actual[i]!=expected[i])fprintf(stderr,"SHY RGBA direction=%u form=%u control=%u pass=%u size=%g byte=%u got=%u expected=%u\n",
-            direction,form,control,pass,size,i,actual[i],expected[i]);
-        CHECK(actual[i]==expected[i]);if(i%4==3 && actual[i])ink++;
-    }CHECK(ink>20);cases++;
+		if(actual[i]!=expected[i]){
+			if(differences<16)fprintf(stderr,"SHY RGBA direction=%u form=%u control=%u pass=%u size=%g byte=%u got=%u expected=%u\n",
+				direction,form,control,pass,size,i,actual[i],expected[i]);
+			differences++;
+		}
+		if(i%4==3 && actual[i])ink++;
+	}CHECK(differences==0);CHECK(ink>20);cases++;
 }
 static void document_cases(xui_proxy p,xui_context context,xui_font font,float size,unsigned direction,unsigned pair,xui_surface* targets)
 {
@@ -172,7 +175,7 @@ static void document_cases(xui_proxy p,xui_context context,xui_font font,float s
                 xuiDocumentChangeSetRelease(change);
             }
             if(pass==3){xuiDocumentRelease(d);d=NULL;}
-            before=shapes;raw=cached=0;
+			before=shapes;raw=cached=0;
             CHECK(p->surfaceClear(p,targets[0],0)==XUI_OK && p->drawBegin(p,&draw,targets[0])==XUI_OK &&
                 xuiDocumentRendererDraw(r,draw,ox,0,clip,NULL,0)==XUI_OK && p->drawEnd(p,draw)==XUI_OK && paint_route() && shapes==before);
             for(unsigned i=0;i<2;i++){
@@ -201,15 +204,15 @@ static void document_cases(xui_proxy p,xui_context context,xui_font font,float s
 #else
                 base+(i?(selected?1:3):terminal?4:2),
 #endif
-                ox+fmin(rects[i][0].x,rects[i][1].x),rects[i][0].y,colors[form==1?2*i:0]);
+				ox+fmin(rects[i][0].x,rects[i][1].x),rects[i][0].y,colors[form==1?2*i:0],ox!=0);
             if(selected){
                 unsigned source=offsets[hyphen_part],local=form==1?0:source;xui_doc_rect_t a,b;
                 xui_doc_position_t start=position(snapshot,form,leaves[form==1?hyphen_part:0],local,source,XUI_DOC_AFTER);
                 xui_doc_position_t end=position(snapshot,form,leaves[form==1?hyphen_part:0],local+2,source+2,XUI_DOC_BEFORE);
                 CHECK(xuiDocumentRendererGetCaretRect(r,&start,&a)==XUI_OK && xuiDocumentRendererGetCaretRect(r,&end,&b)==XUI_OK && fabs(a.y-b.y)<.001 && fabs(fabs(a.x-b.x)-size*.15)<.001);
-                literal(p,draw,font,0xe702,ox+fmin(a.x,b.x),a.y,colors[form==1?1:0]);
+				literal(p,draw,font,0xe702,ox+fmin(a.x,b.x),a.y,colors[form==1?1:0],ox!=0);
             }
-            CHECK(p->drawEnd(p,draw)==XUI_OK);equal_pixels(p,targets,direction,form,3*pair+control,pass,size);
+			CHECK(p->drawEnd(p,draw)==XUI_OK);equal_pixels(p,targets,direction,form,3*pair+control,pass,size);
         }
         xuiDocumentSnapshotRelease(snapshot);xuiDocumentRendererRelease(r);
     }

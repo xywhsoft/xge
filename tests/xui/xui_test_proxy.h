@@ -5,6 +5,7 @@
 
 typedef struct xui_test_proxy_state_t {
 	xui_proxy_t tProxy;
+	xui_clipboard_get_text_proc onClipboardGetText;
 	char sClipboard[16384];
 	unsigned char arrClipboardRich[65536];
 	size_t iClipboardRichSize;
@@ -20,15 +21,19 @@ typedef struct xui_test_proxy_state_t {
 	int iPathDrawCount;
 	int iSvgPathDrawCount;
 	int iLastPathCommandCount;
+	float fLastPointX;
+	float fLastPointY;
 	int iSurfaceLoadCount;
 	int iZstdDecompressCount;
 	int iSvgSurfaceLoadCount;
 	int iSurfaceDestroyCount;
 	int iTextMeasureCount;
+	uint32_t iLastTextMeasureFlags;
 	int iTextShapeCount;
 	size_t iTextShapeBytes;
 	uint32_t iLastTextShapeFlags;
 	uint32_t iLastTextDrawItemFlags;
+	int iLastTextDrawSize;
 	int iTextShapeRangeDrawCount;
 	int bRetainedText;
 	double fClockSeconds;
@@ -59,6 +64,7 @@ int xuiTestSurfaceGetRectFillCount(xui_surface pSurface);
 int xuiTestSurfaceGetRectFillColorCount(xui_surface pSurface, uint32_t iColor);
 int xuiTestSurfaceGetLastRectFillOrder(xui_surface pSurface, uint32_t iColor);
 int xuiTestSurfaceGetTextDrawCount(xui_surface pSurface);
+const char* xuiTestSurfaceGetLastText(xui_surface pSurface);
 xui_rect_t xuiTestSurfaceGetLastRect(xui_surface pSurface);
 xui_rect_t xuiTestSurfaceGetLastSrc(xui_surface pSurface);
 xui_rect_t xuiTestSurfaceGetLastDst(xui_surface pSurface);
@@ -71,6 +77,7 @@ int xuiTestProxyGetLastMeshIndexCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetPathDrawCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetSvgPathDrawCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetLastPathCommandCount(xui_test_proxy_state_t* pState);
+void xuiTestProxyGetLastPoint(xui_test_proxy_state_t* pState, float* pX, float* pY);
 int xuiTestProxyGetSurfaceLoadCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetSvgSurfaceLoadCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetSurfaceDestroyCount(xui_test_proxy_state_t* pState);

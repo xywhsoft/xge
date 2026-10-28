@@ -55,6 +55,8 @@ int main(void)
 	xui_widget pCanvas;
 	xui_workflow pWorkflow;
 	xui_workflow pOtherWorkflow;
+	xui_flow_graph pGraphBeforeLoad;
+	xvalue* pSavedWorkflow;
 	xui_workflow_desc_t tDesc;
 	xui_workflow_node_type_desc_t tType;
 	xui_flow_port_desc_t tPort;
@@ -68,6 +70,7 @@ int main(void)
 	pWidget = NULL;
 	pWorkflow = NULL;
 	pOtherWorkflow = NULL;
+	pSavedWorkflow = NULL;
 	iFailed = 0;
 	memset(&tContextMenu, 0, sizeof(tContextMenu));
 	tContextMenu.iType = XUI_FLOW_HIT_NONE;
@@ -139,6 +142,19 @@ int main(void)
 	XUI_TEST_CHECK(tContextMenu.pWidget == pWidget &&
 		tContextMenu.iType == XUI_FLOW_HIT_NODE && tContextMenu.iNode == 0,
 		"workflow context uses wrapper and selected node");
+	pGraphBeforeLoad = xuiWorkflowGetGraph(pWorkflow);
+	iRet = xuiWorkflowToXValue(pWorkflow, &pSavedWorkflow);
+	XUI_TEST_CHECK(iRet == XUI_OK && pSavedWorkflow != NULL, "serialize attached workflow");
+	iRet = xuiWorkflowLoadXValue(pWorkflow, pSavedWorkflow);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reload attached workflow");
+	XUI_TEST_CHECK(xuiWorkflowGetGraph(pWorkflow) == pGraphBeforeLoad &&
+		xuiFlowGraphWidgetGetGraph(pCanvas) == pGraphBeforeLoad,
+		"workflow load preserves attached graph handle");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphGetNodeCount(pGraphBeforeLoad) == 1,
+		"attached canvas renders reloaded workflow");
+	xrtValueRelease(pSavedWorkflow);
+	pSavedWorkflow = NULL;
 
 	iRet = xuiWorkflowCreate(&pOtherWorkflow);
 	XUI_TEST_CHECK(iRet == XUI_OK && pOtherWorkflow != NULL, "other workflow create");
@@ -148,6 +164,9 @@ int main(void)
 	XUI_TEST_CHECK((xuiWidgetGetDirtyFlags(pWidget) & XUI_WIDGET_DIRTY_CACHE) != 0, "workflow widget cache dirty after model swap");
 
 cleanup:
+	if ( pSavedWorkflow != NULL ) {
+		xrtValueRelease(pSavedWorkflow);
+	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
 	}

@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -195,6 +196,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pTextEdit;
+	xui_widget pProbe;
 	xui_widget pFindWindow;
 	xui_widget pMenu;
 	xui_widget pHScrollBar;
@@ -221,6 +223,12 @@ int main(void)
 	float fScrollY;
 	float fScrollBeforeX;
 	float fScrollBeforeY;
+	float fBorderWidth;
+	float fLineGap;
+	uint32_t iLineTextColor;
+	uint32_t iLineBackgroundColor;
+	uint32_t iLineBorderColor;
+	uint32_t iFindActiveColor;
 	int iStart;
 	int iEnd;
 	int iWrapInitialLines;
@@ -233,6 +241,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pTextEdit = NULL;
+	pProbe = NULL;
 	pFindWindow = NULL;
 	pMenu = NULL;
 	pHScrollBar = NULL;
@@ -265,6 +274,19 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "default font");
 	iRet = xuiInputViewport(pContext, 520.0f, 320.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fLineGap = NAN;
+	pProbe = (xui_widget)pContext;
+	iRet = xuiTextEditCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"invalid descriptor clears output");
+	tDesc.fLineGap = 0.0f;
+	pProbe = (xui_widget)pContext;
+	iRet = xuiTextEditCreate(NULL, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"invalid context clears output");
 
 	iRet = xuiWidgetCreate(pContext, &pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK && pRoot != NULL, "root create");
@@ -305,6 +327,29 @@ int main(void)
 	XUI_TEST_CHECK(xuiTextEditGetWordWrap(pTextEdit) == 1, "word wrap");
 	XUI_TEST_CHECK(xuiTextEditGetLineNumbers(pTextEdit) == 1, "line numbers enabled");
 	XUI_TEST_CHECK(xuiTextEditGetLineNumberWidth(pTextEdit) == 44.0f, "line number width");
+	iRet = xuiTextEditSetLineNumberColors(pTextEdit, 0u, 0u, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditGetLineNumberColors(pTextEdit,
+		&iLineTextColor, &iLineBackgroundColor, &iLineBorderColor);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLineTextColor == 0u &&
+		iLineBackgroundColor == 0u && iLineBorderColor == 0u,
+		"line number colors accept transparent values");
+	iRet = xuiTextEditSetLineNumbers(pTextEdit, 0, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTextEditGetLineNumbers(pTextEdit) == 1 &&
+		xuiTextEditGetLineNumberWidth(pTextEdit) == 44.0f, "line number NaN preserves state");
+	iRet = xuiTextEditSetLineNumbers(pTextEdit, 0, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTextEditGetLineNumbers(pTextEdit) == 1 &&
+		xuiTextEditGetLineNumberWidth(pTextEdit) == 44.0f, "line number infinity preserves state");
+	iRet = xuiTextEditGetVisualMetrics(pTextEdit, &fBorderWidth, &fLineGap);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get visual metrics");
+	iRet = xuiTextEditSetVisualMetrics(pTextEdit, NAN, fLineGap);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "visual border NaN rejected");
+	iRet = xuiTextEditSetVisualMetrics(pTextEdit, fBorderWidth, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "visual line gap infinity rejected");
+	XUI_TEST_CHECK(xuiTextEditGetVisualMetrics(pTextEdit, &fScrollX, &fScrollY) == XUI_OK &&
+		fScrollX == fBorderWidth && fScrollY == fLineGap, "invalid visual metrics preserve state");
+	iRet = xuiTextEditSetFont(pTextEdit, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTextEditGetFont(pTextEdit) == pFont,
+		"null font restores default font");
 	tTextRect = xuiTextEditGetTextRect(pTextEdit);
 	XUI_TEST_CHECK(tTextRect.fX >= 50.0f, "line number gutter shifts text rect");
 	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
@@ -314,6 +359,17 @@ int main(void)
 	XUI_TEST_CHECK(xuiQueryCursor(pContext,
 		(int)(tWorldRect.fX + tTextRect.fX + 8.0f), (int)(tWorldRect.fY + tTextRect.fY + 8.0f)) == XUI_CURSOR_IBEAM,
 		"textedit text area uses ibeam cursor");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiTextEditGetState(pTextEdit) & XUI_WIDGET_STATE_DISABLED) != 0u,
+		"textedit inherits disabled state from parent");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext,
+		(int)(tWorldRect.fX + tTextRect.fX + 8.0f), (int)(tWorldRect.fY + tTextRect.fY + 8.0f)) != XUI_CURSOR_IBEAM,
+		"effectively disabled textedit does not expose ibeam cursor");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiTextEditGetState(pTextEdit) & XUI_WIDGET_STATE_DISABLED) == 0u,
+		"textedit restores enabled state with parent");
 	iRet = xuiTextEditSetText(pTextEdit, "one\ntwo\nthree");
 	XUI_TEST_CHECK(iRet == XUI_OK, "line gutter selection text");
 	iRet = xuiLayout(pContext);
@@ -326,6 +382,55 @@ int main(void)
 	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 8,
 		"textedit gutter drag selects complete lines");
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 0);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDownEx(pContext, 1101u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX - 22.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + 8.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 4 &&
+		xuiGetPointerCaptureEx(pContext, 1101u, XUI_POINTER_TYPE_TOUCH) == pTextEdit,
+		"textedit owner touch captures gutter line selection");
+	iRet = xuiInputPointerDownEx(pContext, 1102u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX - 22.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + 40.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 1102u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX - 22.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + 40.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1102u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX - 22.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + 40.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 4 &&
+		xuiGetPointerCaptureEx(pContext, 1101u, XUI_POINTER_TYPE_TOUCH) == pTextEdit &&
+		xuiGetPointerCaptureEx(pContext, 1102u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot change gutter selection or end owner capture");
+	iRet = xuiInputPointerMoveEx(pContext, 1101u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX - 22.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + 24.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 8,
+		"textedit owner touch extends gutter line selection");
+	iRet = xuiInputPointerUpEx(pContext, 1101u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX - 22.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + 24.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1101u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"textedit owner touch releases gutter line selection capture");
 	iRet = xuiTextEditSetText(pTextEdit, "one\ntwo");
 	if ( iRet == XUI_OK ) iRet = xuiTextEditSetSelection(pTextEdit, 7, 7);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore initial text after gutter selection");
@@ -494,6 +599,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "AB") == 0, "textedit delete removes complete emoji");
 	iRet = xuiTextEditSetText(pTextEdit, sEmojiText);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset textedit emoji text");
+	iRet = xuiTextEditSetMaxLength(pTextEdit, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "A") == 0,
+		"max length truncates at UTF-8 grapheme boundary");
+	iRet = xuiTextEditSetMaxLength(pTextEdit, 128);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore max length after UTF-8 truncation");
+	iRet = xuiTextEditSetText(pTextEdit, sEmojiText);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore textedit emoji after max length test");
 	iRet = xuiTextEditSetSelection(pTextEdit, 26, 26);
 	XUI_TEST_CHECK(iRet == XUI_OK, "textedit cursor after emoji");
 	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_BACKSPACE, 0);
@@ -550,6 +662,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "IME multiline preedit renders as virtual text");
 	iRet = __xuiTextEditTestDispatchIme(pContext, sNiHao);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), sNiHao) == 0, "IME committed text");
+	iRet = xuiTextEditSetText(pTextEdit, "seed");
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditTestDispatchImePreedit(pContext, "pending");
+	if ( iRet == XUI_OK ) iRet = xuiTextEditSetText(pTextEdit, "A");
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditTestDispatchText(pContext, 'B');
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "AB") == 0,
+		"programmatic text replacement cancels stale IME composition");
+	iRet = xuiTextEditSetText(pTextEdit, "prefix");
+	if ( iRet == XUI_OK ) iRet = xuiTextEditSetText(pTextEdit, xuiTextEditGetText(pTextEdit) + 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "efix") == 0,
+		"programmatic text replacement accepts an aliased source");
 	iRet = xuiTextEditSetText(pTextEdit, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear IME text");
 	iRet = xuiTextEditSetText(pTextEdit, "12345");
@@ -627,6 +749,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set both scrollbar scroll");
 	iRet = xuiTextEditGetScroll(pTextEdit, &fScrollX, &fScrollY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == 24.0f && fScrollY > 0.0f, "textedit both scrollbar scroll values");
+	fScrollBeforeX = fScrollX;
+	fScrollBeforeY = fScrollY;
+	iRet = xuiTextEditSetScroll(pTextEdit, NAN, fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "textedit scroll NaN rejected");
+	iRet = xuiTextEditScrollBy(pTextEdit, 0.0f, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "textedit scroll delta infinity rejected");
+	iRet = xuiTextEditGetScroll(pTextEdit, &fScrollX, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == fScrollBeforeX && fScrollY == fScrollBeforeY,
+		"invalid textedit scroll preserves offsets");
 	fScrollBeforeY = fScrollY;
 	XUI_TEST_CHECK(xuiWidgetGetVisible(pHScrollBar) && xuiWidgetGetVisible(pVScrollBar), "textedit both scrollbars visible");
 	XUI_TEST_CHECK(xuiScrollBarGetValue(pHScrollBar) == fScrollX && xuiScrollBarGetValue(pVScrollBar) == fScrollY, "textedit scrollbar values");
@@ -703,6 +834,14 @@ int main(void)
 	tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
 	iRet = xuiTextEditFindNext(pTextEdit, &tFind);
 	XUI_TEST_CHECK(iRet == XUI_OK, "find next first");
+	iRet = xuiTextEditGetExtendedColors(pTextEdit, NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, &iFindActiveColor);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditTestRender(pContext, pTarget);
+	pTextEditCache = xuiWidgetGetCacheSurface(pTextEdit, xuiWidgetGetStateId(pTextEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && pTextEditCache != NULL &&
+		xuiTestSurfaceGetRectFillColorCount(pTextEditCache, iFindActiveColor) > 0,
+		"find active highlight rendered");
 	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 5, "find next selects first");
 	iRet = xuiTextEditFindNext(pTextEdit, &tFind);
@@ -727,6 +866,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 22 && iEnd == 27, "selection find stays in range");
 	iRet = xuiTextEditClearFind(pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear find");
+
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 0);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditFindNext(pTextEdit, &tFind);
+	if ( pTextEditCache != NULL ) xuiTestSurfaceReset(pTextEditCache);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditSetText(pTextEdit, "replacement");
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditTestRender(pContext, pTarget);
+	pTextEditCache = xuiWidgetGetCacheSurface(pTextEdit, xuiWidgetGetStateId(pTextEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && pTextEditCache != NULL &&
+		xuiTestSurfaceGetRectFillColorCount(pTextEditCache, iFindActiveColor) == 0,
+		"programmatic text replacement clears stale find highlights");
 
 	iRet = xuiTextEditSetText(pTextEdit, "cat dog cat");
 	XUI_TEST_CHECK(iRet == XUI_OK, "replace text set");
@@ -922,6 +1072,30 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "menu delete");
 	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == iEnd, "selection cleared");
+
+	iRet = xuiTextEditSetText(pTextEdit, "capture");
+	XUI_TEST_CHECK(iRet == XUI_OK, "capture release text");
+	iRet = xuiTextEditSetLineNumbers(pTextEdit, 0, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "capture release hide line numbers");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "capture release layout");
+	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	iRet = xuiInputPointerDown(pContext, tWorldRect.fX + tTextRect.fX + 8.0f,
+		tWorldRect.fY + tTextRect.fY + 8.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "capture release pointer down input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pTextEdit,
+		"textedit captures selection pointer");
+	iRet = xuiWidgetSetEnabled(pTextEdit, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable captured textedit");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"disable releases textedit pointer capture");
+	iRet = xuiWidgetSetEnabled(pTextEdit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable textedit");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch reenable textedit");
 
 cleanup:
 	if ( pTarget != NULL ) {

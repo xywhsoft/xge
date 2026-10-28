@@ -98,7 +98,7 @@ static const unlink_fixture unlink_fixtures[] = {
     {"[alpha]( oldA 'one' )[**beta**]( \t<oldB> (two) )", "alpha**beta**"},
     {"[__A__][ONE][`B`][TWO]", "__A__`B`"},
     {"[![![inner](hidden)](asset 'keep')](old)[![](other)][TWO]", "![![inner](hidden)](asset 'keep')![](other)"},
-    {"<https://example.tests/xge/a*b*c>", "https\\:\\/\\/example\\.tests\xge\\/a\\*b\\*c"},
+    {"<https://example.tests/xge/a*b*c>", "https\\:\\/\\/example\\.tests\\/xge\\/a\\*b\\*c"},
     {"<user+tag@example.test>", "user\\+tag\\@example\\.test"},
     {"[foo\nbar](old 'one')", "foo\nbar"},
     {"[**a** <i>b</i>](old)", "**a** <i>b</i>"},

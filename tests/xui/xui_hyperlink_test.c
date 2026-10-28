@@ -25,6 +25,42 @@ static void __xuiHyperlinkClicked(xui_widget pWidget, void* pUser)
 	}
 }
 
+typedef struct xui_hyperlink_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_hyperlink_destroy_state_t;
+
+static void __xuiHyperlinkDestroyClicked(xui_widget pWidget, void* pUser)
+{
+	xui_hyperlink_destroy_state_t* pState = (xui_hyperlink_destroy_state_t*)pUser;
+
+	if ( pState != NULL ) {
+		pState->iCount++;
+		if ( pState->ppWidget != NULL && *pState->ppWidget == pWidget ) *pState->ppWidget = NULL;
+	}
+	xuiWidgetDestroy(pWidget);
+}
+
+static int __xuiHyperlinkSetTextOomPreserves(xui_widget pLink)
+{
+	xallocationbudget* pBudget = NULL;
+	xallocationscope tScope;
+	int iRet;
+
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiHyperlinkSetText(pLink,
+		"This replacement is intentionally longer than the retained hyperlink allocation.");
+	(void)xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	return iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		strcmp(xuiHyperlinkGetText(pLink), "Open document") == 0;
+}
+
 static xui_style_value_t __xuiHyperlinkTestColor(uint32_t iColor)
 {
 	xui_style_value_t tValue;
@@ -72,6 +108,12 @@ int main(void)
 	xui_surface pNormalCache;
 	xui_surface pHoverCache;
 	xui_surface pActiveCache;
+	xui_surface pFocusCache;
+	xui_accessible_node_t tAccessible;
+	xui_theme_t tTheme;
+	xui_hyperlink_destroy_state_t tDestroyState;
+	xui_widget pDestroyLink;
+	xui_widget pProbe;
 	int iClickCount;
 	int iFailed;
 	int iRet;
@@ -80,9 +122,14 @@ int main(void)
 	pRoot = NULL;
 	pLink = NULL;
 	pFont = NULL;
+	pDestroyLink = NULL;
+	pProbe = NULL;
 	iClickCount = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	memset(&tTheme, 0, sizeof(tTheme));
+	tTheme.iSize = sizeof(tTheme);
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -94,6 +141,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pFont != NULL, "font create");
 	iRet = xuiSetDefaultFont(pContext, pFont);
 	XUI_TEST_CHECK(iRet == XUI_OK, "default font");
+	iRet = xuiGetTheme(pContext, &tTheme);
+	XUI_TEST_CHECK(iRet == XUI_OK, "theme get");
 
 	iRet = xuiWidgetCreate(pContext, &pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK && pRoot != NULL, "root create");
@@ -113,15 +162,39 @@ int main(void)
 	tDesc.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 	tDesc.bHoverUnderline = 1;
 	tDesc.bActiveUnderline = 1;
+	tDesc.fLineGap = INFINITY;
+	pProbe = pRoot;
+	iRet = xuiHyperlinkCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"invalid create clears output");
+	tDesc.fLineGap = 0.0f;
 	iRet = xuiHyperlinkCreate(pContext, &pLink, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pLink != NULL, "hyperlink create");
 	XUI_TEST_CHECK(strcmp(xuiHyperlinkGetText(pLink), "Open document") == 0, "text getter");
 	XUI_TEST_CHECK(xuiHyperlinkGetTextColor(pLink) == XUI_COLOR_RGBA(20, 92, 210, 255), "text color getter");
 	XUI_TEST_CHECK(xuiHyperlinkGetHoverUnderline(pLink) == 1 && xuiHyperlinkGetActiveUnderline(pLink) == 1, "underline defaults");
-	XUI_TEST_CHECK(xuiWidgetGetCacheStateCount(pLink) == 3, "three cache states");
+	XUI_TEST_CHECK(xuiWidgetGetCacheStateCount(pLink) == 4, "four cache states");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 0) == 0, "normal cache id");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 1) == XUI_WIDGET_STATE_HOVER, "hover cache id");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 2) == XUI_WIDGET_STATE_ACTIVE, "active cache id");
+	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 3) == XUI_WIDGET_STATE_FOCUS, "focus cache id");
+	XUI_TEST_CHECK(__xuiHyperlinkSetTextOomPreserves(pLink), "text OOM preserves value");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pLink) == 1, "accessible node count");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pLink, 0, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_LINK &&
+		strcmp(tAccessible.sName, "Open document") == 0 &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE)) != 0,
+		"accessible link node");
+	XUI_TEST_CHECK(xuiWidgetSetAccessibleName(pLink, "Open the current document") == XUI_OK,
+		"accessible name set");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pLink, 0, &tAccessible) == XUI_OK &&
+		strcmp(tAccessible.sName, "Open the current document") == 0,
+		"explicit accessible name");
+	XUI_TEST_CHECK(xuiWidgetSetAccessibleName(pLink, NULL) == XUI_OK, "accessible name clear");
 	iRet = xuiHyperlinkSetClick(pLink, __xuiHyperlinkClicked, &iClickCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "click callback");
 	iRet = xuiWidgetSetRect(pLink, (xui_rect_t){20.0f, 20.0f, 160.0f, 24.0f});
@@ -138,13 +211,21 @@ int main(void)
 	pNormalCache = xuiWidgetGetCacheSurface(pLink, 0);
 	pHoverCache = xuiWidgetGetCacheSurface(pLink, XUI_WIDGET_STATE_HOVER);
 	pActiveCache = xuiWidgetGetCacheSurface(pLink, XUI_WIDGET_STATE_ACTIVE);
-	XUI_TEST_CHECK(pNormalCache != NULL && pHoverCache != NULL && pActiveCache != NULL, "cache surfaces");
+	pFocusCache = xuiWidgetGetCacheSurface(pLink, XUI_WIDGET_STATE_FOCUS);
+	XUI_TEST_CHECK(pNormalCache != NULL && pHoverCache != NULL && pActiveCache != NULL &&
+		pFocusCache != NULL, "cache surfaces");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pNormalCache) == XUI_COLOR_RGBA(20, 92, 210, 255), "normal color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pHoverCache) == XUI_COLOR_RGBA(8, 128, 230, 255), "hover color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pActiveCache) == XUI_COLOR_RGBA(6, 60, 160, 255), "active color cache");
+	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pFocusCache) == tTheme.iStateFocusColor,
+		"focus cache outline");
+	XUI_TEST_CHECK(tState.iLastTextDrawSize >= 0, "bounded display text draw");
+	xuiWidgetClearDirty(pLink, XUI_WIDGET_DIRTY_ALL);
 	iRet = xuiHyperlinkSetTextFlags(pLink, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE |
 		XUI_TEXT_CLIP | XUI_TEXT_RTL);
-	XUI_TEST_CHECK(iRet == XUI_OK, "rtl flags set");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pLink) & XUI_WIDGET_DIRTY_LAYOUT) != 0,
+		"rtl flags invalidate layout");
 	xuiTestProxyResetTextCounters(&tState);
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "rtl render");
@@ -169,6 +250,30 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch up");
 	XUI_TEST_CHECK(xuiHyperlinkGetClickCount(pLink) == 1 && iClickCount == 1, "pointer click");
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		30, 30, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pLink,
+		"first touch owns hyperlink press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		30, 30, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH, 30, 30, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 1 &&
+		iClickCount == 1 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pLink &&
+		(xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) != 0,
+		"unrelated touch cannot click or release hyperlink press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		30, 30, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 2 &&
+		iClickCount == 2 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch completes one hyperlink click");
 
 	iRet = xuiSetFocusWidget(pContext, pLink);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus");
@@ -181,12 +286,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "space up");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch space up");
-	XUI_TEST_CHECK(xuiHyperlinkGetClickCount(pLink) == 2 && iClickCount == 2, "keyboard click");
+	XUI_TEST_CHECK(xuiHyperlinkGetClickCount(pLink) == 3 && iClickCount == 3, "keyboard click");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_ENTER, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "enter default");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch enter default");
-	XUI_TEST_CHECK(xuiHyperlinkGetClickCount(pLink) == 3 && iClickCount == 3, "enter default click");
+	XUI_TEST_CHECK(xuiHyperlinkGetClickCount(pLink) == 4 && iClickCount == 4, "enter default click");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "space down before blur");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -200,21 +305,30 @@ int main(void)
 	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "space up after blur");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 3 && iClickCount == 3,
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 4 && iClickCount == 4,
 	               "blurred keyboard press does not click");
+	iRet = xuiWidgetPerformAccessibleAction(pLink, 1u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 5 && iClickCount == 5,
+		"accessible activate click");
 	iRet = xuiHyperlinkSetLineGap(pLink, NAN);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan line gap");
 	iRet = xuiHyperlinkSetParagraphGap(pLink, INFINITY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite paragraph gap");
 
-	iRet = xuiWidgetSetEnabled(pLink, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK, "disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable parent");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disabled render");
 	pNormalCache = xuiWidgetGetCacheSurface(pLink, 0);
-	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pNormalCache) == XUI_COLOR_RGBA(120, 130, 140, 255), "disabled color");
-	iRet = xuiWidgetSetEnabled(pLink, 1);
-	XUI_TEST_CHECK(iRet == XUI_OK, "enable");
+	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pNormalCache) == XUI_COLOR_RGBA(120, 130, 140, 255),
+		"inherited disabled color");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, 30, 30) == XUI_CURSOR_ARROW,
+		"disabled subtree does not claim cursor");
+	iRet = xuiWidgetPerformAccessibleAction(pLink, 1u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iClickCount == 5,
+		"inherited disabled action rejected");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable parent");
 
 	arrProps[0] = __xuiHyperlinkTestProp("hyperlink.text.color", __xuiHyperlinkTestColor(XUI_COLOR_RGBA(30, 170, 100, 255)));
 	tStyle = __xuiHyperlinkTestStyle(arrProps, 1);
@@ -230,6 +344,30 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "style render");
 	pNormalCache = xuiWidgetGetCacheSurface(pLink, 0);
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pNormalCache) == XUI_COLOR_RGBA(30, 170, 100, 255), "style color");
+
+	tDestroyState.ppWidget = &pDestroyLink;
+	tDesc.sText = "Destroying link";
+	iRet = xuiHyperlinkCreate(pContext, &pDestroyLink, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyLink != NULL, "destroying link create");
+	iRet = xuiWidgetSetRect(pDestroyLink, (xui_rect_t){20.0f, 60.0f, 160.0f, 24.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying link rect");
+	iRet = xuiWidgetAddChild(pRoot, pDestroyLink);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying link add");
+	iRet = xuiHyperlinkSetClick(pDestroyLink, __xuiHyperlinkDestroyClicked, &tDestroyState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying callback set");
+	iRet = xuiSetFocusWidget(pContext, pDestroyLink);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying link focus");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying link space down");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying link dispatch down");
+	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying link space up");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroyState.iCount == 1 && pDestroyLink == NULL,
+		"keyboard callback may destroy hyperlink");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context usable after callback destruction");
 
 cleanup:
 	if ( pContext != NULL ) {

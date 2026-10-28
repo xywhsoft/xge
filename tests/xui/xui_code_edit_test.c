@@ -726,6 +726,45 @@ int main(void)
 		"codeedit gutter drag selects complete lines");
 	iRet = __xuiCodeEditPointerUp(pContext, fLineNumberX, 57.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit line gutter pointer up");
+	iRet = xuiInputPointerDownEx(pContext, 1201u, XUI_POINTER_TYPE_TOUCH,
+		(int)fLineNumberX, 39, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionGetRange(
+		xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd > 0 &&
+		xuiGetPointerCaptureEx(pContext, 1201u, XUI_POINTER_TYPE_TOUCH) == pCodeEdit,
+		"codeedit owner touch captures line gutter selection");
+	iLine = iSelectEnd;
+	iRet = xuiInputPointerDownEx(pContext, 1202u, XUI_POINTER_TYPE_TOUCH,
+		(int)fLineNumberX, 75, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 1202u,
+		XUI_POINTER_TYPE_TOUCH, (int)fLineNumberX, 75, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1202u,
+		XUI_POINTER_TYPE_TOUCH, (int)fLineNumberX, 75, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionGetRange(
+		xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == iLine &&
+		xuiGetPointerCaptureEx(pContext, 1201u, XUI_POINTER_TYPE_TOUCH) == pCodeEdit &&
+		xuiGetPointerCaptureEx(pContext, 1202u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot change codeedit gutter selection or release owner");
+	iRet = xuiInputPointerMoveEx(pContext, 1201u, XUI_POINTER_TYPE_TOUCH,
+		(int)fLineNumberX, 57, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeDocumentGetLineRange(
+		xuiCodeEditGetDocument(pCodeEdit), 2, &iLine, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionGetRange(
+		xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == iLine,
+		"codeedit owner touch extends gutter selection");
+	iRet = xuiInputPointerUpEx(pContext, 1201u, XUI_POINTER_TYPE_TOUCH,
+		(int)fLineNumberX, 57, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1201u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"codeedit owner touch releases gutter selection capture");
 	iMarginCount = xuiCodeCommandMapGetCount(xuiCodeEditGetCommandMap(pCodeEdit));
 	XUI_TEST_CHECK(iMarginCount > 0, "command map defaults");
 	iCustomMarginCallbackCount = 0;
@@ -1374,6 +1413,71 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > 0.0f, "drag auto scroll updates vertical scroll");
 	iRet = __xuiCodeEditPointerUp(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 260.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "drag auto scroll pointer up");
+	iRet = xuiCodeEditSetScroll(pCodeEdit, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDownEx(pContext, 1301u,
+		XUI_POINTER_TYPE_TOUCH, (int)(20.0f + fTextOriginX + 4.0f), 39,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionGetRange(
+		xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1301u, XUI_POINTER_TYPE_TOUCH) == pCodeEdit,
+		"codeedit owner touch captures text selection");
+	iLine = iSelectStart;
+	iColumn = iSelectEnd;
+	iRet = xuiInputPointerDownEx(pContext, 1302u, XUI_POINTER_TYPE_TOUCH,
+		(int)(20.0f + fTextOriginX + 64.0f), 57,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 1302u,
+		XUI_POINTER_TYPE_TOUCH, (int)(20.0f + fTextOriginX + 84.0f), 57,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1302u,
+		XUI_POINTER_TYPE_TOUCH, (int)(20.0f + fTextOriginX + 84.0f), 57,
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionGetRange(
+		xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == iLine && iSelectEnd == iColumn &&
+		xuiGetPointerCaptureEx(pContext, 1301u, XUI_POINTER_TYPE_TOUCH) == pCodeEdit &&
+		xuiGetPointerCaptureEx(pContext, 1302u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot change codeedit text selection or release owner");
+	iRet = xuiInputPointerMoveEx(pContext, 1301u, XUI_POINTER_TYPE_TOUCH,
+		(int)(20.0f + fTextOriginX + 64.0f), 57, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionGetRange(
+		xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectEnd > iSelectStart,
+		"codeedit owner touch extends text selection");
+	iRet = xuiInputPointerUpEx(pContext, 1301u, XUI_POINTER_TYPE_TOUCH,
+		(int)(20.0f + fTextOriginX + 64.0f), 57, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1301u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"codeedit owner touch releases text selection capture");
+	iRet = xuiInputPointerDownEx(pContext, 1303u, XUI_POINTER_TYPE_TOUCH,
+		(int)(20.0f + fTextOriginX + 4.0f), 39,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditSetReadonly(pCodeEdit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1303u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"codeedit readonly transition cancels owner capture");
+	iRet = xuiCodeEditSetReadonly(pCodeEdit, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit readonly transition restore");
+	iRet = xuiInputPointerDownEx(pContext, 1304u, XUI_POINTER_TYPE_TOUCH,
+		(int)(20.0f + fTextOriginX + 4.0f), 39,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pCodeEdit, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1304u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"codeedit disable transition cancels owner capture");
+	iRet = xuiWidgetSetEnabled(pCodeEdit, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit disable transition restore");
 	iRet = xuiCodeEditSetDisplayOptions(pCodeEdit, XUI_CODE_EDIT_SHOW_WHITESPACE | XUI_CODE_EDIT_SHOW_EOL | XUI_CODE_EDIT_SHOW_INDENT_GUIDES);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetDisplayOptions(pCodeEdit) == (XUI_CODE_EDIT_SHOW_WHITESPACE | XUI_CODE_EDIT_SHOW_EOL | XUI_CODE_EDIT_SHOW_INDENT_GUIDES), "display options set");
 	tProperty = __xuiCodeEditStyleColorProp("codeedit.whitespace.color", XUI_COLOR_RGBA(23, 98, 201, 255));
@@ -2014,16 +2118,55 @@ int main(void)
 		tRangeRect.fX == tMinimapRect.fX + 1.0f &&
 		tRangeRect.fW == tMinimapRect.fW - 1.0f,
 		"minimap viewport is translucent and preserves divider");
-	iRet = __xuiCodeEditPointerDown(pContext,
-		340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f,
-		30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f);
-	XUI_TEST_CHECK(iRet == XUI_OK, "minimap pointer down");
-	iRet = __xuiCodeEditPointerUp(pContext,
-		340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f,
-		30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f);
-	XUI_TEST_CHECK(iRet == XUI_OK, "minimap pointer up");
-	iRet = xuiCodeEditGetScroll(pToyEdit, NULL, &fScrollY);
-	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > 0.0f, "minimap click scrolls document");
+	iRet = xuiCodeEditSetScroll(pToyEdit, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDownEx(pContext, 1401u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f),
+		(int)(30.0f + tMinimapRect.fY + tMinimapRect.fH * 0.25f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditGetScroll(pToyEdit, NULL, &fScrollBefore);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollBefore > 0.0f &&
+		xuiGetPointerCaptureEx(pContext, 1401u, XUI_POINTER_TYPE_TOUCH) == pToyEdit,
+		"codeedit owner touch captures minimap drag");
+	iRet = xuiInputPointerDownEx(pContext, 1402u, XUI_POINTER_TYPE_TOUCH,
+		(int)(340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f),
+		(int)(30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 1402u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f),
+		(int)(30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1402u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f),
+		(int)(30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditGetScroll(pToyEdit, NULL, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY == fScrollBefore &&
+		xuiGetPointerCaptureEx(pContext, 1401u, XUI_POINTER_TYPE_TOUCH) == pToyEdit &&
+		xuiGetPointerCaptureEx(pContext, 1402u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot scroll minimap or release owner");
+	iRet = xuiInputPointerMoveEx(pContext, 1401u, XUI_POINTER_TYPE_TOUCH,
+		(int)(340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f),
+		(int)(30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditGetScroll(pToyEdit, NULL, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > fScrollBefore,
+		"codeedit owner touch scrolls minimap");
+	iRet = xuiInputPointerUpEx(pContext, 1401u, XUI_POINTER_TYPE_TOUCH,
+		(int)(340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f),
+		(int)(30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1401u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"codeedit owner touch releases minimap capture");
 
 cleanup:
 	if ( pFindScope != NULL ) xuiCodeFindScopeDestroy(pFindScope);

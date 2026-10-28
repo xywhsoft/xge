@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -19,6 +20,10 @@ typedef struct xui_menu_test_select_t {
 	int iIndex;
 	int iValue;
 } xui_menu_test_select_t;
+
+typedef struct xui_menu_test_destroy_t {
+	int iCount;
+} xui_menu_test_destroy_t;
 
 static int __xuiMenuNear(float fA, float fB)
 {
@@ -41,6 +46,15 @@ static void __xuiMenuSelected(xui_widget pMenu, int iIndex, int iValue, void* pU
 	pSelect->iCount++;
 	pSelect->iIndex = iIndex;
 	pSelect->iValue = iValue;
+}
+
+static void __xuiMenuDestroySelected(xui_widget pMenu, int iIndex, int iValue, void* pUser)
+{
+	xui_menu_test_destroy_t* pDestroy = (xui_menu_test_destroy_t*)pUser;
+	(void)iIndex;
+	(void)iValue;
+	pDestroy->iCount++;
+	xuiWidgetDestroy(pMenu);
 }
 
 static int __xuiMenuRender(xui_context pContext, xui_surface pTarget)
@@ -109,27 +123,47 @@ int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_menu_test_select_t tSelect;
+	xui_menu_test_select_t tInheritedSelect;
+	xui_menu_test_select_t tShortcutSelect;
+	xui_menu_test_destroy_t tDestroy;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pOwner;
 	xui_widget pMenu;
 	xui_widget pSubmenu;
+	xui_widget pDestroyMenu;
+	xui_widget pShortcutMenu;
+	xui_widget pLifetimeParent;
+	xui_widget pLifetimeSubmenu;
+	xui_widget pInvalidMenu;
 	xui_surface pTarget;
 	xui_surface pMenuCache;
 	xui_menu_desc_t tDesc;
 	xui_menu_item_t arrItems[7];
-	xui_menu_item_t arrSubItems[1];
+	xui_menu_item_t arrSubItems[3];
 	xui_menu_item_t arrWideItems[1];
+	xui_menu_item_t arrCycleItems[1];
+	xui_menu_item_t arrDestroyItems[1];
+	xui_menu_item_t arrShortcutItems[3];
 	xui_menu_metrics_t tMetrics;
+	xui_menu_metrics_t tBadMetrics;
+	xui_menu_desc_t tBadDesc;
 	xui_rect_t tPopupRect;
 	xui_rect_t tOwnerRect;
+	xui_rect_t tItemRect;
+	xui_rect_t tMenuWorld;
+	xui_accessible_node_t tAccessible;
 	const char* sWideText;
 	const char* sWideShortcut;
+	char sOwnedText[32];
+	char sOwnedShortcut[32];
 	float fWidth;
 	float fHeight;
 	float fPopupW;
 	float fPopupH;
 	float fExpectedWidth;
+	int iMeasureCount;
+	int iBefore;
 	int iFailed;
 	int iRet;
 
@@ -138,22 +172,30 @@ int main(void)
 	pOwner = NULL;
 	pMenu = NULL;
 	pSubmenu = NULL;
+	pDestroyMenu = NULL;
+	pShortcutMenu = NULL;
+	pLifetimeParent = NULL;
+	pLifetimeSubmenu = NULL;
+	pInvalidMenu = NULL;
 	pTarget = NULL;
 	pMenuCache = NULL;
 	iFailed = 0;
 	memset(&tSelect, 0, sizeof(tSelect));
+	memset(&tInheritedSelect, 0, sizeof(tInheritedSelect));
+	memset(&tShortcutSelect, 0, sizeof(tShortcutSelect));
+	memset(&tDestroy, 0, sizeof(tDestroy));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
-	iRet = xuiInputViewport(pContext, 420.0f, 320.0f);
+	iRet = xuiInputViewport(pContext, 640.0f, 320.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport");
 
 	iRet = xuiWidgetCreate(pContext, &pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK && pRoot != NULL, "root create");
-	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 420.0f, 320.0f});
+	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 640.0f, 320.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
 
@@ -163,6 +205,16 @@ int main(void)
 	xuiWidgetSetFocusable(pOwner, 1);
 	iRet = xuiWidgetAddChild(pRoot, pOwner);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add owner");
+
+	memset(&tBadDesc, 0, sizeof(tBadDesc));
+	tBadDesc.iSize = sizeof(tBadDesc);
+	tBadDesc.bHasMetrics = 1;
+	tBadDesc.tMetrics.iSize = sizeof(tBadDesc.tMetrics);
+	tBadDesc.tMetrics.fItemHeight = NAN;
+	tBadDesc.tMetrics.fSeparatorHeight = 9.0f;
+	pInvalidMenu = pOwner;
+	iRet = xuiMenuCreate(pContext, &pInvalidMenu, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidMenu == NULL, "invalid descriptor metrics rejected");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -175,11 +227,23 @@ int main(void)
 	arrSubItems[0].iType = XUI_MENU_ITEM_NORMAL;
 	arrSubItems[0].iState = XUI_MENU_ITEM_ENABLED;
 	arrSubItems[0].iValue = 50;
-	iRet = xuiMenuSetItems(pSubmenu, arrSubItems, 1);
+	arrSubItems[1].sText = "Sub second";
+	arrSubItems[1].iType = XUI_MENU_ITEM_NORMAL;
+	arrSubItems[1].iState = XUI_MENU_ITEM_ENABLED;
+	arrSubItems[1].iValue = 51;
+	arrSubItems[2].sText = "Sub third";
+	arrSubItems[2].iType = XUI_MENU_ITEM_NORMAL;
+	arrSubItems[2].iState = XUI_MENU_ITEM_ENABLED;
+	arrSubItems[2].iValue = 52;
+	iRet = xuiMenuSetItems(pSubmenu, arrSubItems, 3);
 	XUI_TEST_CHECK(iRet == XUI_OK, "submenu items");
 
 	iRet = xuiMenuCreate(pContext, &pMenu, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pMenu != NULL, "menu create");
+	iRet = xuiWidgetSetAccessibleName(pMenu, "Application menu");
+	XUI_TEST_CHECK(iRet == XUI_OK, "accessible name");
+	iRet = xuiWidgetSetAccessibleDescription(pMenu, "Application commands");
+	XUI_TEST_CHECK(iRet == XUI_OK, "accessible description");
 	iRet = xuiMenuSetSelect(pMenu, __xuiMenuSelected, &tSelect);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
 
@@ -231,10 +295,56 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	iRet = xuiMenuMeasure(pMenu, &fWidth, &fHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && fWidth >= 112.0f && fHeight > 120.0f, "menu measure");
+	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
+	iRet = __xuiMenuMoveToItem(pContext, pMenu, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cached measure pointer move");
+	iRet = __xuiMenuMoveToItem(pContext, pMenu, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestProxyGetTextMeasureCount(&tState) == iMeasureCount,
+		"pointer moves reuse menu text measurements");
 	iRet = xuiPopupGetContentSize(xuiMenuGetPopupWidget(pMenu), &fPopupW, &fPopupH);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiMenuNear(fWidth, fPopupW) && __xuiMenuNear(fHeight, fPopupH), "popup content size");
 	XUI_TEST_CHECK(xuiMenuGetContentWidget(pMenu) == pMenu && xuiMenuGetOwner(pMenu) == pOwner, "menu internals");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pMenu, "menu focused");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pMenu) == 8, "menu accessibility exposes logical items");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pMenu, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_MENU &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_EXPANDED) &&
+		strcmp(tAccessible.sName, "Application menu") == 0 &&
+		strcmp(tAccessible.sDescription, "Application commands") == 0 &&
+		tAccessible.iRowCount == 7 && tAccessible.iColumnCount == 1 &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS)),
+		"menu accessibility root");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pMenu, 2, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_MENU_ITEM &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_CHECKED) && tAccessible.iRow == 1 &&
+		tAccessible.iColumn == 0 && tAccessible.iRowCount == 1 && tAccessible.iColumnCount == 1 &&
+		strcmp(tAccessible.sDescription, "G") == 0 &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE)) &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS)),
+		"menu accessibility checked item");
+	iRet = xuiWidgetPerformAccessibleAction(pMenu, 2u, XUI_ACCESSIBLE_ACTION_TOGGLE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && xuiMenuIsOpen(pMenu),
+		"normal item rejects accessibility toggle");
+	iRet = xuiWidgetPerformAccessibleAction(pMenu, 3u, XUI_ACCESSIBLE_ACTION_EXPAND, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && xuiMenuIsOpen(pMenu),
+		"check item rejects accessibility expand");
+	iRet = xuiWidgetPerformAccessibleAction(pMenu, 7u, XUI_ACCESSIBLE_ACTION_COLLAPSE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE, "collapsed submenu rejects accessibility collapse");
+	iRet = xuiWidgetPerformAccessibleAction(pMenu, 7u, XUI_ACCESSIBLE_ACTION_EXPAND, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pSubmenu), "accessibility expands submenu");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pMenu, 6, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE)) &&
+		!(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND)),
+		"expanded submenu exposes collapse only");
+	iRet = xuiWidgetPerformAccessibleAction(pMenu, 7u, XUI_ACCESSIBLE_ACTION_COLLAPSE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuIsOpen(pSubmenu), "accessibility collapses submenu");
 	pMenuCache = xuiWidgetGetCacheSurface(pMenu, xuiWidgetGetStateId(pMenu));
 	XUI_TEST_CHECK(pMenuCache != NULL, "menu cache surface");
 	XUI_TEST_CHECK(!__xuiMenuRectEq(xuiTestSurfaceGetLastRect(pMenuCache), 1.0f, 1.0f, fWidth - 2.0f, fHeight - 2.0f), "no menu panel focus frame");
@@ -278,6 +388,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "reopen disabled");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disabled layout");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_END, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiMenuGetHoverIndex(pMenu) == 5, "End selects last enabled item");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_HOME, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiMenuGetHoverIndex(pMenu) == 0, "Home selects first enabled item");
 	iRet = __xuiMenuClickItem(pContext, pMenu, 6);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "disabled does not close");
 	XUI_TEST_CHECK(tSelect.iCount == 3, "disabled no select");
@@ -291,9 +407,58 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "submenu layout");
 	XUI_TEST_CHECK(xuiMenuIsOpen(pSubmenu), "submenu opened on hover");
+	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
+	tItemRect = xuiMenuGetItemRect(pMenu, 6);
+	iRet = __xuiMenuDispatchMove(pContext,
+		tMenuWorld.fX + tItemRect.fX + tItemRect.fW - 5.0f,
+		tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetHoverIndex(pMenu) == 5 && xuiMenuIsOpen(pSubmenu),
+		"diagonal submenu path keeps current item");
+	iRet = xuiUpdate(pContext, 0.10f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetHoverIndex(pMenu) == 5 && xuiMenuIsOpen(pSubmenu),
+		"submenu aim grace period");
+	iRet = xuiUpdate(pContext, 0.21f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetHoverIndex(pMenu) == -1 && !xuiMenuIsOpen(pSubmenu),
+		"submenu aim eventually applies deferred disabled row");
+	iRet = __xuiMenuMoveToItem(pContext, pMenu, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiUpdate(pContext, 0.21f) == XUI_OK && xuiMenuIsOpen(pSubmenu),
+		"submenu reopens after aim deferral");
 	iRet = __xuiMenuClickItem(pContext, pSubmenu, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuIsOpen(pMenu) && !xuiMenuIsOpen(pSubmenu), "submenu select closes root");
 	XUI_TEST_CHECK(tSelect.iCount == 4 && tSelect.pMenu == pSubmenu && tSelect.iIndex == 0 && tSelect.iValue == 50, "submenu inherited callback");
+
+	iRet = xuiMenuSetSelect(pMenu, __xuiMenuSelected, &tInheritedSelect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "replace parent select callback");
+	iRet = xuiMenuOpenForOwner(pMenu, pOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK, "open for refreshed inherited callback");
+	iRet = xuiMenuSetHoverIndex(pMenu, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hover submenu for refreshed callback");
+	iRet = xuiMenuCommitHover(pMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pSubmenu), "open submenu for refreshed callback");
+	iRet = __xuiMenuClickItem(pContext, pSubmenu, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && tInheritedSelect.iCount == 1 && tInheritedSelect.pMenu == pSubmenu,
+		"submenu resolves current parent callback without stale inheritance");
+	iRet = xuiMenuSetSelect(pMenu, __xuiMenuSelected, &tSelect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore parent select callback");
+
+	memset(arrCycleItems, 0, sizeof(arrCycleItems));
+	arrCycleItems[0].sText = "Cycle";
+	arrCycleItems[0].iType = XUI_MENU_ITEM_SUBMENU;
+	arrCycleItems[0].iState = XUI_MENU_ITEM_ENABLED;
+	arrCycleItems[0].pSubmenu = pMenu;
+	iRet = xuiMenuSetItems(pSubmenu, arrCycleItems, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "configure deferred submenu cycle");
+	iRet = xuiMenuOpenForOwner(pMenu, pOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK, "open cycle parent");
+	iRet = xuiMenuSetHoverIndex(pMenu, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuCommitHover(pMenu) == XUI_OK, "open cycle child");
+	iRet = xuiMenuSetHoverIndex(pSubmenu, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuCommitHover(pSubmenu) == XUI_ERROR_INVALID_STATE,
+		"runtime submenu cycle rejected");
+	iRet = xuiMenuClose(pMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close cycle menu chain");
+	iRet = xuiMenuSetItems(pSubmenu, arrSubItems, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore submenu items");
 
 	memset(arrWideItems, 0, sizeof(arrWideItems));
 	sWideText = "Export selection with all metadata";
@@ -313,6 +478,180 @@ int main(void)
 		tMetrics.fShortcutGap + ((float)strlen(sWideShortcut) * 7.0f) + 6.0f +
 		4.0f + tMetrics.fArrowWidth;
 	XUI_TEST_CHECK(fWidth >= fExpectedWidth, "wide text and shortcut width");
+
+	tBadMetrics = tMetrics;
+	tBadMetrics.fPaddingX = NAN;
+	iRet = xuiMenuSetMetrics(pMenu, &tBadMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan metrics rejected");
+	iRet = xuiMenuOpenAt(pMenu, pOwner, NAN, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && !xuiMenuIsOpen(pMenu), "nan popup coordinate rejected");
+	iRet = xuiMenuSetItemState(pMenu, 0, 0x80000000u, 0x80000000u);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "unknown item state rejected");
+
+	strcpy(sOwnedText, "Owned label");
+	strcpy(sOwnedShortcut, "Ctrl+O");
+	arrWideItems[0].sText = sOwnedText;
+	arrWideItems[0].sShortcut = sOwnedShortcut;
+	iRet = xuiMenuSetItems(pMenu, arrWideItems, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "owned item set");
+	strcpy(sOwnedText, "Changed");
+	strcpy(sOwnedShortcut, "Changed");
+	XUI_TEST_CHECK(strcmp(xuiMenuGetItem(pMenu, 0)->sText, "Owned label") == 0 &&
+		strcmp(xuiMenuGetItem(pMenu, 0)->sShortcut, "Ctrl+O") == 0, "menu owns text copies");
+
+	iRet = xuiMenuOpenForOwner(pMenu, pOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK, "open multi-touch menu");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi-touch menu layout");
+	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
+	tItemRect = xuiMenuGetItemRect(pMenu, 0);
+	iBefore = tSelect.iCount;
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tMenuWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pMenu,
+		"first touch owns menu item press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tMenuWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tMenuWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSelect.iCount == iBefore && xuiMenuIsOpen(pMenu) &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pMenu,
+		"second touch cannot commit or release menu item");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tMenuWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSelect.iCount == iBefore + 1 &&
+		tSelect.iValue == arrWideItems[0].iValue && !xuiMenuIsOpen(pMenu) &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch commits menu item exactly once");
+
+	iRet = xuiMenuOpenForOwner(pMenu, pOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK, "open disable-during-press menu");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable-during-press menu layout");
+	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
+	tItemRect = xuiMenuGetItemRect(pMenu, 0);
+	iRet = xuiInputPointerDownEx(pContext, 503u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tMenuWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiMenuSetItemState(pMenu, 0,
+		XUI_MENU_ITEM_ENABLED, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 503u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"disabling pressed menu item releases owner capture");
+	iRet = xuiInputPointerUpEx(pContext, 503u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tMenuWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiMenuSetItemState(pMenu, 0,
+		XUI_MENU_ITEM_ENABLED, XUI_MENU_ITEM_ENABLED);
+	if ( iRet == XUI_OK ) iRet = xuiMenuClose(pMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSelect.iCount == iBefore + 1,
+		"release after disabling menu item does not commit");
+
+	iRet = xuiMenuOpenForOwner(pMenu, pOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK, "open drag cancel menu");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag cancel layout");
+	tPopupRect = xuiPopupGetPopupRect(xuiMenuGetPopupWidget(pMenu));
+	iRet = __xuiMenuDispatchDown(pContext, tPopupRect.fX + 12.0f, tPopupRect.fY + 12.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag cancel down");
+	iRet = __xuiMenuDispatchUp(pContext, tPopupRect.fX + tPopupRect.fW + 30.0f, tPopupRect.fY + 12.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "dragging outside cancels activation");
+	iRet = xuiMenuClose(pMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close drag cancel menu");
+
+	iRet = xuiMenuCreate(pContext, &pShortcutMenu, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pShortcutMenu != NULL, "shortcut validation menu create");
+	memset(arrShortcutItems, 0, sizeof(arrShortcutItems));
+	arrShortcutItems[0].sText = "Malformed multiple keys";
+	arrShortcutItems[0].sShortcut = "Ctrl+A+B";
+	arrShortcutItems[0].iType = XUI_MENU_ITEM_NORMAL;
+	arrShortcutItems[0].iState = XUI_MENU_ITEM_ENABLED;
+	arrShortcutItems[0].iValue = 101;
+	arrShortcutItems[1].sText = "Malformed function key";
+	arrShortcutItems[1].sShortcut = "F1x";
+	arrShortcutItems[1].iType = XUI_MENU_ITEM_NORMAL;
+	arrShortcutItems[1].iState = XUI_MENU_ITEM_ENABLED;
+	arrShortcutItems[1].iValue = 102;
+	arrShortcutItems[2].sText = "Valid function key";
+	arrShortcutItems[2].sShortcut = "F12";
+	arrShortcutItems[2].iType = XUI_MENU_ITEM_NORMAL;
+	arrShortcutItems[2].iState = XUI_MENU_ITEM_ENABLED;
+	arrShortcutItems[2].iValue = 103;
+	iRet = xuiMenuSetItems(pShortcutMenu, arrShortcutItems, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "shortcut validation items");
+	iRet = xuiMenuSetSelect(pShortcutMenu, __xuiMenuSelected, &tShortcutSelect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "shortcut validation callback");
+	iRet = xuiMenuOpenForOwner(pShortcutMenu, pOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pShortcutMenu), "shortcut validation menu open");
+	iRet = xuiInputKeyDown(pContext, 'B', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiMenuIsOpen(pShortcutMenu) && tShortcutSelect.iCount == 0,
+		"multiple key shortcut rejected");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_F1, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiMenuIsOpen(pShortcutMenu) && tShortcutSelect.iCount == 0,
+		"malformed function key shortcut rejected");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_F12, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		!xuiMenuIsOpen(pShortcutMenu) && tShortcutSelect.iCount == 1 &&
+		tShortcutSelect.iIndex == 2 && tShortcutSelect.iValue == 103,
+		"valid function key shortcut activates");
+
+	iRet = xuiMenuCreate(pContext, &pLifetimeParent, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pLifetimeParent != NULL, "lifetime parent create");
+	iRet = xuiMenuCreate(pContext, &pLifetimeSubmenu, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pLifetimeSubmenu != NULL, "lifetime submenu create");
+	memset(arrDestroyItems, 0, sizeof(arrDestroyItems));
+	arrDestroyItems[0].sText = "Transient submenu";
+	arrDestroyItems[0].iType = XUI_MENU_ITEM_SUBMENU;
+	arrDestroyItems[0].iState = XUI_MENU_ITEM_ENABLED;
+	arrDestroyItems[0].pSubmenu = pLifetimeSubmenu;
+	iRet = xuiMenuSetItems(pLifetimeParent, arrDestroyItems, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lifetime submenu binding");
+	xuiWidgetDestroy(pLifetimeSubmenu);
+	pLifetimeSubmenu = NULL;
+	XUI_TEST_CHECK(xuiMenuGetItem(pLifetimeParent, 0) != NULL &&
+		xuiMenuGetItem(pLifetimeParent, 0)->pSubmenu == NULL &&
+		(xuiMenuGetItemState(pLifetimeParent, 0) & XUI_MENU_ITEM_ENABLED) == 0u,
+		"destroyed submenu clears and disables parent binding");
+	xuiWidgetDestroy(pLifetimeParent);
+	pLifetimeParent = NULL;
+
+	iRet = xuiMenuCreate(pContext, &pDestroyMenu, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyMenu != NULL, "destroy callback menu create");
+	memset(arrDestroyItems, 0, sizeof(arrDestroyItems));
+	arrDestroyItems[0].sText = "Destroy";
+	arrDestroyItems[0].iType = XUI_MENU_ITEM_NORMAL;
+	arrDestroyItems[0].iState = XUI_MENU_ITEM_ENABLED;
+	arrDestroyItems[0].iValue = 91;
+	iRet = xuiMenuSetItems(pDestroyMenu, arrDestroyItems, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback menu items");
+	iRet = xuiMenuSetSelect(pDestroyMenu, __xuiMenuDestroySelected, &tDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback set");
+	iRet = xuiMenuOpenForOwner(pDestroyMenu, pOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback menu open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback layout");
+	iRet = __xuiMenuClickItem(pContext, pDestroyMenu, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iCount == 1, "select callback may destroy menu");
+	pDestroyMenu = NULL;
 
 cleanup:
 	if ( pContext != NULL ) {

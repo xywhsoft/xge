@@ -25,8 +25,9 @@ static xui_rect_t intersect(xui_rect_t a, xui_rect_t b)
 }
 static xui_surface icons[2], tracked;
 static xui_rect_t iconSeen[2], textSeen, separatorSeen, dotSeen[3], srcSeen, dstSeen;
-static int iconCalls, dotCalls, copies;
-static uint32_t separatorColor, dotColor;
+static xui_rect_t watchedFillRect;
+static int iconCalls, dotCalls, copies, watchFill, watchedFillCalls;
+static uint32_t separatorColor, dotColor, watchedFillColor;
 static xui_draw_surface_proc iconOriginal;
 static xui_draw_rect_fill_proc fillOriginal;
 static xui_draw_text_proc textOriginal;
@@ -54,6 +55,7 @@ static int fill_capture(xui_proxy p, xui_draw_context draw, xui_rect_t r, uint32
 {
     if (color == separatorColor) separatorSeen = r;
     if (color == dotColor && r.fW == 2 && r.fH == 2) { dotSeen[dotCalls % 3] = r; ++dotCalls; }
+    if (watchFill && same(r, watchedFillRect)) { watchedFillColor = color; ++watchedFillCalls; }
     return fillOriginal(p, draw, r, color);
 }
 static int copy_capture(xui_proxy p, xui_surface target, xui_surface source,
@@ -75,11 +77,25 @@ static void verify_layout(xui_widget bar, const xui_toolbar_metrics_t *m, int w,
     float x = m->fPaddingX, y = m->fPaddingY;
     float iw = fmaxf(0, w - 2 * x), ih = fmaxf(0, h - 2 * y);
     int vertical = m->iOrientation == XUI_ORIENTATION_VERTICAL;
-    float cursor = vertical ? y : x, end = vertical ? y + ih : x + iw;
+    float cursor = vertical ? y : x, end = vertical ? y + ih : x + iw, required = 0, limit;
     float axis = 2 * m->fPaddingX, cross = 2 * m->fPaddingY + (vertical ? m->fItemWidth : m->fItemHeight);
-    int i, prev = 0, first = -1;
+    float overflowSize;
+    int i, prev = 0, first = -1, needsOverflow;
     xui_rect_t expected, actual;
+    xui_rect_t expectedItems[6];
     xui_vec2_t size;
+    for (i = 0; i < 6; ++i) {
+        const xui_toolbar_item_t *item = xuiToolbarGetItem(bar, i);
+        float extent = item->iType == XUI_TOOLBAR_ITEM_SEPARATOR ? m->fSeparatorSize :
+            (vertical ? m->fItemHeight : m->fItemWidth);
+        if (i > 0 && item->iType != XUI_TOOLBAR_ITEM_SEPARATOR && item->iGroup != prev) required += m->fGroupGap;
+        required += extent;
+        if (item->iType != XUI_TOOLBAR_ITEM_SEPARATOR) prev = item->iGroup;
+    }
+    needsOverflow = overflow && required > (vertical ? ih : iw);
+    overflowSize = needsOverflow ? fminf(m->fOverflowSize, vertical ? ih : iw) : 0;
+    limit = end - overflowSize;
+    prev = 0;
     for (i = 0; i < 6; ++i) {
         const xui_toolbar_item_t *item = xuiToolbarGetItem(bar, i);
         float extent = item->iType == XUI_TOOLBAR_ITEM_SEPARATOR ? m->fSeparatorSize :
@@ -88,11 +104,21 @@ static void verify_layout(xui_widget bar, const xui_toolbar_metrics_t *m, int w,
             cursor += m->fGroupGap; axis += m->fGroupGap;
         }
         axis += extent;
-        if (overflow && first < 0 && cursor + extent > end - m->fOverflowSize) first = i;
+        if (needsOverflow && first < 0 && cursor + extent > limit) first = i;
         if (first < 0) {
             float visible = fminf(extent, fmaxf(0, end - cursor));
-            expected = vertical ? pixels(x, cursor, iw, visible) : pixels(cursor, y, visible, ih);
-        } else expected = (xui_rect_t){0, 0, 0, 0};
+            expectedItems[i] = vertical ? pixels(x, cursor, iw, visible) : pixels(cursor, y, visible, ih);
+        } else expectedItems[i] = (xui_rect_t){0, 0, 0, 0};
+        cursor += extent;
+        if (item->iType != XUI_TOOLBAR_ITEM_SEPARATOR) prev = item->iGroup;
+    }
+    while (first > 0 && xuiToolbarGetItem(bar, first - 1)->iType == XUI_TOOLBAR_ITEM_SEPARATOR) {
+        --first;
+        expectedItems[first] = (xui_rect_t){0, 0, 0, 0};
+    }
+    for (i = 0; i < 6; ++i) {
+        const xui_toolbar_item_t *item = xuiToolbarGetItem(bar, i);
+        expected = expectedItems[i];
         actual = xuiToolbarGetItemRect(bar, i);
         CHECK(same(actual, expected));
         CHECK(actual.fW >= 0 && actual.fH >= 0);
@@ -101,14 +127,12 @@ static void verify_layout(xui_widget bar, const xui_toolbar_metrics_t *m, int w,
             CHECK(xuiToolbarGetItemAt(bar, expected.fX, expected.fY) == hit);
             CHECK(xuiToolbarGetItemAt(bar, expected.fX + expected.fW - 1, expected.fY + expected.fH - 1) == hit);
         }
-        cursor += extent;
-        if (item->iType != XUI_TOOLBAR_ITEM_SEPARATOR) prev = item->iGroup;
     }
     CHECK(xuiToolbarGetOverflowFirst(bar) == first);
     CHECK(xuiToolbarGetOverflowCount(bar) == (first < 0 ? 0 : 6 - first));
     expected = first < 0 ? (xui_rect_t){0, 0, 0, 0} : (vertical ?
-        pixels(x, y + ih - m->fOverflowSize, iw, m->fOverflowSize) :
-        pixels(x + iw - m->fOverflowSize, y, m->fOverflowSize, ih));
+        pixels(x, y + ih - overflowSize, iw, overflowSize) :
+        pixels(x + iw - overflowSize, y, overflowSize, ih));
     CHECK(same(xuiToolbarGetOverflowRect(bar), expected));
     CHECK(xuiWidgetMeasureContent(bar, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &size) == XUI_OK);
     CHECK(size.fX == floorf((vertical ? cross : axis) + .5f));
@@ -118,6 +142,7 @@ static void verify_draw(xui_context c, xui_widget bar, const xui_toolbar_metrics
 {
     int i, before = iconCalls, vertical = m->iOrientation == XUI_ORIENTATION_VERTICAL;
     xui_rect_t r, expected;
+    separatorSeen = (xui_rect_t){0, 0, 0, 0};
     CHECK(xuiLayout(c) == XUI_OK);
     CHECK(xuiRenderPrepare(c) == XUI_OK);
     CHECK(iconCalls >= before + 2);
@@ -135,8 +160,9 @@ static void verify_draw(xui_context c, xui_widget bar, const xui_toolbar_metrics
         }
     }
     r = xuiToolbarGetItemRect(bar, 2);
-    expected = vertical ? pixels(r.fX + 6, r.fY + (r.fH - 1) * .5f, r.fW - 12, 1) :
-        pixels(r.fX + (r.fW - 1) * .5f, r.fY + 5, 1, r.fH - 10);
+    expected = r.fW <= 0 || r.fH <= 0 ? (xui_rect_t){0, 0, 0, 0} : (vertical ?
+        pixels(r.fX + 6, r.fY + (r.fH - 1) * .5f, r.fW - 12, 1) :
+        pixels(r.fX + (r.fW - 1) * .5f, r.fY + 5, 1, r.fH - 10));
     CHECK(same(separatorSeen, expected));
     if (xuiToolbarGetOverflowCount(bar) > 0) {
         r = xuiToolbarGetOverflowRect(bar);
@@ -230,19 +256,31 @@ static void geometry(int odd, int offset, int vertical)
     CHECK(xuiHitTest(c, vertical ? x : world.fX + w - 1, vertical ? world.fY + h - 1 : y, XUI_WIDGET_HIT_DEFAULT) != bar);
     CHECK(xuiToolbarSetOverflow(bar, 1, m.fOverflowSize, overflow_selected, NULL) == XUI_OK);
     verify_layout(bar, &m, w, h, 1);
-    CHECK(xuiToolbarGetOverflowFirst(bar) == 3);
+    CHECK(xuiToolbarGetOverflowFirst(bar) == 2);
+    r = xuiToolbarGetOverflowRect(bar);
+    r.fX += vertical ? 3 : 2; r.fY += vertical ? 2 : 3;
+    r.fW -= vertical ? 6 : 4; r.fH -= vertical ? 4 : 6;
+    watchedFillRect = pixels(r.fX, r.fY, r.fW, r.fH);
+    watchFill = 1; watchedFillCalls = 0;
     verify_draw(c, bar, &m, -1);
+    CHECK(watchedFillCalls == 0);
     /* Enlarge the clipping ancestor only for clicking the overflow button. */
     CHECK(xuiWidgetSetRect(parent, (xui_rect_t){17, 17, 350, 250}) == XUI_OK);
     CHECK(xuiLayout(c) == XUI_OK);
     world = xuiWidgetGetWorldRect(bar); r = xuiToolbarGetOverflowRect(bar);
     x = world.fX + r.fX + r.fW / 2; y = world.fY + r.fY + r.fH / 2;
+    CHECK(xuiInputPointerMove(c, x, y, 0) == XUI_OK);
+    CHECK(xuiDispatchPendingEvents(c) == XUI_OK);
+    watchedFillCalls = 0;
+    verify_draw(c, bar, &m, -1);
+    CHECK(watchedFillCalls == 1 && watchedFillColor == colors.iHoverColor);
     before = overflowSelections;
     CHECK(xuiInputPointerDown(c, x, y, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK);
     CHECK(xuiDispatchPendingEvents(c) == XUI_OK);
     CHECK(xuiInputPointerUp(c, x, y, XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK);
     CHECK(xuiDispatchPendingEvents(c) == XUI_OK);
-    CHECK(overflowSelections == before + 1 && lastFirst == 3 && lastCount == 3);
+    CHECK(overflowSelections == before + 1 && lastFirst == 2 && lastCount == 4);
+    watchFill = 0;
     m.fPaddingX = m.fPaddingY = 3.75f; m.fIconSize = 14.25f; m.fIconGap = 2.75f;
     CHECK(xuiToolbarSetMetrics(bar, &m) == XUI_OK);
     memset(&got, 0, sizeof(got)); got.iSize = sizeof(got);

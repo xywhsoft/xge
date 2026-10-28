@@ -22,6 +22,18 @@ static int find_kind(const xui_code_token_t* pTokens, int iCount, int iKind)
 	return -1;
 }
 
+static int find_span(const xui_code_token_t* pTokens, int iCount,
+	int iKind, int iStart, int iEnd)
+{
+	int i;
+
+	for ( i = 0; i < iCount; i++ ) {
+		if ( pTokens[i].iKind == iKind && pTokens[i].iStartOffset == iStart &&
+		     pTokens[i].iEndOffset == iEnd ) return i;
+	}
+	return -1;
+}
+
 int main(void)
 {
 	const char* sCode;
@@ -66,8 +78,29 @@ int main(void)
 	memset(arrTokens, 0, sizeof(arrTokens));
 	iRet = xuiCodeLexerCTokenize("int \xE5\x8F\x98\xE9\x87\x8F = 1;", -1, arrTokens, (int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "c tokenize unicode");
-	iIndex = find_kind(arrTokens, iCount, XUI_CODE_TOKEN_TEXT);
-	XUI_TEST_CHECK(iIndex >= 0 && arrTokens[iIndex].iStartOffset == 4 && arrTokens[iIndex].iEndOffset == 10, "unicode token keeps utf8 span");
+	XUI_TEST_CHECK(find_span(arrTokens, iCount, XUI_CODE_TOKEN_IDENTIFIER, 4, 10) >= 0,
+		"unicode identifier keeps utf8 span");
+
+	memset(arrTokens, 0, sizeof(arrTokens));
+	iRet = xuiCodeLexerCTokenize("e\xCC\x81 = 1;", -1, arrTokens,
+		(int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		find_span(arrTokens, iCount, XUI_CODE_TOKEN_IDENTIFIER, 0, 3) >= 0,
+		"combining identifier keeps grapheme span");
+	iRet = xuiCodeLexerCTokenize("/*x", -1, arrTokens,
+		(int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrTokens[0].iKind == XUI_CODE_TOKEN_COMMENT && arrTokens[0].iEndOffset == 3,
+		"unterminated block comment includes final byte");
+	iRet = xuiCodeLexerCTokenize("1+2", -1, arrTokens,
+		(int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 3 &&
+		arrTokens[0].iKind == XUI_CODE_TOKEN_NUMBER &&
+		arrTokens[1].iKind == XUI_CODE_TOKEN_OPERATOR &&
+		arrTokens[2].iKind == XUI_CODE_TOKEN_NUMBER,
+		"number does not consume binary operator");
+	iRet = xuiCodeLexerCTokenize("x", -1, NULL, 1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing token buffer rejected");
 
 	memset(arrRules, 0, sizeof(arrRules));
 	arrRules[0].iSize = sizeof(arrRules[0]);
@@ -94,6 +127,23 @@ int main(void)
 	XUI_TEST_CHECK(iIndex >= 0 && arrTokens[iIndex].iStartOffset == 6 && arrTokens[iIndex].iEndOffset == 9, "regex number");
 	iIndex = find_kind(arrTokens, iCount, XUI_CODE_TOKEN_OPERATOR);
 	XUI_TEST_CHECK(iIndex >= 0, "regex operator");
+
+	arrRules[0].sPattern = "[0-9]+";
+	iRet = xuiCodeLexerRegexTokenize("e\xCC\x81", -1, arrRules, 1,
+		arrTokens, 16, &iCount, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrTokens[0].iKind == XUI_CODE_TOKEN_TEXT &&
+		arrTokens[0].iStartOffset == 0 && arrTokens[0].iEndOffset == 3,
+		"regex unmatched grapheme is one text token");
+	arrRules[0].sPattern = "e";
+	iRet = xuiCodeLexerRegexTokenize("e\xCC\x81", -1, arrRules, 1,
+		arrTokens, 16, &iCount, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrTokens[0].iKind == XUI_CODE_TOKEN_NUMBER && arrTokens[0].iEndOffset == 3,
+		"regex token expands to grapheme boundary");
+	iRet = xuiCodeLexerRegexTokenize("abc", -1, arrRules, 0,
+		arrTokens, 16, &iCount, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "empty regex rules rejected");
 
 	arrRules[0].sPattern = "[";
 	iRet = xuiCodeLexerRegexTokenize("abc", -1, arrRules, 1, arrTokens, 16, &iCount, sError, sizeof(sError));

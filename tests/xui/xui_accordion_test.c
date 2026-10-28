@@ -20,6 +20,10 @@ typedef struct xui_accordion_test_events_t {
 	int iLastId;
 } xui_accordion_test_events_t;
 
+typedef struct xui_accordion_destroy_events_t {
+	int iCount;
+} xui_accordion_destroy_events_t;
+
 static xui_style_value_t __xuiAccordionStyleFloat(float fValue)
 {
 	xui_style_value_t tValue;
@@ -62,6 +66,15 @@ static void __xuiAccordionSelected(xui_widget pWidget, int iIndex, int iId, void
 		pEvents->iLastIndex = iIndex;
 		pEvents->iLastId = iId;
 	}
+}
+
+static void __xuiAccordionDestroySelected(xui_widget pWidget, int iIndex, int iId, void* pUser)
+{
+	xui_accordion_destroy_events_t* pEvents = (xui_accordion_destroy_events_t*)pUser;
+	(void)iIndex;
+	(void)iId;
+	if ( pEvents != NULL ) pEvents->iCount++;
+	(void)xuiWidgetDestroy(pWidget);
 }
 
 static int __xuiAccordionLayoutRender(xui_context pContext, xui_surface pTarget)
@@ -147,15 +160,18 @@ int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_accordion_test_events_t tEvents;
+	xui_accordion_destroy_events_t tDestroy;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pAccordion;
+	xui_widget pDestroyAccordion;
 	xui_widget pInvalid;
 	xui_widget pClient;
 	xui_surface pTarget;
 	xui_surface pHeaderCache;
 	xui_accordion_desc_t tDesc;
 	xui_accordion_desc_t tInvalidDesc;
+	xui_accessible_node_t tNode;
 	xui_style_property_t tStyle;
 	xui_rect_t tWorld;
 	xui_rect_t tHeader;
@@ -174,15 +190,18 @@ int main(void)
 	int i;
 	int iFailed;
 	int iRet;
+	int iBefore;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pAccordion = NULL;
+	pDestroyAccordion = NULL;
 	pInvalid = NULL;
 	pTarget = NULL;
 	pHeaderCache = NULL;
 	iFailed = 0;
 	memset(&tEvents, 0, sizeof(tEvents));
+	memset(&tDestroy, 0, sizeof(tDestroy));
 	tEvents.iLastIndex = -1;
 	tEvents.iLastId = 0;
 	xuiTestProxyInit(&tState);
@@ -285,18 +304,43 @@ int main(void)
 	XUI_TEST_CHECK(__xuiAccordionNear(tClient1.fH, 0.0f), "collapsed client height");
 	XUI_TEST_CHECK(tArrow.fW > 0.0f && tArrow.fH > 0.0f, "arrow rect");
 	XUI_TEST_CHECK(xuiAccordionGetContentHeight(pAccordion) > 90.0f, "content height");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pAccordion) == 4 &&
+		xuiWidgetGetAccessibleNode(pAccordion, 0, &tNode) == XUI_OK &&
+		tNode.iRole == XUI_ACCESSIBLE_ROLE_GROUP && tNode.iRowCount == 3 &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_VERTICAL) != 0,
+		"accordion accessibility root");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pAccordion, 1, &tNode) == XUI_OK &&
+		tNode.iRole == XUI_ACCESSIBLE_ROLE_BUTTON && strcmp(tNode.sName, "General") == 0 &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_EXPANDED) != 0 &&
+		(tNode.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE)) != 0,
+		"accordion accessibility section");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pAccordion, 3, &tNode) == XUI_OK &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0 &&
+		xuiWidgetPerformAccessibleAction(pAccordion, 4u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL) == XUI_ERROR_INVALID_STATE,
+		"disabled accordion section rejects accessibility action");
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pAccordion, 2u, XUI_ACCESSIBLE_ACTION_FOCUS, NULL) == XUI_OK &&
+		xuiAccordionGetSelected(pAccordion) == 0 && xuiGetFocusWidget(pContext) == pAccordion,
+		"accessibility focuses accordion section");
 
 	tWorld = xuiWidgetGetWorldRect(pAccordion);
 	tHeader = xuiAccordionGetHeaderRect(pAccordion, 1);
+	iBefore = tEvents.iSelectCount;
 	iRet = __xuiAccordionDispatchClick(pContext, tWorld.fX + tHeader.fX + tHeader.fW * 0.5f, tWorld.fY + tHeader.fY + tHeader.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "click section 1");
 	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render after click");
-	XUI_TEST_CHECK(xuiAccordionIsExpanded(pAccordion, 1) == 1 && tEvents.iSelectCount == 1 && tEvents.iLastIndex == 1 && tEvents.iLastId == 102, "click expands and notifies");
+	XUI_TEST_CHECK(xuiAccordionIsExpanded(pAccordion, 1) == 1 && tEvents.iSelectCount == iBefore + 1 && tEvents.iLastIndex == 1 && tEvents.iLastId == 102, "click expands and notifies");
 
 	tHeader = xuiAccordionGetHeaderRect(pAccordion, 2);
+	iBefore = tEvents.iSelectCount;
 	iRet = __xuiAccordionDispatchClick(pContext, tWorld.fX + tHeader.fX + tHeader.fW * 0.5f, tWorld.fY + tHeader.fY + tHeader.fH * 0.5f);
-	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == 1, "disabled click ignored");
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore, "disabled click ignored");
 
 	iRet = xuiAccordionSetMode(pAccordion, XUI_ACCORDION_MODE_SINGLE);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetMode(pAccordion) == XUI_ACCORDION_MODE_SINGLE, "single mode");
@@ -343,10 +387,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "key down");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSelected(pAccordion) == 0, "keyboard step skips disabled");
+	iBefore = tEvents.iSelectCount;
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "key space");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionIsExpanded(pAccordion, 0) == 1 && xuiAccordionIsExpanded(pAccordion, 1) == 0 && tEvents.iSelectCount == 2, "keyboard toggles selected");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionIsExpanded(pAccordion, 0) == 1 &&
+		xuiAccordionIsExpanded(pAccordion, 1) == 0 && tEvents.iSelectCount == iBefore + 1,
+		"keyboard toggles selected");
+	iBefore = tEvents.iSelectCount;
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiAccordionIsExpanded(pAccordion, 0) == 0 && xuiAccordionGetSelected(pAccordion) == 0 &&
+		tEvents.iSelectCount == iBefore + 1, "left collapses and preserves header focus");
+	iBefore = tEvents.iSelectCount;
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiAccordionIsExpanded(pAccordion, 0) == 1 && xuiAccordionGetSelected(pAccordion) == 0 &&
+		tEvents.iSelectCount == iBefore + 1, "right expands selected section");
 	XUI_TEST_CHECK((xuiAccordionGetState(pAccordion) & XUI_WIDGET_STATE_FOCUS) != 0, "focus state");
 	XUI_TEST_CHECK(xuiAccordionGetChangeCount(pAccordion) >= 3, "change count");
 
@@ -407,12 +464,61 @@ int main(void)
 
 	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render before clear capture");
+	tWorld = xuiWidgetGetWorldRect(xuiAccordionGetHeaderWidget(pAccordion, 0));
+	fPressX = tWorld.fX + tWorld.fW * 0.5f;
+	fPressY = tWorld.fY + tWorld.fH * 0.5f;
+	iBefore = tEvents.iSelectCount;
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)fPressX, (int)fPressY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) ==
+			xuiAccordionGetHeaderWidget(pAccordion, 0) &&
+		xuiAccordionGetActiveIndex(pAccordion) == 0,
+		"first touch owns accordion header press");
+	tHeader = xuiWidgetGetWorldRect(xuiAccordionGetHeaderWidget(pAccordion, 1));
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tHeader.fX + tHeader.fW * 0.5f),
+		(int)(tHeader.fY + tHeader.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tHeader.fX + tHeader.fW * 0.5f),
+		(int)(tHeader.fY + tHeader.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) ==
+			xuiAccordionGetHeaderWidget(pAccordion, 0) &&
+		xuiAccordionGetActiveIndex(pAccordion) == 0,
+		"unrelated touch cannot toggle or release accordion header");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)fPressX, (int)fPressY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore + 1 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL &&
+		xuiAccordionGetActiveIndex(pAccordion) == -1,
+		"owning touch toggles accordion header once");
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render after multi-touch header test");
 	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0), "clear capture acquired");
 	iRet = xuiAccordionClear(pAccordion);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pAccordion) == 0 && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "clear cancels header capture");
 	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK, "release after clear");
+
+	iRet = xuiAccordionCreate(pContext, &pDestroyAccordion, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyAccordion != NULL, "destroy callback accordion create");
+	XUI_TEST_CHECK(xuiWidgetAddChild(pRoot, pDestroyAccordion) == XUI_OK &&
+		xuiAccordionAddSection(pDestroyAccordion, "Destroy", 901, 0, NULL) == XUI_OK &&
+		xuiAccordionSetSelect(pDestroyAccordion, __xuiAccordionDestroySelected, &tDestroy) == XUI_OK,
+		"destroy callback accordion setup");
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pDestroyAccordion, 2u,
+		XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL) == XUI_OK && tDestroy.iCount == 1,
+		"selection callback may destroy accordion");
+	pDestroyAccordion = NULL;
 
 cleanup:
 	if ( pTarget != NULL ) {

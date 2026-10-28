@@ -8,6 +8,8 @@ if errorlevel 1 (popd & exit /b 1)
 rem Inspect private history storage without adding a public testing API.
 call tools/build/xui_sources.bat
 set XUI_SRC=%XUI_SRC:src\xui\controls\xui_terminal.c=%
+set XUI_SRC=%XUI_SRC:src\xui\core\xui_proxy_xge.c=%
+set XUI_SRC=%XUI_SRC:src\xui\controls\xui_file_dialog.c=%
 set OUT=build\xui_terminal_history_memory_test.exe
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 gcc %FLAGS% @config/includes.rsp -c -o build\xui_terminal_history_memory_test.o tests\xui\xui_terminal_history_memory_test.c

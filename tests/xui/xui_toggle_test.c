@@ -31,6 +31,18 @@ static void __xuiToggleChanged(xui_widget pWidget, int bChecked, void* pUser)
 	}
 }
 
+static void __xuiToggleDestroyParentChanged(xui_widget pWidget, int bChecked, void* pUser)
+{
+	int* pCount;
+	xui_widget pParent;
+
+	(void)bChecked;
+	pCount = (int*)pUser;
+	if ( pCount != NULL ) (*pCount)++;
+	pParent = xuiWidgetGetParent(pWidget);
+	if ( pParent != NULL ) xuiWidgetDestroy(pParent);
+}
+
 static int __xuiToggleClick(xui_context pContext, xui_widget pWidget)
 {
 	xui_rect_t tRect;
@@ -60,6 +72,10 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pToggle;
+	xui_widget pChild;
+	xui_widget pDestroyHost;
+	xui_widget pDestroyToggle;
+	xui_widget pInvalidWidget;
 	xui_surface pTarget;
 	xui_surface pAtlas;
 	xui_font pFont;
@@ -71,17 +87,26 @@ int main(void)
 	xui_rect_t tSrc;
 	xui_rect_t tLastSrc;
 	xui_rect_i_t tFullRect;
+	xui_accessible_node_t tAccessible;
+	xui_event_t tEvent;
 	int iChanged;
+	int iDestroyChanged;
 	int iFailed;
 	int iRet;
+	xui_toggle_desc_t tInvalidDesc;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pToggle = NULL;
+	pChild = NULL;
+	pDestroyHost = NULL;
+	pDestroyToggle = NULL;
+	pInvalidWidget = NULL;
 	pTarget = NULL;
 	pAtlas = NULL;
 	pFont = NULL;
 	iChanged = 0;
+	iDestroyChanged = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -105,6 +130,7 @@ int main(void)
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = "Enable feature";
+	tDesc.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL;
 	tDesc.bChecked = 1;
 	iRet = xuiToggleCreate(pContext, &pToggle, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pToggle != NULL, "toggle create");
@@ -117,9 +143,22 @@ int main(void)
 	XUI_TEST_CHECK(xuiToggleGetTrackHeight(pToggle) == 22.0f, "default track height");
 	XUI_TEST_CHECK(xuiToggleGetThumbSize(pToggle) == 14.0f, "default thumb size");
 	XUI_TEST_CHECK(xuiToggleGetGap(pToggle) == 8.0f, "default gap");
+	iRet = xuiWidgetSetAccessibleName(pToggle, "Feature switch");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set accessible name");
+	iRet = xuiWidgetSetAccessibleDescription(pToggle, "Controls the optional feature");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set accessible description");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pToggle, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_SWITCH &&
+	               strcmp(tAccessible.sName, "Feature switch") == 0 &&
+	               strcmp(tAccessible.sDescription, "Controls the optional feature") == 0,
+	               "toggle accessibility metadata");
 
 	xuiWidgetMeasure(pToggle, (xui_vec2_t){300.0f, 100.0f}, &tMeasured);
 	XUI_TEST_CHECK(tMeasured.fX > 40.0f && tMeasured.fY >= 24.0f, "measure includes text");
+	XUI_TEST_CHECK((tState.iLastTextMeasureFlags & XUI_TEXT_SHAPE_RTL) != 0,
+		"toggle rtl reaches text measurement");
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 260, 100, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	iRet = xuiLayout(pContext);
@@ -137,6 +176,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set inner text");
 	XUI_TEST_CHECK(strcmp(xuiToggleGetUncheckedText(pToggle), "OFF") == 0, "get unchecked text");
 	XUI_TEST_CHECK(strcmp(xuiToggleGetCheckedText(pToggle), "ON") == 0, "get checked text");
+	iRet = xuiToggleSetInnerText(pToggle, xuiToggleGetUncheckedText(pToggle) + 1,
+	                            xuiToggleGetCheckedText(pToggle) + 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetUncheckedText(pToggle), "FF") == 0 &&
+	               strcmp(xuiToggleGetCheckedText(pToggle), "N") == 0,
+	               "self-aliased inner text update");
+	iRet = xuiToggleSetInnerText(pToggle, "OFF", "ON");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore inner text");
 	iRet = xuiToggleSetInnerTextColor(pToggle, XUI_COLOR_RGBA(90, 108, 125, 255), XUI_COLOR_RGBA(255, 255, 255, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set inner text color");
 	iRet = xuiToggleSetInnerTextMetrics(pToggle, 7.0f, 3.0f);
@@ -164,12 +210,53 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetGap(pToggle) == 10.0f, "set gap");
 	iRet = xuiToggleSetText(pToggle, "Use custom atlas");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetText(pToggle), "Use custom atlas") == 0, "set text");
+	iRet = xuiToggleSetText(pToggle, xuiToggleGetText(pToggle) + 4);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetText(pToggle), "custom atlas") == 0,
+	               "self-aliased outer text update");
 	iRet = xuiToggleSetChange(pToggle, __xuiToggleChanged, &iChanged);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set change callback");
 
 	iRet = __xuiToggleClick(pContext, pToggle);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer click");
 	XUI_TEST_CHECK(xuiToggleGetChecked(pToggle) == 1 && iChanged == 1, "pointer click toggles");
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		20, 16, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pToggle,
+		"first touch owns toggle press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		20, 16, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH, 20, 16, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 1 &&
+		iChanged == 1 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pToggle &&
+		(xuiToggleGetState(pToggle) & XUI_WIDGET_STATE_ACTIVE) != 0,
+		"unrelated touch cannot click or release toggle press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		20, 16, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 0 &&
+		iChanged == 2 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch commits toggle click once");
+	iRet = xuiToggleSetChecked(pToggle, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore toggle before descendant click");
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "child create");
+	iRet = xuiWidgetAddChild(pToggle, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK, "child add");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_CLICK;
+	tEvent.pTarget = pChild;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 1 && iChanged == 2,
+	               "descendant click does not toggle switch");
 	iRet = xuiToggleSetChecked(pToggle, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 0, "reset before keyboard");
 	iRet = xuiSetFocusWidget(pContext, pToggle);
@@ -182,7 +269,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "key up");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch key up");
-	XUI_TEST_CHECK(xuiToggleGetChecked(pToggle) == 1 && iChanged == 2, "keyboard space toggles");
+	XUI_TEST_CHECK(xuiToggleGetChecked(pToggle) == 1 && iChanged == 3, "keyboard space toggles");
 	iRet = xuiToggleSetChecked(pToggle, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset before blur");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
@@ -198,7 +285,7 @@ int main(void)
 	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "key up after blur");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 0 && iChanged == 2,
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 0 && iChanged == 3,
 	               "blurred keyboard press does not toggle");
 	iRet = xuiToggleSetInnerTextMetrics(pToggle, NAN, 3.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan inner padding");
@@ -225,6 +312,31 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render atlas toggle");
 	tLastSrc = tSrc;
 	XUI_TEST_CHECK(__xuiToggleRectEq(tLastSrc, 48.0f, 0.0f, 48.0f, 24.0f), "checked atlas rect");
+
+	iRet = xuiWidgetCreate(pContext, &pDestroyHost);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyHost != NULL, "destroy host create");
+	iRet = xuiWidgetAddChild(pRoot, pDestroyHost);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy host add");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	iRet = xuiToggleCreate(pContext, &pDestroyToggle, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyToggle != NULL, "destroy toggle create");
+	iRet = xuiWidgetAddChild(pDestroyHost, pDestroyToggle);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy toggle add");
+	iRet = xuiToggleSetChange(pDestroyToggle, __xuiToggleDestroyParentChanged, &iDestroyChanged);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback setup");
+	iRet = xuiWidgetPerformAccessibleAction(pDestroyToggle, 1, XUI_ACCESSIBLE_ACTION_TOGGLE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyChanged == 1,
+	               "change callback may destroy toggle parent without stale access");
+	pDestroyHost = NULL;
+	pDestroyToggle = NULL;
+
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fGap = NAN;
+	pInvalidWidget = pRoot;
+	iRet = xuiToggleCreate(pContext, &pInvalidWidget, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWidget == NULL,
+	               "invalid toggle create clears output");
 
 cleanup:
 	if ( pTarget != NULL ) {

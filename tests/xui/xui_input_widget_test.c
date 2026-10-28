@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -48,6 +49,18 @@ static void __xuiInputWidgetDecorationClick(xui_widget pWidget, xui_input_decora
 	if ( pData != NULL ) {
 		pData->iClickCount++;
 	}
+}
+
+static int __xuiInputWidgetEditEvent(xui_widget pWidget,
+	const xui_edit_event_t* pEvent, void* pUser)
+{
+	int* pSelectionEvents = (int*)pUser;
+	(void)pWidget;
+	if ( pSelectionEvents != NULL && pEvent != NULL &&
+	     pEvent->iType == XUI_EDIT_EVENT_SELECTION_CHANGED ) {
+		(*pSelectionEvents)++;
+	}
+	return XUI_OK;
 }
 
 static int __xuiInputWidgetNear(float fA, float fB)
@@ -241,6 +254,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pInput;
+	xui_widget pProbe;
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pInputCache;
@@ -264,12 +278,14 @@ int main(void)
 	int iStart;
 	int iEnd;
 	int iVectorDrawBase;
+	int iSelectionEvents;
 	int iFailed;
 	int iRet;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pInput = NULL;
+	pProbe = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
 	pInputCache = NULL;
@@ -278,6 +294,7 @@ int main(void)
 	pClearDecoration = NULL;
 	pGoDecoration = NULL;
 	iVectorDrawBase = 0;
+	iSelectionEvents = 0;
 	iFailed = 0;
 	sNiHao = "\xE4\xBD\xA0\xE5\xA5\xBD";
 	sEmojiText = "A"
@@ -300,6 +317,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "default font");
 	iRet = xuiInputViewport(pContext, 480.0f, 260.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fBorderWidth = NAN;
+	pProbe = (xui_widget)pContext;
+	iRet = xuiInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"invalid input descriptor clears output");
 
 	iRet = xuiWidgetCreate(pContext, &pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK && pRoot != NULL, "root create");
@@ -338,6 +362,22 @@ int main(void)
 	XUI_TEST_CHECK(xuiInputGetMaxLength(pInput) == 5, "max length");
 	XUI_TEST_CHECK(xuiInputGetTextAlign(pInput) == XUI_INPUT_ALIGN_LEFT, "align");
 	XUI_TEST_CHECK((xuiInputGetState(pInput) & XUI_INPUT_STATE_ERROR) == 0u, "initial state");
+	iRet = xuiInputSetFont(pInput, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiInputGetFont(pInput) == pFont,
+		"null input font restores default font");
+	iRet = xuiInputSetBorderWidth(pInput, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiInputGetBorderWidth(pInput) == 1.0f,
+		"input border rejects NaN and preserves value");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiInputGetState(pInput) & XUI_WIDGET_STATE_DISABLED) != 0u,
+		"input inherits disabled state from parent");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, 40, 42) != XUI_CURSOR_IBEAM,
+		"effectively disabled input does not expose ibeam cursor");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiInputGetState(pInput) & XUI_WIDGET_STATE_DISABLED) == 0u,
+		"input restores enabled state with parent");
 	iRet = xuiInputSetError(pInput, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && (xuiInputGetState(pInput) & XUI_INPUT_STATE_ERROR) != 0u, "error state");
 	iRet = xuiInputSetError(pInput, 0);
@@ -476,10 +516,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "word render");
 	tWorldRect = xuiWidgetGetWorldRect(pInput);
 	tTextRect = xuiInputGetTextRect(pInput);
-	iRet = __xuiInputWidgetDoubleClick(pContext, tWorldRect.fX + tTextRect.fX + 25.0f, tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f);
+	iRet = xuiEditSetEvent(pInput, __xuiInputWidgetEditEvent, &iSelectionEvents);
+	XUI_TEST_CHECK(iRet == XUI_OK, "word selection edit callback");
+	iRet = __xuiInputWidgetClick(pContext, tWorldRect.fX + tTextRect.fX + 25.0f,
+		tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "first word click");
+	iSelectionEvents = 0;
+	iRet = __xuiInputWidgetClick(pContext, tWorldRect.fX + tTextRect.fX + 25.0f,
+		tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "double click word");
 	iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 3 && iEnd == 5, "double click selects word");
+	XUI_TEST_CHECK(iSelectionEvents == 1, "double click reports one selection change");
 	iRet = xuiInputSetSelection(pInput, 5, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK, "cursor after double click");
 	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_KEY_LEFT, XUI_MOD_CTRL);
@@ -556,6 +604,65 @@ int main(void)
 	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_TEST_KEY_BACKSPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiInputGetText(pInput)[0] == '\0',
 		"backspace deletes astral emoji");
+	iRet = xuiInputSetText(pInput, "abcdefgh");
+	if ( iRet == XUI_OK ) iRet = xuiInputSetSelection(pInput, 0, 0);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "prepare input owner touch selection");
+	tWorldRect = xuiWidgetGetWorldRect(pInput);
+	tTextRect = xuiInputGetTextRect(pInput);
+	iRet = xuiInputPointerDownEx(pContext, 1001u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX + 3.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1001u, XUI_POINTER_TYPE_TOUCH) == pInput,
+		"input owner touch captures selection");
+	iRet = xuiInputPointerDownEx(pContext, 1002u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX + 50.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 1002u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tWorldRect.fX + tTextRect.fX + 70.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1002u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tWorldRect.fX + tTextRect.fX + 70.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) {
+		int iOtherStart;
+		int iOtherEnd;
+		iRet = xuiInputGetSelection(pInput, &iOtherStart, &iOtherEnd);
+		if ( iRet == XUI_OK && (iOtherStart != iStart || iOtherEnd != iEnd) ) {
+			iRet = XUI_ERROR_INVALID_STATE;
+		}
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1001u, XUI_POINTER_TYPE_TOUCH) == pInput &&
+		xuiGetPointerCaptureEx(pContext, 1002u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot change input selection or end owner capture");
+	iRet = xuiInputPointerMoveEx(pContext, 1001u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX + 50.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iEnd > iStart,
+		"input owner touch extends selection");
+	iRet = xuiInputPointerUpEx(pContext, 1001u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorldRect.fX + tTextRect.fX + 50.0f),
+		(int)(tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1001u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"input owner touch releases selection capture");
 	iRet = xuiInputSetText(pInput, "abcd");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set drag move text");
 	iRet = xuiInputSetSelection(pInput, 1, 3);
@@ -602,6 +709,30 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "") == 0, "IME preedit render keeps document unchanged");
 	iRet = __xuiInputWidgetDispatchIme(pContext, sNiHao);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), sNiHao) == 0, "IME committed text");
+	iRet = xuiInputSetText(pInput, "seed");
+	if ( iRet == XUI_OK ) iRet = __xuiInputWidgetDispatchImePreedit(pContext, "pending");
+	if ( iRet == XUI_OK ) iRet = xuiInputSetText(pInput, "A");
+	if ( iRet == XUI_OK ) iRet = __xuiInputWidgetDispatchText(pContext, 'B');
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "AB") == 0,
+		"programmatic input replacement cancels stale IME composition");
+	iRet = xuiInputSetText(pInput, "prefix");
+	if ( iRet == XUI_OK ) iRet = xuiInputSetText(pInput, xuiInputGetText(pInput) + 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "efix") == 0,
+		"programmatic input replacement accepts an aliased source");
+	iRet = xuiInputSetText(pInput, "");
+	if ( iRet == XUI_OK ) iRet = __xuiInputWidgetDispatchImePreedit(pContext, "readonly");
+	if ( iRet == XUI_OK ) iRet = xuiInputSetReadonly(pInput, 1);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetReadonly(pInput, 0);
+	if ( iRet == XUI_OK ) iRet = __xuiInputWidgetDispatchText(pContext, 'R');
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "R") == 0,
+		"readonly transition cancels active IME composition");
+	iRet = xuiInputSetText(pInput, "");
+	if ( iRet == XUI_OK ) iRet = __xuiInputWidgetDispatchImePreedit(pContext, "password");
+	if ( iRet == XUI_OK ) iRet = xuiInputSetPassword(pInput, 1);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetPassword(pInput, 0);
+	if ( iRet == XUI_OK ) iRet = __xuiInputWidgetDispatchText(pContext, 'P');
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "P") == 0,
+		"password transition cancels active IME composition");
 	iRet = xuiInputSetText(pInput, "12345");
 	XUI_TEST_CHECK(iRet == XUI_OK, "IME replacement seed text");
 	iRet = xuiInputSetSelection(pInput, 1, 4);
@@ -768,6 +899,25 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "") == 0, "menu delete");
 	iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == iEnd, "selection cleared");
+
+	iRet = xuiInputSetText(pInput, "capture");
+	XUI_TEST_CHECK(iRet == XUI_OK, "capture release input text");
+	tWorldRect = xuiWidgetGetWorldRect(pInput);
+	tTextRect = xuiInputGetTextRect(pInput);
+	iRet = xuiInputPointerDown(pContext,
+		tWorldRect.fX + tTextRect.fX + 8.0f,
+		tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pInput,
+		"input captures selection pointer");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"ancestor disable releases input pointer capture");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore input ancestor enabled state");
 
 cleanup:
 	if ( pTarget != NULL ) {

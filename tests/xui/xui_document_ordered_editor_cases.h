@@ -42,8 +42,8 @@ static int ordered_clipboard(xui_proxy proxy, const char* text)
             CHECK(xuiDocumentEditorSetReadOnly(editor, 1) == XUI_DOC_ERROR_BUSY);
             CHECK(xuiEditCopy(editor) == XUI_DOC_ERROR_BUSY && xuiEditSetSelection(editor, 0, 0) == XUI_DOC_ERROR_BUSY);
         }
-        uint64_t started = xrtClock(); ordered_slow_calls++;
-        while (xrtClock() - started < 8000) xrtThreadYield();
+        uint64_t started = document_test_clock_microseconds(); ordered_slow_calls++;
+        while (document_test_clock_microseconds() - started < 8000) xrtThreadYield();
     }
     ordered_clipboard_callback(); return ordered_clipboard_set(proxy, text);
 }
@@ -73,8 +73,8 @@ static int ordered_parent_event(xui_widget w, const xui_event_t* event, void* da
 }
 static void ordered_wait_ready(xui_widget editor)
 {
-    xdeadline deadline = xrtDeadlineAfter(10000000); xui_doc_prepare_info_t info;
-    do { info = async_editor_info(editor); CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield(); }
+    uint64_t deadline = document_test_deadline_after(10000000); xui_doc_prepare_info_t info;
+    do { info = async_editor_info(editor); CHECK(!document_test_deadline_expired(deadline)); xrtThreadYield(); }
     while (info.iState != XUI_DOC_PREPARE_READY);
 }
 static void ordered_pause(async_editor_allocator* a, xui_widget editor)

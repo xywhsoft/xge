@@ -25,6 +25,18 @@ typedef struct xui_date_picker_test_events_t {
 	int iMode;
 } xui_date_picker_test_events_t;
 
+typedef struct xui_date_picker_destroy_test_t {
+	xui_widget* ppWidget;
+	int iCount;
+	int bSawClosed;
+} xui_date_picker_destroy_test_t;
+
+typedef struct xui_date_picker_event_destroy_test_t {
+	xui_widget* ppWidget;
+	int iEventType;
+	int iCount;
+} xui_date_picker_event_destroy_test_t;
+
 static int __xuiDatePickerRectEq(xui_rect_t tRect, float fX, float fY, float fW, float fH)
 {
 	return (tRect.fX == fX) && (tRect.fY == fY) && (tRect.fW == fW) && (tRect.fH == fH);
@@ -128,6 +140,36 @@ static void __xuiDatePickerClear(xui_widget pWidget, xtime tStart, xtime tEnd, i
 	pEvents->iMode = iMode;
 }
 
+static void __xuiDatePickerDestroyOnCommit(xui_widget pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser)
+{
+	xui_date_picker_destroy_test_t* pDestroy;
+
+	(void)tStart;
+	(void)tEnd;
+	(void)iMode;
+	pDestroy = (xui_date_picker_destroy_test_t*)pUser;
+	if ( pDestroy == NULL ) return;
+	pDestroy->iCount++;
+	pDestroy->bSawClosed = !xuiDatePickerIsOpen(pWidget);
+	xuiWidgetDestroy(pWidget);
+	if ( pDestroy->ppWidget != NULL ) *pDestroy->ppWidget = NULL;
+}
+
+static int __xuiDatePickerDestroyVictimOnEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_date_picker_event_destroy_test_t* pDestroy = (xui_date_picker_event_destroy_test_t*)pUser;
+	xui_widget pVictim;
+
+	(void)pWidget;
+	if ( (pDestroy == NULL) || (pEvent == NULL) || (pEvent->iType != pDestroy->iEventType) ||
+	     (pDestroy->ppWidget == NULL) || (*pDestroy->ppWidget == NULL) ) return XUI_OK;
+	pVictim = *pDestroy->ppWidget;
+	*pDestroy->ppWidget = NULL;
+	pDestroy->iCount++;
+	xuiWidgetDestroy(pVictim);
+	return XUI_OK;
+}
+
 static int __xuiDatePickerRender(xui_context pContext, xui_surface pTarget)
 {
 	xui_rect_i_t tFullRect;
@@ -137,6 +179,21 @@ static int __xuiDatePickerRender(xui_context pContext, xui_surface pTarget)
 }
 
 static int __xuiDatePickerClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, (int)floorf(fX + 0.5f), (int)floorf(fY + 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, (int)floorf(fX + 0.5f), (int)floorf(fY + 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiDatePickerDispatchDown(xui_context pContext, float fX, float fY)
 {
 	int iRet;
 
@@ -175,6 +232,20 @@ static int __xuiDatePickerInputText(xui_context pContext, const char* sText)
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
+}
+
+static int __xuiDatePickerInputWheel(xui_context pContext, xui_widget pPanel, xui_rect_t tRect, float fWheelY)
+{
+	xui_rect_t tWorld;
+	int iRet;
+
+	tWorld = xuiWidgetGetWorldRect(pPanel);
+	iRet = xuiInputPointerWheel(pContext,
+		(int)floorf(tWorld.fX + tRect.fX + tRect.fW * 0.5f + 0.5f),
+		(int)floorf(tWorld.fY + tRect.fY + tRect.fH * 0.5f + 0.5f),
+		0.0f, fWheelY, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
 }
 
 static void __xuiDatePickerHeaderFieldRects(xui_widget pPicker, int iPanel, xui_rect_t* pYear, xui_rect_t* pMonth)
@@ -244,23 +315,43 @@ int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_date_picker_test_events_t tEvents;
+	xui_date_picker_destroy_test_t tDestroy;
+	xui_date_picker_event_destroy_test_t tFocusDestroy;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pPicker;
+	xui_widget pInvalid;
+	xui_widget pDestroyPicker;
+	xui_widget pFocusDestroyPicker;
+	xui_widget pFocusDestroyPanel;
+	xui_widget pSpanPicker;
 	xui_widget pPopup;
 	xui_widget pPanel;
 	xui_surface pTarget;
 	xui_surface pOwnerCache;
 	xui_font pFont;
 	xui_date_picker_desc_t tDesc;
+	xui_accessible_node_t tAccessible;
+	xui_accessible_value_t tAccessibleValue;
 	xui_rect_t tRect;
 	xui_rect_t tYearRect;
 	xui_rect_t tMonthRect;
 	xui_rect_t tTimeRect;
+	xui_rect_t tWorld;
 	xtime tStart;
 	xtime tEnd;
 	xtime tTarget;
 	float fBorderWidth;
+	float fPopupWidth;
+	float fPopupHeight;
+	float fCheckWidth;
+	float fCheckHeight;
+	int bHasMin;
+	int bHasMax;
+	int iChangingBefore;
+	int iCommitBefore;
+	char sLongFormat[80];
+	char sLongSeparator[40];
 	int iFailed;
 	int iRet;
 	int iIndex;
@@ -268,11 +359,18 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pPicker = NULL;
+	pInvalid = NULL;
+	pDestroyPicker = NULL;
+	pFocusDestroyPicker = NULL;
+	pFocusDestroyPanel = NULL;
+	pSpanPicker = NULL;
 	pTarget = NULL;
 	pOwnerCache = NULL;
 	pFont = NULL;
 	iFailed = 0;
 	memset(&tEvents, 0, sizeof(tEvents));
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	memset(&tFocusDestroy, 0, sizeof(tFocusDestroy));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -291,6 +389,32 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 760.0f, 620.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iMode = XUI_DATE_PICKER_MODE_DATE;
+	tDesc.fPopupWidth = NAN;
+	pInvalid = pRoot;
+	iRet = xuiDatePickerCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject NaN descriptor popup width and clear output");
+	tDesc.fPopupWidth = 200.0f;
+	pInvalid = pRoot;
+	iRet = xuiDatePickerCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject undersized descriptor popup");
+	tDesc.fPopupWidth = 0.0f;
+	tDesc.fBorderWidth = INFINITY;
+	pInvalid = pRoot;
+	iRet = xuiDatePickerCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject infinite descriptor border");
+	tDesc.fBorderWidth = 0.0f;
+	tDesc.bHasMin = 1;
+	tDesc.bHasMax = 1;
+	tDesc.tMin = __xuiDatePickerTestDate(2026, 6, 1);
+	tDesc.tMax = __xuiDatePickerTestDate(2026, 5, 1);
+	pInvalid = pRoot;
+	iRet = xuiDatePickerCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject reversed descriptor limits");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -323,6 +447,18 @@ int main(void)
 	XUI_TEST_CHECK(strcmp(xuiDatePickerGetText(pPicker), "2026-05-19") == 0, "date text");
 	iRet = xuiDatePickerGetMetrics(pPicker, &fBorderWidth);
 	XUI_TEST_CHECK(iRet == XUI_OK && fBorderWidth == 1.0f, "default metrics");
+	iRet = xuiDatePickerGetPopupSize(pPicker, &fPopupWidth, &fPopupHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get initial popup size");
+	iRet = xuiDatePickerSetPopupSize(pPicker, NAN, fPopupHeight);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject NaN runtime popup size");
+	iRet = xuiDatePickerSetPopupSize(pPicker, 200.0f, fPopupHeight);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject undersized runtime popup size");
+	iRet = xuiDatePickerSetPopupSize(pPicker, fPopupWidth, 250.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject popup height that clips year options");
+	iRet = xuiDatePickerSetMetrics(pPicker, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite runtime border");
+	iRet = xuiDatePickerGetPopupSize(pPicker, &fCheckWidth, &fCheckHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && fCheckWidth == fPopupWidth && fCheckHeight == fPopupHeight, "invalid popup size preserves state");
 	pOwnerCache = xuiWidgetGetCacheSurface(pPicker, xuiWidgetGetStateId(pPicker));
 	XUI_TEST_CHECK(pOwnerCache != NULL, "owner cache surface");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pOwnerCache) >= 4, "owner cache draw count");
@@ -332,6 +468,33 @@ int main(void)
 	XUI_TEST_CHECK(__xuiDatePickerRectEq(tRect, 8.0f, 0.0f, 166.0f, 30.0f), "owner text rect local");
 	tRect = xuiDatePickerGetButtonRect(pPicker);
 	XUI_TEST_CHECK(__xuiDatePickerRectEq(tRect, 180.0f, 0.0f, 30.0f, 30.0f), "owner button rect local");
+
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pPicker, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_COMBOBOX &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_READONLY) != 0u &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_COLLAPSED) != 0u &&
+		strcmp(tAccessible.sValue, "2026-05-19") == 0,
+		"date picker accessibility node");
+	iRet = xuiWidgetPerformAccessibleAction(pPicker, tAccessible.iId,
+		XUI_ACCESSIBLE_ACTION_EXPAND, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "accessibility expands date picker");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pPicker, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_EXPANDED) != 0u,
+		"accessibility reports expanded date picker");
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pPicker, tAccessible.iId,
+		XUI_ACCESSIBLE_ACTION_COLLAPSE, NULL) == XUI_OK && !xuiDatePickerIsOpen(pPicker),
+		"accessibility collapses date picker");
+	memset(&tAccessibleValue, 0, sizeof(tAccessibleValue));
+	tAccessibleValue.iSize = sizeof(tAccessibleValue);
+	tAccessibleValue.iType = XUI_ACCESSIBLE_VALUE_TEXT;
+	tAccessibleValue.sText = "2026-05-20";
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pPicker, tAccessible.iId,
+		XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue) == XUI_ERROR_UNSUPPORTED,
+		"date picker rejects untyped accessibility value parsing");
 
 	iRet = xuiDatePickerSetMode(pPicker, XUI_DATE_PICKER_MODE_TIME);
 	XUI_TEST_CHECK(iRet == XUI_OK, "time mode");
@@ -345,6 +508,16 @@ int main(void)
 	XUI_TEST_CHECK(__xuiDatePickerRectEq(tRect, 12.0f, 24.0f, 244.0f, 104.0f), "time panel rect");
 	XUI_TEST_CHECK(__xuiDatePickerRectEq(tTimeRect, 58.0f, 71.0f, 72.0f, 28.0f), "time field vertical center");
 	XUI_TEST_CHECK(__xuiDatePickerTimeFieldsFit(pPicker, 0, 2), "time fields stay inside panel");
+	iRet = xuiDatePickerSetNullable(pPicker, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time nullable expands default popup");
+	iRet = xuiDatePickerGetPopupSize(pPicker, &fCheckWidth, &fCheckHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && fCheckWidth == 324.0f && fCheckHeight == 168.0f,
+		"nullable time footer fits popup");
+	iRet = xuiDatePickerSetNullable(pPicker, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time nullable off");
+	iRet = xuiDatePickerGetPopupSize(pPicker, &fCheckWidth, &fCheckHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && fCheckWidth == 268.0f && fCheckHeight == 168.0f,
+		"noncustom popup returns to mode default");
 	iRet = xuiDatePickerSetShowSecond(pPicker, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "show second");
 	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestTime(10, 15, 30));
@@ -355,6 +528,10 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "time edit layout");
 	pPanel = xuiDatePickerGetPanelWidget(pPicker);
+	iChangingBefore = tEvents.iChanging;
+	iRet = __xuiDatePickerInputWheel(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 0), 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iChanging == iChangingBefore,
+		"zero wheel delta leaves time draft unchanged");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 0));
 	XUI_TEST_CHECK(iRet == XUI_OK, "time hour field click");
 	iRet = __xuiDatePickerInputText(pContext, "16");
@@ -403,6 +580,21 @@ int main(void)
 	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestDateTime(2026, 5, 19, 15, 45, 30));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDateTime(2026, 5, 19, 15, 45, 30), "datetime value");
 	XUI_TEST_CHECK(__xuiDatePickerTimeFieldsFit(pPicker, 0, 3), "datetime time fields stay inside panel");
+	iRet = xuiDatePickerOpen(pPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "datetime keyboard time open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "datetime keyboard time layout");
+	pPanel = xuiDatePickerGetPanelWidget(pPicker);
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 0));
+	XUI_TEST_CHECK(iRet == XUI_OK, "datetime keyboard hour focus");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "datetime keyboard hour edit commit");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_UP);
+	XUI_TEST_CHECK(iRet == XUI_OK, "datetime keyboard hour increment");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker) &&
+		xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDateTime(2026, 5, 19, 16, 45, 30),
+		"active datetime time field consumes arrows before calendar");
 
 	iRet = xuiDatePickerSetMode(pPicker, XUI_DATE_PICKER_MODE_DATE_RANGE);
 	XUI_TEST_CHECK(iRet == XUI_OK, "date range mode");
@@ -427,13 +619,29 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "datetime range hide second");
 	iRet = xuiDatePickerSetFormat(pPicker, "yyyy-mm-dd hh:nn");
 	XUI_TEST_CHECK(iRet == XUI_OK, "custom format");
+	memset(sLongFormat, 'a', 62u);
+	memcpy(sLongFormat + 62, "\xe4\xb8\xad", 4u);
+	iRet = xuiDatePickerSetFormat(pPicker, sLongFormat);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiDatePickerGetFormat(pPicker)) == 62u,
+		"truncated format preserves UTF-8 boundary");
+	iRet = xuiDatePickerSetFormat(pPicker, "yyyy-mm-dd hh:nn");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore custom format");
 	iRet = xuiDatePickerSetRangeSeparator(pPicker, " / ");
 	XUI_TEST_CHECK(iRet == XUI_OK, "range separator");
+	memset(sLongSeparator, 'b', 22u);
+	memcpy(sLongSeparator + 22, "\xe4\xb8\xad", 4u);
+	iRet = xuiDatePickerSetRangeSeparator(pPicker, sLongSeparator);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiDatePickerGetRangeSeparator(pPicker)) == 22u,
+		"truncated range separator preserves UTF-8 boundary");
+	iRet = xuiDatePickerSetRangeSeparator(pPicker, " / ");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore range separator");
 	iRet = xuiDatePickerSetRangeValue(pPicker, __xuiDatePickerTestDateTime(2026, 5, 19, 9, 0, 22), __xuiDatePickerTestDateTime(2026, 5, 19, 13, 0, 44));
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiDatePickerGetText(pPicker), "2026-05-19 09:00 / 2026-05-19 13:00") == 0, "datetime range text");
 	XUI_TEST_CHECK(__xuiDatePickerTimeFieldsFit(pPicker, 0, 2) && __xuiDatePickerTimeFieldsFit(pPicker, 1, 2), "datetime range fields stay inside panels");
 	iRet = xuiDatePickerSetShowSecond(pPicker, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "datetime range show second");
+	XUI_TEST_CHECK(strcmp(xuiDatePickerGetFormat(pPicker), "yyyy-mm-dd hh:nn") == 0,
+		"show second preserves custom format");
 	XUI_TEST_CHECK(__xuiDatePickerTimeFieldsFit(pPicker, 0, 3) && __xuiDatePickerTimeFieldsFit(pPicker, 1, 3), "datetime range second fields stay inside panels");
 
 	iRet = xuiDatePickerSetMode(pPicker, XUI_DATE_PICKER_MODE_DATE);
@@ -442,6 +650,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "default format");
 	iRet = xuiDatePickerSetLimits(pPicker, __xuiDatePickerTestDate(2026, 5, 1), __xuiDatePickerTestDate(2026, 5, 31));
 	XUI_TEST_CHECK(iRet == XUI_OK, "limits");
+	iRet = xuiDatePickerSetLimits(pPicker, __xuiDatePickerTestDate(2026, 6, 1), __xuiDatePickerTestDate(2026, 5, 1));
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject reversed runtime limits");
+	iRet = xuiDatePickerGetLimitRange(pPicker, &bHasMin, &tStart, &bHasMax, &tEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && bHasMin && bHasMax &&
+		tStart == __xuiDatePickerTestDate(2026, 5, 1) && tEnd == __xuiDatePickerTestDate(2026, 5, 31),
+		"invalid limits preserve state");
 	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestDate(2026, 6, 20));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDate(2026, 5, 31), "limit clamps");
 
@@ -463,9 +677,61 @@ int main(void)
 	pPopup = xuiDatePickerGetPopupWidget(pPicker);
 	pPanel = xuiDatePickerGetPanelWidget(pPicker);
 	XUI_TEST_CHECK(pPopup != NULL && pPanel != NULL && xuiGetFocusWidget(pContext) == pPanel, "popup focus");
+	XUI_TEST_CHECK(xuiWidgetGetImeMode(pPicker) == XUI_IME_DISABLED &&
+		xuiWidgetGetImeMode(pPanel) == XUI_IME_DISABLED, "numeric date fields keep IME disabled");
 	XUI_TEST_CHECK((xuiDatePickerGetState(pPicker) & XUI_DATE_PICKER_STATE_OPEN) != 0u, "open state");
 	tRect = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(tRect.fY >= 60.0f, "popup below owner");
+	tRect = xuiDatePickerGetFooterRect(pPicker, XUI_DATE_PICKER_FOOTER_OK);
+	tWorld = xuiWidgetGetWorldRect(pPanel);
+	iRet = xuiInputPointerDownEx(pContext, 801u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tRect.fX + tRect.fW * 0.5f),
+		(int)(tWorld.fY + tRect.fY + tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 801u, XUI_POINTER_TYPE_TOUCH) == pPanel,
+		"date picker owner touch captures footer press");
+	iRet = xuiInputPointerDownEx(pContext, 802u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tRect.fX + tRect.fW * 0.5f),
+		(int)(tWorld.fY + tRect.fY + tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 802u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tRect.fX + tRect.fW * 0.5f),
+		(int)(tWorld.fY + tRect.fY + tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker) &&
+		xuiGetPointerCaptureEx(pContext, 801u, XUI_POINTER_TYPE_TOUCH) == pPanel &&
+		xuiGetPointerCaptureEx(pContext, 802u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot commit footer or end owner capture");
+	iRet = xuiInputPointerMoveEx(pContext, 801u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 1.0f), (int)(tWorld.fY + 1.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 801u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tWorld.fX + 1.0f),
+		(int)(tWorld.fY + 1.0f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker) &&
+		xuiGetPointerCaptureEx(pContext, 801u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"date picker owner touch releases cancelled footer press");
+	iRet = xuiInputPointerDown(pContext, tWorld.fX + tRect.fX + tRect.fW * 0.5f,
+		tWorld.fY + tRect.fY + tRect.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "footer press input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pPanel, "footer press captures pointer");
+	iRet = xuiInputPointerMove(pContext, tWorld.fX + 1.0f, tWorld.fY + 1.0f, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "footer drag out input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "footer drag out dispatch");
+	iRet = xuiInputPointerUp(pContext, tWorld.fX + 1.0f, tWorld.fY + 1.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "footer release out input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker) && xuiGetPointerCapture(pContext) != pPanel,
+		"footer drag out cancels activation");
 	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_RIGHT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "calendar right key moves draft");
 	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
@@ -545,6 +811,107 @@ int main(void)
 	iRet = xuiDatePickerOpen(pPicker);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "disabled no open");
 	XUI_TEST_CHECK((xuiDatePickerGetState(pPicker) & XUI_WIDGET_STATE_DISABLED) != 0u, "disabled state");
+	iRet = xuiWidgetSetEnabled(pPicker, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "re-enable picker");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable parent");
+	iRet = xuiDatePickerOpen(pPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker) &&
+		(xuiDatePickerGetState(pPicker) & XUI_WIDGET_STATE_DISABLED) != 0u, "effective parent disable blocks open");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable parent");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iMode = XUI_DATE_PICKER_MODE_DATETIME_RANGE;
+	tDesc.bNullable = 1;
+	tDesc.tDefaultRangeSpan = INT64_MAX;
+	tDesc.pFont = pFont;
+	iRet = xuiDatePickerCreate(pContext, &pSpanPicker, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pSpanPicker != NULL, "overflow span picker create");
+	xuiWidgetSetRect(pSpanPicker, (xui_rect_t){500.0f, 32.0f, 210.0f, 30.0f});
+	iRet = xuiWidgetAddChild(pRoot, pSpanPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overflow span picker add");
+	iRet = xuiDatePickerOpen(pSpanPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pSpanPicker), "overflow span picker open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overflow span picker layout");
+	pPanel = xuiDatePickerGetPanelWidget(pSpanPicker);
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel,
+		xuiDatePickerGetFooterRect(pSpanPicker, XUI_DATE_PICKER_FOOTER_OK));
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pSpanPicker), "overflow span picker commit");
+	iRet = xuiDatePickerGetRangeValue(pSpanPicker, &tStart, &tEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && tStart == tEnd, "overflow default span degrades to a valid zero span");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iMode = XUI_DATE_PICKER_MODE_DATE;
+	tDesc.bHasValue = 1;
+	tDesc.tValue = __xuiDatePickerTestDate(2026, 8, 12);
+	tDesc.pFont = pFont;
+	iRet = xuiDatePickerCreate(pContext, &pDestroyPicker, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyPicker != NULL, "destroy callback picker create");
+	xuiWidgetSetRect(pDestroyPicker, (xui_rect_t){280.0f, 32.0f, 210.0f, 30.0f});
+	iRet = xuiWidgetAddChild(pRoot, pDestroyPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback picker add");
+	tDestroy.ppWidget = &pDestroyPicker;
+	iRet = xuiDatePickerSetChange(pDestroyPicker, __xuiDatePickerDestroyOnCommit, &tDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy change callback set");
+	iCommitBefore = tEvents.iCommit;
+	iRet = xuiDatePickerSetCommit(pDestroyPicker, __xuiDatePickerCommit, &tEvents);
+	XUI_TEST_CHECK(iRet == XUI_OK, "commit callback after destroy change set");
+	iRet = xuiDatePickerOpen(pDestroyPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pDestroyPicker), "destroy change picker open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy change layout");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_RIGHT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy change moves draft");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iCount == 1 && tDestroy.bSawClosed &&
+		pDestroyPicker == NULL && tEvents.iCommit == iCommitBefore,
+		"change callback may destroy picker and suppresses later commit callback");
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	iRet = xuiDatePickerCreate(pContext, &pDestroyPicker, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyPicker != NULL, "commit destroy picker create");
+	xuiWidgetSetRect(pDestroyPicker, (xui_rect_t){280.0f, 72.0f, 210.0f, 30.0f});
+	iRet = xuiWidgetAddChild(pRoot, pDestroyPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK, "commit destroy picker add");
+	tDestroy.ppWidget = &pDestroyPicker;
+	iRet = xuiDatePickerSetCommit(pDestroyPicker, __xuiDatePickerDestroyOnCommit, &tDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy commit callback set");
+	iRet = xuiDatePickerOpen(pDestroyPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pDestroyPicker), "destroy callback picker open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback layout");
+	pPanel = xuiDatePickerGetPanelWidget(pDestroyPicker);
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel,
+		xuiDatePickerGetFooterRect(pDestroyPicker, XUI_DATE_PICKER_FOOTER_OK));
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iCount == 1 && tDestroy.bSawClosed && pDestroyPicker == NULL,
+		"commit callback observes closed popup and may destroy picker");
+
+	iRet = xuiDatePickerCreate(pContext, &pFocusDestroyPicker, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFocusDestroyPicker != NULL,
+		"focus destroy picker create");
+	XUI_TEST_CHECK(xuiWidgetSetRect(pFocusDestroyPicker,
+		(xui_rect_t){500.0f, 72.0f, 210.0f, 30.0f}) == XUI_OK &&
+		xuiWidgetAddChild(pRoot, pFocusDestroyPicker) == XUI_OK,
+		"focus destroy picker add");
+	pFocusDestroyPanel = xuiDatePickerGetPanelWidget(pFocusDestroyPicker);
+	tFocusDestroy.ppWidget = &pFocusDestroyPicker;
+	tFocusDestroy.iEventType = XUI_EVENT_FOCUS;
+	XUI_TEST_CHECK(pFocusDestroyPanel != NULL &&
+		xuiWidgetSetEventHandler(pFocusDestroyPanel, XUI_EVENT_FOCUS,
+			__xuiDatePickerDestroyVictimOnEvent, &tFocusDestroy) == XUI_OK,
+		"install date picker focus destroy callback");
+	XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK && xuiSetFocusWidget(pContext, NULL) == XUI_OK,
+		"prepare date picker focus destroy callback");
+	tWorld = xuiWidgetGetWorldRect(pFocusDestroyPicker);
+	iRet = __xuiDatePickerDispatchDown(pContext,
+		tWorld.fX + tWorld.fW * 0.5f, tWorld.fY + tWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus destroy pointer dispatch returns safely");
+	XUI_TEST_CHECK(tFocusDestroy.iCount == 1 && pFocusDestroyPicker == NULL,
+		"focus callback destroys date picker exactly once");
 
 cleanup:
 	if ( pContext != NULL ) {

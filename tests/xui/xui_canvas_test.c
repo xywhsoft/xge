@@ -37,6 +37,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pCanvas;
+	xui_widget pLazyCanvas;
 	xui_widget pViewport;
 	xui_surface pTarget;
 	xui_surface pCanvasSurface;
@@ -44,6 +45,7 @@ int main(void)
 	xui_canvas_desc_t tDesc;
 	xui_canvas_desc_t tInvalidDesc;
 	xui_rect_t tViewportWorld;
+	xui_rect_t tViewportContent;
 	xui_vec2_t tMeasured;
 	xui_mesh_vertex_t arrVertices[3];
 	xui_surface_vertex_t arrQuad[4];
@@ -56,12 +58,14 @@ int main(void)
 	float fPenWidth;
 	uint32_t iPenColor;
 	int iDrawCount;
+	int iSurfaceDestroyCount;
 	int iRet;
 	int iFailed;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pCanvas = NULL;
+	pLazyCanvas = NULL;
 	pTarget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
@@ -95,6 +99,35 @@ int main(void)
 	tInvalidDesc.fWheelStep = NAN;
 	iRet = xuiCanvasCreate(pContext, &pCanvas, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCanvas == NULL, "reject NaN canvas metric");
+	tInvalidDesc.fWheelStep = 0.0f;
+	tInvalidDesc.iScrollbarMode = 99;
+	pCanvas = (xui_widget)(uintptr_t)1;
+	iRet = xuiCanvasCreate(pContext, &pCanvas, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCanvas == NULL, "reject invalid mode and clear output");
+
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.fCanvasWidth = 100.4f;
+	tInvalidDesc.fCanvasHeight = 80.6f;
+	tInvalidDesc.iPolicyX = XUI_SCROLLBAR_POLICY_AUTO;
+	tInvalidDesc.iPolicyY = XUI_SCROLLBAR_POLICY_AUTO;
+	tInvalidDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	tInvalidDesc.iWheelAxis = XUI_WHEEL_AXIS_BOTH;
+	tInvalidDesc.iCornerMode = XUI_SCROLL_FRAME_CORNER_NONE;
+	iRet = xuiCanvasCreate(pContext, &pLazyCanvas, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pLazyCanvas != NULL, "lazy canvas create");
+	iRet = xuiCanvasGetCanvasSize(pLazyCanvas, &fWidth, &fHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fWidth, 100.0f) &&
+		__xuiCanvasNear(fHeight, 81.0f), "fractional canvas dimensions canonicalized");
+	xuiTestProxyFailNextSurfaceCreate(&tState, XUI_ERROR_OUT_OF_MEMORY);
+	iRet = xuiCanvasSetCanvasSize(pLazyCanvas, 120.4f, 90.6f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "untouched canvas resize stays lazy");
+	iRet = xuiCanvasDrawPoint(pLazyCanvas, 1.0f, 1.0f, 2.0f, XUI_COLOR_RGBA(1, 2, 3, 0));
+	XUI_TEST_CHECK(iRet == XUI_OK, "transparent draw stays lazy");
+	XUI_TEST_CHECK(xuiCanvasGetSurface(pLazyCanvas) == NULL, "lazy operations preserve pending create failure");
+	XUI_TEST_CHECK(xuiCanvasGetSurface(pLazyCanvas) != NULL, "lazy surface creates on demand");
+	xuiWidgetDestroy(pLazyCanvas);
+	pLazyCanvas = NULL;
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -139,6 +172,18 @@ int main(void)
 	iRet = xuiCanvasGetCanvasSize(pCanvas, &fWidth, &fHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fWidth, 480.0f) && __xuiCanvasNear(fHeight, 320.0f), "failed resize preserves dimensions");
 	XUI_TEST_CHECK(xuiCanvasGetSurface(pCanvas) == pOldSurface, "failed resize preserves surface");
+	iSurfaceDestroyCount = xuiTestProxyGetSurfaceDestroyCount(&tState);
+	xuiTestProxySetSurfaceClearUnsupported(&tState, 1);
+	xuiTestProxyFailNextDrawEnd(&tState, XUI_ERROR_UNSUPPORTED);
+	iRet = xuiCanvasSetCanvasSize(pCanvas, 301.0f, 221.0f);
+	xuiTestProxySetSurfaceClearUnsupported(&tState, 0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "resize propagates temporary surface clear failure");
+	XUI_TEST_CHECK(xuiTestProxyGetSurfaceDestroyCount(&tState) == iSurfaceDestroyCount + 1, "failed resize destroys temporary surface");
+	XUI_TEST_CHECK(xuiCanvasGetSurface(pCanvas) == pOldSurface, "clear failure preserves old surface");
+	iRet = xuiCanvasGetCanvasSize(pCanvas, &fWidth, &fHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fWidth, 480.0f) && __xuiCanvasNear(fHeight, 320.0f), "clear failure preserves dimensions");
+	XUI_TEST_CHECK(xuiCanvasSetCanvasSize(pCanvas, NAN, 220.0f) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN resize");
+	XUI_TEST_CHECK(xuiCanvasSetCanvasSize(pCanvas, 32768.0f, 220.0f) == XUI_ERROR_INVALID_ARGUMENT, "reject oversized resize");
 
 	iRet = xuiCanvasClear(pCanvas, XUI_COLOR_RGBA(250, 250, 250, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetLastColor(pCanvasSurface) == XUI_COLOR_RGBA(250, 250, 250, 255), "clear");
@@ -253,6 +298,69 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport, "viewport mutation capture");
 	iRet = xuiCanvasSetViewportHint(pCanvas, 181.0f, 141.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "viewport mutation cancels capture");
+	iRet = xuiCanvasGetViewportHint(pCanvas, &fWidth, &fHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fWidth, 181.0f) && __xuiCanvasNear(fHeight, 141.0f), "canvas viewport hint");
+	iRet = xuiScrollFrameGetViewportHint(xuiCanvasGetFrameWidget(pCanvas), &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fOffsetX, fWidth) && __xuiCanvasNear(fOffsetY, fHeight), "frame is viewport hint source");
+
+	iRet = xuiWidgetSetPadding(pViewport, (xui_thickness_t){5.0f, 7.0f, 0.0f, 0.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	if ( iRet == XUI_OK ) iRet = xuiCanvasSetOffset(pCanvas, 20.4f, 10.6f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "prepare padded viewport coordinates");
+	tViewportWorld = xuiWidgetGetWorldRect(pViewport);
+	tViewportContent = xuiWidgetGetContentRect(pViewport);
+	tState.fLastPointX = -1.0f;
+	tState.fLastPointY = -1.0f;
+	iRet = xuiInputPointerDown(pContext,
+		(int)(tViewportWorld.fX + tViewportContent.fX + 7.0f),
+		(int)(tViewportWorld.fY + tViewportContent.fY + 9.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	xuiTestProxyGetLastPoint(&tState, &fWidth, &fHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fWidth, 27.0f) &&
+		__xuiCanvasNear(fHeight, 20.0f), "pen matches padded viewport and snapped scroll offset");
+	iRet = xuiInputPointerUp(pContext,
+		(int)(tViewportWorld.fX + tViewportContent.fX + 7.0f),
+		(int)(tViewportWorld.fY + tViewportContent.fY + 9.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release padded pen");
+
+	iRet = xuiInputPointerDownEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + tViewportContent.fX + 10.0f),
+		(int)(tViewportWorld.fY + tViewportContent.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pViewport,
+		"first touch owns pen capture");
+	iRet = xuiInputPointerDownEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + tViewportContent.fX + 20.0f),
+		(int)(tViewportWorld.fY + tViewportContent.fY + 20.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + tViewportContent.fX + 20.0f),
+		(int)(tViewportWorld.fY + tViewportContent.fY + 20.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pViewport &&
+		xuiGetPointerCaptureEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"second touch cannot steal or release pen capture");
+	iRet = xuiInputPointerUpEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + tViewportContent.fX + 10.0f),
+		(int)(tViewportWorld.fY + tViewportContent.fY + 10.0f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch releases pen capture");
+	iRet = xuiWidgetSetPadding(pViewport, (xui_thickness_t){0});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore viewport padding");
 
 	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hide widget down input");
@@ -264,6 +372,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "hidden canvas cancels capture");
 
 cleanup:
+	if ( pLazyCanvas != NULL ) {
+		xuiWidgetDestroy(pLazyCanvas);
+	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
 	}

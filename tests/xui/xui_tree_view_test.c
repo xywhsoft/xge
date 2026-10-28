@@ -2,6 +2,7 @@
 #include "xui_test_proxy.h"
 
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -74,6 +75,62 @@ static int __xuiTreeViewRenderItem(xui_widget pWidget, int iNodeId, int iVisible
 		(*pCount)++;
 	}
 	return 0;
+}
+
+typedef struct xui_tree_view_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_tree_view_destroy_state_t;
+
+static void __xuiTreeViewDestroyOnSelect(xui_widget pWidget, int iNodeId, void* pUser)
+{
+	xui_tree_view_destroy_state_t* pState = (xui_tree_view_destroy_state_t*)pUser;
+	(void)iNodeId;
+	if ( pState == NULL ) return;
+	pState->iCount++;
+	(void)xuiWidgetDestroy(pWidget);
+	if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+}
+
+static int __xuiTreeViewDestroyOnContext(xui_widget pWidget, int iNodeId, int iVisibleIndex,
+	float fX, float fY, void* pUser)
+{
+	xui_tree_view_destroy_state_t* pState = (xui_tree_view_destroy_state_t*)pUser;
+	(void)iNodeId;
+	(void)iVisibleIndex;
+	(void)fX;
+	(void)fY;
+	if ( pState != NULL ) {
+		pState->iCount++;
+		(void)xuiWidgetDestroy(pWidget);
+		if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+	}
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiTreeViewDestroyOnRender(xui_widget pWidget, int iNodeId, int iVisible,
+	const xui_tree_view_node_t* pNode, xui_draw_context pDraw, xui_rect_t tRect, int iState, void* pUser)
+{
+	xui_tree_view_destroy_state_t* pState = (xui_tree_view_destroy_state_t*)pUser;
+	(void)iNodeId;
+	(void)iVisible;
+	(void)pNode;
+	(void)pDraw;
+	(void)tRect;
+	(void)iState;
+	if ( pState != NULL ) {
+		pState->iCount++;
+		(void)xuiWidgetDestroy(pWidget);
+		if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+	}
+	return 1;
+}
+
+static int __xuiTreeViewNear(float fA, float fB)
+{
+	float fDelta = fA - fB;
+	if ( fDelta < 0.0f ) fDelta = -fDelta;
+	return fDelta < 0.01f;
 }
 
 static int g_iTreeViewTriangleCount = 0;
@@ -199,7 +256,7 @@ static int __xuiTreeViewIndexRegression(xui_widget pTree)
 	XUI_TEST_CHECK(xuiTreeViewAddNode(pTree, 14, 0, "after expanded sibling") == XUI_OK, "append after previous sibling subtree");
 	XUI_TEST_CHECK(__xuiTreeViewExpectOrder(pTree, (int[]){0, INT_MAX, 7, 8, 3, 11, 12, 14, 900, 25}, 10), "incremental inserts retain DFS order");
 	iChange = xuiTreeViewGetChangeCount(pTree);
-	XUI_TEST_CHECK(xuiTreeViewSetNodeExpanded(pTree, 0, 1) == XUI_OK && xuiTreeViewGetChangeCount(pTree) == iChange + 1, "no-op expansion keeps change counter contract");
+	XUI_TEST_CHECK(xuiTreeViewSetNodeExpanded(pTree, 0, 1) == XUI_OK && xuiTreeViewGetChangeCount(pTree) == iChange, "no-op expansion is idempotent");
 	XUI_TEST_CHECK(xuiTreeViewSetNodeEnabled(pTree, 0, 0) == XUI_OK && xuiTreeViewSetSelected(pTree, 12) == XUI_OK && xuiTreeViewGetSelected(pTree) == 12, "disabled parent does not disable children");
 	arrInvalid[0] = __xuiTreeViewTestNode(123, -1);
 	arrInvalid[1] = __xuiTreeViewTestNode(123, -1);
@@ -222,6 +279,10 @@ static int __xuiTreeViewIndexRegression(xui_widget pTree)
 		XUI_TEST_CHECK(xuiTreeViewFindNode(pTree, INT_MAX - i * 7919) == i && xuiTreeViewGetVisibleIndexOfId(pTree, INT_MAX - i * 7919) == i, "IDs survive realloc and hash rehash");
 	}
 	XUI_TEST_CHECK(xuiTreeViewClear(pTree) == XUI_OK && xuiTreeViewFindNode(pTree, INT_MAX) == -1, "clear removes retained hash entries");
+	iChange = xuiTreeViewGetChangeCount(pTree);
+	XUI_TEST_CHECK(xuiTreeViewClear(pTree) == XUI_OK &&
+		xuiTreeViewGetChangeCount(pTree) == iChange,
+		"repeated clear is idempotent");
 	XUI_TEST_CHECK(xuiTreeViewAddNode(pTree, INT_MAX, -1, "reused root") == XUI_OK && xuiTreeViewGetVisibleIndexOfId(pTree, INT_MAX) == 0, "clear then reuse ID");
 
 	memset(&tAdapter, 0, sizeof(tAdapter));
@@ -313,6 +374,227 @@ static int __xuiTreeViewPressedIndexRegression(xui_context pContext, xui_widget 
 	XUI_TEST_CHECK(xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK, "release hidden descendant");
 	XUI_TEST_CHECK(xuiTreeViewGetSelected(pTree) != 2 && xuiGetPointerCapture(pContext) == NULL, "hidden press is canceled and capture released");
 cleanup:
+	return !iFailed;
+}
+
+static int __xuiTreeViewContractRegression(xui_context pContext, xui_widget pRoot,
+	xui_widget pTree, xui_surface pTarget)
+{
+	xui_tree_view_node_t arrNodes[24];
+	xui_tree_view_desc_t tDesc;
+	xui_tree_view_destroy_state_t tDestroy;
+	xui_accessible_node_t tAccessible;
+	xui_widget pInvalid;
+	xui_widget pTemp;
+	xui_rect_t tWorld;
+	xui_rect_t tItem;
+	float fOldItemHeight;
+	float fItemHeight;
+	float fContentHeight;
+	float fX;
+	float fY;
+	int iFailed = 0;
+	int iRet;
+	int i;
+
+	pTemp = NULL;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	pInvalid = pRoot;
+	tDesc.fItemHeight = INFINITY;
+	XUI_TEST_CHECK(xuiTreeViewCreate(pContext, &pInvalid, &tDesc) == XUI_ERROR_INVALID_ARGUMENT &&
+		pInvalid == NULL, "invalid descriptor clears output");
+	pInvalid = pRoot;
+	tDesc.fItemHeight = 0.0f;
+	tDesc.iNodeCount = 1;
+	XUI_TEST_CHECK(xuiTreeViewCreate(pContext, &pInvalid, &tDesc) == XUI_ERROR_INVALID_ARGUMENT &&
+		pInvalid == NULL, "missing node array clears output");
+
+	for ( i = 0; i < 20; i++ ) arrNodes[i] = __xuiTreeViewTestNode(1000 + i, -1);
+	arrNodes[20] = __xuiTreeViewTestNode(2000, -1);
+	arrNodes[20].bExpanded = 0;
+	arrNodes[21] = __xuiTreeViewTestNode(2001, 2000);
+	XUI_TEST_CHECK(xuiTreeViewSetNodes(pTree, arrNodes, 22) == XUI_OK &&
+		xuiTreeViewGetVisibleIndexOfId(pTree, 2001) < 0, "hidden descendant setup");
+	XUI_TEST_CHECK(xuiTreeViewSetScroll(pTree, 0.0f) == XUI_OK &&
+		xuiTreeViewEnsureVisible(pTree, 2001) == XUI_OK, "ensure hidden descendant");
+	XUI_TEST_CHECK(xuiTreeViewGetNodeExpanded(pTree, 2000) &&
+		xuiTreeViewGetVisibleIndexOfId(pTree, 2001) >= 0 && xuiTreeViewGetScroll(pTree) > 0.0f,
+		"ensure visible expands ancestors and scrolls");
+	XUI_TEST_CHECK(xuiTreeViewEnsureVisible(pTree, 999999) == XUI_ERROR_INVALID_ARGUMENT,
+		"ensure visible rejects missing ID");
+
+	XUI_TEST_CHECK(xuiTreeViewGetMetrics(pTree, &fOldItemHeight, NULL, NULL, NULL) == XUI_OK,
+		"read old tree metrics");
+	XUI_TEST_CHECK(xuiTreeViewSetMetrics(pTree, XUI_LAYOUT_UNBOUNDED, 0.0f, 0.0f, 0.0f) ==
+		XUI_ERROR_INVALID_ARGUMENT, "oversized metrics rejected");
+	XUI_TEST_CHECK(xuiTreeViewGetMetrics(pTree, &fItemHeight, NULL, NULL, NULL) == XUI_OK &&
+		__xuiTreeViewNear(fItemHeight, fOldItemHeight), "rejected metrics preserve state");
+	XUI_TEST_CHECK(xuiTreeViewSetMetrics(pTree, 30.0f, 18.0f, 6.0f, 1.0f) == XUI_OK &&
+		xuiScrollModelGetContentSize(xuiTreeViewGetModel(pTree), NULL, &fContentHeight) == XUI_OK &&
+		__xuiTreeViewNear(fContentHeight, 22.0f * 30.0f), "metrics update content extent immediately");
+
+	arrNodes[0] = __xuiTreeViewTestNode(3000, -1);
+	arrNodes[1] = __xuiTreeViewTestNode(3001, 3000);
+	arrNodes[1].bEnabled = 0;
+	arrNodes[2] = __xuiTreeViewTestNode(3002, -1);
+	XUI_TEST_CHECK(xuiTreeViewSetNodes(pTree, arrNodes, 3) == XUI_OK &&
+		xuiTreeViewSetSelected(pTree, 3000) == XUI_OK && xuiSetFocusWidget(pContext, pTree) == XUI_OK,
+		"keyboard subtree setup");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pTree) == 4 &&
+		xuiWidgetGetAccessibleNode(pTree, 0, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_TREE &&
+		tAccessible.iRowCount == 3 &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_VERTICAL) != 0,
+		"tree accessibility root");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTree, 1, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_TREE_ITEM &&
+		strcmp(tAccessible.sName, "indexed node") == 0 &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_EXPANDED) != 0 &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE)) != 0,
+		"tree accessibility item");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTree, 2, &tAccessible) == XUI_OK &&
+		tAccessible.iParentId == 2u &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0 &&
+		xuiWidgetPerformAccessibleAction(pTree, 3u,
+			XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_ERROR_INVALID_STATE,
+		"disabled tree item rejects accessibility action");
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pTree, 2u,
+		XUI_ACCESSIBLE_ACTION_COLLAPSE, NULL) == XUI_OK &&
+		xuiTreeViewGetVisibleIndexOfId(pTree, 3001) < 0 &&
+		xuiWidgetPerformAccessibleAction(pTree, 2u,
+			XUI_ACCESSIBLE_ACTION_EXPAND, NULL) == XUI_OK &&
+		xuiTreeViewGetVisibleIndexOfId(pTree, 3001) >= 0,
+		"tree accessibility expand and collapse");
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pTree, 4u,
+		XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_OK &&
+		xuiTreeViewGetSelected(pTree) == 3002 &&
+		xuiTreeViewSetSelected(pTree, 3000) == XUI_OK,
+		"tree accessibility selection");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 3000,
+		"right key does not escape current subtree");
+	XUI_TEST_CHECK(xuiTreeViewSetNodeDecorations(pTree, 3000, 0, 1) == XUI_OK,
+		"keyboard check decoration");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetNodeChecked(pTree, 3000),
+		"space toggles checkable row");
+
+	arrNodes[0] = __xuiTreeViewTestNode(4000, -1);
+	arrNodes[1] = __xuiTreeViewTestNode(4001, -1);
+	XUI_TEST_CHECK(xuiTreeViewSetNodes(pTree, arrNodes, 2) == XUI_OK && xuiLayout(pContext) == XUI_OK,
+		"multi-pointer tree setup");
+	tWorld = xuiWidgetGetWorldRect(pTree);
+	tItem = xuiTreeViewGetItemRect(pTree, 0);
+	fX = tWorld.fX + tItem.fX + 80.0f;
+	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerDownEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH, (int)fX, (int)fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 4000 &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pTree,
+		"first touch owns tree press");
+	tItem = xuiTreeViewGetItemRect(pTree, 1);
+	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerDownEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH, (int)fX, (int)fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)fX, (int)fY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 4000 &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pTree,
+		"unrelated touch cannot select or release tree press");
+	tItem = xuiTreeViewGetItemRect(pTree, 0);
+	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerUpEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH, (int)fX, (int)fY,
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch releases tree press");
+
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 0) == XUI_OK && xuiTreeViewSetSelected(pTree, -1) == XUI_OK,
+		"effective disabled setup");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTree, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0 &&
+		tAccessible.iActions == 0 &&
+		xuiWidgetPerformAccessibleAction(pTree, 1u,
+			XUI_ACCESSIBLE_ACTION_FOCUS, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+		"disabled tree rejects accessibility actions");
+	iRet = __xuiTreeViewClick(pContext, fX, fY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == -1,
+		"disabled ancestor blocks direct tree interaction");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 1) == XUI_OK, "restore root enabled state");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.arrNodes = arrNodes;
+	tDesc.iNodeCount = 2;
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	pTemp = NULL;
+	iRet = xuiTreeViewCreate(pContext, &pTemp, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTemp);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTemp, (xui_rect_t){280.0f, 20.0f, 180.0f, 70.0f});
+	tDestroy.ppWidget = &pTemp;
+	if ( iRet == XUI_OK ) iRet = xuiTreeViewSetSelect(pTemp, __xuiTreeViewDestroyOnSelect, &tDestroy);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "selection destroy tree setup");
+	tWorld = xuiWidgetGetWorldRect(pTemp);
+	tItem = xuiTreeViewGetItemRect(pTemp, 1);
+	fX = tWorld.fX + tItem.fX + 70.0f;
+	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTemp == NULL && tDestroy.iCount == 1,
+		"selection callback may destroy tree");
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	pTemp = NULL;
+	iRet = xuiTreeViewCreate(pContext, &pTemp, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTemp);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTemp, (xui_rect_t){280.0f, 20.0f, 180.0f, 70.0f});
+	tDestroy.ppWidget = &pTemp;
+	if ( iRet == XUI_OK ) iRet = xuiTreeViewSetContextMenu(pTemp, __xuiTreeViewDestroyOnContext, &tDestroy);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context destroy tree setup");
+	tWorld = xuiWidgetGetWorldRect(pTemp);
+	tItem = xuiTreeViewGetItemRect(pTemp, 1);
+	fX = tWorld.fX + tItem.fX + 70.0f;
+	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTemp == NULL && tDestroy.iCount == 1,
+		"context callback may destroy tree");
+
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	pTemp = NULL;
+	iRet = xuiTreeViewCreate(pContext, &pTemp, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTemp);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTemp, (xui_rect_t){280.0f, 20.0f, 180.0f, 70.0f});
+	tDestroy.ppWidget = &pTemp;
+	if ( iRet == XUI_OK ) iRet = xuiTreeViewSetItemRenderer(pTemp, __xuiTreeViewDestroyOnRender, &tDestroy);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiTreeViewRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTemp == NULL && tDestroy.iCount == 1,
+		"item renderer may destroy tree");
+
+cleanup:
+	if ( pTemp != NULL && xuiWidgetGetContext(pTemp) == pContext ) (void)xuiWidgetDestroy(pTemp);
 	return !iFailed;
 }
 
@@ -532,6 +814,8 @@ int main(void)
 	XUI_TEST_CHECK(__xuiTreeViewIndexRegression(pTree), "indexed tree public API regressions");
 	XUI_TEST_CHECK(__xuiTreeViewLargeRegression(pContext, pTree, pTarget, &iRenderCount), "large public tree regressions");
 	XUI_TEST_CHECK(__xuiTreeViewPressedIndexRegression(pContext, pTree), "pressed row ID regressions");
+	XUI_TEST_CHECK(__xuiTreeViewContractRegression(pContext, pRoot, pTree, pTarget),
+		"tree contract regressions");
 
 cleanup:
 	if ( pContext != NULL ) {

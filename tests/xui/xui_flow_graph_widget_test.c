@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -55,11 +56,13 @@ int main(void)
 	xui_flow_graph pGraph;
 	xui_flow_graph_desc_t tWidgetDesc;
 	xui_flow_node_desc_t tNode;
+	xui_flow_node_info_t tNodeInfo;
 	xui_flow_port_desc_t tPort;
 	xui_flow_edge_desc_t tEdge;
 	xui_flow_diagnostic_desc_t tDiagnostic;
 	xui_flow_viewport_t tViewport;
 	xui_flow_hit_t tHit;
+	xui_accessible_node_t tAccessibleNode;
 	xui_style_property_t arrStyle[2];
 	xui_flow_context_test_t tContextMenu;
 	xui_surface pCache;
@@ -67,6 +70,7 @@ int main(void)
 	int iTool;
 	int iFailed;
 	int iRet;
+	float fOldZoom;
 
 	pContext = NULL;
 	pRoot = NULL;
@@ -137,6 +141,7 @@ int main(void)
 	tPort.sId = "in";
 	tPort.sTitle = "in";
 	tPort.iDirection = XUI_FLOW_PORT_INPUT;
+	tPort.bMulti = 1;
 	iRet = xuiFlowGraphAddPort(pGraph, iTool, &tPort, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tool input");
 
@@ -199,6 +204,14 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) >= 7, "badge rect fill count");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(9, 18, 27, 255)) > 0, "style background draw");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(44, 55, 66, 120)) > 0, "style grid draw");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pWidget) == 4, "accessible root nodes and edge");
+	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
+	tAccessibleNode.iSize = sizeof(tAccessibleNode);
+	iRet = xuiWidgetGetAccessibleNode(pWidget, 1, &tAccessibleNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessibleNode.iRole == XUI_ACCESSIBLE_ROLE_GROUP &&
+		tAccessibleNode.sName != NULL && strcmp(tAccessibleNode.sName, "Start") == 0 &&
+		(tAccessibleNode.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION)) != 0u,
+		"accessible node metadata");
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSize = sizeof(tHit);
 	iRet = xuiFlowGraphWidgetHitTest(pWidget, 222.0f, 170.0f, &tHit);
@@ -245,6 +258,137 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "hover background dispatch");
 	iRet = xuiFlowGraphWidgetGetHoverHit(pWidget, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iType == XUI_FLOW_HIT_BACKGROUND, "hover background hit");
+	iRet = xuiInputPointerLeave(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "pointer leave input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "pointer leave dispatch");
+	iRet = xuiFlowGraphWidgetGetHoverHit(pWidget, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iType == XUI_FLOW_HIT_NONE, "pointer leave clears hover");
+
+	iRet = xuiInputPointerDown(pContext, 334.0f, 158.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "start node drag before capture loss");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch node drag start");
+	iRet = xuiInputPointerMove(pContext, 374.0f, 178.0f, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move node before capture loss");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch node drag move");
+	memset(&tNodeInfo, 0, sizeof(tNodeInfo));
+	tNodeInfo.iSize = sizeof(tNodeInfo);
+	iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 320.0f && tNodeInfo.fY == 90.0f, "node follows active drag");
+	iRet = xuiSetPointerCapture(pContext, pRoot);
+	XUI_TEST_CHECK(iRet == XUI_OK, "transfer pointer capture");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch capture loss");
+	iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 280.0f && tNodeInfo.fY == 70.0f,
+		"capture loss rolls back transient node drag");
+	(void)xuiReleasePointerCapture(pContext, pRoot);
+	(void)xuiDispatchPendingEvents(pContext);
+	iRet = xuiInputPointerDownEx(pContext, 2001u, XUI_POINTER_TYPE_TOUCH,
+		334, 158, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 2001u, XUI_POINTER_TYPE_TOUCH) == pWidget,
+		"flow node drag captures exact owner touch");
+	iRet = xuiInputPointerDownEx(pContext, 2002u, XUI_POINTER_TYPE_TOUCH,
+		340, 160, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 2002u,
+		XUI_POINTER_TYPE_TOUCH, 410, 210, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 2002u,
+		XUI_POINTER_TYPE_TOUCH, 410, 210, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 280.0f && tNodeInfo.fY == 70.0f &&
+		xuiGetPointerCaptureEx(pContext, 2001u, XUI_POINTER_TYPE_TOUCH) == pWidget &&
+		xuiGetPointerCaptureEx(pContext, 2002u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot move flow node or release owner");
+	iRet = xuiInputPointerMoveEx(pContext, 2001u, XUI_POINTER_TYPE_TOUCH,
+		354, 168, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 300.0f && tNodeInfo.fY == 80.0f,
+		"flow owner touch moves selected node");
+	iRet = xuiSetPointerCaptureEx(pContext, 2001u, XUI_POINTER_TYPE_TOUCH, pRoot);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 280.0f && tNodeInfo.fY == 70.0f,
+		"exact touch capture loss rolls back flow node drag");
+	(void)xuiReleasePointerCaptureEx(pContext, 2001u, XUI_POINTER_TYPE_TOUCH, pRoot);
+	(void)xuiDispatchPendingEvents(pContext);
+
+	iRet = xuiInputPointerDown(pContext, 334.0f, 158.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "start committed node drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch committed drag start");
+	iRet = xuiInputPointerMove(pContext, 364.0f, 178.0f, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move committed node drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch committed drag move");
+	iRet = xuiInputPointerUp(pContext, 364.0f, 178.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "finish committed node drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch committed drag finish");
+	iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 310.0f && tNodeInfo.fY == 90.0f && xuiFlowGraphCanUndo(pGraph),
+		"completed drag records one undoable move");
+	iRet = xuiInputKeyDown(pContext, 'Z', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "keyboard undo node drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch keyboard undo");
+	(void)xuiInputKeyUp(pContext, 'Z', 0);
+	(void)xuiDispatchPendingEvents(pContext);
+	iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 280.0f && tNodeInfo.fY == 70.0f,
+		"ctrl+z restores dragged node");
+	iRet = xuiInputKeyDown(pContext, 'Z', XUI_MOD_CTRL | XUI_MOD_SHIFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "keyboard redo node drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch keyboard redo");
+	(void)xuiInputKeyUp(pContext, 'Z', 0);
+	(void)xuiDispatchPendingEvents(pContext);
+	iRet = xuiFlowGraphGetNode(pGraph, iTool, &tNodeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeInfo.fX == 310.0f && tNodeInfo.fY == 90.0f,
+		"ctrl+shift+z reapplies dragged node");
+	iRet = xuiInputKeyDown(pContext, 'Z', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore node for remaining hit tests");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch node restore");
+	(void)xuiInputKeyUp(pContext, 'Z', 0);
+	(void)xuiDispatchPendingEvents(pContext);
+	memset(&tHit, 0, sizeof(tHit));
+	tHit.iSize = sizeof(tHit);
+	iRet = xuiFlowGraphWidgetHitTest(pWidget, 312.0f, 190.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iType == XUI_FLOW_HIT_PORT && tHit.iNode == iTool,
+		"connection target port hit");
+	iRet = xuiFlowGraphWidgetHitTest(pWidget, 222.0f, 170.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iType == XUI_FLOW_HIT_PORT && tHit.iNode == iStart,
+		"connection source port hit");
+	iRet = xuiInputPointerDown(pContext, 222.0f, 170.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "start connection drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch connection drag start");
+	XUI_TEST_CHECK(xuiGetPointerCapture(pContext) == pWidget, "connection drag captures pointer");
+	iRet = xuiInputPointerMove(pContext, 312.0f, 190.0f, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move connection drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch connection drag move");
+	iRet = xuiInputPointerUp(pContext, 312.0f, 190.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "finish connection drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphGetEdgeCount(pGraph) == 2,
+		"connection drag creates edge");
+	iRet = xuiInputKeyDown(pContext, 'Z', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "undo connection drag");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphGetEdgeCount(pGraph) == 1,
+		"connection drag participates in undo history");
+	(void)xuiInputKeyUp(pContext, 'Z', 0);
+	(void)xuiDispatchPendingEvents(pContext);
+
 	iRet = __xuiFlowContextClick(pContext, 334.0f, 158.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && tContextMenu.iCount == 1,
 		"node context callback");
@@ -261,6 +405,55 @@ int main(void)
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "rerender after external mutation");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) >= 8, "external mutation invalidates cache");
+	iRet = xuiInputKeyDown(pContext, 'A', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "keyboard select all");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphGetSelectedNodeCount(pGraph) == xuiFlowGraphGetNodeCount(pGraph) &&
+		xuiFlowGraphGetSelectedEdgeCount(pGraph) == xuiFlowGraphGetEdgeCount(pGraph),
+		"ctrl+a selects all graph items");
+	(void)xuiInputKeyUp(pContext, 'A', 0);
+	(void)xuiDispatchPendingEvents(pContext);
+	memset(&tViewport, 0, sizeof(tViewport));
+	tViewport.iSize = sizeof(tViewport);
+	iRet = xuiFlowGraphGetViewport(pGraph, &tViewport);
+	XUI_TEST_CHECK(iRet == XUI_OK, "read viewport before wheel pan");
+	iRet = xuiInputPointerWheel(pContext, 100, 100, 0.0f, 1.0f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wheel pan input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch wheel pan");
+	iRet = xuiFlowGraphGetViewport(pGraph, &tViewport);
+	XUI_TEST_CHECK(iRet == XUI_OK && tViewport.fPanY > 0.0f, "wheel pans graph viewport");
+	fOldZoom = tViewport.fZoom;
+	(void)xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
+	iRet = xuiInputPointerWheel(pContext, 100, 100, 0.0f, 1.0f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "ctrl wheel zoom input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	(void)xuiInputSetModifiers(pContext, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch ctrl wheel zoom");
+	iRet = xuiFlowGraphGetViewport(pGraph, &tViewport);
+	XUI_TEST_CHECK(iRet == XUI_OK && tViewport.fZoom > fOldZoom, "ctrl+wheel zooms graph viewport");
+	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
+	tAccessibleNode.iSize = sizeof(tAccessibleNode);
+	iRet = xuiWidgetGetAccessibleNode(pWidget, 1, &tAccessibleNode);
+	XUI_TEST_CHECK(iRet == XUI_OK, "read accessible node action target");
+	iRet = xuiWidgetPerformAccessibleAction(pWidget, tAccessibleNode.iId,
+		XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphIsNodeSelected(pGraph, "start") &&
+		xuiFlowGraphGetSelectedNodeCount(pGraph) == 1 && xuiFlowGraphGetSelectedEdgeCount(pGraph) == 0,
+		"accessible action selects one node");
+	iRet = xuiWidgetPerformAccessibleAction(pWidget, tAccessibleNode.iId,
+		XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "accessible action scrolls node into view");
+	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
+	tAccessibleNode.iSize = sizeof(tAccessibleNode);
+	iRet = xuiWidgetGetAccessibleNode(pWidget, 1, &tAccessibleNode);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		fabsf(tAccessibleNode.tBounds.fX + tAccessibleNode.tBounds.fW * 0.5f - 324.0f) < 1.0f &&
+		fabsf(tAccessibleNode.tBounds.fY + tAccessibleNode.tBounds.fH * 0.5f - 198.0f) < 1.0f,
+		"accessible scroll centers fixed-size node at non-unit zoom");
+	iRet = xuiFlowGraphWidgetSetGraph(pWidget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiFlowGraphWidgetGetGraph(pWidget) == pGraph,
+		"null graph binding rejected without changing model");
 
 cleanup:
 	if ( pContext != NULL ) {

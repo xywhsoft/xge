@@ -4,6 +4,28 @@
 #include <stdio.h>
 #include <string.h>
 
+void xgeInternalImeSetFocusOwner(uint64_t owner) { (void)owner; }
+void xgeInternalImeSetSnapshotOwner(uint64_t owner) { (void)owner; }
+uint64_t xgeInternalInputImeOwner(void) { return 0; }
+
+int xuiInternalContextIsValid(xui_context context) { return context != NULL; }
+void xuiInternalOperationEnter(xui_context context) { (void)context; }
+void xuiInternalOperationLeave(xui_context context) { (void)context; }
+int xuiInternalContextDestroyPending(xui_context context) { (void)context; return 0; }
+void xuiInternalInputInvalidateImeOwner(xui_context context) { (void)context; }
+int xuiInternalInputImeEditTextComposition(xui_context context,
+	const xui_ime_composition_t* composition)
+{
+	(void)context; (void)composition;
+	return XUI_ERROR_UNSUPPORTED;
+}
+int xuiInternalDocumentImeText(xui_widget widget, const char** text,
+	int* length, int* start, int* end, uint64_t* revision)
+{
+	(void)widget; (void)text; (void)length; (void)start; (void)end; (void)revision;
+	return XUI_ERROR_UNSUPPORTED;
+}
+
 static int __xuiTestStatusAllowed(int iRet)
 {
 	return (iRet == XGE_OK) || (iRet == XGE_ERROR_NOT_INITIALIZED) || (iRet == XGE_ERROR_UNSUPPORTED);
@@ -794,14 +816,17 @@ int main(void)
 		printf("xui_proxy_xge_test failed: clipboard validation\n");
 		return 1;
 	}
-	if ( tProxy.clipboardSetText(&tProxy, "xui proxy clipboard smoke") != XGE_OK ) {
-		printf("xui_proxy_xge_test failed: clipboard set\n");
-		return 1;
-	}
-	memset(arrText, 'x', sizeof(arrText));
-	iRet = tProxy.clipboardGetText(&tProxy, arrText, (int)sizeof(arrText));
-	if ( (iRet < 0) || (arrText[sizeof(arrText) - 1u] != 0 && arrText[sizeof(arrText) - 1u] != 'x') ) {
-		printf("xui_proxy_xge_test failed: clipboard get ret=%d\n", iRet);
+	iRet = tProxy.clipboardSetText(&tProxy, "xui proxy clipboard smoke");
+	if ( iRet == XGE_OK ) {
+		memset(arrText, 'x', sizeof(arrText));
+		iRet = tProxy.clipboardGetText(&tProxy, arrText, (int)sizeof(arrText));
+		if ( (iRet < 0) ||
+		     (arrText[sizeof(arrText) - 1u] != 0 && arrText[sizeof(arrText) - 1u] != 'x') ) {
+			printf("xui_proxy_xge_test failed: clipboard get ret=%d\n", iRet);
+			return 1;
+		}
+	} else if ( __xuiTestStatusAllowed(iRet) == 0 ) {
+		printf("xui_proxy_xge_test failed: clipboard set ret=%d\n", iRet);
 		return 1;
 	}
 

@@ -38,6 +38,8 @@ struct xui_font_t {
 typedef struct xui_button_test_state_t {
 	xui_proxy_t tProxy;
 	int iDrawTextCount;
+	int iTextMeasureCount;
+	uint32_t iLastTextMeasureFlags;
 	int iDrawSurfaceCount;
 	int iFillCount;
 	int iStrokeCount;
@@ -594,9 +596,12 @@ static int __xuiButtonTestTextMeasure(xui_proxy pProxy, const xui_text_item_t* p
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
     const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
 
-	(void)pProxy;
 	if ( !__xuiButtonTestFontValid(pFont) || (sText == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xuiButtonTestState(pProxy) != NULL ) {
+		__xuiButtonTestState(pProxy)->iTextMeasureCount++;
+		__xuiButtonTestState(pProxy)->iLastTextMeasureFlags = pTextItem->iFlags;
 	}
 	pSize->fX = (float)strlen(sText) * 8.0f;
 	pSize->fY = pFont->fSize;
@@ -755,30 +760,48 @@ static void __xuiButtonTestClick(xui_widget pWidget, void* pUser)
 	(*pCount)++;
 }
 
+static void __xuiButtonTestDestroyClick(xui_widget pWidget, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(*pCount)++;
+	xuiWidgetDestroy(pWidget);
+}
+
 int main(void)
 {
 	xui_button_test_state_t tState;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pButton;
+	xui_widget pDestroyButton;
+	xui_widget pInvalidButton;
 	xui_surface pIcon;
 	xui_surface pFocusSurface;
 	xui_button_desc_t tDesc;
+	xui_button_desc_t tBadDesc;
 	xui_surface_desc_t tSurfaceDesc;
 	xui_nine_patch_t tPatch;
+	xui_style_property_info_t tPropertyInfo;
+	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
+	uint32_t iPropertyId;
 	struct xui_font_t tFont;
 	int iFailed;
 	int iRet;
 	int iClickCount;
+	int iDestroyClickCount;
+	int iMeasureCount;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pButton = NULL;
+	pDestroyButton = NULL;
+	pInvalidButton = NULL;
 	pIcon = NULL;
 	pFocusSurface = NULL;
 	iFailed = 0;
 	iClickCount = 0;
+	iDestroyClickCount = 0;
 	__xuiButtonTestInitProxy(&tState);
 	tFont.iMagic = XUI_TEST_FONT_MAGIC;
 	tFont.fSize = 16.0f;
@@ -798,6 +821,14 @@ int main(void)
 	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 240.0f, 120.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "root rect");
 
+	memset(&tBadDesc, 0, sizeof(tBadDesc));
+	tBadDesc.iSize = sizeof(tBadDesc);
+	tBadDesc.fBorderWidth = NAN;
+	pInvalidButton = pRoot;
+	iRet = xuiButtonCreate(pContext, &pInvalidButton, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidButton == NULL,
+		"invalid descriptor clears output");
+
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = "Press";
@@ -805,6 +836,13 @@ int main(void)
 	tDesc.iTextColor = XUI_COLOR_RGBA(12, 24, 40, 255);
 	iRet = xuiButtonCreate(pContext, &pButton, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pButton != NULL, "button create");
+	iPropertyId = xuiStyleFindProperty(pContext, "text.flags");
+	memset(&tPropertyInfo, 0, sizeof(tPropertyInfo));
+	tPropertyInfo.iSize = sizeof(tPropertyInfo);
+	iRet = xuiStyleGetPropertyInfo(pContext, iPropertyId, &tPropertyInfo);
+	XUI_TEST_CHECK(iPropertyId != 0 && iRet == XUI_OK &&
+		(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) != 0,
+		"button registers text flags as layout affecting");
 	iRet = xuiWidgetSetRect(pButton, (xui_rect_t){20.0f, 20.0f, 120.0f, 38.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "button rect");
 	iRet = xuiWidgetAddChild(pRoot, pButton);
@@ -817,8 +855,23 @@ int main(void)
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "initial render prepare");
 	XUI_TEST_CHECK(tState.iDrawTextCount > 0, "button text rendered");
+	XUI_TEST_CHECK(tState.iTextMeasureCount == 1, "button text measured once across cache states");
 	XUI_TEST_CHECK(tState.iFillCount > 0, "button fill rendered");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pButton, xuiWidgetGetStateId(pButton)) != NULL, "button cache surface");
+	iMeasureCount = tState.iTextMeasureCount;
+	iRet = xuiWidgetInvalidate(pButton, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iTextMeasureCount == iMeasureCount,
+		"cache rebuild reuses button text measurement");
+	xuiWidgetClearDirty(pButton, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiButtonSetTextFlags(pButton, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pButton) & XUI_WIDGET_DIRTY_LAYOUT) != 0,
+		"button rtl change invalidates layout");
+	iRet = xuiWidgetMeasure(pButton, (xui_vec2_t){240.0f, 120.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tState.iLastTextMeasureFlags & XUI_TEXT_SHAPE_RTL) != 0,
+		"button rtl reaches text measurement");
 
 	memset(&tSurfaceDesc, 0, sizeof(tSurfaceDesc));
 	tSurfaceDesc.iKind = XUI_SURFACE_KIND_TEXTURE;
@@ -829,6 +882,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pIcon != NULL, "icon surface create");
 	iRet = xuiButtonSetIcon(pButton, pIcon, (xui_rect_t){0.0f, 0.0f, 32.0f, 32.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "icon set");
+	iRet = xuiButtonSetIcon(pButton, pIcon, (xui_rect_t){0, 0, -1, 32});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative icon source width");
 	iRet = xuiButtonSetIconLayout(pButton, XUI_BUTTON_ICON_RIGHT, 18.0f, 5.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "icon layout");
 	memset(&tPatch, 0, sizeof(tPatch));
@@ -868,6 +923,30 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch up");
 	XUI_TEST_CHECK(xuiGetPointerCapture(pContext) == NULL, "capture release");
 	XUI_TEST_CHECK(xuiButtonGetClickCount(pButton) == 1 && iClickCount == 1, "click count");
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		40, 35, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pButton,
+		"first touch owns button press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		40, 35, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH, 40, 35, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiButtonGetClickCount(pButton) == 1 &&
+		iClickCount == 1 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pButton &&
+		(xuiButtonGetState(pButton) & XUI_WIDGET_STATE_ACTIVE) != 0,
+		"unrelated touch cannot click or release button press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		40, 35, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiButtonGetClickCount(pButton) == 2 &&
+		iClickCount == 2 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch completes one button click");
 	iRet = xuiButtonClearPatch(pButton, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear patch");
 	iRet = xuiButtonSetBadgeVisible(pButton, 0);
@@ -911,7 +990,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "space up");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch space up");
-	XUI_TEST_CHECK(xuiButtonGetClickCount(pButton) == 2 && iClickCount == 2, "keyboard click");
+	XUI_TEST_CHECK(xuiButtonGetClickCount(pButton) == 3 && iClickCount == 3, "keyboard click");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "space down before blur");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -925,7 +1004,7 @@ int main(void)
 	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "space up after blur");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiButtonGetClickCount(pButton) == 2 && iClickCount == 2,
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiButtonGetClickCount(pButton) == 3 && iClickCount == 3,
 	               "blurred keyboard press does not click");
 	iRet = xuiButtonSetIconLayout(pButton, XUI_BUTTON_ICON_LEFT, NAN, 4.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan icon size");
@@ -940,6 +1019,23 @@ int main(void)
 	tPatch.tSlice.fLeft = -1;
 	iRet = xuiButtonSetPatch(pButton, 0, &tPatch);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative patch slice");
+	tPatch.tSlice.fLeft = 8.0f;
+	tPatch.tSrc.fW = -1;
+	iRet = xuiButtonSetPatch(pButton, 0, &tPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative patch source width");
+
+	iRet = xuiButtonCreate(pContext, &pDestroyButton, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyButton != NULL, "destroy callback button create");
+	iRet = xuiWidgetAddChild(pRoot, pDestroyButton);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(pDestroyButton, __xuiButtonTestDestroyClick, &iDestroyClickCount);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pDestroyButton);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyClickCount == 1,
+		"space click callback may destroy button");
+	pDestroyButton = NULL;
 
 	iRet = xuiWidgetSetEnabled(pButton, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");

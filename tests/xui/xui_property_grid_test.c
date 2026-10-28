@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,11 @@ typedef struct property_grid_test_data_t {
 	char sLastId[64];
 	char sLastValue[128];
 } property_grid_test_data_t;
+
+typedef struct property_grid_lifecycle_data_t {
+	int iCallCount;
+	int bIdStable;
+} property_grid_lifecycle_data_t;
 
 static int __xuiPropertyGridContext(xui_widget pWidget, int iPart, int iCategory, int iProperty,
 	float fX, float fY, void* pUser)
@@ -201,6 +207,18 @@ static int __xuiPropertyGridStrictInt(const char* sValue)
 	return (iValue >= 1) && (iValue <= 64);
 }
 
+static int __xuiPropertyGridRejectAll(xui_widget pWidget, int iProperty, const char* sId,
+	const char* sValue, int iType, void* pUser)
+{
+	(void)pWidget;
+	(void)iProperty;
+	(void)sId;
+	(void)sValue;
+	(void)iType;
+	(void)pUser;
+	return 0;
+}
+
 static void __xuiPropertyGridSelect(xui_widget pWidget, int iProperty, const char* sId, void* pUser)
 {
 	property_grid_test_data_t* pData;
@@ -278,6 +296,104 @@ static int __xuiPropertyGridCustomRender(xui_widget pWidget, int iProperty, int 
 	return 0;
 }
 
+static void __xuiPropertyGridDestroySelect(xui_widget pWidget, int iProperty, const char* sId, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)iProperty;
+	(void)sId;
+	if ( pCount != NULL ) (*pCount)++;
+	xuiWidgetDestroy(pWidget);
+}
+
+static void __xuiPropertyGridDestroyChange(xui_widget pWidget, int iProperty, const char* sId,
+	const char* sValue, int iType, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)iProperty;
+	(void)sId;
+	(void)sValue;
+	(void)iType;
+	if ( pCount != NULL ) (*pCount)++;
+	xuiWidgetDestroy(pWidget);
+}
+
+static int __xuiPropertyGridDestroyRender(xui_widget pWidget, int iProperty, int iColumn,
+	const xui_table_view_cell_t* pCell, xui_draw_context pDraw, xui_rect_t tRect, int iState, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)iProperty;
+	(void)iColumn;
+	(void)pCell;
+	(void)pDraw;
+	(void)tRect;
+	(void)iState;
+	if ( pCount != NULL ) (*pCount)++;
+	xuiWidgetDestroy(pWidget);
+	return 1;
+}
+
+static int __xuiPropertyGridDestroyValidate(xui_widget pWidget, int iProperty, const char* sId,
+	const char* sValue, int iType, void* pUser)
+{
+	property_grid_lifecycle_data_t* pData = (property_grid_lifecycle_data_t*)pUser;
+	(void)iProperty;
+	(void)sValue;
+	(void)iType;
+	if ( pData != NULL ) pData->iCallCount++;
+	xuiWidgetDestroy(pWidget);
+	if ( pData != NULL && sId != NULL && strcmp(sId, "value") == 0 ) pData->bIdStable = 1;
+	return 1;
+}
+
+static int __xuiPropertyGridDestroyAction(xui_widget pWidget, int iProperty, const char* sId,
+	xui_rect_t tWorldRect, void* pUser)
+{
+	property_grid_lifecycle_data_t* pData = (property_grid_lifecycle_data_t*)pUser;
+	(void)iProperty;
+	(void)tWorldRect;
+	if ( pData != NULL ) pData->iCallCount++;
+	xuiWidgetDestroy(pWidget);
+	if ( pData != NULL && sId != NULL && strcmp(sId, "value") == 0 ) pData->bIdStable = 1;
+	return 1;
+}
+
+static int __xuiPropertyGridCreateLifecycleGrid(xui_context pContext, xui_font pFont,
+	int iType, xui_widget* ppGrid, int* pProperty)
+{
+	xui_property_grid_desc_t tDesc;
+	xui_property_desc_t tProp;
+	xui_widget pGrid;
+	int iCategory;
+	int iProperty;
+	int iRet;
+
+	if ( ppGrid == NULL || pProperty == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppGrid = NULL;
+	*pProperty = -1;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = pFont;
+	tDesc.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_NONE;
+	tDesc.iEditMode = XUI_TABLE_GRID_EDIT_QUICK;
+	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	iRet = xuiPropertyGridCreate(pContext, &pGrid, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iCategory = xuiPropertyGridAddCategory(pGrid, "lifecycle", "Lifecycle", 1);
+	memset(&tProp, 0, sizeof(tProp));
+	tProp.sId = "value";
+	tProp.sName = "Value";
+	tProp.sValue = "initial";
+	tProp.iType = iType;
+	iProperty = xuiPropertyGridAddProperty(pGrid, iCategory, &tProp);
+	if ( iCategory < 0 || iProperty < 0 ) {
+		xuiWidgetDestroy(pGrid);
+		return XUI_ERROR_INVALID_STATE;
+	}
+	*ppGrid = pGrid;
+	*pProperty = iProperty;
+	return XUI_OK;
+}
+
 int main(void)
 {
 	static const char* arrThemes[] = {"Light", "Dark", "High contrast"};
@@ -292,14 +408,22 @@ int main(void)
 	xui_widget pTableGrid;
 	xui_widget pTableView;
 	xui_widget pPopupOwner;
+	xui_widget pProbe;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_property_grid_desc_t tDesc;
 	xui_property_desc_t tProp;
 	xui_table_grid_editor_config_t tConfig;
 	property_grid_test_data_t tData;
+	property_grid_lifecycle_data_t tLifecycle;
 	xui_rect_t tCell;
 	xui_rect_t tWorld;
+	char sLongId[XUI_PROPERTY_GRID_ID_CAPACITY + 1];
+	char sOwnedTheme0[32];
+	char sOwnedTheme1[32];
+	const char* arrOwnedThemes[2];
+	uint32_t arrOwnedPalette[2];
+	float fColumnWidth;
 	int iAppearance;
 	int iBehavior;
 	int iAdvanced;
@@ -317,7 +441,11 @@ int main(void)
 	int iFailed;
 	int iRet;
 	int iRow;
+	int iSelectedRow;
+	int iSelectedColumn;
 	int i;
+	int iProbeProperty;
+	int iCallbackCount;
 
 	pContext = NULL;
 	pRoot = NULL;
@@ -325,6 +453,7 @@ int main(void)
 	pTableGrid = NULL;
 	pTableView = NULL;
 	pPopupOwner = NULL;
+	pProbe = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -349,6 +478,37 @@ int main(void)
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
+	tDesc.fNameWidth = NAN;
+	pProbe = pRoot;
+	iRet = xuiPropertyGridCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+	               "invalid descriptor clears output");
+	tDesc.fNameWidth = 0.0f;
+	tDesc.iDescriptionMode = 99;
+	pProbe = pRoot;
+	iRet = xuiPropertyGridCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+	               "invalid descriptor mode rejected");
+	tDesc.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_NONE;
+	tDesc.iEditMode = 99;
+	pProbe = pRoot;
+	iRet = xuiPropertyGridCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+	               "invalid edit mode rejected");
+	tDesc.iEditMode = XUI_TABLE_GRID_EDIT_DISPLAY;
+	tDesc.iScrollbarMode = 99;
+	pProbe = pRoot;
+	iRet = xuiPropertyGridCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+	               "invalid scrollbar mode rejected");
+	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	pProbe = pRoot;
+	iRet = xuiPropertyGridCreate(NULL, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+	               "invalid context clears output");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
 	tDesc.pFont = pFont;
 	tDesc.fNameWidth = 150.0f;
 	tDesc.fRowHeight = 26.0f;
@@ -365,6 +525,8 @@ int main(void)
 	pTableGrid = xuiPropertyGridGetTableGrid(pGrid);
 	pTableView = xuiPropertyGridGetTableView(pGrid);
 	XUI_TEST_CHECK(pTableGrid != NULL && pTableView != NULL, "inner widgets");
+	XUI_TEST_CHECK(xuiPropertyGridGetScrollbarMode(pGrid) == XUI_SCROLLBAR_MODE_FULL,
+	               "descriptor scrollbar mode honored");
 	iRet = xuiPropertyGridSetSelect(pGrid, __xuiPropertyGridSelect, &tData);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
 	iRet = xuiPropertyGridSetValidate(pGrid, __xuiPropertyGridValidate, &tData);
@@ -382,6 +544,14 @@ int main(void)
 	iBehavior = xuiPropertyGridAddCategory(pGrid, "behavior", "Behavior", 1);
 	iAdvanced = xuiPropertyGridAddCategory(pGrid, "advanced", "Advanced", 1);
 	XUI_TEST_CHECK(iAppearance >= 0 && iBehavior >= 0 && iAdvanced >= 0, "categories");
+	memset(sLongId, 'x', XUI_PROPERTY_GRID_ID_CAPACITY);
+	sLongId[XUI_PROPERTY_GRID_ID_CAPACITY] = '\0';
+	XUI_TEST_CHECK(xuiPropertyGridAddCategory(pGrid, NULL, NULL, 1) < 0,
+	               "empty effective category id rejected");
+	XUI_TEST_CHECK(xuiPropertyGridAddCategory(pGrid, sLongId, "Long", 1) < 0,
+	               "long category id rejected");
+	XUI_TEST_CHECK(xuiPropertyGridAddCategory(pGrid, NULL, "appearance", 1) < 0,
+	               "duplicate effective category id rejected");
 
 	memset(&tProp, 0, sizeof(tProp));
 	tProp.sId = "title";
@@ -448,6 +618,9 @@ int main(void)
 	tProp.iFlags = 0;
 	pLayoutDirection = xuiPropertyGridAddProperty(pGrid, iAdvanced, &tProp);
 	XUI_TEST_CHECK(pTitle >= 0 && pVisible >= 0 && pMaxPlayers >= 0 && pTheme >= 0 && pAccent >= 0 && pAsset >= 0 && pReadonly >= 0 && pDisabled >= 0 && pHidden >= 0 && pLayoutDirection >= 0, "properties");
+	tProp.sId = sLongId;
+	XUI_TEST_CHECK(xuiPropertyGridAddProperty(pGrid, iAppearance, &tProp) < 0,
+	               "long property id rejected");
 
 	memset(&tConfig, 0, sizeof(tConfig));
 	tConfig.arrEnumItems = arrThemes;
@@ -469,6 +642,48 @@ int main(void)
 	tConfig.iPrecision = 0;
 	iRet = xuiPropertyGridSetEditorConfig(pGrid, pMaxPlayers, &tConfig);
 	XUI_TEST_CHECK(iRet == XUI_OK, "int config");
+	snprintf(sOwnedTheme0, sizeof(sOwnedTheme0), "%s", "Light");
+	snprintf(sOwnedTheme1, sizeof(sOwnedTheme1), "%s", "Dark");
+	arrOwnedThemes[0] = sOwnedTheme0;
+	arrOwnedThemes[1] = sOwnedTheme1;
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.arrEnumItems = arrOwnedThemes;
+	tConfig.iEnumItemCount = 2;
+	tConfig.iEnumSelected = 1;
+	iRet = xuiPropertyGridSetEditorConfig(pGrid, pTheme, &tConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enum config snapshots mutable text");
+	snprintf(sOwnedTheme0, sizeof(sOwnedTheme0), "%s", "Mutated Light");
+	snprintf(sOwnedTheme1, sizeof(sOwnedTheme1), "%s", "Mutated Dark");
+	arrOwnedPalette[0] = XUI_COLOR_RGBA(12, 34, 56, 255);
+	arrOwnedPalette[1] = XUI_COLOR_RGBA(78, 90, 12, 255);
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.arrPalette = arrOwnedPalette;
+	tConfig.iPaletteCount = 2;
+	iRet = xuiPropertyGridSetEditorConfig(pGrid, pAccent, &tConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK, "palette config snapshots mutable colors");
+	arrOwnedPalette[0] = XUI_COLOR_RGBA(1, 2, 3, 255);
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.iEnumItemCount = 1;
+	XUI_TEST_CHECK(xuiPropertyGridSetEditorConfig(pGrid, pTheme, &tConfig) == XUI_ERROR_INVALID_ARGUMENT,
+	               "enum config requires items");
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.iPaletteCount = 1;
+	XUI_TEST_CHECK(xuiPropertyGridSetEditorConfig(pGrid, pAccent, &tConfig) == XUI_ERROR_INVALID_ARGUMENT,
+	               "palette config requires colors");
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.arrEnumItems = arrThemes;
+	tConfig.iEnumItemCount = XUI_PROPERTY_GRID_OPTION_CAPACITY + 1;
+	XUI_TEST_CHECK(xuiPropertyGridSetEditorConfig(pGrid, pTheme, &tConfig) == XUI_ERROR_INVALID_ARGUMENT,
+	               "oversized enum config rejected without truncation");
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.arrPalette = arrOwnedPalette;
+	tConfig.iPaletteCount = XUI_COLOR_PICKER_PALETTE_CAPACITY + 1;
+	XUI_TEST_CHECK(xuiPropertyGridSetEditorConfig(pGrid, pAccent, &tConfig) == XUI_ERROR_INVALID_ARGUMENT,
+	               "oversized palette config rejected without deferred failure");
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.fStep = NAN;
+	XUI_TEST_CHECK(xuiPropertyGridSetEditorConfig(pGrid, pMaxPlayers, &tConfig) == XUI_ERROR_INVALID_ARGUMENT,
+	               "nonfinite editor metrics rejected");
 
 	XUI_TEST_CHECK(xuiPropertyGridGetCategoryCount(pGrid) == 3, "category count");
 	XUI_TEST_CHECK(xuiPropertyGridGetPropertyCount(pGrid) == 10, "property count");
@@ -570,6 +785,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid), "enum quick edit");
 	pPopupOwner = __xuiPropertyGridFindPopupOwner(pContext, xuiComboBoxGetType(pContext));
 	XUI_TEST_CHECK(pPopupOwner != NULL && xuiComboBoxIsOpen(pPopupOwner), "enum quick popup open");
+	XUI_TEST_CHECK(strcmp(xuiComboBoxGetItemText(pPopupOwner, 0), "Light") == 0 &&
+	               strcmp(xuiComboBoxGetItemText(pPopupOwner, 1), "Dark") == 0,
+	               "enum editor uses saved text snapshot");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "enum quick layout");
 	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
@@ -593,6 +811,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid), "color quick edit");
 	pPopupOwner = __xuiPropertyGridFindPopupOwner(pContext, xuiColorPickerGetType(pContext));
 	XUI_TEST_CHECK(pPopupOwner != NULL && xuiColorPickerIsOpen(pPopupOwner), "color quick popup open");
+	XUI_TEST_CHECK(xuiColorPickerGetPaletteCount(pPopupOwner) == 2 &&
+	               xuiColorPickerGetPaletteColor(pPopupOwner, 0) == XUI_COLOR_RGBA(12, 34, 56, 255),
+	               "color editor uses saved palette snapshot");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "color quick layout");
 	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
@@ -612,8 +833,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "int type invalid");
 	iRet = xuiPropertyGridEndEdit(pGrid, 1);
 	XUI_TEST_CHECK(iRet == 0 && xuiPropertyGridIsEditing(pGrid), "int reject");
+	iRet = xuiPropertyGridSetCategoryExpanded(pGrid, iBehavior, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid),
+	               "idempotent category update preserves edit");
+	iRet = xuiPropertyGridSetPropertyFlags(pGrid, pMaxPlayers,
+		XUI_PROPERTY_FLAG_DIRTY | XUI_PROPERTY_FLAG_INVALID);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid),
+	               "visual flags preserve edit");
+	iRet = xuiPropertyGridSetPropertyFlags(pGrid, pMaxPlayers,
+		XUI_PROPERTY_FLAG_DIRTY | XUI_PROPERTY_FLAG_INVALID | XUI_PROPERTY_FLAG_READONLY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && xuiPropertyGridIsEditing(pGrid) &&
+	               (xuiPropertyGridGetPropertyFlags(pGrid, pMaxPlayers) & XUI_PROPERTY_FLAG_READONLY) == 0,
+	               "structural flags reject invalid edit transactionally");
+	iRet = xuiPropertyGridSetCategoryExpanded(pGrid, iBehavior, 0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && xuiPropertyGridIsEditing(pGrid) &&
+	               xuiPropertyGridGetCategoryExpanded(pGrid, iBehavior) == 1,
+	               "category collapse rejects invalid edit transactionally");
 	iRet = xuiPropertyGridEndEdit(pGrid, 0);
 	XUI_TEST_CHECK(iRet != 0, "int cancel");
+	iRet = xuiPropertyGridSetPropertyFlags(pGrid, pMaxPlayers, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset visual flags");
 	iRet = xuiPropertyGridBeginEdit(pGrid, pMaxPlayers);
 	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridIsEditing(pGrid), "int begin valid");
 	iRet = xuiLayout(pContext);
@@ -641,11 +880,44 @@ int main(void)
 	XUI_TEST_CHECK(tData.iActionCount == 1 && strcmp(xuiPropertyGridGetValue(pGrid, pAsset), "picked.xge") == 0, "picker action");
 	XUI_TEST_CHECK(xuiTableGridGetPickerCount(pTableGrid) >= 1, "tablegrid picker count");
 
+	iRow = -1;
+	for ( i = 0; i < xuiPropertyGridGetVisibleCount(pGrid); i++ ) {
+		if ( xuiPropertyGridGetVisibleProperty(pGrid, i) == pReadonly ) {
+			iRow = i;
+			break;
+		}
+	}
+	iRet = xuiTableViewSetSelectedCell(pTableView, iRow, 1);
+	iSelectedRow = -1;
+	iSelectedColumn = -1;
+	(void)xuiTableViewGetSelectedCell(pTableView, &iSelectedRow, &iSelectedColumn);
+	XUI_TEST_CHECK(iRet == XUI_OK && iRow >= 0 && iSelectedRow == iRow && iSelectedColumn == 1,
+	               "readonly value remains selectable");
 	iRet = xuiPropertyGridBeginEdit(pGrid, pReadonly);
-	XUI_TEST_CHECK(iRet == 0, "readonly not editable");
+	XUI_TEST_CHECK(iRet == 0 && !xuiPropertyGridIsEditing(pGrid), "readonly not editable");
 	iRet = xuiPropertyGridBeginEdit(pGrid, pDisabled);
 	XUI_TEST_CHECK(iRet == 0, "disabled not editable");
 	XUI_TEST_CHECK(xuiPropertyGridGetVisibleProperty(pGrid, xuiPropertyGridGetVisibleCount(pGrid) - 1) != pHidden, "hidden not visible");
+
+	fColumnWidth = xuiTableViewGetColumnWidth(pTableView, 1);
+	iRet = xuiPropertyGridBeginEdit(pGrid, pTitle);
+	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridIsEditing(pGrid), "resize edit begin");
+	iRet = xuiWidgetSetRect(pGrid, (xui_rect_t){18.0f, 18.0f, 520.0f, 380.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "resize propertygrid during edit");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid) &&
+	               xuiTableViewGetColumnWidth(pTableView, 1) == fColumnWidth,
+	               "layout defers columns while editing");
+	iRet = xuiPropertyGridEndEdit(pGrid, 0);
+	XUI_TEST_CHECK(iRet != 0, "resize edit cancel");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetColumnWidth(pTableView, 1) > fColumnWidth + 50.0f,
+	               "deferred columns synchronize after edit");
+	iRet = xuiWidgetSetRect(pGrid, (xui_rect_t){18.0f, 18.0f, 420.0f, 380.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore propertygrid size");
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore propertygrid layout");
 
 	iRet = xuiPropertyGridSetColor(pGrid, pAccent, XUI_COLOR_RGBA(67, 167, 124, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetColor(pGrid, pAccent, 0) == XUI_COLOR_RGBA(67, 167, 124, 255), "color helpers");
@@ -655,6 +927,31 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetScroll(pGrid) >= 0.0f, "scroll");
 	iRet = xuiPropertyGridSetDescriptionMode(pGrid, XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetDescriptionMode(pGrid) == XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP, "description mode");
+	XUI_TEST_CHECK(xuiPropertyGridSetDescriptionMode(pGrid, 99, 0.0f) == XUI_ERROR_INVALID_ARGUMENT,
+	               "invalid description mode rejected");
+	XUI_TEST_CHECK(xuiPropertyGridSetDescriptionMode(pGrid, XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP, NAN) == XUI_ERROR_INVALID_ARGUMENT,
+	               "nonfinite description metrics rejected");
+	XUI_TEST_CHECK(xuiPropertyGridSetMetrics(pGrid, NAN, 0.0f, 0.0f) == XUI_ERROR_INVALID_ARGUMENT,
+	               "nonfinite metrics rejected");
+	XUI_TEST_CHECK(xuiPropertyGridSetScroll(pGrid, NAN) == XUI_ERROR_INVALID_ARGUMENT,
+	               "nonfinite scroll rejected");
+	XUI_TEST_CHECK(xuiPropertyGridSetFloat(pGrid, pMaxPlayers, NAN) == XUI_ERROR_INVALID_ARGUMENT &&
+	               xuiPropertyGridSetFloat(pGrid, pMaxPlayers, INFINITY) == XUI_ERROR_INVALID_ARGUMENT,
+	               "nonfinite float values rejected");
+	iRet = xuiPropertyGridSetValue(pGrid, pMaxPlayers, "42oops");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetInt(pGrid, pMaxPlayers, 17) == 17,
+	               "malformed int uses default");
+	iRet = xuiPropertyGridSetValue(pGrid, pMaxPlayers, "999999999999999999999999");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetInt(pGrid, pMaxPlayers, 19) == 19,
+	               "overflow int uses default");
+	iRet = xuiPropertyGridSetValue(pGrid, pMaxPlayers, "nan");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetFloat(pGrid, pMaxPlayers, 2.5f) == 2.5f,
+	               "nonfinite parsed float uses default");
+	iRet = xuiPropertyGridSetValue(pGrid, pAccent, "#43A77C trailing");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetColor(pGrid, pAccent, 0x12345678u) == 0x12345678u,
+	               "color parser rejects trailing data");
+	(void)xuiPropertyGridSetInt(pGrid, pMaxPlayers, 42);
+	(void)xuiPropertyGridSetColor(pGrid, pAccent, XUI_COLOR_RGBA(67, 167, 124, 255));
 
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "final layout");
@@ -665,6 +962,104 @@ int main(void)
 	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pTarget) > 0, "final render");
 	XUI_TEST_CHECK(xuiTableViewGetColumnCount(pTableView) == 2, "column count");
+
+	iRet = __xuiPropertyGridCreateLifecycleGrid(pContext, pFont, XUI_TABLE_CELL_TYPE_TEXT, &pProbe, &iProbeProperty);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear lifecycle grid create");
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear lifecycle grid attach");
+	(void)xuiWidgetSetRect(pProbe, (xui_rect_t){20.0f, 20.0f, 260.0f, 120.0f});
+	(void)xuiPropertyGridSetValidate(pProbe, __xuiPropertyGridRejectAll, NULL);
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear lifecycle grid layout");
+	iRet = xuiPropertyGridBeginEdit(pProbe, iProbeProperty);
+	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridIsEditing(pProbe), "clear lifecycle edit begin");
+	iRet = __xuiPropertyGridTypeText(pContext, "invalid");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridEndEdit(pProbe, 1) == 0 && xuiPropertyGridIsEditing(pProbe),
+	               "clear lifecycle invalid edit");
+	iRet = xuiPropertyGridClear(pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiPropertyGridIsEditing(pProbe) &&
+	               xuiPropertyGridGetPropertyCount(pProbe) == 0,
+	               "clear cancels invalid edit");
+	xuiWidgetDestroy(pProbe);
+	pProbe = NULL;
+
+	(void)xuiWidgetSetVisible(pGrid, 0);
+	iRet = __xuiPropertyGridCreateLifecycleGrid(pContext, pFont, XUI_TABLE_CELL_TYPE_TEXT, &pProbe, &iProbeProperty);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select lifecycle grid create");
+	(void)xuiWidgetSetRect(pProbe, (xui_rect_t){20.0f, 20.0f, 260.0f, 120.0f});
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select lifecycle grid attach");
+	iCallbackCount = 0;
+	(void)xuiPropertyGridSetSelect(pProbe, __xuiPropertyGridDestroySelect, &iCallbackCount);
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select lifecycle layout");
+	pTableView = xuiPropertyGridGetTableView(pProbe);
+	XUI_TEST_CHECK(pTableView != NULL && xuiTableViewGetCellRect(pTableView, 1, 0, &tCell) == XUI_OK,
+	               "select lifecycle cell");
+	tWorld = xuiWidgetGetWorldRect(pTableView);
+	iRet = __xuiPropertyGridClick(pContext, tWorld.fX + tCell.fX + 8.0f,
+		tWorld.fY + tCell.fY + tCell.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCallbackCount == 1,
+	               "select callback may destroy propertygrid");
+	pProbe = NULL;
+
+	iRet = __xuiPropertyGridCreateLifecycleGrid(pContext, pFont, XUI_TABLE_CELL_TYPE_TEXT, &pProbe, &iProbeProperty);
+	XUI_TEST_CHECK(iRet == XUI_OK, "change lifecycle grid create");
+	(void)xuiWidgetSetRect(pProbe, (xui_rect_t){20.0f, 20.0f, 260.0f, 120.0f});
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "change lifecycle grid attach");
+	iCallbackCount = 0;
+	(void)xuiPropertyGridSetChange(pProbe, __xuiPropertyGridDestroyChange, &iCallbackCount);
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "change lifecycle grid layout");
+	iRet = xuiPropertyGridBeginEdit(pProbe, iProbeProperty);
+	XUI_TEST_CHECK(iRet != 0, "change lifecycle edit begin");
+	iRet = __xuiPropertyGridTypeText(pContext, "changed");
+	XUI_TEST_CHECK(iRet == XUI_OK, "change lifecycle type");
+	(void)xuiPropertyGridEndEdit(pProbe, 1);
+	XUI_TEST_CHECK(iCallbackCount == 1, "change callback may destroy propertygrid");
+	pProbe = NULL;
+
+	iRet = __xuiPropertyGridCreateLifecycleGrid(pContext, pFont, XUI_TABLE_CELL_TYPE_TEXT, &pProbe, &iProbeProperty);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render lifecycle grid create");
+	(void)xuiWidgetSetRect(pProbe, (xui_rect_t){20.0f, 20.0f, 260.0f, 120.0f});
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render lifecycle grid attach");
+	iCallbackCount = 0;
+	(void)xuiPropertyGridSetGlobalRenderer(pProbe, __xuiPropertyGridDestroyRender, &iCallbackCount);
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiPropertyGridTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCallbackCount == 1,
+	               "render callback may destroy propertygrid");
+	pProbe = NULL;
+
+	iRet = __xuiPropertyGridCreateLifecycleGrid(pContext, pFont, XUI_TABLE_CELL_TYPE_TEXT, &pProbe, &iProbeProperty);
+	XUI_TEST_CHECK(iRet == XUI_OK, "validate lifecycle grid create");
+	(void)xuiWidgetSetRect(pProbe, (xui_rect_t){20.0f, 20.0f, 260.0f, 120.0f});
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "validate lifecycle grid attach");
+	memset(&tLifecycle, 0, sizeof(tLifecycle));
+	(void)xuiPropertyGridSetValidate(pProbe, __xuiPropertyGridDestroyValidate, &tLifecycle);
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiPropertyGridBeginEdit(pProbe, iProbeProperty) ? XUI_OK : XUI_ERROR_INVALID_STATE;
+	if ( iRet == XUI_OK ) iRet = __xuiPropertyGridTypeText(pContext, "changed");
+	if ( iRet == XUI_OK ) (void)xuiPropertyGridEndEdit(pProbe, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLifecycle.iCallCount == 1 && tLifecycle.bIdStable,
+	               "validate callback keeps id snapshot while destroying propertygrid");
+	pProbe = NULL;
+
+	iRet = __xuiPropertyGridCreateLifecycleGrid(pContext, pFont, XUI_TABLE_CELL_TYPE_CUSTOM, &pProbe, &iProbeProperty);
+	XUI_TEST_CHECK(iRet == XUI_OK, "action lifecycle grid create");
+	(void)xuiWidgetSetRect(pProbe, (xui_rect_t){20.0f, 20.0f, 260.0f, 120.0f});
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "action lifecycle grid attach");
+	memset(&tLifecycle, 0, sizeof(tLifecycle));
+	(void)xuiPropertyGridSetAction(pProbe, iProbeProperty, __xuiPropertyGridDestroyAction, &tLifecycle);
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) (void)xuiPropertyGridBeginEdit(pProbe, iProbeProperty);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLifecycle.iCallCount == 1 && tLifecycle.bIdStable,
+	               "action callback keeps id snapshot while destroying propertygrid");
+	pProbe = NULL;
 
 cleanup:
 	if ( pContext != NULL ) {

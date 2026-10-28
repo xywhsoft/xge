@@ -3,6 +3,33 @@
 #include <stdio.h>
 #include <string.h>
 
+static int g_iAnnotationFailAllocation = -1;
+static int g_bAnnotationAllocationFailed = 0;
+
+static void* xuiTestAnnotationMalloc(size_t iSize)
+{
+	if ( g_iAnnotationFailAllocation >= 0 && g_iAnnotationFailAllocation-- == 0 ) {
+		g_bAnnotationAllocationFailed = 1;
+		return NULL;
+	}
+	return xrtMalloc(iSize);
+}
+
+static void* xuiTestAnnotationRealloc(void* pMemory, size_t iSize)
+{
+	if ( g_iAnnotationFailAllocation >= 0 && g_iAnnotationFailAllocation-- == 0 ) {
+		g_bAnnotationAllocationFailed = 1;
+		return NULL;
+	}
+	return xrtRealloc(pMemory, iSize);
+}
+
+#define xrtMalloc xuiTestAnnotationMalloc
+#define xrtRealloc xuiTestAnnotationRealloc
+#include "../../src/xui/code/xui_code_annotation.c"
+#undef xrtMalloc
+#undef xrtRealloc
+
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
 		if ( !(expr) ) { \
@@ -18,12 +45,15 @@ int main(void)
 	xui_code_marker_t arrMarkers[4];
 	xui_code_indicator_t arrIndicators[4];
 	xui_code_diagnostic_t arrDiagnostics[2];
+	xui_code_diagnostic_t arrReplacement[2];
 	xui_code_diagnostic_t tDiagnostic;
 	int arrDiagnosticIndices[2];
 	uint32_t iDiagnosticVersion;
 	int iCount;
+	int iFail;
 	int iFailed;
 	int iRet;
+	int bReplacementSucceeded;
 
 	pStore = NULL;
 	iFailed = 0;
@@ -104,9 +134,69 @@ int main(void)
 	iRet = xuiCodeAnnotationGetDiagnosticsAt(pStore, 9, arrDiagnostics, 2, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrDiagnostics[0].tRange.iStart == 9 && arrDiagnostics[0].tRange.iEnd == 10, "diagnostic collapsed after overlap delete");
 
+	memset(arrReplacement, 0, sizeof(arrReplacement));
+	arrReplacement[0].iSize = sizeof(arrReplacement[0]);
+	arrReplacement[0].tRange.iStart = 30;
+	arrReplacement[0].tRange.iEnd = 34;
+	arrReplacement[0].sCode = "R1";
+	arrReplacement[0].sMessage = "replacement one";
+	arrReplacement[0].sSource = "test";
+	arrReplacement[1].iSize = sizeof(arrReplacement[1]);
+	arrReplacement[1].tRange.iStart = 40;
+	arrReplacement[1].tRange.iEnd = 44;
+	arrReplacement[1].sCode = "R2";
+	arrReplacement[1].sMessage = "replacement two";
+	arrReplacement[1].sSource = "test";
+	bReplacementSucceeded = 0;
+	for ( iFail = 0; iFail < 16; iFail++ ) {
+		iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pStore);
+		g_iAnnotationFailAllocation = iFail;
+		g_bAnnotationAllocationFailed = 0;
+		iRet = xuiCodeAnnotationSetDiagnostics(pStore, arrReplacement, 2);
+		g_iAnnotationFailAllocation = -1;
+		if ( iRet == XUI_OK ) {
+			bReplacementSucceeded = 1;
+			break;
+		}
+		XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && g_bAnnotationAllocationFailed,
+			"diagnostic replacement allocation failure");
+		XUI_TEST_CHECK(xuiCodeAnnotationGetDiagnosticCount(pStore) == 2 &&
+			xuiCodeAnnotationGetDiagnosticVersion(pStore) == iDiagnosticVersion,
+			"diagnostic replacement preserves old store");
+		iRet = xuiCodeAnnotationGetDiagnostic(pStore, 0, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tDiagnostic.sMessage, "expected ;") == 0,
+			"diagnostic replacement preserves old strings");
+	}
+	XUI_TEST_CHECK(bReplacementSucceeded && xuiCodeAnnotationGetDiagnosticCount(pStore) == 2,
+		"diagnostic replacement eventually succeeds");
+	iRet = xuiCodeAnnotationGetDiagnostic(pStore, 0, &tDiagnostic);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tDiagnostic.sMessage, "replacement one") == 0,
+		"diagnostic replacement committed");
+
+	iRet = xuiCodeAnnotationSetMarker(pStore, INT_MAX,
+		XUI_CODE_MARKER_BOOKMARK, 0u, NULL, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set maximum line marker");
+	iRet = xuiCodeAnnotationTrackEdit(pStore, 0, 0, 1, 0, 0, 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED, "track edit overflow rejected");
+	iRet = xuiCodeAnnotationGetMarkers(pStore, INT_MAX, arrMarkers, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1,
+		"track edit overflow preserves marker");
+	iRet = xuiCodeAnnotationGetDiagnosticsAt(pStore, INT_MAX,
+		arrDiagnostics, 2, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"maximum diagnostic offset rejected");
+	iRet = xuiCodeAnnotationGetMarkers(pStore, 0, arrMarkers, -1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"negative marker capacity rejected");
+
 	iRet = xuiCodeAnnotationClearDiagnostics(pStore);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeAnnotationGetDiagnosticCount(pStore) == 0, "clear diagnostics");
 	XUI_TEST_CHECK(xuiCodeAnnotationGetDiagnosticVersion(pStore) > iDiagnosticVersion, "diagnostic version changes");
+	iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pStore);
+	iRet = xuiCodeAnnotationClearDiagnostics(pStore);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeAnnotationGetDiagnosticVersion(pStore) == iDiagnosticVersion,
+		"empty diagnostic clear keeps version");
 	xuiCodeAnnotationStoreClear(pStore);
 	iRet = xuiCodeAnnotationGetMarkers(pStore, 5, arrMarkers, 4, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 0, "clear store markers");

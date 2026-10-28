@@ -198,8 +198,8 @@ typedef struct prepare_gate_allocator {
 } prepare_gate_allocator;
 static void prepare_gate_wait(atomic_int* gate)
 {
-    xdeadline deadline = xrtDeadlineAfter(10000000);
-    while (!atomic_load(gate)) { CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield(); }
+    double deadline = xrtTimer() + 10.0;
+    while (!atomic_load(gate)) { CHECK(xrtTimer() < deadline); xrtThreadYield(); }
 }
 static void* prepare_gate_alloc(void* data, size_t bytes)
 {

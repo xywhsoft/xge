@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +16,21 @@
 	} while ( 0 )
 
 static int g_iTooltipCalls = 0;
+static int (*g_pChartCircleFill)(xui_proxy, xui_draw_context, float, float, float, uint32_t) = NULL;
+static uint32_t g_iChartLodColor = 0;
+static float g_fChartLodMinY = FLT_MAX;
+static int g_iChartLodCircles = 0;
+
+static int __xuiChartRecordCircle(xui_proxy pProxy, xui_draw_context pDraw,
+	float fX, float fY, float fRadius, uint32_t iColor)
+{
+	if ( iColor == g_iChartLodColor ) {
+		if ( fY < g_fChartLodMinY ) g_fChartLodMinY = fY;
+		g_iChartLodCircles++;
+	}
+	return g_pChartCircleFill != NULL ?
+		g_pChartCircleFill(pProxy, pDraw, fX, fY, fRadius, iColor) : XUI_OK;
+}
 
 static int __xuiChartTooltip(xui_widget pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser)
 {
@@ -25,6 +41,21 @@ static int __xuiChartTooltip(xui_widget pWidget, int iSeries, int iItem, char* s
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	snprintf(sBuffer, (size_t)iCapacity, "custom:%d:%d", iSeries, iItem);
+	return XUI_OK;
+}
+
+static int __xuiChartDestroyTooltip(xui_widget pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser)
+{
+	xui_widget* ppChart = (xui_widget*)pUser;
+
+	(void)iSeries;
+	(void)iItem;
+	if ( (sBuffer == NULL) || (iCapacity <= 0) || (ppChart == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	snprintf(sBuffer, (size_t)iCapacity, "destroy");
+	xuiWidgetDestroy(pWidget);
+	if ( *ppChart == pWidget ) *ppChart = NULL;
 	return XUI_OK;
 }
 
@@ -48,6 +79,7 @@ int main(void)
 	xui_path_command_t tPathCommand;
 	float arrDashPattern[2];
 	float arrChartDash[2];
+	char sMutableLabel[32];
 	xui_chart_point_t arrLine[4];
 	xui_chart_point_t arrLineLarge[32];
 	xui_chart_point_t arrBarA[3];
@@ -56,6 +88,7 @@ int main(void)
 	xui_chart_point_t arrPieB[3];
 	xui_chart_point_t arrScatter[3];
 	xui_chart_hit_t tHit;
+	xui_accessible_node_t tAccessible;
 	xui_rect_t tPlot;
 	xui_rect_t tPlotPadded;
 	xui_thickness_t tPadding;
@@ -71,6 +104,10 @@ int main(void)
 	double fAutoMinY;
 	double fAutoMaxY;
 	double fPanMinX;
+	double fOwnerMinX;
+	double fOwnerMaxX;
+	double fOwnerMinY;
+	double fOwnerMaxY;
 	float fMinSize;
 	float fMaxSize;
 	float fAnimDuration;
@@ -84,6 +121,7 @@ int main(void)
 	int iPie;
 	int iPieB;
 	int iScatter;
+	int iUtf8Series;
 	int bAnimEnabled;
 	int iMeshBase;
 	int iPathBase;
@@ -131,8 +169,11 @@ int main(void)
 	memset(arrPie, 0, sizeof(arrPie));
 	memset(arrPieB, 0, sizeof(arrPieB));
 	memset(arrScatter, 0, sizeof(arrScatter));
+	strcpy(sMutableLabel, "OwnedLabel");
 	xuiTestProxyInit(&tState);
 	xuiTestProxyInit(&tNoVectorState);
+	g_pChartCircleFill = tState.tProxy.drawCircleFill;
+	tState.tProxy.drawCircleFill = __xuiChartRecordCircle;
 	tNoVectorState.tProxy.drawPath = NULL;
 
 	iRet = xuiCreate(&pContext);
@@ -165,6 +206,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "chart add");
 
 	XUI_TEST_CHECK(strcmp(xuiChartGetTitle(pChart), "Chart Test") == 0, "title");
+	iRet = xuiChartSetTitle(pChart, "");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetTitle(pChart) != NULL && xuiChartGetTitle(pChart)[0] == '\0', "empty title accepted");
+	iRet = xuiChartSetTitle(pChart, "Chart Test");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiChartGetTitle(pChart), "Chart Test") == 0, "title restore");
 	XUI_TEST_CHECK(xuiChartGetSeriesCount(pChart) == 0, "empty series");
 	iRet = xuiChartAddSeries(pChart, XUI_CHART_SERIES_LINE, "Line", &iLine);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 0, "line add");
@@ -178,11 +223,27 @@ int main(void)
 	arrLine[3].x = 3.0; arrLine[3].y = 9.0; arrLine[3].value = 9.0; arrLine[3].label = "D";
 	for ( i = 0; i < 32; i++ ) {
 		arrLineLarge[i].x = (double)i;
-		arrLineLarge[i].y = (double)((i % 9) + 1);
+		arrLineLarge[i].y = 1.0;
 		arrLineLarge[i].value = arrLineLarge[i].y;
 	}
+	arrLineLarge[5].y = 100.0;
+	arrLineLarge[5].value = 100.0;
 	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "line data");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pChart) == 7,
+	               "chart accessibility exposes root, points, and legend");
+	iRet = xuiWidgetGetAccessibleNode(pChart, 1, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_LIST_ITEM &&
+	               strcmp(tAccessible.sName, "A") == 0 && tAccessible.tRange.fValue == 3.0,
+	               "chart point accessibility metadata");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pChart, 5, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_CHECKBOX &&
+	               (tAccessible.iState & XUI_ACCESSIBLE_STATE_CHECKED) != 0,
+	               "chart legend accessibility metadata");
 	arrLine[0].y = NAN;
 	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite chart data rejected");
@@ -193,12 +254,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesSymbol(pChart, iLine) == XUI_CHART_SYMBOL_DIAMOND, "symbol");
 	iRet = xuiChartSetSeriesSymbolSize(pChart, iLine, 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesSymbolSize(pChart, iLine) == 10.0f, "symbol size");
+	iRet = xuiChartSetSeriesSymbolSize(pChart, iLine, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetSeriesSymbolSize(pChart, iLine) == 10.0f, "non-finite symbol size rejected transactionally");
 	iRet = xuiChartSetSeriesAreaFill(pChart, iLine, 1, XUI_COLOR_RGBA(42, 124, 221, 48));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesAreaFill(pChart, iLine, &iAreaColor) == 1 && iAreaColor == XUI_COLOR_RGBA(42, 124, 221, 48), "area fill set");
 	iRet = xuiChartSetSeriesSmooth(pChart, iLine, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesSmooth(pChart, iLine) == 1, "smooth line set");
 	iRet = xuiChartSetSeriesDash(pChart, iLine, arrChartDash, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesDash(pChart, iLine, arrDashPattern, 2) == 2 && arrDashPattern[0] == 10.0f && arrDashPattern[1] == 5.0f, "line dash set");
+	arrChartDash[1] = NAN;
+	iRet = xuiChartSetSeriesDash(pChart, iLine, arrChartDash, 2);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetSeriesDash(pChart, iLine, arrDashPattern, 2) == 2 && arrDashPattern[0] == 10.0f && arrDashPattern[1] == 5.0f, "non-finite dash rejected transactionally");
+	arrChartDash[1] = 5.0f;
 	iRet = xuiChartSetTooltipCallback(pChart, __xuiChartTooltip, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tooltip callback");
 	XUI_TEST_CHECK((xuiChartGetDirtyFlags(pChart) & XUI_CHART_DIRTY_PLOT) != 0, "dirty before render");
@@ -221,6 +288,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "data to pixel");
 	iRet = xuiChartPixelToData(pChart, tPixel.fX, tPixel.fY, &fDataX, &fDataY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fDataX > 0.99 && fDataX < 1.01 && fDataY > 6.99 && fDataY < 7.01, "pixel to data");
+	iRet = xuiChartDataToPixel(pChart, NAN, 7.0, &tPixel);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite data coordinate rejected");
+	iRet = xuiChartPixelToData(pChart, INFINITY, 20.0f, &fDataX, &fDataY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite pixel coordinate rejected");
+	iRet = xuiChartHitTest(pChart, 20.0f, NAN, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite hit coordinate rejected");
+	iRet = xuiChartDataToPixel(pChart, 1.0, 7.0, &tPixel);
+	XUI_TEST_CHECK(iRet == XUI_OK, "data to pixel restore");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
 	XUI_TEST_CHECK(xuiChartGetDirtyFlags(pChart) == 0, "dirty cleared after render");
@@ -318,6 +393,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set padding");
 	tPadding = xuiChartGetPadding(pChart);
 	XUI_TEST_CHECK(tPadding.fLeft == 12.0f && tPadding.fTop == 8.0f && tPadding.fRight == 10.0f && tPadding.fBottom == 6.0f, "get padding");
+	iRet = xuiChartSetPadding(pChart, (xui_thickness_t){NAN, 8.0f, 10.0f, 6.0f});
+	tPadding = xuiChartGetPadding(pChart);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && tPadding.fLeft == 12.0f && tPadding.fTop == 8.0f && tPadding.fRight == 10.0f && tPadding.fBottom == 6.0f, "non-finite padding rejected transactionally");
 	XUI_TEST_CHECK((xuiChartGetDirtyFlags(pChart) & XUI_CHART_DIRTY_STATIC) != 0, "padding dirty static");
 	tPlotPadded = xuiChartGetPlotRect(pChart);
 	XUI_TEST_CHECK(tPlotPadded.fX > tPlot.fX && tPlotPadded.fW < tPlot.fW, "padding plot effect");
@@ -338,12 +416,29 @@ int main(void)
 	XUI_TEST_CHECK(tState.iDrawClipGetCount > 0 && tState.iDrawClipSetCount > 0 &&
 	               tState.iDrawClipClearCount > 0 && !tState.bLastDrawClipActive,
 	               "plot clip applied and restored");
+	iRet = xuiChartSetTooltipCallback(pChart, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "default tooltip callback");
+	arrLine[1].label = sMutableLabel;
+	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "mutable label data");
+	strcpy(sMutableLabel, "Mutated");
+	pCache = xuiWidgetGetCacheSurface(pChart, xuiWidgetGetStateId(pChart));
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetLastText(pCache) != NULL && strstr(xuiTestSurfaceGetLastText(pCache), "OwnedLabel") != NULL, "series labels are owned copies");
+	arrLine[1].label = "B";
+	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "line data restore after ownership test");
+	iRet = xuiChartSetTooltipCallback(pChart, __xuiChartTooltip, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "custom tooltip restore");
 	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
 	XUI_TEST_CHECK(iRet == 0 && fMaxX > fMinX && fMaxY > fMinY, "auto view range");
 	fAutoMinX = fMinX;
 	fAutoMaxX = fMaxX;
 	fAutoMinY = fMinY;
 	fAutoMaxY = fMaxY;
+	iRet = xuiChartSetViewRange(pChart, NAN, 5.0, 0.0, 12.0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY) == 0, "non-finite view range rejected transactionally");
 	iRet = xuiChartSetViewRange(pChart, -1.0, 5.0, 0.0, 12.0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set view range");
 	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
@@ -372,6 +467,64 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel zoom dispatch");
 	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
 	XUI_TEST_CHECK(iRet == 1 && (fMaxX - fMinX) < 4.0 && (fMaxY - fMinY) < 10.0, "wheel zoom range");
+	fOwnerMinX = fMinX;
+	fOwnerMaxX = fMaxX;
+	fOwnerMinY = fMinY;
+	fOwnerMaxY = fMaxY;
+	iRet = xuiInputPointerDownEx(pContext, 601u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tPlot.fX + tPlot.fW * 0.5f), (int)(tPlot.fY + tPlot.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 601u, XUI_POINTER_TYPE_TOUCH) == pChart,
+		"chart owner touch captures pan");
+	iRet = xuiInputPointerDownEx(pContext, 602u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tPlot.fX + tPlot.fW * 0.5f), (int)(tPlot.fY + tPlot.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 602u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tPlot.fX + tPlot.fW * 0.9f),
+		(int)(tPlot.fY + tPlot.fH * 0.5f), XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 602u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tPlot.fX + tPlot.fW * 0.9f),
+		(int)(tPlot.fY + tPlot.fH * 0.5f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiChartGetViewRange(pChart,
+		&fMinX, &fMaxX, &fMinY, &fMaxY);
+	XUI_TEST_CHECK(iRet == 1 && fMinX == fOwnerMinX && fMaxX == fOwnerMaxX &&
+		xuiGetPointerCaptureEx(pContext, 601u, XUI_POINTER_TYPE_TOUCH) == pChart &&
+		xuiGetPointerCaptureEx(pContext, 602u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot pan chart or end owner capture");
+	iRet = xuiInputPointerMoveEx(pContext, 601u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tPlot.fX + tPlot.fW * 0.75f), (int)(tPlot.fY + tPlot.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiChartGetViewRange(pChart,
+		&fMinX, &fMaxX, &fMinY, &fMaxY);
+	XUI_TEST_CHECK(iRet == 1 && fMinX != fOwnerMinX,
+		"chart owner touch controls pan");
+	iRet = xuiInputPointerUpEx(pContext, 601u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tPlot.fX + tPlot.fW * 0.75f), (int)(tPlot.fY + tPlot.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 601u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"chart owner touch releases pan capture");
+	iRet = xuiChartSetViewRange(pChart, fOwnerMinX, fOwnerMaxX,
+		fOwnerMinY, fOwnerMaxY);
+	if ( iRet == XUI_OK ) iRet = xuiChartGetViewRange(pChart,
+		&fMinX, &fMaxX, &fMinY, &fMaxY);
+	XUI_TEST_CHECK(iRet == 1 && fMinX == fOwnerMinX && fMaxX == fOwnerMaxX,
+		"restore chart range after owner isolation test");
+	iRet = xuiInputPointerDown(pContext, tPlot.fX + tPlot.fW * 0.5f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == pChart, "disable capture acquired");
+	iRet = xuiWidgetSetEnabled(pChart, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "disable releases chart capture");
+	iRet = xuiInputPointerUp(pContext, tPlot.fX + tPlot.fW * 0.5f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK, "disabled pointer release");
+	iRet = xuiWidgetSetEnabled(pChart, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "chart re-enable");
 	fPanMinX = fMinX;
 	iRet = xuiInputPointerDown(pContext, tPlot.fX + tPlot.fW * 0.5f, tPlot.fY + tPlot.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pan down");
@@ -392,6 +545,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset view range after interactions");
 	iRet = xuiChartSetBrushRange(pChart, 2.0, 0.0, 9.0, 3.0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set brush range");
+	iRet = xuiChartSetBrushRange(pChart, 4.0, 1.0, INFINITY, 3.0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite brush range rejected");
 	iRet = xuiChartGetBrushRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
 	XUI_TEST_CHECK(iRet == 1 && fMinX == 0.0 && fMaxX == 2.0 && fMinY == 3.0 && fMaxY == 9.0, "get brush range");
 	iRet = xuiChartClearBrushRange(pChart);
@@ -414,20 +569,48 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear brush modifiers");
 	iRet = xuiChartGetBrushRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
 	XUI_TEST_CHECK(iRet == 1 && fMaxX > fMinX && fMaxY > fMinY, "drag brush range");
+	iRet = xuiInputSetModifiers(pContext, XUI_MOD_SHIFT);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDown(pContext,
+		tPlot.fX + tPlot.fW * 0.25f, tPlot.fY + tPlot.fH * 0.75f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pChart,
+		"brush captures before programmatic clear");
+	iRet = xuiChartClearBrushRange(pChart);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"programmatic brush clear releases capture");
+	iRet = xuiInputPointerUp(pContext, tPlot.fX + tPlot.fW * 0.25f,
+		tPlot.fY + tPlot.fH * 0.75f, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetModifiers(pContext, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "brush clear cleanup");
 	iRet = xuiChartSetSeriesData(pChart, iLine, arrLineLarge, 32);
 	XUI_TEST_CHECK(iRet == XUI_OK, "large line data");
+	iRet = xuiChartSetSeriesSymbol(pChart, iLine, XUI_CHART_SYMBOL_CIRCLE);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lod circle symbol");
 	iRet = xuiChartSetLodThreshold(pChart, 8);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetLodThreshold(pChart) == 8, "lod threshold");
+	g_iChartLodColor = xuiChartGetSeriesColor(pChart, iLine);
+	g_fChartLodMinY = FLT_MAX;
+	g_iChartLodCircles = 0;
+	iRet = xuiChartDataToPixel(pChart, arrLineLarge[5].x, arrLineLarge[5].y, &tPixel);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lod peak coordinate");
 	iRet = xuiRenderPrepare(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetLastLodStride(pChart) > 1, "lod render stride");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetLastLodStride(pChart) > 1 &&
+	               g_iChartLodCircles > 0 && fabsf(g_fChartLodMinY - tPixel.fY) < 1.0f,
+	               "lod render preserves interior extrema");
 	iRet = xuiChartSetLodThreshold(pChart, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetLodThreshold(pChart) == 0, "lod disabled");
+	iRet = xuiChartSetAnimation(pChart, 1, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetAnimation(pChart, &bAnimEnabled, &fAnimDuration, &fAnimProgress) == 0, "non-finite animation duration rejected");
 	iRet = xuiChartSetAnimation(pChart, 1, 0.25f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "animation enable");
 	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "animation trigger data");
 	iRet = xuiChartGetAnimation(pChart, &bAnimEnabled, &fAnimDuration, &fAnimProgress);
 	XUI_TEST_CHECK(iRet == 1 && bAnimEnabled == 1 && fAnimDuration == 0.25f && fAnimProgress == 0.0f, "animation active");
+	iRet = xuiChartStepAnimation(pChart, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetAnimation(pChart, &bAnimEnabled, &fAnimDuration, &fAnimProgress) == 1 && fAnimProgress == 0.0f, "non-finite animation delta rejected transactionally");
 	iRet = xuiChartStepAnimation(pChart, 0.125f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "animation step half");
 	iRet = xuiChartGetAnimation(pChart, &bAnimEnabled, &fAnimDuration, &fAnimProgress);
@@ -502,10 +685,25 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "scatter add");
 	iRet = xuiChartSetSeriesData(pChart, iScatter, arrScatter, 3);
 	XUI_TEST_CHECK(iRet == XUI_OK, "scatter data");
+	iRet = xuiChartSetSeriesData(pChart, iScatter, arrLineLarge, 32);
+	XUI_TEST_CHECK(iRet == XUI_OK, "large scatter data");
+	iRet = xuiChartSetLodThreshold(pChart, 8);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scatter lod threshold");
+	g_iChartLodColor = xuiChartGetSeriesColor(pChart, iScatter);
+	g_iChartLodCircles = 0;
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iChartLodCircles == 8,
+	               "scatter lod uses exact uniform point budget");
+	iRet = xuiChartSetLodThreshold(pChart, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scatter lod disabled");
+	iRet = xuiChartSetSeriesData(pChart, iScatter, arrScatter, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scatter data restore");
 	iRet = xuiChartSetSeriesValueRadius(pChart, iScatter, 6.0f, 18.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "scatter value radius set");
 	iRet = xuiChartGetSeriesValueRadius(pChart, iScatter, &fMinSize, &fMaxSize);
 	XUI_TEST_CHECK(iRet == 1 && fMinSize == 6.0f && fMaxSize == 18.0f, "scatter value radius get");
+	iRet = xuiChartSetSeriesValueRadius(pChart, iScatter, NAN, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetSeriesValueRadius(pChart, iScatter, &fMinSize, &fMaxSize) == 1 && fMinSize == 6.0f && fMaxSize == 18.0f, "non-finite scatter radius rejected transactionally");
 	iRet = xuiChartSetSeriesValueColor(pChart, iScatter, XUI_COLOR_RGBA(42, 124, 221, 255), XUI_COLOR_RGBA(211, 75, 98, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "scatter value color set");
 	iRet = xuiChartGetSeriesValueColor(pChart, iScatter, &iMinColor, &iMaxColor);
@@ -537,6 +735,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "pie ring data");
 	iRet = xuiChartSetPieInnerRadius(pChart, 0.35f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetPieInnerRadius(pChart) == 0.35f, "donut");
+	iRet = xuiChartSetPieInnerRadius(pChart, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetPieInnerRadius(pChart) == 0.35f, "non-finite pie radius rejected transactionally");
 	tPlot = xuiChartGetPlotRect(pChart);
 	iRet = xuiChartHitTest(pChart, tPlot.fX + tPlot.fW * 0.5f + 34.0f, tPlot.fY + tPlot.fH * 0.5f - 34.0f, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_SERIES && tHit.iSeries == iPie && tHit.iItem == 0, "pie hit");
@@ -554,6 +754,54 @@ int main(void)
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pie render");
 	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) >= iMeshBase + 6, "pie sector mesh draw");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pChart, 1, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_LIST_ITEM,
+	               "chart accessible point before action");
+	iRet = xuiWidgetPerformAccessibleAction(pChart, tAccessible.iId,
+	                                      XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "chart point accessibility selection");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pChart, 1, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && (tAccessible.iState & XUI_ACCESSIBLE_STATE_SELECTED) != 0,
+	               "chart accessibility reports selected point");
+	i = xuiWidgetGetAccessibleNodeCount(pChart) - xuiChartGetSeriesCount(pChart);
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pChart, i, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_CHECKBOX,
+	               "chart accessible legend before action");
+	iRet = xuiWidgetPerformAccessibleAction(pChart, tAccessible.iId,
+	                                      XUI_ACCESSIBLE_ACTION_TOGGLE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiChartGetSeriesVisible(pChart, iPie),
+	               "chart legend accessibility toggle");
+	iRet = xuiWidgetPerformAccessibleAction(pChart, tAccessible.iId,
+	                                      XUI_ACCESSIBLE_ACTION_TOGGLE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesVisible(pChart, iPie),
+	               "chart legend accessibility toggle restore");
+	iRet = xuiChartAddSeries(pChart, XUI_CHART_SERIES_LINE,
+		"A\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD"
+		"\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD"
+		"\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD",
+		&iUtf8Series);
+	XUI_TEST_CHECK(iRet == XUI_OK && iUtf8Series == 2, "long utf-8 series name");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pChart, xuiWidgetGetAccessibleNodeCount(pChart) - 1, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_CHECKBOX &&
+	               strcmp(tAccessible.sName,
+				"A\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD"
+				"\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD"
+				"\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD\xE4\xB8\xAD") == 0,
+	               "series name truncation preserves utf-8 boundary");
+	iRet = xuiInputPointerMove(pContext, tPlot.fX + tPlot.fW * 0.5f + 34.0f, tPlot.fY + tPlot.fH * 0.5f - 34.0f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK, "destroy tooltip hover");
+	iRet = xuiChartSetTooltipCallback(pChart, __xuiChartDestroyTooltip, &pChart);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy tooltip callback");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChart == NULL, "tooltip callback may destroy chart safely");
 
 cleanup:
 	if ( pPainter != NULL ) {

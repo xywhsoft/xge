@@ -271,6 +271,16 @@ static int run_case(const char* sName)
 		(void)xuiPopupCreate(s.pContext, &s.pWidget, NULL);
 		(void)xuiPopupSetModal(s.pWidget, 1);
 		(void)xuiPopupSetChange(s.pWidget, popup_changed, &s);
+	} else if (is_family(sName, "inventorygrid")) {
+		xui_inventory_grid_desc_t desc = {0};
+		desc.iSize = sizeof(desc);
+		desc.iSlotCount = 4;
+		(void)xuiInventoryGridCreate(s.pContext, &s.pWidget, &desc);
+	} else if (strcmp(sName, "virtual_focus") == 0) {
+		const char* items[] = {"First", "Second", "Third"};
+		(void)xuiListViewCreate(s.pContext, &s.pWidget, NULL);
+		(void)xuiListViewSetItems(s.pWidget, items, 3);
+		(void)xuiListViewSetSelected(s.pWidget, 1);
 	} else {
 		(void)xuiButtonCreate(s.pContext, &s.pWidget, NULL);
 		(void)xuiButtonSetText(s.pWidget, "Apply");
@@ -287,7 +297,26 @@ static int run_case(const char* sName)
 	(void)xuiSetAccessibilityEventCallback(s.pContext, accessibility_event, &s);
 	memset(&node, 0, sizeof(node));
 	node.iSize = sizeof(node);
-	if (strcmp(sName, "provider_count_destroy_context") == 0) {
+	if (strcmp(sName, "virtual_focus") == 0) {
+		xui_accessible_node_t root = {0}, first = {0}, selected = {0}, last = {0};
+		root.iSize = first.iSize = selected.iSize = last.iSize = sizeof(root);
+		CHECK(&s, xuiSetFocusWidget(s.pContext, s.pWidget) == XUI_OK,
+			"focus virtualized list");
+		CHECK(&s, xuiWidgetGetAccessibleNode(s.pWidget, 0, &root) == XUI_OK &&
+			xuiWidgetGetAccessibleNode(s.pWidget, 1, &first) == XUI_OK &&
+			xuiWidgetGetAccessibleNode(s.pWidget, 2, &selected) == XUI_OK &&
+			xuiWidgetGetAccessibleNode(s.pWidget, 3, &last) == XUI_OK,
+			"query list root and virtual items");
+		CHECK(&s, (root.iState & XUI_ACCESSIBLE_STATE_FOCUSED) != 0 &&
+			(first.iState & XUI_ACCESSIBLE_STATE_FOCUSED) == 0 &&
+			(selected.iState & XUI_ACCESSIBLE_STATE_FOCUSED) != 0 &&
+			(last.iState & XUI_ACCESSIBLE_STATE_FOCUSED) == 0,
+			"only active virtual item carries item focus");
+		CHECK(&s, (first.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) != 0 &&
+			(selected.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) != 0 &&
+			(last.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) != 0,
+			"virtual items with focus actions remain focusable");
+	} else if (strcmp(sName, "provider_count_destroy_context") == 0) {
 		CHECK(&s, xuiWidgetGetAccessibleNodeCount(s.pWidget) == 0, "destroyed count provider returns zero");
 	} else if (strcmp(sName, "provider_mutate_explicit") == 0) {
 		(void)xuiWidgetNotifyAccessibility(s.pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED, 1);
@@ -439,7 +468,9 @@ static int run_case(const char* sName)
 		CHECK(&s, xuiWidgetGetAccessibleNode(s.pWidget, 0, &legacy) == XUI_OK, "legacy buffer can be retried after failure");
 		for (i = oldSize; i < sizeof(legacy); i++) CHECK(&s, bytes[i] == 0xa5, "query does not overwrite legacy buffer tail");
 	} else {
-		CHECK(&s, xuiWidgetGetAccessibleNodeCount(s.pWidget) == 1, "default node exists without custom name");
+		CHECK(&s, xuiWidgetGetAccessibleNodeCount(s.pWidget) ==
+			(strcmp(sName, "inventorygrid") == 0 ? 5 : 1),
+			"default node exists without custom name");
 		iRet = xuiWidgetGetAccessibleNode(s.pWidget, 0, &node);
 		if (strcmp(sName, "provider_destroy_context") == 0 || strcmp(sName, "provider_widget_destroy") == 0 ||
 			strcmp(sName, "provider_replace") == 0 || strcmp(sName, "provider_fail") == 0 ||
@@ -451,6 +482,7 @@ static int run_case(const char* sName)
 		if (strcmp(sName, "widget_tree") == 0) {
 			CHECK(&s, xuiWidgetGetAccessibleNodeCount(s.pRoot) == 1, "root is queryable");
 		} else CHECK(&s, node.iRole != XUI_ACCESSIBLE_ROLE_GENERIC, "built-in semantic role");
+		if (strcmp(sName, "inventorygrid") == 0) CHECK(&s, node.iRole == XUI_ACCESSIBLE_ROLE_LIST, "inventory grid exposes list role");
 		if (strcmp(sName, "button") == 0) CHECK(&s, node.sName && strcmp(node.sName, "Apply") == 0, "button text supplies name");
 		if (strcmp(sName, "toggle") == 0 || strcmp(sName, "checkbox") == 0 || strcmp(sName, "radio") == 0)
 			CHECK(&s, (node.iState & XUI_ACCESSIBLE_STATE_CHECKED) != 0, "checked state");
@@ -566,7 +598,7 @@ int main(int argc, char** argv)
 {
 	static const char* const cases[] = {
 		"widget_tree", "button", "toggle", "checkbox", "radio", "input", "password", "textedit",
-		"slider", "combobox", "window", "popup", "action", "action_destroy_context", "focus_notify",
+		"slider", "combobox", "window", "popup", "inventorygrid", "action", "action_destroy_context", "focus_notify",
 		"state_notify", "notify_reentry", "provider_priority", "provider_disabled", "provider_hidden",
 		"provider_destroy_context", "widget_tree_notify", "effective_state_notify", "action_reentry",
 		"provider_count_reentry", "provider_get_reentry", "provider_action_reentry", "provider_replace",
@@ -579,7 +611,7 @@ int main(int argc, char** argv)
 		"action_disabled", "action_hidden", "modal_action", "provider_mutate",
 		"window_state_destroy_context", "combobox_state_destroy_context",
 		"notify_widget_destroy", "notify_queued_destroy", "notify_update_reentry", "provider_mutate_explicit",
-		"button_selected_notify", "scrollbar_orientation_notify", "window_close_metadata"
+		"button_selected_notify", "scrollbar_orientation_notify", "window_close_metadata", "virtual_focus"
 	};
 	size_t i;
 	int count = 0, failed = 0;

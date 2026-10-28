@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -19,6 +20,26 @@ typedef struct xui_file_dialog_test_result_t {
 	char sPath[1024];
 } xui_file_dialog_test_result_t;
 
+typedef struct xui_file_dialog_destroy_result_t {
+	xui_file_dialog* ppDialog;
+	int iCount;
+} xui_file_dialog_destroy_result_t;
+
+typedef struct xui_file_dialog_context_result_t {
+	int iCount;
+	int iIndex;
+	int bDirectory;
+	char sPath[1024];
+} xui_file_dialog_context_result_t;
+
+static int __xuiFileDialogBackgroundClick(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)pWidget;
+	if ( pEvent != NULL && pEvent->iType == XUI_EVENT_POINTER_CLICK && pCount != NULL ) (*pCount)++;
+	return XUI_OK;
+}
+
 static void __xuiFileDialogTestResult(xui_file_dialog pDialog, int iResult, const char* sPath, void* pUser)
 {
 	xui_file_dialog_test_result_t* pResult = (xui_file_dialog_test_result_t*)pUser;
@@ -29,6 +50,33 @@ static void __xuiFileDialogTestResult(xui_file_dialog pDialog, int iResult, cons
 	pResult->iCount++;
 	pResult->iResult = iResult;
 	snprintf(pResult->sPath, sizeof(pResult->sPath), "%s", sPath != NULL ? sPath : "");
+}
+
+static void __xuiFileDialogDestroyResult(xui_file_dialog pDialog, int iResult,
+	const char* sPath, void* pUser)
+{
+	xui_file_dialog_destroy_result_t* pResult = (xui_file_dialog_destroy_result_t*)pUser;
+	(void)iResult;
+	(void)sPath;
+	if ( pResult == NULL ) return;
+	pResult->iCount++;
+	xuiFileDialogDestroy(pDialog);
+	if ( pResult->ppDialog != NULL ) *pResult->ppDialog = NULL;
+}
+
+static int __xuiFileDialogTestContext(xui_file_dialog pDialog, int iIndex,
+	const char* sPath, int bDirectory, float fX, float fY, void* pUser)
+{
+	xui_file_dialog_context_result_t* pResult = (xui_file_dialog_context_result_t*)pUser;
+	(void)pDialog;
+	(void)fX;
+	(void)fY;
+	if ( pResult == NULL ) return XUI_OK;
+	pResult->iCount++;
+	pResult->iIndex = iIndex;
+	pResult->bDirectory = bDirectory;
+	snprintf(pResult->sPath, sizeof(pResult->sPath), "%s", sPath != NULL ? sPath : "");
+	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static int __xuiFileDialogFindEntry(xui_file_dialog pDialog, const char* sName)
@@ -84,6 +132,31 @@ static int __xuiFileDialogDoubleClickEntry(xui_context pContext, xui_file_dialog
 	iRet = __xuiFileDialogClick(pContext, fX, fY);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiFileDialogClick(pContext, fX, fY);
+}
+
+static int __xuiFileDialogRightClickEntry(xui_context pContext, xui_file_dialog pDialog, int iIndex)
+{
+	xui_widget pList;
+	xui_rect_t tListWorld;
+	xui_rect_t tItem;
+	float fX;
+	float fY;
+	int iRet;
+
+	pList = xuiFileDialogGetFileListWidget(pDialog);
+	if ( pList == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiLayout(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	tListWorld = xuiWidgetGetWorldRect(pList);
+	tItem = xuiListViewGetItemRect(pList, iIndex);
+	fX = tListWorld.fX + tItem.fX + 8.0f;
+	fY = tListWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY,
+		XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
 }
 
 static int __xuiFileDialogClickWidget(xui_context pContext, xui_widget pWidget)
@@ -144,6 +217,34 @@ static int __xuiFileDialogSendText(xui_context pContext, uint32_t iCodepoint)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiFileDialogRefreshOomPreserves(xui_file_dialog pDialog)
+{
+	xallocationbudget* pBudget = NULL;
+	xallocationscope tScope;
+	char sDirectory[1024];
+	char sFirstEntry[1024];
+	int iEntryCount;
+	int iRet;
+
+	if ( pDialog == NULL || xuiFileDialogGetEntryCount(pDialog) <= 0 ) return 0;
+	snprintf(sDirectory, sizeof(sDirectory), "%s", xuiFileDialogGetDirectory(pDialog));
+	snprintf(sFirstEntry, sizeof(sFirstEntry), "%s", xuiFileDialogGetEntryName(pDialog, 0));
+	iEntryCount = xuiFileDialogGetEntryCount(pDialog);
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiFileDialogRefresh(pDialog);
+	xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	return iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		xuiFileDialogGetEntryCount(pDialog) == iEntryCount &&
+		strcmp(xuiFileDialogGetDirectory(pDialog), sDirectory) == 0 &&
+		strcmp(xuiFileDialogGetEntryName(pDialog, 0), sFirstEntry) == 0;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -158,6 +259,8 @@ int main(void)
 	xui_surface pRootCache = NULL;
 	xui_file_dialog_desc_t tDesc;
 	xui_file_dialog_test_result_t tResult;
+	xui_file_dialog_destroy_result_t tDestroyResult;
+	xui_file_dialog_context_result_t tContextResult;
 	xui_rect_i_t tFullRect;
 	xui_rect_t tRect;
 	xui_rect_t tWorld;
@@ -174,6 +277,7 @@ int main(void)
 	int iRet;
 	int iIndex;
 	int iBulk;
+	int iBackgroundClicks = 0;
 	float fRootItemHeight;
 #if defined(_WIN32)
 	int iUser;
@@ -200,6 +304,41 @@ int main(void)
 	(void)xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 800.0f, 520.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
+	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_POINTER_CLICK,
+		__xuiFileDialogBackgroundClick, &iBackgroundClicks);
+	XUI_TEST_CHECK(iRet == XUI_OK, "background click handler");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fWidth = NAN;
+	pDialog = (xui_file_dialog)(size_t)1;
+	iRet = xuiFileDialogCreate(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pDialog == NULL,
+		"nan width rejected and output cleared");
+	tDesc.fWidth = 0.0f;
+	tDesc.fHeight = INFINITY;
+	pDialog = (xui_file_dialog)(size_t)1;
+	iRet = xuiFileDialogCreate(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pDialog == NULL,
+		"infinite height rejected and output cleared");
+	tDesc.fHeight = 0.0f;
+	tDesc.iSize = sizeof(tDesc) - 1u;
+	pDialog = (xui_file_dialog)(size_t)1;
+	iRet = xuiOpenFileDialog(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pDialog == NULL,
+		"short convenience descriptor rejected before copy");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sInitialDir = ".";
+	tDesc.fWidth = 100.0f;
+	tDesc.fHeight = 100.0f;
+	iRet = xuiFileDialogCreate(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL, "undersized dialog create");
+	tRect = xuiWidgetGetRect(xuiFileDialogGetWindowWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fW >= 560.0f && tRect.fH >= 430.0f,
+		"initial dialog size respects window minimum");
+	xuiFileDialogDestroy(pDialog);
+	pDialog = NULL;
 
 	sFixture = xrtPathJoin("build", "file_dialog_fixture");
 	sSub = xrtPathJoin(sFixture, "sub");
@@ -228,6 +367,7 @@ int main(void)
 	tFullRect = (xui_rect_i_t){0, 0, 800, 520};
 
 	memset(&tResult, 0, sizeof(tResult));
+	memset(&tContextResult, 0, sizeof(tContextResult));
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sInitialDir = (const char*)sFixture;
@@ -236,6 +376,21 @@ int main(void)
 	tDesc.pResultUser = &tResult;
 	iRet = xuiOpenFileDialog(pContext, &pDialog, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL && xuiFileDialogIsOpen(pDialog), "open dialog");
+	iRet = xuiFileDialogSetContextMenu(pDialog, __xuiFileDialogTestContext, &tContextResult);
+	XUI_TEST_CHECK(iRet == XUI_OK, "file dialog context callback");
+	XUI_TEST_CHECK(xuiFileDialogIsModal(pDialog), "convenience file dialog is modal");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout modal dialog");
+	iRet = __xuiFileDialogClick(pContext, 4.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iBackgroundClicks == 0, "modal dialog blocks background input");
+	iRet = xuiFileDialogSetModal(pDialog, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiFileDialogIsModal(pDialog), "dialog switches to modeless");
+	iRet = __xuiFileDialogClick(pContext, 4.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iBackgroundClicks == 1, "modeless dialog permits background input");
+	iRet = xuiFileDialogSetModal(pDialog, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogIsModal(pDialog), "dialog restores modal state");
+	iRet = __xuiFileDialogClick(pContext, 4.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iBackgroundClicks == 1, "restored modal dialog blocks background input");
 	XUI_TEST_CHECK(xuiFileDialogGetWindowWidget(pDialog) != NULL, "window getter");
 	XUI_TEST_CHECK(xuiFileDialogGetRootListWidget(pDialog) != NULL, "root list getter");
 	pRootTree = xuiFileDialogGetRootListWidget(pDialog);
@@ -282,6 +437,30 @@ int main(void)
 	XUI_TEST_CHECK(strcmp(xuiFileDialogGetFilterName(pDialog, 0), "Text Files (*.txt)") == 0, "filter name");
 	XUI_TEST_CHECK(strcmp(xuiFileDialogGetFilterPattern(pDialog, 1), "*.*") == 0, "filter pattern");
 	XUI_TEST_CHECK(strcmp(xuiFileDialogGetFilter(pDialog), "*.txt") == 0, "active filter");
+	XUI_TEST_CHECK(xuiFileDialogGetEntryCount(pDialog) >= 2 &&
+		xuiFileDialogEntryIsDir(pDialog, 0) &&
+		strcmp(xuiFileDialogGetEntryName(pDialog, 0), "sub") == 0 &&
+		strcmp(xuiFileDialogGetEntryName(pDialog, 1), "alpha.txt") == 0,
+		"entries sort directories first then names");
+	XUI_TEST_CHECK(strcmp(xuiListViewGetItemText(xuiFileDialogGetFileListWidget(pDialog), 0),
+		xuiFileDialogGetEntryName(pDialog, 0)) == 0,
+		"virtual file list reads canonical entry text");
+	iIndex = __xuiFileDialogFindEntry(pDialog, "alpha.txt");
+	iRet = __xuiFileDialogRightClickEntry(pContext, pDialog, iIndex);
+	XUI_TEST_CHECK(iRet == XUI_OK && tContextResult.iCount == 1 &&
+		tContextResult.iIndex == iIndex && !tContextResult.bDirectory &&
+		strcmp(tContextResult.sPath, (const char*)sTxt) == 0,
+		"file list context callback receives selected path");
+	iRet = xuiInputSetText(xuiFileDialogGetNameInputWidget(pDialog), "preserve.txt");
+	XUI_TEST_CHECK(iRet == XUI_OK, "name before failed directory change");
+	iIndex = xuiFileDialogGetEntryCount(pDialog);
+	iRet = xuiFileDialogSetDirectory(pDialog, (const char*)sMissingDir);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_FILE_NOT_FOUND &&
+		strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0 &&
+		xuiFileDialogGetEntryCount(pDialog) == iIndex &&
+		strcmp(xuiInputGetText(xuiFileDialogGetNameInputWidget(pDialog)), "preserve.txt") == 0,
+		"missing directory preserves current state");
+	(void)xuiInputSetText(xuiFileDialogGetNameInputWidget(pDialog), "");
 	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiFileDialogGetPathBreadcrumbWidget(pDialog)) && !xuiWidgetGetVisible(xuiFileDialogGetPathInputWidget(pDialog)), "path starts as breadcrumb");
 	XUI_TEST_CHECK(xuiFileDialogGetUpButtonWidget(pDialog) != NULL, "up button getter");
 	XUI_TEST_CHECK(xuiFileDialogGetRefreshButtonWidget(pDialog) != NULL, "refresh button getter");
@@ -339,10 +518,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0, "up after breadcrumb edit");
 	iIndex = __xuiFileDialogFindEntry(pDialog, "sub");
 	XUI_TEST_CHECK(iIndex >= 0, "directory visible");
+	iRet = xuiFileDialogSelectIndex(pDialog, iIndex);
+	XUI_TEST_CHECK(iRet == XUI_OK, "first programmatic folder select");
+	iRet = xuiFileDialogSelectIndex(pDialog, iIndex);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0,
+		"repeat selection does not impersonate double click");
 	iRet = __xuiFileDialogDoubleClickEntry(pContext, pDialog, iIndex);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sSub) == 0, "double click enters directory");
 	iRet = __xuiFileDialogClickWidget(pContext, xuiFileDialogGetUpButtonWidget(pDialog));
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0, "up button enters parent directory");
+	iIndex = __xuiFileDialogFindEntry(pDialog, "sub");
+	iRet = xuiFileDialogSelectIndex(pDialog, iIndex);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, xuiFileDialogGetFileListWidget(pDialog));
+	if ( iRet == XUI_OK ) iRet = __xuiFileDialogSendKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sSub) == 0,
+		"enter activates selected directory");
+	iRet = xuiFileDialogGoUp(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0,
+		"up after keyboard activation");
+	XUI_TEST_CHECK(__xuiFileDialogRefreshOomPreserves(pDialog),
+		"refresh allocation failure preserves directory and entries");
 	XUI_TEST_CHECK(xrtFileWriteAll(sLate, (xbytesview){ (const unsigned char*)"late", 4 }), "late txt");
 	XUI_TEST_CHECK(__xuiFileDialogFindEntry(pDialog, "late.txt") < 0, "late file absent before refresh");
 	iRet = __xuiFileDialogClickWidget(pContext, xuiFileDialogGetRefreshButtonWidget(pDialog));
@@ -386,6 +581,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "name input set missing");
 	iRet = __xuiFileDialogSendKey(pContext, XUI_KEY_ENTER);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogIsOpen(pDialog) && xuiInputGetError(xuiFileDialogGetNameInputWidget(pDialog)), "open missing file stays open");
+	iRet = xuiFileDialogCommit(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_FILE_NOT_FOUND && xuiFileDialogIsOpen(pDialog) &&
+		tResult.iCount == 0 && xuiInputGetError(xuiFileDialogGetNameInputWidget(pDialog)),
+		"public commit rejects missing open file");
 	iIndex = __xuiFileDialogFindEntry(pDialog, "alpha.txt");
 	XUI_TEST_CHECK(iIndex >= 0, "txt visible");
 	XUI_TEST_CHECK(__xuiFileDialogFindEntry(pDialog, "beta.bin") < 0, "filter hides bin");
@@ -403,6 +602,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiFileDialogIsOpen(pDialog), "commit open");
 	XUI_TEST_CHECK(tResult.iCount == 1 && tResult.iResult == XUI_FILE_DIALOG_RESULT_OK, "open result callback");
 	XUI_TEST_CHECK(strcmp(xuiFileDialogGetResultPath(pDialog), (const char*)sTxt) == 0, "open result path");
+	iRet = xuiFileDialogSetOpen(pDialog, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogIsOpen(pDialog), "reuse dialog open");
+	XUI_TEST_CHECK(xuiFileDialogGetResult(pDialog) == XUI_FILE_DIALOG_RESULT_NONE &&
+		xuiFileDialogGetResultPath(pDialog)[0] == 0, "reuse dialog resets stale result");
+	iRet = xuiFileDialogCancel(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogGetResult(pDialog) == XUI_FILE_DIALOG_RESULT_CANCEL &&
+		xuiFileDialogGetResultPath(pDialog)[0] == 0, "reuse dialog cancel keeps result path empty");
 	xuiFileDialogDestroy(pDialog);
 	pDialog = NULL;
 
@@ -490,8 +696,31 @@ int main(void)
 	tDesc.pResultUser = &tResult;
 	iRet = xuiSaveFileDialog(pContext, &pDialog, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL, "save overwrite dialog");
+	XUI_TEST_CHECK(xrtFileExists(sTxt), "save overwrite fixture exists");
 	iRet = xuiFileDialogCommit(pDialog);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogIsOpen(pDialog) && xuiMsgBoxIsOpen(xuiFileDialogGetOverwriteMsgBox(pDialog)), "save overwrite asks");
+	XUI_TEST_CHECK(iRet == XUI_OK, "save overwrite commit");
+	XUI_TEST_CHECK(xuiFileDialogIsOpen(pDialog), "save overwrite keeps dialog open");
+	XUI_TEST_CHECK(xuiFileDialogGetOverwriteMsgBox(pDialog) != NULL,
+		"save overwrite creates confirmation");
+	XUI_TEST_CHECK(xuiMsgBoxIsOpen(xuiFileDialogGetOverwriteMsgBox(pDialog)),
+		"save overwrite opens confirmation");
+	{
+		int iDialogLayer = 0;
+		int iDialogZ = 0;
+		int iBackdropLayer = 0;
+		int iBackdropZ = 0;
+		xui_msgbox pOverwrite = xuiFileDialogGetOverwriteMsgBox(pDialog);
+		iRet = xuiWidgetGetLayer(xuiFileDialogGetWindowWidget(pDialog), &iDialogLayer, &iDialogZ);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetGetLayer(xuiMsgBoxGetBackdropWidget(pOverwrite),
+			&iBackdropLayer, &iBackdropZ);
+		XUI_TEST_CHECK(iRet == XUI_OK && iDialogLayer == XUI_LAYER_MODAL &&
+			iBackdropLayer == XUI_LAYER_MODAL && iBackdropZ > iDialogZ,
+			"overwrite confirmation backdrop stacks above file dialog");
+	}
+	iRet = __xuiFileDialogClickWidget(pContext, xuiFileDialogGetCancelButtonWidget(pDialog));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogIsOpen(pDialog) &&
+		xuiMsgBoxIsOpen(xuiFileDialogGetOverwriteMsgBox(pDialog)),
+		"overwrite confirmation blocks file dialog input");
 	iRet = __xuiFileDialogClickWidget(pContext, xuiMsgBoxGetButtonWidget(xuiFileDialogGetOverwriteMsgBox(pDialog), 1));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogIsOpen(pDialog) && tResult.iCount == 0, "save overwrite no keeps open");
 	iRet = xuiFileDialogCommit(pDialog);
@@ -573,6 +802,25 @@ int main(void)
 	(void)xuiSetFocusWidget(pContext, xuiFileDialogGetNameInputWidget(pDialog));
 	iRet = __xuiFileDialogSendKey(pContext, XUI_KEY_ESCAPE);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiFileDialogIsOpen(pDialog) && xuiFileDialogGetResult(pDialog) == XUI_FILE_DIALOG_RESULT_CANCEL, "escape cancels");
+	xuiFileDialogDestroy(pDialog);
+	pDialog = NULL;
+
+	memset(&tDestroyResult, 0, sizeof(tDestroyResult));
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sInitialDir = (const char*)sFixture;
+	tDesc.sFilter = "Text Files (*.txt)|*.txt";
+	tDesc.onResult = __xuiFileDialogDestroyResult;
+	tDesc.pResultUser = &tDestroyResult;
+	tDestroyResult.ppDialog = &pDialog;
+	iRet = xuiOpenFileDialog(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL, "callback destroy dialog open");
+	iIndex = __xuiFileDialogFindEntry(pDialog, "alpha.txt");
+	XUI_TEST_CHECK(iIndex >= 0 && xuiFileDialogSelectIndex(pDialog, iIndex) == XUI_OK,
+		"callback destroy dialog select");
+	iRet = xuiFileDialogCommit(pDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDialog == NULL && tDestroyResult.iCount == 1,
+		"result callback may destroy dialog");
 
 cleanup:
 	if ( pDialog != NULL ) xuiFileDialogDestroy(pDialog);

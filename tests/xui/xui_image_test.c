@@ -652,10 +652,12 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pImage;
 	xui_widget pTopLeft;
+	xui_widget pInvalid;
 	xui_surface pSource;
 	xui_surface pCache;
 	xui_surface pTopLeftCache;
 	xui_image_desc_t tDesc;
+	xui_accessible_node_t tAccessible;
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
 	int iFailed;
@@ -667,6 +669,7 @@ int main(void)
 	pRoot = NULL;
 	pImage = NULL;
 	pTopLeft = NULL;
+	pInvalid = NULL;
 	pSource = NULL;
 	pCache = NULL;
 	pTopLeftCache = NULL;
@@ -692,6 +695,13 @@ int main(void)
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
+	tDesc.iMode = 99;
+	pInvalid = pRoot;
+	iRet = xuiImageCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"invalid image descriptor clears output");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
 	tDesc.pSurface = pSource;
 	tDesc.iColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	tDesc.iAlignX = XUI_ALIGN_CENTER;
@@ -702,6 +712,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "image rect");
 	iRet = xuiWidgetAddChild(pRoot, pImage);
 	XUI_TEST_CHECK(iRet == XUI_OK, "image add");
+	iRet = xuiWidgetSetAccessibleName(pImage, "Preview image");
+	XUI_TEST_CHECK(iRet == XUI_OK, "image accessible name");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pImage) == 1,
+		"image exposes one accessibility node");
+	iRet = xuiWidgetGetAccessibleNode(pImage, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_IMAGE &&
+		tAccessible.sName != NULL && strcmp(tAccessible.sName, "Preview image") == 0,
+		"image accessibility role and name");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);

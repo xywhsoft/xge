@@ -44,6 +44,18 @@ static void __xuiRadioGroupChanged(xui_widget pGroup, xui_widget pSelected, int 
 	}
 }
 
+static void __xuiRadioDestroyParentChanged(xui_widget pWidget, int bChecked, void* pUser)
+{
+	int* pCount;
+	xui_widget pParent;
+
+	(void)bChecked;
+	pCount = (int*)pUser;
+	if ( pCount != NULL ) (*pCount)++;
+	pParent = xuiWidgetGetParent(pWidget);
+	if ( pParent != NULL ) xuiWidgetDestroy(pParent);
+}
+
 static int __xuiRadioClick(xui_context pContext, xui_widget pWidget)
 {
 	xui_rect_t tRect;
@@ -73,29 +85,40 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pGroup;
+	xui_widget pDestroyGroup;
+	xui_widget pInvalidWidget;
 	xui_widget pRadio[3];
+	xui_widget pDestroyRadio[2];
 	xui_surface pTarget;
 	xui_surface pAtlas;
 	xui_font pFont;
 	xui_radio_group_desc_t tGroupDesc;
 	xui_radio_desc_t tDesc;
+	xui_radio_desc_t tInvalidDesc;
+	xui_accessible_node_t tAccessible;
+	xui_vec2_t tMeasured;
 	xui_rect_i_t tFullRect;
 	xui_rect_t tRect;
 	xui_rect_t tLastSrc;
 	int iRadioChanged;
 	int iGroupChanged;
+	int iDestroyChanged;
 	int iFailed;
 	int iRet;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pGroup = NULL;
+	pDestroyGroup = NULL;
+	pInvalidWidget = NULL;
 	pTarget = NULL;
 	pAtlas = NULL;
 	pFont = NULL;
 	memset(pRadio, 0, sizeof(pRadio));
+	memset(pDestroyRadio, 0, sizeof(pDestroyRadio));
 	iRadioChanged = 0;
 	iGroupChanged = 0;
+	iDestroyChanged = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -127,6 +150,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "add group");
 	iRet = xuiRadioGroupSetChange(pGroup, __xuiRadioGroupChanged, &iGroupChanged);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set group change");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pGroup, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_RADIO_GROUP,
+		"radio group accessibility");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -142,10 +170,27 @@ int main(void)
 	iRet = xuiRadioGroupAddOption(pGroup, &pRadio[2], &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pRadio[2] != NULL, "add option 2");
 	xuiRadioSetChange(pRadio[2], __xuiRadioChanged, &iRadioChanged);
+	xuiWidgetClearDirty(pRadio[0], XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiRadioSetTextFlags(pRadio[0],
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pRadio[0]) & XUI_WIDGET_DIRTY_LAYOUT) != 0,
+		"radio rtl change invalidates layout");
+	iRet = xuiWidgetMeasureContent(pRadio[0], (xui_vec2_t){220.0f, 40.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tState.iLastTextMeasureFlags & XUI_TEXT_SHAPE_RTL) != 0,
+		"radio rtl reaches text measurement");
 
 	XUI_TEST_CHECK(strcmp(xuiRadioGetText(pRadio[1]), "Medium") == 0, "text from desc");
+	iRet = xuiRadioSetText(pRadio[1], xuiRadioGetText(pRadio[1]) + 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiRadioGetText(pRadio[1]), "edium") == 0,
+		"self-aliased text update");
+	iRet = xuiRadioSetText(pRadio[1], "Medium");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore aliased text");
 	XUI_TEST_CHECK(xuiRadioGroupGetSelectedIndex(pGroup) == 1, "selected index from desc");
 	XUI_TEST_CHECK(xuiRadioGetChecked(pRadio[1]) == 1 && xuiRadioGetChecked(pRadio[0]) == 0, "initial group selection");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 0 && xuiWidgetGetTabStop(pRadio[1]) == 1 &&
+		xuiWidgetGetTabStop(pRadio[2]) == 0, "selected radio is the only group tab stop");
 	XUI_TEST_CHECK(xuiRadioGetIndicatorSize(pRadio[0]) == 18.0f, "default indicator size");
 	XUI_TEST_CHECK(xuiRadioGetGap(pRadio[0]) == 8.0f, "default radio gap");
 	XUI_TEST_CHECK(xuiRadioGroupGetGap(pGroup) == 4.0f, "group gap");
@@ -158,11 +203,65 @@ int main(void)
 	}
 	XUI_TEST_CHECK(tRect.fW > 20.0f && tRect.fH >= 24.0f, "radio layout");
 
+	iRet = xuiWidgetSetEnabled(pRadio[1], 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable middle option");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 1 && xuiWidgetGetTabStop(pRadio[1]) == 0 &&
+		xuiWidgetGetTabStop(pRadio[2]) == 0, "disabled selection falls back to first eligible tab stop");
+	iRet = xuiSetFocusWidget(pContext, pRadio[0]);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus option 0 for arrow navigation");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "right key down");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedWidget(pGroup) == pRadio[2] &&
+		xuiGetFocusWidget(pContext) == pRadio[2], "arrow navigation skips disabled option");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 0 && xuiWidgetGetTabStop(pRadio[1]) == 0 &&
+		xuiWidgetGetTabStop(pRadio[2]) == 1, "arrow selection moves the group tab stop");
+	iRet = xuiWidgetSetEnabled(pRadio[1], 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable middle option");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 0 && xuiWidgetGetTabStop(pRadio[1]) == 0 &&
+		xuiWidgetGetTabStop(pRadio[2]) == 1, "reenabling an unselected radio preserves the selected tab stop");
+	iGroupChanged = 0;
+	iRadioChanged = 0;
+
 	iRet = __xuiRadioClick(pContext, pRadio[0]);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer click option 0");
 	XUI_TEST_CHECK(xuiRadioGroupGetSelectedIndex(pGroup) == 0, "click selects option 0");
 	XUI_TEST_CHECK(xuiRadioGetChecked(pRadio[0]) == 1 && xuiRadioGetChecked(pRadio[1]) == 0, "click unchecks sibling");
 	XUI_TEST_CHECK(iGroupChanged == 1 && iRadioChanged >= 1, "click callbacks");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 1 && xuiWidgetGetTabStop(pRadio[1]) == 0 &&
+		xuiWidgetGetTabStop(pRadio[2]) == 0, "pointer selection moves the group tab stop");
+	iGroupChanged = 0;
+	iRadioChanged = 0;
+	tRect = xuiWidgetGetWorldRect(pRadio[1]);
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tRect.fW * 0.5f), (int)(tRect.fY + tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pRadio[1],
+		"first touch owns radio press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tRect.fW * 0.5f), (int)(tRect.fY + tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tRect.fW * 0.5f), (int)(tRect.fY + tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedIndex(pGroup) == 0 &&
+		iGroupChanged == 0 && iRadioChanged == 0 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pRadio[1] &&
+		(xuiRadioGetState(pRadio[1]) & XUI_WIDGET_STATE_ACTIVE) != 0,
+		"unrelated touch cannot select or release radio press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tRect.fW * 0.5f), (int)(tRect.fY + tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedIndex(pGroup) == 1 &&
+		iGroupChanged == 1 && iRadioChanged >= 1 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch selects radio once");
 
 	iRet = xuiSetFocusWidget(pContext, pRadio[2]);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus option 2");
@@ -195,6 +294,8 @@ int main(void)
 
 	iRet = xuiRadioGroupSetSelectedIndex(pGroup, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedRadio(pGroup) == pRadio[1], "set selected index");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 0 && xuiWidgetGetTabStop(pRadio[1]) == 1 &&
+		xuiWidgetGetTabStop(pRadio[2]) == 0, "programmatic selection moves the group tab stop");
 	iRet = xuiRadioGroupSetOrientation(pGroup, XUI_RADIO_GROUP_HORIZONTAL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetOrientation(pGroup) == XUI_RADIO_GROUP_HORIZONTAL, "set orientation");
 	iRet = xuiRadioGroupSetGap(pGroup, 10.0f);
@@ -230,6 +331,57 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render atlas radio");
 	tLastSrc = tRect;
 	XUI_TEST_CHECK(__xuiRadioRectEq(tLastSrc, 104.0f, 34.0f, 34.0f, 34.0f), "checked radio atlas rect");
+
+	iRet = xuiRadioGroupSetSelectedWidget(pGroup, pRadio[1]);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select before removal reconciliation");
+	iRet = xuiWidgetRemoveFromParent(pRadio[0]);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedWidget(pGroup) == pRadio[1] &&
+		xuiRadioGroupGetSelectedIndex(pGroup) == 0,
+		"removing earlier option reconciles selected index");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 1 && xuiWidgetGetTabStop(pRadio[1]) == 1 &&
+		xuiWidgetGetTabStop(pRadio[2]) == 0,
+		"removed option restores standalone tab stop without changing group entry");
+	iRet = xuiWidgetRemoveFromParent(pRadio[1]);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedWidget(pGroup) == NULL &&
+		xuiRadioGroupGetSelectedIndex(pGroup) == -1 && xuiRadioGetChecked(pRadio[1]),
+		"removing selected option clears group selection without changing option");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[1]) == 1 && xuiWidgetGetTabStop(pRadio[2]) == 1,
+		"selected removal restores standalone tab stop and group fallback");
+
+	memset(&tGroupDesc, 0, sizeof(tGroupDesc));
+	tGroupDesc.iSize = sizeof(tGroupDesc);
+	tGroupDesc.iOrientation = XUI_RADIO_GROUP_VERTICAL;
+	tGroupDesc.iSelectedIndex = 0;
+	iRet = xuiRadioGroupCreate(pContext, &pDestroyGroup, &tGroupDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyGroup != NULL, "destroy callback group create");
+	iRet = xuiWidgetAddChild(pRoot, pDestroyGroup);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback group add");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	iRet = xuiRadioGroupAddOption(pDestroyGroup, &pDestroyRadio[0], &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback option 0");
+	iRet = xuiRadioGroupAddOption(pDestroyGroup, &pDestroyRadio[1], &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback option 1");
+	iRet = xuiRadioSetChange(pDestroyRadio[0], __xuiRadioDestroyParentChanged, &iDestroyChanged);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback setup");
+	iRet = xuiRadioGroupSetSelectedWidget(pDestroyGroup, pDestroyRadio[1]);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyChanged == 1,
+		"option callback may destroy radio group without stale access");
+	pDestroyGroup = NULL;
+	pDestroyRadio[0] = NULL;
+	pDestroyRadio[1] = NULL;
+
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fGap = NAN;
+	pInvalidWidget = pRoot;
+	iRet = xuiRadioCreate(pContext, &pInvalidWidget, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWidget == NULL,
+		"invalid radio create clears output");
+	tGroupDesc.iOrientation = 99;
+	pInvalidWidget = pRoot;
+	iRet = xuiRadioGroupCreate(pContext, &pInvalidWidget, &tGroupDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWidget == NULL,
+		"invalid group create clears output");
 
 cleanup:
 	if ( pTarget != NULL ) {

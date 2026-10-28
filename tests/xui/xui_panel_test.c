@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -51,21 +52,39 @@ static xui_style_property_t __xuiPanelStyleProp(const char* sName, xui_style_val
 	return tProp;
 }
 
+static int __xuiPanelDestroyOnVisible(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_widget pPanel = (xui_widget)pUser;
+
+	(void)pWidget;
+	if ( (pEvent != NULL) && (pEvent->iPhase == XUI_EVENT_PHASE_TARGET) ) {
+		xuiWidgetDestroy(pPanel);
+	}
+	return XUI_OK;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pPanel;
+	xui_widget pLifecyclePanel;
 	xui_widget pClient;
 	xui_widget pLabel;
+	xui_widget pTitle;
 	xui_surface pIconSurface;
 	xui_surface pCache;
+	xui_surface pTitleCache;
 	xui_font pFont;
 	xui_panel_desc_t tDesc;
+	xui_panel_desc_t tInvalidDesc;
 	xui_label_desc_t tLabelDesc;
 	xui_style_property_t arrStyle[4];
+	xui_accessible_node_t tNode;
 	xui_rect_t tRect;
+	uint32_t iAccessibilityRevision;
+	uint32_t iDirtyFlags;
 	float fBorderWidth;
 	uint32_t iBorderColor;
 	int iFailed;
@@ -74,8 +93,10 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pPanel = NULL;
+	pLifecyclePanel = NULL;
 	pClient = NULL;
 	pLabel = NULL;
+	pTitle = NULL;
 	pIconSurface = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -99,6 +120,18 @@ int main(void)
 	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 360.0f, 260.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "root rect");
 
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.fHeaderHeight = NAN;
+	pLifecyclePanel = pRoot;
+	iRet = xuiPanelCreate(pContext, &pLifecyclePanel, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pLifecyclePanel == NULL, "reject NaN descriptor");
+	tInvalidDesc.fHeaderHeight = 0.0f;
+	tInvalidDesc.tIconSrc.fW = -1;
+	pLifecyclePanel = pRoot;
+	iRet = xuiPanelCreate(pContext, &pLifecyclePanel, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pLifecyclePanel == NULL, "reject negative icon source");
+
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sTitle = "Settings";
@@ -115,12 +148,37 @@ int main(void)
 
 	XUI_TEST_CHECK(xuiPanelGetHeaderWidget(pPanel) != NULL, "header widget");
 	XUI_TEST_CHECK(xuiPanelGetIconWidget(pPanel) != NULL, "icon widget");
-	XUI_TEST_CHECK(xuiPanelGetTitleWidget(pPanel) != NULL, "title widget");
+	pTitle = xuiPanelGetTitleWidget(pPanel);
+	XUI_TEST_CHECK(pTitle != NULL, "title widget");
 	pClient = xuiPanelGetClientWidget(pPanel);
 	XUI_TEST_CHECK(pClient != NULL, "client widget");
 	XUI_TEST_CHECK(strcmp(xuiPanelGetTitle(pPanel), "Settings") == 0, "title text");
 	XUI_TEST_CHECK(xuiPanelGetTitleColor(pPanel) == XUI_COLOR_RGBA(20, 40, 60, 255), "title color");
 	XUI_TEST_CHECK(xuiPanelGetHeaderHeight(pPanel) == 30.0f, "header height getter");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiWidgetGetAccessibleNode(pPanel, 0, &tNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNode.iRole == XUI_ACCESSIBLE_ROLE_GROUP &&
+		strcmp(tNode.sName, "Settings") == 0, "panel accessibility title");
+	iAccessibilityRevision = xuiWidgetGetAccessibilityRevision(pPanel);
+	iRet = xuiPanelSetTitle(pPanel, "Preferences");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiPanelGetTitle(pPanel), "Preferences") == 0,
+		"title update");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush title accessibility");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibilityRevision(pPanel) > iAccessibilityRevision,
+		"title updates panel accessibility");
+	iRet = xuiPanelSetTitle(pPanel, "Settings");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore title");
+	iRet = xuiWidgetSetAccessibleName(pPanel, "Custom panel");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set explicit accessible name");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiWidgetGetAccessibleNode(pPanel, 0, &tNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tNode.sName, "Custom panel") == 0,
+		"explicit accessible name overrides title");
+	iRet = xuiWidgetSetAccessibleName(pPanel, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear explicit accessible name");
 
 	memset(&tLabelDesc, 0, sizeof(tLabelDesc));
 	tLabelDesc.iSize = sizeof(tLabelDesc);
@@ -162,6 +220,36 @@ int main(void)
 	XUI_TEST_CHECK(pCache != NULL, "panel cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) >= 4, "panel fills");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pCache) == XUI_COLOR_RGBA(70, 120, 180, 255), "border render color");
+	iRet = xuiWidgetSetEnabled(pPanel, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWidgetGetEffectiveEnabled(pTitle) &&
+		(xuiWidgetGetDirtyFlags(pTitle) & XUI_WIDGET_DIRTY_CACHE) != 0,
+		"disable panel invalidates title cache");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disabled render");
+	pTitleCache = xuiWidgetGetCacheSurface(pTitle, xuiWidgetGetStateId(pTitle));
+	XUI_TEST_CHECK(pTitleCache != NULL, "disabled title cache");
+	iRet = xuiWidgetSetEnabled(pPanel, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable panel");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enabled render");
+	iDirtyFlags = xuiWidgetGetDirtyFlags(pPanel);
+	iRet = xuiPanelSetHeaderColor(pPanel, xuiPanelGetHeaderColor(pPanel));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pPanel) == iDirtyFlags,
+		"idempotent color keeps dirty state");
+	iRet = xuiPanelSetHeaderHeight(pPanel, xuiPanelGetHeaderHeight(pPanel));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pPanel) == iDirtyFlags,
+		"idempotent metric keeps dirty state");
+	iRet = xuiWidgetSetGap(xuiPanelGetHeaderWidget(pPanel), 17.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "customize header gap");
+	iRet = xuiPanelSetHeaderGap(pPanel, xuiPanelGetHeaderGap(pPanel));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetGap(xuiPanelGetHeaderWidget(pPanel)) ==
+		xuiPanelGetHeaderGap(pPanel), "panel setter repairs customized child");
+	XUI_TEST_CHECK(xuiPanelSetBorder(pPanel, NAN, 0) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject NaN border");
+	XUI_TEST_CHECK(xuiPanelSetHeaderGap(pPanel, NAN) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject NaN gap");
+	XUI_TEST_CHECK(xuiPanelSetIconSize(pPanel, NAN) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject NaN icon size");
 
 	arrStyle[0] = __xuiPanelStyleProp("panel.header.height", __xuiPanelStyleFloat(24.0f));
 	arrStyle[1] = __xuiPanelStyleProp("panel.icon.size", __xuiPanelStyleFloat(12.0f));
@@ -187,6 +275,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiPanelGetClientClip(pPanel) && xuiWidgetGetOverflow(pClient) == XUI_OVERFLOW_VISIBLE, "client clip off");
 	iRet = xuiPanelSetClientClip(pPanel, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPanelGetClientClip(pPanel) && xuiWidgetGetOverflow(pClient) == XUI_OVERFLOW_CLIP, "client clip on");
+
+	iRet = xuiPanelCreate(pContext, &pLifecyclePanel, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && pLifecyclePanel != NULL, "lifecycle panel create");
+	iRet = xuiWidgetAddChild(pRoot, pLifecyclePanel);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lifecycle panel add");
+	iRet = xuiWidgetSetEventHandler(xuiPanelGetHeaderWidget(pLifecyclePanel),
+		XUI_EVENT_VISIBLE_CHANGED, __xuiPanelDestroyOnVisible, pLifecyclePanel);
+	XUI_TEST_CHECK(iRet == XUI_OK, "lifecycle handler");
+	iRet = xuiPanelSetHeaderHeight(pLifecyclePanel, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPanelGetClientWidget(pLifecyclePanel) == NULL,
+		"visible callback may destroy panel");
+	pLifecyclePanel = NULL;
 
 cleanup:
 	if ( pContext != NULL ) {

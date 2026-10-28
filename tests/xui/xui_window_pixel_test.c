@@ -75,18 +75,51 @@ static void frame_geometry(void)
 		CHECK(same(xuiInternalWindowFrameMove(r, bounds, dx, -dx), pixels(x0, y0, 101, 77)));
 		for (edge = 1; edge <= 8; edge <<= 1) {
 			float left = r.fX, top = r.fY, right = r.fX + r.fW, bottom = r.fY + r.fH;
-			if (edge == XUI_WINDOW_EDGE_LEFT) left += dx;
-			if (edge == XUI_WINDOW_EDGE_RIGHT) right += dx;
-			if (edge == XUI_WINDOW_EDGE_TOP) top += dx;
-			if (edge == XUI_WINDOW_EDGE_BOTTOM) bottom += dx;
-			if (left < bounds.fX) { right += bounds.fX - left; left = bounds.fX; }
-			if (top < bounds.fY) { bottom += bounds.fY - top; top = bounds.fY; }
+			if (edge == XUI_WINDOW_EDGE_LEFT) {
+				left = fminf(right - 30.75f, fmaxf(bounds.fX, left + dx));
+			}
+			if (edge == XUI_WINDOW_EDGE_RIGHT) {
+				right = fminf(bounds.fX + bounds.fW, fmaxf(left + 30.75f, right + dx));
+			}
+			if (edge == XUI_WINDOW_EDGE_TOP) {
+				top = fminf(bottom - 20.75f, fmaxf(bounds.fY, top + dx));
+			}
+			if (edge == XUI_WINDOW_EDGE_BOTTOM) {
+				bottom = fminf(bounds.fY + bounds.fH, fmaxf(top + 20.75f, bottom + dx));
+			}
 			CHECK(same(xuiInternalWindowFrameResize(r, bounds, edge, dx, dx, 30.75f, 20.75f),
 				pixels(left, top, right - left, bottom - top)));
 		}
 	}
 	CHECK(same(xuiInternalWindowFrameResize(r, bounds, XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_TOP,
 		200.6f, 200.6f, 30.75f, 20.75f), pixels(71.25f, 61.25f, 30.75f, 20.75f)));
+	CHECK(same(xuiInternalWindowFrameResize((xui_rect_t){100, 100, 200, 100},
+		(xui_rect_t){0, 0, 500, 400}, XUI_WINDOW_EDGE_LEFT, -150.0f, 0.0f, 80.0f, 60.0f),
+		(xui_rect_t){0, 100, 300, 100}));
+	CHECK(same(xuiInternalWindowFrameResize((xui_rect_t){100, 100, 200, 100},
+		(xui_rect_t){0, 0, 500, 400}, XUI_WINDOW_EDGE_TOP, 0.0f, -150.0f, 80.0f, 60.0f),
+		(xui_rect_t){100, 0, 200, 200}));
+	CHECK(same(xuiInternalWindowFrameResize((xui_rect_t){100, 100, 200, 100},
+		(xui_rect_t){0, 0, 500, 400}, XUI_WINDOW_EDGE_RIGHT | XUI_WINDOW_EDGE_BOTTOM,
+		400.0f, 400.0f, 80.0f, 60.0f), (xui_rect_t){100, 100, 400, 300}));
+	m.bResizable = 1;
+	m.bShowTitleBar = 0;
+	m.fResizeGrip = 5.0f;
+	m.iResizeEdges = XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_RIGHT |
+		XUI_WINDOW_EDGE_TOP | XUI_WINDOW_EDGE_BOTTOM;
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 6, 40}, &m, 1, 20) ==
+		XUI_WINDOW_EDGE_LEFT);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 6, 40}, &m, 5, 20) ==
+		XUI_WINDOW_EDGE_RIGHT);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 6, 40}, &m, 3, 20) ==
+		XUI_WINDOW_EDGE_LEFT);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 40, 6}, &m, 20, 1) ==
+		XUI_WINDOW_EDGE_TOP);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 40, 6}, &m, 20, 5) ==
+		XUI_WINDOW_EDGE_BOTTOM);
+	m.iResizeEdges = XUI_WINDOW_EDGE_RIGHT;
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 6, 40}, &m, 1, 20) ==
+		XUI_WINDOW_EDGE_RIGHT);
 }
 
 static xui_surface tracked;

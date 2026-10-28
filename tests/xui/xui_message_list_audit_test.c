@@ -4,9 +4,10 @@
 static struct {
     int LayoutNode, MeasureNode, HitNode, RenderNode, HitLine, RenderLine;
     int CaretSource, CaretDecode, CaretCluster, CaretDisplay, HitCaret;
+    int NodeIdLookup, NodeIdScan;
 } g_tSteps;
 static int g_iLayoutCreates, g_iLayoutResets, g_iLayoutDestroys;
-static int g_iDisplayCalls, g_bFailDisplay, g_bFailCaretAlloc;
+static int g_iDisplayCalls, g_bFailDisplay, g_bFailCaretAlloc, g_bFailMessageAlloc;
 
 static int auditDisplayLine(xui_text_layout pLayout, int iLine, const char** ppText, int* pSize)
 {
@@ -18,6 +19,11 @@ static int auditDisplayLine(xui_text_layout pLayout, int iLine, const char** ppT
 static void* auditMessageRealloc(void* pOld, size_t iSize)
 {
     return g_bFailCaretAlloc ? NULL : xrtRealloc(pOld, iSize);
+}
+
+static void* auditMessageMalloc(size_t iSize)
+{
+    return g_bFailMessageAlloc ? NULL : xrtMalloc(iSize);
 }
 
 static int auditLayoutCreate(xui_context pContext, xui_text_layout* ppLayout, const xui_text_layout_desc_t* pDesc)
@@ -43,6 +49,7 @@ static void auditLayoutDestroy(xui_text_layout pLayout)
 #define xuiTextLayoutReset auditLayoutReset
 #define xuiTextLayoutDestroy auditLayoutDestroy
 #define xuiInternalTextLayoutGetDisplayLine auditDisplayLine
+#define xrtMalloc auditMessageMalloc
 #define xrtRealloc auditMessageRealloc
 #include "../src/xui/controls/xui_message_list.c"
 
@@ -54,6 +61,7 @@ static int auditResolveSelectionOffset(xui_widget widget, xui_message_list_data_
         anchor, node, offset, &document_position);
 }
 #undef xrtRealloc
+#undef xrtMalloc
 #undef xuiInternalTextLayoutGetDisplayLine
 #undef xuiTextLayoutCreate
 #undef xuiTextLayoutReset
@@ -124,6 +132,84 @@ static int auditHit(xui_widget pWidget, int iLine, float fX, int* pOffset)
         tWorld.fX + tContent.fX + pNode->tTextRect.fX + fX,
         tWorld.fY + tContent.fY + pNode->tTextRect.fY + tLine.fY + 4 - pData->fScrollY,
         &iNode, pOffset) && iNode == 0;
+}
+
+static int auditNodeIndexKeyboardAndErrors(void)
+{
+    enum { NODE_COUNT = 4096 };
+    xui_test_proxy_state_t proxy;
+    xui_context context = NULL;
+    xui_widget list = NULL;
+    xui_font font = NULL;
+    xui_message_node_t* nodes = NULL;
+    char (*ids)[32] = NULL;
+    xui_message_node_t duplicates[2] = {{0}};
+    xui_message_node_t invalid;
+    xui_message_list_data_t* data;
+    char selected[8] = "stale";
+    int i;
+    int iFailed = 0;
+
+    xuiTestProxyInit(&proxy);
+    nodes = (xui_message_node_t*)calloc(NODE_COUNT, sizeof(*nodes));
+    ids = (char (*)[32])calloc(NODE_COUNT, sizeof(*ids));
+    CHECK(nodes != NULL && ids != NULL);
+    for (i = 0; i < NODE_COUNT; i++) {
+        snprintf(ids[i], sizeof(ids[i]), "node-%d", i);
+        nodes[i].iSize = sizeof(nodes[i]);
+        nodes[i].iType = XUI_MESSAGE_NODE_OTHER;
+        nodes[i].sId = ids[i];
+        nodes[i].sText = "row";
+    }
+    CHECK(xuiCreate(&context) == XUI_OK &&
+        xuiSetProxy(context, &proxy.tProxy) == XUI_OK &&
+        proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, "test.ttf", 16, 0) == XUI_OK &&
+        xuiSetDefaultFont(context, font) == XUI_OK &&
+        xuiInputViewport(context, 320, 100) == XUI_OK &&
+        xuiMessageListCreate(context, &list, NULL) == XUI_OK &&
+        xuiSetRootWidget(context, list) == XUI_OK &&
+        xuiWidgetSetRect(list, (xui_rect_t){0, 0, 320, 100}) == XUI_OK &&
+        xuiMessageListSetAutoScroll(list, 0) == XUI_OK &&
+        xuiMessageListSetNodes(list, nodes, NODE_COUNT) == XUI_OK);
+    memset(&g_tSteps, 0, sizeof(g_tSteps));
+    CHECK(xuiMessageListUpdateNodeText(list, ids[NODE_COUNT - 1], "tail") == XUI_OK &&
+        strcmp(xuiMessageListGetNode(list, NODE_COUNT - 1)->sText, "tail") == 0 &&
+        g_tSteps.NodeIdLookup == 1 && g_tSteps.NodeIdScan == 0);
+    CHECK(xuiMessageListSetSelected(list, 0) == XUI_OK &&
+        xuiSetFocusWidget(context, list) == XUI_OK &&
+        xuiInputKeyDown(context, XUI_KEY_PAGE_DOWN, 0) == XUI_OK &&
+        xuiDispatchPendingEvents(context) == XUI_OK &&
+        xuiMessageListGetSelected(list) > 0 && xuiMessageListGetScroll(list) > 0.0f);
+
+    duplicates[0].iSize = duplicates[1].iSize = sizeof(duplicates[0]);
+    duplicates[0].iType = duplicates[1].iType = XUI_MESSAGE_NODE_OTHER;
+    duplicates[0].sId = duplicates[1].sId = "duplicate";
+    duplicates[0].sText = "first";
+    duplicates[1].sText = "second";
+    CHECK(xuiMessageListSetNodes(list, duplicates, 2) == XUI_OK &&
+        xuiMessageListUpdateNodeText(list, "duplicate", "updated") == XUI_OK &&
+        strcmp(xuiMessageListGetNode(list, 0)->sText, "updated") == 0 &&
+        strcmp(xuiMessageListGetNode(list, 1)->sText, "second") == 0);
+    invalid = duplicates[0];
+    invalid.iSize = sizeof(invalid.iSize);
+    CHECK(xuiMessageListSetNodes(list, &invalid, 1) == XUI_ERROR_INVALID_ARGUMENT &&
+        xuiMessageListGetNodeCount(list) == 2 &&
+        strcmp(xuiMessageListGetNode(list, 0)->sText, "updated") == 0);
+
+    data = __xuiMessageListGetData(list);
+    __xuiMessageSetTextSelection(data, 0, 0, 0, 7);
+    g_bFailMessageAlloc = 1;
+    CHECK(xuiMessageListGetSelectedText(list, selected, sizeof(selected)) == XUI_ERROR_OUT_OF_MEMORY &&
+        selected[0] == 0);
+    g_bFailMessageAlloc = 0;
+    puts("MessageList indexed IDs, keyboard paging, descriptor validation and selection errors passed");
+cleanup:
+    g_bFailMessageAlloc = 0;
+    if (context != NULL) xuiDestroy(context);
+    if (font != NULL) proxy.tProxy.fontDestroy(&proxy.tProxy, font);
+    free(ids);
+    free(nodes);
+    return iFailed;
 }
 
 static int auditGraphemes(void)
@@ -718,6 +804,11 @@ static int auditLayouts(int iCount)
     auditResetCounts();
     CHECK(xuiMessageListSetNodes(pWidget, arrNodes, iCount) == XUI_OK);
     CHECK(g_tSteps.LayoutNode == iCount && g_tSteps.MeasureNode == iCount);
+    g_bFailMessageAlloc = 1;
+    CHECK(xuiMessageListSetNodes(pWidget, arrNodes, iCount + 1) == XUI_ERROR_OUT_OF_MEMORY);
+    g_bFailMessageAlloc = 0;
+    CHECK(xuiMessageListGetNodeCount(pWidget) == iCount &&
+        strcmp(xuiMessageListGetNode(pWidget, iCount - 1)->sId, arrIds[iCount - 1]) == 0);
     for (i = iCount; i > 1; i /= 2) iLog++;
     iMid = (iCount / 2 / 5) * 5;
     CHECK(xuiMessageListSetScroll(pWidget, pData->arrNodes[iMid].tNodeRect.fY + 7) == XUI_OK);
@@ -836,7 +927,12 @@ static int auditLayouts(int iCount)
     CHECK(xuiMessageListUpdateNodeText(pWidget, arrIds[0], "changed before failed layout") == XUI_ERROR_OUT_OF_MEMORY);
     CHECK(pData->iLayoutDirtyFrom == 0 && pData->arrNodes[iMid].tNodeRect.fY == tAnchor.fY && pData->fScrollY == fScroll);
     pData->bSelecting = 1;
+    pData->tPointerOwner.bActive = 1;
+    pData->tPointerOwner.iPointerId = 901u;
+    pData->tPointerOwner.iPointerType = XUI_POINTER_TYPE_TOUCH;
     tEvent.iType = XUI_EVENT_POINTER_CAPTURE_LOST;
+    tEvent.iPointerId = 901u;
+    tEvent.iPointerType = XUI_POINTER_TYPE_TOUCH;
     CHECK(__xuiMessageEvent(pWidget, &tEvent, NULL) == XUI_EVENT_DISPATCH_STOP && !pData->bSelecting);
     g_bFailShape = 0;
     CHECK(__xuiMessageLayoutNodes(pWidget, pData) == XUI_OK);
@@ -1408,6 +1504,9 @@ cleanup:
 
 int main(int argc, char** argv)
 {
+    if (argc < 2 || strcmp(argv[1], "Index") == 0) {
+        if (auditNodeIndexKeyboardAndErrors()) return 1;
+    }
     if (argc < 2 || strcmp(argv[1], "Display") == 0) {
         if (auditDisplay()) return 1;
         puts("xui_message_list_audit_test display/source mapping passed");

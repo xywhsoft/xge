@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,8 +18,81 @@ typedef struct dock_test_data_t {
 	int iStateChanged;
 	int iActiveChanged;
 	int iClose;
+	int iContext;
 	int iClientPointerDown;
 } dock_test_data_t;
+
+typedef struct dock_destroy_test_data_t {
+	xui_widget* ppWidget;
+	int iCount;
+} dock_destroy_test_data_t;
+
+typedef struct dock_replace_close_test_data_t {
+	xui_widget pReplacementClient;
+	int iReplacementWindow;
+	int iResult;
+	int iCount;
+} dock_replace_close_test_data_t;
+
+static void __xuiDockTestDestroyWidget(xui_widget pWidget, dock_destroy_test_data_t* pData)
+{
+	if ( pData == NULL || pData->ppWidget == NULL || *pData->ppWidget != pWidget ) return;
+	pData->iCount++;
+	xuiWidgetDestroy(pWidget);
+	*pData->ppWidget = NULL;
+}
+
+static void __xuiDockTestDestroyOnState(xui_widget pWidget, int iWindow, int iOldState, int iNewState, void* pUser)
+{
+	(void)iWindow;
+	(void)iOldState;
+	(void)iNewState;
+	__xuiDockTestDestroyWidget(pWidget, (dock_destroy_test_data_t*)pUser);
+}
+
+static void __xuiDockTestDestroyOnActive(xui_widget pWidget, int iPane, int iOldWindow, int iNewWindow, void* pUser)
+{
+	(void)iPane;
+	(void)iOldWindow;
+	(void)iNewWindow;
+	__xuiDockTestDestroyWidget(pWidget, (dock_destroy_test_data_t*)pUser);
+}
+
+static void __xuiDockTestDestroyOnClose(xui_widget pWidget, int iWindow, void* pUser)
+{
+	(void)iWindow;
+	__xuiDockTestDestroyWidget(pWidget, (dock_destroy_test_data_t*)pUser);
+}
+
+static int __xuiDockTestDestroyOnContext(xui_widget pWidget, const xui_dock_hit_t* pHit,
+	float fX, float fY, void* pUser)
+{
+	(void)pHit;
+	(void)fX;
+	(void)fY;
+	__xuiDockTestDestroyWidget(pWidget, (dock_destroy_test_data_t*)pUser);
+	return XUI_OK;
+}
+
+static void __xuiDockTestReplaceOnClose(xui_widget pWidget, int iWindow, void* pUser)
+{
+	dock_replace_close_test_data_t* pData = (dock_replace_close_test_data_t*)pUser;
+	(void)iWindow;
+	if ( pData == NULL || pData->iCount != 0 ) return;
+	pData->iCount++;
+	pData->iReplacementWindow = -1;
+	pData->iResult = xuiDockPanelSetWindowClose(pWidget, NULL, NULL);
+	if ( pData->iResult == XUI_OK ) pData->iResult = xuiDockPanelClear(pWidget);
+	if ( pData->iResult == XUI_OK ) {
+		pData->iResult = xuiDockPanelAddWindow(pWidget, "Replacement",
+			pData->pReplacementClient, &pData->iReplacementWindow);
+		if ( pData->iResult == XUI_OK ) pData->pReplacementClient = NULL;
+	}
+	if ( pData->iResult == XUI_OK ) {
+		pData->iResult = xuiDockPanelDockWindow(pWidget, pData->iReplacementWindow,
+			XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, NULL);
+	}
+}
 
 static int __xuiDockTestClientEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
@@ -56,6 +130,17 @@ static void __xuiDockTestClose(xui_widget pWidget, int iWindow, void* pUser)
 	(void)pWidget;
 	(void)iWindow;
 	if ( pData != NULL ) pData->iClose++;
+}
+
+static int __xuiDockTestContext(xui_widget pWidget, const xui_dock_hit_t* pHit, float fX, float fY, void* pUser)
+{
+	dock_test_data_t* pData = (dock_test_data_t*)pUser;
+	(void)pWidget;
+	(void)pHit;
+	(void)fX;
+	(void)fY;
+	if ( pData != NULL ) pData->iContext++;
+	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static int __xuiDockTestClick(xui_context pContext, float fX, float fY)
@@ -296,6 +381,51 @@ static int __xuiDockFindPaneFreeDropPoint(xui_widget pDock, int iWindow, xui_rec
 	return 0;
 }
 
+static int __xuiDockTestCapacityRollback(xui_context pContext, xui_widget pRoot,
+	const xui_dock_panel_desc_t* pDesc)
+{
+	xui_widget pDock = NULL;
+	xui_widget pClient = NULL;
+	xui_dock_window_info_t tInfo;
+	int arrWindows[49];
+	int iBasePane = -1;
+	int iPane = -1;
+	int iRet;
+	int i;
+	int bPassed = 0;
+	memset(arrWindows, 0xff, sizeof(arrWindows));
+	iRet = xuiDockPanelCreate(pContext, &pDock, pDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pDock);
+	for ( i = 0; iRet == XUI_OK && i < 49; i++ ) {
+		iRet = xuiWidgetCreate(pContext, &pClient);
+		if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pDock, "Capacity", pClient, &arrWindows[i]);
+		if ( iRet == XUI_OK ) pClient = NULL;
+	}
+	if ( iRet == XUI_OK ) {
+		iRet = xuiDockPanelDockWindow(pDock, arrWindows[0], XUI_DOCK_PANEL_REGION_DOCUMENT,
+			XUI_DOCK_PANEL_SIDE_FILL, 0.0f, &iBasePane);
+	}
+	for ( i = 1; iRet == XUI_OK && i < 48; i++ ) {
+		iRet = xuiDockPanelDockWindow(pDock, arrWindows[i], XUI_DOCK_PANEL_REGION_DOCUMENT,
+			XUI_DOCK_PANEL_SIDE_RIGHT, 0.25f, &iPane);
+	}
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindowToPane(pDock, arrWindows[48], iBasePane);
+	if ( iRet == XUI_OK && xuiDockPanelGetPaneCount(pDock) == XUI_DOCK_PANEL_PANE_CAPACITY &&
+	     xuiDockPanelGetPaneWindowCount(pDock, iBasePane) == 2 ) {
+		iRet = xuiDockPanelDockWindow(pDock, arrWindows[48], XUI_DOCK_PANEL_REGION_DOCUMENT,
+			XUI_DOCK_PANEL_SIDE_RIGHT, 0.25f, NULL);
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		     xuiDockPanelGetWindowInfo(pDock, arrWindows[48], &tInfo) == XUI_OK &&
+		     tInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED && tInfo.iPane == iBasePane &&
+		     xuiDockPanelGetPaneWindowCount(pDock, iBasePane) == 2 ) {
+			bPassed = 1;
+		}
+	}
+	if ( pClient != NULL && xuiWidgetGetParent(pClient) == NULL ) xuiWidgetDestroy(pClient);
+	if ( pDock != NULL ) xuiWidgetDestroy(pDock);
+	return bPassed;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -306,6 +436,7 @@ int main(void)
 	xui_widget pNestedClient;
 	xui_widget pTempDock;
 	xui_widget pTempClient;
+	xui_widget pTempClient2;
 	xui_widget pTempButton;
 	xui_widget pHitWidget;
 	xui_widget pMenu;
@@ -314,6 +445,7 @@ int main(void)
 	xui_surface pIndicatorCache;
 	xui_font pFont;
 	xui_dock_panel_desc_t tDesc;
+	xui_dock_panel_desc_t tBadDesc;
 	xui_dock_window_info_t tWinInfo;
 	xui_dock_window_info_t tToolboxInfo;
 	xui_dock_pane_info_t tPaneInfo;
@@ -321,10 +453,16 @@ int main(void)
 	xui_dock_hit_t tExtremeHit;
 	xui_dock_drop_info_t tDrop;
 	xui_dock_panel_metrics_t tMetrics;
+	xui_dock_panel_metrics_t tSavedMetrics;
 	xui_dock_panel_colors_t tColors;
 	xui_render_node_t tRenderNode;
+	xui_accessible_node_t tAccessibleNode;
 	xvalue* pState;
+	xvalue* pRegions;
+	xvalue* pRegionState;
 	dock_test_data_t tData;
+	dock_destroy_test_data_t tDestroyData;
+	dock_replace_close_test_data_t tReplaceCloseData;
 	int iFailed;
 	int iRet;
 	int iRegionCount;
@@ -340,8 +478,13 @@ int main(void)
 	int iZNested;
 	int iMenuIndex;
 	int iRenderNodeCount;
+	int iAccessibleCount;
 	int iDragNodeIndex;
 	int iClientBefore;
+	int iChangeBefore;
+	int iLayoutChangeBefore;
+	int iWindowChangeBefore;
+	int iRegionMode;
 	float fOldX;
 	float fOldW;
 	float fOldY;
@@ -358,8 +501,10 @@ int main(void)
 	xui_rect_t tSrcRect;
 	xui_rect_t tDockWorld;
 	xui_rect_t tPreviewWorld;
+	xui_rect_t tUnrelatedPreview;
 	xui_rect_t tClientWorld;
 	xui_rect_t tTempButtonWorld;
+	xui_event_t tContextEvent;
 	xui_widget pDragOverlay;
 	float fPreviewCenter;
 	float fActualCenter;
@@ -384,8 +529,10 @@ int main(void)
 	int iActiveBefore;
 	int iOverlayChildCount;
 	int iTempWindow;
+	int iTempWindow2;
 	int iCloseBefore;
 	int i;
+	char sLongTitle[XUI_DOCK_PANEL_TITLE_CAPACITY + 4];
 
 	pContext = NULL;
 	pRoot = NULL;
@@ -393,6 +540,7 @@ int main(void)
 	pNestedClient = NULL;
 	pTempDock = NULL;
 	pTempClient = NULL;
+	pTempClient2 = NULL;
 	pTempButton = NULL;
 	pHitWidget = NULL;
 	pMenu = NULL;
@@ -401,16 +549,20 @@ int main(void)
 	pDragOverlay = NULL;
 	pFont = NULL;
 	pState = NULL;
+	pRegions = NULL;
+	pRegionState = NULL;
 	iFailed = 0;
 	iRegionCount = iWindowCount = iFloatingCount = 0;
 	iLayerProps = iLayerToolbox = iZProps = iZToolbox = 0;
 	iLayerClient = iLayerNested = iZClient = iZNested = 0;
 	iMenuIndex = -1;
 	iRenderNodeCount = 0;
+	iAccessibleCount = 0;
 	iDragNodeIndex = -1;
 	iActiveBefore = 0;
 	iOverlayChildCount = 0;
 	iTempWindow = -1;
+	iTempWindow2 = -1;
 	iCloseBefore = 0;
 	fRegionBefore = fRegionAfter = 0.0f;
 	fAutoHidePaneW = 0.0f;
@@ -421,6 +573,8 @@ int main(void)
 	dragPane = -1;
 	memset(arrClient, 0, sizeof(arrClient));
 	memset(&tData, 0, sizeof(tData));
+	memset(&tDestroyData, 0, sizeof(tDestroyData));
+	memset(&tReplaceCloseData, 0, sizeof(tReplaceCloseData));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -444,6 +598,25 @@ int main(void)
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pFont = pFont;
+	tBadDesc = tDesc;
+	tBadDesc.iSize = 1;
+	pTempDock = pRoot;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pTempDock == NULL,
+		"invalid descriptor clears create output");
+	tBadDesc = tDesc;
+	tBadDesc.bHasMetrics = 1;
+	memset(&tBadDesc.tMetrics, 0, sizeof(tBadDesc.tMetrics));
+	tBadDesc.tMetrics.iSize = sizeof(tBadDesc.tMetrics);
+	tBadDesc.tMetrics.fCaptionHeight = NAN;
+	pTempDock = pRoot;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pTempDock == NULL,
+		"invalid descriptor metrics rejected");
+	pTempDock = pRoot;
+	iRet = xuiDockPanelCreate(NULL, &pTempDock, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pTempDock == NULL,
+		"invalid context clears create output");
 	iRet = xuiDockPanelCreate(pContext, &pDock, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDock != NULL, "dock create");
 	iRet = xuiWidgetSetRect(pDock, (xui_rect_t){8.0f, 8.0f, 624.0f, 404.0f});
@@ -456,6 +629,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "active callback");
 	iRet = xuiDockPanelSetWindowClose(pDock, __xuiDockTestClose, &tData);
 	XUI_TEST_CHECK(iRet == XUI_OK, "close callback");
+	iRet = xuiDockPanelSetContextMenu(pDock, __xuiDockTestContext, &tData);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
+	iTempWindow = 123;
+	iRet = xuiDockPanelAddWindow(NULL, "invalid", NULL, &iTempWindow);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iTempWindow == -1,
+		"add window failure clears output");
 
 	for ( i = 0; i < 11; i++ ) {
 		iRet = xuiWidgetCreate(pContext, &arrClient[i]);
@@ -474,6 +653,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "nested client add");
 	iRet = xuiDockPanelAddWindow(pDock, "Document.c", arrClient[0], &doc1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "doc1 add");
+	memset(sLongTitle, 't', XUI_DOCK_PANEL_TITLE_CAPACITY - 2);
+	memcpy(sLongTitle + XUI_DOCK_PANEL_TITLE_CAPACITY - 2, "\xe4\xb8\xad", 4);
+	iRet = xuiDockPanelSetWindowTitle(pDock, doc1, sLongTitle);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strlen(xuiDockPanelGetWindowTitle(pDock, doc1)) == XUI_DOCK_PANEL_TITLE_CAPACITY - 2,
+		"window title truncation preserves utf8 boundary");
+	iRet = xuiDockPanelGetWindowInfo(pDock, doc1, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(tWinInfo.sTitle) == XUI_DOCK_PANEL_TITLE_CAPACITY - 2,
+		"window info title remains valid after utf8 truncation");
+	iRet = xuiDockPanelSetWindowTitle(pDock, doc1, "Document.c");
+	XUI_TEST_CHECK(iRet == XUI_OK, "doc1 title restore");
 	iRet = xuiDockPanelAddWindow(pDock, "Preview.h", arrClient[1], &doc2);
 	XUI_TEST_CHECK(iRet == XUI_OK, "doc2 add");
 	iRet = xuiDockPanelAddWindow(pDock, "Scene.json", arrClient[2], &doc3);
@@ -521,6 +711,40 @@ int main(void)
 	iRet = xuiDockPanelGetMetrics(pDock, &tMetrics);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiDockNear(tMetrics.fSplitterSize, 3.0f) &&
 		tMetrics.fSplitterHitSize > tMetrics.fSplitterSize, "splitter visual and hit metrics");
+	tSavedMetrics = tMetrics;
+	tMetrics.fCaptionHeight = NAN;
+	iRet = xuiDockPanelSetMetrics(pDock, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "metrics reject NaN");
+	tMetrics = tSavedMetrics;
+	tMetrics.fTabMaxWidth = tMetrics.fTabMinWidth - 1.0f;
+	iRet = xuiDockPanelSetMetrics(pDock, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "metrics reject inverted tab bounds");
+	iRet = xuiDockPanelGetMetrics(pDock, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK && memcmp(&tMetrics, &tSavedMetrics, sizeof(tMetrics)) == 0,
+		"invalid metrics preserve previous state");
+	iChangeBefore = xuiDockPanelGetChangeCount(pDock);
+	iLayoutChangeBefore = xuiDockPanelGetLayoutChangeCount(pDock);
+	iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, &iRegionMode, &fRegionBefore);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelSetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, iRegionMode, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiDockPanelGetChangeCount(pDock) == iChangeBefore &&
+		xuiDockPanelGetLayoutChangeCount(pDock) == iLayoutChangeBefore,
+		"region size rejects NaN without mutation");
+	iRet = xuiDockPanelSetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, iRegionMode, fRegionBefore);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetChangeCount(pDock) == iChangeBefore &&
+		xuiDockPanelGetLayoutChangeCount(pDock) == iLayoutChangeBefore,
+		"region size no-op does not dirty layout");
+	iRet = xuiDockPanelSetWindowMinSize(pDock, doc1, INFINITY, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "window minimum rejects infinity");
+	iRet = xuiDockPanelSetWindowIcon(pDock, doc1, NULL, (xui_rect_t){NAN, 0.0f, 0.0f, 0.0f});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "window icon source rejects NaN");
+	dragPane = 123;
+	iRet = xuiDockPanelDockWindow(pDock, doc1, XUI_DOCK_PANEL_REGION_DOCUMENT,
+		XUI_DOCK_PANEL_SIDE_FILL, NAN, &dragPane);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && dragPane == -1,
+		"dock ratio rejects NaN and clears pane output");
+	iRet = xuiDockPanelFloatWindow(pDock, doc1, (xui_rect_t){0.0f, 0.0f, INFINITY, 120.0f});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "float rect rejects infinity");
 	iRet = xuiDockPanelGetColors(pDock, &tColors);
 	XUI_TEST_CHECK(iRet == XUI_OK, "splitter colors");
 	tDockWorld = xuiWidgetGetWorldRect(pDock);
@@ -636,6 +860,64 @@ int main(void)
 	fActualCenter = tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f;
 	XUI_TEST_CHECK(__xuiDockNear(fPreviewCenter, fActualCenter),
 		"horizontal reverse preview matches committed splitter");
+	XUI_TEST_CHECK(__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_VERTICAL, -1, &tExtremeHit),
+		"multi-touch splitter found");
+	iRet = xuiInputPointerDownEx(pContext, 1801u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f),
+		(int)(tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1801u, XUI_POINTER_TYPE_TOUCH) == pDock,
+		"dock splitter captures exact owner touch");
+	iRet = xuiInputPointerMoveEx(pContext, 1801u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f + 24.0f),
+		(int)(tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	pDragOverlay = xuiOverlayTop(pContext);
+	tPreviewWorld = pDragOverlay != NULL ? xuiWidgetGetWorldRect(pDragOverlay) : (xui_rect_t){0};
+	XUI_TEST_CHECK(iRet == XUI_OK && pDragOverlay != NULL && xuiOverlayGetOwner(pDragOverlay) == pDock,
+		"owner touch moves dock splitter preview");
+	iRet = xuiInputPointerDownEx(pContext, 1802u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tDockWorld.fX + tExtremeHit.tRect.fX + 4.0f),
+		(int)(tDockWorld.fY + tExtremeHit.tRect.fY + 4.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 1802u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tDockWorld.fX + tDockWorld.fW - 4.0f),
+		(int)(tDockWorld.fY + tDockWorld.fH - 4.0f), XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1802u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tDockWorld.fX + tDockWorld.fW - 4.0f),
+		(int)(tDockWorld.fY + tDockWorld.fH - 4.0f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tUnrelatedPreview = pDragOverlay != NULL ? xuiWidgetGetWorldRect(pDragOverlay) : (xui_rect_t){0};
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiDockNear(tUnrelatedPreview.fX, tPreviewWorld.fX) &&
+		__xuiDockNear(tUnrelatedPreview.fY, tPreviewWorld.fY) &&
+		xuiGetPointerCaptureEx(pContext, 1801u, XUI_POINTER_TYPE_TOUCH) == pDock &&
+		xuiGetPointerCaptureEx(pContext, 1802u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot move dock splitter or release owner");
+	iRet = xuiInputPointerMoveEx(pContext, 1801u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f + 52.0f),
+		(int)(tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tUnrelatedPreview = pDragOverlay != NULL ? xuiWidgetGetWorldRect(pDragOverlay) : (xui_rect_t){0};
+	XUI_TEST_CHECK(iRet == XUI_OK && !__xuiDockNear(tUnrelatedPreview.fX, tPreviewWorld.fX),
+		"dock owner touch continues moving splitter preview");
+	iRet = xuiInputPointerUpEx(pContext, 1801u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f + 52.0f),
+		(int)(tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1801u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"dock owner touch releases splitter capture");
 	iRet = xuiDockPanelLoadState(pDock, pState);
 	xuiDockPanelStateFree(pState);
 	pState = NULL;
@@ -655,6 +937,35 @@ int main(void)
 	XUI_TEST_CHECK(xuiDockPanelGetPaneCount(pDock) == 4, "pane count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneWindowCount(pDock, docPane) == 5, "doc tab count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2, "doc2 active");
+	iAccessibleCount = xuiWidgetGetAccessibleNodeCount(pDock);
+	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
+	tAccessibleNode.iSize = sizeof(tAccessibleNode);
+	iRet = xuiWidgetGetAccessibleNode(pDock, 0, &tAccessibleNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && iAccessibleCount == 9 &&
+		tAccessibleNode.iRole == XUI_ACCESSIBLE_ROLE_GROUP &&
+		(tAccessibleNode.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS)) != 0u,
+		"dock accessibility exposes root and visible windows");
+	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
+	tAccessibleNode.iSize = sizeof(tAccessibleNode);
+	iRet = xuiWidgetGetAccessibleNode(pDock, 1, &tAccessibleNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessibleNode.iId == (uint64_t)doc1 + 2u &&
+		tAccessibleNode.iRole == XUI_ACCESSIBLE_ROLE_TAB && strcmp(tAccessibleNode.sName, "Document.c") == 0,
+		"dock accessibility exposes document tab");
+	iRet = xuiWidgetPerformAccessibleAction(pDock, (uint64_t)doc1 + 2u,
+		XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc1,
+		"dock accessibility selects tab");
+	iRet = xuiDockPanelSetPaneActiveWindow(pDock, docPane, doc2);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_TAB, XUI_MOD_CTRL);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc3,
+		"ctrl tab switches dock tabs from client focus");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_TAB, XUI_MOD_CTRL | XUI_MOD_SHIFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2,
+		"ctrl shift tab switches dock tabs backward");
+	iRet = xuiInputSetModifiers(pContext, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "ctrl tab restores input modifiers");
 	iRet = xuiDockPanelDockWindowToPane(pDock, toolbox, toolboxPane);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK &&
@@ -1254,6 +1565,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pState != NULL, "save state");
 	iRet = xuiDockPanelStateGetCounts(pState, &iRegionCount, &iWindowCount, &iFloatingCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iRegionCount == XUI_DOCK_PANEL_REGION_COUNT && iWindowCount == 11 && iFloatingCount == 1, "state counts");
+	iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, &iRegionMode, &fRegionBefore);
+	pRegions = xrtValueObjectGet(pState, (xstrview){ "regions", 7 });
+	pRegionState = xrtValueArrayGet(pRegions, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && pRegionState != NULL &&
+		xrtValueObjectSetNew(pRegionState, (xstrview){ "value", 5 }, xrtValueFloat(NAN)),
+		"corrupt saved region size");
+	iRet = xuiDockPanelLoadState(pDock, pState);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nonfinite saved region size");
+	iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, &iRegionCount, &fRegionAfter);
+	XUI_TEST_CHECK(iRet == XUI_OK && iRegionCount == iRegionMode && fRegionAfter == fRegionBefore,
+		"invalid saved state preserves layout");
+	xuiDockPanelStateFree(pState);
+	pState = NULL;
+	pRegions = NULL;
+	pRegionState = NULL;
+	iRet = xuiDockPanelSaveState(pDock, &pState);
+	XUI_TEST_CHECK(iRet == XUI_OK && pState != NULL, "resave valid state");
 	iRet = xuiDockPanelDockWindow(pDock, props, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "mutate props docked");
 	iRet = xuiDockPanelDockWindow(pDock, output, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_BOTTOM, 0.22f, NULL);
@@ -1354,6 +1682,43 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iZProps > iZToolbox, "overlap props visual front");
 	pHitWidget = xuiHitTest(pContext, 8.0f + tWinInfo.tRect.fX + 48.0f, 8.0f + tWinInfo.tRect.fY + 14.0f, XUI_WIDGET_HIT_DEFAULT);
 	XUI_TEST_CHECK(pHitWidget == tWinInfo.pHostWidget, "overlap front floating title hit");
+	tClientWorld = xuiWidgetGetWorldRect(tWinInfo.pHostWidget);
+	fOldX = tWinInfo.tRect.fX;
+	iRet = xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDownEx(pContext, 1901u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tClientWorld.fX + 48.0f),
+		(int)(tClientWorld.fY + 14.0f), XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1901u, XUI_POINTER_TYPE_TOUCH) == tWinInfo.pHostWidget,
+		"floating title captures exact owner touch");
+	iRet = xuiInputPointerDownEx(pContext, 1902u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tClientWorld.fX + 54.0f), (int)(tClientWorld.fY + 14.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1902u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tClientWorld.fX + 120.0f),
+		(int)(tClientWorld.fY + 40.0f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1901u, XUI_POINTER_TYPE_TOUCH) == tWinInfo.pHostWidget &&
+		xuiGetPointerCaptureEx(pContext, 1902u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot release floating title owner");
+	iRet = xuiInputPointerMoveEx(pContext, 1901u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tClientWorld.fX + 98.0f), (int)(tClientWorld.fY + 34.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 1901u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tClientWorld.fX + 98.0f),
+		(int)(tClientWorld.fY + 34.0f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetModifiers(pContext, 0);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tRect.fX > fOldX + 20.0f &&
+		xuiGetPointerCaptureEx(pContext, 1901u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"floating owner touch moves window and releases capture");
 	fOldX = tWinInfo.tRect.fX;
 	iRet = xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
 	if ( iRet == XUI_OK ) iRet = xuiInputPointerDown(pContext, 8.0f + tWinInfo.tRect.fX + 48.0f, 8.0f + tWinInfo.tRect.fY + 14.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
@@ -1450,6 +1815,27 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render target");
 	XUI_TEST_CHECK(xuiDockPanelGetChangeCount(pDock) > 0 && tData.iStateChanged > 0, "change counters");
 
+	memset(&tContextEvent, 0, sizeof(tContextEvent));
+	tContextEvent.iSize = sizeof(tContextEvent);
+	tContextEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	tContextEvent.pTarget = pDock;
+	tContextEvent.iKey = XUI_KEY_CONTEXT_MENU;
+	iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContext == 1, "context callback before clear");
+	iChangeBefore = xuiDockPanelGetChangeCount(pDock);
+	iLayoutChangeBefore = xuiDockPanelGetLayoutChangeCount(pDock);
+	iWindowChangeBefore = xuiDockPanelGetWindowChangeCount(pDock);
+	iRet = xuiDockPanelClear(pDock);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetWindowCount(pDock) == 0 &&
+		xuiDockPanelGetChangeCount(pDock) > iChangeBefore &&
+		xuiDockPanelGetLayoutChangeCount(pDock) > iLayoutChangeBefore &&
+		xuiDockPanelGetWindowChangeCount(pDock) > iWindowChangeBefore,
+		"clear dock content and preserve monotonic counters");
+	iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContext == 2, "clear preserves context callback and user data");
+	XUI_TEST_CHECK(__xuiDockTestCapacityRollback(pContext, pRoot, &tDesc),
+		"full layout rejects split without detaching source window");
+
 	pTempDock = NULL;
 	pTempClient = NULL;
 	iTempWindow = -1;
@@ -1530,6 +1916,167 @@ int main(void)
 	pTempDock = NULL;
 	pTempClient = NULL;
 	pTempButton = NULL;
+
+	memset(&tDestroyData, 0, sizeof(tDestroyData));
+	pTempDock = NULL;
+	pTempClient = NULL;
+	iTempWindow = -1;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Destroy state", pTempClient, &iTempWindow);
+	if ( iRet == XUI_OK ) {
+		pTempClient = NULL;
+		tDestroyData.ppWidget = &pTempDock;
+		iRet = xuiDockPanelSetWindowStateChanged(pTempDock, __xuiDockTestDestroyOnState, &tDestroyData);
+	}
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindow(pTempDock, iTempWindow,
+		XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempDock == NULL && tDestroyData.iCount == 1,
+		"state callback may destroy dock panel");
+
+	memset(&tDestroyData, 0, sizeof(tDestroyData));
+	pTempDock = NULL;
+	pTempClient = NULL;
+	pTempClient2 = NULL;
+	iTempWindow = -1;
+	iTempWindow2 = -1;
+	dragPane = -1;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient2);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Active A", pTempClient, &iTempWindow);
+	if ( iRet == XUI_OK ) {
+		pTempClient = NULL;
+		iRet = xuiDockPanelAddWindow(pTempDock, "Active B", pTempClient2, &iTempWindow2);
+	}
+	if ( iRet == XUI_OK ) pTempClient2 = NULL;
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindow(pTempDock, iTempWindow,
+		XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, &dragPane);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindowToPane(pTempDock, iTempWindow2, dragPane);
+	if ( iRet == XUI_OK ) {
+		tDestroyData.ppWidget = &pTempDock;
+		iRet = xuiDockPanelSetActiveChanged(pTempDock, __xuiDockTestDestroyOnActive, &tDestroyData);
+	}
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelSetPaneActiveWindow(pTempDock, dragPane, iTempWindow);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempDock == NULL && tDestroyData.iCount == 1,
+		"active callback may destroy dock panel");
+
+	memset(&tDestroyData, 0, sizeof(tDestroyData));
+	pTempDock = NULL;
+	pTempClient = NULL;
+	pTempButton = NULL;
+	iTempWindow = -1;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTempDock, (xui_rect_t){24.0f, 24.0f, 300.0f, 210.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Destroy close", pTempClient, &iTempWindow);
+	if ( iRet == XUI_OK ) pTempClient = NULL;
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelFloatWindow(pTempDock, iTempWindow,
+		(xui_rect_t){32.0f, 28.0f, 210.0f, 140.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) pTempButton = xuiDockPanelGetWindowCloseButtonWidget(pTempDock, iTempWindow);
+	if ( iRet == XUI_OK && pTempButton != NULL ) tTempButtonWorld = xuiWidgetGetWorldRect(pTempButton);
+	if ( iRet == XUI_OK ) {
+		tDestroyData.ppWidget = &pTempDock;
+		iRet = xuiDockPanelSetWindowClose(pTempDock, __xuiDockTestDestroyOnClose, &tDestroyData);
+	}
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestClick(pContext,
+		tTempButtonWorld.fX + tTempButtonWorld.fW * 0.5f,
+		tTempButtonWorld.fY + tTempButtonWorld.fH * 0.5f);
+	pTempButton = NULL;
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempDock == NULL && tDestroyData.iCount == 1,
+		"close callback may destroy dock panel");
+
+	memset(&tReplaceCloseData, 0, sizeof(tReplaceCloseData));
+	pTempDock = NULL;
+	pTempClient = NULL;
+	pTempClient2 = NULL;
+	pTempButton = NULL;
+	iTempWindow = -1;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTempDock, (xui_rect_t){24.0f, 24.0f, 300.0f, 210.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Original", pTempClient, &iTempWindow);
+	if ( iRet == XUI_OK ) pTempClient = NULL;
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelFloatWindow(pTempDock, iTempWindow,
+		(xui_rect_t){32.0f, 28.0f, 210.0f, 140.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient2);
+	if ( iRet == XUI_OK ) {
+		tReplaceCloseData.pReplacementClient = pTempClient2;
+		pTempClient2 = NULL;
+		iRet = xuiDockPanelSetWindowClose(pTempDock, __xuiDockTestReplaceOnClose, &tReplaceCloseData);
+	}
+	if ( iRet == XUI_OK ) pTempButton = xuiDockPanelGetWindowCloseButtonWidget(pTempDock, iTempWindow);
+	if ( iRet == XUI_OK && pTempButton != NULL ) tTempButtonWorld = xuiWidgetGetWorldRect(pTempButton);
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestClick(pContext,
+		tTempButtonWorld.fX + tTempButtonWorld.fW * 0.5f,
+		tTempButtonWorld.fY + tTempButtonWorld.fH * 0.5f);
+	pTempClient2 = tReplaceCloseData.pReplacementClient;
+	tReplaceCloseData.pReplacementClient = NULL;
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock,
+		tReplaceCloseData.iReplacementWindow, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tReplaceCloseData.iResult == XUI_OK &&
+		tReplaceCloseData.iCount == 1 && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED &&
+		strcmp(tWinInfo.sTitle, "Replacement") == 0,
+		"close callback replacement is not hidden by stale close operation");
+	pTempButton = NULL;
+	xuiWidgetDestroy(pTempDock);
+	pTempDock = NULL;
+	pTempClient2 = NULL;
+
+	memset(&tDestroyData, 0, sizeof(tDestroyData));
+	pTempDock = NULL;
+	pTempClient = NULL;
+	iTempWindow = -1;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTempDock, (xui_rect_t){24.0f, 24.0f, 300.0f, 210.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Destroy host context", pTempClient, &iTempWindow);
+	if ( iRet == XUI_OK ) pTempClient = NULL;
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelFloatWindow(pTempDock, iTempWindow,
+		(xui_rect_t){32.0f, 28.0f, 210.0f, 140.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pTempDock, iTempWindow, &tWinInfo);
+	if ( iRet == XUI_OK ) tDockWorld = xuiWidgetGetWorldRect(tWinInfo.pHostWidget);
+	if ( iRet == XUI_OK ) {
+		tDestroyData.ppWidget = &pTempDock;
+		iRet = xuiDockPanelSetContextMenu(pTempDock, __xuiDockTestDestroyOnContext, &tDestroyData);
+	}
+	memset(&tContextEvent, 0, sizeof(tContextEvent));
+	tContextEvent.iSize = sizeof(tContextEvent);
+	tContextEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	tContextEvent.pTarget = tWinInfo.pHostWidget;
+	tContextEvent.fX = tDockWorld.fX + 12.0f;
+	tContextEvent.fY = tDockWorld.fY + 8.0f;
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK((iRet == XUI_OK || iRet == XUI_EVENT_DISPATCH_STOP) &&
+		pTempDock == NULL && tDestroyData.iCount == 1,
+		"floating host context callback may destroy dock panel");
+
+	memset(&tDestroyData, 0, sizeof(tDestroyData));
+	pTempDock = NULL;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) {
+		tDestroyData.ppWidget = &pTempDock;
+		iRet = xuiDockPanelSetContextMenu(pTempDock, __xuiDockTestDestroyOnContext, &tDestroyData);
+	}
+	memset(&tContextEvent, 0, sizeof(tContextEvent));
+	tContextEvent.iSize = sizeof(tContextEvent);
+	tContextEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	tContextEvent.pTarget = pTempDock;
+	tContextEvent.iKey = XUI_KEY_CONTEXT_MENU;
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempDock == NULL && tDestroyData.iCount == 1,
+		"context callback may destroy dock panel");
+
 	iOverlayChildCount = xuiWidgetGetChildCount(xuiOverlayRoot(pContext));
 	for ( i = 0; i < 24; i++ ) {
 		pTempDock = NULL;
@@ -1553,6 +2100,11 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetChildCount(xuiOverlayRoot(pContext)) == iOverlayChildCount, "dock lifecycle releases overlays");
 
 cleanup:
+	if ( tReplaceCloseData.pReplacementClient != NULL &&
+	     xuiWidgetGetParent(tReplaceCloseData.pReplacementClient) == NULL ) {
+		xuiWidgetDestroy(tReplaceCloseData.pReplacementClient);
+	}
+	if ( pTempClient2 != NULL && xuiWidgetGetParent(pTempClient2) == NULL ) xuiWidgetDestroy(pTempClient2);
 	if ( pTempClient != NULL && xuiWidgetGetParent(pTempClient) == NULL ) xuiWidgetDestroy(pTempClient);
 	if ( pTempDock != NULL ) xuiWidgetDestroy(pTempDock);
 	if ( pState != NULL ) xuiDockPanelStateFree(pState);

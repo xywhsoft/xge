@@ -22,9 +22,12 @@ int main(void)
 	xui_vec2_t tContent;
 	xui_rect_t tTextRect;
 	xui_rect_t tCaret;
+	char sLongLine[4097];
+	const char* sGraphemeLine;
 	int iCount;
 	int iFailed;
 	int iRet;
+	int i;
 
 	pDocument = NULL;
 	iFailed = 0;
@@ -98,6 +101,59 @@ int main(void)
 		"wrapped hit test");
 	iRet = xuiCodeLayoutGetCaretRect(&tDesc, 0, 8, &tCaret);
 	XUI_TEST_CHECK(iRet == XUI_OK && tCaret.fX == 66.0f && tCaret.fY == 36.0f, "wrapped caret rect");
+
+	sGraphemeLine = "A"
+		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA9\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA7\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA6"
+		"B";
+	tDesc.tViewportRect.fW = 200.0f;
+	tDesc.tViewportRect.fH = 48.0f;
+	tDesc.bWordWrap = 0;
+	iRet = xuiCodeDocumentSetText(pDocument, sGraphemeLine);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeDocumentGetLength(pDocument) == 27,
+		"grapheme document text");
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, arrLines, 8, &iCount, &tContent, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && (int)tContent.fX == 24,
+		"grapheme content width");
+	iRet = xuiCodeLayoutGetCaretRect(&tDesc, 0, 2, &tCaret);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCaret.fX == 66.0f && tCaret.fY == 20.0f,
+		"grapheme caret rect");
+	iRet = xuiCodeLayoutHitTest(&tDesc, 66.0f, 20.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iColumn == 2 && tHit.iOffset == 26,
+		"grapheme hit test");
+
+	tDesc.tViewportRect.fW = 56.0f;
+	tDesc.bWordWrap = 1;
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, arrLines, 8, &iCount, &tContent, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "grapheme wrapped line count");
+	XUI_TEST_CHECK(arrLines[0].iStartOffset == 0 && arrLines[0].iEndOffset == 26 &&
+		arrLines[1].iStartOffset == 26 && arrLines[1].iEndOffset == 27,
+		"grapheme wrap boundaries");
+	iRet = xuiCodeLayoutGetCaretRect(&tDesc, 0, 2, &tCaret);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCaret.fX == 50.0f && tCaret.fY == 36.0f,
+		"grapheme wrapped caret rect");
+	iRet = xuiCodeLayoutHitTest(&tDesc, 50.0f, 37.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iColumn == 2 && tHit.iOffset == 26,
+		"grapheme wrapped hit test");
+
+	for ( i = 0; i < 4096; i++ ) sLongLine[i] = 'x';
+	sLongLine[4096] = '\0';
+	iRet = xuiCodeDocumentSetText(pDocument, sLongLine);
+	XUI_TEST_CHECK(iRet == XUI_OK, "long wrapped document text");
+	tDesc.tViewportRect.fW = 48.0f;
+	tDesc.tViewportRect.fH = 4096.0f * 16.0f;
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount, &tContent, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 4096 && (int)tContent.fY == 4096 * 16,
+		"long wrapped layout remains linear");
+
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, -1, &iCount, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative line capacity rejected");
+	tDesc.pFoldRanges = NULL;
+	tDesc.iFoldRangeCount = 1;
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing fold ranges rejected");
 
 cleanup:
 	xuiCodeDocumentDestroy(pDocument);

@@ -184,7 +184,8 @@ static void group_editor_boundary_cases(void)
     CHECK(xuiDocumentEditorCreate(context, &ed, &editor) == XUI_OK && xuiSetRootWidget(context, editor) == XUI_OK);
     CHECK(xuiWidgetSetRect(editor, (xui_rect_t){0, 0, 400, 260}) == XUI_OK && xuiInputViewport(context, 400, 260) == XUI_OK);
     group_reset(context, editor, d); group_typed(context, editor, "a");
-    started = xrtClock(); while (xrtClock() - started < 25000) xrtThreadYield();
+    started = document_test_clock_microseconds();
+    while (document_test_clock_microseconds() - started < 25000) xrtThreadYield();
     group_typed(context, editor, "b"); CHECK(group_undo_count(d) == 2);
     CHECK(xuiEditUndo(editor) == XUI_OK); source(d, "basea");
 
@@ -192,7 +193,8 @@ static void group_editor_boundary_cases(void)
      * between their arrivals. B/C still belong to one undo unit. */
     group_reset(context, editor, d); ordered_pause(&allocator, editor); ordered_key(context, editor, 'Z', XUI_MOD_CTRL);
     send_text(context, editor, "A", 0, 0);
-    started = xrtClock(); while (xrtClock() - started < 25000) xrtThreadYield();
+    started = document_test_clock_microseconds();
+    while (document_test_clock_microseconds() - started < 25000) xrtThreadYield();
     send_text(context, editor, "B", 0, 0); send_text(context, editor, "C", 0, 0);
     atomic_store(&allocator.resume, 1); async_editor_flush(context, editor); source(d, "baseABC");
     CHECK(group_undo_count(d) == 2 && xuiEditUndo(editor) == XUI_OK); source(d, "baseA");

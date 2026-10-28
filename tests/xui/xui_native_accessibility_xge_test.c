@@ -38,7 +38,8 @@ static IUIAutomationElement* named(IUIAutomation* client,IUIAutomationElement* r
 static DWORD WINAPI client_thread(void* user)
 {
     native_probe* p=user;IUIAutomation* client=NULL;IUIAutomationElement *host=NULL,*rich=NULL,*source=NULL,*heading=NULL;
-    IUIAutomationValuePattern* value=NULL;BSTR text=NULL;CONTROLTYPEID role;RECT bounds;
+    IUIAutomationValuePattern* value=NULL;IUIAutomationTextPattern *rich_text=NULL,*source_text=NULL;
+    IUIAutomationTextRange *range=NULL,*child=NULL;BSTR text=NULL;CONTROLTYPEID role;RECT bounds;
     HR(CoInitializeEx(NULL,COINIT_MULTITHREADED));
     HR(CoCreateInstance(&CLSID_CUIAutomation,NULL,CLSCTX_INPROC_SERVER,&IID_IUIAutomation,(void**)&client));
     HR(IUIAutomation_ElementFromHandle(client,p->window,&host));
@@ -48,6 +49,17 @@ static DWORD WINAPI client_thread(void* user)
     HR(IUIAutomationElement_get_CurrentBoundingRectangle(rich,&bounds));CHECK(bounds.right-bounds.left>300 && bounds.bottom-bounds.top>300);
     HR(IUIAutomationElement_get_CurrentBoundingRectangle(source,&bounds));CHECK(bounds.right-bounds.left>300 && bounds.bottom-bounds.top>300);
     heading=named(client,rich,L"Native Rich text");
+    HR(IUIAutomationElement_GetCurrentPattern(rich,UIA_TextPatternId,(IUnknown**)&rich_text));CHECK(rich_text);
+    HR(IUIAutomationTextPattern_get_DocumentRange(rich_text,&range));CHECK(range);
+    HR(IUIAutomationTextRange_GetText(range,-1,&text));CHECK(text && wcsstr(text,L"Native Rich text") && wcsstr(text,L"Shared Document"));
+    SysFreeString(text);text=NULL;IUIAutomationTextRange_Release(range);range=NULL;
+    HR(IUIAutomationTextPattern_RangeFromChild(rich_text,heading,&child));CHECK(child);
+    HR(IUIAutomationTextRange_GetText(child,-1,&text));CHECK(text && !wcscmp(text,L"Native Rich text"));
+    SysFreeString(text);text=NULL;IUIAutomationTextRange_Release(child);child=NULL;
+    HR(IUIAutomationElement_GetCurrentPattern(source,UIA_TextPatternId,(IUnknown**)&source_text));CHECK(source_text);
+    HR(IUIAutomationTextPattern_get_DocumentRange(source_text,&range));CHECK(range);
+    HR(IUIAutomationTextRange_GetText(range,-1,&text));CHECK(text && wcsstr(text,L"# Native Markdown") && wcsstr(text,L"**bold**"));
+    SysFreeString(text);text=NULL;IUIAutomationTextRange_Release(range);range=NULL;
     HR(IUIAutomationElement_GetCurrentPattern(source,UIA_ValuePatternId,(IUnknown**)&value));CHECK(value);
     HR(IUIAutomationValuePattern_get_CurrentValue(value,&text));CHECK(text && wcsstr(text,L"# Native Markdown") && wcsstr(text,L"**bold**"));SysFreeString(text);text=NULL;
     HR(IUIAutomationValuePattern_SetValue(value,L"# \x4f60\x597d \xd83d\xde00\n\nNative system edit.\n"));
@@ -56,7 +68,8 @@ static DWORD WINAPI client_thread(void* user)
     HR(IUIAutomationValuePattern_get_CurrentValue(value,&text));CHECK(text && wcsstr(text,L"# Native Markdown") && wcsstr(text,L"**bold**"));SysFreeString(text);text=NULL;
     request(p,COMMAND_LIVE);
     HR(IUIAutomationValuePattern_get_CurrentValue(value,&text));CHECK(text && wcsstr(text,L"# Native Markdown"));SysFreeString(text);
-    puts("Actual XGE UIA: automatic input-pump binding, Rich/Markdown roles, native bounds, UTF-16 SetValue, shared Undo and LIVE passed");fflush(stdout);
+    puts("Actual XGE UIA: automatic binding, roles, bounds, TextPattern, UTF-16 SetValue, shared Undo and LIVE passed");fflush(stdout);
+    IUIAutomationTextPattern_Release(source_text);IUIAutomationTextPattern_Release(rich_text);
     IUIAutomationValuePattern_Release(value);IUIAutomationElement_Release(heading);
     IUIAutomationElement_Release(source);IUIAutomationElement_Release(rich);IUIAutomationElement_Release(host);IUIAutomation_Release(client);
     CoUninitialize();InterlockedExchange(&p->finished,1);return 0;
@@ -138,5 +151,5 @@ int main(int argc,char** argv)
     CHECK(GetExitCodeThread(p.worker,&result) && result==0);CloseHandle(p.worker);
     p.proxy.surfaceDestroy(&p.proxy,p.target);xuiDestroy(p.context);xuiDocumentRelease(p.rich_document);xuiDocumentRelease(p.md_document);
     p.proxy.fontDestroy(&p.proxy,p.fonts.normal);p.proxy.fontDestroy(&p.proxy,p.fonts.bold);p.proxy.fontDestroy(&p.proxy,p.fonts.monospace);xgeUnit();
-    puts("Native XGE automatic UIA integration passed; TextPattern and physical reader acceptance remain incomplete.");return 0;
+    puts("Native XGE automatic UIA integration including TextPattern passed; physical reader acceptance remains incomplete.");return 0;
 }

@@ -83,6 +83,28 @@ static int destroy_event(xui_widget widget, const xui_event_t* event, void* user
 	return XUI_OK;
 }
 
+static void destroy_change(xui_widget widget, const char* text, void* user)
+{
+	test_t* s = (test_t*)user;
+	(void)text;
+	s->callbacks++;
+	if (strcmp(s->name, "change_destroy_context") == 0) {
+		xuiDestroy(s->context);
+		s->contextDestroyed = 1;
+	} else xuiWidgetDestroy(widget);
+	CHECK(s, frees[0] == 0 && frees[1] == 0,
+		"scrollbar storage remains alive inside the change callback barrier");
+}
+
+static int destroy_edit_event(xui_widget widget, const xui_edit_event_t* event, void* user)
+{
+	test_t* s = (test_t*)user;
+	(void)event;
+	s->callbacks++;
+	xuiWidgetDestroy(widget);
+	return XUI_OK;
+}
+
 static int run_case(const char* name)
 {
 	test_t s;
@@ -110,6 +132,32 @@ static int run_case(const char* name)
 	if (strcmp(name, "context_destroy") == 0 || strcmp(name, "editor_root") == 0) {
 		xuiDestroy(s.context);
 		s.contextDestroyed = 1;
+	} else if (strncmp(name, "change_", 7) == 0) {
+		CHECK(&s, xuiSetFocusWidget(s.context, s.edit) == XUI_OK, "focus TextEdit");
+		CHECK(&s, xuiTextEditSetChange(s.edit, destroy_change, &s) == XUI_OK,
+			"set destructive change callback");
+		CHECK(&s, xuiInputText(s.context, 'A') == XUI_OK, "queue text input");
+		i = xuiDispatchPendingEvents(s.context);
+		CHECK(&s, i == XUI_OK || (s.contextDestroyed &&
+			(i == XUI_ERROR_INVALID_STATE || i == XUI_ERROR_INVALID_ARGUMENT)),
+			"dispatch destructive change callback");
+		CHECK(&s, s.callbacks == 1, "one destructive change callback");
+	} else if (strcmp(name, "selection_destroy_widget") == 0) {
+		CHECK(&s, xuiTextEditSetText(s.edit, "abc") == XUI_OK, "set selection seed text");
+		CHECK(&s, xuiEditSetEvent(s.edit, destroy_edit_event, &s) == XUI_OK,
+			"set destructive selection callback");
+		CHECK(&s, xuiTextEditSetSelection(s.edit, 0, 1) == XUI_OK,
+			"dispatch destructive selection callback");
+		CHECK(&s, s.callbacks == 1, "one destructive selection callback");
+	} else if (strcmp(name, "ime_destroy_widget") == 0) {
+		CHECK(&s, xuiSetFocusWidget(s.context, s.edit) == XUI_OK, "focus TextEdit for IME");
+		CHECK(&s, xuiEditSetEvent(s.edit, destroy_edit_event, &s) == XUI_OK,
+			"set destructive IME callback");
+		CHECK(&s, xuiInputImeComposition(s.context, "a", 1, 0, 1) == XUI_OK,
+			"queue IME preedit");
+		CHECK(&s, xuiDispatchPendingEvents(s.context) == XUI_OK,
+			"dispatch destructive IME callback");
+		CHECK(&s, s.callbacks == 1, "one destructive IME callback");
 	} else if (strncmp(name, "event_", 6) == 0) {
 		xui_event_t event = {0};
 		event.iSize = sizeof(event);
@@ -157,7 +205,8 @@ int main(int argc, char** argv)
 {
 	static const char* cases[] = {
 		"context_destroy", "widget_destroy", "editor_root", "event_destroy_widget",
-		"event_destroy_context", "scroll_then_destroy", "repeated_destroy"
+		"event_destroy_context", "change_destroy_widget", "change_destroy_context",
+		"selection_destroy_widget", "ime_destroy_widget", "scroll_then_destroy", "repeated_destroy"
 	};
 	size_t i;
 	int count = 0, failed = 0;

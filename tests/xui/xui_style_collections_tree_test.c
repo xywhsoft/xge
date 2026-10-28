@@ -41,7 +41,7 @@ static void resolve(xui_widget w,void* b,void* e) { __xuiTreeViewResolve(w,b,e);
 int main(void)
 {
     xui_widget w; xui_tree_view_data_t* d; xui_tree_view_desc_t desc={0};
-    xui_tree_view_node_t nodes[60]={{0}}; int i, work;
+    xui_tree_view_node_t nodes[60]={{0}}; xui_style_property_t metric={0}; float baseHeight, effectiveHeight; int i, work;
     collectionInit();
     for(i=0;i<COUNT(nodes);i++) {
         nodes[i].iId=i+1; nodes[i].iParent=i==1?1:-1; nodes[i].sText="tree node";
@@ -67,6 +67,13 @@ int main(void)
     CHECK(xuiTreeViewSetScrollbarColors(w,COLOR_A,COLOR_D,COLOR_A,COLOR_A,COLOR_A,COLOR_A)==XUI_OK);
     collectionRender(); CHECK(collectionSeen(COLOR_C)); CHECK(!collectionSeen(COLOR_D));
     CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); collectionRender(); CHECK(collectionSeen(COLOR_D));
+    CHECK(xuiTreeViewGetMetrics(w,&baseHeight,NULL,NULL,NULL)==XUI_OK);
+    metric.iSize=sizeof(metric); metric.sName="treeview.item.height";
+    metric.tValue.iSize=sizeof(metric.tValue); metric.tValue.iType=XUI_STYLE_VALUE_FLOAT; metric.tValue.fFloat=37.0f;
+    CHECK(xuiWidgetSetInlineStyle(w,&metric,1)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
+    CHECK(xuiTreeViewGetMetrics(w,&effectiveHeight,NULL,NULL,NULL)==XUI_OK); CHECK(effectiveHeight==37.0f);
+    CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
+    CHECK(xuiTreeViewGetMetrics(w,&effectiveHeight,NULL,NULL,NULL)==XUI_OK); CHECK(effectiveHeight==baseHeight);
     CHECK(gTreeWork==work);
     collectionDone(); puts("style_collections tree: PASS"); return 0;
 }

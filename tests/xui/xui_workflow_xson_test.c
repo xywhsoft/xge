@@ -87,6 +87,9 @@ int main(void)
 	xui_workflow_edge_run_state_t tEdgeRun;
 	xvalue* pConfig;
 	xvalue* pDefault;
+	xvalue* pBadDocument;
+	xvalue* pVariables;
+	xvalue* pDuplicateVariable;
 	int iDiagnostics;
 	int iRet;
 	int iFailed;
@@ -95,6 +98,7 @@ int main(void)
 	pLoaded = NULL;
 	pConfig = NULL;
 	pDefault = NULL;
+	pBadDocument = NULL;
 	iFailed = 0;
 
 	iRet = xuiWorkflowCreate(&pWorkflow);
@@ -203,6 +207,22 @@ int main(void)
 	tLoadedViewport.iSize = sizeof(tLoadedViewport);
 	iRet = xuiFlowGraphGetViewport(xuiWorkflowGetGraph(pLoaded), &tLoadedViewport);
 	XUI_TEST_CHECK(iRet == XUI_OK && tLoadedViewport.fPanX == 12.0f && tLoadedViewport.fZoom == 1.25f, "loaded viewport");
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create partial viewport document");
+	{
+		xvalue* pViewportObject = xuiXrtValueObjectGet(pBadDocument, "viewport", 0);
+		XUI_TEST_CHECK(pViewportObject != NULL && xuiXrtValueObjectRemove(pViewportObject, "zoom", 0),
+			"remove optional viewport zoom");
+	}
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK, "load partial viewport document");
+	memset(&tLoadedViewport, 0, sizeof(tLoadedViewport));
+	tLoadedViewport.iSize = sizeof(tLoadedViewport);
+	iRet = xuiFlowGraphGetViewport(xuiWorkflowGetGraph(pLoaded), &tLoadedViewport);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLoadedViewport.fPanX == 12.0f && tLoadedViewport.fZoom == 1.0f,
+		"missing viewport zoom preserves graph default");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
 	memset(&tEdge, 0, sizeof(tEdge));
 	tEdge.iSize = sizeof(tEdge);
 	iRet = xuiFlowGraphGetEdge(xuiWorkflowGetGraph(pLoaded), xuiFlowGraphFindEdge(xuiWorkflowGetGraph(pLoaded), "e_broken"), &tEdge);
@@ -210,12 +230,68 @@ int main(void)
 	iRet = xuiFlowGraphGetEdge(xuiWorkflowGetGraph(pLoaded), xuiFlowGraphFindEdge(xuiWorkflowGetGraph(pLoaded), "e_condition_end"), &tEdge);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEdge.iRunState == XUI_WORKFLOW_EDGE_RUN_TAKEN && tEdge.sRunPreview != NULL && strcmp(tEdge.sRunPreview, "true") == 0, "loaded edge visual state");
 	XUI_TEST_CHECK(tEdge.iRouteStyle == XUI_FLOW_ROUTE_ORTHOGONAL && tEdge.fRouteBias > 0.64f && tEdge.fRouteBias < 0.66f && tEdge.fRouteSourceOffset == 12.0f && tEdge.fRouteTargetOffset == -8.0f, "loaded edge route hints");
+	memset(&tNodeRun, 0, sizeof(tNodeRun));
+	iRet = xuiWorkflowGetNodeRunState(pLoaded, "n_llm", &tNodeRun);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNodeRun.iState == XUI_WORKFLOW_NODE_RUN_RUNNING && tNodeRun.sPreview != NULL && strcmp(tNodeRun.sPreview, "streaming") == 0, "workflow getter reads loaded node state");
+	memset(&tEdgeRun, 0, sizeof(tEdgeRun));
+	iRet = xuiWorkflowGetEdgeRunState(pLoaded, "e_condition_end", &tEdgeRun);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEdgeRun.iState == XUI_WORKFLOW_EDGE_RUN_TAKEN && tEdgeRun.sPreview != NULL && strcmp(tEdgeRun.sPreview, "true") == 0, "workflow getter reads loaded edge state");
 	iRet = xuiWorkflowValidateGraph(pLoaded, &iDiagnostics);
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics > 0, "loaded invalid edge diagnostics");
+
+	iRet = xuiWorkflowAddNode(pLoaded, "llm", "n_keep", "Keep", 10.0f, 10.0f, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add node retained across failed load");
+	memset(&tVariable, 0, sizeof(tVariable));
+	tVariable.iSize = sizeof(tVariable);
+	tVariable.sId = "var_keep";
+	iRet = xuiWorkflowAddVariable(pLoaded, &tVariable, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add variable retained across failed load");
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create invalid run state document");
+	{
+		xvalue* pNodes = xuiXrtValueObjectGet(pBadDocument, "nodes", 0);
+		xvalue* pNode = (pNodes != NULL) ? xuiXrtValueArrayGet(pNodes, 1) : NULL;
+		XUI_TEST_CHECK(pNode != NULL && xuiXrtValueObjectSetText(pNode, "runState", 0, "running", 7, FALSE), "set malformed node run state");
+	}
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject malformed node run state type");
+	XUI_TEST_CHECK(xuiFlowGraphFindNode(xuiWorkflowGetGraph(pLoaded), "n_keep") >= 0 && xuiWorkflowFindVariable(pLoaded, "var_keep") >= 0,
+	               "run state load failure preserves workflow");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create invalid route document");
+	{
+		xvalue* pEdges = xuiXrtValueObjectGet(pBadDocument, "edges", 0);
+		xvalue* pEdge = (pEdges != NULL) ? xuiXrtValueArrayGet(pEdges, 2) : NULL;
+		xvalue* pRoute = (pEdge != NULL) ? xuiXrtValueObjectGet(pEdge, "route", 0) : NULL;
+		XUI_TEST_CHECK(pRoute != NULL && xuiXrtValueObjectSetText(pRoute, "style", 0, "orthogonal", 10, FALSE), "set malformed route style");
+	}
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject malformed route style type");
+	XUI_TEST_CHECK(xuiFlowGraphFindNode(xuiWorkflowGetGraph(pLoaded), "n_keep") >= 0 && xuiWorkflowFindVariable(pLoaded, "var_keep") >= 0,
+	               "route load failure preserves workflow");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create invalid load document");
+	pVariables = xuiXrtValueObjectGet(pBadDocument, "variables", 0);
+	XUI_TEST_CHECK(pVariables != NULL && xrtValueCount(pVariables) == 1, "invalid load variable source");
+	pDuplicateVariable = xrtValueDeepClone(xuiXrtValueArrayGet(pVariables, 0));
+	XUI_TEST_CHECK(pDuplicateVariable != NULL, "clone duplicate variable");
+	XUI_TEST_CHECK(xuiXrtValueArrayAppendTake(pVariables, pDuplicateVariable, TRUE), "append duplicate variable");
+	pDuplicateVariable = NULL;
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED, "reject duplicate variable document");
+	XUI_TEST_CHECK(xuiFlowGraphFindNode(xuiWorkflowGetGraph(pLoaded), "n_keep") >= 0 && xuiWorkflowGetNodeCount(pLoaded) == 5, "failed load preserves graph");
+	XUI_TEST_CHECK(xuiWorkflowFindVariable(pLoaded, "var_keep") >= 0 && xuiWorkflowGetVariableCount(pLoaded) == 2, "failed load preserves variables");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
 
 cleanup:
 	if ( pConfig != NULL ) xrtValueRelease(pConfig);
 	if ( pDefault != NULL ) xrtValueRelease(pDefault);
+	if ( pBadDocument != NULL ) xrtValueRelease(pBadDocument);
 	xuiWorkflowDestroy(pLoaded);
 	xuiWorkflowDestroy(pWorkflow);
 	return iFailed ? 1 : 0;

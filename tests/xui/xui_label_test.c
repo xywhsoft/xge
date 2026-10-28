@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -37,6 +38,8 @@ typedef struct xui_label_test_state_t {
 	int iDrawTextCount;
 	int iTextDrawCount;
 	int iCommandCount;
+	int iUnsizedDrawCount;
+	int iLastTextSize;
 	uint32_t iLastColor;
 	uint32_t iLastFlags;
 	xui_rect_t tLastRect;
@@ -751,11 +754,20 @@ static int __xuiLabelTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, cons
 	}
 	pState = __xuiLabelTestState(pProxy);
 	if ( pState != NULL ) {
+		int iCopySize = 0;
+
 		pState->iDrawTextCount++;
 		pState->iLastColor = iColor;
 		pState->iLastFlags = iFlags;
 		pState->tLastRect = tRect;
-		snprintf(pState->sLastText, sizeof(pState->sLastText), "%s", (sText != NULL) ? sText : "");
+		pState->iLastTextSize = (pTextItem != NULL) ? pTextItem->iTextSize : -1;
+		if ( pState->iLastTextSize < 0 ) pState->iUnsizedDrawCount++;
+		if ( sText != NULL ) {
+			iCopySize = (pState->iLastTextSize >= 0) ? pState->iLastTextSize : (int)strlen(sText);
+			if ( iCopySize >= (int)sizeof(pState->sLastText) ) iCopySize = (int)sizeof(pState->sLastText) - 1;
+			memcpy(pState->sLastText, sText, (size_t)iCopySize);
+		}
+		pState->sLastText[iCopySize] = '\0';
 	}
 	return XUI_OK;
 }
@@ -848,6 +860,25 @@ static int __xuiLabelTestCommand(xui_widget pWidget, const xui_event_t* pEvent, 
 	return XUI_OK;
 }
 
+static int __xuiLabelTestSetTextOomPreserves(xui_widget pLabel)
+{
+	xallocationbudget* pBudget = NULL;
+	xallocationscope tScope;
+	int iRet;
+
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiLabelSetText(pLabel,
+		"This replacement is intentionally longer than the retained label allocation.");
+	(void)xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	return iRet == XUI_ERROR_OUT_OF_MEMORY && strcmp(xuiLabelGetText(pLabel), "Label migration") == 0;
+}
+
 int main(void)
 {
 	xui_label_test_state_t tState;
@@ -858,6 +889,7 @@ int main(void)
 	xui_render_stats_t tStats;
 	xui_cache_stats_t tCacheStats;
 	xui_debug_widget_info_t tInfo;
+	xui_accessible_node_t tAccessible;
 	xui_vec2_t tMeasure;
 	xui_context pContext;
 	xui_widget pRoot;
@@ -920,12 +952,74 @@ int main(void)
 	tDesc.iDisabledTextColor = XUI_COLOR_RGBA(100, 110, 120, 255);
 	tDesc.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 	tDesc.iWrapMode = XUI_TEXT_WRAP_NONE;
+	tDesc.fLineGap = NAN;
+	pOverlay = pRoot;
+	iRet = xuiLabelCreate(pContext, &pOverlay, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pOverlay == NULL, "label descriptor rejects nan gap");
+	tDesc.fLineGap = 0.0f;
+	tDesc.fParagraphGap = INFINITY;
+	iRet = xuiLabelCreate(pContext, &pOverlay, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pOverlay == NULL, "label descriptor rejects infinite gap");
+	tDesc.fParagraphGap = 0.0f;
 	iRet = xuiLabelCreate(pContext, &pLabel, &tDesc);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pLabel != NULL), "label create failed");
 	XUI_TEST_CHECK(xuiWidgetIsType(pLabel, pLabelType), "label type check failed");
 	XUI_TEST_CHECK(strcmp(xuiLabelGetText(pLabel), "Label migration") == 0, "label text getter failed");
 	XUI_TEST_CHECK(xuiLabelGetTextColor(pLabel) == XUI_COLOR_RGBA(10, 20, 30, 255), "label color getter failed");
 	XUI_TEST_CHECK((xuiLabelGetTextFlags(pLabel) & XUI_TEXT_CLIP) != 0, "label clip flag failed");
+	XUI_TEST_CHECK(xuiLabelGetFont(pLabel) == pBodyFont, "label font getter failed");
+	XUI_TEST_CHECK(xuiLabelSetFont(pLabel, pHeadlineFont) == XUI_OK && xuiLabelGetFont(pLabel) == pHeadlineFont, "label font setter failed");
+	XUI_TEST_CHECK(xuiLabelSetFont(pLabel, pBodyFont) == XUI_OK, "label font restore failed");
+	XUI_TEST_CHECK(xuiLabelSetTextColor(pLabel, XUI_COLOR_RGBA(1, 2, 3, 255)) == XUI_OK &&
+		xuiLabelGetTextColor(pLabel) == XUI_COLOR_RGBA(1, 2, 3, 255), "label text color setter failed");
+	XUI_TEST_CHECK(xuiLabelSetTextColor(pLabel, XUI_COLOR_RGBA(10, 20, 30, 255)) == XUI_OK, "label text color restore failed");
+	XUI_TEST_CHECK(xuiLabelSetDisabledTextColor(pLabel, XUI_COLOR_RGBA(4, 5, 6, 255)) == XUI_OK &&
+		xuiLabelGetDisabledTextColor(pLabel) == XUI_COLOR_RGBA(4, 5, 6, 255), "label disabled color setter failed");
+	XUI_TEST_CHECK(xuiLabelSetDisabledTextColor(pLabel, XUI_COLOR_RGBA(100, 110, 120, 255)) == XUI_OK, "label disabled color restore failed");
+	XUI_TEST_CHECK(xuiLabelSetTextFlags(pLabel, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM) == XUI_OK &&
+		(xuiLabelGetTextFlags(pLabel) & (XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM | XUI_TEXT_CLIP)) ==
+		(XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_BOTTOM | XUI_TEXT_CLIP), "label flags setter failed");
+	xuiWidgetClearDirty(pLabel, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiLabelSetTextFlags(pLabel,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_RTL) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pLabel) & XUI_WIDGET_DIRTY_LAYOUT) != 0,
+		"label rtl change invalidates layout");
+	XUI_TEST_CHECK(xuiLabelSetTextFlags(pLabel, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP) == XUI_OK, "label flags restore failed");
+	XUI_TEST_CHECK(xuiLabelSetWrapMode(pLabel, XUI_TEXT_WRAP_CHAR) == XUI_OK &&
+		xuiLabelGetWrapMode(pLabel) == XUI_TEXT_WRAP_CHAR, "label char wrap setter failed");
+	XUI_TEST_CHECK(xuiLabelSetWrapMode(pLabel, 999) == XUI_ERROR_INVALID_ARGUMENT, "label invalid wrap rejected");
+	XUI_TEST_CHECK(xuiLabelSetWrapMode(pLabel, XUI_TEXT_WRAP_NONE) == XUI_OK, "label wrap restore failed");
+	XUI_TEST_CHECK(xuiLabelSetUnderline(pLabel, 1) == XUI_OK && xuiLabelGetUnderline(pLabel), "label underline setter failed");
+	XUI_TEST_CHECK(xuiLabelSetUnderline(pLabel, 0) == XUI_OK, "label underline restore failed");
+	XUI_TEST_CHECK(xuiLabelSetLineGap(pLabel, 2.0f) == XUI_OK && xuiLabelGetLineGap(pLabel) == 2.0f, "label line gap setter failed");
+	XUI_TEST_CHECK(xuiLabelSetLineGap(pLabel, NAN) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiLabelSetLineGap(pLabel, INFINITY) == XUI_ERROR_INVALID_ARGUMENT, "label non-finite line gap rejected");
+	XUI_TEST_CHECK(xuiLabelSetLineGap(pLabel, 0.0f) == XUI_OK, "label line gap restore failed");
+	XUI_TEST_CHECK(xuiLabelSetParagraphGap(pLabel, 3.0f) == XUI_OK && xuiLabelGetParagraphGap(pLabel) == 3.0f, "label paragraph gap setter failed");
+	XUI_TEST_CHECK(xuiLabelSetParagraphGap(pLabel, NAN) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiLabelSetParagraphGap(pLabel, INFINITY) == XUI_ERROR_INVALID_ARGUMENT, "label non-finite paragraph gap rejected");
+	XUI_TEST_CHECK(xuiLabelSetParagraphGap(pLabel, 0.0f) == XUI_OK, "label paragraph gap restore failed");
+	XUI_TEST_CHECK(xuiLabelSetText(pLabel, "Prefix label") == XUI_OK, "label self-reference setup failed");
+	XUI_TEST_CHECK(xuiLabelSetText(pLabel, xuiLabelGetText(pLabel) + 7) == XUI_OK &&
+		strcmp(xuiLabelGetText(pLabel), "label") == 0, "label overlapping text update failed");
+	XUI_TEST_CHECK(xuiLabelSetText(pLabel, NULL) == XUI_OK && strcmp(xuiLabelGetText(pLabel), "") == 0, "label null text clears failed");
+	XUI_TEST_CHECK(xuiLabelSetText(pLabel, "Label migration") == XUI_OK, "label text restore failed");
+	XUI_TEST_CHECK(__xuiLabelTestSetTextOomPreserves(pLabel), "label text OOM preserves old value");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pLabel) == 1, "label accessible node count failed");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pLabel, 0, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_TEXT && strcmp(tAccessible.sName, "Label migration") == 0,
+		"label accessible text failed");
+	XUI_TEST_CHECK(xuiWidgetSetAccessibleName(pLabel, "Status caption") == XUI_OK,
+		"label accessible name set failed");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pLabel, 0, &tAccessible) == XUI_OK &&
+		strcmp(tAccessible.sName, "Status caption") == 0,
+		"label explicit accessible name failed");
+	XUI_TEST_CHECK(xuiWidgetSetAccessibleName(pLabel, NULL) == XUI_OK,
+		"label accessible name clear failed");
 	iRet = xuiWidgetAddChild(pRoot, pLabel);
 	XUI_TEST_CHECK(iRet == XUI_OK, "label add failed");
 
@@ -941,12 +1035,23 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout failed");
 	tState.iDrawTextCount = 0;
+	tState.iUnsizedDrawCount = 0;
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare failed");
 	iRet = xuiGetRenderStats(pContext, &tStats);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (tStats.iUpdatedCaches > 0) && (tState.iDrawTextCount > 0), "label cache render failed");
+	XUI_TEST_CHECK(tState.iUnsizedDrawCount == 0 && tState.iLastTextSize >= 0, "label render uses bounded line text");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pLabel, xuiWidgetGetStateId(pLabel)) != NULL, "label cache surface failed");
 	XUI_TEST_CHECK(tState.iLastColor == XUI_COLOR_RGBA(10, 20, 30, 255), "label render color failed");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "parent disable failed");
+	tState.iDrawTextCount = 0;
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iDrawTextCount > 0 &&
+		tState.iLastColor == XUI_COLOR_RGBA(100, 110, 120, 255),
+		"label inherited disabled color failed");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "parent enable failed");
 
 	arrProps[0] = __xuiLabelTestProp("font.name", __xuiLabelTestString("headline"));
 	arrProps[1] = __xuiLabelTestProp("text.color", __xuiLabelTestColor(XUI_COLOR_RGBA(220, 80, 10, 255)));

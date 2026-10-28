@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -25,6 +26,14 @@ static void __xuiTagInputChanged(xui_widget pWidget, int iTagCount, void* pUser)
 	}
 }
 
+static void __xuiTagInputDestroyOnChange(xui_widget pWidget, int iTagCount, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)iTagCount;
+	if ( pCount != NULL ) (*pCount)++;
+	(void)xuiWidgetDestroy(pWidget);
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -32,14 +41,24 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pTagInput;
 	xui_widget pInput;
+	xui_widget pProbe;
+	xui_widget pProbeInput;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_tag_input_desc_t tDesc;
+	xui_accessible_node_t tNode;
 	const char* arrTags[2];
+	const char* arrLongTags[1];
+	const char* arrMixedTags[4];
 	xui_rect_t tRect;
 	xui_rect_t tClose;
 	xui_rect_i_t tFullRect;
+	float fBorderWidth;
+	float fTagHeight;
+	float fReadBorderWidth;
+	float fReadTagHeight;
 	int iChanged;
+	int iDestroyCount;
 	int iFailed;
 	int iRet;
 
@@ -47,9 +66,12 @@ int main(void)
 	pRoot = NULL;
 	pTagInput = NULL;
 	pInput = NULL;
+	pProbe = NULL;
+	pProbeInput = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iChanged = 0;
+	iDestroyCount = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -69,6 +91,48 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 360.0f, 120.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fTagHeight = NAN;
+	pProbe = pRoot;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"invalid metrics clear create output");
+	pProbe = pRoot;
+	iRet = xuiTagInputCreate(NULL, &pProbe, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"invalid context clears create output");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iTagCount = 1;
+	pProbe = pRoot;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"tag array required for descriptor count");
+	tDesc.ppTags = arrTags;
+	tDesc.iTagCount = 2;
+	tDesc.iMaxTags = 1;
+	pProbe = pRoot;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"descriptor count respects max tags");
+	arrLongTags[0] = "abcdef";
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.ppTags = arrLongTags;
+	tDesc.iTagCount = 1;
+	tDesc.iMaxLength = 3;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL &&
+		strcmp(xuiTagInputGetTag(pProbe, 0), "abc") == 0,
+		"descriptor tags respect max length");
+	arrLongTags[0] = "\x41\xE4\xB8\xAD\x42";
+	iRet = xuiTagInputSetTags(pProbe, arrLongTags, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTagInputGetTag(pProbe, 0), "A") == 0,
+		"tag truncation preserves utf8 boundary");
+	xuiWidgetDestroy(pProbe);
+	pProbe = NULL;
 
 	arrTags[0] = "Tag1";
 	arrTags[1] = "Tag2";
@@ -93,6 +157,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "add taginput");
 	pInput = xuiTagInputGetInputWidget(pTagInput);
 	XUI_TEST_CHECK(pInput != NULL, "input child");
+	iRet = xuiTagInputGetVisualMetrics(pTagInput, &fBorderWidth, &fTagHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK, "read visual metrics");
+	iRet = xuiTagInputSetVisualMetrics(pTagInput, NAN, fTagHeight);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan border width");
+	iRet = xuiTagInputSetVisualMetrics(pTagInput, fBorderWidth, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite tag height");
+	iRet = xuiTagInputGetVisualMetrics(pTagInput, &fReadBorderWidth, &fReadTagHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK && fReadBorderWidth == fBorderWidth && fReadTagHeight == fTagHeight,
+		"invalid metrics preserve state");
+	iRet = xuiTagInputSetTags(pTagInput, NULL, 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTagInputGetTagCount(pTagInput) == 2,
+		"invalid tag array preserves state");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 360, 120, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -106,6 +182,21 @@ int main(void)
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pTagInput, 0) != NULL, "normal cache");
+	XUI_TEST_CHECK(tState.iLastTextDrawSize >= 0, "tag text draws use bounded byte lengths");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pTagInput) == 3, "tag accessibility node count");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiWidgetGetAccessibleNode(pTagInput, 1, &tNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNode.iRole == XUI_ACCESSIBLE_ROLE_BUTTON &&
+		strcmp(tNode.sName, "Tag1") == 0 &&
+		(tNode.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_CLOSE)) != 0,
+		"tag accessibility exposes close action");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable ancestor");
+	XUI_TEST_CHECK((xuiTagInputGetState(pTagInput) & XUI_WIDGET_STATE_DISABLED) != 0,
+		"ancestor disabled state is effective");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable ancestor");
 
 	iRet = xuiTagInputSetText(pTagInput, "Alpha");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTagInputGetText(pTagInput), "Alpha") == 0, "set text");
@@ -158,11 +249,136 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch up close");
 	XUI_TEST_CHECK(xuiTagInputGetTagCount(pTagInput) == 2 && strcmp(xuiTagInputGetTag(pTagInput, 0), "Tag2") == 0 && iChanged == 4, "close removes first");
 
+	arrMixedTags[0] = "  Alpha  ";
+	arrMixedTags[1] = "   ";
+	arrMixedTags[2] = "Beta";
+	arrMixedTags[3] = ";";
+	iRet = xuiTagInputSetTags(pTagInput, arrMixedTags, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pTagInput) == 2 &&
+		strcmp(xuiTagInputGetTag(pTagInput, 0), "Alpha") == 0 &&
+		strcmp(xuiTagInputGetTag(pTagInput, 1), "Beta") == 0 && iChanged == 5,
+		"set tags trims and skips empty tags");
+	arrTags[0] = "Alpha";
+	arrTags[1] = "Beta";
+	iRet = xuiTagInputSetTags(pTagInput, arrTags, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && iChanged == 5, "setting identical tags is silent");
+	iRet = xuiTagInputSetMaxLength(pTagInput, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTagInputGetTag(pTagInput, 0), "Alp") == 0 &&
+		strcmp(xuiTagInputGetTag(pTagInput, 1), "Bet") == 0 && iChanged == 6,
+		"lowering max length constrains existing tags once");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout before capture release");
+	tClose = xuiTagInputGetCloseRect(pTagInput, 0);
+	iRet = xuiInputPointerDown(pContext, 10.0f + tClose.fX + 2.0f,
+		10.0f + tClose.fY + 2.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "capture release pointer down");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pTagInput,
+		"tag close captures pointer");
+
 	iRet = xuiWidgetSetEnabled(pTagInput, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"disable releases tag close capture");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disabled render prepare");
 	XUI_TEST_CHECK((xuiTagInputGetState(pTagInput) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	arrLongTags[0] = "Touch";
+	tDesc.ppTags = arrLongTags;
+	tDesc.iTagCount = 1;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "multi-touch close create");
+	iRet = xuiWidgetSetRect(pProbe, (xui_rect_t){10.0f, 64.0f, 220.0f, 38.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pProbe);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi-touch close layout");
+	tRect = xuiWidgetGetWorldRect(pProbe);
+	tClose = xuiTagInputGetCloseRect(pProbe, 0);
+	iRet = xuiInputPointerDownEx(pContext, 401u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tClose.fX + 2.0f),
+		(int)(tRect.fY + tClose.fY + 2.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 401u, XUI_POINTER_TYPE_TOUCH) == pProbe,
+		"first touch owns tag close");
+	iRet = xuiInputPointerDownEx(pContext, 402u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tClose.fX + 2.0f),
+		(int)(tRect.fY + tClose.fY + 2.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 402u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tClose.fX + 2.0f),
+		(int)(tRect.fY + tClose.fY + 2.0f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 1 &&
+		xuiGetPointerCaptureEx(pContext, 401u, XUI_POINTER_TYPE_TOUCH) == pProbe &&
+		xuiGetPointerCaptureEx(pContext, 402u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot remove tag or release close capture");
+	iRet = xuiInputPointerUpEx(pContext, 401u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tRect.fX + tClose.fX + 2.0f),
+		(int)(tRect.fY + tClose.fY + 2.0f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 0 &&
+		xuiGetPointerCaptureEx(pContext, 401u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch removes tag and releases close capture");
+	xuiWidgetDestroy(pProbe);
+	pProbe = NULL;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	arrLongTags[0] = "Accessible";
+	tDesc.ppTags = arrLongTags;
+	tDesc.iTagCount = 1;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "accessible close create");
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "accessible close attach");
+	iRet = xuiWidgetPerformAccessibleAction(pProbe, 2, XUI_ACCESSIBLE_ACTION_CLOSE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 0 &&
+		xuiWidgetGetAccessibleNodeCount(pProbe) == 1, "accessible close removes tag");
+	xuiWidgetDestroy(pProbe);
+	pProbe = NULL;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "destroy-on-add create");
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-add attach");
+	iDestroyCount = 0;
+	iRet = xuiTagInputSetChange(pProbe, __xuiTagInputDestroyOnChange, &iDestroyCount);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-add callback");
+	iRet = xuiTagInputAddTag(pProbe, "destroy");
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyCount == 1 &&
+		xuiTagInputGetInputWidget(pProbe) == NULL, "change callback may destroy tag input");
+
+	pProbe = NULL;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "destroy-on-delimited create");
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-delimited attach");
+	pProbeInput = xuiTagInputGetInputWidget(pProbe);
+	XUI_TEST_CHECK(pProbeInput != NULL, "destroy-on-delimited input");
+	iDestroyCount = 0;
+	iRet = xuiTagInputSetChange(pProbe, __xuiTagInputDestroyOnChange, &iDestroyCount);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-delimited callback");
+	iRet = xuiInputSetText(pProbeInput, "One");
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyCount == 0, "programmatic input text is silent");
+	iRet = xuiSetFocusWidget(pContext, pProbeInput);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus destroy-on-delimited input");
+	iRet = xuiInputText(pContext, ',');
+	XUI_TEST_CHECK(iRet == XUI_OK, "queue destroy-on-delimited separator");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyCount == 1 &&
+		xuiTagInputGetInputWidget(pProbe) == NULL, "delimited callback may destroy tag input");
 
 cleanup:
 	if ( pTarget != NULL ) {

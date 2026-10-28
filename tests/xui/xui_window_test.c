@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -15,6 +16,8 @@
 
 typedef struct xui_window_test_events_t {
 	int iCloseCount;
+	int bDestroyOnClose;
+	xui_widget* ppWindow;
 } xui_window_test_events_t;
 
 static int __xuiWindowNear(float fA, float fB)
@@ -72,6 +75,10 @@ static void __xuiWindowClosed(xui_widget pWidget, void* pUser)
 	pEvents = (xui_window_test_events_t*)pUser;
 	if ( pEvents != NULL ) {
 		pEvents->iCloseCount++;
+		if ( pEvents->bDestroyOnClose ) {
+			xuiWidgetDestroy(pWidget);
+			if ( pEvents->ppWindow != NULL ) *pEvents->ppWindow = NULL;
+		}
 	}
 }
 
@@ -99,11 +106,13 @@ int main(void)
 	xui_window_test_events_t tEvents;
 	xui_context pContext;
 	xui_widget pRoot;
+	xui_widget pInvalidWindow;
 	xui_widget pMain;
 	xui_widget pTop;
 	xui_widget pCollapsed;
 	xui_widget pFrameless;
 	xui_widget pOrderWindow;
+	xui_widget pDestroyWindow;
 	xui_widget pOrderClient;
 	xui_widget pOrderContent;
 	xui_widget pOrderFooter;
@@ -116,21 +125,34 @@ int main(void)
 	xui_rect_t tButton;
 	xui_rect_t tContentRect;
 	xui_rect_t tFooterRect;
+	xui_rect_t tIconBefore;
+	xui_rect_t tIconAfter;
+	float fTitleBarHeight;
+	float fBorderWidth;
+	float fResizeGrip;
+	float fButtonSize;
+	float fMinWidth;
+	float fMinHeight;
+	float fIconSize;
+	char sLongTitle[XUI_WINDOW_TITLE_CAPACITY + 4];
 	int iLayerMain;
 	int iZMain;
 	int iLayerTop;
 	int iZTop;
 	int iFailed;
+	int iChangeBefore;
 	int iRet;
 
 	memset(&tEvents, 0, sizeof(tEvents));
 	pContext = NULL;
 	pRoot = NULL;
+	pInvalidWindow = NULL;
 	pMain = NULL;
 	pTop = NULL;
 	pCollapsed = NULL;
 	pFrameless = NULL;
 	pOrderWindow = NULL;
+	pDestroyWindow = NULL;
 	pOrderClient = NULL;
 	pOrderContent = NULL;
 	pOrderFooter = NULL;
@@ -156,6 +178,18 @@ int main(void)
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
 
+	pInvalidWindow = pRoot;
+	iRet = xuiWindowCreate(NULL, &pInvalidWindow, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWindow == NULL,
+		"invalid context clears create output");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fTitleBarHeight = NAN;
+	pInvalidWindow = pRoot;
+	iRet = xuiWindowCreate(pContext, &pInvalidWindow, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWindow == NULL,
+		"invalid descriptor clears create output");
+
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sTitle = "Main Window";
@@ -165,6 +199,15 @@ int main(void)
 	(void)xuiWidgetSetRect(pMain, (xui_rect_t){80.0f, 70.0f, 260.0f, 180.0f});
 	iRet = xuiWindowSetClose(pMain, __xuiWindowClosed, &tEvents);
 	XUI_TEST_CHECK(iRet == XUI_OK, "close callback");
+	memset(sLongTitle, 'a', sizeof(sLongTitle));
+	memcpy(sLongTitle + XUI_WINDOW_TITLE_CAPACITY - 2, "\xE4\xB8\xAD", 4);
+	iRet = xuiWindowSetTitle(pMain, sLongTitle);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strlen(xuiWindowGetTitle(pMain)) == XUI_WINDOW_TITLE_CAPACITY - 2u &&
+		xuiWindowGetTitle(pMain)[XUI_WINDOW_TITLE_CAPACITY - 2] == '\0',
+		"title truncation preserves UTF-8 boundary");
+	iRet = xuiWindowSetTitle(pMain, "Main Window");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore title after UTF-8 truncation");
 	iRet = __xuiWindowAddFixedChild(pContext, pMain);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add child to client");
 
@@ -201,6 +244,54 @@ int main(void)
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 640, 420, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
+
+	iRet = xuiWindowGetChrome(pMain, &fTitleBarHeight, &fBorderWidth, &fResizeGrip, &fButtonSize);
+	XUI_TEST_CHECK(iRet == XUI_OK, "chrome get before invalid set");
+	iRet = xuiWindowSetChrome(pMain, NAN, fBorderWidth, fResizeGrip, fButtonSize);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "chrome rejects NaN");
+	iRet = xuiWindowSetChrome(pMain, fTitleBarHeight, fBorderWidth, INFINITY, fButtonSize);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "chrome rejects infinity");
+	{
+		float fTitleAfter;
+		float fBorderAfter;
+		float fGripAfter;
+		float fButtonAfter;
+		iRet = xuiWindowGetChrome(pMain, &fTitleAfter, &fBorderAfter, &fGripAfter, &fButtonAfter);
+		XUI_TEST_CHECK(iRet == XUI_OK && fTitleAfter == fTitleBarHeight && fBorderAfter == fBorderWidth &&
+			fGripAfter == fResizeGrip && fButtonAfter == fButtonSize, "invalid chrome preserves state");
+	}
+
+	fIconSize = xuiWindowGetIconSize(pMain);
+	iRet = xuiWindowSetIconSize(pMain, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiWindowGetIconSize(pMain) == fIconSize,
+		"icon size rejects NaN without mutation");
+	iRet = xuiWindowSetIconSize(pMain, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiWindowGetIconSize(pMain) == fIconSize,
+		"icon size rejects infinity without mutation");
+
+	iRet = xuiWindowGetMinSize(pMain, &fMinWidth, &fMinHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimum size get before invalid set");
+	iRet = xuiWindowSetMinSize(pMain, NAN, fMinHeight);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "minimum size rejects NaN");
+	iRet = xuiWindowSetMinSize(pMain, fMinWidth, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "minimum size rejects infinity");
+	{
+		float fWidthAfter;
+		float fHeightAfter;
+		iRet = xuiWindowGetMinSize(pMain, &fWidthAfter, &fHeightAfter);
+		XUI_TEST_CHECK(iRet == XUI_OK && fWidthAfter == fMinWidth && fHeightAfter == fMinHeight,
+			"invalid minimum size preserves state");
+	}
+
+	iRet = xuiWindowSetIcon(pMain, pTarget, (xui_rect_t){1, 2, 16, 16});
+	XUI_TEST_CHECK(iRet == XUI_OK, "valid icon source set");
+	tIconBefore = xuiWindowGetIconSource(pMain);
+	iRet = xuiWindowSetIcon(pMain, pTarget, (xui_rect_t){1, 2, -1, 16});
+	tIconAfter = xuiWindowGetIconSource(pMain);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		memcmp(&tIconBefore, &tIconAfter, sizeof(tIconBefore)) == 0,
+		"invalid icon source preserves state");
+
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
 	iRet = xuiRenderPrepare(pContext);
@@ -313,6 +404,67 @@ int main(void)
 	iRet = xuiWidgetGetLayer(xuiWindowGetClientWidget(pMain), &iLayerTop, &iZTop);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLayerTop == iLayerMain && iZTop == iZMain, "client follows raised window layer");
 
+	/* A second touch must not steal, move, or release the owning drag. */
+	tWorld = xuiWidgetGetWorldRect(pMain);
+	tRect = xuiWidgetGetRect(pMain);
+	iRet = xuiInputPointerDownEx(pContext, 101u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 60.0f), (int)(tWorld.fY + 15.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 101u, XUI_POINTER_TYPE_TOUCH) == pMain,
+		"first touch owns window drag");
+	iRet = xuiInputPointerDownEx(pContext, 102u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 90.0f), (int)(tWorld.fY + 15.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 102u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 150.0f), (int)(tWorld.fY + 45.0f), XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 102u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 150.0f), (int)(tWorld.fY + 45.0f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 101u, XUI_POINTER_TYPE_TOUCH) == pMain &&
+		xuiGetPointerCaptureEx(pContext, 102u, XUI_POINTER_TYPE_TOUCH) == NULL &&
+		__xuiWindowNear(xuiWidgetGetRect(pMain).fX, tRect.fX),
+		"second touch cannot steal window drag");
+	iRet = xuiInputPointerMoveEx(pContext, 101u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 80.0f), (int)(tWorld.fY + 25.0f), XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 101u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + 80.0f), (int)(tWorld.fY + 25.0f), XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiWindowNear(xuiWidgetGetRect(pMain).fX, tRect.fX + 20.0f) &&
+		__xuiWindowNear(xuiWidgetGetRect(pMain).fY, tRect.fY + 10.0f),
+		"owning touch commits window drag");
+
+	/* Runtime interaction changes cancel a stale preview and release its owner. */
+	tWorld = xuiWidgetGetWorldRect(pMain);
+	tRect = xuiWidgetGetRect(pMain);
+	iRet = __xuiWindowDispatchDown(pContext, tWorld.fX + 60.0f, tWorld.fY + 15.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiWindowDispatchMove(pContext,
+		tWorld.fX + 90.0f, tWorld.fY + 35.0f, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiWindowSetMovable(pMain, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		(xuiWindowGetState(pMain) & XUI_WINDOW_STATE_DRAGGING) == 0u &&
+		__xuiWindowNear(xuiWidgetGetRect(pMain).fX, tRect.fX) &&
+		__xuiWindowNear(xuiWidgetGetRect(pMain).fY, tRect.fY),
+		"disabling movement cancels deferred drag");
+	(void)__xuiWindowDispatchUp(pContext, tWorld.fX + 90.0f, tWorld.fY + 35.0f);
+	iRet = xuiWindowSetMovable(pMain, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore movable state");
+
+	/* A click without movement is not a geometry change. */
+	tWorld = xuiWidgetGetWorldRect(pMain);
+	iChangeBefore = xuiWindowGetChangeCount(pMain);
+	iRet = __xuiWindowDispatchDown(pContext, tWorld.fX + 100.0f, tWorld.fY + 15.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiWindowDispatchUp(pContext,
+		tWorld.fX + 100.0f, tWorld.fY + 15.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWindowGetChangeCount(pMain) == iChangeBefore,
+		"no-op drag does not increment change count");
+
 	iRet = xuiWindowSetOpen(pTop, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWindowSetOpen(pOrderWindow, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "close overlapping top-most windows before resize");
@@ -375,6 +527,23 @@ int main(void)
 	tRect = xuiWidgetGetRect(pFrameless);
 	XUI_TEST_CHECK(tRect.fX > 410.0f && tRect.fY > 285.0f, "frameless drag anywhere");
 
+	/* Hiding a pressed caption button releases its pointer capture. */
+	tWorld = xuiWidgetGetWorldRect(pMain);
+	tButton = xuiWindowGetCloseButtonRect(pMain);
+	iRet = __xuiWindowDispatchDown(pContext,
+		tWorld.fX + tButton.fX + tButton.fW * 0.5f,
+		tWorld.fY + tButton.fY + tButton.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiWindowSetShowClose(pMain, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		xuiWindowGetActivePart(pMain) == XUI_WINDOW_PART_NONE,
+		"hiding pressed close button cancels capture");
+	if ( iRet == XUI_OK ) iRet = xuiWindowSetShowClose(pMain, 1);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	(void)__xuiWindowDispatchUp(pContext,
+		tWorld.fX + tButton.fX + tButton.fW * 0.5f,
+		tWorld.fY + tButton.fY + tButton.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore close button after capture cancellation");
+
 	tWorld = xuiWidgetGetWorldRect(pMain);
 	tButton = xuiWindowGetCloseButtonRect(pMain);
 	iRet = __xuiWindowDispatchClick(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f);
@@ -382,6 +551,31 @@ int main(void)
 	iRet = xuiWindowSetOpen(pMain, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWindowIsOpen(pMain), "reopen");
 	XUI_TEST_CHECK(xuiWindowGetChangeCount(pMain) >= 5, "change count");
+
+	/* Closing callback may synchronously destroy the window. */
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sTitle = "Destroy on close";
+	tDesc.pFont = pFont;
+	tDesc.bHideCollapse = 1;
+	tDesc.bHideMaximize = 1;
+	iRet = xuiWindowCreate(pContext, &pDestroyWindow, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyWindow != NULL, "destroy-on-close window create");
+	(void)xuiWidgetSetRect(pDestroyWindow, (xui_rect_t){360.0f, 240.0f, 220.0f, 120.0f});
+	tEvents.iCloseCount = 0;
+	tEvents.bDestroyOnClose = 1;
+	tEvents.ppWindow = &pDestroyWindow;
+	iRet = xuiWindowSetClose(pDestroyWindow, __xuiWindowClosed, &tEvents);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) {
+		tWorld = xuiWidgetGetWorldRect(pDestroyWindow);
+		tButton = xuiWindowGetCloseButtonRect(pDestroyWindow);
+		iRet = __xuiWindowDispatchClick(pContext,
+			tWorld.fX + tButton.fX + tButton.fW * 0.5f,
+			tWorld.fY + tButton.fY + tButton.fH * 0.5f);
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyWindow == NULL && tEvents.iCloseCount == 1,
+		"close callback may destroy window");
 
 cleanup:
 	if ( pTarget != NULL ) {

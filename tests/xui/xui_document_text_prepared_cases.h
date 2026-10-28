@@ -1,6 +1,7 @@
 /* Retained ranges follow the editor's unpublished SOURCE generation. The
  * committed peer, owner callbacks and history still use the same Document. */
 #include "../extlibs/xrt/xrt.h"
+#include "xui_test_time.h"
 #include <stdatomic.h>
 typedef struct prepared_text_allocator {
     uint64_t owner;
@@ -9,8 +10,8 @@ typedef struct prepared_text_allocator {
 } prepared_text_allocator;
 static void prepared_text_wait(atomic_int* flag)
 {
-    xdeadline deadline = xrtDeadlineAfter(30000000);
-    while (!atomic_load(flag)) { CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield(); }
+    xui_test_deadline_t deadline = xuiTestDeadlineAfterUs(30000000);
+    while (!atomic_load(flag)) { CHECK(!xuiTestDeadlineExpired(deadline)); xrtThreadYield(); }
 }
 static void* prepared_text_alloc(void* user, size_t bytes)
 {
@@ -53,10 +54,10 @@ static xui_internal_accessible_text_range* prepared_text_document(xui_widget edi
 }
 static int prepared_text_flush(xui_widget editor)
 {
-    xdeadline deadline = xrtDeadlineAfter(30000000); int result;
+    xui_test_deadline_t deadline = xuiTestDeadlineAfterUs(30000000); int result;
     do {
         result = xuiDocumentEditorFlush(editor);
-        CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield();
+        CHECK(!xuiTestDeadlineExpired(deadline)); xrtThreadYield();
     } while (result == XUI_DOC_ERROR_BUSY);
     return result;
 }

@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,6 +18,11 @@ typedef struct xui_msgbox_test_result_t {
 	int iCount;
 	int iLastResult;
 } xui_msgbox_test_result_t;
+
+typedef struct xui_msgbox_destroy_result_t {
+	xui_msgbox* ppBox;
+	int iCount;
+} xui_msgbox_destroy_result_t;
 
 static int __xuiMsgBoxNear(float fA, float fB)
 {
@@ -77,17 +83,30 @@ static void __xuiMsgBoxResult(xui_msgbox pBox, int iResult, void* pUser)
 	}
 }
 
+static void __xuiMsgBoxDestroyResult(xui_msgbox pBox, int iResult, void* pUser)
+{
+	xui_msgbox_destroy_result_t* pResult = (xui_msgbox_destroy_result_t*)pUser;
+	(void)iResult;
+	if ( pResult == NULL ) return;
+	pResult->iCount++;
+	xuiMsgBoxDestroy(pBox);
+	if ( pResult->ppBox != NULL ) *pResult->ppBox = NULL;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_msgbox_test_result_t tResult;
+	xui_msgbox_destroy_result_t tDestroyResult;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_msgbox pBox;
+	xui_msgbox pInvalidBox;
 	xui_surface pTarget;
 	xui_surface pContentCache;
 	xui_font pFont;
 	xui_msgbox_desc_t tDesc;
+	xui_msgbox_desc_t tInvalidDesc;
 	xui_msgbox_button_t arrCustom[2];
 	xui_rect_t tIcon;
 	xui_rect_t tMessage;
@@ -103,13 +122,16 @@ int main(void)
 	xui_vec2_t tButtonContent;
 	xui_thickness_t tButtonPadding;
 	xui_msgbox_metrics_t tMetrics;
+	xui_msgbox_metrics_t tInvalidMetrics;
 	int iLayer;
 	int iZ;
 	int iWindowZ;
+	int iChangeBefore;
 	int iFailed;
 	int iRet;
 
 	memset(&tResult, 0, sizeof(tResult));
+	memset(&tDestroyResult, 0, sizeof(tDestroyResult));
 	pContext = NULL;
 	pRoot = NULL;
 	pBox = NULL;
@@ -144,6 +166,11 @@ int main(void)
 	tDesc.iButtons = XUI_MSGBOX_BUTTON_OK_CANCEL;
 	tDesc.bHasModal = 1;
 	tDesc.bModal = 1;
+	tInvalidDesc = tDesc;
+	tInvalidDesc.tIconSrc.fX = NAN;
+	pInvalidBox = (xui_msgbox)&tState;
+	iRet = xuiMsgBoxCreate(pContext, &pInvalidBox, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidBox == NULL, "invalid create clears output");
 	iRet = xuiMsgBoxCreate(pContext, &pBox, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pBox != NULL, "msgbox create");
 	iRet = xuiMsgBoxSetResult(pBox, __xuiMsgBoxResult, &tResult);
@@ -157,6 +184,7 @@ int main(void)
 
 	iRet = xuiMsgBoxSetOpen(pBox, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgBoxIsOpen(pBox), "open");
+	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == xuiMsgBoxGetButtonWidget(pBox, 0), "default button receives focus");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
 	tBackdrop = xuiMsgBoxGetBackdropRect(pBox);
@@ -174,6 +202,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iLayer == XUI_LAYER_MODAL && iZ == iWindowZ, "button modal layer");
 	iRet = xuiWidgetGetLayer(xuiMsgBoxGetBackdropWidget(pBox), &iLayer, &iZ);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLayer == XUI_LAYER_MODAL && iZ == 0, "backdrop modal layer");
+	iRet = xuiMsgBoxSetModal(pBox, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMsgBoxIsModal(pBox), "disable modal while open");
+	iRet = xuiWidgetGetLayer(xuiMsgBoxGetWindowWidget(pBox), &iLayer, &iZ);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLayer == XUI_LAYER_FLOATING && iZ == XUI_WINDOW_Z_TOPMOST,
+		"nonmodal msgbox restores floating layer");
+	XUI_TEST_CHECK(xuiWidgetGetParent(xuiMsgBoxGetBackdropWidget(pBox)) == NULL &&
+		!xuiWidgetGetVisible(xuiMsgBoxGetBackdropWidget(pBox)), "nonmodal msgbox detaches backdrop");
+	iRet = xuiMsgBoxSetModal(pBox, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgBoxIsModal(pBox), "restore modal while open");
+	iRet = xuiWidgetGetLayer(xuiMsgBoxGetWindowWidget(pBox), &iLayer, &iZ);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLayer == XUI_LAYER_MODAL, "restored msgbox uses modal layer");
+
+	iRet = xuiMsgBoxGetMetrics(pBox, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get metrics for validation");
+	tInvalidMetrics = tMetrics;
+	tInvalidMetrics.fMinWidth = tMetrics.fMaxWidth + 1.0f;
+	iRet = xuiMsgBoxSetMetrics(pBox, &tInvalidMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject inverted width metrics");
+	tInvalidMetrics = tMetrics;
+	tInvalidMetrics.fFooterHeight = tMetrics.fButtonHeight - 1.0f;
+	iRet = xuiMsgBoxSetMetrics(pBox, &tInvalidMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject footer shorter than button");
+	iRet = xuiMsgBoxSetIconSurface(pBox, NULL, (xui_rect_t){NAN, 0.0f, 0.0f, 0.0f});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nonfinite icon source");
+	iChangeBefore = xuiMsgBoxGetChangeCount(pBox);
+	iRet = xuiMsgBoxSetTitle(pBox, xuiMsgBoxGetTitle(pBox));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgBoxGetChangeCount(pBox) == iChangeBefore, "same title is no-op");
 	tIcon = xuiMsgBoxGetIconRect(pBox);
 	tMessage = xuiMsgBoxGetMessageRect(pBox);
 	XUI_TEST_CHECK(tIcon.fW > 0.0f && tIcon.fH > 0.0f, "icon rect");
@@ -185,6 +240,11 @@ int main(void)
 	XUI_TEST_CHECK(pContentCache != NULL, "content cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pContentCache) > 0, "builtin icon rendered");
 	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pContentCache) > 0, "message rendered");
+	xuiTestProxyResetTextCounters(&tState);
+	iRet = xuiWidgetInvalidate(xuiMsgBoxGetContentWidget(pBox), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate message content");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iLastTextDrawSize > 0, "message lines use bounded text lengths");
 
 	iRet = xuiInputViewport(pContext, 760.0f, 430.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize viewport");
@@ -234,6 +294,17 @@ int main(void)
 	XUI_TEST_CHECK(tResult.iCount == 1 && tResult.iLastResult == XUI_MSGBOX_RESULT_OK, "enter result callback");
 
 	iRet = xuiMsgBoxSetOpen(pBox, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reopen for escape cancel");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "escape cancel down");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "escape cancel dispatch");
+	XUI_TEST_CHECK(!xuiMsgBoxIsOpen(pBox) && xuiMsgBoxGetResult(pBox) == XUI_MSGBOX_RESULT_CANCEL,
+		"escape selects available cancel result");
+	XUI_TEST_CHECK(tResult.iCount == 2 && tResult.iLastResult == XUI_MSGBOX_RESULT_CANCEL,
+		"escape cancel callback");
+
+	iRet = xuiMsgBoxSetOpen(pBox, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgBoxIsOpen(pBox), "reopen for cancel button");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout cancel");
@@ -242,7 +313,7 @@ int main(void)
 	iRet = __xuiMsgBoxDispatchClick(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "cancel button click");
 	XUI_TEST_CHECK(!xuiMsgBoxIsOpen(pBox) && xuiMsgBoxGetResult(pBox) == XUI_MSGBOX_RESULT_CANCEL, "cancel closes");
-	XUI_TEST_CHECK(tResult.iCount == 2 && tResult.iLastResult == XUI_MSGBOX_RESULT_CANCEL, "cancel result callback");
+	XUI_TEST_CHECK(tResult.iCount == 3 && tResult.iLastResult == XUI_MSGBOX_RESULT_CANCEL, "cancel result callback");
 
 	arrCustom[0].sText = "Retry after reconnecting to the service";
 	arrCustom[0].iResult = 10;
@@ -277,7 +348,7 @@ int main(void)
 	iRet = __xuiMsgBoxDispatchClick(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "custom click");
 	XUI_TEST_CHECK(!xuiMsgBoxIsOpen(pBox) && xuiMsgBoxGetResult(pBox) == 20, "custom result");
-	XUI_TEST_CHECK(tResult.iCount == 3 && tResult.iLastResult == 20, "custom result callback");
+	XUI_TEST_CHECK(tResult.iCount == 4 && tResult.iLastResult == 20, "custom result callback");
 
 	iRet = xuiMsgBoxSetButtons(pBox, XUI_MSGBOX_BUTTON_OK);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgBoxGetButtonCount(pBox) == 1, "reset buttons");
@@ -290,9 +361,20 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape dispatch");
 	XUI_TEST_CHECK(!xuiMsgBoxIsOpen(pBox) && xuiMsgBoxGetResult(pBox) == XUI_MSGBOX_RESULT_CLOSE, "escape closes");
-	XUI_TEST_CHECK(tResult.iCount == 4 && tResult.iLastResult == XUI_MSGBOX_RESULT_CLOSE, "escape result callback");
-	XUI_TEST_CHECK(xuiMsgBoxGetResultCount(pBox) == 4, "result count");
+	XUI_TEST_CHECK(tResult.iCount == 5 && tResult.iLastResult == XUI_MSGBOX_RESULT_CLOSE, "escape result callback");
+	XUI_TEST_CHECK(xuiMsgBoxGetResultCount(pBox) == 5, "result count");
 	XUI_TEST_CHECK(xuiMsgBoxGetChangeCount(pBox) > 0, "change count");
+
+	tDestroyResult.ppBox = &pBox;
+	iRet = xuiMsgBoxSetResult(pBox, __xuiMsgBoxDestroyResult, &tDestroyResult);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying result callback set");
+	iRet = xuiMsgBoxSetOpen(pBox, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "open for destroying callback");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ENTER, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying callback enter down");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBox == NULL && tDestroyResult.iCount == 1,
+		"result callback may destroy msgbox");
 
 cleanup:
 	if ( pTarget != NULL ) {

@@ -38,6 +38,23 @@ static void __xuiScrollBarChanged(xui_widget pWidget, float fValue, void* pUser)
 	}
 }
 
+typedef struct xui_scrollbar_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_scrollbar_destroy_state_t;
+
+static void __xuiScrollBarDestroyOnChange(xui_widget pWidget, float fValue, void* pUser)
+{
+	xui_scrollbar_destroy_state_t* pState = (xui_scrollbar_destroy_state_t*)pUser;
+
+	(void)fValue;
+	if ( pState != NULL ) {
+		pState->iCount++;
+		xuiWidgetDestroy(pWidget);
+		if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+	}
+}
+
 static int __xuiScrollBarClick(xui_context pContext, float fX, float fY)
 {
 	int iRet;
@@ -78,10 +95,15 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pBar;
+	xui_widget pChild;
 	xui_widget pInvalid;
+	xui_widget pDestroyBar;
 	xui_surface pTarget;
 	xui_surface pCache;
 	xui_scrollbar_desc_t tDesc;
+	xui_accessible_node_t tAccessible;
+	xui_event_t tEvent;
+	xui_scrollbar_destroy_state_t tDestroy;
 	xui_rect_t tTrack;
 	xui_rect_t tThumb;
 	xui_rect_t tDecrease;
@@ -103,11 +125,14 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pBar = NULL;
+	pChild = NULL;
 	pInvalid = NULL;
+	pDestroyBar = NULL;
 	pTarget = NULL;
 	pCache = NULL;
 	iChanged = 0;
 	iFailed = 0;
+	memset(&tDestroy, 0, sizeof(tDestroy));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -137,6 +162,7 @@ int main(void)
 	iRet = xuiScrollBarCreate(pContext, &pBar, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pBar != NULL, "scrollbar create");
 	tDesc.fValue = NAN;
+	pInvalid = (xui_widget)(void*)1;
 	iRet = xuiScrollBarCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nan descriptor");
 	tDesc.fValue = 50.0f;
@@ -162,6 +188,49 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan steps");
 	iRet = xuiScrollBarSetMetrics(pBar, 0.0f, INFINITY, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metrics");
+	iRet = xuiWidgetSetAccessibleName(pBar, "Document scrollbar");
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAccessibleDescription(pBar, "Moves through the document");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetAccessibleNode(pBar, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.sName != NULL && tAccessible.sDescription != NULL &&
+	               strcmp(tAccessible.sName, "Document scrollbar") == 0 &&
+	               strcmp(tAccessible.sDescription, "Moves through the document") == 0,
+	               "explicit accessible metadata");
+
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pBar, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "scrollbar child create");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.fX = 20;
+	tEvent.fY = 20;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiScrollBarGetValue(pBar) == 50.0f &&
+	               xuiGetPointerCapture(pContext) == NULL,
+	               "descendant pointer does not activate scrollbar");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_WHEEL;
+	tEvent.pTarget = pChild;
+	tEvent.fWheelY = 1.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiScrollBarGetValue(pBar) == 50.0f,
+	               "descendant wheel does not move scrollbar");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiScrollBarGetValue(pBar) == 50.0f,
+	               "descendant key does not move scrollbar");
+	xuiWidgetDestroy(pChild);
+	pChild = NULL;
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 240, 220, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -180,6 +249,18 @@ int main(void)
 	XUI_TEST_CHECK(tDecrease.fH > 0.0f && tIncrease.fH > 0.0f, "full buttons exist");
 	XUI_TEST_CHECK(tTrack.fY >= tDecrease.fH && tTrack.fH > tThumb.fH, "track geometry");
 	XUI_TEST_CHECK(tThumb.fW >= 10.0f && tThumb.fW < 20.0f && tThumb.fH >= 18.0f, "full thumb visual geometry");
+	xuiWidgetSetRect(pBar, (xui_rect_t){10.0f, 10.0f, 20.0f, 10.0f});
+	tTrack = xuiScrollBarGetTrackRect(pBar);
+	tThumb = xuiScrollBarGetThumbRect(pBar);
+	tDecrease = xuiScrollBarGetDecreaseRect(pBar);
+	tIncrease = xuiScrollBarGetIncreaseRect(pBar);
+	XUI_TEST_CHECK(tDecrease.fH == 5.0f && tIncrease.fY == 5.0f && tIncrease.fH == 5.0f &&
+	               tTrack.fH == 0.0f && tThumb.fW == 0.0f && tThumb.fH == 0.0f,
+	               "forced buttons stay bounded in a tiny scrollbar");
+	xuiWidgetSetRect(pBar, (xui_rect_t){10.0f, 10.0f, 20.0f, 140.0f});
+	iRet = __xuiScrollBarRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render restored full scrollbar");
+	tThumb = xuiScrollBarGetThumbRect(pBar);
 	pCache = xuiWidgetGetCacheSurface(pBar, xuiWidgetGetStateId(pBar));
 	XUI_TEST_CHECK(pCache != NULL && xuiTestSurfaceGetRectFillCount(pCache) > 0, "normal cache surface");
 	iRet = xuiInputPointerMove(pContext, 10.0f + tThumb.fX + tThumb.fW * 0.5f, 10.0f + tThumb.fY + tThumb.fH * 0.5f, 0);
@@ -209,7 +290,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel dispatch");
-	XUI_TEST_CHECK(__xuiScrollBarNear(xuiScrollBarGetValue(pBar), 50.0f) && iChanged == 4, "wheel page step");
+	XUI_TEST_CHECK(__xuiScrollBarNear(xuiScrollBarGetValue(pBar), 70.0f) && iChanged == 4, "wheel small step");
 
 	iRet = xuiScrollBarSetValue(pBar, 50.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set button repeat value");
@@ -301,6 +382,60 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag up input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiScrollBarGetActivePart(pBar) == XUI_SCROLLBAR_PART_NONE, "drag release");
+
+	iRet = xuiScrollBarSetValue(pBar, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set multi-pointer value");
+	iRet = __xuiScrollBarRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before multi-pointer drag");
+	tThumb = xuiScrollBarGetThumbRect(pBar);
+	fStartX = 10.0f + tThumb.fX + tThumb.fW * 0.5f;
+	fStartY = 10.0f + tThumb.fY + tThumb.fH * 0.5f;
+	iRet = xuiInputPointerDownEx(pContext, 301u, XUI_POINTER_TYPE_TOUCH, (int)fStartX,
+		(int)fStartY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 301u, XUI_POINTER_TYPE_TOUCH) == pBar,
+		"first touch owns scrollbar drag");
+	iRet = xuiInputPointerDownEx(pContext, 302u, XUI_POINTER_TYPE_TOUCH, (int)fStartX,
+		(int)fStartY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 302u, XUI_POINTER_TYPE_TOUCH,
+		(int)fStartX, (int)(fStartY + 70.0f), XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 302u, XUI_POINTER_TYPE_TOUCH,
+		(int)fStartX, (int)(fStartY + 70.0f), XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollBarNear(xuiScrollBarGetValue(pBar), 0.0f) &&
+		xuiGetPointerCaptureEx(pContext, 301u, XUI_POINTER_TYPE_TOUCH) == pBar &&
+		xuiGetPointerCaptureEx(pContext, 302u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot move or release scrollbar drag");
+	iRet = xuiInputPointerMoveEx(pContext, 301u, XUI_POINTER_TYPE_TOUCH,
+		(int)fStartX, (int)(fStartY + 40.0f), XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollBarNear(xuiScrollBarGetValue(pBar), 50.0f),
+		"owning touch moves scrollbar thumb");
+	iRet = xuiInputPointerUpEx(pContext, 301u, XUI_POINTER_TYPE_TOUCH,
+		(int)fStartX, (int)(fStartY + 40.0f), XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 301u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch releases scrollbar drag");
+	iRet = xuiInputPointerDownEx(pContext, 303u, XUI_POINTER_TYPE_TOUCH, (int)fStartX,
+		(int)fStartY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetMetrics(pBar, 12.0f, 18.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 303u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"geometry change cancels exact scrollbar capture");
+	iRet = xuiScrollBarSetMetrics(pBar, 0.0f, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarGetMetrics(pBar,
+		&fThickness, &fMinThumbSize, &fButtonSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && fThickness == 0.0f &&
+		fMinThumbSize == 18.0f && fButtonSize == 0.0f,
+		"zero metrics restore mode-aware automatic defaults");
+	(void)xuiInputPointerUpEx(pContext, 303u, XUI_POINTER_TYPE_TOUCH,
+		(int)fStartX, (int)fStartY, XUI_POINTER_BUTTON_LEFT, 0u);
+	(void)xuiDispatchPendingEvents(pContext);
 
 	iRet = xuiScrollBarSetValue(pBar, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set escape drag value");
@@ -409,6 +544,22 @@ int main(void)
 	XUI_TEST_CHECK((xuiScrollBarGetState(pBar) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");
 	iRet = __xuiScrollBarClick(pContext, 20.0f, 172.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiScrollBarGetValue(pBar) == 100.0f && xuiGetPointerCapture(pContext) == NULL, "disabled ignores pointer");
+
+	tDesc.fValue = 50.0f;
+	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
+	tDesc.iMode = XUI_SCROLLBAR_MODE_FULL;
+	tDesc.iButtonMode = XUI_SCROLLBAR_BUTTONS_ON;
+	iRet = xuiScrollBarCreate(pContext, &pDestroyBar, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pDestroyBar);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pDestroyBar, (xui_rect_t){50.0f, 10.0f, 20.0f, 140.0f});
+	tDestroy.ppWidget = &pDestroyBar;
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetChange(pDestroyBar,
+		__xuiScrollBarDestroyOnChange, &tDestroy);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-change scrollbar prepare");
+	iRet = __xuiScrollBarClick(pContext, 60.0f, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyBar == NULL && tDestroy.iCount == 1,
+		"change callback may destroy scrollbar without stale access");
 
 cleanup:
 	if ( pTarget != NULL ) {

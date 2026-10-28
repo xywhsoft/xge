@@ -14,7 +14,7 @@ try {
     $extraFlags = @()
     if ($Mode -eq 'regression') {
         $test = "xui_${control}_test"
-        $controlSources = @("src/xui_${control}.c")
+        $controlSources = @("src/xui/controls/xui_${control}.c")
     } elseif ($Mode -eq 'audit') {
         $suffix = @{ table = 'index'; tree = 'scale'; message = 'audit' }[$Family]
         if (-not $suffix) { throw "No audit suite for $Family" }
@@ -24,7 +24,8 @@ try {
     $sources = @("tests/xui/$test.c") + $controlSources + @(
         'tests/xui/xui_test_proxy.c', 'tests/xui/xui_test_xrt_impl.c',
         'modules/xlayout/xlayout.c', 'src/xui/core/xui_core.c', 'src/xui/core/xui_widget.c',
-        'src/xui/accessibility/xui_accessibility.c', 'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c',
+        'src/xui/accessibility/xui_accessibility.c', 'src/xui/accessibility/xui_native_accessibility.c',
+        'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c',
         'src/xui/core/xui_edit.c', 'src/xui/core/xui_drag_drop.c', 'src/xui/core/xui_unicode.c',
         'src/xui/core/xui_text.c', 'src/xui/core/xui_assets.c', 'src/xui/core/xui_builtin_atlas.c',
         'src/xui/core/xui_icon.c', 'src/xui/core/xui_scroll_model.c', 'src/xui/controls/xui_scrollbar.c',
@@ -36,22 +37,15 @@ try {
     if ($Family -eq 'message') {
         & cmd /c tools\build\ensure_xge_dll.bat
         if ($LASTEXITCODE -ne 0) { throw 'Engine build failed' }
-        # Expand the same ordered manifests as the release build. MessageList
-        # now needs private Document helpers and the browser's local stubs.
-        $manifest = @{}
-        foreach ($file in @('tools/build/xui_document_sources.bat', 'tools/build/xui_sources.bat')) {
-            foreach ($line in Get-Content -LiteralPath $file) {
-                if ($line -match '^set (XUI_DOCUMENT_SRC|XUI_SRC)=(.*)$') {
-                    $name=$Matches[1]; $value=$Matches[2]
-                    foreach ($key in @($manifest.Keys)) { $value=$value.Replace("%$key%",$manifest[$key]) }
-                    $manifest[$name]=$value
-                }
-            }
-        }
+        # Consume the authoritative generated source manifest. The legacy batch
+        # files now delegate to build.py and no longer contain expandable lists.
+        $sourceOutput = & python tools/build/build.py --sources-only
+        if ($LASTEXITCODE -ne 0) { throw 'Source manifest generation failed' }
+        $allSources = @(($sourceOutput -join ' ') -split '\s+' | Where-Object { $_ })
         $sources = @("tests/xui/$test.c") + $controlSources + @(
             'tests/xui/xui_test_proxy.c', 'tests/xui/xui_test_xrt_impl.c'
-        ) + @($manifest['XUI_SRC'] -split '\s+' | Where-Object {
-            $_ -and $_ -notin @('src\xui\controls\xui_message_list.c','src\xui\core\xui_proxy_xge.c')
+        ) + @($allSources | Where-Object {
+            $_ -notin @('src/xui/controls/xui_message_list.c','src/xui/core/xui_proxy_xge.c')
         })
         $engineLibraries = @('build/xge.lib')
         $env:PATH = (Join-Path (Get-Location) 'build') + ';' + $env:PATH

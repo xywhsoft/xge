@@ -46,6 +46,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "aXXbc\ndef\n") == 0, "insert text");
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 3 && tState.iAnchorOffset == 3, "insert caret");
+	iRet = xuiCodeDocumentSetText(pDocument, "left-right");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset for normalized paste");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 4, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "normalized paste caret");
+	iRet = xuiCodeEditingInsertText(pDocument, pSelection, "A\r\nB\rC", 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "leftA\nB\nC-right") == 0,
+		"insert normalizes Windows newlines");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 9 && tState.iAnchorOffset == 9,
+		"caret follows normalized insertion length");
+	iRet = xuiCodeDocumentSetText(pDocument, "aXXbc\ndef\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore after normalized paste");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 3, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore insert caret");
 	iRet = xuiCodeSelectionSetRange(pSelection, pDocument, 1, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select replace range");
 	iRet = xuiCodeEditingInsertText(pDocument, pSelection, "Q", 0);
@@ -119,6 +133,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select two lines");
 	iRet = xuiCodeEditingIndentSelection(pDocument, pSelection, "\t", 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "\tone\n\ttwo\nthree\n") == 0, "indent selection");
+	iRet = xuiCodeEditingIndentSelection(pDocument, pSelection, "  \n", 0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "multiline indent invalid");
 	iRet = xuiCodeSelectionGetRange(pSelection, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 1 && iEnd == 10, "indent selection adjusted");
 	iRet = xuiCodeEditingOutdentSelection(pDocument, pSelection, 4, 0);
@@ -134,6 +150,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "  one\n  two\nthree\n") == 0, "uncomment selection");
 	iRet = xuiCodeEditingToggleLineComment(pDocument, pSelection, "", 0);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "empty comment invalid");
+	iRet = xuiCodeEditingToggleLineComment(pDocument, pSelection, "//\n", 0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "multiline comment invalid");
 
 cleanup:
 	xuiCodeSelectionDestroy(pSelection);

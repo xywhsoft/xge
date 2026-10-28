@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
@@ -40,6 +41,11 @@ typedef struct xui_inventory_grid_test_state_t {
 	uint32_t iAnimationFlags;
 	uint32_t iAnimationTint;
 } xui_inventory_grid_test_state_t;
+
+typedef struct xui_inventory_grid_reentry_state_t {
+	int iCalls;
+	int iNewSlotCount;
+} xui_inventory_grid_reentry_state_t;
 
 static int __xuiInventoryGridTestDispatch(xui_context pContext)
 {
@@ -195,6 +201,57 @@ static int __xuiInventoryGridTestMinCountFilter(xui_widget pWidget, int iSlot, c
 	return pSlot->iCount >= *pMinCount;
 }
 
+static int __xuiInventoryGridTestMutatingFilter(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser)
+{
+	xui_inventory_grid_reentry_state_t* pState = (xui_inventory_grid_reentry_state_t*)pUser;
+	(void)iSlot;
+	(void)pSlot;
+	if ( pState != NULL && pState->iCalls++ == 0 ) {
+		(void)xuiInventoryGridSetSlotCount(pWidget, pState->iNewSlotCount);
+	}
+	return 1;
+}
+
+static int __xuiInventoryGridTestDestroyingFilter(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser)
+{
+	int* pCalls = (int*)pUser;
+	(void)iSlot;
+	(void)pSlot;
+	if ( pCalls != NULL && (*pCalls)++ == 0 ) xuiWidgetDestroy(pWidget);
+	return 1;
+}
+
+static int __xuiInventoryGridTestDestroyingContextFilter(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser)
+{
+	xui_context pContext = (xui_context)pUser;
+	(void)pWidget;
+	(void)iSlot;
+	(void)pSlot;
+	xuiDestroy(pContext);
+	return 1;
+}
+
+static int __xuiInventoryGridTestDestroyingCompare(xui_widget pWidget, int iSlotA, const xui_inventory_slot_t* pSlotA,
+	int iSlotB, const xui_inventory_slot_t* pSlotB, void* pUser)
+{
+	int* pCalls = (int*)pUser;
+	(void)iSlotA;
+	(void)pSlotA;
+	(void)iSlotB;
+	(void)pSlotB;
+	if ( pCalls != NULL && (*pCalls)++ == 0 ) xuiWidgetDestroy(pWidget);
+	return 0;
+}
+
+static void __xuiInventoryGridTestDestroyingSplit(xui_widget pWidget, int iSlot, int iCount, void* pUser)
+{
+	int* pCalls = (int*)pUser;
+	(void)iSlot;
+	(void)iCount;
+	if ( pCalls != NULL ) (*pCalls)++;
+	xuiWidgetDestroy(pWidget);
+}
+
 static void __xuiInventoryGridTestSlot(xui_inventory_slot_t* pSlot, int iSlotId, int iItemId, int iCount, const char* sText, const char* sHotkey, uint32_t iQualityColor)
 {
 	memset(pSlot, 0, sizeof(*pSlot));
@@ -221,8 +278,11 @@ int main(void)
 	xui_test_proxy_state_t tProxyState;
 	xui_inventory_grid_test_state_t tState;
 	xui_context pContext;
+	xui_context pTempContext;
 	xui_widget pRoot;
 	xui_widget pGrid;
+	xui_widget pChild;
+	xui_widget pTempGrid;
 	xui_surface pTarget;
 	xui_surface pIcon;
 	xui_surface pCache;
@@ -233,11 +293,14 @@ int main(void)
 	xui_style_property_t arrStyle[3];
 	xui_inventory_slot_t tSlot;
 	xui_inventory_slot_t tOutSlot;
+	xui_accessible_node_t tAccessible;
 	xui_inventory_hit_t tHit;
 	xui_inventory_visible_range_t tVisibleRange;
 	xui_inventory_visible_range_t tPaintRange;
 	xui_inventory_slot_query_t tQuery;
 	xui_inventory_gamepad_profile_t tGamepadProfile;
+	xui_inventory_grid_reentry_state_t tReentry;
+	xui_event_t tPointer;
 	xui_rect_t tSlot0;
 	xui_rect_t tSlot2;
 	xui_rect_t tSlot5;
@@ -259,18 +322,28 @@ int main(void)
 	uint32_t iAnimationFlags;
 	uint32_t iAnimationTint;
 	float fAnimationScale;
+	float fScrollX;
 	float fScrollY;
 	char sXson[32768];
 	int arrQuerySlots[32];
 	int iQueryCount;
 	int iMinCount;
 	int iMeshDrawBefore;
+	int iCallbackCalls;
+	int iChangeBefore;
+	int iCurrentBefore;
+	int iActivatesBefore;
+	int iSelectedCount;
+	int i;
 	int iFailed;
 	int iRet;
 
 	pContext = NULL;
+	pTempContext = NULL;
 	pRoot = NULL;
 	pGrid = NULL;
+	pChild = NULL;
+	pTempGrid = NULL;
 	pTarget = NULL;
 	pIcon = NULL;
 	pCache = NULL;
@@ -302,6 +375,16 @@ int main(void)
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
 
+	__xuiInventoryGridTestSlot(&tSlot, 0, 1, 1, "Invalid", "", XUI_COLOR_WHITE);
+	tSlot.iSize = sizeof(tSlot) - 1u;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.arrSlots = &tSlot;
+	tDesc.iSlotCount = 1;
+	pTempGrid = pRoot;
+	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pTempGrid == NULL, "descriptor rejects malformed initial slot");
+
 	memset(&tLayout, 0, sizeof(tLayout));
 	tLayout.iSize = sizeof(tLayout);
 	tLayout.iColumns = 4;
@@ -327,9 +410,17 @@ int main(void)
 	tDesc.bHasColors = 1;
 	iRet = xuiInventoryGridCreate(pContext, &pGrid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pGrid != NULL, "inventory create");
+	XUI_TEST_CHECK(xuiInventoryGridGetType(pContext) != NULL, "inventory type");
+	XUI_TEST_CHECK(xuiInventoryGridGetFont(pGrid) == pFont, "inventory font from descriptor");
+	XUI_TEST_CHECK(xuiInventoryGridSetFont(pGrid, NULL) == XUI_OK && xuiInventoryGridGetFont(pGrid) == pFont, "inventory default font");
+	XUI_TEST_CHECK(xuiInventoryGridSetFont(pGrid, pFont) == XUI_OK && xuiInventoryGridGetFont(pGrid) == pFont, "inventory explicit font");
 	(void)xuiWidgetSetRect(pGrid, (xui_rect_t){20.0f, 20.0f, 180.0f, 120.0f});
 	iRet = xuiWidgetAddChild(pRoot, pGrid);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add inventory");
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "inventory descendant create");
+	XUI_TEST_CHECK(xuiWidgetSetHitTestVisible(pChild, 0) == XUI_OK &&
+		xuiWidgetAddChild(pGrid, pChild) == XUI_OK, "inventory descendant add");
 
 	iRet = xuiInventoryGridSetSelectCallback(pGrid, __xuiInventoryGridTestSelect, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
@@ -374,6 +465,15 @@ int main(void)
 	tSlot.iFlags |= XUI_INVENTORY_SLOT_LOCKED;
 	iRet = xuiInventoryGridSetSlot(pGrid, 6, &tSlot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set locked slot");
+	__xuiInventoryGridTestSlot(&tSlot, 1, 201, 1, NULL, NULL, XUI_COLOR_WHITE);
+	memset(tSlot.sText, 'a', sizeof(tSlot.sText));
+	tSlot.sText[sizeof(tSlot.sText) - 2u] = (char)0xE4;
+	tSlot.sText[sizeof(tSlot.sText) - 1u] = '\0';
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 1, &tSlot) == XUI_OK, "set truncated utf8 slot");
+	XUI_TEST_CHECK(xuiInventoryGridGetSlot(pGrid, 1, &tOutSlot) == XUI_OK &&
+		strlen(tOutSlot.sText) == sizeof(tOutSlot.sText) - 2u &&
+		(unsigned char)tOutSlot.sText[sizeof(tOutSlot.sText) - 3u] == (unsigned char)'a', "slot text trims incomplete utf8");
+	XUI_TEST_CHECK(xuiInventoryGridClearSlot(pGrid, 1) == XUI_OK, "clear truncated utf8 slot");
 
 	XUI_TEST_CHECK(xuiInventoryGridGetSlotCount(pGrid) == 24, "slot count");
 	iRet = xuiInventoryGridGetSlot(pGrid, 0, &tOutSlot);
@@ -383,8 +483,57 @@ int main(void)
 	iRet = xuiInventoryGridGetColors(pGrid, &tColors);
 	XUI_TEST_CHECK(iRet == XUI_OK && tColors.iSelectedColor == XUI_COLOR_RGBA(44, 126, 214, 255), "colors roundtrip");
 
+	iChangeBefore = xuiInventoryGridGetChangeCount(pGrid);
+	iRet = xuiInventoryGridSetSlot(pGrid, 0, &tOutSlot);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiInventoryGridGetChangeCount(pGrid) == iChangeBefore, "identical slot is idempotent");
+	tSlot = tOutSlot;
+	tSlot.iSize = sizeof(tSlot) - 1u;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 0, &tSlot) == XUI_ERROR_INVALID_ARGUMENT, "undersized slot rejected");
+	tSlot = tOutSlot;
+	tSlot.fCooldownRate = NAN;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 0, &tSlot) == XUI_ERROR_INVALID_ARGUMENT, "nan slot rate rejected");
+	tSlot = tOutSlot;
+	tSlot.tIconSrc.fW = INFINITY;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 0, &tSlot) == XUI_ERROR_INVALID_ARGUMENT, "infinite icon rect rejected");
+	tColors.iSize = sizeof(tColors) - 1u;
+	XUI_TEST_CHECK(xuiInventoryGridSetColors(pGrid, &tColors) == XUI_ERROR_INVALID_ARGUMENT, "undersized colors rejected");
+	iRet = xuiInventoryGridGetLayout(pGrid, &tLayout);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout before invalid input");
+	tLayout.iSelectionMode = 999;
+	XUI_TEST_CHECK(xuiInventoryGridSetLayout(pGrid, &tLayout) == XUI_ERROR_INVALID_ARGUMENT, "invalid selection mode rejected");
+	XUI_TEST_CHECK(xuiInventoryGridSetMetrics(pGrid, NAN, 1.0f, 1.0f, 1.0f, 1.0f) == XUI_ERROR_INVALID_ARGUMENT, "nan metrics rejected");
+	XUI_TEST_CHECK(xuiInventoryGridHitTest(pGrid, NAN, 10.0f, &tHit) == XUI_ERROR_INVALID_ARGUMENT, "nan hit coordinate rejected");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimation(pGrid, 0, NULL, 0u, NAN, 0u) == XUI_ERROR_INVALID_ARGUMENT, "nan animation scale rejected");
+
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pGrid) == 25, "accessible root and slot count");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pGrid, 0, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_LIST && tAccessible.iRowCount == 6 &&
+		tAccessible.iColumnCount == 4 &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_MULTISELECTABLE) != 0u,
+		"accessible multi-selection inventory root");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pGrid, 1, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_LIST_ITEM && strcmp(tAccessible.sName, "Sword") == 0 &&
+		strcmp(tAccessible.sValue, "12") == 0 && tAccessible.iRow == 0 && tAccessible.iColumn == 0 &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_SELECTABLE) != 0u &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE)) != 0u,
+		"accessible inventory slot");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pGrid, 7, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u &&
+		xuiWidgetPerformAccessibleAction(pGrid, 8u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL) == XUI_ERROR_INVALID_STATE,
+		"accessible locked slot rejects action");
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pGrid, 4u, XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_OK &&
+		xuiInventoryGridGetSelected(pGrid, 2) && xuiInventoryGridGetCurrent(pGrid) == 2,
+		"accessible slot selection");
+	XUI_TEST_CHECK(xuiInventoryGridClearSelection(pGrid) == XUI_OK && xuiInventoryGridGetCurrent(pGrid) == -1,
+		"clear accessible selection");
 	iRet = xuiInventoryGridGetSlotRect(pGrid, 0, &tSlot0);
 	XUI_TEST_CHECK(iRet == XUI_OK && tSlot0.fW == 36.0f && tSlot0.fH == 36.0f, "slot rect 0");
 	iRet = xuiInventoryGridGetSlotRect(pGrid, 2, &tSlot2);
@@ -445,6 +594,19 @@ int main(void)
 			iRet, tHit.iSlot, tHit.iPart, tWorld.fX, tWorld.fY, tWorld.fW, tWorld.fH, tSlot0.fX, tSlot0.fY, tSlot0.fW, tSlot0.fH);
 	}
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iSlot == 0 && tHit.iPart == XUI_INVENTORY_HIT_ICON, "hit icon");
+	iCurrentBefore = xuiInventoryGridGetCurrent(pGrid);
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.iType = XUI_EVENT_POINTER_DOWN;
+	tPointer.pTarget = pChild;
+	tPointer.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tPointer.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = tWorld.fX + tSlot2.fX + 8.0f;
+	tPointer.fY = tWorld.fY + tSlot2.fY + 8.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK &&
+		xuiInventoryGridGetCurrent(pGrid) == iCurrentBefore && xuiInventoryGridGetActiveSlot(pGrid) == -1,
+		"descendant pointer event does not drive inventory");
 
 	iRet = xuiInputPointerMove(pContext, tWorld.fX + tSlot0.fX + 8.0f, tWorld.fY + tSlot0.fY + 8.0f, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK, "pointer move");
@@ -467,6 +629,31 @@ int main(void)
 	iRet = xuiInputPointerUp(pContext, tWorld.fX + tSlot0.fX + 8.0f, tWorld.fY + tSlot0.fY + 8.0f, XUI_POINTER_BUTTON_LEFT, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK, "left up");
 	XUI_TEST_CHECK(tState.iActivates == 1 && tState.iLastActivate == 0, "click activate");
+	iRet = xuiInputPointerDown(pContext, tWorld.fX + tSlot0.fX + 8.0f, tWorld.fY + tSlot0.fY + 8.0f, XUI_POINTER_BUTTON_LEFT, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK &&
+		xuiGetPointerCapture(pContext) == pGrid, "capture before lost mouse button");
+	iRet = xuiInputPointerMove(pContext, tWorld.fX + tSlot0.fX + 10.0f, tWorld.fY + tSlot0.fY + 10.0f, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK &&
+		xuiGetPointerCapture(pContext) == NULL && xuiInventoryGridGetActiveSlot(pGrid) == -1,
+		"lost mouse button cancels inventory capture");
+	iCurrentBefore = xuiInventoryGridGetCurrent(pGrid);
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 0) == XUI_OK, "disable inventory ancestor");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pGrid, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u,
+		"accessible inventory reflects disabled ancestor");
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.iType = XUI_EVENT_POINTER_DOWN;
+	tPointer.pTarget = pGrid;
+	tPointer.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tPointer.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = tWorld.fX + tSlot2.fX + 8.0f;
+	tPointer.fY = tWorld.fY + tSlot2.fY + 8.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK && xuiInventoryGridGetCurrent(pGrid) == iCurrentBefore && xuiInventoryGridGetActiveSlot(pGrid) == -1, "effective disabled state blocks pointer input");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 1) == XUI_OK, "restore inventory ancestor");
 
 	iRet = xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set ctrl");
@@ -477,6 +664,57 @@ int main(void)
 	iRet = xuiInputSetModifiers(pContext, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear ctrl");
 	XUI_TEST_CHECK(xuiInventoryGridGetSelected(pGrid, 0) && xuiInventoryGridGetSelected(pGrid, 2), "ctrl multi select");
+	iRet = xuiInventoryGridGetLayout(pGrid, &tLayout);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get layout before single selection");
+	tLayout.iSelectionMode = XUI_INVENTORY_SELECTION_SINGLE;
+	iRet = xuiInventoryGridSetLayout(pGrid, &tLayout);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiInventoryGridGetSelected(pGrid, 0) && xuiInventoryGridGetSelected(pGrid, 2), "single mode collapses prior multi selection");
+	tLayout.iSelectionMode = XUI_INVENTORY_SELECTION_MULTI;
+	XUI_TEST_CHECK(xuiInventoryGridSetLayout(pGrid, &tLayout) == XUI_OK, "restore multi selection mode");
+	XUI_TEST_CHECK(xuiInventoryGridSetSelected(pGrid, 0, 1, 1) == XUI_OK && xuiInventoryGridGetSelected(pGrid, 0), "programmatic selection");
+	iChangeBefore = xuiInventoryGridGetChangeCount(pGrid);
+	i = tState.iSelects;
+	XUI_TEST_CHECK(xuiInventoryGridSetSelected(pGrid, 0, 1, 1) == XUI_OK &&
+		xuiInventoryGridGetChangeCount(pGrid) == iChangeBefore && tState.iSelects == i,
+		"identical programmatic selection is idempotent");
+	XUI_TEST_CHECK(xuiInventoryGridSetSelected(pGrid, 6, 1, 1) == XUI_OK && !xuiInventoryGridGetSelected(pGrid, 6), "locked slot cannot be selected");
+	XUI_TEST_CHECK(xuiInventoryGridSetCurrent(pGrid, 2, 0) == XUI_OK, "keyboard current start");
+	iRet = xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set ctrl for keyboard navigation");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK &&
+		xuiInventoryGridGetCurrent(pGrid) == 3 && !xuiInventoryGridGetSelected(pGrid, 3),
+		"ctrl arrow moves focus without selection");
+	iActivatesBefore = tState.iActivates;
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK &&
+		xuiInventoryGridGetSelected(pGrid, 3) && tState.iActivates == iActivatesBefore,
+		"ctrl space toggles selection without activation");
+	iRet = xuiInputKeyDown(pContext, 'A', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK, "ctrl a dispatch");
+	iSelectedCount = 0;
+	for ( i = 0; i < xuiInventoryGridGetSlotCount(pGrid); i++ ) {
+		if ( xuiInventoryGridGetSelected(pGrid, i) ) iSelectedCount++;
+	}
+	XUI_TEST_CHECK(iSelectedCount == 23 && !xuiInventoryGridGetSelected(pGrid, 6), "ctrl a selects every enabled slot");
+	XUI_TEST_CHECK(xuiInputSetModifiers(pContext, 0u) == XUI_OK, "clear keyboard ctrl");
+	XUI_TEST_CHECK(xuiInventoryGridGetSlot(pGrid, 0, &tOutSlot) == XUI_OK, "get first slot for home test");
+	tSlot = tOutSlot;
+	tSlot.iFlags |= XUI_INVENTORY_SLOT_DISABLED;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 0, &tSlot) == XUI_OK && xuiInventoryGridSetCurrent(pGrid, 5, 0) == XUI_OK, "disable first slot");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_HOME, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK && xuiInventoryGridGetCurrent(pGrid) == 1,
+		"home skips disabled first slot");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 0, &tOutSlot) == XUI_OK, "restore first slot");
+	XUI_TEST_CHECK(xuiInventoryGridGetSlot(pGrid, 23, &tOutSlot) == XUI_OK, "get last slot for end test");
+	tSlot = tOutSlot;
+	tSlot.iFlags |= XUI_INVENTORY_SLOT_DISABLED;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 23, &tSlot) == XUI_OK && xuiInventoryGridSetCurrent(pGrid, 5, 0) == XUI_OK, "disable last slot");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_END, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK && xuiInventoryGridGetCurrent(pGrid) == 22,
+		"end skips disabled last slot");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pGrid, 23, &tOutSlot) == XUI_OK, "restore last slot");
+	XUI_TEST_CHECK(xuiInventoryGridSetCurrent(pGrid, 2, 0) == XUI_OK, "restore keyboard current");
 
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK, "key right");
@@ -523,6 +761,9 @@ int main(void)
 	iRet = xuiInventoryGridOpenSplitPopup(pGrid, 5, tWorld.fX + tSlot5.fX + 8.0f, tWorld.fY + tSlot5.fY + 8.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiInventoryGridIsSplitPopupOpen(pGrid), "split opens stack");
 	XUI_TEST_CHECK(xuiInventoryGridGetSplitSlot(pGrid) == 5 && xuiInventoryGridGetSplitCount(pGrid) == 10, "split default count");
+	XUI_TEST_CHECK(xuiInventoryGridCloseSplitPopup(pGrid) == XUI_OK && !xuiInventoryGridIsSplitPopupOpen(pGrid), "split close api");
+	iRet = xuiInventoryGridOpenSplitPopup(pGrid, 5, tWorld.fX + tSlot5.fX + 8.0f, tWorld.fY + tSlot5.fY + 8.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiInventoryGridIsSplitPopupOpen(pGrid), "split reopens after close");
 	pSplitPopup = xuiInventoryGridGetSplitPopupWidget(pGrid);
 	pSplitInput = xuiInventoryGridGetSplitInputWidget(pGrid);
 	XUI_TEST_CHECK(pSplitPopup != NULL && pSplitInput != NULL, "split popup widgets");
@@ -559,6 +800,31 @@ int main(void)
 	XUI_TEST_CHECK(tState.iDropCalls == 2 && tState.iDrops == 1, "rejected drop not accepted");
 	tState.iDropAccept = 1;
 
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.pTarget = pGrid;
+	tPointer.iType = XUI_EVENT_POINTER_DOWN;
+	tPointer.iPointerId = 1001;
+	tPointer.iPointerType = XUI_POINTER_TYPE_TOUCH;
+	tPointer.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = tWorld.fX + tSlot0.fX + 8.0f;
+	tPointer.fY = tWorld.fY + tSlot0.fY + 8.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK && xuiInventoryGridGetActiveSlot(pGrid) == 0, "touch owns drag sequence");
+	tPointer.iPointerId = 1002;
+	tPointer.fX = tWorld.fX + tSlot2.fX + 8.0f;
+	tPointer.fY = tWorld.fY + tSlot2.fY + 8.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK && xuiInventoryGridGetActiveSlot(pGrid) == 0, "second touch cannot steal drag");
+	tPointer.iType = XUI_EVENT_POINTER_CAPTURE_LOST;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK && xuiInventoryGridGetActiveSlot(pGrid) == 0, "unrelated capture loss ignored");
+	tPointer.iType = XUI_EVENT_POINTER_MOVE;
+	tPointer.iPointerId = 1001;
+	tPointer.fX = tWorld.fX + tSlot5.fX + 18.0f;
+	tPointer.fY = tWorld.fY + tSlot5.fY + 18.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK && xuiInventoryGridGetDragSource(pGrid) == 0, "owning touch continues drag");
+	iRet = xuiReleasePointerCaptureEx(pContext, 1001, XUI_POINTER_TYPE_TOUCH, pGrid);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK && xuiInventoryGridGetActiveSlot(pGrid) == -1 && xuiInventoryGridGetDragSource(pGrid) == -1, "matching capture loss cancels drag");
+
 	iRet = xuiInventoryGridSetSlotAnimation(pGrid, 0, (xui_animation_object_t*)0x1234, 7u, 1.25f, XUI_COLOR_RGBA(200, 210, 255, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set animation");
 	pAnimation = xuiInventoryGridGetSlotAnimation(pGrid, 0, &iAnimationFlags, &fAnimationScale, &iAnimationTint);
@@ -589,6 +855,20 @@ int main(void)
 	fScrollY = 0.0f;
 	iRet = xuiScrollModelGetOffset(pScroll, NULL, &fScrollY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > 0.0f, "scroll offset");
+	XUI_TEST_CHECK(xuiInventoryGridGetLayout(pGrid, &tLayout) == XUI_OK, "get layout for horizontal wheel");
+	tLayout.iColumns = 8;
+	XUI_TEST_CHECK(xuiInventoryGridSetLayout(pGrid, &tLayout) == XUI_OK && xuiLayout(pContext) == XUI_OK, "enable horizontal inventory overflow");
+	XUI_TEST_CHECK(xuiScrollModelSetOffset(pScroll, 0.0f, 0.0f) == XUI_OK, "reset inventory scroll");
+	XUI_TEST_CHECK(xuiInputSetModifiers(pContext, XUI_MOD_SHIFT) == XUI_OK, "set shift wheel modifier");
+	iRet = xuiInputPointerWheel(pContext, tWorld.fX + 8.0f, tWorld.fY + 8.0f, 0.0f, -1.0f, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiInventoryGridTestDispatch(pContext) == XUI_OK, "shift wheel dispatch");
+	fScrollX = 0.0f;
+	XUI_TEST_CHECK(xuiScrollModelGetOffset(pScroll, &fScrollX, NULL) == XUI_OK && fScrollX > 0.0f, "shift wheel scrolls inventory horizontally");
+	XUI_TEST_CHECK(xuiInputSetModifiers(pContext, 0u) == XUI_OK, "clear shift wheel modifier");
+	tLayout.iColumns = 4;
+	XUI_TEST_CHECK(xuiInventoryGridSetLayout(pGrid, &tLayout) == XUI_OK && xuiLayout(pContext) == XUI_OK &&
+		xuiScrollModelSetOffset(pScroll, 0.0f, 0.0f) == XUI_OK, "restore inventory columns and scroll");
+	XUI_TEST_CHECK(xuiInventoryGridEnsureSlotVisible(pGrid, 23) == XUI_OK, "restore animated slot visibility");
 	iRet = xuiInventoryGridSetSlotAnimation(pGrid, 23, (xui_animation_object_t*)0x2345, 9u, 1.0f, XUI_COLOR_RGBA(92, 166, 255, 190));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set visible animation");
 
@@ -625,6 +905,83 @@ int main(void)
 	iRet = xuiInventoryGridSortSlots(pGrid, arrQuerySlots, 3, XUI_INVENTORY_SORT_COUNT, XUI_INVENTORY_QUERY_SORT_DESCENDING, NULL, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && arrQuerySlots[0] == 5 && arrQuerySlots[1] == 0 && arrQuerySlots[2] == 2, "sort existing slots");
 
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = pFont;
+	tDesc.iSlotCount = 4;
+	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempGrid != NULL, "create query mutation grid");
+	memset(&tReentry, 0, sizeof(tReentry));
+	tReentry.iNewSlotCount = 1;
+	memset(&tQuery, 0, sizeof(tQuery));
+	tQuery.iSize = sizeof(tQuery);
+	tQuery.onFilter = __xuiInventoryGridTestMutatingFilter;
+	tQuery.pFilterUser = &tReentry;
+	iRet = xuiInventoryGridQuerySlots(pTempGrid, &tQuery, arrQuerySlots, 32, &iQueryCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iQueryCount == 4 && tReentry.iCalls == 4 && xuiInventoryGridGetSlotCount(pTempGrid) == 1, "query traverses immutable snapshot during mutation");
+	xuiWidgetDestroy(pTempGrid);
+	pTempGrid = NULL;
+
+	tDesc.iSlotCount = 2;
+	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempGrid != NULL, "create query destroy grid");
+	iCallbackCalls = 0;
+	memset(&tQuery, 0, sizeof(tQuery));
+	tQuery.iSize = sizeof(tQuery);
+	tQuery.onFilter = __xuiInventoryGridTestDestroyingFilter;
+	tQuery.pFilterUser = &iCallbackCalls;
+	iQueryCount = 77;
+	iRet = xuiInventoryGridQuerySlots(pTempGrid, &tQuery, arrQuerySlots, 32, &iQueryCount);
+	pTempGrid = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iQueryCount == 0 && iCallbackCalls == 1, "query aborts safely when callback destroys grid");
+
+	tDesc.iSlotCount = 3;
+	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempGrid != NULL, "create sort destroy grid");
+	arrQuerySlots[0] = 2;
+	arrQuerySlots[1] = 0;
+	arrQuerySlots[2] = 1;
+	iCallbackCalls = 0;
+	iRet = xuiInventoryGridSortSlots(pTempGrid, arrQuerySlots, 3, XUI_INVENTORY_SORT_CUSTOM, 0u, __xuiInventoryGridTestDestroyingCompare, &iCallbackCalls);
+	pTempGrid = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iCallbackCalls == 1 && arrQuerySlots[0] == 2 && arrQuerySlots[1] == 0 && arrQuerySlots[2] == 1, "destroyed comparator leaves caller order unchanged");
+
+	tDesc.iSlotCount = 1;
+	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempGrid != NULL, "create clear-all grid");
+	__xuiInventoryGridTestSlot(&tSlot, 0, 900, 2, "Clear me", "", XUI_COLOR_WHITE);
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pTempGrid, 0, &tSlot) == XUI_OK &&
+		xuiInventoryGridSetSelected(pTempGrid, 0, 1, 0) == XUI_OK, "prepare clear-all grid");
+	XUI_TEST_CHECK(xuiInventoryGridClearAll(pTempGrid) == XUI_OK &&
+		xuiInventoryGridGetSlot(pTempGrid, 0, &tOutSlot) == XUI_OK &&
+		(tOutSlot.iFlags & XUI_INVENTORY_SLOT_EMPTY) != 0u && xuiInventoryGridGetCurrent(pTempGrid) == -1,
+		"clear-all resets slots and selection");
+	xuiWidgetDestroy(pTempGrid);
+	pTempGrid = NULL;
+
+	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempGrid != NULL, "create split destroy grid");
+	__xuiInventoryGridTestSlot(&tSlot, 0, 901, 10, "Stack", "", XUI_COLOR_WHITE);
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pTempGrid, 0, &tSlot) == XUI_OK, "set split destroy slot");
+	iCallbackCalls = 0;
+	XUI_TEST_CHECK(xuiInventoryGridSetSplitCallback(pTempGrid, __xuiInventoryGridTestDestroyingSplit, &iCallbackCalls) == XUI_OK, "set destroying split callback");
+	XUI_TEST_CHECK(xuiInventoryGridOpenSplitPopup(pTempGrid, 0, 10.0f, 10.0f) == XUI_OK, "open split destroy popup");
+	iRet = xuiInventoryGridCommitSplitPopup(pTempGrid);
+	pTempGrid = NULL;
+	XUI_TEST_CHECK(iRet == XUI_OK && iCallbackCalls == 1, "split callback may destroy grid safely");
+
+	XUI_TEST_CHECK(xuiCreate(&pTempContext) == XUI_OK && pTempContext != NULL, "create context destroy query context");
+	XUI_TEST_CHECK(xuiInventoryGridCreate(pTempContext, &pTempGrid, &tDesc) == XUI_OK && pTempGrid != NULL, "create context destroy query grid");
+	memset(&tQuery, 0, sizeof(tQuery));
+	tQuery.iSize = sizeof(tQuery);
+	tQuery.onFilter = __xuiInventoryGridTestDestroyingContextFilter;
+	tQuery.pFilterUser = pTempContext;
+	iQueryCount = 77;
+	iRet = xuiInventoryGridQuerySlots(pTempGrid, &tQuery, arrQuerySlots, 32, &iQueryCount);
+	pTempGrid = NULL;
+	pTempContext = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iQueryCount == 0, "query aborts safely when callback destroys context");
+
 	iRet = xuiTestSurfaceCreate(&tProxyState, &pTarget, 360, 240, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	memset(arrStyle, 0, sizeof(arrStyle));
@@ -653,6 +1010,7 @@ int main(void)
 
 	iRet = xuiInventoryGridSetSlotCount(pGrid, 10000);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiInventoryGridGetSlotCount(pGrid) == 10000, "large slot count");
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pGrid) == 10001, "large accessible slot count");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout large inventory");
 	iRet = xuiInventoryGridGetVisibleRange(pGrid, &tVisibleRange);
@@ -673,6 +1031,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tVisibleRange.iFirstSlot <= 9999 && tVisibleRange.iLastSlot >= 9999, "large visible range includes last slot");
 
 cleanup:
+	if ( pTempGrid != NULL ) {
+		xuiWidgetDestroy(pTempGrid);
+	}
+	if ( pTempContext != NULL ) {
+		xuiDestroy(pTempContext);
+	}
 	if ( pXsonValue != NULL ) {
 		xrtValueRelease(pXsonValue);
 	}

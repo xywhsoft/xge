@@ -55,6 +55,22 @@ int main(void)
 	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 0, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "goto offset");
 	XUI_TEST_CHECK(xuiCodeSelectionGetCount(pSelection) == 1, "goto clears extra selections");
+	iRet = xuiCodeSelectionSetRange(pSelection, pDocument, 2, 8);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_MOVE_LEFT) == XUI_OK,
+		"left collapses forward selection");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iAnchorOffset == 2 && tState.iCaretOffset == 2,
+		"left collapses to selection start");
+	iRet = xuiCodeSelectionSetRange(pSelection, pDocument, 8, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_MOVE_RIGHT) == XUI_OK,
+		"right collapses reversed selection");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iAnchorOffset == 8 && tState.iCaretOffset == 8,
+		"right collapses to selection end");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset after collapse checks");
 	iRet = xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_MOVE_RIGHT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "move right");
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
@@ -71,6 +87,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "word left");
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	XUI_TEST_CHECK(tState.iCaretOffset == 0, "word left caret");
+	iRet = xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_SELECT_WORD_RIGHT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select word right");
+	iRet = xuiCodeSelectionGetRange(pSelection, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 6,
+		"ctrl shift right extends to next word");
+	iRet = xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_SELECT_WORD_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeSelectionHasSelection(pSelection),
+		"ctrl shift left contracts word selection");
 
 	iRet = xuiCodeSelectionGotoLineColumn(pSelection, pDocument, 0, 8, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "goto line column");

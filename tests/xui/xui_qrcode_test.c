@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -19,10 +20,24 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pQrCode;
+	xui_widget pInvalid;
 	xui_surface pTarget;
 	xui_surface pIcon;
+	xui_surface pCache;
 	xui_qrcode_desc_t tDesc;
+	xui_qrcode_desc_t tInvalidDesc;
+	xui_accessible_node_t tNode;
 	xui_rect_i_t tFullRect;
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	char sLongValue[512];
+	const char* sPreviousValue;
+	uint32_t iAccessibilityRevision;
+	uint32_t iDirtyFlags;
+	int iChangeCount;
+	int iDarkModules;
+	int iX;
+	int iY;
 	int iVersion;
 	int iModuleCount;
 	int iFailed;
@@ -31,8 +46,11 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pQrCode = NULL;
+	pInvalid = NULL;
 	pTarget = NULL;
 	pIcon = NULL;
+	pCache = NULL;
+	pBudget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -48,6 +66,18 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 260.0f, 220.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
+
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.fPadding = NAN;
+	pInvalid = pRoot;
+	iRet = xuiQrCodeCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject NaN descriptor");
+	tInvalidDesc.fPadding = 0.0f;
+	tInvalidDesc.tIconSrc.fX = (int)XUI_LAYOUT_UNBOUNDED + 1024;
+	pInvalid = pRoot;
+	iRet = xuiQrCodeCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject out-of-range icon source");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -89,6 +119,71 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) == 1, "short value version");
 	XUI_TEST_CHECK(strcmp(xuiQrCodeGetValue(pQrCode), "hello") == 0, "value getter");
 	XUI_TEST_CHECK(xuiQrCodeGetChangeCount(pQrCode) >= 2, "change count");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiWidgetGetAccessibleNode(pQrCode, 0, &tNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNode.iRole == XUI_ACCESSIBLE_ROLE_IMAGE &&
+		strcmp(tNode.sName, "hello") == 0 && strcmp(tNode.sValue, "hello") == 0,
+		"qrcode accessibility");
+	iAccessibilityRevision = xuiWidgetGetAccessibilityRevision(pQrCode);
+
+	XUI_TEST_CHECK(xuiQrCodeSetPadding(pQrCode, NAN) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject NaN padding");
+	XUI_TEST_CHECK(xuiQrCodeSetPadding(pQrCode, INFINITY) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject infinite padding");
+	XUI_TEST_CHECK(xuiQrCodeSetIcon(pQrCode, pIcon,
+		(xui_rect_t){(int)XUI_LAYOUT_UNBOUNDED + 1024, 0, 16, 16}, 16.0f) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject out-of-range icon source");
+	XUI_TEST_CHECK(xuiQrCodeSetIcon(pQrCode, pIcon,
+		(xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f}, INFINITY) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject infinite icon size");
+
+	memset(sLongValue, 'A', sizeof(sLongValue));
+	sLongValue[sizeof(sLongValue) - 1] = '\0';
+	iChangeCount = xuiQrCodeGetChangeCount(pQrCode);
+	iVersion = xuiQrCodeGetVersion(pQrCode);
+	sPreviousValue = xuiQrCodeGetValue(pQrCode);
+	iRet = xuiQrCodeSetValue(pQrCode, sLongValue);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_BUFFER_TOO_SMALL &&
+		xuiQrCodeGetChangeCount(pQrCode) == iChangeCount &&
+		xuiQrCodeGetVersion(pQrCode) == iVersion &&
+		strcmp(xuiQrCodeGetValue(pQrCode), sPreviousValue) == 0,
+		"oversized value rollback");
+
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 1, XUI_QRCODE_MAX_VERSION);
+	XUI_TEST_CHECK(iRet == XUI_OK, "expand version range");
+	sLongValue[30] = '\0';
+	iChangeCount = xuiQrCodeGetChangeCount(pQrCode);
+	iVersion = xuiQrCodeGetVersion(pQrCode);
+	sPreviousValue = xuiQrCodeGetValue(pQrCode);
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget), "create allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope), "enter allocation budget");
+	iRet = xuiQrCodeSetValue(pQrCode, sLongValue);
+	XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope), "leave allocation budget");
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		xuiQrCodeGetChangeCount(pQrCode) == iChangeCount &&
+		xuiQrCodeGetVersion(pQrCode) == iVersion &&
+		strcmp(xuiQrCodeGetValue(pQrCode), sPreviousValue) == 0,
+		"allocation failure preserves value and matrix");
+	iRet = xuiQrCodeSetValue(pQrCode, sLongValue);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) > 1, "larger value version");
+	iChangeCount = xuiQrCodeGetChangeCount(pQrCode);
+	iVersion = xuiQrCodeGetVersion(pQrCode);
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_BUFFER_TOO_SMALL &&
+		xuiQrCodeGetChangeCount(pQrCode) == iChangeCount && xuiQrCodeGetVersion(pQrCode) == iVersion,
+		"version range rollback");
+	iRet = xuiQrCodeSetValue(pQrCode, "hello");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore short value");
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) == 1, "restore version range");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiWidgetGetAccessibilityRevision(pQrCode) > iAccessibilityRevision,
+		"value updates accessibility");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 260, 220, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -97,10 +192,43 @@ int main(void)
 	tFullRect = (xui_rect_i_t){0, 0, 260, 220};
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
-	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pQrCode, 0) != NULL, "cache surface");
+	pCache = xuiWidgetGetCacheSurface(pQrCode, 0);
+	XUI_TEST_CHECK(pCache != NULL, "cache surface");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pTarget) > 0 || xuiTestSurfaceGetDrawCount(pTarget) > 0, "draw count");
+	iDarkModules = 0;
+	for ( iY = 0; iY < xuiQrCodeGetModuleCount(pQrCode); iY++ ) {
+		for ( iX = 0; iX < xuiQrCodeGetModuleCount(pQrCode); iX++ ) {
+			if ( xuiQrCodeGetModule(pQrCode, iX, iY) == 1 ) iDarkModules++;
+		}
+	}
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) < iDarkModules,
+		"dark module runs are batched");
+	iDirtyFlags = xuiWidgetGetDirtyFlags(pQrCode);
+	iChangeCount = xuiQrCodeGetChangeCount(pQrCode);
+	iRet = xuiQrCodeSetValue(pQrCode, "hello");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetChangeCount(pQrCode) == iChangeCount &&
+		xuiWidgetGetDirtyFlags(pQrCode) == iDirtyFlags, "same value is idempotent");
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetChangeCount(pQrCode) == iChangeCount &&
+		xuiWidgetGetDirtyFlags(pQrCode) == iDirtyFlags, "same version range is idempotent");
+	iRet = xuiQrCodeSetColors(pQrCode, xuiQrCodeGetForegroundColor(pQrCode),
+		xuiQrCodeGetBackgroundColor(pQrCode));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pQrCode) == iDirtyFlags,
+		"same colors are idempotent");
+	xuiTestSurfaceReset(pCache);
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pIcon,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "icon surface update");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "update after icon surface change");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) > 0,
+		"icon generation invalidates qrcode cache");
 
 cleanup:
+	if ( pBudget != NULL ) {
+		xrtAllocationBudgetFree(pBudget);
+	}
 	if ( pTarget != NULL ) {
 		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	}

@@ -337,7 +337,8 @@ static void memory_budget(void)
 	CHECK(xuiTerminalResize(terminal, 160, 40) == XUI_OK);
 	CHECK(xuiTerminalFindText(terminal, "generated terminal output", 0, NULL, NULL) == 1);
 	size = xuiTerminalSerializeText(terminal, NULL, 0);
-	text = (char*)malloc((size_t)size + 1u);
+	CHECK(size >= 0 && size < INT_MAX);
+	text = (size >= 0 && size < INT_MAX) ? (char*)malloc((size_t)size + 1u) : NULL;
 	CHECK(text != NULL);
 	if (text != NULL) {
 		CHECK(xuiTerminalSerializeText(terminal, text, size + 1) == size);

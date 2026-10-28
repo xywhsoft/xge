@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "src/xui/core/xui_xrt_port.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -36,6 +37,9 @@ static int make_dynamic_branch_ports(xui_workflow pWorkflow, const char* sNodeId
 	(void)pUser;
 	if ( (pPorts == NULL) || (pPortCount == NULL) || (iPortCapacity < 2) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pConfig != NULL && xuiXrtValueGetBool(xuiXrtValueObjectGet(pConfig, "rejectPorts", 11)) ) {
+		return XUI_ERROR_RESOURCE_FAILED;
 	}
 	*pPortCount = 0;
 	pBranches = (pConfig != NULL && xuiXrtValueIsObject(pConfig)) ? xuiXrtValueObjectGet(pConfig, "branches", 8) : NULL;
@@ -94,18 +98,25 @@ int main(void)
 	xui_workflow_node_library_item_t tLibraryItem;
 	xui_flow_node_info_t tNodeInfo;
 	xui_flow_edge_info_t tEdgeInfo;
+	xui_flow_edge_desc_t tInvalidEdge;
+	xui_flow_diagnostic_desc_t tDiagnostic;
 	xui_flow_port_desc_t tStartOut;
 	xui_flow_port_desc_t tLlmIn;
 	xui_flow_port_desc_t tLlmOut;
+	xui_flow_port_desc_t tBadIn;
+	xui_flow_port_desc_t tBadOut;
 	xui_flow_port_desc_t tConditionIn;
 	xui_flow_port_desc_t tConditionTrue;
 	xui_flow_port_desc_t tConditionFalse;
 	xui_flow_port_desc_t tDynamicIn;
 	xui_flow_port_desc_t tEndIn;
+	xui_flow_port_desc_t tDataOut;
+	xui_flow_port_desc_t tDataIn;
 	xui_workflow_variable_desc_t tVariable;
 	xui_workflow_config_field_desc_t tField;
 	xui_workflow_config_diagnostic_t arrDiagnostics[4];
 	xvalue* pSchema;
+	xvalue* pManySchema;
 	xvalue* pDefaultValue;
 	xvalue* pDefaultConfig;
 	xvalue* pNodeConfig;
@@ -123,12 +134,22 @@ int main(void)
 	int iEnd;
 	int iVariable;
 	int iDiagnostics;
+	int i;
+	int bFoundDirectionDiagnostic;
+	int bFoundUnreachableDiagnostic;
+	int bFoundCycleDiagnostic;
+	int bFoundRequiredPortDiagnostic;
+	int bFoundMultiplePortDiagnostic;
+	int iRequiredConfigDiagnostics;
 	int iRet;
 	int iFailed;
 	char sId[64];
+	char sFieldId[32];
+	char sTinyId[2];
 
 	pWorkflow = NULL;
 	pSchema = NULL;
+	pManySchema = NULL;
 	pDefaultValue = NULL;
 	pDefaultConfig = NULL;
 	pNodeConfig = NULL;
@@ -159,7 +180,27 @@ int main(void)
 	XUI_TEST_CHECK(xuiWorkflowFindNodeType(pWorkflow, "start") == 0, "find start type");
 
 	make_control_port(&tLlmIn, "in", XUI_FLOW_PORT_INPUT);
+	tLlmIn.bMulti = 1;
 	make_control_port(&tLlmOut, "out", XUI_FLOW_PORT_OUTPUT);
+	memset(&tType, 0, sizeof(tType));
+	tType.iSize = sizeof(tType);
+	tType.sId = "bad.direction";
+	tType.pInputs = &tLlmOut;
+	tType.iInputCount = 1;
+	iType = 99;
+	iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, &iType);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iType == -1 && xuiWorkflowGetNodeTypeCount(pWorkflow) == 1, "invalid port direction rejected at registration");
+	make_control_port(&tBadIn, "same", XUI_FLOW_PORT_INPUT);
+	make_control_port(&tBadOut, "same", XUI_FLOW_PORT_OUTPUT);
+	memset(&tType, 0, sizeof(tType));
+	tType.iSize = sizeof(tType);
+	tType.sId = "bad.duplicate_port";
+	tType.pInputs = &tBadIn;
+	tType.iInputCount = 1;
+	tType.pOutputs = &tBadOut;
+	tType.iOutputCount = 1;
+	iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED && xuiWorkflowGetNodeTypeCount(pWorkflow) == 1, "duplicate input output port id rejected at registration");
 	iRet = xuiWorkflowConfigSchemaCreate(&pSchema);
 	XUI_TEST_CHECK(iRet == XUI_OK && pSchema != NULL, "create config schema");
 	memset(&tField, 0, sizeof(tField));
@@ -304,6 +345,22 @@ int main(void)
 	tField.iKind = XUI_WORKFLOW_CONFIG_FIELD_MAPPING_BUILDER;
 	iRet = xuiWorkflowConfigSchemaAddField(pSchema, &tField);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add mapping builder config field");
+	memset(&tField, 0, sizeof(tField));
+	tField.iSize = sizeof(tField);
+	tField.sId = "model";
+	tField.iKind = XUI_WORKFLOW_CONFIG_FIELD_STRING;
+	iRet = xuiWorkflowConfigSchemaAddField(pSchema, &tField);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED, "duplicate config field rejected");
+	memset(&tField, 0, sizeof(tField));
+	tField.iSize = sizeof(tField);
+	tField.sId = "invalidRange";
+	tField.iKind = XUI_WORKFLOW_CONFIG_FIELD_FLOAT;
+	tField.bHasMin = 1;
+	tField.fMin = 2.0;
+	tField.bHasMax = 1;
+	tField.fMax = 1.0;
+	iRet = xuiWorkflowConfigSchemaAddField(pSchema, &tField);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "inverted config range rejected");
 	memset(&tType, 0, sizeof(tType));
 	tType.iSize = sizeof(tType);
 	tType.sId = "llm.chat";
@@ -318,8 +375,15 @@ int main(void)
 	tType.onValidate = validate_llm_manual_mode;
 	iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, &iType);
 	XUI_TEST_CHECK(iRet == XUI_OK && iType == 1, "register llm");
+	memset(&tField, 0, sizeof(tField));
+	tField.iSize = sizeof(tField);
+	tField.sId = "lateExternalField";
+	tField.iKind = XUI_WORKFLOW_CONFIG_FIELD_STRING;
+	iRet = xuiWorkflowConfigSchemaAddField(pSchema, &tField);
+	XUI_TEST_CHECK(iRet == XUI_OK, "mutate caller schema after registration");
 	iRet = xuiWorkflowCreateDefaultConfig(pWorkflow, "llm.chat", &pDefaultConfig);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDefaultConfig != NULL, "create default config");
+	XUI_TEST_CHECK(xuiXrtValueType(xuiXrtValueObjectGet(pDefaultConfig, "lateExternalField", 17)) == XVALUE_NULL, "registered schema isolated from caller mutation");
 	XUI_TEST_CHECK(strcmp((const char*)xuiXrtValueObjectGetText(pDefaultConfig, "model", 5), "glm") == 0, "default string config");
 	XUI_TEST_CHECK(xuiXrtValueObjectGetFloat(pDefaultConfig, "temperature", 11) == 0.7, "default float config");
 	XUI_TEST_CHECK(xuiXrtValueObjectGetBool(pDefaultConfig, "enabled", 7), "default bool config");
@@ -353,6 +417,10 @@ int main(void)
 	xuiXrtValueObjectSetText(pBadConfig, "payload", 7, "not-object", 10, FALSE);
 	iRet = xuiWorkflowValidateConfig(pWorkflow, "llm.chat", pBadConfig, &iDiagnostics);
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics == 2, "complex field type diagnostics");
+	xuiXrtValueObjectSetFloat(pBadConfig, "temperature", 11, NAN);
+	iRet = xuiWorkflowValidateConfigEx(pWorkflow, "llm.chat", pBadConfig, arrDiagnostics, 4, &iDiagnostics);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics == 3 && strcmp(arrDiagnostics[0].sCode, "number.finite") == 0, "non-finite config number diagnosed");
+	xuiXrtValueObjectSetFloat(pBadConfig, "temperature", 11, 0.7);
 
 	iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, NULL);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED, "duplicate type rejected");
@@ -495,12 +563,87 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphGetNodePortCount(pGraph, iDynamic) == 2, "dynamic ports remove missing branch");
 	iRet = xuiFlowGraphGetEdge(pGraph, xuiFlowGraphFindEdge(pGraph, "e_dynamic_end"), &tEdgeInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEdgeInfo.bInvalid && tEdgeInfo.iFromPort < 0, "missing dynamic port marks edge invalid");
+	pNodeConfig = xrtValueDeepClone(pDynamicConfig);
+	XUI_TEST_CHECK(pNodeConfig != NULL, "clone dynamic config for callback failure");
+	XUI_TEST_CHECK(xuiXrtValueObjectSetBool(pNodeConfig, "rejectPorts", 11, TRUE), "set dynamic callback rejection");
+	iRet = xuiWorkflowSetNodeConfig(pWorkflow, "n_dynamic", pNodeConfig);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_RESOURCE_FAILED, "dynamic callback failure rejected before mutation");
+	xrtValueRelease(pNodeConfig);
+	pNodeConfig = NULL;
+	iRet = xuiWorkflowGetNodeConfig(pWorkflow, "n_dynamic", &pNodeConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiXrtValueGetBool(xuiXrtValueObjectGet(pNodeConfig, "rejectPorts", 11)) &&
+	               xrtValueCount(xuiXrtValueObjectGet(pNodeConfig, "branches", 8)) == 1, "callback failure preserves config");
+	xrtValueRelease(pNodeConfig);
+	pNodeConfig = xrtValueDeepClone(pDynamicConfig);
+	XUI_TEST_CHECK(pNodeConfig != NULL, "clone dynamic config for duplicate ports");
+	pBranches = xrtValueArray();
+	XUI_TEST_CHECK(pBranches != NULL, "create duplicate dynamic branches");
+	xuiXrtValueArrayAppendText(pBranches, "maybe", 5, FALSE);
+	xuiXrtValueArrayAppendText(pBranches, "maybe", 5, FALSE);
+	XUI_TEST_CHECK(xuiXrtValueObjectSetTake(pNodeConfig, "branches", 8, pBranches, TRUE), "set duplicate dynamic branches");
+	pBranches = NULL;
+	iRet = xuiWorkflowSetNodeConfig(pWorkflow, "n_dynamic", pNodeConfig);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED, "duplicate dynamic ports rejected");
+	xrtValueRelease(pNodeConfig);
+	pNodeConfig = NULL;
+	iRet = xuiWorkflowGetNodeConfig(pWorkflow, "n_dynamic", &pNodeConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && xrtValueCount(xuiXrtValueObjectGet(pNodeConfig, "branches", 8)) == 1 &&
+	               xuiFlowGraphGetNodePortCount(pGraph, iDynamic) == 2, "failed dynamic rebuild rolls back config and ports");
+	xrtValueRelease(pNodeConfig);
+	pNodeConfig = NULL;
 	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics >= 1 && xuiFlowGraphGetDiagnosticCount(pGraph) == iDiagnostics, "missing dynamic port diagnostic");
+	bFoundUnreachableDiagnostic = 0;
+	for ( i = 0; i < xuiFlowGraphGetDiagnosticCount(pGraph); ++i ) {
+		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+		iRet = xuiFlowGraphGetDiagnostic(pGraph, i, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK, "read reachability diagnostic");
+		if ( tDiagnostic.sCode != NULL && strcmp(tDiagnostic.sCode, "workflow.node.unreachable") == 0 ) {
+			bFoundUnreachableDiagnostic = 1;
+		}
+	}
+	XUI_TEST_CHECK(bFoundUnreachableDiagnostic, "disconnected workflow node diagnosed as unreachable");
 	iRet = xuiWorkflowConnect(pWorkflow, "e_bad_direction", "n_llm", "in", "n_start", "out", NULL);
-	XUI_TEST_CHECK(iRet == XUI_OK, "add direction-invalid edge");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject direction-invalid edge");
+	memset(&tInvalidEdge, 0, sizeof(tInvalidEdge));
+	tInvalidEdge.iSize = sizeof(tInvalidEdge);
+	tInvalidEdge.sId = "e_bad_direction";
+	tInvalidEdge.iKind = XUI_FLOW_PORT_CONTROL;
+	tInvalidEdge.sFromNode = "n_llm";
+	tInvalidEdge.sFromPort = "in";
+	tInvalidEdge.sToNode = "n_start";
+	tInvalidEdge.sToPort = "out";
+	iRet = xuiFlowGraphAddEdgePreserveInvalid(pGraph, &tInvalidEdge, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "preserve direction-invalid imported edge");
 	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics >= 2, "edge direction diagnostic");
+	bFoundDirectionDiagnostic = 0;
+	for ( i = 0; i < xuiFlowGraphGetDiagnosticCount(pGraph); ++i ) {
+		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+		iRet = xuiFlowGraphGetDiagnostic(pGraph, i, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK, "read workflow diagnostic");
+		if ( tDiagnostic.sCode != NULL && strcmp(tDiagnostic.sCode, "workflow.edge.direction") == 0 &&
+		     tDiagnostic.sEdge != NULL && strcmp(tDiagnostic.sEdge, "e_bad_direction") == 0 ) {
+			bFoundDirectionDiagnostic = 1;
+		}
+	}
+	XUI_TEST_CHECK(bFoundDirectionDiagnostic, "direction-invalid edge classified accurately");
+	iRet = xuiWorkflowConnect(pWorkflow, "e_cycle_a", "n_llm", "out", "n_dynamic", "in", NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "connect first cycle edge");
+	iRet = xuiWorkflowConnect(pWorkflow, "e_cycle_b", "n_dynamic", "maybe", "n_llm", "in", NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "connect second cycle edge");
+	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "validate control cycle");
+	bFoundCycleDiagnostic = 0;
+	for ( i = 0; i < xuiFlowGraphGetDiagnosticCount(pGraph); ++i ) {
+		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+		iRet = xuiFlowGraphGetDiagnostic(pGraph, i, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK, "read cycle diagnostic");
+		if ( tDiagnostic.sCode != NULL && strcmp(tDiagnostic.sCode, "workflow.control.cycle") == 0 ) {
+			bFoundCycleDiagnostic = 1;
+		}
+	}
+	XUI_TEST_CHECK(bFoundCycleDiagnostic, "control cycle diagnosed");
 	iRet = xuiWorkflowRemoveNode(pWorkflow, "n_start");
 	XUI_TEST_CHECK(iRet == XUI_OK, "remove start for validation");
 	iRet = xuiWorkflowRemoveNode(pWorkflow, "n_end");
@@ -510,10 +653,15 @@ int main(void)
 
 	iRet = xuiWorkflowAddNode(pWorkflow, "missing", "n_missing", NULL, 0.0f, 0.0f, NULL);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing type rejected");
+	sTinyId[0] = 'x';
+	sTinyId[1] = '\0';
+	iRet = xuiWorkflowMakeVariableId(pWorkflow, sTinyId, (int)sizeof(sTinyId));
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED && sTinyId[0] == '\0', "small variable id buffer rejected");
 	iRet = xuiWorkflowMakeVariableId(pWorkflow, sId, (int)sizeof(sId));
 	XUI_TEST_CHECK(iRet == XUI_OK && strncmp(sId, "var_", 4) == 0, "make variable id");
-	pDefaultValue = xuiXrtValueCreateText("hello", 5, FALSE);
+	pDefaultValue = xrtValueObject();
 	XUI_TEST_CHECK(pDefaultValue != NULL, "create variable default");
+	XUI_TEST_CHECK(xuiXrtValueObjectSetText(pDefaultValue, "value", 5, "hello", 5, FALSE), "set variable default value");
 	memset(&tVariable, 0, sizeof(tVariable));
 	tVariable.iSize = sizeof(tVariable);
 	tVariable.sId = sId;
@@ -523,12 +671,126 @@ int main(void)
 	tVariable.pDefaultValue = pDefaultValue;
 	iRet = xuiWorkflowAddVariable(pWorkflow, &tVariable, &iVariable);
 	XUI_TEST_CHECK(iRet == XUI_OK && iVariable == 0, "add variable");
+	XUI_TEST_CHECK(xuiXrtValueObjectSetText(pDefaultValue, "value", 5, "changed", 7, FALSE), "mutate caller variable default");
+	memset(&tVariable, 0, sizeof(tVariable));
+	iRet = xuiWorkflowGetVariable(pWorkflow, iVariable, &tVariable);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp((const char*)xuiXrtValueObjectGetText(tVariable.pDefaultValue, "value", 5), "hello") == 0, "variable default isolated from caller mutation");
 	XUI_TEST_CHECK(xuiWorkflowFindVariable(pWorkflow, sId) == 0, "find variable");
 	XUI_TEST_CHECK(xuiWorkflowGetVariableCount(pWorkflow) == 1, "variable count");
-	iRet = xuiWorkflowAddVariable(pWorkflow, &tVariable, NULL);
-	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED, "duplicate variable rejected");
+	iVariable = 99;
+	tVariable.iSize = sizeof(tVariable);
+	iRet = xuiWorkflowAddVariable(pWorkflow, &tVariable, &iVariable);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED && iVariable == -1, "duplicate variable rejected and output cleared");
+
+	make_control_port(&tDataOut, "data", XUI_FLOW_PORT_OUTPUT);
+	tDataOut.iKind = XUI_FLOW_PORT_DATA;
+	memset(&tType, 0, sizeof(tType));
+	tType.iSize = sizeof(tType);
+	tType.sId = "data.source";
+	tType.pOutputs = &tDataOut;
+	tType.iOutputCount = 1;
+	iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "register data source");
+	make_control_port(&tDataIn, "data", XUI_FLOW_PORT_INPUT);
+	tDataIn.iKind = XUI_FLOW_PORT_DATA;
+	tDataIn.bRequired = 1;
+	memset(&tType, 0, sizeof(tType));
+	tType.iSize = sizeof(tType);
+	tType.sId = "data.target";
+	tType.pInputs = &tDataIn;
+	tType.iInputCount = 1;
+	iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "register data target");
+	iRet = xuiWorkflowAddNode(pWorkflow, "data.source", "n_data_source", NULL, 0.0f, 0.0f, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add data source");
+	iRet = xuiWorkflowAddNode(pWorkflow, "data.target", "n_data_target", NULL, 0.0f, 0.0f, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add data target");
+	iRet = xuiWorkflowConnect(pWorkflow, "e_data", "n_data_source", "data", "n_data_target", "data", NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "connect data ports through workflow api");
+	iRet = xuiFlowGraphGetEdge(pGraph, xuiFlowGraphFindEdge(pGraph, "e_data"), &tEdgeInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEdgeInfo.iKind == XUI_FLOW_PORT_DATA, "workflow connection infers data edge kind");
+	iRet = xuiWorkflowConnect(pWorkflow, "e_data_duplicate", "n_data_source", "data", "n_data_target", "data", NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject second connection to non-multi input");
+	memset(&tInvalidEdge, 0, sizeof(tInvalidEdge));
+	tInvalidEdge.iSize = sizeof(tInvalidEdge);
+	tInvalidEdge.sId = "e_data_imported_duplicate";
+	tInvalidEdge.iKind = XUI_FLOW_PORT_DATA;
+	tInvalidEdge.sFromNode = "n_data_source";
+	tInvalidEdge.sFromPort = "data";
+	tInvalidEdge.sToNode = "n_data_target";
+	tInvalidEdge.sToPort = "data";
+	iRet = xuiFlowGraphAddEdgePreserveInvalid(pGraph, &tInvalidEdge, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "preserve imported duplicate input edge");
+	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "validate imported duplicate input edge");
+	bFoundMultiplePortDiagnostic = 0;
+	for ( i = 0; i < xuiFlowGraphGetDiagnosticCount(pGraph); ++i ) {
+		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+		iRet = xuiFlowGraphGetDiagnostic(pGraph, i, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK, "read multiple input diagnostic");
+		if ( tDiagnostic.sCode != NULL && strcmp(tDiagnostic.sCode, "workflow.port.multiple") == 0 &&
+		     tDiagnostic.sNode != NULL && strcmp(tDiagnostic.sNode, "n_data_target") == 0 ) {
+			bFoundMultiplePortDiagnostic = 1;
+		}
+	}
+	XUI_TEST_CHECK(bFoundMultiplePortDiagnostic, "imported duplicate input edge diagnosed");
+	iRet = xuiFlowGraphRemoveEdge(pGraph, "e_data_imported_duplicate");
+	XUI_TEST_CHECK(iRet == XUI_OK, "remove imported duplicate input edge");
+	iRet = xuiFlowGraphRemoveEdge(pGraph, "e_data");
+	XUI_TEST_CHECK(iRet == XUI_OK, "remove required input connection");
+	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "validate disconnected required input");
+	bFoundRequiredPortDiagnostic = 0;
+	for ( i = 0; i < xuiFlowGraphGetDiagnosticCount(pGraph); ++i ) {
+		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+		iRet = xuiFlowGraphGetDiagnostic(pGraph, i, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK, "read required port diagnostic");
+		if ( tDiagnostic.sCode != NULL && strcmp(tDiagnostic.sCode, "workflow.port.required") == 0 &&
+		     tDiagnostic.sNode != NULL && strcmp(tDiagnostic.sNode, "n_data_target") == 0 &&
+		     tDiagnostic.sPath != NULL && strcmp(tDiagnostic.sPath, "data") == 0 ) {
+			bFoundRequiredPortDiagnostic = 1;
+		}
+	}
+	XUI_TEST_CHECK(bFoundRequiredPortDiagnostic, "required input port diagnosed when disconnected");
+
+	iRet = xuiWorkflowConfigSchemaCreate(&pManySchema);
+	XUI_TEST_CHECK(iRet == XUI_OK && pManySchema != NULL, "create large diagnostic schema");
+	for ( i = 0; i < 20; ++i ) {
+		snprintf(sFieldId, sizeof(sFieldId), "required_%02d", i);
+		memset(&tField, 0, sizeof(tField));
+		tField.iSize = sizeof(tField);
+		tField.sId = sFieldId;
+		tField.iKind = XUI_WORKFLOW_CONFIG_FIELD_STRING;
+		tField.bRequired = 1;
+		iRet = xuiWorkflowConfigSchemaAddField(pManySchema, &tField);
+		XUI_TEST_CHECK(iRet == XUI_OK, "add large diagnostic schema field");
+	}
+	memset(&tType, 0, sizeof(tType));
+	tType.iSize = sizeof(tType);
+	tType.sId = "many.required";
+	tType.pConfigSchema = pManySchema;
+	iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "register large diagnostic type");
+	iRet = xuiWorkflowAddNode(pWorkflow, "many.required", "n_many_required", NULL, 0.0f, 0.0f, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add large diagnostic node");
+	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "validate more than sixteen config errors");
+	iRequiredConfigDiagnostics = 0;
+	for ( i = 0; i < xuiFlowGraphGetDiagnosticCount(pGraph); ++i ) {
+		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+		iRet = xuiFlowGraphGetDiagnostic(pGraph, i, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK, "read expanded config diagnostic");
+		if ( tDiagnostic.sCode != NULL && strcmp(tDiagnostic.sCode, "required") == 0 &&
+		     tDiagnostic.sNode != NULL && strcmp(tDiagnostic.sNode, "n_many_required") == 0 ) {
+			iRequiredConfigDiagnostics++;
+		}
+	}
+	XUI_TEST_CHECK(iRequiredConfigDiagnostics == 20, "graph validation preserves all config diagnostics");
 
 cleanup:
+	if ( pManySchema != NULL ) {
+		xrtValueRelease(pManySchema);
+	}
 	if ( pChildren != NULL ) {
 		xrtValueRelease(pChildren);
 	}

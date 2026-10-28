@@ -9271,7 +9271,7 @@ static void inline_source_syntax(void)
     CHECK(xuiDocumentAcquireSnapshot(d, &after) == XUI_OK); expect_same_syntax(s, after);
     xuiDocumentSnapshotRelease(after); xuiDocumentSnapshotRelease(s); xuiDocumentRelease(d);
     {
-        const char* forms = "[Foo][] [Foo] [x][foo] ![Foo][] [i](u) <https://x.test> https://y.tests\xge\n\n[foo]: <dest> \"\"\n";
+        const char* forms = "[Foo][] [Foo] [x][foo] ![Foo][] [i](u) <https://x.test> https://y.test\n\n[foo]: <dest> \"\"\n";
         uint64_t i; d = test_markdown_open(forms); CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
         CHECK(xuiDocumentSnapshotGetSourceInfo(s, &info) == XUI_OK && info.iInlineSyntaxCount == 8 && info.iReferenceDefinitionCount == 1);
         for (i = 0; i < 8; i++) {
@@ -17134,7 +17134,7 @@ static void extension_payload_roundtrip(void)
     CHECK(xuiDocumentFragmentImportHtml(html, html_bytes, &html_fragment) == XUI_OK);
     {
         static const char* malformed[] = {
-            "<pre data-xui-object=\"extension\" data-xui-info=\"application/x-tests\xge\" "
+            "<pre data-xui-object=\"extension\" data-xui-info=\"application/x-test\" "
                 "data-xui-payload-base64=\"!\">fallback</pre>",
             "<pre data-xui-object=\"extension\" data-xui-version=\"0\">fallback</pre>",
             "<pre data-xui-object=\"extension\" data-xui-version=\"4294967296\">fallback</pre>",

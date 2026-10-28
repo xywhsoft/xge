@@ -14,11 +14,13 @@
 	} while ( 0 )
 
 typedef struct xui_toast_test_state_t {
+	xui_toast* ppToast;
 	int iClickCount;
 	int iLastClickId;
 	int iCloseCount;
 	int iLastCloseId;
 	int iLastReason;
+	int iDestroyCount;
 } xui_toast_test_state_t;
 
 static int __xuiToastDispatchMove(xui_context pContext, float fX, float fY, uint32_t iButtons)
@@ -35,6 +37,15 @@ static int __xuiToastDispatchDown(xui_context pContext, float fX, float fY)
 	int iRet;
 
 	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiToastDispatchUp(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
 }
@@ -73,6 +84,39 @@ static void __xuiToastClose(xui_toast pToast, int iToastId, int iReason, void* p
 	}
 }
 
+static void __xuiToastDestroyOnClick(xui_toast pToast, int iToastId, void* pUser)
+{
+	xui_toast_test_state_t* pState;
+
+	pState = (xui_toast_test_state_t*)pUser;
+	if ( pState != NULL ) {
+		pState->iClickCount++;
+		pState->iLastClickId = iToastId;
+		pState->iDestroyCount++;
+	}
+	xuiToastDestroy(pToast);
+	if ( (pState != NULL) && (pState->ppToast != NULL) && (*pState->ppToast == pToast) ) {
+		*pState->ppToast = NULL;
+	}
+}
+
+static void __xuiToastDestroyOnClose(xui_toast pToast, int iToastId, int iReason, void* pUser)
+{
+	xui_toast_test_state_t* pState;
+
+	pState = (xui_toast_test_state_t*)pUser;
+	if ( pState != NULL ) {
+		pState->iCloseCount++;
+		pState->iLastCloseId = iToastId;
+		pState->iLastReason = iReason;
+		pState->iDestroyCount++;
+	}
+	xuiToastDestroy(pToast);
+	if ( (pState != NULL) && (pState->ppToast != NULL) && (*pState->ppToast == pToast) ) {
+		*pState->ppToast = NULL;
+	}
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tProxyState;
@@ -80,6 +124,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_toast pToast;
+	xui_toast pInvalidToast;
 	xui_toast_desc_t tDesc;
 	xui_toast_metrics_t tMetrics;
 	xui_toast_colors_t tColors;
@@ -143,6 +188,11 @@ int main(void)
 	tDesc.tMetrics.fCloseSize = 16.0f;
 	tDesc.tMetrics.fProgressHeight = 2.0f;
 	tDesc.tMetrics.iMaxVisible = 2;
+	pInvalidToast = (xui_toast)(uintptr_t)1;
+	tDesc.iPlacement = -1;
+	iRet = xuiToastCreate(pContext, &pInvalidToast, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidToast == NULL, "invalid create clears output");
+	tDesc.iPlacement = XUI_TOAST_PLACEMENT_TOP_RIGHT;
 	iRet = xuiToastCreate(pContext, &pToast, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pToast != NULL, "toast create");
 	iRet = xuiToastSetClose(pToast, __xuiToastClose, &tState);
@@ -176,6 +226,11 @@ int main(void)
 	XUI_TEST_CHECK(pCache != NULL, "item cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) > 0, "item rendered");
 	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pCache) > 0, "text rendered");
+	xuiTestProxyResetTextCounters(&tProxyState);
+	iRet = xuiWidgetInvalidate(xuiToastGetItemWidget(pToast, 0), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate toast text");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tProxyState.iLastTextDrawSize > 0, "toast lines use bounded text lengths");
 
 	iRet = xuiUpdate(pContext, 0.05f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 2 && xuiToastGetPendingCount(pToast) == 1, "before expire");
@@ -187,6 +242,9 @@ int main(void)
 	tClose = xuiToastGetCloseRect(pToast, 0);
 	iRet = __xuiToastDispatchPointerDown(pContext, tClose.fX + tClose.fW * 0.5f, tClose.fY + tClose.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "close button down");
+	XUI_TEST_CHECK(xuiToastGetActiveCount(pToast) == 2, "close button waits for release");
+	iRet = __xuiToastDispatchUp(pContext, tClose.fX + tClose.fW * 0.5f, tClose.fY + tClose.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close button up");
 	XUI_TEST_CHECK(xuiToastGetActiveCount(pToast) == 2, "close button deferred");
 	iRet = xuiUpdate(pContext, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 1, "close button processed");
@@ -195,6 +253,9 @@ int main(void)
 	tItem0 = xuiToastGetItemRect(pToast, 0);
 	iRet = __xuiToastDispatchPointerDown(pContext, tItem0.fX + tItem0.fW * 0.5f, tItem0.fY + tItem0.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "body down");
+	XUI_TEST_CHECK(xuiToastGetActiveCount(pToast) == 1, "body waits for release");
+	iRet = __xuiToastDispatchUp(pContext, tItem0.fX + tItem0.fW * 0.5f, tItem0.fY + tItem0.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "body up");
 	XUI_TEST_CHECK(xuiToastGetActiveCount(pToast) == 1, "body click deferred");
 	iRet = xuiUpdate(pContext, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0, "body click processed");
@@ -202,6 +263,11 @@ int main(void)
 
 	iRet = xuiToastGetMetrics(pToast, &tMetrics);
 	XUI_TEST_CHECK(iRet == XUI_OK, "metrics get");
+	tMetrics.fWidth = tMetrics.fMinWidth - 1.0f;
+	XUI_TEST_CHECK(xuiToastSetMetrics(pToast, &tMetrics) == XUI_ERROR_INVALID_ARGUMENT, "reject inverted metrics");
+	tMetrics.fWidth = 300.0f;
+	tMetrics.iMaxVisible = XUI_TOAST_VISIBLE_CAPACITY + 1;
+	XUI_TEST_CHECK(xuiToastSetMetrics(pToast, &tMetrics) == XUI_ERROR_INVALID_ARGUMENT, "reject excessive visible count");
 	tMetrics.iMaxVisible = 1;
 	iRet = xuiToastSetMetrics(pToast, &tMetrics);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetMetrics(pToast, &tMetrics) == XUI_OK && tMetrics.iMaxVisible == 1, "metrics set");
@@ -225,6 +291,35 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0 && xuiToastGetPendingCount(pToast) == 0, "clear");
 	XUI_TEST_CHECK(tState.iLastCloseId == iId4 && tState.iLastReason == XUI_TOAST_CLOSE_CLEAR, "clear reason");
 	XUI_TEST_CHECK(xuiToastGetCloseCount(pToast) >= 4 && xuiToastGetChangeCount(pToast) > 0, "final counters");
+
+	XUI_TEST_CHECK(xuiToastShow(pToast, -1, "Bad", "Type", 1.0f, NULL, NULL) < 0, "reject invalid type");
+	XUI_TEST_CHECK(xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Bad", "Duration", -1.0f, NULL, NULL) < 0, "reject negative duration");
+	iId1 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Sticky", "Persistent notification.", 0.0f, NULL, NULL);
+	XUI_TEST_CHECK(iId1 > 0 && xuiToastGetActiveCount(pToast) == 1, "sticky show");
+	iRet = xuiUpdate(pContext, 30.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 1, "zero duration remains visible");
+	iRet = xuiToastClose(pToast, iId1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0, "close sticky");
+
+	tState.ppToast = &pToast;
+	iRet = xuiToastSetClose(pToast, __xuiToastDestroyOnClose, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy close callback set");
+	iId1 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Destroy", "Close callback.", 5.0f, NULL, NULL);
+	XUI_TEST_CHECK(iId1 > 0, "destroy close show");
+	iRet = xuiToastClose(pToast, iId1);
+	XUI_TEST_CHECK(iRet == XUI_OK && pToast == NULL && tState.iDestroyCount == 1, "close callback may destroy toast");
+
+	iRet = xuiToastCreate(pContext, &pToast, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pToast != NULL, "toast recreate");
+	tState.ppToast = &pToast;
+	iId1 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Destroy", "Click callback.", 5.0f, __xuiToastDestroyOnClick, &tState);
+	XUI_TEST_CHECK(iId1 > 0, "destroy click show");
+	tItem0 = xuiToastGetItemRect(pToast, 0);
+	iRet = __xuiToastDispatchPointerDown(pContext, tItem0.fX + tItem0.fW * 0.5f, tItem0.fY + tItem0.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = __xuiToastDispatchUp(pContext, tItem0.fX + tItem0.fW * 0.5f, tItem0.fY + tItem0.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy click dispatch");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && pToast == NULL && tState.iDestroyCount == 2, "click callback may destroy toast");
 
 cleanup:
 	if ( pToast != NULL ) {

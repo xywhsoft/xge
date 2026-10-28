@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -19,6 +20,11 @@ typedef struct xui_msgtip_test_close_t {
 	int iCount;
 	int iExpired;
 } xui_msgtip_test_close_t;
+
+typedef struct xui_msgtip_test_destroy_t {
+	xui_msgtip* ppTip;
+	int iCount;
+} xui_msgtip_test_destroy_t;
 
 static int __xuiMsgTipDispatchMove(xui_context pContext, float fX, float fY, uint32_t iButtons)
 {
@@ -57,6 +63,16 @@ static void __xuiMsgTipClose(xui_msgtip pTip, int bExpired, void* pUser)
 		pClose->iCount++;
 		pClose->iExpired = bExpired ? 1 : 0;
 	}
+}
+
+static void __xuiMsgTipDestroyClose(xui_msgtip pTip, int bExpired, void* pUser)
+{
+	xui_msgtip_test_destroy_t* pDestroy = (xui_msgtip_test_destroy_t*)pUser;
+	(void)bExpired;
+	if ( pDestroy == NULL ) return;
+	pDestroy->iCount++;
+	xuiMsgTipDestroy(pTip);
+	if ( pDestroy->ppTip != NULL ) *pDestroy->ppTip = NULL;
 }
 
 static int __xuiMsgTipTestUtf8Count(const char* sText)
@@ -124,13 +140,16 @@ int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_msgtip_test_close_t tClose;
+	xui_msgtip_test_destroy_t tDestroy;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_msgtip pTip;
+	xui_msgtip pInvalidTip;
 	xui_surface pCache;
 	xui_surface pCustomIcon;
 	xui_font pFont;
 	xui_msgtip_desc_t tDesc;
+	xui_msgtip_desc_t tInvalidDesc;
 	xui_msgtip_metrics_t tMetrics;
 	xui_msgtip_colors_t tColors;
 	xui_rect_t tTip;
@@ -138,10 +157,12 @@ int main(void)
 	xui_rect_t tText;
 	int iLayer;
 	int iZ;
+	int iChangeBefore;
 	int iFailed;
 	int iRet;
 
 	memset(&tClose, 0, sizeof(tClose));
+	memset(&tDestroy, 0, sizeof(tDestroy));
 	pContext = NULL;
 	pRoot = NULL;
 	pTip = NULL;
@@ -172,15 +193,40 @@ int main(void)
 	tDesc.sText = "Saved successfully. This intentionally long message wraps to validate the compact tip layout.";
 	tDesc.pFont = pFont;
 	tDesc.iType = XUI_MSGTIP_ICON_INFO;
-	tDesc.fDuration = 0.1f;
+	tDesc.fDuration = 0.0f;
+	tInvalidDesc = tDesc;
+	tInvalidDesc.iType = XUI_MSGTIP_ICON_ERROR + 1;
+	pInvalidTip = (xui_msgtip)&tState;
+	iRet = xuiMsgTipCreate(pContext, &pInvalidTip, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidTip == NULL, "invalid create clears output");
 	iRet = xuiMsgTipCreate(pContext, &pTip, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTip != NULL, "msgtip create");
 	iRet = xuiMsgTipSetClose(pTip, __xuiMsgTipClose, &tClose);
 	XUI_TEST_CHECK(iRet == XUI_OK, "close callback");
 	XUI_TEST_CHECK(!xuiMsgTipIsOpen(pTip), "closed initially");
 	XUI_TEST_CHECK(strcmp(xuiMsgTipGetText(pTip), tDesc.sText) == 0, "text getter");
+	XUI_TEST_CHECK(xuiMsgTipGetDuration(pTip) == 0.0f, "zero descriptor duration stays sticky");
 	iRet = xuiMsgTipGetColors(pTip, &tColors);
 	XUI_TEST_CHECK(iRet == XUI_OK && tColors.iShadowColor == 0, "default shadow disabled");
+	iRet = xuiMsgTipGetMetrics(pTip, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "default metrics get");
+	{
+		xui_msgtip_metrics_t tInvalidMetrics = tMetrics;
+		tInvalidMetrics.fMaxWidth = tInvalidMetrics.fMinWidth - 1.0f;
+		iRet = xuiMsgTipSetMetrics(pTip, &tInvalidMetrics);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject inverted metrics");
+	}
+	iRet = xuiMsgTipSetDuration(pTip, -1.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative duration");
+	iRet = xuiMsgTipSetDuration(pTip, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite duration");
+	iRet = xuiMsgTipSetType(pTip, XUI_MSGTIP_ICON_ERROR + 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject invalid type");
+	iRet = xuiMsgTipSetIconSurface(pTip, NULL, (xui_rect_t){NAN, 0.0f, 0.0f, 0.0f});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nonfinite icon source");
+	iChangeBefore = xuiMsgTipGetChangeCount(pTip);
+	iRet = xuiMsgTipSetText(pTip, xuiMsgTipGetText(pTip));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipGetChangeCount(pTip) == iChangeBefore, "same text is no-op");
 
 	iRet = xuiMsgTipShow(pTip, XUI_MSGTIP_ICON_INFO, tDesc.sText, 0.1f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipIsOpen(pTip), "show");
@@ -201,6 +247,11 @@ int main(void)
 	XUI_TEST_CHECK(pCache != NULL, "cache exists");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) > 0, "tip rendered");
 	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pCache) > 0, "text rendered");
+	xuiTestProxyResetTextCounters(&tState);
+	iRet = xuiWidgetInvalidate(xuiMsgTipGetWidget(pTip), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate tip text");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iLastTextDrawSize > 0, "tip lines use bounded text lengths");
 
 	iRet = xuiUpdate(pContext, 0.05f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipIsOpen(pTip), "duration stays open");
@@ -256,6 +307,13 @@ int main(void)
 	XUI_TEST_CHECK(tTip.fW >= 145.0f, "fractional tip width");
 	XUI_TEST_CHECK(tText.fW >= 85.0f, "fractional text width");
 	XUI_TEST_CHECK(xuiMsgTipGetWrapLineCount(pTip) == 1, "fractional no wrap");
+
+	tDestroy.ppTip = &pTip;
+	iRet = xuiMsgTipSetClose(pTip, __xuiMsgTipDestroyClose, &tDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroying close callback set");
+	iRet = xuiMsgTipClose(pTip);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTip == NULL && tDestroy.iCount == 1,
+		"close callback may destroy msgtip");
 
 cleanup:
 	if ( pCustomIcon != NULL ) {

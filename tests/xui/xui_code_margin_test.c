@@ -2,6 +2,18 @@
 
 #include <stdio.h>
 
+static int g_iMarginFailAllocation = -1;
+
+static void* xuiTestMarginRealloc(void* pMemory, size_t iSize)
+{
+	if ( g_iMarginFailAllocation >= 0 && g_iMarginFailAllocation-- == 0 ) return NULL;
+	return xrtRealloc(pMemory, iSize);
+}
+
+#define xrtRealloc xuiTestMarginRealloc
+#include "../../src/xui/code/xui_code_margin.c"
+#undef xrtRealloc
+
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
 		if ( !(expr) ) { \
@@ -84,6 +96,38 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "remove custom");
 	iRet = xuiCodeMarginModelRemove(pModel, 20);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "remove missing");
+	tDesc.fWidth = NAN;
+	iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "NaN width rejected");
+	tDesc.fWidth = 11.0f;
+	iRet = xuiCodeMarginModelLayout(pModel, tViewport, NULL, 1,
+		&iCount, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"missing layout output rejected");
+	iRet = xuiCodeMarginModelHitTest(pModel, tViewport, 17.0f, 53.0f,
+		16.0f, -1.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"negative margin scroll rejected");
+	iRet = xuiCodeMarginModelHitTest(pModel, tViewport, 17.0f, 53.0f,
+		1.0f, FLT_MAX, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED,
+		"overflowing margin line rejected");
+
+	iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeMarginModelGetCount(pModel) == 6,
+		"restore custom margin");
+	g_iMarginFailAllocation = 0;
+	iRet = xuiCodeMarginModelLoadDefaults(pModel, 0, 0, 0, 0);
+	g_iMarginFailAllocation = -1;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		xuiCodeMarginModelGetCount(pModel) == 6,
+		"default load failure preserves model");
+	iRet = xuiCodeMarginModelGet(pModel, 5, &tInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tInfo.iId == 20,
+		"default load failure preserves custom margin");
+	iRet = xuiCodeMarginModelLoadDefaults(pModel, 0, 0, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeMarginModelGetCount(pModel) == 1,
+		"default load succeeds transactionally");
 	xuiCodeMarginModelClear(pModel);
 	XUI_TEST_CHECK(xuiCodeMarginModelGetCount(pModel) == 0, "clear model");
 

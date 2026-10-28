@@ -69,8 +69,11 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pSeparator;
+	xui_widget pInvalidSeparator;
 	xui_surface pCache;
 	xui_separator_desc_t tDesc;
+	xui_separator_desc_t tInvalidDesc;
+	xui_accessible_node_t tAccessible;
 	xui_style_property_t arrStyle[4];
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
@@ -80,6 +83,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pSeparator = NULL;
+	pInvalidSeparator = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -111,6 +115,13 @@ int main(void)
 	XUI_TEST_CHECK(xuiSeparatorGetOrientation(pSeparator) == XUI_SEPARATOR_HORIZONTAL, "default orientation");
 	XUI_TEST_CHECK(xuiSeparatorGetAlign(pSeparator) == XUI_ALIGN_CENTER, "default align");
 	XUI_TEST_CHECK(xuiSeparatorGetLineStyle(pSeparator) == XUI_SEPARATOR_SOLID, "default line style");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSeparator, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetAccessibleNodeCount(pSeparator) == 1 &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_SEPARATOR &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_VERTICAL) == 0u,
+		"default accessibility");
 	tRect = xuiSeparatorGetLineRect(pSeparator);
 	XUI_TEST_CHECK(__xuiSeparatorRectEq(tRect, 0.0f, 7.0f, 100.0f, 1.0f), "default line rect");
 
@@ -136,6 +147,12 @@ int main(void)
 
 	iRet = xuiSeparatorSetOrientation(pSeparator, XUI_SEPARATOR_VERTICAL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set vertical");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSeparator, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_VERTICAL) != 0u,
+		"vertical accessibility");
 	iRet = xuiSeparatorSetAlign(pSeparator, XUI_ALIGN_END);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set align end");
 	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_SOLID);
@@ -160,6 +177,12 @@ int main(void)
 	arrStyle[3] = __xuiSeparatorStyleProp("separator.color", __xuiSeparatorStyleColor(XUI_COLOR_RGBA(40, 90, 180, 255)));
 	iRet = xuiWidgetSetInlineStyle(pSeparator, arrStyle, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "inline style");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSeparator, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_VERTICAL) == 0u,
+		"style orientation accessibility");
 	tRect = xuiSeparatorGetLineRect(pSeparator);
 	XUI_TEST_CHECK(__xuiSeparatorRectEq(tRect, 0.0f, 76.0f, 14.0f, 4.0f), "style line rect");
 	xuiTestSurfaceReset(pCache);
@@ -176,6 +199,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "infinite thickness");
 	iRet = xuiSeparatorSetLineStyle(pSeparator, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid line style");
+
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fThickness = NAN;
+	pInvalidSeparator = pRoot;
+	iRet = xuiSeparatorCreate(pContext, &pInvalidSeparator, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidSeparator == NULL,
+		"invalid create clears output");
 
 cleanup:
 	if ( pContext != NULL ) {

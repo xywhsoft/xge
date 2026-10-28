@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -34,6 +35,25 @@ static void __xuiScrollFrameChanged(xui_widget pWidget, float fOffsetX, float fO
 	pCount = (int*)pUser;
 	if ( pCount != NULL ) {
 		(*pCount)++;
+	}
+}
+
+typedef struct xui_scroll_frame_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_scroll_frame_destroy_state_t;
+
+static void __xuiScrollFrameDestroyOnChange(xui_widget pWidget, float fOffsetX,
+	float fOffsetY, void* pUser)
+{
+	xui_scroll_frame_destroy_state_t* pState = (xui_scroll_frame_destroy_state_t*)pUser;
+
+	(void)fOffsetX;
+	(void)fOffsetY;
+	if ( pState != NULL ) {
+		pState->iCount++;
+		xuiWidgetDestroy(pWidget);
+		if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
 	}
 }
 
@@ -82,8 +102,14 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pFrame;
 	xui_widget pFooter;
+	xui_widget pInvalid;
+	xui_widget pOuter;
+	xui_widget pInner;
+	xui_widget pDestroyFrame;
 	xui_surface pTarget;
 	xui_scroll_frame_desc_t tDesc;
+	xui_scroll_frame_desc_t tAuxDesc;
+	xui_scroll_frame_destroy_state_t tDestroy;
 	xui_rect_t tViewport;
 	xui_rect_t tHBar;
 	xui_rect_t tVBar;
@@ -98,17 +124,28 @@ int main(void)
 	float fHintHeight;
 	float fMaxX;
 	float fMaxY;
+	float fBeforeX;
+	float fBeforeY;
+	float fMetricA;
+	float fMetricB;
+	float fMetricC;
 	int iChanged;
 	int iFailed;
+	int iReset;
 	int iRet;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pFrame = NULL;
 	pFooter = NULL;
+	pInvalid = NULL;
+	pOuter = NULL;
+	pInner = NULL;
+	pDestroyFrame = NULL;
 	pTarget = NULL;
 	iChanged = 0;
 	iFailed = 0;
+	memset(&tDestroy, 0, sizeof(tDestroy));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -140,6 +177,28 @@ int main(void)
 	tDesc.fViewportHeight = 100.0f;
 	iRet = xuiScrollFrameCreate(pContext, &pFrame, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFrame != NULL, "frame create");
+	tAuxDesc = tDesc;
+	tAuxDesc.fContentWidth = INFINITY;
+	pInvalid = (xui_widget)(void*)1;
+	iRet = xuiScrollFrameCreate(pContext, &pInvalid, &tAuxDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"invalid descriptor clears frame output");
+	tAuxDesc = tDesc;
+	tAuxDesc.iPolicyX = 99;
+	pInvalid = (xui_widget)(void*)1;
+	iRet = xuiScrollFrameCreate(pContext, &pInvalid, &tAuxDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"invalid frame policy is rejected");
+	iRet = xuiScrollFrameSetWheelStep(pFrame, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && __xuiScrollFrameNear(xuiScrollFrameGetWheelStep(pFrame), 20.0f),
+		"reject infinite wheel step without mutation");
+	iRet = xuiScrollFrameGetMetrics(pFrame, &fMetricA, &fMetricB, &fMetricC);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get initial metrics");
+	iRet = xuiScrollFrameSetMetrics(pFrame, NAN, fMetricB, fMetricC);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan frame metrics");
+	iRet = xuiScrollFrameGetMetrics(pFrame, &fBeforeX, &fBeforeY, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && fBeforeX == fMetricA && fBeforeY == fMetricB,
+		"invalid frame metrics preserve state");
 	iRet = xuiWidgetMeasure(pFrame, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(tMeasured.fX, 120.0f) && __xuiScrollFrameNear(tMeasured.fY, 100.0f), "content extent does not define desired viewport");
 	iRet = xuiScrollFrameGetViewportHint(pFrame, &fHintWidth, &fHintHeight);
@@ -179,6 +238,30 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fMaxX, 136.0f) && __xuiScrollFrameNear(fMaxY, 136.0f), "model max offset");
 
 	tViewportWorld = xuiWidgetGetWorldRect(xuiScrollFrameGetViewportWidget(pFrame));
+	iRet = xuiScrollFrameSetWheelStep(pFrame, 12.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarGetSteps(
+		xuiScrollFrameGetHScrollBarWidget(pFrame), &fBeforeX, &fBeforeY);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarGetSteps(
+		xuiScrollFrameGetVScrollBarWidget(pFrame), &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fBeforeX, 12.0f) &&
+		__xuiScrollFrameNear(fBeforeY, tViewport.fW) &&
+		__xuiScrollFrameNear(fOffsetX, 12.0f) && __xuiScrollFrameNear(fOffsetY, tViewport.fH),
+		"wheel step synchronizes both scrollbars immediately");
+	iRet = xuiScrollFrameSetWheelStep(pFrame, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore wheel step");
+
+	iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetModifiers(pContext, XUI_MOD_SHIFT);
+	if ( iRet == XUI_OK ) iRet = __xuiScrollFrameDispatchWheel(pContext,
+		tViewportWorld.fX + 4.0f, tViewportWorld.fY + 4.0f, -1.0f);
+	iReset = xuiInputSetModifiers(pContext, 0u);
+	if ( iRet == XUI_OK ) iRet = iReset;
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pFrame, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fOffsetX, 20.0f) &&
+		__xuiScrollFrameNear(fOffsetY, 0.0f), "shift wheel scrolls horizontally");
+	iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset offset after shift wheel");
+
 	iRet = __xuiScrollFrameDispatchWheel(pContext, tViewportWorld.fX + 4.0f, tViewportWorld.fY + 4.0f, -1.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel dispatch");
 	iRet = xuiScrollFrameGetOffset(pFrame, &fOffsetX, &fOffsetY);
@@ -189,6 +272,142 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag dispatch");
 	iRet = xuiScrollFrameGetOffset(pFrame, &fOffsetX, &fOffsetY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX > 0.0f && fOffsetY > 20.0f, "drag offset");
+
+	iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset offset before multi-pointer drag");
+	iRet = xuiInputPointerDownEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 30.0f), (int)(tViewportWorld.fY + 30.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pFrame,
+		"first touch owns frame content drag");
+	iRet = xuiInputPointerMoveEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 20.0f), (int)(tViewportWorld.fY + 15.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pFrame, &fBeforeX, &fBeforeY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fBeforeX > 0.0f && fBeforeY > 0.0f,
+		"owning touch moves frame content");
+	iRet = xuiInputPointerDownEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 30.0f), (int)(tViewportWorld.fY + 30.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 5.0f), (int)(tViewportWorld.fY + 5.0f),
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 5.0f), (int)(tViewportWorld.fY + 5.0f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pFrame, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fOffsetX, fBeforeX) &&
+		__xuiScrollFrameNear(fOffsetY, fBeforeY) &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pFrame &&
+		xuiGetPointerCaptureEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"unrelated touch cannot move or release frame drag");
+	iRet = xuiInputPointerUpEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 20.0f), (int)(tViewportWorld.fY + 15.0f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch releases frame drag");
+	iRet = xuiInputPointerDownEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 30.0f), (int)(tViewportWorld.fY + 30.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetContentDragEnabled(pFrame, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"disabling content drag releases exact capture");
+	iRet = xuiScrollFrameSetContentDragEnabled(pFrame, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore content drag");
+	(void)xuiInputPointerUpEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 30.0f), (int)(tViewportWorld.fY + 30.0f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	(void)xuiDispatchPendingEvents(pContext);
+	iRet = xuiInputPointerDownEx(pContext, 704u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 30.0f), (int)(tViewportWorld.fY + 30.0f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 704u, XUI_POINTER_TYPE_TOUCH) == pFrame,
+		"touch owns frame drag before disable");
+	iRet = xuiWidgetSetEnabled(pFrame, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 704u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"disabling frame releases exact capture");
+	iRet = xuiWidgetSetEnabled(pFrame, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore enabled frame");
+	(void)xuiInputPointerUpEx(pContext, 704u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tViewportWorld.fX + 30.0f), (int)(tViewportWorld.fY + 30.0f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	(void)xuiDispatchPendingEvents(pContext);
+
+	memset(&tAuxDesc, 0, sizeof(tAuxDesc));
+	tAuxDesc.iSize = sizeof(tAuxDesc);
+	tAuxDesc.fContentWidth = 300.0f;
+	tAuxDesc.fContentHeight = 300.0f;
+	tAuxDesc.iPolicyX = XUI_SCROLLBAR_POLICY_HIDDEN;
+	tAuxDesc.iPolicyY = XUI_SCROLLBAR_POLICY_AUTO;
+	tAuxDesc.iWheelAxis = XUI_WHEEL_AXIS_VERTICAL;
+	tAuxDesc.fWheelStep = 20.0f;
+	tAuxDesc.fViewportWidth = 140.0f;
+	tAuxDesc.fViewportHeight = 100.0f;
+	iRet = xuiScrollFrameCreate(pContext, &pOuter, &tAuxDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pOuter);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pOuter, (xui_rect_t){150.0f, 130.0f, 140.0f, 100.0f});
+	tAuxDesc.fContentWidth = 200.0f;
+	tAuxDesc.fContentHeight = 200.0f;
+	tAuxDesc.fWheelStep = 10.0f;
+	tAuxDesc.fViewportWidth = 80.0f;
+	tAuxDesc.fViewportHeight = 60.0f;
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameCreate(pContext, &pInner, &tAuxDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(xuiScrollFrameGetViewportWidget(pOuter), pInner);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pInner, (xui_rect_t){10.0f, 10.0f, 80.0f, 60.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested frames prepare");
+	iRet = xuiScrollModelGetMaxOffset(xuiScrollFrameGetModel(pInner), NULL, &fMaxY);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pInner, 0.0f, fMaxY);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pOuter, 0.0f, 0.0f);
+	tViewportWorld = xuiWidgetGetWorldRect(xuiScrollFrameGetViewportWidget(pInner));
+	if ( iRet == XUI_OK ) iRet = __xuiScrollFrameDispatchWheel(pContext,
+		tViewportWorld.fX + 4.0f, tViewportWorld.fY + 4.0f, -1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pOuter, NULL, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fOffsetY, 20.0f),
+		"wheel chains to parent when inner frame is at edge");
+	iRet = xuiScrollFrameSetOffset(pInner, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pOuter, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiScrollFrameDispatchWheel(pContext,
+		tViewportWorld.fX + 4.0f, tViewportWorld.fY + 4.0f, -1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pInner, NULL, &fOffsetY);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pOuter, NULL, &fBeforeY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fOffsetY, 10.0f) &&
+		__xuiScrollFrameNear(fBeforeY, 0.0f),
+		"inner frame consumes wheel while it can scroll");
+	xuiWidgetDestroy(pOuter);
+	pOuter = NULL;
+	pInner = NULL;
+
+	tAuxDesc.fContentWidth = 200.0f;
+	tAuxDesc.fContentHeight = 200.0f;
+	tAuxDesc.fViewportWidth = 80.0f;
+	tAuxDesc.fViewportHeight = 60.0f;
+	iRet = xuiScrollFrameCreate(pContext, &pDestroyFrame, &tAuxDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pDestroyFrame);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pDestroyFrame, (xui_rect_t){180.0f, 10.0f, 80.0f, 60.0f});
+	tDestroy.ppWidget = &pDestroyFrame;
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetChange(pDestroyFrame,
+		__xuiScrollFrameDestroyOnChange, &tDestroy);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-change frame prepare");
+	tViewportWorld = xuiWidgetGetWorldRect(xuiScrollFrameGetViewportWidget(pDestroyFrame));
+	iRet = __xuiScrollFrameDispatchWheel(pContext, tViewportWorld.fX + 4.0f,
+		tViewportWorld.fY + 4.0f, -1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyFrame == NULL && tDestroy.iCount == 1,
+		"change callback may destroy frame without stale access");
 
 	iRet = xuiScrollFrameSetScrollbarPolicy(pFrame, XUI_SCROLLBAR_POLICY_HIDDEN, XUI_SCROLLBAR_POLICY_HIDDEN);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hidden policy");

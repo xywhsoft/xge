@@ -73,6 +73,27 @@ int main(void)
 
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9])", xuiCodeDocumentGetLength(pDocument), XUI_CODE_SEARCH_BACKWARD | XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 32, "regex backward");
+	iRet = xuiCodeDocumentSetText(pDocument, "aaa");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set overlapping regex document");
+	iRet = xuiCodeSearchFindRegex(pDocument, "aa", 3,
+		XUI_CODE_SEARCH_BACKWARD | XUI_CODE_SEARCH_CASE_SENSITIVE,
+		&tResult, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 1 && tResult.iEnd == 3,
+		"regex backward keeps latest overlapping match");
+	iRet = xuiCodeDocumentSetText(pDocument, "aba");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set nonzero regex start document");
+	iRet = xuiCodeSearchFindRegex(pDocument, "a", 1,
+		XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 2 && tResult.iEnd == 3,
+		"regex without captures honors nonzero start");
+	iRet = xuiCodeDocumentSetText(pDocument, "aaa");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore greedy regex range document");
+	iRet = xuiCodeSearchFindRegexRange(pDocument, "a+", 0, 0, 2,
+		XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 0 && tResult.iEnd == 2,
+		"regex range constrains greedy match");
+	iRet = xuiCodeDocumentSetText(pDocument, "alpha beta Alpha alphabet\nfoo_1 foo_2\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore document after overlapping regex test");
 	iRet = xuiCodeDocumentInsert(pDocument, 29, "x");
 	XUI_TEST_CHECK(iRet == XUI_OK, "regex range gap insert");
 	iRet = xuiCodeDocumentDelete(pDocument, 29, 30);
@@ -85,7 +106,25 @@ int main(void)
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9])", 34, XUI_CODE_SEARCH_WRAP | XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 26, "regex wrap");
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9]", 0, 0, &tResult, sError, sizeof(sError));
-	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && sError[0] != '\0', "regex invalid pattern");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && strcmp(sError, "regex compile failed") == 0,
+		"regex invalid pattern preserves diagnostic");
+
+	iRet = xuiCodeDocumentSetText(pDocument, "\xC3\xA9");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set Unicode zero-match document");
+	iRet = xuiCodeSearchFindRegex(pDocument, "a*", 0, XUI_CODE_SEARCH_CASE_SENSITIVE,
+		&tResult, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 0 && tResult.iEnd == 0,
+		"regex empty match at Unicode start");
+	iRet = xuiCodeSearchFindRegex(pDocument, "a*", 2,
+		XUI_CODE_SEARCH_CASE_SENSITIVE | XUI_CODE_SEARCH_BACKWARD,
+		&tResult, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 2 && tResult.iEnd == 2,
+		"regex backward keeps terminal empty match");
+	iRet = xuiCodeSearchReplaceAllRegex(pDocument, "a*", "_",
+		XUI_CODE_SEARCH_CASE_SENSITIVE, &iCount, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "regex Unicode empty replace count");
+	XUI_TEST_CHECK(memcmp(xuiCodeDocumentGetText(pDocument), "_\xC3\xA9_", 5) == 0,
+		"regex Unicode empty replace preserves text");
 
 	sLarge = (char*)xrtMalloc(70001u);
 	XUI_TEST_CHECK(sLarge != NULL, "allocate chunk boundary text");

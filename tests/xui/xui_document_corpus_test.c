@@ -1,5 +1,6 @@
 #include "xui_document.h"
 #include "../src/xui/document/xui_document_internal.h"
+#include "xui_test_time.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -343,11 +344,11 @@ static void scale(void)
         elapsed, 1000.0 * (clock() - begin) / CLOCKS_PER_SEC, (unsigned long long)(after.iAllocations - before.iAllocations),
         (unsigned long long)(after.iLiveBytes - before.iLiveBytes));
     for (i = 0; i < 68; i++) {
-        uint64_t started = xrtClock();
+        uint64_t started = xuiTestClockUs();
         CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK);
         CHECK(xuiDocumentTxnReplaceText(t, id, 0, 1, i & 1 ? "p" : "P", 1) == XUI_OK);
         CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_OK); xuiDocumentTxnRelease(t);
-        if (i >= 4) samples[i - 4] = (double)(xrtClock() - started) / 1000.0;
+        if (i >= 4) samples[i - 4] = (double)(xuiTestClockUs() - started) / 1000.0;
     }
     percentiles("Rich 10000 paragraphs", samples, 64);
     CHECK(xuiDocumentGetStats(d, &after) == XUI_OK && after.iHistoryBytes <= after.iHistoryMaxBytes);
@@ -380,11 +381,11 @@ static void scale(void)
             xuiDocumentSnapshotRelease(snapshot);
         }
         for (i = 0; i < 68; i++) {
-            uint64_t started = xrtClock();
+            uint64_t started = xuiTestClockUs();
             CHECK(xuiDocumentBeginTransaction(d, &td, &t) == XUI_OK);
             CHECK(xuiDocumentTxnReplaceSource(t, 3, 4, i & 1 ? "h" : "H", 1) == XUI_OK);
             CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_OK); xuiDocumentTxnRelease(t);
-            if (i >= 4) samples[i - 4] = (double)(xrtClock() - started) / 1000.0;
+            if (i >= 4) samples[i - 4] = (double)(xuiTestClockUs() - started) / 1000.0;
         }
         percentiles("Markdown 102480 bytes (independent-block source edit)", samples, 64);
         CHECK(xuiDocumentGetStats(d, &after) == XUI_OK && after.iHistoryBytes <= after.iHistoryMaxBytes);
@@ -404,13 +405,13 @@ static void scale(void)
 typedef struct prepare_scale_job { xui_document_prepare prepare; uint64_t elapsed; } prepare_scale_job;
 static int32 prepare_scale_worker(void* data)
 {
-    prepare_scale_job* job = data; uint64_t start = xrtClock(); int result = xuiDocumentPrepareRun(job->prepare);
-    job->elapsed = xrtClock() - start; xuiDocumentPrepareRelease(job->prepare); return result;
+    prepare_scale_job* job = data; uint64_t start = xuiTestClockUs(); int result = xuiDocumentPrepareRun(job->prepare);
+    job->elapsed = xuiTestClockUs() - start; xuiDocumentPrepareRelease(job->prepare); return result;
 }
 static int32 prepare_scale_cleanup(void* data)
 {
-    prepare_scale_job* job = data; uint64_t start = xrtClock();
-    xuiDocumentPrepareRelease(job->prepare); job->elapsed = xrtClock() - start; return 0;
+    prepare_scale_job* job = data; uint64_t start = xuiTestClockUs();
+    xuiDocumentPrepareRelease(job->prepare); job->elapsed = xuiTestClockUs() - start; return 0;
 }
 static void prepare_scale(void)
 {
@@ -430,7 +431,7 @@ static void prepare_scale(void)
             patch.iSize = sizeof(patch); patch.iStart = edit ? 3 : 0; patch.iEnd = edit ? 4 : 12;
             patch.sText = edit ? "h" : source; patch.iTextBytes = edit ? 1 : size;
             before_run.iSize = sizeof(before_run); CHECK(xuiDocumentGetStats(d, &before_run) == XUI_OK);
-            begin = xrtClock(); CHECK(xuiDocumentPrepareSource(d, NULL, &patch, 1, &job.prepare) == XUI_OK); create_us = xrtClock() - begin;
+            begin = xuiTestClockUs(); CHECK(xuiDocumentPrepareSource(d, NULL, &patch, 1, &job.prepare) == XUI_OK); create_us = xuiTestClockUs() - begin;
             xuiDocumentPrepareRetain(job.prepare); thread = xrtThreadCreate(prepare_scale_worker, &job, 0); CHECK(thread);
             for (i = 0; i < 64; i++) {
                 CHECK(xuiDocumentAcquireSnapshot(d, &snapshot) == XUI_OK);
@@ -440,7 +441,7 @@ static void prepare_scale(void)
             CHECK(xrtThreadWaitFor(thread, 30000000) == XWAIT_OK && xrtThreadExitCode(thread) == XUI_OK); xrtThreadDestroy(thread); prepare_us = job.elapsed;
             before.iSize = stats.iSize = sizeof(stats); CHECK(xuiDocumentGetStats(d, &before) == XUI_OK);
             if (edit) CHECK(before.iPreparedAccountingVisits - before_run.iPreparedAccountingVisits < 8192);
-            begin = xrtClock(); CHECK(xuiDocumentPreparePublish(d, job.prepare, NULL) == XUI_OK); publish_us = xrtClock() - begin;
+            begin = xuiTestClockUs(); CHECK(xuiDocumentPreparePublish(d, job.prepare, NULL) == XUI_OK); publish_us = xuiTestClockUs() - begin;
             CHECK(xuiDocumentGetStats(d, &stats) == XUI_OK && stats.iAllocations == before.iAllocations && stats.iPreparedPublishes == before.iPreparedPublishes + 1);
             /* Transfer the owner's remaining handle to a cleanup worker. Its
              * potentially linear final Release is explicitly timed separately. */
@@ -456,13 +457,13 @@ static void prepare_scale(void)
                         source_index_oracle(snapshot, offsets[at], affinity);
                 if (megabytes == 10) {
                     uint64_t started, indexed_us, full_us, id; doc_source_hit hit;
-                    started = xrtClock();
+                    started = xuiTestClockUs();
                     for (i = 0; i < 256; i++)
                         CHECK(doc_source_find_position(snapshot->state, size / 2, XUI_DOC_AFTER, 0, &id, &hit) == XUI_OK);
-                    indexed_us = xrtClock() - started;
-                    started = xrtClock();
+                    indexed_us = xuiTestClockUs() - started;
+                    started = xuiTestClockUs();
                     CHECK(doc_source_find_position(snapshot->state, size / 2, XUI_DOC_AFTER, 1, &id, &hit) == XUI_OK);
-                    full_us = xrtClock() - started;
+                    full_us = xuiTestClockUs() - started;
                     printf("Markdown 10 MiB source position: indexed %.3f us/call (256), full DFS %.3f ms/call.\n",
                         (double)indexed_us / 256, (double)full_us / 1000);
                 }
@@ -503,7 +504,7 @@ static void incremental_scale(void)
             CHECK(xuiDocumentPrepareSource(d, NULL, &patch, 1, &job.prepare) == XUI_OK);
             xuiDocumentPrepareRetain(job.prepare); thread = xrtThreadCreate(prepare_scale_worker, &job, 0); CHECK(thread);
             CHECK(xrtThreadWaitFor(thread, 30000000) == XWAIT_OK && xrtThreadExitCode(thread) == XUI_OK); xrtThreadDestroy(thread); prepared = job.elapsed;
-            started = xrtClock(); CHECK(xuiDocumentPreparePublish(d, job.prepare, NULL) == XUI_OK); published = xrtClock() - started;
+            started = xuiTestClockUs(); CHECK(xuiDocumentPreparePublish(d, job.prepare, NULL) == XUI_OK); published = xuiTestClockUs() - started;
             thread = xrtThreadCreate(prepare_scale_cleanup, &job, 0); CHECK(thread);
             CHECK(xrtThreadWaitFor(thread, 30000000) == XWAIT_OK && xrtThreadExitCode(thread) == 0); xrtThreadDestroy(thread);
             CHECK(xuiDocumentGetStats(d, &after) == XUI_OK && after.iMarkdownIncrementalParses == before.iMarkdownIncrementalParses + 1);
@@ -541,10 +542,10 @@ static void no_history_accounting_scale(void)
     before.iSize = after.iSize = sizeof(before); CHECK(xuiDocumentGetStats(d, &before) == XUI_OK);
     patch.iSize = sizeof(patch); patch.iStart = 20; patch.iEnd = 21; patch.sText = "Q"; patch.iTextBytes = 1;
     CHECK(xuiDocumentPrepareSource(d, NULL, &patch, 1, &job.prepare) == XUI_OK);
-    xuiDocumentPrepareRetain(job.prepare); started = xrtClock();
+    xuiDocumentPrepareRetain(job.prepare); started = xuiTestClockUs();
     thread = xrtThreadCreate(prepare_scale_worker, &job, 0); CHECK(thread);
     CHECK(xrtThreadWaitFor(thread, 30000000) == XWAIT_OK && xrtThreadExitCode(thread) == XUI_OK); xrtThreadDestroy(thread);
-    elapsed = xrtClock() - started;
+    elapsed = xuiTestClockUs() - started;
     CHECK(xuiDocumentPreparePublish(d, job.prepare, NULL) == XUI_OK); xuiDocumentPrepareRelease(job.prepare);
     CHECK(xuiDocumentGetStats(d, &after) == XUI_OK && after.iUndoCount == 0 && after.iHistoryBytes == 0);
     CHECK(after.iMarkdownIncrementalParses == before.iMarkdownIncrementalParses + 1);

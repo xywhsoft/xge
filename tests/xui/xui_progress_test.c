@@ -66,9 +66,13 @@ int main(void)
 	xui_progress_desc_t tDesc;
 	xui_nine_patch_t tPatch;
 	xui_nine_patch_t tInvalidPatch;
+	xui_accessible_node_t tNode;
 	xui_style_property_t arrStyle[3];
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	uint32_t iAccessibilityRevision;
 	float fMin;
 	float fMax;
 	int iFailed;
@@ -80,6 +84,7 @@ int main(void)
 	pInvalid = NULL;
 	pPatchSurface = NULL;
 	pFont = NULL;
+	pBudget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -120,15 +125,57 @@ int main(void)
 	XUI_TEST_CHECK(xuiProgressGetValue(pProgress) == 25.0f, "default value");
 	XUI_TEST_CHECK(xuiProgressGetRate(pProgress) == 0.25f, "default rate");
 	XUI_TEST_CHECK(strcmp(xuiProgressGetDisplayText(pProgress), "25%") == 0, "dynamic display text");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiWidgetGetAccessibleNode(pProgress, 0, &tNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNode.iRole == XUI_ACCESSIBLE_ROLE_PROGRESS &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_READONLY) != 0u &&
+		tNode.tRange.iSize == sizeof(tNode.tRange) &&
+		tNode.tRange.fMin == 0.0 && tNode.tRange.fMax == 100.0 &&
+		tNode.tRange.fValue == 25.0 && strcmp(tNode.sValue, "25%") == 0,
+		"progress accessibility range");
+	iAccessibilityRevision = xuiWidgetGetAccessibilityRevision(pProgress);
 	tRect = xuiProgressGetFillRect(pProgress);
 	XUI_TEST_CHECK(__xuiProgressRectEq(tRect, 0.0f, 0.0f, 25.0f, 20.0f), "left-to-right fill rect");
+	XUI_TEST_CHECK(!xuiProgressGetIndeterminate(pProgress) &&
+		xuiProgressGetMarqueeInterval(pProgress) == 1.5f, "marquee defaults");
+	XUI_TEST_CHECK(xuiProgressSetMarqueeInterval(pProgress, 0.0f) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiProgressSetMarqueeInterval(pProgress, NAN) == XUI_ERROR_INVALID_ARGUMENT,
+		"invalid marquee interval rejected");
+	iRet = xuiProgressSetMarqueeInterval(pProgress, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiProgressGetMarqueeInterval(pProgress) == 1.0f,
+		"set marquee interval");
+	iRet = xuiProgressSetIndeterminate(pProgress, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiProgressGetIndeterminate(pProgress),
+		"enable indeterminate progress");
+	tRect = xuiProgressGetFillRect(pProgress);
+	XUI_TEST_CHECK(tRect.fW > 0 && tRect.fW < 100 && tRect.fH == 20,
+		"indeterminate segment rect");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiWidgetGetAccessibleNode(pProgress, 0, &tNode);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNode.tRange.iSize == 0,
+		"indeterminate accessibility omits numeric range");
+	iRet = xuiUpdate(pContext, 0.25f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		!__xuiProgressRectEq(xuiProgressGetFillRect(pProgress), tRect.fX, tRect.fY, tRect.fW, tRect.fH),
+		"marquee advances during update");
+	iRet = xuiProgressSetIndeterminate(pProgress, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiProgressGetIndeterminate(pProgress) &&
+		__xuiProgressRectEq(xuiProgressGetFillRect(pProgress), 0.0f, 0.0f, 25.0f, 20.0f),
+		"restore determinate progress");
 
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
 	pCache = xuiWidgetGetCacheSurface(pProgress, xuiWidgetGetStateId(pProgress));
 	XUI_TEST_CHECK(pCache != NULL, "cache surface");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) == 2, "track and fill draw count");
-	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pCache) == 1, "base text count");
+	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pCache) == 2,
+		"partial fill draws clipped fill text");
+	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pCache) == XUI_COLOR_WHITE &&
+		tState.iDrawClipGetCount > 0 && tState.iDrawClipSetCount > 0 &&
+		tState.iDrawClipClearCount > 0 && !tState.bLastDrawClipActive,
+		"partial fill text uses and restores draw clip");
 	XUI_TEST_CHECK(__xuiProgressRectEq(xuiTestSurfaceGetLastTextRect(pCache), 0.0f, 0.0f, 100.0f, 20.0f), "base text rect");
 
 	iRet = xuiProgressSetRange(pProgress, 100.0f, 0.0f);
@@ -145,6 +192,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pCache) == XUI_COLOR_WHITE, "full fill text color");
 	iRet = xuiProgressSetValue(pProgress, 40.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "40%") == 0, "dynamic text update");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiWidgetGetAccessibilityRevision(pProgress) > iAccessibilityRevision,
+		"value updates accessibility");
 	iRet = xuiProgressSetRange(pProgress, -FLT_MAX, FLT_MAX);
 	XUI_TEST_CHECK(iRet == XUI_OK, "wide finite range");
 	iRet = xuiProgressSetValue(pProgress, 0.0f);
@@ -175,10 +226,24 @@ int main(void)
 	tRect = xuiProgressGetFillRect(pProgress);
 	XUI_TEST_CHECK(__xuiProgressRectEq(tRect, 0.0f, 0.0f, 20.0f, 40.0f), "top-to-bottom fill rect");
 
+	iRet = xuiProgressSetTextTemplate(pProgress, "{{{value}}}/{max} {percent}%");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "{40}/100 40%") == 0,
+		"named template tokens and escaping");
 	iRet = xuiProgressSetTextTemplate(pProgress, "Loading");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Loading") == 0, "static text");
 	iRet = xuiProgressSetTextTemplate(pProgress, "Progress %s");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Progress %s") == 0, "unsafe format literal");
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget), "create allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope), "enter allocation budget");
+	iRet = xuiProgressSetText(pProgress, NULL, "{value} / {max}");
+	XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope), "leave allocation budget");
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && xuiProgressGetFont(pProgress) == pFont &&
+		strcmp(xuiProgressGetTextTemplate(pProgress), "Progress %s") == 0 &&
+		strcmp(xuiProgressGetDisplayText(pProgress), "Progress %s") == 0,
+		"set text allocation failure is atomic");
 	iRet = xuiProgressSetTextTemplate(pProgress, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiProgressGetTextTemplate(pProgress) == NULL && xuiProgressGetDisplayText(pProgress) == NULL, "clear text");
 
@@ -230,6 +295,21 @@ int main(void)
 		XUI_TEST_CHECK(iRet == XUI_OK, "render after patch surface update");
 		XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) > iDrawCount, "patch generation invalidates progress cache");
 	}
+	tPatch.tSlice = (xui_thickness_t){32, 16, 32, 16};
+	iRet = xuiProgressSetTrackPatch(pProgress, &tPatch);
+	XUI_TEST_CHECK(iRet == XUI_OK, "oversized patch slices accepted");
+	iRet = xuiProgressClearFillPatch(pProgress);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear fill patch for slice test");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render oversized patch slices");
+	tRect = xuiTestSurfaceGetLastSrc(pCache);
+	XUI_TEST_CHECK(tRect.fX >= 0 && tRect.fY >= 0 && tRect.fW >= 0 && tRect.fH >= 0 &&
+		tRect.fX + tRect.fW <= 16 && tRect.fY + tRect.fH <= 8,
+		"oversized slices clamp source rectangles");
+	tPatch.tSlice = (xui_thickness_t){0, 0, 0, 0};
+	iRet = xuiProgressSetFillPatch(pProgress, &tPatch);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore fill patch");
 
 	iRet = xuiProgressSetFillDirection(pProgress, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid direction");
@@ -250,10 +330,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative patch slice rejected");
 	XUI_TEST_CHECK(xuiProgressHasFillPatch(pProgress), "invalid fill patch preserves prior state");
 	tDesc.fMin = NAN;
+	pInvalid = pRoot;
 	iRet = xuiProgressCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "nan descriptor rejected");
 
 cleanup:
+	if ( pBudget != NULL ) {
+		xrtAllocationBudgetFree(pBudget);
+	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
 	}

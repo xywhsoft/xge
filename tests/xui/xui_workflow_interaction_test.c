@@ -29,7 +29,7 @@ static int __xuiWorkflowInteractionAddNode(xui_flow_graph pGraph, const char* sI
 	return xuiFlowGraphAddNode(pGraph, &tNode, pIndex);
 }
 
-static int __xuiWorkflowInteractionAddPort(xui_flow_graph pGraph, int iNode, const char* sId, int iDirection)
+static int __xuiWorkflowInteractionAddPort(xui_flow_graph pGraph, int iNode, const char* sId, int iDirection, int bMulti)
 {
 	xui_flow_port_desc_t tPort;
 
@@ -39,6 +39,7 @@ static int __xuiWorkflowInteractionAddPort(xui_flow_graph pGraph, int iNode, con
 	tPort.sTitle = sId;
 	tPort.iDirection = iDirection;
 	tPort.iKind = XUI_FLOW_PORT_CONTROL;
+	tPort.bMulti = bMulti;
 	return xuiFlowGraphAddPort(pGraph, iNode, &tPort, NULL);
 }
 
@@ -128,9 +129,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "node a");
 	iRet = __xuiWorkflowInteractionAddNode(pGraph, "b", 250.0f, 80.0f, &iB);
 	XUI_TEST_CHECK(iRet == XUI_OK, "node b");
-	iRet = __xuiWorkflowInteractionAddPort(pGraph, iA, "out", XUI_FLOW_PORT_OUTPUT);
+	iRet = __xuiWorkflowInteractionAddPort(pGraph, iA, "out", XUI_FLOW_PORT_OUTPUT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "a out");
-	iRet = __xuiWorkflowInteractionAddPort(pGraph, iB, "in", XUI_FLOW_PORT_INPUT);
+	iRet = __xuiWorkflowInteractionAddPort(pGraph, iB, "in", XUI_FLOW_PORT_INPUT, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "b in");
 	memset(&tEdge, 0, sizeof(tEdge));
 	tEdge.iSize = sizeof(tEdge);

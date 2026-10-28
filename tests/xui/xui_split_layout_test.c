@@ -2,6 +2,7 @@
 #include "xge.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -34,6 +35,46 @@ static void __xuiSplitChanged(xui_widget pWidget, int iDivider, void* pUser)
 	pCount = (int*)pUser;
 	if ( pCount != NULL ) {
 		(*pCount)++;
+	}
+}
+
+typedef struct xui_split_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_split_destroy_state_t;
+
+typedef struct xui_split_destroy_context_state_t {
+	xui_context* ppContext;
+	int iCount;
+} xui_split_destroy_context_state_t;
+
+static void __xuiSplitDestroyOnChange(xui_widget pWidget, int iDivider, void* pUser)
+{
+	xui_split_destroy_state_t* pState;
+
+	(void)iDivider;
+	pState = (xui_split_destroy_state_t*)pUser;
+	if ( pState == NULL ) return;
+	pState->iCount++;
+	if ( pState->ppWidget != NULL && *pState->ppWidget == pWidget ) {
+		*pState->ppWidget = NULL;
+		xuiWidgetDestroy(pWidget);
+	}
+}
+
+static void __xuiSplitDestroyContextOnChange(xui_widget pWidget, int iDivider, void* pUser)
+{
+	xui_split_destroy_context_state_t* pState;
+	xui_context pContext;
+
+	(void)iDivider;
+	pState = (xui_split_destroy_context_state_t*)pUser;
+	if ( pState == NULL ) return;
+	pState->iCount++;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( pState->ppContext != NULL && *pState->ppContext == pContext ) {
+		*pState->ppContext = NULL;
+		xuiDestroy(pContext);
 	}
 }
 
@@ -99,6 +140,9 @@ int main(void)
 	xui_widget pTabs;
 	xui_widget pOffsetParent;
 	xui_widget pNestedSplit;
+	xui_widget pMultiSplit;
+	xui_widget pDestroySplit;
+	xui_widget pInvalidSplit;
 	xui_widget pShadowOverlay;
 	xui_widget pCompetingOverlay;
 	xui_widget pDividerWidget;
@@ -106,6 +150,9 @@ int main(void)
 	xui_surface pShadowCache;
 	xui_surface pDividerCache;
 	xui_split_layout_desc_t tDesc;
+	xui_event_t tEvent;
+	xui_accessible_node_t tAccessibleNode;
+	xui_accessible_value_t tAccessibleValue;
 	xui_dock_panel_desc_t tDockDesc;
 	xui_tabs_desc_t tTabsDesc;
 	xge_desc_t tXgeDesc;
@@ -126,12 +173,15 @@ int main(void)
 	float fX;
 	float fY;
 	int iChanged;
+	int iMultiChanged;
 	int iDockWindow;
 	int iDockPane;
 	int bXgeInitialized;
 	int iFailed;
 	int iRet;
 	uint32_t iPointerModifiers;
+	xui_split_destroy_state_t tDestroyState;
+	xui_split_destroy_context_state_t tDestroyContextState;
 	const char* arrTabItems[1];
 
 	pContext = NULL;
@@ -141,6 +191,9 @@ int main(void)
 	pTabs = NULL;
 	pOffsetParent = NULL;
 	pNestedSplit = NULL;
+	pMultiSplit = NULL;
+	pDestroySplit = NULL;
+	pInvalidSplit = NULL;
 	pShadowOverlay = NULL;
 	pCompetingOverlay = NULL;
 	pDividerWidget = NULL;
@@ -148,9 +201,12 @@ int main(void)
 	pShadowCache = NULL;
 	pDividerCache = NULL;
 	iChanged = 0;
+	iMultiChanged = 0;
 	iPointerModifiers = 0u;
 	bXgeInitialized = 0;
 	iFailed = 0;
+	memset(&tDestroyState, 0, sizeof(tDestroyState));
+	memset(&tDestroyContextState, 0, sizeof(tDestroyContextState));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -165,6 +221,15 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 640.0f, 360.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iPaneCount = 2;
+	tDesc.fDividerSize = NAN;
+	pInvalidSplit = pRoot;
+	iRet = xuiSplitLayoutCreate(pContext, &pInvalidSplit, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidSplit == NULL,
+	               "invalid descriptor rejects NaN and clears output");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -204,6 +269,58 @@ int main(void)
 	XUI_TEST_CHECK(xuiSplitLayoutGetOrientation(pSplit) == XUI_ORIENTATION_VERTICAL, "vertical orientation");
 	iRet = xuiSplitLayoutGetDividerMetrics(pSplit, &fLayoutSize, &fVisualSize, &fHitSize);
 	XUI_TEST_CHECK(iRet == XUI_OK && fLayoutSize == 10.0f && fVisualSize == 3.0f && fHitSize == 14.0f, "metrics");
+
+	iRet = xuiSplitLayoutSetPaneWeight(pSplit, 1, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiSplitLayoutGetPaneWeight(pSplit, 1) == 1.0f,
+	               "pane weight rejects NaN without mutation");
+	iRet = xuiSplitLayoutSetPaneFixedSize(pSplit, 0, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiSplitLayoutGetPaneFixedSize(pSplit, 0) == 120.0f,
+	               "fixed size rejects infinity without mutation");
+	iRet = xuiSplitLayoutSetPaneMinSize(pSplit, 1, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiSplitLayoutGetPaneMinSize(pSplit, 1) == 100.0f,
+	               "minimum rejects NaN without mutation");
+	iRet = xuiSplitLayoutSetPaneMaxSize(pSplit, 1, 50.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiSplitLayoutGetPaneMaxSize(pSplit, 1) == 0.0f,
+	               "maximum cannot be smaller than minimum");
+	iRet = xuiSplitLayoutSetPaneMaxSize(pSplit, 1, 200.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set bounded maximum");
+	iRet = xuiSplitLayoutSetPaneMinSize(pSplit, 1, 220.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiSplitLayoutGetPaneMinSize(pSplit, 1) == 100.0f,
+	               "minimum cannot exceed maximum");
+	iRet = xuiSplitLayoutSetPaneMaxSize(pSplit, 1, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore unbounded maximum");
+	iRet = xuiSplitLayoutSetDividerMetrics(pSplit, 10.0f, NAN, 14.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "divider metrics reject NaN");
+	iRet = xuiSplitLayoutSetDividerSize(pSplit, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "divider layout size rejects infinity");
+	iRet = xuiSplitLayoutSetDividerVisualSize(pSplit, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "divider visual size rejects NaN");
+	iRet = xuiSplitLayoutSetDividerHitSize(pSplit, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "divider hit size rejects infinity");
+	iRet = xuiSplitLayoutGetDividerMetrics(pSplit, &fLayoutSize, &fVisualSize, &fHitSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && fLayoutSize == 10.0f && fVisualSize == 3.0f && fHitSize == 14.0f,
+	               "invalid divider metrics leave state unchanged");
+	iRet = xuiSplitLayoutSetPaneCount(pSplit, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetPaneCount(pSplit) == 4 &&
+	               xuiSplitLayoutGetPaneWidget(pSplit, 3) != NULL, "grow pane count");
+	iRet = xuiSplitLayoutSetPaneMode(pSplit, 3, XUI_SPLIT_PANE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneFixedSize(pSplit, 3, 77.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMaxSize(pSplit, 3, 90.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pSplit, 3, 70.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "customize removable pane");
+	iRet = xuiSplitLayoutSetPaneCount(pSplit, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetPaneCount(pSplit) == 3,
+	               "shrink pane count");
+	iRet = xuiSplitLayoutSetPaneCount(pSplit, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiSplitLayoutGetPaneMode(pSplit, 3) == XUI_SPLIT_PANE_GROW &&
+		xuiSplitLayoutGetPaneWeight(pSplit, 3) == 1.0f &&
+		xuiSplitLayoutGetPaneFixedSize(pSplit, 3) == 160.0f &&
+		xuiSplitLayoutGetPaneMinSize(pSplit, 3) == 64.0f &&
+		xuiSplitLayoutGetPaneMaxSize(pSplit, 3) == 0.0f,
+		"regrown pane starts with defaults instead of removed state");
+	iRet = xuiSplitLayoutSetPaneCount(pSplit, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore pane count after reset regression");
 
 	tPane0 = xuiSplitLayoutGetPaneRect(pSplit, 0);
 	tPane1 = xuiSplitLayoutGetPaneRect(pSplit, 1);
@@ -511,6 +628,205 @@ int main(void)
 		__xuiSplitNear(xuiSplitLayoutGetPaneRect(pNestedSplit, 0).fW, fExpectedSize) &&
 		__xuiSplitNear(xuiSplitLayoutGetPaneRect(pNestedSplit, 1).fW, 60.0f),
 		"grow panes commit at the clamped preview limit");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
+	tDesc.iPaneCount = 2;
+	tDesc.fDividerSize = 8.0f;
+	tDesc.fDividerVisualSize = 2.0f;
+	tDesc.fDividerHitSize = 14.0f;
+	iRet = xuiSplitLayoutCreate(pContext, &pMultiSplit, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pMultiSplit);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pMultiSplit, (xui_rect_t){330.0f, 215.0f, 280.0f, 120.0f});
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMode(pMultiSplit, 0, XUI_SPLIT_PANE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneFixedSize(pMultiSplit, 0, 100.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetChange(pMultiSplit, __xuiSplitChanged, &iMultiChanged);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi-pointer split prepare");
+	tWorld = xuiWidgetGetWorldRect(pMultiSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pMultiSplit, 0);
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = xuiInputPointerDownEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)fX, (int)fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pMultiSplit) == 0 &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) != NULL,
+		"first touch owns split drag");
+	iRet = xuiInputPointerMoveEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fX + 24.0f), (int)fY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 0, "first touch preview remains deferred");
+	iRet = xuiInputPointerDownEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)fX, (int)fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCaptureEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"second touch cannot steal split drag");
+	iRet = xuiInputPointerMoveEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fX + 70.0f), (int)fY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	iRet = (iRet == XUI_OK) ? xuiInputPointerUpEx(pContext, 702u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fX + 70.0f), (int)fY, XUI_POINTER_BUTTON_LEFT, 0u) : iRet;
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 0 &&
+		xuiSplitLayoutGetActiveDivider(pMultiSplit) == 0,
+		"unrelated touch cannot move or commit split drag");
+	iRet = xuiInputPointerUpEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fX + 24.0f), (int)fY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 1 &&
+		xuiSplitLayoutGetActiveDivider(pMultiSplit) == -1 &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == NULL &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pMultiSplit, 0), 124.0f),
+		"owning touch commits the preview position exactly once");
+	iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi-pointer commit layout");
+	tWorld = xuiWidgetGetWorldRect(pMultiSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pMultiSplit, 0);
+	tDivider = xuiSplitLayoutGetDividerLayoutRect(pMultiSplit, 0);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOUBLE_CLICK;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tEvent.fX = (int)(tWorld.fX + tHit.fX + 1.0f);
+	tEvent.fY = (int)(tWorld.fY + tHit.fY + tHit.fH * 0.5f);
+	tEvent.pTarget = xuiHitTest(pContext, tEvent.fX, tEvent.fY, 0u);
+	XUI_TEST_CHECK((float)tEvent.fX < tWorld.fX + tDivider.fX,
+		"equalize test point uses expanded divider hit target");
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 2 &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pMultiSplit, 0), 136.0f),
+		"double-click equalizes from the full divider hit target");
+	pDividerWidget = NULL;
+	for ( pDividerWidget = xuiWidgetGetFirstChild(pMultiSplit); pDividerWidget != NULL;
+	      pDividerWidget = xuiWidgetGetNextSibling(pDividerWidget) ) {
+		int iLayer = 0;
+		int iZIndex = 0;
+		if ( xuiWidgetGetLayer(pDividerWidget, &iLayer, &iZIndex) == XUI_OK &&
+		     iLayer == XUI_LAYER_NORMAL && iZIndex == 10 ) break;
+	}
+	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
+	tAccessibleNode.iSize = sizeof(tAccessibleNode);
+	iRet = (pDividerWidget != NULL) ?
+		xuiWidgetGetAccessibleNode(pDividerWidget, 0, &tAccessibleNode) : XUI_ERROR_NOT_FOUND;
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetAccessibleNodeCount(pDividerWidget) == 1 &&
+		xuiWidgetGetTabStop(pDividerWidget) == 1 &&
+		tAccessibleNode.iRole == XUI_ACCESSIBLE_ROLE_SEPARATOR &&
+		(tAccessibleNode.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) != 0u &&
+		(tAccessibleNode.iState & XUI_ACCESSIBLE_STATE_VERTICAL) != 0u &&
+		tAccessibleNode.tRange.fMin <= tAccessibleNode.tRange.fValue &&
+		tAccessibleNode.tRange.fMax >= tAccessibleNode.tRange.fValue &&
+		(tAccessibleNode.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_INCREMENT)) != 0u,
+		"divider exposes constrained separator accessibility node");
+	iRet = xuiWidgetPerformAccessibleAction(pDividerWidget, 1,
+		XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 3 &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pMultiSplit, 0), 144.0f),
+		"accessibility increment reuses divider commit path");
+	iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "accessibility increment layout");
+	memset(&tAccessibleValue, 0, sizeof(tAccessibleValue));
+	tAccessibleValue.iSize = sizeof(tAccessibleValue);
+	tAccessibleValue.iType = XUI_ACCESSIBLE_VALUE_NUMBER;
+	tAccessibleValue.fNumber = 132.0;
+	iRet = xuiWidgetPerformAccessibleAction(pDividerWidget, 1,
+		XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 4 &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pMultiSplit, 0), 132.0f),
+		"accessibility set value reuses constrained divider commit path");
+	iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "accessibility set value layout");
+	tAccessibleValue.fNumber = NAN;
+	iRet = xuiWidgetPerformAccessibleAction(pDividerWidget, 1,
+		XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iMultiChanged == 4 &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pMultiSplit, 0), 132.0f),
+		"accessibility rejects non-finite divider value without mutation");
+	iRet = xuiWidgetSetEnabled(pMultiSplit, 0);
+	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
+	tAccessibleNode.iSize = sizeof(tAccessibleNode);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetAccessibleNode(pDividerWidget, 0, &tAccessibleNode);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessibleNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u &&
+		tAccessibleNode.iActions == 0u,
+		"disabled divider exposes state without actions");
+	iRet = xuiWidgetPerformAccessibleAction(pDividerWidget, 1,
+		XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iMultiChanged == 4,
+		"disabled divider rejects accessibility mutation");
+	iRet = xuiWidgetSetEnabled(pMultiSplit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable accessible divider");
+	tWorld = xuiWidgetGetWorldRect(pMultiSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pMultiSplit, 0);
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = xuiInputPointerDownEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH,
+		(int)fX, (int)fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pMultiSplit) == 0,
+		"configuration-cancel drag starts");
+	iRet = xuiSplitLayoutSetDividerHitSize(pMultiSplit, 16.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pMultiSplit) == -1 &&
+		xuiGetPointerCaptureEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"geometry change cancels active drag and exact capture");
+	iRet = xuiInputPointerUpEx(pContext, 703u, XUI_POINTER_TYPE_TOUCH,
+		(int)(fX + 40.0f), (int)fY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 4,
+		"cancelled drag cannot commit on later pointer up");
+
+	iRet = xuiSplitLayoutCreate(pContext, &pDestroySplit, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pDestroySplit);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pDestroySplit, (xui_rect_t){20.0f, 220.0f, 280.0f, 100.0f});
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMode(pDestroySplit, 0, XUI_SPLIT_PANE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneFixedSize(pDestroySplit, 0, 100.0f);
+	tDestroyState.ppWidget = &pDestroySplit;
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetChange(pDestroySplit,
+		__xuiSplitDestroyOnChange, &tDestroyState);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-change split prepare");
+	tWorld = xuiWidgetGetWorldRect(pDestroySplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pDestroySplit, 0);
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext, fX + 16.0f, fY,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX + 16.0f, fY,
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroyState.iCount == 1 && pDestroySplit == NULL &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"change callback may destroy split without stale access or capture");
+
+	iRet = xuiSplitLayoutCreate(pContext, &pDestroySplit, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pDestroySplit);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pDestroySplit, (xui_rect_t){20.0f, 220.0f, 280.0f, 100.0f});
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMode(pDestroySplit, 0, XUI_SPLIT_PANE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneFixedSize(pDestroySplit, 0, 100.0f);
+	tDestroyContextState.ppContext = &pContext;
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetChange(pDestroySplit,
+		__xuiSplitDestroyContextOnChange, &tDestroyContextState);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-context-on-change split prepare");
+	tWorld = xuiWidgetGetWorldRect(pDestroySplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pDestroySplit, 0);
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = xuiInputPointerDown(pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX + 12.0f, fY,
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroyContextState.iCount == 1 && pContext == NULL,
+		"change callback may destroy context without stale access");
 
 cleanup:
 	if ( pTarget != NULL ) {

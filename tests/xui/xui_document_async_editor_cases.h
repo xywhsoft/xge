@@ -8,8 +8,8 @@ typedef struct async_editor_allocator {
 } async_editor_allocator;
 static void async_editor_gate(atomic_int* value)
 {
-    xdeadline deadline = xrtDeadlineAfter(10000000);
-    while (!atomic_load(value)) { CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield(); }
+    uint64_t deadline = document_test_deadline_after(10000000);
+    while (!atomic_load(value)) { CHECK(!document_test_deadline_expired(deadline)); xrtThreadYield(); }
 }
 static void* async_editor_alloc(void* data, size_t bytes)
 {
@@ -38,11 +38,11 @@ static xui_doc_prepare_info_t async_editor_info(xui_widget editor)
 }
 static void async_editor_flush(xui_context context, xui_widget editor)
 {
-    xdeadline deadline = xrtDeadlineAfter(10000000); int result;
+    uint64_t deadline = document_test_deadline_after(10000000); int result;
     do {
         CHECK(xuiUpdate(context, .016f) == XUI_OK); result = xuiDocumentEditorFlush(editor);
         CHECK(result == XUI_OK || result == XUI_DOC_ERROR_BUSY);
-        CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield();
+        CHECK(!document_test_deadline_expired(deadline)); xrtThreadYield();
     } while (result != XUI_OK);
 }
 static void async_editor_cases(void)
@@ -123,8 +123,8 @@ static void async_editor_cases(void)
     CHECK(xuiDocumentEditorInsertText(editor, "?", 1) == XUI_OK); atomic_store(&a.fail, 1);
     CHECK(xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY);
     {
-        xdeadline deadline = xrtDeadlineAfter(10000000);
-        do { info = async_editor_info(editor); CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield(); } while (info.iState != XUI_DOC_PREPARE_FAILED);
+        uint64_t deadline = document_test_deadline_after(10000000);
+        do { info = async_editor_info(editor); CHECK(!document_test_deadline_expired(deadline)); xrtThreadYield(); } while (info.iState != XUI_DOC_PREPARE_FAILED);
     }
     CHECK(xuiUpdate(context, .016f) == XUI_OK && a.errors == 1);
     CHECK(xuiDocumentEditorFlush(editor) == XUI_ERROR_OUT_OF_MEMORY && xuiDocumentHasPrepare(d));
@@ -171,8 +171,8 @@ static void async_editor_cases(void)
     CHECK(xuiDocumentLoadMarkdown(d, "history base", 12) == XUI_OK);
     CHECK(xuiDocumentEditorInsertText(editor, "?", 1) == XUI_OK && xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY);
     {
-        xdeadline deadline = xrtDeadlineAfter(10000000);
-        do { info = async_editor_info(editor); CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield(); } while (info.iState != XUI_DOC_PREPARE_READY);
+        uint64_t deadline = document_test_deadline_after(10000000);
+        do { info = async_editor_info(editor); CHECK(!document_test_deadline_expired(deadline)); xrtThreadYield(); } while (info.iState != XUI_DOC_PREPARE_READY);
     }
     CHECK(xuiDocumentClearHistory(d) == XUI_OK); atomic_store(&a.fail_owner, 1);
     CHECK(xuiDocumentEditorFlush(editor) == XUI_ERROR_OUT_OF_MEMORY && xuiDocumentHasPrepare(d)); atomic_store(&a.fail_owner, 0);
@@ -193,7 +193,7 @@ static void async_editor_stream_cases(void)
     xui_document d; xui_widget editor; xui_doc_desc_t create = {0};
     xui_doc_editor_desc_t ed = {0}; xui_doc_prepare_info_t pending;
     xui_doc_editor_pending_work_t work = {0}; xui_doc_range_t range;
-    xdeadline deadline; int result;
+    uint64_t deadline; int result;
     xuiTestProxyInit(&proxy);
     CHECK(xuiCreate(&context) == XUI_OK && xuiSetProxy(context, &proxy.tProxy) == XUI_OK);
     CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, "test.ttf", 14, 0) == XUI_OK &&
@@ -222,11 +222,11 @@ static void async_editor_stream_cases(void)
         !strcmp(xuiEditGetText(editor), "seed\n\n# "));
     CHECK(xuiDocumentEditorAppendStreamSource(editor, "\xb8\xad", 2, 0) == XUI_OK);
     CHECK(!strcmp(xuiEditGetText(editor), "seed\n\n# \xe4\xb8\xad"));
-    deadline = xrtDeadlineAfter(10000000);
+    deadline = document_test_deadline_after(10000000);
     do {
         CHECK(xuiUpdate(context, .016f) == XUI_OK);
         result = xuiDocumentEditorFlush(editor);
-        CHECK(result == XUI_DOC_ERROR_BUSY && !xrtDeadlineExpired(deadline));
+        CHECK(result == XUI_DOC_ERROR_BUSY && !document_test_deadline_expired(deadline));
         xrtThreadYield();
     } while (xuiDocumentHasPrepare(d));
     source(d, "seed\n\n# \xe4\xb8\xad");
@@ -254,10 +254,10 @@ static void async_editor_stream_cases(void)
     async_editor_flush(context, editor);
     source(d, "seed\n\n# \xe4\xb8\xad\n\n**bold** [ref]!?q");
     CHECK(xuiDocumentEditorAppendStreamSource(editor, "z", 1, 0) == XUI_OK);
-    deadline = xrtDeadlineAfter(10000000);
+    deadline = document_test_deadline_after(10000000);
     do {
         CHECK(xuiUpdate(context, .016f) == XUI_OK);
-        CHECK(xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY && !xrtDeadlineExpired(deadline));
+        CHECK(xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY && !document_test_deadline_expired(deadline));
         xrtThreadYield();
     } while (xuiDocumentHasPrepare(d));
     CHECK(xuiDocumentEditorCancelInput(editor) == XUI_OK);
@@ -278,7 +278,7 @@ static void async_editor_live_cases(void)
     xui_doc_desc_t create = {0}; xui_doc_editor_desc_t ed = {0};
     xui_document d; xui_widget editor; xui_doc_range_t range;
     xui_doc_renderer_stats_t stats = {0}; xui_doc_prepare_info_t pending;
-    xdeadline deadline;
+    uint64_t deadline;
     uint64_t middle = (uint64_t)(strstr(original, "middle") - original);
     xuiTestProxyInit(&proxy);
     CHECK(xuiCreate(&context) == XUI_OK && xuiSetProxy(context, &proxy.tProxy) == XUI_OK);
@@ -326,10 +326,10 @@ static void async_editor_live_cases(void)
     CHECK(xuiDocumentEditorAppendStreamSource(editor, "z", 1, 0) == XUI_OK &&
         xuiDocumentViewGetRenderStats(editor, &stats) == XUI_OK &&
         stats.iSourceBlocks > 0 && stats.iSourceBlocks < stats.iBlocks && !stats.bLiveSourceFallback);
-    deadline = xrtDeadlineAfter(10000000);
+    deadline = document_test_deadline_after(10000000);
     do {
         CHECK(xuiUpdate(context, .016f) == XUI_OK &&
-            xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY && !xrtDeadlineExpired(deadline));
+            xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY && !document_test_deadline_expired(deadline));
         xrtThreadYield();
     } while (xuiDocumentHasPrepare(d));
     source(d, "# Header\n\nmidXYZdle\n\n**tail**\nz");
@@ -353,7 +353,7 @@ static void async_editor_visual_cases(void)
     xui_document d; xui_document_snapshot snapshot;
     xui_widget editor, sibling; xui_doc_range_t selected, pending_selection;
     xui_doc_prepare_info_t pending; xui_doc_stats_t stats = {0};
-    xdeadline deadline; uint64_t found, revision, matches;
+    uint64_t deadline, found, revision, matches;
     atomic_init(&a.gate, 0); atomic_init(&a.entered, 0); atomic_init(&a.resume, 0);
     atomic_init(&a.fail, 0); atomic_init(&a.fail_owner, 0); atomic_init(&a.live, 0);
     atomic_init(&a.owner_calls, 0); atomic_init(&a.fail_owner_at, UINT64_MAX); a.owner = xrtThreadCurrentId(); a.errors = 0;
@@ -440,8 +440,8 @@ static void async_editor_visual_cases(void)
     CHECK(xuiDocumentEditorInsertText(editor, "?", 1) == XUI_OK);
     atomic_store(&a.fail, 1);
     CHECK(xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY);
-    deadline = xrtDeadlineAfter(10000000);
-    do { pending = async_editor_info(editor); CHECK(!xrtDeadlineExpired(deadline)); xrtThreadYield(); }
+    deadline = document_test_deadline_after(10000000);
+    do { pending = async_editor_info(editor); CHECK(!document_test_deadline_expired(deadline)); xrtThreadYield(); }
     while (pending.iState != XUI_DOC_PREPARE_FAILED);
     CHECK(xuiDocumentEditorFlush(editor) == XUI_ERROR_OUT_OF_MEMORY &&
         strstr(xuiEditGetText(editor), "he?llo*ZQ!\xe4\xb8\xad") && a.errors == 0);
@@ -1456,19 +1456,19 @@ static void async_editor_visual_scale_cases(void)
         selection.tAnchor.iOffset = 511; selection.tAnchor.iAffinity = XUI_DOC_AFTER;
         selection.tCaret = selection.tAnchor;
         CHECK(xuiDocumentViewSetSelection(editor, &selection) == XUI_OK);
-        begin = xrtClock();
+        begin = document_test_clock_microseconds();
         CHECK(xuiDocumentEditorInsertText(editor, "x", 1) == XUI_OK);
-        first_ms = (double)(xrtClock() - begin) / 1000.0;
+        first_ms = (double)(document_test_clock_microseconds() - begin) / 1000.0;
         CHECK(async_editor_info(editor).iPatchCount == 1);
         atomic_store(&a.gate, 1);
         CHECK(xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY);
         async_editor_gate(&a.entered);
         for (i = 0; i < 68; i++) {
-            begin = xrtClock();
+            begin = document_test_clock_microseconds();
             CHECK(xuiDocumentEditorInsertText(editor, "x", 1) == XUI_OK &&
                 xuiUpdate(context, .016f) == XUI_OK &&
                 xuiRender(context, surface, &damage, 1) == XUI_OK);
-            if (i >= 4) samples[i - 4] = (double)(xrtClock() - begin) / 1000.0;
+            if (i >= 4) samples[i - 4] = (double)(document_test_clock_microseconds() - begin) / 1000.0;
             CHECK(xuiDocumentGetRevision(d) == revision &&
                 async_editor_info(editor).iSourceBytes == bytes + i + 2);
         }
@@ -1497,18 +1497,18 @@ static void async_editor_visual_scale_cases(void)
         selection.tAnchor.iNodeId = selection.tCaret.iNodeId = body;
         selection.tAnchor.iOffset = selection.tCaret.iOffset = 511;
         CHECK(xuiDocumentViewSetSelection(editor, &selection) == XUI_OK);
-        begin = xrtClock();
+        begin = document_test_clock_microseconds();
         CHECK(xuiDocumentEditorExecute(editor, XUI_DOC_EDIT_BACKSPACE) == XUI_OK);
-        first_ms = (double)(xrtClock() - begin) / 1000.0;
+        first_ms = (double)(document_test_clock_microseconds() - begin) / 1000.0;
         atomic_store(&a.entered, 0); atomic_store(&a.resume, 0); atomic_store(&a.gate, 1);
         CHECK(xuiDocumentEditorFlush(editor) == XUI_DOC_ERROR_BUSY);
         async_editor_gate(&a.entered);
         for (i = 0; i < 68; i++) {
-            begin = xrtClock();
+            begin = document_test_clock_microseconds();
             CHECK(xuiDocumentEditorExecute(editor, XUI_DOC_EDIT_BACKSPACE) == XUI_OK &&
                 xuiUpdate(context, .016f) == XUI_OK &&
                 xuiRender(context, surface, &damage, 1) == XUI_OK);
-            if (i >= 4) samples[i - 4] = (double)(xrtClock() - begin) / 1000.0;
+            if (i >= 4) samples[i - 4] = (double)(document_test_clock_microseconds() - begin) / 1000.0;
             CHECK(xuiDocumentGetRevision(d) == revision &&
                 async_editor_info(editor).iSourceBytes == bytes - i - 2);
         }
@@ -1589,11 +1589,11 @@ static void async_editor_live_scale_cases(void)
             CHECK(xuiDocumentViewGetSelection(editor, &range) == XUI_OK);
             range.tAnchor.iOffset = 3; range.tCaret.iOffset = 4;
             CHECK(xuiDocumentViewSetSelection(editor, &range) == XUI_OK);
-            begin = xrtClock();
+            begin = document_test_clock_microseconds();
             CHECK(xuiDocumentEditorInsertText(editor, i & 1 ? "a" : "b", 1) == XUI_OK &&
                 xuiUpdate(context, .016f) == XUI_OK &&
                 xuiRender(context, surface, &damage, 1) == XUI_OK);
-            if (i >= 4) samples[i - 4] = (double)(xrtClock() - begin) / 1000.0;
+            if (i >= 4) samples[i - 4] = (double)(document_test_clock_microseconds() - begin) / 1000.0;
             CHECK(xuiDocumentGetRevision(d) == revision &&
                 async_editor_info(editor).iSourceBytes == bytes + 1);
         }
@@ -1689,10 +1689,10 @@ static void async_editor_scale_cases(void)
         for (i = 0; i < 68; i++) {
             CHECK(xuiDocumentViewGetSelection(editor, &range) == XUI_OK); range.tAnchor.iOffset = 3; range.tCaret.iOffset = 4;
             CHECK(xuiDocumentViewSetSelection(editor, &range) == XUI_OK);
-            begin = xrtClock();
+            begin = document_test_clock_microseconds();
             CHECK(xuiDocumentEditorInsertText(editor, i & 1 ? "a" : "b", 1) == XUI_OK);
             CHECK(xuiUpdate(context, .016f) == XUI_OK && xuiRender(context, surface, &damage, 1) == XUI_OK);
-            if (i >= 4) samples[i - 4] = (double)(xrtClock() - begin) / 1000.0;
+            if (i >= 4) samples[i - 4] = (double)(document_test_clock_microseconds() - begin) / 1000.0;
             CHECK(xuiDocumentGetRevision(d) == revision && async_editor_info(editor).iSourceBytes == bytes + 1);
         }
         CHECK(xuiDocumentGetStats(d, &after) == XUI_OK && after.iMarkdownParses == before.iMarkdownParses);
@@ -1717,10 +1717,10 @@ static void async_editor_scale_cases(void)
                 range.tAnchor.iOffset = range.tCaret.iOffset = caret;
                 CHECK(xuiDocumentViewSetSelection(editor, &range) == XUI_OK);
                 for (i = 0; i < 68; i++) {
-                    begin = xrtClock();
+                    begin = document_test_clock_microseconds();
                     event.iKey = XUI_KEY_LEFT; CHECK(xuiDispatchEvent(context, &event) == XUI_OK);
                     event.iKey = XUI_KEY_RIGHT; CHECK(xuiDispatchEvent(context, &event) == XUI_OK);
-                    if (i >= 4) navigation_samples[i - 4] = (double)(xrtClock() - begin) / 1000.0;
+                    if (i >= 4) navigation_samples[i - 4] = (double)(document_test_clock_microseconds() - begin) / 1000.0;
                     CHECK(xuiDocumentViewGetSelection(editor, &range) == XUI_OK && range.tCaret.iOffset == caret);
                 }
                 qsort(navigation_samples, 64, sizeof(*navigation_samples), async_editor_order_time);

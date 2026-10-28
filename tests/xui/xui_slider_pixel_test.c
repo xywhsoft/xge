@@ -74,7 +74,12 @@ int main(void)
 						slider_changes = xuiSliderGetChangeCount(slider);
 						range_changes = xuiRangeSliderGetChangeCount(range);
 						track = xuiSliderGetTrackRect(slider);
-						if (vertical) {
+						if (w <= 0.0f || h <= 0.0f) {
+							pixel_rect(track, 0, 0, 0, 0);
+							pixel_rect(xuiRangeSliderGetTrackRect(range), 0, 0, 0, 0);
+							pixel_rect(xuiSliderGetFillRect(slider), 0, 0, 0, 0);
+							pixel_rect(xuiRangeSliderGetFillRect(range), 0, 0, 0, 0);
+						} else if (vertical) {
 							pixel_rect(track, offset, origin, thickness, length);
 							pixel_rect(xuiRangeSliderGetTrackRect(range), offset, origin, thickness, length);
 							pixel_rect(xuiSliderGetFillRect(slider), offset, origin + length * (1 - rates[ri]), thickness, length * rates[ri]);

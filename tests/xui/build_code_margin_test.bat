@@ -3,7 +3,7 @@ setlocal
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_code_margin_test.exe
-set SRC=tests\xui\xui_code_margin_test.c src\xui\code\xui_code_margin.c
+set SRC=tests\xui\xui_code_margin_test.c
 set INC=@config/includes.rsp
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib

@@ -15,6 +15,7 @@ int main(void)
 {
 	xui_code_token_buffer pBuffer;
 	xui_code_token_t arrIn[3];
+	xui_code_token_t arrInvalid[3];
 	xui_code_token_t arrOut[3];
 	uint32_t iVersion;
 	int iRangeStart;
@@ -61,6 +62,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "covered range fetch");
 	iRet = xuiCodeTokenBufferGetTokensInRange(pBuffer, 43u, 0, 10, arrOut, 3, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && iCount == 0, "uncovered range rejected");
+	arrInvalid[0] = arrIn[1];
+	arrInvalid[1] = arrIn[0];
+	arrInvalid[2] = arrIn[2];
+	iRet = xuiCodeTokenBufferSetRange(pBuffer, arrInvalid, 3, 44u, 0, 10);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiCodeTokenBufferGetCount(pBuffer) == 2,
+		"unsorted tokens rejected without replacing cache");
+	iRet = xuiCodeTokenBufferGetRange(pBuffer, &iVersion, &iRangeStart, &iRangeEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iVersion == 43u &&
+		iRangeStart == 4 && iRangeEnd == 10,
+		"invalid token order preserves metadata");
+	arrInvalid[0] = arrIn[0];
+	arrInvalid[0].iStartOffset = 3;
+	arrInvalid[0].iEndOffset = 5;
+	iRet = xuiCodeTokenBufferSetRange(pBuffer, arrInvalid, 1, 44u, 4, 10);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiCodeTokenBufferGetCount(pBuffer) == 2,
+		"token outside declared range rejected");
 	xuiCodeTokenBufferClear(pBuffer);
 	XUI_TEST_CHECK(xuiCodeTokenBufferGetCount(pBuffer) == 0, "buffer clear");
 

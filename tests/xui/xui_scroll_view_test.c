@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -37,6 +38,25 @@ static void __xuiScrollViewChanged(xui_widget pWidget, float fOffsetX, float fOf
 	}
 }
 
+typedef struct xui_scroll_view_destroy_state_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_scroll_view_destroy_state_t;
+
+static void __xuiScrollViewDestroyOnChange(xui_widget pWidget, float fOffsetX,
+	float fOffsetY, void* pUser)
+{
+	xui_scroll_view_destroy_state_t* pState = (xui_scroll_view_destroy_state_t*)pUser;
+
+	(void)fOffsetX;
+	(void)fOffsetY;
+	if ( pState != NULL ) {
+		pState->iCount++;
+		xuiWidgetDestroy(pWidget);
+		if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
+	}
+}
+
 static int __xuiScrollViewDispatchWheel(xui_context pContext, float fX, float fY, float fWheelY)
 {
 	int iRet;
@@ -62,8 +82,12 @@ int main(void)
 	xui_widget pView;
 	xui_widget pContent;
 	xui_widget pChild;
+	xui_widget pInvalid;
+	xui_widget pDestroyView;
 	xui_surface pTarget;
 	xui_scroll_view_desc_t tDesc;
+	xui_scroll_view_desc_t tInvalidDesc;
+	xui_scroll_view_destroy_state_t tDestroy;
 	xui_rect_t tViewport;
 	xui_rect_t tContentRect;
 	xui_rect_t tChildWorld;
@@ -72,8 +96,15 @@ int main(void)
 	xui_widget pHit;
 	float fOffsetX;
 	float fOffsetY;
+	float fHintWidth;
+	float fHintHeight;
+	float fFrameHintWidth;
+	float fFrameHintHeight;
+	float fSmallStep;
+	float fLargeStep;
 	int iChanged;
 	int iFailed;
+	int iReset;
 	int iRet;
 
 	pContext = NULL;
@@ -81,9 +112,12 @@ int main(void)
 	pView = NULL;
 	pContent = NULL;
 	pChild = NULL;
+	pInvalid = NULL;
+	pDestroyView = NULL;
 	pTarget = NULL;
 	iChanged = 0;
 	iFailed = 0;
+	memset(&tDestroy, 0, sizeof(tDestroy));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -115,8 +149,47 @@ int main(void)
 	tDesc.fViewportHeight = 110.0f;
 	iRet = xuiScrollViewCreate(pContext, &pView, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pView != NULL, "scrollview create");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fWheelStep = INFINITY;
+	pInvalid = (xui_widget)(void*)1;
+	iRet = xuiScrollViewCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"invalid descriptor clears scrollview output");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.iWheelAxis = 99;
+	pInvalid = (xui_widget)(void*)1;
+	iRet = xuiScrollViewCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"invalid scrollview wheel axis is rejected");
+	iRet = xuiScrollViewSetWheelStep(pView, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		__xuiScrollViewNear(xuiScrollViewGetWheelStep(pView), 20.0f),
+		"scrollview rejects infinite wheel step without mutation");
+	iRet = xuiScrollViewSetWheelStep(pView, 12.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarGetSteps(
+		xuiScrollFrameGetHScrollBarWidget(xuiScrollViewGetFrameWidget(pView)),
+		&fSmallStep, &fLargeStep);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(fSmallStep, 12.0f),
+		"scrollview wheel step immediately reaches frame bars");
+	iRet = xuiScrollViewSetWheelStep(pView, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore scrollview wheel step");
 	iRet = xuiWidgetMeasure(pView, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(tMeasured.fX, 140.0f) && __xuiScrollViewNear(tMeasured.fY, 110.0f), "scrollview desired viewport");
+	iRet = xuiScrollViewSetViewportHint(pView, 150.0f, 115.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewGetViewportHint(pView, &fHintWidth, &fHintHeight);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetViewportHint(xuiScrollViewGetFrameWidget(pView),
+		&fFrameHintWidth, &fFrameHintHeight);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetMeasure(pView,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(fHintWidth, 150.0f) &&
+		__xuiScrollViewNear(fHintHeight, 115.0f) &&
+		__xuiScrollViewNear(fFrameHintWidth, fHintWidth) &&
+		__xuiScrollViewNear(fFrameHintHeight, fHintHeight) &&
+		__xuiScrollViewNear(tMeasured.fX, fHintWidth) &&
+		__xuiScrollViewNear(tMeasured.fY, fHintHeight),
+		"scrollview uses frame viewport hint as one source of truth");
+	iRet = xuiScrollViewSetViewportHint(pView, 140.0f, 110.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore scrollview viewport hint");
 	iRet = xuiScrollViewSetContentSize(pView, 3000.0f, 2200.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "scrollview large content extent");
 	iRet = xuiWidgetMeasure(pView, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
@@ -154,11 +227,25 @@ int main(void)
 	pHit = xuiHitTest(pContext, 20.0f + 220.0f + 4.0f, 20.0f + 150.0f + 4.0f, XUI_WIDGET_HIT_DEFAULT);
 	XUI_TEST_CHECK(pHit != pChild, "child clipped from hit outside viewport");
 
+	iRet = xuiScrollViewSetOffset(pView, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetModifiers(pContext, XUI_MOD_SHIFT);
+	if ( iRet == XUI_OK ) iRet = __xuiScrollViewDispatchWheel(pContext,
+		20.0f + 8.0f, 20.0f + 8.0f, -1.0f);
+	iReset = xuiInputSetModifiers(pContext, 0u);
+	if ( iRet == XUI_OK ) iRet = iReset;
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewGetOffset(pView, &fOffsetX, &fOffsetY);
+	tContentRect = xuiWidgetGetRect(pContent);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(fOffsetX, 20.0f) &&
+		__xuiScrollViewNear(fOffsetY, 0.0f) && __xuiScrollViewNear(tContentRect.fX, -20.0f),
+		"shift wheel scrolls and synchronizes content horizontally");
+
 	iRet = xuiScrollViewSetOffset(pView, 50.0f, 40.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set offset");
 	tContentRect = xuiWidgetGetRect(pContent);
 	XUI_TEST_CHECK(__xuiScrollViewNear(tContentRect.fX, -50.0f) && __xuiScrollViewNear(tContentRect.fY, -40.0f), "content shifted");
 
+	iRet = xuiScrollViewEnsureChildVisible(pView, pRoot);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject unrelated ensure-visible widget");
 	iRet = xuiScrollViewEnsureChildVisible(pView, pChild);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ensure child");
 	iRet = xuiScrollViewGetOffset(pView, &fOffsetX, &fOffsetY);
@@ -177,6 +264,26 @@ int main(void)
 	tChildWorld = xuiWidgetGetWorldRect(pChild);
 	pHit = xuiHitTest(pContext, tChildWorld.fX + 2.0f, tChildWorld.fY + 2.0f, XUI_WIDGET_HIT_DEFAULT);
 	XUI_TEST_CHECK(pHit == pChild, "visible child hit");
+
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fContentWidth = 200.0f;
+	tInvalidDesc.fContentHeight = 200.0f;
+	tInvalidDesc.fViewportWidth = 80.0f;
+	tInvalidDesc.fViewportHeight = 60.0f;
+	iRet = xuiScrollViewCreate(pContext, &pDestroyView, &tInvalidDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pDestroyView);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pDestroyView,
+		(xui_rect_t){200.0f, 20.0f, 80.0f, 60.0f});
+	tDestroy.ppWidget = &pDestroyView;
+	if ( iRet == XUI_OK ) iRet = xuiScrollViewSetChange(pDestroyView,
+		__xuiScrollViewDestroyOnChange, &tDestroy);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-change scrollview prepare");
+	tViewportWorld = xuiWidgetGetWorldRect(xuiScrollViewGetViewportWidget(pDestroyView));
+	iRet = __xuiScrollViewDispatchWheel(pContext, tViewportWorld.fX + 4.0f,
+		tViewportWorld.fY + 4.0f, -1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyView == NULL && tDestroy.iCount == 1,
+		"change callback may destroy scrollview without stale frame access");
 
 cleanup:
 	if ( pContext != NULL ) {

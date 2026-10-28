@@ -82,6 +82,79 @@ static int xuiTestCommandEnabled(xui_widget_t* pWidget, int iCommand, int* pEnab
 	return XUI_OK;
 }
 
+static int xuiTestInvalidCompletion(xui_widget_t* pWidget, int iOffset,
+	const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity,
+	int* pItemCount, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)sPrefix;
+	(void)pItems;
+	(void)iItemCapacity;
+	(void)pUser;
+	*pItemCount = -1;
+	return XUI_OK;
+}
+
+static int xuiTestFailingCompletion(xui_widget_t* pWidget, int iOffset,
+	const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity,
+	int* pItemCount, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)sPrefix;
+	(void)pItems;
+	(void)iItemCapacity;
+	(void)pUser;
+	*pItemCount = 9;
+	return XUI_ERROR_RESOURCE_FAILED;
+}
+
+static int xuiTestInvalidHover(xui_widget_t* pWidget, int iOffset,
+	xui_code_hover_t* pHover, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	pHover->tRange.iStart = -1;
+	pHover->tRange.iEnd = 2;
+	pHover->sText = "invalid";
+	return XUI_OK;
+}
+
+static int xuiTestInvalidSignature(xui_widget_t* pWidget, int iOffset,
+	xui_code_signature_help_t* pHelp, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	pHelp->sLabel = "invalid";
+	pHelp->iParameterCount = 1;
+	pHelp->pParameters = NULL;
+	return XUI_OK;
+}
+
+static int xuiTestFailingCommand(xui_widget_t* pWidget, int iCommand,
+	const void* pCommandData, int* pHandled, void* pUser)
+{
+	(void)pWidget;
+	(void)iCommand;
+	(void)pCommandData;
+	(void)pUser;
+	*pHandled = 1;
+	return XUI_ERROR_RESOURCE_FAILED;
+}
+
+static int xuiTestTruthyCommandEnabled(xui_widget_t* pWidget, int iCommand,
+	int* pEnabled, void* pUser)
+{
+	(void)pWidget;
+	(void)iCommand;
+	(void)pUser;
+	*pEnabled = 7;
+	return XUI_OK;
+}
+
 int main(void)
 {
 	xui_code_provider_set pProviders;
@@ -135,6 +208,45 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1, "command enabled query");
 	iRet = xuiCodeProviderExecuteCommand(pProviders, NULL, XUI_CODE_COMMAND_USER_BASE + 3, &iCommandData, &iHandled);
 	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && iSeen == 77, "execute command");
+
+	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 4, "pr", NULL, 1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"missing completion buffer rejected");
+	iRet = xuiCodeProviderSetCompletion(pProviders, xuiTestInvalidCompletion, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid completion");
+	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 0, NULL, NULL, 0, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && iCount == 0,
+		"negative completion count rejected");
+	iRet = xuiCodeProviderSetCompletion(pProviders, xuiTestFailingCompletion, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set failing completion");
+	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 0, NULL, NULL, 0, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_RESOURCE_FAILED && iCount == 0,
+		"failed completion clears count");
+
+	iRet = xuiCodeProviderSetHover(pProviders, xuiTestInvalidHover, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid hover");
+	iRet = xuiCodeProviderRequestHover(pProviders, NULL, 0, &tHover);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tHover.sText == NULL,
+		"invalid hover output rejected");
+	iRet = xuiCodeProviderSetSignature(pProviders, xuiTestInvalidSignature, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid signature");
+	iRet = xuiCodeProviderRequestSignature(pProviders, NULL, 0, &tSignature);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tSignature.sLabel == NULL,
+		"invalid signature output rejected");
+
+	iRet = xuiCodeProviderSetCommand(pProviders, xuiTestFailingCommand, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set failing command");
+	iRet = xuiCodeProviderExecuteCommand(pProviders, NULL,
+		XUI_CODE_COMMAND_USER_BASE + 3, NULL, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_RESOURCE_FAILED && iHandled == 0,
+		"failed command clears handled");
+	iRet = xuiCodeProviderSetCommandEnabled(pProviders,
+		xuiTestTruthyCommandEnabled, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set truthy command enabled");
+	iRet = xuiCodeProviderCanExecuteCommand(pProviders, NULL,
+		XUI_CODE_COMMAND_USER_BASE + 3, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1,
+		"command enabled normalized");
 
 	xuiCodeProviderSetClear(pProviders);
 	iRet = xuiCodeProviderCanExecuteCommand(pProviders, NULL, XUI_CODE_COMMAND_USER_BASE + 3, &iHandled);

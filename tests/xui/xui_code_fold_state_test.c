@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -29,6 +30,31 @@ static int xuiTestFoldProvider(xui_code_document_t* pDocument, xui_code_fold_ran
 	return XUI_OK;
 }
 
+static int xuiTestGrowingFoldProvider(xui_code_document_t* pDocument,
+	xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount, void* pUser)
+{
+	int* pCalls;
+
+	(void)pDocument;
+	if ( pRangeCount == NULL || pUser == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pCalls = (int*)pUser;
+	(*pCalls)++;
+	if ( pRanges == NULL ) {
+		*pRangeCount = 1;
+		return XUI_OK;
+	}
+	*pRangeCount = 2;
+	if ( iRangeCapacity < 2 ) return XUI_OK;
+	memset(pRanges, 0, sizeof(*pRanges) * 2u);
+	pRanges[0].iSize = sizeof(pRanges[0]);
+	pRanges[0].iStartLine = 0;
+	pRanges[0].iEndLine = 2;
+	pRanges[1].iSize = sizeof(pRanges[1]);
+	pRanges[1].iStartLine = 1;
+	pRanges[1].iEndLine = 3;
+	return XUI_OK;
+}
+
 int main(void)
 {
 	xui_code_fold_state pState;
@@ -37,6 +63,7 @@ int main(void)
 	xui_code_fold_range_t tRange;
 	int arrVisible[8];
 	int iCount;
+	int iProviderCalls;
 	int iLine;
 	int iRow;
 	int bVisible;
@@ -46,6 +73,7 @@ int main(void)
 	pState = NULL;
 	pDocument = NULL;
 	iFailed = 0;
+	iProviderCalls = 0;
 
 	iRet = xuiCodeFoldStateCreate(&pState);
 	XUI_TEST_CHECK(iRet == XUI_OK && pState != NULL, "state create");
@@ -108,6 +136,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStartLine == 1 && tRange.iEndLine == 5, "fold end shifts after inner edit");
 	iRet = xuiCodeFoldStateTrackEdit(pState, 1, 1, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFoldStateGetCount(pState) == 0, "header edit drops invalid fold");
+	iRet = xuiCodeFoldStateBuildFromProvider(pState, pDocument,
+		xuiTestGrowingFoldProvider, &iProviderCalls);
+	XUI_TEST_CHECK(iRet == XUI_OK && iProviderCalls == 3 &&
+		xuiCodeFoldStateGetCount(pState) == 2,
+		"provider count growth is retried safely");
+
+	memset(arrRanges, 0, sizeof(arrRanges));
+	arrRanges[0].iSize = sizeof(arrRanges[0]);
+	arrRanges[0].iStartLine = INT_MAX - 2;
+	arrRanges[0].iEndLine = INT_MAX - 1;
+	iRet = xuiCodeFoldStateSetRanges(pState, arrRanges, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "large fold range set");
+	iRet = xuiCodeFoldStateTrackEdit(pState, 0, 0, 10);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "fold edit shift overflow rejected");
+	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStartLine == INT_MAX - 2 &&
+		tRange.iEndLine == INT_MAX - 1, "overflow rejection preserves ranges");
 
 	memset(arrRanges, 0, sizeof(arrRanges));
 	arrRanges[0].iSize = sizeof(arrRanges[0]);

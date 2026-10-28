@@ -3,7 +3,7 @@ setlocal
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_code_language_test.exe
-set SRC=tests\xui\xui_code_language_test.c src\xui\code\xui_code_document.c src\xui\code\xui_code_lexer.c src\xui\code\xui_code_lexer_c.c src\xui\code\xui_code_fold.c src\xui\code\xui_code_language.c
+set SRC=tests\xui\xui_code_language_test.c src\xui\code\xui_code_document.c src\xui\code\xui_code_lexer.c src\xui\code\xui_code_lexer_c.c src\xui\code\xui_code_fold.c
 set SRC=src\xui\core\xui_unicode.c %SRC%
 set INC=@config/includes.rsp
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0

@@ -1,5 +1,5 @@
 #include "../src/xui/core/xui_internal.h"
-static struct { int LayoutNode, MeasureNode, HitNode, RenderNode, HitLine, RenderLine, CaretSource, CaretDecode, CaretCluster, CaretDisplay, HitCaret; } gMessageWork;
+static struct { int LayoutNode, MeasureNode, HitNode, RenderNode, HitLine, RenderLine, CaretSource, CaretDecode, CaretCluster, CaretDisplay, HitCaret, NodeIdLookup, NodeIdScan; } gMessageWork;
 #define XUI_MESSAGE_LIST_AUDIT_STEP(name) (++gMessageWork.name)
 #include "../src/xui/controls/xui_message_list.c"
 #include "xui_style_collections_test.h"

@@ -699,6 +699,32 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "touch B cancel dispatch failed");
 	XUI_TEST_CHECK((tMulti.iCaptureLostB == 1) &&
 	               (xuiGetPointerCaptureEx(pContext, 202, XUI_POINTER_TYPE_TOUCH) == NULL), "touch B cancel release failed");
+	memset(&tMulti, 0, sizeof(tMulti));
+	tMulti.pA = pA;
+	tMulti.pB = pB;
+	iRet = xuiInputPointerDownEx(pContext, 303, XUI_POINTER_TYPE_TOUCH,
+		12.0f, 12.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDownEx(pContext, 304,
+		XUI_POINTER_TYPE_TOUCH, 12.0f, 12.0f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetInputState(pA) & XUI_WIDGET_STATE_ACTIVE) != 0,
+		"two touches keep shared target active");
+	iRet = xuiInputPointerUpEx(pContext, 304, XUI_POINTER_TYPE_TOUCH,
+		12.0f, 12.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetInputState(pA) & XUI_WIDGET_STATE_ACTIVE) != 0 &&
+		xuiGetPointerCaptureEx(pContext, 303, XUI_POINTER_TYPE_TOUCH) == pA,
+		"releasing one touch preserves other touch active state");
+	iRet = xuiInputPointerUpEx(pContext, 303, XUI_POINTER_TYPE_TOUCH,
+		12.0f, 12.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetInputState(pA) & XUI_WIDGET_STATE_ACTIVE) == 0,
+		"last touch release clears shared target active state");
 	(void)xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_DOWN, NULL, NULL);
 	(void)xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_MOVE, NULL, NULL);
 	(void)xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_UP, NULL, NULL);

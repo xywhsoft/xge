@@ -3,6 +3,20 @@
 #include <stdio.h>
 #include <string.h>
 
+xui_widget xuiInternalPopupPointerPassthroughOwner(xui_context pContext,
+	xui_widget pHit, float fX, float fY)
+{
+	(void)pContext; (void)fX; (void)fY;
+	return pHit;
+}
+
+int xuiInternalPopupPrepareOwnerPress(xui_context pContext,
+	xui_widget pTarget, float fX, float fY)
+{
+	(void)pContext; (void)pTarget; (void)fX; (void)fY;
+	return XUI_OK;
+}
+
 enum {
 	ACTION_CANCEL, ACTION_REPLACE, ACTION_DESTROY_NEXT, ACTION_MOVE_NEXT,
 	ACTION_DESTROY_SOURCE, ACTION_DESTROY_TARGET, ACTION_DESTROY_ROOT,

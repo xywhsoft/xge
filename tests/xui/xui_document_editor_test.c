@@ -138,6 +138,19 @@ static void send_text(xui_context context, xui_widget w, const char* text, int i
     strcpy(e.sText, text); e.iTextSize = (int)strlen(text); e.bCompositionActive = active; e.iCompositionCursor = e.iTextSize;
     CHECK(xuiDispatchEvent(context, &e) == XUI_OK);
 }
+static uint64_t document_test_clock_microseconds(void)
+{
+    return (uint64_t)(xrtTimer() * 1000000.0);
+}
+static uint64_t document_test_deadline_after(uint64_t microseconds)
+{
+    uint64_t now = document_test_clock_microseconds();
+    return UINT64_MAX - now < microseconds ? UINT64_MAX : now + microseconds;
+}
+static int document_test_deadline_expired(uint64_t deadline)
+{
+    return document_test_clock_microseconds() >= deadline;
+}
 #include "xui_document_async_editor_cases.h"
 #include "xui_document_ordered_editor_cases.h"
 #include "xui_document_group_editor_cases.h"
@@ -3205,7 +3218,7 @@ static void table_width_editor_cases(xui_context context)
         xuiInputViewport(context, 300, 150) == XUI_OK && xuiLayout(context) == XUI_OK);
     CHECK(xuiWidgetGetCursorQueryCallback(editor, &cursor, &cursor_user) == XUI_OK &&
         cursor && cursor(editor, 100, 10, cursor_user) == XUI_CURSOR_RESIZE_EW &&
-        cursor(editor, 20, 10, cursor_user) == XUI_CURSOR_INHERIT);
+        cursor(editor, 20, 10, cursor_user) == XUI_CURSOR_IBEAM);
     CHECK(xuiDocumentViewGetSelection(editor, &before) == XUI_OK);
     revision = xuiDocumentGetRevision(document);
     send_pointer(context, editor, XUI_EVENT_POINTER_DOWN, 100, 10, XUI_POINTER_BUTTON_LEFT);
@@ -3236,7 +3249,7 @@ static void table_width_editor_cases(xui_context context)
     CHECK(xuiGetPointerCaptureEx(context, 7, XUI_POINTER_TYPE_MOUSE) != editor);
     send_pointer(context, editor, XUI_EVENT_POINTER_MOVE, 140, 10, XUI_POINTER_BUTTON_LEFT);
     send_pointer(context, editor, XUI_EVENT_POINTER_UP, 140, 10, 0);
-    CHECK(cursor(editor, 120, 10, cursor_user) == XUI_CURSOR_INHERIT);
+    CHECK(cursor(editor, 120, 10, cursor_user) == XUI_CURSOR_IBEAM);
     CHECK(xuiDocumentEditorSetTableColumnWidth(editor, table, 0, 50) == XUI_ERROR_UNSUPPORTED);
     CHECK(xuiDocumentEditorSetReadOnly(editor, 0) == XUI_OK);
     CHECK(xuiDocumentEditorSetTableColumnWidth(editor, table, 0, 50) == XUI_OK);

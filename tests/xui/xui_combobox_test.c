@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -24,6 +25,17 @@ typedef struct xui_combobox_test_text_t {
 	char sText[64];
 } xui_combobox_test_text_t;
 
+typedef struct xui_combobox_test_destroy_t {
+	xui_widget* ppWidget;
+	int iCount;
+} xui_combobox_test_destroy_t;
+
+typedef struct xui_combobox_test_event_destroy_t {
+	xui_widget* ppWidget;
+	int iEventType;
+	int iCount;
+} xui_combobox_test_event_destroy_t;
+
 static void __xuiComboBoxSelected(xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	xui_combobox_test_select_t* pSelect;
@@ -44,6 +56,44 @@ static void __xuiComboBoxTextChanged(xui_widget pWidget, const char* sText, void
 	if ( pText == NULL ) return;
 	pText->iCount++;
 	snprintf(pText->sText, sizeof(pText->sText), "%s", (sText != NULL) ? sText : "");
+}
+
+static void __xuiComboBoxDestroyOnSelect(xui_widget pWidget, int iIndex, int iValue, void* pUser)
+{
+	xui_combobox_test_destroy_t* pDestroy = (xui_combobox_test_destroy_t*)pUser;
+
+	(void)iIndex;
+	(void)iValue;
+	if ( pDestroy == NULL ) return;
+	pDestroy->iCount++;
+	xuiWidgetDestroy(pWidget);
+	if ( pDestroy->ppWidget != NULL && *pDestroy->ppWidget == pWidget ) *pDestroy->ppWidget = NULL;
+}
+
+static void __xuiComboBoxDestroyOnTextChange(xui_widget pWidget, const char* sText, void* pUser)
+{
+	xui_combobox_test_destroy_t* pDestroy = (xui_combobox_test_destroy_t*)pUser;
+
+	(void)sText;
+	if ( pDestroy == NULL ) return;
+	pDestroy->iCount++;
+	xuiWidgetDestroy(pWidget);
+	if ( pDestroy->ppWidget != NULL && *pDestroy->ppWidget == pWidget ) *pDestroy->ppWidget = NULL;
+}
+
+static int __xuiComboBoxDestroyVictimOnEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_combobox_test_event_destroy_t* pDestroy = (xui_combobox_test_event_destroy_t*)pUser;
+	xui_widget pVictim;
+
+	(void)pWidget;
+	if ( (pDestroy == NULL) || (pEvent == NULL) || (pEvent->iType != pDestroy->iEventType) ||
+	     (pDestroy->ppWidget == NULL) || (*pDestroy->ppWidget == NULL) ) return XUI_OK;
+	pVictim = *pDestroy->ppWidget;
+	*pDestroy->ppWidget = NULL;
+	pDestroy->iCount++;
+	xuiWidgetDestroy(pVictim);
+	return XUI_OK;
 }
 
 static int __xuiComboBoxRender(xui_context pContext, xui_surface pTarget)
@@ -145,11 +195,18 @@ int main(void)
 	xui_combobox_test_select_t tSelect;
 	xui_combobox_test_select_t tEditSelect;
 	xui_combobox_test_text_t tText;
+	xui_combobox_test_destroy_t tDestroy;
+	xui_combobox_test_destroy_t tTextDestroy;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pCombo;
 	xui_widget pEditCombo;
 	xui_widget pEditInput;
+	xui_widget pDestroyCombo;
+	xui_widget pDestroyMenu;
+	xui_widget pDestroyPopup;
+	xui_widget pTextDestroyCombo;
+	xui_widget pTextDestroyInput;
 	xui_widget pMenu;
 	xui_widget pInputMenu;
 	xui_widget pPopup;
@@ -158,6 +215,9 @@ int main(void)
 	xui_combobox_desc_t tDesc;
 	xui_combobox_desc_t tEditDesc;
 	xui_combobox_item_t arrItems[5];
+	const char* arrOversizedItems[XUI_COMBOBOX_ITEM_CAPACITY + 1];
+	const char* arrOwnedItems[1];
+	char sOwnedItem[16];
 	xui_menu_colors_t tMenuColors;
 	xui_rect_t tButton;
 	xui_rect_t tInputRect;
@@ -177,6 +237,11 @@ int main(void)
 	pCombo = NULL;
 	pEditCombo = NULL;
 	pEditInput = NULL;
+	pDestroyCombo = NULL;
+	pDestroyMenu = NULL;
+	pDestroyPopup = NULL;
+	pTextDestroyCombo = NULL;
+	pTextDestroyInput = NULL;
 	pInputMenu = NULL;
 	pTarget = NULL;
 	pFont = NULL;
@@ -184,6 +249,8 @@ int main(void)
 	memset(&tSelect, 0, sizeof(tSelect));
 	memset(&tEditSelect, 0, sizeof(tEditSelect));
 	memset(&tText, 0, sizeof(tText));
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	memset(&tTextDestroy, 0, sizeof(tTextDestroy));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -204,6 +271,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
 
 	memset(arrItems, 0, sizeof(arrItems));
+	memset(arrOversizedItems, 0, sizeof(arrOversizedItems));
 	arrItems[0].sText = "Alpha";
 	arrItems[0].iValue = 100;
 	arrItems[0].bEnabled = 1;
@@ -224,6 +292,17 @@ int main(void)
 	tDesc.iSelected = 0;
 	tDesc.pFont = pFont;
 	tDesc.fPopupHeight = 132.0f;
+	{
+		xui_combobox_desc_t tInvalidDesc = tDesc;
+		xui_widget pInvalid = (xui_widget)(uintptr_t)1;
+		tInvalidDesc.iItemCount = XUI_COMBOBOX_ITEM_CAPACITY + 1;
+		iRet = xuiComboBoxCreate(pContext, &pInvalid, &tInvalidDesc);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "oversized descriptor rejected and output cleared");
+		tInvalidDesc = tDesc;
+		tInvalidDesc.fPopupHeight = NAN;
+		iRet = xuiComboBoxCreate(pContext, &pInvalid, &tInvalidDesc);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite descriptor rejected");
+	}
 	iRet = xuiComboBoxCreate(pContext, &pCombo, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCombo != NULL, "combobox create");
 	iRet = xuiComboBoxSetSelect(pCombo, __xuiComboBoxSelected, &tSelect);
@@ -262,6 +341,14 @@ int main(void)
 	XUI_TEST_CHECK(xuiComboBoxGetItemCount(pCombo) == 5, "item count");
 	XUI_TEST_CHECK(xuiComboBoxGetSelected(pCombo) == 0 && xuiComboBoxGetSelectedValue(pCombo) == 100, "initial selected");
 	XUI_TEST_CHECK(!xuiComboBoxIsItemEnabled(pCombo, 1) && !xuiComboBoxIsItemEnabled(pCombo, 2), "disabled and separator");
+	snprintf(sOwnedItem, sizeof(sOwnedItem), "%s", "Owned");
+	arrOwnedItems[0] = sOwnedItem;
+	iRet = xuiComboBoxSetItems(pCombo, arrOwnedItems, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set caller-owned item text");
+	sOwnedItem[0] = 'X';
+	XUI_TEST_CHECK(strcmp(xuiComboBoxGetItemText(pCombo, 0), "Owned") == 0, "item text is deep copied");
+	iRet = xuiComboBoxSetItemData(pCombo, arrItems, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxSetSelected(pCombo, 0) == XUI_OK, "restore item data after ownership test");
 	tButton = xuiComboBoxGetButtonRect(pCombo);
 	XUI_TEST_CHECK(tButton.fW > 20.0f && tButton.fH > 20.0f, "button rect");
 	pEditInput = xuiComboBoxGetInputWidget(pEditCombo);
@@ -290,6 +377,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiComboBoxGetInputMenuTitle(pEditCombo, XUI_INPUT_MENU_COPY), xuiInputGetMenuTitle(pEditInput, XUI_INPUT_MENU_COPY)) == 0, "editable input menu title reset");
 	XUI_TEST_CHECK(xuiComboBoxGetMode(pEditCombo) == XUI_COMBOBOX_MODE_EDIT, "editable mode");
 	XUI_TEST_CHECK(strcmp(xuiComboBoxGetText(pEditCombo), "Gamma") == 0, "editable initial text");
+	iRet = xuiComboBoxSetMaxLength(pEditCombo, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiComboBoxGetText(pEditCombo), "Gam") == 0 &&
+	               xuiComboBoxGetSelected(pEditCombo) == -1,
+	               "max length truncation clears mismatched selection");
+	iRet = xuiComboBoxSetMaxLength(pEditCombo, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxSetSelected(pEditCombo, 3) == XUI_OK &&
+	               strcmp(xuiComboBoxGetText(pEditCombo), "Gamma") == 0,
+	               "editable selection restores full item after max length reset");
+	iRet = xuiSetFocusWidget(pContext, pEditInput);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus editable input for F4");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_F4, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK && xuiComboBoxIsOpen(pEditCombo), "editable input F4 opens dropdown");
+	iRet = xuiComboBoxClose(pEditCombo);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close editable F4 dropdown");
+	iRet = xuiSetFocusWidget(pContext, pEditInput);
+	XUI_TEST_CHECK(iRet == XUI_OK, "refocus editable input for alt down");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, XUI_MOD_ALT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK && xuiComboBoxIsOpen(pEditCombo), "editable input alt down opens dropdown");
+	iRet = xuiComboBoxClose(pEditCombo);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSetFocusWidget(pContext, pEditInput) == XUI_OK, "close editable alt dropdown and restore input focus");
 	iRet = xuiComboBoxSetText(pEditCombo, "Custom");
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxGetSelected(pEditCombo) == -1 && strcmp(xuiComboBoxGetText(pEditCombo), "Custom") == 0, "editable custom text clears selection");
 	iRet = xuiSetFocusWidget(pContext, pEditInput);
@@ -401,6 +508,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pCombo), "key down opens");
 	iRet = xuiComboBoxClose(pCombo);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiComboBoxIsOpen(pCombo), "close");
+	iRet = xuiComboBoxSetPopupHeight(pCombo, NAN);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiComboBoxGetPopupHeight(pCombo) == 132.0f, "non-finite popup height rejected transactionally");
+	iRet = xuiComboBoxSetPopupMaxHeight(pCombo, INFINITY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite popup max height rejected");
+	iRet = xuiComboBoxSetMetrics(pCombo, NAN, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite metrics rejected");
+	iRet = xuiComboBoxSetItems(pCombo, arrOversizedItems, XUI_COMBOBOX_ITEM_CAPACITY + 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiComboBoxGetItemCount(pCombo) == 5, "oversized items rejected without truncation");
+	iRet = xuiComboBoxOpen(pCombo);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pCombo), "open before ancestor disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiComboBoxIsOpen(pCombo) && !xuiWidgetGetEffectiveEnabled(pCombo) &&
+	               (xuiComboBoxGetState(pCombo) & XUI_WIDGET_STATE_DISABLED) != 0u,
+	               "ancestor disable closes and disables combobox");
+	iRet = xuiComboBoxOpen(pCombo);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiComboBoxIsOpen(pCombo), "effectively disabled combobox does not open");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetEffectiveEnabled(pCombo), "ancestor re-enable combobox");
 
 	arrEnabled[0] = 1;
 	arrEnabled[1] = 1;
@@ -415,6 +540,150 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiComboBoxIsOpen(pCombo), "disabled does not open");
 	iState = xuiComboBoxGetState(pCombo);
 	XUI_TEST_CHECK((iState & XUI_WIDGET_STATE_DISABLED) != 0u, "disabled state");
+
+	{
+		xui_widget pModeCombo = NULL;
+		xui_widget pModeInput;
+
+		iRet = xuiComboBoxCreate(pContext, &pModeCombo, &tDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pModeCombo != NULL, "mode transfer combobox create");
+		(void)xuiWidgetSetRect(pModeCombo, (xui_rect_t){36.0f, 140.0f, 160.0f, 30.0f});
+		XUI_TEST_CHECK(xuiWidgetAddChild(pRoot, pModeCombo) == XUI_OK, "mode transfer combobox add");
+		pModeInput = xuiComboBoxGetInputWidget(pModeCombo);
+		XUI_TEST_CHECK(pModeInput != NULL && xuiSetFocusWidget(pContext, pModeCombo) == XUI_OK,
+		               "mode transfer select focus");
+		iRet = xuiComboBoxSetMode(pModeCombo, XUI_COMBOBOX_MODE_EDIT);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pModeInput &&
+		               xuiWidgetGetVisible(pModeInput), "select to edit transfers focus to input");
+		iRet = xuiComboBoxSetMode(pModeCombo, XUI_COMBOBOX_MODE_SELECT);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pModeCombo &&
+		               !xuiWidgetGetVisible(pModeInput), "edit to select transfers focus to owner");
+		xuiWidgetDestroy(pModeCombo);
+	}
+
+	tDestroy.ppWidget = &pDestroyCombo;
+	iRet = xuiComboBoxCreate(pContext, &pDestroyCombo, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyCombo != NULL, "destroy callback combobox create");
+	iRet = xuiWidgetSetRect(pDestroyCombo, (xui_rect_t){36.0f, 92.0f, 160.0f, 30.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetAddChild(pRoot, pDestroyCombo) == XUI_OK, "destroy callback combobox add");
+	iRet = xuiComboBoxSetSelect(pDestroyCombo, __xuiComboBoxDestroyOnSelect, &tDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxOpen(pDestroyCombo) == XUI_OK && xuiLayout(pContext) == XUI_OK, "destroy callback combobox open");
+	pDestroyMenu = xuiComboBoxGetMenuWidget(pDestroyCombo);
+	pDestroyPopup = xuiComboBoxGetPopupWidget(pDestroyCombo);
+	XUI_TEST_CHECK(pDestroyMenu != NULL && pDestroyPopup != NULL, "destroy callback popup handles");
+	iRet = __xuiComboBoxClickMenuItem(pContext, pDestroyMenu, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iCount == 1 && pDestroyCombo == NULL,
+	               "selection callback may destroy combobox safely");
+	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) != pDestroyMenu && xuiGetFocusWidget(pContext) != pDestroyPopup,
+	               "destroying combobox clears owned popup focus");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiComboBoxRender(pContext, pTarget) == XUI_OK,
+	               "context remains usable after callback destroys combobox popup tree");
+
+	tTextDestroy.ppWidget = &pTextDestroyCombo;
+	iRet = xuiComboBoxCreate(pContext, &pTextDestroyCombo, &tEditDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTextDestroyCombo != NULL, "text destroy callback combobox create");
+	iRet = xuiWidgetSetRect(pTextDestroyCombo, (xui_rect_t){216.0f, 92.0f, 164.0f, 30.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetAddChild(pRoot, pTextDestroyCombo) == XUI_OK,
+	               "text destroy callback combobox add");
+	iRet = xuiComboBoxSetTextChange(pTextDestroyCombo, __xuiComboBoxDestroyOnTextChange, &tTextDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "text destroy callback set");
+	pTextDestroyInput = xuiComboBoxGetInputWidget(pTextDestroyCombo);
+	XUI_TEST_CHECK(pTextDestroyInput != NULL && xuiSetFocusWidget(pContext, pTextDestroyInput) == XUI_OK,
+	               "text destroy callback input focus");
+	iRet = xuiInputText(pContext, '!');
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               tTextDestroy.iCount == 1 && pTextDestroyCombo == NULL,
+	               "text callback may destroy combobox safely");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiComboBoxRender(pContext, pTarget) == XUI_OK,
+	               "context remains usable after text callback destroys combobox");
+
+	{
+		xui_combobox_test_event_destroy_t tFocusDestroy;
+		xui_widget pFocusTrap = NULL;
+		xui_widget pFocusDestroyCombo = NULL;
+		xui_rect_t tWorld;
+
+		memset(&tFocusDestroy, 0, sizeof(tFocusDestroy));
+		tFocusDestroy.iEventType = XUI_EVENT_BLUR;
+		tFocusDestroy.ppWidget = &pFocusDestroyCombo;
+		iRet = xuiComboBoxCreate(pContext, &pFocusDestroyCombo, &tDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pFocusDestroyCombo != NULL, "focus destroy combobox create");
+		(void)xuiWidgetSetRect(pFocusDestroyCombo, (xui_rect_t){36.0f, 140.0f, 160.0f, 30.0f});
+		XUI_TEST_CHECK(xuiWidgetAddChild(pRoot, pFocusDestroyCombo) == XUI_OK, "focus destroy combobox add");
+		XUI_TEST_CHECK(xuiWidgetCreate(pContext, &pFocusTrap) == XUI_OK && pFocusTrap != NULL,
+		               "combobox focus trap create");
+		(void)xuiWidgetSetFocusable(pFocusTrap, 1);
+		(void)xuiWidgetSetTabStop(pFocusTrap, 1);
+		(void)xuiWidgetSetRect(pFocusTrap, (xui_rect_t){300.0f, 140.0f, 80.0f, 30.0f});
+		XUI_TEST_CHECK(xuiWidgetAddChild(pRoot, pFocusTrap) == XUI_OK, "combobox focus trap add");
+		XUI_TEST_CHECK(xuiWidgetSetEventCallback(pFocusTrap, __xuiComboBoxDestroyVictimOnEvent,
+		               &tFocusDestroy) == XUI_OK, "combobox focus trap callback");
+		XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pFocusTrap) == XUI_OK &&
+		               xuiDispatchPendingEvents(pContext) == XUI_OK, "combobox focus trap focus");
+		XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK, "focus destroy combobox layout");
+		tWorld = xuiWidgetGetWorldRect(pFocusDestroyCombo);
+		iRet = __xuiComboBoxDispatchDown(pContext, tWorld.fX + 12.0f, tWorld.fY + tWorld.fH * 0.5f);
+		XUI_TEST_CHECK(iRet == XUI_OK && tFocusDestroy.iCount == 1 && pFocusDestroyCombo == NULL,
+		               "focus transition may destroy pressed combobox safely");
+		(void)xuiInputPointerUp(pContext, tWorld.fX + 12.0f, tWorld.fY + tWorld.fH * 0.5f,
+		                        XUI_POINTER_BUTTON_LEFT, 0);
+		(void)xuiDispatchPendingEvents(pContext);
+		xuiWidgetDestroy(pFocusTrap);
+	}
+
+	{
+		xui_combobox_test_event_destroy_t tModeDestroy;
+		xui_widget pModeDestroyCombo = NULL;
+		xui_widget pModeInput;
+
+		memset(&tModeDestroy, 0, sizeof(tModeDestroy));
+		tModeDestroy.iEventType = XUI_EVENT_VISIBLE_CHANGED;
+		tModeDestroy.ppWidget = &pModeDestroyCombo;
+		iRet = xuiComboBoxCreate(pContext, &pModeDestroyCombo, &tDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pModeDestroyCombo != NULL, "mode state destroy combobox create");
+		(void)xuiWidgetSetRect(pModeDestroyCombo, (xui_rect_t){36.0f, 184.0f, 160.0f, 30.0f});
+		XUI_TEST_CHECK(xuiWidgetAddChild(pRoot, pModeDestroyCombo) == XUI_OK, "mode state destroy combobox add");
+		pModeInput = xuiComboBoxGetInputWidget(pModeDestroyCombo);
+		XUI_TEST_CHECK(pModeInput != NULL && xuiWidgetSetEventHandler(pModeInput,
+		               XUI_EVENT_VISIBLE_CHANGED, __xuiComboBoxDestroyVictimOnEvent, &tModeDestroy) == XUI_OK,
+		               "mode state destroy callback");
+		iRet = xuiComboBoxSetMode(pModeDestroyCombo, XUI_COMBOBOX_MODE_EDIT);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK && tModeDestroy.iCount == 1 && pModeDestroyCombo == NULL,
+		               "mode state callback may destroy combobox safely");
+	}
+
+	{
+		xui_combobox_test_event_destroy_t tCommitDestroy;
+		xui_widget pCommitDestroyCombo = NULL;
+		xui_widget pCommitInput;
+		xui_widget pCommitMenu;
+
+		memset(&tCommitDestroy, 0, sizeof(tCommitDestroy));
+		tCommitDestroy.iEventType = XUI_EVENT_FOCUS;
+		tCommitDestroy.ppWidget = &pCommitDestroyCombo;
+		iRet = xuiComboBoxCreate(pContext, &pCommitDestroyCombo, &tEditDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pCommitDestroyCombo != NULL, "commit focus destroy combobox create");
+		(void)xuiWidgetSetRect(pCommitDestroyCombo, (xui_rect_t){216.0f, 184.0f, 164.0f, 30.0f});
+		XUI_TEST_CHECK(xuiWidgetAddChild(pRoot, pCommitDestroyCombo) == XUI_OK, "commit focus destroy combobox add");
+		pCommitInput = xuiComboBoxGetInputWidget(pCommitDestroyCombo);
+		XUI_TEST_CHECK(pCommitInput != NULL && xuiSetFocusWidget(pContext, pCommitInput) == XUI_OK &&
+		               xuiDispatchPendingEvents(pContext) == XUI_OK, "commit focus destroy input focus");
+		XUI_TEST_CHECK(xuiComboBoxOpen(pCommitDestroyCombo) == XUI_OK && xuiLayout(pContext) == XUI_OK,
+		               "commit focus destroy dropdown open");
+		pCommitMenu = xuiComboBoxGetMenuWidget(pCommitDestroyCombo);
+		XUI_TEST_CHECK(pCommitMenu != NULL && xuiWidgetSetEventHandler(pCommitInput, XUI_EVENT_FOCUS,
+		               __xuiComboBoxDestroyVictimOnEvent, &tCommitDestroy) == XUI_OK,
+		               "commit focus destroy callback");
+		iRet = __xuiComboBoxClickMenuItem(pContext, pCommitMenu, 0);
+		XUI_TEST_CHECK(iRet == XUI_OK && tCommitDestroy.iCount == 1 && pCommitDestroyCombo == NULL,
+		               "dropdown close focus callback may destroy combobox safely");
+	}
+
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.016f) == XUI_OK && __xuiComboBoxRender(pContext, pTarget) == XUI_OK,
+	               "context remains usable after combobox focus callbacks destroy controls");
 
 cleanup:
 	if ( pContext != NULL ) {

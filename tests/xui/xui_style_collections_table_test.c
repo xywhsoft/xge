@@ -46,6 +46,7 @@ int main(void)
     xui_widget w; xui_widget_type type; xui_widget_type_desc_t td={0};
     xui_table_view_data_t* d; xui_table_view_desc_t desc={0}; xui_table_view_column_t columns[4]={{0}};
     xui_table_view_colors_t base; xui_table_view_row_prefix_t* prefix; uint64_t merges; int i; uint32_t thumb;
+    float baseColumnWidth,baseRowHeight,baseHeaderHeight;
     xui_style_property_t p; xui_style_desc_t style={0};
     collectionInit();
     for(i=0;i<4;i++) { columns[i].sTitle="column"; columns[i].fWidth=140; }
@@ -82,5 +83,17 @@ int main(void)
     CHECK(xuiScrollFrameGetColors(d->pFrame,NULL,&thumb,NULL,NULL,NULL,NULL)==XUI_OK); CHECK(thumb==COLOR_C);
     CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); collectionRender(); CHECK(collectionSeen(COLOR_D));
     CHECK(d->arrRowPrefix==prefix); CHECK(d->iMergeGeneration==merges);
+    CHECK(xuiTableViewSetDefaultMetrics(w,93.0f,23.0f,27.0f)==XUI_OK);
+    CHECK(xuiLayout(gContext)==XUI_OK);
+    CHECK(xuiTableViewGetDefaultMetrics(w,&baseColumnWidth,&baseRowHeight,&baseHeaderHeight)==XUI_OK);
+    CHECK(baseColumnWidth==93.0f && baseRowHeight==23.0f && baseHeaderHeight==27.0f);
+    memset(&p,0,sizeof(p)); p.iSize=sizeof(p); p.sName="tableview.default.row_height";
+    p.tValue.iSize=sizeof(p.tValue); p.tValue.iType=XUI_STYLE_VALUE_FLOAT; p.tValue.fFloat=31.0f;
+    CHECK(xuiWidgetSetInlineStyle(w,&p,1)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
+    CHECK(d->fDefaultRowHeight==31.0f);
+    CHECK(xuiTableViewGetDefaultMetrics(w,&baseColumnWidth,&baseRowHeight,&baseHeaderHeight)==XUI_OK);
+    CHECK(baseRowHeight==23.0f);
+    CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
+    CHECK(d->fDefaultRowHeight==23.0f);
     collectionDone(); puts("style_collections table: PASS"); return 0;
 }

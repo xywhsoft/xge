@@ -19,6 +19,8 @@ typedef struct xui_page_change_state_t {
 	int iCount;
 	int iOldPage;
 	int iNewPage;
+	int bDestroyOnChange;
+	xui_widget* ppDestroyWidget;
 } xui_page_change_state_t;
 
 static xui_style_value_t __xuiPageStyleFloat(float fValue)
@@ -64,6 +66,10 @@ static void __xuiPageChanged(xui_widget pWidget, int iOldPage, int iNewPage, voi
 		pState->iCount++;
 		pState->iOldPage = iOldPage;
 		pState->iNewPage = iNewPage;
+		if ( pState->bDestroyOnChange ) {
+			xuiWidgetDestroy(pWidget);
+			if ( pState->ppDestroyWidget != NULL ) *pState->ppDestroyWidget = NULL;
+		}
 	}
 }
 
@@ -82,11 +88,15 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pPage;
 	xui_widget pInvalid;
+	xui_widget pChild;
+	xui_widget pDestroyPage;
 	xui_surface pTarget;
 	xui_page_desc_t tDesc;
 	xui_page_desc_t tInvalidDesc;
 	xui_page_item_info_t tInfo;
+	xui_accessible_node_t tAccessible;
 	xui_page_change_state_t tChange;
+	xui_page_change_state_t tDestroyChange;
 	xui_style_property_t arrStyle[2];
 	xui_vec2_t tMeasured;
 	xui_rect_t tWorld;
@@ -103,6 +113,10 @@ int main(void)
 	const char* sUtf8Expected;
 	int i;
 	int iNextIndex;
+	int iAccessibleIndex;
+	int iChangeBefore;
+	int iCallbackBefore;
+	uint64_t iAccessibleId;
 	int iRet;
 	int iFailed;
 
@@ -110,10 +124,15 @@ int main(void)
 	pRoot = NULL;
 	pPage = NULL;
 	pInvalid = NULL;
+	pChild = NULL;
+	pDestroyPage = NULL;
 	pTarget = NULL;
 	iFailed = 0;
 	iNextIndex = -1;
+	iAccessibleIndex = -1;
+	iAccessibleId = 0;
 	memset(&tChange, 0, sizeof(tChange));
+	memset(&tDestroyChange, 0, sizeof(tDestroyChange));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -136,6 +155,7 @@ int main(void)
 	tDesc.iWindowSize = 5;
 	tInvalidDesc = tDesc;
 	tInvalidDesc.fItemHeight = NAN;
+	pInvalid = pRoot;
 	iRet = xuiPageCreate(pContext, &pInvalid, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nonfinite descriptor metric");
 	iRet = xuiPageCreate(pContext, &pPage, &tDesc);
@@ -158,6 +178,14 @@ int main(void)
 	iRet = __xuiPageRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render page");
 	XUI_TEST_CHECK(xuiPageGetItemCount(pPage) == 11, "item count with ellipsis");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pPage) == 12 &&
+		xuiWidgetGetAccessibleNode(pPage, 0, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_GROUP &&
+		strcmp(tAccessible.sValue, "Page 6 of 12") == 0 &&
+		tAccessible.tRange.fValue == 6.0 && tAccessible.tRange.fMax == 12.0,
+		"page accessibility root");
 
 	iRet = xuiPageGetItemInfo(pPage, 0, &tInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tInfo.iType == XUI_PAGE_ITEM_PREV && tInfo.iPage == 5 && tInfo.bEnabled, "prev item");
@@ -167,6 +195,32 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tInfo.iType == XUI_PAGE_ITEM_ELLIPSIS && !tInfo.bEnabled, "leading ellipsis");
 	iRet = xuiPageGetItemInfo(pPage, 5, &tInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tInfo.iType == XUI_PAGE_ITEM_PAGE && tInfo.iPage == 6 && !tInfo.bEnabled, "current item disabled");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pPage, 6, &tAccessible) == XUI_OK &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_BUTTON &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_SELECTED) != 0,
+		"page accessibility current item");
+	for ( i = 0; i < xuiPageGetItemCount(pPage); i++ ) {
+		iRet = xuiPageGetItemInfo(pPage, i, &tInfo);
+		XUI_TEST_CHECK(iRet == XUI_OK, "accessible item lookup");
+		if ( tInfo.iType == XUI_PAGE_ITEM_PAGE && tInfo.iPage == 7 ) {
+			iAccessibleIndex = i + 1;
+			break;
+		}
+	}
+	XUI_TEST_CHECK(iAccessibleIndex > 0, "accessible target page");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pPage, iAccessibleIndex, &tAccessible) == XUI_OK,
+		"accessible target node");
+	iAccessibleId = tAccessible.iId;
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pPage, iAccessibleId,
+		XUI_ACCESSIBLE_ACTION_SET_SELECTION, NULL) == XUI_OK &&
+		xuiPageGetCurrent(pPage) == 7 && tChange.iCount == 1,
+		"accessibility selects page");
+	XUI_TEST_CHECK(xuiPageSetCurrent(pPage, 6, 0) == XUI_OK, "restore page after accessibility");
+	memset(&tChange, 0, sizeof(tChange));
 
 	iRet = xuiPageSetMetrics(pPage, 30.0f, 40.0f, 58.0f, 48.0f, 30.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
@@ -236,6 +290,61 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer up input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiPageGetCurrent(pPage) == 7 && tChange.iCount == 1 && tChange.iOldPage == 6 && tChange.iNewPage == 7, "next activates");
+	iRet = __xuiPageRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before multi-touch pointer");
+	iNextIndex = -1;
+	for ( i = 0; i < xuiPageGetItemCount(pPage); i++ ) {
+		iRet = xuiPageGetItemInfo(pPage, i, &tInfo);
+		XUI_TEST_CHECK(iRet == XUI_OK, "multi-touch item lookup");
+		if ( tInfo.iType == XUI_PAGE_ITEM_NEXT ) {
+			iNextIndex = i;
+			break;
+		}
+	}
+	XUI_TEST_CHECK(iNextIndex >= 0, "multi-touch next index");
+	tWorld = xuiWidgetGetWorldRect(pPage);
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tInfo.tRect.fX + tInfo.tRect.fW * 0.5f),
+		(int)(tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pPage &&
+		xuiPageGetActiveItem(pPage) == iNextIndex,
+		"first touch owns page item press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tInfo.tRect.fX + tInfo.tRect.fW * 0.5f),
+		(int)(tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMoveEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tInfo.tRect.fX + tInfo.tRect.fW * 0.5f),
+		(int)(tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f), 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tInfo.tRect.fX + tInfo.tRect.fW * 0.5f),
+		(int)(tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == 7 &&
+		tChange.iCount == 1 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pPage &&
+		xuiPageGetActiveItem(pPage) == iNextIndex,
+		"unrelated touch move and release preserve page press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tWorld.fX + tInfo.tRect.fX + tInfo.tRect.fW * 0.5f),
+		(int)(tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == 8 &&
+		tChange.iCount == 2 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL &&
+		xuiPageGetActiveItem(pPage) == -1,
+		"owning touch activates page item once");
+	iRet = xuiPageSetCurrent(pPage, 7, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore page after multi-touch pointer");
 
 	iRet = __xuiPageRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render before blur capture");
@@ -266,8 +375,29 @@ int main(void)
 	iRet = xuiPageSetWindowSize(pPage, 7);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetWindowSize(pPage) == 7 && xuiGetPointerCapture(pContext) == NULL && xuiPageGetActiveItem(pPage) == -1, "geometry mutation cancels capture");
 
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "page child create");
+	iRet = xuiWidgetAddChild(pPage, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK, "page child add");
+	XUI_TEST_CHECK(xuiWidgetSetFocusable(pChild, 1) == XUI_OK &&
+		xuiWidgetSetTabStop(pChild, 1) == XUI_OK, "page child focusable");
+	iRet = xuiSetFocusWidget(pContext, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus page child");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "child right key");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == 7,
+		"descendant key does not change page");
+	xuiWidgetDestroy(pChild);
+	pChild = NULL;
+
 	iRet = xuiSetFocusWidget(pContext, pPage);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus page");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "modified right key");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == 7,
+		"modified arrow is not consumed");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "left key");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -283,6 +413,16 @@ int main(void)
 
 	iRet = xuiPageSetTotal(pPage, 101, 10);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetPageCount(pPage) == 11 && xuiPageGetCurrent(pPage) == 11, "set total");
+	iChangeBefore = xuiPageGetChangeCount(pPage);
+	iCallbackBefore = tChange.iCount;
+	iRet = xuiPageSetPageCount(pPage, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetPageCount(pPage) == 3 &&
+		xuiPageGetCurrent(pPage) == 3 && xuiPageGetChangeCount(pPage) == iChangeBefore + 1 &&
+		tChange.iCount == iCallbackBefore,
+		"page count shrink clamps selection without callback");
+	iRet = xuiPageSetPageCount(pPage, 11);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageSetCurrent(pPage, 11, 0) == XUI_OK,
+		"restore after page count shrink");
 	iRet = xuiPageSetTotal(pPage, INT_MAX, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetPageCount(pPage) == (INT_MAX / 2) + 1 && xuiPageGetCurrent(pPage) == 11, "large total avoids overflow");
 	iRet = xuiPageSetTotal(pPage, INT_MAX, INT_MAX);
@@ -313,7 +453,25 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && (xuiPageGetState(pPage) & XUI_WIDGET_STATE_DISABLED) != 0 && xuiGetPointerCapture(pContext) == NULL && xuiPageGetActiveItem(pPage) == -1, "disable cancels capture");
 
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iPageCount = 3;
+	tDesc.iCurrentPage = 1;
+	iRet = xuiPageCreate(pContext, &pDestroyPage, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyPage != NULL, "destroy callback page create");
+	iRet = xuiWidgetAddChild(pRoot, pDestroyPage);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback page add");
+	tDestroyChange.bDestroyOnChange = 1;
+	tDestroyChange.ppDestroyWidget = &pDestroyPage;
+	iRet = xuiPageSetChange(pDestroyPage, __xuiPageChanged, &tDestroyChange);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback set");
+	iRet = xuiPageSetCurrent(pDestroyPage, 2, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyPage == NULL && tDestroyChange.iCount == 1,
+		"change callback may destroy page");
+
 cleanup:
+	if ( pDestroyPage != NULL ) xuiWidgetDestroy(pDestroyPage);
+	if ( pChild != NULL ) xuiWidgetDestroy(pChild);
 	if ( pTarget != NULL ) {
 		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	}

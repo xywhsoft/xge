@@ -57,13 +57,35 @@ static void time_panel(xui_widget picker, int panel, box_t r, int second)
 	if (!second) pixel_rect(xuiDatePickerGetTimeRect(picker, panel, 2), 0, 0, 0, 0);
 }
 
+static void minimum_popup_size(int mode, float* width, float* height)
+{
+	float w = 324.0f;
+	float h = 290.0f;
+
+	if (mode == XUI_DATE_PICKER_MODE_TIME || mode == XUI_DATE_PICKER_MODE_TIME_RANGE) h = 148.0f;
+	else if (mode == XUI_DATE_PICKER_MODE_DATETIME) w = 420.0f;
+	else if (mode == XUI_DATE_PICKER_MODE_DATE_RANGE) w = 380.0f;
+	else if (mode == XUI_DATE_PICKER_MODE_DATETIME_RANGE) { w = 380.0f; h = 386.0f; }
+	if (width) *width = w;
+	if (height) *height = h;
+}
+
 static void panel_case(xui_widget picker, int mode, float w, float h, int second)
 {
 	float col = (w - 36) * 0.5f, footer = h - 40;
+	float min_w, min_h, old_w, old_h, check_w, check_h;
 	int range = mode >= XUI_DATE_PICKER_MODE_DATE_RANGE;
 	int date = mode != XUI_DATE_PICKER_MODE_TIME && mode != XUI_DATE_PICKER_MODE_TIME_RANGE;
 	int time = mode != XUI_DATE_PICKER_MODE_DATE && mode != XUI_DATE_PICKER_MODE_DATE_RANGE;
 	int i;
+	minimum_popup_size(mode, &min_w, &min_h);
+	PIXEL_CHECK(xuiDatePickerGetPopupSize(picker, &old_w, &old_h) == XUI_OK);
+	if (w < min_w || h < min_h) {
+		PIXEL_CHECK(xuiDatePickerSetPopupSize(picker, w, h) == XUI_ERROR_INVALID_ARGUMENT);
+		PIXEL_CHECK(xuiDatePickerGetPopupSize(picker, &check_w, &check_h) == XUI_OK);
+		PIXEL_CHECK(check_w == old_w && check_h == old_h);
+		return;
+	}
 	PIXEL_CHECK(xuiDatePickerSetPopupSize(picker, w, h) == XUI_OK);
 	PIXEL_CHECK(xuiDatePickerSetShowSecond(picker, second) == XUI_OK);
 	for (i = 0; i < (range ? 2 : 1); i++) {
@@ -144,8 +166,8 @@ int main(void)
 	pixel_fixture_t f;
 	xui_widget picker = NULL;
 	xui_date_picker_desc_t desc = {0};
-	const float widths[] = {0.5f, 1.5f, 239, 240, 241.5f, 319, 320, 621.5f};
-	const float heights[] = {0.5f, 1.5f, 299, 300, 301.5f, 423.5f};
+	const float widths[] = {0.5f, 267.5f, 268.0f, 323.5f, 324.0f, 379.5f, 380.0f, 419.5f, 420.0f, 621.5f};
+	const float heights[] = {0.5f, 147.5f, 148.0f, 289.5f, 290.0f, 385.5f, 386.0f, 423.5f};
 	int mode, second, w;
 	size_t wi, hi;
 	if (!pixel_init_proxy(&f, configure)) return 1;
@@ -164,8 +186,8 @@ int main(void)
 			for (second = 0; second <= 1; second++) panel_case(picker, mode, widths[wi], heights[hi], second);
 		}
 	}
-	popup_case(&f, picker, 239.5f);
-	popup_case(&f, picker, 320.5f);
+	popup_case(&f, picker, 324.5f);
+	popup_case(&f, picker, 420.5f);
 	pixel_cleanup(&f);
 	return pixel_result("xui_date_picker_pixel_test");
 }

@@ -20,6 +20,7 @@ struct xui_surface_t {
 	xui_rect_t tLastDst;
 	xui_rect_t tLastTextRect;
 	uint32_t iLastColor;
+	char sLastText[256];
 	/* Mixed Document messages use distinct selection colors after theme fills. */
 	uint32_t arrRectFillCountColors[32];
 	int arrRectFillColorCounts[32];
@@ -90,6 +91,9 @@ static int __xuiTestClipboardGetText(xui_proxy pProxy, char* sText, int iCapacit
 	pState = (xui_test_proxy_state_t*)pProxy->pUser;
 	if ( pState == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pState->onClipboardGetText != NULL ) {
+		return pState->onClipboardGetText(pProxy, sText, iCapacity);
 	}
 	if ( (sText != NULL) && (iCapacity > 0) ) {
 		strncpy(sText, pState->sClipboard, (size_t)iCapacity - 1u);
@@ -655,8 +659,11 @@ static int __xuiTestDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 
 static int __xuiTestDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
 {
-	(void)fX;
-	(void)fY;
+	xui_test_proxy_state_t* pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
+	if ( pState != NULL ) {
+		pState->fLastPointX = fX;
+		pState->fLastPointY = fY;
+	}
 	(void)fSize;
 	return __xuiTestDrawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, 1.0f, 1.0f}, iColor);
 }
@@ -712,18 +719,24 @@ static int __xuiTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
     const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
 
-	(void)sText;
 	if ( !__xuiTestDrawValid(pDraw) || !__xuiTestFontValid(pFont) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pProxy != NULL && pProxy->pUser != NULL ) {
 		((xui_test_proxy_state_t*)pProxy->pUser)->iLastTextDrawItemFlags = pTextItem->iFlags;
+		((xui_test_proxy_state_t*)pProxy->pUser)->iLastTextDrawSize = pTextItem->iTextSize;
 	}
 	pDraw->pTarget->iDrawCount++;
 	pDraw->pTarget->iTextDrawCount++;
 	pDraw->pTarget->tLastTextRect = tRect;
 	pDraw->pTarget->iLastTextColor = iColor;
 	pDraw->pTarget->iLastTextFlags = iFlags;
+	if ( sText != NULL ) {
+		strncpy(pDraw->pTarget->sLastText, sText, sizeof(pDraw->pTarget->sLastText) - 1u);
+		pDraw->pTarget->sLastText[sizeof(pDraw->pTarget->sLastText) - 1u] = '\0';
+	} else {
+		pDraw->pTarget->sLastText[0] = '\0';
+	}
 	return XUI_OK;
 }
 
@@ -873,7 +886,10 @@ static int __xuiTestTextMeasure(xui_proxy pProxy, const xui_text_item_t* pTextIt
 	if ( !__xuiTestFontValid(pFont) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pState != NULL ) pState->iTextMeasureCount++;
+	if ( pState != NULL ) {
+		pState->iTextMeasureCount++;
+		pState->iLastTextMeasureFlags = pTextItem->iFlags;
+	}
 	iLen = (sText != NULL) ? (int)strlen(sText) : 0;
 	pSize->fX = (float)iLen * pFont->fSize * 0.5f;
 	pSize->fY = pFont->fSize;
@@ -994,18 +1010,24 @@ static int __xuiTestTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_te
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
     const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
 
-	(void)sText;
 	if ( !__xuiTestSurfaceValid(pTarget) || !__xuiTestFontValid(pFont) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pProxy != NULL && pProxy->pUser != NULL ) {
 		((xui_test_proxy_state_t*)pProxy->pUser)->iLastTextDrawItemFlags = pTextItem->iFlags;
+		((xui_test_proxy_state_t*)pProxy->pUser)->iLastTextDrawSize = pTextItem->iTextSize;
 	}
 	pTarget->iDrawCount++;
 	pTarget->iTextDrawCount++;
 	pTarget->tLastTextRect = tRect;
 	pTarget->iLastTextColor = iColor;
 	pTarget->iLastTextFlags = iFlags;
+	if ( sText != NULL ) {
+		strncpy(pTarget->sLastText, sText, sizeof(pTarget->sLastText) - 1u);
+		pTarget->sLastText[sizeof(pTarget->sLastText) - 1u] = '\0';
+	} else {
+		pTarget->sLastText[0] = '\0';
+	}
 	return XUI_OK;
 }
 
@@ -1165,6 +1187,7 @@ void xuiTestSurfaceReset(xui_surface pSurface)
 		memset(&pSurface->tLastSrc, 0, sizeof(pSurface->tLastSrc));
 		memset(&pSurface->tLastDst, 0, sizeof(pSurface->tLastDst));
 		memset(&pSurface->tLastTextRect, 0, sizeof(pSurface->tLastTextRect));
+		memset(pSurface->sLastText, 0, sizeof(pSurface->sLastText));
 		pSurface->iLastColor = 0;
 		pSurface->iLastTextColor = 0;
 		pSurface->iLastFlags = 0;
@@ -1214,6 +1237,11 @@ int xuiTestSurfaceGetLastRectFillOrder(xui_surface pSurface, uint32_t iColor)
 int xuiTestSurfaceGetTextDrawCount(xui_surface pSurface)
 {
 	return __xuiTestSurfaceValid(pSurface) ? pSurface->iTextDrawCount : 0;
+}
+
+const char* xuiTestSurfaceGetLastText(xui_surface pSurface)
+{
+	return __xuiTestSurfaceValid(pSurface) ? pSurface->sLastText : NULL;
 }
 
 xui_rect_t xuiTestSurfaceGetLastRect(xui_surface pSurface)
@@ -1288,6 +1316,12 @@ int xuiTestProxyGetLastPathCommandCount(xui_test_proxy_state_t* pState)
 	return (pState != NULL) ? pState->iLastPathCommandCount : 0;
 }
 
+void xuiTestProxyGetLastPoint(xui_test_proxy_state_t* pState, float* pX, float* pY)
+{
+	if ( pX != NULL ) *pX = (pState != NULL) ? pState->fLastPointX : 0.0f;
+	if ( pY != NULL ) *pY = (pState != NULL) ? pState->fLastPointY : 0.0f;
+}
+
 int xuiTestProxyGetSurfaceLoadCount(xui_test_proxy_state_t* pState)
 {
 	return (pState != NULL) ? pState->iSurfaceLoadCount : 0;
@@ -1311,6 +1345,7 @@ void xuiTestProxyResetTextCounters(xui_test_proxy_state_t* pState)
 	pState->iTextShapeBytes = 0;
 	pState->iLastTextShapeFlags = 0;
 	pState->iLastTextDrawItemFlags = 0;
+	pState->iLastTextDrawSize = -1;
 	pState->iTextShapeRangeDrawCount = 0;
 }
 

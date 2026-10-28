@@ -30,6 +30,10 @@ int main(void)
 	const char* arrTitles[3];
 	xui_rect_t tRect;
 	xui_rect_i_t tFullRect;
+	xui_accessible_node_t tAccessible;
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	uint32_t iAccessibilityRevision;
 	float fBarHeight;
 	float fDotRadius;
 	float fLineWidth;
@@ -44,6 +48,7 @@ int main(void)
 	pInvalid = NULL;
 	pTarget = NULL;
 	pFont = NULL;
+	pBudget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -82,6 +87,16 @@ int main(void)
 	XUI_TEST_CHECK(xuiStepBarGetStepCount(pArrow) == 3, "step count");
 	XUI_TEST_CHECK(strcmp(xuiStepBarGetTitle(pArrow, 1), "Second") == 0, "title copy");
 	XUI_TEST_CHECK(xuiStepBarGetCurrent(pArrow) == 1, "current");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pArrow, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_PROGRESS &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_READONLY) != 0u &&
+		tAccessible.tRange.iSize == sizeof(tAccessible.tRange) &&
+		tAccessible.tRange.fMin == 1.0 && tAccessible.tRange.fMax == 3.0 &&
+		tAccessible.tRange.fValue == 2.0 && strcmp(tAccessible.sValue, "2/3 Second") == 0,
+		"step bar accessibility state");
+	iAccessibilityRevision = xuiWidgetGetAccessibilityRevision(pArrow);
 
 	tDesc.iStyle = XUI_STEP_BAR_STYLE_DOT;
 	iRet = xuiStepBarCreate(pContext, &pDot, &tDesc);
@@ -99,12 +114,22 @@ int main(void)
 
 	iRet = xuiStepBarSetCurrent(pArrow, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetCurrent(pArrow) == 2, "set current");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiWidgetGetAccessibilityRevision(pArrow) > iAccessibilityRevision,
+		"current change queues accessibility event");
 	iRet = xuiStepBarSetCurrent(pArrow, 3);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid current");
 	iRet = xuiStepBarSetStyle(pArrow, XUI_STEP_BAR_STYLE_DOT);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetStyle(pArrow) == XUI_STEP_BAR_STYLE_DOT, "set style");
 	iRet = xuiStepBarSetTitle(pArrow, 0, "Start");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiStepBarGetTitle(pArrow, 0), "Start") == 0, "set title");
+	{
+		int iChangeCount = xuiStepBarGetChangeCount(pArrow);
+		iRet = xuiStepBarSetTitle(pArrow, 0, "Start");
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetChangeCount(pArrow) == iChangeCount,
+			"same title is idempotent");
+	}
 	iRet = xuiStepBarSetColors(pArrow, XUI_COLOR_RGBA(100, 190, 120, 255), XUI_COLOR_RGBA(50, 160, 90, 255), XUI_COLOR_RGBA(220, 220, 220, 255), XUI_COLOR_RGBA(200, 200, 200, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 	iRet = xuiStepBarSetMetrics(pArrow, 32.0f, 10.0f, 2.0f);
@@ -119,8 +144,28 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fBarHeight == 32.0f && fDotRadius == 10.0f && fLineWidth == 2.0f, "invalid metrics preserve state");
 	tInvalidDesc = tDesc;
 	tInvalidDesc.fDotRadius = NAN;
+	pInvalid = pRoot;
 	iRet = xuiStepBarCreate(pContext, &pInvalid, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nan descriptor");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.iCurrent = tInvalidDesc.iStepCount;
+	pInvalid = pRoot;
+	iRet = xuiStepBarCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject out of range descriptor current");
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget), "create allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope), "enter allocation budget");
+	{
+		const char* arrReplacement[2] = {"Replacement", "Other"};
+		iRet = xuiStepBarSetSteps(pArrow, arrReplacement, 2);
+	}
+	XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope), "leave allocation budget");
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && xuiStepBarGetStepCount(pArrow) == 3 &&
+		strcmp(xuiStepBarGetTitle(pArrow, 0), "Start") == 0 && xuiStepBarGetCurrent(pArrow) == 2,
+		"step replacement allocation failure is atomic");
 	iRet = xuiStepBarSetSteps(pArrow, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetCurrent(pArrow) == 0, "clear steps resets current");
 	iRet = xuiStepBarSetCurrent(pArrow, 1);
@@ -159,6 +204,9 @@ int main(void)
 	               "vertical indicator stays inside tiny content");
 
 cleanup:
+	if ( pBudget != NULL ) {
+		xrtAllocationBudgetFree(pBudget);
+	}
 	if ( pTarget != NULL ) {
 		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	}

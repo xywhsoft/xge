@@ -3,34 +3,17 @@ set -eu
 
 cd "$(dirname "$0")/../.."
 CC=${CC:-gcc}
+PYTHON=${PYTHON:-python3}
 OUT_DIR=${XUI_DOCUMENT_SANITIZER_OUT_DIR:-build/document}
 TEST_SOURCE=${XUI_DOCUMENT_SANITIZER_TEST_SOURCE:-tests/xui/xui_document_view_portability_test.c}
 TEST_BINARY=${XUI_DOCUMENT_SANITIZER_BINARY:-xui_document_view_sanitizer}
 mkdir -p "$OUT_DIR"
 
-# Expand the same source manifests used by the Windows release build. Exclude
-# only the platform XGE proxy and WebView modules; this headless test supplies
-# a test proxy and fails if its out-of-scope PNG clipboard path is entered.
-document_sources=$(awk '
-    /^set XUI_DOCUMENT_SRC=/ {
-        sub(/^set XUI_DOCUMENT_SRC=/, "")
-        gsub(/%XUI_DOCUMENT_SRC%/, "")
-        gsub(/\r/, "")
-        gsub(/\\/, "/")
-        printf "%s ", $0
-    }
-' tools/build/xui_document_sources.bat)
-ui_sources=$(awk -v document="$document_sources" '
-    /^set XUI_SRC=/ {
-        sub(/^set XUI_SRC=/, "")
-        gsub(/\r/, "")
-        gsub(/\\/, "/")
-        gsub(/%XUI_DOCUMENT_SRC%/, document)
-        gsub(/%XUI_SRC%/, sources)
-        sources = $0
-    }
-    END { print sources }
-' tools/build/xui_sources.bat)
+# Expand the same authoritative source manifest used by the release build.
+# Exclude only the platform XGE proxy and WebView modules; this headless test
+# supplies a test proxy and fails if its out-of-scope PNG clipboard path is
+# entered.
+ui_sources=$("$PYTHON" tools/build/build.py --sources-only)
 source_args=
 for source in $ui_sources; do
     case "$source" in

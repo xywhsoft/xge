@@ -463,6 +463,7 @@ static void table_grid_styles(void)
     xui_style_desc_t s;
     uint32_t background, text, border, focus;
     uint32_t layout_version, table_layout_version;
+    int selected_row, selected_column;
     CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, NULL, 14, 0) == XUI_OK);
     memset(&desc, 0, sizeof(desc)); memset(&column, 0, sizeof(column)); memset(rows, 0, sizeof(rows));
     desc.iSize = sizeof(desc); desc.pFont = font;
@@ -542,6 +543,10 @@ static void table_grid_styles(void)
     CHECK(xuiStyleRemoveType(c, xuiInputGetType(c)) == XUI_OK);
     paint(c); CHECK(seen(background));
     CHECK(xuiTableGridEndEdit(grid, 0) != 0);
+    selected_row = selected_column = -1;
+    CHECK(xuiTableViewGetSelectedCell(table, &selected_row, &selected_column) == XUI_OK &&
+        selected_row == 0 && selected_column == 0);
+    CHECK(xuiTableViewSetSelectedCell(table, 1, 0) == XUI_OK);
     paint(c); CHECK(seen(0xdabaccff));
     CHECK(xuiTableGridBeginEdit(grid, 1, 0) != 0);
     for (combo = xuiWidgetGetFirstChild(grid); combo != NULL; combo = xuiWidgetGetNextSibling(combo))

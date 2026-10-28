@@ -265,7 +265,7 @@ static void message_cases(xui_context c, xui_draw_context draw, xui_font font, i
         phase = "message display failure"; displayFail = i; drawCount = ownedAllocs = 0;
         ret = consumer == 0 ? __xuiMsgBoxDrawTextLayout(&box, draw) : consumer == 1 ?
             __xuiMsgTipDrawTextLayout(&tip, draw) : __xuiToastRender(NULL, draw, 0, &view);
-        CHECK(ret == (consumer == 2 ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY));
+        CHECK(ret == XUI_ERROR_OUT_OF_MEMORY);
         CHECK(drawCount == i && liveLayouts == 0 && ownedAllocs == 0);
         if (i) CHECK(strcmp(draws[0].text, consumer == 1 ? "ab" : "ab-") == 0);
         displayFail = -1;
@@ -279,7 +279,7 @@ static void message_cases(xui_context c, xui_draw_context draw, xui_font font, i
         phase = "title display failure"; displayFail = 1; drawCount = ownedAllocs = 0;
         toast.arrActive[0].sTitle = "ab" SHY "cd"; toast.arrActive[0].sMessage = NULL;
         toast.arrActive[0].tTitleRect = (xui_rect_t){5, 7, 30, 60};
-        CHECK(__xuiToastRender(NULL, draw, 0, &view) == XUI_OK);
+        CHECK(__xuiToastRender(NULL, draw, 0, &view) == XUI_ERROR_OUT_OF_MEMORY);
         CHECK(drawCount == 1 && strcmp(draws[0].text, "ab-") == 0 && liveLayouts == 0 && ownedAllocs == 0);
         displayFail = -1; drawCount = ownedAllocs = 0;
         CHECK(__xuiToastRender(NULL, draw, 0, &view) == XUI_OK);

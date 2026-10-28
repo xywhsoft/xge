@@ -18,7 +18,7 @@ def run(command):
     rows.append({'command': command, 'exit': result.returncode})
     (out / 'checks.json').write_text(json.dumps(rows, indent=2), encoding='utf-8')
     if result.returncode: raise SystemExit(result.returncode)
-base = ['gcc', '-std=c11', '-O1' if args.sanitizer else '-O2', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-I' + str(root / 'include'), '-I' + str(root)]
+base = ['gcc', '-std=c11', '-O1' if args.sanitizer else '-O2', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '@config/includes.rsp']
 if args.sanitizer:
     base.extend(['-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-no-pie'])
     os.environ.setdefault('ASAN_OPTIONS', 'detect_leaks=1:halt_on_error=1')

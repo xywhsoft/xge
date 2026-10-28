@@ -57,6 +57,12 @@ static int frame(void* user)
         CHECK(xuiWebViewCreate(context, &view, &desc) == XUI_OK);
         CHECK(xuiWidgetSetRect(view, (xui_rect_t){20,30,300,200}) == XUI_OK);
         CHECK(xuiWidgetAddChild(root, view) == XUI_OK);
+        {
+            xui_accessible_node_t node = {0};
+            node.iSize = sizeof(node);
+            CHECK(xuiWidgetGetAccessibleNode(view, 0, &node) == XUI_OK);
+            CHECK(node.iRole == XUI_ACCESSIBLE_ROLE_EMBEDDED_OBJECT);
+        }
         CHECK(xuiWebViewInitializeAsync(view) == XUI_OK);
     }
     CHECK(++frames < 1800);
@@ -80,6 +86,7 @@ static int frame(void* user)
         phase = 2;
     } else if (phase == 2) {
         CHECK(IsWindowVisible(host) && bounds_are(40,50,280,160));
+        CHECK(xuiWebViewNavigate(view, "http://127.0.0.1:1/superseded") == XUI_OK);
         CHECK(xuiWebViewNavigate(view, "about:blank") == XUI_OK);
         phase = 3;
     } else if (phase == 3 && navigations == 2) {

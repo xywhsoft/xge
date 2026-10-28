@@ -5,13 +5,13 @@ param(
     [string]$OverlayRef
 )
 $ErrorActionPreference = 'Stop'
-Push-Location (Split-Path $PSScriptRoot -Parent)
+Push-Location (Join-Path $PSScriptRoot '..\..')
 try {
     $out = 'build/style_pickers'
     New-Item -ItemType Directory -Force $out | Out-Null
     $sources = @(
         'tests/xui/xui_test_proxy.c', 'tests/xui/xui_test_xrt_impl.c',
-        'modules/xlayout/xlayout.c', 'src/xui/core/xui_core.c', 'src/xui/core/xui_widget.c',
+        'modules/xlayout/xlayout.c', 'src/xui/core/xui_core.c', 'src/xui/accessibility/xui_native_accessibility.c', 'src/xui/core/xui_widget.c',
         'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c', 'src/xui/core/xui_edit.c',
         'src/xui/core/xui_drag_drop.c', 'src/xui/core/xui_unicode.c', 'src/xui/core/xui_text.c',
         'src/xui/core/xui_assets.c', 'src/xui/core/xui_builtin_atlas.c', 'src/xui/core/xui_icon.c',
@@ -26,7 +26,7 @@ try {
     $libs = @('-lm', '-lws2_32', '-liphlpapi', '-lgdi32', '-luser32', '-lshell32',
         '-lole32', '-loleaut32', '-luuid', '-limm32', '-lwinmm', '-lavrt')
     $objects = @()
-    $headers = Get-ChildItem -Path '.', 'src', 'extlibs/xrt', 'extlibs/xlayout' -Filter '*.h' -File
+    $headers = Get-ChildItem -Path '.', 'src', 'extlibs/xrt', 'modules/xlayout' -Filter '*.h' -File
     $headers += Get-Item 'tests/xui/xui_test_proxy.h'
     $latestHeader = ($headers | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
     foreach ($source in $sources) {

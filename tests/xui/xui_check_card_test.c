@@ -24,6 +24,16 @@ static void __xuiCheckCardChanged(xui_widget pWidget, int bChecked, void* pUser)
 	if ( pCount != NULL ) (*pCount)++;
 }
 
+static void __xuiCheckCardDestroyChanged(xui_widget pWidget, int bChecked, void* pUser)
+{
+	int* pCount;
+
+	(void)bChecked;
+	pCount = (int*)pUser;
+	if ( pCount != NULL ) (*pCount)++;
+	xuiWidgetDestroy(pWidget);
+}
+
 static void __xuiCheckCardGroupChanged(xui_widget pGroup, xui_widget pSelected, int iSelectedIndex, void* pUser)
 {
 	int* pIndex;
@@ -71,14 +81,19 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pStandalone;
+	xui_widget pReparentCard;
+	xui_widget pDestroyCard;
+	xui_widget pInvalidCard;
 	xui_widget pGroup;
 	xui_widget pCard[3];
 	xui_widget pChild;
 	xui_widget pLabel;
 	xui_surface pTarget;
 	xui_check_card_desc_t tDesc;
+	xui_check_card_desc_t tInvalidDesc;
 	xui_label_desc_t tLabelDesc;
 	xui_radio_group_desc_t tGroupDesc;
+	xui_accessible_node_t tAccessible;
 	xui_rect_t tCorner;
 	xui_rect_t tCardRect;
 	xui_rect_t tLabelWorld;
@@ -87,6 +102,7 @@ int main(void)
 	float fCorner;
 	float fFocus;
 	int iChanged;
+	int iDestroyedChanges;
 	int iGroupIndex;
 	int iRet;
 	int iFailed;
@@ -94,11 +110,15 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pStandalone = NULL;
+	pReparentCard = NULL;
+	pDestroyCard = NULL;
+	pInvalidCard = NULL;
 	pGroup = NULL;
 	pLabel = NULL;
 	pTarget = NULL;
 	memset(pCard, 0, sizeof(pCard));
 	iChanged = 0;
+	iDestroyedChanges = 0;
 	iGroupIndex = -2;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
@@ -128,6 +148,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "add standalone");
 	xuiWidgetSetRect(pStandalone, (xui_rect_t){12.0f, 12.0f, 180.0f, 56.0f});
 	XUI_TEST_CHECK(xuiWidgetGetFocusable(pStandalone) == 1, "focusable");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pStandalone, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetAccessibleNodeCount(pStandalone) == 1 &&
+		tAccessible.iRole == XUI_ACCESSIBLE_ROLE_CHECKBOX &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE)) != 0u,
+		"standalone accessibility");
 
 	memset(&tGroupDesc, 0, sizeof(tGroupDesc));
 	tGroupDesc.iSize = sizeof(tGroupDesc);
@@ -152,6 +179,50 @@ int main(void)
 	}
 	XUI_TEST_CHECK(xuiRadioGroupGetSelectedIndex(pGroup) == 1 && xuiRadioGroupGetSelectedWidget(pGroup) == pCard[1], "initial group selection");
 	XUI_TEST_CHECK(xuiCheckCardGetChecked(pCard[1]) && !xuiCheckCardGetChecked(pCard[0]), "initial checked");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pCard[0]) == 0 && xuiWidgetGetTabStop(pCard[1]) == 1 &&
+		xuiWidgetGetTabStop(pCard[2]) == 0, "selected card is the only group tab stop");
+	iRet = xuiWidgetSetEnabled(pCard[1], 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetTabStop(pCard[0]) == 1 &&
+		xuiWidgetGetTabStop(pCard[1]) == 0 && xuiWidgetGetTabStop(pCard[2]) == 0,
+		"disabled card selection falls back to first eligible tab stop");
+	iRet = xuiWidgetSetEnabled(pCard[1], 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetTabStop(pCard[0]) == 0 &&
+		xuiWidgetGetTabStop(pCard[1]) == 1 && xuiWidgetGetTabStop(pCard[2]) == 0,
+		"reenabled selected card regains the group tab stop");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pCard[1], 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK && tAccessible.iRole == XUI_ACCESSIBLE_ROLE_RADIO_BUTTON &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_CHECKED) != 0u &&
+		(tAccessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE)) == 0u,
+		"grouped accessibility");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	iRet = xuiCheckCardCreate(pContext, &pReparentCard, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pReparentCard != NULL, "reparent card create");
+	iRet = xuiWidgetAddChild(pRoot, pReparentCard);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reparent card initial parent");
+	iRet = xuiCheckCardSetRadioGroup(pReparentCard, pGroup);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetParent(pReparentCard) == pGroup &&
+		xuiCheckCardGetRadioGroup(pReparentCard) == pGroup, "radio group reparents attached card");
+	iRet = xuiRadioGroupSetSelectedWidget(pGroup, pReparentCard);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckCardGetChecked(pReparentCard),
+		"reparent card selected");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pCard[0]) == 0 && xuiWidgetGetTabStop(pCard[1]) == 0 &&
+		xuiWidgetGetTabStop(pCard[2]) == 0 && xuiWidgetGetTabStop(pReparentCard) == 1,
+		"selected reparented card owns the group tab stop");
+	iRet = xuiCheckCardSetRadioGroup(pReparentCard, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetParent(pReparentCard) == NULL &&
+		xuiCheckCardGetRadioGroup(pReparentCard) == NULL &&
+		xuiRadioGroupGetSelectedWidget(pGroup) == NULL && xuiCheckCardGetChecked(pReparentCard) &&
+		iGroupIndex == -1,
+		"radio group detach reconciles selection");
+	XUI_TEST_CHECK(xuiWidgetGetTabStop(pReparentCard) == 1 && xuiWidgetGetTabStop(pCard[0]) == 1 &&
+		xuiWidgetGetTabStop(pCard[1]) == 0 && xuiWidgetGetTabStop(pCard[2]) == 0,
+		"detached card restores standalone tab stop and group fallback");
+	iRet = xuiWidgetAddChild(pRoot, pReparentCard);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reattach ungrouped card");
 
 	iRet = xuiWidgetCreate(pContext, &pChild);
 	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "child create");
@@ -187,6 +258,42 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckCardGetChecked(pStandalone) && iChanged == 1, "standalone toggles on");
 	iRet = __xuiCheckCardClick(pContext, pStandalone);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 2, "standalone toggles off");
+	tLabelWorld = xuiWidgetGetWorldRect(pStandalone);
+	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tLabelWorld.fX + tLabelWorld.fW * 0.5f),
+		(int)(tLabelWorld.fY + tLabelWorld.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pStandalone,
+		"first touch owns check card press");
+	iRet = xuiInputPointerDownEx(pContext, 502u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tLabelWorld.fX + tLabelWorld.fW * 0.5f),
+		(int)(tLabelWorld.fY + tLabelWorld.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 502u,
+		XUI_POINTER_TYPE_TOUCH,
+		(int)(tLabelWorld.fX + tLabelWorld.fW * 0.5f),
+		(int)(tLabelWorld.fY + tLabelWorld.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) &&
+		iChanged == 2 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == pStandalone &&
+		(xuiCheckCardGetState(pStandalone) & XUI_WIDGET_STATE_ACTIVE) != 0,
+		"unrelated touch cannot click or release check card press");
+	iRet = xuiInputPointerUpEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tLabelWorld.fX + tLabelWorld.fW * 0.5f),
+		(int)(tLabelWorld.fY + tLabelWorld.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckCardGetChecked(pStandalone) &&
+		iChanged == 3 &&
+		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"owning touch commits check card click once");
+	iRet = xuiCheckCardSetChecked(pStandalone, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset check card before keyboard blur");
 	iRet = xuiSetFocusWidget(pContext, pStandalone);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus standalone");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
@@ -202,7 +309,7 @@ int main(void)
 	iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "space up after blur");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 2,
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 3,
 	               "blurred keyboard press does not toggle");
 
 	iRet = __xuiCheckCardClick(pContext, pCard[0]);
@@ -212,6 +319,17 @@ int main(void)
 
 	iRet = xuiRadioGroupSetSelectedIndex(pGroup, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckCardGetChecked(pCard[2]) && !xuiCheckCardGetChecked(pCard[0]), "program selected index");
+	iRet = xuiWidgetSetEnabled(pCard[1], 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable middle card");
+	iRet = xuiSetFocusWidget(pContext, pCard[2]);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus grouped card");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "grouped card left key");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedWidget(pGroup) == pCard[0] &&
+		xuiGetFocusWidget(pContext) == pCard[0], "grouped card arrow navigation skips disabled option");
+	iRet = xuiWidgetSetEnabled(pCard[1], 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable middle card");
 	iRet = xuiCheckCardSetMetrics(pStandalone, 1.0f, 2.0f, 18.0f, 3.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
 	iRet = xuiCheckCardGetMetrics(pStandalone, &fBorder, &fCheckedBorder, &fCorner, &fFocus);
@@ -223,6 +341,26 @@ int main(void)
 	               "invalid metrics preserve state");
 	iRet = xuiCheckCardSetColors(pStandalone, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(250, 252, 252, 255), XUI_COLOR_RGBA(244, 248, 248, 255), XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(220, 220, 220, 255), XUI_COLOR_RGBA(120, 210, 205, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(255, 255, 255, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	iRet = xuiCheckCardCreate(pContext, &pDestroyCard, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyCard != NULL, "destroy callback card create");
+	iRet = xuiWidgetAddChild(pRoot, pDestroyCard);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback card add");
+	iRet = xuiCheckCardSetChange(pDestroyCard, __xuiCheckCardDestroyChanged, &iDestroyedChanges);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy callback setup");
+	iRet = xuiCheckCardSetCheckedFromGroup(pDestroyCard, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyedChanges == 1,
+		"change callback may destroy card without stale access");
+	pDestroyCard = NULL;
+
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fBorderWidth = NAN;
+	pInvalidCard = pRoot;
+	iRet = xuiCheckCardCreate(pContext, &pInvalidCard, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidCard == NULL,
+		"invalid create clears output");
 
 cleanup:
 	if ( pContext != NULL ) xuiDestroy(pContext);

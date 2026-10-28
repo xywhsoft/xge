@@ -100,6 +100,38 @@ int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSiz
 	return XUI_OK;
 }
 
+static int xuiTestCommandDefaultRollback(xui_code_command_map pMap, int iExpectedCount)
+{
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	int iCommand;
+	int iFindRet;
+	int iRet;
+	int bResult;
+
+	pBudget = NULL;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiCodeCommandMapLoadDefaults(pMap);
+	xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	iCommand = 0;
+	iFindRet = xuiCodeCommandMapFind(pMap, 'K', XUI_MOD_CTRL, &iCommand);
+	bResult = iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		xuiCodeCommandMapGetCount(pMap) == iExpectedCount &&
+		iFindRet == XUI_OK &&
+		iCommand == XUI_CODE_COMMAND_USER_BASE + 2;
+	if ( !bResult ) {
+		printf("default rollback details: ret=%d count=%d expected=%d find=%d command=%d\n",
+			iRet, xuiCodeCommandMapGetCount(pMap), iExpectedCount, iFindRet, iCommand);
+	}
+	return bResult;
+}
+
 int main(void)
 {
 	xui_code_command_map pMap;
@@ -151,6 +183,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_MOVE_WORD_LEFT, "ctrl left word binding");
 	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_RIGHT, XUI_MOD_CTRL, &iCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_MOVE_WORD_RIGHT, "ctrl right word binding");
+	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_LEFT, XUI_MOD_CTRL | XUI_MOD_SHIFT, &iCommand);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_SELECT_WORD_LEFT, "ctrl shift left word binding");
+	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_RIGHT, XUI_MOD_CTRL | XUI_MOD_SHIFT, &iCommand);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_SELECT_WORD_RIGHT, "ctrl shift right word binding");
 	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_BACKSPACE, XUI_MOD_CTRL, &iCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_DELETE_WORD_BACK, "ctrl backspace word binding");
 	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_DELETE, XUI_MOD_CTRL, &iCommand);
@@ -176,6 +212,8 @@ int main(void)
 	XUI_TEST_CHECK(xuiCodeCommandMapGetCount(pMap) == iCount + 1, "rebind does not duplicate");
 	iRet = xuiCodeCommandMapFind(pMap, 'K', XUI_MOD_CTRL, &iCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_USER_BASE + 2, "custom rebind find");
+	XUI_TEST_CHECK(xuiTestCommandDefaultRollback(pMap, iCount + 1),
+		"default reload allocation failure preserves existing bindings");
 
 	memset(&tBinding, 0, sizeof(tBinding));
 	iRet = xuiCodeCommandMapGetBinding(pMap, xuiCodeCommandMapGetCount(pMap) - 1, &tBinding);

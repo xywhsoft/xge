@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -36,6 +37,23 @@ static void __xuiPopupChanged(xui_widget pWidget, int bOpen, void* pUser)
 	}
 }
 
+static void __xuiPopupDestroyChanged(xui_widget pWidget, int bOpen, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)bOpen;
+	if ( pCount != NULL ) (*pCount)++;
+	xuiWidgetDestroy(pWidget);
+}
+
+static int __xuiPopupOwnerEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)pWidget;
+	if ( pEvent != NULL && pEvent->iType == XUI_EVENT_POINTER_DOWN &&
+	     pEvent->iPhase == XUI_EVENT_PHASE_TARGET && pCount != NULL ) (*pCount)++;
+	return XUI_OK;
+}
+
 static int __xuiPopupRender(xui_context pContext, xui_surface pTarget)
 {
 	xui_rect_i_t tFullRect;
@@ -53,6 +71,15 @@ static int __xuiPopupDispatchDown(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiPopupDispatchUp(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -60,6 +87,7 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pOwner;
 	xui_widget pPopup;
+	xui_widget pAutoPopup;
 	xui_widget pPanel;
 	xui_widget pScrollView;
 	xui_widget pFrame;
@@ -67,12 +95,16 @@ int main(void)
 	xui_widget pChild;
 	xui_surface pTarget;
 	xui_popup_desc_t tDesc;
+	xui_popup_desc_t tAutoDesc;
+	xui_popup_desc_t tInvalidDesc;
 	xui_rect_t tPopup;
+	xui_rect_t tPopupChanged;
 	xui_rect_t tViewport;
 	xui_rect_t tOwner;
 	float fOffsetX;
 	float fOffsetY;
 	int iChanged;
+	int iOwnerDown;
 	int iFailed;
 	int iRet;
 
@@ -80,6 +112,7 @@ int main(void)
 	pRoot = NULL;
 	pOwner = NULL;
 	pPopup = NULL;
+	pAutoPopup = NULL;
 	pPanel = NULL;
 	pScrollView = NULL;
 	pFrame = NULL;
@@ -87,6 +120,7 @@ int main(void)
 	pChild = NULL;
 	pTarget = NULL;
 	iChanged = 0;
+	iOwnerDown = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -109,6 +143,21 @@ int main(void)
 	xuiWidgetSetFocusable(pOwner, 1);
 	iRet = xuiWidgetAddChild(pRoot, pOwner);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add owner");
+	iRet = xuiWidgetSetEventCallback(pOwner, __xuiPopupOwnerEvent, &iOwnerDown);
+	XUI_TEST_CHECK(iRet == XUI_OK, "owner event callback");
+
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.fContentWidth = NAN;
+	pPopup = pOwner;
+	iRet = xuiPopupCreate(pContext, &pPopup, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pPopup == NULL,
+		"reject NaN descriptor and clear stale output");
+	tInvalidDesc.fContentWidth = 0.0f;
+	tInvalidDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	tInvalidDesc.fScrollbarSize = 9.0f;
+	iRet = xuiPopupCreate(pContext, &pPopup, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pPopup == NULL, "reject oversized compact scrollbar descriptor");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -171,6 +220,25 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollFrameIsVScrollBarVisible(pFrame), "vertical bar visible");
 	XUI_TEST_CHECK(!xuiScrollFrameIsHScrollBarVisible(pFrame), "horizontal bar not chained");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pPopup, "popup focused");
+	XUI_TEST_CHECK(xuiPopupSetAnchorRect(pPopup, (xui_rect_t){0, 0, -1, 20}) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject negative anchor width");
+	XUI_TEST_CHECK(xuiPopupSetScrollbarStyle(pPopup, XUI_SCROLLBAR_MODE_COMPACT, 9.0f) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject oversized compact scrollbar API");
+	iRet = xuiPopupSetMetrics(pPopup, 8.0f, 2.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set open popup metrics");
+	tPopupChanged = xuiPopupGetPopupRect(pPopup);
+	XUI_TEST_CHECK(tPopupChanged.fW > tPopup.fW && __xuiPopupNear(tPopupChanged.fH, tPopup.fH),
+		"open metrics immediately replace geometry");
+	iRet = xuiPopupSetMetrics(pPopup, 4.0f, 1.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore popup metrics");
+	tPopupChanged = xuiPopupGetPopupRect(pPopup);
+	XUI_TEST_CHECK(__xuiPopupNear(tPopupChanged.fW, tPopup.fW) && __xuiPopupNear(tPopupChanged.fH, tPopup.fH),
+		"restored metrics restore geometry");
+
+	iRet = __xuiPopupDispatchDown(pContext, tOwner.fX + 5.0f, tOwner.fY + 5.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iOwnerDown == 1 && xuiPopupIsOpen(pPopup), "owner passthrough reaches owner");
+	iRet = __xuiPopupDispatchUp(pContext, tOwner.fX + 5.0f, tOwner.fY + 5.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPopupIsOpen(pPopup), "owner passthrough release keeps popup open");
 
 	iRet = xuiInputPointerWheel(pContext, tPopup.fX + 20.0f, tPopup.fY + 20.0f, 0.0f, -1.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel input");
@@ -190,6 +258,41 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiPopupIsOpen(pPopup), "escape closes popup");
+
+	memset(&tAutoDesc, 0, sizeof(tAutoDesc));
+	tAutoDesc.iSize = sizeof(tAutoDesc);
+	tAutoDesc.pOwner = pOwner;
+	tAutoDesc.iOutsidePolicy = XUI_POPUP_OUTSIDE_IGNORE;
+	tAutoDesc.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;
+	tAutoDesc.iEscapePolicy = XUI_POPUP_ESCAPE_CLOSE;
+	tAutoDesc.iFocusPolicy = XUI_POPUP_FOCUS_NONE;
+	iRet = xuiPopupCreate(pContext, &pAutoPopup, &tAutoDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pAutoPopup != NULL, "auto-size popup create");
+	pContent = xuiPopupGetContentWidget(pAutoPopup);
+	iRet = xuiWidgetSetRect(pContent, (xui_rect_t){0, 0, 90, 50});
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto-size initial content rect");
+	iRet = xuiPopupGetContentSize(pAutoPopup, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiPopupNear(fOffsetX, 0.0f) && __xuiPopupNear(fOffsetY, 0.0f),
+		"auto-size request remains zero");
+	iRet = xuiPopupSetOpen(pAutoPopup, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "open auto-size popup");
+	tPopupChanged = xuiPopupGetContentRect(pAutoPopup);
+	XUI_TEST_CHECK(__xuiPopupNear(tPopupChanged.fW, 90.0f) && __xuiPopupNear(tPopupChanged.fH, 50.0f),
+		"auto-size resolves initial content rect");
+	iRet = xuiWidgetSetRect(pContent, (xui_rect_t){0, 0, 150, 70});
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto-size changed content rect");
+	iRet = xuiPopupApplyPlacement(pAutoPopup);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reapply auto-size placement");
+	tPopupChanged = xuiPopupGetContentRect(pAutoPopup);
+	XUI_TEST_CHECK(__xuiPopupNear(tPopupChanged.fW, 150.0f) && __xuiPopupNear(tPopupChanged.fH, 70.0f),
+		"auto-size re-resolves changed content rect");
+	iRet = xuiPopupGetContentSize(pAutoPopup, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiPopupNear(fOffsetX, 0.0f) && __xuiPopupNear(fOffsetY, 0.0f),
+		"auto-size request stays declarative after placement");
+	iRet = xuiPopupSetOpen(pAutoPopup, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close auto-size popup");
+	xuiWidgetDestroy(pAutoPopup);
+	pAutoPopup = NULL;
 
 	iRet = xuiPopupSetClosePolicy(pPopup, XUI_POPUP_OUTSIDE_IGNORE, XUI_POPUP_OWNER_CLOSE, XUI_POPUP_ESCAPE_CLOSE);
 	XUI_TEST_CHECK(iRet == XUI_OK, "owner close policy");
@@ -213,6 +316,25 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPopupIsOpen(pPopup), "open fallback popup");
 	tPopup = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(tPopup.fY < 220.0f, "vertical fallback");
+	iRet = xuiPopupSetClosePolicy(pPopup, XUI_POPUP_OUTSIDE_IGNORE, XUI_POPUP_OWNER_TOGGLE, XUI_POPUP_ESCAPE_CLOSE);
+	XUI_TEST_CHECK(iRet == XUI_OK, "owner toggle policy");
+	tOwner = xuiWidgetGetWorldRect(pOwner);
+	iRet = __xuiPopupDispatchDown(pContext, tOwner.fX + 5.0f, tOwner.fY + 5.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiPopupIsOpen(pPopup) && iOwnerDown == 2,
+		"owner toggle closes and reaches owner");
+	iRet = __xuiPopupDispatchUp(pContext, tOwner.fX + 5.0f, tOwner.fY + 5.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "owner toggle release");
+	iRet = xuiPopupSetOpen(pPopup, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPopupIsOpen(pPopup), "reopen after owner toggle");
+
+	iRet = xuiPopupSetClosePolicy(pPopup, XUI_POPUP_OUTSIDE_IGNORE, XUI_POPUP_OWNER_CLOSE, XUI_POPUP_ESCAPE_CLOSE);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destructive owner close policy");
+	iRet = xuiPopupSetChange(pPopup, __xuiPopupDestroyChanged, &iChanged);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destructive change callback");
+	tOwner = xuiWidgetGetWorldRect(pOwner);
+	iRet = __xuiPopupDispatchDown(pContext, tOwner.fX + 5.0f, tOwner.fY + 5.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "owner close callback may destroy popup");
+	pPopup = NULL;
 
 cleanup:
 	if ( pContext != NULL ) {

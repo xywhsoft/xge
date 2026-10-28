@@ -10,7 +10,7 @@
 int xgeImageInfoMemory(const void* data, int size, int* width, int* height)
 {
     (void)data; (void)size; (void)width; (void)height;
-    fputs("unexpected XGE image probe in headless MessageList tests\xge\n", stderr);
+    fputs("unexpected XGE image probe in headless MessageList tests\n", stderr);
     abort();
 }
 int xgeImageEncodePNGEx(int width, int height, const void* pixels,
@@ -18,7 +18,7 @@ int xgeImageEncodePNGEx(int width, int height, const void* pixels,
 {
     (void)width; (void)height; (void)pixels; (void)stride;
     (void)flags; (void)data; (void)size;
-    fputs("unexpected XGE PNG encode in headless MessageList tests\xge\n", stderr);
+    fputs("unexpected XGE PNG encode in headless MessageList tests\n", stderr);
     abort();
 }
 #endif
@@ -1712,6 +1712,7 @@ int main(void)
     body_x = world.fX + content.fX + bubble.fX + metrics.fBubblePaddingX;
     body_y = world.fY + content.fY + bubble.fY + metrics.fBubblePaddingY;
     CHECK(xuiMessageListHitNodeDocument(list, "answer", body_x + 2, body_y + 12, &start) == XUI_OK);
+    CHECK(xuiQueryCursor(context, (int)(body_x + 2), (int)(body_y + 12)) == XUI_CURSOR_IBEAM);
     CHECK(xuiMessageListHitNodeDocument(list, "answer", body_x + 95, body_y + 12, &end) == XUI_OK);
     CHECK(start.iDocumentId == end.iDocumentId && start.iNodeId != 0);
     CHECK(start.iNodeId != end.iNodeId || start.iOffset != end.iOffset);
@@ -1752,6 +1753,7 @@ int main(void)
         xui_document_transaction transaction = NULL;
         xui_doc_node_desc_t node = {0};
         xui_doc_node_id paragraph;
+        xui_doc_node_id plain_node;
         xui_doc_node_id text_node;
         xui_doc_node_id image_node;
         xui_doc_position_t hit;
@@ -1759,6 +1761,9 @@ int main(void)
         CHECK(xuiDocumentBeginTransaction(rich, NULL, &transaction) == XUI_OK);
         node.iSize = sizeof(node); node.iKind = XUI_DOC_PARAGRAPH;
         CHECK(xuiDocumentTxnInsertNode(transaction, XUI_DOCUMENT_ROOT, XUI_DOCUMENT_APPEND, &node, &paragraph) == XUI_OK);
+        memset(&node, 0, sizeof(node)); node.iSize = sizeof(node); node.iKind = XUI_DOC_TEXT;
+        node.sText = "Plain text "; node.iTextBytes = strlen(node.sText);
+        CHECK(xuiDocumentTxnInsertNode(transaction, paragraph, XUI_DOCUMENT_APPEND, &node, &plain_node) == XUI_OK);
         memset(&node, 0, sizeof(node)); node.iSize = sizeof(node); node.iKind = XUI_DOC_TEXT;
         node.sText = "Rich link here"; node.iTextBytes = strlen(node.sText);
         node.tAttributes.iMarks = XUI_DOC_BOLD | XUI_DOC_LINK;
@@ -1780,17 +1785,19 @@ int main(void)
         body_x = world.fX + content.fX + bubble.fX + metrics.fBubblePaddingX;
         body_y = world.fY + content.fY + bubble.fY + metrics.fBubblePaddingY - scroll;
         CHECK(xuiMessageListHitNodeDocument(list, "next", body_x + 8, body_y + 8, &hit) == XUI_OK);
-        CHECK(hit.iNodeId != 0);
+        CHECK(hit.iNodeId == plain_node);
+        CHECK(xuiQueryCursor(context, (int)(body_x + 8), (int)(body_y + 8)) == XUI_CURSOR_IBEAM);
         CHECK(xuiInputPointerDown(context, (int)(body_x + 8), (int)(body_y + 8),
             XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK);
         dispatch(context);
         CHECK(xuiInputPointerUp(context, (int)(body_x + 8), (int)(body_y + 8),
             XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK);
         dispatch(context);
-        CHECK(activations == 1);
+        CHECK(activations == 0);
         {
             int accessible_count = xuiWidgetGetAccessibleNodeCount(list);
-            int accessible_index, found_link = 0, found_image = 0, clicked_image = 0;
+            int accessible_index, found_link = 0, found_image = 0;
+            int clicked_link = 0, clicked_image = 0;
             for (accessible_index = 0; accessible_index < accessible_count; accessible_index++) {
                 xui_accessible_node_t accessible = {0};
                 accessible.iSize = sizeof(accessible);
@@ -1810,6 +1817,7 @@ int main(void)
                             float image_y = accessible.tBounds.fY + 3;
                             CHECK(xuiMessageListHitNodeDocument(list, "next", image_x, image_y,
                                 &hit) == XUI_OK && hit.iNodeId == image_node);
+                            CHECK(xuiQueryCursor(context, (int)image_x, (int)image_y) == XUI_CURSOR_HAND);
                             CHECK(xuiInputPointerDown(context, (int)image_x, (int)image_y,
                                 XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK);
                             dispatch(context);
@@ -1825,9 +1833,24 @@ int main(void)
                 CHECK(accessible.iActions & XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE));
                 CHECK(xuiWidgetPerformAccessibleAction(list, accessible.iId,
                     XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL) == XUI_OK);
+                if (!(accessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) &&
+                    accessible.tBounds.fW > 4 && accessible.tBounds.fH > 4) {
+                    float link_x = accessible.tBounds.fX + 3;
+                    float link_y = accessible.tBounds.fY + 3;
+                    CHECK(xuiMessageListHitNodeDocument(list, "next", link_x, link_y,
+                        &hit) == XUI_OK && hit.iNodeId == text_node);
+                    CHECK(xuiQueryCursor(context, (int)link_x, (int)link_y) == XUI_CURSOR_HAND);
+                    CHECK(xuiInputPointerDown(context, (int)link_x, (int)link_y,
+                        XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK);
+                    dispatch(context);
+                    CHECK(xuiInputPointerUp(context, (int)link_x, (int)link_y,
+                        XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK);
+                    dispatch(context);
+                    clicked_link = 1;
+                }
                 found_link = 1;
             }
-            CHECK(found_link && found_image && clicked_image && activations == 4);
+            CHECK(found_link && found_image && clicked_link && clicked_image && activations == 4);
         }
     }
     CHECK(proxy.tProxy.fontLoadMemory(&proxy.tProxy, &larger_font, NULL, 0, 20.0f, 0) == XUI_OK);

@@ -3,6 +3,33 @@
 #include <stdio.h>
 #include <string.h>
 
+static int g_iFailAllocation = -1;
+static int g_bAllocationFailed = 0;
+
+static void* __xuiCodeDocumentTestMalloc(size_t iSize)
+{
+	if ( g_iFailAllocation >= 0 && g_iFailAllocation-- == 0 ) {
+		g_bAllocationFailed = 1;
+		return NULL;
+	}
+	return xrtMalloc(iSize);
+}
+
+static void* __xuiCodeDocumentTestRealloc(void* pMemory, size_t iSize)
+{
+	if ( g_iFailAllocation >= 0 && g_iFailAllocation-- == 0 ) {
+		g_bAllocationFailed = 1;
+		return NULL;
+	}
+	return xrtRealloc(pMemory, iSize);
+}
+
+#define xrtMalloc __xuiCodeDocumentTestMalloc
+#define xrtRealloc __xuiCodeDocumentTestRealloc
+#include "../../src/xui/code/xui_code_document.c"
+#undef xrtMalloc
+#undef xrtRealloc
+
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
 		if ( !(expr) ) { \
@@ -67,6 +94,118 @@ static int __xuiCodeDocumentValidateLines(xui_code_document pDocument, const cha
 	return 1;
 }
 
+static void __xuiCodeDocumentBuildLargeText(char* sText, int iCapacity)
+{
+	int i;
+
+	for ( i = 0; i + 1 < iCapacity; i++ ) {
+		sText[i] = ((i + 1) % 97 == 0) ? '\n' : (char)('a' + i % 26);
+	}
+	sText[iCapacity - 1] = '\0';
+}
+
+static int __xuiCodeDocumentAllocationRollbackTest(void)
+{
+	xui_code_document pDocument;
+	char sLarge[6000];
+	uint32_t iVersion;
+	int iFailureCount;
+	int iPoint;
+	int iRet;
+	int bSucceeded;
+
+	__xuiCodeDocumentBuildLargeText(sLarge, (int)sizeof(sLarge));
+	iFailureCount = 0;
+	bSucceeded = 0;
+	for ( iPoint = 0; iPoint < 32; iPoint++ ) {
+		pDocument = NULL;
+		if ( xuiCodeDocumentCreate(&pDocument) != XUI_OK ||
+		     xuiCodeDocumentSetText(pDocument, "stable\ntext") != XUI_OK ) {
+			xuiCodeDocumentDestroy(pDocument);
+			return 0;
+		}
+		iVersion = xuiCodeDocumentGetVersion(pDocument);
+		g_iFailAllocation = iPoint;
+		g_bAllocationFailed = 0;
+		iRet = xuiCodeDocumentSetText(pDocument, sLarge);
+		g_iFailAllocation = -1;
+		if ( iRet == XUI_OK ) {
+			bSucceeded = 1;
+			xuiCodeDocumentDestroy(pDocument);
+			break;
+		}
+		if ( !g_bAllocationFailed || iRet != XUI_ERROR_OUT_OF_MEMORY ||
+		     strcmp(xuiCodeDocumentGetText(pDocument), "stable\ntext") != 0 ||
+		     xuiCodeDocumentGetVersion(pDocument) != iVersion ||
+		     xuiCodeDocumentGetDirty(pDocument) ||
+		     xuiCodeDocumentCanUndo(pDocument) ||
+		     !__xuiCodeDocumentValidateLines(pDocument, "stable\ntext") ) {
+			printf("set-text rollback failed at allocation %d\n", iPoint);
+			xuiCodeDocumentDestroy(pDocument);
+			return 0;
+		}
+		iFailureCount++;
+		xuiCodeDocumentDestroy(pDocument);
+	}
+	if ( !bSucceeded || iFailureCount < 3 ) return 0;
+
+	iFailureCount = 0;
+	bSucceeded = 0;
+	for ( iPoint = 0; iPoint < 48; iPoint++ ) {
+		pDocument = NULL;
+		if ( xuiCodeDocumentCreate(&pDocument) != XUI_OK ||
+		     xuiCodeDocumentSetText(pDocument, "left\nright") != XUI_OK ) {
+			xuiCodeDocumentDestroy(pDocument);
+			return 0;
+		}
+		iVersion = xuiCodeDocumentGetVersion(pDocument);
+		g_iFailAllocation = iPoint;
+		g_bAllocationFailed = 0;
+		iRet = xuiCodeDocumentInsert(pDocument, 5, sLarge);
+		g_iFailAllocation = -1;
+		if ( iRet == XUI_OK ) {
+			bSucceeded = 1;
+			xuiCodeDocumentDestroy(pDocument);
+			break;
+		}
+		if ( !g_bAllocationFailed || iRet != XUI_ERROR_OUT_OF_MEMORY ||
+		     strcmp(xuiCodeDocumentGetText(pDocument), "left\nright") != 0 ||
+		     xuiCodeDocumentGetVersion(pDocument) != iVersion ||
+		     xuiCodeDocumentGetDirty(pDocument) ||
+		     xuiCodeDocumentCanUndo(pDocument) ||
+		     !__xuiCodeDocumentValidateLines(pDocument, "left\nright") ) {
+			printf("replace rollback failed at allocation %d\n", iPoint);
+			xuiCodeDocumentDestroy(pDocument);
+			return 0;
+		}
+		iFailureCount++;
+		xuiCodeDocumentDestroy(pDocument);
+	}
+	return bSucceeded && iFailureCount >= 5;
+}
+
+static int __xuiCodeDocumentSaveSnapshotFailureTest(const char* sPath)
+{
+	xui_code_document pDocument;
+	int iRet;
+	int bFailed;
+
+	pDocument = NULL;
+	if ( xuiCodeDocumentCreate(&pDocument) != XUI_OK ||
+	     xuiCodeDocumentSetText(pDocument, "snapshot must exist before save") != XUI_OK ) {
+		xuiCodeDocumentDestroy(pDocument);
+		return 0;
+	}
+	xrtFileDelete((str)sPath);
+	g_iFailAllocation = 0;
+	g_bAllocationFailed = 0;
+	iRet = xuiCodeDocumentSaveTextFile(pDocument, sPath, XENCODING_UTF8);
+	g_iFailAllocation = -1;
+	bFailed = g_bAllocationFailed && iRet == XUI_ERROR_OUT_OF_MEMORY;
+	xuiCodeDocumentDestroy(pDocument);
+	return bFailed;
+}
+
 int main(void)
 {
 	xui_code_document pDocument;
@@ -125,6 +264,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set text length");
 	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "alpha\nbeta\n") == 0, "set text length ignores trailing bytes");
 	XUI_TEST_CHECK(xuiCodeDocumentGetLineCount(pDocument) == 3, "line count after set length");
+	iVersion = xuiCodeDocumentGetVersion(pDocument);
+	iChangeCount = tChange.iCount;
+	iRet = xuiCodeDocumentReplace(pDocument, 0, 5, "alpha");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeDocumentGetVersion(pDocument) == iVersion &&
+		tChange.iCount == iChangeCount && !xuiCodeDocumentCanUndo(pDocument),
+		"identical replacement is a no-op");
 
 	iRet = xuiCodeDocumentSetText(pDocument, "a\xE4\xBD\xA0" "b\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set unicode text");
@@ -172,6 +317,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeDocumentGetDirty(pDocument), "set clean");
 	iRet = xuiCodeDocumentInsert(pDocument, xuiCodeDocumentGetLength(pDocument), "tail");
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeDocumentGetDirty(pDocument), "dirty after clean edit");
+	iRet = xuiCodeDocumentSetText(pDocument, "forced dirty");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset for forced dirty");
+	XUI_TEST_CHECK(xuiCodeDocumentSetDirty(pDocument, 1) == XUI_OK &&
+		xuiCodeDocumentInsert(pDocument, xuiCodeDocumentGetLength(pDocument), "!") == XUI_OK &&
+		xuiCodeDocumentUndo(pDocument) == XUI_OK && xuiCodeDocumentGetDirty(pDocument),
+		"explicit dirty survives edit undo");
+	XUI_TEST_CHECK(xuiCodeDocumentSetDirty(pDocument, 0) == XUI_OK &&
+		!xuiCodeDocumentGetDirty(pDocument), "explicit dirty can be cleared");
 
 	iRet = xuiCodeDocumentSetText(pDocument, "a\nb\nc");
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset text");
@@ -256,12 +409,16 @@ int main(void)
 
 	iRet = xuiCodeDocumentSetText(pDocument, "file\r\ntext");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set file text");
+	XUI_TEST_CHECK(__xuiCodeDocumentSaveSnapshotFailureTest(sFile),
+		"save propagates snapshot allocation failure");
 	iRet = xuiCodeDocumentSaveTextFile(pDocument, sFile, XENCODING_UTF8);
 	XUI_TEST_CHECK(iRet == XUI_OK, "save text file");
 	iRet = xuiCodeDocumentSetText(pDocument, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear before load");
 	iRet = xuiCodeDocumentLoadTextFile(pDocument, sFile, XENCODING_UTF8);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "file\ntext") == 0, "load text file");
+	XUI_TEST_CHECK(__xuiCodeDocumentAllocationRollbackTest(),
+		"allocation failures preserve document state");
 
 cleanup:
 	xrtFileDelete((str)sFile);

@@ -68,12 +68,12 @@ static void document_multiple_shy(xui_proxy p,xui_context context,xui_font font,
                 xuiDocumentRendererDraw(r,draw,.25,0,(xui_rect_t){0,0,W,H},NULL,0)==XUI_OK && p->drawEnd(p,draw)==XUI_OK && paint_route() && shapes==before);
             CHECK(p->surfaceClear(p,targets[1],0)==XUI_OK && p->drawBegin(p,&draw,targets[1])==XUI_OK);
             for(unsigned i=0;i<4;i++)literal(p,draw,font,0xe703+(selected?(i==0?4:i==1?3:i==2?2:1):(i%2?3:2)),
-                .25+fmin(rects[i][0].x,rects[i][1].x),rects[i][0].y,UINT32_C(0xff2040c8)+(form==1?glyphs[i]:0)*UINT32_C(0x10100));
+                .25+fmin(rects[i][0].x,rects[i][1].x),rects[i][0].y,UINT32_C(0xff2040c8)+(form==1?glyphs[i]:0)*UINT32_C(0x10100),1);
             for(unsigned i=0;i<2;i++)if(selected & (1u<<i)){
                 unsigned part=1+4*i,off=offsets[part],local=form==1?0:off;xui_doc_rect_t rect;
                 xui_doc_position_t at=position(snapshot,form,leaves[form==1?part:0],local,off,XUI_DOC_AFTER);
                 CHECK(xuiDocumentRendererGetCaretRect(r,&at,&rect)==XUI_OK);
-                literal(p,draw,font,0xe702,.25+rect.x,rect.y,UINT32_C(0xff2040c8)+(form==1?part:0)*UINT32_C(0x10100));
+                literal(p,draw,font,0xe702,.25+rect.x,rect.y,UINT32_C(0xff2040c8)+(form==1?part:0)*UINT32_C(0x10100),1);
             }
             CHECK(p->drawEnd(p,draw)==XUI_OK);equal_pixels(p,targets,0,form,9,pass,size);
         }
