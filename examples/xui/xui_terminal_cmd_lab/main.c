@@ -518,7 +518,7 @@ static void __xuiCmdLabCommandType(xui_terminal_cmd_lab_t* pDemo, const char* sA
 
 static void __xuiCmdLabAnsiTest(xui_terminal_cmd_lab_t* pDemo)
 {
-	__xuiCmdLabWrite(pDemo, "\x1b[1;36mANSI rendering tests\xge\x1b[0m\r\n");
+	__xuiCmdLabWrite(pDemo, "\x1b[1;36mANSI rendering tests\x1b[0m\r\n");
 	__xuiCmdLabWrite(pDemo, "  \x1b[31mred\x1b[0m  \x1b[32mgreen\x1b[0m  \x1b[33myellow\x1b[0m  \x1b[34mblue\x1b[0m  \x1b[35mmagenta\x1b[0m  \x1b[36mcyan\x1b[0m\r\n");
 	__xuiCmdLabWrite(pDemo, "  \x1b[38;5;196m256-color red\x1b[0m  \x1b[38;2;120;180;255mtrue-color sky\x1b[0m  \x1b[4munderline\x1b[0m  \x1b[7minverse\x1b[0m\r\n");
 	__xuiCmdLabWrite(pDemo, "  rewrite: 0%");
@@ -1018,7 +1018,7 @@ static void __xuiCmdLabRunChecks(xui_terminal_cmd_lab_t* pDemo, int bAutoRun)
 		(void)xuiTerminalInputText(pDemo->pTerminal, "echo scripted input\r");
 		pDemo->iAutoStep++;
 	} else if ( pDemo->iAutoStep == 2 ) {
-		(void)xuiTerminalInputText(pDemo->pTerminal, "ansi-tests\xge\r");
+		(void)xuiTerminalInputText(pDemo->pTerminal, "ansi-test\r");
 		pDemo->iAutoStep++;
 	} else if ( pDemo->iAutoStep == 3 ) {
 		if ( pDemo->bProcessSmoke ) {

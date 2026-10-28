@@ -33,8 +33,7 @@
 #define XUI_TERMINAL_MAX_CSI_PARAMS 16
 #define XUI_TERMINAL_MAX_OSC 256
 #define XUI_TERMINAL_MAX_LINK_ID 65535u
-#define XUI_TERMINAL_TRIPLE_CLICK_SECONDS 0.45
-#define XUI_TERMINAL_TRIPLE_CLICK_DISTANCE 6.0f
+#define XUI_TERMINAL_MAX_WHEEL_STEPS 32
 #define XUI_TERMINAL_SESSION_FAKE 1
 #define XUI_TERMINAL_SESSION_PROCESS 2
 #define XUI_TERMINAL_PROCESS_READ_CHUNK 4096
@@ -299,15 +298,10 @@ typedef struct xui_terminal_data_t {
 	int bCacheRendered;
 	int bSelectAll;
 	int bSelecting;
-	int bDoubleClickPending;
 	int iSelectAnchorLine;
 	int iSelectAnchorColumn;
 	int iSelectEndLine;
 	int iSelectEndColumn;
-	int iDoubleClickLine;
-	float fDoubleClickX;
-	float fDoubleClickY;
-	double fDoubleClickTime;
 	float fBaseCellWidth;
 	float fBaseCellHeight;
 	float fBasePadding;
@@ -407,6 +401,19 @@ static int __xuiTerminalDataAlive(xui_widget pWidget, const xui_terminal_data_t*
 {
 	return pData != NULL && __xuiTerminalWidgetAlive(pWidget) &&
 		xuiWidgetGetTypeData(pWidget) == pData;
+}
+
+static int __xuiTerminalCanInteract(xui_widget pWidget)
+{
+	return xuiWidgetGetEffectiveEnabled(pWidget) &&
+	       xuiWidgetGetEffectiveVisible(pWidget);
+}
+
+static void __xuiTerminalIncrementCounter(int* pValue)
+{
+	if ( pValue != NULL && *pValue < INT_MAX ) {
+		(*pValue)++;
+	}
 }
 
 static int __xuiTerminalDescValid(const xui_terminal_desc_t* pDesc)
@@ -562,6 +569,16 @@ static int __xuiTerminalImeSetText(xui_terminal_data_t* pData, const char* sText
 	if ( iSize > 0 ) memcpy(pData->sImeText, sText, (size_t)iSize);
 	pData->sImeText[iSize] = '\0';
 	return XUI_OK;
+}
+
+static void __xuiTerminalClearIme(xui_terminal_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	pData->bImeActive = 0;
+	pData->iImeAttribute = XUI_IME_ATTRIBUTE_NONE;
+	if ( pData->sImeText != NULL && pData->iImeCapacity > 0 ) {
+		pData->sImeText[0] = '\0';
+	}
 }
 
 static void __xuiTerminalFreeLinks(xui_terminal_data_t* pData)
@@ -2043,7 +2060,7 @@ static int __xuiTerminalNotifyResize(xui_widget pWidget, xui_terminal_data_t* pD
 static void __xuiTerminalInvalidate(xui_widget pWidget, xui_terminal_data_t* pData, uint32_t iFlags)
 {
 	if ( pData != NULL ) {
-		pData->iChangeCount++;
+		__xuiTerminalIncrementCounter(&pData->iChangeCount);
 		if ( (iFlags & XUI_WIDGET_DIRTY_CACHE) != 0u ) {
 			__xuiTerminalMarkFullCacheDirty(pData);
 		}
@@ -2056,7 +2073,7 @@ static void __xuiTerminalInvalidate(xui_widget pWidget, xui_terminal_data_t* pDa
 static void __xuiTerminalInvalidateDirty(xui_widget pWidget, xui_terminal_data_t* pData, uint32_t iFlags)
 {
 	if ( pData != NULL ) {
-		pData->iChangeCount++;
+		__xuiTerminalIncrementCounter(&pData->iChangeCount);
 	}
 	if ( pWidget != NULL ) {
 		(void)xuiWidgetInvalidate(pWidget, iFlags);
@@ -4181,6 +4198,7 @@ static int __xuiTerminalKeyDown(xui_widget pWidget, xui_terminal_data_t* pData, 
 	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) {
 		return XUI_OK;
 	}
+	if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
 	iSize = 0;
 	if ( (pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT | XUI_MOD_ALT)) ==
 	     (XUI_MOD_CTRL | XUI_MOD_SHIFT) &&
@@ -4407,22 +4425,22 @@ static int __xuiTerminalCancelPointer(xui_widget pWidget,
 	xui_context pContext;
 	uint64_t iPointerId;
 	int iPointerType;
-	int iRet;
+	int bOwnsCapture;
 
 	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
 	iPointerId = pData->iActivePointerId;
 	iPointerType = pData->iActivePointerType;
-	if ( bReleaseCapture && xuiInternalContextIsValid(pContext) &&
-	     xuiGetPointerCaptureEx(pContext, iPointerId, iPointerType) == pWidget ) {
-		iRet = xuiReleasePointerCaptureEx(pContext, iPointerId, iPointerType, pWidget);
-		if ( iRet != XUI_OK ) return iRet;
-	}
+	bOwnsCapture = bReleaseCapture && xuiInternalContextIsValid(pContext) &&
+		xuiGetPointerCaptureEx(pContext, iPointerId, iPointerType) == pWidget;
 	pData->bSelecting = 0;
 	pData->bMouseCaptured = 0;
 	pData->iMouseButton = 0;
 	pData->iActivePointerId = 0;
 	pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
+	if ( bOwnsCapture ) {
+		return xuiReleasePointerCaptureEx(pContext, iPointerId, iPointerType, pWidget);
+	}
 	return XUI_OK;
 }
 
@@ -4436,7 +4454,7 @@ static int __xuiTerminalPointerDown(xui_widget pWidget, xui_terminal_data_t* pDa
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
+	if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
 	if ( pData->bSelecting || pData->bMouseCaptured ) return XUI_EVENT_DISPATCH_STOP;
 	pContext = xuiWidgetGetContext(pWidget);
 	iRet = xuiSetFocusWidget(pContext, pWidget);
@@ -4489,6 +4507,13 @@ static int __xuiTerminalPointerMove(xui_widget pWidget, xui_terminal_data_t* pDa
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( !__xuiTerminalCanInteract(pWidget) ) {
+		if ( __xuiTerminalPointerMatches(pData, pEvent) ) {
+			(void)__xuiTerminalCancelPointer(pWidget, pData, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		return XUI_OK;
+	}
 	if ( (pData->bSelecting || pData->bMouseCaptured) &&
 	     !__xuiTerminalPointerMatches(pData, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pData->bMouseCaptured && pEvent->iButtons == 0u ) {
@@ -4543,6 +4568,13 @@ static int __xuiTerminalPointerUp(xui_widget pWidget, xui_terminal_data_t* pData
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( !__xuiTerminalCanInteract(pWidget) ) {
+		if ( __xuiTerminalPointerMatches(pData, pEvent) ) {
+			(void)__xuiTerminalCancelPointer(pWidget, pData, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		return XUI_OK;
+	}
 	if ( (pData->bSelecting || pData->bMouseCaptured) &&
 	     !__xuiTerminalPointerMatches(pData, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pData->bMouseCaptured ) {
@@ -4569,13 +4601,14 @@ static int __xuiTerminalPointerUp(xui_widget pWidget, xui_terminal_data_t* pData
 		pData->iSelectEndColumn = iColumn;
 	}
 	{
-		int iEmitRet = __xuiTerminalEmitSelectionChange(pWidget, pData);
+		int iEmitRet;
+		int iCancelRet;
+
+		iEmitRet = __xuiTerminalEmitSelectionChange(pWidget, pData);
 		if ( !__xuiTerminalDataAlive(pWidget, pData) ) return iEmitRet | XUI_EVENT_DISPATCH_STOP;
-		if ( iEmitRet != XUI_OK ) return iEmitRet;
-	}
-	{
-		int iCancelRet = __xuiTerminalCancelPointer(pWidget, pData, 1);
+		iCancelRet = __xuiTerminalCancelPointer(pWidget, pData, 1);
 		if ( iCancelRet != XUI_OK ) return iCancelRet;
+		if ( iEmitRet != XUI_OK ) return iEmitRet;
 	}
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_EVENT_DISPATCH_STOP;
@@ -4589,24 +4622,21 @@ static int __xuiTerminalPointerDoubleClick(xui_widget pWidget, xui_terminal_data
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
 	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	if ( __xuiTerminalPointerToCell(pWidget, pData, pEvent, &iLine, &iColumn) != XUI_OK ) return XUI_EVENT_DISPATCH_STOP;
 	iRet = __xuiTerminalSelectWordAt(pWidget, pData, iLine, iColumn);
 	pData->bSelecting = 0;
-	pData->bDoubleClickPending = 1;
-	pData->iDoubleClickLine = iLine;
-	pData->fDoubleClickX = pEvent->fX;
-	pData->fDoubleClickY = pEvent->fY;
-	pData->fDoubleClickTime = xrtTimer();
 	{
-		int iEmitRet = __xuiTerminalEmitSelectionChange(pWidget, pData);
+		int iEmitRet;
+		int iCancelRet;
+
+		iEmitRet = __xuiTerminalEmitSelectionChange(pWidget, pData);
 		if ( !__xuiTerminalDataAlive(pWidget, pData) ) return iEmitRet | XUI_EVENT_DISPATCH_STOP;
-		if ( iEmitRet != XUI_OK ) return iEmitRet;
-	}
-	{
-		int iCancelRet = __xuiTerminalCancelPointer(pWidget, pData, 1);
+		iCancelRet = __xuiTerminalCancelPointer(pWidget, pData, 1);
 		if ( iCancelRet != XUI_OK ) return iCancelRet;
+		if ( iEmitRet != XUI_OK ) return iEmitRet;
 	}
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
@@ -4639,9 +4669,6 @@ static int __xuiTerminalLinkSchemeAllowed(const char* sUrl)
 static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pData, const xui_event_t* pEvent)
 {
 	char* sUrl;
-	double fNow;
-	float fDX;
-	float fDY;
 	int iLine;
 	int iColumn;
 	int iStartColumn;
@@ -4650,6 +4677,7 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
 	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	sUrl = NULL;
@@ -4668,22 +4696,14 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( sUrl != NULL ) xrtFree(sUrl);
-	if ( !pData->bDoubleClickPending || (pEvent->iClickCount != 3) ) return XUI_EVENT_DISPATCH_STOP;
-	fNow = xrtTimer();
-	fDX = pEvent->fX - pData->fDoubleClickX;
-	fDY = pEvent->fY - pData->fDoubleClickY;
-	if ( ((fNow - pData->fDoubleClickTime) <= XUI_TERMINAL_TRIPLE_CLICK_SECONDS) &&
-	     ((fDX * fDX + fDY * fDY) <= (XUI_TERMINAL_TRIPLE_CLICK_DISTANCE * XUI_TERMINAL_TRIPLE_CLICK_DISTANCE)) &&
-	     (__xuiTerminalPointerToCell(pWidget, pData, pEvent, &iLine, &iColumn) == XUI_OK) &&
-	     (iLine == pData->iDoubleClickLine) ) {
+	if ( pEvent->iClickCount == 3 &&
+	     __xuiTerminalPointerToCell(pWidget, pData, pEvent, &iLine, &iColumn) == XUI_OK ) {
 		(void)iColumn;
 		iRet = __xuiTerminalSelectLineAt(pWidget, pData, iLine);
-		pData->bDoubleClickPending = 0;
 		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	pData->bDoubleClickPending = 0;
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
@@ -5138,7 +5158,7 @@ static void __xuiTerminalMenuSelect(xui_widget pMenu, int iIndex, int iValue, vo
 	pTerminal = (xui_widget)pUser;
 	if ( pTerminal == NULL ) return;
 	pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pTerminal);
-	if ( pData == NULL ) return;
+	if ( pData == NULL || !__xuiTerminalCanInteract(pTerminal) ) return;
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pTerminal), pTerminal);
 	if ( !__xuiTerminalWidgetAlive(pTerminal) ) return;
 	switch ( iValue ) {
@@ -5176,6 +5196,7 @@ static int __xuiTerminalContextMenu(xui_widget pWidget, xui_terminal_data_t* pDa
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
 	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) && pEvent->iKey != XUI_KEY_CONTEXT_MENU ) return XUI_EVENT_DISPATCH_STOP;
 	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 	if ( iRet != XUI_OK || !__xuiTerminalDataAlive(pWidget, pData) ) return iRet;
@@ -5205,6 +5226,7 @@ static int __xuiTerminalPointerWheel(xui_widget pWidget, xui_terminal_data_t* pD
 	const xui_event_t* pEvent)
 {
 	float fDelta;
+	float fMagnitude;
 	int iCode;
 	int iColumn;
 	int iRow;
@@ -5214,6 +5236,10 @@ static int __xuiTerminalPointerWheel(xui_widget pWidget, xui_terminal_data_t* pD
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
+	if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
+	if ( !isfinite(pEvent->fWheelX) || !isfinite(pEvent->fWheelY) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	if ( __xuiTerminalApplicationMouseEnabled(pData, pEvent) ) {
 		if ( !__xuiTerminalPointerToApplicationCell(pWidget, pData, pEvent, &iColumn, &iRow) ) {
 			return XUI_EVENT_DISPATCH_STOP;
@@ -5227,7 +5253,9 @@ static int __xuiTerminalPointerWheel(xui_widget pWidget, xui_terminal_data_t* pD
 		} else {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		iSteps = (int)(fDelta < 0.0f ? -fDelta : fDelta);
+		fMagnitude = fabsf(fDelta);
+		iSteps = (fMagnitude >= (float)XUI_TERMINAL_MAX_WHEEL_STEPS) ?
+			XUI_TERMINAL_MAX_WHEEL_STEPS : (int)fMagnitude;
 		if ( iSteps < 1 ) iSteps = 1;
 		for ( i = 0; i < iSteps; ++i ) {
 			iRet = __xuiTerminalEmitMouse(pWidget, pData, iCode,
@@ -5280,6 +5308,7 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_POINTER_WHEEL:
 		return __xuiTerminalPointerWheel(pWidget, pData, pEvent);
 	case XUI_EVENT_TEXT:
+		if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
 		if ( pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE ) {
 			if ( pData->bImeActive ) return XUI_EVENT_DISPATCH_STOP;
 			if ( pEvent->iTextSize > 0 ) {
@@ -5295,6 +5324,7 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		break;
 	case XUI_EVENT_IME_COMPOSITION:
+		if ( !__xuiTerminalCanInteract(pWidget) ) return XUI_OK;
 		if ( pEvent->bCompositionActive ) {
 			iRet = __xuiTerminalImeSetText(pData, pEvent->sText, pEvent->iTextSize);
 			if ( iRet != XUI_OK ) return iRet | XUI_EVENT_DISPATCH_STOP;
@@ -5336,7 +5366,7 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE && pData->bFocusReporting ) {
 			static const uint8_t sFocusIn[] = "\x1b[I";
 			static const uint8_t sFocusOut[] = "\x1b[O";
-			if ( pEvent->iType == XUI_EVENT_FOCUS ) {
+			if ( pEvent->iType == XUI_EVENT_FOCUS && __xuiTerminalCanInteract(pWidget) ) {
 				(void)__xuiTerminalEmitInput(pWidget, pData, sFocusIn, (int)sizeof(sFocusIn) - 1);
 			} else if ( pEvent->iType == XUI_EVENT_BLUR ) {
 				(void)__xuiTerminalEmitInput(pWidget, pData, sFocusOut, (int)sizeof(sFocusOut) - 1);
@@ -5344,10 +5374,18 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			if ( !__xuiTerminalWidgetAlive(pWidget) ) return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pEvent->iType == XUI_EVENT_BLUR ) {
-			pData->bImeActive = 0;
-			pData->iImeAttribute = XUI_IME_ATTRIBUTE_NONE;
 			(void)__xuiTerminalCancelPointer(pWidget, pData, 1);
-			(void)__xuiTerminalImeSetText(pData, NULL, 0);
+			__xuiTerminalClearIme(pData);
+		} else if ( (pEvent->iType == XUI_EVENT_ENABLED_CHANGED ||
+		             pEvent->iType == XUI_EVENT_VISIBLE_CHANGED) &&
+		            pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE &&
+		            !__xuiTerminalCanInteract(pWidget) ) {
+			(void)__xuiTerminalCancelPointer(pWidget, pData, 1);
+			__xuiTerminalClearIme(pData);
+			(void)__xuiTerminalSetHoverLink(pWidget, pData, -1, 0, 0, NULL);
+			if ( pData->pMenu != NULL && xuiMenuIsOpen(pData->pMenu) ) {
+				(void)xuiMenuClose(pData->pMenu);
+			}
 		}
 		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		break;
@@ -6141,7 +6179,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		if ( iRet != XUI_OK ) goto render_done;
 	}
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL ) {
-		iFocusColor = xuiWidgetGetEnabled(pWidget) ? pData->iFocusColor : pData->iDisabledFocusColor;
+		iFocusColor = xuiWidgetGetEffectiveEnabled(pWidget) ? pData->iFocusColor : pData->iDisabledFocusColor;
 		if ( __xuiTerminalAlpha(iFocusColor) != 0 ) {
 			iRet = pProxy->drawRectStroke(pProxy, pDraw,
 				xuiInternalInsetRect(xuiInternalRectFromFloatNearest(tRect.fX, tRect.fY, tRect.fW, tRect.fH), 0.5f),

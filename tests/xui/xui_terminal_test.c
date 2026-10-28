@@ -24,6 +24,8 @@
 typedef struct xui_terminal_test_state_t {
 	char sInput[512];
 	int iInputSize;
+	int iInputCalls;
+	int iInputBytes;
 	int iResizeCount;
 	int iLastCols;
 	int iLastRows;
@@ -118,6 +120,8 @@ static void __xuiTerminalTestInput(xui_widget pWidget, const uint8_t* pData, int
 
 	(void)pWidget;
 	if ( pState == NULL || pData == NULL || iSize <= 0 ) return;
+	pState->iInputCalls++;
+	pState->iInputBytes += iSize;
 	iCopy = iSize;
 	if ( pState->iInputSize + iCopy >= (int)sizeof(pState->sInput) ) {
 		iCopy = (int)sizeof(pState->sInput) - 1 - pState->iInputSize;
@@ -127,6 +131,15 @@ static void __xuiTerminalTestInput(xui_widget pWidget, const uint8_t* pData, int
 		pState->iInputSize += iCopy;
 		pState->sInput[pState->iInputSize] = '\0';
 	}
+}
+
+static int __xuiTerminalTestFailSelection(xui_widget pWidget,
+	const xui_edit_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	return pEvent != NULL && pEvent->iType == XUI_EDIT_EVENT_SELECTION_CHANGED ?
+		XUI_ERROR_BACKEND_FAILED : XUI_OK;
 }
 
 static void __xuiTerminalTestResize(xui_widget pWidget, int iColumns, int iRows, void* pUser)
@@ -348,6 +361,8 @@ int main(void)
 	int iFullTextDraws;
 	int iPartialTextDraws;
 	int iSessionResizeBefore;
+	int iInputCallsBefore;
+	int iInputBytesBefore;
 	int iPoll;
 	int iPollBytes;
 	float fScrollY;
@@ -504,8 +519,74 @@ int main(void)
 	iRet = xuiWidgetSetEnabled(pRoot, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiQueryCursor(pContext, 20, 20) == XUI_CURSOR_ARROW,
 		"disabled terminal subtree is skipped by cursor hit testing");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch disabled terminal state");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.pTarget = pTerminal;
+	tPointer.iType = XUI_EVENT_KEY_DOWN;
+	tPointer.iKey = XUI_KEY_ENTER;
+	iRet = xuiDispatchEvent(pContext, &tPointer);
+	tPointer.iType = XUI_EVENT_TEXT;
+	tPointer.iKey = 0;
+	tPointer.iTextSize = 1;
+	tPointer.sText[0] = 'd';
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tPointer);
+	tPointer.iType = XUI_EVENT_POINTER_DOWN;
+	tPointer.iTextSize = 0;
+	tPointer.sText[0] = '\0';
+	tPointer.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = 20;
+	tPointer.fY = 20;
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tPointer);
+	pMenu = xuiTerminalGetMenuWidget(pTerminal);
+	tPointer.iType = XUI_EVENT_CONTEXT_MENU;
+	tPointer.iButton = 0;
+	tPointer.iButtons = 0;
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iInputSize == 0 &&
+		xuiGetPointerCapture(pContext) == NULL && pMenu != NULL && !xuiMenuIsOpen(pMenu),
+		"disabled terminal rejects direct input and context menu events");
 	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore terminal ancestor enabled state");
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.pTarget = pTerminal;
+	tPointer.iType = XUI_EVENT_IME_COMPOSITION;
+	tPointer.bCompositionActive = 1;
+	tPointer.iTextSize = 1;
+	tPointer.sText[0] = 'i';
+	iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_OK, "start terminal IME composition before hide");
+	iRet = xuiWidgetSetVisible(pRoot, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide terminal ancestor during IME composition");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
+	tPointer.iType = XUI_EVENT_KEY_DOWN;
+	tPointer.iKey = XUI_KEY_ENTER;
+	tPointer.iTextSize = 0;
+	tPointer.sText[0] = '\0';
+	iRet = xuiDispatchEvent(pContext, &tPointer);
+	tPointer.iType = XUI_EVENT_TEXT;
+	tPointer.iKey = 0;
+	tPointer.iTextSize = 1;
+	tPointer.sText[0] = 'h';
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iInputSize == 0,
+		"hidden terminal rejects direct key and text events");
+	iRet = xuiWidgetSetVisible(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	tPointer.sText[0] = 'x';
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iInputSize == 1 && tState.sInput[0] == 'x',
+		"hiding terminal clears stale IME composition state");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal style restore clear");
 	XUI_TEST_CHECK(xuiTerminalGetPalette(pTerminal, 1) == XUI_COLOR_RGBA(205, 49, 49, 255), "terminal palette restores base");
@@ -835,6 +916,24 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && strstr(tState.sInput, "\x1b[<64;2;1M") != NULL,
 		"terminal SGR wheel protocol");
+	memset(&tPointer, 0, sizeof(tPointer));
+	tPointer.iSize = sizeof(tPointer);
+	tPointer.iType = XUI_EVENT_POINTER_WHEEL;
+	tPointer.pTarget = pTerminal;
+	tPointer.fX = (int)(tWorld.fX + tContent.fX + 4.0f + 8.0f + 1.0f);
+	tPointer.fY = (int)(tWorld.fY + tContent.fY + 4.0f + 1.0f);
+	tPointer.fWheelY = 1000000.0f;
+	iInputCallsBefore = tState.iInputCalls;
+	iInputBytesBefore = tState.iInputBytes;
+	iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iInputCalls - iInputCallsBefore == 32 &&
+		tState.iInputBytes > iInputBytesBefore,
+		"terminal bounds application mouse wheel expansion");
+	tPointer.fWheelY = NAN;
+	iInputCallsBefore = tState.iInputCalls;
+	iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && tState.iInputCalls == iInputCallsBefore,
+		"terminal rejects non-finite direct wheel input");
 	memset(tState.sInput, 0, sizeof(tState.sInput));
 	tState.iInputSize = 0;
 	iRet = xuiSetFocusWidget(pContext, NULL);
@@ -1411,6 +1510,25 @@ int main(void)
 	iRet = xuiReleasePointerCaptureEx(pContext, 1002, XUI_POINTER_TYPE_TOUCH, pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
 		"terminal releases replacement touch capture");
+	iRet = xuiEditSetEvent(pTerminal, __xuiTerminalTestFailSelection, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal install failing selection callback");
+	tPointer.iType = XUI_EVENT_POINTER_DOWN;
+	tPointer.iPointerId = 1003;
+	tPointer.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tPointer.fX = tWorld.fX + 4.5f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tPointer) == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 1003, XUI_POINTER_TYPE_TOUCH) == pTerminal,
+		"terminal selection captures before callback failure");
+	tPointer.iType = XUI_EVENT_POINTER_UP;
+	tPointer.iButtons = 0;
+	tPointer.fX = tWorld.fX + 20.5f;
+	iRet = xuiDispatchEvent(pContext, &tPointer);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_BACKEND_FAILED &&
+		xuiGetPointerCaptureEx(pContext, 1003, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"terminal selection callback failure releases capture");
+	iRet = xuiEditSetEvent(pTerminal, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal clear failing selection callback");
 
 	tWidgetPadding = (xui_thickness_t){3, 5, 7, 9};
 	iRet = xuiWidgetSetPadding(pTerminal, tWidgetPadding);
