@@ -11305,7 +11305,7 @@ XUI_API xui_widget_type xuiMenuGetType(xui_context pContext);
 XUI_API int xuiMenuCreate(xui_context pContext, xui_widget* ppWidget, const xui_menu_desc_t* pDesc);
 /* 批量设置菜单项；复制文字/快捷键，子菜单和 pUser 保持借用关系。 */
 XUI_API int xuiMenuSetItems(xui_widget pWidget, const xui_menu_item_t* pItems, int iCount);
-/* 追加菜单项；复制文字/快捷键，子菜单和 pUser 保持借用关系。 */
+/* 追加菜单项；复制文字/快捷键，子菜单和 pUser 保持借用关系；运行中修改会取消当前按压并收起子菜单。 */
 XUI_API int xuiMenuAddItem(xui_widget pWidget, const xui_menu_item_t* pItem);
 /* 追加分隔线。 */
 XUI_API int xuiMenuAddSeparator(xui_widget pWidget);
@@ -11335,7 +11335,7 @@ XUI_API int xuiMenuGetSelectCount(xui_widget pWidget);
 XUI_API int xuiMenuSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
 XUI_API xui_font xuiMenuGetFont(xui_widget pWidget);
-/* 以结构体设置度量组。 */
+/* 以结构体设置度量组；单项与最大菜单容量的组合几何均不得超过布局上限。 */
 XUI_API int xuiMenuSetMetrics(xui_widget pWidget, const xui_menu_metrics_t* pMetrics);
 /* 输出度量组。 */
 XUI_API int xuiMenuGetMetrics(xui_widget pWidget, xui_menu_metrics_t* pMetrics);
@@ -11345,7 +11345,7 @@ XUI_API int xuiMenuSetColors(xui_widget pWidget, const xui_menu_colors_t* pColor
 XUI_API int xuiMenuGetColors(xui_widget pWidget, xui_menu_colors_t* pColors);
 /* 测量菜单自然尺寸（弹出前）。 */
 XUI_API int xuiMenuMeasure(xui_widget pWidget, float* pWidth, float* pHeight);
-/* 在宿主坐标处弹出菜单。 */
+/* 在宿主坐标处弹出菜单；坐标必须位于 XUI 支持的上下文几何范围内。 */
 XUI_API int xuiMenuOpenAt(xui_widget pWidget, xui_widget pOwner, float fX, float fY);
 /* 在宿主控件下方弹出（下拉语义）。 */
 XUI_API int xuiMenuOpenForOwner(xui_widget pWidget, xui_widget pOwner);

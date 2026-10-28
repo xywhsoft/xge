@@ -278,12 +278,21 @@ static int __xuiMenuClickItem(xui_menu_demo_t* pDemo, xui_widget pMenu, int iInd
 {
 	xui_rect_t tWorld;
 	xui_rect_t tItem;
+	float fX;
+	float fY;
 	int iRet;
 
 	tWorld = xuiWidgetGetWorldRect(pMenu);
 	tItem = xuiMenuGetItemRect(pMenu, iIndex);
-	iRet = xuiInputPointerDown(pDemo->pContext, tWorld.fX + tItem.fX + tItem.fW * 0.5f, tWorld.fY + tItem.fY + tItem.fH * 0.5f,
+	fX = tWorld.fX + tItem.fX + tItem.fW * 0.5f;
+	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerDown(pDemo->pContext, fX, fY,
 		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pDemo->pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pDemo->pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, 0u);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pDemo->pContext);
 }
@@ -316,6 +325,7 @@ static void __xuiMenuRunChecks(xui_menu_demo_t* pDemo, int bExerciseInput)
 		(void)xuiMenuOpenForOwner(pDemo->pMenu, pDemo->pButton);
 		(void)xuiLayout(pDemo->pContext);
 		(void)__xuiMenuMoveToItem(pDemo, pDemo->pMenu, 1);
+		(void)xuiUpdate(pDemo->pContext, 0.21f);
 		(void)xuiLayout(pDemo->pContext);
 		pDemo->bSubmenuOK = xuiMenuIsOpen(pDemo->pSubmenu);
 		(void)__xuiMenuClickItem(pDemo, pDemo->pSubmenu, 1);

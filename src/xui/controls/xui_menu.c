@@ -4,6 +4,7 @@
 #include "xui_pointer_press_internal.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -163,6 +164,18 @@ static float __xuiMenuMax(float fA, float fB)
 	return (fA > fB) ? fA : fB;
 }
 
+static int __xuiMenuCoordinateValid(float fValue)
+{
+	return isfinite(fValue) &&
+	       fValue >= -XUI_CONTEXT_MAX_VIEWPORT &&
+	       fValue <= XUI_CONTEXT_MAX_VIEWPORT;
+}
+
+static int __xuiMenuMetricValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f && fValue <= XUI_LAYOUT_UNBOUNDED;
+}
+
 static const char* __xuiMenuText(const char* sText)
 {
 	return (sText != NULL) ? sText : "";
@@ -181,34 +194,40 @@ static int __xuiMenuDescValid(const xui_menu_desc_t* pDesc)
 
 static int __xuiMenuMetricsValid(const xui_menu_metrics_t* pMetrics)
 {
+	double fFixedWidth;
+	double fMaximumHeight;
+	double fMaximumItemHeight;
+
 	if ( pMetrics == NULL ) {
 		return 0;
 	}
 	if ( (pMetrics->iSize != 0) && (pMetrics->iSize < sizeof(*pMetrics)) ) {
 		return 0;
 	}
-	if ( !isfinite(pMetrics->fItemHeight) ||
-	     !isfinite(pMetrics->fSeparatorHeight) ||
-	     !isfinite(pMetrics->fPaddingX) ||
-	     !isfinite(pMetrics->fPaddingY) ||
-	     !isfinite(pMetrics->fMarkWidth) ||
-	     !isfinite(pMetrics->fIconWidth) ||
-	     !isfinite(pMetrics->fShortcutGap) ||
-	     !isfinite(pMetrics->fArrowWidth) ||
-	     !isfinite(pMetrics->fMinWidth) ||
-	     !isfinite(pMetrics->fMaxHeight) ||
+	if ( !__xuiMenuMetricValid(pMetrics->fItemHeight) ||
+	     !__xuiMenuMetricValid(pMetrics->fSeparatorHeight) ||
+	     !__xuiMenuMetricValid(pMetrics->fPaddingX) ||
+	     !__xuiMenuMetricValid(pMetrics->fPaddingY) ||
+	     !__xuiMenuMetricValid(pMetrics->fMarkWidth) ||
+	     !__xuiMenuMetricValid(pMetrics->fIconWidth) ||
+	     !__xuiMenuMetricValid(pMetrics->fShortcutGap) ||
+	     !__xuiMenuMetricValid(pMetrics->fArrowWidth) ||
+	     !__xuiMenuMetricValid(pMetrics->fMinWidth) ||
+	     !__xuiMenuMetricValid(pMetrics->fMaxHeight) ||
 	     (pMetrics->fItemHeight <= 0.0f) ||
-	     (pMetrics->fSeparatorHeight <= 0.0f) ||
-	     (pMetrics->fPaddingX < 0.0f) ||
-	     (pMetrics->fPaddingY < 0.0f) ||
-	     (pMetrics->fMarkWidth < 0.0f) ||
-	     (pMetrics->fIconWidth < 0.0f) ||
-	     (pMetrics->fShortcutGap < 0.0f) ||
-	     (pMetrics->fArrowWidth < 0.0f) ||
-	     (pMetrics->fMinWidth < 0.0f) ||
-	     (pMetrics->fMaxHeight < 0.0f) ) {
+	     (pMetrics->fSeparatorHeight <= 0.0f) ) {
 		return 0;
 	}
+	fFixedWidth = (double)pMetrics->fPaddingX * 2.0 +
+		(double)pMetrics->fMarkWidth + (double)pMetrics->fIconWidth +
+		8.0 + (double)XUI_MENU_TEXT_SAFETY_PAD * 2.0 +
+		(double)pMetrics->fShortcutGap + (double)pMetrics->fArrowWidth;
+	fMaximumItemHeight = pMetrics->fItemHeight > pMetrics->fSeparatorHeight ?
+		(double)pMetrics->fItemHeight : (double)pMetrics->fSeparatorHeight;
+	fMaximumHeight = (double)pMetrics->fPaddingY * 2.0 +
+		fMaximumItemHeight * (double)XUI_MENU_ITEM_CAPACITY;
+	if ( fFixedWidth > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fMaximumHeight > (double)XUI_LAYOUT_UNBOUNDED ) return 0;
 	return 1;
 }
 
@@ -218,6 +237,36 @@ static int __xuiMenuColorsValid(const xui_menu_colors_t* pColors)
 		return 0;
 	}
 	return (pColors->iSize == 0) || (pColors->iSize >= sizeof(*pColors));
+}
+
+static int __xuiMenuMetricsEqual(const xui_menu_metrics_t* pA, const xui_menu_metrics_t* pB)
+{
+	return pA->fItemHeight == pB->fItemHeight &&
+	       pA->fSeparatorHeight == pB->fSeparatorHeight &&
+	       pA->fPaddingX == pB->fPaddingX &&
+	       pA->fPaddingY == pB->fPaddingY &&
+	       pA->fMarkWidth == pB->fMarkWidth &&
+	       pA->fIconWidth == pB->fIconWidth &&
+	       pA->fShortcutGap == pB->fShortcutGap &&
+	       pA->fArrowWidth == pB->fArrowWidth &&
+	       pA->fMinWidth == pB->fMinWidth &&
+	       pA->fMaxHeight == pB->fMaxHeight;
+}
+
+static int __xuiMenuColorsEqual(const xui_menu_colors_t* pA, const xui_menu_colors_t* pB)
+{
+	return pA->iPanelColor == pB->iPanelColor &&
+	       pA->iBorderColor == pB->iBorderColor &&
+	       pA->iShadowColor == pB->iShadowColor &&
+	       pA->iHoverColor == pB->iHoverColor &&
+	       pA->iTextColor == pB->iTextColor &&
+	       pA->iHoverTextColor == pB->iHoverTextColor &&
+	       pA->iDisabledTextColor == pB->iDisabledTextColor &&
+	       pA->iShortcutColor == pB->iShortcutColor &&
+	       pA->iDangerTextColor == pB->iDangerTextColor &&
+	       pA->iMarkColor == pB->iMarkColor &&
+	       pA->iSeparatorColor == pB->iSeparatorColor &&
+	       pA->iFocusColor == pB->iFocusColor;
 }
 
 static int __xuiMenuItemTypeValid(int iType)
@@ -390,6 +439,14 @@ static xui_vec2_t __xuiMenuMeasureText(xui_widget pWidget, xui_font pFont, const
 	return tSize;
 }
 
+static int __xuiMenuTextExtentValid(xui_vec2_t tSize)
+{
+	return isfinite(tSize.fX) && isfinite(tSize.fY) &&
+	       tSize.fX >= 0.0f && tSize.fY >= 0.0f &&
+	       tSize.fX <= XUI_LAYOUT_UNBOUNDED &&
+	       tSize.fY <= XUI_LAYOUT_UNBOUNDED;
+}
+
 static int __xuiMenuMeasureData(xui_widget pWidget, xui_menu_data_t* pData)
 {
 	xui_context pContext;
@@ -398,8 +455,8 @@ static int __xuiMenuMeasureData(xui_widget pWidget, xui_menu_data_t* pData)
 	xui_vec2_t tShortcut;
 	float fTextW;
 	float fShortcutW;
-	float fWidth;
-	float fHeight;
+	double fWidth;
+	double fHeight;
 	float fItemH;
 	int i;
 
@@ -421,33 +478,39 @@ static int __xuiMenuMeasureData(xui_widget pWidget, xui_menu_data_t* pData)
 		}
 		tText = __xuiMenuMeasureText(pWidget, pFont, pData->arrItems[i].sText);
 		tShortcut = __xuiMenuMeasureText(pWidget, pFont, pData->arrItems[i].sShortcut);
+		if ( !__xuiMenuTextExtentValid(tText) || !__xuiMenuTextExtentValid(tShortcut) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
 		pData->arrTextWidth[i] = tText.fX;
 		pData->arrShortcutWidth[i] = tShortcut.fX;
 		fTextW = __xuiMenuMax(fTextW, tText.fX);
 		fShortcutW = __xuiMenuMax(fShortcutW, tShortcut.fX);
 		fHeight += pData->tMetrics.fItemHeight;
 	}
-	fWidth = pData->tMetrics.fPaddingX * 2.0f +
-	         pData->tMetrics.fMarkWidth +
-	         pData->tMetrics.fIconWidth +
-	         4.0f +
-	         fTextW +
-	         XUI_MENU_TEXT_SAFETY_PAD +
-	         4.0f +
-	         pData->tMetrics.fArrowWidth;
+	fWidth = (double)pData->tMetrics.fPaddingX * 2.0 +
+	         (double)pData->tMetrics.fMarkWidth +
+	         (double)pData->tMetrics.fIconWidth +
+	         4.0 +
+	         (double)fTextW +
+	         (double)XUI_MENU_TEXT_SAFETY_PAD +
+	         4.0 +
+	         (double)pData->tMetrics.fArrowWidth;
 	if ( fShortcutW > 0.0f ) {
-		fWidth += pData->tMetrics.fShortcutGap + fShortcutW + XUI_MENU_TEXT_SAFETY_PAD;
+		fWidth += (double)pData->tMetrics.fShortcutGap +
+			(double)fShortcutW + (double)XUI_MENU_TEXT_SAFETY_PAD;
 	}
-	fWidth = __xuiMenuMax(fWidth, pData->tMetrics.fMinWidth);
-	pData->fContentW = xuiInternalSnapSize(fWidth);
-	pData->fContentH = xuiInternalSnapSize(fHeight);
+	if ( fWidth < (double)pData->tMetrics.fMinWidth ) fWidth = pData->tMetrics.fMinWidth;
+	if ( fWidth > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fHeight > (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->fContentW = (float)xuiInternalSnapSize((float)fWidth);
+	pData->fContentH = (float)xuiInternalSnapSize((float)fHeight);
 	fHeight = pData->tMetrics.fPaddingY;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		fItemH = (pData->arrItems[i].iType == XUI_MENU_ITEM_SEPARATOR) ?
 			pData->tMetrics.fSeparatorHeight : pData->tMetrics.fItemHeight;
 		pData->arrItemRect[i] = xuiInternalSnapRect((xui_rect_t){
 			pData->tMetrics.fPaddingX,
-			fHeight,
+			(float)fHeight,
 			__xuiMenuMax(1.0f, pData->fContentW - pData->tMetrics.fPaddingX * 2.0f),
 			fItemH
 		});
@@ -512,6 +575,10 @@ static int __xuiMenuNextEnabled(xui_menu_data_t* pData, int iStart, int iStep)
 static int __xuiMenuInvalidateItem(xui_widget pWidget, xui_menu_data_t* pData, int iIndex)
 {
 	xui_rect_t tRect;
+	int64_t iLeft;
+	int64_t iTop;
+	int64_t iRight;
+	int64_t iBottom;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
 		return XUI_OK;
@@ -520,11 +587,42 @@ static int __xuiMenuInvalidateItem(xui_widget pWidget, xui_menu_data_t* pData, i
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	tRect.fX -= 2.0f;
-	tRect.fY -= 2.0f;
-	tRect.fW += 4.0f;
-	tRect.fH += 4.0f;
+	iLeft = (int64_t)tRect.fX - 2;
+	iTop = (int64_t)tRect.fY - 2;
+	iRight = (int64_t)tRect.fX + (int64_t)tRect.fW + 2;
+	iBottom = (int64_t)tRect.fY + (int64_t)tRect.fH + 2;
+	if ( iLeft < 0 ) iLeft = 0;
+	if ( iTop < 0 ) iTop = 0;
+	if ( iRight > (int64_t)pData->fContentW ) iRight = (int64_t)pData->fContentW;
+	if ( iBottom > (int64_t)pData->fContentH ) iBottom = (int64_t)pData->fContentH;
+	tRect = (xui_rect_t){
+		(int)iLeft,
+		(int)iTop,
+		(int)(iRight > iLeft ? iRight - iLeft : 0),
+		(int)(iBottom > iTop ? iBottom - iTop : 0)
+	};
 	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiMenuEnsureItemVisible(xui_menu_data_t* pData, int iIndex)
+{
+	xui_widget pScrollView;
+	xui_rect_t tTarget;
+	float fOffsetX;
+	int iRet;
+
+	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iItemCount ||
+	     pData->pPopup == NULL || !xuiPopupIsOpen(pData->pPopup) ) return XUI_OK;
+	pScrollView = xuiPopupGetScrollViewWidget(pData->pPopup);
+	if ( pScrollView == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	iRet = xuiPopupGetScroll(pData->pPopup, &fOffsetX, NULL);
+	if ( iRet != XUI_OK ) return iRet;
+	tTarget = pData->arrItemRect[iIndex];
+	/* Keyboard navigation only needs vertical reveal. Preserve any deliberate
+	 * horizontal scroll instead of aligning the full-width row. */
+	tTarget.fX = xuiInternalSnapPixel(fOffsetX);
+	tTarget.fW = 1;
+	return xuiScrollViewEnsureRectVisible(pScrollView, tTarget);
 }
 
 static int __xuiMenuSetHover(xui_widget pWidget, xui_menu_data_t* pData, int iIndex)
@@ -547,6 +645,9 @@ static int __xuiMenuSetHover(xui_widget pWidget, xui_menu_data_t* pData, int iIn
 	iRet = __xuiMenuInvalidateItem(pWidget, pData, iOldHover);
 	if ( iRet == XUI_OK ) {
 		iRet = __xuiMenuInvalidateItem(pWidget, pData, iIndex);
+	}
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiMenuEnsureItemVisible(pData, iIndex);
 	}
 	if ( iRet != XUI_OK ) {
 		pData->iHover = iOldHover;
@@ -1100,7 +1201,7 @@ static int __xuiMenuCommit(xui_widget pWidget, xui_menu_data_t* pData, int iInde
 		}
 	}
 	if ( bStateChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-	pData->iSelectCount++;
+	if ( pData->iSelectCount < INT_MAX ) pData->iSelectCount++;
 	__xuiMenuResolveSelect(pWidget, &onSelect, &pUser);
 	iValue = pData->arrItems[iIndex].iValue;
 	pRoot = __xuiMenuRoot(pWidget);
@@ -2004,6 +2105,24 @@ XUI_API int xuiMenuAddItem(xui_widget pWidget, const xui_menu_item_t* pItem)
 	}
 	iRet = __xuiMenuCopyItems(arrNew, pItem, 1);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiMenuCancelPress(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		__xuiMenuFreeItemStrings(arrNew, 1);
+		return iRet;
+	}
+	if ( __xuiMenuGetData(pWidget) != pData ) {
+		__xuiMenuFreeItemStrings(arrNew, 1);
+		return XUI_OK;
+	}
+	iRet = __xuiMenuCloseSubmenu(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		__xuiMenuFreeItemStrings(arrNew, 1);
+		return iRet;
+	}
+	if ( __xuiMenuGetData(pWidget) != pData ) {
+		__xuiMenuFreeItemStrings(arrNew, 1);
+		return XUI_OK;
+	}
 	iOldHover = pData->iHover;
 	pData->arrItems[pData->iItemCount++] = arrNew[0];
 	pData->bMeasureDirty = 1;
@@ -2225,12 +2344,15 @@ XUI_API xui_font xuiMenuGetFont(xui_widget pWidget)
 XUI_API int xuiMenuSetMetrics(xui_widget pWidget, const xui_menu_metrics_t* pMetrics)
 {
 	xui_menu_data_t* pData = __xuiMenuGetData(pWidget);
+	xui_menu_metrics_t tNewMetrics;
 	xui_menu_metrics_t tOldMetrics;
 	int iRet;
 	if ( (pData == NULL) || !__xuiMenuMetricsValid(pMetrics) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tNewMetrics = *pMetrics;
+	tNewMetrics.iSize = sizeof(tNewMetrics);
+	if ( __xuiMenuMetricsEqual(&pData->tMetrics, &tNewMetrics) ) return XUI_OK;
 	tOldMetrics = pData->tMetrics;
-	pData->tMetrics = *pMetrics;
-	pData->tMetrics.iSize = sizeof(pData->tMetrics);
+	pData->tMetrics = tNewMetrics;
 	pData->bMeasureDirty = 1;
 	iRet = __xuiMenuApplyPopupSize(pWidget, pData);
 	if ( iRet != XUI_OK ) {
@@ -2254,12 +2376,15 @@ XUI_API int xuiMenuSetColors(xui_widget pWidget, const xui_menu_colors_t* pColor
 {
 	xui_menu_data_t* pData = __xuiMenuGetData(pWidget);
 	xui_menu_colors_t tColors;
+	xui_menu_colors_t tNewColors;
 	xui_menu_colors_t tOldColors;
 	int iRet;
 	if ( (pData == NULL) || !__xuiMenuColorsValid(pColors) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tNewColors = *pColors;
+	tNewColors.iSize = sizeof(tNewColors);
+	if ( __xuiMenuColorsEqual(&pData->tColors, &tNewColors) ) return XUI_OK;
 	tOldColors = pData->tColors;
-	pData->tColors = *pColors;
-	pData->tColors.iSize = sizeof(pData->tColors);
+	pData->tColors = tNewColors;
 	__xuiMenuResolveColors(pWidget, pData, &tColors);
 	iRet = __xuiMenuApplyPopupColors(pData, &tColors);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -2301,7 +2426,10 @@ XUI_API int xuiMenuOpenAt(xui_widget pWidget, xui_widget pOwner, float fX, float
 	int iOldHover;
 	int iRet;
 
-	if ( pData == NULL || pData->pPopup == NULL || !isfinite(fX) || !isfinite(fY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || pData->pPopup == NULL ||
+	     !__xuiMenuCoordinateValid(fX) || !__xuiMenuCoordinateValid(fY) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( pOwner != NULL && (!xuiInternalWidgetIsValid(pOwner) || xuiWidgetGetContext(pOwner) != pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2325,6 +2453,12 @@ XUI_API int xuiMenuOpenAt(xui_widget pWidget, xui_widget pOwner, float fX, float
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetScroll(pData->pPopup, 0.0f, 0.0f);
 	if ( iRet != XUI_OK ) return iRet;
 	iOldHover = pData->iHover;
+	pData->iPendingSubmenu = -1;
+	pData->fPendingSubmenuTime = 0.0f;
+	pData->iDeferredHover = -1;
+	pData->fDeferredHoverTime = 0.0f;
+	pData->bLastPointer = 0;
+	pData->bAimActive = 0;
 	pData->iHover = __xuiMenuNextEnabled(pData, -1, 1);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetOpen(pData->pPopup, 1);
@@ -2367,6 +2501,12 @@ XUI_API int xuiMenuOpenForOwner(xui_widget pWidget, xui_widget pOwner)
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetScroll(pData->pPopup, 0.0f, 0.0f);
 	if ( iRet != XUI_OK ) return iRet;
 	iOldHover = pData->iHover;
+	pData->iPendingSubmenu = -1;
+	pData->fPendingSubmenuTime = 0.0f;
+	pData->iDeferredHover = -1;
+	pData->fDeferredHoverTime = 0.0f;
+	pData->bLastPointer = 0;
+	pData->bAimActive = 0;
 	pData->iHover = __xuiMenuNextEnabled(pData, -1, 1);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetOpen(pData->pPopup, 1);

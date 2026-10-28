@@ -133,6 +133,7 @@ int main(void)
 	xui_widget pSubmenu;
 	xui_widget pDestroyMenu;
 	xui_widget pShortcutMenu;
+	xui_widget pScrollMenu;
 	xui_widget pLifetimeParent;
 	xui_widget pLifetimeSubmenu;
 	xui_widget pInvalidMenu;
@@ -145,6 +146,7 @@ int main(void)
 	xui_menu_item_t arrCycleItems[1];
 	xui_menu_item_t arrDestroyItems[1];
 	xui_menu_item_t arrShortcutItems[3];
+	xui_menu_item_t arrScrollItems[13];
 	xui_menu_metrics_t tMetrics;
 	xui_menu_metrics_t tBadMetrics;
 	xui_menu_desc_t tBadDesc;
@@ -155,6 +157,7 @@ int main(void)
 	xui_accessible_node_t tAccessible;
 	const char* sWideText;
 	const char* sWideShortcut;
+	const char* sScrollLabel;
 	char sOwnedText[32];
 	char sOwnedShortcut[32];
 	float fWidth;
@@ -162,6 +165,9 @@ int main(void)
 	float fPopupW;
 	float fPopupH;
 	float fExpectedWidth;
+	float fScrollX;
+	float fScrollY;
+	float fScrollBeforeX;
 	int iMeasureCount;
 	int iBefore;
 	int iFailed;
@@ -174,6 +180,7 @@ int main(void)
 	pSubmenu = NULL;
 	pDestroyMenu = NULL;
 	pShortcutMenu = NULL;
+	pScrollMenu = NULL;
 	pLifetimeParent = NULL;
 	pLifetimeSubmenu = NULL;
 	pInvalidMenu = NULL;
@@ -215,6 +222,11 @@ int main(void)
 	pInvalidMenu = pOwner;
 	iRet = xuiMenuCreate(pContext, &pInvalidMenu, &tBadDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidMenu == NULL, "invalid descriptor metrics rejected");
+	tBadDesc.tMetrics.fItemHeight = XUI_LAYOUT_UNBOUNDED;
+	pInvalidMenu = pOwner;
+	iRet = xuiMenuCreate(pContext, &pInvalidMenu, &tBadDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidMenu == NULL,
+		"combined descriptor geometry rejected");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -478,13 +490,29 @@ int main(void)
 		tMetrics.fShortcutGap + ((float)strlen(sWideShortcut) * 7.0f) + 6.0f +
 		4.0f + tMetrics.fArrowWidth;
 	XUI_TEST_CHECK(fWidth >= fExpectedWidth, "wide text and shortcut width");
+	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
+	iRet = xuiMenuSetMetrics(pMenu, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestProxyGetTextMeasureCount(&tState) == iMeasureCount,
+		"unchanged metrics avoid redundant measurement");
 
 	tBadMetrics = tMetrics;
 	tBadMetrics.fPaddingX = NAN;
 	iRet = xuiMenuSetMetrics(pMenu, &tBadMetrics);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan metrics rejected");
+	tBadMetrics = tMetrics;
+	tBadMetrics.fItemHeight = XUI_LAYOUT_UNBOUNDED;
+	iRet = xuiMenuSetMetrics(pMenu, &tBadMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "combined height metrics rejected");
+	tBadMetrics = tMetrics;
+	tBadMetrics.fPaddingX = XUI_LAYOUT_UNBOUNDED;
+	iRet = xuiMenuSetMetrics(pMenu, &tBadMetrics);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "combined width metrics rejected");
 	iRet = xuiMenuOpenAt(pMenu, pOwner, NAN, 20.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && !xuiMenuIsOpen(pMenu), "nan popup coordinate rejected");
+	iRet = xuiMenuOpenAt(pMenu, pOwner, XUI_LAYOUT_UNBOUNDED + 1024.0f, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && !xuiMenuIsOpen(pMenu),
+		"out-of-range popup coordinate rejected before integer conversion");
 	iRet = xuiMenuSetItemState(pMenu, 0, 0x80000000u, 0x80000000u);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "unknown item state rejected");
 
@@ -613,6 +641,75 @@ int main(void)
 		!xuiMenuIsOpen(pShortcutMenu) && tShortcutSelect.iCount == 1 &&
 		tShortcutSelect.iIndex == 2 && tShortcutSelect.iValue == 103,
 		"valid function key shortcut activates");
+
+	iRet = xuiMenuCreate(pContext, &pScrollMenu, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pScrollMenu != NULL, "scroll menu create");
+	iRet = xuiMenuGetMetrics(pScrollMenu, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scroll menu metrics");
+	tMetrics.fMaxHeight = 76.0f;
+	iRet = xuiMenuSetMetrics(pScrollMenu, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scroll menu max height");
+	sScrollLabel = "A deliberately wide menu command used to verify that vertical "
+		"keyboard navigation preserves horizontal scrolling";
+	memset(arrScrollItems, 0, sizeof(arrScrollItems));
+	for ( iBefore = 0; iBefore < 12; iBefore++ ) {
+		arrScrollItems[iBefore].sText = sScrollLabel;
+		arrScrollItems[iBefore].iType = XUI_MENU_ITEM_NORMAL;
+		arrScrollItems[iBefore].iState = XUI_MENU_ITEM_ENABLED;
+		arrScrollItems[iBefore].iValue = 200 + iBefore;
+	}
+	arrScrollItems[12].sText = "Appended while pressed";
+	arrScrollItems[12].iType = XUI_MENU_ITEM_NORMAL;
+	arrScrollItems[12].iState = XUI_MENU_ITEM_ENABLED;
+	arrScrollItems[12].iValue = 212;
+	iRet = xuiMenuSetItems(pScrollMenu, arrScrollItems, 12);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scroll menu items");
+	iRet = xuiMenuOpenForOwner(pScrollMenu, pOwner);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pScrollMenu), "scroll menu open");
+	iRet = xuiPopupSetScroll(xuiMenuGetPopupWidget(pScrollMenu), 48.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiPopupGetScroll(xuiMenuGetPopupWidget(pScrollMenu),
+		&fScrollBeforeX, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollBeforeX > 0.0f && __xuiMenuNear(fScrollY, 0.0f),
+		"scroll menu starts with horizontal offset");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_END, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiPopupGetScroll(xuiMenuGetPopupWidget(pScrollMenu),
+		&fScrollX, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetHoverIndex(pScrollMenu) == 11 &&
+		fScrollY > 0.0f && __xuiMenuNear(fScrollX, fScrollBeforeX),
+		"End reveals last item without changing horizontal scroll");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_HOME, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiPopupGetScroll(xuiMenuGetPopupWidget(pScrollMenu),
+		&fScrollX, &fScrollY);
+	tItemRect = xuiMenuGetItemRect(pScrollMenu, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetHoverIndex(pScrollMenu) == 0 &&
+		fScrollY <= (float)tItemRect.fY && __xuiMenuNear(fScrollX, fScrollBeforeX),
+		"Home reveals first item without changing horizontal scroll");
+	tMenuWorld = xuiWidgetGetWorldRect(pScrollMenu);
+	tPopupRect = xuiPopupGetPopupRect(xuiMenuGetPopupWidget(pScrollMenu));
+	iRet = xuiInputPointerDownEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tPopupRect.fX + 20.0f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == pScrollMenu,
+		"scroll menu press owns touch capture");
+	iRet = xuiMenuAddItem(pScrollMenu, &arrScrollItems[12]);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetItemCount(pScrollMenu) == 13 &&
+		xuiGetPointerCaptureEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"adding an item cancels the active menu press");
+	iRet = xuiInputPointerUpEx(pContext, 701u, XUI_POINTER_TYPE_TOUCH,
+		(int)(tPopupRect.fX + 20.0f),
+		(int)(tMenuWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f),
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pScrollMenu),
+		"release after item mutation does not activate stale press");
+	iRet = xuiMenuClose(pScrollMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scroll menu close");
 
 	iRet = xuiMenuCreate(pContext, &pLifetimeParent, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pLifetimeParent != NULL, "lifetime parent create");
