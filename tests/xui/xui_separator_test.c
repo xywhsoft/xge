@@ -191,6 +191,61 @@ int main(void)
 	pCache = xuiWidgetGetCacheSurface(pSeparator, xuiWidgetGetStateId(pSeparator));
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pCache) == XUI_COLOR_RGBA(40, 90, 180, 255), "style color");
 
+	iRet = xuiWidgetSetInlineStyle(pSeparator, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear inline style");
+	iRet = xuiSeparatorSetOrientation(pSeparator, XUI_SEPARATOR_HORIZONTAL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore horizontal");
+	iRet = xuiSeparatorSetAlign(pSeparator, XUI_ALIGN_CENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore center align");
+	iRet = xuiSeparatorSetThickness(pSeparator, 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore thickness");
+	iRet = xuiWidgetSetRect(pSeparator, (xui_rect_t){20, 20, 14, 8});
+	XUI_TEST_CHECK(iRet == XUI_OK, "short pattern rect");
+	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_DASH);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dash style");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare dash");
+	pCache = xuiWidgetGetCacheSurface(pSeparator, xuiWidgetGetStateId(pSeparator));
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) == 2, "dash segments clipped to line");
+
+	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_DASH_DOT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dash-dot style");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare dash-dot");
+	pCache = xuiWidgetGetCacheSurface(pSeparator, xuiWidgetGetStateId(pSeparator));
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) == 2, "dash-dot segments clipped to line");
+
+	iRet = xuiSeparatorSetThickness(pSeparator, XUI_LAYOUT_UNBOUNDED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "maximum thickness");
+	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_DASH);
+	XUI_TEST_CHECK(iRet == XUI_OK, "maximum thickness dash");
+	XUI_TEST_CHECK(__xuiSeparatorRectEq(xuiSeparatorGetLineRect(pSeparator), 0.0f, 0.0f, 14.0f, 8.0f),
+		"maximum thickness clamps to content");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render maximum thickness");
+	pCache = xuiWidgetGetCacheSurface(pSeparator, xuiWidgetGetStateId(pSeparator));
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) == 1,
+		"maximum thickness pattern avoids overflow");
+	iRet = xuiSeparatorSetThickness(pSeparator, XUI_LAYOUT_UNBOUNDED + 1024.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiSeparatorGetThickness(pSeparator) == XUI_LAYOUT_UNBOUNDED,
+		"out-of-range thickness preserves state");
+
+	iRet = xuiSeparatorSetThickness(pSeparator, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "zero thickness");
+	iRet = xuiWidgetMeasureContent(pSeparator,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 0.0f && tMeasured.fY == 0.0f,
+		"zero thickness measure");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render zero thickness");
+	pCache = xuiWidgetGetCacheSurface(pSeparator, xuiWidgetGetStateId(pSeparator));
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) == 0, "zero thickness draws nothing");
+
 	iRet = xuiSeparatorSetThickness(pSeparator, -1.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid thickness");
 	iRet = xuiSeparatorSetThickness(pSeparator, NAN);
@@ -199,6 +254,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "infinite thickness");
 	iRet = xuiSeparatorSetLineStyle(pSeparator, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid line style");
+	iRet = xuiSeparatorSetOrientation(pSeparator, 99);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid orientation");
+	iRet = xuiSeparatorSetAlign(pSeparator, XUI_ALIGN_STRETCH);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid align");
 
 	tInvalidDesc = tDesc;
 	tInvalidDesc.fThickness = NAN;
@@ -206,6 +265,11 @@ int main(void)
 	iRet = xuiSeparatorCreate(pContext, &pInvalidSeparator, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidSeparator == NULL,
 		"invalid create clears output");
+	tInvalidDesc.fThickness = XUI_LAYOUT_UNBOUNDED + 1024.0f;
+	pInvalidSeparator = pRoot;
+	iRet = xuiSeparatorCreate(pContext, &pInvalidSeparator, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidSeparator == NULL,
+		"out-of-range descriptor clears output");
 
 cleanup:
 	if ( pContext != NULL ) {

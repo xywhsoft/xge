@@ -18,11 +18,6 @@ static uint32_t __xuiSeparatorColorAlpha(uint32_t iColor)
 	return iColor & 0xffu;
 }
 
-static float __xuiSeparatorMaxFloat(float a, float b)
-{
-	return (a > b) ? a : b;
-}
-
 static int __xuiSeparatorOrientationValid(int iOrientation)
 {
 	return (iOrientation == XUI_SEPARATOR_HORIZONTAL) ||
@@ -46,7 +41,8 @@ static int __xuiSeparatorLineStyleValid(int iLineStyle)
 
 static int __xuiSeparatorThicknessValid(float fThickness)
 {
-	return isfinite(fThickness) && fThickness >= 0.0f;
+	return isfinite(fThickness) && fThickness >= 0.0f &&
+	       fThickness <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static int __xuiSeparatorDescValid(const xui_separator_desc_t* pDesc)
@@ -206,38 +202,35 @@ static xui_rect_t __xuiSeparatorLineRectFromData(xui_widget pWidget, const xui_s
 	return tRect;
 }
 
-static int __xuiSeparatorDrawSegment(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tLine, int bVertical, float fStart, float fLength, uint32_t iColor)
+static int __xuiSeparatorDrawSegment(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tLine, int bVertical, int64_t iStart, int64_t iLength, uint32_t iColor)
 {
 	xui_rect_t tPart;
-	float fLimit;
+	int64_t iLimit;
+	int64_t iRemaining;
 
-	if ( fLength <= 0.0f ) {
+	if ( (iStart < 0) || (iLength <= 0) ) {
 		return XUI_OK;
 	}
 	tPart = tLine;
 	if ( bVertical ) {
-		fLimit = tLine.fY + tLine.fH;
-		tPart.fY = tLine.fY + fStart;
-		if ( tPart.fY >= fLimit ) {
+		iLimit = tLine.fH;
+		if ( iStart >= iLimit ) {
 			return XUI_OK;
 		}
-		tPart.fH = fLength;
-		if ( (tPart.fY + tPart.fH) > fLimit ) {
-			tPart.fH = fLimit - tPart.fY;
-		}
+		iRemaining = iLimit - iStart;
+		tPart.fY += (int)iStart;
+		tPart.fH = (int)((iLength < iRemaining) ? iLength : iRemaining);
 	} else {
-		fLimit = tLine.fX + tLine.fW;
-		tPart.fX = tLine.fX + fStart;
-		if ( tPart.fX >= fLimit ) {
+		iLimit = tLine.fW;
+		if ( iStart >= iLimit ) {
 			return XUI_OK;
 		}
-		tPart.fW = fLength;
-		if ( (tPart.fX + tPart.fW) > fLimit ) {
-			tPart.fW = fLimit - tPart.fX;
-		}
+		iRemaining = iLimit - iStart;
+		tPart.fX += (int)iStart;
+		tPart.fW = (int)((iLength < iRemaining) ? iLength : iRemaining);
 	}
-	tPart = xuiInternalSnapRect(tPart);
-	if ( (tPart.fW <= 0.0f) || (tPart.fH <= 0.0f) ) {
+	if ( (tPart.fW <= 0) || (tPart.fH <= 0) ) {
 		return XUI_OK;
 	}
 	return pProxy->drawRectFill(pProxy, pDraw, tPart, iColor);
@@ -245,41 +238,46 @@ static int __xuiSeparatorDrawSegment(xui_proxy pProxy, xui_draw_context pDraw, x
 
 static int __xuiSeparatorDrawPattern(xui_proxy pProxy, xui_draw_context pDraw, const xui_separator_data_t* pData, xui_rect_t tLine)
 {
-	float fThickness;
-	float fCursor;
-	float fMain;
-	float fDash;
-	float fDot;
-	float fGap;
+	int64_t iThickness;
+	int64_t iCursor;
+	int64_t iMain;
+	int64_t iDash;
+	int64_t iDot;
+	int64_t iGap;
 	int bVertical;
 	int iRet;
 
 	bVertical = (pData->iOrientation == XUI_SEPARATOR_VERTICAL);
-	fMain = bVertical ? tLine.fH : tLine.fW;
+	iMain = bVertical ? tLine.fH : tLine.fW;
 	if ( pData->iLineStyle == XUI_SEPARATOR_SOLID ) {
 		return pProxy->drawRectFill(pProxy, pDraw, tLine, pData->iColor);
 	}
-	fThickness = __xuiSeparatorMaxFloat(xuiInternalSnapSize(pData->fThickness), 1.0f);
-	fDot = fThickness;
-	fDash = fThickness * 4.0f;
-	fGap = fThickness * 2.0f;
-	fCursor = 0.0f;
-	while ( fCursor < fMain ) {
+	iThickness = xuiInternalSnapSize(pData->fThickness);
+	if ( iThickness < 1 ) iThickness = 1;
+	iDot = iThickness;
+	iDash = iThickness * 4;
+	iGap = iThickness * 2;
+	iCursor = 0;
+	while ( iCursor < iMain ) {
 		if ( pData->iLineStyle == XUI_SEPARATOR_DOT ) {
-			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical, fCursor, fDot, pData->iColor);
+			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical,
+				iCursor, iDot, pData->iColor);
 			if ( iRet != XUI_OK ) return iRet;
-			fCursor += fDot + fThickness;
+			iCursor += iDot + iThickness;
 		} else if ( pData->iLineStyle == XUI_SEPARATOR_DASH ) {
-			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical, fCursor, fDash, pData->iColor);
+			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical,
+				iCursor, iDash, pData->iColor);
 			if ( iRet != XUI_OK ) return iRet;
-			fCursor += fDash + fGap;
+			iCursor += iDash + iGap;
 		} else {
-			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical, fCursor, fDash, pData->iColor);
+			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical,
+				iCursor, iDash, pData->iColor);
 			if ( iRet != XUI_OK ) return iRet;
-			fCursor += fDash + fGap;
-			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical, fCursor, fDot, pData->iColor);
+			iCursor += iDash + iGap;
+			iRet = __xuiSeparatorDrawSegment(pProxy, pDraw, tLine, bVertical,
+				iCursor, iDot, pData->iColor);
 			if ( iRet != XUI_OK ) return iRet;
-			fCursor += fDot + fGap;
+			iCursor += iDot + iGap;
 		}
 	}
 	return XUI_OK;

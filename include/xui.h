@@ -6891,7 +6891,7 @@ XUI_API int xuiSeparatorCreate(xui_context pContext, xui_widget* ppWidget, const
 XUI_API int xuiSeparatorSetColor(xui_widget pWidget, uint32_t iColor);
 /* 读取颜色。 */
 XUI_API uint32_t xuiSeparatorGetColor(xui_widget pWidget);
-/* 设置线条粗细。 */
+/* 设置线条粗细；0 隐藏线条。 */
 XUI_API int xuiSeparatorSetThickness(xui_widget pWidget, float fThickness);
 /* 读取粗细。 */
 XUI_API float xuiSeparatorGetThickness(xui_widget pWidget);
@@ -6899,11 +6899,11 @@ XUI_API float xuiSeparatorGetThickness(xui_widget pWidget);
 XUI_API int xuiSeparatorSetOrientation(xui_widget pWidget, int iOrientation);
 /* 读取方向。 */
 XUI_API int xuiSeparatorGetOrientation(xui_widget pWidget);
-/* 设置对齐（短线的伸缩侧）。 */
+/* 设置线条在控件厚度方向的对齐。 */
 XUI_API int xuiSeparatorSetAlign(xui_widget pWidget, int iAlign);
 /* 读取对齐。 */
 XUI_API int xuiSeparatorGetAlign(xui_widget pWidget);
-/* 设置线型（实线/虚线）。 */
+/* 设置线型（实线/点线/虚线/点划线）。 */
 XUI_API int xuiSeparatorSetLineStyle(xui_widget pWidget, int iLineStyle);
 /* 读取线型。 */
 XUI_API int xuiSeparatorGetLineStyle(xui_widget pWidget);
