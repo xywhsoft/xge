@@ -158,6 +158,13 @@ int main(void)
 	tInvalidDesc.fScrollbarSize = 9.0f;
 	iRet = xuiPopupCreate(pContext, &pPopup, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pPopup == NULL, "reject oversized compact scrollbar descriptor");
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.fPadding = XUI_LAYOUT_UNBOUNDED * 0.5f;
+	tInvalidDesc.fBorderWidth = XUI_LAYOUT_UNBOUNDED * 0.5f;
+	iRet = xuiPopupCreate(pContext, &pPopup, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pPopup == NULL,
+		"reject descriptor with overflowing combined metrics");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -254,6 +261,9 @@ int main(void)
 
 	iRet = xuiPopupSetOpen(pPopup, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPopupIsOpen(pPopup), "reopen popup");
+	iRet = xuiPopupGetScroll(pPopup, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiPopupNear(fOffsetX, 0.0f) && fOffsetY > 0.0f,
+		"generic popup preserves scroll across close and reopen");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -326,6 +336,28 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "owner toggle release");
 	iRet = xuiPopupSetOpen(pPopup, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPopupIsOpen(pPopup), "reopen after owner toggle");
+
+	XUI_TEST_CHECK(xuiPopupSetMetrics(pPopup, XUI_LAYOUT_UNBOUNDED * 0.5f,
+		XUI_LAYOUT_UNBOUNDED * 0.5f, 0.0f) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject API metrics whose combined geometry exceeds context limit");
+	iRet = xuiPopupSetMargin(pPopup, 1000.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set margin larger than viewport");
+	iRet = xuiPopupSetMetrics(pPopup, 1000.0f, 1000.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics larger than viewport");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout clamped popup metrics");
+	tPopup = xuiPopupGetPopupRect(pPopup);
+	tViewport = xuiPopupGetViewportRect(pPopup);
+	XUI_TEST_CHECK(tPopup.fX >= 0.0f && tPopup.fY >= 0.0f &&
+		tPopup.fX + tPopup.fW <= 360.0f && tPopup.fY + tPopup.fH <= 260.0f,
+		"oversized margin and metrics keep popup inside viewport");
+	XUI_TEST_CHECK(tViewport.fW >= 1.0f && tViewport.fH >= 1.0f &&
+		tViewport.fW <= tPopup.fW && tViewport.fH <= tPopup.fH,
+		"oversized metrics keep a bounded content viewport");
+	iRet = xuiPopupSetMargin(pPopup, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore popup margin");
+	iRet = xuiPopupSetMetrics(pPopup, 4.0f, 1.0f, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore popup metrics after clamp test");
 
 	iRet = xuiPopupSetClosePolicy(pPopup, XUI_POPUP_OUTSIDE_IGNORE, XUI_POPUP_OWNER_CLOSE, XUI_POPUP_ESCAPE_CLOSE);
 	XUI_TEST_CHECK(iRet == XUI_OK, "destructive owner close policy");

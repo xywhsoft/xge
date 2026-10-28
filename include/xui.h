@@ -11260,7 +11260,7 @@ XUI_API int xuiPopupSetFocusPolicy(xui_widget pWidget, int iFocusPolicy, xui_wid
 XUI_API int xuiPopupGetFocusPolicy(xui_widget pWidget);
 /* 设置关闭时焦点归还目标控件。 */
 XUI_API int xuiPopupSetFocusRestore(xui_widget pWidget, xui_widget pRestore);
-/* 直接设置内容滚动。 */
+/* 直接设置内容滚动；开合弹层不会隐式重置该偏移。 */
 XUI_API int xuiPopupSetScroll(xui_widget pWidget, float fOffsetX, float fOffsetY);
 /* 输出滚动偏移。 */
 XUI_API int xuiPopupGetScroll(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
@@ -11290,7 +11290,7 @@ XUI_API xui_rect_t xuiPopupGetContentRect(xui_widget pWidget);
 XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iBackdrop);
 /* 批量输出四色。 */
 XUI_API int xuiPopupGetColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pBackdrop);
-/* 设置度量（内边距/边框/阴影尺寸）。 */
+/* 设置度量（内边距/边框/阴影尺寸）；组合绘制范围不得超过上下文几何上限。 */
 XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fBorderWidth, float fShadowSize);
 /* 输出度量。 */
 XUI_API int xuiPopupGetMetrics(xui_widget pWidget, float* pPadding, float* pBorderWidth, float* pShadowSize);
