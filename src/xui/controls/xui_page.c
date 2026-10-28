@@ -3,11 +3,13 @@
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
 #define XUI_PAGE_ITEM_CAPACITY 32
+#define XUI_PAGE_MAX_ITEM_WIDTH (XUI_LAYOUT_UNBOUNDED / (float)XUI_PAGE_ITEM_CAPACITY)
 #define XUI_PAGE_ACCESSIBLE_ROOT_ID 1u
 #define XUI_PAGE_ACCESSIBLE_PAGE_BASE 0x100000000ull
 #define XUI_PAGE_ACCESSIBLE_ITEM_BASE 0x200000000ull
@@ -50,6 +52,8 @@ typedef struct xui_page_data_t {
 	int iWindowSize;
 	int iHover;
 	int iActive;
+	int iPressedType;
+	int iPressedPage;
 	int iChangeCount;
 	xui_pointer_owner_t tPointerOwner;
 	char sFirstText[16];
@@ -73,6 +77,11 @@ typedef struct xui_page_data_t {
 	uint32_t iFocusColor;
 } xui_page_data_t;
 
+static int __xuiPageMetricValid(float fValue, float fMax)
+{
+	return isfinite(fValue) && (fValue >= 0.0f) && (fValue <= fMax);
+}
+
 static int __xuiPageDescValid(const xui_page_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -81,11 +90,11 @@ static int __xuiPageDescValid(const xui_page_desc_t* pDesc)
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
-	return isfinite(pDesc->fItemHeight) && (pDesc->fItemHeight >= 0.0f) &&
-	       isfinite(pDesc->fPageWidth) && (pDesc->fPageWidth >= 0.0f) &&
-	       isfinite(pDesc->fTextWidth) && (pDesc->fTextWidth >= 0.0f) &&
-	       isfinite(pDesc->fNavWidth) && (pDesc->fNavWidth >= 0.0f) &&
-	       isfinite(pDesc->fEllipsisWidth) && (pDesc->fEllipsisWidth >= 0.0f);
+	return __xuiPageMetricValid(pDesc->fItemHeight, XUI_LAYOUT_UNBOUNDED) &&
+	       __xuiPageMetricValid(pDesc->fPageWidth, XUI_PAGE_MAX_ITEM_WIDTH) &&
+	       __xuiPageMetricValid(pDesc->fTextWidth, XUI_PAGE_MAX_ITEM_WIDTH) &&
+	       __xuiPageMetricValid(pDesc->fNavWidth, XUI_PAGE_MAX_ITEM_WIDTH) &&
+	       __xuiPageMetricValid(pDesc->fEllipsisWidth, XUI_PAGE_MAX_ITEM_WIDTH);
 }
 
 static int __xuiPageClampInt(int iValue, int iMin, int iMax)
@@ -119,6 +128,38 @@ static int __xuiPageClampPage(const xui_page_data_t* pData, int iPage)
 
 	iPageCount = (pData != NULL && pData->iPageCount > 0) ? pData->iPageCount : 1;
 	return __xuiPageClampInt(iPage, 1, iPageCount);
+}
+
+static int __xuiPagePreviousPage(const xui_page_data_t* pData)
+{
+	if ( (pData == NULL) || (pData->iCurrentPage <= 1) ) return 1;
+	return pData->iCurrentPage - 1;
+}
+
+static int __xuiPageNextPage(const xui_page_data_t* pData)
+{
+	if ( pData == NULL ) return 1;
+	if ( pData->iCurrentPage >= pData->iPageCount ) return pData->iPageCount;
+	return pData->iCurrentPage + 1;
+}
+
+static void __xuiPageClearPressed(xui_page_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	pData->iActive = -1;
+	pData->iPressedType = 0;
+	pData->iPressedPage = 0;
+}
+
+static int __xuiPagePressedMatches(const xui_page_data_t* pData, int iIndex)
+{
+	const xui_page_item_t* pItem;
+
+	if ( (pData == NULL) || !pData->tPointerOwner.bActive ||
+	     (iIndex < 0) || (iIndex >= pData->iItemCount) ) return 0;
+	pItem = &pData->arrItems[iIndex];
+	return (pData->iPressedType == pItem->iType) &&
+		(pData->iPressedPage == pItem->iPage);
 }
 
 static int __xuiPageColorAlpha(uint32_t iColor)
@@ -180,7 +221,8 @@ static int __xuiPageStyleColor(xui_widget pWidget, const char* sName, uint32_t* 
 	return 0;
 }
 
-static int __xuiPageStyleFloat(xui_widget pWidget, const char* sName, float* pValue)
+static int __xuiPageStyleFloat(xui_widget pWidget, const char* sName,
+	float fMax, float* pValue)
 {
 	xui_style_property_t tProperty;
 	int iRet;
@@ -189,7 +231,7 @@ static int __xuiPageStyleFloat(xui_widget pWidget, const char* sName, float* pVa
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	     __xuiPageMetricValid(tProperty.tValue.fFloat, fMax) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -241,11 +283,16 @@ static void __xuiPageResolve(xui_widget pWidget, const xui_page_data_t* pData, x
 	(void)__xuiPageStyleColor(pWidget, "page.current_text.color", &pResolved->iCurrentTextColor);
 	(void)__xuiPageStyleColor(pWidget, "page.disabled_text.color", &pResolved->iDisabledTextColor);
 	(void)__xuiPageStyleColor(pWidget, "page.focus.color", &pResolved->iFocusColor);
-	(void)__xuiPageStyleFloat(pWidget, "page.item.height", &pResolved->fItemHeight);
-	(void)__xuiPageStyleFloat(pWidget, "page.width.page", &pResolved->fPageWidth);
-	(void)__xuiPageStyleFloat(pWidget, "page.width.text", &pResolved->fTextWidth);
-	(void)__xuiPageStyleFloat(pWidget, "page.width.nav", &pResolved->fNavWidth);
-	(void)__xuiPageStyleFloat(pWidget, "page.width.ellipsis", &pResolved->fEllipsisWidth);
+	(void)__xuiPageStyleFloat(pWidget, "page.item.height", XUI_LAYOUT_UNBOUNDED,
+		&pResolved->fItemHeight);
+	(void)__xuiPageStyleFloat(pWidget, "page.width.page", XUI_PAGE_MAX_ITEM_WIDTH,
+		&pResolved->fPageWidth);
+	(void)__xuiPageStyleFloat(pWidget, "page.width.text", XUI_PAGE_MAX_ITEM_WIDTH,
+		&pResolved->fTextWidth);
+	(void)__xuiPageStyleFloat(pWidget, "page.width.nav", XUI_PAGE_MAX_ITEM_WIDTH,
+		&pResolved->fNavWidth);
+	(void)__xuiPageStyleFloat(pWidget, "page.width.ellipsis", XUI_PAGE_MAX_ITEM_WIDTH,
+		&pResolved->fEllipsisWidth);
 	if ( pResolved->fItemHeight <= 0.0f ) pResolved->fItemHeight = 28.0f;
 	if ( pResolved->fPageWidth <= 0.0f ) pResolved->fPageWidth = 38.0f;
 	if ( pResolved->fTextWidth <= 0.0f ) pResolved->fTextWidth = 56.0f;
@@ -258,7 +305,7 @@ static uint32_t __xuiPageBaseState(xui_widget pWidget, const xui_page_data_t* pD
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iState |= XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) {
@@ -351,6 +398,7 @@ static float __xuiPageBuildItems(xui_page_data_t* pData, const xui_page_style_t*
 	int iWindowSize;
 	int iHalf;
 	int iStart;
+	int iMaxStart;
 	int iEnd;
 	int iPage;
 
@@ -362,7 +410,7 @@ static float __xuiPageBuildItems(xui_page_data_t* pData, const xui_page_style_t*
 		tContent.fH = pStyle->fItemHeight;
 	}
 	fX = tContent.fX;
-	__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_PREV, pData->iCurrentPage - 1,
+	__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_PREV, __xuiPagePreviousPage(pData),
 		pData->sPrevText, pData->iCurrentPage > 1, tContent, &fX);
 	__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_FIRST, 1,
 		pData->sFirstText, pData->iCurrentPage > 1, tContent, &fX);
@@ -372,28 +420,23 @@ static float __xuiPageBuildItems(xui_page_data_t* pData, const xui_page_style_t*
 	}
 	iHalf = iWindowSize / 2;
 	iStart = pData->iCurrentPage - iHalf;
+	if ( iStart < 1 ) iStart = 1;
+	iMaxStart = pData->iPageCount - iWindowSize + 1;
+	if ( iStart > iMaxStart ) iStart = iMaxStart;
 	iEnd = iStart + iWindowSize - 1;
-	if ( iStart < 1 ) {
-		iStart = 1;
-		iEnd = iWindowSize;
-	}
-	if ( iEnd > pData->iPageCount ) {
-		iEnd = pData->iPageCount;
-		iStart = iEnd - iWindowSize + 1;
-		if ( iStart < 1 ) iStart = 1;
-	}
 	if ( iStart > 1 ) {
 		__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_ELLIPSIS, 0, "...", 0, tContent, &fX);
 	}
-	for ( iPage = iStart; iPage <= iEnd; iPage++ ) {
+	for ( iPage = iStart; ; iPage++ ) {
 		__xuiPageAddPageItem(pData, pStyle, iPage, tContent, &fX);
+		if ( iPage == iEnd ) break;
 	}
 	if ( iEnd < pData->iPageCount ) {
 		__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_ELLIPSIS, 0, "...", 0, tContent, &fX);
 	}
 	__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_LAST, pData->iPageCount,
 		pData->sLastText, pData->iCurrentPage < pData->iPageCount, tContent, &fX);
-	__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_NEXT, pData->iCurrentPage + 1,
+	__xuiPageAddItem(pData, pStyle, XUI_PAGE_ITEM_NEXT, __xuiPageNextPage(pData),
 		pData->sNextText, pData->iCurrentPage < pData->iPageCount, tContent, &fX);
 	return fX - tContent.fX;
 }
@@ -435,9 +478,29 @@ static int __xuiPageReleaseCapture(xui_widget pWidget, xui_page_data_t* pData)
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
 	iRet = xuiInternalPointerOwnerCancel(pContext, pWidget, &pData->tPointerOwner);
-	if ( iRet != XUI_OK || !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
-	pData->iActive = -1;
-	return XUI_OK;
+	if ( !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
+	__xuiPageClearPressed(pData);
+	return iRet;
+}
+
+static int __xuiPageClearInteraction(xui_widget pWidget,
+	xui_page_data_t* pData, int bClearHover)
+{
+	int bChanged;
+	int iRet;
+	int iCleanupRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	bChanged = pData->iActive >= 0 || pData->iPressedType != 0 ||
+		pData->tPointerOwner.bActive || (bClearHover && pData->iHover >= 0);
+	iRet = __xuiPageReleaseCapture(pWidget, pData);
+	if ( !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
+	if ( bClearHover ) pData->iHover = -1;
+	if ( !bChanged ) return iRet;
+	iCleanupRet = __xuiPageSyncState(pWidget, pData);
+	if ( iCleanupRet == XUI_OK ) iCleanupRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return (iRet == XUI_OK) ? iCleanupRet : iRet;
 }
 
 static int __xuiPageSetCurrentInternal(xui_widget pWidget, xui_page_data_t* pData, int iPage, int bNotify)
@@ -468,7 +531,7 @@ static int __xuiPageSetCurrentInternal(xui_widget pWidget, xui_page_data_t* pDat
 		pData->iHover = iOldHover;
 		return iRet;
 	}
-	pData->iChangeCount++;
+	if ( pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onChange = pData->onChange;
@@ -490,8 +553,8 @@ static int __xuiPageActivateItem(xui_widget pWidget, xui_page_data_t* pData, int
 		return XUI_OK;
 	}
 	iTarget = pData->iCurrentPage;
-	if ( pItem->iType == XUI_PAGE_ITEM_PREV ) iTarget = pData->iCurrentPage - 1;
-	else if ( pItem->iType == XUI_PAGE_ITEM_NEXT ) iTarget = pData->iCurrentPage + 1;
+	if ( pItem->iType == XUI_PAGE_ITEM_PREV ) iTarget = __xuiPagePreviousPage(pData);
+	else if ( pItem->iType == XUI_PAGE_ITEM_NEXT ) iTarget = __xuiPageNextPage(pData);
 	else if ( pItem->iType == XUI_PAGE_ITEM_FIRST ) iTarget = 1;
 	else if ( pItem->iType == XUI_PAGE_ITEM_LAST ) iTarget = pData->iPageCount;
 	else if ( pItem->iType == XUI_PAGE_ITEM_PAGE ) iTarget = pItem->iPage;
@@ -552,7 +615,13 @@ static int __xuiPagePointerMove(xui_widget pWidget, xui_page_data_t* pData, cons
 	int bInside;
 	int iHit;
 	int iHover;
+	int iActive;
 	int iRet;
+
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		return __xuiPageClearInteraction(pWidget, pData, 1);
+	}
 
 	if ( pData->tPointerOwner.bActive &&
 	     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
@@ -566,8 +635,11 @@ static int __xuiPagePointerMove(xui_widget pWidget, xui_page_data_t* pData, cons
 	bInside = __xuiPagePointerInside(pWidget, pEvent, &fLocalX, &fLocalY);
 	iHit = bInside ? __xuiPageHitTest(pWidget, pData, fLocalX, fLocalY) : -1;
 	iHover = (iHit >= 0 && pData->arrItems[iHit].bEnabled) ? iHit : -1;
-	if ( pData->iHover == iHover ) return XUI_OK;
+	iActive = __xuiPagePressedMatches(pData, iHit) &&
+		pData->arrItems[iHit].bEnabled ? iHit : -1;
+	if ( pData->iHover == iHover && pData->iActive == iActive ) return XUI_OK;
 	pData->iHover = iHover;
+	pData->iActive = iActive;
 	iRet = __xuiPageSyncState(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -596,6 +668,8 @@ static int __xuiPagePointerDown(xui_widget pWidget, xui_page_data_t* pData, cons
 	iRet = xuiInternalPointerOwnerBegin(pContext, pWidget, pEvent,
 		&pData->tPointerOwner);
 	if ( iRet != XUI_OK || !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
+	pData->iPressedType = pData->arrItems[iHit].iType;
+	pData->iPressedPage = pData->arrItems[iHit].iPage;
 	pData->iActive = iHit;
 	pData->iHover = iHit;
 	iRet = __xuiPageSyncState(pWidget, pData);
@@ -614,44 +688,47 @@ static int __xuiPagePointerUp(xui_widget pWidget, xui_page_data_t* pData, const 
 	float fLocalY;
 	int bInside;
 	int iHit;
-	int iOldActive;
+	int iPressedType;
+	int iPressedPage;
+	int bActivate;
+	int iReleaseRet;
 	int iRet;
 
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 	if ( !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return XUI_OK;
-	iOldActive = pData->iActive;
+	iPressedType = pData->iPressedType;
+	iPressedPage = pData->iPressedPage;
 	bInside = __xuiPagePointerInside(pWidget, pEvent, &fLocalX, &fLocalY);
 	iHit = bInside ? __xuiPageHitTest(pWidget, pData, fLocalX, fLocalY) : -1;
-	iRet = xuiInternalPointerOwnerEnd(xuiWidgetGetContext(pWidget), pWidget,
+	bActivate = iHit >= 0 && pData->arrItems[iHit].bEnabled &&
+		pData->arrItems[iHit].iType == iPressedType &&
+		pData->arrItems[iHit].iPage == iPressedPage;
+	iReleaseRet = xuiInternalPointerOwnerEnd(xuiWidgetGetContext(pWidget), pWidget,
 		pEvent, &pData->tPointerOwner);
-	if ( iRet != XUI_OK || !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
-	pData->iActive = -1;
-	pData->iHover = (iHit >= 0 && pData->arrItems[iHit].bEnabled) ? iHit : -1;
+	if ( !__xuiPageWidgetAlive(pWidget, pData) ) return iReleaseRet;
+	__xuiPageClearPressed(pData);
+	pData->iHover = xuiWidgetGetEffectiveEnabled(pWidget) &&
+		xuiWidgetGetEffectiveVisible(pWidget) && iHit >= 0 &&
+		pData->arrItems[iHit].bEnabled ? iHit : -1;
 	iRet = __xuiPageSyncState(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (iOldActive >= 0) && (iOldActive == iHit) ) {
+	if ( iReleaseRet != XUI_OK ) {
+		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iReleaseRet;
+	}
+	if ( bActivate ) {
 		iRet = __xuiPageActivateItem(pWidget, pData, iHit);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
-	return (iOldActive >= 0) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+	return (iPressedType != 0) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 }
 
 static int __xuiPageCancelCapture(xui_widget pWidget, xui_page_data_t* pData)
 {
-	int bChanged;
-	int iRet;
-
-	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	bChanged = pData->iActive >= 0 || pData->tPointerOwner.bActive;
-	iRet = __xuiPageReleaseCapture(pWidget, pData);
-	if ( iRet != XUI_OK || !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
-	if ( !bChanged ) return XUI_OK;
-	iRet = __xuiPageSyncState(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiPageClearInteraction(pWidget, pData, 0);
 }
 
 static void __xuiPageCancelAction(xui_widget pWidget, void* pUser)
@@ -673,11 +750,11 @@ static int __xuiPageKeyDown(xui_widget pWidget, xui_page_data_t* pData, const xu
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_LEFT:
 	case XUI_KEY_UP:
-		iRet = __xuiPageSetCurrentInternal(pWidget, pData, pData->iCurrentPage - 1, 1);
+		iRet = __xuiPageSetCurrentInternal(pWidget, pData, __xuiPagePreviousPage(pData), 1);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_RIGHT:
 	case XUI_KEY_DOWN:
-		iRet = __xuiPageSetCurrentInternal(pWidget, pData, pData->iCurrentPage + 1, 1);
+		iRet = __xuiPageSetCurrentInternal(pWidget, pData, __xuiPageNextPage(pData), 1);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_HOME:
 		iRet = __xuiPageSetCurrentInternal(pWidget, pData, 1, 1);
@@ -724,7 +801,7 @@ static int __xuiPageEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
 			return XUI_OK;
 		}
-		pData->iActive = -1;
+		__xuiPageClearPressed(pData);
 		iRet = __xuiPageSyncState(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -736,8 +813,9 @@ static int __xuiPageEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		return __xuiPageKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
-			return __xuiPageCancelCapture(pWidget, pData);
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			return __xuiPageClearInteraction(pWidget, pData, 1);
 		}
 		iRet = __xuiPageSyncState(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
@@ -865,6 +943,7 @@ static int __xuiPageAccessibleGet(xui_widget pWidget, int iIndex,
 	int iItem;
 	int bCurrent;
 	int bDisabled;
+	int bOffscreen;
 
 	if ( pData == NULL || pNode == NULL || iIndex < 0 ||
 	     !__xuiPageWidgetAlive(pWidget, pData) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -872,6 +951,7 @@ static int __xuiPageAccessibleGet(xui_widget pWidget, int iIndex,
 	if ( iIndex > pData->iItemCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	bDisabled = !xuiWidgetGetEffectiveEnabled(pWidget);
+	bOffscreen = !xuiWidgetGetEffectiveVisible(pWidget);
 	if ( iIndex == 0 ) {
 		(void)snprintf(pData->sAccessibleValue, sizeof(pData->sAccessibleValue),
 			"Page %d of %d", pData->iCurrentPage, pData->iPageCount);
@@ -895,6 +975,7 @@ static int __xuiPageAccessibleGet(xui_widget pWidget, int iIndex,
 			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_INCREMENT) |
 			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_DECREMENT);
 		if ( bDisabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		if ( bOffscreen ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 		return XUI_OK;
 	}
 	iItem = iIndex - 1;
@@ -926,6 +1007,7 @@ static int __xuiPageAccessibleGet(xui_widget pWidget, int iIndex,
 	if ( bDisabled || (!pItem->bEnabled && !bCurrent && pItem->iType != XUI_PAGE_ITEM_ELLIPSIS) ) {
 		pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
 	}
+	if ( bOffscreen ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 	return XUI_OK;
 }
 
@@ -952,7 +1034,8 @@ static int __xuiPageAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( iRet != XUI_OK || !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
 		return __xuiPageSetCurrentInternal(pWidget, pData,
-			pData->iCurrentPage + (iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ? 1 : -1), 1);
+			iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ?
+				__xuiPageNextPage(pData) : __xuiPagePreviousPage(pData), 1);
 	}
 	(void)__xuiPageRefreshItems(pWidget, pData);
 	for ( i = 0; i < pData->iItemCount; i++ ) {
@@ -970,8 +1053,8 @@ static int __xuiPageAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 		return XUI_ERROR_UNSUPPORTED;
 	}
 	iTarget = pData->iCurrentPage;
-	if ( pItem->iType == XUI_PAGE_ITEM_PREV ) iTarget--;
-	else if ( pItem->iType == XUI_PAGE_ITEM_NEXT ) iTarget++;
+	if ( pItem->iType == XUI_PAGE_ITEM_PREV ) iTarget = __xuiPagePreviousPage(pData);
+	else if ( pItem->iType == XUI_PAGE_ITEM_NEXT ) iTarget = __xuiPageNextPage(pData);
 	else if ( pItem->iType == XUI_PAGE_ITEM_FIRST ) iTarget = 1;
 	else if ( pItem->iType == XUI_PAGE_ITEM_LAST ) iTarget = pData->iPageCount;
 	else if ( pItem->iType == XUI_PAGE_ITEM_PAGE ) iTarget = pItem->iPage;
@@ -1192,6 +1275,7 @@ XUI_API int xuiPageCreate(xui_context pContext, xui_widget* ppWidget, const xui_
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !__xuiPageDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiPageGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
@@ -1237,7 +1321,7 @@ XUI_API int xuiPageSetPageCount(xui_widget pWidget, int iPageCount)
 		return iRet;
 	}
 	if ( iOldCurrent != iNewCurrent ) {
-		pData->iChangeCount++;
+		if ( pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
@@ -1279,13 +1363,15 @@ XUI_API int xuiPageSetWindowSize(xui_widget pWidget, int iWindowSize)
 {
 	xui_page_data_t* pData = __xuiPageGetData(pWidget);
 	int iOldWindowSize;
+	int iOldHover;
 	int iNewWindowSize;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iNewWindowSize = __xuiPageNormalizeWindowSize(iWindowSize);
 	if ( pData->iWindowSize == iNewWindowSize ) return XUI_OK;
-	iRet = __xuiPageCancelCapture(pWidget, pData);
+	iOldHover = pData->iHover;
+	iRet = __xuiPageClearInteraction(pWidget, pData, 1);
 	if ( iRet != XUI_OK || !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
 	iOldWindowSize = pData->iWindowSize;
 	pData->iWindowSize = iNewWindowSize;
@@ -1293,6 +1379,7 @@ XUI_API int xuiPageSetWindowSize(xui_widget pWidget, int iWindowSize)
 		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->iWindowSize = iOldWindowSize;
+		pData->iHover = iOldHover;
 		return iRet;
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
@@ -1394,13 +1481,15 @@ XUI_API int xuiPageSetMetrics(xui_widget pWidget, float fItemHeight, float fPage
 	float fNewTextWidth;
 	float fNewNavWidth;
 	float fNewEllipsisWidth;
+	int iOldHover;
 	int iRet;
 
-	if ( (pData == NULL) || !isfinite(fItemHeight) || (fItemHeight < 0.0f) ||
-	     !isfinite(fPageWidth) || (fPageWidth < 0.0f) ||
-	     !isfinite(fTextWidth) || (fTextWidth < 0.0f) ||
-	     !isfinite(fNavWidth) || (fNavWidth < 0.0f) ||
-	     !isfinite(fEllipsisWidth) || (fEllipsisWidth < 0.0f) ) {
+	if ( (pData == NULL) ||
+	     !__xuiPageMetricValid(fItemHeight, XUI_LAYOUT_UNBOUNDED) ||
+	     !__xuiPageMetricValid(fPageWidth, XUI_PAGE_MAX_ITEM_WIDTH) ||
+	     !__xuiPageMetricValid(fTextWidth, XUI_PAGE_MAX_ITEM_WIDTH) ||
+	     !__xuiPageMetricValid(fNavWidth, XUI_PAGE_MAX_ITEM_WIDTH) ||
+	     !__xuiPageMetricValid(fEllipsisWidth, XUI_PAGE_MAX_ITEM_WIDTH) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	fNewItemHeight = (fItemHeight > 0.0f) ? fItemHeight : 28.0f;
@@ -1411,7 +1500,8 @@ XUI_API int xuiPageSetMetrics(xui_widget pWidget, float fItemHeight, float fPage
 	if ( pData->fItemHeight == fNewItemHeight && pData->fPageWidth == fNewPageWidth &&
 	     pData->fTextWidth == fNewTextWidth && pData->fNavWidth == fNewNavWidth &&
 	     pData->fEllipsisWidth == fNewEllipsisWidth ) return XUI_OK;
-	iRet = __xuiPageCancelCapture(pWidget, pData);
+	iOldHover = pData->iHover;
+	iRet = __xuiPageClearInteraction(pWidget, pData, 1);
 	if ( iRet != XUI_OK || !__xuiPageWidgetAlive(pWidget, pData) ) return iRet;
 	fOldItemHeight = pData->fItemHeight;
 	fOldPageWidth = pData->fPageWidth;
@@ -1431,6 +1521,7 @@ XUI_API int xuiPageSetMetrics(xui_widget pWidget, float fItemHeight, float fPage
 		pData->fTextWidth = fOldTextWidth;
 		pData->fNavWidth = fOldNavWidth;
 		pData->fEllipsisWidth = fOldEllipsisWidth;
+		pData->iHover = iOldHover;
 		return iRet;
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);

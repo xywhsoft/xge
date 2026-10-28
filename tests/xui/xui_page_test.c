@@ -105,6 +105,7 @@ int main(void)
 	float fTextWidth;
 	float fNavWidth;
 	float fEllipsisWidth;
+	float fMeasuredWidth;
 	const char* sFirstText;
 	const char* sLastText;
 	const char* sPrevText;
@@ -147,6 +148,10 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 760.0f, 160.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
+	pInvalid = pRoot;
+	iRet = xuiPageCreate(NULL, &pInvalid, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject invalid context");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -158,6 +163,12 @@ int main(void)
 	pInvalid = pRoot;
 	iRet = xuiPageCreate(pContext, &pInvalid, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nonfinite descriptor metric");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fPageWidth = XUI_LAYOUT_UNBOUNDED;
+	pInvalid = pRoot;
+	iRet = xuiPageCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject descriptor width that can overflow the item group");
 	iRet = xuiPageCreate(pContext, &pPage, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pPage != NULL, "page create");
 	iRet = xuiWidgetAddChild(pRoot, pPage);
@@ -230,6 +241,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan metric");
 	iRet = xuiPageSetMetrics(pPage, 30.0f, INFINITY, 58.0f, 48.0f, 30.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metric");
+	iRet = xuiPageSetMetrics(pPage, 30.0f, XUI_LAYOUT_UNBOUNDED,
+		58.0f, 48.0f, 30.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"reject width that can overflow the item group");
 	iRet = xuiPageGetMetrics(pPage, &fItemHeight, &fPageWidth, &fTextWidth, &fNavWidth, &fEllipsisWidth);
 	XUI_TEST_CHECK(iRet == XUI_OK && fItemHeight == 30.0f && fPageWidth == 40.0f && fTextWidth == 58.0f && fNavWidth == 48.0f && fEllipsisWidth == 30.0f, "invalid metrics preserve state");
 	iRet = xuiWidgetMeasureContent(pPage, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
@@ -263,6 +278,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid style metric");
 	iRet = xuiWidgetMeasureContent(pPage, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fY == 30.0f, "ignore invalid style metric");
+	fMeasuredWidth = tMeasured.fX;
+	arrStyle[0] = __xuiPageStyleProp("page.width.page",
+		__xuiPageStyleFloat(XUI_LAYOUT_UNBOUNDED));
+	iRet = xuiWidgetSetInlineStyle(pPage, arrStyle, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set oversized style metric");
+	iRet = xuiWidgetMeasureContent(pPage,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == fMeasuredWidth,
+		"ignore oversized style metric");
 	iRet = xuiWidgetSetInlineStyle(pPage, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear invalid style");
 
@@ -286,6 +310,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer down input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pPage && xuiPageGetActiveItem(pPage) == iNextIndex, "active next");
+	iRet = xuiInputPointerMove(pContext, tWorld.fX + 1.0f,
+		tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pPage &&
+		xuiPageGetActiveItem(pPage) == -1,
+		"dragging outside the pressed item clears its active visual");
+	iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + tInfo.tRect.fX + tInfo.tRect.fW * 0.5f,
+		tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetActiveItem(pPage) == iNextIndex,
+		"returning to the pressed item restores its active visual");
 	iRet = xuiInputPointerUp(pContext, tWorld.fX + tInfo.tRect.fX + tInfo.tRect.fW * 0.5f, tWorld.fY + tInfo.tRect.fY + tInfo.tRect.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer up input");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -427,10 +465,46 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetPageCount(pPage) == (INT_MAX / 2) + 1 && xuiPageGetCurrent(pPage) == 11, "large total avoids overflow");
 	iRet = xuiPageSetTotal(pPage, INT_MAX, INT_MAX);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetPageCount(pPage) == 1 && xuiPageGetCurrent(pPage) == 1, "large equal total avoids overflow");
+	iRet = xuiPageSetPageCount(pPage, INT_MAX);
+	if ( iRet == XUI_OK ) iRet = xuiPageSetCurrent(pPage, INT_MAX, 0);
+	if ( iRet == XUI_OK ) iRet = xuiPageGetItemCount(pPage) > 0 ? XUI_OK : XUI_ERROR_INVALID_STATE;
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == INT_MAX,
+		"maximum page builds a bounded item window without overflow");
+	iNextIndex = xuiPageGetItemCount(pPage) - 1;
+	iRet = xuiPageGetItemInfo(pPage, iNextIndex, &tInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tInfo.iType == XUI_PAGE_ITEM_NEXT &&
+		tInfo.iPage == INT_MAX && !tInfo.bEnabled,
+		"maximum page exposes a saturated disabled next item");
+	iRet = xuiSetFocusWidget(pContext, pPage);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == INT_MAX,
+		"right key saturates at the maximum page");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pPage, 0, &tAccessible);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetPerformAccessibleAction(pPage, tAccessible.iId,
+			XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == INT_MAX,
+		"accessible increment saturates at the maximum page");
+	iRet = xuiPageSetCurrent(pPage, 1, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore current after maximum page checks");
 	iRet = xuiPageSetTotal(pPage, 101, 10);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetPageCount(pPage) == 11 && xuiPageGetCurrent(pPage) == 1, "restore total");
 	iRet = xuiPageSetCurrent(pPage, 3, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetCurrent(pPage) == 3, "program current");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiPageGetState(pPage) & XUI_WIDGET_STATE_DISABLED) != 0,
+		"parent disable propagates to page state");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiPageGetState(pPage) & XUI_WIDGET_STATE_DISABLED) == 0,
+		"parent reenable restores page state");
 	iRet = __xuiPageRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render before disable capture");
 	iNextIndex = -1;
