@@ -338,6 +338,11 @@ static int __xuiDatePickerClickPanelRect(xui_datepicker_demo_t* pDemo, xui_widge
 	iRet = xuiInputPointerDown(pDemo->pContext, tWorld.fX + tRect.fX + tRect.fW * 0.5f, tWorld.fY + tRect.fY + tRect.fH * 0.5f,
 		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pDemo->pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pDemo->pContext, tWorld.fX + tRect.fX + tRect.fW * 0.5f, tWorld.fY + tRect.fY + tRect.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pDemo->pContext);
 }
 

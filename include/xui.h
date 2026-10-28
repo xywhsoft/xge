@@ -5285,7 +5285,8 @@ typedef struct xui_icon_picker_desc_t {
 } xui_icon_picker_desc_t;
 
 /* 日期选择器创建描述。
- * 弹层宽高为 0 时使用模式默认值；自定义尺寸必须满足对应模式的最小可用布局。
+ * 弹层宽高为 0 时使用模式默认值；自定义尺寸必须满足对应模式的最小可用布局，
+ * 且所有浮点度量不得超过 XUI_LAYOUT_UNBOUNDED。
  * 同时设置上下限时要求规范化后的 tMin <= tMax。
  * sFormat、sRangeSeparator 在创建时复制；pFont 为借用句柄，调用方须保证其生命周期覆盖控件。 */
 typedef struct xui_date_picker_desc_t {
@@ -12123,7 +12124,8 @@ XUI_API int xuiDatePickerClose(xui_widget pWidget);
 XUI_API int xuiDatePickerToggle(xui_widget pWidget);
 /* 弹层是否打开。 */
 XUI_API int xuiDatePickerIsOpen(xui_widget pWidget);
-/* 设置弹层尺寸；单个参数为 0 时保留该维度，非零尺寸须满足当前模式的最小布局。 */
+/* 设置弹层尺寸；单个参数为 0 时保留该维度，非零尺寸须满足当前模式的最小布局，
+ * 且不得超过 XUI_LAYOUT_UNBOUNDED。两个参数均为 0 时不改变自定义尺寸状态。 */
 XUI_API int xuiDatePickerSetPopupSize(xui_widget pWidget, float fWidth, float fHeight);
 /* 输出弹层尺寸。 */
 XUI_API int xuiDatePickerGetPopupSize(xui_widget pWidget, float* pWidth, float* pHeight);
@@ -12131,7 +12133,7 @@ XUI_API int xuiDatePickerGetPopupSize(xui_widget pWidget, float* pWidth, float* 
 XUI_API int xuiDatePickerSetPopupPlacement(xui_widget pWidget, int iPlacement);
 /* 读取弹层方位。 */
 XUI_API int xuiDatePickerGetPopupPlacement(xui_widget pWidget);
-/* 设置度量（边框宽）。 */
+/* 设置度量（边框宽，范围 0..XUI_LAYOUT_UNBOUNDED）。 */
 XUI_API int xuiDatePickerSetMetrics(xui_widget pWidget, float fBorderWidth);
 /* 输出度量。 */
 XUI_API int xuiDatePickerGetMetrics(xui_widget pWidget, float* pBorderWidth);

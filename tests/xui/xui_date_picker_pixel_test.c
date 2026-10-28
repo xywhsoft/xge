@@ -176,9 +176,16 @@ int main(void)
 	if (!picker) { pixel_cleanup(&f); return 1; }
 	PIXEL_CHECK(xuiWidgetAddChild(f.root, picker) == XUI_OK);
 	for (w = 0; w <= 35; w++) {
+		float button = fminf(31.0f, (float)w);
+		float available = fmaxf(0.0f, (float)w - button);
+		float text_left = fminf(8.0f, available);
+		float text_right = available;
+		if (text_right - text_left > 6.0f) text_right -= 6.0f;
+		else text_right = text_left;
 		PIXEL_CHECK(xuiWidgetSetRect(picker, (xui_rect_t){-11, -13, w, 31}) == XUI_OK);
-		pixel_rect(xuiDatePickerGetButtonRect(picker), (float)w - 31, 0, 31, 31);
-		pixel_rect(xuiDatePickerGetTextRect(picker), 8, 0, fmaxf(1, (float)w - 45), 31);
+		pixel_rect(xuiDatePickerGetButtonRect(picker), (float)w - button, 0, button, w > 0 ? 31.0f : 0.0f);
+		pixel_rect(xuiDatePickerGetTextRect(picker), text_left, 0,
+			fmaxf(0.0f, text_right - text_left), w > 0 ? 31.0f : 0.0f);
 	}
 	for (mode = XUI_DATE_PICKER_MODE_DATE; mode <= XUI_DATE_PICKER_MODE_DATETIME_RANGE; mode++) {
 		PIXEL_CHECK(xuiDatePickerSetMode(picker, mode) == XUI_OK);
