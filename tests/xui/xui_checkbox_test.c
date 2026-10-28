@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -79,6 +80,8 @@ int main(void)
 	xui_event_t tEvent;
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
+	xui_rect_t tTextRect;
+	xui_rect_t tInvalidSrc;
 	xui_rect_t tLastSrc;
 	xui_rect_i_t tFullRect;
 	int iChanged;
@@ -161,8 +164,23 @@ int main(void)
 	iRet = xuiUpdate(pContext, 0.016f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	tFullRect = (xui_rect_i_t){0, 0, 220, 80};
+	xuiTestProxyResetTextCounters(&tState);
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render default checkbox");
+	XUI_TEST_CHECK(xuiTestProxyGetTextMeasureCount(&tState) == 0,
+	               "checkbox cache render avoids redundant text measurement");
+	tRect = xuiCheckBoxGetIndicatorRect(pCheck);
+	tTextRect = xuiCheckBoxGetTextRect(pCheck);
+	XUI_TEST_CHECK(tRect.fX >= tTextRect.fX + tTextRect.fW,
+	               "rtl checkbox mirrors indicator after text");
+	iRet = xuiCheckBoxSetTextFlags(pCheck, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore checkbox ltr layout");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render ltr checkbox");
+	tRect = xuiCheckBoxGetIndicatorRect(pCheck);
+	tTextRect = xuiCheckBoxGetTextRect(pCheck);
+	XUI_TEST_CHECK(tRect.fX + tRect.fW <= tTextRect.fX,
+	               "ltr checkbox keeps indicator before text");
 	xuiTestSurfaceReset(pTarget);
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
@@ -262,6 +280,24 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetChecked(pCheck) == 0 && iChanged == 3,
 	               "blurred keyboard press does not toggle");
+	iRet = xuiInputPointerMove(pContext, 20.0f, 16.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDown(pContext, 20.0f, 16.0f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pCheck,
+	               "checkbox captures pointer before ancestor disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+	               (xuiCheckBoxGetState(pCheck) & XUI_WIDGET_STATE_DISABLED) != 0 &&
+	               (xuiCheckBoxGetState(pCheck) & XUI_WIDGET_STATE_ACTIVE) == 0,
+	               "ancestor disable cancels checkbox pointer session");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, 20.0f, 16.0f,
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetChecked(pCheck) == 0 && iChanged == 3,
+	               "cancelled ancestor-disabled press cannot toggle later");
 	iRet = xuiCheckBoxSetChecked(pCheck, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetChecked(pCheck) == 1, "set checked");
 	iRet = xuiCheckBoxSetIndicatorSize(pCheck, NAN);
@@ -270,13 +306,30 @@ int main(void)
 	iRet = xuiCheckBoxSetGap(pCheck, INFINITY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiCheckBoxGetGap(pCheck) == 10.0f,
 	               "reject infinite gap");
+	iRet = xuiCheckBoxSetIndicatorSize(pCheck, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiCheckBoxGetIndicatorSize(pCheck) == 20.0f,
+	               "reject unbounded indicator size");
+	iRet = xuiCheckBoxSetGap(pCheck, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiCheckBoxGetGap(pCheck) == 10.0f,
+	               "reject unbounded gap");
 
 	iRet = xuiBuiltinAssetGetAtlas(pContext, &pAtlas);
 	XUI_TEST_CHECK(iRet == XUI_OK && pAtlas != NULL, "builtin atlas available");
 	iRet = xuiCheckBoxUseBuiltinAtlas(pCheck, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetUseBuiltinAtlas(pCheck) == 1, "enable builtin atlas");
 	xuiBuiltinAssetGetRect("checkbox_checked", &tRect);
-	xuiCheckBoxSetIndicatorSurface(pCheck, pAtlas, tRect, pAtlas, tRect);
+	tInvalidSrc = tRect;
+	tInvalidSrc.fX = NAN;
+	iRet = xuiCheckBoxSetIndicatorSurface(pCheck, pAtlas, tInvalidSrc, pAtlas, tRect);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+	               "reject nan unchecked indicator source");
+	tInvalidSrc = tRect;
+	tInvalidSrc.fH = FLT_MAX;
+	iRet = xuiCheckBoxSetIndicatorSurface(pCheck, pAtlas, tRect, pAtlas, tInvalidSrc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+	               "reject unbounded checked indicator source");
+	iRet = xuiCheckBoxSetIndicatorSurface(pCheck, pAtlas, tRect, pAtlas, tRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set checkbox indicator surfaces");
 	XUI_TEST_CHECK(xuiCheckBoxGetUseBuiltinAtlas(pCheck) == 1, "builtin atlas flag preserved");
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render atlas checkbox");
@@ -298,6 +351,11 @@ int main(void)
 	               "mixed state accessibility");
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render default mixed indicator with atlas enabled");
+	tInvalidSrc = tRect;
+	tInvalidSrc.fW = INFINITY;
+	iRet = xuiCheckBoxSetMixedIndicatorSurface(pCheck, pAtlas, tInvalidSrc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+	               "reject infinite mixed indicator source");
 	iRet = xuiCheckBoxSetMixedIndicatorSurface(pCheck, pAtlas, tRect);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set mixed indicator surface");
 	pAtlas = NULL;

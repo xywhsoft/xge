@@ -60,7 +60,6 @@ typedef struct xui_checkbox_data_t {
 	int bAutoThreeState;
 	int bKeyboardActive;
 	xui_pointer_press_t tPointerPress;
-	int iChangeCount;
 	int bUseBuiltinAtlas;
 	xui_surface pUncheckedSurface;
 	xui_surface pCheckedSurface;
@@ -77,9 +76,30 @@ static uint32_t __xuiCheckBoxColorAlpha(uint32_t iColor)
 	return iColor & 0x000000ffu;
 }
 
+static int __xuiCheckBoxFloatValid(float fValue)
+{
+	return isfinite(fValue) &&
+	       fValue >= -XUI_LAYOUT_UNBOUNDED &&
+	       fValue <= XUI_LAYOUT_UNBOUNDED;
+}
+
 static int __xuiCheckBoxNonNegativeFloatValid(float fValue)
 {
-	return isfinite(fValue) && fValue >= 0.0f;
+	return __xuiCheckBoxFloatValid(fValue) && fValue >= 0.0f;
+}
+
+static int __xuiCheckBoxSourceRectValid(xui_rect_t tRect)
+{
+	return __xuiCheckBoxFloatValid(tRect.fX) &&
+	       __xuiCheckBoxFloatValid(tRect.fY) &&
+	       __xuiCheckBoxNonNegativeFloatValid(tRect.fW) &&
+	       __xuiCheckBoxNonNegativeFloatValid(tRect.fH);
+}
+
+static int __xuiCheckBoxRectEqual(xui_rect_t tA, xui_rect_t tB)
+{
+	return tA.fX == tB.fX && tA.fY == tB.fY &&
+	       tA.fW == tB.fW && tA.fH == tB.fH;
 }
 
 static int __xuiCheckBoxDescValid(const xui_checkbox_desc_t* pDesc)
@@ -250,9 +270,6 @@ static uint32_t __xuiCheckBoxComputeState(xui_widget pWidget, xui_checkbox_data_
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
-		iState |= XUI_WIDGET_STATE_DISABLED;
-	}
 	if ( (pData != NULL) && pData->iCheckState == XUI_CHECKBOX_CHECK_STATE_CHECKED ) {
 		iState |= XUI_CHECKBOX_STATE_CHECKED;
 	} else if ( (pData != NULL) && pData->iCheckState == XUI_CHECKBOX_CHECK_STATE_MIXED ) {
@@ -318,9 +335,7 @@ static xui_vec2_t __xuiCheckBoxMeasureText(xui_widget pWidget, xui_font pFont,
 static void __xuiCheckBoxLayoutContent(xui_widget pWidget, xui_checkbox_data_t* pData, xui_checkbox_data_t* pResolved)
 {
 	xui_rect_t tContent;
-	xui_vec2_t tTextSize;
 	float fSize;
-	float fLineH;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
 	fSize = pResolved->fIndicatorSize;
@@ -330,16 +345,19 @@ static void __xuiCheckBoxLayoutContent(xui_widget pWidget, xui_checkbox_data_t* 
 	if ( fSize > tContent.fH ) {
 		fSize = tContent.fH;
 	}
-	tTextSize = __xuiCheckBoxMeasureText(pWidget, pResolved->pFont,
-		pData->sText, pResolved->iTextFlags);
-	fLineH = (tTextSize.fY > fSize) ? tTextSize.fY : fSize;
-	if ( fLineH > tContent.fH ) {
-		fLineH = tContent.fH;
+	if ( (pResolved->iTextFlags & XUI_TEXT_RTL) != 0 ) {
+		pData->tIndicatorRect = xuiInternalRectFromFloatNearest(
+			tContent.fX + tContent.fW - fSize,
+			tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
+		pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX,
+			tContent.fY, tContent.fW - fSize - pResolved->fGap, tContent.fH);
+	} else {
+		pData->tIndicatorRect = xuiInternalRectFromFloatNearest(tContent.fX,
+			tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
+		pData->tTextRect = xuiInternalRectFromFloatNearest(
+			tContent.fX + fSize + pResolved->fGap,
+			tContent.fY, tContent.fW - fSize - pResolved->fGap, tContent.fH);
 	}
-	pData->tIndicatorRect = xuiInternalRectFromFloatNearest(tContent.fX,
-		tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
-	pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX + fSize + pResolved->fGap,
-		tContent.fY, tContent.fW - fSize - pResolved->fGap, tContent.fH);
 }
 
 static int __xuiCheckBoxContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -527,7 +545,6 @@ static int __xuiCheckBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	xui_checkbox_visual_t tVisual;
 	xui_proxy pProxy;
 	xui_rect_t tIndicator;
-	uint32_t iState;
 	uint32_t iRenderState;
 	int iVisual;
 	int iCheckState;
@@ -546,12 +563,7 @@ static int __xuiCheckBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	__xuiCheckBoxResolve(pWidget, pData, &tResolved);
-	iRenderState = iStateId;
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
-		iRenderState = XUI_WIDGET_STATE_DISABLED;
-		if ( pData->iCheckState == XUI_CHECKBOX_CHECK_STATE_CHECKED ) iRenderState |= XUI_CHECKBOX_STATE_CHECKED;
-		else if ( pData->iCheckState == XUI_CHECKBOX_CHECK_STATE_MIXED ) iRenderState |= XUI_CHECKBOX_STATE_MIXED;
-	}
+	iRenderState = __xuiCheckBoxStateId(iStateId);
 	iVisual = __xuiCheckBoxStateVisual(iRenderState);
 	if ( (iRenderState & XUI_CHECKBOX_STATE_MIXED) != 0 ) iCheckState = XUI_CHECKBOX_CHECK_STATE_MIXED;
 	else if ( (iRenderState & XUI_CHECKBOX_STATE_CHECKED) != 0 ) iCheckState = XUI_CHECKBOX_CHECK_STATE_CHECKED;
@@ -562,8 +574,10 @@ static int __xuiCheckBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	iState = iRenderState;
-	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiCheckBoxColorAlpha(tResolved.iFocusColor) != 0) ) {
+	if ( ((iRenderState & XUI_WIDGET_STATE_FOCUS) != 0) &&
+	     ((iRenderState & XUI_WIDGET_STATE_DISABLED) == 0) &&
+	     (tResolved.fFocusWidth > 0.0f) &&
+	     (__xuiCheckBoxColorAlpha(tResolved.iFocusColor) != 0) ) {
 		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tIndicator, -2.0f), tResolved.fFocusWidth, tResolved.iFocusColor);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -582,7 +596,6 @@ static void __xuiCheckBoxNotify(xui_widget pWidget, xui_checkbox_data_t* pData)
 	void* pUser;
 	int iCheckState;
 
-	pData->iChangeCount++;
 	onChange = pData->onChange;
 	pUser = pData->pChangeUser;
 	iCheckState = pData->iCheckState;
@@ -629,7 +642,8 @@ static void __xuiCheckBoxDefaultAction(xui_widget pWidget, void* pUser)
 
 	(void)pUser;
 	pData = __xuiCheckBoxGetData(pWidget);
-	if ( pData == NULL ) {
+	if ( pData == NULL || !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return;
 	}
 	(void)__xuiCheckBoxSetCheckStateInternal(pWidget, pData, __xuiCheckBoxNextCheckState(pData), 1);
@@ -651,7 +665,8 @@ static int __xuiCheckBoxEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		pData->bKeyboardActive = 0;
 		iRet = xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
 		if ( iRet != XUI_OK ) return iRet;
@@ -680,8 +695,9 @@ static int __xuiCheckBoxEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			if ( iRet == XUI_OK ) iRet = __xuiCheckBoxSyncState(pWidget, pData);
 			if ( iRet != XUI_OK ) {
 				(void)xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+				return iRet;
 			}
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
@@ -692,7 +708,8 @@ static int __xuiCheckBoxEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			if ( iRet == XUI_OK && __xuiCheckBoxDataAlive(pWidget, pData) ) {
 				iRet = __xuiCheckBoxSyncState(pWidget, pData);
 			}
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
@@ -704,14 +721,16 @@ static int __xuiCheckBoxEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 			iRet = __xuiCheckBoxSetCheckStateInternal(pWidget, pData, __xuiCheckBoxNextCheckState(pData), 1);
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_DOWN:
 		if ( (pEvent->pTarget == pWidget) && pEvent->iKey == XUI_KEY_SPACE ) {
 			pData->bKeyboardActive = 1;
 			iRet = __xuiCheckBoxSyncState(pWidget, pData);
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_UP:
@@ -720,9 +739,12 @@ static int __xuiCheckBoxEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 				pData->bKeyboardActive = 0;
 				iRet = __xuiCheckBoxSyncState(pWidget, pData);
 				if ( iRet == XUI_OK ) iRet = __xuiCheckBoxSetCheckStateInternal(pWidget, pData, __xuiCheckBoxNextCheckState(pData), 1);
-				return iRet | XUI_EVENT_DISPATCH_STOP;
+				if ( iRet != XUI_OK ) return iRet;
+				return XUI_EVENT_DISPATCH_STOP;
 			}
-			return __xuiCheckBoxSyncState(pWidget, pData) | XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiCheckBoxSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	default:
@@ -1009,7 +1031,9 @@ XUI_API int xuiCheckBoxCreate(xui_context pContext, xui_widget* ppWidget, const 
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
-	if ( !__xuiCheckBoxDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiCheckBoxDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiCheckBoxGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -1149,7 +1173,9 @@ XUI_API int xuiCheckBoxSetAutoThreeState(xui_widget pWidget, int bEnable)
 {
 	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bAutoThreeState = (bEnable != 0);
+	bEnable = (bEnable != 0);
+	if ( pData->bAutoThreeState == bEnable ) return XUI_OK;
+	pData->bAutoThreeState = bEnable;
 	return XUI_OK;
 }
 
@@ -1199,7 +1225,8 @@ XUI_API int xuiCheckBoxSetIndicatorSize(xui_widget pWidget, float fSize)
 {
 	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
 	int iRet;
-	if ( (pData == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiCheckBoxNonNegativeFloatValid(fSize) ||
+	     (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fIndicatorSize == fSize ) return XUI_OK;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1265,10 +1292,11 @@ XUI_API int xuiCheckBoxSetIndicatorSurface(xui_widget pWidget, xui_surface pUnch
 {
 	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
 	int iRet;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !__xuiCheckBoxSourceRectValid(tUncheckedSrc) ||
+	     !__xuiCheckBoxSourceRectValid(tCheckedSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pUncheckedSurface == pUncheckedSurface && pData->pCheckedSurface == pCheckedSurface &&
-	     memcmp(&pData->tUncheckedSrc, &tUncheckedSrc, sizeof(tUncheckedSrc)) == 0 &&
-	     memcmp(&pData->tCheckedSrc, &tCheckedSrc, sizeof(tCheckedSrc)) == 0 ) return XUI_OK;
+	     __xuiCheckBoxRectEqual(pData->tUncheckedSrc, tUncheckedSrc) &&
+	     __xuiCheckBoxRectEqual(pData->tCheckedSrc, tCheckedSrc) ) return XUI_OK;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pUncheckedSurface = pUncheckedSurface;
@@ -1293,9 +1321,11 @@ XUI_API int xuiCheckBoxSetMixedIndicatorSurface(xui_widget pWidget, xui_surface 
 {
 	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
 	int iRet;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !__xuiCheckBoxSourceRectValid(tSrc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	if ( pData->pMixedSurface == pSurface &&
-	     memcmp(&pData->tMixedSrc, &tSrc, sizeof(tSrc)) == 0 ) return XUI_OK;
+	     __xuiCheckBoxRectEqual(pData->tMixedSrc, tSrc) ) return XUI_OK;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pMixedSurface = pSurface;
