@@ -100,6 +100,15 @@ static int __xuiToolbarDispatchMove(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiToolbarDispatchDragMove(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerMove(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiToolbarDispatchDown(xui_context pContext, float fX, float fY)
 {
 	int iRet;
@@ -271,6 +280,12 @@ int main(void)
 		tNode.iRole == XUI_ACCESSIBLE_ROLE_BUTTON && strcmp(tNode.sName, "New") == 0 &&
 		tNode.iRow == 0 && tNode.iColumn == 0 && tNode.iRowCount == 1 && tNode.iColumnCount == 1,
 		"toolbar accessibility item");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pToolbar, 4, &tNode) == XUI_OK &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) == 0u && tNode.iActions == 0u,
+		"disabled item exposes no accessibility action");
 
 	iRet = __xuiToolbarClickItem(pContext, pToolbar, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetItemChecked(pToolbar, 1) && tEvents.iSelectCount == 1 && tEvents.iLastValue == 11, "toggle click");
@@ -278,6 +293,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == 1, "disabled ignored");
 	tWorld = xuiWidgetGetWorldRect(pToolbar);
 	tItem0 = xuiToolbarGetItemRect(pToolbar, 0);
+	tItem1 = xuiToolbarGetItemRect(pToolbar, 1);
+	iBefore = tEvents.iSelectCount;
+	iRet = __xuiToolbarDispatchDown(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetActiveIndex(pToolbar) == 0 &&
+		xuiToolbarGetHoverIndex(pToolbar) == 0, "item drag starts pressed");
+	iRet = __xuiToolbarDispatchDragMove(pContext,
+		tWorld.fX + tItem1.fX + tItem1.fW * 0.5f,
+		tWorld.fY + tItem1.fY + tItem1.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetActiveIndex(pToolbar) == 0 &&
+		xuiToolbarGetHoverIndex(pToolbar) == -1,
+		"dragging away preserves origin without hovering another item");
+	iRet = __xuiToolbarDispatchDragMove(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == 0,
+		"dragging back restores pressed target");
+	iRet = __xuiToolbarDispatchDragMove(pContext,
+		tWorld.fX + tItem1.fX + tItem1.fW * 0.5f,
+		tWorld.fY + tItem1.fY + tItem1.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = __xuiToolbarDispatchUp(pContext,
+		tWorld.fX + tItem1.fX + tItem1.fW * 0.5f,
+		tWorld.fY + tItem1.fY + tItem1.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore &&
+		xuiToolbarGetActiveIndex(pToolbar) == -1 && xuiGetPointerCapture(pContext) == NULL,
+		"release away cancels item activation");
 	iBefore = tEvents.iSelectCount;
 	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
 		(int)(tWorld.fX + tItem0.fX + tItem0.fW * 0.5f),
@@ -357,13 +399,26 @@ int main(void)
 	iRet = __xuiToolbarLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetOverflowCount(pToolbar) == 0,
 		"overflow button does not reserve space when all items fit");
+	XUI_TEST_CHECK(xuiToolbarSetHoverIndex(pToolbar, 6) == XUI_OK &&
+		xuiToolbarGetHoverIndex(pToolbar) == 6, "focus last item before overflow resize");
 	(void)xuiWidgetSetRect(pToolbar, (xui_rect_t){20.0f, 20.0f, 210.0f, 34.0f});
 	iRet = __xuiToolbarLayoutRender(pContext, pTarget);
-	XUI_TEST_CHECK(iRet == XUI_OK, "overflow render");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == -1,
+		"overflow resize clears hidden focus");
 	iFirst = xuiToolbarGetOverflowFirst(pToolbar);
 	iCount = xuiToolbarGetOverflowCount(pToolbar);
 	tOverflow = xuiToolbarGetOverflowRect(pToolbar);
 	XUI_TEST_CHECK(iFirst > 0 && iCount > 0 && tOverflow.fW > 0.0f, "overflow query");
+	XUI_TEST_CHECK(xuiToolbarSetHoverIndex(pToolbar, 6) == XUI_OK &&
+		xuiToolbarGetHoverIndex(pToolbar) == -1,
+		"hidden overflow item cannot be focused directly");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pToolbar, 7, &tNode) == XUI_OK &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0u && tNode.iActions == 0u &&
+		xuiWidgetPerformAccessibleAction(pToolbar, 8u,
+			XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL) == XUI_ERROR_INVALID_STATE,
+		"overflowed item exposes no direct accessibility action");
 	iRet = __xuiToolbarKey(pContext, XUI_KEY_END);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == -1,
 		"keyboard end targets overflow button");
@@ -428,8 +483,33 @@ int main(void)
 		"owning touch commits toolbar overflow exactly once");
 	iRet = __xuiToolbarDispatchDown(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && (xuiToolbarGetState(pToolbar) & XUI_TOOLBAR_STATE_OVERFLOW_ACTIVE) != 0u, "overflow active");
-	iRet = __xuiToolbarDispatchUp(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
-	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iOverflowCount == 4 && tEvents.iOverflowFirst == iFirst && tEvents.iOverflowItems == iCount, "overflow callback");
+	iBefore = tEvents.iOverflowCount;
+	iRet = __xuiToolbarDispatchDragMove(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiToolbarGetState(pToolbar) & XUI_TOOLBAR_STATE_OVERFLOW_ACTIVE) == 0u &&
+		xuiGetPointerCapture(pContext) == pToolbar,
+		"overflow press visual clears while dragged away");
+	iRet = __xuiToolbarDispatchDragMove(pContext,
+		tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f,
+		tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiToolbarGetState(pToolbar) & XUI_TOOLBAR_STATE_OVERFLOW_ACTIVE) != 0u,
+		"overflow press visual restores on reentry");
+	iRet = __xuiToolbarDispatchDragMove(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = __xuiToolbarDispatchUp(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iOverflowCount == iBefore,
+		"release away cancels overflow activation");
+	iRet = __xuiToolbarDispatchDown(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = __xuiToolbarDispatchUp(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iOverflowCount == iBefore + 1 &&
+		tEvents.iOverflowFirst == iFirst && tEvents.iOverflowItems == iCount,
+		"overflow callback");
 
 	iRet = xuiToolbarGetMetrics(pToolbar, &tMetrics);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMetrics.fItemWidth >= 1.0f, "metrics get");
@@ -443,6 +523,12 @@ int main(void)
 	tBadMetrics.fItemWidth = NAN;
 	XUI_TEST_CHECK(xuiToolbarSetMetrics(pToolbar, &tBadMetrics) == XUI_ERROR_INVALID_ARGUMENT,
 		"nan metrics rejected");
+	tBadMetrics = tMetrics;
+	tBadMetrics.fItemWidth = XUI_LAYOUT_UNBOUNDED;
+	iChangeCount = xuiToolbarGetChangeCount(pToolbar);
+	XUI_TEST_CHECK(xuiToolbarSetMetrics(pToolbar, &tBadMetrics) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiToolbarGetChangeCount(pToolbar) == iChangeCount,
+		"combined geometry overflow rejected transactionally");
 	XUI_TEST_CHECK(xuiToolbarSetOverflow(pToolbar, 1, NAN, __xuiToolbarOverflow, &tEvents) == XUI_ERROR_INVALID_ARGUMENT,
 		"nan overflow size rejected");
 	tOwnedItem = arrItems[0];

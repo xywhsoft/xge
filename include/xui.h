@@ -11439,7 +11439,7 @@ XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButto
 XUI_API int xuiToolbarIsOverflowEnabled(xui_widget pWidget);
 /* 批量设置工具项；Toolbar 复制 sText/sTooltip，pIcon/pUser 仍由调用方管理，输入 tRect 被忽略。 */
 XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pItems, int iCount);
-/* 追加工具项（类型区分按钮/展开/自定义）。 */
+/* 追加工具项（类型区分按钮、切换按钮与分隔线）。 */
 XUI_API int xuiToolbarAddItem(xui_widget pWidget, const char* sText, int iType, int iValue);
 /* 追加分隔线。 */
 XUI_API int xuiToolbarAddSeparator(xui_widget pWidget);
@@ -11459,7 +11459,7 @@ XUI_API int xuiToolbarSetOrientation(xui_widget pWidget, int iOrientation);
 XUI_API int xuiToolbarGetOrientation(xui_widget pWidget);
 /* 设置工具项与分隔线尺寸。 */
 XUI_API int xuiToolbarSetItemSize(xui_widget pWidget, float fWidth, float fHeight, float fSeparatorSize);
-/* 设置工具项分组（组内单选）。 */
+/* 设置工具项布局分组；相邻不同组之间使用 group gap。 */
 XUI_API int xuiToolbarSetItemGroup(xui_widget pWidget, int iIndex, int iGroup);
 /* 读取工具项分组。 */
 XUI_API int xuiToolbarGetItemGroup(xui_widget pWidget, int iIndex);
@@ -11473,7 +11473,7 @@ XUI_API const char* xuiToolbarGetHoverTooltip(xui_widget pWidget);
 XUI_API int xuiToolbarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnabled);
 /* 读取启用状态。 */
 XUI_API int xuiToolbarIsItemEnabled(xui_widget pWidget, int iIndex);
-/* 设置工具项勾选态（可单选组）。 */
+/* 设置按钮或切换按钮的勾选态；分组不隐含互斥选择语义。 */
 XUI_API int xuiToolbarSetItemChecked(xui_widget pWidget, int iIndex, int bChecked);
 /* 读取勾选态。 */
 XUI_API int xuiToolbarGetItemChecked(xui_widget pWidget, int iIndex);

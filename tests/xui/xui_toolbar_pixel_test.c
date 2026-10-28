@@ -78,7 +78,9 @@ static void verify_layout(xui_widget bar, const xui_toolbar_metrics_t *m, int w,
     float iw = fmaxf(0, w - 2 * x), ih = fmaxf(0, h - 2 * y);
     int vertical = m->iOrientation == XUI_ORIENTATION_VERTICAL;
     float cursor = vertical ? y : x, end = vertical ? y + ih : x + iw, required = 0, limit;
-    float axis = 2 * m->fPaddingX, cross = 2 * m->fPaddingY + (vertical ? m->fItemWidth : m->fItemHeight);
+    float axis = 2 * (vertical ? m->fPaddingY : m->fPaddingX);
+    float cross = 2 * (vertical ? m->fPaddingX : m->fPaddingY) +
+        (vertical ? m->fItemWidth : m->fItemHeight);
     float overflowSize;
     int i, prev = 0, first = -1, needsOverflow;
     xui_rect_t expected, actual;
@@ -220,7 +222,7 @@ static void geometry(int odd, int offset, int vertical)
     CHECK(xuiToolbarGetMetrics(bar, &m) == XUI_OK);
     m.iOrientation = vertical ? XUI_ORIENTATION_VERTICAL : XUI_ORIENTATION_HORIZONTAL;
     m.fItemWidth = 40.75f; m.fItemHeight = 26.5f; m.fSeparatorSize = 7.75f;
-    m.fPaddingX = m.fPaddingY = 2.5f; m.fGroupGap = 3.25f; m.fOverflowSize = 19.75f;
+    m.fPaddingX = 2.5f; m.fPaddingY = 3.5f; m.fGroupGap = 3.25f; m.fOverflowSize = 19.75f;
     m.fIconSize = 13.5f; m.fIconGap = 3.25f;
     CHECK(xuiToolbarSetMetrics(bar, &m) == XUI_OK);
     memset(&colors, 0, sizeof(colors)); colors.iSize = sizeof(colors);

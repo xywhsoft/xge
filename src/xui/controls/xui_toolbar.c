@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -49,6 +50,16 @@ typedef struct xui_toolbar_resolved_t {
 static xui_toolbar_data_t* __xuiToolbarGetData(xui_widget pWidget);
 static int __xuiToolbarMetricsValid(const xui_toolbar_metrics_t* pMetrics);
 static int __xuiToolbarColorsValid(const xui_toolbar_colors_t* pColors);
+
+static void __xuiToolbarMarkChanged(xui_toolbar_data_t* pData)
+{
+	if ( pData != NULL && pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
+}
+
+static void __xuiToolbarIncrementCount(int* pCount)
+{
+	if ( pCount != NULL && *pCount < INT_MAX ) (*pCount)++;
+}
 
 static int __xuiToolbarCancelPress(xui_widget pWidget, xui_toolbar_data_t* pData)
 {
@@ -217,16 +228,32 @@ static int __xuiToolbarDescValid(const xui_toolbar_desc_t* pDesc)
 	return 1;
 }
 
+static int __xuiToolbarMetricValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f && fValue <= XUI_LAYOUT_UNBOUNDED;
+}
+
 static int __xuiToolbarMetricsValid(const xui_toolbar_metrics_t* pMetrics)
 {
+	double fMaximumAxis;
+	double fMaximumCross;
+	double fMaximumItem;
+	double fPaddingAxis;
+	double fPaddingCross;
+
 	if ( pMetrics == NULL ) return 0;
 	if ( (pMetrics->iSize != 0) && (pMetrics->iSize < sizeof(*pMetrics)) ) return 0;
 	if ( !__xuiToolbarOrientationValid(pMetrics->iOrientation) ) return 0;
-	if ( !isfinite(pMetrics->fItemWidth) || !isfinite(pMetrics->fItemHeight) ||
-	     !isfinite(pMetrics->fSeparatorSize) || !isfinite(pMetrics->fGroupGap) ||
-	     !isfinite(pMetrics->fPaddingX) || !isfinite(pMetrics->fPaddingY) ||
-	     !isfinite(pMetrics->fOverflowSize) || !isfinite(pMetrics->fBorderWidth) ||
-	     !isfinite(pMetrics->fIconSize) || !isfinite(pMetrics->fIconGap) ||
+	if ( !__xuiToolbarMetricValid(pMetrics->fItemWidth) ||
+	     !__xuiToolbarMetricValid(pMetrics->fItemHeight) ||
+	     !__xuiToolbarMetricValid(pMetrics->fSeparatorSize) ||
+	     !__xuiToolbarMetricValid(pMetrics->fGroupGap) ||
+	     !__xuiToolbarMetricValid(pMetrics->fPaddingX) ||
+	     !__xuiToolbarMetricValid(pMetrics->fPaddingY) ||
+	     !__xuiToolbarMetricValid(pMetrics->fOverflowSize) ||
+	     !__xuiToolbarMetricValid(pMetrics->fBorderWidth) ||
+	     !__xuiToolbarMetricValid(pMetrics->fIconSize) ||
+	     !__xuiToolbarMetricValid(pMetrics->fIconGap) ||
 	     (pMetrics->fItemWidth <= 0.0f) ||
 	     (pMetrics->fItemHeight <= 0.0f) ||
 	     (pMetrics->fSeparatorSize <= 0.0f) ||
@@ -239,6 +266,27 @@ static int __xuiToolbarMetricsValid(const xui_toolbar_metrics_t* pMetrics)
 	     (pMetrics->fIconGap < 0.0f) ) {
 		return 0;
 	}
+	if ( (double)pMetrics->fBorderWidth * 2.0 > (double)XUI_LAYOUT_UNBOUNDED ||
+	     (double)pMetrics->fIconSize + (double)pMetrics->fIconGap >
+		     (double)XUI_LAYOUT_UNBOUNDED ) return 0;
+	if ( pMetrics->iOrientation == XUI_ORIENTATION_VERTICAL ) {
+		fMaximumItem = pMetrics->fItemHeight > pMetrics->fSeparatorSize ?
+			(double)pMetrics->fItemHeight : (double)pMetrics->fSeparatorSize;
+		fPaddingAxis = (double)pMetrics->fPaddingY * 2.0;
+		fPaddingCross = (double)pMetrics->fPaddingX * 2.0;
+		fMaximumCross = fPaddingCross + (double)pMetrics->fItemWidth;
+	} else {
+		fMaximumItem = pMetrics->fItemWidth > pMetrics->fSeparatorSize ?
+			(double)pMetrics->fItemWidth : (double)pMetrics->fSeparatorSize;
+		fPaddingAxis = (double)pMetrics->fPaddingX * 2.0;
+		fPaddingCross = (double)pMetrics->fPaddingY * 2.0;
+		fMaximumCross = fPaddingCross + (double)pMetrics->fItemHeight;
+	}
+	fMaximumAxis = fPaddingAxis +
+		fMaximumItem * (double)XUI_TOOLBAR_ITEM_CAPACITY +
+		(double)pMetrics->fGroupGap * (double)(XUI_TOOLBAR_ITEM_CAPACITY - 1);
+	if ( fMaximumAxis > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fMaximumCross > (double)XUI_LAYOUT_UNBOUNDED ) return 0;
 	return 1;
 }
 
@@ -287,6 +335,7 @@ static xui_vec2_t __xuiToolbarMeasureText(xui_widget pWidget, xui_font pFont, co
 {
 	xui_vec2_t tSize;
 	xui_proxy pProxy;
+	size_t iLength;
 
 	tSize.fX = 0.0f;
 	tSize.fY = 18.0f;
@@ -294,10 +343,13 @@ static xui_vec2_t __xuiToolbarMeasureText(xui_widget pWidget, xui_font pFont, co
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
 	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) &&
-	     isfinite(tSize.fX) && isfinite(tSize.fY) && (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
+	     isfinite(tSize.fX) && isfinite(tSize.fY) && (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) &&
+	     (tSize.fX <= XUI_LAYOUT_UNBOUNDED) && (tSize.fY <= XUI_LAYOUT_UNBOUNDED) ) {
 		return tSize;
 	}
-	tSize.fX = (float)strlen(sText) * 7.0f;
+	iLength = strlen(sText);
+	tSize.fX = iLength > (size_t)(XUI_LAYOUT_UNBOUNDED / 7.0f) ?
+		XUI_LAYOUT_UNBOUNDED : (float)iLength * 7.0f;
 	tSize.fY = 18.0f;
 	return tSize;
 }
@@ -326,7 +378,7 @@ static int __xuiToolbarStyleFloat(xui_widget pWidget, const char* sName, float* 
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	     __xuiToolbarMetricValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -369,29 +421,30 @@ static xui_font __xuiToolbarStyleFont(xui_widget pWidget, xui_font pBaseFont)
 
 static void __xuiToolbarResolve(xui_widget pWidget, const xui_toolbar_data_t* pData, xui_toolbar_resolved_t* pOut)
 {
+	xui_toolbar_metrics_t tMetrics;
 	int iValue;
 
 	memset(pOut, 0, sizeof(*pOut));
-	pOut->tMetrics = pData->tMetrics;
-	pOut->tMetrics.iSize = sizeof(pOut->tMetrics);
+	tMetrics = pData->tMetrics;
+	tMetrics.iSize = sizeof(tMetrics);
 	pOut->tColors = pData->tColors;
 	pOut->tColors.iSize = sizeof(pOut->tColors);
 	pOut->pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 
-	iValue = pOut->tMetrics.iOrientation;
+	iValue = tMetrics.iOrientation;
 	if ( __xuiToolbarStyleInt(pWidget, "toolbar.orientation", &iValue) && __xuiToolbarOrientationValid(iValue) ) {
-		pOut->tMetrics.iOrientation = iValue;
+		tMetrics.iOrientation = iValue;
 	}
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.item.width", &pOut->tMetrics.fItemWidth);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.item.height", &pOut->tMetrics.fItemHeight);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.separator.size", &pOut->tMetrics.fSeparatorSize);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.group_gap", &pOut->tMetrics.fGroupGap);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.padding.x", &pOut->tMetrics.fPaddingX);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.padding.y", &pOut->tMetrics.fPaddingY);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.overflow.size", &pOut->tMetrics.fOverflowSize);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.border.width", &pOut->tMetrics.fBorderWidth);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.icon.size", &pOut->tMetrics.fIconSize);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.icon.gap", &pOut->tMetrics.fIconGap);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.item.width", &tMetrics.fItemWidth);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.item.height", &tMetrics.fItemHeight);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.separator.size", &tMetrics.fSeparatorSize);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.group_gap", &tMetrics.fGroupGap);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.padding.x", &tMetrics.fPaddingX);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.padding.y", &tMetrics.fPaddingY);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.overflow.size", &tMetrics.fOverflowSize);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.border.width", &tMetrics.fBorderWidth);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.icon.size", &tMetrics.fIconSize);
+	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.icon.gap", &tMetrics.fIconGap);
 
 	(void)__xuiToolbarStyleColor(pWidget, "toolbar.background.color", &pOut->tColors.iBackgroundColor);
 	(void)__xuiToolbarStyleColor(pWidget, "toolbar.border.color", &pOut->tColors.iBorderColor);
@@ -412,10 +465,12 @@ static void __xuiToolbarResolve(xui_widget pWidget, const xui_toolbar_data_t* pD
 	(void)__xuiToolbarStyleColor(pWidget, "toolbar.icon.active_color", &pOut->iActiveIconColor);
 	(void)__xuiToolbarStyleColor(pWidget, "toolbar.separator.highlight_color", &pOut->iSeparatorHighlightColor);
 
-	if ( pOut->tMetrics.fItemWidth < 1.0f ) pOut->tMetrics.fItemWidth = 1.0f;
-	if ( pOut->tMetrics.fItemHeight < 1.0f ) pOut->tMetrics.fItemHeight = 1.0f;
-	if ( pOut->tMetrics.fSeparatorSize < 1.0f ) pOut->tMetrics.fSeparatorSize = 1.0f;
-	if ( pOut->tMetrics.fOverflowSize < 1.0f ) pOut->tMetrics.fOverflowSize = 1.0f;
+	if ( tMetrics.fItemWidth < 1.0f ) tMetrics.fItemWidth = 1.0f;
+	if ( tMetrics.fItemHeight < 1.0f ) tMetrics.fItemHeight = 1.0f;
+	if ( tMetrics.fSeparatorSize < 1.0f ) tMetrics.fSeparatorSize = 1.0f;
+	if ( tMetrics.fOverflowSize < 1.0f ) tMetrics.fOverflowSize = 1.0f;
+	pOut->tMetrics = __xuiToolbarMetricsValid(&tMetrics) ? tMetrics : pData->tMetrics;
+	pOut->tMetrics.iSize = sizeof(pOut->tMetrics);
 	pOut->pFont = __xuiToolbarStyleFont(pWidget, pOut->pFont);
 }
 
@@ -428,9 +483,9 @@ static float __xuiToolbarItemSize(const xui_toolbar_item_t* pItem, const xui_too
 		pResolved->tMetrics.fItemHeight : pResolved->tMetrics.fItemWidth;
 }
 
-static float __xuiToolbarItemsAxisSize(const xui_toolbar_data_t* pData, const xui_toolbar_resolved_t* pResolved)
+static double __xuiToolbarItemsAxisSize(const xui_toolbar_data_t* pData, const xui_toolbar_resolved_t* pResolved)
 {
-	float fAxis;
+	double fAxis;
 	int iPrevGroup;
 	int i;
 
@@ -442,7 +497,7 @@ static float __xuiToolbarItemsAxisSize(const xui_toolbar_data_t* pData, const xu
 		     (pData->arrItems[i].iGroup != iPrevGroup) ) {
 			fAxis += pResolved->tMetrics.fGroupGap;
 		}
-		fAxis += __xuiToolbarMax(__xuiToolbarItemSize(&pData->arrItems[i], pResolved), 1.0f);
+		fAxis += (double)__xuiToolbarMax(__xuiToolbarItemSize(&pData->arrItems[i], pResolved), 1.0f);
 		if ( pData->arrItems[i].iType != XUI_TOOLBAR_ITEM_SEPARATOR ) {
 			iPrevGroup = pData->arrItems[i].iGroup;
 		}
@@ -452,80 +507,115 @@ static float __xuiToolbarItemsAxisSize(const xui_toolbar_data_t* pData, const xu
 
 static int __xuiToolbarMeasureItems(xui_widget pWidget, xui_toolbar_data_t* pData, const xui_toolbar_resolved_t* pResolved, xui_vec2_t* pSize)
 {
-	float fAxis;
-	float fCross;
-	float fItem;
-	int iPrevGroup;
-	int i;
+	double fAxis;
+	double fCross;
+	int bVertical;
 
 	(void)pWidget;
 	if ( (pData == NULL) || (pResolved == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	fAxis = pResolved->tMetrics.fPaddingX * 2.0f;
-	fCross = pResolved->tMetrics.fPaddingY * 2.0f;
-	fCross += (pResolved->tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL) ? pResolved->tMetrics.fItemWidth : pResolved->tMetrics.fItemHeight;
-	iPrevGroup = 0;
-	for ( i = 0; i < pData->iItemCount; i++ ) {
-		if ( (i > 0) &&
-		     (pData->arrItems[i].iType != XUI_TOOLBAR_ITEM_SEPARATOR) &&
-		     (pData->arrItems[i].iGroup != iPrevGroup) ) {
-			fAxis += pResolved->tMetrics.fGroupGap;
-		}
-		fItem = __xuiToolbarItemSize(&pData->arrItems[i], pResolved);
-		fAxis += __xuiToolbarMax(fItem, 1.0f);
-		if ( pData->arrItems[i].iType != XUI_TOOLBAR_ITEM_SEPARATOR ) {
-			iPrevGroup = pData->arrItems[i].iGroup;
-		}
+	if ( !__xuiToolbarMetricsValid(&pResolved->tMetrics) ) return XUI_ERROR_INVALID_ARGUMENT;
+	bVertical = pResolved->tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL;
+	fAxis = __xuiToolbarItemsAxisSize(pData, pResolved) +
+		(double)(bVertical ? pResolved->tMetrics.fPaddingY : pResolved->tMetrics.fPaddingX) * 2.0;
+	fCross = (double)(bVertical ? pResolved->tMetrics.fPaddingX : pResolved->tMetrics.fPaddingY) * 2.0 +
+		(double)(bVertical ? pResolved->tMetrics.fItemWidth : pResolved->tMetrics.fItemHeight);
+	if ( fAxis > (double)XUI_LAYOUT_UNBOUNDED || fCross > (double)XUI_LAYOUT_UNBOUNDED ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pResolved->tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL ) {
-		pSize->fX = xuiInternalSnapSize(fCross);
-		pSize->fY = xuiInternalSnapSize(fAxis);
+	if ( bVertical ) {
+		pSize->fX = xuiInternalSnapSize((float)fCross);
+		pSize->fY = xuiInternalSnapSize((float)fAxis);
 	} else {
-		pSize->fX = xuiInternalSnapSize(fAxis);
-		pSize->fY = xuiInternalSnapSize(fCross);
+		pSize->fX = xuiInternalSnapSize((float)fAxis);
+		pSize->fY = xuiInternalSnapSize((float)fCross);
 	}
+	return XUI_OK;
+}
+
+static int __xuiToolbarRectFromDouble(double fX, double fY, double fW, double fH,
+	xui_rect_t* pRect)
+{
+	double fRight;
+	double fBottom;
+	double fBound = (double)XUI_LAYOUT_UNBOUNDED;
+
+	if ( pRect == NULL || fW < 0.0 || fH < 0.0 ||
+	     fX < -fBound || fX > fBound || fY < -fBound || fY > fBound ||
+	     fW > fBound || fH > fBound ) return XUI_ERROR_INVALID_ARGUMENT;
+	fRight = fX + fW;
+	fBottom = fY + fH;
+	if ( fRight < -fBound || fRight > fBound ||
+	     fBottom < -fBound || fBottom > fBound ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pRect = xuiInternalRectFromFloatNearest((float)fX, (float)fY, (float)fW, (float)fH);
 	return XUI_OK;
 }
 
 static int __xuiToolbarLayoutItems(xui_widget pWidget, xui_toolbar_data_t* pData, const xui_toolbar_resolved_t* pResolved)
 {
+	xui_rect_t arrRects[XUI_TOOLBAR_ITEM_CAPACITY];
 	xui_rect_t tContent;
-	float fInnerX;
-	float fInnerY;
-	float fInnerW;
-	float fInnerH;
-	float fLimit;
-	float fCursor;
-	float fSize;
-	float fVisibleSize;
-	float fAxisSize;
-	float fOverflowSize;
+	xui_rect_t tOverflowRect;
+	double fContentRight;
+	double fContentBottom;
+	double fInnerX;
+	double fInnerY;
+	double fInnerW;
+	double fInnerH;
+	double fAxisEnd;
+	double fLimit;
+	double fCursor;
+	double fSize;
+	double fVisibleSize;
+	double fAxisSize;
+	double fOverflowSize;
+	double fItemsAxisSize;
 	int bVertical;
 	int bNeedsOverflow;
+	int bSelectionChanged;
+	int iOverflowFirst;
+	int iOverflowCount;
 	int iPrevGroup;
+	int iRet;
 	int i;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiToolbarMetricsValid(&pResolved->tMetrics) ) return XUI_ERROR_INVALID_ARGUMENT;
 	tContent = xuiInternalSnapRect(xuiWidgetGetContentRect(pWidget));
-	fInnerX = tContent.fX + pResolved->tMetrics.fPaddingX;
-	fInnerY = tContent.fY + pResolved->tMetrics.fPaddingY;
-	fInnerW = __xuiToolbarMax(0.0f, tContent.fW - pResolved->tMetrics.fPaddingX * 2.0f);
-	fInnerH = __xuiToolbarMax(0.0f, tContent.fH - pResolved->tMetrics.fPaddingY * 2.0f);
-	memset(&pData->tOverflowRect, 0, sizeof(pData->tOverflowRect));
-	pData->iOverflowFirst = -1;
-	pData->iOverflowCount = 0;
-	for ( i = 0; i < pData->iItemCount; i++ ) {
-		memset(&pData->arrItems[i].tRect, 0, sizeof(pData->arrItems[i].tRect));
+	if ( tContent.fX < -(int)XUI_LAYOUT_UNBOUNDED || tContent.fX > (int)XUI_LAYOUT_UNBOUNDED ||
+	     tContent.fY < -(int)XUI_LAYOUT_UNBOUNDED || tContent.fY > (int)XUI_LAYOUT_UNBOUNDED ||
+	     tContent.fW > (int)XUI_LAYOUT_UNBOUNDED || tContent.fH > (int)XUI_LAYOUT_UNBOUNDED ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	fContentRight = (double)tContent.fX + (double)tContent.fW;
+	fContentBottom = (double)tContent.fY + (double)tContent.fH;
+	if ( fContentRight > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fContentBottom > (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+	fInnerX = (double)tContent.fX + (double)pResolved->tMetrics.fPaddingX;
+	fInnerY = (double)tContent.fY + (double)pResolved->tMetrics.fPaddingY;
+	if ( fInnerX > fContentRight ) fInnerX = fContentRight;
+	if ( fInnerY > fContentBottom ) fInnerY = fContentBottom;
+	fInnerW = (double)tContent.fW - (double)pResolved->tMetrics.fPaddingX * 2.0;
+	fInnerH = (double)tContent.fH - (double)pResolved->tMetrics.fPaddingY * 2.0;
+	if ( fInnerW < 0.0 ) fInnerW = 0.0;
+	if ( fInnerH < 0.0 ) fInnerH = 0.0;
+	if ( fInnerX + fInnerW > fContentRight ) fInnerW = fContentRight - fInnerX;
+	if ( fInnerY + fInnerH > fContentBottom ) fInnerH = fContentBottom - fInnerY;
+	memset(arrRects, 0, sizeof(arrRects));
+	memset(&tOverflowRect, 0, sizeof(tOverflowRect));
+	iOverflowFirst = -1;
+	iOverflowCount = 0;
 	bVertical = (pResolved->tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL);
 	fAxisSize = bVertical ? fInnerH : fInnerW;
+	fItemsAxisSize = __xuiToolbarItemsAxisSize(pData, pResolved);
 	bNeedsOverflow = pData->bOverflowEnabled && pData->iItemCount > 0 &&
-		__xuiToolbarItemsAxisSize(pData, pResolved) > fAxisSize;
-	fOverflowSize = 0.0f;
+		fItemsAxisSize > fAxisSize;
+	fOverflowSize = 0.0;
 	if ( bNeedsOverflow ) {
 		fOverflowSize = pResolved->tMetrics.fOverflowSize;
 		if ( fOverflowSize > fAxisSize ) fOverflowSize = fAxisSize;
 	}
-	fLimit = (bVertical ? (fInnerY + fInnerH) : (fInnerX + fInnerW)) - fOverflowSize;
+	fAxisEnd = bVertical ? (fInnerY + fInnerH) : (fInnerX + fInnerW);
+	fLimit = fAxisEnd - fOverflowSize;
 	fCursor = bVertical ? fInnerY : fInnerX;
 	iPrevGroup = 0;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
@@ -534,42 +624,59 @@ static int __xuiToolbarLayoutItems(xui_widget pWidget, xui_toolbar_data_t* pData
 		     (pData->arrItems[i].iGroup != iPrevGroup) ) {
 			fCursor += pResolved->tMetrics.fGroupGap;
 		}
-		fSize = __xuiToolbarItemSize(&pData->arrItems[i], pResolved);
-		if ( fSize < 1.0f ) fSize = 1.0f;
+		fSize = (double)__xuiToolbarItemSize(&pData->arrItems[i], pResolved);
+		if ( fSize < 1.0 ) fSize = 1.0;
 		if ( bNeedsOverflow && ((fCursor + fSize) > fLimit) ) {
-			pData->iOverflowFirst = i;
-			pData->iOverflowCount = pData->iItemCount - i;
+			iOverflowFirst = i;
+			iOverflowCount = pData->iItemCount - i;
 			break;
 		}
-		fVisibleSize = (bVertical ? fInnerY + fInnerH : fInnerX + fInnerW) - fCursor;
+		fVisibleSize = fAxisEnd - fCursor;
 		if ( fVisibleSize > fSize ) fVisibleSize = fSize;
-		if ( fVisibleSize < 0.0f ) fVisibleSize = 0.0f;
-		pData->arrItems[i].tRect = bVertical ?
-			xuiInternalRectFromFloatNearest(fInnerX, fCursor, fInnerW, fVisibleSize) :
-			xuiInternalRectFromFloatNearest(fCursor, fInnerY, fVisibleSize, fInnerH);
+		if ( fVisibleSize < 0.0 ) fVisibleSize = 0.0;
+		if ( fInnerW > 0.0 && fInnerH > 0.0 ) {
+			iRet = bVertical ?
+				__xuiToolbarRectFromDouble(fInnerX, fCursor, fInnerW, fVisibleSize, &arrRects[i]) :
+				__xuiToolbarRectFromDouble(fCursor, fInnerY, fVisibleSize, fInnerH, &arrRects[i]);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 		fCursor += fSize;
+		if ( fCursor > (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( pData->arrItems[i].iType != XUI_TOOLBAR_ITEM_SEPARATOR ) {
 			iPrevGroup = pData->arrItems[i].iGroup;
 		}
 	}
-	while ( pData->iOverflowFirst > 0 &&
-	        pData->arrItems[pData->iOverflowFirst - 1].iType == XUI_TOOLBAR_ITEM_SEPARATOR ) {
-		pData->iOverflowFirst--;
-		pData->iOverflowCount++;
-		memset(&pData->arrItems[pData->iOverflowFirst].tRect, 0,
-			sizeof(pData->arrItems[pData->iOverflowFirst].tRect));
+	while ( iOverflowFirst > 0 &&
+	        pData->arrItems[iOverflowFirst - 1].iType == XUI_TOOLBAR_ITEM_SEPARATOR ) {
+		iOverflowFirst--;
+		iOverflowCount++;
+		memset(&arrRects[iOverflowFirst], 0, sizeof(arrRects[iOverflowFirst]));
 	}
-	if ( pData->iOverflowCount > 0 ) {
-		if ( bVertical ) {
-			pData->tOverflowRect = xuiInternalRectFromFloatNearest(fInnerX,
-				fInnerY + fInnerH - fOverflowSize, fInnerW, fOverflowSize);
-		} else {
-			pData->tOverflowRect = xuiInternalRectFromFloatNearest(fInnerX + fInnerW - fOverflowSize,
-				fInnerY, fOverflowSize, fInnerH);
-		}
-	} else {
+	if ( iOverflowCount > 0 && fOverflowSize > 0.0 && fInnerW > 0.0 && fInnerH > 0.0 ) {
+		iRet = bVertical ?
+			__xuiToolbarRectFromDouble(fInnerX, fInnerY + fInnerH - fOverflowSize,
+				fInnerW, fOverflowSize, &tOverflowRect) :
+			__xuiToolbarRectFromDouble(fInnerX + fInnerW - fOverflowSize, fInnerY,
+				fOverflowSize, fInnerH, &tOverflowRect);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	bSelectionChanged = 0;
+	if ( pData->iHover >= 0 &&
+	     (pData->iHover >= pData->iItemCount || arrRects[pData->iHover].fW <= 0 ||
+	      arrRects[pData->iHover].fH <= 0) ) {
+		pData->iHover = -1;
+		bSelectionChanged = 1;
+	}
+	if ( iOverflowCount <= 0 && pData->bOverflowFocused ) {
 		pData->bOverflowFocused = 0;
-		pData->bOverflowActive = 0;
+		bSelectionChanged = 1;
+	}
+	for ( i = 0; i < pData->iItemCount; i++ ) pData->arrItems[i].tRect = arrRects[i];
+	pData->tOverflowRect = tOverflowRect;
+	pData->iOverflowFirst = iOverflowFirst;
+	pData->iOverflowCount = iOverflowCount;
+	if ( bSelectionChanged ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	}
 	return XUI_OK;
 }
@@ -632,36 +739,51 @@ static int __xuiToolbarNextEnabled(xui_toolbar_data_t* pData, int iCurrent, int 
 	return -1;
 }
 
+static int __xuiToolbarInvalidateLocalRect(xui_widget pWidget, xui_rect_t tRect)
+{
+	xui_rect_t tWidget;
+	int64_t iContentW;
+	int64_t iContentH;
+	int64_t iLeft;
+	int64_t iTop;
+	int64_t iRight;
+	int64_t iBottom;
+
+	if ( pWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW <= 0 || tRect.fH <= 0 ) return XUI_OK;
+	tWidget = xuiWidgetGetRect(pWidget);
+	iContentW = tWidget.fW > 0 ? (int64_t)tWidget.fW : 0;
+	iContentH = tWidget.fH > 0 ? (int64_t)tWidget.fH : 0;
+	iLeft = (int64_t)tRect.fX - 2;
+	iTop = (int64_t)tRect.fY - 2;
+	iRight = (int64_t)tRect.fX + (int64_t)tRect.fW + 2;
+	iBottom = (int64_t)tRect.fY + (int64_t)tRect.fH + 2;
+	if ( iLeft < 0 ) iLeft = 0;
+	if ( iTop < 0 ) iTop = 0;
+	if ( iRight > iContentW ) iRight = iContentW;
+	if ( iBottom > iContentH ) iBottom = iContentH;
+	tRect = (xui_rect_t){
+		(int)iLeft,
+		(int)iTop,
+		(int)(iRight > iLeft ? iRight - iLeft : 0),
+		(int)(iBottom > iTop ? iBottom - iTop : 0)
+	};
+	if ( tRect.fW <= 0 || tRect.fH <= 0 ) return XUI_OK;
+	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiToolbarInvalidateItem(xui_widget pWidget, xui_toolbar_data_t* pData, int iIndex)
 {
-	xui_rect_t tRect;
-
 	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
 		return XUI_OK;
 	}
-	tRect = pData->arrItems[iIndex].tRect;
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		return XUI_OK;
-	}
-	tRect.fX -= 2.0f;
-	tRect.fY -= 2.0f;
-	tRect.fW += 4.0f;
-	tRect.fH += 4.0f;
-	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiToolbarInvalidateLocalRect(pWidget, pData->arrItems[iIndex].tRect);
 }
 
 static int __xuiToolbarInvalidateOverflow(xui_widget pWidget, xui_toolbar_data_t* pData)
 {
-	xui_rect_t tRect;
-
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	tRect = pData->tOverflowRect;
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) return XUI_OK;
-	tRect.fX -= 2.0f;
-	tRect.fY -= 2.0f;
-	tRect.fW += 4.0f;
-	tRect.fH += 4.0f;
-	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiToolbarInvalidateLocalRect(pWidget, pData->tOverflowRect);
 }
 
 static int __xuiToolbarSetTarget(xui_widget pWidget, xui_toolbar_data_t* pData, int iIndex, int bOverflow)
@@ -673,7 +795,9 @@ static int __xuiToolbarSetTarget(xui_widget pWidget, xui_toolbar_data_t* pData, 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	bOverflow = bOverflow && (pData->iOverflowCount > 0) &&
 		(pData->tOverflowRect.fW > 0.0f) && (pData->tOverflowRect.fH > 0.0f);
-	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) || !__xuiToolbarItemInteractive(&pData->arrItems[iIndex]) ) {
+	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) ||
+	     !__xuiToolbarItemVisible(pData, iIndex) ||
+	     !__xuiToolbarItemInteractive(&pData->arrItems[iIndex]) ) {
 		iIndex = -1;
 	}
 	if ( bOverflow ) iIndex = -1;
@@ -719,7 +843,7 @@ static int __xuiToolbarActivateOverflow(xui_widget pWidget, xui_toolbar_data_t* 
 	pOverflowUser = pData->pOverflowUser;
 	iOverflowFirst = pData->iOverflowFirst;
 	iOverflowCount = pData->iOverflowCount;
-	pData->iOverflowSelectCount++;
+	__xuiToolbarIncrementCount(&pData->iOverflowSelectCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onOverflow(pWidget, iOverflowFirst, iOverflowCount, pOverflowUser);
 	return XUI_OK;
@@ -730,6 +854,8 @@ static int __xuiToolbarSelect(xui_widget pWidget, xui_toolbar_data_t* pData, int
 	xui_toolbar_select_proc onSelect;
 	void* pSelectUser;
 	int iValue;
+	int iOldChangeCount;
+	int iOldSelectCount;
 	int iRet;
 	int bToggle;
 
@@ -738,17 +864,19 @@ static int __xuiToolbarSelect(xui_widget pWidget, xui_toolbar_data_t* pData, int
 		return XUI_OK;
 	}
 	bToggle = pData->arrItems[iIndex].iType == XUI_TOOLBAR_ITEM_TOGGLE;
+	iOldChangeCount = pData->iChangeCount;
+	iOldSelectCount = pData->iSelectCount;
 	if ( bToggle ) {
 		pData->arrItems[iIndex].iState ^= XUI_TOOLBAR_ITEM_CHECKED;
-		pData->iChangeCount++;
+		__xuiToolbarMarkChanged(pData);
 	}
-	pData->iSelectCount++;
+	__xuiToolbarIncrementCount(&pData->iSelectCount);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
-		pData->iSelectCount--;
+		pData->iSelectCount = iOldSelectCount;
 		if ( bToggle ) {
 			pData->arrItems[iIndex].iState ^= XUI_TOOLBAR_ITEM_CHECKED;
-			pData->iChangeCount--;
+			pData->iChangeCount = iOldChangeCount;
 		}
 		return iRet;
 	}
@@ -833,6 +961,9 @@ static int __xuiToolbarDrawItemContent(xui_widget pWidget, xui_proxy pProxy, xui
 	float fIconY;
 	float fTextX;
 	float fGroupW;
+	float fGap;
+	float fAvailableText;
+	float fTextWidth;
 	int bHasIcon;
 	int bHasText;
 	int iRet;
@@ -845,15 +976,21 @@ static int __xuiToolbarDrawItemContent(xui_widget pWidget, xui_proxy pProxy, xui
 	if ( bHasIcon ) {
 		fIconSize = pResolved->tMetrics.fIconSize;
 		if ( fIconSize > tText.fH ) fIconSize = tText.fH;
+		if ( fIconSize > tText.fW ) fIconSize = tText.fW;
 		fIconY = tText.fY + (tText.fH - fIconSize) * 0.5f;
 		if ( !bHasText ) {
 			fIconX = tText.fX + (tText.fW - fIconSize) * 0.5f;
 		} else {
 			tTextSize = __xuiToolbarMeasureText(pWidget, pResolved->pFont, pItem->sText);
-			fGroupW = fIconSize + pResolved->tMetrics.fIconGap + tTextSize.fX;
-			if ( fGroupW > tText.fW ) fGroupW = tText.fW;
+			fGap = pResolved->tMetrics.fIconGap;
+			if ( fGap > tText.fW - fIconSize ) fGap = tText.fW - fIconSize;
+			if ( fGap < 0.0f ) fGap = 0.0f;
+			fAvailableText = tText.fW - fIconSize - fGap;
+			if ( fAvailableText < 0.0f ) fAvailableText = 0.0f;
+			fTextWidth = tTextSize.fX < fAvailableText ? tTextSize.fX : fAvailableText;
+			fGroupW = fIconSize + fGap + fTextWidth;
 			fIconX = tText.fX + (tText.fW - fGroupW) * 0.5f;
-			fTextX = fIconX + fIconSize + pResolved->tMetrics.fIconGap;
+			fTextX = fIconX + fIconSize + fGap;
 			tText = xuiInternalRectFromFloatNearest(fTextX, tText.fY,
 				tRect.fX + tRect.fW - 6.0f - fTextX, tText.fH);
 		}
@@ -891,7 +1028,8 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	pData = __xuiToolbarGetData(pWidget);
 	if ( (pData == NULL) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	tRect = xuiWidgetGetRect(pWidget);
@@ -921,7 +1059,7 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			iText = tResolved.tColors.iDisabledTextColor;
 			iIcon = tResolved.tColors.iDisabledTextColor;
 			iBorder = __xuiToolbarColorAlpha(tResolved.tColors.iBorderColor, 120);
-		} else if ( i == pData->iActive ) {
+		} else if ( i == pData->iActive && i == pData->iHover ) {
 			iFill = tResolved.tColors.iActiveColor;
 			iText = tResolved.iActiveTextColor;
 			iIcon = tResolved.iActiveIconColor;
@@ -960,11 +1098,12 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tDraw = bVertical ?
 			__xuiToolbarInsetRect(pData->tOverflowRect, 3.0f, 2.0f, 3.0f, 2.0f) :
 			__xuiToolbarInsetRect(pData->tOverflowRect, 2.0f, 3.0f, 2.0f, 3.0f);
-		if ( pData->bOverflowActive ) tDraw.fY += 1.0f;
+		bPressed = pData->bOverflowActive && pData->bOverflowFocused;
+		if ( bPressed ) tDraw.fY += 1.0f;
 		iFill = tResolved.tColors.iItemColor;
 		iBorder = XUI_COLOR_RGBA(0, 0, 0, 0);
-		iText = pData->bOverflowActive ? tResolved.iActiveTextColor : tResolved.tColors.iTextColor;
-		if ( pData->bOverflowActive ) {
+		iText = bPressed ? tResolved.iActiveTextColor : tResolved.tColors.iTextColor;
+		if ( bPressed ) {
 			iFill = tResolved.tColors.iActiveColor;
 			iBorder = __xuiToolbarColorAlpha(tResolved.tColors.iActiveColor, 235);
 		} else if ( pData->bOverflowFocused ) {
@@ -1019,7 +1158,7 @@ static int __xuiToolbarTooltipResolve(xui_context pContext, xui_widget pWidget, 
 	pData = __xuiToolbarGetData(pWidget);
 	if ( pData == NULL ) return 0;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return 0;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	iIndex = __xuiToolbarIndexAt(pData, pContext->fTooltipMouseX - tWorld.fX, pContext->fTooltipMouseY - tWorld.fY);
 	if ( iIndex < 0 ) return 0;
@@ -1056,7 +1195,8 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 	pData = __xuiToolbarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	pContext = xuiWidgetGetContext(pWidget);
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	fLocalX = pEvent->fX - tWorld.fX;
@@ -1071,16 +1211,28 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			return XUI_OK;
 		}
 		if ( pData->bOverflowActive ) {
+			iRet = __xuiToolbarSetTarget(pWidget, pData, -1, bOverflowHit);
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pData->iActive >= 0 ) {
+			iRet = __xuiToolbarSetTarget(pWidget, pData,
+				iIndex == pData->iActive ? pData->iActive : -1, 0);
+			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iRet = __xuiToolbarSetTarget(pWidget, pData, iIndex, bOverflowHit);
 		if ( iRet != XUI_OK ) return iRet;
-		return (pData->iActive >= 0) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
-	case XUI_EVENT_POINTER_LEAVE:
-		if ( (pData->iActive < 0) && !pData->bOverflowActive ) {
-			return __xuiToolbarSetTarget(pWidget, pData, -1, 0);
-		}
 		return XUI_OK;
+	case XUI_EVENT_POINTER_LEAVE:
+		if ( pData->tPointerOwner.bActive &&
+		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
+		iRet = __xuiToolbarSetTarget(pWidget, pData, -1, 0);
+		if ( iRet != XUI_OK ) return iRet;
+		return (pData->iActive >= 0 || pData->bOverflowActive) ?
+			XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
 		if ( !bLeftButton ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive ) {
@@ -1296,7 +1448,7 @@ static int __xuiToolbarAccessibleCount(xui_widget pWidget, void* pUser)
 
 	if ( pData == NULL ) return 0;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return 0;
 	return pData->iItemCount + 1 + (pData->iOverflowCount > 0 ? 1 : 0);
 }
 
@@ -1310,10 +1462,12 @@ static int __xuiToolbarAccessibleGet(xui_widget pWidget, int iIndex,
 	xui_rect_t tItem;
 	int iItem;
 	int bOverflowNode;
+	int iRet;
 
 	if ( pData == NULL || pNode == NULL || iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	bOverflowNode = pData->iOverflowCount > 0 && iIndex == pData->iItemCount + 1;
 	if ( iIndex > pData->iItemCount && !bOverflowNode ) return XUI_ERROR_INVALID_ARGUMENT;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
@@ -1379,8 +1533,8 @@ static int __xuiToolbarAccessibleGet(xui_widget pWidget, int iIndex,
 	pNode->iColumnCount = 1;
 	if ( !__xuiToolbarItemVisible(pData, iItem) ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 	if ( pItem->iType == XUI_TOOLBAR_ITEM_SEPARATOR ) return XUI_OK;
-	pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
 	if ( !__xuiToolbarItemInteractive(pItem) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	else if ( __xuiToolbarItemVisible(pData, iItem) ) pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
 	if ( iItem == pData->iHover ) {
 		pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
 		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
@@ -1388,9 +1542,11 @@ static int __xuiToolbarAccessibleGet(xui_widget pWidget, int iIndex,
 		}
 	}
 	if ( (pItem->iState & XUI_TOOLBAR_ITEM_CHECKED) != 0u ) pNode->iState |= XUI_ACCESSIBLE_STATE_CHECKED;
-	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
-	pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(
-		pItem->iType == XUI_TOOLBAR_ITEM_TOGGLE ? XUI_ACCESSIBLE_ACTION_TOGGLE : XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	if ( __xuiToolbarItemInteractive(pItem) && __xuiToolbarItemVisible(pData, iItem) ) {
+		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+		pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(
+			pItem->iType == XUI_TOOLBAR_ITEM_TOGGLE ? XUI_ACCESSIBLE_ACTION_TOGGLE : XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	}
 	return XUI_OK;
 }
 
@@ -1409,7 +1565,8 @@ static int __xuiToolbarAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 			xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget) : XUI_ERROR_UNSUPPORTED;
 	}
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	iRet = __xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( iNodeId == XUI_TOOLBAR_ACCESSIBLE_OVERFLOW_ID ) {
 		if ( pData->iOverflowCount <= 0 ) return XUI_ERROR_NOT_FOUND;
 		if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS ) {
@@ -1425,9 +1582,9 @@ static int __xuiToolbarAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 	}
 	if ( iNodeId < 2 || iNodeId > (uint64_t)pData->iItemCount + 1u ) return XUI_ERROR_NOT_FOUND;
 	iIndex = (int)iNodeId - 2;
+	if ( !__xuiToolbarItemVisible(pData, iIndex) ) return XUI_ERROR_INVALID_STATE;
 	if ( !__xuiToolbarItemInteractive(&pData->arrItems[iIndex]) ) return XUI_ERROR_INVALID_STATE;
 	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS ) {
-		if ( !__xuiToolbarItemVisible(pData, iIndex) ) return XUI_ERROR_INVALID_STATE;
 		iRet = __xuiToolbarSetHover(pWidget, pData, iIndex);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( __xuiToolbarGetData(pWidget) != pData ) return XUI_OK;
@@ -1636,7 +1793,7 @@ XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButto
 	int bNewEnabled;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !isfinite(fButtonSize) || fButtonSize <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiToolbarMetricValid(fButtonSize) || fButtonSize <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	bNewEnabled = bEnabled ? 1 : 0;
 	if ( pData->bOverflowEnabled == bNewEnabled && pData->tMetrics.fOverflowSize == fButtonSize &&
 	     pData->onOverflow == onOverflow && pData->pOverflowUser == pUser ) return XUI_OK;
@@ -1666,7 +1823,7 @@ XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButto
 		pData->iOverflowCount = 0;
 		memset(&pData->tOverflowRect, 0, sizeof(pData->tOverflowRect));
 	}
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->bOverflowEnabled = bOldEnabled;
@@ -1765,7 +1922,7 @@ XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pIt
 	pData->iOverflowFirst = -1;
 	pData->iOverflowCount = 0;
 	memset(&pData->tOverflowRect, 0, sizeof(pData->tOverflowRect));
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		memcpy(pData->arrItems, arrOld, sizeof(arrOld));
@@ -1848,7 +2005,7 @@ XUI_API xui_rect_t xuiToolbarGetItemRect(xui_widget pWidget, int iIndex)
 	memset(&tEmpty, 0, sizeof(tEmpty));
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return tEmpty;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return tEmpty;
 	return pData->arrItems[iIndex].tRect;
 }
 
@@ -1858,7 +2015,7 @@ XUI_API int xuiToolbarGetItemAt(xui_widget pWidget, float fX, float fY)
 	xui_toolbar_resolved_t tResolved;
 	if ( pData == NULL ) return -1;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return -1;
 	return __xuiToolbarIndexAt(pData, fX, fY);
 }
 
@@ -1904,7 +2061,7 @@ XUI_API int xuiToolbarSetItemGroup(xui_widget pWidget, int iIndex, int iGroup)
 	iOldGroup = pData->arrItems[iIndex].iGroup;
 	iOldChangeCount = pData->iChangeCount;
 	pData->arrItems[iIndex].iGroup = iGroup;
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].iGroup = iOldGroup;
@@ -1940,7 +2097,7 @@ XUI_API int xuiToolbarSetItemTooltip(xui_widget pWidget, int iIndex, const char*
 	xrtFree(pData->arrOwnedTooltips[iIndex]);
 	pData->arrOwnedTooltips[iIndex] = sCopy;
 	pData->arrItems[iIndex].sTooltip = sCopy != NULL ? sCopy : "";
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
@@ -1955,7 +2112,11 @@ XUI_API const char* xuiToolbarGetItemTooltip(xui_widget pWidget, int iIndex)
 XUI_API const char* xuiToolbarGetHoverTooltip(xui_widget pWidget)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
-	if ( (pData == NULL) || (pData->iHover < 0) || (pData->iHover >= pData->iItemCount) ) return "";
+	xui_toolbar_resolved_t tResolved;
+	if ( pData == NULL ) return "";
+	__xuiToolbarResolve(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return "";
+	if ( !__xuiToolbarItemVisible(pData, pData->iHover) ) return "";
 	return xuiToolbarGetItemTooltip(pWidget, pData->iHover);
 }
 
@@ -1987,7 +2148,7 @@ XUI_API int xuiToolbarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnable
 		if ( pData->iHover == iIndex ) pData->iHover = -1;
 		if ( pData->iActive == iIndex ) pData->iActive = -1;
 	}
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].iState = iOldState;
@@ -2020,7 +2181,7 @@ XUI_API int xuiToolbarSetItemChecked(xui_widget pWidget, int iIndex, int bChecke
 	iOldChangeCount = pData->iChangeCount;
 	if ( bChecked ) pData->arrItems[iIndex].iState |= XUI_TOOLBAR_ITEM_CHECKED;
 	else pData->arrItems[iIndex].iState &= ~XUI_TOOLBAR_ITEM_CHECKED;
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].iState = iOldState;
@@ -2053,7 +2214,7 @@ XUI_API int xuiToolbarSetItemIcon(xui_widget pWidget, int iIndex, xui_surface pI
 	iOldChangeCount = pData->iChangeCount;
 	pData->arrItems[iIndex].pIcon = pIcon;
 	pData->arrItems[iIndex].tIconSrc = tSrc;
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].pIcon = pOldIcon;
@@ -2074,7 +2235,12 @@ XUI_API int xuiToolbarGetHoverIndex(xui_widget pWidget)
 XUI_API int xuiToolbarSetHoverIndex(xui_widget pWidget, int iIndex)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	xui_toolbar_resolved_t tResolved;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiToolbarResolve(pWidget, pData, &tResolved);
+	iRet = __xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiToolbarSetHover(pWidget, pData, iIndex);
 }
 
@@ -2090,7 +2256,7 @@ XUI_API int xuiToolbarGetOverflowFirst(xui_widget pWidget)
 	xui_toolbar_resolved_t tResolved;
 	if ( pData == NULL ) return -1;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return -1;
 	return pData->iOverflowFirst;
 }
 
@@ -2100,7 +2266,7 @@ XUI_API int xuiToolbarGetOverflowCount(xui_widget pWidget)
 	xui_toolbar_resolved_t tResolved;
 	if ( pData == NULL ) return 0;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return 0;
 	return pData->iOverflowCount;
 }
 
@@ -2112,7 +2278,7 @@ XUI_API xui_rect_t xuiToolbarGetOverflowRect(xui_widget pWidget)
 	memset(&tEmpty, 0, sizeof(tEmpty));
 	if ( pData == NULL ) return tEmpty;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	(void)__xuiToolbarLayoutItems(pWidget, pData, &tResolved);
+	if ( __xuiToolbarLayoutItems(pWidget, pData, &tResolved) != XUI_OK ) return tEmpty;
 	return pData->tOverflowRect;
 }
 
@@ -2127,7 +2293,7 @@ XUI_API int xuiToolbarSetFont(xui_widget pWidget, xui_font pFont)
 	pOldFont = pData->pFont;
 	iOldChangeCount = pData->iChangeCount;
 	pData->pFont = pFont;
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->pFont = pOldFont;
@@ -2156,7 +2322,7 @@ XUI_API int xuiToolbarSetMetrics(xui_widget pWidget, const xui_toolbar_metrics_t
 	tOld = pData->tMetrics;
 	iOldChangeCount = pData->iChangeCount;
 	pData->tMetrics = tNew;
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->tMetrics = tOld;
@@ -2190,7 +2356,7 @@ XUI_API int xuiToolbarSetColors(xui_widget pWidget, const xui_toolbar_colors_t* 
 	tOld = pData->tColors;
 	iOldChangeCount = pData->iChangeCount;
 	pData->tColors = tNew;
-	pData->iChangeCount++;
+	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->tColors = tOld;
@@ -2214,7 +2380,7 @@ XUI_API uint32_t xuiToolbarGetState(xui_widget pWidget)
 	uint32_t iState;
 	if ( pData == NULL ) return XUI_WIDGET_STATE_DISABLED;
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( pData->bOverflowActive ) iState |= XUI_TOOLBAR_STATE_OVERFLOW_ACTIVE;
+	if ( pData->bOverflowActive && pData->bOverflowFocused ) iState |= XUI_TOOLBAR_STATE_OVERFLOW_ACTIVE;
 	return iState;
 }
 
