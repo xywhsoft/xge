@@ -11861,7 +11861,7 @@ XUI_API int xuiColorPickerClose(xui_widget pWidget);
 XUI_API int xuiColorPickerToggle(xui_widget pWidget);
 /* 弹层是否打开。 */
 XUI_API int xuiColorPickerIsOpen(xui_widget pWidget);
-/* 设置弹层尺寸；0 表示保持当前值，非零尺寸至少为 408x260。 */
+/* 设置弹层尺寸；0 表示保持当前值，非零尺寸至少为 408x260，且不得超过 XUI_LAYOUT_UNBOUNDED。 */
 XUI_API int xuiColorPickerSetPopupSize(xui_widget pWidget, float fWidth, float fHeight);
 /* 输出弹层尺寸。 */
 XUI_API int xuiColorPickerGetPopupSize(xui_widget pWidget, float* pWidth, float* pHeight);
@@ -11869,7 +11869,7 @@ XUI_API int xuiColorPickerGetPopupSize(xui_widget pWidget, float* pWidth, float*
 XUI_API int xuiColorPickerSetPopupPlacement(xui_widget pWidget, int iPlacement);
 /* 读取弹层方位。 */
 XUI_API int xuiColorPickerGetPopupPlacement(xui_widget pWidget);
-/* 设置度量（边框宽）。 */
+/* 设置度量（边框宽）；参数须为 [0, XUI_LAYOUT_UNBOUNDED] 内的有限值。 */
 XUI_API int xuiColorPickerSetMetrics(xui_widget pWidget, float fBorderWidth);
 /* 输出度量。 */
 XUI_API int xuiColorPickerGetMetrics(xui_widget pWidget, float* pBorderWidth);

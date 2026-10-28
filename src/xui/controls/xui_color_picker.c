@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +13,7 @@
 #define XUI_COLOR_PICKER_MIN_POPUP_W		408.0f
 #define XUI_COLOR_PICKER_MIN_POPUP_H		260.0f
 #define XUI_COLOR_PICKER_PANEL_PAD		14.0f
+#define XUI_COLOR_PICKER_TRACK_HIT_H		18.0f
 
 typedef struct xui_color_picker_data_t {
 	xui_widget pPopup;
@@ -97,6 +99,11 @@ typedef struct xui_color_picker_data_t {
 static xui_color_picker_data_t* __xuiColorPickerGetData(xui_widget pWidget);
 static int __xuiColorPickerApplyPopupStyle(xui_widget pWidget, xui_color_picker_data_t* pData);
 static int __xuiColorPickerPlacementValid(int iPlacement);
+
+static int __xuiColorPickerMetricValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f && fValue <= XUI_LAYOUT_UNBOUNDED;
+}
 
 static int __xuiColorPickerAlpha(uint32_t iColor)
 {
@@ -328,10 +335,23 @@ static uint32_t __xuiColorPickerTextOnColor(uint32_t iColor)
 
 static int __xuiColorPickerRectContains(xui_rect_t tRect, float fX, float fY)
 {
-	return (fX >= tRect.fX) &&
+	return (tRect.fW > 0) && (tRect.fH > 0) &&
+	       (fX >= tRect.fX) &&
 	       (fY >= tRect.fY) &&
 	       (fX < (tRect.fX + tRect.fW)) &&
 	       (fY < (tRect.fY + tRect.fH));
+}
+
+static xui_rect_t __xuiColorPickerTrackHitRect(xui_rect_t tTrack)
+{
+	float fHeight;
+	float fCenterY;
+
+	fHeight = (float)tTrack.fH;
+	if ( fHeight < XUI_COLOR_PICKER_TRACK_HIT_H ) fHeight = XUI_COLOR_PICKER_TRACK_HIT_H;
+	fCenterY = (float)tTrack.fY + (float)tTrack.fH * 0.5f;
+	return xuiInternalRectFromFloatNearest((float)tTrack.fX,
+		fCenterY - fHeight * 0.5f, (float)tTrack.fW, fHeight);
 }
 
 static int __xuiColorPickerChannelPart(int iChannel)
@@ -387,12 +407,9 @@ static int __xuiColorPickerDescValid(const xui_color_picker_desc_t* pDesc)
 	}
 	if ( (pDesc->iPaletteCount < 0) ||
 	     (pDesc->iPaletteCount > XUI_COLOR_PICKER_PALETTE_CAPACITY) ||
-	     !isfinite(pDesc->fPopupWidth) ||
-	     !isfinite(pDesc->fPopupHeight) ||
-	     !isfinite(pDesc->fBorderWidth) ||
-	     (pDesc->fPopupWidth < 0.0f) ||
-	     (pDesc->fPopupHeight < 0.0f) ||
-	     (pDesc->fBorderWidth < 0.0f) ||
+	     !__xuiColorPickerMetricValid(pDesc->fPopupWidth) ||
+	     !__xuiColorPickerMetricValid(pDesc->fPopupHeight) ||
+	     !__xuiColorPickerMetricValid(pDesc->fBorderWidth) ||
 	     ((pDesc->fPopupWidth > 0.0f) && (pDesc->fPopupWidth < XUI_COLOR_PICKER_MIN_POPUP_W)) ||
 	     ((pDesc->fPopupHeight > 0.0f) && (pDesc->fPopupHeight < XUI_COLOR_PICKER_MIN_POPUP_H)) ||
 	     !__xuiColorPickerPlacementValid(pDesc->iPopupPlacement) ) {
@@ -436,8 +453,7 @@ static int __xuiColorPickerStyleFloat(xui_widget pWidget, const char* sName, flo
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) &&
 	     (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     isfinite(tProperty.tValue.fFloat) &&
-	     (tProperty.tValue.fFloat >= 0.0f) ) {
+	     __xuiColorPickerMetricValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -682,7 +698,7 @@ static void __xuiColorPickerNotify(xui_widget pWidget, xui_color_picker_data_t* 
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return;
 	}
-	pData->iChangeCount++;
+	if ( pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 	onChange = pData->onChange;
 	pUser = pData->pChangeUser;
 	if ( onChange != NULL ) {
@@ -692,6 +708,7 @@ static void __xuiColorPickerNotify(xui_widget pWidget, xui_color_picker_data_t* 
 
 static int __xuiColorPickerSetColorInternal(xui_widget pWidget, xui_color_picker_data_t* pData, uint32_t iColor, int bNotify)
 {
+	uint32_t iOldColor;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) {
@@ -699,11 +716,13 @@ static int __xuiColorPickerSetColorInternal(xui_widget pWidget, xui_color_picker
 	}
 	iColor = __xuiColorPickerNormalizeColor(pData, iColor);
 	if ( pData->iColor == iColor ) {
-		__xuiColorPickerFormatHex(pData);
 		return XUI_OK;
 	}
+	iOldColor = pData->iColor;
 	pData->iColor = iColor;
-	__xuiColorPickerRgbToHsv(iColor, &pData->fHue, &pData->fSaturation, &pData->fValue);
+	if ( (iOldColor & 0xffffff00u) != (iColor & 0xffffff00u) ) {
+		__xuiColorPickerRgbToHsv(iColor, &pData->fHue, &pData->fSaturation, &pData->fValue);
+	}
 	__xuiColorPickerFormatHex(pData);
 	__xuiColorPickerSyncSelectedPalette(pData);
 	iRet = __xuiColorPickerInvalidateAll(pWidget, pData);
@@ -822,30 +841,43 @@ static int __xuiColorPickerSyncState(xui_widget pWidget, xui_color_picker_data_t
 static void __xuiColorPickerUpdateOwnerRects(xui_widget pWidget, xui_color_picker_data_t* pData)
 {
 	xui_rect_t tRect;
+	float fContentW;
+	float fContentH;
 	float fButtonW;
+	float fLeadingW;
 	float fSwatch;
+	float fSwatchX;
+	float fTextX;
+	float fTextRight;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return;
 	}
 	tRect = xuiWidgetGetRect(pWidget);
-	tRect.fX = 0.0f;
-	tRect.fY = 0.0f;
-	fButtonW = tRect.fH;
+	fContentW = tRect.fW > 0 ? (float)tRect.fW : 0.0f;
+	fContentH = tRect.fH > 0 ? (float)tRect.fH : 0.0f;
+	fButtonW = fContentH;
 	if ( fButtonW < 24.0f ) fButtonW = 24.0f;
 	if ( fButtonW > 36.0f ) fButtonW = 36.0f;
-	if ( fButtonW > tRect.fW ) fButtonW = tRect.fW;
-	fSwatch = tRect.fH - 10.0f;
+	if ( fButtonW > fContentW ) fButtonW = fContentW;
+	fLeadingW = fContentW - fButtonW;
+	fSwatch = fContentH - 10.0f;
 	if ( fSwatch < 12.0f ) fSwatch = 12.0f;
 	if ( fSwatch > 22.0f ) fSwatch = 22.0f;
-	pData->tButtonRect = xuiInternalSnapRect((xui_rect_t){tRect.fW - fButtonW, 0.0f, fButtonW, tRect.fH});
-	pData->tSwatchRect = xuiInternalSnapRect((xui_rect_t){7.0f, (tRect.fH - fSwatch) * 0.5f, fSwatch, fSwatch});
-	pData->tTextRect = xuiInternalSnapRect((xui_rect_t){
-		pData->tSwatchRect.fX + pData->tSwatchRect.fW + 8.0f,
-		0.0f,
-		__xuiColorPickerMax(1.0f, tRect.fW - fButtonW - pData->tSwatchRect.fW - 22.0f),
-		tRect.fH
-	});
+	if ( fSwatch > fContentH ) fSwatch = fContentH;
+	fSwatchX = fLeadingW > 7.0f ? 7.0f : fLeadingW;
+	if ( fSwatch > fLeadingW - fSwatchX ) fSwatch = fLeadingW - fSwatchX;
+	if ( fSwatch < 0.0f ) fSwatch = 0.0f;
+	fTextX = fSwatchX + fSwatch + (fSwatch > 0.0f ? 8.0f : 0.0f);
+	if ( fTextX > fLeadingW ) fTextX = fLeadingW;
+	fTextRight = fLeadingW - 7.0f;
+	if ( fTextRight < fTextX ) fTextRight = fTextX;
+	pData->tButtonRect = xuiInternalRectFromFloatNearest(fContentW - fButtonW, 0.0f,
+		fButtonW, fContentH);
+	pData->tSwatchRect = xuiInternalRectFromFloatNearest(fSwatchX,
+		(fContentH - fSwatch) * 0.5f, fSwatch, fSwatch);
+	pData->tTextRect = xuiInternalRectFromFloatNearest(fTextX, 0.0f,
+		fTextRight - fTextX, fContentH);
 }
 
 static void __xuiColorPickerUpdatePanelRects(xui_color_picker_data_t* pData)
@@ -1410,7 +1442,7 @@ static int __xuiColorPickerHitPanel(xui_color_picker_data_t* pData, float fX, fl
 	iCount = pData->bAlphaEnabled ? 4 : 3;
 	for ( i = 0; i < iCount; i++ ) {
 		if ( __xuiColorPickerRectContains(pData->arrFieldRect[i], fX, fY) ||
-		     __xuiColorPickerRectContains(pData->arrSliderRect[i], fX, fY) ) {
+		     __xuiColorPickerRectContains(__xuiColorPickerTrackHitRect(pData->arrSliderRect[i]), fX, fY) ) {
 			return __xuiColorPickerChannelPart(i);
 		}
 	}
@@ -1677,7 +1709,7 @@ static int __xuiColorPickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner
 			iFieldChannel = i;
 			break;
 		}
-		if ( __xuiColorPickerRectContains(pData->arrSliderRect[i], fX, fY) ) {
+		if ( __xuiColorPickerRectContains(__xuiColorPickerTrackHitRect(pData->arrSliderRect[i]), fX, fY) ) {
 			iSliderChannel = i;
 			break;
 		}
@@ -1701,6 +1733,11 @@ static int __xuiColorPickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner
 	pData->iActiveChannel = -1;
 	if ( iFieldChannel >= 0 ) {
 		pData->iActivePart = __xuiColorPickerChannelPart(iFieldChannel);
+		if ( bSameEditTarget ) {
+			pData->bEditSelectAll = 1;
+			iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
 		iRet = __xuiColorPickerBeginChannelEdit(pData, iFieldChannel);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
@@ -1745,6 +1782,11 @@ static int __xuiColorPickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_COLOR_PICKER_PART_HEX ) {
+		if ( bSameEditTarget ) {
+			pData->bEditSelectAll = 1;
+			iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
 		iRet = __xuiColorPickerBeginHexEdit(pOwner, pData);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
@@ -2038,7 +2080,7 @@ static int __xuiColorPickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_
 	iCount = pData->bAlphaEnabled ? 4 : 3;
 	for ( i = 0; i < iCount; i++ ) {
 		if ( __xuiColorPickerRectContains(pData->arrFieldRect[i], fX, fY) ||
-		     __xuiColorPickerRectContains(pData->arrSliderRect[i], fX, fY) ) {
+		     __xuiColorPickerRectContains(__xuiColorPickerTrackHitRect(pData->arrSliderRect[i]), fX, fY) ) {
 			iValue = (i == 0) ? __xuiColorPickerR(pData->iColor) :
 				((i == 1) ? __xuiColorPickerG(pData->iColor) :
 				((i == 2) ? __xuiColorPickerB(pData->iColor) : __xuiColorPickerA(pData->iColor)));
@@ -2048,6 +2090,15 @@ static int __xuiColorPickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_
 		}
 	}
 	return XUI_OK;
+}
+
+static int __xuiColorPickerPanelAcceptsInput(xui_widget pPanel, xui_widget pOwner, xui_color_picker_data_t* pData)
+{
+	return (pPanel != NULL) && (pOwner != NULL) && (pData != NULL) &&
+	       (pData->pPanel == pPanel) && (pData->pPopup != NULL) &&
+	       xuiPopupIsOpen(pData->pPopup) &&
+	       xuiWidgetGetEffectiveEnabled(pOwner) && xuiWidgetGetEffectiveVisible(pOwner) &&
+	       xuiWidgetGetEffectiveEnabled(pPanel) && xuiWidgetGetEffectiveVisible(pPanel);
 }
 
 static int __xuiColorPickerPanelEvent(xui_widget pPanel, const xui_event_t* pEvent, void* pUser)
@@ -2065,9 +2116,27 @@ static int __xuiColorPickerPanelEvent(xui_widget pPanel, const xui_event_t* pEve
 	}
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_DOWN:
+	case XUI_EVENT_POINTER_MOVE:
+	case XUI_EVENT_POINTER_UP:
+	case XUI_EVENT_POINTER_WHEEL:
+	case XUI_EVENT_KEY_DOWN:
+	case XUI_EVENT_TEXT:
+		if ( !__xuiColorPickerPanelAcceptsInput(pPanel, pOwner, pData) ) return XUI_OK;
+		break;
+	default:
+		break;
+	}
+	switch ( pEvent->iType ) {
+	case XUI_EVENT_POINTER_DOWN:
 		return __xuiColorPickerPanelPointerDown(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_POINTER_MOVE:
 		return __xuiColorPickerPanelPointerMove(pPanel, pOwner, pData, pEvent);
+	case XUI_EVENT_POINTER_LEAVE:
+		if ( pData->iHoverPart != XUI_COLOR_PICKER_PART_NONE ) {
+			pData->iHoverPart = XUI_COLOR_PICKER_PART_NONE;
+			return xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		}
+		return XUI_OK;
 	case XUI_EVENT_POINTER_UP:
 		if ( pData->tPointerOwner.bActive &&
 		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
@@ -2149,7 +2218,7 @@ static int __xuiColorPickerPointerDown(xui_widget pWidget, xui_color_picker_data
 	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) {
 		return XUI_OK;
 	}
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return XUI_OK;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
@@ -2298,7 +2367,6 @@ static int __xuiColorPickerContentMeasure(xui_widget pWidget, xui_vec2_t tConstr
 	xui_font_metrics_t tMetrics;
 	xui_proxy pProxy;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2318,6 +2386,10 @@ static int __xuiColorPickerContentMeasure(xui_widget pWidget, xui_vec2_t tConstr
 	}
 	pSize->fX = xuiInternalSnapSize(pSize->fX);
 	pSize->fY = xuiInternalSnapSize(pSize->fY);
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
@@ -2375,6 +2447,7 @@ static int __xuiColorPickerInitPanelEvents(xui_widget pPanel, xui_widget pOwner)
 
 	iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_DOWN, __xuiColorPickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_MOVE, __xuiColorPickerPanelEvent, pOwner);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_LEAVE, __xuiColorPickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_UP, __xuiColorPickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiColorPickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_WHEEL, __xuiColorPickerPanelEvent, pOwner);
@@ -2918,17 +2991,21 @@ XUI_API int xuiColorPickerSetPopupSize(xui_widget pWidget, float fWidth, float f
 	xui_context pContext;
 	float fOldWidth;
 	float fOldHeight;
+	float fNewWidth;
+	float fNewHeight;
 	int iRet;
 
-	if ( (pData == NULL) || !isfinite(fWidth) || !isfinite(fHeight) ||
-	     (fWidth < 0.0f) || (fHeight < 0.0f) ||
+	if ( (pData == NULL) || !__xuiColorPickerMetricValid(fWidth) || !__xuiColorPickerMetricValid(fHeight) ||
 	     ((fWidth > 0.0f) && (fWidth < XUI_COLOR_PICKER_MIN_POPUP_W)) ||
 	     ((fHeight > 0.0f) && (fHeight < XUI_COLOR_PICKER_MIN_POPUP_H)) ) return XUI_ERROR_INVALID_ARGUMENT;
+	fNewWidth = (fWidth > 0.0f) ? fWidth : pData->fPopupWidth;
+	fNewHeight = (fHeight > 0.0f) ? fHeight : pData->fPopupHeight;
+	if ( (pData->fPopupWidth == fNewWidth) && (pData->fPopupHeight == fNewHeight) ) return XUI_OK;
 	pContext = xuiWidgetGetContext(pWidget);
 	fOldWidth = pData->fPopupWidth;
 	fOldHeight = pData->fPopupHeight;
-	if ( fWidth > 0.0f ) pData->fPopupWidth = fWidth;
-	if ( fHeight > 0.0f ) pData->fPopupHeight = fHeight;
+	pData->fPopupWidth = fNewWidth;
+	pData->fPopupHeight = fNewHeight;
 	iRet = (pData->pPopup != NULL) ? __xuiColorPickerApplyPopupStyle(pWidget, pData) : XUI_OK;
 	if ( !__xuiColorPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	if ( iRet == XUI_OK ) iRet = __xuiColorPickerInvalidateAll(pWidget, pData);
@@ -2956,6 +3033,7 @@ XUI_API int xuiColorPickerSetPopupPlacement(xui_widget pWidget, int iPlacement)
 	int iOldPlacement;
 	int iRet;
 	if ( (pData == NULL) || !__xuiColorPickerPlacementValid(iPlacement) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPopupPlacement == iPlacement ) return XUI_OK;
 	pContext = xuiWidgetGetContext(pWidget);
 	iOldPlacement = pData->iPopupPlacement;
 	pData->iPopupPlacement = iPlacement;
@@ -2977,7 +3055,8 @@ XUI_API int xuiColorPickerGetPopupPlacement(xui_widget pWidget)
 XUI_API int xuiColorPickerSetMetrics(xui_widget pWidget, float fBorderWidth)
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
-	if ( (pData == NULL) || !isfinite(fBorderWidth) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiColorPickerMetricValid(fBorderWidth) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fBorderWidth == fBorderWidth ) return XUI_OK;
 	pData->fBorderWidth = fBorderWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -2994,6 +3073,10 @@ XUI_API int xuiColorPickerSetColors(xui_widget pWidget, uint32_t iText, uint32_t
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iTextColor == iText) && (pData->iDisabledTextColor == iDisabledText) &&
+	     (pData->iBackgroundColor == iBackground) && (pData->iHoverBackgroundColor == iHoverBackground) &&
+	     (pData->iOpenBackgroundColor == iOpenBackground) &&
+	     (pData->iDisabledBackgroundColor == iDisabledBackground) ) return XUI_OK;
 	pData->iTextColor = iText;
 	pData->iDisabledTextColor = iDisabledText;
 	pData->iBackgroundColor = iBackground;
@@ -3020,6 +3103,8 @@ XUI_API int xuiColorPickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, 
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iBorderColor == iBorder) && (pData->iHoverBorderColor == iHoverBorder) &&
+	     (pData->iFocusBorderColor == iFocusBorder) ) return XUI_OK;
 	pData->iBorderColor = iBorder;
 	pData->iHoverBorderColor = iHoverBorder;
 	pData->iFocusBorderColor = iFocusBorder;
@@ -3040,6 +3125,7 @@ XUI_API int xuiColorPickerSetArrowColors(xui_widget pWidget, uint32_t iArrow, ui
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iArrowColor == iArrow) && (pData->iDisabledArrowColor == iDisabledArrow) ) return XUI_OK;
 	pData->iArrowColor = iArrow;
 	pData->iDisabledArrowColor = iDisabledArrow;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3058,6 +3144,8 @@ XUI_API int xuiColorPickerSetButtonColors(xui_widget pWidget, uint32_t iButton, 
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iButtonColor == iButton) && (pData->iButtonHoverColor == iButtonHover) &&
+	     (pData->iButtonOpenColor == iButtonOpen) ) return XUI_OK;
 	pData->iButtonColor = iButton;
 	pData->iButtonHoverColor = iButtonHover;
 	pData->iButtonOpenColor = iButtonOpen;
@@ -3082,6 +3170,11 @@ XUI_API int xuiColorPickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, ui
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iPopupPanelColor == iPanel) && (pData->iPopupBorderColor == iBorder) &&
+	     (pData->iPopupShadowColor == iShadow) && (pData->iPopupTextColor == iText) &&
+	     (pData->iPopupMutedTextColor == iMutedText) && (pData->iAccentColor == iAccent) &&
+	     (pData->iFieldColor == iField) && (pData->iFieldBorderColor == iFieldBorder) &&
+	     (pData->iSeparatorColor == iSeparator) ) return XUI_OK;
 	pContext = xuiWidgetGetContext(pWidget);
 	arrOld[0] = pData->iPopupPanelColor;
 	arrOld[1] = pData->iPopupBorderColor;
@@ -3142,6 +3235,7 @@ XUI_API int xuiColorPickerSetFont(xui_widget pWidget, xui_font pFont)
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFont == pFont ) return XUI_OK;
 	pData->pFont = pFont;
 	iRet = (pData->pPanel != NULL) ? xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
 	if ( iRet != XUI_OK ) return iRet;

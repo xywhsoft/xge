@@ -166,6 +166,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pPicker;
+	xui_widget pFocusTarget;
 	xui_widget pFocusDestroyPicker;
 	xui_widget pFocusDestroyPanel;
 	xui_widget pPopup;
@@ -175,8 +176,10 @@ int main(void)
 	xui_color_picker_desc_t tDesc;
 	xui_accessible_node_t tAccessible;
 	xui_accessible_value_t tAccessibleValue;
+	xui_event_t tEvent;
 	xui_rect_t tRect;
 	xui_rect_t tWorld;
+	xui_vec2_t tMeasured;
 	uint32_t arrPalette[5];
 	uint32_t arrTooMany[XUI_COLOR_PICKER_PALETTE_CAPACITY + 1];
 	uint32_t iTarget;
@@ -190,10 +193,12 @@ int main(void)
 	int iRet;
 	float fPopupWidth;
 	float fPopupHeight;
+	float fBorderWidth;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pPicker = NULL;
+	pFocusTarget = NULL;
 	pFocusDestroyPicker = NULL;
 	pFocusDestroyPanel = NULL;
 	pTarget = NULL;
@@ -246,6 +251,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pPicker == NULL, "undersized descriptor popup rejected");
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
+	tDesc.fPopupWidth = XUI_LAYOUT_UNBOUNDED * 2.0f;
+	iRet = xuiColorPickerCreate(pContext, &pPicker, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pPicker == NULL, "oversized descriptor popup rejected");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
 	tDesc.iPopupPlacement = 99;
 	iRet = xuiColorPickerCreate(pContext, &pPicker, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pPicker == NULL, "invalid descriptor placement rejected");
@@ -264,6 +274,34 @@ int main(void)
 	xuiWidgetSetRect(pPicker, (xui_rect_t){36.0f, 32.0f, 190.0f, 30.0f});
 	iRet = xuiWidgetAddChild(pRoot, pPicker);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add picker");
+	iRet = xuiWidgetCreate(pContext, &pFocusTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFocusTarget != NULL, "focus target create");
+	XUI_TEST_CHECK(xuiWidgetSetFocusable(pFocusTarget, 1) == XUI_OK &&
+		xuiWidgetSetRect(pFocusTarget, (xui_rect_t){470.0f, 520.0f, 20.0f, 20.0f}) == XUI_OK &&
+		xuiWidgetAddChild(pRoot, pFocusTarget) == XUI_OK, "focus target attach");
+	iRet = xuiWidgetMeasureContent(pPicker,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 176.0f && tMeasured.fY == 30.0f,
+		"unbounded content measure");
+	iRet = xuiWidgetMeasureContent(pPicker, (xui_vec2_t){60.0f, 12.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 60.0f && tMeasured.fY == 12.0f,
+		"content measure respects tight constraints");
+	XUI_TEST_CHECK(xuiWidgetSetRect(pPicker, (xui_rect_t){36.0f, 32.0f, 12.0f, 8.0f}) == XUI_OK,
+		"set tiny owner rect");
+	{
+		xui_rect_t tSwatch = xuiColorPickerGetSwatchRect(pPicker);
+		xui_rect_t tButton = xuiColorPickerGetButtonRect(pPicker);
+		xui_rect_t tText = xuiColorPickerGetTextRect(pPicker);
+		XUI_TEST_CHECK(tSwatch.fX >= 0 && tSwatch.fY >= 0 && tSwatch.fW >= 0 && tSwatch.fH >= 0 &&
+			tSwatch.fX + tSwatch.fW <= 12 && tSwatch.fY + tSwatch.fH <= 8 &&
+			tButton.fX >= 0 && tButton.fY >= 0 && tButton.fW >= 0 && tButton.fH >= 0 &&
+			tButton.fX + tButton.fW <= 12 && tButton.fY + tButton.fH <= 8 &&
+			tText.fX >= 0 && tText.fY >= 0 && tText.fW >= 0 && tText.fH >= 0 &&
+			tText.fX + tText.fW <= 12 && tText.fY + tText.fH <= 8,
+			"tiny owner geometry stays inside bounds");
+	}
+	XUI_TEST_CHECK(xuiWidgetSetRect(pPicker, (xui_rect_t){36.0f, 32.0f, 190.0f, 30.0f}) == XUI_OK,
+		"restore picker rect");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 560, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -273,6 +311,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiColorPickerRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
+	iRet = xuiColorPickerGetMetrics(pPicker, &fBorderWidth);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get border width for idempotence");
+	xuiWidgetClearDirty(pPicker, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiColorPickerSetMetrics(pPicker, fBorderWidth);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pPicker) == 0u,
+		"same metrics do not invalidate picker");
 
 	XUI_TEST_CHECK(xuiColorPickerGetPaletteCount(pPicker) == 5, "palette count");
 	XUI_TEST_CHECK(xuiColorPickerGetAlphaEnabled(pPicker) == 1, "alpha enabled");
@@ -285,8 +329,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan popup width rejected");
 	iRet = xuiColorPickerSetPopupSize(pPicker, 320.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "undersized popup width rejected");
+	iRet = xuiColorPickerSetPopupSize(pPicker, XUI_LAYOUT_UNBOUNDED * 2.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "oversized popup width rejected");
 	iRet = xuiColorPickerSetMetrics(pPicker, INFINITY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "infinite border rejected");
+	iRet = xuiColorPickerSetMetrics(pPicker, XUI_LAYOUT_UNBOUNDED * 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "oversized border rejected");
 	iRet = xuiColorPickerGetPopupSize(pPicker, &fPopupWidth, &fPopupHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && fPopupWidth == 432.0f && fPopupHeight == 260.0f, "invalid popup settings preserve size");
 	iRet = xuiColorPickerSetHex(pPicker, "#445566");
@@ -359,19 +407,40 @@ int main(void)
 	{
 		xui_rect_t tSv = xuiColorPickerGetSvRect(pPicker);
 		xui_rect_t tPanelWorld = xuiWidgetGetWorldRect(pPanel);
+		iRet = xuiInputPointerMove(pContext,
+			tPanelWorld.fX + tSv.fX + tSv.fW * 0.5f,
+			tPanelWorld.fY + tSv.fY + tSv.fH * 0.5f, 0);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK &&
+			xuiColorPickerGetHoverPart(pPicker) == XUI_COLOR_PICKER_PART_SV,
+			"panel pointer move sets hover part");
+		memset(&tEvent, 0, sizeof(tEvent));
+		tEvent.iSize = sizeof(tEvent);
+		tEvent.iType = XUI_EVENT_POINTER_LEAVE;
+		tEvent.pTarget = pPanel;
+		iRet = xuiDispatchEvent(pContext, &tEvent);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiColorPickerIsOpen(pPicker) &&
+			xuiColorPickerGetHoverPart(pPicker) == XUI_COLOR_PICKER_PART_NONE,
+			"panel leave clears stale hover state");
+	}
+	{
+		xui_rect_t tSv = xuiColorPickerGetSvRect(pPicker);
+		xui_rect_t tPanelWorld = xuiWidgetGetWorldRect(pPanel);
 		iRet = xuiColorPickerSetColor(pPicker, XUI_COLOR_RGBA(0, 255, 0, 255));
 		XUI_TEST_CHECK(iRet == XUI_OK, "set green before hsv persistence test");
 		iRet = __xuiColorPickerDispatchClick(pContext,
-			tPanelWorld.fX + tSv.fX + 1.0f,
-			tPanelWorld.fY + tSv.fY + 1.0f);
+			tPanelWorld.fX + tSv.fX,
+			tPanelWorld.fY + tSv.fY);
 		XUI_TEST_CHECK(iRet == XUI_OK, "desaturate green through sv panel");
+		iRet = xuiColorPickerSetHex(pPicker, "#FFFFFF40");
+		XUI_TEST_CHECK(iRet == XUI_OK, "alpha-only edit while desaturated");
 		iRet = __xuiColorPickerDispatchClick(pContext,
 			tPanelWorld.fX + tSv.fX + tSv.fW - 1.0f,
 			tPanelWorld.fY + tSv.fY + 1.0f);
 		XUI_TEST_CHECK(iRet == XUI_OK, "resaturate through sv panel");
 		iRet = xuiColorPickerGetRGBA(pPicker, &iR, &iG, &iB, &iA);
-		XUI_TEST_CHECK(iRet == XUI_OK && iR < 16 && iG > 240 && iB < 16,
-			"zero saturation preserves hue for subsequent edits");
+		XUI_TEST_CHECK(iRet == XUI_OK && iR < 16 && iG > 240 && iB < 16 && iA == 0x40,
+			"alpha-only edit preserves zero-saturation hue");
 		iRet = xuiColorPickerSetColor(pPicker, XUI_COLOR_RGBA(0, 0, 0, 255));
 		XUI_TEST_CHECK(iRet == XUI_OK, "set black before hue redraw test");
 		iRet = __xuiColorPickerRender(pContext, pTarget);
@@ -460,6 +529,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tChange.iCount >= 3, "alpha drag callback");
 	iColor = xuiColorPickerGetColor(pPicker);
 	XUI_TEST_CHECK((iColor & 0xffu) >= 50u && (iColor & 0xffu) <= 80u, "alpha drag value");
+	iCountBefore = tChange.iCount;
+	iRet = __xuiColorPickerDispatchClick(pContext,
+		tWorld.fX + tRect.fX + tRect.fW * 0.75f,
+		tWorld.fY + tRect.fY - 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "alpha knob-height hit target click");
+	iRet = xuiColorPickerGetRGBA(pPicker, &iR, &iG, &iB, &iA);
+	XUI_TEST_CHECK(iRet == XUI_OK && iA >= 185 && iA <= 200 && tChange.iCount > iCountBefore,
+		"alpha track accepts pointer across visible knob height");
 
 	iCountBefore = tChange.iCount;
 	tRect = xuiColorPickerGetHexRect(pPicker);
@@ -467,6 +544,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "hex edit click");
 	iRet = __xuiColorPickerDispatchText(pContext, "ABCDEF40");
 	XUI_TEST_CHECK(iRet == XUI_OK, "hex edit text");
+	iRet = __xuiColorPickerClickPanelRectFull(pContext, pPanel, tRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "repeat click keeps uncommitted hex text");
 	iRet = __xuiColorPickerDispatchKey(pContext, XUI_KEY_ENTER);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hex edit commit");
 	XUI_TEST_CHECK(strcmp(xuiColorPickerGetHex(pPicker), "#ABCDEF40") == 0 && tChange.iCount > iCountBefore, "hex edit applies typed color");
@@ -496,6 +575,47 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiColorPickerIsOpen(pPicker), "escape closes");
+
+	XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pFocusTarget) == XUI_OK,
+		"focus target before closed panel event");
+	iColor = xuiColorPickerGetColor(pPicker);
+	tRect = xuiColorPickerGetAlphaRect(pPicker);
+	tWorld = xuiWidgetGetWorldRect(pPanel);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pPanel;
+	tEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tEvent.fX = tWorld.fX + tRect.fX + tRect.fW * 0.75f;
+	tEvent.fY = tWorld.fY + tRect.fY + tRect.fH * 0.5f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiColorPickerGetColor(pPicker) == iColor &&
+		xuiGetFocusWidget(pContext) == pFocusTarget,
+		"closed panel ignores direct pointer event");
+	iRet = xuiWidgetSetVisible(pPicker, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiColorPickerIsOpen(pPicker), "hide picker");
+	XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pFocusTarget) == XUI_OK,
+		"focus target before hidden owner event");
+	tWorld = xuiWidgetGetWorldRect(pPicker);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pPicker;
+	tEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tEvent.fX = tWorld.fX + tWorld.fW * 0.5f;
+	tEvent.fY = tWorld.fY + tWorld.fH * 0.5f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiColorPickerIsOpen(pPicker) &&
+		xuiGetFocusWidget(pContext) == pFocusTarget,
+		"hidden owner ignores direct pointer event");
+	iRet = xuiWidgetSetVisible(pPicker, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore picker visibility");
 
 	iRet = xuiWidgetSetEnabled(pPicker, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");
