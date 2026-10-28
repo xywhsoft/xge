@@ -302,6 +302,11 @@ int main(void)
 		tInvalidDesc.fPopupHeight = NAN;
 		iRet = xuiComboBoxCreate(pContext, &pInvalid, &tInvalidDesc);
 		XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite descriptor rejected");
+		tInvalidDesc = tDesc;
+		tInvalidDesc.fItemHeight = XUI_LAYOUT_UNBOUNDED * 2.0f;
+		iRet = xuiComboBoxCreate(pContext, &pInvalid, &tInvalidDesc);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		               "oversized descriptor metric rejected");
 	}
 	iRet = xuiComboBoxCreate(pContext, &pCombo, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCombo != NULL, "combobox create");
@@ -319,6 +324,14 @@ int main(void)
 	tEditDesc.iMode = XUI_COMBOBOX_MODE_EDIT;
 	tEditDesc.sPlaceholder = "type or choose";
 	tEditDesc.pFont = pFont;
+	{
+		xui_combobox_desc_t tLimitedDesc = tEditDesc;
+		xui_widget pInvalid = (xui_widget)(uintptr_t)1;
+		tLimitedDesc.iMaxLength = 3;
+		iRet = xuiComboBoxCreate(pContext, &pInvalid, &tLimitedDesc);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_BUFFER_TOO_SMALL && pInvalid == NULL,
+		               "editable descriptor rejects selected item that exceeds max length");
+	}
 	iRet = xuiComboBoxCreate(pContext, &pEditCombo, &tEditDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pEditCombo != NULL, "editable combobox create");
 	iRet = xuiComboBoxSetSelect(pEditCombo, __xuiComboBoxSelected, &tEditSelect);
@@ -337,6 +350,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiComboBoxRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
+	{
+		xui_vec2_t tMeasured;
+		iRet = xuiWidgetMeasureContent(pCombo,
+			(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+		XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX > 0.0f && tMeasured.fY > 0.0f,
+		               "combobox intrinsic measure");
+		iRet = xuiWidgetMeasureContent(pCombo, (xui_vec2_t){60.0f, 12.0f}, &tMeasured);
+		XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX <= 60.0f && tMeasured.fY <= 12.0f,
+		               "combobox measure honors finite constraints");
+	}
 
 	XUI_TEST_CHECK(xuiComboBoxGetItemCount(pCombo) == 5, "item count");
 	XUI_TEST_CHECK(xuiComboBoxGetSelected(pCombo) == 0 && xuiComboBoxGetSelectedValue(pCombo) == 100, "initial selected");
@@ -351,6 +374,29 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxSetSelected(pCombo, 0) == XUI_OK, "restore item data after ownership test");
 	tButton = xuiComboBoxGetButtonRect(pCombo);
 	XUI_TEST_CHECK(tButton.fW > 20.0f && tButton.fH > 20.0f, "button rect");
+	{
+		xui_rect_t tOldRect = xuiWidgetGetRect(pCombo);
+		xui_rect_t tContent;
+		xui_rect_t tText;
+		iRet = xuiWidgetSetRect(pCombo, (xui_rect_t){36.0f, 32.0f, 7.0f, 3.0f});
+		XUI_TEST_CHECK(iRet == XUI_OK, "tiny combobox rect set");
+		tContent = xuiWidgetGetContentRect(pCombo);
+		tButton = xuiComboBoxGetButtonRect(pCombo);
+		tText = xuiComboBoxGetTextRect(pCombo);
+		XUI_TEST_CHECK(tButton.fW >= 0.0f && tButton.fH >= 0.0f &&
+		               tButton.fX >= tContent.fX && tButton.fY >= tContent.fY &&
+		               tButton.fX + tButton.fW <= tContent.fX + tContent.fW &&
+		               tButton.fY + tButton.fH <= tContent.fY + tContent.fH,
+		               "tiny combobox button stays inside content");
+		XUI_TEST_CHECK(tText.fW >= 0.0f && tText.fH >= 0.0f &&
+		               tText.fX >= tContent.fX && tText.fY >= tContent.fY &&
+		               tText.fX + tText.fW <= tContent.fX + tContent.fW &&
+		               tText.fY + tText.fH <= tContent.fY + tContent.fH,
+		               "tiny combobox text stays inside content");
+		iRet = xuiWidgetSetRect(pCombo, tOldRect);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiLayout(pContext) == XUI_OK,
+		               "restore combobox geometry after tiny bounds");
+	}
 	pEditInput = xuiComboBoxGetInputWidget(pEditCombo);
 	XUI_TEST_CHECK(pEditInput != NULL && xuiWidgetGetVisible(pEditInput), "editable input visible");
 	tButton = xuiComboBoxGetButtonRect(pEditCombo);
@@ -381,6 +427,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiComboBoxGetText(pEditCombo), "Gam") == 0 &&
 	               xuiComboBoxGetSelected(pEditCombo) == -1,
 	               "max length truncation clears mismatched selection");
+	{
+		int iChangeCount = xuiComboBoxGetChangeCount(pEditCombo);
+		xuiWidgetClearDirty(pEditCombo, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pEditInput, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiComboBoxSetText(pEditCombo, "Gamma");
+		XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiComboBoxGetText(pEditCombo), "Gam") == 0 &&
+		               xuiComboBoxGetChangeCount(pEditCombo) == iChangeCount &&
+		               xuiWidgetGetDirtyFlags(pEditCombo) == 0u &&
+		               xuiWidgetGetDirtyFlags(pEditInput) == 0u,
+		               "truncated text setter compares applied value and is idempotent");
+		iRet = xuiComboBoxSetSelected(pEditCombo, 0);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_BUFFER_TOO_SMALL &&
+		               xuiComboBoxGetSelected(pEditCombo) == -1 &&
+		               strcmp(xuiComboBoxGetText(pEditCombo), "Gam") == 0 &&
+		               xuiComboBoxGetChangeCount(pEditCombo) == iChangeCount,
+		               "selection that exceeds max length rolls back transactionally");
+	}
 	iRet = xuiComboBoxSetMaxLength(pEditCombo, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxSetSelected(pEditCombo, 3) == XUI_OK &&
 	               strcmp(xuiComboBoxGetText(pEditCombo), "Gamma") == 0,
@@ -458,8 +521,47 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pInputMenu), "editable input menu opens by long press");
 	iRet = xuiMenuClose(pInputMenu);
 	XUI_TEST_CHECK(iRet == XUI_OK, "close long press input menu");
+	iRet = xuiWidgetSetVisible(pEditCombo, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide editable combobox");
+	iRet = xuiComboBoxOpenInputMenu(pEditCombo, 64.0f, 64.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuIsOpen(pInputMenu),
+	               "hidden editable combobox does not open input menu");
+	iRet = xuiWidgetSetVisible(pEditCombo, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore editable combobox visibility");
 	iRet = xuiComboBoxOpenInputMenu(pCombo, 40.0f, 40.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "select mode has no editable input menu");
+	{
+		xui_rect_t tWorld = xuiWidgetGetWorldRect(pCombo);
+		iRet = xuiWidgetSetVisible(pCombo, 0);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+		if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pEditInput);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pEditInput,
+		               "focus sibling before hidden targeted input");
+		memset(&tContextEvent, 0, sizeof(tContextEvent));
+		tContextEvent.iSize = sizeof(tContextEvent);
+		tContextEvent.iType = XUI_EVENT_POINTER_DOWN;
+		tContextEvent.pTarget = pCombo;
+		tContextEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+		tContextEvent.fX = tWorld.fX + 4.0f;
+		tContextEvent.fY = tWorld.fY + 4.0f;
+		iRet = xuiDispatchEvent(pContext, &tContextEvent);
+		XUI_TEST_CHECK(iRet == XUI_OK && !xuiComboBoxIsOpen(pCombo) &&
+		               xuiGetFocusWidget(pContext) == pEditInput,
+		               "hidden combobox ignores targeted pointer down");
+		memset(&tContextEvent, 0, sizeof(tContextEvent));
+		tContextEvent.iSize = sizeof(tContextEvent);
+		tContextEvent.iType = XUI_EVENT_KEY_DOWN;
+		tContextEvent.pTarget = pCombo;
+		tContextEvent.iKey = XUI_KEY_F4;
+		iRet = xuiDispatchEvent(pContext, &tContextEvent);
+		XUI_TEST_CHECK(iRet == XUI_OK && !xuiComboBoxIsOpen(pCombo),
+		               "hidden combobox ignores targeted keyboard open");
+		iRet = xuiWidgetSetVisible(pCombo, 1);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK, "restore combobox visibility");
+	}
 
 	iRet = xuiComboBoxOpen(pCombo);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pCombo), "open");
@@ -514,6 +616,58 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite popup max height rejected");
 	iRet = xuiComboBoxSetMetrics(pCombo, NAN, 1.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite metrics rejected");
+	iRet = xuiComboBoxSetPopupHeight(pCombo, XUI_LAYOUT_UNBOUNDED * 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiComboBoxGetPopupHeight(pCombo) == 132.0f,
+	               "oversized popup height rejected transactionally");
+	iRet = xuiComboBoxSetPopupMaxHeight(pCombo, XUI_LAYOUT_UNBOUNDED * 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "oversized popup max height rejected");
+	iRet = xuiComboBoxSetMetrics(pCombo, XUI_LAYOUT_UNBOUNDED * 2.0f, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "oversized metrics rejected");
+	{
+		uint32_t iText, iDisabledText, iBackground, iHoverBackground, iOpenBackground;
+		uint32_t iDisabledBackground, iBorder, iHoverBorder, iFocusBorder;
+		uint32_t iArrow, iDisabledArrow, iButton, iButtonHover, iButtonOpen;
+		uint32_t iPanel, iPopupBorder, iShadow, iHover, iPopupText, iHoverText;
+		uint32_t iPopupDisabledText, iSeparator;
+		float fItemHeight, fBorderWidth;
+		int arrCurrentEnabled[5] = {1, 0, 0, 1, 1};
+
+		XUI_TEST_CHECK(xuiComboBoxGetColors(pCombo, &iText, &iDisabledText, &iBackground,
+		               &iHoverBackground, &iOpenBackground, &iDisabledBackground) == XUI_OK,
+		               "get combobox colors for idempotence");
+		XUI_TEST_CHECK(xuiComboBoxGetBorderColors(pCombo, &iBorder, &iHoverBorder,
+		               &iFocusBorder) == XUI_OK &&
+		               xuiComboBoxGetArrowColors(pCombo, &iArrow, &iDisabledArrow) == XUI_OK &&
+		               xuiComboBoxGetButtonColors(pCombo, &iButton, &iButtonHover,
+		               &iButtonOpen) == XUI_OK, "get combobox chrome colors for idempotence");
+		XUI_TEST_CHECK(xuiComboBoxGetPopupColors(pCombo, &iPanel, &iPopupBorder, &iShadow,
+		               &iHover, &iPopupText, &iHoverText, &iPopupDisabledText,
+		               &iSeparator) == XUI_OK &&
+		               xuiComboBoxGetMetrics(pCombo, &fItemHeight, &fBorderWidth) == XUI_OK,
+		               "get combobox popup style for idempotence");
+		xuiWidgetClearDirty(pCombo, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMenu, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiComboBoxSetPopupHeight(pCombo, xuiComboBoxGetPopupHeight(pCombo));
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetPopupMaxHeight(pCombo, xuiComboBoxGetPopupMaxHeight(pCombo));
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetPopupPlacement(pCombo, xuiComboBoxGetPopupPlacement(pCombo));
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetMetrics(pCombo, fItemHeight, fBorderWidth);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetColors(pCombo, iText, iDisabledText,
+			iBackground, iHoverBackground, iOpenBackground, iDisabledBackground);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetBorderColors(pCombo, iBorder, iHoverBorder, iFocusBorder);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetArrowColors(pCombo, iArrow, iDisabledArrow);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetButtonColors(pCombo, iButton, iButtonHover, iButtonOpen);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetPopupColors(pCombo, iPanel, iPopupBorder,
+			iShadow, iHover, iPopupText, iHoverText, iPopupDisabledText, iSeparator);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetFont(pCombo, xuiComboBoxGetFont(pCombo));
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetMaxLength(pCombo, xuiComboBoxGetMaxLength(pCombo));
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetEnabledItems(pCombo, arrCurrentEnabled, 5);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxClose(pCombo);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pCombo) == 0u &&
+		               xuiWidgetGetDirtyFlags(pMenu) == 0u &&
+		               xuiWidgetGetDirtyFlags(pPopup) == 0u,
+		               "same combobox setters and closed close are idempotent");
+	}
 	iRet = xuiComboBoxSetItems(pCombo, arrOversizedItems, XUI_COMBOBOX_ITEM_CAPACITY + 1);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiComboBoxGetItemCount(pCombo) == 5, "oversized items rejected without truncation");
 	iRet = xuiComboBoxOpen(pCombo);
@@ -532,8 +686,21 @@ int main(void)
 	arrEnabled[2] = 0;
 	arrEnabled[3] = 1;
 	arrEnabled[4] = 0;
-	iRet = xuiComboBoxSetEnabledItems(pCombo, arrEnabled, 5);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxGetSelected(pCombo) == -1 && xuiComboBoxIsItemEnabled(pCombo, 1), "enabled map");
+	{
+		int iChangeCount = xuiComboBoxGetChangeCount(pCombo);
+		iRet = xuiComboBoxSetEnabledItems(pCombo, arrEnabled, 5);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxGetSelected(pCombo) == -1 &&
+		               xuiComboBoxIsItemEnabled(pCombo, 1) &&
+		               xuiComboBoxGetChangeCount(pCombo) == iChangeCount + 1,
+		               "enabled map clears selection and records change");
+		xuiWidgetClearDirty(pCombo, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(xuiComboBoxGetMenuWidget(pCombo), XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiComboBoxSetEnabledItems(pCombo, arrEnabled, 5);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxGetChangeCount(pCombo) == iChangeCount + 1 &&
+		               xuiWidgetGetDirtyFlags(pCombo) == 0u &&
+		               xuiWidgetGetDirtyFlags(xuiComboBoxGetMenuWidget(pCombo)) == 0u,
+		               "same enabled map is idempotent");
+	}
 	iRet = xuiWidgetSetEnabled(pCombo, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable combo");
 	iRet = xuiComboBoxOpen(pCombo);
@@ -552,9 +719,23 @@ int main(void)
 		pModeInput = xuiComboBoxGetInputWidget(pModeCombo);
 		XUI_TEST_CHECK(pModeInput != NULL && xuiSetFocusWidget(pContext, pModeCombo) == XUI_OK,
 		               "mode transfer select focus");
+		iRet = xuiComboBoxSetMaxLength(pModeCombo, 3);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxGetSelected(pModeCombo) == 0 &&
+		               strcmp(xuiComboBoxGetText(pModeCombo), "Alpha") == 0,
+		               "select mode max length preserves selected item");
 		iRet = xuiComboBoxSetMode(pModeCombo, XUI_COMBOBOX_MODE_EDIT);
+		XUI_TEST_CHECK(iRet == XUI_ERROR_BUFFER_TOO_SMALL &&
+		               xuiComboBoxGetMode(pModeCombo) == XUI_COMBOBOX_MODE_SELECT &&
+		               xuiComboBoxGetSelected(pModeCombo) == 0 &&
+		               xuiGetFocusWidget(pContext) == pModeCombo &&
+		               !xuiWidgetGetVisible(pModeInput),
+		               "select to edit rejects truncated selection transactionally");
+		iRet = xuiComboBoxSetMaxLength(pModeCombo, 0);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetMode(pModeCombo, XUI_COMBOBOX_MODE_EDIT);
 		XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pModeInput &&
-		               xuiWidgetGetVisible(pModeInput), "select to edit transfers focus to input");
+		               xuiWidgetGetVisible(pModeInput) &&
+		               strcmp(xuiComboBoxGetText(pModeCombo), "Alpha") == 0,
+		               "select to edit transfers focus and selected text to input");
 		iRet = xuiComboBoxSetMode(pModeCombo, XUI_COMBOBOX_MODE_SELECT);
 		XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pModeCombo &&
 		               !xuiWidgetGetVisible(pModeInput), "edit to select transfers focus to owner");

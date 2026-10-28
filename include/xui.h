@@ -5102,7 +5102,8 @@ typedef struct xui_statusbar_desc_t {
 
 /* 组合框创建描述。选项数组、选项文本、sText 与 sPlaceholder 在创建期间
  * 读取，控件复制需要保留的字符串；pUser 与 pFont 为借用资源。iMaxLength
- * 使用 UTF-8 字节数，0 表示不限。 */
+ * 使用 UTF-8 字节数，0 表示不限；可编辑模式的初始选中项文本必须能在
+ * iMaxLength 内完整表示。四个尺寸字段须位于 [0, XUI_LAYOUT_UNBOUNDED]。 */
 typedef struct xui_combobox_desc_t {
 	uint32_t iSize;
 	const char** arrItems;
@@ -11612,19 +11613,22 @@ XUI_API const char* xuiComboBoxGetItemText(xui_widget pWidget, int iIndex);
 XUI_API int xuiComboBoxGetItemValue(xui_widget pWidget, int iIndex);
 /* 按索引查询启用状态。 */
 XUI_API int xuiComboBoxIsItemEnabled(xui_widget pWidget, int iIndex);
-/* 按索引设置选中项；-1、越界、禁用项或分隔项均清空选择。 */
+/* 按索引设置选中项；-1、越界、禁用项或分隔项均清空选择。可编辑模式下，
+ * 若选项文本超过最大长度则返回 XUI_ERROR_BUFFER_TOO_SMALL 并保持原选择。 */
 XUI_API int xuiComboBoxSetSelected(xui_widget pWidget, int iIndex);
 /* 读取选中索引（未选 -1）。 */
 XUI_API int xuiComboBoxGetSelected(xui_widget pWidget);
-/* 按业务值设置首个匹配且可用的选项；无匹配项时清空选择。 */
+/* 按业务值设置首个匹配且可用的选项；无匹配项时清空选择。可编辑模式下，
+ * 若匹配项文本超过最大长度则返回 XUI_ERROR_BUFFER_TOO_SMALL 并保持原选择。 */
 XUI_API int xuiComboBoxSetSelectedValue(xui_widget pWidget, int iValue);
 /* 读取选中项业务值；未选时返回 0，请配合 GetSelected 区分合法值 0。 */
 XUI_API int xuiComboBoxGetSelectedValue(xui_widget pWidget);
-/* 设置模式（只选/可编辑）。 */
+/* 设置模式（只选/可编辑）。切换到可编辑模式时会同步选中项文本；若文本超过
+ * 最大长度则返回 XUI_ERROR_BUFFER_TOO_SMALL，并保持原模式、选择与焦点。 */
 XUI_API int xuiComboBoxSetMode(xui_widget pWidget, int iMode);
 /* 读取模式。 */
 XUI_API int xuiComboBoxGetMode(xui_widget pWidget);
-/* 设置可编辑文本。 */
+/* 设置可编辑文本；应用最大长度并在 UTF-8 字素边界截断。 */
 XUI_API int xuiComboBoxSetText(xui_widget pWidget, const char* sText);
 /* 读取控件持有的只读显示文本；下一次文本、选择或数据更新会使其失效。 */
 XUI_API const char* xuiComboBoxGetText(xui_widget pWidget);
@@ -11632,7 +11636,7 @@ XUI_API const char* xuiComboBoxGetText(xui_widget pWidget);
 XUI_API int xuiComboBoxSetPlaceholder(xui_widget pWidget, const char* sText);
 /* 读取占位文本。 */
 XUI_API const char* xuiComboBoxGetPlaceholder(xui_widget pWidget);
-/* 设置可编辑文本最大 UTF-8 字节数；0 表示不限。 */
+/* 设置可编辑文本最大 UTF-8 字节数；0 表示不限。只选模式下不截断或清除当前选择。 */
 XUI_API int xuiComboBoxSetMaxLength(xui_widget pWidget, int iMaxLength);
 /* 读取最大长度。 */
 XUI_API int xuiComboBoxGetMaxLength(xui_widget pWidget);
@@ -11652,11 +11656,11 @@ XUI_API int xuiComboBoxClose(xui_widget pWidget);
 XUI_API int xuiComboBoxToggle(xui_widget pWidget);
 /* 下拉是否打开。 */
 XUI_API int xuiComboBoxIsOpen(xui_widget pWidget);
-/* 设置下拉高度。 */
+/* 设置下拉高度；参数须为 [0, XUI_LAYOUT_UNBOUNDED] 内的有限值。 */
 XUI_API int xuiComboBoxSetPopupHeight(xui_widget pWidget, float fHeight);
 /* 读取下拉高度。 */
 XUI_API float xuiComboBoxGetPopupHeight(xui_widget pWidget);
-/* 设置下拉最大高度（超出滚动）。 */
+/* 设置下拉最大高度（超出滚动）；参数须为 [0, XUI_LAYOUT_UNBOUNDED] 内的有限值。 */
 XUI_API int xuiComboBoxSetPopupMaxHeight(xui_widget pWidget, float fMaxHeight);
 /* 读取下拉最大高度。 */
 XUI_API float xuiComboBoxGetPopupMaxHeight(xui_widget pWidget);
@@ -11664,7 +11668,8 @@ XUI_API float xuiComboBoxGetPopupMaxHeight(xui_widget pWidget);
 XUI_API int xuiComboBoxSetPopupPlacement(xui_widget pWidget, int iPlacement);
 /* 读取下拉方位。 */
 XUI_API int xuiComboBoxGetPopupPlacement(xui_widget pWidget);
-/* 设置度量（项高/边框宽）。 */
+/* 设置度量（项高/边框宽）；参数须为 [0, XUI_LAYOUT_UNBOUNDED] 内的有限值，
+ * 项高 0 表示保持当前值。 */
 XUI_API int xuiComboBoxSetMetrics(xui_widget pWidget, float fItemHeight, float fBorderWidth);
 /* 输出度量。 */
 XUI_API int xuiComboBoxGetMetrics(xui_widget pWidget, float* pItemHeight, float* pBorderWidth);
