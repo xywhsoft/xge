@@ -6862,7 +6862,7 @@ XUI_API int xuiPanelGetBorder(xui_widget pWidget, float* pBorderWidth, uint32_t*
 XUI_API int xuiPanelSetHeaderHeight(xui_widget pWidget, float fHeight);
 /* 读取头部高度。 */
 XUI_API float xuiPanelGetHeaderHeight(xui_widget pWidget);
-/* 设置头部与内容区间距。 */
+/* 设置头部中图标与标题的间距。 */
 XUI_API int xuiPanelSetHeaderGap(xui_widget pWidget, float fGap);
 /* 读取间距。 */
 XUI_API float xuiPanelGetHeaderGap(xui_widget pWidget);

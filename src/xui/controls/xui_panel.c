@@ -41,6 +41,16 @@ typedef struct xui_panel_resolved_t {
 	int bClipClient;
 } xui_panel_resolved_t;
 
+#define XUI_PANEL_SYNC_HEADER_HEIGHT	(1u << 0)
+#define XUI_PANEL_SYNC_HEADER_GAP	(1u << 1)
+#define XUI_PANEL_SYNC_ICON_SIZE		(1u << 2)
+#define XUI_PANEL_SYNC_TITLE_FONT	(1u << 3)
+#define XUI_PANEL_SYNC_TITLE_COLOR	(1u << 4)
+#define XUI_PANEL_SYNC_TITLE_DISABLED	(1u << 5)
+#define XUI_PANEL_SYNC_TITLE_FLAGS	(1u << 6)
+#define XUI_PANEL_SYNC_CLIENT_CLIP	(1u << 7)
+#define XUI_PANEL_SYNC_ALL		0xffu
+
 static int __xuiPanelFloatValid(float fValue)
 {
 	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
@@ -50,6 +60,17 @@ static int __xuiPanelRectEqual(xui_rect_t tA, xui_rect_t tB)
 {
 	return (tA.fX == tB.fX) && (tA.fY == tB.fY) &&
 	       (tA.fW == tB.fW) && (tA.fH == tB.fH);
+}
+
+static int __xuiPanelIconSourceValid(xui_rect_t tRect)
+{
+	return (tRect.fX >= -XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fY >= -XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fX <= XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fY <= XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fW >= 0) && (tRect.fH >= 0) &&
+	       (tRect.fW <= XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fH <= XUI_CONTEXT_MAX_VIEWPORT);
 }
 
 static xui_thickness_t __xuiPanelThickness(float fLeft, float fTop, float fRight, float fBottom)
@@ -71,7 +92,7 @@ static int __xuiPanelDescValid(const xui_panel_desc_t* pDesc)
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
-	if ( (pDesc->tIconSrc.fW < 0.0f) || (pDesc->tIconSrc.fH < 0.0f) ) {
+	if ( !__xuiPanelIconSourceValid(pDesc->tIconSrc) ) {
 		return 0;
 	}
 	if ( ((pDesc->fHeaderHeight != 0.0f) && !__xuiPanelFloatValid(pDesc->fHeaderHeight)) ||
@@ -208,46 +229,110 @@ static void __xuiPanelResolve(xui_widget pWidget, const xui_panel_data_t* pData,
 	pResolved->pFont = __xuiPanelStyleFont(pWidget, pResolved->pFont);
 }
 
-static int __xuiPanelSyncChildren(xui_widget pWidget, xui_panel_data_t* pData, const xui_panel_resolved_t* pResolved)
+static int __xuiPanelSyncChildrenMask(xui_widget pWidget, xui_panel_data_t* pData,
+	const xui_panel_resolved_t* pResolved, uint32_t iMask, int* pChanged)
 {
+	xui_vec2_t tPreferred;
+	int bChanged;
+	int bVisible;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pData->pHeader != NULL ) {
-		iRet = xuiWidgetSetVisible(pData->pHeader, pResolved->fHeaderHeight > 0.0f);
-		if ( iRet != XUI_OK ) return iRet;
-		iRet = xuiWidgetSetPreferredSize(pData->pHeader, (xui_vec2_t){0.0f, pResolved->fHeaderHeight});
-		if ( iRet != XUI_OK ) return iRet;
+	bChanged = 0;
+	if ( (pData->pHeader != NULL) && ((iMask & XUI_PANEL_SYNC_HEADER_HEIGHT) != 0u) ) {
+		bVisible = pResolved->fHeaderHeight > 0.0f;
+		if ( xuiWidgetGetVisible(pData->pHeader) != bVisible ) {
+			iRet = xuiWidgetSetVisible(pData->pHeader, bVisible);
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
+		tPreferred = xuiWidgetGetPreferredSize(pData->pHeader);
+		if ( (tPreferred.fX != 0.0f) || (tPreferred.fY != pResolved->fHeaderHeight) ) {
+			iRet = xuiWidgetSetPreferredSize(pData->pHeader,
+				(xui_vec2_t){0.0f, pResolved->fHeaderHeight});
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
+	}
+	if ( (pData->pHeader != NULL) && ((iMask & XUI_PANEL_SYNC_HEADER_GAP) != 0u) &&
+	     (xuiWidgetGetGap(pData->pHeader) != pResolved->fHeaderGap) ) {
 		iRet = xuiWidgetSetGap(pData->pHeader, pResolved->fHeaderGap);
 		if ( iRet != XUI_OK ) return iRet;
+		bChanged = 1;
 	}
-	if ( pData->pIcon != NULL ) {
-		iRet = xuiWidgetSetPreferredSize(pData->pIcon, (xui_vec2_t){pResolved->fIconSize, pResolved->fIconSize});
-		if ( iRet != XUI_OK ) return iRet;
+	if ( (pData->pIcon != NULL) && ((iMask & XUI_PANEL_SYNC_ICON_SIZE) != 0u) ) {
+		tPreferred = xuiWidgetGetPreferredSize(pData->pIcon);
+		if ( (tPreferred.fX != pResolved->fIconSize) || (tPreferred.fY != pResolved->fIconSize) ) {
+			iRet = xuiWidgetSetPreferredSize(pData->pIcon,
+				(xui_vec2_t){pResolved->fIconSize, pResolved->fIconSize});
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
 	}
 	if ( pData->pTitle != NULL ) {
-		iRet = xuiLabelSetFont(pData->pTitle, pResolved->pFont);
-		if ( iRet != XUI_OK ) return iRet;
-		iRet = xuiLabelSetTextColor(pData->pTitle, pResolved->iTitleColor);
-		if ( iRet != XUI_OK ) return iRet;
-		iRet = xuiLabelSetDisabledTextColor(pData->pTitle, pResolved->iDisabledTitleColor);
-		if ( iRet != XUI_OK ) return iRet;
-		iRet = xuiLabelSetTextFlags(pData->pTitle, pResolved->iTitleFlags);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( ((iMask & XUI_PANEL_SYNC_TITLE_FONT) != 0u) &&
+		     (xuiLabelGetFont(pData->pTitle) != pResolved->pFont) ) {
+			iRet = xuiLabelSetFont(pData->pTitle, pResolved->pFont);
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
+		if ( ((iMask & XUI_PANEL_SYNC_TITLE_COLOR) != 0u) &&
+		     (xuiLabelGetTextColor(pData->pTitle) != pResolved->iTitleColor) ) {
+			iRet = xuiLabelSetTextColor(pData->pTitle, pResolved->iTitleColor);
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
+		if ( ((iMask & XUI_PANEL_SYNC_TITLE_DISABLED) != 0u) &&
+		     (xuiLabelGetDisabledTextColor(pData->pTitle) != pResolved->iDisabledTitleColor) ) {
+			iRet = xuiLabelSetDisabledTextColor(pData->pTitle, pResolved->iDisabledTitleColor);
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
+		if ( ((iMask & XUI_PANEL_SYNC_TITLE_FLAGS) != 0u) &&
+		     (xuiLabelGetTextFlags(pData->pTitle) != pResolved->iTitleFlags) ) {
+			iRet = xuiLabelSetTextFlags(pData->pTitle, pResolved->iTitleFlags);
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
 	}
-	if ( pData->pClient != NULL ) {
-		iRet = xuiWidgetSetOverflow(pData->pClient, pResolved->bClipClient ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE);
-		if ( iRet != XUI_OK ) return iRet;
+	if ( (pData->pClient != NULL) && ((iMask & XUI_PANEL_SYNC_CLIENT_CLIP) != 0u) ) {
+		int iOverflow = pResolved->bClipClient ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE;
+		if ( xuiWidgetGetOverflow(pData->pClient) != iOverflow ) {
+			iRet = xuiWidgetSetOverflow(pData->pClient, iOverflow);
+			if ( iRet != XUI_OK ) return iRet;
+			bChanged = 1;
+		}
 	}
+	if ( pChanged != NULL ) *pChanged = bChanged;
 	return XUI_OK;
+}
+
+static int __xuiPanelSyncChildren(xui_widget pWidget, xui_panel_data_t* pData,
+	const xui_panel_resolved_t* pResolved)
+{
+	return __xuiPanelSyncChildrenMask(pWidget, pData, pResolved,
+		XUI_PANEL_SYNC_ALL, NULL);
 }
 
 static int __xuiPanelSyncResolved(xui_widget pWidget, xui_panel_data_t* pData, xui_panel_resolved_t* pResolved)
 {
 	__xuiPanelResolve(pWidget, pData, pResolved);
 	return __xuiPanelSyncChildren(pWidget, pData, pResolved);
+}
+
+static int __xuiPanelSyncResolvedMask(xui_widget pWidget, xui_panel_data_t* pData,
+	uint32_t iMask, uint32_t iDirtyFlags)
+{
+	xui_panel_resolved_t tResolved;
+	int bChanged;
+	int iRet;
+
+	__xuiPanelResolve(pWidget, pData, &tResolved);
+	iRet = __xuiPanelSyncChildrenMask(pWidget, pData, &tResolved, iMask, &bChanged);
+	if ( (iRet != XUI_OK) || !bChanged ) return iRet;
+	return xuiWidgetInvalidate(pWidget, iDirtyFlags);
 }
 
 static int __xuiPanelPreparePaint(xui_widget pWidget)
@@ -266,9 +351,8 @@ static int __xuiPanelPreparePaint(xui_widget pWidget)
 		pData->iChromeStyleVersion = pWidget->iStyleVersion;
 	}
 	__xuiPanelResolve(pWidget, pData, &tResolved);
-	iRet = xuiLabelSetTextColor(pData->pTitle, tResolved.iTitleColor);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiLabelSetDisabledTextColor(pData->pTitle, tResolved.iDisabledTitleColor);
+	return __xuiPanelSyncChildrenMask(pWidget, pData, &tResolved,
+		XUI_PANEL_SYNC_TITLE_COLOR | XUI_PANEL_SYNC_TITLE_DISABLED, NULL);
 }
 
 static int __xuiPanelDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -769,21 +853,20 @@ XUI_API int xuiPanelSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_panel_data_t* pData;
 	xui_context pContext;
+	xui_font pOldFont;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pData->pFont == pFont) && (xuiLabelGetFont(pData->pTitle) == pFont) ) return XUI_OK;
+	pOldFont = pData->pFont;
+	pData->pFont = pFont;
 	pContext = xuiWidgetGetContext(pWidget);
 	xuiInternalOperationEnter(pContext);
-	iRet = xuiLabelSetFont(pData->pTitle, pFont);
-	if ( iRet == XUI_OK ) {
-		pData->pFont = pFont;
-		iRet = xuiWidgetInvalidate(pWidget,
-			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_TITLE_FONT,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->pFont = pOldFont;
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
@@ -799,17 +882,19 @@ XUI_API xui_font xuiPanelGetFont(xui_widget pWidget)
 XUI_API int xuiPanelSetTitleColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_panel_data_t* pData;
+	uint32_t iOldColor;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pData->iTitleColor == iColor) && (xuiLabelGetTextColor(pData->pTitle) == iColor) ) return XUI_OK;
-	iRet = xuiLabelSetTextColor(pData->pTitle, iColor);
-	if ( iRet != XUI_OK ) return iRet;
+	iOldColor = pData->iTitleColor;
 	pData->iTitleColor = iColor;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_TITLE_COLOR,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->iTitleColor = iOldColor;
+	return iRet;
 }
 
 XUI_API uint32_t xuiPanelGetTitleColor(xui_widget pWidget)
@@ -823,18 +908,19 @@ XUI_API uint32_t xuiPanelGetTitleColor(xui_widget pWidget)
 XUI_API int xuiPanelSetDisabledTitleColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_panel_data_t* pData;
+	uint32_t iOldColor;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pData->iDisabledTitleColor == iColor) &&
-	     (xuiLabelGetDisabledTextColor(pData->pTitle) == iColor) ) return XUI_OK;
-	iRet = xuiLabelSetDisabledTextColor(pData->pTitle, iColor);
-	if ( iRet != XUI_OK ) return iRet;
+	iOldColor = pData->iDisabledTitleColor;
 	pData->iDisabledTitleColor = iColor;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_TITLE_DISABLED,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->iDisabledTitleColor = iOldColor;
+	return iRet;
 }
 
 XUI_API uint32_t xuiPanelGetDisabledTitleColor(xui_widget pWidget)
@@ -848,6 +934,7 @@ XUI_API uint32_t xuiPanelGetDisabledTitleColor(xui_widget pWidget)
 XUI_API int xuiPanelSetTitleAlign(xui_widget pWidget, uint32_t iTextFlags)
 {
 	xui_panel_data_t* pData;
+	uint32_t iOldFlags;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
@@ -855,12 +942,12 @@ XUI_API int xuiPanelSetTitleAlign(xui_widget pWidget, uint32_t iTextFlags)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iTextFlags |= XUI_TEXT_CLIP;
-	if ( (pData->iTitleFlags == iTextFlags) &&
-	     (xuiLabelGetTextFlags(pData->pTitle) == iTextFlags) ) return XUI_OK;
-	iRet = xuiLabelSetTextFlags(pData->pTitle, iTextFlags);
-	if ( iRet != XUI_OK ) return iRet;
+	iOldFlags = pData->iTitleFlags;
 	pData->iTitleFlags = iTextFlags;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_TITLE_FLAGS,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->iTitleFlags = iOldFlags;
+	return iRet;
 }
 
 XUI_API uint32_t xuiPanelGetTitleAlign(xui_widget pWidget)
@@ -877,8 +964,11 @@ XUI_API int xuiPanelSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_t
 	xui_context pContext;
 	int iRet;
 
+	if ( !__xuiPanelIconSourceValid(tSrc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pData = __xuiPanelGetData(pWidget);
-	if ( (pData == NULL) || (tSrc.fW < 0.0f) || (tSrc.fH < 0.0f) ) {
+	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (xuiImageGetSurface(pData->pIcon) == pSurface) &&
@@ -920,7 +1010,7 @@ XUI_API xui_rect_t xuiPanelGetIconSource(xui_widget pWidget)
 XUI_API int xuiPanelSetIconSize(xui_widget pWidget, float fSize)
 {
 	xui_panel_data_t* pData;
-	xui_vec2_t tPreferred;
+	float fOldSize;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
@@ -930,12 +1020,12 @@ XUI_API int xuiPanelSetIconSize(xui_widget pWidget, float fSize)
 	if ( fSize < 1.0f ) {
 		fSize = 1.0f;
 	}
-	tPreferred = xuiWidgetGetPreferredSize(pData->pIcon);
-	if ( (pData->fIconSize == fSize) && (tPreferred.fX == fSize) && (tPreferred.fY == fSize) ) return XUI_OK;
-	iRet = xuiWidgetSetPreferredSize(pData->pIcon, (xui_vec2_t){fSize, fSize});
-	if ( iRet != XUI_OK ) return iRet;
+	fOldSize = pData->fIconSize;
 	pData->fIconSize = fSize;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_ICON_SIZE,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->fIconSize = fOldSize;
+	return iRet;
 }
 
 XUI_API float xuiPanelGetIconSize(xui_widget pWidget)
@@ -1030,23 +1120,18 @@ XUI_API int xuiPanelSetHeaderHeight(xui_widget pWidget, float fHeight)
 {
 	xui_panel_data_t* pData;
 	xui_context pContext;
-	xui_vec2_t tPreferred;
+	float fOldHeight;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( (pData == NULL) || !__xuiPanelFloatValid(fHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
-	tPreferred = xuiWidgetGetPreferredSize(pData->pHeader);
-	if ( (pData->fHeaderHeight == fHeight) && (tPreferred.fY == fHeight) &&
-	     (xuiWidgetGetVisible(pData->pHeader) == (fHeight > 0.0f)) ) return XUI_OK;
+	fOldHeight = pData->fHeaderHeight;
+	pData->fHeaderHeight = fHeight;
 	pContext = xuiWidgetGetContext(pWidget);
 	xuiInternalOperationEnter(pContext);
-	iRet = xuiWidgetSetVisible(pData->pHeader, fHeight > 0.0f);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPreferredSize(pData->pHeader, (xui_vec2_t){0.0f, fHeight});
-	if ( iRet == XUI_OK ) {
-		pData->fHeaderHeight = fHeight;
-		iRet = xuiWidgetInvalidate(pWidget,
-			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_HEADER_HEIGHT,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->fHeaderHeight = fOldHeight;
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
@@ -1062,15 +1147,17 @@ XUI_API float xuiPanelGetHeaderHeight(xui_widget pWidget)
 XUI_API int xuiPanelSetHeaderGap(xui_widget pWidget, float fGap)
 {
 	xui_panel_data_t* pData;
+	float fOldGap;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( (pData == NULL) || !__xuiPanelFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( (pData->fHeaderGap == fGap) && (xuiWidgetGetGap(pData->pHeader) == fGap) ) return XUI_OK;
-	iRet = xuiWidgetSetGap(pData->pHeader, fGap);
-	if ( iRet != XUI_OK ) return iRet;
+	fOldGap = pData->fHeaderGap;
 	pData->fHeaderGap = fGap;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_HEADER_GAP,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->fHeaderGap = fOldGap;
+	return iRet;
 }
 
 XUI_API float xuiPanelGetHeaderGap(xui_widget pWidget)
@@ -1084,19 +1171,18 @@ XUI_API float xuiPanelGetHeaderGap(xui_widget pWidget)
 XUI_API int xuiPanelSetClientClip(xui_widget pWidget, int bClip)
 {
 	xui_panel_data_t* pData;
+	int bOldClip;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	bClip = bClip ? 1 : 0;
-	if ( (pData->bClipClient == bClip) &&
-	     (xuiWidgetGetOverflow(pData->pClient) == (bClip ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE)) ) {
-		return XUI_OK;
-	}
-	iRet = xuiWidgetSetOverflow(pData->pClient, bClip ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE);
-	if ( iRet != XUI_OK ) return iRet;
+	bOldClip = pData->bClipClient;
 	pData->bClipClient = bClip;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_CLIENT_CLIP,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) pData->bClipClient = bOldClip;
+	return iRet;
 }
 
 XUI_API int xuiPanelGetClientClip(xui_widget pWidget)

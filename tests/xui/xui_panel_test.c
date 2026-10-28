@@ -41,6 +41,28 @@ static xui_style_value_t __xuiPanelStyleFloat(float fValue)
 	return tValue;
 }
 
+static xui_style_value_t __xuiPanelStyleInt(int iValue)
+{
+	xui_style_value_t tValue;
+
+	memset(&tValue, 0, sizeof(tValue));
+	tValue.iSize = sizeof(tValue);
+	tValue.iType = XUI_STYLE_VALUE_INT;
+	tValue.iInt = iValue;
+	return tValue;
+}
+
+static xui_style_value_t __xuiPanelStyleBool(int bValue)
+{
+	xui_style_value_t tValue;
+
+	memset(&tValue, 0, sizeof(tValue));
+	tValue.iSize = sizeof(tValue);
+	tValue.iType = XUI_STYLE_VALUE_BOOL;
+	tValue.iInt = bValue ? 1 : 0;
+	return tValue;
+}
+
 static xui_style_property_t __xuiPanelStyleProp(const char* sName, xui_style_value_t tValue)
 {
 	xui_style_property_t tProp;
@@ -80,7 +102,7 @@ int main(void)
 	xui_panel_desc_t tDesc;
 	xui_panel_desc_t tInvalidDesc;
 	xui_label_desc_t tLabelDesc;
-	xui_style_property_t arrStyle[4];
+	xui_style_property_t arrStyle[8];
 	xui_accessible_node_t tNode;
 	xui_rect_t tRect;
 	uint32_t iAccessibilityRevision;
@@ -131,6 +153,12 @@ int main(void)
 	pLifecyclePanel = pRoot;
 	iRet = xuiPanelCreate(pContext, &pLifecyclePanel, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pLifecyclePanel == NULL, "reject negative icon source");
+	tInvalidDesc.tIconSrc.fW = 0;
+	tInvalidDesc.tIconSrc.fX = (int)XUI_LAYOUT_UNBOUNDED + 1024;
+	pLifecyclePanel = pRoot;
+	iRet = xuiPanelCreate(pContext, &pLifecyclePanel, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pLifecyclePanel == NULL,
+		"reject out-of-range icon source descriptor");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -199,6 +227,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pIconSurface != NULL, "icon surface");
 	iRet = xuiPanelSetIcon(pPanel, pIconSurface, (xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPanelGetIconSurface(pPanel) == pIconSurface, "set icon");
+	iRet = xuiPanelSetIcon(pPanel, NULL,
+		(xui_rect_t){(int)XUI_LAYOUT_UNBOUNDED + 1024, 0, 16, 16});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiPanelGetIconSurface(pPanel) == pIconSurface &&
+		__xuiPanelRectEq(xuiPanelGetIconSource(pPanel), 0.0f, 0.0f, 16.0f, 16.0f) &&
+		xuiWidgetGetVisible(xuiPanelGetIconWidget(pPanel)),
+		"invalid icon update preserves surface, source, and visibility");
 	iRet = xuiPanelSetIconSize(pPanel, 20.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPanelGetIconSize(pPanel) == 20.0f, "icon size");
 	iRet = xuiLayout(pContext);
@@ -233,6 +268,14 @@ int main(void)
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "enabled render");
 	iDirtyFlags = xuiWidgetGetDirtyFlags(pPanel);
+	iRet = xuiPanelSetFont(pPanel, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPanelGetFont(pPanel) == NULL &&
+		xuiLabelGetFont(pTitle) == pFont && xuiWidgetGetDirtyFlags(pPanel) == iDirtyFlags,
+		"default font fallback remains resolved without redundant invalidation");
+	iRet = xuiPanelSetFont(pPanel, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiLabelGetFont(pTitle) == pFont &&
+		xuiWidgetGetDirtyFlags(pPanel) == iDirtyFlags,
+		"repeated default font setter is idempotent");
 	iRet = xuiPanelSetHeaderColor(pPanel, xuiPanelGetHeaderColor(pPanel));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pPanel) == iDirtyFlags,
 		"idempotent color keeps dirty state");
@@ -252,20 +295,67 @@ int main(void)
 		"reject NaN icon size");
 
 	arrStyle[0] = __xuiPanelStyleProp("panel.header.height", __xuiPanelStyleFloat(24.0f));
-	arrStyle[1] = __xuiPanelStyleProp("panel.icon.size", __xuiPanelStyleFloat(12.0f));
-	arrStyle[2] = __xuiPanelStyleProp("panel.border.color", __xuiPanelStyleColor(XUI_COLOR_RGBA(18, 88, 150, 255)));
-	arrStyle[3] = __xuiPanelStyleProp("text.color", __xuiPanelStyleColor(XUI_COLOR_RGBA(10, 30, 80, 255)));
-	iRet = xuiWidgetSetInlineStyle(pPanel, arrStyle, 4);
+	arrStyle[1] = __xuiPanelStyleProp("panel.header.gap", __xuiPanelStyleFloat(3.0f));
+	arrStyle[2] = __xuiPanelStyleProp("panel.icon.size", __xuiPanelStyleFloat(12.0f));
+	arrStyle[3] = __xuiPanelStyleProp("panel.border.color", __xuiPanelStyleColor(XUI_COLOR_RGBA(18, 88, 150, 255)));
+	arrStyle[4] = __xuiPanelStyleProp("text.color", __xuiPanelStyleColor(XUI_COLOR_RGBA(10, 30, 80, 255)));
+	arrStyle[5] = __xuiPanelStyleProp("text.disabled_color", __xuiPanelStyleColor(XUI_COLOR_RGBA(90, 100, 110, 255)));
+	arrStyle[6] = __xuiPanelStyleProp("text.flags", __xuiPanelStyleInt(XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE));
+	arrStyle[7] = __xuiPanelStyleProp("panel.client.clip", __xuiPanelStyleBool(0));
+	iRet = xuiWidgetSetInlineStyle(pPanel, arrStyle, 8);
 	XUI_TEST_CHECK(iRet == XUI_OK, "inline style");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "style layout");
 	XUI_TEST_CHECK(__xuiPanelRectEq(xuiPanelGetHeaderRect(pPanel), 0.0f, 0.0f, 220.0f, 24.0f), "style header height");
 	XUI_TEST_CHECK(xuiPanelGetIconRect(pPanel).fW == 12.0f, "style icon size");
+	XUI_TEST_CHECK(xuiWidgetGetGap(xuiPanelGetHeaderWidget(pPanel)) == 3.0f &&
+		xuiLabelGetTextColor(pTitle) == XUI_COLOR_RGBA(10, 30, 80, 255) &&
+		xuiLabelGetDisabledTextColor(pTitle) == XUI_COLOR_RGBA(90, 100, 110, 255) &&
+		xuiLabelGetTextFlags(pTitle) ==
+			(XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) &&
+		xuiWidgetGetOverflow(pClient) == XUI_OVERFLOW_VISIBLE,
+		"style values synchronize internal widgets");
+
+	iRet = xuiPanelSetTitleColor(pPanel, XUI_COLOR_RGBA(30, 60, 90, 255));
+	XUI_TEST_CHECK(iRet == XUI_OK, "set base title color under style");
+	iRet = xuiPanelSetDisabledTitleColor(pPanel, XUI_COLOR_RGBA(120, 130, 140, 255));
+	XUI_TEST_CHECK(iRet == XUI_OK, "set base disabled title color under style");
+	iRet = xuiPanelSetTitleAlign(pPanel, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set base title flags under style");
+	iRet = xuiPanelSetHeaderHeight(pPanel, 36.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set base header height under style");
+	iRet = xuiPanelSetHeaderGap(pPanel, 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set base header gap under style");
+	iRet = xuiPanelSetIconSize(pPanel, 22.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set base icon size under style");
+	iRet = xuiPanelSetClientClip(pPanel, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set base client clip under style");
+	XUI_TEST_CHECK(xuiWidgetGetPreferredSize(xuiPanelGetHeaderWidget(pPanel)).fY == 24.0f &&
+		xuiWidgetGetGap(xuiPanelGetHeaderWidget(pPanel)) == 3.0f &&
+		xuiWidgetGetPreferredSize(xuiPanelGetIconWidget(pPanel)).fX == 12.0f &&
+		xuiLabelGetTextColor(pTitle) == XUI_COLOR_RGBA(10, 30, 80, 255) &&
+		xuiLabelGetDisabledTextColor(pTitle) == XUI_COLOR_RGBA(90, 100, 110, 255) &&
+		xuiLabelGetTextFlags(pTitle) ==
+			(XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) &&
+		xuiWidgetGetOverflow(pClient) == XUI_OVERFLOW_VISIBLE,
+		"base setters preserve active resolved style");
+
+	iRet = xuiWidgetSetInlineStyle(pPanel, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear style");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "base layout after clearing style");
+	XUI_TEST_CHECK(__xuiPanelRectEq(xuiPanelGetHeaderRect(pPanel), 0.0f, 0.0f, 220.0f, 36.0f) &&
+		xuiPanelGetIconRect(pPanel).fW == 22.0f &&
+		xuiWidgetGetGap(xuiPanelGetHeaderWidget(pPanel)) == 9.0f &&
+		xuiLabelGetTextColor(pTitle) == XUI_COLOR_RGBA(30, 60, 90, 255) &&
+		xuiLabelGetDisabledTextColor(pTitle) == XUI_COLOR_RGBA(120, 130, 140, 255) &&
+		xuiLabelGetTextFlags(pTitle) ==
+			(XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) &&
+		xuiWidgetGetOverflow(pClient) == XUI_OVERFLOW_CLIP,
+		"clearing style restores updated base values");
 
 	iRet = xuiPanelSetHeaderHeight(pPanel, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hide header");
-	iRet = xuiWidgetSetInlineStyle(pPanel, NULL, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK, "clear style");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hidden layout");
 	XUI_TEST_CHECK(!xuiWidgetGetVisible(xuiPanelGetHeaderWidget(pPanel)), "header hidden");
