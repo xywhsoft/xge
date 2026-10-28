@@ -117,6 +117,87 @@ static int __xuiIconPickerDispatchClick(xui_context pContext, float fX, float fY
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiIconPickerSameValueSettersStayClean(xui_widget pPicker,
+	xui_icon_picker_format_proc onFormat, void* pFormatUser)
+{
+	xui_widget pPopup;
+	xui_widget pFrame;
+	xui_widget pViewport;
+	xui_icon_category pCategory;
+	xui_font pFont;
+	xui_thickness_t tPadding;
+	float fCellWidth;
+	float fCellHeight;
+	float fGapX;
+	float fGapY;
+	float fIconPadding;
+	float fBorderWidth;
+	float fScrollbarSize;
+	uint32_t arrColors[7];
+	uint32_t arrBorderColors[3];
+	uint32_t arrArrowColors[2];
+	uint32_t arrButtonColors[3];
+	uint32_t arrPopupColors[6];
+	int iRows;
+	int iColumns;
+	int iRet;
+
+	pPopup = xuiIconPickerGetPopupWidget(pPicker);
+	pFrame = xuiIconPickerGetFrameWidget(pPicker);
+	pViewport = xuiIconPickerGetViewportWidget(pPicker);
+	if ( pPopup == NULL || pFrame == NULL || pViewport == NULL ) return 0;
+	pCategory = xuiIconPickerGetCategory(pPicker);
+	pFont = xuiIconPickerGetFont(pPicker);
+	tPadding = xuiIconPickerGetValuePadding(pPicker);
+	iRet = xuiIconPickerGetGrid(pPicker, &iRows, &iColumns);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetCellSize(pPicker, &fCellWidth, &fCellHeight);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetSpacing(pPicker, &fGapX, &fGapY, &fIconPadding);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetMetrics(pPicker, &fBorderWidth, &fScrollbarSize);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetColors(pPicker,
+		&arrColors[0], &arrColors[1], &arrColors[2], &arrColors[3],
+		&arrColors[4], &arrColors[5], &arrColors[6]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetBorderColors(pPicker,
+		&arrBorderColors[0], &arrBorderColors[1], &arrBorderColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetArrowColors(pPicker,
+		&arrArrowColors[0], &arrArrowColors[1]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetButtonColors(pPicker,
+		&arrButtonColors[0], &arrButtonColors[1], &arrButtonColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerGetPopupColors(pPicker,
+		&arrPopupColors[0], &arrPopupColors[1], &arrPopupColors[2],
+		&arrPopupColors[3], &arrPopupColors[4], &arrPopupColors[5]);
+	if ( iRet != XUI_OK ) return 0;
+	xuiWidgetClearDirty(pPicker, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pFrame, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiIconPickerSetFormatter(pPicker, onFormat, pFormatUser);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetCategory(pPicker, pCategory);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetTextMode(pPicker, xuiIconPickerGetTextMode(pPicker));
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetPlaceholder(pPicker, xuiIconPickerGetPlaceholder(pPicker));
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetGrid(pPicker, iRows, iColumns);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetCellSize(pPicker, fCellWidth, fCellHeight);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetSpacing(pPicker, fGapX, fGapY, fIconPadding);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetValuePadding(pPicker, tPadding);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetPopupPlacement(pPicker, xuiIconPickerGetPopupPlacement(pPicker));
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetMetrics(pPicker, fBorderWidth, fScrollbarSize);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetColors(pPicker,
+		arrColors[0], arrColors[1], arrColors[2], arrColors[3],
+		arrColors[4], arrColors[5], arrColors[6]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetBorderColors(pPicker,
+		arrBorderColors[0], arrBorderColors[1], arrBorderColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetArrowColors(pPicker,
+		arrArrowColors[0], arrArrowColors[1]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetButtonColors(pPicker,
+		arrButtonColors[0], arrButtonColors[1], arrButtonColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetPopupColors(pPicker,
+		arrPopupColors[0], arrPopupColors[1], arrPopupColors[2],
+		arrPopupColors[3], arrPopupColors[4], arrPopupColors[5]);
+	if ( iRet == XUI_OK ) iRet = xuiIconPickerSetFont(pPicker, pFont);
+	return iRet == XUI_OK && xuiWidgetGetDirtyFlags(pPicker) == 0u &&
+		xuiWidgetGetDirtyFlags(pPopup) == 0u && xuiWidgetGetDirtyFlags(pFrame) == 0u &&
+		xuiWidgetGetDirtyFlags(pViewport) == 0u;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -142,16 +223,26 @@ int main(void)
 	xui_icon_picker_desc_t tDestroyDesc;
 	xui_icon_desc_t tIconDesc;
 	xui_icon_desc_t tLongIconDesc;
+	xui_event_t tEvent;
 	xui_rect_t tRect;
 	xui_rect_t tWorld;
 	xui_rect_t tPopupRect;
 	xui_rect_t tViewportRect;
 	xui_accessible_node_t tAccessible;
 	xui_icon_id arrIds[15];
+	xui_icon_id iMutationA;
+	xui_icon_id iMutationB;
+	xui_icon_id iSelectedBefore;
 	xui_accessible_value_t tAccessibleValue;
+	xui_vec2_t tMeasured;
 	char sName[32];
 	char sLongDisplay[300];
 	float fBorderWidth;
+	float fCellHeight;
+	float fCellWidth;
+	float fGapX;
+	float fGapY;
+	float fIconPadding;
 	float fOffsetY;
 	float fScrollbarSize;
 	int iPolicyX;
@@ -159,6 +250,7 @@ int main(void)
 	int iRefBefore;
 	int iRefSame;
 	int iChangeBefore;
+	int iFocusBefore;
 	int iFailed;
 	int iRet;
 	int i;
@@ -169,6 +261,8 @@ int main(void)
 	memset(&tOpenDestroy, 0, sizeof(tOpenDestroy));
 	memset(&tCloseDestroy, 0, sizeof(tCloseDestroy));
 	memset(arrIds, 0, sizeof(arrIds));
+	iMutationA = XUI_ICON_ID_INVALID;
+	iMutationB = XUI_ICON_ID_INVALID;
 	pContext = NULL;
 	pOtherContext = NULL;
 	pRoot = NULL;
@@ -247,6 +341,10 @@ int main(void)
 		tInvalidDesc.fScrollbarSize = 12.0f;
 		XUI_TEST_CHECK(xuiIconPickerCreate(pContext, &pInvalid, &tInvalidDesc) == XUI_ERROR_INVALID_ARGUMENT,
 			"compact scrollbar size above supported maximum rejected");
+		tInvalidDesc = tDesc;
+		tInvalidDesc.fCellWidth = XUI_LAYOUT_UNBOUNDED;
+		XUI_TEST_CHECK(xuiIconPickerCreate(pContext, &pInvalid, &tInvalidDesc) == XUI_ERROR_INVALID_ARGUMENT,
+			"descriptor rejects oversized combined grid geometry");
 	}
 	XUI_TEST_CHECK(xuiIconPickerCreate(pContext, &pPicker, &tDesc) == XUI_OK && pPicker != NULL, "picker create");
 	XUI_TEST_CHECK(xuiIconCategoryGetRefCount(pCategory) == iRefBefore + 1, "picker retains category");
@@ -278,16 +376,36 @@ int main(void)
 	XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pPicker) == XUI_OK &&
 		__xuiIconPickerDispatchKey(pContext, XUI_KEY_F4) == XUI_OK && xuiIconPickerIsOpen(pPicker),
 		"F4 opens icon picker");
+	XUI_TEST_CHECK(__xuiIconPickerDispatchKeyWithModifiers(pContext, XUI_KEY_F4, XUI_MOD_ALT) == XUI_OK &&
+		xuiIconPickerIsOpen(pPicker), "Alt+F4 is not consumed as an icon picker shortcut");
 	XUI_TEST_CHECK(__xuiIconPickerDispatchKey(pContext, XUI_KEY_F4) == XUI_OK && !xuiIconPickerIsOpen(pPicker),
 		"F4 closes icon picker from popup viewport");
 	XUI_TEST_CHECK(__xuiIconPickerDispatchKeyWithModifiers(pContext, XUI_KEY_DOWN, XUI_MOD_ALT) == XUI_OK &&
 		xuiIconPickerIsOpen(pPicker), "Alt+Down opens icon picker");
+	XUI_TEST_CHECK(__xuiIconPickerDispatchKeyWithModifiers(pContext, XUI_KEY_DOWN, XUI_MOD_ALT) == XUI_OK &&
+		xuiIconPickerIsOpen(pPicker), "Alt+Down keeps open icon picker open");
 	XUI_TEST_CHECK(__xuiIconPickerDispatchKeyWithModifiers(pContext, XUI_KEY_UP, XUI_MOD_ALT) == XUI_OK &&
 		!xuiIconPickerIsOpen(pPicker), "Alt+Up closes icon picker");
+	XUI_TEST_CHECK(__xuiIconPickerDispatchKeyWithModifiers(pContext, XUI_KEY_UP, XUI_MOD_ALT) == XUI_OK &&
+		!xuiIconPickerIsOpen(pPicker), "Alt+Up keeps closed icon picker closed");
 	tRect = xuiIconPickerGetValueRect(pPicker);
 	XUI_TEST_CHECK(tRect.fW > 140.0f && tRect.fH > 20.0f, "value rect");
 	tRect = xuiIconPickerGetButtonRect(pPicker);
 	XUI_TEST_CHECK(tRect.fW >= 24.0f && tRect.fH == 34.0f, "button rect");
+	XUI_TEST_CHECK(xuiWidgetMeasureContent(pPicker, (xui_vec2_t){60.0f, 12.0f}, &tMeasured) == XUI_OK &&
+		tMeasured.fX == 60.0f && tMeasured.fY == 12.0f,
+		"content measure respects tight constraints");
+	XUI_TEST_CHECK(xuiWidgetSetRect(pPicker, (xui_rect_t){32.0f, 24.0f, 7.0f, 3.0f}) == XUI_OK,
+		"set tiny icon picker rect");
+	tRect = xuiIconPickerGetButtonRect(pPicker);
+	tPopupRect = xuiIconPickerGetValueRect(pPicker);
+	XUI_TEST_CHECK(tRect.fX >= 0.0f && tRect.fY >= 0.0f &&
+		tRect.fX + tRect.fW <= 7.0f && tRect.fY + tRect.fH <= 3.0f &&
+		tPopupRect.fX >= 0.0f && tPopupRect.fY >= 0.0f &&
+		tPopupRect.fX + tPopupRect.fW <= 7.0f && tPopupRect.fY + tPopupRect.fH <= 3.0f,
+		"tiny icon picker geometry stays inside the widget");
+	XUI_TEST_CHECK(xuiWidgetSetRect(pPicker, (xui_rect_t){32.0f, 24.0f, 210.0f, 34.0f}) == XUI_OK,
+		"restore icon picker rect");
 
 	XUI_TEST_CHECK(xuiIconPickerOpen(pPicker) == XUI_OK && xuiIconPickerIsOpen(pPicker), "open");
 	XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK, "open layout");
@@ -316,6 +434,15 @@ int main(void)
 	XUI_TEST_CHECK(!xuiIconPickerIsOpen(pPicker), "commit closes popup");
 	XUI_TEST_CHECK(xuiIconPickerGetSelectedId(pPicker) == arrIds[5], "keyboard selected id");
 	XUI_TEST_CHECK(tChange.iCount == 1 && tChange.iOldId == arrIds[1] && tChange.iNewId == arrIds[5], "keyboard callback");
+	iFocusBefore = xuiIconPickerGetFocusIndex(pPicker);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pViewport;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK && !xuiIconPickerIsOpen(pPicker) &&
+		xuiIconPickerGetFocusIndex(pPicker) == iFocusBefore,
+		"closed viewport ignores directly targeted keyboard input");
 
 	XUI_TEST_CHECK(xuiIconPickerOpen(pPicker) == XUI_OK, "reopen");
 	XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK, "reopen layout");
@@ -375,6 +502,45 @@ int main(void)
 		tWorld.fX + tRect.fX + tRect.fW * 0.5f,
 		tWorld.fY + tRect.fY + tRect.fH * 0.5f) == XUI_OK, "mouse select");
 	XUI_TEST_CHECK(xuiIconPickerGetSelectedId(pPicker) == arrIds[0] && tChange.iCount == 2, "mouse selected");
+	{
+		xui_icon pMutationIcon;
+		tIconDesc.sDisplayName = "mutation-a";
+		XUI_TEST_CHECK(xuiIconAddSvgPath(pCategory, "mutation-a", "M2 2 H22 V22 H2 Z",
+			(xui_rect_t){0.0f, 0.0f, 24.0f, 24.0f}, NULL, &tIconDesc, &pMutationIcon) == XUI_OK,
+			"add first mutation icon");
+		iMutationA = xuiIconGetId(pMutationIcon);
+		tIconDesc.sDisplayName = "mutation-b";
+		XUI_TEST_CHECK(xuiIconAddSvgPath(pCategory, "mutation-b", "M2 2 H22 V22 H2 Z",
+			(xui_rect_t){0.0f, 0.0f, 24.0f, 24.0f}, NULL, &tIconDesc, &pMutationIcon) == XUI_OK,
+			"add second mutation icon");
+		iMutationB = xuiIconGetId(pMutationIcon);
+	}
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.016f) == XUI_OK && xuiIconPickerOpen(pPicker) == XUI_OK &&
+		xuiLayout(pContext) == XUI_OK && xuiIconPickerEnsureVisible(pPicker, iMutationA) == XUI_OK,
+		"open after category growth");
+	tRect = xuiIconPickerGetItemRect(pPicker, 15);
+	tWorld = xuiWidgetGetWorldRect(pViewport);
+	iSelectedBefore = xuiIconPickerGetSelectedId(pPicker);
+	iChangeBefore = tChange.iCount;
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext,
+		tWorld.fX + tRect.fX + tRect.fW * 0.5f,
+		tWorld.fY + tRect.fY + tRect.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiGetPointerCapture(pContext) == pViewport,
+		"category mutation test captures pressed icon");
+	XUI_TEST_CHECK(xuiIconRemoveById(pCategory, iMutationA) == XUI_OK &&
+		xuiUpdate(pContext, 0.016f) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"category mutation cancels stale item press");
+	XUI_TEST_CHECK(xuiInputPointerUp(pContext,
+		tWorld.fX + tRect.fX + tRect.fW * 0.5f,
+		tWorld.fY + tRect.fY + tRect.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiIconPickerGetSelectedId(pPicker) == iSelectedBefore && tChange.iCount == iChangeBefore &&
+		xuiIconPickerIsOpen(pPicker),
+		"release after category mutation cannot commit replacement icon");
+	XUI_TEST_CHECK(xuiIconRemoveById(pCategory, iMutationB) == XUI_OK &&
+		xuiUpdate(pContext, 0.016f) == XUI_OK, "remove remaining mutation icon");
 
 	XUI_TEST_CHECK(xuiIconPickerOpen(pPicker) == XUI_OK, "open for ensure");
 	XUI_TEST_CHECK(xuiIconPickerEnsureVisible(pPicker, arrIds[14]) == XUI_OK, "ensure last visible");
@@ -388,12 +554,31 @@ int main(void)
 		"effectively disabled icon picker does not open");
 	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 1) == XUI_OK && xuiWidgetGetEffectiveEnabled(pPicker),
 		"ancestor re-enable icon picker");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pPicker, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"hide icon picker");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pPicker;
+	tEvent.iKey = XUI_KEY_F4;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK && !xuiIconPickerIsOpen(pPicker),
+		"hidden icon picker ignores directly targeted key input");
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.fX = 36.0f;
+	tEvent.fY = 30.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK && !xuiIconPickerIsOpen(pPicker),
+		"hidden icon picker ignores directly targeted pointer input");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pPicker, 1) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"restore icon picker visibility");
 
 	XUI_TEST_CHECK(xuiIconPickerSetFormatter(pPicker, __xuiIconPickerFormat, &tChange) == XUI_OK, "formatter set");
 	XUI_TEST_CHECK(xuiIconPickerSetTextMode(pPicker, XUI_ICON_PICKER_TEXT_CUSTOM) == XUI_OK, "custom mode");
 	XUI_TEST_CHECK(__xuiIconPickerRender(pContext, pTarget) == XUI_OK && tChange.iFormatCount > 0, "custom formatter used");
 	XUI_TEST_CHECK(xuiIconPickerSetTextMode(pPicker, XUI_ICON_PICKER_TEXT_NONE) == XUI_OK, "icon only mode");
 	XUI_TEST_CHECK(xuiIconPickerGetTextMode(pPicker) == XUI_ICON_PICKER_TEXT_NONE, "icon only get");
+	XUI_TEST_CHECK(__xuiIconPickerSameValueSettersStayClean(pPicker, __xuiIconPickerFormat, &tChange),
+		"same-value setters do not dirty icon picker or popup widgets");
 	XUI_TEST_CHECK(xuiIconPickerSetGrid(pPicker, 1025, 2) == XUI_ERROR_INVALID_ARGUMENT,
 		"oversized grid rejected");
 	XUI_TEST_CHECK(xuiIconPickerSetCellSize(pPicker, 10.0f, 10.0f) == XUI_ERROR_INVALID_ARGUMENT,
@@ -402,6 +587,16 @@ int main(void)
 		"non-finite spacing rejected");
 	XUI_TEST_CHECK(xuiIconPickerSetMetrics(pPicker, 1.0f, 12.0f) == XUI_ERROR_INVALID_ARGUMENT,
 		"unsupported compact scrollbar size rejected");
+	XUI_TEST_CHECK(xuiIconPickerGetCellSize(pPicker, &fCellWidth, &fCellHeight) == XUI_OK &&
+		xuiIconPickerSetCellSize(pPicker, XUI_LAYOUT_UNBOUNDED, fCellHeight) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiIconPickerGetCellSize(pPicker, &tMeasured.fX, &tMeasured.fY) == XUI_OK &&
+		tMeasured.fX == fCellWidth && tMeasured.fY == fCellHeight,
+		"oversized combined cell geometry is rejected transactionally");
+	XUI_TEST_CHECK(xuiIconPickerGetSpacing(pPicker, &fGapX, &fGapY, &fIconPadding) == XUI_OK &&
+		xuiIconPickerSetSpacing(pPicker, XUI_LAYOUT_UNBOUNDED, fGapY, fIconPadding) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiIconPickerGetSpacing(pPicker, &tMeasured.fX, &tMeasured.fY, &fBorderWidth) == XUI_OK &&
+		tMeasured.fX == fGapX && tMeasured.fY == fGapY && fBorderWidth == fIconPadding,
+		"oversized combined spacing is rejected transactionally");
 
 	XUI_TEST_CHECK(xuiIconPickerSetSelectedId(pPicker, arrIds[4]) == XUI_OK, "set before remove");
 	iRefSame = xuiIconCategoryGetRefCount(pCategory);

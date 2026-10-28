@@ -5242,7 +5242,8 @@ typedef struct xui_color_picker_desc_t {
 
 /* 图标选择器创建描述。
  * pCategory 必须属于同一 xui_context，控件会持有其引用；sPlaceholder 在创建时
- * 复制。pFont 为借用句柄，调用方须保证字体生命周期覆盖控件。 */
+ * 复制。pFont 为借用句柄，调用方须保证字体生命周期覆盖控件。
+ * 网格尺寸、间距及滚动条的单项与组合几何均不得超过 XUI_LAYOUT_UNBOUNDED。 */
 typedef struct xui_icon_picker_desc_t {
 	uint32_t iSize;
 	xui_icon_category_t* pCategory;
@@ -11971,15 +11972,15 @@ XUI_API int xuiIconPickerGetTextMode(xui_widget pWidget);
 XUI_API int xuiIconPickerSetPlaceholder(xui_widget pWidget, const char* sText);
 /* 读取控件持有的占位文本；返回指针在下次设置或销毁控件前有效。 */
 XUI_API const char* xuiIconPickerGetPlaceholder(xui_widget pWidget);
-/* 设置弹层网格行列数；每一维范围为 [1, 1024]。 */
+/* 设置弹层网格行列数；每一维范围为 [1, 1024]，组合几何不得超过 XUI_LAYOUT_UNBOUNDED。 */
 XUI_API int xuiIconPickerSetGrid(xui_widget pWidget, int iRows, int iColumns);
 /* 输出网格行列数。 */
 XUI_API int xuiIconPickerGetGrid(xui_widget pWidget, int* pRows, int* pColumns);
-/* 设置网格单元尺寸；两倍图标内边距必须小于对应单元尺寸。 */
+/* 设置网格单元尺寸；两倍图标内边距必须小于对应单元尺寸，组合几何不得超过 XUI_LAYOUT_UNBOUNDED。 */
 XUI_API int xuiIconPickerSetCellSize(xui_widget pWidget, float fWidth, float fHeight);
 /* 输出单元尺寸。 */
 XUI_API int xuiIconPickerGetCellSize(xui_widget pWidget, float* pWidth, float* pHeight);
-/* 设置间距（格距两向/图标内边距）。 */
+/* 设置间距（格距两向/图标内边距）；组合几何不得超过 XUI_LAYOUT_UNBOUNDED。 */
 XUI_API int xuiIconPickerSetSpacing(xui_widget pWidget, float fGapX, float fGapY, float fIconPadding);
 /* 输出间距参数。 */
 XUI_API int xuiIconPickerGetSpacing(xui_widget pWidget, float* pGapX, float* pGapY, float* pIconPadding);
