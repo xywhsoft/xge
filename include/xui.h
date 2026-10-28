@@ -8281,7 +8281,7 @@ XUI_API xui_font xuiButtonGetFont(xui_widget pWidget);
 XUI_API int xuiButtonSetTextFlags(xui_widget pWidget, uint32_t iTextFlags);
 /* 读取文本绘制标志。 */
 XUI_API uint32_t xuiButtonGetTextFlags(xui_widget pWidget);
-/* 设置文字颜色。 */
+/* 设置文字颜色；不修改由 xuiButtonSetIconColor 独立管理的图标着色。 */
 XUI_API int xuiButtonSetTextColor(xui_widget pWidget, uint32_t iColor);
 /* 读取文字颜色。 */
 XUI_API uint32_t xuiButtonGetTextColor(xui_widget pWidget);

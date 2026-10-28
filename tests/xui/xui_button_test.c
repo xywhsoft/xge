@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -880,12 +881,26 @@ int main(void)
 	tSurfaceDesc.iHeight = 32;
 	iRet = tState.tProxy.surfaceCreate(&tState.tProxy, &pIcon, &tSurfaceDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pIcon != NULL, "icon surface create");
+	iRet = xuiButtonSetIcon(pButton, pIcon, (xui_rect_t){NAN, 0.0f, 32.0f, 32.0f});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan icon source position");
 	iRet = xuiButtonSetIcon(pButton, pIcon, (xui_rect_t){0.0f, 0.0f, 32.0f, 32.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "icon set");
 	iRet = xuiButtonSetIcon(pButton, pIcon, (xui_rect_t){0, 0, -1, 32});
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative icon source width");
 	iRet = xuiButtonSetIconLayout(pButton, XUI_BUTTON_ICON_RIGHT, 18.0f, 5.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "icon layout");
+	xuiWidgetClearDirty(pButton, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiButtonSetIconLayout(pButton, XUI_BUTTON_ICON_RIGHT, 18.0f, 5.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pButton) == 0,
+		"unchanged icon layout avoids cache rebuild");
+	iRet = xuiButtonSetIconColor(pButton, XUI_COLOR_RGBA(31, 71, 111, 255));
+	if ( iRet == XUI_OK ) {
+		iRet = xuiButtonSetTextColor(pButton, XUI_COLOR_RGBA(42, 82, 122, 255));
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiButtonGetTextColor(pButton) == XUI_COLOR_RGBA(42, 82, 122, 255) &&
+		xuiButtonGetIconColor(pButton) == XUI_COLOR_RGBA(31, 71, 111, 255),
+		"text color does not overwrite explicit icon color");
 	memset(&tPatch, 0, sizeof(tPatch));
 	tPatch.iSize = sizeof(tPatch);
 	tPatch.pSurface = pIcon;
@@ -978,6 +993,9 @@ int main(void)
 	iRet = xuiButtonSetSelected(pButton, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiButtonIsSelected(pButton), "selected");
 	XUI_TEST_CHECK((xuiButtonGetState(pButton) & XUI_BUTTON_STATE_CHECKED) != 0, "checked state");
+	XUI_TEST_CHECK(xuiWidgetGetStateId(pButton) ==
+		(XUI_BUTTON_STATE_CHECKED | XUI_WIDGET_STATE_FOCUS),
+		"focused checked button keeps focus visual state");
 
 	iRet = xuiSetFocusWidget(pContext, pButton);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus");
@@ -1008,12 +1026,16 @@ int main(void)
 	               "blurred keyboard press does not click");
 	iRet = xuiButtonSetIconLayout(pButton, XUI_BUTTON_ICON_LEFT, NAN, 4.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan icon size");
+	iRet = xuiButtonSetIconLayout(pButton, XUI_BUTTON_ICON_LEFT, FLT_MAX, 4.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject out-of-range icon size");
 	iRet = xuiButtonSetStateVisual(pButton, 0, XUI_COLOR_WHITE, INFINITY, XUI_COLOR_RGBA(0, 0, 0, 255));
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite state border");
 	iRet = xuiButtonSetBorder(pButton, NAN, XUI_COLOR_RGBA(0, 0, 0, 255));
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan border");
 	iRet = xuiButtonSetBadgeOffset(pButton, INFINITY, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite badge offset");
+	iRet = xuiButtonSetBadgeOffset(pButton, FLT_MAX, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject out-of-range badge offset");
 	iRet = xuiButtonSetBadgeSize(pButton, NAN);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan badge size");
 	tPatch.tSlice.fLeft = -1;
@@ -1023,6 +1045,10 @@ int main(void)
 	tPatch.tSrc.fW = -1;
 	iRet = xuiButtonSetPatch(pButton, 0, &tPatch);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative patch source width");
+	tPatch.tSrc.fW = 32.0f;
+	tPatch.tSrc.fX = NAN;
+	iRet = xuiButtonSetPatch(pButton, 0, &tPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan patch source position");
 
 	iRet = xuiButtonCreate(pContext, &pDestroyButton, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyButton != NULL, "destroy callback button create");
@@ -1039,7 +1065,18 @@ int main(void)
 
 	iRet = xuiWidgetSetEnabled(pButton, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiWidgetGetStateId(pButton) == XUI_WIDGET_STATE_DISABLED,
+		"disabled state change synchronizes visual state");
 	XUI_TEST_CHECK((xuiButtonGetState(pButton) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");
+	iRet = xuiWidgetSetEnabled(pButton, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pRoot, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiWidgetGetStateId(pButton) == XUI_WIDGET_STATE_DISABLED,
+		"ancestor disable synchronizes button visual state");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disabled render prepare");
 	tRect = xuiWidgetGetRect(pButton);

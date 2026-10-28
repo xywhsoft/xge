@@ -15,7 +15,7 @@
 #define XUI_BUTTON_VISUAL_CHECKED	5
 #define XUI_BUTTON_VISUAL_COUNT		6
 
-#define XUI_BUTTON_CACHE_STATE_COUNT	XUI_BUTTON_VISUAL_COUNT
+#define XUI_BUTTON_CACHE_STATE_COUNT	(XUI_BUTTON_VISUAL_COUNT + 1)
 
 typedef struct xui_button_visual_t {
 	uint32_t iFillColor;
@@ -131,7 +131,9 @@ static int __xuiButtonBadgeAnchorValid(int iAnchor)
 
 static int __xuiButtonFloatValid(float fValue)
 {
-	return isfinite(fValue);
+	return isfinite(fValue) &&
+	       fValue >= -XUI_LAYOUT_UNBOUNDED &&
+	       fValue <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static int __xuiButtonNonNegativeFloatValid(float fValue)
@@ -141,7 +143,30 @@ static int __xuiButtonNonNegativeFloatValid(float fValue)
 
 static int __xuiButtonSourceRectValid(xui_rect_t tRect)
 {
-	return tRect.fW >= 0 && tRect.fH >= 0;
+	return __xuiButtonFloatValid(tRect.fX) &&
+	       __xuiButtonFloatValid(tRect.fY) &&
+	       __xuiButtonNonNegativeFloatValid(tRect.fW) &&
+	       __xuiButtonNonNegativeFloatValid(tRect.fH);
+}
+
+static int __xuiButtonRectEqual(xui_rect_t tA, xui_rect_t tB)
+{
+	return tA.fX == tB.fX && tA.fY == tB.fY &&
+	       tA.fW == tB.fW && tA.fH == tB.fH;
+}
+
+static int __xuiButtonPatchEqual(const xui_nine_patch_t* pA,
+	const xui_nine_patch_t* pB)
+{
+	return pA != NULL && pB != NULL &&
+	       pA->pSurface == pB->pSurface &&
+	       __xuiButtonRectEqual(pA->tSrc, pB->tSrc) &&
+	       pA->tSlice.fLeft == pB->tSlice.fLeft &&
+	       pA->tSlice.fTop == pB->tSlice.fTop &&
+	       pA->tSlice.fRight == pB->tSlice.fRight &&
+	       pA->tSlice.fBottom == pB->tSlice.fBottom &&
+	       pA->iColor == pB->iColor &&
+	       pA->iMode == pB->iMode;
 }
 
 static int __xuiButtonDescValid(const xui_button_desc_t* pDesc)
@@ -184,6 +209,7 @@ static int __xuiButtonPatchValid(const xui_nine_patch_t* pPatch)
 static int __xuiButtonTextSet(xui_button_data_t* pData, const char* sText)
 {
 	char* sNew;
+	size_t iLength;
 	int iNeed;
 
 	if ( pData == NULL ) {
@@ -192,8 +218,9 @@ static int __xuiButtonTextSet(xui_button_data_t* pData, const char* sText)
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	if ( strlen(sText) >= (size_t)INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
-	iNeed = (int)strlen(sText) + 1;
+	iLength = strlen(sText);
+	if ( iLength >= (size_t)INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+	iNeed = (int)iLength + 1;
 	if ( iNeed > pData->iTextCapacity ) {
 		sNew = (char*)xrtRealloc(pData->sText, (size_t)iNeed);
 		if ( sNew == NULL ) {
@@ -325,7 +352,8 @@ static uint32_t __xuiButtonVisualStateId(uint32_t iState)
 	case XUI_BUTTON_VISUAL_DISABLED:
 		return XUI_WIDGET_STATE_DISABLED;
 	case XUI_BUTTON_VISUAL_CHECKED:
-		return XUI_BUTTON_STATE_CHECKED;
+		return XUI_BUTTON_STATE_CHECKED |
+			(iState & XUI_WIDGET_STATE_FOCUS);
 	default:
 		return 0;
 	}
@@ -956,9 +984,6 @@ static int __xuiButtonCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	}
 	__xuiButtonResolve(pWidget, pData, &tResolved);
 	iRenderState = __xuiButtonVisualStateId(iStateId);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
-		iRenderState = XUI_WIDGET_STATE_DISABLED;
-	}
 	iVisual = __xuiButtonStateIndex(iRenderState);
 	if ( iVisual == XUI_BUTTON_VISUAL_FOCUS ) {
 		iVisual = XUI_BUTTON_VISUAL_NORMAL;
@@ -1081,7 +1106,8 @@ static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		pData->bKeyboardActive = 0;
 		iRet = xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1096,6 +1122,8 @@ static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		(void)__xuiButtonSyncState(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_BLUR:
+	case XUI_EVENT_ENABLED_CHANGED:
+	case XUI_EVENT_VISIBLE_CHANGED:
 		pData->bKeyboardActive = 0;
 		(void)__xuiButtonSyncState(pWidget, pData);
 		return XUI_OK;
@@ -1198,7 +1226,8 @@ static int __xuiButtonInitCacheStates(xui_widget pWidget)
 		XUI_WIDGET_STATE_ACTIVE,
 		XUI_WIDGET_STATE_FOCUS,
 		XUI_WIDGET_STATE_DISABLED,
-		XUI_BUTTON_STATE_CHECKED
+		XUI_BUTTON_STATE_CHECKED,
+		XUI_BUTTON_STATE_CHECKED | XUI_WIDGET_STATE_FOCUS
 	};
 	int i;
 	int iRet;
@@ -1236,6 +1265,8 @@ static int __xuiButtonInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiButtonEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiButtonEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiButtonEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiButtonEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiButtonEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiButtonEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_UP, __xuiButtonEvent, NULL);
 	return iRet;
@@ -1540,11 +1571,10 @@ XUI_API int xuiButtonSetTextColor(xui_widget pWidget, uint32_t iColor)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pData->iTextColor == iColor && pData->iIconColor == iColor ) {
+	if ( pData->iTextColor == iColor ) {
 		return XUI_OK;
 	}
 	pData->iTextColor = iColor;
-	pData->iIconColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1639,6 +1669,11 @@ XUI_API int xuiButtonSetSemantic(xui_widget pWidget, int iSemantic)
 {
 	xui_button_data_t* pData;
 	xui_theme_t tTheme;
+	uint32_t iNormal;
+	uint32_t iHover;
+	uint32_t iActive;
+	uint32_t iDisabled;
+	uint32_t iForeground;
 
 	pData = __xuiButtonGetData(pWidget);
 	if ( pData == NULL ) {
@@ -1650,11 +1685,17 @@ XUI_API int xuiButtonSetSemantic(xui_widget pWidget, int iSemantic)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( iSemantic == XUI_BUTTON_SEMANTIC_PRIMARY ) {
-		(void)xuiButtonSetColors(pWidget, XUI_COLOR_RGBA(35, 132, 214, 255), XUI_COLOR_RGBA(56, 151, 228, 255), XUI_COLOR_RGBA(22, 104, 176, 255), pData->arrVisual[XUI_BUTTON_VISUAL_FOCUS].iBorderColor, XUI_COLOR_RGBA(188, 210, 228, 255));
-		(void)xuiButtonSetTextColor(pWidget, XUI_COLOR_RGBA(248, 252, 255, 255));
+		iNormal = XUI_COLOR_RGBA(35, 132, 214, 255);
+		iHover = XUI_COLOR_RGBA(56, 151, 228, 255);
+		iActive = XUI_COLOR_RGBA(22, 104, 176, 255);
+		iDisabled = XUI_COLOR_RGBA(188, 210, 228, 255);
+		iForeground = XUI_COLOR_RGBA(248, 252, 255, 255);
 	} else if ( iSemantic == XUI_BUTTON_SEMANTIC_DANGER ) {
-		(void)xuiButtonSetColors(pWidget, XUI_COLOR_RGBA(214, 72, 86, 255), XUI_COLOR_RGBA(228, 92, 104, 255), XUI_COLOR_RGBA(178, 52, 66, 255), pData->arrVisual[XUI_BUTTON_VISUAL_FOCUS].iBorderColor, XUI_COLOR_RGBA(230, 200, 204, 255));
-		(void)xuiButtonSetTextColor(pWidget, XUI_COLOR_RGBA(255, 250, 250, 255));
+		iNormal = XUI_COLOR_RGBA(214, 72, 86, 255);
+		iHover = XUI_COLOR_RGBA(228, 92, 104, 255);
+		iActive = XUI_COLOR_RGBA(178, 52, 66, 255);
+		iDisabled = XUI_COLOR_RGBA(230, 200, 204, 255);
+		iForeground = XUI_COLOR_RGBA(255, 250, 250, 255);
 	} else {
 		memset(&tTheme, 0, sizeof(tTheme));
 		tTheme.iSize = sizeof(tTheme);
@@ -1662,7 +1703,18 @@ XUI_API int xuiButtonSetSemantic(xui_widget pWidget, int iSemantic)
 		__xuiButtonApplyThemeDefaults(pData, &tTheme, NULL);
 		pData->iTextColor = tTheme.iTextColor;
 		pData->iIconColor = tTheme.iTextColor;
+		pData->iSemantic = iSemantic;
+		return xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
+	pData->arrVisual[XUI_BUTTON_VISUAL_NORMAL].iFillColor = iNormal;
+	pData->arrVisual[XUI_BUTTON_VISUAL_HOVER].iFillColor = iHover;
+	pData->arrVisual[XUI_BUTTON_VISUAL_ACTIVE].iFillColor = iActive;
+	pData->arrVisual[XUI_BUTTON_VISUAL_FOCUS].iFillColor = iNormal;
+	pData->arrVisual[XUI_BUTTON_VISUAL_DISABLED].iFillColor = iDisabled;
+	pData->arrVisual[XUI_BUTTON_VISUAL_CHECKED].iFillColor = iActive;
+	pData->iTextColor = iForeground;
+	pData->iIconColor = iForeground;
 	pData->iSemantic = iSemantic;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1684,6 +1736,8 @@ XUI_API int xuiButtonSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->pIconSurface == pSurface &&
+	     __xuiButtonRectEqual(pData->tIconSrc, tSrc) ) return XUI_OK;
 	pData->pIconSurface = pSurface;
 	pData->tIconSrc = tSrc;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1736,6 +1790,7 @@ XUI_API uint32_t xuiButtonGetIconColor(xui_widget pWidget)
 XUI_API int xuiButtonSetIconLayout(xui_widget pWidget, int iPlacement, float fIconSize, float fGap)
 {
 	xui_button_data_t* pData;
+	float fResolvedSize;
 
 	if ( !__xuiButtonIconPlacementValid(iPlacement) ||
 	     !__xuiButtonNonNegativeFloatValid(fIconSize) ||
@@ -1746,8 +1801,12 @@ XUI_API int xuiButtonSetIconLayout(xui_widget pWidget, int iPlacement, float fIc
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	fResolvedSize = (fIconSize > 0.0f) ? fIconSize : 16.0f;
+	if ( pData->iIconPlacement == iPlacement &&
+	     pData->fIconSize == fResolvedSize &&
+	     pData->fIconGap == fGap ) return XUI_OK;
 	pData->iIconPlacement = iPlacement;
-	pData->fIconSize = (fIconSize > 0.0f) ? fIconSize : 16.0f;
+	pData->fIconSize = fResolvedSize;
 	pData->fIconGap = fGap;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1774,6 +1833,14 @@ XUI_API int xuiButtonSetColors(xui_widget pWidget, uint32_t iNormal, uint32_t iH
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->arrVisual[XUI_BUTTON_VISUAL_NORMAL].iFillColor == iNormal &&
+	     pData->arrVisual[XUI_BUTTON_VISUAL_HOVER].iFillColor == iHover &&
+	     pData->arrVisual[XUI_BUTTON_VISUAL_ACTIVE].iFillColor == iActive &&
+	     pData->arrVisual[XUI_BUTTON_VISUAL_FOCUS].iFillColor == iNormal &&
+	     pData->arrVisual[XUI_BUTTON_VISUAL_FOCUS].iBorderColor == iFocus &&
+	     pData->arrVisual[XUI_BUTTON_VISUAL_DISABLED].iFillColor == iDisabled &&
+	     pData->arrVisual[XUI_BUTTON_VISUAL_CHECKED].iFillColor == iActive &&
+	     pData->iSemantic == XUI_BUTTON_SEMANTIC_DEFAULT ) return XUI_OK;
 	pData->arrVisual[XUI_BUTTON_VISUAL_NORMAL].iFillColor = iNormal;
 	pData->arrVisual[XUI_BUTTON_VISUAL_HOVER].iFillColor = iHover;
 	pData->arrVisual[XUI_BUTTON_VISUAL_ACTIVE].iFillColor = iActive;
@@ -1798,6 +1865,9 @@ XUI_API int xuiButtonSetStateVisual(xui_widget pWidget, uint32_t iState, uint32_
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iIndex = __xuiButtonStateIndex(iState);
+	if ( pData->arrVisual[iIndex].iFillColor == iFill &&
+	     pData->arrVisual[iIndex].fBorderWidth == fBorderWidth &&
+	     pData->arrVisual[iIndex].iBorderColor == iBorderColor ) return XUI_OK;
 	pData->arrVisual[iIndex].iFillColor = iFill;
 	pData->arrVisual[iIndex].fBorderWidth = fBorderWidth;
 	pData->arrVisual[iIndex].iBorderColor = iBorderColor;
@@ -1823,6 +1893,7 @@ XUI_API int xuiButtonGetStateVisual(xui_widget pWidget, uint32_t iState, uint32_
 XUI_API int xuiButtonSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t iBorderColor)
 {
 	xui_button_data_t* pData;
+	int bChanged;
 	int i;
 
 	if ( !__xuiButtonNonNegativeFloatValid(fBorderWidth) ) {
@@ -1832,6 +1903,16 @@ XUI_API int xuiButtonSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t 
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	bChanged = 0;
+	for ( i = 0; i < XUI_BUTTON_VISUAL_COUNT; i++ ) {
+		if ( i == XUI_BUTTON_VISUAL_FOCUS ) continue;
+		if ( pData->arrVisual[i].fBorderWidth != fBorderWidth ||
+		     pData->arrVisual[i].iBorderColor != iBorderColor ) {
+			bChanged = 1;
+			break;
+		}
+	}
+	if ( !bChanged ) return XUI_OK;
 	for ( i = 0; i < XUI_BUTTON_VISUAL_COUNT; i++ ) {
 		if ( i == XUI_BUTTON_VISUAL_FOCUS ) {
 			continue;
@@ -1845,6 +1926,7 @@ XUI_API int xuiButtonSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t 
 XUI_API int xuiButtonSetPatch(xui_widget pWidget, uint32_t iState, const xui_nine_patch_t* pPatch)
 {
 	xui_button_data_t* pData;
+	xui_nine_patch_t tPatch;
 	int iIndex;
 
 	if ( !__xuiButtonPatchValid(pPatch) ) {
@@ -1856,14 +1938,16 @@ XUI_API int xuiButtonSetPatch(xui_widget pWidget, uint32_t iState, const xui_nin
 	}
 	iIndex = __xuiButtonStateIndex(iState);
 	if ( pPatch == NULL ) {
+		if ( !pData->arrHasPatch[iIndex] ) return XUI_OK;
 		memset(&pData->arrPatch[iIndex], 0, sizeof(pData->arrPatch[iIndex]));
 		pData->arrHasPatch[iIndex] = 0;
 	} else {
-		pData->arrPatch[iIndex] = *pPatch;
-		pData->arrPatch[iIndex].iSize = sizeof(pData->arrPatch[iIndex]);
-		if ( pData->arrPatch[iIndex].iColor == 0 ) {
-			pData->arrPatch[iIndex].iColor = XUI_COLOR_WHITE;
-		}
+		tPatch = *pPatch;
+		tPatch.iSize = sizeof(tPatch);
+		if ( tPatch.iColor == 0 ) tPatch.iColor = XUI_COLOR_WHITE;
+		if ( pData->arrHasPatch[iIndex] &&
+		     __xuiButtonPatchEqual(&pData->arrPatch[iIndex], &tPatch) ) return XUI_OK;
+		pData->arrPatch[iIndex] = tPatch;
 		pData->arrHasPatch[iIndex] = 1;
 	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1942,6 +2026,7 @@ XUI_API int xuiButtonSetBadgeAnchor(xui_widget pWidget, int iAnchor)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->iBadgeAnchor == iAnchor ) return XUI_OK;
 	pData->iBadgeAnchor = iAnchor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1965,6 +2050,7 @@ XUI_API int xuiButtonSetBadgeOffset(xui_widget pWidget, float fX, float fY)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->fBadgeOffsetX == fX && pData->fBadgeOffsetY == fY ) return XUI_OK;
 	pData->fBadgeOffsetX = fX;
 	pData->fBadgeOffsetY = fY;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1994,6 +2080,7 @@ XUI_API int xuiButtonSetBadgeSize(xui_widget pWidget, float fSize)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->fBadgeSize == fSize ) return XUI_OK;
 	pData->fBadgeSize = fSize;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -2015,6 +2102,8 @@ XUI_API int xuiButtonSetBadgeSurface(xui_widget pWidget, xui_surface pSurface, x
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->pBadgeSurface == pSurface &&
+	     __xuiButtonRectEqual(pData->tBadgeSrc, tSrc) ) return XUI_OK;
 	pData->pBadgeSurface = pSurface;
 	pData->tBadgeSrc = tSrc;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
