@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_SCROLLBAR
 #include "xui_internal.h"
+#include "xui_slider_common.h"
 
 #include <float.h>
 #include <math.h>
@@ -61,6 +62,11 @@ static int __xuiScrollBarOrientationValid(int iOrientation);
 static int __xuiScrollBarModeValid(int iMode);
 static int __xuiScrollBarButtonModeValid(int iButtonMode);
 
+static int __xuiScrollBarMetricValid(float fValue)
+{
+	return xuiSliderCommonMetricValid(fValue, 0.0f);
+}
+
 static int __xuiScrollBarDescValid(const xui_scrollbar_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -71,9 +77,9 @@ static int __xuiScrollBarDescValid(const xui_scrollbar_desc_t* pDesc)
 	     !isfinite(pDesc->fPage) || pDesc->fPage < 0.0f ) return 0;
 	if ( !isfinite(pDesc->fSmallStep) || pDesc->fSmallStep < 0.0f ||
 	     !isfinite(pDesc->fLargeStep) || pDesc->fLargeStep < 0.0f ) return 0;
-	if ( !isfinite(pDesc->fThickness) || pDesc->fThickness < 0.0f ||
-	     !isfinite(pDesc->fMinThumbSize) || pDesc->fMinThumbSize < 0.0f ||
-	     !isfinite(pDesc->fButtonSize) || pDesc->fButtonSize < 0.0f ) return 0;
+	if ( !__xuiScrollBarMetricValid(pDesc->fThickness) ||
+	     !__xuiScrollBarMetricValid(pDesc->fMinThumbSize) ||
+	     !__xuiScrollBarMetricValid(pDesc->fButtonSize) ) return 0;
 	return __xuiScrollBarOrientationValid(pDesc->iOrientation) &&
 	       __xuiScrollBarModeValid(pDesc->iMode) &&
 	       __xuiScrollBarButtonModeValid(pDesc->iButtonMode);
@@ -107,44 +113,22 @@ static int __xuiScrollBarPartValid(int iPart)
 
 static float __xuiScrollBarClampFloat(float fValue, float fMin, float fMax)
 {
-	if ( fValue < fMin ) {
-		return fMin;
-	}
-	if ( fValue > fMax ) {
-		return fMax;
-	}
-	return fValue;
+	return xuiSliderCommonClamp(fValue, fMin, fMax);
 }
 
 static float __xuiScrollBarAbsFloat(float fValue)
 {
-	return (fValue < 0.0f) ? -fValue : fValue;
+	return xuiSliderCommonAbs(fValue);
 }
 
 static float __xuiScrollBarMinFloat(float fA, float fB)
 {
-	return (fA < fB) ? fA : fB;
+	return xuiSliderCommonMin(fA, fB);
 }
 
 static void __xuiScrollBarNormalizeRange(float* pMin, float* pMax, float* pPage)
 {
-	float fSwap;
-
-	if ( (*pMax) < (*pMin) ) {
-		fSwap = *pMin;
-		*pMin = *pMax;
-		*pMax = fSwap;
-	}
-	if ( (*pMax) == (*pMin) ) {
-		*pMax = (*pMin) + 1.0f;
-		if ( !isfinite(*pMax) || (*pMax == *pMin) ) {
-			*pMax = nextafterf(*pMin, INFINITY);
-			if ( !isfinite(*pMax) ) {
-				*pMax = *pMin;
-				*pMin = nextafterf(*pMax, -INFINITY);
-			}
-		}
-	}
+	xuiSliderCommonNormalizeRange(pMin, pMax);
 	if ( (*pPage) < 0.0f ) {
 		*pPage = 0.0f;
 	}
@@ -270,7 +254,7 @@ static int __xuiScrollBarStyleFloat(xui_widget pWidget, const char* sName, float
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	     __xuiScrollBarMetricValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -291,8 +275,8 @@ static void __xuiScrollBarResolve(xui_widget pWidget, const xui_scrollbar_data_t
 	(void)__xuiScrollBarStyleFloat(pWidget, "scrollbar.thickness", &pResolved->fThickness);
 	(void)__xuiScrollBarStyleFloat(pWidget, "scrollbar.min_thumb_size", &pResolved->fMinThumbSize);
 	(void)__xuiScrollBarStyleFloat(pWidget, "scrollbar.button_size", &pResolved->fButtonSize);
-	if ( pResolved->fMinThumbSize < 1.0f ) {
-		pResolved->fMinThumbSize = 1.0f;
+	if ( pResolved->fMinThumbSize <= 0.0f ) {
+		pResolved->fMinThumbSize = 18.0f;
 	}
 }
 
@@ -301,7 +285,7 @@ static uint32_t __xuiScrollBarBaseState(xui_widget pWidget)
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iState |= XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) {
@@ -632,7 +616,7 @@ static int __xuiScrollBarTrackDirectionAtAxis(xui_scrollbar_data_t* pData, float
 	if ( fMouse < fThumbStart ) {
 		return -1;
 	}
-	if ( fMouse > fThumbEnd ) {
+	if ( fMouse >= fThumbEnd ) {
 		return 1;
 	}
 	return 0;
@@ -698,15 +682,14 @@ static int __xuiScrollBarSetValueInternal(xui_widget pWidget, xui_scrollbar_data
 	return XUI_OK;
 }
 
-static int __xuiScrollBarStepValue(xui_widget pWidget, xui_scrollbar_data_t* pData, float fStep)
+static int __xuiScrollBarStepValue(xui_widget pWidget, xui_scrollbar_data_t* pData, double fStep)
 {
-	double fValue;
+	float fValue;
 
-	if ( pData == NULL || !isfinite(fStep) ) return XUI_ERROR_INVALID_ARGUMENT;
-	fValue = (double)pData->fValue + (double)fStep;
-	if ( fValue <= (double)pData->fMin ) return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fMin, 1);
-	if ( fValue >= (double)pData->fMax ) return __xuiScrollBarSetValueInternal(pWidget, pData, pData->fMax, 1);
-	return __xuiScrollBarSetValueInternal(pWidget, pData, (float)fValue, 1);
+	if ( pData == NULL || isnan(fStep) ) return XUI_ERROR_INVALID_ARGUMENT;
+	fValue = xuiSliderCommonValueWithDelta(pData->fValue, pData->fMin,
+		pData->fMax, fStep);
+	return __xuiScrollBarSetValueInternal(pWidget, pData, fValue, 1);
 }
 
 static void __xuiScrollBarStopRepeat(xui_scrollbar_data_t* pData)
@@ -752,10 +735,26 @@ static int __xuiScrollBarRepeatOnce(xui_widget pWidget, xui_scrollbar_data_t* pD
 	}
 	__xuiScrollBarResolve(pWidget, pData, &tResolved);
 	if ( pData->iRepeatPart == XUI_SCROLLBAR_PART_DECREASE ) {
-		return __xuiScrollBarStepValue(pWidget, pData, -__xuiScrollBarSmallStep(&tResolved));
+		if ( pData->iHoverPart != XUI_SCROLLBAR_PART_DECREASE ) return XUI_OK;
+		fBefore = pData->fValue;
+		iRet = __xuiScrollBarStepValue(pWidget, pData,
+			-(double)__xuiScrollBarSmallStep(&tResolved));
+		if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_OK;
+		if ( (iRet == XUI_OK) && (pData->fValue == fBefore) ) {
+			__xuiScrollBarStopRepeat(pData);
+		}
+		return iRet;
 	}
 	if ( pData->iRepeatPart == XUI_SCROLLBAR_PART_INCREASE ) {
-		return __xuiScrollBarStepValue(pWidget, pData, __xuiScrollBarSmallStep(&tResolved));
+		if ( pData->iHoverPart != XUI_SCROLLBAR_PART_INCREASE ) return XUI_OK;
+		fBefore = pData->fValue;
+		iRet = __xuiScrollBarStepValue(pWidget, pData,
+			(double)__xuiScrollBarSmallStep(&tResolved));
+		if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_OK;
+		if ( (iRet == XUI_OK) && (pData->fValue == fBefore) ) {
+			__xuiScrollBarStopRepeat(pData);
+		}
+		return iRet;
 	}
 	if ( pData->iRepeatPart == XUI_SCROLLBAR_PART_TRACK ) {
 		__xuiScrollBarUpdateRects(pWidget, pData, &tResolved);
@@ -791,8 +790,8 @@ static int __xuiScrollBarUpdateRepeat(xui_widget pWidget, xui_scrollbar_data_t* 
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( !pData->bPointerActive ||
 	     (xuiGetPointerCaptureEx(pContext, pData->iActivePointerId, pData->iActivePointerType) != pWidget) ||
-	     !xuiWidgetGetEnabled(pWidget) ||
-	     !xuiWidgetGetVisible(pWidget) ||
+	     !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ||
 	     (pData->bDraggingThumb != 0) ) {
 		__xuiScrollBarStopRepeat(pData);
 		return XUI_OK;
@@ -901,7 +900,8 @@ static int __xuiScrollBarPointerDown(xui_widget pWidget, xui_scrollbar_data_t* p
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
 		return XUI_OK;
 	}
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return XUI_OK;
 	}
 	__xuiScrollBarResolve(pWidget, pData, &tResolved);
@@ -915,12 +915,24 @@ static int __xuiScrollBarPointerDown(xui_widget pWidget, xui_scrollbar_data_t* p
 		return __xuiScrollBarPointerMatches(pData, pEvent) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
+	iRet = xuiSetFocusWidget(pContext, pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_EVENT_DISPATCH_STOP;
 	iRet = xuiSetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 	pData->bPointerActive = 1;
 	pData->iActivePointerId = pEvent->iPointerId;
 	pData->iActivePointerType = pEvent->iPointerType;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ||
+	     xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
+	      pEvent->iPointerType) != pWidget ) {
+		__xuiScrollBarCancelDrag(pWidget, pData);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
 	iRet = __xuiScrollBarSetParts(pWidget, pData, iPart, iPart);
 	if ( iRet != XUI_OK ) {
 		__xuiScrollBarCancelDrag(pWidget, pData);
@@ -941,7 +953,9 @@ static int __xuiScrollBarPointerDown(xui_widget pWidget, xui_scrollbar_data_t* p
 			return iRet;
 		}
 		if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-		if ( !__xuiScrollBarPointerMatches(pData, pEvent) ||
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ||
+		     !__xuiScrollBarPointerMatches(pData, pEvent) ||
 		     xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) != pWidget ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -956,7 +970,9 @@ static int __xuiScrollBarPointerDown(xui_widget pWidget, xui_scrollbar_data_t* p
 			return iRet;
 		}
 		if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-		if ( !__xuiScrollBarPointerMatches(pData, pEvent) ||
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ||
+		     !__xuiScrollBarPointerMatches(pData, pEvent) ||
 		     xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) != pWidget ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -976,7 +992,9 @@ static int __xuiScrollBarPointerDown(xui_widget pWidget, xui_scrollbar_data_t* p
 				return iRet;
 			}
 			if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-			if ( !__xuiScrollBarPointerMatches(pData, pEvent) ||
+			if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+			     !xuiWidgetGetEffectiveVisible(pWidget) ||
+			     !__xuiScrollBarPointerMatches(pData, pEvent) ||
 			     xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) != pWidget ) {
 				return XUI_EVENT_DISPATCH_STOP;
 			}
@@ -998,10 +1016,21 @@ static int __xuiScrollBarPointerMove(xui_widget pWidget, xui_scrollbar_data_t* p
 
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( pData->bPointerActive && !__xuiScrollBarPointerMatches(pData, pEvent) ) return XUI_OK;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		if ( pData->bPointerActive ) __xuiScrollBarCancelDrag(pWidget, pData);
+		return __xuiScrollBarSetParts(pWidget, pData,
+			XUI_SCROLLBAR_PART_NONE, XUI_SCROLLBAR_PART_NONE);
+	}
 	if ( (pData->bDraggingThumb != 0) &&
 	     (xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget) ) {
 		iRet = __xuiScrollBarDragValue(pWidget, pData, pEvent);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			__xuiScrollBarCancelDrag(pWidget, pData);
+		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( (pData->iRepeatPart == XUI_SCROLLBAR_PART_TRACK) &&
@@ -1017,6 +1046,7 @@ static int __xuiScrollBarPointerUp(xui_widget pWidget, xui_scrollbar_data_t* pDa
 {
 	xui_context pContext;
 	int bWasActive;
+	int iRet;
 
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
 		return XUI_OK;
@@ -1026,6 +1056,15 @@ static int __xuiScrollBarPointerUp(xui_widget pWidget, xui_scrollbar_data_t* pDa
 	bWasActive = (pData->bDraggingThumb != 0) ||
 	             (pData->iActivePart != XUI_SCROLLBAR_PART_NONE) ||
 	             (xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget);
+	if ( (pData->bDraggingThumb != 0) &&
+	     (xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
+	      pEvent->iPointerType) == pWidget) &&
+	     xuiWidgetGetEffectiveEnabled(pWidget) &&
+	     xuiWidgetGetEffectiveVisible(pWidget) ) {
+		iRet = __xuiScrollBarDragValue(pWidget, pData, pEvent);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	}
 	__xuiScrollBarCancelDrag(pWidget, pData);
 	return bWasActive ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 }
@@ -1038,17 +1077,19 @@ static int __xuiScrollBarWheel(xui_widget pWidget, xui_scrollbar_data_t* pData, 
 	float fStep;
 	int iRet;
 
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return XUI_OK;
 	}
 	fDelta = (__xuiScrollBarAbsFloat(pEvent->fWheelY) >= __xuiScrollBarAbsFloat(pEvent->fWheelX)) ? pEvent->fWheelY : pEvent->fWheelX;
-	if ( fDelta == 0.0f ) {
+	if ( !isfinite(fDelta) || fDelta == 0.0f ) {
 		return XUI_OK;
 	}
 	__xuiScrollBarResolve(pWidget, pData, &tResolved);
 	fStep = __xuiScrollBarSmallStep(&tResolved);
 	fOldValue = pData->fValue;
-	iRet = __xuiScrollBarStepValue(pWidget, pData, -fDelta * fStep);
+	iRet = __xuiScrollBarStepValue(pWidget, pData,
+		-(double)fDelta * (double)fStep);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 	return (pData->fValue != fOldValue) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -1060,7 +1101,8 @@ static int __xuiScrollBarKeyDown(xui_widget pWidget, xui_scrollbar_data_t* pData
 	float fStep;
 	int iRet;
 
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return XUI_OK;
 	}
 	__xuiScrollBarResolve(pWidget, pData, &tResolved);
@@ -1159,8 +1201,12 @@ static int __xuiScrollBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		return __xuiScrollBarKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 			__xuiScrollBarCancelDrag(pWidget, pData);
+			iRet = __xuiScrollBarSetParts(pWidget, pData,
+				XUI_SCROLLBAR_PART_NONE, XUI_SCROLLBAR_PART_NONE);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		iRet = __xuiScrollBarSyncState(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1565,7 +1611,9 @@ static int __xuiScrollBarAccessibleAction(xui_widget pWidget, int iAction, const
 		fValue = pValue->fNumber;
 		if ( !(fValue >= pData->fMin && fValue <= pData->fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
 	} else if ( iAction == XUI_ACCESSIBLE_ACTION_INCREMENT || iAction == XUI_ACCESSIBLE_ACTION_DECREMENT ) {
-		fValue = pData->fValue + (iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ? 1.0 : -1.0) * __xuiScrollBarSmallStep(pData);
+		return __xuiScrollBarStepValue(pWidget, pData,
+			(iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ? 1.0 : -1.0) *
+			(double)__xuiScrollBarSmallStep(pData));
 	} else return XUI_ERROR_UNSUPPORTED;
 	return __xuiScrollBarSetValueInternal(pWidget, pData, (float)fValue, 1);
 }
@@ -1579,7 +1627,7 @@ static int __xuiScrollBarQueryCursor(xui_widget pWidget, int iX, int iY, void* p
 	(void)iX;
 	(void)iY;
 	(void)pUser;
-	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_ARROW : XUI_CURSOR_NOT_ALLOWED;
+	return xuiWidgetGetEffectiveEnabled(pWidget) ? XUI_CURSOR_ARROW : XUI_CURSOR_NOT_ALLOWED;
 }
 
 XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext)
@@ -1626,7 +1674,8 @@ XUI_API int xuiScrollBarCreate(xui_context pContext, xui_widget* ppWidget, const
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
-	if ( !__xuiScrollBarDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalContextIsValid(pContext) ||
+	     !__xuiScrollBarDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiScrollBarGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -1804,10 +1853,9 @@ XUI_API int xuiScrollBarSetMetrics(xui_widget pWidget, float fThickness, float f
 {
 	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
 	int iRet;
-	if ( (pData == NULL) || !isfinite(fThickness) || !isfinite(fMinThumbSize) || !isfinite(fButtonSize) ||
-	     (fThickness < 0.0f) || (fMinThumbSize < 0.0f) || (fButtonSize < 0.0f) ||
-	     (fThickness > XUI_LAYOUT_UNBOUNDED) || (fMinThumbSize > XUI_LAYOUT_UNBOUNDED) ||
-	     (fButtonSize > XUI_LAYOUT_UNBOUNDED) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !__xuiScrollBarMetricValid(fThickness) ||
+	     !__xuiScrollBarMetricValid(fMinThumbSize) ||
+	     !__xuiScrollBarMetricValid(fButtonSize) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fMinThumbSize = (fMinThumbSize > 0.0f) ? fMinThumbSize : 18.0f;
 	if ( pData->fThickness == fThickness && pData->fMinThumbSize == fMinThumbSize &&
 	     pData->fButtonSize == fButtonSize ) return XUI_OK;

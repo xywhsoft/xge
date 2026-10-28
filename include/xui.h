@@ -8668,7 +8668,7 @@ XUI_API int xuiScrollBarGetSteps(xui_widget pWidget, float* pSmallStep, float* p
 XUI_API int xuiScrollBarSetOrientation(xui_widget pWidget, int iOrientation);
 /* 读取方向。 */
 XUI_API int xuiScrollBarGetOrientation(xui_widget pWidget);
-/* 设置显示模式（常显/悬停/自动隐藏）。 */
+/* 设置显示模式（完整滚动条/紧凑滚动条）。 */
 XUI_API int xuiScrollBarSetMode(xui_widget pWidget, int iMode);
 /* 读取显示模式。 */
 XUI_API int xuiScrollBarGetMode(xui_widget pWidget);
