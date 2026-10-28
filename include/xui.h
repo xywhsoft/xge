@@ -2449,7 +2449,9 @@ typedef struct xui_nine_patch_t {
 } xui_nine_patch_t;
 
 /* 进度条创建描述。sText 会被复制；pFont 与 nine-patch surface 为借用资源，
- * 调用方须保证其生命周期覆盖 Progress 对它们的使用期。 */
+ * 调用方须保证其生命周期覆盖 Progress 对它们的使用期。nine-patch 的源矩形
+ * 与切片均使用整数像素；尺寸及切片不得为负，组合几何不得超过
+ * XUI_LAYOUT_UNBOUNDED。 */
 typedef struct xui_progress_desc_t {
 	uint32_t iSize;
 	struct xui_font_t* pFont;
@@ -6981,7 +6983,7 @@ XUI_API uint32_t xuiProgressGetFillColor(xui_widget pWidget);
 XUI_API int xuiProgressSetFillDirection(xui_widget pWidget, int iFillDirection);
 /* 读取填充方向。 */
 XUI_API int xuiProgressGetFillDirection(xui_widget pWidget);
-/* 设置轨道九宫格贴图。 */
+/* 设置轨道九宫格贴图；几何边界见 xui_progress_desc_t。 */
 XUI_API int xuiProgressSetTrackPatch(xui_widget pWidget, const xui_nine_patch_t* pPatch);
 /* 清除轨道贴图。 */
 XUI_API int xuiProgressClearTrackPatch(xui_widget pWidget);
@@ -6989,7 +6991,7 @@ XUI_API int xuiProgressClearTrackPatch(xui_widget pWidget);
 XUI_API int xuiProgressHasTrackPatch(xui_widget pWidget);
 /* 输出轨道贴图。 */
 XUI_API int xuiProgressGetTrackPatch(xui_widget pWidget, xui_nine_patch_t* pPatch);
-/* 设置填充九宫格贴图。 */
+/* 设置填充九宫格贴图；几何边界见 xui_progress_desc_t。 */
 XUI_API int xuiProgressSetFillPatch(xui_widget pWidget, const xui_nine_patch_t* pPatch);
 /* 清除填充贴图。 */
 XUI_API int xuiProgressClearFillPatch(xui_widget pWidget);

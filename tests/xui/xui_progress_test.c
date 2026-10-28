@@ -269,6 +269,75 @@ int main(void)
 	iRet = xuiProgressSetTextTemplate(pProgress, "{{{value}}}/{max} {percent}%");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "{40}/100 40%") == 0,
 		"named template tokens and escaping");
+	iRet = xuiProgressSetTextTemplate(pProgress, "{{value}} %% {{percent}}");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiProgressGetDisplayText(pProgress), "{value} % {percent}") == 0,
+		"escaped named tokens remain static literals");
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget),
+		"create escaped template allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope),
+		"enter escaped template allocation budget");
+	{
+		int iFirst = xuiProgressSetValue(pProgress, 41.0f);
+		int iSecond = xuiProgressSetRange(pProgress, 0.0f, 200.0f);
+		XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope),
+			"leave escaped template allocation budget");
+		xrtAllocationBudgetFree(pBudget);
+		pBudget = NULL;
+		XUI_TEST_CHECK(iFirst == XUI_OK && iSecond == XUI_OK &&
+			strcmp(xuiProgressGetDisplayText(pProgress), "{value} % {percent}") == 0,
+			"escaped static template updates without heap churn");
+	}
+	XUI_TEST_CHECK(xuiProgressSetRange(pProgress, 0.0f, 100.0f) == XUI_OK &&
+		xuiProgressSetValue(pProgress, 40.0f) == XUI_OK,
+		"restore range after escaped template test");
+	iRet = xuiProgressSetTextTemplate(pProgress, "{value} / {max}");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiProgressGetDisplayText(pProgress), "40 / 100") == 0,
+		"dynamic template prepared");
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget),
+		"create dynamic reuse allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope),
+		"enter dynamic reuse allocation budget");
+	{
+		int iFirst = xuiProgressSetValue(pProgress, 41.0f);
+		int iSecond = xuiProgressSetValue(pProgress, 42.0f);
+		int iThird = xuiProgressSetRange(pProgress, 0.0f, 200.0f);
+		XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope),
+			"leave dynamic reuse allocation budget");
+		xrtAllocationBudgetFree(pBudget);
+		pBudget = NULL;
+		XUI_TEST_CHECK(iFirst == XUI_OK && iSecond == XUI_OK && iThird == XUI_OK &&
+			strcmp(xuiProgressGetDisplayText(pProgress), "42 / 200") == 0,
+			"dynamic template reuses display capacity");
+	}
+	XUI_TEST_CHECK(xuiProgressSetRange(pProgress, -FLT_MAX, FLT_MAX) == XUI_OK &&
+		xuiProgressSetValue(pProgress, 0.0f) == XUI_OK,
+		"prepare dynamic growth range");
+	iRet = xuiProgressSetTextTemplate(pProgress,
+		"{value}{value}{value}{value}{value}{value}{value}{value}");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiProgressGetDisplayText(pProgress), "00000000") == 0,
+		"prepare compact repeated template");
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget),
+		"create dynamic growth allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope),
+		"enter dynamic growth allocation budget");
+	iRet = xuiProgressSetValue(pProgress, FLT_MAX);
+	XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope),
+		"leave dynamic growth allocation budget");
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		xuiProgressGetValue(pProgress) == 0.0f &&
+		strcmp(xuiProgressGetDisplayText(pProgress), "00000000") == 0,
+		"dynamic display growth failure is atomic");
+	XUI_TEST_CHECK(xuiProgressSetRange(pProgress, 0.0f, 100.0f) == XUI_OK &&
+		xuiProgressSetValue(pProgress, 40.0f) == XUI_OK,
+		"restore range after dynamic growth test");
 	iRet = xuiProgressSetTextTemplate(pProgress, "Loading");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Loading") == 0, "static text");
 	iRet = xuiProgressSetTextTemplate(pProgress, "Progress %s");
@@ -387,18 +456,22 @@ int main(void)
 	tPatch.tSlice = (xui_thickness_t){0, 0, 0, 0};
 	iRet = xuiProgressSetFillPatch(pProgress, &tPatch);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore fill patch");
-	tPatch.tSrc = (xui_rect_t){0.0f, 0.0f, 0.25f, 0.25f};
+	tPatch.tSrc = (xui_rect_t){0, 0, 1, 1};
 	tPatch.iMode = XUI_NINE_PATCH_TILE;
 	iRet = xuiProgressSetTrackPatch(pProgress, &tPatch);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tiny tile patch accepted");
 	iRet = xuiProgressClearFillPatch(pProgress);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear fill patch for tile budget test");
 	xuiTestSurfaceReset(pCache);
+	iRet = xuiWidgetSetRect(pProgress, (xui_rect_t){10, 20, 200, 100});
+	XUI_TEST_CHECK(iRet == XUI_OK, "large destination for tile budget test");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render tiny tile patch");
 	pCache = xuiWidgetGetCacheSurface(pProgress, xuiWidgetGetStateId(pProgress));
-	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) <= 64,
-		"tiny tile source has bounded draw complexity");
+	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) <= 4,
+		"one-pixel tile falls back before exceeding draw budget");
+	iRet = xuiWidgetSetRect(pProgress, (xui_rect_t){10, 20, 100, 20});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore rect after tile budget test");
 	tPatch.tSrc = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	tPatch.iMode = XUI_NINE_PATCH_STRETCH;
 	XUI_TEST_CHECK(xuiProgressSetTrackPatch(pProgress, &tPatch) == XUI_OK &&
@@ -424,13 +497,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative patch slice rejected");
 	XUI_TEST_CHECK(xuiProgressHasFillPatch(pProgress), "invalid fill patch preserves prior state");
 	tInvalidPatch = tPatch;
-	tInvalidPatch.tSrc.fX = NAN;
+	tInvalidPatch.tSrc = (xui_rect_t){(int)XUI_LAYOUT_UNBOUNDED, 0, 1, 1};
 	iRet = xuiProgressSetTrackPatch(pProgress, &tInvalidPatch);
-	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite patch source rejected");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"patch source extent beyond geometry bound rejected");
 	tInvalidPatch = tPatch;
-	tInvalidPatch.tSlice.fTop = INFINITY;
+	tInvalidPatch.tSlice = (xui_thickness_t){(int)XUI_LAYOUT_UNBOUNDED, 0, 1, 0};
 	iRet = xuiProgressSetFillPatch(pProgress, &tInvalidPatch);
-	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite patch slice rejected");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"combined patch slice beyond geometry bound rejected");
 	tDesc.fMin = NAN;
 	pInvalid = pRoot;
 	iRet = xuiProgressCreate(pContext, &pInvalid, &tDesc);
