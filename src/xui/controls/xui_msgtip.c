@@ -111,6 +111,17 @@ static int __xuiMsgTipSignedFloatValid(float fValue)
 	return (fValue == fValue) && (fValue >= -XUI_CONTEXT_MAX_VIEWPORT) && (fValue <= XUI_CONTEXT_MAX_VIEWPORT);
 }
 
+static int __xuiMsgTipTypeValid(int iType)
+{
+	return (iType >= XUI_MSGTIP_ICON_NONE) && (iType <= XUI_MSGTIP_ICON_ERROR);
+}
+
+static int __xuiMsgTipRectValid(xui_rect_t tRect)
+{
+	return __xuiMsgTipSignedFloatValid(tRect.fX) && __xuiMsgTipSignedFloatValid(tRect.fY) &&
+	       __xuiMsgTipFloatValid(tRect.fW) && __xuiMsgTipFloatValid(tRect.fH);
+}
+
 static int __xuiMsgTipNormalizeType(int iType)
 {
 	if ( iType < XUI_MSGTIP_ICON_NONE || iType > XUI_MSGTIP_ICON_ERROR ) {
@@ -152,6 +163,13 @@ static int __xuiMsgTipReplaceText(char** ppText, const char* sText)
 	}
 	*ppText = sCopy;
 	return XUI_OK;
+}
+
+static int __xuiMsgTipTextSame(const char* sA, const char* sB)
+{
+	if ( sA == NULL ) sA = "";
+	if ( sB == NULL ) sB = "";
+	return strcmp(sA, sB) == 0;
 }
 
 static void __xuiMsgTipDefaultMetrics(xui_msgtip_metrics_t* pMetrics)
@@ -205,6 +223,9 @@ static int __xuiMsgTipMetricsValid(const xui_msgtip_metrics_t* pMetrics)
 	       __xuiMsgTipFloatValid(pMetrics->fPaddingY) &&
 	       __xuiMsgTipFloatValid(pMetrics->fIconSize) &&
 	       __xuiMsgTipFloatValid(pMetrics->fIconGap) &&
+	       (pMetrics->fMinWidth >= 32.0f) &&
+	       (pMetrics->fMaxWidth >= pMetrics->fMinWidth) &&
+	       (pMetrics->fMinHeight >= 24.0f) &&
 	       __xuiMsgTipSignedFloatValid(pMetrics->fOffsetY);
 }
 
@@ -218,8 +239,9 @@ static int __xuiMsgTipDescValid(const xui_msgtip_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) return 1;
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
-	if ( pDesc->fDuration != pDesc->fDuration ) return 0;
-	if ( (pDesc->tIconSrc.fW < 0.0f) || (pDesc->tIconSrc.fH < 0.0f) ) return 0;
+	if ( !__xuiMsgTipTypeValid(pDesc->iType) ) return 0;
+	if ( !__xuiMsgTipFloatValid(pDesc->fDuration) ) return 0;
+	if ( !__xuiMsgTipRectValid(pDesc->tIconSrc) ) return 0;
 	if ( pDesc->bHasMetrics && !__xuiMsgTipMetricsValid(&pDesc->tMetrics) ) return 0;
 	if ( pDesc->bHasColors && !__xuiMsgTipColorsValid(&pDesc->tColors) ) return 0;
 	return 1;
@@ -379,11 +401,7 @@ static int __xuiMsgTipLayout(xui_msgtip pTip)
 		fTextLimit = 32.0f;
 	}
 	iRet = __xuiMsgTipMeasureText(pTip, fTextLimit, &tTextSize, &pTip->iWrapLineCount);
-	if ( iRet != XUI_OK ) {
-		tTextSize.fX = fTextLimit;
-		tTextSize.fY = 18.0f;
-		pTip->iWrapLineCount = 1;
-	}
+	if ( iRet != XUI_OK ) return iRet;
 	fTextW = __xuiMsgTipMin(__xuiMsgTipPixelCeil(tTextSize.fX), fTextLimit);
 	fContentW = __xuiMsgTipPixelCeil(fIconBlock + fTextW);
 	fContentH = tTextSize.fY;
@@ -398,11 +416,7 @@ static int __xuiMsgTipLayout(xui_msgtip pTip)
 		fTextLimit = 32.0f;
 	}
 	iRet = __xuiMsgTipMeasureText(pTip, fTextLimit, &tTextSize, &pTip->iWrapLineCount);
-	if ( iRet != XUI_OK ) {
-		tTextSize.fX = fTextLimit;
-		tTextSize.fY = 18.0f;
-		pTip->iWrapLineCount = 1;
-	}
+	if ( iRet != XUI_OK ) return iRet;
 	fContentH = tTextSize.fY;
 	if ( bIcon ) {
 		fContentH = __xuiMsgTipMax(fContentH, pTip->tMetrics.fIconSize);
@@ -479,7 +493,7 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 	pLayout = NULL;
 	iRet = xuiTextLayoutCreate(pTip->pContext, &pLayout, &tDesc);
 	if ( iRet != XUI_OK ) {
-		return XUI_OK;
+		return iRet;
 	}
 	for ( i = 0; i < xuiTextLayoutGetLineCount(pLayout); i++ ) {
 		memset(&tLine, 0, sizeof(tLine));
@@ -497,7 +511,11 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 		tLineRect.fY = pTip->tTextRect.fY + tLine.fY;
 		tLineRect.fW = pTip->tTextRect.fW;
 		tLineRect.fH = tLine.fH;
-		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tLineRect), __xuiMsgTipStyleColor(pTip, "msgtip.text.color", pTip->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=iDisplaySize, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tLineRect), __xuiMsgTipStyleColor(pTip, "msgtip.text.color", pTip->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) {
+			xuiTextLayoutDestroy(pLayout);
+			return iRet;
+		}
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
@@ -508,6 +526,7 @@ static int __xuiMsgTipDrawFallbackIcon(xui_msgtip pTip, xui_draw_context pDraw, 
 	xui_rect_t tIcon;
 	xui_rect_t tText;
 	float fRadius;
+	int iRet;
 
 	if ( (pProxy == NULL) || (pDraw == NULL) || (pTip == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -515,12 +534,13 @@ static int __xuiMsgTipDrawFallbackIcon(xui_msgtip pTip, xui_draw_context pDraw, 
 	tIcon = pTip->tIconRect;
 	fRadius = __xuiMsgTipMin(tIcon.fW, tIcon.fH) * 0.5f;
 	if ( pProxy->drawCircleFill != NULL ) {
-		(void)pProxy->drawCircleFill(pProxy, pDraw, tIcon.fX + tIcon.fW * 0.5f, tIcon.fY + tIcon.fH * 0.5f, fRadius, __xuiMsgTipStyleColor(pTip, "msgtip.icon.color", pTip->tColors.iIconColor));
+		iRet = pProxy->drawCircleFill(pProxy, pDraw, tIcon.fX + tIcon.fW * 0.5f, tIcon.fY + tIcon.fH * 0.5f, fRadius, __xuiMsgTipStyleColor(pTip, "msgtip.icon.color", pTip->tColors.iIconColor));
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (pProxy->drawText != NULL) && (__xuiMsgTipFont(pTip) != NULL) ) {
 		tText = tIcon;
 		tText.fY -= 1.0f;
-		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=__xuiMsgTipFont(pTip), .sText=__xuiMsgTipIconFallbackText(pTip->iType), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, __xuiMsgTipStyleColor(pTip, "msgtip.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		return pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=__xuiMsgTipFont(pTip), .sText=__xuiMsgTipIconFallbackText(pTip->iType), .iTextSize=1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, __xuiMsgTipStyleColor(pTip, "msgtip.icon.text.color", XUI_COLOR_WHITE), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return XUI_OK;
 }
@@ -556,6 +576,7 @@ static int __xuiMsgTipRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 	xui_msgtip pTip;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
+	int iRet;
 
 	(void)iStateId;
 	(void)pWidget;
@@ -572,35 +593,52 @@ static int __xuiMsgTipRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 	if ( pProxy->drawRectFill != NULL ) {
 		uint32_t iShadow = __xuiMsgTipStyleColor(pTip, "msgtip.shadow.color", pTip->tColors.iShadowColor);
 		if ( (iShadow & 0xffu) != 0u ) {
-			(void)pProxy->drawRectFill(pProxy, pDraw, tRect, iShadow);
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, iShadow);
+			if ( iRet != XUI_OK ) return iRet;
 			tRect.fW = __xuiMsgTipMax(1.0f, tRect.fW - 2.0f);
 			tRect.fH = __xuiMsgTipMax(1.0f, tRect.fH - 2.0f);
 		}
 	}
 	if ( pProxy->drawRectFill != NULL ) {
-		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, __xuiMsgTipStyleColor(pTip, "msgtip.background.color", pTip->tColors.iBackgroundColor));
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, __xuiMsgTipStyleColor(pTip, "msgtip.background.color", pTip->tColors.iBackgroundColor));
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( ((__xuiMsgTipStyleColor(pTip, "msgtip.border.color", pTip->tColors.iBorderColor) & 0xffu) != 0u) && (pProxy->drawRectStroke != NULL) ) {
-		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, __xuiMsgTipStyleColor(pTip, "msgtip.border.color", pTip->tColors.iBorderColor));
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, __xuiMsgTipStyleColor(pTip, "msgtip.border.color", pTip->tColors.iBorderColor));
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( __xuiMsgTipHasIcon(pTip) ) {
 		if ( pTip->bCustomIcon && (pTip->pIconSurface != NULL) && (pProxy->drawSurface != NULL) ) {
-			(void)pProxy->drawSurface(pProxy, pDraw, pTip->pIconSurface, pTip->tIconSrc, pTip->tIconRect, XUI_COLOR_WHITE, 0);
+			iRet = pProxy->drawSurface(pProxy, pDraw, pTip->pIconSurface, pTip->tIconSrc, pTip->tIconRect, XUI_COLOR_WHITE, 0);
 		} else {
-			(void)__xuiMsgTipDrawBuiltinIcon(pTip, pDraw, pProxy);
+			iRet = __xuiMsgTipDrawBuiltinIcon(pTip, pDraw, pProxy);
 		}
+		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)__xuiMsgTipDrawTextLayout(pTip, pDraw);
-	return XUI_OK;
+	return __xuiMsgTipDrawTextLayout(pTip, pDraw);
 }
 
 static int __xuiMsgTipCloseInternal(xui_msgtip pTip, int bExpired)
 {
+	xui_msgtip_close_proc onClose;
+	void* pCloseUser;
+	int iRet;
+
 	if ( !__xuiMsgTipValid(pTip) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( !pTip->bOpen ) {
 		return XUI_OK;
+	}
+	iRet = xuiWidgetSetHitTestVisible(pTip->pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pTip->pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pTip->pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pTip->pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		(void)xuiWidgetSetVisible(pTip->pWidget, 1);
+		(void)xuiWidgetSetEnabled(pTip->pWidget, 1);
+		(void)xuiWidgetSetHitTestVisible(pTip->pWidget, 1);
+		return iRet;
 	}
 	pTip->bOpen = 0;
 	pTip->fElapsed = 0.0f;
@@ -610,13 +648,9 @@ static int __xuiMsgTipCloseInternal(xui_msgtip pTip, int bExpired)
 		pTip->iCloseCount++;
 	}
 	pTip->iChangeCount++;
-	(void)xuiWidgetSetHitTestVisible(pTip->pWidget, 0);
-	(void)xuiWidgetSetEnabled(pTip->pWidget, 0);
-	(void)xuiWidgetSetVisible(pTip->pWidget, 0);
-	(void)xuiWidgetInvalidate(pTip->pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( pTip->onClose != NULL ) {
-		pTip->onClose(pTip, bExpired ? 1 : 0, pTip->pCloseUser);
-	}
+	onClose = pTip->onClose;
+	pCloseUser = pTip->pCloseUser;
+	if ( onClose != NULL ) onClose(pTip, bExpired ? 1 : 0, pCloseUser);
 	return XUI_OK;
 }
 
@@ -628,7 +662,8 @@ static int __xuiMsgTipUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	(void)pWidget;
 	ppTip = (xui_msgtip*)pUser;
 	pTip = (ppTip != NULL) ? *ppTip : NULL;
-	if ( !__xuiMsgTipValid(pTip) || !pTip->bOpen || (pTip->fDuration <= 0.0f) || (fDelta <= 0.0f) ) {
+	if ( !__xuiMsgTipValid(pTip) || !pTip->bOpen || (pTip->fDuration <= 0.0f) ||
+	     (fDelta != fDelta) || (fDelta <= 0.0f) ) {
 		return XUI_OK;
 	}
 	pTip->fElapsed += fDelta;
@@ -650,7 +685,8 @@ static int __xuiMsgTipEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		return XUI_OK;
 	}
 	if ( (pEvent->iType == XUI_EVENT_POINTER_DOWN) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
-		(void)__xuiMsgTipCloseInternal(pTip, 0);
+		int iRet = __xuiMsgTipCloseInternal(pTip, 0);
+		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	return XUI_OK;
@@ -660,6 +696,7 @@ static int __xuiMsgTipTypeInit(xui_widget pWidget, void* pTypeData, const void* 
 {
 	xui_cache_policy_t tPolicy;
 	xui_msgtip* ppTip;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pTypeData == NULL) || (pCreateData == NULL) ) {
@@ -672,17 +709,18 @@ static int __xuiMsgTipTypeInit(xui_widget pWidget, void* pTypeData, const void* 
 	tPolicy.iPolicy = XUI_CACHE_POLICY_SELF;
 	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE | XUI_CACHE_UPDATE_ALL_STATES;
 	tPolicy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetFocusable(pWidget, 0);
-	(void)xuiWidgetSetTabStop(pWidget, 0);
-	(void)xuiWidgetSetVisible(pWidget, 0);
-	(void)xuiWidgetSetEnabled(pWidget, 0);
-	(void)xuiWidgetSetHitTestVisible(pWidget, 0);
-	(void)xuiWidgetSetLayer(pWidget, XUI_LAYER_TOOLTIP, 100);
-	(void)xuiWidgetSetCachePolicy(pWidget, &tPolicy);
-	return xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiMsgTipEvent, pTypeData);
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayer(pWidget, XUI_LAYER_TOOLTIP, 100);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCachePolicy(pWidget, &tPolicy);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiMsgTipEvent, pTypeData);
+	return iRet;
 }
 
 static void __xuiMsgTipTypeDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -733,13 +771,16 @@ XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_m
 	xui_widget_type pType;
 	int iRet;
 
-	if ( !xuiInternalContextIsValid(pContext) || (ppTip == NULL) || !__xuiMsgTipDescValid(pDesc) ) {
+	if ( ppTip == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppTip = NULL;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiMsgTipDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = __xuiMsgTipEnsureType(pContext);
 	if ( pType == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	pTip = (xui_msgtip)xrtCalloc(1, sizeof(*pTip));
 	if ( pTip == NULL ) {
@@ -749,7 +790,7 @@ XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_m
 	pTip->pContext = pContext;
 	pTip->pFont = (pDesc != NULL && pDesc->pFont != NULL) ? pDesc->pFont : xuiGetDefaultFont(pContext);
 	pTip->iType = (pDesc != NULL) ? __xuiMsgTipNormalizeType(pDesc->iType) : XUI_MSGTIP_ICON_INFO;
-	pTip->fDuration = (pDesc != NULL && pDesc->fDuration > 0.0f) ? pDesc->fDuration : 1.8f;
+	pTip->fDuration = (pDesc != NULL) ? pDesc->fDuration : 1.8f;
 	__xuiMsgTipDefaultMetrics(&pTip->tMetrics);
 	__xuiMsgTipDefaultColors(&pTip->tColors);
 	if ( pDesc != NULL && pDesc->bHasMetrics ) pTip->tMetrics = pDesc->tMetrics;
@@ -809,32 +850,64 @@ XUI_API void xuiMsgTipDestroy(xui_msgtip pTip)
 
 XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float fDuration)
 {
+	char* sNewText;
+	char* sOldText;
+	uint32_t iOldIconColor;
+	float fOldDuration;
+	float fOldElapsed;
+	int iOldType;
+	int bOldOpen;
+	int bWasAttached;
 	int iRet;
 
-	if ( !__xuiMsgTipValid(pTip) || (fDuration != fDuration) ) {
+	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipTypeValid(iType) || !__xuiMsgTipFloatValid(fDuration) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiMsgTipReplaceText(&pTip->sText, sText);
-	if ( iRet != XUI_OK ) return iRet;
-	pTip->iType = __xuiMsgTipNormalizeType(iType);
+	sNewText = __xuiMsgTipDupText(sText);
+	if ( sNewText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	sOldText = pTip->sText;
+	iOldType = pTip->iType;
+	iOldIconColor = pTip->tColors.iIconColor;
+	fOldDuration = pTip->fDuration;
+	fOldElapsed = pTip->fElapsed;
+	bOldOpen = pTip->bOpen;
+	bWasAttached = xuiWidgetGetParent(pTip->pWidget) != NULL;
+	pTip->sText = sNewText;
+	pTip->iType = iType;
 	if ( !pTip->bCustomIcon ) {
 		if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
 	}
-	pTip->fDuration = (fDuration < 0.0f) ? 0.0f : fDuration;
+	pTip->fDuration = fDuration;
 	pTip->fElapsed = 0.0f;
-	pTip->bOpen = 1;
-	pTip->iShowCount++;
-	pTip->iChangeCount++;
-	iRet = xuiWidgetSetVisible(pTip->pWidget, 1);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pTip->pWidget, 1);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pTip->pWidget, 1);
-	if ( iRet == XUI_OK && xuiWidgetGetParent(pTip->pWidget) == NULL ) {
+	iRet = __xuiMsgTipLayout(pTip);
+	if ( iRet == XUI_OK && !bWasAttached ) {
 		iRet = xuiOverlayAttach(pTip->pContext, NULL, pTip->pWidget, XUI_LAYER_TOOLTIP, 100);
 	}
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayer(pTip->pWidget, XUI_LAYER_TOOLTIP, 100);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pTip->pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pTip->pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pTip->pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiOverlayBringToFront(pTip->pWidget);
-	if ( iRet == XUI_OK ) iRet = __xuiMsgTipLayout(pTip);
-	return iRet;
+	if ( iRet != XUI_OK ) {
+		pTip->sText = sOldText;
+		pTip->iType = iOldType;
+		pTip->tColors.iIconColor = iOldIconColor;
+		pTip->fDuration = fOldDuration;
+		pTip->fElapsed = fOldElapsed;
+		pTip->bOpen = bOldOpen;
+		(void)__xuiMsgTipLayout(pTip);
+		(void)xuiWidgetSetVisible(pTip->pWidget, bOldOpen);
+		(void)xuiWidgetSetEnabled(pTip->pWidget, bOldOpen);
+		(void)xuiWidgetSetHitTestVisible(pTip->pWidget, bOldOpen);
+		if ( !bWasAttached && xuiWidgetGetParent(pTip->pWidget) != NULL ) (void)xuiOverlayDetach(pTip->pWidget);
+		xrtFree(sNewText);
+		return iRet;
+	}
+	pTip->bOpen = 1;
+	pTip->iShowCount++;
+	pTip->iChangeCount++;
+	if ( sOldText != NULL ) xrtFree(sOldText);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgTipClose(xui_msgtip pTip)
@@ -849,15 +922,28 @@ XUI_API int xuiMsgTipIsOpen(xui_msgtip pTip)
 
 XUI_API int xuiMsgTipSetText(xui_msgtip pTip, const char* sText)
 {
+	char* sNewText;
+	char* sOldText;
 	int iRet;
 
 	if ( !__xuiMsgTipValid(pTip) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiMsgTipReplaceText(&pTip->sText, sText);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( __xuiMsgTipTextSame(pTip->sText, sText) ) return XUI_OK;
+	sNewText = __xuiMsgTipDupText(sText);
+	if ( sNewText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	sOldText = pTip->sText;
+	pTip->sText = sNewText;
+	iRet = __xuiMsgTipLayout(pTip);
+	if ( iRet != XUI_OK ) {
+		pTip->sText = sOldText;
+		(void)__xuiMsgTipLayout(pTip);
+		xrtFree(sNewText);
+		return iRet;
+	}
+	if ( sOldText != NULL ) xrtFree(sOldText);
 	pTip->iChangeCount++;
-	return __xuiMsgTipLayout(pTip);
+	return XUI_OK;
 }
 
 XUI_API const char* xuiMsgTipGetText(xui_msgtip pTip)
@@ -867,15 +953,29 @@ XUI_API const char* xuiMsgTipGetText(xui_msgtip pTip)
 
 XUI_API int xuiMsgTipSetType(xui_msgtip pTip, int iType)
 {
-	if ( !__xuiMsgTipValid(pTip) ) {
+	uint32_t iOldIconColor;
+	int iOldType;
+	int iRet;
+
+	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipTypeValid(iType) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pTip->iType = __xuiMsgTipNormalizeType(iType);
+	if ( pTip->iType == iType ) return XUI_OK;
+	iOldType = pTip->iType;
+	iOldIconColor = pTip->tColors.iIconColor;
+	pTip->iType = iType;
 	if ( !pTip->bCustomIcon ) {
 		if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
 	}
+	iRet = __xuiMsgTipLayout(pTip);
+	if ( iRet != XUI_OK ) {
+		pTip->iType = iOldType;
+		pTip->tColors.iIconColor = iOldIconColor;
+		(void)__xuiMsgTipLayout(pTip);
+		return iRet;
+	}
 	pTip->iChangeCount++;
-	return __xuiMsgTipLayout(pTip);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgTipGetType(xui_msgtip pTip)
@@ -885,10 +985,11 @@ XUI_API int xuiMsgTipGetType(xui_msgtip pTip)
 
 XUI_API int xuiMsgTipSetDuration(xui_msgtip pTip, float fDuration)
 {
-	if ( !__xuiMsgTipValid(pTip) || (fDuration != fDuration) ) {
+	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipFloatValid(fDuration) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pTip->fDuration = (fDuration < 0.0f) ? 0.0f : fDuration;
+	if ( pTip->fDuration == fDuration ) return XUI_OK;
+	pTip->fDuration = fDuration;
 	pTip->iChangeCount++;
 	return XUI_OK;
 }
@@ -900,41 +1001,89 @@ XUI_API float xuiMsgTipGetDuration(xui_msgtip pTip)
 
 XUI_API int xuiMsgTipSetIconSurface(xui_msgtip pTip, xui_surface pSurface, xui_rect_t tSrc)
 {
-	if ( !__xuiMsgTipValid(pTip) || (tSrc.fW < 0.0f) || (tSrc.fH < 0.0f) ) {
+	xui_surface pOldSurface;
+	xui_rect_t tOldSrc;
+	int bOldCustomIcon;
+	int iRet;
+
+	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipRectValid(tSrc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pTip->pIconSurface == pSurface && pTip->bCustomIcon == (pSurface != NULL) &&
+	     memcmp(&pTip->tIconSrc, &tSrc, sizeof(tSrc)) == 0 ) return XUI_OK;
+	pOldSurface = pTip->pIconSurface;
+	tOldSrc = pTip->tIconSrc;
+	bOldCustomIcon = pTip->bCustomIcon;
 	pTip->pIconSurface = pSurface;
 	pTip->tIconSrc = tSrc;
 	pTip->bCustomIcon = (pSurface != NULL);
+	iRet = __xuiMsgTipLayout(pTip);
+	if ( iRet != XUI_OK ) {
+		pTip->pIconSurface = pOldSurface;
+		pTip->tIconSrc = tOldSrc;
+		pTip->bCustomIcon = bOldCustomIcon;
+		(void)__xuiMsgTipLayout(pTip);
+		return iRet;
+	}
 	pTip->iChangeCount++;
-	return __xuiMsgTipLayout(pTip);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgTipUseBuiltinIcon(xui_msgtip pTip)
 {
+	xui_surface pOldSurface;
+	xui_rect_t tOldSrc;
+	uint32_t iOldIconColor;
+	int bOldCustomIcon;
+	int iRet;
+
 	if ( !__xuiMsgTipValid(pTip) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( !pTip->bCustomIcon && pTip->pIconSurface == NULL ) return XUI_OK;
+	pOldSurface = pTip->pIconSurface;
+	tOldSrc = pTip->tIconSrc;
+	iOldIconColor = pTip->tColors.iIconColor;
+	bOldCustomIcon = pTip->bCustomIcon;
 	pTip->pIconSurface = NULL;
 	pTip->tIconSrc = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	pTip->bCustomIcon = 0;
 	if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
+	iRet = __xuiMsgTipLayout(pTip);
+	if ( iRet != XUI_OK ) {
+		pTip->pIconSurface = pOldSurface;
+		pTip->tIconSrc = tOldSrc;
+		pTip->tColors.iIconColor = iOldIconColor;
+		pTip->bCustomIcon = bOldCustomIcon;
+		(void)__xuiMsgTipLayout(pTip);
+		return iRet;
+	}
 	pTip->iChangeCount++;
-	return __xuiMsgTipLayout(pTip);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgTipSetMetrics(xui_msgtip pTip, const xui_msgtip_metrics_t* pMetrics)
 {
+	xui_msgtip_metrics_t tOldMetrics;
+	xui_msgtip_metrics_t tNewMetrics;
+	int iRet;
+
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipMetricsValid(pMetrics) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pTip->tMetrics = *pMetrics;
-	pTip->tMetrics.iSize = sizeof(pTip->tMetrics);
-	if ( pTip->tMetrics.fMinWidth < 32.0f ) pTip->tMetrics.fMinWidth = 32.0f;
-	if ( pTip->tMetrics.fMaxWidth < pTip->tMetrics.fMinWidth ) pTip->tMetrics.fMaxWidth = pTip->tMetrics.fMinWidth;
-	if ( pTip->tMetrics.fMinHeight < 24.0f ) pTip->tMetrics.fMinHeight = 24.0f;
+	tNewMetrics = *pMetrics;
+	tNewMetrics.iSize = sizeof(tNewMetrics);
+	if ( memcmp(&pTip->tMetrics, &tNewMetrics, sizeof(tNewMetrics)) == 0 ) return XUI_OK;
+	tOldMetrics = pTip->tMetrics;
+	pTip->tMetrics = tNewMetrics;
+	iRet = __xuiMsgTipLayout(pTip);
+	if ( iRet != XUI_OK ) {
+		pTip->tMetrics = tOldMetrics;
+		(void)__xuiMsgTipLayout(pTip);
+		return iRet;
+	}
 	pTip->iChangeCount++;
-	return __xuiMsgTipLayout(pTip);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgTipGetMetrics(xui_msgtip pTip, xui_msgtip_metrics_t* pMetrics)
@@ -949,14 +1098,29 @@ XUI_API int xuiMsgTipGetMetrics(xui_msgtip pTip, xui_msgtip_metrics_t* pMetrics)
 
 XUI_API int xuiMsgTipSetColors(xui_msgtip pTip, const xui_msgtip_colors_t* pColors)
 {
+	xui_msgtip_colors_t tOldColors;
+	xui_msgtip_colors_t tNewColors;
+	int bOldHasColors;
+	int iRet;
+
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipColorsValid(pColors) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pTip->tColors = *pColors;
+	tNewColors = *pColors;
+	tNewColors.iSize = sizeof(tNewColors);
+	if ( pTip->bHasColors && memcmp(&pTip->tColors, &tNewColors, sizeof(tNewColors)) == 0 ) return XUI_OK;
+	tOldColors = pTip->tColors;
+	bOldHasColors = pTip->bHasColors;
+	pTip->tColors = tNewColors;
 	pTip->bHasColors = 1;
-	pTip->tColors.iSize = sizeof(pTip->tColors);
+	iRet = xuiWidgetInvalidate(pTip->pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pTip->tColors = tOldColors;
+		pTip->bHasColors = bOldHasColors;
+		return iRet;
+	}
 	pTip->iChangeCount++;
-	return xuiWidgetInvalidate(pTip->pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgTipGetColors(xui_msgtip pTip, xui_msgtip_colors_t* pColors)

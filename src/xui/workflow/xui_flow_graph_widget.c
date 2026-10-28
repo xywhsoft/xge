@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_FLOW_GRAPH
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -8,6 +9,12 @@
 
 #define XUI_FLOW_NODE_BUCKET_SIZE 256.0f
 #define XUI_FLOW_GRID_ZOOM_BUCKET_SCALE 100.0f
+#define XUI_FLOW_WHEEL_PAN_PIXELS 48.0f
+#define XUI_FLOW_MIN_ZOOM 0.1f
+#define XUI_FLOW_MAX_ZOOM 4.0f
+#define XUI_FLOW_ACCESSIBLE_ROOT_ID UINT64_C(1)
+#define XUI_FLOW_ACCESSIBLE_NODE_KIND UINT64_C(1)
+#define XUI_FLOW_ACCESSIBLE_EDGE_KIND UINT64_C(2)
 
 #define XUI_FLOW_EXTRA_COLORS(X) \
 	X(NODE_HOVER, "flowgraph.node.hover_color", XUI_COLOR_RGBA(238,247,255,255)) \
@@ -126,9 +133,14 @@ typedef struct xui_flow_graph_widget_data_t {
 	uint32_t arrExtraColors[XUI_FLOW_COLOR_COUNT];
 	uint32_t arrLastPaintColors[8];
 	uint32_t iLastGraphRevision;
+	uint32_t iLastGeometryRevision;
+	uint64_t iLastSelectionFingerprint;
+	int iLastNodeCount;
+	int iLastEdgeCount;
 	int bDraggingNode;
 	int bDraggingConnection;
 	int bDraggingMarquee;
+	xui_pointer_owner_t tPointerOwner;
 	xui_flow_graph_drag_node_t* arrDragNodes;
 	int iDragNodeCount;
 	char* sDragNodeId;
@@ -205,6 +217,8 @@ static void __xuiFlowGraphWidgetPointToLocal(xui_widget pWidget, float fX, float
 
 static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser);
 static void __xuiFlowGraphWidgetPortCenter(xui_flow_graph pGraph, int iNode, int iPort, xui_rect_t tContent, float* pX, float* pY);
+static int __xuiFlowGraphWidgetSelectOnlyNode(xui_flow_graph pGraph, const char* sId);
+static int __xuiFlowGraphWidgetSelectOnlyEdge(xui_flow_graph pGraph, const char* sId);
 
 static int __xuiFlowGraphWidgetSetHover(xui_widget pWidget, xui_flow_graph_widget_data_t* pData, const xui_flow_hit_t* pHit)
 {
@@ -505,6 +519,30 @@ static void __xuiFlowGraphWidgetClearDrag(xui_flow_graph_widget_data_t* pData)
 	pData->bDragConnectionValid = 0;
 }
 
+static int __xuiFlowGraphWidgetRestoreDraggedNodes(xui_flow_graph_widget_data_t* pData)
+{
+	int i;
+	int iRet;
+	int iFirstError;
+
+	if ( (pData == NULL) || !pData->bDraggingNode || (pData->pGraph == NULL) ) {
+		return XUI_OK;
+	}
+	iFirstError = XUI_OK;
+	for ( i = 0; i < pData->iDragNodeCount; ++i ) {
+		if ( pData->arrDragNodes == NULL || pData->arrDragNodes[i].sId == NULL ||
+		     xuiFlowGraphFindNode(pData->pGraph, pData->arrDragNodes[i].sId) < 0 ) {
+			continue;
+		}
+		iRet = xuiFlowGraphSetNodePosition(pData->pGraph, pData->arrDragNodes[i].sId,
+			pData->arrDragNodes[i].fStartX, pData->arrDragNodes[i].fStartY);
+		if ( iFirstError == XUI_OK && iRet != XUI_OK ) {
+			iFirstError = iRet;
+		}
+	}
+	return iFirstError;
+}
+
 static int __xuiFlowGraphWidgetZoomBucket(float fZoom)
 {
 	if ( fZoom <= 0.001f ) {
@@ -792,14 +830,14 @@ static int __xuiFlowGraphWidgetRebuildNodeBuckets(xui_flow_graph_widget_data_t* 
 	if ( (pData == NULL) || (pData->pGraph == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pData->iNodeBucketRevision == xuiFlowGraphGetRevision(pData->pGraph) &&
+	if ( pData->iNodeBucketRevision == xuiInternalFlowGraphGetGeometryRevision(pData->pGraph) &&
 	     __xuiFlowGraphWidgetRectNear(pData->tNodeBucketContent, tContent) &&
 	     pData->arrNodeBuckets.Count > 0u ) {
 		return XUI_OK;
 	}
 	__xuiFlowGraphWidgetClearNodeBuckets(pData);
 	pData->tNodeBucketContent = tContent;
-	pData->iNodeBucketRevision = xuiFlowGraphGetRevision(pData->pGraph);
+	pData->iNodeBucketRevision = xuiInternalFlowGraphGetGeometryRevision(pData->pGraph);
 	pData->iNodeBucketCols = (int)ceilf(tContent.fW / XUI_FLOW_NODE_BUCKET_SIZE);
 	pData->iNodeBucketRows = (int)ceilf(tContent.fH / XUI_FLOW_NODE_BUCKET_SIZE);
 	if ( pData->iNodeBucketCols < 1 ) pData->iNodeBucketCols = 1;
@@ -865,14 +903,14 @@ static int __xuiFlowGraphWidgetRebuildEdgeBuckets(xui_flow_graph_widget_data_t* 
 	if ( (pData == NULL) || (pData->pGraph == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pData->iEdgeBucketRevision == xuiFlowGraphGetRevision(pData->pGraph) &&
+	if ( pData->iEdgeBucketRevision == xuiInternalFlowGraphGetGeometryRevision(pData->pGraph) &&
 	     __xuiFlowGraphWidgetRectNear(pData->tEdgeBucketContent, tContent) &&
 	     pData->arrEdgeBuckets.Count > 0u ) {
 		return XUI_OK;
 	}
 	__xuiFlowGraphWidgetClearEdgeBuckets(pData);
 	pData->tEdgeBucketContent = tContent;
-	pData->iEdgeBucketRevision = xuiFlowGraphGetRevision(pData->pGraph);
+	pData->iEdgeBucketRevision = xuiInternalFlowGraphGetGeometryRevision(pData->pGraph);
 	pData->iEdgeBucketCols = (int)ceilf(tContent.fW / XUI_FLOW_NODE_BUCKET_SIZE);
 	pData->iEdgeBucketRows = (int)ceilf(tContent.fH / XUI_FLOW_NODE_BUCKET_SIZE);
 	if ( pData->iEdgeBucketCols < 1 ) pData->iEdgeBucketCols = 1;
@@ -1467,10 +1505,315 @@ cleanup:
 	return iRet;
 }
 
+static uint64_t __xuiFlowGraphWidgetAccessibleId(uint64_t iKind, int iIndex)
+{
+	return (iKind << 60) | (uint64_t)(uint32_t)(iIndex + 1);
+}
+
+static int __xuiFlowGraphWidgetAccessibleDecode(uint64_t iId, int* pKind, int* pIndex)
+{
+	uint64_t iKind;
+	uint32_t iIndex;
+
+	iKind = iId >> 60;
+	iIndex = (uint32_t)(iId & UINT64_C(0xffffffff));
+	if ( (iKind != XUI_FLOW_ACCESSIBLE_NODE_KIND && iKind != XUI_FLOW_ACCESSIBLE_EDGE_KIND) || iIndex == 0u ) {
+		return 0;
+	}
+	if ( pKind != NULL ) *pKind = (int)iKind;
+	if ( pIndex != NULL ) *pIndex = (int)iIndex - 1;
+	return 1;
+}
+
+static uint64_t __xuiFlowGraphWidgetHashText(uint64_t iHash, const char* sText)
+{
+	const unsigned char* pText;
+
+	for ( pText = (const unsigned char*)sText; pText != NULL && *pText != 0; ++pText ) {
+		iHash ^= (uint64_t)*pText;
+		iHash *= UINT64_C(1099511628211);
+	}
+	return iHash;
+}
+
+static uint64_t __xuiFlowGraphWidgetSelectionFingerprint(xui_flow_graph pGraph)
+{
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	uint64_t iHash;
+	int i;
+
+	iHash = UINT64_C(1469598103934665603);
+	if ( pGraph == NULL ) return iHash;
+	for ( i = 0; i < xuiFlowGraphGetNodeCount(pGraph); ++i ) {
+		if ( xuiFlowGraphGetNode(pGraph, i, &tNode) == XUI_OK &&
+		     xuiFlowGraphIsNodeSelected(pGraph, tNode.sId) ) {
+			iHash ^= UINT64_C(0x4e);
+			iHash *= UINT64_C(1099511628211);
+			iHash = __xuiFlowGraphWidgetHashText(iHash, tNode.sId);
+		}
+	}
+	for ( i = 0; i < xuiFlowGraphGetEdgeCount(pGraph); ++i ) {
+		if ( xuiFlowGraphGetEdge(pGraph, i, &tEdge) == XUI_OK &&
+		     xuiFlowGraphIsEdgeSelected(pGraph, tEdge.sId) ) {
+			iHash ^= UINT64_C(0x45);
+			iHash *= UINT64_C(1099511628211);
+			iHash = __xuiFlowGraphWidgetHashText(iHash, tEdge.sId);
+		}
+	}
+	return iHash;
+}
+
+static void __xuiFlowGraphWidgetSyncAccessibility(xui_widget pWidget,
+	xui_flow_graph_widget_data_t* pData, int bNotify)
+{
+	uint32_t iGeometryRevision;
+	uint64_t iSelectionFingerprint;
+	int iNodeCount;
+	int iEdgeCount;
+
+	if ( pWidget == NULL || pData == NULL ) return;
+	iGeometryRevision = xuiInternalFlowGraphGetGeometryRevision(pData->pGraph);
+	iSelectionFingerprint = __xuiFlowGraphWidgetSelectionFingerprint(pData->pGraph);
+	iNodeCount = xuiFlowGraphGetNodeCount(pData->pGraph);
+	iEdgeCount = xuiFlowGraphGetEdgeCount(pData->pGraph);
+	if ( bNotify ) {
+		if ( iNodeCount != pData->iLastNodeCount || iEdgeCount != pData->iLastEdgeCount ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+		} else {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+		}
+		if ( iGeometryRevision != pData->iLastGeometryRevision ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+		}
+		if ( iSelectionFingerprint != pData->iLastSelectionFingerprint ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+		}
+	}
+	pData->iLastGeometryRevision = iGeometryRevision;
+	pData->iLastSelectionFingerprint = iSelectionFingerprint;
+	pData->iLastNodeCount = iNodeCount;
+	pData->iLastEdgeCount = iEdgeCount;
+}
+
+static xui_rect_t __xuiFlowGraphWidgetAccessibleEdgeRect(xui_flow_graph pGraph,
+	const xui_flow_edge_info_t* pEdge, xui_rect_t tContent)
+{
+	xui_flow_graph_route_t tRoute;
+	xui_rect_t tRect;
+	float fX0;
+	float fY0;
+	float fX1;
+	float fY1;
+
+	memset(&tRect, 0, sizeof(tRect));
+	if ( pGraph == NULL || pEdge == NULL || pEdge->iFromNode < 0 || pEdge->iFromPort < 0 ||
+	     pEdge->iToNode < 0 || pEdge->iToPort < 0 ) return tRect;
+	__xuiFlowGraphWidgetPortCenter(pGraph, pEdge->iFromNode, pEdge->iFromPort, tContent, &fX0, &fY0);
+	__xuiFlowGraphWidgetPortCenter(pGraph, pEdge->iToNode, pEdge->iToPort, tContent, &fX1, &fY1);
+	__xuiFlowGraphWidgetBuildRoute(&tRoute, fX0, fY0, fX1, fY1, pEdge->iRouteStyle,
+		pEdge->fRouteBias, pEdge->fRouteSourceOffset, pEdge->fRouteTargetOffset);
+	tRect = __xuiFlowGraphWidgetRouteBounds(&tRoute);
+	tRect.fX -= 4.0f;
+	tRect.fY -= 4.0f;
+	tRect.fW += 8.0f;
+	tRect.fH += 8.0f;
+	return tRect;
+}
+
+static int __xuiFlowGraphWidgetAccessibleCount(xui_widget pWidget, void* pUser)
+{
+	xui_flow_graph_widget_data_t* pData = (xui_flow_graph_widget_data_t*)pUser;
+	size_t iCount;
+
+	if ( __xuiFlowGraphWidgetGetData(pWidget) != pData || pData->pGraph == NULL ) return 0;
+	iCount = 1u + (size_t)xuiFlowGraphGetNodeCount(pData->pGraph) +
+		(size_t)xuiFlowGraphGetEdgeCount(pData->pGraph);
+	return iCount <= 0x7fffffffu ? (int)iCount : 0;
+}
+
+static int __xuiFlowGraphWidgetAccessibleGet(xui_widget pWidget, int iIndex,
+	xui_accessible_node_t* pNode, void* pUser)
+{
+	xui_flow_graph_widget_data_t* pData = (xui_flow_graph_widget_data_t*)pUser;
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	xui_rect_t tContent;
+	xui_rect_t tWorld;
+	int iNodeCount;
+	int bDisabled;
+	int bOffscreen;
+
+	if ( pNode == NULL || iIndex < 0 || __xuiFlowGraphWidgetGetData(pWidget) != pData ||
+	     pData->pGraph == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	tContent = xuiWidgetGetContentRect(pWidget);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	bDisabled = !xuiWidgetGetEffectiveEnabled(pWidget);
+	bOffscreen = !xuiWidgetGetEffectiveVisible(pWidget);
+	if ( iIndex == 0 ) {
+		pNode->iId = XUI_FLOW_ACCESSIBLE_ROOT_ID;
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+		pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+			xuiWidgetGetAccessibleName(pWidget) : "Flow graph";
+		pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+		pNode->tBounds = tWorld;
+		pNode->iRowCount = xuiFlowGraphGetNodeCount(pData->pGraph);
+		pNode->iColumnCount = xuiFlowGraphGetEdgeCount(pData->pGraph);
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget )
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		if ( bDisabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		if ( bOffscreen ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+		if ( !bDisabled ) pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+		return XUI_OK;
+	}
+	iNodeCount = xuiFlowGraphGetNodeCount(pData->pGraph);
+	if ( iIndex - 1 < iNodeCount ) {
+		iIndex--;
+		if ( xuiFlowGraphGetNode(pData->pGraph, iIndex, &tNode) != XUI_OK ) return XUI_ERROR_NOT_FOUND;
+		pNode->iId = __xuiFlowGraphWidgetAccessibleId(XUI_FLOW_ACCESSIBLE_NODE_KIND, iIndex);
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+		pNode->sName = (tNode.sTitle != NULL && tNode.sTitle[0] != 0) ? tNode.sTitle : tNode.sId;
+		pNode->sValue = tNode.sRunPreview;
+		pNode->sDescription = tNode.sSummary;
+		pNode->iRow = iIndex;
+		pNode->iRowCount = iNodeCount;
+		pNode->tBounds = __xuiFlowGraphWidgetNodeRect(pData->pGraph, &tNode, tContent);
+		if ( xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId) ) pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+	} else {
+		iIndex -= iNodeCount + 1;
+		if ( xuiFlowGraphGetEdge(pData->pGraph, iIndex, &tEdge) != XUI_OK ) return XUI_ERROR_NOT_FOUND;
+		pNode->iId = __xuiFlowGraphWidgetAccessibleId(XUI_FLOW_ACCESSIBLE_EDGE_KIND, iIndex);
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GENERIC;
+		pNode->sName = tEdge.sId;
+		pNode->sValue = tEdge.sRunPreview;
+		pNode->iColumn = iIndex;
+		pNode->iColumnCount = xuiFlowGraphGetEdgeCount(pData->pGraph);
+		pNode->tBounds = __xuiFlowGraphWidgetAccessibleEdgeRect(pData->pGraph, &tEdge, tContent);
+		if ( xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId) ) pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+	}
+	pNode->iParentId = XUI_FLOW_ACCESSIBLE_ROOT_ID;
+	pNode->tBounds.fX += tWorld.fX;
+	pNode->tBounds.fY += tWorld.fY;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_SELECTABLE;
+	if ( (pNode->iState & XUI_ACCESSIBLE_STATE_SELECTED) != 0u &&
+	     xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget )
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+	if ( bDisabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	if ( bOffscreen || !__xuiFlowGraphWidgetRectsIntersect((xui_rect_t){
+		pNode->tBounds.fX - tWorld.fX, pNode->tBounds.fY - tWorld.fY,
+		pNode->tBounds.fW, pNode->tBounds.fH}, tContent) )
+		pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	if ( !bDisabled ) {
+		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS) |
+			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION) |
+			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW) |
+			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	}
+	return XUI_OK;
+}
+
+static int __xuiFlowGraphWidgetAccessibleScrollTo(xui_widget pWidget,
+	xui_flow_graph_widget_data_t* pData, int iKind, int iIndex)
+{
+	xui_flow_viewport_t tViewport;
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	xui_rect_t tContent;
+	xui_rect_t tTarget;
+	float fZoom;
+	int iRet;
+
+	tContent = xuiWidgetGetContentRect(pWidget);
+	if ( iKind == (int)XUI_FLOW_ACCESSIBLE_NODE_KIND ) {
+		iRet = xuiFlowGraphGetNode(pData->pGraph, iIndex, &tNode);
+		if ( iRet != XUI_OK ) return XUI_ERROR_NOT_FOUND;
+		tTarget = __xuiFlowGraphWidgetNodeRect(pData->pGraph, &tNode, tContent);
+	} else {
+		iRet = xuiFlowGraphGetEdge(pData->pGraph, iIndex, &tEdge);
+		if ( iRet != XUI_OK || tEdge.iFromNode < 0 || tEdge.iToNode < 0 ) return XUI_ERROR_NOT_FOUND;
+		tTarget = __xuiFlowGraphWidgetAccessibleEdgeRect(pData->pGraph, &tEdge, tContent);
+	}
+	memset(&tViewport, 0, sizeof(tViewport));
+	tViewport.iSize = sizeof(tViewport);
+	iRet = xuiFlowGraphGetViewport(pData->pGraph, &tViewport);
+	if ( iRet != XUI_OK ) return iRet;
+	fZoom = tViewport.fZoom > 0.001f ? tViewport.fZoom : 1.0f;
+	tViewport.fPanX += (tContent.fX + tContent.fW * 0.5f - (tTarget.fX + tTarget.fW * 0.5f)) / fZoom;
+	tViewport.fPanY += (tContent.fY + tContent.fH * 0.5f - (tTarget.fY + tTarget.fH * 0.5f)) / fZoom;
+	iRet = xuiFlowGraphSetViewport(pData->pGraph, &tViewport);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiFlowGraphWidgetAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pPayload, void* pUser)
+{
+	xui_flow_graph_widget_data_t* pData = (xui_flow_graph_widget_data_t*)pUser;
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	int iKind;
+	int iIndex;
+	int iRet;
+
+	(void)pPayload;
+	if ( __xuiFlowGraphWidgetGetData(pWidget) != pData || pData->pGraph == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) )
+		return XUI_ERROR_INVALID_STATE;
+	if ( iNodeId == 0u || iNodeId == XUI_FLOW_ACCESSIBLE_ROOT_ID ) {
+		return iAction == XUI_ACCESSIBLE_ACTION_FOCUS ?
+			xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget) : XUI_ERROR_UNSUPPORTED;
+	}
+	if ( !__xuiFlowGraphWidgetAccessibleDecode(iNodeId, &iKind, &iIndex) ) return XUI_ERROR_NOT_FOUND;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW ) {
+		return __xuiFlowGraphWidgetAccessibleScrollTo(pWidget, pData, iKind, iIndex);
+	}
+	if ( iAction != XUI_ACCESSIBLE_ACTION_FOCUS && iAction != XUI_ACCESSIBLE_ACTION_SET_SELECTION &&
+	     iAction != XUI_ACCESSIBLE_ACTION_ACTIVATE ) return XUI_ERROR_UNSUPPORTED;
+	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iRet != XUI_OK || __xuiFlowGraphWidgetGetData(pWidget) != pData ) return iRet;
+	if ( iKind == (int)XUI_FLOW_ACCESSIBLE_NODE_KIND ) {
+		if ( xuiFlowGraphGetNode(pData->pGraph, iIndex, &tNode) != XUI_OK ) return XUI_ERROR_NOT_FOUND;
+	} else {
+		if ( xuiFlowGraphGetEdge(pData->pGraph, iIndex, &tEdge) != XUI_OK ) return XUI_ERROR_NOT_FOUND;
+	}
+	if ( iKind == (int)XUI_FLOW_ACCESSIBLE_NODE_KIND ) {
+		iRet = __xuiFlowGraphWidgetSelectOnlyNode(pData->pGraph, tNode.sId);
+	} else {
+		iRet = __xuiFlowGraphWidgetSelectOnlyEdge(pData->pGraph, tEdge.sId);
+	}
+	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static void __xuiFlowGraphWidgetReleaseData(xui_flow_graph_widget_data_t* pData, int bDestroyGraph)
+{
+	if ( pData == NULL ) return;
+	(void)__xuiFlowGraphWidgetRestoreDraggedNodes(pData);
+	__xuiFlowGraphWidgetClearDrag(pData);
+	__xuiFlowGraphWidgetClearNodeBuckets(pData);
+	__xuiFlowGraphWidgetClearEdgeBuckets(pData);
+	__xuiFlowGraphWidgetClearGridCache(pData);
+	__xuiFlowGraphWidgetClearNodeCardStates(pData);
+	__xuiFlowGraphWidgetClearEdgeLayerStates(pData);
+	if ( bDestroyGraph && pData->pGraph != NULL ) xuiFlowGraphDestroy(pData->pGraph);
+	memset(pData, 0, sizeof(*pData));
+}
+
 static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
+	static const int arrEvents[] = {
+		XUI_EVENT_POINTER_DOWN, XUI_EVENT_POINTER_MOVE, XUI_EVENT_POINTER_UP,
+		XUI_EVENT_POINTER_WHEEL, XUI_EVENT_POINTER_LEAVE, XUI_EVENT_POINTER_CAPTURE_LOST,
+		XUI_EVENT_KEY_DOWN, XUI_EVENT_CONTEXT_MENU, XUI_EVENT_FOCUS, XUI_EVENT_BLUR,
+		XUI_EVENT_ENABLED_CHANGED, XUI_EVENT_VISIBLE_CHANGED
+	};
 	xui_flow_graph_widget_data_t* pData;
 	const xui_flow_graph_desc_t* pDesc;
+	int bCreatedGraph;
+	int i;
 	int iRet;
 
 	(void)pUser;
@@ -1479,6 +1822,7 @@ static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const v
 	}
 	pData = (xui_flow_graph_widget_data_t*)pTypeData;
 	pDesc = (const xui_flow_graph_desc_t*)pCreateData;
+	bCreatedGraph = 0;
 	memset(pData, 0, sizeof(*pData));
 	xuiXrtArrayInit(&pData->arrNodeBuckets, sizeof(xui_flow_graph_node_bucket_t));
 	xuiXrtArrayInit(&pData->arrVisibleNodes, sizeof(int));
@@ -1513,21 +1857,27 @@ static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const v
 			return iRet;
 		}
 		pData->bOwnGraph = 1;
+		bCreatedGraph = 1;
 	}
 	pData->iHoverType = XUI_FLOW_HIT_NONE;
 	pData->iHoverNode = -1;
 	pData->iHoverPort = -1;
 	pData->iHoverEdge = -1;
 	pData->iLastGraphRevision = xuiFlowGraphGetRevision(pData->pGraph);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiFlowGraphWidgetEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_MOVE, __xuiFlowGraphWidgetEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiFlowGraphWidgetEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiFlowGraphWidgetEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiFlowGraphWidgetEvent, NULL);
-	(void)xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiFlowGraphWidgetEvent, NULL);
-	return XUI_OK;
+	__xuiFlowGraphWidgetSyncAccessibility(pWidget, pData, 0);
+	iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	for ( i = 0; iRet == XUI_OK && i < (int)(sizeof(arrEvents) / sizeof(arrEvents[0])); ++i ) {
+		iRet = xuiWidgetSetEventHandler(pWidget, arrEvents[i], __xuiFlowGraphWidgetEvent, NULL);
+	}
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetSetAccessibilityProvider(pWidget, __xuiFlowGraphWidgetAccessibleCount,
+			__xuiFlowGraphWidgetAccessibleGet, __xuiFlowGraphWidgetAccessibleAction, pData);
+	}
+	if ( iRet != XUI_OK ) {
+		__xuiFlowGraphWidgetReleaseData(pData, bCreatedGraph);
+	}
+	return iRet;
 }
 
 static int __xuiFlowGraphWidgetUpdate(xui_widget pWidget, float fDelta, void* pUser)
@@ -1544,6 +1894,7 @@ static int __xuiFlowGraphWidgetUpdate(xui_widget pWidget, float fDelta, void* pU
 	iRevision = xuiFlowGraphGetRevision(pData->pGraph);
 	if ( iRevision != pData->iLastGraphRevision ) {
 		pData->iLastGraphRevision = iRevision;
+		__xuiFlowGraphWidgetSyncAccessibility(pWidget, pData, 1);
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_OK;
@@ -1553,20 +1904,14 @@ static void __xuiFlowGraphWidgetDestroy(xui_widget pWidget, void* pTypeData, voi
 {
 	xui_flow_graph_widget_data_t* pData;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_flow_graph_widget_data_t*)pTypeData;
 	if ( pData != NULL ) {
-		__xuiFlowGraphWidgetClearDrag(pData);
-		__xuiFlowGraphWidgetClearNodeBuckets(pData);
-		__xuiFlowGraphWidgetClearEdgeBuckets(pData);
-		__xuiFlowGraphWidgetClearGridCache(pData);
-		__xuiFlowGraphWidgetClearNodeCardStates(pData);
-		__xuiFlowGraphWidgetClearEdgeLayerStates(pData);
-		if ( pData->bOwnGraph && (pData->pGraph != NULL) ) {
-			xuiFlowGraphDestroy(pData->pGraph);
+		if ( pWidget != NULL ) {
+			(void)xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
+				pWidget, &pData->tPointerOwner);
 		}
-		memset(pData, 0, sizeof(*pData));
+		__xuiFlowGraphWidgetReleaseData(pData, pData->bOwnGraph);
 	}
 }
 
@@ -1692,12 +2037,22 @@ XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget)
 XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph)
 {
 	xui_flow_graph_widget_data_t* pData;
+	int iRet;
 
 	pData = __xuiFlowGraphWidgetGetData(pWidget);
-	if ( pData == NULL ) {
+	if ( pData == NULL || pGraph == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiFlowGraphWidgetRestoreDraggedNodes(pData);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
 	__xuiFlowGraphWidgetClearDrag(pData);
+	iRet = xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget), pWidget,
+		&pData->tPointerOwner);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
 	__xuiFlowGraphWidgetClearNodeBuckets(pData);
 	__xuiFlowGraphWidgetClearEdgeBuckets(pData);
 	__xuiFlowGraphWidgetClearGridCache(pData);
@@ -1713,6 +2068,9 @@ XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	pData->iHoverPort = -1;
 	pData->iHoverEdge = -1;
 	pData->iLastGraphRevision = xuiFlowGraphGetRevision(pGraph);
+	__xuiFlowGraphWidgetSyncAccessibility(pWidget, pData, 0);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1883,24 +2241,28 @@ static int __xuiFlowGraphWidgetSelectAt(xui_widget pWidget, float fX, float fY, 
 		return iRet;
 	}
 	bToggle = ((iModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT)) != 0u) ? 1 : 0;
-	if ( !bToggle ) {
-		iRet = xuiFlowGraphClearSelection(pData->pGraph);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
 	if ( tHit.iType == XUI_FLOW_HIT_PORT || tHit.iType == XUI_FLOW_HIT_NODE ) {
 		iRet = xuiFlowGraphGetNode(pData->pGraph, tHit.iNode, &tNode);
 		if ( iRet == XUI_OK ) {
-			bSelected = bToggle ? !xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId) : 1;
-			iRet = xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, bSelected);
+			if ( bToggle ) {
+				bSelected = !xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId);
+				iRet = xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, bSelected);
+			} else {
+				iRet = __xuiFlowGraphWidgetSelectOnlyNode(pData->pGraph, tNode.sId);
+			}
 		}
 	} else if ( tHit.iType == XUI_FLOW_HIT_EDGE ) {
 		iRet = xuiFlowGraphGetEdge(pData->pGraph, tHit.iEdge, &tEdge);
 		if ( iRet == XUI_OK ) {
-			bSelected = bToggle ? !xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId) : 1;
-			iRet = xuiFlowGraphSelectEdge(pData->pGraph, tEdge.sId, bSelected);
+			if ( bToggle ) {
+				bSelected = !xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId);
+				iRet = xuiFlowGraphSelectEdge(pData->pGraph, tEdge.sId, bSelected);
+			} else {
+				iRet = __xuiFlowGraphWidgetSelectOnlyEdge(pData->pGraph, tEdge.sId);
+			}
 		}
+	} else if ( !bToggle ) {
+		iRet = xuiFlowGraphClearSelection(pData->pGraph);
 	}
 	if ( pHit != NULL ) {
 		*pHit = tHit;
@@ -1911,7 +2273,84 @@ static int __xuiFlowGraphWidgetSelectAt(xui_widget pWidget, float fX, float fY, 
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiFlowGraphWidgetStartNodeDrag(xui_widget pWidget, xui_flow_graph_widget_data_t* pData, const xui_flow_hit_t* pHit)
+static int __xuiFlowGraphWidgetSelectOnlyNode(xui_flow_graph pGraph, const char* sId)
+{
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	int i;
+	int iRet;
+
+	if ( (pGraph == NULL) || (sId == NULL) || (xuiFlowGraphFindNode(pGraph, sId) < 0) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	/* Selecting is the only allocation-prone step. Preserve the old selection until it succeeds. */
+	iRet = xuiFlowGraphSelectNode(pGraph, sId, 1);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	for ( i = 0; i < xuiFlowGraphGetNodeCount(pGraph); ++i ) {
+		iRet = xuiFlowGraphGetNode(pGraph, i, &tNode);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+		if ( strcmp(tNode.sId, sId) != 0 && xuiFlowGraphIsNodeSelected(pGraph, tNode.sId) ) {
+			iRet = xuiFlowGraphSelectNode(pGraph, tNode.sId, 0);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	for ( i = 0; i < xuiFlowGraphGetEdgeCount(pGraph); ++i ) {
+		iRet = xuiFlowGraphGetEdge(pGraph, i, &tEdge);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+		if ( xuiFlowGraphIsEdgeSelected(pGraph, tEdge.sId) ) {
+			iRet = xuiFlowGraphSelectEdge(pGraph, tEdge.sId, 0);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	return XUI_OK;
+}
+
+static int __xuiFlowGraphWidgetSelectOnlyEdge(xui_flow_graph pGraph, const char* sId)
+{
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	int i;
+	int iRet;
+
+	if ( (pGraph == NULL) || (sId == NULL) || (xuiFlowGraphFindEdge(pGraph, sId) < 0) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = xuiFlowGraphSelectEdge(pGraph, sId, 1);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	for ( i = 0; i < xuiFlowGraphGetNodeCount(pGraph); ++i ) {
+		iRet = xuiFlowGraphGetNode(pGraph, i, &tNode);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+		if ( xuiFlowGraphIsNodeSelected(pGraph, tNode.sId) ) {
+			iRet = xuiFlowGraphSelectNode(pGraph, tNode.sId, 0);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	for ( i = 0; i < xuiFlowGraphGetEdgeCount(pGraph); ++i ) {
+		iRet = xuiFlowGraphGetEdge(pGraph, i, &tEdge);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+		if ( strcmp(tEdge.sId, sId) != 0 && xuiFlowGraphIsEdgeSelected(pGraph, tEdge.sId) ) {
+			iRet = xuiFlowGraphSelectEdge(pGraph, tEdge.sId, 0);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	return XUI_OK;
+}
+
+static int __xuiFlowGraphWidgetStartNodeDrag(xui_widget pWidget,
+	xui_flow_graph_widget_data_t* pData, const xui_flow_hit_t* pHit,
+	const xui_event_t* pEvent)
 {
 	xui_flow_graph_drag_node_t* arrNodes;
 	xui_flow_node_info_t tNode;
@@ -1971,7 +2410,12 @@ static int __xuiFlowGraphWidgetStartNodeDrag(xui_widget pWidget, xui_flow_graph_
 	pData->bDraggingNode = 1;
 	pData->fDragStartX = pHit->fX;
 	pData->fDragStartY = pHit->fY;
-	return xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	iRet = xuiInternalPointerOwnerBegin(xuiWidgetGetContext(pWidget), pWidget,
+		pEvent, &pData->tPointerOwner);
+	if ( iRet != XUI_OK ) {
+		__xuiFlowGraphWidgetClearDrag(pData);
+	}
+	return iRet;
 }
 
 static int __xuiFlowGraphWidgetDragNode(xui_widget pWidget, xui_flow_graph_widget_data_t* pData, float fX, float fY)
@@ -2055,8 +2499,12 @@ static int __xuiFlowGraphWidgetFinishNodeDrag(xui_widget pWidget, xui_flow_graph
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiFlowGraphWidgetStartMarquee(xui_widget pWidget, xui_flow_graph_widget_data_t* pData, float fX, float fY, uint32_t iModifiers)
+static int __xuiFlowGraphWidgetStartMarquee(xui_widget pWidget,
+	xui_flow_graph_widget_data_t* pData, float fX, float fY,
+	uint32_t iModifiers, const xui_event_t* pEvent)
 {
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pGraph == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -2067,7 +2515,12 @@ static int __xuiFlowGraphWidgetStartMarquee(xui_widget pWidget, xui_flow_graph_w
 	pData->fDragStartY = fY;
 	pData->fDragCurrentX = fX;
 	pData->fDragCurrentY = fY;
-	return xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	iRet = xuiInternalPointerOwnerBegin(xuiWidgetGetContext(pWidget), pWidget,
+		pEvent, &pData->tPointerOwner);
+	if ( iRet != XUI_OK ) {
+		__xuiFlowGraphWidgetClearDrag(pData);
+	}
+	return iRet;
 }
 
 static int __xuiFlowGraphWidgetUpdateMarquee(xui_widget pWidget, xui_flow_graph_widget_data_t* pData, float fX, float fY)
@@ -2083,9 +2536,12 @@ static int __xuiFlowGraphWidgetUpdateMarquee(xui_widget pWidget, xui_flow_graph_
 static int __xuiFlowGraphWidgetFinishMarquee(xui_widget pWidget, xui_flow_graph_widget_data_t* pData)
 {
 	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
 	xui_rect_t tContent;
 	xui_rect_t tMarquee;
 	xui_rect_t tNodeRect;
+	uint8_t* pState;
+	uint8_t* pTarget;
 	int bToggle;
 	int i;
 	int iCount;
@@ -2099,31 +2555,74 @@ static int __xuiFlowGraphWidgetFinishMarquee(xui_widget pWidget, xui_flow_graph_
 		return XUI_OK;
 	}
 	bToggle = ((pData->iMarqueeModifiers & XUI_MOD_SHIFT) != 0u) ? 1 : 0;
-	if ( (pData->iMarqueeModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT)) == 0u ) {
-		iRet = xuiFlowGraphClearSelection(pData->pGraph);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
 	tContent = xuiWidgetGetContentRect(pWidget);
 	iCount = xuiFlowGraphGetNodeCount(pData->pGraph);
+	pState = NULL;
+	pTarget = NULL;
+	if ( iCount > 0 ) {
+		pState = (uint8_t*)xrtMalloc((size_t)iCount);
+		pTarget = (uint8_t*)xrtMalloc((size_t)iCount);
+		if ( (pState == NULL) || (pTarget == NULL) ) {
+			xrtFree(pState);
+			xrtFree(pTarget);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pTarget, 0, (size_t)iCount);
+	}
 	for ( i = 0; i < iCount; ++i ) {
-		if ( xuiFlowGraphGetNode(pData->pGraph, i, &tNode) != XUI_OK ) {
-			continue;
-		}
-		tNodeRect = __xuiFlowGraphWidgetNodeRect(pData->pGraph, &tNode, tContent);
-		if ( !__xuiFlowGraphWidgetRectsIntersect(tMarquee, tNodeRect) ) {
-			continue;
-		}
-		iRet = xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, bToggle ? !xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId) : 1);
+		iRet = xuiFlowGraphGetNode(pData->pGraph, i, &tNode);
 		if ( iRet != XUI_OK ) {
+			xrtFree(pState);
+			xrtFree(pTarget);
+			return iRet;
+		}
+		pState[i] = xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId) ? 1u : 0u;
+		tNodeRect = __xuiFlowGraphWidgetNodeRect(pData->pGraph, &tNode, tContent);
+		pTarget[i] = __xuiFlowGraphWidgetRectsIntersect(tMarquee, tNodeRect) ? 1u : 0u;
+	}
+	/* Add every target first. On failure, remove only additions made by this operation. */
+	for ( i = 0; i < iCount; ++i ) {
+		if ( !pTarget[i] || pState[i] ) continue;
+		iRet = xuiFlowGraphGetNode(pData->pGraph, i, &tNode);
+		if ( iRet == XUI_OK ) iRet = xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, 1);
+		if ( iRet != XUI_OK ) {
+			int j;
+			for ( j = 0; j < i; ++j ) {
+				if ( !pTarget[j] || pState[j] ) continue;
+				if ( xuiFlowGraphGetNode(pData->pGraph, j, &tNode) == XUI_OK )
+					(void)xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, 0);
+			}
+			xrtFree(pState);
+			xrtFree(pTarget);
 			return iRet;
 		}
 	}
+	if ( bToggle ) {
+		for ( i = 0; i < iCount; ++i ) {
+			if ( !pTarget[i] || !pState[i] ) continue;
+			if ( xuiFlowGraphGetNode(pData->pGraph, i, &tNode) == XUI_OK )
+				(void)xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, 0);
+		}
+	} else if ( (pData->iMarqueeModifiers & XUI_MOD_CTRL) == 0u ) {
+		for ( i = 0; i < iCount; ++i ) {
+			if ( pTarget[i] || !pState[i] ) continue;
+			if ( xuiFlowGraphGetNode(pData->pGraph, i, &tNode) == XUI_OK )
+				(void)xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, 0);
+		}
+		for ( i = 0; i < xuiFlowGraphGetEdgeCount(pData->pGraph); ++i ) {
+			if ( xuiFlowGraphGetEdge(pData->pGraph, i, &tEdge) == XUI_OK &&
+			     xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId) )
+				(void)xuiFlowGraphSelectEdge(pData->pGraph, tEdge.sId, 0);
+		}
+	}
+	xrtFree(pState);
+	xrtFree(pTarget);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiFlowGraphWidgetStartConnectionDrag(xui_widget pWidget, xui_flow_graph_widget_data_t* pData, const xui_flow_hit_t* pHit)
+static int __xuiFlowGraphWidgetStartConnectionDrag(xui_widget pWidget,
+	xui_flow_graph_widget_data_t* pData, const xui_flow_hit_t* pHit,
+	const xui_event_t* pEvent)
 {
 	xui_flow_node_info_t tNode;
 	xui_flow_port_info_t tPort;
@@ -2155,7 +2654,12 @@ static int __xuiFlowGraphWidgetStartConnectionDrag(xui_widget pWidget, xui_flow_
 	pData->fDragCurrentX = pHit->fX;
 	pData->fDragCurrentY = pHit->fY;
 	pData->bDragConnectionValid = 0;
-	return xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+	iRet = xuiInternalPointerOwnerBegin(xuiWidgetGetContext(pWidget), pWidget,
+		pEvent, &pData->tPointerOwner);
+	if ( iRet != XUI_OK ) {
+		__xuiFlowGraphWidgetClearDrag(pData);
+	}
+	return iRet;
 }
 
 static int __xuiFlowGraphWidgetUpdateConnectionPreview(xui_widget pWidget, xui_flow_graph_widget_data_t* pData, float fX, float fY)
@@ -2230,7 +2734,7 @@ static int __xuiFlowGraphWidgetFinishConnectionDrag(xui_widget pWidget, xui_flow
 		tEdge.sToNode = pData->sDragNodeId;
 		tEdge.sToPort = pData->sDragPortId;
 	}
-	iRet = xuiFlowGraphAddEdge(pData->pGraph, &tEdge, NULL);
+	iRet = xuiFlowGraphCommandAddEdge(pData->pGraph, &tEdge, NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -2257,33 +2761,158 @@ static int __xuiFlowGraphWidgetDeleteSelection(xui_widget pWidget, xui_flow_grap
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiFlowGraphWidgetCancelDrag(xui_widget pWidget, xui_flow_graph_widget_data_t* pData)
+static int __xuiFlowGraphWidgetSelectAll(xui_widget pWidget, xui_flow_graph_widget_data_t* pData)
 {
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	uint8_t* pEdgeState;
+	uint8_t* pNodeState;
+	int iEdgeCount;
+	int iNodeCount;
 	int i;
 	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->pGraph == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iNodeCount = xuiFlowGraphGetNodeCount(pData->pGraph);
+	iEdgeCount = xuiFlowGraphGetEdgeCount(pData->pGraph);
+	pNodeState = iNodeCount > 0 ? (uint8_t*)xrtMalloc((size_t)iNodeCount) : NULL;
+	pEdgeState = iEdgeCount > 0 ? (uint8_t*)xrtMalloc((size_t)iEdgeCount) : NULL;
+	if ( (iNodeCount > 0 && pNodeState == NULL) || (iEdgeCount > 0 && pEdgeState == NULL) ) {
+		xrtFree(pNodeState);
+		xrtFree(pEdgeState);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	for ( i = 0; i < iNodeCount; ++i ) {
+		iRet = xuiFlowGraphGetNode(pData->pGraph, i, &tNode);
+		if ( iRet != XUI_OK ) {
+			xrtFree(pNodeState);
+			xrtFree(pEdgeState);
+			return iRet;
+		}
+		pNodeState[i] = xuiFlowGraphIsNodeSelected(pData->pGraph, tNode.sId) ? 1u : 0u;
+	}
+	for ( i = 0; i < iEdgeCount; ++i ) {
+		iRet = xuiFlowGraphGetEdge(pData->pGraph, i, &tEdge);
+		if ( iRet != XUI_OK ) {
+			xrtFree(pNodeState);
+			xrtFree(pEdgeState);
+			return iRet;
+		}
+		pEdgeState[i] = xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId) ? 1u : 0u;
+	}
+	for ( i = 0; i < iNodeCount; ++i ) {
+		if ( pNodeState[i] ) continue;
+		iRet = xuiFlowGraphGetNode(pData->pGraph, i, &tNode);
+		if ( iRet == XUI_OK ) iRet = xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, 1);
+		if ( iRet != XUI_OK ) goto rollback;
+	}
+	for ( i = 0; i < iEdgeCount; ++i ) {
+		if ( pEdgeState[i] ) continue;
+		iRet = xuiFlowGraphGetEdge(pData->pGraph, i, &tEdge);
+		if ( iRet == XUI_OK ) iRet = xuiFlowGraphSelectEdge(pData->pGraph, tEdge.sId, 1);
+		if ( iRet != XUI_OK ) goto rollback;
+	}
+	xrtFree(pNodeState);
+	xrtFree(pEdgeState);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+
+rollback:
+	for ( i = 0; i < iNodeCount; ++i ) {
+		if ( pNodeState[i] ) continue;
+		if ( xuiFlowGraphGetNode(pData->pGraph, i, &tNode) == XUI_OK )
+			(void)xuiFlowGraphSelectNode(pData->pGraph, tNode.sId, 0);
+	}
+	for ( i = 0; i < iEdgeCount; ++i ) {
+		if ( pEdgeState[i] ) continue;
+		if ( xuiFlowGraphGetEdge(pData->pGraph, i, &tEdge) == XUI_OK )
+			(void)xuiFlowGraphSelectEdge(pData->pGraph, tEdge.sId, 0);
+	}
+	xrtFree(pNodeState);
+	xrtFree(pEdgeState);
+	return iRet;
+}
+
+static int __xuiFlowGraphWidgetWheel(xui_widget pWidget, xui_flow_graph_widget_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	xui_flow_viewport_t tViewport;
+	xui_rect_t tContent;
+	float fLocalX;
+	float fLocalY;
+	float fOldZoom;
+	float fNewZoom;
+	float fWheel;
+	float fScreenX;
+	float fScreenY;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->pGraph == NULL) || (pEvent == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->bDraggingNode || pData->bDraggingConnection || pData->bDraggingMarquee ) {
+		return XUI_OK;
+	}
+	memset(&tViewport, 0, sizeof(tViewport));
+	tViewport.iSize = sizeof(tViewport);
+	iRet = xuiFlowGraphGetViewport(pData->pGraph, &tViewport);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	fOldZoom = (tViewport.fZoom > 0.001f) ? tViewport.fZoom : 1.0f;
+	if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u ) {
+		fWheel = (fabsf(pEvent->fWheelY) >= fabsf(pEvent->fWheelX)) ? pEvent->fWheelY : pEvent->fWheelX;
+		if ( fWheel == 0.0f ) {
+			return XUI_OK;
+		}
+		fNewZoom = fOldZoom * powf(1.1f, fWheel);
+		if ( fNewZoom < XUI_FLOW_MIN_ZOOM ) fNewZoom = XUI_FLOW_MIN_ZOOM;
+		if ( fNewZoom > XUI_FLOW_MAX_ZOOM ) fNewZoom = XUI_FLOW_MAX_ZOOM;
+		__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
+		tContent = xuiWidgetGetContentRect(pWidget);
+		fScreenX = fLocalX - tContent.fX;
+		fScreenY = fLocalY - tContent.fY;
+		tViewport.fPanX += fScreenX / fNewZoom - fScreenX / fOldZoom;
+		tViewport.fPanY += fScreenY / fNewZoom - fScreenY / fOldZoom;
+		tViewport.fZoom = fNewZoom;
+	} else {
+		if ( pEvent->fWheelX == 0.0f && pEvent->fWheelY == 0.0f ) {
+			return XUI_OK;
+		}
+		tViewport.fPanX += pEvent->fWheelX * XUI_FLOW_WHEEL_PAN_PIXELS / fOldZoom;
+		tViewport.fPanY += pEvent->fWheelY * XUI_FLOW_WHEEL_PAN_PIXELS / fOldZoom;
+	}
+	iRet = xuiFlowGraphSetViewport(pData->pGraph, &tViewport);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiFlowGraphWidgetCancelDrag(xui_widget pWidget, xui_flow_graph_widget_data_t* pData)
+{
+	int iRet;
+	int iInvalidateRet;
+	int iReleaseRet;
 	int bHadDrag;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pGraph == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	bHadDrag = (pData->bDraggingNode || pData->bDraggingConnection || pData->bDraggingMarquee) ? 1 : 0;
-	if ( pData->bDraggingNode ) {
-		for ( i = 0; i < pData->iDragNodeCount; ++i ) {
-			if ( pData->arrDragNodes[i].sId == NULL ) {
-				continue;
-			}
-			iRet = xuiFlowGraphSetNodePosition(pData->pGraph, pData->arrDragNodes[i].sId, pData->arrDragNodes[i].fStartX, pData->arrDragNodes[i].fStartY);
-			if ( iRet != XUI_OK ) {
-				return iRet;
-			}
+	iRet = __xuiFlowGraphWidgetRestoreDraggedNodes(pData);
+	__xuiFlowGraphWidgetClearDrag(pData);
+	iReleaseRet = xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
+		pWidget, &pData->tPointerOwner);
+	if ( iRet == XUI_OK ) iRet = iReleaseRet;
+	if ( bHadDrag ) {
+		iInvalidateRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet == XUI_OK ) {
+			iRet = iInvalidateRet;
 		}
 	}
-	__xuiFlowGraphWidgetClearDrag(pData);
-	(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-	if ( bHadDrag ) {
-		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
-	return XUI_OK;
+	return iRet;
 }
 
 static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -2302,12 +2931,68 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 		return 0;
 	}
 	pData = __xuiFlowGraphWidgetGetData(pWidget);
-	if ( (pData == NULL) || (pData->pGraph == NULL) || !xuiWidgetGetEnabled(pWidget) ) {
+	if ( pData == NULL ) {
 		return 0;
 	}
+	if ( pData->tPointerOwner.bActive &&
+	     (pEvent->iType == XUI_EVENT_POINTER_DOWN ||
+	      pEvent->iType == XUI_EVENT_POINTER_MOVE ||
+	      pEvent->iType == XUI_EVENT_POINTER_UP ||
+	      pEvent->iType == XUI_EVENT_POINTER_LEAVE) &&
+	     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+		return 0;
+	}
+	if ( pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
+		if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) )
+			return 0;
+		(void)__xuiFlowGraphWidgetCancelDrag(pWidget, pData);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pEvent->iType == XUI_EVENT_POINTER_LEAVE ) {
+		if ( !pData->bDraggingNode && !pData->bDraggingConnection && !pData->bDraggingMarquee ) {
+			(void)__xuiFlowGraphWidgetSetHover(pWidget, pData, NULL);
+		}
+		return 0;
+	}
+	if ( pEvent->iType == XUI_EVENT_BLUR ||
+	     (pEvent->iType == XUI_EVENT_ENABLED_CHANGED && !xuiWidgetGetEffectiveEnabled(pWidget)) ||
+	     (pEvent->iType == XUI_EVENT_VISIBLE_CHANGED && !xuiWidgetGetEffectiveVisible(pWidget)) ) {
+		(void)__xuiFlowGraphWidgetCancelDrag(pWidget, pData);
+		(void)__xuiFlowGraphWidgetSetHover(pWidget, pData, NULL);
+		return 0;
+	}
+	if ( pEvent->iType == XUI_EVENT_FOCUS || pEvent->iType == XUI_EVENT_ENABLED_CHANGED ||
+	     pEvent->iType == XUI_EVENT_VISIBLE_CHANGED ) {
+		return 0;
+	}
+	if ( pData->pGraph == NULL || !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) return 0;
 	if ( pEvent->iType == XUI_EVENT_KEY_DOWN ) {
 		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
 			iRet = __xuiFlowGraphWidgetCancelDrag(pWidget, pData);
+			return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
+		}
+		if ( pData->tPointerOwner.bActive ) return XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u && (pEvent->iKey == 'Z' || pEvent->iKey == 'z') ) {
+			if ( (pEvent->iModifiers & XUI_MOD_SHIFT) != 0u ) {
+				iRet = xuiFlowGraphCanRedo(pData->pGraph) ? xuiFlowGraphRedo(pData->pGraph) : XUI_OK;
+			} else {
+				iRet = xuiFlowGraphCanUndo(pData->pGraph) ? xuiFlowGraphUndo(pData->pGraph) : XUI_OK;
+			}
+			if ( iRet == XUI_OK ) {
+				(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u && (pEvent->iKey == 'Y' || pEvent->iKey == 'y') ) {
+			iRet = xuiFlowGraphCanRedo(pData->pGraph) ? xuiFlowGraphRedo(pData->pGraph) : XUI_OK;
+			if ( iRet == XUI_OK ) {
+				(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u && (pEvent->iKey == 'A' || pEvent->iKey == 'a') ) {
+			iRet = __xuiFlowGraphWidgetSelectAll(pWidget, pData);
 			return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
 		}
 		if ( (pEvent->iKey == XUI_KEY_DELETE) || (pEvent->iKey == XUI_KEY_BACKSPACE) ) {
@@ -2316,7 +3001,13 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 		}
 		return 0;
 	}
+	if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL ) {
+		if ( pData->tPointerOwner.bActive ) return 0;
+		iRet = __xuiFlowGraphWidgetWheel(pWidget, pData, pEvent);
+		return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
+	}
 	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
+		if ( pData->tPointerOwner.bActive ) return 0;
 		xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
 		xui_rect_t tAnchor = tWorld;
 		float fMenuX;
@@ -2362,7 +3053,8 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fMenuX, &fMenuY);
-		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		if ( iRet != XUI_OK ) return iRet;
 		if ( pData->onContext != NULL ) {
 			return pData->onContext(pWidget, &tHit, fMenuX, fMenuY, pData->pContextUser);
 		}
@@ -2372,8 +3064,10 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
 			return 0;
 		}
+		if ( pData->tPointerOwner.bActive ) return 0;
 		__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
-		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		if ( iRet != XUI_OK ) return iRet;
 		memset(&tHit, 0, sizeof(tHit));
 		tHit.iSize = sizeof(tHit);
 		iRet = __xuiFlowGraphWidgetHitTestLocal(pWidget, fLocalX, fLocalY, &tHit);
@@ -2395,23 +3089,40 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 			}
 		}
 		if ( ((pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT)) == 0u) && (tHit.iType == XUI_FLOW_HIT_PORT) ) {
-			(void)__xuiFlowGraphWidgetStartConnectionDrag(pWidget, pData, &tHit);
+			iRet = __xuiFlowGraphWidgetStartConnectionDrag(pWidget, pData, &tHit, pEvent);
 		} else if ( ((pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT)) == 0u) && (tHit.iType == XUI_FLOW_HIT_NODE) ) {
-			(void)__xuiFlowGraphWidgetStartNodeDrag(pWidget, pData, &tHit);
+			iRet = __xuiFlowGraphWidgetStartNodeDrag(pWidget, pData, &tHit, pEvent);
 		} else if ( tHit.iType == XUI_FLOW_HIT_BACKGROUND ) {
-			(void)__xuiFlowGraphWidgetStartMarquee(pWidget, pData, fLocalX, fLocalY, pEvent->iModifiers);
+			iRet = __xuiFlowGraphWidgetStartMarquee(pWidget, pData, fLocalX,
+				fLocalY, pEvent->iModifiers, pEvent);
+		}
+		if ( iRet != XUI_OK ) {
+			(void)__xuiFlowGraphWidgetCancelDrag(pWidget, pData);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_MOVE ) {
+		if ( pData->tPointerOwner.bActive &&
+		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return 0;
+		if ( pData->tPointerOwner.bActive &&
+		     (pEvent->iButtons & XUI_POINTER_BUTTON_LEFT) == 0u ) {
+			iRet = __xuiFlowGraphWidgetCancelDrag(pWidget, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
 		__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
 		if ( pData->bDraggingMarquee ) {
-			(void)__xuiFlowGraphWidgetUpdateMarquee(pWidget, pData, fLocalX, fLocalY);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiFlowGraphWidgetUpdateMarquee(pWidget, pData, fLocalX, fLocalY);
+			if ( iRet != XUI_OK ) {
+				(void)__xuiFlowGraphWidgetCancelDrag(pWidget, pData);
+			}
+			return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
 		}
 		if ( pData->bDraggingConnection ) {
-			(void)__xuiFlowGraphWidgetUpdateConnectionPreview(pWidget, pData, fLocalX, fLocalY);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiFlowGraphWidgetUpdateConnectionPreview(pWidget, pData, fLocalX, fLocalY);
+			if ( iRet != XUI_OK ) {
+				(void)__xuiFlowGraphWidgetCancelDrag(pWidget, pData);
+			}
+			return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
 		}
 		if ( !pData->bDraggingNode ) {
 			memset(&tHit, 0, sizeof(tHit));
@@ -2422,36 +3133,47 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 			return 0;
 		}
 		iRet = __xuiFlowGraphWidgetDragNode(pWidget, pData, fLocalX, fLocalY);
+		if ( iRet != XUI_OK ) {
+			(void)__xuiFlowGraphWidgetCancelDrag(pWidget, pData);
+		}
 		return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_UP ) {
+		int iReleaseRet;
+		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return 0;
+		if ( !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return 0;
 		if ( pData->bDraggingMarquee ) {
 			iStop = XUI_EVENT_DISPATCH_STOP;
-			(void)__xuiFlowGraphWidgetFinishMarquee(pWidget, pData);
+			iRet = __xuiFlowGraphWidgetFinishMarquee(pWidget, pData);
 			__xuiFlowGraphWidgetClearDrag(pData);
-			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-			return iStop;
+			iReleaseRet = xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
+				pWidget, &pData->tPointerOwner);
+			if ( iRet == XUI_OK ) iRet = iReleaseRet;
+			return (iRet == XUI_OK) ? (int)iStop : iRet;
 		}
 		if ( pData->bDraggingConnection ) {
 			iStop = XUI_EVENT_DISPATCH_STOP;
 			__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
-			(void)__xuiFlowGraphWidgetFinishConnectionDrag(pWidget, pData, fLocalX, fLocalY);
+			iRet = __xuiFlowGraphWidgetFinishConnectionDrag(pWidget, pData, fLocalX, fLocalY);
 			__xuiFlowGraphWidgetClearDrag(pData);
-			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-			return iStop;
+			iReleaseRet = xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
+				pWidget, &pData->tPointerOwner);
+			if ( iRet == XUI_OK ) iRet = iReleaseRet;
+			return (iRet == XUI_OK) ? (int)iStop : iRet;
 		}
 		if ( !pData->bDraggingNode ) {
 			return 0;
 		}
 		iStop = XUI_EVENT_DISPATCH_STOP;
-		(void)__xuiFlowGraphWidgetFinishNodeDrag(pWidget, pData);
+		iRet = __xuiFlowGraphWidgetFinishNodeDrag(pWidget, pData);
+		if ( iRet != XUI_OK ) {
+			(void)__xuiFlowGraphWidgetRestoreDraggedNodes(pData);
+		}
 		__xuiFlowGraphWidgetClearDrag(pData);
-		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-		return iStop;
-	}
-	if ( pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
-		__xuiFlowGraphWidgetClearDrag(pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iReleaseRet = xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
+			pWidget, &pData->tPointerOwner);
+		if ( iRet == XUI_OK ) iRet = iReleaseRet;
+		return (iRet == XUI_OK) ? (int)iStop : iRet;
 	}
 	return 0;
 }

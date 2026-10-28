@@ -1,8 +1,10 @@
 #include "xui_config.h"
 #if XUI_ENABLE_WORKFLOW
-#include "xui.h"
+#include "xui_internal.h"
 #include "xui_xrt_port.h"
 
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -30,42 +32,17 @@ typedef struct xui_workflow_variable_model_t {
 	xvalue* pDefaultValue;
 } xui_workflow_variable_model_t;
 
-typedef struct xui_workflow_node_run_state_model_t {
-	char* sNodeId;
-	int iState;
-	char* sPreview;
-} xui_workflow_node_run_state_model_t;
-
-typedef struct xui_workflow_edge_run_state_model_t {
-	char* sEdgeId;
-	int iState;
-	char* sPreview;
-} xui_workflow_edge_run_state_model_t;
-
-typedef struct xui_workflow_runtime_state_model_t {
-	int iWorkflowState;
-	xarray arrNodeStates;
-	xarray arrEdgeStates;
-} xui_workflow_runtime_state_model_t;
-
-typedef struct xui_workflow_diagnostic_model_t {
-	int iSeverity;
-	char* sCode;
-	char* sMessage;
-	char* sPath;
-} xui_workflow_diagnostic_model_t;
-
 struct xui_workflow_t {
 	xui_flow_graph pGraph;
 	xarray arrTypes;
 	xarray arrVariables;
-	xarray arrDiagnostics;
-	xui_workflow_runtime_state_model_t tRuntime;
 	xmap mapTypes;
 	xmap mapVariables;
-	uint32_t iNextNodeId;
 	uint32_t iNextVariableId;
 };
+
+static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, xvalue* pConfig,
+	xui_flow_port_desc_t* pPorts, int iCapacity, int* pCount);
 
 static char* __xuiWorkflowCopyString(const char* sText)
 {
@@ -95,18 +72,28 @@ static void __xuiWorkflowFreePortDesc(xui_flow_port_desc_t* pPort)
 	memset(pPort, 0, sizeof(*pPort));
 }
 
-static int __xuiWorkflowCopyPortArray(xarray* pDst, const xui_flow_port_desc_t* pSrc, int iCount)
+static int __xuiWorkflowCopyPortArray(xarray* pDst, const xui_flow_port_desc_t* pSrc, int iCount, int iExpectedDirection)
 {
 	xui_flow_port_desc_t* pPort;
+	xui_flow_port_desc_t* pExisting;
 	uint32_t iPos;
+	uint32_t j;
 	int i;
 
 	if ( iCount < 0 || (iCount > 0 && pSrc == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	for ( i = 0; i < iCount; ++i ) {
-		if ( pSrc[i].iSize < sizeof(pSrc[i]) || pSrc[i].sId == NULL || pSrc[i].sId[0] == 0 ) {
+		if ( pSrc[i].iSize < sizeof(pSrc[i]) || pSrc[i].sId == NULL || pSrc[i].sId[0] == 0 ||
+		     pSrc[i].iDirection != iExpectedDirection ||
+		     (pSrc[i].iKind != XUI_FLOW_PORT_CONTROL && pSrc[i].iKind != XUI_FLOW_PORT_DATA) ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		for ( j = 1u; j <= pDst->Count; ++j ) {
+			pExisting = (xui_flow_port_desc_t*)xuiXrtArrayGet(pDst, j);
+			if ( pExisting->sId != NULL && strcmp(pExisting->sId, pSrc[i].sId) == 0 ) {
+				return XUI_ERROR_ALREADY_INITIALIZED;
+			}
 		}
 		iPos = xuiXrtArrayAppendSpace(pDst, 1u);
 		if ( iPos == 0u ) {
@@ -166,54 +153,6 @@ static void __xuiWorkflowFreeVariable(xui_workflow_variable_model_t* pVariable)
 		xrtValueRelease(pVariable->pDefaultValue);
 	}
 	memset(pVariable, 0, sizeof(*pVariable));
-}
-
-static void __xuiWorkflowFreeNodeRunState(xui_workflow_node_run_state_model_t* pState)
-{
-	if ( pState == NULL ) {
-		return;
-	}
-	xrtFree(pState->sNodeId);
-	xrtFree(pState->sPreview);
-	memset(pState, 0, sizeof(*pState));
-}
-
-static void __xuiWorkflowFreeEdgeRunState(xui_workflow_edge_run_state_model_t* pState)
-{
-	if ( pState == NULL ) {
-		return;
-	}
-	xrtFree(pState->sEdgeId);
-	xrtFree(pState->sPreview);
-	memset(pState, 0, sizeof(*pState));
-}
-
-static void __xuiWorkflowFreeDiagnostic(xui_workflow_diagnostic_model_t* pDiagnostic)
-{
-	if ( pDiagnostic == NULL ) {
-		return;
-	}
-	xrtFree(pDiagnostic->sCode);
-	xrtFree(pDiagnostic->sMessage);
-	xrtFree(pDiagnostic->sPath);
-	memset(pDiagnostic, 0, sizeof(*pDiagnostic));
-}
-
-static void __xuiWorkflowClearVariables(xui_workflow pWorkflow)
-{
-	uint32_t i;
-
-	if ( pWorkflow == NULL ) {
-		return;
-	}
-	for ( i = 1u; i <= pWorkflow->arrVariables.Count; ++i ) {
-		__xuiWorkflowFreeVariable((xui_workflow_variable_model_t*)xuiXrtArrayGet(&pWorkflow->arrVariables, i));
-	}
-	xrtArrayUnit(&pWorkflow->arrVariables);
-	xuiXrtArrayInit(&pWorkflow->arrVariables, sizeof(xui_workflow_variable_model_t));
-	xrtMapUnit(&pWorkflow->mapVariables);
-	xuiXrtMapInit(&pWorkflow->mapVariables, sizeof(int));
-	pWorkflow->iNextVariableId = 0u;
 }
 
 static int __xuiWorkflowDictFindIndex(xmap* pDict, const char* sId)
@@ -435,21 +374,21 @@ static int __xuiWorkflowConfigFieldKind(xui_workflow pWorkflow, const char* sTyp
 	return 0;
 }
 
-static int __xuiWorkflowRefreshNodeSummary(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue* pConfig)
+static int __xuiWorkflowBuildNodeSummary(xui_workflow pWorkflow, const char* sType,
+	xvalue* pConfig, char* sSummary, int iSummaryCapacity)
 {
 	xui_workflow_type_model_t* pType;
 	xvalue* pFields;
 	xvalue* pField;
 	xvalue* pValue;
 	const char* sId;
-	char sSummary[256];
 	char sPart[96];
 	int iOffset;
 	int iParts;
 	uint32_t i;
 	uint32_t iCount;
 
-	if ( (pWorkflow == NULL) || (sNodeId == NULL) || (sType == NULL) ) {
+	if ( pWorkflow == NULL || sType == NULL || sSummary == NULL || iSummaryCapacity <= 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pType = __xuiWorkflowFindTypeModel(pWorkflow, sType);
@@ -476,13 +415,26 @@ static int __xuiWorkflowRefreshNodeSummary(xui_workflow pWorkflow, const char* s
 				continue;
 			}
 			if ( iParts > 0 ) {
-				__xuiWorkflowSummaryAppend(sSummary, (int)sizeof(sSummary), &iOffset, ", ");
+				__xuiWorkflowSummaryAppend(sSummary, iSummaryCapacity, &iOffset, ", ");
 			}
-			__xuiWorkflowSummaryAppend(sSummary, (int)sizeof(sSummary), &iOffset, sPart);
+			__xuiWorkflowSummaryAppend(sSummary, iSummaryCapacity, &iOffset, sPart);
 			iParts++;
 		}
 	}
-	return xuiFlowGraphSetNodeSummary(pWorkflow->pGraph, sNodeId, (sSummary[0] != 0) ? sSummary : NULL);
+	return XUI_OK;
+}
+
+static int __xuiWorkflowRefreshNodeSummary(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue* pConfig)
+{
+	char sSummary[256];
+	int iRet;
+
+	if ( sNodeId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiWorkflowBuildNodeSummary(pWorkflow, sType, pConfig,
+		sSummary, (int)sizeof(sSummary));
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiFlowGraphSetNodeSummary(pWorkflow->pGraph, sNodeId,
+		(sSummary[0] != 0) ? sSummary : NULL);
 }
 
 static void __xuiWorkflowConfigAddDiagnostic(xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount, const char* sPath, const char* sCode, const char* sMessage)
@@ -526,9 +478,6 @@ XUI_API int xuiWorkflowCreate(xui_workflow* ppWorkflow)
 	}
 	xuiXrtArrayInit(&pWorkflow->arrTypes, sizeof(xui_workflow_type_model_t));
 	xuiXrtArrayInit(&pWorkflow->arrVariables, sizeof(xui_workflow_variable_model_t));
-	xuiXrtArrayInit(&pWorkflow->arrDiagnostics, sizeof(xui_workflow_diagnostic_model_t));
-	xuiXrtArrayInit(&pWorkflow->tRuntime.arrNodeStates, sizeof(xui_workflow_node_run_state_model_t));
-	xuiXrtArrayInit(&pWorkflow->tRuntime.arrEdgeStates, sizeof(xui_workflow_edge_run_state_model_t));
 	xuiXrtMapInit(&pWorkflow->mapTypes, sizeof(int));
 	xuiXrtMapInit(&pWorkflow->mapVariables, sizeof(int));
 	*ppWorkflow = pWorkflow;
@@ -548,20 +497,8 @@ XUI_API void xuiWorkflowDestroy(xui_workflow pWorkflow)
 	for ( i = 1u; i <= pWorkflow->arrVariables.Count; ++i ) {
 		__xuiWorkflowFreeVariable((xui_workflow_variable_model_t*)xuiXrtArrayGet(&pWorkflow->arrVariables, i));
 	}
-	for ( i = 1u; i <= pWorkflow->arrDiagnostics.Count; ++i ) {
-		__xuiWorkflowFreeDiagnostic((xui_workflow_diagnostic_model_t*)xuiXrtArrayGet(&pWorkflow->arrDiagnostics, i));
-	}
-	for ( i = 1u; i <= pWorkflow->tRuntime.arrNodeStates.Count; ++i ) {
-		__xuiWorkflowFreeNodeRunState((xui_workflow_node_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrNodeStates, i));
-	}
-	for ( i = 1u; i <= pWorkflow->tRuntime.arrEdgeStates.Count; ++i ) {
-		__xuiWorkflowFreeEdgeRunState((xui_workflow_edge_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrEdgeStates, i));
-	}
 	xrtArrayUnit(&pWorkflow->arrTypes);
 	xrtArrayUnit(&pWorkflow->arrVariables);
-	xrtArrayUnit(&pWorkflow->arrDiagnostics);
-	xrtArrayUnit(&pWorkflow->tRuntime.arrNodeStates);
-	xrtArrayUnit(&pWorkflow->tRuntime.arrEdgeStates);
 	xrtMapUnit(&pWorkflow->mapTypes);
 	xrtMapUnit(&pWorkflow->mapVariables);
 	xuiFlowGraphDestroy(pWorkflow->pGraph);
@@ -604,17 +541,54 @@ XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_
 {
 	xvalue* pFields;
 	xvalue* pField;
+	xvalue* pExisting;
 	xvalue* pDefaultCopy;
 	xvalue* pMetaCopy;
+	const char* sExistingId;
+	int iExpectedType;
+	int iDefaultType;
+	double fDefault;
+	uint32_t i;
 
 	if ( (pSchema == NULL) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) ||
 	     (pDesc->sId == NULL) || (pDesc->sId[0] == 0) ||
 	     (__xuiWorkflowConfigKindToXvoType(pDesc->iKind) == XVALUE_NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (pDesc->bHasMin || pDesc->bHasMax) &&
+	     (pDesc->iKind != XUI_WORKFLOW_CONFIG_FIELD_INT) && (pDesc->iKind != XUI_WORKFLOW_CONFIG_FIELD_FLOAT) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pDesc->bHasMin && !isfinite(pDesc->fMin)) || (pDesc->bHasMax && !isfinite(pDesc->fMax)) ||
+	     (pDesc->bHasMin && pDesc->bHasMax && pDesc->fMin > pDesc->fMax) ||
+	     (pDesc->bHasDefault && pDesc->pDefaultValue == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pDesc->bHasDefault ) {
+		iExpectedType = __xuiWorkflowConfigKindToXvoType(pDesc->iKind);
+		iDefaultType = xuiXrtValueType(pDesc->pDefaultValue);
+		if ( iDefaultType != XVALUE_NULL && iDefaultType != iExpectedType &&
+		     !(iExpectedType == XVALUE_FLOAT && iDefaultType == XVALUE_INT) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		if ( iDefaultType != XVALUE_NULL &&
+		     (pDesc->iKind == XUI_WORKFLOW_CONFIG_FIELD_INT || pDesc->iKind == XUI_WORKFLOW_CONFIG_FIELD_FLOAT) ) {
+			fDefault = (iDefaultType == XVALUE_INT) ? (double)xuiXrtValueGetInt(pDesc->pDefaultValue) : xuiXrtValueGetFloat(pDesc->pDefaultValue);
+			if ( !isfinite(fDefault) || (pDesc->bHasMin && fDefault < pDesc->fMin) || (pDesc->bHasMax && fDefault > pDesc->fMax) ) {
+				return XUI_ERROR_INVALID_ARGUMENT;
+			}
+		}
+	}
 	pFields = __xuiWorkflowConfigFields(pSchema);
 	if ( pFields == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0u; i < xrtValueCount(pFields); ++i ) {
+		pExisting = xuiXrtValueArrayGet(pFields, i);
+		sExistingId = (const char*)xuiXrtValueObjectGetText(pExisting, "id", 2);
+		if ( sExistingId != NULL && strcmp(sExistingId, pDesc->sId) == 0 ) {
+			return XUI_ERROR_ALREADY_INITIALIZED;
+		}
 	}
 	pField = xrtValueObject();
 	if ( pField == NULL ) {
@@ -704,10 +678,17 @@ XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_
 XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex)
 {
 	xui_workflow_type_model_t* pType;
+	xui_flow_port_desc_t* pInput;
+	xui_flow_port_desc_t* pOutput;
 	uint32_t iPos;
+	uint32_t i;
+	uint32_t j;
 	int iIndex;
 	int iRet;
 
+	if ( pIndex != NULL ) {
+		*pIndex = -1;
+	}
 	if ( (pWorkflow == NULL) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) ||
 	     (pDesc->sId == NULL) || (pDesc->sId[0] == 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -730,26 +711,36 @@ XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workfl
 	pType->sCategory = __xuiWorkflowCopyString(pDesc->sCategory);
 	pType->sDescription = __xuiWorkflowCopyString(pDesc->sDescription);
 	pType->sIcon = __xuiWorkflowCopyString(pDesc->sIcon);
-	pType->pConfigSchema = pDesc->pConfigSchema;
+	pType->pConfigSchema = (pDesc->pConfigSchema != NULL) ? xrtValueDeepClone(pDesc->pConfigSchema) : NULL;
 	pType->onDynamicPorts = pDesc->onDynamicPorts;
 	pType->pDynamicPortsUser = pDesc->pDynamicPortsUser;
 	pType->onValidate = pDesc->onValidate;
 	pType->pValidateUser = pDesc->pValidateUser;
-	if ( pType->pConfigSchema != NULL ) {
-		xrtValueRetain(pType->pConfigSchema);
-	}
 	if ( pType->sId == NULL ||
 	     (pDesc->sTitle != NULL && pType->sTitle == NULL) ||
 	     (pDesc->sCategory != NULL && pType->sCategory == NULL) ||
 	     (pDesc->sDescription != NULL && pType->sDescription == NULL) ||
-	     (pDesc->sIcon != NULL && pType->sIcon == NULL) ) {
+	     (pDesc->sIcon != NULL && pType->sIcon == NULL) ||
+	     (pDesc->pConfigSchema != NULL && pType->pConfigSchema == NULL) ) {
 		__xuiWorkflowFreeType(pType);
 		xuiXrtArrayRemove(&pWorkflow->arrTypes, iPos, 1u);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = __xuiWorkflowCopyPortArray(&pType->arrInputs, pDesc->pInputs, pDesc->iInputCount);
+	iRet = __xuiWorkflowCopyPortArray(&pType->arrInputs, pDesc->pInputs, pDesc->iInputCount, XUI_FLOW_PORT_INPUT);
 	if ( iRet == XUI_OK ) {
-		iRet = __xuiWorkflowCopyPortArray(&pType->arrOutputs, pDesc->pOutputs, pDesc->iOutputCount);
+		iRet = __xuiWorkflowCopyPortArray(&pType->arrOutputs, pDesc->pOutputs, pDesc->iOutputCount, XUI_FLOW_PORT_OUTPUT);
+	}
+	if ( iRet == XUI_OK ) {
+		for ( i = 1u; i <= pType->arrInputs.Count && iRet == XUI_OK; ++i ) {
+			pInput = (xui_flow_port_desc_t*)xuiXrtArrayGet(&pType->arrInputs, i);
+			for ( j = 1u; j <= pType->arrOutputs.Count; ++j ) {
+				pOutput = (xui_flow_port_desc_t*)xuiXrtArrayGet(&pType->arrOutputs, j);
+				if ( strcmp(pInput->sId, pOutput->sId) == 0 ) {
+					iRet = XUI_ERROR_ALREADY_INITIALIZED;
+					break;
+				}
+			}
+		}
 	}
 	if ( iRet != XUI_OK ) {
 		__xuiWorkflowFreeType(pType);
@@ -791,20 +782,9 @@ static int __xuiWorkflowAddDynamicPorts(xui_workflow pWorkflow, const xui_workfl
 	if ( (pWorkflow == NULL) || (pType == NULL) || (pType->onDynamicPorts == NULL) ) {
 		return XUI_OK;
 	}
-	memset(arrPorts, 0, sizeof(arrPorts));
-	iCount = 0;
-	iRet = pType->onDynamicPorts(pWorkflow, sNodeId, pType->sId, pConfig, arrPorts, (int)(sizeof(arrPorts) / sizeof(arrPorts[0])), &iCount, pType->pDynamicPortsUser);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	if ( iCount < 0 || iCount > (int)(sizeof(arrPorts) / sizeof(arrPorts[0])) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sNodeId, pConfig, arrPorts, (int)(sizeof(arrPorts) / sizeof(arrPorts[0])), &iCount);
+	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < iCount; ++i ) {
-		if ( arrPorts[i].iSize < sizeof(arrPorts[i]) ) {
-			arrPorts[i].iSize = sizeof(arrPorts[i]);
-		}
-		arrPorts[i].bDynamic = 1;
 		iRet = xuiFlowGraphAddPort(pWorkflow->pGraph, iNode, &arrPorts[i], NULL);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -813,25 +793,34 @@ static int __xuiWorkflowAddDynamicPorts(xui_workflow pWorkflow, const xui_workfl
 	return XUI_OK;
 }
 
-static int __xuiWorkflowRebuildDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, xvalue* pConfig)
+static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, xvalue* pConfig,
+	xui_flow_port_desc_t* pPorts, int iCapacity, int* pCount)
 {
-	xui_flow_port_desc_t arrPorts[32];
-	int iCount;
+	int i;
 	int iRet;
 
-	if ( (pWorkflow == NULL) || (pType == NULL) || (pType->onDynamicPorts == NULL) ) {
+	if ( (pWorkflow == NULL) || (pType == NULL) || (pPorts == NULL) || (iCapacity < 0) || (pCount == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	memset(pPorts, 0, (size_t)iCapacity * sizeof(*pPorts));
+	*pCount = 0;
+	if ( pType->onDynamicPorts == NULL ) {
 		return XUI_OK;
 	}
-	memset(arrPorts, 0, sizeof(arrPorts));
-	iCount = 0;
-	iRet = pType->onDynamicPorts(pWorkflow, sNodeId, pType->sId, pConfig, arrPorts, (int)(sizeof(arrPorts) / sizeof(arrPorts[0])), &iCount, pType->pDynamicPortsUser);
+	iRet = pType->onDynamicPorts(pWorkflow, sNodeId, pType->sId, pConfig, pPorts, iCapacity, pCount, pType->pDynamicPortsUser);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	if ( iCount < 0 || iCount > (int)(sizeof(arrPorts) / sizeof(arrPorts[0])) ) {
+	if ( *pCount < 0 || *pCount > iCapacity ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	return xuiFlowGraphRebuildNodeDynamicPorts(pWorkflow->pGraph, sNodeId, arrPorts, iCount);
+	for ( i = 0; i < *pCount; ++i ) {
+		if ( pPorts[i].iSize < sizeof(pPorts[i]) ) {
+			pPorts[i].iSize = sizeof(pPorts[i]);
+		}
+		pPorts[i].bDynamic = 1;
+	}
+	return XUI_OK;
 }
 
 XUI_API int xuiWorkflowAddNode(xui_workflow pWorkflow, const char* sType, const char* sId, const char* sTitle, float fX, float fY, int* pIndex)
@@ -845,6 +834,9 @@ XUI_API int xuiWorkflowAddNode(xui_workflow pWorkflow, const char* sType, const 
 	int iNode;
 	int iRet;
 
+	if ( pIndex != NULL ) {
+		*pIndex = -1;
+	}
 	if ( (pWorkflow == NULL) || (sType == NULL) || (sId == NULL) || (sId[0] == 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -912,15 +904,39 @@ XUI_API int xuiWorkflowAddNode(xui_workflow pWorkflow, const char* sType, const 
 XUI_API int xuiWorkflowConnect(xui_workflow pWorkflow, const char* sEdgeId, const char* sFromNode, const char* sFromPort, const char* sToNode, const char* sToPort, int* pIndex)
 {
 	xui_flow_edge_desc_t tEdge;
+	xui_flow_port_info_t tPort;
+	int iNode;
+	int i;
+	int iRet;
 
+	if ( pIndex != NULL ) {
+		*pIndex = -1;
+	}
 	if ( (pWorkflow == NULL) || (sEdgeId == NULL) || (sEdgeId[0] == 0) ||
 	     (sFromNode == NULL) || (sFromPort == NULL) || (sToNode == NULL) || (sToPort == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iNode = xuiFlowGraphFindNode(pWorkflow->pGraph, sFromNode);
+	if ( iNode < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	memset(&tPort, 0, sizeof(tPort));
+	for ( i = 0; i < xuiFlowGraphGetNodePortCount(pWorkflow->pGraph, iNode); ++i ) {
+		iRet = xuiFlowGraphGetPort(pWorkflow->pGraph, iNode, i, &tPort);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+		if ( tPort.sId != NULL && strcmp(tPort.sId, sFromPort) == 0 ) {
+			break;
+		}
+	}
+	if ( i >= xuiFlowGraphGetNodePortCount(pWorkflow->pGraph, iNode) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	memset(&tEdge, 0, sizeof(tEdge));
 	tEdge.iSize = sizeof(tEdge);
 	tEdge.sId = sEdgeId;
-	tEdge.iKind = XUI_FLOW_PORT_CONTROL;
+	tEdge.iKind = tPort.iKind;
 	tEdge.sFromNode = sFromNode;
 	tEdge.sFromPort = sFromPort;
 	tEdge.sToNode = sToNode;
@@ -1132,6 +1148,10 @@ XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sTyp
 		}
 		if ( (iKind == XUI_WORKFLOW_CONFIG_FIELD_INT) || (iKind == XUI_WORKFLOW_CONFIG_FIELD_FLOAT) ) {
 			fValue = (iValueType == XVALUE_INT) ? (double)xuiXrtValueGetInt(pValue) : xuiXrtValueGetFloat(pValue);
+			if ( !isfinite(fValue) ) {
+				__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "number.finite", "Config field must be a finite number.");
+				continue;
+			}
 			if ( xuiXrtValueType(xuiXrtValueObjectGet(pField, "min", 3)) != XVALUE_NULL && fValue < xuiXrtValueObjectGetFloat(pField, "min", 3) ) {
 				__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "range.min", "Config field is below minimum.");
 			}
@@ -1144,6 +1164,222 @@ XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sTyp
 	return XUI_OK;
 }
 
+static int __xuiWorkflowAnalyzeControlGraph(xui_workflow pWorkflow, int* pReachable, int* pCycleEdge)
+{
+	xui_flow_node_info_t tNode;
+	xui_flow_edge_info_t tEdge;
+	int* pHeads;
+	int* pNext;
+	int* pTo;
+	int* pEdgeIndices;
+	int* pInDegree;
+	int* pQueue;
+	int iNodeCount;
+	int iEdgeCount;
+	int iControlEdgeCount;
+	int iQueueHead;
+	int iQueueTail;
+	int iVisited;
+	int i;
+	int iEntry;
+	int iRet;
+
+	if ( (pWorkflow == NULL) || (pReachable == NULL) || (pCycleEdge == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	*pCycleEdge = -1;
+	iNodeCount = xuiFlowGraphGetNodeCount(pWorkflow->pGraph);
+	iEdgeCount = xuiFlowGraphGetEdgeCount(pWorkflow->pGraph);
+	memset(pReachable, 0, (size_t)iNodeCount * sizeof(*pReachable));
+	if ( iNodeCount == 0 ) {
+		return XUI_OK;
+	}
+	pHeads = (int*)xrtMalloc((uint32_t)iNodeCount * sizeof(*pHeads));
+	pInDegree = (int*)xrtCalloc((uint32_t)iNodeCount, sizeof(*pInDegree));
+	pQueue = (int*)xrtMalloc((uint32_t)iNodeCount * sizeof(*pQueue));
+	pNext = (iEdgeCount > 0) ? (int*)xrtMalloc((uint32_t)iEdgeCount * sizeof(*pNext)) : NULL;
+	pTo = (iEdgeCount > 0) ? (int*)xrtMalloc((uint32_t)iEdgeCount * sizeof(*pTo)) : NULL;
+	pEdgeIndices = (iEdgeCount > 0) ? (int*)xrtMalloc((uint32_t)iEdgeCount * sizeof(*pEdgeIndices)) : NULL;
+	if ( pHeads == NULL || pInDegree == NULL || pQueue == NULL ||
+	     (iEdgeCount > 0 && (pNext == NULL || pTo == NULL || pEdgeIndices == NULL)) ) {
+		iRet = XUI_ERROR_OUT_OF_MEMORY;
+		goto cleanup;
+	}
+	for ( i = 0; i < iNodeCount; ++i ) {
+		pHeads[i] = -1;
+	}
+	iControlEdgeCount = 0;
+	for ( i = 0; i < iEdgeCount; ++i ) {
+		iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, i, &tEdge);
+		if ( iRet != XUI_OK ) goto cleanup;
+		if ( tEdge.bInvalid || tEdge.iKind != XUI_FLOW_PORT_CONTROL ||
+		     tEdge.iFromNode < 0 || tEdge.iFromNode >= iNodeCount || tEdge.iToNode < 0 || tEdge.iToNode >= iNodeCount ) {
+			continue;
+		}
+		pNext[iControlEdgeCount] = pHeads[tEdge.iFromNode];
+		pTo[iControlEdgeCount] = tEdge.iToNode;
+		pEdgeIndices[iControlEdgeCount] = i;
+		pHeads[tEdge.iFromNode] = iControlEdgeCount;
+		pInDegree[tEdge.iToNode]++;
+		iControlEdgeCount++;
+	}
+	iQueueHead = 0;
+	iQueueTail = 0;
+	for ( i = 0; i < iNodeCount; ++i ) {
+		if ( pInDegree[i] == 0 ) pQueue[iQueueTail++] = i;
+	}
+	iVisited = 0;
+	while ( iQueueHead < iQueueTail ) {
+		i = pQueue[iQueueHead++];
+		iVisited++;
+		for ( iEntry = pHeads[i]; iEntry >= 0; iEntry = pNext[iEntry] ) {
+			if ( --pInDegree[pTo[iEntry]] == 0 ) pQueue[iQueueTail++] = pTo[iEntry];
+		}
+	}
+	if ( iVisited < iNodeCount ) {
+		for ( i = 0; i < iControlEdgeCount; ++i ) {
+			iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, pEdgeIndices[i], &tEdge);
+			if ( iRet != XUI_OK ) goto cleanup;
+			if ( pInDegree[tEdge.iFromNode] > 0 && pInDegree[tEdge.iToNode] > 0 ) {
+				*pCycleEdge = pEdgeIndices[i];
+				break;
+			}
+		}
+	}
+	iQueueHead = 0;
+	iQueueTail = 0;
+	for ( i = 0; i < iNodeCount; ++i ) {
+		iRet = xuiFlowGraphGetNode(pWorkflow->pGraph, i, &tNode);
+		if ( iRet != XUI_OK ) goto cleanup;
+		if ( tNode.sType != NULL && strcmp(tNode.sType, "start") == 0 ) {
+			pReachable[i] = 1;
+			pQueue[iQueueTail++] = i;
+		}
+	}
+	while ( iQueueHead < iQueueTail ) {
+		i = pQueue[iQueueHead++];
+		for ( iEntry = pHeads[i]; iEntry >= 0; iEntry = pNext[iEntry] ) {
+			if ( !pReachable[pTo[iEntry]] ) {
+				pReachable[pTo[iEntry]] = 1;
+				pQueue[iQueueTail++] = pTo[iEntry];
+			}
+		}
+	}
+	iRet = XUI_OK;
+
+cleanup:
+	xrtFree(pEdgeIndices);
+	xrtFree(pTo);
+	xrtFree(pNext);
+	xrtFree(pQueue);
+	xrtFree(pInDegree);
+	xrtFree(pHeads);
+	return iRet;
+}
+
+static int __xuiWorkflowValidatePortConnections(xui_workflow pWorkflow, int* pDiagnosticCount)
+{
+	xui_flow_diagnostic_desc_t tDiagnostic;
+	xui_flow_edge_info_t tEdge;
+	xui_flow_node_info_t tNode;
+	xui_flow_port_info_t tFromPort;
+	xui_flow_port_info_t tToPort;
+	uint32_t* pConnectionCounts;
+	int* pPortOffsets;
+	int iNodeCount;
+	int iEdgeCount;
+	int iPortCount;
+	int iTotalPorts;
+	int i;
+	int j;
+	int iRet;
+
+	if ( (pWorkflow == NULL) || (pDiagnosticCount == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iNodeCount = xuiFlowGraphGetNodeCount(pWorkflow->pGraph);
+	pPortOffsets = (int*)xrtMalloc((size_t)(iNodeCount + 1) * sizeof(*pPortOffsets));
+	if ( pPortOffsets == NULL ) {
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pPortOffsets[0] = 0;
+	for ( i = 0; i < iNodeCount; ++i ) {
+		iPortCount = xuiFlowGraphGetNodePortCount(pWorkflow->pGraph, i);
+		if ( iPortCount > INT_MAX - pPortOffsets[i] ) {
+			xrtFree(pPortOffsets);
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		pPortOffsets[i + 1] = pPortOffsets[i] + iPortCount;
+	}
+	iTotalPorts = pPortOffsets[iNodeCount];
+	pConnectionCounts = (iTotalPorts > 0) ? (uint32_t*)xrtCalloc((size_t)iTotalPorts, sizeof(*pConnectionCounts)) : NULL;
+	if ( iTotalPorts > 0 && pConnectionCounts == NULL ) {
+		xrtFree(pPortOffsets);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	iEdgeCount = xuiFlowGraphGetEdgeCount(pWorkflow->pGraph);
+	for ( i = 0; i < iEdgeCount; ++i ) {
+		iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, i, &tEdge);
+		if ( iRet != XUI_OK ) goto cleanup;
+		if ( tEdge.bInvalid || tEdge.iFromNode < 0 || tEdge.iFromNode >= iNodeCount ||
+		     tEdge.iToNode < 0 || tEdge.iToNode >= iNodeCount ||
+		     tEdge.iFromPort < 0 || tEdge.iFromPort >= pPortOffsets[tEdge.iFromNode + 1] - pPortOffsets[tEdge.iFromNode] ||
+		     tEdge.iToPort < 0 || tEdge.iToPort >= pPortOffsets[tEdge.iToNode + 1] - pPortOffsets[tEdge.iToNode] ) {
+			continue;
+		}
+		iRet = xuiFlowGraphGetPort(pWorkflow->pGraph, tEdge.iFromNode, tEdge.iFromPort, &tFromPort);
+		if ( iRet != XUI_OK ) goto cleanup;
+		iRet = xuiFlowGraphGetPort(pWorkflow->pGraph, tEdge.iToNode, tEdge.iToPort, &tToPort);
+		if ( iRet != XUI_OK ) goto cleanup;
+		if ( tFromPort.iDirection == XUI_FLOW_PORT_OUTPUT && tToPort.iDirection == XUI_FLOW_PORT_INPUT &&
+		     tFromPort.iKind == tEdge.iKind && tToPort.iKind == tEdge.iKind ) {
+			pConnectionCounts[pPortOffsets[tEdge.iToNode] + tEdge.iToPort]++;
+		}
+	}
+	for ( i = 0; i < iNodeCount; ++i ) {
+		iRet = xuiFlowGraphGetNode(pWorkflow->pGraph, i, &tNode);
+		if ( iRet != XUI_OK ) goto cleanup;
+		iPortCount = pPortOffsets[i + 1] - pPortOffsets[i];
+		for ( j = 0; j < iPortCount; ++j ) {
+			iRet = xuiFlowGraphGetPort(pWorkflow->pGraph, i, j, &tToPort);
+			if ( iRet != XUI_OK ) goto cleanup;
+			if ( tToPort.iDirection != XUI_FLOW_PORT_INPUT ) {
+				continue;
+			}
+			if ( tToPort.bRequired && pConnectionCounts[pPortOffsets[i] + j] == 0u ) {
+				memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+				tDiagnostic.iSize = sizeof(tDiagnostic);
+				tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
+				tDiagnostic.sCode = "workflow.port.required";
+				tDiagnostic.sMessage = "Required workflow input port is not connected.";
+				tDiagnostic.sNode = tNode.sId;
+				tDiagnostic.sPath = tToPort.sId;
+				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
+				if ( iRet != XUI_OK ) goto cleanup;
+				(*pDiagnosticCount)++;
+			}
+			if ( !tToPort.bMulti && pConnectionCounts[pPortOffsets[i] + j] > 1u ) {
+				memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+				tDiagnostic.iSize = sizeof(tDiagnostic);
+				tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
+				tDiagnostic.sCode = "workflow.port.multiple";
+				tDiagnostic.sMessage = "Workflow input port does not accept multiple connections.";
+				tDiagnostic.sNode = tNode.sId;
+				tDiagnostic.sPath = tToPort.sId;
+				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
+				if ( iRet != XUI_OK ) goto cleanup;
+				(*pDiagnosticCount)++;
+			}
+		}
+	}
+	iRet = XUI_OK;
+
+cleanup:
+	xrtFree(pConnectionCounts);
+	xrtFree(pPortOffsets);
+	return iRet;
+}
+
 XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCount)
 {
 	xui_flow_edge_info_t tEdge;
@@ -1153,6 +1389,7 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 	xui_flow_diagnostic_desc_t tDiagnostic;
 	xui_workflow_type_model_t* pType;
 	xui_workflow_config_diagnostic_t arrConfigDiagnostics[16];
+	xui_workflow_config_diagnostic_t* pConfigDiagnostics;
 	xui_flow_diagnostic_desc_t arrHostDiagnostics[16];
 	xvalue* pConfig;
 	xvalue* pFields;
@@ -1170,8 +1407,7 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 	int iHostDiagnostics;
 	int iStartCount;
 	int iEndCount;
-	int iCycleFound;
-	int bChanged;
+	int iCycleEdge;
 	int iKind;
 	int iRet;
 
@@ -1186,8 +1422,8 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 	iDiagnostics = 0;
 	iStartCount = 0;
 	iEndCount = 0;
-	iCycleFound = 0;
 	pReachable = NULL;
+	pConfig = NULL;
 	iNodeCount = xuiFlowGraphGetNodeCount(pWorkflow->pGraph);
 	for ( i = 0; i < iNodeCount; ++i ) {
 		iRet = xuiFlowGraphGetNode(pWorkflow->pGraph, i, &tNode);
@@ -1203,7 +1439,10 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 			tDiagnostic.sNode = tNode.sId;
 			tDiagnostic.sPath = "nodes";
 			iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) {
+				if ( pConfig != NULL ) xrtValueRelease(pConfig);
+				return iRet;
+			}
 			iDiagnostics++;
 			continue;
 		}
@@ -1213,23 +1452,42 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
-		iRet = xuiWorkflowValidateConfigEx(pWorkflow, tNode.sType, pConfig, arrConfigDiagnostics, (int)(sizeof(arrConfigDiagnostics) / sizeof(arrConfigDiagnostics[0])), &iConfigDiagnostics);
+		pConfigDiagnostics = arrConfigDiagnostics;
+		iRet = xuiWorkflowValidateConfigEx(pWorkflow, tNode.sType, pConfig, pConfigDiagnostics, (int)(sizeof(arrConfigDiagnostics) / sizeof(arrConfigDiagnostics[0])), &iConfigDiagnostics);
 		if ( iRet != XUI_OK ) {
 			if ( pConfig != NULL ) xrtValueRelease(pConfig);
 			return iRet;
 		}
-		for ( j = 0; j < iConfigDiagnostics && j < (int)(sizeof(arrConfigDiagnostics) / sizeof(arrConfigDiagnostics[0])); ++j ) {
+		if ( iConfigDiagnostics > (int)(sizeof(arrConfigDiagnostics) / sizeof(arrConfigDiagnostics[0])) ) {
+			pConfigDiagnostics = (xui_workflow_config_diagnostic_t*)xrtMalloc((size_t)iConfigDiagnostics * sizeof(*pConfigDiagnostics));
+			if ( pConfigDiagnostics == NULL ) {
+				if ( pConfig != NULL ) xrtValueRelease(pConfig);
+				return XUI_ERROR_OUT_OF_MEMORY;
+			}
+			iRet = xuiWorkflowValidateConfigEx(pWorkflow, tNode.sType, pConfig, pConfigDiagnostics, iConfigDiagnostics, &iConfigDiagnostics);
+			if ( iRet != XUI_OK ) {
+				xrtFree(pConfigDiagnostics);
+				if ( pConfig != NULL ) xrtValueRelease(pConfig);
+				return iRet;
+			}
+		}
+		for ( j = 0; j < iConfigDiagnostics; ++j ) {
 			memset(&tDiagnostic, 0, sizeof(tDiagnostic));
 			tDiagnostic.iSize = sizeof(tDiagnostic);
 			tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
-			tDiagnostic.sCode = arrConfigDiagnostics[j].sCode;
-			tDiagnostic.sMessage = arrConfigDiagnostics[j].sMessage;
+			tDiagnostic.sCode = pConfigDiagnostics[j].sCode;
+			tDiagnostic.sMessage = pConfigDiagnostics[j].sMessage;
 			tDiagnostic.sNode = tNode.sId;
-			tDiagnostic.sPath = arrConfigDiagnostics[j].sPath;
+			tDiagnostic.sPath = pConfigDiagnostics[j].sPath;
 			iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) {
+				if ( pConfigDiagnostics != arrConfigDiagnostics ) xrtFree(pConfigDiagnostics);
+				if ( pConfig != NULL ) xrtValueRelease(pConfig);
+				return iRet;
+			}
 			iDiagnostics++;
 		}
+		if ( pConfigDiagnostics != arrConfigDiagnostics ) xrtFree(pConfigDiagnostics);
 		pFields = (pType != NULL) ? __xuiWorkflowConfigFields(pType->pConfigSchema) : NULL;
 		if ( pFields != NULL && pConfig != NULL && xuiXrtValueType(pConfig) == XVALUE_OBJECT ) {
 			iCount = xrtValueCount(pFields);
@@ -1260,7 +1518,10 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 					tDiagnostic.sNode = tNode.sId;
 					tDiagnostic.sPath = sField;
 					iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
-					if ( iRet != XUI_OK ) return iRet;
+					if ( iRet != XUI_OK ) {
+						if ( pConfig != NULL ) xrtValueRelease(pConfig);
+						return iRet;
+					}
 					iDiagnostics++;
 					continue;
 				}
@@ -1275,7 +1536,10 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 				tDiagnostic.sNode = tNode.sId;
 				tDiagnostic.sPath = sField;
 				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
-				if ( iRet != XUI_OK ) return iRet;
+				if ( iRet != XUI_OK ) {
+					if ( pConfig != NULL ) xrtValueRelease(pConfig);
+					return iRet;
+				}
 				iDiagnostics++;
 			}
 		}
@@ -1287,6 +1551,10 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 				if ( pConfig != NULL ) xrtValueRelease(pConfig);
 				return iRet;
 			}
+			if ( iHostDiagnostics < 0 || iHostDiagnostics > (int)(sizeof(arrHostDiagnostics) / sizeof(arrHostDiagnostics[0])) ) {
+				if ( pConfig != NULL ) xrtValueRelease(pConfig);
+				return XUI_ERROR_INVALID_ARGUMENT;
+			}
 			for ( j = 0; j < iHostDiagnostics && j < (int)(sizeof(arrHostDiagnostics) / sizeof(arrHostDiagnostics[0])); ++j ) {
 				if ( arrHostDiagnostics[j].iSize < sizeof(arrHostDiagnostics[j]) ) {
 					arrHostDiagnostics[j].iSize = sizeof(arrHostDiagnostics[j]);
@@ -1295,12 +1563,16 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 					arrHostDiagnostics[j].sNode = tNode.sId;
 				}
 				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &arrHostDiagnostics[j], NULL);
-				if ( iRet != XUI_OK ) return iRet;
+				if ( iRet != XUI_OK ) {
+					if ( pConfig != NULL ) xrtValueRelease(pConfig);
+					return iRet;
+				}
 				iDiagnostics++;
 			}
 		}
 		if ( pConfig != NULL ) {
 			xrtValueRelease(pConfig);
+			pConfig = NULL;
 		}
 		if ( tNode.sType != NULL && strcmp(tNode.sType, "start") == 0 ) {
 			iStartCount++;
@@ -1337,7 +1609,7 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
-		if ( !tEdge.bInvalid ) {
+		if ( tEdge.iFromNode >= 0 && tEdge.iFromPort >= 0 && tEdge.iToNode >= 0 && tEdge.iToPort >= 0 ) {
 			iRet = xuiFlowGraphGetPort(pWorkflow->pGraph, tEdge.iFromNode, tEdge.iFromPort, &tFromPort);
 			if ( iRet != XUI_OK ) return iRet;
 			iRet = xuiFlowGraphGetPort(pWorkflow->pGraph, tEdge.iToNode, tEdge.iToPort, &tToPort);
@@ -1353,8 +1625,22 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
 				if ( iRet != XUI_OK ) return iRet;
 				iDiagnostics++;
+				continue;
 			}
-			continue;
+			if ( tFromPort.iKind != tEdge.iKind || tToPort.iKind != tEdge.iKind ) {
+				memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+				tDiagnostic.iSize = sizeof(tDiagnostic);
+				tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
+				tDiagnostic.sCode = "workflow.edge.kind";
+				tDiagnostic.sMessage = "Workflow edge kind must match both connected ports.";
+				tDiagnostic.sEdge = tEdge.sId;
+				tDiagnostic.sPath = "edges";
+				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
+				if ( iRet != XUI_OK ) return iRet;
+				iDiagnostics++;
+				continue;
+			}
+			if ( !tEdge.bInvalid ) continue;
 		}
 		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
 		tDiagnostic.iSize = sizeof(tDiagnostic);
@@ -1370,35 +1656,23 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 		}
 		iDiagnostics++;
 	}
-	if ( iNodeCount > 0 && iCount > 0 ) {
-		for ( i = 0; i < iCount && !iCycleFound; ++i ) {
-			iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, i, &tEdge);
-			if ( iRet != XUI_OK ) return iRet;
-			if ( tEdge.bInvalid || tEdge.iKind != XUI_FLOW_PORT_CONTROL || tEdge.iFromNode < 0 || tEdge.iToNode < 0 ) {
-				continue;
-			}
-			pReachable = (int*)xrtCalloc((uint32_t)iNodeCount, sizeof(int));
-			if ( pReachable == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-			pReachable[tEdge.iToNode] = 1;
-			do {
-				bChanged = 0;
-				for ( j = 0; j < iCount; ++j ) {
-					xui_flow_edge_info_t tWalkEdge;
-					iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, j, &tWalkEdge);
-					if ( iRet != XUI_OK ) {
-						xrtFree(pReachable);
-						return iRet;
-					}
-					if ( tWalkEdge.bInvalid || tWalkEdge.iKind != XUI_FLOW_PORT_CONTROL || tWalkEdge.iFromNode < 0 || tWalkEdge.iToNode < 0 ) {
-						continue;
-					}
-					if ( pReachable[tWalkEdge.iFromNode] && !pReachable[tWalkEdge.iToNode] ) {
-						pReachable[tWalkEdge.iToNode] = 1;
-						bChanged = 1;
-					}
-				}
-			} while ( bChanged );
-			if ( pReachable[tEdge.iFromNode] ) {
+	iRet = __xuiWorkflowValidatePortConnections(pWorkflow, &iDiagnostics);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	if ( iNodeCount > 0 ) {
+		pReachable = (int*)xrtCalloc((uint32_t)iNodeCount, sizeof(int));
+		if ( pReachable == NULL ) {
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		iRet = __xuiWorkflowAnalyzeControlGraph(pWorkflow, pReachable, &iCycleEdge);
+		if ( iRet != XUI_OK ) {
+			xrtFree(pReachable);
+			return iRet;
+		}
+		if ( iCycleEdge >= 0 ) {
+			iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, iCycleEdge, &tEdge);
+			if ( iRet == XUI_OK ) {
 				memset(&tDiagnostic, 0, sizeof(tDiagnostic));
 				tDiagnostic.iSize = sizeof(tDiagnostic);
 				tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
@@ -1407,71 +1681,35 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 				tDiagnostic.sEdge = tEdge.sId;
 				tDiagnostic.sPath = "edges";
 				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
-				xrtFree(pReachable);
-				pReachable = NULL;
-				if ( iRet != XUI_OK ) return iRet;
-				iDiagnostics++;
-				iCycleFound = 1;
-				break;
 			}
-			xrtFree(pReachable);
-			pReachable = NULL;
-		}
-	}
-	if ( iStartCount > 0 && iNodeCount > 0 ) {
-		pReachable = (int*)xrtCalloc((uint32_t)iNodeCount, sizeof(int));
-		if ( pReachable == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		for ( i = 0; i < iNodeCount; ++i ) {
-			iRet = xuiFlowGraphGetNode(pWorkflow->pGraph, i, &tNode);
-			if ( iRet != XUI_OK ) {
-				xrtFree(pReachable);
-				return iRet;
-			}
-			if ( tNode.sType != NULL && strcmp(tNode.sType, "start") == 0 ) {
-				pReachable[i] = 1;
-			}
-		}
-		do {
-			bChanged = 0;
-			for ( j = 0; j < iCount; ++j ) {
-				iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, j, &tEdge);
-				if ( iRet != XUI_OK ) {
-					xrtFree(pReachable);
-					return iRet;
-				}
-				if ( tEdge.bInvalid || tEdge.iKind != XUI_FLOW_PORT_CONTROL || tEdge.iFromNode < 0 || tEdge.iToNode < 0 ) {
-					continue;
-				}
-				if ( pReachable[tEdge.iFromNode] && !pReachable[tEdge.iToNode] ) {
-					pReachable[tEdge.iToNode] = 1;
-					bChanged = 1;
-				}
-			}
-		} while ( bChanged );
-		for ( i = 0; i < iNodeCount; ++i ) {
-			if ( pReachable[i] ) {
-				continue;
-			}
-			iRet = xuiFlowGraphGetNode(pWorkflow->pGraph, i, &tNode);
-			if ( iRet != XUI_OK ) {
-				xrtFree(pReachable);
-				return iRet;
-			}
-			memset(&tDiagnostic, 0, sizeof(tDiagnostic));
-			tDiagnostic.iSize = sizeof(tDiagnostic);
-			tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
-			tDiagnostic.sCode = "workflow.node.unreachable";
-			tDiagnostic.sMessage = "Workflow node is not reachable from a Start node.";
-			tDiagnostic.sNode = tNode.sId;
-			tDiagnostic.sPath = "nodes";
-			iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
 			if ( iRet != XUI_OK ) {
 				xrtFree(pReachable);
 				return iRet;
 			}
 			iDiagnostics++;
+		}
+		if ( iStartCount > 0 ) {
+			for ( i = 0; i < iNodeCount; ++i ) {
+				if ( pReachable[i] ) continue;
+				iRet = xuiFlowGraphGetNode(pWorkflow->pGraph, i, &tNode);
+				if ( iRet != XUI_OK ) {
+					xrtFree(pReachable);
+					return iRet;
+				}
+				memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+				tDiagnostic.iSize = sizeof(tDiagnostic);
+				tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
+				tDiagnostic.sCode = "workflow.node.unreachable";
+				tDiagnostic.sMessage = "Workflow node is not reachable from a Start node.";
+				tDiagnostic.sNode = tNode.sId;
+				tDiagnostic.sPath = "nodes";
+				iRet = xuiFlowGraphAddDiagnostic(pWorkflow->pGraph, &tDiagnostic, NULL);
+				if ( iRet != XUI_OK ) {
+					xrtFree(pReachable);
+					return iRet;
+				}
+				iDiagnostics++;
+			}
 		}
 		xrtFree(pReachable);
 	}
@@ -1483,6 +1721,9 @@ XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 {
 	xui_flow_node_info_t tInfo;
 	xui_workflow_type_model_t* pType;
+	xui_flow_port_desc_t arrNewPorts[32];
+	char sSummary[256];
+	int iNewPortCount;
 	int iDiagnostics;
 	int iRet;
 
@@ -1497,18 +1738,20 @@ XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 	if ( iDiagnostics > 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = xuiFlowGraphSetNodeConfig(pWorkflow->pGraph, sId, pConfig);
-	if ( iRet == XUI_OK ) {
-		pType = __xuiWorkflowFindTypeModel(pWorkflow, tInfo.sType);
-		if ( pType == NULL ) {
-			return XUI_ERROR_INVALID_ARGUMENT;
-		}
-		iRet = __xuiWorkflowRebuildDynamicPorts(pWorkflow, pType, sId, pConfig);
+	pType = __xuiWorkflowFindTypeModel(pWorkflow, tInfo.sType);
+	if ( pType == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( iRet == XUI_OK ) {
-		iRet = __xuiWorkflowRefreshNodeSummary(pWorkflow, sId, tInfo.sType, pConfig);
+	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sId, pConfig, arrNewPorts, (int)(sizeof(arrNewPorts) / sizeof(arrNewPorts[0])), &iNewPortCount);
+	if ( iRet != XUI_OK ) {
+		return iRet;
 	}
-	return iRet;
+	iRet = __xuiWorkflowBuildNodeSummary(pWorkflow, tInfo.sType, pConfig,
+		sSummary, (int)sizeof(sSummary));
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiInternalFlowGraphUpdateNodeConfiguration(pWorkflow->pGraph, sId,
+		pConfig, arrNewPorts, iNewPortCount, pType->onDynamicPorts != NULL,
+		(sSummary[0] != 0) ? sSummary : NULL);
 }
 
 XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue** ppConfig)
@@ -1521,12 +1764,27 @@ XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 
 XUI_API int xuiWorkflowMakeVariableId(xui_workflow pWorkflow, char* sBuffer, int iCapacity)
 {
+	char sId[32];
+	uint32_t iNext;
+	int iLength;
+
 	if ( (pWorkflow == NULL) || (sBuffer == NULL) || (iCapacity <= 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	sBuffer[0] = '\0';
+	iNext = pWorkflow->iNextVariableId;
 	do {
-		snprintf(sBuffer, (size_t)iCapacity, "var_%u", ++pWorkflow->iNextVariableId);
-	} while ( __xuiWorkflowDictFindIndex(&pWorkflow->mapVariables, sBuffer) >= 0 );
+		if ( iNext == UINT32_MAX ) {
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		iNext++;
+		iLength = snprintf(sId, sizeof(sId), "var_%u", iNext);
+		if ( iLength < 0 || iLength >= (int)sizeof(sId) || iLength >= iCapacity ) {
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+	} while ( __xuiWorkflowDictFindIndex(&pWorkflow->mapVariables, sId) >= 0 );
+	memcpy(sBuffer, sId, (size_t)iLength + 1u);
+	pWorkflow->iNextVariableId = iNext;
 	return XUI_OK;
 }
 
@@ -1537,6 +1795,9 @@ XUI_API int xuiWorkflowAddVariable(xui_workflow pWorkflow, const xui_workflow_va
 	int iIndex;
 	int iRet;
 
+	if ( pIndex != NULL ) {
+		*pIndex = -1;
+	}
 	if ( (pWorkflow == NULL) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) || (pDesc->sId == NULL) || (pDesc->sId[0] == 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -1554,14 +1815,12 @@ XUI_API int xuiWorkflowAddVariable(xui_workflow pWorkflow, const xui_workflow_va
 	pVariable->sTitle = __xuiWorkflowCopyString(pDesc->sTitle);
 	pVariable->sType = __xuiWorkflowCopyString(pDesc->sType);
 	pVariable->sScope = __xuiWorkflowCopyString(pDesc->sScope);
-	pVariable->pDefaultValue = pDesc->pDefaultValue;
-	if ( pVariable->pDefaultValue != NULL ) {
-		xrtValueRetain(pVariable->pDefaultValue);
-	}
+	pVariable->pDefaultValue = (pDesc->pDefaultValue != NULL) ? xrtValueDeepClone(pDesc->pDefaultValue) : NULL;
 	if ( pVariable->sId == NULL ||
 	     (pDesc->sTitle != NULL && pVariable->sTitle == NULL) ||
 	     (pDesc->sType != NULL && pVariable->sType == NULL) ||
-	     (pDesc->sScope != NULL && pVariable->sScope == NULL) ) {
+	     (pDesc->sScope != NULL && pVariable->sScope == NULL) ||
+	     (pDesc->pDefaultValue != NULL && pVariable->pDefaultValue == NULL) ) {
 		__xuiWorkflowFreeVariable(pVariable);
 		xuiXrtArrayRemove(&pWorkflow->arrVariables, iPos, 1u);
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1612,6 +1871,18 @@ XUI_API int xuiWorkflowGetVariable(xui_workflow pWorkflow, int iIndex, xui_workf
 static const char* __xuiWorkflowXsonText(xvalue* pValue)
 {
 	return (pValue != NULL && xuiXrtValueType(pValue) == XVALUE_STRING) ? (const char*)xuiXrtValueGetText(pValue) : NULL;
+}
+
+static int __xuiWorkflowXsonOptionalType(xvalue* pValue, int iType)
+{
+	int iValueType = xuiXrtValueType(pValue);
+	return iValueType == XVALUE_NULL || iValueType == iType;
+}
+
+static int __xuiWorkflowXsonOptionalNumber(xvalue* pValue)
+{
+	int iType = xuiXrtValueType(pValue);
+	return iType == XVALUE_NULL || iType == XVALUE_INT || iType == XVALUE_FLOAT;
 }
 
 static int __xuiWorkflowXsonSetText(xvalue* pTable, const char* sKey, const char* sValue)
@@ -1725,9 +1996,12 @@ static int __xuiWorkflowAppendNodeXValue(xui_workflow pWorkflow, xvalue* pNodes,
 		pPorts = NULL;
 	}
 	pConfig = NULL;
-	if ( iRet == XUI_OK && xuiFlowGraphGetNodeConfig(pWorkflow->pGraph, tNode.sId, &pConfig) == XUI_OK ) {
-		iRet = __xuiWorkflowXsonSetValueCopy(pObj, "config", pConfig);
-		xrtValueRelease(pConfig);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiFlowGraphGetNodeConfig(pWorkflow->pGraph, tNode.sId, &pConfig);
+		if ( iRet == XUI_OK && pConfig != NULL ) {
+			iRet = __xuiWorkflowXsonSetValueCopy(pObj, "config", pConfig);
+		}
+		if ( pConfig != NULL ) xrtValueRelease(pConfig);
 	}
 	if ( iRet == XUI_OK && !xuiXrtValueArrayAppendTake(pNodes, pObj, TRUE) ) iRet = XUI_ERROR_OUT_OF_MEMORY;
 	if ( pPorts != NULL ) xrtValueRelease(pPorts);
@@ -1899,8 +2173,21 @@ XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue)
 static int __xuiWorkflowLoadPortXValue(xui_flow_graph pGraph, int iNode, xvalue* pObj)
 {
 	xui_flow_port_desc_t tPort;
+	xvalue* pDirection;
+	xvalue* pKind;
 
 	if ( pObj == NULL || xuiXrtValueType(pObj) != XVALUE_OBJECT ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pDirection = xuiXrtValueObjectGet(pObj, "direction", 0);
+	pKind = xuiXrtValueObjectGet(pObj, "kind", 0);
+	if ( xuiXrtValueType(xuiXrtValueObjectGet(pObj, "id", 0)) != XVALUE_STRING ||
+	     xuiXrtValueType(pDirection) != XVALUE_INT || xuiXrtValueType(pKind) != XVALUE_INT ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "title", 0), XVALUE_STRING) ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "dataType", 0), XVALUE_STRING) ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "required", 0), XVALUE_BOOL) ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "multi", 0), XVALUE_BOOL) ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "dynamic", 0), XVALUE_BOOL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	memset(&tPort, 0, sizeof(tPort));
@@ -1908,8 +2195,8 @@ static int __xuiWorkflowLoadPortXValue(xui_flow_graph pGraph, int iNode, xvalue*
 	tPort.sId = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "id", 0));
 	tPort.sTitle = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "title", 0));
 	tPort.sDataType = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "dataType", 0));
-	tPort.iDirection = (int)xuiXrtValueGetInt(xuiXrtValueObjectGet(pObj, "direction", 0));
-	tPort.iKind = (int)xuiXrtValueGetInt(xuiXrtValueObjectGet(pObj, "kind", 0));
+	tPort.iDirection = (int)xuiXrtValueGetInt(pDirection);
+	tPort.iKind = (int)xuiXrtValueGetInt(pKind);
 	tPort.bRequired = xuiXrtValueGetBool(xuiXrtValueObjectGet(pObj, "required", 0)) ? 1 : 0;
 	tPort.bMulti = xuiXrtValueGetBool(xuiXrtValueObjectGet(pObj, "multi", 0)) ? 1 : 0;
 	tPort.bDynamic = xuiXrtValueGetBool(xuiXrtValueObjectGet(pObj, "dynamic", 0)) ? 1 : 0;
@@ -1921,11 +2208,29 @@ static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	xui_flow_node_desc_t tNode;
 	xvalue* pPorts;
 	xvalue* pConfig;
+	xvalue* pRunPreview;
+	xvalue* pRunState;
 	uint32_t i;
 	int iNode;
 	int iRet;
 
 	if ( pObj == NULL || xuiXrtValueType(pObj) != XVALUE_OBJECT ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xuiXrtValueType(xuiXrtValueObjectGet(pObj, "id", 0)) != XVALUE_STRING ||
+	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "type", 0)) != XVALUE_STRING ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "title", 0), XVALUE_STRING) ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "summary", 0), XVALUE_STRING) ||
+	     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pObj, "x", 0)) ||
+	     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pObj, "y", 0)) ||
+	     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pObj, "w", 0)) ||
+	     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pObj, "h", 0)) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pRunState = xuiXrtValueObjectGet(pObj, "runState", 0);
+	pRunPreview = xuiXrtValueObjectGet(pObj, "runPreview", 0);
+	if ( !__xuiWorkflowXsonOptionalType(pRunState, XVALUE_INT) ||
+	     !__xuiWorkflowXsonOptionalType(pRunPreview, XVALUE_STRING) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	memset(&tNode, 0, sizeof(tNode));
@@ -1943,6 +2248,9 @@ static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
 		return iRet;
 	}
 	pPorts = xuiXrtValueObjectGet(pObj, "ports", 0);
+	if ( pPorts != NULL && xuiXrtValueType(pPorts) != XVALUE_NULL && xuiXrtValueType(pPorts) != XVALUE_ARRAY ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	if ( pPorts != NULL && xuiXrtValueType(pPorts) == XVALUE_ARRAY ) {
 		for ( i = 0u; i < xrtValueCount(pPorts); ++i ) {
 			iRet = __xuiWorkflowLoadPortXValue(pGraph, iNode, xuiXrtValueArrayGet(pPorts, i));
@@ -1953,12 +2261,14 @@ static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	}
 	pConfig = xuiXrtValueObjectGet(pObj, "config", 0);
 	if ( pConfig != NULL && xuiXrtValueType(pConfig) != XVALUE_NULL ) {
+		if ( xuiXrtValueType(pConfig) != XVALUE_OBJECT ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
 		iRet = xuiFlowGraphSetNodeConfig(pGraph, tNode.sId, pConfig);
 	}
 	if ( iRet == XUI_OK ) {
-		xvalue* pRunState = xuiXrtValueObjectGet(pObj, "runState", 0);
 		if ( pRunState != NULL && xuiXrtValueType(pRunState) != XVALUE_NULL ) {
-			iRet = xuiFlowGraphSetNodeRunState(pGraph, tNode.sId, (int)xuiXrtValueGetInt(pRunState), __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "runPreview", 0)));
+			iRet = xuiFlowGraphSetNodeRunState(pGraph, tNode.sId, (int)xuiXrtValueGetInt(pRunState), __xuiWorkflowXsonText(pRunPreview));
 		}
 	}
 	return iRet;
@@ -1968,8 +2278,28 @@ static int __xuiWorkflowLoadEdgeXValue(xui_flow_graph pGraph, xvalue* pObj)
 {
 	xui_flow_edge_desc_t tEdge;
 	xvalue* pRoute;
+	xvalue* pRouteBias;
+	xvalue* pRouteSourceOffset;
+	xvalue* pRouteStyle;
+	xvalue* pRouteTargetOffset;
+	xvalue* pRunPreview;
+	xvalue* pRunState;
 
 	if ( pObj == NULL || xuiXrtValueType(pObj) != XVALUE_OBJECT ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xuiXrtValueType(xuiXrtValueObjectGet(pObj, "id", 0)) != XVALUE_STRING ||
+	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "kind", 0)) != XVALUE_INT ||
+	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "fromNode", 0)) != XVALUE_STRING ||
+	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "fromPort", 0)) != XVALUE_STRING ||
+	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "toNode", 0)) != XVALUE_STRING ||
+	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "toPort", 0)) != XVALUE_STRING ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pRunState = xuiXrtValueObjectGet(pObj, "runState", 0);
+	pRunPreview = xuiXrtValueObjectGet(pObj, "runPreview", 0);
+	if ( !__xuiWorkflowXsonOptionalType(pRunState, XVALUE_INT) ||
+	     !__xuiWorkflowXsonOptionalType(pRunPreview, XVALUE_STRING) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	memset(&tEdge, 0, sizeof(tEdge));
@@ -1981,17 +2311,29 @@ static int __xuiWorkflowLoadEdgeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	tEdge.sToNode = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "toNode", 0));
 	tEdge.sToPort = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "toPort", 0));
 	pRoute = xuiXrtValueObjectGet(pObj, "route", 0);
-	if ( pRoute != NULL && xuiXrtValueType(pRoute) == XVALUE_OBJECT ) {
-		tEdge.iRouteStyle = (int)xuiXrtValueGetInt(xuiXrtValueObjectGet(pRoute, "style", 0));
-		tEdge.fRouteBias = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pRoute, "bias", 0));
-		tEdge.fRouteSourceOffset = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pRoute, "sourceOffset", 0));
-		tEdge.fRouteTargetOffset = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pRoute, "targetOffset", 0));
+	if ( pRoute != NULL && xuiXrtValueType(pRoute) != XVALUE_NULL ) {
+		if ( xuiXrtValueType(pRoute) != XVALUE_OBJECT ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		pRouteStyle = xuiXrtValueObjectGet(pRoute, "style", 0);
+		pRouteBias = xuiXrtValueObjectGet(pRoute, "bias", 0);
+		pRouteSourceOffset = xuiXrtValueObjectGet(pRoute, "sourceOffset", 0);
+		pRouteTargetOffset = xuiXrtValueObjectGet(pRoute, "targetOffset", 0);
+		if ( !__xuiWorkflowXsonOptionalType(pRouteStyle, XVALUE_INT) ||
+		     !__xuiWorkflowXsonOptionalNumber(pRouteBias) ||
+		     !__xuiWorkflowXsonOptionalNumber(pRouteSourceOffset) ||
+		     !__xuiWorkflowXsonOptionalNumber(pRouteTargetOffset) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		tEdge.iRouteStyle = (int)xuiXrtValueGetInt(pRouteStyle);
+		tEdge.fRouteBias = (float)xuiXrtValueGetFloat(pRouteBias);
+		tEdge.fRouteSourceOffset = (float)xuiXrtValueGetFloat(pRouteSourceOffset);
+		tEdge.fRouteTargetOffset = (float)xuiXrtValueGetFloat(pRouteTargetOffset);
 	}
 	{
 		int iRet = xuiFlowGraphAddEdgePreserveInvalid(pGraph, &tEdge, NULL);
-		xvalue* pRunState = xuiXrtValueObjectGet(pObj, "runState", 0);
 		if ( iRet == XUI_OK && pRunState != NULL && xuiXrtValueType(pRunState) != XVALUE_NULL ) {
-			iRet = xuiFlowGraphSetEdgeRunState(pGraph, tEdge.sId, (int)xuiXrtValueGetInt(pRunState), __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "runPreview", 0)));
+			iRet = xuiFlowGraphSetEdgeRunState(pGraph, tEdge.sId, (int)xuiXrtValueGetInt(pRunState), __xuiWorkflowXsonText(pRunPreview));
 		}
 		return iRet;
 	}
@@ -2003,6 +2345,12 @@ static int __xuiWorkflowLoadVariableXValue(xui_workflow pWorkflow, xvalue* pObj)
 	xvalue* pDefault;
 
 	if ( pObj == NULL || xuiXrtValueType(pObj) != XVALUE_OBJECT ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xuiXrtValueType(xuiXrtValueObjectGet(pObj, "id", 0)) != XVALUE_STRING ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "title", 0), XVALUE_STRING) ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "type", 0), XVALUE_STRING) ||
+	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "scope", 0), XVALUE_STRING) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	memset(&tVariable, 0, sizeof(tVariable));
@@ -2021,11 +2369,15 @@ static int __xuiWorkflowLoadVariableXValue(xui_workflow pWorkflow, xvalue* pObj)
 XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 {
 	xui_flow_graph pGraph;
+	xui_workflow pVariablesWorkflow;
 	xvalue* pNodes;
 	xvalue* pEdges;
 	xvalue* pVariables;
 	xvalue* pViewportValue;
 	xui_flow_viewport_t tViewport;
+	xarray arrVariables;
+	xmap mapVariables;
+	uint32_t iNextVariableId;
 	uint32_t i;
 	int iRet;
 
@@ -2038,6 +2390,10 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 	if ( (pNodes == NULL) || (xuiXrtValueType(pNodes) != XVALUE_ARRAY) || (pEdges == NULL) || (xuiXrtValueType(pEdges) != XVALUE_ARRAY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pVariables != NULL && xuiXrtValueType(pVariables) != XVALUE_ARRAY ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pVariablesWorkflow = NULL;
 	iRet = xuiFlowGraphCreate(&pGraph);
 	if ( iRet != XUI_OK ) {
 		return iRet;
@@ -2057,31 +2413,70 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 		}
 	}
 	pViewportValue = xuiXrtValueObjectGet(pValue, "viewport", 0);
+	if ( pViewportValue != NULL && xuiXrtValueType(pViewportValue) != XVALUE_NULL && xuiXrtValueType(pViewportValue) != XVALUE_OBJECT ) {
+		xuiFlowGraphDestroy(pGraph);
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	if ( pViewportValue != NULL && xuiXrtValueType(pViewportValue) == XVALUE_OBJECT ) {
+		xvalue* pField;
+		if ( !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pViewportValue, "panX", 0)) ||
+		     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pViewportValue, "panY", 0)) ||
+		     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pViewportValue, "zoom", 0)) ||
+		     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pViewportValue, "width", 0)) ||
+		     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pViewportValue, "height", 0)) ) {
+			xuiFlowGraphDestroy(pGraph);
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
 		memset(&tViewport, 0, sizeof(tViewport));
 		tViewport.iSize = sizeof(tViewport);
-		tViewport.fPanX = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pViewportValue, "panX", 0));
-		tViewport.fPanY = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pViewportValue, "panY", 0));
-		tViewport.fZoom = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pViewportValue, "zoom", 0));
-		tViewport.fWidth = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pViewportValue, "width", 0));
-		tViewport.fHeight = (float)xuiXrtValueGetFloat(xuiXrtValueObjectGet(pViewportValue, "height", 0));
+		iRet = xuiFlowGraphGetViewport(pGraph, &tViewport);
+		if ( iRet != XUI_OK ) {
+			xuiFlowGraphDestroy(pGraph);
+			return iRet;
+		}
+		pField = xuiXrtValueObjectGet(pViewportValue, "panX", 0);
+		if ( pField != NULL && xuiXrtValueType(pField) != XVALUE_NULL ) tViewport.fPanX = (float)xuiXrtValueGetFloat(pField);
+		pField = xuiXrtValueObjectGet(pViewportValue, "panY", 0);
+		if ( pField != NULL && xuiXrtValueType(pField) != XVALUE_NULL ) tViewport.fPanY = (float)xuiXrtValueGetFloat(pField);
+		pField = xuiXrtValueObjectGet(pViewportValue, "zoom", 0);
+		if ( pField != NULL && xuiXrtValueType(pField) != XVALUE_NULL ) tViewport.fZoom = (float)xuiXrtValueGetFloat(pField);
+		pField = xuiXrtValueObjectGet(pViewportValue, "width", 0);
+		if ( pField != NULL && xuiXrtValueType(pField) != XVALUE_NULL ) tViewport.fWidth = (float)xuiXrtValueGetFloat(pField);
+		pField = xuiXrtValueObjectGet(pViewportValue, "height", 0);
+		if ( pField != NULL && xuiXrtValueType(pField) != XVALUE_NULL ) tViewport.fHeight = (float)xuiXrtValueGetFloat(pField);
 		iRet = xuiFlowGraphSetViewport(pGraph, &tViewport);
 		if ( iRet != XUI_OK ) {
 			xuiFlowGraphDestroy(pGraph);
 			return iRet;
 		}
 	}
-	xuiFlowGraphDestroy(pWorkflow->pGraph);
-	pWorkflow->pGraph = pGraph;
-	__xuiWorkflowClearVariables(pWorkflow);
-	if ( pVariables != NULL && xuiXrtValueType(pVariables) == XVALUE_ARRAY ) {
+	iRet = xuiWorkflowCreate(&pVariablesWorkflow);
+	if ( iRet != XUI_OK ) {
+		xuiFlowGraphDestroy(pGraph);
+		return iRet;
+	}
+	if ( pVariables != NULL ) {
 		for ( i = 0u; i < xrtValueCount(pVariables); ++i ) {
-			iRet = __xuiWorkflowLoadVariableXValue(pWorkflow, xuiXrtValueArrayGet(pVariables, i));
+			iRet = __xuiWorkflowLoadVariableXValue(pVariablesWorkflow, xuiXrtValueArrayGet(pVariables, i));
 			if ( iRet != XUI_OK ) {
+				xuiWorkflowDestroy(pVariablesWorkflow);
+				xuiFlowGraphDestroy(pGraph);
 				return iRet;
 			}
 		}
 	}
+	xuiInternalFlowGraphSwapContents(pWorkflow->pGraph, pGraph);
+	xuiFlowGraphDestroy(pGraph);
+	arrVariables = pWorkflow->arrVariables;
+	pWorkflow->arrVariables = pVariablesWorkflow->arrVariables;
+	pVariablesWorkflow->arrVariables = arrVariables;
+	mapVariables = pWorkflow->mapVariables;
+	pWorkflow->mapVariables = pVariablesWorkflow->mapVariables;
+	pVariablesWorkflow->mapVariables = mapVariables;
+	iNextVariableId = pWorkflow->iNextVariableId;
+	pWorkflow->iNextVariableId = pVariablesWorkflow->iNextVariableId;
+	pVariablesWorkflow->iNextVariableId = iNextVariableId;
+	xuiWorkflowDestroy(pVariablesWorkflow);
 	return XUI_OK;
 }
 
@@ -2130,47 +2525,8 @@ static int __xuiWorkflowEdgeRunStateValid(int iState)
 	return (iState >= XUI_WORKFLOW_EDGE_RUN_IDLE && iState <= XUI_WORKFLOW_EDGE_RUN_INVALID);
 }
 
-static int __xuiWorkflowFindNodeRunState(xui_workflow pWorkflow, const char* sNodeId)
-{
-	xui_workflow_node_run_state_model_t* pState;
-	uint32_t i;
-
-	if ( (pWorkflow == NULL) || (sNodeId == NULL) || (sNodeId[0] == 0) ) {
-		return -1;
-	}
-	for ( i = 1u; i <= pWorkflow->tRuntime.arrNodeStates.Count; ++i ) {
-		pState = (xui_workflow_node_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrNodeStates, i);
-		if ( pState->sNodeId != NULL && strcmp(pState->sNodeId, sNodeId) == 0 ) {
-			return (int)i - 1;
-		}
-	}
-	return -1;
-}
-
-static int __xuiWorkflowFindEdgeRunState(xui_workflow pWorkflow, const char* sEdgeId)
-{
-	xui_workflow_edge_run_state_model_t* pState;
-	uint32_t i;
-
-	if ( (pWorkflow == NULL) || (sEdgeId == NULL) || (sEdgeId[0] == 0) ) {
-		return -1;
-	}
-	for ( i = 1u; i <= pWorkflow->tRuntime.arrEdgeStates.Count; ++i ) {
-		pState = (xui_workflow_edge_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrEdgeStates, i);
-		if ( pState->sEdgeId != NULL && strcmp(pState->sEdgeId, sEdgeId) == 0 ) {
-			return (int)i - 1;
-		}
-	}
-	return -1;
-}
-
 XUI_API int xuiWorkflowSetNodeRunState(xui_workflow pWorkflow, const xui_workflow_node_run_state_t* pState)
 {
-	xui_workflow_node_run_state_model_t* pModel;
-	char* sPreview;
-	uint32_t iPos;
-	int iIndex;
-
 	if ( (pWorkflow == NULL) || (pState == NULL) || (pState->iSize < sizeof(*pState)) ||
 	     (pState->sNodeId == NULL) || (pState->sNodeId[0] == 0) || !__xuiWorkflowNodeRunStateValid(pState->iState) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2178,66 +2534,38 @@ XUI_API int xuiWorkflowSetNodeRunState(xui_workflow pWorkflow, const xui_workflo
 	if ( xuiFlowGraphFindNode(pWorkflow->pGraph, pState->sNodeId) < 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sPreview = __xuiWorkflowCopyString(pState->sPreview);
-	if ( pState->sPreview != NULL && sPreview == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	iIndex = __xuiWorkflowFindNodeRunState(pWorkflow, pState->sNodeId);
-	if ( iIndex >= 0 ) {
-		pModel = (xui_workflow_node_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrNodeStates, (uint32_t)iIndex + 1u);
-		xrtFree(pModel->sPreview);
-		pModel->sPreview = sPreview;
-		pModel->iState = pState->iState;
-		return xuiFlowGraphSetNodeRunState(pWorkflow->pGraph, pState->sNodeId, pState->iState, pState->sPreview);
-	}
-	iPos = xuiXrtArrayAppendSpace(&pWorkflow->tRuntime.arrNodeStates, 1u);
-	if ( iPos == 0u ) {
-		xrtFree(sPreview);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	pModel = (xui_workflow_node_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrNodeStates, iPos);
-	memset(pModel, 0, sizeof(*pModel));
-	pModel->sNodeId = __xuiWorkflowCopyString(pState->sNodeId);
-	pModel->sPreview = sPreview;
-	pModel->iState = pState->iState;
-	if ( pModel->sNodeId == NULL ) {
-		__xuiWorkflowFreeNodeRunState(pModel);
-		xuiXrtArrayRemove(&pWorkflow->tRuntime.arrNodeStates, iPos, 1u);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
 	return xuiFlowGraphSetNodeRunState(pWorkflow->pGraph, pState->sNodeId, pState->iState, pState->sPreview);
 }
 
 XUI_API int xuiWorkflowGetNodeRunState(xui_workflow pWorkflow, const char* sNodeId, xui_workflow_node_run_state_t* pState)
 {
-	xui_workflow_node_run_state_model_t* pModel;
+	xui_flow_node_info_t tNode;
 	int iIndex;
+	int iRet;
 
 	if ( (pWorkflow == NULL) || (sNodeId == NULL) || (sNodeId[0] == 0) || (pState == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iIndex = __xuiWorkflowFindNodeRunState(pWorkflow, sNodeId);
+	iIndex = xuiFlowGraphFindNode(pWorkflow->pGraph, sNodeId);
+	if ( iIndex < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiFlowGraphGetNode(pWorkflow->pGraph, iIndex, &tNode);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
 	memset(pState, 0, sizeof(*pState));
 	pState->iSize = sizeof(*pState);
-	pState->sNodeId = sNodeId;
-	if ( iIndex < 0 ) {
-		pState->iState = XUI_WORKFLOW_NODE_RUN_IDLE;
-		return XUI_OK;
-	}
-	pModel = (xui_workflow_node_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrNodeStates, (uint32_t)iIndex + 1u);
-	pState->sNodeId = pModel->sNodeId;
-	pState->iState = pModel->iState;
-	pState->sPreview = pModel->sPreview;
+	pState->sNodeId = tNode.sId;
+	pState->iState = tNode.iRunState;
+	pState->sPreview = tNode.sRunPreview;
 	return XUI_OK;
 }
 
 XUI_API int xuiWorkflowSetEdgeRunState(xui_workflow pWorkflow, const xui_workflow_edge_run_state_t* pState)
 {
-	xui_workflow_edge_run_state_model_t* pModel;
-	char* sPreview;
-	uint32_t iPos;
-	int iIndex;
-
 	if ( (pWorkflow == NULL) || (pState == NULL) || (pState->iSize < sizeof(*pState)) ||
 	     (pState->sEdgeId == NULL) || (pState->sEdgeId[0] == 0) || !__xuiWorkflowEdgeRunStateValid(pState->iState) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2245,56 +2573,33 @@ XUI_API int xuiWorkflowSetEdgeRunState(xui_workflow pWorkflow, const xui_workflo
 	if ( xuiFlowGraphFindEdge(pWorkflow->pGraph, pState->sEdgeId) < 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sPreview = __xuiWorkflowCopyString(pState->sPreview);
-	if ( pState->sPreview != NULL && sPreview == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	iIndex = __xuiWorkflowFindEdgeRunState(pWorkflow, pState->sEdgeId);
-	if ( iIndex >= 0 ) {
-		pModel = (xui_workflow_edge_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrEdgeStates, (uint32_t)iIndex + 1u);
-		xrtFree(pModel->sPreview);
-		pModel->sPreview = sPreview;
-		pModel->iState = pState->iState;
-		return xuiFlowGraphSetEdgeRunState(pWorkflow->pGraph, pState->sEdgeId, pState->iState, pState->sPreview);
-	}
-	iPos = xuiXrtArrayAppendSpace(&pWorkflow->tRuntime.arrEdgeStates, 1u);
-	if ( iPos == 0u ) {
-		xrtFree(sPreview);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	pModel = (xui_workflow_edge_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrEdgeStates, iPos);
-	memset(pModel, 0, sizeof(*pModel));
-	pModel->sEdgeId = __xuiWorkflowCopyString(pState->sEdgeId);
-	pModel->sPreview = sPreview;
-	pModel->iState = pState->iState;
-	if ( pModel->sEdgeId == NULL ) {
-		__xuiWorkflowFreeEdgeRunState(pModel);
-		xuiXrtArrayRemove(&pWorkflow->tRuntime.arrEdgeStates, iPos, 1u);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
 	return xuiFlowGraphSetEdgeRunState(pWorkflow->pGraph, pState->sEdgeId, pState->iState, pState->sPreview);
 }
 
 XUI_API int xuiWorkflowGetEdgeRunState(xui_workflow pWorkflow, const char* sEdgeId, xui_workflow_edge_run_state_t* pState)
 {
-	xui_workflow_edge_run_state_model_t* pModel;
+	xui_flow_edge_info_t tEdge;
 	int iIndex;
+	int iRet;
 
 	if ( (pWorkflow == NULL) || (sEdgeId == NULL) || (sEdgeId[0] == 0) || (pState == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iIndex = __xuiWorkflowFindEdgeRunState(pWorkflow, sEdgeId);
+	iIndex = xuiFlowGraphFindEdge(pWorkflow->pGraph, sEdgeId);
+	if ( iIndex < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	memset(&tEdge, 0, sizeof(tEdge));
+	tEdge.iSize = sizeof(tEdge);
+	iRet = xuiFlowGraphGetEdge(pWorkflow->pGraph, iIndex, &tEdge);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
 	memset(pState, 0, sizeof(*pState));
 	pState->iSize = sizeof(*pState);
-	pState->sEdgeId = sEdgeId;
-	if ( iIndex < 0 ) {
-		pState->iState = XUI_WORKFLOW_EDGE_RUN_IDLE;
-		return XUI_OK;
-	}
-	pModel = (xui_workflow_edge_run_state_model_t*)xuiXrtArrayGet(&pWorkflow->tRuntime.arrEdgeStates, (uint32_t)iIndex + 1u);
-	pState->sEdgeId = pModel->sEdgeId;
-	pState->iState = pModel->iState;
-	pState->sPreview = pModel->sPreview;
+	pState->sEdgeId = tEdge.sId;
+	pState->iState = tEdge.iRunState;
+	pState->sPreview = tEdge.sRunPreview;
 	return XUI_OK;
 }
 

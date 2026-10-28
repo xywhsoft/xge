@@ -1,15 +1,18 @@
 #include "xui_config.h"
 #if XUI_ENABLE_HYPERLINK
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
 #define XUI_HYPERLINK_VISUAL_NORMAL	0
 #define XUI_HYPERLINK_VISUAL_HOVER	1
 #define XUI_HYPERLINK_VISUAL_ACTIVE	2
-#define XUI_HYPERLINK_VISUAL_COUNT	3
+#define XUI_HYPERLINK_VISUAL_FOCUS	3
+#define XUI_HYPERLINK_VISUAL_COUNT	4
 
 typedef struct xui_hyperlink_data_t {
 	char* sText;
@@ -21,20 +24,23 @@ typedef struct xui_hyperlink_data_t {
 	uint32_t iHoverTextColor;
 	uint32_t iActiveTextColor;
 	uint32_t iDisabledTextColor;
+	uint32_t iFocusColor;
 	uint32_t iTextFlags;
 	int iWrapMode;
 	int bUnderline;
 	int bHoverUnderline;
 	int bActiveUnderline;
 	int bKeyboardActive;
+	xui_pointer_press_t tPointerPress;
 	int iClickCount;
 	float fLineGap;
 	float fParagraphGap;
+	float fFocusWidth;
 } xui_hyperlink_data_t;
 
 static int __xuiHyperlinkNonNegativeFloatValid(float fValue)
 {
-	return isfinite(fValue) && fValue >= 0.0f;
+	return isfinite(fValue) && fValue >= 0.0f && fValue <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static int __xuiHyperlinkWrapModeValid(int iWrapMode)
@@ -65,6 +71,7 @@ static int __xuiHyperlinkDescValid(const xui_hyperlink_desc_t* pDesc)
 static int __xuiHyperlinkTextSet(xui_hyperlink_data_t* pData, const char* sText)
 {
 	char* sNew;
+	size_t iLength;
 	int iNeed;
 
 	if ( pData == NULL ) {
@@ -73,7 +80,9 @@ static int __xuiHyperlinkTextSet(xui_hyperlink_data_t* pData, const char* sText)
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iNeed = (int)strlen(sText) + 1;
+	iLength = strlen(sText);
+	if ( iLength >= (size_t)INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+	iNeed = (int)iLength + 1;
 	if ( iNeed > pData->iTextCapacity ) {
 		sNew = (char*)xrtRealloc(pData->sText, (size_t)iNeed);
 		if ( sNew == NULL ) {
@@ -82,7 +91,7 @@ static int __xuiHyperlinkTextSet(xui_hyperlink_data_t* pData, const char* sText)
 		pData->sText = sNew;
 		pData->iTextCapacity = iNeed;
 	}
-	memcpy(pData->sText, sText, (size_t)iNeed);
+	memmove(pData->sText, sText, (size_t)iNeed);
 	return XUI_OK;
 }
 
@@ -107,7 +116,7 @@ static int __xuiHyperlinkQueryCursor(xui_widget pWidget, int iX, int iY, void* p
 	(void)iX;
 	(void)iY;
 	(void)pUser;
-	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_HAND : XUI_CURSOR_NOT_ALLOWED;
+	return xuiWidgetGetEffectiveEnabled(pWidget) ? XUI_CURSOR_HAND : XUI_CURSOR_NOT_ALLOWED;
 }
 
 static int __xuiHyperlinkStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
@@ -187,6 +196,9 @@ static int __xuiHyperlinkVisualIndexFromStateId(uint32_t iStateId)
 	if ( (iStateId & XUI_WIDGET_STATE_HOVER) != 0 ) {
 		return XUI_HYPERLINK_VISUAL_HOVER;
 	}
+	if ( (iStateId & XUI_WIDGET_STATE_FOCUS) != 0 ) {
+		return XUI_HYPERLINK_VISUAL_FOCUS;
+	}
 	return XUI_HYPERLINK_VISUAL_NORMAL;
 }
 
@@ -211,6 +223,9 @@ static uint32_t __xuiHyperlinkVisualStateId(uint32_t iState)
 	}
 	if ( (iState & XUI_WIDGET_STATE_HOVER) != 0 ) {
 		return XUI_WIDGET_STATE_HOVER;
+	}
+	if ( (iState & XUI_WIDGET_STATE_FOCUS) != 0 ) {
+		return XUI_WIDGET_STATE_FOCUS;
 	}
 	return 0;
 }
@@ -285,7 +300,7 @@ static void __xuiHyperlinkResolve(xui_widget pWidget, xui_hyperlink_data_t* pDat
 		fParagraphGap = 0.0f;
 	}
 	iVisual = __xuiHyperlinkVisualIndexFromStateId(iStateId);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		*pTextColor = iDisabledTextColor;
 	} else if ( iVisual == XUI_HYPERLINK_VISUAL_ACTIVE ) {
 		*pTextColor = iActiveTextColor;
@@ -371,6 +386,9 @@ static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	uint32_t iLineFlags;
 	float fOffsetY;
 	float fLineBottom;
+	float fFocusInset;
+	float fFocusWidth;
+	uint32_t iFocusColor;
 	int iLine;
 	int iLineCount;
 	int iDisplaySize;
@@ -441,25 +459,48 @@ static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 				continue;
 			}
 		}
-		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iTextColor, iLineFlags);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=iDisplaySize, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iTextColor, iLineFlags);
 		if ( iRet != XUI_OK ) {
 			break;
+		}
+	}
+	if ( iRet == XUI_OK && (iStateId & XUI_WIDGET_STATE_FOCUS) != 0 &&
+	     pProxy->drawRectStroke != NULL ) {
+		iFocusColor = pData->iFocusColor;
+		fFocusWidth = pData->fFocusWidth;
+		(void)__xuiHyperlinkStyleColor(pWidget, "hyperlink.focus.color", &iFocusColor);
+		(void)__xuiHyperlinkStyleFloat(pWidget, "hyperlink.focus.width", &fFocusWidth);
+		if ( fFocusWidth > 0.0f && (iFocusColor & 0xffu) != 0u ) {
+			fFocusInset = fFocusWidth * 0.5f;
+			if ( tContent.fW > fFocusWidth && tContent.fH > fFocusWidth ) {
+				iRet = pProxy->drawRectStroke(pProxy, pDraw,
+					(xui_rect_t){tContent.fX + fFocusInset, tContent.fY + fFocusInset,
+						tContent.fW - fFocusWidth, tContent.fH - fFocusWidth},
+					fFocusWidth, iFocusColor);
+			}
 		}
 	}
 	xuiTextLayoutDestroy(pLayout);
 	return iRet;
 }
 
-static void __xuiHyperlinkDoClick(xui_widget pWidget, xui_hyperlink_data_t* pData)
+static int __xuiHyperlinkDoClick(xui_widget pWidget, xui_hyperlink_data_t* pData)
 {
-	if ( (pWidget == NULL) || (pData == NULL) || !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
-		return;
+	xui_hyperlink_click_proc onClick;
+	void* pClickUser;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		return XUI_OK;
 	}
-	pData->iClickCount++;
-	(void)__xuiHyperlinkSyncState(pWidget, pData);
-	if ( pData->onClick != NULL ) {
-		pData->onClick(pWidget, pData->pClickUser);
-	}
+	if ( pData->iClickCount < INT_MAX ) pData->iClickCount++;
+	iRet = __xuiHyperlinkSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	onClick = pData->onClick;
+	pClickUser = pData->pClickUser;
+	if ( onClick != NULL ) onClick(pWidget, pClickUser);
+	return XUI_OK;
 }
 
 static void __xuiHyperlinkDefaultAction(xui_widget pWidget, void* pUser)
@@ -471,7 +512,7 @@ static void __xuiHyperlinkDefaultAction(xui_widget pWidget, void* pUser)
 	if ( pData == NULL ) {
 		return;
 	}
-	__xuiHyperlinkDoClick(pWidget, pData);
+	(void)__xuiHyperlinkDoClick(pWidget, pData);
 }
 
 static int __xuiHyperlinkEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -479,6 +520,7 @@ static int __xuiHyperlinkEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	xui_hyperlink_data_t* pData;
 	xui_context pContext;
 	int bLeftButton;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) {
@@ -489,10 +531,11 @@ static int __xuiHyperlinkEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		pData->bKeyboardActive = 0;
-		(void)__xuiHyperlinkSyncState(pWidget, pData);
-		return XUI_OK;
+		iRet = xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+		if ( iRet != XUI_OK ) return iRet;
+		return __xuiHyperlinkSyncState(pWidget, pData);
 	}
 	bLeftButton = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	switch ( pEvent->iType ) {
@@ -500,40 +543,55 @@ static int __xuiHyperlinkEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
-		(void)__xuiHyperlinkSyncState(pWidget, pData);
-		return XUI_OK;
+		return __xuiHyperlinkSyncState(pWidget, pData);
 	case XUI_EVENT_BLUR:
 		pData->bKeyboardActive = 0;
-		(void)__xuiHyperlinkSyncState(pWidget, pData);
-		return XUI_OK;
+		return __xuiHyperlinkSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( bLeftButton ) {
-			(void)xuiSetPointerCapture(pContext, pWidget);
-			(void)__xuiHyperlinkSyncState(pWidget, pData);
+			if ( pData->tPointerPress.tOwner.bActive ) {
+				return xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ?
+					XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			}
+			iRet = xuiInternalPointerPressBegin(pContext, pWidget, pEvent,
+				&pData->tPointerPress);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiHyperlinkSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) {
+				(void)xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+				return iRet;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
-		if ( bLeftButton ) {
-			(void)xuiReleasePointerCapture(pContext, pWidget);
-			(void)__xuiHyperlinkSyncState(pWidget, pData);
+		if ( bLeftButton && xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ) {
+			iRet = xuiInternalPointerPressEnd(pContext, pWidget, pEvent,
+				&pData->tPointerPress);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiHyperlinkSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
-		pData->bKeyboardActive = 0;
-		(void)__xuiHyperlinkSyncState(pWidget, pData);
-		return XUI_OK;
+		if ( !xuiInternalPointerPressCaptureLost(&pData->tPointerPress, pEvent) ) return XUI_OK;
+		return __xuiHyperlinkSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_CLICK:
 		if ( bLeftButton ) {
-			__xuiHyperlinkDoClick(pWidget, pData);
+			if ( !xuiInternalPointerPressAcceptClick(&pData->tPointerPress, pEvent) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			iRet = __xuiHyperlinkDoClick(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_DOWN:
 		if ( pEvent->iKey == XUI_KEY_SPACE ) {
 			pData->bKeyboardActive = 1;
-			(void)__xuiHyperlinkSyncState(pWidget, pData);
+			iRet = __xuiHyperlinkSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
@@ -541,9 +599,12 @@ static int __xuiHyperlinkEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( pEvent->iKey == XUI_KEY_SPACE ) {
 			if ( pData->bKeyboardActive ) {
 				pData->bKeyboardActive = 0;
-				__xuiHyperlinkDoClick(pWidget, pData);
+				iRet = __xuiHyperlinkDoClick(pWidget, pData);
+				if ( iRet != XUI_OK ) return iRet;
+				return XUI_EVENT_DISPATCH_STOP;
 			}
-			(void)__xuiHyperlinkSyncState(pWidget, pData);
+			iRet = __xuiHyperlinkSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
@@ -586,7 +647,8 @@ static int __xuiHyperlinkInitCacheStates(xui_widget pWidget)
 	static const uint32_t arrState[XUI_HYPERLINK_VISUAL_COUNT] = {
 		0,
 		XUI_WIDGET_STATE_HOVER,
-		XUI_WIDGET_STATE_ACTIVE
+		XUI_WIDGET_STATE_ACTIVE,
+		XUI_WIDGET_STATE_FOCUS
 	};
 	int i;
 	int iRet;
@@ -646,6 +708,7 @@ static int __xuiHyperlinkInit(xui_widget pWidget, void* pTypeData, const void* p
 	pData->iHoverTextColor = (pDesc != NULL && pDesc->iHoverTextColor != 0) ? pDesc->iHoverTextColor : XUI_COLOR_RGBA(28, 110, 214, 255);
 	pData->iActiveTextColor = (pDesc != NULL && pDesc->iActiveTextColor != 0) ? pDesc->iActiveTextColor : XUI_COLOR_RGBA(16, 78, 172, 255);
 	pData->iDisabledTextColor = (pDesc != NULL && pDesc->iDisabledTextColor != 0) ? pDesc->iDisabledTextColor : tTheme.iStateDisabledColor;
+	pData->iFocusColor = tTheme.iStateFocusColor;
 	pData->iTextFlags = ((pDesc != NULL && pDesc->iTextFlags != 0) ? pDesc->iTextFlags : (XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP)) | XUI_TEXT_CLIP;
 	pData->iWrapMode = (pDesc != NULL) ? pDesc->iWrapMode : XUI_TEXT_WRAP_NONE;
 	pData->bUnderline = (pDesc != NULL) ? (pDesc->bUnderline ? 1 : 0) : 0;
@@ -653,14 +716,15 @@ static int __xuiHyperlinkInit(xui_widget pWidget, void* pTypeData, const void* p
 	pData->bActiveUnderline = (pDesc != NULL) ? (pDesc->bActiveUnderline ? 1 : 0) : 1;
 	pData->fLineGap = (pDesc != NULL) ? pDesc->fLineGap : 0.0f;
 	pData->fParagraphGap = (pDesc != NULL) ? pDesc->fParagraphGap : 0.0f;
+	pData->fFocusWidth = 1.0f;
 	iRet = __xuiHyperlinkTextSet(pData, (pDesc != NULL) ? pDesc->sText : "");
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	(void)xuiWidgetSetHitTestVisible(pWidget, 1);
-	iRet = __xuiHyperlinkInitCacheStates(pWidget);
+	iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiHyperlinkInitCacheStates(pWidget);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -675,12 +739,13 @@ static void __xuiHyperlinkDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 {
 	xui_hyperlink_data_t* pData;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_hyperlink_data_t*)pTypeData;
 	if ( pData == NULL ) {
 		return;
 	}
+	(void)xuiInternalPointerPressCancel(xuiWidgetGetContext(pWidget), pWidget,
+		&pData->tPointerPress);
 	if ( pData->sText != NULL ) {
 		xrtFree(pData->sText);
 	}
@@ -708,7 +773,7 @@ static void __xuiHyperlinkRegisterStyleProperties(xui_context pContext, xui_widg
 {
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
-	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "text.wrap", XUI_STYLE_VALUE_INT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "text.underline", XUI_STYLE_VALUE_BOOL, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "text.line_gap", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
@@ -720,7 +785,26 @@ static void __xuiHyperlinkRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "hyperlink.text.disabled_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0);
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "hyperlink.text.hover_underline", XUI_STYLE_VALUE_BOOL, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0);
 	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "hyperlink.text.active_underline", XUI_STYLE_VALUE_BOOL, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0);
+	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "hyperlink.focus.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0);
+	__xuiHyperlinkRegisterStyleProperty(pContext, pType, "hyperlink.focus.width", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0);
 }
+
+static int __xuiHyperlinkAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_hyperlink_data_t* pData = __xuiHyperlinkGetData(pWidget);
+
+	if ( pData == NULL || pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_LINK;
+	pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+		xuiWidgetGetAccessibleName(pWidget) : pData->sText;
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiHyperlinkAccessible = {
+	.getNode = __xuiHyperlinkAccessibleNode,
+	.performAction = NULL
+};
 
 XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext)
 {
@@ -734,6 +818,7 @@ XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "hyperlink");
 	if ( pType != NULL ) {
 		__xuiHyperlinkRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiHyperlinkAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -754,6 +839,7 @@ XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiHyperlinkRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiHyperlinkAccessible;
 	return pType;
 }
 
@@ -761,10 +847,13 @@ XUI_API int xuiHyperlinkCreate(xui_context pContext, xui_widget* ppWidget, const
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiHyperlinkDescValid(pDesc) ) {
+	if ( ppWidget == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
+	if ( !__xuiHyperlinkDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiHyperlinkGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -804,6 +893,7 @@ XUI_API int xuiHyperlinkSetText(xui_widget pWidget, const char* sText)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -938,6 +1028,7 @@ XUI_API int xuiHyperlinkSetTextColors(xui_widget pWidget, uint32_t iNormal, uint
 XUI_API int xuiHyperlinkSetTextFlags(xui_widget pWidget, uint32_t iTextFlags)
 {
 	xui_hyperlink_data_t* pData;
+	uint32_t iDirtyFlags;
 
 	pData = __xuiHyperlinkGetData(pWidget);
 	if ( pData == NULL ) {
@@ -947,8 +1038,12 @@ XUI_API int xuiHyperlinkSetTextFlags(xui_widget pWidget, uint32_t iTextFlags)
 	if ( pData->iTextFlags == iTextFlags ) {
 		return XUI_OK;
 	}
+	iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	if ( ((pData->iTextFlags ^ iTextFlags) & XUI_TEXT_RTL) != 0 ) {
+		iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
+	}
 	pData->iTextFlags = iTextFlags;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, iDirtyFlags);
 }
 
 XUI_API uint32_t xuiHyperlinkGetTextFlags(xui_widget pWidget)

@@ -1,7 +1,10 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CAROUSEL
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 typedef struct xui_carousel_data_t {
@@ -22,6 +25,7 @@ typedef struct xui_carousel_data_t {
 	int iActiveArrow;
 	int iChangeCount;
 	int bHover;
+	xui_pointer_owner_t tPointerOwner;
 	float fAutoInterval;
 	float fAutoElapsed;
 	float fArrowSize;
@@ -43,7 +47,31 @@ typedef struct xui_carousel_data_t {
 	uint32_t iIndicatorActiveColor;
 	uint32_t iIndicatorHoverColor;
 	uint32_t iFocusColor;
+	char sAccessibleValue[32];
+	char arrAccessiblePageNames[XUI_CAROUSEL_MAX_PAGES][24];
 } xui_carousel_data_t;
+
+typedef struct xui_carousel_style_t {
+	int bAutoPlay;
+	int bShowIndicators;
+	int bShowArrowsOnHover;
+	float fAutoInterval;
+	float fArrowSize;
+	float fIndicatorSize;
+	float fIndicatorGap;
+	float fIndicatorBottom;
+	uint32_t iBackgroundColor;
+	uint32_t iArrowColor;
+	uint32_t iArrowHoverColor;
+	uint32_t iArrowTextColor;
+	uint32_t iIndicatorColor;
+	uint32_t iIndicatorBackgroundColor;
+	uint32_t iIndicatorActiveColor;
+	uint32_t iIndicatorHoverColor;
+	uint32_t iFocusColor;
+} xui_carousel_style_t;
+
+static int __xuiCarouselArrowAvailable(const xui_carousel_data_t* pData, int iArrow);
 
 static int __xuiCarouselDescValid(const xui_carousel_desc_t* pDesc)
 {
@@ -56,7 +84,10 @@ static int __xuiCarouselDescValid(const xui_carousel_desc_t* pDesc)
 	if ( (pDesc->iPageCount < 0) || (pDesc->iPageCount > XUI_CAROUSEL_MAX_PAGES) ) {
 		return 0;
 	}
-	if ( (pDesc->fAutoInterval < 0.0f) ||
+	if ( !isfinite(pDesc->fAutoInterval) || !isfinite(pDesc->fArrowSize) ||
+	     !isfinite(pDesc->fIndicatorSize) || !isfinite(pDesc->fIndicatorGap) ||
+	     !isfinite(pDesc->fIndicatorBottom) ||
+	     (pDesc->fAutoInterval < 0.0f) ||
 	     (pDesc->fArrowSize < 0.0f) ||
 	     (pDesc->fIndicatorSize < 0.0f) ||
 	     (pDesc->fIndicatorGap < 0.0f) ||
@@ -93,6 +124,31 @@ static int __xuiCarouselRectContains(xui_rect_t tRect, float fX, float fY)
 	       (fY < (tRect.fY + tRect.fH));
 }
 
+static xui_rect_t __xuiCarouselMinHitRect(xui_rect_t tRect, float fMinSize)
+{
+	float fExtra;
+
+	if ( tRect.fW < fMinSize ) {
+		fExtra = (fMinSize - tRect.fW) * 0.5f;
+		tRect.fX -= fExtra;
+		tRect.fW = fMinSize;
+	}
+	if ( tRect.fH < fMinSize ) {
+		fExtra = (fMinSize - tRect.fH) * 0.5f;
+		tRect.fY -= fExtra;
+		tRect.fH = fMinSize;
+	}
+	return tRect;
+}
+
+static int __xuiCarouselContainsWidget(xui_widget pCarousel, xui_widget pWidget)
+{
+	for ( ; pWidget != NULL; pWidget = xuiWidgetGetParent(pWidget) ) {
+		if ( pWidget == pCarousel ) return 1;
+	}
+	return 0;
+}
+
 static xui_carousel_data_t* __xuiCarouselGetData(xui_widget pWidget)
 {
 	xui_context pContext;
@@ -110,6 +166,16 @@ static xui_carousel_data_t* __xuiCarouselGetData(xui_widget pWidget)
 		return NULL;
 	}
 	return (xui_carousel_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiCarouselWidgetAlive(xui_widget pWidget, xui_carousel_data_t* pData)
+{
+	xui_context pContext;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 0;
+	pContext = xuiWidgetGetContext(pWidget);
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		__xuiCarouselGetData(pWidget) == pData;
 }
 
 static int __xuiCarouselStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
@@ -135,7 +201,8 @@ static int __xuiCarouselStyleFloat(xui_widget pWidget, const char* sName, float*
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -158,32 +225,27 @@ static int __xuiCarouselStyleInt(xui_widget pWidget, const char* sName, int* pVa
 	return 0;
 }
 
-static xui_font __xuiCarouselStyleFont(xui_widget pWidget, xui_font pBaseFont)
-{
-	xui_style_property_t tProperty;
-	xui_font pFont;
-	int iRet;
-
-	memset(&tProperty, 0, sizeof(tProperty));
-	tProperty.iSize = sizeof(tProperty);
-	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, "font.name", &tProperty);
-	if ( (iRet == XUI_OK) &&
-	     (tProperty.tValue.iType == XUI_STYLE_VALUE_STRING) &&
-	     (tProperty.tValue.sText != NULL) ) {
-		pFont = xuiFindFont(xuiWidgetGetContext(pWidget), tProperty.tValue.sText);
-		if ( pFont != NULL ) {
-			return pFont;
-		}
-	}
-	return pBaseFont;
-}
-
-static void __xuiCarouselResolve(xui_widget pWidget, const xui_carousel_data_t* pData, xui_carousel_data_t* pResolved)
+static void __xuiCarouselResolve(xui_widget pWidget, const xui_carousel_data_t* pData, xui_carousel_style_t* pResolved)
 {
 	int iValue;
 
-	*pResolved = *pData;
-	pResolved->pFont = __xuiCarouselStyleFont(pWidget, (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget)));
+	memset(pResolved, 0, sizeof(*pResolved));
+	pResolved->bAutoPlay = pData->bAutoPlay;
+	pResolved->bShowIndicators = pData->bShowIndicators;
+	pResolved->bShowArrowsOnHover = pData->bShowArrowsOnHover;
+	pResolved->fAutoInterval = pData->fAutoInterval;
+	pResolved->fArrowSize = pData->fArrowSize;
+	pResolved->fIndicatorSize = pData->fIndicatorSize;
+	pResolved->fIndicatorGap = pData->fIndicatorGap;
+	pResolved->fIndicatorBottom = pData->fIndicatorBottom;
+	pResolved->iBackgroundColor = pData->iBackgroundColor;
+	pResolved->iArrowColor = pData->iArrowColor;
+	pResolved->iArrowHoverColor = pData->iArrowHoverColor;
+	pResolved->iArrowTextColor = pData->iArrowTextColor;
+	pResolved->iIndicatorColor = pData->iIndicatorColor;
+	pResolved->iIndicatorActiveColor = pData->iIndicatorActiveColor;
+	pResolved->iIndicatorHoverColor = pData->iIndicatorHoverColor;
+	pResolved->iFocusColor = pData->iFocusColor;
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.arrow.color", &pResolved->iArrowColor);
 	(void)__xuiCarouselStyleColor(pWidget, "carousel.arrow.hover_color", &pResolved->iArrowHoverColor);
@@ -236,7 +298,7 @@ static void __xuiCarouselClearRects(xui_carousel_data_t* pData)
 	}
 }
 
-static void __xuiCarouselComputeRects(xui_widget pCarousel, xui_carousel_data_t* pData, const xui_carousel_data_t* pResolved, xui_rect_t tContent)
+static void __xuiCarouselComputeRects(xui_widget pCarousel, xui_carousel_data_t* pData, const xui_carousel_style_t* pResolved, xui_rect_t tContent)
 {
 	float fArrow;
 	float fIndicator;
@@ -266,17 +328,17 @@ static void __xuiCarouselComputeRects(xui_widget pCarousel, xui_carousel_data_t*
 		fArrow,
 		fArrow
 	});
-	if ( pResolved->bShowIndicators && (pResolved->iPageCount > 0) ) {
+	if ( pResolved->bShowIndicators && (pData->iPageCount > 0) ) {
 		fIndicator = __xuiCarouselMaxFloat(4.0f, pResolved->fIndicatorSize);
 		fGap = __xuiCarouselMaxFloat(0.0f, pResolved->fIndicatorGap);
-		fGroupW = ((float)pResolved->iPageCount * fIndicator) + ((float)(pResolved->iPageCount - 1) * fGap) + 16.0f;
+		fGroupW = ((float)pData->iPageCount * fIndicator) + ((float)(pData->iPageCount - 1) * fGap) + 16.0f;
 		fGroupH = fIndicator + 10.0f;
 		fX = tContent.fX + (tContent.fW - fGroupW) * 0.5f;
 		fY = tContent.fY + tContent.fH - fGroupH - pResolved->fIndicatorBottom;
 		pData->tIndicatorGroupRect = xuiInternalSnapRect((xui_rect_t){fX, fY, fGroupW, fGroupH});
 		fX += 8.0f;
 		fY += (fGroupH - fIndicator) * 0.5f;
-		for ( i = 0; i < pResolved->iPageCount; i++ ) {
+		for ( i = 0; i < pData->iPageCount; i++ ) {
 			pData->arrIndicatorRects[i] = xuiInternalSnapRect((xui_rect_t){fX, fY, fIndicator, fIndicator});
 			fX += fIndicator + fGap;
 		}
@@ -366,7 +428,7 @@ static int __xuiCarouselDrawArrow(xui_proxy pProxy, xui_draw_context pDraw, xui_
 static int __xuiCarouselBaseRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_carousel_data_t* pData;
-	xui_carousel_data_t tResolved;
+	xui_carousel_style_t tResolved;
 	xui_proxy pProxy;
 
 	(void)iStateId;
@@ -383,7 +445,7 @@ static int __xuiCarouselOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 {
 	xui_widget pCarousel;
 	xui_carousel_data_t* pData;
-	xui_carousel_data_t tResolved;
+	xui_carousel_style_t tResolved;
 	xui_proxy pProxy;
 	uint32_t iFill;
 	float fCX;
@@ -405,22 +467,26 @@ static int __xuiCarouselOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 
 	iRet = XUI_OK;
 	bShowArrows = !tResolved.bShowArrowsOnHover || pData->bHover || (pData->iActiveArrow != XUI_CAROUSEL_ARROW_NONE);
-	if ( bShowArrows && (tResolved.iPageCount > 1) ) {
-		iFill = (pData->iHoverArrow == XUI_CAROUSEL_ARROW_PREV || pData->iActiveArrow == XUI_CAROUSEL_ARROW_PREV) ? tResolved.iArrowHoverColor : tResolved.iArrowColor;
-		iRet = __xuiCarouselDrawArrow(pProxy, pDraw, pData->tPrevArrowRect, XUI_CAROUSEL_ARROW_PREV, iFill, tResolved.iArrowTextColor);
-		if ( iRet != XUI_OK ) return iRet;
-		iFill = (pData->iHoverArrow == XUI_CAROUSEL_ARROW_NEXT || pData->iActiveArrow == XUI_CAROUSEL_ARROW_NEXT) ? tResolved.iArrowHoverColor : tResolved.iArrowColor;
-		iRet = __xuiCarouselDrawArrow(pProxy, pDraw, pData->tNextArrowRect, XUI_CAROUSEL_ARROW_NEXT, iFill, tResolved.iArrowTextColor);
-		if ( iRet != XUI_OK ) return iRet;
+	if ( bShowArrows && (pData->iPageCount > 1) ) {
+		if ( __xuiCarouselArrowAvailable(pData, XUI_CAROUSEL_ARROW_PREV) ) {
+			iFill = (pData->iHoverArrow == XUI_CAROUSEL_ARROW_PREV || pData->iActiveArrow == XUI_CAROUSEL_ARROW_PREV) ? tResolved.iArrowHoverColor : tResolved.iArrowColor;
+			iRet = __xuiCarouselDrawArrow(pProxy, pDraw, pData->tPrevArrowRect, XUI_CAROUSEL_ARROW_PREV, iFill, tResolved.iArrowTextColor);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		if ( __xuiCarouselArrowAvailable(pData, XUI_CAROUSEL_ARROW_NEXT) ) {
+			iFill = (pData->iHoverArrow == XUI_CAROUSEL_ARROW_NEXT || pData->iActiveArrow == XUI_CAROUSEL_ARROW_NEXT) ? tResolved.iArrowHoverColor : tResolved.iArrowColor;
+			iRet = __xuiCarouselDrawArrow(pProxy, pDraw, pData->tNextArrowRect, XUI_CAROUSEL_ARROW_NEXT, iFill, tResolved.iArrowTextColor);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 	}
-	if ( tResolved.bShowIndicators && (tResolved.iPageCount > 1) ) {
+	if ( tResolved.bShowIndicators && (pData->iPageCount > 1) ) {
 		iRet = __xuiCarouselDrawRectFill(pProxy, pDraw, pData->tIndicatorGroupRect, tResolved.iIndicatorBackgroundColor);
 		if ( iRet != XUI_OK ) return iRet;
-		for ( i = 0; i < tResolved.iPageCount; i++ ) {
+		for ( i = 0; i < pData->iPageCount; i++ ) {
 			fCX = pData->arrIndicatorRects[i].fX + pData->arrIndicatorRects[i].fW * 0.5f;
 			fCY = pData->arrIndicatorRects[i].fY + pData->arrIndicatorRects[i].fH * 0.5f;
 			fRadius = pData->arrIndicatorRects[i].fW * 0.5f;
-			if ( i == tResolved.iCurrent ) {
+			if ( i == pData->iCurrent ) {
 				iFill = tResolved.iIndicatorActiveColor;
 			} else if ( i == pData->iHoverIndicator ) {
 				iFill = tResolved.iIndicatorHoverColor;
@@ -444,16 +510,18 @@ static int __xuiCarouselOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 
 static int __xuiCarouselConfigurePage(xui_widget pPage)
 {
+	int iRet;
+
 	if ( pPage == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)xuiWidgetSetLayoutType(pPage, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pPage, XUI_FLOW_BLOCK);
-	(void)xuiWidgetSetSizeMode(pPage, XUI_SIZE_FILL, XUI_SIZE_FILL);
-	(void)xuiWidgetSetAlign(pPage, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
-	(void)xuiWidgetSetOverflow(pPage, XUI_OVERFLOW_CLIP);
-	(void)xuiWidgetSetFocusable(pPage, 0);
-	(void)xuiWidgetSetTabStop(pPage, 0);
-	(void)xuiWidgetSetHitTestVisible(pPage, 1);
-	return XUI_OK;
+	iRet = xuiWidgetSetLayoutType(pPage, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pPage, XUI_FLOW_BLOCK);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pPage, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pPage, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pPage, XUI_OVERFLOW_CLIP);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pPage, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pPage, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pPage, 1);
+	return iRet;
 }
 
 static int __xuiCarouselConfigureOverlay(xui_widget pOverlay, xui_widget pCarousel)
@@ -500,8 +568,12 @@ static int __xuiCarouselEnsurePage(xui_widget pCarousel, xui_carousel_data_t* pD
 		xuiWidgetDestroy(pPage);
 		return iRet;
 	}
+	iRet = xuiWidgetSetVisible(pPage, 0);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pPage);
+		return iRet;
+	}
 	pData->arrPages[iIndex] = pPage;
-	(void)xuiWidgetSetVisible(pPage, 0);
 	return XUI_OK;
 }
 
@@ -528,26 +600,65 @@ static int __xuiCarouselSyncPages(xui_widget pCarousel, xui_carousel_data_t* pDa
 
 static int __xuiCarouselSetPageCountInternal(xui_widget pCarousel, xui_carousel_data_t* pData, int iPageCount)
 {
+	xui_widget arrOldPages[XUI_CAROUSEL_MAX_PAGES];
 	int i;
 	int iRet;
+	int iOldPageCount;
+	int iOldCurrent;
+	int iOldChangeCount;
+	int iOldHoverIndicator;
+	int iOldActiveIndicator;
+	int iNewCurrent;
 
 	if ( (pCarousel == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iPageCount < 1 ) iPageCount = 1;
 	if ( iPageCount > XUI_CAROUSEL_MAX_PAGES ) return XUI_ERROR_INVALID_ARGUMENT;
+	memcpy(arrOldPages, pData->arrPages, sizeof(arrOldPages));
+	iOldPageCount = pData->iPageCount;
+	iOldCurrent = pData->iCurrent;
+	iOldChangeCount = pData->iChangeCount;
+	iOldHoverIndicator = pData->iHoverIndicator;
+	iOldActiveIndicator = pData->iActiveIndicator;
 	for ( i = 0; i < iPageCount; i++ ) {
 		iRet = __xuiCarouselEnsurePage(pCarousel, pData, i);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) goto rollback;
 	}
 	pData->iPageCount = iPageCount;
+	iNewCurrent = __xuiCarouselClampInt(pData->iCurrent, 0, iPageCount - 1);
+	pData->iCurrent = iNewCurrent;
 	if ( pData->iHoverIndicator >= iPageCount ) pData->iHoverIndicator = -1;
 	if ( pData->iActiveIndicator >= iPageCount ) pData->iActiveIndicator = -1;
-	return __xuiCarouselSyncPages(pCarousel, pData);
+	iRet = __xuiCarouselSyncPages(pCarousel, pData);
+	if ( iRet != XUI_OK ) goto rollback;
+	if ( iOldCurrent != iNewCurrent ) {
+		pData->iChangeCount++;
+		xuiInternalAccessibilityQueue(pCarousel, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+	xuiInternalAccessibilityQueue(pCarousel, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	return XUI_OK;
+
+rollback:
+	for ( i = 0; i < XUI_CAROUSEL_MAX_PAGES; i++ ) {
+		if ( arrOldPages[i] == NULL && pData->arrPages[i] != NULL ) {
+			xuiWidgetDestroy(pData->arrPages[i]);
+		}
+	}
+	memcpy(pData->arrPages, arrOldPages, sizeof(arrOldPages));
+	pData->iPageCount = iOldPageCount;
+	pData->iCurrent = iOldCurrent;
+	pData->iChangeCount = iOldChangeCount;
+	pData->iHoverIndicator = iOldHoverIndicator;
+	pData->iActiveIndicator = iOldActiveIndicator;
+	/* Preserve the original failure; restoring widget state is best-effort. */
+	(void)__xuiCarouselSyncPages(pCarousel, pData);
+	return iRet;
 }
 
 static int __xuiCarouselSetCurrentInternal(xui_widget pCarousel, xui_carousel_data_t* pData, int iIndex, int bNotify)
 {
 	int iOld;
 	int iRet;
+	float fOldElapsed;
 
 	if ( (pCarousel == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iPageCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -557,11 +668,19 @@ static int __xuiCarouselSetCurrentInternal(xui_widget pCarousel, xui_carousel_da
 		return XUI_OK;
 	}
 	iOld = pData->iCurrent;
+	fOldElapsed = pData->fAutoElapsed;
 	pData->iCurrent = iIndex;
 	pData->fAutoElapsed = 0.0f;
-	pData->iChangeCount++;
 	iRet = __xuiCarouselSyncPages(pCarousel, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		pData->iCurrent = iOld;
+		pData->fAutoElapsed = fOldElapsed;
+		/* Preserve the original failure; restoring widget state is best-effort. */
+		(void)__xuiCarouselSyncPages(pCarousel, pData);
+		return iRet;
+	}
+	pData->iChangeCount++;
+	xuiInternalAccessibilityQueue(pCarousel, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( bNotify && (pData->onChange != NULL) ) {
 		pData->onChange(pCarousel, iOld, iIndex, pData->pChangeUser);
 	}
@@ -586,32 +705,57 @@ static int __xuiCarouselMove(xui_widget pCarousel, xui_carousel_data_t* pData, i
 
 static int __xuiCarouselHitIndicator(const xui_carousel_data_t* pData, float fX, float fY)
 {
+	float fDX;
+	float fDY;
+	float fDistance;
+	float fBestDistance;
+	int iBest;
 	int i;
 
 	if ( pData == NULL ) return -1;
+	iBest = -1;
+	fBestDistance = 0.0f;
 	for ( i = 0; i < pData->iPageCount; i++ ) {
-		if ( __xuiCarouselRectContains(pData->arrIndicatorRects[i], fX, fY) ) {
-			return i;
+		if ( __xuiCarouselRectContains(
+			__xuiCarouselMinHitRect(pData->arrIndicatorRects[i], 16.0f), fX, fY) ) {
+			fDX = fX - (pData->arrIndicatorRects[i].fX + pData->arrIndicatorRects[i].fW * 0.5f);
+			fDY = fY - (pData->arrIndicatorRects[i].fY + pData->arrIndicatorRects[i].fH * 0.5f);
+			fDistance = fDX * fDX + fDY * fDY;
+			if ( iBest < 0 || fDistance < fBestDistance ) {
+				iBest = i;
+				fBestDistance = fDistance;
+			}
 		}
 	}
-	return -1;
+	return iBest;
 }
 
-static int __xuiCarouselHitArrow(const xui_carousel_data_t* pData, const xui_carousel_data_t* pResolved, float fX, float fY)
+static int __xuiCarouselArrowAvailable(const xui_carousel_data_t* pData, int iArrow)
+{
+	if ( pData == NULL || pData->iPageCount <= 1 ) return 0;
+	if ( pData->bLoop ) return 1;
+	if ( iArrow == XUI_CAROUSEL_ARROW_PREV ) return pData->iCurrent > 0;
+	if ( iArrow == XUI_CAROUSEL_ARROW_NEXT ) return pData->iCurrent + 1 < pData->iPageCount;
+	return 0;
+}
+
+static int __xuiCarouselHitArrow(const xui_carousel_data_t* pData, const xui_carousel_style_t* pResolved, float fX, float fY)
 {
 	int bShowArrows;
 
-	if ( (pData == NULL) || (pResolved == NULL) || (pResolved->iPageCount <= 1) ) return XUI_CAROUSEL_ARROW_NONE;
+	if ( (pData == NULL) || (pResolved == NULL) || (pData->iPageCount <= 1) ) return XUI_CAROUSEL_ARROW_NONE;
 	bShowArrows = !pResolved->bShowArrowsOnHover || pData->bHover || (pData->iActiveArrow != XUI_CAROUSEL_ARROW_NONE);
 	if ( !bShowArrows ) return XUI_CAROUSEL_ARROW_NONE;
-	if ( __xuiCarouselRectContains(pData->tPrevArrowRect, fX, fY) ) return XUI_CAROUSEL_ARROW_PREV;
-	if ( __xuiCarouselRectContains(pData->tNextArrowRect, fX, fY) ) return XUI_CAROUSEL_ARROW_NEXT;
+	if ( __xuiCarouselArrowAvailable(pData, XUI_CAROUSEL_ARROW_PREV) &&
+	     __xuiCarouselRectContains(pData->tPrevArrowRect, fX, fY) ) return XUI_CAROUSEL_ARROW_PREV;
+	if ( __xuiCarouselArrowAvailable(pData, XUI_CAROUSEL_ARROW_NEXT) &&
+	     __xuiCarouselRectContains(pData->tNextArrowRect, fX, fY) ) return XUI_CAROUSEL_ARROW_NEXT;
 	return XUI_CAROUSEL_ARROW_NONE;
 }
 
 static int __xuiCarouselUpdateHover(xui_widget pCarousel, xui_carousel_data_t* pData, const xui_event_t* pEvent)
 {
-	xui_carousel_data_t tResolved;
+	xui_carousel_style_t tResolved;
 	xui_rect_t tWorld;
 	float fX;
 	float fY;
@@ -636,20 +780,50 @@ static int __xuiCarouselUpdateHover(xui_widget pCarousel, xui_carousel_data_t* p
 	return XUI_OK;
 }
 
+static int __xuiCarouselCancelPress(xui_widget pWidget, xui_carousel_data_t* pData, int bClearHover)
+{
+	xui_context pContext;
+	int bChanged;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	bChanged = pData->tPointerOwner.bActive || (pData->iActiveIndicator >= 0) ||
+		(pData->iActiveArrow != XUI_CAROUSEL_ARROW_NONE);
+	if ( bClearHover ) {
+		bChanged = bChanged || pData->bHover || (pData->iHoverIndicator >= 0) ||
+			(pData->iHoverArrow != XUI_CAROUSEL_ARROW_NONE);
+	}
+	iRet = xuiInternalPointerOwnerCancel(pContext, pWidget, &pData->tPointerOwner);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iActiveIndicator = -1;
+	pData->iActiveArrow = XUI_CAROUSEL_ARROW_NONE;
+	if ( bClearHover ) {
+		pData->bHover = 0;
+		pData->iHoverIndicator = -1;
+		pData->iHoverArrow = XUI_CAROUSEL_ARROW_NONE;
+	}
+	return bChanged ? __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+}
+
 static int __xuiCarouselEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_carousel_data_t* pData;
-	xui_carousel_data_t tResolved;
+	xui_carousel_style_t tResolved;
 	xui_rect_t tWorld;
 	float fX;
 	float fY;
 	int iHitIndicator;
 	int iHitArrow;
+	int iActiveIndicator;
+	int iActiveArrow;
+	int iCancelRet;
 	int iRet;
 
 	(void)pUser;
 	pData = __xuiCarouselGetData(pWidget);
 	if ( (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->pTarget != pWidget && pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
 	__xuiCarouselResolve(pWidget, pData, &tResolved);
 	__xuiCarouselComputeRects(pWidget, pData, &tResolved, xuiWidgetGetContentRect(pWidget));
 	tWorld = xuiWidgetGetWorldRect(pWidget);
@@ -660,61 +834,132 @@ static int __xuiCarouselEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
+		if ( __xuiCarouselContainsWidget(pWidget, pEvent->pRelated) ) return XUI_OK;
 		pData->bHover = 1;
-		(void)__xuiCarouselUpdateHover(pWidget, pData, pEvent);
+		iRet = __xuiCarouselUpdateHover(pWidget, pData, pEvent);
+		if ( iRet != XUI_OK ) return iRet;
 		return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_POINTER_MOVE:
+		if ( pData->tPointerOwner.bActive &&
+		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
+		if ( pData->tPointerOwner.bActive &&
+		     ((pEvent->iButtons & XUI_POINTER_BUTTON_LEFT) == 0u) ) {
+			iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiCarouselUpdateHover(pWidget, pData, pEvent);
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		pData->bHover = 1;
-		(void)__xuiCarouselUpdateHover(pWidget, pData, pEvent);
+		iRet = __xuiCarouselUpdateHover(pWidget, pData, pEvent);
+		if ( iRet != XUI_OK ) return iRet;
 		return (pData->iHoverIndicator >= 0 || pData->iHoverArrow != XUI_CAROUSEL_ARROW_NONE) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_LEAVE:
+		if ( __xuiCarouselContainsWidget(pWidget, pEvent->pRelated) ) return XUI_OK;
 		pData->bHover = 0;
 		pData->iHoverIndicator = -1;
 		pData->iHoverArrow = XUI_CAROUSEL_ARROW_NONE;
 		return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_POINTER_DOWN:
-		if ( (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) &&
+		if ( xuiWidgetGetEffectiveEnabled(pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) &&
 		     ((iHitIndicator >= 0) || (iHitArrow != XUI_CAROUSEL_ARROW_NONE)) ) {
+			if ( pData->tPointerOwner.bActive ) {
+				return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
+					XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			}
 			pData->iActiveIndicator = iHitIndicator;
 			pData->iActiveArrow = iHitArrow;
 			pData->bHover = 1;
-			(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
-			(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-			(void)__xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+			if ( iRet != XUI_OK ) {
+				pData->iActiveIndicator = -1;
+				pData->iActiveArrow = XUI_CAROUSEL_ARROW_NONE;
+				return iRet;
+			}
+			iRet = xuiInternalPointerOwnerBegin(xuiWidgetGetContext(pWidget), pWidget,
+				pEvent, &pData->tPointerOwner);
+			if ( iRet != XUI_OK ) {
+				pData->iActiveIndicator = -1;
+				pData->iActiveArrow = XUI_CAROUSEL_ARROW_NONE;
+				return iRet;
+			}
+			iRet = __xuiCarouselInvalidate(pWidget, pData,
+				XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			if ( iRet != XUI_OK ) {
+				iCancelRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+				return iCancelRet != XUI_OK ? iCancelRet : iRet;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
 		if ( (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) &&
+		     xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) &&
 		     ((pData->iActiveIndicator >= 0) || (pData->iActiveArrow != XUI_CAROUSEL_ARROW_NONE)) ) {
-			iRet = XUI_OK;
-			if ( (pData->iActiveIndicator >= 0) && (iHitIndicator == pData->iActiveIndicator) ) {
-				iRet = __xuiCarouselSetCurrentInternal(pWidget, pData, pData->iActiveIndicator, 1);
-			} else if ( (pData->iActiveArrow == XUI_CAROUSEL_ARROW_PREV) && (iHitArrow == XUI_CAROUSEL_ARROW_PREV) ) {
-				iRet = __xuiCarouselMove(pWidget, pData, -1, 1);
-			} else if ( (pData->iActiveArrow == XUI_CAROUSEL_ARROW_NEXT) && (iHitArrow == XUI_CAROUSEL_ARROW_NEXT) ) {
-				iRet = __xuiCarouselMove(pWidget, pData, 1, 1);
-			}
+			iActiveIndicator = pData->iActiveIndicator;
+			iActiveArrow = pData->iActiveArrow;
+			iRet = xuiInternalPointerOwnerEnd(xuiWidgetGetContext(pWidget), pWidget,
+				pEvent, &pData->tPointerOwner);
+			if ( iRet != XUI_OK ) return iRet;
 			pData->iActiveIndicator = -1;
 			pData->iActiveArrow = XUI_CAROUSEL_ARROW_NONE;
-			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-			(void)__xuiCarouselUpdateHover(pWidget, pData, pEvent);
-			(void)__xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			iRet = __xuiCarouselUpdateHover(pWidget, pData, pEvent);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = XUI_OK;
+			if ( (iActiveIndicator >= 0) && (iHitIndicator == iActiveIndicator) ) {
+				iRet = __xuiCarouselSetCurrentInternal(pWidget, pData, iActiveIndicator, 1);
+			} else if ( (iActiveArrow == XUI_CAROUSEL_ARROW_PREV) && (iHitArrow == XUI_CAROUSEL_ARROW_PREV) ) {
+				iRet = __xuiCarouselMove(pWidget, pData, -1, 1);
+			} else if ( (iActiveArrow == XUI_CAROUSEL_ARROW_NEXT) && (iHitArrow == XUI_CAROUSEL_ARROW_NEXT) ) {
+				iRet = __xuiCarouselMove(pWidget, pData, 1, 1);
+			}
 			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
+		if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
 		pData->iActiveIndicator = -1;
 		pData->iActiveArrow = XUI_CAROUSEL_ARROW_NONE;
 		return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_KEY_DOWN:
-		if ( pEvent->iKey == XUI_KEY_LEFT ) return __xuiCarouselMove(pWidget, pData, -1, 1) | (int)XUI_EVENT_DISPATCH_STOP;
-		if ( pEvent->iKey == XUI_KEY_RIGHT ) return __xuiCarouselMove(pWidget, pData, 1, 1) | (int)XUI_EVENT_DISPATCH_STOP;
+		if ( pEvent->pTarget != pWidget || pEvent->iPhase != XUI_EVENT_PHASE_TARGET ) return XUI_OK;
+		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
+			iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
+		if ( (pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) != 0u ) return XUI_OK;
+		if ( pEvent->iKey == XUI_KEY_LEFT || pEvent->iKey == XUI_KEY_RIGHT ) {
+			iRet = __xuiCarouselMove(pWidget, pData,
+				(pEvent->iKey == XUI_KEY_LEFT) ? -1 : 1, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
+		if ( pEvent->iKey == XUI_KEY_HOME || pEvent->iKey == XUI_KEY_END ) {
+			iRet = __xuiCarouselSetCurrentInternal(pWidget, pData,
+				(pEvent->iKey == XUI_KEY_HOME) ? 0 : pData->iPageCount - 1, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
 		break;
 	case XUI_EVENT_FOCUS:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
+		return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_BLUR:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
+		return __xuiCarouselCancelPress(pWidget, pData, 0);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			pData->fAutoElapsed = 0.0f;
+			return __xuiCarouselCancelPress(pWidget, pData, 1);
+		}
 		return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	default:
 		break;
@@ -745,14 +990,15 @@ static int __xuiCarouselPreparePaint(xui_widget pWidget)
 static int __xuiCarouselUpdate(xui_widget pWidget, float fDelta, void* pUser)
 {
 	xui_carousel_data_t* pData;
-	xui_carousel_data_t tResolved;
+	xui_carousel_style_t tResolved;
 	int iRet;
 
 	(void)pUser;
 	pData = __xuiCarouselGetData(pWidget);
-	if ( (pData == NULL) || (fDelta < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fDelta) || (fDelta < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiCarouselResolve(pWidget, pData, &tResolved);
-	if ( !tResolved.bAutoPlay || (tResolved.fAutoInterval <= 0.0f) || (tResolved.iPageCount <= 1) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ||
+	     !tResolved.bAutoPlay || (tResolved.fAutoInterval <= 0.0f) || (pData->iPageCount <= 1) ) {
 		pData->fAutoElapsed = 0.0f;
 		return XUI_OK;
 	}
@@ -766,6 +1012,121 @@ static int __xuiCarouselUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	pData->fAutoElapsed = 0.0f;
 	iRet = __xuiCarouselMove(pWidget, pData, 1, 1);
 	return (iRet == XUI_ERROR_INVALID_ARGUMENT) ? XUI_OK : iRet;
+}
+
+static int __xuiCarouselAccessibleCount(xui_widget pWidget, void* pUser)
+{
+	const xui_carousel_data_t* pData = (const xui_carousel_data_t*)pUser;
+
+	(void)pWidget;
+	return pData != NULL ? pData->iPageCount + 1 : 0;
+}
+
+static int __xuiCarouselAccessibleGet(xui_widget pWidget, int iIndex,
+	xui_accessible_node_t* pNode, void* pUser)
+{
+	xui_carousel_data_t* pData = (xui_carousel_data_t*)pUser;
+	xui_carousel_style_t tResolved;
+	xui_rect_t tWorld;
+	xui_rect_t tIndicator;
+	int iPage;
+	int bDisabled;
+
+	if ( pData == NULL || pNode == NULL || iIndex < 0 || iIndex > pData->iPageCount ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	__xuiCarouselResolve(pWidget, pData, &tResolved);
+	__xuiCarouselComputeRects(pWidget, pData, &tResolved, xuiWidgetGetContentRect(pWidget));
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	bDisabled = !xuiWidgetGetEffectiveEnabled(pWidget);
+	if ( iIndex == 0 ) {
+		(void)snprintf(pData->sAccessibleValue, sizeof(pData->sAccessibleValue),
+			"Page %d of %d", pData->iCurrent + 1, pData->iPageCount);
+		pNode->iId = 1;
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+		pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+			xuiWidgetGetAccessibleName(pWidget) : "Carousel";
+		pNode->sValue = pData->sAccessibleValue;
+		pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+		pNode->tBounds = tWorld;
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+		if ( bDisabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		pNode->iRowCount = 1;
+		pNode->iColumnCount = pData->iPageCount;
+		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS) |
+			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_INCREMENT) |
+			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_DECREMENT);
+		if ( bDisabled ) pNode->iActions = 0;
+		return XUI_OK;
+	}
+	iPage = iIndex - 1;
+	(void)snprintf(pData->arrAccessiblePageNames[iPage],
+		sizeof(pData->arrAccessiblePageNames[iPage]), "Page %d", iPage + 1);
+	tIndicator = pData->arrIndicatorRects[iPage];
+	pNode->iId = (uint64_t)iPage + 2u;
+	pNode->iParentId = 1;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_BUTTON;
+	pNode->sName = pData->arrAccessiblePageNames[iPage];
+	pNode->sDescription = iPage == pData->iCurrent ? "Current page" : NULL;
+	pNode->tBounds = (xui_rect_t){tWorld.fX + tIndicator.fX, tWorld.fY + tIndicator.fY,
+		tIndicator.fW, tIndicator.fH};
+	pNode->iRow = 0;
+	pNode->iColumn = iPage;
+	pNode->iRowCount = 1;
+	pNode->iColumnCount = 1;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_SELECTABLE;
+	if ( iPage == pData->iCurrent ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+	}
+	if ( bDisabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	if ( !tResolved.bShowIndicators || tIndicator.fW <= 0.0f || tIndicator.fH <= 0.0f ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	}
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	if ( bDisabled ) pNode->iActions = 0;
+	return XUI_OK;
+}
+
+static int __xuiCarouselAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pPayload, void* pUser)
+{
+	xui_carousel_data_t* pData = (xui_carousel_data_t*)pUser;
+	int iPage;
+	int iRet;
+
+	(void)pPayload;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_ERROR_INVALID_STATE;
+	if ( iNodeId == 0 || iNodeId == 1 ) {
+		if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS ) {
+			return xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		}
+		if ( iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ||
+		     iAction == XUI_ACCESSIBLE_ACTION_DECREMENT ) {
+			iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+			if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) return iRet;
+			return __xuiCarouselMove(pWidget, pData,
+				iAction == XUI_ACCESSIBLE_ACTION_INCREMENT ? 1 : -1, 1);
+		}
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	if ( iNodeId < 2 || iNodeId > (uint64_t)pData->iPageCount + 1u ) return XUI_ERROR_NOT_FOUND;
+	iPage = (int)iNodeId - 2;
+	if ( iAction != XUI_ACCESSIBLE_ACTION_FOCUS &&
+	     iAction != XUI_ACCESSIBLE_ACTION_SET_SELECTION &&
+	     iAction != XUI_ACCESSIBLE_ACTION_ACTIVATE ) return XUI_ERROR_UNSUPPORTED;
+	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) return iRet;
+	return __xuiCarouselSetCurrentInternal(pWidget, pData, iPage,
+		iAction != XUI_ACCESSIBLE_ACTION_FOCUS);
 }
 
 static void __xuiCarouselDefaultLayout(xui_layout_t* pLayout)
@@ -813,6 +1174,9 @@ static int __xuiCarouselInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiCarouselEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiCarouselEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiCarouselEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAccessibilityProvider(pWidget,
+		__xuiCarouselAccessibleCount, __xuiCarouselAccessibleGet,
+		__xuiCarouselAccessibleAction, __xuiCarouselGetData(pWidget));
 	return iRet;
 }
 
@@ -833,7 +1197,7 @@ static int __xuiCarouselInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->pFont = (pDesc != NULL && pDesc->pFont != NULL) ? pDesc->pFont : xuiGetDefaultFont(pContext);
 	pData->iPageCount = 1;
 	pData->iCurrent = 0;
-	pData->bLoop = 1;
+	pData->bLoop = (pDesc != NULL) ? (pDesc->bLoop ? 1 : 0) : 1;
 	pData->bAutoPlay = (pDesc != NULL && pDesc->bAutoPlay) ? 1 : 0;
 	pData->bShowIndicators = (pDesc != NULL) ? (pDesc->bShowIndicators ? 1 : 0) : 1;
 	pData->bShowArrowsOnHover = (pDesc != NULL) ? (pDesc->bShowArrowsOnHover ? 1 : 0) : 1;
@@ -855,11 +1219,11 @@ static int __xuiCarouselInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iIndicatorActiveColor = (pDesc != NULL && pDesc->iIndicatorActiveColor != 0) ? pDesc->iIndicatorActiveColor : XUI_COLOR_RGBA(255, 255, 255, 255);
 	pData->iIndicatorHoverColor = (pDesc != NULL && pDesc->iIndicatorHoverColor != 0) ? pDesc->iIndicatorHoverColor : XUI_COLOR_RGBA(255, 255, 255, 215);
 	pData->iFocusColor = (pDesc != NULL && pDesc->iFocusColor != 0) ? pDesc->iFocusColor : XUI_COLOR_RGBA(255, 255, 255, 110);
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	iRet = xuiWidgetCreate(pContext, &pData->pOverlay);
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pData->pOverlay);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCarouselConfigureOverlay(pData->pOverlay, pWidget);
 	if ( iRet == XUI_OK ) iRet = __xuiCarouselInitEvents(pWidget);
@@ -888,10 +1252,11 @@ static void __xuiCarouselDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 {
 	xui_carousel_data_t* pData;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_carousel_data_t*)pTypeData;
 	if ( pData != NULL ) {
+		(void)xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget), pWidget,
+			&pData->tPointerOwner);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -976,8 +1341,9 @@ XUI_API int xuiCarouselCreate(xui_context pContext, xui_widget* ppWidget, const 
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiCarouselDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiCarouselDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiCarouselGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
@@ -995,7 +1361,13 @@ XUI_API int xuiCarouselSetChange(xui_widget pWidget, xui_carousel_change_proc on
 XUI_API int xuiCarouselSetPageCount(xui_widget pWidget, int iPageCount)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet;
+	if ( (pData == NULL) || (iPageCount < 1) || (iPageCount > XUI_CAROUSEL_MAX_PAGES) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->iPageCount == iPageCount ) return XUI_OK;
+	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiCarouselSetPageCountInternal(pWidget, pData, iPageCount);
 }
 
@@ -1025,7 +1397,10 @@ XUI_API int xuiCarouselAddPageChild(xui_widget pWidget, int iIndex, xui_widget p
 XUI_API int xuiCarouselSetCurrent(xui_widget pWidget, int iIndex, int bNotify)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet;
+	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iPageCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiCarouselSetCurrentInternal(pWidget, pData, iIndex, bNotify);
 }
 
@@ -1038,21 +1413,27 @@ XUI_API int xuiCarouselGetCurrent(xui_widget pWidget)
 XUI_API int xuiCarouselNext(xui_widget pWidget, int bNotify)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiCarouselMove(pWidget, pData, 1, bNotify);
 }
 
 XUI_API int xuiCarouselPrev(xui_widget pWidget, int bNotify)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiCarouselMove(pWidget, pData, -1, bNotify);
 }
 
 XUI_API int xuiCarouselSetAutoPlay(xui_widget pWidget, int bEnabled, float fInterval)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
-	if ( (pData == NULL) || (fInterval < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fInterval) || (fInterval < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bAutoPlay = bEnabled ? 1 : 0;
 	pData->fAutoInterval = (fInterval > 0.0f) ? fInterval : 0.0f;
 	if ( pData->bAutoPlay && pData->fAutoInterval <= 0.0f ) pData->fAutoInterval = 3.0f;
@@ -1072,9 +1453,14 @@ XUI_API int xuiCarouselGetAutoPlay(xui_widget pWidget, int* pEnabled, float* pIn
 XUI_API int xuiCarouselSetLoop(xui_widget pWidget, int bLoop)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	int bNewLoop;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bLoop = bLoop ? 1 : 0;
-	return XUI_OK;
+	bNewLoop = bLoop ? 1 : 0;
+	if ( pData->bLoop == bNewLoop ) return XUI_OK;
+	pData->bLoop = bNewLoop;
+	pData->iHoverArrow = XUI_CAROUSEL_ARROW_NONE;
+	return __xuiCarouselInvalidate(pWidget, pData,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiCarouselGetLoop(xui_widget pWidget)
@@ -1086,8 +1472,14 @@ XUI_API int xuiCarouselGetLoop(xui_widget pWidget)
 XUI_API int xuiCarouselSetIndicatorsVisible(xui_widget pWidget, int bVisible)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	int bNewVisible;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bShowIndicators = bVisible ? 1 : 0;
+	bNewVisible = bVisible ? 1 : 0;
+	if ( pData->bShowIndicators == bNewVisible ) return XUI_OK;
+	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->bShowIndicators = bNewVisible;
 	pData->iHoverIndicator = -1;
 	pData->iActiveIndicator = -1;
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1102,8 +1494,11 @@ XUI_API int xuiCarouselGetIndicatorsVisible(xui_widget pWidget)
 XUI_API int xuiCarouselSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	xui_font pNewFont;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	pNewFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	if ( pData->pFont == pNewFont ) return XUI_OK;
+	pData->pFont = pNewFont;
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1116,8 +1511,14 @@ XUI_API xui_font xuiCarouselGetFont(xui_widget pWidget)
 XUI_API int xuiCarouselSetArrowsOnHover(xui_widget pWidget, int bEnabled)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	int bNewEnabled;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bShowArrowsOnHover = bEnabled ? 1 : 0;
+	bNewEnabled = bEnabled ? 1 : 0;
+	if ( pData->bShowArrowsOnHover == bNewEnabled ) return XUI_OK;
+	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->bShowArrowsOnHover = bNewEnabled;
 	pData->iHoverArrow = XUI_CAROUSEL_ARROW_NONE;
 	pData->iActiveArrow = XUI_CAROUSEL_ARROW_NONE;
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1132,9 +1533,25 @@ XUI_API int xuiCarouselGetArrowsOnHover(xui_widget pWidget)
 XUI_API int xuiCarouselSetMetrics(xui_widget pWidget, float fArrowSize, float fIndicatorSize, float fIndicatorGap, float fIndicatorBottom)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
-	if ( (pData == NULL) || (fArrowSize < 0.0f) || (fIndicatorSize < 0.0f) || (fIndicatorGap < 0.0f) || (fIndicatorBottom < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fArrowSize = (fArrowSize > 0.0f) ? fArrowSize : 36.0f;
-	pData->fIndicatorSize = (fIndicatorSize > 0.0f) ? fIndicatorSize : 9.0f;
+	float fNewArrowSize;
+	float fNewIndicatorSize;
+	int iRet;
+	if ( (pData == NULL) || !isfinite(fArrowSize) || !isfinite(fIndicatorSize) ||
+	     !isfinite(fIndicatorGap) || !isfinite(fIndicatorBottom) ||
+	     (fArrowSize < 0.0f) || (fIndicatorSize < 0.0f) ||
+	     (fIndicatorGap < 0.0f) || (fIndicatorBottom < 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	fNewArrowSize = (fArrowSize > 0.0f) ? fArrowSize : 36.0f;
+	fNewIndicatorSize = (fIndicatorSize > 0.0f) ? fIndicatorSize : 9.0f;
+	if ( pData->fArrowSize == fNewArrowSize &&
+	     pData->fIndicatorSize == fNewIndicatorSize &&
+	     pData->fIndicatorGap == fIndicatorGap &&
+	     pData->fIndicatorBottom == fIndicatorBottom ) return XUI_OK;
+	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->fArrowSize = fNewArrowSize;
+	pData->fIndicatorSize = fNewIndicatorSize;
 	pData->fIndicatorGap = fIndicatorGap;
 	pData->fIndicatorBottom = fIndicatorBottom;
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1155,6 +1572,11 @@ XUI_API int xuiCarouselSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iBackground && pData->iArrowColor == iArrow &&
+	     pData->iArrowHoverColor == iArrowHover && pData->iArrowTextColor == iArrowText &&
+	     pData->iIndicatorColor == iIndicator &&
+	     pData->iIndicatorActiveColor == iIndicatorActive &&
+	     pData->iIndicatorHoverColor == iIndicatorHover ) return XUI_OK;
 	pData->iBackgroundColor = iBackground;
 	pData->iArrowColor = iArrow;
 	pData->iArrowHoverColor = iArrowHover;
@@ -1183,6 +1605,7 @@ XUI_API int xuiCarouselSetFocusColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iFocusColor == iColor ) return XUI_OK;
 	pData->iFocusColor = iColor;
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }

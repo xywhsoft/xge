@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_TOGGLE
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
 #include <math.h>
 #include <string.h>
@@ -65,6 +66,7 @@ typedef struct xui_toggle_data_t {
 	float fInnerTextGap;
 	int bChecked;
 	int bKeyboardActive;
+	xui_pointer_press_t tPointerPress;
 	int iChangeCount;
 	int bUseBuiltinAtlas;
 	xui_surface pUncheckedSurface;
@@ -102,6 +104,7 @@ static int __xuiToggleDescValid(const xui_toggle_desc_t* pDesc)
 static int __xuiToggleStringSet(char** ppText, int* pCapacity, const char* sText)
 {
 	char* sNew;
+	char* sOld;
 	int iNeed;
 
 	if ( (ppText == NULL) || (pCapacity == NULL) ) {
@@ -111,18 +114,19 @@ static int __xuiToggleStringSet(char** ppText, int* pCapacity, const char* sText
 		sText = "";
 	}
 	iNeed = (int)strlen(sText) + 1;
-	if ( iNeed > *pCapacity ) {
+	if ( (iNeed > *pCapacity) || (*ppText == NULL) ) {
 		sNew = (char*)xrtMalloc((size_t)iNeed);
 		if ( sNew == NULL ) {
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
-		if ( *ppText != NULL ) {
-			xrtFree(*ppText);
-		}
+		memcpy(sNew, sText, (size_t)iNeed);
+		sOld = *ppText;
 		*ppText = sNew;
 		*pCapacity = iNeed;
+		if ( sOld != NULL ) xrtFree(sOld);
+		return XUI_OK;
 	}
-	memcpy(*ppText, sText, (size_t)iNeed);
+	memmove(*ppText, sText, (size_t)iNeed);
 	return XUI_OK;
 }
 
@@ -136,16 +140,38 @@ static int __xuiToggleTextSet(xui_toggle_data_t* pData, const char* sText)
 
 static int __xuiToggleInnerTextSet(xui_toggle_data_t* pData, const char* sUncheckedText, const char* sCheckedText)
 {
-	int iRet;
+	char* sNewUnchecked;
+	char* sNewChecked;
+	char* sOldUnchecked;
+	char* sOldChecked;
+	int iUncheckedNeed;
+	int iCheckedNeed;
 
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiToggleStringSet(&pData->sUncheckedText, &pData->iUncheckedTextCapacity, sUncheckedText);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( sUncheckedText == NULL ) sUncheckedText = "";
+	if ( sCheckedText == NULL ) sCheckedText = "";
+	iUncheckedNeed = (int)strlen(sUncheckedText) + 1;
+	iCheckedNeed = (int)strlen(sCheckedText) + 1;
+	sNewUnchecked = (char*)xrtMalloc((size_t)iUncheckedNeed);
+	if ( sNewUnchecked == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	sNewChecked = (char*)xrtMalloc((size_t)iCheckedNeed);
+	if ( sNewChecked == NULL ) {
+		xrtFree(sNewUnchecked);
+		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	return __xuiToggleStringSet(&pData->sCheckedText, &pData->iCheckedTextCapacity, sCheckedText);
+	memcpy(sNewUnchecked, sUncheckedText, (size_t)iUncheckedNeed);
+	memcpy(sNewChecked, sCheckedText, (size_t)iCheckedNeed);
+	sOldUnchecked = pData->sUncheckedText;
+	sOldChecked = pData->sCheckedText;
+	pData->sUncheckedText = sNewUnchecked;
+	pData->iUncheckedTextCapacity = iUncheckedNeed;
+	pData->sCheckedText = sNewChecked;
+	pData->iCheckedTextCapacity = iCheckedNeed;
+	if ( sOldUnchecked != NULL ) xrtFree(sOldUnchecked);
+	if ( sOldChecked != NULL ) xrtFree(sOldChecked);
+	return XUI_OK;
 }
 
 static xui_toggle_data_t* __xuiToggleGetData(xui_widget pWidget)
@@ -153,15 +179,19 @@ static xui_toggle_data_t* __xuiToggleGetData(xui_widget pWidget)
 	xui_context pContext;
 	xui_widget_type pType;
 
-	if ( pWidget == NULL ) {
-		return NULL;
-	}
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return NULL;
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "toggle");
 	if ( (pType == NULL) || !xuiWidgetIsType(pWidget, pType) ) {
 		return NULL;
 	}
 	return (xui_toggle_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiToggleDataAlive(xui_widget pWidget, const xui_toggle_data_t* pData)
+{
+	return (pData != NULL) && (__xuiToggleGetData(pWidget) == pData);
 }
 
 static int __xuiToggleStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
@@ -334,7 +364,8 @@ static int __xuiToggleStateVisual(uint32_t iStateId)
 	return XUI_TOGGLE_VISUAL_NORMAL;
 }
 
-static xui_vec2_t __xuiToggleMeasureText(xui_widget pWidget, xui_font pFont, const char* sText)
+static xui_vec2_t __xuiToggleMeasureText(xui_widget pWidget, xui_font pFont,
+	const char* sText, uint32_t iTextFlags)
 {
 	xui_proxy pProxy;
 	xui_vec2_t tSize;
@@ -345,7 +376,7 @@ static xui_vec2_t __xuiToggleMeasureText(xui_widget pWidget, xui_font pFont, con
 	}
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) ) {
-		(void)pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize);
+		(void)pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iTextFlags & XUI_TEXT_RTL) ? XUI_TEXT_SHAPE_RTL : 0)}, &tSize);
 	}
 	return tSize;
 }
@@ -375,8 +406,10 @@ static xui_vec2_t __xuiToggleMeasureInnerText(xui_widget pWidget, xui_toggle_dat
 	if ( !__xuiToggleHasInnerText(pResolved) ) {
 		return tUnchecked;
 	}
-	tUnchecked = __xuiToggleMeasureText(pWidget, pResolved->pFont, pResolved->sUncheckedText);
-	tChecked = __xuiToggleMeasureText(pWidget, pResolved->pFont, pResolved->sCheckedText);
+	tUnchecked = __xuiToggleMeasureText(pWidget, pResolved->pFont,
+		pResolved->sUncheckedText, pResolved->iTextFlags);
+	tChecked = __xuiToggleMeasureText(pWidget, pResolved->pFont,
+		pResolved->sCheckedText, pResolved->iTextFlags);
 	if ( tChecked.fX > tUnchecked.fX ) {
 		tUnchecked.fX = tChecked.fX;
 	}
@@ -449,7 +482,8 @@ static void __xuiToggleLayoutContent(xui_widget pWidget, xui_toggle_data_t* pDat
 		}
 		pData->tInnerTextRect = xuiInternalRectFromFloatNearest(fInnerX, fTrackY, fInnerW, fTrackH);
 	}
-	tTextSize = __xuiToggleMeasureText(pWidget, pResolved->pFont, pData->sText);
+	tTextSize = __xuiToggleMeasureText(pWidget, pResolved->pFont,
+		pData->sText, pResolved->iTextFlags);
 	(void)tTextSize;
 	pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX + fTrackW + pResolved->fGap,
 		tContent.fY, tContent.fW - fTrackW - pResolved->fGap, tContent.fH);
@@ -474,7 +508,8 @@ static int __xuiToggleContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint,
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiToggleResolve(pWidget, pData, &tResolved);
-	tTextSize = __xuiToggleMeasureText(pWidget, tResolved.pFont, pData->sText);
+	tTextSize = __xuiToggleMeasureText(pWidget, tResolved.pFont,
+		pData->sText, tResolved.iTextFlags);
 	fTrackH = tResolved.fTrackHeight;
 	if ( fTrackH < 2.0f ) {
 		fTrackH = 2.0f;
@@ -601,7 +636,7 @@ static int __xuiToggleDrawDefaultIndicator(xui_widget pWidget, xui_draw_context 
 				iInnerColor = pResolved->iDisabledTextColor;
 			}
 			if ( __xuiToggleColorAlpha(iInnerColor) != 0 ) {
-				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sInnerText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tInnerTextRect, iInnerColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sInnerText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((pResolved->iTextFlags & XUI_TEXT_RTL) ? XUI_TEXT_SHAPE_RTL : 0)}, pData->tInnerTextRect, iInnerColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP | (pResolved->iTextFlags & XUI_TEXT_RTL));
 			}
 		}
 	}
@@ -679,26 +714,41 @@ static int __xuiToggleCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 
 static void __xuiToggleNotify(xui_widget pWidget, xui_toggle_data_t* pData)
 {
+	xui_toggle_change_proc onChange;
+	void* pUser;
+	int bChecked;
+
 	pData->iChangeCount++;
-	if ( pData->onChange != NULL ) {
-		pData->onChange(pWidget, pData->bChecked, pData->pChangeUser);
-	}
+	onChange = pData->onChange;
+	pUser = pData->pChangeUser;
+	bChecked = pData->bChecked;
+	if ( onChange != NULL ) onChange(pWidget, bChecked, pUser);
 }
 
 static int __xuiToggleSetCheckedInternal(xui_widget pWidget, xui_toggle_data_t* pData, int bChecked, int bNotify)
 {
+	int bOldChecked;
+	int iRet;
+
 	bChecked = (bChecked != 0);
 	if ( pData->bChecked == bChecked ) {
 		return XUI_OK;
 	}
+	bOldChecked = pData->bChecked;
 	pData->bChecked = bChecked;
+	iRet = __xuiToggleSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->bChecked = bOldChecked;
+		(void)__xuiToggleSyncState(pWidget, pData);
+		return iRet;
+	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
-	(void)__xuiToggleSyncState(pWidget, pData);
 	if ( bNotify ) {
 		__xuiToggleNotify(pWidget, pData);
+		if ( !__xuiToggleDataAlive(pWidget, pData) ) return XUI_OK;
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static void __xuiToggleDefaultAction(xui_widget pWidget, void* pUser)
@@ -718,6 +768,7 @@ static int __xuiToggleEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	xui_toggle_data_t* pData;
 	xui_context pContext;
 	int bLeftButton;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) {
@@ -730,8 +781,9 @@ static int __xuiToggleEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
 		pData->bKeyboardActive = 0;
-		(void)__xuiToggleSyncState(pWidget, pData);
-		return XUI_OK;
+		iRet = xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+		if ( iRet != XUI_OK ) return iRet;
+		return __xuiToggleSyncState(pWidget, pData);
 	}
 	bLeftButton = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	switch ( pEvent->iType ) {
@@ -739,51 +791,66 @@ static int __xuiToggleEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
-		(void)__xuiToggleSyncState(pWidget, pData);
-		return XUI_OK;
+		return __xuiToggleSyncState(pWidget, pData);
 	case XUI_EVENT_BLUR:
+	case XUI_EVENT_ENABLED_CHANGED:
+	case XUI_EVENT_VISIBLE_CHANGED:
 		pData->bKeyboardActive = 0;
-		(void)__xuiToggleSyncState(pWidget, pData);
-		return XUI_OK;
+		return __xuiToggleSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_DOWN:
-		if ( bLeftButton ) {
-			(void)xuiSetPointerCapture(pContext, pWidget);
-			(void)__xuiToggleSyncState(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->pTarget == pWidget) && bLeftButton ) {
+			if ( pData->tPointerPress.tOwner.bActive ) {
+				return xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ?
+					XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			}
+			iRet = xuiInternalPointerPressBegin(pContext, pWidget, pEvent,
+				&pData->tPointerPress);
+			if ( iRet == XUI_OK ) iRet = __xuiToggleSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) {
+				(void)xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+			}
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
-		if ( bLeftButton ) {
-			(void)xuiReleasePointerCapture(pContext, pWidget);
-			(void)__xuiToggleSyncState(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->pTarget == pWidget) && bLeftButton &&
+		     xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ) {
+			iRet = xuiInternalPointerPressEnd(pContext, pWidget, pEvent,
+				&pData->tPointerPress);
+			if ( iRet == XUI_OK && __xuiToggleDataAlive(pWidget, pData) ) {
+				iRet = __xuiToggleSyncState(pWidget, pData);
+			}
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
-		pData->bKeyboardActive = 0;
-		(void)__xuiToggleSyncState(pWidget, pData);
-		return XUI_OK;
+		if ( !xuiInternalPointerPressCaptureLost(&pData->tPointerPress, pEvent) ) return XUI_OK;
+		return __xuiToggleSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_CLICK:
-		if ( bLeftButton ) {
-			(void)__xuiToggleSetCheckedInternal(pWidget, pData, !pData->bChecked, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->pTarget == pWidget) && bLeftButton ) {
+			if ( !xuiInternalPointerPressAcceptClick(&pData->tPointerPress, pEvent) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			iRet = __xuiToggleSetCheckedInternal(pWidget, pData, !pData->bChecked, 1);
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_DOWN:
-		if ( pEvent->iKey == XUI_KEY_SPACE ) {
+		if ( (pEvent->pTarget == pWidget) && pEvent->iKey == XUI_KEY_SPACE ) {
 			pData->bKeyboardActive = 1;
-			(void)__xuiToggleSyncState(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiToggleSyncState(pWidget, pData);
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_UP:
-		if ( pEvent->iKey == XUI_KEY_SPACE ) {
+		if ( (pEvent->pTarget == pWidget) && pEvent->iKey == XUI_KEY_SPACE ) {
 			if ( pData->bKeyboardActive ) {
 				pData->bKeyboardActive = 0;
-				(void)__xuiToggleSetCheckedInternal(pWidget, pData, !pData->bChecked, 1);
+				iRet = __xuiToggleSyncState(pWidget, pData);
+				if ( iRet == XUI_OK ) iRet = __xuiToggleSetCheckedInternal(pWidget, pData, !pData->bChecked, 1);
+				return iRet | XUI_EVENT_DISPATCH_STOP;
 			}
-			(void)__xuiToggleSyncState(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			return __xuiToggleSyncState(pWidget, pData) | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	default:
@@ -865,6 +932,8 @@ static int __xuiToggleInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiToggleEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiToggleEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiToggleEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiToggleEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiToggleEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiToggleEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_UP, __xuiToggleEvent, NULL);
 	return iRet;
@@ -919,9 +988,12 @@ static int __xuiToggleInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	iRet = __xuiToggleInnerTextSet(pData, (pDesc != NULL) ? pDesc->sUncheckedText : "", (pDesc != NULL) ? pDesc->sCheckedText : "");
 	if ( iRet != XUI_OK ) return iRet;
 	tPadding = (xui_thickness_t){4.0f, 3.0f, 4.0f, 3.0f};
-	(void)xuiWidgetSetPadding(pWidget, tPadding);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
+	iRet = xuiWidgetSetPadding(pWidget, tPadding);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiToggleInitCacheStates(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiToggleInitEvents(pWidget);
@@ -933,10 +1005,11 @@ static void __xuiToggleDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
 	xui_toggle_data_t* pData;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_toggle_data_t*)pTypeData;
 	if ( pData == NULL ) return;
+	(void)xuiInternalPointerPressCancel(xuiWidgetGetContext(pWidget), pWidget,
+		&pData->tPointerPress);
 	if ( pData->sText != NULL ) {
 		xrtFree(pData->sText);
 	}
@@ -1000,16 +1073,18 @@ static void __xuiToggleRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiToggleRegisterStyleProperty(pContext, pType, "toggle.thumb.disabled_border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
-	__xuiToggleRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiToggleRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiToggleRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
 static int __xuiToggleAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (pNode == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNode->iRole = XUI_ACCESSIBLE_ROLE_SWITCH;
-	pNode->sName = pData->sText;
+	pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+		xuiWidgetGetAccessibleName(pWidget) : pData->sText;
+	pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
 	pNode->sValue = pData->bChecked ? "true" : "false";
 	if ( pData->bChecked ) pNode->iState |= XUI_ACCESSIBLE_STATE_CHECKED;
 	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE) |
@@ -1031,6 +1106,7 @@ XUI_API xui_widget_type xuiToggleGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "toggle");
 	if ( pType != NULL ) {
 		__xuiToggleRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiToggleAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1058,10 +1134,9 @@ XUI_API int xuiToggleCreate(xui_context pContext, xui_widget* ppWidget, const xu
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiToggleDescValid(pDesc) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiToggleDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiToggleGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -1085,10 +1160,14 @@ XUI_API int xuiToggleSetText(xui_widget pWidget, const char* sText)
 
 	pData = __xuiToggleGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sText == NULL ) sText = "";
+	if ( pData->sText != NULL && strcmp(pData->sText, sText) == 0 ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiToggleTextSet(pData, sText);
 	if ( iRet != XUI_OK ) return iRet;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API const char* xuiToggleGetText(xui_widget pWidget)
@@ -1104,9 +1183,16 @@ XUI_API int xuiToggleSetInnerText(xui_widget pWidget, const char* sUncheckedText
 
 	pData = __xuiToggleGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sUncheckedText == NULL ) sUncheckedText = "";
+	if ( sCheckedText == NULL ) sCheckedText = "";
+	if ( pData->sUncheckedText != NULL && pData->sCheckedText != NULL &&
+	     strcmp(pData->sUncheckedText, sUncheckedText) == 0 &&
+	     strcmp(pData->sCheckedText, sCheckedText) == 0 ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiToggleInnerTextSet(pData, sUncheckedText, sCheckedText);
 	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API const char* xuiToggleGetUncheckedText(xui_widget pWidget)
@@ -1124,12 +1210,17 @@ XUI_API const char* xuiToggleGetCheckedText(xui_widget pWidget)
 XUI_API int xuiToggleSetInnerTextColor(xui_widget pWidget, uint32_t iUncheckedColor, uint32_t iCheckedColor)
 {
 	xui_toggle_data_t* pData;
+	int iRet;
 
 	pData = __xuiToggleGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iUncheckedTextColor == iUncheckedColor &&
+	     pData->iCheckedTextColor == iCheckedColor ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iUncheckedTextColor = iUncheckedColor;
 	pData->iCheckedTextColor = iCheckedColor;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiToggleGetInnerTextColor(xui_widget pWidget, uint32_t* pUncheckedColor, uint32_t* pCheckedColor)
@@ -1144,13 +1235,17 @@ XUI_API int xuiToggleGetInnerTextColor(xui_widget pWidget, uint32_t* pUncheckedC
 XUI_API int xuiToggleSetInnerTextMetrics(xui_widget pWidget, float fPadding, float fGap)
 {
 	xui_toggle_data_t* pData;
+	int iRet;
 
 	pData = __xuiToggleGetData(pWidget);
 	if ( (pData == NULL) || !__xuiToggleNonNegativeFloatValid(fPadding) ||
 	     !__xuiToggleNonNegativeFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fInnerTextPadding == fPadding && pData->fInnerTextGap == fGap ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fInnerTextPadding = fPadding;
 	pData->fInnerTextGap = fGap;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiToggleGetInnerTextMetrics(xui_widget pWidget, float* pPadding, float* pGap)
@@ -1165,9 +1260,13 @@ XUI_API int xuiToggleGetInnerTextMetrics(xui_widget pWidget, float* pPadding, fl
 XUI_API int xuiToggleSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFont == pFont ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->pFont = pFont;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API xui_font xuiToggleGetFont(xui_widget pWidget)
@@ -1192,9 +1291,13 @@ XUI_API int xuiToggleGetChecked(xui_widget pWidget)
 XUI_API int xuiToggleSetTextColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iTextColor == iColor ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iTextColor = iColor;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API uint32_t xuiToggleGetTextColor(xui_widget pWidget)
@@ -1206,9 +1309,13 @@ XUI_API uint32_t xuiToggleGetTextColor(xui_widget pWidget)
 XUI_API int xuiToggleSetDisabledTextColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iDisabledTextColor == iColor ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iDisabledTextColor = iColor;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API uint32_t xuiToggleGetDisabledTextColor(xui_widget pWidget)
@@ -1220,11 +1327,15 @@ XUI_API uint32_t xuiToggleGetDisabledTextColor(xui_widget pWidget)
 XUI_API int xuiToggleSetTrackSize(xui_widget pWidget, float fWidth, float fHeight)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( (pData == NULL) || !isfinite(fWidth) || !isfinite(fHeight) ||
 	     (fWidth <= 0.0f) || (fHeight <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fTrackWidth == fWidth && pData->fTrackHeight == fHeight ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fTrackWidth = fWidth;
 	pData->fTrackHeight = fHeight;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API float xuiToggleGetTrackWidth(xui_widget pWidget)
@@ -1242,9 +1353,13 @@ XUI_API float xuiToggleGetTrackHeight(xui_widget pWidget)
 XUI_API int xuiToggleSetThumbSize(xui_widget pWidget, float fSize)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( (pData == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fThumbSize == fSize ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fThumbSize = fSize;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API float xuiToggleGetThumbSize(xui_widget pWidget)
@@ -1256,9 +1371,13 @@ XUI_API float xuiToggleGetThumbSize(xui_widget pWidget)
 XUI_API int xuiToggleSetGap(xui_widget pWidget, float fGap)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( (pData == NULL) || !__xuiToggleNonNegativeFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fGap == fGap ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fGap = fGap;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API float xuiToggleGetGap(xui_widget pWidget)
@@ -1270,14 +1389,20 @@ XUI_API float xuiToggleGetGap(xui_widget pWidget)
 XUI_API int xuiToggleSetColors(xui_widget pWidget, uint32_t iAccent, uint32_t iTrack, uint32_t iHoverTrack, uint32_t iFocus)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iAccentColor == iAccent && pData->iAccentHoverColor == iAccent &&
+	     pData->iAccentActiveColor == iAccent && pData->iTrackColor == iTrack &&
+	     pData->iTrackHoverColor == iHoverTrack && pData->iFocusColor == iFocus ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iAccentColor = iAccent;
 	pData->iAccentHoverColor = iAccent;
 	pData->iAccentActiveColor = iAccent;
 	pData->iTrackColor = iTrack;
 	pData->iTrackHoverColor = iHoverTrack;
 	pData->iFocusColor = iFocus;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiToggleGetColors(xui_widget pWidget, uint32_t* pAccent, uint32_t* pTrack, uint32_t* pHoverTrack, uint32_t* pFocus)
@@ -1294,12 +1419,18 @@ XUI_API int xuiToggleGetColors(xui_widget pWidget, uint32_t* pAccent, uint32_t* 
 XUI_API int xuiToggleSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheckedSurface, xui_rect_t tUncheckedSrc, xui_surface pCheckedSurface, xui_rect_t tCheckedSrc)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pUncheckedSurface == pUncheckedSurface && pData->pCheckedSurface == pCheckedSurface &&
+	     memcmp(&pData->tUncheckedSrc, &tUncheckedSrc, sizeof(tUncheckedSrc)) == 0 &&
+	     memcmp(&pData->tCheckedSrc, &tCheckedSrc, sizeof(tCheckedSrc)) == 0 ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->pUncheckedSurface = pUncheckedSurface;
 	pData->tUncheckedSrc = tUncheckedSrc;
 	pData->pCheckedSurface = pCheckedSurface;
 	pData->tCheckedSrc = tCheckedSrc;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiToggleGetIndicatorSurface(xui_widget pWidget, xui_surface* ppUncheckedSurface, xui_rect_t* pUncheckedSrc, xui_surface* ppCheckedSurface, xui_rect_t* pCheckedSrc)
@@ -1316,9 +1447,14 @@ XUI_API int xuiToggleGetIndicatorSurface(xui_widget pWidget, xui_surface* ppUnch
 XUI_API int xuiToggleUseBuiltinAtlas(xui_widget pWidget, int bEnable)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bUseBuiltinAtlas = (bEnable != 0);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	bEnable = (bEnable != 0);
+	if ( pData->bUseBuiltinAtlas == bEnable ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->bUseBuiltinAtlas = bEnable;
+	return XUI_OK;
 }
 
 XUI_API int xuiToggleGetUseBuiltinAtlas(xui_widget pWidget)

@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_ACCORDION
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -35,6 +36,7 @@ typedef struct xui_accordion_data_t {
 	int iHoverIndex;
 	int iActiveIndex;
 	int iChangeCount;
+	xui_pointer_owner_t tPointerOwner;
 	uint32_t iChromeStyleVersion;
 	float fHeaderHeight;
 	float fSpacing;
@@ -373,12 +375,16 @@ static void __xuiAccordionDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 
 static int __xuiAccordionInvalidateSection(const xui_accordion_section_t* pSection, uint32_t iFlags)
 {
+	int iRet;
+
 	if ( pSection == NULL ) {
 		return XUI_OK;
 	}
-	if ( pSection->pSection != NULL ) (void)xuiWidgetInvalidate(pSection->pSection, iFlags);
-	if ( pSection->pHeader != NULL ) (void)xuiWidgetInvalidate(pSection->pHeader, iFlags);
-	if ( pSection->pClient != NULL ) (void)xuiWidgetInvalidate(pSection->pClient, iFlags);
+	iRet = XUI_OK;
+	if ( pSection->pSection != NULL ) iRet = xuiWidgetInvalidate(pSection->pSection, iFlags);
+	if ( iRet == XUI_OK && pSection->pHeader != NULL ) iRet = xuiWidgetInvalidate(pSection->pHeader, iFlags);
+	if ( iRet == XUI_OK && pSection->pClient != NULL ) iRet = xuiWidgetInvalidate(pSection->pClient, iFlags);
+	if ( iRet != XUI_OK ) return iRet;
 	return XUI_OK;
 }
 
@@ -389,9 +395,13 @@ static int __xuiAccordionInvalidateAll(xui_widget pAccordion, xui_accordion_data
 	if ( (pAccordion == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	(void)xuiWidgetInvalidate(pAccordion, iFlags);
+	int iRet;
+
+	iRet = xuiWidgetInvalidate(pAccordion, iFlags);
+	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pData->iSectionCount; i++ ) {
-		(void)__xuiAccordionInvalidateSection(&pData->arrSections[i], iFlags);
+		iRet = __xuiAccordionInvalidateSection(&pData->arrSections[i], iFlags);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
@@ -483,8 +493,30 @@ static int __xuiAccordionStepEnabled(const xui_accordion_data_t* pData, int iSta
 	return iFallback;
 }
 
+static int __xuiAccordionSetSelected(xui_widget pAccordion, xui_accordion_data_t* pData, int iIndex)
+{
+	int iOld;
+	int iRet;
+
+	if ( (pAccordion == NULL) || (pData == NULL) ||
+	     (iIndex < -1) || (iIndex >= pData->iSectionCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iIndex >= 0 && !__xuiAccordionSectionEnabled(pData, iIndex) ) return XUI_ERROR_INVALID_STATE;
+	if ( pData->iSelected == iIndex ) return XUI_OK;
+	iOld = pData->iSelected;
+	pData->iSelected = iIndex;
+	iRet = __xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->iSelected = iOld;
+		(void)__xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iRet;
+	}
+	xuiInternalAccessibilityQueue(pAccordion, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	return XUI_OK;
+}
+
 static int __xuiAccordionSyncSections(xui_widget pAccordion, xui_accordion_data_t* pData)
 {
+	int iRet;
 	int i;
 
 	if ( (pAccordion == NULL) || (pData == NULL) ) {
@@ -493,25 +525,31 @@ static int __xuiAccordionSyncSections(xui_widget pAccordion, xui_accordion_data_
 	for ( i = 0; i < pData->iSectionCount; i++ ) {
 		xui_accordion_section_t* pSection = &pData->arrSections[i];
 		if ( pSection->pSection != NULL ) {
-			(void)xuiWidgetSetVisible(pSection->pSection, 1);
-			(void)xuiWidgetSetEnabled(pSection->pSection, pSection->bEnabled);
+			iRet = xuiWidgetSetVisible(pSection->pSection, 1);
+			if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pSection->pSection, pSection->bEnabled);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( __xuiAccordionGetData(pAccordion) != pData ) return XUI_OK;
 		}
 		if ( pSection->pHeader != NULL ) {
-			(void)xuiWidgetSetEnabled(pSection->pHeader, pSection->bEnabled);
-			(void)xuiWidgetInvalidate(pSection->pHeader, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			iRet = xuiWidgetSetEnabled(pSection->pHeader, pSection->bEnabled);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( __xuiAccordionGetData(pAccordion) != pData ) return XUI_OK;
 		}
 		if ( pSection->pClient != NULL ) {
-			(void)xuiWidgetSetVisible(pSection->pClient, pSection->bExpanded);
-			(void)xuiWidgetSetEnabled(pSection->pClient, pSection->bEnabled);
-			(void)xuiWidgetInvalidate(pSection->pClient, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			iRet = xuiWidgetSetVisible(pSection->pClient, pSection->bExpanded);
+			if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pSection->pClient, pSection->bEnabled);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( __xuiAccordionGetData(pAccordion) != pData ) return XUI_OK;
 		}
 	}
-	return xuiWidgetInvalidate(pAccordion, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiAccordionInvalidateAll(pAccordion, pData,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiAccordionSetHover(xui_widget pAccordion, xui_accordion_data_t* pData, int iIndex)
 {
 	int iOld;
+	int iRet;
 
 	if ( (pAccordion == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -521,18 +559,19 @@ static int __xuiAccordionSetHover(xui_widget pAccordion, xui_accordion_data_t* p
 	}
 	iOld = pData->iHoverIndex;
 	pData->iHoverIndex = iIndex;
-	if ( (iOld >= 0) && (iOld < pData->iSectionCount) ) {
-		(void)__xuiAccordionInvalidateSection(&pData->arrSections[iOld], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->iHoverIndex = iOld;
+		(void)__xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iRet;
 	}
-	if ( (iIndex >= 0) && (iIndex < pData->iSectionCount) ) {
-		(void)__xuiAccordionInvalidateSection(&pData->arrSections[iIndex], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
-	return xuiWidgetInvalidate(pAccordion, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static int __xuiAccordionSetActive(xui_widget pAccordion, xui_accordion_data_t* pData, int iIndex)
 {
 	int iOld;
+	int iRet;
 
 	if ( (pAccordion == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -542,38 +581,59 @@ static int __xuiAccordionSetActive(xui_widget pAccordion, xui_accordion_data_t* 
 	}
 	iOld = pData->iActiveIndex;
 	pData->iActiveIndex = iIndex;
-	if ( (iOld >= 0) && (iOld < pData->iSectionCount) ) {
-		(void)__xuiAccordionInvalidateSection(&pData->arrSections[iOld], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->iActiveIndex = iOld;
+		(void)__xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iRet;
 	}
-	if ( (iIndex >= 0) && (iIndex < pData->iSectionCount) ) {
-		(void)__xuiAccordionInvalidateSection(&pData->arrSections[iIndex], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
-	return xuiWidgetInvalidate(pAccordion, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static int __xuiAccordionCancelPress(xui_widget pAccordion, xui_accordion_data_t* pData)
 {
 	xui_context pContext;
 	xui_widget pCapture;
+	int iRet;
 
 	if ( (pAccordion == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pAccordion);
-	pCapture = xuiGetPointerCapture(pContext);
-	if ( __xuiAccordionHeaderIndex(pData, pCapture) >= 0 ) {
-		(void)xuiReleasePointerCapture(pContext, pCapture);
+	pCapture = NULL;
+	if ( pData->tPointerOwner.bActive ) {
+		pCapture = xuiGetPointerCaptureEx(pContext,
+			pData->tPointerOwner.iPointerId, pData->tPointerOwner.iPointerType);
+	}
+	if ( pCapture != NULL ) {
+		iRet = xuiInternalPointerOwnerCancel(pContext, pCapture,
+			&pData->tPointerOwner);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( __xuiAccordionGetData(pAccordion) != pData ) return XUI_OK;
+	} else {
+		(void)xuiInternalPointerOwnerCancel(pContext, NULL, &pData->tPointerOwner);
 	}
 	return __xuiAccordionSetActive(pAccordion, pData, -1);
 }
 
 static int __xuiAccordionSetExpandedInternal(xui_widget pAccordion, xui_accordion_data_t* pData, int iIndex, int bExpanded, int bNotify)
 {
+	xui_accordion_select_proc onSelect;
+	void* pSelectUser;
+	int arrOldExpanded[XUI_ACCORDION_SECTION_CAPACITY];
+	int iOldSelected;
+	int iOldChangeCount;
+	int iId;
+	int iRet;
 	int i;
 	int bChanged;
+	int bSelectionChanged;
 
 	if ( (pAccordion == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iSectionCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	bExpanded = bExpanded ? 1 : 0;
+	for ( i = 0; i < pData->iSectionCount; i++ ) arrOldExpanded[i] = pData->arrSections[i].bExpanded;
+	iOldSelected = pData->iSelected;
+	iOldChangeCount = pData->iChangeCount;
 	bChanged = 0;
 	if ( (pData->iMode == XUI_ACCORDION_MODE_SINGLE) && bExpanded ) {
 		for ( i = 0; i < pData->iSectionCount; i++ ) {
@@ -589,18 +649,25 @@ static int __xuiAccordionSetExpandedInternal(xui_widget pAccordion, xui_accordio
 	}
 	if ( bExpanded ) {
 		pData->iSelected = iIndex;
-	} else if ( pData->iSelected == iIndex ) {
-		pData->iSelected = -1;
 	}
-	if ( bChanged ) {
-		pData->iChangeCount++;
+	bSelectionChanged = pData->iSelected != iOldSelected;
+	if ( !bChanged && !bSelectionChanged ) return XUI_OK;
+	if ( bChanged ) pData->iChangeCount++;
+	iRet = __xuiAccordionSyncSections(pAccordion, pData);
+	if ( iRet != XUI_OK ) {
+		for ( i = 0; i < pData->iSectionCount; i++ ) pData->arrSections[i].bExpanded = arrOldExpanded[i];
+		pData->iSelected = iOldSelected;
+		pData->iChangeCount = iOldChangeCount;
 		(void)__xuiAccordionSyncSections(pAccordion, pData);
-		if ( bNotify && (pData->onSelect != NULL) ) {
-			pData->onSelect(pAccordion, iIndex, pData->arrSections[iIndex].iId, pData->pSelectUser);
-		}
-	} else {
-		(void)__xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iRet;
 	}
+	if ( __xuiAccordionGetData(pAccordion) != pData ) return XUI_OK;
+	if ( bChanged ) xuiInternalAccessibilityQueue(pAccordion, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	if ( bSelectionChanged ) xuiInternalAccessibilityQueue(pAccordion, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	onSelect = pData->onSelect;
+	pSelectUser = pData->pSelectUser;
+	iId = pData->arrSections[iIndex].iId;
+	if ( bChanged && bNotify && onSelect != NULL ) onSelect(pAccordion, iIndex, iId, pSelectUser);
 	return XUI_OK;
 }
 
@@ -609,7 +676,6 @@ static int __xuiAccordionClickSection(xui_widget pAccordion, xui_accordion_data_
 	if ( !__xuiAccordionSectionEnabled(pData, iIndex) ) {
 		return XUI_OK;
 	}
-	pData->iSelected = iIndex;
 	return __xuiAccordionSetExpandedInternal(pAccordion, pData, iIndex, !pData->arrSections[iIndex].bExpanded, 1);
 }
 
@@ -622,6 +688,8 @@ static int __xuiAccordionHeaderEvent(xui_widget pHeader, const xui_event_t* pEve
 	float fX;
 	float fY;
 	int iIndex;
+	int iRet;
+	int bInside;
 
 	pAccordion = (xui_widget)pUser;
 	pData = __xuiAccordionGetData(pAccordion);
@@ -641,36 +709,62 @@ static int __xuiAccordionHeaderEvent(xui_widget pHeader, const xui_event_t* pEve
 	case XUI_EVENT_POINTER_ENTER:
 	case XUI_EVENT_POINTER_MOVE:
 		if ( __xuiAccordionSectionEnabled(pData, iIndex) && __xuiAccordionRectContains(tLocal, fX, fY) ) {
-			(void)__xuiAccordionSetHover(pAccordion, pData, iIndex);
+			iRet = __xuiAccordionSetHover(pAccordion, pData, iIndex);
 		} else if ( pData->iHoverIndex == iIndex ) {
-			(void)__xuiAccordionSetHover(pAccordion, pData, -1);
+			iRet = __xuiAccordionSetHover(pAccordion, pData, -1);
+		} else {
+			iRet = XUI_OK;
 		}
+		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_LEAVE:
 		if ( pData->iHoverIndex == iIndex ) {
-			(void)__xuiAccordionSetHover(pAccordion, pData, -1);
+			iRet = __xuiAccordionSetHover(pAccordion, pData, -1);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_DOWN:
 		if ( (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) && __xuiAccordionSectionEnabled(pData, iIndex) ) {
-			(void)__xuiAccordionSetActive(pAccordion, pData, iIndex);
-			(void)xuiSetFocusWidget(xuiWidgetGetContext(pAccordion), pAccordion);
-			(void)xuiSetPointerCapture(xuiWidgetGetContext(pAccordion), pHeader);
+			if ( pData->tPointerOwner.bActive ) {
+				return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
+					XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			}
+			iRet = xuiSetFocusWidget(xuiWidgetGetContext(pAccordion), pAccordion);
+			if ( iRet != XUI_OK ) return iRet;
+			pData = __xuiAccordionGetData(pAccordion);
+			if ( pData == NULL ) return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiAccordionSetSelected(pAccordion, pData, iIndex);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiAccordionSetActive(pAccordion, pData, iIndex);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = xuiInternalPointerOwnerBegin(xuiWidgetGetContext(pAccordion),
+				pHeader, pEvent, &pData->tPointerOwner);
+			if ( iRet != XUI_OK ) {
+				(void)__xuiAccordionSetActive(pAccordion, pData, -1);
+				return iRet;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
-		if ( pData->iActiveIndex == iIndex ) {
-			(void)__xuiAccordionCancelPress(pAccordion, pData);
-			if ( __xuiAccordionRectContains(tLocal, fX, fY) ) {
-				(void)__xuiAccordionClickSection(pAccordion, pData, iIndex);
+		if ( pData->iActiveIndex == iIndex &&
+		     xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+			bInside = __xuiAccordionRectContains(tLocal, fX, fY);
+			iRet = __xuiAccordionCancelPress(pAccordion, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			pData = __xuiAccordionGetData(pAccordion);
+			if ( pData != NULL && bInside ) {
+				iRet = __xuiAccordionClickSection(pAccordion, pData, iIndex);
+				if ( iRet != XUI_OK ) return iRet;
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
-		if ( pData->iActiveIndex == iIndex ) {
-			(void)__xuiAccordionCancelPress(pAccordion, pData);
+		if ( pData->iActiveIndex == iIndex &&
+		     xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
+			iRet = __xuiAccordionSetActive(pAccordion, pData, -1);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
@@ -683,6 +777,7 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 {
 	xui_accordion_data_t* pData;
 	int iNext;
+	int iRet;
 
 	(void)pUser;
 	pData = __xuiAccordionGetData(pWidget);
@@ -697,29 +792,44 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( pEvent->iKey == XUI_KEY_DOWN ) {
 			iNext = __xuiAccordionStepEnabled(pData, pData->iSelected, 1);
 			if ( iNext >= 0 ) {
-				pData->iSelected = iNext;
-				(void)__xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				iRet = __xuiAccordionSetSelected(pWidget, pData, iNext);
+				if ( iRet != XUI_OK ) return iRet;
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		} else if ( pEvent->iKey == XUI_KEY_UP ) {
 			iNext = __xuiAccordionStepEnabled(pData, pData->iSelected, -1);
 			if ( iNext >= 0 ) {
-				pData->iSelected = iNext;
-				(void)__xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				iRet = __xuiAccordionSetSelected(pWidget, pData, iNext);
+				if ( iRet != XUI_OK ) return iRet;
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		} else if ( pEvent->iKey == XUI_KEY_HOME ) {
 			iNext = __xuiAccordionFirstEnabled(pData);
 			if ( iNext >= 0 ) {
-				pData->iSelected = iNext;
-				(void)__xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				iRet = __xuiAccordionSetSelected(pWidget, pData, iNext);
+				if ( iRet != XUI_OK ) return iRet;
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		} else if ( pEvent->iKey == XUI_KEY_END ) {
 			iNext = __xuiAccordionLastEnabled(pData);
 			if ( iNext >= 0 ) {
-				pData->iSelected = iNext;
-				(void)__xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				iRet = __xuiAccordionSetSelected(pWidget, pData, iNext);
+				if ( iRet != XUI_OK ) return iRet;
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+		} else if ( (pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_LEFT) ) {
+			iNext = pData->iSelected;
+			if ( (iNext < 0) || !__xuiAccordionSectionEnabled(pData, iNext) ) {
+				iNext = __xuiAccordionFirstEnabled(pData);
+			}
+			if ( iNext >= 0 ) {
+				iRet = __xuiAccordionSetSelected(pWidget, pData, iNext);
+				if ( iRet != XUI_OK ) return iRet;
+				pData = __xuiAccordionGetData(pWidget);
+				if ( pData == NULL ) return XUI_EVENT_DISPATCH_STOP;
+				iRet = __xuiAccordionSetExpandedInternal(pWidget, pData, iNext,
+					pEvent->iKey == XUI_KEY_RIGHT, 1);
+				if ( iRet != XUI_OK ) return iRet;
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		} else if ( (pEvent->iKey == XUI_KEY_SPACE) || (pEvent->iKey == XUI_KEY_ENTER) ) {
@@ -728,27 +838,42 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				iNext = __xuiAccordionFirstEnabled(pData);
 			}
 			if ( iNext >= 0 ) {
-				(void)__xuiAccordionClickSection(pWidget, pData, iNext);
+				iRet = __xuiAccordionClickSection(pWidget, pData, iNext);
+				if ( iRet != XUI_OK ) return iRet;
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		} else if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-			(void)__xuiAccordionCancelPress(pWidget, pData);
+			iRet = __xuiAccordionCancelPress(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_FOCUS:
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
 		if ( ((pEvent->iType == XUI_EVENT_ENABLED_CHANGED) && !xuiWidgetGetEnabled(pWidget)) ||
 		     ((pEvent->iType == XUI_EVENT_VISIBLE_CHANGED) && !xuiWidgetGetVisible(pWidget)) ) {
-			(void)__xuiAccordionSetHover(pWidget, pData, -1);
-			(void)__xuiAccordionCancelPress(pWidget, pData);
+			iRet = __xuiAccordionSetHover(pWidget, pData, -1);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiAccordionCancelPress(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
 		}
-		(void)__xuiAccordionSyncSections(pWidget, pData);
+		iRet = __xuiAccordionSyncSections(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_BLUR:
-		(void)__xuiAccordionCancelPress(pWidget, pData);
-		(void)__xuiAccordionSyncSections(pWidget, pData);
+		iRet = __xuiAccordionCancelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		pData = __xuiAccordionGetData(pWidget);
+		if ( pData == NULL ) return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiAccordionSyncSections(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
 		break;
@@ -896,20 +1021,23 @@ static int __xuiAccordionCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	return __xuiAccordionDrawFill(pProxy, pDraw, tRect, tResolved.iBackgroundColor);
 }
 
-static void __xuiAccordionUpdateClientPadding(xui_accordion_data_t* pData, float fContentPadding)
+static int __xuiAccordionUpdateClientPadding(xui_accordion_data_t* pData, float fContentPadding)
 {
 	xui_thickness_t tPadding;
+	int iRet;
 	int i;
 
 	if ( pData == NULL ) {
-		return;
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tPadding = __xuiAccordionThickness(fContentPadding, fContentPadding, fContentPadding, fContentPadding);
 	for ( i = 0; i < pData->iSectionCount; i++ ) {
 		if ( pData->arrSections[i].pClient != NULL ) {
-			(void)xuiWidgetSetPadding(pData->arrSections[i].pClient, tPadding);
+			iRet = xuiWidgetSetPadding(pData->arrSections[i].pClient, tPadding);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
+	return XUI_OK;
 }
 
 static int __xuiAccordionContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -1019,6 +1147,104 @@ static void __xuiAccordionDefaultLayout(xui_layout_t* pLayout)
 	pLayout->fShrink = 1.0f;
 }
 
+static int __xuiAccordionAccessibleCount(xui_widget pWidget, void* pUser)
+{
+	const xui_accordion_data_t* pData = (const xui_accordion_data_t*)pUser;
+	(void)pWidget;
+	return pData != NULL ? 1 + pData->iSectionCount : 0;
+}
+
+static int __xuiAccordionAccessibleGet(xui_widget pWidget, int iIndex,
+	xui_accessible_node_t* pNode, void* pUser)
+{
+	xui_accordion_data_t* pData = (xui_accordion_data_t*)pUser;
+	xui_accordion_section_t* pSection;
+	xui_rect_t tWorld;
+	int iSection;
+
+	if ( pData == NULL || pNode == NULL || iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iIndex == 0 ) {
+		pNode->iId = 1;
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+		pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+			xuiWidgetGetAccessibleName(pWidget) : "Accordion";
+		pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+		pNode->tBounds = xuiWidgetGetWorldRect(pWidget);
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_VERTICAL;
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+		if ( !xuiWidgetGetEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		pNode->iRowCount = pData->iSectionCount;
+		pNode->iColumnCount = 1;
+		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+		return XUI_OK;
+	}
+	iSection = iIndex - 1;
+	if ( iSection < 0 || iSection >= pData->iSectionCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	pSection = &pData->arrSections[iSection];
+	tWorld = pSection->pHeader != NULL ? xuiWidgetGetWorldRect(pSection->pHeader) :
+		(xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	pNode->iId = (uint64_t)iSection + 2u;
+	pNode->iParentId = 1;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_BUTTON;
+	pNode->sName = pSection->sTitle;
+	pNode->tBounds = tWorld;
+	pNode->iRow = iSection;
+	pNode->iColumn = 0;
+	pNode->iRowCount = 1;
+	pNode->iColumnCount = 1;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_SELECTABLE |
+		(pSection->bExpanded ? XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED);
+	if ( !pSection->bEnabled || !xuiWidgetGetEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	if ( pSection->pHeader == NULL || !xuiWidgetGetVisible(pSection->pHeader) ||
+	     tWorld.fW <= 0.0f || tWorld.fH <= 0.0f ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	if ( pData->iSelected == iSection ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+	}
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE);
+	return XUI_OK;
+}
+
+static int __xuiAccordionAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pPayload, void* pUser)
+{
+	xui_accordion_data_t* pData = (xui_accordion_data_t*)pUser;
+	int iSection;
+	int iRet;
+
+	(void)pPayload;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNodeId == 0 || iNodeId == 1 ) {
+		return iAction == XUI_ACCESSIBLE_ACTION_FOCUS ?
+			xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget) : XUI_ERROR_UNSUPPORTED;
+	}
+	if ( iNodeId < 2 || iNodeId > (uint64_t)pData->iSectionCount + 1u ) return XUI_ERROR_NOT_FOUND;
+	iSection = (int)iNodeId - 2;
+	if ( !__xuiAccordionSectionEnabled(pData, iSection) ) return XUI_ERROR_INVALID_STATE;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS ) {
+		iRet = __xuiAccordionSetSelected(pWidget, pData, iSection);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_OK;
+		return xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE || iAction == XUI_ACCESSIBLE_ACTION_TOGGLE ) {
+		return __xuiAccordionClickSection(pWidget, pData, iSection);
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_EXPAND || iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE ) {
+		return __xuiAccordionSetExpandedInternal(pWidget, pData, iSection,
+			iAction == XUI_ACCESSIBLE_ACTION_EXPAND, 1);
+	}
+	return XUI_ERROR_UNSUPPORTED;
+}
+
 static void __xuiAccordionDefaultData(xui_accordion_data_t* pData)
 {
 	int i;
@@ -1047,16 +1273,18 @@ static void __xuiAccordionDefaultData(xui_accordion_data_t* pData)
 
 static int __xuiAccordionConfigureSectionWidget(xui_widget pWidget)
 {
+	int iRet;
+
 	if ( pWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_COLUMN);
-	(void)xuiWidgetSetSizeMode(pWidget, XUI_SIZE_FILL, XUI_SIZE_CONTENT);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_BLOCK);
-	(void)xuiWidgetSetAlign(pWidget, XUI_ALIGN_STRETCH, XUI_ALIGN_START);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
-	(void)xuiWidgetSetFocusable(pWidget, 0);
-	(void)xuiWidgetSetTabStop(pWidget, 0);
-	(void)xuiWidgetSetHitTestVisible(pWidget, 1);
-	return XUI_OK;
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_COLUMN);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pWidget, XUI_SIZE_FILL, XUI_SIZE_CONTENT);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_BLOCK);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pWidget, XUI_ALIGN_STRETCH, XUI_ALIGN_START);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 1);
+	return iRet;
 }
 
 static int __xuiAccordionConfigureHeaderWidget(xui_widget pAccordion, xui_widget pHeader)
@@ -1177,16 +1405,18 @@ static int __xuiAccordionInit(xui_widget pWidget, void* pTypeData, const void* p
 		if ( __xuiAccordionAlpha(pDesc->iActiveTextColor) != 0 ) pData->iActiveTextColor = pDesc->iActiveTextColor;
 		if ( __xuiAccordionAlpha(pDesc->iDisabledTextColor) != 0 ) pData->iDisabledTextColor = pDesc->iDisabledTextColor;
 	}
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_COLUMN);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_COLUMN);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( (pDesc != NULL) && (pDesc->arrSections != NULL) ) {
 		for ( i = 0; i < pDesc->iSectionCount; i++ ) {
 			iRet = xuiAccordionAddSection(pWidget, pDesc->arrSections[i].sTitle, pDesc->arrSections[i].iId, pDesc->arrSections[i].bExpanded, NULL);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( pDesc->arrSections[i].bDisabled ) {
-				(void)xuiAccordionSetSectionEnabled(pWidget, i, 0);
+				iRet = xuiAccordionSetSectionEnabled(pWidget, i, 0);
+				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
 	}
@@ -1195,6 +1425,9 @@ static int __xuiAccordionInit(xui_widget pWidget, void* pTypeData, const void* p
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiAccordionEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiAccordionEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiAccordionEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAccessibilityProvider(pWidget,
+		__xuiAccordionAccessibleCount, __xuiAccordionAccessibleGet,
+		__xuiAccordionAccessibleAction, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiAccordionSyncSections(pWidget, pData);
 }
@@ -1327,11 +1560,17 @@ XUI_API int xuiAccordionSetSelect(xui_widget pWidget, xui_accordion_select_proc 
 XUI_API int xuiAccordionClear(xui_widget pWidget)
 {
 	xui_accordion_data_t* pData;
+	int iRet;
 	int i;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiAccordionCancelPress(pWidget, pData);
+	if ( pData->iSectionCount == 0 ) return XUI_OK;
+	iRet = __xuiAccordionCancelPress(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pData->iSectionCount; i++ ) {
 		if ( pData->arrSections[i].pSection != NULL ) {
 			xuiWidgetDestroy(pData->arrSections[i].pSection);
@@ -1345,20 +1584,30 @@ XUI_API int xuiAccordionClear(xui_widget pWidget)
 	pData->iSelected = -1;
 	pData->iHoverIndex = -1;
 	pData->iActiveIndex = -1;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->iChangeCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiAccordionAddSection(xui_widget pWidget, const char* sTitle, int iId, int bExpanded, xui_widget* ppClient)
 {
 	xui_accordion_data_t* pData;
 	xui_accordion_section_t* pSection;
+	int arrOldExpanded[XUI_ACCORDION_SECTION_CAPACITY];
+	int iOldSelected;
+	int iOldChangeCount;
 	int iIndex;
 	int iRet;
+	int i;
 
 	if ( ppClient != NULL ) *ppClient = NULL;
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iSectionCount >= XUI_ACCORDION_SECTION_CAPACITY ) return XUI_ERROR_OUT_OF_MEMORY;
+	for ( i = 0; i < pData->iSectionCount; i++ ) arrOldExpanded[i] = pData->arrSections[i].bExpanded;
+	iOldSelected = pData->iSelected;
+	iOldChangeCount = pData->iChangeCount;
 	iIndex = pData->iSectionCount;
 	iRet = __xuiAccordionCreateSectionWidgets(pWidget, pData, iIndex);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1369,12 +1618,29 @@ XUI_API int xuiAccordionAddSection(xui_widget pWidget, const char* sTitle, int i
 	pSection->bEnabled = 1;
 	pData->iSectionCount++;
 	if ( pData->iMode == XUI_ACCORDION_MODE_SINGLE && pSection->bExpanded ) {
-		(void)__xuiAccordionSetExpandedInternal(pWidget, pData, iIndex, 1, 0);
+		for ( i = 0; i < iIndex; i++ ) pData->arrSections[i].bExpanded = 0;
+		pData->iSelected = iIndex;
 	} else if ( pSection->bExpanded && pData->iSelected < 0 ) {
 		pData->iSelected = iIndex;
 	}
+	pData->iChangeCount++;
+	iRet = __xuiAccordionSyncSections(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->iSectionCount--;
+		for ( i = 0; i < pData->iSectionCount; i++ ) pData->arrSections[i].bExpanded = arrOldExpanded[i];
+		pData->iSelected = iOldSelected;
+		pData->iChangeCount = iOldChangeCount;
+		if ( pSection->pSection != NULL ) xuiWidgetDestroy(pSection->pSection);
+		memset(pSection, 0, sizeof(*pSection));
+		pSection->bEnabled = 1;
+		(void)__xuiAccordionSyncSections(pWidget, pData);
+		return iRet;
+	}
+	if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_OK;
 	if ( ppClient != NULL ) *ppClient = pSection->pClient;
-	return __xuiAccordionSyncSections(pWidget, pData);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiAccordionGetSectionCount(xui_widget pWidget)
@@ -1430,11 +1696,23 @@ XUI_API int xuiAccordionAddSectionChild(xui_widget pWidget, int iIndex, xui_widg
 XUI_API int xuiAccordionSetSectionTitle(xui_widget pWidget, int iIndex, const char* sTitle)
 {
 	xui_accordion_data_t* pData;
+	char sOld[XUI_ACCORDION_TITLE_CAPACITY];
+	int iRet;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iSectionCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memcpy(sOld, pData->arrSections[iIndex].sTitle, sizeof(sOld));
 	__xuiAccordionSetTitle(&pData->arrSections[iIndex], sTitle);
-	return __xuiAccordionInvalidateSection(&pData->arrSections[iIndex], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( strcmp(sOld, pData->arrSections[iIndex].sTitle) == 0 ) return XUI_OK;
+	iRet = __xuiAccordionInvalidateSection(&pData->arrSections[iIndex], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		memcpy(pData->arrSections[iIndex].sTitle, sOld, sizeof(sOld));
+		(void)__xuiAccordionInvalidateSection(&pData->arrSections[iIndex], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iRet;
+	}
+	pData->iChangeCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API const char* xuiAccordionGetSectionTitle(xui_widget pWidget, int iIndex)
@@ -1452,7 +1730,10 @@ XUI_API int xuiAccordionSetSectionId(xui_widget pWidget, int iIndex, int iId)
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iSectionCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->arrSections[iIndex].iId == iId ) return XUI_OK;
 	pData->arrSections[iIndex].iId = iId;
+	pData->iChangeCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
 
@@ -1468,12 +1749,16 @@ XUI_API int xuiAccordionGetSectionId(xui_widget pWidget, int iIndex)
 XUI_API int xuiAccordionSetExpanded(xui_widget pWidget, int iIndex, int bExpanded)
 {
 	xui_accordion_data_t* pData;
+	int iRet;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iSectionCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	(void)__xuiAccordionCancelPress(pWidget, pData);
+	iRet = __xuiAccordionCancelPress(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pData = __xuiAccordionGetData(pWidget);
+	if ( pData == NULL ) return XUI_OK;
 	return __xuiAccordionSetExpandedInternal(pWidget, pData, iIndex, bExpanded, 0);
 }
 
@@ -1489,18 +1774,45 @@ XUI_API int xuiAccordionIsExpanded(xui_widget pWidget, int iIndex)
 XUI_API int xuiAccordionSetSectionEnabled(xui_widget pWidget, int iIndex, int bEnabled)
 {
 	xui_accordion_data_t* pData;
+	int iOldEnabled;
+	int iOldHover;
+	int iOldSelected;
+	int iOldChangeCount;
+	int iRet;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iSectionCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	bEnabled = bEnabled ? 1 : 0;
+	if ( pData->arrSections[iIndex].bEnabled == bEnabled ) return XUI_OK;
 	if ( !bEnabled && (pData->iActiveIndex == iIndex) ) {
-		(void)__xuiAccordionCancelPress(pWidget, pData);
+		iRet = __xuiAccordionCancelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		pData = __xuiAccordionGetData(pWidget);
+		if ( pData == NULL ) return XUI_OK;
 	}
-	pData->arrSections[iIndex].bEnabled = bEnabled ? 1 : 0;
-	if ( !pData->arrSections[iIndex].bEnabled ) {
+	iOldEnabled = pData->arrSections[iIndex].bEnabled;
+	iOldHover = pData->iHoverIndex;
+	iOldSelected = pData->iSelected;
+	iOldChangeCount = pData->iChangeCount;
+	pData->arrSections[iIndex].bEnabled = bEnabled;
+	if ( !bEnabled ) {
 		if ( pData->iHoverIndex == iIndex ) pData->iHoverIndex = -1;
-		if ( pData->iActiveIndex == iIndex ) pData->iActiveIndex = -1;
+		if ( pData->iSelected == iIndex ) pData->iSelected = __xuiAccordionStepEnabled(pData, iIndex, 1);
 	}
-	return __xuiAccordionSyncSections(pWidget, pData);
+	pData->iChangeCount++;
+	iRet = __xuiAccordionSyncSections(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->arrSections[iIndex].bEnabled = iOldEnabled;
+		pData->iHoverIndex = iOldHover;
+		pData->iSelected = iOldSelected;
+		pData->iChangeCount = iOldChangeCount;
+		(void)__xuiAccordionSyncSections(pWidget, pData);
+		return iRet;
+	}
+	if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_OK;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	if ( pData->iSelected != iOldSelected ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiAccordionIsSectionEnabled(xui_widget pWidget, int iIndex)
@@ -1515,15 +1827,26 @@ XUI_API int xuiAccordionIsSectionEnabled(xui_widget pWidget, int iIndex)
 XUI_API int xuiAccordionSetMode(xui_widget pWidget, int iMode)
 {
 	xui_accordion_data_t* pData;
+	int arrOldExpanded[XUI_ACCORDION_SECTION_CAPACITY];
+	int iOldMode;
+	int iOldSelected;
+	int iOldChangeCount;
+	int iRet;
 	int i;
 	int bKeepFound;
-	int bChanged;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || !__xuiAccordionModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiAccordionCancelPress(pWidget, pData);
+	if ( pData->iMode == iMode ) return XUI_OK;
+	iRet = __xuiAccordionCancelPress(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pData = __xuiAccordionGetData(pWidget);
+	if ( pData == NULL ) return XUI_OK;
+	for ( i = 0; i < pData->iSectionCount; i++ ) arrOldExpanded[i] = pData->arrSections[i].bExpanded;
+	iOldMode = pData->iMode;
+	iOldSelected = pData->iSelected;
+	iOldChangeCount = pData->iChangeCount;
 	pData->iMode = iMode;
-	bChanged = 0;
 	if ( iMode == XUI_ACCORDION_MODE_SINGLE ) {
 		bKeepFound = 0;
 		for ( i = 0; i < pData->iSectionCount; i++ ) {
@@ -1533,13 +1856,24 @@ XUI_API int xuiAccordionSetMode(xui_widget pWidget, int iMode)
 					pData->iSelected = i;
 				} else {
 					pData->arrSections[i].bExpanded = 0;
-					bChanged = 1;
 				}
 			}
 		}
 	}
-	if ( bChanged ) pData->iChangeCount++;
-	return __xuiAccordionSyncSections(pWidget, pData);
+	pData->iChangeCount++;
+	iRet = __xuiAccordionSyncSections(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->iMode = iOldMode;
+		pData->iSelected = iOldSelected;
+		pData->iChangeCount = iOldChangeCount;
+		for ( i = 0; i < pData->iSectionCount; i++ ) pData->arrSections[i].bExpanded = arrOldExpanded[i];
+		(void)__xuiAccordionSyncSections(pWidget, pData);
+		return iRet;
+	}
+	if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_OK;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	if ( pData->iSelected != iOldSelected ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiAccordionGetMode(xui_widget pWidget)
@@ -1553,11 +1887,24 @@ XUI_API int xuiAccordionGetMode(xui_widget pWidget)
 XUI_API int xuiAccordionSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_accordion_data_t* pData;
+	xui_font pOldFont;
+	int iOldChangeCount;
+	int iRet;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFont == pFont ) return XUI_OK;
+	pOldFont = pData->pFont;
+	iOldChangeCount = pData->iChangeCount;
 	pData->pFont = pFont;
-	return __xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->iChangeCount++;
+	iRet = __xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->pFont = pOldFont;
+		pData->iChangeCount = iOldChangeCount;
+		(void)__xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return iRet;
 }
 
 XUI_API xui_font xuiAccordionGetFont(xui_widget pWidget)
@@ -1571,6 +1918,11 @@ XUI_API xui_font xuiAccordionGetFont(xui_widget pWidget)
 XUI_API int xuiAccordionSetMetrics(xui_widget pWidget, float fHeaderHeight, float fSpacing, float fContentPadding)
 {
 	xui_accordion_data_t* pData;
+	float fOldHeaderHeight;
+	float fOldSpacing;
+	float fOldContentPadding;
+	int iOldChangeCount;
+	int iRet;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( (pData == NULL) || !isfinite(fHeaderHeight) || (fHeaderHeight < 18.0f) ||
@@ -1578,12 +1930,35 @@ XUI_API int xuiAccordionSetMetrics(xui_widget pWidget, float fHeaderHeight, floa
 	     !isfinite(fContentPadding) || (fContentPadding < 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	(void)__xuiAccordionCancelPress(pWidget, pData);
+	if ( pData->fHeaderHeight == fHeaderHeight && pData->fSpacing == fSpacing &&
+	     pData->fContentPadding == fContentPadding ) return XUI_OK;
+	iRet = __xuiAccordionCancelPress(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	pData = __xuiAccordionGetData(pWidget);
+	if ( pData == NULL ) return XUI_OK;
+	fOldHeaderHeight = pData->fHeaderHeight;
+	fOldSpacing = pData->fSpacing;
+	fOldContentPadding = pData->fContentPadding;
+	iOldChangeCount = pData->iChangeCount;
 	pData->fHeaderHeight = fHeaderHeight;
 	pData->fSpacing = fSpacing;
 	pData->fContentPadding = fContentPadding;
-	__xuiAccordionUpdateClientPadding(pData, fContentPadding);
-	return __xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->iChangeCount++;
+	iRet = __xuiAccordionUpdateClientPadding(pData, fContentPadding);
+	if ( iRet == XUI_OK ) iRet = __xuiAccordionInvalidateAll(pWidget, pData,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->fHeaderHeight = fOldHeaderHeight;
+		pData->fSpacing = fOldSpacing;
+		pData->fContentPadding = fOldContentPadding;
+		pData->iChangeCount = iOldChangeCount;
+		(void)__xuiAccordionUpdateClientPadding(pData, fOldContentPadding);
+		(void)__xuiAccordionInvalidateAll(pWidget, pData,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return iRet;
+	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiAccordionGetMetrics(xui_widget pWidget, float* pHeaderHeight, float* pSpacing, float* pContentPadding)
@@ -1601,9 +1976,27 @@ XUI_API int xuiAccordionGetMetrics(xui_widget pWidget, float* pHeaderHeight, flo
 XUI_API int xuiAccordionSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iHeader, uint32_t iHover, uint32_t iExpanded, uint32_t iContent, uint32_t iBorder, uint32_t iText, uint32_t iActiveText, uint32_t iDisabledText)
 {
 	xui_accordion_data_t* pData;
+	uint32_t arrOld[9];
+	int iOldChangeCount;
+	int iRet;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iBackground && pData->iHeaderColor == iHeader &&
+	     pData->iHoverColor == iHover && pData->iExpandedColor == iExpanded &&
+	     pData->iContentColor == iContent && pData->iBorderColor == iBorder &&
+	     pData->iTextColor == iText && pData->iActiveTextColor == iActiveText &&
+	     pData->iDisabledTextColor == iDisabledText ) return XUI_OK;
+	arrOld[0] = pData->iBackgroundColor;
+	arrOld[1] = pData->iHeaderColor;
+	arrOld[2] = pData->iHoverColor;
+	arrOld[3] = pData->iExpandedColor;
+	arrOld[4] = pData->iContentColor;
+	arrOld[5] = pData->iBorderColor;
+	arrOld[6] = pData->iTextColor;
+	arrOld[7] = pData->iActiveTextColor;
+	arrOld[8] = pData->iDisabledTextColor;
+	iOldChangeCount = pData->iChangeCount;
 	pData->iBackgroundColor = iBackground;
 	pData->iHeaderColor = iHeader;
 	pData->iHoverColor = iHover;
@@ -1613,7 +2006,22 @@ XUI_API int xuiAccordionSetColors(xui_widget pWidget, uint32_t iBackground, uint
 	pData->iTextColor = iText;
 	pData->iActiveTextColor = iActiveText;
 	pData->iDisabledTextColor = iDisabledText;
-	return __xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->iChangeCount++;
+	iRet = __xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->iBackgroundColor = arrOld[0];
+		pData->iHeaderColor = arrOld[1];
+		pData->iHoverColor = arrOld[2];
+		pData->iExpandedColor = arrOld[3];
+		pData->iContentColor = arrOld[4];
+		pData->iBorderColor = arrOld[5];
+		pData->iTextColor = arrOld[6];
+		pData->iActiveTextColor = arrOld[7];
+		pData->iDisabledTextColor = arrOld[8];
+		pData->iChangeCount = iOldChangeCount;
+		(void)__xuiAccordionInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return iRet;
 }
 
 XUI_API int xuiAccordionGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pHeader, uint32_t* pHover, uint32_t* pExpanded, uint32_t* pContent, uint32_t* pBorder, uint32_t* pText, uint32_t* pActiveText, uint32_t* pDisabledText)

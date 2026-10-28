@@ -46,6 +46,12 @@ static int __xuiPanelFloatValid(float fValue)
 	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
 }
 
+static int __xuiPanelRectEqual(xui_rect_t tA, xui_rect_t tB)
+{
+	return (tA.fX == tB.fX) && (tA.fY == tB.fY) &&
+	       (tA.fW == tB.fW) && (tA.fH == tB.fH);
+}
+
 static xui_thickness_t __xuiPanelThickness(float fLeft, float fTop, float fRight, float fBottom)
 {
 	xui_thickness_t tValue;
@@ -399,17 +405,17 @@ static void __xuiPanelDestroyInitChildren(xui_panel_data_t* pData)
 	if ( pData == NULL ) {
 		return;
 	}
-	if ( pData->pHeader != NULL ) {
-		xuiWidgetDestroy(pData->pHeader);
-		pData->pHeader = NULL;
+	if ( pData->pTitle != NULL ) {
+		xuiWidgetDestroy(pData->pTitle);
+		pData->pTitle = NULL;
 	}
 	if ( pData->pIcon != NULL ) {
 		xuiWidgetDestroy(pData->pIcon);
 		pData->pIcon = NULL;
 	}
-	if ( pData->pTitle != NULL ) {
-		xuiWidgetDestroy(pData->pTitle);
-		pData->pTitle = NULL;
+	if ( pData->pHeader != NULL ) {
+		xuiWidgetDestroy(pData->pHeader);
+		pData->pHeader = NULL;
 	}
 	if ( pData->pClient != NULL ) {
 		xuiWidgetDestroy(pData->pClient);
@@ -460,29 +466,33 @@ static int __xuiPanelInitChildren(xui_widget pWidget, xui_panel_data_t* pData)
 	pData->pTitle = pTitle;
 	pData->pClient = pClient;
 
-	(void)xuiWidgetSetLayoutType(pHeader, XUI_LAYOUT_ROW);
-	(void)xuiWidgetSetSizeMode(pHeader, XUI_SIZE_FILL, XUI_SIZE_FIXED);
-	(void)xuiWidgetSetPreferredSize(pHeader, (xui_vec2_t){0.0f, pData->fHeaderHeight});
-	(void)xuiWidgetSetPadding(pHeader, __xuiPanelThickness(8.0f, 0.0f, 8.0f, 0.0f));
-	(void)xuiWidgetSetGap(pHeader, pData->fHeaderGap);
-	(void)xuiWidgetSetAlign(pHeader, XUI_ALIGN_STRETCH, XUI_ALIGN_START);
+	iRet = xuiWidgetSetLayoutType(pHeader, XUI_LAYOUT_ROW);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pHeader, XUI_SIZE_FILL, XUI_SIZE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPreferredSize(pHeader, (xui_vec2_t){0.0f, pData->fHeaderHeight});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPadding(pHeader, __xuiPanelThickness(8.0f, 0.0f, 8.0f, 0.0f));
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetGap(pHeader, pData->fHeaderGap);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pHeader, XUI_ALIGN_STRETCH, XUI_ALIGN_START);
 
-	(void)xuiWidgetSetSizeMode(pIcon, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
-	(void)xuiWidgetSetPreferredSize(pIcon, (xui_vec2_t){pData->fIconSize, pData->fIconSize});
-	(void)xuiWidgetSetAlign(pIcon, XUI_ALIGN_START, XUI_ALIGN_CENTER);
-	(void)xuiWidgetSetVisible(pIcon, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pIcon, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPreferredSize(pIcon, (xui_vec2_t){pData->fIconSize, pData->fIconSize});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pIcon, XUI_ALIGN_START, XUI_ALIGN_CENTER);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pIcon, 0);
 
-	(void)xuiWidgetSetSizeMode(pTitle, XUI_SIZE_FILL, XUI_SIZE_FILL);
-	(void)xuiWidgetSetFlex(pTitle, 1.0f, 1.0f);
-	(void)xuiWidgetSetAlign(pTitle, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pTitle, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlex(pTitle, 1.0f, 1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pTitle, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 
-	(void)xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_COLUMN);
-	(void)xuiWidgetSetSizeMode(pClient, XUI_SIZE_FILL, XUI_SIZE_FILL);
-	(void)xuiWidgetSetFlex(pClient, 1.0f, 1.0f);
-	(void)xuiWidgetSetPadding(pClient, __xuiPanelThickness(8.0f, 8.0f, 8.0f, 8.0f));
-	(void)xuiWidgetSetGap(pClient, 6.0f);
-	(void)xuiWidgetSetOverflow(pClient, pData->bClipClient ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetAlign(pClient, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_COLUMN);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pClient, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlex(pClient, 1.0f, 1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPadding(pClient, __xuiPanelThickness(8.0f, 8.0f, 8.0f, 8.0f));
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetGap(pClient, 6.0f);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pClient, pData->bClipClient ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pClient, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet != XUI_OK ) {
+		__xuiPanelDestroyInitChildren(pData);
+		return iRet;
+	}
 
 	iRet = xuiWidgetAddChild(pWidget, pHeader);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pHeader, pIcon);
@@ -507,6 +517,7 @@ static int __xuiPanelInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	}
 	pData = (xui_panel_data_t*)pTypeData;
 	pDesc = (const xui_panel_desc_t*)pCreateData;
+	memset(pData, 0, sizeof(*pData));
 	pData->pFont = (pDesc != NULL) ? pDesc->pFont : NULL;
 	pData->iTitleColor = (pDesc != NULL && pDesc->iTitleColor != 0) ? pDesc->iTitleColor : XUI_COLOR_RGBA(46, 70, 96, 255);
 	pData->iDisabledTitleColor = (pDesc != NULL && pDesc->iDisabledTitleColor != 0) ? pDesc->iDisabledTitleColor : XUI_COLOR_RGBA(128, 141, 158, 255);
@@ -553,6 +564,9 @@ static void __xuiPanelRegisterStyleProperty(xui_context pContext, xui_widget_typ
 {
 	xui_style_property_info_t tInfo;
 
+	if ( xuiStyleFindProperty(pContext, sName) != 0 ) {
+		return;
+	}
 	memset(&tInfo, 0, sizeof(tInfo));
 	tInfo.iSize = sizeof(tInfo);
 	tInfo.sName = sName;
@@ -573,7 +587,7 @@ static void __xuiPanelRegisterStyleProperties(xui_context pContext, xui_widget_t
 	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiPanelRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
-	__xuiPanelRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiPanelRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.header.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -585,6 +599,28 @@ static void __xuiPanelRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.icon.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.client.clip", XUI_STYLE_VALUE_BOOL, iLayoutDirty, 0);
 }
+
+static int __xuiPanelAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_panel_data_t* pData;
+	const char* sTitle;
+
+	pData = __xuiPanelGetData(pWidget);
+	if ( (pData == NULL) || (pNode == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+	sTitle = xuiLabelGetText(pData->pTitle);
+	if ( (sTitle != NULL) && (sTitle[0] != '\0') ) {
+		pNode->sName = sTitle;
+	}
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiPanelAccessible = {
+	.getNode = __xuiPanelAccessibleNode,
+	.performAction = NULL
+};
 
 XUI_API xui_widget_type xuiPanelGetType(xui_context pContext)
 {
@@ -598,6 +634,7 @@ XUI_API xui_widget_type xuiPanelGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "panel");
 	if ( pType != NULL ) {
 		__xuiPanelRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiPanelAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -618,6 +655,7 @@ XUI_API xui_widget_type xuiPanelGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiPanelRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiPanelAccessible;
 	return pType;
 }
 
@@ -625,10 +663,13 @@ XUI_API int xuiPanelCreate(xui_context pContext, xui_widget* ppWidget, const xui
 {
 	xui_widget_type pType;
 
-	if ( !xuiInternalContextIsValid(pContext) || (ppWidget == NULL) || !__xuiPanelDescValid(pDesc) ) {
+	if ( ppWidget == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiPanelDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiPanelGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -693,17 +734,27 @@ XUI_API int xuiPanelInsertBefore(xui_widget pWidget, xui_widget pChild, xui_widg
 XUI_API int xuiPanelSetTitle(xui_widget pWidget, const char* sTitle)
 {
 	xui_panel_data_t* pData;
+	xui_context pContext;
+	const char* sCurrent;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = xuiLabelSetText(pData->pTitle, (sTitle != NULL) ? sTitle : "");
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( sTitle == NULL ) sTitle = "";
+	sCurrent = xuiLabelGetText(pData->pTitle);
+	if ( (sCurrent != NULL) && (strcmp(sCurrent, sTitle) == 0) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	iRet = xuiLabelSetText(pData->pTitle, sTitle);
+	if ( iRet == XUI_OK ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+		iRet = xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API const char* xuiPanelGetTitle(xui_widget pWidget)
@@ -717,14 +768,24 @@ XUI_API const char* xuiPanelGetTitle(xui_widget pWidget)
 XUI_API int xuiPanelSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_panel_data_t* pData;
+	xui_context pContext;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pData->pFont = pFont;
-	(void)xuiLabelSetFont(pData->pTitle, pFont);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( (pData->pFont == pFont) && (xuiLabelGetFont(pData->pTitle) == pFont) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	iRet = xuiLabelSetFont(pData->pTitle, pFont);
+	if ( iRet == XUI_OK ) {
+		pData->pFont = pFont;
+		iRet = xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API xui_font xuiPanelGetFont(xui_widget pWidget)
@@ -738,13 +799,16 @@ XUI_API xui_font xuiPanelGetFont(xui_widget pWidget)
 XUI_API int xuiPanelSetTitleColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_panel_data_t* pData;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (pData->iTitleColor == iColor) && (xuiLabelGetTextColor(pData->pTitle) == iColor) ) return XUI_OK;
+	iRet = xuiLabelSetTextColor(pData->pTitle, iColor);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iTitleColor = iColor;
-	(void)xuiLabelSetTextColor(pData->pTitle, iColor);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -759,13 +823,17 @@ XUI_API uint32_t xuiPanelGetTitleColor(xui_widget pWidget)
 XUI_API int xuiPanelSetDisabledTitleColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_panel_data_t* pData;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (pData->iDisabledTitleColor == iColor) &&
+	     (xuiLabelGetDisabledTextColor(pData->pTitle) == iColor) ) return XUI_OK;
+	iRet = xuiLabelSetDisabledTextColor(pData->pTitle, iColor);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iDisabledTitleColor = iColor;
-	(void)xuiLabelSetDisabledTextColor(pData->pTitle, iColor);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -780,13 +848,18 @@ XUI_API uint32_t xuiPanelGetDisabledTitleColor(xui_widget pWidget)
 XUI_API int xuiPanelSetTitleAlign(xui_widget pWidget, uint32_t iTextFlags)
 {
 	xui_panel_data_t* pData;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pData->iTitleFlags = iTextFlags | XUI_TEXT_CLIP;
-	(void)xuiLabelSetTextFlags(pData->pTitle, pData->iTitleFlags);
+	iTextFlags |= XUI_TEXT_CLIP;
+	if ( (pData->iTitleFlags == iTextFlags) &&
+	     (xuiLabelGetTextFlags(pData->pTitle) == iTextFlags) ) return XUI_OK;
+	iRet = xuiLabelSetTextFlags(pData->pTitle, iTextFlags);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iTitleFlags = iTextFlags;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -801,19 +874,29 @@ XUI_API uint32_t xuiPanelGetTitleAlign(xui_widget pWidget)
 XUI_API int xuiPanelSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc)
 {
 	xui_panel_data_t* pData;
+	xui_context pContext;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( (pData == NULL) || (tSrc.fW < 0.0f) || (tSrc.fH < 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (xuiImageGetSurface(pData->pIcon) == pSurface) &&
+	     __xuiPanelRectEqual(xuiImageGetSource(pData->pIcon), tSrc) &&
+	     (xuiWidgetGetVisible(pData->pIcon) == (pSurface != NULL)) ) {
+		return XUI_OK;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
 	iRet = xuiImageSetSurface(pData->pIcon, pSurface);
 	if ( iRet == XUI_OK ) iRet = xuiImageSetSource(pData->pIcon, tSrc);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pIcon, pSurface != NULL);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API xui_surface xuiPanelGetIconSurface(xui_widget pWidget)
@@ -837,6 +920,8 @@ XUI_API xui_rect_t xuiPanelGetIconSource(xui_widget pWidget)
 XUI_API int xuiPanelSetIconSize(xui_widget pWidget, float fSize)
 {
 	xui_panel_data_t* pData;
+	xui_vec2_t tPreferred;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( (pData == NULL) || !__xuiPanelFloatValid(fSize) ) {
@@ -845,8 +930,11 @@ XUI_API int xuiPanelSetIconSize(xui_widget pWidget, float fSize)
 	if ( fSize < 1.0f ) {
 		fSize = 1.0f;
 	}
+	tPreferred = xuiWidgetGetPreferredSize(pData->pIcon);
+	if ( (pData->fIconSize == fSize) && (tPreferred.fX == fSize) && (tPreferred.fY == fSize) ) return XUI_OK;
+	iRet = xuiWidgetSetPreferredSize(pData->pIcon, (xui_vec2_t){fSize, fSize});
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fIconSize = fSize;
-	(void)xuiWidgetSetPreferredSize(pData->pIcon, (xui_vec2_t){fSize, fSize});
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -864,6 +952,7 @@ XUI_API int xuiPanelSetBackgroundColor(xui_widget pWidget, uint32_t iColor)
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iColor ) return XUI_OK;
 	pData->iBackgroundColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -882,6 +971,7 @@ XUI_API int xuiPanelSetHeaderColor(xui_widget pWidget, uint32_t iColor)
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iHeaderColor == iColor ) return XUI_OK;
 	pData->iHeaderColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -900,6 +990,7 @@ XUI_API int xuiPanelSetClientColor(xui_widget pWidget, uint32_t iColor)
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iClientColor == iColor ) return XUI_OK;
 	pData->iClientColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -918,6 +1009,7 @@ XUI_API int xuiPanelSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t i
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( (pData == NULL) || !__xuiPanelFloatValid(fBorderWidth) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->fBorderWidth == fBorderWidth) && (pData->iBorderColor == iBorderColor) ) return XUI_OK;
 	pData->fBorderWidth = fBorderWidth;
 	pData->iBorderColor = iBorderColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -937,13 +1029,26 @@ XUI_API int xuiPanelGetBorder(xui_widget pWidget, float* pBorderWidth, uint32_t*
 XUI_API int xuiPanelSetHeaderHeight(xui_widget pWidget, float fHeight)
 {
 	xui_panel_data_t* pData;
+	xui_context pContext;
+	xui_vec2_t tPreferred;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( (pData == NULL) || !__xuiPanelFloatValid(fHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fHeaderHeight = fHeight;
-	(void)xuiWidgetSetVisible(pData->pHeader, fHeight > 0.0f);
-	(void)xuiWidgetSetPreferredSize(pData->pHeader, (xui_vec2_t){0.0f, fHeight});
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	tPreferred = xuiWidgetGetPreferredSize(pData->pHeader);
+	if ( (pData->fHeaderHeight == fHeight) && (tPreferred.fY == fHeight) &&
+	     (xuiWidgetGetVisible(pData->pHeader) == (fHeight > 0.0f)) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	iRet = xuiWidgetSetVisible(pData->pHeader, fHeight > 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPreferredSize(pData->pHeader, (xui_vec2_t){0.0f, fHeight});
+	if ( iRet == XUI_OK ) {
+		pData->fHeaderHeight = fHeight;
+		iRet = xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API float xuiPanelGetHeaderHeight(xui_widget pWidget)
@@ -957,11 +1062,14 @@ XUI_API float xuiPanelGetHeaderHeight(xui_widget pWidget)
 XUI_API int xuiPanelSetHeaderGap(xui_widget pWidget, float fGap)
 {
 	xui_panel_data_t* pData;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( (pData == NULL) || !__xuiPanelFloatValid(fGap) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->fHeaderGap == fGap) && (xuiWidgetGetGap(pData->pHeader) == fGap) ) return XUI_OK;
+	iRet = xuiWidgetSetGap(pData->pHeader, fGap);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fHeaderGap = fGap;
-	(void)xuiWidgetSetGap(pData->pHeader, fGap);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -976,11 +1084,18 @@ XUI_API float xuiPanelGetHeaderGap(xui_widget pWidget)
 XUI_API int xuiPanelSetClientClip(xui_widget pWidget, int bClip)
 {
 	xui_panel_data_t* pData;
+	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bClipClient = bClip ? 1 : 0;
-	(void)xuiWidgetSetOverflow(pData->pClient, pData->bClipClient ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE);
+	bClip = bClip ? 1 : 0;
+	if ( (pData->bClipClient == bClip) &&
+	     (xuiWidgetGetOverflow(pData->pClient) == (bClip ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE)) ) {
+		return XUI_OK;
+	}
+	iRet = xuiWidgetSetOverflow(pData->pClient, bClip ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->bClipClient = bClip;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

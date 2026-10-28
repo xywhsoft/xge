@@ -1,7 +1,10 @@
 #include "xui_config.h"
 #if XUI_ENABLE_DATE_PICKER
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
+#include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +35,11 @@
 #define XUI_DATE_PICKER_YEAR_FIELD_W		112.0f
 #define XUI_DATE_PICKER_MONTH_FIELD_W		62.0f
 #define XUI_DATE_PICKER_HEADER_COMBO_GAP	6.0f
+#define XUI_DATE_PICKER_MIN_POPUP_W		268.0f
+#define XUI_DATE_PICKER_MIN_NULLABLE_W		324.0f
+#define XUI_DATE_PICKER_MIN_DATE_H		290.0f
+#define XUI_DATE_PICKER_MIN_TIME_H		148.0f
+#define XUI_DATE_PICKER_MIN_DATETIME_RANGE_H	386.0f
 
 typedef struct xui_date_picker_data_t {
 	xui_widget pPopup;
@@ -64,6 +72,9 @@ typedef struct xui_date_picker_data_t {
 	int iHoverPanel;
 	int iHoverIndex;
 	int iActivePanel;
+	int iPressedPanel;
+	int iActiveIndex;
+	xui_pointer_owner_t tPointerOwner;
 	int iActiveTimePanel;
 	int iActiveTimeField;
 	int iOpenComboKind;
@@ -104,7 +115,7 @@ typedef struct xui_date_picker_data_t {
 	xui_rect_t arrFooterRect[4];
 	char sEdit[16];
 	int iEditLen;
-	char sText[96];
+	char sText[216];
 	char sFormat[64];
 	char sRangeSeparator[24];
 	float fPopupWidth;
@@ -148,7 +159,16 @@ typedef struct xui_date_picker_data_t {
 
 static xui_date_picker_data_t* __xuiDatePickerGetData(xui_widget pWidget);
 static int __xuiDatePickerApplyPopupStyle(xui_widget pWidget, xui_date_picker_data_t* pData);
+static int __xuiDatePickerPanelCancelPointer(xui_widget pPanel, xui_date_picker_data_t* pData);
 static void __xuiDatePickerCancelEdit(xui_date_picker_data_t* pData);
+static void __xuiDatePickerPreferredPopupSize(int iMode, float* pW, float* pH);
+
+static int __xuiDatePickerAlive(xui_context pContext, xui_widget pWidget,
+	const xui_date_picker_data_t* pExpected)
+{
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		xuiInternalWidgetIsValid(pWidget) && __xuiDatePickerGetData(pWidget) == pExpected;
+}
 
 static uint32_t __xuiDatePickerAlpha(uint32_t iColor)
 {
@@ -268,12 +288,67 @@ static int __xuiDatePickerPanelCount(int iMode)
 	return __xuiDatePickerIsRange(iMode) ? 2 : 1;
 }
 
+static void __xuiDatePickerMinimumPopupSize(int iMode, int bNullable, float* pW, float* pH)
+{
+	float fW;
+	float fH;
+
+	fW = XUI_DATE_PICKER_MIN_POPUP_W;
+	fH = XUI_DATE_PICKER_MIN_DATE_H;
+	if ( iMode == XUI_DATE_PICKER_MODE_TIME || iMode == XUI_DATE_PICKER_MODE_TIME_RANGE ) {
+		fH = XUI_DATE_PICKER_MIN_TIME_H;
+	} else if ( iMode == XUI_DATE_PICKER_MODE_DATETIME ) {
+		fW = 420.0f;
+	} else if ( iMode == XUI_DATE_PICKER_MODE_DATE_RANGE ) {
+		fW = 380.0f;
+	} else if ( iMode == XUI_DATE_PICKER_MODE_DATETIME_RANGE ) {
+		fW = 380.0f;
+		fH = XUI_DATE_PICKER_MIN_DATETIME_RANGE_H;
+	}
+	if ( bNullable && fW < XUI_DATE_PICKER_MIN_NULLABLE_W ) fW = XUI_DATE_PICKER_MIN_NULLABLE_W;
+	if ( pW != NULL ) *pW = fW;
+	if ( pH != NULL ) *pH = fH;
+}
+
+static int __xuiDatePickerPopupSizeValid(int iMode, int bNullable, float fWidth, float fHeight)
+{
+	float fMinWidth;
+	float fMinHeight;
+	float fDefaultWidth;
+	float fDefaultHeight;
+
+	if ( !isfinite(fWidth) || !isfinite(fHeight) || fWidth < 0.0f || fHeight < 0.0f ) return 0;
+	__xuiDatePickerMinimumPopupSize(iMode, bNullable, &fMinWidth, &fMinHeight);
+	__xuiDatePickerPreferredPopupSize(iMode, &fDefaultWidth, &fDefaultHeight);
+	if ( fDefaultWidth < fMinWidth ) fDefaultWidth = fMinWidth;
+	if ( fDefaultHeight < fMinHeight ) fDefaultHeight = fMinHeight;
+	if ( fWidth <= 0.0f ) fWidth = fDefaultWidth;
+	if ( fHeight <= 0.0f ) fHeight = fDefaultHeight;
+	if ( fWidth < fMinWidth || fHeight < fMinHeight ) return 0;
+	return 1;
+}
+
+static xtime __xuiDatePickerLimitValueForMode(int iMode, xtime tValue)
+{
+	if ( iMode == XUI_DATE_PICKER_MODE_TIME || iMode == XUI_DATE_PICKER_MODE_TIME_RANGE ) {
+		return xrtTimePart(tValue);
+	}
+	return tValue;
+}
+
+static int __xuiDatePickerLimitsValid(int iMode, int bHasMin, xtime tMin, int bHasMax, xtime tMax)
+{
+	return !bHasMin || !bHasMax ||
+		__xuiDatePickerLimitValueForMode(iMode, tMin) <= __xuiDatePickerLimitValueForMode(iMode, tMax);
+}
+
 static void __xuiDatePickerCopyText(char* sDst, int iDstSize, const char* sSrc)
 {
 	if ( (sDst == NULL) || (iDstSize <= 0) ) return;
 	if ( sSrc == NULL ) sSrc = "";
 	snprintf(sDst, (size_t)iDstSize, "%s", sSrc);
 	sDst[iDstSize - 1] = '\0';
+	xuiInternalUtf8TrimIncomplete(sDst);
 }
 
 static const char* __xuiDatePickerDefaultFormat(int iMode, int bShowSecond)
@@ -331,10 +406,7 @@ static xtime __xuiDatePickerNormalizeValue(const xui_date_picker_data_t* pData, 
 
 static xtime __xuiDatePickerLimitValue(const xui_date_picker_data_t* pData, xtime tValue)
 {
-	if ( (pData != NULL) && ((pData->iMode == XUI_DATE_PICKER_MODE_TIME) || (pData->iMode == XUI_DATE_PICKER_MODE_TIME_RANGE)) ) {
-		return xrtTimePart(tValue);
-	}
-	return tValue;
+	return __xuiDatePickerLimitValueForMode((pData != NULL) ? pData->iMode : XUI_DATE_PICKER_MODE_DATE, tValue);
 }
 
 static xtime __xuiDatePickerClampValue(const xui_date_picker_data_t* pData, xtime tValue)
@@ -378,18 +450,26 @@ static xtime __xuiDatePickerDefaultSpan(const xui_date_picker_data_t* pData)
 
 static xtime __xuiDatePickerAddSpan(const xui_date_picker_data_t* pData, xtime tValue, xtime tSpan)
 {
+	xtime tDelta;
 	xtime tEnd;
 
-	if ( pData == NULL ) return tValue + tSpan;
+	tDelta = (tSpan > 0) ? tSpan : ((pData != NULL && pData->iMode == XUI_DATE_PICKER_MODE_DATE_RANGE) ?
+		XRT_TIME_DAY : (XRT_TIME_HOUR * 4));
+	if ( pData == NULL ) {
+		return (tValue > INT64_MAX - tDelta) ? tValue : tValue + tDelta;
+	}
 	if ( pData->iMode == XUI_DATE_PICKER_MODE_DATE_RANGE ) {
-		return xrtDatePart(tValue + ((tSpan > 0) ? tSpan : XRT_TIME_DAY));
+		tEnd = (tValue > INT64_MAX - tDelta) ? tValue : tValue + tDelta;
+		return xrtDatePart(tEnd);
 	}
 	if ( pData->iMode == XUI_DATE_PICKER_MODE_TIME_RANGE ) {
-		tEnd = xrtTimePart(tValue) + ((tSpan > 0) ? tSpan : (XRT_TIME_HOUR * 4));
-		if ( tEnd >= XRT_TIME_DAY ) tEnd = XRT_TIME_DAY - 1;
+		tEnd = xrtTimePart(tValue);
+		if ( tDelta >= XRT_TIME_DAY - tEnd ) tEnd = XRT_TIME_DAY - 1;
+		else tEnd += tDelta;
 		return __xuiDatePickerNormalizeValue(pData, tEnd);
 	}
-	return __xuiDatePickerNormalizeValue(pData, tValue + ((tSpan > 0) ? tSpan : (XRT_TIME_HOUR * 4)));
+	tEnd = (tValue > INT64_MAX - tDelta) ? tValue : tValue + tDelta;
+	return __xuiDatePickerNormalizeValue(pData, tEnd);
 }
 
 static void __xuiDatePickerDefaultValues(xui_date_picker_data_t* pData, xtime* pStart, xtime* pEnd)
@@ -575,8 +655,8 @@ static void __xuiDatePickerFormatOne(xui_date_picker_data_t* pData, xtime tValue
 
 static void __xuiDatePickerSyncText(xui_date_picker_data_t* pData)
 {
-	char sA[48];
-	char sB[48];
+	char sA[96];
+	char sB[96];
 
 	if ( pData == NULL ) return;
 	if ( !pData->bHasValue && pData->bNullable ) {
@@ -627,7 +707,13 @@ static void __xuiDatePickerPreferredPopupSize(int iMode, float* pW, float* pH)
 static void __xuiDatePickerUpdatePopupSizeForMode(xui_date_picker_data_t* pData)
 {
 	if ( (pData != NULL) && !pData->bPopupSizeCustom ) {
+		float fMinWidth;
+		float fMinHeight;
+
 		__xuiDatePickerPreferredPopupSize(pData->iMode, &pData->fPopupWidth, &pData->fPopupHeight);
+		__xuiDatePickerMinimumPopupSize(pData->iMode, pData->bNullable, &fMinWidth, &fMinHeight);
+		if ( pData->fPopupWidth < fMinWidth ) pData->fPopupWidth = fMinWidth;
+		if ( pData->fPopupHeight < fMinHeight ) pData->fPopupHeight = fMinHeight;
 	}
 }
 
@@ -638,6 +724,9 @@ static int __xuiDatePickerDescValid(const xui_date_picker_desc_t* pDesc)
 	if ( !__xuiDatePickerModeValid(pDesc->iMode) ) return 0;
 	if ( (pDesc->iPopupPlacement != 0) && !__xuiDatePickerPlacementValid(pDesc->iPopupPlacement) ) return 0;
 	if ( (pDesc->iFirstDayOfWeek < 0) || (pDesc->iFirstDayOfWeek > 6) ) return 0;
+	if ( pDesc->tDefaultRangeSpan < 0 || !isfinite(pDesc->fBorderWidth) || pDesc->fBorderWidth < 0.0f ) return 0;
+	if ( !__xuiDatePickerPopupSizeValid(pDesc->iMode, pDesc->bNullable, pDesc->fPopupWidth, pDesc->fPopupHeight) ) return 0;
+	if ( !__xuiDatePickerLimitsValid(pDesc->iMode, pDesc->bHasMin, pDesc->tMin, pDesc->bHasMax, pDesc->tMax) ) return 0;
 	return 1;
 }
 
@@ -652,6 +741,8 @@ static void __xuiDatePickerDefaults(xui_date_picker_data_t* pData)
 	pData->iHoverPanel = -1;
 	pData->iHoverIndex = -1;
 	pData->iActivePanel = 0;
+	pData->iPressedPanel = -1;
+	pData->iActiveIndex = -1;
 	pData->iActiveTimePanel = 0;
 	pData->iActiveTimeField = -1;
 	pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
@@ -703,6 +794,9 @@ static void __xuiDatePickerDefaults(xui_date_picker_data_t* pData)
 
 static void __xuiDatePickerApplyDesc(xui_date_picker_data_t* pData, const xui_date_picker_desc_t* pDesc)
 {
+	float fMinWidth;
+	float fMinHeight;
+
 	if ( (pData == NULL) || (pDesc == NULL) ) return;
 	pData->iMode = __xuiDatePickerModeValid(pDesc->iMode) ? pDesc->iMode : XUI_DATE_PICKER_MODE_DATE;
 	pData->bNullable = pDesc->bNullable ? 1 : 0;
@@ -731,13 +825,14 @@ static void __xuiDatePickerApplyDesc(xui_date_picker_data_t* pData, const xui_da
 		pData->tEnd = pDesc->tValue;
 		pData->bHasValue = 1;
 	}
-	if ( (pDesc->fPopupWidth > 0.0f) && (pDesc->fPopupHeight > 0.0f) ) {
-		pData->fPopupWidth = pDesc->fPopupWidth;
-		pData->fPopupHeight = pDesc->fPopupHeight;
-		pData->bPopupSizeCustom = 1;
-	} else {
-		__xuiDatePickerUpdatePopupSizeForMode(pData);
-	}
+	__xuiDatePickerPreferredPopupSize(pData->iMode, &pData->fPopupWidth, &pData->fPopupHeight);
+	__xuiDatePickerMinimumPopupSize(pData->iMode, pData->bNullable, &fMinWidth, &fMinHeight);
+	if ( pData->fPopupWidth < fMinWidth ) pData->fPopupWidth = fMinWidth;
+	if ( pData->fPopupHeight < fMinHeight ) pData->fPopupHeight = fMinHeight;
+	if ( pDesc->fPopupWidth > 0.0f ) pData->fPopupWidth = pDesc->fPopupWidth;
+	if ( pDesc->fPopupHeight > 0.0f ) pData->fPopupHeight = pDesc->fPopupHeight;
+	pData->bPopupSizeCustom = (pDesc->fPopupWidth > 0.0f || pDesc->fPopupHeight > 0.0f) ? 1 : 0;
+	if ( !pData->bPopupSizeCustom ) __xuiDatePickerUpdatePopupSizeForMode(pData);
 	if ( __xuiDatePickerPlacementValid(pDesc->iPopupPlacement) ) pData->iPopupPlacement = pDesc->iPopupPlacement;
 	if ( __xuiDatePickerAlpha(pDesc->iTextColor) != 0 ) pData->iTextColor = pDesc->iTextColor;
 	if ( __xuiDatePickerAlpha(pDesc->iDisabledTextColor) != 0 ) pData->iDisabledTextColor = pDesc->iDisabledTextColor;
@@ -792,7 +887,8 @@ static int __xuiDatePickerStyleFloat(xui_widget pWidget, const char* sName, floa
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -858,33 +954,39 @@ static void __xuiDatePickerResolve(xui_widget pWidget, xui_date_picker_data_t* p
 
 static int __xuiDatePickerInvalidateAll(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
+	int iRet;
+	int iPanelRet;
+
+	iRet = (pWidget != NULL) ? xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+	iPanelRet = XUI_OK;
 	if ( pData != NULL && pData->pPanel != NULL ) {
-		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iPanelRet = xuiWidgetInvalidate(pData->pPanel,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return (iRet != XUI_OK) ? iRet : iPanelRet;
 }
 
-static void __xuiDatePickerNotifyDraft(xui_widget pWidget, xui_date_picker_data_t* pData)
+static int __xuiDatePickerNotifyDraft(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
-	if ( pData == NULL ) return;
+	xui_date_picker_proc proc;
+	void* pUser;
+	xtime tStart;
+	xtime tEnd;
+	int iMode;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iChangingCount++;
-	if ( pData->onChanging != NULL ) {
-		if ( __xuiDatePickerIsRange(pData->iMode) ) {
-			pData->onChanging(pWidget, pData->tDraftStart, pData->tDraftEnd, pData->iMode, pData->pChangingUser);
-		} else {
-			pData->onChanging(pWidget, pData->tDraftValue, 0, pData->iMode, pData->pChangingUser);
-		}
-	}
-}
-
-static void __xuiDatePickerNotifyValue(xui_widget pWidget, xui_date_picker_data_t* pData, xui_date_picker_proc proc, void* pUser)
-{
-	if ( (pData == NULL) || (proc == NULL) ) return;
-	if ( __xuiDatePickerIsRange(pData->iMode) ) {
-		proc(pWidget, pData->tStart, pData->tEnd, pData->iMode, pUser);
-	} else {
-		proc(pWidget, pData->tValue, 0, pData->iMode, pUser);
-	}
+	proc = pData->onChanging;
+	pUser = pData->pChangingUser;
+	iMode = pData->iMode;
+	tStart = __xuiDatePickerIsRange(iMode) ? pData->tDraftStart : pData->tDraftValue;
+	tEnd = __xuiDatePickerIsRange(iMode) ? pData->tDraftEnd : 0;
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( proc != NULL ) proc(pWidget, tStart, tEnd, iMode, pUser);
+	return XUI_OK;
 }
 
 static uint32_t __xuiDatePickerState(xui_widget pWidget, xui_date_picker_data_t* pData)
@@ -895,7 +997,7 @@ static uint32_t __xuiDatePickerState(xui_widget pWidget, xui_date_picker_data_t*
 
 	if ( pWidget == NULL ) return 0u;
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iState |= XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( (pData != NULL) && (pData->pPopup != NULL) && xuiPopupIsOpen(pData->pPopup) ) {
@@ -915,7 +1017,19 @@ static uint32_t __xuiDatePickerState(xui_widget pWidget, xui_date_picker_data_t*
 
 static int __xuiDatePickerSyncState(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
-	return xuiWidgetSetStateId(pWidget, __xuiDatePickerState(pWidget, pData));
+	xui_context pContext;
+	uint32_t iState;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	iState = __xuiDatePickerState(pWidget, pData);
+	if ( xuiWidgetGetStateId(pWidget) == iState ) return XUI_OK;
+	iRet = xuiWidgetSetStateId(pWidget, iState);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static void __xuiDatePickerUpdateOwnerRects(xui_widget pWidget, xui_date_picker_data_t* pData)
@@ -1187,8 +1301,10 @@ static int __xuiDatePickerSyncStyle(xui_widget pWidget)
 			tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, 0u);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( pData->pPanel != NULL )
-		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( pData->pPanel != NULL ) {
+		iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pData->iChildStyleHash = iHash;
 	pData->bChildStyleSynced = 1;
 	return XUI_OK;
@@ -1348,12 +1464,14 @@ static int __xuiDatePickerDrawComboField(xui_date_picker_data_t* pData, const xu
 	if ( iRet != XUI_OK ) return iRet;
 	tArrow = xuiInternalRectFromFloatNearest(tRect.fX + tRect.fW - 20.0f, tRect.fY, 20.0f, tRect.fH);
 	tText = xuiInternalRectFromFloatNearest(tRect.fX + 6.0f, tRect.fY, tRect.fW - 28.0f, tRect.fH);
-	if ( bSelectAll && (pProxy->drawRectFill != NULL || pProxy->drawRectFill != NULL) ) {
+	if ( bSelectAll ) {
 		tSelect = __xuiDatePickerInsetRect(tText, 3.0f);
-		(void)__xuiDatePickerDrawFill(pProxy, pDraw, tSelect, pResolved->iSelectionColor);
+		iRet = __xuiDatePickerDrawFill(pProxy, pDraw, tSelect, pResolved->iSelectionColor);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return __xuiDatePickerDrawChevron(pProxy, pDraw, tArrow, bOpen, pResolved->iPopupMutedTextColor);
 }
@@ -1365,7 +1483,6 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 	xui_rect_t tRect;
 	xtime tMonth;
 	xtime tDay;
-	xtime tDate;
 	int64 iYear;
 	int iMonth;
 	int iDay;
@@ -1389,32 +1506,39 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 	if ( iRet != XUI_OK ) return iRet;
 	tMonth = pData->tViewMonth[iPanel];
 	xuiXrtDecodeSerial(tMonth, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
-	(void)__xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, pData->tPrevRect[iPanel], "", pResolved->iPopupTextColor, pResolved->iFieldColor, pResolved->iFieldBorderColor, 0);
-	(void)__xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, pData->tNextRect[iPanel], "", pResolved->iPopupTextColor, pResolved->iFieldColor, pResolved->iFieldBorderColor, 0);
-	(void)__xuiDatePickerDrawArrow(pProxy, pDraw, pData->tPrevRect[iPanel], -1, pResolved->iPopupMutedTextColor);
-	(void)__xuiDatePickerDrawArrow(pProxy, pDraw, pData->tNextRect[iPanel], 1, pResolved->iPopupMutedTextColor);
+	iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, pData->tPrevRect[iPanel], "", pResolved->iPopupTextColor, pResolved->iFieldColor, pResolved->iFieldBorderColor, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, pData->tNextRect[iPanel], "", pResolved->iPopupTextColor, pResolved->iFieldColor, pResolved->iFieldBorderColor, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiDatePickerDrawArrow(pProxy, pDraw, pData->tPrevRect[iPanel], -1, pResolved->iPopupMutedTextColor);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiDatePickerDrawArrow(pProxy, pDraw, pData->tNextRect[iPanel], 1, pResolved->iPopupMutedTextColor);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->iEditKind == XUI_DATE_PICKER_EDIT_YEAR && pData->iEditPanel == iPanel ) {
 		snprintf(sText, sizeof(sText), "%s", pData->sEdit);
 	} else {
 		snprintf(sText, sizeof(sText), "%04lld", (long long)iYear);
 	}
-	(void)__xuiDatePickerDrawComboField(pData, pResolved, pProxy, pDraw, pData->tYearRect[iPanel], sText,
+	iRet = __xuiDatePickerDrawComboField(pData, pResolved, pProxy, pDraw, pData->tYearRect[iPanel], sText,
 		(pData->iOpenComboKind == XUI_DATE_PICKER_COMBO_YEAR) && (pData->iOpenComboPanel == iPanel),
 		(pData->iEditKind == XUI_DATE_PICKER_EDIT_YEAR && pData->iEditPanel == iPanel) ||
 		(pData->iOpenComboKind == XUI_DATE_PICKER_COMBO_YEAR && pData->iOpenComboPanel == iPanel),
 		(pData->iEditKind == XUI_DATE_PICKER_EDIT_YEAR && pData->iEditPanel == iPanel && pData->iEditError),
 		(pData->iEditKind == XUI_DATE_PICKER_EDIT_YEAR && pData->iEditPanel == iPanel && pData->iEditSelectAll));
+	if ( iRet != XUI_OK ) return iRet;
 	snprintf(sText, sizeof(sText), "%02d", iMonth);
-	(void)__xuiDatePickerDrawComboField(pData, pResolved, pProxy, pDraw, pData->tMonthRect[iPanel], sText,
+	iRet = __xuiDatePickerDrawComboField(pData, pResolved, pProxy, pDraw, pData->tMonthRect[iPanel], sText,
 		(pData->iOpenComboKind == XUI_DATE_PICKER_COMBO_MONTH) && (pData->iOpenComboPanel == iPanel),
 		(pData->iOpenComboKind == XUI_DATE_PICKER_COMBO_MONTH) && (pData->iOpenComboPanel == iPanel),
 		0, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < 7; i++ ) {
 		tRect = pData->arrDayRect[iPanel][i];
 		tRect.fY = pData->tCalendarRect[iPanel].fY + 34;
 		tRect.fH = 20;
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=arrWeek[(i + pData->iFirstDayOfWeek) % 7], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=arrWeek[(i + pData->iFirstDayOfWeek) % 7], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
 	for ( i = 0; i < XUI_DATE_PICKER_CELL_COUNT; i++ ) {
@@ -1422,7 +1546,6 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 		xuiXrtDecodeSerial(tDay, NULL, &iCellMonth, &iDay, NULL, NULL, NULL, NULL, NULL);
 		bCurrentMonth = (iCellMonth == iMonth);
 		bEnabled = __xuiDatePickerValueEnabled(pData, tDay);
-		tDate = __xuiDatePickerNormalizeValue(pData, tDay);
 		bSelected = 0;
 		bInRange = 0;
 		if ( __xuiDatePickerIsRange(pData->iMode) ) {
@@ -1458,9 +1581,9 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 		}
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 			snprintf(sText, sizeof(sText), "%d", iDay);
-			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
 		}
-		(void)tDate;
 	}
 	return XUI_OK;
 }
@@ -1497,7 +1620,8 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 	fTitleY = tRect.fY + 7.0f;
 	if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 		snprintf(sText, sizeof(sText), "%s time", (__xuiDatePickerIsRange(pData->iMode) ? ((iPanel == 0) ? "Start" : "End") : "Select"));
-		(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalRectFromFloatNearest(tRect.fX + 8.0f, fTitleY, tRect.fW - 16.0f, 16.0f), pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalRectFromFloatNearest(tRect.fX + 8.0f, fTitleY, tRect.fW - 16.0f, 16.0f), pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
 	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
@@ -1507,12 +1631,14 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 	for ( i = 0; i < (pData->bShowSecond ? 3 : 2); i++ ) {
 		tRect = pData->arrTimeRect[iPanel][i];
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=arrName[i], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tRect.fX, tRect.fY - 18, tRect.fW, 16}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=arrName[i], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tRect.fX, tRect.fY - 18, tRect.fW, 16}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		iRet = __xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, tRect, "", pResolved->iPopupTextColor, pResolved->iFieldColor, ((pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i)) ? pResolved->iAccentColor : pResolved->iFieldBorderColor, (pData->iActiveTimePanel == iPanel) && (pData->iActiveTimeField == i));
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pData->iEditKind == XUI_DATE_PICKER_EDIT_TIME && pData->iEditPanel == iPanel && pData->iEditField == i && pData->iEditSelectAll ) {
-			(void)__xuiDatePickerDrawFill(pProxy, pDraw, __xuiDatePickerInsetRect(tRect, 4.0f), pResolved->iSelectionColor);
+			iRet = __xuiDatePickerDrawFill(pProxy, pDraw, __xuiDatePickerInsetRect(tRect, 4.0f), pResolved->iSelectionColor);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 			if ( pData->iEditKind == XUI_DATE_PICKER_EDIT_TIME && pData->iEditPanel == iPanel && pData->iEditField == i ) {
@@ -1520,7 +1646,8 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 			} else {
 				snprintf(sText, sizeof(sText), "%02d", arrValue[i]);
 			}
-			(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
 	return XUI_OK;
@@ -1566,7 +1693,8 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 			}
 			if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 				snprintf(sText, sizeof(sText), "%04lld", (long long)iValue);
-				(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
 	} else {
@@ -1581,7 +1709,8 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 			}
 			if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
 				snprintf(sText, sizeof(sText), "%02d", i + 1);
-				(void)pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
 	}
@@ -1613,14 +1742,19 @@ static int __xuiDatePickerPanelRender(xui_widget pPanel, xui_draw_context pDraw,
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pProxy->drawRectFill != NULL ) {
-		(void)pProxy->drawRectFill(pProxy, pDraw, xuiInternalRectFromFloatNearest(XUI_DATE_PICKER_PAD, pData->fPopupHeight - 48.0f, pData->fPopupWidth - XUI_DATE_PICKER_PAD * 2.0f, 1.0f), tResolved.iSeparatorColor);
+		iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalRectFromFloatNearest(XUI_DATE_PICKER_PAD, pData->fPopupHeight - 48.0f, pData->fPopupWidth - XUI_DATE_PICKER_PAD * 2.0f, 1.0f), tResolved.iSeparatorColor);
+		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)__xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_TODAY], __xuiDatePickerHasDate(pData->iMode) ? "Today" : "Now", tResolved.iPopupTextColor, tResolved.iFieldColor, tResolved.iFieldBorderColor, 0);
+	iRet = __xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_TODAY], __xuiDatePickerHasDate(pData->iMode) ? "Today" : "Now", tResolved.iPopupTextColor, tResolved.iFieldColor, tResolved.iFieldBorderColor, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->bNullable ) {
-		(void)__xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CLEAR], "Clear", tResolved.iPopupTextColor, tResolved.iFieldColor, tResolved.iFieldBorderColor, 0);
+		iRet = __xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CLEAR], "Clear", tResolved.iPopupTextColor, tResolved.iFieldColor, tResolved.iFieldBorderColor, 0);
+		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)__xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CANCEL], "Cancel", tResolved.iPopupTextColor, tResolved.iFieldColor, tResolved.iFieldBorderColor, 0);
-	(void)__xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_OK], "OK", tResolved.iSelectedTextColor, tResolved.iAccentColor, tResolved.iAccentColor, 1);
+	iRet = __xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_CANCEL], "Cancel", tResolved.iPopupTextColor, tResolved.iFieldColor, tResolved.iFieldBorderColor, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiDatePickerDrawButton(pProxy, pDraw, tResolved.pFont, pData->arrFooterRect[XUI_DATE_PICKER_FOOTER_OK], "OK", tResolved.iSelectedTextColor, tResolved.iAccentColor, tResolved.iAccentColor, 1);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiDatePickerDrawComboPopup(pData, &tResolved, pProxy, pDraw);
 	if ( iRet != XUI_OK ) return iRet;
 	return XUI_OK;
@@ -1649,12 +1783,22 @@ static void __xuiDatePickerPrepareDraft(xui_date_picker_data_t* pData)
 
 static int __xuiDatePickerCommitDraft(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
+	xui_context pContext;
+	xui_date_picker_proc onChange;
+	xui_date_picker_proc onCommit;
+	void* pChangeUser;
+	void* pCommitUser;
 	int bChanged;
+	int iMode;
+	int iRet;
 	xtime tOldValue;
 	xtime tOldStart;
 	xtime tOldEnd;
+	xtime tStart;
+	xtime tEnd;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	tOldValue = pData->tValue;
 	tOldStart = pData->tStart;
 	tOldEnd = pData->tEnd;
@@ -1673,89 +1817,168 @@ static int __xuiDatePickerCommitDraft(xui_widget pWidget, xui_date_picker_data_t
 	}
 	pData->bHasValue = 1;
 	__xuiDatePickerSyncText(pData);
+	onChange = pData->onChange;
+	pChangeUser = pData->pChangeUser;
+	onCommit = pData->onCommit;
+	pCommitUser = pData->pCommitUser;
+	iMode = pData->iMode;
+	tStart = __xuiDatePickerIsRange(iMode) ? pData->tStart : pData->tValue;
+	tEnd = __xuiDatePickerIsRange(iMode) ? pData->tEnd : 0;
 	if ( bChanged ) {
 		pData->iChangeCount++;
-		__xuiDatePickerNotifyValue(pWidget, pData, pData->onChange, pData->pChangeUser);
 	}
 	pData->iCommitCount++;
-	__xuiDatePickerNotifyValue(pWidget, pData, pData->onCommit, pData->pCommitUser);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	if ( bChanged && onChange != NULL ) {
+		onChange(pWidget, tStart, tEnd, iMode, pChangeUser);
+		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
+	if ( onCommit != NULL ) onCommit(pWidget, tStart, tEnd, iMode, pCommitUser);
+	return XUI_OK;
 }
 
 static int __xuiDatePickerCancelDraft(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
+	xui_date_picker_proc proc;
+	void* pUser;
+	xtime tStart;
+	xtime tEnd;
+	int iMode;
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iCancelCount++;
-	__xuiDatePickerNotifyValue(pWidget, pData, pData->onCancel, pData->pCancelUser);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	proc = pData->onCancel;
+	pUser = pData->pCancelUser;
+	iMode = pData->iMode;
+	tStart = __xuiDatePickerIsRange(iMode) ? pData->tStart : pData->tValue;
+	tEnd = __xuiDatePickerIsRange(iMode) ? pData->tEnd : 0;
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( proc != NULL ) proc(pWidget, tStart, tEnd, iMode, pUser);
+	return XUI_OK;
 }
 
 static int __xuiDatePickerClearInternal(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
+	xui_context pContext;
+	xui_date_picker_proc onClear;
+	xui_date_picker_proc onChange;
+	void* pClearUser;
+	void* pChangeUser;
 	int bChanged;
+	int iMode;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !pData->bNullable ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
 	bChanged = pData->bHasValue;
 	pData->bHasValue = 0;
 	pData->sText[0] = '\0';
 	pData->iClearCount++;
-	__xuiDatePickerNotifyValue(pWidget, pData, pData->onClear, pData->pClearUser);
+	onClear = pData->onClear;
+	pClearUser = pData->pClearUser;
+	onChange = pData->onChange;
+	pChangeUser = pData->pChangeUser;
+	iMode = pData->iMode;
 	if ( bChanged ) {
 		pData->iChangeCount++;
-		__xuiDatePickerNotifyValue(pWidget, pData, pData->onChange, pData->pChangeUser);
 	}
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	if ( onClear != NULL ) {
+		onClear(pWidget, 0, 0, iMode, pClearUser);
+		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
+	if ( bChanged && onChange != NULL ) onChange(pWidget, 0, 0, iMode, pChangeUser);
+	return XUI_OK;
 }
 
 static int __xuiDatePickerCloseWithReason(xui_widget pWidget, xui_date_picker_data_t* pData, int iReason)
 {
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pPanel;
 	int iRet;
+	int bWasOpen;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->pPopup != NULL ) {
-		if ( iReason == XUI_DATE_PICKER_CLOSE_CANCEL ) {
-			(void)__xuiDatePickerCancelDraft(pWidget, pData);
-		} else if ( iReason == XUI_DATE_PICKER_CLOSE_COMMIT ) {
-			(void)__xuiDatePickerCommitDraft(pWidget, pData);
-		} else if ( iReason == XUI_DATE_PICKER_CLOSE_CLEAR ) {
-			(void)__xuiDatePickerClearInternal(pWidget, pData);
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pPanel = pData->pPanel;
+	bWasOpen = (pPopup != NULL) && xuiPopupIsOpen(pPopup);
+	if ( bWasOpen ) {
+		if ( pPanel != NULL ) {
+			iRet = __xuiDatePickerPanelCancelPointer(pPanel, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 		}
 		pData->bClosingExplicit = 1;
 		pData->iCloseReason = iReason;
-		iRet = xuiPopupSetOpen(pData->pPopup, 0);
+		iRet = xuiPopupSetOpen(pPopup, 0);
+		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return (iRet == XUI_OK) ? XUI_OK : iRet;
 		pData->bClosingExplicit = 0;
 		pData->iCloseReason = XUI_DATE_PICKER_CLOSE_NONE;
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)__xuiDatePickerSyncState(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiDatePickerSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !bWasOpen ) return XUI_OK;
+	if ( iReason == XUI_DATE_PICKER_CLOSE_CANCEL ) return __xuiDatePickerCancelDraft(pWidget, pData);
+	if ( iReason == XUI_DATE_PICKER_CLOSE_COMMIT ) return __xuiDatePickerCommitDraft(pWidget, pData);
+	if ( iReason == XUI_DATE_PICKER_CLOSE_CLEAR ) return __xuiDatePickerClearInternal(pWidget, pData);
+	return __xuiDatePickerInvalidateAll(pWidget, pData);
 }
 
 static int __xuiDatePickerOpenInternal(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pPanel;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) return XUI_OK;
+	if ( (pData->pPopup == NULL) || (pData->pPanel == NULL) ) return XUI_ERROR_NOT_INITIALIZED;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_OK;
+	if ( xuiPopupIsOpen(pData->pPopup) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pPanel = pData->pPanel;
 	__xuiDatePickerPrepareDraft(pData);
 	iRet = __xuiDatePickerApplyPopupStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetOpen(pData->pPopup, 1);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetOpen(pPopup, 1);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( pData->pPanel != NULL ) (void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pPanel);
-	(void)__xuiDatePickerSyncState(pWidget, pData);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiSetFocusWidget(pContext, pPanel);
+	if ( iRet != XUI_OK ) {
+		int iCloseRet;
+		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return iRet;
+		pData->bClosingExplicit = 1;
+		iCloseRet = xuiPopupSetOpen(pPopup, 0);
+		if ( __xuiDatePickerAlive(pContext, pWidget, pData) ) pData->bClosingExplicit = 0;
+		return (iCloseRet != XUI_OK) ? iCloseRet : iRet;
+	}
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = __xuiDatePickerSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiDatePickerInvalidateAll(pWidget, pData);
 }
 
-static void __xuiDatePickerSelectDay(xui_widget pOwner, xui_date_picker_data_t* pData, int iPanel, int iIndex)
+static int __xuiDatePickerSelectDay(xui_widget pOwner, xui_date_picker_data_t* pData, int iPanel, int iIndex)
 {
 	xtime tDay;
 	xtime tTime;
 
-	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) || (iIndex < 0) || (iIndex >= XUI_DATE_PICKER_CELL_COUNT) ) return;
+	if ( (pOwner == NULL) || (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ||
+	     (iIndex < 0) || (iIndex >= XUI_DATE_PICKER_CELL_COUNT) ) return XUI_ERROR_INVALID_ARGUMENT;
 	tDay = pData->arrDayValue[iPanel][iIndex];
-	if ( !__xuiDatePickerValueEnabled(pData, tDay) ) return;
+	if ( !__xuiDatePickerValueEnabled(pData, tDay) ) return XUI_OK;
 	if ( __xuiDatePickerIsRange(pData->iMode) ) {
 		if ( pData->iMode == XUI_DATE_PICKER_MODE_DATETIME_RANGE ) {
 			tTime = xrtTimePart((iPanel == 1) ? pData->tDraftEnd : pData->tDraftStart);
@@ -1775,8 +1998,7 @@ static void __xuiDatePickerSelectDay(xui_widget pOwner, xui_date_picker_data_t* 
 		}
 		pData->tDraftValue = __xuiDatePickerClampValue(pData, tDay);
 	}
-	__xuiDatePickerNotifyDraft(pOwner, pData);
-	(void)__xuiDatePickerInvalidateAll(pOwner, pData);
+	return __xuiDatePickerNotifyDraft(pOwner, pData);
 }
 
 static void __xuiDatePickerSetDraftTime(xui_date_picker_data_t* pData, int iPanel, int iField, int iDelta)
@@ -1923,44 +2145,45 @@ static int __xuiDatePickerCommitEdit(xui_widget pOwner, xui_date_picker_data_t* 
 		iValue = __xuiDatePickerClampInt(iValue, 0, iMax);
 		__xuiDatePickerSetDraftTimeValue(pData, pData->iEditPanel, pData->iEditField, iValue);
 		__xuiDatePickerCancelEdit(pData);
-		if ( bNotify ) __xuiDatePickerNotifyDraft(pOwner, pData);
-		return __xuiDatePickerInvalidateAll(pOwner, pData);
+		return bNotify ? __xuiDatePickerNotifyDraft(pOwner, pData) :
+			__xuiDatePickerInvalidateAll(pOwner, pData);
 	}
 	__xuiDatePickerCancelEdit(pData);
 	return XUI_OK;
 }
 
-static void __xuiDatePickerSetDraftNow(xui_widget pOwner, xui_date_picker_data_t* pData)
+static int __xuiDatePickerSetDraftNow(xui_widget pOwner, xui_date_picker_data_t* pData)
 {
 	xtime tStart;
 	xtime tEnd;
 
-	if ( pData == NULL ) return;
+	if ( (pOwner == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiDatePickerDefaultValues(pData, &tStart, &tEnd);
 	pData->tDraftValue = tStart;
 	pData->tDraftStart = tStart;
 	pData->tDraftEnd = tEnd;
 	__xuiDatePickerInitViewMonth(pData);
-	__xuiDatePickerNotifyDraft(pOwner, pData);
-	(void)__xuiDatePickerInvalidateAll(pOwner, pData);
+	return __xuiDatePickerNotifyDraft(pOwner, pData);
 }
 
 static int __xuiDatePickerMoveDraftDate(xui_widget pOwner, xui_date_picker_data_t* pData,
 	const xui_event_t* pEvent)
 {
-	xtime tValue;
+	xtime tValue = 0;
 	xtime tMoved;
 	int iPanel;
 	int iUnit;
+	int iRet;
 	int64 iAmount;
 	int iWeekday;
 	int iOffset;
 	int64 iYear;
 	int iMonth;
 
-	if ( (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) || !__xuiDatePickerHasDate(pData->iMode) ) {
-		return 0;
+	if ( (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( !__xuiDatePickerHasDate(pData->iMode) ) return XUI_OK;
 	iUnit = 0;
 	iAmount = 0;
 	switch ( pEvent->iKey ) {
@@ -1980,7 +2203,7 @@ static int __xuiDatePickerMoveDraftDate(xui_widget pOwner, xui_date_picker_data_
 		iAmount = (pEvent->iKey == XUI_KEY_HOME) ? -iOffset : (6 - iOffset);
 		break;
 	default:
-		return 0;
+		return XUI_OK;
 	}
 	iPanel = __xuiDatePickerIsRange(pData->iMode) ? pData->iActivePanel : 0;
 	if ( (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) iPanel = 0;
@@ -1988,9 +2211,9 @@ static int __xuiDatePickerMoveDraftDate(xui_widget pOwner, xui_date_picker_data_
 		tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
 	}
 	tMoved = tValue;
-	if ( !xrtTimeAdd(tValue, iAmount, iUnit, &tMoved) ) return 1;
+	if ( !xrtTimeAdd(tValue, iAmount, iUnit, &tMoved) ) return XUI_EVENT_DISPATCH_STOP;
 	tMoved = __xuiDatePickerClampValue(pData, tMoved);
-	if ( !__xuiDatePickerValueEnabled(pData, tMoved) ) return 1;
+	if ( !__xuiDatePickerValueEnabled(pData, tMoved) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( __xuiDatePickerIsRange(pData->iMode) ) {
 		if ( iPanel == 1 ) pData->tDraftEnd = tMoved;
 		else pData->tDraftStart = tMoved;
@@ -2000,9 +2223,8 @@ static int __xuiDatePickerMoveDraftDate(xui_widget pOwner, xui_date_picker_data_
 	}
 	xuiXrtDecodeSerial(tMoved, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 	__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, iYear, iMonth);
-	__xuiDatePickerNotifyDraft(pOwner, pData);
-	(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-	return 1;
+	iRet = __xuiDatePickerNotifyDraft(pOwner, pData);
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiDatePickerHitPanel(xui_date_picker_data_t* pData, float fX, float fY, int* pPanel, int* pIndex)
@@ -2075,34 +2297,25 @@ static int __xuiDatePickerHitPanel(xui_date_picker_data_t* pData, float fX, floa
 	return XUI_DATE_PICKER_PART_NONE;
 }
 
-static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
+static int __xuiDatePickerPanelActivate(xui_widget pOwner, xui_date_picker_data_t* pData,
+	int iHit, int iPanel, int iIndex)
 {
-	xui_rect_t tWorld;
-	float fX;
-	float fY;
 	int64 iYear;
 	int iMonth;
-	int iPanel;
-	int iIndex;
-	int iHit;
+	int iRet;
 
-	if ( (pPanel == NULL) || (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) return XUI_OK;
-	tWorld = xuiWidgetGetWorldRect(pPanel);
-	fX = pEvent->fX - tWorld.fX;
-	fY = pEvent->fY - tWorld.fY;
-	__xuiDatePickerUpdatePanelRects(pData);
-	iHit = __xuiDatePickerHitPanel(pData, fX, fY, &iPanel, &iIndex);
-	pData->iActivePart = iHit;
-	pData->iActivePanel = (iPanel >= 0) ? iPanel : pData->iActivePanel;
+	if ( (pOwner == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iHit < XUI_DATE_PICKER_PART_TIME_HOUR || iHit > XUI_DATE_PICKER_PART_TIME_SECOND ) {
+		pData->iActiveTimeField = -1;
+	}
 	if ( iHit == XUI_DATE_PICKER_PART_YEAR_OPTION ) {
 		xuiXrtDecodeSerial(pData->tViewMonth[iPanel], NULL, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 		__xuiDatePickerCancelEdit(pData);
 		pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 		pData->iOpenComboPanel = -1;
 		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, __xuiDatePickerYearOptionValue(pData, iPanel, iIndex), iMonth);
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_MONTH_OPTION ) {
 		xuiXrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
@@ -2110,28 +2323,29 @@ static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner,
 		pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 		pData->iOpenComboPanel = -1;
 		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, iYear, iIndex + 1);
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_YEAR_FIELD ) {
 		pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_YEAR;
 		pData->iOpenComboPanel = iPanel;
 		__xuiDatePickerBeginYearEdit(pData, iPanel);
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_MONTH_FIELD ) {
 		__xuiDatePickerCancelEdit(pData);
 		pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_MONTH;
 		pData->iOpenComboPanel = iPanel;
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( __xuiDatePickerEditing(pData) ) {
-		if ( __xuiDatePickerCommitEdit(pOwner, pData, 1) != XUI_OK ) {
-			(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-			return XUI_EVENT_DISPATCH_STOP;
-		}
+		iRet = __xuiDatePickerCommitEdit(pOwner, pData, 1);
+		if ( iRet != XUI_OK ) return (iRet == XUI_ERROR_INVALID_ARGUMENT) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		if ( !xuiInternalWidgetIsValid(pOwner) ) return XUI_EVENT_DISPATCH_STOP;
+		pData = __xuiDatePickerGetData(pOwner);
+		if ( pData == NULL ) return XUI_EVENT_DISPATCH_STOP;
 	}
 	pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 	pData->iOpenComboPanel = -1;
@@ -2139,37 +2353,137 @@ static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner,
 		pData->tViewMonth[iPanel] = xuiXrtDateAddMonth(0, (iHit == XUI_DATE_PICKER_PART_PREV) ? -1 : 1, pData->tViewMonth[iPanel]);
 		xuiXrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, iYear, iMonth);
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_DAY ) {
-		__xuiDatePickerSelectDay(pOwner, pData, iPanel, iIndex);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerSelectDay(pOwner, pData, iPanel, iIndex);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit >= XUI_DATE_PICKER_PART_TIME_HOUR && iHit <= XUI_DATE_PICKER_PART_TIME_SECOND ) {
 		pData->iActiveTimePanel = iPanel;
 		pData->iActiveTimeField = iIndex;
 		__xuiDatePickerBeginTimeEdit(pData, iPanel, iIndex);
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_TODAY ) {
-		__xuiDatePickerSetDraftNow(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerSetDraftNow(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_CLEAR ) {
-		(void)__xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_CLEAR);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_CLEAR);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_CANCEL ) {
-		(void)__xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_CANCEL);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_CANCEL);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_OK ) {
-		(void)__xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_COMMIT);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_COMMIT);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_context pContext;
+	xui_rect_t tWorld;
+	float fX;
+	float fY;
+	int iPanel;
+	int iIndex;
+	int iHit;
+	int iRet;
+
+	if ( (pPanel == NULL) || (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) return XUI_OK;
+	if ( pData->tPointerOwner.bActive ) {
+		return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
+			XUI_EVENT_DISPATCH_STOP : XUI_OK;
+	}
+	pContext = xuiWidgetGetContext(pPanel);
+	tWorld = xuiWidgetGetWorldRect(pPanel);
+	fX = pEvent->fX - tWorld.fX;
+	fY = pEvent->fY - tWorld.fY;
+	__xuiDatePickerUpdatePanelRects(pData);
+	iHit = __xuiDatePickerHitPanel(pData, fX, fY, &iPanel, &iIndex);
+	pData->iActivePart = iHit;
+	pData->iPressedPanel = iPanel;
+	pData->iActiveIndex = iIndex;
+	if ( iPanel >= 0 ) pData->iActivePanel = iPanel;
+	iRet = xuiInternalPointerOwnerBegin(pContext, pPanel, pEvent,
+		&pData->tPointerOwner);
+	if ( iRet != XUI_OK ) {
+		pData->iActivePart = XUI_DATE_PICKER_PART_NONE;
+		pData->iPressedPanel = -1;
+		pData->iActiveIndex = -1;
+		return iRet;
+	}
+	if ( !__xuiDatePickerAlive(pContext, pOwner, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+}
+
+static int __xuiDatePickerPanelPointerUp(xui_widget pPanel, xui_widget pOwner, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_context pContext;
+	xui_rect_t tWorld;
+	float fX;
+	float fY;
+	int iHit;
+	int iPanel;
+	int iIndex;
+	int iActivePart;
+	int iActivePanel;
+	int iActiveIndex;
+	int iRet;
+
+	if ( (pPanel == NULL) || (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT || pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
+	if ( !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pPanel);
+	tWorld = xuiWidgetGetWorldRect(pPanel);
+	fX = pEvent->fX - tWorld.fX;
+	fY = pEvent->fY - tWorld.fY;
+	__xuiDatePickerUpdatePanelRects(pData);
+	iHit = __xuiDatePickerHitPanel(pData, fX, fY, &iPanel, &iIndex);
+	iActivePart = pData->iActivePart;
+	iActivePanel = pData->iPressedPanel;
+	iActiveIndex = pData->iActiveIndex;
+	pData->iActivePart = XUI_DATE_PICKER_PART_NONE;
+	pData->iPressedPanel = -1;
+	pData->iActiveIndex = -1;
+	iRet = xuiInternalPointerOwnerEnd(pContext, pPanel, pEvent,
+		&pData->tPointerOwner);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiDatePickerAlive(pContext, pOwner, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iHit != iActivePart || iPanel != iActivePanel || iIndex != iActiveIndex ) return XUI_EVENT_DISPATCH_STOP;
+	return __xuiDatePickerPanelActivate(pOwner, pData, iHit, iPanel, iIndex);
+}
+
+static int __xuiDatePickerPanelCancelPointer(xui_widget pPanel, xui_date_picker_data_t* pData)
+{
+	xui_context pContext;
+	int bChanged;
+	int iRet;
+
+	if ( (pPanel == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pPanel);
+	bChanged = (pData->iActivePart != XUI_DATE_PICKER_PART_NONE) ||
+		(pData->iPressedPanel >= 0) || (pData->iActiveIndex >= 0) ||
+		pData->tPointerOwner.bActive;
+	pData->iActivePart = XUI_DATE_PICKER_PART_NONE;
+	pData->iPressedPanel = -1;
+	pData->iActiveIndex = -1;
+	iRet = xuiInternalPointerOwnerCancel(pContext, pPanel, &pData->tPointerOwner);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !xuiInternalContextIsValid(pContext) || xuiInternalContextDestroyPending(pContext) ||
+	     !xuiInternalWidgetIsValid(pPanel) ) return XUI_OK;
+	return bChanged ? xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
 }
 
 static int __xuiDatePickerPanelPointerMove(xui_widget pPanel, xui_widget pOwner, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
@@ -2184,6 +2498,10 @@ static int __xuiDatePickerPanelPointerMove(xui_widget pPanel, xui_widget pOwner,
 	(void)pOwner;
 	if ( (pPanel == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
+	if ( pData->tPointerOwner.bActive &&
+	     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+		return XUI_OK;
+	}
 	tWorld = xuiWidgetGetWorldRect(pPanel);
 	fX = pEvent->fX - tWorld.fX;
 	fY = pEvent->fY - tWorld.fY;
@@ -2207,8 +2525,10 @@ static int __xuiDatePickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_d
 	int iIndex;
 	int iHit;
 	int iDelta;
+	int iRet;
 
 	if ( (pPanel == NULL) || (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->fWheelY == 0.0f ) return XUI_OK;
 	tWorld = xuiWidgetGetWorldRect(pPanel);
 	fX = pEvent->fX - tWorld.fX;
 	fY = pEvent->fY - tWorld.fY;
@@ -2219,9 +2539,8 @@ static int __xuiDatePickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_d
 		pData->iActiveTimePanel = iPanel;
 		pData->iActiveTimeField = iIndex;
 		__xuiDatePickerSetDraftTime(pData, iPanel, iIndex, iDelta);
-		__xuiDatePickerNotifyDraft(pOwner, pData);
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerNotifyDraft(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	return XUI_OK;
 }
@@ -2229,6 +2548,7 @@ static int __xuiDatePickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_d
 static int __xuiDatePickerPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
 {
 	int iDelta;
+	int iRet;
 
 	(void)pPanel;
 	if ( (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2236,19 +2556,19 @@ static int __xuiDatePickerPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui
 	if ( __xuiDatePickerEditing(pData) ) {
 		if ( (pEvent->iKey == 'A' || pEvent->iKey == 'a') && ((pEvent->iModifiers & XUI_MOD_CTRL) != 0u) ) {
 			pData->iEditSelectAll = 1;
-			(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		if ( pEvent->iKey == XUI_KEY_ENTER ) {
-			(void)__xuiDatePickerCommitEdit(pOwner, pData, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiDatePickerCommitEdit(pOwner, pData, 1);
+			return (iRet == XUI_OK || iRet == XUI_ERROR_INVALID_ARGUMENT) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
 			__xuiDatePickerCancelEdit(pData);
 			pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 			pData->iOpenComboPanel = -1;
-			(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		if ( pEvent->iKey == XUI_KEY_BACKSPACE ) {
 			if ( pData->iEditSelectAll ) {
@@ -2259,16 +2579,16 @@ static int __xuiDatePickerPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui
 				pData->sEdit[--pData->iEditLen] = '\0';
 			}
 			pData->iEditError = 0;
-			(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		if ( pEvent->iKey == XUI_KEY_DELETE ) {
 			pData->iEditLen = 0;
 			pData->sEdit[0] = '\0';
 			pData->iEditSelectAll = 0;
 			pData->iEditError = 0;
-			(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -2276,28 +2596,26 @@ static int __xuiDatePickerPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui
 		if ( pEvent->iKey == XUI_KEY_ESCAPE || pEvent->iKey == XUI_KEY_ENTER ) {
 			pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 			pData->iOpenComboPanel = -1;
-			(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 	}
 	if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-		(void)__xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_CANCEL);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_CANCEL);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( pEvent->iKey == XUI_KEY_ENTER ) {
-		(void)__xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_COMMIT);
-		return XUI_EVENT_DISPATCH_STOP;
-	}
-	if ( __xuiDatePickerMoveDraftDate(pOwner, pData, pEvent) ) {
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_COMMIT);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( (pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN) && pData->iActiveTimeField >= 0 ) {
 		iDelta = (pEvent->iKey == XUI_KEY_UP) ? 1 : -1;
 		__xuiDatePickerSetDraftTime(pData, pData->iActiveTimePanel, pData->iActiveTimeField, iDelta);
-		__xuiDatePickerNotifyDraft(pOwner, pData);
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiDatePickerNotifyDraft(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
+	iRet = __xuiDatePickerMoveDraftDate(pOwner, pData, pEvent);
+	if ( iRet != XUI_OK ) return iRet;
 	return XUI_OK;
 }
 
@@ -2305,6 +2623,7 @@ static int __xuiDatePickerPanelText(xui_widget pPanel, xui_widget pOwner, xui_da
 {
 	uint32_t iCodepoint;
 	int iLimit;
+	int iRet;
 
 	(void)pPanel;
 	if ( (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2325,7 +2644,8 @@ static int __xuiDatePickerPanelText(xui_widget pPanel, xui_widget pOwner, xui_da
 		pData->sEdit[pData->iEditLen] = '\0';
 		__xuiDatePickerClampTimeEditText(pData);
 		pData->iEditError = 0;
-		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
+		iRet = __xuiDatePickerInvalidateAll(pOwner, pData);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_EVENT_DISPATCH_STOP;
 }
@@ -2347,17 +2667,19 @@ static int __xuiDatePickerPanelEvent(xui_widget pPanel, const xui_event_t* pEven
 	case XUI_EVENT_POINTER_WHEEL:
 		return __xuiDatePickerPanelWheel(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_POINTER_UP:
+		return __xuiDatePickerPanelPointerUp(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
-		pData->iActivePart = XUI_DATE_PICKER_PART_NONE;
-		return xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
+		return __xuiDatePickerPanelCancelPointer(pPanel, pData);
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiDatePickerPanelKeyDown(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_TEXT:
 		return __xuiDatePickerPanelText(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
-		(void)__xuiDatePickerSyncState(pOwner, pData);
-		return xuiWidgetInvalidate(pOwner, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return __xuiDatePickerSyncState(pOwner, pData);
 	default:
 		return XUI_OK;
 	}
@@ -2365,26 +2687,35 @@ static int __xuiDatePickerPanelEvent(xui_widget pPanel, const xui_event_t* pEven
 
 static int __xuiDatePickerPointerDown(xui_widget pWidget, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_context pContext;
+	int iRet;
+
 	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) return XUI_OK;
-	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	iRet = xuiSetFocusWidget(pContext, pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) {
-		(void)__xuiDatePickerCloseWithReason(pWidget, pData, XUI_DATE_PICKER_CLOSE_SILENT);
+		iRet = __xuiDatePickerCloseWithReason(pWidget, pData, XUI_DATE_PICKER_CLOSE_SILENT);
 	} else {
-		(void)__xuiDatePickerOpenInternal(pWidget, pData);
+		iRet = __xuiDatePickerOpenInternal(pWidget, pData);
 	}
-	return XUI_EVENT_DISPATCH_STOP;
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiDatePickerKeyDown(xui_widget pWidget, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
 {
-	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	int iRet;
+
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
 	if ( (pEvent->iKey == XUI_KEY_ENTER) || (pEvent->iKey == XUI_KEY_SPACE) ) {
 		if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) {
-			(void)__xuiDatePickerCloseWithReason(pWidget, pData, XUI_DATE_PICKER_CLOSE_SILENT);
+			iRet = __xuiDatePickerCloseWithReason(pWidget, pData, XUI_DATE_PICKER_CLOSE_SILENT);
 		} else {
-			(void)__xuiDatePickerOpenInternal(pWidget, pData);
+			iRet = __xuiDatePickerOpenInternal(pWidget, pData);
 		}
-		return XUI_EVENT_DISPATCH_STOP;
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	return XUI_OK;
 }
@@ -2410,20 +2741,18 @@ static int __xuiDatePickerEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
-		(void)__xuiDatePickerSyncState(pWidget, pData);
-		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return __xuiDatePickerSyncState(pWidget, pData);
 	case XUI_EVENT_BOUNDS_CHANGED:
 		if ( (pData->pPopup != NULL) && xuiPopupIsOpen(pData->pPopup) ) {
-			(void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
+			return __xuiDatePickerApplyPopupStyle(pWidget, pData);
 		}
 		return XUI_OK;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( ((pEvent->iType == XUI_EVENT_ENABLED_CHANGED) && !xuiWidgetGetEnabled(pWidget)) ||
-		     ((pEvent->iType == XUI_EVENT_VISIBLE_CHANGED) && !xuiWidgetGetVisible(pWidget)) ) {
-			(void)__xuiDatePickerCloseWithReason(pWidget, pData, XUI_DATE_PICKER_CLOSE_SILENT);
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			return __xuiDatePickerCloseWithReason(pWidget, pData, XUI_DATE_PICKER_CLOSE_SILENT);
 		}
-		return XUI_OK;
+		return __xuiDatePickerSyncState(pWidget, pData);
 	default:
 		break;
 	}
@@ -2434,16 +2763,24 @@ static void __xuiDatePickerPopupChanged(xui_widget pPopup, int bOpen, void* pUse
 {
 	xui_widget pOwner;
 	xui_date_picker_data_t* pData;
+	xui_context pContext;
 
 	(void)pPopup;
 	pOwner = (xui_widget)pUser;
+	if ( pOwner == NULL ) return;
 	pData = __xuiDatePickerGetData(pOwner);
-	if ( (pOwner == NULL) || (pData == NULL) ) return;
+	if ( pData == NULL ) return;
+	pContext = xuiWidgetGetContext(pOwner);
+	if ( pData->pPanel != NULL ) (void)__xuiDatePickerPanelCancelPointer(pData->pPanel, pData);
+	if ( !__xuiDatePickerAlive(pContext, pOwner, pData) ) return;
+	if ( pData->bClosingExplicit ) return;
+	(void)__xuiDatePickerSyncState(pOwner, pData);
+	if ( !__xuiDatePickerAlive(pContext, pOwner, pData) ) return;
+	(void)__xuiDatePickerInvalidateAll(pOwner, pData);
+	if ( !__xuiDatePickerAlive(pContext, pOwner, pData) ) return;
 	if ( !bOpen && !pData->bClosingExplicit ) {
 		(void)__xuiDatePickerCancelDraft(pOwner, pData);
 	}
-	(void)__xuiDatePickerSyncState(pOwner, pData);
-	(void)__xuiDatePickerInvalidateAll(pOwner, pData);
 }
 
 static void __xuiDatePickerDefaultLayout(xui_layout_t* pLayout)
@@ -2548,57 +2885,90 @@ static int __xuiDatePickerCreatePopup(xui_widget pWidget, xui_date_picker_data_t
 	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pPopup, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pPanel = xuiPopupGetContentWidget(pData->pPopup);
-	if ( pData->pPanel == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	if ( pData->pPanel == NULL ) {
+		iRet = XUI_ERROR_NOT_INITIALIZED;
+		goto fail;
+	}
 	__xuiDatePickerDefaultCachePolicy(&tPolicy);
-	(void)xuiWidgetSetFocusable(pData->pPanel, 1);
-	(void)xuiWidgetSetTabStop(pData->pPanel, 0);
-	(void)xuiWidgetSetLayoutType(pData->pPanel, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pData->pPanel, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetOverflow(pData->pPanel, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetCachePolicy(pData->pPanel, &tPolicy);
-	(void)xuiWidgetSetCacheRenderCallback(pData->pPanel, __xuiDatePickerPanelRender, pWidget);
-	iRet = __xuiDatePickerInitPanelEvents(pData->pPanel, pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetChange(pData->pPopup, __xuiDatePickerPopupChanged, pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pPanel);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiDatePickerApplyPopupStyle(pWidget, pData);
+	iRet = xuiWidgetSetFocusable(pData->pPanel, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pData->pPanel, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetImeMode(pData->pPanel, XUI_IME_DISABLED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayoutType(pData->pPanel, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pPanel, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pData->pPanel, XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCachePolicy(pData->pPanel, &tPolicy);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCacheRenderCallback(pData->pPanel, __xuiDatePickerPanelRender, pWidget);
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerInitPanelEvents(pData->pPanel, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetChange(pData->pPopup, __xuiDatePickerPopupChanged, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pPanel);
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerApplyPopupStyle(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+fail:
+	xuiWidgetDestroy(pData->pPopup);
+	pData->pPopup = NULL;
+	pData->pPanel = NULL;
+	return iRet;
 }
 
 static int __xuiDatePickerApplyPopupStyle(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
 	xui_date_picker_data_t tResolved;
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pPanel;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pPopup == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pPanel = pData->pPanel;
 	__xuiDatePickerResolve(pWidget, pData, &tResolved);
-	iRet = xuiPopupSetOwner(pData->pPopup, pWidget);
+	iRet = xuiPopupSetOwner(pPopup, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetFocusRestore(pData->pPopup, pWidget);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetFocusRestore(pPopup, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetContentSize(pData->pPopup, pData->fPopupWidth, pData->fPopupHeight);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetContentSize(pPopup, pData->fPopupWidth, pData->fPopupHeight);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor, tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetColors(pPopup, tResolved.iPopupPanelColor, tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetMetrics(pData->pPopup, 0.0f, 1.0f, 6.0f);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetMetrics(pPopup, 0.0f, 1.0f, 6.0f);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetClosePolicy(pData->pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetClosePolicy(pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pPanel);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetFocusPolicy(pPopup, XUI_POPUP_FOCUS_CUSTOM, pPanel);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetGap(pData->pPopup, 2.0f);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetGap(pPopup, 2.0f);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiPopupClearAnchorRect(pData->pPopup);
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupClearAnchorRect(pPopup);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	if ( pData->iPopupPlacement == XUI_DATE_PICKER_POPUP_TOP ) {
-		(void)xuiPopupSetAnchor(pData->pPopup, XUI_POPUP_ANCHOR_TOP_LEFT);
-		(void)xuiPopupSetDirection(pData->pPopup, XUI_POPUP_DIRECTION_RIGHT_UP);
+		iRet = xuiPopupSetAnchor(pPopup, XUI_POPUP_ANCHOR_TOP_LEFT);
+		if ( iRet == XUI_OK && __xuiDatePickerAlive(pContext, pWidget, pData) )
+			iRet = xuiPopupSetDirection(pPopup, XUI_POPUP_DIRECTION_RIGHT_UP);
 	} else {
-		(void)xuiPopupSetAnchor(pData->pPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
-		(void)xuiPopupSetDirection(pData->pPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
+		iRet = xuiPopupSetAnchor(pPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
+		if ( iRet == XUI_OK && __xuiDatePickerAlive(pContext, pWidget, pData) )
+			iRet = xuiPopupSetDirection(pPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
 	}
-	if ( pData->pPanel != NULL ) {
-		(void)xuiWidgetSetRect(pData->pPanel, xuiInternalRectFromFloatNearest(0.0f, 0.0f, pData->fPopupWidth, pData->fPopupHeight));
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( pPanel != NULL ) {
+		iRet = xuiWidgetSetRect(pPanel,
+			xuiInternalRectFromFloatNearest(0.0f, 0.0f, pData->fPopupWidth, pData->fPopupHeight));
+		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pPanel,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
@@ -2615,18 +2985,18 @@ static int __xuiDatePickerInit(xui_widget pWidget, void* pTypeData, const void* 
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiDatePickerDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiDatePickerDefaults(pData);
 	__xuiDatePickerApplyDesc(pData, pDesc);
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
-	iRet = __xuiDatePickerInitEvents(pWidget);
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetImeMode(pWidget, XUI_IME_DISABLED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerInitEvents(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiDatePickerCreatePopup(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)__xuiDatePickerSyncState(pWidget, pData);
-	return XUI_OK;
+	return __xuiDatePickerSyncState(pWidget, pData);
 }
 
 static void __xuiDatePickerDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -2637,6 +3007,9 @@ static void __xuiDatePickerDestroy(xui_widget pWidget, void* pTypeData, void* pU
 	(void)pUser;
 	pData = (xui_date_picker_data_t*)pTypeData;
 	if ( pData != NULL ) {
+		if ( pData->pPanel != NULL ) {
+			(void)__xuiDatePickerPanelCancelPointer(pData->pPanel, pData);
+		}
 		if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
 		memset(pData, 0, sizeof(*pData));
 	}
@@ -2712,6 +3085,36 @@ static xui_date_picker_data_t* __xuiDatePickerGetData(xui_widget pWidget)
 	return (xui_date_picker_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiDatePickerAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+
+	if ( (pData == NULL) || (pNode == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_COMBOBOX;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_READONLY;
+	pNode->iState |= xuiDatePickerIsOpen(pWidget) ?
+		XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED;
+	pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE);
+	pNode->sName = "Date picker";
+	pNode->sValue = pData->sText;
+	return XUI_OK;
+}
+
+static int __xuiDatePickerAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	(void)pPayload;
+	if ( __xuiDatePickerGetData(pWidget) == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_EXPAND ) return xuiDatePickerOpen(pWidget);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE ) return xuiDatePickerClose(pWidget);
+	return XUI_ERROR_UNSUPPORTED;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiDatePickerAccessible = {
+	.getNode = __xuiDatePickerAccessibleNode,
+	.performAction = __xuiDatePickerAccessibleAction
+};
+
 XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -2722,6 +3125,7 @@ XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "datepicker");
 	if ( pType != NULL ) {
 		__xuiDatePickerRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiDatePickerAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -2740,6 +3144,7 @@ XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiDatePickerRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiDatePickerSyncStyle;
+	pType->pAccessibleAdapter = &g_xuiDatePickerAccessible;
 	return pType;
 }
 
@@ -2747,8 +3152,9 @@ XUI_API int xuiDatePickerCreate(xui_context pContext, xui_widget* ppWidget, cons
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiDatePickerDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiDatePickerDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiDatePickerGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
@@ -2802,16 +3208,44 @@ XUI_API int xuiDatePickerSetClear(xui_widget pWidget, xui_date_picker_proc onCle
 XUI_API int xuiDatePickerSetMode(xui_widget pWidget, int iMode)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	xui_date_picker_data_t tOld;
+	xui_context pContext;
+	int iRet;
+
 	if ( (pData == NULL) || !__xuiDatePickerModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iMode == iMode ) return XUI_OK;
+	if ( !__xuiDatePickerLimitsValid(iMode, pData->bHasMin, pData->tMin, pData->bHasMax, pData->tMax) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->bPopupSizeCustom && !__xuiDatePickerPopupSizeValid(iMode, pData->bNullable, pData->fPopupWidth, pData->fPopupHeight) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->pPanel != NULL ) {
+		iRet = __xuiDatePickerPanelCancelPointer(pData->pPanel, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
+	tOld = *pData;
 	pData->iMode = iMode;
 	__xuiDatePickerSyncDefaultFormat(pData);
 	__xuiDatePickerUpdatePopupSizeForMode(pData);
 	__xuiDatePickerEnsureValue(pData);
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerInitViewMonth(pData);
 	__xuiDatePickerSyncText(pData);
-	if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = (pData->pPopup != NULL) ? __xuiDatePickerApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		*pData = tOld;
+		if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
+	} else {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+		if ( strcmp(tOld.sText, pData->sText) != 0 )
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	}
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetMode(xui_widget pWidget)
@@ -2823,11 +3257,44 @@ XUI_API int xuiDatePickerGetMode(xui_widget pWidget)
 XUI_API int xuiDatePickerSetNullable(xui_widget pWidget, int bNullable)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	xui_date_picker_data_t tOld;
+	xui_context pContext;
+	float fMinWidth;
+	float fMinHeight;
+	int iNewNullable;
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bNullable = bNullable ? 1 : 0;
+	iNewNullable = bNullable ? 1 : 0;
+	if ( pData->bNullable == iNewNullable ) return XUI_OK;
+	if ( pData->bPopupSizeCustom &&
+	     !__xuiDatePickerPopupSizeValid(pData->iMode, iNewNullable, pData->fPopupWidth, pData->fPopupHeight) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	tOld = *pData;
+	pData->bNullable = iNewNullable;
+	if ( !pData->bPopupSizeCustom ) {
+		__xuiDatePickerPreferredPopupSize(pData->iMode, &pData->fPopupWidth, &pData->fPopupHeight);
+		__xuiDatePickerMinimumPopupSize(pData->iMode, pData->bNullable, &fMinWidth, &fMinHeight);
+		if ( pData->fPopupWidth < fMinWidth ) pData->fPopupWidth = fMinWidth;
+		if ( pData->fPopupHeight < fMinHeight ) pData->fPopupHeight = fMinHeight;
+	}
 	__xuiDatePickerEnsureValue(pData);
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = (pData->pPopup != NULL) ? __xuiDatePickerApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		*pData = tOld;
+		if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
+	} else {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+		if ( strcmp(tOld.sText, pData->sText) != 0 )
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	}
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetNullable(xui_widget pWidget)
@@ -2839,14 +3306,22 @@ XUI_API int xuiDatePickerGetNullable(xui_widget pWidget)
 XUI_API int xuiDatePickerSetValue(xui_widget pWidget, xtime tValue)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->tValue = __xuiDatePickerClampValue(pData, tValue);
+	tValue = __xuiDatePickerClampValue(pData, tValue);
+	if ( pData->bHasValue && pData->tValue == tValue && pData->tStart == tValue && pData->tEnd == tValue ) {
+		return XUI_OK;
+	}
+	pData->tValue = tValue;
 	pData->tStart = pData->tValue;
 	pData->tEnd = pData->tValue;
 	pData->bHasValue = 1;
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerInitViewMonth(pData);
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API xtime xuiDatePickerGetValue(xui_widget pWidget)
@@ -2866,28 +3341,44 @@ XUI_API int xuiDatePickerHasValue(xui_widget pWidget)
 XUI_API int xuiDatePickerClearValue(xui_widget pWidget)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	int bOldHasValue;
+	xtime tOldValue;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	bOldHasValue = pData->bHasValue;
+	tOldValue = pData->tValue;
 	if ( !pData->bNullable ) {
 		__xuiDatePickerEnsureValue(pData);
 	} else {
 		pData->bHasValue = 0;
 	}
+	if ( pData->bHasValue == bOldHasValue && pData->tValue == tOldValue ) return XUI_OK;
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiDatePickerSetRangeValue(xui_widget pWidget, xtime tStart, xtime tEnd)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiDatePickerNormalizeRange(pData, &tStart, &tEnd);
+	if ( pData->bHasValue && pData->tStart == tStart && pData->tEnd == tEnd && pData->tValue == tStart ) {
+		return XUI_OK;
+	}
 	pData->tStart = tStart;
 	pData->tEnd = tEnd;
 	pData->tValue = tStart;
 	pData->bHasValue = 1;
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerInitViewMonth(pData);
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetRangeValue(xui_widget pWidget, xtime* pStart, xtime* pEnd)
@@ -2909,37 +3400,51 @@ XUI_API int xuiDatePickerHasRangeValue(xui_widget pWidget)
 XUI_API int xuiDatePickerSetLimits(xui_widget pWidget, xtime tMin, xtime tMax)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	xtime tOldValue;
+	xtime tOldStart;
+	xtime tOldEnd;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( tMax < tMin ) {
-		xtime tSwap = tMin;
-		tMin = tMax;
-		tMax = tSwap;
-	}
+	if ( !__xuiDatePickerLimitsValid(pData->iMode, 1, tMin, 1, tMax) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tOldValue = pData->tValue;
+	tOldStart = pData->tStart;
+	tOldEnd = pData->tEnd;
 	pData->tMin = tMin;
 	pData->tMax = tMax;
 	pData->bHasMin = 1;
 	pData->bHasMax = 1;
 	__xuiDatePickerEnsureValue(pData);
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK && (tOldValue != pData->tValue || tOldStart != pData->tStart || tOldEnd != pData->tEnd) )
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiDatePickerSetLimitRange(xui_widget pWidget, int bHasMin, xtime tMin, int bHasMax, xtime tMax)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	xtime tOldValue;
+	xtime tOldStart;
+	xtime tOldEnd;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( bHasMin && bHasMax && (tMax < tMin) ) {
-		xtime tSwap = tMin;
-		tMin = tMax;
-		tMax = tSwap;
-	}
+	if ( !__xuiDatePickerLimitsValid(pData->iMode, bHasMin, tMin, bHasMax, tMax) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tOldValue = pData->tValue;
+	tOldStart = pData->tStart;
+	tOldEnd = pData->tEnd;
 	pData->tMin = tMin;
 	pData->tMax = tMax;
 	pData->bHasMin = bHasMin ? 1 : 0;
 	pData->bHasMax = bHasMax ? 1 : 0;
 	__xuiDatePickerEnsureValue(pData);
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK && (tOldValue != pData->tValue || tOldStart != pData->tStart || tOldEnd != pData->tEnd) )
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetLimitRange(xui_widget pWidget, int* pHasMin, xtime* pMin, int* pHasMax, xtime* pMax)
@@ -2959,13 +3464,17 @@ XUI_API int xuiDatePickerClearLimits(xui_widget pWidget)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bHasMin = 0;
 	pData->bHasMax = 0;
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	return __xuiDatePickerInvalidateAll(pWidget, pData);
 }
 
 XUI_API int xuiDatePickerSetFormat(xui_widget pWidget, const char* sFormat)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	char sOldText[sizeof(pData->sText)];
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memcpy(sOldText, pData->sText, sizeof(sOldText));
 	if ( sFormat == NULL || sFormat[0] == '\0' ) {
 		pData->bFormatCustom = 0;
 		__xuiDatePickerSyncDefaultFormat(pData);
@@ -2974,7 +3483,10 @@ XUI_API int xuiDatePickerSetFormat(xui_widget pWidget, const char* sFormat)
 		__xuiDatePickerCopyText(pData->sFormat, (int)sizeof(pData->sFormat), sFormat);
 	}
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK && strcmp(sOldText, pData->sText) != 0 )
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API const char* xuiDatePickerGetFormat(xui_widget pWidget)
@@ -2986,10 +3498,16 @@ XUI_API const char* xuiDatePickerGetFormat(xui_widget pWidget)
 XUI_API int xuiDatePickerSetRangeSeparator(xui_widget pWidget, const char* sSeparator)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	char sOldText[sizeof(pData->sText)];
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memcpy(sOldText, pData->sText, sizeof(sOldText));
 	__xuiDatePickerCopyText(pData->sRangeSeparator, (int)sizeof(pData->sRangeSeparator), (sSeparator != NULL) ? sSeparator : " - ");
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK && strcmp(sOldText, pData->sText) != 0 )
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API const char* xuiDatePickerGetRangeSeparator(xui_widget pWidget)
@@ -3001,12 +3519,22 @@ XUI_API const char* xuiDatePickerGetRangeSeparator(xui_widget pWidget)
 XUI_API int xuiDatePickerSetShowSecond(xui_widget pWidget, int bShowSecond)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	char sOldText[sizeof(pData->sText)];
+	int iNewShowSecond;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bShowSecond = bShowSecond ? 1 : 0;
+	iNewShowSecond = bShowSecond ? 1 : 0;
+	if ( pData->bShowSecond == iNewShowSecond ) return XUI_OK;
+	memcpy(sOldText, pData->sText, sizeof(sOldText));
+	pData->bShowSecond = iNewShowSecond;
 	__xuiDatePickerSyncDefaultFormat(pData);
 	__xuiDatePickerEnsureValue(pData);
+	if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) __xuiDatePickerPrepareDraft(pData);
 	__xuiDatePickerSyncText(pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet == XUI_OK && strcmp(sOldText, pData->sText) != 0 )
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetShowSecond(xui_widget pWidget)
@@ -3071,12 +3599,42 @@ XUI_API int xuiDatePickerIsOpen(xui_widget pWidget)
 XUI_API int xuiDatePickerSetPopupSize(xui_widget pWidget, float fWidth, float fHeight)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
-	if ( (pData == NULL) || (fWidth <= 0.0f) || (fHeight <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fPopupWidth = fWidth;
-	pData->fPopupHeight = fHeight;
+	xui_context pContext;
+	float fOldWidth;
+	float fOldHeight;
+	float fNewWidth;
+	float fNewHeight;
+	int bOldCustom;
+	int iRet;
+
+	if ( pData == NULL || !isfinite(fWidth) || !isfinite(fHeight) || fWidth < 0.0f || fHeight < 0.0f ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	fNewWidth = (fWidth > 0.0f) ? fWidth : pData->fPopupWidth;
+	fNewHeight = (fHeight > 0.0f) ? fHeight : pData->fPopupHeight;
+	if ( !__xuiDatePickerPopupSizeValid(pData->iMode, pData->bNullable, fNewWidth, fNewHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	fOldWidth = pData->fPopupWidth;
+	fOldHeight = pData->fPopupHeight;
+	bOldCustom = pData->bPopupSizeCustom;
+	if ( pData->pPanel != NULL ) {
+		iRet = __xuiDatePickerPanelCancelPointer(pData->pPanel, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
+	pData->fPopupWidth = fNewWidth;
+	pData->fPopupHeight = fNewHeight;
 	pData->bPopupSizeCustom = 1;
-	if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = (pData->pPopup != NULL) ? __xuiDatePickerApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->fPopupWidth = fOldWidth;
+		pData->fPopupHeight = fOldHeight;
+		pData->bPopupSizeCustom = bOldCustom;
+		if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetPopupSize(xui_widget pWidget, float* pWidth, float* pHeight)
@@ -3091,10 +3649,22 @@ XUI_API int xuiDatePickerGetPopupSize(xui_widget pWidget, float* pWidth, float* 
 XUI_API int xuiDatePickerSetPopupPlacement(xui_widget pWidget, int iPlacement)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	xui_context pContext;
+	int iOldPlacement;
+	int iRet;
+
 	if ( (pData == NULL) || !__xuiDatePickerPlacementValid(iPlacement) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPopupPlacement == iPlacement ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	iOldPlacement = pData->iPopupPlacement;
 	pData->iPopupPlacement = iPlacement;
-	if ( pData->pPopup != NULL ) return __xuiDatePickerApplyPopupStyle(pWidget, pData);
-	return XUI_OK;
+	iRet = (pData->pPopup != NULL) ? __xuiDatePickerApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( iRet != XUI_OK ) {
+		pData->iPopupPlacement = iOldPlacement;
+		if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetPopupPlacement(xui_widget pWidget)
@@ -3106,7 +3676,7 @@ XUI_API int xuiDatePickerGetPopupPlacement(xui_widget pWidget)
 XUI_API int xuiDatePickerSetMetrics(xui_widget pWidget, float fBorderWidth)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
-	if ( (pData == NULL) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || !isfinite(fBorderWidth) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fBorderWidth = fBorderWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3186,7 +3756,13 @@ XUI_API int xuiDatePickerGetArrowColors(xui_widget pWidget, uint32_t* pArrow, ui
 XUI_API int xuiDatePickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iAccent, uint32_t iField, uint32_t iFieldBorder, uint32_t iSelectedText, uint32_t iDisabledDay, uint32_t iSeparator)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	xui_date_picker_data_t tOld;
+	xui_context pContext;
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	tOld = *pData;
 	pData->iPopupPanelColor = iPanel;
 	pData->iPopupBorderColor = iBorder;
 	pData->iPopupShadowColor = iShadow;
@@ -3198,8 +3774,14 @@ XUI_API int xuiDatePickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uin
 	pData->iSelectedTextColor = iSelectedText;
 	pData->iDisabledDayColor = iDisabledDay;
 	pData->iSeparatorColor = iSeparator;
-	if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	iRet = (pData->pPopup != NULL) ? __xuiDatePickerApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		*pData = tOld;
+		if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiDatePickerGetPopupColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pText, uint32_t* pMutedText, uint32_t* pAccent, uint32_t* pField, uint32_t* pFieldBorder, uint32_t* pSelectedText, uint32_t* pDisabledDay, uint32_t* pSeparator)

@@ -53,8 +53,14 @@ typedef struct xui_tree_view_data_t {
 	int iFocusVisible;
 	int iActiveVisible;
 	int iActivePart;
+	uint64_t iActivePointerId;
+	int iActivePointerType;
 	int iChangeCount;
 	int iSelectCount;
+	float fBaseItemHeight;
+	float fBaseIndent;
+	float fBasePadding;
+	float fBaseBorderWidth;
 	float fItemHeight;
 	float fIndent;
 	float fPadding;
@@ -92,9 +98,22 @@ typedef struct xui_tree_view_data_t {
 	uint32_t iFileLineColor;
 	uint32_t iPreparedStyleHash;
 	int bPaintStylePrepared;
+	char sAccessibleName[256];
 } xui_tree_view_data_t;
 
 static xui_tree_view_data_t* __xuiTreeViewGetData(xui_widget pWidget);
+static void __xuiTreeViewCancelPointer(xui_widget pWidget,
+	xui_tree_view_data_t* pData, int bReleaseCapture);
+
+static int __xuiTreeViewWidgetAlive(xui_widget pWidget, xui_tree_view_data_t* pData)
+{
+	xui_context pContext;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 0;
+	pContext = xuiWidgetGetContext(pWidget);
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		__xuiTreeViewGetData(pWidget) == pData;
+}
 
 static int __xuiTreeViewFloatValid(float fValue)
 {
@@ -112,12 +131,18 @@ static int __xuiTreeViewDescValid(const xui_tree_view_desc_t* pDesc)
 	if ( pDesc->iNodeCount < 0 ) {
 		return 0;
 	}
+	if ( pDesc->iNodeCount > 0 && pDesc->arrNodes == NULL ) {
+		return 0;
+	}
 	if ( ((pDesc->fItemHeight != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fItemHeight)) ||
 	     ((pDesc->fIndent != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fIndent)) ||
 	     ((pDesc->fPadding != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fPadding)) ||
 	     ((pDesc->fBorderWidth != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fBorderWidth)) ) {
 		return 0;
 	}
+	if ( (double)pDesc->iNodeCount *
+	     (double)((pDesc->fItemHeight > 0.0f) ? pDesc->fItemHeight : XUI_TREE_VIEW_DEFAULT_ITEM_HEIGHT) >
+	     (double)XUI_LAYOUT_UNBOUNDED ) return 0;
 	return 1;
 }
 
@@ -226,6 +251,12 @@ static void __xuiTreeViewDefaults(xui_tree_view_data_t* pData)
 	pData->iFocusVisible = -1;
 	pData->iActiveVisible = -1;
 	pData->iActivePart = XUI_TREE_VIEW_ACTIVE_ROW;
+	pData->iActivePointerId = XUI_POINTER_ID_MOUSE;
+	pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
+	pData->fBaseItemHeight = XUI_TREE_VIEW_DEFAULT_ITEM_HEIGHT;
+	pData->fBaseIndent = 18.0f;
+	pData->fBasePadding = 8.0f;
+	pData->fBaseBorderWidth = 1.0f;
 	pData->fItemHeight = XUI_TREE_VIEW_DEFAULT_ITEM_HEIGHT;
 	pData->fIndent = 18.0f;
 	pData->fPadding = 8.0f;
@@ -269,10 +300,10 @@ static void __xuiTreeViewApplyDesc(xui_tree_view_data_t* pData, const xui_tree_v
 		return;
 	}
 	pData->pFont = pDesc->pFont;
-	if ( pDesc->fItemHeight > 0.0f ) pData->fItemHeight = pDesc->fItemHeight;
-	if ( pDesc->fIndent > 0.0f ) pData->fIndent = pDesc->fIndent;
-	if ( pDesc->fPadding > 0.0f ) pData->fPadding = pDesc->fPadding;
-	if ( pDesc->fBorderWidth > 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
+	if ( pDesc->fItemHeight > 0.0f ) pData->fBaseItemHeight = pData->fItemHeight = pDesc->fItemHeight;
+	if ( pDesc->fIndent > 0.0f ) pData->fBaseIndent = pData->fIndent = pDesc->fIndent;
+	if ( pDesc->fPadding > 0.0f ) pData->fBasePadding = pData->fPadding = pDesc->fPadding;
+	if ( pDesc->fBorderWidth > 0.0f ) pData->fBaseBorderWidth = pData->fBorderWidth = pDesc->fBorderWidth;
 	if ( pDesc->iSelectedId >= 0 ) pData->iSelectedId = pDesc->iSelectedId;
 	if ( __xuiTreeViewAlpha(pDesc->iBackgroundColor) != 0 ) pData->iBackgroundColor = pDesc->iBackgroundColor;
 	if ( __xuiTreeViewAlpha(pDesc->iBorderColor) != 0 ) pData->iBorderColor = pDesc->iBorderColor;
@@ -346,6 +377,10 @@ static xui_font __xuiTreeViewStyleFont(xui_widget pWidget, xui_font pBaseFont)
 static void __xuiTreeViewResolve(xui_widget pWidget, xui_tree_view_data_t* pData, xui_tree_view_data_t* pResolved)
 {
 	*pResolved = *pData;
+	pResolved->fItemHeight = pData->fBaseItemHeight;
+	pResolved->fIndent = pData->fBaseIndent;
+	pResolved->fPadding = pData->fBasePadding;
+	pResolved->fBorderWidth = pData->fBaseBorderWidth;
 	pResolved->pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	pResolved->pFont = __xuiTreeViewStyleFont(pWidget, pResolved->pFont);
 	(void)__xuiTreeViewStyleColor(pWidget, "treeview.background.color", &pResolved->iBackgroundColor);
@@ -540,13 +575,43 @@ static int __xuiTreeViewAppendNodeData(xui_tree_view_data_t* pData, const xui_tr
 	return XUI_OK;
 }
 
-static int __xuiTreeViewUpdateContentSize(xui_widget pWidget, xui_tree_view_data_t* pData)
+static void __xuiTreeViewRollbackLastNodeData(xui_tree_view_data_t* pData,
+	int iParent, int iPrevious)
+{
+	int iNode;
+
+	if ( pData == NULL || pData->iNodeCount <= 0 ) return;
+	iNode = pData->iNodeCount - 1;
+	if ( iPrevious >= 0 ) {
+		pData->arrIndex[iPrevious].iNextSibling = -1;
+	} else if ( iParent >= 0 ) {
+		pData->arrIndex[iParent].iFirstChild = -1;
+	} else {
+		pData->iFirstRoot = -1;
+	}
+	if ( iParent >= 0 ) {
+		pData->arrIndex[iParent].iLastChild = iPrevious;
+		pData->arrNodes[iParent].bHasChildren = (iPrevious >= 0) ? 1 : 0;
+	} else {
+		pData->iLastRoot = iPrevious;
+	}
+	(void)xrtMapRemove(&pData->mapNodeIds,
+		xuiXrtBytes(&pData->arrNodes[iNode].iId,
+			sizeof(pData->arrNodes[iNode].iId)));
+	__xuiTreeViewFreeNodeText(&pData->arrNodes[iNode]);
+	pData->iNodeCount--;
+}
+
+static int __xuiTreeViewUpdateContentSizeFor(xui_widget pWidget,
+	xui_tree_view_data_t* pData, int iVisibleCount, float fItemHeight)
 {
 	xui_rect_t tFrame;
 	float fHeight;
 	int iRet;
 
-	if ( (pWidget == NULL) || (pData == NULL) || (pData->pFrame == NULL) ) {
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->pFrame == NULL) ||
+	     (iVisibleCount < 0) || (fItemHeight <= 0.0f) ||
+	     ((double)iVisibleCount * (double)fItemHeight > (double)XUI_LAYOUT_UNBOUNDED) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tFrame = xuiWidgetGetContentRect(pWidget);
@@ -555,21 +620,51 @@ static int __xuiTreeViewUpdateContentSize(xui_widget pWidget, xui_tree_view_data
 	}
 	if ( tFrame.fW < 0.0f ) tFrame.fW = 0.0f;
 	if ( tFrame.fH < 0.0f ) tFrame.fH = 0.0f;
-	fHeight = pData->fItemHeight * (float)pData->iVisibleCount;
-	iRet = xuiScrollFrameSetContentSize(pData->pFrame, __xuiTreeViewMaxFloat(0.0f, tFrame.fW), __xuiTreeViewMaxFloat(0.0f, fHeight));
+	fHeight = fItemHeight * (float)iVisibleCount;
+	iRet = xuiScrollFrameSetWheelStep(pData->pFrame, fItemHeight * 3.0f);
 	if ( iRet != XUI_OK ) return iRet;
-	return xuiScrollFrameSetWheelStep(pData->pFrame, pData->fItemHeight * 3.0f);
+	return xuiScrollFrameSetContentSize(pData->pFrame,
+		__xuiTreeViewMaxFloat(0.0f, tFrame.fW),
+		__xuiTreeViewMaxFloat(0.0f, fHeight));
+}
+
+static int __xuiTreeViewUpdateContentSize(xui_widget pWidget, xui_tree_view_data_t* pData)
+{
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiTreeViewUpdateContentSizeFor(pWidget, pData,
+		pData->iVisibleCount, pData->fItemHeight);
 }
 
 static int __xuiTreeViewInvalidateRows(xui_widget pWidget, xui_tree_view_data_t* pData)
 {
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pData->pViewport != NULL ) {
-		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = xuiWidgetInvalidate(pData->pViewport,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiTreeViewInvalidateLayoutRows(xui_widget pWidget,
+	xui_tree_view_data_t* pData)
+{
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->pViewport != NULL ) {
+		iRet = xuiWidgetInvalidate(pData->pViewport,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiTreeViewInvalidateViewportRow(xui_tree_view_data_t* pData, int iVisible)
@@ -669,10 +764,12 @@ static void __xuiTreeViewMoveVisibleTail(xui_tree_view_data_t* pData, int iFrom,
 	}
 }
 
-static int __xuiTreeViewFinishVisibleChange(xui_widget pWidget, xui_tree_view_data_t* pData, int iFallbackNodeId)
+static void __xuiTreeViewNormalizeVisibleState(xui_tree_view_data_t* pData,
+	int iFallbackNodeId)
 {
 	int iVisible;
 	int iNode;
+
 	pData->iHoverVisible = -1;
 	iVisible = __xuiTreeViewVisibleIndexData(pData, pData->iSelectedId);
 	iNode = (iVisible >= 0) ? pData->arrVisible[iVisible] : -1;
@@ -687,17 +784,14 @@ static int __xuiTreeViewFinishVisibleChange(xui_widget pWidget, xui_tree_view_da
 		}
 	}
 	pData->iFocusVisible = iVisible;
-	if ( pWidget != NULL && pData->pFrame != NULL ) {
-		(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
-		(void)__xuiTreeViewInvalidateRows(pWidget, pData);
-	}
-	return XUI_OK;
 }
 
-static int __xuiTreeViewRebuildVisible(xui_widget pWidget, xui_tree_view_data_t* pData, int iFallbackNodeId)
+static int __xuiTreeViewRebuildVisible(xui_widget pWidget,
+	xui_tree_view_data_t* pData, int iFallbackNodeId)
 {
 	int i;
 	int iRet = __xuiTreeViewEnsureVisibleCapacity(pData, pData->iNodeCount);
+	(void)pWidget;
 	if ( iRet != XUI_OK ) return iRet;
 	XUI_TREE_VIEW_TEST_COUNT(iRebuilds, 1);
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
@@ -705,7 +799,8 @@ static int __xuiTreeViewRebuildVisible(xui_widget pWidget, xui_tree_view_data_t*
 		XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
 	}
 	pData->iVisibleCount = __xuiTreeViewWriteVisibleNodes(pData, pData->iFirstRoot, -1, 0);
-	return __xuiTreeViewFinishVisibleChange(pWidget, pData, iFallbackNodeId);
+	__xuiTreeViewNormalizeVisibleState(pData, iFallbackNodeId);
+	return XUI_OK;
 }
 
 static int __xuiTreeViewSetExpandedData(xui_widget pWidget, xui_tree_view_data_t* pData, int iNode, int bExpanded)
@@ -715,8 +810,14 @@ static int __xuiTreeViewSetExpandedData(xui_widget pWidget, xui_tree_view_data_t
 	int iChild;
 	int iCount;
 	int iEnd;
+	int iNewVisibleCount;
+	int iOldSelectedId;
+	int iOldFocusVisible;
+	int iRet;
 	bExpanded = bExpanded ? 1 : 0;
-	if ( (pData->arrNodes[iNode].bExpanded != bExpanded) && (iVisible >= 0) ) {
+	if ( pData->arrNodes[iNode].bExpanded == bExpanded ) return XUI_OK;
+	iNewVisibleCount = pData->iVisibleCount;
+	if ( iVisible >= 0 ) {
 		if ( bExpanded ) {
 			iCount = 0;
 			iChild = pData->arrIndex[iNode].iFirstChild;
@@ -724,48 +825,104 @@ static int __xuiTreeViewSetExpandedData(xui_widget pWidget, xui_tree_view_data_t
 				iCount++;
 				iChild = __xuiTreeViewNextVisibleNode(pData, iChild, iNode);
 			}
-			__xuiTreeViewMoveVisibleTail(pData, iAt, iAt + iCount);
-			(void)__xuiTreeViewWriteVisibleNodes(pData, pData->arrIndex[iNode].iFirstChild, iNode, iAt);
+			iNewVisibleCount += iCount;
 		} else {
 			iEnd = iAt;
 			while ( iEnd < pData->iVisibleCount ) {
 				iChild = pData->arrVisible[iEnd];
 				XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
 				if ( pData->arrNodes[iChild].iDepth <= pData->arrNodes[iNode].iDepth ) break;
-				pData->arrIndex[iChild].iVisible = -1;
-				XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
 				iEnd++;
+			}
+			iNewVisibleCount -= iEnd - iAt;
+		}
+	}
+	if ( pWidget != NULL ) {
+		iRet = __xuiTreeViewInvalidateLayoutRows(pWidget, pData);
+		if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+		if ( iNewVisibleCount != pData->iVisibleCount ) {
+			iRet = __xuiTreeViewUpdateContentSizeFor(pWidget, pData,
+				iNewVisibleCount, pData->fItemHeight);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		__xuiTreeViewCancelPointer(pWidget, pData, 1);
+	}
+	iOldSelectedId = pData->iSelectedId;
+	iOldFocusVisible = pData->iFocusVisible;
+	if ( iVisible >= 0 ) {
+		if ( bExpanded ) {
+			iCount = iNewVisibleCount - pData->iVisibleCount;
+			__xuiTreeViewMoveVisibleTail(pData, iAt, iAt + iCount);
+			(void)__xuiTreeViewWriteVisibleNodes(pData,
+				pData->arrIndex[iNode].iFirstChild, iNode, iAt);
+		} else {
+			iEnd = iAt + (pData->iVisibleCount - iNewVisibleCount);
+			for ( iChild = iAt; iChild < iEnd; iChild++ ) {
+				pData->arrIndex[pData->arrVisible[iChild]].iVisible = -1;
+				XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
 			}
 			__xuiTreeViewMoveVisibleTail(pData, iEnd, iAt);
 		}
 	}
 	pData->arrNodes[iNode].bExpanded = bExpanded;
+	__xuiTreeViewNormalizeVisibleState(pData,
+		bExpanded ? -1 : pData->arrNodes[iNode].iId);
 	pData->iChangeCount++;
-	return __xuiTreeViewFinishVisibleChange(pWidget, pData, bExpanded ? -1 : pData->arrNodes[iNode].iId);
+	if ( pWidget != NULL ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+		if ( pData->iSelectedId != iOldSelectedId ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+		}
+		if ( pData->iFocusVisible != iOldFocusVisible ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
+		}
+	}
+	return XUI_OK;
 }
 
 static int __xuiTreeViewAddNodeData(xui_widget pWidget, xui_tree_view_data_t* pData, const xui_tree_view_node_t* pSource)
 {
 	int iParent = __xuiTreeViewFindNodeData(pData, pSource->iParent);
-	int iPrevious = (iParent >= 0) ? pData->arrIndex[iParent].iLastChild : -1;
+	int iPrevious = (iParent >= 0) ? pData->arrIndex[iParent].iLastChild : pData->iLastRoot;
 	int iAt;
 	int iNode;
-	int iRet = __xuiTreeViewAppendNodeData(pData, pSource);
+	int bVisible;
+	int iRet;
+
+	iAt = pData->iVisibleCount;
+	bVisible = (iParent < 0) ||
+		((pData->arrIndex[iParent].iVisible >= 0) && pData->arrNodes[iParent].bExpanded);
+	if ( bVisible && iParent >= 0 ) {
+		if ( iPrevious < 0 ) {
+			iAt = pData->arrIndex[iParent].iVisible + 1;
+		} else {
+			int iTail = iPrevious;
+			while ( pData->arrNodes[iTail].bExpanded &&
+			        (pData->arrIndex[iTail].iLastChild >= 0) ) {
+				XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
+				iTail = pData->arrIndex[iTail].iLastChild;
+			}
+			iAt = pData->arrIndex[iTail].iVisible + 1;
+		}
+	}
+	if ( pWidget != NULL ) {
+		iRet = __xuiTreeViewInvalidateLayoutRows(pWidget, pData);
+		if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	}
+	iRet = __xuiTreeViewAppendNodeData(pData, pSource);
 	if ( iRet != XUI_OK ) return iRet;
 	iNode = pData->iNodeCount - 1;
-	if ( (iParent < 0) || ((pData->arrIndex[iParent].iVisible >= 0) && pData->arrNodes[iParent].bExpanded) ) {
-		iAt = pData->iVisibleCount;
-		if ( iParent >= 0 ) {
-			if ( iPrevious < 0 ) {
-				iAt = pData->arrIndex[iParent].iVisible + 1;
-			} else {
-				while ( pData->arrNodes[iPrevious].bExpanded && (pData->arrIndex[iPrevious].iLastChild >= 0) ) {
-					XUI_TREE_VIEW_TEST_COUNT(iHierarchySteps, 1);
-					iPrevious = pData->arrIndex[iPrevious].iLastChild;
-				}
-				iAt = pData->arrIndex[iPrevious].iVisible + 1;
-			}
+	if ( pWidget != NULL && bVisible ) {
+		iRet = __xuiTreeViewUpdateContentSizeFor(pWidget, pData,
+			pData->iVisibleCount + 1, pData->fItemHeight);
+		if ( iRet != XUI_OK ) {
+			__xuiTreeViewRollbackLastNodeData(pData, iParent, iPrevious);
+			return iRet;
 		}
+	}
+	if ( pWidget != NULL ) __xuiTreeViewCancelPointer(pWidget, pData, 1);
+	if ( bVisible ) {
 		__xuiTreeViewMoveVisibleTail(pData, iAt, iAt + 1);
 		pData->arrVisible[iAt] = iNode;
 		pData->arrIndex[iNode].iVisible = iAt;
@@ -773,7 +930,14 @@ static int __xuiTreeViewAddNodeData(xui_widget pWidget, xui_tree_view_data_t* pD
 		XUI_TREE_VIEW_TEST_COUNT(iVisibleWrites, 1);
 	}
 	pData->iChangeCount++;
-	return __xuiTreeViewFinishVisibleChange(pWidget, pData, -1);
+	__xuiTreeViewNormalizeVisibleState(pData, -1);
+	if ( pWidget != NULL ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+		if ( bVisible ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+		}
+	}
+	return XUI_OK;
 }
 
 static uint32_t __xuiTreeViewState(xui_widget pWidget)
@@ -781,7 +945,7 @@ static uint32_t __xuiTreeViewState(xui_widget pWidget)
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iState |= XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
@@ -797,12 +961,17 @@ static int __xuiTreeViewSyncState(xui_widget pWidget)
 
 static void __xuiTreeViewNotifySelect(xui_widget pWidget, xui_tree_view_data_t* pData, int iNodeId)
 {
+	xui_tree_view_select_proc onSelect;
+	void* pSelectUser;
+
 	if ( (pWidget == NULL) || (pData == NULL) || (iNodeId < 0) ) {
 		return;
 	}
 	pData->iSelectCount++;
-	if ( pData->onSelect != NULL ) {
-		pData->onSelect(pWidget, iNodeId, pData->pSelectUser);
+	onSelect = pData->onSelect;
+	pSelectUser = pData->pSelectUser;
+	if ( onSelect != NULL ) {
+		onSelect(pWidget, iNodeId, pSelectUser);
 	}
 }
 
@@ -828,6 +997,8 @@ static int __xuiTreeViewSetSelectedVisible(xui_widget pWidget, xui_tree_view_dat
 	int iNode;
 	int iNodeId;
 	int iOld;
+	int iOldFocus;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -844,16 +1015,27 @@ static int __xuiTreeViewSetSelectedVisible(xui_widget pWidget, xui_tree_view_dat
 		}
 	}
 	iOld = pData->iSelectedId;
+	iOldFocus = pData->iFocusVisible;
+	if ( iOld == iNodeId && iOldFocus == iVisible ) {
+		return (iVisible >= 0) ?
+			__xuiTreeViewEnsureVisibleIndex(pWidget, pData, iVisible) : XUI_OK;
+	}
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	if ( iVisible >= 0 ) {
+		iRet = __xuiTreeViewEnsureVisibleIndex(pWidget, pData, iVisible);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pData->iSelectedId = iNodeId;
 	pData->iFocusVisible = iVisible;
 	if ( iOld != iNodeId ) {
 		pData->iChangeCount++;
 	}
-	if ( iVisible >= 0 ) {
-		(void)__xuiTreeViewEnsureVisibleIndex(pWidget, pData, iVisible);
-	}
-	(void)__xuiTreeViewInvalidateRows(pWidget, pData);
-	if ( bNotify && iNodeId >= 0 ) {
+	if ( iOld != iNodeId ) xuiInternalAccessibilityQueue(pWidget,
+		XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	if ( iOldFocus != iVisible ) xuiInternalAccessibilityQueue(pWidget,
+		XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
+	if ( bNotify && iNodeId >= 0 && iOld != iNodeId ) {
 		__xuiTreeViewNotifySelect(pWidget, pData, iNodeId);
 	}
 	return XUI_OK;
@@ -872,6 +1054,22 @@ static int __xuiTreeViewFindEnabledVisible(const xui_tree_view_data_t* pData, in
 		if ( __xuiTreeViewNodeEnabledData(pData, iNode) ) {
 			return i;
 		}
+	}
+	return -1;
+}
+
+static int __xuiTreeViewFindEnabledDescendantVisible(const xui_tree_view_data_t* pData, int iParentVisible)
+{
+	int i;
+	int iNode;
+	int iParentDepth;
+
+	if ( pData == NULL || iParentVisible < 0 || iParentVisible >= pData->iVisibleCount ) return -1;
+	iParentDepth = pData->arrNodes[pData->arrVisible[iParentVisible]].iDepth;
+	for ( i = iParentVisible + 1; i < pData->iVisibleCount; i++ ) {
+		iNode = pData->arrVisible[i];
+		if ( pData->arrNodes[iNode].iDepth <= iParentDepth ) break;
+		if ( __xuiTreeViewNodeEnabledData(pData, iNode) ) return i;
 	}
 	return -1;
 }
@@ -959,13 +1157,16 @@ static int __xuiTreeViewHitWorld(xui_widget pWidget, xui_tree_view_data_t* pData
 static int __xuiTreeViewSetHover(xui_widget pWidget, xui_tree_view_data_t* pData, int iHover)
 {
 	int iOldHover;
+	int iRet;
 
 	if ( (pData == NULL) || (pData->iHoverVisible == iHover) ) {
 		return XUI_OK;
 	}
 	iOldHover = pData->iHoverVisible;
+	iRet = __xuiTreeViewInvalidateHoverRows(pWidget, pData, iOldHover, iHover);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
 	pData->iHoverVisible = iHover;
-	return __xuiTreeViewInvalidateHoverRows(pWidget, pData, iOldHover, iHover);
+	return XUI_OK;
 }
 
 static xui_rect_t __xuiTreeViewExpanderRect(const xui_tree_view_data_t* pData, const xui_tree_view_node_t* pNode, xui_rect_t tRow)
@@ -1064,6 +1265,35 @@ static int __xuiTreeViewApplyFrameStyle(xui_widget pWidget, xui_tree_view_data_t
 	return iRet;
 }
 
+static int __xuiTreeViewPointerMatches(const xui_tree_view_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	return pData != NULL && pEvent != NULL && pData->iActiveVisible >= 0 &&
+		pData->iActivePointerId == pEvent->iPointerId &&
+		pData->iActivePointerType == pEvent->iPointerType;
+}
+
+static void __xuiTreeViewCancelPointer(xui_widget pWidget,
+	xui_tree_view_data_t* pData, int bReleaseCapture)
+{
+	xui_context pContext;
+	uint64_t iPointerId;
+	int iPointerType;
+
+	if ( pWidget == NULL || pData == NULL || pData->iActiveVisible < 0 ) return;
+	pContext = xuiWidgetGetContext(pWidget);
+	iPointerId = pData->iActivePointerId;
+	iPointerType = pData->iActivePointerType;
+	pData->iActiveVisible = -1;
+	pData->iActivePart = XUI_TREE_VIEW_ACTIVE_ROW;
+	pData->iActivePointerId = XUI_POINTER_ID_MOUSE;
+	pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
+	if ( bReleaseCapture && pContext != NULL &&
+	     xuiGetPointerCaptureEx(pContext, iPointerId, iPointerType) == pWidget ) {
+		(void)xuiReleasePointerCaptureEx(pContext, iPointerId, iPointerType, pWidget);
+	}
+}
+
 static int __xuiTreeViewPointerMove(xui_widget pWidget, xui_tree_view_data_t* pData, const xui_event_t* pEvent)
 {
 	int iHover;
@@ -1079,34 +1309,62 @@ static int __xuiTreeViewPointerDown(xui_widget pWidget, xui_tree_view_data_t* pD
 {
 	int iVisible;
 	int iNode;
+	int iNodeId;
+	int iRet;
 
 	if ( (pEvent == NULL) || (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) {
 		return XUI_OK;
 	}
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		return XUI_OK;
+	}
+	if ( pData->iActiveVisible >= 0 ) {
+		return __xuiTreeViewPointerMatches(pData, pEvent) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	}
 	iVisible = __xuiTreeViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
 	if ( iVisible < 0 ) {
 		return XUI_OK;
 	}
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 	iNode = pData->arrVisible[iVisible];
+	iNodeId = pData->arrNodes[iNode].iId;
 	if ( !__xuiTreeViewNodeEnabledData(pData, iNode) ) {
 		return XUI_EVENT_DISPATCH_STOP;
 	}
+	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
+	iVisible = (iNode >= 0) ? pData->arrIndex[iNode].iVisible : -1;
+	if ( iVisible < 0 || !__xuiTreeViewNodeEnabledData(pData, iNode) ) {
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	iRet = xuiSetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId,
+		pEvent->iPointerType, pWidget);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
 	pData->iActiveVisible = iVisible;
 	pData->iActivePart = XUI_TREE_VIEW_ACTIVE_ROW;
+	pData->iActivePointerId = pEvent->iPointerId;
+	pData->iActivePointerType = pEvent->iPointerType;
 	if ( __xuiTreeViewHitExpander(pWidget, pData, iVisible, pEvent->fX, pEvent->fY) ) {
 		pData->iActivePart = XUI_TREE_VIEW_ACTIVE_EXPANDER;
 	} else if ( __xuiTreeViewHitCheck(pWidget, pData, iVisible, pEvent->fX, pEvent->fY) ) {
 		pData->iActivePart = XUI_TREE_VIEW_ACTIVE_CHECK;
 	}
+	iRet = __xuiTreeViewSetHover(pWidget, pData, iVisible);
+	if ( iRet != XUI_OK ) {
+		if ( __xuiTreeViewWidgetAlive(pWidget, pData) ) __xuiTreeViewCancelPointer(pWidget, pData, 1);
+		return iRet;
+	}
 	pData->iFocusVisible = iVisible;
-	(void)__xuiTreeViewSetHover(pWidget, pData, iVisible);
-	(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-	(void)__xuiTreeViewInvalidateRows(pWidget, pData);
-	return XUI_EVENT_DISPATCH_STOP;
+	if ( pData->iActivePart == XUI_TREE_VIEW_ACTIVE_ROW ) {
+		iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
+		if ( iRet != XUI_OK ) {
+			if ( __xuiTreeViewWidgetAlive(pWidget, pData) ) __xuiTreeViewCancelPointer(pWidget, pData, 1);
+			return iRet;
+		}
+		if ( !__xuiTreeViewWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	}
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiTreeViewPointerUp(xui_widget pWidget, xui_tree_view_data_t* pData, const xui_event_t* pEvent)
@@ -1114,38 +1372,38 @@ static int __xuiTreeViewPointerUp(xui_widget pWidget, xui_tree_view_data_t* pDat
 	xui_context pContext;
 	int iVisible;
 	int iNode;
+	int iActiveVisible;
+	int iActivePart;
 	int iRet;
 
 	if ( (pEvent == NULL) || (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) {
 		return XUI_OK;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( xuiGetPointerCapture(pContext) != pWidget ) {
+	if ( !__xuiTreeViewPointerMatches(pData, pEvent) ||
+	     xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) != pWidget ) {
 		return XUI_OK;
 	}
-	if ( pData->iActiveVisible < 0 ) {
-		return xuiReleasePointerCapture(pContext, pWidget);
-	}
 	iRet = XUI_OK;
+	iActiveVisible = pData->iActiveVisible;
+	iActivePart = pData->iActivePart;
 	iVisible = __xuiTreeViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
-	if ( iVisible == pData->iActiveVisible ) {
+	__xuiTreeViewCancelPointer(pWidget, pData, 1);
+	if ( iVisible == iActiveVisible ) {
 		iNode = pData->arrVisible[iVisible];
 		if ( __xuiTreeViewNodeEnabledData(pData, iNode) ) {
-			if ( (pData->iActivePart == XUI_TREE_VIEW_ACTIVE_EXPANDER) && (pData->arrNodes[iNode].bHasChildren != 0) ) {
+			if ( (iActivePart == XUI_TREE_VIEW_ACTIVE_EXPANDER) && (pData->arrNodes[iNode].bHasChildren != 0) ) {
 				iRet = __xuiTreeViewSetExpandedData(pWidget, pData, iNode, !pData->arrNodes[iNode].bExpanded);
-			} else if ( (pData->iActivePart == XUI_TREE_VIEW_ACTIVE_CHECK) && (pData->arrNodes[iNode].bCheckReserved != 0) ) {
-				pData->arrNodes[iNode].bChecked = !pData->arrNodes[iNode].bChecked;
-				pData->iChangeCount++;
-				iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
-			} else {
-				iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
+			} else if ( (iActivePart == XUI_TREE_VIEW_ACTIVE_CHECK) && (pData->arrNodes[iNode].bCheckReserved != 0) ) {
+				iRet = xuiTreeViewSetNodeChecked(pWidget,
+					pData->arrNodes[iNode].iId,
+					!pData->arrNodes[iNode].bChecked);
 			}
 		}
 	}
-	pData->iActiveVisible = -1;
-	pData->iActivePart = XUI_TREE_VIEW_ACTIVE_ROW;
-	(void)xuiReleasePointerCapture(pContext, pWidget);
-	(void)__xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet == XUI_OK && __xuiTreeViewWidgetAlive(pWidget, pData) ) {
+		iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	}
 	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
@@ -1153,14 +1411,24 @@ static int __xuiTreeViewDoubleClick(xui_widget pWidget, xui_tree_view_data_t* pD
 {
 	int iVisible;
 	int iNode;
+	int iNodeId;
+	int iRet;
 
-	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
 	iVisible = __xuiTreeViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
 	if ( iVisible < 0 ) return XUI_OK;
 	iNode = pData->arrVisible[iVisible];
 	if ( !__xuiTreeViewNodeEnabledData(pData, iNode) ) return XUI_OK;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
-	(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
+	iNodeId = pData->arrNodes[iNode].iId;
+	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
+	iVisible = (iNode >= 0) ? pData->arrIndex[iNode].iVisible : -1;
+	if ( iVisible < 0 || !__xuiTreeViewNodeEnabledData(pData, iNode) ) return XUI_EVENT_DISPATCH_STOP;
+	iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
+	if ( iNode < 0 ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pData->arrNodes[iNode].bHasChildren != 0 ) {
 		return __xuiTreeViewSetExpandedData(pWidget, pData, iNode, !pData->arrNodes[iNode].bExpanded);
 	}
@@ -1169,15 +1437,18 @@ static int __xuiTreeViewDoubleClick(xui_widget pWidget, xui_tree_view_data_t* pD
 
 static int __xuiTreeViewContextMenu(xui_widget pWidget, xui_tree_view_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_tree_view_context_proc onContext;
+	void* pContextUser;
 	int iVisible;
 	int iNode;
+	int iNodeId;
 	int iRet;
 	float fX;
 	float fY;
 	xui_rect_t tAnchor;
 	xui_rect_t tWorld;
 
-	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	if ( pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
 		iVisible = pData->iFocusVisible;
@@ -1193,18 +1464,27 @@ static int __xuiTreeViewContextMenu(xui_widget pWidget, xui_tree_view_data_t* pD
 	}
 	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
 	iNode = (iVisible >= 0 && iVisible < pData->iVisibleCount) ? pData->arrVisible[iVisible] : -1;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	iNodeId = (iNode >= 0) ? pData->arrNodes[iNode].iId : -1;
+	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
+	iVisible = (iNode >= 0) ? pData->arrIndex[iNode].iVisible : -1;
 	if ( iNode >= 0 && __xuiTreeViewNodeEnabledData(pData, iNode) ) {
 		iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible, 1);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiTreeViewWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
+		iVisible = (iNode >= 0) ? pData->arrIndex[iNode].iVisible : -1;
 	} else {
 		iVisible = -1;
 		iNode = -1;
 	}
-	if ( pData->onContext != NULL ) {
-		return pData->onContext(pWidget,
+	onContext = pData->onContext;
+	pContextUser = pData->pContextUser;
+	if ( onContext != NULL ) {
+		return onContext(pWidget,
 			iNode >= 0 ? pData->arrNodes[iNode].iId : -1,
-			iVisible, fX, fY, pData->pContextUser);
+			iVisible, fX, fY, pContextUser);
 	}
 	return XUI_OK;
 }
@@ -1226,8 +1506,9 @@ static int __xuiTreeViewKeyDown(xui_widget pWidget, xui_tree_view_data_t* pData,
 	int iNode;
 	int iParentVisible;
 	int iRows;
+	int iRet;
 
-	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) || !xuiWidgetGetEnabled(pWidget) || (pData->iVisibleCount <= 0) ) {
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) || !xuiWidgetGetEffectiveEnabled(pWidget) || (pData->iVisibleCount <= 0) ) {
 		return XUI_OK;
 	}
 	iCurrent = __xuiTreeViewVisibleIndexData(pData, pData->iSelectedId);
@@ -1238,56 +1519,58 @@ static int __xuiTreeViewKeyDown(xui_widget pWidget, xui_tree_view_data_t* pData,
 	case XUI_KEY_UP:
 		iTarget = (iCurrent >= 0) ? __xuiTreeViewFindEnabledVisible(pData, iCurrent - 1, -1) : __xuiTreeViewFindEnabledVisible(pData, 0, 1);
 		if ( iTarget >= 0 ) {
-			(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_KEY_DOWN:
 		iTarget = (iCurrent >= 0) ? __xuiTreeViewFindEnabledVisible(pData, iCurrent + 1, 1) : __xuiTreeViewFindEnabledVisible(pData, 0, 1);
 		if ( iTarget >= 0 ) {
-			(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_KEY_PAGE_UP:
 		iRows = __xuiTreeViewVisibleRows(pWidget, pData);
 		iTarget = (iCurrent >= 0) ? __xuiTreeViewFindNearestEnabledVisible(pData, iCurrent - iRows, -1) : __xuiTreeViewFindEnabledVisible(pData, 0, 1);
 		if ( iTarget >= 0 ) {
-			(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_KEY_PAGE_DOWN:
 		iRows = __xuiTreeViewVisibleRows(pWidget, pData);
 		iTarget = (iCurrent >= 0) ? __xuiTreeViewFindNearestEnabledVisible(pData, iCurrent + iRows, 1) : __xuiTreeViewFindEnabledVisible(pData, 0, 1);
 		if ( iTarget >= 0 ) {
-			(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_KEY_HOME:
 		iTarget = __xuiTreeViewFindEnabledVisible(pData, 0, 1);
 		if ( iTarget >= 0 ) {
-			(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_KEY_END:
 		iTarget = __xuiTreeViewFindEnabledVisible(pData, pData->iVisibleCount - 1, -1);
 		if ( iTarget >= 0 ) {
-			(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_KEY_RIGHT:
 		if ( iCurrent >= 0 ) {
 			iNode = pData->arrVisible[iCurrent];
 			if ( (pData->arrNodes[iNode].bHasChildren != 0) && (pData->arrNodes[iNode].bExpanded == 0) ) {
-				(void)__xuiTreeViewSetExpandedData(pWidget, pData, iNode, 1);
+				iRet = __xuiTreeViewSetExpandedData(pWidget, pData, iNode, 1);
+				if ( iRet != XUI_OK ) return iRet;
 			} else if ( pData->arrNodes[iNode].bHasChildren != 0 ) {
-				iTarget = __xuiTreeViewFindEnabledVisible(pData, iCurrent + 1, 1);
+				iTarget = __xuiTreeViewFindEnabledDescendantVisible(pData, iCurrent);
 				if ( iTarget >= 0 ) {
-					(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+					iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iTarget, 1);
+					if ( iRet != XUI_OK ) return iRet;
 				}
 			}
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1297,18 +1580,31 @@ static int __xuiTreeViewKeyDown(xui_widget pWidget, xui_tree_view_data_t* pData,
 		if ( iCurrent >= 0 ) {
 			iNode = pData->arrVisible[iCurrent];
 			if ( (pData->arrNodes[iNode].bHasChildren != 0) && (pData->arrNodes[iNode].bExpanded != 0) ) {
-				(void)__xuiTreeViewSetExpandedData(pWidget, pData, iNode, 0);
+				iRet = __xuiTreeViewSetExpandedData(pWidget, pData, iNode, 0);
+				if ( iRet != XUI_OK ) return iRet;
 			} else if ( pData->arrNodes[iNode].iParent >= 0 ) {
 				iParentVisible = __xuiTreeViewVisibleIndexData(pData, pData->arrNodes[iNode].iParent);
 				if ( iParentVisible >= 0 ) {
-					(void)__xuiTreeViewSetSelectedVisible(pWidget, pData, iParentVisible, 1);
+					iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iParentVisible, 1);
+					if ( iRet != XUI_OK ) return iRet;
 				}
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
-	case XUI_KEY_ENTER:
 	case XUI_KEY_SPACE:
+		if ( iCurrent >= 0 ) {
+			iNode = pData->arrVisible[iCurrent];
+			if ( pData->arrNodes[iNode].bCheckReserved ) {
+				iRet = xuiTreeViewSetNodeChecked(pWidget,
+					pData->arrNodes[iNode].iId,
+					!pData->arrNodes[iNode].bChecked);
+				return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+			}
+		}
+		/* A non-checkable row keeps the existing activation behavior. */
+		/* fall through */
+	case XUI_KEY_ENTER:
 		if ( pData->iSelectedId >= 0 ) {
 			__xuiTreeViewNotifySelect(pWidget, pData, pData->iSelectedId);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1338,8 +1634,9 @@ static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_POINTER_LEAVE:
 		return __xuiTreeViewSetHover(pWidget, pData, -1);
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
-		pData->iActiveVisible = -1;
-		pData->iActivePart = XUI_TREE_VIEW_ACTIVE_ROW;
+		if ( __xuiTreeViewPointerMatches(pData, pEvent) ) {
+			__xuiTreeViewCancelPointer(pWidget, pData, 0);
+		}
 		return __xuiTreeViewSetHover(pWidget, pData, -1);
 	case XUI_EVENT_POINTER_DOWN:
 		return __xuiTreeViewPointerDown(pWidget, pData, pEvent);
@@ -1353,7 +1650,7 @@ static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return __xuiTreeViewKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_WHEEL:
 		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
-			(void)__xuiTreeViewSetHover(pWidget, pData, -1);
+			return __xuiTreeViewSetHover(pWidget, pData, -1);
 		}
 		return XUI_OK;
 	case XUI_EVENT_FOCUS:
@@ -1361,13 +1658,20 @@ static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
 		if ( pEvent->iType == XUI_EVENT_ENABLED_CHANGED && pData->pFrame != NULL ) {
-			(void)xuiWidgetSetEnabled(pData->pFrame, xuiWidgetGetEnabled(pWidget));
+			int iRet = xuiWidgetSetEnabled(pData->pFrame,
+				xuiWidgetGetEffectiveEnabled(pWidget));
+			if ( iRet != XUI_OK ) return iRet;
 		}
-		(void)__xuiTreeViewSyncState(pWidget);
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			__xuiTreeViewCancelPointer(pWidget, pData, 1);
+		}
+		{
+			int iRet = __xuiTreeViewSyncState(pWidget);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 		return __xuiTreeViewInvalidateRows(pWidget, pData);
 	case XUI_EVENT_BOUNDS_CHANGED:
-		(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
-		return XUI_OK;
+		return __xuiTreeViewUpdateContentSize(pWidget, pData);
 	default:
 		break;
 	}
@@ -1417,6 +1721,7 @@ static int __xuiTreeViewPrepare(xui_widget pWidget, void* pUser)
 {
 	xui_tree_view_data_t* pData;
 	xui_tree_view_data_t tResolved;
+	xui_thickness_t tOldMargin;
 	xui_thickness_t tMargin;
 	int iRet;
 
@@ -1425,14 +1730,22 @@ static int __xuiTreeViewPrepare(xui_widget pWidget, void* pUser)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTreeViewResolve(pWidget, pData, &tResolved);
+	if ( (double)pData->iVisibleCount * (double)tResolved.fItemHeight >
+	     (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+	tOldMargin = xuiWidgetGetMargin(pData->pFrame);
+	tMargin = (xui_thickness_t){tResolved.fBorderWidth, tResolved.fBorderWidth, tResolved.fBorderWidth, tResolved.fBorderWidth};
+	iRet = xuiWidgetSetMargin(pData->pFrame, tMargin);
+	if ( iRet == XUI_OK ) iRet = __xuiTreeViewApplyFrameStyle(pWidget, &tResolved);
+	if ( iRet != XUI_OK ) {
+		(void)xuiWidgetSetMargin(pData->pFrame, tOldMargin);
+		(void)__xuiTreeViewApplyFrameStyle(pWidget, pData);
+		return iRet;
+	}
 	pData->fItemHeight = tResolved.fItemHeight;
 	pData->fIndent = tResolved.fIndent;
 	pData->fPadding = tResolved.fPadding;
 	pData->fBorderWidth = tResolved.fBorderWidth;
-	tMargin = (xui_thickness_t){tResolved.fBorderWidth, tResolved.fBorderWidth, tResolved.fBorderWidth, tResolved.fBorderWidth};
-	iRet = xuiWidgetSetMargin(pData->pFrame, tMargin);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiTreeViewApplyFrameStyle(pWidget, pData);
+	return XUI_OK;
 }
 
 static int __xuiTreeViewLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
@@ -1472,9 +1785,12 @@ static int __xuiTreeViewPreparePaint(xui_widget pWidget)
 	__xuiTreeViewResolve(pWidget, pData, &tResolved);
 	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetInvalidate(pData->pViewport,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iPreparedStyleHash = xuiWidgetGetStyleHash(pWidget);
 	pData->bPaintStylePrepared = 1;
-	return xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static int __xuiTreeViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1625,6 +1941,9 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	xui_widget pWidget;
 	xui_tree_view_data_t* pData;
 	xui_tree_view_data_t tResolved;
+	xui_tree_view_node_t tNodeSnapshot;
+	xui_tree_view_item_proc onRenderItem;
+	void* pRenderItemUser;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
 	xui_rect_t tRow;
@@ -1646,6 +1965,7 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	int iState;
 	int iHandled;
 	int iRet;
+	int iGeneration;
 	int bActiveExpander;
 	uint32_t iTextColor;
 	uint32_t iExpanderColor;
@@ -1686,14 +2006,24 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		iState = 0;
 		if ( pData->iSelectedId == pNode->iId ) iState |= XUI_TREE_ITEM_SELECTED;
 		if ( pData->iHoverVisible == i ) iState |= XUI_TREE_ITEM_HOVER;
-		if ( !__xuiTreeViewNodeEnabledData(pData, iNode) || !xuiWidgetGetEnabled(pWidget) ) iState |= XUI_TREE_ITEM_DISABLED;
+		if ( !__xuiTreeViewNodeEnabledData(pData, iNode) || !xuiWidgetGetEffectiveEnabled(pWidget) ) iState |= XUI_TREE_ITEM_DISABLED;
 		if ( pData->iFocusVisible == i ) iState |= XUI_TREE_ITEM_FOCUS;
 		if ( pNode->bExpanded ) iState |= XUI_TREE_ITEM_EXPANDED;
 		if ( pNode->bHasChildren ) iState |= XUI_TREE_ITEM_HAS_CHILDREN;
 		if ( pNode->bChecked ) iState |= XUI_TREE_ITEM_CHECKED;
 		if ( pData->onRenderItem != NULL ) {
-			iHandled = pData->onRenderItem(pWidget, pNode->iId, i, pNode, pDraw, tRow, iState, pData->pRenderItemUser);
+			onRenderItem = pData->onRenderItem;
+			pRenderItemUser = pData->pRenderItemUser;
+			iGeneration = pData->iChangeCount;
+			tNodeSnapshot = *pNode;
+			iHandled = onRenderItem(pWidget, tNodeSnapshot.iId, i, &tNodeSnapshot,
+				pDraw, tRow, iState, pRenderItemUser);
 			if ( iHandled < 0 ) return iHandled;
+			if ( !__xuiTreeViewWidgetAlive(pWidget, pData) ) return XUI_OK;
+			if ( pData->iChangeCount != iGeneration || pData->onRenderItem != onRenderItem ||
+			     pData->pRenderItemUser != pRenderItemUser ) return XUI_OK;
+			iNode = pData->arrVisible[i];
+			pNode = &pData->arrNodes[iNode];
 			if ( iHandled ) continue;
 		}
 		if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) {
@@ -1801,9 +2131,189 @@ static int __xuiTreeViewInitEvents(xui_widget pWidget)
 	return iRet;
 }
 
+static int __xuiTreeViewAccessibleCount(xui_widget pWidget, void* pUser)
+{
+	xui_tree_view_data_t* pData = (xui_tree_view_data_t*)pUser;
+
+	(void)pWidget;
+	if ( pData == NULL || pData->iNodeCount >= 0x7ffffffe ) return 0;
+	return pData->iNodeCount + 1;
+}
+
+static int __xuiTreeViewAccessibleGet(xui_widget pWidget, int iIndex,
+	xui_accessible_node_t* pNode, void* pUser)
+{
+	xui_tree_view_data_t* pData = (xui_tree_view_data_t*)pUser;
+	xui_tree_view_node_t* pTreeNode;
+	xui_rect_t tWorld;
+	xui_rect_t tViewport;
+	xui_rect_t tItem;
+	const char* sText;
+	size_t iTextSize;
+	int iNode;
+	int iParent;
+	int iVisible;
+
+	if ( pData == NULL || pNode == NULL || iIndex < 0 ||
+	     iIndex > pData->iNodeCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	if ( iIndex == 0 ) {
+		pNode->iId = 1;
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_TREE;
+		pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+			xuiWidgetGetAccessibleName(pWidget) : "Tree";
+		pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+		pNode->tBounds = tWorld;
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE |
+			XUI_ACCESSIBLE_STATE_VERTICAL;
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+		pNode->iRowCount = pData->iNodeCount;
+		pNode->iColumnCount = 1;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+			pNode->iActions = 0;
+		}
+		return XUI_OK;
+	}
+	iNode = iIndex - 1;
+	pTreeNode = &pData->arrNodes[iNode];
+	iParent = pData->arrIndex[iNode].iParent;
+	iVisible = pData->arrIndex[iNode].iVisible;
+	pNode->iId = (uint64_t)iNode + 2u;
+	pNode->iParentId = (iParent >= 0) ? (uint64_t)iParent + 2u : 1u;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_TREE_ITEM;
+	sText = __xuiTreeViewText(pTreeNode->sText);
+	if ( sText[0] != '\0' ) {
+		iTextSize = strlen(sText);
+		if ( iTextSize >= sizeof(pData->sAccessibleName) ) {
+			iTextSize = sizeof(pData->sAccessibleName) - 1u;
+		}
+		memcpy(pData->sAccessibleName, sText, iTextSize);
+		pData->sAccessibleName[iTextSize] = '\0';
+		xuiInternalUtf8TrimIncomplete(pData->sAccessibleName);
+	} else {
+		memcpy(pData->sAccessibleName, "Tree item", sizeof("Tree item"));
+	}
+	pNode->sName = pData->sAccessibleName;
+	pNode->iRow = (iVisible >= 0) ? iVisible : iNode;
+	pNode->iColumn = 0;
+	pNode->iRowCount = 1;
+	pNode->iColumnCount = 1;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTABLE;
+	if ( pData->iSelectedId == pTreeNode->iId ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
+	}
+	if ( iVisible >= 0 && pData->iFocusVisible == iVisible &&
+	     xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+	}
+	if ( !pTreeNode->bEnabled || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	}
+	if ( pTreeNode->bHasChildren ) {
+		pNode->iState |= pTreeNode->bExpanded ?
+			XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED;
+	}
+	if ( pTreeNode->bCheckReserved && pTreeNode->bChecked ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_CHECKED;
+	}
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_SELECTION) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	if ( pTreeNode->bHasChildren ) {
+		pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+			XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE);
+	}
+	if ( pTreeNode->bCheckReserved ) {
+		pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE);
+	}
+	if ( (pNode->iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0 ) {
+		pNode->iActions = 0;
+	}
+	if ( iVisible >= 0 ) {
+		tItem = xuiTreeViewGetItemRect(pWidget, iVisible);
+		pNode->tBounds = (xui_rect_t){tWorld.fX + tItem.fX,
+			tWorld.fY + tItem.fY, tItem.fW, tItem.fH};
+		tViewport = xuiTreeViewGetViewportRect(pWidget);
+		if ( tItem.fX + tItem.fW <= tViewport.fX ||
+		     tItem.fY + tItem.fH <= tViewport.fY ||
+		     tItem.fX >= tViewport.fX + tViewport.fW ||
+		     tItem.fY >= tViewport.fY + tViewport.fH ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+		}
+	} else {
+		pNode->tBounds = tWorld;
+		pNode->tBounds.fW = 0.0f;
+		pNode->tBounds.fH = 0.0f;
+		pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTreeViewAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pPayload, void* pUser)
+{
+	xui_tree_view_data_t* pData = (xui_tree_view_data_t*)pUser;
+	int iNode;
+	int iNodeValue;
+	int iVisible;
+	int iRet;
+
+	(void)pPayload;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_ERROR_INVALID_STATE;
+	if ( iNodeId == 0 || iNodeId == 1 ) {
+		return iAction == XUI_ACCESSIBLE_ACTION_FOCUS ?
+			xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget) :
+			XUI_ERROR_UNSUPPORTED;
+	}
+	if ( iNodeId < 2 || iNodeId > (uint64_t)pData->iNodeCount + 1u ) {
+		return XUI_ERROR_NOT_FOUND;
+	}
+	iNode = (int)iNodeId - 2;
+	if ( !pData->arrNodes[iNode].bEnabled ) return XUI_ERROR_INVALID_STATE;
+	iNodeValue = pData->arrNodes[iNode].iId;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_EXPAND ||
+	     iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE ) {
+		if ( !pData->arrNodes[iNode].bHasChildren ) return XUI_ERROR_UNSUPPORTED;
+		return xuiTreeViewSetNodeExpanded(pWidget, iNodeValue,
+			iAction == XUI_ACCESSIBLE_ACTION_EXPAND);
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_TOGGLE ) {
+		if ( !pData->arrNodes[iNode].bCheckReserved ) return XUI_ERROR_UNSUPPORTED;
+		return xuiTreeViewSetNodeChecked(pWidget, iNodeValue,
+			!pData->arrNodes[iNode].bChecked);
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW ) {
+		return xuiTreeViewEnsureVisible(pWidget, iNodeValue);
+	}
+	if ( iAction != XUI_ACCESSIBLE_ACTION_FOCUS &&
+	     iAction != XUI_ACCESSIBLE_ACTION_SET_SELECTION &&
+	     iAction != XUI_ACCESSIBLE_ACTION_ACTIVATE ) return XUI_ERROR_UNSUPPORTED;
+	iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iRet = xuiTreeViewEnsureVisible(pWidget, iNodeValue);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iNode = __xuiTreeViewFindNodeData(pData, iNodeValue);
+	iVisible = (iNode >= 0) ? pData->arrIndex[iNode].iVisible : -1;
+	if ( iVisible < 0 ) return XUI_ERROR_INVALID_STATE;
+	iRet = __xuiTreeViewSetSelectedVisible(pWidget, pData, iVisible,
+		iAction == XUI_ACCESSIBLE_ACTION_SET_SELECTION);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE ) {
+		__xuiTreeViewNotifySelect(pWidget, pData, iNodeValue);
+	}
+	return XUI_OK;
+}
+
 static int __xuiTreeViewInitViewport(xui_widget pWidget, xui_tree_view_data_t* pData)
 {
 	xui_cache_policy_t tPolicy;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pViewport == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1813,12 +2323,16 @@ static int __xuiTreeViewInitViewport(xui_widget pWidget, xui_tree_view_data_t* p
 	tPolicy.iPolicy = XUI_CACHE_POLICY_SELF;
 	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	tPolicy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	(void)xuiWidgetSetLayoutType(pData->pViewport, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pData->pViewport, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetFocusable(pData->pViewport, 0);
-	(void)xuiWidgetSetTabStop(pData->pViewport, 0);
-	(void)xuiWidgetSetCachePolicy(pData->pViewport, &tPolicy);
-	return xuiWidgetSetCacheRenderCallback(pData->pViewport, __xuiTreeViewViewportRender, pWidget);
+	iRet = xuiWidgetSetLayoutType(pData->pViewport, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pViewport, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pData->pViewport, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pData->pViewport, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCachePolicy(pData->pViewport, &tPolicy);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetSetCacheRenderCallback(pData->pViewport,
+			__xuiTreeViewViewportRender, pWidget);
+	}
+	return iRet;
 }
 
 static int __xuiTreeViewCreateFrame(xui_widget pWidget, xui_tree_view_data_t* pData, const xui_tree_view_desc_t* pDesc)
@@ -1851,9 +2365,14 @@ static int __xuiTreeViewCreateFrame(xui_widget pWidget, xui_tree_view_data_t* pD
 		pData->pFrame = NULL;
 		return iRet;
 	}
-	(void)xuiWidgetSetFlowMode(pData->pFrame, XUI_FLOW_BLOCK);
-	(void)xuiWidgetSetSizeMode(pData->pFrame, XUI_SIZE_FILL, XUI_SIZE_FILL);
-	(void)xuiWidgetSetAlign(pData->pFrame, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	iRet = xuiWidgetSetFlowMode(pData->pFrame, XUI_FLOW_BLOCK);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pFrame, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pFrame, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pFrame);
+		pData->pFrame = NULL;
+		return iRet;
+	}
 	pData->pViewport = xuiScrollFrameGetViewportWidget(pData->pFrame);
 	if ( pData->pViewport == NULL ) {
 		xuiWidgetDestroy(pData->pFrame);
@@ -1886,15 +2405,22 @@ static int __xuiTreeViewInit(xui_widget pWidget, void* pTypeData, const void* pC
 	}
 	__xuiTreeViewDefaults(pData);
 	__xuiTreeViewApplyDesc(pData, pDesc);
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
-	iRet = __xuiTreeViewCreateFrame(pWidget, pData, pDesc);
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetSetPadding(pWidget,
+			(xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	}
+	if ( iRet == XUI_OK ) iRet = __xuiTreeViewCreateFrame(pWidget, pData, pDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTreeViewInitEvents(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetAccessibilityProvider(pWidget,
+		__xuiTreeViewAccessibleCount, __xuiTreeViewAccessibleGet,
+		__xuiTreeViewAccessibleAction, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pDesc != NULL) && (pDesc->arrNodes != NULL) && (pDesc->iNodeCount > 0) ) {
 		iRet = xuiTreeViewSetNodes(pWidget, pDesc->arrNodes, pDesc->iNodeCount);
@@ -1904,8 +2430,7 @@ static int __xuiTreeViewInit(xui_widget pWidget, void* pTypeData, const void* pC
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	(void)__xuiTreeViewSyncState(pWidget);
-	return XUI_OK;
+	return __xuiTreeViewSyncState(pWidget);
 }
 
 static void __xuiTreeViewDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -2046,10 +2571,13 @@ XUI_API int xuiTreeViewCreate(xui_context pContext, xui_widget* ppWidget, const 
 {
 	xui_widget_type pType;
 
-	if ( !xuiInternalContextIsValid(pContext) || (ppWidget == NULL) || !__xuiTreeViewDescValid(pDesc) ) {
+	if ( ppWidget == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiTreeViewDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiTreeViewGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -2078,10 +2606,14 @@ XUI_API int xuiTreeViewSetContextMenu(xui_widget pWidget, xui_tree_view_context_
 XUI_API int xuiTreeViewSetItemRenderer(xui_widget pWidget, xui_tree_view_item_proc onRender, void* pUser)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->onRenderItem == onRender && pData->pRenderItemUser == pUser ) return XUI_OK;
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
 	pData->onRenderItem = onRender;
 	pData->pRenderItemUser = pUser;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewSetAdapter(xui_widget pWidget, xui_tree_view_count_proc onCount, xui_tree_view_node_proc onNode, void* pUser)
@@ -2156,8 +2688,8 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
 	fScroll = xuiTreeViewGetScroll(pWidget);
 	iRet = xuiTreeViewSetNodes(pWidget, tStaged.arrNodes, tStaged.iNodeCount);
 	if ( iRet == XUI_OK ) {
-		(void)xuiTreeViewSetSelected(pWidget, iSelectedId);
-		iRet = xuiTreeViewSetScroll(pWidget, fScroll);
+		iRet = xuiTreeViewSetSelected(pWidget, iSelectedId);
+		if ( iRet == XUI_OK ) iRet = xuiTreeViewSetScroll(pWidget, fScroll);
 	}
 cleanup:
 	__xuiTreeViewClearNodeStorage(&tStaged);
@@ -2178,16 +2710,42 @@ XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
 XUI_API int xuiTreeViewClear(xui_widget pWidget)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	float fOldScroll;
+	int iOldVisibleCount;
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iNodeCount == 0 && pData->iSelectedId < 0 &&
+	     pData->iHoverVisible < 0 && pData->iFocusVisible < 0 &&
+	     pData->iActiveVisible < 0 ) return XUI_OK;
+	iRet = __xuiTreeViewInvalidateLayoutRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	fOldScroll = xuiTreeViewGetScroll(pWidget);
+	iOldVisibleCount = pData->iVisibleCount;
+	iRet = xuiTreeViewSetScroll(pWidget, 0.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTreeViewUpdateContentSizeFor(pWidget, pData, 0,
+		pData->fItemHeight);
+	if ( iRet != XUI_OK ) {
+		(void)__xuiTreeViewUpdateContentSizeFor(pWidget, pData,
+			iOldVisibleCount, pData->fItemHeight);
+		(void)xuiTreeViewSetScroll(pWidget, fOldScroll);
+		return iRet;
+	}
+	__xuiTreeViewCancelPointer(pWidget, pData, 1);
 	__xuiTreeViewResetNodes(pData);
 	pData->iSelectedId = -1;
 	pData->iHoverVisible = -1;
 	pData->iFocusVisible = -1;
 	pData->iActiveVisible = -1;
-	(void)xuiTreeViewSetScroll(pWidget, 0.0f);
-	(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
+	pData->iActivePointerId = XUI_POINTER_ID_MOUSE;
+	pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
 	pData->iChangeCount++;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* pNodes, int iCount)
@@ -2195,6 +2753,7 @@ XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* 
 	xui_tree_view_data_t* pData;
 	xui_tree_view_data_t tStaged;
 	xui_tree_view_data_t tOld;
+	float fOldScroll;
 	int i;
 	int iRet;
 
@@ -2222,13 +2781,40 @@ XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* 
 		__xuiTreeViewClearNodeStorage(&tStaged);
 		return iRet;
 	}
+	if ( (double)tStaged.iVisibleCount * (double)tStaged.fItemHeight >
+	     (double)XUI_LAYOUT_UNBOUNDED ) {
+		__xuiTreeViewClearNodeStorage(&tStaged);
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiTreeViewInvalidateLayoutRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) {
+		__xuiTreeViewClearNodeStorage(&tStaged);
+		return iRet;
+	}
+	fOldScroll = xuiTreeViewGetScroll(pWidget);
+	iRet = xuiTreeViewSetScroll(pWidget, 0.0f);
+	if ( iRet != XUI_OK ) {
+		__xuiTreeViewClearNodeStorage(&tStaged);
+		return iRet;
+	}
+	iRet = __xuiTreeViewUpdateContentSizeFor(pWidget, pData,
+		tStaged.iVisibleCount, tStaged.fItemHeight);
+	if ( iRet != XUI_OK ) {
+		(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
+		(void)xuiTreeViewSetScroll(pWidget, fOldScroll);
+		__xuiTreeViewClearNodeStorage(&tStaged);
+		return iRet;
+	}
+	__xuiTreeViewCancelPointer(pWidget, pData, 1);
 	tOld = *pData;
+	tStaged.iChangeCount = pData->iChangeCount + 1;
 	*pData = tStaged;
 	__xuiTreeViewClearNodeStorage(&tOld);
-	(void)xuiTreeViewSetScroll(pWidget, 0.0f);
-	(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
-	pData->iChangeCount++;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewAddNode(xui_widget pWidget, int iId, int iParentId, const char* sText)
@@ -2299,12 +2885,29 @@ XUI_API int xuiTreeViewSetNodeEnabled(xui_widget pWidget, int iNodeId, int bEnab
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	int iNode;
+	int iOldSelectedId;
+	int iOldFocusVisible;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
 	if ( iNode < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->arrNodes[iNode].bEnabled = bEnabled ? 1 : 0;
+	bEnabled = bEnabled ? 1 : 0;
+	if ( pData->arrNodes[iNode].bEnabled == bEnabled ) return XUI_OK;
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iOldSelectedId = pData->iSelectedId;
+	iOldFocusVisible = pData->iFocusVisible;
+	pData->arrNodes[iNode].bEnabled = bEnabled;
+	__xuiTreeViewNormalizeVisibleState(pData, -1);
 	pData->iChangeCount++;
-	return __xuiTreeViewFinishVisibleChange(pWidget, pData, -1);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	if ( pData->iSelectedId != iOldSelectedId ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+	if ( pData->iFocusVisible != iOldFocusVisible ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
+	}
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewGetNodeEnabled(xui_widget pWidget, int iNodeId)
@@ -2318,13 +2921,26 @@ XUI_API int xuiTreeViewSetNodeChecked(xui_widget pWidget, int iNodeId, int bChec
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	int iNode;
+	int bHadCheck;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
 	if ( iNode < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	bChecked = bChecked ? 1 : 0;
+	if ( pData->arrNodes[iNode].bCheckReserved && pData->arrNodes[iNode].bChecked == bChecked ) return XUI_OK;
+	bHadCheck = pData->arrNodes[iNode].bCheckReserved;
+	{
+		int iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+		if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	}
 	pData->arrNodes[iNode].bCheckReserved = 1;
-	pData->arrNodes[iNode].bChecked = bChecked ? 1 : 0;
+	pData->arrNodes[iNode].bChecked = bChecked;
 	pData->iChangeCount++;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( !bHadCheck ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewGetNodeChecked(xui_widget pWidget, int iNodeId)
@@ -2341,10 +2957,19 @@ XUI_API int xuiTreeViewSetNodeDecorations(xui_widget pWidget, int iNodeId, int b
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
 	if ( iNode < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->arrNodes[iNode].bIconReserved = bIcon ? 1 : 0;
-	pData->arrNodes[iNode].bCheckReserved = bCheck ? 1 : 0;
+	bIcon = bIcon ? 1 : 0;
+	bCheck = bCheck ? 1 : 0;
+	if ( pData->arrNodes[iNode].bIconReserved == bIcon &&
+	     pData->arrNodes[iNode].bCheckReserved == bCheck ) return XUI_OK;
+	{
+		int iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+		if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	}
+	pData->arrNodes[iNode].bIconReserved = bIcon;
+	pData->arrNodes[iNode].bCheckReserved = bCheck;
 	pData->iChangeCount++;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewSetSelected(xui_widget pWidget, int iNodeId)
@@ -2391,9 +3016,13 @@ XUI_API int xuiTreeViewGetVisibleIndexOfId(xui_widget pWidget, int iNodeId)
 XUI_API int xuiTreeViewSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFont == pFont ) return XUI_OK;
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
 	pData->pFont = pFont;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API xui_font xuiTreeViewGetFont(xui_widget pWidget)
@@ -2405,16 +3034,54 @@ XUI_API xui_font xuiTreeViewGetFont(xui_widget pWidget)
 XUI_API int xuiTreeViewSetMetrics(xui_widget pWidget, float fItemHeight, float fIndent, float fPadding, float fBorderWidth)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	xui_tree_view_data_t tCandidate;
+	xui_tree_view_data_t tOldData;
+	float fNewBaseItemHeight;
+	float fNewBaseIndent;
+	float fNewBasePadding;
+	float fNewBaseBorderWidth;
+	int iRet;
 	if ( (pData == NULL) ||
 	     ((fItemHeight != 0.0f) && !__xuiTreeViewFloatValid(fItemHeight)) ||
 	     ((fIndent != 0.0f) && !__xuiTreeViewFloatValid(fIndent)) ||
 	     ((fPadding != 0.0f) && !__xuiTreeViewFloatValid(fPadding)) ||
 	     ((fBorderWidth != 0.0f) && !__xuiTreeViewFloatValid(fBorderWidth)) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( fItemHeight > 0.0f ) pData->fItemHeight = fItemHeight;
-	if ( fIndent > 0.0f ) pData->fIndent = fIndent;
-	if ( fPadding > 0.0f ) pData->fPadding = fPadding;
-	if ( fBorderWidth >= 0.0f ) pData->fBorderWidth = fBorderWidth;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	fNewBaseItemHeight = (fItemHeight > 0.0f) ? fItemHeight : pData->fBaseItemHeight;
+	fNewBaseIndent = (fIndent > 0.0f) ? fIndent : pData->fBaseIndent;
+	fNewBasePadding = (fPadding > 0.0f) ? fPadding : pData->fBasePadding;
+	fNewBaseBorderWidth = fBorderWidth;
+	if ( (double)pData->iVisibleCount * (double)fNewBaseItemHeight >
+	     (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fBaseItemHeight == fNewBaseItemHeight && pData->fBaseIndent == fNewBaseIndent &&
+	     pData->fBasePadding == fNewBasePadding && pData->fBaseBorderWidth == fNewBaseBorderWidth ) return XUI_OK;
+	tCandidate = *pData;
+	tCandidate.fBaseItemHeight = fNewBaseItemHeight;
+	tCandidate.fBaseIndent = fNewBaseIndent;
+	tCandidate.fBasePadding = fNewBasePadding;
+	tCandidate.fBaseBorderWidth = fNewBaseBorderWidth;
+	__xuiTreeViewResolve(pWidget, &tCandidate, &tCandidate);
+	if ( (double)pData->iVisibleCount * (double)tCandidate.fItemHeight >
+	     (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiTreeViewInvalidateLayoutRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	__xuiTreeViewCancelPointer(pWidget, pData, 1);
+	tOldData = *pData;
+	pData->fBaseItemHeight = fNewBaseItemHeight;
+	pData->fBaseIndent = fNewBaseIndent;
+	pData->fBasePadding = fNewBasePadding;
+	pData->fBaseBorderWidth = fNewBaseBorderWidth;
+	pData->fItemHeight = tCandidate.fItemHeight;
+	pData->fIndent = tCandidate.fIndent;
+	pData->fPadding = tCandidate.fPadding;
+	pData->fBorderWidth = tCandidate.fBorderWidth;
+	iRet = __xuiTreeViewUpdateContentSize(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		*pData = tOldData;
+		(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
+		return iRet;
+	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pIndent, float* pPadding, float* pBorderWidth)
@@ -2449,10 +3116,104 @@ XUI_API float xuiTreeViewGetScroll(xui_widget pWidget)
 XUI_API int xuiTreeViewEnsureVisible(xui_widget pWidget, int iNodeId)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	xui_rect_t tTarget;
+	int* arrParents;
+	int iNode;
+	int iParent;
 	int iVisible;
+	int iParentCount;
+	int iCursor;
+	int iNewVisibleCount;
+	int iOldSelectedId;
+	int iOldFocusVisible;
+	int i;
+	float fOldScroll;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iVisible = __xuiTreeViewVisibleIndexData(pData, iNodeId);
-	return __xuiTreeViewEnsureVisibleIndex(pWidget, pData, iVisible);
+	iNode = __xuiTreeViewFindNodeData(pData, iNodeId);
+	if ( iNode < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iParentCount = 0;
+	for ( iParent = pData->arrIndex[iNode].iParent; iParent >= 0;
+	      iParent = pData->arrIndex[iParent].iParent ) {
+		if ( !pData->arrNodes[iParent].bExpanded ) iParentCount++;
+	}
+	if ( iParentCount == 0 ) {
+		iVisible = pData->arrIndex[iNode].iVisible;
+		return __xuiTreeViewEnsureVisibleIndex(pWidget, pData, iVisible);
+	}
+	arrParents = (int*)xrtMalloc((size_t)iParentCount * sizeof(int));
+	if ( arrParents == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	i = 0;
+	for ( iParent = pData->arrIndex[iNode].iParent; iParent >= 0;
+	      iParent = pData->arrIndex[iParent].iParent ) {
+		if ( !pData->arrNodes[iParent].bExpanded ) arrParents[i++] = iParent;
+	}
+	iRet = __xuiTreeViewEnsureVisibleCapacity(pData, pData->iNodeCount);
+	if ( iRet != XUI_OK ) {
+		xrtFree(arrParents);
+		return iRet;
+	}
+	for ( i = 0; i < iParentCount; i++ ) pData->arrNodes[arrParents[i]].bExpanded = 1;
+	iNewVisibleCount = 0;
+	iVisible = -1;
+	iCursor = pData->iFirstRoot;
+	while ( iCursor >= 0 ) {
+		if ( iCursor == iNode ) iVisible = iNewVisibleCount;
+		iNewVisibleCount++;
+		iCursor = __xuiTreeViewNextVisibleNode(pData, iCursor, -1);
+	}
+	for ( i = 0; i < iParentCount; i++ ) pData->arrNodes[arrParents[i]].bExpanded = 0;
+	if ( iVisible < 0 ||
+	     (double)iNewVisibleCount * (double)pData->fItemHeight >
+	     (double)XUI_LAYOUT_UNBOUNDED ) {
+		xrtFree(arrParents);
+		return XUI_ERROR_INVALID_STATE;
+	}
+	iRet = __xuiTreeViewInvalidateLayoutRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) {
+		xrtFree(arrParents);
+		return iRet;
+	}
+	fOldScroll = xuiTreeViewGetScroll(pWidget);
+	iRet = __xuiTreeViewUpdateContentSizeFor(pWidget, pData,
+		iNewVisibleCount, pData->fItemHeight);
+	if ( iRet == XUI_OK ) {
+		tTarget = (xui_rect_t){0.0f, (float)iVisible * pData->fItemHeight,
+			1.0f, pData->fItemHeight};
+		iRet = xuiScrollFrameEnsureRectVisible(pData->pFrame, tTarget);
+	}
+	if ( iRet != XUI_OK ) {
+		(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
+		(void)xuiTreeViewSetScroll(pWidget, fOldScroll);
+		xrtFree(arrParents);
+		return iRet;
+	}
+	__xuiTreeViewCancelPointer(pWidget, pData, 1);
+	iOldSelectedId = pData->iSelectedId;
+	iOldFocusVisible = pData->iFocusVisible;
+	for ( i = 0; i < iParentCount; i++ ) pData->arrNodes[arrParents[i]].bExpanded = 1;
+	iRet = __xuiTreeViewRebuildVisible(pWidget, pData, -1);
+	if ( iRet != XUI_OK ) {
+		for ( i = 0; i < iParentCount; i++ ) {
+			pData->arrNodes[arrParents[i]].bExpanded = 0;
+		}
+		(void)__xuiTreeViewRebuildVisible(NULL, pData, -1);
+		(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
+		(void)xuiTreeViewSetScroll(pWidget, fOldScroll);
+		xrtFree(arrParents);
+		return iRet;
+	}
+	xrtFree(arrParents);
+	pData->iChangeCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	if ( pData->iSelectedId != iOldSelectedId ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+	if ( pData->iFocusVisible != iOldFocusVisible ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
+	}
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewSetScrollbarMode(xui_widget pWidget, int iMode)
@@ -2471,7 +3232,14 @@ XUI_API int xuiTreeViewGetScrollbarMode(xui_widget pWidget)
 XUI_API int xuiTreeViewSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iBorder, uint32_t iFocus, uint32_t iRow, uint32_t iHover, uint32_t iSelected, uint32_t iText, uint32_t iDisabledText)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iBackground && pData->iBorderColor == iBorder &&
+	     pData->iFocusColor == iFocus && pData->iRowColor == iRow &&
+	     pData->iHoverColor == iHover && pData->iSelectedColor == iSelected &&
+	     pData->iTextColor == iText && pData->iDisabledTextColor == iDisabledText ) return XUI_OK;
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
 	pData->iBackgroundColor = iBackground;
 	pData->iBorderColor = iBorder;
 	pData->iFocusColor = iFocus;
@@ -2480,7 +3248,7 @@ XUI_API int xuiTreeViewSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 	pData->iSelectedColor = iSelected;
 	pData->iTextColor = iText;
 	pData->iDisabledTextColor = iDisabledText;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pBorder, uint32_t* pFocus, uint32_t* pRow, uint32_t* pHover, uint32_t* pSelected, uint32_t* pText, uint32_t* pDisabledText)
@@ -2501,11 +3269,16 @@ XUI_API int xuiTreeViewGetColors(xui_widget pWidget, uint32_t* pBackground, uint
 XUI_API int xuiTreeViewSetDecorationColors(xui_widget pWidget, uint32_t iExpander, uint32_t iIcon, uint32_t iCheck)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iExpanderColor == iExpander && pData->iIconColor == iIcon &&
+	     pData->iCheckColor == iCheck ) return XUI_OK;
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
 	pData->iExpanderColor = iExpander;
 	pData->iIconColor = iIcon;
 	pData->iCheckColor = iCheck;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewGetDecorationColors(xui_widget pWidget, uint32_t* pExpander, uint32_t* pIcon, uint32_t* pCheck)
@@ -2520,20 +3293,35 @@ XUI_API int xuiTreeViewGetDecorationColors(xui_widget pWidget, uint32_t* pExpand
 
 XUI_API int xuiTreeViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
 {
-	xui_tree_view_data_t tResolved;
+	xui_tree_view_data_t tCandidate;
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	int iRet;
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iTrackColor == iTrack && pData->iThumbColor == iThumb &&
+	     pData->iScrollbarHoverColor == iHover && pData->iScrollbarActiveColor == iActive &&
+	     pData->iScrollbarFocusColor == iFocus && pData->iScrollbarDisabledColor == iDisabled ) return XUI_OK;
+	tCandidate = *pData;
+	tCandidate.iTrackColor = iTrack;
+	tCandidate.iThumbColor = iThumb;
+	tCandidate.iScrollbarHoverColor = iHover;
+	tCandidate.iScrollbarActiveColor = iActive;
+	tCandidate.iScrollbarFocusColor = iFocus;
+	tCandidate.iScrollbarDisabledColor = iDisabled;
+	__xuiTreeViewResolve(pWidget, &tCandidate, &tCandidate);
+	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
+	iRet = xuiScrollFrameSetColors(pData->pFrame, tCandidate.iTrackColor,
+		tCandidate.iThumbColor, tCandidate.iScrollbarHoverColor,
+		tCandidate.iScrollbarActiveColor, tCandidate.iScrollbarFocusColor,
+		tCandidate.iScrollbarDisabledColor);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iTrackColor = iTrack;
 	pData->iThumbColor = iThumb;
 	pData->iScrollbarHoverColor = iHover;
 	pData->iScrollbarActiveColor = iActive;
 	pData->iScrollbarFocusColor = iFocus;
 	pData->iScrollbarDisabledColor = iDisabled;
-	__xuiTreeViewResolve(pWidget, pData, &tResolved);
-	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewGetScrollbarColors(xui_widget pWidget, uint32_t* pTrack, uint32_t* pThumb, uint32_t* pHover, uint32_t* pActive, uint32_t* pFocus, uint32_t* pDisabled)

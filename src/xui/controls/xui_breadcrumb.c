@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_BREADCRUMB
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
 #include <math.h>
 #include <string.h>
@@ -15,8 +16,10 @@ typedef struct xui_breadcrumb_runtime_item_t {
 	char* sText;
 	int bClickable;
 	int iValue;
+	xui_vec2_t tMeasuredText;
 	xui_rect_t tRect;
 	xui_rect_t tSeparatorRect;
+	int bMeasureDirty;
 } xui_breadcrumb_runtime_item_t;
 
 typedef struct xui_breadcrumb_data_t {
@@ -41,11 +44,17 @@ typedef struct xui_breadcrumb_data_t {
 	float fGap;
 	float fPaddingX;
 	float fPaddingY;
+	xui_vec2_t tMeasuredSeparator;
+	xui_font pMeasuredFont;
+	uint32_t iMeasureDpiGeneration;
 	int iHoverIndex;
 	int iActiveIndex;
 	int iFocusIndex;
 	int iActiveKey;
 	int iClickCount;
+	xui_pointer_owner_t tPointerOwner;
+	int bMeasureEnvironmentValid;
+	int bSeparatorMeasureDirty;
 	int bSeparatorIconGenerationValid;
 } xui_breadcrumb_data_t;
 
@@ -66,7 +75,7 @@ static int __xuiBreadcrumbDescValid(const xui_breadcrumb_desc_t* pDesc)
 	     (pDesc->fPaddingX < 0.0f) || (pDesc->fPaddingY < 0.0f) ) {
 		return 0;
 	}
-	if ( (pDesc->tSeparatorIconSrc.fW < 0.0f) || (pDesc->tSeparatorIconSrc.fH < 0.0f) ) {
+	if ( (pDesc->tSeparatorIconSrc.fW < 0) || (pDesc->tSeparatorIconSrc.fH < 0) ) {
 		return 0;
 	}
 	return 1;
@@ -100,8 +109,10 @@ static void __xuiBreadcrumbClearItemsData(xui_breadcrumb_data_t* pData)
 		}
 		pData->arrItems[i].bClickable = 0;
 		pData->arrItems[i].iValue = 0;
+		pData->arrItems[i].tMeasuredText = (xui_vec2_t){0.0f, 0.0f};
 		pData->arrItems[i].tRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 		pData->arrItems[i].tSeparatorRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+		pData->arrItems[i].bMeasureDirty = 1;
 	}
 	pData->iItemCount = 0;
 	pData->iHoverIndex = -1;
@@ -110,13 +121,28 @@ static void __xuiBreadcrumbClearItemsData(xui_breadcrumb_data_t* pData)
 	pData->iActiveKey = 0;
 }
 
+static int __xuiBreadcrumbHasClickableItem(const xui_breadcrumb_data_t* pData)
+{
+	int i;
+
+	if ( pData == NULL ) return 0;
+	for ( i = 0; i < pData->iItemCount; i++ ) {
+		if ( pData->arrItems[i].bClickable ) return 1;
+	}
+	return 0;
+}
+
+static int __xuiBreadcrumbItemFocusable(const xui_breadcrumb_data_t* pData, int iIndex)
+{
+	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iItemCount ) return 0;
+	return pData->arrItems[iIndex].bClickable ||
+		(pData->onContext != NULL && !__xuiBreadcrumbHasClickableItem(pData));
+}
+
 static int __xuiBreadcrumbStep(const xui_breadcrumb_data_t* pData, int iIndex, int iStep)
 {
-	int bContextOnly = pData->onContext != NULL;
-	int i;
-	for ( i = 0; bContextOnly && i < pData->iItemCount; i++ ) {
-		if ( pData->arrItems[i].bClickable ) bContextOnly = 0;
-	}
+	int bContextOnly = pData->onContext != NULL && !__xuiBreadcrumbHasClickableItem(pData);
+
 	for ( iIndex += iStep; iIndex >= 0 && iIndex < pData->iItemCount; iIndex += iStep ) {
 		if ( pData->arrItems[iIndex].bClickable || bContextOnly ) return iIndex;
 	}
@@ -127,15 +153,18 @@ static int __xuiBreadcrumbSyncFocus(xui_widget pWidget, xui_breadcrumb_data_t* p
 {
 	xui_context pContext = xuiWidgetGetContext(pWidget);
 	int iFirst = __xuiBreadcrumbStep(pData, -1, 1);
+	int iOldFocus = pData->iFocusIndex;
 	int iRet = XUI_OK;
-	if ( pData->iFocusIndex < 0 || pData->iFocusIndex >= pData->iItemCount ||
-		!pData->arrItems[pData->iFocusIndex].bClickable ) pData->iFocusIndex = iFirst;
+	if ( !__xuiBreadcrumbItemFocusable(pData, pData->iFocusIndex) ) pData->iFocusIndex = iFirst;
 	pData->iActiveIndex = -1;
 	pData->iActiveKey = 0;
 	xuiInternalOperationEnter(pContext);
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	(void)xuiWidgetSetTabStop(pWidget, iFirst >= 0);
-	if ( xuiGetPointerCapture(pContext) == pWidget ) (void)xuiReleasePointerCapture(pContext, pWidget);
+	if ( pData->iFocusIndex != iOldFocus ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+	(void)xuiInternalPointerOwnerCancel(pContext, pWidget, &pData->tPointerOwner);
 	/* Cancellation and blur callbacks can destroy the control or its context. */
 	if ( xuiInternalWidgetIsValid(pWidget) ) iRet = xuiWidgetSetFocusable(pWidget, iFirst >= 0);
 	xuiInternalOperationLeave(pContext);
@@ -180,9 +209,20 @@ static xui_breadcrumb_data_t* __xuiBreadcrumbGetData(xui_widget pWidget)
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) return NULL;
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "breadcrumb");
 	if ( (pType == NULL) || !xuiWidgetIsType(pWidget, pType) ) return NULL;
 	return (xui_breadcrumb_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiBreadcrumbWidgetAlive(xui_widget pWidget, const xui_breadcrumb_data_t* pData)
+{
+	xui_context pContext;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 0;
+	pContext = xuiWidgetGetContext(pWidget);
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		__xuiBreadcrumbGetData(pWidget) == pData;
 }
 
 static int __xuiBreadcrumbReadSurfaceGeneration(xui_widget pWidget, xui_surface pSurface, uint32_t* pGeneration)
@@ -205,9 +245,7 @@ static int __xuiBreadcrumbCancelPress(xui_widget pWidget, xui_breadcrumb_data_t*
 	pData->iActiveIndex = -1;
 	pData->iActiveKey = 0;
 	xuiInternalOperationEnter(pContext);
-	if ( xuiGetPointerCapture(pContext) == pWidget ) {
-		(void)xuiReleasePointerCapture(pContext, pWidget);
-	}
+	(void)xuiInternalPointerOwnerCancel(pContext, pWidget, &pData->tPointerOwner);
 	if ( xuiInternalWidgetIsValid(pWidget) ) {
 		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	} else {
@@ -317,21 +355,40 @@ static xui_vec2_t __xuiBreadcrumbMeasureText(xui_proxy pProxy, xui_font pFont, c
 	return tSize;
 }
 
-static float __xuiBreadcrumbSeparatorWidth(xui_proxy pProxy, xui_font pFont, const xui_breadcrumb_data_t* pData)
+static void __xuiBreadcrumbEnsureMeasurements(xui_widget pWidget,
+	xui_breadcrumb_data_t* pData, xui_font pFont)
 {
-	xui_vec2_t tSize;
+	xui_context pContext;
+	xui_proxy pProxy;
+	int bEnvironmentChanged;
+	int i;
 
-	if ( pData->pSeparatorIcon != NULL ) {
-		return (pData->fSeparatorIconSize > 0.0f) ? pData->fSeparatorIconSize : XUI_BREADCRUMB_DEFAULT_ICON;
+	if ( (pWidget == NULL) || (pData == NULL) ) return;
+	pContext = xuiWidgetGetContext(pWidget);
+	pProxy = xuiInternalContextGetProxy(pContext);
+	bEnvironmentChanged = !pData->bMeasureEnvironmentValid ||
+		pData->pMeasuredFont != pFont ||
+		pData->iMeasureDpiGeneration != pContext->iDpiGeneration;
+	for ( i = 0; i < pData->iItemCount; i++ ) {
+		if ( bEnvironmentChanged || pData->arrItems[i].bMeasureDirty ) {
+			pData->arrItems[i].tMeasuredText = __xuiBreadcrumbMeasureText(pProxy,
+				pFont, __xuiBreadcrumbItemText(pData, i));
+			pData->arrItems[i].bMeasureDirty = 0;
+		}
 	}
-	tSize = __xuiBreadcrumbMeasureText(pProxy, pFont, __xuiBreadcrumbSeparator(pData));
-	return tSize.fX;
+	if ( bEnvironmentChanged || pData->bSeparatorMeasureDirty ) {
+		pData->tMeasuredSeparator = __xuiBreadcrumbMeasureText(pProxy, pFont,
+			__xuiBreadcrumbSeparator(pData));
+		pData->bSeparatorMeasureDirty = 0;
+	}
+	pData->pMeasuredFont = pFont;
+	pData->iMeasureDpiGeneration = pContext->iDpiGeneration;
+	pData->bMeasureEnvironmentValid = 1;
 }
 
 static int __xuiBreadcrumbLayoutItems(xui_widget pWidget, const xui_breadcrumb_data_t* pResolved, float* pContentW, float* pContentH)
 {
 	xui_breadcrumb_data_t* pData;
-	xui_proxy pProxy;
 	xui_rect_t tContent;
 	xui_vec2_t tText;
 	float fX;
@@ -342,32 +399,31 @@ static int __xuiBreadcrumbLayoutItems(xui_widget pWidget, const xui_breadcrumb_d
 	int i;
 
 	pData = __xuiBreadcrumbGetData(pWidget);
-	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiBreadcrumbEnsureMeasurements(pWidget, pData, pResolved->pFont);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	fX = tContent.fX + pResolved->fPaddingX;
 	fTextH = 16.0f;
-	fSepW = __xuiBreadcrumbSeparatorWidth(pProxy, pResolved->pFont, pResolved);
-	fSepH = (pResolved->pSeparatorIcon != NULL) ? ((pResolved->fSeparatorIconSize > 0.0f) ? pResolved->fSeparatorIconSize : XUI_BREADCRUMB_DEFAULT_ICON) : 16.0f;
+	fSepW = (pResolved->pSeparatorIcon != NULL) ?
+		((pResolved->fSeparatorIconSize > 0.0f) ? pResolved->fSeparatorIconSize : XUI_BREADCRUMB_DEFAULT_ICON) :
+		pData->tMeasuredSeparator.fX;
+	fSepH = (pResolved->pSeparatorIcon != NULL) ?
+		((pResolved->fSeparatorIconSize > 0.0f) ? pResolved->fSeparatorIconSize : XUI_BREADCRUMB_DEFAULT_ICON) :
+		pData->tMeasuredSeparator.fY;
 	fItemH = tContent.fH - pResolved->fPaddingY * 2.0f;
 	if ( fItemH < 0.0f ) fItemH = 0.0f;
-	if ( pData != NULL ) {
-		for ( i = 0; i < XUI_BREADCRUMB_MAX_ITEMS; i++ ) {
-			pData->arrItems[i].tRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-			pData->arrItems[i].tSeparatorRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-		}
+	for ( i = 0; i < XUI_BREADCRUMB_MAX_ITEMS; i++ ) {
+		pData->arrItems[i].tRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+		pData->arrItems[i].tSeparatorRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	}
 	for ( i = 0; i < pResolved->iItemCount; i++ ) {
-		tText = __xuiBreadcrumbMeasureText(pProxy, pResolved->pFont, __xuiBreadcrumbItemText(pResolved, i));
+		tText = pData->arrItems[i].tMeasuredText;
 		if ( tText.fY > fTextH ) fTextH = tText.fY;
-		if ( pData != NULL ) {
-			pData->arrItems[i].tRect = xuiInternalSnapRect((xui_rect_t){fX, tContent.fY + pResolved->fPaddingY, tText.fX, fItemH});
-		}
+		pData->arrItems[i].tRect = xuiInternalSnapRect((xui_rect_t){fX, tContent.fY + pResolved->fPaddingY, tText.fX, fItemH});
 		fX += tText.fX;
 		if ( i < pResolved->iItemCount - 1 ) {
 			fX += pResolved->fGap;
-			if ( pData != NULL ) {
-				pData->arrItems[i].tSeparatorRect = xuiInternalSnapRect((xui_rect_t){fX, tContent.fY + pResolved->fPaddingY, fSepW, fItemH});
-			}
+			pData->arrItems[i].tSeparatorRect = xuiInternalSnapRect((xui_rect_t){fX, tContent.fY + pResolved->fPaddingY, fSepW, fItemH});
 			fX += fSepW + pResolved->fGap;
 		}
 	}
@@ -555,6 +611,7 @@ static int __xuiBreadcrumbEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 	int bLeftButton;
 	int iHit;
 	int iActive;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -599,7 +656,10 @@ static int __xuiBreadcrumbEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 			pData->iActiveKey = 0;
 			pData->iActiveIndex = -1;
 		}
-		if ( iHit >= 0 ) pData->iFocusIndex = iHit;
+		if ( iHit >= 0 && iHit != pData->iFocusIndex ) {
+			pData->iFocusIndex = iHit;
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+		}
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_KEY_UP:
@@ -626,27 +686,45 @@ static int __xuiBreadcrumbEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
 		if ( bLeftButton ) {
+			if ( pData->tPointerOwner.bActive ) {
+				return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
+					XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			}
 			pData->iActiveKey = 0;
 			pData->iActiveIndex = -1;
 			iHit = __xuiBreadcrumbHitItem(pWidget, pEvent->fX, pEvent->fY);
 			if ( iHit >= 0 ) {
-				(void)xuiSetFocusWidget(pContext, pWidget);
-				pData->iFocusIndex = iHit;
+				iRet = xuiSetFocusWidget(pContext, pWidget);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiBreadcrumbWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+				if ( pData->iFocusIndex != iHit ) {
+					pData->iFocusIndex = iHit;
+					xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+				}
 				pData->iActiveIndex = iHit;
-				(void)xuiSetPointerCapture(pContext, pWidget);
+				iRet = xuiInternalPointerOwnerBegin(pContext, pWidget, pEvent,
+					&pData->tPointerOwner);
+				if ( iRet != XUI_OK ) {
+					pData->iActiveIndex = -1;
+					return iRet;
+				}
+				if ( !__xuiBreadcrumbWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 				(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
-		if ( bLeftButton && pData->iActiveKey == 0 ) {
+		if ( bLeftButton && pData->iActiveKey == 0 &&
+		     xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
 			iActive = pData->iActiveIndex;
-			if ( (iActive < 0) && (xuiGetPointerCapture(pContext) != pWidget) ) break;
 			iHit = __xuiBreadcrumbHitItem(pWidget, pEvent->fX, pEvent->fY);
 			if ( iHit != iActive ) iHit = -1;
 			pData->iActiveIndex = -1;
-			(void)xuiReleasePointerCapture(pContext, pWidget);
+			iRet = xuiInternalPointerOwnerEnd(pContext, pWidget, pEvent,
+				&pData->tPointerOwner);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiBreadcrumbWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 			(void)__xuiBreadcrumbSyncHover(pWidget, pData, pEvent->fX, pEvent->fY);
 			(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			__xuiBreadcrumbDoClick(pWidget, pData, iHit);
@@ -654,6 +732,9 @@ static int __xuiBreadcrumbEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
+		if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
+			return XUI_OK;
+		}
 		pData->iActiveIndex = -1;
 		pData->iActiveKey = 0;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -700,6 +781,114 @@ static void __xuiBreadcrumbDefaults(xui_breadcrumb_data_t* pData)
 	pData->iHoverIndex = -1;
 	pData->iActiveIndex = -1;
 	pData->iFocusIndex = -1;
+	pData->bSeparatorMeasureDirty = 1;
+	{
+		int i;
+		for ( i = 0; i < XUI_BREADCRUMB_MAX_ITEMS; i++ ) pData->arrItems[i].bMeasureDirty = 1;
+	}
+}
+
+static int __xuiBreadcrumbAccessibleCount(xui_widget pWidget, void* pUser)
+{
+	xui_breadcrumb_data_t* pData = (xui_breadcrumb_data_t*)pUser;
+	return __xuiBreadcrumbWidgetAlive(pWidget, pData) ? 1 + pData->iItemCount : 0;
+}
+
+static int __xuiBreadcrumbAccessibleGet(xui_widget pWidget, int iIndex,
+	xui_accessible_node_t* pNode, void* pUser)
+{
+	xui_breadcrumb_data_t* pData = (xui_breadcrumb_data_t*)pUser;
+	xui_breadcrumb_data_t tResolved;
+	xui_rect_t tWorld;
+	xui_rect_t tItem;
+	int iItem;
+	int bEnabled;
+
+	if ( !__xuiBreadcrumbWidgetAlive(pWidget, pData) || pNode == NULL || iIndex < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	__xuiBreadcrumbResolve(pWidget, pData, &tResolved);
+	(void)__xuiBreadcrumbLayoutItems(pWidget, &tResolved, NULL, NULL);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	bEnabled = xuiWidgetGetEffectiveEnabled(pWidget);
+	if ( iIndex == 0 ) {
+		pNode->iId = 1;
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+		pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+			xuiWidgetGetAccessibleName(pWidget) : "Breadcrumb";
+		pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+		pNode->tBounds = tWorld;
+		pNode->iRowCount = 1;
+		pNode->iColumnCount = pData->iItemCount;
+		if ( xuiWidgetGetEffectiveFocusable(pWidget) ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
+			pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+		}
+		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+		if ( !bEnabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		return XUI_OK;
+	}
+	iItem = iIndex - 1;
+	if ( iItem < 0 || iItem >= pData->iItemCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	tItem = pData->arrItems[iItem].tRect;
+	pNode->iId = (uint64_t)iItem + 2u;
+	pNode->iParentId = 1;
+	pNode->iRole = pData->arrItems[iItem].bClickable ? XUI_ACCESSIBLE_ROLE_LINK : XUI_ACCESSIBLE_ROLE_TEXT;
+	pNode->sName = __xuiBreadcrumbItemText(pData, iItem);
+	pNode->tBounds = (xui_rect_t){tWorld.fX + tItem.fX, tWorld.fY + tItem.fY, tItem.fW, tItem.fH};
+	pNode->iRow = 0;
+	pNode->iColumn = iItem;
+	pNode->iRowCount = 1;
+	pNode->iColumnCount = 1;
+	if ( tItem.fW <= 0.0f || tItem.fH <= 0.0f ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	if ( !bEnabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	if ( __xuiBreadcrumbItemFocusable(pData, iItem) && bEnabled ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
+		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+		if ( pData->arrItems[iItem].bClickable ) {
+			pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+		}
+		if ( pData->iFocusIndex == iItem && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+	}
+	return XUI_OK;
+}
+
+static int __xuiBreadcrumbAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pPayload, void* pUser)
+{
+	xui_breadcrumb_data_t* pData = (xui_breadcrumb_data_t*)pUser;
+	int iItem;
+	int iRet;
+
+	(void)pPayload;
+	if ( !__xuiBreadcrumbWidgetAlive(pWidget, pData) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNodeId == 0 || iNodeId == 1 ) {
+		return iAction == XUI_ACCESSIBLE_ACTION_FOCUS ?
+			xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget) : XUI_ERROR_UNSUPPORTED;
+	}
+	if ( iNodeId < 2 || iNodeId > (uint64_t)pData->iItemCount + 1u ) return XUI_ERROR_NOT_FOUND;
+	iItem = (int)iNodeId - 2;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_ERROR_INVALID_STATE;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS ) {
+		if ( !__xuiBreadcrumbItemFocusable(pData, iItem) ) return XUI_ERROR_INVALID_STATE;
+		if ( pData->iFocusIndex != iItem ) {
+			pData->iFocusIndex = iItem;
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+		}
+		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK || !__xuiBreadcrumbWidgetAlive(pWidget, pData) ) return iRet;
+		return xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	}
+	if ( iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE ) {
+		if ( !pData->arrItems[iItem].bClickable ) return XUI_ERROR_INVALID_STATE;
+		__xuiBreadcrumbDoClick(pWidget, pData, iItem);
+		return XUI_OK;
+	}
+	return XUI_ERROR_UNSUPPORTED;
 }
 
 static int __xuiBreadcrumbInitEvents(xui_widget pWidget)
@@ -758,8 +947,12 @@ static int __xuiBreadcrumbInit(xui_widget pWidget, void* pTypeData, const void* 
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pData->pFont == NULL ) pData->pFont = xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
-	(void)__xuiBreadcrumbSyncFocus(pWidget, pData);
-	return __xuiBreadcrumbInitEvents(pWidget);
+	iRet = __xuiBreadcrumbSyncFocus(pWidget, pData);
+	if ( iRet == XUI_OK ) iRet = __xuiBreadcrumbInitEvents(pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAccessibilityProvider(pWidget,
+		__xuiBreadcrumbAccessibleCount, __xuiBreadcrumbAccessibleGet,
+		__xuiBreadcrumbAccessibleAction, pData);
+	return iRet;
 }
 
 static int __xuiBreadcrumbUpdate(xui_widget pWidget, float fDelta, void* pUser)
@@ -789,10 +982,11 @@ static void __xuiBreadcrumbDestroy(xui_widget pWidget, void* pTypeData, void* pU
 {
 	xui_breadcrumb_data_t* pData;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_breadcrumb_data_t*)pTypeData;
 	if ( pData == NULL ) return;
+	(void)xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget), pWidget,
+		&pData->tPointerOwner);
 	__xuiBreadcrumbClearItemsData(pData);
 	if ( pData->sSeparator != NULL ) {
 		xrtFree(pData->sSeparator);
@@ -896,8 +1090,9 @@ XUI_API int xuiBreadcrumbCreate(xui_context pContext, xui_widget* ppWidget, cons
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiBreadcrumbDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiBreadcrumbDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiBreadcrumbGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
@@ -932,6 +1127,8 @@ XUI_API int xuiBreadcrumbSetItems(xui_widget pWidget, const xui_breadcrumb_item_
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiBreadcrumbSetItemsData(pData, pItems, iItemCount);
 	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return __xuiBreadcrumbSyncFocus(pWidget, pData);
 }
 
@@ -953,7 +1150,10 @@ XUI_API int xuiBreadcrumbAddItem(xui_widget pWidget, const char* sText, int bCli
 	if ( iRet != XUI_OK ) return iRet;
 	pItem->bClickable = bClickable ? 1 : 0;
 	pItem->iValue = iValue;
+	pItem->bMeasureDirty = 1;
 	pData->iItemCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return __xuiBreadcrumbSyncFocus(pWidget, pData);
 }
 
@@ -968,6 +1168,9 @@ XUI_API int xuiBreadcrumbSetItem(xui_widget pWidget, int iIndex, const char* sTe
 	if ( iRet != XUI_OK ) return iRet;
 	pData->arrItems[iIndex].bClickable = bClickable ? 1 : 0;
 	pData->arrItems[iIndex].iValue = iValue;
+	pData->arrItems[iIndex].bMeasureDirty = 1;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return __xuiBreadcrumbSyncFocus(pWidget, pData);
 }
 
@@ -1014,12 +1217,14 @@ XUI_API int xuiBreadcrumbSetSeparator(xui_widget pWidget, const char* sSeparator
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiBreadcrumbStringSet(&pData->sSeparator, (sSeparator != NULL) ? sSeparator : "/");
 	if ( iRet != XUI_OK ) return iRet;
+	pData->bSeparatorMeasureDirty = 1;
 	iRet = __xuiBreadcrumbCancelPress(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pData = __xuiBreadcrumbGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->pSeparatorIcon = NULL;
 	pData->bSeparatorIconGenerationValid = 0;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1038,7 +1243,7 @@ XUI_API int xuiBreadcrumbSetSeparatorIcon(xui_widget pWidget, xui_surface pSurfa
 
 	pData = __xuiBreadcrumbGetData(pWidget);
 	if ( (pData == NULL) || !isfinite(fIconSize) || (fIconSize < 0.0f) ||
-	     (tSrc.fW < 0.0f) || (tSrc.fH < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	     (tSrc.fW < 0) || (tSrc.fH < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiBreadcrumbCancelPress(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pData = __xuiBreadcrumbGetData(pWidget);
@@ -1048,6 +1253,7 @@ XUI_API int xuiBreadcrumbSetSeparatorIcon(xui_widget pWidget, xui_surface pSurfa
 	if ( fIconSize > 0.0f ) pData->fSeparatorIconSize = fIconSize;
 	pData->bSeparatorIconGenerationValid = __xuiBreadcrumbReadSurfaceGeneration(pWidget,
 		pData->pSeparatorIcon, &pData->iSeparatorIconGeneration);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1087,6 +1293,8 @@ XUI_API int xuiBreadcrumbSetFont(xui_widget pWidget, xui_font pFont)
 	pData = __xuiBreadcrumbGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->pFont = pFont;
+	pData->bMeasureEnvironmentValid = 0;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1175,6 +1383,7 @@ XUI_API int xuiBreadcrumbSetMetrics(xui_widget pWidget, float fGap, float fPaddi
 	pData->fGap = fGap;
 	pData->fPaddingX = fPaddingX;
 	pData->fPaddingY = fPaddingY;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

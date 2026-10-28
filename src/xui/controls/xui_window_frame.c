@@ -68,18 +68,35 @@ xui_rect_t xuiInternalWindowFrameTrailingButton(const xui_internal_window_frame_
 uint32_t xuiInternalWindowFrameResizeEdgesAt(xui_rect_t tFrameRect,
 	const xui_internal_window_frame_metrics_t* pMetrics, float fX, float fY)
 {
+	float leftDistance;
+	float rightDistance;
+	float topDistance;
+	float bottomDistance;
 	float grip;
 	float topGrip;
 	uint32_t edges;
 	if ( pMetrics == NULL || !pMetrics->bResizable || !__xuiWindowFrameContains(tFrameRect, fX, fY) ) return 0u;
 	grip = __xuiWindowFrameMax(2.0f, pMetrics->fResizeGrip);
 	topGrip = pMetrics->bShowTitleBar ? __xuiWindowFrameMin(4.0f, grip) : grip;
+	leftDistance = fX - tFrameRect.fX;
+	rightDistance = tFrameRect.fX + tFrameRect.fW - fX;
+	topDistance = fY - tFrameRect.fY;
+	bottomDistance = tFrameRect.fY + tFrameRect.fH - fY;
 	edges = 0u;
-	if ( fX - tFrameRect.fX <= grip ) edges |= XUI_WINDOW_EDGE_LEFT;
-	if ( tFrameRect.fX + tFrameRect.fW - fX <= grip ) edges |= XUI_WINDOW_EDGE_RIGHT;
-	if ( fY - tFrameRect.fY <= topGrip ) edges |= XUI_WINDOW_EDGE_TOP;
-	if ( tFrameRect.fY + tFrameRect.fH - fY <= grip ) edges |= XUI_WINDOW_EDGE_BOTTOM;
-	return edges & pMetrics->iResizeEdges;
+	if ( leftDistance <= grip ) edges |= XUI_WINDOW_EDGE_LEFT;
+	if ( rightDistance <= grip ) edges |= XUI_WINDOW_EDGE_RIGHT;
+	if ( topDistance <= topGrip ) edges |= XUI_WINDOW_EDGE_TOP;
+	if ( bottomDistance <= grip ) edges |= XUI_WINDOW_EDGE_BOTTOM;
+	edges &= pMetrics->iResizeEdges;
+	if ( (edges & (XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_RIGHT)) ==
+	     (XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_RIGHT) ) {
+		edges &= (leftDistance <= rightDistance) ? ~XUI_WINDOW_EDGE_RIGHT : ~XUI_WINDOW_EDGE_LEFT;
+	}
+	if ( (edges & (XUI_WINDOW_EDGE_TOP | XUI_WINDOW_EDGE_BOTTOM)) ==
+	     (XUI_WINDOW_EDGE_TOP | XUI_WINDOW_EDGE_BOTTOM) ) {
+		edges &= (topDistance <= bottomDistance) ? ~XUI_WINDOW_EDGE_BOTTOM : ~XUI_WINDOW_EDGE_TOP;
+	}
+	return edges;
 }
 
 int xuiInternalWindowFrameResizeCursor(uint32_t iEdges)
@@ -145,26 +162,36 @@ xui_rect_t xuiInternalWindowFrameResize(xui_rect_t r, xui_rect_t bounds, uint32_
 {
 	float right = r.fX + r.fW;
 	float bottom = r.fY + r.fH;
-	float x = r.fX, y = r.fY, w = r.fW, h = r.fH;
+	float boundsRight = bounds.fX + bounds.fW;
+	float boundsBottom = bounds.fY + bounds.fH;
+	float x = r.fX, y = r.fY;
+	float resizedRight = right, resizedBottom = bottom;
+
+	fMinWidth = __xuiWindowFrameMax(0.0f, fMinWidth);
+	fMinHeight = __xuiWindowFrameMax(0.0f, fMinHeight);
 	if ( (iEdges & XUI_WINDOW_EDGE_LEFT) != 0u ) {
-		x += fDX;
-		w -= fDX;
-		if ( w < fMinWidth ) { w = fMinWidth; x = right - fMinWidth; }
-	}
-	if ( (iEdges & XUI_WINDOW_EDGE_RIGHT) != 0u ) {
-		w += fDX;
-		if ( w < fMinWidth ) w = fMinWidth;
+		x = r.fX + fDX;
+		if ( bounds.fW > 0.0f ) x = __xuiWindowFrameMax(bounds.fX, x);
+		x = __xuiWindowFrameMin(right - fMinWidth, x);
+	} else if ( (iEdges & XUI_WINDOW_EDGE_RIGHT) != 0u ) {
+		resizedRight = right + fDX;
+		resizedRight = __xuiWindowFrameMax(x + fMinWidth, resizedRight);
+		if ( bounds.fW > 0.0f && boundsRight >= x + fMinWidth ) {
+			resizedRight = __xuiWindowFrameMin(boundsRight, resizedRight);
+		}
 	}
 	if ( (iEdges & XUI_WINDOW_EDGE_TOP) != 0u ) {
-		y += fDY;
-		h -= fDY;
-		if ( h < fMinHeight ) { h = fMinHeight; y = bottom - fMinHeight; }
+		y = r.fY + fDY;
+		if ( bounds.fH > 0.0f ) y = __xuiWindowFrameMax(bounds.fY, y);
+		y = __xuiWindowFrameMin(bottom - fMinHeight, y);
+	} else if ( (iEdges & XUI_WINDOW_EDGE_BOTTOM) != 0u ) {
+		resizedBottom = bottom + fDY;
+		resizedBottom = __xuiWindowFrameMax(y + fMinHeight, resizedBottom);
+		if ( bounds.fH > 0.0f && boundsBottom >= y + fMinHeight ) {
+			resizedBottom = __xuiWindowFrameMin(boundsBottom, resizedBottom);
+		}
 	}
-	if ( (iEdges & XUI_WINDOW_EDGE_BOTTOM) != 0u ) {
-		h += fDY;
-		if ( h < fMinHeight ) h = fMinHeight;
-	}
-	return __xuiWindowFrameClampFloat(x, y, w, h, bounds, fMinWidth, fMinHeight);
+	return xuiInternalRectFromFloatNearest(x, y, resizedRight - x, resizedBottom - y);
 }
 
 #endif

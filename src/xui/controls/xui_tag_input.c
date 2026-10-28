@@ -3,6 +3,8 @@
 #include "xui_internal.h"
 
 #include <ctype.h>
+#include <limits.h>
+#include <math.h>
 #include <string.h>
 
 #define XUI_TAG_INPUT_STATE_NORMAL	0
@@ -33,6 +35,9 @@ typedef struct xui_tag_input_data_t {
 	int iChangeCount;
 	int iHoverClose;
 	int iActiveClose;
+	int bPointerActive;
+	uint64_t iActivePointerId;
+	int iActivePointerType;
 	int bHover;
 	int bSyncingInput;
 	uint32_t iTextColor;
@@ -63,6 +68,8 @@ typedef struct xui_tag_input_data_t {
 
 static xui_tag_input_data_t* __xuiTagInputGetData(xui_widget pWidget);
 static int __xuiTagInputSyncInputStyle(xui_widget pWidget, xui_tag_input_data_t* pData);
+static int __xuiTagInputCommitTextEx(xui_widget pWidget, xui_tag_input_data_t* pData,
+	const char* sText, int iSize, int bNotify);
 static int __xuiTagInputCommitText(xui_widget pWidget, xui_tag_input_data_t* pData, const char* sText, int iSize);
 static int __xuiTagInputRemoveAt(xui_widget pWidget, xui_tag_input_data_t* pData, int iIndex, int bNotify);
 
@@ -76,10 +83,16 @@ static int __xuiTagInputDescValid(const xui_tag_input_desc_t* pDesc)
 	}
 	if ( (pDesc->iTagCount < 0) ||
 	     (pDesc->iTagCount > XUI_TAG_INPUT_TAG_CAPACITY) ||
+	     (pDesc->iTagCount > 0 && pDesc->ppTags == NULL) ||
 	     (pDesc->iMaxTags < 0) ||
 	     (pDesc->iMaxLength < 0) ||
+	     !isfinite(pDesc->fBorderWidth) ||
+	     !isfinite(pDesc->fTagHeight) ||
 	     (pDesc->fBorderWidth < 0.0f) ||
-	     (pDesc->fTagHeight < 0.0f) ) {
+	     (pDesc->fTagHeight < 0.0f) ||
+	     (pDesc->fBorderWidth > XUI_LAYOUT_UNBOUNDED) ||
+	     (pDesc->fTagHeight > XUI_LAYOUT_UNBOUNDED) ||
+	     (pDesc->iMaxTags > 0 && pDesc->iTagCount > pDesc->iMaxTags) ) {
 		return 0;
 	}
 	return 1;
@@ -118,11 +131,14 @@ static int __xuiTagInputStringSet(char** psText, int* pCapacity, const char* sTe
 {
 	int iNeed;
 	int iRet;
+	size_t iLength;
 
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iNeed = (int)strlen(sText) + 1;
+	iLength = strlen(sText);
+	if ( iLength >= (size_t)INT_MAX ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	iNeed = (int)iLength + 1;
 	iRet = __xuiTagInputStringReserve(psText, pCapacity, iNeed);
 	if ( iRet != XUI_OK ) {
 		return iRet;
@@ -134,14 +150,18 @@ static int __xuiTagInputStringSet(char** psText, int* pCapacity, const char* sTe
 static char* __xuiTagInputDuplicateRange(const char* sText, int iSize)
 {
 	char* sNew;
+	size_t iLength;
 
 	if ( sText == NULL ) {
 		sText = "";
 		iSize = 0;
 	}
 	if ( iSize < 0 ) {
-		iSize = (int)strlen(sText);
+		iLength = strlen(sText);
+		if ( iLength > (size_t)INT_MAX ) return NULL;
+		iSize = (int)iLength;
 	}
+	if ( iSize > INT_MAX - 1 ) return NULL;
 	sNew = (char*)xrtMalloc((size_t)iSize + 1u);
 	if ( sNew == NULL ) {
 		return NULL;
@@ -168,7 +188,9 @@ static char* __xuiTagInputTrimDuplicate(const char* sText, int iSize)
 		iSize = 0;
 	}
 	if ( iSize < 0 ) {
-		iSize = (int)strlen(sText);
+		size_t iLength = strlen(sText);
+		if ( iLength > (size_t)(INT_MAX - 1) ) return NULL;
+		iSize = (int)iLength;
 	}
 	iStart = 0;
 	iEnd = iSize;
@@ -198,14 +220,16 @@ static xui_vec2_t __xuiTagInputMeasureText(xui_widget pWidget, xui_font pFont, c
 {
 	xui_proxy pProxy;
 	xui_vec2_t tSize;
+	int iTextSize;
 
 	tSize = (xui_vec2_t){0.0f, 0.0f};
 	if ( sText == NULL ) {
 		sText = "";
 	}
+	iTextSize = (int)strlen(sText);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
-	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) ) {
+	     (pProxy->textMeasure(pProxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sText, .iTextSize=iTextSize, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &tSize) == XUI_OK) ) {
 		return tSize;
 	}
 	tSize.fX = (float)strlen(sText) * 7.0f;
@@ -233,6 +257,7 @@ static void __xuiTagInputDefaults(xui_tag_input_data_t* pData)
 	pData->iMaxTags = XUI_TAG_INPUT_TAG_CAPACITY;
 	pData->iHoverClose = -1;
 	pData->iActiveClose = -1;
+	pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
 	pData->iTextColor = XUI_COLOR_RGBA(31, 41, 55, 255);
 	pData->iPlaceholderColor = XUI_COLOR_RGBA(135, 148, 166, 255);
 	pData->iDisabledTextColor = XUI_COLOR_RGBA(150, 160, 172, 255);
@@ -307,7 +332,9 @@ static int __xuiTagInputStyleFloat(xui_widget pWidget, const char* sName, float*
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) && tProperty.tValue.fFloat >= 0.0f &&
+	     tProperty.tValue.fFloat <= XUI_LAYOUT_UNBOUNDED ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -371,11 +398,40 @@ static void __xuiTagInputNotify(xui_widget pWidget, xui_tag_input_data_t* pData)
 	}
 }
 
+static int __xuiTagInputAlive(xui_context pContext, xui_widget pWidget,
+	const xui_tag_input_data_t* pExpected)
+{
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		xuiInternalWidgetIsValid(pWidget) && __xuiTagInputGetData(pWidget) == pExpected;
+}
+
+static int __xuiTagInputPointerMatches(const xui_tag_input_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	return (pData != NULL) && (pEvent != NULL) && pData->bPointerActive &&
+		(pData->iActivePointerId == pEvent->iPointerId) &&
+		(pData->iActivePointerType == pEvent->iPointerType);
+}
+
+static int __xuiTagInputCancelPointer(xui_widget pWidget,
+	xui_tag_input_data_t* pData, int bInvalidate);
+
+static void __xuiTagInputClampTag(const xui_tag_input_data_t* pData, char* sTag)
+{
+	if ( pData == NULL || sTag == NULL || pData->iMaxLength <= 0 ) return;
+	if ( strlen(sTag) <= (size_t)pData->iMaxLength ) return;
+	sTag[pData->iMaxLength] = '\0';
+	xuiInternalUtf8TrimIncomplete(sTag);
+}
+
 static int __xuiTagInputAddPrepared(xui_widget pWidget, xui_tag_input_data_t* pData, char* sTag, int bNotify)
 {
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) || (sTag == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	__xuiTagInputClampTag(pData, sTag);
 	if ( sTag[0] == '\0' ) {
 		xrtFree(sTag);
 		return XUI_OK;
@@ -385,13 +441,15 @@ static int __xuiTagInputAddPrepared(xui_widget pWidget, xui_tag_input_data_t* pD
 		return XUI_ERROR_BUFFER_TOO_SMALL;
 	}
 	pData->arrTags[pData->iTagCount++] = sTag;
-	if ( bNotify ) {
-		__xuiTagInputNotify(pWidget, pData);
-	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	if ( bNotify ) __xuiTagInputNotify(pWidget, pData);
+	return XUI_OK;
 }
 
-static int __xuiTagInputCommitText(xui_widget pWidget, xui_tag_input_data_t* pData, const char* sText, int iSize)
+static int __xuiTagInputCommitTextEx(xui_widget pWidget, xui_tag_input_data_t* pData,
+	const char* sText, int iSize, int bNotify)
 {
 	char* sTag;
 
@@ -399,16 +457,25 @@ static int __xuiTagInputCommitText(xui_widget pWidget, xui_tag_input_data_t* pDa
 	if ( sTag == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	return __xuiTagInputAddPrepared(pWidget, pData, sTag, 1);
+	return __xuiTagInputAddPrepared(pWidget, pData, sTag, bNotify);
+}
+
+static int __xuiTagInputCommitText(xui_widget pWidget, xui_tag_input_data_t* pData,
+	const char* sText, int iSize)
+{
+	return __xuiTagInputCommitTextEx(pWidget, pData, sText, iSize, 1);
 }
 
 static int __xuiTagInputRemoveAt(xui_widget pWidget, xui_tag_input_data_t* pData, int iIndex, int bNotify)
 {
 	int i;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iTagCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiTagInputCancelPointer(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->arrTags[iIndex] != NULL ) {
 		xrtFree(pData->arrTags[iIndex]);
 	}
@@ -419,10 +486,11 @@ static int __xuiTagInputRemoveAt(xui_widget pWidget, xui_tag_input_data_t* pData
 	pData->arrTags[pData->iTagCount] = NULL;
 	pData->iHoverClose = -1;
 	pData->iActiveClose = -1;
-	if ( bNotify ) {
-		__xuiTagInputNotify(pWidget, pData);
-	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	if ( bNotify ) __xuiTagInputNotify(pWidget, pData);
+	return XUI_OK;
 }
 
 static int __xuiTagInputSetInputText(xui_widget pWidget, xui_tag_input_data_t* pData, const char* sText)
@@ -440,6 +508,8 @@ static int __xuiTagInputSetInputText(xui_widget pWidget, xui_tag_input_data_t* p
 
 static int __xuiTagInputCommitDelimited(xui_widget pWidget, xui_tag_input_data_t* pData, const char* sText)
 {
+	xui_context pContext;
+	char* sStable;
 	int iLen;
 	int iStart;
 	int i;
@@ -449,22 +519,33 @@ static int __xuiTagInputCommitDelimited(xui_widget pWidget, xui_tag_input_data_t
 	if ( (pWidget == NULL) || (pData == NULL) || (sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iLen = (int)strlen(sText);
+	pContext = xuiWidgetGetContext(pWidget);
+	sStable = __xuiTagInputDuplicateRange(sText, -1);
+	if ( sStable == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	iLen = (int)strlen(sStable);
 	iStart = 0;
 	bFound = 0;
 	for ( i = 0; i < iLen; i++ ) {
-		if ( __xuiTagInputDelimiter(sText[i]) ) {
-			iRet = __xuiTagInputCommitText(pWidget, pData, sText + iStart, i - iStart);
+		if ( __xuiTagInputDelimiter(sStable[i]) ) {
+			iRet = __xuiTagInputCommitText(pWidget, pData, sStable + iStart, i - iStart);
 			if ( iRet != XUI_OK ) {
+				xrtFree(sStable);
 				return iRet;
+			}
+			if ( !__xuiTagInputAlive(pContext, pWidget, pData) ) {
+				xrtFree(sStable);
+				return XUI_OK;
 			}
 			iStart = i + 1;
 			bFound = 1;
 		}
 	}
 	if ( bFound ) {
-		return __xuiTagInputSetInputText(pWidget, pData, sText + iStart);
+		iRet = __xuiTagInputSetInputText(pWidget, pData, sStable + iStart);
+		xrtFree(sStable);
+		return iRet;
 	}
+	xrtFree(sStable);
 	return XUI_OK;
 }
 
@@ -563,7 +644,7 @@ static uint32_t __xuiTagInputComputeState(xui_widget pWidget, xui_tag_input_data
 		return 0;
 	}
 	iState = 0;
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		return XUI_WIDGET_STATE_DISABLED;
 	}
 	if ( pData->bHover ) {
@@ -678,6 +759,35 @@ static int __xuiTagInputSetHoverClose(xui_widget pWidget, xui_tag_input_data_t* 
 		iRet = __xuiTagInputInvalidateTag(pWidget, pData, iIndex);
 	}
 	return iRet;
+}
+
+static int __xuiTagInputCancelPointer(xui_widget pWidget,
+	xui_tag_input_data_t* pData, int bInvalidate)
+{
+	xui_context pContext;
+	uint64_t iPointerId;
+	int iPointerType;
+	int bPointerActive;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	iPointerId = pData->iActivePointerId;
+	iPointerType = pData->iActivePointerType;
+	bPointerActive = pData->bPointerActive;
+	pData->iActiveClose = -1;
+	pData->bPointerActive = 0;
+	pData->iActivePointerId = 0;
+	pData->iActivePointerType = XUI_POINTER_TYPE_MOUSE;
+	if ( bPointerActive && xuiInternalContextIsValid(pContext) &&
+	     xuiGetPointerCaptureEx(pContext, iPointerId, iPointerType) == pWidget ) {
+		iRet = xuiReleasePointerCaptureEx(pContext, iPointerId, iPointerType, pWidget);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( bInvalidate && __xuiTagInputAlive(pContext, pWidget, pData) ) {
+		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return XUI_OK;
 }
 
 static int __xuiTagInputDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -805,7 +915,7 @@ static int __xuiTagInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	tRect = xuiInternalSnapRect(tRect);
 	iBackground = tResolved.iBackgroundColor;
 	iBorder = tResolved.iBorderColor;
-	if ( !xuiWidgetGetEnabled(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		iBackground = tResolved.iDisabledBackgroundColor;
 		iBorder = tResolved.iBorderColor;
 	} else if ( (iStateId & XUI_WIDGET_STATE_FOCUS) != 0 ) {
@@ -828,7 +938,7 @@ static int __xuiTagInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		tText.fX += tResolved.fTagPaddingX;
 		tText.fW -= tResolved.fTagPaddingX * 2.0f + 18.0f;
 		if ( tText.fW > 0.0f && tResolved.pFont != NULL ) {
-			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=tResolved.arrTags[i], .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, tResolved.iTagTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=tResolved.arrTags[i], .iTextSize=(int)strlen(tResolved.arrTags[i]), .iFlags=XUI_TEXT_SHAPE_DEFAULT}, tText, tResolved.iTagTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		iCloseColor = (i == pData->iHoverClose || i == pData->iActiveClose) ? tResolved.iTagCloseHoverColor : tResolved.iTagCloseColor;
@@ -870,61 +980,83 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
 	case XUI_EVENT_POINTER_MOVE:
+		if ( pData->bPointerActive && !__xuiTagInputPointerMatches(pData, pEvent) ) return XUI_OK;
 		pData->bHover = __xuiTagInputPointerInside(pWidget, pEvent);
 		iHit = __xuiTagInputCloseHit(pWidget, pData, pEvent->fX, pEvent->fY);
-		(void)__xuiTagInputSetHoverClose(pWidget, pData, iHit);
-		(void)__xuiTagInputSyncState(pWidget, pData);
-		return XUI_OK;
+		iRet = __xuiTagInputSetHoverClose(pWidget, pData, iHit);
+		if ( iRet != XUI_OK ) return iRet;
+		return __xuiTagInputSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_LEAVE:
+		if ( pData->bPointerActive && !__xuiTagInputPointerMatches(pData, pEvent) ) return XUI_OK;
 		pData->bHover = 0;
 		if ( pData->iActiveClose < 0 ) {
-			(void)__xuiTagInputSetHoverClose(pWidget, pData, -1);
+			iRet = __xuiTagInputSetHoverClose(pWidget, pData, -1);
+			if ( iRet != XUI_OK ) return iRet;
 		}
-		(void)__xuiTagInputSyncState(pWidget, pData);
-		return XUI_OK;
+		return __xuiTagInputSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
+			if ( pData->bPointerActive ) {
+				return __xuiTagInputPointerMatches(pData, pEvent) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			}
 			iHit = __xuiTagInputCloseHit(pWidget, pData, pEvent->fX, pEvent->fY);
 			if ( iHit >= 0 && pData->pInput != NULL && !xuiInputIsReadonly(pData->pInput) ) {
+				iRet = xuiSetPointerCaptureEx(pContext, pEvent->iPointerId,
+					pEvent->iPointerType, pWidget);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiTagInputAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 				pData->iActiveClose = iHit;
 				pData->iHoverClose = iHit;
-				(void)xuiSetPointerCapture(pContext, pWidget);
-				(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				pData->bPointerActive = 1;
+				pData->iActivePointerId = pEvent->iPointerId;
+				pData->iActivePointerType = pEvent->iPointerType;
+				iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				if ( iRet != XUI_OK ) {
+					(void)__xuiTagInputCancelPointer(pWidget, pData, 0);
+					return iRet;
+				}
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 			if ( pEvent->pTarget == pWidget && pData->pInput != NULL ) {
-				(void)xuiSetFocusWidget(pContext, pData->pInput);
-				return XUI_EVENT_DISPATCH_STOP;
+				iRet = xuiSetFocusWidget(pContext, pData->pInput);
+				return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 			}
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
-			if ( pData->iActiveClose >= 0 ) {
+			if ( pData->iActiveClose >= 0 && __xuiTagInputPointerMatches(pData, pEvent) ) {
+				int iActive = pData->iActiveClose;
 				iHit = __xuiTagInputCloseHit(pWidget, pData, pEvent->fX, pEvent->fY);
-				iRet = XUI_OK;
-				if ( iHit == pData->iActiveClose ) {
-					iRet = __xuiTagInputRemoveAt(pWidget, pData, pData->iActiveClose, 1);
+				iRet = __xuiTagInputCancelPointer(pWidget, pData, 0);
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __xuiTagInputSetHoverClose(pWidget, pData, iHit);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( iHit == iActive ) {
+					iRet = __xuiTagInputRemoveAt(pWidget, pData, iActive, 1);
 				}
-				pData->iActiveClose = -1;
-				(void)__xuiTagInputSetHoverClose(pWidget, pData, iHit);
-				(void)xuiReleasePointerCapture(pContext, pWidget);
 				return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 			}
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
-		pData->iActiveClose = -1;
-		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_OK;
+		if ( !__xuiTagInputPointerMatches(pData, pEvent) ) return XUI_OK;
+		return __xuiTagInputCancelPointer(pWidget, pData, 1);
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
-		(void)__xuiTagInputSyncState(pWidget, pData);
+		iRet = __xuiTagInputSyncState(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		(void)__xuiTagInputSyncInputStyle(pWidget, pData);
-		(void)__xuiTagInputSyncState(pWidget, pData);
+		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+			iRet = __xuiTagInputCancelPointer(pWidget, pData, 0);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __xuiTagInputSyncState(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_KEY_DOWN:
 		if ( pEvent->pTarget != pWidget ) {
@@ -953,13 +1085,13 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pEvent->iTextSize > 0 ) {
 			for ( iHit = 0; iHit < pEvent->iTextSize; iHit++ ) {
 				if ( __xuiTagInputDelimiter(pEvent->sText[iHit]) ) {
-					(void)xuiTagInputCommit(pWidget);
-					return XUI_EVENT_DISPATCH_STOP;
+					iRet = xuiTagInputCommit(pWidget);
+					return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 				}
 			}
 		} else if ( pEvent->iCodepoint == ',' || pEvent->iCodepoint == ';' ) {
-			(void)xuiTagInputCommit(pWidget);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = xuiTagInputCommit(pWidget);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_EVENT_CONTEXT_MENU: {
@@ -1023,6 +1155,8 @@ static void __xuiTagInputInputChanged(xui_widget pInput, const char* sText, void
 {
 	xui_widget pTagInput;
 	xui_tag_input_data_t* pData;
+	xui_context pContext;
+	int iRet;
 
 	(void)pInput;
 	pTagInput = (xui_widget)pUser;
@@ -1030,8 +1164,10 @@ static void __xuiTagInputInputChanged(xui_widget pInput, const char* sText, void
 	if ( pData == NULL || pData->bSyncingInput ) {
 		return;
 	}
+	pContext = xuiWidgetGetContext(pTagInput);
 	if ( sText != NULL ) {
-		(void)__xuiTagInputCommitDelimited(pTagInput, pData, sText);
+		iRet = __xuiTagInputCommitDelimited(pTagInput, pData, sText);
+		if ( iRet != XUI_OK || !__xuiTagInputAlive(pContext, pTagInput, pData) ) return;
 	}
 	(void)xuiWidgetInvalidate(pTagInput, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1152,25 +1288,36 @@ static int __xuiTagInputSyncInputStyle(xui_widget pWidget, xui_tag_input_data_t*
 {
 	xui_tag_input_data_t tResolved;
 	int bEnabled;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pInput == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return (pWidget != NULL && pData != NULL) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTagInputResolve(pWidget, pData, &tResolved);
-	bEnabled = xuiWidgetGetEnabled(pWidget) && xuiWidgetGetVisible(pWidget);
-	(void)__xuiTagInputSyncInputColors(pData->pInput, &tResolved);
-	(void)xuiInputSetBorderWidth(pData->pInput, 0.0f);
-	(void)xuiInputSetPlaceholder(pData->pInput, (pData->sPlaceholder != NULL) ? pData->sPlaceholder : "");
+	bEnabled = xuiWidgetGetEffectiveEnabled(pWidget) && xuiWidgetGetVisible(pWidget);
+	iRet = __xuiTagInputSyncInputColors(pData->pInput, &tResolved);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputSetBorderWidth(pData->pInput, 0.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( strcmp(xuiInputGetPlaceholder(pData->pInput),
+	     (pData->sPlaceholder != NULL) ? pData->sPlaceholder : "") != 0 ) {
+		iRet = xuiInputSetPlaceholder(pData->pInput,
+			(pData->sPlaceholder != NULL) ? pData->sPlaceholder : "");
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	if ( xuiInputGetFont(pData->pInput) != tResolved.pFont ) {
-		(void)xuiInputSetFont(pData->pInput, tResolved.pFont);
+		iRet = xuiInputSetFont(pData->pInput, tResolved.pFont);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( xuiInputGetMaxLength(pData->pInput) != pData->iMaxLength ) {
-		(void)xuiInputSetMaxLength(pData->pInput, pData->iMaxLength);
+		iRet = xuiInputSetMaxLength(pData->pInput, pData->iMaxLength);
+		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)xuiWidgetSetEnabled(pData->pInput, bEnabled);
-	(void)xuiWidgetSetVisible(pData->pInput, xuiWidgetGetVisible(pWidget));
-	(void)xuiWidgetSetHitTestVisible(pData->pInput, bEnabled);
-	return XUI_OK;
+	iRet = xuiWidgetSetEnabled(pData->pInput, bEnabled);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetVisible(pData->pInput, xuiWidgetGetVisible(pWidget));
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiWidgetSetHitTestVisible(pData->pInput, bEnabled);
 }
 
 static int __xuiTagInputCreateInputChild(xui_widget pWidget, xui_tag_input_data_t* pData, const xui_tag_input_desc_t* pDesc)
@@ -1216,9 +1363,102 @@ static int __xuiTagInputCreateInputChild(xui_widget pWidget, xui_tag_input_data_
 		tBehavior.iTabBehavior = XUI_EDIT_TAB_FOCUS;
 		tBehavior.iEnterBehavior = XUI_EDIT_ENTER_COMMIT;
 		tBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
-		(void)xuiEditSetBehavior(pWidget, &tBehavior);
+		iRet = xuiEditSetBehavior(pWidget, &tBehavior);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return __xuiTagInputSyncInputStyle(pWidget, pData);
+}
+
+static int __xuiTagInputAccessibleCount(xui_widget pWidget, void* pUser)
+{
+	xui_tag_input_data_t* pData = (xui_tag_input_data_t*)pUser;
+	return __xuiTagInputAlive(xuiWidgetGetContext(pWidget), pWidget, pData) ? 1 + pData->iTagCount : 0;
+}
+
+static int __xuiTagInputAccessibleGet(xui_widget pWidget, int iIndex,
+	xui_accessible_node_t* pNode, void* pUser)
+{
+	xui_tag_input_data_t* pData = (xui_tag_input_data_t*)pUser;
+	xui_rect_t tWorld;
+	xui_rect_t tTag;
+	int iTag;
+	int bEnabled;
+	int bReadonly;
+
+	if ( pNode == NULL || iIndex < 0 ||
+	     !__xuiTagInputAlive(xuiWidgetGetContext(pWidget), pWidget, pData) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	bEnabled = xuiWidgetGetEffectiveEnabled(pWidget);
+	bReadonly = pData->pInput != NULL && xuiInputIsReadonly(pData->pInput);
+	if ( iIndex == 0 ) {
+		pNode->iId = 1;
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+		pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+			xuiWidgetGetAccessibleName(pWidget) : "Tag input";
+		pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+		pNode->tBounds = tWorld;
+		if ( !bEnabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		if ( bReadonly ) pNode->iState |= XUI_ACCESSIBLE_STATE_READONLY;
+		if ( !xuiWidgetGetEffectiveVisible(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+		if ( bEnabled && pData->pInput != NULL && xuiWidgetGetEffectiveFocusable(pData->pInput) ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
+			pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+		}
+		if ( pData->pInput != NULL && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pData->pInput ) {
+			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+		}
+		return XUI_OK;
+	}
+	iTag = iIndex - 1;
+	if ( iTag < 0 || iTag >= pData->iTagCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	tTag = pData->arrTagRect[iTag];
+	pNode->iId = (uint64_t)iTag + 2u;
+	pNode->iParentId = 1;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_BUTTON;
+	pNode->sName = pData->arrTags[iTag];
+	pNode->sDescription = "Remove tag";
+	pNode->tBounds = (xui_rect_t){tWorld.fX + tTag.fX, tWorld.fY + tTag.fY, tTag.fW, tTag.fH};
+	if ( !bEnabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	if ( bReadonly ) pNode->iState |= XUI_ACCESSIBLE_STATE_READONLY;
+	if ( !xuiWidgetGetEffectiveVisible(pWidget) || tTag.fW <= 0.0f || tTag.fH <= 0.0f ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
+	}
+	if ( bEnabled && !bReadonly ) {
+		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_CLOSE);
+	}
+	return XUI_OK;
+}
+
+static int __xuiTagInputAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pPayload, void* pUser)
+{
+	xui_tag_input_data_t* pData = (xui_tag_input_data_t*)pUser;
+	int iTag;
+
+	(void)pPayload;
+	if ( !__xuiTagInputAlive(xuiWidgetGetContext(pWidget), pWidget, pData) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	if ( iNodeId == 0 || iNodeId == 1 ) {
+		if ( iAction != XUI_ACCESSIBLE_ACTION_FOCUS || pData->pInput == NULL ) {
+			return XUI_ERROR_UNSUPPORTED;
+		}
+		return xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pInput);
+	}
+	if ( iNodeId < 2 || iNodeId > (uint64_t)pData->iTagCount + 1u ) {
+		return XUI_ERROR_NOT_FOUND;
+	}
+	if ( iAction != XUI_ACCESSIBLE_ACTION_CLOSE ) return XUI_ERROR_UNSUPPORTED;
+	if ( pData->pInput != NULL && xuiInputIsReadonly(pData->pInput) ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	iTag = (int)iNodeId - 2;
+	return __xuiTagInputRemoveAt(pWidget, pData, iTag, 1);
 }
 
 static int __xuiTagInputInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
@@ -1243,19 +1483,22 @@ static int __xuiTagInputInit(xui_widget pWidget, void* pTypeData, const void* pC
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pDesc != NULL) && (pDesc->ppTags != NULL) ) {
 		for ( i = 0; i < pDesc->iTagCount; i++ ) {
-			iRet = __xuiTagInputCommitText(pWidget, pData, pDesc->ppTags[i], -1);
+			iRet = __xuiTagInputCommitTextEx(pWidget, pData, pDesc->ppTags[i], -1, 0);
 			if ( iRet != XUI_OK ) return iRet;
-			pData->iChangeCount = 0;
 		}
 	}
-	(void)xuiWidgetSetFocusable(pWidget, 0);
-	(void)xuiWidgetSetTabStop(pWidget, 0);
-	(void)xuiWidgetSetHitTestVisible(pWidget, 1);
-	iRet = __xuiTagInputInitCacheStates(pWidget);
+	iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputInitCacheStates(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTagInputInitEvents(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTagInputCreateInputChild(pWidget, pData, pDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetAccessibilityProvider(pWidget,
+		__xuiTagInputAccessibleCount, __xuiTagInputAccessibleGet,
+		__xuiTagInputAccessibleAction, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTagInputSyncState(pWidget, pData);
 }
@@ -1265,12 +1508,12 @@ static void __xuiTagInputDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	xui_tag_input_data_t* pData;
 	int i;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_tag_input_data_t*)pTypeData;
 	if ( pData == NULL ) {
 		return;
 	}
+	(void)__xuiTagInputCancelPointer(pWidget, pData, 0);
 	for ( i = 0; i < XUI_TAG_INPUT_TAG_CAPACITY; i++ ) {
 		if ( pData->arrTags[i] != NULL ) {
 			xrtFree(pData->arrTags[i]);
@@ -1385,10 +1628,13 @@ XUI_API int xuiTagInputCreate(xui_context pContext, xui_widget* ppWidget, const 
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiTagInputDescValid(pDesc) ) {
+	if ( ppWidget == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiTagInputDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiTagInputGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -1438,10 +1684,13 @@ XUI_API int xuiTagInputClearTags(xui_widget pWidget)
 {
 	xui_tag_input_data_t* pData;
 	int i;
+	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iTagCount == 0 ) return XUI_OK;
+	iRet = __xuiTagInputCancelPointer(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pData->iTagCount; i++ ) {
 		if ( pData->arrTags[i] != NULL ) {
 			xrtFree(pData->arrTags[i]);
@@ -1451,8 +1700,11 @@ XUI_API int xuiTagInputClearTags(xui_widget pWidget)
 	pData->iTagCount = 0;
 	pData->iHoverClose = -1;
 	pData->iActiveClose = -1;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	__xuiTagInputNotify(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiTagInputSetTags(xui_widget pWidget, const char* const* ppTags, int iCount)
@@ -1460,31 +1712,63 @@ XUI_API int xuiTagInputSetTags(xui_widget pWidget, const char* const* ppTags, in
 	xui_tag_input_data_t* pData;
 	char* arrNew[XUI_TAG_INPUT_TAG_CAPACITY];
 	int i;
+	int iNewCount;
 	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
-	if ( (pData == NULL) || (iCount < 0) || (iCount > pData->iMaxTags) || (iCount > XUI_TAG_INPUT_TAG_CAPACITY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (iCount < 0) || (iCount > XUI_TAG_INPUT_TAG_CAPACITY) ||
+	     (iCount > 0 && ppTags == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(arrNew, 0, sizeof(arrNew));
+	iNewCount = 0;
 	for ( i = 0; i < iCount; i++ ) {
-		arrNew[i] = __xuiTagInputTrimDuplicate((ppTags != NULL) ? ppTags[i] : "", -1);
-		if ( arrNew[i] == NULL ) {
+		char* sTag = __xuiTagInputTrimDuplicate(ppTags[i], -1);
+		if ( sTag == NULL ) {
 			iRet = XUI_ERROR_OUT_OF_MEMORY;
 			goto failed;
 		}
+		if ( sTag[0] == '\0' ) {
+			xrtFree(sTag);
+			continue;
+		}
+		__xuiTagInputClampTag(pData, sTag);
+		if ( sTag[0] == '\0' ) {
+			xrtFree(sTag);
+			continue;
+		}
+		if ( iNewCount >= pData->iMaxTags ) {
+			xrtFree(sTag);
+			iRet = XUI_ERROR_BUFFER_TOO_SMALL;
+			goto failed;
+		}
+		arrNew[iNewCount++] = sTag;
 	}
+	if ( iNewCount == pData->iTagCount ) {
+		for ( i = 0; i < iNewCount; i++ ) {
+			if ( strcmp(arrNew[i], pData->arrTags[i]) != 0 ) break;
+		}
+		if ( i == iNewCount ) {
+			for ( i = 0; i < iNewCount; i++ ) xrtFree(arrNew[i]);
+			return XUI_OK;
+		}
+	}
+	iRet = __xuiTagInputCancelPointer(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) goto failed;
 	for ( i = 0; i < pData->iTagCount; i++ ) {
 		if ( pData->arrTags[i] != NULL ) xrtFree(pData->arrTags[i]);
 		pData->arrTags[i] = NULL;
 	}
-	for ( i = 0; i < iCount; i++ ) {
+	for ( i = 0; i < iNewCount; i++ ) {
 		pData->arrTags[i] = arrNew[i];
 		arrNew[i] = NULL;
 	}
-	pData->iTagCount = iCount;
+	pData->iTagCount = iNewCount;
 	pData->iHoverClose = -1;
 	pData->iActiveClose = -1;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	__xuiTagInputNotify(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 
 failed:
 	for ( i = 0; i < XUI_TAG_INPUT_TAG_CAPACITY; i++ ) {
@@ -1530,29 +1814,44 @@ XUI_API const char* xuiTagInputGetText(xui_widget pWidget)
 XUI_API int xuiTagInputCommit(xui_widget pWidget)
 {
 	xui_tag_input_data_t* pData;
+	xui_context pContext;
 	const char* sText;
 	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL || pData->pInput == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	sText = xuiInputGetText(pData->pInput);
 	iRet = __xuiTagInputCommitText(pWidget, pData, sText, -1);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiTagInputAlive(pContext, pWidget, pData) ) return XUI_OK;
 	return __xuiTagInputSetInputText(pWidget, pData, "");
 }
 
 XUI_API int xuiTagInputSetPlaceholder(xui_widget pWidget, const char* sText)
 {
 	xui_tag_input_data_t* pData;
+	char* sNew;
+	char* sOld;
 	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiTagInputStringSet(&pData->sPlaceholder, &pData->iPlaceholderCapacity, sText);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( sText == NULL ) sText = "";
+	if ( pData->sPlaceholder != NULL && strcmp(pData->sPlaceholder, sText) == 0 ) return XUI_OK;
+	sNew = __xuiTagInputDuplicateRange(sText, -1);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( pData->pInput != NULL ) {
-		(void)xuiInputSetPlaceholder(pData->pInput, pData->sPlaceholder);
+		iRet = xuiInputSetPlaceholder(pData->pInput, sNew);
+		if ( iRet != XUI_OK ) {
+			xrtFree(sNew);
+			return iRet;
+		}
 	}
+	sOld = pData->sPlaceholder;
+	pData->sPlaceholder = sNew;
+	pData->iPlaceholderCapacity = (int)strlen(sNew) + 1;
+	if ( sOld != NULL ) xrtFree(sOld);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1567,12 +1866,21 @@ XUI_API const char* xuiTagInputGetPlaceholder(xui_widget pWidget)
 XUI_API int xuiTagInputSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_tag_input_data_t* pData;
+	xui_font pOldFont;
+	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pFont ) return XUI_OK;
+	pOldFont = pData->pFont;
 	pData->pFont = pFont;
-	if ( pData->pInput != NULL ) (void)xuiInputSetFont(pData->pInput, pFont);
+	iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->pFont = pOldFont;
+		(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+		return iRet;
+	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1592,6 +1900,7 @@ XUI_API int xuiTagInputSetMaxTags(xui_widget pWidget, int iMaxTags)
 	if ( pData == NULL || iMaxTags < 0 || iMaxTags > XUI_TAG_INPUT_TAG_CAPACITY ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iMaxTags == 0 ) iMaxTags = XUI_TAG_INPUT_TAG_CAPACITY;
 	if ( iMaxTags < pData->iTagCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iMaxTags == iMaxTags ) return XUI_OK;
 	pData->iMaxTags = iMaxTags;
 	return XUI_OK;
 }
@@ -1607,11 +1916,55 @@ XUI_API int xuiTagInputGetMaxTags(xui_widget pWidget)
 XUI_API int xuiTagInputSetMaxLength(xui_widget pWidget, int iMaxLength)
 {
 	xui_tag_input_data_t* pData;
+	char* sTag;
+	size_t iOldLength;
+	int iOldMaxLength;
+	int iOldTagCount;
+	int iNewTagCount;
+	int bTagsChanged;
+	int i;
+	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL || iMaxLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iMaxLength == iMaxLength ) return XUI_OK;
+	iRet = __xuiTagInputCancelPointer(pWidget, pData, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	iOldMaxLength = pData->iMaxLength;
 	pData->iMaxLength = iMaxLength;
-	if ( pData->pInput != NULL ) (void)xuiInputSetMaxLength(pData->pInput, iMaxLength);
+	iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->iMaxLength = iOldMaxLength;
+		(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+		return iRet;
+	}
+	iOldTagCount = pData->iTagCount;
+	iNewTagCount = 0;
+	bTagsChanged = 0;
+	for ( i = 0; i < iOldTagCount; i++ ) {
+		sTag = pData->arrTags[i];
+		iOldLength = strlen(sTag);
+		__xuiTagInputClampTag(pData, sTag);
+		if ( sTag[0] == '\0' ) {
+			xrtFree(sTag);
+			bTagsChanged = 1;
+			continue;
+		}
+		if ( strlen(sTag) != iOldLength ) bTagsChanged = 1;
+		pData->arrTags[iNewTagCount++] = sTag;
+	}
+	for ( i = iNewTagCount; i < iOldTagCount; i++ ) pData->arrTags[i] = NULL;
+	pData->iTagCount = iNewTagCount;
+	if ( !bTagsChanged ) return XUI_OK;
+	pData->iHoverClose = -1;
+	pData->iActiveClose = -1;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	xuiInternalAccessibilityQueue(pWidget,
+		iNewTagCount == iOldTagCount ? XUI_ACCESSIBLE_EVENT_NODE_CHANGED :
+		XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	__xuiTagInputNotify(pWidget, pData);
 	return XUI_OK;
 }
 
@@ -1626,9 +1979,19 @@ XUI_API int xuiTagInputGetMaxLength(xui_widget pWidget)
 XUI_API int xuiTagInputSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iBorder, uint32_t iFocusBorder, uint32_t iTagBackground, uint32_t iTagText)
 {
 	xui_tag_input_data_t* pData;
+	uint32_t arrOld[8];
+	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	arrOld[0] = pData->iBackgroundColor;
+	arrOld[1] = pData->iHoverBackgroundColor;
+	arrOld[2] = pData->iFocusBackgroundColor;
+	arrOld[3] = pData->iBorderColor;
+	arrOld[4] = pData->iHoverBorderColor;
+	arrOld[5] = pData->iFocusBorderColor;
+	arrOld[6] = pData->iTagBackgroundColor;
+	arrOld[7] = pData->iTagTextColor;
 	pData->iBackgroundColor = iBackground;
 	pData->iHoverBackgroundColor = iBackground;
 	pData->iFocusBackgroundColor = iBackground;
@@ -1637,7 +2000,19 @@ XUI_API int xuiTagInputSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 	pData->iFocusBorderColor = iFocusBorder;
 	pData->iTagBackgroundColor = iTagBackground;
 	pData->iTagTextColor = iTagText;
-	(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+	iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->iBackgroundColor = arrOld[0];
+		pData->iHoverBackgroundColor = arrOld[1];
+		pData->iFocusBackgroundColor = arrOld[2];
+		pData->iBorderColor = arrOld[3];
+		pData->iHoverBorderColor = arrOld[4];
+		pData->iFocusBorderColor = arrOld[5];
+		pData->iTagBackgroundColor = arrOld[6];
+		pData->iTagTextColor = arrOld[7];
+		(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+		return iRet;
+	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1658,9 +2033,21 @@ XUI_API int xuiTagInputGetColors(xui_widget pWidget, uint32_t* pBackground, uint
 XUI_API int xuiTagInputSetExtendedColors(xui_widget pWidget, uint32_t iText, uint32_t iPlaceholder, uint32_t iDisabledText, uint32_t iHoverBackground, uint32_t iFocusBackground, uint32_t iDisabledBackground, uint32_t iHoverBorder, uint32_t iTagHoverBackground, uint32_t iTagClose, uint32_t iTagCloseHover)
 {
 	xui_tag_input_data_t* pData;
+	uint32_t arrOld[10];
+	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	arrOld[0] = pData->iTextColor;
+	arrOld[1] = pData->iPlaceholderColor;
+	arrOld[2] = pData->iDisabledTextColor;
+	arrOld[3] = pData->iHoverBackgroundColor;
+	arrOld[4] = pData->iFocusBackgroundColor;
+	arrOld[5] = pData->iDisabledBackgroundColor;
+	arrOld[6] = pData->iHoverBorderColor;
+	arrOld[7] = pData->iTagHoverBackgroundColor;
+	arrOld[8] = pData->iTagCloseColor;
+	arrOld[9] = pData->iTagCloseHoverColor;
 	pData->iTextColor = iText;
 	pData->iPlaceholderColor = iPlaceholder;
 	pData->iDisabledTextColor = iDisabledText;
@@ -1671,7 +2058,21 @@ XUI_API int xuiTagInputSetExtendedColors(xui_widget pWidget, uint32_t iText, uin
 	pData->iTagHoverBackgroundColor = iTagHoverBackground;
 	pData->iTagCloseColor = iTagClose;
 	pData->iTagCloseHoverColor = iTagCloseHover;
-	(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+	iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->iTextColor = arrOld[0];
+		pData->iPlaceholderColor = arrOld[1];
+		pData->iDisabledTextColor = arrOld[2];
+		pData->iHoverBackgroundColor = arrOld[3];
+		pData->iFocusBackgroundColor = arrOld[4];
+		pData->iDisabledBackgroundColor = arrOld[5];
+		pData->iHoverBorderColor = arrOld[6];
+		pData->iTagHoverBackgroundColor = arrOld[7];
+		pData->iTagCloseColor = arrOld[8];
+		pData->iTagCloseHoverColor = arrOld[9];
+		(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+		return iRet;
+	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1697,13 +2098,30 @@ XUI_API int xuiTagInputGetExtendedColors(xui_widget pWidget, uint32_t* pText, ui
 XUI_API int xuiTagInputSetVisualMetrics(xui_widget pWidget, float fBorderWidth, float fTagHeight)
 {
 	xui_tag_input_data_t* pData;
+	float fOldBorderWidth;
+	float fOldTagHeight;
+	int iRet;
 
-	if ( (fBorderWidth < 0.0f) || (fTagHeight < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !isfinite(fBorderWidth) || !isfinite(fTagHeight) ||
+	     (fBorderWidth < 0.0f) || (fTagHeight < 0.0f) ||
+	     (fBorderWidth > XUI_LAYOUT_UNBOUNDED) || (fTagHeight > XUI_LAYOUT_UNBOUNDED) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	fTagHeight = (fTagHeight > 0.0f) ? fTagHeight : 24.0f;
+	if ( pData->fBorderWidth == fBorderWidth && pData->fTagHeight == fTagHeight ) return XUI_OK;
+	fOldBorderWidth = pData->fBorderWidth;
+	fOldTagHeight = pData->fTagHeight;
 	pData->fBorderWidth = fBorderWidth;
-	pData->fTagHeight = (fTagHeight > 0.0f) ? fTagHeight : 24.0f;
-	(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+	pData->fTagHeight = fTagHeight;
+	iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->fBorderWidth = fOldBorderWidth;
+		pData->fTagHeight = fOldTagHeight;
+		(void)__xuiTagInputSyncInputStyle(pWidget, pData);
+		return iRet;
+	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

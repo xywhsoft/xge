@@ -1,6 +1,8 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CHECK_CARD
 #include "xui_internal.h"
+#include "xui_choice_internal.h"
+#include "xui_pointer_press_internal.h"
 
 #include <math.h>
 #include <string.h>
@@ -11,6 +13,7 @@ typedef struct xui_check_card_data_t {
 	xui_widget pRadioGroup;
 	int bChecked;
 	int bKeyboardActive;
+	xui_pointer_press_t tPointerPress;
 	int iChangeCount;
 	float fBorderWidth;
 	float fCheckedBorderWidth;
@@ -69,9 +72,41 @@ static xui_check_card_data_t* __xuiCheckCardGetData(xui_widget pWidget)
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) return NULL;
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "checkcard");
 	if ( (pType == NULL) || !xuiWidgetIsType(pWidget, pType) ) return NULL;
 	return (xui_check_card_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiCheckCardDataAlive(xui_widget pWidget, const xui_check_card_data_t* pData)
+{
+	return (pData != NULL) && (__xuiCheckCardGetData(pWidget) == pData);
+}
+
+static int __xuiCheckCardIsRadioGroup(xui_widget pWidget, xui_widget pGroup)
+{
+	xui_context pContext;
+	xui_widget_type pType;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) || !xuiInternalWidgetIsValid(pGroup) ) return 0;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) || xuiWidgetGetContext(pGroup) != pContext ) return 0;
+	pType = xuiWidgetFindType(pContext, "radiogroup");
+	return (pType != NULL) && xuiWidgetIsType(pGroup, pType);
+}
+
+static xui_widget __xuiCheckCardResolveRadioGroup(xui_widget pWidget, xui_check_card_data_t* pData)
+{
+	xui_widget pParent;
+
+	if ( (pData == NULL) || !xuiInternalWidgetIsValid(pWidget) ) return NULL;
+	pParent = xuiWidgetGetParent(pWidget);
+	if ( __xuiCheckCardIsRadioGroup(pWidget, pParent) ) {
+		pData->pRadioGroup = pParent;
+		return pParent;
+	}
+	pData->pRadioGroup = NULL;
+	return NULL;
 }
 
 static int __xuiCheckCardStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
@@ -159,27 +194,56 @@ static int __xuiCheckCardSyncState(xui_widget pWidget, xui_check_card_data_t* pD
 
 static void __xuiCheckCardNotify(xui_widget pWidget, xui_check_card_data_t* pData)
 {
+	xui_check_card_change_proc onChange;
+	void* pChangeUser;
+	int bChecked;
+
+	onChange = pData->onChange;
+	pChangeUser = pData->pChangeUser;
+	bChecked = pData->bChecked;
 	pData->iChangeCount++;
-	if ( pData->onChange != NULL ) pData->onChange(pWidget, pData->bChecked, pData->pChangeUser);
+	if ( onChange != NULL ) onChange(pWidget, bChecked, pChangeUser);
 }
 
 static int __xuiCheckCardSetCheckedInternal(xui_widget pWidget, xui_check_card_data_t* pData, int bChecked, int bNotify, int bFromGroup)
 {
+	xui_widget pGroup;
+	int bOldChecked;
+	int iRet;
+
 	bChecked = (bChecked != 0);
-	/* Radio groups own their options. A card reparented by generic widget APIs
-	 * must not retain a raw pointer to its former group. */
-	if ( (pData->pRadioGroup != NULL) && (xuiWidgetGetParent(pWidget) != pData->pRadioGroup) ) {
-		pData->pRadioGroup = NULL;
-	}
-	if ( !bFromGroup && (pData->pRadioGroup != NULL) ) {
-		if ( bChecked ) return xuiRadioGroupSetSelectedWidget(pData->pRadioGroup, pWidget);
-		if ( xuiRadioGroupGetSelectedWidget(pData->pRadioGroup) == pWidget ) return xuiRadioGroupSetSelectedWidget(pData->pRadioGroup, NULL);
+	pGroup = __xuiCheckCardResolveRadioGroup(pWidget, pData);
+	if ( !bFromGroup && (pGroup != NULL) ) {
+		if ( bChecked ) return xuiRadioGroupSetSelectedWidget(pGroup, pWidget);
+		if ( xuiRadioGroupGetSelectedWidget(pGroup) == pWidget ) {
+			return xuiRadioGroupSetSelectedWidget(pGroup, NULL);
+		}
 	}
 	if ( pData->bChecked == bChecked ) return XUI_OK;
+	bOldChecked = pData->bChecked;
 	pData->bChecked = bChecked;
-	(void)__xuiCheckCardSyncState(pWidget, pData);
-	if ( bNotify ) __xuiCheckCardNotify(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiCheckCardSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->bChecked = bOldChecked;
+		(void)__xuiCheckCardSyncState(pWidget, pData);
+		return iRet;
+	}
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	if ( bNotify ) {
+		__xuiCheckCardNotify(pWidget, pData);
+		if ( !__xuiCheckCardDataAlive(pWidget, pData) ) return XUI_OK;
+	}
+	return XUI_OK;
+}
+
+static int __xuiCheckCardActivate(xui_widget pWidget, xui_check_card_data_t* pData)
+{
+	if ( (pData == NULL) || !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		return XUI_OK;
+	}
+	return __xuiCheckCardSetCheckedInternal(pWidget, pData,
+		__xuiCheckCardResolveRadioGroup(pWidget, pData) != NULL ? 1 : !pData->bChecked, 1, 0);
 }
 
 static void __xuiCheckCardDefaultAction(xui_widget pWidget, void* pUser)
@@ -188,70 +252,120 @@ static void __xuiCheckCardDefaultAction(xui_widget pWidget, void* pUser)
 
 	(void)pUser;
 	pData = __xuiCheckCardGetData(pWidget);
-	if ( pData == NULL || !xuiWidgetGetEnabled(pWidget) ) return;
-	if ( pData->pRadioGroup != NULL ) {
-		(void)__xuiCheckCardSetCheckedInternal(pWidget, pData, 1, 1, 0);
-	} else {
-		(void)__xuiCheckCardSetCheckedInternal(pWidget, pData, !pData->bChecked, 1, 0);
-	}
+	(void)__xuiCheckCardActivate(pWidget, pData);
 }
 
 static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_check_card_data_t* pData;
+	xui_context pContext;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiCheckCardGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		pData->bKeyboardActive = 0;
+		iRet = xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __xuiCheckCardSyncState(pWidget, pData);
+#if XUI_ENABLE_RADIO_GROUP
+		if ( iRet == XUI_OK && (pEvent->iType == XUI_EVENT_ENABLED_CHANGED ||
+		     pEvent->iType == XUI_EVENT_VISIBLE_CHANGED) ) {
+			xui_widget pGroup = __xuiCheckCardResolveRadioGroup(pWidget, pData);
+			if ( pGroup != NULL ) iRet = xuiInternalRadioGroupSyncTabStops(pGroup);
+		}
+#endif
+		return iRet;
+	}
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
 	case XUI_EVENT_POINTER_LEAVE:
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
-		(void)__xuiCheckCardSyncState(pWidget, pData);
-		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return __xuiCheckCardSyncState(pWidget, pData);
 	case XUI_EVENT_BLUR:
+		pData->bKeyboardActive = 0;
+		return __xuiCheckCardSyncState(pWidget, pData);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
 		pData->bKeyboardActive = 0;
-		(void)__xuiCheckCardSyncState(pWidget, pData);
-		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = __xuiCheckCardSyncState(pWidget, pData);
+#if XUI_ENABLE_RADIO_GROUP
+		if ( iRet == XUI_OK ) {
+			xui_widget pGroup = __xuiCheckCardResolveRadioGroup(pWidget, pData);
+			if ( pGroup != NULL ) iRet = xuiInternalRadioGroupSyncTabStops(pGroup);
+		}
+#endif
+		return iRet;
 	case XUI_EVENT_POINTER_DOWN:
-		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT && xuiWidgetGetEnabled(pWidget) ) {
-			(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-			(void)__xuiCheckCardSyncState(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->pTarget == pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
+			if ( pData->tPointerPress.tOwner.bActive ) {
+				return xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ?
+					XUI_EVENT_DISPATCH_STOP : XUI_OK;
+			}
+			iRet = xuiInternalPointerPressBegin(pContext, pWidget, pEvent,
+				&pData->tPointerPress);
+			if ( iRet == XUI_OK ) iRet = __xuiCheckCardSyncState(pWidget, pData);
+			if ( iRet != XUI_OK ) {
+				(void)xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+			}
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
-		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT ) {
-			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) (void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
-			return XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->pTarget == pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) &&
+		     xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ) {
+			iRet = xuiInternalPointerPressEnd(pContext, pWidget, pEvent,
+				&pData->tPointerPress);
+			if ( iRet == XUI_OK && __xuiCheckCardDataAlive(pWidget, pData) ) {
+				iRet = __xuiCheckCardSyncState(pWidget, pData);
+			}
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CLICK:
-		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT ) {
-			__xuiCheckCardDefaultAction(pWidget, NULL);
-			return XUI_EVENT_DISPATCH_STOP;
+		if ( (pEvent->pTarget == pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
+			if ( !xuiInternalPointerPressAcceptClick(&pData->tPointerPress, pEvent) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			iRet = __xuiCheckCardActivate(pWidget, pData);
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
-		pData->bKeyboardActive = 0;
+		if ( !xuiInternalPointerPressCaptureLost(&pData->tPointerPress, pEvent) ) return XUI_OK;
 		return __xuiCheckCardSyncState(pWidget, pData);
 	case XUI_EVENT_KEY_DOWN:
-		if ( (pEvent->iKey == XUI_KEY_SPACE) || (pEvent->iKey == XUI_KEY_ENTER) ) {
+		if ( (pEvent->pTarget == pWidget) &&
+		     ((pEvent->iKey == XUI_KEY_SPACE) || (pEvent->iKey == XUI_KEY_ENTER)) ) {
 			pData->bKeyboardActive = 1;
-			(void)__xuiCheckCardSyncState(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiCheckCardSyncState(pWidget, pData);
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
+#if XUI_ENABLE_RADIO_GROUP
+		if ( (pEvent->pTarget == pWidget) &&
+		     ((pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_UP)) ) {
+			iRet = xuiInternalRadioGroupMoveSelection(pWidget, -1);
+			return (iRet == XUI_ERROR_UNSUPPORTED) ? XUI_OK : (iRet | XUI_EVENT_DISPATCH_STOP);
+		}
+		if ( (pEvent->pTarget == pWidget) &&
+		     ((pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_DOWN)) ) {
+			iRet = xuiInternalRadioGroupMoveSelection(pWidget, 1);
+			return (iRet == XUI_ERROR_UNSUPPORTED) ? XUI_OK : (iRet | XUI_EVENT_DISPATCH_STOP);
+		}
+#endif
 		break;
 	case XUI_EVENT_KEY_UP:
-		if ( ((pEvent->iKey == XUI_KEY_SPACE) || (pEvent->iKey == XUI_KEY_ENTER)) && pData->bKeyboardActive ) {
+		if ( (pEvent->pTarget == pWidget) &&
+		     ((pEvent->iKey == XUI_KEY_SPACE) || (pEvent->iKey == XUI_KEY_ENTER)) &&
+		     pData->bKeyboardActive ) {
 			pData->bKeyboardActive = 0;
-			__xuiCheckCardDefaultAction(pWidget, NULL);
-			(void)__xuiCheckCardSyncState(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiCheckCardSyncState(pWidget, pData);
+			if ( iRet == XUI_OK ) iRet = __xuiCheckCardActivate(pWidget, pData);
+			return iRet | XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	default:
@@ -415,12 +529,14 @@ static int __xuiCheckCardInit(xui_widget pWidget, void* pTypeData, const void* p
 	pData->iFocusColor = (pDesc != NULL && pDesc->iFocusColor != 0) ? pDesc->iFocusColor : XUI_COLOR_RGBA(29, 196, 186, 180);
 	tPadding = (xui_thickness_t){16.0f, 14.0f, 16.0f, 14.0f};
 	if ( pDesc != NULL && (pDesc->tPadding.fLeft != 0.0f || pDesc->tPadding.fTop != 0.0f || pDesc->tPadding.fRight != 0.0f || pDesc->tPadding.fBottom != 0.0f) ) tPadding = pDesc->tPadding;
-	(void)xuiWidgetSetPadding(pWidget, tPadding);
-	(void)xuiWidgetSetMinSize(pWidget, (xui_vec2_t){(pDesc != NULL && pDesc->fMinWidth > 0.0f) ? pDesc->fMinWidth : 120.0f, (pDesc != NULL && pDesc->fMinHeight > 0.0f) ? pDesc->fMinHeight : 56.0f});
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
-	iRet = __xuiCheckCardInitCacheStates(pWidget);
+	iRet = xuiWidgetSetPadding(pWidget, tPadding);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetMinSize(pWidget,
+		(xui_vec2_t){(pDesc != NULL && pDesc->fMinWidth > 0.0f) ? pDesc->fMinWidth : 120.0f,
+			(pDesc != NULL && pDesc->fMinHeight > 0.0f) ? pDesc->fMinHeight : 56.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
+	if ( iRet == XUI_OK ) iRet = __xuiCheckCardInitCacheStates(pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetDefaultAction(pWidget, __xuiCheckCardDefaultAction, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_ENTER, __xuiCheckCardEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_LEAVE, __xuiCheckCardEvent, NULL);
@@ -445,9 +561,14 @@ static int __xuiCheckCardInit(xui_widget pWidget, void* pTypeData, const void* p
 
 static void __xuiCheckCardDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
-	(void)pWidget;
+	xui_check_card_data_t* pData;
+
 	(void)pUser;
-	if ( pTypeData != NULL ) memset(pTypeData, 0, sizeof(xui_check_card_data_t));
+	pData = (xui_check_card_data_t*)pTypeData;
+	if ( pData == NULL ) return;
+	(void)xuiInternalPointerPressCancel(xuiWidgetGetContext(pWidget), pWidget,
+		&pData->tPointerPress);
+	memset(pData, 0, sizeof(*pData));
 }
 
 static void __xuiCheckCardRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags)
@@ -486,6 +607,32 @@ static void __xuiCheckCardRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.focus.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty);
 }
 
+static int __xuiCheckCardAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_check_card_data_t* pData;
+	xui_widget pGroup;
+
+	pData = __xuiCheckCardGetData(pWidget);
+	if ( (pData == NULL) || (pNode == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pGroup = __xuiCheckCardResolveRadioGroup(pWidget, pData);
+	pNode->iRole = (pGroup != NULL) ? XUI_ACCESSIBLE_ROLE_RADIO_BUTTON : XUI_ACCESSIBLE_ROLE_CHECKBOX;
+	pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+		xuiWidgetGetAccessibleName(pWidget) : "Check card";
+	pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
+	pNode->sValue = pData->bChecked ? "true" : "false";
+	if ( pData->bChecked ) pNode->iState |= XUI_ACCESSIBLE_STATE_CHECKED;
+	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
+	if ( pGroup == NULL ) {
+		pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_TOGGLE);
+	}
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiCheckCardAccessible = {
+	.getNode = __xuiCheckCardAccessibleNode,
+	.performAction = NULL
+};
+
 XUI_API xui_widget_type xuiCheckCardGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -496,6 +643,10 @@ XUI_API xui_widget_type xuiCheckCardGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "checkcard");
 	if ( pType != NULL ) {
 		__xuiCheckCardRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiCheckCardAccessible;
+#if XUI_ENABLE_RADIO_GROUP
+		pType->onParentChanged = xuiInternalRadioGroupOptionParentChanged;
+#endif
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -512,6 +663,10 @@ XUI_API xui_widget_type xuiCheckCardGetType(xui_context pContext)
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiCheckCardRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiCheckCardAccessible;
+#if XUI_ENABLE_RADIO_GROUP
+	pType->onParentChanged = xuiInternalRadioGroupOptionParentChanged;
+#endif
 	return pType;
 }
 
@@ -519,8 +674,9 @@ XUI_API int xuiCheckCardCreate(xui_context pContext, xui_widget* ppWidget, const
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiCheckCardDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiCheckCardDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiCheckCardGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
@@ -547,6 +703,14 @@ XUI_API int xuiCheckCardSetCheckedFromGroup(xui_widget pWidget, int bChecked, in
 	return (pData != NULL) ? __xuiCheckCardSetCheckedInternal(pWidget, pData, bChecked, bNotify, 1) : XUI_ERROR_INVALID_ARGUMENT;
 }
 
+int xuiInternalCheckCardNotifyFromGroup(xui_widget pWidget)
+{
+	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiCheckCardNotify(pWidget, pData);
+	return XUI_OK;
+}
+
 XUI_API int xuiCheckCardGetChecked(xui_widget pWidget)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
@@ -555,43 +719,84 @@ XUI_API int xuiCheckCardGetChecked(xui_widget pWidget)
 
 XUI_API int xuiCheckCardSetRadioGroup(xui_widget pWidget, xui_widget pGroup)
 {
-	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	xui_check_card_data_t* pData;
+	xui_widget pOldGroup;
+	xui_widget pOldParent;
+	xui_widget pOldSelected;
+	xui_widget pScan;
 	int iRet;
 
+	pData = __xuiCheckCardGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pGroup != NULL ) {
-		if ( xuiWidgetFindType(xuiWidgetGetContext(pGroup), "radiogroup") == NULL || !xuiWidgetIsType(pGroup, xuiWidgetFindType(xuiWidgetGetContext(pGroup), "radiogroup")) ) return XUI_ERROR_INVALID_ARGUMENT;
-		pData->pRadioGroup = pGroup;
-		if ( xuiWidgetGetParent(pWidget) != pGroup ) {
-			iRet = xuiWidgetAddChild(pGroup, pWidget);
-			if ( iRet != XUI_OK ) return iRet;
+	pOldGroup = __xuiCheckCardResolveRadioGroup(pWidget, pData);
+	pOldParent = xuiWidgetGetParent(pWidget);
+	if ( pGroup == NULL ) {
+		if ( (pOldGroup != NULL) && (pOldParent == pOldGroup) ) {
+			iRet = xuiInternalRadioGroupRemoveOption(pOldGroup, pWidget, 1);
+			if ( iRet != XUI_OK || !__xuiCheckCardDataAlive(pWidget, pData) ) return iRet;
 		}
-		if ( pData->bChecked ) return xuiRadioGroupSetSelectedWidget(pGroup, pWidget);
+		pData->pRadioGroup = NULL;
+		if ( pOldGroup != NULL ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+		}
 		return XUI_OK;
 	}
-	pData->pRadioGroup = NULL;
+	if ( !__xuiCheckCardIsRadioGroup(pWidget, pGroup) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( pScan = pGroup; pScan != NULL; pScan = xuiWidgetGetParent(pScan) ) {
+		if ( pScan == pWidget ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pOldParent != pGroup ) {
+		pOldSelected = (pOldGroup != NULL) ? xuiRadioGroupGetSelectedWidget(pOldGroup) : NULL;
+		if ( pOldParent != NULL ) {
+			if ( pOldGroup != NULL ) {
+				iRet = xuiInternalRadioGroupRemoveOption(pOldGroup, pWidget, 1);
+				if ( iRet != XUI_OK || !__xuiCheckCardDataAlive(pWidget, pData) ) return iRet;
+				if ( !__xuiCheckCardIsRadioGroup(pWidget, pGroup) ) return XUI_OK;
+			} else {
+				iRet = xuiWidgetRemoveFromParent(pWidget);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+		}
+		iRet = xuiWidgetAddChild(pGroup, pWidget);
+		if ( iRet != XUI_OK ) {
+			if ( pOldParent != NULL && xuiWidgetAddChild(pOldParent, pWidget) == XUI_OK &&
+			     pOldGroup != NULL && pOldSelected != NULL ) {
+				(void)xuiRadioGroupSetSelectedWidget(pOldGroup, pOldSelected);
+			}
+			return iRet;
+		}
+	}
+	pData->pRadioGroup = pGroup;
+	if ( pOldGroup != pGroup ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	}
+	if ( pData->bChecked ) return xuiRadioGroupSetSelectedWidget(pGroup, pWidget);
 	return XUI_OK;
 }
 
 XUI_API xui_widget xuiCheckCardGetRadioGroup(xui_widget pWidget)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
-	if ( (pData != NULL) && (pData->pRadioGroup != NULL) &&
-		 (xuiWidgetGetParent(pWidget) != pData->pRadioGroup) ) {
-		pData->pRadioGroup = NULL;
-	}
-	return (pData != NULL) ? pData->pRadioGroup : NULL;
+	return (pData != NULL) ? __xuiCheckCardResolveRadioGroup(pWidget, pData) : NULL;
 }
 
 XUI_API int xuiCheckCardSetMetrics(xui_widget pWidget, float fBorderWidth, float fCheckedBorderWidth, float fCornerSize, float fFocusWidth)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	int iRet;
+
 	if ( (pData == NULL) || !__xuiCheckCardNonNegativeFloatValid(fBorderWidth) ||
 	     !__xuiCheckCardNonNegativeFloatValid(fCheckedBorderWidth) ||
 	     !__xuiCheckCardNonNegativeFloatValid(fCornerSize) ||
 	     !__xuiCheckCardNonNegativeFloatValid(fFocusWidth) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->fBorderWidth == fBorderWidth) &&
+	     (pData->fCheckedBorderWidth == fCheckedBorderWidth) &&
+	     (pData->fCornerSize == fCornerSize) &&
+	     (pData->fFocusWidth == fFocusWidth) ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fBorderWidth = fBorderWidth; pData->fCheckedBorderWidth = fCheckedBorderWidth; pData->fCornerSize = fCornerSize; pData->fFocusWidth = fFocusWidth;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiCheckCardGetMetrics(xui_widget pWidget, float* pBorderWidth, float* pCheckedBorderWidth, float* pCornerSize, float* pFocusWidth)
@@ -608,10 +813,22 @@ XUI_API int xuiCheckCardGetMetrics(xui_widget pWidget, float* pBorderWidth, floa
 XUI_API int xuiCheckCardSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iActiveBackground, uint32_t iCheckedBackground, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iCheckedBorder, uint32_t iCorner, uint32_t iCheck)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iBackgroundColor == iBackground) &&
+	     (pData->iHoverBackgroundColor == iHoverBackground) &&
+	     (pData->iActiveBackgroundColor == iActiveBackground) &&
+	     (pData->iCheckedBackgroundColor == iCheckedBackground) &&
+	     (pData->iBorderColor == iBorder) &&
+	     (pData->iHoverBorderColor == iHoverBorder) &&
+	     (pData->iCheckedBorderColor == iCheckedBorder) &&
+	     (pData->iCornerColor == iCorner) && (pData->iCheckColor == iCheck) ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iBackgroundColor = iBackground; pData->iHoverBackgroundColor = iHoverBackground; pData->iActiveBackgroundColor = iActiveBackground; pData->iCheckedBackgroundColor = iCheckedBackground;
 	pData->iBorderColor = iBorder; pData->iHoverBorderColor = iHoverBorder; pData->iCheckedBorderColor = iCheckedBorder; pData->iCornerColor = iCorner; pData->iCheckColor = iCheck;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiCheckCardGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pHoverBackground, uint32_t* pActiveBackground, uint32_t* pCheckedBackground, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pCheckedBorder, uint32_t* pCorner, uint32_t* pCheck)
@@ -633,10 +850,15 @@ XUI_API int xuiCheckCardGetColors(xui_widget pWidget, uint32_t* pBackground, uin
 XUI_API int xuiCheckCardSetStateColors(xui_widget pWidget, uint32_t iDisabledBorder, uint32_t iFocus)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iDisabledBorderColor == iDisabledBorder) && (pData->iFocusColor == iFocus) ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iDisabledBorderColor = iDisabledBorder;
 	pData->iFocusColor = iFocus;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiCheckCardGetStateColors(xui_widget pWidget, uint32_t* pDisabledBorder, uint32_t* pFocus)

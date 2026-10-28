@@ -3,6 +3,8 @@
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
+#include <limits.h>
+#include <math.h>
 #include <string.h>
 
 typedef struct xui_label_data_t {
@@ -36,7 +38,9 @@ static int __xuiLabelDescValid(const xui_label_desc_t* pDesc)
 	if ( !__xuiLabelWrapModeValid(pDesc->iWrapMode) ) {
 		return 0;
 	}
-	if ( (pDesc->fLineGap < 0.0f) || (pDesc->fParagraphGap < 0.0f) ) {
+	if ( !isfinite(pDesc->fLineGap) || !isfinite(pDesc->fParagraphGap) ||
+	     (pDesc->fLineGap < 0.0f) || (pDesc->fLineGap > XUI_LAYOUT_UNBOUNDED) ||
+	     (pDesc->fParagraphGap < 0.0f) || (pDesc->fParagraphGap > XUI_LAYOUT_UNBOUNDED) ) {
 		return 0;
 	}
 	return 1;
@@ -45,6 +49,7 @@ static int __xuiLabelDescValid(const xui_label_desc_t* pDesc)
 static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 {
 	char* sNew;
+	size_t iLength;
 	int iNeed;
 
 	if ( pData == NULL ) {
@@ -53,7 +58,11 @@ static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iNeed = (int)strlen(sText) + 1;
+	iLength = strlen(sText);
+	if ( iLength >= (size_t)INT_MAX ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iNeed = (int)iLength + 1;
 	if ( iNeed > pData->iTextCapacity ) {
 		sNew = (char*)xrtRealloc(pData->sText, (size_t)iNeed);
 		if ( sNew == NULL ) {
@@ -62,7 +71,7 @@ static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 		pData->sText = sNew;
 		pData->iTextCapacity = iNeed;
 	}
-	memcpy(pData->sText, sText, (size_t)iNeed);
+	memmove(pData->sText, sText, (size_t)iNeed);
 	return XUI_OK;
 }
 
@@ -121,7 +130,9 @@ static int __xuiLabelStyleFloat(xui_widget pWidget, const char* sName, float* pV
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) &&
+	     (tProperty.tValue.fFloat <= XUI_LAYOUT_UNBOUNDED) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -204,7 +215,7 @@ static void __xuiLabelResolve(xui_widget pWidget, xui_label_data_t* pData, xui_t
 	pDesc->iFlags = iTextFlags | XUI_TEXT_CLIP;
 	pDesc->fLineGap = fLineGap;
 	pDesc->fParagraphGap = fParagraphGap;
-	*pTextColor = xuiWidgetGetEnabled(pWidget) ? iTextColor : iDisabledTextColor;
+	*pTextColor = xuiWidgetGetEffectiveEnabled(pWidget) ? iTextColor : iDisabledTextColor;
 }
 
 static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -335,7 +346,7 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 				continue;
 			}
 		}
-		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iTextColor, iLineFlags);
+		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=iDisplaySize, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iTextColor, iLineFlags);
 		if ( iRet != XUI_OK ) {
 			break;
 		}
@@ -374,10 +385,10 @@ static int __xuiLabelInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	(void)xuiWidgetSetFocusable(pWidget, 0);
-	(void)xuiWidgetSetTabStop(pWidget, 0);
-	(void)xuiWidgetSetHitTestVisible(pWidget, 0);
-	return XUI_OK;
+	iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 0);
+	return iRet;
 }
 
 static void __xuiLabelDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -445,7 +456,7 @@ static void __xuiLabelRegisterStyleProperties(xui_context pContext, xui_widget_t
 {
 	__xuiLabelRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiLabelRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
-	__xuiLabelRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiLabelRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiLabelRegisterStyleProperty(pContext, pType, "text.wrap", XUI_STYLE_VALUE_INT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiLabelRegisterStyleProperty(pContext, pType, "text.underline", XUI_STYLE_VALUE_BOOL, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiLabelRegisterStyleProperty(pContext, pType, "text.line_gap", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED);
@@ -456,7 +467,8 @@ static void __xuiLabelRegisterStyleProperties(xui_context pContext, xui_widget_t
 static int __xuiLabelAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
 {
 	pNode->iRole = XUI_ACCESSIBLE_ROLE_TEXT;
-	pNode->sName = xuiLabelGetText(pWidget);
+	pNode->sName = xuiWidgetGetAccessibleName(pWidget) != NULL ?
+		xuiWidgetGetAccessibleName(pWidget) : xuiLabelGetText(pWidget);
 	return XUI_OK;
 }
 
@@ -474,6 +486,7 @@ XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "label");
 	if ( pType != NULL ) {
 		__xuiLabelRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiLabelAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -501,10 +514,13 @@ XUI_API int xuiLabelCreate(xui_context pContext, xui_widget* ppWidget, const xui
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiLabelDescValid(pDesc) ) {
+	if ( ppWidget == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
+	if ( !__xuiLabelDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiLabelGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -615,6 +631,7 @@ XUI_API uint32_t xuiLabelGetDisabledTextColor(xui_widget pWidget)
 XUI_API int xuiLabelSetTextFlags(xui_widget pWidget, uint32_t iTextFlags)
 {
 	xui_label_data_t* pData;
+	uint32_t iDirtyFlags;
 
 	pData = __xuiLabelGetData(pWidget);
 	if ( pData == NULL ) {
@@ -624,8 +641,12 @@ XUI_API int xuiLabelSetTextFlags(xui_widget pWidget, uint32_t iTextFlags)
 	if ( pData->iTextFlags == iTextFlags ) {
 		return XUI_OK;
 	}
+	iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	if ( ((pData->iTextFlags ^ iTextFlags) & XUI_TEXT_RTL) != 0 ) {
+		iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
+	}
 	pData->iTextFlags = iTextFlags;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, iDirtyFlags);
 }
 
 XUI_API uint32_t xuiLabelGetTextFlags(xui_widget pWidget)
@@ -690,7 +711,7 @@ XUI_API int xuiLabelSetLineGap(xui_widget pWidget, float fLineGap)
 {
 	xui_label_data_t* pData;
 
-	if ( fLineGap < 0.0f ) {
+	if ( !isfinite(fLineGap) || fLineGap < 0.0f || fLineGap > XUI_LAYOUT_UNBOUNDED ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiLabelGetData(pWidget);
@@ -716,7 +737,7 @@ XUI_API int xuiLabelSetParagraphGap(xui_widget pWidget, float fParagraphGap)
 {
 	xui_label_data_t* pData;
 
-	if ( fParagraphGap < 0.0f ) {
+	if ( !isfinite(fParagraphGap) || fParagraphGap < 0.0f || fParagraphGap > XUI_LAYOUT_UNBOUNDED ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData = __xuiLabelGetData(pWidget);

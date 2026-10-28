@@ -26,6 +26,7 @@ typedef struct xui_qrcode_data_t {
 	uint8_t arrModules[XUI_QRCODE_MAX_MODULES];
 	uint32_t iForegroundColor;
 	uint32_t iBackgroundColor;
+	uint32_t iIconSurfaceGeneration;
 	float fPadding;
 	float fIconSize;
 	int iMinVersion;
@@ -33,6 +34,7 @@ typedef struct xui_qrcode_data_t {
 	int iVersion;
 	int iModuleCount;
 	int iChangeCount;
+	int bIconSurfaceGenerationValid;
 } xui_qrcode_data_t;
 
 static const int g_xuiQrCodeEccCodewordsPerBlock[XUI_QRCODE_MAX_VERSION + 1] = {
@@ -48,6 +50,24 @@ static int __xuiQrCodeVersionValid(int iVersion)
 	return (iVersion >= XUI_QRCODE_MIN_VERSION) && (iVersion <= XUI_QRCODE_MAX_VERSION);
 }
 
+static int __xuiQrCodeFloatValid(float fValue)
+{
+	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
+}
+
+static int __xuiQrCodeRectValid(xui_rect_t tRect)
+{
+	return __xuiQrCodeFloatValid(tRect.fW) && __xuiQrCodeFloatValid(tRect.fH) &&
+	       (tRect.fX >= -XUI_LAYOUT_UNBOUNDED) && (tRect.fX <= XUI_LAYOUT_UNBOUNDED) &&
+	       (tRect.fY >= -XUI_LAYOUT_UNBOUNDED) && (tRect.fY <= XUI_LAYOUT_UNBOUNDED);
+}
+
+static int __xuiQrCodeRectEqual(xui_rect_t tA, xui_rect_t tB)
+{
+	return (tA.fX == tB.fX) && (tA.fY == tB.fY) &&
+	       (tA.fW == tB.fW) && (tA.fH == tB.fH);
+}
+
 static int __xuiQrCodeDescValid(const xui_qrcode_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -56,10 +76,10 @@ static int __xuiQrCodeDescValid(const xui_qrcode_desc_t* pDesc)
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
-	if ( (pDesc->fPadding < 0.0f) || (pDesc->fIconSize < 0.0f) ) {
+	if ( !__xuiQrCodeFloatValid(pDesc->fPadding) || !__xuiQrCodeFloatValid(pDesc->fIconSize) ) {
 		return 0;
 	}
-	if ( (pDesc->tIconSrc.fW < 0.0f) || (pDesc->tIconSrc.fH < 0.0f) ) {
+	if ( !__xuiQrCodeRectValid(pDesc->tIconSrc) ) {
 		return 0;
 	}
 	if ( pDesc->iMinVersion != 0 && !__xuiQrCodeVersionValid(pDesc->iMinVersion) ) {
@@ -74,18 +94,18 @@ static int __xuiQrCodeDescValid(const xui_qrcode_desc_t* pDesc)
 	return 1;
 }
 
-static int __xuiQrCodeStringSet(char** psText, int* pCapacity, const char* sText)
+static int __xuiQrCodeStringSet(char** psText, int* pCapacity, const char* sText, int iLength)
 {
 	char* sNew;
 	int iNeed;
 
-	if ( (psText == NULL) || (pCapacity == NULL) ) {
+	if ( (psText == NULL) || (pCapacity == NULL) || (iLength < 0) || ((sText == NULL) && (iLength != 0)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iNeed = (int)strlen(sText) + 1;
+	iNeed = iLength + 1;
 	if ( iNeed > *pCapacity ) {
 		sNew = (char*)xrtRealloc(*psText, (size_t)iNeed);
 		if ( sNew == NULL ) {
@@ -94,7 +114,8 @@ static int __xuiQrCodeStringSet(char** psText, int* pCapacity, const char* sText
 		*psText = sNew;
 		*pCapacity = iNeed;
 	}
-	memcpy(*psText, sText, (size_t)iNeed);
+	memmove(*psText, sText, (size_t)iLength);
+	(*psText)[iLength] = '\0';
 	return XUI_OK;
 }
 
@@ -132,7 +153,8 @@ static int __xuiQrCodeStyleFloat(xui_widget pWidget, const char* sName, float* p
 	memset(&tProperty, 0, sizeof(tProperty));
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
-	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) && (tProperty.tValue.fFloat >= 0.0f) ) {
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
+	     __xuiQrCodeFloatValid(tProperty.tValue.fFloat) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -162,6 +184,19 @@ static xui_qrcode_data_t* __xuiQrCodeGetData(xui_widget pWidget)
 		return NULL;
 	}
 	return (xui_qrcode_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiQrCodeReadSurfaceGeneration(xui_widget pWidget, xui_surface pSurface,
+	uint32_t* pGeneration)
+{
+	xui_proxy pProxy;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) || pSurface == NULL || pGeneration == NULL ) {
+		return 0;
+	}
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	return pProxy != NULL && pProxy->surfaceGetGeneration != NULL &&
+		pProxy->surfaceGetGeneration(pProxy, pSurface, pGeneration) == XUI_OK;
 }
 
 static int __xuiQrCodeRawDataModules(int iVersion)
@@ -196,6 +231,26 @@ static int __xuiQrCodeCharCountBits(int iVersion)
 	return (iVersion <= 9) ? 8 : 16;
 }
 
+static int __xuiQrCodePayloadLength(const char* sValue, int iMaxVersion, int* pLength)
+{
+	int iCapacityBits;
+	int iMaxBytes;
+	int i;
+
+	if ( (sValue == NULL) || (pLength == NULL) || !__xuiQrCodeVersionValid(iMaxVersion) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iCapacityBits = __xuiQrCodeDataCodewords(iMaxVersion) * 8;
+	iMaxBytes = (iCapacityBits - 4 - __xuiQrCodeCharCountBits(iMaxVersion)) / 8;
+	for ( i = 0; i <= iMaxBytes; i++ ) {
+		if ( sValue[i] == '\0' ) {
+			*pLength = i;
+			return XUI_OK;
+		}
+	}
+	return XUI_ERROR_BUFFER_TOO_SMALL;
+}
+
 static int __xuiQrCodeAppendBits(uint8_t* pData, int iCapacityBits, int* pBitLen, unsigned int iValue, int iBitCount)
 {
 	int i;
@@ -212,19 +267,17 @@ static int __xuiQrCodeAppendBits(uint8_t* pData, int iCapacityBits, int* pBitLen
 	return XUI_OK;
 }
 
-static int __xuiQrCodeEncodeData(const char* sValue, int iVersion, uint8_t* pData, int* pDataLen)
+static int __xuiQrCodeEncodeData(const char* sValue, int iPayloadLen, int iVersion, uint8_t* pData, int* pDataLen)
 {
 	const unsigned char* pBytes;
-	int iPayloadLen;
 	int iCapacity;
 	int iBitLen;
 	int iRet;
 	int i;
 
-	if ( (sValue == NULL) || (pData == NULL) || (pDataLen == NULL) ) {
+	if ( (sValue == NULL) || (iPayloadLen < 0) || (pData == NULL) || (pDataLen == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iPayloadLen = (int)strlen(sValue);
 	iCapacity = __xuiQrCodeDataCodewords(iVersion);
 	if ( (4 + __xuiQrCodeCharCountBits(iVersion) + iPayloadLen * 8) > iCapacity * 8 ) {
 		return XUI_ERROR_BUFFER_TOO_SMALL;
@@ -699,7 +752,8 @@ static int __xuiQrCodePenalty(const uint8_t* pModules, int iSize)
 	return iPenalty;
 }
 
-static int __xuiQrCodeEncodeMatrix(const char* sValue, int iMinVersion, int iMaxVersion, xui_qrcode_matrix_t* pMatrix)
+static int __xuiQrCodeEncodeMatrix(const char* sValue, int iMinVersion, int iMaxVersion,
+	xui_qrcode_matrix_t* pMatrix, int* pValueLength)
 {
 	uint8_t arrData[XUI_QRCODE_MAX_CODEWORDS];
 	uint8_t arrCodewords[XUI_QRCODE_MAX_CODEWORDS];
@@ -716,12 +770,15 @@ static int __xuiQrCodeEncodeMatrix(const char* sValue, int iMinVersion, int iMax
 	int iBestPenalty;
 	int iBestMask;
 	int iRet;
+	int iPayloadLen;
 
 	if ( (sValue == NULL) || (pMatrix == NULL) || !__xuiQrCodeVersionValid(iMinVersion) || !__xuiQrCodeVersionValid(iMaxVersion) || iMinVersion > iMaxVersion ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiQrCodePayloadLength(sValue, iMaxVersion, &iPayloadLen);
+	if ( iRet != XUI_OK ) return iRet;
 	for ( iVersion = iMinVersion; iVersion <= iMaxVersion; iVersion++ ) {
-		iRet = __xuiQrCodeEncodeData(sValue, iVersion, arrData, &iDataLen);
+		iRet = __xuiQrCodeEncodeData(sValue, iPayloadLen, iVersion, arrData, &iDataLen);
 		if ( iRet == XUI_OK ) {
 			break;
 		}
@@ -757,6 +814,7 @@ static int __xuiQrCodeEncodeMatrix(const char* sValue, int iMinVersion, int iMax
 	pMatrix->iVersion = iVersion;
 	pMatrix->iSize = iSize;
 	memcpy(pMatrix->arrModules, arrBest, (size_t)(iSize * iSize));
+	if ( pValueLength != NULL ) *pValueLength = iPayloadLen;
 	return XUI_OK;
 }
 
@@ -768,25 +826,6 @@ static void __xuiQrCodeApplyMatrix(xui_qrcode_data_t* pData, const xui_qrcode_ma
 	pData->iVersion = pMatrix->iVersion;
 	pData->iModuleCount = pMatrix->iSize;
 	memcpy(pData->arrModules, pMatrix->arrModules, sizeof(pData->arrModules));
-}
-
-static int __xuiQrCodeRebuild(xui_widget pWidget, xui_qrcode_data_t* pData)
-{
-	xui_qrcode_matrix_t tMatrix;
-	int iRet;
-
-	if ( (pWidget == NULL) || (pData == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xuiQrCodeEncodeMatrix((pData->sValue != NULL) ? pData->sValue : "", pData->iMinVersion, pData->iMaxVersion, &tMatrix);
-	if ( iRet != XUI_OK ) {
-		pData->iVersion = 0;
-		pData->iModuleCount = 0;
-		memset(pData->arrModules, 0, sizeof(pData->arrModules));
-		return iRet;
-	}
-	__xuiQrCodeApplyMatrix(pData, &tMatrix);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiQrCodeContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -849,6 +888,7 @@ static int __xuiQrCodeCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	float fModuleSize;
 	float fQrSize;
 	float fIconSize;
+	int iRunStart;
 	int iX;
 	int iY;
 	int iRet;
@@ -892,15 +932,20 @@ static int __xuiQrCodeCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 		fQrSize,
 		fQrSize});
 	for ( iY = 0; iY < tResolved.iModuleCount; iY++ ) {
-		for ( iX = 0; iX < tResolved.iModuleCount; iX++ ) {
-			if ( tResolved.arrModules[__xuiQrCodeIndex(tResolved.iModuleCount, iX, iY)] != 0 ) {
+		iRunStart = -1;
+		for ( iX = 0; iX <= tResolved.iModuleCount; iX++ ) {
+			if ( (iX < tResolved.iModuleCount) &&
+		     (tResolved.arrModules[__xuiQrCodeIndex(tResolved.iModuleCount, iX, iY)] != 0) ) {
+				if ( iRunStart < 0 ) iRunStart = iX;
+			} else if ( iRunStart >= 0 ) {
 				tModule = xuiInternalSnapRect((xui_rect_t){
-					tField.fX + (float)iX * fModuleSize,
+					tField.fX + (float)iRunStart * fModuleSize,
 					tField.fY + (float)iY * fModuleSize,
-					fModuleSize + 0.01f,
+					(float)(iX - iRunStart) * fModuleSize + 0.01f,
 					fModuleSize + 0.01f});
 				iRet = pProxy->drawRectFill(pProxy, pDraw, tModule, tResolved.iForegroundColor);
 				if ( iRet != XUI_OK ) return iRet;
+				iRunStart = -1;
 			}
 		}
 	}
@@ -933,6 +978,9 @@ static int __xuiQrCodeInit(xui_widget pWidget, void* pTypeData, const void* pCre
 {
 	xui_qrcode_data_t* pData;
 	const xui_qrcode_desc_t* pDesc;
+	xui_qrcode_matrix_t tMatrix;
+	const char* sValue;
+	int iValueLength;
 	int iRet;
 
 	(void)pUser;
@@ -957,11 +1005,38 @@ static int __xuiQrCodeInit(xui_widget pWidget, void* pTypeData, const void* pCre
 		if ( pDesc->iMinVersion != 0 ) pData->iMinVersion = pDesc->iMinVersion;
 		if ( pDesc->iMaxVersion != 0 ) pData->iMaxVersion = pDesc->iMaxVersion;
 	}
-	iRet = __xuiQrCodeStringSet(&pData->sValue, &pData->iValueCapacity, (pDesc != NULL) ? pDesc->sValue : "");
+	pData->bIconSurfaceGenerationValid = __xuiQrCodeReadSurfaceGeneration(pWidget,
+		pData->pIconSurface, &pData->iIconSurfaceGeneration);
+	sValue = (pDesc != NULL && pDesc->sValue != NULL) ? pDesc->sValue : "";
+	iRet = __xuiQrCodeEncodeMatrix(sValue, pData->iMinVersion, pData->iMaxVersion,
+		&tMatrix, &iValueLength);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiWidgetSetFocusable(pWidget, 0);
-	(void)xuiWidgetSetTabStop(pWidget, 0);
-	return __xuiQrCodeRebuild(pWidget, pData);
+	iRet = __xuiQrCodeStringSet(&pData->sValue, &pData->iValueCapacity, sValue, iValueLength);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiQrCodeApplyMatrix(pData, &tMatrix);
+	iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
+	return iRet;
+}
+
+static int __xuiQrCodeUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_qrcode_data_t* pData = (xui_qrcode_data_t*)pUser;
+	uint32_t iGeneration;
+	int bValid;
+
+	(void)fDelta;
+	if ( __xuiQrCodeGetData(pWidget) != pData ) return XUI_ERROR_INVALID_ARGUMENT;
+	bValid = __xuiQrCodeReadSurfaceGeneration(pWidget, pData->pIconSurface, &iGeneration);
+	if ( !bValid ) {
+		pData->bIconSurfaceGenerationValid = 0;
+		return XUI_OK;
+	}
+	if ( pData->bIconSurfaceGenerationValid &&
+	     pData->iIconSurfaceGeneration == iGeneration ) return XUI_OK;
+	pData->iIconSurfaceGeneration = iGeneration;
+	pData->bIconSurfaceGenerationValid = 1;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static void __xuiQrCodeDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1035,6 +1110,25 @@ static void __xuiQrCodeRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiQrCodeRegisterStyleProperty(pContext, pType, "qrcode.icon_size", XUI_STYLE_VALUE_FLOAT, iPaintDirty);
 }
 
+static int __xuiQrCodeAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_qrcode_data_t* pData;
+
+	pData = __xuiQrCodeGetData(pWidget);
+	if ( (pData == NULL) || (pNode == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_IMAGE;
+	if ( (pData->sValue != NULL) && (pData->sValue[0] != '\0') ) {
+		pNode->sName = pData->sValue;
+		pNode->sValue = pData->sValue;
+	}
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiQrCodeAccessible = {
+	.getNode = __xuiQrCodeAccessibleNode,
+	.performAction = NULL
+};
+
 XUI_API xui_widget_type xuiQrCodeGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1047,6 +1141,7 @@ XUI_API xui_widget_type xuiQrCodeGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "qrcode");
 	if ( pType != NULL ) {
 		__xuiQrCodeRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiQrCodeAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1059,6 +1154,7 @@ XUI_API xui_widget_type xuiQrCodeGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiQrCodeDestroy;
 	tDesc.onContentMeasure = __xuiQrCodeContentMeasure;
 	tDesc.onCacheRender = __xuiQrCodeCacheRender;
+	tDesc.onUpdate = __xuiQrCodeUpdate;
 	__xuiQrCodeDefaultLayout(&tDesc.tLayout);
 	__xuiQrCodeDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
@@ -1066,6 +1162,7 @@ XUI_API xui_widget_type xuiQrCodeGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiQrCodeRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiQrCodeAccessible;
 	return pType;
 }
 
@@ -1073,10 +1170,11 @@ XUI_API int xuiQrCodeCreate(xui_context pContext, xui_widget* ppWidget, const xu
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiQrCodeDescValid(pDesc) ) {
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiQrCodeDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*ppWidget = NULL;
 	pType = xuiQrCodeGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -1088,17 +1186,25 @@ XUI_API int xuiQrCodeSetValue(xui_widget pWidget, const char* sValue)
 {
 	xui_qrcode_data_t* pData;
 	xui_qrcode_matrix_t tMatrix;
+	int iValueLength;
+	int iCurrentLength;
 	int iRet;
 
 	pData = __xuiQrCodeGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( sValue == NULL ) sValue = "";
-	iRet = __xuiQrCodeEncodeMatrix(sValue, pData->iMinVersion, pData->iMaxVersion, &tMatrix);
+	iRet = __xuiQrCodePayloadLength(sValue, pData->iMaxVersion, &iValueLength);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiQrCodeStringSet(&pData->sValue, &pData->iValueCapacity, sValue);
+	iCurrentLength = (pData->sValue != NULL) ? (int)strlen(pData->sValue) : 0;
+	if ( (iCurrentLength == iValueLength) &&
+	     ((iValueLength == 0) || (memcmp(pData->sValue, sValue, (size_t)iValueLength) == 0)) ) return XUI_OK;
+	iRet = __xuiQrCodeEncodeMatrix(sValue, pData->iMinVersion, pData->iMaxVersion, &tMatrix, NULL);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiQrCodeStringSet(&pData->sValue, &pData->iValueCapacity, sValue, iValueLength);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiQrCodeApplyMatrix(pData, &tMatrix);
 	pData->iChangeCount++;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1116,6 +1222,8 @@ XUI_API int xuiQrCodeSetColors(xui_widget pWidget, uint32_t iForegroundColor, ui
 
 	pData = __xuiQrCodeGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->iForegroundColor == iForegroundColor) &&
+	     (pData->iBackgroundColor == iBackgroundColor) ) return XUI_OK;
 	pData->iForegroundColor = iForegroundColor;
 	pData->iBackgroundColor = iBackgroundColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1127,6 +1235,7 @@ XUI_API int xuiQrCodeSetForegroundColor(xui_widget pWidget, uint32_t iColor)
 
 	pData = __xuiQrCodeGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iForegroundColor == iColor ) return XUI_OK;
 	pData->iForegroundColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1145,6 +1254,7 @@ XUI_API int xuiQrCodeSetBackgroundColor(xui_widget pWidget, uint32_t iColor)
 
 	pData = __xuiQrCodeGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iColor ) return XUI_OK;
 	pData->iBackgroundColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1162,7 +1272,8 @@ XUI_API int xuiQrCodeSetPadding(xui_widget pWidget, float fPadding)
 	xui_qrcode_data_t* pData;
 
 	pData = __xuiQrCodeGetData(pWidget);
-	if ( pData == NULL || fPadding < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !__xuiQrCodeFloatValid(fPadding) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fPadding == fPadding ) return XUI_OK;
 	pData->fPadding = fPadding;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1180,10 +1291,16 @@ XUI_API int xuiQrCodeSetIcon(xui_widget pWidget, xui_surface pIconSurface, xui_r
 	xui_qrcode_data_t* pData;
 
 	pData = __xuiQrCodeGetData(pWidget);
-	if ( pData == NULL || tIconSrc.fW < 0.0f || tIconSrc.fH < 0.0f || fIconSize < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !__xuiQrCodeRectValid(tIconSrc) || !__xuiQrCodeFloatValid(fIconSize) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pData->pIconSurface == pIconSurface) && __xuiQrCodeRectEqual(pData->tIconSrc, tIconSrc) &&
+	     (pData->fIconSize == fIconSize) ) return XUI_OK;
 	pData->pIconSurface = pIconSurface;
 	pData->tIconSrc = tIconSrc;
 	pData->fIconSize = fIconSize;
+	pData->bIconSurfaceGenerationValid = __xuiQrCodeReadSurfaceGeneration(pWidget,
+		pData->pIconSurface, &pData->iIconSurfaceGeneration);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1224,7 +1341,9 @@ XUI_API int xuiQrCodeSetVersionRange(xui_widget pWidget, int iMinVersion, int iM
 	if ( !__xuiQrCodeVersionValid(iMinVersion) || !__xuiQrCodeVersionValid(iMaxVersion) || iMinVersion > iMaxVersion ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiQrCodeEncodeMatrix((pData->sValue != NULL) ? pData->sValue : "", iMinVersion, iMaxVersion, &tMatrix);
+	if ( (pData->iMinVersion == iMinVersion) && (pData->iMaxVersion == iMaxVersion) ) return XUI_OK;
+	iRet = __xuiQrCodeEncodeMatrix((pData->sValue != NULL) ? pData->sValue : "",
+		iMinVersion, iMaxVersion, &tMatrix, NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iMinVersion = iMinVersion;
 	pData->iMaxVersion = iMaxVersion;

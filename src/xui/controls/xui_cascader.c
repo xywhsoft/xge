@@ -2,6 +2,7 @@
 #if XUI_ENABLE_CASCADER
 #include "xui_internal.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -14,6 +15,7 @@ typedef struct xui_cascader_data_t {
 	xui_widget pPanel;
 	xui_font pFont;
 	xui_cascader_item_t arrItems[XUI_CASCADER_ITEM_CAPACITY];
+	char* arrItemTextStorage[XUI_CASCADER_ITEM_CAPACITY];
 	xui_cascader_change_proc onChange;
 	void* pChangeUser;
 	int iItemCount;
@@ -78,6 +80,15 @@ static xui_cascader_data_t* __xuiCascaderGetData(xui_widget pWidget);
 static int __xuiCascaderApplyPopupStyle(xui_widget pWidget, xui_cascader_data_t* pData);
 static int __xuiCascaderSyncState(xui_widget pWidget, xui_cascader_data_t* pData);
 static int __xuiCascaderCloseInternal(xui_widget pWidget, xui_cascader_data_t* pData);
+static int __xuiCascaderPlacementValid(int iPlacement);
+static int __xuiCascaderExpandTriggerValid(int iTrigger);
+
+static int __xuiCascaderAlive(xui_context pContext, xui_widget pWidget,
+	const xui_cascader_data_t* pExpected)
+{
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		xuiInternalWidgetIsValid(pWidget) && __xuiCascaderGetData(pWidget) == pExpected;
+}
 
 static int __xuiCascaderAlpha(uint32_t iColor)
 {
@@ -116,15 +127,82 @@ static void __xuiCascaderCopyText(char* sDst, int iCapacity, const char* sSrc)
 	if ( sSrc == NULL ) sSrc = "";
 	snprintf(sDst, (size_t)iCapacity, "%s", sSrc);
 	sDst[iCapacity - 1] = '\0';
+	xuiInternalUtf8TrimIncomplete(sDst);
+}
+
+static char* __xuiCascaderDuplicateText(const char* sText)
+{
+	char* sCopy;
+	size_t iLength;
+
+	if ( sText == NULL ) return NULL;
+	iLength = strlen(sText) + 1u;
+	sCopy = (char*)xrtMalloc(iLength);
+	if ( sCopy != NULL ) memcpy(sCopy, sText, iLength);
+	return sCopy;
+}
+
+static void __xuiCascaderFreeTextArray(char** arrTexts)
+{
+	int i;
+
+	if ( arrTexts == NULL ) return;
+	for ( i = 0; i < XUI_CASCADER_ITEM_CAPACITY; i++ ) {
+		xrtFree(arrTexts[i]);
+		arrTexts[i] = NULL;
+	}
+}
+
+static void __xuiCascaderClearItemTexts(xui_cascader_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	__xuiCascaderFreeTextArray(pData->arrItemTextStorage);
+}
+
+static int __xuiCascaderItemsValid(const xui_cascader_item_t* pItems, int iCount)
+{
+	int i;
+	int j;
+	int iDepth;
+	int iItem;
+	int iParent;
+
+	if ( (iCount < 0) || (iCount > XUI_CASCADER_ITEM_CAPACITY) ) return 0;
+	if ( iCount == 0 ) return 1;
+	if ( pItems == NULL ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		iParent = pItems[i].iParent;
+		if ( (iParent < -1) || (iParent >= iCount) || (iParent == i) ) return 0;
+		if ( (iParent >= 0) && ((pItems[iParent].iFlags & XUI_CASCADER_ITEM_LEAF) != 0u) ) return 0;
+		for ( j = 0; j < i; j++ ) {
+			if ( (pItems[j].iParent == iParent) && (pItems[j].iValue == pItems[i].iValue) ) return 0;
+		}
+		iDepth = 0;
+		iItem = i;
+		while ( iItem >= 0 ) {
+			if ( iItem >= iCount ) return 0;
+			iDepth++;
+			if ( iDepth > XUI_CASCADER_PATH_CAPACITY ) return 0;
+			iItem = pItems[iItem].iParent;
+		}
+	}
+	return 1;
 }
 
 static int __xuiCascaderDescValid(const xui_cascader_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) return 1;
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
-	if ( pDesc->iItemCount < 0 ) return 0;
+	if ( !__xuiCascaderItemsValid(pDesc->arrItems, pDesc->iItemCount) ) return 0;
 	if ( (pDesc->iSelectedDepth < 0) || (pDesc->iSelectedDepth > XUI_CASCADER_PATH_CAPACITY) ) return 0;
-	if ( (pDesc->fItemHeight < 0.0f) || (pDesc->fColumnWidth < 0.0f) ||
+	if ( (pDesc->iSelectedDepth > 0) && (pDesc->arrSelectedValues == NULL) ) return 0;
+	if ( (pDesc->iSelectedDepth > 0) && (pDesc->iItemCount == 0) ) return 0;
+	if ( !__xuiCascaderExpandTriggerValid(pDesc->iExpandTrigger) ||
+	     !__xuiCascaderPlacementValid(pDesc->iPopupPlacement) ) return 0;
+	if ( !isfinite(pDesc->fItemHeight) || !isfinite(pDesc->fColumnWidth) ||
+	     !isfinite(pDesc->fPopupHeight) || !isfinite(pDesc->fPopupMaxHeight) ||
+	     !isfinite(pDesc->fBorderWidth) ||
+	     (pDesc->fItemHeight < 0.0f) || (pDesc->fColumnWidth < 0.0f) ||
 	     (pDesc->fPopupHeight < 0.0f) || (pDesc->fPopupMaxHeight < 0.0f) ||
 	     (pDesc->fBorderWidth < 0.0f) ) return 0;
 	return 1;
@@ -167,7 +245,7 @@ static int __xuiCascaderStyleFloat(xui_widget pWidget, const char* sName, float*
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) &&
 	     (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     (tProperty.tValue.fFloat >= 0.0f) ) {
+	     isfinite(tProperty.tValue.fFloat) && (tProperty.tValue.fFloat >= 0.0f) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -362,6 +440,17 @@ static int __xuiCascaderChildAt(const xui_cascader_data_t* pData, int iParent, i
 			if ( n == iOrdinal ) return i;
 			n++;
 		}
+	}
+	return -1;
+}
+
+static int __xuiCascaderFirstEnabledChild(const xui_cascader_data_t* pData, int iParent)
+{
+	int i;
+
+	if ( pData == NULL ) return -1;
+	for ( i = 0; i < pData->iItemCount; i++ ) {
+		if ( (pData->arrItems[i].iParent == iParent) && __xuiCascaderItemEnabled(pData, i) ) return i;
 	}
 	return -1;
 }
@@ -581,6 +670,7 @@ static void __xuiCascaderSyncDisplay(xui_cascader_data_t* pData)
 		if ( offset >= (int)sizeof(pData->sDisplay) - 1 ) break;
 	}
 	pData->sDisplay[sizeof(pData->sDisplay) - 1] = '\0';
+	xuiInternalUtf8TrimIncomplete(pData->sDisplay);
 }
 
 static void __xuiCascaderSetActivePath(xui_cascader_data_t* pData, const int* arrPath, int iDepth)
@@ -619,21 +709,40 @@ static void __xuiCascaderSyncActiveFromSelected(xui_cascader_data_t* pData)
 	} else {
 		__xuiCascaderSetActivePath(pData, NULL, 0);
 		pData->iHoverColumn = 0;
-		pData->iHoverItem = __xuiCascaderChildAt(pData, -1, 0);
+		pData->iHoverItem = __xuiCascaderFirstEnabledChild(pData, -1);
 	}
 }
 
-static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t* pData, int iItem, int bNotify)
+static int __xuiCascaderNotifyChange(xui_widget pWidget, xui_cascader_data_t* pData)
 {
 	xui_cascader_change_proc onChange;
 	void* pUser;
 	int arrValues[XUI_CASCADER_PATH_CAPACITY];
-	int arrPath[XUI_CASCADER_PATH_CAPACITY];
-	int depth;
 	int i;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	onChange = pData->onChange;
+	pUser = pData->pChangeUser;
+	if ( onChange == NULL ) return XUI_OK;
+	for ( i = 0; i < pData->iSelectedDepth; i++ ) {
+		arrValues[i] = pData->arrItems[pData->arrSelected[i]].iValue;
+	}
+	onChange(pWidget, pData->iSelectedLeaf,
+		(pData->iSelectedDepth > 0) ? arrValues : NULL,
+		pData->iSelectedDepth, pUser);
+	return XUI_OK;
+}
+
+static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t* pData, int iItem, int bNotify)
+{
+	int arrPath[XUI_CASCADER_PATH_CAPACITY];
+	int depth;
+	int i;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( (iItem < 0) || (iItem >= pData->iItemCount) || !__xuiCascaderItemEnabled(pData, iItem) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iSelectedLeaf == iItem ) return XUI_OK;
 	depth = __xuiCascaderBuildPathToItem(pData, iItem, arrPath, XUI_CASCADER_PATH_CAPACITY);
 	if ( depth <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < XUI_CASCADER_PATH_CAPACITY; i++ ) {
@@ -646,22 +755,20 @@ static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t*
 	pData->iHoverColumn = depth - 1;
 	pData->iHoverItem = iItem;
 	pData->iChangeCount++;
-	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( pData->pPanel != NULL ) (void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( bNotify ) {
-		for ( i = 0; i < depth; i++ ) arrValues[i] = pData->arrItems[arrPath[i]].iValue;
-		onChange = pData->onChange;
-		pUser = pData->pChangeUser;
-		if ( onChange != NULL ) onChange(pWidget, iItem, arrValues, depth, pUser);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( (iRet == XUI_OK) && (pData->pPanel != NULL) ) {
+		iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
-	return XUI_OK;
+	if ( (iRet == XUI_OK) && bNotify ) iRet = __xuiCascaderNotifyChange(pWidget, pData);
+	return iRet;
 }
 
 static int __xuiCascaderClearInternal(xui_widget pWidget, xui_cascader_data_t* pData, int bNotify)
 {
-	xui_cascader_change_proc onChange;
-	void* pUser;
 	int i;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iSelectedDepth <= 0 && pData->iSelectedLeaf < 0 ) return XUI_OK;
@@ -671,14 +778,14 @@ static int __xuiCascaderClearInternal(xui_widget pWidget, xui_cascader_data_t* p
 	pData->sDisplay[0] = '\0';
 	__xuiCascaderSetActivePath(pData, NULL, 0);
 	pData->iChangeCount++;
-	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( pData->pPanel != NULL ) (void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( bNotify ) {
-		onChange = pData->onChange;
-		pUser = pData->pChangeUser;
-		if ( onChange != NULL ) onChange(pWidget, -1, NULL, 0, pUser);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( (iRet == XUI_OK) && (pData->pPanel != NULL) ) {
+		iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
-	return XUI_OK;
+	if ( (iRet == XUI_OK) && bNotify ) iRet = __xuiCascaderNotifyChange(pWidget, pData);
+	return iRet;
 }
 
 static int __xuiCascaderSetSelectedPathInternal(xui_widget pWidget, xui_cascader_data_t* pData, const int* arrValues, int iDepth, int bNotify)
@@ -714,7 +821,7 @@ static void __xuiCascaderUpdateOwnerRects(xui_widget pWidget, xui_cascader_data_
 	pData->tButtonRect = xuiInternalSnapRect((xui_rect_t){__xuiCascaderMax(0.0f, r.fW - button), 0.0f, button, r.fH});
 	pData->tClearRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	clear = 0.0f;
-	if ( pData->bClearable && pData->iSelectedDepth > 0 && xuiWidgetGetEnabled(pWidget) ) {
+	if ( pData->bClearable && pData->iSelectedDepth > 0 && xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		clear = 22.0f;
 		pData->tClearRect = xuiInternalSnapRect((xui_rect_t){__xuiCascaderMax(0.0f, pData->tButtonRect.fX - clear), 0.0f, clear, r.fH});
 	}
@@ -729,7 +836,7 @@ static uint32_t __xuiCascaderState(xui_widget pWidget, xui_cascader_data_t* pDat
 
 	if ( pWidget == NULL ) return 0u;
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
 	if ( (pData != NULL) && (pData->pPopup != NULL) && xuiPopupIsOpen(pData->pPopup) ) iState |= XUI_CASCADER_STATE_OPEN;
 	if ( pData != NULL ) {
 		pContext = xuiWidgetGetContext(pWidget);
@@ -741,132 +848,190 @@ static uint32_t __xuiCascaderState(xui_widget pWidget, xui_cascader_data_t* pDat
 
 static int __xuiCascaderSyncState(xui_widget pWidget, xui_cascader_data_t* pData)
 {
-	return xuiWidgetSetStateId(pWidget, __xuiCascaderState(pWidget, pData));
+	xui_context pContext;
+	uint32_t iState;
+	int iRet;
+
+	pContext = xuiWidgetGetContext(pWidget);
+	iState = __xuiCascaderState(pWidget, pData);
+	if ( xuiWidgetGetStateId(pWidget) == iState ) return XUI_OK;
+	iRet = xuiWidgetSetStateId(pWidget, iState);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiCascaderApplyPopupStyle(xui_widget pWidget, xui_cascader_data_t* pData)
 {
 	xui_cascader_data_t tResolved;
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pPanel;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pPopup == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pPanel = pData->pPanel;
 	__xuiCascaderResolve(pWidget, pData, &tResolved);
 	__xuiCascaderClampScrolls(pData);
-	iRet = xuiPopupSetOwner(pData->pPopup, pWidget);
+	iRet = xuiPopupSetOwner(pPopup, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetFocusRestore(pData->pPopup, pWidget);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetFocusRestore(pPopup, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetContentSize(pData->pPopup, pData->fResolvedPopupWidth, pData->fResolvedPopupHeight);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetContentSize(pPopup, pData->fResolvedPopupWidth, pData->fResolvedPopupHeight);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor, tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetColors(pPopup, tResolved.iPopupPanelColor, tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetMetrics(pData->pPopup, 0.0f, 1.0f, 5.0f);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetMetrics(pPopup, 0.0f, 1.0f, 5.0f);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetClosePolicy(pData->pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetClosePolicy(pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pPanel);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetFocusPolicy(pPopup, XUI_POPUP_FOCUS_CUSTOM, pPanel);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetGap(pData->pPopup, 2.0f);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetGap(pPopup, 2.0f);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiPopupClearAnchorRect(pData->pPopup);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupClearAnchorRect(pPopup);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
 	if ( pData->iPopupPlacement == XUI_CASCADER_POPUP_TOP ) {
-		(void)xuiPopupSetAnchor(pData->pPopup, XUI_POPUP_ANCHOR_TOP_LEFT);
-		(void)xuiPopupSetDirection(pData->pPopup, XUI_POPUP_DIRECTION_RIGHT_UP);
+		iRet = xuiPopupSetAnchor(pPopup, XUI_POPUP_ANCHOR_TOP_LEFT);
+		if ( iRet == XUI_OK && __xuiCascaderAlive(pContext, pWidget, pData) ) iRet = xuiPopupSetDirection(pPopup, XUI_POPUP_DIRECTION_RIGHT_UP);
 	} else {
-		(void)xuiPopupSetAnchor(pData->pPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
-		(void)xuiPopupSetDirection(pData->pPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
+		iRet = xuiPopupSetAnchor(pPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
+		if ( iRet == XUI_OK && __xuiCascaderAlive(pContext, pWidget, pData) ) iRet = xuiPopupSetDirection(pPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
 	}
-	if ( pData->pPanel != NULL ) {
-		(void)xuiWidgetSetRect(pData->pPanel, (xui_rect_t){0.0f, 0.0f, pData->fResolvedPopupWidth, pData->fResolvedPopupHeight});
-		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( pPanel != NULL ) {
+		iRet = xuiWidgetSetRect(pPanel, (xui_rect_t){0.0f, 0.0f, pData->fResolvedPopupWidth, pData->fResolvedPopupHeight});
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( iRet == XUI_OK ) {
+			iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		}
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
 
 static int __xuiCascaderOpenInternal(xui_widget pWidget, xui_cascader_data_t* pData)
 {
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pPanel;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pPopup == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
-		if ( xuiPopupIsOpen(pData->pPopup) ) return __xuiCascaderCloseInternal(pWidget, pData);
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	pPanel = pData->pPanel;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		if ( xuiPopupIsOpen(pPopup) ) return __xuiCascaderCloseInternal(pWidget, pData);
 		return XUI_OK;
 	}
 	__xuiCascaderSyncActiveFromSelected(pData);
 	iRet = __xuiCascaderApplyPopupStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetOpen(pData->pPopup, 1);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	iRet = xuiPopupSetOpen(pPopup, 1);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( pData->pPanel != NULL ) (void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pPanel);
-	(void)__xuiCascaderSyncState(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( pPanel != NULL ) {
+		iRet = xuiSetFocusWidget(pContext, pPanel);
+		if ( iRet != XUI_OK ) {
+			if ( __xuiCascaderAlive(pContext, pWidget, pData) ) (void)xuiPopupSetOpen(pPopup, 0);
+			return iRet;
+		}
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
+	return __xuiCascaderSyncState(pWidget, pData);
 }
 
 static int __xuiCascaderCloseInternal(xui_widget pWidget, xui_cascader_data_t* pData)
 {
+	xui_context pContext;
+	xui_widget pPopup;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->pPopup != NULL ) {
-		iRet = xuiPopupSetOpen(pData->pPopup, 0);
+	pContext = xuiWidgetGetContext(pWidget);
+	pPopup = pData->pPopup;
+	if ( pPopup != NULL ) {
+		iRet = xuiPopupSetOpen(pPopup, 0);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
-	(void)__xuiCascaderSyncState(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiCascaderSyncState(pWidget, pData);
 }
 
 static int __xuiCascaderOwnerPointerDown(xui_widget pWidget, xui_cascader_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_context pContext;
 	xui_rect_t w;
 	float x;
 	float y;
+	int iRet;
 
 	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) return XUI_OK;
-	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	iRet = xuiSetFocusWidget(pContext, pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 	__xuiCascaderUpdateOwnerRects(pWidget, pData);
 	w = xuiWidgetGetWorldRect(pWidget);
 	x = pEvent->fX - w.fX;
 	y = pEvent->fY - w.fY;
 	if ( pData->bClearable && pData->iSelectedDepth > 0 && __xuiCascaderRectContains(pData->tClearRect, x, y) ) {
-		(void)__xuiCascaderClearInternal(pWidget, pData, 1);
-		(void)__xuiCascaderCloseInternal(pWidget, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiCascaderCloseInternal(pWidget, pData);
+		if ( iRet == XUI_OK && __xuiCascaderAlive(pContext, pWidget, pData) ) iRet = __xuiCascaderClearInternal(pWidget, pData, 1);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	if ( (pData->pPopup != NULL) && xuiPopupIsOpen(pData->pPopup) ) {
-		(void)__xuiCascaderCloseInternal(pWidget, pData);
+		iRet = __xuiCascaderCloseInternal(pWidget, pData);
 	} else {
-		(void)__xuiCascaderOpenInternal(pWidget, pData);
+		iRet = __xuiCascaderOpenInternal(pWidget, pData);
 	}
-	return XUI_EVENT_DISPATCH_STOP;
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiCascaderOwnerKeyDown(xui_widget pWidget, xui_cascader_data_t* pData, const xui_event_t* pEvent)
 {
-	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	int iRet;
+
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
 	switch ( pEvent->iKey ) {
 	case XUI_KEY_ENTER:
 	case XUI_KEY_SPACE:
 		if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) {
-			(void)__xuiCascaderCloseInternal(pWidget, pData);
+			iRet = __xuiCascaderCloseInternal(pWidget, pData);
 		} else {
-			(void)__xuiCascaderOpenInternal(pWidget, pData);
+			iRet = __xuiCascaderOpenInternal(pWidget, pData);
 		}
-		return XUI_EVENT_DISPATCH_STOP;
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_DOWN:
-		(void)__xuiCascaderOpenInternal(pWidget, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiCascaderOpenInternal(pWidget, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_BACKSPACE:
 	case XUI_KEY_DELETE:
 		if ( pData->bClearable ) {
-			(void)__xuiCascaderClearInternal(pWidget, pData, 1);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiCascaderClearInternal(pWidget, pData, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	case XUI_KEY_ESCAPE:
 		if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) {
-			(void)__xuiCascaderCloseInternal(pWidget, pData);
-			return XUI_EVENT_DISPATCH_STOP;
+			iRet = __xuiCascaderCloseInternal(pWidget, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
 	default:
@@ -895,16 +1060,16 @@ static int __xuiCascaderOwnerEvent(xui_widget pWidget, const xui_event_t* pEvent
 	case XUI_EVENT_POINTER_MOVE:
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
-		(void)__xuiCascaderSyncState(pWidget, pData);
-		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return __xuiCascaderSyncState(pWidget, pData);
 	case XUI_EVENT_BOUNDS_CHANGED:
-		if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+		if ( pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup) ) return __xuiCascaderApplyPopupStyle(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) (void)__xuiCascaderCloseInternal(pWidget, pData);
-		(void)__xuiCascaderSyncState(pWidget, pData);
-		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			return __xuiCascaderCloseInternal(pWidget, pData);
+		}
+		return __xuiCascaderSyncState(pWidget, pData);
 	default:
 		break;
 	}
@@ -935,10 +1100,13 @@ static int __xuiCascaderHitPanel(xui_cascader_data_t* pData, float x, float y, i
 
 static int __xuiCascaderPanelActivateItem(xui_widget pOwner, xui_cascader_data_t* pData, int iColumn, int iItem, int bCommit)
 {
+	xui_context pContext;
 	int hasChildren;
+	int oldSelected;
 	int iRet;
 
 	if ( (pOwner == NULL) || (pData == NULL) || (iItem < 0) || (iItem >= pData->iItemCount) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pOwner);
 	pData->iHoverColumn = iColumn;
 	pData->iHoverItem = iItem;
 	if ( !__xuiCascaderItemEnabled(pData, iItem) ) return XUI_OK;
@@ -946,39 +1114,52 @@ static int __xuiCascaderPanelActivateItem(xui_widget pOwner, xui_cascader_data_t
 	if ( hasChildren ) {
 		__xuiCascaderSetActiveToItem(pData, iItem);
 		__xuiCascaderEnsureItemVisible(pData, iColumn, iItem);
-		(void)__xuiCascaderApplyPopupStyle(pOwner, pData);
+		iRet = __xuiCascaderApplyPopupStyle(pOwner, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pOwner, pData) ) return XUI_OK;
 	}
 	if ( bCommit && (!hasChildren || pData->bSelectAnyLevel) ) {
-		iRet = __xuiCascaderSetSelectedItem(pOwner, pData, iItem, 1);
+		oldSelected = pData->iSelectedLeaf;
+		iRet = __xuiCascaderSetSelectedItem(pOwner, pData, iItem, 0);
 		if ( iRet != XUI_OK ) return iRet;
-		return __xuiCascaderCloseInternal(pOwner, pData);
+		iRet = __xuiCascaderCloseInternal(pOwner, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pOwner, pData) ) return XUI_OK;
+		return (oldSelected != iItem) ? __xuiCascaderNotifyChange(pOwner, pData) : XUI_OK;
 	}
-	if ( pData->pPanel != NULL ) (void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( pData->pPanel != NULL ) return xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return XUI_OK;
 }
 
 static int __xuiCascaderPanelPointerDown(xui_widget pPanel, xui_widget pOwner, xui_cascader_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_context pContext;
 	xui_rect_t w;
 	float x;
 	float y;
 	int column;
 	int item;
+	int iRet;
 
 	if ( (pEvent->iButton != 0) && (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) ) return XUI_OK;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pPanel), pPanel);
+	pContext = xuiWidgetGetContext(pPanel);
+	iRet = xuiSetFocusWidget(pContext, pPanel);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCascaderAlive(pContext, pOwner, pData) ) return XUI_EVENT_DISPATCH_STOP;
 	w = xuiWidgetGetWorldRect(pPanel);
 	x = pEvent->fX - w.fX;
 	y = pEvent->fY - w.fY;
 	if ( __xuiCascaderHitPanel(pData, x, y, &column, &item) ) {
-		(void)__xuiCascaderPanelActivateItem(pOwner, pData, column, item, 1);
+		iRet = __xuiCascaderPanelActivateItem(pOwner, pData, column, item, 1);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
 static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, xui_cascader_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_context pContext;
 	xui_rect_t w;
 	float x;
 	float y;
@@ -987,7 +1168,9 @@ static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, x
 	int oldColumn;
 	int oldItem;
 	int bExpanded;
+	int iRet;
 
+	pContext = xuiWidgetGetContext(pPanel);
 	w = xuiWidgetGetWorldRect(pPanel);
 	x = pEvent->fX - w.fX;
 	y = pEvent->fY - w.fY;
@@ -999,14 +1182,18 @@ static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, x
 			pData->iHoverColumn = column;
 			pData->iHoverItem = item;
 			if ( pData->iExpandTrigger == XUI_CASCADER_EXPAND_HOVER && __xuiCascaderItemEnabled(pData, item) && __xuiCascaderItemHasChildren(pData, item) ) {
-				(void)__xuiCascaderPanelActivateItem(pOwner, pData, column, item, 0);
+				iRet = __xuiCascaderPanelActivateItem(pOwner, pData, column, item, 0);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiCascaderAlive(pContext, pOwner, pData) ) return XUI_OK;
 				bExpanded = 1;
 			}
 			if ( bExpanded ) {
-				(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				if ( iRet != XUI_OK ) return iRet;
 			} else {
-				(void)__xuiCascaderInvalidatePanelItem(pPanel, pData, oldColumn, oldItem);
-				(void)__xuiCascaderInvalidatePanelItem(pPanel, pData, column, item);
+				iRet = __xuiCascaderInvalidatePanelItem(pPanel, pData, oldColumn, oldItem);
+				if ( iRet == XUI_OK ) iRet = __xuiCascaderInvalidatePanelItem(pPanel, pData, column, item);
+				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
 	} else if ( pData->iHoverItem >= 0 ) {
@@ -1014,7 +1201,7 @@ static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, x
 		oldItem = pData->iHoverItem;
 		pData->iHoverColumn = -1;
 		pData->iHoverItem = -1;
-		(void)__xuiCascaderInvalidatePanelItem(pPanel, pData, oldColumn, oldItem);
+		return __xuiCascaderInvalidatePanelItem(pPanel, pData, oldColumn, oldItem);
 	}
 	return XUI_OK;
 }
@@ -1040,7 +1227,7 @@ static int __xuiCascaderMoveHover(xui_cascader_data_t* pData, int iDelta)
 		if ( ordinal < 0 ) ordinal = count - 1;
 		if ( ordinal >= count ) ordinal = 0;
 		item = __xuiCascaderChildAt(pData, parent, ordinal);
-		if ( item >= 0 ) {
+		if ( (item >= 0) && __xuiCascaderItemEnabled(pData, item) ) {
 			pData->iHoverColumn = column;
 			pData->iHoverItem = item;
 			__xuiCascaderEnsureItemVisible(pData, column, item);
@@ -1052,34 +1239,40 @@ static int __xuiCascaderMoveHover(xui_cascader_data_t* pData, int iDelta)
 
 static int __xuiCascaderPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui_cascader_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_context pContext;
 	int child;
 	int parentItem;
 	int column;
+	int iRet;
 
-	(void)pPanel;
+	pContext = xuiWidgetGetContext(pPanel);
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
 	switch ( pEvent->iKey ) {
 	case XUI_KEY_ESCAPE:
-		(void)__xuiCascaderCloseInternal(pOwner, pData);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = __xuiCascaderCloseInternal(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_UP:
-		if ( __xuiCascaderMoveHover(pData, -1) && pData->pPanel != NULL ) (void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = XUI_OK;
+		if ( __xuiCascaderMoveHover(pData, -1) && pData->pPanel != NULL ) iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_DOWN:
-		if ( __xuiCascaderMoveHover(pData, 1) && pData->pPanel != NULL ) (void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = XUI_OK;
+		if ( __xuiCascaderMoveHover(pData, 1) && pData->pPanel != NULL ) iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_RIGHT:
 		if ( pData->iHoverItem >= 0 && __xuiCascaderItemEnabled(pData, pData->iHoverItem) && __xuiCascaderItemHasChildren(pData, pData->iHoverItem) ) {
-			(void)__xuiCascaderPanelActivateItem(pOwner, pData, pData->iHoverColumn, pData->iHoverItem, 0);
-			child = __xuiCascaderChildAt(pData, pData->iHoverItem, 0);
+			iRet = __xuiCascaderPanelActivateItem(pOwner, pData, pData->iHoverColumn, pData->iHoverItem, 0);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiCascaderAlive(pContext, pOwner, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			child = __xuiCascaderFirstEnabledChild(pData, pData->iHoverItem);
 			if ( child >= 0 ) {
 				pData->iHoverColumn++;
 				pData->iHoverItem = child;
 				__xuiCascaderEnsureItemVisible(pData, pData->iHoverColumn, child);
 			}
 		}
-		if ( pData->pPanel != NULL ) (void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = (pData->pPanel != NULL) ? xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_LEFT:
 		column = pData->iHoverColumn;
 		if ( column > 0 ) {
@@ -1087,13 +1280,16 @@ static int __xuiCascaderPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui_c
 			pData->iHoverColumn = column - 1;
 			pData->iHoverItem = parentItem;
 			__xuiCascaderEnsureItemVisible(pData, pData->iHoverColumn, pData->iHoverItem);
-			if ( pData->pPanel != NULL ) (void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			if ( pData->pPanel != NULL ) {
+				iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_ENTER:
 	case XUI_KEY_SPACE:
-		if ( pData->iHoverItem >= 0 ) (void)__xuiCascaderPanelActivateItem(pOwner, pData, pData->iHoverColumn, pData->iHoverItem, 1);
-		return XUI_EVENT_DISPATCH_STOP;
+		iRet = (pData->iHoverItem >= 0) ? __xuiCascaderPanelActivateItem(pOwner, pData, pData->iHoverColumn, pData->iHoverItem, 1) : XUI_OK;
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	default:
 		break;
 	}
@@ -1118,8 +1314,8 @@ static int __xuiCascaderPanelWheel(xui_widget pPanel, xui_cascader_data_t* pData
 	if ( pEvent->fWheelY < 0.0f ) pData->arrColumnScroll[column] += 1;
 	__xuiCascaderClampScrolls(pData);
 	if ( before != pData->arrColumnScroll[column] ) {
-		(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_EVENT_DISPATCH_STOP;
+		int iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	return XUI_OK;
 }
@@ -1143,8 +1339,7 @@ static int __xuiCascaderPanelEvent(xui_widget pPanel, const xui_event_t* pEvent,
 		return __xuiCascaderPanelKeyDown(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
-		(void)__xuiCascaderSyncState(pOwner, pData);
-		return xuiWidgetInvalidate(pOwner, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return __xuiCascaderSyncState(pOwner, pData);
 	default:
 		break;
 	}
@@ -1165,7 +1360,6 @@ static void __xuiCascaderPopupChanged(xui_widget pPopup, int bOpen, void* pUser)
 		pData->iHoverItem = -1;
 	}
 	(void)__xuiCascaderSyncState(pOwner, pData);
-	(void)xuiWidgetInvalidate(pOwner, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiCascaderDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, uint32_t iColor)
@@ -1212,7 +1406,10 @@ static int __xuiCascaderDrawClear(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	if ( pProxy->drawLine == NULL || __xuiCascaderAlpha(iColor) == 0 ) return XUI_OK;
 	cx = r.fX + r.fW * 0.5f;
 	cy = r.fY + r.fH * 0.5f;
-	(void)pProxy->drawLine(pProxy, pDraw, cx - 4.0f, cy - 4.0f, cx + 4.0f, cy + 4.0f, 1.5f, iColor);
+	{
+		int iRet = pProxy->drawLine(pProxy, pDraw, cx - 4.0f, cy - 4.0f, cx + 4.0f, cy + 4.0f, 1.5f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	return pProxy->drawLine(pProxy, pDraw, cx + 4.0f, cy - 4.0f, cx - 4.0f, cy + 4.0f, 1.5f, iColor);
 }
 
@@ -1220,18 +1417,23 @@ static int __xuiCascaderSyncStyle(xui_widget pWidget)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
 	xui_cascader_data_t tResolved;
+	xui_context pContext;
 	uint32_t iHash = xuiWidgetGetStyleHash(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	if ( pData->bChildStyleSynced && pData->iChildStyleHash == iHash ) return XUI_OK;
 	__xuiCascaderResolve(pWidget, pData, &tResolved);
 	if ( pData->pPopup != NULL ) {
 		iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor,
 			tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, 0u);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
-	if ( pData->pPanel != NULL )
-		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( pData->pPanel != NULL ) {
+		iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pData->iChildStyleHash = iHash;
 	pData->bChildStyleSynced = 1;
 	return XUI_OK;
@@ -1350,13 +1552,15 @@ static int __xuiCascaderPanelRender(xui_widget pPanel, xui_draw_context pDraw, u
 	columns = __xuiCascaderColumnCount(pData);
 	visible = __xuiCascaderVisibleRows(pData);
 	if ( pProxy->drawRectFill != NULL ) {
-		(void)pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, pData->fResolvedPopupWidth, pData->fResolvedPopupHeight}, tResolved.iPopupPanelColor);
+		iRet = pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, pData->fResolvedPopupWidth, pData->fResolvedPopupHeight}, tResolved.iPopupPanelColor);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	for ( column = 0; column < columns; column++ ) {
 		parent = __xuiCascaderColumnParent(pData, column);
 		count = __xuiCascaderChildCount(pData, parent);
 		if ( column > 0 && __xuiCascaderAlpha(tResolved.iPopupSeparatorColor) != 0 && pProxy->drawLine != NULL ) {
-			(void)pProxy->drawLine(pProxy, pDraw, pData->fColumnWidth * (float)column, 0.0f, pData->fColumnWidth * (float)column, pData->fResolvedPopupHeight, 1.0f, tResolved.iPopupSeparatorColor);
+			iRet = pProxy->drawLine(pProxy, pDraw, pData->fColumnWidth * (float)column, 0.0f, pData->fColumnWidth * (float)column, pData->fResolvedPopupHeight, 1.0f, tResolved.iPopupSeparatorColor);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		start = pData->arrColumnScroll[column];
 		end = start + visible;
@@ -1406,7 +1610,8 @@ static int __xuiCascaderPanelRender(xui_widget pPanel, xui_draw_context pDraw, u
 			thumb.fX = pData->fColumnWidth * (float)(column + 1) - 7.0f;
 			thumb.fH = __xuiCascaderMax(18.0f, pData->fResolvedPopupHeight * ((float)visible / (float)count));
 			thumb.fY = (pData->fResolvedPopupHeight - thumb.fH) * ((float)pData->arrColumnScroll[column] / (float)(count - visible));
-			(void)pProxy->drawRectFill(pProxy, pDraw, thumb, __xuiCascaderColorWithAlpha(tResolved.iPopupMutedTextColor, 95));
+			iRet = pProxy->drawRectFill(pProxy, pDraw, thumb, __xuiCascaderColorWithAlpha(tResolved.iPopupMutedTextColor, 95));
+			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
 	return XUI_OK;
@@ -1525,37 +1730,84 @@ static int __xuiCascaderCreatePopup(xui_widget pWidget, xui_cascader_data_t* pDa
 	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pPopup, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pPanel = xuiPopupGetContentWidget(pData->pPopup);
-	if ( pData->pPanel == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	if ( pData->pPanel == NULL ) {
+		iRet = XUI_ERROR_NOT_INITIALIZED;
+		goto fail;
+	}
 	__xuiCascaderDefaultCachePolicy(&tPolicy);
-	(void)xuiWidgetSetFocusable(pData->pPanel, 1);
-	(void)xuiWidgetSetTabStop(pData->pPanel, 0);
-	(void)xuiWidgetSetOverflow(pData->pPanel, XUI_OVERFLOW_CLIP);
-	(void)xuiWidgetSetCachePolicy(pData->pPanel, &tPolicy);
-	(void)xuiWidgetSetCacheRenderCallback(pData->pPanel, __xuiCascaderPanelRender, pWidget);
-	iRet = __xuiCascaderInitPanelEvents(pData->pPanel, pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetChange(pData->pPopup, __xuiCascaderPopupChanged, pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pPanel);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiCascaderApplyPopupStyle(pWidget, pData);
+	iRet = xuiWidgetSetFocusable(pData->pPanel, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pData->pPanel, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pData->pPanel, XUI_OVERFLOW_CLIP);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCachePolicy(pData->pPanel, &tPolicy);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCacheRenderCallback(pData->pPanel, __xuiCascaderPanelRender, pWidget);
+	if ( iRet == XUI_OK ) iRet = __xuiCascaderInitPanelEvents(pData->pPanel, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetChange(pData->pPopup, __xuiCascaderPopupChanged, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pPanel);
+	if ( iRet == XUI_OK ) iRet = __xuiCascaderApplyPopupStyle(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+fail:
+	xuiWidgetDestroy(pData->pPopup);
+	pData->pPopup = NULL;
+	pData->pPanel = NULL;
+	return iRet;
 }
 
 static int __xuiCascaderSetItemsInternal(xui_widget pWidget, xui_cascader_data_t* pData, const xui_cascader_item_t* pItems, int iCount)
 {
+	xui_cascader_data_t tOld;
+	xui_cascader_item_t arrNewItems[XUI_CASCADER_ITEM_CAPACITY];
+	char* arrNewTexts[XUI_CASCADER_ITEM_CAPACITY];
+	xui_context pContext;
+	int bHadSelection;
 	int i;
+	int iRet;
 
-	if ( (pWidget == NULL) || (pData == NULL) || (iCount < 0) || ((iCount > 0) && (pItems == NULL)) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iCount > XUI_CASCADER_ITEM_CAPACITY ) iCount = XUI_CASCADER_ITEM_CAPACITY;
-	memset(pData->arrItems, 0, sizeof(pData->arrItems));
+	if ( (pWidget == NULL) || (pData == NULL) || !__xuiCascaderItemsValid(pItems, iCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(arrNewItems, 0, sizeof(arrNewItems));
+	memset(arrNewTexts, 0, sizeof(arrNewTexts));
 	for ( i = 0; i < iCount; i++ ) {
-		pData->arrItems[i] = pItems[i];
-		if ( pData->arrItems[i].iParent >= iCount ) pData->arrItems[i].iParent = -1;
+		arrNewItems[i] = pItems[i];
+		arrNewTexts[i] = __xuiCascaderDuplicateText(pItems[i].sText);
+		if ( pItems[i].sText != NULL && arrNewTexts[i] == NULL ) {
+			__xuiCascaderFreeTextArray(arrNewTexts);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		arrNewItems[i].sText = arrNewTexts[i];
 	}
+	pContext = xuiWidgetGetContext(pWidget);
+	tOld = *pData;
+	bHadSelection = (pData->iSelectedDepth > 0) || (pData->iSelectedLeaf >= 0);
+	memset(pData->arrItems, 0, sizeof(pData->arrItems));
+	memset(pData->arrItemTextStorage, 0, sizeof(pData->arrItemTextStorage));
+	memcpy(pData->arrItems, arrNewItems, sizeof(arrNewItems));
+	memcpy(pData->arrItemTextStorage, arrNewTexts, sizeof(arrNewTexts));
 	pData->iItemCount = iCount;
-	(void)__xuiCascaderClearInternal(pWidget, pData, 0);
-	__xuiCascaderSyncDisplay(pData);
-	(void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+	for ( i = 0; i < XUI_CASCADER_PATH_CAPACITY; i++ ) pData->arrSelected[i] = -1;
+	pData->iSelectedDepth = 0;
+	pData->iSelectedLeaf = -1;
+	pData->sDisplay[0] = '\0';
+	__xuiCascaderSetActivePath(pData, NULL, 0);
+	pData->iHoverColumn = -1;
+	pData->iHoverItem = -1;
+	if ( bHadSelection ) pData->iChangeCount++;
+	iRet = __xuiCascaderApplyPopupStyle(pWidget, pData);
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) {
+		__xuiCascaderFreeTextArray(tOld.arrItemTextStorage);
+		return XUI_OK;
+	}
+	if ( iRet != XUI_OK ) {
+		*pData = tOld;
+		__xuiCascaderFreeTextArray(arrNewTexts);
+		if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+		return iRet;
+	}
+	__xuiCascaderFreeTextArray(tOld.arrItemTextStorage);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	if ( bHadSelection ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1571,26 +1823,33 @@ static int __xuiCascaderInit(xui_widget pWidget, void* pTypeData, const void* pC
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiCascaderDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiCascaderDefaults(pData);
 	__xuiCascaderApplyDesc(pData, pDesc);
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetFocusable(pWidget, 1);
-	(void)xuiWidgetSetTabStop(pWidget, 1);
-	(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
-	iRet = __xuiCascaderInitEvents(pWidget);
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiCascaderInitEvents(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCascaderCreatePopup(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pDesc != NULL) && (pDesc->arrItems != NULL) && (pDesc->iItemCount > 0) ) {
 		iRet = __xuiCascaderSetItemsInternal(pWidget, pData, pDesc->arrItems, pDesc->iItemCount);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) goto fail;
 		if ( (pDesc->arrSelectedValues != NULL) && (pDesc->iSelectedDepth > 0) ) {
 			iRet = __xuiCascaderSetSelectedPathInternal(pWidget, pData, pDesc->arrSelectedValues, pDesc->iSelectedDepth, 0);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) goto fail;
 		}
 	}
-	(void)__xuiCascaderSyncState(pWidget, pData);
-	return XUI_OK;
+	iRet = __xuiCascaderSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+fail:
+	if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
+	pData->pPopup = NULL;
+	pData->pPanel = NULL;
+	__xuiCascaderClearItemTexts(pData);
+	return iRet;
 }
 
 static void __xuiCascaderDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1602,6 +1861,7 @@ static void __xuiCascaderDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	pData = (xui_cascader_data_t*)pTypeData;
 	if ( pData != NULL ) {
 		if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
+		__xuiCascaderClearItemTexts(pData);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -1670,6 +1930,51 @@ static xui_cascader_data_t* __xuiCascaderGetData(xui_widget pWidget)
 	return (xui_cascader_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiCascaderAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+
+	if ( (pData == NULL) || (pNode == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_COMBOBOX;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_READONLY;
+	pNode->iState |= xuiCascaderIsOpen(pWidget) ? XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED;
+	pNode->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_EXPAND) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_COLLAPSE) |
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_VALUE);
+	pNode->sName = (pData->sPlaceholder[0] != '\0') ? pData->sPlaceholder : "Cascader";
+	pNode->sValue = pData->sDisplay;
+	return XUI_OK;
+}
+
+static int __xuiCascaderAccessibleAction(xui_widget pWidget, int iAction, const void* pPayload)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	const xui_accessible_value_t* pValue;
+	int iItem;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iAction == XUI_ACCESSIBLE_ACTION_EXPAND ) return xuiCascaderOpen(pWidget);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_COLLAPSE ) return xuiCascaderClose(pWidget);
+	if ( iAction != XUI_ACCESSIBLE_ACTION_SET_VALUE ) return XUI_ERROR_UNSUPPORTED;
+	pValue = (const xui_accessible_value_t*)pPayload;
+	if ( (pValue == NULL) || (pValue->iSize < sizeof(*pValue)) ||
+	     (pValue->iType != XUI_ACCESSIBLE_VALUE_NUMBER) ||
+	     !(pValue->fNumber >= 0.0 && pValue->fNumber < (double)pData->iItemCount) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iItem = (int)pValue->fNumber;
+	if ( (double)iItem != pValue->fNumber || !__xuiCascaderItemEnabled(pData, iItem) ||
+	     (!pData->bSelectAnyLevel && __xuiCascaderItemHasChildren(pData, iItem)) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	return __xuiCascaderSetSelectedItem(pWidget, pData, iItem, 1);
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiCascaderAccessible = {
+	.getNode = __xuiCascaderAccessibleNode,
+	.performAction = __xuiCascaderAccessibleAction
+};
+
 XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1697,6 +2002,7 @@ XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiCascaderRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiCascaderSyncStyle;
+	pType->pAccessibleAdapter = &g_xuiCascaderAccessible;
 	return pType;
 }
 
@@ -1704,8 +2010,9 @@ XUI_API int xuiCascaderCreate(xui_context pContext, xui_widget* ppWidget, const 
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiCascaderDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiCascaderDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiCascaderGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
@@ -1870,12 +2177,30 @@ XUI_API int xuiCascaderGetExpandTrigger(xui_widget pWidget)
 XUI_API int xuiCascaderSetPopupSize(xui_widget pWidget, float fColumnWidth, float fPopupHeight, float fPopupMaxHeight)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
-	if ( (pData == NULL) || (fColumnWidth < 0.0f) || (fPopupHeight < 0.0f) || (fPopupMaxHeight < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext;
+	float fOldColumnWidth;
+	float fOldPopupHeight;
+	float fOldPopupMaxHeight;
+	int iRet;
+	if ( (pData == NULL) || !isfinite(fColumnWidth) || !isfinite(fPopupHeight) ||
+	     !isfinite(fPopupMaxHeight) || (fColumnWidth < 0.0f) ||
+	     (fPopupHeight < 0.0f) || (fPopupMaxHeight < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	fOldColumnWidth = pData->fColumnWidth;
+	fOldPopupHeight = pData->fPopupHeight;
+	fOldPopupMaxHeight = pData->fPopupMaxHeight;
 	if ( fColumnWidth > 0.0f ) pData->fColumnWidth = fColumnWidth;
 	pData->fPopupHeight = fPopupHeight;
 	if ( fPopupMaxHeight > 0.0f ) pData->fPopupMaxHeight = fPopupMaxHeight;
-	if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
-	return XUI_OK;
+	iRet = (pData->pPopup != NULL) ? __xuiCascaderApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return iRet;
+	if ( iRet != XUI_OK ) {
+		pData->fColumnWidth = fOldColumnWidth;
+		pData->fPopupHeight = fOldPopupHeight;
+		pData->fPopupMaxHeight = fOldPopupMaxHeight;
+		if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiCascaderGetPopupSize(xui_widget pWidget, float* pColumnWidth, float* pPopupHeight, float* pPopupMaxHeight)
@@ -1891,10 +2216,20 @@ XUI_API int xuiCascaderGetPopupSize(xui_widget pWidget, float* pColumnWidth, flo
 XUI_API int xuiCascaderSetPopupPlacement(xui_widget pWidget, int iPlacement)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	xui_context pContext;
+	int iOldPlacement;
+	int iRet;
 	if ( (pData == NULL) || !__xuiCascaderPlacementValid(iPlacement) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	iOldPlacement = pData->iPopupPlacement;
 	pData->iPopupPlacement = iPlacement;
-	if ( pData->pPopup != NULL ) return __xuiCascaderApplyPopupStyle(pWidget, pData);
-	return XUI_OK;
+	iRet = (pData->pPopup != NULL) ? __xuiCascaderApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return iRet;
+	if ( iRet != XUI_OK ) {
+		pData->iPopupPlacement = iOldPlacement;
+		if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiCascaderGetPopupPlacement(xui_widget pWidget)
@@ -1906,10 +2241,26 @@ XUI_API int xuiCascaderGetPopupPlacement(xui_widget pWidget)
 XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float fBorderWidth)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
-	if ( (pData == NULL) || (fItemHeight <= 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext;
+	float fOldItemHeight;
+	float fOldBorderWidth;
+	int iRet;
+	if ( (pData == NULL) || !isfinite(fItemHeight) || !isfinite(fBorderWidth) ||
+	     (fItemHeight <= 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	fOldItemHeight = pData->fItemHeight;
+	fOldBorderWidth = pData->fBorderWidth;
 	pData->fItemHeight = fItemHeight;
 	pData->fBorderWidth = fBorderWidth;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = (pData->pPopup != NULL) ? __xuiCascaderApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return iRet;
+	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->fItemHeight = fOldItemHeight;
+		pData->fBorderWidth = fOldBorderWidth;
+		if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiCascaderGetMetrics(xui_widget pWidget, float* pItemHeight, float* pBorderWidth)
@@ -2010,7 +2361,22 @@ XUI_API int xuiCascaderGetButtonColors(xui_widget pWidget, uint32_t* pButton, ui
 XUI_API int xuiCascaderSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iHover, uint32_t iActive, uint32_t iSelected, uint32_t iActiveText, uint32_t iDisabledText, uint32_t iSeparator)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	xui_context pContext;
+	uint32_t arrOld[11];
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	arrOld[0] = pData->iPopupPanelColor;
+	arrOld[1] = pData->iPopupBorderColor;
+	arrOld[2] = pData->iPopupShadowColor;
+	arrOld[3] = pData->iPopupTextColor;
+	arrOld[4] = pData->iPopupMutedTextColor;
+	arrOld[5] = pData->iPopupHoverColor;
+	arrOld[6] = pData->iPopupActiveColor;
+	arrOld[7] = pData->iPopupSelectedColor;
+	arrOld[8] = pData->iPopupActiveTextColor;
+	arrOld[9] = pData->iPopupDisabledTextColor;
+	arrOld[10] = pData->iPopupSeparatorColor;
 	pData->iPopupPanelColor = iPanel;
 	pData->iPopupBorderColor = iBorder;
 	pData->iPopupShadowColor = iShadow;
@@ -2022,8 +2388,23 @@ XUI_API int xuiCascaderSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint3
 	pData->iPopupActiveTextColor = iActiveText;
 	pData->iPopupDisabledTextColor = iDisabledText;
 	pData->iPopupSeparatorColor = iSeparator;
-	if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
-	return XUI_OK;
+	iRet = (pData->pPopup != NULL) ? __xuiCascaderApplyPopupStyle(pWidget, pData) : XUI_OK;
+	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return iRet;
+	if ( iRet != XUI_OK ) {
+		pData->iPopupPanelColor = arrOld[0];
+		pData->iPopupBorderColor = arrOld[1];
+		pData->iPopupShadowColor = arrOld[2];
+		pData->iPopupTextColor = arrOld[3];
+		pData->iPopupMutedTextColor = arrOld[4];
+		pData->iPopupHoverColor = arrOld[5];
+		pData->iPopupActiveColor = arrOld[6];
+		pData->iPopupSelectedColor = arrOld[7];
+		pData->iPopupActiveTextColor = arrOld[8];
+		pData->iPopupDisabledTextColor = arrOld[9];
+		pData->iPopupSeparatorColor = arrOld[10];
+		if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiCascaderGetPopupColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pText, uint32_t* pMutedText, uint32_t* pHover, uint32_t* pActive, uint32_t* pSelected, uint32_t* pActiveText, uint32_t* pDisabledText, uint32_t* pSeparator)
@@ -2047,9 +2428,12 @@ XUI_API int xuiCascaderGetPopupColors(xui_widget pWidget, uint32_t* pPanel, uint
 XUI_API int xuiCascaderSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->pFont = pFont;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = (pData->pPanel != NULL) ? xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API xui_font xuiCascaderGetFont(xui_widget pWidget)

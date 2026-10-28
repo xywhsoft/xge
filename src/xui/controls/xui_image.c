@@ -43,6 +43,18 @@ static int __xuiImageAlignValid(int iAlign)
 	       (iAlign == XUI_ALIGN_END);
 }
 
+static int __xuiImageFloatRectValid(xui_image_rect_t tRect)
+{
+	return isfinite(tRect.fX) && isfinite(tRect.fY) && isfinite(tRect.fW) && isfinite(tRect.fH) &&
+		tRect.fW >= 0.0f && tRect.fH >= 0.0f;
+}
+
+static int __xuiImageFloatRectEqual(xui_image_rect_t tA, xui_image_rect_t tB)
+{
+	return (tA.fX == tB.fX) && (tA.fY == tB.fY) &&
+		(tA.fW == tB.fW) && (tA.fH == tB.fH);
+}
+
 static int __xuiImageDescValid(const xui_image_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -69,7 +81,7 @@ static xui_image_data_t* __xuiImageGetData(xui_widget pWidget)
 	xui_context pContext;
 	xui_widget_type pType;
 
-	if ( pWidget == NULL ) {
+	if ( !xuiInternalWidgetIsValid(pWidget) ) {
 		return NULL;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
@@ -152,12 +164,6 @@ static int __xuiImageSurfaceDesc(xui_widget pWidget, xui_surface pSurface, xui_s
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	return pProxy->surfaceGetDesc(pProxy, pSurface, pDesc);
-}
-
-static int __xuiImageFloatRectValid(xui_image_rect_t tRect)
-{
-	return isfinite(tRect.fX) && isfinite(tRect.fY) && isfinite(tRect.fW) && isfinite(tRect.fH) &&
-		tRect.fW >= 0.0f && tRect.fH >= 0.0f;
 }
 
 static xui_image_rect_t __xuiImageSourceRect(xui_widget pWidget, const xui_image_data_t* pData)
@@ -333,6 +339,7 @@ static int __xuiImageInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 {
 	xui_image_data_t* pData;
 	const xui_image_desc_t* pDesc;
+	int iRet;
 
 	(void)pUser;
 	pData = (xui_image_data_t*)pTypeData;
@@ -356,9 +363,9 @@ static int __xuiImageInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	}
 	pData->bSurfaceGenerationValid = __xuiImageReadSurfaceGeneration(pWidget,
 		pData->pSurface, &pData->iSurfaceGeneration);
-	(void)xuiWidgetSetFocusable(pWidget, 0);
-	(void)xuiWidgetSetTabStop(pWidget, 0);
-	return XUI_OK;
+	iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiWidgetSetTabStop(pWidget, 0);
 }
 
 static int __xuiImageUpdate(xui_widget pWidget, float fDelta, void* pUser)
@@ -447,6 +454,20 @@ static void __xuiImageRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiImageRegisterStyleProperty(pContext, pType, "image.align_y", XUI_STYLE_VALUE_INT, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int __xuiImageAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	if ( (__xuiImageGetData(pWidget) == NULL) || (pNode == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_IMAGE;
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiImageAccessible = {
+	.getNode = __xuiImageAccessibleNode,
+	.performAction = NULL
+};
+
 XUI_API xui_widget_type xuiImageGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -459,6 +480,7 @@ XUI_API xui_widget_type xuiImageGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "image");
 	if ( pType != NULL ) {
 		__xuiImageRegisterStyleProperties(pContext, pType);
+		pType->pAccessibleAdapter = &g_xuiImageAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -479,6 +501,7 @@ XUI_API xui_widget_type xuiImageGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiImageRegisterStyleProperties(pContext, pType);
+	pType->pAccessibleAdapter = &g_xuiImageAccessible;
 	return pType;
 }
 
@@ -486,10 +509,9 @@ XUI_API int xuiImageCreate(xui_context pContext, xui_widget* ppWidget, const xui
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiImageDescValid(pDesc) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !__xuiImageDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiImageGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -525,15 +547,20 @@ XUI_API xui_surface xuiImageGetSurface(xui_widget pWidget)
 XUI_API int xuiImageSetSource(xui_widget pWidget, xui_rect_t tSrc)
 {
 	xui_image_data_t* pData;
+	xui_image_rect_t tSource;
 
 	if ( (tSrc.fW < 0.0f) || (tSrc.fH < 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	tSource = (xui_image_rect_t){tSrc.fX, tSrc.fY, tSrc.fW, tSrc.fH};
 	pData = __xuiImageGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pData->tSrc = (xui_image_rect_t){tSrc.fX, tSrc.fY, tSrc.fW, tSrc.fH};
+	if ( __xuiImageFloatRectEqual(pData->tSrc, tSource) ) {
+		return XUI_OK;
+	}
+	pData->tSrc = tSource;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -545,6 +572,7 @@ XUI_API int xuiImageSetSourceRect(xui_widget pWidget, float fX1, float fY1, floa
 	if ( !__xuiImageFloatRectValid(tSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiImageGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( __xuiImageFloatRectEqual(pData->tSrc, tSrc) ) return XUI_OK;
 	pData->tSrc = tSrc;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -667,6 +695,9 @@ XUI_API int xuiImageSetCustomRect(xui_widget pWidget, float fX1, float fY1, floa
 	pData = __xuiImageGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pData->iMode == XUI_IMAGE_CUSTOM) && __xuiImageFloatRectEqual(pData->tDst, tDst) ) {
+		return XUI_OK;
 	}
 	pData->tDst = tDst;
 	pData->iMode = XUI_IMAGE_CUSTOM;

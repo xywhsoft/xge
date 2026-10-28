@@ -60,10 +60,105 @@ typedef struct xui_table_grid_data_t {
 	int iCancelCount;
 	int iPickerCount;
 	int iChangeCount;
+	uint64_t iAdapterGeneration;
+	int bCommitting;
+	int bStartingEdit;
+	uint32_t arrDefaultPalette[XUI_COLOR_PICKER_PALETTE_CAPACITY];
+	int iDefaultPaletteCount;
 	char sOriginalValue[XUI_TABLE_GRID_VALUE_CAPACITY];
 } xui_table_grid_data_t;
 
 static xui_table_grid_data_t* __xuiTableGridGetData(xui_widget pWidget);
+static int __xuiTableGridEditModeValid(int iMode);
+static int __xuiTableGridEndEditOperation(xui_widget pWidget, int bCommit);
+
+static int __xuiTableGridWidgetAlive(xui_widget pWidget, xui_table_grid_data_t* pData)
+{
+	xui_context pContext;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 0;
+	pContext = xuiWidgetGetContext(pWidget);
+	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
+		__xuiTableGridGetData(pWidget) == pData;
+}
+
+static int __xuiTableGridFloatValid(float fValue)
+{
+	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
+}
+
+static int __xuiTableGridFloatFinite(float fValue)
+{
+	return (fValue == fValue) &&
+		(fValue >= -XUI_LAYOUT_UNBOUNDED) && (fValue <= XUI_LAYOUT_UNBOUNDED);
+}
+
+static int __xuiTableGridSelectionModeValid(int iMode)
+{
+	return (iMode == XUI_TABLE_VIEW_SELECTION_CELL) || (iMode == XUI_TABLE_VIEW_SELECTION_ROW);
+}
+
+static int __xuiTableGridScrollbarModeValid(int iMode)
+{
+	return (iMode == XUI_SCROLLBAR_MODE_FULL) || (iMode == XUI_SCROLLBAR_MODE_COMPACT);
+}
+
+static int __xuiTableGridColumnValid(const xui_table_view_column_t* pColumn)
+{
+	if ( pColumn == NULL || !__xuiTableGridFloatValid(pColumn->fWidth) ||
+	     !__xuiTableGridFloatValid(pColumn->fMinWidth) ||
+	     !__xuiTableGridFloatValid(pColumn->fMaxWidth) ) return 0;
+	return (pColumn->fMaxWidth <= 0.0f) || (pColumn->fMinWidth <= pColumn->fMaxWidth);
+}
+
+static int __xuiTableGridColumnsValid(const xui_table_view_column_t* arrColumns, int iCount)
+{
+	int i;
+
+	if ( iCount < 0 || iCount > XUI_TABLE_VIEW_COLUMN_CAPACITY ||
+	     (iCount > 0 && arrColumns == NULL) ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( !__xuiTableGridColumnValid(&arrColumns[i]) ) return 0;
+	}
+	return 1;
+}
+
+static int __xuiTableGridRowsValid(const xui_table_view_row_t* arrRows, int iCount)
+{
+	int i;
+
+	if ( iCount < 0 ) return 0;
+	if ( arrRows == NULL ) return 1;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( !__xuiTableGridFloatValid(arrRows[i].fHeight) ) return 0;
+	}
+	return 1;
+}
+
+static int __xuiTableGridDateModeValid(int iMode)
+{
+	return iMode >= XUI_DATE_PICKER_MODE_DATE && iMode <= XUI_DATE_PICKER_MODE_DATETIME_RANGE;
+}
+
+static int __xuiTableGridEditorConfigValid(const xui_table_grid_editor_config_t* pConfig)
+{
+	if ( pConfig == NULL || pConfig->iEnumItemCount < 0 ||
+	     pConfig->iEnumItemCount > XUI_COMBOBOX_ITEM_CAPACITY ||
+	     (pConfig->iEnumItemCount > 0 && pConfig->arrEnumItems == NULL &&
+	      pConfig->arrEnumItemData == NULL) ||
+	     !__xuiTableGridFloatFinite(pConfig->fMin) ||
+	     !__xuiTableGridFloatFinite(pConfig->fMax) ||
+	     !__xuiTableGridFloatFinite(pConfig->fStep) || pConfig->fStep < 0.0f ||
+	     (pConfig->fMin != pConfig->fMax && pConfig->fMin > pConfig->fMax) ||
+	     pConfig->iPrecision < -1 || pConfig->iPrecision > 9 ||
+	     (pConfig->bDateModeSet && !__xuiTableGridDateModeValid(pConfig->iDateMode)) ||
+	     pConfig->tDefaultRangeSpan < 0 ||
+	     (pConfig->bDateHasMin && pConfig->bDateHasMax && pConfig->tDateMin > pConfig->tDateMax) ||
+	     pConfig->iPaletteCount < 0 ||
+	     pConfig->iPaletteCount > XUI_COLOR_PICKER_PALETTE_CAPACITY ||
+	     (pConfig->iPaletteCount > 0 && pConfig->arrPalette == NULL) ) return 0;
+	return 1;
+}
 
 static int __xuiTableGridTableContext(xui_widget pTable, int iPart, int iRow, int iColumn,
 	float fX, float fY, void* pUser)
@@ -94,14 +189,32 @@ static int __xuiTableGridTextEqualNoCase(const char* sA, const char* sB)
 
 static int __xuiTableGridDescValid(const xui_table_grid_desc_t* pDesc)
 {
+	int i;
+
 	if ( pDesc == NULL ) {
 		return 1;
 	}
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
-	if ( (pDesc->iColumnCount < 0) || (pDesc->iRowCount < 0) ) {
+	if ( (pDesc->iColumnCount < 0) || (pDesc->iRowCount < 0) ||
+	     (pDesc->iColumnCount > XUI_TABLE_VIEW_COLUMN_CAPACITY) ||
+	     ((pDesc->iColumnCount > 0) && (pDesc->arrColumns == NULL)) ||
+	     !__xuiTableGridSelectionModeValid(pDesc->iSelectionMode) ||
+	     !__xuiTableGridEditModeValid(pDesc->iEditMode) ||
+	     !__xuiTableGridScrollbarModeValid(pDesc->iScrollbarMode) ) {
 		return 0;
+	}
+	if ( ((pDesc->fDefaultColumnWidth != 0.0f) && !__xuiTableGridFloatValid(pDesc->fDefaultColumnWidth)) ||
+	     ((pDesc->fDefaultRowHeight != 0.0f) && !__xuiTableGridFloatValid(pDesc->fDefaultRowHeight)) ||
+	     ((pDesc->fHeaderHeight != 0.0f) && !__xuiTableGridFloatValid(pDesc->fHeaderHeight)) ) return 0;
+	for ( i = 0; i < pDesc->iColumnCount; i++ ) {
+		if ( !__xuiTableGridColumnValid(&pDesc->arrColumns[i]) ) return 0;
+	}
+	if ( pDesc->arrRows != NULL ) {
+		for ( i = 0; i < pDesc->iRowCount; i++ ) {
+			if ( !__xuiTableGridFloatValid(pDesc->arrRows[i].fHeight) ) return 0;
+		}
 	}
 	return 1;
 }
@@ -331,14 +444,18 @@ static int __xuiTableGridEditingRect(xui_widget pWidget, xui_table_grid_data_t* 
 
 static int __xuiTableGridPlaceEditor(xui_widget pWidget, xui_table_grid_data_t* pData, xui_widget pEditor, xui_rect_t tRect)
 {
+	int iRet;
+
 	(void)pWidget;
 	(void)pData;
 	if ( pEditor == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tRect = xuiInternalSnapRect(tRect);
-	(void)xuiWidgetSetRect(pEditor, tRect);
-	(void)xuiWidgetSetVisible(pEditor, 1);
+	iRet = xuiWidgetSetRect(pEditor, tRect);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetVisible(pEditor, 1);
+	if ( iRet != XUI_OK ) return iRet;
 	/* The editor remains an absolute child of the grid. Arranging it as a
 	 * standalone root would discard its parent-relative item coordinates. */
 	return XUI_OK;
@@ -441,7 +558,8 @@ static int __xuiTableGridEventInActiveEditor(xui_widget pWidget, xui_table_grid_
 		return 1;
 	}
 	/* Text selection may release outside the editor while the input still owns pointer capture. */
-	pCapture = xuiGetPointerCapture(xuiWidgetGetContext(pWidget));
+	pCapture = xuiGetPointerCaptureEx(xuiWidgetGetContext(pWidget),
+		pEvent->iPointerId, pEvent->iPointerType);
 	return __xuiTableGridWidgetContains(pEditor, pCapture);
 }
 
@@ -462,17 +580,24 @@ static void __xuiTableGridDefaultCell(xui_table_grid_data_t* pData, int iColumn,
 	}
 }
 
-static void __xuiTableGridGetCell(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell)
+static int __xuiTableGridGetCell(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell)
 {
+	xui_table_view_cell_proc onCell;
+	void* pUser;
+
 	__xuiTableGridDefaultCell(pData, iColumn, pCell);
 	if ( (pData == NULL) || (pCell == NULL) || (iRow < 0) || (iColumn < 0) ) {
-		return;
+		return 0;
 	}
-	if ( pData->onCell != NULL ) {
-		(void)pData->onCell(pWidget, iRow, iColumn, pCell, pData->pAdapterUser);
+	onCell = pData->onCell;
+	pUser = pData->pAdapterUser;
+	if ( onCell != NULL ) {
+		(void)onCell(pWidget, iRow, iColumn, pCell, pUser);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
 	}
 	if ( pCell->iRowSpan <= 0 ) pCell->iRowSpan = 1;
 	if ( pCell->iColSpan <= 0 ) pCell->iColSpan = 1;
+	return 1;
 }
 
 static const char* __xuiTableGridCellText(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, const xui_table_view_cell_t* pCell, char* sBuffer, int iCapacity)
@@ -485,7 +610,11 @@ static const char* __xuiTableGridCellText(xui_widget pWidget, xui_table_grid_dat
 	if ( (sBuffer == NULL) || (iCapacity <= 0) ) return "";
 	sBuffer[0] = '\0';
 	if ( pCell == NULL ) return sBuffer;
-	if ( pCell->sText != NULL ) return pCell->sText;
+	if ( pCell->sText != NULL ) {
+		snprintf(sBuffer, (size_t)iCapacity, "%s", pCell->sText);
+		sBuffer[iCapacity - 1] = '\0';
+		return sBuffer;
+	}
 	onFormat = pCell->onFormat;
 	pUser = pCell->pFormatUser;
 	if ( onFormat == NULL && pData != NULL && pData->pTable != NULL ) {
@@ -516,6 +645,7 @@ static void __xuiTableGridDefaultEditorConfig(xui_table_grid_editor_config_t* pC
 	if ( pConfig == NULL ) return;
 	memset(pConfig, 0, sizeof(*pConfig));
 	pConfig->iEnumSelected = -1;
+	pConfig->iPrecision = -1;
 	pConfig->iDateMode = __xuiTableGridDateModeForType(iType);
 	pConfig->bShowSecond = 1;
 	pConfig->sRangeSeparator = " - ";
@@ -523,10 +653,16 @@ static void __xuiTableGridDefaultEditorConfig(xui_table_grid_editor_config_t* pC
 
 static int __xuiTableGridLoadEditorConfig(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, int iType)
 {
+	int iRet;
+
 	if ( pData == NULL ) return 0;
 	__xuiTableGridDefaultEditorConfig(&pData->tEditorConfig, iType);
-	if ( pData->onEditorConfig == NULL ) return 0;
-	return pData->onEditorConfig(pWidget, iRow, iColumn, iType, &pData->tEditorConfig, pData->pEditorConfigUser);
+	if ( pData->onEditorConfig != NULL ) {
+		iRet = pData->onEditorConfig(pWidget, iRow, iColumn, iType,
+			&pData->tEditorConfig, pData->pEditorConfigUser);
+		if ( iRet < 0 || !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
+	}
+	return __xuiTableGridEditorConfigValid(&pData->tEditorConfig);
 }
 
 static xtime __xuiTableGridParseDateValue(const char* sText, int iType, const char* sFormat)
@@ -610,34 +746,76 @@ static const char* __xuiTableGridCurrentEditorValue(xui_table_grid_data_t* pData
 	}
 }
 
+static void __xuiTableGridClearEditState(xui_table_grid_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	pData->iEditingRow = -1;
+	pData->iEditingColumn = -1;
+	pData->iEditingType = XUI_TABLE_CELL_TYPE_TEXT;
+	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
+	pData->sOriginalValue[0] = '\0';
+}
+
 static int __xuiTableGridCommitValue(xui_widget pWidget, xui_table_grid_data_t* pData, const char* sValue)
 {
+	xui_table_grid_validate_proc onValidate;
+	xui_table_grid_set_proc onSet;
+	xui_table_grid_change_proc onChange;
+	void* pValidateUser;
+	void* pSetUser;
+	void* pChangeUser;
 	xui_widget pInput;
+	char sStable[XUI_TABLE_GRID_VALUE_CAPACITY];
+	int iRow;
+	int iColumn;
+	int iType;
+	int iActiveEditor;
+	int bAccepted;
+	int bChanged;
 
-	if ( pData == NULL ) return 0;
-	if ( sValue == NULL ) sValue = "";
-	if ( pData->onValidate != NULL ) {
-		if ( pData->onValidate(pWidget, pData->iEditingRow, pData->iEditingColumn, sValue, pData->iEditingType, pData->pValidateUser) == 0 ) {
+	if ( pData == NULL || pData->bCommitting ) return 0;
+	snprintf(sStable, sizeof(sStable), "%s", (sValue != NULL) ? sValue : "");
+	sStable[sizeof(sStable) - 1] = '\0';
+	iRow = pData->iEditingRow;
+	iColumn = pData->iEditingColumn;
+	iType = pData->iEditingType;
+	iActiveEditor = pData->iActiveEditor;
+	onValidate = pData->onValidate;
+	pValidateUser = pData->pValidateUser;
+	onSet = pData->onSet;
+	pSetUser = pData->pSetUser;
+	onChange = pData->onChange;
+	pChangeUser = pData->pChangeUser;
+	bChanged = strcmp(pData->sOriginalValue, sStable) != 0;
+	pData->bCommitting = 1;
+	if ( onValidate != NULL ) {
+		bAccepted = onValidate(pWidget, iRow, iColumn, sStable, iType, pValidateUser);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 1;
+		if ( bAccepted == 0 ) {
+			pData->bCommitting = 0;
 			pData->iRejectCount++;
-			if ( pData->iActiveEditor == XUI_TABLE_GRID_EDITOR_INPUT && pData->pInput != NULL ) {
+			if ( iActiveEditor == XUI_TABLE_GRID_EDITOR_INPUT && pData->pInput != NULL ) {
 				(void)xuiInputSetError(pData->pInput, 1);
-			} else if ( pData->iActiveEditor == XUI_TABLE_GRID_EDITOR_NUMERIC && pData->pNumeric != NULL ) {
+			} else if ( iActiveEditor == XUI_TABLE_GRID_EDITOR_NUMERIC && pData->pNumeric != NULL ) {
 				pInput = xuiNumericInputGetInputWidget(pData->pNumeric);
 				if ( pInput != NULL ) (void)xuiInputSetError(pInput, 1);
 			}
 			return 0;
 		}
 	}
-	if ( strcmp(pData->sOriginalValue, sValue) != 0 ) {
-		if ( pData->onSet != NULL ) {
-			pData->onSet(pWidget, pData->iEditingRow, pData->iEditingColumn, sValue, pData->iEditingType, pData->pSetUser);
-		}
-		if ( pData->onChange != NULL ) {
-			pData->onChange(pWidget, pData->iEditingRow, pData->iEditingColumn, sValue, pData->iEditingType, pData->pChangeUser);
+	if ( bChanged ) {
+		if ( onSet != NULL ) {
+			onSet(pWidget, iRow, iColumn, sStable, iType, pSetUser);
+			if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 1;
 		}
 		pData->iCommitCount++;
 		pData->iChangeCount++;
+		if ( onChange != NULL ) {
+			onChange(pWidget, iRow, iColumn, sStable, iType, pChangeUser);
+			if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 1;
+		}
 	}
+	pData->bCommitting = 0;
 	return 1;
 }
 
@@ -695,6 +873,7 @@ static int __xuiTableGridCellProc(xui_widget pTable, int iRow, int iColumn, xui_
 	iRet = 1;
 	if ( pData->onCell != NULL ) {
 		iRet = pData->onCell(pWidget, iRow, iColumn, pCell, pData->pAdapterUser);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return iRet;
 	}
 	if ( (pData->iEditingRow == iRow) && (pData->iEditingColumn == iColumn) ) {
 		pCell->bEditing = 1;
@@ -720,16 +899,20 @@ static void __xuiTableGridColorChange(xui_widget pWidget, uint32_t iColor, void*
 {
 	xui_table_grid_data_t* pData;
 	xui_widget pGrid;
-	const char* sValue;
+	char sValue[XUI_TABLE_GRID_VALUE_CAPACITY];
+	const char* sHex;
 
 	(void)pWidget;
 	(void)iColor;
 	pData = (xui_table_grid_data_t*)pUser;
 	if ( pData == NULL || pData->iActiveEditor != XUI_TABLE_GRID_EDITOR_COLOR ) return;
 	pGrid = xuiWidgetGetParent(pData->pColor);
-	sValue = xuiColorPickerGetHex(pData->pColor);
+	sHex = xuiColorPickerGetHex(pData->pColor);
+	snprintf(sValue, sizeof(sValue), "%s", (sHex != NULL) ? sHex : "");
+	sValue[sizeof(sValue) - 1] = '\0';
 	if ( __xuiTableGridCommitValue(pGrid, pData, sValue) != 0 ) {
-		snprintf(pData->sOriginalValue, sizeof(pData->sOriginalValue), "%s", sValue != NULL ? sValue : "");
+		if ( !__xuiTableGridWidgetAlive(pGrid, pData) ) return;
+		snprintf(pData->sOriginalValue, sizeof(pData->sOriginalValue), "%s", sValue);
 		(void)xuiTableViewRefresh(pData->pTable);
 	}
 }
@@ -806,6 +989,7 @@ static int __xuiTableGridOpenTextArea(xui_widget pWidget, xui_table_grid_data_t*
 	xui_rect_t tAnchor;
 	float fW;
 	float fH;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pTextPopup == NULL) ) return 0;
 	fW = 380.0f;
@@ -813,25 +997,36 @@ static int __xuiTableGridOpenTextArea(xui_widget pWidget, xui_table_grid_data_t*
 	if ( !__xuiTableGridCellRectWorld(pWidget, pData, pData->iEditingRow, pData->iEditingColumn, &tAnchor) ) {
 		tAnchor = xuiWidgetGetWorldRect(pWidget);
 	}
-	(void)xuiTextEditSetText(pData->pTextEdit, pData->sOriginalValue);
-	(void)xuiPopupSetOwner(pData->pTextPopup, pWidget);
-	(void)xuiPopupSetFocusRestore(pData->pTextPopup, pData->pTable);
-	(void)xuiPopupSetAnchorRect(pData->pTextPopup, tAnchor);
-	(void)xuiPopupSetAnchor(pData->pTextPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
-	(void)xuiPopupSetDirection(pData->pTextPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
-	(void)xuiPopupSetContentSize(pData->pTextPopup, fW, fH);
-	(void)xuiWidgetSetRect(pData->pTextEdit, (xui_rect_t){10.0f, 10.0f, fW - 20.0f, fH - 58.0f});
-	(void)xuiWidgetSetRect(pData->pTextCancel, (xui_rect_t){fW - 172.0f, fH - 40.0f, 76.0f, 28.0f});
-	(void)xuiWidgetSetRect(pData->pTextOk, (xui_rect_t){fW - 88.0f, fH - 40.0f, 76.0f, 28.0f});
-	(void)xuiPopupSetOpen(pData->pTextPopup, 1);
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pTextEdit);
+	iRet = xuiTextEditSetText(pData->pTextEdit, pData->sOriginalValue);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetOwner(pData->pTextPopup, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusRestore(pData->pTextPopup, pData->pTable);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetAnchorRect(pData->pTextPopup, tAnchor);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetAnchor(pData->pTextPopup, XUI_POPUP_ANCHOR_BOTTOM_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetDirection(pData->pTextPopup, XUI_POPUP_DIRECTION_RIGHT_DOWN);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetContentSize(pData->pTextPopup, fW, fH);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pData->pTextEdit, (xui_rect_t){10.0f, 10.0f, fW - 20.0f, fH - 58.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pData->pTextCancel, (xui_rect_t){fW - 172.0f, fH - 40.0f, 76.0f, 28.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pData->pTextOk, (xui_rect_t){fW - 88.0f, fH - 40.0f, 76.0f, 28.0f});
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetOpen(pData->pTextPopup, 1);
+	if ( iRet != XUI_OK ) {
+		(void)xuiPopupSetOpen(pData->pTextPopup, 0);
+		return 0;
+	}
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_TEXTAREA;
+	if ( xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pTextEdit) != XUI_OK ) {
+		(void)xuiPopupSetOpen(pData->pTextPopup, 0);
+		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
+		return 0;
+	}
 	return 1;
 }
 
 static int __xuiTableGridOpenPicker(xui_widget pWidget, xui_table_grid_data_t* pData, xui_table_view_cell_t* pCell)
 {
+	xui_table_grid_editor_proc onEditor;
+	void* pUser;
 	xui_rect_t tRect;
+	int bHandled;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->onEditor == NULL) || (pCell == NULL) ) {
 		return 0;
@@ -839,7 +1034,11 @@ static int __xuiTableGridOpenPicker(xui_widget pWidget, xui_table_grid_data_t* p
 	if ( !__xuiTableGridCellRectWorld(pWidget, pData, pData->iEditingRow, pData->iEditingColumn, &tRect) ) {
 		tRect = xuiWidgetGetWorldRect(pWidget);
 	}
-	if ( pData->onEditor(pWidget, pData->iEditingRow, pData->iEditingColumn, pCell, tRect, pData->pEditorUser) != 0 ) {
+	onEditor = pData->onEditor;
+	pUser = pData->pEditorUser;
+	bHandled = onEditor(pWidget, pData->iEditingRow, pData->iEditingColumn, pCell, tRect, pUser) != 0;
+	if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bHandled;
+	if ( bHandled ) {
 		pData->iPickerCount++;
 		return 1;
 	}
@@ -851,21 +1050,25 @@ static int __xuiTableGridBeginComboEdit(xui_widget pWidget, xui_table_grid_data_
 	const xui_combobox_item_t* pItem;
 	int i;
 	int iSelected;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pCombo == NULL) ) return 0;
 	if ( pData->tEditorConfig.arrEnumItemData != NULL && pData->tEditorConfig.iEnumItemCount > 0 ) {
-		(void)xuiComboBoxSetItemData(pData->pCombo, pData->tEditorConfig.arrEnumItemData, pData->tEditorConfig.iEnumItemCount);
+		iRet = xuiComboBoxSetItemData(pData->pCombo, pData->tEditorConfig.arrEnumItemData, pData->tEditorConfig.iEnumItemCount);
+		if ( iRet != XUI_OK ) return 0;
 		if ( pData->tEditorConfig.bEnumUseValue ) {
-			(void)xuiComboBoxSetSelectedValue(pData->pCombo, pData->tEditorConfig.iEnumSelectedValue);
+			iRet = xuiComboBoxSetSelectedValue(pData->pCombo, pData->tEditorConfig.iEnumSelectedValue);
+			if ( iRet != XUI_OK ) return 0;
 		}
 	} else if ( pData->tEditorConfig.arrEnumItems != NULL && pData->tEditorConfig.iEnumItemCount > 0 ) {
-		(void)xuiComboBoxSetItems(pData->pCombo, pData->tEditorConfig.arrEnumItems, pData->tEditorConfig.iEnumItemCount);
+		iRet = xuiComboBoxSetItems(pData->pCombo, pData->tEditorConfig.arrEnumItems, pData->tEditorConfig.iEnumItemCount);
+		if ( iRet != XUI_OK ) return 0;
 	} else {
 		return 0;
 	}
-	if ( pData->tEditorConfig.arrEnumEnabled != NULL ) {
-		(void)xuiComboBoxSetEnabledItems(pData->pCombo, pData->tEditorConfig.arrEnumEnabled, pData->tEditorConfig.iEnumItemCount);
-	}
+	iRet = xuiComboBoxSetEnabledItems(pData->pCombo, pData->tEditorConfig.arrEnumEnabled,
+		pData->tEditorConfig.iEnumItemCount);
+	if ( iRet != XUI_OK ) return 0;
 	if ( pData->tEditorConfig.bEnumUseValue && pData->tEditorConfig.arrEnumItemData != NULL ) {
 		iSelected = xuiComboBoxGetSelected(pData->pCombo);
 	} else {
@@ -879,27 +1082,48 @@ static int __xuiTableGridBeginComboEdit(xui_widget pWidget, xui_table_grid_data_
 				}
 			}
 		}
-		(void)xuiComboBoxSetSelected(pData->pCombo, iSelected);
+		iRet = xuiComboBoxSetSelected(pData->pCombo, iSelected);
+		if ( iRet != XUI_OK ) return 0;
 	}
-	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pCombo, tRect);
+	if ( __xuiTableGridPlaceEditor(pWidget, pData, pData->pCombo, tRect) != XUI_OK ) return 0;
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_COMBO;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pCombo);
+	if ( xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pCombo) != XUI_OK ) {
+		(void)xuiWidgetSetVisible(pData->pCombo, 0);
+		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
+		return 0;
+	}
 	return 1;
 }
 
 static int __xuiTableGridBeginColorEdit(xui_widget pWidget, xui_table_grid_data_t* pData, const char* sText, xui_rect_t tRect)
 {
+	const uint32_t* arrPalette;
+	int iPaletteCount;
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pColor == NULL) ) return 0;
-	(void)xuiColorPickerSetAlphaEnabled(pData->pColor, pData->tEditorConfig.bAlphaEnabled);
+	iRet = xuiColorPickerSetAlphaEnabled(pData->pColor, pData->tEditorConfig.bAlphaEnabled);
+	if ( iRet != XUI_OK ) return 0;
 	if ( pData->tEditorConfig.arrPalette != NULL && pData->tEditorConfig.iPaletteCount > 0 ) {
-		(void)xuiColorPickerSetPalette(pData->pColor, pData->tEditorConfig.arrPalette, pData->tEditorConfig.iPaletteCount);
+		arrPalette = pData->tEditorConfig.arrPalette;
+		iPaletteCount = pData->tEditorConfig.iPaletteCount;
+	} else {
+		arrPalette = pData->arrDefaultPalette;
+		iPaletteCount = pData->iDefaultPaletteCount;
 	}
+	iRet = xuiColorPickerSetPalette(pData->pColor, arrPalette, iPaletteCount);
+	if ( iRet != XUI_OK ) return 0;
 	if ( xuiColorPickerSetHex(pData->pColor, sText != NULL ? sText : "") != XUI_OK ) {
-		(void)xuiColorPickerSetColor(pData->pColor, XUI_COLOR_RGBA(67, 167, 124, 255));
+		iRet = xuiColorPickerSetColor(pData->pColor, XUI_COLOR_RGBA(67, 167, 124, 255));
+		if ( iRet != XUI_OK ) return 0;
 	}
-	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pColor, tRect);
+	if ( __xuiTableGridPlaceEditor(pWidget, pData, pData->pColor, tRect) != XUI_OK ) return 0;
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_COLOR;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pColor);
+	if ( xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pColor) != XUI_OK ) {
+		(void)xuiWidgetSetVisible(pData->pColor, 0);
+		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
+		return 0;
+	}
 	return 1;
 }
 
@@ -907,33 +1131,37 @@ static int __xuiTableGridBeginDateEdit(xui_widget pWidget, xui_table_grid_data_t
 {
 	const char* sFormat;
 	int iMode;
+	int iRet;
 	xtime tValue;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pDate == NULL) ) return 0;
 	iMode = pData->tEditorConfig.bDateModeSet ? pData->tEditorConfig.iDateMode : __xuiTableGridDateModeForType(iType);
-	(void)xuiDatePickerSetMode(pData->pDate, iMode);
-	(void)xuiDatePickerSetNullable(pData->pDate, pData->tEditorConfig.bNullable);
-	(void)xuiDatePickerSetShowSecond(pData->pDate, pData->tEditorConfig.bShowSecond);
+	iRet = xuiDatePickerSetMode(pData->pDate, iMode);
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetNullable(pData->pDate, pData->tEditorConfig.bNullable);
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetShowSecond(pData->pDate, pData->tEditorConfig.bShowSecond);
 	sFormat = (pData->tEditorConfig.sDateFormat != NULL) ? pData->tEditorConfig.sDateFormat : __xuiTableGridDefaultDateFormat(iMode, pData->tEditorConfig.bShowSecond);
-	(void)xuiDatePickerSetFormat(pData->pDate, sFormat);
-	if ( pData->tEditorConfig.sRangeSeparator != NULL ) {
-		(void)xuiDatePickerSetRangeSeparator(pData->pDate, pData->tEditorConfig.sRangeSeparator);
-	}
-	if ( pData->tEditorConfig.tDefaultRangeSpan > 0 ) {
-		(void)xuiDatePickerSetDefaultRangeSpan(pData->pDate, pData->tEditorConfig.tDefaultRangeSpan);
-	}
-	if ( pData->tEditorConfig.bDateHasMin || pData->tEditorConfig.bDateHasMax ) {
-		(void)xuiDatePickerSetLimits(pData->pDate,
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetFormat(pData->pDate, sFormat);
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetRangeSeparator(pData->pDate,
+		pData->tEditorConfig.sRangeSeparator != NULL ? pData->tEditorConfig.sRangeSeparator : " - ");
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetDefaultRangeSpan(pData->pDate,
+		pData->tEditorConfig.tDefaultRangeSpan);
+	if ( iRet == XUI_OK && (pData->tEditorConfig.bDateHasMin || pData->tEditorConfig.bDateHasMax) ) {
+		iRet = xuiDatePickerSetLimits(pData->pDate,
 			pData->tEditorConfig.bDateHasMin ? pData->tEditorConfig.tDateMin : 0,
 			pData->tEditorConfig.bDateHasMax ? pData->tEditorConfig.tDateMax : (xtime)XRT_TIME_DAY * (xtime)365242);
-	} else {
-		(void)xuiDatePickerClearLimits(pData->pDate);
+	} else if ( iRet == XUI_OK ) {
+		iRet = xuiDatePickerClearLimits(pData->pDate);
 	}
+	if ( iRet != XUI_OK ) return 0;
 	tValue = __xuiTableGridParseDateValue(sText, iType, sFormat);
-	(void)xuiDatePickerSetValue(pData->pDate, tValue);
-	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pDate, tRect);
+	iRet = xuiDatePickerSetValue(pData->pDate, tValue);
+	if ( iRet != XUI_OK || __xuiTableGridPlaceEditor(pWidget, pData, pData->pDate, tRect) != XUI_OK ) return 0;
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_DATE;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pDate);
+	if ( xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pDate) != XUI_OK ) {
+		(void)xuiWidgetSetVisible(pData->pDate, 0);
+		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
+		return 0;
+	}
 	return 1;
 }
 
@@ -944,6 +1172,7 @@ static int __xuiTableGridBeginNumericEdit(xui_widget pWidget, xui_table_grid_dat
 	float fMin;
 	float fMax;
 	int iPrecision;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pNumeric == NULL) ) return 0;
 	iPrecision = (pData->tEditorConfig.iPrecision >= 0) ? pData->tEditorConfig.iPrecision : __xuiTableGridInferPrecision(sText, iType);
@@ -953,51 +1182,67 @@ static int __xuiTableGridBeginNumericEdit(xui_widget pWidget, xui_table_grid_dat
 		fMin = -1000000000.0f;
 		fMax = 1000000000.0f;
 	}
-	(void)xuiNumericInputSetRange(pData->pNumeric, fMin, fMax);
-	(void)xuiNumericInputSetInteger(pData->pNumeric, iType == XUI_TABLE_CELL_TYPE_INT);
-	(void)xuiNumericInputSetPrecision(pData->pNumeric, iPrecision);
-	(void)xuiNumericInputSetStep(pData->pNumeric, (pData->tEditorConfig.fStep > 0.0f) ? pData->tEditorConfig.fStep : __xuiTableGridStepForPrecision(iPrecision));
-	(void)xuiNumericInputSetSpinnerVisible(pData->pNumeric, 1);
+	iRet = xuiNumericInputSetRange(pData->pNumeric, fMin, fMax);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetInteger(pData->pNumeric, iType == XUI_TABLE_CELL_TYPE_INT);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetPrecision(pData->pNumeric, iPrecision);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetStep(pData->pNumeric,
+		(pData->tEditorConfig.fStep > 0.0f) ? pData->tEditorConfig.fStep : __xuiTableGridStepForPrecision(iPrecision));
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetSpinnerVisible(pData->pNumeric, 1);
+	if ( iRet != XUI_OK ) return 0;
 	if ( sText != NULL && sText[0] != '\0' && __xuiTableGridValidateNumberText(sText, iType) ) {
 		fValue = (float)strtod(sText, NULL);
-		(void)xuiNumericInputSetValue(pData->pNumeric, fValue);
+		iRet = xuiNumericInputSetValue(pData->pNumeric, fValue);
+		if ( iRet != XUI_OK ) return 0;
 	}
-	(void)xuiNumericInputSetText(pData->pNumeric, sText != NULL ? sText : "");
-	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pNumeric, tRect);
+	iRet = xuiNumericInputSetText(pData->pNumeric, sText != NULL ? sText : "");
+	if ( iRet != XUI_OK || __xuiTableGridPlaceEditor(pWidget, pData, pData->pNumeric, tRect) != XUI_OK ) return 0;
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NUMERIC;
 	pInput = xuiNumericInputGetInputWidget(pData->pNumeric);
 	if ( pInput != NULL ) {
-		(void)xuiInputSetError(pInput, 0);
-		(void)xuiInputSelectAll(pInput);
+		iRet = xuiInputSetError(pInput, 0);
+		if ( iRet == XUI_OK ) iRet = xuiInputSelectAll(pInput);
+		if ( iRet != XUI_OK ) return 0;
 	}
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pInput != NULL ? pInput : pData->pNumeric);
+	if ( xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pInput != NULL ? pInput : pData->pNumeric) != XUI_OK ) {
+		(void)xuiWidgetSetVisible(pData->pNumeric, 0);
+		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
+		return 0;
+	}
 	return 1;
 }
 
 static int __xuiTableGridBeginInputEdit(xui_widget pWidget, xui_table_grid_data_t* pData, const char* sText, xui_rect_t tRect, int iColumn, int iType)
 {
 	const xui_table_view_column_t* pColumn;
+	int iAlign;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pInput == NULL) ) return 0;
-	(void)xuiInputSetReadonly(pData->pInput, 0);
-	(void)xuiInputSetError(pData->pInput, 0);
-	(void)xuiInputSetText(pData->pInput, sText != NULL ? sText : "");
-	(void)xuiInputSelectAll(pData->pInput);
+	iRet = xuiInputSetReadonly(pData->pInput, 0);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetError(pData->pInput, 0);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetText(pData->pInput, sText != NULL ? sText : "");
+	if ( iRet == XUI_OK ) iRet = xuiInputSelectAll(pData->pInput);
+	if ( iRet != XUI_OK ) return 0;
 	if ( __xuiTableGridIsNumericType(iType) ) {
-		(void)xuiInputSetTextAlign(pData->pInput, XUI_INPUT_ALIGN_RIGHT);
+		iAlign = XUI_INPUT_ALIGN_RIGHT;
 	} else {
 		pColumn = xuiTableViewGetColumn(pData->pTable, iColumn);
 		if ( pColumn != NULL && ((pColumn->iAlign & XUI_TEXT_ALIGN_RIGHT) != 0) ) {
-			(void)xuiInputSetTextAlign(pData->pInput, XUI_INPUT_ALIGN_RIGHT);
+			iAlign = XUI_INPUT_ALIGN_RIGHT;
 		} else if ( pColumn != NULL && ((pColumn->iAlign & XUI_TEXT_ALIGN_CENTER) != 0) ) {
-			(void)xuiInputSetTextAlign(pData->pInput, XUI_INPUT_ALIGN_CENTER);
+			iAlign = XUI_INPUT_ALIGN_CENTER;
 		} else {
-			(void)xuiInputSetTextAlign(pData->pInput, XUI_INPUT_ALIGN_LEFT);
+			iAlign = XUI_INPUT_ALIGN_LEFT;
 		}
 	}
-	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pInput, tRect);
+	iRet = xuiInputSetTextAlign(pData->pInput, iAlign);
+	if ( iRet != XUI_OK || __xuiTableGridPlaceEditor(pWidget, pData, pData->pInput, tRect) != XUI_OK ) return 0;
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_INPUT;
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pInput);
+	if ( xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pInput) != XUI_OK ) {
+		(void)xuiWidgetSetVisible(pData->pInput, 0);
+		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
+		return 0;
+	}
 	return 1;
 }
 
@@ -1014,6 +1259,12 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	(void)pUser;
 	pData = __xuiTableGridGetData(pWidget);
 	if ( (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->iType == XUI_EVENT_ENABLED_CHANGED || pEvent->iType == XUI_EVENT_VISIBLE_CHANGED ) {
+		if ( (!xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget)) &&
+		     pData->iEditingRow >= 0 ) (void)xuiTableGridEndEdit(pWidget, 0);
+		return XUI_OK;
+	}
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_OK;
 	if ( pEvent->iType == XUI_EVENT_KEY_DOWN ) {
 		if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) {
 			return XUI_OK;
@@ -1025,7 +1276,8 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			}
 		}
 		if ( pData->iEditingRow < 0 ) {
-			if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ) {
+			if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ||
+			     pEvent->iKey == XUI_KEY_F2 ) {
 				iRow = -1;
 				iColumn = -1;
 				(void)xuiTableViewGetSelectedCell(pData->pTable, &iRow, &iColumn);
@@ -1046,11 +1298,14 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( __xuiTableGridEditorPopupOpen(pData) ) {
 			return XUI_OK;
 		}
-		if ( !__xuiTableGridPointInWidget(__xuiTableGridActiveEditor(pData), pEvent->fX, pEvent->fY) ) {
-			if ( xuiTableGridEndEdit(pWidget, 1) == 0 ) {
-				return XUI_EVENT_DISPATCH_STOP;
-			}
+		if ( __xuiTableGridPointInWidget(__xuiTableGridActiveEditor(pData), pEvent->fX, pEvent->fY) ) {
+			return XUI_OK;
 		}
+		if ( xuiTableGridEndEdit(pWidget, 1) == 0 ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		pData = __xuiTableGridGetData(pWidget);
+		if ( pData == NULL ) return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL && pData->iEditingRow >= 0 ) {
 		if ( __xuiTableGridEditorPopupOpen(pData) ||
@@ -1060,6 +1315,8 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( xuiTableGridEndEdit(pWidget, 1) == 0 ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
+		pData = __xuiTableGridGetData(pWidget);
+		if ( pData == NULL ) return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pData->iEditingRow >= 0 &&
 	     (pEvent->iType == XUI_EVENT_POINTER_UP || pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK) &&
@@ -1067,7 +1324,8 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		return XUI_OK;
 	}
 	if ( (pEvent->iButton == 0 || pEvent->iButton == XUI_POINTER_BUTTON_LEFT) &&
-	     ((pEvent->iType == XUI_EVENT_POINTER_UP && pData->iEditMode == XUI_TABLE_GRID_EDIT_QUICK) ||
+	     ((pEvent->iType == XUI_EVENT_POINTER_DOWN && pData->iEditMode == XUI_TABLE_GRID_EDIT_IMMEDIATE) ||
+	      (pEvent->iType == XUI_EVENT_POINTER_UP && pData->iEditMode == XUI_TABLE_GRID_EDIT_QUICK) ||
 	      (pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK && pData->iEditMode == XUI_TABLE_GRID_EDIT_DISPLAY)) ) {
 		tTableWorld = xuiWidgetGetWorldRect(pData->pTable);
 		fLocalX = pEvent->fX - tTableWorld.fX;
@@ -1076,6 +1334,11 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		iColumn = -1;
 		iRet = xuiTableViewGetItemAt(pData->pTable, fLocalX, fLocalY, &iRow, &iColumn);
 		if ( iRet == XUI_OK && iRow >= 0 && iColumn >= 0 ) {
+			if ( pEvent->iType == XUI_EVENT_POINTER_DOWN ) {
+				iRet = xuiTableViewSetSelectedCell(pData->pTable, iRow, iColumn);
+				pData = __xuiTableGridGetData(pWidget);
+				if ( iRet != XUI_OK || pData == NULL ) return XUI_EVENT_DISPATCH_STOP;
+			}
 			if ( xuiTableGridBeginEdit(pWidget, iRow, iColumn) != 0 ) {
 				return XUI_EVENT_DISPATCH_STOP;
 			}
@@ -1103,7 +1366,8 @@ static int __xuiTableGridKeyEvent(xui_widget pWidget, const xui_event_t* pEvent,
 	if ( !xuiWidgetGetEffectiveEnabled(tRoute.pGrid) ) return XUI_OK;
 	pTable = pData->pTable;
 	if ( pWidget == pTable ) {
-		if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ) {
+		if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ||
+		     pEvent->iKey == XUI_KEY_F2 ) {
 			iRet = __xuiTableGridEvent(tRoute.pGrid, pEvent, NULL);
 			if ( iRet < 0 ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1162,19 +1426,14 @@ static int __xuiTableGridKeyEvent(xui_widget pWidget, const xui_event_t* pEvent,
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( pWidget == xuiColorPickerGetPanelWidget(pData->pColor) && tRoute.onKey != NULL ) {
-		tCommit = *pEvent;
-		tCommit.iKey = XUI_KEY_ENTER;
-		tCommit.iModifiers = 0;
-		/* A field consumes Enter even on failed validation. Only an unconsumed
-		   Enter at the panel level may finish the cell. */
-		for ( i = 0; i < (bTab ? 2 : 1); i++ ) {
-			iRet = tRoute.onKey(pWidget, &tCommit, tRoute.pUser);
-			if ( iRet < 0 ) return iRet;
-			if ( !xuiInternalWidgetIsValid(tRoute.pGrid) || xuiInternalContextDestroyPending(pContext) ) return XUI_EVENT_DISPATCH_STOP;
-			if ( (iRet & XUI_EVENT_DISPATCH_STOP) == 0 ) return __xuiTableGridFinishKey(tRoute.pGrid, pEvent);
+	if ( pWidget == xuiColorPickerGetPanelWidget(pData->pColor) ) {
+		iRet = xuiInternalColorPickerCommitPendingEdit(pData->pColor);
+		if ( iRet == XUI_ERROR_INVALID_ARGUMENT ) return XUI_EVENT_DISPATCH_STOP;
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !xuiInternalWidgetIsValid(tRoute.pGrid) || xuiInternalContextDestroyPending(pContext) ) {
+			return XUI_EVENT_DISPATCH_STOP;
 		}
-		return XUI_EVENT_DISPATCH_STOP;
+		return __xuiTableGridFinishKey(tRoute.pGrid, pEvent);
 	}
 	return __xuiTableGridFinishKey(tRoute.pGrid, pEvent);
 delegate:
@@ -1191,8 +1450,10 @@ static int __xuiTableGridInitKeyboard(xui_widget pWidget, xui_table_grid_data_t*
 	int i;
 	int iRet;
 	/* TableView navigation already scrolls its active cell into view. */
-	(void)xuiWidgetSetTabStop(xuiScrollFrameGetHScrollBarWidget(pFrame), 0);
-	(void)xuiWidgetSetTabStop(xuiScrollFrameGetVScrollBarWidget(pFrame), 0);
+	iRet = xuiWidgetSetTabStop(xuiScrollFrameGetHScrollBarWidget(pFrame), 0);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetTabStop(xuiScrollFrameGetVScrollBarWidget(pFrame), 0);
+	if ( iRet != XUI_OK ) return iRet;
 	/* Preserve each owned control's navigation handler; callbacks run too late
 	   for keys already consumed by TableView, NumericInput, or popup fields. */
 	for ( i = 0; i < (int)(sizeof(arrTargets) / sizeof(arrTargets[0])); i++ ) {
@@ -1249,6 +1510,22 @@ static int __xuiTableGridContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	return XUI_OK;
 }
 
+static int __xuiTableGridAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
+{
+	if ( __xuiTableGridGetData(pWidget) == NULL || pNode == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	/* TableView owns the table/cell semantics. The wrapper is only an editor host. */
+	pNode->iRole = XUI_ACCESSIBLE_ROLE_GROUP;
+	if ( xuiWidgetGetAccessibleName(pWidget) == NULL ) pNode->sName = "Data grid";
+	return XUI_OK;
+}
+
+static const xui_internal_accessibility_adapter_t g_xuiTableGridAccessible = {
+	.getNode = __xuiTableGridAccessibleNode,
+	.performAction = NULL
+};
+
 static int __xuiTableGridInitEvents(xui_widget pWidget)
 {
 	int iRet;
@@ -1258,16 +1535,54 @@ static int __xuiTableGridInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOUBLE_CLICK, __xuiTableGridEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_WHEEL, __xuiTableGridEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiTableGridEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiTableGridEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiTableGridEvent, NULL);
 	return iRet;
 }
 
-static void __xuiTableGridApplyEditorColors(xui_table_grid_data_t* pData,
+static int __xuiTableGridApplyEditorColors(xui_table_grid_data_t* pData,
 	const xui_table_view_colors_t* pColors)
 {
-	(void)xuiInputSetColors(pData->pInput, pColors->iRowColor, pColors->iTextColor,
-		pColors->iGridColor, pColors->iFocusRingColor);
-	(void)xuiComboBoxSetColors(pData->pCombo, pColors->iTextColor, pColors->iDisabledTextColor,
-		pColors->iRowColor, pColors->iAltRowColor, pColors->iHoverColor, pColors->iDisabledColor);
+	int iRet;
+
+	if ( pData == NULL || pColors == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pInput != NULL ) {
+		iRet = xuiInputSetColors(pData->pInput, pColors->iRowColor, pColors->iTextColor,
+			pColors->iGridColor, pColors->iFocusRingColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pNumeric != NULL ) {
+		iRet = xuiNumericInputSetColors(pData->pNumeric, pColors->iRowColor, pColors->iTextColor,
+			pColors->iGridColor, pColors->iFocusRingColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pCombo != NULL ) {
+		iRet = xuiComboBoxSetColors(pData->pCombo, pColors->iTextColor, pColors->iDisabledTextColor,
+			pColors->iRowColor, pColors->iAltRowColor, pColors->iHoverColor, pColors->iDisabledColor);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetBorderColors(pData->pCombo,
+			pColors->iGridColor, pColors->iGridColor, pColors->iFocusRingColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pColor != NULL ) {
+		iRet = xuiColorPickerSetColors(pData->pColor, pColors->iTextColor, pColors->iDisabledTextColor,
+			pColors->iRowColor, pColors->iAltRowColor, pColors->iHoverColor, pColors->iDisabledColor);
+		if ( iRet == XUI_OK ) iRet = xuiColorPickerSetBorderColors(pData->pColor,
+			pColors->iGridColor, pColors->iGridColor, pColors->iFocusRingColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pDate != NULL ) {
+		iRet = xuiDatePickerSetColors(pData->pDate, pColors->iTextColor, pColors->iDisabledTextColor,
+			pColors->iRowColor, pColors->iAltRowColor, pColors->iHoverColor, pColors->iDisabledColor);
+		if ( iRet == XUI_OK ) iRet = xuiDatePickerSetBorderColors(pData->pDate,
+			pColors->iGridColor, pColors->iGridColor, pColors->iFocusRingColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pTextEdit != NULL ) {
+		iRet = xuiTextEditSetColors(pData->pTextEdit, pColors->iRowColor, pColors->iTextColor,
+			pColors->iGridColor, pColors->iFocusRingColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
 }
 
 static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t* pData, const xui_table_grid_desc_t* pDesc)
@@ -1283,8 +1598,10 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	xui_button_desc_t tButton;
 	xui_widget pContent;
 	xui_table_view_colors_t tColors;
+	int i;
 	int iRet;
 
+	(void)pDesc;
 	pContext = xuiWidgetGetContext(pWidget);
 	memset(&tInput, 0, sizeof(tInput));
 	tInput.iSize = sizeof(tInput);
@@ -1293,7 +1610,12 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tInput.iTextAlign = XUI_INPUT_ALIGN_LEFT;
 	iRet = xuiInputCreate(pContext, &pData->pInput, &tInput);
 	if ( iRet != XUI_OK ) return iRet;
-
+	iRet = xuiWidgetAddChild(pWidget, pData->pInput);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pInput);
+		pData->pInput = NULL;
+		return iRet;
+	}
 	memset(&tNumeric, 0, sizeof(tNumeric));
 	tNumeric.iSize = sizeof(tNumeric);
 	tNumeric.pFont = pData->pFont;
@@ -1304,6 +1626,12 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tNumeric.bSpinnerVisible = 1;
 	iRet = xuiNumericInputCreate(pContext, &pData->pNumeric, &tNumeric);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pWidget, pData->pNumeric);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pNumeric);
+		pData->pNumeric = NULL;
+		return iRet;
+	}
 
 	memset(&tCombo, 0, sizeof(tCombo));
 	tCombo.iSize = sizeof(tCombo);
@@ -1311,8 +1639,16 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tCombo.fPopupMaxHeight = 180.0f;
 	iRet = xuiComboBoxCreate(pContext, &pData->pCombo, &tCombo);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( xuiTableViewGetColors(pData->pTable, &tColors) == XUI_OK )
-		__xuiTableGridApplyEditorColors(pData, &tColors);
+	iRet = xuiWidgetAddChild(pWidget, pData->pCombo);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pCombo);
+		pData->pCombo = NULL;
+		return iRet;
+	}
+	iRet = xuiTableViewGetColors(pData->pTable, &tColors);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTableGridApplyEditorColors(pData, &tColors);
+	if ( iRet != XUI_OK ) return iRet;
 
 	memset(&tColor, 0, sizeof(tColor));
 	tColor.iSize = sizeof(tColor);
@@ -1320,6 +1656,18 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tColor.iColor = XUI_COLOR_RGBA(67, 167, 124, 255);
 	iRet = xuiColorPickerCreate(pContext, &pData->pColor, &tColor);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pWidget, pData->pColor);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pColor);
+		pData->pColor = NULL;
+		return iRet;
+	}
+	pData->iDefaultPaletteCount = xuiColorPickerGetPaletteCount(pData->pColor);
+	if ( pData->iDefaultPaletteCount < 0 ||
+	     pData->iDefaultPaletteCount > XUI_COLOR_PICKER_PALETTE_CAPACITY ) return XUI_ERROR_INVALID_STATE;
+	for ( i = 0; i < pData->iDefaultPaletteCount; i++ ) {
+		pData->arrDefaultPalette[i] = xuiColorPickerGetPaletteColor(pData->pColor, i);
+	}
 
 	memset(&tDate, 0, sizeof(tDate));
 	tDate.iSize = sizeof(tDate);
@@ -1328,6 +1676,12 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tDate.tValue = xrtNow();
 	iRet = xuiDatePickerCreate(pContext, &pData->pDate, &tDate);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pWidget, pData->pDate);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pDate);
+		pData->pDate = NULL;
+		return iRet;
+	}
 
 	memset(&tPopup, 0, sizeof(tPopup));
 	tPopup.iSize = sizeof(tPopup);
@@ -1343,14 +1697,22 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	iRet = xuiPopupCreate(pContext, &pData->pTextPopup, &tPopup);
 	if ( iRet != XUI_OK ) return iRet;
 	pContent = xuiPopupGetContentWidget(pData->pTextPopup);
+	if ( pContent == NULL ) return XUI_ERROR_INVALID_STATE;
 	pData->pTextContent = pContent;
 
 	memset(&tTextEdit, 0, sizeof(tTextEdit));
 	tTextEdit.iSize = sizeof(tTextEdit);
 	tTextEdit.pFont = pData->pFont;
 	tTextEdit.bWordWrap = 1;
+	tTextEdit.iMaxLength = XUI_TABLE_GRID_VALUE_CAPACITY - 1;
 	iRet = xuiTextEditCreate(pContext, &pData->pTextEdit, &tTextEdit);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pContent, pData->pTextEdit);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pTextEdit);
+		pData->pTextEdit = NULL;
+		return iRet;
+	}
 
 	memset(&tButton, 0, sizeof(tButton));
 	tButton.iSize = sizeof(tButton);
@@ -1358,20 +1720,33 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tButton.sText = "OK";
 	iRet = xuiButtonCreate(pContext, &pData->pTextOk, &tButton);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pContent, pData->pTextOk);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pTextOk);
+		pData->pTextOk = NULL;
+		return iRet;
+	}
 	tButton.sText = "Cancel";
 	iRet = xuiButtonCreate(pContext, &pData->pTextCancel, &tButton);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pContent, pData->pTextCancel);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pData->pTextCancel);
+		pData->pTextCancel = NULL;
+		return iRet;
+	}
 
-	(void)xuiWidgetSetVisible(pData->pInput, 0);
-	(void)xuiWidgetSetVisible(pData->pNumeric, 0);
-	(void)xuiWidgetSetVisible(pData->pCombo, 0);
-	(void)xuiWidgetSetVisible(pData->pColor, 0);
-	(void)xuiWidgetSetVisible(pData->pDate, 0);
-	(void)xuiWidgetSetFlowMode(pData->pInput, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetFlowMode(pData->pNumeric, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetFlowMode(pData->pCombo, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetFlowMode(pData->pColor, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetFlowMode(pData->pDate, XUI_FLOW_ABSOLUTE);
+	iRet = xuiWidgetSetVisible(pData->pInput, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pNumeric, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pCombo, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pColor, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pDate, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pInput, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pNumeric, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pCombo, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pColor, XUI_FLOW_ABSOLUTE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pDate, XUI_FLOW_ABSOLUTE);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTableGridSetEditorLayerTree(pData->pInput, XUI_LAYER_NORMAL, 100);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTableGridSetEditorLayerTree(pData->pNumeric, XUI_LAYER_NORMAL, 100);
@@ -1382,25 +1757,50 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTableGridSetEditorLayerTree(pData->pDate, XUI_LAYER_NORMAL, 100);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiComboBoxSetSelect(pData->pCombo, __xuiTableGridComboSelect, pData);
-	(void)xuiColorPickerSetChange(pData->pColor, __xuiTableGridColorChange, pData);
-	(void)xuiDatePickerSetCommit(pData->pDate, __xuiTableGridDateCommit, pData);
-	(void)xuiDatePickerSetCancel(pData->pDate, __xuiTableGridDateCancel, pData);
-	(void)xuiButtonSetClick(pData->pTextOk, __xuiTableGridTextOk, pData);
-	(void)xuiButtonSetClick(pData->pTextCancel, __xuiTableGridTextCancel, pData);
-	(void)xuiPopupSetFocusPolicy(pData->pTextPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pTextEdit);
-	(void)xuiWidgetSetLayoutType(pContent, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetAddChild(pContent, pData->pTextEdit);
-	(void)xuiWidgetAddChild(pContent, pData->pTextCancel);
-	(void)xuiWidgetAddChild(pContent, pData->pTextOk);
-
-	iRet = xuiWidgetAddChild(pWidget, pData->pInput);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pNumeric);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pCombo);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pColor);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pDate);
-	(void)pDesc;
+	iRet = xuiComboBoxSetSelect(pData->pCombo, __xuiTableGridComboSelect, pData);
+	if ( iRet == XUI_OK ) iRet = xuiColorPickerSetChange(pData->pColor, __xuiTableGridColorChange, pData);
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetCommit(pData->pDate, __xuiTableGridDateCommit, pData);
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetCancel(pData->pDate, __xuiTableGridDateCancel, pData);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(pData->pTextOk, __xuiTableGridTextOk, pData);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(pData->pTextCancel, __xuiTableGridTextCancel, pData);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pData->pTextPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pTextEdit);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayoutType(pContent, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = __xuiTableGridApplyEditorColors(pData, &tColors);
 	return iRet;
+}
+
+static void __xuiTableGridCleanupInit(xui_table_grid_data_t* pData)
+{
+	xui_widget arrChildren[6];
+	int i;
+
+	if ( pData == NULL ) return;
+	if ( pData->pTextPopup != NULL ) {
+		(void)xuiPopupSetOwner(pData->pTextPopup, NULL);
+		xuiWidgetDestroy(pData->pTextPopup);
+		pData->pTextPopup = NULL;
+		pData->pTextContent = NULL;
+		pData->pTextEdit = NULL;
+		pData->pTextOk = NULL;
+		pData->pTextCancel = NULL;
+	}
+	arrChildren[0] = pData->pDate;
+	arrChildren[1] = pData->pColor;
+	arrChildren[2] = pData->pCombo;
+	arrChildren[3] = pData->pNumeric;
+	arrChildren[4] = pData->pInput;
+	arrChildren[5] = pData->pTable;
+	for ( i = 0; i < (int)(sizeof(arrChildren) / sizeof(arrChildren[0])); i++ ) {
+		if ( arrChildren[i] == NULL ) continue;
+		if ( xuiWidgetGetParent(arrChildren[i]) != NULL ) (void)xuiWidgetRemoveFromParent(arrChildren[i]);
+		xuiWidgetDestroy(arrChildren[i]);
+	}
+	pData->pDate = NULL;
+	pData->pColor = NULL;
+	pData->pCombo = NULL;
+	pData->pNumeric = NULL;
+	pData->pInput = NULL;
+	pData->pTable = NULL;
 }
 
 static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
@@ -1462,24 +1862,32 @@ static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* p
 	tTableDesc.onCell = (pData->onCell != NULL) ? __xuiTableGridCellProc : NULL;
 	tTableDesc.pAdapterUser = pData;
 	iRet = xuiTableViewCreate(xuiWidgetGetContext(pWidget), &pData->pTable, &tTableDesc);
-	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiTableViewSetContextMenu(pData->pTable, __xuiTableGridTableContext, pData);
-	(void)xuiWidgetSetFlowMode(pData->pTable, XUI_FLOW_BLOCK);
-	(void)xuiWidgetSetSizeMode(pData->pTable, XUI_SIZE_FILL, XUI_SIZE_FILL);
-	(void)xuiWidgetSetAlign(pData->pTable, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iRet = xuiTableViewSetContextMenu(pData->pTable, __xuiTableGridTableContext, pData);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iRet = xuiWidgetSetFlowMode(pData->pTable, XUI_FLOW_BLOCK);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pTable, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pTable, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = xuiWidgetAddChild(pWidget, pData->pTable);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiTableGridCreateEditors(pWidget, pData, pDesc);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiTableGridInitKeyboard(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_BLOCK);
-	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
-	(void)xuiWidgetSetFocusable(pWidget, 0);
-	(void)xuiWidgetSetTabStop(pWidget, 0);
-	(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
-	return __xuiTableGridInitEvents(pWidget);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_BLOCK);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPadding(pWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiTableGridInitEvents(pWidget);
+	if ( iRet != XUI_OK ) goto cleanup;
+	return XUI_OK;
+
+cleanup:
+	__xuiTableGridCleanupInit(pData);
+	return iRet;
 }
 
 static void __xuiTableGridDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1506,7 +1914,7 @@ static xui_table_grid_data_t* __xuiTableGridGetData(xui_widget pWidget)
 		return NULL;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiInternalContextIsValid(pContext) ) {
+	if ( !xuiInternalContextIsValid(pContext) || xuiInternalContextDestroyPending(pContext) ) {
 		return NULL;
 	}
 	pType = xuiWidgetFindType(pContext, "tablegrid");
@@ -1526,6 +1934,7 @@ XUI_API xui_widget_type xuiTableGridGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "tablegrid");
 	if ( pType != NULL ) {
+		pType->pAccessibleAdapter = &g_xuiTableGridAccessible;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1541,6 +1950,7 @@ XUI_API xui_widget_type xuiTableGridGetType(xui_context pContext)
 	if ( xuiWidgetRegisterType(pContext, &pType, &tDesc) != XUI_OK ) {
 		return NULL;
 	}
+	pType->pAccessibleAdapter = &g_xuiTableGridAccessible;
 	return pType;
 }
 
@@ -1548,10 +1958,9 @@ XUI_API int xuiTableGridCreate(xui_context pContext, xui_widget* ppWidget, const
 {
 	xui_widget_type pType;
 
-	if ( (ppWidget == NULL) || !__xuiTableGridDescValid(pDesc) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiTableGridDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiTableGridGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -1567,28 +1976,113 @@ XUI_API xui_widget xuiTableGridGetTableView(xui_widget pWidget)
 
 XUI_API int xuiTableGridSetColumns(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount)
 {
-	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
-	if ( pData == NULL || pData->pTable == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xuiTableViewSetColumns(pData->pTable, arrColumns, iCount);
+	xui_context pContext;
+	xui_table_grid_data_t* pData;
+	int iRet;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) || !__xuiTableGridColumnsValid(arrColumns, iCount) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	pData = __xuiTableGridGetData(pWidget);
+	iRet = XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData != NULL && pData->pTable != NULL ) {
+		if ( pData->iEditingRow >= 0 && xuiTableGridEndEdit(pWidget, 0) == 0 ) {
+			xuiInternalOperationLeave(pContext);
+			return XUI_ERROR_INVALID_STATE;
+		}
+		pData = __xuiTableGridGetData(pWidget);
+		if ( pData != NULL && pData->pTable != NULL ) iRet = xuiTableViewSetColumns(pData->pTable, arrColumns, iCount);
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiTableGridSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)
 {
-	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
-	if ( pData == NULL || pData->pTable == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xuiTableViewSetRows(pData->pTable, arrRows, iCount);
+	xui_context pContext;
+	xui_table_grid_data_t* pData;
+	int iRet;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) || !__xuiTableGridRowsValid(arrRows, iCount) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	pData = __xuiTableGridGetData(pWidget);
+	iRet = XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData != NULL && pData->pTable != NULL ) {
+		if ( pData->iEditingRow >= 0 && xuiTableGridEndEdit(pWidget, 0) == 0 ) {
+			xuiInternalOperationLeave(pContext);
+			return XUI_ERROR_INVALID_STATE;
+		}
+		pData = __xuiTableGridGetData(pWidget);
+		if ( pData != NULL && pData->pTable != NULL ) iRet = xuiTableViewSetRows(pData->pTable, arrRows, iCount);
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiTableGridSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, xui_table_grid_set_proc onSet, void* pUser)
 {
-	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
-	if ( pData == NULL || pData->pTable == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext;
+	xui_table_grid_data_t* pData;
+	xui_table_view_count_proc onOldCount;
+	xui_table_view_cell_proc onOldCell;
+	xui_table_grid_set_proc onOldSet;
+	void* pOldAdapterUser;
+	void* pOldSetUser;
+	uint64_t iGeneration;
+	int iRet;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	pData = __xuiTableGridGetData(pWidget);
+	if ( pData == NULL || pData->pTable == NULL ) {
+		xuiInternalOperationLeave(pContext);
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->iEditingRow >= 0 && xuiTableGridEndEdit(pWidget, 0) == 0 ) {
+		xuiInternalOperationLeave(pContext);
+		return XUI_ERROR_INVALID_STATE;
+	}
+	pData = __xuiTableGridGetData(pWidget);
+	if ( pData == NULL || pData->pTable == NULL ) {
+		xuiInternalOperationLeave(pContext);
+		return XUI_ERROR_INVALID_STATE;
+	}
+	onOldCount = pData->onCount;
+	onOldCell = pData->onCell;
+	onOldSet = pData->onSet;
+	pOldAdapterUser = pData->pAdapterUser;
+	pOldSetUser = pData->pSetUser;
 	pData->onCount = onCount;
 	pData->onCell = onCell;
 	pData->onSet = onSet;
 	pData->pAdapterUser = pUser;
 	pData->pSetUser = pUser;
-	return xuiTableViewSetAdapter(pData->pTable, __xuiTableGridCountProc, __xuiTableGridCellProc, pData);
+	iGeneration = ++pData->iAdapterGeneration;
+	iRet = xuiTableViewSetAdapter(pData->pTable,
+		onCount != NULL ? __xuiTableGridCountProc : NULL,
+		onCell != NULL ? __xuiTableGridCellProc : NULL, pData);
+	if ( __xuiTableGridWidgetAlive(pWidget, pData) ) {
+		if ( pData->iAdapterGeneration != iGeneration ) {
+			iRet = xuiTableViewSetAdapter(pData->pTable,
+				pData->onCount != NULL ? __xuiTableGridCountProc : NULL,
+				pData->onCell != NULL ? __xuiTableGridCellProc : NULL, pData);
+		} else if ( iRet != XUI_OK ) {
+			pData->onCount = onOldCount;
+			pData->onCell = onOldCell;
+			pData->onSet = onOldSet;
+			pData->pAdapterUser = pOldAdapterUser;
+			pData->pSetUser = pOldSetUser;
+			pData->iAdapterGeneration++;
+		}
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiTableGridSetValidate(xui_widget pWidget, xui_table_grid_validate_proc onValidate, void* pUser)
@@ -1640,6 +2134,7 @@ XUI_API int xuiTableGridSetEditMode(xui_widget pWidget, int iMode)
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
 	if ( pData == NULL || !__xuiTableGridEditModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iEditMode == iMode ) return XUI_OK;
 	pData->iEditMode = iMode;
 	return XUI_OK;
 }
@@ -1650,19 +2145,37 @@ XUI_API int xuiTableGridGetEditMode(xui_widget pWidget)
 	return (pData != NULL) ? pData->iEditMode : XUI_TABLE_GRID_EDIT_DISPLAY;
 }
 
+static int __xuiTableGridSetFontChildren(xui_table_grid_data_t* pData, xui_font pFont)
+{
+	int iRet;
+
+	iRet = xuiTableViewSetFont(pData->pTable, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetFont(pData->pInput, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetFont(pData->pNumeric, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiComboBoxSetFont(pData->pCombo, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiColorPickerSetFont(pData->pColor, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiDatePickerSetFont(pData->pDate, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditSetFont(pData->pTextEdit, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetFont(pData->pTextOk, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetFont(pData->pTextCancel, pFont);
+	return iRet;
+}
+
 XUI_API int xuiTableGridSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
+	xui_font pOldFont;
+	int iRet;
+
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFont == pFont ) return XUI_OK;
+	pOldFont = pData->pFont;
+	iRet = __xuiTableGridSetFontChildren(pData, pFont);
+	if ( iRet != XUI_OK ) {
+		(void)__xuiTableGridSetFontChildren(pData, pOldFont);
+		return iRet;
+	}
 	pData->pFont = pFont;
-	(void)xuiTableViewSetFont(pData->pTable, pFont);
-	(void)xuiInputSetFont(pData->pInput, pFont);
-	(void)xuiComboBoxSetFont(pData->pCombo, pFont);
-	(void)xuiColorPickerSetFont(pData->pColor, pFont);
-	(void)xuiDatePickerSetFont(pData->pDate, pFont);
-	(void)xuiTextEditSetFont(pData->pTextEdit, pFont);
-	(void)xuiButtonSetFont(pData->pTextOk, pFont);
-	(void)xuiButtonSetFont(pData->pTextCancel, pFont);
 	return XUI_OK;
 }
 
@@ -1697,23 +2210,26 @@ XUI_API int xuiTableGridSetColors(xui_widget pWidget, uint32_t iBackground, uint
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
 	xui_table_view_colors_t tColors;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)xuiTableViewSetColors(pData->pTable, iBackground, iHeader, iRow, iSelected, iGrid, iText);
-	if ( xuiTableViewGetColors(pData->pTable, &tColors) == XUI_OK )
-		__xuiTableGridApplyEditorColors(pData, &tColors);
-	return XUI_OK;
+	iRet = xuiTableViewSetColors(pData->pTable, iBackground, iHeader, iRow, iSelected, iGrid, iText);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiTableViewGetColors(pData->pTable, &tColors);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiTableGridApplyEditorColors(pData, &tColors);
 }
 
 XUI_API int xuiTableGridSetColorStyle(xui_widget pWidget, const xui_table_view_colors_t* pColors)
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
+	int iRet;
 	if ( (pData == NULL) || (pColors == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)xuiTableViewSetColorStyle(pData->pTable, pColors);
-	__xuiTableGridApplyEditorColors(pData, pColors);
-	return XUI_OK;
+	iRet = xuiTableViewSetColorStyle(pData->pTable, pColors);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiTableGridApplyEditorColors(pData, pColors);
 }
 
-XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn)
+static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iColumn)
 {
 	xui_table_grid_data_t* pData;
 	xui_table_view_cell_t tCell;
@@ -1722,54 +2238,70 @@ XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn)
 	const char* sText;
 	int iType;
 	int bOK;
+	int iRet;
 
 	pData = __xuiTableGridGetData(pWidget);
 	if ( (pData == NULL) || (pData->pTable == NULL) || (iRow < 0) || (iColumn < 0) ) {
 		return 0;
 	}
-	if ( xuiTableViewGetRowCount(pData->pTable) <= iRow || xuiTableViewGetColumnCount(pData->pTable) <= iColumn ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) || pData->bCommitting ) {
 		return 0;
 	}
-	if ( pData->iEditingRow >= 0 && xuiTableGridEndEdit(pWidget, 1) == 0 ) {
+	iRet = xuiTableViewGetRowCount(pData->pTable);
+	if ( !__xuiTableGridWidgetAlive(pWidget, pData) || iRet <= iRow ) {
 		return 0;
 	}
-	__xuiTableGridGetCell(pWidget, pData, iRow, iColumn, &tCell);
-	if ( tCell.bDisabled ) {
+	if ( xuiTableViewGetColumnCount(pData->pTable) <= iColumn ) return 0;
+	if ( pData->iEditingRow >= 0 && __xuiTableGridEndEditOperation(pWidget, 1) == 0 ) {
+		return 0;
+	}
+	pData = __xuiTableGridGetData(pWidget);
+	if ( pData == NULL || !__xuiTableGridGetCell(pWidget, pData, iRow, iColumn, &tCell) ) return 0;
+	if ( tCell.bDisabled || tCell.bReadOnly ) {
 		return 0;
 	}
 	iType = tCell.iType;
 	sText = __xuiTableGridCellText(pWidget, pData, iRow, iColumn, &tCell, sValue, (int)sizeof(sValue));
+	if ( sText == NULL || !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
+	if ( xuiTableViewGetSelectionMode(pData->pTable) == XUI_TABLE_VIEW_SELECTION_ROW ) {
+		iRet = xuiTableViewSetSelectedRow(pData->pTable, iRow);
+	} else {
+		iRet = xuiTableViewSetSelectedCell(pData->pTable, iRow, iColumn);
+	}
+	if ( iRet != XUI_OK || !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
 	if ( iType == XUI_TABLE_CELL_TYPE_BOOL ) {
 		pData->iEditingRow = iRow;
 		pData->iEditingColumn = iColumn;
 		pData->iEditingType = iType;
 		snprintf(pData->sOriginalValue, sizeof(pData->sOriginalValue), "%s", __xuiTableGridBoolValue(sText, tCell.pValue) ? "true" : "false");
 		bOK = __xuiTableGridCommitValue(pWidget, pData, __xuiTableGridBoolValue(sText, tCell.pValue) ? "false" : "true");
-		pData->iEditingRow = -1;
-		pData->iEditingColumn = -1;
-		pData->iEditingType = XUI_TABLE_CELL_TYPE_TEXT;
-		pData->sOriginalValue[0] = '\0';
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		__xuiTableGridClearEditState(pData);
 		(void)xuiTableViewRefresh(pData->pTable);
 		return bOK;
 	}
-	(void)xuiTableViewEnsureCellVisible(pData->pTable, iRow, iColumn);
+	iRet = xuiTableViewEnsureCellVisible(pData->pTable, iRow, iColumn);
+	if ( !__xuiTableGridWidgetAlive(pWidget, pData) || iRet != XUI_OK ) return 0;
+	__xuiTableGridHideEditors(pData);
+	if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
+	pData->iEditingRow = iRow;
+	pData->iEditingColumn = iColumn;
 	if ( !__xuiTableGridEditingRect(pWidget, pData, &tRect) ) {
-		pData->iEditingRow = iRow;
-		pData->iEditingColumn = iColumn;
-		if ( !__xuiTableGridEditingRect(pWidget, pData, &tRect) ) {
-			pData->iEditingRow = -1;
-			pData->iEditingColumn = -1;
-			return 0;
-		}
-	} else {
-		pData->iEditingRow = iRow;
-		pData->iEditingColumn = iColumn;
+		__xuiTableGridClearEditState(pData);
+		return 0;
 	}
 	pData->iEditingType = iType;
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
 	snprintf(pData->sOriginalValue, sizeof(pData->sOriginalValue), "%s", sText != NULL ? sText : "");
-	(void)__xuiTableGridLoadEditorConfig(pWidget, pData, iRow, iColumn, iType);
-	__xuiTableGridHideEditors(pData);
+	if ( !__xuiTableGridLoadEditorConfig(pWidget, pData, iRow, iColumn, iType) ||
+	     !__xuiTableGridWidgetAlive(pWidget, pData) ) {
+		if ( __xuiTableGridWidgetAlive(pWidget, pData) ) {
+			__xuiTableGridClearEditState(pData);
+			__xuiTableGridHideEditors(pData);
+			(void)xuiTableViewRefresh(pData->pTable);
+		}
+		return 0;
+	}
 	if ( iType == XUI_TABLE_CELL_TYPE_TEXTAREA ) {
 		(void)xuiTableViewRefresh(pData->pTable);
 		return __xuiTableGridOpenTextArea(pWidget, pData);
@@ -1777,62 +2309,97 @@ XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn)
 	if ( __xuiTableGridIsPickerType(iType) ) {
 		(void)xuiTableViewRefresh(pData->pTable);
 		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell);
-		pData->iEditingRow = -1;
-		pData->iEditingColumn = -1;
-		pData->iEditingType = XUI_TABLE_CELL_TYPE_TEXT;
-		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
-		pData->sOriginalValue[0] = '\0';
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		__xuiTableGridClearEditState(pData);
 		(void)xuiTableViewRefresh(pData->pTable);
 		return bOK;
 	}
 	if ( iType == XUI_TABLE_CELL_TYPE_ENUM ) {
-		if ( __xuiTableGridBeginComboEdit(pWidget, pData, pData->sOriginalValue, tRect) ) {
+		bOK = __xuiTableGridBeginComboEdit(pWidget, pData, pData->sOriginalValue, tRect);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		if ( bOK ) {
 			(void)xuiTableViewRefresh(pData->pTable);
-			if ( pData->iEditMode == XUI_TABLE_GRID_EDIT_QUICK ) {
+			if ( pData->iEditMode != XUI_TABLE_GRID_EDIT_DISPLAY ) {
 				(void)xuiComboBoxOpen(pData->pCombo);
 			}
 			return 1;
 		}
-		if ( __xuiTableGridOpenPicker(pWidget, pData, &tCell) ) {
-			pData->iEditingRow = -1;
-			pData->iEditingColumn = -1;
-			pData->iEditingType = XUI_TABLE_CELL_TYPE_TEXT;
-			pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
-			pData->sOriginalValue[0] = '\0';
+		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		if ( bOK ) {
+			__xuiTableGridClearEditState(pData);
 			return 1;
 		}
 	}
-	if ( iType == XUI_TABLE_CELL_TYPE_COLOR && __xuiTableGridBeginColorEdit(pWidget, pData, pData->sOriginalValue, tRect) ) {
-		(void)xuiTableViewRefresh(pData->pTable);
-		if ( pData->iEditMode == XUI_TABLE_GRID_EDIT_QUICK ) {
-			(void)xuiColorPickerOpen(pData->pColor);
+	if ( iType == XUI_TABLE_CELL_TYPE_COLOR ) {
+		bOK = __xuiTableGridBeginColorEdit(pWidget, pData, pData->sOriginalValue, tRect);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		if ( bOK ) {
+			(void)xuiTableViewRefresh(pData->pTable);
+			if ( pData->iEditMode != XUI_TABLE_GRID_EDIT_DISPLAY ) {
+				(void)xuiColorPickerOpen(pData->pColor);
+			}
+			return 1;
 		}
-		return 1;
 	}
-	if ( __xuiTableGridIsDateType(iType) && __xuiTableGridBeginDateEdit(pWidget, pData, pData->sOriginalValue, tRect, iType) ) {
+	if ( __xuiTableGridIsDateType(iType) ) {
+		bOK = __xuiTableGridBeginDateEdit(pWidget, pData, pData->sOriginalValue, tRect, iType);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		if ( bOK ) {
+			(void)xuiTableViewRefresh(pData->pTable);
+			return 1;
+		}
+	}
+	if ( iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
+		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		if ( bOK ) {
+			__xuiTableGridClearEditState(pData);
+			return 1;
+		}
+	}
+	if ( __xuiTableGridIsNumericType(iType) ) {
+		bOK = __xuiTableGridBeginNumericEdit(pWidget, pData, pData->sOriginalValue, tRect, iType);
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+		if ( bOK ) {
+			(void)xuiTableViewRefresh(pData->pTable);
+			return 1;
+		}
+	}
+	bOK = __xuiTableGridBeginInputEdit(pWidget, pData, pData->sOriginalValue, tRect, iColumn, iType);
+	if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
+	if ( bOK ) {
 		(void)xuiTableViewRefresh(pData->pTable);
 		return 1;
 	}
-	if ( iType == XUI_TABLE_CELL_TYPE_CUSTOM && __xuiTableGridOpenPicker(pWidget, pData, &tCell) ) {
-		pData->iEditingRow = -1;
-		pData->iEditingColumn = -1;
-		pData->iEditingType = XUI_TABLE_CELL_TYPE_TEXT;
-		pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
-		pData->sOriginalValue[0] = '\0';
-		return 1;
-	}
-	if ( __xuiTableGridIsNumericType(iType) && __xuiTableGridBeginNumericEdit(pWidget, pData, pData->sOriginalValue, tRect, iType) ) {
-		(void)xuiTableViewRefresh(pData->pTable);
-		return 1;
-	}
-	if ( __xuiTableGridBeginInputEdit(pWidget, pData, pData->sOriginalValue, tRect, iColumn, iType) ) {
-		(void)xuiTableViewRefresh(pData->pTable);
-		return 1;
-	}
+	__xuiTableGridClearEditState(pData);
+	__xuiTableGridHideEditors(pData);
+	(void)xuiTableViewRefresh(pData->pTable);
 	return 0;
 }
 
-XUI_API int xuiTableGridEndEdit(xui_widget pWidget, int bCommit)
+XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn)
+{
+	xui_context pContext;
+	xui_table_grid_data_t* pData;
+	int iRet;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 0;
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	pData = __xuiTableGridGetData(pWidget);
+	if ( pData == NULL || pData->bStartingEdit || pData->bCommitting ) {
+		xuiInternalOperationLeave(pContext);
+		return 0;
+	}
+	pData->bStartingEdit = 1;
+	iRet = __xuiTableGridBeginEditOperation(pWidget, iRow, iColumn);
+	if ( __xuiTableGridWidgetAlive(pWidget, pData) ) pData->bStartingEdit = 0;
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+static int __xuiTableGridEndEditOperation(xui_widget pWidget, int bCommit)
 {
 	xui_table_grid_data_t* pData;
 	char sBuffer[XUI_TABLE_GRID_VALUE_CAPACITY];
@@ -1842,28 +2409,47 @@ XUI_API int xuiTableGridEndEdit(xui_widget pWidget, int bCommit)
 	if ( (pData == NULL) || (pData->iEditingRow < 0) || (pData->iEditingColumn < 0) ) {
 		return 1;
 	}
+	if ( pData->bCommitting ) return 0;
 	if ( bCommit ) {
 		sValue = __xuiTableGridCurrentEditorValue(pData, sBuffer, (int)sizeof(sBuffer));
 		if ( __xuiTableGridCommitValue(pWidget, pData, sValue) == 0 ) {
 			return 0;
 		}
+		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 1;
 	} else {
 		pData->iCancelCount++;
 	}
-	pData->iEditingRow = -1;
-	pData->iEditingColumn = -1;
-	pData->iEditingType = XUI_TABLE_CELL_TYPE_TEXT;
-	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NONE;
-	pData->sOriginalValue[0] = '\0';
+	__xuiTableGridClearEditState(pData);
 	(void)xuiInputSetText(pData->pInput, "");
 	(void)xuiInputSetError(pData->pInput, 0);
 	(void)xuiNumericInputSetText(pData->pNumeric, "");
 	__xuiTableGridHideEditors(pData);
+	if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 1;
 	if ( pData->pTable != NULL ) {
-		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pTable);
+		if ( xuiWidgetGetEffectiveEnabled(pWidget) && xuiWidgetGetEffectiveVisible(pWidget) )
+			(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pTable);
 		(void)xuiTableViewRefresh(pData->pTable);
 	}
 	return 1;
+}
+
+XUI_API int xuiTableGridEndEdit(xui_widget pWidget, int bCommit)
+{
+	xui_context pContext;
+	xui_table_grid_data_t* pData;
+	int iRet;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return 1;
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	pData = __xuiTableGridGetData(pWidget);
+	if ( pData != NULL && pData->bStartingEdit ) {
+		xuiInternalOperationLeave(pContext);
+		return 0;
+	}
+	iRet = __xuiTableGridEndEditOperation(pWidget, bCommit);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiTableGridIsEditing(xui_widget pWidget)

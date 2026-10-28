@@ -73,6 +73,7 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	xui_workflow_widget_data_t* pData;
 	const xui_workflow_desc_t* pDesc;
 	xui_flow_graph_desc_t tGraphDesc;
+	int bCreatedWorkflow;
 	int iRet;
 
 	(void)pUser;
@@ -82,6 +83,7 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	pData = (xui_workflow_widget_data_t*)pTypeData;
 	pDesc = (const xui_workflow_desc_t*)pCreateData;
 	memset(pData, 0, sizeof(*pData));
+	bCreatedWorkflow = 0;
 	if ( pDesc != NULL ) {
 		pData->pWorkflow = pDesc->pWorkflow;
 		pData->bOwnWorkflow = pDesc->bOwnWorkflow ? 1 : 0;
@@ -92,6 +94,7 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 			return iRet;
 		}
 		pData->bOwnWorkflow = 1;
+		bCreatedWorkflow = 1;
 	}
 	memset(&tGraphDesc, 0, sizeof(tGraphDesc));
 	tGraphDesc.iSize = sizeof(tGraphDesc);
@@ -103,21 +106,21 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	tGraphDesc.bOwnGraph = 0;
 	iRet = xuiFlowGraphWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pCanvas, &tGraphDesc);
 	if ( iRet != XUI_OK ) {
-		if ( pData->bOwnWorkflow && pData->pWorkflow != NULL ) {
+		if ( bCreatedWorkflow && pData->pWorkflow != NULL ) {
 			xuiWorkflowDestroy(pData->pWorkflow);
 		}
 		memset(pData, 0, sizeof(*pData));
 		return iRet;
 	}
-	(void)xuiFlowGraphWidgetSetContextMenu(pData->pCanvas, __xuiWorkflowWidgetContext, pWidget);
-	(void)xuiWidgetSetSizeMode(pData->pCanvas, XUI_SIZE_FILL, XUI_SIZE_FILL);
-	(void)xuiWidgetSetDock(pData->pCanvas, XUI_DOCK_FILL);
-	(void)xuiWidgetSetAlign(pData->pCanvas, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
-	iRet = xuiWidgetAddChild(pWidget, pData->pCanvas);
+	iRet = xuiFlowGraphWidgetSetContextMenu(pData->pCanvas, __xuiWorkflowWidgetContext, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pCanvas, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetDock(pData->pCanvas, XUI_DOCK_FILL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pCanvas, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pCanvas);
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pData->pCanvas);
 		pData->pCanvas = NULL;
-		if ( pData->bOwnWorkflow && pData->pWorkflow != NULL ) {
+		if ( bCreatedWorkflow && pData->pWorkflow != NULL ) {
 			xuiWorkflowDestroy(pData->pWorkflow);
 		}
 		memset(pData, 0, sizeof(*pData));
