@@ -42,6 +42,29 @@ void xuiInternalUtf8TrimIncomplete(char* sText)
 	}
 }
 
+size_t xuiInternalUtf8CopyGraphemes(char* sDst, size_t iCapacity, const char* sSource)
+{
+	size_t iSourceSize;
+	int iTextSize;
+	int iAt;
+	int iNext;
+
+	if ( sDst == NULL || iCapacity == 0u ) return 0u;
+	if ( sSource == NULL ) sSource = "";
+	iSourceSize = strlen(sSource);
+	iTextSize = (iSourceSize > (size_t)INT_MAX) ? INT_MAX : (int)iSourceSize;
+	iAt = 0;
+	while ( iAt < iTextSize ) {
+		iNext = xuiInternalTextGraphemeNext(sSource, iTextSize, iAt);
+		if ( iNext <= iAt || iNext > iTextSize ) iNext = iAt + 1;
+		if ( (size_t)iNext >= iCapacity ) break;
+		iAt = iNext;
+	}
+	if ( iAt > 0 ) memmove(sDst, sSource, (size_t)iAt);
+	sDst[iAt] = '\0';
+	return (size_t)iAt;
+}
+
 int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundaries)
 {
     if (!text || bytes < 0 || !boundaries) return XUI_ERROR_INVALID_ARGUMENT;

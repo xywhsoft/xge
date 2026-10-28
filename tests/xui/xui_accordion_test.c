@@ -164,9 +164,11 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pAccordion;
+	xui_widget pMutationAccordion;
 	xui_widget pDestroyAccordion;
 	xui_widget pInvalid;
 	xui_widget pClient;
+	xui_widget arrMutationClients[3];
 	xui_surface pTarget;
 	xui_surface pHeaderCache;
 	xui_accordion_desc_t tDesc;
@@ -195,6 +197,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pAccordion = NULL;
+	pMutationAccordion = NULL;
 	pDestroyAccordion = NULL;
 	pInvalid = NULL;
 	pTarget = NULL;
@@ -264,8 +267,19 @@ int main(void)
 	sExpectedTitle[61] = '\0';
 	iRet = xuiAccordionSetSectionTitle(pAccordion, 1, sLongTitle);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiAccordionGetSectionTitle(pAccordion, 1), sExpectedTitle) == 0, "title truncation keeps whole utf8 codepoints");
+	memset(sLongTitle, 'a', XUI_ACCORDION_TITLE_CAPACITY - 2u);
+	memcpy(sLongTitle + XUI_ACCORDION_TITLE_CAPACITY - 2u, "e\xCC\x81", 4u);
+	iRet = xuiAccordionSetSectionTitle(pAccordion, 1, sLongTitle);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strlen(xuiAccordionGetSectionTitle(pAccordion, 1)) == XUI_ACCORDION_TITLE_CAPACITY - 2u,
+		"title truncation preserves grapheme boundary");
 	iRet = xuiAccordionSetSectionTitle(pAccordion, 1, "Advanced");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore section title");
+	iRet = xuiAccordionSetSectionTitle(pAccordion, 1,
+		xuiAccordionGetSectionTitle(pAccordion, 1));
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiAccordionGetSectionTitle(pAccordion, 1), "Advanced") == 0,
+		"borrowed section title may be assigned back");
 	iRet = xuiAccordionSetSectionEnabled(pAccordion, 2, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "section disabled");
 	iRet = __xuiAccordionAddFixedChild(pContext, pAccordion, 0, 24.0f);
@@ -327,6 +341,16 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pAccordion, 2u, XUI_ACCESSIBLE_ACTION_FOCUS, NULL) == XUI_OK &&
 		xuiAccordionGetSelected(pAccordion) == 0 && xuiGetFocusWidget(pContext) == pAccordion,
 		"accessibility focuses accordion section");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiAccordionGetState(pAccordion) & XUI_WIDGET_STATE_DISABLED) != 0,
+		"ancestor disable updates accordion state");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiAccordionGetState(pAccordion) & XUI_WIDGET_STATE_DISABLED) == 0,
+		"ancestor enable restores accordion state");
 
 	tWorld = xuiWidgetGetWorldRect(pAccordion);
 	tHeader = xuiAccordionGetHeaderRect(pAccordion, 1);
@@ -505,9 +529,48 @@ int main(void)
 	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0), "clear capture acquired");
 	iRet = xuiAccordionClear(pAccordion);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pAccordion) == 0 && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "clear cancels header capture");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pAccordion) == 0 &&
+		xuiAccordionGetContentHeight(pAccordion) == 0.0f &&
+		xuiGetPointerCapture(pContext) == NULL &&
+		xuiAccordionGetActiveIndex(pAccordion) == -1,
+		"clear cancels header capture and resets cached geometry");
 	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK, "release after clear");
+
+	iRet = xuiAccordionCreate(pContext, &pMutationAccordion, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pMutationAccordion);
+	if ( iRet == XUI_OK ) iRet = xuiAccordionAddSection(pMutationAccordion,
+		"Alpha", 201, 1, &arrMutationClients[0]);
+	if ( iRet == XUI_OK ) iRet = xuiAccordionAddSection(pMutationAccordion,
+		"Beta", 202, 0, &arrMutationClients[1]);
+	if ( iRet == XUI_OK ) iRet = xuiAccordionAddSection(pMutationAccordion,
+		"Gamma", 203, 0, &arrMutationClients[2]);
+	if ( iRet == XUI_OK ) iRet = xuiAccordionSetExpanded(pMutationAccordion, 2, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSelected(pMutationAccordion) == 2,
+		"mutation accordion setup");
+	iBefore = xuiAccordionGetChangeCount(pMutationAccordion);
+	iRet = xuiAccordionRemoveSection(pMutationAccordion, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pMutationAccordion) == 2 &&
+		xuiAccordionGetSelected(pMutationAccordion) == 1 &&
+		xuiAccordionGetChangeCount(pMutationAccordion) == iBefore + 1 &&
+		xuiAccordionGetSectionId(pMutationAccordion, 0) == 201 &&
+		xuiAccordionGetSectionId(pMutationAccordion, 1) == 203 &&
+		xuiAccordionGetClientWidget(pMutationAccordion, 0) == arrMutationClients[0] &&
+		xuiAccordionGetClientWidget(pMutationAccordion, 1) == arrMutationClients[2],
+		"remove section preserves remaining identity and selected item");
+	iRet = xuiAccordionRemoveSection(pMutationAccordion, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pMutationAccordion) == 1 &&
+		xuiAccordionGetSelected(pMutationAccordion) == 0 &&
+		xuiAccordionGetSectionId(pMutationAccordion, 0) == 201,
+		"remove selected section chooses remaining enabled item");
+	iRet = xuiAccordionRemoveSection(pMutationAccordion, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSectionCount(pMutationAccordion) == 0 &&
+		xuiAccordionGetSelected(pMutationAccordion) == -1 &&
+		xuiAccordionGetContentHeight(pMutationAccordion) == 0.0f &&
+		xuiAccordionRemoveSection(pMutationAccordion, 0) == XUI_ERROR_INVALID_ARGUMENT,
+		"remove final section resets model");
+	xuiWidgetDestroy(pMutationAccordion);
+	pMutationAccordion = NULL;
 
 	iRet = xuiAccordionCreate(pContext, &pDestroyAccordion, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyAccordion != NULL, "destroy callback accordion create");

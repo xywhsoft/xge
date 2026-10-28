@@ -3,7 +3,6 @@
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
 
-#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -1334,28 +1333,7 @@ static int __xuiTabsCreatePage(xui_widget pTabs, xui_tabs_data_t* pData, int iIn
 
 static void __xuiTabsCopyTitle(char sOutput[XUI_TABS_TITLE_CAPACITY], const char* sTitle)
 {
-	size_t iTextSizeValue;
-	int iTextSize;
-	int iAt;
-	int iNext;
-
-	if ( sOutput == NULL ) {
-		return;
-	}
-	if ( sTitle == NULL ) {
-		sTitle = "";
-	}
-	iTextSizeValue = strlen(sTitle);
-	iTextSize = iTextSizeValue > (size_t)INT_MAX ? INT_MAX : (int)iTextSizeValue;
-	iAt = 0;
-	while ( iAt < iTextSize ) {
-		iNext = xuiInternalTextGraphemeNext(sTitle, iTextSize, iAt);
-		if ( iNext <= iAt || iNext > iTextSize ) iNext = iAt + 1;
-		if ( iNext >= XUI_TABS_TITLE_CAPACITY ) break;
-		iAt = iNext;
-	}
-	if ( iAt > 0 ) memmove(sOutput, sTitle, (size_t)iAt);
-	sOutput[iAt] = 0;
+	(void)xuiInternalUtf8CopyGraphemes(sOutput, XUI_TABS_TITLE_CAPACITY, sTitle);
 }
 
 static void __xuiTabsSetTitle(xui_tabs_page_t* pPage, const char* sTitle)

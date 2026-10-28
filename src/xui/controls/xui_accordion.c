@@ -4,7 +4,6 @@
 #include "xui_pointer_press_internal.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
 
 #define XUI_ACCORDION_DEFAULT_BORDER_COLOR XUI_COLOR_RGBA(127, 196, 229, 255)
@@ -139,15 +138,9 @@ static int __xuiAccordionDescValid(const xui_accordion_desc_t* pDesc)
 
 static void __xuiAccordionSetTitle(xui_accordion_section_t* pSection, const char* sTitle)
 {
-	if ( pSection == NULL ) {
-		return;
-	}
-	if ( sTitle == NULL ) {
-		sTitle = "";
-	}
-	(void)snprintf(pSection->sTitle, sizeof(pSection->sTitle), "%s", sTitle);
-	pSection->sTitle[sizeof(pSection->sTitle) - 1] = '\0';
-	xuiInternalUtf8TrimIncomplete(pSection->sTitle);
+	if ( pSection == NULL ) return;
+	(void)xuiInternalUtf8CopyGraphemes(pSection->sTitle,
+		sizeof(pSection->sTitle), sTitle);
 }
 
 static xui_accordion_data_t* __xuiAccordionGetData(xui_widget pWidget)
@@ -388,6 +381,14 @@ static int __xuiAccordionInvalidateSection(const xui_accordion_section_t* pSecti
 	return XUI_OK;
 }
 
+static int __xuiAccordionInvalidateHeader(const xui_accordion_data_t* pData, int iIndex,
+	uint32_t iFlags)
+{
+	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iSectionCount ||
+	     pData->arrSections[iIndex].pHeader == NULL ) return XUI_OK;
+	return xuiWidgetInvalidate(pData->arrSections[iIndex].pHeader, iFlags);
+}
+
 static int __xuiAccordionInvalidateAll(xui_widget pAccordion, xui_accordion_data_t* pData, uint32_t iFlags)
 {
 	int i;
@@ -559,10 +560,16 @@ static int __xuiAccordionSetHover(xui_widget pAccordion, xui_accordion_data_t* p
 	}
 	iOld = pData->iHoverIndex;
 	pData->iHoverIndex = iIndex;
-	iRet = __xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiAccordionInvalidateHeader(pData, iOld,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK ) iRet = __xuiAccordionInvalidateHeader(pData, iIndex,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->iHoverIndex = iOld;
-		(void)__xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)__xuiAccordionInvalidateHeader(pData, iOld,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)__xuiAccordionInvalidateHeader(pData, iIndex,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return iRet;
 	}
 	return XUI_OK;
@@ -581,10 +588,16 @@ static int __xuiAccordionSetActive(xui_widget pAccordion, xui_accordion_data_t* 
 	}
 	iOld = pData->iActiveIndex;
 	pData->iActiveIndex = iIndex;
-	iRet = __xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiAccordionInvalidateHeader(pData, iOld,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK ) iRet = __xuiAccordionInvalidateHeader(pData, iIndex,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->iActiveIndex = iOld;
-		(void)__xuiAccordionInvalidateAll(pAccordion, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)__xuiAccordionInvalidateHeader(pData, iOld,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)__xuiAccordionInvalidateHeader(pData, iIndex,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return iRet;
 	}
 	return XUI_OK;
@@ -786,7 +799,7 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	}
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_KEY_DOWN:
-		if ( !xuiWidgetGetEnabled(pWidget) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 			return XUI_OK;
 		}
 		if ( pEvent->iKey == XUI_KEY_DOWN ) {
@@ -853,8 +866,8 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( ((pEvent->iType == XUI_EVENT_ENABLED_CHANGED) && !xuiWidgetGetEnabled(pWidget)) ||
-		     ((pEvent->iType == XUI_EVENT_VISIBLE_CHANGED) && !xuiWidgetGetVisible(pWidget)) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 			iRet = __xuiAccordionSetHover(pWidget, pData, -1);
 			if ( iRet != XUI_OK ) return iRet;
 			iRet = __xuiAccordionCancelPress(pWidget, pData);
@@ -919,7 +932,7 @@ static int __xuiAccordionHeaderRender(xui_widget pHeader, xui_draw_context pDraw
 	tRect.fY = 0.0f;
 	iFill = tResolved.iHeaderColor;
 	iText = tResolved.iTextColor;
-	bEnabled = xuiWidgetGetEnabled(pAccordion) && pSection->bEnabled;
+	bEnabled = xuiWidgetGetEffectiveEnabled(pHeader) && pSection->bEnabled;
 	if ( !bEnabled ) {
 		iText = tResolved.iDisabledTextColor;
 	} else if ( pData->iActiveIndex == iIndex ) {
@@ -1174,7 +1187,8 @@ static int __xuiAccordionAccessibleGet(xui_widget pWidget, int iIndex,
 		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
 			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
 		}
-		if ( !xuiWidgetGetEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+		if ( !xuiWidgetGetEffectiveVisible(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 		pNode->iRowCount = pData->iSectionCount;
 		pNode->iColumnCount = 1;
 		pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
@@ -1196,8 +1210,8 @@ static int __xuiAccordionAccessibleGet(xui_widget pWidget, int iIndex,
 	pNode->iColumnCount = 1;
 	pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_SELECTABLE |
 		(pSection->bExpanded ? XUI_ACCESSIBLE_STATE_EXPANDED : XUI_ACCESSIBLE_STATE_COLLAPSED);
-	if ( !pSection->bEnabled || !xuiWidgetGetEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
-	if ( pSection->pHeader == NULL || !xuiWidgetGetVisible(pSection->pHeader) ||
+	if ( !pSection->bEnabled || !xuiWidgetGetEffectiveEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	if ( pSection->pHeader == NULL || !xuiWidgetGetEffectiveVisible(pSection->pHeader) ||
 	     tWorld.fW <= 0.0f || tWorld.fH <= 0.0f ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 	if ( pData->iSelected == iSection ) {
 		pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTED;
@@ -1584,6 +1598,7 @@ XUI_API int xuiAccordionClear(xui_widget pWidget)
 	pData->iSelected = -1;
 	pData->iHoverIndex = -1;
 	pData->iActiveIndex = -1;
+	pData->fContentHeight = 0.0f;
 	pData->iChangeCount++;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
@@ -1641,6 +1656,86 @@ XUI_API int xuiAccordionAddSection(xui_widget pWidget, const char* sTitle, int i
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	return XUI_OK;
+}
+
+XUI_API int xuiAccordionRemoveSection(xui_widget pWidget, int iIndex)
+{
+	xui_accordion_data_t* pData;
+	xui_accordion_section_t arrOldSections[XUI_ACCORDION_SECTION_CAPACITY];
+	xui_accordion_section_t tRemoved;
+	xui_context pContext;
+	float fOldContentHeight;
+	int iOldSectionCount;
+	int iOldSelected;
+	int iOldHover;
+	int iOldChangeCount;
+	int iCandidate;
+	int bSelectionChanged;
+	int iRet;
+	int i;
+
+	pData = __xuiAccordionGetData(pWidget);
+	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iSectionCount ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiAccordionCancelPress(pWidget, pData);
+	if ( iRet != XUI_OK || __xuiAccordionGetData(pWidget) != pData ) goto done;
+
+	memcpy(arrOldSections, pData->arrSections, sizeof(arrOldSections));
+	tRemoved = pData->arrSections[iIndex];
+	iOldSectionCount = pData->iSectionCount;
+	iOldSelected = pData->iSelected;
+	iOldHover = pData->iHoverIndex;
+	iOldChangeCount = pData->iChangeCount;
+	fOldContentHeight = pData->fContentHeight;
+	for ( i = iIndex; i < XUI_ACCORDION_SECTION_CAPACITY - 1; i++ ) {
+		pData->arrSections[i] = pData->arrSections[i + 1];
+	}
+	memset(&pData->arrSections[XUI_ACCORDION_SECTION_CAPACITY - 1], 0,
+		sizeof(pData->arrSections[XUI_ACCORDION_SECTION_CAPACITY - 1]));
+	pData->arrSections[XUI_ACCORDION_SECTION_CAPACITY - 1].bEnabled = 1;
+	pData->iSectionCount--;
+	pData->iActiveIndex = -1;
+	if ( iOldHover == iIndex ) pData->iHoverIndex = -1;
+	else if ( iOldHover > iIndex ) pData->iHoverIndex = iOldHover - 1;
+	bSelectionChanged = 0;
+	if ( iOldSelected == iIndex ) {
+		pData->iSelected = -1;
+		if ( pData->iSectionCount > 0 ) {
+			iCandidate = iIndex < pData->iSectionCount ? iIndex : pData->iSectionCount - 1;
+			pData->iSelected = __xuiAccordionSectionEnabled(pData, iCandidate) ?
+				iCandidate : __xuiAccordionStepEnabled(pData, iCandidate, 1);
+		}
+		bSelectionChanged = 1;
+	} else if ( iOldSelected > iIndex ) {
+		pData->iSelected = iOldSelected - 1;
+		bSelectionChanged = 1;
+	}
+	pData->fContentHeight = 0.0f;
+	pData->iChangeCount++;
+	iRet = __xuiAccordionSyncSections(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		memcpy(pData->arrSections, arrOldSections, sizeof(arrOldSections));
+		pData->iSectionCount = iOldSectionCount;
+		pData->iSelected = iOldSelected;
+		pData->iHoverIndex = iOldHover;
+		pData->iChangeCount = iOldChangeCount;
+		pData->fContentHeight = fOldContentHeight;
+		(void)__xuiAccordionSyncSections(pWidget, pData);
+		goto done;
+	}
+	if ( __xuiAccordionGetData(pWidget) != pData ) goto done;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	if ( bSelectionChanged ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+	xuiWidgetDestroy(tRemoved.pSection);
+
+done:
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiAccordionGetSectionCount(xui_widget pWidget)
@@ -2121,7 +2216,7 @@ XUI_API uint32_t xuiAccordionGetState(xui_widget pWidget)
 	if ( pData->iHoverIndex >= 0 ) iState |= XUI_WIDGET_STATE_HOVER;
 	if ( pData->iActiveIndex >= 0 ) iState |= XUI_WIDGET_STATE_ACTIVE;
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) iState |= XUI_WIDGET_STATE_FOCUS;
-	if ( !xuiWidgetGetEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
 	return iState;
 }
 

@@ -2,7 +2,6 @@
 #if XUI_ENABLE_WINDOW
 #include "xui_internal.h"
 
-#include <limits.h>
 #include <string.h>
 
 typedef struct xui_window_data_t {
@@ -221,24 +220,7 @@ static int __xuiWindowRectEqual(xui_rect_t tA, xui_rect_t tB)
 
 static void __xuiWindowCopyTitle(char* sDst, size_t iCapacity, const char* sTitle)
 {
-	size_t iSourceSize;
-	int iTextSize;
-	int iAt;
-	int iNext;
-
-	if ( sDst == NULL || iCapacity == 0u ) return;
-	if ( sTitle == NULL ) sTitle = "";
-	iSourceSize = strlen(sTitle);
-	iTextSize = (iSourceSize > (size_t)INT_MAX) ? INT_MAX : (int)iSourceSize;
-	iAt = 0;
-	while ( iAt < iTextSize ) {
-		iNext = xuiInternalTextGraphemeNext(sTitle, iTextSize, iAt);
-		if ( iNext <= iAt ) iNext = iAt + 1;
-		if ( (size_t)iNext >= iCapacity ) break;
-		iAt = iNext;
-	}
-	if ( iAt > 0 ) memmove(sDst, sTitle, (size_t)iAt);
-	sDst[iAt] = '\0';
+	(void)xuiInternalUtf8CopyGraphemes(sDst, iCapacity, sTitle);
 }
 
 static int __xuiWindowRectContains(xui_rect_t tRect, float fX, float fY)

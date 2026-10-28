@@ -9473,6 +9473,8 @@ XUI_API int xuiAccordionSetSelect(xui_widget pWidget, xui_accordion_select_proc 
 XUI_API int xuiAccordionClear(xui_widget pWidget);
 /* 添加分区（标题/id/初始展开）；标题会复制，*ppClient 可空并输出内容容器。 */
 XUI_API int xuiAccordionAddSection(xui_widget pWidget, const char* sTitle, int iId, int bExpanded, xui_widget* ppClient);
+/* 删除指定分区并销毁其内容子树；其余分区及内容容器保持原身份。 */
+XUI_API int xuiAccordionRemoveSection(xui_widget pWidget, int iIndex);
 /* 读取分区数量。 */
 XUI_API int xuiAccordionGetSectionCount(xui_widget pWidget);
 /* 按索引取分区整体控件。 */
@@ -9485,7 +9487,7 @@ XUI_API xui_widget xuiAccordionGetButtonWidget(xui_widget pWidget, int iIndex);
 XUI_API xui_widget xuiAccordionGetClientWidget(xui_widget pWidget, int iIndex);
 /* 向指定分区内容区追加子控件。 */
 XUI_API int xuiAccordionAddSectionChild(xui_widget pWidget, int iIndex, xui_widget pChild);
-/* 设置分区标题。 */
+/* 设置分区标题；标题按 UTF-8 字素边界复制。 */
 XUI_API int xuiAccordionSetSectionTitle(xui_widget pWidget, int iIndex, const char* sTitle);
 /* 读取分区标题；返回只读借用指针，后续修改或销毁控件会使其失效。 */
 XUI_API const char* xuiAccordionGetSectionTitle(xui_widget pWidget, int iIndex);
@@ -9535,7 +9537,7 @@ XUI_API int xuiAccordionGetHoverIndex(xui_widget pWidget);
 XUI_API int xuiAccordionGetActiveIndex(xui_widget pWidget);
 /* 读取控件状态位。 */
 XUI_API uint32_t xuiAccordionGetState(xui_widget pWidget);
-/* 读取变更计数（展开/收起自增，测试用）。 */
+/* 读取变更计数（模型或展开状态变化时自增，测试用）。 */
 XUI_API int xuiAccordionGetChangeCount(xui_widget pWidget);
 #endif
 
