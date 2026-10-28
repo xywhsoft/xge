@@ -9,8 +9,8 @@
 #define DEMO_TARGET_H 620
 #define DEMO_OFFSET_X 10.0f
 #define DEMO_OFFSET_Y 20.0f
-#define PROGRESS_COUNT 10
-#define LABEL_COUNT 10
+#define PROGRESS_COUNT 11
+#define LABEL_COUNT 11
 #define SURFACE_COUNT 6
 
 typedef struct xui_progress_box_t {
@@ -416,7 +416,12 @@ static int __xuiProgressCreateUi(xui_progress_demo_t* pDemo)
 	     (__xuiProgressAddLabel(pDemo, "Nine-patch stretch") != XUI_OK) ||
 	     (__xuiProgressAddPatchProgress(pDemo, "%1.0f%%", pDemo->pSurface[2], pDemo->pSurface[3], XUI_NINE_PATCH_STRETCH) == NULL) ||
 	     (__xuiProgressAddLabel(pDemo, "Nine-patch tile") != XUI_OK) ||
-	     (__xuiProgressAddPatchProgress(pDemo, "%1.0f%%", pDemo->pSurface[4], pDemo->pSurface[5], XUI_NINE_PATCH_TILE) == NULL) ) {
+	     (__xuiProgressAddPatchProgress(pDemo, "%1.0f%%", pDemo->pSurface[4], pDemo->pSurface[5], XUI_NINE_PATCH_TILE) == NULL) ||
+	     (__xuiProgressAddLabel(pDemo, "Indeterminate marquee") != XUI_OK) ||
+	     (__xuiProgressAddProgress(pDemo, NULL, iTrack, iFill) == NULL) ) {
+		return XUI_ERROR;
+	}
+	if ( xuiProgressSetIndeterminate(pDemo->pProgress[10], 1) != XUI_OK ) {
 		return XUI_ERROR;
 	}
 	return XUI_OK;
@@ -457,7 +462,8 @@ static void __xuiProgressRunChecks(xui_progress_demo_t* pDemo)
 		(xuiProgressGetDisplayText(pDemo->pProgress[2]) != NULL) &&
 		(xuiProgressHasFillPatch(pDemo->pProgress[6]) != 0) &&
 		(xuiProgressGetFillPatchMode(pDemo->pProgress[7]) == XUI_PROGRESS_FILL_REVEAL) &&
-		(xuiProgressHasTrackPatch(pDemo->pProgress[9]) != 0);
+		(xuiProgressHasTrackPatch(pDemo->pProgress[9]) != 0) &&
+		(xuiProgressGetIndeterminate(pDemo->pProgress[10]) != 0);
 }
 
 static int __xuiProgressCreateAssets(xui_progress_demo_t* pDemo)

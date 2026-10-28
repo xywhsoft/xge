@@ -20,6 +20,11 @@ static int __xuiProgressRectEq(xui_rect_t tRect, float fX, float fY, float fW, f
 	return (tRect.fX == fX) && (tRect.fY == fY) && (tRect.fW == fW) && (tRect.fH == fH);
 }
 
+static int __xuiProgressFloatFinite(float fValue)
+{
+	return (fValue == fValue) && (fValue >= -FLT_MAX) && (fValue <= FLT_MAX);
+}
+
 static xui_style_value_t __xuiProgressStyleColor(uint32_t iColor)
 {
 	xui_style_value_t tValue;
@@ -68,6 +73,8 @@ int main(void)
 	xui_nine_patch_t tInvalidPatch;
 	xui_accessible_node_t tNode;
 	xui_style_property_t arrStyle[3];
+	xui_layout_t tLayout;
+	xui_layout_t tSavedLayout;
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
 	xallocationbudget* pBudget;
@@ -87,6 +94,7 @@ int main(void)
 	pBudget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
+	xuiTestProxyEnableFrameClock(&tState, 0.0);
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "context create");
@@ -145,9 +153,13 @@ int main(void)
 	iRet = xuiProgressSetMarqueeInterval(pProgress, 1.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiProgressGetMarqueeInterval(pProgress) == 1.0f,
 		"set marquee interval");
-	iRet = xuiProgressSetIndeterminate(pProgress, 1);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiProgressGetIndeterminate(pProgress),
-		"enable indeterminate progress");
+	{
+		int iFrameRequests = tState.iFrameRequestCount;
+		iRet = xuiProgressSetIndeterminate(pProgress, 1);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiProgressGetIndeterminate(pProgress) &&
+			tState.iFrameRequestCount > iFrameRequests,
+			"enable indeterminate progress");
+	}
 	tRect = xuiProgressGetFillRect(pProgress);
 	XUI_TEST_CHECK(tRect.fW > 0 && tRect.fW < 100 && tRect.fH == 20,
 		"indeterminate segment rect");
@@ -156,10 +168,26 @@ int main(void)
 	iRet = xuiWidgetGetAccessibleNode(pProgress, 0, &tNode);
 	XUI_TEST_CHECK(iRet == XUI_OK && tNode.tRange.iSize == 0,
 		"indeterminate accessibility omits numeric range");
+	{
+		int iFrameRequests = tState.iFrameRequestCount;
+		iRet = xuiUpdate(pContext, 0.0f);
+		XUI_TEST_CHECK(iRet == XUI_OK && tState.iFrameRequestCount > iFrameRequests,
+			"stationary marquee requests the next animation frame");
+	}
 	iRet = xuiUpdate(pContext, 0.25f);
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		!__xuiProgressRectEq(xuiProgressGetFillRect(pProgress), tRect.fX, tRect.fY, tRect.fW, tRect.fH),
 		"marquee advances during update");
+	iRet = xuiProgressSetMarqueeInterval(pProgress, FLT_MIN);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimum positive marquee interval");
+	iRet = xuiUpdate(pContext, FLT_MAX);
+	tRect = xuiProgressGetFillRect(pProgress);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiProgressFloatFinite(tRect.fX) &&
+		__xuiProgressFloatFinite(tRect.fY) && __xuiProgressFloatFinite(tRect.fW) &&
+		__xuiProgressFloatFinite(tRect.fH),
+		"extreme marquee timing keeps finite geometry");
+	iRet = xuiProgressSetMarqueeInterval(pProgress, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore marquee interval");
 	iRet = xuiProgressSetIndeterminate(pProgress, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiProgressGetIndeterminate(pProgress) &&
 		__xuiProgressRectEq(xuiProgressGetFillRect(pProgress), 0.0f, 0.0f, 25.0f, 20.0f),
@@ -225,6 +253,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "top-to-bottom");
 	tRect = xuiProgressGetFillRect(pProgress);
 	XUI_TEST_CHECK(__xuiProgressRectEq(tRect, 0.0f, 0.0f, 20.0f, 40.0f), "top-to-bottom fill rect");
+	tSavedLayout = xuiWidgetGetLayout(pProgress);
+	tLayout = tSavedLayout;
+	tLayout.tPadding = (xui_thickness_t){60.0f, 20.0f, 60.0f, 20.0f};
+	iRet = xuiWidgetSetRect(pProgress, (xui_rect_t){10.0f, 20.0f, 100.0f, 20.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "empty content rect widget size");
+	iRet = xuiWidgetSetLayout(pProgress, &tLayout);
+	XUI_TEST_CHECK(iRet == XUI_OK, "empty content rect padding");
+	tRect = xuiProgressGetFillRect(pProgress);
+	XUI_TEST_CHECK(tRect.fW == 0.0f && tRect.fH == 0.0f,
+		"collapsed content rect does not fall back to widget bounds");
+	iRet = xuiWidgetSetLayout(pProgress, &tSavedLayout);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore progress layout");
 
 	iRet = xuiProgressSetTextTemplate(pProgress, "{{{value}}}/{max} {percent}%");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "{40}/100 40%") == 0,
@@ -233,6 +273,32 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Loading") == 0, "static text");
 	iRet = xuiProgressSetTextTemplate(pProgress, "Progress %s");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Progress %s") == 0, "unsafe format literal");
+	iRet = xuiProgressSetTextTemplate(pProgress, "%05.1f%%");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "040.0%") == 0,
+		"zero-padded percentage format");
+	iRet = xuiProgressSetTextTemplate(pProgress, "Progress %05d");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiProgressGetDisplayText(pProgress), "Progress %05d") == 0,
+		"unsupported formatted token remains literal");
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget), "create static text allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope), "enter static text allocation budget");
+	{
+		int iFirst = xuiProgressSetValue(pProgress, 41.0f);
+		int iSecond = xuiProgressSetValue(pProgress, 42.0f);
+		int iThird = xuiProgressSetRange(pProgress, 0.0f, 200.0f);
+		XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope), "leave static text allocation budget");
+		xrtAllocationBudgetFree(pBudget);
+		pBudget = NULL;
+		XUI_TEST_CHECK(iFirst == XUI_OK && iSecond == XUI_OK && iThird == XUI_OK &&
+			strcmp(xuiProgressGetDisplayText(pProgress), "Progress %05d") == 0,
+			"static progress text updates without heap churn");
+	}
+	iRet = xuiProgressSetRange(pProgress, 0.0f, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore range after static text test");
+	iRet = xuiProgressSetValue(pProgress, 40.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore value after static text test");
+	iRet = xuiProgressSetTextTemplate(pProgress, "Progress %s");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore unsafe literal template");
 	memset(&tScope, 0, sizeof(tScope));
 	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget), "create allocation budget");
 	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope), "enter allocation budget");
@@ -286,6 +352,17 @@ int main(void)
 	XUI_TEST_CHECK(__xuiProgressRectEq(xuiTestSurfaceGetLastDst(pCache), 50.0f, 0.0f, 50.0f, 20.0f), "reveal patch dst");
 	{
 		int iDrawCount = xuiTestSurfaceGetDrawCount(pCache);
+		tPatch.iSize = 0;
+		XUI_TEST_CHECK(xuiProgressSetTrackPatch(pProgress, &tPatch) == XUI_OK &&
+			xuiProgressSetFillPatch(pProgress, &tPatch) == XUI_OK,
+			"repeat equivalent patches");
+		XUI_TEST_CHECK(xuiRenderPrepare(pContext) == XUI_OK &&
+			xuiTestSurfaceGetDrawCount(pCache) == iDrawCount,
+			"equivalent patches do not rebuild cache");
+		tPatch.iSize = sizeof(tPatch);
+	}
+	{
+		int iDrawCount = xuiTestSurfaceGetDrawCount(pCache);
 		iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pPatchSurface,
 			(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
 		XUI_TEST_CHECK(iRet == XUI_OK, "patch surface update");
@@ -310,6 +387,23 @@ int main(void)
 	tPatch.tSlice = (xui_thickness_t){0, 0, 0, 0};
 	iRet = xuiProgressSetFillPatch(pProgress, &tPatch);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore fill patch");
+	tPatch.tSrc = (xui_rect_t){0.0f, 0.0f, 0.25f, 0.25f};
+	tPatch.iMode = XUI_NINE_PATCH_TILE;
+	iRet = xuiProgressSetTrackPatch(pProgress, &tPatch);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny tile patch accepted");
+	iRet = xuiProgressClearFillPatch(pProgress);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear fill patch for tile budget test");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render tiny tile patch");
+	pCache = xuiWidgetGetCacheSurface(pProgress, xuiWidgetGetStateId(pProgress));
+	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) <= 64,
+		"tiny tile source has bounded draw complexity");
+	tPatch.tSrc = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	tPatch.iMode = XUI_NINE_PATCH_STRETCH;
+	XUI_TEST_CHECK(xuiProgressSetTrackPatch(pProgress, &tPatch) == XUI_OK &&
+		xuiProgressSetFillPatch(pProgress, &tPatch) == XUI_OK,
+		"restore progress patches after tile budget test");
 
 	iRet = xuiProgressSetFillDirection(pProgress, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid direction");
@@ -329,6 +423,14 @@ int main(void)
 	iRet = xuiProgressSetFillPatch(pProgress, &tInvalidPatch);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative patch slice rejected");
 	XUI_TEST_CHECK(xuiProgressHasFillPatch(pProgress), "invalid fill patch preserves prior state");
+	tInvalidPatch = tPatch;
+	tInvalidPatch.tSrc.fX = NAN;
+	iRet = xuiProgressSetTrackPatch(pProgress, &tInvalidPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite patch source rejected");
+	tInvalidPatch = tPatch;
+	tInvalidPatch.tSlice.fTop = INFINITY;
+	iRet = xuiProgressSetFillPatch(pProgress, &tInvalidPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite patch slice rejected");
 	tDesc.fMin = NAN;
 	pInvalid = pRoot;
 	iRet = xuiProgressCreate(pContext, &pInvalid, &tDesc);
