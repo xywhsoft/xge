@@ -13,6 +13,9 @@
 #define XUI_CHART_NAME_CAPACITY 64
 #define XUI_CHART_DASH_CAPACITY 8
 #define XUI_CHART_PI 3.14159265358979323846
+#define XUI_CHART_PIE_SEGMENTS 72
+#define XUI_CHART_PIE_MAX_STEPS (XUI_CHART_PIE_SEGMENTS + 1)
+#define XUI_CHART_MAP_RATE_LIMIT 1000000.0
 #define XUI_CHART_ACCESSIBLE_ROOT_ID 1ull
 #define XUI_CHART_ACCESSIBLE_SERIES_KIND 1ull
 #define XUI_CHART_ACCESSIBLE_LEGEND_KIND 2ull
@@ -260,6 +263,128 @@ static int __xuiChartFiniteFloat(float fValue)
 	return fValue >= -FLT_MAX && fValue <= FLT_MAX;
 }
 
+static double __xuiChartSaturatingAdd(double fA, double fB)
+{
+	if ( (fB > 0.0) && (fA > DBL_MAX - fB) ) return DBL_MAX;
+	if ( (fB < 0.0) && (fA < -DBL_MAX - fB) ) return -DBL_MAX;
+	return fA + fB;
+}
+
+static double __xuiChartSaturatingScale(double fValue, double fFactor)
+{
+	double fAbsValue;
+	double fAbsFactor;
+
+	if ( (fValue == 0.0) || (fFactor == 0.0) ) return 0.0;
+	if ( !isfinite(fValue) || !isfinite(fFactor) ) {
+		return ((fValue < 0.0) != (fFactor < 0.0)) ? -DBL_MAX : DBL_MAX;
+	}
+	fAbsValue = fabs(fValue);
+	fAbsFactor = fabs(fFactor);
+	if ( fAbsFactor > DBL_MAX / fAbsValue ) {
+		return ((fValue < 0.0) != (fFactor < 0.0)) ? -DBL_MAX : DBL_MAX;
+	}
+	return fValue * fFactor;
+}
+
+static double __xuiChartRangeSpan(double fMin, double fMax)
+{
+	double fScale;
+	double fNormalized;
+
+	if ( !isfinite(fMin) || !isfinite(fMax) || (fMax <= fMin) ) return 0.0;
+	fScale = fmax(fabs(fMin), fabs(fMax));
+	if ( fScale == 0.0 ) return 0.0;
+	fNormalized = fMax / fScale - fMin / fScale;
+	if ( (fNormalized <= 0.0) || (fNormalized > DBL_MAX / fScale) ) return DBL_MAX;
+	return fNormalized * fScale;
+}
+
+static double __xuiChartRangePadding(double fMin, double fMax, double fRate)
+{
+	double fScale;
+	double fNormalized;
+
+	if ( (fRate <= 0.0) || (fMax <= fMin) ) return 0.0;
+	fScale = fmax(fabs(fMin), fabs(fMax));
+	if ( fScale == 0.0 ) return fRate;
+	fNormalized = (fMax / fScale - fMin / fScale) * fRate;
+	if ( (fNormalized <= 0.0) || (fNormalized > DBL_MAX / fScale) ) return DBL_MAX;
+	return fNormalized * fScale;
+}
+
+static void __xuiChartExpandEqualRange(double* pMin, double* pMax)
+{
+	double fValue;
+	double fDelta;
+	double fMin;
+	double fMax;
+
+	if ( (pMin == NULL) || (pMax == NULL) || (*pMin < *pMax) ) return;
+	fValue = *pMin;
+	if ( fValue == 0.0 ) {
+		*pMin = -1.0;
+		*pMax = 1.0;
+		return;
+	}
+	fDelta = fabs(fValue) * 0.05;
+	fMin = fValue - fDelta;
+	fMax = fValue + fDelta;
+	if ( !isfinite(fMin) ) fMin = fValue;
+	if ( !isfinite(fMax) ) fMax = fValue;
+	if ( fMin == fMax ) {
+		double fNextMin = nextafter(fValue, -HUGE_VAL);
+		double fNextMax = nextafter(fValue, HUGE_VAL);
+		if ( isfinite(fNextMin) ) fMin = fNextMin;
+		if ( isfinite(fNextMax) ) fMax = fNextMax;
+	}
+	if ( fMin == fMax ) {
+		if ( fValue > 0.0 ) fMin = 0.0;
+		else fMax = 0.0;
+	}
+	*pMin = fMin;
+	*pMax = fMax;
+}
+
+static double __xuiChartNormalizedRate(double fValue, double fMin, double fMax)
+{
+	double fScale;
+	double fDenominator;
+	double fRate;
+
+	if ( fValue == fMin ) return 0.0;
+	if ( fValue == fMax ) return 1.0;
+	if ( !isfinite(fValue) || !isfinite(fMin) || !isfinite(fMax) || (fMax <= fMin) ) return 0.5;
+	fScale = fmax(fabs(fValue), fmax(fabs(fMin), fabs(fMax)));
+	if ( fScale == 0.0 ) return 0.5;
+	fDenominator = fMax / fScale - fMin / fScale;
+	if ( fDenominator <= 0.0 ) {
+		return fValue < fMin ? -XUI_CHART_MAP_RATE_LIMIT : XUI_CHART_MAP_RATE_LIMIT;
+	}
+	fRate = (fValue / fScale - fMin / fScale) / fDenominator;
+	if ( !isfinite(fRate) ) {
+		return fValue < fMin ? -XUI_CHART_MAP_RATE_LIMIT : XUI_CHART_MAP_RATE_LIMIT;
+	}
+	if ( fRate < -XUI_CHART_MAP_RATE_LIMIT ) return -XUI_CHART_MAP_RATE_LIMIT;
+	if ( fRate > XUI_CHART_MAP_RATE_LIMIT ) return XUI_CHART_MAP_RATE_LIMIT;
+	return fRate;
+}
+
+static double __xuiChartLerp(double fMin, double fMax, double fRate)
+{
+	double fScale;
+	double fNormalized;
+
+	if ( fRate == 0.0 ) return fMin;
+	if ( fRate == 1.0 ) return fMax;
+	fScale = fmax(fabs(fMin), fabs(fMax));
+	if ( fScale == 0.0 ) return 0.0;
+	fNormalized = (fMin / fScale) * (1.0 - fRate) + (fMax / fScale) * fRate;
+	if ( !isfinite(fNormalized) || (fNormalized > DBL_MAX / fScale) ) return DBL_MAX;
+	if ( fNormalized < -DBL_MAX / fScale ) return -DBL_MAX;
+	return fNormalized * fScale;
+}
+
 static char* __xuiChartCopyString(const char* sText)
 {
 	char* sCopy;
@@ -502,9 +627,9 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 				}
 				y = pSeries->pPoints[j].y;
 				if ( y >= 0.0 ) {
-					fPositive += y;
+					fPositive = __xuiChartSaturatingAdd(fPositive, y);
 				} else {
-					fNegative += y;
+					fNegative = __xuiChartSaturatingAdd(fNegative, y);
 				}
 			}
 			if ( bHasX ) {
@@ -554,14 +679,8 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 	if ( bHorizontalBar && fMinX > 0.0 ) {
 		fMinX = 0.0;
 	}
-	if ( fMinX == fMaxX ) {
-		fMinX -= 1.0;
-		fMaxX += 1.0;
-	}
-	if ( fMinY == fMaxY ) {
-		fMinY -= 1.0;
-		fMaxY += 1.0;
-	}
+	__xuiChartExpandEqualRange(&fMinX, &fMaxX);
+	__xuiChartExpandEqualRange(&fMinY, &fMaxY);
 	if ( bHorizontalBar ) {
 		fMinY -= 0.5;
 		fMaxY += 0.5;
@@ -570,21 +689,28 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 		fMaxX += 0.5;
 	}
 	if ( bValueSeries ) {
-		double fPadX = (fMaxX - fMinX) * 0.05;
-		double fPadY = (fMaxY - fMinY) * 0.05;
+		double fPadX = __xuiChartRangePadding(fMinX, fMaxX, 0.05);
+		double fPadY = __xuiChartRangePadding(fMinY, fMaxY, 0.05);
 		if ( pData->iXAxisType == XUI_CHART_AXIS_VALUE ) {
-			fMinX -= fPadX;
-			fMaxX += fPadX;
+			double fPaddedMin = __xuiChartSaturatingAdd(fMinX, -fPadX);
+			double fPaddedMax = __xuiChartSaturatingAdd(fMaxX, fPadX);
+			if ( fPaddedMin < fMinX ) fMinX = fPaddedMin;
+			if ( fPaddedMax > fMaxX ) fMaxX = fPaddedMax;
 		}
 		if ( pData->iYAxisType == XUI_CHART_AXIS_VALUE ) {
 			if ( fMinY == 0.0 ) {
-				fMaxY += fPadY;
+				double fPaddedMax = __xuiChartSaturatingAdd(fMaxY, fPadY);
+				if ( fPaddedMax > fMaxY ) fMaxY = fPaddedMax;
 			} else {
-				fMinY -= fPadY;
-				fMaxY += fPadY;
+				double fPaddedMin = __xuiChartSaturatingAdd(fMinY, -fPadY);
+				double fPaddedMax = __xuiChartSaturatingAdd(fMaxY, fPadY);
+				if ( fPaddedMin < fMinY ) fMinY = fPaddedMin;
+				if ( fPaddedMax > fMaxY ) fMaxY = fPaddedMax;
 			}
 		}
 	}
+	__xuiChartExpandEqualRange(&fMinX, &fMaxX);
+	__xuiChartExpandEqualRange(&fMinY, &fMaxY);
 	pData->fDataMinX = pData->fMinX = fMinX;
 	pData->fDataMaxX = pData->fMaxX = fMaxX;
 	pData->fDataMinY = pData->fMinY = fMinY;
@@ -607,22 +733,22 @@ static void __xuiChartClampPanAxis(double fDataMin, double fDataMax, double fPan
 	double fEpsilon;
 
 	if ( (pMin == NULL) || (pMax == NULL) ) return;
-	fDataRange = fDataMax - fDataMin;
-	fPanRange = fPanMax - fPanMin;
+	fDataRange = __xuiChartRangeSpan(fDataMin, fDataMax);
+	fPanRange = __xuiChartRangeSpan(fPanMin, fPanMax);
 	fEpsilon = (fabs(fDataRange) + 1.0) * 1.0e-9;
 	if ( (fDataRange <= fEpsilon) || (fPanRange >= fDataRange - fEpsilon) ) {
 		*pMin = fPanMin;
 		*pMax = fPanMax;
 		return;
 	}
-	fMin = fPanMin + fDelta;
-	fMax = fPanMax + fDelta;
+	fMin = __xuiChartSaturatingAdd(fPanMin, fDelta);
+	fMax = __xuiChartSaturatingAdd(fPanMax, fDelta);
 	if ( fMin < fDataMin ) {
-		fMax += fDataMin - fMin;
+		fMax = __xuiChartSaturatingAdd(fMax, __xuiChartRangeSpan(fMin, fDataMin));
 		fMin = fDataMin;
 	}
 	if ( fMax > fDataMax ) {
-		fMin -= fMax - fDataMax;
+		fMin = __xuiChartSaturatingAdd(fMin, -__xuiChartRangeSpan(fDataMax, fMax));
 		fMax = fDataMax;
 	}
 	*pMin = fMin;
@@ -632,12 +758,20 @@ static void __xuiChartClampPanAxis(double fDataMin, double fDataMax, double fPan
 static xui_rect_t __xuiChartComputePlotRect(xui_widget pWidget, xui_chart_data_t* pData)
 {
 	xui_rect_t tRect;
+	float fContentX;
+	float fContentY;
+	float fContentW;
+	float fContentH;
 	float fTop;
 	float fBottom;
 	float fLeft;
 	float fRight;
 
 	tRect = __xuiChartContentRect(pWidget);
+	fContentX = (float)tRect.fX;
+	fContentY = (float)tRect.fY;
+	fContentW = tRect.fW > 0 ? (float)tRect.fW : 0.0f;
+	fContentH = tRect.fH > 0 ? (float)tRect.fH : 0.0f;
 	fTop = (pData->sTitle != NULL && pData->sTitle[0] != 0) ? 30.0f : 12.0f;
 	fBottom = 34.0f;
 	fLeft = 48.0f;
@@ -649,20 +783,33 @@ static xui_rect_t __xuiChartComputePlotRect(xui_widget pWidget, xui_chart_data_t
 	if ( tRect.fW < 240.0f ) {
 		fRight = 12.0f;
 	}
-	tRect.fX += fLeft;
-	tRect.fY += fTop;
-	tRect.fW -= fLeft + fRight;
-	tRect.fH -= fTop + fBottom;
-	if ( tRect.fW < 10.0f ) tRect.fW = 10.0f;
-	if ( tRect.fH < 10.0f ) tRect.fH = 10.0f;
-	return xuiInternalSnapRect(tRect);
+	if ( fLeft > fContentW ) fLeft = fContentW;
+	if ( fTop > fContentH ) fTop = fContentH;
+	if ( fRight > fContentW - fLeft ) fRight = fContentW - fLeft;
+	if ( fBottom > fContentH - fTop ) fBottom = fContentH - fTop;
+	{
+		float fPlotW = fContentW - fLeft - fRight;
+		float fPlotH = fContentH - fTop - fBottom;
+		float fMinW = fContentW < 10.0f ? fContentW : 10.0f;
+		float fMinH = fContentH < 10.0f ? fContentH : 10.0f;
+		if ( fPlotW < fMinW ) {
+			fPlotW = fMinW;
+			fLeft = fContentW - fPlotW;
+		}
+		if ( fPlotH < fMinH ) {
+			fPlotH = fMinH;
+			fTop = fContentH - fPlotH;
+		}
+		return xuiInternalRectFromFloatNearest(fContentX + fLeft, fContentY + fTop,
+			fPlotW, fPlotH);
+	}
 }
 
 static float __xuiChartMapX(const xui_chart_data_t* pData, double x)
 {
 	double fRate;
 
-	fRate = (x - pData->fMinX) / (pData->fMaxX - pData->fMinX);
+	fRate = __xuiChartNormalizedRate(x, pData->fMinX, pData->fMaxX);
 	return pData->tPlotRect.fX + (float)(fRate * pData->tPlotRect.fW);
 }
 
@@ -670,7 +817,7 @@ static float __xuiChartMapY(const xui_chart_data_t* pData, double y)
 {
 	double fRate;
 
-	fRate = (y - pData->fMinY) / (pData->fMaxY - pData->fMinY);
+	fRate = __xuiChartNormalizedRate(y, pData->fMinY, pData->fMaxY);
 	return pData->tPlotRect.fY + pData->tPlotRect.fH - (float)(fRate * pData->tPlotRect.fH);
 }
 
@@ -682,7 +829,7 @@ static double __xuiChartUnmapX(const xui_chart_data_t* pData, float fX)
 		return pData->fMinX;
 	}
 	fRate = ((double)fX - (double)pData->tPlotRect.fX) / (double)pData->tPlotRect.fW;
-	return pData->fMinX + fRate * (pData->fMaxX - pData->fMinX);
+	return __xuiChartLerp(pData->fMinX, pData->fMaxX, fRate);
 }
 
 static double __xuiChartUnmapY(const xui_chart_data_t* pData, float fY)
@@ -693,12 +840,14 @@ static double __xuiChartUnmapY(const xui_chart_data_t* pData, float fY)
 		return pData->fMinY;
 	}
 	fRate = ((double)(pData->tPlotRect.fY + pData->tPlotRect.fH) - (double)fY) / (double)pData->tPlotRect.fH;
-	return pData->fMinY + fRate * (pData->fMaxY - pData->fMinY);
+	return __xuiChartLerp(pData->fMinY, pData->fMaxY, fRate);
 }
 
 static int __xuiChartPointInRect(xui_rect_t tRect, float fX, float fY)
 {
-	return (fX >= tRect.fX) && (fX <= tRect.fX + tRect.fW) && (fY >= tRect.fY) && (fY <= tRect.fY + tRect.fH);
+	return (tRect.fW > 0) && (tRect.fH > 0) &&
+		(fX >= tRect.fX) && (fX < tRect.fX + tRect.fW) &&
+		(fY >= tRect.fY) && (fY < tRect.fY + tRect.fH);
 }
 
 static int __xuiChartHasVisiblePie(const xui_chart_data_t* pData)
@@ -863,7 +1012,8 @@ static int __xuiChartEnsureSeriesLod(xui_chart_data_t* pData, xui_chart_series_t
 	iInterior = pSeries->iCount - 2;
 	if ( iBudget <= 3 ) {
 		int iExtreme = -1;
-		double fReference = (pSeries->pPoints[0].y + pSeries->pPoints[pSeries->iCount - 1].y) * 0.5;
+		double fReference = __xuiChartLerp(pSeries->pPoints[0].y,
+			pSeries->pPoints[pSeries->iCount - 1].y, 0.5);
 		double fDistance = -1.0;
 		int i;
 		if ( (size_t)iBudget > (size_t)-1 / sizeof(*pIndices) ) return XUI_ERROR_OUT_OF_MEMORY;
@@ -873,7 +1023,9 @@ static int __xuiChartEnsureSeriesLod(xui_chart_data_t* pData, xui_chart_series_t
 		pIndices[iOutput++] = 0;
 		if ( iBudget == 3 ) {
 			for ( i = 1; i < pSeries->iCount - 1; i++ ) {
-				double fCandidate = fabs(pSeries->pPoints[i].y - fReference);
+				double fCandidate = pSeries->pPoints[i].y < fReference ?
+					__xuiChartRangeSpan(pSeries->pPoints[i].y, fReference) :
+					__xuiChartRangeSpan(fReference, pSeries->pPoints[i].y);
 				if ( fCandidate > fDistance ) {
 					fDistance = fCandidate;
 					iExtreme = i;
@@ -1008,7 +1160,7 @@ static float __xuiChartValueRate(double fValue, double fMinValue, double fMaxVal
 	if ( fMaxValue == fMinValue ) {
 		return 0.5f;
 	}
-	return (float)((fValue - fMinValue) / (fMaxValue - fMinValue));
+	return (float)__xuiChartNormalizedRate(fValue, fMinValue, fMaxValue);
 }
 
 static int __xuiChartDrawAxes(xui_proxy pProxy, xui_draw_context pDraw, xui_chart_data_t* pData)
@@ -1050,12 +1202,12 @@ static int __xuiChartDrawAxes(xui_proxy pProxy, xui_draw_context pDraw, xui_char
 				}
 				iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tPlot.fX - 46.0f, __xuiChartMapY(pData, (double)iPoint) - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
-				fXValue = pData->fMinX + (pData->fMaxX - pData->fMinX) * (double)i / 4.0;
+				fXValue = __xuiChartLerp(pData->fMinX, pData->fMaxX, (double)i / 4.0);
 				snprintf(sText, sizeof(sText), "%.1f", fXValue);
 				iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
 			} else {
-				double fYValue = pData->fMaxY - (pData->fMaxY - pData->fMinY) * (double)i / 4.0;
+				double fYValue = __xuiChartLerp(pData->fMaxY, pData->fMinY, (double)i / 4.0);
 				snprintf(sText, sizeof(sText), "%.1f", fYValue);
 				iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){tPlot.fX - 46.0f, y - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
@@ -1072,7 +1224,7 @@ static int __xuiChartDrawAxes(xui_proxy pProxy, xui_draw_context pDraw, xui_char
 					iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 					if ( iRet != XUI_OK ) return iRet;
 				} else {
-					double fXValue = pData->fMinX + (pData->fMaxX - pData->fMinX) * (double)i / 4.0;
+					double fXValue = __xuiChartLerp(pData->fMinX, pData->fMaxX, (double)i / 4.0);
 					snprintf(sText, sizeof(sText), "%.1f", fXValue);
 					iRet = __xuiChartDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 					if ( iRet != XUI_OK ) return iRet;
@@ -1278,11 +1430,11 @@ static void __xuiChartStackedBarRange(const xui_chart_data_t* pData, int iSeries
 		}
 		y = pSeries->pPoints[iItem].y;
 		if ( ((fValue >= 0.0) && (y >= 0.0)) || ((fValue < 0.0) && (y < 0.0)) ) {
-			fStart += y;
+			fStart = __xuiChartSaturatingAdd(fStart, y);
 		}
 	}
 	if ( pStart != NULL ) *pStart = fStart;
-	if ( pEnd != NULL ) *pEnd = fStart + fValue;
+	if ( pEnd != NULL ) *pEnd = __xuiChartSaturatingAdd(fStart, fValue);
 }
 
 static int __xuiChartDrawBarSeries(xui_proxy pProxy, xui_draw_context pDraw, xui_chart_data_t* pData, int iSeries)
@@ -1478,10 +1630,25 @@ static double __xuiChartPieMaxValue(const xui_chart_series_t* pSeries)
 	return fMax;
 }
 
+static double __xuiChartPieScaledTotal(const xui_chart_series_t* pSeries, double fMaxValue)
+{
+	double fTotal;
+	int i;
+
+	if ( (pSeries == NULL) || (fMaxValue <= 0.0) ) return 0.0;
+	fTotal = 0.0;
+	for ( i = 0; i < pSeries->iCount; i++ ) {
+		if ( pSeries->pPoints[i].value > 0.0 ) {
+			fTotal += pSeries->pPoints[i].value / fMaxValue;
+		}
+	}
+	return fTotal;
+}
+
 static int __xuiChartDrawPieSliceMesh(xui_proxy pProxy, xui_draw_context pDraw, float fCx, float fCy, float fInnerRadius, float fOuterRadius, double fAngle, double fNext, int iSteps, uint32_t iColor)
 {
-	xui_mesh_vertex_t* pVertices;
-	uint32_t* pIndices;
+	xui_mesh_vertex_t arrVertices[(XUI_CHART_PIE_MAX_STEPS + 1) * 2];
+	uint32_t arrIndices[XUI_CHART_PIE_MAX_STEPS * 6];
 	int iVertexCount;
 	int iIndexCount;
 	int s;
@@ -1493,6 +1660,9 @@ static int __xuiChartDrawPieSliceMesh(xui_proxy pProxy, xui_draw_context pDraw, 
 	if ( iSteps < 2 ) {
 		iSteps = 2;
 	}
+	if ( iSteps > XUI_CHART_PIE_MAX_STEPS ) {
+		iSteps = XUI_CHART_PIE_MAX_STEPS;
+	}
 	if ( fInnerRadius <= 0.0f ) {
 		iVertexCount = iSteps + 2;
 		iIndexCount = iSteps * 3;
@@ -1500,44 +1670,35 @@ static int __xuiChartDrawPieSliceMesh(xui_proxy pProxy, xui_draw_context pDraw, 
 		iVertexCount = (iSteps + 1) * 2;
 		iIndexCount = iSteps * 6;
 	}
-	pVertices = (xui_mesh_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-	pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-	if ( (pVertices == NULL) || (pIndices == NULL) ) {
-		if ( pVertices != NULL ) xrtFree(pVertices);
-		if ( pIndices != NULL ) xrtFree(pIndices);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
 	if ( fInnerRadius <= 0.0f ) {
-		pVertices[0] = (xui_mesh_vertex_t){fCx, fCy, iColor};
+		arrVertices[0] = (xui_mesh_vertex_t){fCx, fCy, iColor};
 		for ( s = 0; s <= iSteps; s++ ) {
 			double a = fAngle + (fNext - fAngle) * (double)s / (double)iSteps;
-			pVertices[s + 1] = (xui_mesh_vertex_t){fCx + (float)cos(a) * fOuterRadius, fCy + (float)sin(a) * fOuterRadius, iColor};
+			arrVertices[s + 1] = (xui_mesh_vertex_t){fCx + (float)cos(a) * fOuterRadius, fCy + (float)sin(a) * fOuterRadius, iColor};
 		}
 		for ( s = 0; s < iSteps; s++ ) {
-			pIndices[(s * 3) + 0] = 0u;
-			pIndices[(s * 3) + 1] = (uint32_t)(s + 1);
-			pIndices[(s * 3) + 2] = (uint32_t)(s + 2);
+			arrIndices[(s * 3) + 0] = 0u;
+			arrIndices[(s * 3) + 1] = (uint32_t)(s + 1);
+			arrIndices[(s * 3) + 2] = (uint32_t)(s + 2);
 		}
 	} else {
 		for ( s = 0; s <= iSteps; s++ ) {
 			double a = fAngle + (fNext - fAngle) * (double)s / (double)iSteps;
-			pVertices[(s * 2) + 0] = (xui_mesh_vertex_t){fCx + (float)cos(a) * fOuterRadius, fCy + (float)sin(a) * fOuterRadius, iColor};
-			pVertices[(s * 2) + 1] = (xui_mesh_vertex_t){fCx + (float)cos(a) * fInnerRadius, fCy + (float)sin(a) * fInnerRadius, iColor};
+			arrVertices[(s * 2) + 0] = (xui_mesh_vertex_t){fCx + (float)cos(a) * fOuterRadius, fCy + (float)sin(a) * fOuterRadius, iColor};
+			arrVertices[(s * 2) + 1] = (xui_mesh_vertex_t){fCx + (float)cos(a) * fInnerRadius, fCy + (float)sin(a) * fInnerRadius, iColor};
 		}
 		for ( s = 0; s < iSteps; s++ ) {
 			int iBase = s * 2;
 			int iIndex = s * 6;
-			pIndices[iIndex + 0] = (uint32_t)iBase;
-			pIndices[iIndex + 1] = (uint32_t)(iBase + 2);
-			pIndices[iIndex + 2] = (uint32_t)(iBase + 3);
-			pIndices[iIndex + 3] = (uint32_t)iBase;
-			pIndices[iIndex + 4] = (uint32_t)(iBase + 3);
-			pIndices[iIndex + 5] = (uint32_t)(iBase + 1);
+			arrIndices[iIndex + 0] = (uint32_t)iBase;
+			arrIndices[iIndex + 1] = (uint32_t)(iBase + 2);
+			arrIndices[iIndex + 2] = (uint32_t)(iBase + 3);
+			arrIndices[iIndex + 3] = (uint32_t)iBase;
+			arrIndices[iIndex + 4] = (uint32_t)(iBase + 3);
+			arrIndices[iIndex + 5] = (uint32_t)(iBase + 1);
 		}
 	}
-	iRet = pProxy->drawMeshTriangles(pProxy, pDraw, pVertices, iVertexCount, pIndices, iIndexCount, 0);
-	xrtFree(pIndices);
-	xrtFree(pVertices);
+	iRet = pProxy->drawMeshTriangles(pProxy, pDraw, arrVertices, iVertexCount, arrIndices, iIndexCount, 0);
 	return iRet;
 }
 
@@ -1557,13 +1718,8 @@ static int __xuiChartDrawPieSeries(xui_proxy pProxy, xui_draw_context pDraw, xui
 	int iRet;
 
 	pSeries = &pData->arrSeries[iSeries];
-	fTotal = 0.0;
 	fMaxValue = __xuiChartPieMaxValue(pSeries);
-	for ( i = 0; i < pSeries->iCount; i++ ) {
-		if ( pSeries->pPoints[i].value > 0.0 ) {
-			fTotal += pSeries->pPoints[i].value;
-		}
-	}
+	fTotal = __xuiChartPieScaledTotal(pSeries, fMaxValue);
 	if ( (pData->iPieMode == XUI_CHART_PIE_NORMAL && fTotal <= 0.0) || (pData->iPieMode == XUI_CHART_PIE_ROSE && fMaxValue <= 0.0) ) {
 		return XUI_OK;
 	}
@@ -1585,10 +1741,10 @@ static int __xuiChartDrawPieSeries(xui_proxy pProxy, xui_draw_context pDraw, xui
 			fNext = -XUI_CHART_PI * 0.5 + XUI_CHART_PI * 2.0 * (double)(i + 1) / (double)pSeries->iCount;
 			fSliceOuterRadius = fInnerRadius + (fOuterRadius - fInnerRadius) * (float)(pSeries->pPoints[i].value / fMaxValue);
 		} else {
-			fNext = fAngle + (pSeries->pPoints[i].value / fTotal) * XUI_CHART_PI * 2.0;
+			fNext = fAngle + ((pSeries->pPoints[i].value / fMaxValue) / fTotal) * XUI_CHART_PI * 2.0;
 			fSliceOuterRadius = fOuterRadius;
 		}
-		iSteps = (int)((fNext - fAngle) / (XUI_CHART_PI * 2.0) * 72.0) + 1;
+		iSteps = (int)((fNext - fAngle) / (XUI_CHART_PI * 2.0) * (double)XUI_CHART_PIE_SEGMENTS) + 1;
 		if ( iSteps < 2 ) iSteps = 2;
 		iColor = (pSeries->pPoints[i].color != 0) ? pSeries->pPoints[i].color : __xuiChartPalette(i);
 		iColor = __xuiChartAnimatedColor(pData, iColor);
@@ -1795,29 +1951,32 @@ static void __xuiChartTargetRect(xui_widget pWidget, xui_chart_data_t* pData, xu
 			fOffset = -fSlot * 0.36f + fWidth * ((float)__xuiChartBarVisibleIndex(pData, i) + 0.5f);
 		}
 		if ( bHorizontal ) {
-			px = __xuiChartMapX(pData, (fStart + fEnd) * 0.5);
+			px = __xuiChartMapX(pData, __xuiChartLerp(fStart, fEnd, 0.5));
 			py = __xuiChartMapY(pData, (double)j) + fOffset;
 		} else {
 			px += fOffset;
-			py = __xuiChartMapY(pData, (fStart + fEnd) * 0.5);
+			py = __xuiChartMapY(pData, __xuiChartLerp(fStart, fEnd, 0.5));
 		}
 	} else if ( pSeries->iType == XUI_CHART_SERIES_PIE ) {
 		double fTotal = 0.0, fBefore = 0.0;
+		double fMaxValue;
 		double fAngle;
 		float fInner, fOuter, fRadius;
 		int k;
 		fRadius = (float)(pData->tPlotRect.fW < pData->tPlotRect.fH ? pData->tPlotRect.fW : pData->tPlotRect.fH) * 0.42f;
 		__xuiChartPieRing(pData, i, fRadius, &fInner, &fOuter);
+		fMaxValue = __xuiChartPieMaxValue(pSeries);
 		if ( pData->iPieMode == XUI_CHART_PIE_ROSE ) {
 			fAngle = -XUI_CHART_PI * 0.5 + XUI_CHART_PI * 2.0 * ((double)j + 0.5) / (double)pSeries->iCount;
-			fOuter = fInner + (fOuter - fInner) * (float)(pPoint->value / __xuiChartPieMaxValue(pSeries));
+			fOuter = fInner + (fOuter - fInner) * (float)(pPoint->value / fMaxValue);
 		} else {
+			fTotal = __xuiChartPieScaledTotal(pSeries, fMaxValue);
 			for ( k = 0; k < pSeries->iCount; k++ ) {
 				if ( pSeries->pPoints[k].value <= 0.0 ) continue;
-				fTotal += pSeries->pPoints[k].value;
-				if ( k < j ) fBefore += pSeries->pPoints[k].value;
+				if ( k < j ) fBefore += pSeries->pPoints[k].value / fMaxValue;
 			}
-			fAngle = -XUI_CHART_PI * 0.5 + (fBefore + pPoint->value * 0.5) / fTotal * XUI_CHART_PI * 2.0;
+			fAngle = -XUI_CHART_PI * 0.5 +
+				(fBefore + (pPoint->value / fMaxValue) * 0.5) / fTotal * XUI_CHART_PI * 2.0;
 		}
 		fRadius = (fInner + fOuter) * 0.5f;
 		px = (float)pData->tPlotRect.fX + (float)pData->tPlotRect.fW * 0.5f + (float)cos(fAngle) * fRadius;
@@ -2030,13 +2189,16 @@ cleanup:
 static int __xuiChartContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	(void)pWidget;
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pSize->fX = 320.0f;
 	pSize->fY = 220.0f;
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
@@ -2053,7 +2215,8 @@ static int __xuiChartHitLegend(xui_chart_data_t* pData, xui_rect_t tContent, flo
 	fTop = tContent.fY + 36.0f;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		xui_rect_t tRect = {fLeft, fTop + (float)i * 20.0f, 106.0f, 18.0f};
-		if ( (fX >= tRect.fX) && (fX <= tRect.fX + tRect.fW) && (fY >= tRect.fY) && (fY <= tRect.fY + tRect.fH) ) {
+		if ( (fX >= tRect.fX) && (fX < tRect.fX + tRect.fW) &&
+		     (fY >= tRect.fY) && (fY < tRect.fY + tRect.fH) ) {
 			if ( pHit != NULL ) {
 				pHit->iPart = XUI_CHART_HIT_LEGEND;
 				pHit->iSeries = i;
@@ -2083,11 +2246,13 @@ static int __xuiChartHitSeries(xui_chart_data_t* pData, float fX, float fY, xui_
 	iBestItem = -1;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		xui_chart_series_t* pSeries = &pData->arrSeries[i];
+		int iBarCount = 1;
+		int iBarIndex = 0;
 		if ( !pSeries->bVisible ) {
 			continue;
 		}
 		if ( pSeries->iType == XUI_CHART_SERIES_PIE ) {
-			double fTotal = 0.0;
+			double fTotal;
 			double fMaxValue;
 			double fAngle = -XUI_CHART_PI * 0.5;
 			double fPointAngle;
@@ -2102,15 +2267,13 @@ static int __xuiChartHitSeries(xui_chart_data_t* pData, float fX, float fY, xui_
 			double dist = sqrt(dx * dx + dy * dy);
 			__xuiChartPieRing(pData, i, fRadius, &fInnerRadius, &fOuterRadius);
 			fMaxValue = __xuiChartPieMaxValue(pSeries);
+			fTotal = __xuiChartPieScaledTotal(pSeries, fMaxValue);
 			if ( (dist > (double)fOuterRadius) || (dist < (double)fInnerRadius) ) {
 				continue;
 			}
 			fPointAngle = atan2(dy, dx);
 			if ( fPointAngle < -XUI_CHART_PI * 0.5 ) {
 				fPointAngle += XUI_CHART_PI * 2.0;
-			}
-			for ( j = 0; j < pSeries->iCount; j++ ) {
-				if ( pSeries->pPoints[j].value > 0.0 ) fTotal += pSeries->pPoints[j].value;
 			}
 			for ( j = 0; j < pSeries->iCount; j++ ) {
 				double fNext;
@@ -2123,7 +2286,7 @@ static int __xuiChartHitSeries(xui_chart_data_t* pData, float fX, float fY, xui_
 					fSliceOuterRadius = fInnerRadius + (fOuterRadius - fInnerRadius) * (float)(pSeries->pPoints[j].value / fMaxValue);
 				} else {
 					if ( fTotal <= 0.0 ) break;
-					fNext = fAngle + (pSeries->pPoints[j].value / fTotal) * XUI_CHART_PI * 2.0;
+					fNext = fAngle + ((pSeries->pPoints[j].value / fMaxValue) / fTotal) * XUI_CHART_PI * 2.0;
 					fSliceOuterRadius = fOuterRadius;
 				}
 				if ( (fPointAngle >= fAngle) && (fPointAngle <= fNext) ) {
@@ -2148,6 +2311,11 @@ static int __xuiChartHitSeries(xui_chart_data_t* pData, float fX, float fY, xui_
 			}
 			continue;
 		}
+		if ( pSeries->iType == XUI_CHART_SERIES_BAR ) {
+			iBarCount = __xuiChartVisibleBarSeries(pData);
+			if ( iBarCount <= 0 ) iBarCount = 1;
+			iBarIndex = __xuiChartBarVisibleIndex(pData, i);
+		}
 		iSampleCount = pSeries->iCount;
 		if ( (pSeries->iType == XUI_CHART_SERIES_LINE || pSeries->iType == XUI_CHART_SERIES_SCATTER) &&
 		     __xuiChartEnsureSeriesLod(pData, pSeries) == XUI_OK ) {
@@ -2165,14 +2333,14 @@ static int __xuiChartHitSeries(xui_chart_data_t* pData, float fX, float fY, xui_
 				float fSlot = ((pData->iBarDirection == XUI_CHART_BAR_HORIZONTAL) ? pData->tPlotRect.fH : pData->tPlotRect.fW) / (float)((pSeries->iCount > 1) ? pSeries->iCount : 1);
 				float fBaseY = __xuiChartMapY(pData, 0.0);
 				float fBaseX = __xuiChartMapX(pData, 0.0);
-				float fBarW = fSlot * 0.72f / (float)((__xuiChartVisibleBarSeries(pData) > 0) ? __xuiChartVisibleBarSeries(pData) : 1);
-				float bx = px - (fSlot * 0.36f) + fBarW * (float)__xuiChartBarVisibleIndex(pData, i);
+				float fBarW = fSlot * 0.72f / (float)iBarCount;
+				float bx = px - (fSlot * 0.36f) + fBarW * (float)iBarIndex;
 				float by = py < fBaseY ? py : fBaseY;
 				float bh = (py < fBaseY) ? (fBaseY - py) : (py - fBaseY);
 				float bw = fBarW;
 				if ( pData->iBarDirection == XUI_CHART_BAR_HORIZONTAL ) {
 					float fValueX = __xuiChartMapX(pData, pSeries->pPoints[j].y);
-					float fItemY = __xuiChartMapY(pData, (double)j) - (fSlot * 0.36f) + fBarW * (float)__xuiChartBarVisibleIndex(pData, i);
+					float fItemY = __xuiChartMapY(pData, (double)j) - (fSlot * 0.36f) + fBarW * (float)iBarIndex;
 					if ( pData->iBarMode == XUI_CHART_BAR_STACKED ) {
 						double fStart;
 						double fEnd;
@@ -2202,13 +2370,14 @@ static int __xuiChartHitSeries(xui_chart_data_t* pData, float fX, float fY, xui_
 					float fEndY;
 					fBarW = fSlot * 0.72f;
 					bx = px - (fSlot * 0.36f);
+					bw = fBarW;
 					__xuiChartStackedBarRange(pData, i, j, &fStart, &fEnd);
 					fStartY = __xuiChartMapY(pData, fStart);
 					fEndY = __xuiChartMapY(pData, fEnd);
 					by = fEndY < fStartY ? fEndY : fStartY;
 					bh = (fEndY < fStartY) ? (fStartY - fEndY) : (fEndY - fStartY);
 				}
-				if ( (fX >= bx) && (fX <= bx + bw) && (fY >= by) && (fY <= by + bh) ) {
+				if ( (fX >= bx) && (fX < bx + bw) && (fY >= by) && (fY < by + bh) ) {
 					fBest = 0.0;
 					iBestSeries = i;
 					iBestItem = j;
@@ -2312,8 +2481,8 @@ static int __xuiChartKey(xui_widget pWidget, xui_chart_data_t* pData, const xui_
 		if ( !bArrow ) return XUI_OK;
 		pData->iActiveKey = 0;
 		if ( !pData->bViewRange ) return XUI_EVENT_DISPATCH_STOP;
-		if ( iKey == XUI_KEY_LEFT || iKey == XUI_KEY_RIGHT ) dx = (pData->fMaxX - pData->fMinX) * (iKey == XUI_KEY_LEFT ? -0.1 : 0.1);
-		else dy = (pData->fMaxY - pData->fMinY) * (iKey == XUI_KEY_DOWN ? -0.1 : 0.1);
+		if ( iKey == XUI_KEY_LEFT || iKey == XUI_KEY_RIGHT ) dx = __xuiChartRangeSpan(pData->fMinX, pData->fMaxX) * (iKey == XUI_KEY_LEFT ? -0.1 : 0.1);
+		else dy = __xuiChartRangeSpan(pData->fMinY, pData->fMaxY) * (iKey == XUI_KEY_DOWN ? -0.1 : 0.1);
 		__xuiChartClampPanAxis(pData->fDataMinX, pData->fDataMaxX, pData->fMinX, pData->fMaxX, dx, &fMinX, &fMaxX);
 		__xuiChartClampPanAxis(pData->fDataMinY, pData->fDataMaxY, pData->fMinY, pData->fMaxY, dy, &fMinY, &fMaxY);
 		iRet = __xuiChartSetViewRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);
@@ -2322,11 +2491,14 @@ static int __xuiChartKey(xui_widget pWidget, xui_chart_data_t* pData, const xui_
 	}
 	if ( iKey == XUI_KEY_PAGE_UP || iKey == XUI_KEY_PAGE_DOWN ) {
 		double fFactor = iKey == XUI_KEY_PAGE_UP ? 0.8 : 1.25;
-		double x = (pData->fMinX + pData->fMaxX) * 0.5;
-		double y = (pData->fMinY + pData->fMaxY) * 0.5;
+		double x = __xuiChartLerp(pData->fMinX, pData->fMaxX, 0.5);
+		double y = __xuiChartLerp(pData->fMinY, pData->fMaxY, 0.5);
 		if ( __xuiChartHasVisiblePie(pData) || pEvent->iModifiers != 0 ) return XUI_OK;
-		iRet = __xuiChartSetViewRangeData(pData, x - (x - pData->fMinX) * fFactor,
-			x + (pData->fMaxX - x) * fFactor, y - (y - pData->fMinY) * fFactor, y + (pData->fMaxY - y) * fFactor);
+		iRet = __xuiChartSetViewRangeData(pData,
+			__xuiChartLerp(x, pData->fMinX, fFactor),
+			__xuiChartLerp(x, pData->fMaxX, fFactor),
+			__xuiChartLerp(y, pData->fMinY, fFactor),
+			__xuiChartLerp(y, pData->fMaxY, fFactor));
 		if ( iRet != XUI_OK ) return iRet;
 		goto changed;
 	}
@@ -2348,8 +2520,10 @@ static int __xuiChartKey(xui_widget pWidget, xui_chart_data_t* pData, const xui_
 			tCurrent.iPart == XUI_CHART_HIT_SERIES && tNext.iPart == XUI_CHART_HIT_SERIES ) {
 			double x = __xuiChartUnmapX(pData, pData->tSelected.fX);
 			double y = __xuiChartUnmapY(pData, pData->tSelected.fY);
-			double fPadX = (pData->fMaxX - pData->fMinX) / (double)pData->tPlotRect.fW;
-			double fPadY = (pData->fMaxY - pData->fMinY) / (double)pData->tPlotRect.fH;
+			double fPadX = pData->tPlotRect.fW > 0 ?
+				__xuiChartRangeSpan(pData->fMinX, pData->fMaxX) / (double)pData->tPlotRect.fW : 0.0;
+			double fPadY = pData->tPlotRect.fH > 0 ?
+				__xuiChartRangeSpan(pData->fMinY, pData->fMaxY) / (double)pData->tPlotRect.fH : 0.0;
 			if ( !pData->bKeyboardBrush ) {
 				pData->fKeyboardBrushX = __xuiChartUnmapX(pData, tCurrent.fX);
 				pData->fKeyboardBrushY = __xuiChartUnmapY(pData, tCurrent.fY);
@@ -2387,7 +2561,8 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSize = sizeof(tHit);
 	if ( pEvent->iType == XUI_EVENT_BLUR || pEvent->iType == XUI_EVENT_ENABLED_CHANGED ||
-		pEvent->iType == XUI_EVENT_VISIBLE_CHANGED || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+		pEvent->iType == XUI_EVENT_VISIBLE_CHANGED || !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		!xuiWidgetGetEffectiveVisible(pWidget) ) {
 		pData->iActiveKey = 0;
 		pData->bKeyboardBrush = 0;
 		iRet = __xuiChartCancelPointer(pWidget, pData);
@@ -2483,10 +2658,10 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		fAnchorX = __xuiChartUnmapX(pData, pEvent->fX);
 		fAnchorY = __xuiChartUnmapY(pData, pEvent->fY);
 		fFactor = (pEvent->fWheelY > 0.0f) ? 0.8 : 1.25;
-		fMinX = fAnchorX - (fAnchorX - pData->fMinX) * fFactor;
-		fMaxX = fAnchorX + (pData->fMaxX - fAnchorX) * fFactor;
-		fMinY = fAnchorY - (fAnchorY - pData->fMinY) * fFactor;
-		fMaxY = fAnchorY + (pData->fMaxY - fAnchorY) * fFactor;
+		fMinX = __xuiChartLerp(fAnchorX, pData->fMinX, fFactor);
+		fMaxX = __xuiChartLerp(fAnchorX, pData->fMaxX, fFactor);
+		fMinY = __xuiChartLerp(fAnchorY, pData->fMinY, fFactor);
+		fMaxY = __xuiChartLerp(fAnchorY, pData->fMaxY, fFactor);
 		iRet = __xuiChartSetViewRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -2603,11 +2778,13 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		double fMaxX;
 		double fMinY;
 		double fMaxY;
-		fRangeX = pData->fPanMaxX - pData->fPanMinX;
-		fRangeY = pData->fPanMaxY - pData->fPanMinY;
+		fRangeX = __xuiChartRangeSpan(pData->fPanMinX, pData->fPanMaxX);
+		fRangeY = __xuiChartRangeSpan(pData->fPanMinY, pData->fPanMaxY);
 		if ( (pData->tPlotRect.fW > 0.0f) && (pData->tPlotRect.fH > 0.0f) ) {
-			fDx = -((double)pEvent->fX - (double)pData->fPanStartX) / (double)pData->tPlotRect.fW * fRangeX;
-			fDy = ((double)pEvent->fY - (double)pData->fPanStartY) / (double)pData->tPlotRect.fH * fRangeY;
+			fDx = __xuiChartSaturatingScale(fRangeX,
+				-((double)pEvent->fX - (double)pData->fPanStartX) / (double)pData->tPlotRect.fW);
+			fDy = __xuiChartSaturatingScale(fRangeY,
+				((double)pEvent->fY - (double)pData->fPanStartY) / (double)pData->tPlotRect.fH);
 			__xuiChartClampPanAxis(pData->fDataMinX, pData->fDataMaxX, pData->fPanMinX, pData->fPanMaxX, fDx, &fMinX, &fMaxX);
 			__xuiChartClampPanAxis(pData->fDataMinY, pData->fDataMaxY, pData->fPanMinY, pData->fPanMaxY, fDy, &fMinY, &fMaxY);
 			iRet = __xuiChartSetViewRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);

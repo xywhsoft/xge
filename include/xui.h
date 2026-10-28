@@ -7094,13 +7094,13 @@ XUI_API int xuiChartSetPadding(xui_widget pWidget, xui_thickness_t tPadding);
 XUI_API xui_thickness_t xuiChartGetPadding(xui_widget pWidget);
 /* 读取三层脏标记（STATIC/PLOT/OVERLAY，测试用）。 */
 XUI_API uint32_t xuiChartGetDirtyFlags(xui_widget pWidget);
-/* 设置可视数据范围（缩放/平移）。 */
+/* 设置可视数据范围（缩放/平移）；四个端点须为有限数，控件会稳定处理完整 double 有限范围。 */
 XUI_API int xuiChartSetViewRange(xui_widget pWidget, double fMinX, double fMaxX, double fMinY, double fMaxY);
 /* 输出可视数据范围。 */
 XUI_API int xuiChartGetViewRange(xui_widget pWidget, double* pMinX, double* pMaxX, double* pMinY, double* pMaxY);
 /* 重置为全量范围。 */
 XUI_API int xuiChartResetViewRange(xui_widget pWidget);
-/* 设置框选范围（刷选联动）。 */
+/* 设置框选范围（刷选联动）；四个端点须为有限数且每个轴范围非空。 */
 XUI_API int xuiChartSetBrushRange(xui_widget pWidget, double fMinX, double fMaxX, double fMinY, double fMaxY);
 /* 输出框选范围。 */
 XUI_API int xuiChartGetBrushRange(xui_widget pWidget, double* pMinX, double* pMaxX, double* pMinY, double* pMaxY);
@@ -7126,7 +7126,7 @@ XUI_API int xuiChartClearSeries(xui_widget pWidget);
 XUI_API int xuiChartGetSeriesCount(xui_widget pWidget);
 /* 读取序列类型。 */
 XUI_API int xuiChartGetSeriesType(xui_widget pWidget, int iSeries);
-/* 替换序列数据点；点数组及非 NULL 标签仅在调用期间读取，控件会完整复制。 */
+/* 替换序列数据点；x/y/value 须为有限数。点数组及非 NULL 标签仅在调用期间读取，控件会完整复制。 */
 XUI_API int xuiChartSetSeriesData(xui_widget pWidget, int iSeries, const xui_chart_point_t* pPoints, int iCount);
 /* 设置序列颜色。 */
 XUI_API int xuiChartSetSeriesColor(xui_widget pWidget, int iSeries, uint32_t iColor);

@@ -81,6 +81,7 @@ int main(void)
 	float arrChartDash[2];
 	char sMutableLabel[32];
 	xui_chart_point_t arrLine[4];
+	xui_chart_point_t arrExtreme[2];
 	xui_chart_point_t arrLineLarge[32];
 	xui_chart_point_t arrBarA[3];
 	xui_chart_point_t arrBarB[3];
@@ -88,11 +89,13 @@ int main(void)
 	xui_chart_point_t arrPieB[3];
 	xui_chart_point_t arrScatter[3];
 	xui_chart_hit_t tHit;
+	xui_event_t tEvent;
 	xui_accessible_node_t tAccessible;
 	xui_rect_t tPlot;
 	xui_rect_t tPlotPadded;
 	xui_thickness_t tPadding;
 	xui_vec2_t tPixel;
+	xui_vec2_t tMeasured;
 	double fDataX;
 	double fDataY;
 	double fMinX;
@@ -156,6 +159,7 @@ int main(void)
 	iPathBase = 0;
 	iFailed = 0;
 	memset(arrLine, 0, sizeof(arrLine));
+	memset(arrExtreme, 0, sizeof(arrExtreme));
 	memset(arrMeshVertices, 0, sizeof(arrMeshVertices));
 	memset(arrMeshIndices, 0, sizeof(arrMeshIndices));
 	memset(arrStyle, 0, sizeof(arrStyle));
@@ -204,6 +208,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "chart rect");
 	iRet = xuiWidgetAddChild(pRoot, pChart);
 	XUI_TEST_CHECK(iRet == XUI_OK, "chart add");
+	iRet = xuiWidgetMeasureContent(pChart,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 320.0f && tMeasured.fY == 220.0f,
+		"chart intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pChart, (xui_vec2_t){640.0f, 440.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 320.0f && tMeasured.fY == 220.0f,
+		"roomy constraints do not stretch chart measure");
+	iRet = xuiWidgetMeasureContent(pChart, (xui_vec2_t){96.0f, 72.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 96.0f && tMeasured.fY == 72.0f,
+		"tight constraints clamp chart measure");
 
 	XUI_TEST_CHECK(strcmp(xuiChartGetTitle(pChart), "Chart Test") == 0, "title");
 	iRet = xuiChartSetTitle(pChart, "");
@@ -284,6 +298,15 @@ int main(void)
 
 	tPlot = xuiChartGetPlotRect(pChart);
 	XUI_TEST_CHECK(tPlot.fW > 100.0f && tPlot.fH > 100.0f, "plot rect");
+	iRet = xuiWidgetSetRect(pChart, (xui_rect_t){0, 0, 20, 16});
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny chart rect");
+	tPlotPadded = xuiChartGetPlotRect(pChart);
+	XUI_TEST_CHECK(tPlotPadded.fX >= 0 && tPlotPadded.fY >= 0 &&
+		tPlotPadded.fX + tPlotPadded.fW <= 20 && tPlotPadded.fY + tPlotPadded.fH <= 16,
+		"tiny plot remains inside chart bounds");
+	iRet = xuiWidgetSetRect(pChart, (xui_rect_t){0, 0, 420, 260});
+	XUI_TEST_CHECK(iRet == XUI_OK, "chart rect restore");
+	tPlot = xuiChartGetPlotRect(pChart);
 	iRet = xuiChartDataToPixel(pChart, 1.0, 7.0, &tPixel);
 	XUI_TEST_CHECK(iRet == XUI_OK, "data to pixel");
 	iRet = xuiChartPixelToData(pChart, tPixel.fX, tPixel.fY, &fDataX, &fDataY);
@@ -294,6 +317,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite pixel coordinate rejected");
 	iRet = xuiChartHitTest(pChart, 20.0f, NAN, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite hit coordinate rejected");
+	iRet = xuiChartSetViewRange(pChart, -DBL_MAX, DBL_MAX, -DBL_MAX, DBL_MAX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "full finite double view range");
+	iRet = xuiChartDataToPixel(pChart, 0.0, 0.0, &tPixel);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(tPixel.fX) && isfinite(tPixel.fY),
+		"extreme view range maps to finite pixels");
+	iRet = xuiChartPixelToData(pChart, tPixel.fX, tPixel.fY, &fDataX, &fDataY);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(fDataX) && isfinite(fDataY),
+		"extreme view range unmaps to finite data");
+	iRet = xuiChartResetViewRange(pChart);
+	XUI_TEST_CHECK(iRet == XUI_OK, "extreme view range reset");
+	arrExtreme[0].x = -DBL_MAX; arrExtreme[0].y = -DBL_MAX; arrExtreme[0].value = -DBL_MAX;
+	arrExtreme[1].x = DBL_MAX; arrExtreme[1].y = DBL_MAX; arrExtreme[1].value = DBL_MAX;
+	iRet = xuiChartSetXAxis(pChart, XUI_CHART_AXIS_VALUE);
+	if ( iRet == XUI_OK ) iRet = xuiChartSetSeriesData(pChart, iLine, arrExtreme, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK, "extreme finite series data");
+	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
+	XUI_TEST_CHECK(iRet == 0 && isfinite(fMinX) && isfinite(fMaxX) &&
+		isfinite(fMinY) && isfinite(fMaxY) && fMinX < fMaxX && fMinY < fMaxY,
+		"extreme series computes finite ordered ranges");
+	iRet = xuiChartDataToPixel(pChart, DBL_MAX, DBL_MAX, &tPixel);
+	XUI_TEST_CHECK(iRet == XUI_OK && isfinite(tPixel.fX) && isfinite(tPixel.fY),
+		"extreme series endpoint maps to finite pixels");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "extreme finite series render");
+	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
+	if ( iRet == XUI_OK ) iRet = xuiChartSetXAxis(pChart, XUI_CHART_AXIS_CATEGORY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "extreme series restore");
 	iRet = xuiChartDataToPixel(pChart, 1.0, 7.0, &tPixel);
 	XUI_TEST_CHECK(iRet == XUI_OK, "data to pixel restore");
 	iRet = xuiRenderPrepare(pContext);
@@ -407,6 +457,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_SERIES && tHit.iSeries == iLine && tHit.iItem == 1, "line hit");
 	iRet = xuiChartHitTest(pChart, 320.0f, 36.0f, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_LEGEND && tHit.iSeries == 0, "legend hit");
+	iRet = xuiChartHitTest(pChart, 418.0f, 36.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_NONE,
+		"legend right edge follows half-open bounds");
+	iRet = xuiWidgetSetVisible(pChart, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide chart");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_CLICK;
+	tEvent.pTarget = pChart;
+	tEvent.fX = 320;
+	tEvent.fY = 36;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iClickCount = 1;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesVisible(pChart, iLine),
+		"hidden chart ignores direct pointer event");
+	iRet = xuiWidgetSetVisible(pChart, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore chart visibility");
 	iRet = xuiInputPointerMove(pContext, tPixel.fX, tPixel.fY, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer move");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -655,6 +725,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "stacked bar data to pixel");
 	iRet = xuiChartHitTest(pChart, tPixel.fX, tPixel.fY, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_SERIES && tHit.iSeries == iBarB && tHit.iItem == 1, "stacked bar hit");
+	iRet = xuiChartHitTest(pChart, tPixel.fX + (tPlot.fW / 3.0f) * 0.25f, tPixel.fY, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_SERIES &&
+		tHit.iSeries == iBarB && tHit.iItem == 1, "stacked bar right half hit");
 	iRet = xuiChartSetBarMode(pChart, XUI_CHART_BAR_GROUPED);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetBarMode(pChart) == XUI_CHART_BAR_GROUPED, "grouped bar mode restore");
 	iRet = xuiChartSetBarDirection(pChart, XUI_CHART_BAR_HORIZONTAL);
@@ -738,6 +811,22 @@ int main(void)
 	iRet = xuiChartSetPieInnerRadius(pChart, NAN);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiChartGetPieInnerRadius(pChart) == 0.35f, "non-finite pie radius rejected transactionally");
 	tPlot = xuiChartGetPlotRect(pChart);
+	arrPie[0].value = DBL_MAX;
+	arrPie[1].value = DBL_MAX;
+	arrPie[2].value = DBL_MAX;
+	iRet = xuiChartSetSeriesData(pChart, iPie, arrPie, 3);
+	if ( iRet == XUI_OK ) iRet = xuiChartHitTest(pChart,
+		tPlot.fX + tPlot.fW * 0.5f + 34.0f, tPlot.fY + tPlot.fH * 0.5f - 34.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_SERIES &&
+		tHit.iSeries == iPie && tHit.iItem == 0,
+		"pie hit remains stable when positive total exceeds double range");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "extreme pie total render");
+	arrPie[0].value = 30.0;
+	arrPie[1].value = 20.0;
+	arrPie[2].value = 50.0;
+	iRet = xuiChartSetSeriesData(pChart, iPie, arrPie, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "pie data restore after extreme total");
 	iRet = xuiChartHitTest(pChart, tPlot.fX + tPlot.fW * 0.5f + 34.0f, tPlot.fY + tPlot.fH * 0.5f - 34.0f, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iPart == XUI_CHART_HIT_SERIES && tHit.iSeries == iPie && tHit.iItem == 0, "pie hit");
 	iRet = xuiChartHitTest(pChart, tPlot.fX + tPlot.fW * 0.5f + 60.0f, tPlot.fY + tPlot.fH * 0.5f - 45.0f, &tHit);
