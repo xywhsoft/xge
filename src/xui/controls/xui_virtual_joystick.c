@@ -2,9 +2,13 @@
 #if XUI_ENABLE_VIRTUAL_JOYSTICK
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+
+#define XUI_VIRTUAL_JOYSTICK_MAX_RADIUS \
+	(XUI_LAYOUT_UNBOUNDED * 0.5f - 64.0f)
 
 typedef struct xui_virtual_joystick_channel_t {
 	int bPressed;
@@ -85,6 +89,12 @@ static int __xuiVirtualJoystickNonNegativeFloatValid(float fValue)
 	return __xuiVirtualJoystickFloatValid(fValue) && (fValue >= 0.0f);
 }
 
+static int __xuiVirtualJoystickMetricValid(float fValue, float fMax)
+{
+	return __xuiVirtualJoystickNonNegativeFloatValid(fValue) &&
+	       (fValue <= fMax);
+}
+
 static int __xuiVirtualJoystickSourceRectValid(xui_rect_t tRect)
 {
 	return __xuiVirtualJoystickFloatValid(tRect.fX) &&
@@ -105,10 +115,10 @@ static int __xuiVirtualJoystickDescValid(const xui_virtual_joystick_desc_t* pDes
 		return 1;
 	}
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
-	if ( !__xuiVirtualJoystickNonNegativeFloatValid(pDesc->fRadius) ||
+	if ( !__xuiVirtualJoystickMetricValid(pDesc->fRadius,
+		XUI_VIRTUAL_JOYSTICK_MAX_RADIUS) ||
 	     !__xuiVirtualJoystickNonNegativeFloatValid(pDesc->fKnobSize) ||
-	     !__xuiVirtualJoystickNonNegativeFloatValid(pDesc->fDeadZone) ||
-	     (pDesc->fDeadZone > 1.0f) ) return 0;
+	     !__xuiVirtualJoystickMetricValid(pDesc->fDeadZone, 1.0f) ) return 0;
 	return __xuiVirtualJoystickSourceRectValid(pDesc->tBaseSrc) &&
 	       __xuiVirtualJoystickSourceRectValid(pDesc->tBaseActiveSrc) &&
 	       __xuiVirtualJoystickSourceRectValid(pDesc->tKnobSrc) &&
@@ -188,7 +198,8 @@ static int __xuiVirtualJoystickStyleColor(xui_widget pWidget, const char* sName,
 	return 0;
 }
 
-static int __xuiVirtualJoystickStyleFloat(xui_widget pWidget, const char* sName, float* pValue)
+static int __xuiVirtualJoystickStyleFloat(xui_widget pWidget, const char* sName,
+	float fMax, float* pValue)
 {
 	xui_style_property_t tProperty;
 	int iRet;
@@ -197,7 +208,7 @@ static int __xuiVirtualJoystickStyleFloat(xui_widget pWidget, const char* sName,
 	tProperty.iSize = sizeof(tProperty);
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     __xuiVirtualJoystickNonNegativeFloatValid(tProperty.tValue.fFloat) ) {
+	     __xuiVirtualJoystickMetricValid(tProperty.tValue.fFloat, fMax) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -246,9 +257,12 @@ static void __xuiVirtualJoystickResolve(xui_widget pWidget, const xui_virtual_jo
 	pResolved->iRippleColor = pData->iRippleColor;
 	pResolved->iFocusColor = pData->iFocusColor;
 	pResolved->iDisabledColor = pData->iDisabledColor;
-	(void)__xuiVirtualJoystickStyleFloat(pWidget, "virtual_joystick.radius", &pResolved->fRadius);
-	(void)__xuiVirtualJoystickStyleFloat(pWidget, "virtual_joystick.knob_size", &pResolved->fKnobSize);
-	(void)__xuiVirtualJoystickStyleFloat(pWidget, "virtual_joystick.deadzone", &pResolved->fDeadZone);
+	(void)__xuiVirtualJoystickStyleFloat(pWidget, "virtual_joystick.radius",
+		XUI_VIRTUAL_JOYSTICK_MAX_RADIUS, &pResolved->fRadius);
+	(void)__xuiVirtualJoystickStyleFloat(pWidget, "virtual_joystick.knob_size",
+		XUI_LAYOUT_UNBOUNDED, &pResolved->fKnobSize);
+	(void)__xuiVirtualJoystickStyleFloat(pWidget, "virtual_joystick.deadzone",
+		1.0f, &pResolved->fDeadZone);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.base.color", &pResolved->iBaseColor);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.base.active_color", &pResolved->iBaseActiveColor);
 	(void)__xuiVirtualJoystickStyleColor(pWidget, "virtual_joystick.knob.color", &pResolved->iKnobColor);
@@ -379,7 +393,7 @@ static int __xuiVirtualJoystickSetStateInternal(
 	tOldState = pData->tState;
 	iOldChangeCount = pData->iChangeCount;
 	pData->tState = tState;
-	pData->iChangeCount++;
+	if ( pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 	iRet = __xuiVirtualJoystickSyncState(pWidget, pData);
 	if ( iRet == XUI_OK ) {
 		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -443,6 +457,28 @@ static int __xuiVirtualJoystickApplyChannels(xui_widget pWidget, xui_virtual_joy
 		0,
 		XUI_POINTER_TYPE_MOUSE,
 		bNotify);
+}
+
+static int __xuiVirtualJoystickReapplyState(xui_widget pWidget,
+	xui_virtual_joystick_data_t* pData)
+{
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !pData->bPointerActive &&
+	     pData->tState.iSource == XUI_VIRTUAL_JOYSTICK_SOURCE_CHANNEL ) {
+		return __xuiVirtualJoystickApplyChannels(pWidget, pData, 0);
+	}
+	return __xuiVirtualJoystickSetStateInternal(
+		pWidget,
+		pData,
+		pData->tState.fX,
+		pData->tState.fY,
+		pData->bPointerActive,
+		pData->tState.iSource,
+		pData->bPointerActive ? pData->iActivePointerId : 0,
+		pData->bPointerActive ? pData->iActivePointerType : XUI_POINTER_TYPE_MOUSE,
+		0);
 }
 
 static void __xuiVirtualJoystickComputeRects(
@@ -543,7 +579,9 @@ static int __xuiVirtualJoystickPointerDown(xui_widget pWidget, xui_virtual_joyst
 	float fY;
 	int iRet;
 
-	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+	if ( (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) ||
+	     !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return XUI_OK;
 	}
 	if ( pData->bPointerActive && !__xuiVirtualJoystickPointerMatches(pData, pEvent) ) {
@@ -555,8 +593,20 @@ static int __xuiVirtualJoystickPointerDown(xui_widget pWidget, xui_virtual_joyst
 	pContext = xuiWidgetGetContext(pWidget);
 	iRet = xuiSetFocusWidget(pContext, pWidget);
 	if ( iRet != XUI_OK || !__xuiVirtualJoystickWidgetAlive(pWidget, pData) ) return iRet;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_EVENT_DISPATCH_STOP;
 	iRet = xuiSetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType, pWidget);
 	if ( iRet != XUI_OK || !__xuiVirtualJoystickWidgetAlive(pWidget, pData) ) return iRet;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		if ( xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
+			pEvent->iPointerType) == pWidget ) {
+			iRet = xuiReleasePointerCaptureEx(pContext, pEvent->iPointerId,
+				pEvent->iPointerType, pWidget);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		return XUI_EVENT_DISPATCH_STOP;
+	}
 	bOldPointerActive = pData->bPointerActive;
 	iOldPointerId = pData->iActivePointerId;
 	iOldPointerType = pData->iActivePointerType;
@@ -600,6 +650,12 @@ static int __xuiVirtualJoystickPointerMove(xui_widget pWidget, xui_virtual_joyst
 	float fY;
 	int iRet;
 
+	if ( pData->bPointerActive &&
+	     (!xuiWidgetGetEffectiveEnabled(pWidget) ||
+	      !xuiWidgetGetEffectiveVisible(pWidget)) ) {
+		iRet = __xuiVirtualJoystickCancelPointer(pWidget, pData, 1, 1);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
 	if ( __xuiVirtualJoystickPointerMatches(pData, pEvent) &&
 	     (xuiGetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId, pEvent->iPointerType) == pWidget) ) {
 		if ( (pEvent->iPointerType == XUI_POINTER_TYPE_MOUSE) &&
@@ -630,16 +686,19 @@ static int __xuiVirtualJoystickPointerMove(xui_widget pWidget, xui_virtual_joyst
 static int __xuiVirtualJoystickPointerUp(xui_widget pWidget, xui_virtual_joystick_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_context pContext;
-	int bWasActive;
 	int iRet;
 
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
 		return XUI_OK;
 	}
 	pContext = xuiWidgetGetContext(pWidget);
-	bWasActive = __xuiVirtualJoystickPointerMatches(pData, pEvent) ||
-		(xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget);
-	if ( !bWasActive ) {
+	if ( !__xuiVirtualJoystickPointerMatches(pData, pEvent) ) {
+		if ( xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
+			pEvent->iPointerType) == pWidget ) {
+			iRet = xuiReleasePointerCaptureEx(pContext, pEvent->iPointerId,
+				pEvent->iPointerType, pWidget);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
 		return XUI_OK;
 	}
 	iRet = __xuiVirtualJoystickCancelPointer(pWidget, pData, 1, 1);
@@ -744,7 +803,8 @@ static int __xuiVirtualJoystickEvent(xui_widget pWidget, const xui_event_t* pEve
 		break;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 			iRet = __xuiVirtualJoystickCancelPointer(pWidget, pData, 1, 1);
 			if ( iRet != XUI_OK || !__xuiVirtualJoystickWidgetAlive(pWidget, pData) ) return iRet;
 		}
@@ -792,6 +852,31 @@ static int __xuiVirtualJoystickDrawCircleFallback(xui_proxy pProxy, xui_draw_con
 	return XUI_OK;
 }
 
+static int __xuiVirtualJoystickResolveSurfaceSource(xui_proxy pProxy,
+	xui_surface pSurface, xui_rect_t tSrc, xui_rect_t* pResolved)
+{
+	xui_surface_desc_t tDesc;
+	int iRet;
+
+	if ( (pProxy == NULL) || (pSurface == NULL) || (pResolved == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xuiVirtualJoystickRectValid(tSrc) ) {
+		*pResolved = tSrc;
+		return XUI_OK;
+	}
+	if ( pProxy->surfaceGetDesc == NULL ) return XUI_ERROR_UNSUPPORTED;
+	memset(&tDesc, 0, sizeof(tDesc));
+	iRet = pProxy->surfaceGetDesc(pProxy, pSurface, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (tDesc.iWidth <= 0) || (tDesc.iHeight <= 0) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	*pResolved = (xui_rect_t){0.0f, 0.0f,
+		(float)tDesc.iWidth, (float)tDesc.iHeight};
+	return XUI_OK;
+}
+
 static int __xuiVirtualJoystickDrawAsset(
 	xui_widget pWidget,
 	xui_proxy pProxy,
@@ -814,10 +899,13 @@ static int __xuiVirtualJoystickDrawAsset(
 	if ( __xuiVirtualJoystickAlpha(iColor) == 0u ) {
 		return XUI_OK;
 	}
-	if ( (pSurface != NULL) && __xuiVirtualJoystickRectValid(tSrc) ) {
+	if ( pSurface != NULL ) {
+		iRet = __xuiVirtualJoystickResolveSurfaceSource(pProxy, pSurface,
+			tSrc, &tAssetSrc);
+		if ( iRet != XUI_OK ) return iRet;
 		if ( pProxy->drawSurface == NULL ) return XUI_ERROR_UNSUPPORTED;
 		if ( pDrawAttempted != NULL ) *pDrawAttempted = 1;
-		return pProxy->drawSurface(pProxy, pDraw, pSurface, tSrc, tDst, iColor, 0);
+		return pProxy->drawSurface(pProxy, pDraw, pSurface, tAssetSrc, tDst, iColor, 0);
 	}
 	if ( sBuiltinName == NULL ) {
 		return XUI_ERROR_FILE_NOT_FOUND;
@@ -842,6 +930,10 @@ static int __xuiVirtualJoystickCacheRender(xui_widget pWidget, xui_draw_context 
 	xui_proxy pProxy;
 	xui_rect_t tContent;
 	xui_rect_t tFocus;
+	xui_rect_t tBaseSrc;
+	xui_rect_t tKnobSrc;
+	xui_surface pBaseSurface;
+	xui_surface pKnobSurface;
 	uint32_t iBaseColor;
 	uint32_t iKnobColor;
 	uint32_t iRippleColor;
@@ -868,6 +960,14 @@ static int __xuiVirtualJoystickCacheRender(xui_widget pWidget, xui_draw_context 
 	iBaseColor = bActive ? tResolved.iBaseActiveColor : tResolved.iBaseColor;
 	iKnobColor = bActive ? tResolved.iKnobActiveColor : tResolved.iKnobColor;
 	iRippleColor = tResolved.iRippleColor;
+	pBaseSurface = (bActive && tResolved.pBaseActiveSurface != NULL) ?
+		tResolved.pBaseActiveSurface : tResolved.pBaseSurface;
+	tBaseSrc = (bActive && tResolved.pBaseActiveSurface != NULL) ?
+		tResolved.tBaseActiveSrc : tResolved.tBaseSrc;
+	pKnobSurface = (bActive && tResolved.pKnobActiveSurface != NULL) ?
+		tResolved.pKnobActiveSurface : tResolved.pKnobSurface;
+	tKnobSrc = (bActive && tResolved.pKnobActiveSurface != NULL) ?
+		tResolved.tKnobActiveSrc : tResolved.tKnobSrc;
 	if ( bDisabled ) {
 		iBaseColor = __xuiVirtualJoystickColorWithAlpha(tResolved.iDisabledColor, 130);
 		iKnobColor = __xuiVirtualJoystickColorWithAlpha(tResolved.iDisabledColor, 180);
@@ -878,8 +978,8 @@ static int __xuiVirtualJoystickCacheRender(xui_widget pWidget, xui_draw_context 
 			pWidget,
 			pProxy,
 			pDraw,
-			bActive ? tResolved.pBaseActiveSurface : tResolved.pBaseSurface,
-			bActive ? tResolved.tBaseActiveSrc : tResolved.tBaseSrc,
+			pBaseSurface,
+			tBaseSrc,
 			tResolved.bUseBuiltinAtlas ? (bActive ? "virtual_joystick_base_active" : "virtual_joystick_base") : NULL,
 			pData->tBaseRect,
 			iBaseColor,
@@ -922,8 +1022,8 @@ static int __xuiVirtualJoystickCacheRender(xui_widget pWidget, xui_draw_context 
 			pWidget,
 			pProxy,
 			pDraw,
-			bActive ? tResolved.pKnobActiveSurface : tResolved.pKnobSurface,
-			bActive ? tResolved.tKnobActiveSrc : tResolved.tKnobSrc,
+			pKnobSurface,
+			tKnobSrc,
 			tResolved.bUseBuiltinAtlas ? (bActive ? "virtual_joystick_knob_active" : "virtual_joystick_knob") : NULL,
 			pData->tKnobRect,
 			iKnobColor,
@@ -1003,7 +1103,9 @@ static int __xuiVirtualJoystickAccessibleGet(xui_widget pWidget, int iIndex,
 	if ( (iInputState & XUI_WIDGET_STATE_FOCUS) != 0 ) pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
 	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
 	if ( !xuiWidgetGetEffectiveVisible(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
-	pNode->iActions = XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS);
+	pNode->iActions = (xuiWidgetGetEffectiveEnabled(pWidget) &&
+		xuiWidgetGetEffectiveVisible(pWidget)) ?
+		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_FOCUS) : 0;
 	return XUI_OK;
 }
 
@@ -1430,16 +1532,19 @@ XUI_API int xuiVirtualJoystickClearChannels(xui_widget pWidget, int bNotify)
 XUI_API int xuiVirtualJoystickSetMetrics(xui_widget pWidget, float fRadius, float fKnobSize, float fDeadZone)
 {
 	xui_virtual_joystick_data_t* pData;
+	xui_virtual_joystick_state_t tOldState;
 	float fOldRadius;
 	float fOldKnobSize;
 	float fOldDeadZone;
+	int iOldChangeCount;
 	int iRet;
 
 	pData = __xuiVirtualJoystickGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !__xuiVirtualJoystickNonNegativeFloatValid(fRadius) || fRadius <= 0.0f ||
+	if ( !__xuiVirtualJoystickMetricValid(fRadius,
+		XUI_VIRTUAL_JOYSTICK_MAX_RADIUS) || fRadius <= 0.0f ||
 	     !__xuiVirtualJoystickNonNegativeFloatValid(fKnobSize) || fKnobSize <= 0.0f ||
-	     !__xuiVirtualJoystickNonNegativeFloatValid(fDeadZone) || fDeadZone > 1.0f ) {
+	     !__xuiVirtualJoystickMetricValid(fDeadZone, 1.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (pData->fRadius == fRadius) && (pData->fKnobSize == fKnobSize) &&
@@ -1447,14 +1552,26 @@ XUI_API int xuiVirtualJoystickSetMetrics(xui_widget pWidget, float fRadius, floa
 	fOldRadius = pData->fRadius;
 	fOldKnobSize = pData->fKnobSize;
 	fOldDeadZone = pData->fDeadZone;
+	tOldState = pData->tState;
+	iOldChangeCount = pData->iChangeCount;
 	pData->fRadius = fRadius;
 	pData->fKnobSize = fKnobSize;
 	pData->fDeadZone = fDeadZone;
+	iRet = __xuiVirtualJoystickReapplyState(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->fRadius = fOldRadius;
+		pData->fKnobSize = fOldKnobSize;
+		pData->fDeadZone = fOldDeadZone;
+		return iRet;
+	}
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->fRadius = fOldRadius;
 		pData->fKnobSize = fOldKnobSize;
 		pData->fDeadZone = fOldDeadZone;
+		pData->tState = tOldState;
+		pData->iChangeCount = iOldChangeCount;
+		(void)__xuiVirtualJoystickSyncState(pWidget, pData);
 	}
 	return iRet;
 }

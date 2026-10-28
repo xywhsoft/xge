@@ -88,8 +88,11 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pJoystick;
 	xui_widget pLifecycleJoystick;
+	xui_widget pInvalid;
 	xui_widget pChild;
 	xui_surface pTarget;
+	xui_surface pCustomSurface;
+	xui_surface pCache;
 	xui_virtual_joystick_desc_t tDesc;
 	xui_virtual_joystick_desc_t tInvalidDesc;
 	xui_virtual_joystick_state_t tJoyState;
@@ -98,6 +101,7 @@ int main(void)
 	xui_rect_t tBase;
 	xui_rect_t tKnob;
 	xui_rect_t tWorld;
+	xui_rect_t tLastSrc;
 	float fRadius;
 	float fKnob;
 	float fDeadZone;
@@ -114,8 +118,11 @@ int main(void)
 	pRoot = NULL;
 	pJoystick = NULL;
 	pLifecycleJoystick = NULL;
+	pInvalid = NULL;
 	pChild = NULL;
 	pTarget = NULL;
+	pCustomSurface = NULL;
+	pCache = NULL;
 	iChanged = 0;
 	iDestroyChanges = 0;
 	iRootEscapeCount = 0;
@@ -137,6 +144,10 @@ int main(void)
 	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_KEY_DOWN,
 		__xuiVirtualJoystickRootKey, &iRootEscapeCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root key observer");
+	pInvalid = pRoot;
+	iRet = xuiVirtualJoystickCreate(NULL, &pInvalid, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject invalid context");
 
 	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
 	tInvalidDesc.iSize = sizeof(tInvalidDesc);
@@ -151,6 +162,12 @@ int main(void)
 	iRet = xuiVirtualJoystickCreate(pContext, &pLifecycleJoystick, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pLifecycleJoystick == NULL,
 		"reject infinite source rect");
+	tInvalidDesc.tKnobSrc.fX = 0.0f;
+	tInvalidDesc.fRadius = XUI_LAYOUT_UNBOUNDED;
+	pLifecycleJoystick = pRoot;
+	iRet = xuiVirtualJoystickCreate(pContext, &pLifecycleJoystick, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pLifecycleJoystick == NULL,
+		"reject descriptor radius that can overflow layout geometry");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -204,6 +221,19 @@ int main(void)
 		XUI_ACCESSIBLE_ACTION_FOCUS, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pJoystick,
 		"joystick accessibility focus action");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pJoystick, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK, "hide joystick");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pJoystick, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0 &&
+		tAccessible.iActions == 0,
+		"hidden joystick accessibility is offscreen and inert");
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pJoystick, tAccessible.iId,
+		XUI_ACCESSIBLE_ACTION_FOCUS, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+		"hidden joystick rejects accessibility focus");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pJoystick, 1) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK, "show joystick");
 	tBase = xuiVirtualJoystickGetBaseRect(pJoystick);
 	tKnob = xuiVirtualJoystickGetKnobRect(pJoystick);
 	XUI_TEST_CHECK(tBase.fW > 120.0f && tBase.fH > 120.0f, "base rect");
@@ -236,6 +266,9 @@ int main(void)
 		"reject infinite channel value");
 	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, NAN, 44.0f, 0.1f) ==
 		XUI_ERROR_INVALID_ARGUMENT, "reject NaN metrics");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, XUI_LAYOUT_UNBOUNDED,
+		44.0f, 0.1f) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject radius that can overflow layout geometry");
 	XUI_TEST_CHECK(xuiVirtualJoystickSetSurface(pJoystick, XUI_VIRTUAL_JOYSTICK_PART_BASE,
 		NULL, (xui_rect_t){NAN, 0.0f, 0.0f, 0.0f}) == XUI_ERROR_INVALID_ARGUMENT,
 		"reject NaN surface rect");
@@ -257,6 +290,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset");
 	iRet = xuiVirtualJoystickGetState(pJoystick, &tJoyState);
 	XUI_TEST_CHECK(iRet == XUI_OK && !tJoyState.bActive && tJoyState.iSource == XUI_VIRTUAL_JOYSTICK_SOURCE_NONE, "reset state");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 70.0f, 46.0f, 0.0f) == XUI_OK &&
+		xuiVirtualJoystickSetValue(pJoystick, 0.05f, 0.0f, 0) == XUI_OK,
+		"prepare deadzone metric update");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 70.0f, 46.0f, 0.10f) == XUI_OK &&
+		xuiVirtualJoystickGetState(pJoystick, &tJoyState) == XUI_OK &&
+		!tJoyState.bActive && __xuiVirtualJoystickNear(tJoyState.fMagnitude, 0.0f),
+		"deadzone metric update immediately normalizes current value");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 70.0f, 46.0f, 0.05f) == XUI_OK,
+		"restore pointer test metrics");
 
 	iRet = __xuiVirtualJoystickRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render before touch");
@@ -298,20 +340,19 @@ int main(void)
 		"second touch preserves active pointer");
 	iRet = xuiSetPointerCaptureEx(pContext, 8, XUI_POINTER_TYPE_TOUCH, pJoystick);
 	XUI_TEST_CHECK(iRet == XUI_OK, "capture unrelated pointer");
-	iRet = xuiReleasePointerCaptureEx(pContext, 8, XUI_POINTER_TYPE_TOUCH, pJoystick);
-	XUI_TEST_CHECK(iRet == XUI_OK, "release unrelated pointer");
-	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch unrelated capture loss");
-	iRet = xuiVirtualJoystickGetState(pJoystick, &tJoyState);
-	XUI_TEST_CHECK(iRet == XUI_OK && tJoyState.bActive && tJoyState.iPointerId == 7,
-		"unrelated capture loss preserves active pointer");
 	iRet = xuiInputPointerUpEx(pContext, 8, XUI_POINTER_TYPE_TOUCH,
 		tWorld.fX + tBase.fX + tBase.fW * 0.5f,
 		tWorld.fY + tBase.fY + tBase.fH * 0.5f,
 		XUI_POINTER_BUTTON_LEFT, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK, "second touch up input");
+	XUI_TEST_CHECK(iRet == XUI_OK, "captured unrelated touch up input");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "second touch up dispatch");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiGetPointerCaptureEx(pContext, 7, XUI_POINTER_TYPE_TOUCH) == pJoystick &&
+		xuiGetPointerCaptureEx(pContext, 8, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"captured unrelated touch release preserves active capture");
+	iRet = xuiVirtualJoystickGetState(pJoystick, &tJoyState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tJoyState.bActive && tJoyState.iPointerId == 7,
+		"captured unrelated touch release preserves active pointer state");
 	iRet = xuiInputPointerUpEx(pContext, 7, XUI_POINTER_TYPE_TOUCH, tWorld.fX + tBase.fX + tBase.fW, tWorld.fY + tBase.fY + tBase.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "touch up input");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -345,6 +386,38 @@ int main(void)
 		xuiVirtualJoystickGetState(pJoystick, &tJoyState) == XUI_OK && !tJoyState.bActive,
 		"lost mouse button cancels joystick capture");
 
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext,
+		tWorld.fX + tBase.fX + tBase.fW,
+		tWorld.fY + tBase.fY + tBase.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiGetPointerCapture(pContext) == pJoystick,
+		"capture before ancestor disable");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiGetPointerCapture(pContext) == NULL &&
+		xuiVirtualJoystickGetState(pJoystick, &tJoyState) == XUI_OK && !tJoyState.bActive,
+		"ancestor disable cancels joystick capture");
+	XUI_TEST_CHECK(xuiWidgetSetEnabled(pRoot, 1) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"restore ancestor enabled state");
+
+	XUI_TEST_CHECK(xuiInputPointerDown(pContext,
+		tWorld.fX + tBase.fX + tBase.fW,
+		tWorld.fY + tBase.fY + tBase.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiGetPointerCapture(pContext) == pJoystick,
+		"capture before ancestor hide");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pRoot, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiGetPointerCapture(pContext) == NULL &&
+		xuiVirtualJoystickGetState(pJoystick, &tJoyState) == XUI_OK && !tJoyState.bActive,
+		"ancestor hide cancels joystick capture");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pRoot, 1) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"restore ancestor visibility");
+
 	iRet = xuiVirtualJoystickSetMetrics(pJoystick, 64.0f, 44.0f, 0.10f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
 	iRet = xuiRenderPrepare(pContext);
@@ -359,6 +432,31 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 	iRet = __xuiVirtualJoystickRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "fallback render");
+	iRet = xuiTestSurfaceCreate(&tState, &pCustomSurface, 16, 16,
+		XUI_SURFACE_USAGE_TARGET);
+	XUI_TEST_CHECK(iRet == XUI_OK && pCustomSurface != NULL,
+		"custom joystick surface create");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetSurface(pJoystick,
+		XUI_VIRTUAL_JOYSTICK_PART_BASE, pCustomSurface,
+		(xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f}) == XUI_OK &&
+		xuiVirtualJoystickSetSurface(pJoystick,
+			XUI_VIRTUAL_JOYSTICK_PART_KNOB, pCustomSurface,
+			(xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f}) == XUI_OK &&
+		xuiVirtualJoystickSetValue(pJoystick, 0.5f, 0.0f, 0) == XUI_OK,
+		"set normal custom surfaces for active state");
+	XUI_TEST_CHECK(__xuiVirtualJoystickRender(pContext, pTarget) == XUI_OK,
+		"prime active custom surface cache");
+	pCache = xuiWidgetGetCacheSurface(pJoystick, xuiWidgetGetStateId(pJoystick));
+	XUI_TEST_CHECK(pCache != NULL, "active custom surface cache");
+	xuiTestSurfaceReset(pCache);
+	XUI_TEST_CHECK(xuiWidgetInvalidate(pJoystick,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) == XUI_OK &&
+		__xuiVirtualJoystickRender(pContext, pTarget) == XUI_OK,
+		"render active custom surface fallback");
+	tLastSrc = xuiTestSurfaceGetLastSrc(pCache);
+	XUI_TEST_CHECK(tLastSrc.fX == 0.0f && tLastSrc.fY == 0.0f &&
+		tLastSrc.fW == 16.0f && tLastSrc.fH == 16.0f,
+		"active state reuses normal custom surface and resolves full source rect");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -380,6 +478,9 @@ cleanup:
 	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
+	}
+	if ( pCustomSurface != NULL ) {
+		tState.tProxy.surfaceDestroy(&tState.tProxy, pCustomSurface);
 	}
 	if ( iFailed ) {
 		return 1;
