@@ -44,6 +44,7 @@ int main(void)
 	xui_surface pOldSurface;
 	xui_canvas_desc_t tDesc;
 	xui_canvas_desc_t tInvalidDesc;
+	xui_event_t tEvent;
 	xui_rect_t tViewportWorld;
 	xui_rect_t tViewportContent;
 	xui_vec2_t tMeasured;
@@ -54,6 +55,8 @@ int main(void)
 	float fHeight;
 	float fOffsetX;
 	float fOffsetY;
+	float fMaxX;
+	float fMaxY;
 	int bPenEnabled;
 	float fPenWidth;
 	uint32_t iPenColor;
@@ -82,6 +85,10 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 360.0f, 240.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
+	pCanvas = (xui_widget)(uintptr_t)1;
+	iRet = xuiCanvasCreate(NULL, &pCanvas, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCanvas == NULL,
+		"reject invalid context");
 
 	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
 	tInvalidDesc.iSize = sizeof(tInvalidDesc);
@@ -145,6 +152,8 @@ int main(void)
 	tDesc.iPenColor = XUI_COLOR_RGBA(20, 90, 210, 255);
 	iRet = xuiCanvasCreate(pContext, &pCanvas, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCanvas != NULL, "canvas create");
+	XUI_TEST_CHECK(xuiScrollFrameGetScrollbarMode(xuiCanvasGetFrameWidget(pCanvas)) ==
+		XUI_SCROLLBAR_MODE_FULL, "canvas delegates full scrollbar mode to scroll frame");
 	iRet = xuiWidgetMeasure(pCanvas, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(tMeasured.fX, 180.0f) && __xuiCanvasNear(tMeasured.fY, 140.0f), "canvas extent does not define viewport");
 	iRet = xuiWidgetAddChild(pRoot, pCanvas);
@@ -233,6 +242,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set offset");
 	iRet = xuiCanvasGetOffset(pCanvas, &fOffsetX, &fOffsetY);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(fOffsetX, 120.0f) && __xuiCanvasNear(fOffsetY, 80.0f), "get offset");
+	iRet = xuiCanvasScrollBy(pCanvas, XUI_LAYOUT_UNBOUNDED,
+		XUI_LAYOUT_UNBOUNDED);
+	if ( iRet == XUI_OK ) iRet = xuiScrollModelGetMaxOffset(
+		xuiCanvasGetModel(pCanvas), &fMaxX, &fMaxY);
+	if ( iRet == XUI_OK ) iRet = xuiCanvasGetOffset(pCanvas, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX == fMaxX && fOffsetY == fMaxY,
+		"wide relative scroll saturates at the canvas boundary");
+	iRet = xuiCanvasSetOffset(pCanvas, 120.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore canvas offset after wide scroll");
 	iRet = __xuiCanvasRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "scrolled render");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pTarget) > 0, "scrolled render draw count");
@@ -258,10 +276,29 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "pen move input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetRectFillColorCount(xuiCanvasGetSurface(pCanvas), XUI_COLOR_RGBA(90, 70, 210, 255)) >= 2, "pen draws");
+	iDrawCount = xuiCanvasGetDrawCount(pCanvas);
+	iRet = xuiInputPointerMove(pContext, tViewportWorld.fX + 48.0f,
+		tViewportWorld.fY + 44.0f, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCanvasGetDrawCount(pCanvas) == iDrawCount,
+		"duplicate pen sample does not redraw");
 	iRet = xuiInputPointerUp(pContext, tViewportWorld.fX + 48.0f, tViewportWorld.fY + 44.0f, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pen up input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "pen release");
+
+	iDrawCount = xuiCanvasGetDrawCount(pCanvas);
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 24.0f,
+		tViewportWorld.fY + 24.0f, XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext,
+		tViewportWorld.fX + 40.0f, tViewportWorld.fY + 36.0f,
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		xuiCanvasGetDrawCount(pCanvas) == iDrawCount + 2,
+		"pointer-up position supplies the final pen sample");
 
 	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pen disable down input");
@@ -271,6 +308,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "disabling pen cancels capture");
 	iRet = xuiCanvasSetPen(pCanvas, 1, 5.0f, iPenColor);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reenable pen");
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f,
+		tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport,
+		"programmatic scroll starts with pen capture");
+	iRet = xuiCanvasSetOffset(pCanvas, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"programmatic scroll cancels the active pen stroke");
 
 	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "lost button down input");
@@ -361,6 +407,25 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore viewport padding");
+	iRet = xuiWidgetSetEnabled(pViewport, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable canvas viewport");
+	iDrawCount = xuiCanvasGetDrawCount(pCanvas);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pViewport;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tEvent.fX = tViewportWorld.fX + 20.0f;
+	tEvent.fY = tViewportWorld.fY + 20.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		xuiCanvasGetDrawCount(pCanvas) == iDrawCount,
+		"disabled viewport rejects directly dispatched pen input");
+	iRet = xuiWidgetSetEnabled(pViewport, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable canvas viewport");
 
 	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hide widget down input");

@@ -406,6 +406,46 @@ static void __xuiCanvasCancelPen(xui_widget pWidget, xui_canvas_data_t* pData)
 	}
 }
 
+static int __xuiCanvasDrawPenTo(xui_widget pWidget, xui_canvas_data_t* pData,
+	xui_vec2_t tPoint, uint32_t iColor)
+{
+	int iRet;
+
+	if ( (pData->fLastPenX == tPoint.fX) && (pData->fLastPenY == tPoint.fY) ) {
+		return XUI_OK;
+	}
+	iRet = xuiCanvasDrawLine(pWidget, pData->fLastPenX, pData->fLastPenY,
+		tPoint.fX, tPoint.fY, pData->fPenWidth, iColor);
+	if ( iRet == XUI_OK ) {
+		pData->fLastPenX = tPoint.fX;
+		pData->fLastPenY = tPoint.fY;
+	}
+	return iRet;
+}
+
+static int __xuiCanvasFinishScroll(xui_widget pWidget, xui_canvas_data_t* pData,
+	float fOldX, float fOldY)
+{
+	float fNewX;
+	float fNewY;
+	int iRet;
+
+	iRet = xuiScrollFrameGetOffset(pData->pFrame, &fNewX, &fNewY);
+	if ( iRet != XUI_OK ) {
+		(void)xuiScrollFrameSetOffset(pData->pFrame, fOldX, fOldY);
+		return iRet;
+	}
+	if ( (fOldX == fNewX) && (fOldY == fNewY) ) return XUI_OK;
+	iRet = __xuiCanvasInvalidateViewport(pData);
+	if ( iRet != XUI_OK ) {
+		(void)xuiScrollFrameSetOffset(pData->pFrame, fOldX, fOldY);
+		(void)__xuiCanvasInvalidateViewport(pData);
+		return iRet;
+	}
+	__xuiCanvasCancelPen(pWidget, pData);
+	return XUI_OK;
+}
+
 static int __xuiCanvasEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_canvas_data_t* pData;
@@ -425,6 +465,7 @@ static int __xuiCanvasEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 static int __xuiCanvasViewportEvent(xui_widget pViewport, const xui_event_t* pEvent, void* pUser)
 {
 	xui_widget pWidget;
+	xui_context pContext;
 	xui_canvas_data_t* pData;
 	xui_canvas_data_t tResolved;
 	xui_vec2_t tPoint;
@@ -433,6 +474,7 @@ static int __xuiCanvasViewportEvent(xui_widget pViewport, const xui_event_t* pEv
 	pWidget = (xui_widget)pUser;
 	pData = __xuiCanvasGetData(pWidget);
 	if ( (pData == NULL) || (pEvent == NULL) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
 	if ( pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
 		if ( __xuiCanvasPenPointerMatches(pData, pEvent) ) {
 			pData->bPenDown = 0;
@@ -449,16 +491,38 @@ static int __xuiCanvasViewportEvent(xui_widget pViewport, const xui_event_t* pEv
 		return XUI_OK;
 	}
 	if ( !pData->bPenEnabled || !xuiWidgetGetEffectiveEnabled(pWidget) ||
-	     !xuiWidgetGetEffectiveVisible(pWidget) ) return XUI_OK;
+	     !xuiWidgetGetEffectiveVisible(pWidget) ||
+	     !xuiWidgetGetEffectiveEnabled(pViewport) ||
+	     !xuiWidgetGetEffectiveVisible(pViewport) ) {
+		__xuiCanvasCancelPen(pWidget, pData);
+		return XUI_OK;
+	}
 	__xuiCanvasResolve(pWidget, pData, &tResolved);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT || pData->bPenDown ) return XUI_OK;
 		iRet = __xuiCanvasEventToContent(pData, pEvent, &tPoint);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = xuiSetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId,
+		iRet = xuiSetPointerCaptureEx(pContext, pEvent->iPointerId,
 			pEvent->iPointerType, pViewport);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			if ( xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
+			     pEvent->iPointerType) == pViewport ) {
+				(void)xuiReleasePointerCaptureEx(pContext,
+					pEvent->iPointerId, pEvent->iPointerType, pViewport);
+			}
+			return iRet;
+		}
+		if ( xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
+		     pEvent->iPointerType) != pViewport ||
+		     !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ||
+		     !xuiWidgetGetEffectiveEnabled(pViewport) ||
+		     !xuiWidgetGetEffectiveVisible(pViewport) ) {
+			(void)xuiReleasePointerCaptureEx(pContext,
+				pEvent->iPointerId, pEvent->iPointerType, pViewport);
+			return XUI_OK;
+		}
 		pData->bPenDown = 1;
 		pData->iPenPointerId = pEvent->iPointerId;
 		pData->iPenPointerType = pEvent->iPointerType;
@@ -472,7 +536,7 @@ static int __xuiCanvasViewportEvent(xui_widget pViewport, const xui_event_t* pEv
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_MOVE:
 		if ( !__xuiCanvasPenPointerMatches(pData, pEvent) ) return XUI_OK;
-		if ( xuiGetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId,
+		if ( xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
 		     pEvent->iPointerType) != pViewport ) {
 			__xuiCanvasCancelPen(pWidget, pData);
 			return XUI_OK;
@@ -486,18 +550,26 @@ static int __xuiCanvasViewportEvent(xui_widget pViewport, const xui_event_t* pEv
 			__xuiCanvasCancelPen(pWidget, pData);
 			return iRet;
 		}
-		iRet = xuiCanvasDrawLine(pWidget, pData->fLastPenX, pData->fLastPenY, tPoint.fX, tPoint.fY, pData->fPenWidth, tResolved.iPenColor);
+		iRet = __xuiCanvasDrawPenTo(pWidget, pData, tPoint, tResolved.iPenColor);
 		if ( iRet != XUI_OK ) {
 			__xuiCanvasCancelPen(pWidget, pData);
 			return iRet;
 		}
-		pData->fLastPenX = tPoint.fX;
-		pData->fLastPenY = tPoint.fY;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_UP:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT &&
 		     __xuiCanvasPenPointerMatches(pData, pEvent) ) {
+			iRet = XUI_OK;
+			if ( xuiGetPointerCaptureEx(pContext, pEvent->iPointerId,
+			     pEvent->iPointerType) == pViewport ) {
+				iRet = __xuiCanvasEventToContent(pData, pEvent, &tPoint);
+				if ( iRet == XUI_OK ) {
+					iRet = __xuiCanvasDrawPenTo(pWidget, pData, tPoint,
+						tResolved.iPenColor);
+				}
+			}
 			__xuiCanvasCancelPen(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
@@ -586,7 +658,7 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	tFrameDesc.fOffsetY = (pDesc != NULL) ? pDesc->fOffsetY : 0.0f;
 	tFrameDesc.iPolicyX = (pDesc != NULL) ? pDesc->iPolicyX : XUI_SCROLLBAR_POLICY_AUTO;
 	tFrameDesc.iPolicyY = (pDesc != NULL) ? pDesc->iPolicyY : XUI_SCROLLBAR_POLICY_AUTO;
-	tFrameDesc.iScrollbarMode = (pDesc != NULL && pDesc->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL && pDesc->fScrollbarSize > 8.0f) ? XUI_SCROLLBAR_MODE_FULL : XUI_SCROLLBAR_MODE_COMPACT;
+	tFrameDesc.iScrollbarMode = (pDesc != NULL) ? pDesc->iScrollbarMode : XUI_SCROLLBAR_MODE_COMPACT;
 	tFrameDesc.iWheelAxis = (pDesc != NULL) ? pDesc->iWheelAxis : XUI_WHEEL_AXIS_BOTH;
 	tFrameDesc.iCornerMode = (pDesc != NULL) ? pDesc->iCornerMode : XUI_SCROLL_FRAME_CORNER_GRIP;
 	tFrameDesc.bContentDragEnabled = (pDesc != NULL) ? pDesc->bContentDragEnabled : 0;
@@ -728,6 +800,7 @@ XUI_API int xuiCanvasCreate(xui_context pContext, xui_widget* ppWidget, const xu
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !__xuiCanvasDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiCanvasGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
@@ -862,23 +935,22 @@ XUI_API int xuiCanvasSetOffset(xui_widget pWidget, float fOffsetX, float fOffset
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiScrollFrameSetOffset(pData->pFrame, fOffsetX, fOffsetY);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCanvasInvalidateViewport(pData);
-	if ( iRet != XUI_OK ) {
-		(void)xuiScrollFrameSetOffset(pData->pFrame, fOldX, fOldY);
-		(void)__xuiCanvasInvalidateViewport(pData);
-	}
-	return iRet;
+	return __xuiCanvasFinishScroll(pWidget, pData, fOldX, fOldY);
 }
 
 XUI_API int xuiCanvasScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY)
 {
+	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
 	float fOffsetX;
 	float fOffsetY;
 	int iRet;
 
-	iRet = xuiCanvasGetOffset(pWidget, &fOffsetX, &fOffsetY);
+	if ( (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiScrollFrameGetOffset(pData->pFrame, &fOffsetX, &fOffsetY);
 	if ( iRet != XUI_OK ) return iRet;
-	return xuiCanvasSetOffset(pWidget, fOffsetX + fDeltaX, fOffsetY + fDeltaY);
+	iRet = xuiScrollFrameScrollBy(pData->pFrame, fDeltaX, fDeltaY);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiCanvasFinishScroll(pWidget, pData, fOffsetX, fOffsetY);
 }
 
 XUI_API int xuiCanvasGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY)
@@ -899,12 +971,7 @@ XUI_API int xuiCanvasEnsureRectVisible(xui_widget pWidget, xui_rect_t tContentRe
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiScrollFrameEnsureRectVisible(pData->pFrame, tContentRect);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCanvasInvalidateViewport(pData);
-	if ( iRet != XUI_OK ) {
-		(void)xuiScrollFrameSetOffset(pData->pFrame, fOldX, fOldY);
-		(void)__xuiCanvasInvalidateViewport(pData);
-	}
-	return iRet;
+	return __xuiCanvasFinishScroll(pWidget, pData, fOldX, fOldY);
 }
 
 XUI_API int xuiCanvasClear(xui_widget pWidget, uint32_t iColor)
