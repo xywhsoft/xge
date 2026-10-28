@@ -289,14 +289,21 @@ static int __xuiCascaderClickItem(xui_cascader_demo_t* pDemo, xui_widget pCascad
 	xui_widget pPanel;
 	xui_rect_t tWorld;
 	xui_rect_t tItem;
+	float x;
+	float y;
 	int iRet;
 
 	pPanel = xuiCascaderGetPanelWidget(pCascader);
 	if ( pPanel == NULL ) return XUI_ERROR;
 	tWorld = xuiWidgetGetWorldRect(pPanel);
 	tItem = xuiCascaderGetItemRect(pCascader, iColumn, iItem);
-	iRet = xuiInputPointerDown(pDemo->pContext, tWorld.fX + tItem.fX + tItem.fW * 0.5f, tWorld.fY + tItem.fY + tItem.fH * 0.5f,
-		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	x = tWorld.fX + tItem.fX + tItem.fW * 0.5f;
+	y = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = xuiInputPointerDown(pDemo->pContext, x, y, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pDemo->pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pDemo->pContext, x, y, XUI_POINTER_BUTTON_LEFT, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pDemo->pContext);
 }
@@ -304,11 +311,18 @@ static int __xuiCascaderClickItem(xui_cascader_demo_t* pDemo, xui_widget pCascad
 static int __xuiCascaderClickOwnerRect(xui_cascader_demo_t* pDemo, xui_widget pCascader, xui_rect_t tLocal)
 {
 	xui_rect_t tWorld;
+	float x;
+	float y;
 	int iRet;
 
 	tWorld = xuiWidgetGetWorldRect(pCascader);
-	iRet = xuiInputPointerDown(pDemo->pContext, tWorld.fX + tLocal.fX + tLocal.fW * 0.5f, tWorld.fY + tLocal.fY + tLocal.fH * 0.5f,
-		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	x = tWorld.fX + tLocal.fX + tLocal.fW * 0.5f;
+	y = tWorld.fY + tLocal.fY + tLocal.fH * 0.5f;
+	iRet = xuiInputPointerDown(pDemo->pContext, x, y, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pDemo->pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pDemo->pContext, x, y, XUI_POINTER_BUTTON_LEFT, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pDemo->pContext);
 }

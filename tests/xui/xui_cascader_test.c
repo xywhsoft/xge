@@ -125,6 +125,73 @@ static int __xuiCascaderSetItemsOomPreserves(xui_widget pCascader)
 		strcmp(xuiCascaderGetItem(pCascader, 0)->sText, "Guide") == 0;
 }
 
+static int __xuiCascaderSameValueSettersStayClean(xui_widget pCascader)
+{
+	xui_widget pPanel;
+	xui_widget pPopup;
+	xui_font pFont;
+	float fColumnWidth;
+	float fPopupHeight;
+	float fPopupMaxHeight;
+	float fItemHeight;
+	float fBorderWidth;
+	uint32_t arrColors[7];
+	uint32_t arrBorderColors[3];
+	uint32_t arrArrowColors[2];
+	uint32_t arrButtonColors[3];
+	uint32_t arrPopupColors[11];
+	int iRet;
+
+	pPanel = xuiCascaderGetPanelWidget(pCascader);
+	pPopup = xuiCascaderGetPopupWidget(pCascader);
+	if ( pPanel == NULL || pPopup == NULL ) return 0;
+	iRet = xuiCascaderGetPopupSize(pCascader, &fColumnWidth, &fPopupHeight, &fPopupMaxHeight);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderGetMetrics(pCascader, &fItemHeight, &fBorderWidth);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderGetColors(pCascader,
+		&arrColors[0], &arrColors[1], &arrColors[2], &arrColors[3],
+		&arrColors[4], &arrColors[5], &arrColors[6]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderGetBorderColors(pCascader,
+		&arrBorderColors[0], &arrBorderColors[1], &arrBorderColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderGetArrowColors(pCascader,
+		&arrArrowColors[0], &arrArrowColors[1]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderGetButtonColors(pCascader,
+		&arrButtonColors[0], &arrButtonColors[1], &arrButtonColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderGetPopupColors(pCascader,
+		&arrPopupColors[0], &arrPopupColors[1], &arrPopupColors[2], &arrPopupColors[3],
+		&arrPopupColors[4], &arrPopupColors[5], &arrPopupColors[6], &arrPopupColors[7],
+		&arrPopupColors[8], &arrPopupColors[9], &arrPopupColors[10]);
+	if ( iRet != XUI_OK ) return 0;
+	pFont = xuiCascaderGetFont(pCascader);
+	xuiWidgetClearDirty(pCascader, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPanel, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiCascaderSetShowAllLevels(pCascader, xuiCascaderGetShowAllLevels(pCascader));
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetClearable(pCascader, xuiCascaderGetClearable(pCascader));
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetSelectAnyLevel(pCascader, xuiCascaderGetSelectAnyLevel(pCascader));
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetExpandTrigger(pCascader, xuiCascaderGetExpandTrigger(pCascader));
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetPopupSize(pCascader, fColumnWidth, fPopupHeight, fPopupMaxHeight);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetPopupPlacement(pCascader, xuiCascaderGetPopupPlacement(pCascader));
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetMetrics(pCascader, fItemHeight, fBorderWidth);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetColors(pCascader,
+		arrColors[0], arrColors[1], arrColors[2], arrColors[3],
+		arrColors[4], arrColors[5], arrColors[6]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetBorderColors(pCascader,
+		arrBorderColors[0], arrBorderColors[1], arrBorderColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetArrowColors(pCascader,
+		arrArrowColors[0], arrArrowColors[1]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetButtonColors(pCascader,
+		arrButtonColors[0], arrButtonColors[1], arrButtonColors[2]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetPopupColors(pCascader,
+		arrPopupColors[0], arrPopupColors[1], arrPopupColors[2], arrPopupColors[3],
+		arrPopupColors[4], arrPopupColors[5], arrPopupColors[6], arrPopupColors[7],
+		arrPopupColors[8], arrPopupColors[9], arrPopupColors[10]);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetFont(pCascader, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetPlaceholder(pCascader, xuiCascaderGetPlaceholder(pCascader));
+	if ( iRet == XUI_OK ) iRet = xuiCascaderSetSeparator(pCascader, xuiCascaderGetSeparator(pCascader));
+	return iRet == XUI_OK && xuiWidgetGetDirtyFlags(pCascader) == 0u &&
+		xuiWidgetGetDirtyFlags(pPanel) == 0u && xuiWidgetGetDirtyFlags(pPopup) == 0u;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -135,16 +202,21 @@ int main(void)
 	xui_widget pCascader;
 	xui_widget pPanel;
 	xui_widget pPopup;
+	xui_widget pBlockedCascader;
 	xui_widget pFocusDestroyCascader;
 	xui_widget pFocusDestroyPanel;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_cascader_desc_t tDesc;
 	xui_cascader_desc_t tInvalidDesc;
+	xui_cascader_desc_t tBlockedDesc;
 	xui_cascader_item_t arrItems[11];
 	xui_cascader_item_t arrInvalid[9];
+	xui_cascader_item_t arrBlocked[2];
 	xui_accessible_node_t tAccessible;
 	xui_accessible_value_t tAccessibleValue;
+	xui_event_t tEvent;
+	xui_vec2_t tMeasured;
 	int arrSelected[3];
 	int arrPath[3];
 	char sLongUtf8[132];
@@ -152,9 +224,15 @@ int main(void)
 	char sSetText[32];
 	xui_rect_t tButton;
 	xui_rect_t tClear;
+	xui_rect_t tText;
 	xui_rect_t tPopupRect;
 	xui_rect_t tPanelWorld;
 	xui_rect_t tItemRect;
+	float fColumnBefore;
+	float fHeightBefore;
+	float fMaxBefore;
+	float fItemBefore;
+	float fBorderBefore;
 	uint32_t iState;
 	int iChangeBefore;
 	int iFailed;
@@ -165,6 +243,7 @@ int main(void)
 	pCascader = NULL;
 	pPanel = NULL;
 	pPopup = NULL;
+	pBlockedCascader = NULL;
 	pFocusDestroyCascader = NULL;
 	pFocusDestroyPanel = NULL;
 	pTarget = NULL;
@@ -196,6 +275,9 @@ int main(void)
 	pCascader = pRoot;
 	iRet = xuiCascaderCreate(pContext, &pCascader, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCascader == NULL, "reject NaN descriptor metric");
+	tInvalidDesc.fItemHeight = XUI_LAYOUT_UNBOUNDED * 2.0f;
+	iRet = xuiCascaderCreate(pContext, &pCascader, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCascader == NULL, "reject oversized descriptor metric");
 	tInvalidDesc.fItemHeight = 0.0f;
 	tInvalidDesc.iSelectedDepth = 1;
 	iRet = xuiCascaderCreate(pContext, &pCascader, &tInvalidDesc);
@@ -227,6 +309,12 @@ int main(void)
 	tDesc.bClearable = 1;
 	tDesc.fColumnWidth = 128.0f;
 	tDesc.fPopupMaxHeight = 160.0f;
+	tInvalidDesc = tDesc;
+	tInvalidDesc.arrSelectedValues = arrSelected;
+	tInvalidDesc.iSelectedDepth = 1;
+	iRet = xuiCascaderCreate(pContext, &pCascader, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pCascader == NULL,
+	               "descriptor rejects non-leaf selection when select-any-level is off");
 	iRet = xuiCascaderCreate(pContext, &pCascader, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCascader != NULL, "cascader create");
 	strcpy(sOwnedText, "Changed after create");
@@ -236,6 +324,9 @@ int main(void)
 	xuiWidgetSetRect(pCascader, (xui_rect_t){40.0f, 32.0f, 220.0f, 30.0f});
 	iRet = xuiWidgetAddChild(pRoot, pCascader);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add cascader");
+	iRet = xuiWidgetMeasureContent(pCascader, (xui_vec2_t){60.0f, 12.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 60.0f && tMeasured.fY == 12.0f,
+	               "content measure respects tight constraints");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 360, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -266,6 +357,23 @@ int main(void)
 	               "selected path supports size query and partial output");
 	XUI_TEST_CHECK(xuiCascaderGetSelectedPath(pCascader, arrPath, -1) == XUI_ERROR_INVALID_ARGUMENT,
 	               "selected path rejects negative capacity");
+	arrPath[0] = 1;
+	iChangeBefore = xuiCascaderGetChangeCount(pCascader);
+	XUI_TEST_CHECK(xuiCascaderSetSelectedPath(pCascader, arrPath, 1) == XUI_ERROR_INVALID_ARGUMENT &&
+	               xuiCascaderGetSelectedLeaf(pCascader) == 5 &&
+	               xuiCascaderGetChangeCount(pCascader) == iChangeBefore,
+	               "path setter rejects non-leaf selection transactionally");
+	XUI_TEST_CHECK(xuiCascaderSetSelectAnyLevel(pCascader, 1) == XUI_OK &&
+	               xuiCascaderSetSelectedPath(pCascader, arrPath, 1) == XUI_OK &&
+	               xuiCascaderGetSelectedLeaf(pCascader) == 0,
+	               "select-any-level permits non-leaf selection");
+	iChangeBefore = xuiCascaderGetChangeCount(pCascader);
+	XUI_TEST_CHECK(xuiCascaderSetSelectAnyLevel(pCascader, 0) == XUI_OK &&
+	               xuiCascaderGetSelectedDepth(pCascader) == 0 &&
+	               xuiCascaderGetChangeCount(pCascader) == iChangeBefore + 1 && tChange.iCount == 0,
+	               "disabling select-any-level clears an incompatible selection without callback");
+	XUI_TEST_CHECK(xuiCascaderSetSelectedPath(pCascader, arrSelected, 3) == XUI_OK,
+	               "restore leaf selection after select-any-level policy change");
 	memset(arrInvalid, 0, sizeof(arrInvalid));
 	arrInvalid[0] = (xui_cascader_item_t){"Self", 1, 0, 0u, NULL};
 	XUI_TEST_CHECK(xuiCascaderSetItems(pCascader, arrInvalid, 1) == XUI_ERROR_INVALID_ARGUMENT, "reject self parent");
@@ -298,6 +406,16 @@ int main(void)
 	               "item replacement allocation failure preserves data and selection");
 	XUI_TEST_CHECK(xuiCascaderSetPopupSize(pCascader, NAN, 0.0f, 160.0f) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN popup size");
 	XUI_TEST_CHECK(xuiCascaderSetMetrics(pCascader, 32.0f, INFINITY) == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metric");
+	XUI_TEST_CHECK(xuiCascaderGetPopupSize(pCascader, &fColumnBefore, &fHeightBefore, &fMaxBefore) == XUI_OK &&
+	               xuiCascaderSetPopupSize(pCascader, XUI_LAYOUT_UNBOUNDED * 2.0f, 0.0f, 0.0f) == XUI_ERROR_INVALID_ARGUMENT &&
+	               xuiCascaderGetPopupSize(pCascader, &tMeasured.fX, &tMeasured.fY, &fBorderBefore) == XUI_OK &&
+	               tMeasured.fX == fColumnBefore && tMeasured.fY == fHeightBefore && fBorderBefore == fMaxBefore,
+	               "oversized popup size is rejected transactionally");
+	XUI_TEST_CHECK(xuiCascaderGetMetrics(pCascader, &fItemBefore, &fBorderBefore) == XUI_OK &&
+	               xuiCascaderSetMetrics(pCascader, 0.001f, XUI_LAYOUT_UNBOUNDED * 2.0f) == XUI_ERROR_INVALID_ARGUMENT &&
+	               xuiCascaderGetMetrics(pCascader, &tMeasured.fX, &tMeasured.fY) == XUI_OK &&
+	               tMeasured.fX == fItemBefore && tMeasured.fY == fBorderBefore,
+	               "oversized metrics are rejected transactionally");
 	iRet = xuiCascaderSetShowAllLevels(pCascader, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCascaderGetSelectedText(pCascader), "Side nav") == 0, "leaf display");
 	iRet = xuiCascaderSetShowAllLevels(pCascader, 1);
@@ -305,6 +423,22 @@ int main(void)
 	tButton = xuiCascaderGetButtonRect(pCascader);
 	tClear = xuiCascaderGetClearRect(pCascader);
 	XUI_TEST_CHECK(tButton.fW > 20.0f && tButton.fH > 20.0f && tClear.fW > 12.0f, "owner rects");
+	XUI_TEST_CHECK(xuiWidgetSetRect(pCascader, (xui_rect_t){40.0f, 32.0f, 7.0f, 3.0f}) == XUI_OK,
+	               "set tiny owner rect");
+	tButton = xuiCascaderGetButtonRect(pCascader);
+	tClear = xuiCascaderGetClearRect(pCascader);
+	tText = xuiCascaderGetTextRect(pCascader);
+	XUI_TEST_CHECK(tButton.fX >= 0.0f && tButton.fY >= 0.0f &&
+	               tButton.fX + tButton.fW <= 7.0f && tButton.fY + tButton.fH <= 3.0f &&
+	               tClear.fX >= 0.0f && tClear.fY >= 0.0f &&
+	               tClear.fX + tClear.fW <= 7.0f && tClear.fY + tClear.fH <= 3.0f &&
+	               tText.fX >= 0.0f && tText.fY >= 0.0f &&
+	               tText.fX + tText.fW <= 7.0f && tText.fY + tText.fH <= 3.0f,
+	               "tiny owner geometry stays inside the widget");
+	XUI_TEST_CHECK(xuiWidgetSetRect(pCascader, (xui_rect_t){40.0f, 32.0f, 220.0f, 30.0f}) == XUI_OK,
+	               "restore owner rect");
+	XUI_TEST_CHECK(__xuiCascaderSameValueSettersStayClean(pCascader),
+	               "same-value setters do not dirty owner or popup widgets");
 
 	iRet = xuiSetFocusWidget(pContext, pCascader);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus owner before popup shortcuts");
@@ -419,6 +553,23 @@ int main(void)
 	iState = xuiCascaderGetState(pCascader);
 	XUI_TEST_CHECK((iState & XUI_WIDGET_STATE_DISABLED) != 0u, "disabled state");
 	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCascader, 1) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK, "reenable cascader");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pCascader, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+	               "hide cascader");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pCascader;
+	tEvent.iKey = XUI_KEY_DOWN;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK && !xuiCascaderIsOpen(pCascader),
+	               "hidden cascader ignores directly targeted key input");
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.fX = 45.0f;
+	tEvent.fY = 37.0f;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK && !xuiCascaderIsOpen(pCascader),
+	               "hidden cascader ignores directly targeted pointer input");
+	XUI_TEST_CHECK(xuiWidgetSetVisible(pCascader, 1) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
+	               "restore cascader visibility");
 	memset(&tAccessible, 0, sizeof(tAccessible));
 	tAccessible.iSize = sizeof(tAccessible);
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pCascader, 0, &tAccessible) == XUI_OK &&
@@ -438,6 +589,25 @@ int main(void)
 	               XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue) == XUI_OK &&
 	               tChange.iCount == iChangeBefore + 1,
 	               "accessibility reselect is idempotent");
+	arrBlocked[0] = (xui_cascader_item_t){"Disabled root", 1, -1, XUI_CASCADER_ITEM_DISABLED, NULL};
+	arrBlocked[1] = (xui_cascader_item_t){"Enabled leaf", 2, 0, XUI_CASCADER_ITEM_LEAF, NULL};
+	memset(&tBlockedDesc, 0, sizeof(tBlockedDesc));
+	tBlockedDesc.iSize = sizeof(tBlockedDesc);
+	tBlockedDesc.arrItems = arrBlocked;
+	tBlockedDesc.iItemCount = 2;
+	XUI_TEST_CHECK(xuiCascaderCreate(pContext, &pBlockedCascader, &tBlockedDesc) == XUI_OK &&
+	               pBlockedCascader != NULL, "disabled ancestor cascader create");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pBlockedCascader, 0, &tAccessible) == XUI_OK,
+	               "disabled ancestor accessibility node");
+	tAccessibleValue.fNumber = 1.0;
+	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pBlockedCascader, tAccessible.iId,
+	               XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue) == XUI_ERROR_INVALID_ARGUMENT &&
+	               xuiCascaderGetSelectedDepth(pBlockedCascader) == 0,
+	               "accessibility cannot select through a disabled ancestor");
+	xuiWidgetDestroy(pBlockedCascader);
+	pBlockedCascader = NULL;
 	XUI_TEST_CHECK(xuiCascaderSetSelectedPath(pCascader, arrSelected, 3) == XUI_OK, "restore before destroying callback");
 	XUI_TEST_CHECK(xuiCascaderOpen(pCascader) == XUI_OK && xuiLayout(pContext) == XUI_OK, "open before destroying callback");
 	XUI_TEST_CHECK(__xuiCascaderRender(pContext, pTarget) == XUI_OK, "render before destroying callback");

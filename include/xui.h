@@ -11716,7 +11716,8 @@ XUI_API int xuiComboBoxGetChangeCount(xui_widget pWidget);
 /* 取级联选择器控件类型。 */
 #if XUI_ENABLE_CASCADER
 XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext);
-/* 创建级联选择器（多列弹层逐级选择）。弹层条目仅在同一项按下并抬起时提交；
+/* 创建级联选择器（多列弹层逐级选择）。初始路径上的各项必须启用；未开启
+ * bSelectAnyLevel 时末项必须为叶子。弹层条目仅在同一项按下并抬起时提交；
  * 支持方向键、Home/End、PageUp/PageDown、F4 与 Alt+Up/Down。 */
 XUI_API int xuiCascaderCreate(xui_context pContext, xui_widget* ppWidget, const xui_cascader_desc_t* pDesc);
 /* 注册选择路径变更回调；回调在弹层关闭后触发，并允许销毁控件。 */
@@ -11728,7 +11729,8 @@ XUI_API int xuiCascaderSetItems(xui_widget pWidget, const xui_cascader_item_t* p
 XUI_API int xuiCascaderGetItemCount(xui_widget pWidget);
 /* 按索引输出选项描述；返回借用指针，在下次 SetItems 或控件销毁后失效。 */
 XUI_API const xui_cascader_item_t* xuiCascaderGetItem(xui_widget pWidget, int iIndex);
-/* 按各级值数组设置选中路径。 */
+/* 按各级值数组设置选中路径。路径上的各项必须启用；未开启“任意层级可选”时
+ * 末项必须为叶子。校验失败时保留原选择和交互状态。 */
 XUI_API int xuiCascaderSetSelectedPath(xui_widget pWidget, const int* arrValues, int iDepth);
 /* 输出选中路径值数组；返回实际深度。arrValues 可为 NULL 以查询深度；容量不足时
  * 写入可容纳的前缀，返回值仍为完整深度。 */
@@ -11757,7 +11759,8 @@ XUI_API int xuiCascaderGetShowAllLevels(xui_widget pWidget);
 XUI_API int xuiCascaderSetClearable(xui_widget pWidget, int bClearable);
 /* 读取清除按钮开关。 */
 XUI_API int xuiCascaderGetClearable(xui_widget pWidget);
-/* 设置允许选中任意层级（非仅叶子）。 */
+/* 设置允许选中任意层级（非仅叶子）。关闭该能力时，若当前选择为非叶项，
+ * 将清除选择但不触发用户 change 回调。 */
 XUI_API int xuiCascaderSetSelectAnyLevel(xui_widget pWidget, int bSelectAnyLevel);
 /* 读取任意层级可选开关。 */
 XUI_API int xuiCascaderGetSelectAnyLevel(xui_widget pWidget);
@@ -11765,7 +11768,8 @@ XUI_API int xuiCascaderGetSelectAnyLevel(xui_widget pWidget);
 XUI_API int xuiCascaderSetExpandTrigger(xui_widget pWidget, int iExpandTrigger);
 /* 读取展开触发方式。 */
 XUI_API int xuiCascaderGetExpandTrigger(xui_widget pWidget);
-/* 设置弹层尺寸（列宽/高/最大高）。 */
+/* 设置弹层尺寸（列宽/高/最大高）。参数须位于 [0, XUI_LAYOUT_UNBOUNDED]；
+ * 列宽和最大高为 0 时保留当前值，弹层高为 0 时按内容自动计算。 */
 XUI_API int xuiCascaderSetPopupSize(xui_widget pWidget, float fColumnWidth, float fPopupHeight, float fPopupMaxHeight);
 /* 输出弹层尺寸参数。 */
 XUI_API int xuiCascaderGetPopupSize(xui_widget pWidget, float* pColumnWidth, float* pPopupHeight, float* pPopupMaxHeight);
@@ -11773,7 +11777,8 @@ XUI_API int xuiCascaderGetPopupSize(xui_widget pWidget, float* pColumnWidth, flo
 XUI_API int xuiCascaderSetPopupPlacement(xui_widget pWidget, int iPlacement);
 /* 读取弹出方位。 */
 XUI_API int xuiCascaderGetPopupPlacement(xui_widget pWidget);
-/* 设置度量（项高/边框宽）。 */
+/* 设置度量（项高/边框宽）。项高须位于 (0, XUI_LAYOUT_UNBOUNDED]，
+ * 边框宽须位于 [0, XUI_LAYOUT_UNBOUNDED]。 */
 XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float fBorderWidth);
 /* 输出度量参数。 */
 XUI_API int xuiCascaderGetMetrics(xui_widget pWidget, float* pItemHeight, float* pBorderWidth);
