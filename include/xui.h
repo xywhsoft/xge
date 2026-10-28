@@ -8587,6 +8587,10 @@ XUI_API int xuiToggleGetInnerTextMetrics(xui_widget pWidget, float* pPadding, fl
 XUI_API int xuiToggleSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
 XUI_API xui_font xuiToggleGetFont(xui_widget pWidget);
+/* 设置文本绘制标志；切换 XUI_TEXT_RTL 时会同步镜像轨道与滑块方向。 */
+XUI_API int xuiToggleSetTextFlags(xui_widget pWidget, uint32_t iTextFlags);
+/* 读取文本绘制标志。 */
+XUI_API uint32_t xuiToggleGetTextFlags(xui_widget pWidget);
 /* 设置开关状态。 */
 XUI_API int xuiToggleSetChecked(xui_widget pWidget, int bChecked);
 /* 读取开关状态。 */

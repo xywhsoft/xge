@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -72,6 +73,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pToggle;
+	xui_widget pRtlToggle;
 	xui_widget pChild;
 	xui_widget pDestroyHost;
 	xui_widget pDestroyToggle;
@@ -80,11 +82,15 @@ int main(void)
 	xui_surface pAtlas;
 	xui_font pFont;
 	xui_toggle_desc_t tDesc;
+	xui_toggle_desc_t tRtlDesc;
 	xui_vec2_t tMeasured;
 	xui_rect_t tTrack;
 	xui_rect_t tThumb;
+	xui_rect_t tText;
 	xui_rect_t tInner;
 	xui_rect_t tSrc;
+	xui_rect_t tStoredUncheckedSrc;
+	xui_rect_t tStoredCheckedSrc;
 	xui_rect_t tLastSrc;
 	xui_rect_i_t tFullRect;
 	xui_accessible_node_t tAccessible;
@@ -93,11 +99,18 @@ int main(void)
 	int iDestroyChanged;
 	int iFailed;
 	int iRet;
+	float fInnerPadding;
+	float fInnerGap;
+	uint32_t iUncheckedTextColor;
+	uint32_t iCheckedTextColor;
+	xui_surface pStoredUncheckedSurface;
+	xui_surface pStoredCheckedSurface;
 	xui_toggle_desc_t tInvalidDesc;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pToggle = NULL;
+	pRtlToggle = NULL;
 	pChild = NULL;
 	pDestroyHost = NULL;
 	pDestroyToggle = NULL;
@@ -130,7 +143,9 @@ int main(void)
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = "Enable feature";
-	tDesc.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL;
+	tDesc.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE;
+	tDesc.iUncheckedTextColor = XUI_COLOR_RGBA(18, 52, 86, 255);
+	tDesc.iCheckedTextColor = XUI_COLOR_RGBA(101, 67, 33, 255);
 	tDesc.bChecked = 1;
 	iRet = xuiToggleCreate(pContext, &pToggle, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pToggle != NULL, "toggle create");
@@ -143,6 +158,13 @@ int main(void)
 	XUI_TEST_CHECK(xuiToggleGetTrackHeight(pToggle) == 22.0f, "default track height");
 	XUI_TEST_CHECK(xuiToggleGetThumbSize(pToggle) == 14.0f, "default thumb size");
 	XUI_TEST_CHECK(xuiToggleGetGap(pToggle) == 8.0f, "default gap");
+	iRet = xuiToggleGetInnerTextColor(pToggle, &iUncheckedTextColor, &iCheckedTextColor);
+	XUI_TEST_CHECK(iRet == XUI_OK && iUncheckedTextColor == tDesc.iUncheckedTextColor &&
+	               iCheckedTextColor == tDesc.iCheckedTextColor,
+	               "descriptor inner text colors");
+	iRet = xuiToggleGetInnerTextMetrics(pToggle, &fInnerPadding, &fInnerGap);
+	XUI_TEST_CHECK(iRet == XUI_OK && fInnerPadding == 6.0f && fInnerGap == 2.0f,
+	               "default inner text metrics");
 	iRet = xuiWidgetSetAccessibleName(pToggle, "Feature switch");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set accessible name");
 	iRet = xuiWidgetSetAccessibleDescription(pToggle, "Controls the optional feature");
@@ -157,8 +179,24 @@ int main(void)
 
 	xuiWidgetMeasure(pToggle, (xui_vec2_t){300.0f, 100.0f}, &tMeasured);
 	XUI_TEST_CHECK(tMeasured.fX > 40.0f && tMeasured.fY >= 24.0f, "measure includes text");
+	XUI_TEST_CHECK((tState.iLastTextMeasureFlags & XUI_TEXT_SHAPE_RTL) == 0,
+		"ltr toggle uses ltr shaping");
+
+	memset(&tRtlDesc, 0, sizeof(tRtlDesc));
+	tRtlDesc.iSize = sizeof(tRtlDesc);
+	tRtlDesc.sText = "RTL switch";
+	tRtlDesc.sUncheckedText = "OFF";
+	tRtlDesc.sCheckedText = "ON";
+	tRtlDesc.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL;
+	tRtlDesc.bChecked = 1;
+	iRet = xuiToggleCreate(pContext, &pRtlToggle, &tRtlDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pRtlToggle != NULL, "rtl toggle create");
+	iRet = xuiWidgetAddChild(pRoot, pRtlToggle);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add rtl toggle");
+	xuiWidgetSetRect(pRtlToggle, (xui_rect_t){0.0f, 50.0f, 180.0f, 34.0f});
+	xuiWidgetMeasure(pRtlToggle, (xui_vec2_t){300.0f, 100.0f}, &tMeasured);
 	XUI_TEST_CHECK((tState.iLastTextMeasureFlags & XUI_TEXT_SHAPE_RTL) != 0,
-		"toggle rtl reaches text measurement");
+	               "rtl toggle uses rtl shaping");
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 260, 100, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	iRet = xuiLayout(pContext);
@@ -172,6 +210,44 @@ int main(void)
 	tThumb = xuiToggleGetThumbRect(pToggle);
 	XUI_TEST_CHECK(tTrack.fW == 38.0f && tTrack.fH == 22.0f, "track rect");
 	XUI_TEST_CHECK(tThumb.fW == 14.0f && tThumb.fH == 14.0f && tThumb.fX > tTrack.fX, "checked thumb rect");
+	tTrack = xuiToggleGetTrackRect(pRtlToggle);
+	tThumb = xuiToggleGetThumbRect(pRtlToggle);
+	tText = xuiToggleGetTextRect(pRtlToggle);
+	tInner = xuiToggleGetInnerTextRect(pRtlToggle);
+	XUI_TEST_CHECK(tTrack.fX >= tText.fX + tText.fW,
+	               "rtl toggle mirrors track after outer text");
+	XUI_TEST_CHECK(tThumb.fX < tTrack.fX + tTrack.fW * 0.5f,
+	               "rtl checked thumb is on leading side");
+	XUI_TEST_CHECK(tInner.fX >= tThumb.fX + tThumb.fW &&
+	               tInner.fX + tInner.fW <= tTrack.fX + tTrack.fW,
+	               "rtl checked inner text is opposite thumb");
+	iRet = xuiToggleSetChecked(pRtlToggle, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "rtl toggle unchecked");
+	tThumb = xuiToggleGetThumbRect(pRtlToggle);
+	tInner = xuiToggleGetInnerTextRect(pRtlToggle);
+	XUI_TEST_CHECK(tThumb.fX >= tTrack.fX + tTrack.fW * 0.5f,
+	               "rtl unchecked thumb is on trailing side");
+	XUI_TEST_CHECK(tInner.fX >= tTrack.fX && tInner.fX + tInner.fW <= tThumb.fX,
+	               "rtl unchecked inner text is opposite thumb");
+	XUI_TEST_CHECK((xuiToggleGetTextFlags(pToggle) & XUI_TEXT_RTL) == 0,
+	               "get ltr toggle text flags");
+	xuiWidgetClearDirty(pToggle, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiToggleSetTextFlags(pToggle,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+	               (xuiToggleGetTextFlags(pToggle) & XUI_TEXT_RTL) != 0 &&
+	               (xuiWidgetGetDirtyFlags(pToggle) & XUI_WIDGET_DIRTY_LAYOUT) != 0,
+	               "runtime rtl toggle flags invalidate layout");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render runtime rtl toggle");
+	tTrack = xuiToggleGetTrackRect(pToggle);
+	tText = xuiToggleGetTextRect(pToggle);
+	XUI_TEST_CHECK(tTrack.fX >= tText.fX + tText.fW,
+	               "runtime rtl toggle mirrors geometry");
+	iRet = xuiToggleSetTextFlags(pToggle,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore runtime ltr toggle");
 	iRet = xuiToggleSetInnerText(pToggle, "OFF", "ON");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set inner text");
 	XUI_TEST_CHECK(strcmp(xuiToggleGetUncheckedText(pToggle), "OFF") == 0, "get unchecked text");
@@ -187,8 +263,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set inner text color");
 	iRet = xuiToggleSetInnerTextMetrics(pToggle, 7.0f, 3.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set inner text metrics");
+	xuiTestProxyResetTextCounters(&tState);
 	xuiWidgetMeasure(pToggle, (xui_vec2_t){300.0f, 100.0f}, &tMeasured);
 	XUI_TEST_CHECK(tMeasured.fX > 160.0f, "measure includes inner text width");
+	XUI_TEST_CHECK(xuiTestProxyGetTextMeasureCount(&tState) == 3,
+	               "measure shapes outer and two inner labels once");
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render inner text toggle");
 	tTrack = xuiToggleGetTrackRect(pToggle);
@@ -196,6 +275,15 @@ int main(void)
 	tInner = xuiToggleGetInnerTextRect(pToggle);
 	XUI_TEST_CHECK(tTrack.fW >= 54.0f, "inner text expands track");
 	XUI_TEST_CHECK(tInner.fW > 0.0f && tInner.fX >= tTrack.fX && (tInner.fX + tInner.fW) <= tThumb.fX, "checked inner text rect");
+	iRet = xuiToggleSetInnerTextMetrics(pToggle, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set zero inner text metrics");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render zero inner text metrics");
+	tTrack = xuiToggleGetTrackRect(pToggle);
+	tInner = xuiToggleGetInnerTextRect(pToggle);
+	XUI_TEST_CHECK(tInner.fX == tTrack.fX, "zero inner padding is preserved");
+	iRet = xuiToggleSetInnerTextMetrics(pToggle, 7.0f, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore inner text metrics");
 	iRet = xuiToggleSetInnerText(pToggle, NULL, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetUncheckedText(pToggle)[0] == '\0' && xuiToggleGetCheckedText(pToggle)[0] == '\0', "clear inner text");
 
@@ -287,6 +375,24 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 0 && iChanged == 3,
 	               "blurred keyboard press does not toggle");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+	               (xuiToggleGetState(pToggle) & XUI_WIDGET_STATE_DISABLED) != 0,
+	               "ancestor disable reaches toggle state");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pToggle;
+	tEvent.iKey = XUI_KEY_SPACE;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	tEvent.iType = XUI_EVENT_KEY_UP;
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetChecked(pToggle) == 0 && iChanged == 3,
+	               "ancestor-disabled toggle rejects injected keyboard activation");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+	               (xuiToggleGetState(pToggle) & XUI_WIDGET_STATE_DISABLED) == 0,
+	               "ancestor re-enable restores toggle state");
 	iRet = xuiToggleSetInnerTextMetrics(pToggle, NAN, 3.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan inner padding");
 	iRet = xuiToggleSetTrackSize(pToggle, INFINITY, 24.0f);
@@ -298,6 +404,15 @@ int main(void)
 	iRet = xuiToggleSetGap(pToggle, INFINITY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiToggleGetGap(pToggle) == 10.0f,
 	               "reject infinite gap");
+	iRet = xuiToggleSetTrackSize(pToggle, FLT_MAX, 24.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiToggleGetTrackWidth(pToggle) == 44.0f,
+	               "reject unbounded track width");
+	iRet = xuiToggleSetThumbSize(pToggle, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiToggleGetThumbSize(pToggle) == 15.0f,
+	               "reject unbounded thumb size");
+	iRet = xuiToggleSetInnerTextMetrics(pToggle, 7.0f, FLT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+	               "reject unbounded inner text gap");
 	iRet = xuiToggleSetColors(pToggle, XUI_COLOR_RGBA(24, 166, 113, 255), XUI_COLOR_RGBA(215, 230, 224, 255), XUI_COLOR_RGBA(194, 222, 211, 255), XUI_COLOR_RGBA(24, 166, 113, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 
@@ -308,6 +423,27 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetUseBuiltinAtlas(pToggle) == 1, "enable builtin atlas flag");
 	iRet = xuiToggleSetIndicatorSurface(pToggle, pAtlas, (xui_rect_t){0.0f, 0.0f, 48.0f, 24.0f}, pAtlas, tSrc);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set indicator surface");
+	xuiWidgetClearDirty(pToggle, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiToggleSetIndicatorSurface(pToggle, pAtlas,
+		(xui_rect_t){-0.0f, 0.0f, 48.0f, 24.0f}, pAtlas, tSrc);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pToggle) == 0,
+	               "equivalent source rectangles are a no-op");
+	iRet = xuiToggleGetIndicatorSurface(pToggle, &pStoredUncheckedSurface,
+		&tStoredUncheckedSrc, &pStoredCheckedSurface, &tStoredCheckedSrc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get stored indicator surfaces");
+	iRet = xuiToggleSetIndicatorSurface(pToggle, pAtlas,
+		(xui_rect_t){0.0f, 0.0f, -1.0f, 24.0f}, pAtlas, tSrc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative source width");
+	iRet = xuiToggleSetIndicatorSurface(pToggle, pAtlas,
+		(xui_rect_t){FLT_MAX, 0.0f, 48.0f, 24.0f}, pAtlas, tSrc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject unbounded source coordinate");
+	iRet = xuiToggleGetIndicatorSurface(pToggle, &pStoredUncheckedSurface,
+		&tStoredUncheckedSrc, &pStoredCheckedSurface, &tStoredCheckedSrc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pStoredUncheckedSurface == pAtlas &&
+	               pStoredCheckedSurface == pAtlas &&
+	               __xuiToggleRectEq(tStoredUncheckedSrc, 0.0f, 0.0f, 48.0f, 24.0f) &&
+	               __xuiToggleRectEq(tStoredCheckedSrc, 48.0f, 0.0f, 48.0f, 24.0f),
+	               "invalid source rectangles preserve prior state");
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render atlas toggle");
 	tLastSrc = tSrc;
@@ -337,6 +473,10 @@ int main(void)
 	iRet = xuiToggleCreate(pContext, &pInvalidWidget, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWidget == NULL,
 	               "invalid toggle create clears output");
+	pInvalidWidget = pRoot;
+	iRet = xuiToggleCreate(NULL, &pInvalidWidget, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWidget == NULL,
+	               "invalid context clears toggle output");
 
 cleanup:
 	if ( pTarget != NULL ) {

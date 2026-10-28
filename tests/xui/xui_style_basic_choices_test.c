@@ -63,6 +63,25 @@ static void radio_state_cases(pixel_fixture_t* f, xui_widget radio)
 	PIXEL_CHECK(xuiWidgetSetInlineStyle(radio, NULL, 0) == XUI_OK);
 }
 
+static void toggle_state_cases(pixel_fixture_t* f, xui_widget toggle)
+{
+	const uint32_t normal = 0x183756ffu;
+	const uint32_t disabled = 0x395877ffu;
+	xui_style_property_t p[2];
+
+	p[0] = basic_color("toggle.track.color", normal);
+	p[1] = basic_color("toggle.track.disabled_color", disabled);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(toggle, p, 2) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetSetEnabled(toggle, 0) == XUI_OK);
+	basic_paint(f, toggle, 0);
+	PIXEL_CHECK(basic_seen(BASIC_FILL, normal) > 0);
+	PIXEL_CHECK(basic_seen(BASIC_FILL, disabled) == 0);
+	basic_paint(f, toggle, XUI_WIDGET_STATE_DISABLED);
+	PIXEL_CHECK(basic_seen(BASIC_FILL, disabled) > 0);
+	PIXEL_CHECK(xuiWidgetSetEnabled(toggle, 1) == XUI_OK);
+	PIXEL_CHECK(xuiWidgetSetInlineStyle(toggle, NULL, 0) == XUI_OK);
+}
+
 int main(void)
 {
 	pixel_fixture_t f;
@@ -86,6 +105,7 @@ int main(void)
 	basic_attach(&f, checkbox); basic_attach(&f, radio); basic_attach(&f, toggle);
 	choice_cases(&f, checkbox, 0); choice_cases(&f, radio, 1);
 	radio_state_cases(&f, radio);
+	toggle_state_cases(&f, toggle);
 	for (i = 0; i < sizeof(keys) / sizeof(*keys); ++i) basic_case(&f, toggle, keys[i], states[i], kinds[i]);
 	basic_case(&f, toggle, "choice.focus.color", XUI_WIDGET_STATE_FOCUS, BASIC_STROKE);
 	basic_case(&f, toggle, "choice.accent.color", XUI_TOGGLE_STATE_CHECKED, BASIC_FILL);
