@@ -1,8 +1,9 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
-#include "xui.h"
+#include "xui_internal.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <string.h>
 
 static int __xuiCodeLexerCIsIdentStart(int c)
@@ -15,22 +16,18 @@ static int __xuiCodeLexerCIsIdent(int c)
 	return (c == '_') || isalnum((unsigned char)c);
 }
 
-static int __xuiCodeLexerCUtf8Next(const char* sText, int iTextSize, int iOffset)
+static int __xuiCodeLexerCUnicodeIdentifierEnd(const char* sText,
+	int iTextSize, int iOffset)
 {
-	unsigned char c;
-	int iStep;
+	int iStart;
+	int iEnd;
+	xui_internal_word_kind_t iKind;
 
-	if ( sText == NULL ) return 0;
-	if ( iOffset < 0 ) return 0;
-	if ( iOffset >= iTextSize ) return iTextSize;
-	c = (unsigned char)sText[iOffset];
-	if ( c < 0x80u ) iStep = 1;
-	else if ( (c & 0xE0u) == 0xC0u ) iStep = 2;
-	else if ( (c & 0xF0u) == 0xE0u ) iStep = 3;
-	else if ( (c & 0xF8u) == 0xF0u ) iStep = 4;
-	else iStep = 1;
-	if ( iOffset + iStep > iTextSize ) return iTextSize;
-	return iOffset + iStep;
+	if ( sText == NULL || iOffset < 0 || iOffset >= iTextSize ) return iOffset;
+	iKind = xuiInternalTextWordRange(sText, iTextSize, iOffset,
+		XUI_INTERNAL_WORD_IDENTIFIER, &iStart, &iEnd);
+	return (iKind == XUI_INTERNAL_WORD_TEXT && iStart <= iOffset && iEnd > iOffset) ?
+		iEnd : iOffset;
 }
 
 static int __xuiCodeLexerCIsKeyword(const char* sText, int iStart, int iEnd)
@@ -90,14 +87,28 @@ XUI_API int xuiCodeLexerCTokenizeRange(const char* sText, int iTextSize, int iSt
 	int i;
 	int iStart;
 	int iKind;
+	int iOriginalStart;
+	int iNext;
+	size_t iTextSizeValue;
 
 	if ( pTokenCount == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pTokenCount = 0;
-	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	if ( sText == NULL || iTokenCapacity < 0 ||
+	     (pTokens == NULL && iTokenCapacity > 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iTextSize < 0 ) {
+		iTextSizeValue = strlen(sText);
+		if ( iTextSizeValue > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+		iTextSize = (int)iTextSizeValue;
+	}
 	if ( iStartOffset < 0 ) iStartOffset = 0;
 	if ( iStartOffset > iTextSize ) iStartOffset = iTextSize;
 	if ( iEndOffset < 0 || iEndOffset > iTextSize ) iEndOffset = iTextSize;
+	iOriginalStart = iStartOffset;
+	iStartOffset = xuiInternalTextGraphemeClamp(sText, iTextSize, iStartOffset);
+	if ( iStartOffset < iOriginalStart ) {
+		iStartOffset = xuiInternalTextGraphemeNext(sText, iTextSize, iStartOffset);
+	}
+	iEndOffset = xuiInternalTextGraphemeClamp(sText, iTextSize, iEndOffset);
 	if ( iEndOffset < iStartOffset ) iEndOffset = iStartOffset;
 	i = iStartOffset;
 	while ( i < iEndOffset ) {
@@ -117,6 +128,7 @@ XUI_API int xuiCodeLexerCTokenizeRange(const char* sText, int iTextSize, int iSt
 			i += 2;
 			while ( i + 1 < iEndOffset && !(sText[i] == '*' && sText[i + 1] == '/') ) i++;
 			if ( i + 1 < iEndOffset ) i += 2;
+			else i = iEndOffset;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_COMMENT);
 		} else if ( sText[i] == '"' ) {
 			i++;
@@ -146,14 +158,34 @@ XUI_API int xuiCodeLexerCTokenizeRange(const char* sText, int iTextSize, int iSt
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_CHAR);
 		} else if ( isdigit((unsigned char)sText[i]) ) {
 			i++;
-			while ( i < iEndOffset &&
-			        (isalnum((unsigned char)sText[i]) || sText[i] == '.' || sText[i] == '_' || sText[i] == '+' || sText[i] == '-') ) {
-				i++;
+			while ( i < iEndOffset ) {
+				if ( isalnum((unsigned char)sText[i]) || sText[i] == '.' || sText[i] == '_' ) {
+					i++;
+				} else if ( (sText[i] == '+' || sText[i] == '-') && i > iStart &&
+				            (sText[i - 1] == 'e' || sText[i - 1] == 'E' ||
+				             sText[i - 1] == 'p' || sText[i - 1] == 'P') ) {
+					i++;
+				} else {
+					break;
+				}
 			}
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_NUMBER);
 		} else if ( __xuiCodeLexerCIsIdentStart((unsigned char)sText[i]) ) {
 			i++;
-			while ( i < iEndOffset && __xuiCodeLexerCIsIdent((unsigned char)sText[i]) ) i++;
+			while ( i < iEndOffset ) {
+				if ( __xuiCodeLexerCIsIdent((unsigned char)sText[i]) ) {
+					i++;
+					continue;
+				}
+				if ( (unsigned char)sText[i] >= 0x80u ) {
+					iNext = __xuiCodeLexerCUnicodeIdentifierEnd(sText, iEndOffset, i);
+					if ( iNext > i ) {
+						i = iNext;
+						continue;
+					}
+				}
+				break;
+			}
 			iKind = __xuiCodeLexerCIsKeyword(sText, iStart, i);
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, iKind);
 		} else if ( strchr("{}[]()", sText[i]) != NULL ) {
@@ -164,11 +196,16 @@ XUI_API int xuiCodeLexerCTokenizeRange(const char* sText, int iTextSize, int iSt
 			while ( i < iEndOffset && strchr("+-*/%=!<>|&^~", sText[i]) != NULL ) i++;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_OPERATOR);
 		} else if ( ((unsigned char)sText[i]) >= 0x80u ) {
-			i = __xuiCodeLexerCUtf8Next(sText, iEndOffset, i);
-			while ( i < iEndOffset && ((unsigned char)sText[i]) >= 0x80u ) {
-				i = __xuiCodeLexerCUtf8Next(sText, iEndOffset, i);
+			iNext = __xuiCodeLexerCUnicodeIdentifierEnd(sText, iEndOffset, i);
+			if ( iNext > i ) {
+				i = iNext;
+				iKind = XUI_CODE_TOKEN_IDENTIFIER;
+			} else {
+				i = xuiInternalTextGraphemeNext(sText, iEndOffset, i);
+				if ( i <= iStart ) i = iStart + 1;
+				iKind = XUI_CODE_TOKEN_TEXT;
 			}
-			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_TEXT);
+			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, iKind);
 		} else {
 			i++;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_TEXT);
@@ -193,7 +230,8 @@ XUI_API int xuiCodeLexerCTokenizeDocumentRange(xui_code_document pDocument,
 	int i;
 	int iRet;
 
-	if ( pDocument == NULL || pTokenCount == NULL || iTokenCapacity < 0 ) {
+	if ( pDocument == NULL || pTokenCount == NULL || iTokenCapacity < 0 ||
+	     (pTokens == NULL && iTokenCapacity > 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iDocumentLength = xuiCodeDocumentGetLength(pDocument);

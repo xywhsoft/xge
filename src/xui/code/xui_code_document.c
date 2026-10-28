@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef struct xui_code_line_t {
@@ -61,12 +62,14 @@ struct xui_code_document_t {
 	uint64_t iSavedState;
 	uint64_t iNextState;
 	int bDirty;
+	int bForcedDirty;
 	xui_code_document_change_proc onChange;
 	void* pChangeUser;
 	char sError[160];
 };
 
 static int __xuiCodeDocumentRebuildLines(xui_code_document pDocument);
+static int __xuiCodeDocumentReserveLines(xui_code_document pDocument, int iCapacity);
 static unsigned char __xuiCodeDocumentByteAt(xui_code_document pDocument, int iOffset);
 
 static int __xuiCodeDocumentUnicodeRead(void* pUser, int iOffset, unsigned char* pByte)
@@ -155,12 +158,33 @@ static int __xuiCodeDocumentCopyRangeRaw(xui_code_document pDocument,
 	return XUI_OK;
 }
 
+static int __xuiCodeDocumentRangeEquals(xui_code_document pDocument,
+	int iStart, int iEnd, const char* sText, int iTextLength)
+{
+	int i;
+
+	if ( pDocument == NULL || sText == NULL || iStart < 0 || iEnd < iStart ||
+	     iEnd > pDocument->iLength || iTextLength != iEnd - iStart ) return 0;
+	for ( i = 0; i < iTextLength; i++ ) {
+		if ( __xuiCodeDocumentByteAt(pDocument, iStart + i) !=
+		     (unsigned char)sText[i] ) return 0;
+	}
+	return 1;
+}
+
 static void __xuiCodeDocumentSetError(xui_code_document pDocument, const char* sError)
 {
 	if ( pDocument == NULL ) return;
 	if ( sError == NULL ) sError = "";
 	strncpy(pDocument->sError, sError, sizeof(pDocument->sError) - 1u);
 	pDocument->sError[sizeof(pDocument->sError) - 1u] = '\0';
+}
+
+static void __xuiCodeDocumentUpdateDirty(xui_code_document pDocument)
+{
+	if ( pDocument == NULL ) return;
+	pDocument->bDirty = pDocument->bForcedDirty ||
+		(pDocument->iState != pDocument->iSavedState);
 }
 
 static int __xuiCodeDocumentUtf8Next(xui_code_document pDocument, int iOffset)
@@ -180,11 +204,14 @@ static int __xuiCodeDocumentClampOffset(xui_code_document pDocument, int iOffset
 static int __xuiCodeDocumentReserveSnapshot(xui_code_document pDocument, int iCapacity)
 {
 	char* sNew;
+	int iDoubledCapacity;
 
-	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pDocument->iSnapshotCapacity ) return XUI_OK;
-	if ( iCapacity < pDocument->iSnapshotCapacity * 2 ) {
-		iCapacity = pDocument->iSnapshotCapacity * 2;
+	iDoubledCapacity = (pDocument->iSnapshotCapacity <= INT_MAX / 2) ?
+		pDocument->iSnapshotCapacity * 2 : iCapacity;
+	if ( iCapacity < iDoubledCapacity ) {
+		iCapacity = iDoubledCapacity;
 	}
 	if ( iCapacity < 32 ) iCapacity = 32;
 	sNew = (char*)xrtRealloc(pDocument->sSnapshot, (size_t)iCapacity);
@@ -251,7 +278,11 @@ static int __xuiCodeDocumentEnsureGap(xui_code_document pDocument, int iNeed)
 	if ( iGrowth < 4096 ) iGrowth = 4096;
 	if ( iGrowth > 1024 * 1024 ) iGrowth = 1024 * 1024;
 	if ( iGrowth < iNeed - iGapSize ) iGrowth = iNeed - iGapSize;
-	if ( pDocument->iLength > INT_MAX - iGapSize - iGrowth ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( iGapSize > INT_MAX - pDocument->iLength ||
+	     iGrowth > INT_MAX - pDocument->iLength - iGapSize ) {
+		__xuiCodeDocumentSetError(pDocument, "document too large");
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
 	iNewCapacity = pDocument->iLength + iGapSize + iGrowth;
 	iSuffixLength = pDocument->iBufferCapacity - pDocument->iGapEnd;
 	sNew = (char*)xrtRealloc(pDocument->sBuffer, (size_t)iNewCapacity);
@@ -273,35 +304,88 @@ static int __xuiCodeDocumentEnsureGap(xui_code_document pDocument, int iNeed)
 
 static int __xuiCodeDocumentSetOwnedText(xui_code_document pDocument, char* sText, int iLength)
 {
+	char* sNewBuffer;
+	char* sOldBuffer;
+	xui_code_line_t* pLine;
 	int iRet;
 	int iGapReserve;
+	int iNewCapacity;
+	int iLineCount;
+	int iLine;
+	int iStart;
+	int i;
 
 	if ( pDocument == NULL || sText == NULL || iLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	xrtFree(pDocument->sBuffer);
-	pDocument->sBuffer = sText;
-	pDocument->iLength = iLength;
-	pDocument->iBufferCapacity = iLength + 1;
-	pDocument->iGapStart = iLength;
-	pDocument->iGapEnd = iLength + 1;
-	pDocument->bSnapshotValid = 0;
 	iGapReserve = 4096;
 	if ( iLength > 0 && iLength / 64 > iGapReserve ) iGapReserve = iLength / 64;
 	if ( iGapReserve > 1024 * 1024 ) iGapReserve = 1024 * 1024;
-	iRet = __xuiCodeDocumentEnsureGap(pDocument, iGapReserve);
+	if ( iLength > INT_MAX - iGapReserve ) {
+		__xuiCodeDocumentSetError(pDocument, "document too large");
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	iLineCount = 1;
+	for ( i = 0; i < iLength; i++ ) {
+		if ( sText[i] == '\n' ) {
+			if ( iLineCount == INT_MAX ) return XUI_ERROR_OUT_OF_MEMORY;
+			iLineCount++;
+		}
+	}
+	iRet = __xuiCodeDocumentReserveLines(pDocument, iLineCount);
 	if ( iRet != XUI_OK ) return iRet;
-	return __xuiCodeDocumentRebuildLines(pDocument);
+	iNewCapacity = iLength + iGapReserve;
+	sNewBuffer = (char*)xrtRealloc(sText, (size_t)iNewCapacity);
+	if ( sNewBuffer == NULL ) {
+		__xuiCodeDocumentSetError(pDocument, "out of memory");
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+
+	/* All fallible work is complete. Install text and its derived line index together. */
+	sOldBuffer = pDocument->sBuffer;
+	pDocument->sBuffer = sNewBuffer;
+	pDocument->iLength = iLength;
+	pDocument->iBufferCapacity = iNewCapacity;
+	pDocument->iGapStart = iLength;
+	pDocument->iGapEnd = iNewCapacity;
+	pDocument->bSnapshotValid = 0;
+	pDocument->iPendingLineShiftStart = 0;
+	pDocument->iPendingLineShiftDelta = 0;
+	pDocument->iLineCount = 0;
+	iLine = 0;
+	iStart = 0;
+	for ( i = 0; i < iLength; i++ ) {
+		if ( sNewBuffer[i] != '\n' ) continue;
+		pLine = &pDocument->pLines[iLine++];
+		pLine->iStart = iStart;
+		pLine->iEnd = i + 1;
+		pLine->iTextEnd = i;
+		iStart = i + 1;
+	}
+	pLine = &pDocument->pLines[iLine++];
+	pLine->iStart = iStart;
+	pLine->iEnd = iLength;
+	pLine->iTextEnd = iLength;
+	pDocument->iLineCount = iLine;
+	xrtFree(sOldBuffer);
+	return XUI_OK;
 }
 
 static int __xuiCodeDocumentReserveLines(xui_code_document pDocument, int iCapacity)
 {
 	xui_code_line_t* pNew;
+	int iDoubledCapacity;
 
-	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pDocument->iLineCapacity ) return XUI_OK;
-	if ( iCapacity < pDocument->iLineCapacity * 2 ) {
-		iCapacity = pDocument->iLineCapacity * 2;
+	iDoubledCapacity = (pDocument->iLineCapacity <= INT_MAX / 2) ?
+		pDocument->iLineCapacity * 2 : iCapacity;
+	if ( iCapacity < iDoubledCapacity ) {
+		iCapacity = iDoubledCapacity;
 	}
 	if ( iCapacity < 16 ) iCapacity = 16;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) {
+		__xuiCodeDocumentSetError(pDocument, "document too large");
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
 	pNew = (xui_code_line_t*)xrtRealloc(pDocument->pLines, sizeof(*pNew) * (size_t)iCapacity);
 	if ( pNew == NULL ) {
 		__xuiCodeDocumentSetError(pDocument, "out of memory");
@@ -499,7 +583,12 @@ static int __xuiCodeDocumentReplaceRaw(xui_code_document pDocument,
 {
 	int iOldLength;
 	int iNewLength;
+	int iDeletedLength;
 	int iDelta;
+	int iDeletedLineBreaks;
+	int iInsertedLineBreaks;
+	int iNewLineCount;
+	int iRequiredGap;
 	int iStartLine;
 	int iEndLine;
 	int iOldSegmentEnd;
@@ -509,17 +598,35 @@ static int __xuiCodeDocumentReplaceRaw(xui_code_document pDocument,
 	if ( pDocument == NULL || sText == NULL || iTextLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iStart < 0 || iEnd < iStart || iEnd > pDocument->iLength ) return XUI_ERROR_INVALID_ARGUMENT;
 	iOldLength = pDocument->iLength;
-	iNewLength = iOldLength - (iEnd - iStart) + iTextLength;
-	if ( iNewLength < 0 ) return XUI_ERROR_OUT_OF_MEMORY;
+	iDeletedLength = iEnd - iStart;
+	if ( iTextLength > INT_MAX - (iOldLength - iDeletedLength) ) {
+		__xuiCodeDocumentSetError(pDocument, "document too large");
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	iNewLength = iOldLength - iDeletedLength + iTextLength;
+	iDeletedLineBreaks = 0;
+	for ( iRet = iStart; iRet < iEnd; iRet++ ) {
+		if ( __xuiCodeDocumentByteAt(pDocument, iRet) == '\n' ) iDeletedLineBreaks++;
+	}
+	iInsertedLineBreaks = 0;
+	for ( iRet = 0; iRet < iTextLength; iRet++ ) {
+		if ( sText[iRet] == '\n' ) iInsertedLineBreaks++;
+	}
+	iNewLineCount = pDocument->iLineCount - iDeletedLineBreaks + iInsertedLineBreaks;
+	if ( iNewLineCount <= 0 ) iNewLineCount = 1;
+	iRet = __xuiCodeDocumentReserveLines(pDocument, iNewLineCount);
+	if ( iRet != XUI_OK ) return iRet;
+	iRequiredGap = iTextLength - iDeletedLength;
+	if ( iRequiredGap < 0 ) iRequiredGap = 0;
+	iRet = __xuiCodeDocumentEnsureGap(pDocument, iRequiredGap);
+	if ( iRet != XUI_OK ) return iRet;
 	iStartLine = __xuiCodeDocumentFindLine(pDocument, iStart);
 	iEndLine = __xuiCodeDocumentFindLine(pDocument, iEnd);
 	iOldSegmentEnd = __xuiCodeDocumentLineField(pDocument, iEndLine, 1);
-	bInsertedLineBreak = memchr(sText, '\n', (size_t)iTextLength) != NULL;
+	bInsertedLineBreak = (iInsertedLineBreaks > 0);
 	iRet = __xuiCodeDocumentMoveGap(pDocument, iStart);
 	if ( iRet != XUI_OK ) return iRet;
-	pDocument->iGapEnd += iEnd - iStart;
-	iRet = __xuiCodeDocumentEnsureGap(pDocument, iTextLength);
-	if ( iRet != XUI_OK ) return iRet;
+	pDocument->iGapEnd += iDeletedLength;
 	if ( iTextLength > 0 ) {
 		memcpy(pDocument->sBuffer + pDocument->iGapStart, sText, (size_t)iTextLength);
 		pDocument->iGapStart += iTextLength;
@@ -715,6 +822,7 @@ static int __xuiCodeDocumentTryMergeAction(xui_code_edit_group_t* pGroup,
 	if ( pPrevious->iDeletedLength == 0 && pAction->iDeletedLength == 0 &&
 	     pPrevious->iInsertedLength > 0 && pAction->iInsertedLength > 0 &&
 	     pPrevious->iStart + pPrevious->iInsertedLength == pAction->iStart ) {
+		if ( pPrevious->iInsertedLength > INT_MAX - pAction->iInsertedLength ) return 0;
 		iMergedLength = pPrevious->iInsertedLength + pAction->iInsertedLength;
 		sMerged = (char*)xrtRealloc(pPrevious->sInserted, (size_t)iMergedLength + 1u);
 		if ( sMerged == NULL ) return 0;
@@ -727,6 +835,7 @@ static int __xuiCodeDocumentTryMergeAction(xui_code_edit_group_t* pGroup,
 	}
 	if ( pPrevious->iInsertedLength == 0 && pAction->iInsertedLength == 0 &&
 	     pPrevious->iDeletedLength > 0 && pAction->iDeletedLength > 0 ) {
+		if ( pPrevious->iDeletedLength > INT_MAX - pAction->iDeletedLength ) return 0;
 		iMergedLength = pPrevious->iDeletedLength + pAction->iDeletedLength;
 		sMerged = (char*)xrtMalloc((size_t)iMergedLength + 1u);
 		if ( sMerged == NULL ) return 0;
@@ -757,6 +866,70 @@ static void __xuiCodeDocumentClearRedo(xui_code_document pDocument)
 	if ( pDocument == NULL ) return;
 	__xuiCodeDocumentGroupArrayClear(pDocument->pRedo, pDocument->iRedoCount);
 	pDocument->iRedoCount = 0;
+}
+
+static int __xuiCodeDocumentTextLineBreaks(const char* sText, int iLength)
+{
+	int iCount;
+	int i;
+
+	if ( sText == NULL || iLength <= 0 ) return 0;
+	iCount = 0;
+	for ( i = 0; i < iLength; i++ ) {
+		if ( sText[i] == '\n' ) iCount++;
+	}
+	return iCount;
+}
+
+static int __xuiCodeDocumentPrepareHistory(xui_code_document pDocument,
+	const xui_code_edit_group_t* pGroup, int bUndo)
+{
+	const xui_code_edit_action_t* pAction;
+	const char* sDeleted;
+	const char* sInserted;
+	int iDeletedLength;
+	int iInsertedLength;
+	int iLength;
+	int iLineCount;
+	int iMaximumLength;
+	int iMaximumLineCount;
+	int i;
+	int iRet;
+
+	if ( pDocument == NULL || pGroup == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iLength = pDocument->iLength;
+	iLineCount = pDocument->iLineCount;
+	iMaximumLength = iLength;
+	iMaximumLineCount = iLineCount;
+	for ( i = 0; i < pGroup->iActionCount; i++ ) {
+		int iActionIndex = bUndo ? pGroup->iActionCount - 1 - i : i;
+		pAction = &pGroup->pActions[iActionIndex];
+		if ( bUndo ) {
+			sDeleted = pAction->sInserted;
+			iDeletedLength = pAction->iInsertedLength;
+			sInserted = pAction->sDeleted;
+			iInsertedLength = pAction->iDeletedLength;
+		} else {
+			sDeleted = pAction->sDeleted;
+			iDeletedLength = pAction->iDeletedLength;
+			sInserted = pAction->sInserted;
+			iInsertedLength = pAction->iInsertedLength;
+		}
+		if ( iDeletedLength < 0 || iDeletedLength > iLength ||
+		     iInsertedLength < 0 || iInsertedLength > INT_MAX - (iLength - iDeletedLength) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		iLength = iLength - iDeletedLength + iInsertedLength;
+		iLineCount = iLineCount -
+			__xuiCodeDocumentTextLineBreaks(sDeleted, iDeletedLength) +
+			__xuiCodeDocumentTextLineBreaks(sInserted, iInsertedLength);
+		if ( iLineCount <= 0 ) iLineCount = 1;
+		if ( iLength > iMaximumLength ) iMaximumLength = iLength;
+		if ( iLineCount > iMaximumLineCount ) iMaximumLineCount = iLineCount;
+	}
+	iRet = __xuiCodeDocumentReserveLines(pDocument, iMaximumLineCount);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiCodeDocumentEnsureGap(pDocument, iMaximumLength - pDocument->iLength);
 }
 
 static void __xuiCodeDocumentSetLastEditRange(xui_code_document pDocument, int iStart, int iEnd)
@@ -864,6 +1037,7 @@ XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char
 		pDocument->iChangeVersion++;
 		pDocument->iSavedVersion = pDocument->iVersion;
 		pDocument->bDirty = 0;
+		pDocument->bForcedDirty = 0;
 		pDocument->iState = ++pDocument->iNextState;
 		pDocument->iSavedState = pDocument->iState;
 		__xuiCodeDocumentSetLastEditRange(pDocument, 0, iNormalizedLength);
@@ -947,6 +1121,7 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 			pDocument->iChangeVersion++;
 			pDocument->iSavedVersion = pDocument->iVersion;
 			pDocument->bDirty = 0;
+			pDocument->bForcedDirty = 0;
 			pDocument->iState = ++pDocument->iNextState;
 			pDocument->iSavedState = pDocument->iState;
 			__xuiCodeDocumentSetLastEditRange(pDocument, 0, iLength);
@@ -970,8 +1145,10 @@ XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char*
 	if ( (pDocument == NULL) || (sPath == NULL) || (sPath[0] == '\0') ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiCodeDocumentEnsureSnapshot(pDocument);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xrtFileWriteText(sPath,
-		xuiXrtText(xuiCodeDocumentGetText(pDocument), (size_t)pDocument->iLength),
+		xuiXrtText(pDocument->sSnapshot, (size_t)pDocument->iLength),
 		(xencoding)iCharset, XUTF_STRICT, false);
 	if ( iRet == 0 ) {
 		__xuiCodeDocumentSetError(pDocument, "file write failed");
@@ -1094,6 +1271,11 @@ XUI_API int xuiCodeDocumentReplace(xui_code_document pDocument, int iStart, int 
 		xrtFree(sNormalized);
 		return XUI_OK;
 	}
+	if ( __xuiCodeDocumentRangeEquals(pDocument, iStart, iEnd,
+	     sNormalized, iInsertLength) ) {
+		xrtFree(sNormalized);
+		return XUI_OK;
+	}
 	memset(&tAction, 0, sizeof(tAction));
 	iRet = __xuiCodeDocumentActionInit(pDocument, &tAction, iStart,
 		NULL, iDeletedLength, sNormalized, iInsertLength);
@@ -1134,7 +1316,7 @@ XUI_API int xuiCodeDocumentReplace(xui_code_document pDocument, int iStart, int 
 	pDocument->iChangeVersion++;
 	pDocument->iState = ++pDocument->iNextState;
 	pGroup->iAfterState = pDocument->iState;
-	pDocument->bDirty = (pDocument->iState != pDocument->iSavedState);
+	__xuiCodeDocumentUpdateDirty(pDocument);
 	if ( bStandalone && !bMerged ) pDocument->iUndoCount++;
 	__xuiCodeDocumentSetLastEditRange(pDocument, iStart, iStart + iInsertLength);
 	__xuiCodeDocumentNotifyChanged(pDocument);
@@ -1212,6 +1394,8 @@ XUI_API int xuiCodeDocumentUndo(xui_code_document pDocument)
 		&pDocument->iRedoCapacity, pDocument->iRedoCount + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	pGroup = &pDocument->pUndo[pDocument->iUndoCount - 1];
+	iRet = __xuiCodeDocumentPrepareHistory(pDocument, pGroup, 1);
+	if ( iRet != XUI_OK ) return iRet;
 	pDocument->bApplyingHistory = 1;
 	iRet = XUI_OK;
 	for ( i = pGroup->iActionCount - 1; i >= 0; i-- ) {
@@ -1228,7 +1412,7 @@ XUI_API int xuiCodeDocumentUndo(xui_code_document pDocument)
 		pDocument->iVersion++;
 		pDocument->iChangeVersion++;
 		pDocument->iState = pGroup->iBeforeState;
-		pDocument->bDirty = (pDocument->iState != pDocument->iSavedState);
+		__xuiCodeDocumentUpdateDirty(pDocument);
 		__xuiCodeDocumentSetLastEditRange(pDocument, 0, pDocument->iLength);
 		pDocument->pRedo[pDocument->iRedoCount++] = *pGroup;
 		memset(pGroup, 0, sizeof(*pGroup));
@@ -1252,6 +1436,8 @@ XUI_API int xuiCodeDocumentRedo(xui_code_document pDocument)
 		&pDocument->iUndoCapacity, pDocument->iUndoCount + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	pGroup = &pDocument->pRedo[pDocument->iRedoCount - 1];
+	iRet = __xuiCodeDocumentPrepareHistory(pDocument, pGroup, 0);
+	if ( iRet != XUI_OK ) return iRet;
 	pDocument->bApplyingHistory = 1;
 	iRet = XUI_OK;
 	for ( i = 0; i < pGroup->iActionCount; i++ ) {
@@ -1268,7 +1454,7 @@ XUI_API int xuiCodeDocumentRedo(xui_code_document pDocument)
 		pDocument->iVersion++;
 		pDocument->iChangeVersion++;
 		pDocument->iState = pGroup->iAfterState;
-		pDocument->bDirty = (pDocument->iState != pDocument->iSavedState);
+		__xuiCodeDocumentUpdateDirty(pDocument);
 		__xuiCodeDocumentSetLastEditRange(pDocument, 0, pDocument->iLength);
 		pDocument->pUndo[pDocument->iUndoCount++] = *pGroup;
 		memset(pGroup, 0, sizeof(*pGroup));
@@ -1315,11 +1501,12 @@ XUI_API int xuiCodeDocumentGetDirty(xui_code_document pDocument)
 XUI_API int xuiCodeDocumentSetDirty(xui_code_document pDocument, int bDirty)
 {
 	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pDocument->bDirty = bDirty ? 1 : 0;
-	if ( !pDocument->bDirty ) {
+	pDocument->bForcedDirty = bDirty ? 1 : 0;
+	if ( !pDocument->bForcedDirty ) {
 		pDocument->iSavedVersion = pDocument->iVersion;
 		pDocument->iSavedState = pDocument->iState;
 	}
+	__xuiCodeDocumentUpdateDirty(pDocument);
 	return XUI_OK;
 }
 

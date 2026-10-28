@@ -151,6 +151,45 @@ static void doc_view_reset_selection(doc_view_data* v)
     p.iDocumentId = xuiDocumentGetIdentity(v->document); p.iRevision = xuiDocumentGetRevision(v->document);
     p.iNodeId = DOC_ROOT; p.iAffinity = XUI_DOC_AFTER; v->selection.tAnchor = v->selection.tCaret = p;
 }
+static int doc_view_data_alive(xui_widget widget, const doc_view_data* v)
+{
+    return v && xuiInternalWidgetIsValid(widget) && doc_view_get(widget) == v;
+}
+static int doc_view_pointer_matches(const doc_view_data* v, const xui_event_t* event)
+{
+    return v && event && v->gesture_pointer_active &&
+        v->gesture_pointer_id == event->iPointerId &&
+        v->gesture_pointer_type == event->iPointerType;
+}
+void doc_view_cancel_pointer(doc_view_data* v, int release_capture)
+{
+    xui_widget widget;
+    xui_context context;
+    uint64_t pointer_id;
+    int pointer_type;
+    if (!v || !v->gesture_pointer_active) return;
+    widget = v->widget;
+    context = xuiWidgetGetContext(widget);
+    pointer_id = v->gesture_pointer_id;
+    pointer_type = v->gesture_pointer_type;
+    v->gesture_pointer_active = 0;
+    v->gesture_pointer_id = 0;
+    v->gesture_pointer_type = XUI_POINTER_TYPE_MOUSE;
+    v->dragging = 0;
+    v->drag_pointer_active = 0;
+    v->table_selecting = 0;
+    v->pressed_node = 0;
+    if (release_capture && xuiInternalContextIsValid(context) &&
+        !xuiInternalContextDestroyPending(context) &&
+        xuiGetPointerCaptureEx(context, pointer_id, pointer_type) == widget) {
+        (void)xuiReleasePointerCaptureEx(context, pointer_id, pointer_type, widget);
+    }
+}
+static void doc_view_cancel_action(xui_widget widget, void* user)
+{
+    (void)user;
+    doc_view_cancel_pointer(doc_view_get(widget), 1);
+}
 int doc_view_sync(doc_view_data* v)
 {
     xui_document_snapshot snapshot; int result;
@@ -184,11 +223,15 @@ static void doc_view_changed(xui_document document, xui_document_change_set chan
     doc_view_data* v = user; xui_document_snapshot snapshot = NULL; xui_doc_position_t p; int mapping;
     xui_doc_position_t visible = {0}, mapped_visible = {0};
     xui_doc_rect_t old_rect = {0}, new_rect = {0}, size = {0};
-    xui_rect_t content = xuiWidgetGetContentRect(v->widget);
-    double screen_y = fmin(20, content.fH / 4), fraction = 0, next_y;
+    xui_rect_t content;
+    double screen_y, fraction = 0, next_y;
     size_t anchor_block = 0, i;
     int anchored = 0, exact;
     (void)document;
+    doc_view_cancel_pointer(v, !v->replaying_input);
+    if (!doc_view_data_alive(v->widget, v)) return;
+    content = xuiWidgetGetContentRect(v->widget);
+    screen_y = fmin(20, content.fH / 4);
     if (changes && (changes->flags & XUI_DOC_CHANGE_STYLE) &&
         !(changes->flags & (XUI_DOC_CHANGE_SOURCE | XUI_DOC_CHANGE_RESET)) &&
         (!(changes->flags & XUI_DOC_CHANGE_STRUCTURE) ||
@@ -271,7 +314,9 @@ XUI_API int xuiDocumentViewSetDocument(xui_widget widget, xui_document document)
     if (result != XUI_OK) return result;
     result = xuiDocumentSubscribe(document, doc_view_changed, v, &subscription);
     if (result == XUI_OK) {
-        result = xuiDocumentRendererSetSnapshot(v->renderer, snapshot, NULL);
+        doc_view_cancel_pointer(v, !v->replaying_input);
+        if (!doc_view_data_alive(widget, v)) result = XUI_ERROR_INVALID_STATE;
+        else result = xuiDocumentRendererSetSnapshot(v->renderer, snapshot, NULL);
         if (result != XUI_OK) xuiDocumentUnsubscribe(document, subscription);
     }
     xuiDocumentSnapshotRelease(snapshot);
@@ -364,6 +409,9 @@ XUI_API int xuiDocumentViewSetSelection(xui_widget widget, const xui_doc_range_t
     doc_view_data* v = doc_view_get(widget); int result;
     if (!v || !range) return XUI_ERROR_INVALID_ARGUMENT;
     if (v->onBeforeSelection && (result = v->onBeforeSelection(widget)) != XUI_OK) return result;
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
+    doc_view_cancel_pointer(v, !v->replaying_input);
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
     return doc_view_set_selection(v, range);
 }
 XUI_API int xuiDocumentViewGetSelection(xui_widget widget, xui_doc_range_t* range)
@@ -386,6 +434,9 @@ XUI_API int xuiDocumentViewSelectObject(xui_widget widget, xui_doc_node_id node)
         return XUI_ERROR_UNSUPPORTED;
     if (v->onBeforeSelection && (result = v->onBeforeSelection(widget)) != XUI_OK)
         return result;
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
+    doc_view_cancel_pointer(v, !v->replaying_input);
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
     result = doc_view_sync(v); if (result != XUI_OK) return result;
     result = doc_view_object_range(v, node, &range);
     return result == XUI_OK ? doc_view_set_selection(v, &range) : result;
@@ -468,6 +519,9 @@ XUI_API int xuiDocumentViewSetTableSelection(xui_widget widget,
         return XUI_ERROR_INVALID_ARGUMENT;
     if (v->onBeforeSelection && (result = v->onBeforeSelection(widget)) != XUI_OK)
         return result;
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
+    doc_view_cancel_pointer(v, !v->replaying_input);
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
     return doc_view_set_table_selection(v, selection);
 }
 XUI_API int xuiDocumentViewGetTableSelection(xui_widget widget, xui_doc_table_selection_t* out)
@@ -508,11 +562,12 @@ XUI_API int xuiDocumentViewGetScroll(xui_widget widget, double* x, double* y)
 {
     doc_view_data* v = doc_view_get(widget); if (!v || !x || !y) return XUI_ERROR_INVALID_ARGUMENT; *x = v->scroll_x; *y = v->scroll_y; return XUI_OK;
 }
+static void doc_view_table_drag(doc_view_data* v, const xui_doc_cell_hit_t* hit);
 int doc_view_drag_autoscroll(doc_view_data* v, double dt)
 {
     xui_rect_t content; xui_doc_position_t hit;
     double dx = 0, dy = 0, before_x, before_y, x, y; int result;
-    if (!v || !v->dragging || !v->drag_pointer_active || v->table_selecting ||
+    if (!v || !v->dragging || !v->drag_pointer_active ||
         v->desc.bAutoHeight || dt <= 0) return XUI_OK;
     content = xuiWidgetGetContentRect(v->widget);
     if (content.fW <= 0 || content.fH <= 0) return XUI_OK;
@@ -527,6 +582,16 @@ int doc_view_drag_autoscroll(doc_view_data* v, double dt)
     if (result != XUI_OK || (before_x == v->scroll_x && before_y == v->scroll_y)) return result;
     x = fmin(fmax(x, content.fX), content.fX + content.fW - 1);
     y = fmin(fmax(y, content.fY), content.fY + content.fH - 1);
+    if (v->table_selecting) {
+        xui_doc_cell_hit_t cell = {0};
+        cell.iSize = sizeof(cell);
+        result = xuiDocumentViewHitTestCell(v->widget, x, y, &cell);
+        if (result == XUI_OK && cell.iTableId == v->table_anchor.iTableId) {
+            doc_view_table_drag(v, &cell);
+            v->pending_edit_events |= 2;
+        }
+        return result == XUI_ERROR_NOT_FOUND ? XUI_OK : result;
+    }
     result = xuiDocumentViewHitTest(v->widget, x, y, &hit);
     if (result == XUI_OK) { v->selection.tCaret = hit; v->pending_edit_events |= 2; }
     return result;
@@ -539,6 +604,8 @@ static int doc_view_rebuild_renderer(doc_view_data* v, float zoom, int prepare_o
     double next_x, next_y, width, viewport_height, ratio, anchor_screen_y, anchor_fraction = 0;
     size_t anchor_block = 0, i;
     int anchored = 0, track_prefix = 0, exact, result; unsigned pass;
+    doc_view_cancel_pointer(v, !v->replaying_input);
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
     result = prepare_old_layout ? doc_view_layout(v) : doc_view_sync(v);
     if (result != XUI_OK) return result;
     content = xuiWidgetGetContentRect(widget);
@@ -624,6 +691,7 @@ XUI_API int xuiDocumentViewSetZoom(xui_widget widget, float zoom)
     doc_view_data* v = doc_view_get(widget); int result;
     if (!v || !isfinite(zoom) || zoom < .1f || zoom > 10) return XUI_ERROR_INVALID_ARGUMENT;
     if (v->onBeforeSelection && (result = v->onBeforeSelection(widget)) != XUI_OK) return result;
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
     return doc_view_set_zoom(v, zoom);
 }
 XUI_API int xuiDocumentViewInvalidateFonts(xui_widget widget)
@@ -634,7 +702,7 @@ XUI_API int xuiDocumentViewInvalidateFonts(xui_widget widget)
     if (!v) return XUI_ERROR_INVALID_ARGUMENT;
     if (v->onBeforeSelection && (result = v->onBeforeSelection(widget)) != XUI_OK)
         return result;
-    if (!xuiInternalWidgetIsValid(widget)) return XUI_ERROR_INVALID_STATE;
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
     context = xuiWidgetGetContext(widget);
     metrics_changed = v->renderer->dpi_scale != xuiGetVirtualDpi(context) ||
         (v->uses_default_font && v->renderer->desc.tFonts.normal != xuiGetDefaultFont(context));
@@ -647,7 +715,9 @@ XUI_API int xuiDocumentViewSetMode(xui_widget widget, uint32_t mode)
     if (!v || (mode != XUI_DOC_VISUAL && mode != XUI_DOC_SOURCE_TEXT && mode != XUI_DOC_LIVE_MARKDOWN)) return XUI_ERROR_INVALID_ARGUMENT;
     if (v->renderer->mode == mode) return XUI_OK;
     if (v->onBeforeTransition && (result = v->onBeforeTransition(widget)) != XUI_OK) return result;
-    if (!xuiInternalWidgetIsValid(widget)) return XUI_ERROR_INVALID_STATE;
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
+    doc_view_cancel_pointer(v, !v->replaying_input);
+    if (!doc_view_data_alive(widget, v)) return XUI_ERROR_INVALID_STATE;
     result = doc_view_sync(v); if (result != XUI_OK) return result;
     mapped = v->selection;
     result = doc_view_map_range(v, mode, &mapped); if (result != XUI_OK) return result;
@@ -1078,6 +1148,37 @@ int doc_view_extend_table_selection(doc_view_data* v, int key)
     }
     return XUI_OK;
 }
+int doc_view_cursor(xui_widget widget, int x, int y, void* user)
+{
+    doc_view_data* v = doc_view_get(widget);
+    xui_rect_t world, content;
+    xui_doc_position_t hit = {0};
+    xui_doc_node_info_t info = {0};
+    double local_x, local_y;
+    int has_info;
+    (void)user;
+    if (!v) return XUI_CURSOR_INHERIT;
+    world = xuiWidgetGetWorldRect(widget);
+    content = xuiWidgetGetContentRect(widget);
+    local_x = x - world.fX;
+    local_y = y - world.fY;
+    if (local_x < content.fX || local_y < content.fY ||
+        local_x >= content.fX + content.fW || local_y >= content.fY + content.fH)
+        return XUI_CURSOR_INHERIT;
+    if (xuiDocumentViewHitTest(widget, local_x, local_y, &hit) != XUI_OK)
+        return XUI_CURSOR_ARROW;
+    info.iSize = sizeof(info);
+    has_info = hit.iNodeId &&
+        xuiDocumentSnapshotGetNode(v->renderer->snapshot, hit.iNodeId, &info) == XUI_OK;
+    if (v->desc.onActivate && has_info &&
+        (info.iKind == XUI_DOC_IMAGE || (info.tAttributes.iMarks & XUI_DOC_LINK)))
+        return XUI_CURSOR_HAND;
+    if (!v->desc.bDisableSelection &&
+        (v->renderer->mode != XUI_DOC_VISUAL || hit.iKind == XUI_DOC_POSITION_TEXT ||
+         (has_info && info.iKind == XUI_DOC_TEXT)))
+        return XUI_CURSOR_IBEAM;
+    return XUI_CURSOR_ARROW;
+}
 int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
 {
     doc_view_data* v = doc_view_get(widget); xui_rect_t world; xui_doc_position_t hit; int result;
@@ -1098,17 +1199,53 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
         if (event->iKey == 'A' || event->iKey == 'a') { xuiEditSelectAll(widget); return XUI_EVENT_DISPATCH_STOP; }
     }
     if (event->iType == XUI_EVENT_POINTER_WHEEL) {
-        if (event->iModifiers & XUI_MOD_CTRL) result = doc_view_set_zoom(v, fminf(10, fmaxf(.1f, v->renderer->desc.fZoom * (event->fWheelY > 0 ? 1.1f : 1 / 1.1f))));
-        else if (v->desc.bAutoHeight) return XUI_OK; /* Let the containing scroll host handle it. */
-        else result = doc_view_set_scroll(v, v->scroll_x - event->fWheelX * 48, v->scroll_y - event->fWheelY * 48);
-        if (result != XUI_OK) return result;
-        return XUI_EVENT_DISPATCH_STOP;
+        if (event->iModifiers & XUI_MOD_CTRL) {
+            double delta = event->fWheelY != 0 ? event->fWheelY : event->fWheelX;
+            float zoom;
+            if (delta == 0) return XUI_OK;
+            zoom = (float)fmin(10, fmax(.1,
+                v->renderer->desc.fZoom * pow(1.1, delta)));
+            result = doc_view_set_zoom(v, zoom);
+            if (result != XUI_OK) return result;
+            return XUI_EVENT_DISPATCH_STOP;
+        } else if (v->desc.bAutoHeight) return XUI_OK; /* Let the containing scroll host handle it. */
+        else {
+            xui_interaction_policy_t policy;
+            double before_x = v->scroll_x, before_y = v->scroll_y;
+            double dx, dy, step;
+            xuiInteractionPolicyDefault(&policy);
+            (void)xuiGetInteractionPolicy(xuiWidgetGetContext(widget), &policy);
+            step = 16.0 * policy.iWheelScrollLines;
+            if (event->iModifiers & XUI_MOD_SHIFT) {
+                dx = -((event->fWheelX != 0) ? event->fWheelX : event->fWheelY) * step;
+                dy = 0;
+            } else {
+                dx = -event->fWheelX * step;
+                dy = -event->fWheelY * step;
+            }
+            if (dx == 0 && dy == 0) return XUI_OK;
+            result = doc_view_set_scroll(v, before_x + dx, before_y + dy);
+            if (result != XUI_OK) return result;
+            return v->scroll_x != before_x || v->scroll_y != before_y ?
+                (int)XUI_EVENT_DISPATCH_STOP : XUI_OK;
+        }
     }
-    if (event->iType == XUI_EVENT_BLUR || event->iType == XUI_EVENT_POINTER_CAPTURE_LOST) {
-        v->dragging = 0; v->drag_pointer_active = 0; v->table_selecting = 0; v->pressed_node = 0; return XUI_OK;
+    if (event->iType == XUI_EVENT_BLUR) {
+        doc_view_cancel_pointer(v, !v->replaying_input); return XUI_OK;
+    }
+    if (event->iType == XUI_EVENT_POINTER_CAPTURE_LOST) {
+        if (doc_view_pointer_matches(v, event)) doc_view_cancel_pointer(v, 0);
+        return XUI_OK;
+    }
+    if (event->iType == XUI_EVENT_ENABLED_CHANGED || event->iType == XUI_EVENT_VISIBLE_CHANGED) {
+        if (!xuiWidgetGetEffectiveEnabled(widget) || !xuiWidgetGetEffectiveVisible(widget))
+            doc_view_cancel_pointer(v, !v->replaying_input);
+        return XUI_OK;
     }
     if (event->iType == XUI_EVENT_POINTER_DOWN && (event->iButton == XUI_POINTER_BUTTON_LEFT || !event->iButton)) {
         xui_doc_cell_hit_t cell = {0}; int table_drag = 0;
+        if (v->gesture_pointer_active)
+            return doc_view_pointer_matches(v, event) ? (int)XUI_EVENT_DISPATCH_STOP : XUI_OK;
         result = xuiDocumentViewHitTest(widget, event->fX - world.fX, event->fY - world.fY, &hit);
         if (result != XUI_OK) return result;
         if (!v->desc.bDisableSelection && v->renderer->mode == XUI_DOC_VISUAL &&
@@ -1117,7 +1254,18 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
             table_drag = xuiDocumentViewHitTestCell(widget,
                 event->fX - world.fX, event->fY - world.fY, &cell) == XUI_OK;
         }
-        if (!v->replaying_input) xuiSetFocusWidget(xuiWidgetGetContext(widget), widget);
+        if (!v->desc.bDisableSelection && !v->replaying_input) {
+            result = xuiSetFocusWidget(xuiWidgetGetContext(widget), widget);
+            if (result != XUI_OK) return result;
+            if (!doc_view_data_alive(widget, v)) return XUI_EVENT_DISPATCH_STOP;
+            result = xuiSetPointerCaptureEx(xuiWidgetGetContext(widget),
+                event->iPointerId, event->iPointerType, widget);
+            if (result != XUI_OK) return result;
+            if (!doc_view_data_alive(widget, v)) return XUI_EVENT_DISPATCH_STOP;
+        }
+        v->gesture_pointer_active = 1;
+        v->gesture_pointer_id = event->iPointerId;
+        v->gesture_pointer_type = event->iPointerType;
         v->pressed_node = table_drag ? 0 : hit.iNodeId;
         if (!v->desc.bDisableSelection) {
             if (table_drag) {
@@ -1139,7 +1287,6 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
             }
             v->dragging = 1; v->drag_pointer_active = 0;
             v->pending_edit_events |= 2;
-            if (!v->replaying_input) xuiSetPointerCaptureEx(xuiWidgetGetContext(widget), event->iPointerId, event->iPointerType, widget);
         }
         xuiWidgetInvalidate(widget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER |
             (v->renderer->mode == XUI_DOC_LIVE_MARKDOWN ? XUI_WIDGET_DIRTY_LAYOUT : 0)); return XUI_EVENT_DISPATCH_STOP;
@@ -1150,11 +1297,21 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
             (v->drag_pointer_x < content.fX || v->drag_pointer_x > content.fX + content.fW ||
              v->drag_pointer_y < content.fY || v->drag_pointer_y > content.fY + content.fH);
         int is_outside;
+        if (!doc_view_pointer_matches(v, event)) return XUI_OK;
+        if (!v->replaying_input && xuiGetPointerCaptureEx(xuiWidgetGetContext(widget),
+                event->iPointerId, event->iPointerType) != widget) {
+            doc_view_cancel_pointer(v, 0);
+            return XUI_OK;
+        }
         v->drag_pointer_x = event->fX - world.fX;
         v->drag_pointer_y = event->fY - world.fY;
         v->drag_pointer_active = 1;
         is_outside = v->drag_pointer_x < content.fX || v->drag_pointer_x > content.fX + content.fW ||
             v->drag_pointer_y < content.fY || v->drag_pointer_y > content.fY + content.fH;
+        if (is_outside && !was_outside) {
+            result = doc_view_drag_autoscroll(v, 1.0 / 60.0);
+            if (result != XUI_OK) return result;
+        }
         if (v->table_selecting) {
             xui_doc_cell_hit_t cell = {0}; cell.iSize = sizeof(cell);
             if (xuiDocumentViewHitTestCell(widget, event->fX - world.fX,
@@ -1164,10 +1321,6 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
             }
             xuiWidgetInvalidate(widget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
             return XUI_EVENT_DISPATCH_STOP;
-        }
-        if (is_outside && !was_outside) {
-            result = doc_view_drag_autoscroll(v, 1.0 / 60.0);
-            if (result != XUI_OK) return result;
         }
         {
             double x = fmin(fmax(v->drag_pointer_x, content.fX), content.fX + fmax(0, content.fW - 1));
@@ -1181,6 +1334,7 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
     if (event->iType == XUI_EVENT_POINTER_UP) {
         uint64_t pressed = v->pressed_node;
         int table_result = XUI_OK;
+        if (!doc_view_pointer_matches(v, event)) return XUI_OK;
         if (v->table_selecting && v->table_selection.iTableId) {
             xui_doc_cell_hit_t cell = {0}; cell.iSize = sizeof(cell);
             if (xuiDocumentViewHitTestCell(widget, event->fX - world.fX,
@@ -1196,18 +1350,19 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
             v->pending_edit_events |= 2;
             xuiWidgetInvalidate(widget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
         }
-        v->dragging = 0; v->drag_pointer_active = 0; v->table_selecting = 0; v->pressed_node = 0;
-        if (!v->replaying_input) xuiReleasePointerCaptureEx(xuiWidgetGetContext(widget), event->iPointerId, event->iPointerType, widget);
+        doc_view_cancel_pointer(v, !v->replaying_input);
+        if (!doc_view_data_alive(widget, v)) return XUI_EVENT_DISPATCH_STOP;
         if (table_result != XUI_OK) return table_result;
         if (pressed && v->desc.onActivate) {
             xui_doc_node_info_t info = {0}; info.iSize = sizeof(info);
             result = xuiDocumentViewHitTest(widget, event->fX - world.fX, event->fY - world.fY, &hit);
-            if (result == XUI_OK && hit.iNodeId == pressed && xuiDocumentSnapshotGetNode(v->renderer->snapshot, pressed, &info) == XUI_OK) {
+            if (result == XUI_OK && hit.iNodeId == pressed) {
                 xui_document_snapshot retained = v->renderer->snapshot;
                 xuiDocumentSnapshotRetain(retained);
-                v->desc.onActivate(widget, pressed,
-                    info.iKind == XUI_DOC_IMAGE && (info.tAttributes.iMarks & XUI_DOC_LINK) ?
-                        info.sLinkTarget : info.sResource, v->desc.pUser);
+                if (xuiDocumentSnapshotGetNode(retained, pressed, &info) == XUI_OK)
+                    v->desc.onActivate(widget, pressed,
+                        info.iKind == XUI_DOC_IMAGE && (info.tAttributes.iMarks & XUI_DOC_LINK) ?
+                            info.sLinkTarget : info.sResource, v->desc.pUser);
                 xuiDocumentSnapshotRelease(retained);
             }
         }
@@ -1221,7 +1376,7 @@ int doc_view_init(xui_widget widget, void* data, const void* create, void* user)
     (void)user;
     if (!desc || desc->iSize != sizeof(*desc) || !desc->pDocument) return XUI_ERROR_INVALID_ARGUMENT;
     v->widget = widget; v->desc = *desc;
-    if (!v->desc.iSelectionColor) v->desc.iSelectionColor = XUI_COLOR_RGBA(80, 140, 230, 100);
+    if (!v->desc.iSelectionColor) v->desc.iSelectionColor = XUI_COLOR_RGBA(74, 144, 239, 255);
     result = xuiDocumentRendererCreate(xuiWidgetGetContext(widget), desc->tRenderer.iSize ? &desc->tRenderer : NULL, &v->renderer);
     if (result != XUI_OK) return result;
     v->uses_default_font = !desc->tRenderer.iSize || !desc->tRenderer.tFonts.normal;
@@ -1230,7 +1385,9 @@ int doc_view_init(xui_widget widget, void* data, const void* create, void* user)
     if (result != XUI_OK) { xuiDocumentRendererRelease(v->renderer); v->renderer = NULL; return result; }
     xuiWidgetSetFocusable(widget, !desc->bDisableSelection); xuiWidgetSetTabStop(widget, !desc->bDisableSelection);
     result = doc_view_register_edit(widget, 0);
+    if (result == XUI_OK) result = xuiWidgetSetCancelAction(widget, doc_view_cancel_action, NULL);
     if (result == XUI_OK) result = xuiWidgetSetEventCallback(widget, doc_view_event, NULL);
+    if (result == XUI_OK) result = xuiWidgetSetCursorQueryCallback(widget, doc_view_cursor, NULL);
     if (result != XUI_OK) doc_view_destroy(widget, data, user);
     return result;
 }

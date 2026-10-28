@@ -3,6 +3,7 @@
 #include "xui.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -107,15 +108,26 @@ static void __xuiCodeLanguagePublish(xui_code_language_entry_t* pEntry)
 static int __xuiCodeLanguageReserve(xui_code_language_registry pRegistry, int iCapacity)
 {
 	xui_code_language_entry_t* pNew;
+	int iNewCapacity;
 
+	if ( pRegistry == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pRegistry->iCapacity ) return XUI_OK;
-	if ( iCapacity < pRegistry->iCapacity * 2 ) iCapacity = pRegistry->iCapacity * 2;
-	if ( iCapacity < 8 ) iCapacity = 8;
-	pNew = (xui_code_language_entry_t*)xrtRealloc(pRegistry->pEntries, sizeof(*pNew) * (size_t)iCapacity);
+	iNewCapacity = (pRegistry->iCapacity > 0) ? pRegistry->iCapacity : 8;
+	while ( iNewCapacity < iCapacity ) {
+		if ( iNewCapacity > INT_MAX / 2 ) {
+			iNewCapacity = iCapacity;
+			break;
+		}
+		iNewCapacity *= 2;
+	}
+	if ( (size_t)iNewCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_LIMIT_EXCEEDED;
+	pNew = (xui_code_language_entry_t*)xrtRealloc(pRegistry->pEntries,
+		sizeof(*pNew) * (size_t)iNewCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memset(pNew + pRegistry->iCapacity, 0, sizeof(*pNew) * (size_t)(iCapacity - pRegistry->iCapacity));
+	memset(pNew + pRegistry->iCapacity, 0,
+		sizeof(*pNew) * (size_t)(iNewCapacity - pRegistry->iCapacity));
 	pRegistry->pEntries = pNew;
-	pRegistry->iCapacity = iCapacity;
+	pRegistry->iCapacity = iNewCapacity;
 	return XUI_OK;
 }
 
@@ -125,6 +137,8 @@ static int __xuiCodeLanguageCopyEntry(xui_code_language_entry_t* pEntry, const x
 
 	memset(pEntry, 0, sizeof(*pEntry));
 	pEntry->tLanguage = *pLanguage;
+	pEntry->tLanguage.iExtensionCount = 0;
+	pEntry->tLanguage.iRegexRuleCount = 0;
 	pEntry->sId = __xuiCodeLanguageStrDup(pLanguage->sId);
 	pEntry->sName = __xuiCodeLanguageStrDup((pLanguage->sName != NULL) ? pLanguage->sName : pLanguage->sId);
 	pEntry->sLineComment = __xuiCodeLanguageStrDup(pLanguage->sLineComment);
@@ -141,6 +155,7 @@ static int __xuiCodeLanguageCopyEntry(xui_code_language_entry_t* pEntry, const x
 		for ( i = 0; i < pLanguage->iExtensionCount; i++ ) {
 			pEntry->pExtensions[i] = __xuiCodeLanguageStrDup(__xuiCodeLanguageNormalizeExtension(pLanguage->arrExtensions[i]));
 			if ( pEntry->pExtensions[i] == NULL ) goto oom;
+			pEntry->tLanguage.iExtensionCount++;
 		}
 	}
 	if ( pLanguage->iRegexRuleCount > 0 ) {
@@ -155,7 +170,9 @@ static int __xuiCodeLanguageCopyEntry(xui_code_language_entry_t* pEntry, const x
 			pEntry->pRegexRules[i] = pLanguage->pRegexRules[i];
 			pEntry->pRuleNames[i] = __xuiCodeLanguageStrDup(pLanguage->pRegexRules[i].sName);
 			pEntry->pRulePatterns[i] = __xuiCodeLanguageStrDup(pLanguage->pRegexRules[i].sPattern);
-			if ( pLanguage->pRegexRules[i].sPattern != NULL && pEntry->pRulePatterns[i] == NULL ) goto oom;
+			if ( (pLanguage->pRegexRules[i].sName != NULL && pEntry->pRuleNames[i] == NULL) ||
+			     pEntry->pRulePatterns[i] == NULL ) goto oom;
+			pEntry->tLanguage.iRegexRuleCount++;
 		}
 	}
 	__xuiCodeLanguagePublish(pEntry);
@@ -304,6 +321,13 @@ XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry
 	if ( (pRegistry == NULL) || (pLanguage == NULL) || (pLanguage->sId == NULL) || (pLanguage->sId[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pLanguage->iExtensionCount < 0 || (pLanguage->iExtensionCount > 0 && pLanguage->arrExtensions == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pLanguage->iRegexRuleCount < 0 || (pLanguage->iRegexRuleCount > 0 && pLanguage->pRegexRules == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < pLanguage->iExtensionCount; i++ ) {
+		const char* sExtension = __xuiCodeLanguageNormalizeExtension(pLanguage->arrExtensions[i]);
+		if ( sExtension == NULL || sExtension[0] == '\0' ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < pLanguage->iRegexRuleCount; i++ ) {
+		if ( pLanguage->pRegexRules[i].sPattern == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	iRet = __xuiCodeLanguageCopyEntry(&tEntry, pLanguage);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pRegistry->iCount; i++ ) {
@@ -312,6 +336,10 @@ XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry
 			pRegistry->pEntries[i] = tEntry;
 			return XUI_OK;
 		}
+	}
+	if ( pRegistry->iCount == INT_MAX ) {
+		__xuiCodeLanguageFreeEntry(&tEntry);
+		return XUI_ERROR_LIMIT_EXCEEDED;
 	}
 	iRet = __xuiCodeLanguageReserve(pRegistry, pRegistry->iCount + 1);
 	if ( iRet != XUI_OK ) {
@@ -372,14 +400,32 @@ XUI_API int xuiCodeLanguageRegistryFindByExtension(xui_code_language_registry pR
 
 XUI_API int xuiCodeLanguageLex(const xui_code_language_t* pLanguage, xui_code_document pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity)
 {
-	if ( (pLanguage == NULL) || (pDocument == NULL) || (pTokenCount == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet;
+
+	if ( (pLanguage == NULL) || (pDocument == NULL) || (pTokenCount == NULL) ||
+	     iTokenCapacity < 0 || (pTokens == NULL && iTokenCapacity > 0) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	*pTokenCount = 0;
 	__xuiCodeLanguageSetError(sError, iErrorCapacity, "");
-	if ( pLanguage->onLex != NULL ) return pLanguage->onLex(pDocument, iStartLine, iEndLine, pTokens, iTokenCapacity, pTokenCount, pLanguage->pUser);
+	if ( pLanguage->onLex != NULL ) {
+		iRet = pLanguage->onLex(pDocument, iStartLine, iEndLine, pTokens,
+			iTokenCapacity, pTokenCount, pLanguage->pUser);
+		if ( iRet == XUI_OK && *pTokenCount < 0 ) {
+			*pTokenCount = 0;
+			return XUI_ERROR_INVALID_STATE;
+		}
+		return iRet;
+	}
 	if ( pLanguage->iLexerType == XUI_CODE_LEXER_REGEX && pLanguage->pRegexRules != NULL ) {
-		return __xuiCodeLanguageRegexLexRange(pLanguage, pDocument,
+		iRet = __xuiCodeLanguageRegexLexRange(pLanguage, pDocument,
 			iStartLine, iEndLine, pTokens, iTokenCapacity, pTokenCount,
 			sError, iErrorCapacity);
+		if ( iRet == XUI_OK && *pTokenCount < 0 ) {
+			*pTokenCount = 0;
+			return XUI_ERROR_INVALID_STATE;
+		}
+		return iRet;
 	}
 	__xuiCodeLanguageSetError(sError, iErrorCapacity, "language has no lexer");
 	return XUI_ERROR_UNSUPPORTED;
@@ -387,9 +433,22 @@ XUI_API int xuiCodeLanguageLex(const xui_code_language_t* pLanguage, xui_code_do
 
 XUI_API int xuiCodeLanguageFold(const xui_code_language_t* pLanguage, xui_code_document pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount)
 {
-	if ( (pLanguage == NULL) || (pDocument == NULL) || (pRangeCount == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet;
+
+	if ( (pLanguage == NULL) || (pDocument == NULL) || (pRangeCount == NULL) ||
+	     iRangeCapacity < 0 || (pRanges == NULL && iRangeCapacity > 0) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	*pRangeCount = 0;
-	if ( pLanguage->onFold != NULL ) return pLanguage->onFold(pDocument, pRanges, iRangeCapacity, pRangeCount, pLanguage->pUser);
+	if ( pLanguage->onFold != NULL ) {
+		iRet = pLanguage->onFold(pDocument, pRanges, iRangeCapacity,
+			pRangeCount, pLanguage->pUser);
+		if ( iRet == XUI_OK && *pRangeCount < 0 ) {
+			*pRangeCount = 0;
+			return XUI_ERROR_INVALID_STATE;
+		}
+		return iRet;
+	}
 	return XUI_ERROR_UNSUPPORTED;
 }
 

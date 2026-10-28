@@ -2,24 +2,112 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
-#define XUI_CODE_THEME_STYLE_CAPACITY 128
-#define XUI_CODE_THEME_TOKEN_CAPACITY 128
+#define XUI_CODE_THEME_TOKEN_BUILTIN_COUNT (XUI_CODE_TOKEN_ERROR + 1)
+
+typedef struct xui_code_theme_style_entry_t {
+	int iStyleId;
+	xui_code_style_t tStyle;
+} xui_code_theme_style_entry_t;
+
+typedef struct xui_code_theme_token_entry_t {
+	int iTokenKind;
+	int iStyleId;
+} xui_code_theme_token_entry_t;
 
 struct xui_code_theme_t {
-	xui_code_style_t arrStyles[XUI_CODE_THEME_STYLE_CAPACITY];
-	int arrTokenStyle[XUI_CODE_THEME_TOKEN_CAPACITY];
+	xui_code_style_t arrStyles[XUI_CODE_STYLE_COUNT];
+	int arrTokenStyle[XUI_CODE_THEME_TOKEN_BUILTIN_COUNT];
+	xui_code_theme_style_entry_t* pCustomStyles;
+	int iCustomStyleCount;
+	int iCustomStyleCapacity;
+	xui_code_theme_token_entry_t* pCustomTokens;
+	int iCustomTokenCount;
+	int iCustomTokenCapacity;
 };
 
-static int __xuiCodeThemeStyleIndexValid(int iStyleId)
+static int __xuiCodeThemeStyleIdValid(int iStyleId)
 {
-	return iStyleId >= 0 && iStyleId < XUI_CODE_THEME_STYLE_CAPACITY;
+	return (iStyleId >= 0 && iStyleId < XUI_CODE_STYLE_COUNT) ||
+		iStyleId >= XUI_CODE_STYLE_CUSTOM_BASE;
 }
 
-static int __xuiCodeThemeTokenIndexValid(int iTokenKind)
+static int __xuiCodeThemeTokenKindValid(int iTokenKind)
 {
-	return iTokenKind >= 0 && iTokenKind < XUI_CODE_THEME_TOKEN_CAPACITY;
+	return (iTokenKind >= 0 && iTokenKind < XUI_CODE_THEME_TOKEN_BUILTIN_COUNT) ||
+		iTokenKind >= XUI_CODE_TOKEN_CUSTOM_BASE;
+}
+
+static int __xuiCodeThemeReserve(void** ppItems, int* pCapacity,
+	int iRequired, size_t iItemSize)
+{
+	void* pNew;
+	int iCapacity;
+
+	if ( ppItems == NULL || pCapacity == NULL || iRequired < 0 || iItemSize == 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iRequired <= *pCapacity ) return XUI_OK;
+	iCapacity = (*pCapacity > 0) ? *pCapacity : 8;
+	while ( iCapacity < iRequired ) {
+		if ( iCapacity > INT_MAX / 2 ) {
+			iCapacity = iRequired;
+			break;
+		}
+		iCapacity *= 2;
+	}
+	if ( (size_t)iCapacity > SIZE_MAX / iItemSize ) return XUI_ERROR_LIMIT_EXCEEDED;
+	pNew = xrtRealloc(*ppItems, (size_t)iCapacity * iItemSize);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	*ppItems = pNew;
+	*pCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static int __xuiCodeThemeFindStyle(xui_code_theme pTheme, int iStyleId,
+	int* pInsertIndex)
+{
+	int iLow;
+	int iHigh;
+
+	iLow = 0;
+	iHigh = pTheme->iCustomStyleCount;
+	while ( iLow < iHigh ) {
+		int iMiddle = iLow + (iHigh - iLow) / 2;
+		if ( pTheme->pCustomStyles[iMiddle].iStyleId < iStyleId ) iLow = iMiddle + 1;
+		else iHigh = iMiddle;
+	}
+	if ( pInsertIndex != NULL ) *pInsertIndex = iLow;
+	return iLow < pTheme->iCustomStyleCount &&
+		pTheme->pCustomStyles[iLow].iStyleId == iStyleId;
+}
+
+static int __xuiCodeThemeFindToken(xui_code_theme pTheme, int iTokenKind,
+	int* pInsertIndex)
+{
+	int iLow;
+	int iHigh;
+
+	iLow = 0;
+	iHigh = pTheme->iCustomTokenCount;
+	while ( iLow < iHigh ) {
+		int iMiddle = iLow + (iHigh - iLow) / 2;
+		if ( pTheme->pCustomTokens[iMiddle].iTokenKind < iTokenKind ) iLow = iMiddle + 1;
+		else iHigh = iMiddle;
+	}
+	if ( pInsertIndex != NULL ) *pInsertIndex = iLow;
+	return iLow < pTheme->iCustomTokenCount &&
+		pTheme->pCustomTokens[iLow].iTokenKind == iTokenKind;
+}
+
+static int __xuiCodeThemeStyleExists(xui_code_theme pTheme, int iStyleId)
+{
+	if ( iStyleId >= 0 && iStyleId < XUI_CODE_STYLE_COUNT ) return 1;
+	if ( iStyleId < XUI_CODE_STYLE_CUSTOM_BASE ) return 0;
+	return __xuiCodeThemeFindStyle(pTheme, iStyleId, NULL);
 }
 
 XUI_API int xuiCodeThemeCreate(xui_code_theme* ppTheme)
@@ -43,6 +131,9 @@ XUI_API int xuiCodeThemeCreate(xui_code_theme* ppTheme)
 
 XUI_API void xuiCodeThemeDestroy(xui_code_theme pTheme)
 {
+	if ( pTheme == NULL ) return;
+	xrtFree(pTheme->pCustomStyles);
+	xrtFree(pTheme->pCustomTokens);
 	xrtFree(pTheme);
 }
 
@@ -51,8 +142,16 @@ XUI_API int xuiCodeThemeSetDefault(xui_code_theme pTheme)
 	int i;
 
 	if ( pTheme == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	memset(pTheme, 0, sizeof(*pTheme));
-	for ( i = 0; i < XUI_CODE_THEME_STYLE_CAPACITY; i++ ) {
+	xrtFree(pTheme->pCustomStyles);
+	xrtFree(pTheme->pCustomTokens);
+	pTheme->pCustomStyles = NULL;
+	pTheme->iCustomStyleCount = 0;
+	pTheme->iCustomStyleCapacity = 0;
+	pTheme->pCustomTokens = NULL;
+	pTheme->iCustomTokenCount = 0;
+	pTheme->iCustomTokenCapacity = 0;
+	memset(pTheme->arrStyles, 0, sizeof(pTheme->arrStyles));
+	for ( i = 0; i < XUI_CODE_STYLE_COUNT; i++ ) {
 		pTheme->arrStyles[i].iSize = sizeof(pTheme->arrStyles[i]);
 		pTheme->arrStyles[i].iForeground = XUI_COLOR_RGBA(36, 41, 47, 255);
 		pTheme->arrStyles[i].iBackground = 0;
@@ -82,7 +181,9 @@ XUI_API int xuiCodeThemeSetDefault(xui_code_theme pTheme)
 	pTheme->arrStyles[XUI_CODE_STYLE_DIAGNOSTIC_ERROR].iForeground = XUI_COLOR_RGBA(207, 34, 46, 255);
 	pTheme->arrStyles[XUI_CODE_STYLE_DIAGNOSTIC_WARNING].iForeground = XUI_COLOR_RGBA(154, 103, 0, 255);
 	pTheme->arrStyles[XUI_CODE_STYLE_DIAGNOSTIC_INFO].iForeground = XUI_COLOR_RGBA(9, 105, 218, 255);
-	for ( i = 0; i < XUI_CODE_THEME_TOKEN_CAPACITY; i++ ) pTheme->arrTokenStyle[i] = XUI_CODE_STYLE_DEFAULT;
+	for ( i = 0; i < XUI_CODE_THEME_TOKEN_BUILTIN_COUNT; i++ ) {
+		pTheme->arrTokenStyle[i] = XUI_CODE_STYLE_DEFAULT;
+	}
 	pTheme->arrTokenStyle[XUI_CODE_TOKEN_KEYWORD] = XUI_CODE_STYLE_KEYWORD;
 	pTheme->arrTokenStyle[XUI_CODE_TOKEN_TYPE] = XUI_CODE_STYLE_TYPE;
 	pTheme->arrTokenStyle[XUI_CODE_TOKEN_IDENTIFIER] = XUI_CODE_STYLE_IDENTIFIER;
@@ -97,50 +198,154 @@ XUI_API int xuiCodeThemeSetDefault(xui_code_theme pTheme)
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeThemeSetStyle(xui_code_theme pTheme, int iStyleId, const xui_code_style_t* pStyle)
+XUI_API int xuiCodeThemeSetStyle(xui_code_theme pTheme, int iStyleId,
+	const xui_code_style_t* pStyle)
 {
-	if ( (pTheme == NULL) || !__xuiCodeThemeStyleIndexValid(iStyleId) || (pStyle == NULL) ) {
+	xui_code_style_t tStyle;
+	int iIndex;
+	int iRet;
+
+	if ( pTheme == NULL || !__xuiCodeThemeStyleIdValid(iStyleId) ||
+		pStyle == NULL || pStyle->iSize < sizeof(*pStyle) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pTheme->arrStyles[iStyleId] = *pStyle;
-	pTheme->arrStyles[iStyleId].iSize = sizeof(pTheme->arrStyles[iStyleId]);
+	tStyle = *pStyle;
+	tStyle.iSize = sizeof(tStyle);
+	if ( iStyleId < XUI_CODE_STYLE_COUNT ) {
+		pTheme->arrStyles[iStyleId] = tStyle;
+		return XUI_OK;
+	}
+	if ( __xuiCodeThemeFindStyle(pTheme, iStyleId, &iIndex) ) {
+		pTheme->pCustomStyles[iIndex].tStyle = tStyle;
+		return XUI_OK;
+	}
+	if ( pTheme->iCustomStyleCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iRet = __xuiCodeThemeReserve((void**)&pTheme->pCustomStyles,
+		&pTheme->iCustomStyleCapacity, pTheme->iCustomStyleCount + 1,
+		sizeof(*pTheme->pCustomStyles));
+	if ( iRet != XUI_OK ) return iRet;
+	memmove(&pTheme->pCustomStyles[iIndex + 1],
+		&pTheme->pCustomStyles[iIndex],
+		(size_t)(pTheme->iCustomStyleCount - iIndex) * sizeof(*pTheme->pCustomStyles));
+	pTheme->pCustomStyles[iIndex].iStyleId = iStyleId;
+	pTheme->pCustomStyles[iIndex].tStyle = tStyle;
+	pTheme->iCustomStyleCount++;
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeThemeGetStyle(xui_code_theme pTheme, int iStyleId, xui_code_style_t* pStyle)
+XUI_API int xuiCodeThemeGetStyle(xui_code_theme pTheme, int iStyleId,
+	xui_code_style_t* pStyle)
 {
-	if ( (pTheme == NULL) || !__xuiCodeThemeStyleIndexValid(iStyleId) || (pStyle == NULL) ) {
+	int iIndex;
+
+	if ( pTheme == NULL || !__xuiCodeThemeStyleIdValid(iStyleId) || pStyle == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*pStyle = pTheme->arrStyles[iStyleId];
+	if ( iStyleId < XUI_CODE_STYLE_COUNT ) {
+		*pStyle = pTheme->arrStyles[iStyleId];
+	} else {
+		if ( !__xuiCodeThemeFindStyle(pTheme, iStyleId, &iIndex) ) return XUI_ERROR_NOT_FOUND;
+		*pStyle = pTheme->pCustomStyles[iIndex].tStyle;
+	}
 	pStyle->iSize = sizeof(*pStyle);
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeThemeMapTokenKind(xui_code_theme pTheme, int iTokenKind, int iStyleId)
+XUI_API int xuiCodeThemeMapTokenKind(xui_code_theme pTheme, int iTokenKind,
+	int iStyleId)
 {
-	if ( (pTheme == NULL) || !__xuiCodeThemeTokenIndexValid(iTokenKind) || !__xuiCodeThemeStyleIndexValid(iStyleId) ) {
+	int iIndex;
+	int iRet;
+
+	if ( pTheme == NULL || !__xuiCodeThemeTokenKindValid(iTokenKind) ||
+		!__xuiCodeThemeStyleIdValid(iStyleId) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pTheme->arrTokenStyle[iTokenKind] = iStyleId;
+	if ( !__xuiCodeThemeStyleExists(pTheme, iStyleId) ) return XUI_ERROR_NOT_FOUND;
+	if ( iTokenKind < XUI_CODE_THEME_TOKEN_BUILTIN_COUNT ) {
+		pTheme->arrTokenStyle[iTokenKind] = iStyleId;
+		return XUI_OK;
+	}
+	if ( __xuiCodeThemeFindToken(pTheme, iTokenKind, &iIndex) ) {
+		pTheme->pCustomTokens[iIndex].iStyleId = iStyleId;
+		return XUI_OK;
+	}
+	if ( pTheme->iCustomTokenCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iRet = __xuiCodeThemeReserve((void**)&pTheme->pCustomTokens,
+		&pTheme->iCustomTokenCapacity, pTheme->iCustomTokenCount + 1,
+		sizeof(*pTheme->pCustomTokens));
+	if ( iRet != XUI_OK ) return iRet;
+	memmove(&pTheme->pCustomTokens[iIndex + 1],
+		&pTheme->pCustomTokens[iIndex],
+		(size_t)(pTheme->iCustomTokenCount - iIndex) * sizeof(*pTheme->pCustomTokens));
+	pTheme->pCustomTokens[iIndex].iTokenKind = iTokenKind;
+	pTheme->pCustomTokens[iIndex].iStyleId = iStyleId;
+	pTheme->iCustomTokenCount++;
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeThemeGetTokenStyle(xui_code_theme pTheme, int iTokenKind, xui_code_style_t* pStyle)
+XUI_API int xuiCodeThemeGetTokenStyle(xui_code_theme pTheme, int iTokenKind,
+	xui_code_style_t* pStyle)
 {
+	int iIndex;
 	int iStyleId;
 
-	if ( (pTheme == NULL) || !__xuiCodeThemeTokenIndexValid(iTokenKind) || (pStyle == NULL) ) {
+	if ( pTheme == NULL || !__xuiCodeThemeTokenKindValid(iTokenKind) || pStyle == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iStyleId = pTheme->arrTokenStyle[iTokenKind];
+	if ( iTokenKind < XUI_CODE_THEME_TOKEN_BUILTIN_COUNT ) {
+		iStyleId = pTheme->arrTokenStyle[iTokenKind];
+	} else if ( __xuiCodeThemeFindToken(pTheme, iTokenKind, &iIndex) ) {
+		iStyleId = pTheme->pCustomTokens[iIndex].iStyleId;
+	} else {
+		iStyleId = XUI_CODE_STYLE_DEFAULT;
+	}
 	return xuiCodeThemeGetStyle(pTheme, iStyleId, pStyle);
 }
 
 XUI_API int xuiCodeThemeCopy(xui_code_theme pDst, xui_code_theme pSrc)
 {
+	xui_code_theme_style_entry_t* pStyles;
+	xui_code_theme_token_entry_t* pTokens;
+
 	if ( pDst == NULL || pSrc == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	memcpy(pDst, pSrc, sizeof(*pDst));
+	if ( pDst == pSrc ) return XUI_OK;
+	pStyles = NULL;
+	pTokens = NULL;
+	if ( pSrc->iCustomStyleCount > 0 ) {
+		if ( (size_t)pSrc->iCustomStyleCount > SIZE_MAX / sizeof(*pStyles) ) {
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		pStyles = (xui_code_theme_style_entry_t*)xrtMalloc(
+			(size_t)pSrc->iCustomStyleCount * sizeof(*pStyles));
+		if ( pStyles == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		memcpy(pStyles, pSrc->pCustomStyles,
+			(size_t)pSrc->iCustomStyleCount * sizeof(*pStyles));
+	}
+	if ( pSrc->iCustomTokenCount > 0 ) {
+		if ( (size_t)pSrc->iCustomTokenCount > SIZE_MAX / sizeof(*pTokens) ) {
+			xrtFree(pStyles);
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		pTokens = (xui_code_theme_token_entry_t*)xrtMalloc(
+			(size_t)pSrc->iCustomTokenCount * sizeof(*pTokens));
+		if ( pTokens == NULL ) {
+			xrtFree(pStyles);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		memcpy(pTokens, pSrc->pCustomTokens,
+			(size_t)pSrc->iCustomTokenCount * sizeof(*pTokens));
+	}
+	xrtFree(pDst->pCustomStyles);
+	xrtFree(pDst->pCustomTokens);
+	memcpy(pDst->arrStyles, pSrc->arrStyles, sizeof(pDst->arrStyles));
+	memcpy(pDst->arrTokenStyle, pSrc->arrTokenStyle, sizeof(pDst->arrTokenStyle));
+	pDst->pCustomStyles = pStyles;
+	pDst->iCustomStyleCount = pSrc->iCustomStyleCount;
+	pDst->iCustomStyleCapacity = pSrc->iCustomStyleCount;
+	pDst->pCustomTokens = pTokens;
+	pDst->iCustomTokenCount = pSrc->iCustomTokenCount;
+	pDst->iCustomTokenCapacity = pSrc->iCustomTokenCount;
 	return XUI_OK;
 }
 

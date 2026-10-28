@@ -12,6 +12,8 @@
 #else
 #define XUI_WEBVIEW_INTERNAL_API
 #endif
+/* Runs synchronously on the WebView UI thread. Source and JSON are borrowed for
+ * this call only; the callback may close or destroy pWidget. */
 typedef void (*xui_webview_message_proc)(xui_widget pWidget, const char* sSource,
     const char* sJson, size_t iBytes, void* pUser);
 
@@ -37,6 +39,9 @@ XUI_WEBVIEW_INTERNAL_API int xuiWebViewEvalScriptAsync(xui_widget pWidget, const
     size_t iBytes, xui_web_request* ppRequest);
 XUI_WEBVIEW_INTERNAL_API int xuiWebViewCapturePngAsync(xui_widget pWidget,
     xui_web_request* ppRequest);
+/* Request state, cancellation and result access belong to the creating UI
+ * thread. Retain/release manage the handle lifetime; returned result storage is
+ * owned by the request and remains valid until its final release. */
 XUI_WEBVIEW_INTERNAL_API void xuiWebRequestRetain(xui_web_request pRequest);
 XUI_WEBVIEW_INTERNAL_API void xuiWebRequestRelease(xui_web_request pRequest);
 XUI_WEBVIEW_INTERNAL_API int xuiWebRequestGetState(xui_web_request pRequest);

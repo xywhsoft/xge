@@ -2,6 +2,9 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui.h"
 
+#include <float.h>
+#include <limits.h>
+#include <math.h>
 #include <string.h>
 
 struct xui_code_margin_model_t {
@@ -13,15 +16,32 @@ struct xui_code_margin_model_t {
 static int __xuiCodeMarginReserve(xui_code_margin_model pModel, int iCapacity)
 {
 	xui_code_margin_desc_t* pNew;
+	int iNewCapacity;
 
+	if ( pModel == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pModel->iCapacity ) return XUI_OK;
-	if ( iCapacity < pModel->iCapacity * 2 ) iCapacity = pModel->iCapacity * 2;
-	if ( iCapacity < 8 ) iCapacity = 8;
-	pNew = (xui_code_margin_desc_t*)xrtRealloc(pModel->pMargins, sizeof(*pNew) * (size_t)iCapacity);
+	iNewCapacity = (pModel->iCapacity > 0) ? pModel->iCapacity : 8;
+	while ( iNewCapacity < iCapacity ) {
+		if ( iNewCapacity > INT_MAX / 2 ) {
+			iNewCapacity = iCapacity;
+			break;
+		}
+		iNewCapacity *= 2;
+	}
+	if ( (size_t)iNewCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_LIMIT_EXCEEDED;
+	pNew = (xui_code_margin_desc_t*)xrtRealloc(pModel->pMargins,
+		sizeof(*pNew) * (size_t)iNewCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pModel->pMargins = pNew;
-	pModel->iCapacity = iCapacity;
+	pModel->iCapacity = iNewCapacity;
 	return XUI_OK;
+}
+
+static int __xuiCodeMarginRectValid(xui_rect_t tRect)
+{
+	return isfinite((double)tRect.fX) && isfinite((double)tRect.fY) &&
+		isfinite((double)tRect.fW) && isfinite((double)tRect.fH) &&
+		tRect.fW >= 0.0f && tRect.fH >= 0.0f;
 }
 
 static int __xuiCodeMarginFind(xui_code_margin_model pModel, int iId)
@@ -94,35 +114,44 @@ XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel)
 
 XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLineNumber, int bMarker, int bFold, int bDiagnostic)
 {
+	xui_code_margin_model_t tNew;
 	xui_code_margin_desc_t tDesc;
 	int iRet;
 
 	if ( pModel == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	xuiCodeMarginModelClear(pModel);
+	memset(&tNew, 0, sizeof(tNew));
 	tDesc = __xuiCodeMarginDefault(1, XUI_CODE_MARGIN_CHANGE, 4.0f, 0);
-	iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
-	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiCodeMarginModelAdd(&tNew, &tDesc);
+	if ( iRet != XUI_OK ) goto cleanup;
 	if ( bMarker ) {
 		tDesc = __xuiCodeMarginDefault(2, XUI_CODE_MARGIN_MARKER, 16.0f, XUI_CODE_MARGIN_CLICKABLE);
-		iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
-		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiCodeMarginModelAdd(&tNew, &tDesc);
+		if ( iRet != XUI_OK ) goto cleanup;
 	}
 	if ( bFold ) {
 		tDesc = __xuiCodeMarginDefault(3, XUI_CODE_MARGIN_FOLD, 14.0f, XUI_CODE_MARGIN_CLICKABLE);
-		iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
-		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiCodeMarginModelAdd(&tNew, &tDesc);
+		if ( iRet != XUI_OK ) goto cleanup;
 	}
 	if ( bLineNumber ) {
 		tDesc = __xuiCodeMarginDefault(4, XUI_CODE_MARGIN_LINE_NUMBER, 44.0f, 0);
-		iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
-		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiCodeMarginModelAdd(&tNew, &tDesc);
+		if ( iRet != XUI_OK ) goto cleanup;
 	}
 	if ( bDiagnostic ) {
 		tDesc = __xuiCodeMarginDefault(5, XUI_CODE_MARGIN_DIAGNOSTIC, 14.0f, XUI_CODE_MARGIN_CLICKABLE);
-		iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
-		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiCodeMarginModelAdd(&tNew, &tDesc);
+		if ( iRet != XUI_OK ) goto cleanup;
 	}
+	xrtFree(pModel->pMargins);
+	pModel->pMargins = tNew.pMargins;
+	pModel->iCount = tNew.iCount;
+	pModel->iCapacity = tNew.iCapacity;
 	return XUI_OK;
+
+cleanup:
+	xrtFree(tNew.pMargins);
+	return iRet;
 }
 
 XUI_API int xuiCodeMarginModelAdd(xui_code_margin_model pModel, const xui_code_margin_desc_t* pDesc)
@@ -130,13 +159,16 @@ XUI_API int xuiCodeMarginModelAdd(xui_code_margin_model pModel, const xui_code_m
 	int iIndex;
 	int iRet;
 
-	if ( (pModel == NULL) || (pDesc == NULL) || (pDesc->iId <= 0) || (pDesc->iKind <= 0) || (pDesc->fWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pModel == NULL) || (pDesc == NULL) || (pDesc->iId <= 0) ||
+	     (pDesc->iKind <= 0) || !isfinite((double)pDesc->fWidth) ||
+	     (pDesc->fWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeMarginFind(pModel, pDesc->iId);
 	if ( iIndex >= 0 ) {
 		pModel->pMargins[iIndex] = *pDesc;
 		pModel->pMargins[iIndex].iSize = sizeof(pModel->pMargins[iIndex]);
 		return XUI_OK;
 	}
+	if ( pModel->iCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 	iRet = __xuiCodeMarginReserve(pModel, pModel->iCount + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	pModel->pMargins[pModel->iCount] = *pDesc;
@@ -161,7 +193,8 @@ XUI_API int xuiCodeMarginModelSetWidth(xui_code_margin_model pModel, int iId, fl
 {
 	int iIndex;
 
-	if ( (pModel == NULL) || (iId <= 0) || (fWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pModel == NULL) || (iId <= 0) || !isfinite((double)fWidth) ||
+	     (fWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeMarginFind(pModel, iId);
 	if ( iIndex < 0 ) return XUI_ERROR_UNSUPPORTED;
 	pModel->pMargins[iIndex].fWidth = fWidth;
@@ -197,39 +230,41 @@ XUI_API int xuiCodeMarginModelGet(xui_code_margin_model pModel, int iIndex, xui_
 
 XUI_API int xuiCodeMarginModelGetTotalWidth(xui_code_margin_model pModel, float* pWidth)
 {
-	float fWidth;
+	double fWidth;
 	int i;
 
 	if ( (pModel == NULL) || (pWidth == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fWidth = 0.0f;
 	for ( i = 0; i < pModel->iCount; i++ ) {
-		if ( __xuiCodeMarginVisible(&pModel->pMargins[i]) ) fWidth += pModel->pMargins[i].fWidth;
+		if ( __xuiCodeMarginVisible(&pModel->pMargins[i]) ) {
+			fWidth += (double)pModel->pMargins[i].fWidth;
+			if ( fWidth > FLT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+		}
 	}
-	*pWidth = fWidth;
+	*pWidth = (float)fWidth;
 	return XUI_OK;
 }
 
 XUI_API int xuiCodeMarginModelGetRect(xui_code_margin_model pModel, int iId, xui_rect_t tViewport, xui_rect_t* pRect)
 {
-	xui_rect_t tTextRect;
-	xui_code_margin_info_t tInfo;
+	float fCurrentX;
 	int i;
-	int iCount;
-	int iRet;
 
-	if ( (pModel == NULL) || (iId <= 0) || (pRect == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = xuiCodeMarginModelLayout(pModel, tViewport, &tInfo, 1, &iCount, &tTextRect);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( (pModel == NULL) || (iId <= 0) || (pRect == NULL) ||
+	     !__xuiCodeMarginRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
+	fCurrentX = tViewport.fX;
 	for ( i = 0; i < pModel->iCount; i++ ) {
 		if ( pModel->pMargins[i].iId == iId ) {
-			float fX = tViewport.fX;
-			int j;
-			for ( j = 0; j < i; j++ ) {
-				if ( __xuiCodeMarginVisible(&pModel->pMargins[j]) ) fX += pModel->pMargins[j].fWidth;
-			}
 			if ( !__xuiCodeMarginVisible(&pModel->pMargins[i]) ) return XUI_ERROR_UNSUPPORTED;
-			*pRect = (xui_rect_t){ fX, tViewport.fY, pModel->pMargins[i].fWidth, tViewport.fH };
+			*pRect = (xui_rect_t){ fCurrentX, tViewport.fY,
+				pModel->pMargins[i].fWidth, tViewport.fH };
 			return XUI_OK;
+		}
+		if ( __xuiCodeMarginVisible(&pModel->pMargins[i]) ) {
+			if ( (double)fCurrentX + pModel->pMargins[i].fWidth > FLT_MAX ) {
+				return XUI_ERROR_LIMIT_EXCEEDED;
+			}
+			fCurrentX += pModel->pMargins[i].fWidth;
 		}
 	}
 	return XUI_ERROR_UNSUPPORTED;
@@ -238,25 +273,33 @@ XUI_API int xuiCodeMarginModelGetRect(xui_code_margin_model pModel, int iId, xui
 XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model pModel, xui_rect_t tViewport, xui_code_margin_info_t* pInfos, int iInfoCapacity, int* pInfoCount, xui_rect_t* pTextRect)
 {
 	xui_rect_t tRect;
-	float fX;
-	float fTotal;
+	double fX;
+	double fTotal;
 	int i;
 	int iCount;
 
-	if ( (pModel == NULL) || (pInfoCount == NULL) || (iInfoCapacity < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pModel == NULL) || (pInfoCount == NULL) || (iInfoCapacity < 0) ||
+	     (pInfos == NULL && iInfoCapacity > 0) ||
+	     !__xuiCodeMarginRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fX = tViewport.fX;
 	iCount = 0;
 	for ( i = 0; i < pModel->iCount; i++ ) {
 		if ( !__xuiCodeMarginVisible(&pModel->pMargins[i]) ) continue;
-		tRect = (xui_rect_t){ fX, tViewport.fY, pModel->pMargins[i].fWidth, tViewport.fH };
+		if ( fX > FLT_MAX || fX < -FLT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+		tRect = (xui_rect_t){ (float)fX, tViewport.fY,
+			pModel->pMargins[i].fWidth, tViewport.fH };
 		if ( pInfos != NULL && iCount < iInfoCapacity ) __xuiCodeMarginCopyInfo(&pInfos[iCount], &pModel->pMargins[i], tRect);
 		fX += pModel->pMargins[i].fWidth;
 		iCount++;
 	}
 	*pInfoCount = iCount;
 	if ( pTextRect != NULL ) {
-		fTotal = fX - tViewport.fX;
-		*pTextRect = (xui_rect_t){ tViewport.fX + fTotal, tViewport.fY, tViewport.fW - fTotal, tViewport.fH };
+		fTotal = fX - (double)tViewport.fX;
+		if ( fX > FLT_MAX || fX < -FLT_MAX || fTotal > FLT_MAX ) {
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		*pTextRect = (xui_rect_t){ (float)fX, tViewport.fY,
+			(float)((double)tViewport.fW - fTotal), tViewport.fH };
 		if ( pTextRect->fW < 0.0f ) pTextRect->fW = 0.0f;
 	}
 	return XUI_OK;
@@ -265,22 +308,35 @@ XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model pModel, xui_rect_t tV
 XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t tViewport, float fX, float fY, float fLineHeight, float fScrollY, xui_code_margin_hit_t* pHit)
 {
 	xui_rect_t tRect;
-	float fCurrentX;
+	double fCurrentX;
+	double fLine;
 	int i;
 
-	if ( (pModel == NULL) || (pHit == NULL) || (fLineHeight <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pModel == NULL) || (pHit == NULL) ||
+	     !__xuiCodeMarginRectValid(tViewport) ||
+	     !isfinite((double)fX) || !isfinite((double)fY) ||
+	     !isfinite((double)fLineHeight) || fLineHeight <= 0.0f ||
+	     !isfinite((double)fScrollY) || fScrollY < 0.0f ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	memset(pHit, 0, sizeof(*pHit));
 	pHit->iSize = sizeof(*pHit);
 	if ( fY < tViewport.fY || fY >= tViewport.fY + tViewport.fH ) return XUI_ERROR_UNSUPPORTED;
 	fCurrentX = tViewport.fX;
 	for ( i = 0; i < pModel->iCount; i++ ) {
 		if ( !__xuiCodeMarginVisible(&pModel->pMargins[i]) ) continue;
-		tRect = (xui_rect_t){ fCurrentX, tViewport.fY, pModel->pMargins[i].fWidth, tViewport.fH };
+		if ( fCurrentX > FLT_MAX || fCurrentX < -FLT_MAX ) {
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		tRect = (xui_rect_t){ (float)fCurrentX, tViewport.fY,
+			pModel->pMargins[i].fWidth, tViewport.fH };
 		if ( fX >= tRect.fX && fX < tRect.fX + tRect.fW ) {
 			pHit->iId = pModel->pMargins[i].iId;
 			pHit->iKind = pModel->pMargins[i].iKind;
 			pHit->iIndex = i;
-			pHit->iLine = (int)((fY - tViewport.fY + fScrollY) / fLineHeight);
+			fLine = ((double)fY - tViewport.fY + fScrollY) / fLineHeight;
+			if ( fLine < 0.0 || fLine > INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+			pHit->iLine = (int)fLine;
 			pHit->tRect = tRect;
 			return XUI_OK;
 		}

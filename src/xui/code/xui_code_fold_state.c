@@ -3,6 +3,7 @@
 #include "xui.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,7 +14,6 @@ struct xui_code_fold_state_t {
 	xui_code_range_t* pHiddenRanges;
 	int iHiddenRangeCount;
 	int iHiddenRangeCapacity;
-	int iHiddenTotal;
 	int bHiddenDirty;
 };
 
@@ -21,9 +21,12 @@ static int __xuiCodeFoldStateReserve(xui_code_fold_state pState, int iCapacity)
 {
 	xui_code_fold_range_t* pNew;
 
+	if ( pState == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pState->iRangeCapacity ) return XUI_OK;
-	if ( iCapacity < pState->iRangeCapacity * 2 ) iCapacity = pState->iRangeCapacity * 2;
+	if ( pState->iRangeCapacity <= INT_MAX / 2 &&
+	     iCapacity < pState->iRangeCapacity * 2 ) iCapacity = pState->iRangeCapacity * 2;
 	if ( iCapacity < 16 ) iCapacity = 16;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_OUT_OF_MEMORY;
 	pNew = (xui_code_fold_range_t*)xrtRealloc(pState->pRanges, sizeof(*pNew) * (size_t)iCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pState->pRanges = pNew;
@@ -35,9 +38,12 @@ static int __xuiCodeFoldStateReserveHidden(xui_code_fold_state pState, int iCapa
 {
 	xui_code_range_t* pNew;
 
+	if ( pState == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pState->iHiddenRangeCapacity ) return XUI_OK;
-	if ( iCapacity < pState->iHiddenRangeCapacity * 2 ) iCapacity = pState->iHiddenRangeCapacity * 2;
+	if ( pState->iHiddenRangeCapacity <= INT_MAX / 2 &&
+	     iCapacity < pState->iHiddenRangeCapacity * 2 ) iCapacity = pState->iHiddenRangeCapacity * 2;
 	if ( iCapacity < 16 ) iCapacity = 16;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_OUT_OF_MEMORY;
 	pNew = (xui_code_range_t*)xrtRealloc(pState->pHiddenRanges, sizeof(*pNew) * (size_t)iCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pState->pHiddenRanges = pNew;
@@ -89,19 +95,23 @@ static int __xuiCodeFoldStateBuildHidden(xui_code_fold_state pState)
 	int iRet;
 	int iStart;
 	int iEnd;
+	int iCollapsedCount;
 	int bMerge;
 
 	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !pState->bHiddenDirty ) return XUI_OK;
+	iCollapsedCount = 0;
+	for ( i = 0; i < pState->iRangeCount; i++ ) {
+		if ( (pState->pRanges[i].iFlags & XUI_CODE_FOLD_COLLAPSED) != 0 ) iCollapsedCount++;
+	}
+	iRet = __xuiCodeFoldStateReserveHidden(pState, iCollapsedCount);
+	if ( iRet != XUI_OK ) return iRet;
 	pState->iHiddenRangeCount = 0;
-	pState->iHiddenTotal = 0;
 	for ( i = 0; i < pState->iRangeCount; i++ ) {
 		if ( (pState->pRanges[i].iFlags & XUI_CODE_FOLD_COLLAPSED) == 0 ) continue;
 		iStart = pState->pRanges[i].iStartLine + 1;
 		iEnd = pState->pRanges[i].iEndLine;
 		if ( iEnd < iStart ) continue;
-		iRet = __xuiCodeFoldStateReserveHidden(pState, pState->iHiddenRangeCount + 1);
-		if ( iRet != XUI_OK ) return iRet;
 		pRange = &pState->pHiddenRanges[pState->iHiddenRangeCount++];
 		pRange->iStart = iStart;
 		pRange->iEnd = iEnd;
@@ -124,9 +134,6 @@ static int __xuiCodeFoldStateBuildHidden(xui_code_fold_state pState)
 			}
 		}
 		pState->iHiddenRangeCount = iOut;
-	}
-	for ( i = 0; i < pState->iHiddenRangeCount; i++ ) {
-		pState->iHiddenTotal += pState->pHiddenRanges[i].iEnd - pState->pHiddenRanges[i].iStart + 1;
 	}
 	pState->bHiddenDirty = 0;
 	return XUI_OK;
@@ -158,7 +165,6 @@ XUI_API void xuiCodeFoldStateClear(xui_code_fold_state pState)
 	if ( pState == NULL ) return;
 	pState->iRangeCount = 0;
 	pState->iHiddenRangeCount = 0;
-	pState->iHiddenTotal = 0;
 	pState->bHiddenDirty = 0;
 }
 
@@ -185,6 +191,8 @@ XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code
 
 XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine, int iEndLine, int iNewEndLine)
 {
+	int64_t iShiftedStart;
+	int64_t iShiftedEnd;
 	int i;
 	int iOut;
 	int iDelta;
@@ -192,6 +200,18 @@ XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine
 
 	if ( (pState == NULL) || (iStartLine < 0) || (iEndLine < iStartLine) || (iNewEndLine < iStartLine) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iDelta = iNewEndLine - iEndLine;
+	for ( i = 0; i < pState->iRangeCount; i++ ) {
+		tRange = pState->pRanges[i];
+		if ( tRange.iStartLine > iEndLine ) {
+			iShiftedStart = (int64_t)tRange.iStartLine + iDelta;
+			iShiftedEnd = (int64_t)tRange.iEndLine + iDelta;
+			if ( iShiftedStart < 0 || iShiftedStart > INT_MAX ||
+			     iShiftedEnd < 0 || iShiftedEnd > INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+		} else if ( iStartLine > tRange.iStartLine && iEndLine < tRange.iEndLine ) {
+			iShiftedEnd = (int64_t)tRange.iEndLine + iDelta;
+			if ( iShiftedEnd < 0 || iShiftedEnd > INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	}
 	iOut = 0;
 	for ( i = 0; i < pState->iRangeCount; i++ ) {
 		tRange = pState->pRanges[i];
@@ -220,23 +240,48 @@ XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine
 XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_code_document pDocument, xui_code_fold_proc onFold, void* pUser)
 {
 	xui_code_fold_range_t* pRanges;
+	int iCapacity;
 	int iCount;
+	int iAttempts;
 	int iRet;
 
 	if ( (pState == NULL) || (pDocument == NULL) || (onFold == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = onFold(pDocument, NULL, 0, &iCount, pUser);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( iCount < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	pRanges = NULL;
-	if ( iCount > 0 ) {
-		pRanges = (xui_code_fold_range_t*)xrtMalloc(sizeof(*pRanges) * (size_t)iCount);
-		if ( pRanges == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		iRet = onFold(pDocument, pRanges, iCount, &iCount, pUser);
-		if ( iRet != XUI_OK ) {
-			xrtFree(pRanges);
-			return iRet;
+	iCapacity = iCount;
+	iAttempts = 0;
+	while ( iCapacity > 0 ) {
+		xui_code_fold_range_t* pNew;
+		if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pRanges) ) {
+			iRet = XUI_ERROR_OUT_OF_MEMORY;
+			goto cleanup;
+		}
+		pNew = (xui_code_fold_range_t*)xrtRealloc(pRanges,
+			sizeof(*pRanges) * (size_t)iCapacity);
+		if ( pNew == NULL ) {
+			iRet = XUI_ERROR_OUT_OF_MEMORY;
+			goto cleanup;
+		}
+		pRanges = pNew;
+		iCount = iCapacity;
+		iRet = onFold(pDocument, pRanges, iCapacity, &iCount, pUser);
+		if ( iRet != XUI_OK ) goto cleanup;
+		if ( iCount < 0 ) {
+			iRet = XUI_ERROR_INVALID_ARGUMENT;
+			goto cleanup;
+		}
+		if ( iCount <= iCapacity ) break;
+		iCapacity = iCount;
+		if ( ++iAttempts >= 8 ) {
+			iRet = XUI_ERROR_RESOURCE_FAILED;
+			goto cleanup;
 		}
 	}
 	iRet = xuiCodeFoldStateSetRanges(pState, pRanges, iCount);
+
+cleanup:
 	xrtFree(pRanges);
 	return iRet;
 }
@@ -400,11 +445,11 @@ XUI_API int xuiCodeFoldStateVisibleRowToLine(xui_code_fold_state pState, int iLi
 			return XUI_OK;
 		}
 		iRemaining -= iVisibleSpan;
-		iCurrentLine = pState->pHiddenRanges[i].iEnd + 1;
-		if ( iCurrentLine < 0 || iCurrentLine > iLineCount ) {
+		if ( pState->pHiddenRanges[i].iEnd >= iLineCount - 1 ) {
 			iCurrentLine = iLineCount;
 			break;
 		}
+		iCurrentLine = pState->pHiddenRanges[i].iEnd + 1;
 	}
 	*pLine = iCurrentLine + iRemaining;
 	if ( *pLine >= iLineCount ) *pLine = iLineCount - 1;
@@ -414,6 +459,7 @@ XUI_API int xuiCodeFoldStateVisibleRowToLine(xui_code_fold_state pState, int iLi
 XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iLineCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount)
 {
 	int i;
+	int iHiddenIndex;
 	int iLine;
 	int iCount;
 	int iRet;
@@ -421,14 +467,24 @@ XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iL
 	if ( (pState == NULL) || (iLineCount < 0) || (iVisibleCapacity < 0) || (pVisibleCount == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = xuiCodeFoldStateGetVisibleLineCount(pState, iLineCount, &iCount);
 	if ( iRet != XUI_OK ) return iRet;
-	for ( i = 0; i < iCount; i++ ) {
-		if ( pVisibleLines != NULL && i < iVisibleCapacity ) {
-			iRet = xuiCodeFoldStateVisibleRowToLine(pState, iLineCount, i, &iLine);
-			if ( iRet != XUI_OK ) return iRet;
-			pVisibleLines[i] = iLine;
+	i = 0;
+	iLine = 0;
+	iHiddenIndex = 0;
+	while ( iLine < iLineCount ) {
+		while ( iHiddenIndex < pState->iHiddenRangeCount &&
+		       pState->pHiddenRanges[iHiddenIndex].iEnd < iLine ) iHiddenIndex++;
+		if ( iHiddenIndex < pState->iHiddenRangeCount &&
+		     iLine >= pState->pHiddenRanges[iHiddenIndex].iStart ) {
+			if ( pState->pHiddenRanges[iHiddenIndex].iEnd >= iLineCount - 1 ) break;
+			iLine = pState->pHiddenRanges[iHiddenIndex].iEnd + 1;
+			continue;
 		}
+		if ( pVisibleLines != NULL && i < iVisibleCapacity ) pVisibleLines[i] = iLine;
+		i++;
+		iLine++;
 	}
-	*pVisibleCount = iCount;
+	*pVisibleCount = i;
+	if ( i != iCount ) return XUI_ERROR_RESOURCE_FAILED;
 	return XUI_OK;
 }
 

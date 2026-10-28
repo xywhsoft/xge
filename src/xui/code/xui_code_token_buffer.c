@@ -3,6 +3,7 @@
 #include "xui.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
 struct xui_code_token_buffer_t {
@@ -18,7 +19,9 @@ static int __xuiCodeTokenBufferReserve(xui_code_token_buffer pBuffer, int iCapac
 {
 	xui_code_token_t* pNew;
 
+	if ( pBuffer == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pBuffer->iTokenCapacity ) return XUI_OK;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_OUT_OF_MEMORY;
 	pNew = (xui_code_token_t*)xrtRealloc(pBuffer->pTokens, sizeof(*pNew) * (size_t)iCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pBuffer->pTokens = pNew;
@@ -72,7 +75,13 @@ XUI_API int xuiCodeTokenBufferSetRange(xui_code_token_buffer pBuffer, const xui_
 
 	if ( (pBuffer == NULL) || (iTokenCount < 0) || (iTokenCount > 0 && pTokens == NULL) || (iRangeStart < 0) || (iRangeEnd < iRangeStart) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < iTokenCount; i++ ) {
-		if ( pTokens[i].iStartOffset < 0 || pTokens[i].iEndOffset <= pTokens[i].iStartOffset ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pTokens[i].iStartOffset < iRangeStart ||
+		     pTokens[i].iEndOffset <= pTokens[i].iStartOffset ||
+		     pTokens[i].iEndOffset > iRangeEnd ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( i > 0 && (pTokens[i].iStartOffset < pTokens[i - 1].iStartOffset ||
+		     pTokens[i].iEndOffset < pTokens[i - 1].iEndOffset) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
 	}
 	iRet = __xuiCodeTokenBufferReserve(pBuffer, iTokenCount);
 	if ( iRet != XUI_OK ) return iRet;

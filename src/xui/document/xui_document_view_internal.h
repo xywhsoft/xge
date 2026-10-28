@@ -26,6 +26,9 @@ typedef struct doc_view_data {
     double scroll_x, scroll_y;
     double drag_pointer_x, drag_pointer_y;
     int drag_pointer_active;
+    uint64_t gesture_pointer_id;
+    int gesture_pointer_type;
+    int gesture_pointer_active;
     int dragging, table_selecting, needs_sync, error;
     uint64_t pressed_node;
     xui_doc_change_proc onChanged; /* Subtype hook; called after base selection/layout mapping. */
@@ -64,6 +67,8 @@ int doc_view_set_table_selection(doc_view_data*, const xui_doc_table_selection_t
 int doc_view_extend_table_selection(doc_view_data*, int key);
 int doc_view_object_range(doc_view_data*, uint64_t, xui_doc_range_t*);
 int doc_view_event(xui_widget, const xui_event_t*, void*);
+int doc_view_cursor(xui_widget, int, int, void*);
+void doc_view_cancel_pointer(doc_view_data*, int);
 int doc_view_init(xui_widget, void*, const void*, void*);
 void doc_view_destroy(xui_widget, void*, void*);
 int doc_view_measure(xui_widget, xui_vec2_t, xui_vec2_t*, void*);

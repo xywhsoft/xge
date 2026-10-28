@@ -124,16 +124,19 @@ XUI_API int xuiCodeEditingInsertText(xui_code_document pDocument, xui_code_selec
 	int iStart;
 	int iEnd;
 	int iLength;
+	int iOldDocumentLength;
 	int iRet;
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iLength = (int)strlen(sText);
 	iRet = __xuiCodeEditingSelectionRange(pSelection, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
+	iOldDocumentLength = xuiCodeDocumentGetLength(pDocument);
 	iRet = xuiCodeDocumentReplace(pDocument, iStart, iEnd, sText);
 	if ( iRet != XUI_OK ) return iRet;
+	iLength = xuiCodeDocumentGetLength(pDocument) -
+		(iOldDocumentLength - (iEnd - iStart));
 	return xuiCodeSelectionGotoOffset(pSelection, pDocument, iStart + iLength, 0);
 }
 
@@ -241,7 +244,10 @@ XUI_API int xuiCodeEditingIndentSelection(xui_code_document pDocument, xui_code_
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( sIndent == NULL || sIndent[0] == '\0' ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sIndent == NULL || sIndent[0] == '\0' ||
+	     strchr(sIndent, '\r') != NULL || strchr(sIndent, '\n') != NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	iIndentLength = (int)strlen(sIndent);
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	if ( iRet != XUI_OK ) return iRet;
@@ -354,7 +360,10 @@ XUI_API int xuiCodeEditingToggleLineComment(xui_code_document pDocument, xui_cod
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( sLineComment == NULL || sLineComment[0] == '\0' ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sLineComment == NULL || sLineComment[0] == '\0' ||
+	     strchr(sLineComment, '\r') != NULL || strchr(sLineComment, '\n') != NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	iCommentLength = (int)strlen(sLineComment);
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	if ( iRet != XUI_OK ) return iRet;

@@ -24,6 +24,16 @@ static int __xuiCodeSearchClamp(int iValue, int iMin, int iMax)
 	return iValue;
 }
 
+static int __xuiCodeSearchNextBoundary(const char* sText, int iTextLength, int iOffset)
+{
+	int iNext;
+
+	if ( iOffset >= iTextLength ) return iTextLength;
+	iNext = xuiInternalTextGraphemeNext(sText, iTextLength, iOffset);
+	if ( iNext <= iOffset || iNext > iTextLength ) iNext = iOffset + 1;
+	return iNext;
+}
+
 static int __xuiCodeSearchUnicodeRead(void* pUser, int iOffset, unsigned char* pByte)
 {
 	char c;
@@ -32,6 +42,17 @@ static int __xuiCodeSearchUnicodeRead(void* pUser, int iOffset, unsigned char* p
 	if ( xuiCodeDocumentGetByte((xui_code_document)pUser, iOffset, &c) != XUI_OK ) return 0;
 	*pByte = (unsigned char)c;
 	return 1;
+}
+
+static int __xuiCodeSearchDocumentNextBoundary(xui_code_document pDocument, int iLength, int iOffset)
+{
+	int iNext;
+
+	if ( iOffset >= iLength ) return iLength;
+	iNext = xuiInternalTextGraphemeNextRead(__xuiCodeSearchUnicodeRead, pDocument,
+		iLength, iOffset);
+	if ( iNext <= iOffset || iNext > iLength ) iNext = iOffset + 1;
+	return iNext;
 }
 
 static int __xuiCodeSearchIsWholeWordDocument(xui_code_document pDocument, int iLength, int iStart, int iEnd)
@@ -156,12 +177,15 @@ cleanup:
 
 XUI_API int xuiCodeSearchFindPlain(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_range_t* pRange)
 {
+	size_t iPatternSize;
 	int iTextLength;
 	int iPatternLength;
 	int iRet;
 
 	if ( (pDocument == NULL) || (sPattern == NULL) || (pRange == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iPatternLength = (int)strlen(sPattern);
+	iPatternSize = strlen(sPattern);
+	if ( iPatternSize > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iPatternLength = (int)iPatternSize;
 	if ( iPatternLength <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iTextLength = xuiCodeDocumentGetLength(pDocument);
 	iStartOffset = __xuiCodeSearchClamp(iStartOffset, 0, iTextLength);
@@ -178,12 +202,15 @@ XUI_API int xuiCodeSearchFindPlain(xui_code_document pDocument, const char* sPat
 
 XUI_API int xuiCodeSearchFindPlainRange(xui_code_document pDocument, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_code_range_t* pRange)
 {
+	size_t iPatternSize;
 	int iTextLength;
 	int iPatternLength;
 	int iRet;
 
 	if ( (pDocument == NULL) || (sPattern == NULL) || (pRange == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iPatternLength = (int)strlen(sPattern);
+	iPatternSize = strlen(sPattern);
+	if ( iPatternSize > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iPatternLength = (int)iPatternSize;
 	if ( iPatternLength <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iTextLength = xuiCodeDocumentGetLength(pDocument);
 	iRangeStart = __xuiCodeSearchClamp(iRangeStart, 0, iTextLength);
@@ -250,15 +277,20 @@ static int __xuiCodeSearchFillRegexResult(xui_xrt_regex_t* pRegex, const char* s
 static int __xuiCodeSearchFindRegexForward(xui_xrt_regex_t* pRegex, const char* sText, int iTextLength, int iStartOffset, int iEndOffset, uint32_t iFlags, xui_code_search_result_t* pResult)
 {
 	xregexspan tSpan = { 0 };
+	int iNext;
 	int iPos;
 	int iRet;
 
 	iPos = iStartOffset;
 	while ( iPos <= iEndOffset ) {
-		iRet = xuiXrtRegexFindAt(pRegex, sText, (size_t)iTextLength, (size_t)iPos, &tSpan);
+		iRet = xuiXrtRegexFindAt(pRegex, sText, (size_t)iEndOffset, (size_t)iPos, &tSpan);
+		if ( iRet == XREGEX_ERROR ) return XUI_ERROR_INVALID_STATE;
 		if ( iRet != XREGEX_MATCH || (int)tSpan.Begin > iEndOffset ) return XUI_ERROR_UNSUPPORTED;
-		if ( __xuiCodeSearchFillRegexResult(pRegex, sText, iTextLength, tSpan, iFlags, pResult) == XUI_OK ) return XUI_OK;
-		iPos = ((int)tSpan.End > iPos) ? (int)tSpan.End : iPos + 1;
+		if ( (int)tSpan.End <= iEndOffset &&
+		     __xuiCodeSearchFillRegexResult(pRegex, sText, iTextLength, tSpan, iFlags, pResult) == XUI_OK ) return XUI_OK;
+		iNext = __xuiCodeSearchNextBoundary(sText, iTextLength, (int)tSpan.Begin);
+		if ( iNext <= (int)tSpan.Begin ) break;
+		iPos = iNext;
 	}
 	return XUI_ERROR_UNSUPPORTED;
 }
@@ -269,15 +301,19 @@ static int __xuiCodeSearchFindRegexBackward(xui_xrt_regex_t* pRegex, const char*
 	xui_code_search_result_t tCurrent;
 	int iPos;
 	int iFound;
+	int iRet;
 
 	iFound = 0;
 	iPos = iStartOffset;
-	while ( __xuiCodeSearchFindRegexForward(pRegex, sText, iTextLength, iPos, iEndOffset, iFlags & ~XUI_CODE_SEARCH_BACKWARD, &tCurrent) == XUI_OK ) {
+	while ( (iRet = __xuiCodeSearchFindRegexForward(pRegex, sText, iTextLength, iPos,
+		iEndOffset, iFlags & ~XUI_CODE_SEARCH_BACKWARD, &tCurrent)) == XUI_OK ) {
 		if ( tCurrent.iEnd > iEndOffset ) break;
 		tLast = tCurrent;
 		iFound = 1;
-		iPos = (tCurrent.iEnd > tCurrent.iStart) ? tCurrent.iEnd : tCurrent.iStart + 1;
+		iPos = __xuiCodeSearchNextBoundary(sText, iTextLength, tCurrent.iStart);
+		if ( iPos <= tCurrent.iStart ) break;
 	}
+	if ( iRet != XUI_ERROR_UNSUPPORTED && iRet != XUI_OK ) return iRet;
 	if ( !iFound ) return XUI_ERROR_UNSUPPORTED;
 	*pResult = tLast;
 	return XUI_OK;
@@ -286,6 +322,11 @@ static int __xuiCodeSearchFindRegexBackward(xui_xrt_regex_t* pRegex, const char*
 
 XUI_API int xuiCodeSearchFindRegex(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_search_result_t* pResult, char* sError, int iErrorCapacity)
 {
+	if ( pDocument == NULL ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "invalid argument");
+		if ( pResult != NULL ) memset(pResult, 0, sizeof(*pResult));
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	return xuiCodeSearchFindRegexRange(pDocument, sPattern, iStartOffset, 0,
 		xuiCodeDocumentGetLength(pDocument), iFlags, pResult, sError, iErrorCapacity);
 }
@@ -313,7 +354,12 @@ XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument,
 	int i;
 	int iRet;
 
-	if ( (pDocument == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') || (pResult == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiCodeSearchSetError(sError, iErrorCapacity, "");
+	if ( pResult != NULL ) memset(pResult, 0, sizeof(*pResult));
+	if ( (pDocument == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') || (pResult == NULL) ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "invalid argument");
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	iDocumentLength = xuiCodeDocumentGetLength(pDocument);
 	iRangeStart = __xuiCodeSearchClamp(iRangeStart, 0, iDocumentLength);
 	iRangeEnd = __xuiCodeSearchClamp(iRangeEnd, 0, iDocumentLength);
@@ -337,15 +383,14 @@ XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument,
 		return iRet;
 	}
 	iStartOffset = __xuiCodeSearchClamp(iStartOffset, iRangeStart, iRangeEnd) - iRangeStart;
-	memset(pResult, 0, sizeof(*pResult));
 	if ( (iFlags & XUI_CODE_SEARCH_BACKWARD) != 0 ) {
 		iRet = __xuiCodeSearchFindRegexBackward(pRegex, sText, iTextLength, 0, iStartOffset, iFlags, pResult);
-		if ( iRet != XUI_OK && (iFlags & XUI_CODE_SEARCH_WRAP) != 0 ) {
+		if ( iRet == XUI_ERROR_UNSUPPORTED && (iFlags & XUI_CODE_SEARCH_WRAP) != 0 ) {
 			iRet = __xuiCodeSearchFindRegexBackward(pRegex, sText, iTextLength, iStartOffset, iTextLength, iFlags, pResult);
 		}
 	} else {
 		iRet = __xuiCodeSearchFindRegexForward(pRegex, sText, iTextLength, iStartOffset, iTextLength, iFlags, pResult);
-		if ( iRet != XUI_OK && (iFlags & XUI_CODE_SEARCH_WRAP) != 0 ) {
+		if ( iRet == XUI_ERROR_UNSUPPORTED && (iFlags & XUI_CODE_SEARCH_WRAP) != 0 ) {
 			iRet = __xuiCodeSearchFindRegexForward(pRegex, sText, iTextLength, 0, iStartOffset, iFlags, pResult);
 		}
 	}
@@ -361,7 +406,10 @@ XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument,
 		}
 	}
 	xrtFree(sText);
-	__xuiCodeSearchSetError(sError, iErrorCapacity, (iRet == XUI_OK) ? "" : "not found");
+	if ( iRet == XUI_OK ) __xuiCodeSearchSetError(sError, iErrorCapacity, "");
+	else if ( iRet == XUI_ERROR_UNSUPPORTED ) __xuiCodeSearchSetError(sError, iErrorCapacity, "not found");
+	else if ( sError != NULL && iErrorCapacity > 0 && sError[0] == '\0' )
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "regex match failed");
 	return iRet;
 #endif
 }
@@ -369,40 +417,69 @@ XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument,
 XUI_API int xuiCodeSearchReplaceAllPlain(xui_code_document pDocument, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount)
 {
 	xui_code_range_t tRange;
+	size_t iReplacementSize;
 	int iCount;
 	int iOffset;
 	int iReplacementLength;
+	int iEndRet;
+	int iFindRet;
 	int iRet;
 
+	if ( pReplaceCount != NULL ) *pReplaceCount = 0;
 	if ( (pDocument == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') || (sReplacement == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iCount = 0;
 	iOffset = 0;
-	iReplacementLength = (int)strlen(sReplacement);
+	iReplacementSize = strlen(sReplacement);
+	if ( iReplacementSize > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iReplacementLength = (int)iReplacementSize;
 	iFlags &= ~XUI_CODE_SEARCH_BACKWARD;
 	iFlags &= ~XUI_CODE_SEARCH_WRAP;
 	iRet = xuiCodeDocumentBeginEdit(pDocument);
 	if ( iRet != XUI_OK ) return iRet;
-	while ( xuiCodeSearchFindPlain(pDocument, sPattern, iOffset, iFlags, &tRange) == XUI_OK ) {
+	for ( ;; ) {
+		iFindRet = xuiCodeSearchFindPlain(pDocument, sPattern, iOffset, iFlags, &tRange);
+		if ( iFindRet == XUI_ERROR_UNSUPPORTED ) break;
+		if ( iFindRet != XUI_OK ) {
+			iRet = iFindRet;
+			break;
+		}
 		iRet = xuiCodeDocumentReplace(pDocument, tRange.iStart, tRange.iEnd, sReplacement);
 		if ( iRet != XUI_OK ) break;
+		if ( iCount == INT_MAX ) {
+			iRet = XUI_ERROR_LIMIT_EXCEEDED;
+			break;
+		}
 		iCount++;
 		iOffset = tRange.iStart + iReplacementLength;
 	}
-	(void)xuiCodeDocumentEndEdit(pDocument);
+	iEndRet = xuiCodeDocumentEndEdit(pDocument);
+	if ( iRet == XUI_OK && iEndRet != XUI_OK ) iRet = iEndRet;
 	if ( pReplaceCount != NULL ) *pReplaceCount = iCount;
-	return (iRet == XUI_OK) ? XUI_OK : iRet;
+	return iRet;
 }
 
 #ifndef XRT_NO_REGEX
 static int __xuiCodeSearchAppend(char** psBuffer, int* pLength, int* pCapacity, const char* sText, int iTextLength)
 {
 	char* sNew;
+	int iRequired;
 	int iNewCapacity;
 
-	if ( iTextLength <= 0 ) return XUI_OK;
-	if ( *pLength + iTextLength + 1 > *pCapacity ) {
+	if ( psBuffer == NULL || pLength == NULL || pCapacity == NULL || iTextLength < 0 ||
+	     *pLength < 0 || *pCapacity < 0 || *pLength > *pCapacity ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iTextLength == 0 ) return XUI_OK;
+	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iTextLength > INT_MAX - *pLength - 1 ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iRequired = *pLength + iTextLength + 1;
+	if ( iRequired > *pCapacity ) {
 		iNewCapacity = (*pCapacity > 0) ? *pCapacity : 64;
-		while ( *pLength + iTextLength + 1 > iNewCapacity ) iNewCapacity *= 2;
+		while ( iRequired > iNewCapacity ) {
+			if ( iNewCapacity > INT_MAX / 2 ) {
+				iNewCapacity = iRequired;
+				break;
+			}
+			iNewCapacity *= 2;
+		}
 		sNew = (char*)xrtRealloc(*psBuffer, (size_t)iNewCapacity);
 		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		*psBuffer = sNew;
@@ -461,14 +538,26 @@ XUI_API int xuiCodeSearchReplaceAllRegex(xui_code_document pDocument, const char
 	xui_code_search_result_t tResult;
 	char* sText;
 	char* sOutput;
+	size_t iReplacementLength;
 	int iTextLength;
 	int iLength;
 	int iCapacity;
 	int iPos;
+	int iNext;
 	int iCount;
 	int iRet;
 
-	if ( (pDocument == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') || (sReplacement == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiCodeSearchSetError(sError, iErrorCapacity, "");
+	if ( pReplaceCount != NULL ) *pReplaceCount = 0;
+	if ( (pDocument == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') || (sReplacement == NULL) ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "invalid argument");
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iReplacementLength = strlen(sReplacement);
+	if ( iReplacementLength > (size_t)INT_MAX ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "replacement is too large");
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
 	iRet = __xuiCodeSearchCreateRegex(&pRegex, sPattern, iFlags, sError, iErrorCapacity);
 	if ( iRet != XUI_OK ) return iRet;
 	iTextLength = xuiCodeDocumentGetLength(pDocument);
@@ -487,12 +576,36 @@ XUI_API int xuiCodeSearchReplaceAllRegex(xui_code_document pDocument, const char
 	iCount = 0;
 	iFlags &= ~XUI_CODE_SEARCH_BACKWARD;
 	iFlags &= ~XUI_CODE_SEARCH_WRAP;
-	while ( __xuiCodeSearchFindRegexForward(pRegex, sText, iTextLength, iPos, iTextLength, iFlags, &tResult) == XUI_OK ) {
+	for ( ;; ) {
+		iRet = __xuiCodeSearchFindRegexForward(pRegex, sText, iTextLength, iPos,
+			iTextLength, iFlags, &tResult);
+		if ( iRet == XUI_ERROR_UNSUPPORTED ) break;
+		if ( iRet != XUI_OK ) goto cleanup;
 		iRet = __xuiCodeSearchAppend(&sOutput, &iLength, &iCapacity, sText + iPos, tResult.iStart - iPos);
 		if ( iRet == XUI_OK ) iRet = __xuiCodeSearchAppendReplacement(&sOutput, &iLength, &iCapacity, sReplacement, sText, &tResult);
 		if ( iRet != XUI_OK ) goto cleanup;
+		if ( iCount == INT_MAX ) {
+			iRet = XUI_ERROR_LIMIT_EXCEEDED;
+			goto cleanup;
+		}
 		iCount++;
-		iPos = (tResult.iEnd > tResult.iStart) ? tResult.iEnd : tResult.iStart + 1;
+		if ( tResult.iEnd > tResult.iStart ) {
+			iPos = tResult.iEnd;
+		} else {
+			iNext = __xuiCodeSearchNextBoundary(sText, iTextLength, tResult.iStart);
+			if ( iNext > tResult.iStart ) {
+				iRet = __xuiCodeSearchAppend(&sOutput, &iLength, &iCapacity,
+					sText + tResult.iStart, iNext - tResult.iStart);
+				if ( iRet != XUI_OK ) goto cleanup;
+			}
+			iPos = iNext;
+			if ( tResult.iStart >= iTextLength ) break;
+		}
+	}
+	if ( iCount == 0 ) {
+		iRet = XUI_OK;
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "");
+		goto cleanup;
 	}
 	iRet = __xuiCodeSearchAppend(&sOutput, &iLength, &iCapacity, sText + iPos, iTextLength - iPos);
 	if ( iRet != XUI_OK ) goto cleanup;
@@ -504,6 +617,10 @@ cleanup:
 	xuiXrtRegexDestroy(pRegex);
 	xrtFree(sText);
 	xrtFree(sOutput);
+	if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) __xuiCodeSearchSetError(sError, iErrorCapacity, "out of memory");
+	else if ( iRet == XUI_ERROR_LIMIT_EXCEEDED ) __xuiCodeSearchSetError(sError, iErrorCapacity, "result is too large");
+	else if ( iRet == XUI_ERROR_INVALID_STATE && sError != NULL && iErrorCapacity > 0 && sError[0] == '\0' )
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "regex match failed");
 	return iRet;
 #endif
 }
@@ -523,22 +640,30 @@ XUI_API int xuiCodeSearchClearResultIndicators(xui_code_annotation_store pStore,
 XUI_API int xuiCodeSearchMarkAllPlain(xui_code_document pDocument, xui_code_annotation_store pStore, const char* sPattern, uint32_t iFlags, int iIndicator, int* pMatchCount)
 {
 	xui_code_range_t tRange;
+	size_t iPatternSize;
 	int iOffset;
 	int iCount;
 	int iPatternLength;
 	int iRet;
 
+	if ( pMatchCount != NULL ) *pMatchCount = 0;
 	if ( (pDocument == NULL) || (pStore == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndicator = __xuiCodeSearchIndicatorId(iIndicator);
 	(void)xuiCodeAnnotationClearIndicators(pStore, iIndicator);
 	iFlags &= ~XUI_CODE_SEARCH_BACKWARD;
 	iFlags &= ~XUI_CODE_SEARCH_WRAP;
-	iPatternLength = (int)strlen(sPattern);
+	iPatternSize = strlen(sPattern);
+	if ( iPatternSize > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iPatternLength = (int)iPatternSize;
 	iOffset = 0;
 	iCount = 0;
-	while ( xuiCodeSearchFindPlain(pDocument, sPattern, iOffset, iFlags, &tRange) == XUI_OK ) {
+	for ( ;; ) {
+		iRet = xuiCodeSearchFindPlain(pDocument, sPattern, iOffset, iFlags, &tRange);
+		if ( iRet == XUI_ERROR_UNSUPPORTED ) break;
+		if ( iRet != XUI_OK ) return iRet;
 		iRet = xuiCodeAnnotationSetIndicator(pStore, iIndicator, XUI_CODE_INDICATOR_BACKGROUND, tRange.iStart, tRange.iEnd, 0u, 0u);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( iCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 		iCount++;
 		iOffset = tRange.iEnd;
 		if ( iOffset <= tRange.iStart ) iOffset = tRange.iStart + iPatternLength;
@@ -551,24 +676,37 @@ XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_anno
 {
 	xui_code_search_result_t tResult;
 	int iOffset;
+	int iNext;
 	int iCount;
 	int iRet;
 
-	if ( (pDocument == NULL) || (pStore == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiCodeSearchSetError(sError, iErrorCapacity, "");
+	if ( pMatchCount != NULL ) *pMatchCount = 0;
+	if ( (pDocument == NULL) || (pStore == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "invalid argument");
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	iIndicator = __xuiCodeSearchIndicatorId(iIndicator);
 	(void)xuiCodeAnnotationClearIndicators(pStore, iIndicator);
 	iFlags &= ~XUI_CODE_SEARCH_BACKWARD;
 	iFlags &= ~XUI_CODE_SEARCH_WRAP;
 	iOffset = 0;
 	iCount = 0;
-	while ( xuiCodeSearchFindRegex(pDocument, sPattern, iOffset, iFlags, &tResult, sError, iErrorCapacity) == XUI_OK ) {
+	for ( ;; ) {
+		iRet = xuiCodeSearchFindRegex(pDocument, sPattern, iOffset, iFlags,
+			&tResult, sError, iErrorCapacity);
+		if ( iRet == XUI_ERROR_UNSUPPORTED ) break;
+		if ( iRet != XUI_OK ) return iRet;
 		if ( tResult.iEnd > tResult.iStart ) {
 			iRet = xuiCodeAnnotationSetIndicator(pStore, iIndicator, XUI_CODE_INDICATOR_BACKGROUND, tResult.iStart, tResult.iEnd, 0u, 0u);
 			if ( iRet != XUI_OK ) return iRet;
 			iCount++;
 			iOffset = tResult.iEnd;
 		} else {
-			iOffset = tResult.iStart + 1;
+			iNext = __xuiCodeSearchDocumentNextBoundary(pDocument,
+				xuiCodeDocumentGetLength(pDocument), tResult.iStart);
+			if ( iNext <= tResult.iStart ) break;
+			iOffset = iNext;
 		}
 		if ( iOffset > xuiCodeDocumentGetLength(pDocument) ) break;
 	}

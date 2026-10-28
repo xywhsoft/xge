@@ -2,6 +2,8 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
 struct xui_code_command_map_t {
@@ -10,14 +12,71 @@ struct xui_code_command_map_t {
 	int iCapacity;
 };
 
+typedef struct xui_code_default_binding_t {
+	int iKey;
+	uint32_t iModifiers;
+	int iCommand;
+} xui_code_default_binding_t;
+
+static const xui_code_default_binding_t g_arrXuiCodeDefaultBindings[] = {
+	{XUI_KEY_LEFT, 0, XUI_CODE_COMMAND_MOVE_LEFT},
+	{XUI_KEY_RIGHT, 0, XUI_CODE_COMMAND_MOVE_RIGHT},
+	{XUI_KEY_UP, 0, XUI_CODE_COMMAND_MOVE_UP},
+	{XUI_KEY_DOWN, 0, XUI_CODE_COMMAND_MOVE_DOWN},
+	{XUI_KEY_LEFT, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_WORD_LEFT},
+	{XUI_KEY_RIGHT, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_WORD_RIGHT},
+	{XUI_KEY_LEFT, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_LEFT},
+	{XUI_KEY_RIGHT, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_RIGHT},
+	{XUI_KEY_UP, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_UP},
+	{XUI_KEY_DOWN, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_DOWN},
+	{XUI_KEY_LEFT, XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_WORD_LEFT},
+	{XUI_KEY_RIGHT, XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_WORD_RIGHT},
+	{XUI_KEY_HOME, 0, XUI_CODE_COMMAND_MOVE_LINE_START},
+	{XUI_KEY_END, 0, XUI_CODE_COMMAND_MOVE_LINE_END},
+	{XUI_KEY_HOME, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_LINE_START},
+	{XUI_KEY_END, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_LINE_END},
+	{XUI_KEY_PAGE_UP, 0, XUI_CODE_COMMAND_MOVE_PAGE_UP},
+	{XUI_KEY_PAGE_DOWN, 0, XUI_CODE_COMMAND_MOVE_PAGE_DOWN},
+	{XUI_KEY_PAGE_UP, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_PAGE_UP},
+	{XUI_KEY_PAGE_DOWN, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_PAGE_DOWN},
+	{XUI_KEY_HOME, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_DOCUMENT_START},
+	{XUI_KEY_END, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_DOCUMENT_END},
+	{XUI_KEY_HOME, XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_DOCUMENT_START},
+	{XUI_KEY_END, XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_DOCUMENT_END},
+	{XUI_KEY_BACKSPACE, 0, XUI_CODE_COMMAND_DELETE_BACK},
+	{XUI_KEY_DELETE, 0, XUI_CODE_COMMAND_DELETE_FORWARD},
+	{XUI_KEY_BACKSPACE, XUI_MOD_CTRL, XUI_CODE_COMMAND_DELETE_WORD_BACK},
+	{XUI_KEY_DELETE, XUI_MOD_CTRL, XUI_CODE_COMMAND_DELETE_WORD_FORWARD},
+	{XUI_KEY_ENTER, 0, XUI_CODE_COMMAND_INSERT_NEWLINE},
+	{XUI_KEY_TAB, 0, XUI_CODE_COMMAND_INSERT_TAB},
+	{XUI_KEY_TAB, XUI_MOD_SHIFT, XUI_CODE_COMMAND_OUTDENT},
+	{'A', XUI_MOD_CTRL, XUI_CODE_COMMAND_SELECT_ALL},
+	{'C', XUI_MOD_CTRL, XUI_CODE_COMMAND_COPY},
+	{'X', XUI_MOD_CTRL, XUI_CODE_COMMAND_CUT},
+	{'V', XUI_MOD_CTRL, XUI_CODE_COMMAND_PASTE},
+	{'Z', XUI_MOD_CTRL, XUI_CODE_COMMAND_UNDO},
+	{'Y', XUI_MOD_CTRL, XUI_CODE_COMMAND_REDO},
+	{'Z', XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_REDO},
+	{'F', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_FIND},
+	{'H', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_REPLACE},
+	{'G', XUI_MOD_CTRL, XUI_CODE_COMMAND_GOTO_LINE},
+	{XUI_KEY_SPACE, XUI_MOD_CTRL, XUI_CODE_COMMAND_SHOW_COMPLETION},
+	{'/', XUI_MOD_CTRL, XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT},
+	{XUI_KEY_F3, 0, XUI_CODE_COMMAND_FIND_NEXT},
+	{XUI_KEY_F3, XUI_MOD_SHIFT, XUI_CODE_COMMAND_FIND_PREVIOUS}
+};
+
 static int __xuiCodeCommandMapReserve(xui_code_command_map pMap, int iCapacity)
 {
 	xui_code_key_binding_t* pNew;
 
-	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pMap == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pMap->iCapacity ) return XUI_OK;
-	if ( iCapacity < pMap->iCapacity * 2 ) iCapacity = pMap->iCapacity * 2;
+	if ( pMap->iCapacity <= INT_MAX / 2 && iCapacity < pMap->iCapacity * 2 ) {
+		iCapacity = pMap->iCapacity * 2;
+	}
 	if ( iCapacity < 16 ) iCapacity = 16;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_OUT_OF_MEMORY;
 	pNew = (xui_code_key_binding_t*)xrtRealloc(pMap->pBindings, sizeof(*pNew) * (size_t)iCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pMap->pBindings = pNew;
@@ -121,51 +180,26 @@ XUI_API int xuiCodeCommandMapGetBinding(xui_code_command_map pMap, int iIndex, x
 
 XUI_API int xuiCodeCommandMapLoadDefaults(xui_code_command_map pMap)
 {
+	xui_code_key_binding_t* pBindings;
+	int iCount;
+	int i;
+
 	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pMap->iCount = 0;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_LEFT, 0, XUI_CODE_COMMAND_MOVE_LEFT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_RIGHT, 0, XUI_CODE_COMMAND_MOVE_RIGHT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_UP, 0, XUI_CODE_COMMAND_MOVE_UP) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_DOWN, 0, XUI_CODE_COMMAND_MOVE_DOWN) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_LEFT, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_WORD_LEFT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_RIGHT, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_WORD_RIGHT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_LEFT, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_LEFT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_RIGHT, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_RIGHT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_UP, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_UP) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_DOWN, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_DOWN) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_HOME, 0, XUI_CODE_COMMAND_MOVE_LINE_START) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_END, 0, XUI_CODE_COMMAND_MOVE_LINE_END) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_HOME, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_LINE_START) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_END, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_LINE_END) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_PAGE_UP, 0, XUI_CODE_COMMAND_MOVE_PAGE_UP) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_PAGE_DOWN, 0, XUI_CODE_COMMAND_MOVE_PAGE_DOWN) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_PAGE_UP, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_PAGE_UP) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_PAGE_DOWN, XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_PAGE_DOWN) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_HOME, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_DOCUMENT_START) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_END, XUI_MOD_CTRL, XUI_CODE_COMMAND_MOVE_DOCUMENT_END) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_HOME, XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_DOCUMENT_START) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_END, XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_SELECT_DOCUMENT_END) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_BACKSPACE, 0, XUI_CODE_COMMAND_DELETE_BACK) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_DELETE, 0, XUI_CODE_COMMAND_DELETE_FORWARD) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_BACKSPACE, XUI_MOD_CTRL, XUI_CODE_COMMAND_DELETE_WORD_BACK) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_DELETE, XUI_MOD_CTRL, XUI_CODE_COMMAND_DELETE_WORD_FORWARD) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_ENTER, 0, XUI_CODE_COMMAND_INSERT_NEWLINE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_TAB, 0, XUI_CODE_COMMAND_INSERT_TAB) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_TAB, XUI_MOD_SHIFT, XUI_CODE_COMMAND_OUTDENT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'A', XUI_MOD_CTRL, XUI_CODE_COMMAND_SELECT_ALL) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'C', XUI_MOD_CTRL, XUI_CODE_COMMAND_COPY) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'X', XUI_MOD_CTRL, XUI_CODE_COMMAND_CUT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'V', XUI_MOD_CTRL, XUI_CODE_COMMAND_PASTE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'Z', XUI_MOD_CTRL, XUI_CODE_COMMAND_UNDO) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'Y', XUI_MOD_CTRL, XUI_CODE_COMMAND_REDO) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'Z', XUI_MOD_CTRL | XUI_MOD_SHIFT, XUI_CODE_COMMAND_REDO) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'F', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_FIND) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'H', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_REPLACE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'G', XUI_MOD_CTRL, XUI_CODE_COMMAND_GOTO_LINE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_SPACE, XUI_MOD_CTRL, XUI_CODE_COMMAND_SHOW_COMPLETION) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, '/', XUI_MOD_CTRL, XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_F3, 0, XUI_CODE_COMMAND_FIND_NEXT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_F3, XUI_MOD_SHIFT, XUI_CODE_COMMAND_FIND_PREVIOUS) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
+	iCount = (int)(sizeof(g_arrXuiCodeDefaultBindings) /
+		sizeof(g_arrXuiCodeDefaultBindings[0]));
+	pBindings = (xui_code_key_binding_t*)xrtMalloc(sizeof(*pBindings) * (size_t)iCount);
+	if ( pBindings == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memset(pBindings, 0, sizeof(*pBindings) * (size_t)iCount);
+	for ( i = 0; i < iCount; i++ ) {
+		pBindings[i].iSize = sizeof(pBindings[i]);
+		pBindings[i].iKey = g_arrXuiCodeDefaultBindings[i].iKey;
+		pBindings[i].iModifiers = g_arrXuiCodeDefaultBindings[i].iModifiers;
+		pBindings[i].iCommand = g_arrXuiCodeDefaultBindings[i].iCommand;
+	}
+	xrtFree(pMap->pBindings);
+	pMap->pBindings = pBindings;
+	pMap->iCount = iCount;
+	pMap->iCapacity = iCount;
 	return XUI_OK;
 }
 
@@ -178,6 +212,8 @@ static int __xuiCodeCommandNeedsDocumentSelection(int iCommand)
 	case XUI_CODE_COMMAND_MOVE_DOWN:
 	case XUI_CODE_COMMAND_MOVE_WORD_LEFT:
 	case XUI_CODE_COMMAND_MOVE_WORD_RIGHT:
+	case XUI_CODE_COMMAND_SELECT_WORD_LEFT:
+	case XUI_CODE_COMMAND_SELECT_WORD_RIGHT:
 	case XUI_CODE_COMMAND_MOVE_LINE_START:
 	case XUI_CODE_COMMAND_MOVE_LINE_END:
 	case XUI_CODE_COMMAND_MOVE_DOCUMENT_START:
@@ -397,6 +433,8 @@ XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, in
 	case XUI_CODE_COMMAND_MOVE_DOWN:
 	case XUI_CODE_COMMAND_MOVE_WORD_LEFT:
 	case XUI_CODE_COMMAND_MOVE_WORD_RIGHT:
+	case XUI_CODE_COMMAND_SELECT_WORD_LEFT:
+	case XUI_CODE_COMMAND_SELECT_WORD_RIGHT:
 	case XUI_CODE_COMMAND_MOVE_LINE_START:
 	case XUI_CODE_COMMAND_MOVE_LINE_END:
 	case XUI_CODE_COMMAND_MOVE_DOCUMENT_START:

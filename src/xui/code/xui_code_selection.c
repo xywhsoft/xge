@@ -2,6 +2,8 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
 struct xui_code_selection_model_t {
@@ -95,11 +97,20 @@ static int __xuiCodeSelectionEnsureExtra(xui_code_selection_model pSelection, in
 	xui_code_selection_t* pNew;
 	int iCapacity;
 
-	if ( pSelection == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pSelection == NULL || iNeeded < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iNeeded <= pSelection->iExtraCapacity ) return XUI_OK;
 	iCapacity = pSelection->iExtraCapacity;
 	if ( iCapacity <= 0 ) iCapacity = XUI_CODE_SELECTION_EXTRA_INITIAL;
-	while ( iCapacity < iNeeded ) iCapacity *= 2;
+	while ( iCapacity < iNeeded ) {
+		if ( iCapacity > INT_MAX / 2 ) {
+			iCapacity = iNeeded;
+			break;
+		}
+		iCapacity *= 2;
+	}
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(xui_code_selection_t) ) {
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
 	pNew = (xui_code_selection_t*)xrtRealloc(pSelection->pExtra, sizeof(xui_code_selection_t) * (size_t)iCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pSelection->pExtra = pNew;
@@ -338,6 +349,22 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_LINE_END ) { iCommand = XUI_CODE_COMMAND_MOVE_LINE_END; bExtend = 1; }
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_DOCUMENT_START ) { iCommand = XUI_CODE_COMMAND_MOVE_DOCUMENT_START; bExtend = 1; }
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_DOCUMENT_END ) { iCommand = XUI_CODE_COMMAND_MOVE_DOCUMENT_END; bExtend = 1; }
+	else if ( iCommand == XUI_CODE_COMMAND_SELECT_WORD_LEFT ) { iCommand = XUI_CODE_COMMAND_MOVE_WORD_LEFT; bExtend = 1; }
+	else if ( iCommand == XUI_CODE_COMMAND_SELECT_WORD_RIGHT ) { iCommand = XUI_CODE_COMMAND_MOVE_WORD_RIGHT; bExtend = 1; }
+	if ( !bExtend && pSelection->tPrimary.iAnchorOffset != pSelection->tPrimary.iCaretOffset ) {
+		if ( iCommand == XUI_CODE_COMMAND_MOVE_LEFT ) {
+			iOffset = (pSelection->tPrimary.iAnchorOffset < pSelection->tPrimary.iCaretOffset) ?
+				pSelection->tPrimary.iAnchorOffset : pSelection->tPrimary.iCaretOffset;
+			__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, 0, -1);
+			return XUI_OK;
+		}
+		if ( iCommand == XUI_CODE_COMMAND_MOVE_RIGHT ) {
+			iOffset = (pSelection->tPrimary.iAnchorOffset > pSelection->tPrimary.iCaretOffset) ?
+				pSelection->tPrimary.iAnchorOffset : pSelection->tPrimary.iCaretOffset;
+			__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, 0, -1);
+			return XUI_OK;
+		}
+	}
 	switch ( iCommand ) {
 	case XUI_CODE_COMMAND_MOVE_LEFT:
 		iOffset = __xuiCodeSelectionUtf8Prev(pDocument, iLength, iOffset);

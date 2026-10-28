@@ -1,8 +1,9 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
-#include "xui.h"
+#include "xui_internal.h"
 #include "xui_xrt_port.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -51,13 +52,33 @@ XUI_API int xuiCodeLexerRegexTokenize(const char* sText, int iTextSize, const xu
 	size_t iEnd;
 	int i;
 	int iPos;
+	int iNext;
+	int iTextStart;
 	int iMatched;
+	int iResult;
 	int iRet;
+	size_t iTextSizeValue;
 
 	if ( pTokenCount == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pTokenCount = 0;
-	if ( (sText == NULL) || (pRules == NULL) || (iRuleCount < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	__xuiCodeLexerSetError(sError, iErrorCapacity, "");
+	if ( (sText == NULL) || (pRules == NULL) || (iRuleCount <= 0) ||
+	     iTokenCapacity < 0 || (pTokens == NULL && iTokenCapacity > 0) ) {
+		__xuiCodeLexerSetError(sError, iErrorCapacity, "invalid argument");
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iTextSize < 0 ) {
+		iTextSizeValue = strlen(sText);
+		if ( iTextSizeValue > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+		iTextSize = (int)iTextSizeValue;
+	}
+	for ( i = 0; i < iRuleCount; i++ ) {
+		if ( pRules[i].sPattern == NULL ) {
+			__xuiCodeLexerSetError(sError, iErrorCapacity, "invalid regex rule");
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( (size_t)iRuleCount > SIZE_MAX / sizeof(*pRegexes) ) return XUI_ERROR_LIMIT_EXCEEDED;
 	pRegexes = (xui_xrt_regex_t**)xrtMalloc(sizeof(*pRegexes) * (size_t)iRuleCount);
 	if ( pRegexes == NULL ) {
 		__xuiCodeLexerSetError(sError, iErrorCapacity, "out of memory");
@@ -66,7 +87,7 @@ XUI_API int xuiCodeLexerRegexTokenize(const char* sText, int iTextSize, const xu
 	memset(pRegexes, 0, sizeof(*pRegexes) * (size_t)iRuleCount);
 	for ( i = 0; i < iRuleCount; i++ ) {
 		pRegexes[i] = xuiXrtRegexCreate(pRules[i].sPattern,
-			(pRules[i].sPattern != NULL) ? strlen(pRules[i].sPattern) : 0u,
+			strlen(pRules[i].sPattern),
 			pRules[i].iFlags);
 		if ( pRegexes[i] == NULL ) {
 			__xuiCodeLexerSetError(sError, iErrorCapacity, "regex compile failed");
@@ -74,30 +95,57 @@ XUI_API int xuiCodeLexerRegexTokenize(const char* sText, int iTextSize, const xu
 		}
 	}
 	iPos = 0;
+	iTextStart = 0;
+	iResult = XUI_OK;
 	while ( iPos < iTextSize ) {
 		iMatched = 0;
 		for ( i = 0; i < iRuleCount; i++ ) {
 			iRet = xuiXrtRegexFindAt(pRegexes[i], sText, (size_t)iTextSize, (size_t)iPos, &tSpan);
+			if ( iRet == XREGEX_ERROR ) {
+				__xuiCodeLexerSetError(sError, iErrorCapacity, "regex match failed");
+				iResult = XUI_ERROR_INVALID_STATE;
+				goto done;
+			}
 			if ( iRet != XREGEX_MATCH ) continue;
 			iBegin = tSpan.Begin;
 			iEnd = tSpan.End;
+			if ( iBegin > (size_t)iTextSize || iEnd > (size_t)iTextSize ) {
+				__xuiCodeLexerSetError(sError, iErrorCapacity, "invalid regex span");
+				iResult = XUI_ERROR_INVALID_STATE;
+				goto done;
+			}
 			if ( (int)iBegin != iPos || iEnd <= iBegin ) continue;
-			(void)__xuiCodeLexerAddToken(pTokens, iTokenCapacity, pTokenCount, (int)iBegin, (int)iEnd, pRules[i].iTokenKind, pRules[i].iStyle);
-			iPos = (int)iEnd;
+			iNext = xuiInternalTextGraphemeClamp(sText, iTextSize, (int)iEnd);
+			if ( iNext != (int)iEnd ) {
+				iNext = xuiInternalTextGraphemeNext(sText, iTextSize, iNext);
+				if ( iNext <= iPos || iNext > iTextSize ) iNext = (int)iEnd;
+			} else {
+				iNext = (int)iEnd;
+			}
+			(void)__xuiCodeLexerAddToken(pTokens, iTokenCapacity, pTokenCount,
+				iTextStart, iPos, XUI_CODE_TOKEN_TEXT, XUI_CODE_STYLE_DEFAULT);
+			(void)__xuiCodeLexerAddToken(pTokens, iTokenCapacity, pTokenCount,
+				(int)iBegin, iNext, pRules[i].iTokenKind, pRules[i].iStyle);
+			iPos = iNext;
+			iTextStart = iPos;
 			iMatched = 1;
 			break;
 		}
 		if ( !iMatched ) {
-			(void)__xuiCodeLexerAddToken(pTokens, iTokenCapacity, pTokenCount, iPos, iPos + 1, XUI_CODE_TOKEN_TEXT, XUI_CODE_TOKEN_TEXT);
-			iPos++;
+			iNext = xuiInternalTextGraphemeNext(sText, iTextSize, iPos);
+			if ( iNext <= iPos || iNext > iTextSize ) iNext = iPos + 1;
+			iPos = iNext;
 		}
 	}
+	(void)__xuiCodeLexerAddToken(pTokens, iTokenCapacity, pTokenCount,
+		iTextStart, iTextSize, XUI_CODE_TOKEN_TEXT, XUI_CODE_STYLE_DEFAULT);
+done:
 	for ( i = 0; i < iRuleCount; i++ ) {
 		if ( pRegexes[i] != NULL ) xuiXrtRegexDestroy(pRegexes[i]);
 	}
 	xrtFree(pRegexes);
-	__xuiCodeLexerSetError(sError, iErrorCapacity, "");
-	return XUI_OK;
+	if ( iResult == XUI_OK ) __xuiCodeLexerSetError(sError, iErrorCapacity, "");
+	return iResult;
 
 fail:
 	for ( i = 0; i < iRuleCount; i++ ) {

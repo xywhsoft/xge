@@ -35,8 +35,7 @@ typedef struct doc_editor_data {
     uint32_t pending_set, pending_clear;
     uint32_t pending_style_fields;
     xui_doc_text_style_t pending_style;
-    int has_pending_marks, pending_clear_format, composing, committing, caret_visible;
-    double blink;
+    int has_pending_marks, pending_clear_format, composing, committing;
     xui_doc_range_t composition_range;
     xui_doc_position_t composition_caret;
     xui_document_renderer projection;
@@ -53,7 +52,9 @@ typedef struct doc_editor_data {
     int input_error;
     doc_editor_event_item *events, *events_tail;
     uint64_t event_count, input_epoch;
-    int draining, event_error, event_dragging, in_clipboard;
+    int draining, event_error, event_dragging, event_pointer_active, in_clipboard;
+    uint64_t event_pointer_id;
+    int event_pointer_type;
     int resizing_column, resize_pointer_type;
     uint64_t resize_pointer_id, resize_table, resize_group;
     uint32_t resize_column;
@@ -92,6 +93,45 @@ static int doc_editor_before_selection(xui_widget w)
     return e && (e->events || e->draining || e->in_clipboard || e->committing) ?
         XUI_DOC_ERROR_BUSY : XUI_OK;
 }
+static int doc_editor_data_alive(xui_widget w, const doc_editor_data* e)
+{
+    return e && xuiInternalWidgetIsValid(w) && doc_editor_get(w) == e;
+}
+static void doc_editor_reset_caret_blink(doc_editor_data* e)
+{
+    xui_widget w = e ? e->view.widget : NULL;
+    xui_context context;
+    if (!doc_editor_data_alive(w, e)) return;
+    context = xuiWidgetGetContext(w);
+    if (xuiGetFocusWidget(context) == w) xuiInternalCaretBlinkReset(context);
+}
+static int doc_editor_event_pointer_matches(const doc_editor_data* e,
+    const xui_event_t* event)
+{
+    return e && event && e->event_pointer_active &&
+        e->event_pointer_id == event->iPointerId &&
+        e->event_pointer_type == event->iPointerType;
+}
+static void doc_editor_cancel_event_pointer(doc_editor_data* e, int release_capture)
+{
+    xui_widget w;
+    xui_context context;
+    uint64_t pointer_id;
+    int pointer_type;
+    if (!e || !e->event_pointer_active) return;
+    w = e->view.widget;
+    context = xuiWidgetGetContext(w);
+    pointer_id = e->event_pointer_id;
+    pointer_type = e->event_pointer_type;
+    e->event_pointer_active = 0;
+    e->event_pointer_id = 0;
+    e->event_pointer_type = XUI_POINTER_TYPE_MOUSE;
+    e->event_dragging = 0;
+    if (release_capture && xuiInternalContextIsValid(context) &&
+        !xuiInternalContextDestroyPending(context) &&
+        xuiGetPointerCaptureEx(context, pointer_id, pointer_type) == w)
+        (void)xuiReleasePointerCaptureEx(context, pointer_id, pointer_type, w);
+}
 static void doc_editor_cancel_resize(doc_editor_data* e, int release_capture)
 {
     xui_widget w = e->view.widget;
@@ -99,6 +139,8 @@ static void doc_editor_cancel_resize(doc_editor_data* e, int release_capture)
     int pointer_type = e->resize_pointer_type;
     int active = e->resizing_column;
     e->resizing_column = 0;
+    e->resize_pointer_id = 0;
+    e->resize_pointer_type = XUI_POINTER_TYPE_MOUSE;
     if (active && release_capture && xuiInternalWidgetIsValid(w)) {
         xui_context context = xuiWidgetGetContext(w);
         if (xuiGetPointerCaptureEx(context, pointer_id, pointer_type) == w)
@@ -112,6 +154,8 @@ static void doc_editor_cancel_task_marker(doc_editor_data* e, int release_captur
     int pointer_type = e->task_pointer_type;
     int active = e->task_pressed != 0;
     e->task_pressed = 0;
+    e->task_pointer_id = 0;
+    e->task_pointer_type = XUI_POINTER_TYPE_MOUSE;
     if (active && release_capture && xuiInternalWidgetIsValid(w)) {
         xui_context context = xuiWidgetGetContext(w);
         if (xuiGetPointerCaptureEx(context, pointer_id, pointer_type) == w)
@@ -120,10 +164,13 @@ static void doc_editor_cancel_task_marker(doc_editor_data* e, int release_captur
 }
 static void doc_editor_clear_events(doc_editor_data* e)
 {
+    int arrival_pointer_active = e->event_pointer_active;
     e->input_epoch++;
     doc_editor_break_group(e);
     while (e->events) { doc_editor_event_item* item = e->events; e->events = item->next; doc_free(item); }
-    e->events_tail = NULL; e->event_count = 0; e->event_error = e->event_dragging = 0;
+    e->events_tail = NULL; e->event_count = 0; e->event_error = 0;
+    doc_view_cancel_pointer(&e->view, !arrival_pointer_active);
+    doc_editor_cancel_event_pointer(e, 1);
     doc_editor_cancel_resize(e, 1);
     doc_editor_cancel_task_marker(e, 1);
     if (!e->stream_open && e->view.document &&
@@ -155,33 +202,70 @@ static int doc_editor_ordered_event(const xui_event_t* event)
 }
 static int doc_editor_enqueue(doc_editor_data* e, const xui_event_t* event, uint64_t received)
 {
-    doc_editor_event_item* item; xui_widget w = e->view.widget;
-    if (event->iType == XUI_EVENT_POINTER_MOVE && e->events_tail && e->events_tail->event.iType == XUI_EVENT_POINTER_MOVE &&
-        e->events_tail->event.iPointerId == event->iPointerId && e->events_tail->event.iPointerType == event->iPointerType) {
+    doc_editor_event_item* item;
+    xui_widget w = e->view.widget;
+    xui_context context = xuiWidgetGetContext(w);
+    int pointer_down = event->iType == XUI_EVENT_POINTER_DOWN &&
+        (event->iButton == XUI_POINTER_BUTTON_LEFT || !event->iButton);
+    int captured = 0, result;
+    if (!e->events && e->view.gesture_pointer_active) {
+        e->event_pointer_active = 1;
+        e->event_pointer_id = e->view.gesture_pointer_id;
+        e->event_pointer_type = e->view.gesture_pointer_type;
+        e->event_dragging = e->view.dragging;
+    }
+    if (pointer_down && e->event_pointer_active) return XUI_OK;
+    if ((event->iType == XUI_EVENT_POINTER_MOVE ||
+         event->iType == XUI_EVENT_POINTER_UP ||
+         event->iType == XUI_EVENT_POINTER_CAPTURE_LOST) &&
+        !doc_editor_event_pointer_matches(e, event)) return XUI_OK;
+    if (event->iType == XUI_EVENT_POINTER_MOVE && e->events_tail &&
+        e->events_tail->event.iType == XUI_EVENT_POINTER_MOVE &&
+        e->events_tail->event.iPointerId == event->iPointerId &&
+        e->events_tail->event.iPointerType == event->iPointerType) {
         e->events_tail->event.fX = event->fX; e->events_tail->event.fY = event->fY;
         e->events_tail->event.iModifiers = event->iModifiers; e->events_tail->event.iButtons = event->iButtons; return XUI_OK;
     }
     if (e->event_count >= 4096) return XUI_DOC_ERROR_LIMIT;
-    item = doc_alloc(e->view.document->allocator, sizeof(*item)); if (!item) return XUI_ERROR_OUT_OF_MEMORY;
+    /* Platform focus/capture follow arrival time, while selection/navigation
+     * follows document action order. Replay must not steal focus back later. */
+    if (pointer_down && !e->view.desc.bDisableSelection) {
+        result = xuiSetFocusWidget(context, w);
+        if (result != XUI_OK) return result;
+        if (!doc_editor_data_alive(w, e)) return XUI_EVENT_DISPATCH_STOP;
+        result = xuiSetPointerCaptureEx(context, event->iPointerId,
+            event->iPointerType, w);
+        if (result != XUI_OK) return result;
+        captured = 1;
+        if (!doc_editor_data_alive(w, e)) return XUI_EVENT_DISPATCH_STOP;
+    }
+    item = doc_alloc(e->view.document->allocator, sizeof(*item));
+    if (!item) {
+        if (captured && xuiGetPointerCaptureEx(context, event->iPointerId,
+                event->iPointerType) == w)
+            (void)xuiReleasePointerCaptureEx(context, event->iPointerId,
+                event->iPointerType, w);
+        return XUI_ERROR_OUT_OF_MEMORY;
+    }
+    item->next = NULL;
     item->received = received;
     item->event = *event; item->event.pTarget = item->event.pCurrentTarget = w;
     /* Only inline payloads of the event types above are retained. Borrowed
      * command/user/related-widget pointers have no meaning for this queue. */
     item->event.sCommand = NULL; item->event.pData = NULL; item->event.pRelated = NULL;
-    if (e->events_tail) e->events_tail->next = item; else { e->events = item; e->event_dragging = e->view.dragging; }
+    if (e->events_tail) e->events_tail->next = item; else e->events = item;
     e->events_tail = item; e->event_count++; e->view.document->input_barrier = e->origin;
-    xuiWidgetInvalidate(w, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-    /* Platform focus/capture follow arrival time, while selection/navigation
-     * follows document action order. Replay must not steal focus back later. */
-    if (event->iType == XUI_EVENT_POINTER_DOWN && (event->iButton == XUI_POINTER_BUTTON_LEFT || !event->iButton)) {
+    if (pointer_down) {
+        e->event_pointer_active = 1;
+        e->event_pointer_id = event->iPointerId;
+        e->event_pointer_type = event->iPointerType;
         e->event_dragging = !e->view.desc.bDisableSelection;
-        xuiSetFocusWidget(xuiWidgetGetContext(w), w);
-        if (xuiInternalWidgetIsValid(w) && !e->view.desc.bDisableSelection)
-            xuiSetPointerCaptureEx(xuiWidgetGetContext(w), event->iPointerId, event->iPointerType, w);
-    } else if (event->iType == XUI_EVENT_POINTER_UP) {
-        e->event_dragging = 0;
-        xuiReleasePointerCaptureEx(xuiWidgetGetContext(w), event->iPointerId, event->iPointerType, w);
-    } else if (event->iType == XUI_EVENT_BLUR || event->iType == XUI_EVENT_POINTER_CAPTURE_LOST) e->event_dragging = 0;
+    } else if (event->iType == XUI_EVENT_POINTER_UP || event->iType == XUI_EVENT_BLUR) {
+        doc_editor_cancel_event_pointer(e, 1);
+    } else if (event->iType == XUI_EVENT_POINTER_CAPTURE_LOST) {
+        doc_editor_cancel_event_pointer(e, 0);
+    }
+    xuiWidgetInvalidate(w, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
     return XUI_OK;
 }
 static void doc_editor_clear_bookmarks(doc_editor_data* e)
@@ -241,7 +325,7 @@ static void doc_editor_projection_changed(xui_widget w)
     e->vertical_goal_active = 0;
     e->pending_set = e->pending_clear = 0; e->has_pending_marks = 0;
     e->pending_style_fields = 0; e->pending_clear_format = 0;
-    e->blink = 0; e->caret_visible = 1;
+    doc_editor_reset_caret_blink(e);
 }
 static void doc_editor_changed(xui_document d, xui_document_change_set c, void* user)
 {
@@ -285,7 +369,7 @@ static void doc_editor_changed(xui_document d, xui_document_change_set c, void* 
                 xuiDocumentSourceToPositionEx(e->view.renderer->snapshot, p->iOffset, p->iAffinity, p, &mapping);
         }
     }
-    e->blink = 0; e->caret_visible = 1;
+    doc_editor_reset_caret_blink(e);
 }
 static int doc_editor_sync(doc_editor_data* e)
 {
@@ -308,7 +392,7 @@ static void doc_editor_reveal(doc_editor_data* e)
         e->view.scroll_x = fmin(e->view.scroll_x, fmax(0, size.width - content.fW));
         e->view.scroll_y = fmin(e->view.scroll_y, fmax(0, size.height - content.fH));
     }
-    e->blink = 0; e->caret_visible = 1;
+    doc_editor_reset_caret_blink(e);
     xuiWidgetInvalidate(e->view.widget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER |
         (e->view.renderer->mode == XUI_DOC_LIVE_MARKDOWN ? XUI_WIDGET_DIRTY_LAYOUT : 0));
 }
@@ -929,7 +1013,7 @@ static int doc_editor_resize_cursor(xui_widget w, int x, int y, void* user)
     if (!e) return XUI_CURSOR_INHERIT;
     if (e->resizing_column) return XUI_CURSOR_RESIZE_EW;
     return doc_editor_resize_hit(e, x, y, &table, &column, &width) == XUI_OK ?
-        XUI_CURSOR_RESIZE_EW : XUI_CURSOR_INHERIT;
+        XUI_CURSOR_RESIZE_EW : doc_view_cursor(w, x, y, NULL);
 }
 static int doc_editor_resize_event(doc_editor_data* e, const xui_event_t* event)
 {
@@ -942,16 +1026,20 @@ static int doc_editor_resize_event(doc_editor_data* e, const xui_event_t* event)
         result = doc_editor_resize_hit(e, event->fX, event->fY, &table, &column, &width);
         if (result != XUI_OK) return result;
         if (e->next_group == UINT64_MAX) return XUI_DOC_ERROR_LIMIT;
+        if (!e->view.replaying_input) {
+            result = xuiSetFocusWidget(xuiWidgetGetContext(w), w);
+            if (result != XUI_OK) return result;
+            if (!doc_editor_data_alive(w, e)) return XUI_EVENT_DISPATCH_STOP;
+            result = xuiSetPointerCaptureEx(xuiWidgetGetContext(w),
+                event->iPointerId, event->iPointerType, w);
+            if (result != XUI_OK) return result;
+            if (!doc_editor_data_alive(w, e)) return XUI_EVENT_DISPATCH_STOP;
+        }
         doc_editor_break_group(e);
         e->resize_group = ++e->next_group; e->resize_table = table; e->resize_column = column;
         e->resize_start_x = event->fX; e->resize_start_width = e->resize_current_width = width;
         e->resize_pointer_id = event->iPointerId; e->resize_pointer_type = event->iPointerType;
         e->resizing_column = 1;
-        if (!e->view.replaying_input) {
-            xuiSetFocusWidget(xuiWidgetGetContext(w), w);
-            if (!xuiInternalWidgetIsValid(w)) return XUI_EVENT_DISPATCH_STOP;
-            xuiSetPointerCaptureEx(xuiWidgetGetContext(w), event->iPointerId, event->iPointerType, w);
-        }
         return XUI_EVENT_DISPATCH_STOP;
     }
     if (!e->resizing_column) return XUI_ERROR_NOT_FOUND;
@@ -3563,11 +3651,12 @@ static int doc_editor_task_marker_event(doc_editor_data* e,
         e->task_pointer_type = event->iPointerType;
         if (!e->view.replaying_input) {
             result = xuiSetFocusWidget(context, w);
-            if (result != XUI_OK) { e->task_pressed = 0; return result; }
-            if (!xuiInternalWidgetIsValid(w)) return XUI_EVENT_DISPATCH_STOP;
+            if (result != XUI_OK) { doc_editor_cancel_task_marker(e, 0); return result; }
+            if (!doc_editor_data_alive(w, e)) return XUI_EVENT_DISPATCH_STOP;
             result = xuiSetPointerCaptureEx(context, event->iPointerId,
                 event->iPointerType, w);
-            if (result != XUI_OK) { e->task_pressed = 0; return result; }
+            if (result != XUI_OK) { doc_editor_cancel_task_marker(e, 0); return result; }
+            if (!doc_editor_data_alive(w, e)) return XUI_EVENT_DISPATCH_STOP;
         }
         return XUI_EVENT_DISPATCH_STOP;
     }
@@ -3650,7 +3739,7 @@ static int doc_editor_handle_event(doc_editor_data* e, const xui_event_t* event,
             result = doc_editor_task_marker_event(e, event);
             if (result != XUI_ERROR_NOT_FOUND) return result;
         }
-        e->blink = 0; e->caret_visible = 1; return doc_view_event(w, event, NULL);
+        doc_editor_reset_caret_blink(e); return doc_view_event(w, event, NULL);
     }
     return result;
 }
@@ -3717,7 +3806,8 @@ static int doc_editor_render(xui_widget w, xui_draw_context draw, uint32_t state
         if (result == XUI_OK) result = doc_view_paint_border(&e->view, draw, content);
     } else result = doc_view_render(w, draw, state, user);
     if (result != XUI_OK) return result;
-    if (!e->desc.bReadOnly && (e->caret_visible || e->composing) && xuiGetFocusWidget(xuiWidgetGetContext(w)) == w) {
+    if (!e->desc.bReadOnly && (xuiInternalCaretBlinkVisible(w) || e->composing) &&
+        xuiGetFocusWidget(xuiWidgetGetContext(w)) == w) {
         caret = doc_editor_caret_rect(e);
         if (caret.fH && caret.fX >= content.fX && caret.fX < content.fX + content.fW) {
             int bottom = caret.fY + caret.fH; caret.fY = caret.fY < content.fY ? content.fY : caret.fY;
@@ -3750,9 +3840,6 @@ static int doc_editor_update(xui_widget w, float dt, void* user)
             if (!xuiInternalWidgetIsValid(w)) return XUI_OK;
         }
     }
-    if (xuiGetFocusWidget(xuiWidgetGetContext(w)) == w && !e->desc.bReadOnly && !e->composing) {
-        e->blink += dt; if (e->blink >= .5) { e->blink = fmod(e->blink, .5); e->caret_visible = !e->caret_visible; xuiWidgetInvalidate(w, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER); }
-    }
     if (e->find_ui) {
         doc_find_ui_update(e->find_ui);
         if (!xuiInternalWidgetIsValid(w)) return XUI_OK;
@@ -3763,7 +3850,7 @@ static int doc_editor_init(xui_widget w, void* data, const void* create, void* u
 {
     doc_editor_data* e = data; const xui_doc_editor_desc_t* desc = create; int result; (void)user;
     if (!desc || desc->iSize != sizeof(*desc)) return XUI_ERROR_INVALID_ARGUMENT;
-    e->desc = *desc; e->origin = atomic_fetch_add(&doc_editor_sequence, 1); e->caret_visible = 1;
+    e->desc = *desc; e->origin = atomic_fetch_add(&doc_editor_sequence, 1);
     if (!e->desc.iAsyncSourceThresholdBytes) e->desc.iAsyncSourceThresholdBytes = 100 * 1024;
     if (!e->desc.iUndoGroupTimeoutMs) e->desc.iUndoGroupTimeoutMs = 1000;
     e->view.onChanged = doc_editor_changed;

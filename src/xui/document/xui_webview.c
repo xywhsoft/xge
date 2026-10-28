@@ -57,6 +57,11 @@ struct xui_webview_data {
     ICoreWebView2* view;
     uint64_t page_epoch;
     int page_loaded;
+    UINT64 navigation_id;
+    int navigation_active;
+    uint64_t navigation_generation;
+    uint64_t navigation_active_generation;
+    uint32_t navigation_pending_starts;
     xui_web_request_t* requests;
     LONG inflight_scripts;
     LONG inflight_captures;
@@ -315,7 +320,29 @@ static void webview_advance_page(xui_webview_data* data)
 {
     webview_cancel_requests(data);
     data->page_loaded = 0;
+    data->navigation_id = 0;
+    data->navigation_active = 0;
     if (++data->page_epoch == 0) data->page_epoch = 1;
+}
+
+static uint64_t webview_queue_navigation(xui_webview_data* data)
+{
+    webview_advance_page(data);
+    if (++data->navigation_generation == 0) {
+        data->navigation_generation = 1;
+        data->navigation_pending_starts = 0;
+    }
+    if (data->navigation_pending_starts != UINT32_MAX)
+        data->navigation_pending_starts++;
+    return data->navigation_generation;
+}
+
+static void webview_discard_navigation(xui_webview_data* data, uint64_t generation)
+{
+    if (data->navigation_generation == generation &&
+            data->navigation_active_generation != generation &&
+            data->navigation_pending_starts)
+        data->navigation_pending_starts--;
 }
 
 static void webview_stop_backend(xui_webview_data* data)
@@ -367,6 +394,11 @@ static void webview_stop_backend(xui_webview_data* data)
         data->controller = NULL;
     }
     if (data->host) { DestroyWindow(data->host); data->host = NULL; }
+    data->host_visible = 0;
+    data->controller_visible = 0;
+    data->controller_bounds_valid = 0;
+    data->navigation_active = 0;
+    data->navigation_pending_starts = 0;
     data->process_failed_pending = 0;
 }
 
@@ -399,6 +431,7 @@ static void webview_sync_host(xui_webview_data* data)
     xui_rect_t world, visible, clip;
     xui_widget parent;
     RECT client, host_rect, bounds;
+    HRESULT hr;
     int is_visible, is_enabled;
     if (!data->host || !data->widget || !IsWindow(data->parent)) return;
     is_enabled = xuiWidgetGetEffectiveEnabled(data->widget);
@@ -439,11 +472,12 @@ static void webview_sync_host(xui_webview_data* data)
             (void)xuiSetFocusWidget(xuiWidgetGetContext(data->widget), NULL);
         if (!data->host || data->state == XUI_WEBVIEW_CLOSED) return;
         if (data->host_visible) ShowWindow(data->host, SW_HIDE);
-        data->host_visible = 0;
+        data->host_visible = IsWindowVisible(data->host) != 0;
         if (data->controller && data->controller_visible) {
-            ICoreWebView2Controller_put_IsVisible(data->controller, FALSE);
+            hr = ICoreWebView2Controller_put_IsVisible(data->controller, FALSE);
             if (!data->host || data->state == XUI_WEBVIEW_CLOSED) return;
-            data->controller_visible = 0;
+            if (SUCCEEDED(hr)) data->controller_visible = 0;
+            else data->error = (int32_t)hr;
         }
         return;
     }
@@ -452,14 +486,23 @@ static void webview_sync_host(xui_webview_data* data)
     host_rect.right = visible.fX + visible.fW;
     host_rect.bottom = visible.fY + visible.fH;
     if (memcmp(&host_rect, &data->host_rect, sizeof(host_rect))) {
-        SetWindowPos(data->host, NULL, host_rect.left, host_rect.top,
-            host_rect.right - host_rect.left, host_rect.bottom - host_rect.top,
-            SWP_NOACTIVATE | SWP_NOZORDER);
+        if (!SetWindowPos(data->host, NULL, host_rect.left, host_rect.top,
+                host_rect.right - host_rect.left, host_rect.bottom - host_rect.top,
+                SWP_NOACTIVATE | SWP_NOZORDER)) {
+            data->controller_bounds_valid = 0;
+            data->error = (int32_t)HRESULT_FROM_WIN32(GetLastError());
+            return;
+        }
         if (!data->host || data->state == XUI_WEBVIEW_CLOSED) return;
+        hr = data->controller ?
+            ICoreWebView2Controller_NotifyParentWindowPositionChanged(data->controller) : S_OK;
+        if (!data->host || data->state == XUI_WEBVIEW_CLOSED) return;
+        if (FAILED(hr)) {
+            data->controller_bounds_valid = 0;
+            data->error = (int32_t)hr;
+            return;
+        }
         data->host_rect = host_rect;
-        if (data->controller)
-            ICoreWebView2Controller_NotifyParentWindowPositionChanged(data->controller);
-        if (!data->host || data->state == XUI_WEBVIEW_CLOSED) return;
     }
     bounds.left = world.fX - host_rect.left;
     bounds.top = world.fY - host_rect.top;
@@ -468,19 +511,26 @@ static void webview_sync_host(xui_webview_data* data)
     if (data->controller) {
         if (!data->controller_bounds_valid ||
                 memcmp(&bounds, &data->controller_bounds, sizeof(bounds))) {
-            ICoreWebView2Controller_put_Bounds(data->controller, bounds);
+            hr = ICoreWebView2Controller_put_Bounds(data->controller, bounds);
             if (!data->host || data->state == XUI_WEBVIEW_CLOSED) return;
-            data->controller_bounds = bounds;
-            data->controller_bounds_valid = 1;
+            if (SUCCEEDED(hr)) {
+                data->controller_bounds = bounds;
+                data->controller_bounds_valid = 1;
+            } else {
+                data->controller_bounds_valid = 0;
+                data->error = (int32_t)hr;
+                return;
+            }
         }
         if (!data->controller_visible) {
-            ICoreWebView2Controller_put_IsVisible(data->controller, TRUE);
+            hr = ICoreWebView2Controller_put_IsVisible(data->controller, TRUE);
             if (!data->host || data->state == XUI_WEBVIEW_CLOSED) return;
-            data->controller_visible = 1;
+            if (SUCCEEDED(hr)) data->controller_visible = 1;
+            else data->error = (int32_t)hr;
         }
     }
     if (!data->host_visible) ShowWindow(data->host, SW_SHOWNA);
-    data->host_visible = 1;
+    data->host_visible = IsWindowVisible(data->host) != 0;
     /* The HWND can gain focus without a matching controller GotFocus callback. */
     if (data->state == XUI_WEBVIEW_READY && is_enabled &&
             xuiGetFocusWidget(xuiWidgetGetContext(data->widget)) != data->widget) {
@@ -671,8 +721,25 @@ static HRESULT STDMETHODCALLTYPE navigation_starting_invoke(
     ICoreWebView2NavigationStartingEventArgs* args)
 {
     xui_webview_data* data = ((webview_navigation_starting_handler*)self)->data;
-    (void)sender; (void)args;
-    if (data->state == XUI_WEBVIEW_READY) webview_advance_page(data);
+    UINT64 navigation_id = 0;
+    HRESULT hr;
+    (void)sender;
+    if (data->state != XUI_WEBVIEW_READY) return S_OK;
+    hr = ICoreWebView2NavigationStartingEventArgs_get_NavigationId(args,
+        &navigation_id);
+    if (SUCCEEDED(hr) && data->navigation_active &&
+            data->navigation_id == navigation_id) return S_OK;
+    webview_advance_page(data);
+    if (data->navigation_pending_starts) {
+        data->navigation_active_generation = data->navigation_generation -
+            data->navigation_pending_starts + 1;
+        data->navigation_pending_starts--;
+    } else {
+        if (++data->navigation_generation == 0) data->navigation_generation = 1;
+        data->navigation_active_generation = data->navigation_generation;
+    }
+    data->navigation_id = SUCCEEDED(hr) ? navigation_id : 0;
+    data->navigation_active = 1;
     return S_OK;
 }
 
@@ -935,9 +1002,18 @@ static HRESULT STDMETHODCALLTYPE navigation_invoke(
 {
     xui_webview_data* data = ((webview_navigation_handler*)self)->data;
     BOOL success = FALSE;
+    UINT64 navigation_id = 0;
     HRESULT hr;
     (void)sender;
     if (data->state != XUI_WEBVIEW_READY) return S_OK;
+    hr = ICoreWebView2NavigationCompletedEventArgs_get_NavigationId(args,
+        &navigation_id);
+    if (!data->navigation_active ||
+            (SUCCEEDED(hr) && data->navigation_id &&
+             data->navigation_id != navigation_id)) return S_OK;
+    data->navigation_active = 0;
+    data->navigation_id = 0;
+    if (data->navigation_active_generation != data->navigation_generation) return S_OK;
     hr = ICoreWebView2NavigationCompletedEventArgs_get_IsSuccess(args, &success);
     if (FAILED(hr) || !success) {
         data->error = (int32_t)(FAILED(hr) ? hr : E_FAIL);
@@ -1363,13 +1439,15 @@ XUI_API int xuiWebViewNavigate(xui_widget widget, const char* url)
     if (data->state != XUI_WEBVIEW_READY) return XUI_ERROR_INVALID_STATE;
 #if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
     wchar_t* wide;
+    uint64_t generation;
     HRESULT hr;
     if (!webview_on_owner_thread(data)) return XUI_ERROR_INVALID_STATE;
     wide = webview_utf16(url, strlen(url));
     if (!wide) return XUI_ERROR_INVALID_ARGUMENT;
     webview_retain(data);
-    webview_advance_page(data);
+    generation = webview_queue_navigation(data);
     hr = ICoreWebView2_Navigate(data->view, wide);
+    if (FAILED(hr)) webview_discard_navigation(data, generation);
     free(wide);
     if (data->state == XUI_WEBVIEW_READY) data->error = (int32_t)hr;
     {
@@ -1390,13 +1468,15 @@ XUI_API int xuiWebViewLoadHtml(xui_widget widget, const char* html, size_t bytes
     if (data->state != XUI_WEBVIEW_READY) return XUI_ERROR_INVALID_STATE;
 #if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
     wchar_t* wide;
+    uint64_t generation;
     HRESULT hr;
     if (!webview_on_owner_thread(data)) return XUI_ERROR_INVALID_STATE;
     wide = webview_utf16(html, bytes);
     if (!wide) return XUI_ERROR_INVALID_ARGUMENT;
     webview_retain(data);
-    webview_advance_page(data);
+    generation = webview_queue_navigation(data);
     hr = ICoreWebView2_NavigateToString(data->view, wide);
+    if (FAILED(hr)) webview_discard_navigation(data, generation);
     free(wide);
     if (data->state == XUI_WEBVIEW_READY) data->error = (int32_t)hr;
     {
