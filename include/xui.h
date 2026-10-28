@@ -11699,7 +11699,8 @@ XUI_API int xuiComboBoxGetChangeCount(xui_widget pWidget);
 /* 取级联选择器控件类型。 */
 #if XUI_ENABLE_CASCADER
 XUI_API xui_widget_type xuiCascaderGetType(xui_context pContext);
-/* 创建级联选择器（多列弹层逐级选择）。 */
+/* 创建级联选择器（多列弹层逐级选择）。弹层条目仅在同一项按下并抬起时提交；
+ * 支持方向键、Home/End、PageUp/PageDown、F4 与 Alt+Up/Down。 */
 XUI_API int xuiCascaderCreate(xui_context pContext, xui_widget* ppWidget, const xui_cascader_desc_t* pDesc);
 /* 注册选择路径变更回调；回调在弹层关闭后触发，并允许销毁控件。 */
 XUI_API int xuiCascaderSetChange(xui_widget pWidget, xui_cascader_change_proc onChange, void* pUser);
@@ -11712,7 +11713,8 @@ XUI_API int xuiCascaderGetItemCount(xui_widget pWidget);
 XUI_API const xui_cascader_item_t* xuiCascaderGetItem(xui_widget pWidget, int iIndex);
 /* 按各级值数组设置选中路径。 */
 XUI_API int xuiCascaderSetSelectedPath(xui_widget pWidget, const int* arrValues, int iDepth);
-/* 输出选中路径值数组；返回实际深度。 */
+/* 输出选中路径值数组；返回实际深度。arrValues 可为 NULL 以查询深度；容量不足时
+ * 写入可容纳的前缀，返回值仍为完整深度。 */
 XUI_API int xuiCascaderGetSelectedPath(xui_widget pWidget, int* arrValues, int iCapacity);
 /* 读取选中深度。 */
 XUI_API int xuiCascaderGetSelectedDepth(xui_widget pWidget);

@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CASCADER
 #include "xui_internal.h"
+#include "xui_pointer_press_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -27,6 +28,9 @@ typedef struct xui_cascader_data_t {
 	int arrColumnScroll[XUI_CASCADER_PATH_CAPACITY];
 	int iHoverColumn;
 	int iHoverItem;
+	int iPressedColumn;
+	int iPressedItem;
+	xui_pointer_owner_t tPointerOwner;
 	int bShowAllLevels;
 	int bClearable;
 	int bSelectAnyLevel;
@@ -282,6 +286,8 @@ static void __xuiCascaderDefaults(xui_cascader_data_t* pData)
 	pData->iSelectedLeaf = -1;
 	pData->iHoverColumn = -1;
 	pData->iHoverItem = -1;
+	pData->iPressedColumn = -1;
+	pData->iPressedItem = -1;
 	pData->bShowAllLevels = 1;
 	pData->iExpandTrigger = XUI_CASCADER_EXPAND_CLICK;
 	pData->iPopupPlacement = XUI_CASCADER_POPUP_AUTO;
@@ -713,6 +719,19 @@ static void __xuiCascaderSyncActiveFromSelected(xui_cascader_data_t* pData)
 	}
 }
 
+static int __xuiCascaderCancelPanelPress(xui_widget pOwner, xui_cascader_data_t* pData)
+{
+	xui_widget pPanel;
+	xui_context pContext;
+
+	if ( pData == NULL ) return XUI_OK;
+	pPanel = pData->pPanel;
+	pContext = (pOwner != NULL) ? xuiWidgetGetContext(pOwner) : NULL;
+	pData->iPressedColumn = -1;
+	pData->iPressedItem = -1;
+	return xuiInternalPointerOwnerCancel(pContext, pPanel, &pData->tPointerOwner);
+}
+
 static int __xuiCascaderNotifyChange(xui_widget pWidget, xui_cascader_data_t* pData)
 {
 	xui_cascader_change_proc onChange;
@@ -735,12 +754,19 @@ static int __xuiCascaderNotifyChange(xui_widget pWidget, xui_cascader_data_t* pD
 
 static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t* pData, int iItem, int bNotify)
 {
+	xui_context pContext;
 	int arrPath[XUI_CASCADER_PATH_CAPACITY];
 	int depth;
 	int i;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
 	if ( (iItem < 0) || (iItem >= pData->iItemCount) || !__xuiCascaderItemEnabled(pData, iItem) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iSelectedLeaf == iItem ) return XUI_OK;
 	depth = __xuiCascaderBuildPathToItem(pData, iItem, arrPath, XUI_CASCADER_PATH_CAPACITY);
@@ -767,10 +793,17 @@ static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t*
 
 static int __xuiCascaderClearInternal(xui_widget pWidget, xui_cascader_data_t* pData, int bNotify)
 {
+	xui_context pContext;
 	int i;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
 	if ( pData->iSelectedDepth <= 0 && pData->iSelectedLeaf < 0 ) return XUI_OK;
 	for ( i = 0; i < XUI_CASCADER_PATH_CAPACITY; i++ ) pData->arrSelected[i] = -1;
 	pData->iSelectedDepth = 0;
@@ -938,6 +971,11 @@ static int __xuiCascaderOpenInternal(xui_widget pWidget, xui_cascader_data_t* pD
 		if ( xuiPopupIsOpen(pPopup) ) return __xuiCascaderCloseInternal(pWidget, pData);
 		return XUI_OK;
 	}
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
 	__xuiCascaderSyncActiveFromSelected(pData);
 	iRet = __xuiCascaderApplyPopupStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
@@ -965,6 +1003,11 @@ static int __xuiCascaderCloseInternal(xui_widget pWidget, xui_cascader_data_t* p
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
 	pPopup = pData->pPopup;
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
 	if ( pPopup != NULL ) {
 		iRet = xuiPopupSetOpen(pPopup, 0);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1009,6 +1052,22 @@ static int __xuiCascaderOwnerKeyDown(xui_widget pWidget, xui_cascader_data_t* pD
 	int iRet;
 
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
+	if ( pEvent->iKey == XUI_KEY_F4 && pEvent->iModifiers == 0u ) {
+		iRet = (pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup)) ?
+			__xuiCascaderCloseInternal(pWidget, pData) : __xuiCascaderOpenInternal(pWidget, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
+	if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u &&
+	     (pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN) ) {
+		if ( pEvent->iKey == XUI_KEY_UP ) {
+			iRet = (pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup)) ?
+				__xuiCascaderCloseInternal(pWidget, pData) : XUI_OK;
+		} else {
+			iRet = (pData->pPopup != NULL && xuiPopupIsOpen(pData->pPopup)) ?
+				XUI_OK : __xuiCascaderOpenInternal(pWidget, pData);
+		}
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
 	switch ( pEvent->iKey ) {
 	case XUI_KEY_ENTER:
 	case XUI_KEY_SPACE:
@@ -1019,6 +1078,7 @@ static int __xuiCascaderOwnerKeyDown(xui_widget pWidget, xui_cascader_data_t* pD
 		}
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_DOWN:
+	case XUI_KEY_UP:
 		iRet = __xuiCascaderOpenInternal(pWidget, pData);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_BACKSPACE:
@@ -1087,6 +1147,7 @@ static int __xuiCascaderHitPanel(xui_cascader_data_t* pData, float x, float y, i
 	if ( pItem != NULL ) *pItem = -1;
 	if ( (pData == NULL) || (x < 0.0f) || (y < 0.0f) || (pData->fColumnWidth <= 0.0f) || (pData->fItemHeight <= 0.0f) ) return 0;
 	__xuiCascaderClampScrolls(pData);
+	if ( x >= pData->fResolvedPopupWidth || y >= pData->fResolvedPopupHeight ) return 0;
 	column = (int)(x / pData->fColumnWidth);
 	if ( (column < 0) || (column >= __xuiCascaderColumnCount(pData)) ) return 0;
 	row = (int)(y / pData->fItemHeight) + pData->arrColumnScroll[column];
@@ -1143,6 +1204,10 @@ static int __xuiCascaderPanelPointerDown(xui_widget pPanel, xui_widget pOwner, x
 
 	if ( (pEvent->iButton != 0) && (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) ) return XUI_OK;
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
+	if ( pData->tPointerOwner.bActive ) {
+		return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
+			XUI_EVENT_DISPATCH_STOP : XUI_OK;
+	}
 	pContext = xuiWidgetGetContext(pPanel);
 	iRet = xuiSetFocusWidget(pContext, pPanel);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1151,10 +1216,62 @@ static int __xuiCascaderPanelPointerDown(xui_widget pPanel, xui_widget pOwner, x
 	x = pEvent->fX - w.fX;
 	y = pEvent->fY - w.fY;
 	if ( __xuiCascaderHitPanel(pData, x, y, &column, &item) ) {
-		iRet = __xuiCascaderPanelActivateItem(pOwner, pData, column, item, 1);
+		iRet = xuiInternalPointerOwnerBegin(pContext, pPanel, pEvent, &pData->tPointerOwner);
 		if ( iRet != XUI_OK ) return iRet;
+		pData->iPressedColumn = column;
+		pData->iPressedItem = item;
+		pData->iHoverColumn = column;
+		pData->iHoverItem = item;
+		iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) {
+			(void)__xuiCascaderCancelPanelPress(pOwner, pData);
+			return iRet;
+		}
 	}
 	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiCascaderPanelPointerUp(xui_widget pPanel, xui_widget pOwner, xui_cascader_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_context pContext;
+	xui_rect_t w;
+	float x;
+	float y;
+	int column;
+	int item;
+	int pressedColumn;
+	int pressedItem;
+	int hit;
+	int iRet;
+
+	if ( (pEvent->iButton != 0) && (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) ) return XUI_OK;
+	if ( !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pPanel);
+	w = xuiWidgetGetWorldRect(pPanel);
+	x = pEvent->fX - w.fX;
+	y = pEvent->fY - w.fY;
+	hit = __xuiCascaderHitPanel(pData, x, y, &column, &item);
+	pressedColumn = pData->iPressedColumn;
+	pressedItem = pData->iPressedItem;
+	pData->iPressedColumn = -1;
+	pData->iPressedItem = -1;
+	iRet = xuiInternalPointerOwnerEnd(pContext, pPanel, pEvent, &pData->tPointerOwner);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCascaderAlive(pContext, pOwner, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	if ( hit && column == pressedColumn && item == pressedItem ) {
+		iRet = __xuiCascaderPanelActivateItem(pOwner, pData, column, item, 1);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
+	iRet = xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+}
+
+static int __xuiCascaderPanelCaptureLost(xui_widget pPanel, xui_cascader_data_t* pData, const xui_event_t* pEvent)
+{
+	if ( !xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) return XUI_OK;
+	pData->iPressedColumn = -1;
+	pData->iPressedItem = -1;
+	return xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, xui_cascader_data_t* pData, const xui_event_t* pEvent)
@@ -1170,6 +1287,8 @@ static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, x
 	int bExpanded;
 	int iRet;
 
+	if ( pData->tPointerOwner.bActive &&
+	     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) return XUI_OK;
 	pContext = xuiWidgetGetContext(pPanel);
 	w = xuiWidgetGetWorldRect(pPanel);
 	x = pEvent->fX - w.fX;
@@ -1206,6 +1325,19 @@ static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, x
 	return XUI_OK;
 }
 
+static int __xuiCascaderPanelPointerLeave(xui_widget pPanel, xui_cascader_data_t* pData)
+{
+	int oldColumn;
+	int oldItem;
+
+	if ( pData->iHoverItem < 0 ) return XUI_OK;
+	oldColumn = pData->iHoverColumn;
+	oldItem = pData->iHoverItem;
+	pData->iHoverColumn = -1;
+	pData->iHoverItem = -1;
+	return __xuiCascaderInvalidatePanelItem(pPanel, pData, oldColumn, oldItem);
+}
+
 static int __xuiCascaderMoveHover(xui_cascader_data_t* pData, int iDelta)
 {
 	int column;
@@ -1215,7 +1347,7 @@ static int __xuiCascaderMoveHover(xui_cascader_data_t* pData, int iDelta)
 	int item;
 	int i;
 
-	if ( pData == NULL ) return 0;
+	if ( pData == NULL || iDelta == 0 ) return 0;
 	column = pData->iHoverColumn;
 	if ( column < 0 || column >= __xuiCascaderColumnCount(pData) ) column = 0;
 	parent = __xuiCascaderColumnParent(pData, column);
@@ -1237,17 +1369,101 @@ static int __xuiCascaderMoveHover(xui_cascader_data_t* pData, int iDelta)
 	return 0;
 }
 
+static int __xuiCascaderMoveHoverToEdge(xui_cascader_data_t* pData, int bEnd)
+{
+	int column;
+	int parent;
+	int count;
+	int ordinal;
+	int delta;
+	int item;
+
+	if ( pData == NULL ) return 0;
+	column = pData->iHoverColumn;
+	if ( column < 0 || column >= __xuiCascaderColumnCount(pData) ) column = 0;
+	parent = __xuiCascaderColumnParent(pData, column);
+	count = __xuiCascaderChildCount(pData, parent);
+	if ( count <= 0 ) return 0;
+	ordinal = bEnd ? count - 1 : 0;
+	delta = bEnd ? -1 : 1;
+	for ( ; ordinal >= 0 && ordinal < count; ordinal += delta ) {
+		item = __xuiCascaderChildAt(pData, parent, ordinal);
+		if ( item >= 0 && __xuiCascaderItemEnabled(pData, item) ) {
+			pData->iHoverColumn = column;
+			pData->iHoverItem = item;
+			__xuiCascaderEnsureItemVisible(pData, column, item);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int __xuiCascaderMoveHoverPage(xui_cascader_data_t* pData, int iDirection)
+{
+	int column;
+	int parent;
+	int count;
+	int current;
+	int target;
+	int step;
+	int item;
+
+	if ( pData == NULL || iDirection == 0 ) return 0;
+	column = pData->iHoverColumn;
+	if ( column < 0 || column >= __xuiCascaderColumnCount(pData) ) column = 0;
+	parent = __xuiCascaderColumnParent(pData, column);
+	count = __xuiCascaderChildCount(pData, parent);
+	if ( count <= 0 ) return 0;
+	current = __xuiCascaderChildOrdinal(pData, parent, pData->iHoverItem);
+	if ( current < 0 ) current = (iDirection > 0) ? 0 : count - 1;
+	target = current + iDirection * __xuiCascaderVisibleRows(pData);
+	if ( target < 0 ) target = 0;
+	if ( target >= count ) target = count - 1;
+	step = (iDirection > 0) ? 1 : -1;
+	for ( ; target >= 0 && target < count; target += step ) {
+		item = __xuiCascaderChildAt(pData, parent, target);
+		if ( item >= 0 && __xuiCascaderItemEnabled(pData, item) ) goto found;
+	}
+	target = current + iDirection * __xuiCascaderVisibleRows(pData);
+	if ( target < 0 ) target = 0;
+	if ( target >= count ) target = count - 1;
+	step = -step;
+	for ( ; target >= 0 && target < count; target += step ) {
+		item = __xuiCascaderChildAt(pData, parent, target);
+		if ( item >= 0 && __xuiCascaderItemEnabled(pData, item) ) goto found;
+	}
+	return 0;
+
+found:
+	pData->iHoverColumn = column;
+	pData->iHoverItem = item;
+	__xuiCascaderEnsureItemVisible(pData, column, item);
+	return 1;
+}
+
 static int __xuiCascaderPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui_cascader_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_context pContext;
 	int child;
 	int parentItem;
 	int column;
+	int moved;
 	int iRet;
 
 	pContext = xuiWidgetGetContext(pPanel);
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
+	if ( (pEvent->iKey == XUI_KEY_F4 && pEvent->iModifiers == 0u) ||
+	     (((pEvent->iModifiers & XUI_MOD_ALT) != 0u) && pEvent->iKey == XUI_KEY_UP) ) {
+		iRet = __xuiCascaderCloseInternal(pOwner, pData);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
+	if ( ((pEvent->iModifiers & XUI_MOD_ALT) != 0u) && pEvent->iKey == XUI_KEY_DOWN ) {
+		return XUI_EVENT_DISPATCH_STOP;
+	}
 	switch ( pEvent->iKey ) {
+	case XUI_KEY_TAB:
+		iRet = __xuiCascaderCloseInternal(pOwner, pData);
+		return (iRet == XUI_OK) ? XUI_OK : iRet;
 	case XUI_KEY_ESCAPE:
 		iRet = __xuiCascaderCloseInternal(pOwner, pData);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
@@ -1258,6 +1474,18 @@ static int __xuiCascaderPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui_c
 	case XUI_KEY_DOWN:
 		iRet = XUI_OK;
 		if ( __xuiCascaderMoveHover(pData, 1) && pData->pPanel != NULL ) iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	case XUI_KEY_HOME:
+	case XUI_KEY_END:
+		moved = __xuiCascaderMoveHoverToEdge(pData, pEvent->iKey == XUI_KEY_END);
+		iRet = (moved && pData->pPanel != NULL) ?
+			xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	case XUI_KEY_PAGE_UP:
+	case XUI_KEY_PAGE_DOWN:
+		moved = __xuiCascaderMoveHoverPage(pData, pEvent->iKey == XUI_KEY_PAGE_DOWN ? 1 : -1);
+		iRet = (moved && pData->pPanel != NULL) ?
+			xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	case XUI_KEY_RIGHT:
 		if ( pData->iHoverItem >= 0 && __xuiCascaderItemEnabled(pData, pData->iHoverItem) && __xuiCascaderItemHasChildren(pData, pData->iHoverItem) ) {
@@ -1331,8 +1559,14 @@ static int __xuiCascaderPanelEvent(xui_widget pPanel, const xui_event_t* pEvent,
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_DOWN:
 		return __xuiCascaderPanelPointerDown(pPanel, pOwner, pData, pEvent);
+	case XUI_EVENT_POINTER_UP:
+		return __xuiCascaderPanelPointerUp(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_POINTER_MOVE:
 		return __xuiCascaderPanelPointerMove(pPanel, pOwner, pData, pEvent);
+	case XUI_EVENT_POINTER_LEAVE:
+		return __xuiCascaderPanelPointerLeave(pPanel, pData);
+	case XUI_EVENT_POINTER_CAPTURE_LOST:
+		return __xuiCascaderPanelCaptureLost(pPanel, pData, pEvent);
 	case XUI_EVENT_POINTER_WHEEL:
 		return __xuiCascaderPanelWheel(pPanel, pData, pEvent);
 	case XUI_EVENT_KEY_DOWN:
@@ -1356,6 +1590,7 @@ static void __xuiCascaderPopupChanged(xui_widget pPopup, int bOpen, void* pUser)
 	pData = __xuiCascaderGetData(pOwner);
 	if ( (pOwner == NULL) || (pData == NULL) ) return;
 	if ( !bOpen ) {
+		(void)__xuiCascaderCancelPanelPress(pOwner, pData);
 		pData->iHoverColumn = -1;
 		pData->iHoverItem = -1;
 	}
@@ -1692,7 +1927,10 @@ static int __xuiCascaderInitPanelEvents(xui_widget pPanel, xui_widget pOwner)
 	int iRet;
 
 	iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_DOWN, __xuiCascaderPanelEvent, pOwner);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_UP, __xuiCascaderPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_MOVE, __xuiCascaderPanelEvent, pOwner);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_LEAVE, __xuiCascaderPanelEvent, pOwner);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiCascaderPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_WHEEL, __xuiCascaderPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_KEY_DOWN, __xuiCascaderPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_FOCUS, __xuiCascaderPanelEvent, pOwner);
@@ -1776,6 +2014,17 @@ static int __xuiCascaderSetItemsInternal(xui_widget pWidget, xui_cascader_data_t
 		arrNewItems[i].sText = arrNewTexts[i];
 	}
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) {
+			__xuiCascaderFreeTextArray(arrNewTexts);
+			return iRet;
+		}
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) {
+			__xuiCascaderFreeTextArray(arrNewTexts);
+			return XUI_OK;
+		}
+	}
 	tOld = *pData;
 	bHadSelection = (pData->iSelectedDepth > 0) || (pData->iSelectedLeaf >= 0);
 	memset(pData->arrItems, 0, sizeof(pData->arrItems));
@@ -1790,6 +2039,8 @@ static int __xuiCascaderSetItemsInternal(xui_widget pWidget, xui_cascader_data_t
 	__xuiCascaderSetActivePath(pData, NULL, 0);
 	pData->iHoverColumn = -1;
 	pData->iHoverItem = -1;
+	pData->iPressedColumn = -1;
+	pData->iPressedItem = -1;
 	if ( bHadSelection ) pData->iChangeCount++;
 	iRet = __xuiCascaderApplyPopupStyle(pWidget, pData);
 	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) {
@@ -1860,6 +2111,7 @@ static void __xuiCascaderDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	(void)pUser;
 	pData = (xui_cascader_data_t*)pTypeData;
 	if ( pData != NULL ) {
+		(void)__xuiCascaderCancelPanelPress(pWidget, pData);
 		if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
 		__xuiCascaderClearItemTexts(pData);
 		memset(pData, 0, sizeof(*pData));
@@ -2186,6 +2438,11 @@ XUI_API int xuiCascaderSetPopupSize(xui_widget pWidget, float fColumnWidth, floa
 	     !isfinite(fPopupMaxHeight) || (fColumnWidth < 0.0f) ||
 	     (fPopupHeight < 0.0f) || (fPopupMaxHeight < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
 	fOldColumnWidth = pData->fColumnWidth;
 	fOldPopupHeight = pData->fPopupHeight;
 	fOldPopupMaxHeight = pData->fPopupMaxHeight;
@@ -2221,6 +2478,11 @@ XUI_API int xuiCascaderSetPopupPlacement(xui_widget pWidget, int iPlacement)
 	int iRet;
 	if ( (pData == NULL) || !__xuiCascaderPlacementValid(iPlacement) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
 	iOldPlacement = pData->iPopupPlacement;
 	pData->iPopupPlacement = iPlacement;
 	iRet = (pData->pPopup != NULL) ? __xuiCascaderApplyPopupStyle(pWidget, pData) : XUI_OK;
@@ -2248,6 +2510,11 @@ XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float f
 	if ( (pData == NULL) || !isfinite(fItemHeight) || !isfinite(fBorderWidth) ||
 	     (fItemHeight <= 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->tPointerOwner.bActive ) {
+		iRet = __xuiCascaderCancelPanelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
+	}
 	fOldItemHeight = pData->fItemHeight;
 	fOldBorderWidth = pData->fBorderWidth;
 	pData->fItemHeight = fItemHeight;

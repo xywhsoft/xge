@@ -83,12 +83,46 @@ static int __xuiCascaderClickItem(xui_context pContext, xui_widget pCascader, in
 	xui_widget pPanel;
 	xui_rect_t tWorld;
 	xui_rect_t tItem;
+	float x;
+	float y;
+	int iRet;
 
 	pPanel = xuiCascaderGetPanelWidget(pCascader);
 	if ( pPanel == NULL ) return XUI_ERROR;
 	tWorld = xuiWidgetGetWorldRect(pPanel);
 	tItem = xuiCascaderGetItemRect(pCascader, iColumn, iItem);
-	return __xuiCascaderDispatchDown(pContext, tWorld.fX + tItem.fX + tItem.fW * 0.5f, tWorld.fY + tItem.fY + tItem.fH * 0.5f);
+	x = tWorld.fX + tItem.fX + tItem.fW * 0.5f;
+	y = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = __xuiCascaderDispatchDown(pContext, x, y);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, x, y, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiCascaderSetItemsOomPreserves(xui_widget pCascader)
+{
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xui_cascader_item_t arrReplacement[2];
+	int iRet;
+
+	pBudget = NULL;
+	memset(&tScope, 0, sizeof(tScope));
+	arrReplacement[0] = (xui_cascader_item_t){"Replacement", 701, -1, XUI_CASCADER_ITEM_LEAF, NULL};
+	arrReplacement[1] = (xui_cascader_item_t){"Other", 702, -1, XUI_CASCADER_ITEM_LEAF, NULL};
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiCascaderSetItems(pCascader, arrReplacement, 2);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	return iRet == XUI_ERROR_OUT_OF_MEMORY &&
+		xuiCascaderGetItemCount(pCascader) == 11 &&
+		xuiCascaderGetSelectedLeaf(pCascader) == 5 &&
+		strcmp(xuiCascaderGetItem(pCascader, 0)->sText, "Guide") == 0;
 }
 
 int main(void)
@@ -119,6 +153,8 @@ int main(void)
 	xui_rect_t tButton;
 	xui_rect_t tClear;
 	xui_rect_t tPopupRect;
+	xui_rect_t tPanelWorld;
+	xui_rect_t tItemRect;
 	uint32_t iState;
 	int iChangeBefore;
 	int iFailed;
@@ -224,6 +260,12 @@ int main(void)
 	XUI_TEST_CHECK(xuiCascaderSetPlaceholder(pCascader, "Select") == XUI_OK, "restore placeholder");
 	XUI_TEST_CHECK(strcmp(xuiCascaderGetSelectedText(pCascader), "Guide / Navigation / Side nav") == 0, "full display");
 	XUI_TEST_CHECK(xuiCascaderGetSelectedPath(pCascader, arrPath, 3) == 3 && arrPath[0] == 1 && arrPath[1] == 12 && arrPath[2] == 121, "selected values");
+	arrPath[0] = -1;
+	XUI_TEST_CHECK(xuiCascaderGetSelectedPath(pCascader, NULL, 0) == 3 &&
+	               xuiCascaderGetSelectedPath(pCascader, arrPath, 1) == 3 && arrPath[0] == 1,
+	               "selected path supports size query and partial output");
+	XUI_TEST_CHECK(xuiCascaderGetSelectedPath(pCascader, arrPath, -1) == XUI_ERROR_INVALID_ARGUMENT,
+	               "selected path rejects negative capacity");
 	memset(arrInvalid, 0, sizeof(arrInvalid));
 	arrInvalid[0] = (xui_cascader_item_t){"Self", 1, 0, 0u, NULL};
 	XUI_TEST_CHECK(xuiCascaderSetItems(pCascader, arrInvalid, 1) == XUI_ERROR_INVALID_ARGUMENT, "reject self parent");
@@ -252,6 +294,8 @@ int main(void)
 	XUI_TEST_CHECK(xuiCascaderSetItems(pCascader, arrItems, 11) == XUI_OK &&
 	               xuiCascaderSetSelectedPath(pCascader, arrSelected, 3) == XUI_OK,
 	               "restore items and selection");
+	XUI_TEST_CHECK(__xuiCascaderSetItemsOomPreserves(pCascader),
+	               "item replacement allocation failure preserves data and selection");
 	XUI_TEST_CHECK(xuiCascaderSetPopupSize(pCascader, NAN, 0.0f, 160.0f) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN popup size");
 	XUI_TEST_CHECK(xuiCascaderSetMetrics(pCascader, 32.0f, INFINITY) == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metric");
 	iRet = xuiCascaderSetShowAllLevels(pCascader, 0);
@@ -261,6 +305,24 @@ int main(void)
 	tButton = xuiCascaderGetButtonRect(pCascader);
 	tClear = xuiCascaderGetClearRect(pCascader);
 	XUI_TEST_CHECK(tButton.fW > 20.0f && tButton.fH > 20.0f && tClear.fW > 12.0f, "owner rects");
+
+	iRet = xuiSetFocusWidget(pContext, pCascader);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus owner before popup shortcuts");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_F4, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK && xuiCascaderIsOpen(pCascader),
+	               "F4 opens popup");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_F4, XUI_MOD_ALT) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK && xuiCascaderIsOpen(pCascader),
+	               "Alt+F4 is not consumed as a popup shortcut");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_F4, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK && !xuiCascaderIsOpen(pCascader),
+	               "F4 closes popup");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_DOWN, XUI_MOD_ALT) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK && xuiCascaderIsOpen(pCascader),
+	               "Alt+Down opens popup");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_UP, XUI_MOD_ALT) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK && !xuiCascaderIsOpen(pCascader),
+	               "Alt+Up closes popup");
 
 	iRet = xuiCascaderOpen(pCascader);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCascaderIsOpen(pCascader), "open");
@@ -276,6 +338,22 @@ int main(void)
 	XUI_TEST_CHECK((iState & XUI_CASCADER_STATE_OPEN) != 0u, "open state");
 	tPopupRect = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(tPopupRect.fY >= 60.0f && tPopupRect.fW >= 380.0f, "popup rect");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_TAB, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK && !xuiCascaderIsOpen(pCascader),
+	               "Tab closes popup without trapping focus");
+	XUI_TEST_CHECK(xuiCascaderOpen(pCascader) == XUI_OK && xuiLayout(pContext) == XUI_OK &&
+	               __xuiCascaderRender(pContext, pTarget) == XUI_OK,
+	               "reopen after Tab");
+	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_END, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               xuiInputKeyDown(pContext, XUI_KEY_HOME, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               xuiInputKeyDown(pContext, XUI_KEY_PAGE_DOWN, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               xuiInputKeyDown(pContext, XUI_KEY_PAGE_UP, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               xuiCascaderIsOpen(pCascader) && xuiCascaderGetSelectedLeaf(pCascader) == 5,
+	               "Home End and page navigation do not commit selection");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK, "keyboard next item");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
@@ -286,6 +364,27 @@ int main(void)
 	memset(&tChange, 0, sizeof(tChange));
 	XUI_TEST_CHECK(xuiCascaderOpen(pCascader) == XUI_OK && xuiLayout(pContext) == XUI_OK, "reopen after keyboard navigation");
 	XUI_TEST_CHECK(__xuiCascaderRender(pContext, pTarget) == XUI_OK, "render reopened cascader");
+	pPanel = xuiCascaderGetPanelWidget(pCascader);
+	tPanelWorld = xuiWidgetGetWorldRect(pPanel);
+	tItemRect = xuiCascaderGetItemRect(pCascader, 2, 6);
+	iRet = __xuiCascaderDispatchDown(pContext,
+		tPanelWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f,
+		tPanelWorld.fY + tItemRect.fY + tItemRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pPanel &&
+	               xuiCascaderIsOpen(pCascader) && tChange.iCount == 0,
+	               "item press captures without committing");
+	XUI_TEST_CHECK(xuiInputPointerMove(pContext,
+	               (int)(tPanelWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+	               (int)(tPanelWorld.fY + tPanelWorld.fH + 20.0f), XUI_POINTER_BUTTON_LEFT) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK,
+	               "drag pressed item outside panel");
+	XUI_TEST_CHECK(xuiInputPointerUp(pContext,
+	               (int)(tPanelWorld.fX + tItemRect.fX + tItemRect.fW * 0.5f),
+	               (int)(tPanelWorld.fY + tPanelWorld.fH + 20.0f), XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               xuiGetPointerCapture(pContext) == NULL && xuiCascaderIsOpen(pCascader) &&
+	               tChange.iCount == 0 && xuiCascaderGetSelectedLeaf(pCascader) == 5,
+	               "release outside cancels item activation and capture");
 
 	iRet = __xuiCascaderClickItem(pContext, pCascader, 2, 7);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCascaderIsOpen(pCascader), "disabled click keeps open");
