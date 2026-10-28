@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_SCROLL_FRAME
 #include "xui_internal.h"
+#include "xui_slider_common.h"
 
 #include <math.h>
 #include <string.h>
@@ -374,6 +375,28 @@ static int __xuiScrollFrameSyncBars(xui_widget pWidget, xui_scroll_frame_data_t*
 	return iRet;
 }
 
+static int __xuiScrollFrameSyncChromeVisibility(xui_scroll_frame_data_t* pData)
+{
+	int bOldH;
+	int bOldV;
+	int bOldCorner;
+	int iRet;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	bOldH = xuiWidgetGetVisible(pData->pHBar);
+	bOldV = xuiWidgetGetVisible(pData->pVBar);
+	bOldCorner = xuiWidgetGetVisible(pData->pCorner);
+	iRet = xuiWidgetSetVisible(pData->pHBar, pData->bShowH);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pVBar, pData->bShowV);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pCorner, pData->bShowCorner);
+	if ( iRet != XUI_OK ) {
+		(void)xuiWidgetSetVisible(pData->pHBar, bOldH);
+		(void)xuiWidgetSetVisible(pData->pVBar, bOldV);
+		(void)xuiWidgetSetVisible(pData->pCorner, bOldCorner);
+	}
+	return iRet;
+}
+
 static int __xuiScrollFrameSetBarValues(xui_scroll_frame_data_t* pData,
 	float fOffsetX, float fOffsetY)
 {
@@ -451,6 +474,25 @@ static int __xuiScrollFrameSetOffsetInternal(xui_widget pWidget, xui_scroll_fram
 		__xuiScrollFrameNotify(pWidget, pData);
 	}
 	return XUI_OK;
+}
+
+static int __xuiScrollFrameSetOffsetDelta(xui_widget pWidget,
+	xui_scroll_frame_data_t* pData, float fBaseX, float fBaseY,
+	double fDeltaX, double fDeltaY, int bNotify)
+{
+	float fMaxX;
+	float fMaxY;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = xuiScrollModelGetMaxOffset(&pData->tModel, &fMaxX, &fMaxY);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiScrollFrameSetOffsetInternal(pWidget, pData,
+		xuiSliderCommonValueWithDelta(fBaseX, 0.0f, fMaxX, fDeltaX),
+		xuiSliderCommonValueWithDelta(fBaseY, 0.0f, fMaxY, fDeltaY),
+		bNotify);
 }
 
 static void __xuiScrollFrameHBarChanged(xui_widget pBar, float fValue, void* pUser)
@@ -568,6 +610,7 @@ static int __xuiScrollFrameLayoutComplete(xui_widget pWidget, xui_rect_t tConten
 	}
 	pData->tModel = tNewModel;
 	iRet = __xuiScrollFrameSyncBars(pWidget, pData);
+	if ( iRet == XUI_OK ) iRet = __xuiScrollFrameSyncChromeVisibility(pData);
 	if ( iRet != XUI_OK ) {
 		pData->tModel = tOldModel;
 		(void)__xuiScrollFrameSyncBars(pWidget, pData);
@@ -602,7 +645,8 @@ static int __xuiScrollFrameEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 	tViewportWorld = xuiWidgetGetWorldRect(pData->pViewport);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_WHEEL:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 			return XUI_OK;
 		}
 		if ( !__xuiScrollFramePointInRect(tViewportWorld, pEvent->fX, pEvent->fY) ) {
@@ -628,7 +672,9 @@ static int __xuiScrollFrameEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 		}
 		fOldX = pData->tModel.fScrollX;
 		fOldY = pData->tModel.fScrollY;
-		iRet = __xuiScrollFrameSetOffsetInternal(pWidget, pData, pData->tModel.fScrollX + fDX, pData->tModel.fScrollY + fDY, 1);
+		iRet = __xuiScrollFrameSetOffsetDelta(pWidget, pData,
+			pData->tModel.fScrollX, pData->tModel.fScrollY,
+			(double)fDX, (double)fDY, 1);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -638,7 +684,8 @@ static int __xuiScrollFrameEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 		}
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ||
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ||
 		     !pData->bContentDragEnabled || (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) ||
 		     !__xuiScrollFramePointInRect(tViewportWorld, pEvent->fX, pEvent->fY) ) {
 			return XUI_OK;
@@ -650,6 +697,17 @@ static int __xuiScrollFrameEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 			pEvent->iPointerType, pWidget);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiScrollFrameDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ||
+		     xuiGetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId,
+		      pEvent->iPointerType) != pWidget ) {
+			if ( xuiGetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId,
+			     pEvent->iPointerType) == pWidget ) {
+				(void)xuiReleasePointerCaptureEx(xuiWidgetGetContext(pWidget),
+					pEvent->iPointerId, pEvent->iPointerType, pWidget);
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		pData->bDraggingContent = 1;
 		pData->iDragPointerId = pEvent->iPointerId;
 		pData->iDragPointerType = pEvent->iPointerType;
@@ -662,17 +720,43 @@ static int __xuiScrollFrameEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 		if ( !__xuiScrollFramePointerMatches(pData, pEvent) ) {
 			return XUI_OK;
 		}
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			__xuiScrollFrameCancelContentDrag(pWidget, pData, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( xuiGetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId,
-		     pEvent->iPointerType) != pWidget ) return XUI_OK;
+		     pEvent->iPointerType) != pWidget ) {
+			__xuiScrollFrameCancelContentDrag(pWidget, pData, 0);
+			return XUI_OK;
+		}
 		fDX = pData->fDragX - pEvent->fX;
 		fDY = pData->fDragY - pEvent->fY;
-		iRet = __xuiScrollFrameSetOffsetInternal(pWidget, pData,
-			pData->fDragOffsetX + fDX, pData->fDragOffsetY + fDY, 1);
+		iRet = __xuiScrollFrameSetOffsetDelta(pWidget, pData,
+			pData->fDragOffsetX, pData->fDragOffsetY,
+			(double)fDX, (double)fDY, 1);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_UP:
 		if ( !__xuiScrollFramePointerMatches(pData, pEvent) ) {
 			return XUI_OK;
+		}
+		if ( xuiGetPointerCaptureEx(xuiWidgetGetContext(pWidget), pEvent->iPointerId,
+		     pEvent->iPointerType) == pWidget &&
+		     xuiWidgetGetEffectiveEnabled(pWidget) &&
+		     xuiWidgetGetEffectiveVisible(pWidget) ) {
+			fDX = pData->fDragX - pEvent->fX;
+			fDY = pData->fDragY - pEvent->fY;
+			iRet = __xuiScrollFrameSetOffsetDelta(pWidget, pData,
+				pData->fDragOffsetX, pData->fDragOffsetY,
+				(double)fDX, (double)fDY, 1);
+			if ( iRet != XUI_OK ) {
+				__xuiScrollFrameCancelContentDrag(pWidget, pData, 1);
+				return iRet;
+			}
+			if ( !__xuiScrollFrameDataAlive(pWidget, pData) ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
 		}
 		__xuiScrollFrameCancelContentDrag(pWidget, pData, 1);
 		return XUI_EVENT_DISPATCH_STOP;
@@ -686,7 +770,8 @@ static int __xuiScrollFrameEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 		return XUI_OK;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 			__xuiScrollFrameCancelContentDrag(pWidget, pData, 1);
 		}
 		return XUI_OK;
@@ -924,7 +1009,8 @@ XUI_API int xuiScrollFrameCreate(xui_context pContext, xui_widget* ppWidget, con
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
-	if ( !__xuiScrollFrameDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalContextIsValid(pContext) ||
+	     !__xuiScrollFrameDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiScrollFrameGetType(pContext);
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -1047,11 +1133,16 @@ XUI_API int xuiScrollFrameScrollBy(xui_widget pWidget, float fDeltaX, float fDel
 	float fOldX;
 	float fOldY;
 	int iRet;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !isfinite(fDeltaX) || !isfinite(fDeltaY) ||
+	     fDeltaX < -XUI_LAYOUT_UNBOUNDED || fDeltaX > XUI_LAYOUT_UNBOUNDED ||
+	     fDeltaY < -XUI_LAYOUT_UNBOUNDED || fDeltaY > XUI_LAYOUT_UNBOUNDED ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	fOldX = pData->tModel.fScrollX;
 	fOldY = pData->tModel.fScrollY;
-	iRet = __xuiScrollFrameSetOffsetInternal(pWidget, pData,
-		pData->tModel.fScrollX + fDeltaX, pData->tModel.fScrollY + fDeltaY, 0);
+	iRet = __xuiScrollFrameSetOffsetDelta(pWidget, pData,
+		pData->tModel.fScrollX, pData->tModel.fScrollY,
+		(double)fDeltaX, (double)fDeltaY, 0);
 	if ( iRet == XUI_OK && (fOldX != pData->tModel.fScrollX || fOldY != pData->tModel.fScrollY) ) {
 		__xuiScrollFrameCancelContentDrag(pWidget, pData, 1);
 	}

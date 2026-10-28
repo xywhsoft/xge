@@ -110,6 +110,8 @@ int main(void)
 	xui_scroll_frame_desc_t tDesc;
 	xui_scroll_frame_desc_t tAuxDesc;
 	xui_scroll_frame_destroy_state_t tDestroy;
+	xui_event_t tEvent;
+	xui_layout_stats_t tLayoutStats;
 	xui_rect_t tViewport;
 	xui_rect_t tHBar;
 	xui_rect_t tVBar;
@@ -175,6 +177,10 @@ int main(void)
 	tDesc.fWheelStep = 20.0f;
 	tDesc.fViewportWidth = 120.0f;
 	tDesc.fViewportHeight = 100.0f;
+	pInvalid = (xui_widget)(void*)1;
+	iRet = xuiScrollFrameCreate(NULL, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject invalid context");
 	iRet = xuiScrollFrameCreate(pContext, &pFrame, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFrame != NULL, "frame create");
 	tAuxDesc = tDesc;
@@ -236,6 +242,22 @@ int main(void)
 	XUI_TEST_CHECK(__xuiScrollFrameNear(tCorner.fW, 16.0f) && __xuiScrollFrameNear(tCorner.fH, 16.0f), "corner size");
 	iRet = xuiScrollModelGetMaxOffset(xuiScrollFrameGetModel(pFrame), &fMaxX, &fMaxY);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fMaxX, 136.0f) && __xuiScrollFrameNear(fMaxY, 136.0f), "model max offset");
+	iRet = xuiScrollFrameSetContentSize(pFrame, XUI_LAYOUT_UNBOUNDED,
+		XUI_LAYOUT_UNBOUNDED);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pFrame,
+		XUI_LAYOUT_UNBOUNDED - 512.0f, XUI_LAYOUT_UNBOUNDED - 512.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameScrollBy(pFrame,
+		XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED);
+	if ( iRet == XUI_OK ) iRet = xuiScrollModelGetMaxOffset(
+		xuiScrollFrameGetModel(pFrame), &fMaxX, &fMaxY);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pFrame,
+		&fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX == fMaxX && fOffsetY == fMaxY,
+		"wide relative scroll saturates at the content boundary");
+	iRet = xuiScrollFrameSetContentSize(pFrame, 240.0f, 220.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary frame after wide scroll");
 
 	tViewportWorld = xuiWidgetGetWorldRect(xuiScrollFrameGetViewportWidget(pFrame));
 	iRet = xuiScrollFrameSetWheelStep(pFrame, 12.0f);
@@ -268,10 +290,45 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fOffsetY, 20.0f) && iChanged > 0, "wheel offset");
 	XUI_TEST_CHECK(__xuiScrollFrameNear(xuiScrollBarGetValue(xuiScrollFrameGetVScrollBarWidget(pFrame)), fOffsetY), "vbar sync");
 
+	iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pRoot, 0);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_WHEEL;
+	tEvent.pTarget = pFrame;
+	tEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tEvent.fX = tViewportWorld.fX + 4.0f;
+	tEvent.fY = tViewportWorld.fY + 4.0f;
+	tEvent.fWheelY = -1.0f;
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tEvent);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pFrame, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fOffsetX, 0.0f) &&
+		__xuiScrollFrameNear(fOffsetY, 0.0f),
+		"inherited disabled state blocks directly dispatched wheel input");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore enabled root and drag baseline");
+
 	iRet = __xuiScrollFrameDispatchDrag(pContext, tViewportWorld.fX + 30.0f, tViewportWorld.fY + 30.0f, tViewportWorld.fX + 20.0f, tViewportWorld.fY + 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag dispatch");
 	iRet = xuiScrollFrameGetOffset(pFrame, &fOffsetX, &fOffsetY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX > 0.0f && fOffsetY > 20.0f, "drag offset");
+
+	iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDownEx(pContext, 705u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tViewportWorld.fX + 30.0f),
+		(int)(tViewportWorld.fY + 30.0f), XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUpEx(pContext, 705u,
+		XUI_POINTER_TYPE_TOUCH, (int)(tViewportWorld.fX + 10.0f),
+		(int)(tViewportWorld.fY + 5.0f), XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetOffset(pFrame, &fOffsetX, &fOffsetY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fOffsetX, 20.0f) &&
+		__xuiScrollFrameNear(fOffsetY, 25.0f) &&
+		xuiGetPointerCaptureEx(pContext, 705u, XUI_POINTER_TYPE_TOUCH) == NULL,
+		"pointer-up position supplies the final content-drag sample");
 
 	iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset offset before multi-pointer drag");
@@ -414,14 +471,46 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hidden layout");
 	XUI_TEST_CHECK(!xuiScrollFrameIsHScrollBarVisible(pFrame) && !xuiScrollFrameIsVScrollBarVisible(pFrame), "bars hidden");
+	XUI_TEST_CHECK(!xuiWidgetGetVisible(xuiScrollFrameGetHScrollBarWidget(pFrame)) &&
+		!xuiWidgetGetVisible(xuiScrollFrameGetVScrollBarWidget(pFrame)) &&
+		!xuiWidgetGetVisible(xuiScrollFrameGetCornerWidget(pFrame)),
+		"hidden chrome is removed from input and accessibility trees");
+	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLayoutStats.bStabilized,
+		"hidden chrome visibility stabilizes layout");
 
 	iRet = xuiScrollFrameSetContentSize(pFrame, 20.0f, 20.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "small content");
+	iRet = xuiScrollFrameSetScrollbarPolicy(pFrame, XUI_SCROLLBAR_POLICY_AUTO,
+		XUI_SCROLLBAR_POLICY_AUTO);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		!xuiWidgetGetVisible(xuiScrollFrameGetHScrollBarWidget(pFrame)) &&
+		!xuiWidgetGetVisible(xuiScrollFrameGetVScrollBarWidget(pFrame)) &&
+		!xuiWidgetGetVisible(xuiScrollFrameGetCornerWidget(pFrame)),
+		"auto policy hides chrome when content fits");
 	iRet = xuiScrollFrameSetScrollbarPolicy(pFrame, XUI_SCROLLBAR_POLICY_ALWAYS, XUI_SCROLLBAR_POLICY_ALWAYS);
 	XUI_TEST_CHECK(iRet == XUI_OK, "always policy");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "always layout");
 	XUI_TEST_CHECK(xuiScrollFrameIsHScrollBarVisible(pFrame) && xuiScrollFrameIsVScrollBarVisible(pFrame), "always bars");
+	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiScrollFrameGetHScrollBarWidget(pFrame)) &&
+		xuiWidgetGetVisible(xuiScrollFrameGetVScrollBarWidget(pFrame)) &&
+		xuiWidgetGetVisible(xuiScrollFrameGetCornerWidget(pFrame)),
+		"visible chrome returns to input and accessibility trees");
+	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLayoutStats.bStabilized,
+		"visible chrome restoration stabilizes layout");
+	iRet = xuiScrollFrameSetCornerMode(pFrame, XUI_SCROLL_FRAME_CORNER_NONE);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiWidgetGetVisible(xuiScrollFrameGetHScrollBarWidget(pFrame)) &&
+		xuiWidgetGetVisible(xuiScrollFrameGetVScrollBarWidget(pFrame)) &&
+		!xuiWidgetGetVisible(xuiScrollFrameGetCornerWidget(pFrame)),
+		"corner-none hides only the corner widget");
+	iRet = xuiScrollFrameSetCornerMode(pFrame, XUI_SCROLL_FRAME_CORNER_GRIP);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore grip corner");
 
 	iRet = xuiWidgetCreate(pContext, &pFooter);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFooter != NULL, "footer create");
