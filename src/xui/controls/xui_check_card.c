@@ -35,7 +35,8 @@ typedef struct xui_check_card_data_t {
 
 static int __xuiCheckCardNonNegativeFloatValid(float fValue)
 {
-	return isfinite(fValue) && fValue >= 0.0f;
+	return isfinite(fValue) && fValue >= 0.0f &&
+	       fValue <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static int __xuiCheckCardDescValid(const xui_check_card_desc_t* pDesc)
@@ -58,11 +59,6 @@ static int __xuiCheckCardDescValid(const xui_check_card_desc_t* pDesc)
 static int __xuiCheckCardAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
-}
-
-static uint32_t __xuiCheckCardWithAlpha(uint32_t iColor, uint32_t iAlpha)
-{
-	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
 static xui_check_card_data_t* __xuiCheckCardGetData(xui_widget pWidget)
@@ -143,8 +139,6 @@ static int __xuiCheckCardStyleFloat(xui_widget pWidget, const char* sName, float
 static void __xuiCheckCardResolve(xui_widget pWidget, const xui_check_card_data_t* pData, xui_check_card_data_t* pResolved)
 {
 	*pResolved = *pData;
-	pResolved->iFocusColor = (__xuiCheckCardAlpha(pData->iFocusColor) != 0) ?
-		__xuiCheckCardWithAlpha(pData->iFocusColor, 150) : pData->iFocusColor;
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.background.hover_color", &pResolved->iHoverBackgroundColor);
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.background.active_color", &pResolved->iActiveBackgroundColor);
@@ -167,7 +161,6 @@ static uint32_t __xuiCheckCardComputeState(xui_widget pWidget, const xui_check_c
 	uint32_t iState;
 
 	iState = xuiWidgetGetInputState(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
 	if ( (pData != NULL) && pData->bChecked ) iState |= XUI_CHECKCARD_STATE_CHECKED;
 	if ( (pData != NULL) && pData->bKeyboardActive ) iState |= XUI_WIDGET_STATE_ACTIVE;
 	return iState;
@@ -239,7 +232,8 @@ static int __xuiCheckCardSetCheckedInternal(xui_widget pWidget, xui_check_card_d
 
 static int __xuiCheckCardActivate(xui_widget pWidget, xui_check_card_data_t* pData)
 {
-	if ( (pData == NULL) || !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+	if ( (pData == NULL) || !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		return XUI_OK;
 	}
 	return __xuiCheckCardSetCheckedInternal(pWidget, pData,
@@ -266,7 +260,8 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	pData = __xuiCheckCardGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 		pData->bKeyboardActive = 0;
 		iRet = xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
 		if ( iRet != XUI_OK ) return iRet;
@@ -311,8 +306,9 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			if ( iRet == XUI_OK ) iRet = __xuiCheckCardSyncState(pWidget, pData);
 			if ( iRet != XUI_OK ) {
 				(void)xuiInternalPointerPressCancel(pContext, pWidget, &pData->tPointerPress);
+				return iRet;
 			}
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
@@ -323,7 +319,8 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			if ( iRet == XUI_OK && __xuiCheckCardDataAlive(pWidget, pData) ) {
 				iRet = __xuiCheckCardSyncState(pWidget, pData);
 			}
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CLICK:
@@ -332,7 +329,8 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 			iRet = __xuiCheckCardActivate(pWidget, pData);
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
@@ -343,18 +341,23 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		     ((pEvent->iKey == XUI_KEY_SPACE) || (pEvent->iKey == XUI_KEY_ENTER)) ) {
 			pData->bKeyboardActive = 1;
 			iRet = __xuiCheckCardSyncState(pWidget, pData);
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 #if XUI_ENABLE_RADIO_GROUP
 		if ( (pEvent->pTarget == pWidget) &&
 		     ((pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_UP)) ) {
 			iRet = xuiInternalRadioGroupMoveSelection(pWidget, -1);
-			return (iRet == XUI_ERROR_UNSUPPORTED) ? XUI_OK : (iRet | XUI_EVENT_DISPATCH_STOP);
+			if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_OK;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( (pEvent->pTarget == pWidget) &&
 		     ((pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_DOWN)) ) {
 			iRet = xuiInternalRadioGroupMoveSelection(pWidget, 1);
-			return (iRet == XUI_ERROR_UNSUPPORTED) ? XUI_OK : (iRet | XUI_EVENT_DISPATCH_STOP);
+			if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_OK;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 #endif
 		break;
@@ -365,7 +368,8 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			pData->bKeyboardActive = 0;
 			iRet = __xuiCheckCardSyncState(pWidget, pData);
 			if ( iRet == XUI_OK ) iRet = __xuiCheckCardActivate(pWidget, pData);
-			return iRet | XUI_EVENT_DISPATCH_STOP;
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	default:
@@ -399,9 +403,13 @@ static int __xuiCheckCardCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	uint32_t iBorder;
 	float fBorderWidth;
 	float fCorner;
+	float fCornerMax;
 	float fCornerInset;
 	float fCornerRight;
 	float fCornerTop;
+	float fFocusWidth;
+	float fMetricMax;
+	xui_rect_t tFocusRect;
 	int bChecked;
 	int iRet;
 
@@ -420,14 +428,23 @@ static int __xuiCheckCardCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	if ( (iStateId & XUI_WIDGET_STATE_DISABLED) != 0 ) iBorder = tResolved.iDisabledBorderColor;
 	else if ( !bChecked && ((iStateId & XUI_WIDGET_STATE_HOVER) != 0) ) iBorder = tResolved.iHoverBorderColor;
 	fBorderWidth = bChecked ? tResolved.fCheckedBorderWidth : tResolved.fBorderWidth;
+	fMetricMax = (tRect.fW < tRect.fH) ? tRect.fW : tRect.fH;
+	if ( fMetricMax < 0.0f ) fMetricMax = 0.0f;
+	if ( fBorderWidth > fMetricMax ) fBorderWidth = fMetricMax;
 	iRet = __xuiCheckCardDrawRectFill(pProxy, pDraw, tRect, iBg);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCheckCardDrawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, fBorderWidth * 0.5f), fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	fCornerInset = (fBorderWidth > 0.0f) ? fBorderWidth : 0.0f;
-	pData->tCornerRect = (xui_rect_t){tRect.fX + tRect.fW - tResolved.fCornerSize - fCornerInset, tRect.fY + fCornerInset, tResolved.fCornerSize, tResolved.fCornerSize};
-	if ( bChecked && tResolved.fCornerSize > 0.0f && pProxy->drawTriangleFill != NULL ) {
-		fCorner = tResolved.fCornerSize;
+	fCornerMax = tRect.fW - fCornerInset * 2.0f;
+	if ( fCornerMax > tRect.fH - fCornerInset * 2.0f ) {
+		fCornerMax = tRect.fH - fCornerInset * 2.0f;
+	}
+	if ( fCornerMax < 0.0f ) fCornerMax = 0.0f;
+	fCorner = (tResolved.fCornerSize < fCornerMax) ? tResolved.fCornerSize : fCornerMax;
+	pData->tCornerRect = (xui_rect_t){tRect.fX + tRect.fW - fCorner - fCornerInset,
+		tRect.fY + fCornerInset, fCorner, fCorner};
+	if ( bChecked && fCorner > 0.0f && pProxy->drawTriangleFill != NULL ) {
 		fCornerRight = tRect.fX + tRect.fW - fCornerInset;
 		fCornerTop = tRect.fY + fCornerInset;
 		tA = (xui_vec2_t){fCornerRight - fCorner, fCornerTop};
@@ -442,7 +459,11 @@ static int __xuiCheckCardCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		}
 	}
 	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && ((iStateId & XUI_WIDGET_STATE_DISABLED) == 0) ) {
-		iRet = __xuiCheckCardDrawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, 2.0f), tResolved.fFocusWidth, tResolved.iFocusColor);
+		tFocusRect = xuiInternalInsetRect(tRect, 2.0f);
+		fMetricMax = (tFocusRect.fW < tFocusRect.fH) ? tFocusRect.fW : tFocusRect.fH;
+		if ( fMetricMax < 0.0f ) fMetricMax = 0.0f;
+		fFocusWidth = (tResolved.fFocusWidth < fMetricMax) ? tResolved.fFocusWidth : fMetricMax;
+		iRet = __xuiCheckCardDrawRectStroke(pProxy, pDraw, tFocusRect, fFocusWidth, tResolved.iFocusColor);
 	}
 	return iRet;
 }
@@ -676,7 +697,9 @@ XUI_API int xuiCheckCardCreate(xui_context pContext, xui_widget* ppWidget, const
 
 	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
-	if ( !__xuiCheckCardDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalContextIsValid(pContext) || !__xuiCheckCardDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	pType = xuiCheckCardGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);

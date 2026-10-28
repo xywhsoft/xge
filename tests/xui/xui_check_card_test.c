@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -311,6 +312,31 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 3,
 	               "blurred keyboard press does not toggle");
+	tLabelWorld = xuiWidgetGetWorldRect(pStandalone);
+	iRet = xuiInputPointerMove(pContext,
+		tLabelWorld.fX + tLabelWorld.fW * 0.5f,
+		tLabelWorld.fY + tLabelWorld.fH * 0.5f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDown(pContext,
+		tLabelWorld.fX + tLabelWorld.fW * 0.5f,
+		tLabelWorld.fY + tLabelWorld.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pStandalone,
+		"check card captures pointer before ancestor disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		(xuiCheckCardGetState(pStandalone) & XUI_WIDGET_STATE_DISABLED) != 0u &&
+		(xuiCheckCardGetState(pStandalone) & XUI_WIDGET_STATE_ACTIVE) == 0u,
+		"ancestor disable cancels check card pointer session");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext,
+		tLabelWorld.fX + tLabelWorld.fW * 0.5f,
+		tLabelWorld.fY + tLabelWorld.fH * 0.5f,
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 3,
+		"cancelled ancestor-disabled press cannot toggle later");
 
 	iRet = __xuiCheckCardClick(pContext, pCard[0]);
 	XUI_TEST_CHECK(iRet == XUI_OK, "group click");
@@ -339,6 +365,20 @@ int main(void)
 	iRet = xuiCheckCardGetMetrics(pStandalone, &fBorder, &fCheckedBorder, &fCorner, &fFocus);
 	XUI_TEST_CHECK(iRet == XUI_OK && fBorder == 1.0f && fCheckedBorder == 2.0f && fCorner == 18.0f && fFocus == 3.0f,
 	               "invalid metrics preserve state");
+	iRet = xuiCheckCardSetMetrics(pStandalone, FLT_MAX, 2.0f, 18.0f, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject unbounded metrics");
+	iRet = xuiCheckCardSetMetrics(pStandalone, 1.0f, 2.0f, 1000.0f, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set oversized corner metric");
+	iRet = __xuiCheckCardRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render oversized corner metric");
+	tCorner = xuiCheckCardGetCornerRect(pStandalone);
+	tCardRect = xuiWidgetGetContentRect(pStandalone);
+	XUI_TEST_CHECK(tCorner.fX >= tCardRect.fX && tCorner.fY >= tCardRect.fY &&
+		tCorner.fX + tCorner.fW <= tCardRect.fX + tCardRect.fW &&
+		tCorner.fY + tCorner.fH <= tCardRect.fY + tCardRect.fH,
+		"oversized corner stays inside card bounds");
+	iRet = xuiCheckCardSetMetrics(pStandalone, 1.0f, 2.0f, 18.0f, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore metrics after oversized corner");
 	iRet = xuiCheckCardSetColors(pStandalone, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(250, 252, 252, 255), XUI_COLOR_RGBA(244, 248, 248, 255), XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(220, 220, 220, 255), XUI_COLOR_RGBA(120, 210, 205, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(255, 255, 255, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 
@@ -361,6 +401,16 @@ int main(void)
 	iRet = xuiCheckCardCreate(pContext, &pInvalidCard, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidCard == NULL,
 		"invalid create clears output");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fCornerSize = FLT_MAX;
+	pInvalidCard = pRoot;
+	iRet = xuiCheckCardCreate(pContext, &pInvalidCard, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidCard == NULL,
+		"unbounded create clears output");
+	pInvalidCard = pRoot;
+	iRet = xuiCheckCardCreate(NULL, &pInvalidCard, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidCard == NULL,
+		"invalid context clears output");
 
 cleanup:
 	if ( pContext != NULL ) xuiDestroy(pContext);

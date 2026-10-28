@@ -60,6 +60,9 @@ static void card_cases(pixel_fixture_t* f)
 	basic_case(f, w, "checkcard.check.color", XUI_CHECKCARD_STATE_CHECKED | XUI_WIDGET_STATE_DISABLED, BASIC_LINE);
 	basic_case(f, w, "checkcard.background.color", XUI_WIDGET_STATE_DISABLED, BASIC_FILL);
 	basic_cached_case(f, w, "checkcard.background.color", BASIC_FILL);
+	PIXEL_CHECK(xuiCheckCardSetStateColors(w, 0, 0x1234567fu) == XUI_OK);
+	basic_paint(f, w, XUI_WIDGET_STATE_FOCUS);
+	PIXEL_CHECK(basic_seen(BASIC_STROKE, 0x1234567fu) > 0);
 	PIXEL_CHECK(xuiCheckCardSetStateColors(w, 0, 0) == XUI_OK);
 	basic_paint(f, w, XUI_WIDGET_STATE_FOCUS); PIXEL_CHECK(basic_seen(BASIC_STROKE, 150) == 0);
 	xuiWidgetDestroy(w);
