@@ -30,6 +30,39 @@ typedef struct xui_tabs_destroy_events_t {
 	int iSelectCount;
 } xui_tabs_destroy_events_t;
 
+typedef struct xui_tabs_remove_events_t {
+	int iCount;
+	int iLastIndex;
+	int iResult;
+} xui_tabs_remove_events_t;
+
+typedef struct xui_tabs_blur_destroy_events_t {
+	xui_widget* ppWidget;
+	int iDestroyCount;
+} xui_tabs_blur_destroy_events_t;
+
+static xui_style_value_t __xuiTabsStyleFloat(float fValue)
+{
+	xui_style_value_t tValue;
+
+	memset(&tValue, 0, sizeof(tValue));
+	tValue.iSize = sizeof(tValue);
+	tValue.iType = XUI_STYLE_VALUE_FLOAT;
+	tValue.fFloat = fValue;
+	return tValue;
+}
+
+static xui_style_property_t __xuiTabsStyleProperty(const char* sName, xui_style_value_t tValue)
+{
+	xui_style_property_t tProperty;
+
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	tProperty.sName = sName;
+	tProperty.tValue = tValue;
+	return tProperty;
+}
+
 static int __xuiTabsNear(float fA, float fB)
 {
 	float fD;
@@ -72,6 +105,33 @@ static void __xuiTabsOnClose(xui_widget pWidget, int iIndex, void* pUser)
 		pEvents->iCloseCount++;
 		pEvents->iLastClose = iIndex;
 	}
+}
+
+static void __xuiTabsRemoveOnClose(xui_widget pWidget, int iIndex, void* pUser)
+{
+	xui_tabs_remove_events_t* pEvents = (xui_tabs_remove_events_t*)pUser;
+
+	if ( pEvents == NULL ) return;
+	pEvents->iCount++;
+	pEvents->iLastIndex = iIndex;
+	pEvents->iResult = xuiTabsRemovePage(pWidget, iIndex);
+}
+
+static int __xuiTabsDestroyTargetOnBlur(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_tabs_blur_destroy_events_t* pEvents = (xui_tabs_blur_destroy_events_t*)pUser;
+	xui_widget pVictim;
+
+	(void)pWidget;
+	if ( pEvents == NULL || pEvent == NULL || pEvent->iType != XUI_EVENT_BLUR ||
+	     pEvents->ppWidget == NULL || *pEvents->ppWidget == NULL ) {
+		return XUI_OK;
+	}
+	pVictim = *pEvents->ppWidget;
+	*pEvents->ppWidget = NULL;
+	pEvents->iDestroyCount++;
+	xuiWidgetDestroy(pVictim);
+	return XUI_OK;
 }
 
 static int __xuiTabsOnContext(xui_widget pWidget, int iIndex, float fX, float fY, void* pUser)
@@ -146,15 +206,22 @@ int main(void)
 	static const int arrEnabled[] = {1, 1, 0, 1, 1};
 	static const int arrEnabledMove[] = {1, 0, 0, 1, 1};
 	static const int arrDirty[] = {0, 1, 0, 0, 0};
+	static const char* arrMutationItems[] = {"Alpha", "Beta", "Gamma"};
 	xui_test_proxy_state_t tState;
 	xui_tabs_test_events_t tEvents;
 	xui_tabs_destroy_events_t tDestroyEvents;
+	xui_tabs_remove_events_t tRemoveEvents;
+	xui_tabs_blur_destroy_events_t tBlurDestroyEvents;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pTabs;
 	xui_widget pDestroyTabs;
+	xui_widget pMutationTabs;
+	xui_widget pContextTabs;
+	xui_widget pBlurProbe;
 	xui_widget pProbe;
 	xui_widget pUtf8Tabs;
+	xui_widget arrMutationPages[3];
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pIcon;
@@ -164,6 +231,8 @@ int main(void)
 	xui_tabs_desc_t tBadDesc;
 	xui_tabs_desc_t tUtf8Desc;
 	xui_accessible_node_t tAccessible;
+	xui_style_property_t tStyle;
+	xui_event_t tContextEvent;
 	xui_rect_t tWorld;
 	xui_rect_t tProbeWorld;
 	xui_rect_t tTab;
@@ -183,6 +252,7 @@ int main(void)
 	float fScroll;
 	char sLongTitle[80];
 	const char* arrUtf8Items[1];
+	const char* arrBorrowedTitles[3];
 	int iBefore;
 	int iFailed;
 	int iRet;
@@ -191,6 +261,9 @@ int main(void)
 	pRoot = NULL;
 	pTabs = NULL;
 	pDestroyTabs = NULL;
+	pMutationTabs = NULL;
+	pContextTabs = NULL;
+	pBlurProbe = NULL;
 	pProbe = NULL;
 	pUtf8Tabs = NULL;
 	pTarget = NULL;
@@ -198,6 +271,10 @@ int main(void)
 	iFailed = 0;
 	memset(&tEvents, 0, sizeof(tEvents));
 	memset(&tDestroyEvents, 0, sizeof(tDestroyEvents));
+	memset(&tRemoveEvents, 0, sizeof(tRemoveEvents));
+	memset(&tBlurDestroyEvents, 0, sizeof(tBlurDestroyEvents));
+	memset(arrMutationPages, 0, sizeof(arrMutationPages));
+	tRemoveEvents.iLastIndex = -1;
 	tEvents.iLastSelect = -1;
 	tEvents.iLastClose = -1;
 	tEvents.iLastContext = -1;
@@ -278,6 +355,31 @@ int main(void)
 		strcmp(tAccessible.sName, "Scene") == 0 &&
 		(tAccessible.iState & XUI_ACCESSIBLE_STATE_SELECTED) != 0,
 		"tabs accessibility selected tab");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiTabsGetState(pTabs) & XUI_WIDGET_STATE_DISABLED) != 0u,
+		"parent disabled state reaches tabs");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTabs, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u &&
+		tAccessible.iActions == 0u,
+		"parent disabled state reaches accessibility");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore parent enabled state");
+	iRet = xuiWidgetSetVisible(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hide tabs through parent");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTabs, 0, &tAccessible) == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0u &&
+		tAccessible.iActions == 0u &&
+		xuiWidgetPerformAccessibleAction(pTabs, 1u,
+			XUI_ACCESSIBLE_ACTION_FOCUS, NULL) != XUI_OK,
+		"hidden tabs are offscreen and reject accessibility actions");
+	iRet = xuiWidgetSetVisible(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore parent visibility");
 	iRet = xuiTabsGetTabSize(pTabs, &fTabWidth, &fTabHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK, "get tab size baseline");
 	iRet = xuiTabsSetTabSize(pTabs, NAN, fTabHeight);
@@ -287,6 +389,14 @@ int main(void)
 	iRet = xuiTabsGetTabSize(pTabs, &fCheckWidth, &fCheckHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && fCheckWidth == fTabWidth && fCheckHeight == fTabHeight,
 		"invalid tab size preserves values");
+	tStyle = __xuiTabsStyleProperty("tabs.tab.width", __xuiTabsStyleFloat(INFINITY));
+	iRet = xuiWidgetSetInlineStyle(pTabs, &tStyle, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTabsNear(xuiTabsGetTabRect(pTabs, 1).fW, fTabWidth),
+		"ignore non-finite style metric");
+	iRet = xuiWidgetSetInlineStyle(pTabs, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear invalid tabs style");
 	tClient = xuiTabsGetClientRect(pTabs);
 	tTab = xuiTabsGetTabRect(pTabs, 1);
 	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 32.0f), "selected top tab fills strip height");
@@ -472,8 +582,9 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
 		xuiTabsGetActiveIndex(pTabs) == -1 && xuiTabsGetCloseActiveIndex(pTabs) == -1 &&
+		xuiTabsGetHoverIndex(pTabs) == 0 &&
 		(xuiTabsGetState(pTabs) & XUI_WIDGET_STATE_ACTIVE) == 0,
-		"escape releases child capture and clears active state");
+		"escape releases child capture without clearing pointer hover");
 	iRet = xuiInputPointerUp(pContext,
 		tWorld.fX + tTab.fX + tTab.fW * 0.5f,
 		tWorld.fY + tTab.fY + tTab.fH * 0.5f,
@@ -539,8 +650,9 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
 		(xuiTabsGetState(pTabs) & XUI_WIDGET_STATE_ACTIVE) == 0 &&
+		(xuiTabsGetState(pTabs) & XUI_WIDGET_STATE_HOVER) != 0 &&
 		!xuiMenuIsOpen(xuiTabsGetOverflowMenu(pTabs)),
-		"escape releases overflow capture without opening menu");
+		"escape releases overflow capture without clearing pointer hover");
 	iRet = xuiInputPointerUp(pContext,
 		tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f,
 		tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f,
@@ -581,8 +693,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(xuiTabsGetOverflowMenu(pTabs)) &&
 		xuiGetPointerCaptureEx(pContext, 511u, XUI_POINTER_TYPE_TOUCH) == NULL,
 		"owning touch opens tabs overflow once");
-	iRet = xuiMenuClose(xuiTabsGetOverflowMenu(pTabs));
-	XUI_TEST_CHECK(iRet == XUI_OK, "close multi-touch overflow menu");
+	iRet = xuiWidgetSetVisible(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuIsOpen(xuiTabsGetOverflowMenu(pTabs)) &&
+		xuiTabsGetHoverIndex(pTabs) == -1 &&
+		(xuiTabsGetState(pTabs) & (XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_ACTIVE)) == 0u,
+		"parent hide closes overflow and clears transient state");
+	iRet = xuiWidgetSetVisible(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore after hiding open overflow");
 
 	iRet = xuiTabsSetSelected(pTabs, 4);
 	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
@@ -631,6 +749,106 @@ int main(void)
 		"title truncation preserves utf8 grapheme boundary");
 	xuiWidgetDestroy(pUtf8Tabs);
 	pUtf8Tabs = NULL;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.arrItems = arrMutationItems;
+	tDesc.iItemCount = 3;
+	tDesc.iSelected = 0;
+	tDesc.fTabWidth = 88.0f;
+	tDesc.fTabHeight = 30.0f;
+	iRet = xuiTabsCreate(pContext, &pMutationTabs, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pMutationTabs != NULL, "mutation tabs create");
+	iRet = xuiWidgetAddChild(pRoot, pMutationTabs);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetSetRect(pMutationTabs,
+			(xui_rect_t){300.0f, 210.0f, 320.0f, 130.0f});
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK, "mutation tabs add");
+	arrMutationPages[0] = xuiTabsGetPageWidget(pMutationTabs, 0);
+	arrMutationPages[1] = xuiTabsGetPageWidget(pMutationTabs, 1);
+	arrMutationPages[2] = xuiTabsGetPageWidget(pMutationTabs, 2);
+	iRet = xuiTabsSetItemText(pMutationTabs, 1, "Renamed");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiTabsGetItemText(pMutationTabs, 1), "Renamed") == 0,
+		"set item text");
+	arrBorrowedTitles[0] = xuiTabsGetItemText(pMutationTabs, 2);
+	arrBorrowedTitles[1] = xuiTabsGetItemText(pMutationTabs, 0);
+	arrBorrowedTitles[2] = xuiTabsGetItemText(pMutationTabs, 1);
+	iRet = xuiTabsSetItems(pMutationTabs, arrBorrowedTitles, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiTabsGetItemText(pMutationTabs, 0), "Gamma") == 0 &&
+		strcmp(xuiTabsGetItemText(pMutationTabs, 1), "Alpha") == 0 &&
+		strcmp(xuiTabsGetItemText(pMutationTabs, 2), "Renamed") == 0,
+		"set items accepts borrowed titles while reordering");
+	iRet = xuiTabsSetSelected(pMutationTabs, 1);
+	iBefore = xuiTabsGetChangeCount(pMutationTabs);
+	if ( iRet == XUI_OK ) iRet = xuiTabsRemovePage(pMutationTabs, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetItemCount(pMutationTabs) == 2 &&
+		xuiTabsGetSelected(pMutationTabs) == 0 &&
+		xuiTabsGetChangeCount(pMutationTabs) == iBefore + 1 &&
+		xuiTabsGetPageWidget(pMutationTabs, 0) == arrMutationPages[1] &&
+		xuiTabsGetPageWidget(pMutationTabs, 1) == arrMutationPages[2] &&
+		strcmp(xuiTabsGetItemText(pMutationTabs, 0), "Alpha") == 0 &&
+		strcmp(xuiTabsGetItemText(pMutationTabs, 1), "Renamed") == 0,
+		"remove page preserves remaining page identity and selection");
+	iRet = xuiTabsSetClose(pMutationTabs, __xuiTabsRemoveOnClose, 1, &tRemoveEvents);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "remove-on-close tabs layout");
+	tWorld = xuiWidgetGetWorldRect(pMutationTabs);
+	tClose = xuiTabsGetCloseRect(pMutationTabs, 0);
+	iRet = __xuiTabsDispatchClick(pContext,
+		tWorld.fX + tClose.fX + tClose.fW * 0.5f,
+		tWorld.fY + tClose.fY + tClose.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRemoveEvents.iCount == 1 &&
+		tRemoveEvents.iLastIndex == 0 && tRemoveEvents.iResult == XUI_OK &&
+		xuiTabsGetItemCount(pMutationTabs) == 1 &&
+		xuiTabsGetPageWidget(pMutationTabs, 0) == arrMutationPages[2] &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"close callback may remove its page safely");
+	xuiWidgetDestroy(pMutationTabs);
+	pMutationTabs = NULL;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.arrItems = arrItems;
+	tDesc.iItemCount = 2;
+	tDesc.iSelected = 0;
+	iRet = xuiTabsCreate(pContext, &pContextTabs, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pContextTabs != NULL, "context destroy tabs create");
+	iRet = xuiWidgetSetRect(pContextTabs, (xui_rect_t){380.0f, 210.0f, 220.0f, 120.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pContextTabs);
+	if ( iRet == XUI_OK ) iRet = xuiTabsSetContextMenu(pContextTabs, __xuiTabsOnContext, &tEvents);
+	XUI_TEST_CHECK(iRet == XUI_OK, "context destroy tabs add");
+	iRet = xuiWidgetCreate(pContext, &pBlurProbe);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pBlurProbe, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pBlurProbe, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pBlurProbe,
+		(xui_rect_t){380.0f, 170.0f, 80.0f, 30.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pBlurProbe);
+	tBlurDestroyEvents.ppWidget = &pContextTabs;
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pBlurProbe, XUI_EVENT_BLUR,
+		__xuiTabsDestroyTargetOnBlur, &tBlurDestroyEvents);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pBlurProbe);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pBlurProbe,
+		"context destroy focus probe");
+	memset(&tContextEvent, 0, sizeof(tContextEvent));
+	tContextEvent.iSize = sizeof(tContextEvent);
+	tContextEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	tContextEvent.iKey = XUI_KEY_CONTEXT_MENU;
+	tContextEvent.pTarget = pContextTabs;
+	iBefore = tEvents.iContextCount;
+	iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && pContextTabs != NULL &&
+		tBlurDestroyEvents.iDestroyCount == 0 && tEvents.iContextCount == iBefore + 1,
+		"context callback completes before queued focus events");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pContextTabs == NULL &&
+		tBlurDestroyEvents.iDestroyCount == 1,
+		"queued blur callback may destroy tabs safely");
+	xuiWidgetDestroy(pBlurProbe);
+	pBlurProbe = NULL;
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);

@@ -9358,12 +9358,16 @@ XUI_API xui_widget_type xuiTabsGetType(xui_context pContext);
 XUI_API int xuiTabsCreate(xui_context pContext, xui_widget* ppWidget, const xui_tabs_desc_t* pDesc);
 /* 注册页签切换回调。 */
 XUI_API int xuiTabsSetSelect(xui_widget pWidget, xui_tabs_select_proc onSelect, void* pUser);
-/* 注册页签关闭回调；bCloseButtons 控制显示关闭钮。 */
+/* 注册页签关闭回调；bCloseButtons 控制显示关闭钮。控件不自动删除页面，回调可调用 xuiTabsRemovePage。 */
 XUI_API int xuiTabsSetClose(xui_widget pWidget, xui_tabs_close_proc onClose, int bCloseButtons, void* pUser);
 /* 注册页签右键回调。 */
 XUI_API int xuiTabsSetContextMenu(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser);
 /* 添加页面（标题会复制）；*ppPage 可空输出借用的页面容器。 */
 XUI_API int xuiTabsAddPage(xui_widget pWidget, const char* sTitle, xui_widget* ppPage);
+/* 修改指定页签标题；标题按 UTF-8 字素边界复制。 */
+XUI_API int xuiTabsSetItemText(xui_widget pWidget, int iIndex, const char* sTitle);
+/* 删除指定页签，并销毁 Tabs 拥有的按钮、页面容器及其子树；相关借用句柄随即失效。 */
+XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex);
 /* 以字符串数组批量设置页签；标题会复制，既有页面容器按索引复用。 */
 XUI_API int xuiTabsSetItems(xui_widget pWidget, const char** arrItems, int iItemCount);
 /* 读取页签数。 */
@@ -9394,7 +9398,7 @@ XUI_API xui_font xuiTabsGetFont(xui_widget pWidget);
 XUI_API int xuiTabsSetSelected(xui_widget pWidget, int iIndex);
 /* 读取选中索引。 */
 XUI_API int xuiTabsGetSelected(xui_widget pWidget);
-/* 设置页签尺寸（宽度可自动）。 */
+/* 设置页签尺寸。 */
 XUI_API int xuiTabsSetTabSize(xui_widget pWidget, float fWidth, float fHeight);
 /* 输出页签尺寸。 */
 XUI_API int xuiTabsGetTabSize(xui_widget pWidget, float* pWidth, float* pHeight);

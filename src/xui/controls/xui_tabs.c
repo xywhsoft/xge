@@ -192,7 +192,7 @@ static int __xuiTabsWidgetAlive(xui_widget pWidget, xui_tabs_data_t* pData)
 		__xuiTabsGetData(pWidget) == pData;
 }
 
-static int __xuiTabsClearInteraction(xui_widget pTabs, xui_tabs_data_t* pData)
+static int __xuiTabsResetInteraction(xui_widget pTabs, xui_tabs_data_t* pData, int bClearHover)
 {
 	xui_context pContext;
 	xui_widget pCapture;
@@ -207,14 +207,29 @@ static int __xuiTabsClearInteraction(xui_widget pTabs, xui_tabs_data_t* pData)
 			pData->tPointerOwner.iPointerId, pData->tPointerOwner.iPointerType);
 	}
 	bChanged = pData->iActiveIndex >= 0 || pData->iCloseActiveIndex >= 0 ||
-		pData->bOverflowActive || pData->tPointerOwner.bActive;
+		pData->bOverflowActive || pData->tPointerOwner.bActive ||
+		(bClearHover && (pData->iHoverIndex >= 0 || pData->iCloseHoverIndex >= 0 ||
+		pData->bOverflowHover));
+	if ( bClearHover ) pData->iHoverIndex = -1;
 	pData->iActiveIndex = -1;
+	if ( bClearHover ) pData->iCloseHoverIndex = -1;
 	pData->iCloseActiveIndex = -1;
+	if ( bClearHover ) pData->bOverflowHover = 0;
 	pData->bOverflowActive = 0;
 	iRet = xuiInternalPointerOwnerCancel(pContext, pCapture, &pData->tPointerOwner);
 	if ( iRet != XUI_OK ) return iRet;
 	return bChanged ? __xuiTabsInvalidateAll(pTabs, pData,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+}
+
+static int __xuiTabsClearInteraction(xui_widget pTabs, xui_tabs_data_t* pData)
+{
+	return __xuiTabsResetInteraction(pTabs, pData, 0);
+}
+
+static int __xuiTabsClearAllInteraction(xui_widget pTabs, xui_tabs_data_t* pData)
+{
+	return __xuiTabsResetInteraction(pTabs, pData, 1);
 }
 
 static int __xuiTabsIconRectValid(xui_rect_t tRect)
@@ -250,7 +265,9 @@ static int __xuiTabsStyleFloat(xui_widget pWidget, const char* sName, float* pVa
 	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
 	if ( (iRet == XUI_OK) &&
 	     (tProperty.tValue.iType == XUI_STYLE_VALUE_FLOAT) &&
-	     (tProperty.tValue.fFloat >= 0.0f) ) {
+	     isfinite(tProperty.tValue.fFloat) &&
+	     (tProperty.tValue.fFloat >= 0.0f) &&
+	     (tProperty.tValue.fFloat <= XUI_LAYOUT_UNBOUNDED) ) {
 		*pValue = tProperty.tValue.fFloat;
 		return 1;
 	}
@@ -1156,6 +1173,7 @@ static int __xuiTabsEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
 		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiTabsWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 		if ( pData->onContext != NULL ) return pData->onContext(pWidget, iIndex, fX, fY, pData->pContextUser);
 		return XUI_OK;
 	case XUI_EVENT_KEY_DOWN:
@@ -1200,10 +1218,16 @@ static int __xuiTabsEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_ENABLED_CHANGED:
+	case XUI_EVENT_VISIBLE_CHANGED:
 		if ( pEvent->pTarget != pWidget ) return XUI_OK;
-		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
-			iRet = __xuiTabsClearInteraction(pWidget, pData);
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			iRet = __xuiTabsClearAllInteraction(pWidget, pData);
 			if ( iRet != XUI_OK ) return iRet;
+			if ( pData->pOverflowMenu != NULL && xuiMenuIsOpen(pData->pOverflowMenu) ) {
+				iRet = xuiMenuClose(pData->pOverflowMenu);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiTabsWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			}
 		}
 		iRet = __xuiTabsSyncPages(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1308,14 +1332,14 @@ static int __xuiTabsCreatePage(xui_widget pTabs, xui_tabs_data_t* pData, int iIn
 	return XUI_OK;
 }
 
-static void __xuiTabsSetTitle(xui_tabs_page_t* pPage, const char* sTitle)
+static void __xuiTabsCopyTitle(char sOutput[XUI_TABS_TITLE_CAPACITY], const char* sTitle)
 {
 	size_t iTextSizeValue;
 	int iTextSize;
 	int iAt;
 	int iNext;
 
-	if ( pPage == NULL ) {
+	if ( sOutput == NULL ) {
 		return;
 	}
 	if ( sTitle == NULL ) {
@@ -1327,16 +1351,23 @@ static void __xuiTabsSetTitle(xui_tabs_page_t* pPage, const char* sTitle)
 	while ( iAt < iTextSize ) {
 		iNext = xuiInternalTextGraphemeNext(sTitle, iTextSize, iAt);
 		if ( iNext <= iAt || iNext > iTextSize ) iNext = iAt + 1;
-		if ( iNext >= (int)sizeof(pPage->sTitle) ) break;
+		if ( iNext >= XUI_TABS_TITLE_CAPACITY ) break;
 		iAt = iNext;
 	}
-	if ( iAt > 0 ) memcpy(pPage->sTitle, sTitle, (size_t)iAt);
-	pPage->sTitle[iAt] = 0;
+	if ( iAt > 0 ) memmove(sOutput, sTitle, (size_t)iAt);
+	sOutput[iAt] = 0;
+}
+
+static void __xuiTabsSetTitle(xui_tabs_page_t* pPage, const char* sTitle)
+{
+	if ( pPage == NULL ) return;
+	__xuiTabsCopyTitle(pPage->sTitle, sTitle);
 }
 
 static int __xuiTabsApplyItems(xui_widget pTabs, xui_tabs_data_t* pData, const char** arrItems, int iItemCount)
 {
 	xui_tabs_page_t arrOldPages[XUI_TABS_PAGE_CAPACITY];
+	char arrNewTitles[XUI_TABS_PAGE_CAPACITY][XUI_TABS_TITLE_CAPACITY];
 	float fOldScroll;
 	int iOldPageCount;
 	int iOldSelected;
@@ -1351,7 +1382,10 @@ static int __xuiTabsApplyItems(xui_widget pTabs, xui_tabs_data_t* pData, const c
 	if ( (pTabs == NULL) || (pData == NULL) || (iItemCount < 0) || (iItemCount > XUI_TABS_PAGE_CAPACITY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiTabsClearInteraction(pTabs, pData);
+	for ( i = 0; i < iItemCount; i++ ) {
+		__xuiTabsCopyTitle(arrNewTitles[i], (arrItems != NULL) ? arrItems[i] : "");
+	}
+	iRet = __xuiTabsClearAllInteraction(pTabs, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	memcpy(arrOldPages, pData->arrPages, sizeof(arrOldPages));
 	iOldPageCount = pData->iPageCount;
@@ -1365,7 +1399,7 @@ static int __xuiTabsApplyItems(xui_widget pTabs, xui_tabs_data_t* pData, const c
 	for ( i = 0; i < iItemCount; i++ ) {
 		iRet = __xuiTabsCreatePage(pTabs, pData, i);
 		if ( iRet != XUI_OK ) goto rollback;
-		__xuiTabsSetTitle(&pData->arrPages[i], (arrItems != NULL) ? arrItems[i] : "");
+		__xuiTabsSetTitle(&pData->arrPages[i], arrNewTitles[i]);
 		if ( pData->arrPages[i].bEnabled == 0 ) {
 			pData->arrPages[i].bEnabled = 1;
 		}
@@ -1459,7 +1493,8 @@ static int __xuiTabsDrawBorderGap(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	return iRet;
 }
 
-static int __xuiTabsDrawOverflowButton(xui_proxy pProxy, xui_draw_context pDraw, const xui_tabs_data_t* pData, const xui_tabs_data_t* pColors)
+static int __xuiTabsDrawOverflowButton(xui_proxy pProxy, xui_draw_context pDraw,
+	const xui_tabs_data_t* pData, const xui_tabs_data_t* pColors, int bEnabled)
 {
 	xui_rect_t tRect;
 	float fCX;
@@ -1473,10 +1508,12 @@ static int __xuiTabsDrawOverflowButton(xui_proxy pProxy, xui_draw_context pDraw,
 		return XUI_OK;
 	}
 	tRect = pData->tOverflowRect;
-	iFill = pData->bOverflowActive ? pColors->iHoverColor : (pData->bOverflowHover ? pColors->iHoverColor : 0u);
-	iLine = pColors->iTextColor;
+	iFill = bEnabled ?
+		(pData->bOverflowActive ? pColors->iHoverColor : (pData->bOverflowHover ? pColors->iHoverColor : 0u)) :
+		pColors->iDisabledColor;
+	iLine = bEnabled ? pColors->iTextColor : pColors->iDisabledTextColor;
 	iRet = __xuiTabsDrawFill(pProxy, pDraw, tRect, iFill);
-	if ( iRet == XUI_OK && (pData->bOverflowHover || pData->bOverflowActive) ) {
+	if ( iRet == XUI_OK && bEnabled && (pData->bOverflowHover || pData->bOverflowActive) ) {
 		iRet = __xuiTabsDrawEdgeRect(pProxy, pDraw, tRect, pColors->iFocusColor, 1, 1, 1, 1);
 	}
 	if ( iRet != XUI_OK ) return iRet;
@@ -1515,7 +1552,8 @@ static int __xuiTabsCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	if ( iRet == XUI_OK ) iRet = __xuiTabsDrawFill(pProxy, pDraw, pData->tClientRect, tColors.iClientColor);
 	tGap = (pData->iSelected >= 0 && pData->iSelected < pData->iPageCount) ? pData->arrPages[pData->iSelected].tTabRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	if ( iRet == XUI_OK ) iRet = __xuiTabsDrawBorderGap(pProxy, pDraw, pData->tClientRect, pData->iPlacement, tGap, tColors.iBorderColor);
-	if ( iRet == XUI_OK ) iRet = __xuiTabsDrawOverflowButton(pProxy, pDraw, pData, &tColors);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsDrawOverflowButton(pProxy, pDraw, pData,
+		&tColors, xuiWidgetGetEffectiveEnabled(pWidget));
 	return iRet;
 }
 
@@ -1612,7 +1650,7 @@ static int __xuiTabsButtonRender(xui_widget pButton, xui_draw_context pDraw, uin
 	}
 	__xuiTabsResolveColors(pTabs, pData, &tColors);
 	bSelected = (iIndex == pData->iSelected);
-	bEnabled = xuiWidgetGetEnabled(pTabs) && pPage->bEnabled;
+	bEnabled = xuiWidgetGetEffectiveEnabled(pTabs) && pPage->bEnabled;
 	iFill = tColors.iTabColor;
 	iText = tColors.iTextColor;
 	if ( !bEnabled ) {
@@ -1969,11 +2007,14 @@ static int __xuiTabsAccessibleGet(xui_widget pWidget, int iIndex,
 	xui_rect_t tTab;
 	int iTab;
 	int bDisabled;
+	int bWidgetOffscreen;
 
 	if ( pData == NULL || pNode == NULL || iIndex < 0 || iIndex > pData->iPageCount ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tWorld = xuiWidgetGetWorldRect(pWidget);
+	bWidgetOffscreen = !xuiWidgetGetEffectiveVisible(pWidget) ||
+		tWorld.fW <= 0.0f || tWorld.fH <= 0.0f;
 	if ( iIndex == 0 ) {
 		pNode->iId = 1;
 		pNode->iRole = XUI_ACCESSIBLE_ROLE_TAB_LIST;
@@ -1988,6 +2029,7 @@ static int __xuiTabsAccessibleGet(xui_widget pWidget, int iIndex,
 			pNode->iState |= XUI_ACCESSIBLE_STATE_SELECTION_REQUIRED;
 		}
 		if ( __xuiTabsVertical(pData->iPlacement) ) pNode->iState |= XUI_ACCESSIBLE_STATE_VERTICAL;
+		if ( bWidgetOffscreen ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
 			pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
 		}
@@ -1998,6 +2040,7 @@ static int __xuiTabsAccessibleGet(xui_widget pWidget, int iIndex,
 			pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
 			pNode->iActions = 0;
 		}
+		if ( bWidgetOffscreen ) pNode->iActions = 0;
 		return XUI_OK;
 	}
 	iTab = iIndex - 1;
@@ -2021,7 +2064,7 @@ static int __xuiTabsAccessibleGet(xui_widget pWidget, int iIndex,
 	}
 	bDisabled = !xuiWidgetGetEffectiveEnabled(pWidget) || !__xuiTabsItemEnabled(pData, iTab);
 	if ( bDisabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
-	if ( tTab.fW <= 0.0f || tTab.fH <= 0.0f ||
+	if ( bWidgetOffscreen || tTab.fW <= 0.0f || tTab.fH <= 0.0f ||
 	     tTab.fX + tTab.fW <= pData->tTabBarRect.fX ||
 	     tTab.fY + tTab.fH <= pData->tTabBarRect.fY ||
 	     tTab.fX >= pData->tTabBarRect.fX + pData->tTabBarRect.fW ||
@@ -2033,6 +2076,7 @@ static int __xuiTabsAccessibleGet(xui_widget pWidget, int iIndex,
 		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE) |
 		XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW);
 	if ( bDisabled ) pNode->iActions = 0;
+	if ( bWidgetOffscreen ) pNode->iActions = 0;
 	return XUI_OK;
 }
 
@@ -2045,7 +2089,9 @@ static int __xuiTabsAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 
 	(void)pPayload;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_ERROR_INVALID_STATE;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget) ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
 	if ( iNodeId == 0 || iNodeId == 1 ) {
 		return iAction == XUI_ACCESSIBLE_ACTION_FOCUS ?
 			xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget) : XUI_ERROR_UNSUPPORTED;
@@ -2222,6 +2268,7 @@ static int __xuiTabsInit(xui_widget pWidget, void* pTypeData, const void* pCreat
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiTabsEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiTabsEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiTabsEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiTabsEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAccessibilityProvider(pWidget,
 		__xuiTabsAccessibleCount, __xuiTabsAccessibleGet,
 		__xuiTabsAccessibleAction, pData);
@@ -2236,7 +2283,7 @@ static void __xuiTabsDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	(void)pUser;
 	pData = (xui_tabs_data_t*)pTypeData;
 	if ( pData != NULL ) {
-		(void)__xuiTabsClearInteraction(pWidget, pData);
+		(void)__xuiTabsClearAllInteraction(pWidget, pData);
 		xuiWidgetDestroy(pData->pOverflowMenu);
 		memset(pData, 0, sizeof(*pData));
 	}
@@ -2381,6 +2428,7 @@ XUI_API int xuiTabsSetClose(xui_widget pWidget, xui_tabs_close_proc onClose, int
 	pData->bCloseButtons = bCloseButtons ? 1 : 0;
 	pData->pCloseUser = pUser;
 	if ( !pData->bCloseButtons || onClose == NULL ) {
+		pData->iCloseHoverIndex = -1;
 		int iRet = __xuiTabsClearInteraction(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -2438,6 +2486,126 @@ XUI_API int xuiTabsAddPage(xui_widget pWidget, const char* sTitle, xui_widget* p
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	}
 	return XUI_OK;
+}
+
+XUI_API int xuiTabsSetItemText(xui_widget pWidget, int iIndex, const char* sTitle)
+{
+	xui_tabs_data_t* pData;
+	xui_context pContext;
+	char sOldTitle[XUI_TABS_TITLE_CAPACITY];
+	char sNewTitle[XUI_TABS_TITLE_CAPACITY];
+	int bMenuOpen;
+	int iRet;
+
+	pData = __xuiTabsGetData(pWidget);
+	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iPageCount ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	__xuiTabsCopyTitle(sNewTitle, sTitle);
+	if ( strcmp(pData->arrPages[iIndex].sTitle, sNewTitle) == 0 ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	memcpy(sOldTitle, pData->arrPages[iIndex].sTitle, sizeof(sOldTitle));
+	bMenuOpen = pData->pOverflowMenu != NULL && xuiMenuIsOpen(pData->pOverflowMenu);
+	xuiInternalOperationEnter(pContext);
+	__xuiTabsSetTitle(&pData->arrPages[iIndex], sNewTitle);
+	iRet = bMenuOpen ? __xuiTabsBuildOverflowMenu(pWidget, pData) : XUI_OK;
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetInvalidate(pData->arrPages[iIndex].pButton,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	if ( iRet != XUI_OK ) {
+		__xuiTabsSetTitle(&pData->arrPages[iIndex], sOldTitle);
+		if ( bMenuOpen ) (void)__xuiTabsBuildOverflowMenu(pWidget, pData);
+	} else {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+		if ( iIndex == pData->iSelected ) {
+			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		}
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex)
+{
+	xui_tabs_data_t* pData;
+	xui_tabs_page_t arrOldPages[XUI_TABS_PAGE_CAPACITY];
+	xui_tabs_page_t tRemoved;
+	xui_context pContext;
+	float fOldScroll;
+	int iOldPageCount;
+	int iOldSelected;
+	int iOldChangeCount;
+	int bSelectionChanged;
+	int iCandidate;
+	int iRet;
+	int i;
+
+	pData = __xuiTabsGetData(pWidget);
+	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iPageCount ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	iRet = __xuiTabsClearAllInteraction(pWidget, pData);
+	if ( iRet != XUI_OK || !__xuiTabsWidgetAlive(pWidget, pData) ) goto done;
+	if ( pData->pOverflowMenu != NULL ) {
+		iRet = xuiMenuClose(pData->pOverflowMenu);
+		if ( iRet == XUI_OK ) iRet = xuiMenuClear(pData->pOverflowMenu);
+		if ( iRet != XUI_OK || !__xuiTabsWidgetAlive(pWidget, pData) ) goto done;
+	}
+
+	memcpy(arrOldPages, pData->arrPages, sizeof(arrOldPages));
+	tRemoved = pData->arrPages[iIndex];
+	iOldPageCount = pData->iPageCount;
+	iOldSelected = pData->iSelected;
+	iOldChangeCount = pData->iChangeCount;
+	fOldScroll = pData->fScrollX;
+	for ( i = iIndex; i < XUI_TABS_PAGE_CAPACITY - 1; i++ ) {
+		pData->arrPages[i] = pData->arrPages[i + 1];
+	}
+	/* Keep the removed widgets discoverable until their detach callbacks finish. */
+	pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1] = tRemoved;
+	pData->iPageCount--;
+	bSelectionChanged = 0;
+	if ( iOldSelected == iIndex ) {
+		pData->iSelected = -1;
+		if ( pData->iPageCount > 0 ) {
+			iCandidate = iIndex < pData->iPageCount ? iIndex : pData->iPageCount - 1;
+			pData->iSelected = __xuiTabsItemEnabled(pData, iCandidate) ?
+				iCandidate : __xuiTabsStepEnabled(pData, iCandidate, 1);
+		}
+		bSelectionChanged = 1;
+	} else if ( iOldSelected > iIndex ) {
+		pData->iSelected = iOldSelected - 1;
+		bSelectionChanged = 1;
+	}
+	if ( bSelectionChanged ) pData->iChangeCount++;
+	__xuiTabsUpdateMaxScroll(pData);
+	if ( pData->iSelected >= 0 ) __xuiTabsEnsureVisibleInternal(pData, pData->iSelected);
+	iRet = __xuiTabsSyncPages(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		memcpy(pData->arrPages, arrOldPages, sizeof(arrOldPages));
+		pData->iPageCount = iOldPageCount;
+		pData->iSelected = iOldSelected;
+		pData->iChangeCount = iOldChangeCount;
+		pData->fScrollX = fOldScroll;
+		(void)__xuiTabsSyncPages(pWidget, pData);
+		goto done;
+	}
+	xuiWidgetDestroy(tRemoved.pButton);
+	xuiWidgetDestroy(tRemoved.pPage);
+	memset(&pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1], 0,
+		sizeof(pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1]));
+	pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1].bEnabled = 1;
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	if ( bSelectionChanged ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
+
+done:
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiTabsSetItems(xui_widget pWidget, const char** arrItems, int iItemCount)
@@ -2528,8 +2696,14 @@ XUI_API int xuiTabsSetEnabledItems(xui_widget pWidget, const int* arrEnabled, in
 	if ( pData->iCloseActiveIndex >= 0 && pData->iCloseActiveIndex < pData->iPageCount &&
 	     arrEnabled != NULL && pData->iCloseActiveIndex < iItemCount &&
 	     arrEnabled[pData->iCloseActiveIndex] == 0 ) bClearInteraction = 1;
+	if ( pData->iHoverIndex >= 0 && pData->iHoverIndex < pData->iPageCount &&
+	     arrEnabled != NULL && pData->iHoverIndex < iItemCount &&
+	     arrEnabled[pData->iHoverIndex] == 0 ) bClearInteraction = 1;
+	if ( pData->iCloseHoverIndex >= 0 && pData->iCloseHoverIndex < pData->iPageCount &&
+	     arrEnabled != NULL && pData->iCloseHoverIndex < iItemCount &&
+	     arrEnabled[pData->iCloseHoverIndex] == 0 ) bClearInteraction = 1;
 	if ( bClearInteraction ) {
-		iRet = __xuiTabsClearInteraction(pWidget, pData);
+		iRet = __xuiTabsClearAllInteraction(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iOldSelected = pData->iSelected;
@@ -2935,7 +3109,7 @@ XUI_API uint32_t xuiTabsGetState(xui_widget pWidget)
 	if ( (pData->iHoverIndex >= 0) || pData->bOverflowHover ) iState |= XUI_WIDGET_STATE_HOVER;
 	if ( (pData->iActiveIndex >= 0) || pData->bOverflowActive ) iState |= XUI_WIDGET_STATE_ACTIVE;
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) iState |= XUI_WIDGET_STATE_FOCUS;
-	if ( !xuiWidgetGetEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
 	if ( (pData->pOverflowMenu != NULL) && xuiMenuIsOpen(pData->pOverflowMenu) ) iState |= XUI_TABS_STATE_OPEN;
 	return iState;
 }
