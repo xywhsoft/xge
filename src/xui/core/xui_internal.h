@@ -169,6 +169,10 @@ struct xui_context_t {
 	xui_widget pHoverWidget;
 	xui_widget pActiveWidget;
 	xui_widget pFocusWidget;
+	/* MenuBar menu-mode focus is context-owned so widget detachment can clear
+	 * both borrowed handles before deferred destruction releases memory. */
+	xui_widget pMenuBarModeOwner;
+	xui_widget pMenuBarFocusRestore;
 	struct xui_popup_data_t* pPopupList;
 	struct xui_menu_data_t* pMenuList;
 	struct xui_menubar_data_t* pMenuBarList;

@@ -53,6 +53,15 @@ static xui_menubar_data_t* __xuiMenuBarGetData(xui_widget pWidget);
 static int __xuiMenuBarMetricsValid(const xui_menubar_metrics_t* pMetrics);
 static int __xuiMenuBarColorsValid(const xui_menubar_colors_t* pColors);
 static int __xuiMenuBarMenuValid(xui_widget pWidget, xui_widget pMenu);
+static int __xuiMenuBarSetHover(xui_widget pWidget, xui_menubar_data_t* pData, int iIndex);
+static int __xuiMenuBarCloseOpen(xui_widget pWidget, xui_menubar_data_t* pData);
+static int __xuiMenuBarModeExit(xui_widget pWidget, xui_menubar_data_t* pData);
+static int __xuiMenuBarHotkeyEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser);
+
+static void __xuiMenuBarMarkChanged(xui_menubar_data_t* pData)
+{
+	if ( pData != NULL && pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
+}
 
 static int __xuiMenuBarReleaseSelectBinding(xui_widget pWidget, xui_menubar_data_t* pData, int iIndex)
 {
@@ -109,11 +118,6 @@ static int __xuiMenuBarAlpha(uint32_t iColor)
 	return (int)(iColor & 0xffu);
 }
 
-static float __xuiMenuBarMax(float fA, float fB)
-{
-	return (fA > fB) ? fA : fB;
-}
-
 static int __xuiMenuBarAsciiUpper(int iChar)
 {
 	return (iChar >= 'a' && iChar <= 'z') ? (iChar - 'a' + 'A') : iChar;
@@ -133,24 +137,38 @@ static int __xuiMenuBarDescValid(const xui_menubar_desc_t* pDesc)
 	return 1;
 }
 
+static int __xuiMenuBarMetricValid(float fValue)
+{
+	return isfinite(fValue) && fValue >= 0.0f && fValue <= XUI_LAYOUT_UNBOUNDED;
+}
+
 static int __xuiMenuBarMetricsValid(const xui_menubar_metrics_t* pMetrics)
 {
+	double fMinimumItemWidth;
+	double fMaximumWidth;
+	double fMaximumHeight;
+
 	if ( pMetrics == NULL ) return 0;
 	if ( (pMetrics->iSize != 0) && (pMetrics->iSize < sizeof(*pMetrics)) ) return 0;
-	if ( !isfinite(pMetrics->fHeight) ||
-	     !isfinite(pMetrics->fPaddingX) ||
-	     !isfinite(pMetrics->fPaddingY) ||
-	     !isfinite(pMetrics->fItemPaddingX) ||
-	     !isfinite(pMetrics->fItemGap) ||
-	     !isfinite(pMetrics->fBorderWidth) ||
+	if ( !__xuiMenuBarMetricValid(pMetrics->fHeight) ||
+	     !__xuiMenuBarMetricValid(pMetrics->fPaddingX) ||
+	     !__xuiMenuBarMetricValid(pMetrics->fPaddingY) ||
+	     !__xuiMenuBarMetricValid(pMetrics->fItemPaddingX) ||
+	     !__xuiMenuBarMetricValid(pMetrics->fItemGap) ||
+	     !__xuiMenuBarMetricValid(pMetrics->fBorderWidth) ||
 	     (pMetrics->fHeight <= 0.0f) ||
-	     (pMetrics->fPaddingX < 0.0f) ||
-	     (pMetrics->fPaddingY < 0.0f) ||
-	     (pMetrics->fItemPaddingX < 0.0f) ||
-	     (pMetrics->fItemGap < 0.0f) ||
-	     (pMetrics->fBorderWidth < 0.0f) ) {
+	     ((double)pMetrics->fPaddingY * 2.0 > (double)XUI_LAYOUT_UNBOUNDED) ||
+	     ((double)pMetrics->fBorderWidth * 2.0 > (double)XUI_LAYOUT_UNBOUNDED) ) {
 		return 0;
 	}
+	fMinimumItemWidth = (double)pMetrics->fItemPaddingX * 2.0;
+	if ( fMinimumItemWidth < 20.0 ) fMinimumItemWidth = 20.0;
+	fMaximumWidth = (double)pMetrics->fPaddingX * 2.0 +
+		fMinimumItemWidth * (double)XUI_MENUBAR_ITEM_CAPACITY +
+		(double)pMetrics->fItemGap * (double)(XUI_MENUBAR_ITEM_CAPACITY - 1);
+	fMaximumHeight = (double)pMetrics->fPaddingY * 2.0 + 1.0;
+	if ( fMaximumWidth > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fMaximumHeight > (double)XUI_LAYOUT_UNBOUNDED ) return 0;
 	return 1;
 }
 
@@ -158,6 +176,30 @@ static int __xuiMenuBarColorsValid(const xui_menubar_colors_t* pColors)
 {
 	if ( pColors == NULL ) return 0;
 	return (pColors->iSize == 0) || (pColors->iSize >= sizeof(*pColors));
+}
+
+static int __xuiMenuBarMetricsEqual(const xui_menubar_metrics_t* pA,
+	const xui_menubar_metrics_t* pB)
+{
+	return pA->fHeight == pB->fHeight &&
+	       pA->fPaddingX == pB->fPaddingX &&
+	       pA->fPaddingY == pB->fPaddingY &&
+	       pA->fItemPaddingX == pB->fItemPaddingX &&
+	       pA->fItemGap == pB->fItemGap &&
+	       pA->fBorderWidth == pB->fBorderWidth;
+}
+
+static int __xuiMenuBarColorsEqual(const xui_menubar_colors_t* pA,
+	const xui_menubar_colors_t* pB)
+{
+	return pA->iBackgroundColor == pB->iBackgroundColor &&
+	       pA->iBorderColor == pB->iBorderColor &&
+	       pA->iItemColor == pB->iItemColor &&
+	       pA->iHoverColor == pB->iHoverColor &&
+	       pA->iActiveColor == pB->iActiveColor &&
+	       pA->iTextColor == pB->iTextColor &&
+	       pA->iDisabledTextColor == pB->iDisabledTextColor &&
+	       pA->iFocusColor == pB->iFocusColor;
 }
 
 static void __xuiMenuBarDefaultMetrics(xui_menubar_metrics_t* pMetrics)
@@ -275,6 +317,7 @@ static void __xuiMenuBarMenuUnavailable(xui_context pContext, xui_widget pMenu)
 	int bChanged;
 	int bSelectionChanged;
 	int bCancelPress;
+	int bCloseMode;
 	int i;
 
 	if ( !xuiInternalContextIsValid(pContext) || pMenu == NULL ) return;
@@ -282,6 +325,7 @@ static void __xuiMenuBarMenuUnavailable(xui_context pContext, xui_widget pMenu)
 		bChanged = 0;
 		bSelectionChanged = 0;
 		bCancelPress = 0;
+		bCloseMode = 0;
 		for ( i = 0; i < pData->iItemCount; i++ ) {
 			if ( pData->arrItems[i].pMenu != pMenu ) continue;
 			pData->arrItems[i].pMenu = NULL;
@@ -301,6 +345,7 @@ static void __xuiMenuBarMenuUnavailable(xui_context pContext, xui_widget pMenu)
 			if ( pData->iOpen == i ) {
 				pData->iOpen = -1;
 				bSelectionChanged = 1;
+				bCloseMode = 1;
 			}
 			bChanged = 1;
 		}
@@ -309,7 +354,7 @@ static void __xuiMenuBarMenuUnavailable(xui_context pContext, xui_widget pMenu)
 			(void)xuiInternalPointerOwnerCancel(pContext, pData->pWidget,
 				&pData->tPointerOwner);
 		}
-		pData->iChangeCount++;
+		__xuiMenuBarMarkChanged(pData);
 		if ( xuiInternalWidgetIsValid(pData->pWidget) &&
 		     !xuiInternalContextDestroyPending(pContext) ) {
 			(void)xuiWidgetInvalidate(pData->pWidget,
@@ -318,6 +363,9 @@ static void __xuiMenuBarMenuUnavailable(xui_context pContext, xui_widget pMenu)
 			xuiInternalAccessibilityQueue(pData->pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 			if ( bSelectionChanged ) xuiInternalAccessibilityQueue(pData->pWidget,
 				XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+			if ( bCloseMode && pContext->pMenuBarModeOwner == pData->pWidget ) {
+				(void)__xuiMenuBarModeExit(pData->pWidget, pData);
+			}
 		}
 	}
 }
@@ -366,6 +414,7 @@ static xui_vec2_t __xuiMenuBarMeasureText(xui_widget pWidget, xui_font pFont, co
 {
 	xui_vec2_t tSize;
 	xui_proxy pProxy;
+	size_t iLength;
 
 	tSize.fX = 0.0f;
 	tSize.fY = 18.0f;
@@ -376,9 +425,22 @@ static xui_vec2_t __xuiMenuBarMeasureText(xui_widget pWidget, xui_font pFont, co
 	     isfinite(tSize.fX) && isfinite(tSize.fY) && (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
 		return tSize;
 	}
-	tSize.fX = (float)strlen(sText) * 7.0f;
+	iLength = strlen(sText);
+	if ( iLength > (size_t)(XUI_LAYOUT_UNBOUNDED / 7.0f) ) {
+		tSize.fX = XUI_LAYOUT_UNBOUNDED * 2.0f;
+	} else {
+		tSize.fX = (float)iLength * 7.0f;
+	}
 	tSize.fY = 18.0f;
 	return tSize;
+}
+
+static int __xuiMenuBarTextExtentValid(xui_vec2_t tSize)
+{
+	return isfinite(tSize.fX) && isfinite(tSize.fY) &&
+	       tSize.fX >= 0.0f && tSize.fY >= 0.0f &&
+	       tSize.fX <= XUI_LAYOUT_UNBOUNDED &&
+	       tSize.fY <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static int __xuiMenuBarStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
@@ -433,18 +495,20 @@ static xui_font __xuiMenuBarStyleFont(xui_widget pWidget, xui_font pBaseFont)
 
 static void __xuiMenuBarResolve(xui_widget pWidget, xui_menubar_data_t* pData, xui_menubar_resolved_t* pOut)
 {
+	xui_menubar_metrics_t tMetrics;
+
 	if ( (pWidget == NULL) || (pData == NULL) || (pOut == NULL) ) return;
 	pOut->pFont = __xuiMenuBarStyleFont(pWidget, pData->pFont);
-	pOut->tMetrics = pData->tMetrics;
-	pOut->tMetrics.iSize = sizeof(pOut->tMetrics);
+	tMetrics = pData->tMetrics;
+	tMetrics.iSize = sizeof(tMetrics);
 	pOut->tColors = pData->tColors;
 	pOut->tColors.iSize = sizeof(pOut->tColors);
-	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.height", &pOut->tMetrics.fHeight);
-	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.padding.x", &pOut->tMetrics.fPaddingX);
-	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.padding.y", &pOut->tMetrics.fPaddingY);
-	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.item.padding.x", &pOut->tMetrics.fItemPaddingX);
-	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.item.gap", &pOut->tMetrics.fItemGap);
-	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.border.width", &pOut->tMetrics.fBorderWidth);
+	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.height", &tMetrics.fHeight);
+	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.padding.x", &tMetrics.fPaddingX);
+	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.padding.y", &tMetrics.fPaddingY);
+	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.item.padding.x", &tMetrics.fItemPaddingX);
+	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.item.gap", &tMetrics.fItemGap);
+	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.border.width", &tMetrics.fBorderWidth);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.background.color", &pOut->tColors.iBackgroundColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.border.color", &pOut->tColors.iBorderColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.item.color", &pOut->tColors.iItemColor);
@@ -455,23 +519,31 @@ static void __xuiMenuBarResolve(xui_widget pWidget, xui_menubar_data_t* pData, x
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.text.active_color", &pOut->iActiveTextColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.text.disabled_color", &pOut->tColors.iDisabledTextColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.focus.color", &pOut->tColors.iFocusColor);
+	if ( tMetrics.fHeight < 18.0f ) tMetrics.fHeight = 18.0f;
+	pOut->tMetrics = __xuiMenuBarMetricsValid(&tMetrics) ? tMetrics : pData->tMetrics;
 	if ( pOut->tMetrics.fHeight < 18.0f ) pOut->tMetrics.fHeight = 18.0f;
+	pOut->tMetrics.iSize = sizeof(pOut->tMetrics);
 }
 
 static int __xuiMenuBarLayoutItems(xui_widget pWidget, xui_menubar_data_t* pData, const xui_menubar_resolved_t* pResolved, xui_vec2_t* pMeasured)
 {
 	xui_context pContext;
+	xui_rect_t arrRect[XUI_MENUBAR_ITEM_CAPACITY];
+	float arrTextWidth[XUI_MENUBAR_ITEM_CAPACITY];
 	xui_rect_t tRect;
 	xui_vec2_t tText;
 	xui_vec2_t tMeasured;
-	float fX;
-	float fY;
-	float fH;
-	float fW;
+	double fX;
+	double fY;
+	double fH;
+	double fW;
+	double fMeasuredW;
 	int i;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiMenuBarMetricsValid(&pResolved->tMetrics) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	tRect = xuiWidgetGetRect(pWidget);
 	if ( pData->bLayoutValid && !pData->bLayoutDirty &&
 	     pData->pLayoutFont == pResolved->pFont &&
@@ -485,23 +557,41 @@ static int __xuiMenuBarLayoutItems(xui_widget pWidget, xui_menubar_data_t* pData
 		if ( pMeasured != NULL ) *pMeasured = pData->tMeasured;
 		return XUI_OK;
 	}
-	fX = pResolved->tMetrics.fPaddingX;
-	fY = pResolved->tMetrics.fPaddingY;
-	fH = pResolved->tMetrics.fHeight - pResolved->tMetrics.fPaddingY * 2.0f;
+	memset(arrRect, 0, sizeof(arrRect));
+	memset(arrTextWidth, 0, sizeof(arrTextWidth));
+	fX = (double)pResolved->tMetrics.fPaddingX;
+	fY = (double)pResolved->tMetrics.fPaddingY;
+	fH = (double)pResolved->tMetrics.fHeight - (double)pResolved->tMetrics.fPaddingY * 2.0;
 	if ( tRect.fH > 0.0f ) {
-		fH = tRect.fH - pResolved->tMetrics.fPaddingY * 2.0f;
+		fH = (double)tRect.fH - (double)pResolved->tMetrics.fPaddingY * 2.0;
 	}
-	if ( fH < 1.0f ) fH = 1.0f;
+	if ( fH < 1.0 ) fH = 1.0;
+	if ( fX > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fY > (double)XUI_LAYOUT_UNBOUNDED ||
+	     fH > (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		tText = __xuiMenuBarMeasureText(pWidget, pResolved->pFont, pData->arrDisplayText[i]);
-		pData->arrTextWidth[i] = tText.fX;
-		fW = pData->arrTextWidth[i] + pResolved->tMetrics.fItemPaddingX * 2.0f;
-		if ( fW < 20.0f ) fW = 20.0f;
-		pData->arrItems[i].tRect = xuiInternalRectFromFloatNearest(fX, fY, fW, fH);
-		fX += fW + pResolved->tMetrics.fItemGap;
+		if ( !__xuiMenuBarTextExtentValid(tText) ) return XUI_ERROR_INVALID_ARGUMENT;
+		arrTextWidth[i] = tText.fX;
+		fW = (double)tText.fX + (double)pResolved->tMetrics.fItemPaddingX * 2.0;
+		if ( fW < 20.0 ) fW = 20.0;
+		if ( fW > (double)XUI_LAYOUT_UNBOUNDED ||
+		     fX + fW > (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+		arrRect[i] = xuiInternalRectFromFloatNearest((float)fX, (float)fY,
+			(float)fW, (float)fH);
+		fX += fW + (double)pResolved->tMetrics.fItemGap;
+		if ( fX > (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	tMeasured.fX = xuiInternalSnapSize(__xuiMenuBarMax(fX + pResolved->tMetrics.fPaddingX - pResolved->tMetrics.fItemGap, pResolved->tMetrics.fPaddingX * 2.0f));
+	fMeasuredW = fX + (double)pResolved->tMetrics.fPaddingX;
+	if ( pData->iItemCount > 0 ) fMeasuredW -= (double)pResolved->tMetrics.fItemGap;
+	if ( fMeasuredW < (double)pResolved->tMetrics.fPaddingX * 2.0 ) {
+		fMeasuredW = (double)pResolved->tMetrics.fPaddingX * 2.0;
+	}
+	if ( fMeasuredW > (double)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+	tMeasured.fX = xuiInternalSnapSize((float)fMeasuredW);
 	tMeasured.fY = xuiInternalSnapSize(pResolved->tMetrics.fHeight);
+	memcpy(pData->arrTextWidth, arrTextWidth, sizeof(arrTextWidth));
+	for ( i = 0; i < pData->iItemCount; i++ ) pData->arrItems[i].tRect = arrRect[i];
 	pData->pLayoutFont = pResolved->pFont;
 	pData->tLayoutMetrics = pResolved->tMetrics;
 	pData->fLayoutHeight = tRect.fH;
@@ -589,10 +679,12 @@ static int __xuiMenuBarMenuNextEnabled(xui_widget pMenu, int iCurrent, int iStep
 
 static int __xuiMenuBarSyncOpen(xui_widget pWidget, xui_menubar_data_t* pData)
 {
+	xui_context pContext;
 	xui_widget pMenu;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	if ( (pData->iOpen < 0) || (pData->iOpen >= pData->iItemCount) ) return XUI_OK;
 	pMenu = pData->arrItems[pData->iOpen].pMenu;
 	if ( !__xuiMenuBarMenuValid(pWidget, pMenu) || !xuiMenuIsOpen(pMenu) ) {
@@ -600,10 +692,14 @@ static int __xuiMenuBarSyncOpen(xui_widget pWidget, xui_menubar_data_t* pData)
 		if ( iRet != XUI_OK ) return iRet;
 		pData->iOpen = -1;
 		pData->iActive = -1;
-		pData->iChangeCount++;
+		__xuiMenuBarMarkChanged(pData);
 		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		if ( iRet != XUI_OK ) return iRet;
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+		if ( pContext->pMenuBarModeOwner == pWidget ) {
+			iRet = __xuiMenuBarModeExit(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 	}
 	return XUI_OK;
 }
@@ -611,6 +707,13 @@ static int __xuiMenuBarSyncOpen(xui_widget pWidget, xui_menubar_data_t* pData)
 static int __xuiMenuBarInvalidateItem(xui_widget pWidget, xui_menubar_data_t* pData, int iIndex)
 {
 	xui_rect_t tRect;
+	xui_rect_t tWidget;
+	int64_t iContentW;
+	int64_t iContentH;
+	int64_t iLeft;
+	int64_t iTop;
+	int64_t iRight;
+	int64_t iBottom;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
 		return XUI_OK;
@@ -619,10 +722,25 @@ static int __xuiMenuBarInvalidateItem(xui_widget pWidget, xui_menubar_data_t* pD
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	tRect.fX -= 2.0f;
-	tRect.fY -= 2.0f;
-	tRect.fW += 4.0f;
-	tRect.fH += 4.0f;
+	tWidget = xuiWidgetGetRect(pWidget);
+	iContentW = tWidget.fW > pData->tMeasured.fX ? tWidget.fW : pData->tMeasured.fX;
+	iContentH = tWidget.fH > pData->tMeasured.fY ? tWidget.fH : pData->tMeasured.fY;
+	if ( iContentW < 0 ) iContentW = 0;
+	if ( iContentH < 0 ) iContentH = 0;
+	iLeft = (int64_t)tRect.fX - 2;
+	iTop = (int64_t)tRect.fY - 2;
+	iRight = (int64_t)tRect.fX + (int64_t)tRect.fW + 2;
+	iBottom = (int64_t)tRect.fY + (int64_t)tRect.fH + 2;
+	if ( iLeft < 0 ) iLeft = 0;
+	if ( iTop < 0 ) iTop = 0;
+	if ( iRight > iContentW ) iRight = iContentW;
+	if ( iBottom > iContentH ) iBottom = iContentH;
+	tRect = (xui_rect_t){
+		(int)iLeft,
+		(int)iTop,
+		(int)(iRight > iLeft ? iRight - iLeft : 0),
+		(int)(iBottom > iTop ? iBottom - iTop : 0)
+	};
 	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -652,6 +770,91 @@ static int __xuiMenuBarSetHover(xui_widget pWidget, xui_menubar_data_t* pData, i
 	return iRet;
 }
 
+static int __xuiMenuBarModeEnter(xui_widget pWidget, xui_menubar_data_t* pData)
+{
+	xui_menubar_data_t* pOldData;
+	xui_context pContext;
+	xui_widget pOldOwner;
+	xui_widget pInheritedRestore;
+	xui_widget pFocus;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pOldOwner = pContext->pMenuBarModeOwner;
+	pInheritedRestore = NULL;
+	if ( pOldOwner != NULL && pOldOwner != pWidget ) {
+		pOldData = __xuiMenuBarGetData(pOldOwner);
+		if ( pOldData != NULL ) {
+			pInheritedRestore = pContext->pMenuBarFocusRestore;
+			if ( pOldData->iOpen >= 0 || pOldData->iActive >= 0 ||
+			     pOldData->tPointerOwner.bActive ) {
+				iRet = __xuiMenuBarCloseOpen(pOldOwner, pOldData);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+			if ( __xuiMenuBarGetData(pOldOwner) == pOldData ) {
+				iRet = __xuiMenuBarModeExit(pOldOwner, pOldData);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+		} else {
+			pContext->pMenuBarModeOwner = NULL;
+			pContext->pMenuBarFocusRestore = NULL;
+		}
+	}
+	if ( pInheritedRestore != NULL &&
+	     (!xuiWidgetIsAttachedToContext(pInheritedRestore) ||
+	      xuiWidgetGetContext(pInheritedRestore) != pContext) ) {
+		pInheritedRestore = NULL;
+	}
+	pFocus = xuiGetFocusWidget(pContext);
+	if ( pContext->pMenuBarModeOwner != pWidget ) {
+		pContext->pMenuBarModeOwner = pWidget;
+		pContext->pMenuBarFocusRestore = (pInheritedRestore != NULL) ?
+			pInheritedRestore : ((pFocus != pWidget) ? pFocus : NULL);
+	}
+	iRet = xuiSetFocusWidget(pContext, pWidget);
+	if ( iRet != XUI_OK ) {
+		if ( pContext->pMenuBarModeOwner == pWidget ) {
+			pContext->pMenuBarModeOwner = NULL;
+			pContext->pMenuBarFocusRestore = NULL;
+		}
+	}
+	return iRet;
+}
+
+static void __xuiMenuBarModeAbandon(xui_widget pWidget)
+{
+	xui_context pContext;
+
+	if ( pWidget == NULL ) return;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) || pContext->pMenuBarModeOwner != pWidget ) return;
+	pContext->pMenuBarModeOwner = NULL;
+	pContext->pMenuBarFocusRestore = NULL;
+}
+
+static int __xuiMenuBarModeExit(xui_widget pWidget, xui_menubar_data_t* pData)
+{
+	xui_context pContext;
+	xui_widget pRestore;
+	int iFirstRet;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iFirstRet = __xuiMenuBarSetHover(pWidget, pData, -1);
+	if ( pContext->pMenuBarModeOwner != pWidget ) return iFirstRet;
+	pRestore = pContext->pMenuBarFocusRestore;
+	pContext->pMenuBarModeOwner = NULL;
+	pContext->pMenuBarFocusRestore = NULL;
+	if ( xuiGetFocusWidget(pContext) != pWidget ) return iFirstRet;
+	iRet = xuiSetFocusWidget(pContext, pRestore);
+	if ( iRet != XUI_OK && pRestore != NULL ) iRet = xuiSetFocusWidget(pContext, NULL);
+	return (iFirstRet != XUI_OK) ? iFirstRet : iRet;
+}
+
 static int __xuiMenuBarCloseOpen(xui_widget pWidget, xui_menubar_data_t* pData)
 {
 	xui_context pContext;
@@ -677,7 +880,7 @@ static int __xuiMenuBarCloseOpen(xui_widget pWidget, xui_menubar_data_t* pData)
 	}
 	pData->iOpen = -1;
 	pData->iActive = -1;
-	pData->iChangeCount++;
+	__xuiMenuBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet == XUI_OK ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
@@ -736,7 +939,7 @@ static int __xuiMenuBarOpenItemInternal(xui_widget pWidget, xui_menubar_data_t* 
 	pData->iHover = iIndex;
 	pData->iActive = (pMenu != NULL) ? iIndex : -1;
 	pData->iOpen = (pMenu != NULL) ? iIndex : -1;
-	pData->iChangeCount++;
+	__xuiMenuBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->iHover = iOldHover;
@@ -792,9 +995,31 @@ open_failed:
 	return iRet;
 }
 
+static int __xuiMenuBarTrackItem(xui_widget pWidget, xui_menubar_data_t* pData,
+	int iIndex)
+{
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || iIndex < 0 ||
+	     iIndex >= pData->iItemCount ||
+	     !__xuiMenuBarItemEnabled(&pData->arrItems[iIndex]) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->arrItems[iIndex].pMenu != NULL ) {
+		return __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
+	}
+	if ( pData->iOpen >= 0 || pData->iActive >= 0 ) {
+		iRet = __xuiMenuBarCloseOpen(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_OK;
+	}
+	return __xuiMenuBarSetHover(pWidget, pData, iIndex);
+}
+
 static int __xuiMenuBarHotkeyEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_menubar_data_t* pData;
+	xui_context pContext;
 	int iIndex;
 	int iRet;
 
@@ -802,16 +1027,44 @@ static int __xuiMenuBarHotkeyEvent(xui_widget pWidget, const xui_event_t* pEvent
 	if ( (pWidget == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiMenuBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) {
+	pContext = xuiWidgetGetContext(pWidget);
+	if ( !xuiWidgetIsAttachedToContext(pWidget) ||
+	     !xuiWidgetGetEffectiveVisible(pWidget) ||
+	     !xuiWidgetGetEffectiveEnabled(pWidget) ) return XUI_OK;
+	if ( pEvent->iKey == XUI_KEY_F10 && pEvent->iModifiers == 0u ) {
+		if ( pContext->pMenuBarModeOwner == pWidget ) {
+			if ( pData->iOpen >= 0 ) {
+				iRet = __xuiMenuBarCloseOpen(pWidget, pData);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
+			}
+			iRet = __xuiMenuBarModeExit(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		iRet = __xuiMenuBarModeEnter(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		iIndex = (pData->iHover >= 0) ? pData->iHover :
+			__xuiMenuBarNextEnabled(pData, -1, 1);
+		iRet = __xuiMenuBarSetHover(pWidget, pData, iIndex);
+		if ( iRet != XUI_OK ) return iRet;
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( xuiGetFocusWidget(pContext) == pWidget ) {
 		return XUI_OK;
 	}
 	iIndex = __xuiMenuBarMnemonicIndex(pData, pEvent->iKey);
 	if ( iIndex >= 0 ) {
-		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		iRet = __xuiMenuBarModeEnter(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
 		iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
 		if ( iRet != XUI_OK ) return iRet;
+		if ( __xuiMenuBarGetData(pWidget) == pData &&
+		     pData->arrItems[iIndex].pMenu == NULL ) {
+			iRet = __xuiMenuBarModeExit(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	return XUI_OK;
@@ -974,17 +1227,24 @@ static int __xuiMenuBarUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	if ( !isfinite(fDelta) || fDelta < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiMenuBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	if ( !xuiWidgetGetEffectiveVisible(pWidget) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
-		return (pData->iOpen >= 0) ? __xuiMenuBarCloseOpen(pWidget, pData) : XUI_OK;
+		if ( pData->iOpen >= 0 || pData->iActive >= 0 || pData->tPointerOwner.bActive ) {
+			iRet = __xuiMenuBarCloseOpen(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		return (pContext->pMenuBarModeOwner == pWidget) ?
+			__xuiMenuBarModeExit(pWidget, pData) : XUI_OK;
 	}
 	iRet = __xuiMenuBarSyncOpen(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( pData->iOpen >= 0 ) {
-		pContext = xuiWidgetGetContext(pWidget);
+	if ( pData->iOpen >= 0 || pContext->pMenuBarModeOwner == pWidget ) {
 		tWorld = xuiWidgetGetWorldRect(pWidget);
 		iIndex = __xuiMenuBarIndexAt(pData, pContext->fPointerX - tWorld.fX, pContext->fPointerY - tWorld.fY);
-		if ( (iIndex >= 0) && (iIndex != pData->iOpen) ) {
-			return __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
+		if ( iIndex >= 0 &&
+		     (iIndex != pData->iHover ||
+		      (pData->iOpen >= 0 && iIndex != pData->iOpen)) ) {
+			return __xuiMenuBarTrackItem(pWidget, pData, iIndex);
 		}
 	}
 	return XUI_OK;
@@ -995,7 +1255,9 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 	xui_menubar_data_t* pData;
 	xui_menubar_resolved_t tResolved;
 	xui_rect_t tWorld;
+	xui_context pContext;
 	xui_widget pMenu;
+	const xui_menu_item_t* pMenuItem;
 	float fLocalX;
 	float fLocalY;
 	int iIndex;
@@ -1007,6 +1269,7 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) return XUI_OK;
 	pData = __xuiMenuBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
 	iRet = __xuiMenuBarSyncOpen(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiMenuBarResolve(pWidget, pData, &tResolved);
@@ -1024,14 +1287,17 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		}
 		iRet = __xuiMenuBarSetHover(pWidget, pData, iIndex);
 		if ( iRet != XUI_OK ) return iRet;
-		if ( (iIndex >= 0) && (pData->iOpen >= 0) && (iIndex != pData->iOpen) ) {
-			iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
+		if ( iIndex >= 0 &&
+		     (pData->iOpen >= 0 || pContext->pMenuBarModeOwner == pWidget) &&
+		     iIndex != pData->iOpen ) {
+			iRet = __xuiMenuBarTrackItem(pWidget, pData, iIndex);
 			if ( iRet != XUI_OK ) return iRet;
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		return (pData->iOpen >= 0) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+		return (pData->iOpen >= 0 || pContext->pMenuBarModeOwner == pWidget) ?
+			XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_LEAVE:
-		if ( pData->iOpen < 0 ) {
+		if ( pData->iOpen < 0 && pContext->pMenuBarModeOwner != pWidget ) {
 			iRet = __xuiMenuBarSetHover(pWidget, pData, -1);
 			if ( iRet != XUI_OK ) return iRet;
 		}
@@ -1046,16 +1312,24 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			if ( pData->iOpen >= 0 ) {
 				iRet = __xuiMenuBarCloseOpen(pWidget, pData);
 				if ( iRet != XUI_OK ) return iRet;
+				if ( __xuiMenuBarGetData(pWidget) == pData ) {
+					iRet = __xuiMenuBarModeExit(pWidget, pData);
+					if ( iRet != XUI_OK ) return iRet;
+				}
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 			return XUI_OK;
 		}
-		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		iRet = __xuiMenuBarModeEnter(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
 		if ( (pData->iOpen == iIndex) && (pData->arrItems[iIndex].pMenu != NULL) && xuiMenuIsOpen(pData->arrItems[iIndex].pMenu) ) {
 			iRet = __xuiMenuBarCloseOpen(pWidget, pData);
 			if ( iRet != XUI_OK ) return iRet;
+			if ( __xuiMenuBarGetData(pWidget) == pData ) {
+				iRet = __xuiMenuBarModeExit(pWidget, pData);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pData->arrItems[iIndex].pMenu == NULL ) {
@@ -1066,21 +1340,29 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			}
 			iRet = xuiInternalPointerOwnerBegin(xuiWidgetGetContext(pWidget),
 				pWidget, pEvent, &pData->tPointerOwner);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) {
+				(void)__xuiMenuBarModeExit(pWidget, pData);
+				return iRet;
+			}
 			pData->iActive = iIndex;
-			pData->iChangeCount++;
+			iNext = pData->iChangeCount;
+			__xuiMenuBarMarkChanged(pData);
 			iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			if ( iRet != XUI_OK ) {
 				pData->iActive = -1;
-				pData->iChangeCount--;
+				pData->iChangeCount = iNext;
 				(void)xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget),
 					pWidget, &pData->tPointerOwner);
+				(void)__xuiMenuBarModeExit(pWidget, pData);
 				return iRet;
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			(void)__xuiMenuBarModeExit(pWidget, pData);
+			return iRet;
+		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_UP:
 		if ( pData->iActive >= 0 && pData->iOpen < 0 &&
@@ -1091,11 +1373,15 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 				pWidget, pEvent, &pData->tPointerOwner);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
-			pData->iChangeCount++;
+			__xuiMenuBarMarkChanged(pData);
 			iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( iIndex == iPressed ) {
 				iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iPressed);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+			if ( __xuiMenuBarGetData(pWidget) == pData ) {
+				iRet = __xuiMenuBarModeExit(pWidget, pData);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1105,25 +1391,42 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		if ( pData->iOpen < 0 && pData->iActive >= 0 &&
 		     xuiInternalPointerOwnerCaptureLost(&pData->tPointerOwner, pEvent) ) {
 			pData->iActive = -1;
-			pData->iChangeCount++;
-			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			__xuiMenuBarMarkChanged(pData);
+			iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			if ( iRet != XUI_OK ) return iRet;
+			return __xuiMenuBarModeExit(pWidget, pData);
 		}
 		return XUI_OK;
 	case XUI_EVENT_KEY_DOWN:
 		if ( (pEvent->iModifiers & XUI_MOD_ALT) != 0u ) {
 			iIndex = __xuiMenuBarMnemonicIndex(pData, pEvent->iKey);
 			if ( iIndex >= 0 ) {
-				iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+				iRet = __xuiMenuBarModeEnter(pWidget, pData);
 				if ( iRet != XUI_OK ) return iRet;
 				if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
 				iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
 				if ( iRet != XUI_OK ) return iRet;
+				if ( __xuiMenuBarGetData(pWidget) == pData &&
+				     pData->arrItems[iIndex].pMenu == NULL ) {
+					iRet = __xuiMenuBarModeExit(pWidget, pData);
+					if ( iRet != XUI_OK ) return iRet;
+				}
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		}
 		if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) != pWidget && pData->iOpen < 0 ) return XUI_OK;
-		if ( pEvent->iKey == XUI_KEY_F10 || pEvent->iKey == XUI_KEY_CONTEXT_MENU ) {
-			iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+		if ( pEvent->iKey == XUI_KEY_F10 && pEvent->iModifiers == 0u ) {
+			if ( pContext->pMenuBarModeOwner == pWidget ) {
+				if ( pData->iOpen >= 0 ) {
+					iRet = __xuiMenuBarCloseOpen(pWidget, pData);
+					if ( iRet != XUI_OK ) return iRet;
+					if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
+				}
+				iRet = __xuiMenuBarModeExit(pWidget, pData);
+				if ( iRet != XUI_OK ) return iRet;
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			iRet = __xuiMenuBarModeEnter(pWidget, pData);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
 			iIndex = (pData->iHover >= 0) ? pData->iHover : __xuiMenuBarNextEnabled(pData, -1, 1);
@@ -1132,26 +1435,42 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pEvent->iKey == XUI_KEY_LEFT || pEvent->iKey == XUI_KEY_RIGHT ) {
+			if ( pEvent->iKey == XUI_KEY_RIGHT && pData->iOpen >= 0 ) {
+				pMenu = pData->arrItems[pData->iOpen].pMenu;
+				iIndex = (pMenu != NULL) ? xuiMenuGetHoverIndex(pMenu) : -1;
+				pMenuItem = (pMenu != NULL && iIndex >= 0) ? xuiMenuGetItem(pMenu, iIndex) : NULL;
+				if ( pMenuItem != NULL && pMenuItem->iType == XUI_MENU_ITEM_SUBMENU &&
+				     (pMenuItem->iState & XUI_MENU_ITEM_ENABLED) != 0u ) {
+					iRet = xuiMenuCommitHover(pMenu);
+					if ( iRet != XUI_OK && iRet != XUI_EVENT_DISPATCH_STOP ) return iRet;
+					return XUI_EVENT_DISPATCH_STOP;
+				}
+			}
 			iNext = __xuiMenuBarNextEnabled(pData, (pData->iHover >= 0) ? pData->iHover : pData->iOpen, (pEvent->iKey == XUI_KEY_RIGHT) ? 1 : -1);
 			if ( iNext >= 0 ) {
-				iRet = __xuiMenuBarSetHover(pWidget, pData, iNext);
+				iRet = (pData->iOpen >= 0 || pContext->pMenuBarModeOwner == pWidget) ?
+					__xuiMenuBarTrackItem(pWidget, pData, iNext) :
+					__xuiMenuBarSetHover(pWidget, pData, iNext);
 				if ( iRet != XUI_OK ) return iRet;
-				if ( pData->iOpen >= 0 ) {
-					iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iNext);
-					if ( iRet != XUI_OK ) return iRet;
-				}
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		}
 		if ( pEvent->iKey == XUI_KEY_HOME || pEvent->iKey == XUI_KEY_END ) {
-			iNext = __xuiMenuBarNextEnabled(pData,
-				(pEvent->iKey == XUI_KEY_HOME) ? -1 : 0,
-				(pEvent->iKey == XUI_KEY_HOME) ? 1 : -1);
-			if ( iNext >= 0 ) {
-				iRet = __xuiMenuBarSetHover(pWidget, pData, iNext);
-				if ( iRet != XUI_OK ) return iRet;
-				if ( pData->iOpen >= 0 ) {
-					iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iNext);
+			if ( pData->iOpen >= 0 ) {
+				pMenu = pData->arrItems[pData->iOpen].pMenu;
+				iNext = __xuiMenuBarMenuNextEnabled(pMenu,
+					(pEvent->iKey == XUI_KEY_HOME) ? -1 : 0,
+					(pEvent->iKey == XUI_KEY_HOME) ? 1 : -1);
+				if ( iNext >= 0 ) {
+					iRet = xuiMenuSetHoverIndex(pMenu, iNext);
+					if ( iRet != XUI_OK ) return iRet;
+				}
+			} else {
+				iNext = __xuiMenuBarNextEnabled(pData,
+					(pEvent->iKey == XUI_KEY_HOME) ? -1 : 0,
+					(pEvent->iKey == XUI_KEY_HOME) ? 1 : -1);
+				if ( iNext >= 0 ) {
+					iRet = __xuiMenuBarSetHover(pWidget, pData, iNext);
 					if ( iRet != XUI_OK ) return iRet;
 				}
 			}
@@ -1167,7 +1486,7 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 				}
 			} else {
 				iIndex = (pData->iHover >= 0) ? pData->iHover : __xuiMenuBarNextEnabled(pData, -1, 1);
-				if ( iIndex >= 0 ) {
+				if ( iIndex >= 0 && pData->arrItems[iIndex].pMenu != NULL ) {
 					iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
 					if ( iRet != XUI_OK ) return iRet;
 				}
@@ -1186,18 +1505,51 @@ static int __xuiMenuBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 				if ( iIndex >= 0 ) {
 					iRet = __xuiMenuBarOpenItemInternal(pWidget, pData, iIndex);
 					if ( iRet != XUI_OK ) return iRet;
+					if ( __xuiMenuBarGetData(pWidget) == pData &&
+					     pData->arrItems[iIndex].pMenu == NULL ) {
+						iRet = __xuiMenuBarModeExit(pWidget, pData);
+						if ( iRet != XUI_OK ) return iRet;
+					}
 				}
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-			iRet = __xuiMenuBarCloseOpen(pWidget, pData);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( pData->iOpen >= 0 ) {
+				iRet = __xuiMenuBarCloseOpen(pWidget, pData);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_EVENT_DISPATCH_STOP;
+			}
+			if ( pContext->pMenuBarModeOwner == pWidget ) {
+				iRet = __xuiMenuBarModeExit(pWidget, pData);
+				if ( iRet != XUI_OK ) return iRet;
+			} else {
+				iRet = __xuiMenuBarSetHover(pWidget, pData, -1);
+				if ( iRet == XUI_OK && xuiGetFocusWidget(pContext) == pWidget ) {
+					iRet = xuiSetFocusWidget(pContext, NULL);
+				}
+				if ( iRet != XUI_OK ) return iRet;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
-	case XUI_EVENT_FOCUS:
 	case XUI_EVENT_BLUR:
+		if ( pData->iOpen < 0 && pContext->pMenuBarModeOwner == pWidget &&
+		     xuiGetFocusWidget(pContext) != pWidget ) {
+			if ( __xuiMenuBarGetData(xuiGetFocusWidget(pContext)) == NULL ) {
+				__xuiMenuBarModeAbandon(pWidget);
+				iRet = __xuiMenuBarSetHover(pWidget, pData, -1);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+		}
+		/* fall through */
+	case XUI_EVENT_FOCUS:
+		if ( pEvent->iType == XUI_EVENT_FOCUS &&
+		     pContext->pMenuBarModeOwner != NULL &&
+		     pContext->pMenuBarModeOwner != pWidget ) {
+			iRet = __xuiMenuBarModeEnter(pWidget, pData);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		if ( iRet != XUI_OK ) return iRet;
 		break;
@@ -1261,14 +1613,19 @@ static int __xuiMenuBarAccessibleGet(xui_widget pWidget, int iIndex,
 	xui_accessible_node_t* pNode, void* pUser)
 {
 	xui_menubar_data_t* pData = (xui_menubar_data_t*)pUser;
+	xui_menubar_resolved_t tResolved;
 	xui_menubar_item_t* pItem;
 	xui_rect_t tWorld;
 	xui_rect_t tItem;
 	int iItem;
+	int iRet;
 
 	if ( pData == NULL || pNode == NULL || iIndex < 0 || iIndex > pData->iItemCount ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	__xuiMenuBarResolve(pWidget, pData, &tResolved);
+	iRet = __xuiMenuBarLayoutItems(pWidget, pData, &tResolved, NULL);
+	if ( iRet != XUI_OK ) return iRet;
 	pNode->iId = (uint64_t)iIndex + 1u;
 	if ( iIndex == 0 ) {
 		pNode->iRole = XUI_ACCESSIBLE_ROLE_MENU;
@@ -1381,6 +1738,8 @@ static int __xuiMenuBarInit(xui_widget pWidget, void* pTypeData, const void* pCr
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAccessibilityProvider(pWidget,
 		__xuiMenuBarAccessibleCount, __xuiMenuBarAccessibleGet,
 		__xuiMenuBarAccessibleAction, pData);
+	if ( iRet == XUI_OK ) iRet = xuiHotKeyRegister(xuiWidgetGetContext(pWidget),
+		pWidget, XUI_KEY_F10, 0u, __xuiMenuBarHotkeyEvent, NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pWidget = pWidget;
 	pData->pNext = pWidget->pContext->pMenuBarList;
@@ -1538,6 +1897,10 @@ XUI_API int xuiMenuBarSetItems(xui_widget pWidget, const xui_menubar_item_t* pIt
 	iRet = __xuiMenuBarCloseOpen(pWidget, pData);
 	if ( iRet != XUI_OK ) goto failed_new;
 	if ( __xuiMenuBarGetData(pWidget) != pData ) goto abandoned_new;
+	if ( xuiWidgetGetContext(pWidget)->pMenuBarModeOwner == pWidget ) {
+		iRet = __xuiMenuBarModeExit(pWidget, pData);
+		if ( iRet != XUI_OK ) goto failed_new;
+	}
 	iRet = __xuiMenuBarResetMnemonics(pWidget, pData);
 	if ( iRet != XUI_OK ) goto failed_new;
 	memcpy(arrOld, pData->arrItems, sizeof(arrOld));
@@ -1558,7 +1921,7 @@ XUI_API int xuiMenuBarSetItems(xui_widget pWidget, const xui_menubar_item_t* pIt
 	pData->iHover = -1;
 	pData->iActive = -1;
 	pData->iOpen = -1;
-	pData->iChangeCount++;
+	__xuiMenuBarMarkChanged(pData);
 	pData->bLayoutDirty = 1;
 	iRet = __xuiMenuBarRegisterMnemonics(pWidget, pData);
 	if ( iRet == XUI_OK ) {
@@ -1640,7 +2003,7 @@ XUI_API xui_rect_t xuiMenuBarGetItemRect(xui_widget pWidget, int iIndex)
 	memset(&tEmpty, 0, sizeof(tEmpty));
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return tEmpty;
 	__xuiMenuBarResolve(pWidget, pData, &tResolved);
-	(void)__xuiMenuBarLayoutItems(pWidget, pData, &tResolved, NULL);
+	if ( __xuiMenuBarLayoutItems(pWidget, pData, &tResolved, NULL) != XUI_OK ) return tEmpty;
 	return pData->arrItems[iIndex].tRect;
 }
 
@@ -1648,6 +2011,7 @@ XUI_API int xuiMenuBarSetItemMenu(xui_widget pWidget, int iIndex, xui_widget pMe
 {
 	xui_menubar_data_t* pData = __xuiMenuBarGetData(pWidget);
 	xui_widget pOldMenu;
+	int iOldChangeCount;
 	int iRet;
 
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ||
@@ -1660,11 +2024,12 @@ XUI_API int xuiMenuBarSetItemMenu(xui_widget pWidget, int iIndex, xui_widget pMe
 		if ( __xuiMenuBarGetData(pWidget) != pData ) return XUI_OK;
 	}
 	pData->arrItems[iIndex].pMenu = pMenu;
-	pData->iChangeCount++;
+	iOldChangeCount = pData->iChangeCount;
+	__xuiMenuBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].pMenu = pOldMenu;
-		pData->iChangeCount--;
+		pData->iChangeCount = iOldChangeCount;
 	}
 	else xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return iRet;
@@ -1675,6 +2040,7 @@ XUI_API int xuiMenuBarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnable
 	xui_menubar_data_t* pData = __xuiMenuBarGetData(pWidget);
 	uint32_t iOldState;
 	int iOldHover;
+	int iOldChangeCount;
 	int iRet;
 	int bOldEnabled;
 
@@ -1689,15 +2055,16 @@ XUI_API int xuiMenuBarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnable
 	}
 	iOldState = pData->arrItems[iIndex].iState;
 	iOldHover = pData->iHover;
+	iOldChangeCount = pData->iChangeCount;
 	if ( bEnabled ) pData->arrItems[iIndex].iState |= XUI_MENUBAR_ITEM_ENABLED;
 	else pData->arrItems[iIndex].iState &= ~XUI_MENUBAR_ITEM_ENABLED;
 	if ( !bEnabled && pData->iHover == iIndex ) pData->iHover = -1;
-	pData->iChangeCount++;
+	__xuiMenuBarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->arrItems[iIndex].iState = iOldState;
 		pData->iHover = iOldHover;
-		pData->iChangeCount--;
+		pData->iChangeCount = iOldChangeCount;
 		return iRet;
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
@@ -1733,7 +2100,7 @@ XUI_API int xuiMenuBarSetItemMnemonic(xui_widget pWidget, int iIndex, int iMnemo
 		(void)__xuiMenuBarRegisterMnemonics(pWidget, pData);
 		return iRet;
 	}
-	pData->iChangeCount++;
+	__xuiMenuBarMarkChanged(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
@@ -1845,17 +2212,22 @@ XUI_API xui_font xuiMenuBarGetFont(xui_widget pWidget)
 XUI_API int xuiMenuBarSetMetrics(xui_widget pWidget, const xui_menubar_metrics_t* pMetrics)
 {
 	xui_menubar_data_t* pData = __xuiMenuBarGetData(pWidget);
+	xui_menubar_resolved_t tResolved;
 	xui_menubar_metrics_t tOld;
 	int bOldLayoutDirty;
 	int iRet;
 
 	if ( (pData == NULL) || !__xuiMenuBarMetricsValid(pMetrics) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( __xuiMenuBarMetricsEqual(&pData->tMetrics, pMetrics) ) return XUI_OK;
 	tOld = pData->tMetrics;
 	bOldLayoutDirty = pData->bLayoutDirty;
 	pData->tMetrics = *pMetrics;
 	pData->tMetrics.iSize = sizeof(pData->tMetrics);
 	pData->bLayoutDirty = 1;
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	__xuiMenuBarResolve(pWidget, pData, &tResolved);
+	iRet = __xuiMenuBarLayoutItems(pWidget, pData, &tResolved, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->tMetrics = tOld;
 		pData->bLayoutDirty = bOldLayoutDirty;
@@ -1880,6 +2252,7 @@ XUI_API int xuiMenuBarSetColors(xui_widget pWidget, const xui_menubar_colors_t* 
 	int iRet;
 
 	if ( (pData == NULL) || !__xuiMenuBarColorsValid(pColors) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( __xuiMenuBarColorsEqual(&pData->tColors, pColors) ) return XUI_OK;
 	tOld = pData->tColors;
 	pData->tColors = *pColors;
 	pData->tColors.iSize = sizeof(pData->tColors);

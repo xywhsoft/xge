@@ -115,21 +115,27 @@ int main(void)
 	xui_test_proxy_state_t tState;
 	xui_menubar_test_select_t tSelect;
 	xui_menubar_test_select_t tDirectSelect;
+	xui_menubar_test_select_t tSecondSelect;
 	xui_menubar_test_destroy_t tDestroy;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pMenuBar;
+	xui_widget pSecondBar;
+	xui_widget pTransientFocus;
 	xui_widget pFileMenu;
 	xui_widget pEditMenu;
+	xui_widget pRecentMenu;
 	xui_widget pDestroyBar;
 	xui_widget pInvalidBar;
 	xui_widget pLifetimeMenu;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_menu_desc_t tMenuDesc;
-	xui_menu_item_t arrFileItems[3];
+	xui_menu_item_t arrFileItems[4];
 	xui_menu_item_t arrEditItems[3];
+	xui_menu_item_t arrRecentItems[1];
 	xui_menubar_item_t arrBarItems[3];
+	xui_menubar_item_t arrSecondItems[1];
 	xui_menubar_item_t arrOwnedItems[1];
 	xui_menubar_item_t arrDestroyItems[1];
 	xui_rect_i_t tFullRect;
@@ -150,12 +156,16 @@ int main(void)
 
 	memset(&tSelect, 0, sizeof(tSelect));
 	memset(&tDirectSelect, 0, sizeof(tDirectSelect));
+	memset(&tSecondSelect, 0, sizeof(tSecondSelect));
 	memset(&tDestroy, 0, sizeof(tDestroy));
 	pContext = NULL;
 	pRoot = NULL;
 	pMenuBar = NULL;
+	pSecondBar = NULL;
+	pTransientFocus = NULL;
 	pFileMenu = NULL;
 	pEditMenu = NULL;
+	pRecentMenu = NULL;
 	pDestroyBar = NULL;
 	pInvalidBar = NULL;
 	pLifetimeMenu = NULL;
@@ -184,6 +194,16 @@ int main(void)
 	memset(&tMenuDesc, 0, sizeof(tMenuDesc));
 	tMenuDesc.iSize = sizeof(tMenuDesc);
 	tMenuDesc.pFont = pFont;
+	iRet = xuiMenuCreate(pContext, &pRecentMenu, &tMenuDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pRecentMenu != NULL, "recent menu create");
+	memset(arrRecentItems, 0, sizeof(arrRecentItems));
+	arrRecentItems[0].sText = "Project";
+	arrRecentItems[0].iType = XUI_MENU_ITEM_NORMAL;
+	arrRecentItems[0].iState = XUI_MENU_ITEM_ENABLED;
+	arrRecentItems[0].iValue = 30;
+	iRet = xuiMenuSetItems(pRecentMenu, arrRecentItems, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recent menu items");
+
 	iRet = xuiMenuCreate(pContext, &pFileMenu, &tMenuDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFileMenu != NULL, "file menu create");
 	memset(arrFileItems, 0, sizeof(arrFileItems));
@@ -200,7 +220,11 @@ int main(void)
 	arrFileItems[2].iType = XUI_MENU_ITEM_NORMAL;
 	arrFileItems[2].iState = 0;
 	arrFileItems[2].iValue = 12;
-	iRet = xuiMenuSetItems(pFileMenu, arrFileItems, 3);
+	arrFileItems[3].sText = "Recent";
+	arrFileItems[3].iType = XUI_MENU_ITEM_SUBMENU;
+	arrFileItems[3].iState = XUI_MENU_ITEM_ENABLED;
+	arrFileItems[3].pSubmenu = pRecentMenu;
+	iRet = xuiMenuSetItems(pFileMenu, arrFileItems, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "file menu items");
 
 	iRet = xuiMenuCreate(pContext, &pEditMenu, &tMenuDesc);
@@ -337,13 +361,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 0 && xuiMenuIsOpen(pFileMenu), "alt mnemonic opens");
 	iRet = __xuiMenuBarKey(pContext, XUI_KEY_RIGHT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 1 && xuiMenuIsOpen(pEditMenu), "right switches open menu");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_END, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 1 &&
+		xuiMenuGetHoverIndex(pEditMenu) == 1,
+		"End moves within the open dropdown");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_HOME, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 1 &&
+		xuiMenuGetHoverIndex(pEditMenu) == 0,
+		"Home moves within the open dropdown");
 	iRet = __xuiMenuBarKey(pContext, XUI_KEY_DOWN, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetHoverIndex(pEditMenu) == 1, "down moves menu hover");
 	iRet = __xuiMenuBarKey(pContext, XUI_KEY_ENTER, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && tSelect.iCount == 1 && tSelect.pMenu == pEditMenu && tSelect.iValue == 21, "enter commits open menu");
 	XUI_TEST_CHECK(tDirectSelect.iCount == 0, "menubar temporarily overrides direct menu callback");
 	iRet = xuiUpdate(pContext, 0.016f);
-	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuBarIsOpen(pMenuBar), "commit closes menubar");
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuBarIsOpen(pMenuBar) &&
+		xuiGetFocusWidget(pContext) == pRoot,
+		"commit closes menubar and restores prior focus");
 	iRet = xuiMenuOpenForOwner(pEditMenu, pMenuBar);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pEditMenu), "open edit menu directly after menubar close");
 	iRet = xuiMenuSetHoverIndex(pEditMenu, 0);
@@ -352,10 +386,41 @@ int main(void)
 		tDirectSelect.iCount == 1 && tDirectSelect.iValue == 20 && tSelect.iCount == 1,
 		"menubar restores direct menu callback");
 
-	iRet = xuiSetFocusWidget(pContext, pMenuBar);
-	XUI_TEST_CHECK(iRet == XUI_OK, "focus menubar");
+	iRet = xuiSetFocusWidget(pContext, pRoot);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus root before F10");
 	iRet = __xuiMenuBarKey(pContext, XUI_KEY_F10, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetHoverIndex(pMenuBar) >= 0, "f10 focuses item");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pMenuBar &&
+		xuiMenuBarGetHoverIndex(pMenuBar) == 0, "global F10 enters menu mode");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_CONTEXT_MENU, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pMenuBar &&
+		xuiMenuBarGetHoverIndex(pMenuBar) == 0 && !xuiMenuBarIsOpen(pMenuBar),
+		"context-menu key does not activate the menu bar");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_F10, XUI_MOD_SHIFT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pMenuBar &&
+		xuiMenuBarGetHoverIndex(pMenuBar) == 0,
+		"Shift+F10 is not treated as menu-bar activation");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_F10, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pRoot &&
+		xuiMenuBarGetHoverIndex(pMenuBar) == -1, "second F10 exits and restores focus");
+	iRet = xuiWidgetCreate(pContext, &pTransientFocus);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pTransientFocus, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTransientFocus);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pTransientFocus);
+	XUI_TEST_CHECK(iRet == XUI_OK, "transient focus target");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_F10, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pMenuBar,
+		"F10 captures a transient restore target");
+	xuiWidgetDestroy(pTransientFocus);
+	pTransientFocus = NULL;
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_F10, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == NULL &&
+		xuiMenuBarGetHoverIndex(pMenuBar) == -1,
+		"destroyed restore target is cleared before menu-mode exit");
+	iRet = xuiSetFocusWidget(pContext, pRoot);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore root after transient target test");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_F10, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pMenuBar &&
+		xuiMenuBarGetHoverIndex(pMenuBar) == 0, "F10 re-enters menu mode");
 	iRet = __xuiMenuBarKey(pContext, XUI_KEY_END, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetHoverIndex(pMenuBar) == 1, "End selects last enabled item");
 	iRet = __xuiMenuBarKey(pContext, XUI_KEY_HOME, 0);
@@ -368,6 +433,84 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "top command rejects accessibility expand");
 	tViewRect = xuiMenuBarGetItemRect(pMenuBar, 2);
 	tBarWorld = xuiWidgetGetWorldRect(pMenuBar);
+	iBefore = tSelect.iCount;
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_DOWN, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 0,
+		"Down opens the highlighted top-level menu");
+	iRet = __xuiMenuBarDispatchMove(pContext,
+		tBarWorld.fX + tViewRect.fX + tViewRect.fW * 0.5f,
+		tBarWorld.fY + tViewRect.fY + tViewRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSelect.iCount == iBefore &&
+		!xuiMenuBarIsOpen(pMenuBar) && xuiMenuBarGetHoverIndex(pMenuBar) == 2,
+		"hovering a top-level command never activates it");
+	iRet = __xuiMenuBarMoveToItem(pContext, pMenuBar, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 1 &&
+		tSelect.iCount == iBefore, "menu tracking resumes after a command item");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuBarIsOpen(pMenuBar) &&
+		xuiGetFocusWidget(pContext) == pRoot, "Escape exits pointer menu mode");
+
+	iRet = __xuiMenuBarKey(pContext, 'E', XUI_MOD_ALT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 1,
+		"Alt mnemonic reopens Edit");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_RIGHT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSelect.iCount == iBefore &&
+		!xuiMenuBarIsOpen(pMenuBar) && xuiMenuBarGetHoverIndex(pMenuBar) == 2,
+		"keyboard tracking does not execute a top-level command");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_RIGHT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 0 &&
+		xuiMenuIsOpen(pFileMenu), "keyboard tracking continues past a command item");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pRoot,
+		"Escape restores focus after keyboard tracking");
+
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_F10, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pMenuBar,
+		"primary menubar enters mode before handoff");
+	iRet = xuiMenuBarCreate(pContext, &pSecondBar, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pSecondBar,
+		(xui_rect_t){20.0f, 60.0f, 180.0f, 28.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pSecondBar);
+	memset(arrSecondItems, 0, sizeof(arrSecondItems));
+	arrSecondItems[0].sText = "&Help";
+	arrSecondItems[0].iState = XUI_MENUBAR_ITEM_ENABLED;
+	arrSecondItems[0].iValue = 41;
+	if ( iRet == XUI_OK ) iRet = xuiMenuBarSetItems(pSecondBar, arrSecondItems, 1);
+	if ( iRet == XUI_OK ) iRet = xuiMenuBarSetSelect(pSecondBar,
+		__xuiMenuBarSelected, &tSecondSelect);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "secondary menubar setup");
+	tViewRect = xuiMenuBarGetItemRect(pSecondBar, 0);
+	tBarWorld = xuiWidgetGetWorldRect(pSecondBar);
+	iRet = __xuiMenuBarDispatchMove(pContext,
+		tBarWorld.fX + tViewRect.fX + tViewRect.fW * 0.5f,
+		tBarWorld.fY + tViewRect.fY + tViewRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = __xuiMenuBarDispatchDown(pContext,
+		tBarWorld.fX + tViewRect.fX + tViewRect.fW * 0.5f,
+		tBarWorld.fY + tViewRect.fY + tViewRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = __xuiMenuBarDispatchUp(pContext,
+		tBarWorld.fX + tViewRect.fX + tViewRect.fW * 0.5f,
+		tBarWorld.fY + tViewRect.fY + tViewRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetHoverIndex(pMenuBar) == -1 &&
+		tSecondSelect.iCount == 1 && tSecondSelect.iValue == 41 &&
+		xuiGetFocusWidget(pContext) == pRoot,
+		"switching menubars closes the old mode and restores original focus");
+	xuiWidgetDestroy(pSecondBar);
+	pSecondBar = NULL;
+	tViewRect = xuiMenuBarGetItemRect(pMenuBar, 2);
+	tBarWorld = xuiWidgetGetWorldRect(pMenuBar);
+
+	iRet = __xuiMenuBarKey(pContext, 'F', XUI_MOD_ALT);
+	if ( iRet == XUI_OK ) iRet = xuiMenuSetHoverIndex(pFileMenu, 3);
+	if ( iRet == XUI_OK ) iRet = __xuiMenuBarKey(pContext, XUI_KEY_RIGHT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pFileMenu) &&
+		xuiMenuIsOpen(pRecentMenu), "Right opens the highlighted submenu before switching top-level menus");
+	iRet = __xuiMenuBarKey(pContext, XUI_KEY_ESCAPE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuBarIsOpen(pMenuBar) &&
+		xuiGetFocusWidget(pContext) == pRoot, "submenu Escape closes the menu session and restores focus");
+
 	iRet = __xuiMenuBarDispatchMove(pContext,
 		tBarWorld.fX + tViewRect.fX + tViewRect.fW * 0.5f,
 		tBarWorld.fY + tViewRect.fY + tViewRect.fH * 0.5f);
@@ -462,6 +605,22 @@ int main(void)
 	tBadMetrics.fItemGap = NAN;
 	XUI_TEST_CHECK(xuiMenuBarSetMetrics(pMenuBar, &tBadMetrics) == XUI_ERROR_INVALID_ARGUMENT,
 		"nan metrics rejected");
+	tBadMetrics = tMetrics;
+	tBadMetrics.fPaddingX = XUI_LAYOUT_UNBOUNDED;
+	XUI_TEST_CHECK(xuiMenuBarSetMetrics(pMenuBar, &tBadMetrics) == XUI_ERROR_INVALID_ARGUMENT,
+		"combined horizontal geometry rejected");
+	tBadMetrics = tMetrics;
+	tBadMetrics.fItemPaddingX = XUI_LAYOUT_UNBOUNDED * 0.5f;
+	XUI_TEST_CHECK(xuiMenuBarSetMetrics(pMenuBar, &tBadMetrics) == XUI_ERROR_INVALID_ARGUMENT,
+		"maximum-capacity item geometry rejected");
+	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
+	XUI_TEST_CHECK(xuiMenuBarSetMetrics(pMenuBar, &tMetrics) == XUI_OK,
+		"unchanged metrics accepted");
+	(void)xuiMenuBarGetItemRect(pMenuBar, 0);
+	XUI_TEST_CHECK(xuiTestProxyGetTextMeasureCount(&tState) == iMeasureCount,
+		"unchanged metrics preserve the layout cache");
+	XUI_TEST_CHECK(xuiMenuBarSetColors(pMenuBar, &tColors) == XUI_OK,
+		"unchanged colors accepted without invalidation");
 	iChangeCount = xuiMenuBarGetChangeCount(pMenuBar);
 	XUI_TEST_CHECK(xuiMenuBarSetItemEnabled(pMenuBar, 2, 1) == XUI_OK &&
 		xuiMenuBarGetChangeCount(pMenuBar) == iChangeCount, "idempotent enable does not change state");

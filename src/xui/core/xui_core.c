@@ -1246,6 +1246,13 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 		}
 		pContext->pFocusWidget = NULL;
 	}
+	if ( __xuiContextWidgetContains(pWidget, pContext->pMenuBarFocusRestore) ) {
+		pContext->pMenuBarFocusRestore = NULL;
+	}
+	if ( __xuiContextWidgetContains(pWidget, pContext->pMenuBarModeOwner) ) {
+		pContext->pMenuBarModeOwner = NULL;
+		pContext->pMenuBarFocusRestore = NULL;
+	}
 	if ( __xuiContextWidgetContains(pWidget, pContext->pPointerCaptureWidget) ) {
 		pContext->pPointerCaptureWidget = NULL;
 	}

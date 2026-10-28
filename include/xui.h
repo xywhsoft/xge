@@ -4958,6 +4958,8 @@ typedef struct xui_menubar_item_t {
 
 typedef struct xui_menubar_metrics_t {
 	uint32_t iSize;
+	/* All values are finite and bounded by XUI_LAYOUT_UNBOUNDED. The fixed
+	 * geometry for the maximum item capacity must fit the same bound. */
 	float fHeight;
 	float fPaddingX;
 	float fPaddingY;
@@ -11408,7 +11410,7 @@ XUI_API int xuiMenuBarSetSelect(xui_widget pWidget, xui_menu_select_proc onSelec
 XUI_API int xuiMenuBarSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
 XUI_API xui_font xuiMenuBarGetFont(xui_widget pWidget);
-/* 以结构体设置度量组。 */
+/* 以结构体设置度量组；单项、最大项容量的组合几何及实际文本布局均不得超过布局上限。 */
 XUI_API int xuiMenuBarSetMetrics(xui_widget pWidget, const xui_menubar_metrics_t* pMetrics);
 /* 输出度量组。 */
 XUI_API int xuiMenuBarGetMetrics(xui_widget pWidget, xui_menubar_metrics_t* pMetrics);
