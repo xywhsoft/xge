@@ -15,8 +15,6 @@
 typedef struct xui_step_bar_data_t {
 	char* arrTitles[XUI_STEP_BAR_MAX_STEPS];
 	char sAccessibleValue[256];
-	xui_rect_t arrStepRect[XUI_STEP_BAR_MAX_STEPS];
-	xui_rect_t arrIndicatorRect[XUI_STEP_BAR_MAX_STEPS];
 	xui_font pFont;
 	int iStepCount;
 	int iCurrent;
@@ -51,7 +49,8 @@ static int __xuiStepBarAlpha(uint32_t iColor)
 
 static int __xuiStepBarNonNegativeFloatValid(float fValue)
 {
-	return isfinite(fValue) && fValue >= 0.0f;
+	return isfinite(fValue) && fValue >= 0.0f &&
+	       fValue <= XUI_LAYOUT_UNBOUNDED;
 }
 
 static void __xuiStepBarFormatArrowTitle(char* sText, size_t iCapacity, int iIndex, const char* sTitle)
@@ -118,6 +117,13 @@ static int __xuiStepBarStringSet(char** psText, const char* sText)
 	if ( sText == NULL ) {
 		sText = "";
 	}
+	if ( sText[0] == '\0' ) {
+		if ( *psText != NULL ) {
+			xrtFree(*psText);
+			*psText = NULL;
+		}
+		return XUI_OK;
+	}
 	iNeed = strlen(sText) + 1u;
 	sNew = (char*)xrtMalloc(iNeed);
 	if ( sNew == NULL ) {
@@ -160,6 +166,9 @@ static int __xuiStepBarSetTitlesData(xui_step_bar_data_t* pData, const char* con
 	memset(arrNew, 0, sizeof(arrNew));
 	for ( i = 0; i < iStepCount; i++ ) {
 		const char* sTitle = (ppTitles != NULL && ppTitles[i] != NULL) ? ppTitles[i] : "";
+		if ( sTitle[0] == '\0' ) {
+			continue;
+		}
 		iNeed = strlen(sTitle) + 1u;
 		arrNew[i] = (char*)xrtMalloc(iNeed);
 		if ( arrNew[i] == NULL ) {
@@ -324,6 +333,110 @@ static const char* __xuiStepBarTitle(const xui_step_bar_data_t* pData, int iInde
 	return pData->arrTitles[iIndex];
 }
 
+static float __xuiStepBarMinFloat(float fA, float fB)
+{
+	return (fA < fB) ? fA : fB;
+}
+
+static float __xuiStepBarDotRadius(const xui_step_bar_data_t* pResolved,
+	float fPrimaryExtent, float fCrossExtent)
+{
+	float fRadius;
+	float fCrossLimit;
+	float fPrimaryLimit;
+
+	if ( (pResolved == NULL) || (pResolved->iStepCount <= 0) ||
+	     (fPrimaryExtent <= 0.0f) || (fCrossExtent <= 0.0f) ) {
+		return 0.0f;
+	}
+	fRadius = (pResolved->fDotRadius > 0.0f) ? pResolved->fDotRadius : 11.0f;
+	fCrossLimit = (fCrossExtent >= 4.0f) ? (fCrossExtent - 4.0f) * 0.5f : fCrossExtent * 0.5f;
+	fPrimaryLimit = fPrimaryExtent / ((float)pResolved->iStepCount * 2.0f);
+	fRadius = __xuiStepBarMinFloat(fRadius, fCrossLimit);
+	fRadius = __xuiStepBarMinFloat(fRadius, fPrimaryLimit);
+	return (fRadius > 0.0f) ? fRadius : 0.0f;
+}
+
+static void __xuiStepBarGeometry(xui_widget pWidget, const xui_step_bar_data_t* pResolved,
+	int iIndex, xui_rect_t* pStepRect, xui_rect_t* pIndicatorRect)
+{
+	xui_rect_t tContent;
+	xui_rect_t tStep;
+	xui_rect_t tIndicator;
+	float fRadius;
+	float fSpacing;
+	float fCenter;
+	float fExtent;
+	float fPosition;
+
+	memset(&tStep, 0, sizeof(tStep));
+	memset(&tIndicator, 0, sizeof(tIndicator));
+	if ( (pWidget == NULL) || (pResolved == NULL) || (iIndex < 0) ||
+	     (iIndex >= pResolved->iStepCount) ) {
+		goto done;
+	}
+	tContent = xuiWidgetGetContentRect(pWidget);
+	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
+		goto done;
+	}
+	if ( pResolved->iStyle == XUI_STEP_BAR_STYLE_ARROW ) {
+		float fHeight = (pResolved->fBarHeight > 0.0f) ? pResolved->fBarHeight : XUI_STEP_BAR_ARROW_H;
+		float fStepWidth = tContent.fW / (float)pResolved->iStepCount;
+		if ( fHeight > tContent.fH ) fHeight = tContent.fH;
+		tStep = (xui_rect_t){
+			tContent.fX + fStepWidth * (float)iIndex,
+			tContent.fY + (tContent.fH - fHeight) * 0.5f,
+			fStepWidth,
+			fHeight
+		};
+		tIndicator = tStep;
+		goto done;
+	}
+	if ( pResolved->iStyle == XUI_STEP_BAR_STYLE_DOT ) {
+		fRadius = __xuiStepBarDotRadius(pResolved, tContent.fW, tContent.fH);
+		fSpacing = (pResolved->iStepCount > 1) ?
+			(tContent.fW - fRadius * 2.0f) / (float)(pResolved->iStepCount - 1) : 0.0f;
+		fCenter = (pResolved->iStepCount > 1) ?
+			tContent.fX + fRadius + fSpacing * (float)iIndex :
+			tContent.fX + tContent.fW * 0.5f;
+		fPosition = (tContent.fH >= fRadius * 2.0f + 4.0f) ?
+			tContent.fY + fRadius + 4.0f : tContent.fY + tContent.fH * 0.5f;
+		tIndicator = (xui_rect_t){fCenter - fRadius, fPosition - fRadius,
+			fRadius * 2.0f, fRadius * 2.0f};
+		fExtent = __xuiStepBarMinFloat(tContent.fW, 152.0f);
+		if ( (pResolved->iStepCount > 1) && (fExtent > fSpacing) ) fExtent = fSpacing;
+		fPosition = fCenter - fExtent * 0.5f;
+		if ( fPosition < tContent.fX ) fPosition = tContent.fX;
+		if ( fPosition + fExtent > tContent.fX + tContent.fW ) {
+			fPosition = tContent.fX + tContent.fW - fExtent;
+		}
+		tStep = (xui_rect_t){fPosition, tContent.fY, fExtent, tContent.fH};
+		goto done;
+	}
+	fRadius = __xuiStepBarDotRadius(pResolved, tContent.fH, tContent.fW);
+	fSpacing = (pResolved->iStepCount > 1) ?
+		(tContent.fH - fRadius * 2.0f) / (float)(pResolved->iStepCount - 1) : 0.0f;
+	fCenter = (pResolved->iStepCount > 1) ?
+		tContent.fY + fRadius + fSpacing * (float)iIndex :
+		tContent.fY + tContent.fH * 0.5f;
+	fPosition = (tContent.fW >= fRadius * 2.0f + 4.0f) ?
+		tContent.fX + fRadius + 4.0f : tContent.fX + tContent.fW * 0.5f;
+	tIndicator = (xui_rect_t){fPosition - fRadius, fCenter - fRadius,
+		fRadius * 2.0f, fRadius * 2.0f};
+	fExtent = __xuiStepBarMinFloat(tContent.fH, 56.0f);
+	if ( (pResolved->iStepCount > 1) && (fExtent > fSpacing) ) fExtent = fSpacing;
+	fPosition = fCenter - fExtent * 0.5f;
+	if ( fPosition < tContent.fY ) fPosition = tContent.fY;
+	if ( fPosition + fExtent > tContent.fY + tContent.fH ) {
+		fPosition = tContent.fY + tContent.fH - fExtent;
+	}
+	tStep = (xui_rect_t){tContent.fX, fPosition, tContent.fW, fExtent};
+
+done:
+	if ( pStepRect != NULL ) *pStepRect = tStep;
+	if ( pIndicatorRect != NULL ) *pIndicatorRect = tIndicator;
+}
+
 static int __xuiStepBarDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
@@ -336,51 +449,69 @@ static int __xuiStepBarDrawText(xui_proxy pProxy, xui_draw_context pDraw, const 
 	return pProxy->drawText(pProxy, pDraw, pTextItem, xuiInternalSnapRect(tRect), iColor, iFlags);
 }
 
+static int __xuiStepBarDrawLine(xui_proxy pProxy, xui_draw_context pDraw,
+	float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor)
+{
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawLine == NULL) ||
+	     (fWidth <= 0.0f) || (__xuiStepBarAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
+	return pProxy->drawLine(pProxy, pDraw, fX0, fY0, fX1, fY1, fWidth, iColor);
+}
+
+static int __xuiStepBarDrawCircleFill(xui_proxy pProxy, xui_draw_context pDraw,
+	float fX, float fY, float fRadius, uint32_t iColor)
+{
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawCircleFill == NULL) ||
+	     (fRadius <= 0.0f) || (__xuiStepBarAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
+	return pProxy->drawCircleFill(pProxy, pDraw, fX, fY, fRadius, iColor);
+}
+
+static int __xuiStepBarDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDraw,
+	float fX, float fY, float fRadius, float fWidth, uint32_t iColor)
+{
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawCircleStroke == NULL) ||
+	     (fRadius <= 0.0f) || (fWidth <= 0.0f) || (__xuiStepBarAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
+	return pProxy->drawCircleStroke(pProxy, pDraw, fX, fY, fRadius, fWidth, iColor);
+}
+
 static int __xuiStepBarDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, uint32_t iColor)
 {
 	int iRet;
 
-	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawLine == NULL) ) {
+	if ( fRadius <= 0.0f ) {
 		return XUI_OK;
 	}
-	iRet = pProxy->drawLine(pProxy, pDraw, fX - fRadius * 0.35f, fY, fX - fRadius * 0.08f, fY + fRadius * 0.28f, 1.5f, iColor);
+	iRet = __xuiStepBarDrawLine(pProxy, pDraw, fX - fRadius * 0.35f, fY,
+		fX - fRadius * 0.08f, fY + fRadius * 0.28f, 1.5f, iColor);
 	if ( iRet != XUI_OK ) return iRet;
-	return pProxy->drawLine(pProxy, pDraw, fX - fRadius * 0.08f, fY + fRadius * 0.28f, fX + fRadius * 0.42f, fY - fRadius * 0.34f, 1.5f, iColor);
+	return __xuiStepBarDrawLine(pProxy, pDraw, fX - fRadius * 0.08f, fY + fRadius * 0.28f,
+		fX + fRadius * 0.42f, fY - fRadius * 0.34f, 1.5f, iColor);
 }
 
 static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, const xui_step_bar_data_t* pResolved)
 {
-	xui_step_bar_data_t* pData;
-	xui_rect_t tContent;
 	xui_rect_t tStep;
 	xui_rect_t tRect;
 	xui_vec2_t tA;
 	xui_vec2_t tB;
 	xui_vec2_t tC;
 	char sText[160];
-	float fStepW;
 	float fArrowW;
-	float fY;
-	float fH;
 	uint32_t iColor;
 	int i;
 	int iRet;
 
-	pData = __xuiStepBarGetData(pWidget);
-	tContent = xuiWidgetGetContentRect(pWidget);
-	fH = (pResolved->fBarHeight > 0.0f) ? pResolved->fBarHeight : XUI_STEP_BAR_ARROW_H;
-	if ( fH > tContent.fH ) fH = tContent.fH;
-	fY = tContent.fY + (tContent.fH - fH) * 0.5f;
-	fStepW = (pResolved->iStepCount > 0) ? (tContent.fW / (float)pResolved->iStepCount) : 0.0f;
-	fArrowW = (fStepW < 28.0f) ? fStepW * 0.35f : 16.0f;
 	for ( i = 0; i < pResolved->iStepCount; i++ ) {
-		tStep = xuiInternalSnapRect((xui_rect_t){tContent.fX + fStepW * (float)i, fY, fStepW, fH});
-		if ( pData != NULL ) {
-			pData->arrStepRect[i] = tStep;
-			pData->arrIndicatorRect[i] = tStep;
-		}
+		__xuiStepBarGeometry(pWidget, pResolved, i, &tStep, NULL);
+		fArrowW = (tStep.fW < 28.0f) ? tStep.fW * 0.35f : 16.0f;
 		iColor = __xuiStepBarStatusColor(pResolved, i);
-		if ( (__xuiStepBarAlpha(iColor) != 0) && (pProxy->drawRectFill != NULL) ) {
+		if ( (__xuiStepBarAlpha(iColor) != 0) && (pProxy->drawRectFill != NULL) &&
+		     (tStep.fW > 0.0f) && (tStep.fH > 0.0f) ) {
 			tRect = tStep;
 			if ( i < pResolved->iStepCount - 1 ) {
 				tRect.fW -= fArrowW;
@@ -394,10 +525,12 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 			tC = (xui_vec2_t){tStep.fX + tStep.fW - fArrowW, tStep.fY + tStep.fH};
 			iRet = pProxy->drawTriangleFill(pProxy, pDraw, tA, tB, tC, iColor);
 			if ( iRet != XUI_OK ) return iRet;
-			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && (pProxy->drawLine != NULL) ) {
-				(void)pProxy->drawLine(pProxy, pDraw, tA.fX, tA.fY, tB.fX, tB.fY, 1.0f, pResolved->iBackgroundColor);
-				(void)pProxy->drawLine(pProxy, pDraw, tB.fX, tB.fY, tC.fX, tC.fY, 1.0f, pResolved->iBackgroundColor);
-			}
+			iRet = __xuiStepBarDrawLine(pProxy, pDraw, tA.fX, tA.fY,
+				tB.fX, tB.fY, 1.0f, pResolved->iBackgroundColor);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiStepBarDrawLine(pProxy, pDraw, tB.fX, tB.fY,
+				tC.fX, tC.fY, 1.0f, pResolved->iBackgroundColor);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		__xuiStepBarFormatArrowTitle(sText, sizeof(sText), i, __xuiStepBarTitle(pResolved, i));
 		tRect = tStep;
@@ -411,81 +544,71 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 
 static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, const xui_step_bar_data_t* pResolved)
 {
-	xui_step_bar_data_t* pData;
 	xui_rect_t tContent;
+	xui_rect_t tStep;
+	xui_rect_t tIndicator;
+	xui_rect_t tPrevIndicator;
 	xui_rect_t tText;
 	char sIndex[16];
 	float fRadius;
 	float fLineY;
 	float fX;
-	float fPrevX;
-	float fColW;
-	float fTextW;
 	uint32_t iTextColor;
 	uint32_t iCircleColor;
 	uint32_t iTextFlags;
 	int i;
 	int iRet;
 
-	pData = __xuiStepBarGetData(pWidget);
 	tContent = xuiWidgetGetContentRect(pWidget);
-	fRadius = (pResolved->fDotRadius > 0.0f) ? pResolved->fDotRadius : 11.0f;
-	if ( fRadius > tContent.fW * 0.5f ) fRadius = tContent.fW * 0.5f;
-	if ( fRadius > tContent.fH * 0.5f ) fRadius = tContent.fH * 0.5f;
-	if ( (tContent.fH >= 4.0f) && (fRadius > (tContent.fH - 4.0f) * 0.5f) ) fRadius = (tContent.fH - 4.0f) * 0.5f;
-	if ( fRadius < 0.0f ) fRadius = 0.0f;
-	fLineY = (tContent.fH >= fRadius * 2.0f + 4.0f) ?
-		tContent.fY + fRadius + 4.0f : tContent.fY + tContent.fH * 0.5f;
-	fColW = (pResolved->iStepCount > 1) ? (tContent.fW - fRadius * 2.0f) / (float)(pResolved->iStepCount - 1) : 0.0f;
-	fPrevX = tContent.fX + fRadius;
+	__xuiStepBarGeometry(pWidget, pResolved, 0, NULL, &tPrevIndicator);
 	for ( i = 1; i < pResolved->iStepCount; i++ ) {
-		fX = tContent.fX + fRadius + fColW * (float)i;
+		__xuiStepBarGeometry(pWidget, pResolved, i, NULL, &tIndicator);
 		iCircleColor = (i <= pResolved->iCurrent) ? pResolved->iDoneColor : pResolved->iLineColor;
-		if ( (__xuiStepBarAlpha(iCircleColor) != 0) && (pProxy->drawLine != NULL) ) {
-			iRet = pProxy->drawLine(pProxy, pDraw, fPrevX + fRadius, fLineY, fX - fRadius, fLineY,
-				(pResolved->fLineWidth > 0.0f) ? pResolved->fLineWidth : 1.0f,
-				iCircleColor);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-		fPrevX = fX;
+		iRet = __xuiStepBarDrawLine(pProxy, pDraw,
+			tPrevIndicator.fX + tPrevIndicator.fW,
+			tPrevIndicator.fY + tPrevIndicator.fH * 0.5f,
+			tIndicator.fX,
+			tIndicator.fY + tIndicator.fH * 0.5f,
+			(pResolved->fLineWidth > 0.0f) ? pResolved->fLineWidth : 1.0f,
+			iCircleColor);
+		if ( iRet != XUI_OK ) return iRet;
+		tPrevIndicator = tIndicator;
 	}
 	for ( i = 0; i < pResolved->iStepCount; i++ ) {
-		fX = tContent.fX + fRadius + fColW * (float)i;
-		if ( pResolved->iStepCount == 1 ) {
-			fX = tContent.fX + tContent.fW * 0.5f;
-		}
-		if ( pData != NULL ) {
-			pData->arrIndicatorRect[i] = xuiInternalSnapRect((xui_rect_t){fX - fRadius, fLineY - fRadius, fRadius * 2.0f, fRadius * 2.0f});
-		}
+		__xuiStepBarGeometry(pWidget, pResolved, i, &tStep, &tIndicator);
+		fRadius = __xuiStepBarMinFloat(tIndicator.fW, tIndicator.fH) * 0.5f;
+		fX = tIndicator.fX + tIndicator.fW * 0.5f;
+		fLineY = tIndicator.fY + tIndicator.fH * 0.5f;
 		iCircleColor = __xuiStepBarStatusColor(pResolved, i);
 		if ( i < pResolved->iCurrent ) {
-			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
-			if ( (__xuiStepBarAlpha(pResolved->iDoneColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iDoneColor);
+			iRet = __xuiStepBarDrawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiStepBarDrawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iDoneColor);
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iDoneColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( i == pResolved->iCurrent ) {
-			if ( (__xuiStepBarAlpha(iCircleColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, iCircleColor);
+			iRet = __xuiStepBarDrawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, iCircleColor);
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iActiveCheckColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else {
-			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
-			if ( (__xuiStepBarAlpha(pResolved->iPendingTextColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iPendingTextColor);
+			iRet = __xuiStepBarDrawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiStepBarDrawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, iCircleColor);
+			if ( iRet != XUI_OK ) return iRet;
 			snprintf(sIndex, sizeof(sIndex), "%d", i + 1);
-			(void)__xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sIndex, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){fX - fRadius, fLineY - fRadius, fRadius * 2.0f, fRadius * 2.0f}, pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sIndex, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tIndicator, pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		iTextColor = __xuiStepBarTextColor(pResolved, i);
-		fTextW = (tContent.fW < 152.0f) ? tContent.fW : 152.0f;
-		tText = (xui_rect_t){fX - fTextW * 0.5f, fLineY + fRadius + 2.0f, fTextW, tContent.fY + tContent.fH - (fLineY + fRadius + 2.0f)};
+		tText = (xui_rect_t){tStep.fX, fLineY + fRadius + 2.0f, tStep.fW,
+			tContent.fY + tContent.fH - (fLineY + fRadius + 2.0f)};
 		iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
 		if ( (pResolved->iStepCount > 1) && (i == 0) ) {
-			tText.fX = tContent.fX;
 			iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
 		} else if ( (pResolved->iStepCount > 1) && (i == pResolved->iStepCount - 1) ) {
-			tText.fX = tContent.fX + tContent.fW - fTextW;
 			iTextFlags = XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
-		}
-		if ( pData != NULL ) {
-			pData->arrStepRect[i] = xuiInternalSnapRect((xui_rect_t){tText.fX, tContent.fY, tText.fW, tContent.fH});
 		}
 		iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=__xuiStepBarTitle(pResolved, i), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iTextFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, iTextFlags);
 		if ( iRet != XUI_OK ) return iRet;
@@ -495,67 +618,67 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 
 static int __xuiStepBarDrawVerticalDot(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, const xui_step_bar_data_t* pResolved)
 {
-	xui_step_bar_data_t* pData;
 	xui_rect_t tContent;
+	xui_rect_t tStep;
+	xui_rect_t tIndicator;
+	xui_rect_t tPrevIndicator;
 	xui_rect_t tText;
 	char sIndex[16];
 	float fRadius;
 	float fLineX;
 	float fY;
-	float fPrevY;
-	float fRowH;
+	float fTextHeight;
 	uint32_t iTextColor;
 	int i;
 	int iRet;
 
-	pData = __xuiStepBarGetData(pWidget);
 	tContent = xuiWidgetGetContentRect(pWidget);
-	fRadius = (pResolved->fDotRadius > 0.0f) ? pResolved->fDotRadius : 11.0f;
-	if ( fRadius > tContent.fH * 0.5f ) fRadius = tContent.fH * 0.5f;
-	if ( fRadius > tContent.fW * 0.5f ) fRadius = tContent.fW * 0.5f;
-	if ( (tContent.fW >= 4.0f) && (fRadius > (tContent.fW - 4.0f) * 0.5f) ) fRadius = (tContent.fW - 4.0f) * 0.5f;
-	if ( fRadius < 0.0f ) fRadius = 0.0f;
-	fLineX = (tContent.fW >= fRadius * 2.0f + 4.0f) ?
-		tContent.fX + fRadius + 4.0f : tContent.fX + tContent.fW * 0.5f;
-	fRowH = (pResolved->iStepCount > 1) ? (tContent.fH - fRadius * 2.0f) / (float)(pResolved->iStepCount - 1) : 0.0f;
-	fPrevY = tContent.fY + fRadius;
+	__xuiStepBarGeometry(pWidget, pResolved, 0, NULL, &tPrevIndicator);
 	for ( i = 1; i < pResolved->iStepCount; i++ ) {
-		fY = tContent.fY + fRadius + fRowH * (float)i;
+		__xuiStepBarGeometry(pWidget, pResolved, i, NULL, &tIndicator);
 		iTextColor = (i <= pResolved->iCurrent) ? pResolved->iDoneColor : pResolved->iLineColor;
-		if ( (__xuiStepBarAlpha(iTextColor) != 0) && (pProxy->drawLine != NULL) ) {
-			iRet = pProxy->drawLine(pProxy, pDraw, fLineX, fPrevY + fRadius, fLineX, fY - fRadius,
-				(pResolved->fLineWidth > 0.0f) ? pResolved->fLineWidth : 1.0f,
-				iTextColor);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-		fPrevY = fY;
+		iRet = __xuiStepBarDrawLine(pProxy, pDraw,
+			tPrevIndicator.fX + tPrevIndicator.fW * 0.5f,
+			tPrevIndicator.fY + tPrevIndicator.fH,
+			tIndicator.fX + tIndicator.fW * 0.5f,
+			tIndicator.fY,
+			(pResolved->fLineWidth > 0.0f) ? pResolved->fLineWidth : 1.0f,
+			iTextColor);
+		if ( iRet != XUI_OK ) return iRet;
+		tPrevIndicator = tIndicator;
 	}
 	for ( i = 0; i < pResolved->iStepCount; i++ ) {
-		fY = tContent.fY + fRadius + fRowH * (float)i;
-		if ( pResolved->iStepCount == 1 ) {
-			fY = tContent.fY + tContent.fH * 0.5f;
-		}
-		if ( pData != NULL ) {
-			pData->arrIndicatorRect[i] = xuiInternalSnapRect((xui_rect_t){fLineX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f});
-			pData->arrStepRect[i] = xuiInternalSnapRect((xui_rect_t){tContent.fX, fY - 28.0f, tContent.fW, 56.0f});
-		}
+		__xuiStepBarGeometry(pWidget, pResolved, i, &tStep, &tIndicator);
+		fRadius = __xuiStepBarMinFloat(tIndicator.fW, tIndicator.fH) * 0.5f;
+		fLineX = tIndicator.fX + tIndicator.fW * 0.5f;
+		fY = tIndicator.fY + tIndicator.fH * 0.5f;
 		if ( i < pResolved->iCurrent ) {
-			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
-			if ( (__xuiStepBarAlpha(pResolved->iDoneColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iDoneColor);
+			iRet = __xuiStepBarDrawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiStepBarDrawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iDoneColor);
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iDoneColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( i == pResolved->iCurrent ) {
-			if ( (__xuiStepBarAlpha(pResolved->iActiveColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iActiveColor);
+			iRet = __xuiStepBarDrawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iActiveColor);
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iActiveCheckColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else {
-			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
-			if ( (__xuiStepBarAlpha(pResolved->iPendingTextColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iPendingTextColor);
+			iRet = __xuiStepBarDrawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __xuiStepBarDrawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iPendingColor);
+			if ( iRet != XUI_OK ) return iRet;
 			snprintf(sIndex, sizeof(sIndex), "%d", i + 1);
-			(void)__xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sIndex, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, (xui_rect_t){fLineX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f}, pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sIndex, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tIndicator, pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 		iTextColor = __xuiStepBarTextColor(pResolved, i);
-		tText = (xui_rect_t){fLineX + fRadius + 8.0f, fY - 15.0f, tContent.fW - (fLineX - tContent.fX) - fRadius - 10.0f, 30.0f};
+		fTextHeight = __xuiStepBarMinFloat(tStep.fH, 30.0f);
+		tText = (xui_rect_t){fLineX + fRadius + 8.0f,
+			tStep.fY + (tStep.fH - fTextHeight) * 0.5f,
+			tContent.fW - (fLineX - tContent.fX) - fRadius - 10.0f,
+			fTextHeight};
 		iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=__xuiStepBarTitle(pResolved, i), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -608,11 +731,10 @@ static int __xuiStepBarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	if ( pProxy == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	memset(pData->arrStepRect, 0, sizeof(pData->arrStepRect));
-	memset(pData->arrIndicatorRect, 0, sizeof(pData->arrIndicatorRect));
 	__xuiStepBarResolve(pWidget, pData, &tResolved);
 	tContent = xuiWidgetGetContentRect(pWidget);
-	if ( (tResolved.iBackgroundColor & 0xffu) != 0 && pProxy->drawRectFill != NULL ) {
+	if ( (tContent.fW > 0.0f) && (tContent.fH > 0.0f) &&
+	     (tResolved.iBackgroundColor & 0xffu) != 0 && pProxy->drawRectFill != NULL ) {
 		iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tContent), tResolved.iBackgroundColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -662,7 +784,7 @@ static int __xuiStepBarInit(xui_widget pWidget, void* pTypeData, const void* pCr
 	if ( pDesc != NULL ) {
 		pData->pFont = pDesc->pFont;
 		pData->iCurrent = pDesc->iCurrent;
-		if ( pDesc->iStyle != 0 || pDesc->iStyle == XUI_STEP_BAR_STYLE_ARROW ) pData->iStyle = pDesc->iStyle;
+		pData->iStyle = pDesc->iStyle;
 		if ( pDesc->iDoneColor != 0 ) pData->iDoneColor = pDesc->iDoneColor;
 		if ( pDesc->iActiveColor != 0 ) pData->iActiveColor = pDesc->iActiveColor;
 		if ( pDesc->iPendingColor != 0 ) pData->iPendingColor = pDesc->iPendingColor;
@@ -1067,22 +1189,28 @@ XUI_API int xuiStepBarGetMetrics(xui_widget pWidget, float* pBarHeight, float* p
 	return XUI_OK;
 }
 
-XUI_API xui_rect_t xuiStepBarGetStepRect(xui_widget pWidget, int iIndex)
+static xui_rect_t __xuiStepBarGetComputedRect(xui_widget pWidget, int iIndex, int bIndicator)
 {
 	xui_step_bar_data_t* pData;
+	xui_step_bar_data_t tResolved;
+	xui_rect_t tStep;
+	xui_rect_t tIndicator;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iStepCount ) return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-	return pData->arrStepRect[iIndex];
+	__xuiStepBarResolve(pWidget, pData, &tResolved);
+	__xuiStepBarGeometry(pWidget, &tResolved, iIndex, &tStep, &tIndicator);
+	return xuiInternalSnapRect(bIndicator ? tIndicator : tStep);
+}
+
+XUI_API xui_rect_t xuiStepBarGetStepRect(xui_widget pWidget, int iIndex)
+{
+	return __xuiStepBarGetComputedRect(pWidget, iIndex, 0);
 }
 
 XUI_API xui_rect_t xuiStepBarGetIndicatorRect(xui_widget pWidget, int iIndex)
 {
-	xui_step_bar_data_t* pData;
-
-	pData = __xuiStepBarGetData(pWidget);
-	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iStepCount ) return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-	return pData->arrIndicatorRect[iIndex];
+	return __xuiStepBarGetComputedRect(pWidget, iIndex, 1);
 }
 
 XUI_API int xuiStepBarGetChangeCount(xui_widget pWidget)

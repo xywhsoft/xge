@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +14,34 @@
 			goto cleanup; \
 		} \
 	} while ( 0 )
+
+static xui_draw_circle_stroke_proc g_onCircleStroke;
+static int g_bFailCircleStroke;
+static int g_iErrorCount;
+static int g_iLastError;
+static int g_iLastErrorStage;
+static xui_widget g_pLastErrorWidget;
+
+static void __xuiStepBarTestError(xui_context pContext, const xui_error_info_t* pError, void* pUser)
+{
+	(void)pContext;
+	(void)pUser;
+	if ( pError == NULL ) return;
+	g_iErrorCount++;
+	g_iLastError = pError->iCode;
+	g_iLastErrorStage = pError->iStage;
+	g_pLastErrorWidget = pError->pWidget;
+}
+
+static int __xuiStepBarTestCircleStroke(xui_proxy pProxy, xui_draw_context pDraw,
+	float fX, float fY, float fRadius, float fWidth, uint32_t iColor)
+{
+	if ( g_bFailCircleStroke ) {
+		g_bFailCircleStroke = 0;
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	return g_onCircleStroke(pProxy, pDraw, fX, fY, fRadius, fWidth, iColor);
+}
 
 int main(void)
 {
@@ -29,6 +58,7 @@ int main(void)
 	xui_step_bar_desc_t tInvalidDesc;
 	const char* arrTitles[3];
 	xui_rect_t tRect;
+	xui_rect_t tNextRect;
 	xui_rect_i_t tFullRect;
 	xui_accessible_node_t tAccessible;
 	xallocationbudget* pBudget;
@@ -51,9 +81,13 @@ int main(void)
 	pBudget = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
+	g_onCircleStroke = tState.tProxy.drawCircleStroke;
+	tState.tProxy.drawCircleStroke = __xuiStepBarTestCircleStroke;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
+	iRet = xuiSetErrorCallback(pContext, __xuiStepBarTestError, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "error callback set");
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
 	iRet = tState.tProxy.fontLoadMemory(&tState.tProxy, &pFont, "step", 4, 14.0f, XUI_FONT_FORMAT_TTF);
@@ -140,6 +174,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan metrics");
 	iRet = xuiStepBarSetMetrics(pArrow, 33.0f, INFINITY, 3.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metrics");
+	iRet = xuiStepBarSetMetrics(pArrow, 33.0f, FLT_MAX, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject out of layout range metrics");
 	iRet = xuiStepBarGetMetrics(pArrow, &fBarHeight, &fDotRadius, &fLineWidth);
 	XUI_TEST_CHECK(iRet == XUI_OK && fBarHeight == 32.0f && fDotRadius == 10.0f && fLineWidth == 2.0f, "invalid metrics preserve state");
 	tInvalidDesc = tDesc;
@@ -147,6 +183,12 @@ int main(void)
 	pInvalid = pRoot;
 	iRet = xuiStepBarCreate(pContext, &pInvalid, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject nan descriptor");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.fLineWidth = FLT_MAX;
+	pInvalid = pRoot;
+	iRet = xuiStepBarCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject out of layout range descriptor metric");
 	tInvalidDesc = tDesc;
 	tInvalidDesc.iCurrent = tInvalidDesc.iStepCount;
 	pInvalid = pRoot;
@@ -166,6 +208,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && xuiStepBarGetStepCount(pArrow) == 3 &&
 		strcmp(xuiStepBarGetTitle(pArrow, 0), "Start") == 0 && xuiStepBarGetCurrent(pArrow) == 2,
 		"step replacement allocation failure is atomic");
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget), "create empty title allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope), "enter empty title allocation budget");
+	iRet = xuiStepBarSetSteps(pArrow, NULL, XUI_STEP_BAR_MAX_STEPS);
+	XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope), "leave empty title allocation budget");
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetStepCount(pArrow) == XUI_STEP_BAR_MAX_STEPS &&
+		xuiStepBarGetTitle(pArrow, 0)[0] == '\0' && xuiStepBarGetCurrent(pArrow) == 2,
+		"empty titles require no per-step allocation");
 	iRet = xuiStepBarSetSteps(pArrow, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetCurrent(pArrow) == 0, "clear steps resets current");
 	iRet = xuiStepBarSetCurrent(pArrow, 1);
@@ -177,10 +229,17 @@ int main(void)
 	XUI_TEST_CHECK(xuiStepBarGetChangeCount(pArrow) >= 3, "change count");
 	iRet = xuiStepBarSetMetrics(pDot, 32.0f, 100.0f, 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set oversized horizontal dot radius");
-	xuiWidgetSetRect(pDot, (xui_rect_t){20.0f, 80.0f, 20.0f, 3.0f});
+	iRet = xuiStepBarSetColors(pDot, XUI_COLOR_RGBA(30, 140, 70, 255),
+		XUI_COLOR_RGBA(30, 100, 200, 255), XUI_COLOR_RGBA(210, 120, 40, 255),
+		XUI_COLOR_RGBA(90, 90, 90, 255));
+	XUI_TEST_CHECK(iRet == XUI_OK, "set distinct dot colors");
+	iRet = xuiStepBarSetTextColors(pDot, XUI_COLOR_RGBA(20, 80, 40, 255),
+		XUI_COLOR_RGBA(20, 60, 140, 255), XUI_COLOR_RGBA(110, 40, 150, 255));
+	XUI_TEST_CHECK(iRet == XUI_OK, "set distinct dot text colors");
+	xuiWidgetSetRect(pDot, (xui_rect_t){20.0f, 80.0f, 20.0f, 20.0f});
 	iRet = xuiStepBarSetMetrics(pVertical, 32.0f, 100.0f, 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set oversized vertical dot radius");
-	xuiWidgetSetRect(pVertical, (xui_rect_t){20.0f, 170.0f, 3.0f, 20.0f});
+	xuiWidgetSetRect(pVertical, (xui_rect_t){20.0f, 170.0f, 20.0f, 20.0f});
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 320, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -196,12 +255,40 @@ int main(void)
 	XUI_TEST_CHECK(tRect.fW > 0.0f && tRect.fH > 0.0f, "dot step rect");
 	tRect = xuiStepBarGetIndicatorRect(pDot, 0);
 	XUI_TEST_CHECK(tRect.fX >= 0.0f && tRect.fY >= 0.0f &&
-	               tRect.fX + tRect.fW <= 20.0f && tRect.fY + tRect.fH <= 3.0f,
+	               tRect.fX + tRect.fW <= 20.0f && tRect.fY + tRect.fH <= 20.0f,
 	               "horizontal indicator stays inside tiny content");
+	tNextRect = xuiStepBarGetIndicatorRect(pDot, 1);
+	XUI_TEST_CHECK(tRect.fX + tRect.fW <= tNextRect.fX,
+		"horizontal indicators do not overlap in tiny content");
 	tRect = xuiStepBarGetIndicatorRect(pVertical, 1);
 	XUI_TEST_CHECK(tRect.fX >= 0.0f && tRect.fY >= 0.0f &&
-	               tRect.fX + tRect.fW <= 3.0f && tRect.fY + tRect.fH <= 20.0f,
+	               tRect.fX + tRect.fW <= 20.0f && tRect.fY + tRect.fH <= 20.0f,
 	               "vertical indicator stays inside tiny content");
+	tRect = xuiStepBarGetIndicatorRect(pVertical, 0);
+	tNextRect = xuiStepBarGetIndicatorRect(pVertical, 1);
+	XUI_TEST_CHECK(tRect.fY + tRect.fH <= tNextRect.fY,
+		"vertical indicators do not overlap in tiny content");
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(xuiWidgetGetCacheSurface(pDot, 0),
+		XUI_COLOR_RGBA(210, 120, 40, 255)) > 0,
+		"pending indicator uses pending color");
+
+	xuiWidgetSetRect(pDot, (xui_rect_t){20.0f, 80.0f, 60.0f, 20.0f});
+	tRect = xuiStepBarGetIndicatorRect(pDot, 2);
+	XUI_TEST_CHECK(tRect.fX > 40.0f && tRect.fX + tRect.fW <= 60.0f,
+		"geometry query reflects current widget size before render");
+
+	g_bFailCircleStroke = 1;
+	g_iErrorCount = 0;
+	g_iLastError = XUI_OK;
+	g_iLastErrorStage = XUI_ERROR_STAGE_GENERAL;
+	g_pLastErrorWidget = NULL;
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "relayout before draw failure test");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_bFailCircleStroke == 0 && g_iErrorCount == 1 &&
+		g_iLastError == XUI_ERROR_OUT_OF_MEMORY && g_iLastErrorStage == XUI_ERROR_STAGE_CACHE &&
+		g_pLastErrorWidget == pDot,
+		"circle draw failure reaches recoverable error channel");
 
 cleanup:
 	if ( pBudget != NULL ) {
