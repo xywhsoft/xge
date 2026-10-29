@@ -380,6 +380,21 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0 &&
 		xuiToastGetPendingCount(pToast) == 0,
 		"clear capacity queue");
+	iId1 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO,
+		"Hover", "Hover pauses the visible timeout.", 0.10f, NULL, NULL);
+	tItem0 = xuiToastGetItemRect(pToast, 0);
+	iRet = xuiInputPointerMove(pContext,
+		tItem0.fX + tItem0.fW * 0.5f, tItem0.fY + tItem0.fH * 0.5f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iId1 > 0 &&
+		xuiToastGetActiveCount(pToast) == 1,
+		"hover pauses toast timeout");
+	iRet = xuiInputPointerMove(pContext, 639.0f, 5.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.11f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0,
+		"toast timeout resumes after pointer leave");
 
 	tState.ppToast = &pToast;
 	iRet = xuiToastSetClose(pToast, __xuiToastDestroyOnClose, &tState);

@@ -10086,7 +10086,8 @@ XUI_API int xuiMsgTipGetChangeCount(xui_msgtip pTip);
 XUI_API int xuiToastCreate(xui_context pContext, xui_toast* ppToast, const xui_toast_desc_t* pDesc);
 /* 释放通知中心。 */
 XUI_API void xuiToastDestroy(xui_toast pToast);
-/* 显示一条通知；标题和正文会被复制。返回通知 id，fDuration 为非负秒数（0 不自动关闭）。
+/* 显示一条通知；标题和正文会被复制。返回通知 id，fDuration 为非负秒数（0 不自动关闭），
+ * 鼠标悬停在通知上时自动关闭倒计时暂停。
  * 队列满时丢弃最早的待显示通知，并以 XUI_TOAST_CLOSE_CAPACITY_DROP 通知关闭回调。 */
 XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const char* sMessage, float fDuration, xui_toast_click_proc onClick, void* pUser);
 /* 按 id 关闭一条通知。 */

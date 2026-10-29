@@ -984,7 +984,8 @@ static int __xuiToastUpdateService(xui_toast pToast, float fDelta)
 		for ( i = 0; i < iActiveCount; i++ ) {
 			iIndex = __xuiToastFindActiveById(pToast, arrActiveIds[i]);
 			if ( iIndex < 0 || pToast->arrActive[iIndex].bClosing ||
-			     pToast->arrActive[iIndex].fDuration <= 0.0f ) {
+			     pToast->arrActive[iIndex].fDuration <= 0.0f ||
+			     pToast->iHoverItem == iIndex ) {
 				continue;
 			}
 			if ( pToast->arrActive[iIndex].fElapsed >= pToast->arrActive[iIndex].fDuration ||
