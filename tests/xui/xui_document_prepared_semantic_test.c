@@ -14,6 +14,15 @@ static xui_document markdown(allocation* a,const char* text)
     desc.onAlloc=allocate;desc.onFree=deallocate;desc.pAllocatorUser=a;
     CHECK(xuiDocumentCreate(&desc,&d)==XUI_OK);CHECK(xuiDocumentLoadMarkdown(d,text,strlen(text))==XUI_OK);return d;
 }
+static xui_document rich(allocation* a,float width,xui_doc_node_id* table)
+{
+    xui_document d;xui_document_transaction t;xui_doc_desc_t desc={0};desc.iSize=sizeof(desc);
+    desc.iProfile=XUI_DOCUMENT_RICH;desc.onAlloc=allocate;desc.onFree=deallocate;desc.pAllocatorUser=a;
+    CHECK(xuiDocumentCreate(&desc,&d)==XUI_OK);CHECK(xuiDocumentBeginTransaction(d,NULL,&t)==XUI_OK);
+    CHECK(xuiDocumentTxnInsertTable(t,XUI_DOCUMENT_ROOT,0,1,2,0,table)==XUI_OK);
+    CHECK(xuiDocumentTxnSetTableColumnWidth(t,*table,0,width)==XUI_OK);
+    CHECK(xuiDocumentTxnCommit(t,NULL)==XUI_OK);xuiDocumentTxnRelease(t);return d;
+}
 static xui_doc_position_t find(xui_document_snapshot snapshot,const char* text)
 {
     xui_doc_range_t range;uint64_t count;
@@ -95,4 +104,20 @@ static void equivalence(void)
     xuiDocumentSnapshotRelease(ls);xuiDocumentSnapshotRelease(rs);xuiDocumentRelease(left);xuiDocumentRelease(right);
     CHECK(!a.live&&!b.live);puts("Semantic equivalent trees: entity repartition/coalescing, internal gaps and image before/after/child, no allocation passed.");
 }
-int main(void){input_lineage();equivalence();puts("Unified prepared semantic mapping tests passed.");return 0;}
+static void table_geometry_equivalence(void)
+{
+    allocation a={0},b={0},c={0};xui_doc_node_id at,bt,ct;
+    xui_document left=rich(&a,80,&at),different=rich(&b,120,&bt),same=rich(&c,80,&ct);
+    xui_document_snapshot ls,ds,ss;
+    CHECK(xuiDocumentAcquireSnapshot(left,&ls)==XUI_OK);
+    CHECK(xuiDocumentAcquireSnapshot(different,&ds)==XUI_OK);
+    CHECK(xuiDocumentAcquireSnapshot(same,&ss)==XUI_OK);
+    CHECK(!doc_semantic_equal(ls->state,ds->state));
+    CHECK(!doc_semantic_subtree_equal(ls->state,at,ds->state,bt));
+    CHECK(doc_semantic_equal(ls->state,ss->state));
+    CHECK(doc_semantic_subtree_equal(ls->state,at,ss->state,ct));
+    xuiDocumentSnapshotRelease(ls);xuiDocumentSnapshotRelease(ds);xuiDocumentSnapshotRelease(ss);
+    xuiDocumentRelease(left);xuiDocumentRelease(different);xuiDocumentRelease(same);
+    CHECK(!a.live&&!b.live&&!c.live);puts("Semantic table geometry: distinct widths differ and equal widths match.");
+}
+int main(void){input_lineage();equivalence();table_geometry_equivalence();puts("Unified prepared semantic mapping tests passed.");return 0;}

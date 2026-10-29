@@ -2,17 +2,20 @@
 #if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
 
+static int doc_semantic_blob(const doc_blob* a, const doc_blob* b)
+{
+    uint64_t size_a = a ? a->size : 0, size_b = b ? b->size : 0;
+    return size_a == size_b && (!size_a || !memcmp(a->data, b->data, (size_t)size_a));
+}
 static int doc_semantic_attrs(const doc_node* a, const doc_node* b)
 {
-    uint64_t payload_a = a->extension_payload ? a->extension_payload->size : 0;
-    uint64_t payload_b = b->extension_payload ? b->extension_payload->size : 0;
     return doc_attributes_equal(a->attrs, b->attrs) && !strcmp(doc_string(a->resource), doc_string(b->resource)) &&
         !strcmp(doc_string(a->info), doc_string(b->info)) && !strcmp(doc_string(a->title), doc_string(b->title)) &&
         !strcmp(doc_string(a->link_target), doc_string(b->link_target)) &&
         !strcmp(doc_string(a->link_title), doc_string(b->link_title)) &&
+        doc_semantic_blob(a->column_widths, b->column_widths) &&
         a->extension_version == b->extension_version && a->extension_required == b->extension_required &&
-        payload_a == payload_b && (!payload_a || !memcmp(a->extension_payload->data,
-            b->extension_payload->data, (size_t)payload_a));
+        doc_semantic_blob(a->extension_payload, b->extension_payload);
 }
 static int doc_semantic_text(doc_sequence* a, uint64_t ao, doc_sequence* b, uint64_t bo, uint64_t bytes)
 {
