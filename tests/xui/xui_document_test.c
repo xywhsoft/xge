@@ -10221,6 +10221,53 @@ static void text_style_range_commands(void)
     xuiDocumentTxnRelease(t); test_source(d, "plain\n", 1); xuiDocumentRelease(d);
     puts("Rich text style: cross-block selection, mixed query, selective reset, JSON, Undo and Markdown rejection passed");
 }
+
+static void collapsed_gap_inline_queries(void)
+{
+    xui_document document; xui_document_transaction transaction;
+    xui_document_snapshot snapshot; xui_doc_range_t range;
+    xui_doc_link_info_t link = {0}; xui_doc_text_style_query_t style = {0};
+    xui_doc_node_desc_t text = {0}; xui_doc_node_id first, second;
+    uint64_t paragraph; uint32_t common, mixed;
+    CHECK(xuiDocumentCreate(NULL, &document) == XUI_OK);
+    CHECK(xuiDocumentBeginTransaction(document, NULL, &transaction) == XUI_OK);
+    paragraph = insert(transaction, 1, XUI_DOC_PARAGRAPH, NULL);
+    text.iSize = sizeof(text); text.iKind = XUI_DOC_TEXT;
+    text.sText = "linked"; text.iTextBytes = 6;
+    text.sResource = "/target"; text.sTitle = "Title";
+    text.tAttributes.iMarks = XUI_DOC_BOLD | XUI_DOC_LINK;
+    text.tAttributes.iTextColor = 0x224466ffu;
+    CHECK(xuiDocumentTxnInsertNode(transaction, paragraph, XUI_DOCUMENT_APPEND,
+        &text, &first) == XUI_OK);
+    paragraph = insert(transaction, 1, XUI_DOC_PARAGRAPH, NULL);
+    second = insert(transaction, paragraph, XUI_DOC_TEXT, "plain");
+    CHECK(xuiDocumentTxnCommit(transaction, NULL) == XUI_OK);
+    xuiDocumentTxnRelease(transaction);
+    CHECK(xuiDocumentAcquireSnapshot(document, &snapshot) == XUI_OK);
+
+    range.tAnchor = range.tCaret = test_position(document, 1,
+        XUI_DOC_POSITION_GAP, 1, XUI_DOC_AFTER);
+    CHECK(xuiDocumentSnapshotQueryMarks(snapshot, &range, &common, &mixed) == XUI_OK &&
+        common == (XUI_DOC_BOLD | XUI_DOC_LINK) && !mixed);
+    link.iSize = sizeof(link);
+    CHECK(xuiDocumentSnapshotQueryLink(snapshot, &range, &link) == XUI_OK &&
+        link.bLinked && !link.bMixed && !strcmp(link.sUri, "/target") &&
+        !strcmp(link.sTitle, "Title"));
+    style.iSize = sizeof(style);
+    CHECK(xuiDocumentSnapshotQueryTextStyle(snapshot, &range, &style) == XUI_OK &&
+        style.bHasText && style.tStyle.iTextColor == 0x224466ffu);
+
+    range.tAnchor = range.tCaret = test_position(document, 1,
+        XUI_DOC_POSITION_GAP, 2, XUI_DOC_AFTER);
+    CHECK(xuiDocumentSnapshotQueryMarks(snapshot, &range, &common, &mixed) == XUI_OK &&
+        !common && !mixed);
+    link.iSize = sizeof(link);
+    CHECK(xuiDocumentSnapshotQueryLink(snapshot, &range, &link) == XUI_OK &&
+        !link.bLinked && !link.bMixed);
+    CHECK(first != second);
+    xuiDocumentSnapshotRelease(snapshot); xuiDocumentRelease(document);
+    puts("Collapsed container gap queries: adjacent marks, link and text style passed");
+}
 static void explicit_zero_style_commands(void)
 {
     xui_document document = NULL, loaded = NULL, markdown = NULL;
@@ -17967,7 +18014,7 @@ int main(void)
     markdown_list_split_source(); markdown_list_split_source_failures(); markdown_reference_values_guard(); markdown_reference_cache_persistence();
     inline_source_syntax();
     reference_candidates();
-    markdown_lossless_mark_commands(); markdown_other_mark_whitespace_clear(); extended_markdown_marks(); link_range_commands(); link_insert_commands(); text_style_range_commands(); explicit_zero_style_commands(); current_color_style_commands(); clear_formatting_commands(); clear_formatting_failures(); extended_markdown_mark_failures(); link_range_failures(); link_insert_failures(); text_style_range_failures(); delimiter_failures();
+    markdown_lossless_mark_commands(); markdown_other_mark_whitespace_clear(); extended_markdown_marks(); link_range_commands(); link_insert_commands(); text_style_range_commands(); collapsed_gap_inline_queries(); explicit_zero_style_commands(); current_color_style_commands(); clear_formatting_commands(); clear_formatting_failures(); extended_markdown_mark_failures(); link_range_failures(); link_insert_failures(); text_style_range_failures(); delimiter_failures();
     shared_attribute_pool(); memory_accounting(); first_undo_large_document_accounting();
     memory_auxiliary_blob_accounting();
     history_budgets(); memory_failures(); concurrent_memory_diagnostics();

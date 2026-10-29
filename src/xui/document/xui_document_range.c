@@ -10,6 +10,42 @@ typedef struct doc_mark_collect {
     const xui_doc_position_t *first, *last;
     int error, links;
 } doc_mark_collect;
+
+static int doc_inline_query_kind(const doc_node* node, int links)
+{
+    return node->kind == XUI_DOC_TEXT || node->kind == XUI_DOC_SOFT_BREAK ||
+        node->kind == XUI_DOC_HARD_BREAK || (links && (node->kind == XUI_DOC_IMAGE ||
+        (node->kind == XUI_DOC_HTML && !(node->attrs->iFlags & XUI_DOC_BLOCK))));
+}
+
+static doc_node* doc_inline_edge(doc_state* state, uint64_t id, int last, int links)
+{
+    doc_node* node = doc_index_get(state->index, id);
+    uint64_t count, i;
+    if (!node) return NULL;
+    if (doc_inline_query_kind(node, links)) return node;
+    count = doc_seq_size(node->children);
+    for (i = 0; i < count; i++) {
+        uint64_t child = doc_seq_get_id(node->children, last ? count - i - 1 : i);
+        doc_node* found = doc_inline_edge(state, child, last, links);
+        if (found) return found;
+    }
+    return NULL;
+}
+
+static doc_node* doc_inline_at_position(doc_state* state,
+    const xui_doc_position_t* position, int links)
+{
+    doc_node* node = doc_index_get(state->index, position->iNodeId);
+    if (!node || position->iKind != XUI_DOC_POSITION_GAP) return node;
+    if (doc_seq_size(node->children)) {
+        uint64_t index = position->iOffset ? position->iOffset - 1 : 0;
+        node = doc_inline_edge(state, doc_seq_get_id(node->children, index),
+            position->iOffset != 0, links);
+    }
+    return node;
+}
+
 static void doc_collect_marks(doc_state* s, uint64_t id, doc_mark_collect* c)
 {
     doc_node* n = doc_index_get(s->index, id);
@@ -266,12 +302,8 @@ XUI_API int xuiDocumentSnapshotQueryMarks(xui_document_snapshot snapshot, const 
     if (result != XUI_OK) return result;
     if (range->tAnchor.iKind == XUI_DOC_POSITION_SOURCE) return XUI_DOC_ERROR_DOMAIN;
     if (!order) {
-        doc_node* n = doc_index_get(snapshot->state->index, range->tCaret.iNodeId);
-        if (range->tCaret.iKind == XUI_DOC_POSITION_GAP && doc_seq_size(n->children)) {
-            uint64_t index = range->tCaret.iOffset ? range->tCaret.iOffset - 1 : 0;
-            n = doc_index_get(snapshot->state->index, doc_seq_get_id(n->children, index));
-        }
-        if (n && n->kind == XUI_DOC_TEXT) *common = n->attrs->iMarks;
+        doc_node* n = doc_inline_at_position(snapshot->state, &range->tCaret, 0);
+        if (n && doc_inline_query_kind(n, 0)) *common = n->attrs->iMarks;
         return XUI_OK;
     }
     c.first = order < 0 ? &range->tAnchor : &range->tCaret; c.last = order < 0 ? &range->tCaret : &range->tAnchor;
@@ -299,15 +331,8 @@ XUI_API int xuiDocumentSnapshotQueryLink(xui_document_snapshot snapshot, const x
     if (range->tAnchor.iKind == XUI_DOC_POSITION_SOURCE || range->tCaret.iKind == XUI_DOC_POSITION_SOURCE)
         return XUI_DOC_ERROR_DOMAIN;
     if (!order) {
-        doc_node* n = doc_index_get(snapshot->state->index, range->tCaret.iNodeId);
-        if (n && range->tCaret.iKind == XUI_DOC_POSITION_GAP && doc_seq_size(n->children)) {
-            uint64_t index = range->tCaret.iOffset ? range->tCaret.iOffset - 1 : 0;
-            n = doc_index_get(snapshot->state->index, doc_seq_get_id(n->children, index));
-        }
-        if (n && (n->kind == XUI_DOC_TEXT || n->kind == XUI_DOC_IMAGE ||
-            n->kind == XUI_DOC_SOFT_BREAK || n->kind == XUI_DOC_HARD_BREAK ||
-            (n->kind == XUI_DOC_HTML && !(n->attrs->iFlags & XUI_DOC_BLOCK))) &&
-            (n->attrs->iMarks & XUI_DOC_LINK)) {
+        doc_node* n = doc_inline_at_position(snapshot->state, &range->tCaret, 1);
+        if (n && doc_inline_query_kind(n, 1) && (n->attrs->iMarks & XUI_DOC_LINK)) {
             out->bLinked = 1;
             out->sUri = doc_string(n->kind == XUI_DOC_IMAGE ? n->link_target : n->resource);
             out->sTitle = doc_string(n->kind == XUI_DOC_IMAGE ? n->link_title : n->title);
@@ -580,21 +605,6 @@ XUI_API int xuiDocumentTxnClearFormatting(xui_document_transaction t,
     doc_free(c.targets);
     return result == XUI_OK ? result : doc_txn_fail(t, result);
 }
-static doc_node* doc_text_style_edge(doc_state* state, uint64_t id, int last)
-{
-    doc_node* node = doc_index_get(state->index, id);
-    uint64_t count, i;
-    if (!node) return NULL;
-    if (node->kind == XUI_DOC_TEXT || node->kind == XUI_DOC_SOFT_BREAK || node->kind == XUI_DOC_HARD_BREAK)
-        return node;
-    count = doc_seq_size(node->children);
-    for (i = 0; i < count; i++) {
-        uint64_t child = doc_seq_get_id(node->children, last ? count - i - 1 : i);
-        doc_node* found = doc_text_style_edge(state, child, last);
-        if (found) return found;
-    }
-    return NULL;
-}
 XUI_API int xuiDocumentSnapshotQueryTextStyle(xui_document_snapshot snapshot, const xui_doc_range_t* range,
     xui_doc_text_style_query_t* out)
 {
@@ -606,13 +616,7 @@ XUI_API int xuiDocumentSnapshotQueryTextStyle(xui_document_snapshot snapshot, co
     if (range->tAnchor.iKind == XUI_DOC_POSITION_SOURCE ||
         range->tCaret.iKind == XUI_DOC_POSITION_SOURCE) return XUI_DOC_ERROR_DOMAIN;
     if (!order) {
-        doc_node* node = doc_index_get(snapshot->state->index, range->tCaret.iNodeId);
-        if (node && range->tCaret.iKind == XUI_DOC_POSITION_GAP) {
-            uint64_t count = doc_seq_size(node->children), index = range->tCaret.iOffset;
-            if (count) node = doc_text_style_edge(snapshot->state,
-                doc_seq_get_id(node->children, index ? index - 1 : 0), !!index);
-            else node = NULL;
-        }
+        doc_node* node = doc_inline_at_position(snapshot->state, &range->tCaret, 0);
         if (node && (node->kind == XUI_DOC_TEXT || node->kind == XUI_DOC_SOFT_BREAK ||
             node->kind == XUI_DOC_HARD_BREAK)) {
             doc_text_style_read(&out->tStyle, snapshot->state, node); out->bHasText = 1;

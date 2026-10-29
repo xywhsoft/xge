@@ -1036,7 +1036,8 @@ XUI_API int xuiDocumentTxnSetLink(xui_document_transaction transaction, const xu
 XUI_API int xuiDocumentTxnInsertLink(xui_document_transaction transaction, const xui_doc_range_t* range,
     const char* label, uint64_t label_bytes, const char* uri, const char* title, xui_doc_position_t* caret);
 /* common: marks present throughout the selection; mixed: marks present on only
- * part of it. Structural gaps are supported, including a root Select All range. */
+ * part of it. Structural gaps are supported, including a root Select All range.
+ * A collapsed container gap inspects its adjacent inline run. */
 XUI_API int xuiDocumentSnapshotQueryMarks(xui_document_snapshot snapshot, const xui_doc_range_t* range, uint32_t* common, uint32_t* mixed);
 #endif
 typedef struct xui_doc_link_info_t {
@@ -1046,7 +1047,8 @@ typedef struct xui_doc_link_info_t {
     const char* sUri;   /* Borrowed from snapshot; NULL when absent or mixed. */
     const char* sTitle; /* Borrowed from snapshot; NULL when absent or mixed. */
 } xui_doc_link_info_t;
-/* Query link state and borrowed URI/title for a semantic range. */
+/* Query link state and borrowed URI/title for a semantic range. A collapsed
+ * container gap inspects its adjacent inline run. */
 #if XUI_ENABLE_DOCUMENT
 XUI_API int xuiDocumentSnapshotQueryLink(xui_document_snapshot snapshot, const xui_doc_range_t* range,
     xui_doc_link_info_t* out);
