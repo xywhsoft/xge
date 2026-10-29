@@ -141,6 +141,7 @@ int main(void)
 	xui_surface pMenuCache;
 	xui_menu_desc_t tDesc;
 	xui_menu_item_t arrItems[7];
+	xui_menu_item_t arrEquivalent[7];
 	xui_menu_item_t arrSubItems[3];
 	xui_menu_item_t arrWideItems[1];
 	xui_menu_item_t arrCycleItems[1];
@@ -170,6 +171,7 @@ int main(void)
 	float fScrollBeforeX;
 	int iMeasureCount;
 	int iBefore;
+	int i;
 	int iFailed;
 	int iRet;
 
@@ -419,6 +421,13 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "submenu layout");
 	XUI_TEST_CHECK(xuiMenuIsOpen(pSubmenu), "submenu opened on hover");
+	for ( i = 0; i < 7; i++ ) arrEquivalent[i] = *xuiMenuGetItem(pMenu, i);
+	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
+	iRet = xuiMenuSetItems(pMenu, arrEquivalent, 7);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetHoverIndex(pMenu) == 5 &&
+		xuiMenuIsOpen(pSubmenu) &&
+		xuiTestProxyGetTextMeasureCount(&tState) == iMeasureCount,
+		"repeated items preserve active submenu and measurement cache");
 	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
 	tItemRect = xuiMenuGetItemRect(pMenu, 6);
 	iRet = __xuiMenuDispatchMove(pContext,

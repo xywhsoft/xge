@@ -281,6 +281,36 @@ static int __xuiMenuItemEnabled(const xui_menu_item_t* pItem)
 	       ((pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u);
 }
 
+static int __xuiMenuStringEqual(const char* sA, const char* sB)
+{
+	if ( sA == sB ) return 1;
+	if ( sA == NULL || sB == NULL ) return 0;
+	return strcmp(sA, sB) == 0;
+}
+
+static int __xuiMenuItemsEqual(const xui_menu_data_t* pData,
+	const xui_menu_item_t* pItems, int iCount)
+{
+	const xui_menu_item_t* pCurrent;
+	const xui_menu_item_t* pNext;
+	int i;
+
+	if ( pData == NULL || pData->iItemCount != iCount ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		pCurrent = &pData->arrItems[i];
+		pNext = &pItems[i];
+		if ( !__xuiMenuStringEqual(pCurrent->sText, pNext->sText) ||
+		     !__xuiMenuStringEqual(pCurrent->sShortcut, pNext->sShortcut) ||
+		     pCurrent->iType != pNext->iType ||
+		     pCurrent->iState != pNext->iState ||
+		     pCurrent->iValue != pNext->iValue ||
+		     pCurrent->iIcon != pNext->iIcon ||
+		     pCurrent->pSubmenu != pNext->pSubmenu ||
+		     pCurrent->pUser != pNext->pUser ) return 0;
+	}
+	return 1;
+}
+
 static void __xuiMenuFreeItemStrings(xui_menu_item_t* pItems, int iCount)
 {
 	int i;
@@ -2050,6 +2080,7 @@ XUI_API int xuiMenuSetItems(xui_widget pWidget, const xui_menu_item_t* pItems, i
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
+	if ( __xuiMenuItemsEqual(pData, pItems, iCount) ) return XUI_OK;
 	iRet = __xuiMenuCopyItems(arrNew, pItems, iCount);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiMenuCancelPress(pWidget, pData);
