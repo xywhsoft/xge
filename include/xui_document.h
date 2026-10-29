@@ -788,7 +788,9 @@ XUI_API int xuiDocumentSnapshotExportFile(xui_document_snapshot snapshot, const 
 /* Save committed content and update the saved state on success. */
 XUI_API int xuiDocumentSaveFile(xui_document document, const char* path, uint32_t format);
 /* Returns a new, clean document without an import undo entry. max_file_bytes=0
- * selects a 256 MiB input cap. Native and Markdown are accepted input formats. */
+ * selects a 256 MiB input cap; exceeding it returns XUI_DOC_ERROR_LIMIT while
+ * other filesystem read failures return XUI_DOC_ERROR_IO. Native and Markdown
+ * are accepted input formats. */
 XUI_API int xuiDocumentOpenFile(const char* path, uint32_t format, const xui_doc_desc_t* desc, uint64_t max_file_bytes, xui_document* out);
 /* Inspect a Rich snapshot before explicitly converting it to Markdown.
  * Reports one entry per affected node in document order; a root ROUNDTRIP

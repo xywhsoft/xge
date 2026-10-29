@@ -3374,6 +3374,7 @@ static void regex_capture_failures(void)
 static void file_roundtrip(void)
 {
     const char* md_path = "build/document/roundtrip.md"; const char* native_path = "build/document/roundtrip.xdoc";
+    const char* missing_path = "build/document/missing-roundtrip.md";
     const char* source = "\xef\xbb\xbf# Title\r\n\r\nA &amp; B\\*\n";
     xui_doc_desc_t desc = {0}; xui_document d, loaded; xui_document_snapshot snapshot; xui_document_transaction t;
     xui_doc_txn_desc_t td = {0}; char output[128]; uint64_t bytes; unsigned char* file; size_t file_bytes;
@@ -3381,6 +3382,10 @@ static void file_roundtrip(void)
     CHECK(xuiDocumentCreate(&desc, &d) == XUI_OK); CHECK(xuiDocumentLoadMarkdown(d, source, strlen(source)) == XUI_OK);
     CHECK(xuiDocumentSaveFile(d, md_path, XUI_DOC_FILE_MARKDOWN) == XUI_OK && !xuiDocumentIsDirty(d));
     file = xrtFileReadAll(md_path, &file_bytes); CHECK(file && file_bytes == strlen(source) && !memcmp(file, source, file_bytes)); xrtFree(file);
+    loaded = (xui_document)(uintptr_t)1;
+    CHECK(xuiDocumentOpenFile(md_path, XUI_DOC_FILE_MARKDOWN, NULL, file_bytes - 1, &loaded) == XUI_DOC_ERROR_LIMIT && !loaded);
+    (void)remove(missing_path); loaded = (xui_document)(uintptr_t)1;
+    CHECK(xuiDocumentOpenFile(missing_path, XUI_DOC_FILE_MARKDOWN, NULL, 1, &loaded) == XUI_DOC_ERROR_IO && !loaded);
     CHECK(xuiDocumentOpenFile(md_path, XUI_DOC_FILE_MARKDOWN, NULL, 1024, &loaded) == XUI_OK);
     CHECK(!xuiDocumentIsDirty(loaded) && !xuiDocumentCanUndo(loaded)); xuiDocumentRelease(loaded);
     CHECK(xuiDocumentAcquireSnapshot(d, &snapshot) == XUI_OK);

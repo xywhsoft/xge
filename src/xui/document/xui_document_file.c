@@ -2,6 +2,13 @@
 #if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
 
+static int __xuiDocumentFileReadError(void)
+{
+    const xerror* error = xrtGetError();
+    return (error && xrtErrorFind(error, "xrt.file", XFILE_ERROR_LIMIT)) ?
+        XUI_DOC_ERROR_LIMIT : XUI_DOC_ERROR_IO;
+}
+
 XUI_API int xuiDocumentSnapshotExportFile(xui_document_snapshot snapshot, const char* path, uint32_t format)
 {
     char* data = NULL; uint64_t length = 0; int result;
@@ -19,9 +26,11 @@ XUI_API int xuiDocumentSnapshotExportFile(xui_document_snapshot snapshot, const 
     default: return XUI_ERROR_INVALID_ARGUMENT;
     }
     if (result == XUI_OK) {
-        xbytesview bytes = {(const unsigned char*)data, (size_t)length};
         if (length > SIZE_MAX) result = XUI_DOC_ERROR_LIMIT;
-        else if (!xrtFileWriteAtomic(path, bytes)) result = XUI_DOC_ERROR_IO;
+        else {
+            xbytesview bytes = {(const unsigned char*)data, (size_t)length};
+            if (!xrtFileWriteAtomic(path, bytes)) result = XUI_DOC_ERROR_IO;
+        }
     }
     xuiDocumentFreeBuffer(data); return result;
 }
@@ -43,7 +52,8 @@ XUI_API int xuiDocumentOpenFile(const char* path, uint32_t format, const xui_doc
         (format != XUI_DOC_FILE_NATIVE && format != XUI_DOC_FILE_MARKDOWN)) return XUI_ERROR_INVALID_ARGUMENT;
     if (!max_bytes) max_bytes = UINT64_C(256) * 1024 * 1024;
     if (max_bytes >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
-    data = xrtFileReadAllLimit(path, (size_t)max_bytes, &length); if (!data) return XUI_DOC_ERROR_IO;
+    data = xrtFileReadAllLimit(path, (size_t)max_bytes, &length);
+    if (!data) return __xuiDocumentFileReadError();
     if (format == XUI_DOC_FILE_NATIVE) result = xuiDocumentDeserialize(desc, (const char*)data, length, &document);
     else {
         if (desc) options = *desc;
