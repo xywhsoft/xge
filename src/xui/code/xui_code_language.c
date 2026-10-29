@@ -1,6 +1,6 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
-#include "xui.h"
+#include "xui_internal.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -212,6 +212,13 @@ static int __xuiCodeLanguageCLex(xui_code_document_t* pDocument, int iStartLine,
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiCodeLexerCTokenizeDocumentRange(pDocument, iStartOffset, iEndOffset,
 		pTokens, iTokenCapacity, pTokenCount);
+}
+
+int xuiInternalCodeLanguageUsesBuiltinC(const xui_code_language_t* pLanguage)
+{
+	return pLanguage != NULL && pLanguage->iSize >= sizeof(*pLanguage) &&
+		pLanguage->iLexerType == XUI_CODE_LEXER_BUILTIN_C &&
+		pLanguage->onLex == __xuiCodeLanguageCLex;
 }
 
 static int __xuiCodeLanguageRegexLexRange(const xui_code_language_t* pLanguage,

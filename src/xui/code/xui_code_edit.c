@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <limits.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -115,7 +116,7 @@ typedef struct xui_code_edit_data_t {
 	xui_widget pHScrollBar;
 	xui_widget pVScrollBar;
 	xui_font pFont;
-	char sLanguage[32];
+	char* sLanguage;
 	char sError[160];
 	int bReadonly;
 	int bWordWrap;
@@ -391,11 +392,14 @@ static void __xuiCodeEditImeReset(xui_code_edit_data_t* pData)
 
 static int __xuiCodeEditStringSet(char** psText, int* pCapacity, const char* sText)
 {
+	size_t iLength;
 	int iNeed;
 	int iRet;
 
 	if ( sText == NULL ) sText = "";
-	iNeed = (int)strlen(sText) + 1;
+	iLength = strlen(sText);
+	if ( iLength >= (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	iNeed = (int)iLength + 1;
 	iRet = __xuiCodeEditTextReserve(psText, pCapacity, iNeed);
 	if ( iRet != XUI_OK ) return iRet;
 	memcpy(*psText, sText, (size_t)iNeed);
@@ -2346,6 +2350,7 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	xrtFree(pData->sInlineCompletion);
 	xrtFree(pData->sReadBuffer);
 	xrtFree(pData->sImeComposition);
+	xrtFree(pData->sLanguage);
 	xrtFree(pData->sAssistLabel);
 	xrtFree(pData->sAssistDocumentation);
 	xrtFree(pData->pPlaceholders);
@@ -2354,6 +2359,7 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	pData->sInlineCompletion = NULL;
 	pData->sReadBuffer = NULL;
 	pData->sImeComposition = NULL;
+	pData->sLanguage = NULL;
 	pData->sAssistLabel = NULL;
 	pData->sAssistDocumentation = NULL;
 	pData->pPlaceholders = NULL;
@@ -2935,7 +2941,7 @@ static int __xuiCodeEditCommandContext(xui_widget pWidget, xui_code_edit_data_t*
 	pContext->iPageLineCount = (iPageLines > 1) ? iPageLines : 1;
 	sLineComment = "//";
 	memset(&tLanguage, 0, sizeof(tLanguage));
-	if ( pData->sLanguage[0] != '\0' &&
+	if ( pData->sLanguage != NULL && pData->sLanguage[0] != '\0' &&
 	     xuiCodeLanguageRegistryFind(pData->pLanguages, pData->sLanguage, &tLanguage) == XUI_OK &&
 	     tLanguage.sLineComment != NULL ) {
 		sLineComment = tLanguage.sLineComment;
@@ -5110,9 +5116,9 @@ static int __xuiCodeEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iCompletionMaxItems = 256;
 	pData->fCompletionDelay = 0.075f;
 	xuiScrollModelInit(&pData->tScrollModel);
-	if ( pDesc != NULL && pDesc->sLanguage != NULL ) {
-		strncpy(pData->sLanguage, pDesc->sLanguage, sizeof(pData->sLanguage) - 1u);
-	}
+	pData->sLanguage = __xuiCodeEditStringDup(
+		(pDesc != NULL && pDesc->sLanguage != NULL) ? pDesc->sLanguage : "");
+	if ( pData->sLanguage == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	iRet = __xuiCodeEditInitOwned(pData, pDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeDocumentSetText(pData->pDocument, (pDesc != NULL) ? pDesc->sText : NULL);
@@ -5440,16 +5446,46 @@ static const char* __xuiCodeEditSyntaxColorProperty(int iTokenKind)
 	return NULL;
 }
 
-static int __xuiCodeEditEnsureTokens(xui_code_edit_data_t* pData, int iStartOffset, int iEndOffset)
+static int __xuiCodeEditReserveTokenScratch(xui_code_edit_data_t* pData,
+	int iCapacity)
 {
+	xui_code_token_t* pNew;
+
+	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iCapacity <= pData->iTokenScratchCapacity ) return XUI_OK;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) {
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
+	pNew = (xui_code_token_t*)xrtRealloc(pData->pTokenScratch,
+		sizeof(*pNew) * (size_t)iCapacity);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->pTokenScratch = pNew;
+	pData->iTokenScratchCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static int __xuiCodeEditEnsureTokens(xui_code_edit_data_t* pData,
+	int iStartOffset, int iEndOffset)
+{
+	xui_code_language_t tLanguage;
+	char sLexError[160];
 	uint32_t iVersion;
 	uint32_t iBufferVersion;
 	int iBufferStart;
 	int iBufferEnd;
+	int iLexStart;
+	int iLexEnd;
+	int iStartLine;
+	int iEndLine;
+	int iEndProbe;
+	int iLineCount;
 	int iLength;
 	int iCount;
 	int iRet;
 	int iCapacity;
+	int iAttempt;
+	int bBuiltinC;
+	int bHasLexer;
 
 	if ( pData == NULL || pData->pDocument == NULL || pData->pTokenBuffer == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iVersion = xuiCodeDocumentGetVersion(pData->pDocument);
@@ -5463,35 +5499,74 @@ static int __xuiCodeEditEnsureTokens(xui_code_edit_data_t* pData, int iStartOffs
 	     iBufferVersion == iVersion && iStartOffset >= iBufferStart && iEndOffset <= iBufferEnd ) {
 		return XUI_OK;
 	}
-	iCapacity = (iEndOffset - iStartOffset) / 4 + 64;
-	if ( iCapacity < 256 ) iCapacity = 256;
-	if ( iCapacity > pData->iTokenScratchCapacity ) {
-		xui_code_token_t* pNew = (xui_code_token_t*)xrtRealloc(
-			pData->pTokenScratch, sizeof(*pNew) * (size_t)iCapacity);
-		if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		pData->pTokenScratch = pNew;
-		pData->iTokenScratchCapacity = iCapacity;
+	memset(&tLanguage, 0, sizeof(tLanguage));
+	if ( pData->sLanguage == NULL || pData->sLanguage[0] == '\0' ||
+	     xuiCodeLanguageRegistryFind(pData->pLanguages, pData->sLanguage,
+		     &tLanguage) != XUI_OK ) {
+		return xuiCodeTokenBufferSetRange(pData->pTokenBuffer, NULL, 0,
+			iVersion, iStartOffset, iEndOffset);
 	}
-	iCount = 0;
-	iRet = xuiCodeLexerCTokenizeDocumentRange(pData->pDocument,
-		iStartOffset, iEndOffset, pData->pTokenScratch,
-		pData->iTokenScratchCapacity, &iCount);
+	bBuiltinC = xuiInternalCodeLanguageUsesBuiltinC(&tLanguage);
+	bHasLexer = bBuiltinC || tLanguage.onLex != NULL ||
+		(tLanguage.iLexerType == XUI_CODE_LEXER_REGEX &&
+		 tLanguage.pRegexRules != NULL && tLanguage.iRegexRuleCount > 0);
+	if ( !bHasLexer || iEndOffset == iStartOffset ) {
+		return xuiCodeTokenBufferSetRange(pData->pTokenBuffer, NULL, 0,
+			iVersion, iStartOffset, iEndOffset);
+	}
+	iLexStart = iStartOffset;
+	iLexEnd = iEndOffset;
+	iStartLine = 0;
+	iEndLine = 0;
+	if ( !bBuiltinC ) {
+		iEndProbe = (iEndOffset > iStartOffset) ? iEndOffset - 1 : iEndOffset;
+		iRet = xuiCodeDocumentOffsetToLineColumn(pData->pDocument,
+			iStartOffset, &iStartLine, NULL);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiCodeDocumentOffsetToLineColumn(pData->pDocument,
+			iEndProbe, &iEndLine, NULL);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiCodeDocumentGetLineRange(pData->pDocument, iStartLine,
+			&iLexStart, NULL);
+		if ( iRet != XUI_OK ) return iRet;
+		iLineCount = xuiCodeDocumentGetLineCount(pData->pDocument);
+		if ( iEndLine + 1 < iLineCount ) {
+			iRet = xuiCodeDocumentGetLineRange(pData->pDocument,
+				iEndLine + 1, &iLexEnd, NULL);
+			if ( iRet != XUI_OK ) return iRet;
+		} else {
+			iLexEnd = iLength;
+		}
+	}
+	iCapacity = (iLexEnd - iLexStart) / 4 + 64;
+	if ( iCapacity < 256 ) iCapacity = 256;
+	iRet = __xuiCodeEditReserveTokenScratch(pData, iCapacity);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( iCount > pData->iTokenScratchCapacity ) {
-		xui_code_token_t* pNew = (xui_code_token_t*)xrtRealloc(
-			pData->pTokenScratch, sizeof(*pNew) * (size_t)iCount);
-		if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		pData->pTokenScratch = pNew;
-		pData->iTokenScratchCapacity = iCount;
+	for ( iAttempt = 0; iAttempt < 2; iAttempt++ ) {
 		iCount = 0;
-		iRet = xuiCodeLexerCTokenizeDocumentRange(pData->pDocument,
-			iStartOffset, iEndOffset, pData->pTokenScratch,
-			pData->iTokenScratchCapacity, &iCount);
+		sLexError[0] = '\0';
+		if ( bBuiltinC ) {
+			iRet = xuiCodeLexerCTokenizeDocumentRange(pData->pDocument,
+				iLexStart, iLexEnd, pData->pTokenScratch,
+				pData->iTokenScratchCapacity, &iCount);
+		} else {
+			iRet = xuiCodeLanguageLex(&tLanguage, pData->pDocument,
+				iStartLine, iEndLine, pData->pTokenScratch,
+				pData->iTokenScratchCapacity, &iCount, sLexError,
+				(int)sizeof(sLexError));
+		}
+		if ( iRet != XUI_OK ) {
+			if ( sLexError[0] != '\0' ) __xuiCodeEditSetError(pData, sLexError);
+			return iRet;
+		}
+		if ( iCount <= pData->iTokenScratchCapacity ) break;
+		if ( iAttempt != 0 ) return XUI_ERROR_INVALID_STATE;
+		iRet = __xuiCodeEditReserveTokenScratch(pData, iCount);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = xuiCodeTokenBufferSetRange(pData->pTokenBuffer,
 		(iCount > 0) ? pData->pTokenScratch : NULL, iCount, iVersion,
-		iStartOffset, iEndOffset);
+		iLexStart, iLexEnd);
 	return iRet;
 }
 
@@ -6783,6 +6858,7 @@ XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage)
 {
 	xui_code_edit_data_t* pData;
 	xui_code_language_t tLanguage;
+	char* sNew;
 
 	pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL || sLanguage == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -6793,8 +6869,11 @@ XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage)
 			return XUI_ERROR_UNSUPPORTED;
 		}
 	}
-	strncpy(pData->sLanguage, sLanguage, sizeof(pData->sLanguage) - 1u);
-	pData->sLanguage[sizeof(pData->sLanguage) - 1u] = '\0';
+	sNew = __xuiCodeEditStringDup(sLanguage);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	xrtFree(pData->sLanguage);
+	pData->sLanguage = sNew;
+	xuiCodeTokenBufferClear(pData->pTokenBuffer);
 	__xuiCodeEditSetError(pData, "");
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -6802,7 +6881,7 @@ XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage)
 XUI_API const char* xuiCodeEditGetLanguage(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
-	return (pData != NULL) ? pData->sLanguage : "";
+	return (pData != NULL && pData->sLanguage != NULL) ? pData->sLanguage : "";
 }
 
 XUI_API xui_widget xuiCodeEditGetMenuWidget(xui_widget pWidget)

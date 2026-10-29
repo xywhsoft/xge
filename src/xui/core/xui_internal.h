@@ -660,6 +660,7 @@ int xuiInternalCodeDocumentSetLexerCCache(xui_code_document pDocument,
 	void* pCache, void (*onDestroy)(void* pCache));
 int xuiInternalCodeDocumentClampOffset(xui_code_document pDocument,
 	int iOffset, int bForward, int* pClamped);
+int xuiInternalCodeLanguageUsesBuiltinC(const xui_code_language_t* pLanguage);
 uint32_t xuiInternalFlowGraphGetGeometryRevision(xui_flow_graph pGraph);
 void xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSecond);
 int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,

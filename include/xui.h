@@ -2885,7 +2885,7 @@ struct xui_code_edit_desc_t {
 	uint32_t iSize;
 	struct xui_font_t* pFont;
 	const char* sText;
-	const char* sLanguage;
+	const char* sLanguage; /* Registered syntax language id; NULL/empty uses plain text. */
 	int bReadonly;
 	int bShowLineNumbers;
 	int bShowFoldMargin;
@@ -7647,7 +7647,7 @@ XUI_API xui_code_margin_model xuiCodeEditGetMargins(xui_widget pWidget);
 XUI_API xui_code_command_map xuiCodeEditGetCommandMap(xui_widget pWidget);
 /* 取语言注册表（编辑器持有）。 */
 XUI_API xui_code_language_registry xuiCodeEditGetLanguageRegistry(xui_widget pWidget);
-/* 按 id 切换当前语言。 */
+/* 按 id 切换当前语言；空字符串关闭语法高亮。 */
 XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage);
 /* 输出当前语言定义。 */
 XUI_API const char* xuiCodeEditGetLanguage(xui_widget pWidget);

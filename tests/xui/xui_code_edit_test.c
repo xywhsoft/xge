@@ -454,6 +454,8 @@ int main(void)
 	xui_code_margin_desc_t tCustomMargin;
 	xui_code_margin_info_t tMargin;
 	xui_code_language_t tToyLanguage;
+	xui_code_regex_rule_t tToyRule;
+	xui_code_token_t arrToyTokens[8];
 	xui_code_indicator_t arrIndicators[4];
 	xui_find_options_t tFind;
 	xui_code_find_result_t tFindResult;
@@ -1803,6 +1805,53 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "toy toggle comment command dispatch");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "#one\n#two\n") == 0, "toy line comment metadata");
+	iRet = xuiCodeEditSetText(pToyEdit, "123 abc");
+	XUI_TEST_CHECK(iRet == XUI_OK, "toy plain language text");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "toy plain language layout");
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeTokenBufferGetCount(xuiCodeEditGetTokenBuffer(pToyEdit)) == 0,
+		"language without lexer renders as plain text");
+	memset(&tToyRule, 0, sizeof(tToyRule));
+	tToyRule.iSize = sizeof(tToyRule);
+	tToyRule.sName = "number";
+	tToyRule.sPattern = "[0-9]+";
+	tToyRule.iTokenKind = XUI_CODE_TOKEN_NUMBER;
+	tToyRule.iStyle = XUI_CODE_TOKEN_NUMBER;
+	tToyLanguage.iLexerType = XUI_CODE_LEXER_REGEX;
+	tToyLanguage.pRegexRules = &tToyRule;
+	tToyLanguage.iRegexRuleCount = 1;
+	iRet = xuiCodeLanguageRegistryRegister(
+		xuiCodeEditGetLanguageRegistry(pToyEdit), &tToyLanguage);
+	XUI_TEST_CHECK(iRet == XUI_OK, "toy regex language replace");
+	iRet = xuiCodeEditSetLanguage(pToyEdit, "toy");
+	XUI_TEST_CHECK(iRet == XUI_OK, "toy regex language reactivate");
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "toy regex language render");
+	iRet = xuiCodeTokenBufferGetTokens(xuiCodeEditGetTokenBuffer(pToyEdit),
+		xuiCodeDocumentGetVersion(xuiCodeEditGetDocument(pToyEdit)),
+		arrToyTokens, 8, &iTokenCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == 2 &&
+		arrToyTokens[0].iKind == XUI_CODE_TOKEN_NUMBER &&
+		arrToyTokens[0].iStartOffset == 0 && arrToyTokens[0].iEndOffset == 3,
+		"selected regex language drives codeedit tokens");
+	tToyLanguage.sId = "toy-language-identifier-longer-than-thirty-one-bytes";
+	tToyLanguage.sName = "Long Toy";
+	iRet = xuiCodeLanguageRegistryRegister(
+		xuiCodeEditGetLanguageRegistry(pToyEdit), &tToyLanguage);
+	XUI_TEST_CHECK(iRet == XUI_OK, "long language id register");
+	iRet = xuiCodeEditSetLanguage(pToyEdit, tToyLanguage.sId);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiCodeEditGetLanguage(pToyEdit), tToyLanguage.sId) == 0,
+		"language id is not truncated");
+	iRet = xuiCodeEditSetLanguage(pToyEdit, "");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetLanguage(pToyEdit), "") == 0,
+		"empty language selects plain text");
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeTokenBufferGetCount(xuiCodeEditGetTokenBuffer(pToyEdit)) == 0,
+		"plain language clears stale syntax tokens");
 
 	iRet = xuiCodeEditSetText(pToyEdit, "value = ");
 	XUI_TEST_CHECK(iRet == XUI_OK, "inline completion reset text");
