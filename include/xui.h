@@ -2572,8 +2572,10 @@ struct xui_code_fold_range_t {
 	uint32_t iFlags;
 };
 
+/* 代码布局描述借用文档与折叠区间；调用期间两者必须保持有效。
+ * 滚动量和边栏宽度必须为非负有限值；非正或非有限的行高/字符宽使用默认值。 */
 struct xui_code_layout_desc_t {
-	uint32_t iSize;
+	uint32_t iSize; /* 必须至少为 sizeof(xui_code_layout_desc_t)。 */
 	xui_code_document_t* pDocument;
 	const xui_code_fold_range_t* pFoldRanges;
 	int iFoldRangeCount;
@@ -7280,7 +7282,7 @@ XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_f
 XUI_API int xuiCodeFoldCBuildDocumentRanges(xui_code_document pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);
 /* 由折叠区间计算可见行映射表。 */
 XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_range_t* pRanges, int iRangeCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);
-/* 布局可见行（含换行/制表投影），输出行描述与内容尺寸。 */
+/* 布局视口相交行（含换行/制表投影），*pLineCount 返回总数，可能大于容量。 */
 XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, xui_code_layout_line_t* pLines, int iLineCapacity, int* pLineCount, xui_vec2_t* pContentSize, xui_rect_t* pTextRect);
 /* 布局空间命中测试（坐标转行/列/偏移）。 */
 XUI_API int xuiCodeLayoutHitTest(const xui_code_layout_desc_t* pDesc, float fX, float fY, xui_code_hit_t* pHit);

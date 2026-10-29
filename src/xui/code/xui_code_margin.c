@@ -1,10 +1,8 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
-#include "xui.h"
+#include "xui_code_geometry_internal.h"
 
 #include <float.h>
-#include <limits.h>
-#include <math.h>
 #include <string.h>
 
 struct xui_code_margin_model_t {
@@ -37,44 +35,12 @@ static int __xuiCodeMarginReserve(xui_code_margin_model pModel, int iCapacity)
 	return XUI_OK;
 }
 
-static int __xuiCodeMarginRectValid(xui_rect_t tRect)
-{
-	if ( tRect.fW < 0 || tRect.fH < 0 ) return 0;
-	if ( tRect.fX > INT_MAX - tRect.fW ) return 0;
-	if ( tRect.fY > INT_MAX - tRect.fH ) return 0;
-	return 1;
-}
-
-static int __xuiCodeMarginSnapEdge(double fValue, int* pPixel)
-{
-	double fPixel;
-
-	if ( pPixel == NULL || !isfinite(fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
-	fPixel = floor(fValue + 0.5);
-	if ( fPixel < (double)INT_MIN || fPixel > (double)INT_MAX ) {
-		return XUI_ERROR_LIMIT_EXCEEDED;
-	}
-	*pPixel = (int)fPixel;
-	return XUI_OK;
-}
-
 static int __xuiCodeMarginRectFromEdges(double fLeft, double fRight,
 	xui_rect_t tViewport, xui_rect_t* pRect)
 {
-	long long iWidth;
-	int iLeft;
-	int iRight;
-	int iRet;
-
 	if ( pRect == NULL || fRight < fLeft ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiCodeMarginSnapEdge(fLeft, &iLeft);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCodeMarginSnapEdge(fRight, &iRight);
-	if ( iRet != XUI_OK ) return iRet;
-	iWidth = (long long)iRight - (long long)iLeft;
-	if ( iWidth < 0 || iWidth > INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
-	*pRect = (xui_rect_t){ iLeft, tViewport.fY, (int)iWidth, tViewport.fH };
-	return XUI_OK;
+	return xuiCodeInternalRectFromDouble(fLeft, tViewport.fY,
+		fRight - fLeft, tViewport.fH, pRect);
 }
 
 static int __xuiCodeMarginFind(xui_code_margin_model pModel, int iId)
@@ -288,7 +254,7 @@ XUI_API int xuiCodeMarginModelGetRect(xui_code_margin_model pModel, int iId, xui
 	int iRet;
 
 	if ( (pModel == NULL) || (iId <= 0) || (pRect == NULL) ||
-	     !__xuiCodeMarginRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
+	     !xuiCodeInternalRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fCurrentX = tViewport.fX;
 	for ( i = 0; i < pModel->iCount; i++ ) {
 		if ( pModel->pMargins[i].iId == iId ) {
@@ -321,7 +287,7 @@ XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model pModel, xui_rect_t tV
 	if ( pInfoCount != NULL ) *pInfoCount = 0;
 	if ( (pModel == NULL) || (pInfoCount == NULL) || (iInfoCapacity < 0) ||
 	     (pInfos == NULL && iInfoCapacity > 0) ||
-	     !__xuiCodeMarginRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
+	     !xuiCodeInternalRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fX = tViewport.fX;
 	iCount = 0;
 	for ( i = 0; i < pModel->iCount; i++ ) {
@@ -332,7 +298,7 @@ XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model pModel, xui_rect_t tV
 		fX = fNextX;
 		iCount++;
 	}
-	iRet = __xuiCodeMarginSnapEdge(fX, &iTextLeft);
+	iRet = xuiCodeInternalSnapPixel(fX, &iTextLeft);
 	if ( iRet != XUI_OK ) return iRet;
 	iViewportRight = tViewport.fX + tViewport.fW;
 	if ( iTextLeft < tViewport.fX ) iTextLeft = tViewport.fX;
@@ -373,7 +339,7 @@ XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t t
 		pHit->iSize = sizeof(*pHit);
 	}
 	if ( (pModel == NULL) || (pHit == NULL) ||
-	     !__xuiCodeMarginRectValid(tViewport) ||
+	     !xuiCodeInternalRectValid(tViewport) ||
 	     !isfinite((double)fX) || !isfinite((double)fY) ||
 	     !isfinite((double)fLineHeight) || fLineHeight <= 0.0f ||
 	     !isfinite((double)fScrollY) || fScrollY < 0.0f ) {

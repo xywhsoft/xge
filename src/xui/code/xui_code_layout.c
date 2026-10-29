@@ -1,9 +1,12 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
+#include "xui_code_geometry_internal.h"
 
+#include <float.h>
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 static int __xuiCodeLayoutTabColumns(const xui_code_layout_desc_t* pDesc)
@@ -19,13 +22,28 @@ static float __xuiCodeLayoutMetric(float fValue, float fFallback)
 static int __xuiCodeLayoutGeometryValid(const xui_code_layout_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) return 0;
-	return isfinite((double)pDesc->tViewportRect.fX) &&
-		isfinite((double)pDesc->tViewportRect.fY) &&
-		isfinite((double)pDesc->tViewportRect.fW) &&
-		isfinite((double)pDesc->tViewportRect.fH) &&
+	return pDesc->iSize >= sizeof(*pDesc) &&
+		xuiCodeInternalRectValid(pDesc->tViewportRect) &&
 		isfinite((double)pDesc->fScrollX) &&
 		isfinite((double)pDesc->fScrollY) &&
-		isfinite((double)pDesc->fMarginWidth);
+		isfinite((double)pDesc->fMarginWidth) &&
+		pDesc->fScrollX >= 0.0f && pDesc->fScrollY >= 0.0f &&
+		pDesc->fMarginWidth >= 0.0f;
+}
+
+static int __xuiCodeLayoutTextRect(const xui_code_layout_desc_t* pDesc,
+	xui_rect_t* pTextRect)
+{
+	double fMargin;
+
+	if ( pDesc == NULL || pTextRect == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	fMargin = pDesc->fMarginWidth;
+	if ( fMargin > pDesc->tViewportRect.fW ) fMargin = pDesc->tViewportRect.fW;
+	return xuiCodeInternalRectFromDouble(
+		(double)pDesc->tViewportRect.fX + fMargin,
+		pDesc->tViewportRect.fY,
+		(double)pDesc->tViewportRect.fW - fMargin,
+		pDesc->tViewportRect.fH, pTextRect);
 }
 
 static int __xuiCodeLayoutNextVisualColumn(int iVisualColumn, char c, int iTabColumns)
@@ -78,9 +96,11 @@ static int __xuiCodeLayoutLineVisualColumns(xui_code_document pDocument, int iLi
 	return iColumn;
 }
 
-static float __xuiCodeLayoutLineWidth(xui_code_document pDocument, int iLine, float fCharWidth, int iTabColumns)
+static double __xuiCodeLayoutLineWidth(xui_code_document pDocument, int iLine,
+	float fCharWidth, int iTabColumns)
 {
-	return (float)__xuiCodeLayoutLineVisualColumns(pDocument, iLine, iTabColumns) * fCharWidth;
+	return (double)__xuiCodeLayoutLineVisualColumns(pDocument, iLine, iTabColumns) *
+		(double)fCharWidth;
 }
 
 static int __xuiCodeLayoutColumnToVisual(xui_code_document pDocument, int iLine, int iColumn, int iTabColumns)
@@ -137,11 +157,19 @@ static int __xuiCodeLayoutVisibleLines(const xui_code_layout_desc_t* pDesc, int*
 	if ( (pDesc == NULL) || (pDesc->pDocument == NULL) || (ppVisible == NULL) || (pCount == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	*ppVisible = NULL;
+	*pCount = 0;
 	if ( pDesc->iFoldRangeCount < 0 ||
 	     (pDesc->iFoldRangeCount > 0 && pDesc->pFoldRanges == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iLineCount = xuiCodeDocumentGetLineCount(pDesc->pDocument);
+	if ( pDesc->iFoldRangeCount == 0 ) {
+		*pCount = iLineCount;
+		return XUI_OK;
+	}
+	if ( (size_t)((iLineCount > 0) ? iLineCount : 1) >
+	     SIZE_MAX / sizeof(*pVisible) ) return XUI_ERROR_LIMIT_EXCEEDED;
 	pVisible = (int*)xrtMalloc(sizeof(*pVisible) * (size_t)((iLineCount > 0) ? iLineCount : 1));
 	if ( pVisible == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	iRet = xuiCodeFoldBuildVisibleLines(iLineCount, pDesc->pFoldRanges, pDesc->iFoldRangeCount, pVisible, iLineCount, pCount);
@@ -153,13 +181,20 @@ static int __xuiCodeLayoutVisibleLines(const xui_code_layout_desc_t* pDesc, int*
 	return XUI_OK;
 }
 
+static int __xuiCodeLayoutVisibleLineAt(const int* pVisible, int iCount, int iIndex)
+{
+	if ( iIndex < 0 || iIndex >= iCount ) return -1;
+	return (pVisible != NULL) ? pVisible[iIndex] : iIndex;
+}
+
 static int __xuiCodeLayoutFindVisibleIndex(const int* pVisible, int iCount, int iLine)
 {
 	int iLow;
 	int iHigh;
 	int iMid;
 
-	if ( pVisible == NULL || iCount <= 0 ) return -1;
+	if ( iCount <= 0 || iLine < 0 ) return -1;
+	if ( pVisible == NULL ) return (iLine < iCount) ? iLine : -1;
 	iLow = 0;
 	iHigh = iCount - 1;
 	while ( iLow <= iHigh ) {
@@ -190,7 +225,6 @@ static int __xuiCodeLayoutWrapColumns(const xui_code_layout_desc_t* pDesc, const
 	int iColumns;
 
 	if ( !pDesc->bWordWrap ) return 0;
-	if ( !isfinite((double)pTextRect->fW) ) return 1;
 	if ( pTextRect->fW / fCharWidth >= (float)INT_MAX ) return INT_MAX;
 	iColumns = (int)(pTextRect->fW / fCharWidth);
 	return (iColumns > 0) ? iColumns : 1;
@@ -357,28 +391,51 @@ static int __xuiCodeLayoutVisualRow(const xui_code_layout_desc_t* pDesc,
 	__xui_code_layout_segment_t tNext;
 	__xui_code_layout_segment_t tLast;
 
+	if ( pDesc == NULL || iVisibleCount <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iWrapColumns <= 0 ) {
+		int iResolved;
+		int iResolvedLine;
+
+		if ( pTotalRows != NULL ) *pTotalRows = iVisibleCount;
+		if ( iWantedRow < 0 ) return XUI_OK;
+		iResolved = (iWantedRow < iVisibleCount) ? iWantedRow : iVisibleCount - 1;
+		iResolvedLine = __xuiCodeLayoutVisibleLineAt(pVisible, iVisibleCount, iResolved);
+		if ( iResolvedLine < 0 ||
+		     __xuiCodeLayoutFirstSegment(pDesc->pDocument, iResolvedLine,
+		     __xuiCodeLayoutTabColumns(pDesc), 0, &tCurrent, NULL) != XUI_OK ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		if ( pLine != NULL ) *pLine = iResolvedLine;
+		if ( pSegmentIndex != NULL ) *pSegmentIndex = 0;
+		if ( pSegment != NULL ) *pSegment = tCurrent;
+		if ( pResolvedRow != NULL ) *pResolvedRow = iResolved;
+		return XUI_OK;
+	}
 	iRows = 0;
 	iLastLine = -1;
 	iLastSegment = -1;
 	bFound = 0;
 	memset(&tLast, 0, sizeof(tLast));
 	for ( i = 0; i < iVisibleCount; i++ ) {
-		if ( __xuiCodeLayoutFirstSegment(pDesc->pDocument, pVisible[i],
+		int iVisibleLine = __xuiCodeLayoutVisibleLineAt(pVisible, iVisibleCount, i);
+		if ( iVisibleLine < 0 ||
+		     __xuiCodeLayoutFirstSegment(pDesc->pDocument, iVisibleLine,
 		     __xuiCodeLayoutTabColumns(pDesc), iWrapColumns,
 		     &tCurrent, &iLineEnd) != XUI_OK ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 		iSegment = 0;
 		for ( ;; ) {
-			iLastLine = pVisible[i];
+			iLastLine = iVisibleLine;
 			iLastSegment = iSegment;
 			tLast = tCurrent;
 			if ( iWantedRow == iRows ) {
-				if ( pLine != NULL ) *pLine = pVisible[i];
+				if ( pLine != NULL ) *pLine = iVisibleLine;
 				if ( pSegmentIndex != NULL ) *pSegmentIndex = iSegment;
 				if ( pSegment != NULL ) *pSegment = tCurrent;
 				if ( pResolvedRow != NULL ) *pResolvedRow = iRows;
 				bFound = 1;
+				if ( pTotalRows == NULL ) return XUI_OK;
 			}
 			if ( iRows == INT_MAX ) return XUI_ERROR_RESOURCE_FAILED;
 			iRows++;
@@ -412,66 +469,91 @@ XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, 
 	int iRet;
 	float fLineHeight;
 	float fCharWidth;
-	float fContentWidth;
-	float fY;
+	double fContentWidth;
+	double fRenderWidth;
+	double fY;
 	int iTabColumns;
 	int iWrapColumns;
 	int iVisualRow;
 	int iTotalRows;
 	int iLineEnd;
+	int iVisibleLine;
 	__xui_code_layout_segment_t tSegment;
 	__xui_code_layout_segment_t tNextSegment;
 	xui_rect_t tTextRect;
 
+	if ( pLineCount != NULL ) *pLineCount = 0;
 	if ( (pDesc == NULL) || (pDesc->pDocument == NULL) || (pLineCount == NULL) ||
 	     !__xuiCodeLayoutGeometryValid(pDesc) ||
-	     (iLineCapacity < 0) ) {
+	     (iLineCapacity < 0) || (pLines == NULL && iLineCapacity > 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*pLineCount = 0;
 	fLineHeight = __xuiCodeLayoutMetric(pDesc->fLineHeight, 18.0f);
 	fCharWidth = __xuiCodeLayoutMetric(pDesc->fCharWidth, 8.0f);
 	iTabColumns = __xuiCodeLayoutTabColumns(pDesc);
-	tTextRect = pDesc->tViewportRect;
-	tTextRect.fX += pDesc->fMarginWidth;
-	tTextRect.fW -= pDesc->fMarginWidth;
-	if ( tTextRect.fW < 0.0f ) tTextRect.fW = 0.0f;
+	iRet = __xuiCodeLayoutTextRect(pDesc, &tTextRect);
+	if ( iRet != XUI_OK ) return iRet;
 	iWrapColumns = __xuiCodeLayoutWrapColumns(pDesc, &tTextRect);
 	iRet = __xuiCodeLayoutVisibleLines(pDesc, &pVisible, &iVisibleCount);
 	if ( iRet != XUI_OK ) return iRet;
-	fContentWidth = 0.0f;
+	fContentWidth = 0.0;
 	if ( !pDesc->bWordWrap ) {
 		for ( i = 0; i < iVisibleCount; i++ ) {
-			float fWidth = __xuiCodeLayoutLineWidth(pDesc->pDocument, pVisible[i], fCharWidth, iTabColumns);
+			double fWidth;
+			iVisibleLine = __xuiCodeLayoutVisibleLineAt(pVisible, iVisibleCount, i);
+			if ( iVisibleLine < 0 ) {
+				xrtFree(pVisible);
+				return XUI_ERROR_RESOURCE_FAILED;
+			}
+			fWidth = __xuiCodeLayoutLineWidth(pDesc->pDocument, iVisibleLine,
+				fCharWidth, iTabColumns);
+			if ( !isfinite(fWidth) || fWidth > FLT_MAX ) {
+				xrtFree(pVisible);
+				return XUI_ERROR_LIMIT_EXCEEDED;
+			}
 			if ( fWidth > fContentWidth ) fContentWidth = fWidth;
 		}
 	}
+	fRenderWidth = pDesc->bWordWrap ? (double)tTextRect.fW :
+		((fContentWidth > tTextRect.fW) ? fContentWidth : (double)tTextRect.fW);
 	iOut = 0;
 	iVisualRow = 0;
 	for ( i = 0; i < iVisibleCount; i++ ) {
-		iRet = __xuiCodeLayoutFirstSegment(pDesc->pDocument, pVisible[i],
+		iVisibleLine = __xuiCodeLayoutVisibleLineAt(pVisible, iVisibleCount, i);
+		if ( iVisibleLine < 0 ) {
+			xrtFree(pVisible);
+			return XUI_ERROR_RESOURCE_FAILED;
+		}
+		iRet = __xuiCodeLayoutFirstSegment(pDesc->pDocument, iVisibleLine,
 			iTabColumns, iWrapColumns, &tSegment, &iLineEnd);
 		if ( iRet != XUI_OK ) {
 			xrtFree(pVisible);
 			return iRet;
 		}
 		for ( ;; ) {
-			fY = pDesc->tViewportRect.fY + (float)iVisualRow * fLineHeight - pDesc->fScrollY;
-			if ( fY + fLineHeight >= pDesc->tViewportRect.fY &&
-			     fY <= pDesc->tViewportRect.fY + pDesc->tViewportRect.fH ) {
+			fY = (double)pDesc->tViewportRect.fY +
+				(double)iVisualRow * fLineHeight - pDesc->fScrollY;
+			if ( fY + fLineHeight > pDesc->tViewportRect.fY &&
+			     fY < pDesc->tViewportRect.fY + pDesc->tViewportRect.fH ) {
 				if ( pLines != NULL && iOut < iLineCapacity ) {
 					memset(&pLines[iOut], 0, sizeof(pLines[iOut]));
 					pLines[iOut].iSize = sizeof(pLines[iOut]);
-					pLines[iOut].iLine = pVisible[i];
+					pLines[iOut].iLine = iVisibleLine;
 					pLines[iOut].iVisibleIndex = iVisualRow;
 					pLines[iOut].iStartOffset = tSegment.iStartOffset;
 					pLines[iOut].iEndOffset = tSegment.iEndOffset;
-					pLines[iOut].tRect = (xui_rect_t){
-						tTextRect.fX - (pDesc->bWordWrap ? 0.0f : pDesc->fScrollX),
-						fY,
-						pDesc->bWordWrap ? tTextRect.fW : ((fContentWidth > tTextRect.fW) ? fContentWidth : tTextRect.fW),
-						fLineHeight
-					};
+					iRet = xuiCodeInternalRectFromDouble(
+						(double)tTextRect.fX -
+							(pDesc->bWordWrap ? 0.0 : (double)pDesc->fScrollX),
+						fY, fRenderWidth, fLineHeight, &pLines[iOut].tRect);
+					if ( iRet != XUI_OK ) {
+						xrtFree(pVisible);
+						return iRet;
+					}
+				}
+				if ( iOut == INT_MAX ) {
+					xrtFree(pVisible);
+					return XUI_ERROR_LIMIT_EXCEEDED;
 				}
 				iOut++;
 			}
@@ -490,12 +572,17 @@ XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, 
 			tSegment = tNextSegment;
 		}
 	}
-	*pLineCount = iOut;
 	iTotalRows = iVisualRow;
 	if ( pContentSize != NULL ) {
-		pContentSize->fX = pDesc->bWordWrap ? tTextRect.fW : fContentWidth;
-		pContentSize->fY = (float)iTotalRows * fLineHeight;
+		double fContentHeight = (double)iTotalRows * fLineHeight;
+		if ( fContentWidth > FLT_MAX || fContentHeight > FLT_MAX ) {
+			xrtFree(pVisible);
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		pContentSize->fX = pDesc->bWordWrap ? (float)tTextRect.fW : (float)fContentWidth;
+		pContentSize->fY = (float)fContentHeight;
 	}
+	*pLineCount = iOut;
 	if ( pTextRect != NULL ) *pTextRect = tTextRect;
 	xrtFree(pVisible);
 	return XUI_OK;
@@ -516,32 +603,35 @@ XUI_API int xuiCodeLayoutHitTest(const xui_code_layout_desc_t* pDesc, float fX, 
 	int iWrapColumns;
 	int iSegmentVisual;
 	double fSegmentVisual;
-	float fRow;
+	double fRow;
 	__xui_code_layout_segment_t tSegment;
 	xui_rect_t tTextRect;
+	xui_rect_t tLineRect;
 
+	if ( pHit != NULL ) {
+		memset(pHit, 0, sizeof(*pHit));
+		pHit->iSize = sizeof(*pHit);
+	}
 	if ( (pDesc == NULL) || (pDesc->pDocument == NULL) || (pHit == NULL) ||
 	     !__xuiCodeLayoutGeometryValid(pDesc) ||
-	     !isfinite((double)fX) || !isfinite((double)fY) ||
-	     !isfinite((double)pDesc->fScrollX) ) {
+	     !isfinite((double)fX) || !isfinite((double)fY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memset(pHit, 0, sizeof(*pHit));
 	memset(&tSegment, 0, sizeof(tSegment));
-	pHit->iSize = sizeof(*pHit);
 	fLineHeight = __xuiCodeLayoutMetric(pDesc->fLineHeight, 18.0f);
 	fCharWidth = __xuiCodeLayoutMetric(pDesc->fCharWidth, 8.0f);
 	iTabColumns = __xuiCodeLayoutTabColumns(pDesc);
 	iRet = __xuiCodeLayoutVisibleLines(pDesc, &pVisible, &iVisibleCount);
 	if ( iRet != XUI_OK ) return iRet;
-	tTextRect = pDesc->tViewportRect;
-	tTextRect.fX += pDesc->fMarginWidth;
-	tTextRect.fW -= pDesc->fMarginWidth;
-	if ( tTextRect.fW < 0.0f ) tTextRect.fW = 0.0f;
+	iRet = __xuiCodeLayoutTextRect(pDesc, &tTextRect);
+	if ( iRet != XUI_OK ) {
+		xrtFree(pVisible);
+		return iRet;
+	}
 	iWrapColumns = __xuiCodeLayoutWrapColumns(pDesc, &tTextRect);
-	fRow = (fY - pDesc->tViewportRect.fY + pDesc->fScrollY) / fLineHeight;
-	if ( fRow <= 0.0f ) iIndex = 0;
-	else if ( fRow >= (float)INT_MAX ) iIndex = INT_MAX;
+	fRow = ((double)fY - pDesc->tViewportRect.fY + pDesc->fScrollY) / fLineHeight;
+	if ( fRow <= 0.0 ) iIndex = 0;
+	else if ( fRow >= (double)INT_MAX ) iIndex = INT_MAX;
 	else iIndex = (int)fRow;
 	iRet = __xuiCodeLayoutVisualRow(pDesc, pVisible, iVisibleCount, iWrapColumns,
 		iIndex, &iLine, NULL, &tSegment, &iIndex, NULL);
@@ -562,12 +652,25 @@ XUI_API int xuiCodeLayoutHitTest(const xui_code_layout_desc_t* pDesc, float fX, 
 		tSegment.iStartVisual + iSegmentVisual, iTabColumns);
 	if ( iColumn < tSegment.iStartColumn ) iColumn = tSegment.iStartColumn;
 	if ( iColumn > tSegment.iEndColumn ) iColumn = tSegment.iEndColumn;
-	(void)xuiCodeDocumentLineColumnToOffset(pDesc->pDocument, iLine, iColumn, &iOffset);
+	iRet = xuiCodeDocumentLineColumnToOffset(pDesc->pDocument, iLine, iColumn, &iOffset);
+	if ( iRet != XUI_OK ) {
+		xrtFree(pVisible);
+		return iRet;
+	}
+	iRet = xuiCodeInternalRectFromDouble(
+		(double)tTextRect.fX - (pDesc->bWordWrap ? 0.0 : (double)pDesc->fScrollX),
+		(double)pDesc->tViewportRect.fY + (double)iIndex * fLineHeight -
+			pDesc->fScrollY,
+		tTextRect.fW, fLineHeight, &tLineRect);
+	if ( iRet != XUI_OK ) {
+		xrtFree(pVisible);
+		return iRet;
+	}
 	pHit->iPart = (fX < tTextRect.fX) ? 1 : 2;
 	pHit->iLine = iLine;
 	pHit->iColumn = iColumn;
 	pHit->iOffset = iOffset;
-	pHit->tLineRect = (xui_rect_t){tTextRect.fX - (pDesc->bWordWrap ? 0.0f : pDesc->fScrollX), pDesc->tViewportRect.fY + (float)iIndex * fLineHeight - pDesc->fScrollY, tTextRect.fW, fLineHeight};
+	pHit->tLineRect = tLineRect;
 	xrtFree(pVisible);
 	return XUI_OK;
 }
@@ -587,6 +690,7 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
 	int iLineEnd;
 	int iTargetOffset;
 	int iVisualRow;
+	int iVisibleLine;
 	int i;
 	__xui_code_layout_segment_t tSegment;
 	__xui_code_layout_segment_t tNextSegment;
@@ -596,6 +700,7 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
 	     !__xuiCodeLayoutGeometryValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	memset(pRect, 0, sizeof(*pRect));
 	iRet = __xuiCodeLayoutVisibleLines(pDesc, &pVisible, &iVisibleCount);
 	if ( iRet != XUI_OK ) return iRet;
 	iIndex = __xuiCodeLayoutFindVisibleIndex(pVisible, iVisibleCount, iLine);
@@ -608,10 +713,11 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
 	fCharWidth = __xuiCodeLayoutMetric(pDesc->fCharWidth, 8.0f);
 	iTabColumns = __xuiCodeLayoutTabColumns(pDesc);
 	iVisualColumn = __xuiCodeLayoutColumnToVisual(pDesc->pDocument, iLine, iColumn, iTabColumns);
-	tTextRect = pDesc->tViewportRect;
-	tTextRect.fX += pDesc->fMarginWidth;
-	tTextRect.fW -= pDesc->fMarginWidth;
-	if ( tTextRect.fW < 0.0f ) tTextRect.fW = 0.0f;
+	iRet = __xuiCodeLayoutTextRect(pDesc, &tTextRect);
+	if ( iRet != XUI_OK ) {
+		xrtFree(pVisible);
+		return iRet;
+	}
 	iWrapColumns = __xuiCodeLayoutWrapColumns(pDesc, &tTextRect);
 	iRet = xuiCodeDocumentLineColumnToOffset(pDesc->pDocument, iLine, iColumn,
 		&iTargetOffset);
@@ -619,15 +725,24 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
 		xrtFree(pVisible);
 		return iRet;
 	}
-	iVisualRow = 0;
-	for ( i = 0; i < iIndex; i++ ) {
-		iRet = __xuiCodeLayoutGetSegment(pDesc->pDocument, pVisible[i],
-			iTabColumns, iWrapColumns, -1, NULL, &iSegmentCount);
-		if ( iRet != XUI_OK || iVisualRow > INT_MAX - iSegmentCount ) {
-			xrtFree(pVisible);
-			return (iRet != XUI_OK) ? iRet : XUI_ERROR_RESOURCE_FAILED;
+	if ( iWrapColumns <= 0 ) {
+		iVisualRow = iIndex;
+	} else {
+		iVisualRow = 0;
+		for ( i = 0; i < iIndex; i++ ) {
+			iVisibleLine = __xuiCodeLayoutVisibleLineAt(pVisible, iVisibleCount, i);
+			if ( iVisibleLine < 0 ) {
+				xrtFree(pVisible);
+				return XUI_ERROR_RESOURCE_FAILED;
+			}
+			iRet = __xuiCodeLayoutGetSegment(pDesc->pDocument, iVisibleLine,
+				iTabColumns, iWrapColumns, -1, NULL, &iSegmentCount);
+			if ( iRet != XUI_OK || iVisualRow > INT_MAX - iSegmentCount ) {
+				xrtFree(pVisible);
+				return (iRet != XUI_OK) ? iRet : XUI_ERROR_RESOURCE_FAILED;
+			}
+			iVisualRow += iSegmentCount;
 		}
-		iVisualRow += iSegmentCount;
 	}
 	iRet = __xuiCodeLayoutFirstSegment(pDesc->pDocument, iLine, iTabColumns,
 		iWrapColumns, &tSegment, &iLineEnd);
@@ -644,17 +759,20 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
 			return iRet;
 		}
 		tSegment = tNextSegment;
+		if ( iVisualRow == INT_MAX ) {
+			xrtFree(pVisible);
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
 		iVisualRow++;
 	}
 	xrtFree(pVisible);
-	*pRect = (xui_rect_t){
-		tTextRect.fX + (float)(iVisualColumn - tSegment.iStartVisual) * fCharWidth -
-			(pDesc->bWordWrap ? 0.0f : pDesc->fScrollX),
-		pDesc->tViewportRect.fY + (float)iVisualRow * fLineHeight - pDesc->fScrollY,
-		1.0f,
-		fLineHeight
-	};
-	return XUI_OK;
+	return xuiCodeInternalRectFromDouble(
+		(double)tTextRect.fX +
+			(double)(iVisualColumn - tSegment.iStartVisual) * fCharWidth -
+			(pDesc->bWordWrap ? 0.0 : (double)pDesc->fScrollX),
+		(double)pDesc->tViewportRect.fY + (double)iVisualRow * fLineHeight -
+			pDesc->fScrollY,
+		1.0, fLineHeight, pRect);
 }
 
 #endif

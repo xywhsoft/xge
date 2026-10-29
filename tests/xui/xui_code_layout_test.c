@@ -1,5 +1,7 @@
 #include "xui.h"
 
+#include <float.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -23,6 +25,7 @@ int main(void)
 	xui_rect_t tTextRect;
 	xui_rect_t tCaret;
 	char sLongLine[4097];
+	char sManyLines[1025];
 	const char* sGraphemeLine;
 	int iCount;
 	int iFailed;
@@ -47,10 +50,16 @@ int main(void)
 
 	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, arrLines, 8, &iCount, &tContent, &tTextRect);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout visible lines");
-	XUI_TEST_CHECK(iCount == 4, "visible clipped line count");
+	XUI_TEST_CHECK(iCount == 3, "half-open viewport line count");
 	XUI_TEST_CHECK(arrLines[0].iLine == 0 && arrLines[0].tRect.fX == 50.0f && arrLines[0].tRect.fY == 20.0f, "first line rect");
 	XUI_TEST_CHECK((int)tContent.fY == 80, "content height");
 	XUI_TEST_CHECK(tTextRect.fX == 50.0f && tTextRect.fW == 160.0f, "text rect");
+	tDesc.fScrollY = 16.0f;
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, arrLines, 8, &iCount, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 3 && arrLines[0].iLine == 1 &&
+		arrLines[0].tRect.fY == 20,
+		"line touching viewport top is excluded");
+	tDesc.fScrollY = 0.0f;
 
 	iRet = xuiCodeLayoutHitTest(&tDesc, 66.0f, 37.0f, &tHit);
 	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iLine == 1 && tHit.iOffset == 8, "hit test text");
@@ -147,13 +156,73 @@ int main(void)
 	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount, &tContent, &tTextRect);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 4096 && (int)tContent.fY == 4096 * 16,
 		"long wrapped layout remains linear");
+	for ( i = 0; i < 512; i++ ) {
+		sManyLines[i * 2] = 'x';
+		sManyLines[i * 2 + 1] = '\n';
+	}
+	sManyLines[1024] = '\0';
+	iRet = xuiCodeDocumentSetText(pDocument, sManyLines);
+	XUI_TEST_CHECK(iRet == XUI_OK, "many-line document text");
+	tDesc.tViewportRect = (xui_rect_t){10, 20, 200, 16};
+	tDesc.fMarginWidth = 0.0f;
+	tDesc.fScrollY = 511.0f * 16.0f;
+	tDesc.bWordWrap = 0;
+	iRet = xuiCodeLayoutHitTest(&tDesc, 10.0f, 20.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iLine == 511 && tHit.iOffset == 1022,
+		"high-line hit uses direct visible index");
+	iRet = xuiCodeLayoutGetCaretRect(&tDesc, 511, 1, &tCaret);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCaret.fX == 18 && tCaret.fY == 20,
+		"high-line caret uses direct visible index");
 
 	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, -1, &iCount, NULL, NULL);
-	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative line capacity rejected");
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iCount == 0,
+		"negative line capacity rejected");
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 1, &iCount, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iCount == 0,
+		"missing line output rejected");
 	tDesc.pFoldRanges = NULL;
 	tDesc.iFoldRangeCount = 1;
 	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount, NULL, NULL);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing fold ranges rejected");
+	tDesc.iFoldRangeCount = 0;
+	tDesc.iSize = sizeof(tDesc) - 1u;
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iCount == 0,
+		"undersized layout descriptor rejected");
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fScrollY = -1.0f;
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iCount == 0,
+		"negative scroll rejected");
+	tDesc.fScrollY = 0.0f;
+	tDesc.tViewportRect = (xui_rect_t){INT_MAX, 0, 1, 1};
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iCount == 0,
+		"overflowing integer viewport rejected");
+	tDesc.tViewportRect = (xui_rect_t){10, 20, 200, 48};
+	tDesc.bWordWrap = 0;
+	tDesc.fMarginWidth = 40.6f;
+	tDesc.fCharWidth = 8.0f;
+	iRet = xuiCodeDocumentSetText(pDocument, "xy");
+	XUI_TEST_CHECK(iRet == XUI_OK, "fractional margin document text");
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, arrLines, 8, &iCount,
+		&tContent, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && tTextRect.fX == 51 &&
+		tTextRect.fW == 159 && arrLines[0].tRect.fX == 51,
+		"fractional margin snaps shared text edge");
+	iRet = xuiCodeLayoutGetCaretRect(&tDesc, 0, 0, &tCaret);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCaret.fX == tTextRect.fX,
+		"fractional margin caret shares text edge");
+	tDesc.fMarginWidth = -1.0f;
+	iRet = xuiCodeLayoutHitTest(&tDesc, 51.0f, 20.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"negative margin rejected");
+	tDesc.fMarginWidth = 40.0f;
+	tDesc.fCharWidth = FLT_MAX;
+	iRet = xuiCodeLayoutBuildVisibleLines(&tDesc, NULL, 0, &iCount,
+		&tContent, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED,
+		"overflowing content metric rejected");
 
 cleanup:
 	xuiCodeDocumentDestroy(pDocument);
