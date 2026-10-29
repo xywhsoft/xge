@@ -20,6 +20,11 @@ typedef struct xui_window_test_events_t {
 	xui_widget* ppWindow;
 } xui_window_test_events_t;
 
+typedef struct xui_window_focus_events_t {
+	int iFocusCount;
+	int iBlurCount;
+} xui_window_focus_events_t;
+
 static int __xuiWindowNear(float fA, float fB)
 {
 	float fD;
@@ -82,6 +87,18 @@ static void __xuiWindowClosed(xui_widget pWidget, void* pUser)
 	}
 }
 
+static int __xuiWindowChildFocusEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_window_focus_events_t* pEvents = (xui_window_focus_events_t*)pUser;
+
+	if ( pWidget == NULL || pEvent == NULL || pEvents == NULL || pEvent->pTarget != pWidget ) {
+		return XUI_OK;
+	}
+	if ( pEvent->iType == XUI_EVENT_FOCUS ) pEvents->iFocusCount++;
+	else if ( pEvent->iType == XUI_EVENT_BLUR ) pEvents->iBlurCount++;
+	return XUI_OK;
+}
+
 static int __xuiWindowAddFixedChild(xui_context pContext, xui_widget pWindow)
 {
 	xui_widget pChild;
@@ -104,6 +121,7 @@ int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_window_test_events_t tEvents;
+	xui_window_focus_events_t tFocusEvents;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pInvalidWindow;
@@ -116,6 +134,7 @@ int main(void)
 	xui_widget pOrderClient;
 	xui_widget pOrderContent;
 	xui_widget pOrderFooter;
+	xui_widget pFocusChild;
 	xui_widget pDragAdorner;
 	xui_surface pTarget;
 	xui_font pFont;
@@ -145,6 +164,7 @@ int main(void)
 	int iRet;
 
 	memset(&tEvents, 0, sizeof(tEvents));
+	memset(&tFocusEvents, 0, sizeof(tFocusEvents));
 	pContext = NULL;
 	pRoot = NULL;
 	pInvalidWindow = NULL;
@@ -157,6 +177,7 @@ int main(void)
 	pOrderClient = NULL;
 	pOrderContent = NULL;
 	pOrderFooter = NULL;
+	pFocusChild = NULL;
 	pDragAdorner = NULL;
 	pTarget = NULL;
 	pFont = NULL;
@@ -234,6 +255,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore enabled state after active-state test");
 	iRet = __xuiWindowAddFixedChild(pContext, pMain);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add child to client");
+	iRet = xuiWidgetCreate(pContext, &pFocusChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pFocusChild, XUI_SIZE_FILL, XUI_SIZE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPreferredSize(pFocusChild, (xui_vec2_t){0.0f, 28.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pFocusChild, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pFocusChild, XUI_EVENT_FOCUS,
+		__xuiWindowChildFocusEvent, &tFocusEvents);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pFocusChild, XUI_EVENT_BLUR,
+		__xuiWindowChildFocusEvent, &tFocusEvents);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pMain, pFocusChild);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add focus child to client");
+	iRet = xuiSetFocusWidget(pContext, pFocusChild);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pFocusChild &&
+		tFocusEvents.iFocusCount == 1 && tFocusEvents.iBlurCount == 0,
+		"window forwards descendant focus events");
+	iRet = xuiWindowBringToFront(pMain);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pFocusChild &&
+		tFocusEvents.iFocusCount == 1 && tFocusEvents.iBlurCount == 0,
+		"window activation preserves descendant focus");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);

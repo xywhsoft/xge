@@ -591,8 +591,10 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	iRet = xuiSetFocusWidget(pContext, pWidget);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( !xuiInternalInputFocusContains(pWidget, xuiGetFocusWidget(pContext)) ) {
+		iRet = xuiSetFocusWidget(pContext, pWidget);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	if ( !__xuiWindowDataAlive(pWidget, pData) ) return XUI_OK;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1364,11 +1366,13 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		}
 		break;
 	case XUI_EVENT_FOCUS:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		if ( xuiGetFocusWidget(pContext) == pWidget ) {
 			(void)__xuiWindowActivate(pWidget, pData, 0);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_BLUR:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_ENABLED_CHANGED:
