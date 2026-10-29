@@ -916,6 +916,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "patched render prepare");
 	XUI_TEST_CHECK(tState.iDrawSurfaceCount > 0, "surface pieces rendered");
 	XUI_TEST_CHECK(tState.iCircleCount > 0, "badge rendered");
+	tState.iDrawSurfaceCount = 0;
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iDrawSurfaceCount == 0,
+		"unchanged borrowed surface reuses button caches");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pIcon,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iDrawSurfaceCount > 0,
+		"borrowed surface generation rebuilds button caches");
 
 	iRet = xuiInputPointerMove(pContext, 40.0f, 35.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer move");

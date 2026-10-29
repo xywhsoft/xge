@@ -16,12 +16,19 @@
 #define XUI_BUTTON_VISUAL_COUNT		6
 
 #define XUI_BUTTON_CACHE_STATE_COUNT	(XUI_BUTTON_VISUAL_COUNT + 1)
+#define XUI_BUTTON_SURFACE_DEPENDENCY_COUNT	(XUI_BUTTON_VISUAL_COUNT + 2)
 
 typedef struct xui_button_visual_t {
 	uint32_t iFillColor;
 	uint32_t iBorderColor;
 	float fBorderWidth;
 } xui_button_visual_t;
+
+typedef struct xui_button_surface_dependency_t {
+	xui_surface pSurface;
+	uint32_t iGeneration;
+	int bGenerationValid;
+} xui_button_surface_dependency_t;
 
 typedef struct xui_button_data_t {
 	char* sText;
@@ -60,6 +67,7 @@ typedef struct xui_button_data_t {
 	uint32_t iMeasureDpiGeneration;
 	int bTextMeasureDirty;
 	int bTextMeasureValid;
+	xui_button_surface_dependency_t arrSurfaceDependencies[XUI_BUTTON_SURFACE_DEPENDENCY_COUNT];
 } xui_button_data_t;
 
 typedef struct xui_button_resolved_t {
@@ -147,6 +155,40 @@ static int __xuiButtonSourceRectValid(xui_rect_t tRect)
 	       __xuiButtonFloatValid(tRect.fY) &&
 	       __xuiButtonNonNegativeFloatValid(tRect.fW) &&
 	       __xuiButtonNonNegativeFloatValid(tRect.fH);
+}
+
+static int __xuiButtonSyncSurfaceDependency(xui_proxy pProxy, xui_surface pSurface,
+	xui_button_surface_dependency_t* pDependencies, int iIndex)
+{
+	xui_button_surface_dependency_t* pDependency;
+	uint32_t iGeneration;
+	int bGenerationValid;
+	int bChanged;
+	int i;
+
+	pDependency = &pDependencies[iIndex];
+	iGeneration = 0;
+	bGenerationValid = 0;
+	if ( pSurface != NULL && pProxy != NULL && pProxy->surfaceGetGeneration != NULL ) {
+		for ( i = 0; i < iIndex; i++ ) {
+			if ( pDependencies[i].pSurface == pSurface &&
+			     pDependencies[i].bGenerationValid ) {
+				iGeneration = pDependencies[i].iGeneration;
+				bGenerationValid = 1;
+				break;
+			}
+		}
+		if ( !bGenerationValid &&
+		     pProxy->surfaceGetGeneration(pProxy, pSurface, &iGeneration) == XUI_OK ) {
+			bGenerationValid = 1;
+		}
+	}
+	bChanged = pDependency->pSurface == pSurface && bGenerationValid &&
+		(!pDependency->bGenerationValid || pDependency->iGeneration != iGeneration);
+	pDependency->pSurface = pSurface;
+	pDependency->iGeneration = iGeneration;
+	pDependency->bGenerationValid = bGenerationValid;
+	return bChanged;
 }
 
 static int __xuiButtonRectEqual(xui_rect_t tA, xui_rect_t tB)
@@ -1396,6 +1438,29 @@ static void __xuiButtonRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiButtonRegisterStyleProperty(pContext, pType, "button.icon_placement", XUI_STYLE_VALUE_INT, iLayoutDirty, 0);
 }
 
+static int __xuiButtonPreparePaint(xui_widget pWidget)
+{
+	xui_button_data_t* pData;
+	xui_proxy pProxy;
+	int bChanged;
+	int i;
+
+	pData = __xuiButtonGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	bChanged = __xuiButtonSyncSurfaceDependency(pProxy, pData->pIconSurface,
+		pData->arrSurfaceDependencies, 0);
+	bChanged |= __xuiButtonSyncSurfaceDependency(pProxy, pData->pBadgeSurface,
+		pData->arrSurfaceDependencies, 1);
+	for ( i = 0; i < XUI_BUTTON_VISUAL_COUNT; i++ ) {
+		bChanged |= __xuiButtonSyncSurfaceDependency(pProxy,
+			pData->arrHasPatch[i] ? pData->arrPatch[i].pSurface : NULL,
+			pData->arrSurfaceDependencies, i + 2);
+	}
+	return bChanged ? xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+}
+
 static int __xuiButtonAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
 {
 	xui_button_data_t* pData = __xuiButtonGetData(pWidget);
@@ -1426,6 +1491,7 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "button");
 	if ( pType != NULL ) {
 		__xuiButtonRegisterStyleProperties(pContext, pType);
+		pType->onPreparePaint = __xuiButtonPreparePaint;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1445,6 +1511,7 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiButtonRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiButtonPreparePaint;
 	pType->pAccessibleAdapter = &g_xuiButtonAccessible;
 	return pType;
 }
