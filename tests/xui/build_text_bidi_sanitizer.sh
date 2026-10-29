@@ -3,8 +3,8 @@ set -eu
 cd "$(dirname "$0")/../.."
 CC=${CC:-gcc}
 OUT_DIR=${XUI_BIDI_SANITIZER_OUT_DIR:-build/document}
-CORPUS=${1:-artifacts/xui-document-rebuild/bidi/BidiCharacterTest-17.0.0.txt}
-CLASS_CORPUS=${2:-artifacts/xui-document-rebuild/bidi/BidiTest-17.0.0.txt}
+CORPUS=${1:-tests/xui/data/unicode-17/BidiCharacterTest.txt}
+CLASS_CORPUS=${2:-tests/xui/data/unicode-17/BidiTest.txt}
 mkdir -p "$OUT_DIR"
 "$CC" -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
     -Wall -Wextra -Werror -DXUI_BIDI_TEST_ALLOCATOR @config/includes.rsp \

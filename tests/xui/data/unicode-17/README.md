@@ -34,3 +34,22 @@ SHA256: `e6a18fa91f8f6a6f8e534b1d3f128c21ada45bfe152eb6b1bcc5e15fd8ac92e6`.
 `build_text_break_index_test.bat` expands its explicit ranges and XX default
 independently and compares all 1,114,112 codepoints to the vendored lookup.
 Unicode License V3 applies, as preserved at `extlibs/unicode/LICENSE`.
+
+## Bidirectional text
+
+`BidiCharacterTest.txt` and `BidiTest.txt` are the unmodified official Unicode
+17.0.0 conformance corpora from:
+
+- https://www.unicode.org/Public/17.0.0/ucd/BidiCharacterTest.txt
+- https://www.unicode.org/Public/17.0.0/ucd/BidiTest.txt
+
+Their official raw SHA256 hashes are respectively
+`a3e6e905ab5afbe318a96df5401d0372a04cd73ef139ab5e3cf0ae241c255488`
+and `888bdfc8090652272d1f859cdb00ae659e2dc6c26740be61ef1d03998a687620`.
+Repository SHA256 hashes are respectively
+`c098a3ec4fa9c321bd7e6251bcdec8f95de1aed88041f1dba4fd00d0e8a4c6f9`
+and `72bcf937b7b4287b6e5e3f63186c8c414f8f180b548952575ac64b3074d70d14`.
+Only trailing whitespace on five comment/directive lines was removed.
+`build_text_bidi_test.bat` checks all 91,707 character records and 770,241
+class/direction combinations, including paragraph bases, L1 levels, L2 visual
+order, UTF-8 run boundaries, mirrors and allocation rollback.
