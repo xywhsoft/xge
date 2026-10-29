@@ -21,6 +21,7 @@ void xuiInternalWindowFrameLayout(xui_rect_t tFrameRect,
 	const xui_internal_window_frame_metrics_t* pMetrics,
 	xui_internal_window_frame_layout_t* pLayout)
 {
+	xui_rect_t frame;
 	float border;
 	float title;
 	if ( pLayout == NULL ) return;
@@ -28,20 +29,23 @@ void xuiInternalWindowFrameLayout(xui_rect_t tFrameRect,
 	pLayout->tTitleBarRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	pLayout->tClientRect = pLayout->tFrameRect;
 	if ( pMetrics == NULL ) return;
+	frame = pLayout->tFrameRect;
 	border = __xuiWindowFrameMax(0.0f, pMetrics->fBorderWidth);
+	border = __xuiWindowFrameMin(border, (float)frame.fW * 0.5f);
+	border = __xuiWindowFrameMin(border, (float)frame.fH * 0.5f);
 	title = pMetrics->bShowTitleBar ? __xuiWindowFrameMax(0.0f, pMetrics->fTitleBarHeight) : 0.0f;
-	title = __xuiWindowFrameMin(title, __xuiWindowFrameMax(0.0f, tFrameRect.fH - border * 2.0f));
+	title = __xuiWindowFrameMin(title, __xuiWindowFrameMax(0.0f, (float)frame.fH - border * 2.0f));
 	pLayout->tTitleBarRect = xuiInternalRectFromFloatNearest(
-		tFrameRect.fX + border,
-		tFrameRect.fY + border,
-		__xuiWindowFrameMax(0.0f, tFrameRect.fW - border * 2.0f),
+		(float)frame.fX + border,
+		(float)frame.fY + border,
+		__xuiWindowFrameMax(0.0f, (float)frame.fW - border * 2.0f),
 		title
 	);
 	pLayout->tClientRect = xuiInternalRectFromFloatNearest(
-		tFrameRect.fX + border,
-		tFrameRect.fY + border + title,
-		__xuiWindowFrameMax(0.0f, tFrameRect.fW - border * 2.0f),
-		__xuiWindowFrameMax(0.0f, tFrameRect.fH - border * 2.0f - title)
+		(float)frame.fX + border,
+		(float)frame.fY + border + title,
+		__xuiWindowFrameMax(0.0f, (float)frame.fW - border * 2.0f),
+		__xuiWindowFrameMax(0.0f, (float)frame.fH - border * 2.0f - title)
 	);
 }
 
@@ -78,10 +82,11 @@ uint32_t xuiInternalWindowFrameResizeEdgesAt(xui_rect_t tFrameRect,
 	if ( pMetrics == NULL || !pMetrics->bResizable || !__xuiWindowFrameContains(tFrameRect, fX, fY) ) return 0u;
 	grip = __xuiWindowFrameMax(2.0f, pMetrics->fResizeGrip);
 	topGrip = pMetrics->bShowTitleBar ? __xuiWindowFrameMin(4.0f, grip) : grip;
-	leftDistance = fX - tFrameRect.fX;
-	rightDistance = tFrameRect.fX + tFrameRect.fW - fX;
-	topDistance = fY - tFrameRect.fY;
-	bottomDistance = tFrameRect.fY + tFrameRect.fH - fY;
+	/* Input coordinates identify pixels, so compare each pixel center to its edge. */
+	leftDistance = fX - (float)tFrameRect.fX + 0.5f;
+	rightDistance = (float)tFrameRect.fX + (float)tFrameRect.fW - fX - 0.5f;
+	topDistance = fY - (float)tFrameRect.fY + 0.5f;
+	bottomDistance = (float)tFrameRect.fY + (float)tFrameRect.fH - fY - 0.5f;
 	edges = 0u;
 	if ( leftDistance <= grip ) edges |= XUI_WINDOW_EDGE_LEFT;
 	if ( rightDistance <= grip ) edges |= XUI_WINDOW_EDGE_RIGHT;

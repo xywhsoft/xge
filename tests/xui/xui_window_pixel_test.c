@@ -25,6 +25,13 @@ static int same(xui_rect_t a, xui_rect_t b)
 	return a.fX == b.fX && a.fY == b.fY && a.fW == b.fW && a.fH == b.fH;
 }
 
+static int inside(xui_rect_t inner, xui_rect_t outer)
+{
+	return inner.fX >= outer.fX && inner.fY >= outer.fY &&
+		inner.fX + inner.fW <= outer.fX + outer.fW &&
+		inner.fY + inner.fH <= outer.fY + outer.fH;
+}
+
 static void frame_geometry(void)
 {
 	xui_internal_window_frame_metrics_t m;
@@ -66,6 +73,16 @@ static void frame_geometry(void)
 	xuiInternalWindowFrameLayout((xui_rect_t){-3, -5, 51, 11}, &m, &l);
 	CHECK(l.tTitleBarRect.fY + l.tTitleBarRect.fH == l.tClientRect.fY);
 	CHECK(l.tClientRect.fH == 0);
+	m.fBorderWidth = 8.0f;
+	xuiInternalWindowFrameLayout((xui_rect_t){10, 20, 7, 5}, &m, &l);
+	CHECK(inside(l.tTitleBarRect, l.tFrameRect));
+	CHECK(inside(l.tClientRect, l.tFrameRect));
+	CHECK(l.tTitleBarRect.fY + l.tTitleBarRect.fH == l.tClientRect.fY);
+	xuiInternalWindowFrameLayout((xui_rect_t){10, 20, -7, -5}, &m, &l);
+	CHECK(same(l.tFrameRect, (xui_rect_t){10, 20, 0, 0}));
+	CHECK(same(l.tTitleBarRect, l.tFrameRect));
+	CHECK(same(l.tClientRect, l.tFrameRect));
+	m.fBorderWidth = 1.5f;
 	bounds = (xui_rect_t){-20, -15, 260, 180};
 	r = (xui_rect_t){1, 5, 101, 77};
 	for (i = 0; i < 6; ++i) {
@@ -112,10 +129,20 @@ static void frame_geometry(void)
 	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 6, 40}, &m, 5, 20) ==
 		XUI_WINDOW_EDGE_RIGHT);
 	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 6, 40}, &m, 3, 20) ==
-		XUI_WINDOW_EDGE_LEFT);
+		XUI_WINDOW_EDGE_RIGHT);
 	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 40, 6}, &m, 20, 1) ==
 		XUI_WINDOW_EDGE_TOP);
 	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 40, 6}, &m, 20, 5) ==
+		XUI_WINDOW_EDGE_BOTTOM);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 20, 20}, &m, 4, 10) ==
+		XUI_WINDOW_EDGE_LEFT);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 20, 20}, &m, 5, 10) == 0u);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 20, 20}, &m, 15, 10) ==
+		XUI_WINDOW_EDGE_RIGHT);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 20, 20}, &m, 10, 4) ==
+		XUI_WINDOW_EDGE_TOP);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 20, 20}, &m, 10, 5) == 0u);
+	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 20, 20}, &m, 10, 15) ==
 		XUI_WINDOW_EDGE_BOTTOM);
 	m.iResizeEdges = XUI_WINDOW_EDGE_RIGHT;
 	CHECK(xuiInternalWindowFrameResizeEdgesAt((xui_rect_t){0, 0, 6, 40}, &m, 1, 20) ==
