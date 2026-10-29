@@ -67,6 +67,8 @@ typedef struct xui_list_view_data_t {
 static xui_list_view_data_t* __xuiListViewGetData(xui_widget pWidget);
 static int __xuiListViewSelectionModeValid(int iMode);
 static int __xuiListViewScrollbarModeValid(int iMode);
+static xui_rect_t __xuiListViewRowRect(float fX, float fY, float fWidth,
+	float fItemHeight, int iIndex, float fOffsetY);
 
 static int __xuiListViewWidgetAlive(xui_widget pWidget, xui_list_view_data_t* pData)
 {
@@ -137,11 +139,6 @@ static int __xuiListViewAlpha(uint32_t iColor)
 static float __xuiListViewMaxFloat(float fA, float fB)
 {
 	return (fA > fB) ? fA : fB;
-}
-
-static float __xuiListViewMinFloat(float fA, float fB)
-{
-	return (fA < fB) ? fA : fB;
 }
 
 static const char* __xuiListViewText(const char* sText)
@@ -435,6 +432,51 @@ static int __xuiListViewFirstSelected(xui_list_view_data_t* pData)
 	return -1;
 }
 
+static int __xuiListViewSelectionMatchesOnly(xui_list_view_data_t* pData, int iIndex)
+{
+	int* arrSelection;
+	int iCount;
+	int i;
+
+	if ( (pData == NULL) || (pData->iSelected != iIndex) ||
+	     (pData->iFocus != iIndex) || (pData->iAnchor != iIndex) ) {
+		return 0;
+	}
+	arrSelection = __xuiListViewSelectionArray(pData, &iCount);
+	if ( (arrSelection == NULL) || (iCount < pData->iItemCount) ) {
+		return 0;
+	}
+	for ( i = 0; i < pData->iItemCount; i++ ) {
+		if ( (arrSelection[i] != 0) != (i == iIndex) ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int __xuiListViewSelectionMatchesRange(xui_list_view_data_t* pData,
+	int iStart, int iEnd, int iFocus)
+{
+	int* arrSelection;
+	int iCount;
+	int i;
+
+	if ( (pData == NULL) || (pData->iSelected != iFocus) || (pData->iFocus != iFocus) ) {
+		return 0;
+	}
+	arrSelection = __xuiListViewSelectionArray(pData, &iCount);
+	if ( (arrSelection == NULL) || (iCount < pData->iItemCount) ) {
+		return 0;
+	}
+	for ( i = 0; i < pData->iItemCount; i++ ) {
+		int bExpected = (i >= iStart) && (i <= iEnd) && __xuiListViewItemEnabledData(pData, i);
+		if ( (arrSelection[i] != 0) != bExpected ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
 static void __xuiListViewSyncSingleSelection(xui_list_view_data_t* pData)
 {
 	__xuiListViewClearSelectionArray(pData);
@@ -562,8 +604,6 @@ static int __xuiListViewInvalidateViewportRow(xui_list_view_data_t* pData, int i
 	xui_rect_t tViewport;
 	xui_rect_t tRow;
 	float fOffsetY;
-	float fTop;
-	float fBottom;
 
 	if ( (pData == NULL) || (pData->pViewport == NULL) || (pData->fItemHeight <= 0.0f) ) {
 		return XUI_OK;
@@ -577,15 +617,15 @@ static int __xuiListViewInvalidateViewportRow(xui_list_view_data_t* pData, int i
 	}
 	fOffsetY = 0.0f;
 	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
-	fTop = (float)iIndex * pData->fItemHeight - fOffsetY;
-	fBottom = fTop + pData->fItemHeight;
-	if ( (fBottom <= 0.0f) || (fTop >= tViewport.fH) ) {
-		return XUI_OK;
+	tRow = __xuiListViewRowRect(0.0f, 0.0f, (float)tViewport.fW,
+		pData->fItemHeight, iIndex, fOffsetY);
+	if ( tRow.fY < 0 ) {
+		tRow.fH += tRow.fY;
+		tRow.fY = 0;
 	}
-	tRow.fX = 0.0f;
-	tRow.fY = __xuiListViewMaxFloat(0.0f, fTop);
-	tRow.fW = tViewport.fW;
-	tRow.fH = __xuiListViewMinFloat(tViewport.fH, fBottom) - tRow.fY;
+	if ( tRow.fY + tRow.fH > tViewport.fH ) {
+		tRow.fH = tViewport.fH - tRow.fY;
+	}
 	if ( tRow.fH <= 0.0f ) {
 		return XUI_OK;
 	}
@@ -665,7 +705,12 @@ static int __xuiListViewSetSelectedInternal(xui_widget pWidget, xui_list_view_da
 		iIndex = -1;
 	}
 	iOld = pData->iSelected;
-	if ( (iOld == iIndex) && !(bNotify && (bRepeat || pData->bNotifyRepeatSelect)) ) {
+	if ( (iOld == iIndex) &&
+	     (pData->iSelectionMode == XUI_SELECTION_SINGLE ||
+	      (iIndex >= 0 && __xuiListViewItemSelectedData(pData, iIndex))) ) {
+		if ( bNotify && (bRepeat || pData->bNotifyRepeatSelect) ) {
+			__xuiListViewNotifySelect(pWidget, pData, iIndex);
+		}
 		return XUI_OK;
 	}
 	iRet = xuiListViewEnsureVisible(pWidget, iIndex);
@@ -713,6 +758,12 @@ static int __xuiListViewSelectRange(xui_widget pWidget, xui_list_view_data_t* pD
 	}
 	iStart = (iFrom < iTo) ? iFrom : iTo;
 	iEnd = (iFrom < iTo) ? iTo : iFrom;
+	if ( __xuiListViewSelectionMatchesRange(pData, iStart, iEnd, iTo) ) {
+		if ( bNotify && pData->bNotifyRepeatSelect ) {
+			__xuiListViewNotifySelect(pWidget, pData, iTo);
+		}
+		return XUI_OK;
+	}
 	iRet = xuiListViewEnsureVisible(pWidget, iTo);
 	if ( iRet == XUI_OK ) iRet = __xuiListViewInvalidateRows(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
@@ -754,6 +805,12 @@ static int __xuiListViewSelectIndex(xui_widget pWidget, xui_list_view_data_t* pD
 	bShift = ((iModifiers & XUI_MOD_SHIFT) != 0);
 	if ( (pData->iSelectionMode == XUI_SELECTION_RANGE) && bShift && (pData->iAnchor >= 0) ) {
 		return __xuiListViewSelectRange(pWidget, pData, pData->iAnchor, iIndex, bNotify);
+	}
+	if ( !bCtrl && __xuiListViewSelectionMatchesOnly(pData, iIndex) ) {
+		if ( bNotify && pData->bNotifyRepeatSelect ) {
+			__xuiListViewNotifySelect(pWidget, pData, iIndex);
+		}
+		return XUI_OK;
 	}
 	iRet = xuiListViewEnsureVisible(pWidget, iIndex);
 	if ( iRet == XUI_OK ) iRet = __xuiListViewInvalidateRows(pWidget, pData);
@@ -861,12 +918,45 @@ static int __xuiListViewPointInRect(xui_rect_t tRect, float fX, float fY)
 	       (fX < (tRect.fX + tRect.fW)) && (fY < (tRect.fY + tRect.fH));
 }
 
+static xui_rect_t __xuiListViewRowRect(float fX, float fY, float fWidth,
+	float fItemHeight, int iIndex, float fOffsetY)
+{
+	return xuiInternalRectFromFloatNearest(fX,
+		fY + (float)iIndex * fItemHeight - fOffsetY, fWidth, fItemHeight);
+}
+
+static int __xuiListViewHitViewportY(xui_list_view_data_t* pData,
+	float fLocalY, float fViewportHeight)
+{
+	xui_rect_t tRow;
+	float fOffsetY;
+	int iCandidate;
+	int iIndex;
+	int i;
+	static const int arrDelta[] = {0, -1, 1};
+
+	if ( (pData == NULL) || (pData->pFrame == NULL) || (pData->fItemHeight <= 0.0f) ||
+	     (fLocalY < 0.0f) || (fLocalY >= fViewportHeight) ) {
+		return -1;
+	}
+	fOffsetY = 0.0f;
+	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
+	iCandidate = (int)((fLocalY + fOffsetY) / pData->fItemHeight);
+	for ( i = 0; i < (int)(sizeof(arrDelta) / sizeof(arrDelta[0])); i++ ) {
+		iIndex = iCandidate + arrDelta[i];
+		if ( (iIndex < 0) || (iIndex >= pData->iItemCount) ) continue;
+		tRow = __xuiListViewRowRect(0.0f, 0.0f, 1.0f,
+			pData->fItemHeight, iIndex, fOffsetY);
+		if ( (fLocalY >= tRow.fY) && (fLocalY < tRow.fY + tRow.fH) ) {
+			return iIndex;
+		}
+	}
+	return -1;
+}
+
 static int __xuiListViewHitWorld(xui_widget pWidget, xui_list_view_data_t* pData, float fX, float fY)
 {
 	xui_rect_t tViewportWorld;
-	float fOffsetY;
-	float fLocalY;
-	int iIndex;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pViewport == NULL) || (pData->fItemHeight <= 0.0f) ) {
 		return -1;
@@ -875,17 +965,7 @@ static int __xuiListViewHitWorld(xui_widget pWidget, xui_list_view_data_t* pData
 	if ( !__xuiListViewPointInRect(tViewportWorld, fX, fY) ) {
 		return -1;
 	}
-	fOffsetY = 0.0f;
-	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
-	fLocalY = fY - tViewportWorld.fY + fOffsetY;
-	if ( fLocalY < 0.0f ) {
-		return -1;
-	}
-	iIndex = (int)(fLocalY / pData->fItemHeight);
-	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
-		return -1;
-	}
-	return iIndex;
+	return __xuiListViewHitViewportY(pData, fY - tViewportWorld.fY, tViewportWorld.fH);
 }
 
 static int __xuiListViewSetHover(xui_widget pWidget, xui_list_view_data_t* pData, int iHover)
@@ -1106,14 +1186,17 @@ static int __xuiListViewKeyDown(xui_widget pWidget, xui_list_view_data_t* pData,
 		}
 		break;
 	case XUI_KEY_SPACE:
+		iTarget = __xuiListViewItemEnabledData(pData, pData->iFocus) ?
+			pData->iFocus : pData->iSelected;
 		if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0 &&
 		     pData->iSelectionMode != XUI_SELECTION_SINGLE &&
-		     __xuiListViewItemEnabledData(pData, pData->iFocus) ) {
-			iRet = __xuiListViewSelectIndex(pWidget, pData, pData->iFocus, XUI_MOD_CTRL, 1);
+		     __xuiListViewItemEnabledData(pData, iTarget) ) {
+			iRet = __xuiListViewSelectIndex(pWidget, pData, iTarget, XUI_MOD_CTRL, 1);
 			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
-		if ( __xuiListViewItemEnabledData(pData, pData->iSelected) ) {
-			iRet = __xuiListViewSetSelectedInternal(pWidget, pData, pData->iSelected, 1, 1);
+		if ( __xuiListViewItemEnabledData(pData, iTarget) ) {
+			iRet = __xuiListViewSelectIndex(pWidget, pData, iTarget,
+				pEvent->iModifiers & XUI_MOD_SHIFT, 1);
 			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 		break;
@@ -1353,7 +1436,6 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	float fOffsetY;
 	float fViewportW;
 	float fViewportH;
-	float fY;
 	int iStart;
 	int iEnd;
 	int i;
@@ -1393,8 +1475,8 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	iEnd = (int)((fOffsetY + fViewportH) / tResolved.fItemHeight) + 2;
 	if ( iEnd > pData->iItemCount ) iEnd = pData->iItemCount;
 	for ( i = iStart; i < iEnd; i++ ) {
-		fY = ((float)i * tResolved.fItemHeight) - fOffsetY;
-		tRow = xuiInternalSnapRect((xui_rect_t){0.0f, fY, fViewportW, tResolved.fItemHeight});
+		tRow = __xuiListViewRowRect(0.0f, 0.0f, fViewportW,
+			tResolved.fItemHeight, i, fOffsetY);
 		iState = 0;
 		if ( __xuiListViewItemSelectedData(pData, i) ) iState |= XUI_LIST_ITEM_SELECTED;
 		if ( pData->iHover == i ) iState |= XUI_LIST_ITEM_HOVER;
@@ -1412,11 +1494,15 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 			if ( iHandled ) continue;
 		}
 		if ( (iState & XUI_LIST_ITEM_SELECTED) != 0 ) {
-			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiListViewMaxFloat(1.0f, tRow.fH - 4.0f)});
+			tFill = xuiInternalRectFromFloatNearest((float)tRow.fX + 3.0f,
+				(float)tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, (float)tRow.fW - 6.0f),
+				__xuiListViewMaxFloat(1.0f, (float)tRow.fH - 4.0f));
 			iRet = __xuiListViewDrawRectFill(pProxy, pDraw, tFill, tResolved.iSelectedColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( (iState & XUI_LIST_ITEM_HOVER) != 0 ) {
-			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiListViewMaxFloat(1.0f, tRow.fH - 4.0f)});
+			tFill = xuiInternalRectFromFloatNearest((float)tRow.fX + 3.0f,
+				(float)tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, (float)tRow.fW - 6.0f),
+				__xuiListViewMaxFloat(1.0f, (float)tRow.fH - 4.0f));
 			iRet = __xuiListViewDrawRectFill(pProxy, pDraw, tFill, tResolved.iHoverColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( __xuiListViewAlpha(tResolved.iRowColor) != 0 ) {
@@ -1426,7 +1512,9 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		if ( ((iState & XUI_LIST_ITEM_FOCUS) != 0) &&
 		     (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) &&
 		     ((iState & XUI_LIST_ITEM_DISABLED) == 0) ) {
-			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiListViewMaxFloat(1.0f, tRow.fH - 4.0f)});
+			tFill = xuiInternalRectFromFloatNearest((float)tRow.fX + 3.0f,
+				(float)tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, (float)tRow.fW - 6.0f),
+				__xuiListViewMaxFloat(1.0f, (float)tRow.fH - 4.0f));
 			iRet = __xuiListViewDrawRectStroke(pProxy, pDraw, tFill, 1.0f, tResolved.iFocusColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
@@ -1435,7 +1523,9 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 			iTextColor = tResolved.iSelectedTextColor;
 		}
 		if ( (tResolved.pFont != NULL) && (__xuiListViewAlpha(iTextColor) != 0) ) {
-			tText = xuiInternalSnapRect((xui_rect_t){tRow.fX + tResolved.fPadding, tRow.fY, __xuiListViewMaxFloat(1.0f, tRow.fW - tResolved.fPadding * 2.0f), tRow.fH});
+			tText = xuiInternalRectFromFloatNearest((float)tRow.fX + tResolved.fPadding,
+				(float)tRow.fY, __xuiListViewMaxFloat(1.0f,
+				(float)tRow.fW - tResolved.fPadding * 2.0f), (float)tRow.fH);
 			if ( pData->bVirtualItems ) {
 				onText = pData->onText;
 				pTextUser = pData->pTextUser;
@@ -1955,7 +2045,6 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 	xui_list_view_data_t* pData;
 	xui_list_view_data_t tOldData;
 	char** arrNewItems;
-	int* arrNewEnabled;
 	int* arrNewSelected;
 	int i;
 	int iRet;
@@ -1972,7 +2061,6 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	arrNewItems = NULL;
-	arrNewEnabled = NULL;
 	arrNewSelected = NULL;
 	if ( iCount > 0 ) {
 		arrNewItems = (char**)xrtMalloc((size_t)iCount * sizeof(char*));
@@ -2003,13 +2091,12 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 	iRet = __xuiListViewInvalidateLayoutRows(pWidget, pData);
 	if ( iRet != XUI_OK || !__xuiListViewWidgetAlive(pWidget, pData) ) {
 		__xuiListViewFreeItems(arrNewItems, iCount);
-		if ( arrNewEnabled != NULL ) xrtFree(arrNewEnabled);
 		if ( arrNewSelected != NULL ) xrtFree(arrNewSelected);
 		return iRet;
 	}
 	tOldData = *pData;
 	pData->arrItems = arrNewItems;
-	pData->arrEnabled = arrNewEnabled;
+	pData->arrEnabled = NULL;
 	pData->arrSelected = arrNewSelected;
 	pData->bVirtualItems = 0;
 	pData->onText = NULL;
@@ -2021,7 +2108,6 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 		*pData = tOldData;
 		(void)__xuiListViewUpdateContentSize(pWidget, pData);
 		__xuiListViewFreeItems(arrNewItems, iCount);
-		if ( arrNewEnabled != NULL ) xrtFree(arrNewEnabled);
 		if ( arrNewSelected != NULL ) xrtFree(arrNewSelected);
 		return iRet;
 	}
@@ -2399,7 +2485,7 @@ XUI_API int xuiListViewSetSelectionBuffer(xui_widget pWidget, int* arrSelected, 
 		if ( arrOld != NULL && iCopyCount > 0 ) {
 			memmove(arrNewExternal, arrOld, (size_t)iCopyCount * sizeof(int));
 		}
-		for ( i = 0; i < iCount; i++ ) {
+		for ( i = 0; i < pData->iItemCount; i++ ) {
 			arrNewExternal[i] = (i < iCopyCount && arrNewExternal[i]) ? 1 : 0;
 		}
 	} else if ( pData->arrSelected != NULL ) {
@@ -2522,10 +2608,8 @@ XUI_API int xuiListViewEnsureVisible(xui_widget pWidget, int iIndex)
 	xui_rect_t tRect;
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) ) return XUI_OK;
-	tRect.fX = 0.0f;
-	tRect.fY = (float)iIndex * pData->fItemHeight;
-	tRect.fW = 1.0f;
-	tRect.fH = pData->fItemHeight;
+	tRect = __xuiListViewRowRect(0.0f, 0.0f, 1.0f,
+		pData->fItemHeight, iIndex, 0.0f);
 	float before = xuiListViewGetScroll(pWidget);
 	int result = xuiScrollFrameEnsureRectVisible(pData->pFrame, tRect);
 	if (result == XUI_OK && before != xuiListViewGetScroll(pWidget)) __xuiListViewFrameChanged(pData->pFrame, 0, xuiListViewGetScroll(pWidget), pWidget);
@@ -2663,26 +2747,20 @@ XUI_API xui_rect_t xuiListViewGetItemRect(xui_widget pWidget, int iIndex)
 	tViewport = xuiListViewGetViewportRect(pWidget);
 	fOffsetY = 0.0f;
 	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
-	return (xui_rect_t){tViewport.fX, tViewport.fY + (float)iIndex * pData->fItemHeight - fOffsetY, tViewport.fW, pData->fItemHeight};
+	return __xuiListViewRowRect((float)tViewport.fX, (float)tViewport.fY,
+		(float)tViewport.fW, pData->fItemHeight, iIndex, fOffsetY);
 }
 
 XUI_API int xuiListViewGetItemAt(xui_widget pWidget, float fX, float fY)
 {
 	xui_list_view_data_t* pData;
 	xui_rect_t tViewport;
-	float fOffsetY;
-	float fLocalY;
-	int iIndex;
 
 	pData = __xuiListViewGetData(pWidget);
 	if ( (pData == NULL) || (pData->fItemHeight <= 0.0f) ) return -1;
 	tViewport = xuiListViewGetViewportRect(pWidget);
 	if ( !__xuiListViewPointInRect(tViewport, fX, fY) ) return -1;
-	fOffsetY = 0.0f;
-	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
-	fLocalY = fY - tViewport.fY + fOffsetY;
-	iIndex = (int)(fLocalY / pData->fItemHeight);
-	return (iIndex >= 0 && iIndex < pData->iItemCount) ? iIndex : -1;
+	return __xuiListViewHitViewportY(pData, fY - tViewport.fY, tViewport.fH);
 }
 
 XUI_API int xuiListViewGetHoverIndex(xui_widget pWidget)

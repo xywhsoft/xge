@@ -189,6 +189,7 @@ int main(void)
 	int arrEnabled[16];
 	int arrSelected[16];
 	int arrTooSmall[15];
+	int arrOversized[20];
 	const char* arrExpanded[17];
 	xui_test_proxy_state_t tState;
 	xui_context pContext;
@@ -206,7 +207,9 @@ int main(void)
 	xui_list_view_desc_t tDesc;
 	xui_list_view_desc_t tInvalidDesc;
 	xui_event_t tContextEvent;
+	xui_event_t tPointerEvent;
 	xui_rect_t tItem;
+	xui_rect_t tItemNext;
 	xui_rect_t tListWorld;
 	xui_vec2_t tMeasured;
 	xui_accessible_node_t tAccessible;
@@ -219,6 +222,7 @@ int main(void)
 	float fPadding;
 	float fBorderWidth;
 	int iSelectCount;
+	int iOldSelectCount;
 	int iRenderCount;
 	int iOldChangeCount;
 	int i;
@@ -255,6 +259,8 @@ int main(void)
 	memset(arrEnabled, 1, sizeof(arrEnabled));
 	memset(arrSelected, 0, sizeof(arrSelected));
 	memset(arrTooSmall, 0, sizeof(arrTooSmall));
+	memset(arrOversized, 0, sizeof(arrOversized));
+	for ( i = 16; i < 20; i++ ) arrOversized[i] = 0x5100 + i;
 	for ( i = 0; i < 17; i++ ) arrExpanded[i] = "Expanded";
 	arrEnabled[2] = 0;
 	xuiTestProxyInit(&tState);
@@ -456,6 +462,13 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pList, 0, &tAccessible) == XUI_OK &&
 		(tAccessible.iState & XUI_ACCESSIBLE_STATE_MULTISELECTABLE) != 0u,
 		"accessible range-selection list root");
+	iRet = xuiListViewSetSelectionBuffer(pList, arrOversized, 20);
+	XUI_TEST_CHECK(iRet == XUI_OK && arrOversized[16] == 0x5110 &&
+		arrOversized[17] == 0x5111 && arrOversized[18] == 0x5112 &&
+		arrOversized[19] == 0x5113,
+		"external selection binding preserves capacity beyond current rows");
+	iRet = xuiListViewSetSelectionBuffer(pList, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "detach oversized external selection");
 	iRet = xuiListViewSetSelectionBuffer(pList, arrTooSmall, 15);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
 		"short external selection buffer is rejected at runtime");
@@ -467,6 +480,35 @@ int main(void)
 		"bound selection capacity rejects transactional item growth");
 	iRet = xuiListViewSetSelected(pList, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK && arrSelected[5], "range base selected");
+	arrSelected[5] = 0;
+	iRet = xuiListViewSetSelected(pList, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK && arrSelected[5],
+		"selected setter repairs externally cleared current row");
+	tItem = xuiListViewGetItemRect(pList, 5);
+	memset(&tPointerEvent, 0, sizeof(tPointerEvent));
+	tPointerEvent.iSize = sizeof(tPointerEvent);
+	tPointerEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tPointerEvent.pTarget = pList;
+	tPointerEvent.iPointerType = XUI_POINTER_TYPE_MOUSE;
+	tPointerEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tPointerEvent.fX = tListWorld.fX + tItem.fX + 8.0f;
+	tPointerEvent.fY = tListWorld.fY + tItem.fY + 8.0f;
+	iRet = xuiDispatchEvent(pContext, &tPointerEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && arrSelected[5] && !arrSelected[4],
+		"plain range click collapses prior selection");
+	iOldSelectCount = iSelectCount;
+	iOldChangeCount = xuiListViewGetChangeCount(pList);
+	iRet = xuiDispatchEvent(pContext, &tPointerEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectCount == iOldSelectCount &&
+		xuiListViewGetChangeCount(pList) == iOldChangeCount,
+		"repeated multi-selection click is idempotent by default");
+	iRet = xuiListViewSetNotifyRepeatSelect(pList, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchEvent(pContext, &tPointerEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectCount == iOldSelectCount + 1 &&
+		xuiListViewGetChangeCount(pList) == iOldChangeCount,
+		"repeat selection notification does not report a state change");
+	iRet = xuiListViewSetNotifyRepeatSelect(pList, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "repeat selection restore after range test");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, XUI_MOD_SHIFT);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && arrSelected[5] && arrSelected[6], "shift range selects");
@@ -478,13 +520,23 @@ int main(void)
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, XUI_MOD_CTRL);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && arrSelected[7], "ctrl space toggles focused row");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, XUI_MOD_CTRL);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewGetFocusIndex(pList) == 8 &&
+		arrSelected[5] && arrSelected[6] && arrSelected[7] && !arrSelected[8],
+		"ctrl arrow advances focus independently after toggle");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !arrSelected[5] && !arrSelected[6] &&
+		!arrSelected[7] && arrSelected[8],
+		"plain space selects the focused row instead of the stale selected row");
 	iRet = xuiInputKeyDown(pContext, 'A', XUI_MOD_CTRL);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && arrSelected[0] && arrSelected[1] && !arrSelected[2] &&
 		arrSelected[15], "ctrl a selects every enabled row");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, XUI_MOD_CTRL);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && !arrSelected[7] && xuiListViewGetSelected(pList) != 7,
+	XUI_TEST_CHECK(iRet == XUI_OK && !arrSelected[8] && xuiListViewGetSelected(pList) != 8,
 		"ctrl space deselects focus without reporting it selected");
 	iRet = xuiListViewSetSelectionBuffer(pList, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewIsItemSelected(pList, 5),
@@ -523,6 +575,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
 		__xuiListViewNear(xuiListViewGetItemHeight(pList), fOldItemHeight),
 		"oversized row height is rejected transactionally");
+	iRet = xuiListViewSetMetrics(pList, 22.5f, 9.0f, 1.0f);
+	if ( iRet == XUI_OK ) iRet = xuiListViewSetScroll(pList, 0.0f);
+	tItem = xuiListViewGetItemRect(pList, 1);
+	tItemNext = xuiListViewGetItemRect(pList, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && tItem.fY + tItem.fH == tItemNext.fY &&
+		xuiListViewGetItemAt(pList, tItemNext.fX + 1.0f, tItemNext.fY) == 2 &&
+		xuiListViewGetItemAt(pList, tItemNext.fX + 1.0f, tItemNext.fY - 1.0f) == 1,
+		"fractional row metrics keep rendering and hit boundaries contiguous");
 	iRet = xuiListViewSetMetrics(pList, 30.0f, 9.0f, 1.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollModelGetContentSize(xuiListViewGetModel(pList), NULL, &fContentHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiListViewNear(fContentHeight, 480.0f),
