@@ -1237,6 +1237,11 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
         if (doc_view_pointer_matches(v, event)) doc_view_cancel_pointer(v, 0);
         return XUI_OK;
     }
+    if (event->iType == XUI_EVENT_POINTER_LEAVE &&
+        v->desc.bDisableSelection && doc_view_pointer_matches(v, event)) {
+        doc_view_cancel_pointer(v, 0);
+        return XUI_OK;
+    }
     if (event->iType == XUI_EVENT_ENABLED_CHANGED || event->iType == XUI_EVENT_VISIBLE_CHANGED) {
         if (!xuiWidgetGetEffectiveEnabled(widget) || !xuiWidgetGetEffectiveVisible(widget))
             doc_view_cancel_pointer(v, !v->replaying_input);

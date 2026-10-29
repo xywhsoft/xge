@@ -179,7 +179,16 @@ static void document_view_pointer_ownership(xui_context context,
     pointer.iPointerId = 22; pointer.iButtons = 0;
     pointer.iType = XUI_EVENT_POINTER_UP;
     CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK && probe.count == 0);
-    pointer.iPointerId = 21;
+    pointer.iPointerId = 21; pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.iType = XUI_EVENT_POINTER_LEAVE;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK);
+    pointer.iButtons = 0;
+    pointer.iType = XUI_EVENT_POINTER_UP;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK && probe.count == 0);
+    pointer.iButtons = XUI_POINTER_BUTTON_LEFT;
+    pointer.iType = XUI_EVENT_POINTER_DOWN;
+    CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK);
+    pointer.iButtons = 0; pointer.iType = XUI_EVENT_POINTER_UP;
     CHECK(xuiDispatchEvent(context, &pointer) == XUI_OK &&
         probe.count == 1 && probe.node == text);
     xuiWidgetDestroy(view);
@@ -689,6 +698,6 @@ int main(void)
     proxy.tProxy.surfaceDestroy(&proxy.tProxy, target);
     xuiDestroy(context);
     proxy.tProxy.fontDestroy(&proxy.tProxy, font);
-    puts("Linux headless Rich/Markdown DocumentView and Editor visual/source/live input, task marker, vertical navigation, undo, hit and draw passed");
+    puts("Headless Rich/Markdown DocumentView and Editor visual/source/live input, task marker, vertical navigation, undo, hit and draw passed");
     return 0;
 }
