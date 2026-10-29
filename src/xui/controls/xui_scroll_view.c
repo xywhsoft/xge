@@ -113,7 +113,7 @@ static void __xuiScrollViewMakeFrameDesc(const xui_scroll_view_desc_t* pDesc, xu
 	pFrameDesc->iPolicyY = pDesc->iPolicyY;
 	pFrameDesc->iWheelAxis = pDesc->iWheelAxis;
 	pFrameDesc->iScrollbarMode = pDesc->iScrollbarMode;
-	if ( pDesc->iCornerMode == XUI_SCROLL_FRAME_CORNER_GRIP ) pFrameDesc->iCornerMode = XUI_SCROLL_FRAME_CORNER_GRIP;
+	pFrameDesc->iCornerMode = pDesc->iCornerMode;
 	pFrameDesc->bContentDragEnabled = pDesc->bContentDragEnabled;
 	pFrameDesc->fScrollbarSize = pDesc->fScrollbarSize;
 	pFrameDesc->fMinThumbSize = pDesc->fMinThumbSize;

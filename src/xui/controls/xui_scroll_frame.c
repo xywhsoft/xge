@@ -838,7 +838,7 @@ static int __xuiScrollFrameInitDefaults(xui_scroll_frame_data_t* pData, const xu
 	/* FULL is zero, so zero-initialized descs must still resolve to the compact default. */
 	pData->iScrollbarMode = __xuiScrollFrameDescWantsFullMode(pDesc) ? XUI_SCROLLBAR_MODE_FULL : XUI_SCROLLBAR_MODE_COMPACT;
 	pData->iWheelAxis = (pDesc != NULL && __xuiScrollFrameWheelAxisValid(pDesc->iWheelAxis)) ? pDesc->iWheelAxis : XUI_WHEEL_AXIS_VERTICAL;
-	pData->iCornerMode = (pDesc != NULL && pDesc->iCornerMode == XUI_SCROLL_FRAME_CORNER_GRIP) ? XUI_SCROLL_FRAME_CORNER_GRIP : XUI_SCROLL_FRAME_CORNER_AUTO;
+	pData->iCornerMode = (pDesc != NULL) ? pDesc->iCornerMode : XUI_SCROLL_FRAME_CORNER_AUTO;
 	pData->bContentDragEnabled = (pDesc != NULL) ? (pDesc->bContentDragEnabled != 0) : 0;
 	pData->fScrollbarSize = (pDesc != NULL && pDesc->fScrollbarSize > 0.0f) ? pDesc->fScrollbarSize : __xuiScrollFrameDefaultScrollbarSize(pData->iScrollbarMode);
 	pData->fMinThumbSize = (pDesc != NULL && pDesc->fMinThumbSize > 0.0f) ? pDesc->fMinThumbSize : 18.0f;

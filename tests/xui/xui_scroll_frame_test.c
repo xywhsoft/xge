@@ -410,10 +410,14 @@ int main(void)
 	tAuxDesc.iPolicyX = XUI_SCROLLBAR_POLICY_HIDDEN;
 	tAuxDesc.iPolicyY = XUI_SCROLLBAR_POLICY_AUTO;
 	tAuxDesc.iWheelAxis = XUI_WHEEL_AXIS_VERTICAL;
+	tAuxDesc.iCornerMode = XUI_SCROLL_FRAME_CORNER_NONE;
 	tAuxDesc.fWheelStep = 20.0f;
 	tAuxDesc.fViewportWidth = 140.0f;
 	tAuxDesc.fViewportHeight = 100.0f;
 	iRet = xuiScrollFrameCreate(pContext, &pOuter, &tAuxDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiScrollFrameGetCornerMode(pOuter) == XUI_SCROLL_FRAME_CORNER_NONE,
+		"frame creation preserves explicit no-corner mode");
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pOuter);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pOuter, (xui_rect_t){150.0f, 130.0f, 140.0f, 100.0f});
 	tAuxDesc.fContentWidth = 200.0f;

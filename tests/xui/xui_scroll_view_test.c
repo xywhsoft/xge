@@ -169,6 +169,14 @@ int main(void)
 	iRet = xuiScrollViewCreate(pContext, &pInvalid, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
 		"invalid scrollview wheel axis is rejected");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.iCornerMode = XUI_SCROLL_FRAME_CORNER_NONE;
+	iRet = xuiScrollViewCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pInvalid != NULL &&
+		xuiScrollViewGetCornerMode(pInvalid) == XUI_SCROLL_FRAME_CORNER_NONE,
+		"scrollview creation preserves explicit no-corner mode");
+	xuiWidgetDestroy(pInvalid);
+	pInvalid = NULL;
 	iRet = xuiScrollViewSetWheelStep(pView, INFINITY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
 		__xuiScrollViewNear(xuiScrollViewGetWheelStep(pView), 20.0f),
