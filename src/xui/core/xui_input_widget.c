@@ -40,6 +40,8 @@ struct xui_input_decoration_t {
 typedef struct xui_input_history_t {
 	char* sRemoved;
 	char* sInserted;
+	int iRemovedCapacity;
+	int iInsertedCapacity;
 	int iStart;
 	int iRemovedLength;
 	int iInsertedLength;
@@ -250,19 +252,35 @@ static uint32_t __xuiInputColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 static int __xuiInputTextReserve(char** psText, int* pCapacity, int iCapacity)
 {
 	char* sNew;
+	int iNewCapacity;
+	int iGrowth;
 
 	if ( (psText == NULL) || (pCapacity == NULL) || (iCapacity <= 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( *pCapacity < 0 || (*pCapacity > 0 && *psText == NULL) ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
 	if ( iCapacity <= *pCapacity ) {
 		return XUI_OK;
 	}
-	sNew = (char*)xrtRealloc(*psText, (size_t)iCapacity);
+	iNewCapacity = *pCapacity;
+	if ( iNewCapacity < 32 ) iNewCapacity = 32;
+	while ( iNewCapacity < iCapacity ) {
+		iGrowth = iNewCapacity / 2;
+		if ( iGrowth < 32 ) iGrowth = 32;
+		if ( iNewCapacity > INT_MAX - iGrowth ) {
+			iNewCapacity = iCapacity;
+			break;
+		}
+		iNewCapacity += iGrowth;
+	}
+	sNew = (char*)xrtRealloc(*psText, (size_t)iNewCapacity);
 	if ( sNew == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	*psText = sNew;
-	*pCapacity = iCapacity;
+	*pCapacity = iNewCapacity;
 	return XUI_OK;
 }
 
@@ -1350,17 +1368,19 @@ static void __xuiInputHistoryFree(xui_input_history_t* pState)
 	memset(pState, 0, sizeof(*pState));
 }
 
-static int __xuiInputHistoryCopy(char** psCopy, const char* sText, int iLength)
+static int __xuiInputHistoryCopy(char** psCopy, int* pCapacity,
+	const char* sText, int iLength)
 {
-	char* sCopy;
-	if ( psCopy == NULL || iLength < 0 || (iLength > 0 && sText == NULL) )
+	int iRet;
+	if ( psCopy == NULL || pCapacity == NULL || iLength < 0 ||
+	     (iLength > 0 && sText == NULL) )
 		return XUI_ERROR_INVALID_ARGUMENT;
 	*psCopy = NULL;
+	*pCapacity = 0;
 	if ( iLength == 0 ) return XUI_OK;
-	sCopy = (char*)xrtMalloc((size_t)iLength);
-	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memcpy(sCopy, sText, (size_t)iLength);
-	*psCopy = sCopy;
+	iRet = __xuiInputTextReserve(psCopy, pCapacity, iLength);
+	if ( iRet != XUI_OK ) return iRet;
+	memcpy(*psCopy, sText, (size_t)iLength);
 	return XUI_OK;
 }
 
@@ -1381,9 +1401,10 @@ static int __xuiInputHistoryBegin(xui_input_data_t* pData,
 	pState->iBeforeSelectStart = pData->iSelectStart;
 	pState->iBeforeSelectEnd = pData->iSelectEnd;
 	pState->fBeforeScrollX = pData->fScrollX;
-	iRet = __xuiInputHistoryCopy(&pState->sRemoved,
+	iRet = __xuiInputHistoryCopy(&pState->sRemoved, &pState->iRemovedCapacity,
 		pData->sText + iStart, pState->iRemovedLength);
 	if ( iRet == XUI_OK ) iRet = __xuiInputHistoryCopy(&pState->sInserted,
+		&pState->iInsertedCapacity,
 		sInserted, iInsertedLength);
 	if ( iRet != XUI_OK ) __xuiInputHistoryFree(pState);
 	return iRet;
@@ -1425,18 +1446,24 @@ static void __xuiInputHistoryCommit(xui_input_data_t* pData,
 static int __xuiInputHistoryCoalesceInsert(xui_input_data_t* pData,
 	const char* sText, int iTextSize)
 {
-	char* sInserted;
+	int iNewLength;
+	int iRet;
 	if ( pData == NULL || sText == NULL || iTextSize <= 0 || !pData->bCanUndo )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->tUndo.iRemovedLength != 0 ||
-	     pData->tUndo.iStart + pData->tUndo.iInsertedLength != pData->iUndoInsertEnd )
+	if ( pData->tUndo.iRemovedLength != 0 || pData->tUndo.iStart < 0 ||
+	     pData->tUndo.iInsertedLength < 0 || pData->iUndoInsertEnd < 0 ||
+	     (size_t)pData->tUndo.iStart + (size_t)pData->tUndo.iInsertedLength !=
+		(size_t)pData->iUndoInsertEnd )
 		return XUI_ERROR_INVALID_STATE;
-	sInserted = (char*)xrtRealloc(pData->tUndo.sInserted,
-		(size_t)pData->tUndo.iInsertedLength + (size_t)iTextSize);
-	if ( sInserted == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memcpy(sInserted + pData->tUndo.iInsertedLength, sText, (size_t)iTextSize);
-	pData->tUndo.sInserted = sInserted;
-	pData->tUndo.iInsertedLength += iTextSize;
+	if ( pData->tUndo.iInsertedLength > INT_MAX - iTextSize )
+		return XUI_ERROR_BUFFER_TOO_SMALL;
+	iNewLength = pData->tUndo.iInsertedLength + iTextSize;
+	iRet = __xuiInputTextReserve(&pData->tUndo.sInserted,
+		&pData->tUndo.iInsertedCapacity, iNewLength);
+	if ( iRet != XUI_OK ) return iRet;
+	memcpy(pData->tUndo.sInserted + pData->tUndo.iInsertedLength,
+		sText, (size_t)iTextSize);
+	pData->tUndo.iInsertedLength = iNewLength;
 	return XUI_OK;
 }
 
@@ -1576,7 +1603,8 @@ static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, con
 		return XUI_OK;
 	}
 	if ( iInsertSize < 0 ) {
-		iInsertSize = (int)strlen(sInsert);
+		iRet = __xuiInputStringSize(sInsert, &iInsertSize);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( iInsertSize <= 0 ) {
 		return XUI_OK;
@@ -1596,6 +1624,8 @@ static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, con
 			return XUI_OK;
 		}
 	}
+	if ( iInsertSize > INT_MAX - 1 - (iLen - iSelected) )
+		return XUI_ERROR_BUFFER_TOO_SMALL;
 	iNewLen = iLen - iSelected + iInsertSize;
 	iRet = __xuiInputTextReserve(&pData->sText, &pData->iTextCapacity, iNewLen + 1);
 	if ( iRet != XUI_OK ) {
@@ -3714,8 +3744,11 @@ static int __xuiInputApplyHistoryState(xui_widget pWidget,
 	iInsertLength = bRedo ? pState->iInsertedLength : pState->iRemovedLength;
 	sInsert = bRedo ? pState->sInserted : pState->sRemoved;
 	if ( pState->iStart < 0 || iRemoveLength < 0 || iInsertLength < 0 ||
-	     pState->iStart + iRemoveLength > pData->iTextLength ||
+	     pState->iStart > pData->iTextLength ||
+	     iRemoveLength > pData->iTextLength - pState->iStart ||
 	     (iInsertLength > 0 && sInsert == NULL) ) return XUI_ERROR_INVALID_STATE;
+	if ( iInsertLength > INT_MAX - 1 - (pData->iTextLength - iRemoveLength) )
+		return XUI_ERROR_INVALID_STATE;
 	iNewLength = pData->iTextLength - iRemoveLength + iInsertLength;
 	iRet = __xuiInputTextReserve(&pData->sText, &pData->iTextCapacity,
 		iNewLength + 1);
@@ -3926,11 +3959,27 @@ static int __xuiInputDecorationBelongsToList(xui_input_decoration pHead, xui_inp
 	return 0;
 }
 
+static xui_input_decoration* __xuiInputDecorationFindRef(
+	xui_input_data_t* pData, xui_input_decoration pDecoration)
+{
+	xui_input_decoration* ppList;
+	int iSide;
+
+	if ( pData == NULL || pDecoration == NULL ) return NULL;
+	for ( iSide = XUI_INPUT_DECORATION_SIDE_LEADING;
+	      iSide <= XUI_INPUT_DECORATION_SIDE_TRAILING; iSide++ ) {
+		ppList = __xuiInputDecorationListRef(pData, iSide);
+		while ( ppList != NULL && *ppList != NULL ) {
+			if ( *ppList == pDecoration ) return ppList;
+			ppList = &(*ppList)->pNext;
+		}
+	}
+	return NULL;
+}
+
 static int __xuiInputDecorationBelongs(xui_input_data_t* pData, xui_input_decoration pDecoration)
 {
-	return (pData != NULL) && (pDecoration != NULL) &&
-	       (__xuiInputDecorationBelongsToList(pData->pLeadingDecoration, pDecoration) ||
-	        __xuiInputDecorationBelongsToList(pData->pTrailingDecoration, pDecoration));
+	return __xuiInputDecorationFindRef(pData, pDecoration) != NULL;
 }
 
 static int __xuiInputDecorationCopyDesc(xui_input_decoration pDecoration, const xui_input_decoration_desc_t* pDesc)
@@ -3976,6 +4025,7 @@ XUI_API int xuiInputDecorationAdd(xui_widget pWidget, int iSide, xui_input_decor
 	xui_input_decoration pDecoration;
 	int iRet;
 
+	if ( ppDecoration != NULL ) *ppDecoration = NULL;
 	pData = __xuiInputGetData(pWidget);
 	if ( (pData == NULL) || !__xuiInputDecorationSideValid(iSide) || !__xuiInputDecorationDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -4026,22 +4076,17 @@ XUI_API int xuiInputDecorationRemove(xui_widget pWidget, xui_input_decoration pD
 	xui_input_decoration* ppList;
 
 	pData = __xuiInputGetData(pWidget);
-	if ( (pData == NULL) || (pDecoration == NULL) || !__xuiInputDecorationSideValid(pDecoration->iSide) ) {
+	if ( (pData == NULL) || (pDecoration == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	ppList = __xuiInputDecorationListRef(pData, pDecoration->iSide);
-	while ( (ppList != NULL) && (*ppList != NULL) ) {
-		if ( *ppList == pDecoration ) {
-			*ppList = pDecoration->pNext;
-			if ( pData->pHoverDecoration == pDecoration ) pData->pHoverDecoration = NULL;
-			if ( pData->pActiveDecoration == pDecoration ) pData->pActiveDecoration = NULL;
-			__xuiInputDecorationFree(pDecoration);
-			(void)__xuiInputDecorationSyncPadding(pWidget, pData);
-			return __xuiInputInvalidateText(pWidget);
-		}
-		ppList = &(*ppList)->pNext;
-	}
-	return XUI_ERROR_INVALID_ARGUMENT;
+	ppList = __xuiInputDecorationFindRef(pData, pDecoration);
+	if ( ppList == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppList = pDecoration->pNext;
+	if ( pData->pHoverDecoration == pDecoration ) pData->pHoverDecoration = NULL;
+	if ( pData->pActiveDecoration == pDecoration ) pData->pActiveDecoration = NULL;
+	__xuiInputDecorationFree(pDecoration);
+	(void)__xuiInputDecorationSyncPadding(pWidget, pData);
+	return __xuiInputInvalidateText(pWidget);
 }
 
 XUI_API int xuiInputDecorationClear(xui_widget pWidget, int iSide)

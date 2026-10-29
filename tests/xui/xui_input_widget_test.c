@@ -388,6 +388,10 @@ int main(void)
 	tDecorationDesc.iKind = XUI_INPUT_DECORATION_ICON;
 	tDecorationDesc.iVisibleMode = XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
 	tDecorationDesc.iIcon = XUI_INPUT_ICON_SEARCH;
+	pSearchDecoration = (xui_input_decoration)pInput;
+	iRet = xuiInputDecorationAdd(pInput, -1, &pSearchDecoration, &tDecorationDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pSearchDecoration == NULL,
+		"invalid decoration add clears output");
 	iRet = xuiInputDecorationAdd(pInput, XUI_INPUT_DECORATION_SIDE_LEADING, &pSearchDecoration, &tDecorationDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pSearchDecoration != NULL, "add leading decoration");
 	memset(&tDecorationDesc, 0, sizeof(tDecorationDesc));
