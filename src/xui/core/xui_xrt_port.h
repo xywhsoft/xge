@@ -279,6 +279,22 @@ static inline xui_xrt_regex_t* xuiXrtRegexCreate(const char* sPattern, size_t iS
 	return pResult;
 }
 
+static inline int xuiXrtRegexCreateChecked(const char* sPattern, size_t iSize,
+	uint32 iFlags, xui_xrt_regex_t** ppRegex)
+{
+	if ( ppRegex == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppRegex = xuiXrtRegexCreate(sPattern, iSize, iFlags);
+	if ( *ppRegex != NULL ) return XUI_OK;
+	return xrtErrorIs(xrtGetError(), XERR_MEMORY) != NULL ?
+		XUI_ERROR_OUT_OF_MEMORY : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static inline int xuiXrtRegexFailureStatus(void)
+{
+	return xrtErrorIs(xrtGetError(), XERR_MEMORY) != NULL ?
+		XUI_ERROR_OUT_OF_MEMORY : XUI_ERROR_INVALID_STATE;
+}
+
 static inline void xuiXrtRegexDestroy(xui_xrt_regex_t* pRegex)
 {
 	if ( pRegex == NULL ) return;

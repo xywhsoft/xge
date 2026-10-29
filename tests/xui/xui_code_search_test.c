@@ -12,6 +12,58 @@
 		} \
 	} while ( 0 )
 
+static int test_regex_allocation_failures(xui_code_document pDocument)
+{
+	static const size_t arrBudgets[] = {
+		1u, 8u, 16u, 32u, 64u, 128u, 256u, 512u, 1024u,
+		2048u, 4096u, 8192u, 16384u, 32768u, 65536u
+	};
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xallocationbudgetinfo tInfo;
+	xui_code_search_result_t tResult;
+	char sError[80];
+	int bSawFailure;
+	int bSawSuccess;
+	int iRet;
+	size_t i;
+
+	bSawFailure = 0;
+	bSawSuccess = 0;
+	for ( i = 0u; i < sizeof(arrBudgets) / sizeof(arrBudgets[0]); i++ ) {
+		pBudget = NULL;
+		memset(&tScope, 0, sizeof(tScope));
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.Size = sizeof(tInfo);
+		if ( !xrtAllocationBudgetCreate(arrBudgets[i], &pBudget) ||
+		     !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+			xrtAllocationBudgetFree(pBudget);
+			return 0;
+		}
+		memset(&tResult, 0x7F, sizeof(tResult));
+		memset(sError, 0, sizeof(sError));
+		iRet = xuiCodeSearchFindRegex(pDocument, "(alpha)", 0,
+			XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
+		if ( !xrtAllocationBudgetLeave(&tScope) ||
+		     !xrtAllocationBudgetInfo(pBudget, &tInfo) ) {
+			xrtAllocationBudgetFree(pBudget);
+			return 0;
+		}
+		xrtAllocationBudgetFree(pBudget);
+		if ( tInfo.LiveBytes != 0u || tInfo.LiveCount != 0u ) return 0;
+		if ( iRet == XUI_OK ) {
+			if ( tResult.iStart != 0 || tResult.iEnd != 5 ) return 0;
+			bSawSuccess = 1;
+			break;
+		}
+		if ( tInfo.Rejections == 0u || iRet != XUI_ERROR_OUT_OF_MEMORY ||
+		     strcmp(sError, "out of memory") != 0 ||
+		     tResult.iStart != 0 || tResult.iEnd != 0 ) return 0;
+		bSawFailure = 1;
+	}
+	return bSawFailure && bSawSuccess;
+}
+
 int main(void)
 {
 	xui_code_document pDocument;
@@ -108,6 +160,8 @@ int main(void)
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9]", 0, 0, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && strcmp(sError, "regex compile failed") == 0,
 		"regex invalid pattern preserves diagnostic");
+	XUI_TEST_CHECK(test_regex_allocation_failures(pDocument),
+		"regex search reports allocation failures transactionally");
 
 	iRet = xuiCodeDocumentSetText(pDocument, "\xC3\xA9");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set Unicode zero-match document");

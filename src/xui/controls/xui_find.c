@@ -432,16 +432,22 @@ static int __xuiFindPlainInRange(const char* sText, int iTextLength, const xui_f
 static int __xuiFindRegexCreate(xui_find_engine_t* pEngine, char* sError, int iErrorCapacity)
 {
 	uint32 iRegexFlags;
+	int iRet;
 
 	pEngine->pRegex = NULL;
 	iRegexFlags = 0;
 	if ( (pEngine->iFlags & XUI_FIND_CASE_SENSITIVE) == 0 ) iRegexFlags |= 1u;
 	if ( (pEngine->iFlags & XUI_FIND_MULTILINE) != 0 ) iRegexFlags |= 2u;
 	if ( (pEngine->iFlags & XUI_FIND_DOT_NEWLINE) != 0 ) iRegexFlags |= 4u;
-	pEngine->pRegex = xuiXrtRegexCreate(pEngine->sPattern, strlen(pEngine->sPattern), iRegexFlags);
-	if ( pEngine->pRegex == NULL ) {
+	iRet = xuiXrtRegexCreateChecked(pEngine->sPattern, strlen(pEngine->sPattern),
+		iRegexFlags, &pEngine->pRegex);
+	if ( iRet != XUI_OK ) {
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) {
+			__xuiFindSetError(sError, iErrorCapacity, "out of memory");
+			return iRet;
+		}
 		__xuiFindSetError(sError, iErrorCapacity, "regex compile failed");
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return iRet;
 	}
 	return XUI_OK;
 }
@@ -484,7 +490,7 @@ static int __xuiFindRegexForward(xui_find_engine_t* pEngine, const char* sText, 
 	iPos = iStart;
 	while ( iPos <= iEnd ) {
 		iRet = xuiXrtRegexFindAt(pEngine->pRegex, sText, (size_t)iEnd, (size_t)iPos, &tSpan);
-		if ( iRet == XREGEX_ERROR ) return XUI_ERROR_INVALID_STATE;
+		if ( iRet == XREGEX_ERROR ) return xuiXrtRegexFailureStatus();
 		if ( iRet != XREGEX_MATCH || (int)tSpan.Begin > iEnd ) return XUI_ERROR_UNSUPPORTED;
 		if ( (int)tSpan.End <= iEnd && __xuiFindRegexFillResult(pEngine, sText, iTextLength, tSpan, pResult) == XUI_OK ) return XUI_OK;
 		iNext = __xuiFindNextBoundary(sText, iTextLength, (int)tSpan.Begin);

@@ -85,25 +85,31 @@ XUI_API int xuiCodeLexerRegexTokenize(const char* sText, int iTextSize, const xu
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	memset(pRegexes, 0, sizeof(*pRegexes) * (size_t)iRuleCount);
+	iResult = XUI_OK;
 	for ( i = 0; i < iRuleCount; i++ ) {
-		pRegexes[i] = xuiXrtRegexCreate(pRules[i].sPattern,
+		iResult = xuiXrtRegexCreateChecked(pRules[i].sPattern,
 			strlen(pRules[i].sPattern),
-			pRules[i].iFlags);
-		if ( pRegexes[i] == NULL ) {
+			pRules[i].iFlags, &pRegexes[i]);
+		if ( iResult != XUI_OK ) {
+			if ( iResult == XUI_ERROR_OUT_OF_MEMORY ) {
+				__xuiCodeLexerSetError(sError, iErrorCapacity, "out of memory");
+				goto fail;
+			}
 			__xuiCodeLexerSetError(sError, iErrorCapacity, "regex compile failed");
 			goto fail;
 		}
 	}
 	iPos = 0;
 	iTextStart = 0;
-	iResult = XUI_OK;
 	while ( iPos < iTextSize ) {
 		iMatched = 0;
 		for ( i = 0; i < iRuleCount; i++ ) {
 			iRet = xuiXrtRegexFindAt(pRegexes[i], sText, (size_t)iTextSize, (size_t)iPos, &tSpan);
 			if ( iRet == XREGEX_ERROR ) {
-				__xuiCodeLexerSetError(sError, iErrorCapacity, "regex match failed");
-				iResult = XUI_ERROR_INVALID_STATE;
+				iResult = xuiXrtRegexFailureStatus();
+				__xuiCodeLexerSetError(sError, iErrorCapacity,
+					iResult == XUI_ERROR_OUT_OF_MEMORY ? "out of memory" :
+					"regex match failed");
 				goto done;
 			}
 			if ( iRet != XREGEX_MATCH ) continue;
@@ -152,7 +158,7 @@ fail:
 		if ( pRegexes[i] != NULL ) xuiXrtRegexDestroy(pRegexes[i]);
 	}
 	xrtFree(pRegexes);
-	return XUI_ERROR_INVALID_ARGUMENT;
+	return iResult;
 #endif
 }
 

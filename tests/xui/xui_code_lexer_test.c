@@ -34,6 +34,58 @@ static int find_span(const xui_code_token_t* pTokens, int iCount,
 	return -1;
 }
 
+static int test_regex_allocation_failures(const xui_code_regex_rule_t* pRule)
+{
+	static const size_t arrBudgets[] = {
+		1u, 8u, 16u, 32u, 64u, 128u, 256u, 512u, 1024u,
+		2048u, 4096u, 8192u, 16384u, 32768u, 65536u
+	};
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xallocationbudgetinfo tInfo;
+	xui_code_token_t arrTokens[8];
+	char sError[80];
+	int bSawFailure;
+	int bSawSuccess;
+	int iCount;
+	int iRet;
+	size_t i;
+
+	bSawFailure = 0;
+	bSawSuccess = 0;
+	for ( i = 0u; i < sizeof(arrBudgets) / sizeof(arrBudgets[0]); i++ ) {
+		pBudget = NULL;
+		memset(&tScope, 0, sizeof(tScope));
+		memset(&tInfo, 0, sizeof(tInfo));
+		tInfo.Size = sizeof(tInfo);
+		if ( !xrtAllocationBudgetCreate(arrBudgets[i], &pBudget) ||
+		     !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+			xrtAllocationBudgetFree(pBudget);
+			return 0;
+		}
+		iCount = 77;
+		memset(sError, 0, sizeof(sError));
+		iRet = xuiCodeLexerRegexTokenize("alpha", 5, pRule, 1, arrTokens,
+			8, &iCount, sError, sizeof(sError));
+		if ( !xrtAllocationBudgetLeave(&tScope) ||
+		     !xrtAllocationBudgetInfo(pBudget, &tInfo) ) {
+			xrtAllocationBudgetFree(pBudget);
+			return 0;
+		}
+		xrtAllocationBudgetFree(pBudget);
+		if ( tInfo.LiveBytes != 0u || tInfo.LiveCount != 0u ) return 0;
+		if ( iRet == XUI_OK ) {
+			if ( iCount != 1 ) return 0;
+			bSawSuccess = 1;
+			break;
+		}
+		if ( tInfo.Rejections == 0u || iRet != XUI_ERROR_OUT_OF_MEMORY ||
+		     strcmp(sError, "out of memory") != 0 || iCount != 0 ) return 0;
+		bSawFailure = 1;
+	}
+	return bSawFailure && bSawSuccess;
+}
+
 int main(void)
 {
 	const char* sCode;
@@ -127,6 +179,8 @@ int main(void)
 	XUI_TEST_CHECK(iIndex >= 0 && arrTokens[iIndex].iStartOffset == 6 && arrTokens[iIndex].iEndOffset == 9, "regex number");
 	iIndex = find_kind(arrTokens, iCount, XUI_CODE_TOKEN_OPERATOR);
 	XUI_TEST_CHECK(iIndex >= 0, "regex operator");
+	XUI_TEST_CHECK(test_regex_allocation_failures(&arrRules[1]),
+		"regex lexer reports allocation failures transactionally");
 
 	arrRules[0].sPattern = "[0-9]+";
 	iRet = xuiCodeLexerRegexTokenize("e\xCC\x81", -1, arrRules, 1,

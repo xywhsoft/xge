@@ -236,13 +236,19 @@ XUI_API int xuiCodeSearchFindPlainRange(xui_code_document pDocument, const char*
 static int __xuiCodeSearchCreateRegex(xui_xrt_regex_t** ppRegex, const char* sPattern, uint32_t iFlags, char* sError, int iErrorCapacity)
 {
 	uint32 iRegexFlags = 0u;
+	int iRet;
 	if ( (iFlags & XUI_CODE_SEARCH_CASE_SENSITIVE) == 0 ) iRegexFlags |= 1u;
 	if ( (iFlags & XUI_CODE_SEARCH_MULTILINE) != 0 ) iRegexFlags |= 2u;
 	if ( (iFlags & XUI_CODE_SEARCH_DOT_NEWLINE) != 0 ) iRegexFlags |= 4u;
-	*ppRegex = xuiXrtRegexCreate(sPattern, strlen(sPattern), iRegexFlags);
-	if ( *ppRegex == NULL ) {
+	iRet = xuiXrtRegexCreateChecked(sPattern, strlen(sPattern), iRegexFlags,
+		ppRegex);
+	if ( iRet != XUI_OK ) {
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) {
+			__xuiCodeSearchSetError(sError, iErrorCapacity, "out of memory");
+			return iRet;
+		}
 		__xuiCodeSearchSetError(sError, iErrorCapacity, "regex compile failed");
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return iRet;
 	}
 	return XUI_OK;
 }
@@ -284,7 +290,7 @@ static int __xuiCodeSearchFindRegexForward(xui_xrt_regex_t* pRegex, const char* 
 	iPos = iStartOffset;
 	while ( iPos <= iEndOffset ) {
 		iRet = xuiXrtRegexFindAt(pRegex, sText, (size_t)iEndOffset, (size_t)iPos, &tSpan);
-		if ( iRet == XREGEX_ERROR ) return XUI_ERROR_INVALID_STATE;
+		if ( iRet == XREGEX_ERROR ) return xuiXrtRegexFailureStatus();
 		if ( iRet != XREGEX_MATCH || (int)tSpan.Begin > iEndOffset ) return XUI_ERROR_UNSUPPORTED;
 		if ( (int)tSpan.End <= iEndOffset &&
 		     __xuiCodeSearchFillRegexResult(pRegex, sText, iTextLength, tSpan, iFlags, pResult) == XUI_OK ) return XUI_OK;
@@ -370,11 +376,16 @@ XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument,
 	}
 	iTextLength = iRangeEnd - iRangeStart;
 	sText = (char*)xrtMalloc((size_t)iTextLength + 1u);
-	if ( sText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( sText == NULL ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "out of memory");
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
 	iRet = xuiCodeDocumentCopyRange(pDocument, iRangeStart, iRangeEnd,
 		sText, iTextLength + 1, NULL);
 	if ( iRet != XUI_OK ) {
 		xrtFree(sText);
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY )
+			__xuiCodeSearchSetError(sError, iErrorCapacity, "out of memory");
 		return iRet;
 	}
 	iRet = __xuiCodeSearchCreateRegex(&pRegex, sPattern, iFlags, sError, iErrorCapacity);
@@ -408,8 +419,10 @@ XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument,
 	xrtFree(sText);
 	if ( iRet == XUI_OK ) __xuiCodeSearchSetError(sError, iErrorCapacity, "");
 	else if ( iRet == XUI_ERROR_UNSUPPORTED ) __xuiCodeSearchSetError(sError, iErrorCapacity, "not found");
-	else if ( sError != NULL && iErrorCapacity > 0 && sError[0] == '\0' )
-		__xuiCodeSearchSetError(sError, iErrorCapacity, "regex match failed");
+	else if ( sError != NULL && iErrorCapacity > 0 && sError[0] == '\0' ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity,
+			iRet == XUI_ERROR_OUT_OF_MEMORY ? "out of memory" : "regex match failed");
+	}
 	return iRet;
 #endif
 }
