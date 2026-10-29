@@ -72,6 +72,7 @@ typedef struct xui_window_data_t {
 	int iChangeCount;
 	int iCloseCount;
 	uint32_t iChromeStyleVersion;
+	xui_surface_dependency_t tIconDependency;
 } xui_window_data_t;
 
 typedef struct xui_window_resolved_t {
@@ -134,9 +135,23 @@ static float __xuiWindowClamp(float fValue, float fMin, float fMax)
 	return fValue;
 }
 
+static int __xuiWindowCoordinateValid(float fValue)
+{
+	return (fValue == fValue) &&
+		(fValue >= -XUI_LAYOUT_UNBOUNDED) && (fValue <= XUI_LAYOUT_UNBOUNDED);
+}
+
 static int __xuiWindowFloatValid(float fValue)
 {
-	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
+	return __xuiWindowCoordinateValid(fValue) && (fValue >= 0.0f);
+}
+
+static int __xuiWindowSourceRectValid(xui_rect_t tRect)
+{
+	return __xuiWindowCoordinateValid(tRect.fX) &&
+		__xuiWindowCoordinateValid(tRect.fY) &&
+		__xuiWindowFloatValid(tRect.fW) &&
+		__xuiWindowFloatValid(tRect.fH);
 }
 
 static uint32_t __xuiWindowDefaultResizeEdges(const xui_window_data_t* pData)
@@ -166,10 +181,7 @@ static int __xuiWindowDescValid(const xui_window_desc_t* pDesc)
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) {
 		return 0;
 	}
-	if ( pDesc->tIconSrc.fX < -(int)XUI_LAYOUT_UNBOUNDED || pDesc->tIconSrc.fX > (int)XUI_LAYOUT_UNBOUNDED ||
-	     pDesc->tIconSrc.fY < -(int)XUI_LAYOUT_UNBOUNDED || pDesc->tIconSrc.fY > (int)XUI_LAYOUT_UNBOUNDED ||
-	     pDesc->tIconSrc.fW < 0 || pDesc->tIconSrc.fW > (int)XUI_LAYOUT_UNBOUNDED ||
-	     pDesc->tIconSrc.fH < 0 || pDesc->tIconSrc.fH > (int)XUI_LAYOUT_UNBOUNDED ) {
+	if ( !__xuiWindowSourceRectValid(pDesc->tIconSrc) ) {
 		return 0;
 	}
 	if ( ((pDesc->fTitleBarHeight != 0.0f) && !__xuiWindowFloatValid(pDesc->fTitleBarHeight)) ||
@@ -1685,7 +1697,17 @@ static int __xuiWindowPreparePaint(xui_widget pWidget)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
 	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_proxy pProxy;
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(pContext);
+	iRet = XUI_OK;
+	if ( xuiInternalSurfaceDependencySync(pProxy, pData->pIconSurface,
+	     &pData->tIconDependency, 0) ) {
+		iRet = xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pContext->pDragAdornerOwner == pWidget && pContext->iDragAdornerPrimitiveCount == 1 ) {
 		uint32_t iColor = pData->iActiveBorderColor;
 		(void)__xuiWindowStyleColor(pWidget, "window.border.active_color", &iColor);
@@ -1931,11 +1953,7 @@ XUI_API xui_font xuiWindowGetFont(xui_widget pWidget)
 XUI_API int xuiWindowSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
-	if ( pData == NULL ||
-	     tSrc.fX < -(int)XUI_LAYOUT_UNBOUNDED || tSrc.fX > (int)XUI_LAYOUT_UNBOUNDED ||
-	     tSrc.fY < -(int)XUI_LAYOUT_UNBOUNDED || tSrc.fY > (int)XUI_LAYOUT_UNBOUNDED ||
-	     tSrc.fW < 0 || tSrc.fW > (int)XUI_LAYOUT_UNBOUNDED ||
-	     tSrc.fH < 0 || tSrc.fH > (int)XUI_LAYOUT_UNBOUNDED ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !__xuiWindowSourceRectValid(tSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pIconSurface == pSurface && memcmp(&pData->tIconSrc, &tSrc, sizeof(tSrc)) == 0 ) return XUI_OK;
 	pData->pIconSurface = pSurface;
 	pData->tIconSrc = tSrc;

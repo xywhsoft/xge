@@ -137,6 +137,7 @@ int main(void)
 	xui_widget pFocusChild;
 	xui_widget pDragAdorner;
 	xui_surface pTarget;
+	xui_surface pCache;
 	xui_font pFont;
 	xui_window_desc_t tDesc;
 	xui_rect_t tRect;
@@ -180,6 +181,7 @@ int main(void)
 	pFocusChild = NULL;
 	pDragAdorner = NULL;
 	pTarget = NULL;
+	pCache = NULL;
 	pFont = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
@@ -211,6 +213,13 @@ int main(void)
 	iRet = xuiWindowCreate(pContext, &pInvalidWindow, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWindow == NULL,
 		"invalid descriptor clears create output");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.tIconSrc.fX = NAN;
+	pInvalidWindow = pRoot;
+	iRet = xuiWindowCreate(pContext, &pInvalidWindow, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidWindow == NULL,
+		"descriptor rejects NaN icon source");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -356,11 +365,27 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
 		memcmp(&tIconBefore, &tIconAfter, sizeof(tIconBefore)) == 0,
 		"invalid icon source preserves state");
+	iRet = xuiWindowSetIcon(pMain, pTarget, (xui_rect_t){NAN, 2, 16, 16});
+	tIconAfter = xuiWindowGetIconSource(pMain);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		memcmp(&tIconBefore, &tIconAfter, sizeof(tIconBefore)) == 0,
+		"NaN icon source preserves state");
 
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
+	pCache = xuiWidgetGetCacheSurface(pMain, xuiWidgetGetStateId(pMain));
+	XUI_TEST_CHECK(pCache != NULL, "window cache surface");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) == 0,
+		"unchanged borrowed window icon reuses cache");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pTarget,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) > 0,
+		"borrowed window icon generation rebuilds cache");
 
 	XUI_TEST_CHECK(xuiWindowGetClientWidget(pMain) != NULL, "client widget");
 	XUI_TEST_CHECK(xuiWindowGetCloseButtonWidget(pMain) != NULL, "close button");
