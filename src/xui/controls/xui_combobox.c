@@ -229,6 +229,45 @@ static void __xuiComboBoxClearItemTexts(xui_combobox_data_t* pData)
 	}
 }
 
+static void __xuiComboBoxNormalizeItem(xui_combobox_item_t* pItem,
+	const char** arrItems, const xui_combobox_item_t* arrItemData,
+	const int* arrEnabled, int iIndex)
+{
+	memset(pItem, 0, sizeof(*pItem));
+	if ( arrItemData != NULL ) {
+		*pItem = arrItemData[iIndex];
+		if ( pItem->bSeparator ) pItem->bEnabled = 0;
+	} else {
+		pItem->sText = arrItems[iIndex];
+		pItem->iValue = iIndex;
+		pItem->bEnabled = 1;
+	}
+	if ( (arrEnabled != NULL) && !arrEnabled[iIndex] ) pItem->bEnabled = 0;
+}
+
+static int __xuiComboBoxItemsEqual(const xui_combobox_data_t* pData,
+	const char** arrItems, const xui_combobox_item_t* arrItemData,
+	const int* arrEnabled, int iCount)
+{
+	xui_combobox_item_t tItem;
+	const xui_combobox_item_t* pCurrent;
+	int i;
+
+	if ( (pData == NULL) || (pData->iItemCount != iCount) ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		__xuiComboBoxNormalizeItem(&tItem, arrItems, arrItemData, arrEnabled, i);
+		pCurrent = &pData->arrItems[i];
+		if ( strcmp(__xuiComboBoxText(pCurrent->sText),
+		            __xuiComboBoxText(tItem.sText)) != 0 ||
+		     pCurrent->iValue != tItem.iValue ||
+		     pCurrent->bEnabled != tItem.bEnabled ||
+		     pCurrent->bSeparator != tItem.bSeparator ||
+		     pCurrent->iIcon != tItem.iIcon ||
+		     pCurrent->pUser != tItem.pUser ) return 0;
+	}
+	return 1;
+}
+
 static int __xuiComboBoxStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
 {
 	xui_style_property_t tProperty;
@@ -859,28 +898,20 @@ static int __xuiComboBoxSetItemsInternal(xui_widget pWidget, xui_combobox_data_t
 	     ((iCount > 0) && (arrItems == NULL) && (arrItemData == NULL)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xuiComboBoxItemsEqual(pData, arrItems, arrItemData, arrEnabled, iCount) ) {
+		return XUI_OK;
+	}
 	memset(arrNewItems, 0, sizeof(arrNewItems));
 	memset(arrNewTexts, 0, sizeof(arrNewTexts));
 	for ( i = 0; i < iCount; i++ ) {
-		if ( arrItemData != NULL ) {
-			arrNewItems[i] = arrItemData[i];
-			if ( arrNewItems[i].bSeparator ) {
-				arrNewItems[i].bEnabled = 0;
-			}
-		} else {
-			arrNewItems[i].sText = arrItems[i];
-			arrNewItems[i].iValue = i;
-			arrNewItems[i].bEnabled = 1;
-		}
+		__xuiComboBoxNormalizeItem(&arrNewItems[i], arrItems, arrItemData,
+			arrEnabled, i);
 		arrNewTexts[i] = __xuiComboBoxCopyText(arrNewItems[i].sText);
 		if ( arrNewItems[i].sText != NULL && arrNewTexts[i] == NULL ) {
 			while ( i-- > 0 ) xrtFree(arrNewTexts[i]);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 		arrNewItems[i].sText = arrNewTexts[i];
-		if ( arrEnabled != NULL && !arrEnabled[i] ) {
-			arrNewItems[i].bEnabled = 0;
-		}
 	}
 	memcpy(arrOldItems, pData->arrItems, sizeof(arrOldItems));
 	memcpy(arrOldTexts, pData->arrItemTextStorage, sizeof(arrOldTexts));

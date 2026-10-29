@@ -368,10 +368,41 @@ int main(void)
 	arrOwnedItems[0] = sOwnedItem;
 	iRet = xuiComboBoxSetItems(pCombo, arrOwnedItems, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set caller-owned item text");
+	{
+		const char* sStoredText = xuiComboBoxGetItemText(pCombo, 0);
+		xui_widget pItemsMenu = xuiComboBoxGetMenuWidget(pCombo);
+		xuiWidgetClearDirty(pCombo, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pItemsMenu, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiComboBoxSetItems(pCombo, arrOwnedItems, 1);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxGetItemText(pCombo, 0) == sStoredText &&
+		               xuiWidgetGetDirtyFlags(pCombo) == 0u &&
+		               xuiWidgetGetDirtyFlags(pItemsMenu) == 0u,
+		               "same string items preserve storage and menu state");
+	}
 	sOwnedItem[0] = 'X';
 	XUI_TEST_CHECK(strcmp(xuiComboBoxGetItemText(pCombo, 0), "Owned") == 0, "item text is deep copied");
 	iRet = xuiComboBoxSetItemData(pCombo, arrItems, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxSetSelected(pCombo, 0) == XUI_OK, "restore item data after ownership test");
+	{
+		xui_widget pItemsMenu = xuiComboBoxGetMenuWidget(pCombo);
+		xui_widget pItemsPopup = xuiComboBoxGetPopupWidget(pCombo);
+		int iChangeCount = xuiComboBoxGetChangeCount(pCombo);
+		iRet = xuiComboBoxOpen(pCombo);
+		if ( iRet == XUI_OK ) iRet = xuiMenuSetHoverIndex(pItemsMenu, 3);
+		xuiWidgetClearDirty(pCombo, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pItemsMenu, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pItemsPopup, XUI_WIDGET_DIRTY_ALL);
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxSetItemData(pCombo, arrItems, 5);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pCombo) &&
+		               xuiMenuGetHoverIndex(pItemsMenu) == 3 &&
+		               xuiComboBoxGetChangeCount(pCombo) == iChangeCount &&
+		               xuiWidgetGetDirtyFlags(pCombo) == 0u &&
+		               xuiWidgetGetDirtyFlags(pItemsMenu) == 0u &&
+		               xuiWidgetGetDirtyFlags(pItemsPopup) == 0u,
+		               "same structured items preserve open popup interaction state");
+		if ( iRet == XUI_OK ) iRet = xuiComboBoxClose(pCombo);
+		XUI_TEST_CHECK(iRet == XUI_OK, "close popup after same item data test");
+	}
 	tButton = xuiComboBoxGetButtonRect(pCombo);
 	XUI_TEST_CHECK(tButton.fW > 20.0f && tButton.fH > 20.0f, "button rect");
 	{
