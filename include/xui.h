@@ -7476,6 +7476,9 @@ XUI_API int xuiCodeFoldStateLineToVisibleRow(xui_code_fold_state pState, int iLi
 XUI_API int xuiCodeFoldStateVisibleRowToLine(xui_code_fold_state pState, int iLineCount, int iRow, int* pLine);
 /* 构建可见行号映射表。 */
 XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iLineCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);
+/* 语言服务回调在请求线程同步执行。回调写入的字符串和参数数组仍由提供者
+ * 所有，并须保持有效，直至同类请求再次执行、相应回调被替换或集合被清空。
+ * 补全回调返回的数量不得超过 iItemCapacity；每个返回描述必须设置有效 iSize。 */
 /* 创建语言服务提供者集合（补全/悬停/签名/命令）。 */
 XUI_API int xuiCodeProviderSetCreate(xui_code_provider_set* ppProviders);
 /* 释放提供者集合。 */
@@ -7492,7 +7495,8 @@ XUI_API int xuiCodeProviderSetSignature(xui_code_provider_set pProviders, xui_co
 XUI_API int xuiCodeProviderSetCommand(xui_code_provider_set pProviders, xui_code_command_proc onCommand, void* pUser);
 /* 注册命令可用性查询回调。 */
 XUI_API int xuiCodeProviderSetCommandEnabled(xui_code_provider_set pProviders, xui_code_command_enabled_proc onEnabled, void* pUser);
-/* 请求指定前缀的补全项（同步调用注册的提供者）。 */
+/* 请求指定前缀的补全项（同步调用注册的提供者）。pItems 在回调前清零，
+ * 每个槽位的 iSize 会预置为当前结构大小。 */
 XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount);
 /* 请求指定偏移的悬停信息。 */
 XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, xui_code_hover_t* pHover);

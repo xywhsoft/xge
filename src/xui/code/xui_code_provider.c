@@ -1,7 +1,9 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui.h"
+#include "xui_code_provider_internal.h"
 
+#include <stddef.h>
 #include <string.h>
 
 struct xui_code_provider_set_t {
@@ -16,6 +18,34 @@ struct xui_code_provider_set_t {
 	xui_code_command_enabled_proc onCommandEnabled;
 	void* pCommandEnabledUser;
 };
+
+static void __xuiCodeProviderCompletionItemsReset(
+	xui_code_completion_item_t* pItems, int iItemCapacity)
+{
+	int i;
+
+	if ( pItems == NULL || iItemCapacity <= 0 ) return;
+	memset(pItems, 0, sizeof(*pItems) * (size_t)iItemCapacity);
+	for ( i = 0; i < iItemCapacity; i++ ) {
+		pItems[i].iSize = sizeof(pItems[i]);
+	}
+}
+
+static int __xuiCodeProviderCompletionItemsValid(
+	const xui_code_completion_item_t* pItems, int iItemCount)
+{
+	size_t iRequiredSize = offsetof(xui_code_completion_item_t, iUserData) +
+		sizeof(pItems[0].iUserData);
+	int i;
+
+	for ( i = 0; i < iItemCount; i++ ) {
+		if ( pItems[i].iSize < iRequiredSize || pItems[i].sLabel == NULL ||
+		     pItems[i].sLabel[0] == '\0' ) {
+			return 0;
+		}
+	}
+	return 1;
+}
 
 XUI_API int xuiCodeProviderSetCreate(xui_code_provider_set* ppProviders)
 {
@@ -90,16 +120,20 @@ XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set pProviders, x
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*pItemCount = 0;
+	__xuiCodeProviderCompletionItemsReset(pItems, iItemCapacity);
 	if ( pProviders->onComplete == NULL ) return XUI_ERROR_UNSUPPORTED;
 	iRet = pProviders->onComplete((xui_widget_t*)pWidget, iOffset,
 		(sPrefix != NULL) ? sPrefix : "", pItems, iItemCapacity,
 		pItemCount, pProviders->pCompleteUser);
 	if ( iRet != XUI_OK ) {
 		*pItemCount = 0;
+		__xuiCodeProviderCompletionItemsReset(pItems, iItemCapacity);
 		return iRet;
 	}
-	if ( *pItemCount < 0 ) {
+	if ( *pItemCount < 0 || *pItemCount > iItemCapacity ||
+	     !__xuiCodeProviderCompletionItemsValid(pItems, *pItemCount) ) {
 		*pItemCount = 0;
+		__xuiCodeProviderCompletionItemsReset(pItems, iItemCapacity);
 		return XUI_ERROR_INVALID_STATE;
 	}
 	return XUI_OK;
@@ -119,9 +153,7 @@ XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set pProviders, xui_wi
 	iRet = pProviders->onHover((xui_widget_t*)pWidget, iOffset,
 		&tHover, pProviders->pHoverUser);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( tHover.tRange.iStart < 0 || tHover.tRange.iEnd < tHover.tRange.iStart ) {
-		return XUI_ERROR_INVALID_STATE;
-	}
+	if ( !xuiInternalCodeProviderHoverValid(&tHover) ) return XUI_ERROR_INVALID_STATE;
 	tHover.iSize = sizeof(tHover);
 	*pHover = tHover;
 	return XUI_OK;
@@ -135,16 +167,15 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set pProviders, xu
 	if ( (pProviders == NULL) || (pHelp == NULL) || (iOffset < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(pHelp, 0, sizeof(*pHelp));
 	pHelp->iSize = sizeof(*pHelp);
+	pHelp->iActiveParameter = -1;
 	if ( pProviders->onSignature == NULL ) return XUI_ERROR_UNSUPPORTED;
 	memset(&tHelp, 0, sizeof(tHelp));
 	tHelp.iSize = sizeof(tHelp);
+	tHelp.iActiveParameter = -1;
 	iRet = pProviders->onSignature((xui_widget_t*)pWidget, iOffset,
 		&tHelp, pProviders->pSignatureUser);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( tHelp.sLabel == NULL || tHelp.iParameterCount < 0 ||
-	     (tHelp.iParameterCount > 0 && tHelp.pParameters == NULL) ) {
-		return XUI_ERROR_INVALID_STATE;
-	}
+	if ( !xuiInternalCodeProviderSignatureValid(&tHelp) ) return XUI_ERROR_INVALID_STATE;
 	tHelp.iSize = sizeof(tHelp);
 	*pHelp = tHelp;
 	return XUI_OK;

@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
+#include "xui_code_provider_internal.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -7918,9 +7919,7 @@ XUI_API int xuiCodeEditShowSignatureHelp(xui_widget pWidget,
 	const char* sFound;
 	int iRet;
 
-	if ( pData == NULL || pHelp == NULL || pHelp->sLabel == NULL ||
-	     pHelp->iParameterCount < 0 ||
-	     (pHelp->iParameterCount > 0 && pHelp->pParameters == NULL) ) {
+	if ( pData == NULL || !xuiInternalCodeProviderSignatureValid(pHelp) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = __xuiCodeEditStringSet(&pData->sAssistLabel,
@@ -8000,7 +7999,9 @@ XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHin
 	int iOffset;
 	int iRet;
 
-	if ( pData == NULL || pHint == NULL || pHint->sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL || !xuiInternalCodeProviderHoverValid(pHint) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	iRet = __xuiCodeEditStringSet(&pData->sAssistLabel,
 		&pData->iAssistLabelCapacity, pHint->sText);
 	if ( iRet != XUI_OK ) return iRet;

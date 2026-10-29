@@ -96,6 +96,52 @@ static int xuiTestInvalidCompletion(xui_widget_t* pWidget, int iOffset,
 	return XUI_OK;
 }
 
+static int xuiTestOverflowCompletion(xui_widget_t* pWidget, int iOffset,
+	const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity,
+	int* pItemCount, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)sPrefix;
+	(void)pUser;
+	if ( pItems != NULL && iItemCapacity > 0 ) pItems[0].sLabel = "overflow";
+	*pItemCount = iItemCapacity + 1;
+	return XUI_OK;
+}
+
+static int xuiTestShortCompletion(xui_widget_t* pWidget, int iOffset,
+	const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity,
+	int* pItemCount, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)sPrefix;
+	(void)pUser;
+	if ( pItems != NULL && iItemCapacity > 0 ) {
+		pItems[0].iSize = sizeof(uint32_t);
+		pItems[0].sLabel = "short";
+	}
+	*pItemCount = 1;
+	return XUI_OK;
+}
+
+static int xuiTestPartialCompletion(xui_widget_t* pWidget, int iOffset,
+	const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity,
+	int* pItemCount, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)sPrefix;
+	(void)pUser;
+	if ( pItems == NULL || iItemCapacity <= 0 ||
+	     pItems[0].iSize != sizeof(pItems[0]) ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	pItems[0].sLabel = "partial";
+	*pItemCount = 1;
+	return XUI_OK;
+}
+
 static int xuiTestFailingCompletion(xui_widget_t* pWidget, int iOffset,
 	const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity,
 	int* pItemCount, void* pUser)
@@ -122,6 +168,28 @@ static int xuiTestInvalidHover(xui_widget_t* pWidget, int iOffset,
 	return XUI_OK;
 }
 
+static int xuiTestShortHover(xui_widget_t* pWidget, int iOffset,
+	xui_code_hover_t* pHover, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	pHover->iSize = sizeof(uint32_t);
+	pHover->tRange = (xui_code_range_t){0, 1};
+	pHover->sText = "short";
+	return XUI_OK;
+}
+
+static int xuiTestMissingTextHover(xui_widget_t* pWidget, int iOffset,
+	xui_code_hover_t* pHover, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	pHover->tRange = (xui_code_range_t){0, 1};
+	return XUI_OK;
+}
+
 static int xuiTestInvalidSignature(xui_widget_t* pWidget, int iOffset,
 	xui_code_signature_help_t* pHelp, void* pUser)
 {
@@ -131,6 +199,66 @@ static int xuiTestInvalidSignature(xui_widget_t* pWidget, int iOffset,
 	pHelp->sLabel = "invalid";
 	pHelp->iParameterCount = 1;
 	pHelp->pParameters = NULL;
+	return XUI_OK;
+}
+
+static int xuiTestInvalidActiveSignature(xui_widget_t* pWidget, int iOffset,
+	xui_code_signature_help_t* pHelp, void* pUser)
+{
+	static xui_code_signature_parameter_t tParameter;
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	memset(&tParameter, 0, sizeof(tParameter));
+	tParameter.iSize = sizeof(tParameter);
+	pHelp->sLabel = "call(value)";
+	pHelp->pParameters = &tParameter;
+	pHelp->iParameterCount = 1;
+	pHelp->iActiveParameter = 1;
+	return XUI_OK;
+}
+
+static int xuiTestInvalidParameterSignature(xui_widget_t* pWidget, int iOffset,
+	xui_code_signature_help_t* pHelp, void* pUser)
+{
+	static xui_code_signature_parameter_t tParameter;
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	memset(&tParameter, 0, sizeof(tParameter));
+	tParameter.iSize = sizeof(uint32_t);
+	tParameter.tLabelRange = (xui_code_range_t){5, 10};
+	pHelp->sLabel = "call(value)";
+	pHelp->pParameters = &tParameter;
+	pHelp->iParameterCount = 1;
+	pHelp->iActiveParameter = 0;
+	return XUI_OK;
+}
+
+static int xuiTestOutOfRangeParameterSignature(xui_widget_t* pWidget, int iOffset,
+	xui_code_signature_help_t* pHelp, void* pUser)
+{
+	static xui_code_signature_parameter_t tParameter;
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	memset(&tParameter, 0, sizeof(tParameter));
+	tParameter.iSize = sizeof(tParameter);
+	tParameter.tLabelRange = (xui_code_range_t){5, 50};
+	pHelp->sLabel = "call(value)";
+	pHelp->pParameters = &tParameter;
+	pHelp->iParameterCount = 1;
+	pHelp->iActiveParameter = 0;
+	return XUI_OK;
+}
+
+static int xuiTestEmptySignature(xui_widget_t* pWidget, int iOffset,
+	xui_code_signature_help_t* pHelp, void* pUser)
+{
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	pHelp->sLabel = "call()";
 	return XUI_OK;
 }
 
@@ -217,6 +345,29 @@ int main(void)
 	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 0, NULL, NULL, 0, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && iCount == 0,
 		"negative completion count rejected");
+	iRet = xuiCodeProviderSetCompletion(pProviders, xuiTestOverflowCompletion, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set overflow completion");
+	arrItems[0].sDetail = "stale";
+	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 0, NULL,
+		arrItems, 1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && iCount == 0 &&
+		arrItems[0].sLabel == NULL && arrItems[0].sDetail == NULL &&
+		arrItems[0].iSize == sizeof(arrItems[0]),
+		"overflow completion rejected and output reset");
+	iRet = xuiCodeProviderSetCompletion(pProviders, xuiTestShortCompletion, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set short completion");
+	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 0, NULL,
+		arrItems, 1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && iCount == 0,
+		"short completion descriptor rejected");
+	iRet = xuiCodeProviderSetCompletion(pProviders, xuiTestPartialCompletion, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set partial completion");
+	arrItems[0].sDetail = "stale";
+	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 0, NULL,
+		arrItems, 1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		strcmp(arrItems[0].sLabel, "partial") == 0 && arrItems[0].sDetail == NULL,
+		"completion slots initialized before callback");
 	iRet = xuiCodeProviderSetCompletion(pProviders, xuiTestFailingCompletion, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set failing completion");
 	iRet = xuiCodeProviderRequestCompletion(pProviders, NULL, 0, NULL, NULL, 0, &iCount);
@@ -228,11 +379,44 @@ int main(void)
 	iRet = xuiCodeProviderRequestHover(pProviders, NULL, 0, &tHover);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tHover.sText == NULL,
 		"invalid hover output rejected");
+	iRet = xuiCodeProviderSetHover(pProviders, xuiTestShortHover, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set short hover");
+	iRet = xuiCodeProviderRequestHover(pProviders, NULL, 0, &tHover);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tHover.sText == NULL,
+		"short hover descriptor rejected");
+	iRet = xuiCodeProviderSetHover(pProviders, xuiTestMissingTextHover, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set missing text hover");
+	iRet = xuiCodeProviderRequestHover(pProviders, NULL, 0, &tHover);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tHover.sText == NULL,
+		"missing hover text rejected");
 	iRet = xuiCodeProviderSetSignature(pProviders, xuiTestInvalidSignature, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid signature");
 	iRet = xuiCodeProviderRequestSignature(pProviders, NULL, 0, &tSignature);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tSignature.sLabel == NULL,
 		"invalid signature output rejected");
+	iRet = xuiCodeProviderSetSignature(pProviders, xuiTestInvalidActiveSignature, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid active signature");
+	iRet = xuiCodeProviderRequestSignature(pProviders, NULL, 0, &tSignature);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tSignature.sLabel == NULL &&
+		tSignature.iActiveParameter == -1,
+		"invalid active signature rejected");
+	iRet = xuiCodeProviderSetSignature(pProviders, xuiTestInvalidParameterSignature, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid parameter signature");
+	iRet = xuiCodeProviderRequestSignature(pProviders, NULL, 0, &tSignature);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tSignature.sLabel == NULL,
+		"short signature parameter rejected");
+	iRet = xuiCodeProviderSetSignature(pProviders,
+		xuiTestOutOfRangeParameterSignature, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set out-of-range parameter signature");
+	iRet = xuiCodeProviderRequestSignature(pProviders, NULL, 0, &tSignature);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && tSignature.sLabel == NULL,
+		"out-of-range signature parameter rejected");
+	iRet = xuiCodeProviderSetSignature(pProviders, xuiTestEmptySignature, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set empty signature");
+	iRet = xuiCodeProviderRequestSignature(pProviders, NULL, 0, &tSignature);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tSignature.sLabel, "call()") == 0 &&
+		tSignature.iParameterCount == 0 && tSignature.iActiveParameter == -1,
+		"empty signature receives no-active default");
 
 	iRet = xuiCodeProviderSetCommand(pProviders, xuiTestFailingCommand, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set failing command");

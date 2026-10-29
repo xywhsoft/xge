@@ -451,6 +451,8 @@ int main(void)
 	xui_code_placeholder_t arrPlaceholders[2];
 	xui_code_placeholder_t tActivePlaceholder;
 	xui_code_hover_t tHint;
+	xui_code_signature_parameter_t tSignatureParameter;
+	xui_code_signature_help_t tSignatureHelp;
 	xui_code_margin_desc_t tCustomMargin;
 	xui_code_margin_info_t tMargin;
 	xui_code_language_t tToyLanguage;
@@ -2141,8 +2143,41 @@ int main(void)
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ESCAPE, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsSignatureHelpOpen(pToyEdit),
 		"escape closes signature popup");
+	memset(&tSignatureHelp, 0, sizeof(tSignatureHelp));
+	tSignatureHelp.iSize = sizeof(uint32_t);
+	tSignatureHelp.sLabel = "call(value)";
+	tSignatureHelp.iActiveParameter = -1;
+	iRet = xuiCodeEditShowSignatureHelp(pToyEdit, &tSignatureHelp);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		!xuiCodeEditIsSignatureHelpOpen(pToyEdit),
+		"short direct signature descriptor rejected");
+	memset(&tSignatureParameter, 0, sizeof(tSignatureParameter));
+	tSignatureParameter.iSize = sizeof(tSignatureParameter);
+	tSignatureParameter.tLabelRange = (xui_code_range_t){5, 50};
+	memset(&tSignatureHelp, 0, sizeof(tSignatureHelp));
+	tSignatureHelp.iSize = sizeof(tSignatureHelp);
+	tSignatureHelp.sLabel = "call(value)";
+	tSignatureHelp.pParameters = &tSignatureParameter;
+	tSignatureHelp.iParameterCount = 1;
+	tSignatureHelp.iActiveParameter = 0;
+	iRet = xuiCodeEditShowSignatureHelp(pToyEdit, &tSignatureHelp);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		!xuiCodeEditIsSignatureHelpOpen(pToyEdit),
+		"invalid direct signature range rejected");
+	memset(&tHint, 0, sizeof(tHint));
+	tHint.iSize = sizeof(uint32_t);
+	tHint.tRange = (xui_code_range_t){1, 2};
+	tHint.sText = "short";
+	iRet = xuiCodeEditShowHint(pToyEdit, &tHint);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && !xuiCodeEditIsHintOpen(pToyEdit),
+		"short direct hint descriptor rejected");
 	memset(&tHint, 0, sizeof(tHint));
 	tHint.iSize = sizeof(tHint);
+	tHint.tRange = (xui_code_range_t){2, 1};
+	tHint.sText = "invalid range";
+	iRet = xuiCodeEditShowHint(pToyEdit, &tHint);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && !xuiCodeEditIsHintOpen(pToyEdit),
+		"invalid direct hint range rejected");
 	tHint.tRange = (xui_code_range_t){1, 2};
 	tHint.sText = "automation hint";
 	tHint.sContentType = "text/plain";
