@@ -368,11 +368,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pTagInput,
 		"tag close captures pointer");
 
-	iRet = xuiWidgetSetEnabled(pTagInput, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK, "disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable ancestor during close press");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
-		"disable releases tag close capture");
+		"ancestor disable releases tag close capture");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pTagInput, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore ancestor and disable tag input");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disabled render prepare");
 	XUI_TEST_CHECK((xuiTagInputGetState(pTagInput) & XUI_WIDGET_STATE_DISABLED) != 0, "disabled state");

@@ -1016,9 +1016,12 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( !xuiWidgetGetEnabled(pWidget) || !xuiWidgetGetVisible(pWidget) ) {
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 			iRet = __xuiTagInputCancelPointer(pWidget, pData, 0);
 			if ( iRet != XUI_OK ) return iRet;
+			pData->bHover = 0;
+			pData->iHoverClose = -1;
 		}
 		iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1270,7 +1273,8 @@ static int __xuiTagInputSyncInputStyle(xui_widget pWidget, xui_tag_input_data_t*
 		return (pWidget != NULL && pData != NULL) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTagInputResolve(pWidget, pData, &tResolved);
-	bEnabled = xuiWidgetGetEffectiveEnabled(pWidget) && xuiWidgetGetVisible(pWidget);
+	bEnabled = xuiWidgetGetEffectiveEnabled(pWidget) &&
+		xuiWidgetGetEffectiveVisible(pWidget);
 	iRet = __xuiTagInputSyncInputColors(pData->pInput, &tResolved);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiInputSetBorderWidth(pData->pInput, 0.0f);
