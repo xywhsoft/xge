@@ -2,7 +2,11 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <string.h>
+
+static int __xuiCodeEditingUnicodeRead(void* pUser, int iOffset,
+	unsigned char* pByte);
 
 static int __xuiCodeEditingWritable(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly)
 {
@@ -10,12 +14,28 @@ static int __xuiCodeEditingWritable(xui_code_document pDocument, xui_code_select
 	return bReadonly ? XUI_ERROR_UNSUPPORTED : XUI_OK;
 }
 
-static int __xuiCodeEditingSelectionRange(xui_code_selection_model pSelection, int* pStart, int* pEnd)
+static int __xuiCodeEditingClampOffset(xui_code_document pDocument, int iOffset)
+{
+	int iLength;
+
+	if ( pDocument == NULL ) return 0;
+	iLength = xuiCodeDocumentGetLength(pDocument);
+	if ( iOffset <= 0 ) return 0;
+	if ( iOffset >= iLength ) return iLength;
+	return xuiInternalTextGraphemeClampRead(__xuiCodeEditingUnicodeRead,
+		pDocument, iLength, iOffset);
+}
+
+static int __xuiCodeEditingSelectionRange(xui_code_document pDocument,
+	xui_code_selection_model pSelection, int* pStart, int* pEnd)
 {
 	int iRet;
 
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = xuiCodeSelectionGetRange(pSelection, pStart, pEnd);
 	if ( iRet != XUI_OK ) return iRet;
+	*pStart = __xuiCodeEditingClampOffset(pDocument, *pStart);
+	*pEnd = __xuiCodeEditingClampOffset(pDocument, *pEnd);
 	return XUI_OK;
 }
 
@@ -25,7 +45,7 @@ static int __xuiCodeEditingSelectedLines(xui_code_document pDocument, xui_code_s
 	int iEnd;
 	int iRet;
 
-	iRet = __xuiCodeEditingSelectionRange(pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeEditingSelectionRange(pDocument, pSelection, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeDocumentOffsetToLineColumn(pDocument, iStart, pStartLine, NULL);
 	if ( iRet != XUI_OK ) return iRet;
@@ -55,6 +75,46 @@ static int __xuiCodeEditingAdjustOffsetForDelete(int iOffset, int iStart, int iE
 	if ( iOffset <= iStart ) return iOffset;
 	if ( iOffset >= iEnd ) return iOffset - iLength;
 	return iStart;
+}
+
+static int __xuiCodeEditingTextLength(const char* sText, int* pLength)
+{
+	size_t iLength;
+
+	if ( sText == NULL || pLength == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iLength = strlen(sText);
+	if ( iLength > (size_t)INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pLength = (int)iLength;
+	return XUI_OK;
+}
+
+static int __xuiCodeEditingCanGrowDocument(xui_code_document pDocument,
+	int iItemCount, int iItemLength)
+{
+	int iLength;
+
+	if ( pDocument == NULL || iItemCount < 0 || iItemLength < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iLength = xuiCodeDocumentGetLength(pDocument);
+	if ( iItemLength > 0 && iItemCount > (INT_MAX - iLength) / iItemLength ) {
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	return XUI_OK;
+}
+
+static int __xuiCodeEditingNormalizeCollapsedSelection(
+	xui_code_selection_model pSelection, xui_code_document pDocument, int iOffset)
+{
+	xui_code_selection_t tState;
+	int iRet;
+
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( tState.iAnchorOffset == iOffset && tState.iCaretOffset == iOffset ) {
+		return XUI_OK;
+	}
+	return xuiCodeSelectionGotoOffset(pSelection, pDocument, iOffset, 0);
 }
 
 static char __xuiCodeEditingByteAt(xui_code_document pDocument, int iOffset)
@@ -130,7 +190,7 @@ XUI_API int xuiCodeEditingInsertText(xui_code_document pDocument, xui_code_selec
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiCodeEditingSelectionRange(pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeEditingSelectionRange(pDocument, pSelection, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
 	iOldDocumentLength = xuiCodeDocumentGetLength(pDocument);
 	iRet = xuiCodeDocumentReplace(pDocument, iStart, iEnd, sText);
@@ -148,10 +208,12 @@ XUI_API int xuiCodeEditingDeleteBackward(xui_code_document pDocument, xui_code_s
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCodeEditingSelectionRange(pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeEditingSelectionRange(pDocument, pSelection, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iStart == iEnd ) {
-		if ( iStart <= 0 ) return XUI_OK;
+		if ( iStart <= 0 ) {
+			return __xuiCodeEditingNormalizeCollapsedSelection(pSelection, pDocument, 0);
+		}
 		iStart = __xuiCodeEditingUtf8Prev(pDocument, xuiCodeDocumentGetLength(pDocument), iStart);
 	}
 	iRet = xuiCodeDocumentDelete(pDocument, iStart, iEnd);
@@ -168,11 +230,13 @@ XUI_API int xuiCodeEditingDeleteForward(xui_code_document pDocument, xui_code_se
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCodeEditingSelectionRange(pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeEditingSelectionRange(pDocument, pSelection, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iStart == iEnd ) {
-		if ( iEnd >= iLength ) return XUI_OK;
+		if ( iEnd >= iLength ) {
+			return __xuiCodeEditingNormalizeCollapsedSelection(pSelection, pDocument, iLength);
+		}
 		iEnd = __xuiCodeEditingUtf8Next(pDocument, iLength, iEnd);
 	}
 	iRet = xuiCodeDocumentDelete(pDocument, iStart, iEnd);
@@ -182,7 +246,6 @@ XUI_API int xuiCodeEditingDeleteForward(xui_code_document pDocument, xui_code_se
 
 XUI_API int xuiCodeEditingDeleteWordBackward(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly)
 {
-	xui_code_selection_t tState;
 	int iStart;
 	int iEnd;
 	int iCaret;
@@ -190,13 +253,13 @@ XUI_API int xuiCodeEditingDeleteWordBackward(xui_code_document pDocument, xui_co
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCodeEditingSelectionRange(pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeEditingSelectionRange(pDocument, pSelection, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iStart == iEnd ) {
-		iRet = xuiCodeSelectionGetState(pSelection, &tState);
-		if ( iRet != XUI_OK ) return iRet;
-		iCaret = tState.iCaretOffset;
-		if ( iCaret <= 0 ) return XUI_OK;
+		iCaret = iStart;
+		if ( iCaret <= 0 ) {
+			return __xuiCodeEditingNormalizeCollapsedSelection(pSelection, pDocument, 0);
+		}
 		iStart = __xuiCodeEditingWordLeft(pDocument, iCaret);
 		iEnd = iCaret;
 	}
@@ -207,7 +270,6 @@ XUI_API int xuiCodeEditingDeleteWordBackward(xui_code_document pDocument, xui_co
 
 XUI_API int xuiCodeEditingDeleteWordForward(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly)
 {
-	xui_code_selection_t tState;
 	int iStart;
 	int iEnd;
 	int iCaret;
@@ -215,13 +277,14 @@ XUI_API int xuiCodeEditingDeleteWordForward(xui_code_document pDocument, xui_cod
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCodeEditingSelectionRange(pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeEditingSelectionRange(pDocument, pSelection, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iStart == iEnd ) {
-		iRet = xuiCodeSelectionGetState(pSelection, &tState);
-		if ( iRet != XUI_OK ) return iRet;
-		iCaret = tState.iCaretOffset;
-		if ( iCaret >= xuiCodeDocumentGetLength(pDocument) ) return XUI_OK;
+		iCaret = iStart;
+		if ( iCaret >= xuiCodeDocumentGetLength(pDocument) ) {
+			return __xuiCodeEditingNormalizeCollapsedSelection(pSelection,
+				pDocument, xuiCodeDocumentGetLength(pDocument));
+		}
 		iStart = iCaret;
 		iEnd = __xuiCodeEditingWordRight(pDocument, iCaret);
 	}
@@ -248,12 +311,16 @@ XUI_API int xuiCodeEditingIndentSelection(xui_code_document pDocument, xui_code_
 	     strchr(sIndent, '\r') != NULL || strchr(sIndent, '\n') != NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iIndentLength = (int)strlen(sIndent);
+	iRet = __xuiCodeEditingTextLength(sIndent, &iIndentLength);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	if ( iRet != XUI_OK ) return iRet;
-	iAnchor = tState.iAnchorOffset;
-	iCaret = tState.iCaretOffset;
+	iAnchor = __xuiCodeEditingClampOffset(pDocument, tState.iAnchorOffset);
+	iCaret = __xuiCodeEditingClampOffset(pDocument, tState.iCaretOffset);
 	iRet = __xuiCodeEditingSelectedLines(pDocument, pSelection, &iStartLine, &iEndLine);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiCodeEditingCanGrowDocument(pDocument,
+		iEndLine - iStartLine + 1, iIndentLength);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeDocumentBeginEdit(pDocument);
 	if ( iRet != XUI_OK ) return iRet;
@@ -290,8 +357,8 @@ XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code
 	if ( iIndentColumns <= 0 ) iIndentColumns = 4;
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	if ( iRet != XUI_OK ) return iRet;
-	iAnchor = tState.iAnchorOffset;
-	iCaret = tState.iCaretOffset;
+	iAnchor = __xuiCodeEditingClampOffset(pDocument, tState.iAnchorOffset);
+	iCaret = __xuiCodeEditingClampOffset(pDocument, tState.iCaretOffset);
 	iRet = __xuiCodeEditingSelectedLines(pDocument, pSelection, &iStartLine, &iEndLine);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeDocumentBeginEdit(pDocument);
@@ -321,11 +388,11 @@ XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code
 	return xuiCodeSelectionSetRange(pSelection, pDocument, iAnchor, iCaret);
 }
 
-static int __xuiCodeEditingLineCommentPos(xui_code_document pDocument, int iLine, const char* sLineComment, int* pPos, int* pHasComment)
+static int __xuiCodeEditingLineCommentPos(xui_code_document pDocument, int iLine,
+	const char* sLineComment, int iCommentLength, int* pPos, int* pHasComment)
 {
 	int iStart;
 	int iEnd;
-	int iCommentLength;
 	int iRet;
 	int i;
 	int j;
@@ -335,9 +402,8 @@ static int __xuiCodeEditingLineCommentPos(xui_code_document pDocument, int iLine
 	i = iStart;
 	while ( i < iEnd &&
 	       (__xuiCodeEditingByteAt(pDocument, i) == ' ' || __xuiCodeEditingByteAt(pDocument, i) == '\t') ) i++;
-	iCommentLength = (int)strlen(sLineComment);
 	*pPos = i;
-	*pHasComment = (i + iCommentLength <= iEnd);
+	*pHasComment = (iCommentLength <= iEnd - i);
 	for ( j = 0; *pHasComment && j < iCommentLength; j++ ) {
 		if ( __xuiCodeEditingByteAt(pDocument, i + j) != sLineComment[j] ) *pHasComment = 0;
 	}
@@ -364,26 +430,34 @@ XUI_API int xuiCodeEditingToggleLineComment(xui_code_document pDocument, xui_cod
 	     strchr(sLineComment, '\r') != NULL || strchr(sLineComment, '\n') != NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iCommentLength = (int)strlen(sLineComment);
+	iRet = __xuiCodeEditingTextLength(sLineComment, &iCommentLength);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeSelectionGetState(pSelection, &tState);
 	if ( iRet != XUI_OK ) return iRet;
-	iAnchor = tState.iAnchorOffset;
-	iCaret = tState.iCaretOffset;
+	iAnchor = __xuiCodeEditingClampOffset(pDocument, tState.iAnchorOffset);
+	iCaret = __xuiCodeEditingClampOffset(pDocument, tState.iCaretOffset);
 	iRet = __xuiCodeEditingSelectedLines(pDocument, pSelection, &iStartLine, &iEndLine);
 	if ( iRet != XUI_OK ) return iRet;
 	bAllCommented = 1;
 	for ( iLine = iStartLine; iLine <= iEndLine; iLine++ ) {
-		iRet = __xuiCodeEditingLineCommentPos(pDocument, iLine, sLineComment, &iPos, &bHasComment);
+		iRet = __xuiCodeEditingLineCommentPos(pDocument, iLine,
+			sLineComment, iCommentLength, &iPos, &bHasComment);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !bHasComment ) {
 			bAllCommented = 0;
 			break;
 		}
 	}
+	if ( !bAllCommented ) {
+		iRet = __xuiCodeEditingCanGrowDocument(pDocument,
+			iEndLine - iStartLine + 1, iCommentLength);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	iRet = xuiCodeDocumentBeginEdit(pDocument);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( iLine = iStartLine; iLine <= iEndLine; iLine++ ) {
-		iRet = __xuiCodeEditingLineCommentPos(pDocument, iLine, sLineComment, &iPos, &bHasComment);
+		iRet = __xuiCodeEditingLineCommentPos(pDocument, iLine,
+			sLineComment, iCommentLength, &iPos, &bHasComment);
 		if ( iRet != XUI_OK ) break;
 		if ( bAllCommented ) {
 			iRet = xuiCodeDocumentDelete(pDocument, iPos, iPos + iCommentLength);

@@ -77,6 +77,38 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select delete range");
 	iRet = xuiCodeEditingDeleteForward(pDocument, pSelection, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "af\n") == 0, "delete selection");
+	iRet = xuiCodeDocumentSetText(pDocument, "stale caret");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset stale caret text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument,
+		xuiCodeDocumentGetLength(pDocument), 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set stale caret source offset");
+	iRet = xuiCodeDocumentSetText(pDocument, "x");
+	XUI_TEST_CHECK(iRet == XUI_OK, "shrink document behind selection model");
+	iRet = xuiCodeEditingDeleteForward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "x") == 0,
+		"forward delete at stale caret preserves text");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iAnchorOffset == 1 && tState.iCaretOffset == 1,
+		"forward delete clamps stale caret to document end");
+	iRet = xuiCodeDocumentSetText(pDocument, "another stale caret");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset stale word caret text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument,
+		xuiCodeDocumentGetLength(pDocument), 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set stale word caret source offset");
+	iRet = xuiCodeDocumentSetText(pDocument, "z");
+	XUI_TEST_CHECK(iRet == XUI_OK, "shrink document behind word selection model");
+	iRet = xuiCodeEditingDeleteWordForward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "z") == 0,
+		"word delete at stale caret preserves text");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iAnchorOffset == 1 && tState.iCaretOffset == 1,
+		"word delete clamps stale caret to document end");
+	iRet = xuiCodeSelectionAdd(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeSelectionGetCount(pSelection) == 2,
+		"add secondary selection before boundary no-op");
+	iRet = xuiCodeEditingDeleteForward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeSelectionGetCount(pSelection) == 2,
+		"valid boundary no-op preserves secondary selections");
 	iRet = xuiCodeDocumentSetText(pDocument, "alpha beta gamma");
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset word delete text");
 	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 10, 0);
