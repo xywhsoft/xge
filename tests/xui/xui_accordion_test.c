@@ -24,6 +24,13 @@ typedef struct xui_accordion_destroy_events_t {
 	int iCount;
 } xui_accordion_destroy_events_t;
 
+typedef struct xui_accordion_reentrant_destroy_t {
+	xui_widget pAccordion;
+	xui_widget pAddedClient;
+	int iDestroyCount;
+	int iAddResult;
+} xui_accordion_reentrant_destroy_t;
+
 static xui_style_value_t __xuiAccordionStyleFloat(float fValue)
 {
 	xui_style_value_t tValue;
@@ -75,6 +82,20 @@ static void __xuiAccordionDestroySelected(xui_widget pWidget, int iIndex, int iI
 	(void)iId;
 	if ( pEvents != NULL ) pEvents->iCount++;
 	(void)xuiWidgetDestroy(pWidget);
+}
+
+static void __xuiAccordionReentrantChildDestroy(xui_widget pWidget,
+	void* pTypeData, void* pUser)
+{
+	xui_accordion_reentrant_destroy_t* pState =
+		(xui_accordion_reentrant_destroy_t*)pUser;
+
+	(void)pWidget;
+	(void)pTypeData;
+	if ( pState == NULL ) return;
+	pState->iDestroyCount++;
+	pState->iAddResult = xuiAccordionAddSection(pState->pAccordion,
+		"Added during destroy", 802, 0, &pState->pAddedClient);
 }
 
 static int __xuiAccordionLayoutRender(xui_context pContext, xui_surface pTarget)
@@ -161,6 +182,7 @@ int main(void)
 	xui_test_proxy_state_t tState;
 	xui_accordion_test_events_t tEvents;
 	xui_accordion_destroy_events_t tDestroy;
+	xui_accordion_reentrant_destroy_t tReentrantDestroy;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pAccordion;
@@ -168,7 +190,10 @@ int main(void)
 	xui_widget pDestroyAccordion;
 	xui_widget pInvalid;
 	xui_widget pClient;
+	xui_widget pReentrantChild;
 	xui_widget arrMutationClients[3];
+	xui_widget_type pReentrantType;
+	xui_widget_type_desc_t tTypeDesc;
 	xui_surface pTarget;
 	xui_surface pHeaderCache;
 	xui_accordion_desc_t tDesc;
@@ -200,17 +225,30 @@ int main(void)
 	pMutationAccordion = NULL;
 	pDestroyAccordion = NULL;
 	pInvalid = NULL;
+	pReentrantChild = NULL;
+	pReentrantType = NULL;
 	pTarget = NULL;
 	pHeaderCache = NULL;
 	iFailed = 0;
 	memset(&tEvents, 0, sizeof(tEvents));
 	memset(&tDestroy, 0, sizeof(tDestroy));
+	memset(&tReentrantDestroy, 0, sizeof(tReentrantDestroy));
+	tReentrantDestroy.iAddResult = XUI_ERROR_INVALID_STATE;
 	tEvents.iLastIndex = -1;
 	tEvents.iLastId = 0;
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
+	memset(&tTypeDesc, 0, sizeof(tTypeDesc));
+	tTypeDesc.iSize = sizeof(tTypeDesc);
+	tTypeDesc.sName = "test.accordion.reentrant-child";
+	tTypeDesc.pParent = xuiWidgetGetBaseType();
+	tTypeDesc.pUser = &tReentrantDestroy;
+	tTypeDesc.onDestroy = __xuiAccordionReentrantChildDestroy;
+	iRet = xuiWidgetRegisterType(pContext, &pReentrantType, &tTypeDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pReentrantType != NULL,
+		"reentrant child type register");
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
 	iRet = xuiInputViewport(pContext, 640.0f, 360.0f);
@@ -536,6 +574,27 @@ int main(void)
 		"clear cancels header capture and resets cached geometry");
 	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK, "release after clear");
+
+	tReentrantDestroy.pAccordion = pAccordion;
+	iRet = xuiAccordionAddSection(pAccordion, "Removed", 801, 0, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreateTyped(pContext,
+		pReentrantType, &pReentrantChild, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiAccordionAddSectionChild(pAccordion, 0,
+		pReentrantChild);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reentrant clear setup");
+	iRet = xuiAccordionClear(pAccordion);
+	pReentrantChild = NULL;
+	XUI_TEST_CHECK(iRet == XUI_OK && tReentrantDestroy.iDestroyCount == 1 &&
+		tReentrantDestroy.iAddResult == XUI_OK &&
+		xuiAccordionGetSectionCount(pAccordion) == 1 &&
+		xuiAccordionGetSectionId(pAccordion, 0) == 802 &&
+		xuiAccordionGetClientWidget(pAccordion, 0) ==
+			tReentrantDestroy.pAddedClient,
+		"clear defers child destruction so reentrant additions survive");
+	XUI_TEST_CHECK(xuiAccordionClear(pAccordion) == XUI_OK &&
+		xuiAccordionGetSectionCount(pAccordion) == 0 &&
+		tReentrantDestroy.iDestroyCount == 1,
+		"reentrant clear cleanup");
 
 	iRet = xuiAccordionCreate(pContext, &pMutationAccordion, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pMutationAccordion);

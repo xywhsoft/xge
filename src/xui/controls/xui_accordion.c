@@ -1574,17 +1574,19 @@ XUI_API int xuiAccordionSetSelect(xui_widget pWidget, xui_accordion_select_proc 
 XUI_API int xuiAccordionClear(xui_widget pWidget)
 {
 	xui_accordion_data_t* pData;
+	xui_context pContext;
 	int iRet;
 	int i;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iSectionCount == 0 ) return XUI_OK;
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
 	iRet = __xuiAccordionCancelPress(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( __xuiAccordionGetData(pWidget) != pData ) return XUI_OK;
+	if ( iRet != XUI_OK || __xuiAccordionGetData(pWidget) != pData ) goto done;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto done;
 	for ( i = 0; i < pData->iSectionCount; i++ ) {
 		if ( pData->arrSections[i].pSection != NULL ) {
 			xuiWidgetDestroy(pData->arrSections[i].pSection);
@@ -1602,7 +1604,10 @@ XUI_API int xuiAccordionClear(xui_widget pWidget)
 	pData->iChangeCount++;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
-	return XUI_OK;
+
+done:
+	xuiInternalOperationLeave(pContext);
+	return iRet;
 }
 
 XUI_API int xuiAccordionAddSection(xui_widget pWidget, const char* sTitle, int iId, int bExpanded, xui_widget* ppClient)
