@@ -228,6 +228,7 @@ int main(void)
 	uint32_t iLineTextColor;
 	uint32_t iLineBackgroundColor;
 	uint32_t iLineBorderColor;
+	uint32_t iFindResultColor;
 	uint32_t iFindActiveColor;
 	int iStart;
 	int iEnd;
@@ -846,10 +847,15 @@ int main(void)
 	tFind.iSize = sizeof(tFind);
 	tFind.sPattern = "alpha";
 	tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
+	tFind.iSize = 1;
+	iRet = xuiTextEditFindNext(pTextEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"undersized find options rejected");
+	tFind.iSize = sizeof(tFind);
 	iRet = xuiTextEditFindNext(pTextEdit, &tFind);
 	XUI_TEST_CHECK(iRet == XUI_OK, "find next first");
 	iRet = xuiTextEditGetExtendedColors(pTextEdit, NULL, NULL, NULL, NULL, NULL,
-		NULL, NULL, NULL, &iFindActiveColor);
+		NULL, NULL, &iFindResultColor, &iFindActiveColor);
 	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
 	if ( iRet == XUI_OK ) iRet = __xuiTextEditTestRender(pContext, pTarget);
 	pTextEditCache = xuiWidgetGetCacheSurface(pTextEdit, xuiWidgetGetStateId(pTextEdit));
@@ -907,8 +913,51 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "fox dog cat") == 0, "replace current text");
 	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 3, "replace current selection");
+	if ( pTextEditCache != NULL ) xuiTestSurfaceReset(pTextEditCache);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditTestRender(pContext, pTarget);
+	pTextEditCache = xuiWidgetGetCacheSurface(pTextEdit,
+		xuiWidgetGetStateId(pTextEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && pTextEditCache != NULL &&
+		xuiTestSurfaceGetRectFillColorCount(pTextEditCache,
+			iFindResultColor) > 0,
+		"replace current preserves remaining match highlights");
 	iRet = xuiTextEditReplaceAll(pTextEdit, &tFind, &iReplaceCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iReplaceCount == 1 && strcmp(xuiTextEditGetText(pTextEdit), "fox dog fox") == 0, "replace all remaining");
+
+	iRet = xuiTextEditSetText(pTextEdit, "cat cat outside");
+	if ( iRet == XUI_OK ) iRet = xuiTextEditSetSelection(pTextEdit, 0, 7);
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "cat";
+	tFind.sReplacement = "kitten";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE | XUI_FIND_SELECTION;
+	if ( iRet == XUI_OK ) iRet = xuiTextEditFindNext(pTextEdit, &tFind);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditReplaceCurrent(pTextEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiTextEditGetText(pTextEdit), "kitten cat outside") == 0,
+		"selection replace current grows tracked range");
+	if ( iRet == XUI_OK ) iRet = xuiTextEditFindNext(pTextEdit, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiTextEditGetSelection(pTextEdit,
+		&iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 7 && iEnd == 10,
+		"selection find uses grown replacement range");
+
+	iRet = xuiTextEditSetText(pTextEdit, "cat catcat");
+	if ( iRet == XUI_OK ) iRet = xuiTextEditSetSelection(pTextEdit, 0, 7);
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "cat";
+	tFind.sReplacement = "";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE | XUI_FIND_SELECTION;
+	if ( iRet == XUI_OK ) iRet = xuiTextEditReplaceAll(pTextEdit, &tFind,
+		&iReplaceCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iReplaceCount == 2 &&
+		strcmp(xuiTextEditGetText(pTextEdit), " cat") == 0,
+		"selection replace all shrinks tracked range");
+	if ( iRet == XUI_OK ) iRet = xuiTextEditFindNext(pTextEdit, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED,
+		"selection find excludes text shifted behind shrunken range");
 
 	iRet = xuiTextEditSetText(pTextEdit, "int a = 1;\nint b = 2;\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "regex replace text set");
