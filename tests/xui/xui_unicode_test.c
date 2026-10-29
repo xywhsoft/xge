@@ -83,6 +83,11 @@ int main(void)
 	static const char sWordMovement[] =
 		"hello, \xD0\xBC\xD0\xB8\xD1\x80";
 	static const char sNbsp[] = "a\xC2\xA0" "b";
+	static const char sLeadingZwjPict[] =
+		"\xE2\x80\x8D\xF0\x9F\x9B\x91";
+	static const char sRegionalTriple[] =
+		"\xF0\x9F\x87\xA6\xF0\x9F\x87\xA7\xF0\x9F\x87\xA8";
+	static const char sSpaceExtendSpace[] = " \xCC\x88 ";
 	char sMixed[96];
 	char sRegionalRun[32];
 	int iFamilyLength;
@@ -138,6 +143,17 @@ int main(void)
 
 	XUI_TEST_CHECK(check_word_range(sMixed, 4, XUI_INTERNAL_WORD_NATURAL,
 		XUI_INTERNAL_WORD_SYMBOL, 1, 1 + iFamilyLength, "emoji symbol"), "emoji symbol range");
+	XUI_TEST_CHECK(check_word_range(sLeadingZwjPict, 0, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_SYMBOL, 0, 7, "leading ZWJ pictograph"),
+		"leading ZWJ pictograph range");
+	XUI_TEST_CHECK(check_word_range(sRegionalTriple, 0, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_SYMBOL, 0, 8, "regional pair"), "regional pair range");
+	XUI_TEST_CHECK(check_word_range(sRegionalTriple, 8, XUI_INTERNAL_WORD_NATURAL,
+		XUI_INTERNAL_WORD_SYMBOL, 8, 12, "regional tail"), "regional tail range");
+	XUI_TEST_CHECK(xuiInternalTextWordBoundary(sLeadingZwjPict, -1, 3,
+		XUI_INTERNAL_WORD_NATURAL) == 0, "ZWJ joins extended pictograph");
+	XUI_TEST_CHECK(xuiInternalTextWordBoundary(sSpaceExtendSpace, -1, 3,
+		XUI_INTERNAL_WORD_NATURAL) != 0, "space extend space boundary");
 	XUI_TEST_CHECK(xuiInternalTextWordNext(sWordMovement, -1, 0,
 		XUI_INTERNAL_WORD_NATURAL) == 7, "word next skips punctuation and space");
 	XUI_TEST_CHECK(xuiInternalTextWordPrev(sWordMovement, -1, (int)strlen(sWordMovement),

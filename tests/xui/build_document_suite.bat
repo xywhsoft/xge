@@ -3,6 +3,8 @@ setlocal
 cd /d "%~dp0\..\.."
 call tests\xui\build_unicode_grapheme_test.bat
 if errorlevel 1 exit /b 1
+call tests\xui\build_unicode_word_corpus_test.bat
+if errorlevel 1 exit /b 1
 call tests\xui\build_unicode_script_test.bat
 if errorlevel 1 exit /b 1
 if "%~1"=="" (

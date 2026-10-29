@@ -12,6 +12,14 @@ Source: https://www.unicode.org/Public/17.0.0/ucd/auxiliary/GraphemeBreakTest.tx
 official boundaries using both contiguous and callback-based navigation. The
 actual layout integration is covered by `build_text_break_index_test.bat`.
 
+`WordBreakTest.txt` is the official Unicode 17.0.0 corpus from
+https://www.unicode.org/Public/17.0.0/ucd/auxiliary/WordBreakTest.txt.
+Official raw SHA256: `1de23a75f37904abc7d206239ee8d34f8fdf0fb4ab32a7174dfbabbde25419b2`.
+Repository SHA256: `712cd8b8189944ad86cd81ebc3a9f6e9bb036cde6c27c7cafed3cfb68f8efe60`.
+Only trailing whitespace on two comment lines was removed.
+`tests/xui/build_unicode_word_corpus_test.bat` checks all 1,944 records and
+8,487 boundaries through the pointer, 32-bit callback and 64-bit callback APIs.
+
 ## Line breaking
 
 `LineBreakTest.txt` is the unmodified official corpus from

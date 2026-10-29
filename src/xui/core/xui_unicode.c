@@ -129,6 +129,14 @@ static int64_t __xuiUnicodePrevCodepoint(xui_internal_text_read64_proc onRead, v
 	return iStart;
 }
 
+static int64_t __xuiUnicodeCodepointClamp(xui_internal_text_read64_proc onRead,
+	void* pUser, int64_t iLength, int64_t iOffset)
+{
+	if ( onRead == NULL || iLength <= 0 || iOffset <= 0 ) return 0;
+	if ( iOffset >= iLength ) return iLength;
+	return __xuiUnicodePrevCodepoint(onRead, pUser, iLength, iOffset + 1, NULL);
+}
+
 /* Recover only the prefix context required by GB9c/GB11/GB12-13, then
  * use the same state transition as the forward map. Ordinary text queries
  * never rescan the paragraph. No allocation or contiguous input is needed. */
@@ -282,8 +290,7 @@ static int __xuiUnicodeWordUnitRead(xui_internal_text_read64_proc onRead, void* 
 	if ( onRead == NULL || pUnit == NULL || iOffset < 0 || iOffset >= iLength ) return 0;
 	if ( !__xuiUnicodeDecode(onRead, pUser, iLength, iOffset, &iCodepoint, &iScalarEnd) ) return 0;
 	pUnit->iStart = iOffset;
-	pUnit->iEnd = xuiInternalTextGraphemeNext64Read(onRead, pUser, iLength, iOffset);
-	if ( pUnit->iEnd <= iOffset ) pUnit->iEnd = iScalarEnd;
+	pUnit->iEnd = iScalarEnd;
 	pUnit->iCodepoint = iCodepoint;
 	pUnit->iProperty = __xuiUnicodeWordProperty(iCodepoint);
 	pUnit->bXidContinue = __xuiUnicodeXidContinue(iCodepoint);
@@ -295,7 +302,7 @@ static int __xuiUnicodeWordUnitBefore(xui_internal_text_read64_proc onRead, void
 {
 	int64_t iStart;
 	if ( iOffset <= 0 ) return 0;
-	iStart = xuiInternalTextGraphemePrev64Read(onRead, pUser, iLength, iOffset);
+	iStart = __xuiUnicodePrevCodepoint(onRead, pUser, iLength, iOffset, NULL);
 	return __xuiUnicodeWordUnitRead(onRead, pUser, iLength, iStart, pUnit);
 }
 
@@ -345,6 +352,7 @@ static int __xuiUnicodeWordPolicyUnit(const xui_unicode_word_unit_t* pUnit,
 	xui_internal_word_policy_t iPolicy)
 {
 	if ( pUnit == NULL ) return 0;
+	if ( __xuiUnicodeWordIgnored(pUnit->iProperty) ) return 0;
 	if ( iPolicy == XUI_INTERNAL_WORD_IDENTIFIER ) return pUnit->bXidContinue;
 	if ( iPolicy == XUI_INTERNAL_WORD_TERMINAL ) {
 		return pUnit->bXidContinue || __xuiUnicodeWordTerminalExtra(pUnit->iCodepoint);
@@ -401,6 +409,8 @@ static int __xuiUnicodeWordNaturalBoundary(xui_internal_text_read64_proc onRead,
 	     __xuiUnicodeWordNewline(tImmediateRight.iProperty) ) return 1;
 	if ( tImmediateLeft.iProperty == XUI_WB_WSEG_SPACE &&
 	     tImmediateRight.iProperty == XUI_WB_WSEG_SPACE ) return 0;
+	if ( tImmediateLeft.iProperty == XUI_WB_ZWJ &&
+	     (__xgeGraphemeProperty(tImmediateRight.iCodepoint) & 64u) != 0 ) return 0;
 	if ( __xuiUnicodeWordIgnored(tImmediateRight.iProperty) ) return 0;
 	if ( !__xuiUnicodeWordPreviousSignificant(onRead, pUser, iLength, iOffset, &tLeft) ||
 	     !__xuiUnicodeWordNextSignificant(onRead, pUser, iLength, iOffset, &tRight) ) return 1;
@@ -455,7 +465,7 @@ int xuiInternalTextWordBoundary64Read(xui_internal_text_read64_proc onRead, void
 	xui_unicode_word_unit_t tRight;
 
 	if ( onRead == NULL || iLength <= 0 || iOffset <= 0 || iOffset >= iLength ) return 1;
-	iOffset = xuiInternalTextGraphemeClamp64Read(onRead, pUser, iLength, iOffset);
+	iOffset = __xuiUnicodeCodepointClamp(onRead, pUser, iLength, iOffset);
 	if ( iOffset <= 0 || iOffset >= iLength ) return 1;
 	if ( iPolicy == XUI_INTERNAL_WORD_NATURAL ) {
 		return __xuiUnicodeWordNaturalBoundary(onRead, pUser, iLength, iOffset);
@@ -496,7 +506,8 @@ xui_internal_word_kind_t xuiInternalTextWordRange64Read(xui_internal_text_read64
 		return XUI_INTERNAL_WORD_SPACE;
 	}
 	iStart = tUnit.iStart;
-	iEnd = tUnit.iEnd;
+	iEnd = xuiInternalTextGraphemeNext64Read(onRead, pUser, iLength, iOffset);
+	if ( iEnd <= iOffset ) iEnd = tUnit.iEnd;
 	while ( iStart > 0 && !xuiInternalTextWordBoundary64Read(onRead, pUser, iLength, iStart, iPolicy) ) {
 		int64_t iPrevious = xuiInternalTextGraphemePrev64Read(onRead, pUser, iLength, iStart);
 		if ( iPrevious >= iStart ) break;
