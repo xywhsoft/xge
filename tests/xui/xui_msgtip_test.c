@@ -199,6 +199,14 @@ int main(void)
 	pInvalidTip = (xui_msgtip)&tState;
 	iRet = xuiMsgTipCreate(pContext, &pInvalidTip, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidTip == NULL, "invalid create clears output");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.bHasCustomIcon = 1;
+	tInvalidDesc.pIconSurface = (xui_surface)&tState;
+	tInvalidDesc.tIconSrc = (xui_rect_t){0, 0, 0, 16};
+	pInvalidTip = (xui_msgtip)&tState;
+	iRet = xuiMsgTipCreate(pContext, &pInvalidTip, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidTip == NULL,
+		"invalid custom icon create clears output");
 	iRet = xuiMsgTipCreate(pContext, &pTip, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTip != NULL, "msgtip create");
 	iRet = xuiMsgTipSetClose(pTip, __xuiMsgTipClose, &tClose);
@@ -222,8 +230,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite duration");
 	iRet = xuiMsgTipSetType(pTip, XUI_MSGTIP_ICON_ERROR + 1);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject invalid type");
-	iRet = xuiMsgTipSetIconSurface(pTip, NULL, (xui_rect_t){NAN, 0.0f, 0.0f, 0.0f});
-	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nonfinite icon source");
+	iRet = xuiMsgTipSetIconSurface(pTip, NULL, (xui_rect_t){0, 0, -1, 1});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative icon source");
 	iChangeBefore = xuiMsgTipGetChangeCount(pTip);
 	iRet = xuiMsgTipSetText(pTip, xuiMsgTipGetText(pTip));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipGetChangeCount(pTip) == iChangeBefore, "same text is no-op");
@@ -239,6 +247,34 @@ int main(void)
 	XUI_TEST_CHECK(tIcon.fW > 0.0f && tIcon.fH > 0.0f, "icon rect");
 	XUI_TEST_CHECK(tText.fW > 40.0f && tText.fH > 12.0f, "text rect");
 	XUI_TEST_CHECK(xuiMsgTipGetWrapLineCount(pTip) >= 1, "wrap line count");
+	iRet = xuiInputViewport(pContext, 16.0f, 16.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny viewport");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0, 0, 16, 16});
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny root");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny root sync");
+	tTip = xuiMsgTipGetTipRect(pTip);
+	tIcon = xuiMsgTipGetIconRect(pTip);
+	tText = xuiMsgTipGetTextRect(pTip);
+	XUI_TEST_CHECK(tTip.fX >= 0 && tTip.fY >= 0 &&
+		tTip.fX + tTip.fW <= 16 && tTip.fY + tTip.fH <= 16,
+		"tiny tip remains inside root");
+	XUI_TEST_CHECK(tIcon.fX >= 0 && tIcon.fY >= 0 &&
+		tIcon.fX + tIcon.fW <= tTip.fW && tIcon.fY + tIcon.fH <= tTip.fH &&
+		tText.fX >= 0 && tText.fY >= 0 &&
+		tText.fX + tText.fW <= tTip.fW && tText.fY + tText.fH <= tTip.fH,
+		"tiny tip content remains bounded");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny tip render");
+	iRet = xuiInputViewport(pContext, 640.0f, 420.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore viewport");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0, 0, 640, 420});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore root");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore root sync");
+	tTip = xuiMsgTipGetTipRect(pTip);
+	XUI_TEST_CHECK(tTip.fW >= 92 && tTip.fW <= 360,
+		"restored tip uses normal width");
 	iRet = xuiWidgetGetLayer(xuiMsgTipGetWidget(pTip), &iLayer, &iZ);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLayer == XUI_LAYER_TOOLTIP && iZ >= 100, "tooltip layer");
 	iRet = xuiRenderPrepare(pContext);
@@ -270,6 +306,9 @@ int main(void)
 
 	iRet = xuiTestSurfaceCreate(&tState, &pCustomIcon, 16, 16, XUI_SURFACE_ALPHA_PREMULTIPLIED);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCustomIcon != NULL, "custom icon create");
+	iRet = xuiMsgTipSetIconSurface(pTip, pCustomIcon, (xui_rect_t){0, 0, 0, 16});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"custom icon requires nonempty source");
 	iRet = xuiMsgTipSetIconSurface(pTip, pCustomIcon, (xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "custom icon set");
 	iRet = xuiMsgTipGetMetrics(pTip, &tMetrics);

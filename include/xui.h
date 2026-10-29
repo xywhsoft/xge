@@ -4198,7 +4198,7 @@ typedef struct xui_msgtip_colors_t {
 } xui_msgtip_colors_t;
 
 /* 轻提示创建描述。文本会被复制；字体和自定义图标 surface 为借用资源，调用方
- * 须保证其生命周期覆盖轻提示。fDuration 为 0 时不自动关闭。 */
+ * 须保证其生命周期覆盖轻提示。自定义图标要求非空源矩形。fDuration 为 0 时不自动关闭。 */
 typedef struct xui_msgtip_desc_t {
 	uint32_t iSize;
 	const char* sText;
@@ -10025,7 +10025,7 @@ XUI_API int xuiMsgTipIsOpen(xui_msgtip pTip);
 XUI_API int xuiMsgTipSetText(xui_msgtip pTip, const char* sText);
 /* 读取文本；返回值由轻提示持有，修改文本或销毁后失效。 */
 XUI_API const char* xuiMsgTipGetText(xui_msgtip pTip);
-/* 设置提示类型（信息/成功/警告/错误）。 */
+/* 设置提示类型（无图标/信息/询问/警告/错误）。 */
 XUI_API int xuiMsgTipSetType(xui_msgtip pTip, int iType);
 /* 读取类型。 */
 XUI_API int xuiMsgTipGetType(xui_msgtip pTip);
@@ -10033,7 +10033,7 @@ XUI_API int xuiMsgTipGetType(xui_msgtip pTip);
 XUI_API int xuiMsgTipSetDuration(xui_msgtip pTip, float fDuration);
 /* 读取持续时长。 */
 XUI_API float xuiMsgTipGetDuration(xui_msgtip pTip);
-/* 以 surface 设置图标。 */
+/* 以 surface 设置图标；非 NULL surface 要求非空源矩形。 */
 XUI_API int xuiMsgTipSetIconSurface(xui_msgtip pTip, xui_surface pSurface, xui_rect_t tSrc);
 /* 使用内建四态图标。 */
 XUI_API int xuiMsgTipUseBuiltinIcon(xui_msgtip pTip);
