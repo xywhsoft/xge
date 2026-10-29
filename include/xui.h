@@ -4097,7 +4097,7 @@ struct xui_dock_drop_info_t {
 typedef struct xui_msgbox_button_t {
 	const char* sText;
 	int iResult;
-	int iSemantic;
+	int iSemantic; /* XUI_BUTTON_SEMANTIC_*; other values are rejected. */
 } xui_msgbox_button_t;
 
 typedef struct xui_msgbox_metrics_t {
@@ -9867,7 +9867,7 @@ XUI_API const char* xuiMsgBoxGetMessage(xui_msgbox pBox);
 XUI_API int xuiMsgBoxSetType(xui_msgbox pBox, int iType);
 /* 读取类型。 */
 XUI_API int xuiMsgBoxGetType(xui_msgbox pBox);
-/* 以 surface 自定义图标。 */
+/* 以 surface 自定义图标；非 NULL surface 要求非空源矩形。 */
 XUI_API int xuiMsgBoxSetIconSurface(xui_msgbox pBox, xui_surface pSurface, xui_rect_t tSrc);
 /* 使用内建类型图标（恢复默认）。 */
 XUI_API int xuiMsgBoxUseBuiltinIcon(xui_msgbox pBox);

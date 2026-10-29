@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_text_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 #define XUI_MSGBOX_MAGIC 0x584D5342u
@@ -148,15 +149,9 @@ static int __xuiMsgBoxFloatValid(float fValue)
 	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
 }
 
-static int __xuiMsgBoxCoordValid(float fValue)
-{
-	return (fValue == fValue) && (fValue >= -XUI_LAYOUT_UNBOUNDED) && (fValue <= XUI_LAYOUT_UNBOUNDED);
-}
-
 static int __xuiMsgBoxRectValid(xui_rect_t tRect)
 {
-	return __xuiMsgBoxCoordValid(tRect.fX) && __xuiMsgBoxCoordValid(tRect.fY) &&
-	       __xuiMsgBoxFloatValid(tRect.fW) && __xuiMsgBoxFloatValid(tRect.fH);
+	return tRect.fW >= 0 && tRect.fH >= 0;
 }
 
 static int __xuiMsgBoxTypeValid(int iType)
@@ -205,6 +200,19 @@ static int __xuiMsgBoxSemanticValid(int iSemantic)
 	return (iSemantic == XUI_BUTTON_SEMANTIC_DEFAULT) ||
 	       (iSemantic == XUI_BUTTON_SEMANTIC_PRIMARY) ||
 	       (iSemantic == XUI_BUTTON_SEMANTIC_DANGER);
+}
+
+static int __xuiMsgBoxButtonModelValid(const xui_msgbox_button_t* pButtons,
+	int iCount)
+{
+	int i;
+
+	if ( iCount < 0 || iCount > XUI_MSGBOX_BUTTON_CAPACITY ||
+	     (iCount > 0 && pButtons == NULL) ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( !__xuiMsgBoxSemanticValid(pButtons[i].iSemantic) ) return 0;
+	}
+	return 1;
 }
 
 static char* __xuiMsgBoxDupText(const char* sText)
@@ -278,8 +286,7 @@ static int __xuiMsgBoxApplyButtonModel(xui_msgbox pBox, int iButtons,
 	int iRet;
 
 	if ( !__xuiMsgBoxValid(pBox) || !__xuiMsgBoxButtonsValid(iButtons) ||
-	     (iCount < 0) || (iCount > XUI_MSGBOX_BUTTON_CAPACITY) ||
-	     ((iCount > 0) && (pButtons == NULL)) ) {
+	     !__xuiMsgBoxButtonModelValid(pButtons, iCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xuiMsgBoxButtonModelSame(pBox, iButtons, pButtons, iCount) ) {
@@ -293,9 +300,7 @@ static int __xuiMsgBoxApplyButtonModel(xui_msgbox pBox, int iButtons,
 				iRet = XUI_ERROR_OUT_OF_MEMORY;
 				goto failed;
 			}
-			if ( __xuiMsgBoxSemanticValid(pButtons[i].iSemantic) ) {
-				arrSemantic[i] = pButtons[i].iSemantic;
-			}
+			arrSemantic[i] = pButtons[i].iSemantic;
 		}
 	}
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
@@ -404,6 +409,10 @@ static int __xuiMsgBoxDescValid(const xui_msgbox_desc_t* pDesc)
 	if ( (pDesc->iCustomButtonCount < 0) || (pDesc->iCustomButtonCount > XUI_MSGBOX_BUTTON_CAPACITY) ) return 0;
 	if ( (pDesc->iCustomButtonCount > 0) && (pDesc->pCustomButtons == NULL) ) return 0;
 	if ( !__xuiMsgBoxRectValid(pDesc->tIconSrc) ) return 0;
+	if ( pDesc->bHasCustomIcon && pDesc->pIconSurface != NULL &&
+	     (pDesc->tIconSrc.fW <= 0 || pDesc->tIconSrc.fH <= 0) ) return 0;
+	if ( !__xuiMsgBoxButtonModelValid(pDesc->pCustomButtons,
+	     pDesc->iCustomButtonCount) ) return 0;
 	if ( pDesc->bHasMetrics && !__xuiMsgBoxMetricsValid(&pDesc->tMetrics) ) return 0;
 	if ( pDesc->bHasColors && !__xuiMsgBoxColorsValid(&pDesc->tColors) ) return 0;
 	return 1;
@@ -482,23 +491,12 @@ static xui_rect_t __xuiMsgBoxRootRect(xui_msgbox pBox)
 
 static int __xuiMsgBoxRectSame(xui_rect_t tA, xui_rect_t tB)
 {
-	float fDX;
-	float fDY;
-	float fDW;
-	float fDH;
-
-	fDX = tA.fX - tB.fX;
-	fDY = tA.fY - tB.fY;
-	fDW = tA.fW - tB.fW;
-	fDH = tA.fH - tB.fH;
-	if ( fDX < 0.0f ) fDX = -fDX;
-	if ( fDY < 0.0f ) fDY = -fDY;
-	if ( fDW < 0.0f ) fDW = -fDW;
-	if ( fDH < 0.0f ) fDH = -fDH;
-	return (fDX < 0.05f) && (fDY < 0.05f) && (fDW < 0.05f) && (fDH < 0.05f);
+	return tA.fX == tB.fX && tA.fY == tB.fY &&
+	       tA.fW == tB.fW && tA.fH == tB.fH;
 }
 
-static int __xuiMsgBoxMeasureText(xui_msgbox pBox, float fWidth, xui_vec2_t* pSize, int* pLineCount)
+static int __xuiMsgBoxMeasureText(xui_msgbox pBox, float fWidth,
+	float fHeight, xui_vec2_t* pSize, int* pLineCount)
 {
 	xui_text_layout_desc_t tDesc;
 	xui_text_layout pLayout;
@@ -515,20 +513,21 @@ static int __xuiMsgBoxMeasureText(xui_msgbox pBox, float fWidth, xui_vec2_t* pSi
 	}
 	pFont = __xuiMsgBoxFont(pBox);
 	if ( pFont == NULL ) {
-		if ( pBox->sMessage != NULL ) {
+		if ( pBox->sMessage != NULL && pBox->sMessage[0] != '\0' && fHeight > 0.0f ) {
 			pSize->fX = __xuiMsgBoxMin((float)strlen(pBox->sMessage) * 7.0f, fWidth);
+			pSize->fY = __xuiMsgBoxMin(18.0f, fHeight);
+			if ( pLineCount != NULL ) *pLineCount = 1;
 		}
-		pSize->fY = 18.0f;
-		if ( pLineCount != NULL ) *pLineCount = 1;
 		return XUI_OK;
 	}
+	if ( fWidth <= 0.0f || fHeight <= 0.0f ) return XUI_OK;
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = (pBox->sMessage != NULL) ? pBox->sMessage : "";
 	tDesc.iTextSize = -1;
 	tDesc.pFont = pFont;
 	tDesc.fMaxWidth = fWidth;
-	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	tDesc.fMaxHeight = fHeight;
 	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
 	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 	tDesc.fLineGap = 2.0f;
@@ -652,6 +651,7 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 {
 	xui_rect_t tRoot;
 	xui_rect_t tWin;
+	xui_rect_t tContent;
 	xui_vec2_t tTextSize;
 	float arrButtonWidth[XUI_MSGBOX_BUTTON_CAPACITY];
 	float fTitleBar;
@@ -660,22 +660,37 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 	float fButtonSize;
 	float fRootMaxWidth;
 	float fRootAvailableWidth;
+	float fRootAvailableHeight;
 	float fMaxWidth;
+	float fMinWidth;
 	float fWidth;
 	float fClientW;
 	float fClientH;
 	float fIconBlock;
+	float fIconSize;
+	float fIconGap;
 	float fMessageW;
 	float fMessageH;
+	float fMaxRowH;
+	float fPaddingX;
 	float fRowH;
+	float fPaddingY;
+	float fFooterHeight;
 	float fFooterTop;
 	float fButtonsW;
 	float fButtonsRequiredWidth;
+	float fButtonArea;
+	float fButtonWidthArea;
+	float fButtonScale;
+	float fButtonGap;
+	float fButtonHeight;
 	float fButtonsX;
 	float fButtonsY;
 	float fButtonX;
 	float fWindowH;
 	int bIcon;
+	int iWindowWidth;
+	int iWindowHeight;
 	int i;
 	int iRet;
 
@@ -691,7 +706,30 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 	(void)fResizeGrip;
 	(void)fButtonSize;
 	bIcon = __xuiMsgBoxHasIcon(pBox);
-	fIconBlock = bIcon ? (pBox->tMetrics.fIconSize + pBox->tMetrics.fIconGap) : 0.0f;
+	fRootAvailableWidth = (tRoot.fW > 24) ? (float)(tRoot.fW - 24) : (float)tRoot.fW;
+	fRootAvailableHeight = (tRoot.fH > 24) ? (float)(tRoot.fH - 24) : (float)tRoot.fH;
+	if ( fRootAvailableWidth < 1.0f ) fRootAvailableWidth = 1.0f;
+	if ( fRootAvailableHeight < 1.0f ) fRootAvailableHeight = 1.0f;
+	fPaddingX = __xuiMsgBoxMin(pBox->tMetrics.fPaddingX,
+		__xuiMsgBoxMax(0.0f, (fRootAvailableWidth - fBorder * 2.0f) * 0.5f));
+	fClientH = __xuiMsgBoxMax(0.0f,
+		fRootAvailableHeight - fTitleBar - fBorder * 2.0f);
+	fFooterHeight = __xuiMsgBoxMin(pBox->tMetrics.fFooterHeight,
+		fClientH);
+	fPaddingY = __xuiMsgBoxMin(pBox->tMetrics.fPaddingY,
+		__xuiMsgBoxMax(0.0f, fClientH - fFooterHeight));
+	fMaxRowH = __xuiMsgBoxMax(0.0f,
+		fClientH - fFooterHeight - fPaddingY);
+	fIconSize = bIcon ? __xuiMsgBoxMin(pBox->tMetrics.fIconSize,
+		__xuiMsgBoxMin(fMaxRowH,
+			__xuiMsgBoxMax(0.0f, fRootAvailableWidth - fBorder * 2.0f -
+				fPaddingX * 2.0f))) : 0.0f;
+	fIconGap = (fIconSize > 0.0f) ?
+		__xuiMsgBoxMin(pBox->tMetrics.fIconGap,
+			__xuiMsgBoxMax(0.0f, fRootAvailableWidth - fBorder * 2.0f -
+				fPaddingX * 2.0f - fIconSize)) : 0.0f;
+	fIconBlock = (fIconSize > 0.0f) ?
+		(fIconSize + fIconGap) : 0.0f;
 	fButtonsW = 0.0f;
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
 		arrButtonWidth[i] = 0.0f;
@@ -703,66 +741,118 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 	if ( pBox->iButtonCount > 1 ) {
 		fButtonsW += (float)(pBox->iButtonCount - 1) * pBox->tMetrics.fButtonGap;
 	}
-	fButtonsRequiredWidth = fBorder * 2.0f + pBox->tMetrics.fPaddingX * 2.0f + fButtonsW;
+	fButtonsRequiredWidth = fBorder * 2.0f + fPaddingX * 2.0f + fButtonsW;
 	fRootMaxWidth = tRoot.fW * pBox->tMetrics.fMaxWidthRatio;
-	fRootAvailableWidth = __xuiMsgBoxMax(1.0f, tRoot.fW - 24.0f);
 	fMaxWidth = __xuiMsgBoxMin(pBox->tMetrics.fMaxWidth, fRootMaxWidth);
-	if ( fMaxWidth < 220.0f ) fMaxWidth = __xuiMsgBoxMin(tRoot.fW - 24.0f, pBox->tMetrics.fMaxWidth);
-	if ( fMaxWidth < 220.0f ) fMaxWidth = 220.0f;
+	if ( fMaxWidth < __xuiMsgBoxMin(220.0f, fRootAvailableWidth) ) {
+		fMaxWidth = __xuiMsgBoxMin(fRootAvailableWidth,
+			pBox->tMetrics.fMaxWidth);
+	}
+	fMaxWidth = __xuiMsgBoxClamp(fMaxWidth, 1.0f,
+		fRootAvailableWidth);
 	if ( fButtonsRequiredWidth > fMaxWidth ) {
 		fMaxWidth = __xuiMsgBoxMin(fButtonsRequiredWidth, fRootAvailableWidth);
 	}
-	fMessageW = __xuiMsgBoxMax(120.0f, fMaxWidth - fBorder * 2.0f - pBox->tMetrics.fPaddingX * 2.0f - fIconBlock);
-	iRet = __xuiMsgBoxMeasureText(pBox, fMessageW, &tTextSize, &pBox->iWrapLineCount);
+	fMinWidth = __xuiMsgBoxMin(pBox->tMetrics.fMinWidth, fMaxWidth);
+	fMessageW = __xuiMsgBoxMax(1.0f, fMaxWidth - fBorder * 2.0f -
+		fPaddingX * 2.0f - fIconBlock);
+	iRet = __xuiMsgBoxMeasureText(pBox, fMessageW,
+		XUI_LAYOUT_UNBOUNDED, &tTextSize, &pBox->iWrapLineCount);
 	if ( iRet != XUI_OK ) return iRet;
 	fWidth = __xuiMsgBoxMax(
-		fBorder * 2.0f + pBox->tMetrics.fPaddingX * 2.0f + fIconBlock + tTextSize.fX,
+		fBorder * 2.0f + fPaddingX * 2.0f + fIconBlock + tTextSize.fX,
 		fButtonsRequiredWidth);
-	fWidth = __xuiMsgBoxClamp(fWidth, pBox->tMetrics.fMinWidth, fMaxWidth);
+	fWidth = __xuiMsgBoxClamp(fWidth, fMinWidth, fMaxWidth);
+	iWindowWidth = xuiInternalSnapSize(fWidth);
+	if ( iWindowWidth > (int)fRootAvailableWidth )
+		iWindowWidth = (int)fRootAvailableWidth;
+	if ( iWindowWidth < 1 ) iWindowWidth = 1;
+	fWidth = (float)iWindowWidth;
 	fClientW = __xuiMsgBoxMax(1.0f, fWidth - fBorder * 2.0f);
-	fMessageW = __xuiMsgBoxMax(80.0f, fClientW - pBox->tMetrics.fPaddingX * 2.0f - fIconBlock);
-	iRet = __xuiMsgBoxMeasureText(pBox, fMessageW, &tTextSize, &pBox->iWrapLineCount);
+	fMessageW = __xuiMsgBoxMax(0.0f, fClientW -
+		fPaddingX * 2.0f - fIconBlock);
+	iRet = __xuiMsgBoxMeasureText(pBox, fMessageW, fMaxRowH,
+		&tTextSize, &pBox->iWrapLineCount);
 	if ( iRet != XUI_OK ) return iRet;
-	fMessageH = __xuiMsgBoxMax(tTextSize.fY, pBox->tMetrics.fMinMessageHeight);
-	fRowH = __xuiMsgBoxMax(fMessageH, bIcon ? pBox->tMetrics.fIconSize : 0.0f);
-	fClientH = pBox->tMetrics.fPaddingY + fRowH + pBox->tMetrics.fFooterHeight;
+	fMessageH = __xuiMsgBoxMax(tTextSize.fY,
+		__xuiMsgBoxMin(pBox->tMetrics.fMinMessageHeight, fMaxRowH));
+	fMessageH = __xuiMsgBoxMin(fMessageH, fMaxRowH);
+	fRowH = __xuiMsgBoxMax(fMessageH, fIconSize);
+	fClientH = fPaddingY + fRowH + fFooterHeight;
 	fWindowH = fTitleBar + fClientH + fBorder * 2.0f;
-	tWin.fW = fWidth;
-	tWin.fH = fWindowH;
-	tWin.fX = tRoot.fX + (tRoot.fW - tWin.fW) * 0.5f;
-	tWin.fY = tRoot.fY + (tRoot.fH - tWin.fH) * 0.5f;
-	tWin = xuiInternalSnapRect(tWin);
+	iWindowHeight = xuiInternalSnapSize(fWindowH);
+	if ( iWindowHeight > (int)fRootAvailableHeight )
+		iWindowHeight = (int)fRootAvailableHeight;
+	if ( iWindowHeight < 1 ) iWindowHeight = 1;
+	tWin = xuiInternalRectFromFloatNearest(
+		(float)tRoot.fX + ((float)tRoot.fW - (float)iWindowWidth) * 0.5f,
+		(float)tRoot.fY + ((float)tRoot.fH - (float)iWindowHeight) * 0.5f,
+		(float)iWindowWidth, (float)iWindowHeight);
+	iRet = xuiWindowSetMinSize(pBox->pWindow,
+		__xuiMsgBoxMin(pBox->tMetrics.fMinWidth, (float)tWin.fW),
+		__xuiMsgBoxMin(120.0f, (float)tWin.fH));
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetRect(pBox->pWindow, tWin);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWindowSetMinSize(pBox->pWindow, pBox->tMetrics.fMinWidth, 120.0f);
+	tContent = xuiInternalRectFromFloatNearest(0.0f, 0.0f,
+		__xuiMsgBoxMax(0.0f, (float)tWin.fW - fBorder * 2.0f),
+		__xuiMsgBoxMax(0.0f, (float)tWin.fH - fTitleBar - fBorder * 2.0f));
+	iRet = xuiWidgetSetRect(pBox->pContent, tContent);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetSetRect(pBox->pContent, (xui_rect_t){0.0f, 0.0f, fClientW, fClientH});
-	if ( iRet != XUI_OK ) return iRet;
-	if ( bIcon ) {
-		pBox->tIconRect.fX = pBox->tMetrics.fPaddingX;
-		pBox->tIconRect.fY = pBox->tMetrics.fPaddingY + (fRowH - pBox->tMetrics.fIconSize) * 0.5f;
-		pBox->tIconRect.fW = pBox->tMetrics.fIconSize;
-		pBox->tIconRect.fH = pBox->tMetrics.fIconSize;
+	fClientW = (float)tContent.fW;
+	fClientH = (float)tContent.fH;
+	if ( fIconSize > 0.0f ) {
+		pBox->tIconRect = xuiInternalRectFromFloatNearest(
+			fPaddingX,
+			fPaddingY + (fRowH - fIconSize) * 0.5f,
+			fIconSize, fIconSize);
 	} else {
-		pBox->tIconRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+		pBox->tIconRect = (xui_rect_t){0, 0, 0, 0};
 	}
-	pBox->tMessageRect.fX = pBox->tMetrics.fPaddingX + fIconBlock;
-	pBox->tMessageRect.fY = pBox->tMetrics.fPaddingY + (fRowH - fMessageH) * 0.5f;
-	pBox->tMessageRect.fW = fMessageW;
-	pBox->tMessageRect.fH = fMessageH;
-	fFooterTop = fClientH - pBox->tMetrics.fFooterHeight;
-	fButtonsX = fClientW - pBox->tMetrics.fPaddingX - fButtonsW;
-	fButtonsY = fFooterTop + (pBox->tMetrics.fFooterHeight - pBox->tMetrics.fButtonHeight) * 0.5f;
+	fMessageW = __xuiMsgBoxMax(0.0f, fClientW -
+		fPaddingX * 2.0f - fIconBlock);
+	pBox->tMessageRect = xuiInternalRectFromFloatNearest(
+		fPaddingX + fIconBlock,
+		fPaddingY + (fRowH - fMessageH) * 0.5f,
+		fMessageW, fMessageH);
+	fFooterHeight = __xuiMsgBoxMin(fFooterHeight, fClientH);
+	fFooterTop = fClientH - fFooterHeight;
+	fButtonHeight = __xuiMsgBoxMin(pBox->tMetrics.fButtonHeight,
+		fFooterHeight);
+	fButtonArea = __xuiMsgBoxMax(0.0f,
+		fClientW - fPaddingX * 2.0f);
+	fButtonGap = pBox->tMetrics.fButtonGap;
+	if ( pBox->iButtonCount > 1 ) {
+		float fMaxGap = __xuiMsgBoxMax(0.0f,
+			(fButtonArea - (float)pBox->iButtonCount) /
+			(float)(pBox->iButtonCount - 1));
+		if ( fButtonGap > fMaxGap ) fButtonGap = fMaxGap;
+	}
+	fButtonWidthArea = fButtonArea;
+	if ( pBox->iButtonCount > 1 ) {
+		fButtonWidthArea = __xuiMsgBoxMax(0.0f, fButtonArea -
+			(float)(pBox->iButtonCount - 1) * fButtonGap);
+	}
+	fButtonsW = 0.0f;
+	for ( i = 0; i < pBox->iButtonCount; i++ )
+		fButtonsW += arrButtonWidth[i];
+	if ( fButtonsW > fButtonWidthArea && fButtonsW > 0.0f ) {
+		fButtonScale = fButtonWidthArea / fButtonsW;
+		for ( i = 0; i < pBox->iButtonCount; i++ )
+			arrButtonWidth[i] *= fButtonScale;
+		fButtonsW = fButtonWidthArea;
+	}
+	if ( pBox->iButtonCount > 1 )
+		fButtonsW += (float)(pBox->iButtonCount - 1) * fButtonGap;
+	fButtonsX = __xuiMsgBoxMax(fPaddingX,
+		fClientW - fPaddingX - fButtonsW);
+	fButtonsY = fFooterTop + (fFooterHeight - fButtonHeight) * 0.5f;
 	fButtonX = fButtonsX;
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
 		if ( i < pBox->iButtonCount ) {
-			pBox->arrButtonRect[i] = (xui_rect_t){
-				fButtonX,
-				fButtonsY,
-				arrButtonWidth[i],
-				pBox->tMetrics.fButtonHeight
-			};
-			fButtonX += arrButtonWidth[i] + pBox->tMetrics.fButtonGap;
+			pBox->arrButtonRect[i] = xuiInternalRectFromFloatNearest(
+				fButtonX, fButtonsY, arrButtonWidth[i], fButtonHeight);
+			fButtonX += arrButtonWidth[i] + fButtonGap;
 			if ( pBox->arrButtons[i] != NULL ) {
 				iRet = xuiWidgetSetRect(pBox->arrButtons[i], pBox->arrButtonRect[i]);
 				if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pBox->arrButtons[i], 1);
@@ -770,7 +860,7 @@ static int __xuiMsgBoxLayout(xui_msgbox pBox)
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		} else {
-			pBox->arrButtonRect[i] = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+			pBox->arrButtonRect[i] = (xui_rect_t){0, 0, 0, 0};
 			if ( pBox->arrButtons[i] != NULL ) {
 				iRet = xuiWidgetSetVisible(pBox->arrButtons[i], 0);
 				if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pBox->arrButtons[i], 0);
@@ -909,13 +999,8 @@ static int __xuiMsgBoxDrawTextLayout(xui_msgbox pBox, xui_draw_context pDraw)
 {
 	xui_text_layout_desc_t tDesc;
 	xui_text_layout pLayout;
-	xui_text_line_t tLine;
 	xui_proxy pProxy;
 	xui_font pFont;
-	const char* sLine;
-	xui_rect_t tLineRect;
-	int i;
-	int iDisplaySize;
 	int iRet;
 
 	pProxy = xuiInternalContextGetProxy(pBox->pContext);
@@ -938,30 +1023,12 @@ static int __xuiMsgBoxDrawTextLayout(xui_msgbox pBox, xui_draw_context pDraw)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	for ( i = 0; i < xuiTextLayoutGetLineCount(pLayout); i++ ) {
-		memset(&tLine, 0, sizeof(tLine));
-		tLine.iSize = sizeof(tLine);
-		if ( xuiTextLayoutGetLine(pLayout, i, &tLine) != XUI_OK || tLine.iTextSize <= 0 ) {
-			continue;
-		}
-		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, i, &sLine, &iDisplaySize);
-		if ( iRet != XUI_OK ) {
-			xuiTextLayoutDestroy(pLayout);
-			return iRet;
-		}
-		if ( iDisplaySize <= 0 ) continue;
-		tLineRect.fX = pBox->tMessageRect.fX;
-		tLineRect.fY = pBox->tMessageRect.fY + tLine.fY;
-		tLineRect.fW = pBox->tMessageRect.fW;
-		tLineRect.fH = tLine.fH;
-		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=iDisplaySize, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tLineRect), __xuiMsgBoxColor(pBox, "msgbox.text.color", pBox->tColors.iMessageColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
-		if ( iRet != XUI_OK ) {
-			xuiTextLayoutDestroy(pLayout);
-			return iRet;
-		}
-	}
+	iRet = xuiInternalTextLayoutDrawContext(pLayout, pDraw,
+		pBox->tMessageRect,
+		__xuiMsgBoxColor(pBox, "msgbox.text.color",
+			pBox->tColors.iMessageColor), 0);
 	xuiTextLayoutDestroy(pLayout);
-	return XUI_OK;
+	return iRet;
 }
 
 static int __xuiMsgBoxDrawIconFallback(xui_msgbox pBox, xui_draw_context pDraw, xui_proxy pProxy)
@@ -1136,7 +1203,7 @@ static void __xuiMsgBoxCloseResult(xui_msgbox pBox, int iResult)
 		return;
 	}
 	pBox->iResult = iResult;
-	pBox->iResultCount++;
+	if ( pBox->iResultCount < INT_MAX ) pBox->iResultCount++;
 	(void)xuiMsgBoxSetOpen(pBox, 0);
 	if ( pBox->onResult != NULL ) {
 		pBox->onResult(pBox, iResult, pBox->pResultUser);
@@ -1507,7 +1574,7 @@ XUI_API int xuiMsgBoxSetText(xui_msgbox pBox, const char* sTitle, const char* sM
 	}
 	if ( sOldTitle != NULL ) xrtFree(sOldTitle);
 	if ( sOldMessage != NULL ) xrtFree(sOldMessage);
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1529,7 +1596,7 @@ XUI_API int xuiMsgBoxSetTitle(xui_msgbox pBox, const char* sTitle)
 	}
 	if ( pBox->sTitle != NULL ) xrtFree(pBox->sTitle);
 	pBox->sTitle = sNewTitle;
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1560,7 +1627,7 @@ XUI_API int xuiMsgBoxSetMessage(xui_msgbox pBox, const char* sMessage)
 		return iRet;
 	}
 	if ( sOldMessage != NULL ) xrtFree(sOldMessage);
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1602,7 +1669,7 @@ XUI_API int xuiMsgBoxSetType(xui_msgbox pBox, int iType)
 		(void)__xuiMsgBoxLayout(pBox);
 		return iRet;
 	}
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1620,7 +1687,8 @@ XUI_API int xuiMsgBoxSetIconSurface(xui_msgbox pBox, xui_surface pSurface, xui_r
 	int bOldBuiltin;
 	int iRet;
 
-	if ( !__xuiMsgBoxValid(pBox) || !__xuiMsgBoxRectValid(tSrc) ) {
+	if ( !__xuiMsgBoxValid(pBox) || !__xuiMsgBoxRectValid(tSrc) ||
+	     (pSurface != NULL && (tSrc.fW <= 0 || tSrc.fH <= 0)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pBox->pIconSurface == pSurface && memcmp(&pBox->tIconSrc, &tSrc, sizeof(tSrc)) == 0 &&
@@ -1647,7 +1715,7 @@ XUI_API int xuiMsgBoxSetIconSurface(xui_msgbox pBox, xui_surface pSurface, xui_r
 		(void)__xuiMsgBoxLayout(pBox);
 		return iRet;
 	}
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1676,7 +1744,7 @@ XUI_API int xuiMsgBoxUseBuiltinIcon(xui_msgbox pBox)
 		(void)__xuiMsgBoxLayout(pBox);
 		return iRet;
 	}
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1694,7 +1762,7 @@ XUI_API int xuiMsgBoxSetButtons(xui_msgbox pBox, int iButtons)
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiMsgBoxApplyButtonVisual(pBox);
 	if ( iRet != XUI_OK ) return iRet;
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return __xuiMsgBoxLayout(pBox);
 }
 
@@ -1702,7 +1770,8 @@ XUI_API int xuiMsgBoxSetCustomButtons(xui_msgbox pBox, const xui_msgbox_button_t
 {
 	int iRet;
 
-	if ( !__xuiMsgBoxValid(pBox) || (iCount < 0) || (iCount > XUI_MSGBOX_BUTTON_CAPACITY) || ((iCount > 0) && (pButtons == NULL)) ) {
+	if ( !__xuiMsgBoxValid(pBox) ||
+	     !__xuiMsgBoxButtonModelValid(pButtons, iCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xuiMsgBoxButtonModelSame(pBox, XUI_MSGBOX_BUTTON_CUSTOM, pButtons, iCount) ) return XUI_OK;
@@ -1710,7 +1779,7 @@ XUI_API int xuiMsgBoxSetCustomButtons(xui_msgbox pBox, const xui_msgbox_button_t
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiMsgBoxApplyButtonVisual(pBox);
 	if ( iRet != XUI_OK ) return iRet;
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return __xuiMsgBoxLayout(pBox);
 }
 
@@ -1749,11 +1818,11 @@ XUI_API int xuiMsgBoxSetPresetButtonTitle(xui_msgbox pBox, int iTitle, const cha
 			return iRet;
 		}
 		if ( sOldText != NULL ) xrtFree(sOldText);
-		pBox->iChangeCount++;
+		if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 		return XUI_OK;
 	}
 	if ( sOldText != NULL ) xrtFree(sOldText);
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1793,7 +1862,7 @@ XUI_API int xuiMsgBoxSetModal(xui_msgbox pBox, int bModal)
 		(void)__xuiMsgBoxApplyOverlay(pBox);
 		return iRet;
 	}
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1849,7 +1918,7 @@ XUI_API int xuiMsgBoxSetOpen(xui_msgbox pBox, int bOpen)
 			return iRet;
 		}
 	}
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1883,7 +1952,7 @@ XUI_API int xuiMsgBoxSetMetrics(xui_msgbox pBox, const xui_msgbox_metrics_t* pMe
 		(void)__xuiMsgBoxLayout(pBox);
 		return iRet;
 	}
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 
@@ -1941,7 +2010,7 @@ XUI_API int xuiMsgBoxSetColors(xui_msgbox pBox, const xui_msgbox_colors_t* pColo
 		return iRet;
 	}
 	(void)__xuiMsgBoxSyncPaint(pBox);
-	pBox->iChangeCount++;
+	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
 	return XUI_OK;
 }
 

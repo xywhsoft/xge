@@ -1,7 +1,6 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -119,6 +118,8 @@ int main(void)
 	xui_rect_t tAfterUpdate;
 	xui_rect_t tLongButton;
 	xui_rect_t tShortButton;
+	xui_rect_t tSmallWindow;
+	xui_rect_t tSmallContent;
 	xui_vec2_t tButtonContent;
 	xui_thickness_t tButtonPadding;
 	xui_msgbox_metrics_t tMetrics;
@@ -167,7 +168,7 @@ int main(void)
 	tDesc.bHasModal = 1;
 	tDesc.bModal = 1;
 	tInvalidDesc = tDesc;
-	tInvalidDesc.tIconSrc.fX = NAN;
+	tInvalidDesc.tIconSrc.fW = -1;
 	pInvalidBox = (xui_msgbox)&tState;
 	iRet = xuiMsgBoxCreate(pContext, &pInvalidBox, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidBox == NULL, "invalid create clears output");
@@ -224,8 +225,12 @@ int main(void)
 	tInvalidMetrics.fFooterHeight = tMetrics.fButtonHeight - 1.0f;
 	iRet = xuiMsgBoxSetMetrics(pBox, &tInvalidMetrics);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject footer shorter than button");
-	iRet = xuiMsgBoxSetIconSurface(pBox, NULL, (xui_rect_t){NAN, 0.0f, 0.0f, 0.0f});
-	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nonfinite icon source");
+	iRet = xuiMsgBoxSetIconSurface(pBox, NULL, (xui_rect_t){0, 0, -1, 1});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative icon source");
+	iRet = xuiMsgBoxSetIconSurface(pBox, (xui_surface)&tState,
+		(xui_rect_t){0, 0, 0, 16});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"custom icon requires nonempty source");
 	iChangeBefore = xuiMsgBoxGetChangeCount(pBox);
 	iRet = xuiMsgBoxSetTitle(pBox, xuiMsgBoxGetTitle(pBox));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgBoxGetChangeCount(pBox) == iChangeBefore, "same title is no-op");
@@ -321,6 +326,12 @@ int main(void)
 	arrCustom[1].sText = "Delete";
 	arrCustom[1].iResult = 20;
 	arrCustom[1].iSemantic = XUI_BUTTON_SEMANTIC_DANGER;
+	arrCustom[1].iSemantic = 999;
+	iRet = xuiMsgBoxSetCustomButtons(pBox, arrCustom, 2);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiMsgBoxGetButtonCount(pBox) == 2,
+		"invalid custom semantic preserves preset buttons");
+	arrCustom[1].iSemantic = XUI_BUTTON_SEMANTIC_DANGER;
 	iRet = xuiMsgBoxSetType(pBox, XUI_MSGBOX_ICON_ERROR);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set type error");
 	iRet = xuiMsgBoxSetCustomButtons(pBox, arrCustom, 2);
@@ -343,6 +354,49 @@ int main(void)
 	XUI_TEST_CHECK(__xuiMsgBoxNear(tShortButton.fW, tMetrics.fButtonWidth), "short button keeps minimum width");
 	XUI_TEST_CHECK(tShortButton.fX >= tLongButton.fX + tLongButton.fW + tMetrics.fButtonGap,
 		"variable-width buttons preserve gap");
+	iRet = xuiInputViewport(pContext, 240.0f, 180.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "small viewport");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0, 0, 240, 180});
+	XUI_TEST_CHECK(iRet == XUI_OK, "small root");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "small msgbox update");
+	tSmallWindow = xuiWidgetGetRect(xuiMsgBoxGetWindowWidget(pBox));
+	tSmallContent = xuiWidgetGetRect(xuiMsgBoxGetContentWidget(pBox));
+	tLongButton = xuiMsgBoxGetButtonRect(pBox, 0);
+	tShortButton = xuiMsgBoxGetButtonRect(pBox, 1);
+	XUI_TEST_CHECK(tSmallWindow.fX >= 0 && tSmallWindow.fY >= 0 &&
+		tSmallWindow.fX + tSmallWindow.fW <= 240 &&
+		tSmallWindow.fY + tSmallWindow.fH <= 180,
+		"small msgbox remains inside root");
+	XUI_TEST_CHECK(tLongButton.fX >= 0 && tLongButton.fY >= 0 &&
+		tShortButton.fX >= tLongButton.fX + tLongButton.fW &&
+		tShortButton.fX + tShortButton.fW <= tSmallContent.fW &&
+		tShortButton.fY + tShortButton.fH <= tSmallContent.fH,
+		"small msgbox buttons remain inside content");
+	iRet = xuiInputViewport(pContext, 16.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny viewport");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0, 0, 16, 80});
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny root");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny msgbox update");
+	tSmallWindow = xuiWidgetGetRect(xuiMsgBoxGetWindowWidget(pBox));
+	tSmallContent = xuiWidgetGetRect(xuiMsgBoxGetContentWidget(pBox));
+	tLongButton = xuiMsgBoxGetButtonRect(pBox, 0);
+	tShortButton = xuiMsgBoxGetButtonRect(pBox, 1);
+	XUI_TEST_CHECK(tSmallWindow.fX >= 0 && tSmallWindow.fY >= 0 &&
+		tSmallWindow.fX + tSmallWindow.fW <= 16 &&
+		tSmallWindow.fY + tSmallWindow.fH <= 80,
+		"tiny msgbox remains inside root");
+	XUI_TEST_CHECK(tLongButton.fX >= 0 && tLongButton.fX <= tSmallContent.fW &&
+		tShortButton.fX >= tLongButton.fX + tLongButton.fW &&
+		tShortButton.fX + tShortButton.fW <= tSmallContent.fW,
+		"tiny msgbox button geometry remains bounded");
+	iRet = xuiInputViewport(pContext, 760.0f, 430.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore viewport after small layout");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0, 0, 760, 430});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore root after small layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore msgbox layout");
 	tButton = xuiMsgBoxGetButtonRect(pBox, 1);
 	tWorld = xuiWidgetGetWorldRect(xuiMsgBoxGetContentWidget(pBox));
 	iRet = __xuiMsgBoxDispatchClick(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f);
