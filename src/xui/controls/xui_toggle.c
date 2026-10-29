@@ -469,15 +469,26 @@ static void __xuiToggleLayoutContent(xui_widget pWidget,
 	float fTrackH;
 	float fThumb;
 	float fInset;
+	float fMaxInset;
+	float fMaxThumb;
 	float fThumbX;
 	float fTrackX;
 	float fTrackY;
 	float fInnerX;
 	float fInnerW;
+	float fInnerStart;
+	float fInnerEnd;
+	float fInnerAvailable;
+	float fInnerGap;
+	float fInnerPadding;
+	float fAvailable;
+	float fGap;
 	int bRtl;
 	int bThumbTrailing;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
+	if ( tContent.fW < 0.0f ) tContent.fW = 0.0f;
+	if ( tContent.fH < 0.0f ) tContent.fH = 0.0f;
 	memset(&tInnerSize, 0, sizeof(tInnerSize));
 	fTrackW = pResolved->fTrackWidth;
 	fTrackH = pResolved->fTrackHeight;
@@ -486,16 +497,26 @@ static void __xuiToggleLayoutContent(xui_widget pWidget,
 	if ( fTrackH < 2.0f ) fTrackH = 2.0f;
 	if ( fTrackW > tContent.fW ) fTrackW = tContent.fW;
 	if ( fTrackH > tContent.fH ) fTrackH = tContent.fH;
-	if ( fThumb < 1.0f ) fThumb = 1.0f;
-	if ( fThumb > fTrackH - 4.0f ) fThumb = fTrackH - 4.0f;
-	if ( fThumb < 1.0f ) fThumb = 1.0f;
 	if ( __xuiToggleHasInnerText(pResolved) ) {
 		tInnerSize = __xuiToggleMeasureInnerText(pWidget, pResolved);
 	}
 	fTrackW = __xuiToggleEffectiveTrackWidth(pResolved, tInnerSize, fTrackW, fThumb);
 	if ( fTrackW > tContent.fW ) fTrackW = tContent.fW;
+	fMaxThumb = fTrackH;
+	if ( fMaxThumb > fTrackW ) fMaxThumb = fTrackW;
+	if ( fTrackH > 0.0f ) {
+		float fInsetLimitedThumb = fTrackH - 4.0f;
+		if ( fInsetLimitedThumb < 1.0f ) fInsetLimitedThumb = 1.0f;
+		if ( fMaxThumb > fInsetLimitedThumb ) fMaxThumb = fInsetLimitedThumb;
+	}
+	if ( fMaxThumb < 0.0f ) fMaxThumb = 0.0f;
+	if ( fThumb < 1.0f ) fThumb = 1.0f;
+	if ( fThumb > fMaxThumb ) fThumb = fMaxThumb;
 	fInset = (fTrackH - fThumb) * 0.5f;
 	if ( fInset < 1.0f ) fInset = 1.0f;
+	fMaxInset = (fTrackW - fThumb) * 0.5f;
+	if ( fMaxInset < 0.0f ) fMaxInset = 0.0f;
+	if ( fInset > fMaxInset ) fInset = fMaxInset;
 	/* Keep dependent positions in float until each final rectangle is emitted. */
 	bRtl = ((pResolved->iTextFlags & XUI_TEXT_RTL) != 0);
 	fTrackX = bRtl ? (tContent.fX + tContent.fW - fTrackW) : tContent.fX;
@@ -514,20 +535,37 @@ static void __xuiToggleLayoutContent(xui_widget pWidget,
 	memset(&pGeometry->tInnerTextRect, 0, sizeof(pGeometry->tInnerTextRect));
 	if ( __xuiToggleHasInnerText(pResolved) ) {
 		if ( bThumbTrailing ) {
-			fInnerX = fTrackX + pResolved->fInnerTextPadding;
-			fInnerW = fThumbX - pResolved->fInnerTextGap - fInnerX;
+			fInnerStart = fTrackX;
+			fInnerEnd = fThumbX;
 		} else {
-			fInnerX = fThumbX + fThumb + pResolved->fInnerTextGap;
-			fInnerW = fTrackX + fTrackW - pResolved->fInnerTextPadding - fInnerX;
+			fInnerStart = fThumbX + fThumb;
+			fInnerEnd = fTrackX + fTrackW;
+		}
+		fInnerAvailable = fInnerEnd - fInnerStart;
+		if ( fInnerAvailable < 0.0f ) fInnerAvailable = 0.0f;
+		fInnerPadding = (pResolved->fInnerTextPadding < fInnerAvailable) ?
+			pResolved->fInnerTextPadding : fInnerAvailable;
+		fInnerAvailable -= fInnerPadding;
+		fInnerGap = (pResolved->fInnerTextGap < fInnerAvailable) ?
+			pResolved->fInnerTextGap : fInnerAvailable;
+		if ( bThumbTrailing ) {
+			fInnerX = fInnerStart + fInnerPadding;
+			fInnerW = fInnerEnd - fInnerGap - fInnerX;
+		} else {
+			fInnerX = fInnerStart + fInnerGap;
+			fInnerW = fInnerEnd - fInnerPadding - fInnerX;
 		}
 		pGeometry->tInnerTextRect = xuiInternalRectFromFloatNearest(fInnerX, fTrackY, fInnerW, fTrackH);
 	}
+	fAvailable = tContent.fW - fTrackW;
+	if ( fAvailable < 0.0f ) fAvailable = 0.0f;
+	fGap = (pResolved->fGap < fAvailable) ? pResolved->fGap : fAvailable;
 	if ( bRtl ) {
 		pGeometry->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX, tContent.fY,
-			tContent.fW - fTrackW - pResolved->fGap, tContent.fH);
+			fAvailable - fGap, tContent.fH);
 	} else {
-		pGeometry->tTextRect = xuiInternalRectFromFloatNearest(fTrackX + fTrackW + pResolved->fGap,
-			tContent.fY, tContent.fW - fTrackW - pResolved->fGap, tContent.fH);
+		pGeometry->tTextRect = xuiInternalRectFromFloatNearest(fTrackX + fTrackW + fGap,
+			tContent.fY, fAvailable - fGap, tContent.fH);
 	}
 }
 

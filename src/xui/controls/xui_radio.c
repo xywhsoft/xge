@@ -386,24 +386,32 @@ static xui_vec2_t __xuiRadioMeasureText(xui_widget pWidget, xui_font pFont,
 static void __xuiRadioLayoutContent(xui_widget pWidget, xui_radio_data_t* pData, xui_radio_data_t* pResolved)
 {
 	xui_rect_t tContent;
+	float fAvailable;
+	float fGap;
 	float fSize;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
+	if ( tContent.fW < 0.0f ) tContent.fW = 0.0f;
+	if ( tContent.fH < 0.0f ) tContent.fH = 0.0f;
 	fSize = pResolved->fIndicatorSize;
 	if ( fSize < 1.0f ) fSize = 1.0f;
 	if ( fSize > tContent.fH ) fSize = tContent.fH;
+	if ( fSize > tContent.fW ) fSize = tContent.fW;
+	fAvailable = tContent.fW - fSize;
+	if ( fAvailable < 0.0f ) fAvailable = 0.0f;
+	fGap = (pResolved->fGap < fAvailable) ? pResolved->fGap : fAvailable;
 	if ( (pResolved->iTextFlags & XUI_TEXT_RTL) != 0 ) {
 		pData->tIndicatorRect = xuiInternalRectFromFloatNearest(
 			tContent.fX + tContent.fW - fSize,
 			tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
 		pData->tTextRect = xuiInternalRectFromFloatNearest(tContent.fX,
-			tContent.fY, tContent.fW - fSize - pResolved->fGap, tContent.fH);
+			tContent.fY, fAvailable - fGap, tContent.fH);
 	} else {
 		pData->tIndicatorRect = xuiInternalRectFromFloatNearest(tContent.fX,
 			tContent.fY + (tContent.fH - fSize) * 0.5f, fSize, fSize);
 		pData->tTextRect = xuiInternalRectFromFloatNearest(
-			tContent.fX + fSize + pResolved->fGap, tContent.fY,
-			tContent.fW - fSize - pResolved->fGap, tContent.fH);
+			tContent.fX + fSize + fGap, tContent.fY,
+			fAvailable - fGap, tContent.fH);
 	}
 }
 

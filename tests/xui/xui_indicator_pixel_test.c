@@ -41,30 +41,59 @@ int main(void)
 			PIXEL_CHECK(xuiWidgetSetRect(radio, rect) == XUI_OK);
 			PIXEL_CHECK(xuiWidgetSetRect(toggle, rect) == XUI_OK);
 			for (si = 0; si < sizeof(sizes) / sizeof(sizes[0]); si++) {
-				float size = fminf(h, fmaxf(1.0f, sizes[si]));
+				float size = fminf(w, fminf(h, fmaxf(1.0f, sizes[si])));
+				float available = w - size;
+				float gap = fminf(0.5f, available);
 				PIXEL_CHECK(xuiCheckBoxSetIndicatorSize(checkbox, sizes[si]) == XUI_OK);
 				PIXEL_CHECK(xuiRadioSetIndicatorSize(radio, sizes[si]) == XUI_OK);
 				pixel_paint(&f, checkbox, 0);
 				pixel_paint(&f, radio, 0);
 				pixel_rect(xuiCheckBoxGetIndicatorRect(checkbox), 0, (h - size) * 0.5f, size, size);
 				pixel_rect(xuiRadioGetIndicatorRect(radio), 0, (h - size) * 0.5f, size, size);
-				pixel_rect(xuiCheckBoxGetTextRect(checkbox), size + 0.5f, 0, fmaxf(0, w - size - 0.5f), h);
-				pixel_rect(xuiRadioGetTextRect(radio), size + 0.5f, 0, fmaxf(0, w - size - 0.5f), h);
+				pixel_rect(xuiCheckBoxGetTextRect(checkbox), size + gap, 0, available - gap, h);
+				pixel_rect(xuiRadioGetTextRect(radio), size + gap, 0, available - gap, h);
 			}
 			for (checked = 0; checked <= 1; checked++) {
 				float tw = fminf(64.5f, w), th = fminf(22.5f, h);
-				float thumb = fmaxf(1, fminf(13.5f, th - 4));
-				float inset = fmaxf(1, (th - thumb) * 0.5f);
+				float maxThumb = fminf(tw, th);
+				float limitedThumb = fmaxf(1, th - 4);
+				float thumb;
+				float maxInset;
+				float inset;
 				float ty = (h - th) * 0.5f;
-				float tx = checked ? tw - inset - thumb : inset;
-				float ix = checked ? 2.5f : tx + thumb + 1.5f;
-				float iw = checked ? tx - 1.5f - ix : tw - 2.5f - ix;
+				float tx;
+				float innerStart;
+				float innerEnd;
+				float innerAvailable;
+				float innerPadding;
+				float innerGap;
+				float ix;
+				float iw;
+				float available;
+				float gap;
+				if (maxThumb > limitedThumb) maxThumb = limitedThumb;
+				if (maxThumb < 0) maxThumb = 0;
+				thumb = fminf(13.5f, maxThumb);
+				inset = fmaxf(1, (th - thumb) * 0.5f);
+				maxInset = fmaxf(0, (tw - thumb) * 0.5f);
+				if (inset > maxInset) inset = maxInset;
+				tx = checked ? tw - inset - thumb : inset;
+				innerStart = checked ? 0 : tx + thumb;
+				innerEnd = checked ? tx : tw;
+				innerAvailable = fmaxf(0, innerEnd - innerStart);
+				innerPadding = fminf(2.5f, innerAvailable);
+				innerAvailable -= innerPadding;
+				innerGap = fminf(1.5f, innerAvailable);
+				ix = checked ? innerStart + innerPadding : innerStart + innerGap;
+				iw = checked ? innerEnd - innerGap - ix : innerEnd - innerPadding - ix;
+				available = w - tw;
+				gap = fminf(0.5f, available);
 				PIXEL_CHECK(xuiToggleSetChecked(toggle, checked) == XUI_OK);
 				pixel_paint(&f, toggle, checked ? XUI_TOGGLE_STATE_CHECKED : 0);
 				pixel_rect(xuiToggleGetTrackRect(toggle), 0, ty, tw, th);
 				pixel_rect(xuiToggleGetThumbRect(toggle), tx, ty + (th - thumb) * 0.5f, thumb, thumb);
-				pixel_rect(xuiToggleGetInnerTextRect(toggle), ix, ty, fmaxf(0, iw), th);
-				pixel_rect(xuiToggleGetTextRect(toggle), tw + 0.5f, 0, fmaxf(0, w - tw - 0.5f), h);
+				pixel_rect(xuiToggleGetInnerTextRect(toggle), ix, ty, iw, th);
+				pixel_rect(xuiToggleGetTextRect(toggle), tw + gap, 0, available - gap, h);
 			}
 		}
 	}
