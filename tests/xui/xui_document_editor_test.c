@@ -6,6 +6,65 @@
 #include <stdlib.h>
 #include <string.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
+
+static int (*document_editor_ime_set_enabled)(xui_proxy, int);
+static int document_editor_fail_ime_once;
+
+static int document_editor_ime_set_enabled_test(xui_proxy proxy, int enabled)
+{
+    if (document_editor_fail_ime_once) {
+        document_editor_fail_ime_once = 0;
+        return XUI_ERROR_BACKEND_FAILED;
+    }
+    return document_editor_ime_set_enabled(proxy, enabled);
+}
+
+static void document_read_only_ime_failure_cases(void)
+{
+    xui_test_proxy_state_t proxy;
+    xui_doc_editor_desc_t desc = {0};
+    xui_context context;
+    xui_document document;
+    xui_widget editor;
+    xui_font font;
+
+    xuiTestProxyInit(&proxy);
+    document_editor_ime_set_enabled = proxy.tProxy.imeSetEnabled;
+    proxy.tProxy.imeSetEnabled = document_editor_ime_set_enabled_test;
+    document_editor_fail_ime_once = 0;
+    CHECK(xuiCreate(&context) == XUI_OK);
+    CHECK(xuiSetProxy(context, &proxy.tProxy) == XUI_OK);
+    CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, "test.ttf", 14, 0) == XUI_OK);
+    CHECK(xuiSetDefaultFont(context, font) == XUI_OK);
+    CHECK(xuiDocumentCreate(NULL, &document) == XUI_OK);
+    desc.iSize = sizeof(desc);
+    desc.tView.iSize = sizeof(desc.tView);
+    desc.tView.pDocument = document;
+    CHECK(xuiDocumentEditorCreate(context, &desc, &editor) == XUI_OK);
+    CHECK(xuiSetRootWidget(context, editor) == XUI_OK);
+    CHECK(xuiWidgetSetRect(editor, (xui_rect_t){0, 0, 320, 160}) == XUI_OK);
+    CHECK(xuiInputViewport(context, 320, 160) == XUI_OK);
+    CHECK(xuiSetFocusWidget(context, editor) == XUI_OK);
+    CHECK(xuiWidgetGetImeMode(editor) == XUI_IME_ENABLED);
+
+    document_editor_fail_ime_once = 1;
+    CHECK(xuiDocumentEditorSetReadOnly(editor, 1) == XUI_ERROR_BACKEND_FAILED);
+    CHECK(!xuiDocumentEditorGetReadOnly(editor));
+    CHECK(xuiWidgetGetImeMode(editor) == XUI_IME_ENABLED);
+    CHECK(xuiDocumentEditorSetReadOnly(editor, 1) == XUI_OK);
+    document_editor_fail_ime_once = 1;
+    CHECK(xuiDocumentEditorSetReadOnly(editor, 0) == XUI_ERROR_BACKEND_FAILED);
+    CHECK(xuiDocumentEditorGetReadOnly(editor));
+    CHECK(xuiWidgetGetImeMode(editor) == XUI_IME_DISABLED);
+    CHECK(xuiDocumentEditorSetReadOnly(editor, 0) == XUI_OK);
+
+    xuiWidgetDestroy(editor);
+    xuiDocumentRelease(document);
+    xuiDestroy(context);
+    proxy.tProxy.fontDestroy(&proxy.tProxy, font);
+    document_editor_ime_set_enabled = NULL;
+}
+
 static void plain(xui_document d, const char* expected)
 {
     xui_document_snapshot s; char* text; uint64_t bytes;
@@ -6879,6 +6938,7 @@ int main(void)
     xui_test_proxy_state_t proxy; xui_context context; xui_font font; xui_surface target; xui_widget editor, view;
     xui_doc_editor_desc_t ed = {0}; xui_doc_view_desc_t vd = {0}; xui_document d; xui_doc_range_t selection, before;
     xui_rect_i_t damage = {0, 0, 640, 480}; xui_doc_stats_t stats = {0}; uint64_t revision, count;
+    document_read_only_ime_failure_cases();
     xuiTestProxyInit(&proxy); CHECK(xuiCreate(&context) == XUI_OK); CHECK(xuiSetProxy(context, &proxy.tProxy) == XUI_OK);
     CHECK(proxy.tProxy.fontLoadFile(&proxy.tProxy, &font, "test.ttf", 14, 0) == XUI_OK); CHECK(xuiSetDefaultFont(context, font) == XUI_OK);
     CHECK(xuiTestSurfaceCreate(&proxy, &target, 640, 480, XUI_SURFACE_USAGE_TARGET) == XUI_OK);

@@ -1675,8 +1675,11 @@ XUI_API int xuiDocumentEditorUpdateObjectSource(xui_widget w,
 }
 XUI_API int xuiDocumentEditorSetReadOnly(xui_widget w, int read_only)
 {
-    doc_editor_data* e = doc_editor_get(w); int result; if (!e) return XUI_ERROR_INVALID_ARGUMENT;
+    doc_editor_data* e = doc_editor_get(w); int old_read_only, old_ime_mode, result;
+    if (!e) return XUI_ERROR_INVALID_ARGUMENT;
     if (e->desc.bReadOnly == !!read_only) return XUI_OK;
+    old_read_only = e->desc.bReadOnly;
+    old_ime_mode = xuiWidgetGetImeMode(w);
     result = xuiDocumentEditorFlush(w); if (result != XUI_OK || !xuiInternalWidgetIsValid(w)) return result;
     doc_editor_break_group(e);
     if (read_only) {
@@ -1684,7 +1687,12 @@ XUI_API int xuiDocumentEditorSetReadOnly(xui_widget w, int read_only)
         doc_editor_cancel_task_marker(e, 1);
     }
     e->desc.bReadOnly = !!read_only; if (read_only) doc_editor_cancel_composition(e);
-    return xuiWidgetSetImeMode(w, read_only ? XUI_IME_DISABLED : XUI_IME_ENABLED);
+    result = xuiWidgetSetImeMode(w, read_only ? XUI_IME_DISABLED : XUI_IME_ENABLED);
+    if (result != XUI_OK && doc_editor_data_alive(w, e)) {
+        e->desc.bReadOnly = old_read_only;
+        (void)xuiWidgetSetImeMode(w, old_ime_mode);
+    }
+    return result;
 }
 XUI_API int xuiDocumentEditorReplaceCurrentEx(xui_widget w,
     const char* pattern, uint64_t pattern_bytes,
