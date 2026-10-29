@@ -80,6 +80,8 @@ void xuiInternalEditUndelegate(xui_widget pWidget)
 		pWidget->pEditDelegate->pEditOwner = NULL;
 	}
 	pWidget->pEditDelegate = NULL;
+	pWidget->onEditPrepare = NULL;
+	pWidget->pEditPrepareUser = NULL;
 }
 
 xui_widget xuiInternalEditHost(xui_widget pWidget)
@@ -93,6 +95,25 @@ xui_widget xuiInternalEditHost(xui_widget pWidget)
 	}
 	if ( iDepth >= 8 && xuiInternalWidgetIsValid(pWidget->pEditOwner) ) return NULL;
 	return pWidget;
+}
+
+int xuiInternalEditSetPrepare(xui_widget pWidget, xui_internal_edit_prepare_proc onPrepare, void* pUser)
+{
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pWidget->onEditPrepare = onPrepare;
+	pWidget->pEditPrepareUser = pUser;
+	return XUI_OK;
+}
+
+int xuiInternalEditPrepare(xui_widget pWidget, int iType, int* pSkipDefault)
+{
+	xui_widget pHost;
+
+	if ( pSkipDefault != NULL ) *pSkipDefault = 0;
+	pHost = xuiInternalEditHost(pWidget);
+	if ( pHost == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pHost->onEditPrepare == NULL ) return XUI_OK;
+	return pHost->onEditPrepare(pHost, pWidget, iType, pSkipDefault, pHost->pEditPrepareUser);
 }
 
 const xui_edit_behavior_t* xuiInternalEditBehavior(xui_widget pWidget)

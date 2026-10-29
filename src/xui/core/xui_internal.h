@@ -377,6 +377,9 @@ typedef struct xui_internal_edit_adapter_t {
 	int (*openContextMenu)(xui_widget pWidget, float fX, float fY);
 } xui_internal_edit_adapter_t;
 
+typedef int (*xui_internal_edit_prepare_proc)(xui_widget pHost, xui_widget pSource,
+	int iType, int* pSkipDefault, void* pUser);
+
 struct xui_widget_t {
 	uint32_t iMagic;
 	xlayout_node_t iLayoutNode;
@@ -439,6 +442,8 @@ struct xui_widget_t {
 	xui_widget pEditDelegate;
 	xui_widget pEditOwner;
 	xui_edit_behavior_t tEditBehavior;
+	xui_internal_edit_prepare_proc onEditPrepare;
+	void* pEditPrepareUser;
 	xui_edit_event_proc onEditEvent;
 	void* pEditEventUser;
 	char* sStyleName;
@@ -605,6 +610,8 @@ int xuiInternalEditRegister(xui_widget pWidget, const xui_internal_edit_adapter_
 int xuiInternalEditDelegate(xui_widget pWidget, xui_widget pDelegate);
 void xuiInternalEditUndelegate(xui_widget pWidget);
 xui_widget xuiInternalEditHost(xui_widget pWidget);
+int xuiInternalEditSetPrepare(xui_widget pWidget, xui_internal_edit_prepare_proc onPrepare, void* pUser);
+int xuiInternalEditPrepare(xui_widget pWidget, int iType, int* pSkipDefault);
 const xui_edit_behavior_t* xuiInternalEditBehavior(xui_widget pWidget);
 int xuiInternalEditEmit(xui_widget pWidget, int iType, const char* sText,
 	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid);

@@ -2,6 +2,7 @@
 #include "xui_test_proxy.h"
 
 #include <float.h>
+#include <locale.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +28,13 @@ typedef struct xui_numeric_input_destroy_t {
 	int iCount;
 } xui_numeric_input_destroy_t;
 
+typedef struct xui_numeric_input_edit_t {
+	int iCommitCount;
+	int iCancelCount;
+	int iLastType;
+	int bLastValid;
+} xui_numeric_input_edit_t;
+
 static int __xuiNumericInputNear(float fA, float fB)
 {
 	float fD;
@@ -34,6 +42,23 @@ static int __xuiNumericInputNear(float fA, float fB)
 	fD = fA - fB;
 	if ( fD < 0.0f ) fD = -fD;
 	return fD < 0.02f;
+}
+
+static const char* __xuiNumericInputSetCommaLocale(void)
+{
+	static const char* arrLocales[] = {
+		"German_Germany.1252", "de-DE", "de_DE.UTF-8", "de_DE"
+	};
+	size_t i;
+
+	for ( i = 0; i < sizeof(arrLocales) / sizeof(arrLocales[0]); i++ ) {
+		if ( setlocale(LC_NUMERIC, arrLocales[i]) != NULL &&
+		     localeconv() != NULL && localeconv()->decimal_point != NULL &&
+		     strcmp(localeconv()->decimal_point, ",") == 0 ) {
+			return arrLocales[i];
+		}
+	}
+	return NULL;
 }
 
 static void __xuiNumericInputChanged(xui_widget pWidget, float fValue, void* pUser)
@@ -84,6 +109,19 @@ static int __xuiNumericInputDestroyOnFormat(float fValue, char* sBuffer, int iCa
 		xuiWidgetDestroy(pDestroy->pWidget);
 	}
 	return 1;
+}
+
+static int __xuiNumericInputEditEvent(xui_widget pWidget, const xui_edit_event_t* pEvent, void* pUser)
+{
+	xui_numeric_input_edit_t* pEdit = (xui_numeric_input_edit_t*)pUser;
+
+	(void)pWidget;
+	if ( pEdit == NULL || pEvent == NULL ) return XUI_OK;
+	pEdit->iLastType = pEvent->iType;
+	pEdit->bLastValid = pEvent->bValid;
+	if ( pEvent->iType == XUI_EDIT_EVENT_COMMIT ) pEdit->iCommitCount++;
+	if ( pEvent->iType == XUI_EDIT_EVENT_CANCEL ) pEdit->iCancelCount++;
+	return XUI_OK;
 }
 
 static int __xuiNumericInputRender(xui_context pContext, xui_surface pTarget)
@@ -157,12 +195,14 @@ int main(void)
 	xui_test_proxy_state_t tState;
 	xui_numeric_input_change_t tChange;
 	xui_numeric_input_destroy_t tDestroy;
+	xui_numeric_input_edit_t tEdit;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pInvalid;
 	xui_widget pNumeric;
 	xui_widget pNumericDefaultFont;
 	xui_widget pDestroyChange;
+	xui_widget pDestroyEdit;
 	xui_widget pDestroyError;
 	xui_widget pDestroyFormat;
 	xui_widget pInput;
@@ -174,7 +214,11 @@ int main(void)
 	xui_numeric_input_desc_t tDesc;
 	xui_numeric_input_desc_t tDefaultDesc;
 	xui_accessible_node_t tAccessible;
+	xui_accessible_value_t tAccessibleValue;
 	const xui_menu_item_t* pItem;
+	const char* sCurrentLocale;
+	const char* sCommaLocale;
+	char sSavedLocale[128];
 	xui_rect_t tWorld;
 	xui_rect_t tButton;
 	xui_rect_t tSpinner;
@@ -194,6 +238,7 @@ int main(void)
 	pNumeric = NULL;
 	pNumericDefaultFont = NULL;
 	pDestroyChange = NULL;
+	pDestroyEdit = NULL;
 	pDestroyError = NULL;
 	pDestroyFormat = NULL;
 	pInput = NULL;
@@ -205,6 +250,7 @@ int main(void)
 	iFailed = 0;
 	memset(&tChange, 0, sizeof(tChange));
 	memset(&tDestroy, 0, sizeof(tDestroy));
+	memset(&tEdit, 0, sizeof(tEdit));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -289,6 +335,26 @@ int main(void)
 	XUI_TEST_CHECK(xuiNumericInputGetStep(pNumeric) == 0.5f, "step");
 	XUI_TEST_CHECK(xuiNumericInputGetPrecision(pNumeric) == 2, "precision");
 	XUI_TEST_CHECK(xuiNumericInputGetSpinnerVisible(pNumeric), "spinner visible");
+	sSavedLocale[0] = '\0';
+	sCurrentLocale = setlocale(LC_NUMERIC, NULL);
+	if ( sCurrentLocale != NULL ) {
+		strncpy(sSavedLocale, sCurrentLocale, sizeof(sSavedLocale) - 1u);
+		sSavedLocale[sizeof(sSavedLocale) - 1u] = '\0';
+	}
+	sCommaLocale = __xuiNumericInputSetCommaLocale();
+	if ( sCommaLocale != NULL ) {
+		iRet = xuiNumericInputSetText(pNumeric, "2.25");
+		if ( iRet == XUI_OK ) iRet = xuiNumericInputCommit(pNumeric);
+		XUI_TEST_CHECK(iRet == XUI_OK && !xuiNumericInputGetError(pNumeric) &&
+			__xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.25f) &&
+			strcmp(xuiNumericInputGetText(pNumeric), "2.25") == 0,
+			"numeric text remains locale independent");
+		iRet = xuiNumericInputSetValue(pNumeric, 1.5f);
+		XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiNumericInputGetText(pNumeric), "1.50") == 0,
+			"numeric format remains locale independent");
+	}
+	if ( sSavedLocale[0] != '\0' ) (void)setlocale(LC_NUMERIC, sSavedLocale);
+	memset(&tChange, 0, sizeof(tChange));
 	iRet = xuiNumericInputGetRange(pNumeric, &fMin, &fMax);
 	XUI_TEST_CHECK(iRet == XUI_OK && fMin == 0.0f && fMax == 10.0f, "range");
 	memset(&tAccessible, 0, sizeof(tAccessible));
@@ -304,6 +370,30 @@ int main(void)
 		tChange.iCount == 1, "accessible increment changes value");
 	iRet = xuiNumericInputSetValue(pNumeric, 1.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset after accessible increment");
+	memset(&tAccessibleValue, 0, sizeof(tAccessibleValue));
+	tAccessibleValue.iSize = sizeof(tAccessibleValue);
+	tAccessibleValue.iType = XUI_ACCESSIBLE_VALUE_NUMBER;
+	tAccessibleValue.fNumber = 4.0;
+	iRet = xuiWidgetSetEnabled(pNumeric, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable numeric for accessibility");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pNumeric, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iActions & (XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SET_VALUE) |
+		 XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_INCREMENT) |
+		 XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_DECREMENT))) == 0,
+		"disabled numeric hides mutating accessibility actions");
+	iRet = xuiWidgetPerformAccessibleAction(pNumeric, 1, XUI_ACCESSIBLE_ACTION_INCREMENT, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		__xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f),
+		"disabled numeric rejects accessible increment");
+	iRet = xuiWidgetPerformAccessibleAction(pNumeric, 1, XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		__xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f),
+		"disabled numeric rejects accessible set value");
+	iRet = xuiWidgetSetEnabled(pNumeric, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore numeric after accessibility");
 	memset(&tChange, 0, sizeof(tChange));
 	fBefore = xuiNumericInputGetValue(pNumeric);
 	iRet = xuiNumericInputSetRange(pNumeric, NAN, 10.0f);
@@ -419,6 +509,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "key value reset");
 	iRet = xuiSetFocusWidget(pContext, pInput);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pInput, "focus input");
+	iRet = xuiEditSetEvent(pNumeric, __xuiNumericInputEditEvent, &tEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "numeric edit callback");
 	iRet = xuiNumericInputSetText(pNumeric, "12.50");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set hotkey text");
 	iRet = __xuiNumericInputDispatchKey(pContext, 'A', XUI_MOD_CTRL);
@@ -432,7 +524,40 @@ int main(void)
 	iRet = __xuiNumericInputDispatchKey(pContext, 'V', XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiNumericInputGetText(pNumeric), "2.25") == 0, "ctrl v pastes child input");
 	iRet = xuiNumericInputSetValue(pNumeric, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enter value reset");
+	iRet = xuiNumericInputSetText(pNumeric, "2.25");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set enter text");
+	iRet = __xuiNumericInputDispatchKey(pContext, XUI_KEY_ENTER, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.25f) &&
+		strcmp(xuiNumericInputGetText(pNumeric), "2.25") == 0 &&
+		tEdit.iCommitCount == 1 && tEdit.iLastType == XUI_EDIT_EVENT_COMMIT && tEdit.bLastValid,
+		"enter commits model before edit event");
+	iRet = xuiNumericInputSetText(pNumeric, "bad");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid enter text");
+	iRet = __xuiNumericInputDispatchKey(pContext, XUI_KEY_ENTER, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiNumericInputGetError(pNumeric) &&
+		tEdit.iCommitCount == 2 && tEdit.iLastType == XUI_EDIT_EVENT_COMMIT && !tEdit.bLastValid,
+		"invalid enter reports failed commit");
+	iRet = __xuiNumericInputDispatchKey(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiNumericInputGetError(pNumeric) &&
+		__xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.25f) &&
+		strcmp(xuiNumericInputGetText(pNumeric), "2.25") == 0 &&
+		tEdit.iCancelCount == 1 && tEdit.iLastType == XUI_EDIT_EVENT_CANCEL && tEdit.bLastValid,
+		"escape restores committed numeric value");
+	iRet = xuiNumericInputSetText(pNumeric, "bad");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid blur text");
+	iRet = xuiSetFocusWidget(pContext, pDefaultInput);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pDefaultInput &&
+		xuiNumericInputGetError(pNumeric) && tEdit.iCommitCount == 3 &&
+		tEdit.iLastType == XUI_EDIT_EVENT_COMMIT && !tEdit.bLastValid,
+		"blur validates before edit commit event");
+	iRet = xuiEditSetEvent(pNumeric, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear numeric edit callback");
+	iRet = xuiNumericInputSetValue(pNumeric, 1.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "key value reset");
+	iRet = xuiSetFocusWidget(pContext, pInput);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pInput, "restore input focus");
 	iRet = __xuiNumericInputDispatchKey(pContext, XUI_KEY_UP, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f), "key up step");
 	iRet = __xuiNumericInputDispatchKey(pContext, XUI_KEY_ENTER, 0);
@@ -484,10 +609,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "spinner repeat down dispatch");
 	iRet = xuiUpdate(pContext, 0.39f);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.0f), "spinner repeat delay");
-	iRet = xuiUpdate(pContext, 0.02f);
-	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f), "spinner repeat first step");
-	iRet = xuiUpdate(pContext, 0.16f);
-	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.5f), "spinner repeat interval");
+	iRet = xuiUpdate(pContext, 0.18f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.5f),
+		"spinner repeat consumes elapsed intervals in one frame");
 	iRet = xuiInputPointerUp(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "spinner repeat up");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -641,6 +765,21 @@ int main(void)
 	iRet = xuiNumericInputStep(pDestroyChange, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iCount == 1 &&
 		xuiNumericInputGetInputWidget(pDestroyChange) == NULL, "change callback may destroy numeric input");
+
+	iRet = xuiNumericInputCreate(pContext, &pDestroyEdit, &tDefaultDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyEdit != NULL, "destroy-on-edit create");
+	iRet = xuiWidgetAddChild(pRoot, pDestroyEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-edit attach");
+	memset(&tDestroy, 0, sizeof(tDestroy));
+	tDestroy.pWidget = pDestroyEdit;
+	iRet = xuiNumericInputSetChange(pDestroyEdit, __xuiNumericInputDestroyOnChange, &tDestroy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-edit callback set");
+	iRet = xuiNumericInputSetText(pDestroyEdit, "2");
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, xuiNumericInputGetInputWidget(pDestroyEdit));
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputDispatchKey(pContext, XUI_KEY_ENTER, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iCount == 1 &&
+		xuiNumericInputGetInputWidget(pDestroyEdit) == NULL,
+		"edit prepare callback may destroy numeric input");
 
 	iRet = xuiNumericInputCreate(pContext, &pDestroyError, &tDefaultDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyError != NULL, "destroy-on-error create");

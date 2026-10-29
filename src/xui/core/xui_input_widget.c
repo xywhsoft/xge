@@ -2582,6 +2582,7 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 	int iStart;
 	int iEnd;
 	int iKey;
+	int bSkipDefault;
 	int bShift;
 	int bCtrl;
 	int iRet;
@@ -2632,6 +2633,9 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 		break;
 	case XUI_KEY_ENTER:
 		if ( pBehavior != NULL && pBehavior->iEnterBehavior == XUI_EDIT_ENTER_COMMIT ) {
+			iRet = xuiInternalEditPrepare(pWidget, XUI_EDIT_EVENT_COMMIT, NULL);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 			(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT, pData->sText,
 				pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -2639,7 +2643,12 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 		break;
 	case XUI_KEY_ESCAPE:
 		if ( pBehavior != NULL && pBehavior->iEscapeBehavior != XUI_EDIT_ESCAPE_DEFAULT ) {
-			if ( pBehavior->iEscapeBehavior == XUI_EDIT_ESCAPE_REVERT && pData->sFocusText != NULL && !pData->bReadonly ) {
+			bSkipDefault = 0;
+			iRet = xuiInternalEditPrepare(pWidget, XUI_EDIT_EVENT_CANCEL, &bSkipDefault);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInputAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+			if ( !bSkipDefault && pBehavior->iEscapeBehavior == XUI_EDIT_ESCAPE_REVERT &&
+			     pData->sFocusText != NULL && !pData->bReadonly ) {
 				iRet = __xuiInputSetTextInternal(pWidget, pData, pData->sFocusText, 1, 0);
 				if ( iRet != XUI_OK ) return iRet;
 				if ( !__xuiInputAlive(pContext, pWidget, pData) ) {
@@ -2784,8 +2793,13 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			(void)__xuiInputDecorationSyncPadding(pWidget, pData);
 			iRet = __xuiInputInvalidateText(pWidget);
 			if ( iRet != XUI_OK ) return iRet;
-			if ( bCommit ) (void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT,
-				pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+			if ( bCommit ) {
+				iRet = xuiInternalEditPrepare(pWidget, XUI_EDIT_EVENT_COMMIT, NULL);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( !__xuiInputAlive(pContext, pWidget, pData) ) return XUI_OK;
+				(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_COMMIT,
+					pData->sText, pData->iSelectStart, pData->iSelectEnd, 0, 0, !pData->bError);
+			}
 			return XUI_OK;
 		}
 		(void)__xuiInputDecorationSyncPadding(pWidget, pData);
