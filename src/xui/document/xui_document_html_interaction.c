@@ -136,6 +136,7 @@ static int doc_html_interaction_load(xui_doc_html_interaction panel)
 static int doc_html_interaction_advance(xui_doc_html_interaction panel)
 {
     int result = doc_html_interaction_load(panel);
+    if (!xuiWindowIsOpen(panel->window)) panel->focus_pending = 0;
     if (result != XUI_OK || !panel->focus_pending ||
         xuiWebViewGetState(panel->webview) != XUI_WEBVIEW_READY)
         return result;

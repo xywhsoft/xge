@@ -34,6 +34,7 @@ static int phase, frames, phase_frames, result = 1;
 static int link_calls;
 static char link_url[256];
 static uint64_t markdown_revision;
+static int initial_closed_checked;
 static SOCKET resource_listener = INVALID_SOCKET;
 static int resource_requests;
 static int resource_winsock_started;
@@ -110,6 +111,9 @@ static int setup(void)
     SETUP_OK("panel", xuiDocumentHtmlInteractionCreate(&desc, &panel));
     if (!xuiDocumentHtmlInteractionGetWindow(panel) ||
         !xuiDocumentHtmlInteractionGetWebView(panel)) return 0;
+    SETUP_OK("show pending panel", xuiDocumentHtmlInteractionShow(panel));
+    SETUP_OK("close pending panel", xuiWindowSetOpen(
+        xuiDocumentHtmlInteractionGetWindow(panel), 0));
 #undef SETUP_OK
     return 1;
 }
@@ -311,6 +315,20 @@ static int frame(void* user)
     phase_frames++;
     if (xuiWebViewGetState(xuiDocumentHtmlInteractionGetWebView(panel)) !=
         XUI_WEBVIEW_READY) goto render;
+    if (!initial_closed_checked) {
+        if (xuiWindowIsOpen(xuiDocumentHtmlInteractionGetWindow(panel)) ||
+                xuiGetFocusWidget(context) ==
+                    xuiDocumentHtmlInteractionGetWebView(panel)) {
+            fail("closed panel stole focus after backend ready");
+            return XGE_ERROR;
+        }
+        if (xuiDocumentHtmlInteractionShow(panel) != XUI_OK) {
+            fail("show panel after cancelled pending focus");
+            return XGE_ERROR;
+        }
+        initial_closed_checked = 1;
+        goto render;
+    }
     if (phase == 21 && getenv("XUI_DOCUMENT_HTML_SYNTHETIC_TEXT")) {
         if (!send_unicode_to_panel()) {
             fail("system Unicode input into HTML form"); return XGE_ERROR;
