@@ -105,6 +105,7 @@ int main(void)
 	xui_style_property_t arrProps[1];
 	xui_style_desc_t tStyle;
 	xui_vec2_t tMeasure;
+	xui_rect_t tTextRect;
 	xui_surface pNormalCache;
 	xui_surface pHoverCache;
 	xui_surface pActiveCache;
@@ -197,7 +198,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetSetAccessibleName(pLink, NULL) == XUI_OK, "accessible name clear");
 	iRet = xuiHyperlinkSetClick(pLink, __xuiHyperlinkClicked, &iClickCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "click callback");
-	iRet = xuiWidgetSetRect(pLink, (xui_rect_t){20.0f, 20.0f, 160.0f, 24.0f});
+	iRet = xuiWidgetSetRect(pLink, (xui_rect_t){20, 20, 160, 25});
 	XUI_TEST_CHECK(iRet == XUI_OK, "link rect");
 	iRet = xuiWidgetAddChild(pRoot, pLink);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add link");
@@ -219,6 +220,13 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pActiveCache) == XUI_COLOR_RGBA(6, 60, 160, 255), "active color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pFocusCache) == tTheme.iStateFocusColor,
 		"focus cache outline");
+	tTextRect = xuiTestSurfaceGetLastRect(pFocusCache);
+	XUI_TEST_CHECK(tTextRect.fX == 0 && tTextRect.fY == 0 &&
+		tTextRect.fW == 160 && tTextRect.fH == 25,
+		"focus outline uses symmetric content bounds");
+	tTextRect = xuiTestSurfaceGetLastTextRect(pNormalCache);
+	XUI_TEST_CHECK(tTextRect.fY == 4 && tTextRect.fH == 17,
+		"fractional centered line keeps final pixel row");
 	XUI_TEST_CHECK(tState.iLastTextDrawSize >= 0, "bounded display text draw");
 	xuiWidgetClearDirty(pLink, XUI_WIDGET_DIRTY_ALL);
 	iRet = xuiHyperlinkSetTextFlags(pLink, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE |

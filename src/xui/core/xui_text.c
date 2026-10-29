@@ -1765,19 +1765,60 @@ int xuiInternalTextLayoutNextCaret(xui_text_layout pLayout, int iOffset, int iLi
 	return XUI_OK;
 }
 
-XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+static int __xuiTextLayoutPixelLineRect(xui_rect_t tRect, float fOffsetY,
+	const xui_text_line_t* pLine, uint32_t iFlags, xui_rect_t* pLineRect)
+{
+	double fTop;
+	double fBottom;
+	double fClipTop;
+	double fClipBottom;
+	long long iHeight;
+	int iTop;
+	int iBottom;
+
+	if ( pLine == NULL || pLineRect == NULL ) return 0;
+	fTop = (double)tRect.fY + (double)fOffsetY + (double)pLine->fY;
+	fBottom = fTop + (double)pLine->fH;
+	if ( !isfinite(fTop) || !isfinite(fBottom) || fBottom <= fTop ) return 0;
+	if ( (iFlags & XUI_TEXT_CLIP) != 0 ) {
+		fClipTop = (double)tRect.fY;
+		fClipBottom = fClipTop + (double)tRect.fH;
+		if ( fBottom <= fClipTop || fTop >= fClipBottom ) return 0;
+		if ( fTop < fClipTop ) fTop = fClipTop;
+		if ( fBottom > fClipBottom ) fBottom = fClipBottom;
+	}
+	if ( fTop <= (double)INT_MIN ) iTop = INT_MIN;
+	else if ( fTop >= (double)INT_MAX ) iTop = INT_MAX;
+	else iTop = (int)floor(fTop);
+	if ( fBottom <= (double)INT_MIN ) iBottom = INT_MIN;
+	else if ( fBottom >= (double)INT_MAX ) iBottom = INT_MAX;
+	else iBottom = (int)ceil(fBottom);
+	iHeight = (long long)iBottom - (long long)iTop;
+	if ( iHeight <= 0 ) return 0;
+	if ( iHeight > INT_MAX ) iHeight = INT_MAX;
+	pLineRect->fX = tRect.fX;
+	pLineRect->fY = iTop;
+	pLineRect->fW = tRect.fW;
+	pLineRect->fH = (int)iHeight;
+	return 1;
+}
+
+static int __xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget,
+	xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor,
+	uint32_t iFlags, int bSkipEmptyDisplay)
 {
 	xui_proxy pProxy;
 	xui_text_line_t* pLine;
+	xui_text_item_t tItem;
 	xui_rect_t tLineRect;
 	uint32_t iMergedFlags;
 	uint32_t iLineFlags;
 	float fOffsetY;
-	float fLineBottom;
 	int i;
 	int iRet;
 
-	if ( !__xuiTextLayoutValid(pLayout) || (pTarget == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+	if ( !__xuiTextLayoutValid(pLayout) || ((pTarget == NULL) == (pDraw == NULL)) ||
+	     (tRect.fW <= 0) || (tRect.fH <= 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = __xuiTextLayoutEnsureDpi(pLayout);
@@ -1785,6 +1826,10 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 	pProxy = xuiInternalContextGetProxy(pLayout->pContext);
 	if ( pProxy == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
+	}
+	if ( (pDraw != NULL && pProxy->drawText == NULL) ||
+	     (pTarget != NULL && pProxy->textDraw == NULL) ) {
+		return XUI_ERROR_UNSUPPORTED;
 	}
 	iMergedFlags = __xuiTextMergeFlags(pLayout->tDesc.iFlags, iFlags);
 	iLineFlags = (iMergedFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE | XUI_TEXT_RTL)) | XUI_TEXT_ALIGN_TOP;
@@ -1800,32 +1845,43 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
-		tLineRect.fX = tRect.fX;
-		tLineRect.fY = tRect.fY + fOffsetY + pLine->fY;
-		tLineRect.fW = tRect.fW;
-		tLineRect.fH = pLine->fH;
-		if ( (iMergedFlags & XUI_TEXT_CLIP) != 0 ) {
-			fLineBottom = tLineRect.fY + tLineRect.fH;
-			if ( (fLineBottom <= tRect.fY) || (tLineRect.fY >= (tRect.fY + tRect.fH)) ) {
-				continue;
-			}
-			if ( tLineRect.fY < tRect.fY ) {
-				tLineRect.fH -= tRect.fY - tLineRect.fY;
-				tLineRect.fY = tRect.fY;
-			}
-			if ( (tLineRect.fY + tLineRect.fH) > (tRect.fY + tRect.fH) ) {
-				tLineRect.fH = (tRect.fY + tRect.fH) - tLineRect.fY;
-			}
-			if ( tLineRect.fH <= 0.0f ) {
-				continue;
-			}
+		if ( bSkipEmptyDisplay && iDisplaySize <= 0 ) continue;
+		if ( !__xuiTextLayoutPixelLineRect(tRect, fOffsetY, pLine,
+		     iMergedFlags, &tLineRect) ) continue;
+		memset(&tItem, 0, sizeof(tItem));
+		tItem.iSize = sizeof(tItem);
+		tItem.pFont = pLayout->tDesc.pFont;
+		tItem.sText = sDisplay;
+		tItem.iTextSize = iDisplaySize;
+		tItem.iFlags = XUI_TEXT_SHAPE_DEFAULT |
+			((iLineFlags & XUI_TEXT_RTL) ? XUI_TEXT_SHAPE_RTL : 0);
+		if ( pDraw != NULL ) {
+			iRet = pProxy->drawText(pProxy, pDraw, &tItem, tLineRect,
+				iColor, iLineFlags);
+		} else {
+			iRet = pProxy->textDraw(pProxy, pTarget, &tItem, tLineRect,
+				iColor, iLineFlags);
 		}
-		iRet = pProxy->textDraw(pProxy, pTarget, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pLayout->tDesc.pFont, .sText=sDisplay, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iColor, iLineFlags);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 	}
 	return XUI_OK;
+}
+
+int xuiInternalTextLayoutDrawContext(xui_text_layout pLayout,
+	xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor,
+	uint32_t iFlags)
+{
+	return __xuiTextLayoutDraw(pLayout, NULL, pDraw, tRect, iColor,
+		iFlags, 1);
+}
+
+XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget,
+	xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+{
+	return __xuiTextLayoutDraw(pLayout, pTarget, NULL, tRect, iColor,
+		iFlags, 0);
 }
 
 XUI_API int xuiTextMeasureLayout(xui_context pContext, const xui_text_layout_desc_t* pDesc, xui_vec2_t* pSize)

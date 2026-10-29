@@ -65,6 +65,7 @@ int main(void)
 	xui_surface pTarget = NULL;
 	xui_text_layout_desc_t tDesc;
 	xui_text_line_t tLine;
+	xui_rect_t tDrawRect;
 	xui_vec2_t tSize;
 	char sMixed[256];
 	int i, j, iOffset, iMode;
@@ -96,6 +97,17 @@ int main(void)
 	CHECK(xuiTextLayoutDraw(pLayout, pTarget, (xui_rect_t){0.0f, 0.0f, 64.0f, 32.0f},
 		XUI_COLOR_WHITE, 0) == XUI_OK);
 	CHECK((tState.iLastTextDrawItemFlags & XUI_TEXT_SHAPE_RTL) != 0);
+	/* A centered line can begin and end on half pixels. The backend rectangle
+	 * must contain both edges rather than truncating the final pixel row. */
+	tDesc.sText = "a";
+	tDesc.iTextSize = -1;
+	tDesc.iFlags = XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
+	CHECK(xuiTextLayoutReset(pLayout, &tDesc) == XUI_OK);
+	CHECK(xuiTextLayoutDraw(pLayout, pTarget, (xui_rect_t){0, 0, 8, 5},
+		XUI_COLOR_WHITE, 0) == XUI_OK);
+	tDrawRect = xuiTestSurfaceGetLastTextRect(pTarget);
+	CHECK(tDrawRect.fY == 1 && tDrawRect.fH == 3);
+	CHECK(tState.iLastTextDrawSize == 1);
 	tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	pTarget = NULL;
 	for ( iMode = 0; iMode < 2; iMode++ ) {

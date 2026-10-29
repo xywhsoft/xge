@@ -83,6 +83,13 @@ int xuiInternalTextChunkCacheDrawSpans(xui_proxy pProxy, xui_draw_context pDraw,
 int xuiInternalTextLayoutGetDisplayLine(xui_text_layout pLayout, int iIndex,
 	const char** ppText, int* pSize);
 
+/* Draw retained layout lines through an existing cache/render draw context.
+ * Line geometry is snapped once from float top/bottom edges so fractional
+ * metrics cannot lose the final pixel row. */
+int xuiInternalTextLayoutDrawContext(xui_text_layout pLayout,
+	xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor,
+	uint32_t iFlags);
+
 /* Geometry remains in original UTF-8 coordinates, including discretionary hyphens. */
 int xuiInternalTextLayoutLineAdvance(xui_text_layout pLayout, int iLine,
 	int iOffset, float* pAdvance);

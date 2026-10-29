@@ -249,35 +249,14 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	return xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
 }
 
-static float __xuiLabelVerticalOffset(xui_rect_t tRect, xui_vec2_t tSize, uint32_t iFlags)
-{
-	if ( (iFlags & XUI_TEXT_ALIGN_BOTTOM) == XUI_TEXT_ALIGN_BOTTOM ) {
-		return tRect.fH - tSize.fY;
-	}
-	if ( (iFlags & XUI_TEXT_ALIGN_MIDDLE) == XUI_TEXT_ALIGN_MIDDLE ) {
-		return (tRect.fH - tSize.fY) * 0.5f;
-	}
-	return 0.0f;
-}
-
 static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_label_data_t* pData;
 	xui_text_layout_desc_t tDesc;
 	xui_text_layout pLayout;
-	xui_text_line_t tLine;
 	xui_rect_t tContent;
-	xui_rect_t tLineRect;
-	xui_vec2_t tSize;
 	xui_proxy pProxy;
-	const char* sDisplay;
 	uint32_t iTextColor;
-	uint32_t iLineFlags;
-	float fOffsetY;
-	float fLineBottom;
-	int iLine;
-	int iLineCount;
-	int iDisplaySize;
 	int iRet;
 
 	(void)iStateId;
@@ -309,48 +288,8 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	tSize = xuiTextLayoutGetSize(pLayout);
-	iLineCount = xuiTextLayoutGetLineCount(pLayout);
-	iLineFlags = (tDesc.iFlags & (XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_CLIP | XUI_TEXT_UNDERLINE | XUI_TEXT_RTL)) | XUI_TEXT_ALIGN_TOP;
-	fOffsetY = __xuiLabelVerticalOffset(tContent, tSize, tDesc.iFlags);
-	for ( iLine = 0; iLine < iLineCount; iLine++ ) {
-		iRet = xuiTextLayoutGetLine(pLayout, iLine, &tLine);
-		if ( iRet != XUI_OK ) {
-			break;
-		}
-		if ( tLine.iTextSize <= 0 ) {
-			continue;
-		}
-		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, iLine, &sDisplay, &iDisplaySize);
-		if ( iRet != XUI_OK ) {
-			break;
-		}
-		if ( iDisplaySize <= 0 ) continue;
-		tLineRect.fX = tContent.fX;
-		tLineRect.fY = tContent.fY + fOffsetY + tLine.fY;
-		tLineRect.fW = tContent.fW;
-		tLineRect.fH = tLine.fH;
-		if ( (tDesc.iFlags & XUI_TEXT_CLIP) != 0 ) {
-			fLineBottom = tLineRect.fY + tLineRect.fH;
-			if ( (fLineBottom <= tContent.fY) || (tLineRect.fY >= (tContent.fY + tContent.fH)) ) {
-				continue;
-			}
-			if ( tLineRect.fY < tContent.fY ) {
-				tLineRect.fH -= tContent.fY - tLineRect.fY;
-				tLineRect.fY = tContent.fY;
-			}
-			if ( (tLineRect.fY + tLineRect.fH) > (tContent.fY + tContent.fH) ) {
-				tLineRect.fH = (tContent.fY + tContent.fH) - tLineRect.fY;
-			}
-			if ( tLineRect.fH <= 0.0f ) {
-				continue;
-			}
-		}
-		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tDesc.pFont, .sText=sDisplay, .iTextSize=iDisplaySize, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iLineFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLineRect, iTextColor, iLineFlags);
-		if ( iRet != XUI_OK ) {
-			break;
-		}
-	}
+	iRet = xuiInternalTextLayoutDrawContext(pLayout, pDraw, tContent,
+		iTextColor, 0);
 	xuiTextLayoutDestroy(pLayout);
 	return iRet;
 }
