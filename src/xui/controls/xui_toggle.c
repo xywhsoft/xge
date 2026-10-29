@@ -17,6 +17,7 @@
 #define XUI_TOGGLE_VISUAL_CHECKED_FOCUS	8
 #define XUI_TOGGLE_VISUAL_CHECKED_DISABLED	9
 #define XUI_TOGGLE_VISUAL_COUNT		10
+#define XUI_TOGGLE_SURFACE_DEPENDENCY_COUNT	2
 
 typedef struct xui_toggle_visual_t {
 	uint32_t iTrackColor;
@@ -81,6 +82,7 @@ typedef struct xui_toggle_data_t {
 	xui_rect_t tUncheckedSrc;
 	xui_rect_t tCheckedSrc;
 	xui_toggle_geometry_t tGeometry;
+	xui_surface_dependency_t arrSurfaceDependencies[XUI_TOGGLE_SURFACE_DEPENDENCY_COUNT];
 } xui_toggle_data_t;
 
 static uint32_t __xuiToggleColorAlpha(uint32_t iColor)
@@ -1154,6 +1156,23 @@ static void __xuiToggleRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiToggleRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
+static int __xuiTogglePreparePaint(xui_widget pWidget)
+{
+	xui_toggle_data_t* pData;
+	xui_proxy pProxy;
+	int bChanged;
+
+	pData = __xuiToggleGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	bChanged = xuiInternalSurfaceDependencySync(pProxy, pData->pUncheckedSurface,
+		pData->arrSurfaceDependencies, 0);
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pCheckedSurface,
+		pData->arrSurfaceDependencies, 1);
+	return bChanged ? xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+}
+
 static int __xuiToggleAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
@@ -1183,6 +1202,7 @@ XUI_API xui_widget_type xuiToggleGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "toggle");
 	if ( pType != NULL ) {
 		__xuiToggleRegisterStyleProperties(pContext, pType);
+		pType->onPreparePaint = __xuiTogglePreparePaint;
 		pType->pAccessibleAdapter = &g_xuiToggleAccessible;
 		return pType;
 	}
@@ -1203,6 +1223,7 @@ XUI_API xui_widget_type xuiToggleGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiToggleRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiTogglePreparePaint;
 	pType->pAccessibleAdapter = &g_xuiToggleAccessible;
 	return pType;
 }

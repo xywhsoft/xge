@@ -20,6 +20,18 @@ static int __xuiToggleRectEq(xui_rect_t tRect, float fX, float fY, float fW, flo
 	return (tRect.fX == fX) && (tRect.fY == fY) && (tRect.fW == fW) && (tRect.fH == fH);
 }
 
+static xui_draw_surface_proc g_xuiToggleDrawSurface;
+static int g_iToggleDrawSurfaceCount;
+
+static int __xuiToggleDrawSurface(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst,
+	uint32_t iColor, uint32_t iFlags)
+{
+	g_iToggleDrawSurfaceCount++;
+	return g_xuiToggleDrawSurface(pProxy, pDraw, pSurface, tSrc, tDst,
+		iColor, iFlags);
+}
+
 static void __xuiToggleChanged(xui_widget pWidget, int bChecked, void* pUser)
 {
 	int* pCount;
@@ -122,6 +134,8 @@ int main(void)
 	iDestroyChanged = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
+	g_xuiToggleDrawSurface = tState.tProxy.drawSurface;
+	tState.tProxy.drawSurface = __xuiToggleDrawSurface;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -448,6 +462,21 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render atlas toggle");
 	tLastSrc = tSrc;
 	XUI_TEST_CHECK(__xuiToggleRectEq(tLastSrc, 48.0f, 0.0f, 48.0f, 24.0f), "checked atlas rect");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "prepare borrowed indicator dependencies");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "consume prepared indicator caches");
+	xuiWidgetClearDirty(pToggle, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pRoot, XUI_WIDGET_DIRTY_ALL);
+	g_iToggleDrawSurfaceCount = 0;
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iToggleDrawSurfaceCount == 0,
+	               "unchanged borrowed indicator surface reuses toggle caches");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pAtlas,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iToggleDrawSurfaceCount > 0,
+	               "borrowed indicator generation rebuilds toggle caches");
 
 	iRet = xuiWidgetCreate(pContext, &pDestroyHost);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDestroyHost != NULL, "destroy host create");
