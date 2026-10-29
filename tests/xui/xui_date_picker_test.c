@@ -975,6 +975,8 @@ int main(void)
 	tDesc.pFont = pFont;
 	iRet = xuiDatePickerCreate(pContext, &pSpanPicker, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pSpanPicker != NULL, "overflow span picker create");
+	XUI_TEST_CHECK(!xuiDatePickerHasValue(pSpanPicker),
+		"nullable descriptor without an explicit value starts empty");
 	xuiWidgetSetRect(pSpanPicker, (xui_rect_t){500.0f, 32.0f, 210.0f, 30.0f});
 	iRet = xuiWidgetAddChild(pRoot, pSpanPicker);
 	XUI_TEST_CHECK(iRet == XUI_OK, "overflow span picker add");
@@ -982,6 +984,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pSpanPicker), "overflow span picker open");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "overflow span picker layout");
+	XUI_TEST_CHECK(!xuiDatePickerHasValue(pSpanPicker) &&
+		__xuiDatePickerFindDay(pSpanPicker, 0, xrtNow()) >= 0,
+		"empty nullable picker shows its current-date draft without committing it");
 	pPanel = xuiDatePickerGetPanelWidget(pSpanPicker);
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel,
 		xuiDatePickerGetFooterRect(pSpanPicker, XUI_DATE_PICKER_FOOTER_OK));

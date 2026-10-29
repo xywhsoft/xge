@@ -576,6 +576,8 @@ static void __xuiDatePickerEnsureValue(xui_date_picker_data_t* pData)
 
 static void __xuiDatePickerInitViewMonth(xui_date_picker_data_t* pData)
 {
+	xtime tStart;
+	xtime tEnd;
 	int64 iYear;
 	int iMonth;
 
@@ -586,10 +588,16 @@ static void __xuiDatePickerInitViewMonth(xui_date_picker_data_t* pData)
 		pData->tViewMonth[1] = xuiXrtDateAddMonth(0, 1, pData->tViewMonth[0]);
 		return;
 	}
-	xuiXrtDecodeSerial(__xuiDatePickerIsRange(pData->iMode) ? pData->tStart : pData->tValue, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+	if ( pData->bHasValue ) {
+		tStart = __xuiDatePickerIsRange(pData->iMode) ? pData->tStart : pData->tValue;
+		tEnd = __xuiDatePickerIsRange(pData->iMode) ? pData->tEnd : tStart;
+	} else {
+		__xuiDatePickerDefaultValues(pData, &tStart, &tEnd);
+	}
+	xuiXrtDecodeSerial(tStart, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 	pData->tViewMonth[0] = xuiXrtDateSerial(iYear, iMonth, 1);
 	if ( __xuiDatePickerIsRange(pData->iMode) ) {
-		xuiXrtDecodeSerial(pData->tEnd, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+		xuiXrtDecodeSerial(tEnd, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 		pData->tViewMonth[1] = xuiXrtDateSerial(iYear, iMonth, 1);
 		if ( pData->tViewMonth[1] <= pData->tViewMonth[0] ) {
 			pData->tViewMonth[1] = xuiXrtDateAddMonth(0, 1, pData->tViewMonth[0]);
@@ -844,6 +852,8 @@ static void __xuiDatePickerApplyDesc(xui_date_picker_data_t* pData, const xui_da
 		pData->tStart = pDesc->tValue;
 		pData->tEnd = pDesc->tValue;
 		pData->bHasValue = 1;
+	} else if ( pData->bNullable ) {
+		pData->bHasValue = 0;
 	}
 	__xuiDatePickerPreferredPopupSize(pData->iMode, &pData->fPopupWidth, &pData->fPopupHeight);
 	__xuiDatePickerMinimumPopupSize(pData->iMode, pData->bNullable, &fMinWidth, &fMinHeight);
