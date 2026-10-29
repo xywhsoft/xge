@@ -25,6 +25,18 @@ static int __xuiCheckBoxRectEq(xui_rect_t tRect, float fX, float fY, float fW, f
 	return (tRect.fX == fX) && (tRect.fY == fY) && (tRect.fW == fW) && (tRect.fH == fH);
 }
 
+static xui_draw_surface_proc g_xuiCheckBoxDrawSurface;
+static int g_iCheckBoxDrawSurfaceCount;
+
+static int __xuiCheckBoxDrawSurface(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst,
+	uint32_t iColor, uint32_t iFlags)
+{
+	g_iCheckBoxDrawSurfaceCount++;
+	return g_xuiCheckBoxDrawSurface(pProxy, pDraw, pSurface, tSrc, tDst,
+		iColor, iFlags);
+}
+
 static void __xuiCheckBoxChanged(xui_widget pWidget, int bChecked, void* pUser)
 {
 	int* pCount;
@@ -80,6 +92,7 @@ int main(void)
 	xui_event_t tEvent;
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
+	xui_rect_t tContentRect;
 	xui_rect_t tTextRect;
 	xui_rect_t tInvalidSrc;
 	xui_rect_t tLastSrc;
@@ -104,6 +117,8 @@ int main(void)
 	iFailed = 0;
 	memset(&tChangeState, 0, sizeof(tChangeState));
 	xuiTestProxyInit(&tState);
+	g_xuiCheckBoxDrawSurface = tState.tProxy.drawSurface;
+	tState.tProxy.drawSurface = __xuiCheckBoxDrawSurface;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -181,6 +196,21 @@ int main(void)
 	tTextRect = xuiCheckBoxGetTextRect(pCheck);
 	XUI_TEST_CHECK(tRect.fX + tRect.fW <= tTextRect.fX,
 	               "ltr checkbox keeps indicator before text");
+	iRet = xuiWidgetSetRect(pCheck, (xui_rect_t){0.0f, 0.0f, 10.0f, 8.0f});
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render narrow checkbox");
+	tContentRect = xuiWidgetGetContentRect(pCheck);
+	tRect = xuiCheckBoxGetIndicatorRect(pCheck);
+	tTextRect = xuiCheckBoxGetTextRect(pCheck);
+	XUI_TEST_CHECK(tRect.fX >= tContentRect.fX && tRect.fY >= tContentRect.fY &&
+	               tRect.fX + tRect.fW <= tContentRect.fX + tContentRect.fW &&
+	               tRect.fY + tRect.fH <= tContentRect.fY + tContentRect.fH &&
+	               tTextRect.fW >= 0.0f && tTextRect.fH >= 0.0f,
+	               "narrow checkbox geometry remains inside nonnegative content bounds");
+	iRet = xuiWidgetSetRect(pCheck, (xui_rect_t){0.0f, 0.0f, 160.0f, 32.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore checkbox geometry");
 	xuiTestSurfaceReset(pTarget);
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
@@ -366,6 +396,21 @@ int main(void)
 	               "get mixed indicator surface");
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render custom mixed indicator");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "prepare borrowed indicator dependencies");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "consume prepared indicator caches");
+	xuiWidgetClearDirty(pCheck, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pRoot, XUI_WIDGET_DIRTY_ALL);
+	g_iCheckBoxDrawSurfaceCount = 0;
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iCheckBoxDrawSurfaceCount == 0,
+	               "unchanged borrowed indicator surface reuses checkbox caches");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pAtlas,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iCheckBoxDrawSurfaceCount > 0,
+	               "borrowed indicator generation rebuilds checkbox caches");
 	iRet = xuiCheckBoxSetCheckState(pCheck, 3);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
 	               xuiCheckBoxGetCheckState(pCheck) == XUI_CHECKBOX_CHECK_STATE_MIXED,
