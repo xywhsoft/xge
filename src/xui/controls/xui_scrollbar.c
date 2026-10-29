@@ -559,6 +559,20 @@ static int __xuiScrollBarRectContains(xui_rect_t tRect, float fX, float fY)
 	       (fY < (tRect.fY + tRect.fH));
 }
 
+static int __xuiScrollBarAxisContains(const xui_scrollbar_data_t* pData,
+	xui_rect_t tRect, float fX, float fY)
+{
+	float fPoint;
+	float fStart;
+	float fLength;
+
+	if ( pData == NULL ) return 0;
+	fPoint = __xuiScrollBarAxisPoint(pData, fX, fY);
+	fStart = __xuiScrollBarAxisStart(pData, tRect);
+	fLength = __xuiScrollBarAxisLen(pData, tRect);
+	return (fLength > 0.0f) && (fPoint >= fStart) && (fPoint < fStart + fLength);
+}
+
 static int __xuiScrollBarHitPart(xui_widget pWidget, xui_scrollbar_data_t* pData, const xui_scrollbar_data_t* pResolved, float fX, float fY)
 {
 	xui_rect_t tWorld;
@@ -583,7 +597,9 @@ static int __xuiScrollBarHitPart(xui_widget pWidget, xui_scrollbar_data_t* pData
 	if ( __xuiScrollBarRectContains(pData->tIncreaseRect, fLocalX, fLocalY) ) {
 		return XUI_SCROLLBAR_PART_INCREASE;
 	}
-	if ( __xuiScrollBarRectContains(pData->tThumbRect, fLocalX, fLocalY) ) {
+	/* The thumb may be drawn narrower than the control, but its hit target spans
+	 * the full cross-axis strip to avoid treating visual gutters as page clicks. */
+	if ( __xuiScrollBarAxisContains(pData, pData->tThumbRect, fLocalX, fLocalY) ) {
 		return XUI_SCROLLBAR_PART_THUMB;
 	}
 	if ( __xuiScrollBarRectContains(pData->tTrackRect, fLocalX, fLocalY) ) {

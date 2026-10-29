@@ -579,7 +579,9 @@ int main(void)
 	XUI_TEST_CHECK(tDecrease.fW == 0.0f && tIncrease.fW == 0.0f, "compact hides buttons");
 	XUI_TEST_CHECK(tTrack.fW == 180.0f && tThumb.fH <= 6.0f && tThumb.fW >= 20.0f, "compact geometry");
 	fStartX = 10.0f + tThumb.fX + tThumb.fW * 0.5f;
-	fStartY = 166.0f + tThumb.fY + tThumb.fH * 0.5f;
+	fStartY = 167.0f;
+	XUI_TEST_CHECK((fStartY - 166.0f) < tThumb.fY,
+		"compact drag starts in the visual thumb gutter");
 	iRet = xuiInputPointerDown(pContext, fStartX, fStartY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "compact drag down");
 	iRet = xuiDispatchPendingEvents(pContext);
