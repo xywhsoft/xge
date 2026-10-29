@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_native_accessibility_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -34,6 +35,7 @@ struct xui_resource_t {
 	void* pUser;
 	void (*onDestroy)(xui_context pContext, void* pHandle, void* pUser);
 	uint32_t iGeneration;
+	uint32_t iCascadeMark;
 	int iRefCount;
 	xui_resource_dependency_t* pDependencies;
 };
@@ -846,6 +848,64 @@ static void __xuiResourceRegistryChanged(xui_context pContext)
 	}
 }
 
+static uint32_t __xuiResourceNextGeneration(xui_context pContext)
+{
+	uint32_t iGeneration;
+
+	iGeneration = pContext->iNextResourceGeneration++;
+	if ( pContext->iNextResourceGeneration == 0 ) {
+		pContext->iNextResourceGeneration = 1;
+	}
+	return iGeneration;
+}
+
+static uint32_t __xuiResourceNextCascadeMark(xui_context pContext)
+{
+	xui_resource pResource;
+
+	pContext->iResourceCascadeMark++;
+	if ( pContext->iResourceCascadeMark != 0 ) {
+		return pContext->iResourceCascadeMark;
+	}
+	for ( pResource = pContext->pResources; pResource != NULL;
+	      pResource = pResource->pNext ) {
+		pResource->iCascadeMark = 0;
+	}
+	pContext->iResourceCascadeMark = 1;
+	return 1;
+}
+
+static void __xuiResourceCascadeChanged(xui_context pContext,
+	xui_resource pResource)
+{
+	xui_resource pScan;
+	xui_resource_dependency_t* pDependency;
+	uint32_t iMark;
+	int bChanged;
+
+	iMark = __xuiResourceNextCascadeMark(pContext);
+	pResource->iCascadeMark = iMark;
+	pResource->iGeneration = __xuiResourceNextGeneration(pContext);
+	do {
+		bChanged = 0;
+		for ( pScan = pContext->pResources; pScan != NULL;
+		      pScan = pScan->pNext ) {
+			if ( pScan->iCascadeMark == iMark ) continue;
+			for ( pDependency = pScan->pDependencies; pDependency != NULL;
+			      pDependency = pDependency->pNext ) {
+				if ( pDependency->pResource != NULL &&
+				     pDependency->pResource->iCascadeMark == iMark ) {
+					pScan->iCascadeMark = iMark;
+					pScan->iGeneration =
+						__xuiResourceNextGeneration(pContext);
+					bChanged = 1;
+					break;
+				}
+			}
+		}
+	} while ( bChanged );
+}
+
 static void __xuiContextRemoveDamage(xui_context pContext, int iIndex)
 {
 	int iMoveCount;
@@ -1143,10 +1203,6 @@ static void __xuiResourceRemoveDependencyReferences(xui_context pContext, xui_re
 					pResource->pDependencies = pNext;
 				}
 				xrtFree(pDependency);
-				pResource->iGeneration = pContext->iNextResourceGeneration++;
-				if ( pContext->iNextResourceGeneration == 0 ) {
-					pContext->iNextResourceGeneration = 1;
-				}
 			} else {
 				pPrev = pDependency;
 			}
@@ -2138,12 +2194,37 @@ XUI_API int xuiResourceSet(xui_context pContext, xui_resource* ppResource, const
 	xui_resource pPrev;
 	char* sName;
 
+	if ( ppResource != NULL ) {
+		*ppResource = NULL;
+	}
 	if ( !__xuiContextValid(pContext) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) ||
 	     (pDesc->sName == NULL) || (pDesc->sName[0] == '\0') || (pDesc->iKind <= 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( ppResource != NULL ) {
-		*ppResource = NULL;
+	pPrev = NULL;
+	pExisting = NULL;
+	for ( pResource = pContext->pResources; pResource != NULL;
+	      pResource = pResource->pNext ) {
+		if ( strcmp(pResource->sName, pDesc->sName) == 0 ) {
+			pExisting = pResource;
+			break;
+		}
+		pPrev = pResource;
+	}
+	if ( pExisting != NULL && pExisting->iKind == pDesc->iKind &&
+	     pExisting->pHandle == pDesc->pHandle &&
+	     pExisting->pUser == pDesc->pUser &&
+	     pExisting->onDestroy == pDesc->onDestroy ) {
+		if ( ppResource != NULL ) *ppResource = pExisting;
+		return XUI_OK;
+	}
+	if ( pExisting != NULL && pExisting->iRefCount != 1 ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	if ( pExisting != NULL && pExisting->pHandle != NULL &&
+	     pExisting->pHandle == pDesc->pHandle &&
+	     pExisting->onDestroy != NULL ) {
+		return XUI_ERROR_INVALID_STATE;
 	}
 	sName = __xuiCoreStringDuplicate(pDesc->sName);
 	if ( sName == NULL ) {
@@ -2154,19 +2235,15 @@ XUI_API int xuiResourceSet(xui_context pContext, xui_resource* ppResource, const
 		xrtFree(sName);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	pPrev = NULL;
-	for ( pExisting = pContext->pResources; pExisting != NULL; pExisting = pExisting->pNext ) {
-		if ( strcmp(pExisting->sName, pDesc->sName) == 0 ) {
-			if ( pPrev != NULL ) {
-				pPrev->pNext = pExisting->pNext;
-			} else {
-				pContext->pResources = pExisting->pNext;
-			}
-			__xuiResourceRemoveDependencyReferences(pContext, pExisting);
-			__xuiResourceDestroyOne(pExisting);
-			break;
+	if ( pExisting != NULL ) {
+		__xuiResourceCascadeChanged(pContext, pExisting);
+		if ( pPrev != NULL ) {
+			pPrev->pNext = pExisting->pNext;
+		} else {
+			pContext->pResources = pExisting->pNext;
 		}
-		pPrev = pExisting;
+		__xuiResourceRemoveDependencyReferences(pContext, pExisting);
+		__xuiResourceDestroyOne(pExisting);
 	}
 	pResource->iMagic = XUI_RESOURCE_MAGIC;
 	pResource->pContext = pContext;
@@ -2175,11 +2252,8 @@ XUI_API int xuiResourceSet(xui_context pContext, xui_resource* ppResource, const
 	pResource->pHandle = pDesc->pHandle;
 	pResource->pUser = pDesc->pUser;
 	pResource->onDestroy = pDesc->onDestroy;
-	pResource->iGeneration = pContext->iNextResourceGeneration++;
+	pResource->iGeneration = __xuiResourceNextGeneration(pContext);
 	pResource->iRefCount = 1;
-	if ( pContext->iNextResourceGeneration == 0 ) {
-		pContext->iNextResourceGeneration = 1;
-	}
 	pResource->pNext = pContext->pResources;
 	pContext->pResources = pResource;
 	__xuiContextBumpGeneration(pContext);
@@ -2214,6 +2288,9 @@ XUI_API int xuiResourceRemove(xui_resource pResource)
 	if ( !__xuiResourceValid(pResource) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pResource->iRefCount != 1 ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
 	pContext = pResource->pContext;
 	if ( !__xuiContextValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2221,6 +2298,7 @@ XUI_API int xuiResourceRemove(xui_resource pResource)
 	pPrev = NULL;
 	for ( pScan = pContext->pResources; pScan != NULL; pScan = pScan->pNext ) {
 		if ( pScan == pResource ) {
+			__xuiResourceCascadeChanged(pContext, pScan);
 			if ( pPrev != NULL ) {
 				pPrev->pNext = pScan->pNext;
 			} else {
@@ -2240,8 +2318,6 @@ XUI_API int xuiResourceRemove(xui_resource pResource)
 XUI_API int xuiResourceTouch(xui_resource pResource)
 {
 	xui_context pContext;
-	xui_resource pScan;
-	xui_resource_dependency_t* pDependency;
 
 	if ( !__xuiResourceValid(pResource) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2250,24 +2326,7 @@ XUI_API int xuiResourceTouch(xui_resource pResource)
 	if ( !__xuiContextValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pResource->iGeneration = pContext->iNextResourceGeneration++;
-	if ( pContext->iNextResourceGeneration == 0 ) {
-		pContext->iNextResourceGeneration = 1;
-	}
-	for ( pScan = pContext->pResources; pScan != NULL; pScan = pScan->pNext ) {
-		if ( pScan == pResource ) {
-			continue;
-		}
-		for ( pDependency = pScan->pDependencies; pDependency != NULL; pDependency = pDependency->pNext ) {
-			if ( pDependency->pResource == pResource ) {
-				pScan->iGeneration = pContext->iNextResourceGeneration++;
-				if ( pContext->iNextResourceGeneration == 0 ) {
-					pContext->iNextResourceGeneration = 1;
-				}
-				break;
-			}
-		}
-	}
+	__xuiResourceCascadeChanged(pContext, pResource);
 	__xuiContextBumpGeneration(pContext);
 	__xuiResourceRegistryChanged(pContext);
 	return XUI_OK;
@@ -2303,11 +2362,10 @@ XUI_API int xuiResourceAddRef(xui_resource pResource)
 	if ( !__xuiResourceValid(pResource) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pResource->iRefCount++;
-	if ( pResource->iRefCount <= 0 ) {
-		pResource->iRefCount = 1;
-		return XUI_ERROR_UNSUPPORTED;
+	if ( pResource->iRefCount == INT_MAX ) {
+		return XUI_ERROR_LIMIT_EXCEEDED;
 	}
+	pResource->iRefCount++;
 	return XUI_OK;
 }
 
@@ -2316,8 +2374,11 @@ XUI_API int xuiResourceRelease(xui_resource pResource)
 	if ( !__xuiResourceValid(pResource) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pResource->iRefCount--;
-	if ( pResource->iRefCount > 0 ) {
+	if ( pResource->iRefCount <= 0 ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	if ( pResource->iRefCount > 1 ) {
+		pResource->iRefCount--;
 		return XUI_OK;
 	}
 	return xuiResourceRemove(pResource);
@@ -2360,6 +2421,9 @@ XUI_API void xuiResourceClearDependencies(xui_resource pResource)
 	xui_resource_dependency_t* pNext;
 
 	if ( !__xuiResourceValid(pResource) ) {
+		return;
+	}
+	if ( pResource->pDependencies == NULL ) {
 		return;
 	}
 	pDependency = pResource->pDependencies;

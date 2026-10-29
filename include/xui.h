@@ -6222,13 +6222,14 @@ XUI_API xui_font xuiFindFont(xui_context pContext, const char* sName);
 /* 清除上下文已注册字体。 */
 XUI_API void xuiClearFonts(xui_context pContext);
 
-/* 注册命名资源（surface/纹理等，按名全局可查）。 */
+/* 注册命名资源（surface/纹理等，按名全局可查）。同名且描述完全一致时幂等；
+ * 替换仍被外部引用的资源或复用其拥有型句柄时返回 XUI_ERROR_INVALID_STATE。 */
 XUI_API int xuiResourceSet(xui_context pContext, xui_resource* ppResource, const xui_resource_desc_t* pDesc);
 /* 按名查找资源；不存在返回 NULL。 */
 XUI_API xui_resource xuiResourceFind(xui_context pContext, const char* sName);
-/* 移除资源注册（引用归零后释放）。 */
+/* 移除资源注册并释放注册表引用；仍有外部引用时返回 XUI_ERROR_INVALID_STATE。 */
 XUI_API int xuiResourceRemove(xui_resource pResource);
-/* 提升资源热度（LRU 保活）。 */
+/* 标记资源内容已变更；修订号会传递到全部直接和间接依赖资源。 */
 XUI_API int xuiResourceTouch(xui_resource pResource);
 /* 读取资源名。 */
 XUI_API const char* xuiResourceGetName(xui_resource pResource);
@@ -6247,7 +6248,7 @@ XUI_API int xuiResourceAddRef(xui_resource pResource);
 XUI_API int xuiResourceRelease(xui_resource pResource);
 /* 读取资源引用计数。 */
 XUI_API int xuiResourceGetRefCount(xui_resource pResource);
-/* 声明资源依赖（依赖失效级联本资源）。 */
+/* 声明资源依赖（依赖失效会传递到本资源及其依赖方）。 */
 XUI_API int xuiResourceAddDependency(xui_resource pResource, xui_resource pDependency);
 /* 清空依赖声明。 */
 XUI_API void xuiResourceClearDependencies(xui_resource pResource);

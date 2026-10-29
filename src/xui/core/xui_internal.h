@@ -285,6 +285,7 @@ struct xui_context_t {
 	int bStyleDirty;
 	xui_resource_t* pResources;
 	uint32_t iNextResourceGeneration;
+	uint32_t iResourceCascadeMark;
 	uint64_t iResourceRegistryGeneration;
 	xmap mapIconCategories;
 	xarray arrIconCategories;
