@@ -27,6 +27,8 @@ typedef struct xui_text_edit_line_t {
 typedef struct xui_text_edit_history_t {
 	char* sRemoved;
 	char* sInserted;
+	int iRemovedCapacity;
+	int iInsertedCapacity;
 	int iStart;
 	int iRemovedLength;
 	int iInsertedLength;
@@ -429,6 +431,7 @@ static int __xuiTextEditImeSetText(xui_text_edit_data_t* pData, const char* sTex
 	int iRet;
 
 	if ( pData == NULL || sText == NULL || iTextSize < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iTextSize > INT_MAX - 1 ) return XUI_ERROR_BUFFER_TOO_SMALL;
 	iRet = __xuiTextEditTextReserve(&pData->sImeText, &pData->iImeTextCapacity, iTextSize + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iTextSize > 0 ) memcpy(pData->sImeText, sText, (size_t)iTextSize);
@@ -443,6 +446,7 @@ static int __xuiTextEditImeBuildDisplay(xui_text_edit_data_t* pData)
 	int iStart;
 	int iEnd;
 	int iDisplaySize;
+	int iSuffixSize;
 	int iRet;
 
 	if ( pData == NULL || pData->sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -455,7 +459,11 @@ static int __xuiTextEditImeBuildDisplay(xui_text_edit_data_t* pData)
 		iStart = iEnd;
 		iEnd = iSwap;
 	}
-	iDisplaySize = iStart + iCompositionSize + (iDocumentSize - iEnd);
+	iSuffixSize = iDocumentSize - iEnd;
+	if ( iStart > INT_MAX - 1 - iSuffixSize ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	iDisplaySize = iStart + iSuffixSize;
+	if ( iCompositionSize > INT_MAX - 1 - iDisplaySize ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	iDisplaySize += iCompositionSize;
 	iRet = __xuiTextEditTextReserve(&pData->sImeDisplay, &pData->iImeDisplayCapacity, iDisplaySize + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iStart > 0 ) memcpy(pData->sImeDisplay, pData->sText, (size_t)iStart);
@@ -1123,17 +1131,21 @@ static void __xuiTextEditHistoryClear(xui_text_edit_history_t* pStates, int* pCo
 	*pCount = 0;
 }
 
-static int __xuiTextEditHistoryCopy(char** psCopy, const char* sText, int iLength)
+static int __xuiTextEditHistoryCopy(char** psCopy, int* pCapacity,
+	const char* sText, int iLength)
 {
 	char* sCopy;
-	if ( psCopy == NULL || iLength < 0 || (iLength > 0 && sText == NULL) )
+	if ( psCopy == NULL || pCapacity == NULL || iLength < 0 ||
+	     (iLength > 0 && sText == NULL) )
 		return XUI_ERROR_INVALID_ARGUMENT;
 	*psCopy = NULL;
+	*pCapacity = 0;
 	if ( iLength == 0 ) return XUI_OK;
 	sCopy = (char*)xrtMalloc((size_t)iLength);
 	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	memcpy(sCopy, sText, (size_t)iLength);
 	*psCopy = sCopy;
+	*pCapacity = iLength;
 	return XUI_OK;
 }
 
@@ -1155,9 +1167,10 @@ static int __xuiTextEditHistoryBegin(xui_text_edit_data_t* pData,
 	pState->iBeforeSelectEnd = pData->iSelectEnd;
 	pState->fBeforeScrollX = pData->fScrollX;
 	pState->fBeforeScrollY = pData->fScrollY;
-	iRet = __xuiTextEditHistoryCopy(&pState->sRemoved,
+	iRet = __xuiTextEditHistoryCopy(&pState->sRemoved, &pState->iRemovedCapacity,
 		pData->sText + iStart, pState->iRemovedLength);
 	if ( iRet == XUI_OK ) iRet = __xuiTextEditHistoryCopy(&pState->sInserted,
+		&pState->iInsertedCapacity,
 		sInserted, iInsertedLength);
 	if ( iRet != XUI_OK ) __xuiTextEditHistoryStateFree(pState);
 	return iRet;
@@ -1216,19 +1229,27 @@ static int __xuiTextEditHistoryCoalesceInsert(xui_text_edit_data_t* pData,
 	const char* sText, int iTextSize)
 {
 	xui_text_edit_history_t* pState;
-	char* sInserted;
+	int iNewLength;
+	int iRet;
 	if ( pData == NULL || sText == NULL || iTextSize <= 0 || pData->iUndoCount <= 0 )
 		return XUI_ERROR_INVALID_ARGUMENT;
 	pState = &pData->arrUndo[pData->iUndoCount - 1];
-	if ( pState->iRemovedLength != 0 ||
-	     pState->iStart + pState->iInsertedLength != pData->iUndoInsertEnd )
+	if ( pState->iRemovedLength != 0 || pState->iStart < 0 ||
+	     pState->iInsertedLength < 0 || pData->iUndoInsertEnd < 0 ||
+	     (size_t)pState->iStart + (size_t)pState->iInsertedLength !=
+		(size_t)pData->iUndoInsertEnd )
 		return XUI_ERROR_INVALID_STATE;
-	sInserted = (char*)xrtRealloc(pState->sInserted,
-		(size_t)pState->iInsertedLength + (size_t)iTextSize);
-	if ( sInserted == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memcpy(sInserted + pState->iInsertedLength, sText, (size_t)iTextSize);
-	pState->sInserted = sInserted;
-	pState->iInsertedLength += iTextSize;
+	if ( (size_t)pState->iInsertedLength + (size_t)iTextSize >
+	     XUI_TEXT_EDIT_HISTORY_BYTES_LIMIT ) return XUI_ERROR_INVALID_STATE;
+	if ( pState->iInsertedLength > INT_MAX - iTextSize )
+		return XUI_ERROR_BUFFER_TOO_SMALL;
+	iNewLength = pState->iInsertedLength + iTextSize;
+	iRet = __xuiTextEditTextReserve(&pState->sInserted,
+		&pState->iInsertedCapacity, iNewLength);
+	if ( iRet != XUI_OK ) return iRet;
+	memcpy(pState->sInserted + pState->iInsertedLength,
+		sText, (size_t)iTextSize);
+	pState->iInsertedLength = iNewLength;
 	return XUI_OK;
 }
 
@@ -1974,12 +1995,24 @@ static int __xuiTextEditInsertText(xui_widget pWidget, xui_text_edit_data_t* pDa
 			return XUI_OK;
 		}
 	}
+	if ( iInsertSize > INT_MAX - 1 - (iLen - iSelected) )
+		return XUI_ERROR_BUFFER_TOO_SMALL;
 	bPatch = __xuiTextEditDirectPatchPrepare(pData, iStart, iEnd,
 		sInsert, iInsertSize, &iPatchLine);
 	bGroupable = iSelected == 0 && memchr(sInsert, '\n', (size_t)iInsertSize) == NULL &&
 		memchr(sInsert, '\r', (size_t)iInsertSize) == NULL &&
 		xuiInternalTextGraphemeNext(sInsert, iInsertSize, 0) == iInsertSize;
 	bReuseUndo = bGroupable && pData->bUndoInsertGroup && pData->iUndoInsertEnd == iStart;
+	if ( bReuseUndo && pData->iUndoCount <= 0 ) bReuseUndo = 0;
+	if ( bReuseUndo ) {
+		xui_text_edit_history_t* pState = &pData->arrUndo[pData->iUndoCount - 1];
+		if ( pState->iRemovedLength != 0 || pState->iStart < 0 ||
+		     pState->iInsertedLength < 0 ||
+		     (size_t)pState->iStart + (size_t)pState->iInsertedLength !=
+			(size_t)pData->iUndoInsertEnd ||
+		     (size_t)pState->iInsertedLength + (size_t)iInsertSize >
+			XUI_TEXT_EDIT_HISTORY_BYTES_LIMIT ) bReuseUndo = 0;
+	}
 	memset(&tHistory, 0, sizeof(tHistory));
 	pGroupedHistory = NULL;
 	iNewLen = iLen - iSelected + iInsertSize;
@@ -5270,8 +5303,11 @@ static int __xuiTextEditApplyHistoryState(xui_widget pWidget,
 	iInsertLength = bRedo ? pState->iInsertedLength : pState->iRemovedLength;
 	sInsert = bRedo ? pState->sInserted : pState->sRemoved;
 	if ( pState->iStart < 0 || iRemoveLength < 0 || iInsertLength < 0 ||
-	     pState->iStart + iRemoveLength > pData->iTextLength ||
+	     pState->iStart > pData->iTextLength ||
+	     iRemoveLength > pData->iTextLength - pState->iStart ||
 	     (iInsertLength > 0 && sInsert == NULL) ) return XUI_ERROR_INVALID_STATE;
+	if ( iInsertLength > INT_MAX - 1 - (pData->iTextLength - iRemoveLength) )
+		return XUI_ERROR_INVALID_STATE;
 	iOldEnd = pState->iStart + iRemoveLength;
 	bPatch = __xuiTextEditDirectPatchPrepare(pData, pState->iStart,
 		iOldEnd, sInsert, iInsertLength, &iPatchLine);

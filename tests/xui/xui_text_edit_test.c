@@ -237,6 +237,7 @@ int main(void)
 	int iReplaceCount;
 	int iFailed;
 	int iRet;
+	int i;
 
 	pContext = NULL;
 	pRoot = NULL;
@@ -652,6 +653,19 @@ int main(void)
 	XUI_TEST_CHECK(xuiTextEditCanRedo(pTextEdit), "can redo cut");
 	iRet = xuiTextEditRedo(pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "redo cut");
+	for ( i = 0; i < 80 && iRet == XUI_OK; i++ ) {
+		iRet = __xuiTextEditTestDispatchText(pContext, 'a');
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiTextEditGetText(pTextEdit)) == 80u,
+		"coalesced typing grows history buffer");
+	iRet = xuiTextEditUndo(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTextEditGetText(pTextEdit)[0] == '\0',
+		"coalesced typing remains one undo group");
+	iRet = xuiTextEditRedo(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiTextEditGetText(pTextEdit)) == 80u,
+		"coalesced typing redo restores full group");
+	iRet = xuiTextEditSetText(pTextEdit, "");
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear coalesced typing text");
 	iRet = __xuiTextEditTestDispatchImePreedit(pContext, "nihao");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "IME preedit does not commit text");
 	iRet = __xuiTextEditTestRender(pContext, pTarget);
