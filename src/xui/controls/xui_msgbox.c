@@ -43,6 +43,7 @@ struct xui_msgbox_t {
 	void* pWindowEventUser;
 	xui_font pFont;
 	xui_surface pIconSurface;
+	xui_surface_dependency_t tIconDependency;
 	xui_rect_t tIconSrc;
 	xui_rect_t tIconRect;
 	xui_rect_t tMessageRect;
@@ -955,6 +956,8 @@ static int __xuiMsgBoxPreparePaint(xui_widget pWidget)
 {
 	xui_context pContext = xuiWidgetGetContext(pWidget);
 	xui_widget_type pParent = xuiWidgetFindType(pContext, "msgbox")->pParent;
+	xui_msgbox pBox;
+	xui_proxy pProxy;
 	int iRet;
 	/* The framework selects one hook; preserve Window's chrome dependencies. */
 	for ( ; pParent != NULL && pParent->onPreparePaint == NULL; pParent = pParent->pParent ) {}
@@ -963,7 +966,18 @@ static int __xuiMsgBoxPreparePaint(xui_widget pWidget)
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !xuiInternalWidgetIsValid(pWidget) || xuiInternalContextDestroyPending(pContext) || !xuiWidgetGetVisible(pWidget) ) return XUI_OK;
 	}
-	(void)__xuiMsgBoxSyncPaint((xui_msgbox)pWidget->pUpdateUser);
+	pBox = (xui_msgbox)pWidget->pUpdateUser;
+	if ( __xuiMsgBoxValid(pBox) ) {
+		pProxy = xuiInternalContextGetProxy(pContext);
+		if ( xuiInternalSurfaceDependencySync(pProxy,
+			pBox->bCustomIcon ? pBox->pIconSurface : NULL,
+			&pBox->tIconDependency, 0) && pBox->pContent != NULL ) {
+			iRet = xuiWidgetInvalidate(pBox->pContent,
+				XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	(void)__xuiMsgBoxSyncPaint(pBox);
 	return XUI_OK;
 }
 

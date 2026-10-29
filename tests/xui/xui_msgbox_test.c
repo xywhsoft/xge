@@ -102,7 +102,7 @@ int main(void)
 	xui_widget pRoot;
 	xui_msgbox pBox;
 	xui_msgbox pInvalidBox;
-	xui_surface pTarget;
+	xui_surface pCustomIcon;
 	xui_surface pContentCache;
 	xui_font pFont;
 	xui_msgbox_desc_t tDesc;
@@ -137,7 +137,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pBox = NULL;
-	pTarget = NULL;
+	pCustomIcon = NULL;
 	pFont = NULL;
 	pContentCache = NULL;
 	iFailed = 0;
@@ -158,6 +158,9 @@ int main(void)
 	(void)xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 640.0f, 420.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
+	iRet = xuiTestSurfaceCreate(&tState, &pCustomIcon, 16, 16,
+		XUI_SURFACE_ALPHA_PREMULTIPLIED);
+	XUI_TEST_CHECK(iRet == XUI_OK && pCustomIcon != NULL, "custom icon create");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -254,6 +257,22 @@ int main(void)
 	XUI_TEST_CHECK(pContentCache != NULL, "content cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pContentCache) > 0, "builtin icon rendered");
 	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pContentCache) > 0, "message rendered");
+	iRet = xuiMsgBoxSetIconSurface(pBox, pCustomIcon,
+		(xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f});
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "custom icon render");
+	xuiTestSurfaceReset(pContentCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pContentCache) == 0,
+		"unchanged borrowed msgbox icon reuses cache");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pCustomIcon,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pContentCache) > 0,
+		"borrowed msgbox icon generation rebuilds cache");
+	iRet = xuiMsgBoxUseBuiltinIcon(pBox);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore builtin icon");
 	xuiTestProxyResetTextCounters(&tState);
 	iRet = xuiWidgetInvalidate(xuiMsgBoxGetContentWidget(pBox), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate message content");
@@ -440,8 +459,8 @@ int main(void)
 		"result callback may destroy msgbox");
 
 cleanup:
-	if ( pTarget != NULL ) {
-		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
+	if ( pCustomIcon != NULL ) {
+		tState.tProxy.surfaceDestroy(&tState.tProxy, pCustomIcon);
 	}
 	if ( pBox != NULL ) {
 		xuiMsgBoxDestroy(pBox);

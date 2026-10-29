@@ -15,6 +15,7 @@ struct xui_msgtip_t {
 	char* sText;
 	xui_font pFont;
 	xui_surface pIconSurface;
+	xui_surface_dependency_t tIconDependency;
 	xui_rect_t tIconSrc;
 	xui_rect_t tTipRect;
 	xui_rect_t tIconRect;
@@ -739,6 +740,25 @@ static int __xuiMsgTipEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	return XUI_OK;
 }
 
+static int __xuiMsgTipPreparePaint(xui_widget pWidget)
+{
+	xui_msgtip* ppTip;
+	xui_msgtip pTip;
+	xui_proxy pProxy;
+
+	ppTip = (xui_msgtip*)xuiWidgetGetTypeData(pWidget);
+	pTip = (ppTip != NULL) ? *ppTip : NULL;
+	if ( !__xuiMsgTipValid(pTip) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(pTip->pContext);
+	if ( xuiInternalSurfaceDependencySync(pProxy,
+		pTip->bCustomIcon ? pTip->pIconSurface : NULL,
+		&pTip->tIconDependency, 0) ) {
+		return xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return XUI_OK;
+}
+
 static int __xuiMsgTipTypeInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_cache_policy_t tPolicy;
@@ -805,9 +825,14 @@ static xui_widget_type __xuiMsgTipEnsureType(xui_context pContext)
 	tDesc.onCacheRender = __xuiMsgTipRender;
 	tDesc.onUpdate = __xuiMsgTipUpdate;
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
-	if ( iRet == XUI_OK ) __xuiMsgTipRegisterColors(pContext, pType);
+	if ( iRet == XUI_OK ) {
+		pType->onPreparePaint = __xuiMsgTipPreparePaint;
+		__xuiMsgTipRegisterColors(pContext, pType);
+	}
 	if ( iRet == XUI_ERROR_ALREADY_INITIALIZED ) {
-		return xuiWidgetFindType(pContext, "msgtip");
+		pType = xuiWidgetFindType(pContext, "msgtip");
+		if ( pType != NULL ) pType->onPreparePaint = __xuiMsgTipPreparePaint;
+		return pType;
 	}
 	return (iRet == XUI_OK) ? pType : NULL;
 }

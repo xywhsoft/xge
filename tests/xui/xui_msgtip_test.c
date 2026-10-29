@@ -337,6 +337,20 @@ int main(void)
 	tTip = xuiMsgTipGetTipRect(pTip);
 	tIcon = xuiMsgTipGetIconRect(pTip);
 	XUI_TEST_CHECK(tTip.fW >= 160.0f && tTip.fW <= 280.0f && tIcon.fW > 0.0f, "custom layout");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "custom icon render");
+	pCache = xuiWidgetGetCacheSurface(xuiMsgTipGetWidget(pTip),
+		xuiWidgetGetStateId(xuiMsgTipGetWidget(pTip)));
+	XUI_TEST_CHECK(pCache != NULL, "custom icon cache");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) == 0,
+		"unchanged borrowed msgtip icon reuses cache");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pCustomIcon,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) > 0,
+		"borrowed msgtip icon generation rebuilds cache");
 	iRet = xuiMsgTipSetDuration(pTip, 0.25f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipGetDuration(pTip) > 0.2f, "duration setter");
 	iRet = xuiMsgTipUseBuiltinIcon(pTip);
