@@ -41,6 +41,7 @@ int main(void)
 	xui_widget pViewport;
 	xui_surface pTarget;
 	xui_surface pCanvasSurface;
+	xui_surface pViewportCache;
 	xui_surface pOldSurface;
 	xui_canvas_desc_t tDesc;
 	xui_canvas_desc_t tInvalidDesc;
@@ -174,6 +175,22 @@ int main(void)
 	XUI_TEST_CHECK(xuiCanvasGetFrameWidget(pCanvas) != NULL && xuiCanvasGetViewportWidget(pCanvas) != NULL, "child accessors");
 	pCanvasSurface = xuiCanvasGetSurface(pCanvas);
 	XUI_TEST_CHECK(pCanvasSurface != NULL, "surface accessor");
+	pViewport = xuiCanvasGetViewportWidget(pCanvas);
+	pViewportCache = xuiWidgetGetCacheSurface(pViewport,
+		xuiWidgetGetStateId(pViewport));
+	XUI_TEST_CHECK(pViewportCache != NULL, "viewport cache surface");
+	xuiTestSurfaceReset(pViewportCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pViewportCache) == 0,
+		"unchanged canvas surface reuses viewport cache");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pCanvasSurface,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	pViewportCache = xuiWidgetGetCacheSurface(pViewport,
+		xuiWidgetGetStateId(pViewport));
+	XUI_TEST_CHECK(iRet == XUI_OK && pViewportCache != NULL &&
+		xuiTestSurfaceGetDrawCount(pViewportCache) > 0,
+		"external canvas surface update rebuilds viewport cache");
 	pOldSurface = pCanvasSurface;
 	xuiTestProxyFailNextSurfaceCreate(&tState, XUI_ERROR_OUT_OF_MEMORY);
 	iRet = xuiCanvasSetCanvasSize(pCanvas, 300.0f, 220.0f);

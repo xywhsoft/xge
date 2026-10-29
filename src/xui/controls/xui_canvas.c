@@ -23,8 +23,10 @@ typedef struct xui_canvas_data_t {
 	int bPenEnabled;
 	int bPenColorExplicit;
 	int bPenDown;
+	int bSurfaceGenerationValid;
 	int iChangeCount;
 	int iDrawCount;
+	uint32_t iSurfaceGeneration;
 	uint32_t iClearColor;
 	uint32_t iBackgroundColor;
 	uint32_t iBorderColor;
@@ -155,6 +157,47 @@ static int __xuiCanvasInvalidateViewport(xui_canvas_data_t* pData)
 	return xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static void __xuiCanvasRememberSurfaceGeneration(xui_widget pWidget,
+	xui_canvas_data_t* pData)
+{
+	xui_proxy pProxy;
+	uint32_t iGeneration;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->pSurface == NULL) ) {
+		if ( pData != NULL ) pData->bSurfaceGenerationValid = 0;
+		return;
+	}
+	pProxy = __xuiCanvasProxy(pWidget);
+	if ( (pProxy == NULL) || (pProxy->surfaceGetGeneration == NULL) ||
+	     (pProxy->surfaceGetGeneration(pProxy, pData->pSurface, &iGeneration) != XUI_OK) ) {
+		pData->bSurfaceGenerationValid = 0;
+		return;
+	}
+	pData->iSurfaceGeneration = iGeneration;
+	pData->bSurfaceGenerationValid = 1;
+}
+
+static int __xuiCanvasSyncSurfaceGeneration(xui_widget pWidget,
+	xui_canvas_data_t* pData)
+{
+	xui_proxy pProxy;
+	uint32_t iGeneration;
+	int bChanged;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->pSurface == NULL) ) return 0;
+	pProxy = __xuiCanvasProxy(pWidget);
+	if ( (pProxy == NULL) || (pProxy->surfaceGetGeneration == NULL) ||
+	     (pProxy->surfaceGetGeneration(pProxy, pData->pSurface, &iGeneration) != XUI_OK) ) {
+		pData->bSurfaceGenerationValid = 0;
+		return 0;
+	}
+	bChanged = pData->bSurfaceGenerationValid &&
+		pData->iSurfaceGeneration != iGeneration;
+	pData->iSurfaceGeneration = iGeneration;
+	pData->bSurfaceGenerationValid = 1;
+	return bChanged;
+}
+
 static int __xuiCanvasGetSnappedOffset(const xui_canvas_data_t* pData,
 	float* pOffsetX, float* pOffsetY)
 {
@@ -177,16 +220,18 @@ static int __xuiCanvasPreparePaint(xui_widget pWidget)
 {
 	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
 	xui_canvas_data_t tResolved;
+	int bInvalidate;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiCanvasResolve(pWidget, pData, &tResolved);
+	bInvalidate = __xuiCanvasSyncSurfaceGeneration(pWidget, pData);
 	if ( !pData->bViewportStyleSeen || pData->iViewportBackgroundColor != tResolved.iBackgroundColor ||
 	     pData->iViewportBorderColor != tResolved.iBorderColor ) {
 		pData->bViewportStyleSeen = 1;
 		pData->iViewportBackgroundColor = tResolved.iBackgroundColor;
 		pData->iViewportBorderColor = tResolved.iBorderColor;
-		return __xuiCanvasInvalidateViewport(pData);
+		bInvalidate = 1;
 	}
-	return XUI_OK;
+	return bInvalidate ? __xuiCanvasInvalidateViewport(pData) : XUI_OK;
 }
 
 static int __xuiCanvasClearSurface(xui_proxy pProxy, xui_surface pSurface, float fWidth,
@@ -263,6 +308,7 @@ static int __xuiCanvasEnsureSurface(xui_widget pWidget, xui_canvas_data_t* pData
 		pData->iClearColor, bClear, &pSurface);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pSurface = pSurface;
+	__xuiCanvasRememberSurfaceGeneration(pWidget, pData);
 	return XUI_OK;
 }
 
@@ -289,6 +335,7 @@ static int __xuiCanvasWithDraw(xui_widget pWidget, int (*onDraw)(xui_proxy, xui_
 	iEndRet = pProxy->drawEnd(pProxy, pDraw);
 	if ( iRet == XUI_OK ) iRet = iEndRet;
 	if ( iRet == XUI_OK ) {
+		__xuiCanvasRememberSurfaceGeneration(pWidget, pData);
 		pData->iDrawCount++;
 		iRet = __xuiCanvasInvalidateViewport(pData);
 	}
@@ -880,6 +927,7 @@ XUI_API int xuiCanvasSetCanvasSize(xui_widget pWidget, float fWidth, float fHeig
 	pData->pSurface = pNewSurface;
 	pData->fCanvasWidth = fNewWidth;
 	pData->fCanvasHeight = fNewHeight;
+	__xuiCanvasRememberSurfaceGeneration(pWidget, pData);
 	if ( pOldSurface != NULL ) pProxy->surfaceDestroy(pProxy, pOldSurface);
 	return XUI_OK;
 }
@@ -996,6 +1044,7 @@ XUI_API int xuiCanvasClear(xui_widget pWidget, uint32_t iColor)
 			pData->fCanvasHeight, iColor);
 	}
 	if ( iRet == XUI_OK ) {
+		__xuiCanvasRememberSurfaceGeneration(pWidget, pData);
 		pData->iClearColor = iColor;
 		pData->iDrawCount++;
 		iRet = __xuiCanvasInvalidateViewport(pData);
