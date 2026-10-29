@@ -42,7 +42,7 @@ struct xui_workflow_t {
 };
 
 static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, xvalue* pConfig,
-	xui_flow_port_desc_t* pPorts, int iCapacity, int* pCount);
+	xui_flow_port_desc_t** ppPorts, int* pCount);
 
 static char* __xuiWorkflowCopyString(const char* sText)
 {
@@ -774,7 +774,7 @@ XUI_API int xuiWorkflowGetNodeTypeCount(xui_workflow pWorkflow)
 
 static int __xuiWorkflowAddDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, int iNode, xvalue* pConfig)
 {
-	xui_flow_port_desc_t arrPorts[32];
+	xui_flow_port_desc_t* pPorts;
 	int iCount;
 	int i;
 	int iRet;
@@ -782,44 +782,80 @@ static int __xuiWorkflowAddDynamicPorts(xui_workflow pWorkflow, const xui_workfl
 	if ( (pWorkflow == NULL) || (pType == NULL) || (pType->onDynamicPorts == NULL) ) {
 		return XUI_OK;
 	}
-	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sNodeId, pConfig, arrPorts, (int)(sizeof(arrPorts) / sizeof(arrPorts[0])), &iCount);
+	pPorts = NULL;
+	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sNodeId, pConfig, &pPorts, &iCount);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < iCount; ++i ) {
-		iRet = xuiFlowGraphAddPort(pWorkflow->pGraph, iNode, &arrPorts[i], NULL);
+		iRet = xuiFlowGraphAddPort(pWorkflow->pGraph, iNode, &pPorts[i], NULL);
 		if ( iRet != XUI_OK ) {
+			xrtFree(pPorts);
 			return iRet;
 		}
 	}
+	xrtFree(pPorts);
 	return XUI_OK;
 }
 
 static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, xvalue* pConfig,
-	xui_flow_port_desc_t* pPorts, int iCapacity, int* pCount)
+	xui_flow_port_desc_t** ppPorts, int* pCount)
 {
+	xui_flow_port_desc_t* pPorts;
+	int iCapacity;
+	int iNextCapacity;
+	int iPortCount;
 	int i;
 	int iRet;
 
-	if ( (pWorkflow == NULL) || (pType == NULL) || (pPorts == NULL) || (iCapacity < 0) || (pCount == NULL) ) {
+	if ( (pWorkflow == NULL) || (pType == NULL) || (ppPorts == NULL) || (pCount == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memset(pPorts, 0, (size_t)iCapacity * sizeof(*pPorts));
+	*ppPorts = NULL;
 	*pCount = 0;
 	if ( pType->onDynamicPorts == NULL ) {
 		return XUI_OK;
 	}
-	iRet = pType->onDynamicPorts(pWorkflow, sNodeId, pType->sId, pConfig, pPorts, iCapacity, pCount, pType->pDynamicPortsUser);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	iCapacity = 32;
+	for ( ;; ) {
+		pPorts = (xui_flow_port_desc_t*)xrtCalloc((size_t)iCapacity, sizeof(*pPorts));
+		if ( pPorts == NULL ) {
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		iPortCount = 0;
+		iRet = pType->onDynamicPorts(pWorkflow, sNodeId, pType->sId, pConfig,
+			pPorts, iCapacity, &iPortCount, pType->pDynamicPortsUser);
+		if ( iRet != XUI_OK ) {
+			xrtFree(pPorts);
+			return iRet;
+		}
+		if ( iPortCount < 0 ) {
+			xrtFree(pPorts);
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		if ( iPortCount < iCapacity ) {
+			break;
+		}
+		xrtFree(pPorts);
+		if ( iPortCount > iCapacity ) {
+			iNextCapacity = iPortCount;
+		} else {
+			if ( iCapacity > INT_MAX / 2 ) {
+				return XUI_ERROR_LIMIT_EXCEEDED;
+			}
+			iNextCapacity = iCapacity * 2;
+		}
+		if ( iNextCapacity <= iCapacity ) {
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+		iCapacity = iNextCapacity;
 	}
-	if ( *pCount < 0 || *pCount > iCapacity ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	for ( i = 0; i < *pCount; ++i ) {
+	for ( i = 0; i < iPortCount; ++i ) {
 		if ( pPorts[i].iSize < sizeof(pPorts[i]) ) {
 			pPorts[i].iSize = sizeof(pPorts[i]);
 		}
 		pPorts[i].bDynamic = 1;
 	}
+	*ppPorts = pPorts;
+	*pCount = iPortCount;
 	return XUI_OK;
 }
 
@@ -1380,6 +1416,21 @@ cleanup:
 	return iRet;
 }
 
+static int __xuiWorkflowExpressionReferencesClosed(const char* sExpression)
+{
+	const char* sOpen;
+	const char* sClose;
+
+	if ( sExpression == NULL ) return 1;
+	sOpen = sExpression;
+	while ( (sOpen = strstr(sOpen, "${")) != NULL ) {
+		sClose = strchr(sOpen + 2, '}');
+		if ( sClose == NULL ) return 0;
+		sOpen = sClose + 1;
+	}
+	return 1;
+}
+
 XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCount)
 {
 	xui_flow_edge_info_t tEdge;
@@ -1507,7 +1558,7 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 				}
 				sRef = (const char*)xuiXrtValueGetText(pValue);
 				if ( iKind == XUI_WORKFLOW_CONFIG_FIELD_EXPRESSION ) {
-					if ( strstr(sRef, "${") == NULL || strchr(sRef, '}') != NULL ) {
+					if ( strstr(sRef, "${") == NULL || __xuiWorkflowExpressionReferencesClosed(sRef) ) {
 						continue;
 					}
 					memset(&tDiagnostic, 0, sizeof(tDiagnostic));
@@ -1721,7 +1772,7 @@ XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 {
 	xui_flow_node_info_t tInfo;
 	xui_workflow_type_model_t* pType;
-	xui_flow_port_desc_t arrNewPorts[32];
+	xui_flow_port_desc_t* pNewPorts;
 	char sSummary[256];
 	int iNewPortCount;
 	int iDiagnostics;
@@ -1742,16 +1793,20 @@ XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 	if ( pType == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sId, pConfig, arrNewPorts, (int)(sizeof(arrNewPorts) / sizeof(arrNewPorts[0])), &iNewPortCount);
+	pNewPorts = NULL;
+	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sId, pConfig, &pNewPorts, &iNewPortCount);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
 	iRet = __xuiWorkflowBuildNodeSummary(pWorkflow, tInfo.sType, pConfig,
 		sSummary, (int)sizeof(sSummary));
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiInternalFlowGraphUpdateNodeConfiguration(pWorkflow->pGraph, sId,
-		pConfig, arrNewPorts, iNewPortCount, pType->onDynamicPorts != NULL,
+	if ( iRet == XUI_OK ) {
+		iRet = xuiInternalFlowGraphUpdateNodeConfiguration(pWorkflow->pGraph, sId,
+		pConfig, pNewPorts, iNewPortCount, pType->onDynamicPorts != NULL,
 		(sSummary[0] != 0) ? sSummary : NULL);
+	}
+	xrtFree(pNewPorts);
+	return iRet;
 }
 
 XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue** ppConfig)
@@ -1883,6 +1938,37 @@ static int __xuiWorkflowXsonOptionalNumber(xvalue* pValue)
 {
 	int iType = xuiXrtValueType(pValue);
 	return iType == XVALUE_NULL || iType == XVALUE_INT || iType == XVALUE_FLOAT;
+}
+
+static int __xuiWorkflowXsonHeaderValid(xvalue* pRoot)
+{
+	xvalue* pKind;
+	xvalue* pVersion;
+	xvalue* pMetadata;
+	xvalue* pFormat;
+	xvalue* pSchemaVersion;
+	const char* sText;
+
+	pKind = xuiXrtValueObjectGet(pRoot, "kind", 0);
+	if ( xuiXrtValueType(pKind) != XVALUE_NULL ) {
+		sText = __xuiWorkflowXsonText(pKind);
+		if ( sText == NULL || strcmp(sText, "xui.workflow") != 0 ) return 0;
+	}
+	pVersion = xuiXrtValueObjectGet(pRoot, "version", 0);
+	if ( xuiXrtValueType(pVersion) != XVALUE_NULL &&
+	     (xuiXrtValueType(pVersion) != XVALUE_INT || xuiXrtValueGetInt(pVersion) != 1) ) return 0;
+	pMetadata = xuiXrtValueObjectGet(pRoot, "metadata", 0);
+	if ( xuiXrtValueType(pMetadata) == XVALUE_NULL ) return 1;
+	if ( xuiXrtValueType(pMetadata) != XVALUE_OBJECT ) return 0;
+	pFormat = xuiXrtValueObjectGet(pMetadata, "format", 0);
+	if ( xuiXrtValueType(pFormat) != XVALUE_NULL ) {
+		sText = __xuiWorkflowXsonText(pFormat);
+		if ( sText == NULL || strcmp(sText, "xui.workflow.v1") != 0 ) return 0;
+	}
+	pSchemaVersion = xuiXrtValueObjectGet(pMetadata, "schemaVersion", 0);
+	if ( xuiXrtValueType(pSchemaVersion) != XVALUE_NULL &&
+	     (xuiXrtValueType(pSchemaVersion) != XVALUE_INT || xuiXrtValueGetInt(pSchemaVersion) != 1) ) return 0;
+	return 1;
 }
 
 static int __xuiWorkflowXsonSetText(xvalue* pTable, const char* sKey, const char* sValue)
@@ -2382,6 +2468,9 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 	int iRet;
 
 	if ( (pWorkflow == NULL) || (pValue == NULL) || (xuiXrtValueType(pValue) != XVALUE_OBJECT) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !__xuiWorkflowXsonHeaderValid(pValue) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pNodes = xuiXrtValueObjectGet(pValue, "nodes", 0);

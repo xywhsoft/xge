@@ -238,6 +238,29 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tEdgeRun.iState == XUI_WORKFLOW_EDGE_RUN_TAKEN && tEdgeRun.sPreview != NULL && strcmp(tEdgeRun.sPreview, "true") == 0, "workflow getter reads loaded edge state");
 	iRet = xuiWorkflowValidateGraph(pLoaded, &iDiagnostics);
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics > 0, "loaded invalid edge diagnostics");
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create legacy headerless document");
+	XUI_TEST_CHECK(xuiXrtValueObjectRemove(pBadDocument, "kind", 0) &&
+	               xuiXrtValueObjectRemove(pBadDocument, "version", 0) &&
+	               xuiXrtValueObjectRemove(pBadDocument, "metadata", 0), "remove optional legacy headers");
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK, "load legacy headerless document");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create wrong-kind document");
+	XUI_TEST_CHECK(xuiXrtValueObjectSetText(pBadDocument, "kind", 0, "other.workflow", 0, FALSE), "set wrong workflow kind");
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject wrong workflow kind");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create future-version document");
+	XUI_TEST_CHECK(xuiXrtValueObjectSetInt(pBadDocument, "version", 0, 2), "set unsupported workflow version");
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject unsupported workflow version");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
 
 	iRet = xuiWorkflowAddNode(pLoaded, "llm", "n_keep", "Keep", 10.0f, 10.0f, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add node retained across failed load");

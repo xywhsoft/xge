@@ -136,6 +136,7 @@ int main(void)
 	int iDiagnostics;
 	int i;
 	int bFoundDirectionDiagnostic;
+	int bFoundExpressionDiagnostic;
 	int bFoundUnreachableDiagnostic;
 	int bFoundCycleDiagnostic;
 	int bFoundRequiredPortDiagnostic;
@@ -509,12 +510,22 @@ int main(void)
 	XUI_TEST_CHECK(pNodeConfig != NULL, "copy config for graph validation");
 	xuiXrtValueObjectSetText(pNodeConfig, "model", 5, "", 0, FALSE);
 	xuiXrtValueObjectSetText(pNodeConfig, "inputVar", 8, "missing_var", 11, FALSE);
-	xuiXrtValueObjectSetText(pNodeConfig, "condition", 9, "${input.user", 12, FALSE);
+	xuiXrtValueObjectSetText(pNodeConfig, "condition", 9, "${ok} ${input.user", 18, FALSE);
 	xuiXrtValueObjectSetText(pNodeConfig, "mode", 4, "manual", 6, FALSE);
 	iRet = xuiFlowGraphSetNodeConfig(xuiWorkflowGetGraph(pWorkflow), "n_llm", pNodeConfig);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set invalid config directly for graph validation");
 	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics >= 4 && xuiFlowGraphGetDiagnosticCount(xuiWorkflowGetGraph(pWorkflow)) == iDiagnostics, "graph config variable expression host diagnostics");
+	bFoundExpressionDiagnostic = 0;
+	for ( i = 0; i < xuiFlowGraphGetDiagnosticCount(xuiWorkflowGetGraph(pWorkflow)); ++i ) {
+		memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+		iRet = xuiFlowGraphGetDiagnostic(xuiWorkflowGetGraph(pWorkflow), i, &tDiagnostic);
+		XUI_TEST_CHECK(iRet == XUI_OK, "read expression diagnostic");
+		if ( tDiagnostic.sCode != NULL && strcmp(tDiagnostic.sCode, "workflow.config.expression") == 0 ) {
+			bFoundExpressionDiagnostic = 1;
+		}
+	}
+	XUI_TEST_CHECK(bFoundExpressionDiagnostic, "later unclosed expression reference diagnosed");
 	iRet = xuiFlowGraphSetNodeConfig(xuiWorkflowGetGraph(pWorkflow), "n_llm", pDefaultConfig);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore valid graph config");
 	xrtValueRelease(pNodeConfig);
@@ -591,6 +602,26 @@ int main(void)
 	               xuiFlowGraphGetNodePortCount(pGraph, iDynamic) == 2, "failed dynamic rebuild rolls back config and ports");
 	xrtValueRelease(pNodeConfig);
 	pNodeConfig = NULL;
+	pBranches = xrtValueArray();
+	XUI_TEST_CHECK(pBranches != NULL, "create large dynamic branch list");
+	for ( i = 0; i < 40; ++i ) {
+		snprintf(sId, sizeof(sId), "branch_%d", i);
+		XUI_TEST_CHECK(xuiXrtValueArrayAppendText(pBranches, sId, 0, FALSE), "append large dynamic branch");
+	}
+	XUI_TEST_CHECK(xuiXrtValueObjectSetTake(pDynamicConfig, "branches", 8, pBranches, TRUE), "set large dynamic branches");
+	pBranches = NULL;
+	iRet = xuiWorkflowSetNodeConfig(pWorkflow, "n_dynamic", pDynamicConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphGetNodePortCount(pGraph, iDynamic) == 41,
+	               "dynamic ports grow beyond initial callback capacity");
+	pBranches = xrtValueArray();
+	XUI_TEST_CHECK(pBranches != NULL && xuiXrtValueArrayAppendText(pBranches, "maybe", 5, FALSE),
+	               "restore dynamic branch list");
+	XUI_TEST_CHECK(xuiXrtValueObjectSetTake(pDynamicConfig, "branches", 8, pBranches, TRUE),
+	               "restore dynamic branches");
+	pBranches = NULL;
+	iRet = xuiWorkflowSetNodeConfig(pWorkflow, "n_dynamic", pDynamicConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphGetNodePortCount(pGraph, iDynamic) == 2,
+	               "restore dynamic ports after growth test");
 	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics >= 1 && xuiFlowGraphGetDiagnosticCount(pGraph) == iDiagnostics, "missing dynamic port diagnostic");
 	bFoundUnreachableDiagnostic = 0;

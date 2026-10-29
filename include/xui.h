@@ -2349,8 +2349,10 @@ typedef struct xui_workflow_desc_t {
 } xui_workflow_desc_t;
 
 /* Workflow 回调中的字符串、配置与输出数组仅在本次调用期间借用；框架会复制成功返回的
- * 端口/诊断描述。回调不得销毁 pWorkflow，也不得注册类型、增删节点/连线或修改正在验证的
- * 配置；需要改变模型时应在外层 API 返回后执行。 */
+ * 端口/诊断描述。动态端口回调每次最多写 iPortCapacity 项，*pPortCount 可报告更大的所需
+ * 总数；输出填满容量时框架可能扩容重试，因此回调必须可重复调用并返回同一配置快照。
+ * 回调不得销毁 pWorkflow，也不得注册类型、增删节点/连线或修改正在验证的配置；需要改变
+ * 模型时应在外层 API 返回后执行。 */
 typedef int (*xui_workflow_dynamic_ports_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue* pConfig, xui_flow_port_desc_t* pPorts, int iPortCapacity, int* pPortCount, void* pUser);
 typedef int (*xui_workflow_validate_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue* pConfig, xui_flow_diagnostic_desc_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount, void* pUser);
 
@@ -12839,7 +12841,7 @@ XUI_API int xuiWorkflowGetVariableCount(xui_workflow pWorkflow);
 XUI_API int xuiWorkflowGetVariable(xui_workflow pWorkflow, int iIndex, xui_workflow_variable_desc_t* pDesc);
 /* 序列化为 xvalue 树；*ppValue 需 xvalue 释放。 */
 XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue);
-/* 从 xvalue 树反序列化（替换当前内容）。 */
+/* 从 xvalue 树反序列化（替换当前内容）；兼容缺少格式头的旧文档，若提供格式头则必须为 v1。 */
 XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue);
 /* 保存为 XSON 文件。 */
 XUI_API int xuiWorkflowSaveXSONFile(xui_workflow pWorkflow, const char* sPath);
