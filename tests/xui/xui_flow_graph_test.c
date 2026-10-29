@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "src/xui/core/xui_xrt_port.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -94,6 +95,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fX == 30.0f && fY == 54.0f, "world to screen");
 	iRet = xuiFlowGraphScreenToWorld(pGraph, fX, fY, &fX, &fY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fX == 5.0f && fY == 7.0f, "screen to world");
+	fX = 123.0f;
+	fY = 456.0f;
+	iRet = xuiFlowGraphWorldToScreen(pGraph, FLT_MAX, FLT_MAX, &fX, &fY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED && fX == 123.0f && fY == 456.0f,
+		"overflowing world transform rejected without partial output");
+	tViewport.fZoom = 0.001f;
+	iRet = xuiFlowGraphSetViewport(pGraph, &tViewport);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum viewport zoom");
+	fX = 123.0f;
+	fY = 456.0f;
+	iRet = xuiFlowGraphScreenToWorld(pGraph, FLT_MAX, FLT_MAX, &fX, &fY);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED && fX == 123.0f && fY == 456.0f,
+		"overflowing screen transform rejected without partial output");
+	tViewport.fZoom = 2.0f;
+	tViewport.fWidth = -1.0f;
+	iRet = xuiFlowGraphSetViewport(pGraph, &tViewport);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative viewport extent rejected");
+	tViewport.fWidth = 800.0f;
 
 	memset(&tNode, 0, sizeof(tNode));
 	tNode.iSize = sizeof(tNode);
@@ -102,6 +121,11 @@ int main(void)
 	tNode.sTitle = "Start";
 	tNode.fX = 80.0f;
 	tNode.fY = 120.0f;
+	tNode.fW = -1.0f;
+	iRet = xuiFlowGraphAddNode(pGraph, &tNode, &iStart);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iStart == -1,
+		"negative node extent rejected");
+	tNode.fW = 0.0f;
 	iRet = xuiFlowGraphAddNode(pGraph, &tNode, &iStart);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0, "add start node");
 	XUI_TEST_CHECK(xuiFlowGraphGetRevision(pGraph) > iRevision, "add node bumps revision");

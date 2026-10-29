@@ -2210,8 +2210,8 @@ typedef struct xui_flow_node_desc_t {
 	const char* sTitle;
 	float fX;
 	float fY;
-	float fW;
-	float fH;
+	float fW; /* 0 使用画布默认宽度；不得为负数。 */
+	float fH; /* 0 使用画布默认高度；不得为负数。 */
 	const char* sSummary;
 } xui_flow_node_desc_t;
 
@@ -2310,8 +2310,8 @@ typedef struct xui_flow_viewport_t {
 	float fPanX;
 	float fPanY;
 	float fZoom;
-	float fWidth;
-	float fHeight;
+	float fWidth;  /* 可选视口宽度；0 表示未指定，不得为负数。 */
+	float fHeight; /* 可选视口高度；0 表示未指定，不得为负数。 */
 } xui_flow_viewport_t;
 
 /* 流程图诊断描述（节点/连线错误）。 */

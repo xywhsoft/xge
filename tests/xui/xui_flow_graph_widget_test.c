@@ -432,6 +432,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch ctrl wheel zoom");
 	iRet = xuiFlowGraphGetViewport(pGraph, &tViewport);
 	XUI_TEST_CHECK(iRet == XUI_OK && tViewport.fZoom > fOldZoom, "ctrl+wheel zooms graph viewport");
+	fOldZoom = tViewport.fZoom;
+	(void)xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
+	iRet = xuiInputPointerWheel(pContext, 100, 100, 1.0f, 0.0f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "ctrl horizontal wheel input");
+	iRet = xuiDispatchPendingEvents(pContext);
+	(void)xuiInputSetModifiers(pContext, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch ctrl horizontal wheel");
+	iRet = xuiFlowGraphGetViewport(pGraph, &tViewport);
+	XUI_TEST_CHECK(iRet == XUI_OK && tViewport.fZoom == fOldZoom,
+		"ctrl+horizontal wheel does not zoom graph viewport");
 	memset(&tAccessibleNode, 0, sizeof(tAccessibleNode));
 	tAccessibleNode.iSize = sizeof(tAccessibleNode);
 	iRet = xuiWidgetGetAccessibleNode(pWidget, 1, &tAccessibleNode);

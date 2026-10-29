@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -592,11 +593,17 @@ static int __xuiFlowGraphWidgetRebuildGridCache(xui_flow_graph_widget_data_t* pD
 	pData->fGridStep = fStep;
 	for ( fX = fStartX; fX < tRect.fX + tRect.fW; fX += fStep ) {
 		iRet = __xuiFlowGraphWidgetAppendGridLine(&pData->arrGridLines, fX, 1);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			__xuiFlowGraphWidgetClearGridCache(pData);
+			return iRet;
+		}
 	}
 	for ( fY = fStartY; fY < tRect.fY + tRect.fH; fY += fStep ) {
 		iRet = __xuiFlowGraphWidgetAppendGridLine(&pData->arrGridLines, fY, 0);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			__xuiFlowGraphWidgetClearGridCache(pData);
+			return iRet;
+		}
 	}
 	return XUI_OK;
 }
@@ -630,7 +637,12 @@ static xui_rect_t __xuiFlowGraphWidgetNodeRect(xui_flow_graph pGraph, const xui_
 	float fX;
 	float fY;
 
-	xuiFlowGraphWorldToScreen(pGraph, pNode->fX, pNode->fY, &fX, &fY);
+	memset(&tRect, 0, sizeof(tRect));
+	if ( xuiFlowGraphWorldToScreen(pGraph, pNode->fX, pNode->fY, &fX, &fY) != XUI_OK ) {
+		tRect.fX = INT_MIN / 4;
+		tRect.fY = INT_MIN / 4;
+		return tRect;
+	}
 	tRect.fX = tContent.fX + fX;
 	tRect.fY = tContent.fY + fY;
 	tRect.fW = pNode->fW;
@@ -842,9 +854,14 @@ static int __xuiFlowGraphWidgetRebuildNodeBuckets(xui_flow_graph_widget_data_t* 
 	pData->iNodeBucketRows = (int)ceilf(tContent.fH / XUI_FLOW_NODE_BUCKET_SIZE);
 	if ( pData->iNodeBucketCols < 1 ) pData->iNodeBucketCols = 1;
 	if ( pData->iNodeBucketRows < 1 ) pData->iNodeBucketRows = 1;
+	if ( pData->iNodeBucketCols > INT_MAX / pData->iNodeBucketRows ) {
+		__xuiFlowGraphWidgetClearNodeBuckets(pData);
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
 	iBucketCount = pData->iNodeBucketCols * pData->iNodeBucketRows;
 	iPos = xuiXrtArrayAppendSpace(&pData->arrNodeBuckets, (uint32_t)iBucketCount);
 	if ( iPos == 0u ) {
+		__xuiFlowGraphWidgetClearNodeBuckets(pData);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	for ( iNode = 0; iNode < iBucketCount; ++iNode ) {
@@ -862,7 +879,10 @@ static int __xuiFlowGraphWidgetRebuildNodeBuckets(xui_flow_graph_widget_data_t* 
 			continue;
 		}
 		iRet = __xuiFlowGraphWidgetAppendInt(&pData->arrVisibleNodes, iNode);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			__xuiFlowGraphWidgetClearNodeBuckets(pData);
+			return iRet;
+		}
 		iCol0 = __xuiFlowGraphWidgetClampInt((int)floorf((tNodeRect.fX - tContent.fX) / XUI_FLOW_NODE_BUCKET_SIZE), 0, pData->iNodeBucketCols - 1);
 		iCol1 = __xuiFlowGraphWidgetClampInt((int)floorf((tNodeRect.fX + tNodeRect.fW - tContent.fX) / XUI_FLOW_NODE_BUCKET_SIZE), 0, pData->iNodeBucketCols - 1);
 		iRow0 = __xuiFlowGraphWidgetClampInt((int)floorf((tNodeRect.fY - tContent.fY) / XUI_FLOW_NODE_BUCKET_SIZE), 0, pData->iNodeBucketRows - 1);
@@ -871,7 +891,10 @@ static int __xuiFlowGraphWidgetRebuildNodeBuckets(xui_flow_graph_widget_data_t* 
 			for ( iCol = iCol0; iCol <= iCol1; ++iCol ) {
 				pBucket = (xui_flow_graph_node_bucket_t*)xuiXrtArrayGet(&pData->arrNodeBuckets, (uint32_t)(iRow * pData->iNodeBucketCols + iCol) + 1u);
 				iRet = __xuiFlowGraphWidgetAppendInt(&pBucket->arrNodes, iNode);
-				if ( iRet != XUI_OK ) return iRet;
+				if ( iRet != XUI_OK ) {
+					__xuiFlowGraphWidgetClearNodeBuckets(pData);
+					return iRet;
+				}
 			}
 		}
 	}
@@ -915,9 +938,14 @@ static int __xuiFlowGraphWidgetRebuildEdgeBuckets(xui_flow_graph_widget_data_t* 
 	pData->iEdgeBucketRows = (int)ceilf(tContent.fH / XUI_FLOW_NODE_BUCKET_SIZE);
 	if ( pData->iEdgeBucketCols < 1 ) pData->iEdgeBucketCols = 1;
 	if ( pData->iEdgeBucketRows < 1 ) pData->iEdgeBucketRows = 1;
+	if ( pData->iEdgeBucketCols > INT_MAX / pData->iEdgeBucketRows ) {
+		__xuiFlowGraphWidgetClearEdgeBuckets(pData);
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
 	iBucketCount = pData->iEdgeBucketCols * pData->iEdgeBucketRows;
 	iPos = xuiXrtArrayAppendSpace(&pData->arrEdgeBuckets, (uint32_t)iBucketCount);
 	if ( iPos == 0u ) {
+		__xuiFlowGraphWidgetClearEdgeBuckets(pData);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	for ( iEdge = 0; iEdge < iBucketCount; ++iEdge ) {
@@ -938,7 +966,10 @@ static int __xuiFlowGraphWidgetRebuildEdgeBuckets(xui_flow_graph_widget_data_t* 
 			continue;
 		}
 		iRet = __xuiFlowGraphWidgetAppendInt(&pData->arrVisibleEdges, iEdge);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) {
+			__xuiFlowGraphWidgetClearEdgeBuckets(pData);
+			return iRet;
+		}
 		iCol0 = __xuiFlowGraphWidgetClampInt((int)floorf((tEdgeRect.fX - tContent.fX) / XUI_FLOW_NODE_BUCKET_SIZE), 0, pData->iEdgeBucketCols - 1);
 		iCol1 = __xuiFlowGraphWidgetClampInt((int)floorf((tEdgeRect.fX + tEdgeRect.fW - tContent.fX) / XUI_FLOW_NODE_BUCKET_SIZE), 0, pData->iEdgeBucketCols - 1);
 		iRow0 = __xuiFlowGraphWidgetClampInt((int)floorf((tEdgeRect.fY - tContent.fY) / XUI_FLOW_NODE_BUCKET_SIZE), 0, pData->iEdgeBucketRows - 1);
@@ -947,7 +978,10 @@ static int __xuiFlowGraphWidgetRebuildEdgeBuckets(xui_flow_graph_widget_data_t* 
 			for ( iCol = iCol0; iCol <= iCol1; ++iCol ) {
 				pBucket = (xui_flow_graph_edge_bucket_t*)xuiXrtArrayGet(&pData->arrEdgeBuckets, (uint32_t)(iRow * pData->iEdgeBucketCols + iCol) + 1u);
 				iRet = __xuiFlowGraphWidgetAppendInt(&pBucket->arrEdges, iEdge);
-				if ( iRet != XUI_OK ) return iRet;
+				if ( iRet != XUI_OK ) {
+					__xuiFlowGraphWidgetClearEdgeBuckets(pData);
+					return iRet;
+				}
 			}
 		}
 	}
@@ -2862,7 +2896,7 @@ static int __xuiFlowGraphWidgetWheel(xui_widget pWidget, xui_flow_graph_widget_d
 	}
 	fOldZoom = (tViewport.fZoom > 0.001f) ? tViewport.fZoom : 1.0f;
 	if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u ) {
-		fWheel = (fabsf(pEvent->fWheelY) >= fabsf(pEvent->fWheelX)) ? pEvent->fWheelY : pEvent->fWheelX;
+		fWheel = pEvent->fWheelY;
 		if ( fWheel == 0.0f ) {
 			return XUI_OK;
 		}

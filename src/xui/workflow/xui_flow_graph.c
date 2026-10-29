@@ -1175,7 +1175,9 @@ XUI_API int xuiFlowGraphAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_
 		*pIndex = -1;
 	}
 	if ( (pGraph == NULL) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) || (pDesc->sId == NULL) || (pDesc->sId[0] == 0) ||
-	     !__xuiFlowFinite(pDesc->fX) || !__xuiFlowFinite(pDesc->fY) || !__xuiFlowFinite(pDesc->fW) || !__xuiFlowFinite(pDesc->fH) ) {
+	     !__xuiFlowFinite(pDesc->fX) || !__xuiFlowFinite(pDesc->fY) ||
+	     !__xuiFlowFinite(pDesc->fW) || !__xuiFlowFinite(pDesc->fH) ||
+	     pDesc->fW < 0.0f || pDesc->fH < 0.0f ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( xuiFlowGraphFindNode(pGraph, pDesc->sId) >= 0 ) {
@@ -2806,7 +2808,8 @@ XUI_API int xuiFlowGraphSetViewport(xui_flow_graph pGraph, const xui_flow_viewpo
 	if ( (pGraph == NULL) || (pViewport == NULL) || (pViewport->iSize < sizeof(*pViewport)) ||
 	     !__xuiFlowFinite(pViewport->fPanX) || !__xuiFlowFinite(pViewport->fPanY) ||
 	     !__xuiFlowFinite(pViewport->fZoom) || !__xuiFlowFinite(pViewport->fWidth) ||
-	     !__xuiFlowFinite(pViewport->fHeight) ) {
+	     !__xuiFlowFinite(pViewport->fHeight) || pViewport->fWidth < 0.0f ||
+	     pViewport->fHeight < 0.0f ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tViewport = *pViewport;
@@ -2834,18 +2837,28 @@ XUI_API int xuiFlowGraphGetViewport(xui_flow_graph pGraph, xui_flow_viewport_t* 
 
 XUI_API int xuiFlowGraphWorldToScreen(xui_flow_graph pGraph, float fWorldX, float fWorldY, float* pScreenX, float* pScreenY)
 {
+	float fResultX;
+	float fResultY;
+
 	if ( (pGraph == NULL) || (pScreenX == NULL) || (pScreenY == NULL) ||
 	     !__xuiFlowFinite(fWorldX) || !__xuiFlowFinite(fWorldY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*pScreenX = (fWorldX + pGraph->tViewport.fPanX) * pGraph->tViewport.fZoom;
-	*pScreenY = (fWorldY + pGraph->tViewport.fPanY) * pGraph->tViewport.fZoom;
+	fResultX = (fWorldX + pGraph->tViewport.fPanX) * pGraph->tViewport.fZoom;
+	fResultY = (fWorldY + pGraph->tViewport.fPanY) * pGraph->tViewport.fZoom;
+	if ( !__xuiFlowFinite(fResultX) || !__xuiFlowFinite(fResultY) ) {
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
+	*pScreenX = fResultX;
+	*pScreenY = fResultY;
 	return XUI_OK;
 }
 
 XUI_API int xuiFlowGraphScreenToWorld(xui_flow_graph pGraph, float fScreenX, float fScreenY, float* pWorldX, float* pWorldY)
 {
 	float fZoom;
+	float fResultX;
+	float fResultY;
 
 	if ( (pGraph == NULL) || (pWorldX == NULL) || (pWorldY == NULL) ||
 	     !__xuiFlowFinite(fScreenX) || !__xuiFlowFinite(fScreenY) ) {
@@ -2855,8 +2868,13 @@ XUI_API int xuiFlowGraphScreenToWorld(xui_flow_graph pGraph, float fScreenX, flo
 	if ( fZoom <= 0.001f ) {
 		fZoom = 0.001f;
 	}
-	*pWorldX = (fScreenX / fZoom) - pGraph->tViewport.fPanX;
-	*pWorldY = (fScreenY / fZoom) - pGraph->tViewport.fPanY;
+	fResultX = (fScreenX / fZoom) - pGraph->tViewport.fPanX;
+	fResultY = (fScreenY / fZoom) - pGraph->tViewport.fPanY;
+	if ( !__xuiFlowFinite(fResultX) || !__xuiFlowFinite(fResultY) ) {
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
+	*pWorldX = fResultX;
+	*pWorldY = fResultY;
 	return XUI_OK;
 }
 
