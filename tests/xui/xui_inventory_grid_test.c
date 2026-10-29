@@ -513,6 +513,8 @@ int main(void)
 	iRet = xuiInventoryGridSetSlot(pGrid, 5, &tSlot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set slot 5");
 	__xuiInventoryGridTestSlot(&tSlot, 23, 123, 3, "Gem", "Q", XUI_COLOR_RGBA(162, 106, 220, 255));
+	tSlot.pIcon = pIcon;
+	tSlot.tIconSrc = (xui_rect_t){0.0f, 0.0f, 24.0f, 24.0f};
 	tSlot.iFlags |= XUI_INVENTORY_SLOT_COOLDOWN | XUI_INVENTORY_SLOT_COOLDOWN_RADIAL;
 	tSlot.fCooldownRate = 0.5f;
 	iRet = xuiInventoryGridSetSlot(pGrid, 23, &tSlot);
@@ -1201,6 +1203,15 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tProxyState) > iMeshDrawBefore, "radial cooldown mesh rendered");
 	XUI_TEST_CHECK(xuiTestProxyGetLastMeshVertexCount(&tProxyState) >= 4, "radial cooldown mesh vertices");
 	XUI_TEST_CHECK(xuiTestProxyGetLastMeshIndexCount(&tProxyState) >= 6, "radial cooldown mesh indices");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) == 0,
+		"unchanged borrowed slot icon reuses cache");
+	iRet = tProxyState.tProxy.surfaceUpdateRGBA(&tProxyState.tProxy, pIcon,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) > 0,
+		"borrowed slot icon generation rebuilds cache");
 
 	iRet = xuiInventoryGridSetSlotCount(pGrid, 10000);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiInventoryGridGetSlotCount(pGrid) == 10000, "large slot count");
