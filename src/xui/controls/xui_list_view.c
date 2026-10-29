@@ -2047,7 +2047,8 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 	return XUI_OK;
 }
 
-XUI_API int xuiListViewSetVirtualItems(xui_widget pWidget, int iCount, xui_list_view_text_proc onText, void* pUser)
+static int __xuiListViewSetVirtualItems(xui_widget pWidget, int iCount,
+	xui_list_view_text_proc onText, void* pUser, int bResetSelection)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
 	xui_list_view_data_t tOldData;
@@ -2081,7 +2082,7 @@ XUI_API int xuiListViewSetVirtualItems(xui_widget pWidget, int iCount, xui_list_
 		if ( arrSelected != NULL ) xrtFree(arrSelected);
 		return iRet;
 	}
-	if (!__xuiListViewItemEnabledData(pData, pData->iSelected)) pData->iSelected = -1;
+	if ( bResetSelection || !__xuiListViewItemEnabledData(pData, pData->iSelected) ) pData->iSelected = -1;
 	pData->iFocus = pData->iSelected;
 	pData->iAnchor = pData->iSelected;
 	if (pData->iSelectionMode == XUI_SELECTION_SINGLE) __xuiListViewSyncSingleSelection(pData);
@@ -2095,6 +2096,18 @@ XUI_API int xuiListViewSetVirtualItems(xui_widget pWidget, int iCount, xui_list_
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	return XUI_OK;
+}
+
+XUI_API int xuiListViewSetVirtualItems(xui_widget pWidget, int iCount,
+	xui_list_view_text_proc onText, void* pUser)
+{
+	return __xuiListViewSetVirtualItems(pWidget, iCount, onText, pUser, 0);
+}
+
+int xuiInternalListViewSetVirtualItemsResetSelection(xui_widget pWidget, int iCount,
+	xui_list_view_text_proc onText, void* pUser)
+{
+	return __xuiListViewSetVirtualItems(pWidget, iCount, onText, pUser, 1);
 }
 
 XUI_API int xuiListViewSetEnabledItems(xui_widget pWidget, const int* arrEnabled, int iCount)

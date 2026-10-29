@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
+int xuiFileDialogTestPathRootLen(const char* sPath);
+int xuiFileDialogTestParentDir(const char* sPath, char* sBuffer, size_t iCapacity);
+
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
 		if ( !(expr) ) { \
@@ -64,6 +67,22 @@ static void __xuiFileDialogDestroyResult(xui_file_dialog pDialog, int iResult,
 	if ( pResult->ppDialog != NULL ) *pResult->ppDialog = NULL;
 }
 
+static int __xuiFileDialogDestroyEditEvent(xui_widget pWidget,
+	const xui_edit_event_t* pEvent, void* pUser)
+{
+	xui_file_dialog_destroy_result_t* pResult = (xui_file_dialog_destroy_result_t*)pUser;
+	(void)pWidget;
+	if ( pResult == NULL || pEvent == NULL || pEvent->iType != XUI_EDIT_EVENT_COMMIT ) {
+		return XUI_OK;
+	}
+	pResult->iCount++;
+	if ( pResult->ppDialog != NULL && *pResult->ppDialog != NULL ) {
+		xuiFileDialogDestroy(*pResult->ppDialog);
+		*pResult->ppDialog = NULL;
+	}
+	return XUI_OK;
+}
+
 static int __xuiFileDialogTestContext(xui_file_dialog pDialog, int iIndex,
 	const char* sPath, int bDirectory, float fX, float fY, void* pUser)
 {
@@ -91,6 +110,51 @@ static int __xuiFileDialogFindEntry(xui_file_dialog pDialog, const char* sName)
 		}
 	}
 	return -1;
+}
+
+static int __xuiFileDialogPathHelpersValid(void)
+{
+	static const struct {
+		const char* sPath;
+		const char* sRoot;
+	} arrRoots[] = {
+		{"/tmp", "/"},
+		{"C:", "C:"},
+		{"C:\\folder", "C:\\"},
+		{"\\\\server\\share", "\\\\server\\share"},
+		{"\\\\server\\share\\folder", "\\\\server\\share\\"},
+		{"\\\\?\\C:\\folder", "\\\\?\\C:\\"},
+		{"\\\\?\\UNC\\server\\share", "\\\\?\\UNC\\server\\share"},
+		{"\\\\?\\UNC\\server\\share\\folder", "\\\\?\\UNC\\server\\share\\"}
+	};
+	static const struct {
+		const char* sPath;
+		const char* sParent;
+	} arrParents[] = {
+		{"/", ""},
+		{"/tmp", "/"},
+		{"/tmp/child", "/tmp"},
+		{"C:\\", ""},
+		{"C:\\folder", "C:\\"},
+		{"C:\\folder\\child", "C:\\folder"},
+		{"\\\\server\\share", ""},
+		{"\\\\server\\share\\folder", "\\\\server\\share\\"},
+		{"\\\\?\\C:\\folder", "\\\\?\\C:\\"},
+		{"\\\\?\\UNC\\server\\share", ""},
+		{"\\\\?\\UNC\\server\\share\\folder", "\\\\?\\UNC\\server\\share\\"}
+	};
+	char sParent[256];
+	size_t i;
+
+	for ( i = 0u; i < sizeof(arrRoots) / sizeof(arrRoots[0]); i++ ) {
+		if ( xuiFileDialogTestPathRootLen(arrRoots[i].sPath) !=
+		     (int)strlen(arrRoots[i].sRoot) ) return 0;
+	}
+	for ( i = 0u; i < sizeof(arrParents) / sizeof(arrParents[0]); i++ ) {
+		if ( xuiFileDialogTestParentDir(arrParents[i].sPath, sParent,
+		     sizeof(sParent)) != XUI_OK || strcmp(sParent, arrParents[i].sParent) != 0 ) return 0;
+	}
+	return 1;
 }
 
 static int __xuiFileDialogClick(xui_context pContext, float fX, float fY)
@@ -217,32 +281,70 @@ static int __xuiFileDialogSendText(xui_context pContext, uint32_t iCodepoint)
 	return xuiDispatchPendingEvents(pContext);
 }
 
-static int __xuiFileDialogRefreshOomPreserves(xui_file_dialog pDialog)
+static int __xuiFileDialogRefreshOomPreserves(xui_file_dialog pDialog,
+	const char* sPendingEntry)
 {
 	xallocationbudget* pBudget = NULL;
 	xallocationscope tScope;
 	char sDirectory[1024];
 	char sFirstEntry[1024];
+	xui_widget pList;
 	int iEntryCount;
+	int iSelected;
+	int iAttempt;
+	int iBudget;
 	int iRet;
+	int bSawOom = 0;
 
-	if ( pDialog == NULL || xuiFileDialogGetEntryCount(pDialog) <= 0 ) return 0;
+	if ( pDialog == NULL || sPendingEntry == NULL ||
+	     xuiFileDialogGetEntryCount(pDialog) <= 0 ) {
+		return 0;
+	}
+	pList = xuiFileDialogGetFileListWidget(pDialog);
+	if ( pList == NULL ) {
+		return 0;
+	}
 	snprintf(sDirectory, sizeof(sDirectory), "%s", xuiFileDialogGetDirectory(pDialog));
 	snprintf(sFirstEntry, sizeof(sFirstEntry), "%s", xuiFileDialogGetEntryName(pDialog, 0));
 	iEntryCount = xuiFileDialogGetEntryCount(pDialog);
-	memset(&tScope, 0, sizeof(tScope));
-	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
-	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+	iSelected = xuiListViewGetSelected(pList);
+	for ( iAttempt = 0; iAttempt <= 1024; iAttempt++ ) {
+		iBudget = (iAttempt == 0) ? 1 : iAttempt * 256;
+		memset(&tScope, 0, sizeof(tScope));
+		if ( !xrtAllocationBudgetCreate((size_t)iBudget, &pBudget) ) {
+			return 0;
+		}
+		if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+			xrtAllocationBudgetFree(pBudget);
+			return 0;
+		}
+		iRet = xuiFileDialogRefresh(pDialog);
+		xrtAllocationBudgetLeave(&tScope);
 		xrtAllocationBudgetFree(pBudget);
-		return 0;
+		pBudget = NULL;
+		if ( xuiListViewGetItemCount(pList) != xuiFileDialogGetEntryCount(pDialog) ) {
+			return 0;
+		}
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) {
+			bSawOom = 1;
+			if ( xuiFileDialogGetEntryCount(pDialog) != iEntryCount ||
+			     strcmp(xuiFileDialogGetDirectory(pDialog), sDirectory) != 0 ||
+			     strcmp(xuiFileDialogGetEntryName(pDialog, 0), sFirstEntry) != 0 ||
+			     xuiListViewGetSelected(pList) != iSelected ||
+			     __xuiFileDialogFindEntry(pDialog, sPendingEntry) >= 0 ) {
+				return 0;
+			}
+			continue;
+		}
+		if ( iRet != XUI_OK ) {
+			return 0;
+		}
+		return bSawOom && xuiFileDialogGetEntryCount(pDialog) == iEntryCount + 1 &&
+			xuiListViewGetItemCount(pList) == iEntryCount + 1 &&
+			xuiListViewGetSelected(pList) == -1 &&
+			__xuiFileDialogFindEntry(pDialog, sPendingEntry) >= 0;
 	}
-	iRet = xuiFileDialogRefresh(pDialog);
-	xrtAllocationBudgetLeave(&tScope);
-	xrtAllocationBudgetFree(pBudget);
-	return iRet == XUI_ERROR_OUT_OF_MEMORY &&
-		xuiFileDialogGetEntryCount(pDialog) == iEntryCount &&
-		strcmp(xuiFileDialogGetDirectory(pDialog), sDirectory) == 0 &&
-		strcmp(xuiFileDialogGetEntryName(pDialog, 0), sFirstEntry) == 0;
+	return 0;
 }
 
 int main(void)
@@ -289,6 +391,8 @@ int main(void)
 	str sBulkPath;
 
 	xuiTestProxyInit(&tState);
+	XUI_TEST_CHECK(__xuiFileDialogPathHelpersValid(),
+		"drive, UNC, and extended path roots preserve parent boundaries");
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
@@ -536,12 +640,17 @@ int main(void)
 	iRet = xuiFileDialogGoUp(pDialog);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0,
 		"up after keyboard activation");
-	XUI_TEST_CHECK(__xuiFileDialogRefreshOomPreserves(pDialog),
-		"refresh allocation failure preserves directory and entries");
+	iIndex = __xuiFileDialogFindEntry(pDialog, "alpha.txt");
+	XUI_TEST_CHECK(iIndex >= 0 && xuiFileDialogSelectIndex(pDialog, iIndex) == XUI_OK,
+		"select entry before transactional refresh");
 	XUI_TEST_CHECK(xrtFileWriteAll(sLate, (xbytesview){ (const unsigned char*)"late", 4 }), "late txt");
-	XUI_TEST_CHECK(__xuiFileDialogFindEntry(pDialog, "late.txt") < 0, "late file absent before refresh");
+	XUI_TEST_CHECK(__xuiFileDialogFindEntry(pDialog, "late.txt") < 0,
+		"late file remains absent before refresh");
+	XUI_TEST_CHECK(__xuiFileDialogRefreshOomPreserves(pDialog, "late.txt"),
+		"refresh allocation budget sweep preserves entries and selection atomically");
 	iRet = __xuiFileDialogClickWidget(pContext, xuiFileDialogGetRefreshButtonWidget(pDialog));
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiFileDialogFindEntry(pDialog, "late.txt") >= 0, "refresh button reloads entries");
+	(void)xuiInputSetText(xuiFileDialogGetNameInputWidget(pDialog), "");
 	iRet = xuiFileDialogSetDirectory(pDialog, (const char*)sSub);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sSub) == 0, "enter sub before breadcrumb segment");
 	iRet = xuiLayout(pContext);
@@ -821,6 +930,39 @@ int main(void)
 	iRet = xuiFileDialogCommit(pDialog);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDialog == NULL && tDestroyResult.iCount == 1,
 		"result callback may destroy dialog");
+
+	memset(&tDestroyResult, 0, sizeof(tDestroyResult));
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sInitialDir = (const char*)sFixture;
+	tDestroyResult.ppDialog = &pDialog;
+	iRet = xuiOpenFileDialog(pContext, &pDialog, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDialog != NULL, "blur callback destroy dialog open");
+	{
+		xui_widget pPathInput = xuiFileDialogGetPathInputWidget(pDialog);
+		xui_widget pNameInput = xuiFileDialogGetNameInputWidget(pDialog);
+		xui_edit_behavior_t tBehavior;
+		memset(&tBehavior, 0, sizeof(tBehavior));
+		iRet = xuiEditGetBehavior(pPathInput, &tBehavior);
+		if ( iRet == XUI_OK ) {
+			tBehavior.bCommitOnBlur = 1;
+			iRet = xuiEditSetBehavior(pPathInput, &tBehavior);
+		}
+		if ( iRet == XUI_OK ) iRet = xuiEditSetEvent(pPathInput,
+			__xuiFileDialogDestroyEditEvent, &tDestroyResult);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(
+			xuiFileDialogGetPathBreadcrumbWidget(pDialog), 0);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pPathInput, 1);
+		if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pPathInput);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+		if ( iRet == XUI_OK && xuiGetFocusWidget(pContext) != pPathInput ) {
+			iRet = XUI_ERROR_INVALID_STATE;
+		}
+		if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pNameInput);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && pDialog == NULL && tDestroyResult.iCount == 1,
+		"path blur commit callback may destroy dialog without stale access");
 
 cleanup:
 	if ( pDialog != NULL ) xuiFileDialogDestroy(pDialog);

@@ -7,7 +7,7 @@ set SRC=tests\xui\xui_file_dialog_test.c tests\xui\xui_test_proxy.c tests\xui\xu
 set SRC=src\xui\core\xui_unicode.c %SRC%
 set SRC=src\xui\accessibility\xui_accessibility.c %SRC%
 set INC=@config/includes.rsp
-set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DEBUGMODE=0
+set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DEBUGMODE=0 -DXUI_FILE_DIALOG_TEST=1
 set LIBS=-lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -loleaut32 -luuid -lwinmm -lavrt
 
 where gcc >nul 2>nul

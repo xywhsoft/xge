@@ -133,6 +133,7 @@ struct xui_file_dialog_t {
 	int bPathEditMode;
 	int bPathApplying;
 	int bInternalNameChange;
+	int bDestroying;
 	float fWidth;
 	float fHeight;
 };
@@ -267,13 +268,18 @@ static int __xuiFileDialogListPreparePaint(xui_widget pWidget)
 	return XUI_OK;
 }
 
-static void __xuiFileDialogResolveChildren(xui_widget pWidget)
+static int __xuiFileDialogResolveChildren(xui_widget pWidget)
 {
 	xui_widget pChild;
+	int iRet;
+
 	for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
-		(void)xuiWidgetResolveStyle(pChild);
-		__xuiFileDialogResolveChildren(pChild);
+		iRet = xuiWidgetResolveStyle(pChild);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __xuiFileDialogResolveChildren(pChild);
+		if ( iRet != XUI_OK ) return iRet;
 	}
+	return XUI_OK;
 }
 
 static int __xuiFileDialogWindowPreparePaint(xui_widget pWidget)
@@ -295,8 +301,8 @@ static int __xuiFileDialogWindowPreparePaint(xui_widget pWidget)
 	if ( !__xuiFileDialogValid(pDialog) ) return XUI_OK;
 	iHash = xuiWidgetGetStyleHash(pWidget);
 	if ( !pDialog->bWindowPaintReady || pDialog->iWindowStyleHash != iHash ) {
-		__xuiFileDialogResolveChildren(pWidget);
-		iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pDialog->pPathBar);
+		iRet = __xuiFileDialogResolveChildren(pWidget);
+		if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pDialog->pPathBar);
 		if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInvalidatePaintIfNeeded(
 			xuiTreeViewGetViewportWidget(pDialog->pRootList));
 		if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInvalidatePaintIfNeeded(
@@ -385,11 +391,47 @@ static int __xuiFileDialogIsSlash(char c)
 	return c == '/' || c == '\\';
 }
 
+static size_t __xuiFileDialogPathComponentEnd(const char* sPath, size_t iLen, size_t iStart)
+{
+	while ( iStart < iLen && !__xuiFileDialogIsSlash(sPath[iStart]) ) iStart++;
+	return iStart;
+}
+
+static int __xuiFileDialogPathTextAt(const char* sPath, size_t iLen, size_t iStart,
+	const char* sText)
+{
+	size_t i;
+	size_t iTextLen = strlen(sText);
+
+	if ( iStart > iLen || iTextLen > iLen - iStart ) return 0;
+	for ( i = 0u; i < iTextLen; i++ ) {
+		if ( tolower((unsigned char)sPath[iStart + i]) !=
+		     tolower((unsigned char)sText[i]) ) return 0;
+	}
+	return 1;
+}
+
+static size_t __xuiFileDialogUncRootLen(const char* sPath, size_t iLen, size_t iStart)
+{
+	size_t iServerEnd;
+	size_t iShareStart;
+	size_t iShareEnd;
+
+	while ( iStart < iLen && __xuiFileDialogIsSlash(sPath[iStart]) ) iStart++;
+	iServerEnd = __xuiFileDialogPathComponentEnd(sPath, iLen, iStart);
+	if ( iServerEnd == iStart ) return iStart;
+	iShareStart = iServerEnd;
+	while ( iShareStart < iLen && __xuiFileDialogIsSlash(sPath[iShareStart]) ) iShareStart++;
+	if ( iShareStart >= iLen ) return iLen;
+	iShareEnd = __xuiFileDialogPathComponentEnd(sPath, iLen, iShareStart);
+	if ( iShareEnd < iLen && __xuiFileDialogIsSlash(sPath[iShareEnd]) ) iShareEnd++;
+	return iShareEnd;
+}
+
 static int __xuiFileDialogPathRootLen(const char* sPath)
 {
 	size_t iLen;
-	size_t iPos;
-	int iSlashCount;
+	size_t iRootLen;
 
 	if ( sPath == NULL || sPath[0] == 0 ) {
 		return 0;
@@ -400,13 +442,23 @@ static int __xuiFileDialogPathRootLen(const char* sPath)
 	}
 	if ( __xuiFileDialogIsSlash(sPath[0]) ) {
 		if ( iLen >= 2u && __xuiFileDialogIsSlash(sPath[1]) ) {
-			iSlashCount = 0;
-			for ( iPos = 0u; iPos < iLen; iPos++ ) {
-				if ( __xuiFileDialogIsSlash(sPath[iPos]) ) {
-					iSlashCount++;
-					if ( iSlashCount >= 4 ) return (int)(iPos + 1u);
+			if ( iLen >= 4u && (sPath[2] == '?' || sPath[2] == '.') &&
+			     __xuiFileDialogIsSlash(sPath[3]) ) {
+				if ( iLen >= 6u && sPath[5] == ':' ) {
+					iRootLen = (iLen >= 7u && __xuiFileDialogIsSlash(sPath[6])) ? 7u : 6u;
+					return (int)iRootLen;
 				}
+				if ( iLen >= 8u && __xuiFileDialogPathTextAt(sPath, iLen, 4u, "UNC") &&
+				     __xuiFileDialogIsSlash(sPath[7]) ) {
+					iRootLen = __xuiFileDialogUncRootLen(sPath, iLen, 8u);
+					return (int)iRootLen;
+				}
+				iRootLen = __xuiFileDialogPathComponentEnd(sPath, iLen, 4u);
+				if ( iRootLen < iLen && __xuiFileDialogIsSlash(sPath[iRootLen]) ) iRootLen++;
+				return (int)iRootLen;
 			}
+			iRootLen = __xuiFileDialogUncRootLen(sPath, iLen, 2u);
+			return (int)iRootLen;
 		}
 		return 1;
 	}
@@ -1067,10 +1119,8 @@ static int __xuiFileDialogReplaceEntries(xui_file_dialog pDialog, xui_file_dialo
 	if ( !__xuiFileDialogValid(pDialog) || pEntries == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = xuiListViewSetVirtualItems(pDialog->pFileList, pEntries->iEntryCount,
+	iRet = xuiInternalListViewSetVirtualItemsResetSelection(pDialog->pFileList, pEntries->iEntryCount,
 		__xuiFileDialogEntryText, pDialog);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiListViewSetSelected(pDialog->pFileList, -1);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiFileDialogReleaseEntryStorage(pDialog);
 	pDialog->arrEntries = pEntries->arrEntries;
@@ -2155,16 +2205,24 @@ static int __xuiFileDialogPathBarEvent(xui_widget pWidget, const xui_event_t* pE
 static int __xuiFileDialogPathInputBlurEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_file_dialog pDialog = (xui_file_dialog)pUser;
+	xui_context pContext;
 	int iRet;
 
 	if ( !__xuiFileDialogValid(pDialog) || pEvent == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	pContext = xuiWidgetGetContext(pWidget);
 	if ( pDialog->onPathInputBlur != NULL ) {
 		iRet = pDialog->onPathInputBlur(pWidget, pEvent, pDialog->pPathInputBlurUser);
 		if ( iRet < 0 ) return iRet;
 	} else {
 		iRet = XUI_OK;
+	}
+	if ( !xuiInternalWidgetIsValid(pWidget) || xuiInternalContextDestroyPending(pContext) ) {
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( !__xuiFileDialogValid(pDialog) || pDialog->pPathInput != pWidget ) {
+		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iType == XUI_EVENT_BLUR && xuiWidgetGetVisible(pDialog->pPathInput) && !pDialog->bPathApplying ) {
 		pDialog->bPathApplying = 1;
@@ -2655,9 +2713,10 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 
 XUI_API void xuiFileDialogDestroy(xui_file_dialog pDialog)
 {
-	if ( !__xuiFileDialogValid(pDialog) ) {
+	if ( !__xuiFileDialogValid(pDialog) || pDialog->bDestroying ) {
 		return;
 	}
+	pDialog->bDestroying = 1;
 	(void)xuiFileDialogSetOpen(pDialog, 0);
 	if ( pDialog->pPathTip != NULL ) {
 		xuiMsgTipDestroy(pDialog->pPathTip);
@@ -2703,6 +2762,31 @@ XUI_API void xuiFileDialogDestroy(xui_file_dialog pDialog)
 	pDialog->iMagic = 0;
 	xrtFree(pDialog);
 }
+
+#if defined(XUI_FILE_DIALOG_TEST)
+int xuiFileDialogTestPathRootLen(const char* sPath)
+{
+	return __xuiFileDialogPathRootLen(sPath);
+}
+
+int xuiFileDialogTestParentDir(const char* sPath, char* sBuffer, size_t iCapacity)
+{
+	char* sParent;
+	size_t iLen;
+
+	if ( sBuffer == NULL || iCapacity == 0u ) return XUI_ERROR_INVALID_ARGUMENT;
+	sParent = __xuiFileDialogParentDir(sPath);
+	if ( sParent == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	iLen = strlen(sParent);
+	if ( iLen >= iCapacity ) {
+		xrtFree(sParent);
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
+	memcpy(sBuffer, sParent, iLen + 1u);
+	xrtFree(sParent);
+	return XUI_OK;
+}
+#endif
 
 XUI_API int xuiOpenFileDialog(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc)
 {
