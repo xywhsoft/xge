@@ -887,6 +887,7 @@ int main(void)
 	iRet = xuiTextEditClearFind(pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear find");
 
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
 	iRet = xuiTextEditSetSelection(pTextEdit, 0, 0);
 	if ( iRet == XUI_OK ) iRet = xuiTextEditFindNext(pTextEdit, &tFind);
 	if ( pTextEditCache != NULL ) xuiTestSurfaceReset(pTextEditCache);
