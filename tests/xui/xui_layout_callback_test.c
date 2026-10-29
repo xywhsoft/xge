@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -20,6 +21,8 @@ typedef struct xui_layout_callback_state_t {
 	int iLayoutChildrenCount;
 	int iLayoutCompleteCount;
 	int iStabilizeCompleteCount;
+	int bCheckInvalidArrange;
+	int iInvalidArrangeRejectCount;
 	int bAlwaysInvalidate;
 	int iErrorCount;
 	int iLastError;
@@ -96,8 +99,23 @@ static int __xuiTestLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect, 
 {
 	xui_layout_callback_state_t* pState = (xui_layout_callback_state_t*)pUser;
 	xui_widget pChild = xuiWidgetGetFirstChild(pWidget);
+	xui_rect_t arrInvalid[4];
+	int i;
 	pState->iLayoutChildrenCount++;
 	if ( pChild == NULL ) return XUI_OK;
+	if ( pState->bCheckInvalidArrange ) {
+		arrInvalid[0] = (xui_rect_t){INT_MIN, 0, 1, 1};
+		arrInvalid[1] = (xui_rect_t){0, INT_MAX, 1, 1};
+		arrInvalid[2] = (xui_rect_t){0, 0, INT_MAX, 1};
+		arrInvalid[3] = (xui_rect_t){0, 0, 1, -1};
+		pState->iInvalidArrangeRejectCount = 0;
+		for ( i = 0; i < 4; i++ ) {
+			if ( xuiLayoutArrangeChild(pWidget, pChild, arrInvalid[i]) == XUI_ERROR_INVALID_ARGUMENT ) {
+				pState->iInvalidArrangeRejectCount++;
+			}
+		}
+		pState->bCheckInvalidArrange = 0;
+	}
 	return xuiLayoutArrangeChild(pWidget, pChild, (xui_rect_t){
 		tContentRect.fX + 2.0f,
 		tContentRect.fY + 3.0f,
@@ -157,6 +175,8 @@ int main(void)
 	tState.iLayoutChildrenCount = 0;
 	tState.iLayoutCompleteCount = 0;
 	tState.iStabilizeCompleteCount = 0;
+	tState.bCheckInvalidArrange = 0;
+	tState.iInvalidArrangeRejectCount = 0;
 	tState.bAlwaysInvalidate = 0;
 	tState.iErrorCount = 0;
 	tState.iLastError = XUI_OK;
@@ -234,6 +254,14 @@ int main(void)
 	tRect = xuiWidgetGetRect(pChild);
 	XUI_TEST_CHECK(__xuiTestRectEquals(tRect, 12.0f, 14.0f, 274.0f, 90.0f),
 		"layout children should use parent-local coordinates");
+	tState.bCheckInvalidArrange = 1;
+	iRet = xuiWidgetInvalidate(pRoot, XUI_WIDGET_DIRTY_LAYOUT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate invalid child geometry test failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iInvalidArrangeRejectCount == 4,
+		"layout child arrangement accepted out-of-range geometry");
+	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pChild), 12.0f, 14.0f, 274.0f, 90.0f),
+		"invalid child geometry changed the arranged result");
 
 	tState.tContentSize.fX = 120.0f;
 	tState.tContentSize.fY = 20.0f;

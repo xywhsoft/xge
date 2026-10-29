@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <limits.h>
 #include <stdio.h>
 
 #define XUI_TEST_CHECK(expr, msg) \
@@ -36,6 +37,7 @@ static xui_table_track_t __xuiTestTrack(int iSizeMode, float fValue)
 	tTrack.fMin = 0.0f;
 	tTrack.fMax = XUI_LAYOUT_UNBOUNDED;
 	tTrack.fWeight = 1.0f;
+	tTrack.fShrink = 0.0f;
 	return tTrack;
 }
 
@@ -258,6 +260,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set table size failed");
 	iRet = xuiWidgetGetTableSize(pRoot, &iRows, &iColumns);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (iRows == 2) && (iColumns == 3), "get table size failed");
+	iRet = xuiWidgetSetTableSize(pRoot, INT_MAX, INT_MAX);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED, "oversized table track count was accepted");
+	iRet = xuiWidgetGetTableSize(pRoot, &iRows, &iColumns);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (iRows == 2) && (iColumns == 3),
+		"failed table resize changed the committed track counts");
 	tTrack = __xuiTestTrack(XUI_SIZE_FIXED, 40.0f);
 	iRet = xuiWidgetSetTableColumn(pRoot, 0, &tTrack);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set table column 0 failed");

@@ -44,6 +44,15 @@ int main(void)
 	(void)xuiGetLayoutStats(context, &before);
 	oldCompletes = completes;
 	oldIme = ime;
+	XUI_TEST_CHECK(xuiWidgetSetMinSize(first, (xui_vec2_t){0, 0}) == XUI_OK &&
+		xuiWidgetSetMaxSize(first, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}) == XUI_OK &&
+		xuiWidgetSetFlex(first, 0, 0) == XUI_OK &&
+		xuiWidgetSetTableCell(first, 0, 0, 1, 1) == XUI_OK &&
+		xuiWidgetSetTableSize(root, 0, 0) == XUI_OK, "idempotent layout setters");
+	XUI_TEST_CHECK(xuiRenderPrepare(context) == XUI_OK, "idempotent setter render preparation");
+	(void)xuiGetLayoutStats(context, &after);
+	XUI_TEST_CHECK(after.iGeneration == before.iGeneration && completes == oldCompletes && ime == oldIme,
+		"idempotent layout setters invalidated stable geometry");
 	for (i = 0; i < 200; ++i) {
 		XUI_TEST_CHECK(xuiHitTest(context, 1, 1, 0) == first, "stable hit");
 		XUI_TEST_CHECK(xuiRenderPrepare(context) == XUI_OK && xuiBuildRenderTree(context) == XUI_OK,

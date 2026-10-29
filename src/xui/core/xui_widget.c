@@ -4,6 +4,7 @@
 #include "xui_native_accessibility_internal.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -2677,45 +2678,41 @@ static int __xuiWidgetLayoutChanged(xui_widget pWidget)
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiWidgetResizeTrackArray(xui_table_track_t** ppTracks, int* pCount, int iNewCount)
+static int __xuiWidgetBuildTrackArray(
+	xui_table_track_t* pOldTracks,
+	int iOldCount,
+	int iNewCount,
+	xui_table_track_t** ppNewTracks)
 {
 	xui_table_track_t* pTracks;
 	int i;
 	int iCopyCount;
 
-	if ( iNewCount < 0 ) {
+	if ( iOldCount < 0 || iNewCount < 0 || ppNewTracks == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( iNewCount == *pCount ) {
-		return XUI_OK;
-	}
+	*ppNewTracks = NULL;
 	if ( iNewCount == 0 ) {
-		if ( *ppTracks != NULL ) {
-			xrtFree(*ppTracks);
-		}
-		*ppTracks = NULL;
-		*pCount = 0;
 		return XUI_OK;
 	}
+#if SIZE_MAX <= UINT32_MAX
+	if ( (uint32_t)iNewCount > (uint32_t)(SIZE_MAX / sizeof(*pTracks)) ) return XUI_ERROR_LIMIT_EXCEEDED;
+#endif
 	pTracks = (xui_table_track_t*)xrtMalloc(sizeof(*pTracks) * (size_t)iNewCount);
 	if ( pTracks == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	iCopyCount = *pCount;
+	iCopyCount = iOldCount;
 	if ( iCopyCount > iNewCount ) {
 		iCopyCount = iNewCount;
 	}
 	for ( i = 0; i < iCopyCount; i++ ) {
-		pTracks[i] = (*ppTracks)[i];
+		pTracks[i] = pOldTracks[i];
 	}
 	for ( i = iCopyCount; i < iNewCount; i++ ) {
 		pTracks[i] = __xuiTableTrackDefault();
 	}
-	if ( *ppTracks != NULL ) {
-		xrtFree(*ppTracks);
-	}
-	*ppTracks = pTracks;
-	*pCount = iNewCount;
+	*ppNewTracks = pTracks;
 	return XUI_OK;
 }
 
@@ -4462,6 +4459,9 @@ XUI_API int xuiWidgetSetMinSize(xui_widget pWidget, xui_vec2_t tSize)
 	if ( (tSize.fX > pWidget->tLayout.fMaxWidth) || (tSize.fY > pWidget->tLayout.fMaxHeight) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pWidget->tLayout.fMinWidth == tSize.fX && pWidget->tLayout.fMinHeight == tSize.fY ) {
+		return XUI_OK;
+	}
 	pWidget->tLayout.fMinWidth = tSize.fX;
 	pWidget->tLayout.fMinHeight = tSize.fY;
 	return __xuiWidgetLayoutChanged(pWidget);
@@ -4482,6 +4482,9 @@ XUI_API int xuiWidgetSetMaxSize(xui_widget pWidget, xui_vec2_t tSize)
 	}
 	if ( (tSize.fX < pWidget->tLayout.fMinWidth) || (tSize.fY < pWidget->tLayout.fMinHeight) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pWidget->tLayout.fMaxWidth == tSize.fX && pWidget->tLayout.fMaxHeight == tSize.fY ) {
+		return XUI_OK;
 	}
 	pWidget->tLayout.fMaxWidth = tSize.fX;
 	pWidget->tLayout.fMaxHeight = tSize.fY;
@@ -4564,6 +4567,9 @@ XUI_API int xuiWidgetSetFlex(xui_widget pWidget, float fGrow, float fShrink)
 	if ( !__xuiWidgetValid(pWidget) || !__xuiNonNegativeFloatValid(fGrow) || !__xuiNonNegativeFloatValid(fShrink) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pWidget->tLayout.fGrow == fGrow && pWidget->tLayout.fShrink == fShrink ) {
+		return XUI_OK;
+	}
 	pWidget->tLayout.fGrow = fGrow;
 	pWidget->tLayout.fShrink = fShrink;
 	return __xuiWidgetLayoutChanged(pWidget);
@@ -4612,18 +4618,44 @@ XUI_API int xuiWidgetGetAlign(xui_widget pWidget, int* pAlignX, int* pAlignY)
 
 XUI_API int xuiWidgetSetTableSize(xui_widget pWidget, int iRows, int iColumns)
 {
+	xui_table_track_t* pNewRows;
+	xui_table_track_t* pNewColumns;
+	int bRowsChanged;
+	int bColumnsChanged;
 	int iRet;
 
 	if ( !__xuiWidgetValid(pWidget) || (iRows < 0) || (iColumns < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiWidgetResizeTrackArray(&pWidget->pTableRows, &pWidget->iTableRowCount, iRows);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( (uint64_t)(uint32_t)iRows + (uint64_t)(uint32_t)iColumns > (uint64_t)UINT32_MAX / 2u ) {
+		return XUI_ERROR_LIMIT_EXCEEDED;
 	}
-	iRet = __xuiWidgetResizeTrackArray(&pWidget->pTableColumns, &pWidget->iTableColumnCount, iColumns);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	bRowsChanged = iRows != pWidget->iTableRowCount;
+	bColumnsChanged = iColumns != pWidget->iTableColumnCount;
+	if ( !bRowsChanged && !bColumnsChanged ) return XUI_OK;
+	pNewRows = pWidget->pTableRows;
+	pNewColumns = pWidget->pTableColumns;
+	if ( bRowsChanged ) {
+		iRet = __xuiWidgetBuildTrackArray(pWidget->pTableRows, pWidget->iTableRowCount, iRows, &pNewRows);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( bColumnsChanged ) {
+		iRet = __xuiWidgetBuildTrackArray(pWidget->pTableColumns, pWidget->iTableColumnCount,
+			iColumns, &pNewColumns);
+		if ( iRet != XUI_OK ) {
+			if ( bRowsChanged && pNewRows != NULL ) xrtFree(pNewRows);
+			return iRet;
+		}
+	}
+	if ( bRowsChanged ) {
+		if ( pWidget->pTableRows != NULL ) xrtFree(pWidget->pTableRows);
+		pWidget->pTableRows = pNewRows;
+		pWidget->iTableRowCount = iRows;
+	}
+	if ( bColumnsChanged ) {
+		if ( pWidget->pTableColumns != NULL ) xrtFree(pWidget->pTableColumns);
+		pWidget->pTableColumns = pNewColumns;
+		pWidget->iTableColumnCount = iColumns;
 	}
 	return __xuiWidgetLayoutChanged(pWidget);
 }
@@ -4688,6 +4720,10 @@ XUI_API int xuiWidgetSetTableCell(xui_widget pWidget, int iRow, int iColumn, int
 {
 	if ( !__xuiWidgetValid(pWidget) || (iRow < 0) || (iColumn < 0) || (iRowSpan <= 0) || (iColumnSpan <= 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pWidget->tLayout.iTableRow == iRow && pWidget->tLayout.iTableColumn == iColumn &&
+		pWidget->tLayout.iTableRowSpan == iRowSpan && pWidget->tLayout.iTableColumnSpan == iColumnSpan ) {
+		return XUI_OK;
 	}
 	pWidget->tLayout.iTableRow = iRow;
 	pWidget->tLayout.iTableColumn = iColumn;

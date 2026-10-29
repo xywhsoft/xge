@@ -3,7 +3,27 @@
 #include "xui_internal.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
+
+static int __xuiLayoutConstraintValid(float value)
+{
+	return isfinite(value) && value >= 0.0f && value <= XUI_LAYOUT_UNBOUNDED;
+}
+
+static int __xuiLayoutRectValid(xui_rect_t rect)
+{
+	return rect.fX >= -XUI_CONTEXT_MAX_VIEWPORT && rect.fX <= XUI_CONTEXT_MAX_VIEWPORT &&
+		rect.fY >= -XUI_CONTEXT_MAX_VIEWPORT && rect.fY <= XUI_CONTEXT_MAX_VIEWPORT &&
+		rect.fW >= 0 && rect.fW <= XUI_CONTEXT_MAX_VIEWPORT &&
+		rect.fH >= 0 && rect.fH <= XUI_CONTEXT_MAX_VIEWPORT;
+}
+
+static int __xuiLayoutTrackCountsValid(uint32_t columns, uint32_t rows)
+{
+	/* xlayout needs two scalar work arrays for every track. */
+	return (uint64_t)columns + (uint64_t)rows <= (uint64_t)UINT32_MAX / 2u;
+}
 
 static xlayout_align_t __xuiLayoutAlign(int align)
 {
@@ -146,6 +166,9 @@ static xlayout_track_t* __xuiLayoutTrackScratch(xui_context context, uint32_t co
 		}
 		capacity *= 2u;
 	}
+#if SIZE_MAX <= UINT32_MAX
+	if ( capacity > (uint32_t)(SIZE_MAX / sizeof(*scratch)) ) return NULL;
+#endif
 	scratch = (xlayout_track_t*)xrtRealloc(context->pLayoutTrackScratch, sizeof(*scratch) * (size_t)capacity);
 	if ( scratch == NULL ) return NULL;
 	context->pLayoutTrackScratch = scratch;
@@ -287,6 +310,7 @@ static int __xuiLayoutSyncTracks(xui_widget widget, uint32_t visible_children)
 	if ( widget->tLayout.iLayoutType == XUI_LAYOUT_TABLE ) {
 		column_count = widget->iTableColumnCount > 0 ? (uint32_t)widget->iTableColumnCount : 0u;
 		row_count = widget->iTableRowCount > 0 ? (uint32_t)widget->iTableRowCount : 0u;
+		if ( !__xuiLayoutTrackCountsValid(column_count, row_count) ) return XUI_ERROR_LIMIT_EXCEEDED;
 		scratch = __xuiLayoutTrackScratch(widget->pContext, column_count + row_count);
 		if ( column_count + row_count > 0u && scratch == NULL ) result = XUI_ERROR_OUT_OF_MEMORY;
 		columns = scratch;
@@ -298,7 +322,10 @@ static int __xuiLayoutSyncTracks(xui_widget widget, uint32_t visible_children)
 	} else if ( widget->tLayout.iLayoutType == XUI_LAYOUT_GRID ) {
 		column_count = widget->tLayout.iGridColumnCount > 0 ? (uint32_t)widget->tLayout.iGridColumnCount : 1u;
 		if ( visible_children > 0u && column_count > visible_children ) column_count = visible_children;
-		row_count = visible_children > 0u ? (visible_children + column_count - 1u) / column_count : 1u;
+		row_count = visible_children > 0u
+			? visible_children / column_count + (visible_children % column_count != 0u)
+			: 1u;
+		if ( !__xuiLayoutTrackCountsValid(column_count, row_count) ) return XUI_ERROR_LIMIT_EXCEEDED;
 		scratch = __xuiLayoutTrackScratch(widget->pContext, column_count + row_count);
 		if ( scratch == NULL ) result = XUI_ERROR_OUT_OF_MEMORY;
 		columns = scratch;
@@ -340,7 +367,10 @@ static int __xuiLayoutSyncNode(xui_widget widget, xui_widget parent, uint32_t vi
 	if ( !sync_self && (widget->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0u ) return XUI_OK;
 	context = widget->pContext->pLayoutContext;
 	for ( child = widget->pFirstChild; child != NULL; child = child->pNextSibling ) {
-		if ( child->bVisible ) child_visible_count++;
+		if ( child->bVisible ) {
+			if ( child_visible_count == UINT32_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+			child_visible_count++;
+		}
 	}
 	if ( sync_self ) {
 		style = xLayoutStyleDefault();
@@ -474,11 +504,20 @@ void xuiInternalLayoutDestroyWidget(xui_widget widget)
 int xuiInternalLayoutAttach(xui_widget parent, xui_widget child, xui_widget before)
 {
 	xlayout_context_t* context;
-	if ( !xuiInternalWidgetIsValid(parent) || !xuiInternalWidgetIsValid(child) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalWidgetIsValid(parent) || !xuiInternalWidgetIsValid(child)
+		|| parent->pContext != child->pContext || parent->pContext->pLayoutContext == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( before != NULL && (!xuiInternalWidgetIsValid(before)
+		|| before->pContext != parent->pContext || before->pParent != parent) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	context = parent->pContext->pLayoutContext;
+	if ( !xLayoutNodeIsValid(context, parent->iLayoutNode)
+		|| !xLayoutNodeIsValid(context, child->iLayoutNode) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !xLayoutNodeSetRole(context, parent->iLayoutNode, XLAYOUT_ROLE_CONTAINER)
 		|| !xLayoutNodeInsertBefore(context, parent->iLayoutNode, child->iLayoutNode,
-			before != NULL ? before->iLayoutNode : XLAYOUT_NODE_INVALID) ) return XUI_ERROR_OUT_OF_MEMORY;
+			before != NULL ? before->iLayoutNode : XLAYOUT_NODE_INVALID) ) return XUI_ERROR_INVALID_STATE;
 	return XUI_OK;
 }
 
@@ -515,7 +554,9 @@ int xuiInternalLayoutMeasure(xui_widget widget, xui_vec2_t constraint, xui_vec2_
 	xlayout_constraints_t constraints;
 	xlayout_measure_t result;
 	int sync_result;
-	if ( !xuiInternalWidgetIsValid(widget) || measured == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalWidgetIsValid(widget) || measured == NULL
+		|| !__xuiLayoutConstraintValid(constraint.fX)
+		|| !__xuiLayoutConstraintValid(constraint.fY) ) return XUI_ERROR_INVALID_ARGUMENT;
 	sync_result = __xuiLayoutSyncNode(widget, widget->pParent, __xuiLayoutVisibleIndex(widget));
 	if ( sync_result != XUI_OK ) return sync_result;
 	constraints = xLayoutConstraints(constraint.fX, constraint.fY);
@@ -531,7 +572,8 @@ int xuiInternalLayoutMeasure(xui_widget widget, xui_vec2_t constraint, xui_vec2_
 int xuiInternalLayoutArrange(xui_widget widget, xui_rect_t rect)
 {
 	int result;
-	if ( !xuiInternalWidgetIsValid(widget) || widget->pParent != NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalWidgetIsValid(widget) || widget->pParent != NULL
+		|| !__xuiLayoutRectValid(rect) ) return XUI_ERROR_INVALID_ARGUMENT;
 	result = __xuiLayoutSyncNode(widget, NULL, 0u);
 	if ( result != XUI_OK ) return result;
 	if ( !xLayoutArrange(widget->pContext->pLayoutContext, widget->iLayoutNode,
@@ -563,7 +605,7 @@ int xuiLayoutArrangeChild(xui_widget parent, xui_widget child, xui_rect_t rect)
 	xlayout_rect_t global_rect;
 	if ( !xuiInternalWidgetIsValid(parent) || !xuiInternalWidgetIsValid(child)
 		|| parent->pContext != child->pContext || child->pParent != parent
-		|| rect.fW < 0.0f || rect.fH < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+		|| !__xuiLayoutRectValid(rect) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !xLayoutNodeGetResult(parent->pContext->pLayoutContext, parent->iLayoutNode, &parent_result) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
