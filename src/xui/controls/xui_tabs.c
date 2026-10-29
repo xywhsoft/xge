@@ -17,6 +17,7 @@ typedef struct xui_tabs_page_t {
 	xui_rect_t tIconRect;
 	xui_rect_t tDirtyRect;
 	xui_rect_t tCloseRect;
+	xui_surface_dependency_t tIconDependency;
 	int bEnabled;
 	int bDirty;
 } xui_tabs_page_t;
@@ -2290,7 +2291,19 @@ static void __xuiTabsRegisterStyleProperty(xui_context pContext, xui_widget_type
 static int __xuiTabsPreparePaint(xui_widget pWidget)
 {
 	xui_tabs_data_t* pData = __xuiTabsGetData(pWidget);
+	xui_proxy pProxy;
+	int iRet;
+	int i;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	for ( i = 0; i < pData->iPageCount; i++ ) {
+		if ( xuiInternalSurfaceDependencySync(pProxy, pData->arrPages[i].pIcon,
+		     &pData->arrPages[i].tIconDependency, 0) ) {
+			iRet = xuiWidgetInvalidate(pData->arrPages[i].pButton,
+				XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
 	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
 	pData->iChromeStyleVersion = pWidget->iStyleVersion;
 	return __xuiTabsInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

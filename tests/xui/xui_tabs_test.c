@@ -232,6 +232,7 @@ int main(void)
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pIcon;
+	xui_surface pTabCache;
 	xui_surface arrIcons[5];
 	xui_rect_t arrIconSrc[5];
 	xui_tabs_desc_t tDesc;
@@ -275,6 +276,7 @@ int main(void)
 	pUtf8Tabs = NULL;
 	pTarget = NULL;
 	pIcon = NULL;
+	pTabCache = NULL;
 	iFailed = 0;
 	memset(&tEvents, 0, sizeof(tEvents));
 	memset(&tDestroyEvents, 0, sizeof(tDestroyEvents));
@@ -538,6 +540,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 0, "select icon tab");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render icons");
+	pTabCache = xuiWidgetGetCacheSurface(xuiTabsGetButtonWidget(pTabs, 0),
+		xuiWidgetGetStateId(xuiTabsGetButtonWidget(pTabs, 0)));
+	XUI_TEST_CHECK(pTabCache != NULL, "icon tab cache surface");
+	xuiTestSurfaceReset(pTabCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pTabCache) == 0,
+		"unchanged borrowed tab icon reuses cache");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pIcon,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pTabCache) > 0,
+		"borrowed tab icon generation rebuilds cache");
 	tDirty = xuiTabsGetDirtyRect(pTabs, 1);
 	tIcon = xuiTabsGetIconRect(pTabs, 0);
 	XUI_TEST_CHECK(tDirty.fW > 0.0f && tDirty.fH > 0.0f, "dirty rect");
