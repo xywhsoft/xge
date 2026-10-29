@@ -207,6 +207,12 @@ int main(void)
 	iRet = xuiMsgTipCreate(pContext, &pInvalidTip, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidTip == NULL,
 		"invalid custom icon create clears output");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.tIconSrc.fX = INFINITY;
+	pInvalidTip = (xui_msgtip)&tState;
+	iRet = xuiMsgTipCreate(pContext, &pInvalidTip, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidTip == NULL,
+		"nonfinite icon source is rejected at creation");
 	iRet = xuiMsgTipCreate(pContext, &pTip, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTip != NULL, "msgtip create");
 	iRet = xuiMsgTipSetClose(pTip, __xuiMsgTipClose, &tClose);
@@ -232,6 +238,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject invalid type");
 	iRet = xuiMsgTipSetIconSurface(pTip, NULL, (xui_rect_t){0, 0, -1, 1});
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative icon source");
+	iRet = xuiMsgTipSetIconSurface(pTip, NULL, (xui_rect_t){NAN, 0, 1, 1});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nonfinite icon source");
 	iChangeBefore = xuiMsgTipGetChangeCount(pTip);
 	iRet = xuiMsgTipSetText(pTip, xuiMsgTipGetText(pTip));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipGetChangeCount(pTip) == iChangeBefore, "same text is no-op");

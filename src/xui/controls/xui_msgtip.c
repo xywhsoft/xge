@@ -115,7 +115,9 @@ static int __xuiMsgTipTypeValid(int iType)
 
 static int __xuiMsgTipRectValid(xui_rect_t tRect)
 {
-	return tRect.fW >= 0 && tRect.fH >= 0;
+	return tRect.fX >= -XUI_LAYOUT_UNBOUNDED && tRect.fX <= XUI_LAYOUT_UNBOUNDED &&
+	       tRect.fY >= -XUI_LAYOUT_UNBOUNDED && tRect.fY <= XUI_LAYOUT_UNBOUNDED &&
+	       __xuiMsgTipFloatValid(tRect.fW) && __xuiMsgTipFloatValid(tRect.fH);
 }
 
 static int __xuiMsgTipRectSame(xui_rect_t tA, xui_rect_t tB)
@@ -1056,7 +1058,7 @@ XUI_API int xuiMsgTipSetIconSurface(xui_msgtip pTip, xui_surface pSurface, xui_r
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pTip->pIconSurface == pSurface && pTip->bCustomIcon == (pSurface != NULL) &&
-	     memcmp(&pTip->tIconSrc, &tSrc, sizeof(tSrc)) == 0 ) return XUI_OK;
+	     __xuiMsgTipRectSame(pTip->tIconSrc, tSrc) ) return XUI_OK;
 	pOldSurface = pTip->pIconSurface;
 	tOldSrc = pTip->tIconSrc;
 	bOldCustomIcon = pTip->bCustomIcon;
