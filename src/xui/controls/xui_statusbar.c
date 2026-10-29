@@ -125,6 +125,36 @@ static int __xuiStatusBarItemValid(const xui_statusbar_item_t* pItem)
 	return 1;
 }
 
+static const char* __xuiStatusBarStringValue(const char* sText)
+{
+	return sText != NULL ? sText : "";
+}
+
+static int __xuiStatusBarItemEqual(const xui_statusbar_item_t* pCurrent,
+	const xui_statusbar_item_t* pNext)
+{
+	uint32_t iState;
+	float fMax;
+	float fValue;
+
+	if ( pCurrent == NULL || pNext == NULL ) return 0;
+	iState = pNext->iType == XUI_STATUSBAR_ITEM_SPACER ? 0u : pNext->iState;
+	fMax = pNext->fMax;
+	fValue = pNext->fValue;
+	if ( pNext->iType == XUI_STATUSBAR_ITEM_PROGRESS ) {
+		if ( fMax < pNext->fMin ) fMax = pNext->fMin;
+		if ( fValue < pNext->fMin ) fValue = pNext->fMin;
+		if ( fValue > fMax ) fValue = fMax;
+	}
+	return strcmp(__xuiStatusBarStringValue(pCurrent->sText),
+			__xuiStatusBarStringValue(pNext->sText)) == 0 &&
+		pCurrent->iType == pNext->iType && pCurrent->iSection == pNext->iSection &&
+		pCurrent->iState == iState && pCurrent->iValue == pNext->iValue &&
+		pCurrent->fWidth == pNext->fWidth && pCurrent->fFlex == pNext->fFlex &&
+		pCurrent->fMin == pNext->fMin && pCurrent->fMax == fMax &&
+		pCurrent->fValue == fValue && pCurrent->pUser == pNext->pUser;
+}
+
 static int __xuiStatusBarItemInteractive(const xui_statusbar_item_t* pItem)
 {
 	return (pItem != NULL) &&
@@ -1550,10 +1580,15 @@ XUI_API int xuiStatusBarSetItems(xui_widget pWidget, const xui_statusbar_item_t*
 	if ( (pData == NULL) || (iCount < 0) || (iCount > XUI_STATUSBAR_ITEM_CAPACITY) || ((iCount > 0) && (pItems == NULL)) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(arrNew, 0, sizeof(arrNew));
 	for ( i = 0; i < iCount; i++ ) {
-		if ( !__xuiStatusBarItemValid(&pItems[i]) ) {
-			__xuiStatusBarFreeStrings(arrNewTexts, i);
-			return XUI_ERROR_INVALID_ARGUMENT;
+		if ( !__xuiStatusBarItemValid(&pItems[i]) ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->iItemCount == iCount ) {
+		for ( i = 0; i < iCount; i++ ) {
+			if ( !__xuiStatusBarItemEqual(&pData->arrItems[i], &pItems[i]) ) break;
 		}
+		if ( i == iCount ) return XUI_OK;
+	}
+	for ( i = 0; i < iCount; i++ ) {
 		arrNew[i] = pItems[i];
 		if ( arrNew[i].iType == XUI_STATUSBAR_ITEM_SPACER ) {
 			arrNew[i].iState &= ~(XUI_STATUSBAR_ITEM_ENABLED | XUI_STATUSBAR_ITEM_CLICKABLE);

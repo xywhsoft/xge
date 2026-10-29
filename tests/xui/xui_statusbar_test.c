@@ -159,6 +159,7 @@ int main(void)
 	xui_statusbar_metrics_t tMetrics;
 	xui_statusbar_colors_t tColors;
 	xui_statusbar_item_t arrItems[7];
+	xui_statusbar_item_t arrEquivalent[7];
 	xui_statusbar_item_t arrInvalid[2];
 	xui_accessible_node_t tNode;
 	xui_event_t tContextEvent;
@@ -172,6 +173,7 @@ int main(void)
 	int iFailed;
 	int iRet;
 	int iBefore;
+	int i;
 	char sMutableText[32];
 
 	pContext = NULL;
@@ -381,6 +383,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus statusbar");
 	iRet = xuiStatusBarSetHoverIndex(pStatusBar, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetHoverIndex(pStatusBar) == 4, "hover set");
+	for ( i = 0; i < 7; i++ ) arrEquivalent[i] = *xuiStatusBarGetItem(pStatusBar, i);
+	iBefore = xuiStatusBarGetChangeCount(pStatusBar);
+	iRet = xuiStatusBarSetItems(pStatusBar, arrEquivalent, 7);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetHoverIndex(pStatusBar) == 4 &&
+		xuiStatusBarGetChangeCount(pStatusBar) == iBefore,
+		"repeated items preserve hover state and skip mutation");
 	iBefore = tEvents.iSelectCount;
 	iRet = __xuiStatusBarKey(pContext, XUI_KEY_SPACE);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore + 1 && tEvents.iLastValue == 20, "keyboard select");
