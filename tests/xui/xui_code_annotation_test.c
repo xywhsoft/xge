@@ -78,6 +78,21 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear marker");
 	iRet = xuiCodeAnnotationGetMarkers(pStore, 3, arrMarkers, 4, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1, "marker after clear");
+	for ( i = 0; i < 64; i++ ) {
+		iRet = xuiCodeAnnotationSetMarker(pStore, 100 + i % 2,
+			1000 + i, 0u, NULL, (uintptr_t)i);
+		XUI_TEST_CHECK(iRet == XUI_OK, "set markers for bulk clear");
+	}
+	iRet = xuiCodeAnnotationClearMarkers(pStore, 100);
+	XUI_TEST_CHECK(iRet == XUI_OK, "bulk clear markers on one line");
+	iRet = xuiCodeAnnotationGetMarkers(pStore, 100, NULL, 0, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 0,
+		"bulk marker clear removes matching line");
+	iRet = xuiCodeAnnotationGetMarkers(pStore, 101, NULL, 0, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 32,
+		"bulk marker clear preserves other lines");
+	iRet = xuiCodeAnnotationClearMarkers(pStore, 101);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear remaining bulk markers");
 
 	iRet = xuiCodeAnnotationSetIndicator(pStore, 1, XUI_CODE_INDICATOR_SQUIGGLE, 4, 9, 0u, 21u);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set indicator");
@@ -107,7 +122,7 @@ int main(void)
 			XUI_CODE_INDICATOR_UNDERLINE, i * 10, i * 10 + 8, 0u, (uintptr_t)i);
 		XUI_TEST_CHECK(iRet == XUI_OK, "fill indicator capacity");
 	}
-	for ( iFail = 0; iFail < 2; iFail++ ) {
+	for ( iFail = 0; iFail < 1; iFail++ ) {
 		g_iAnnotationFailAllocation = iFail;
 		g_bAnnotationAllocationFailed = 0;
 		iRet = xuiCodeAnnotationClearIndicator(pAuxStore, 10, 2, 4);
@@ -129,6 +144,16 @@ int main(void)
 	iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, 5, arrIndicators, 4, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrIndicators[0].tRange.iStart == 4,
 		"indicator split right range after allocation");
+	g_iAnnotationFailAllocation = 0;
+	g_bAnnotationAllocationFailed = 0;
+	iRet = xuiCodeAnnotationClearIndicator(pAuxStore, 10, 0, 1);
+	g_iAnnotationFailAllocation = -1;
+	XUI_TEST_CHECK(iRet == XUI_OK && !g_bAnnotationAllocationFailed,
+		"indicator edge clip does not allocate");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, 1, arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrIndicators[0].tRange.iStart == 1 && arrIndicators[0].tRange.iEnd == 2,
+		"indicator edge clip keeps remaining range");
 
 	xuiCodeAnnotationStoreClear(pAuxStore);
 	iRet = xuiCodeAnnotationSetIndicator(pAuxStore, 1, XUI_CODE_INDICATOR_UNDERLINE,
@@ -201,10 +226,23 @@ int main(void)
 	arrDiagnostics[1].sCode = "W001";
 	arrDiagnostics[1].sMessage = "unused";
 	arrDiagnostics[1].sSource = "lint";
+	tDiagnostic = arrDiagnostics[0];
+	tDiagnostic.iSize = sizeof(tDiagnostic) - 1u;
+	iRet = xuiCodeAnnotationSetDiagnostics(pStore, &tDiagnostic, 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiCodeAnnotationGetDiagnosticCount(pStore) == 0,
+		"short diagnostic descriptor rejected");
 	iRet = xuiCodeAnnotationSetDiagnostics(pStore, arrDiagnostics, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeAnnotationGetDiagnosticCount(pStore) == 2, "set diagnostics");
 	iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pStore);
 	XUI_TEST_CHECK(iDiagnosticVersion != 0u, "diagnostic version");
+	g_iAnnotationFailAllocation = 0;
+	g_bAnnotationAllocationFailed = 0;
+	iRet = xuiCodeAnnotationSetDiagnostics(pStore, arrDiagnostics, 2);
+	g_iAnnotationFailAllocation = -1;
+	XUI_TEST_CHECK(iRet == XUI_OK && !g_bAnnotationAllocationFailed &&
+		xuiCodeAnnotationGetDiagnosticVersion(pStore) == iDiagnosticVersion,
+		"identical diagnostics reuse storage and version");
 	memset(&tDiagnostic, 0, sizeof(tDiagnostic));
 	iRet = xuiCodeAnnotationGetDiagnostic(pStore, 0, &tDiagnostic);
 	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnostic.iSeverity == XUI_CODE_DIAGNOSTIC_ERROR, "get diagnostic");
