@@ -7402,15 +7402,15 @@ XUI_API void xuiCodeLanguageRegistryDestroy(xui_code_language_registry pRegistry
 XUI_API void xuiCodeLanguageRegistryClear(xui_code_language_registry pRegistry);
 /* 装入内建语言（当前仅 C）。 */
 XUI_API int xuiCodeLanguageRegistryLoadDefaults(xui_code_language_registry pRegistry);
-/* 注册一门语言（词法规则/折叠/注释符等）。 */
+/* 注册一门语言（深拷贝字符串、扩展名及正则规则；回调与 pUser 由调用方持有）。 */
 XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry, const xui_code_language_t* pLanguage);
 /* 读取已注册语言数。 */
 XUI_API int xuiCodeLanguageRegistryGetCount(xui_code_language_registry pRegistry);
-/* 按索引输出语言定义。 */
+/* 按索引输出语言定义；其中的指针由注册表持有，替换、Clear 或 Destroy 后失效。 */
 XUI_API int xuiCodeLanguageRegistryGet(xui_code_language_registry pRegistry, int iIndex, xui_code_language_t* pLanguage);
-/* 按语言 id 查找。 */
+/* 按语言 id 查找；输出定义中的指针生命周期同注册表。 */
 XUI_API int xuiCodeLanguageRegistryFind(xui_code_language_registry pRegistry, const char* sId, xui_code_language_t* pLanguage);
-/* 按文件扩展名匹配语言。 */
+/* 按文件扩展名匹配语言；输出定义中的指针生命周期同注册表。 */
 XUI_API int xuiCodeLanguageRegistryFindByExtension(xui_code_language_registry pRegistry, const char* sExtension, xui_code_language_t* pLanguage);
 /* 按语言定义对文档区间做词法分析。 */
 XUI_API int xuiCodeLanguageLex(const xui_code_language_t* pLanguage, xui_code_document pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity);

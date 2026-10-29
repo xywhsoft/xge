@@ -81,6 +81,32 @@ static int xuiTestInvalidFold(xui_code_document_t* pDocument,
 	return XUI_OK;
 }
 
+static int xuiTestFailingLexer(xui_code_document_t* pDocument, int iStartLine,
+	int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity,
+	int* pTokenCount, void* pUser)
+{
+	(void)pDocument;
+	(void)iStartLine;
+	(void)iEndLine;
+	(void)pTokens;
+	(void)iTokenCapacity;
+	(void)pUser;
+	*pTokenCount = 7;
+	return XUI_ERROR_RESOURCE_FAILED;
+}
+
+static int xuiTestFailingFold(xui_code_document_t* pDocument,
+	xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount,
+	void* pUser)
+{
+	(void)pDocument;
+	(void)pRanges;
+	(void)iRangeCapacity;
+	(void)pUser;
+	*pRangeCount = 7;
+	return XUI_ERROR_RESOURCE_FAILED;
+}
+
 static int xuiTestLanguageAllocationRollback(const xui_code_language_t* pLanguage)
 {
 	xui_code_language_registry pRegistry;
@@ -198,6 +224,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "find regex language");
 	iRet = xuiCodeLanguageLex(&tLanguage, pDocument, 0, -1, arrTokens, 16, &iTokenCount, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount > 0 && arrTokens[0].iKind == XUI_CODE_TOKEN_IDENTIFIER, "regex lex");
+	g_iLanguageFailAllocation = 0;
+	g_bLanguageAllocationFailed = 0;
+	iRet = xuiCodeLanguageLex(&tLanguage, pDocument, 0, -1, NULL, 0,
+		&iTokenCount, sError, sizeof(sError));
+	g_iLanguageFailAllocation = -1;
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && g_bLanguageAllocationFailed &&
+		iTokenCount == 0 && strstr(sError, "memory") != NULL,
+		"regex range allocation failure reports empty result and error");
 
 	memset(arrFailureRules, 0, sizeof(arrFailureRules));
 	arrFailureRules[0].iSize = sizeof(arrFailureRules[0]);
@@ -220,6 +254,12 @@ int main(void)
 	tInvalid.iRegexRuleCount = 2;
 	XUI_TEST_CHECK(xuiTestLanguageAllocationRollback(&tInvalid),
 		"register allocation rollback");
+	tInvalid.iSize = 0;
+	iRet = xuiCodeLanguageRegistryRegister(pRegistry, &tInvalid);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiCodeLanguageRegistryGetCount(pRegistry) == 3,
+		"undersized language descriptor rejected");
+	tInvalid.iSize = sizeof(tInvalid);
 
 	tInvalid.arrExtensions = arrInvalidExt;
 	tInvalid.iExtensionCount = 1;
@@ -227,6 +267,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "empty extension rejected");
 	tInvalid.arrExtensions = arrFailureExt;
 	tInvalid.iExtensionCount = 2;
+	arrFailureRules[0].iSize = 0;
+	iRet = xuiCodeLanguageRegistryRegister(pRegistry, &tInvalid);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"undersized regex rule rejected");
+	arrFailureRules[0].iSize = sizeof(arrFailureRules[0]);
 	arrFailureRules[0].sPattern = NULL;
 	iRet = xuiCodeLanguageRegistryRegister(pRegistry, &tInvalid);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing regex pattern rejected");
@@ -238,6 +283,7 @@ int main(void)
 	iRet = xuiCodeLanguageFold(&tLanguage, pDocument, arrFolds, -1, &iFoldCount);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative fold capacity rejected");
 	memset(&tInvalid, 0, sizeof(tInvalid));
+	tInvalid.iSize = sizeof(tInvalid);
 	tInvalid.onLex = xuiTestInvalidLexer;
 	tInvalid.onFold = xuiTestInvalidFold;
 	iRet = xuiCodeLanguageLex(&tInvalid, pDocument, 0, -1, NULL, 0,
@@ -247,6 +293,17 @@ int main(void)
 	iRet = xuiCodeLanguageFold(&tInvalid, pDocument, NULL, 0, &iFoldCount);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && iFoldCount == 0,
 		"negative callback fold count rejected");
+	tInvalid.onLex = xuiTestFailingLexer;
+	tInvalid.onFold = xuiTestFailingFold;
+	iTokenCount = 99;
+	iRet = xuiCodeLanguageLex(&tInvalid, pDocument, 0, -1, NULL, 0,
+		&iTokenCount, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_ERROR_RESOURCE_FAILED && iTokenCount == 0,
+		"failing callback token count discarded");
+	iFoldCount = 99;
+	iRet = xuiCodeLanguageFold(&tInvalid, pDocument, NULL, 0, &iFoldCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_RESOURCE_FAILED && iFoldCount == 0,
+		"failing callback fold count discarded");
 
 	xuiCodeLanguageRegistryClear(pRegistry);
 	XUI_TEST_CHECK(xuiCodeLanguageRegistryGetCount(pRegistry) == 0, "clear registry");
