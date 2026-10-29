@@ -93,6 +93,7 @@ int main(void)
 	xui_widget pDestroyRadio[2];
 	xui_surface pTarget;
 	xui_surface pAtlas;
+	xui_surface pCache;
 	xui_surface pUncheckedSurface;
 	xui_surface pCheckedSurface;
 	xui_font pFont;
@@ -121,6 +122,7 @@ int main(void)
 	pNonOption = NULL;
 	pTarget = NULL;
 	pAtlas = NULL;
+	pCache = NULL;
 	pUncheckedSurface = NULL;
 	pCheckedSurface = NULL;
 	pFont = NULL;
@@ -417,6 +419,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render atlas radio");
 	XUI_TEST_CHECK(xuiTestProxyGetTextMeasureCount(&tState) == 0,
 		"radio cache render avoids redundant text measurement");
+	pCache = xuiWidgetGetCacheSurface(pRadio[1], xuiWidgetGetStateId(pRadio[1]));
+	XUI_TEST_CHECK(pCache != NULL, "radio cache surface");
+	xuiTestSurfaceReset(pCache);
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) == 0,
+		"unchanged borrowed indicator surface reuses radio caches");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pAtlas,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) > 0,
+		"borrowed indicator generation rebuilds radio caches");
 	tLastSrc = tRect;
 	XUI_TEST_CHECK(__xuiRadioRectEq(tLastSrc, 104.0f, 34.0f, 34.0f, 34.0f), "checked radio atlas rect");
 	tRect = xuiRadioGetIndicatorRect(pRadio[0]);

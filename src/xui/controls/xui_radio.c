@@ -18,6 +18,7 @@
 #define XUI_RADIO_VISUAL_CHECKED_FOCUS	8
 #define XUI_RADIO_VISUAL_CHECKED_DISABLED	9
 #define XUI_RADIO_VISUAL_COUNT		10
+#define XUI_RADIO_SURFACE_DEPENDENCY_COUNT	2
 
 typedef struct xui_radio_visual_t {
 	uint32_t iFillColor;
@@ -64,6 +65,7 @@ typedef struct xui_radio_data_t {
 	xui_rect_t tCheckedSrc;
 	xui_rect_t tIndicatorRect;
 	xui_rect_t tTextRect;
+	xui_surface_dependency_t arrSurfaceDependencies[XUI_RADIO_SURFACE_DEPENDENCY_COUNT];
 } xui_radio_data_t;
 
 typedef struct xui_radio_group_data_t {
@@ -1081,6 +1083,23 @@ static void __xuiRadioRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiRadioRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
+static int __xuiRadioPreparePaint(xui_widget pWidget)
+{
+	xui_radio_data_t* pData;
+	xui_proxy pProxy;
+	int bChanged;
+
+	pData = __xuiRadioGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	bChanged = xuiInternalSurfaceDependencySync(pProxy, pData->pUncheckedSurface,
+		pData->arrSurfaceDependencies, 0);
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pCheckedSurface,
+		pData->arrSurfaceDependencies, 1);
+	return bChanged ? xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+}
+
 static int __xuiRadioAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
@@ -1109,6 +1128,7 @@ XUI_API xui_widget_type xuiRadioGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "radio");
 	if ( pType != NULL ) {
 		__xuiRadioRegisterStyleProperties(pContext, pType);
+		pType->onPreparePaint = __xuiRadioPreparePaint;
 		pType->pAccessibleAdapter = &g_xuiRadioAccessible;
 #if XUI_ENABLE_RADIO_GROUP
 		pType->onParentChanged = xuiInternalRadioGroupOptionParentChanged;
@@ -1132,6 +1152,7 @@ XUI_API xui_widget_type xuiRadioGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiRadioRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiRadioPreparePaint;
 	pType->pAccessibleAdapter = &g_xuiRadioAccessible;
 #if XUI_ENABLE_RADIO_GROUP
 	pType->onParentChanged = xuiInternalRadioGroupOptionParentChanged;

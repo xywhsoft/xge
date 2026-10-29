@@ -45,6 +45,12 @@ typedef struct xui_drag_adorner_primitive_t {
 	uint32_t iColor;
 } xui_drag_adorner_primitive_t;
 
+typedef struct xui_surface_dependency_t {
+	xui_surface pSurface;
+	uint32_t iGeneration;
+	int bGenerationValid;
+} xui_surface_dependency_t;
+
 typedef struct xui_internal_window_frame_metrics_t {
 	float fTitleBarHeight;
 	float fBorderWidth;
@@ -548,6 +554,8 @@ int xuiInternalLayoutArrangeChild(xui_widget pParent, xui_widget pChild, xui_rec
 int xuiInternalEnsureLayout(xui_context pContext);
 int xuiInternalContextHasProxy(xui_context pContext);
 xui_proxy xuiInternalContextGetProxy(xui_context pContext);
+int xuiInternalSurfaceDependencySync(xui_proxy pProxy, xui_surface pSurface,
+	xui_surface_dependency_t* pDependencies, int iIndex);
 void xuiInternalUtf8TrimIncomplete(char* sText);
 size_t xuiInternalUtf8CopyGraphemes(char* sDst, size_t iCapacity, const char* sSource);
 int xuiInternalSetInteractionPolicy(xui_context pContext, const xui_interaction_policy_t* pPolicy, int bUserSet);

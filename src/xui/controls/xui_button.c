@@ -24,12 +24,6 @@ typedef struct xui_button_visual_t {
 	float fBorderWidth;
 } xui_button_visual_t;
 
-typedef struct xui_button_surface_dependency_t {
-	xui_surface pSurface;
-	uint32_t iGeneration;
-	int bGenerationValid;
-} xui_button_surface_dependency_t;
-
 typedef struct xui_button_data_t {
 	char* sText;
 	int iTextCapacity;
@@ -67,7 +61,7 @@ typedef struct xui_button_data_t {
 	uint32_t iMeasureDpiGeneration;
 	int bTextMeasureDirty;
 	int bTextMeasureValid;
-	xui_button_surface_dependency_t arrSurfaceDependencies[XUI_BUTTON_SURFACE_DEPENDENCY_COUNT];
+	xui_surface_dependency_t arrSurfaceDependencies[XUI_BUTTON_SURFACE_DEPENDENCY_COUNT];
 } xui_button_data_t;
 
 typedef struct xui_button_resolved_t {
@@ -155,40 +149,6 @@ static int __xuiButtonSourceRectValid(xui_rect_t tRect)
 	       __xuiButtonFloatValid(tRect.fY) &&
 	       __xuiButtonNonNegativeFloatValid(tRect.fW) &&
 	       __xuiButtonNonNegativeFloatValid(tRect.fH);
-}
-
-static int __xuiButtonSyncSurfaceDependency(xui_proxy pProxy, xui_surface pSurface,
-	xui_button_surface_dependency_t* pDependencies, int iIndex)
-{
-	xui_button_surface_dependency_t* pDependency;
-	uint32_t iGeneration;
-	int bGenerationValid;
-	int bChanged;
-	int i;
-
-	pDependency = &pDependencies[iIndex];
-	iGeneration = 0;
-	bGenerationValid = 0;
-	if ( pSurface != NULL && pProxy != NULL && pProxy->surfaceGetGeneration != NULL ) {
-		for ( i = 0; i < iIndex; i++ ) {
-			if ( pDependencies[i].pSurface == pSurface &&
-			     pDependencies[i].bGenerationValid ) {
-				iGeneration = pDependencies[i].iGeneration;
-				bGenerationValid = 1;
-				break;
-			}
-		}
-		if ( !bGenerationValid &&
-		     pProxy->surfaceGetGeneration(pProxy, pSurface, &iGeneration) == XUI_OK ) {
-			bGenerationValid = 1;
-		}
-	}
-	bChanged = pDependency->pSurface == pSurface && bGenerationValid &&
-		(!pDependency->bGenerationValid || pDependency->iGeneration != iGeneration);
-	pDependency->pSurface = pSurface;
-	pDependency->iGeneration = iGeneration;
-	pDependency->bGenerationValid = bGenerationValid;
-	return bChanged;
 }
 
 static int __xuiButtonRectEqual(xui_rect_t tA, xui_rect_t tB)
@@ -1448,12 +1408,12 @@ static int __xuiButtonPreparePaint(xui_widget pWidget)
 	pData = __xuiButtonGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
-	bChanged = __xuiButtonSyncSurfaceDependency(pProxy, pData->pIconSurface,
+	bChanged = xuiInternalSurfaceDependencySync(pProxy, pData->pIconSurface,
 		pData->arrSurfaceDependencies, 0);
-	bChanged |= __xuiButtonSyncSurfaceDependency(pProxy, pData->pBadgeSurface,
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pBadgeSurface,
 		pData->arrSurfaceDependencies, 1);
 	for ( i = 0; i < XUI_BUTTON_VISUAL_COUNT; i++ ) {
-		bChanged |= __xuiButtonSyncSurfaceDependency(pProxy,
+		bChanged |= xuiInternalSurfaceDependencySync(pProxy,
 			pData->arrHasPatch[i] ? pData->arrPatch[i].pSurface : NULL,
 			pData->arrSurfaceDependencies, i + 2);
 	}

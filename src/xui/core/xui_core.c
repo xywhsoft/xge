@@ -1015,6 +1015,41 @@ xui_proxy xuiInternalContextGetProxy(xui_context pContext)
 	return &pContext->tProxy;
 }
 
+int xuiInternalSurfaceDependencySync(xui_proxy pProxy, xui_surface pSurface,
+	xui_surface_dependency_t* pDependencies, int iIndex)
+{
+	xui_surface_dependency_t* pDependency;
+	uint32_t iGeneration;
+	int bGenerationValid;
+	int bChanged;
+	int i;
+
+	if ( pDependencies == NULL || iIndex < 0 ) return 0;
+	pDependency = &pDependencies[iIndex];
+	iGeneration = 0;
+	bGenerationValid = 0;
+	if ( pSurface != NULL && pProxy != NULL && pProxy->surfaceGetGeneration != NULL ) {
+		for ( i = 0; i < iIndex; i++ ) {
+			if ( pDependencies[i].pSurface == pSurface &&
+			     pDependencies[i].bGenerationValid ) {
+				iGeneration = pDependencies[i].iGeneration;
+				bGenerationValid = 1;
+				break;
+			}
+		}
+		if ( !bGenerationValid &&
+		     pProxy->surfaceGetGeneration(pProxy, pSurface, &iGeneration) == XUI_OK ) {
+			bGenerationValid = 1;
+		}
+	}
+	bChanged = pDependency->pSurface == pSurface && bGenerationValid &&
+		(!pDependency->bGenerationValid || pDependency->iGeneration != iGeneration);
+	pDependency->pSurface = pSurface;
+	pDependency->iGeneration = iGeneration;
+	pDependency->bGenerationValid = bGenerationValid;
+	return bChanged;
+}
+
 int xuiInternalContextInvalidateRect(xui_context pContext, xui_rect_i_t tRect)
 {
 	if ( !__xuiContextValid(pContext) ) {

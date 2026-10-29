@@ -32,12 +32,6 @@ typedef struct xui_checkbox_visual_t {
 	float fBorderWidth;
 } xui_checkbox_visual_t;
 
-typedef struct xui_checkbox_surface_dependency_t {
-	xui_surface pSurface;
-	uint32_t iGeneration;
-	int bGenerationValid;
-} xui_checkbox_surface_dependency_t;
-
 typedef struct xui_checkbox_data_t {
 	char* sText;
 	int iTextCapacity;
@@ -76,7 +70,7 @@ typedef struct xui_checkbox_data_t {
 	xui_rect_t tMixedSrc;
 	xui_rect_t tIndicatorRect;
 	xui_rect_t tTextRect;
-	xui_checkbox_surface_dependency_t arrSurfaceDependencies[XUI_CHECKBOX_SURFACE_DEPENDENCY_COUNT];
+	xui_surface_dependency_t arrSurfaceDependencies[XUI_CHECKBOX_SURFACE_DEPENDENCY_COUNT];
 } xui_checkbox_data_t;
 
 static uint32_t __xuiCheckBoxColorAlpha(uint32_t iColor)
@@ -108,40 +102,6 @@ static int __xuiCheckBoxRectEqual(xui_rect_t tA, xui_rect_t tB)
 {
 	return tA.fX == tB.fX && tA.fY == tB.fY &&
 	       tA.fW == tB.fW && tA.fH == tB.fH;
-}
-
-static int __xuiCheckBoxSyncSurfaceDependency(xui_proxy pProxy, xui_surface pSurface,
-	xui_checkbox_surface_dependency_t* pDependencies, int iIndex)
-{
-	xui_checkbox_surface_dependency_t* pDependency;
-	uint32_t iGeneration;
-	int bGenerationValid;
-	int bChanged;
-	int i;
-
-	pDependency = &pDependencies[iIndex];
-	iGeneration = 0;
-	bGenerationValid = 0;
-	if ( pSurface != NULL && pProxy != NULL && pProxy->surfaceGetGeneration != NULL ) {
-		for ( i = 0; i < iIndex; i++ ) {
-			if ( pDependencies[i].pSurface == pSurface &&
-			     pDependencies[i].bGenerationValid ) {
-				iGeneration = pDependencies[i].iGeneration;
-				bGenerationValid = 1;
-				break;
-			}
-		}
-		if ( !bGenerationValid &&
-		     pProxy->surfaceGetGeneration(pProxy, pSurface, &iGeneration) == XUI_OK ) {
-			bGenerationValid = 1;
-		}
-	}
-	bChanged = pDependency->pSurface == pSurface && bGenerationValid &&
-		(!pDependency->bGenerationValid || pDependency->iGeneration != iGeneration);
-	pDependency->pSurface = pSurface;
-	pDependency->iGeneration = iGeneration;
-	pDependency->bGenerationValid = bGenerationValid;
-	return bChanged;
 }
 
 static int __xuiCheckBoxDescValid(const xui_checkbox_desc_t* pDesc)
@@ -1028,11 +988,11 @@ static int __xuiCheckBoxPreparePaint(xui_widget pWidget)
 	pData = __xuiCheckBoxGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
-	bChanged = __xuiCheckBoxSyncSurfaceDependency(pProxy, pData->pUncheckedSurface,
+	bChanged = xuiInternalSurfaceDependencySync(pProxy, pData->pUncheckedSurface,
 		pData->arrSurfaceDependencies, 0);
-	bChanged |= __xuiCheckBoxSyncSurfaceDependency(pProxy, pData->pCheckedSurface,
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pCheckedSurface,
 		pData->arrSurfaceDependencies, 1);
-	bChanged |= __xuiCheckBoxSyncSurfaceDependency(pProxy, pData->pMixedSurface,
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pMixedSurface,
 		pData->arrSurfaceDependencies, 2);
 	return bChanged ? xuiWidgetInvalidate(pWidget,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
