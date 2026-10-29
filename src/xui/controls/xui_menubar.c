@@ -377,6 +377,33 @@ static int __xuiMenuBarItemValid(xui_widget pWidget, const xui_menubar_item_t* p
 	return __xuiMenuBarMenuValid(pWidget, pItem->pMenu);
 }
 
+static int __xuiMenuBarItemsEqual(const xui_menubar_data_t* pData,
+	const xui_menubar_item_t* pItems, int iCount)
+{
+	const xui_menubar_item_t* pCurrent;
+	const xui_menubar_item_t* pNext;
+	const char* sCurrent;
+	const char* sNext;
+	int iMnemonic;
+	int i;
+
+	if ( pData == NULL || pData->iItemCount != iCount ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		pCurrent = &pData->arrItems[i];
+		pNext = &pItems[i];
+		sCurrent = pCurrent->sText != NULL ? pCurrent->sText : "";
+		sNext = pNext->sText != NULL ? pNext->sText : "";
+		iMnemonic = pNext->iMnemonic != 0 ? __xuiMenuBarAsciiUpper(pNext->iMnemonic) : 0;
+		if ( strcmp(sCurrent, sNext) != 0 ||
+		     pCurrent->iState != pNext->iState ||
+		     pCurrent->iValue != pNext->iValue ||
+		     pCurrent->iMnemonic != iMnemonic ||
+		     pCurrent->pMenu != pNext->pMenu ||
+		     pCurrent->pUser != pNext->pUser ) return 0;
+	}
+	return 1;
+}
+
 static int __xuiMenuBarCopyItems(xui_menubar_item_t* pTarget, char** arrDisplay,
 	const xui_menubar_item_t* pItems, int iCount)
 {
@@ -1892,6 +1919,7 @@ XUI_API int xuiMenuBarSetItems(xui_widget pWidget, const xui_menubar_item_t* pIt
 	for ( i = 0; i < iCount; i++ ) {
 		if ( !__xuiMenuBarItemValid(pWidget, &pItems[i]) ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xuiMenuBarItemsEqual(pData, pItems, iCount) ) return XUI_OK;
 	iRet = __xuiMenuBarCopyItems(arrNew, arrNewDisplay, pItems, iCount);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiMenuBarCloseOpen(pWidget, pData);

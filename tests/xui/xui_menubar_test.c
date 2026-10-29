@@ -346,6 +346,14 @@ int main(void)
 	iRet = xuiWidgetPerformAccessibleAction(pMenuBar, 2u, XUI_ACCESSIBLE_ACTION_EXPAND, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 0 && xuiMenuIsOpen(pFileMenu),
 		"accessibility expands menu");
+	iChangeCount = xuiMenuBarGetChangeCount(pMenuBar);
+	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
+	iRet = xuiMenuBarSetItems(pMenuBar, arrBarItems, 3);
+	if ( iRet == XUI_OK ) tFileRect = xuiMenuBarGetItemRect(pMenuBar, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetOpenIndex(pMenuBar) == 0 &&
+		xuiMenuIsOpen(pFileMenu) && xuiMenuBarGetChangeCount(pMenuBar) == iChangeCount &&
+		xuiTestProxyGetTextMeasureCount(&tState) == iMeasureCount && tFileRect.fW >= 20.0f,
+		"repeated items preserve the open menu session and layout cache");
 
 	iRet = __xuiMenuBarMoveToItem(pContext, pMenuBar, 1);
 	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
