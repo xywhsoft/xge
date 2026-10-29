@@ -227,6 +227,7 @@ int main(void)
 	tAccessible.iSize = sizeof(tAccessible);
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pJoystick, 0, &tAccessible) == XUI_OK &&
 		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0 &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) == 0 &&
 		tAccessible.iActions == 0,
 		"hidden joystick accessibility is offscreen and inert");
 	XUI_TEST_CHECK(xuiWidgetPerformAccessibleAction(pJoystick, tAccessible.iId,
@@ -457,6 +458,20 @@ int main(void)
 	XUI_TEST_CHECK(tLastSrc.fX == 0.0f && tLastSrc.fY == 0.0f &&
 		tLastSrc.fW == 16.0f && tLastSrc.fH == 16.0f,
 		"active state reuses normal custom surface and resolves full source rect");
+	XUI_TEST_CHECK(xuiRenderPrepare(pContext) == XUI_OK &&
+		__xuiVirtualJoystickRender(pContext, pTarget) == XUI_OK,
+		"prepare borrowed joystick surface dependency");
+	xuiWidgetClearDirty(pJoystick, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pRoot, XUI_WIDGET_DIRTY_ALL);
+	g_xuiVirtualJoystickRenderCount = 0;
+	XUI_TEST_CHECK(xuiRenderPrepare(pContext) == XUI_OK &&
+		g_xuiVirtualJoystickRenderCount == 0,
+		"unchanged borrowed joystick surface reuses cache");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pCustomSurface,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = __xuiVirtualJoystickRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_xuiVirtualJoystickRenderCount > 0,
+		"borrowed joystick surface generation rebuilds cache");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);

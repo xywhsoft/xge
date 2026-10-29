@@ -9,6 +9,7 @@
 
 #define XUI_VIRTUAL_JOYSTICK_MAX_RADIUS \
 	(XUI_LAYOUT_UNBOUNDED * 0.5f - 64.0f)
+#define XUI_VIRTUAL_JOYSTICK_SURFACE_DEPENDENCY_COUNT 5
 
 typedef struct xui_virtual_joystick_channel_t {
 	int bPressed;
@@ -49,6 +50,7 @@ typedef struct xui_virtual_joystick_data_t {
 	uint32_t iFocusColor;
 	uint32_t iDisabledColor;
 	char sAccessibleValue[96];
+	xui_surface_dependency_t arrSurfaceDependencies[XUI_VIRTUAL_JOYSTICK_SURFACE_DEPENDENCY_COUNT];
 } xui_virtual_joystick_data_t;
 
 typedef struct xui_virtual_joystick_style_t {
@@ -1085,6 +1087,7 @@ static int __xuiVirtualJoystickAccessibleGet(xui_widget pWidget, int iIndex,
 {
 	xui_virtual_joystick_data_t* pData = (xui_virtual_joystick_data_t*)pUser;
 	uint32_t iInputState;
+	int bCanInteract;
 
 	if ( pNode == NULL || iIndex != 0 || !__xuiVirtualJoystickWidgetAlive(pWidget, pData) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1098,9 +1101,14 @@ static int __xuiVirtualJoystickAccessibleGet(xui_widget pWidget, int iIndex,
 	pNode->sValue = pData->sAccessibleValue;
 	pNode->sDescription = xuiWidgetGetAccessibleDescription(pWidget);
 	pNode->tBounds = xuiWidgetGetWorldRect(pWidget);
-	pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE | XUI_ACCESSIBLE_STATE_READONLY;
+	pNode->iState |= XUI_ACCESSIBLE_STATE_READONLY;
+	bCanInteract = xuiWidgetGetEffectiveEnabled(pWidget) &&
+		xuiWidgetGetEffectiveVisible(pWidget);
+	if ( bCanInteract ) pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
 	iInputState = xuiWidgetGetInputState(pWidget);
-	if ( (iInputState & XUI_WIDGET_STATE_FOCUS) != 0 ) pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+	if ( bCanInteract && (iInputState & XUI_WIDGET_STATE_FOCUS) != 0 ) {
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+	}
 	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
 	if ( !xuiWidgetGetEffectiveVisible(pWidget) ) pNode->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 	pNode->iActions = (xuiWidgetGetEffectiveEnabled(pWidget) &&
@@ -1303,6 +1311,29 @@ static void __xuiVirtualJoystickRegisterStyleProperties(xui_context pContext, xu
 	__xuiVirtualJoystickRegisterStyleProperty(pContext, pType, "virtual_joystick.disabled.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 }
 
+static int __xuiVirtualJoystickPreparePaint(xui_widget pWidget)
+{
+	xui_virtual_joystick_data_t* pData;
+	xui_proxy pProxy;
+	int bChanged;
+
+	pData = __xuiVirtualJoystickGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	bChanged = xuiInternalSurfaceDependencySync(pProxy, pData->pBaseSurface,
+		pData->arrSurfaceDependencies, 0);
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pBaseActiveSurface,
+		pData->arrSurfaceDependencies, 1);
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pKnobSurface,
+		pData->arrSurfaceDependencies, 2);
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pKnobActiveSurface,
+		pData->arrSurfaceDependencies, 3);
+	bChanged |= xuiInternalSurfaceDependencySync(pProxy, pData->pRippleSurface,
+		pData->arrSurfaceDependencies, 4);
+	return bChanged ? xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
+}
+
 XUI_API xui_widget_type xuiVirtualJoystickGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1315,6 +1346,7 @@ XUI_API xui_widget_type xuiVirtualJoystickGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "virtual_joystick");
 	if ( pType != NULL ) {
 		__xuiVirtualJoystickRegisterStyleProperties(pContext, pType);
+		pType->onPreparePaint = __xuiVirtualJoystickPreparePaint;
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1334,6 +1366,7 @@ XUI_API xui_widget_type xuiVirtualJoystickGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiVirtualJoystickRegisterStyleProperties(pContext, pType);
+	pType->onPreparePaint = __xuiVirtualJoystickPreparePaint;
 	return pType;
 }
 
