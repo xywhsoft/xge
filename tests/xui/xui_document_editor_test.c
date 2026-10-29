@@ -6608,7 +6608,12 @@ static void document_find_ui_cases(xui_context context, xui_surface target)
         xuiSetRootWidget(context, editor) == XUI_OK &&
         xuiWidgetSetRect(editor, (xui_rect_t){0, 0, 700, 420}) == XUI_OK &&
         xuiInputViewport(context, 700, 420) == XUI_OK &&
-        xuiEditSetText(editor, "alpha beta alpha") == XUI_OK);
+        xuiEditSetText(editor, "alpha beta alpha") == XUI_OK &&
+        xuiDocumentEditorFlush(editor) == XUI_OK);
+    CHECK(xuiDocumentViewFind(editor, "beta", 4, 0, 1, &match) == XUI_OK);
+    selection.tAnchor = match.tCaret;
+    selection.tCaret = match.tAnchor;
+    CHECK(xuiDocumentViewSetSelection(editor, &selection) == XUI_OK);
     CHECK(xuiDocumentEditorGetFindWindow(editor) == NULL &&
         xuiDocumentEditorOpenFind(editor) == XUI_OK);
     window = xuiDocumentEditorGetFindWindow(editor);
@@ -6624,7 +6629,8 @@ static void document_find_ui_cases(xui_context context, xui_surface target)
     CHECK(input && replacement && table && case_sensitive && whole_word && regex &&
         selection_only && status && xuiCheckBoxGetChecked(case_sensitive) &&
         !xuiCheckBoxGetChecked(whole_word) && !xuiCheckBoxGetChecked(regex) &&
-        !xuiCheckBoxGetChecked(selection_only));
+        !xuiCheckBoxGetChecked(selection_only) &&
+        !strcmp(xuiInputGetText(input), "beta"));
     CHECK(xuiInputSetText(input, "alpha") == XUI_OK);
     document_find_click(context, document_find_button(context, window, XUI_TR_FIND_ALL));
     CHECK(xuiDocumentViewGetFindResultCount(editor, &count) == XUI_OK);
