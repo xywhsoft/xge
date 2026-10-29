@@ -309,6 +309,7 @@ int main(void)
 	xui_surface pIcon;
 	xui_surface pCache;
 	xui_font pFont;
+	xui_font pAltFont;
 	xui_inventory_grid_desc_t tDesc;
 	xui_inventory_grid_layout_t tLayout;
 	xui_inventory_grid_layout_t tCompactLayout;
@@ -336,6 +337,10 @@ int main(void)
 	xui_scroll_model_t* pScroll;
 	xui_widget pSplitInput;
 	xui_widget pSplitPopup;
+	xui_widget pSplitContent;
+	xui_widget pSplitTitle;
+	xui_widget pSplitCancel;
+	xui_widget pSplitOk;
 	xui_animation_object_t* pAnimation;
 	xvalue* pXsonValue;
 	xvalue* pSavedXsonValue;
@@ -372,6 +377,7 @@ int main(void)
 	pIcon = NULL;
 	pCache = NULL;
 	pFont = NULL;
+	pAltFont = NULL;
 	pXsonValue = NULL;
 	pSavedXsonValue = NULL;
 	sXsonPath = "build\\xui_inventory_grid_state.xson";
@@ -386,6 +392,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
 	iRet = tProxyState.tProxy.fontLoadMemory(&tProxyState.tProxy, &pFont, "inventorygrid", 13, 13.0f, XUI_FONT_FORMAT_TTF);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFont != NULL, "font create");
+	iRet = tProxyState.tProxy.fontLoadMemory(&tProxyState.tProxy, &pAltFont,
+		"inventorygrid-alt", 17, 15.0f, XUI_FONT_FORMAT_TTF);
+	XUI_TEST_CHECK(iRet == XUI_OK && pAltFont != NULL, "alternate font create");
 	iRet = xuiSetDefaultFont(pContext, pFont);
 	XUI_TEST_CHECK(iRet == XUI_OK, "default font");
 	iRet = xuiInputViewport(pContext, 360.0f, 240.0f);
@@ -408,6 +417,29 @@ int main(void)
 	pTempGrid = pRoot;
 	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pTempGrid == NULL, "descriptor rejects malformed initial slot");
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = pAltFont;
+	XUI_TEST_CHECK(xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc) == XUI_OK && pTempGrid != NULL,
+		"create custom-font inventory");
+	pSplitPopup = xuiInventoryGridGetSplitPopupWidget(pTempGrid);
+	pSplitContent = (pSplitPopup != NULL) ? xuiPopupGetContentWidget(pSplitPopup) : NULL;
+	pSplitTitle = (pSplitContent != NULL) ? xuiWidgetGetFirstChild(pSplitContent) : NULL;
+	pSplitInput = (pSplitTitle != NULL) ? xuiWidgetGetNextSibling(pSplitTitle) : NULL;
+	pSplitCancel = (pSplitInput != NULL) ? xuiWidgetGetNextSibling(pSplitInput) : NULL;
+	pSplitOk = (pSplitCancel != NULL) ? xuiWidgetGetNextSibling(pSplitCancel) : NULL;
+	XUI_TEST_CHECK(pSplitTitle != NULL && pSplitInput != NULL && pSplitCancel != NULL && pSplitOk != NULL &&
+		xuiLabelGetFont(pSplitTitle) == pAltFont && xuiNumericInputGetFont(pSplitInput) == pAltFont &&
+		xuiButtonGetFont(pSplitCancel) == pAltFont && xuiButtonGetFont(pSplitOk) == pAltFont,
+		"split popup inherits inventory descriptor font");
+	xuiWidgetDestroy(pTempGrid);
+	pTempGrid = NULL;
+	pSplitPopup = NULL;
+	pSplitContent = NULL;
+	pSplitTitle = NULL;
+	pSplitInput = NULL;
+	pSplitCancel = NULL;
+	pSplitOk = NULL;
 
 	memset(&tLayout, 0, sizeof(tLayout));
 	tLayout.iSize = sizeof(tLayout);
@@ -1219,6 +1251,9 @@ cleanup:
 	}
 	if ( pFont != NULL ) {
 		tProxyState.tProxy.fontDestroy(&tProxyState.tProxy, pFont);
+	}
+	if ( pAltFont != NULL ) {
+		tProxyState.tProxy.fontDestroy(&tProxyState.tProxy, pAltFont);
 	}
 	if ( iFailed ) {
 		return 1;

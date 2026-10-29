@@ -3181,7 +3181,9 @@ static int __xuiInventoryCreateSplitInput(xui_widget pGrid, xui_inventory_grid_d
 	return XUI_OK;
 }
 
-static int __xuiInventoryCreateSplitButton(xui_widget pGrid, xui_widget pContent, const char* sText, xui_rect_t tRect, int bPrimary, xui_button_click_proc onClick, xui_widget* ppButton)
+static int __xuiInventoryCreateSplitButton(xui_widget pGrid, xui_widget pContent, xui_font pFont,
+	const char* sText, xui_rect_t tRect, int bPrimary, xui_button_click_proc onClick,
+	xui_widget* ppButton)
 {
 	xui_button_desc_t tDesc;
 	xui_widget pButton;
@@ -3190,7 +3192,7 @@ static int __xuiInventoryCreateSplitButton(xui_widget pGrid, xui_widget pContent
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = sText;
-	tDesc.pFont = xuiGetDefaultFont(xuiWidgetGetContext(pGrid));
+	tDesc.pFont = pFont;
 	tDesc.iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 	tDesc.fBorderWidth = 1.0f;
 	if ( bPrimary ) {
@@ -3266,9 +3268,13 @@ static int __xuiInventoryCreateSplitPopup(xui_widget pWidget, xui_inventory_grid
 	if ( iRet != XUI_OK ) goto fail;
 	iRet = __xuiInventoryCreateSplitInput(pWidget, pData, pContent);
 	if ( iRet != XUI_OK ) goto fail;
-	iRet = __xuiInventoryCreateSplitButton(pWidget, pContent, "Cancel", (xui_rect_t){84.0f, 68.0f, 58.0f, 24.0f}, 0, __xuiInventorySplitCancelClick, &pData->pSplitCancel);
+	iRet = __xuiInventoryCreateSplitButton(pWidget, pContent, pData->pFont,
+		"Cancel", (xui_rect_t){84.0f, 68.0f, 58.0f, 24.0f}, 0,
+		__xuiInventorySplitCancelClick, &pData->pSplitCancel);
 	if ( iRet != XUI_OK ) goto fail;
-	iRet = __xuiInventoryCreateSplitButton(pWidget, pContent, "OK", (xui_rect_t){152.0f, 68.0f, 58.0f, 24.0f}, 1, __xuiInventorySplitOkClick, &pData->pSplitOk);
+	iRet = __xuiInventoryCreateSplitButton(pWidget, pContent, pData->pFont,
+		"OK", (xui_rect_t){152.0f, 68.0f, 58.0f, 24.0f}, 1,
+		__xuiInventorySplitOkClick, &pData->pSplitOk);
 	if ( iRet != XUI_OK ) goto fail;
 	iRet = xuiPopupSetFocusPolicy(pData->pSplitPopup, XUI_POPUP_FOCUS_CUSTOM, pData->pSplitInput);
 	if ( iRet != XUI_OK ) goto fail;
