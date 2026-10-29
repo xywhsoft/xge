@@ -11028,7 +11028,8 @@ XUI_API int xuiTimeLineViewGetSelectionCount(xui_widget pWidget);
 XUI_API int xuiTimeLineViewGetSelection(xui_widget pWidget, int iIndex, xui_timeline_selection_t* pSelection);
 /* 注册当前帧 changing/changed 回调对。 */
 XUI_API int xuiTimeLineViewSetCurrentFrameCallbacks(xui_widget pWidget, xui_timeline_current_frame_changing_proc onChanging, xui_timeline_current_frame_changed_proc onChanged, void* pUser);
-/* 注册图层结构变更回调对。 */
+/* 注册图层名称、可见性、锁定与激活选择的 changing/changed 回调对；
+ * changing 返回 0 可否决对应变更。 */
 XUI_API int xuiTimeLineViewSetLayerCallbacks(xui_widget pWidget, xui_timeline_layer_changing_proc onChanging, xui_timeline_layer_changed_proc onChanged, void* pUser);
 /* 注册关键帧变更回调对。 */
 XUI_API int xuiTimeLineViewSetFrameCallbacks(xui_widget pWidget, xui_timeline_frame_changing_proc onChanging, xui_timeline_frame_changed_proc onChanged, void* pUser);

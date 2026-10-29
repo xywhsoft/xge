@@ -489,6 +489,16 @@ static float __xuiTimeLineLayerTop(const xui_timeline_view_data_t* pData, int iL
 	return fY;
 }
 
+static void __xuiTimeLineBuildLayerTops(const xui_timeline_view_data_t* pData,
+	float arrLayerTop[XUI_TIMELINE_LAYER_CAPACITY + 1])
+{
+	int i;
+	arrLayerTop[0] = 0.0f;
+	for ( i = 0; i < pData->iLayerCount; ++i ) {
+		arrLayerTop[i + 1] = arrLayerTop[i] + __xuiTimeLineLayerHeight(pData, i);
+	}
+}
+
 static float __xuiTimeLineContentHeight(const xui_timeline_view_data_t* pData)
 {
 	return __xuiTimeLineLayerTop(pData, pData->iLayerCount);
@@ -625,15 +635,36 @@ static void __xuiTimeLineScrollOffset(xui_timeline_view_data_t* pData, float* pX
 static int __xuiTimeLineSetActiveLayer(xui_widget pWidget, xui_timeline_view_data_t* pData, int iLayer)
 {
 	xui_context pContext;
+	xui_timeline_layer_changing_proc onChanging;
+	xui_timeline_layer_changed_proc onChanged;
 	xui_timeline_layer_selected_proc onSelected;
+	void* pLayerUser;
 	void* pSelectedUser;
+	int iGeneration;
+	int iLayerId;
 	int iOld;
+	int bAllowed;
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( pData->iLayerCount <= 0 ) iLayer = -1;
 	else iLayer = __xuiTimeLineClampInt(iLayer, 0, pData->iLayerCount - 1);
 	iOld = pData->iActiveLayer;
 	if ( iOld == iLayer ) return XUI_OK;
+	iLayerId = (iLayer >= 0) ? pData->arrLayers[iLayer].iId : -1;
+	iGeneration = pData->iLayerChangeCount;
+	onChanging = pData->onLayerChanging;
+	pLayerUser = pData->pLayerUser;
+	if ( onChanging != NULL ) {
+		bAllowed = onChanging(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_SELECT, pLayerUser);
+		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( !bAllowed || pData->iLayerChangeCount != iGeneration ) return XUI_OK;
+		if ( iLayerId > 0 ) {
+			iLayer = __xuiTimeLineFindLayerId(pData, iLayerId);
+			if ( iLayer < 0 ) return XUI_OK;
+		}
+		iOld = pData->iActiveLayer;
+		if ( iOld == iLayer ) return XUI_OK;
+	}
 	if ( iOld >= 0 && iOld < pData->iLayerCount ) pData->arrLayers[iOld].bSelected = 0;
 	pData->iActiveLayer = iLayer;
 	if ( iLayer >= 0 && iLayer < pData->iLayerCount ) {
@@ -641,6 +672,16 @@ static int __xuiTimeLineSetActiveLayer(xui_widget pWidget, xui_timeline_view_dat
 	}
 	pData->iLayerChangeCount++;
 	pData->iChangeCount++;
+	onChanged = pData->onLayerChanged;
+	pLayerUser = pData->pLayerUser;
+	if ( onChanged != NULL ) {
+		onChanged(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_SELECT, pLayerUser);
+		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( iLayerId > 0 ) {
+			iLayer = __xuiTimeLineFindLayerId(pData, iLayerId);
+			if ( iLayer < 0 || pData->iActiveLayer != iLayer ) return XUI_OK;
+		}
+	}
 	onSelected = pData->onLayerSelected;
 	pSelectedUser = pData->pLayerSelectedUser;
 	if ( iLayer >= 0 && onSelected != NULL ) {
@@ -1066,6 +1107,7 @@ static int __xuiTimeLineRenderLayers(xui_widget pWidget, xui_draw_context pDraw,
 	float fOffsetY;
 	float fY;
 	float fH;
+	float arrLayerTop[XUI_TIMELINE_LAYER_CAPACITY + 1];
 	uint32_t iFill;
 	int i;
 	int iRet;
@@ -1076,11 +1118,12 @@ static int __xuiTimeLineRenderLayers(xui_widget pWidget, xui_draw_context pDraw,
 	pContext = xuiWidgetGetContext(pWidget);
 	tLayerRect = __xuiTimeLineLayerRect(pWidget, pData);
 	__xuiTimeLineScrollOffset(pData, NULL, &fOffsetY);
+	__xuiTimeLineBuildLayerTops(pData, arrLayerTop);
 	iRet = __xuiTimeLineDrawFill(pProxy, pDraw, tLayerRect, pPaint->tColors.iLayerColor);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pData->iLayerCount; i++ ) {
 		fH = __xuiTimeLineLayerHeight(pData, i);
-		fY = tLayerRect.fY + __xuiTimeLineLayerTop(pData, i) - fOffsetY;
+		fY = tLayerRect.fY + arrLayerTop[i] - fOffsetY;
 		if ( (fY + fH < tLayerRect.fY) || (fY > tLayerRect.fY + tLayerRect.fH) ) continue;
 		tRow = xuiInternalSnapRect((xui_rect_t){tLayerRect.fX, fY, tLayerRect.fW, fH});
 		iState = __xuiTimeLineLayerState(pData, i);
@@ -1270,6 +1313,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 	float fY;
 	float fH;
 	float fX;
+	float arrLayerTop[XUI_TIMELINE_LAYER_CAPACITY + 1];
 	int iLayer;
 	int iFrame0;
 	int iFrame1;
@@ -1288,6 +1332,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 	pProxy = xuiInternalContextGetProxy(pContext);
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	__xuiTimeLineResolvePaint(pWidget, pData, &tPaint);
+	__xuiTimeLineBuildLayerTops(pData, arrLayerTop);
 	tView = xuiWidgetGetRect(pViewport);
 	tView.fX = 0.0f;
 	tView.fY = 0.0f;
@@ -1298,7 +1343,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 	iFrame1 = __xuiTimeLineClampInt((int)ceilf((fOffsetX + tView.fW) / pData->fFrameWidth) + 1, 0, pData->iTotalFrames - 1);
 	for ( iLayer = 0; iLayer < pData->iLayerCount; iLayer++ ) {
 		fH = __xuiTimeLineLayerHeight(pData, iLayer);
-		fY = __xuiTimeLineLayerTop(pData, iLayer) - fOffsetY;
+		fY = arrLayerTop[iLayer] - fOffsetY;
 		if ( (fY + fH < 0.0f) || (fY > tView.fH) ) continue;
 		tRow = xuiInternalSnapRect((xui_rect_t){0.0f, fY, tView.fW, fH});
 		iRowColor = ((iLayer & 1) != 0) ? pPaint->tColors.iLayerAltColor : pPaint->tColors.iBackgroundColor;
@@ -1316,7 +1361,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 		xui_timeline_span_t* pSpan = &pData->arrSpans[i];
 		if ( (pSpan->iLayer < 0) || (pSpan->iLayer >= pData->iLayerCount) ) continue;
 		fH = __xuiTimeLineLayerHeight(pData, pSpan->iLayer);
-		fY = __xuiTimeLineLayerTop(pData, pSpan->iLayer) - fOffsetY;
+		fY = arrLayerTop[pSpan->iLayer] - fOffsetY;
 		if ( (fY + fH < 0.0f) || (fY > tView.fH) ) continue;
 		tSpan = xuiInternalSnapRect((xui_rect_t){
 			(float)pSpan->iStartFrame * pData->fFrameWidth - fOffsetX + 2.0f,
@@ -1341,7 +1386,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 		xui_timeline_selection_t* pSel = &pData->arrSelection[i];
 		if ( (pSel->iLayer < 0) || (pSel->iLayer >= pData->iLayerCount) || (pSel->iFrame < iFrame0) || (pSel->iFrame > iFrame1) ) continue;
 		fH = __xuiTimeLineLayerHeight(pData, pSel->iLayer);
-		tCell = xuiInternalSnapRect((xui_rect_t){(float)pSel->iFrame * pData->fFrameWidth - fOffsetX + 1.0f, __xuiTimeLineLayerTop(pData, pSel->iLayer) - fOffsetY + 2.0f, __xuiTimeLineMax(1.0f, pData->fFrameWidth - 2.0f), __xuiTimeLineMax(1.0f, fH - 4.0f)});
+		tCell = xuiInternalSnapRect((xui_rect_t){(float)pSel->iFrame * pData->fFrameWidth - fOffsetX + 1.0f, arrLayerTop[pSel->iLayer] - fOffsetY + 2.0f, __xuiTimeLineMax(1.0f, pData->fFrameWidth - 2.0f), __xuiTimeLineMax(1.0f, fH - 4.0f)});
 		iRet = __xuiTimeLineDrawFill(pProxy, pDraw, tCell, pPaint->tColors.iSelectedColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -1349,7 +1394,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 		xui_timeline_frame_t* pFrame = &pData->arrFrames[i];
 		if ( (pFrame->iLayer < 0) || (pFrame->iLayer >= pData->iLayerCount) || (pFrame->iFrame < iFrame0) || (pFrame->iFrame > iFrame1) ) continue;
 		fH = __xuiTimeLineLayerHeight(pData, pFrame->iLayer);
-		tCell = xuiInternalSnapRect((xui_rect_t){(float)pFrame->iFrame * pData->fFrameWidth - fOffsetX, __xuiTimeLineLayerTop(pData, pFrame->iLayer) - fOffsetY, pData->fFrameWidth, fH});
+		tCell = xuiInternalSnapRect((xui_rect_t){(float)pFrame->iFrame * pData->fFrameWidth - fOffsetX, arrLayerTop[pFrame->iLayer] - fOffsetY, pData->fFrameWidth, fH});
 		iRet = __xuiTimeLineDrawFrameMarker(pWidget, pDraw, pData, pProxy, pFrame->iLayer, pFrame->iFrame, pFrame, tCell, pPaint);
 		if ( iRet == XUI_TIMELINE_RENDER_ABORTED ) return XUI_OK;
 		if ( iRet != XUI_OK ) return iRet;
@@ -1514,7 +1559,10 @@ static int __xuiTimeLinePointerMove(xui_widget pWidget, xui_timeline_view_data_t
 	     xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
 		(void)__xuiTimeLineHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
 		if ( pData->bDraggingPlayhead ) {
-			iFrame = (tHit.iFrame >= 0) ? tHit.iFrame : __xuiTimeLineFrameAt(pData, (pEvent->fX - xuiWidgetGetWorldRect(pWidget).fX - pData->fLayerHeaderWidth));
+			float fOffsetX;
+			__xuiTimeLineScrollOffset(pData, &fOffsetX, NULL);
+			iFrame = (tHit.iFrame >= 0) ? tHit.iFrame : __xuiTimeLineFrameAt(pData,
+				pEvent->fX - xuiWidgetGetWorldRect(pWidget).fX - pData->fLayerHeaderWidth + fOffsetX);
 			if ( iFrame >= 0 ) {
 				iRet = __xuiTimeLineSetCurrentFrameInternal(pWidget, pData, iFrame);
 				if ( iRet != XUI_OK ) return iRet;
@@ -2229,6 +2277,7 @@ static int __xuiTimeLineWheel(xui_widget pWidget, xui_timeline_view_data_t* pDat
 		pData->iHoverSpanId = -1;
 		return XUI_OK;
 	}
+	if ( pEvent->fWheelY == 0.0f ) return XUI_OK;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	fLocalX = pEvent->fX - tWorld.fX - pData->fLayerHeaderWidth;
 	if ( fLocalX < 0.0f ) fLocalX = 0.0f;
@@ -3643,12 +3692,14 @@ XUI_API int xuiTimeLineViewSetSpanColor(xui_widget pWidget, int iSpanId, uint32_
 XUI_API int xuiTimeLineViewSetSpanCustomType(xui_widget pWidget, int iSpanId, const char* sCustomType)
 {
 	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	char sNewType[XUI_TIMELINE_TYPE_CAPACITY];
 	int iIndex;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiTimeLineFindSpan(pData, iSpanId);
 	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( strcmp(pData->arrSpans[iIndex].sCustomType, (sCustomType != NULL) ? sCustomType : "") == 0 ) return XUI_OK;
-	__xuiTimeLineCopy(pData->arrSpans[iIndex].sCustomType, XUI_TIMELINE_TYPE_CAPACITY, sCustomType);
+	__xuiTimeLineCopy(sNewType, sizeof(sNewType), sCustomType);
+	if ( strcmp(pData->arrSpans[iIndex].sCustomType, sNewType) == 0 ) return XUI_OK;
+	__xuiTimeLineCopy(pData->arrSpans[iIndex].sCustomType, XUI_TIMELINE_TYPE_CAPACITY, sNewType);
 	pData->iSpanChangeCount++;
 	return __xuiTimeLineChanged(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }

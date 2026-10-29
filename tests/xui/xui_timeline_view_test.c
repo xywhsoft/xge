@@ -19,6 +19,9 @@ typedef struct timeline_test_data_t {
 	int iCurrentChanged;
 	int iLayerChanging;
 	int iLayerChanged;
+	int iLastLayerChanging;
+	int iLastLayerChanged;
+	int bAllowLayerSelect;
 	int iFrameChanging;
 	int iFrameChanged;
 	int iSpanChanging;
@@ -179,7 +182,11 @@ static int __xuiTimelineLayerChanging(xui_widget pWidget, int iLayer, int iChang
 	(void)iLayer;
 	(void)iChange;
 	pData = (timeline_test_data_t*)pUser;
-	if ( pData != NULL ) pData->iLayerChanging++;
+	if ( pData != NULL ) {
+		pData->iLayerChanging++;
+		pData->iLastLayerChanging = iChange;
+		if ( iChange == XUI_TIMELINE_LAYER_CHANGE_SELECT && !pData->bAllowLayerSelect ) return 0;
+	}
 	return 1;
 }
 
@@ -190,7 +197,10 @@ static void __xuiTimelineLayerChanged(xui_widget pWidget, int iLayer, int iChang
 	(void)iLayer;
 	(void)iChange;
 	pData = (timeline_test_data_t*)pUser;
-	if ( pData != NULL ) pData->iLayerChanged++;
+	if ( pData != NULL ) {
+		pData->iLayerChanged++;
+		pData->iLastLayerChanged = iChange;
+	}
 }
 
 static int __xuiTimelineFrameChanging(xui_widget pWidget, int iLayer, int iFrame, int iOldType, int iNewType, void* pUser)
@@ -360,12 +370,18 @@ int main(void)
 	int iContextOpenBefore;
 	int iContextCommandBefore;
 	int iCurrentChangedBefore;
+	int iLayerChangingBefore;
+	int iLayerChangedBefore;
+	int iLayerSelectedBefore;
 	int iSelectionChangedBefore;
 	int iSelectionBefore;
+	int iSpanChangeBefore;
 	int iOwnerFrame;
 	int i;
 	int iFailed;
 	int iRet;
+	float fFrameWidthBefore;
+	float fOffsetX;
 	char sLongUtf8[128];
 
 	pContext = NULL;
@@ -379,6 +395,7 @@ int main(void)
 	pFont = NULL;
 	iFailed = 0;
 	memset(&tData, 0, sizeof(tData));
+	tData.bAllowLayerSelect = 1;
 	memset(&tDestroyChanging, 0, sizeof(tDestroyChanging));
 	memset(&tDestroyRender, 0, sizeof(tDestroyRender));
 	memset(&tMutateRender, 0, sizeof(tMutateRender));
@@ -494,6 +511,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "span custom type");
 	iRet = xuiTimeLineViewGetSpan(pTimeline, iSpan, &tSpan);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tSpan.sLabel, "intro") == 0 && strcmp(tSpan.sCustomType, "clip") == 0, "get span");
+	iSpanChangeBefore = xuiTimeLineViewGetSpanChangeCount(pTimeline);
+	iRet = xuiTimeLineViewSetSpanCustomType(pTimeline, iSpan, sLongUtf8);
+	if ( iRet == XUI_OK ) iRet = xuiTimeLineViewSetSpanCustomType(pTimeline, iSpan, sLongUtf8);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTimeLineViewGetSpanChangeCount(pTimeline) == iSpanChangeBefore + 1,
+		"truncated span custom type repeat is idempotent");
+	iRet = xuiTimeLineViewSetSpanCustomType(pTimeline, iSpan, "clip");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore span custom type");
 	iRet = xuiTimeLineViewSetSpan(pTimeline, iSpan, 0, 20, 999, "invalid");
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "span rejects invalid type");
 	iRet = xuiTimeLineViewGetSpan(pTimeline, iSpan, &tSpan);
@@ -516,6 +541,36 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "surface create");
 	iRet = __xuiTimelineTestRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK && tData.iRenderFrame > 0 && tData.iRenderLayer > 0, "render callbacks fire");
+	iLayerChangingBefore = tData.iLayerChanging;
+	iLayerChangedBefore = tData.iLayerChanged;
+	iLayerSelectedBefore = tData.iLayerSelected;
+	tData.bAllowLayerSelect = 0;
+	iRet = __xuiTimelineTestClick(pContext, 20.0f + 40.0f,
+		20.0f + 26.0f + (float)iLayerFx * 24.0f + 12.0f);
+	if ( iRet == XUI_OK ) iRet = xuiTimeLineViewGetLayer(pTimeline, iLayerFx, &tLayer);
+	XUI_TEST_CHECK(iRet == XUI_OK && !tLayer.bSelected &&
+		tData.iLayerChanging == iLayerChangingBefore + 1 &&
+		tData.iLayerChanged == iLayerChangedBefore &&
+		tData.iLayerSelected == iLayerSelectedBefore &&
+		tData.iLastLayerChanging == XUI_TIMELINE_LAYER_CHANGE_SELECT,
+		"layer select changing callback can veto activation");
+	tData.bAllowLayerSelect = 1;
+	iRet = __xuiTimelineTestClick(pContext, 20.0f + 40.0f,
+		20.0f + 26.0f + (float)iLayerFx * 24.0f + 12.0f);
+	if ( iRet == XUI_OK ) iRet = xuiTimeLineViewGetLayer(pTimeline, iLayerFx, &tLayer);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLayer.bSelected &&
+		tData.iLayerChanging == iLayerChangingBefore + 2 &&
+		tData.iLayerChanged == iLayerChangedBefore + 1 &&
+		tData.iLayerSelected == iLayerSelectedBefore + 1 &&
+		tData.iLastLayerChanged == XUI_TIMELINE_LAYER_CHANGE_SELECT,
+		"layer select callbacks wrap activation");
+	fFrameWidthBefore = xuiTimeLineViewGetFrameWidth(pTimeline);
+	iRet = xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerWheel(pContext, 25.0f, 25.0f, 1.0f, 0.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( xuiInputSetModifiers(pContext, 0u) != XUI_OK && iRet == XUI_OK ) iRet = XUI_ERROR;
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTimeLineViewGetFrameWidth(pTimeline) == fFrameWidthBefore,
+		"ctrl horizontal wheel does not zoom timeline");
 	XUI_TEST_CHECK(xuiQueryCursor(pContext, 20 + 150 + 8 * 10, 20 + 8) == XUI_CURSOR_RESIZE_EW,
 		"playhead uses horizontal drag cursor");
 
@@ -593,6 +648,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set offset");
 	iRet = xuiTimeLineViewGetOffset(pTimeline, NULL, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "get offset accepts nulls");
+	iRet = xuiTimeLineViewGetOffset(pTimeline, &fOffsetX, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiTimeLineViewSetCurrentFrame(pTimeline, 8);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDown(pContext,
+		20.0f + 150.0f + 8.0f * 10.0f - fOffsetX + 0.5f, 20.0f + 8.0f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext,
+		20.0f + 150.0f + 10.0f * 10.0f - fOffsetX + 0.5f, 290.0f,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTimeLineViewGetCurrentFrame(pTimeline) == 10,
+		"captured playhead drag keeps scrolled content coordinates outside widget");
+	iRet = xuiInputPointerUp(pContext,
+		20.0f + 150.0f + 10.0f * 10.0f - fOffsetX + 0.5f, 290.0f,
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"captured playhead drag releases after outside move");
 
 	iRet = xuiTimeLineViewSetFrameRate(pTimeline, NAN);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTimeLineViewGetFrameRate(pTimeline) == 24.0f,
