@@ -9400,7 +9400,7 @@ XUI_API int xuiTabsAddPage(xui_widget pWidget, const char* sTitle, xui_widget* p
 XUI_API int xuiTabsSetItemText(xui_widget pWidget, int iIndex, const char* sTitle);
 /* 删除指定页签，并销毁 Tabs 拥有的按钮、页面容器及其子树；相关借用句柄随即失效。 */
 XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex);
-/* 以字符串数组批量设置页签；标题会复制，既有页面容器按索引复用。 */
+/* 以字符串数组批量设置页签；标题会复制，既有页面容器及其启用、脏标记和图标状态按索引复用。 */
 XUI_API int xuiTabsSetItems(xui_widget pWidget, const char** arrItems, int iItemCount);
 /* 读取页签数。 */
 XUI_API int xuiTabsGetItemCount(xui_widget pWidget);

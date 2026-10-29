@@ -203,6 +203,13 @@ int main(void)
 		"Preview",
 		"Export"
 	};
+	static const char* arrRetitledItems[] = {
+		"Start",
+		"Scene renamed",
+		"Disabled",
+		"Preview",
+		"Export"
+	};
 	static const int arrEnabled[] = {1, 1, 0, 1, 1};
 	static const int arrEnabledMove[] = {1, 0, 0, 1, 1};
 	static const int arrDirty[] = {0, 1, 0, 0, 0};
@@ -408,6 +415,27 @@ int main(void)
 	tTab = xuiTabsGetTabRect(pTabs, 2);
 	iRet = __xuiTabsDispatchClick(pContext, tWorld.fX + tTab.fX + tTab.fW * 0.5f, tWorld.fY + tTab.fY + tTab.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 1 && tEvents.iSelectCount == 0, "disabled click ignored");
+	iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + xuiTabsGetTabRect(pTabs, 1).fX + 4.0f,
+		tWorld.fY + xuiTabsGetTabRect(pTabs, 1).fY + 4.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetHoverIndex(pTabs) == 1,
+		"hover enabled tab before repeated model update");
+	iBefore = xuiTabsGetChangeCount(pTabs);
+	iRet = xuiTabsSetItems(pTabs, arrItems, 5);
+	if ( iRet == XUI_OK ) iRet = xuiTabsSetSelected(pTabs, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 1 &&
+		xuiTabsGetHoverIndex(pTabs) == 1 && xuiTabsGetChangeCount(pTabs) == iBefore,
+		"repeated items preserve disabled and hover state");
+	iRet = xuiTabsSetItems(pTabs, arrRetitledItems, 5);
+	if ( iRet == XUI_OK ) iRet = xuiTabsSetSelected(pTabs, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiTabsGetItemText(pTabs, 1), "Scene renamed") == 0 &&
+		xuiTabsGetSelected(pTabs) == 1,
+		"changed titles preserve disabled state");
+	iRet = xuiTabsSetItems(pTabs, arrItems, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTabsGetItemText(pTabs, 1), "Scene") == 0,
+		"restore tab titles after state preservation test");
 	iBefore = xuiTabsGetChangeCount(pTabs);
 	iRet = xuiTabsSetEnabledItems(pTabs, arrEnabledMove, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 3 &&

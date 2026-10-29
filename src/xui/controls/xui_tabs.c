@@ -1354,15 +1354,21 @@ static int __xuiTabsApplyItems(xui_widget pTabs, xui_tabs_data_t* pData, const c
 	int iOldActiveIndex;
 	int iOldCloseHoverIndex;
 	int iOldCloseActiveIndex;
+	int bSameItems;
 	int i;
 	int iRet;
 
 	if ( (pTabs == NULL) || (pData == NULL) || (iItemCount < 0) || (iItemCount > XUI_TABS_PAGE_CAPACITY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	bSameItems = pData->iPageCount == iItemCount;
 	for ( i = 0; i < iItemCount; i++ ) {
 		__xuiTabsCopyTitle(arrNewTitles[i], (arrItems != NULL) ? arrItems[i] : "");
+		if ( bSameItems && strcmp(pData->arrPages[i].sTitle, arrNewTitles[i]) != 0 ) {
+			bSameItems = 0;
+		}
 	}
+	if ( bSameItems ) return XUI_OK;
 	iRet = __xuiTabsClearAllInteraction(pTabs, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	memcpy(arrOldPages, pData->arrPages, sizeof(arrOldPages));
@@ -1378,9 +1384,6 @@ static int __xuiTabsApplyItems(xui_widget pTabs, xui_tabs_data_t* pData, const c
 		iRet = __xuiTabsCreatePage(pTabs, pData, i);
 		if ( iRet != XUI_OK ) goto rollback;
 		__xuiTabsSetTitle(&pData->arrPages[i], arrNewTitles[i]);
-		if ( pData->arrPages[i].bEnabled == 0 ) {
-			pData->arrPages[i].bEnabled = 1;
-		}
 	}
 	pData->iPageCount = iItemCount;
 	if ( (pData->iSelected < 0) || (pData->iSelected >= pData->iPageCount) || !__xuiTabsItemEnabled(pData, pData->iSelected) ) {
