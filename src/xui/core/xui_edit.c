@@ -57,13 +57,13 @@ int xuiInternalEditDelegate(xui_widget pWidget, xui_widget pDelegate)
 	}
 	pTarget = __xuiEditTarget(pDelegate);
 	if ( pTarget == NULL ) return XUI_ERROR_UNSUPPORTED;
-	if ( xuiInternalWidgetIsValid(pWidget->pEditDelegate) &&
-	     pWidget->pEditDelegate->pEditOwner == pWidget ) {
-		pWidget->pEditDelegate->pEditOwner = NULL;
-	}
 	if ( xuiInternalWidgetIsValid(pDelegate->pEditOwner) &&
 	     pDelegate->pEditOwner != pWidget ) {
 		return XUI_ERROR_ALREADY_INITIALIZED;
+	}
+	if ( xuiInternalWidgetIsValid(pWidget->pEditDelegate) &&
+	     pWidget->pEditDelegate->pEditOwner == pWidget ) {
+		pWidget->pEditDelegate->pEditOwner = NULL;
 	}
 	pWidget->pEditDelegate = pDelegate;
 	pDelegate->pEditOwner = pWidget;
@@ -137,18 +137,19 @@ int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, i
 	xui_widget pHost;
 
 	pHost = xuiInternalEditHost(pWidget);
+	if ( pHost == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iType == XUI_EDIT_EVENT_TEXT_CHANGED || iType == XUI_EDIT_EVENT_SELECTION_CHANGED ) {
 		int iEvent = iType == XUI_EDIT_EVENT_TEXT_CHANGED ? XUI_ACCESSIBLE_EVENT_VALUE_CHANGED :
 			XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED;
 		xuiInternalAccessibilityQueue(pWidget, iEvent);
 		if ( pHost != pWidget ) xuiInternalAccessibilityQueue(pHost, iEvent);
 	}
-	if ( pHost == NULL || pHost->onEditEvent == NULL ) return XUI_OK;
+	if ( pHost->onEditEvent == NULL ) return XUI_OK;
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iType = iType;
 	tEvent.sText = sText;
-	tEvent.iTextSize = (iTextSize >= 0) ? iTextSize : 0;
+	tEvent.iTextSize = (sText != NULL && iTextSize > 0) ? iTextSize : 0;
 	tEvent.iSelectionStart = iSelectionStart;
 	tEvent.iSelectionEnd = iSelectionEnd;
 	tEvent.iCompositionStart = iCompositionStart;
