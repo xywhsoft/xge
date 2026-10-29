@@ -7268,13 +7268,14 @@ XUI_API int xuiCodeDocumentGetDirty(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentSetDirty(xui_code_document pDocument, int bDirty);
 /* 读取最近一次失败原因；无错误返回 NULL。 */
 XUI_API const char* xuiCodeDocumentGetLastError(xui_code_document pDocument);
-/* C 词法分析全文为 token 流（输出到调用方缓冲）。 */
+/* C 词法分析全文为 token 流；*pTokenCount 返回总数，可能大于容量。 */
 XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
-/* C 词法分析指定字节区间。 */
+/* C 词法分析指定 UTF-8 字节区间；负长度/结束位置表示文本末尾。 */
 XUI_API int xuiCodeLexerCTokenizeRange(const char* sText, int iTextSize, int iStartOffset, int iEndOffset, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
-/* 对文档指定区间做 C 词法分析。 */
+/* 对文档指定 UTF-8 字节区间做 C 词法分析；边界会钳制到字素边界。 */
 XUI_API int xuiCodeLexerCTokenizeDocumentRange(xui_code_document pDocument, int iStartOffset, int iEndOffset, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
-/* 按正则规则表做通用词法分析（自定义语言用）；失败输出原因。 */
+/* 按正则规则表做通用词法分析（自定义语言用）；规则必须消费至少一个字节，
+ * *pTokenCount 返回总数，任意失败时清零。 */
 XUI_API int xuiCodeLexerRegexTokenize(const char* sText, int iTextSize, const xui_code_regex_rule_t* pRules, int iRuleCount, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity);
 /* 构建 C 代码折叠区间（花括号配对）。 */
 XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);

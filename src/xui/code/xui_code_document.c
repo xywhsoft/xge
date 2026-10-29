@@ -64,6 +64,8 @@ struct xui_code_document_t {
 	int bForcedDirty;
 	xui_code_document_change_proc onChange;
 	void* pChangeUser;
+	void* pLexerCCache;
+	void (*onLexerCCacheDestroy)(void* pCache);
 	char sError[160];
 };
 
@@ -994,6 +996,10 @@ XUI_API int xuiCodeDocumentCreate(xui_code_document* ppDocument)
 XUI_API void xuiCodeDocumentDestroy(xui_code_document pDocument)
 {
 	if ( pDocument == NULL ) return;
+	if ( pDocument->pLexerCCache != NULL &&
+	     pDocument->onLexerCCacheDestroy != NULL ) {
+		pDocument->onLexerCCacheDestroy(pDocument->pLexerCCache);
+	}
 	xrtFree(pDocument->sBuffer);
 	xrtFree(pDocument->sSnapshot);
 	xrtFree(pDocument->pLines);
@@ -1167,6 +1173,46 @@ XUI_API int xuiCodeDocumentGetLineCount(xui_code_document pDocument)
 {
 	if ( pDocument == NULL ) return 0;
 	return pDocument->iLineCount;
+}
+
+void* xuiInternalCodeDocumentGetLexerCCache(xui_code_document pDocument)
+{
+	return (pDocument != NULL) ? pDocument->pLexerCCache : NULL;
+}
+
+int xuiInternalCodeDocumentSetLexerCCache(xui_code_document pDocument,
+	void* pCache, void (*onDestroy)(void* pCache))
+{
+	if ( pDocument == NULL || (pCache != NULL && onDestroy == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pDocument->pLexerCCache != pCache &&
+	     pDocument->pLexerCCache != NULL &&
+	     pDocument->onLexerCCacheDestroy != NULL ) {
+		pDocument->onLexerCCacheDestroy(pDocument->pLexerCCache);
+	}
+	pDocument->pLexerCCache = pCache;
+	pDocument->onLexerCCacheDestroy = onDestroy;
+	return XUI_OK;
+}
+
+int xuiInternalCodeDocumentClampOffset(xui_code_document pDocument,
+	int iOffset, int bForward, int* pClamped)
+{
+	int iValue;
+
+	if ( pDocument == NULL || pClamped == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iOffset < 0 ) iOffset = 0;
+	if ( iOffset > pDocument->iLength ) iOffset = pDocument->iLength;
+	iValue = __xuiCodeDocumentClampOffset(pDocument, iOffset);
+	if ( bForward && iValue < iOffset ) {
+		iValue = __xuiCodeDocumentUtf8Next(pDocument, iValue);
+	}
+	if ( iValue < 0 || iValue > pDocument->iLength ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	*pClamped = iValue;
+	return XUI_OK;
 }
 
 XUI_API int xuiCodeDocumentGetLineRange(xui_code_document pDocument, int iLine, int* pStart, int* pEnd)

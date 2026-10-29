@@ -655,6 +655,11 @@ xui_rect_t xuiInternalWindowFrameResize(xui_rect_t tRect, xui_rect_t tBounds,
 
 int xuiInternalWidgetIsValid(xui_widget pWidget);
 int xuiInternalIconCategoryBelongsToContext(xui_icon_category pCategory, xui_context pContext);
+void* xuiInternalCodeDocumentGetLexerCCache(xui_code_document pDocument);
+int xuiInternalCodeDocumentSetLexerCCache(xui_code_document pDocument,
+	void* pCache, void (*onDestroy)(void* pCache));
+int xuiInternalCodeDocumentClampOffset(xui_code_document pDocument,
+	int iOffset, int bForward, int* pClamped);
 uint32_t xuiInternalFlowGraphGetGeometryRevision(xui_flow_graph pGraph);
 void xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSecond);
 int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
