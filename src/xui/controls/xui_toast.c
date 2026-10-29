@@ -51,6 +51,7 @@ struct xui_toast_t {
 	int iPendingCount;
 	int iHoverItem;
 	int iHoverClose;
+	xui_rect_t tLayoutRootRect;
 	int iShowCount;
 	int iCloseCount;
 	int iExpireCount;
@@ -137,6 +138,19 @@ static float __xuiToastClamp(float fValue, float fMin, float fMax)
 	if ( fValue < fMin ) return fMin;
 	if ( fValue > fMax ) return fMax;
 	return fValue;
+}
+
+static int __xuiToastRectSame(xui_rect_t tA, xui_rect_t tB)
+{
+	return (tA.fX == tB.fX) && (tA.fY == tB.fY) &&
+	       (tA.fW == tB.fW) && (tA.fH == tB.fH);
+}
+
+static void __xuiToastCountAdd(int* pCount, int iAmount)
+{
+	if ( pCount == NULL || iAmount <= 0 || *pCount >= INT_MAX ) return;
+	if ( iAmount >= INT_MAX - *pCount ) *pCount = INT_MAX;
+	else *pCount += iAmount;
 }
 
 static int __xuiToastFloatValid(float fValue)
@@ -363,7 +377,8 @@ static xui_rect_t __xuiToastRootRect(xui_toast pToast)
 	return tRect;
 }
 
-static int __xuiToastMeasureText(xui_toast pToast, const char* sText, float fWidth, xui_vec2_t* pSize, int* pLineCount)
+static int __xuiToastMeasureText(xui_toast pToast, const char* sText,
+	float fWidth, float fHeight, xui_vec2_t* pSize, int* pLineCount)
 {
 	xui_text_layout_desc_t tDesc;
 	xui_text_layout pLayout;
@@ -373,18 +388,17 @@ static int __xuiToastMeasureText(xui_toast pToast, const char* sText, float fWid
 	if ( !__xuiToastValid(pToast) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( sText == NULL ) sText = "";
-	if ( fWidth < 1.0f ) fWidth = 1.0f;
 	pSize->fX = 0.0f;
 	pSize->fY = 0.0f;
 	if ( pLineCount != NULL ) *pLineCount = 0;
-	if ( sText[0] == 0 ) {
+	if ( sText == NULL ) sText = "";
+	if ( fWidth <= 0.0f || fHeight <= 0.0f || sText[0] == 0 ) {
 		return XUI_OK;
 	}
 	pFont = __xuiToastFont(pToast);
 	if ( pFont == NULL ) {
 		pSize->fX = __xuiToastMin((float)strlen(sText) * 7.0f, fWidth);
-		pSize->fY = 18.0f;
+		pSize->fY = __xuiToastMin(18.0f, fHeight);
 		if ( pLineCount != NULL ) *pLineCount = 1;
 		return XUI_OK;
 	}
@@ -394,7 +408,7 @@ static int __xuiToastMeasureText(xui_toast pToast, const char* sText, float fWid
 	tDesc.iTextSize = -1;
 	tDesc.pFont = pFont;
 	tDesc.fMaxWidth = fWidth;
-	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	tDesc.fMaxHeight = fHeight;
 	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
 	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 	tDesc.fLineGap = 2.0f;
@@ -414,18 +428,29 @@ static int __xuiToastMeasureText(xui_toast pToast, const char* sText, float fWid
 static int __xuiToastVisibleLimit(xui_toast pToast)
 {
 	xui_rect_t tRoot;
+	float fGap;
+	float fItemHeight;
+	float fMargin;
 	float fUsable;
+	int iAutomaticLimit;
 	int iLimit;
 
 	if ( !__xuiToastValid(pToast) ) {
 		return 0;
 	}
-	if ( pToast->tMetrics.iMaxVisible > 0 ) {
+	tRoot = __xuiToastRootRect(pToast);
+	fMargin = ((float)tRoot.fH > pToast->tMetrics.fMargin * 2.0f + 1.0f) ?
+		pToast->tMetrics.fMargin : 0.0f;
+	fUsable = __xuiToastMax(1.0f, (float)tRoot.fH - fMargin * 2.0f);
+	fItemHeight = __xuiToastMin(pToast->tMetrics.fMinHeight, fUsable);
+	fGap = __xuiToastMin(pToast->tMetrics.fGap,
+		__xuiToastMax(0.0f, fUsable - fItemHeight));
+	iAutomaticLimit = (int)((fUsable + fGap) / (fItemHeight + fGap));
+	if ( iAutomaticLimit < 1 ) iAutomaticLimit = 1;
+	iLimit = iAutomaticLimit;
+	if ( pToast->tMetrics.iMaxVisible > 0 &&
+	     pToast->tMetrics.iMaxVisible < iLimit ) {
 		iLimit = pToast->tMetrics.iMaxVisible;
-	} else {
-		tRoot = __xuiToastRootRect(pToast);
-		fUsable = tRoot.fH - pToast->tMetrics.fMargin * 2.0f + pToast->tMetrics.fGap;
-		iLimit = (int)(fUsable / (pToast->tMetrics.fMinHeight + pToast->tMetrics.fGap));
 	}
 	if ( iLimit < 1 ) iLimit = 1;
 	if ( iLimit > XUI_TOAST_VISIBLE_CAPACITY ) iLimit = XUI_TOAST_VISIBLE_CAPACITY;
@@ -458,18 +483,39 @@ static int __xuiToastLayout(xui_toast pToast)
 	xui_rect_t tRoot;
 	xui_vec2_t tTitleSize;
 	xui_vec2_t tMessageSize;
+	float fAfterClose;
+	float fAvailableH;
+	float fAvailableW;
+	float fCloseGap;
+	float fCloseSize;
 	float fWidth;
 	float fTextX;
 	float fCloseX;
 	float fTextW;
 	float fTitleH;
+	float fTitleGap;
 	float fMessageH;
 	float fBodyH;
+	float fDesiredH;
+	float fIconGap;
+	float fIconSize;
+	float fInnerW;
+	float fItemMaxH;
+	float fItemMinH;
+	float fMarginX;
+	float fMarginY;
+	float fMaxContentH;
+	float fPaddingX;
+	float fPaddingY;
+	float fRemainingH;
+	float fReservedH;
+	float fStackGap;
 	float fStackH;
 	float fX;
 	float fY;
 	float fContentY;
 	int iDirection;
+	int iRemaining;
 	int i;
 	int iRet;
 
@@ -477,90 +523,156 @@ static int __xuiToastLayout(xui_toast pToast)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tRoot = __xuiToastRootRect(pToast);
-	fWidth = pToast->tMetrics.fWidth;
-	if ( tRoot.fW > 0.0f ) {
-		fWidth = __xuiToastMin(fWidth, tRoot.fW - pToast->tMetrics.fMargin * 2.0f);
+	if ( tRoot.fW <= 0 || tRoot.fH <= 0 ) {
+		for ( i = 0; i < XUI_TOAST_VISIBLE_CAPACITY; i++ ) {
+			if ( pToast->arrWidgets[i] == NULL ) continue;
+			iRet = xuiWidgetSetVisible(pToast->arrWidgets[i], 0);
+			if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pToast->arrWidgets[i], 0);
+			if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pToast->arrWidgets[i], 0);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		pToast->tLayoutRootRect = tRoot;
+		return XUI_OK;
 	}
-	fWidth = __xuiToastMax(fWidth, pToast->tMetrics.fMinWidth);
-	if ( tRoot.fW > 0.0f ) {
-		fWidth = __xuiToastMin(fWidth, tRoot.fW);
+	fMarginX = ((float)tRoot.fW > pToast->tMetrics.fMargin * 2.0f + 1.0f) ?
+		pToast->tMetrics.fMargin : 0.0f;
+	fMarginY = ((float)tRoot.fH > pToast->tMetrics.fMargin * 2.0f + 1.0f) ?
+		pToast->tMetrics.fMargin : 0.0f;
+	fAvailableW = __xuiToastMax(1.0f, (float)tRoot.fW - fMarginX * 2.0f);
+	fAvailableH = __xuiToastMax(1.0f, (float)tRoot.fH - fMarginY * 2.0f);
+	fWidth = __xuiToastClamp(pToast->tMetrics.fWidth,
+		__xuiToastMin(pToast->tMetrics.fMinWidth, fAvailableW), fAvailableW);
+	fPaddingX = __xuiToastMin(pToast->tMetrics.fPaddingX, fWidth * 0.25f);
+	fInnerW = __xuiToastMax(0.0f, fWidth - fPaddingX * 2.0f);
+	fCloseSize = __xuiToastMin(pToast->tMetrics.fCloseSize, fInnerW);
+	fCloseGap = (fCloseSize > 0.0f) ? __xuiToastMin(8.0f,
+		__xuiToastMax(0.0f, fInnerW - fCloseSize)) : 0.0f;
+	fAfterClose = __xuiToastMax(0.0f, fInnerW - fCloseSize - fCloseGap);
+	fIconSize = __xuiToastMin(pToast->tMetrics.fIconSize,
+		__xuiToastMax(0.0f, fAfterClose - __xuiToastMin(32.0f, fAfterClose)));
+	fIconGap = (fIconSize > 0.0f) ? __xuiToastMin(pToast->tMetrics.fIconGap,
+		__xuiToastMax(0.0f, fAfterClose - fIconSize - __xuiToastMin(32.0f, fAfterClose))) : 0.0f;
+	fTextX = fPaddingX + fIconSize + fIconGap;
+	fCloseX = fWidth - fPaddingX - fCloseSize;
+	fTextW = __xuiToastMax(0.0f, fCloseX - fCloseGap - fTextX);
+	if ( pToast->iActiveCount > 1 ) {
+		fStackGap = __xuiToastMin(pToast->tMetrics.fGap,
+			__xuiToastMax(0.0f,
+				(fAvailableH - (float)pToast->iActiveCount) /
+				(float)(pToast->iActiveCount - 1)));
+	} else {
+		fStackGap = 0.0f;
 	}
-	if ( fWidth < 32.0f ) fWidth = 32.0f;
-	fTextX = pToast->tMetrics.fPaddingX + pToast->tMetrics.fIconSize + pToast->tMetrics.fIconGap;
-	fCloseX = fWidth - pToast->tMetrics.fPaddingX - pToast->tMetrics.fCloseSize;
-	fTextW = fCloseX - fTextX - 8.0f;
-	if ( fTextW < 1.0f ) fTextW = 1.0f;
+	fItemMinH = (pToast->iActiveCount > 0) ?
+		__xuiToastMin(pToast->tMetrics.fMinHeight,
+			__xuiToastMax(1.0f,
+				(fAvailableH - fStackGap * (float)(pToast->iActiveCount - 1)) /
+				(float)pToast->iActiveCount)) : 1.0f;
+	fPaddingY = __xuiToastMin(pToast->tMetrics.fPaddingY, fItemMinH * 0.25f);
+	fRemainingH = fAvailableH;
 	fStackH = 0.0f;
 	for ( i = 0; i < pToast->iActiveCount; i++ ) {
 		pItem = &pToast->arrActive[i];
+		iRemaining = pToast->iActiveCount - i - 1;
+		fReservedH = (float)iRemaining * (fItemMinH + fStackGap);
+		fItemMaxH = __xuiToastMax(1.0f, fRemainingH - fReservedH);
+		fMaxContentH = __xuiToastMax(0.0f, fItemMaxH - fPaddingY * 2.0f);
 		tTitleSize = (xui_vec2_t){0.0f, 0.0f};
 		tMessageSize = (xui_vec2_t){0.0f, 0.0f};
 		fTitleH = 0.0f;
 		fMessageH = 0.0f;
-		if ( (pItem->sTitle != NULL) && (pItem->sTitle[0] != 0) ) {
-			iRet = __xuiToastMeasureText(pToast, pItem->sTitle, fTextW, &tTitleSize, NULL);
+		fTitleGap = 0.0f;
+		if ( (pItem->sTitle != NULL) && (pItem->sTitle[0] != 0) &&
+		     fTextW > 0.0f && fMaxContentH > 0.0f ) {
+			iRet = __xuiToastMeasureText(pToast, pItem->sTitle, fTextW,
+				fMaxContentH, &tTitleSize, NULL);
 			if ( iRet != XUI_OK ) return iRet;
-			fTitleH = __xuiToastMax(tTitleSize.fY, 16.0f);
+			fTitleH = __xuiToastMin(__xuiToastMax(tTitleSize.fY, 16.0f),
+				fMaxContentH);
 		}
-		if ( (pItem->sMessage != NULL) && (pItem->sMessage[0] != 0) ) {
-			iRet = __xuiToastMeasureText(pToast, pItem->sMessage, fTextW, &tMessageSize, &pItem->iMessageLineCount);
+		if ( fTitleH > 0.0f && (pItem->sMessage != NULL) &&
+		     (pItem->sMessage[0] != 0) ) {
+			fTitleGap = __xuiToastMin(2.0f,
+				__xuiToastMax(0.0f, fMaxContentH - fTitleH));
+		}
+		if ( (pItem->sMessage != NULL) && (pItem->sMessage[0] != 0) &&
+		     fTextW > 0.0f && fMaxContentH > fTitleH + fTitleGap ) {
+			iRet = __xuiToastMeasureText(pToast, pItem->sMessage, fTextW,
+				fMaxContentH - fTitleH - fTitleGap,
+				&tMessageSize, &pItem->iMessageLineCount);
 			if ( iRet != XUI_OK ) return iRet;
 			fMessageH = tMessageSize.fY;
 		} else {
 			pItem->iMessageLineCount = 0;
 		}
-		fBodyH = fTitleH + fMessageH;
-		if ( (fTitleH > 0.0f) && (fMessageH > 0.0f) ) {
-			fBodyH += 2.0f;
+		if ( fMessageH <= 0.0f ) fTitleGap = 0.0f;
+		fBodyH = __xuiToastMax(fTitleH + fTitleGap + fMessageH,
+			__xuiToastMin(fIconSize, fMaxContentH));
+		fDesiredH = __xuiToastMax(fItemMinH, fBodyH + fPaddingY * 2.0f);
+		pItem->fHeight = __xuiToastClamp(fDesiredH, 1.0f, fItemMaxH);
+		if ( fIconSize > 0.0f && pItem->fHeight > fPaddingY * 2.0f ) {
+			float fRenderIconSize = __xuiToastMin(fIconSize,
+				pItem->fHeight - fPaddingY * 2.0f);
+			pItem->tIconRect = xuiInternalRectFromFloatNearest(
+				fPaddingX, (pItem->fHeight - fRenderIconSize) * 0.5f,
+				fRenderIconSize, fRenderIconSize);
+		} else {
+			pItem->tIconRect = (xui_rect_t){0, 0, 0, 0};
 		}
-		fBodyH = __xuiToastMax(fBodyH, pToast->tMetrics.fIconSize);
-		pItem->fHeight = __xuiToastMax(pToast->tMetrics.fMinHeight, fBodyH + pToast->tMetrics.fPaddingY * 2.0f);
-		pItem->tIconRect = xuiInternalSnapRect((xui_rect_t){
-			pToast->tMetrics.fPaddingX,
-			(pItem->fHeight - pToast->tMetrics.fIconSize) * 0.5f,
-			pToast->tMetrics.fIconSize,
-			pToast->tMetrics.fIconSize
-		});
-		pItem->tCloseRect = xuiInternalSnapRect((xui_rect_t){
-			fWidth - pToast->tMetrics.fPaddingX - pToast->tMetrics.fCloseSize,
-			pToast->tMetrics.fPaddingY - 1.0f,
-			pToast->tMetrics.fCloseSize,
-			pToast->tMetrics.fCloseSize
-		});
+		if ( fCloseSize > 0.0f ) {
+			float fRenderCloseSize = __xuiToastMin(fCloseSize, pItem->fHeight);
+			pItem->tCloseRect = xuiInternalRectFromFloatNearest(
+				fWidth - fPaddingX - fRenderCloseSize,
+				(pItem->fHeight - fRenderCloseSize) * 0.5f,
+				fRenderCloseSize, fRenderCloseSize);
+		} else {
+			pItem->tCloseRect = (xui_rect_t){0, 0, 0, 0};
+		}
 		fContentY = (pItem->fHeight - fBodyH) * 0.5f;
 		if ( fTitleH > 0.0f ) {
-			pItem->tTitleRect = xuiInternalSnapRect((xui_rect_t){fTextX, fContentY, fTextW, fTitleH});
+			pItem->tTitleRect = xuiInternalRectFromFloatNearest(
+				fTextX, fContentY, fTextW, fTitleH);
 			if ( fMessageH > 0.0f ) {
-				pItem->tMessageRect = xuiInternalSnapRect((xui_rect_t){fTextX, fContentY + fTitleH + 2.0f, fTextW, fMessageH});
+				pItem->tMessageRect = xuiInternalRectFromFloatNearest(
+					fTextX, fContentY + fTitleH + fTitleGap,
+					fTextW, fMessageH);
 			} else {
-				pItem->tMessageRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+				pItem->tMessageRect = (xui_rect_t){0, 0, 0, 0};
 			}
 		} else {
-			pItem->tTitleRect = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-			pItem->tMessageRect = xuiInternalSnapRect((xui_rect_t){fTextX, (pItem->fHeight - fMessageH) * 0.5f, fTextW, fMessageH});
+			pItem->tTitleRect = (xui_rect_t){0, 0, 0, 0};
+			pItem->tMessageRect = (fMessageH > 0.0f) ?
+				xuiInternalRectFromFloatNearest(fTextX,
+					(pItem->fHeight - fMessageH) * 0.5f,
+					fTextW, fMessageH) : (xui_rect_t){0, 0, 0, 0};
 		}
 		fStackH += pItem->fHeight;
-		if ( i + 1 < pToast->iActiveCount ) fStackH += pToast->tMetrics.fGap;
+		fRemainingH -= pItem->fHeight;
+		if ( i + 1 < pToast->iActiveCount ) {
+			fStackH += fStackGap;
+			fRemainingH -= fStackGap;
+		}
 	}
 	if ( pToast->iPlacement == XUI_TOAST_PLACEMENT_TOP_LEFT || pToast->iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_LEFT ) {
-		fX = tRoot.fX + pToast->tMetrics.fMargin;
+		fX = (float)tRoot.fX + fMarginX;
 	} else if ( pToast->iPlacement == XUI_TOAST_PLACEMENT_TOP_CENTER || pToast->iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_CENTER ) {
-		fX = tRoot.fX + (tRoot.fW - fWidth) * 0.5f;
+		fX = (float)tRoot.fX + ((float)tRoot.fW - fWidth) * 0.5f;
 	} else {
-		fX = tRoot.fX + tRoot.fW - pToast->tMetrics.fMargin - fWidth;
+		fX = (float)(tRoot.fX + tRoot.fW) - fMarginX - fWidth;
 	}
 	if ( fX < tRoot.fX ) fX = tRoot.fX;
 	if ( fX + fWidth > tRoot.fX + tRoot.fW ) fX = tRoot.fX + tRoot.fW - fWidth;
 	iDirection = __xuiToastDirection(pToast);
 	if ( iDirection == XUI_TOAST_DIRECTION_UP ) {
-		fY = tRoot.fY + tRoot.fH - pToast->tMetrics.fMargin - fStackH;
+		fY = (float)(tRoot.fY + tRoot.fH) - fMarginY - fStackH;
 	} else {
-		fY = tRoot.fY + pToast->tMetrics.fMargin;
+		fY = (float)tRoot.fY + fMarginY;
 	}
 	if ( fY < tRoot.fY ) fY = tRoot.fY;
 	for ( i = 0; i < pToast->iActiveCount; i++ ) {
 		pItem = &pToast->arrActive[i];
-		pItem->tRect = xuiInternalSnapRect((xui_rect_t){fX, fY, fWidth, pItem->fHeight});
+		pItem->tRect = xuiInternalRectFromFloatNearest(fX, fY,
+			fWidth, pItem->fHeight);
 		if ( pToast->arrWidgets[i] != NULL ) {
 			iRet = xuiWidgetSetRect(pToast->arrWidgets[i], pItem->tRect);
 			if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pToast->arrWidgets[i], 1);
@@ -569,18 +681,20 @@ static int __xuiToastLayout(xui_toast pToast)
 			if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayer(pToast->arrWidgets[i], XUI_LAYER_TOOLTIP, 120 + i);
 			if ( iRet != XUI_OK ) return iRet;
 		}
-		fY += pItem->fHeight + pToast->tMetrics.fGap;
+		fY += pItem->fHeight + fStackGap;
 	}
 	for ( i = pToast->iActiveCount; i < XUI_TOAST_VISIBLE_CAPACITY; i++ ) {
 		if ( pToast->arrWidgets[i] != NULL ) {
 			iRet = xuiWidgetSetVisible(pToast->arrWidgets[i], 0);
 			if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pToast->arrWidgets[i], 0);
 			if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pToast->arrWidgets[i], 0);
-			if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pToast->arrWidgets[i], (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f});
+			if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pToast->arrWidgets[i], (xui_rect_t){0, 0, 0, 0});
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	return __xuiToastInvalidateActive(pToast);
+	iRet = __xuiToastInvalidateActive(pToast);
+	if ( iRet == XUI_OK ) pToast->tLayoutRootRect = tRoot;
+	return iRet;
 }
 
 static int __xuiToastCallbackLeave(xui_toast pToast)
@@ -672,29 +786,43 @@ static int __xuiToastDropPendingAt(xui_toast pToast, int iIndex)
 		__xuiToastItemMove(&pToast->arrPending[i], &pToast->arrPending[i + 1]);
 	}
 	pToast->iPendingCount--;
-	pToast->iDropCount++;
-	pToast->iChangeCount++;
+	__xuiToastCountAdd(&pToast->iDropCount, 1);
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
 	return iToastId;
 }
 
-static int __xuiToastActivatePending(xui_toast pToast)
+static int __xuiToastPromotePending(xui_toast pToast)
 {
 	int iLimit;
+	int iPromoted;
 	int i;
 
 	if ( !__xuiToastValid(pToast) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return -1;
 	}
 	iLimit = __xuiToastVisibleLimit(pToast);
+	iPromoted = 0;
 	while ( (pToast->iActiveCount < iLimit) && (pToast->iPendingCount > 0) ) {
 		__xuiToastItemMove(&pToast->arrActive[pToast->iActiveCount], &pToast->arrPending[0]);
 		pToast->arrActive[pToast->iActiveCount].fElapsed = 0.0f;
 		pToast->iActiveCount++;
+		iPromoted++;
 		for ( i = 0; i + 1 < pToast->iPendingCount; i++ ) {
 			__xuiToastItemMove(&pToast->arrPending[i], &pToast->arrPending[i + 1]);
 		}
 		pToast->iPendingCount--;
 	}
+	return iPromoted;
+}
+
+static int __xuiToastSyncLayout(xui_toast pToast)
+{
+	xui_rect_t tRoot;
+
+	if ( !__xuiToastValid(pToast) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tRoot = __xuiToastRootRect(pToast);
+	if ( __xuiToastRectSame(tRoot, pToast->tLayoutRootRect) ) return XUI_OK;
+	if ( __xuiToastPromotePending(pToast) < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	return __xuiToastLayout(pToast);
 }
 
@@ -717,12 +845,13 @@ static int __xuiToastRemoveActiveAt(xui_toast pToast, int iIndex, int iReason, i
 	pToast->iHoverItem = -1;
 	pToast->iHoverClose = -1;
 	if ( iReason == XUI_TOAST_CLOSE_TIMEOUT ) {
-		pToast->iExpireCount++;
+		__xuiToastCountAdd(&pToast->iExpireCount, 1);
 	} else {
-		pToast->iCloseCount++;
+		__xuiToastCountAdd(&pToast->iCloseCount, 1);
 	}
-	pToast->iChangeCount++;
-	iRet = __xuiToastActivatePending(pToast);
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
+	(void)__xuiToastPromotePending(pToast);
+	iRet = __xuiToastLayout(pToast);
 	if ( !__xuiToastNotifyClose(pToast, iToastId, iReason) && pAlive != NULL ) *pAlive = 0;
 	return iRet;
 }
@@ -743,9 +872,9 @@ static int __xuiToastRemovePendingAt(xui_toast pToast, int iIndex, int iReason, 
 		__xuiToastItemMove(&pToast->arrPending[i], &pToast->arrPending[i + 1]);
 	}
 	pToast->iPendingCount--;
-	pToast->iCloseCount++;
-	pToast->iChangeCount++;
-	iRet = __xuiToastLayout(pToast);
+	__xuiToastCountAdd(&pToast->iCloseCount, 1);
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
+	iRet = XUI_OK;
 	if ( !__xuiToastNotifyClose(pToast, iToastId, iReason) && pAlive != NULL ) *pAlive = 0;
 	return iRet;
 }
@@ -783,7 +912,7 @@ static int __xuiToastRequestActiveClose(xui_toast pToast, int iIndex, int iReaso
 	return XUI_OK;
 }
 
-static int __xuiToastProcessClosing(xui_toast pToast)
+static int __xuiToastProcessClosing(xui_toast pToast, int* pAlive)
 {
 	xui_toast_click_proc onClick;
 	void* pUser;
@@ -797,6 +926,7 @@ static int __xuiToastProcessClosing(xui_toast pToast)
 	if ( !__xuiToastValid(pToast) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pAlive != NULL ) *pAlive = 1;
 	i = 0;
 	while ( i < pToast->iActiveCount ) {
 		if ( !pToast->arrActive[i].bClosing ) {
@@ -807,12 +937,18 @@ static int __xuiToastProcessClosing(xui_toast pToast)
 		iReason = pToast->arrActive[i].iCloseReason;
 		onClick = (iReason == XUI_TOAST_CLOSE_CLICK) ? pToast->arrActive[i].onClick : NULL;
 		pUser = pToast->arrActive[i].pUser;
-		if ( !__xuiToastNotifyClick(pToast, onClick, iId, pUser) ) return XUI_OK;
+		if ( !__xuiToastNotifyClick(pToast, onClick, iId, pUser) ) {
+			if ( pAlive != NULL ) *pAlive = 0;
+			return XUI_OK;
+		}
 		iIndex = __xuiToastFindActiveById(pToast, iId);
 		if ( iIndex >= 0 ) {
 			bAlive = 1;
 			iRet = __xuiToastRemoveActiveAt(pToast, iIndex, iReason, &bAlive);
-			if ( !bAlive ) return iRet;
+			if ( !bAlive ) {
+				if ( pAlive != NULL ) *pAlive = 0;
+				return iRet;
+			}
 			if ( iRet != XUI_OK ) return iRet;
 			i = 0;
 			continue;
@@ -824,6 +960,9 @@ static int __xuiToastProcessClosing(xui_toast pToast)
 
 static int __xuiToastUpdateService(xui_toast pToast, float fDelta)
 {
+	int arrActiveIds[XUI_TOAST_VISIBLE_CAPACITY];
+	int iActiveCount;
+	int iIndex;
 	int bAlive;
 	int i;
 	int iRet;
@@ -831,35 +970,41 @@ static int __xuiToastUpdateService(xui_toast pToast, float fDelta)
 	if ( !__xuiToastValid(pToast) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiToastProcessClosing(pToast);
+	iRet = __xuiToastSyncLayout(pToast);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( fDelta > 0.0f ) {
-		i = 0;
-		while ( i < pToast->iActiveCount ) {
-			if ( pToast->arrActive[i].bClosing ) {
-				i++;
+	bAlive = 1;
+	iRet = __xuiToastProcessClosing(pToast, &bAlive);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !bAlive ) return XUI_OK;
+	if ( (fDelta == fDelta) && fDelta > 0.0f ) {
+		iActiveCount = pToast->iActiveCount;
+		for ( i = 0; i < iActiveCount; i++ ) {
+			arrActiveIds[i] = pToast->arrActive[i].iId;
+		}
+		for ( i = 0; i < iActiveCount; i++ ) {
+			iIndex = __xuiToastFindActiveById(pToast, arrActiveIds[i]);
+			if ( iIndex < 0 || pToast->arrActive[iIndex].bClosing ||
+			     pToast->arrActive[iIndex].fDuration <= 0.0f ) {
 				continue;
 			}
-			if ( pToast->arrActive[i].fDuration <= 0.0f ) {
-				i++;
-				continue;
-			}
-			pToast->arrActive[i].fElapsed += fDelta;
-			if ( pToast->arrWidgets[i] != NULL ) {
-				iRet = xuiWidgetInvalidate(pToast->arrWidgets[i], XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-				if ( iRet != XUI_OK ) return iRet;
-			}
-			if ( pToast->arrActive[i].fElapsed >= pToast->arrActive[i].fDuration ) {
+			if ( pToast->arrActive[iIndex].fElapsed >= pToast->arrActive[iIndex].fDuration ||
+			     fDelta >= pToast->arrActive[iIndex].fDuration - pToast->arrActive[iIndex].fElapsed ) {
 				bAlive = 1;
-				iRet = __xuiToastRemoveActiveAt(pToast, i, XUI_TOAST_CLOSE_TIMEOUT, &bAlive);
+				iRet = __xuiToastRemoveActiveAt(pToast, iIndex,
+					XUI_TOAST_CLOSE_TIMEOUT, &bAlive);
 				if ( !bAlive ) return iRet;
 				if ( iRet != XUI_OK ) return iRet;
 				continue;
 			}
-			i++;
+			pToast->arrActive[iIndex].fElapsed += fDelta;
+			if ( pToast->arrWidgets[iIndex] != NULL ) {
+				iRet = xuiWidgetInvalidate(pToast->arrWidgets[iIndex],
+					XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 		}
 	}
-	return __xuiToastActivatePending(pToast);
+	return XUI_OK;
 }
 
 static int __xuiToastDrawTextLayout(xui_toast pToast, xui_draw_context pDraw,
@@ -867,20 +1012,15 @@ static int __xuiToastDrawTextLayout(xui_toast pToast, xui_draw_context pDraw,
 {
 	xui_text_layout_desc_t tDesc;
 	xui_text_layout pLayout;
-	xui_text_line_t tLine;
 	xui_proxy pProxy;
 	xui_font pFont;
-	const char* sLine;
-	xui_rect_t tLineRect;
-	float fOffsetY;
-	int i;
-	int iDisplaySize;
 	int iRet;
 
 	if ( !__xuiToastValid(pToast) || (pDraw == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (sText == NULL) || (sText[0] == 0) || (tRect.fW <= 0.0f) ) {
+	if ( (sText == NULL) || (sText[0] == 0) ||
+	     (tRect.fW <= 0) || (tRect.fH <= 0) ) {
 		return XUI_OK;
 	}
 	pProxy = xuiInternalContextGetProxy(pToast->pContext);
@@ -903,37 +1043,9 @@ static int __xuiToastDrawTextLayout(xui_toast pToast, xui_draw_context pDraw,
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	fOffsetY = 0.0f;
-	if ( (iFlags & XUI_TEXT_ALIGN_MIDDLE) != 0 ) {
-		fOffsetY = __xuiToastMax(0.0f, (tRect.fH - xuiTextLayoutGetSize(pLayout).fY) * 0.5f);
-	}
-	for ( i = 0; i < xuiTextLayoutGetLineCount(pLayout); i++ ) {
-		memset(&tLine, 0, sizeof(tLine));
-		tLine.iSize = sizeof(tLine);
-		iRet = xuiTextLayoutGetLine(pLayout, i, &tLine);
-		if ( iRet != XUI_OK ) {
-			xuiTextLayoutDestroy(pLayout);
-			return iRet;
-		}
-		if ( tLine.iTextSize <= 0 ) continue;
-		iRet = xuiInternalTextLayoutGetDisplayLine(pLayout, i, &sLine, &iDisplaySize);
-		if ( iRet != XUI_OK ) {
-			xuiTextLayoutDestroy(pLayout);
-			return iRet;
-		}
-		if ( iDisplaySize <= 0 ) continue;
-		tLineRect.fX = tRect.fX + tLine.fX;
-		tLineRect.fY = tRect.fY + fOffsetY + tLine.fY;
-		tLineRect.fW = tRect.fW;
-		tLineRect.fH = tLine.fH;
-		iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=sLine, .iTextSize=iDisplaySize, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((iFlags) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, xuiInternalSnapRect(tLineRect), iColor, iFlags);
-		if ( iRet != XUI_OK ) {
-			xuiTextLayoutDestroy(pLayout);
-			return iRet;
-		}
-	}
+	iRet = xuiInternalTextLayoutDrawContext(pLayout, pDraw, tRect, iColor, 0);
 	xuiTextLayoutDestroy(pLayout);
-	return XUI_OK;
+	return iRet;
 }
 
 static int __xuiToastDrawAtlas(xui_toast pToast, xui_draw_context pDraw, const char* sName, xui_rect_t tDst, uint32_t iColor)
@@ -946,6 +1058,7 @@ static int __xuiToastDrawAtlas(xui_toast pToast, xui_draw_context pDraw, const c
 	if ( !__xuiToastValid(pToast) || (pDraw == NULL) || (sName == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tDst.fW <= 0 || tDst.fH <= 0 ) return XUI_OK;
 	pProxy = xuiInternalContextGetProxy(pToast->pContext);
 	if ( (pProxy == NULL) || (pProxy->drawSurface == NULL) ) {
 		return XUI_ERROR_UNSUPPORTED;
@@ -993,6 +1106,7 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 		return XUI_OK;
 	}
 	tRect = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, pItem->tRect.fW, pItem->tRect.fH});
+	if ( tRect.fW <= 0 || tRect.fH <= 0 ) return XUI_OK;
 	__xuiToastResolveColors(pWidget, pToast, &tColors);
 	iTypeColor = __xuiToastTypeColor(&tColors, pItem->iType);
 	if ( (__xuiToastAlpha(tColors.iShadowColor) != 0) && (pProxy->drawRectFill != NULL) ) {
@@ -1011,19 +1125,21 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pProxy->drawRectFill != NULL ) {
-		tBand = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, 4.0f, tRect.fH});
+		tBand = (xui_rect_t){0, 0, (tRect.fW < 4) ? tRect.fW : 4, tRect.fH};
 		iRet = pProxy->drawRectFill(pProxy, pDraw, tBand, iTypeColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	tIconBg = xuiInternalSnapRect(pItem->tIconRect);
-	if ( pProxy->drawRectFill != NULL ) {
+	if ( tIconBg.fW > 0 && tIconBg.fH > 0 && pProxy->drawRectFill != NULL ) {
 		iRet = pProxy->drawRectFill(pProxy, pDraw, tIconBg, __xuiToastStyleColor(pWidget, "toast.icon.background.color", __xuiToastColorWithAlpha(iTypeColor, 32)));
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	fIconInset = __xuiToastClamp(pToast->tMetrics.fIconSize * 0.1f, 2.0f, 3.0f);
+	fIconInset = __xuiToastMin(3.0f,
+		__xuiToastMax(0.0f, (float)pItem->tIconRect.fW * 0.1f));
 	tIcon = xuiInternalInsetRect(pItem->tIconRect, fIconInset);
-	iRet = __xuiToastDrawAtlas(pToast, pDraw, __xuiToastIconName(pItem->iType), tIcon, iTypeColor);
-	if ( iRet != XUI_OK ) {
+	iRet = __xuiToastDrawAtlas(pToast, pDraw,
+		__xuiToastIconName(pItem->iType), tIcon, iTypeColor);
+	if ( iRet != XUI_OK && pItem->tIconRect.fW > 0 && pItem->tIconRect.fH > 0 ) {
 		if ( pProxy->drawCircleFill != NULL ) {
 			iRet = pProxy->drawCircleFill(pProxy, pDraw, pItem->tIconRect.fX + pItem->tIconRect.fW * 0.5f, pItem->tIconRect.fY + pItem->tIconRect.fH * 0.5f, pItem->tIconRect.fW * 0.28f, iTypeColor);
 			if ( iRet != XUI_OK ) return iRet;
@@ -1040,20 +1156,32 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iCloseColor = (pView->iSlot == pToast->iHoverClose) ? tColors.iCloseHoverColor : tColors.iCloseColor;
-	tClose = xuiInternalInsetRect(pItem->tCloseRect, (pItem->tCloseRect.fW - 10.0f) * 0.5f);
+	tClose = xuiInternalInsetRect(pItem->tCloseRect,
+		__xuiToastMax(0.0f, ((float)pItem->tCloseRect.fW - 10.0f) * 0.5f));
 	iRet = __xuiToastDrawAtlas(pToast, pDraw, "clear_10", tClose, iCloseColor);
-	if ( iRet != XUI_OK && pProxy->drawLine != NULL ) {
+	if ( iRet != XUI_OK && tClose.fW > 0 && tClose.fH > 0 &&
+	     pProxy->drawLine != NULL ) {
 		iRet = pProxy->drawLine(pProxy, pDraw, tClose.fX, tClose.fY, tClose.fX + tClose.fW, tClose.fY + tClose.fH, 1.0f, iCloseColor);
 		if ( iRet == XUI_OK ) iRet = pProxy->drawLine(pProxy, pDraw, tClose.fX + tClose.fW, tClose.fY, tClose.fX, tClose.fY + tClose.fH, 1.0f, iCloseColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( (pProxy->drawRectFill != NULL) && (pItem->fDuration > 0.0f) ) {
+	if ( (pProxy->drawRectFill != NULL) && (pItem->fDuration > 0.0f) &&
+	     (pToast->tMetrics.fProgressHeight > 0.0f) && (tRect.fW > 4) ) {
+		float fProgressHeight;
 		fProgress = 1.0f - (pItem->fElapsed / pItem->fDuration);
 		if ( fProgress < 0.0f ) fProgress = 0.0f;
 		if ( fProgress > 1.0f ) fProgress = 1.0f;
-		tProgress = xuiInternalSnapRect((xui_rect_t){4.0f, tRect.fH - pToast->tMetrics.fProgressHeight, (tRect.fW - 4.0f) * fProgress, pToast->tMetrics.fProgressHeight});
-		iRet = pProxy->drawRectFill(pProxy, pDraw, tProgress, __xuiToastStyleColor(pWidget, "toast.progress.color", __xuiToastColorWithAlpha(iTypeColor, 96)));
-		if ( iRet != XUI_OK ) return iRet;
+		fProgressHeight = __xuiToastMin(pToast->tMetrics.fProgressHeight,
+			(float)tRect.fH);
+		tProgress = xuiInternalRectFromFloatNearest(4.0f,
+			(float)tRect.fH - fProgressHeight,
+			((float)tRect.fW - 4.0f) * fProgress, fProgressHeight);
+		if ( tProgress.fW > 0 && tProgress.fH > 0 ) {
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tProgress,
+				__xuiToastStyleColor(pWidget, "toast.progress.color",
+					__xuiToastColorWithAlpha(iTypeColor, 96)));
+			if ( iRet != XUI_OK ) return iRet;
+		}
 	}
 	(void)pWidget;
 	return XUI_OK;
@@ -1305,6 +1433,7 @@ XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const 
 	xui_toast_item_t tItem;
 	int iId;
 	int iDroppedId;
+	int iPromoted;
 	int iRet;
 
 	if ( !__xuiToastValid(pToast) || !__xuiToastTypeValid(iType) ||
@@ -1334,9 +1463,10 @@ XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const 
 	}
 	__xuiToastItemMove(&pToast->arrPending[pToast->iPendingCount], &tItem);
 	pToast->iPendingCount++;
-	pToast->iShowCount++;
-	pToast->iChangeCount++;
-	iRet = __xuiToastActivatePending(pToast);
+	__xuiToastCountAdd(&pToast->iShowCount, 1);
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
+	iPromoted = __xuiToastPromotePending(pToast);
+	iRet = (iPromoted > 0) ? __xuiToastLayout(pToast) : XUI_OK;
 	if ( iDroppedId > 0 ) {
 		(void)__xuiToastNotifyClose(pToast, iDroppedId, XUI_TOAST_CLOSE_CAPACITY_DROP);
 	}
@@ -1384,8 +1514,8 @@ XUI_API int xuiToastClear(xui_toast pToast)
 	pToast->iPendingCount = 0;
 	pToast->iHoverItem = -1;
 	pToast->iHoverClose = -1;
-	pToast->iCloseCount += iCount;
-	pToast->iChangeCount++;
+	__xuiToastCountAdd(&pToast->iCloseCount, iCount);
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
 	iRet = __xuiToastLayout(pToast);
 	for ( i = 0; i < iCount; i++ ) {
 		if ( !__xuiToastNotifyClose(pToast, arrIds[i], XUI_TOAST_CLOSE_CLEAR) ) return iRet;
@@ -1420,7 +1550,7 @@ XUI_API int xuiToastSetPlacement(xui_toast pToast, int iPlacement)
 		(void)__xuiToastLayout(pToast);
 		return iRet;
 	}
-	pToast->iChangeCount++;
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
 	return XUI_OK;
 }
 
@@ -1446,7 +1576,7 @@ XUI_API int xuiToastSetDirection(xui_toast pToast, int iDirection)
 		(void)__xuiToastLayout(pToast);
 		return iRet;
 	}
-	pToast->iChangeCount++;
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
 	return XUI_OK;
 }
 
@@ -1469,13 +1599,14 @@ XUI_API int xuiToastSetMetrics(xui_toast pToast, const xui_toast_metrics_t* pMet
 	if ( memcmp(&pToast->tMetrics, &tNewMetrics, sizeof(tNewMetrics)) == 0 ) return XUI_OK;
 	tOldMetrics = pToast->tMetrics;
 	pToast->tMetrics = tNewMetrics;
-	iRet = __xuiToastActivatePending(pToast);
+	(void)__xuiToastPromotePending(pToast);
+	iRet = __xuiToastLayout(pToast);
 	if ( iRet != XUI_OK ) {
 		pToast->tMetrics = tOldMetrics;
 		(void)__xuiToastLayout(pToast);
 		return iRet;
 	}
-	pToast->iChangeCount++;
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
 	return XUI_OK;
 }
 
@@ -1509,7 +1640,7 @@ XUI_API int xuiToastSetColors(xui_toast pToast, const xui_toast_colors_t* pColor
 		(void)__xuiToastInvalidateActive(pToast);
 		return iRet;
 	}
-	pToast->iChangeCount++;
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
 	return XUI_OK;
 }
 
@@ -1540,7 +1671,7 @@ XUI_API int xuiToastSetFont(xui_toast pToast, xui_font pFont)
 		(void)__xuiToastLayout(pToast);
 		return iRet;
 	}
-	pToast->iChangeCount++;
+	__xuiToastCountAdd(&pToast->iChangeCount, 1);
 	return XUI_OK;
 }
 

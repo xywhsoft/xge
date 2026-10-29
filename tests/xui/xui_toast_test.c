@@ -141,6 +141,7 @@ int main(void)
 	int iId3;
 	int iId4;
 	int iId5;
+	int i;
 	int iFailed;
 	int iRet;
 
@@ -215,6 +216,47 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tMetrics.fIconSize >= 28.0f, "large icon metrics");
 	XUI_TEST_CHECK(tItem0.fW >= 180.0f && tItem0.fH >= 58.0f && tItem0.fX > 300.0f && tItem0.fY >= 18.0f, "item0 rect");
 	XUI_TEST_CHECK(tItem1.fY > tItem0.fY && tItem1.fW == tItem0.fW, "item1 stack");
+	xuiTestProxyResetTextCounters(&tProxyState);
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestProxyGetTextMeasureCount(&tProxyState) == 0 &&
+		xuiTestProxyGetTextShapeCount(&tProxyState) == 0,
+		"stable update skips text relayout");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){20, 30, 240, 180});
+	XUI_TEST_CHECK(iRet == XUI_OK, "resize root");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestProxyGetTextShapeCount(&tProxyState) > 0,
+		"root resize relayout");
+	tItem0 = xuiToastGetItemRect(pToast, 0);
+	tItem1 = xuiToastGetItemRect(pToast, 1);
+	XUI_TEST_CHECK(tItem0.fX >= 20 && tItem0.fY >= 30 &&
+		tItem0.fX + tItem0.fW <= 260 &&
+		tItem1.fY + tItem1.fH <= 210,
+		"resized stack stays inside root");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0, 0, 16, 80});
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny root");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny root relayout");
+	tItem0 = xuiToastGetItemRect(pToast, 0);
+	tItem1 = xuiToastGetItemRect(pToast, 1);
+	tClose = xuiToastGetCloseRect(pToast, 0);
+	XUI_TEST_CHECK(tItem0.fX >= 0 && tItem0.fY >= 0 &&
+		tItem0.fX + tItem0.fW <= 16 &&
+		tItem1.fY + tItem1.fH <= 80,
+		"tiny stack stays inside root");
+	XUI_TEST_CHECK(tClose.fX >= tItem0.fX && tClose.fY >= tItem0.fY &&
+		tClose.fX + tClose.fW <= tItem0.fX + tItem0.fW &&
+		tClose.fY + tClose.fH <= tItem0.fY + tItem0.fH,
+		"tiny close button stays inside item");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tiny root render");
+	iRet = xuiWidgetSetRect(pRoot, (xui_rect_t){0, 0, 640, 420});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore root");
+	iRet = xuiUpdate(pContext, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore root relayout");
+	tItem0 = xuiToastGetItemRect(pToast, 0);
+	tItem1 = xuiToastGetItemRect(pToast, 1);
 	iRet = xuiWidgetGetLayer(xuiToastGetItemWidget(pToast, 0), &iLayer, &iZ);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLayer == XUI_LAYER_TOOLTIP && iZ >= 120, "tooltip layer");
 	pHit = xuiHitTest(pContext, 20.0f, 20.0f, XUI_WIDGET_HIT_DEFAULT);
@@ -291,6 +333,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0 && xuiToastGetPendingCount(pToast) == 0, "clear");
 	XUI_TEST_CHECK(tState.iLastCloseId == iId4 && tState.iLastReason == XUI_TOAST_CLOSE_CLEAR, "clear reason");
 	XUI_TEST_CHECK(xuiToastGetCloseCount(pToast) >= 4 && xuiToastGetChangeCount(pToast) > 0, "final counters");
+	iId1 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "First", "Expires after a long frame.", 0.10f, NULL, NULL);
+	iId2 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Second", "Must receive its own visible duration.", 0.10f, NULL, NULL);
+	XUI_TEST_CHECK(iId1 > 0 && iId2 > 0 &&
+		xuiToastGetActiveCount(pToast) == 1 &&
+		xuiToastGetPendingCount(pToast) == 1,
+		"long frame queue setup");
+	iRet = xuiUpdate(pContext, 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 1 &&
+		xuiToastGetPendingCount(pToast) == 0 &&
+		xuiToastGetExpireCount(pToast) == 2,
+		"long frame expires only previously visible toast");
+	iRet = xuiUpdate(pContext, 0.05f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 1,
+		"promoted toast starts with fresh duration");
+	iRet = xuiUpdate(pContext, 0.06f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0 &&
+		xuiToastGetExpireCount(pToast) == 3,
+		"promoted toast expires on its own timeline");
 
 	XUI_TEST_CHECK(xuiToastShow(pToast, -1, "Bad", "Type", 1.0f, NULL, NULL) < 0, "reject invalid type");
 	XUI_TEST_CHECK(xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Bad", "Duration", -1.0f, NULL, NULL) < 0, "reject negative duration");
@@ -300,6 +360,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 1, "zero duration remains visible");
 	iRet = xuiToastClose(pToast, iId1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0, "close sticky");
+	iId1 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Active", "Keeps the visible slot occupied.", 0.0f, NULL, NULL);
+	iId2 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO, "Oldest", "Oldest pending toast.", 0.0f, NULL, NULL);
+	XUI_TEST_CHECK(iId1 > 0 && iId2 > 0, "capacity queue setup");
+	xuiTestProxyResetTextCounters(&tProxyState);
+	for ( i = 0; i < XUI_TOAST_QUEUE_CAPACITY; i++ ) {
+		iId3 = xuiToastShow(pToast, XUI_TOAST_TYPE_INFO,
+			"Queued", "Pending toast.", 0.0f, NULL, NULL);
+		XUI_TEST_CHECK(iId3 > 0, "capacity queue fill");
+	}
+	XUI_TEST_CHECK(xuiToastGetPendingCount(pToast) == XUI_TOAST_QUEUE_CAPACITY &&
+		xuiToastGetDropCount(pToast) == 1 &&
+		tState.iLastCloseId == iId2 &&
+		tState.iLastReason == XUI_TOAST_CLOSE_CAPACITY_DROP,
+		"capacity drops oldest pending toast");
+	XUI_TEST_CHECK(xuiTestProxyGetTextShapeCount(&tProxyState) == 0,
+		"pending enqueue skips visible relayout");
+	iRet = xuiToastClear(pToast);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToastGetActiveCount(pToast) == 0 &&
+		xuiToastGetPendingCount(pToast) == 0,
+		"clear capacity queue");
 
 	tState.ppToast = &pToast;
 	iRet = xuiToastSetClose(pToast, __xuiToastDestroyOnClose, &tState);

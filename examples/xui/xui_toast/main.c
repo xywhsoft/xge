@@ -268,6 +268,16 @@ static int __xuiToastDispatchPointerDown(xui_toast_demo_t* pDemo, float fX, floa
 	return iRet;
 }
 
+static int __xuiToastDispatchPointerUp(xui_toast_demo_t* pDemo, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerUp(pDemo->pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pDemo->pContext);
+	return iRet;
+}
+
 static void __xuiToastRunChecks(xui_toast_demo_t* pDemo, int bExerciseInput)
 {
 	xui_rect_t tItem;
@@ -292,6 +302,7 @@ static void __xuiToastRunChecks(xui_toast_demo_t* pDemo, int bExerciseInput)
 		(void)xuiLayout(pDemo->pContext);
 		tItem = xuiToastGetItemRect(pDemo->pToast, 0);
 		(void)__xuiToastDispatchPointerDown(pDemo, tItem.fX + tItem.fW * 0.5f, tItem.fY + tItem.fH * 0.5f);
+		(void)__xuiToastDispatchPointerUp(pDemo, tItem.fX + tItem.fW * 0.5f, tItem.fY + tItem.fH * 0.5f);
 		(void)xuiUpdate(pDemo->pContext, 0.0f);
 		pDemo->bClickOK = (pDemo->iClickCount == iBeforeClick + 1) && (pDemo->iLastReason == XUI_TOAST_CLOSE_CLICK);
 		(void)xuiToastShow(pDemo->pToast, XUI_TOAST_TYPE_ERROR, "Close", "Close button should not call the click callback.", 5.0f, __xuiToastClick, pDemo);
@@ -299,6 +310,7 @@ static void __xuiToastRunChecks(xui_toast_demo_t* pDemo, int bExerciseInput)
 		tClose = xuiToastGetCloseRect(pDemo->pToast, 0);
 		iBeforeClick = pDemo->iClickCount;
 		(void)__xuiToastDispatchPointerDown(pDemo, tClose.fX + tClose.fW * 0.5f, tClose.fY + tClose.fH * 0.5f);
+		(void)__xuiToastDispatchPointerUp(pDemo, tClose.fX + tClose.fW * 0.5f, tClose.fY + tClose.fH * 0.5f);
 		(void)xuiUpdate(pDemo->pContext, 0.0f);
 		pDemo->bButtonOK = (pDemo->iClickCount == iBeforeClick) && (pDemo->iLastReason == XUI_TOAST_CLOSE_BUTTON);
 		pDemo->bExerciseDone = 1;
