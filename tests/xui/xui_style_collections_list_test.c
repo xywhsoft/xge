@@ -36,5 +36,7 @@ int main(void)
     CHECK(xuiListViewGetItemHeight(w)==37.0f);
     CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
     CHECK(xuiListViewGetItemHeight(w)==baseHeight);
+    collectionVerifyDescendantStateIsolation(w,d->pViewport,
+        xuiScrollFrameGetVScrollBarWidget(d->pFrame));
     collectionDone(); puts("style_collections list: PASS"); return 0;
 }

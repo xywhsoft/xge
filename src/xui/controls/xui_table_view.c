@@ -2280,6 +2280,7 @@ static int __xuiTableViewEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	case XUI_EVENT_BLUR:
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		if ( (pEvent->iType == XUI_EVENT_ENABLED_CHANGED || pEvent->iType == XUI_EVENT_VISIBLE_CHANGED) &&
 		     (!xuiWidgetGetEffectiveEnabled(pWidget) || !xuiWidgetGetEffectiveVisible(pWidget)) ) {
 			__xuiTableViewCancelPointer(pWidget, pData, 1);
@@ -2291,6 +2292,7 @@ static int __xuiTableViewEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		}
 		return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_BOUNDS_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		return __xuiTableViewUpdateContentSize(pWidget, pData);
 	default:
 		break;
@@ -2423,7 +2425,7 @@ static int __xuiTableViewPreparePaint(xui_widget pWidget)
 	__xuiTableViewResolve(pWidget, pData, &tResolved);
 	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iBarColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pData->pViewport);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iPreparedStyleHash = xuiWidgetGetStyleHash(pWidget);
 	pData->bPaintStylePrepared = 1;

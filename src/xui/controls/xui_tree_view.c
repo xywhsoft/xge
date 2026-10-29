@@ -1657,6 +1657,7 @@ static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_BLUR:
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		if ( pEvent->iType == XUI_EVENT_ENABLED_CHANGED && pData->pFrame != NULL ) {
 			int iRet = xuiWidgetSetEnabled(pData->pFrame,
 				xuiWidgetGetEffectiveEnabled(pWidget));
@@ -1671,6 +1672,7 @@ static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		return __xuiTreeViewInvalidateRows(pWidget, pData);
 	case XUI_EVENT_BOUNDS_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		return __xuiTreeViewUpdateContentSize(pWidget, pData);
 	default:
 		break;
@@ -1785,8 +1787,7 @@ static int __xuiTreeViewPreparePaint(xui_widget pWidget)
 	__xuiTreeViewResolve(pWidget, pData, &tResolved);
 	iRet = xuiScrollFrameSetColors(pData->pFrame, tResolved.iTrackColor, tResolved.iThumbColor, tResolved.iScrollbarHoverColor, tResolved.iScrollbarActiveColor, tResolved.iScrollbarFocusColor, tResolved.iScrollbarDisabledColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetInvalidate(pData->pViewport,
-		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pData->pViewport);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iPreparedStyleHash = xuiWidgetGetStyleHash(pWidget);
 	pData->bPaintStylePrepared = 1;

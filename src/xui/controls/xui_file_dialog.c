@@ -258,9 +258,11 @@ static int __xuiFileDialogListPreparePaint(xui_widget pWidget)
 	if ( !__xuiFileDialogValid(pDialog) ) return XUI_OK;
 	iHash = xuiWidgetGetStyleHash(pWidget);
 	if ( !pDialog->bListPaintReady || pDialog->iListStyleHash != iHash ) {
+		iRet = xuiInternalWidgetInvalidatePaintIfNeeded(
+			xuiListViewGetViewportWidget(pWidget));
+		if ( iRet != XUI_OK ) return iRet;
 		pDialog->bListPaintReady = 1;
 		pDialog->iListStyleHash = iHash;
-		(void)xuiWidgetInvalidate(xuiListViewGetViewportWidget(pWidget), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_OK;
 }
@@ -293,12 +295,15 @@ static int __xuiFileDialogWindowPreparePaint(xui_widget pWidget)
 	if ( !__xuiFileDialogValid(pDialog) ) return XUI_OK;
 	iHash = xuiWidgetGetStyleHash(pWidget);
 	if ( !pDialog->bWindowPaintReady || pDialog->iWindowStyleHash != iHash ) {
+		__xuiFileDialogResolveChildren(pWidget);
+		iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pDialog->pPathBar);
+		if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInvalidatePaintIfNeeded(
+			xuiTreeViewGetViewportWidget(pDialog->pRootList));
+		if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInvalidatePaintIfNeeded(
+			xuiListViewGetViewportWidget(pDialog->pFileList));
+		if ( iRet != XUI_OK ) return iRet;
 		pDialog->bWindowPaintReady = 1;
 		pDialog->iWindowStyleHash = iHash;
-		__xuiFileDialogResolveChildren(pWidget);
-		(void)xuiWidgetInvalidate(pDialog->pPathBar, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		(void)xuiWidgetInvalidate(xuiTreeViewGetViewportWidget(pDialog->pRootList), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		(void)xuiWidgetInvalidate(xuiListViewGetViewportWidget(pDialog->pFileList), XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_OK;
 }

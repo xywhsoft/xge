@@ -95,5 +95,7 @@ int main(void)
     CHECK(baseRowHeight==23.0f);
     CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
     CHECK(d->fDefaultRowHeight==23.0f);
+    collectionVerifyDescendantStateIsolation(w,d->pViewport,
+        xuiScrollFrameGetVScrollBarWidget(d->pFrame));
     collectionDone(); puts("style_collections table: PASS"); return 0;
 }

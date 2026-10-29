@@ -533,6 +533,7 @@ void xuiInternalLayoutDetach(xui_widget pWidget);
 void xuiInternalLayoutInvalidate(xui_widget pWidget, int bMeasure);
 void xuiInternalWidgetSyncDpi(xui_widget pWidget);
 int xuiInternalWidgetInvalidateArrange(xui_widget pWidget, uint32_t iPaintFlags);
+int xuiInternalWidgetInvalidatePaintIfNeeded(xui_widget pWidget);
 int xuiInternalLayoutMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasured);
 int xuiInternalLayoutArrange(xui_widget pWidget, xui_rect_t tRect);
 int xuiInternalLayoutArrangeChild(xui_widget pParent, xui_widget pChild, xui_rect_t tRect);

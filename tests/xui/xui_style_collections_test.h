@@ -75,6 +75,18 @@ static void collectionRender(void)
     CHECK(gDraws==draws);
     CHECK(gMeasures==measures);
 }
+static void collectionVerifyDescendantStateIsolation(xui_widget owner, xui_widget viewport,
+    xui_widget descendant)
+{
+    xui_event_t event={0};
+    CHECK(owner!=NULL && viewport!=NULL && descendant!=NULL);
+    xuiWidgetClearDirty(owner,XUI_WIDGET_DIRTY_ALL);
+    xuiWidgetClearDirty(viewport,XUI_WIDGET_DIRTY_ALL);
+    event.iSize=sizeof(event); event.iType=XUI_EVENT_VISIBLE_CHANGED; event.pTarget=descendant;
+    CHECK(xuiDispatchEvent(gContext,&event)==XUI_OK);
+    CHECK(xuiWidgetGetDirtyFlags(owner)==0u);
+    CHECK(xuiWidgetGetDirtyFlags(viewport)==0u);
+}
 static xui_style_property_t collectionProperty(const char* key, uint32_t color)
 {
     xui_style_property_t p={0}; p.iSize=sizeof(p); p.sName=key;

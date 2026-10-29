@@ -1886,7 +1886,7 @@ XUI_API int xuiScrollBarSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t 
 	if ( pData->iTrackColor == iTrack && pData->iThumbColor == iThumb &&
 	     pData->iHoverColor == iHover && pData->iActiveColor == iActive &&
 	     pData->iFocusColor == iFocus && pData->iDisabledColor == iDisabled ) return XUI_OK;
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iTrackColor = iTrack;
 	pData->iThumbColor = iThumb;
@@ -1916,7 +1916,7 @@ XUI_API int xuiScrollBarSetButtonColors(xui_widget pWidget, uint32_t iButton, ui
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iButtonColor == iButton && pData->iButtonIconColor == iIcon ) return XUI_OK;
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iButtonColor = iButton;
 	pData->iButtonIconColor = iIcon;

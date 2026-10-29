@@ -1397,7 +1397,7 @@ XUI_API int xuiScrollFrameSetColors(xui_widget pWidget, uint32_t iTrack, uint32_
 	if ( pData->iTrackColor == iTrack && pData->iThumbColor == iThumb &&
 	     pData->iHoverColor == iHover && pData->iActiveColor == iActive &&
 	     pData->iFocusColor == iFocus && pData->iDisabledColor == iDisabled ) return XUI_OK;
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiInternalWidgetInvalidatePaintIfNeeded(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	iOldTrack = pData->iTrackColor;
 	iOldThumb = pData->iThumbColor;

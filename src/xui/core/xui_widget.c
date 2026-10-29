@@ -6437,6 +6437,16 @@ XUI_API int xuiWidgetInvalidate(xui_widget pWidget, uint32_t iFlags)
 	return __xuiWidgetInvalidateWorldRect(pWidget, xuiWidgetGetWorldRect(pWidget), iFlags);
 }
 
+int xuiInternalWidgetInvalidatePaintIfNeeded(xui_widget pWidget)
+{
+	const uint32_t iFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+
+	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pWidget->iDirtyFlags & iFlags) == iFlags ) return XUI_OK;
+	return __xuiWidgetInvalidateWorldRect(pWidget,
+		xuiWidgetGetWorldRect(pWidget), iFlags);
+}
+
 int xuiInternalWidgetInvalidateArrange(xui_widget pWidget, uint32_t iPaintFlags)
 {
 	xui_widget pScan;

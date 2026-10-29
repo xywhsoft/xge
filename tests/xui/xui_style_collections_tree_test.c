@@ -75,5 +75,7 @@ int main(void)
     CHECK(xuiWidgetSetInlineStyle(w,NULL,0)==XUI_OK); CHECK(xuiLayout(gContext)==XUI_OK);
     CHECK(xuiTreeViewGetMetrics(w,&effectiveHeight,NULL,NULL,NULL)==XUI_OK); CHECK(effectiveHeight==baseHeight);
     CHECK(gTreeWork==work);
+    collectionVerifyDescendantStateIsolation(w,d->pViewport,
+        xuiScrollFrameGetVScrollBarWidget(d->pFrame));
     collectionDone(); puts("style_collections tree: PASS"); return 0;
 }
