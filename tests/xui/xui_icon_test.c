@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -18,6 +19,39 @@ typedef struct xui_icon_custom_test_t {
 	int iPrepareCount;
 	int iDestroyCount;
 } xui_icon_custom_test_t;
+
+static xui_surface_load_memory_proc g_xuiIconLoadMemory;
+static xui_surface_load_svg_memory_proc g_xuiIconLoadSvgMemory;
+static int g_xuiIconFailMemoryCount;
+static int g_xuiIconFailSvgMemoryCount;
+
+static int __xuiIconFailLoadedMemory(xui_proxy pProxy,
+	xui_surface* ppSurface, const void* pData, int iSize, uint32_t iFlags)
+{
+	int iRet;
+
+	iRet = g_xuiIconLoadMemory(pProxy, ppSurface, pData, iSize, iFlags);
+	if ( iRet == XUI_OK && g_xuiIconFailMemoryCount > 0 ) {
+		g_xuiIconFailMemoryCount--;
+		return XUI_ERROR_BACKEND_FAILED;
+	}
+	return iRet;
+}
+
+static int __xuiIconFailLoadedSvgMemory(xui_proxy pProxy,
+	xui_surface* ppSurface, const void* pData, int iSize,
+	int iWidth, int iHeight, uint32_t iFlags)
+{
+	int iRet;
+
+	iRet = g_xuiIconLoadSvgMemory(pProxy, ppSurface, pData, iSize,
+		iWidth, iHeight, iFlags);
+	if ( iRet == XUI_OK && g_xuiIconFailSvgMemoryCount > 0 ) {
+		g_xuiIconFailSvgMemoryCount--;
+		return XUI_ERROR_BACKEND_FAILED;
+	}
+	return iRet;
+}
 
 static int __xuiIconRectEq(xui_rect_t tRect, float fX, float fY, float fW, float fH)
 {
@@ -85,6 +119,7 @@ static int __xuiIconTestRegistry(void)
 	xui_icon_category pCategory;
 	xui_icon_category pRetainedCategory;
 	xui_icon_category_desc_t tCategoryDesc;
+	xui_icon_category_desc_t tInvalidCategoryDesc;
 	xui_icon_desc_t tIconDesc;
 	xui_icon pFirst;
 	xui_icon pSecond;
@@ -94,6 +129,7 @@ static int __xuiIconTestRegistry(void)
 	xui_icon_id iSecondId;
 	xui_icon_id iThirdId;
 	uint32_t iGeneration;
+	uint32_t iIconGeneration;
 	int iFailed;
 	int iRet;
 
@@ -113,6 +149,13 @@ static int __xuiIconTestRegistry(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "registry context create");
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "registry proxy set");
+	tInvalidCategoryDesc = tCategoryDesc;
+	tInvalidCategoryDesc.iSizeMode = XUI_ICON_SIZE_UNRESTRICTED;
+	tInvalidCategoryDesc.fWidth = NAN;
+	tInvalidCategoryDesc.fHeight = 0.0f;
+	XUI_TEST_CHECK(xuiIconCategoryCreate(pContext, "invalid",
+		&tInvalidCategoryDesc, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+		"category rejects non-finite unrestricted size");
 	iRet = xuiIconCategoryCreate(pContext, "ui", &tCategoryDesc, &pCategory);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCategory != NULL, "category create");
 	XUI_TEST_CHECK(xuiIconCategoryCreate(pContext, "ui", NULL, NULL) == XUI_ERROR_ALREADY_INITIALIZED, "category duplicate");
@@ -120,6 +163,12 @@ static int __xuiIconTestRegistry(void)
 	XUI_TEST_CHECK(xuiIconCategoryFind(pContext, "ui") == pCategory, "category find");
 	XUI_TEST_CHECK(xuiIconCategoryGetAt(pContext, 0) == pCategory, "category ordered lookup");
 	XUI_TEST_CHECK(strcmp(xuiIconCategoryGetName(pCategory), "ui") == 0, "category name");
+	iGeneration = xuiIconCategoryGetGeneration(pCategory);
+	XUI_TEST_CHECK(xuiIconCategorySetDesc(pCategory, &tCategoryDesc) == XUI_OK &&
+		xuiIconCategoryGetGeneration(pCategory) == iGeneration,
+		"unchanged category description stays clean");
+	XUI_TEST_CHECK(xuiIconCategoryPreload(pCategory, NAN, 16.0f) ==
+		XUI_ERROR_INVALID_ARGUMENT, "category preload rejects NaN");
 
 	tIconDesc.sDisplayName = "First icon";
 	tIconDesc.sTags = "action,primary";
@@ -145,6 +194,10 @@ static int __xuiIconTestRegistry(void)
 	XUI_TEST_CHECK(xuiIconCategoryGetIconCount(pCategory) == 2, "icon count");
 	XUI_TEST_CHECK(xuiIconFind(pCategory, "second") == pSecond, "icon name lookup");
 	XUI_TEST_CHECK(xuiIconFindById(pCategory, iSecondId) == pSecond, "icon id lookup");
+	iIconGeneration = xuiIconGetGeneration(pSecond);
+	XUI_TEST_CHECK(xuiIconSetMetadata(pSecond, &tIconDesc) == XUI_OK &&
+		xuiIconGetGeneration(pSecond) == iIconGeneration,
+		"unchanged icon metadata stays clean");
 
 	XUI_TEST_CHECK(xuiIconRemoveById(pCategory, iFirstId) == XUI_OK, "remove first");
 	XUI_TEST_CHECK(xuiIconFindById(pCategory, iFirstId) == NULL, "removed id tombstone");
@@ -197,6 +250,71 @@ cleanup:
 	return iFailed;
 }
 
+static int __xuiIconTestBackendFailures(void)
+{
+	static const unsigned char arrRaster[] = {1, 2, 3, 4};
+	static const char sSvg[] =
+		"<svg viewBox=\"0 0 24 24\"><path d=\"M2 2h20v20H2z\"/></svg>";
+	xui_test_proxy_state_t tState;
+	xui_context pContext;
+	xui_icon_category pCategory;
+	xui_icon_category_desc_t tCategoryDesc;
+	xui_icon pRaster;
+	xui_icon pSvg;
+	int iDestroyBefore;
+	int iFailed;
+	int iRet;
+
+	pContext = NULL;
+	pCategory = NULL;
+	pRaster = NULL;
+	pSvg = NULL;
+	iFailed = 0;
+	xuiTestProxyInit(&tState);
+	g_xuiIconLoadMemory = tState.tProxy.surfaceLoadMemory;
+	g_xuiIconLoadSvgMemory = tState.tProxy.surfaceLoadSvgMemory;
+	g_xuiIconFailMemoryCount = 1;
+	g_xuiIconFailSvgMemoryCount = 1;
+	tState.tProxy.surfaceLoadMemory = __xuiIconFailLoadedMemory;
+	tState.tProxy.surfaceLoadSvgMemory = __xuiIconFailLoadedSvgMemory;
+
+	iRet = xuiCreate(&pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "backend context create");
+	iRet = xuiSetProxy(pContext, &tState.tProxy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "backend proxy set");
+	xuiIconCategoryDescDefault(&tCategoryDesc);
+	tCategoryDesc.iSizeMode = XUI_ICON_SIZE_UNRESTRICTED;
+	tCategoryDesc.fWidth = 0.0f;
+	tCategoryDesc.fHeight = 0.0f;
+	XUI_TEST_CHECK(xuiIconCategoryCreate(pContext, "backend",
+		&tCategoryDesc, &pCategory) == XUI_OK, "backend category create");
+	XUI_TEST_CHECK(xuiIconAddRasterMemory(pCategory, "raster", arrRaster,
+		(int)sizeof(arrRaster), NULL, &pRaster) == XUI_OK,
+		"backend raster add");
+	XUI_TEST_CHECK(xuiIconAddSvgMemory(pCategory, "svg", sSvg,
+		(int)sizeof(sSvg), NULL, &pSvg) == XUI_OK, "backend svg add");
+
+	iDestroyBefore = xuiTestProxyGetSurfaceDestroyCount(&tState);
+	XUI_TEST_CHECK(xuiIconPrepare(pRaster, 18.0f, 18.0f) ==
+		XUI_ERROR_BACKEND_FAILED &&
+		xuiTestProxyGetSurfaceDestroyCount(&tState) == iDestroyBefore + 1,
+		"failed raster loader output is destroyed");
+	XUI_TEST_CHECK(xuiIconPrepare(pRaster, 18.0f, 18.0f) == XUI_OK,
+		"raster retries after backend failure");
+
+	iDestroyBefore = xuiTestProxyGetSurfaceDestroyCount(&tState);
+	XUI_TEST_CHECK(xuiIconPrepare(pSvg, 18.0f, 18.0f) ==
+		XUI_ERROR_BACKEND_FAILED &&
+		xuiTestProxyGetSurfaceDestroyCount(&tState) == iDestroyBefore + 1,
+		"failed svg loader output is destroyed");
+	XUI_TEST_CHECK(xuiIconPrepare(pSvg, 18.0f, 18.0f) == XUI_OK,
+		"svg retries after backend failure");
+
+cleanup:
+	if ( pContext != NULL ) xuiDestroy(pContext);
+	return iFailed;
+}
+
 static int __xuiIconTestRenderAndOwnership(void)
 {
 	static const char sSvg[] = "<svg viewBox=\"0 0 24 24\"><path d=\"M2 2h20v20H2z\"/></svg>";
@@ -206,6 +324,7 @@ static int __xuiIconTestRenderAndOwnership(void)
 	xui_icon_category_desc_t tCategoryDesc;
 	xui_icon_draw_desc_t tDrawDesc;
 	xui_icon_custom_desc_t tCustomDesc;
+	xui_path_style_t tPathStyle;
 	xui_resource_desc_t tResourceDesc;
 	xui_context pContext;
 	xui_icon_category pFixed;
@@ -266,6 +385,17 @@ static int __xuiIconTestRenderAndOwnership(void)
 		NULL,
 		NULL,
 		&pPath) == XUI_OK, "path add");
+	memset(&tPathStyle, 0, sizeof(tPathStyle));
+	tPathStyle.iSize = sizeof(tPathStyle);
+	tPathStyle.iFillRule = XUI_PATH_FILL_NON_ZERO;
+	tPathStyle.iLineJoin = XUI_PATH_JOIN_MITER;
+	tPathStyle.iLineCap = XUI_PATH_CAP_BUTT;
+	tPathStyle.fStrokeWidth = NAN;
+	pOwned = pPath;
+	XUI_TEST_CHECK(xuiIconAddSvgPath(pFixed, "invalid_path", "M0 0",
+		(xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f}, &tPathStyle,
+		NULL, &pOwned) == XUI_ERROR_INVALID_ARGUMENT && pOwned == NULL,
+		"path rejects invalid style and clears output");
 
 	xuiIconCategoryDescDefault(&tCategoryDesc);
 	tCategoryDesc.iSizeMode = XUI_ICON_SIZE_UNRESTRICTED;
@@ -294,6 +424,15 @@ static int __xuiIconTestRenderAndOwnership(void)
 		(xui_rect_t){0.0f, 0.0f, 18.0f, 12.0f},
 		NULL,
 		&pResourceIcon) == XUI_OK, "resource icon add");
+	pOwned = pPath;
+	XUI_TEST_CHECK(xuiIconAddSurface(pFlexible, "invalid_surface", pTarget,
+		(xui_rect_t){NAN, 0.0f, 0.0f, 0.0f}, 0u, NULL,
+		&pOwned) == XUI_ERROR_INVALID_ARGUMENT && pOwned == NULL,
+		"surface icon rejects NaN source and clears output");
+	XUI_TEST_CHECK(xuiIconPrepare(pRaster, NAN, 16.0f) ==
+		XUI_ERROR_INVALID_ARGUMENT, "prepare rejects NaN size");
+	XUI_TEST_CHECK(xuiIconPrepare(pRaster, -1.0f, 16.0f) ==
+		XUI_ERROR_INVALID_ARGUMENT, "prepare rejects negative size");
 
 	memset(&tCustomDesc, 0, sizeof(tCustomDesc));
 	tCustomDesc.iSize = sizeof(tCustomDesc);
@@ -308,6 +447,9 @@ static int __xuiIconTestRenderAndOwnership(void)
 	xuiIconDrawDescDefault(&tDrawDesc);
 	tDrawDesc.iColor = XUI_COLOR_RGBA(20, 40, 60, 255);
 	XUI_TEST_CHECK(xuiIconDraw(pPainter, pPath, (xui_rect_t){0.0f, 0.0f, 100.0f, 100.0f}, &tDrawDesc) == XUI_OK, "fixed path draw");
+	XUI_TEST_CHECK(xuiIconDraw(pPainter, pPath,
+		(xui_rect_t){NAN, 0.0f, 16.0f, 16.0f}, &tDrawDesc) ==
+		XUI_ERROR_INVALID_ARGUMENT, "draw rejects NaN position");
 	tLastRect = xuiTestSurfaceGetLastDst(pTarget);
 	XUI_TEST_CHECK(__xuiIconRectEq(tLastRect, 42.0f, 42.0f, 16.0f, 16.0f), "fixed category draw size");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pTarget) == tDrawDesc.iColor, "path tint");
@@ -410,6 +552,7 @@ cleanup:
 int main(void)
 {
 	if ( __xuiIconTestRegistry() != 0 ) return 1;
+	if ( __xuiIconTestBackendFailures() != 0 ) return 1;
 	if ( __xuiIconTestRenderAndOwnership() != 0 ) return 1;
 	printf("xui_icon_test passed\n");
 	return 0;

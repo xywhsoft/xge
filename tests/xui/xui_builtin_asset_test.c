@@ -18,6 +18,51 @@ static int __xuiBuiltinAssetRectEq(xui_rect_t tRect, float fX, float fY, float f
 	return (tRect.fX == fX) && (tRect.fY == fY) && (tRect.fW == fW) && (tRect.fH == fH);
 }
 
+static int __xuiBuiltinAssetNullSurface(xui_proxy pProxy,
+	xui_surface* ppSurface, int iWidth, int iHeight, const void* pPixels,
+	int iStride, uint32_t iFlags)
+{
+	(void)pProxy;
+	(void)iWidth;
+	(void)iHeight;
+	(void)pPixels;
+	(void)iStride;
+	(void)iFlags;
+	if ( ppSurface != NULL ) *ppSurface = NULL;
+	return XUI_OK;
+}
+
+static int __xuiBuiltinAssetTestBackendFailures(void)
+{
+	xui_test_proxy_state_t tState;
+	xui_context pContext;
+	xui_surface pAtlas;
+	int iFailed;
+	int iRet;
+
+	pContext = NULL;
+	pAtlas = NULL;
+	iFailed = 0;
+	xuiTestProxyInit(&tState);
+	tState.tProxy.surfaceCreateRGBA = __xuiBuiltinAssetNullSurface;
+
+	iRet = xuiCreate(&pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL,
+		"backend context create");
+	iRet = xuiSetProxy(pContext, &tState.tProxy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "backend proxy set");
+	pAtlas = (xui_surface)&tState;
+	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlas(pContext, &pAtlas) ==
+		XUI_ERROR_BACKEND_FAILED && pAtlas == NULL,
+		"atlas rejects successful null surface output");
+	XUI_TEST_CHECK(tState.iZstdDecompressCount == 1,
+		"failed atlas create decodes once");
+
+cleanup:
+	if ( pContext != NULL ) xuiDestroy(pContext);
+	return iFailed;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -29,6 +74,8 @@ int main(void)
 	xui_rect_t tRect;
 	xui_rect_t tLastSrc;
 	xui_surface_desc_t tAtlasDesc;
+	xui_resource_desc_t tResourceDesc;
+	xui_resource pReservedResource;
 	int iWidth;
 	int iHeight;
 	int iFailed;
@@ -39,8 +86,10 @@ int main(void)
 	pAtlasAgain = NULL;
 	pTarget = NULL;
 	pPainter = NULL;
+	pReservedResource = NULL;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
+	if ( __xuiBuiltinAssetTestBackendFailures() != 0 ) return 1;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -78,15 +127,31 @@ int main(void)
 
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
+	memset(&tResourceDesc, 0, sizeof(tResourceDesc));
+	tResourceDesc.iSize = sizeof(tResourceDesc);
+	tResourceDesc.sName = "__xui_builtin_atlas";
+	tResourceDesc.iKind = XUI_RESOURCE_FONT;
+	tResourceDesc.pHandle = &tState;
+	XUI_TEST_CHECK(xuiResourceSet(pContext, &pReservedResource,
+		&tResourceDesc) == XUI_OK, "reserved resource collision setup");
+	pAtlas = (xui_surface)&tState;
+	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlas(pContext, &pAtlas) ==
+		XUI_ERROR_RESOURCE_FAILED && pAtlas == NULL,
+		"atlas rejects reserved name with wrong resource kind");
+	XUI_TEST_CHECK(xuiResourceRemove(pReservedResource) == XUI_OK,
+		"reserved resource collision cleanup");
+	pReservedResource = NULL;
 	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlas(pContext, &pAtlas) == XUI_OK && pAtlas != NULL, "atlas load");
-	XUI_TEST_CHECK(tState.iZstdDecompressCount == 1, "atlas Zstd decode");
+	XUI_TEST_CHECK(tState.iZstdDecompressCount == 1,
+		"atlas Zstd decode");
 	XUI_TEST_CHECK(tState.iSurfaceLoadCount == 0, "atlas bypasses encoded image loader");
 	memset(&tAtlasDesc, 0, sizeof(tAtlasDesc));
 	XUI_TEST_CHECK(tState.tProxy.surfaceGetDesc(&tState.tProxy, pAtlas, &tAtlasDesc) == XUI_OK, "atlas surface desc");
 	XUI_TEST_CHECK(tAtlasDesc.iWidth == 1024 && tAtlasDesc.iHeight == 640, "atlas surface dimensions");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlas(pContext, &pAtlasAgain) == XUI_OK, "atlas load cached");
 	XUI_TEST_CHECK(pAtlasAgain == pAtlas, "atlas cache identity");
-	XUI_TEST_CHECK(tState.iZstdDecompressCount == 1, "atlas decode cached");
+	XUI_TEST_CHECK(tState.iZstdDecompressCount == 1,
+		"atlas decode cached");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 128, 64, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");

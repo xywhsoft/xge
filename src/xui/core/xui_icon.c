@@ -2,6 +2,7 @@
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 #define XUI_ICON_CATEGORY_MAGIC 0x58494341u
@@ -99,6 +100,42 @@ static int __xuiIconFloatPositive(float fValue)
 	return (fValue == fValue) && (fValue > 0.0f) && (fValue < XUI_CONTEXT_MAX_VIEWPORT);
 }
 
+static int __xuiIconFloatNonNegative(float fValue)
+{
+	return (fValue == fValue) && (fValue >= 0.0f) &&
+	       (fValue <= XUI_CONTEXT_MAX_VIEWPORT);
+}
+
+static int __xuiIconFloatCoordinate(float fValue)
+{
+	return (fValue == fValue) && (fValue >= -XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (fValue <= XUI_CONTEXT_MAX_VIEWPORT);
+}
+
+static int __xuiIconSourceRectValid(xui_rect_t tRect)
+{
+	if ( !__xuiIconFloatCoordinate(tRect.fX) ||
+	     !__xuiIconFloatCoordinate(tRect.fY) ||
+	     !__xuiIconFloatNonNegative(tRect.fW) ||
+	     !__xuiIconFloatNonNegative(tRect.fH) ) return 0;
+	return ((tRect.fW == 0.0f) == (tRect.fH == 0.0f));
+}
+
+static int __xuiIconDrawRectValid(xui_rect_t tRect)
+{
+	return __xuiIconFloatCoordinate(tRect.fX) &&
+	       __xuiIconFloatCoordinate(tRect.fY) &&
+	       __xuiIconFloatPositive(tRect.fW) &&
+	       __xuiIconFloatPositive(tRect.fH);
+}
+
+static int __xuiIconStringEqual(const char* sA, const char* sB)
+{
+	if ( sA == sB ) return 1;
+	if ( sA == NULL || sB == NULL ) return 0;
+	return strcmp(sA, sB) == 0;
+}
+
 static char* __xuiIconStringDuplicate(const char* sText)
 {
 	char* sCopy;
@@ -148,12 +185,49 @@ static int __xuiIconCategoryDescValid(const xui_icon_category_desc_t* pDesc)
 	      !__xuiIconFloatPositive(pDesc->fHeight)) ) {
 		return 0;
 	}
+	if ( (pDesc->iSizeMode == XUI_ICON_SIZE_UNRESTRICTED) &&
+	     (!__xuiIconFloatNonNegative(pDesc->fWidth) ||
+	      !__xuiIconFloatNonNegative(pDesc->fHeight)) ) return 0;
 	if ( !__xuiIconFitModeValid(pDesc->iFitMode) ) {
 		return 0;
 	}
 	if ( (pDesc->iCacheCapacity < 0) ||
 	     (pDesc->iCacheCapacity > XUI_ICON_MAX_CACHE_CAPACITY) ) {
 		return 0;
+	}
+	return 1;
+}
+
+static int __xuiIconCategoryDescEqual(const xui_icon_category_desc_t* pA,
+	const xui_icon_category_desc_t* pB)
+{
+	return pA->iSizeMode == pB->iSizeMode &&
+	       pA->fWidth == pB->fWidth && pA->fHeight == pB->fHeight &&
+	       pA->iFitMode == pB->iFitMode &&
+	       pA->iCacheCapacity == pB->iCacheCapacity;
+}
+
+static int __xuiIconPathStyleValid(const xui_path_style_t* pStyle)
+{
+	int i;
+
+	if ( pStyle == NULL ) return 1;
+	if ( pStyle->iSize < sizeof(*pStyle) ||
+	     (pStyle->iFillRule != XUI_PATH_FILL_NON_ZERO &&
+	      pStyle->iFillRule != XUI_PATH_FILL_EVEN_ODD) ||
+	     (pStyle->iLineJoin != XUI_PATH_JOIN_MITER &&
+	      pStyle->iLineJoin != XUI_PATH_JOIN_BEVEL &&
+	      pStyle->iLineJoin != XUI_PATH_JOIN_ROUND) ||
+	     (pStyle->iLineCap != XUI_PATH_CAP_BUTT &&
+	      pStyle->iLineCap != XUI_PATH_CAP_SQUARE &&
+	      pStyle->iLineCap != XUI_PATH_CAP_ROUND) ||
+	     !__xuiIconFloatNonNegative(pStyle->fStrokeWidth) ||
+	     !__xuiIconFloatCoordinate(pStyle->fDashOffset) ||
+	     pStyle->iDashCount < 0 ||
+	     (pStyle->iDashCount > 0 && pStyle->pDashPattern == NULL) ||
+	     (size_t)pStyle->iDashCount > (size_t)INT_MAX / sizeof(float) ) return 0;
+	for ( i = 0; i < pStyle->iDashCount; i++ ) {
+		if ( !__xuiIconFloatPositive(pStyle->pDashPattern[i]) ) return 0;
 	}
 	return 1;
 }
@@ -424,22 +498,26 @@ static uint32_t __xuiIconColorMultiply(uint32_t iA, uint32_t iB)
 static int __xuiIconGetSurfaceDesc(xui_icon pIcon, xui_surface pSurface, xui_surface_desc_t* pDesc)
 {
 	xui_proxy pProxy;
+	int iRet;
 
-	if ( !__xuiIconValid(pIcon) || (pSurface == NULL) || (pDesc == NULL) ||
-	     !pIcon->pContext->bHasProxy ) {
-		return XUI_ERROR_NOT_INITIALIZED;
-	}
+	if ( !__xuiIconValid(pIcon) || pSurface == NULL || pDesc == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !pIcon->pContext->bHasProxy ) return XUI_ERROR_NOT_INITIALIZED;
 	pProxy = &pIcon->pContext->tProxy;
 	if ( pProxy->surfaceGetDesc == NULL ) {
 		return XUI_ERROR_UNSUPPORTED;
 	}
 	memset(pDesc, 0, sizeof(*pDesc));
-	return pProxy->surfaceGetDesc(pProxy, pSurface, pDesc);
+	iRet = pProxy->surfaceGetDesc(pProxy, pSurface, pDesc);
+	if ( iRet == XUI_OK && (pDesc->iWidth <= 0 || pDesc->iHeight <= 0) )
+		return XUI_ERROR_BACKEND_FAILED;
+	return iRet;
 }
 
 static int __xuiIconEnsureRasterSurface(xui_icon pIcon)
 {
 	xui_proxy pProxy;
+	xui_surface pSurface;
 	int iRet;
 
 	if ( pIcon->pSurface != NULL ) {
@@ -449,15 +527,22 @@ static int __xuiIconEnsureRasterSurface(xui_icon pIcon)
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	pProxy = &pIcon->pContext->tProxy;
+	pSurface = NULL;
 	if ( pIcon->iSourceType == XUI_ICON_SOURCE_RASTER_FILE ) {
-		iRet = pProxy->surfaceLoadFile(pProxy, &pIcon->pSurface, pIcon->sPath, 0);
+		if ( pProxy->surfaceLoadFile == NULL ) return XUI_ERROR_UNSUPPORTED;
+		iRet = pProxy->surfaceLoadFile(pProxy, &pSurface, pIcon->sPath, 0);
 	} else {
-		iRet = pProxy->surfaceLoadMemory(pProxy, &pIcon->pSurface, pIcon->pMemory, pIcon->iMemorySize, 0);
+		if ( pProxy->surfaceLoadMemory == NULL ) return XUI_ERROR_UNSUPPORTED;
+		iRet = pProxy->surfaceLoadMemory(pProxy, &pSurface, pIcon->pMemory,
+			pIcon->iMemorySize, 0);
 	}
-	if ( (iRet == XUI_OK) && (pIcon->pSurface != NULL) ) {
-		pIcon->bOwnSurface = 1;
+	if ( iRet != XUI_OK || pSurface == NULL ) {
+		if ( pSurface != NULL ) __xuiIconDestroySurface(pIcon, pSurface);
+		return (iRet != XUI_OK) ? iRet : XUI_ERROR_BACKEND_FAILED;
 	}
-	return iRet;
+	pIcon->pSurface = pSurface;
+	pIcon->bOwnSurface = 1;
+	return XUI_OK;
 }
 
 static int __xuiIconPixelSize(xui_icon pIcon, float fWidth, float fHeight, int* pWidth, int* pHeight)
@@ -497,6 +582,7 @@ static xui_icon_cache_entry_t* __xuiIconFindCache(xui_icon pIcon, int iWidth, in
 static int __xuiIconLoadSvgSurface(xui_icon pIcon, int iWidth, int iHeight, xui_surface* ppSurface)
 {
 	xui_proxy pProxy;
+	int iRet;
 
 	if ( (ppSurface == NULL) || !pIcon->pContext->bHasProxy ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -508,10 +594,19 @@ static int __xuiIconLoadSvgSurface(xui_icon pIcon, int iWidth, int iHeight, xui_
 	pProxy = &pIcon->pContext->tProxy;
 	if ( pIcon->iSourceType == XUI_ICON_SOURCE_SVG_FILE ) {
 		if ( pProxy->surfaceLoadSvgFile == NULL ) return XUI_ERROR_UNSUPPORTED;
-		return pProxy->surfaceLoadSvgFile(pProxy, ppSurface, pIcon->sPath, iWidth, iHeight, 0);
+		iRet = pProxy->surfaceLoadSvgFile(pProxy, ppSurface, pIcon->sPath,
+			iWidth, iHeight, 0);
+	} else {
+		if ( pProxy->surfaceLoadSvgMemory == NULL ) return XUI_ERROR_UNSUPPORTED;
+		iRet = pProxy->surfaceLoadSvgMemory(pProxy, ppSurface, pIcon->pMemory,
+			pIcon->iMemorySize, iWidth, iHeight, 0);
 	}
-	if ( pProxy->surfaceLoadSvgMemory == NULL ) return XUI_ERROR_UNSUPPORTED;
-	return pProxy->surfaceLoadSvgMemory(pProxy, ppSurface, pIcon->pMemory, pIcon->iMemorySize, iWidth, iHeight, 0);
+	if ( iRet != XUI_OK || *ppSurface == NULL ) {
+		if ( *ppSurface != NULL ) __xuiIconDestroySurface(pIcon, *ppSurface);
+		*ppSurface = NULL;
+		return (iRet != XUI_OK) ? iRet : XUI_ERROR_BACKEND_FAILED;
+	}
+	return XUI_OK;
 }
 
 static int __xuiIconEnsureSvgCache(xui_icon pIcon, int iWidth, int iHeight,
@@ -655,7 +750,13 @@ surface_size:
 		return __xuiIconIntrinsicSizeDepth(pIcon->pAlias, pSize, iDepth + 1);
 	case XUI_ICON_SOURCE_CUSTOM:
 		if ( pIcon->tCustom.onMeasure != NULL ) {
-			return pIcon->tCustom.onMeasure(pIcon, pSize, pIcon->tCustom.pUser);
+			iRet = pIcon->tCustom.onMeasure(pIcon, pSize,
+				pIcon->tCustom.pUser);
+			if ( iRet == XUI_OK &&
+			     (!__xuiIconFloatPositive(pSize->fX) ||
+			      !__xuiIconFloatPositive(pSize->fY)) )
+				return XUI_ERROR_BACKEND_FAILED;
+			return iRet;
 		}
 		break;
 	default:
@@ -722,8 +823,7 @@ static int __xuiIconResolveDrawRect(xui_icon pIcon, xui_rect_t tRect, const xui_
 	int iFitMode;
 	int iRet;
 
-	if ( (pDrawRect == NULL) || !__xuiIconFloatPositive(tRect.fW) ||
-	     !__xuiIconFloatPositive(tRect.fH) ) {
+	if ( pDrawRect == NULL || !__xuiIconDrawRectValid(tRect) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tLayout = (xui_icon_rect_t){tRect.fX, tRect.fY, tRect.fW, tRect.fH};
@@ -1220,11 +1320,8 @@ XUI_API xui_icon_category xuiIconCategoryGetAt(xui_context pContext, int iIndex)
 XUI_API int xuiIconCategoryAddRef(xui_icon_category pCategory)
 {
 	if ( !__xuiIconCategoryValid(pCategory) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pCategory->iRefCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 	pCategory->iRefCount++;
-	if ( pCategory->iRefCount <= 1 ) {
-		pCategory->iRefCount = 1;
-		return XUI_ERROR_UNSUPPORTED;
-	}
 	return XUI_OK;
 }
 
@@ -1255,16 +1352,18 @@ XUI_API uint32_t xuiIconCategoryGetGeneration(xui_icon_category pCategory)
 
 XUI_API int xuiIconCategorySetDesc(xui_icon_category pCategory, const xui_icon_category_desc_t* pDesc)
 {
+	xui_icon_category_desc_t tDesc;
 	uint32_t i;
 
 	if ( !__xuiIconCategoryValid(pCategory) || !__xuiIconCategoryDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pCategory->tDesc = *pDesc;
-	pCategory->tDesc.iSize = sizeof(pCategory->tDesc);
-	if ( pCategory->tDesc.iCacheCapacity == 0 ) {
-		pCategory->tDesc.iCacheCapacity = XUI_ICON_DEFAULT_CACHE_CAPACITY;
-	}
+	tDesc = *pDesc;
+	tDesc.iSize = sizeof(tDesc);
+	if ( tDesc.iCacheCapacity == 0 )
+		tDesc.iCacheCapacity = XUI_ICON_DEFAULT_CACHE_CAPACITY;
+	if ( __xuiIconCategoryDescEqual(&pCategory->tDesc, &tDesc) ) return XUI_OK;
+	pCategory->tDesc = tDesc;
 	for ( i = 1; i <= pCategory->arrIcons.Count; i++ ) {
 		xui_icon* ppIcon;
 
@@ -1289,6 +1388,7 @@ XUI_API int xuiIconCategoryGetDesc(xui_icon_category pCategory, xui_icon_categor
 XUI_API int xuiIconCategoryBeginUpdate(xui_icon_category pCategory)
 {
 	if ( !__xuiIconCategoryValid(pCategory) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pCategory->iUpdateDepth == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 	pCategory->iUpdateDepth++;
 	return XUI_OK;
 }
@@ -1340,7 +1440,9 @@ XUI_API int xuiIconCategoryPreload(xui_icon_category pCategory, float fWidth, fl
 	uint32_t i;
 	int iRet;
 
-	if ( !__xuiIconCategoryValid(pCategory) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiIconCategoryValid(pCategory) ||
+	     !__xuiIconFloatNonNegative(fWidth) ||
+	     !__xuiIconFloatNonNegative(fHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 1; i <= pCategory->arrIcons.Count; i++ ) {
 		xui_icon* ppIcon;
 
@@ -1359,13 +1461,10 @@ XUI_API int xuiIconAddSvgPath(xui_icon_category pCategory, const char* sName, co
 	xui_icon pIcon;
 	int iRet;
 
-	if ( (sPath == NULL) || (sPath[0] == '\0') ||
-	     !__xuiIconFloatPositive(tViewBox.fW) ||
-	     !__xuiIconFloatPositive(tViewBox.fH) ||
-	     ((pStyle != NULL) &&
-	      ((pStyle->iSize < sizeof(*pStyle)) ||
-	       (pStyle->iDashCount < 0) ||
-	       ((pStyle->iDashCount > 0) && (pStyle->pDashPattern == NULL)))) ) {
+	if ( ppIcon != NULL ) *ppIcon = NULL;
+	if ( sPath == NULL || sPath[0] == '\0' ||
+	     !__xuiIconDrawRectValid(tViewBox) ||
+	     !__xuiIconPathStyleValid(pStyle) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = __xuiIconRegister(pCategory, sName, XUI_ICON_SOURCE_SVG_PATH, pDesc, &pIcon);
@@ -1391,7 +1490,7 @@ XUI_API int xuiIconAddSvgPath(xui_icon_category pCategory, const char* sName, co
 	if ( (pStyle->pDashPattern != NULL) && (pStyle->iDashCount > 0) ) {
 		pIcon->pDashPattern = (float*)__xuiIconMemoryDuplicate(
 			pStyle->pDashPattern,
-			(int)(sizeof(float) * (size_t)pStyle->iDashCount));
+			(int)((size_t)pStyle->iDashCount * sizeof(float)));
 		if ( pIcon->pDashPattern == NULL ) {
 			__xuiIconRollbackRegistration(pIcon);
 			return XUI_ERROR_OUT_OF_MEMORY;
@@ -1407,6 +1506,7 @@ XUI_API int xuiIconAddSvgFile(xui_icon_category pCategory, const char* sName, co
 	xui_icon pIcon;
 	int iRet;
 
+	if ( ppIcon != NULL ) *ppIcon = NULL;
 	if ( (sPath == NULL) || (sPath[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiIconRegister(pCategory, sName, XUI_ICON_SOURCE_SVG_FILE, pDesc, &pIcon);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1424,6 +1524,7 @@ static int __xuiIconAddMemory(xui_icon_category pCategory, const char* sName, co
 	xui_icon pIcon;
 	int iRet;
 
+	if ( ppIcon != NULL ) *ppIcon = NULL;
 	if ( (pData == NULL) || (iSize <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiIconRegister(pCategory, sName, iSourceType, pDesc, &pIcon);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1447,6 +1548,7 @@ XUI_API int xuiIconAddRasterFile(xui_icon_category pCategory, const char* sName,
 	xui_icon pIcon;
 	int iRet;
 
+	if ( ppIcon != NULL ) *ppIcon = NULL;
 	if ( (sPath == NULL) || (sPath[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiIconRegister(pCategory, sName, XUI_ICON_SOURCE_RASTER_FILE, pDesc, &pIcon);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1469,7 +1571,11 @@ XUI_API int xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xu
 	xui_icon pIcon;
 	int iRet;
 
-	if ( pSurface == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppIcon != NULL ) *ppIcon = NULL;
+	if ( pSurface == NULL || !__xuiIconSourceRectValid(tSource) ||
+	     (iSurfaceFlags & ~XUI_ICON_SURFACE_TAKE_OWNERSHIP) != 0u ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	iRet = __xuiIconRegister(pCategory, sName, XUI_ICON_SOURCE_SURFACE, pDesc, &pIcon);
 	if ( iRet != XUI_OK ) return iRet;
 	pIcon->pSurface = pSurface;
@@ -1485,12 +1591,14 @@ XUI_API int xuiIconAddResource(xui_icon_category pCategory, const char* sName, x
 	const char* sResourceName;
 	int iRet;
 
+	if ( ppIcon != NULL ) *ppIcon = NULL;
 	sResourceName = xuiResourceGetName(pResource);
 	if ( !__xuiIconCategoryValid(pCategory) ||
 	     (sResourceName == NULL) ||
 	     (xuiResourceFind(pCategory->pContext, sResourceName) != pResource) ||
 	     (xuiResourceGetKind(pResource) != XUI_RESOURCE_SURFACE) ||
-	     (xuiResourceGetHandle(pResource) == NULL) ) {
+	     (xuiResourceGetHandle(pResource) == NULL) ||
+	     !__xuiIconSourceRectValid(tSource) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = __xuiIconRegister(pCategory, sName, XUI_ICON_SOURCE_RESOURCE, pDesc, &pIcon);
@@ -1510,6 +1618,7 @@ XUI_API int xuiIconAddAlias(xui_icon_category pCategory, const char* sName, xui_
 	xui_icon pIcon;
 	int iRet;
 
+	if ( ppIcon != NULL ) *ppIcon = NULL;
 	if ( !__xuiIconValid(pTarget) || !__xuiIconCategoryValid(pCategory) ||
 	     (pTarget->pContext != pCategory->pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1531,6 +1640,7 @@ XUI_API int xuiIconAddCustom(xui_icon_category pCategory, const char* sName, con
 	xui_icon pIcon;
 	int iRet;
 
+	if ( ppIcon != NULL ) *ppIcon = NULL;
 	if ( (pCustom == NULL) || (pCustom->iSize < sizeof(*pCustom)) ||
 	     (pCustom->onDraw == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1620,11 +1730,8 @@ XUI_API void xuiIconClear(xui_icon_category pCategory)
 XUI_API int xuiIconAddRef(xui_icon pIcon)
 {
 	if ( !__xuiIconValid(pIcon) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pIcon->iRefCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 	pIcon->iRefCount++;
-	if ( pIcon->iRefCount <= 1 ) {
-		pIcon->iRefCount = 1;
-		return XUI_ERROR_UNSUPPORTED;
-	}
 	return XUI_OK;
 }
 
@@ -1687,6 +1794,11 @@ XUI_API int xuiIconSetMetadata(xui_icon pIcon, const xui_icon_desc_t* pDesc)
 	if ( !__xuiIconValid(pIcon) || (pDesc == NULL) || !__xuiIconDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xuiIconStringEqual(pIcon->sDisplayName, pDesc->sDisplayName) &&
+	     __xuiIconStringEqual(pIcon->sTags, pDesc->sTags) &&
+	     pIcon->iFlags == pDesc->iFlags && pIcon->pUser == pDesc->pUser ) {
+		return XUI_OK;
+	}
 	sDisplayName = __xuiIconStringDuplicate(pDesc->sDisplayName);
 	if ( (pDesc->sDisplayName != NULL) && (sDisplayName == NULL) ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1715,11 +1827,17 @@ XUI_API int xuiIconTouch(xui_icon pIcon)
 
 XUI_API int xuiIconGetIntrinsicSize(xui_icon pIcon, xui_vec2_t* pSize)
 {
+	if ( pSize != NULL ) {
+		pSize->fX = 0.0f;
+		pSize->fY = 0.0f;
+	}
 	return __xuiIconIntrinsicSizeDepth(pIcon, pSize, 0);
 }
 
 XUI_API int xuiIconPrepare(xui_icon pIcon, float fWidth, float fHeight)
 {
+	if ( !__xuiIconFloatNonNegative(fWidth) ||
+	     !__xuiIconFloatNonNegative(fHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
 	return __xuiIconPrepareDepth(pIcon, fWidth, fHeight, 0);
 }
 

@@ -107,12 +107,14 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 	int iDecodedSize;
 	int iRet;
 
+	if ( ppSurface != NULL ) *ppSurface = NULL;
 	if ( !xuiInternalContextIsValid(pContext) || (ppSurface == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*ppSurface = NULL;
 	pResource = xuiResourceFind(pContext, XUI_BUILTIN_ATLAS_RESOURCE_NAME);
 	if ( pResource != NULL ) {
+		if ( xuiResourceGetKind(pResource) != XUI_RESOURCE_SURFACE )
+			return XUI_ERROR_RESOURCE_FAILED;
 		*ppSurface = (xui_surface)xuiResourceGetHandle(pResource);
 		return (*ppSurface != NULL) ? XUI_OK : XUI_ERROR_RESOURCE_FAILED;
 	}
@@ -140,8 +142,10 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 		g_iXuiBuiltinAtlasWidth, g_iXuiBuiltinAtlasHeight, pPixels,
 		g_iXuiBuiltinAtlasStride, XUI_SURFACE_ALPHA_PREMULTIPLIED);
 	xrtFree(pPixels);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( iRet != XUI_OK || pSurface == NULL ) {
+		if ( pSurface != NULL && pProxy->surfaceDestroy != NULL )
+			pProxy->surfaceDestroy(pProxy, pSurface);
+		return (iRet != XUI_OK) ? iRet : XUI_ERROR_BACKEND_FAILED;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
