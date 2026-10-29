@@ -5,6 +5,7 @@
 #include "xui_text_internal.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -71,6 +72,8 @@ typedef struct xui_code_edit_data_t {
 	int iTokenScratchCapacity;
 	xui_code_provider_set pProviders;
 	xui_code_margin_model pMargins;
+	xui_code_margin_info_t* pMarginLayout;
+	int iMarginLayoutCapacity;
 	xui_code_command_map pCommandMap;
 	xui_code_language_registry pLanguages;
 	xui_code_find_scope pFindScope;
@@ -422,6 +425,21 @@ static int __xuiCodeEditFindResultReserve(xui_code_edit_data_t* pData, int iCapa
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pData->pFindResults = pNew;
 	pData->iFindResultCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static int __xuiCodeEditMarginLayoutReserve(xui_code_edit_data_t* pData, int iCapacity)
+{
+	xui_code_margin_info_t* pNew;
+
+	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iCapacity <= pData->iMarginLayoutCapacity ) return XUI_OK;
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_LIMIT_EXCEEDED;
+	pNew = (xui_code_margin_info_t*)xrtRealloc(pData->pMarginLayout,
+		sizeof(*pNew) * (size_t)iCapacity);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->pMarginLayout = pNew;
+	pData->iMarginLayoutCapacity = iCapacity;
 	return XUI_OK;
 }
 
@@ -2332,6 +2350,7 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	xrtFree(pData->sAssistDocumentation);
 	xrtFree(pData->pPlaceholders);
 	xrtFree(pData->pTokenScratch);
+	xrtFree(pData->pMarginLayout);
 	pData->sInlineCompletion = NULL;
 	pData->sReadBuffer = NULL;
 	pData->sImeComposition = NULL;
@@ -2339,6 +2358,8 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	pData->sAssistDocumentation = NULL;
 	pData->pPlaceholders = NULL;
 	pData->pTokenScratch = NULL;
+	pData->pMarginLayout = NULL;
+	pData->iMarginLayoutCapacity = 0;
 	pData->iTokenScratchCapacity = 0;
 	pData->iInlineCompletionCapacity = 0;
 	pData->iReadBufferCapacity = 0;
@@ -6144,7 +6165,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	xui_rect_t tTextContent;
 	xui_rect_t tCaret;
 	xui_rect_t tIme;
-	xui_code_margin_info_t arrMargins[12];
+	xui_code_margin_info_t* pMargins;
 	xui_code_selection_t tSelection;
 	const char* sText;
 	uint32_t iBackgroundColor;
@@ -6160,6 +6181,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	uint32_t iInlineCompletionColor;
 	int iLineCount;
 	int iMarginCount;
+	int iMarginCapacity;
 	int iLine;
 	int iVisibleRow;
 	int iFirstVisibleRow;
@@ -6207,11 +6229,16 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( iRet != XUI_OK ) return iRet;
 	tRect = xuiWidgetGetContentRect(pWidget);
 	tContent = pData->tScrollViewportRect;
-	memset(arrMargins, 0, sizeof(arrMargins));
+	iMarginCapacity = xuiCodeMarginModelGetCount(pData->pMargins);
+	iRet = __xuiCodeEditMarginLayoutReserve(pData, iMarginCapacity);
+	if ( iRet != XUI_OK ) return iRet;
+	pMargins = pData->pMarginLayout;
 	iMarginCount = 0;
 	tTextContent = tContent;
-	iRet = xuiCodeMarginModelLayout(pData->pMargins, tContent, arrMargins, (int)(sizeof(arrMargins) / sizeof(arrMargins[0])), &iMarginCount, &tTextContent);
+	iRet = xuiCodeMarginModelLayout(pData->pMargins, tContent, pMargins,
+		iMarginCapacity, &iMarginCount, &tTextContent);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( iMarginCount > iMarginCapacity ) return XUI_ERROR_LIMIT_EXCEEDED;
 	iBackgroundColor = pData->bReadonly ?
 		__xuiCodeEditColor(pWidget, "codeedit.readonly.background_color", XUI_COLOR_RGBA(241, 245, 249, 255)) :
 		__xuiCodeEditColor(pWidget, "codeedit.background.color", XUI_COLOR_RGBA(248, 250, 252, 255));
@@ -6319,7 +6346,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		}
 		iRet = (iWrapSegment == 0) ?
 			__xuiCodeEditRenderMargins(pWidget, pProxy, pDraw, pFont, pData,
-				tContent, arrMargins, iMarginCount, iLine, iActiveLine,
+				tContent, pMargins, iMarginCount, iLine, iActiveLine,
 				iStart, iEnd, fY, fLineHeight) : XUI_OK;
 		if ( iRet != XUI_OK ) return iRet;
 		{

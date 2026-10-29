@@ -96,10 +96,53 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "remove custom");
 	iRet = xuiCodeMarginModelRemove(pModel, 20);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "remove missing");
+	tDesc.iSize = sizeof(tDesc) - 1u;
+	iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "undersized descriptor rejected");
+	tDesc.iSize = sizeof(tDesc);
 	tDesc.fWidth = NAN;
 	iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "NaN width rejected");
 	tDesc.fWidth = 11.0f;
+
+	xuiCodeMarginModelClear(pModel);
+	tDesc.iId = 20;
+	tDesc.fWidth = 1.4f;
+	tDesc.iFlags = XUI_CODE_MARGIN_VISIBLE;
+	iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "fractional first margin add");
+	tDesc.iId = 21;
+	iRet = xuiCodeMarginModelAdd(pModel, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "fractional second margin add");
+	iRet = xuiCodeMarginModelLayout(pModel, tViewport, arrInfos, 1,
+		&iCount, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2,
+		"layout reports total count beyond capacity");
+	XUI_TEST_CHECK(arrInfos[0].tRect.fX == 10 && arrInfos[0].tRect.fW == 1 &&
+		tTextRect.fX == 13 && tTextRect.fW == 297,
+		"fractional margin edges snap cumulatively");
+	iRet = xuiCodeMarginModelGetRect(pModel, 21, tViewport, &tRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRect.fX == 11 && tRect.fW == 2,
+		"fractional margin rect shares snapped edge");
+	iRet = xuiCodeMarginModelHitTest(pModel, tViewport, 11.0f, 53.0f,
+		16.0f, 32.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iId == 21 &&
+		tHit.tRect.fX == 11 && tHit.tRect.fW == 2,
+		"fractional margin hit uses layout geometry");
+	iRet = xuiCodeMarginModelHitTest(pModel, tViewport, 310.0f, 53.0f,
+		16.0f, 32.0f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED,
+		"margin hit rejects viewport right edge");
+	iRet = xuiCodeMarginModelLayout(pModel,
+		(xui_rect_t){INT_MAX, 0, 1, 1}, arrInfos, 8, &iCount, &tTextRect);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iCount == 0,
+		"overflowing integer viewport rejected");
+	iRet = xuiCodeMarginModelLoadDefaults(pModel, 1, 1, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeMarginModelGetCount(pModel) == 5,
+		"defaults restored after fractional geometry checks");
+	tDesc.iId = 20;
+	tDesc.fWidth = 11.0f;
+	tDesc.iFlags = XUI_CODE_MARGIN_VISIBLE | XUI_CODE_MARGIN_CLICKABLE;
 	iRet = xuiCodeMarginModelLayout(pModel, tViewport, NULL, 1,
 		&iCount, &tTextRect);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,

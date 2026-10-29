@@ -466,6 +466,7 @@ int main(void)
 	const char* arrTabItems[2];
 	int iMarginCount;
 	int iCustomMarginCallbackCount;
+	int iOverflowMarginCallbackCount;
 	int iSelectStart;
 	int iSelectEnd;
 	int iLine;
@@ -772,6 +773,25 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCustomMarginCallbackCount == 1, "custom margin pointer down event");
 	iRet = __xuiCodeEditPointerUp(pContext, 20.0f + fTextOriginX - 5.0f, 30.0f + 9.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCustomMarginCallbackCount == 2, "custom margin pointer up event");
+	iOverflowMarginCallbackCount = 0;
+	for ( iLine = 21; iLine <= 30; iLine++ ) {
+		tCustomMargin.iId = iLine;
+		tCustomMargin.fWidth = 1.0f;
+		tCustomMargin.onRender = (iLine == 30) ? __xuiCodeEditCustomMarginRender : NULL;
+		tCustomMargin.onEvent = NULL;
+		tCustomMargin.pUser = &iOverflowMarginCallbackCount;
+		iRet = xuiCodeMarginModelAdd(xuiCodeEditGetMargins(pCodeEdit), &tCustomMargin);
+		XUI_TEST_CHECK(iRet == XUI_OK, "extended custom margin add");
+	}
+	iRet = xuiWidgetInvalidate(pCodeEdit,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && iOverflowMarginCallbackCount > 0,
+		"codeedit renders custom margins beyond former fixed capacity");
+	for ( iLine = 21; iLine <= 30; iLine++ ) {
+		iRet = xuiCodeMarginModelRemove(xuiCodeEditGetMargins(pCodeEdit), iLine);
+		XUI_TEST_CHECK(iRet == XUI_OK, "extended custom margin remove");
+	}
 	iRet = xuiCodeFoldStateGetRange(xuiCodeEditGetFoldState(pCodeEdit), 0, &tFoldRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && (tFoldRange.iFlags & XUI_CODE_FOLD_COLLAPSED) == 0u, "fold margin initially expanded");
 	iRet = __xuiCodeEditPointerDown(pContext, 20.0f + 4.0f + 16.0f + 7.0f, 30.0f + 9.0f);

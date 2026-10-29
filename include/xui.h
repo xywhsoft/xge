@@ -2815,8 +2815,9 @@ typedef void (*xui_code_find_activate_proc)(xui_code_find_scope_t* pScope, xui_w
 typedef int (*xui_code_margin_render_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, xui_draw_context_t* pDraw, xui_rect_t tRect, void* pUser);
 typedef int (*xui_code_margin_event_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, int iEvent, xui_rect_t tRect, void* pUser);
 
+/* 边栏描述按值复制；回调和 pUser 为借用引用，必须在模型使用期间保持有效。 */
 struct xui_code_margin_desc_t {
-	uint32_t iSize;
+	uint32_t iSize; /* 必须至少为 sizeof(xui_code_margin_desc_t)。 */
 	int iId;
 	int iKind;
 	float fWidth;
@@ -7506,7 +7507,7 @@ XUI_API void xuiCodeMarginModelDestroy(xui_code_margin_model pModel);
 XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel);
 /* 按开关组合装入默认边栏（行号/标记/折叠/诊断）。 */
 XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLineNumber, int bMarker, int bFold, int bDiagnostic);
-/* 添加自定义边栏。 */
+/* 添加或按 id 替换自定义边栏；描述按值复制，回调和 pUser 不转移所有权。 */
 XUI_API int xuiCodeMarginModelAdd(xui_code_margin_model pModel, const xui_code_margin_desc_t* pDesc);
 /* 按 id 移除边栏。 */
 XUI_API int xuiCodeMarginModelRemove(xui_code_margin_model pModel, int iId);
@@ -7522,7 +7523,7 @@ XUI_API int xuiCodeMarginModelGet(xui_code_margin_model pModel, int iIndex, xui_
 XUI_API int xuiCodeMarginModelGetTotalWidth(xui_code_margin_model pModel, float* pWidth);
 /* 计算指定边栏在视口内的矩形。 */
 XUI_API int xuiCodeMarginModelGetRect(xui_code_margin_model pModel, int iId, xui_rect_t tViewport, xui_rect_t* pRect);
-/* 布局全部边栏（输出各自矩形与文本区）。 */
+/* 布局全部可见边栏（输出各自矩形与文本区）；*pInfoCount 返回总数，可能大于容量。 */
 XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model pModel, xui_rect_t tViewport, xui_code_margin_info_t* pInfos, int iInfoCapacity, int* pInfoCount, xui_rect_t* pTextRect);
 /* 边栏命中测试（坐标转边栏 id 与行）。 */
 XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t tViewport, float fX, float fY, float fLineHeight, float fScrollY, xui_code_margin_hit_t* pHit);
