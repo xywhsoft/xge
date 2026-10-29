@@ -216,12 +216,15 @@ static void chrome_bars(pixel_fixture_t* f)
 	items[1].iType = XUI_TOOLBAR_ITEM_SEPARATOR;
 	items[2].sText = "Stop"; items[2].iState = XUI_TOOLBAR_ITEM_ENABLED;
 	PIXEL_CHECK(xuiToolbarSetItems(toolbar, items, 3) == XUI_OK);
+	__xuiToolbarGetData(toolbar)->iHover = 0;
 	__xuiToolbarGetData(toolbar)->iActive = 0;
 	chrome_key(f, toolbar, "toolbar.text.active_color", XUI_COLOR_WHITE, 0);
 	chrome_key(f, toolbar, "toolbar.icon.active_color", XUI_COLOR_WHITE, 0);
 	chrome_key(f, toolbar, "toolbar.separator.highlight_color", XUI_COLOR_RGBA(255, 255, 255, 112), 0);
 	PIXEL_CHECK(xuiWidgetSetRect(toolbar, (xui_rect_t){0, 0, 40, 36}) == XUI_OK);
 	__xuiToolbarGetData(toolbar)->bOverflowEnabled = 1;
+	__xuiToolbarGetData(toolbar)->iActive = -1;
+	__xuiToolbarGetData(toolbar)->bOverflowFocused = 1;
 	__xuiToolbarGetData(toolbar)->bOverflowActive = 1;
 	chrome_key(f, toolbar, "toolbar.text.active_color", XUI_COLOR_WHITE, 0);
 	PIXEL_CHECK(__xuiToolbarGetData(toolbar)->iOverflowCount > 0);
@@ -231,6 +234,7 @@ static void chrome_bars(pixel_fixture_t* f)
 	status.sText = "Ready"; status.fWidth = 100;
 	status.iState = XUI_STATUSBAR_ITEM_ENABLED | XUI_STATUSBAR_ITEM_CLICKABLE;
 	PIXEL_CHECK(xuiStatusBarSetItems(statusbar, &status, 1) == XUI_OK);
+	__xuiStatusBarGetData(statusbar)->iHover = 0;
 	__xuiStatusBarGetData(statusbar)->iActive = 0;
 	chrome_key(f, statusbar, "statusbar.text.active_color", XUI_COLOR_WHITE, 0);
 	chrome_inline(toolbar, "toolbar.focus.color", 0);
