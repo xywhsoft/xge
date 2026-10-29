@@ -3245,46 +3245,113 @@ XUI_API int xuiDocumentTxnReplaceRange(xui_document_transaction t, const xui_doc
     p.iAffinity = XUI_DOC_AFTER; *caret = p; return XUI_OK;
 }
 
-typedef struct doc_range_copy { doc_state* state; xui_doc_position_t a, b; char* text; uint64_t length, capacity; } doc_range_copy;
-static void doc_copy_append(doc_range_copy* c, const char* s, uint64_t bytes) { if (bytes) memcpy(c->text + c->length, s, (size_t)bytes); c->length += bytes; }
+typedef struct doc_range_copy {
+    doc_state* state;
+    xui_doc_position_t a, b;
+    char* text;
+    uint64_t length, limit;
+    int result;
+} doc_range_copy;
+static void doc_copy_append(doc_range_copy* c, const char* text, uint64_t bytes)
+{
+    if (c->result != XUI_OK || !bytes) return;
+    if (c->length > c->limit || bytes > c->limit - c->length) {
+        c->result = XUI_DOC_ERROR_LIMIT; return;
+    }
+    if (c->text) memcpy(c->text + c->length, text, (size_t)bytes);
+    c->length += bytes;
+}
+static void doc_copy_append_sequence(doc_range_copy* c, doc_sequence* sequence,
+    uint64_t offset, uint64_t bytes)
+{
+    if (c->result != XUI_OK || !bytes) return;
+    if (c->length > c->limit || bytes > c->limit - c->length) {
+        c->result = XUI_DOC_ERROR_LIMIT; return;
+    }
+    if (c->text) c->result = doc_seq_read(sequence, offset, c->text + c->length, bytes);
+    if (c->result == XUI_OK) c->length += bytes;
+}
 static void doc_copy_range_node(doc_range_copy* c, uint64_t id)
 {
-    doc_node* n = doc_index_get(c->state->index, id); xui_doc_position_t first = c->a, last = c->a;
-    int ca, cb; uint64_t i, size = doc_text_kind(n->kind) ? doc_seq_size(n->text) : doc_seq_size(n->children);
+    doc_node* n;
+    xui_doc_position_t first = c->a, last = c->a;
+    int ca, cb;
+    uint64_t i, size;
+    if (c->result != XUI_OK) return;
+    n = doc_index_get(c->state->index, id);
+    if (!n) { c->result = XUI_DOC_ERROR_SCHEMA; return; }
+    size = doc_text_kind(n->kind) ? doc_seq_size(n->text) : doc_seq_size(n->children);
     first.iNodeId = last.iNodeId = id; first.iOffset = 0; last.iOffset = size;
     first.iKind = last.iKind = doc_text_kind(n->kind) ? XUI_DOC_POSITION_TEXT : XUI_DOC_POSITION_GAP;
-    doc_position_compare(c->state, &last, &c->a, &ca); doc_position_compare(c->state, &first, &c->b, &cb);
+    c->result = doc_position_compare(c->state, &last, &c->a, &ca);
+    if (c->result == XUI_OK) c->result = doc_position_compare(c->state, &first, &c->b, &cb);
+    if (c->result != XUI_OK) return;
     if (ca <= 0 || cb >= 0) return;
     if (doc_text_kind(n->kind)) {
         uint64_t from = c->a.iNodeId == id ? c->a.iOffset : 0, to = c->b.iNodeId == id ? c->b.iOffset : size;
-        doc_seq_read(n->text, from, c->text + c->length, to - from); c->length += to - from;
+        doc_copy_append_sequence(c, n->text, from, to - from);
     }
-    for (i = 0; i < doc_seq_size(n->children); i++) doc_copy_range_node(c, doc_seq_get_id(n->children, i));
+    for (i = 0; c->result == XUI_OK && i < doc_seq_size(n->children); i++)
+        doc_copy_range_node(c, doc_seq_get_id(n->children, i));
     if (n->kind == XUI_DOC_SOFT_BREAK || n->kind == XUI_DOC_HARD_BREAK) doc_copy_append(c, "\n", 1);
-    doc_position_compare(c->state, &last, &c->b, &cb);
+    if (c->result != XUI_OK) return;
+    c->result = doc_position_compare(c->state, &last, &c->b, &cb);
+    if (c->result != XUI_OK) return;
     if (cb < 0) {
         doc_node* parent = doc_index_get(c->state->index, n->parent);
-        int last_child = parent && doc_seq_get_id(parent->children, doc_seq_size(parent->children) - 1) == id;
+        int last_child = parent && doc_seq_size(parent->children) &&
+            doc_seq_get_id(parent->children, doc_seq_size(parent->children) - 1) == id;
         if (n->kind == XUI_DOC_CELL) { if (!last_child) doc_copy_append(c, "\t", 1); }
         else if ((doc_paragraph(n) || n->kind == XUI_DOC_CODE_BLOCK || n->kind == XUI_DOC_ROW) &&
             !(last_child && parent->kind == XUI_DOC_CELL)) doc_copy_append(c, "\n", 1);
     }
 }
-XUI_API int xuiDocumentSnapshotCopyRange(xui_document_snapshot s, const xui_doc_range_t* range, char** out, uint64_t* bytes)
+int doc_snapshot_copy_range_limit(xui_document_snapshot s, const xui_doc_range_t* range,
+    uint64_t limit, char** out, uint64_t* bytes)
 {
-    doc_range_copy c = {0}; int order, result;
+    doc_range_copy c = {0};
+    uint64_t exact;
+    int order, result;
     if (out) *out = NULL;
     if (bytes) *bytes = 0;
     if (!s || !range || !out || !bytes) return XUI_ERROR_INVALID_ARGUMENT;
-    result = xuiDocumentSnapshotComparePositions(s, &range->tAnchor, &range->tCaret, &order); if (result != XUI_OK) return result;
-    c.state = s->state; c.a = order <= 0 ? range->tAnchor : range->tCaret; c.b = order <= 0 ? range->tCaret : range->tAnchor;
-    if (s->state->node_count > (UINT64_MAX - s->state->text_bytes - 1) / 2) return XUI_DOC_ERROR_LIMIT;
-    c.capacity = c.a.iKind == XUI_DOC_POSITION_SOURCE ? c.b.iOffset - c.a.iOffset : s->state->text_bytes + s->state->node_count * 2;
-    if (c.capacity >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
-    c.text = malloc((size_t)c.capacity + 1); if (!c.text) return XUI_ERROR_OUT_OF_MEMORY;
-    if (c.a.iKind == XUI_DOC_POSITION_SOURCE) { doc_seq_read(s->state->source, c.a.iOffset, c.text, c.capacity); c.length = c.capacity; }
-    else if (order) doc_copy_range_node(&c, DOC_ROOT);
-    c.text[c.length] = 0; *out = c.text; *bytes = c.length; return XUI_OK;
+    result = xuiDocumentSnapshotComparePositions(s, &range->tAnchor,
+        &range->tCaret, &order);
+    if (result != XUI_OK) return result;
+    c.state = s->state;
+    c.a = order <= 0 ? range->tAnchor : range->tCaret;
+    c.b = order <= 0 ? range->tCaret : range->tAnchor;
+    c.limit = limit >= (uint64_t)SIZE_MAX ? (uint64_t)SIZE_MAX - 1 : limit;
+    c.result = XUI_OK;
+    if (c.a.iKind == XUI_DOC_POSITION_SOURCE) {
+        exact = c.b.iOffset - c.a.iOffset;
+        if (exact > c.limit) return XUI_DOC_ERROR_LIMIT;
+    } else {
+        if (order) doc_copy_range_node(&c, DOC_ROOT);
+        if (c.result != XUI_OK) return c.result;
+        exact = c.length;
+    }
+    c.text = malloc((size_t)exact + 1);
+    if (!c.text) return XUI_ERROR_OUT_OF_MEMORY;
+    c.length = 0;
+    if (c.a.iKind == XUI_DOC_POSITION_SOURCE)
+        doc_copy_append_sequence(&c, s->state->source, c.a.iOffset, exact);
+    else if (order)
+        doc_copy_range_node(&c, DOC_ROOT);
+    if (c.result != XUI_OK || c.length != exact) {
+        result = c.result != XUI_OK ? c.result : XUI_DOC_ERROR_SCHEMA;
+        free(c.text);
+        return result;
+    }
+    c.text[exact] = 0;
+    *out = c.text;
+    *bytes = exact;
+    return XUI_OK;
+}
+XUI_API int xuiDocumentSnapshotCopyRange(xui_document_snapshot s,
+    const xui_doc_range_t* range, char** out, uint64_t* bytes)
+{
+    return doc_snapshot_copy_range_limit(s, range, UINT64_MAX, out, bytes);
 }
 
 #endif

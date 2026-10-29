@@ -569,6 +569,8 @@ int doc_plain_project(xui_document_snapshot, uint32_t, doc_plain_projection*);
 void doc_plain_projection_free(doc_plain_projection*);
 int doc_plain_project_position(const doc_plain_projection*, const xui_doc_position_t*, uint64_t*);
 xui_doc_position_t doc_plain_unproject(const doc_plain_projection*, uint64_t, int);
+int doc_snapshot_copy_range_limit(xui_document_snapshot, const xui_doc_range_t*,
+    uint64_t, char**, uint64_t*);
 int doc_find_expand_matches(xui_document_snapshot, uint32_t, const char*,
     uint64_t, uint32_t, const xui_doc_range_t*, const xui_doc_range_t*,
     uint64_t, const char*, uint64_t, doc_find_expansion**);

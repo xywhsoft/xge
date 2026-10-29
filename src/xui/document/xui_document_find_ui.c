@@ -536,8 +536,7 @@ int doc_find_ui_open(xui_widget editor, doc_find_ui** slot, int replace)
     xui_document_snapshot snapshot = NULL;
     char* selected = NULL; uint64_t bytes = 0;
     xui_rect_t owner, rect;
-    uint64_t selection_bytes = 0;
-    int result;
+    int order, result;
     if (!editor || !slot) return XUI_ERROR_INVALID_ARGUMENT;
     if (*slot && !xuiInternalWidgetIsValid((*slot)->window)) {
         doc_find_ui_destroy(*slot);
@@ -549,16 +548,12 @@ int doc_find_ui_open(xui_widget editor, doc_find_ui** slot, int replace)
     }
     ui = *slot; ui->replace_mode = !!replace;
     if (xuiDocumentViewGetSelection(editor, &selection) == XUI_OK &&
-        selection.tAnchor.iKind == selection.tCaret.iKind &&
-        selection.tAnchor.iNodeId == selection.tCaret.iNodeId) {
-        selection_bytes = selection.tAnchor.iOffset > selection.tCaret.iOffset ?
-            selection.tAnchor.iOffset - selection.tCaret.iOffset :
-            selection.tCaret.iOffset - selection.tAnchor.iOffset;
-    }
-    if (selection_bytes && selection_bytes <= 256 &&
-        xuiDocumentAcquireSnapshot(xuiDocumentViewGetDocument(editor), &snapshot) == XUI_OK) {
-        if (xuiDocumentSnapshotCopyRange(snapshot, &selection, &selected, &bytes) == XUI_OK &&
-            bytes && bytes <= 256 && !memchr(selected, '\n', (size_t)bytes))
+        xuiDocumentAcquireSnapshot(xuiDocumentViewGetDocument(editor), &snapshot) == XUI_OK &&
+        xuiDocumentSnapshotComparePositions(snapshot, &selection.tAnchor,
+            &selection.tCaret, &order) == XUI_OK && order) {
+        if (doc_snapshot_copy_range_limit(snapshot, &selection, 256,
+            &selected, &bytes) == XUI_OK && bytes &&
+            !memchr(selected, '\n', (size_t)bytes))
             (void)xuiInputSetText(ui->find, selected);
     }
     xuiDocumentFreeBuffer(selected); xuiDocumentSnapshotRelease(snapshot);
