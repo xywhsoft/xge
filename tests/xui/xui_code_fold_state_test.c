@@ -90,6 +90,13 @@ int main(void)
 	arrRanges[1].iFlags = XUI_CODE_FOLD_REGION;
 	iRet = xuiCodeFoldStateSetRanges(pState, arrRanges, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFoldStateGetCount(pState) == 2, "set ranges");
+	arrRanges[0].iSize = 1;
+	iRet = xuiCodeFoldStateSetRanges(pState, arrRanges, 2);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiCodeFoldStateGetCount(pState) == 2,
+		"short range rejected without changing state");
+	arrRanges[0].iSize = sizeof(arrRanges[0]);
+	iRet = xuiCodeFoldStateGetRanges(pState, NULL, 1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing range output rejected");
 	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && (tRange.iFlags & XUI_CODE_FOLD_HEADER) != 0, "header flag applied");
 
@@ -122,6 +129,24 @@ int main(void)
 	iRet = xuiCodeFoldStateToggleLine(pState, 99);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "toggle missing fold");
 
+	memset(arrRanges, 0, sizeof(arrRanges));
+	arrRanges[0].iSize = sizeof(arrRanges[0]);
+	arrRanges[0].iStartLine = 0;
+	arrRanges[0].iEndLine = 10;
+	arrRanges[1].iSize = sizeof(arrRanges[1]);
+	arrRanges[1].iStartLine = 3;
+	arrRanges[1].iEndLine = 5;
+	iRet = xuiCodeFoldStateSetRanges(pState, arrRanges, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested ranges set");
+	iRet = xuiCodeFoldStateToggleLine(pState, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "toggle nested containing fold");
+	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && (tRange.iFlags & XUI_CODE_FOLD_COLLAPSED) == 0,
+		"outer fold remains expanded");
+	iRet = xuiCodeFoldStateGetRange(pState, 1, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && (tRange.iFlags & XUI_CODE_FOLD_COLLAPSED) != 0,
+		"innermost containing fold toggled");
+
 	iRet = xuiCodeDocumentCreate(&pDocument);
 	XUI_TEST_CHECK(iRet == XUI_OK, "document create");
 	iRet = xuiCodeDocumentSetText(pDocument, "a\nb\nc\nd\n");
@@ -130,6 +155,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFoldStateGetCount(pState) == 1, "provider fold");
 	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStartLine == 1 && tRange.iEndLine == 3 && (tRange.iFlags & XUI_CODE_FOLD_CUSTOM) != 0, "provider range");
+	iRet = xuiCodeFoldStateToggleLine(pState, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "collapse provider range");
+	iRet = xuiCodeFoldStateBuildFromProvider(pState, pDocument, xuiTestFoldProvider, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "rebuild provider fold");
+	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && (tRange.iFlags & XUI_CODE_FOLD_COLLAPSED) != 0,
+		"provider rebuild preserves collapsed state");
+	iRet = xuiCodeFoldStateUnfoldAll(pState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "unfold provider range");
 	iRet = xuiCodeFoldStateTrackEdit(pState, 2, 2, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "track edit inside fold");
 	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
@@ -169,8 +203,22 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "overlap visible count");
 	iRet = xuiCodeFoldStateVisibleRowToLine(pState, 10, 1, &iLine);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 9, "overlap visible row to line");
+	iRet = xuiCodeFoldStateVisibleRowToLine(pState, 10, INT_MAX, &iLine);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 9, "overflow row clamps to last visible line");
 	iRet = xuiCodeFoldStateLineToVisibleRow(pState, 9, &iRow);
 	XUI_TEST_CHECK(iRet == XUI_OK && iRow == 1, "overlap line to visible row");
+
+	memset(arrRanges, 0, sizeof(arrRanges));
+	arrRanges[0].iSize = sizeof(arrRanges[0]);
+	arrRanges[0].iStartLine = 0;
+	arrRanges[0].iEndLine = 9;
+	arrRanges[0].iFlags = XUI_CODE_FOLD_COLLAPSED;
+	iRet = xuiCodeFoldStateSetRanges(pState, arrRanges, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tail fold set");
+	iRet = xuiCodeFoldStateVisibleRowToLine(pState, 10, INT_MAX, &iLine);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 0, "overflow row does not resolve to hidden tail");
+	iRet = xuiCodeFoldStateBuildVisibleLines(pState, 10, NULL, 1, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing visible output rejected");
 
 cleanup:
 	xuiCodeDocumentDestroy(pDocument);

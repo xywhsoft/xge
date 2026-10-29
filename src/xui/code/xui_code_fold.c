@@ -26,6 +26,13 @@ typedef struct xui_code_fold_hidden_t {
 	int iEndLine;
 } xui_code_fold_hidden_t;
 
+static int __xuiCodeFoldRangeValid(const xui_code_fold_range_t* pRange)
+{
+	return pRange != NULL &&
+		(pRange->iSize == 0u || pRange->iSize >= sizeof(*pRange)) &&
+		pRange->iStartLine >= 0 && pRange->iEndLine > pRange->iStartLine;
+}
+
 static int __xuiCodeFoldCompareHidden(const void* pA, const void* pB)
 {
 	const xui_code_fold_hidden_t* pLeft = (const xui_code_fold_hidden_t*)pA;
@@ -241,7 +248,7 @@ XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_f
 {
 	xui_code_fold_source_t tSource;
 
-	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sText == NULL || iTextSize < -1 ) return XUI_ERROR_INVALID_ARGUMENT;
 	tSource.sText = sText;
 	tSource.pDocument = NULL;
 	if ( iTextSize < 0 ) {
@@ -268,6 +275,7 @@ XUI_API int xuiCodeFoldCBuildDocumentRanges(xui_code_document pDocument, xui_cod
 XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_range_t* pRanges, int iRangeCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount)
 {
 	xui_code_fold_hidden_t* pHidden;
+	int iCollapsedCount;
 	int iHiddenCount;
 	int iMergedCount;
 	int iHidden;
@@ -281,20 +289,22 @@ XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_ran
 	*pVisibleCount = 0;
 	pHidden = NULL;
 	iHiddenCount = 0;
-	if ( iRangeCount > 0 ) {
-		if ( (size_t)iRangeCount > SIZE_MAX / sizeof(*pHidden) ) {
+	iCollapsedCount = 0;
+	for ( i = 0; i < iRangeCount; i++ ) {
+		if ( !__xuiCodeFoldRangeValid(&pRanges[i]) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( (pRanges[i].iFlags & XUI_CODE_FOLD_COLLAPSED) != 0 &&
+		     pRanges[i].iStartLine < iLineCount - 1 ) iCollapsedCount++;
+	}
+	if ( iCollapsedCount > 0 ) {
+		if ( (size_t)iCollapsedCount > SIZE_MAX / sizeof(*pHidden) ) {
 			return XUI_ERROR_LIMIT_EXCEEDED;
 		}
 		pHidden = (xui_code_fold_hidden_t*)xrtMalloc(
-			(size_t)iRangeCount * sizeof(*pHidden));
+			(size_t)iCollapsedCount * sizeof(*pHidden));
 		if ( pHidden == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	for ( i = 0; i < iRangeCount; i++ ) {
 		int iEnd;
-		if ( pRanges[i].iStartLine < 0 || pRanges[i].iEndLine <= pRanges[i].iStartLine ) {
-			xrtFree(pHidden);
-			return XUI_ERROR_INVALID_ARGUMENT;
-		}
 		if ( (pRanges[i].iFlags & XUI_CODE_FOLD_COLLAPSED) == 0 ||
 		     pRanges[i].iStartLine >= iLineCount - 1 ) continue;
 		iEnd = pRanges[i].iEndLine;

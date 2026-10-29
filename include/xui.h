@@ -7452,7 +7452,7 @@ XUI_API void xuiCodeFoldStateClear(xui_code_fold_state pState);
 XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code_fold_range_t* pRanges, int iRangeCount);
 /* 编辑后平移折叠区间（行级）。 */
 XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine, int iEndLine, int iNewEndLine);
-/* 以回调提供折叠范围并重建状态。 */
+/* 以回调提供折叠范围并重建状态；几何位置不变的区间保留折叠状态。 */
 XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_code_document pDocument, xui_code_fold_proc onFold, void* pUser);
 /* 读取折叠区间数。 */
 XUI_API int xuiCodeFoldStateGetCount(xui_code_fold_state pState);
@@ -7472,7 +7472,7 @@ XUI_API int xuiCodeFoldStateIsLineVisible(xui_code_fold_state pState, int iLine,
 XUI_API int xuiCodeFoldStateGetVisibleLineCount(xui_code_fold_state pState, int iLineCount, int* pVisibleCount);
 /* 实际行号转可见行号。 */
 XUI_API int xuiCodeFoldStateLineToVisibleRow(xui_code_fold_state pState, int iLine, int* pRow);
-/* 可见行号转实际行号。 */
+/* 可见行号转实际行号；越界行号钳制到最后一个可见行。 */
 XUI_API int xuiCodeFoldStateVisibleRowToLine(xui_code_fold_state pState, int iLineCount, int iRow, int* pLine);
 /* 构建可见行号映射表。 */
 XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iLineCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);

@@ -94,6 +94,9 @@ int main(void)
 		arrRanges, 32, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 0,
 		"preprocessor directive requires token boundary");
+	iRet = xuiCodeFoldCBuildRanges("{}", -2, arrRanges, 32, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"invalid negative text length rejected");
 	iRet = xuiCodeFoldCBuildRanges("/* note\n */\n#if A\nx\n#endif\n", -1,
 		arrRanges, 32, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "preprocessor after multiline comment");
@@ -145,6 +148,22 @@ int main(void)
 	g_iFoldFailAllocation = -1;
 	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && iVisible == 0,
 		"visible line allocation failure");
+	arrHidden[0].iFlags = 0;
+	arrHidden[1].iFlags = 0;
+	arrHidden[2].iFlags = 0;
+	g_iFoldFailAllocation = 0;
+	iRet = xuiCodeFoldBuildVisibleLines(10, arrHidden, 3, arrVisible, 16, &iVisible);
+	g_iFoldFailAllocation = -1;
+	XUI_TEST_CHECK(iRet == XUI_OK && iVisible == 10,
+		"expanded folds do not allocate hidden ranges");
+	arrHidden[0].iFlags = XUI_CODE_FOLD_COLLAPSED;
+	arrHidden[1].iFlags = XUI_CODE_FOLD_COLLAPSED;
+	arrHidden[2].iFlags = XUI_CODE_FOLD_COLLAPSED;
+	arrHidden[0].iSize = 1;
+	iRet = xuiCodeFoldBuildVisibleLines(10, arrHidden, 3, arrVisible, 16, &iVisible);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
+		"short fold range rejected");
+	arrHidden[0].iSize = 0;
 	arrHidden[0].iStartLine = -1;
 	iRet = xuiCodeFoldBuildVisibleLines(10, arrHidden, 1, arrVisible, 16, &iVisible);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
