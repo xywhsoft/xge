@@ -658,6 +658,11 @@ int xuiInternalIconCategoryBelongsToContext(xui_icon_category pCategory, xui_con
 void* xuiInternalCodeDocumentGetLexerCCache(xui_code_document pDocument);
 int xuiInternalCodeDocumentSetLexerCCache(xui_code_document pDocument,
 	void* pCache, void (*onDestroy)(void* pCache));
+typedef void (*xui_internal_code_document_edit_proc)(xui_code_document pDocument,
+	int iStartOffset, int iEndOffset, int iNewEndOffset,
+	int iStartLine, int iEndLine, int iNewEndLine, int bReset, void* pUser);
+int xuiInternalCodeDocumentSetEditObserver(xui_code_document pDocument,
+	xui_internal_code_document_edit_proc onEdit, void* pUser);
 int xuiInternalCodeDocumentClampOffset(xui_code_document pDocument,
 	int iOffset, int bForward, int* pClamped);
 int xuiInternalCodeLanguageUsesBuiltinC(const xui_code_language_t* pLanguage);

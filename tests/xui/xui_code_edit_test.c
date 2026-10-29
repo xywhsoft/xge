@@ -2153,6 +2153,89 @@ int main(void)
 	XUI_TEST_CHECK(xuiCodeEditCloseHint(pToyEdit) == XUI_OK && !xuiCodeEditIsHintOpen(pToyEdit),
 		"hint popup closes");
 
+	iRet = xuiCodeEditSetText(pToyEdit, "aa\nbb\ncc\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "tracked edit text reset");
+	iRet = xuiCodeAnnotationSetMarker(xuiCodeEditGetAnnotations(pToyEdit), 2,
+		XUI_CODE_MARKER_BOOKMARK, 0u, "tracked", 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tracked edit marker set");
+	iRet = xuiCodeAnnotationSetIndicator(xuiCodeEditGetAnnotations(pToyEdit), 77,
+		XUI_CODE_INDICATOR_UNDERLINE, 6, 8, 0u, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tracked edit indicator set");
+	memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+	tDiagnostic.iSize = sizeof(tDiagnostic);
+	tDiagnostic.tRange = (xui_code_range_t){6, 8};
+	tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_WARNING;
+	tDiagnostic.sMessage = "tracked";
+	iRet = xuiCodeAnnotationSetDiagnostics(xuiCodeEditGetAnnotations(pToyEdit),
+		&tDiagnostic, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tracked edit diagnostic set");
+	memset(&tFoldRange, 0, sizeof(tFoldRange));
+	tFoldRange.iSize = sizeof(tFoldRange);
+	tFoldRange.iStartLine = 1;
+	tFoldRange.iEndLine = 2;
+	tFoldRange.iFlags = XUI_CODE_FOLD_HEADER;
+	iRet = xuiCodeFoldStateSetRanges(xuiCodeEditGetFoldState(pToyEdit), &tFoldRange, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tracked edit fold set");
+	memset(arrPlaceholders, 0, sizeof(arrPlaceholders));
+	arrPlaceholders[0].iSize = sizeof(arrPlaceholders[0]);
+	arrPlaceholders[0].iIndex = 1;
+	arrPlaceholders[0].tRange = (xui_code_range_t){6, 8};
+	iRet = xuiCodeEditSetPlaceholders(pToyEdit, arrPlaceholders, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tracked edit placeholder set");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 0, 0);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pToyEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiCodeEditDispatchText(pContext, 'X');
+	if ( iRet == XUI_OK ) iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ENTER, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit),
+		"X\naa\nbb\ncc\n") == 0, "typing and newline edit tracked text");
+	iRet = xuiCodeAnnotationGetMarkers(xuiCodeEditGetAnnotations(pToyEdit),
+		3, NULL, 0, &iMarginCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMarginCount == 1,
+		"typing and newline shift marker line");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(xuiCodeEditGetAnnotations(pToyEdit),
+		8, arrIndicators, 4, &iTokenCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == 1 &&
+		arrIndicators[0].tRange.iStart == 8 && arrIndicators[0].tRange.iEnd == 10,
+		"typing and newline shift indicator range");
+	iRet = xuiCodeAnnotationGetDiagnosticsAt(xuiCodeEditGetAnnotations(pToyEdit),
+		8, &tDiagnostic, 1, &iTokenCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == 1 &&
+		tDiagnostic.tRange.iStart == 8 && tDiagnostic.tRange.iEnd == 10,
+		"typing and newline shift diagnostic range");
+	iRet = xuiCodeFoldStateGetRange(xuiCodeEditGetFoldState(pToyEdit), 0, &tFoldRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFoldRange.iStartLine == 2 &&
+		tFoldRange.iEndLine == 3, "typing and newline shift fold range");
+	iRet = xuiCodeEditGetActivePlaceholder(pToyEdit, &tActivePlaceholder);
+	XUI_TEST_CHECK(iRet == XUI_OK && tActivePlaceholder.tRange.iStart == 8 &&
+		tActivePlaceholder.tRange.iEnd == 10,
+		"typing and newline shift placeholder range");
+	iRet = xuiCodeDocumentUndo(xuiCodeEditGetDocument(pToyEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit),
+		"aa\nbb\ncc\n") == 0, "tracked edit undo text");
+	iRet = xuiCodeAnnotationGetDiagnosticsAt(xuiCodeEditGetAnnotations(pToyEdit),
+		6, &tDiagnostic, 1, &iTokenCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == 1 &&
+		tDiagnostic.tRange.iStart == 6 && tDiagnostic.tRange.iEnd == 8,
+		"undo restores diagnostic geometry");
+	iRet = xuiCodeFoldStateGetRange(xuiCodeEditGetFoldState(pToyEdit), 0, &tFoldRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFoldRange.iStartLine == 1 &&
+		tFoldRange.iEndLine == 2, "undo restores fold geometry");
+	iRet = xuiCodeDocumentRedo(xuiCodeEditGetDocument(pToyEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit),
+		"X\naa\nbb\ncc\n") == 0, "tracked edit redo text");
+	iRet = xuiCodeAnnotationGetDiagnosticsAt(xuiCodeEditGetAnnotations(pToyEdit),
+		8, &tDiagnostic, 1, &iTokenCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == 1 &&
+		tDiagnostic.tRange.iStart == 8 && tDiagnostic.tRange.iEnd == 10,
+		"redo restores diagnostic geometry");
+	iRet = xuiCodeDocumentSetText(xuiCodeEditGetDocument(pToyEdit), "reset");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeAnnotationGetDiagnosticCount(xuiCodeEditGetAnnotations(pToyEdit)) == 0 &&
+		xuiCodeFoldStateGetCount(xuiCodeEditGetFoldState(pToyEdit)) == 0 &&
+		xuiCodeEditGetActivePlaceholder(pToyEdit, &tActivePlaceholder) == XUI_ERROR_UNSUPPORTED,
+		"direct full document reset clears tracked editor state");
+
 	iRet = xuiCodeEditSetText(pToyEdit,
 		"line00_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz\n"
 		"line01\nline02\nline03\nline04\nline05\nline06\nline07\n"

@@ -64,6 +64,8 @@ struct xui_code_document_t {
 	int bForcedDirty;
 	xui_code_document_change_proc onChange;
 	void* pChangeUser;
+	xui_internal_code_document_edit_proc onEdit;
+	void* pEditUser;
 	void* pLexerCCache;
 	void (*onLexerCCacheDestroy)(void* pCache);
 	char sError[160];
@@ -592,6 +594,7 @@ static int __xuiCodeDocumentReplaceRaw(xui_code_document pDocument,
 	int iRequiredGap;
 	int iStartLine;
 	int iEndLine;
+	int iNewEndLine;
 	int iOldSegmentEnd;
 	int bInsertedLineBreak;
 	int iRet;
@@ -640,6 +643,11 @@ static int __xuiCodeDocumentReplaceRaw(xui_code_document pDocument,
 	if ( iRet != XUI_OK ) {
 		/* The text is already valid; recover the derived index deterministically. */
 		iRet = __xuiCodeDocumentRebuildLines(pDocument);
+	}
+	if ( iRet == XUI_OK && pDocument->onEdit != NULL ) {
+		iNewEndLine = __xuiCodeDocumentFindLine(pDocument, iStart + iTextLength);
+		pDocument->onEdit(pDocument, iStart, iEnd, iStart + iTextLength,
+			iStartLine, iEndLine, iNewEndLine, 0, pDocument->pEditUser);
 	}
 	return iRet;
 }
@@ -1019,6 +1027,8 @@ XUI_API int xuiCodeDocumentSetText(xui_code_document pDocument, const char* sTex
 XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char* sText, int iLength)
 {
 	char* sNormalized;
+	int iOldLength;
+	int iOldEndLine;
 	int iNormalizedLength;
 	int iRet;
 
@@ -1036,6 +1046,8 @@ XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char
 		__xuiCodeDocumentSetError(pDocument, "out of memory");
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
+	iOldLength = pDocument->iLength;
+	iOldEndLine = pDocument->iLineCount - 1;
 	iRet = __xuiCodeDocumentSetOwnedText(pDocument, sNormalized, iNormalizedLength);
 	if ( iRet == XUI_OK ) {
 		pDocument->iVersion++;
@@ -1050,6 +1062,11 @@ XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char
 		__xuiCodeDocumentGroupClear(&pDocument->tEditGroup);
 		pDocument->iUndoCount = 0;
 		pDocument->iRedoCount = 0;
+		if ( pDocument->onEdit != NULL ) {
+			pDocument->onEdit(pDocument, 0, iOldLength, iNormalizedLength,
+				0, iOldEndLine, pDocument->iLineCount - 1, 1,
+				pDocument->pEditUser);
+		}
 		__xuiCodeDocumentNotifyChanged(pDocument);
 		sNormalized = NULL;
 	}
@@ -1099,6 +1116,8 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 	char* sText;
 	size_t iSize;
 	int iLength;
+	int iOldLength;
+	int iOldEndLine;
 	int iRet;
 
 	if ( (pDocument == NULL) || (sPath == NULL) || (sPath[0] == '\0') ) {
@@ -1119,6 +1138,8 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 	iRet = __xuiCodeDocumentValidateUtf8(pDocument, sText, iLength);
 	if ( iRet == XUI_OK ) iRet = __xuiCodeDocumentNormalizeTextInPlace(sText, iLength, &iLength);
 	if ( iRet == XUI_OK ) {
+		iOldLength = pDocument->iLength;
+		iOldEndLine = pDocument->iLineCount - 1;
 		iRet = __xuiCodeDocumentSetOwnedText(pDocument, sText, iLength);
 		if ( iRet == XUI_OK ) {
 			pDocument->iVersion++;
@@ -1133,6 +1154,11 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 			__xuiCodeDocumentGroupClear(&pDocument->tEditGroup);
 			pDocument->iUndoCount = 0;
 			pDocument->iRedoCount = 0;
+			if ( pDocument->onEdit != NULL ) {
+				pDocument->onEdit(pDocument, 0, iOldLength, iLength,
+					0, iOldEndLine, pDocument->iLineCount - 1, 1,
+					pDocument->pEditUser);
+			}
 			__xuiCodeDocumentNotifyChanged(pDocument);
 			sText = NULL;
 		}
@@ -1193,6 +1219,15 @@ int xuiInternalCodeDocumentSetLexerCCache(xui_code_document pDocument,
 	}
 	pDocument->pLexerCCache = pCache;
 	pDocument->onLexerCCacheDestroy = onDestroy;
+	return XUI_OK;
+}
+
+int xuiInternalCodeDocumentSetEditObserver(xui_code_document pDocument,
+	xui_internal_code_document_edit_proc onEdit, void* pUser)
+{
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pDocument->onEdit = onEdit;
+	pDocument->pEditUser = (onEdit != NULL) ? pUser : NULL;
 	return XUI_OK;
 }
 

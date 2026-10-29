@@ -45,6 +45,17 @@ typedef struct xui_code_document_change_test_t {
 	uint32_t iVersion;
 } xui_code_document_change_test_t;
 
+typedef struct xui_code_document_edit_test_t {
+	int iCount;
+	int iStartOffset;
+	int iEndOffset;
+	int iNewEndOffset;
+	int iStartLine;
+	int iEndLine;
+	int iNewEndLine;
+	int bReset;
+} xui_code_document_edit_test_t;
+
 static void __xuiCodeDocumentChange(xui_code_document pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser)
 {
 	xui_code_document_change_test_t* pState;
@@ -55,6 +66,25 @@ static void __xuiCodeDocumentChange(xui_code_document pDocument, xui_code_range_
 	pState->iCount++;
 	pState->tRange = tRange;
 	pState->iVersion = iVersion;
+}
+
+static void __xuiCodeDocumentEdit(xui_code_document pDocument,
+	int iStartOffset, int iEndOffset, int iNewEndOffset,
+	int iStartLine, int iEndLine, int iNewEndLine, int bReset, void* pUser)
+{
+	xui_code_document_edit_test_t* pState;
+
+	(void)pDocument;
+	pState = (xui_code_document_edit_test_t*)pUser;
+	if ( pState == NULL ) return;
+	pState->iCount++;
+	pState->iStartOffset = iStartOffset;
+	pState->iEndOffset = iEndOffset;
+	pState->iNewEndOffset = iNewEndOffset;
+	pState->iStartLine = iStartLine;
+	pState->iEndLine = iEndLine;
+	pState->iNewEndLine = iNewEndLine;
+	pState->bReset = bReset;
 }
 
 static uint32_t __xuiCodeDocumentRandom(uint32_t* pState)
@@ -206,6 +236,51 @@ static int __xuiCodeDocumentSaveSnapshotFailureTest(const char* sPath)
 	return bFailed;
 }
 
+static int __xuiCodeDocumentEditObserverTest(void)
+{
+	xui_code_document pDocument;
+	xui_code_document_edit_test_t tEdit;
+	int iRet;
+
+	pDocument = NULL;
+	memset(&tEdit, 0, sizeof(tEdit));
+	iRet = xuiCodeDocumentCreate(&pDocument);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiInternalCodeDocumentSetEditObserver(pDocument,
+			__xuiCodeDocumentEdit, &tEdit);
+	}
+	if ( iRet == XUI_OK ) iRet = xuiCodeDocumentSetText(pDocument, "aa\nbb\ncc");
+	if ( iRet != XUI_OK || tEdit.iCount != 1 || !tEdit.bReset ||
+	     tEdit.iStartOffset != 0 || tEdit.iEndOffset != 0 ||
+	     tEdit.iNewEndOffset != 8 || tEdit.iStartLine != 0 ||
+	     tEdit.iEndLine != 0 || tEdit.iNewEndLine != 2 ) goto failed;
+	iRet = xuiCodeDocumentInsert(pDocument, 0, "x\r\ny");
+	if ( iRet != XUI_OK || tEdit.iCount != 2 || tEdit.bReset ||
+	     tEdit.iStartOffset != 0 || tEdit.iEndOffset != 0 ||
+	     tEdit.iNewEndOffset != 3 || tEdit.iStartLine != 0 ||
+	     tEdit.iEndLine != 0 || tEdit.iNewEndLine != 1 ) goto failed;
+	iRet = xuiCodeDocumentUndo(pDocument);
+	if ( iRet != XUI_OK || tEdit.iCount != 3 || tEdit.bReset ||
+	     tEdit.iStartOffset != 0 || tEdit.iEndOffset != 3 ||
+	     tEdit.iNewEndOffset != 0 || tEdit.iStartLine != 0 ||
+	     tEdit.iEndLine != 1 || tEdit.iNewEndLine != 0 ) goto failed;
+	iRet = xuiCodeDocumentRedo(pDocument);
+	if ( iRet != XUI_OK || tEdit.iCount != 4 || tEdit.bReset ||
+	     tEdit.iStartOffset != 0 || tEdit.iEndOffset != 0 ||
+	     tEdit.iNewEndOffset != 3 || tEdit.iStartLine != 0 ||
+	     tEdit.iEndLine != 0 || tEdit.iNewEndLine != 1 ) goto failed;
+	iRet = xuiInternalCodeDocumentSetEditObserver(pDocument, NULL, NULL);
+	if ( iRet != XUI_OK ) goto failed;
+	iRet = xuiCodeDocumentInsert(pDocument, 0, "z");
+	if ( iRet != XUI_OK || tEdit.iCount != 4 ) goto failed;
+	xuiCodeDocumentDestroy(pDocument);
+	return 1;
+
+failed:
+	xuiCodeDocumentDestroy(pDocument);
+	return 0;
+}
+
 int main(void)
 {
 	xui_code_document pDocument;
@@ -240,6 +315,8 @@ int main(void)
 
 	iRet = xuiCodeDocumentCreate(&pDocument);
 	XUI_TEST_CHECK(iRet == XUI_OK && pDocument != NULL, "create document");
+	XUI_TEST_CHECK(__xuiCodeDocumentEditObserverTest(),
+		"internal edit observer reports reset, edit, undo and redo geometry");
 	iRet = xuiCodeDocumentSetChangeCallback(pDocument, __xuiCodeDocumentChange, &tChange);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set change callback");
 	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "") == 0, "initial text");
