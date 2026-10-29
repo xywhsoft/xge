@@ -8019,7 +8019,7 @@ XUI_API const char* xuiTagInputGetPlaceholder(xui_widget pWidget);
 XUI_API int xuiTagInputSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
 XUI_API xui_font xuiTagInputGetFont(xui_widget pWidget);
-/* 设置标签数量上限（0 不限）。 */
+/* 设置标签数量上限（0 使用 XUI_TAG_INPUT_TAG_CAPACITY）。 */
 XUI_API int xuiTagInputSetMaxTags(xui_widget pWidget, int iMaxTags);
 /* 读取数量上限。 */
 XUI_API int xuiTagInputGetMaxTags(xui_widget pWidget);

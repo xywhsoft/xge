@@ -34,9 +34,48 @@ static void __xuiTagInputDestroyOnChange(xui_widget pWidget, int iTagCount, void
 	(void)xuiWidgetDestroy(pWidget);
 }
 
+typedef struct xui_tag_input_edit_t {
+	xui_widget pLastWidget;
+	int iCommitCount;
+	int bLastValid;
+} xui_tag_input_edit_t;
+
+static int __xuiTagInputEditEvent(xui_widget pWidget, const xui_edit_event_t* pEvent, void* pUser)
+{
+	xui_tag_input_edit_t* pEdit = (xui_tag_input_edit_t*)pUser;
+
+	if ( pEdit == NULL || pEvent == NULL ) return XUI_OK;
+	pEdit->pLastWidget = pWidget;
+	pEdit->bLastValid = pEvent->bValid;
+	if ( pEvent->iType == XUI_EDIT_EVENT_COMMIT ) pEdit->iCommitCount++;
+	return XUI_OK;
+}
+
+static int __xuiTagInputSetTagsOomPreserves(xui_widget pWidget)
+{
+	xallocationbudget* pBudget = NULL;
+	xallocationscope tScope;
+	const char* arrReplacement[2] = {"Replacement", "Other"};
+	int iRet;
+
+	if ( pWidget == NULL ) return 0;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiTagInputSetTags(pWidget, arrReplacement, 2);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	return iRet == XUI_ERROR_OUT_OF_MEMORY && xuiTagInputGetTagCount(pWidget) == 1 &&
+		strcmp(xuiTagInputGetTag(pWidget, 0), "Original") == 0;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
+	xui_tag_input_edit_t tEdit;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pTagInput;
@@ -73,6 +112,7 @@ int main(void)
 	iChanged = 0;
 	iDestroyCount = 0;
 	iFailed = 0;
+	memset(&tEdit, 0, sizeof(tEdit));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -117,6 +157,12 @@ int main(void)
 	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
 		"descriptor count respects max tags");
+	tDesc.iTagCount = 0;
+	tDesc.iMaxTags = XUI_TAG_INPUT_TAG_CAPACITY + 1;
+	pProbe = pRoot;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pProbe == NULL,
+		"descriptor rejects unsupported max tags");
 	arrLongTags[0] = "abcdef";
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -131,6 +177,42 @@ int main(void)
 	iRet = xuiTagInputSetTags(pProbe, arrLongTags, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTagInputGetTag(pProbe, 0), "A") == 0,
 		"tag truncation preserves utf8 boundary");
+	xuiWidgetDestroy(pProbe);
+	pProbe = NULL;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	arrLongTags[0] = "Original";
+	tDesc.ppTags = arrLongTags;
+	tDesc.iTagCount = 1;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "set tags oom create");
+	XUI_TEST_CHECK(__xuiTagInputSetTagsOomPreserves(pProbe),
+		"set tags oom preserves existing tags");
+	xuiWidgetDestroy(pProbe);
+	pProbe = NULL;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iMaxTags = 1;
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "limited paste create");
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "limited paste attach");
+	pProbeInput = xuiTagInputGetInputWidget(pProbe);
+	XUI_TEST_CHECK(pProbeInput != NULL, "limited paste input");
+	iRet = xuiTestProxySetClipboardText(&tState, "One,Two,");
+	if ( iRet == XUI_OK ) iRet = xuiInputPaste(pProbeInput);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 1 &&
+		strcmp(xuiTagInputGetTag(pProbe, 0), "One") == 0 &&
+		strcmp(xuiTagInputGetText(pProbe), "Two") == 0,
+		"limited paste removes committed prefix and preserves pending tag");
+	iRet = xuiTagInputRemoveTag(pProbe, 0);
+	if ( iRet == XUI_OK ) iRet = xuiTagInputCommit(pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 1 &&
+		strcmp(xuiTagInputGetTag(pProbe, 0), "Two") == 0 &&
+		strcmp(xuiTagInputGetText(pProbe), "") == 0,
+		"pending pasted tag remains committable after capacity frees");
 	xuiWidgetDestroy(pProbe);
 	pProbe = NULL;
 
@@ -166,6 +248,13 @@ int main(void)
 	iRet = xuiTagInputGetVisualMetrics(pTagInput, &fReadBorderWidth, &fReadTagHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && fReadBorderWidth == fBorderWidth && fReadTagHeight == fTagHeight,
 		"invalid metrics preserve state");
+	iRet = xuiTagInputSetVisualMetrics(pTagInput, fBorderWidth, 23.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tRect = xuiTagInputGetTagRect(pTagInput, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRect.fH == 24,
+		"fractional tag height preserves rounded pixel bounds");
+	iRet = xuiTagInputSetVisualMetrics(pTagInput, fBorderWidth, fTagHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore visual metrics");
 	iRet = xuiTagInputSetTags(pTagInput, NULL, 1);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTagInputGetTagCount(pTagInput) == 2,
 		"invalid tag array preserves state");
@@ -179,8 +268,11 @@ int main(void)
 	tClose = xuiTagInputGetCloseRect(pTagInput, 0);
 	XUI_TEST_CHECK(tClose.fW > 0.0f && tClose.fH > 0.0f, "close rect");
 	tFullRect = (xui_rect_i_t){0, 0, 360, 120};
+	xuiTestProxyResetTextCounters(&tState);
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
+	XUI_TEST_CHECK(xuiTestProxyGetTextMeasureCount(&tState) == 0,
+		"render reuses tag geometry measured during layout");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pTagInput, 0) != NULL, "normal cache");
 	XUI_TEST_CHECK(tState.iLastTextDrawSize >= 0, "tag text draws use bounded byte lengths");
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pTagInput) == 3, "tag accessibility node count");
@@ -329,6 +421,46 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 0 &&
 		xuiGetPointerCaptureEx(pContext, 401u, XUI_POINTER_TYPE_TOUCH) == NULL,
 		"owning touch removes tag and releases close capture");
+	xuiWidgetDestroy(pProbe);
+	pProbe = NULL;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "destroy-on-enter create");
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "destroy-on-enter attach");
+	pProbeInput = xuiTagInputGetInputWidget(pProbe);
+	XUI_TEST_CHECK(pProbeInput != NULL, "destroy-on-enter input");
+	iDestroyCount = 0;
+	iRet = xuiTagInputSetChange(pProbe, __xuiTagInputDestroyOnChange, &iDestroyCount);
+	if ( iRet == XUI_OK ) iRet = xuiTagInputSetText(pProbe, "EnterDestroy");
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pProbeInput);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_ENTER, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDestroyCount == 1 &&
+		xuiTagInputGetInputWidget(pProbe) == NULL,
+		"enter change callback may destroy tag input");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	iRet = xuiTagInputCreate(pContext, &pProbe, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pProbe != NULL, "edit commit create");
+	iRet = xuiWidgetAddChild(pRoot, pProbe);
+	XUI_TEST_CHECK(iRet == XUI_OK, "edit commit attach");
+	pProbeInput = xuiTagInputGetInputWidget(pProbe);
+	XUI_TEST_CHECK(pProbeInput != NULL, "edit commit input");
+	memset(&tEdit, 0, sizeof(tEdit));
+	iRet = xuiEditSetEvent(pProbe, __xuiTagInputEditEvent, &tEdit);
+	if ( iRet == XUI_OK ) iRet = xuiTagInputSetText(pProbe, "EnterTag");
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pProbeInput);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_ENTER, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 1 &&
+		strcmp(xuiTagInputGetTag(pProbe, 0), "EnterTag") == 0 &&
+		strcmp(xuiTagInputGetText(pProbe), "") == 0 &&
+		tEdit.iCommitCount == 1 && tEdit.pLastWidget == pProbe && tEdit.bLastValid,
+		"enter commits through unified edit event");
 	xuiWidgetDestroy(pProbe);
 	pProbe = NULL;
 
