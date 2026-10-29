@@ -2472,7 +2472,8 @@ typedef struct xui_progress_desc_t {
 	int bHasFillPatch;
 } xui_progress_desc_t;
 
-/* 步骤条创建描述。 */
+/* 步骤条创建描述。ppTitles 中的标题会被复制；pFont 为借用资源，调用方须保证
+ * 其生命周期覆盖 StepBar 对它的使用期。度量值须为有限非负数，0 使用默认值。 */
 typedef struct xui_step_bar_desc_t {
 	uint32_t iSize;
 	const char* const* ppTitles;

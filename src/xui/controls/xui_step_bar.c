@@ -2,6 +2,7 @@
 #if XUI_ENABLE_STEP_BAR
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,7 +14,8 @@
 #define XUI_STEP_BAR_VERTICAL_ROW_H	72.0f
 
 typedef struct xui_step_bar_data_t {
-	char* arrTitles[XUI_STEP_BAR_MAX_STEPS];
+	char* arrLabels[XUI_STEP_BAR_MAX_STEPS];
+	unsigned char arrTitleOffsets[XUI_STEP_BAR_MAX_STEPS];
 	char sAccessibleValue[256];
 	xui_font pFont;
 	int iStepCount;
@@ -53,17 +55,9 @@ static int __xuiStepBarNonNegativeFloatValid(float fValue)
 	       fValue <= XUI_LAYOUT_UNBOUNDED;
 }
 
-static void __xuiStepBarFormatArrowTitle(char* sText, size_t iCapacity, int iIndex, const char* sTitle)
+static void __xuiStepBarMarkChanged(xui_step_bar_data_t* pData)
 {
-	int iWritten;
-
-	if ( sText == NULL || iCapacity == 0u ) return;
-	iWritten = snprintf(sText, iCapacity, "%d.%s", iIndex + 1, (sTitle != NULL) ? sTitle : "");
-	if ( iWritten < 0 ) {
-		sText[0] = '\0';
-	} else if ( (size_t)iWritten >= iCapacity ) {
-		xuiInternalUtf8TrimIncomplete(sText);
-	}
+	if ( pData != NULL && pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 }
 
 static int __xuiStepBarDescValid(const xui_step_bar_desc_t* pDesc)
@@ -99,41 +93,47 @@ static int __xuiStepBarTitlesEqual(const xui_step_bar_data_t* pData,
 
 	if ( (pData == NULL) || (pData->iStepCount != iStepCount) ) return 0;
 	for ( i = 0; i < iStepCount; i++ ) {
-		const char* sOld = pData->arrTitles[i] != NULL ? pData->arrTitles[i] : "";
+		const char* sOld = pData->arrLabels[i] != NULL ?
+			pData->arrLabels[i] + pData->arrTitleOffsets[i] : "";
 		const char* sNew = (ppTitles != NULL && ppTitles[i] != NULL) ? ppTitles[i] : "";
 		if ( strcmp(sOld, sNew) != 0 ) return 0;
 	}
 	return 1;
 }
 
-static int __xuiStepBarStringSet(char** psText, const char* sText)
+static int __xuiStepBarLabelCreate(int iIndex, const char* sTitle,
+	char** psLabel, unsigned char* pTitleOffset)
 {
-	char* sNew;
+	char sPrefix[16];
+	char* sLabel;
+	size_t iPrefixLength;
+	size_t iTitleLength;
 	size_t iNeed;
+	int iWritten;
 
-	if ( psText == NULL ) {
+	if ( iIndex < 0 || iIndex >= XUI_STEP_BAR_MAX_STEPS ||
+	     psLabel == NULL || pTitleOffset == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( sText == NULL ) {
-		sText = "";
+	*psLabel = NULL;
+	*pTitleOffset = 0u;
+	if ( sTitle == NULL || sTitle[0] == '\0' ) return XUI_OK;
+	iWritten = snprintf(sPrefix, sizeof(sPrefix), "%d.", iIndex + 1);
+	if ( iWritten <= 0 || (size_t)iWritten >= sizeof(sPrefix) || iWritten > UCHAR_MAX ) {
+		return XUI_ERROR_INVALID_STATE;
 	}
-	if ( sText[0] == '\0' ) {
-		if ( *psText != NULL ) {
-			xrtFree(*psText);
-			*psText = NULL;
-		}
-		return XUI_OK;
-	}
-	iNeed = strlen(sText) + 1u;
-	sNew = (char*)xrtMalloc(iNeed);
-	if ( sNew == NULL ) {
+	iPrefixLength = (size_t)iWritten;
+	iTitleLength = strlen(sTitle);
+	if ( iTitleLength > SIZE_MAX - iPrefixLength - 1u ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	memcpy(sNew, sText, iNeed);
-	if ( *psText != NULL ) {
-		xrtFree(*psText);
-	}
-	*psText = sNew;
+	iNeed = iPrefixLength + iTitleLength + 1u;
+	sLabel = (char*)xrtMalloc(iNeed);
+	if ( sLabel == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memcpy(sLabel, sPrefix, iPrefixLength);
+	memcpy(sLabel + iPrefixLength, sTitle, iTitleLength + 1u);
+	*psLabel = sLabel;
+	*pTitleOffset = (unsigned char)iPrefixLength;
 	return XUI_OK;
 }
 
@@ -145,43 +145,57 @@ static void __xuiStepBarClearTitles(xui_step_bar_data_t* pData)
 		return;
 	}
 	for ( i = 0; i < XUI_STEP_BAR_MAX_STEPS; i++ ) {
-		if ( pData->arrTitles[i] != NULL ) {
-			xrtFree(pData->arrTitles[i]);
-			pData->arrTitles[i] = NULL;
+		if ( pData->arrLabels[i] != NULL ) {
+			xrtFree(pData->arrLabels[i]);
+			pData->arrLabels[i] = NULL;
 		}
+		pData->arrTitleOffsets[i] = 0u;
 	}
 	pData->iStepCount = 0;
 }
 
-static int __xuiStepBarSetTitlesData(xui_step_bar_data_t* pData, const char* const* ppTitles, int iStepCount)
+static void __xuiStepBarClearPreparedLabels(char** ppLabels, int iCount)
 {
-	char* arrNew[XUI_STEP_BAR_MAX_STEPS];
-	size_t iNeed;
 	int i;
-	int j;
 
-	if ( (pData == NULL) || (iStepCount < 0) || (iStepCount > XUI_STEP_BAR_MAX_STEPS) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppLabels == NULL ) return;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( ppLabels[i] != NULL ) xrtFree(ppLabels[i]);
+		ppLabels[i] = NULL;
 	}
-	memset(arrNew, 0, sizeof(arrNew));
+}
+
+static int __xuiStepBarPrepareLabels(const char* const* ppTitles, int iStepCount,
+	char** ppLabels, unsigned char* pTitleOffsets)
+{
+	int i;
+	int iRet;
+
+	if ( iStepCount < 0 || iStepCount > XUI_STEP_BAR_MAX_STEPS ||
+	     ppLabels == NULL || pTitleOffsets == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(ppLabels, 0, sizeof(*ppLabels) * XUI_STEP_BAR_MAX_STEPS);
+	memset(pTitleOffsets, 0, sizeof(*pTitleOffsets) * XUI_STEP_BAR_MAX_STEPS);
 	for ( i = 0; i < iStepCount; i++ ) {
 		const char* sTitle = (ppTitles != NULL && ppTitles[i] != NULL) ? ppTitles[i] : "";
-		if ( sTitle[0] == '\0' ) {
-			continue;
+		iRet = __xuiStepBarLabelCreate(i, sTitle, &ppLabels[i], &pTitleOffsets[i]);
+		if ( iRet != XUI_OK ) {
+			__xuiStepBarClearPreparedLabels(ppLabels, i);
+			return iRet;
 		}
-		iNeed = strlen(sTitle) + 1u;
-		arrNew[i] = (char*)xrtMalloc(iNeed);
-		if ( arrNew[i] == NULL ) {
-			for ( j = 0; j < i; j++ ) {
-				xrtFree(arrNew[j]);
-			}
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		memcpy(arrNew[i], sTitle, iNeed);
 	}
+	return XUI_OK;
+}
+
+static void __xuiStepBarCommitLabels(xui_step_bar_data_t* pData,
+	char** ppLabels, const unsigned char* pTitleOffsets, int iStepCount)
+{
+	int i;
+
 	__xuiStepBarClearTitles(pData);
 	for ( i = 0; i < iStepCount; i++ ) {
-		pData->arrTitles[i] = arrNew[i];
+		pData->arrLabels[i] = ppLabels[i];
+		pData->arrTitleOffsets[i] = pTitleOffsets[i];
+		ppLabels[i] = NULL;
 	}
 	pData->iStepCount = iStepCount;
 	if ( pData->iCurrent >= iStepCount ) {
@@ -190,6 +204,20 @@ static int __xuiStepBarSetTitlesData(xui_step_bar_data_t* pData, const char* con
 	if ( pData->iCurrent < 0 ) {
 		pData->iCurrent = 0;
 	}
+}
+
+static int __xuiStepBarSetTitlesData(xui_step_bar_data_t* pData,
+	const char* const* ppTitles, int iStepCount)
+{
+	char* arrLabels[XUI_STEP_BAR_MAX_STEPS];
+	unsigned char arrTitleOffsets[XUI_STEP_BAR_MAX_STEPS];
+	int iRet;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiStepBarPrepareLabels(ppTitles, iStepCount,
+		arrLabels, arrTitleOffsets);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiStepBarCommitLabels(pData, arrLabels, arrTitleOffsets, iStepCount);
 	return XUI_OK;
 }
 
@@ -327,10 +355,26 @@ static uint32_t __xuiStepBarTextColor(const xui_step_bar_data_t* pData, int iInd
 
 static const char* __xuiStepBarTitle(const xui_step_bar_data_t* pData, int iIndex)
 {
-	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iStepCount) || (pData->arrTitles[iIndex] == NULL) ) {
+	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iStepCount ||
+	     pData->arrLabels[iIndex] == NULL ) {
 		return "";
 	}
-	return pData->arrTitles[iIndex];
+	return pData->arrLabels[iIndex] + pData->arrTitleOffsets[iIndex];
+}
+
+static const char* __xuiStepBarArrowLabel(const xui_step_bar_data_t* pData,
+	int iIndex, char* sFallback, size_t iCapacity)
+{
+	int iWritten;
+
+	if ( pData != NULL && iIndex >= 0 && iIndex < pData->iStepCount &&
+	     pData->arrLabels[iIndex] != NULL ) {
+		return pData->arrLabels[iIndex];
+	}
+	if ( sFallback == NULL || iCapacity == 0u ) return "";
+	iWritten = snprintf(sFallback, iCapacity, "%d.", iIndex + 1);
+	if ( iWritten < 0 || (size_t)iWritten >= iCapacity ) sFallback[0] = '\0';
+	return sFallback;
 }
 
 static float __xuiStepBarMinFloat(float fA, float fB)
@@ -380,15 +424,22 @@ static void __xuiStepBarGeometry(xui_widget pWidget, const xui_step_bar_data_t* 
 		goto done;
 	}
 	if ( pResolved->iStyle == XUI_STEP_BAR_STYLE_ARROW ) {
-		float fHeight = (pResolved->fBarHeight > 0.0f) ? pResolved->fBarHeight : XUI_STEP_BAR_ARROW_H;
-		float fStepWidth = tContent.fW / (float)pResolved->iStepCount;
-		if ( fHeight > tContent.fH ) fHeight = tContent.fH;
-		tStep = (xui_rect_t){
-			tContent.fX + fStepWidth * (float)iIndex,
-			tContent.fY + (tContent.fH - fHeight) * 0.5f,
-			fStepWidth,
-			fHeight
-		};
+		int64_t iStart;
+		int64_t iEnd;
+		int iHeight;
+		float fHeight = (pResolved->fBarHeight > 0.0f) ?
+			pResolved->fBarHeight : XUI_STEP_BAR_ARROW_H;
+
+		if ( fHeight > (float)tContent.fH ) fHeight = (float)tContent.fH;
+		iHeight = xuiInternalSnapSize(fHeight);
+		if ( iHeight > tContent.fH ) iHeight = tContent.fH;
+		iStart = (int64_t)tContent.fX +
+			((int64_t)tContent.fW * (int64_t)iIndex) / pResolved->iStepCount;
+		iEnd = (int64_t)tContent.fX +
+			((int64_t)tContent.fW * (int64_t)(iIndex + 1)) / pResolved->iStepCount;
+		tStep = (xui_rect_t){(int)iStart,
+			tContent.fY + (tContent.fH - iHeight) / 2,
+			(int)(iEnd - iStart), iHeight};
 		tIndicator = tStep;
 		goto done;
 	}
@@ -439,8 +490,8 @@ done:
 
 static int __xuiStepBarDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-    xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
-    const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
+	xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
+	const char* sText = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
 
 	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == '\0') ||
 	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
@@ -500,7 +551,8 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 	xui_vec2_t tA;
 	xui_vec2_t tB;
 	xui_vec2_t tC;
-	char sText[160];
+	char sFallback[16];
+	const char* sLabel;
 	float fArrowW;
 	uint32_t iColor;
 	int i;
@@ -519,7 +571,9 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 			iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), iColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
-		if ( i < pResolved->iStepCount - 1 && (__xuiStepBarAlpha(iColor) != 0) && pProxy->drawTriangleFill != NULL ) {
+		if ( i < pResolved->iStepCount - 1 && tStep.fW > 0 && tStep.fH > 0 &&
+		     fArrowW > 0.0f && (__xuiStepBarAlpha(iColor) != 0) &&
+		     pProxy->drawTriangleFill != NULL ) {
 			tA = (xui_vec2_t){tStep.fX + tStep.fW - fArrowW, tStep.fY};
 			tB = (xui_vec2_t){tStep.fX + tStep.fW, tStep.fY + tStep.fH * 0.5f};
 			tC = (xui_vec2_t){tStep.fX + tStep.fW - fArrowW, tStep.fY + tStep.fH};
@@ -532,11 +586,11 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 				tC.fX, tC.fY, 1.0f, pResolved->iBackgroundColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
-		__xuiStepBarFormatArrowTitle(sText, sizeof(sText), i, __xuiStepBarTitle(pResolved, i));
+		sLabel = __xuiStepBarArrowLabel(pResolved, i, sFallback, sizeof(sFallback));
 		tRect = tStep;
 		tRect.fX += 8.0f;
 		tRect.fW -= 14.0f + ((i < pResolved->iStepCount - 1) ? fArrowW : 0.0f);
-		iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iArrowTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiStepBarDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=sLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, pResolved->iArrowTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -707,8 +761,10 @@ static int __xuiStepBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint
 		fW = XUI_STEP_BAR_DEFAULT_W;
 		fH = (tResolved.fBarHeight > 0.0f) ? tResolved.fBarHeight : XUI_STEP_BAR_ARROW_H;
 	}
-	if ( (tConstraint.fX > 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) ) fW = tConstraint.fX;
-	if ( (tConstraint.fY > 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) ) fH = tConstraint.fY;
+	if ( tConstraint.fX >= 0.0f && tConstraint.fX < XUI_LAYOUT_UNBOUNDED &&
+	     fW > tConstraint.fX ) fW = tConstraint.fX;
+	if ( tConstraint.fY >= 0.0f && tConstraint.fY < XUI_LAYOUT_UNBOUNDED &&
+	     fH > tConstraint.fY ) fH = tConstraint.fY;
 	pSize->fX = fW;
 	pSize->fY = fH;
 	return XUI_OK;
@@ -976,36 +1032,59 @@ XUI_API int xuiStepBarCreate(xui_context pContext, xui_widget* ppWidget, const x
 XUI_API int xuiStepBarSetSteps(xui_widget pWidget, const char* const* ppTitles, int iStepCount)
 {
 	xui_step_bar_data_t* pData;
+	char* arrLabels[XUI_STEP_BAR_MAX_STEPS];
+	unsigned char arrTitleOffsets[XUI_STEP_BAR_MAX_STEPS];
 	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( (iStepCount < 0) || (iStepCount > XUI_STEP_BAR_MAX_STEPS) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( __xuiStepBarTitlesEqual(pData, ppTitles, iStepCount) ) return XUI_OK;
-	iRet = __xuiStepBarSetTitlesData(pData, ppTitles, iStepCount);
+	iRet = __xuiStepBarPrepareLabels(ppTitles, iStepCount,
+		arrLabels, arrTitleOffsets);
 	if ( iRet != XUI_OK ) return iRet;
-	pData->iChangeCount++;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		__xuiStepBarClearPreparedLabels(arrLabels, iStepCount);
+		return iRet;
+	}
+	__xuiStepBarCommitLabels(pData, arrLabels, arrTitleOffsets, iStepCount);
+	__xuiStepBarMarkChanged(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiStepBarSetTitle(xui_widget pWidget, int iIndex, const char* sTitle)
 {
 	xui_step_bar_data_t* pData;
+	char* sNewLabel;
+	char* sOldLabel;
+	unsigned char iTitleOffset;
 	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL || iIndex < 0 || iIndex >= pData->iStepCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( strcmp(__xuiStepBarTitle(pData, iIndex), sTitle != NULL ? sTitle : "") == 0 ) return XUI_OK;
-	iRet = __xuiStepBarStringSet(&pData->arrTitles[iIndex], sTitle);
+	iRet = __xuiStepBarLabelCreate(iIndex, sTitle, &sNewLabel, &iTitleOffset);
 	if ( iRet != XUI_OK ) return iRet;
-	pData->iChangeCount++;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		if ( sNewLabel != NULL ) xrtFree(sNewLabel);
+		return iRet;
+	}
+	sOldLabel = pData->arrLabels[iIndex];
+	pData->arrLabels[iIndex] = sNewLabel;
+	pData->arrTitleOffsets[iIndex] = iTitleOffset;
+	if ( sOldLabel != NULL ) xrtFree(sOldLabel);
+	__xuiStepBarMarkChanged(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	if ( iIndex == pData->iCurrent ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiStepBarGetStepCount(xui_widget pWidget)
@@ -1027,16 +1106,19 @@ XUI_API const char* xuiStepBarGetTitle(xui_widget pWidget, int iIndex)
 XUI_API int xuiStepBarSetCurrent(xui_widget pWidget, int iCurrent)
 {
 	xui_step_bar_data_t* pData;
+	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL || iCurrent < 0 ||
 	     (pData->iStepCount > 0 && iCurrent >= pData->iStepCount) ||
 	     (pData->iStepCount == 0 && iCurrent != 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iCurrent == iCurrent ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iCurrent = iCurrent;
-	pData->iChangeCount++;
+	__xuiStepBarMarkChanged(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiStepBarGetCurrent(xui_widget pWidget)
@@ -1050,13 +1132,17 @@ XUI_API int xuiStepBarGetCurrent(xui_widget pWidget)
 XUI_API int xuiStepBarSetStyle(xui_widget pWidget, int iStyle)
 {
 	xui_step_bar_data_t* pData;
+	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL || !__xuiStepBarStyleValid(iStyle) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iStyle == iStyle ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iStyle = iStyle;
-	pData->iChangeCount++;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	__xuiStepBarMarkChanged(pData);
+	return XUI_OK;
 }
 
 XUI_API int xuiStepBarGetStyle(xui_widget pWidget)
@@ -1070,12 +1156,16 @@ XUI_API int xuiStepBarGetStyle(xui_widget pWidget)
 XUI_API int xuiStepBarSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_step_bar_data_t* pData;
+	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->pFont = pFont;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API xui_font xuiStepBarGetFont(xui_widget pWidget)
@@ -1089,16 +1179,19 @@ XUI_API xui_font xuiStepBarGetFont(xui_widget pWidget)
 XUI_API int xuiStepBarSetColors(xui_widget pWidget, uint32_t iDone, uint32_t iActive, uint32_t iPending, uint32_t iLine)
 {
 	xui_step_bar_data_t* pData;
+	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iDoneColor == iDone && pData->iActiveColor == iActive &&
 	     pData->iPendingColor == iPending && pData->iLineColor == iLine ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iDoneColor = iDone;
 	pData->iActiveColor = iActive;
 	pData->iPendingColor = iPending;
 	pData->iLineColor = iLine;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiStepBarGetColors(xui_widget pWidget, uint32_t* pDone, uint32_t* pActive, uint32_t* pPending, uint32_t* pLine)
@@ -1117,15 +1210,18 @@ XUI_API int xuiStepBarGetColors(xui_widget pWidget, uint32_t* pDone, uint32_t* p
 XUI_API int xuiStepBarSetTextColors(xui_widget pWidget, uint32_t iText, uint32_t iActiveText, uint32_t iPendingText)
 {
 	xui_step_bar_data_t* pData;
+	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iTextColor == iText && pData->iActiveTextColor == iActiveText &&
 	     pData->iPendingTextColor == iPendingText ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iTextColor = iText;
 	pData->iActiveTextColor = iActiveText;
 	pData->iPendingTextColor = iPendingText;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiStepBarGetTextColors(xui_widget pWidget, uint32_t* pText, uint32_t* pActiveText, uint32_t* pPendingText)
@@ -1143,12 +1239,15 @@ XUI_API int xuiStepBarGetTextColors(xui_widget pWidget, uint32_t* pText, uint32_
 XUI_API int xuiStepBarSetBackgroundColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_step_bar_data_t* pData;
+	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iBackgroundColor == iColor ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iBackgroundColor = iColor;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API uint32_t xuiStepBarGetBackgroundColor(xui_widget pWidget)
@@ -1162,6 +1261,7 @@ XUI_API uint32_t xuiStepBarGetBackgroundColor(xui_widget pWidget)
 XUI_API int xuiStepBarSetMetrics(xui_widget pWidget, float fBarHeight, float fDotRadius, float fLineWidth)
 {
 	xui_step_bar_data_t* pData;
+	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL ||
@@ -1171,10 +1271,13 @@ XUI_API int xuiStepBarSetMetrics(xui_widget pWidget, float fBarHeight, float fDo
 	if ( (fBarHeight == 0.0f || pData->fBarHeight == fBarHeight) &&
 	     (fDotRadius == 0.0f || pData->fDotRadius == fDotRadius) &&
 	     (fLineWidth == 0.0f || pData->fLineWidth == fLineWidth) ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( fBarHeight > 0.0f ) pData->fBarHeight = fBarHeight;
 	if ( fDotRadius > 0.0f ) pData->fDotRadius = fDotRadius;
 	if ( fLineWidth > 0.0f ) pData->fLineWidth = fLineWidth;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiStepBarGetMetrics(xui_widget pWidget, float* pBarHeight, float* pDotRadius, float* pLineWidth)

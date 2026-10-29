@@ -57,9 +57,14 @@ int main(void)
 	xui_step_bar_desc_t tDesc;
 	xui_step_bar_desc_t tInvalidDesc;
 	const char* arrTitles[3];
+	const char* arrLongTitle[1];
+	const char* sLongTitle;
+	const char* sRenderedText;
 	xui_rect_t tRect;
 	xui_rect_t tNextRect;
+	xui_rect_t tLastRect;
 	xui_rect_i_t tFullRect;
+	xui_vec2_t tMeasured;
 	xui_accessible_node_t tAccessible;
 	xallocationbudget* pBudget;
 	xallocationscope tScope;
@@ -131,6 +136,12 @@ int main(void)
 		tAccessible.tRange.fValue == 2.0 && strcmp(tAccessible.sValue, "2/3 Second") == 0,
 		"step bar accessibility state");
 	iAccessibilityRevision = xuiWidgetGetAccessibilityRevision(pArrow);
+	iRet = xuiWidgetMeasureContent(pArrow, (xui_vec2_t){1000.0f, 1000.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 420.0f && tMeasured.fY == 30.0f,
+		"large constraint preserves arrow preferred size");
+	iRet = xuiWidgetMeasureContent(pArrow, (xui_vec2_t){100.0f, 20.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 100.0f && tMeasured.fY == 20.0f,
+		"small constraint clamps arrow preferred size");
 
 	tDesc.iStyle = XUI_STEP_BAR_STYLE_DOT;
 	iRet = xuiStepBarCreate(pContext, &pDot, &tDesc);
@@ -138,6 +149,9 @@ int main(void)
 	xuiWidgetSetRect(pDot, (xui_rect_t){20.0f, 80.0f, 460.0f, 76.0f});
 	iRet = xuiWidgetAddChild(pRoot, pDot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add dot");
+	iRet = xuiWidgetMeasureContent(pDot, (xui_vec2_t){1000.0f, 1000.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 420.0f && tMeasured.fY == 72.0f,
+		"large constraint preserves dot preferred size");
 
 	tDesc.iStyle = XUI_STEP_BAR_STYLE_VERTICAL;
 	iRet = xuiStepBarCreate(pContext, &pVertical, &tDesc);
@@ -145,6 +159,9 @@ int main(void)
 	xuiWidgetSetRect(pVertical, (xui_rect_t){20.0f, 170.0f, 180.0f, 130.0f});
 	iRet = xuiWidgetAddChild(pRoot, pVertical);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add vertical");
+	iRet = xuiWidgetMeasureContent(pVertical, (xui_vec2_t){1000.0f, 1000.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 180.0f && tMeasured.fY == 216.0f,
+		"large constraint preserves vertical preferred size");
 
 	iRet = xuiStepBarSetCurrent(pArrow, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetCurrent(pArrow) == 2, "set current");
@@ -227,6 +244,31 @@ int main(void)
 	iRet = xuiStepBarSetSteps(pArrow, arrTitles, 3);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore steps");
 	XUI_TEST_CHECK(xuiStepBarGetChangeCount(pArrow) >= 3, "change count");
+	iRet = xuiStepBarSetStyle(pArrow, XUI_STEP_BAR_STYLE_ARROW);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore arrow style");
+	iRet = xuiWidgetSetRect(pArrow, (xui_rect_t){20, 20, 101, 36});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set non-divisible arrow width");
+	tRect = xuiStepBarGetStepRect(pArrow, 0);
+	tNextRect = xuiStepBarGetStepRect(pArrow, 1);
+	tLastRect = xuiStepBarGetStepRect(pArrow, 2);
+	XUI_TEST_CHECK(tRect.fX == 0 && tRect.fX + tRect.fW == tNextRect.fX &&
+		tNextRect.fX + tNextRect.fW == tLastRect.fX &&
+		tLastRect.fX + tLastRect.fW == 101,
+		"arrow steps partition every content pixel without gaps");
+	sLongTitle =
+		"abcdefghijklmnopqrstuvwxyz"
+		"abcdefghijklmnopqrstuvwxyz"
+		"abcdefghijklmnopqrstuvwxyz"
+		"abcdefghijklmnopqrstuvwxyz"
+		"abcdefghijklmnopqrstuvwxyz"
+		"abcdefghijklmnopqrstuvwxyz"
+		"abcdefghijklmnopqrstuvwxyz";
+	arrLongTitle[0] = sLongTitle;
+	iRet = xuiStepBarSetSteps(pArrow, arrLongTitle, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiStepBarGetTitle(pArrow, 0), sLongTitle) == 0,
+		"long arrow title remains available without truncation");
+	iRet = xuiWidgetSetRect(pArrow, (xui_rect_t){20, 20, 460, 36});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore arrow rect");
 	iRet = xuiStepBarSetMetrics(pDot, 32.0f, 100.0f, 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set oversized horizontal dot radius");
 	iRet = xuiStepBarSetColors(pDot, XUI_COLOR_RGBA(30, 140, 70, 255),
@@ -251,6 +293,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pArrow, 0) != NULL, "arrow cache");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pDot, 0) != NULL, "dot cache");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pVertical, 0) != NULL, "vertical cache");
+	sRenderedText = xuiTestSurfaceGetLastText(xuiWidgetGetCacheSurface(pArrow, 0));
+	XUI_TEST_CHECK(sRenderedText != NULL && strncmp(sRenderedText, "1.", 2u) == 0 &&
+		strcmp(sRenderedText + 2, sLongTitle) == 0,
+		"arrow rendering does not truncate long copied titles");
 	tRect = xuiStepBarGetStepRect(pDot, 1);
 	XUI_TEST_CHECK(tRect.fW > 0.0f && tRect.fH > 0.0f, "dot step rect");
 	tRect = xuiStepBarGetIndicatorRect(pDot, 0);
