@@ -359,6 +359,7 @@ int main(void)
 	xui_timeline_layer_t tLayer;
 	xui_timeline_selection_t tSelection;
 	xui_timeline_hit_t tHit;
+	xui_event_t tEvent;
 	timeline_test_data_t tData;
 	timeline_destroy_data_t tDestroyChanging;
 	timeline_destroy_data_t tDestroyRender;
@@ -767,13 +768,26 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pTimeline,
 		"ruler drag captures pointer");
-	iRet = xuiWidgetSetEnabled(pTimeline, 0);
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
-		"disable releases timeline capture");
-	iRet = xuiWidgetSetEnabled(pTimeline, 1);
+		"ancestor disable releases timeline capture");
+	iOwnerFrame = xuiTimeLineViewGetCurrentFrame(pTimeline);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pTimeline;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	tEvent.fX = 20.0f + 150.0f + 45.0f;
+	tEvent.fY = 20.0f + 8.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		xuiTimeLineViewGetCurrentFrame(pTimeline) == iOwnerFrame,
+		"disabled ancestor blocks direct timeline interaction");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "reenable timeline");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable timeline ancestor");
 
 	tScratchDesc = tDesc;
 	iRet = xuiTimeLineViewCreate(pContext, &pScratch, &tScratchDesc);

@@ -220,6 +220,12 @@ static int __xuiTimeLineAlive(xui_context pContext, xui_widget pWidget,
 		__xuiTimeLineViewGetData(pWidget) == pExpected;
 }
 
+static int __xuiTimeLineCanInteract(xui_widget pWidget)
+{
+	return xuiWidgetGetEffectiveEnabled(pWidget) &&
+		xuiWidgetGetEffectiveVisible(pWidget);
+}
+
 static float __xuiTimeLineMax(float a, float b) { return (a > b) ? a : b; }
 static float __xuiTimeLineMin(float a, float b) { return (a < b) ? a : b; }
 static int __xuiTimeLineClampInt(int v, int mn, int mx) { if ( v < mn ) return mn; if ( v > mx ) return mx; return v; }
@@ -1141,7 +1147,7 @@ static int __xuiTimeLineRenderLayers(xui_widget pWidget, xui_draw_context pDraw,
 		iRet = __xuiTimeLineDrawFill(pProxy, pDraw, (xui_rect_t){tRow.fX, tRow.fY, 3.0f, tRow.fH}, pData->arrLayerCustomColor[i] ? pData->arrLayers[i].iColor : pPaint->iLayerAccentColor);
 		if ( iRet != XUI_OK ) return iRet;
 		tText = xuiInternalSnapRect((xui_rect_t){tRow.fX + 10.0f, tRow.fY, __xuiTimeLineMax(0.0f, __xuiTimeLineLayerTextRight(pData) - 10.0f), tRow.fH});
-		iRet = __xuiTimeLineDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pData->arrLayers[i].sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, !xuiWidgetGetEnabled(pWidget) ? pPaint->tColors.iDisabledColor : (((iState & XUI_TIMELINE_STATE_HIDDEN) != 0) ? pPaint->tColors.iMutedTextColor : pPaint->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		iRet = __xuiTimeLineDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pData->pFont, .sText=pData->arrLayers[i].sName, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, !xuiWidgetGetEffectiveEnabled(pWidget) ? pPaint->tColors.iDisabledColor : (((iState & XUI_TIMELINE_STATE_HIDDEN) != 0) ? pPaint->tColors.iMutedTextColor : pPaint->tColors.iTextColor), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pData->bShowLockFeature ) {
 			tIcon = __xuiTimeLineLayerIconRect(pData, XUI_TIMELINE_HIT_LAYER_LOCK, tRow.fY, tRow.fH);
@@ -1605,7 +1611,6 @@ static int __xuiTimeLinePointerDown(xui_widget pWidget, xui_timeline_view_data_t
 	int iRet;
 	int bSelected;
 	if ( (pEvent == NULL) || (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) return XUI_OK;
-	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( pData->tPointerOwner.bActive ) {
 		return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
@@ -2323,6 +2328,27 @@ static int __xuiTimeLineEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	if ( (pData == NULL) || (pEvent == NULL) ) return XUI_OK;
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_MOVE:
+	case XUI_EVENT_POINTER_DOWN:
+	case XUI_EVENT_POINTER_UP:
+	case XUI_EVENT_POINTER_DOUBLE_CLICK:
+	case XUI_EVENT_CONTEXT_MENU:
+	case XUI_EVENT_KEY_DOWN:
+	case XUI_EVENT_POINTER_WHEEL:
+		if ( !__xuiTimeLineCanInteract(pWidget) ) {
+			if ( pData->tPointerOwner.bActive ) {
+				int iRet = __xuiTimeLineCancelInteraction(pWidget, pData);
+				if ( iRet != XUI_OK ) return iRet;
+				return __xuiTimeLineInvalidate(pWidget, pData,
+					XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			}
+			return XUI_OK;
+		}
+		break;
+	default:
+		break;
+	}
+	switch ( pEvent->iType ) {
+	case XUI_EVENT_POINTER_MOVE:
 		return __xuiTimeLinePointerMove(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_LEAVE:
 		if ( !pData->bDraggingSelection && !pData->bDraggingPlayhead ) {
@@ -2355,8 +2381,7 @@ static int __xuiTimeLineEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_BLUR:
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( (pEvent->iType == XUI_EVENT_ENABLED_CHANGED && !xuiWidgetGetEnabled(pWidget)) ||
-		     (pEvent->iType == XUI_EVENT_VISIBLE_CHANGED && !xuiWidgetGetVisible(pWidget)) ) {
+		if ( !__xuiTimeLineCanInteract(pWidget) ) {
 			int iRet = __xuiTimeLineCancelInteraction(pWidget, pData);
 			if ( iRet != XUI_OK ) return iRet;
 		}
