@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -172,6 +173,12 @@ int main(void)
 	pInvalidBox = (xui_msgbox)&tState;
 	iRet = xuiMsgBoxCreate(pContext, &pInvalidBox, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidBox == NULL, "invalid create clears output");
+	tInvalidDesc = tDesc;
+	tInvalidDesc.tIconSrc.fX = INFINITY;
+	pInvalidBox = (xui_msgbox)&tState;
+	iRet = xuiMsgBoxCreate(pContext, &pInvalidBox, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalidBox == NULL,
+		"nonfinite icon source is rejected at creation");
 	iRet = xuiMsgBoxCreate(pContext, &pBox, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pBox != NULL, "msgbox create");
 	iRet = xuiMsgBoxSetResult(pBox, __xuiMsgBoxResult, &tResult);
@@ -227,6 +234,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject footer shorter than button");
 	iRet = xuiMsgBoxSetIconSurface(pBox, NULL, (xui_rect_t){0, 0, -1, 1});
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject negative icon source");
+	iRet = xuiMsgBoxSetIconSurface(pBox, NULL, (xui_rect_t){NAN, 0, 1, 1});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nonfinite icon source");
 	iRet = xuiMsgBoxSetIconSurface(pBox, (xui_surface)&tState,
 		(xui_rect_t){0, 0, 0, 16});
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,

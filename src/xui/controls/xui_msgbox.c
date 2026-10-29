@@ -151,7 +151,9 @@ static int __xuiMsgBoxFloatValid(float fValue)
 
 static int __xuiMsgBoxRectValid(xui_rect_t tRect)
 {
-	return tRect.fW >= 0 && tRect.fH >= 0;
+	return tRect.fX >= -XUI_LAYOUT_UNBOUNDED && tRect.fX <= XUI_LAYOUT_UNBOUNDED &&
+	       tRect.fY >= -XUI_LAYOUT_UNBOUNDED && tRect.fY <= XUI_LAYOUT_UNBOUNDED &&
+	       __xuiMsgBoxFloatValid(tRect.fW) && __xuiMsgBoxFloatValid(tRect.fH);
 }
 
 static int __xuiMsgBoxTypeValid(int iType)
