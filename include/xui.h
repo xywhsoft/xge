@@ -7432,9 +7432,11 @@ XUI_API int xuiCodeTokenBufferGetVersion(xui_code_token_buffer pBuffer, uint32_t
 XUI_API int xuiCodeTokenBufferGetRange(xui_code_token_buffer pBuffer, uint32_t* pTextVersion, int* pRangeStart, int* pRangeEnd);
 /* 读取缓存 token 数。 */
 XUI_API int xuiCodeTokenBufferGetCount(xui_code_token_buffer pBuffer);
-/* 输出缓存 token（版本不匹配时返回错误）。 */
+/* 输出缓存 token（版本不匹配时返回错误）；容量可为 0 以只查询总数，
+ * pTokenCount 返回总数且可能大于输出容量。 */
 XUI_API int xuiCodeTokenBufferGetTokens(xui_code_token_buffer pBuffer, uint32_t iTextVersion, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
-/* 输出缓存中落于区间的 token。 */
+/* 输出缓存中与半开区间相交的 token；容量可为 0 以只查询总数，
+ * pTokenCount 返回命中总数且可能大于输出容量。 */
 XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, uint32_t iTextVersion, int iStart, int iEnd, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
 /* 创建折叠状态（展开/折叠记录）。 */
 XUI_API int xuiCodeFoldStateCreate(xui_code_fold_state* ppState);

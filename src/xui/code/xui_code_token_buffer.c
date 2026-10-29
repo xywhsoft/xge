@@ -18,20 +18,25 @@ struct xui_code_token_buffer_t {
 static int __xuiCodeTokenBufferReserve(xui_code_token_buffer pBuffer, int iCapacity)
 {
 	xui_code_token_t* pNew;
+	int iNewCapacity;
 
 	if ( pBuffer == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pBuffer->iTokenCapacity ) return XUI_OK;
-	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_OUT_OF_MEMORY;
-	pNew = (xui_code_token_t*)xrtRealloc(pBuffer->pTokens, sizeof(*pNew) * (size_t)iCapacity);
+	iNewCapacity = (pBuffer->iTokenCapacity > 0) ? pBuffer->iTokenCapacity : 16;
+	while ( iNewCapacity < iCapacity ) {
+		if ( iNewCapacity > INT_MAX / 2 ) {
+			iNewCapacity = iCapacity;
+			break;
+		}
+		iNewCapacity *= 2;
+	}
+	if ( (size_t)iNewCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_LIMIT_EXCEEDED;
+	pNew = (xui_code_token_t*)xrtRealloc(pBuffer->pTokens,
+		sizeof(*pNew) * (size_t)iNewCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pBuffer->pTokens = pNew;
-	pBuffer->iTokenCapacity = iCapacity;
+	pBuffer->iTokenCapacity = iNewCapacity;
 	return XUI_OK;
-}
-
-static void __xuiCodeTokenBufferCopyOut(xui_code_token_t* pOut, const xui_code_token_t* pToken)
-{
-	*pOut = *pToken;
 }
 
 XUI_API int xuiCodeTokenBufferCreate(xui_code_token_buffer* ppBuffer)
@@ -116,16 +121,18 @@ XUI_API int xuiCodeTokenBufferGetCount(xui_code_token_buffer pBuffer)
 
 XUI_API int xuiCodeTokenBufferGetTokens(xui_code_token_buffer pBuffer, uint32_t iTextVersion, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount)
 {
-	int i;
+	int iCopyCount;
 
-	if ( (pBuffer == NULL) || (pTokenCount == NULL) || (iTokenCapacity < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pBuffer == NULL) || (pTokenCount == NULL) || (iTokenCapacity < 0) ||
+	     (pTokens == NULL && iTokenCapacity > 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iTextVersion != pBuffer->iTextVersion ) {
 		*pTokenCount = 0;
 		return XUI_ERROR_UNSUPPORTED;
 	}
-	for ( i = 0; i < pBuffer->iTokenCount; i++ ) {
-		if ( pTokens != NULL && i < iTokenCapacity ) __xuiCodeTokenBufferCopyOut(&pTokens[i], &pBuffer->pTokens[i]);
-	}
+	iCopyCount = (pBuffer->iTokenCount < iTokenCapacity) ?
+		pBuffer->iTokenCount : iTokenCapacity;
+	if ( iCopyCount > 0 ) memcpy(pTokens, pBuffer->pTokens,
+		sizeof(*pTokens) * (size_t)iCopyCount);
 	*pTokenCount = pBuffer->iTokenCount;
 	return XUI_OK;
 }
@@ -135,10 +142,14 @@ XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, ui
 	int iLow;
 	int iHigh;
 	int iMid;
-	int i;
+	int iFirst;
+	int iLast;
 	int iCount;
+	int iCopyCount;
 
-	if ( (pBuffer == NULL) || (pTokenCount == NULL) || (iStart < 0) || (iEnd < iStart) || (iTokenCapacity < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pBuffer == NULL) || (pTokenCount == NULL) || (iStart < 0) ||
+	     (iEnd < iStart) || (iTokenCapacity < 0) ||
+	     (pTokens == NULL && iTokenCapacity > 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iTextVersion != pBuffer->iTextVersion ) {
 		*pTokenCount = 0;
 		return XUI_ERROR_UNSUPPORTED;
@@ -147,6 +158,10 @@ XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, ui
 		*pTokenCount = 0;
 		return XUI_ERROR_UNSUPPORTED;
 	}
+	if ( iStart == iEnd ) {
+		*pTokenCount = 0;
+		return XUI_OK;
+	}
 	iLow = 0;
 	iHigh = pBuffer->iTokenCount;
 	while ( iLow < iHigh ) {
@@ -154,12 +169,19 @@ XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, ui
 		if ( pBuffer->pTokens[iMid].iEndOffset <= iStart ) iLow = iMid + 1;
 		else iHigh = iMid;
 	}
-	iCount = 0;
-	for ( i = iLow; i < pBuffer->iTokenCount; i++ ) {
-		if ( pBuffer->pTokens[i].iStartOffset >= iEnd ) break;
-		if ( pTokens != NULL && iCount < iTokenCapacity ) __xuiCodeTokenBufferCopyOut(&pTokens[iCount], &pBuffer->pTokens[i]);
-		iCount++;
+	iFirst = iLow;
+	iLow = iFirst;
+	iHigh = pBuffer->iTokenCount;
+	while ( iLow < iHigh ) {
+		iMid = iLow + (iHigh - iLow) / 2;
+		if ( pBuffer->pTokens[iMid].iStartOffset < iEnd ) iLow = iMid + 1;
+		else iHigh = iMid;
 	}
+	iLast = iLow;
+	iCount = iLast - iFirst;
+	iCopyCount = (iCount < iTokenCapacity) ? iCount : iTokenCapacity;
+	if ( iCopyCount > 0 ) memcpy(pTokens, &pBuffer->pTokens[iFirst],
+		sizeof(*pTokens) * (size_t)iCopyCount);
 	*pTokenCount = iCount;
 	return XUI_OK;
 }
