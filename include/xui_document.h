@@ -1181,7 +1181,9 @@ XUI_API int xuiDocumentTxnSetTableColumnWidth(xui_document_transaction transacti
 /* Merge a rectangular group of table cells. */
 XUI_API int xuiDocumentTxnMergeCells(xui_document_transaction transaction, xui_doc_node_id table,
     uint32_t row, uint32_t column, uint32_t rows, uint32_t columns, xui_doc_node_id* out);
-/* Split a merged table cell into separate cells. */
+/* Split a merged table cell into separate cells. New cells inherit the source
+ * cell's presentation attributes. An already unmerged cell returns
+ * INVALID_STATE. */
 XUI_API int xuiDocumentTxnSplitCell(xui_document_transaction transaction, xui_doc_node_id cell);
 /* Paste a UTF-8 TSV rectangle at an existing cell. Double-quoted fields may
  * contain tabs, row breaks and doubled quotes; malformed quoting is rejected.

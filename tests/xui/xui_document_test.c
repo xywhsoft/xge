@@ -514,14 +514,22 @@ static void structural_commands(void)
 static void table_commands(void)
 {
     xui_document d, reloaded; xui_document_transaction t; xui_document_snapshot s;
-    xui_doc_node_info_t info = {0}; uint64_t table, merged, bytes, row, cell, paragraph, text, i; char* json;
+    xui_doc_node_info_t info = {0}; xui_doc_attributes_t attrs;
+    uint64_t table, merged, bytes, row, cell, paragraph, text, anchor, split_part, i, j; char* json;
     CHECK(xuiDocumentCreate(NULL, &d) == XUI_OK); CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK);
     CHECK(xuiDocumentTxnInsertTable(t, 1, 0, 3, 3, 1, &table) == XUI_OK);
     CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_OK); xuiDocumentTxnRelease(t);
     CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
     CHECK(xuiDocumentSnapshotGetChild(s, table, 1, &row) == XUI_OK); CHECK(xuiDocumentSnapshotGetChild(s, row, 1, &cell) == XUI_OK);
     CHECK(xuiDocumentSnapshotGetChild(s, cell, 0, &paragraph) == XUI_OK); CHECK(xuiDocumentSnapshotGetChild(s, paragraph, 0, &text) == XUI_OK); xuiDocumentSnapshotRelease(s);
+    CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
+    CHECK(xuiDocumentSnapshotGetChild(s, table, 0, &row) == XUI_OK);
+    CHECK(xuiDocumentSnapshotGetChild(s, row, 0, &anchor) == XUI_OK);
+    info.iSize = sizeof(info); CHECK(xuiDocumentSnapshotGetNode(s, anchor, &info) == XUI_OK);
+    attrs = info.tAttributes; attrs.iAlignment = 2; attrs.iBackgroundColor = 0x234567ffu;
+    xuiDocumentSnapshotRelease(s);
     CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK); CHECK(xuiDocumentTxnReplaceText(t, text, 0, 0, "center", 6) == XUI_OK);
+    CHECK(xuiDocumentTxnSetAttributes(t, anchor, &attrs) == XUI_OK);
     CHECK(xuiDocumentTxnMergeCells(t, table, 0, 0, 2, 2, &merged) == XUI_OK);
     CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_OK); xuiDocumentTxnRelease(t);
     info.iSize = sizeof(info); CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
@@ -539,9 +547,21 @@ static void table_commands(void)
     CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK); CHECK(xuiDocumentTxnSplitCell(t, merged) == XUI_OK);
     CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_OK); xuiDocumentTxnRelease(t);
     CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK);
-    for (i = 0; i < 3; i++) { CHECK(xuiDocumentSnapshotGetChild(s, table, i, &row) == XUI_OK); CHECK(xuiDocumentSnapshotGetNode(s, row, &info) == XUI_OK && info.iChildCount == 3); }
+    for (i = 0; i < 3; i++) {
+        CHECK(xuiDocumentSnapshotGetChild(s, table, i, &row) == XUI_OK);
+        CHECK(xuiDocumentSnapshotGetNode(s, row, &info) == XUI_OK && info.iChildCount == 3);
+        for (j = 0; i < 2 && j < 2; j++) {
+            CHECK(xuiDocumentSnapshotGetChild(s, row, j, &split_part) == XUI_OK);
+            CHECK(xuiDocumentSnapshotGetNode(s, split_part, &info) == XUI_OK &&
+                info.tAttributes.iAlignment == 2 &&
+                info.tAttributes.iBackgroundColor == 0x234567ffu);
+        }
+    }
     CHECK(xuiDocumentSerialize(s, &json, &bytes) == XUI_OK); CHECK(xuiDocumentDeserialize(NULL, json, bytes, &reloaded) == XUI_OK);
     xuiDocumentFreeBuffer(json); xuiDocumentRelease(reloaded); xuiDocumentSnapshotRelease(s);
+    CHECK(xuiDocumentBeginTransaction(d, NULL, &t) == XUI_OK);
+    CHECK(xuiDocumentTxnSplitCell(t, split_part) == XUI_ERROR_INVALID_STATE);
+    CHECK(xuiDocumentTxnCommit(t, NULL) == XUI_ERROR_INVALID_STATE); xuiDocumentTxnRelease(t);
     CHECK(xuiDocumentUndo(d, NULL) == XUI_OK); CHECK(xuiDocumentUndo(d, NULL) == XUI_OK); CHECK(xuiDocumentUndo(d, NULL) == XUI_OK); CHECK(xuiDocumentUndo(d, NULL) == XUI_OK);
     CHECK(xuiDocumentAcquireSnapshot(d, &s) == XUI_OK); CHECK(xuiDocumentSnapshotGetNode(s, cell, &info) == XUI_OK);
     expect_text(s, text, ""); xuiDocumentSnapshotRelease(s); xuiDocumentRelease(d);

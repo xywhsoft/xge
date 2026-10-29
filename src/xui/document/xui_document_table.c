@@ -234,22 +234,38 @@ static int doc_table_span(xui_document_transaction t, uint64_t id, uint32_t rows
     xui_doc_attributes_t attrs = *doc_index_get(t->draft->index, id)->attrs; attrs.iRowSpan = rows; attrs.iColumnSpan = columns;
     return xuiDocumentTxnSetAttributes(t, id, &attrs);
 }
-static int doc_table_empty_cell(xui_document_transaction t, uint64_t row, uint64_t index, uint32_t flags)
+static int doc_table_empty_cell_attrs(xui_document_transaction t, uint64_t row,
+    uint64_t index, const xui_doc_attributes_t* attributes)
 {
     xui_doc_node_desc_t desc = {0}; uint64_t cell, paragraph, text; int result;
-    desc.iSize = sizeof(desc); desc.iKind = XUI_DOC_CELL; desc.tAttributes.iFlags = flags;
+    desc.iSize = sizeof(desc); desc.iKind = XUI_DOC_CELL;
+    if (attributes) desc.tAttributes = *attributes;
+    desc.tAttributes.iRowSpan = desc.tAttributes.iColumnSpan = 1;
     result = doc_txn_insert(t, row, index, &desc, &cell); if (result != XUI_OK) return result;
-    desc.iKind = XUI_DOC_PARAGRAPH; desc.tAttributes.iFlags = 0;
+    desc.iKind = XUI_DOC_PARAGRAPH;
+    desc.tAttributes = (xui_doc_attributes_t){0};
+    desc.tAttributes.iRowSpan = desc.tAttributes.iColumnSpan = 1;
     result = doc_txn_insert(t, cell, DOC_NONE, &desc, &paragraph); if (result != XUI_OK) return result;
     desc.iKind = XUI_DOC_TEXT; return doc_txn_insert(t, paragraph, DOC_NONE, &desc, &text);
 }
+static int doc_table_empty_cell(xui_document_transaction t, uint64_t row,
+    uint64_t index, uint32_t flags)
+{
+    xui_doc_attributes_t attributes = {0};
+    attributes.iFlags = flags;
+    return doc_table_empty_cell_attrs(t, row, index, &attributes);
+}
 static int doc_table_insert(xui_document_transaction t, uint64_t parent, uint64_t index, uint32_t rows, uint32_t columns, int header, uint64_t* out)
 {
-    xui_doc_node_desc_t desc = {0}; uint64_t table, row; uint32_t r, c; int result = doc_txn_check(t, XUI_DOC_SEMANTIC);
+    xui_doc_node_desc_t desc = {0}; uint64_t table, row, required;
+    uint32_t r, c; int result = doc_txn_check(t, XUI_DOC_SEMANTIC);
     if (out) *out = 0;
     if (result != XUI_OK) return result;
     if (!out || !rows || !columns || columns > 1024) return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
-    if ((uint64_t)rows * columns > (t->document->max_nodes - t->draft->node_count) / 3) return doc_txn_fail(t, XUI_DOC_ERROR_LIMIT);
+    required = 1 + (uint64_t)rows + (uint64_t)rows * columns * 3;
+    if (t->draft->node_count > t->document->max_nodes ||
+        required > t->document->max_nodes - t->draft->node_count)
+        return doc_txn_fail(t, XUI_DOC_ERROR_LIMIT);
     desc.iSize = sizeof(desc); desc.iKind = XUI_DOC_TABLE; result = doc_txn_insert(t, parent, index, &desc, &table);
     for (r = 0; r < rows && result == XUI_OK; r++) {
         desc.iKind = XUI_DOC_ROW; result = doc_txn_insert(t, table, DOC_NONE, &desc, &row);
@@ -437,18 +453,26 @@ done:
 }
 XUI_API int xuiDocumentTxnSplitCell(xui_document_transaction t, uint64_t cell)
 {
-    doc_grid g; doc_grid_cell original = {0}; doc_node *n, *row; uint64_t table, i; uint32_t r, c, flags; int result = doc_txn_check(t, XUI_DOC_SEMANTIC);
+    doc_grid g; doc_grid_cell original = {0}; doc_node *n, *row;
+    xui_doc_attributes_t attributes;
+    uint64_t table, i; uint32_t r, c; int result = doc_txn_check(t, XUI_DOC_SEMANTIC);
     if (result != XUI_OK) return result;
     n = doc_index_get(t->draft->index, cell); if (!n || n->kind != XUI_DOC_CELL) return doc_txn_fail(t, XUI_ERROR_INVALID_ARGUMENT);
-    flags = n->attrs->iFlags; row = doc_index_get(t->draft->index, n->parent); table = row->parent;
+    attributes = *n->attrs;
+    row = doc_index_get(t->draft->index, n->parent); table = row->parent;
     result = doc_table_grid(t, table, &g); if (result != XUI_OK) return result;
     for (i = 0; i < g.count; i++) if (g.cells[i].id == cell) original = g.cells[i];
+    if (original.rows == 1 && original.columns == 1) {
+        result = XUI_ERROR_INVALID_STATE; goto done;
+    }
+    attributes.iRowSpan = attributes.iColumnSpan = 1;
     result = doc_table_span(t, cell, 1, 1); if (result != XUI_OK) goto done;
     for (r = original.row; r < original.row + original.rows; r++) for (c = original.column + original.columns; c > original.column; c--) {
         uint64_t index = 0; uint32_t column = c - 1;
         if (r == original.row && column == original.column) continue;
         for (i = 0; i < g.count; i++) if (g.cells[i].row == r && g.cells[i].column < column) index++;
-        result = doc_table_empty_cell(t, doc_table_row(t, table, r), index, flags); if (result != XUI_OK) goto done;
+        result = doc_table_empty_cell_attrs(t, doc_table_row(t, table, r),
+            index, &attributes); if (result != XUI_OK) goto done;
     }
 done:
     doc_free(g.cells); return result == XUI_OK ? result : doc_txn_fail(t, result);
