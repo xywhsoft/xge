@@ -34,6 +34,18 @@ static int __xuiToolbarNear(float fA, float fB)
 	return fD < 0.05f;
 }
 
+static xui_draw_surface_proc g_xuiToolbarDrawSurface;
+static int g_iToolbarDrawSurfaceCount;
+
+static int __xuiToolbarDrawSurface(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst,
+	uint32_t iColor, uint32_t iFlags)
+{
+	g_iToolbarDrawSurfaceCount++;
+	return g_xuiToolbarDrawSurface(pProxy, pDraw, pSurface, tSrc, tDst,
+		iColor, iFlags);
+}
+
 static void __xuiToolbarSelect(xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	xui_toolbar_test_events_t* pEvents;
@@ -167,6 +179,7 @@ int main(void)
 	xui_widget pDestroyToolbar;
 	xui_widget pOverflowDestroyToolbar;
 	xui_surface pTarget;
+	xui_surface pIcon;
 	xui_toolbar_desc_t tDesc;
 	xui_toolbar_metrics_t tMetrics;
 	xui_toolbar_metrics_t tBadMetrics;
@@ -175,6 +188,7 @@ int main(void)
 	xui_toolbar_item_t tOwnedItem;
 	xui_toolbar_item_t arrDestroyItems[3];
 	xui_accessible_node_t tNode;
+	xui_event_t tEvent;
 	xui_rect_t tItem0;
 	xui_rect_t tItem1;
 	xui_rect_t tItem4;
@@ -196,6 +210,7 @@ int main(void)
 	pDestroyToolbar = NULL;
 	pOverflowDestroyToolbar = NULL;
 	pTarget = NULL;
+	pIcon = NULL;
 	iFailed = 0;
 	memset(&tEvents, 0, sizeof(tEvents));
 	memset(&tDestroy, 0, sizeof(tDestroy));
@@ -205,6 +220,8 @@ int main(void)
 	tEvents.iOverflowItems = 0;
 	memset(arrItems, 0, sizeof(arrItems));
 	xuiTestProxyInit(&tState);
+	g_xuiToolbarDrawSurface = tState.tProxy.drawSurface;
+	tState.tProxy.drawSurface = __xuiToolbarDrawSurface;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -230,7 +247,7 @@ int main(void)
 	tMetrics.fPaddingY = 3.0f;
 	tMetrics.fOverflowSize = 24.0f;
 	tMetrics.fBorderWidth = 1.0f;
-	tMetrics.fIconSize = 0.0f;
+	tMetrics.fIconSize = 14.0f;
 	tMetrics.fIconGap = 4.0f;
 
 	arrItems[0] = (xui_toolbar_item_t){"New", "Create scene", XUI_TOOLBAR_ITEM_BUTTON, XUI_TOOLBAR_ITEM_ENABLED, 10, 0, NULL, {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, NULL};
@@ -257,10 +274,31 @@ int main(void)
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 520, 320, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
+	iRet = xuiTestSurfaceCreate(&tState, &pIcon, 16, 16, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && pIcon != NULL, "icon create");
+	iRet = xuiToolbarSetItemIcon(pToolbar, 0, pIcon,
+		(xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set borrowed toolbar icon");
 	iRet = __xuiToolbarLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "initial render");
 	XUI_TEST_CHECK(xuiToolbarGetItemCount(pToolbar) == 7, "item count");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pToolbar, xuiWidgetGetStateId(pToolbar)) != NULL, "cache surface");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "prepare borrowed icon dependency");
+	iRet = __xuiToolbarLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "consume prepared toolbar cache");
+	xuiWidgetClearDirty(pToolbar, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pRoot, XUI_WIDGET_DIRTY_ALL);
+	g_iToolbarDrawSurfaceCount = 0;
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iToolbarDrawSurfaceCount == 0,
+		"unchanged borrowed icon reuses toolbar cache");
+	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pIcon,
+		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiToolbarLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iToolbarDrawSurfaceCount > 0,
+		"borrowed icon generation rebuilds toolbar cache");
 
 	tItem0 = xuiToolbarGetItemRect(pToolbar, 0);
 	tItem1 = xuiToolbarGetItemRect(pToolbar, 1);
@@ -363,6 +401,37 @@ int main(void)
 	iRet = __xuiToolbarDispatchDown(pContext, tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
 		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pToolbar, "item captures pointer");
+	iBefore = tEvents.iSelectCount;
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		xuiToolbarGetActiveIndex(pToolbar) == -1 &&
+		(xuiToolbarGetState(pToolbar) & XUI_WIDGET_STATE_DISABLED) != 0u,
+		"ancestor disable cancels toolbar press");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pToolbar;
+	tEvent.iKey = XUI_KEY_ENTER;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iSelectCount == iBefore,
+		"ancestor-disabled toolbar rejects injected activation");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iRet = xuiWidgetGetAccessibleNode(pToolbar, 1, &tNode);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u && tNode.iActions == 0u,
+		"ancestor-disabled toolbar removes item accessibility actions");
+	XUI_TEST_CHECK(__xuiToolbarDispatchUp(pContext,
+		tWorld.fX + tItem0.fX, tWorld.fY + tItem0.fY) == XUI_OK,
+		"release after ancestor disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiToolbarGetState(pToolbar) & XUI_WIDGET_STATE_DISABLED) == 0u,
+		"ancestor re-enable restores toolbar state");
+	iRet = __xuiToolbarDispatchDown(pContext, tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pToolbar,
+		"re-enabled item captures pointer");
 	iRet = xuiToolbarSetItemEnabled(pToolbar, 0, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
 		xuiToolbarGetActiveIndex(pToolbar) == -1, "disabling pressed item releases capture");
@@ -596,6 +665,12 @@ int main(void)
 cleanup:
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
+	}
+	if ( pIcon != NULL ) {
+		tState.tProxy.surfaceDestroy(&tState.tProxy, pIcon);
+	}
+	if ( pTarget != NULL ) {
+		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	}
 	if ( iFailed ) {
 		return 1;
