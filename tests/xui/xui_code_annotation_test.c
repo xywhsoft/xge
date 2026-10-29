@@ -42,6 +42,7 @@ static void* xuiTestAnnotationRealloc(void* pMemory, size_t iSize)
 int main(void)
 {
 	xui_code_annotation_store pStore;
+	xui_code_annotation_store pAuxStore;
 	xui_code_marker_t arrMarkers[4];
 	xui_code_indicator_t arrIndicators[4];
 	xui_code_diagnostic_t arrDiagnostics[2];
@@ -50,12 +51,14 @@ int main(void)
 	int arrDiagnosticIndices[2];
 	uint32_t iDiagnosticVersion;
 	int iCount;
+	int i;
 	int iFail;
 	int iFailed;
 	int iRet;
 	int bReplacementSucceeded;
 
 	pStore = NULL;
+	pAuxStore = NULL;
 	iFailed = 0;
 
 	iRet = xuiCodeAnnotationStoreCreate(&pStore);
@@ -86,7 +89,102 @@ int main(void)
 	iRet = xuiCodeAnnotationClearIndicator(pStore, 1, 5, 6);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear indicator overlap");
 	iRet = xuiCodeAnnotationGetIndicatorsAt(pStore, 8, arrIndicators, 4, &iCount);
-	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrIndicators[0].iIndicator == 2, "indicator after clear");
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2 &&
+		arrIndicators[0].iIndicator == 1 &&
+		arrIndicators[0].tRange.iStart == 6 && arrIndicators[0].tRange.iEnd == 9,
+		"indicator split preserves right side");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pStore, 5, arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 0, "indicator clear removes requested subrange");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pStore, 4, arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrIndicators[0].tRange.iStart == 4 && arrIndicators[0].tRange.iEnd == 5,
+		"indicator split preserves left side");
+
+	iRet = xuiCodeAnnotationStoreCreate(&pAuxStore);
+	XUI_TEST_CHECK(iRet == XUI_OK && pAuxStore != NULL, "auxiliary store create");
+	for ( i = 0; i < 16; i++ ) {
+		iRet = xuiCodeAnnotationSetIndicator(pAuxStore, 10 + i,
+			XUI_CODE_INDICATOR_UNDERLINE, i * 10, i * 10 + 8, 0u, (uintptr_t)i);
+		XUI_TEST_CHECK(iRet == XUI_OK, "fill indicator capacity");
+	}
+	for ( iFail = 0; iFail < 2; iFail++ ) {
+		g_iAnnotationFailAllocation = iFail;
+		g_bAnnotationAllocationFailed = 0;
+		iRet = xuiCodeAnnotationClearIndicator(pAuxStore, 10, 2, 4);
+		g_iAnnotationFailAllocation = -1;
+		XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && g_bAnnotationAllocationFailed,
+			"indicator split allocation failure");
+		iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, 3, arrIndicators, 4, &iCount);
+		XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+			arrIndicators[0].tRange.iStart == 0 && arrIndicators[0].tRange.iEnd == 8,
+			"indicator split failure preserves store");
+	}
+	iRet = xuiCodeAnnotationClearIndicator(pAuxStore, 10, 2, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "indicator split succeeds after allocation failures");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, 3, arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 0, "indicator split cleared middle");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, 1, arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrIndicators[0].tRange.iEnd == 2,
+		"indicator split left range after allocation");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, 5, arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrIndicators[0].tRange.iStart == 4,
+		"indicator split right range after allocation");
+
+	xuiCodeAnnotationStoreClear(pAuxStore);
+	iRet = xuiCodeAnnotationSetIndicator(pAuxStore, 1, XUI_CODE_INDICATOR_UNDERLINE,
+		10, 20, 0u, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set tracked indicator");
+	memset(&tDiagnostic, 0, sizeof(tDiagnostic));
+	tDiagnostic.iSize = sizeof(tDiagnostic);
+	tDiagnostic.tRange.iStart = 10;
+	tDiagnostic.tRange.iEnd = 20;
+	tDiagnostic.iSeverity = XUI_CODE_DIAGNOSTIC_WARNING;
+	tDiagnostic.sMessage = "tracked";
+	iRet = xuiCodeAnnotationSetDiagnostics(pAuxStore, &tDiagnostic, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set tracked diagnostic");
+	iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pAuxStore);
+	iRet = xuiCodeAnnotationTrackEdit(pAuxStore, 15, 15, 18, 0, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "track insertion inside annotation");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, 22, arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrIndicators[0].tRange.iStart == 10 && arrIndicators[0].tRange.iEnd == 23,
+		"insertion preserves annotation suffix");
+	iRet = xuiCodeAnnotationGetDiagnosticsAt(pAuxStore, 22, arrDiagnostics, 2, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrDiagnostics[0].tRange.iStart == 10 && arrDiagnostics[0].tRange.iEnd == 23 &&
+		xuiCodeAnnotationGetDiagnosticVersion(pAuxStore) > iDiagnosticVersion,
+		"insertion preserves diagnostic suffix and version");
+	iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pAuxStore);
+	iRet = xuiCodeAnnotationTrackEdit(pAuxStore, 12, 14, 16, 0, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "track replacement inside annotation");
+	iRet = xuiCodeAnnotationGetDiagnosticsAt(pAuxStore, 24, arrDiagnostics, 2, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrDiagnostics[0].tRange.iStart == 10 && arrDiagnostics[0].tRange.iEnd == 25,
+		"replacement preserves diagnostic suffix");
+	iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pAuxStore);
+	iRet = xuiCodeAnnotationTrackEdit(pAuxStore, 12, 14, 14, 0, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeAnnotationGetDiagnosticVersion(pAuxStore) > iDiagnosticVersion,
+		"equal-length replacement touches diagnostic version");
+	iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pAuxStore);
+	iRet = xuiCodeAnnotationTrackEdit(pAuxStore, 30, 30, 33, 0, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeAnnotationGetDiagnosticVersion(pAuxStore) == iDiagnosticVersion,
+		"unrelated edit keeps diagnostic version");
+	xuiCodeAnnotationStoreClear(pAuxStore);
+	iRet = xuiCodeAnnotationSetIndicator(pAuxStore, 1, XUI_CODE_INDICATOR_UNDERLINE,
+		INT_MAX - 2, INT_MAX, 0u, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set overflow boundary indicator");
+	iRet = xuiCodeAnnotationTrackEdit(pAuxStore, 0, 0, 10, 0, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LIMIT_EXCEEDED, "annotation range overflow rejected");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(pAuxStore, INT_MAX - 1,
+		arrIndicators, 4, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 &&
+		arrIndicators[0].tRange.iStart == INT_MAX - 2 &&
+		arrIndicators[0].tRange.iEnd == INT_MAX,
+		"annotation range overflow preserves store");
+	xuiCodeAnnotationStoreDestroy(pAuxStore);
+	pAuxStore = NULL;
 
 	memset(arrDiagnostics, 0, sizeof(arrDiagnostics));
 	arrDiagnostics[0].iSize = sizeof(arrDiagnostics[0]);
@@ -122,7 +220,12 @@ int main(void)
 	iRet = xuiCodeAnnotationGetMarkers(pStore, 5, arrMarkers, 4, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrMarkers[0].iMarker == XUI_CODE_MARKER_BREAKPOINT, "marker line shifted");
 	iRet = xuiCodeAnnotationGetIndicatorsAt(pStore, 10, arrIndicators, 4, &iCount);
-	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrIndicators[0].iIndicator == 2, "indicator shifted");
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2 &&
+		arrIndicators[0].iIndicator == 1 &&
+		arrIndicators[0].tRange.iStart == 6 && arrIndicators[0].tRange.iEnd == 12 &&
+		arrIndicators[1].iIndicator == 2 &&
+		arrIndicators[1].tRange.iStart == 6 && arrIndicators[1].tRange.iEnd == 15,
+		"indicator fragments shifted");
 	iRet = xuiCodeAnnotationGetDiagnosticsAt(pStore, 14, arrDiagnostics, 2, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1, "diagnostic shifted");
 	iRet = xuiCodeAnnotationTrackEdit(pStore, 9, 16, 9, 4, 5, 4);
@@ -130,7 +233,10 @@ int main(void)
 	iRet = xuiCodeAnnotationGetMarkers(pStore, 4, arrMarkers, 4, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1, "marker collapsed to delete start line");
 	iRet = xuiCodeAnnotationGetIndicatorsAt(pStore, 6, arrIndicators, 4, &iCount);
-	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrIndicators[0].tRange.iStart == 6 && arrIndicators[0].tRange.iEnd == 9, "indicator shrinks after overlap delete");
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2 &&
+		arrIndicators[0].tRange.iStart == 6 && arrIndicators[0].tRange.iEnd == 9 &&
+		arrIndicators[1].tRange.iStart == 6 && arrIndicators[1].tRange.iEnd == 9,
+		"indicator fragments shrink after overlap delete");
 	iRet = xuiCodeAnnotationGetDiagnosticsAt(pStore, 9, arrDiagnostics, 2, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrDiagnostics[0].tRange.iStart == 9 && arrDiagnostics[0].tRange.iEnd == 10, "diagnostic collapsed after overlap delete");
 
@@ -202,6 +308,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 0, "clear store markers");
 
 cleanup:
+	xuiCodeAnnotationStoreDestroy(pAuxStore);
 	xuiCodeAnnotationStoreDestroy(pStore);
 	if ( iFailed ) return 1;
 	printf("xui_code_annotation_test passed\n");

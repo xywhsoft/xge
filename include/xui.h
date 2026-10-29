@@ -7368,31 +7368,31 @@ XUI_API int xuiCodeAnnotationSetMarker(xui_code_annotation_store pStore, int iLi
 XUI_API int xuiCodeAnnotationClearMarker(xui_code_annotation_store pStore, int iLine, int iMarker);
 /* 清除行上全部标记。 */
 XUI_API int xuiCodeAnnotationClearMarkers(xui_code_annotation_store pStore, int iLine);
-/* 输出行上全部标记。 */
+/* 输出行上全部标记；提示文本指针由存储拥有，后续修改或销毁存储后失效。 */
 XUI_API int xuiCodeAnnotationGetMarkers(xui_code_annotation_store pStore, int iLine, xui_code_marker_t* pMarkers, int iMarkerCapacity, int* pMarkerCount);
 /* 设置区间指示器（样式条/下划线高亮）。 */
 XUI_API int xuiCodeAnnotationSetIndicator(xui_code_annotation_store pStore, int iIndicator, int iStyle, int iStart, int iEnd, uint32_t iFlags, uintptr_t iUserData);
-/* 清除区间内指定指示器。 */
+/* 清除区间内指定指示器的重叠部分；必要时保留并拆分两侧区间。 */
 XUI_API int xuiCodeAnnotationClearIndicator(xui_code_annotation_store pStore, int iIndicator, int iStart, int iEnd);
 /* 清除指定类型的全部指示器。 */
 XUI_API int xuiCodeAnnotationClearIndicators(xui_code_annotation_store pStore, int iIndicator);
 /* 输出偏移处命中的全部指示器。 */
 XUI_API int xuiCodeAnnotationGetIndicatorsAt(xui_code_annotation_store pStore, int iOffset, xui_code_indicator_t* pIndicators, int iIndicatorCapacity, int* pIndicatorCount);
-/* 批量设置诊断集合（错误/警告/信息）。 */
+/* 批量设置诊断集合（错误/警告/信息）；输入字符串会被复制。 */
 XUI_API int xuiCodeAnnotationSetDiagnostics(xui_code_annotation_store pStore, const xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCount);
 /* 清空诊断集合。 */
 XUI_API int xuiCodeAnnotationClearDiagnostics(xui_code_annotation_store pStore);
 /* 读取诊断数量。 */
 XUI_API int xuiCodeAnnotationGetDiagnosticCount(xui_code_annotation_store pStore);
-/* 按索引输出诊断。 */
+/* 按索引输出诊断；字符串指针由存储拥有，后续修改或销毁存储后失效。 */
 XUI_API int xuiCodeAnnotationGetDiagnostic(xui_code_annotation_store pStore, int iIndex, xui_code_diagnostic_t* pDiagnostic);
 /* 输出偏移处命中的诊断。 */
 XUI_API int xuiCodeAnnotationGetDiagnosticsAt(xui_code_annotation_store pStore, int iOffset, xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount);
-/* 输出区间内命中的诊断（附索引）。 */
+/* 输出区间内命中的诊断（附索引）；字符串指针的生命周期同存储。 */
 XUI_API int xuiCodeAnnotationGetDiagnosticsInRange(xui_code_annotation_store pStore, int iStart, int iEnd, xui_code_diagnostic_t* pDiagnostics, int* pIndices, int iDiagnosticCapacity, int* pDiagnosticCount);
 /* 读取诊断集修订号（变更自增）。 */
 XUI_API uint32_t xuiCodeAnnotationGetDiagnosticVersion(xui_code_annotation_store pStore);
-/* 编辑后平移注释区间（保持标记随文本移动）。 */
+/* 编辑后平移注释区间（半开区间；保留未编辑前后缀并保持标记随文本移动）。 */
 XUI_API int xuiCodeAnnotationTrackEdit(xui_code_annotation_store pStore, int iStartOffset, int iEndOffset, int iNewEndOffset, int iStartLine, int iEndLine, int iNewEndLine);
 /* 创建语言注册表。 */
 XUI_API int xuiCodeLanguageRegistryCreate(xui_code_language_registry* ppRegistry);
