@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <math.h>
 #include <stdio.h>
 
 #define XUI_TEST_CHECK(expr, msg) \
@@ -29,6 +30,8 @@ int main(void)
 	xui_vec2_t tPoint;
 	float fX;
 	float fY;
+	float fOldX;
+	float fOldY;
 	int iFailed;
 	int iRet;
 
@@ -69,6 +72,52 @@ int main(void)
 	XUI_TEST_CHECK(__xuiScrollModelNear(tPoint.fX, 25.0f) && __xuiScrollModelNear(tPoint.fY, 20.0f), "viewport to content");
 	tPoint = xuiScrollModelContentToScreen(&tModel, 25.0f, 20.0f);
 	XUI_TEST_CHECK(__xuiScrollModelNear(tPoint.fX, 15.0f) && __xuiScrollModelNear(tPoint.fY, 25.0f), "content to screen");
+
+	iRet = xuiScrollModelSetContentSize(&tModel, XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set wide content size");
+	iRet = xuiScrollModelSetOffset(&tModel, XUI_LAYOUT_UNBOUNDED - 512.0f,
+		XUI_LAYOUT_UNBOUNDED - 512.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set wide offset");
+	iRet = xuiScrollModelScrollBy(&tModel, XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide positive scroll saturates");
+	iRet = xuiScrollModelGetMaxOffset(&tModel, &fX, &fY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get wide max offset");
+	iRet = xuiScrollModelGetOffset(&tModel, &fOldX, &fOldY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fOldX == fX && fOldY == fY,
+		"wide positive scroll reaches max offset");
+	iRet = xuiScrollModelScrollBy(&tModel, -XUI_LAYOUT_UNBOUNDED, -XUI_LAYOUT_UNBOUNDED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide negative scroll saturates");
+	iRet = xuiScrollModelGetOffset(&tModel, &fX, &fY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fX == 0.0f && fY == 0.0f,
+		"wide negative scroll reaches zero");
+
+	iRet = xuiScrollModelEnsureRectVisible(&tModel,
+		(xui_rect_t){(int)XUI_LAYOUT_UNBOUNDED, (int)XUI_LAYOUT_UNBOUNDED,
+			(int)XUI_LAYOUT_UNBOUNDED, (int)XUI_LAYOUT_UNBOUNDED});
+	XUI_TEST_CHECK(iRet == XUI_OK, "extreme rectangle remains valid");
+	iRet = xuiScrollModelGetMaxOffset(&tModel, &fX, &fY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "get max after extreme rectangle");
+	iRet = xuiScrollModelGetOffset(&tModel, &fOldX, &fOldY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fOldX == fX && fOldY == fY,
+		"extreme rectangle saturates without integer overflow");
+
+	fOldX = fX;
+	fOldY = fY;
+	iRet = xuiScrollModelScrollBy(&tModel, NAN, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "nan delta rejected");
+	iRet = xuiScrollModelGetOffset(&tModel, &fX, &fY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fX == fOldX && fY == fOldY,
+		"rejected delta preserves offset");
+
+	tPoint = xuiScrollModelScreenToViewport(&tModel, INFINITY, 0.0f);
+	XUI_TEST_CHECK(tPoint.fX == 0.0f && tPoint.fY == 0.0f,
+		"invalid screen coordinate returns zero viewport point");
+	tPoint = xuiScrollModelScreenToContent(&tModel, NAN, 0.0f);
+	XUI_TEST_CHECK(tPoint.fX == 0.0f && tPoint.fY == 0.0f,
+		"invalid screen coordinate returns zero content point");
+	tPoint = xuiScrollModelContentToScreen(&tModel, 0.0f, -INFINITY);
+	XUI_TEST_CHECK(tPoint.fX == 0.0f && tPoint.fY == 0.0f,
+		"invalid content coordinate returns zero screen point");
 
 cleanup:
 	if ( iFailed ) {

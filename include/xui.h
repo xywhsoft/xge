@@ -10155,15 +10155,15 @@ XUI_API int xuiScrollModelGetOffset(const xui_scroll_model_t* pModel, float* pOf
 XUI_API int xuiScrollModelGetMaxOffset(const xui_scroll_model_t* pModel, float* pMaxX, float* pMaxY);
 /* 滚动到内容矩形可见（不足则最小滚动）。 */
 XUI_API int xuiScrollModelEnsureRectVisible(xui_scroll_model_t* pModel, xui_rect_t tContentRect);
-/* 屏幕坐标转视口坐标。 */
+/* 屏幕坐标转视口坐标；非法坐标返回零向量。 */
 XUI_API xui_vec2_t xuiScrollModelScreenToViewport(const xui_scroll_model_t* pModel, float fX, float fY);
-/* 视口坐标转内容坐标（加偏移）。 */
+/* 视口坐标转内容坐标（加偏移）；非法坐标返回零向量。 */
 XUI_API xui_vec2_t xuiScrollModelViewportToContent(const xui_scroll_model_t* pModel, float fX, float fY);
-/* 屏幕坐标转内容坐标。 */
+/* 屏幕坐标转内容坐标；非法坐标返回零向量。 */
 XUI_API xui_vec2_t xuiScrollModelScreenToContent(const xui_scroll_model_t* pModel, float fX, float fY);
-/* 内容坐标转视口坐标（减偏移）。 */
+/* 内容坐标转视口坐标（减偏移）；非法坐标返回零向量。 */
 XUI_API xui_vec2_t xuiScrollModelContentToViewport(const xui_scroll_model_t* pModel, float fX, float fY);
-/* 内容坐标转屏幕坐标。 */
+/* 内容坐标转屏幕坐标；非法坐标返回零向量。 */
 XUI_API xui_vec2_t xuiScrollModelContentToScreen(const xui_scroll_model_t* pModel, float fX, float fY);
 #endif
 

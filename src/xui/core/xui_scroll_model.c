@@ -34,6 +34,18 @@ static float __xuiScrollModelMaxFloat(float fA, float fB)
 	return (fA > fB) ? fA : fB;
 }
 
+static float __xuiScrollModelClampDouble(double fValue, float fMin, float fMax)
+{
+	if ( fValue < (double)fMin ) return fMin;
+	if ( fValue > (double)fMax ) return fMax;
+	return (float)fValue;
+}
+
+static int __xuiScrollModelPointValid(float fX, float fY)
+{
+	return __xuiScrollModelFloatValid(fX) && __xuiScrollModelFloatValid(fY);
+}
+
 static int __xuiScrollModelValid(const xui_scroll_model_t* pModel)
 {
 	return (pModel != NULL) && ((pModel->iSize == 0) || (pModel->iSize >= sizeof(*pModel)));
@@ -139,10 +151,16 @@ XUI_API int xuiScrollModelSetOffset(xui_scroll_model_t* pModel, float fOffsetX, 
 
 XUI_API int xuiScrollModelScrollBy(xui_scroll_model_t* pModel, float fDeltaX, float fDeltaY)
 {
+	float fMaxX;
+	float fMaxY;
+
 	if ( !__xuiScrollModelValid(pModel) || !__xuiScrollModelFloatValid(fDeltaX) || !__xuiScrollModelFloatValid(fDeltaY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	return xuiScrollModelSetOffset(pModel, pModel->fScrollX + fDeltaX, pModel->fScrollY + fDeltaY);
+	__xuiScrollModelGetMaxOffsetValue(pModel, &fMaxX, &fMaxY);
+	return xuiScrollModelSetOffset(pModel,
+		__xuiScrollModelClampDouble((double)pModel->fScrollX + (double)fDeltaX, 0.0f, fMaxX),
+		__xuiScrollModelClampDouble((double)pModel->fScrollY + (double)fDeltaY, 0.0f, fMaxY));
 }
 
 XUI_API int xuiScrollModelGetOffset(const xui_scroll_model_t* pModel, float* pOffsetX, float* pOffsetY)
@@ -166,24 +184,39 @@ XUI_API int xuiScrollModelGetMaxOffset(const xui_scroll_model_t* pModel, float* 
 
 XUI_API int xuiScrollModelEnsureRectVisible(xui_scroll_model_t* pModel, xui_rect_t tContentRect)
 {
+	double fRectEndX;
+	double fRectEndY;
+	double fViewportEndX;
+	double fViewportEndY;
+	double fTargetX;
+	double fTargetY;
+	float fMaxX;
+	float fMaxY;
 	float fOffsetX;
 	float fOffsetY;
 
 	if ( !__xuiScrollModelValid(pModel) || !__xuiScrollModelRectValid(tContentRect) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	fOffsetX = pModel->fScrollX;
-	fOffsetY = pModel->fScrollY;
-	if ( tContentRect.fX < fOffsetX ) {
-		fOffsetX = tContentRect.fX;
-	} else if ( (tContentRect.fX + tContentRect.fW) > (fOffsetX + pModel->tViewportRect.fW) ) {
-		fOffsetX = tContentRect.fX + tContentRect.fW - pModel->tViewportRect.fW;
+	fTargetX = pModel->fScrollX;
+	fTargetY = pModel->fScrollY;
+	fRectEndX = (double)tContentRect.fX + (double)tContentRect.fW;
+	fRectEndY = (double)tContentRect.fY + (double)tContentRect.fH;
+	fViewportEndX = fTargetX + (double)pModel->tViewportRect.fW;
+	fViewportEndY = fTargetY + (double)pModel->tViewportRect.fH;
+	if ( (double)tContentRect.fX < fTargetX ) {
+		fTargetX = tContentRect.fX;
+	} else if ( fRectEndX > fViewportEndX ) {
+		fTargetX = fRectEndX - (double)pModel->tViewportRect.fW;
 	}
-	if ( tContentRect.fY < fOffsetY ) {
-		fOffsetY = tContentRect.fY;
-	} else if ( (tContentRect.fY + tContentRect.fH) > (fOffsetY + pModel->tViewportRect.fH) ) {
-		fOffsetY = tContentRect.fY + tContentRect.fH - pModel->tViewportRect.fH;
+	if ( (double)tContentRect.fY < fTargetY ) {
+		fTargetY = tContentRect.fY;
+	} else if ( fRectEndY > fViewportEndY ) {
+		fTargetY = fRectEndY - (double)pModel->tViewportRect.fH;
 	}
+	__xuiScrollModelGetMaxOffsetValue(pModel, &fMaxX, &fMaxY);
+	fOffsetX = __xuiScrollModelClampDouble(fTargetX, 0.0f, fMaxX);
+	fOffsetY = __xuiScrollModelClampDouble(fTargetY, 0.0f, fMaxY);
 	return xuiScrollModelSetOffset(pModel, fOffsetX, fOffsetY);
 }
 
@@ -193,7 +226,7 @@ XUI_API xui_vec2_t xuiScrollModelScreenToViewport(const xui_scroll_model_t* pMod
 
 	tPoint.fX = 0.0f;
 	tPoint.fY = 0.0f;
-	if ( __xuiScrollModelValid(pModel) ) {
+	if ( __xuiScrollModelValid(pModel) && __xuiScrollModelPointValid(fX, fY) ) {
 		tPoint.fX = fX - pModel->tViewportRect.fX;
 		tPoint.fY = fY - pModel->tViewportRect.fY;
 	}
@@ -206,7 +239,7 @@ XUI_API xui_vec2_t xuiScrollModelViewportToContent(const xui_scroll_model_t* pMo
 
 	tPoint.fX = 0.0f;
 	tPoint.fY = 0.0f;
-	if ( __xuiScrollModelValid(pModel) ) {
+	if ( __xuiScrollModelValid(pModel) && __xuiScrollModelPointValid(fX, fY) ) {
 		tPoint.fX = fX + pModel->fScrollX;
 		tPoint.fY = fY + pModel->fScrollY;
 	}
@@ -217,8 +250,13 @@ XUI_API xui_vec2_t xuiScrollModelScreenToContent(const xui_scroll_model_t* pMode
 {
 	xui_vec2_t tPoint;
 
-	tPoint = xuiScrollModelScreenToViewport(pModel, fX, fY);
-	return xuiScrollModelViewportToContent(pModel, tPoint.fX, tPoint.fY);
+	tPoint.fX = 0.0f;
+	tPoint.fY = 0.0f;
+	if ( __xuiScrollModelValid(pModel) && __xuiScrollModelPointValid(fX, fY) ) {
+		tPoint.fX = fX - pModel->tViewportRect.fX + pModel->fScrollX;
+		tPoint.fY = fY - pModel->tViewportRect.fY + pModel->fScrollY;
+	}
+	return tPoint;
 }
 
 XUI_API xui_vec2_t xuiScrollModelContentToViewport(const xui_scroll_model_t* pModel, float fX, float fY)
@@ -227,7 +265,7 @@ XUI_API xui_vec2_t xuiScrollModelContentToViewport(const xui_scroll_model_t* pMo
 
 	tPoint.fX = 0.0f;
 	tPoint.fY = 0.0f;
-	if ( __xuiScrollModelValid(pModel) ) {
+	if ( __xuiScrollModelValid(pModel) && __xuiScrollModelPointValid(fX, fY) ) {
 		tPoint.fX = fX - pModel->fScrollX;
 		tPoint.fY = fY - pModel->fScrollY;
 	}
@@ -238,10 +276,11 @@ XUI_API xui_vec2_t xuiScrollModelContentToScreen(const xui_scroll_model_t* pMode
 {
 	xui_vec2_t tPoint;
 
-	tPoint = xuiScrollModelContentToViewport(pModel, fX, fY);
-	if ( __xuiScrollModelValid(pModel) ) {
-		tPoint.fX += pModel->tViewportRect.fX;
-		tPoint.fY += pModel->tViewportRect.fY;
+	tPoint.fX = 0.0f;
+	tPoint.fY = 0.0f;
+	if ( __xuiScrollModelValid(pModel) && __xuiScrollModelPointValid(fX, fY) ) {
+		tPoint.fX = fX - pModel->fScrollX + pModel->tViewportRect.fX;
+		tPoint.fY = fY - pModel->fScrollY + pModel->tViewportRect.fY;
 	}
 	return tPoint;
 }
