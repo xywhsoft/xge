@@ -59,6 +59,67 @@ static int __xuiChartDestroyTooltip(xui_widget pWidget, int iSeries, int iItem, 
 	return XUI_OK;
 }
 
+static int __xuiChartSameValueSettersStayClean(xui_widget pChart, xui_font pFont,
+	int iLine, int iPie, const xui_chart_point_t* pLine, int iLineCount)
+{
+	xui_thickness_t tPadding;
+	uint32_t iBackground;
+	uint32_t iPlot;
+	uint32_t iGrid;
+	uint32_t iAxis;
+	uint32_t iText;
+	uint32_t iTooltip;
+	uint32_t iTooltipText;
+	uint32_t iAreaColor;
+	float arrDash[8];
+	float fDuration;
+	float fProgress;
+	int bAnimation;
+	int bArea;
+	int iDashCount;
+
+	if ( xuiChartGetDirtyFlags(pChart) != 0u ||
+	     xuiChartGetColors(pChart, &iBackground, &iPlot, &iGrid, &iAxis,
+		&iText, &iTooltip, &iTooltipText) != XUI_OK ) return 0;
+	tPadding = xuiChartGetPadding(pChart);
+	(void)xuiChartGetAnimation(pChart, &bAnimation, &fDuration, &fProgress);
+	bArea = xuiChartGetSeriesAreaFill(pChart, iLine, &iAreaColor);
+	iDashCount = xuiChartGetSeriesDash(pChart, iLine, arrDash,
+		(int)(sizeof(arrDash) / sizeof(arrDash[0])));
+	if ( iDashCount <= 0 ) return 0;
+
+	if ( xuiChartSetTitle(pChart, xuiChartGetTitle(pChart)) != XUI_OK ||
+	     xuiChartSetFont(pChart, pFont) != XUI_OK ||
+	     xuiChartSetColors(pChart, iBackground, iPlot, iGrid, iAxis, iText,
+		iTooltip, iTooltipText) != XUI_OK ||
+	     xuiChartSetXAxis(pChart, xuiChartGetXAxis(pChart)) != XUI_OK ||
+	     xuiChartSetYAxis(pChart, xuiChartGetYAxis(pChart)) != XUI_OK ||
+	     xuiChartSetBarMode(pChart, xuiChartGetBarMode(pChart)) != XUI_OK ||
+	     xuiChartSetBarDirection(pChart, xuiChartGetBarDirection(pChart)) != XUI_OK ||
+	     xuiChartSetLegendVisible(pChart, xuiChartGetLegendVisible(pChart)) != XUI_OK ||
+	     xuiChartSetTooltipVisible(pChart, xuiChartGetTooltipVisible(pChart)) != XUI_OK ||
+	     xuiChartSetTooltipCallback(pChart, __xuiChartTooltip, NULL) != XUI_OK ||
+	     xuiChartSetContextMenu(pChart, NULL, NULL) != XUI_OK ||
+	     xuiChartSetPadding(pChart, tPadding) != XUI_OK ||
+	     xuiChartResetViewRange(pChart) != XUI_OK ||
+	     xuiChartClearBrushRange(pChart) != XUI_OK ||
+	     xuiChartSetLodThreshold(pChart, xuiChartGetLodThreshold(pChart)) != XUI_OK ||
+	     xuiChartSetAnimation(pChart, bAnimation, fDuration) != XUI_OK ||
+	     xuiChartSetSeriesData(pChart, iLine, pLine, iLineCount) != XUI_OK ||
+	     xuiChartSetSeriesColor(pChart, iLine, xuiChartGetSeriesColor(pChart, iLine)) != XUI_OK ||
+	     xuiChartSetSeriesAreaFill(pChart, iLine, bArea, iAreaColor) != XUI_OK ||
+	     xuiChartSetSeriesSmooth(pChart, iLine, xuiChartGetSeriesSmooth(pChart, iLine)) != XUI_OK ||
+	     xuiChartSetSeriesDash(pChart, iLine, arrDash, iDashCount) != XUI_OK ||
+	     xuiChartSetSeriesVisible(pChart, iPie, xuiChartGetSeriesVisible(pChart, iPie)) != XUI_OK ||
+	     xuiChartSetSeriesSymbol(pChart, iLine, xuiChartGetSeriesSymbol(pChart, iLine)) != XUI_OK ||
+	     xuiChartSetSeriesSymbolSize(pChart, iLine, xuiChartGetSeriesSymbolSize(pChart, iLine)) != XUI_OK ||
+	     xuiChartSetPieMode(pChart, xuiChartGetPieMode(pChart)) != XUI_OK ||
+	     xuiChartSetPieInnerRadius(pChart, xuiChartGetPieInnerRadius(pChart)) != XUI_OK ) {
+		return 0;
+	}
+	return xuiChartGetDirtyFlags(pChart) == 0u;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -349,6 +410,9 @@ int main(void)
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
 	XUI_TEST_CHECK(xuiChartGetDirtyFlags(pChart) == 0, "dirty cleared after render");
+	XUI_TEST_CHECK(__xuiChartSameValueSettersStayClean(pChart, pFont, iLine, iPie,
+		arrLine, (int)(sizeof(arrLine) / sizeof(arrLine[0]))),
+		"same-value chart setters keep the render cache clean");
 	pCache = xuiWidgetGetCacheSurface(pChart, xuiWidgetGetStateId(pChart));
 	XUI_TEST_CHECK(pCache != NULL, "cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) >= 1, "background draw");
@@ -513,6 +577,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set view range");
 	iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
 	XUI_TEST_CHECK(iRet == 1 && fMinX == -1.0 && fMaxX == 5.0 && fMinY == 0.0 && fMaxY == 12.0, "get manual view range");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"manual view range render clears dirty state");
+	iRet = xuiChartSetViewRange(pChart, -1.0, 5.0, 0.0, 12.0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"same manual view range stays clean");
 	iRet = xuiChartResetViewRange(pChart);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY) == 0, "reset view range");
 	tPlot = xuiChartGetPlotRect(pChart);
@@ -619,6 +689,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "non-finite brush range rejected");
 	iRet = xuiChartGetBrushRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
 	XUI_TEST_CHECK(iRet == 1 && fMinX == 0.0 && fMaxX == 2.0 && fMinY == 3.0 && fMaxY == 9.0, "get brush range");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"brush range render clears dirty state");
+	iRet = xuiChartSetBrushRange(pChart, 2.0, 0.0, 9.0, 3.0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"same normalized brush range stays clean");
 	iRet = xuiChartClearBrushRange(pChart);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetBrushRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY) == 0, "clear brush range");
 	iRet = xuiInputSetModifiers(pContext, XUI_MOD_SHIFT);
@@ -685,6 +761,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "animation step half");
 	iRet = xuiChartGetAnimation(pChart, &bAnimEnabled, &fAnimDuration, &fAnimProgress);
 	XUI_TEST_CHECK(iRet == 1 && fAnimProgress > 0.49f && fAnimProgress < 0.51f, "animation progress half");
+	iRet = xuiChartSetAnimation(pChart, 1, 0.25f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "same animation configuration");
+	iRet = xuiChartGetAnimation(pChart, &bAnimEnabled, &fAnimDuration, &fAnimProgress);
+	XUI_TEST_CHECK(iRet == 1 && fAnimProgress > 0.49f && fAnimProgress < 0.51f,
+		"same animation configuration preserves active progress");
 	iRet = xuiChartStepAnimation(pChart, 0.25f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "animation step done");
 	iRet = xuiChartGetAnimation(pChart, &bAnimEnabled, &fAnimDuration, &fAnimProgress);
@@ -781,6 +862,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "scatter value color set");
 	iRet = xuiChartGetSeriesValueColor(pChart, iScatter, &iMinColor, &iMaxColor);
 	XUI_TEST_CHECK(iRet == 1 && iMinColor == XUI_COLOR_RGBA(42, 124, 221, 255) && iMaxColor == XUI_COLOR_RGBA(211, 75, 98, 255), "scatter value color get");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"scatter value styles render clears dirty state");
+	iRet = xuiChartSetSeriesValueRadius(pChart, iScatter, 6.0f, 18.0f);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiChartSetSeriesValueColor(pChart, iScatter,
+			XUI_COLOR_RGBA(42, 124, 221, 255), XUI_COLOR_RGBA(211, 75, 98, 255));
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"same scatter value styles stay clean");
 	iRet = xuiChartDataToPixel(pChart, 4.0, 7.0, &tPixel);
 	XUI_TEST_CHECK(iRet == XUI_OK, "scatter data to pixel");
 	iRet = xuiChartHitTest(pChart, tPixel.fX, tPixel.fY, &tHit);
@@ -789,6 +880,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesValueRadius(pChart, iScatter, &fMinSize, &fMaxSize) == 0, "scatter value radius clear");
 	iRet = xuiChartClearSeriesValueColor(pChart, iScatter);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetSeriesValueColor(pChart, iScatter, &iMinColor, &iMaxColor) == 0, "scatter value color clear");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"cleared scatter value styles render cleanly");
+	iRet = xuiChartClearSeriesValueRadius(pChart, iScatter);
+	if ( iRet == XUI_OK ) iRet = xuiChartClearSeriesValueColor(pChart, iScatter);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"repeated scatter value style clears stay clean");
 
 	arrPie[0].value = 30.0; arrPie[0].label = "A";
 	arrPie[1].value = 20.0; arrPie[1].label = "B";

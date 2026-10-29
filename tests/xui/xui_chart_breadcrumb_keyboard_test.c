@@ -536,6 +536,10 @@ static void test_chart_presentation_mouse(void)
 	CHECK(g_iCircles == iCircles + 1 && fabsf(g_fCircleX - tPixel.fX) < 1.0f &&
 		fabsf(g_fCircleY - tPixel.fY) < 1.0f, "all presentation options off still allow mouse selection");
 	(void)xuiChartSetTooltipVisible(t.pWidget, 0);
+	CHECK(xuiChartGetDirtyFlags(t.pWidget) == 0u,
+		"same presentation setter keeps chart cache clean");
+	(void)xuiWidgetInvalidate(t.pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	iCircles = g_iCircles;
 	(void)xuiRenderPrepare(t.pContext);
 	CHECK(g_iCircles == iCircles + 1 && fabsf(g_fCircleX - tPixel.fX) < 1.0f,

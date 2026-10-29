@@ -3263,6 +3263,10 @@ XUI_API int xuiChartSetTitle(xui_widget pWidget, const char* sTitle)
 
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData->sTitle == NULL && sTitle == NULL) ||
+	     (pData->sTitle != NULL && sTitle != NULL && strcmp(pData->sTitle, sTitle) == 0) ) {
+		return XUI_OK;
+	}
 	sNew = __xuiChartCopyString(sTitle);
 	if ( (sTitle != NULL) && (sNew == NULL) ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( pData->sTitle != NULL ) xrtFree(pData->sTitle);
@@ -3280,6 +3284,7 @@ XUI_API int xuiChartSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFont == pFont ) return XUI_OK;
 	pData->pFont = pFont;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3295,6 +3300,10 @@ XUI_API int xuiChartSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iBackground && pData->iPlotColor == iPlot &&
+	     pData->iGridColor == iGrid && pData->iAxisColor == iAxis &&
+	     pData->iTextColor == iText && pData->iTooltipColor == iTooltip &&
+	     pData->iTooltipTextColor == iTooltipText ) return XUI_OK;
 	pData->iBackgroundColor = iBackground;
 	pData->iPlotColor = iPlot;
 	pData->iGridColor = iGrid;
@@ -3326,6 +3335,7 @@ XUI_API int xuiChartSetXAxis(xui_widget pWidget, int iAxisType)
 	if ( !__xuiChartAxisTypeValid(iAxisType) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iXAxisType == iAxisType ) return XUI_OK;
 	pData->iXAxisType = iAxisType;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3336,6 +3346,7 @@ XUI_API int xuiChartSetYAxis(xui_widget pWidget, int iAxisType)
 	if ( !__xuiChartAxisTypeValid(iAxisType) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iYAxisType == iAxisType ) return XUI_OK;
 	pData->iYAxisType = iAxisType;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3358,6 +3369,7 @@ XUI_API int xuiChartSetBarMode(xui_widget pWidget, int iMode)
 	if ( !__xuiChartBarModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBarMode == iMode ) return XUI_OK;
 	pData->iBarMode = iMode;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3374,6 +3386,7 @@ XUI_API int xuiChartSetBarDirection(xui_widget pWidget, int iDirection)
 	if ( !__xuiChartBarDirectionValid(iDirection) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBarDirection == iDirection ) return XUI_OK;
 	pData->iBarDirection = iDirection;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3407,7 +3420,9 @@ XUI_API int xuiChartSetTooltipVisible(xui_widget pWidget, int bVisible)
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bTooltipVisible = bVisible ? 1 : 0;
+	bVisible = bVisible ? 1 : 0;
+	if ( pData->bTooltipVisible == bVisible ) return XUI_OK;
+	pData->bTooltipVisible = bVisible;
 	return __xuiChartInvalidateAndSyncFocus(pWidget, pData, XUI_CHART_DIRTY_OVERLAY,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0);
 }
@@ -3422,6 +3437,7 @@ XUI_API int xuiChartSetTooltipCallback(xui_widget pWidget, xui_chart_tooltip_pro
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->onTooltip == onTooltip && pData->pTooltipUser == pUser ) return XUI_OK;
 	pData->onTooltip = onTooltip;
 	pData->pTooltipUser = pUser;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3431,6 +3447,7 @@ XUI_API int xuiChartSetContextMenu(xui_widget pWidget, xui_chart_context_proc on
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->onContext == onContext && pData->pContextUser == pUser ) return XUI_OK;
 	pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return __xuiChartInvalidateAndSyncFocus(pWidget, pData, XUI_CHART_DIRTY_OVERLAY,
@@ -3449,6 +3466,10 @@ XUI_API int xuiChartSetPadding(xui_widget pWidget, xui_thickness_t tPadding)
 	}
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->tPadding.fLeft == tPadding.fLeft && pData->tPadding.fTop == tPadding.fTop &&
+	     pData->tPadding.fRight == tPadding.fRight && pData->tPadding.fBottom == tPadding.fBottom ) {
+		return XUI_OK;
+	}
 	pData->tPadding = tPadding;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3473,6 +3494,8 @@ XUI_API int xuiChartSetViewRange(xui_widget pWidget, double fMinX, double fMaxX,
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bViewRange && pData->fViewMinX == fMinX && pData->fViewMaxX == fMaxX &&
+	     pData->fViewMinY == fMinY && pData->fViewMaxY == fMaxY ) return XUI_OK;
 	iRet = __xuiChartSetViewRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiChartStartAnimation(pData);
@@ -3496,6 +3519,7 @@ XUI_API int xuiChartResetViewRange(xui_widget pWidget)
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !pData->bViewRange && !pData->bPanning ) return XUI_OK;
 	if ( pData->bPanning ) {
 		iRet = __xuiChartCancelPointer(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
@@ -3508,8 +3532,21 @@ XUI_API int xuiChartResetViewRange(xui_widget pWidget)
 XUI_API int xuiChartSetBrushRange(xui_widget pWidget, double fMinX, double fMaxX, double fMinY, double fMaxY)
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
+	double fTemp;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( fMinX > fMaxX ) {
+		fTemp = fMinX;
+		fMinX = fMaxX;
+		fMaxX = fTemp;
+	}
+	if ( fMinY > fMaxY ) {
+		fTemp = fMinY;
+		fMinY = fMaxY;
+		fMaxY = fTemp;
+	}
+	if ( pData->bBrushRange && pData->fBrushMinX == fMinX && pData->fBrushMaxX == fMaxX &&
+	     pData->fBrushMinY == fMinY && pData->fBrushMaxY == fMaxY ) return XUI_OK;
 	iRet = __xuiChartSetBrushRangeData(pData, fMinX, fMaxX, fMinY, fMaxY);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3531,6 +3568,7 @@ XUI_API int xuiChartClearBrushRange(xui_widget pWidget)
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !pData->bBrushRange && !pData->bBrushing ) return XUI_OK;
 	if ( pData->bBrushing ) {
 		iRet = __xuiChartCancelPointer(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
@@ -3564,7 +3602,9 @@ XUI_API int xuiChartSetAnimation(xui_widget pWidget, int bEnabled, float fDurati
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( (pData == NULL) || !isfinite(fDuration) || (fDuration < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bAnimationEnabled = bEnabled ? 1 : 0;
+	bEnabled = bEnabled ? 1 : 0;
+	if ( pData->bAnimationEnabled == bEnabled && pData->fAnimationDuration == fDuration ) return XUI_OK;
+	pData->bAnimationEnabled = bEnabled;
 	pData->fAnimationDuration = fDuration;
 	if ( !pData->bAnimationEnabled || (pData->fAnimationDuration == 0.0f) ) {
 		pData->bAnimationActive = 0;
@@ -3639,6 +3679,7 @@ XUI_API int xuiChartClearSeries(xui_widget pWidget)
 
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iSeriesCount == 0 ) return XUI_OK;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		__xuiChartFreeSeries(&pData->arrSeries[i]);
 	}
@@ -3668,17 +3709,31 @@ XUI_API int xuiChartGetSeriesType(xui_widget pWidget, int iSeries)
 XUI_API int xuiChartSetSeriesData(xui_widget pWidget, int iSeries, const xui_chart_point_t* pPoints, int iCount)
 {
 	xui_chart_data_t* pData;
+	xui_chart_series_t* pSeries;
 	xui_chart_point_t* pNew;
+	int bSame;
 	int i;
 
 	if ( (iCount < 0) || ((iCount > 0) && (pPoints == NULL)) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pSeries = &pData->arrSeries[iSeries];
+	bSame = pSeries->iCount == iCount;
 	for ( i = 0; i < iCount; i++ ) {
 		if ( !isfinite(pPoints[i].x) || !isfinite(pPoints[i].y) || !isfinite(pPoints[i].value) ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
+		if ( bSame ) {
+			const xui_chart_point_t* pCurrent = &pSeries->pPoints[i];
+			if ( pCurrent->x != pPoints[i].x || pCurrent->y != pPoints[i].y ||
+			     pCurrent->value != pPoints[i].value ||
+			     ((pCurrent->label == NULL) != (pPoints[i].label == NULL)) ||
+			     (pCurrent->label != NULL && strcmp(pCurrent->label, pPoints[i].label) != 0) ) {
+				bSame = 0;
+			}
+		}
 	}
+	if ( bSame ) return XUI_OK;
 	pNew = NULL;
 	if ( iCount > 0 ) {
 		if ( (size_t)iCount > (size_t)-1 / sizeof(xui_chart_point_t) ) return XUI_ERROR_OUT_OF_MEMORY;
@@ -3697,10 +3752,10 @@ XUI_API int xuiChartSetSeriesData(xui_widget pWidget, int iSeries, const xui_cha
 			}
 		}
 	}
-	__xuiChartClearSeriesLod(&pData->arrSeries[iSeries]);
-	__xuiChartFreePoints(pData->arrSeries[iSeries].pPoints, pData->arrSeries[iSeries].iCount);
-	pData->arrSeries[iSeries].pPoints = pNew;
-	pData->arrSeries[iSeries].iCount = iCount;
+	__xuiChartClearSeriesLod(pSeries);
+	__xuiChartFreePoints(pSeries->pPoints, pSeries->iCount);
+	pSeries->pPoints = pNew;
+	pSeries->iCount = iCount;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	__xuiChartStartAnimation(pData);
 	return __xuiChartInvalidateAndSyncFocus(pWidget, pData,
@@ -3712,6 +3767,7 @@ XUI_API int xuiChartSetSeriesColor(xui_widget pWidget, int iSeries, uint32_t iCo
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->arrSeries[iSeries].iColor == iColor ) return XUI_OK;
 	pData->arrSeries[iSeries].iColor = iColor;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3727,12 +3783,17 @@ XUI_API int xuiChartSetSeriesAreaFill(xui_widget pWidget, int iSeries, int bEnab
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	xui_chart_series_t* pSeries;
+	uint32_t iAreaColor;
+	int bAreaFill;
 
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSeries = &pData->arrSeries[iSeries];
 	if ( pSeries->iType != XUI_CHART_SERIES_LINE ) return XUI_ERROR_UNSUPPORTED;
-	pSeries->bAreaFill = bEnabled ? 1 : 0;
-	pSeries->iAreaColor = (iColor != 0u) ? iColor : __xuiChartColorWithAlphaScale(pSeries->iColor, 0.18f);
+	bAreaFill = bEnabled ? 1 : 0;
+	iAreaColor = (iColor != 0u) ? iColor : __xuiChartColorWithAlphaScale(pSeries->iColor, 0.18f);
+	if ( pSeries->bAreaFill == bAreaFill && pSeries->iAreaColor == iAreaColor ) return XUI_OK;
+	pSeries->bAreaFill = bAreaFill;
+	pSeries->iAreaColor = iAreaColor;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -3758,7 +3819,9 @@ XUI_API int xuiChartSetSeriesSmooth(xui_widget pWidget, int iSeries, int bSmooth
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSeries = &pData->arrSeries[iSeries];
 	if ( pSeries->iType != XUI_CHART_SERIES_LINE ) return XUI_ERROR_UNSUPPORTED;
-	pSeries->bSmooth = bSmooth ? 1 : 0;
+	bSmooth = bSmooth ? 1 : 0;
+	if ( pSeries->bSmooth == bSmooth ) return XUI_OK;
+	pSeries->bSmooth = bSmooth;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -3783,6 +3846,8 @@ XUI_API int xuiChartSetSeriesDash(xui_widget pWidget, int iSeries, const float* 
 	for ( i = 0; i < iDashCount; i++ ) {
 		if ( !isfinite(pDashPattern[i]) || pDashPattern[i] <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pSeries->iDashCount == iDashCount &&
+	     memcmp(pSeries->arrDash, pDashPattern, sizeof(float) * (size_t)iDashCount) == 0 ) return XUI_OK;
 	memcpy(pSeries->arrDash, pDashPattern, sizeof(float) * (size_t)iDashCount);
 	pSeries->iDashCount = iDashCount;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3796,6 +3861,7 @@ XUI_API int xuiChartClearSeriesDash(xui_widget pWidget, int iSeries)
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSeries = &pData->arrSeries[iSeries];
 	if ( pSeries->iType != XUI_CHART_SERIES_LINE ) return XUI_ERROR_UNSUPPORTED;
+	if ( pSeries->iDashCount == 0 ) return XUI_OK;
 	pSeries->iDashCount = 0;
 	memset(pSeries->arrDash, 0, sizeof(pSeries->arrDash));
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3846,6 +3912,7 @@ XUI_API int xuiChartSetSeriesSymbol(xui_widget pWidget, int iSeries, int iSymbol
 	if ( !__xuiChartSymbolValid(iSymbol) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->arrSeries[iSeries].iSymbol == iSymbol ) return XUI_OK;
 	pData->arrSeries[iSeries].iSymbol = iSymbol;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3862,6 +3929,7 @@ XUI_API int xuiChartSetSeriesSymbolSize(xui_widget pWidget, int iSeries, float f
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ||
 	     !isfinite(fSize) || (fSize <= 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->arrSeries[iSeries].fSymbolSize == fSize ) return XUI_OK;
 	pData->arrSeries[iSeries].fSymbolSize = fSize;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3882,6 +3950,8 @@ XUI_API int xuiChartSetSeriesValueRadius(xui_widget pWidget, int iSeries, float 
 	     (fMaxSize <= 0.0f) || (fMaxSize < fMinSize) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSeries = &pData->arrSeries[iSeries];
 	if ( pSeries->iType != XUI_CHART_SERIES_SCATTER ) return XUI_ERROR_UNSUPPORTED;
+	if ( pSeries->bValueRadius && pSeries->fValueRadiusMin == fMinSize &&
+	     pSeries->fValueRadiusMax == fMaxSize ) return XUI_OK;
 	pSeries->bValueRadius = 1;
 	pSeries->fValueRadiusMin = fMinSize;
 	pSeries->fValueRadiusMax = fMaxSize;
@@ -3895,6 +3965,7 @@ XUI_API int xuiChartClearSeriesValueRadius(xui_widget pWidget, int iSeries)
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSeries = &pData->arrSeries[iSeries];
 	if ( pSeries->iType != XUI_CHART_SERIES_SCATTER ) return XUI_ERROR_UNSUPPORTED;
+	if ( !pSeries->bValueRadius ) return XUI_OK;
 	pSeries->bValueRadius = 0;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3918,6 +3989,8 @@ XUI_API int xuiChartSetSeriesValueColor(xui_widget pWidget, int iSeries, uint32_
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSeries = &pData->arrSeries[iSeries];
 	if ( pSeries->iType != XUI_CHART_SERIES_SCATTER ) return XUI_ERROR_UNSUPPORTED;
+	if ( pSeries->bValueColor && pSeries->iValueColorMin == iMinColor &&
+	     pSeries->iValueColorMax == iMaxColor ) return XUI_OK;
 	pSeries->bValueColor = 1;
 	pSeries->iValueColorMin = iMinColor;
 	pSeries->iValueColorMax = iMaxColor;
@@ -3931,6 +4004,7 @@ XUI_API int xuiChartClearSeriesValueColor(xui_widget pWidget, int iSeries)
 	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSeries = &pData->arrSeries[iSeries];
 	if ( pSeries->iType != XUI_CHART_SERIES_SCATTER ) return XUI_ERROR_UNSUPPORTED;
+	if ( !pSeries->bValueColor ) return XUI_OK;
 	pSeries->bValueColor = 0;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3953,6 +4027,7 @@ XUI_API int xuiChartSetPieMode(xui_widget pWidget, int iMode)
 	if ( !__xuiChartPieModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPieMode == iMode ) return XUI_OK;
 	pData->iPieMode = iMode;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3967,6 +4042,7 @@ XUI_API int xuiChartSetPieInnerRadius(xui_widget pWidget, float fRate)
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( (pData == NULL) || !isfinite(fRate) || (fRate < 0.0f) || (fRate >= 1.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->fPieInnerRadius == fRate ) return XUI_OK;
 	pData->fPieInnerRadius = fRate;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
