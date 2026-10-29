@@ -7221,7 +7221,7 @@ XUI_API int xuiCodeDocumentGetByte(xui_code_document pDocument, int iOffset, cha
 XUI_API int xuiCodeDocumentCopyRange(xui_code_document pDocument, int iStart, int iEnd, char* sOutput, int iCapacity, int* pLength);
 /* 从文件加载文本（iCharset 指定字符集）。 */
 XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
-/* 把全文写出文件。 */
+/* 把全文写出文件；成功后以当前内容为保存基线并清除脏标记。 */
 XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
 /* 读取全文字节长度。 */
 XUI_API int xuiCodeDocumentGetLength(xui_code_document pDocument);
@@ -7261,7 +7261,7 @@ XUI_API uint32_t xuiCodeDocumentGetChangeVersion(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentGetLastEditRange(xui_code_document pDocument, xui_code_range_t* pRange);
 /* 读取脏标记（自上次保存）。 */
 XUI_API int xuiCodeDocumentGetDirty(xui_code_document pDocument);
-/* 设置/清除脏标记（保存后调用）。 */
+/* 显式设置/清除脏标记；清除时以当前内容为新的保存基线。 */
 XUI_API int xuiCodeDocumentSetDirty(xui_code_document pDocument, int bDirty);
 /* 读取最近一次失败原因；无错误返回 NULL。 */
 XUI_API const char* xuiCodeDocumentGetLastError(xui_code_document pDocument);

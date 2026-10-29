@@ -411,12 +411,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set file text");
 	XUI_TEST_CHECK(__xuiCodeDocumentSaveSnapshotFailureTest(sFile),
 		"save propagates snapshot allocation failure");
+	iRet = xuiCodeDocumentInsert(pDocument, xuiCodeDocumentGetLength(pDocument), "!");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeDocumentGetDirty(pDocument),
+		"file edit is dirty before save");
 	iRet = xuiCodeDocumentSaveTextFile(pDocument, sFile, XENCODING_UTF8);
-	XUI_TEST_CHECK(iRet == XUI_OK, "save text file");
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeDocumentGetDirty(pDocument),
+		"successful save establishes clean baseline");
+	iRet = xuiCodeDocumentUndo(pDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeDocumentGetDirty(pDocument),
+		"undo away from saved state is dirty");
+	iRet = xuiCodeDocumentRedo(pDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeDocumentGetDirty(pDocument),
+		"redo to saved state is clean");
 	iRet = xuiCodeDocumentSetText(pDocument, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear before load");
 	iRet = xuiCodeDocumentLoadTextFile(pDocument, sFile, XENCODING_UTF8);
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "file\ntext") == 0, "load text file");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "file\ntext!") == 0 &&
+		!xuiCodeDocumentGetDirty(pDocument), "load text file");
 	XUI_TEST_CHECK(__xuiCodeDocumentAllocationRollbackTest(),
 		"allocation failures preserve document state");
 

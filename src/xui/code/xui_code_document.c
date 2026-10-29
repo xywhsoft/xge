@@ -57,7 +57,6 @@ struct xui_code_document_t {
 	int iLastEditEnd;
 	uint32_t iVersion;
 	uint32_t iChangeVersion;
-	uint32_t iSavedVersion;
 	uint64_t iState;
 	uint64_t iSavedState;
 	uint64_t iNextState;
@@ -1035,7 +1034,6 @@ XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char
 	if ( iRet == XUI_OK ) {
 		pDocument->iVersion++;
 		pDocument->iChangeVersion++;
-		pDocument->iSavedVersion = pDocument->iVersion;
 		pDocument->bDirty = 0;
 		pDocument->bForcedDirty = 0;
 		pDocument->iState = ++pDocument->iNextState;
@@ -1119,7 +1117,6 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 		if ( iRet == XUI_OK ) {
 			pDocument->iVersion++;
 			pDocument->iChangeVersion++;
-			pDocument->iSavedVersion = pDocument->iVersion;
 			pDocument->bDirty = 0;
 			pDocument->bForcedDirty = 0;
 			pDocument->iState = ++pDocument->iNextState;
@@ -1154,6 +1151,9 @@ XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char*
 		__xuiCodeDocumentSetError(pDocument, "file write failed");
 		return XUI_ERROR_RESOURCE_FAILED;
 	}
+	pDocument->bForcedDirty = 0;
+	pDocument->iSavedState = pDocument->iState;
+	__xuiCodeDocumentUpdateDirty(pDocument);
 	return XUI_OK;
 }
 
@@ -1503,7 +1503,6 @@ XUI_API int xuiCodeDocumentSetDirty(xui_code_document pDocument, int bDirty)
 	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pDocument->bForcedDirty = bDirty ? 1 : 0;
 	if ( !pDocument->bForcedDirty ) {
-		pDocument->iSavedVersion = pDocument->iVersion;
 		pDocument->iSavedState = pDocument->iState;
 	}
 	__xuiCodeDocumentUpdateDirty(pDocument);
