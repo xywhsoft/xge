@@ -2866,7 +2866,7 @@ struct xui_code_key_binding_t {
 };
 
 struct xui_code_command_context_t {
-	uint32_t iSize;
+	uint32_t iSize; /* 0 或至少为 sizeof(xui_code_command_context_t)。 */
 	xui_widget_t* pWidget;
 	xui_proxy_t* pProxy;
 	xui_code_document_t* pDocument;
@@ -7602,7 +7602,7 @@ XUI_API int xuiCodeCommandMapCreate(xui_code_command_map* ppMap);
 XUI_API void xuiCodeCommandMapDestroy(xui_code_command_map pMap);
 /* 装入默认编辑器键位。 */
 XUI_API int xuiCodeCommandMapLoadDefaults(xui_code_command_map pMap);
-/* 绑定键+修饰到命令。 */
+/* 绑定键+修饰到命令；键和命令必须为正数，修饰符只能使用 XUI_MOD_*。 */
 XUI_API int xuiCodeCommandMapBind(xui_code_command_map pMap, int iKey, uint32_t iModifiers, int iCommand);
 /* 解除一处绑定。 */
 XUI_API int xuiCodeCommandMapUnbind(xui_code_command_map pMap, int iKey, uint32_t iModifiers);
@@ -7612,7 +7612,7 @@ XUI_API int xuiCodeCommandMapFind(xui_code_command_map pMap, int iKey, uint32_t 
 XUI_API int xuiCodeCommandMapGetCount(xui_code_command_map pMap);
 /* 按索引输出键绑定。 */
 XUI_API int xuiCodeCommandMapGetBinding(xui_code_command_map pMap, int iIndex, xui_code_key_binding_t* pBinding);
-/* 在命令上下文中执行编辑命令。 */
+/* 在命令上下文中执行编辑命令；上下文 iSize 为 0 或至少为结构体大小。 */
 XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, int iCommand, int* pHandled);
 
 /* 取代码编辑器控件类型。 */

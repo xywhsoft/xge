@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -140,6 +141,7 @@ int main(void)
 	xui_code_fold_state pFoldState;
 	xui_code_provider_set pProviders;
 	xui_code_command_context_t tContext;
+	xui_code_command_context_t tTestContext;
 	xui_code_selection_t tState;
 	xui_code_fold_range_t tFoldRange;
 	xui_code_key_binding_t tBinding;
@@ -204,6 +206,12 @@ int main(void)
 
 	iRet = xuiCodeCommandMapBind(pMap, 'K', XUI_MOD_CTRL, XUI_CODE_COMMAND_USER_BASE + 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "custom bind");
+	iRet = xuiCodeCommandMapBind(pMap, 0, XUI_MOD_CTRL, XUI_CODE_COMMAND_USER_BASE + 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "zero key rejected");
+	iRet = xuiCodeCommandMapBind(pMap, 'K', 0x80000000u, XUI_CODE_COMMAND_USER_BASE + 1);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "unknown modifier rejected");
+	iRet = xuiCodeCommandMapBind(pMap, 'K', XUI_MOD_CTRL, 0);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "zero command rejected");
 	iRet = xuiCodeCommandMapFind(pMap, 'K', XUI_MOD_CTRL, &iCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_USER_BASE + 1, "custom find");
 
@@ -256,6 +264,14 @@ int main(void)
 	tContext.sLineComment = "//";
 	tContext.pCommandData = &iProviderData;
 	tContext.iPageLineCount = 2;
+	tTestContext = tContext;
+	tTestContext.iSize = sizeof(tTestContext) - 1u;
+	iHandled = 1;
+	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_SELECT_ALL, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iHandled == 0, "short command context rejected");
+	tTestContext.iSize = 0;
+	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_SELECT_ALL, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1, "zero-sized command context compatibility");
 
 	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_USER_BASE + 9, &iHandled);
 	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && iProviderSeen == 91, "provider command handles");
@@ -275,6 +291,22 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select page state");
 	iRet = xuiCodeDocumentOffsetToLineColumn(pDocument, tState.iCaretOffset, &iLine, &iColumn);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 1 && iColumn == 1 && tState.iAnchorOffset != tState.iCaretOffset, "select page target");
+	tContext.iPageLineCount = INT_MAX;
+	iRet = xuiCodeSelectionGotoLineColumn(pSelection, pDocument, 1, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "huge page goto start");
+	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_MOVE_PAGE_DOWN, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1, "huge page down");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "huge page down state");
+	iRet = xuiCodeDocumentOffsetToLineColumn(pDocument, tState.iCaretOffset, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 5, "huge page down saturates");
+	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_MOVE_PAGE_UP, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1, "huge page up");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "huge page up state");
+	iRet = xuiCodeDocumentOffsetToLineColumn(pDocument, tState.iCaretOffset, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 0, "huge page up saturates");
+	tContext.iPageLineCount = 2;
 	iRet = xuiCodeDocumentSetText(pDocument, "alpha beta\n{\nbody\n}\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore document text");
 	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 0, 0);
@@ -324,6 +356,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set paste clipboard");
 	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_PASTE, &iHandled);
 	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(xuiCodeDocumentGetText(pDocument), "copy X\nY\npaste\n") == 0, "paste command");
+
+	iRet = xuiCodeDocumentSetText(pDocument, "abcdef");
+	XUI_TEST_CHECK(iRet == XUI_OK, "stale copy source text");
+	iRet = xuiCodeSelectionSetRange(pSelection, pDocument, 0, 6);
+	XUI_TEST_CHECK(iRet == XUI_OK, "stale copy source selection");
+	iRet = xuiCodeDocumentSetText(pDocument, "xy");
+	XUI_TEST_CHECK(iRet == XUI_OK, "stale copy shrink document");
+	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_COPY, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(sClipboard, "xy") == 0,
+		"copy clamps stale selection");
+	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_CUT, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(sClipboard, "xy") == 0 &&
+		strcmp(xuiCodeDocumentGetText(pDocument), "") == 0, "cut clamps stale selection");
+
+	iRet = xuiCodeDocumentSetText(pDocument, "undo");
+	XUI_TEST_CHECK(iRet == XUI_OK, "undo document text");
+	iRet = xuiCodeDocumentReplace(pDocument, 4, 4, "able");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "undoable") == 0,
+		"undo document edit");
+	tTestContext = tContext;
+	tTestContext.pSelection = NULL;
+	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_UNDO, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(xuiCodeDocumentGetText(pDocument), "undo") == 0,
+		"undo does not require selection");
+	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_REDO, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(xuiCodeDocumentGetText(pDocument), "undoable") == 0,
+		"redo does not require selection");
 
 cleanup:
 	xuiCodeProviderSetDestroy(pProviders);

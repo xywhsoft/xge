@@ -18,6 +18,14 @@ typedef struct xui_code_default_binding_t {
 	int iCommand;
 } xui_code_default_binding_t;
 
+static int __xuiCodeCommandBindingKeyValid(int iKey, uint32_t iModifiers)
+{
+	const uint32_t iKnownModifiers = XUI_MOD_SHIFT | XUI_MOD_CTRL |
+		XUI_MOD_ALT | XUI_MOD_SUPER;
+
+	return iKey > 0 && (iModifiers & ~iKnownModifiers) == 0u;
+}
+
 static const xui_code_default_binding_t g_arrXuiCodeDefaultBindings[] = {
 	{XUI_KEY_LEFT, 0, XUI_CODE_COMMAND_MOVE_LEFT},
 	{XUI_KEY_RIGHT, 0, XUI_CODE_COMMAND_MOVE_RIGHT},
@@ -116,7 +124,9 @@ XUI_API int xuiCodeCommandMapBind(xui_code_command_map pMap, int iKey, uint32_t 
 	int iRet;
 	xui_code_key_binding_t* pBinding;
 
-	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pMap == NULL || !__xuiCodeCommandBindingKeyValid(iKey, iModifiers) || iCommand <= 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	for ( i = 0; i < pMap->iCount; i++ ) {
 		if ( pMap->pBindings[i].iKey == iKey && pMap->pBindings[i].iModifiers == iModifiers ) {
 			pMap->pBindings[i].iCommand = iCommand;
@@ -138,7 +148,9 @@ XUI_API int xuiCodeCommandMapUnbind(xui_code_command_map pMap, int iKey, uint32_
 {
 	int i;
 
-	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pMap == NULL || !__xuiCodeCommandBindingKeyValid(iKey, iModifiers) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	for ( i = 0; i < pMap->iCount; i++ ) {
 		if ( pMap->pBindings[i].iKey == iKey && pMap->pBindings[i].iModifiers == iModifiers ) {
 			memmove(&pMap->pBindings[i], &pMap->pBindings[i + 1], sizeof(pMap->pBindings[i]) * (size_t)(pMap->iCount - i - 1));
@@ -153,7 +165,10 @@ XUI_API int xuiCodeCommandMapFind(xui_code_command_map pMap, int iKey, uint32_t 
 {
 	int i;
 
-	if ( (pMap == NULL) || (pCommand == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pMap == NULL || pCommand == NULL ||
+	     !__xuiCodeCommandBindingKeyValid(iKey, iModifiers) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	for ( i = pMap->iCount - 1; i >= 0; i-- ) {
 		if ( pMap->pBindings[i].iKey == iKey && pMap->pBindings[i].iModifiers == iModifiers ) {
 			*pCommand = pMap->pBindings[i].iCommand;
@@ -243,8 +258,6 @@ static int __xuiCodeCommandNeedsDocumentSelection(int iCommand)
 	case XUI_CODE_COMMAND_COPY:
 	case XUI_CODE_COMMAND_CUT:
 	case XUI_CODE_COMMAND_PASTE:
-	case XUI_CODE_COMMAND_UNDO:
-	case XUI_CODE_COMMAND_REDO:
 		return 1;
 	default:
 		return 0;
@@ -254,6 +267,7 @@ static int __xuiCodeCommandNeedsDocumentSelection(int iCommand)
 static int __xuiCodeCommandMovePage(const xui_code_command_context_t* pContext, int iCommand)
 {
 	xui_code_selection_t tState;
+	int iLastLine;
 	int iLine;
 	int iColumn;
 	int iPageLines;
@@ -268,9 +282,29 @@ static int __xuiCodeCommandMovePage(const xui_code_command_context_t* pContext, 
 	if ( tState.iPreferredColumn >= 0 ) iColumn = tState.iPreferredColumn;
 	iPageLines = (pContext->iPageLineCount > 0) ? pContext->iPageLineCount : 10;
 	bExtend = (iCommand == XUI_CODE_COMMAND_SELECT_PAGE_UP || iCommand == XUI_CODE_COMMAND_SELECT_PAGE_DOWN);
-	if ( iCommand == XUI_CODE_COMMAND_MOVE_PAGE_UP || iCommand == XUI_CODE_COMMAND_SELECT_PAGE_UP ) iLine -= iPageLines;
-	else iLine += iPageLines;
+	iLastLine = xuiCodeDocumentGetLineCount(pContext->pDocument) - 1;
+	if ( iCommand == XUI_CODE_COMMAND_MOVE_PAGE_UP || iCommand == XUI_CODE_COMMAND_SELECT_PAGE_UP ) {
+		iLine = (iPageLines > iLine) ? 0 : (iLine - iPageLines);
+	} else {
+		iLine = (iPageLines > iLastLine - iLine) ? iLastLine : (iLine + iPageLines);
+	}
 	return xuiCodeSelectionGotoLineColumn(pContext->pSelection, pContext->pDocument, iLine, iColumn, bExtend);
+}
+
+static int __xuiCodeCommandSelectionRange(const xui_code_command_context_t* pContext,
+	int* pStart, int* pEnd)
+{
+	int iRet;
+
+	if ( pContext == NULL || pContext->pDocument == NULL ||
+	     pContext->pSelection == NULL || pStart == NULL || pEnd == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = xuiCodeSelectionGetRange(pContext->pSelection, pStart, pEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalCodeDocumentClampOffset(pContext->pDocument, *pStart, 0, pStart);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiInternalCodeDocumentClampOffset(pContext->pDocument, *pEnd, 0, pEnd);
 }
 
 static int __xuiCodeCommandGetProxy(const xui_code_command_context_t* pContext, xui_proxy_t* pProxy)
@@ -292,9 +326,12 @@ static int __xuiCodeCommandCopySelection(const xui_code_command_context_t* pCont
 
 	if ( (pContext == NULL) || (pContext->pDocument == NULL) || (pContext->pSelection == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( bCut && pContext->bReadonly ) return XUI_ERROR_UNSUPPORTED;
-	iRet = xuiCodeSelectionGetRange(pContext->pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeCommandSelectionRange(pContext, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( iStart == iEnd ) return XUI_OK;
+	if ( iStart == iEnd ) {
+		return bCut ? xuiCodeEditingDeleteForward(pContext->pDocument,
+			pContext->pSelection, pContext->bReadonly) : XUI_OK;
+	}
 	iRet = __xuiCodeCommandGetProxy(pContext, &tProxy);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( tProxy.clipboardSetText == NULL ) return XUI_ERROR_UNSUPPORTED;
@@ -366,6 +403,7 @@ static int __xuiCodeCommandInsertNewlineAutoIndent(const xui_code_command_contex
 	if ( iIndentLength <= 0 ) {
 		return xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, "\n", pContext->bReadonly);
 	}
+	if ( iIndentLength > INT_MAX - 2 ) return XUI_ERROR_OUT_OF_MEMORY;
 	sInsert = sSmall;
 	if ( iIndentLength + 2 > (int)sizeof(sSmall) ) {
 		sInsert = (char*)xrtMalloc((size_t)iIndentLength + 2u);
@@ -393,7 +431,7 @@ static int __xuiCodeCommandSelectionSpansLines(const xui_code_command_context_t*
 
 	if ( pContext == NULL || pContext->pDocument == NULL || pContext->pSelection == NULL || pSpansLines == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pSpansLines = 0;
-	iRet = xuiCodeSelectionGetRange(pContext->pSelection, &iStart, &iEnd);
+	iRet = __xuiCodeCommandSelectionRange(pContext, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iStart == iEnd ) return XUI_OK;
 	iRet = xuiCodeDocumentOffsetToLineColumn(pContext->pDocument, iStart, &iStartLine, NULL);
@@ -411,8 +449,12 @@ XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, in
 	const char* sIndent;
 	const char* sLineComment;
 
-	if ( (pContext == NULL) || (pHandled == NULL) || (iCommand <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	*pHandled = 0;
+	if ( pHandled != NULL ) *pHandled = 0;
+	if ( pContext == NULL || pHandled == NULL || iCommand <= 0 ||
+	     (pContext->iSize != 0u && pContext->iSize < sizeof(*pContext)) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	bHandled = 0;
 	if ( pContext->pProviders != NULL ) {
 		iRet = xuiCodeProviderExecuteCommand(pContext->pProviders, pContext->pWidget, iCommand, pContext->pCommandData, &bHandled);
 		if ( iRet != XUI_OK && iRet != XUI_ERROR_UNSUPPORTED ) return iRet;
