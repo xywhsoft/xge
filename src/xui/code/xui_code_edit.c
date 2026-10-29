@@ -359,15 +359,7 @@ static float __xuiCodeEditMaxFloat(float fA, float fB)
 
 static int __xuiCodeEditTextReserve(char** psText, int* pCapacity, int iCapacity)
 {
-	char* sNew;
-
-	if ( psText == NULL || pCapacity == NULL || iCapacity <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iCapacity <= *pCapacity ) return XUI_OK;
-	sNew = (char*)xrtRealloc(*psText, (size_t)iCapacity);
-	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	*psText = sNew;
-	*pCapacity = iCapacity;
-	return XUI_OK;
+	return xuiInternalTextBufferReserve(psText, pCapacity, iCapacity);
 }
 
 static int __xuiCodeEditUtf8ClampOffset(const char* sText, int iLength, int iOffset)

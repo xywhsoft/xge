@@ -25,6 +25,9 @@ int xuiInternalTextShapeProjection(xui_context context, xui_font font,
  * optional shaper caret stops on success; preserves the input on failure. */
 int xuiInternalTextShapeCaretFragments(const char* text, int bytes, xui_text_shape_t* shape);
 
+/* Shared geometric byte-buffer growth for mutable text and scratch storage. */
+int xuiInternalTextBufferReserve(char** ppBuffer, int* pCapacity, int iRequired);
+
 /* Long unwrapped text is retained in independently shaped chunks. Edits
  * rebuild only the touched chunks and their shaping neighbours; offsets and
  * aggregate advances for the untouched tail are updated without reshaping. */

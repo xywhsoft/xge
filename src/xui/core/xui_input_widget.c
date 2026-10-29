@@ -251,37 +251,7 @@ static uint32_t __xuiInputColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 
 static int __xuiInputTextReserve(char** psText, int* pCapacity, int iCapacity)
 {
-	char* sNew;
-	int iNewCapacity;
-	int iGrowth;
-
-	if ( (psText == NULL) || (pCapacity == NULL) || (iCapacity <= 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( *pCapacity < 0 || (*pCapacity > 0 && *psText == NULL) ) {
-		return XUI_ERROR_INVALID_STATE;
-	}
-	if ( iCapacity <= *pCapacity ) {
-		return XUI_OK;
-	}
-	iNewCapacity = *pCapacity;
-	if ( iNewCapacity < 32 ) iNewCapacity = 32;
-	while ( iNewCapacity < iCapacity ) {
-		iGrowth = iNewCapacity / 2;
-		if ( iGrowth < 32 ) iGrowth = 32;
-		if ( iNewCapacity > INT_MAX - iGrowth ) {
-			iNewCapacity = iCapacity;
-			break;
-		}
-		iNewCapacity += iGrowth;
-	}
-	sNew = (char*)xrtRealloc(*psText, (size_t)iNewCapacity);
-	if ( sNew == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	*psText = sNew;
-	*pCapacity = iNewCapacity;
-	return XUI_OK;
+	return xuiInternalTextBufferReserve(psText, pCapacity, iCapacity);
 }
 
 static int __xuiInputStringSize(const char* sText, int* pSize)

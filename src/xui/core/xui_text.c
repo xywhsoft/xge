@@ -65,6 +65,35 @@ size_t xuiInternalUtf8CopyGraphemes(char* sDst, size_t iCapacity, const char* sS
 	return (size_t)iAt;
 }
 
+int xuiInternalTextBufferReserve(char** ppBuffer, int* pCapacity, int iRequired)
+{
+	char* pNew;
+	int iNewCapacity;
+	int iGrowth;
+
+	if ( ppBuffer == NULL || pCapacity == NULL || iRequired <= 0 )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( *pCapacity < 0 || (*pCapacity > 0 && *ppBuffer == NULL) )
+		return XUI_ERROR_INVALID_STATE;
+	if ( iRequired <= *pCapacity ) return XUI_OK;
+	iNewCapacity = *pCapacity;
+	if ( iNewCapacity < 32 ) iNewCapacity = 32;
+	while ( iNewCapacity < iRequired ) {
+		iGrowth = iNewCapacity / 2;
+		if ( iGrowth < 32 ) iGrowth = 32;
+		if ( iNewCapacity > INT_MAX - iGrowth ) {
+			iNewCapacity = iRequired;
+			break;
+		}
+		iNewCapacity += iGrowth;
+	}
+	pNew = (char*)xrtRealloc(*ppBuffer, (size_t)iNewCapacity);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	*ppBuffer = pNew;
+	*pCapacity = iNewCapacity;
+	return XUI_OK;
+}
+
 int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundaries)
 {
     if (!text || bytes < 0 || !boundaries) return XUI_ERROR_INVALID_ARGUMENT;
@@ -230,18 +259,9 @@ static int __xuiTextLineReserve(xui_text_layout pLayout, int iCapacity)
 
 static int __xuiTextScratchReserve(xui_text_layout pLayout, int iCapacity)
 {
-	char* pScratch;
-
-	if ( iCapacity <= pLayout->iScratchCapacity ) {
-		return XUI_OK;
-	}
-	pScratch = (char*)xrtRealloc(pLayout->pScratch, (size_t)iCapacity);
-	if ( pScratch == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	pLayout->pScratch = pScratch;
-	pLayout->iScratchCapacity = iCapacity;
-	return XUI_OK;
+	if ( pLayout == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiInternalTextBufferReserve(&pLayout->pScratch,
+		&pLayout->iScratchCapacity, iCapacity);
 }
 
 static int __xuiTextBuildClusterIndex(xui_text_layout pLayout)
