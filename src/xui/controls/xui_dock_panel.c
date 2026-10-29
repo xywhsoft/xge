@@ -4583,6 +4583,27 @@ static int __xuiDockWidgetIsDescendantOf(xui_widget pWidget, xui_widget pAncesto
 	return 0;
 }
 
+static int __xuiDockClientConflicts(const xui_dock_panel_data_t* pData,
+	int iWindow, xui_widget pClient)
+{
+	int i;
+	if ( pData == NULL || pClient == NULL ) return 0;
+	if ( pClient == pData->pWidget || pClient == pData->pOptionMenu ||
+	     pClient == pData->pOverflowMenu || pClient == pData->pDragOverlayWidget ) {
+		return 1;
+	}
+	for ( i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; i++ ) {
+		const xui_dock_window_slot_t* pWin = &pData->arrWindows[i];
+		if ( !pWin->bUsed ) continue;
+		if ( pClient == pWin->pHostWidget || pClient == pWin->pCloseButtonWidget ||
+		     pClient == pWin->pPinButtonWidget ) {
+			return 1;
+		}
+		if ( i != iWindow && pClient == pWin->pClientWidget ) return 1;
+	}
+	return 0;
+}
+
 static int __xuiDockPointerTargetIsFloatingHost(xui_dock_panel_data_t* pData, xui_widget pTarget)
 {
 	int i;
@@ -6607,7 +6628,8 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 	if ( pClient != NULL &&
 	     (!xuiInternalWidgetIsValid(pClient) ||
 	      xuiWidgetGetContext(pClient) != xuiWidgetGetContext(pWidget) ||
-	      __xuiDockWidgetIsDescendantOf(pWidget, pClient)) ) return XUI_ERROR_INVALID_ARGUMENT;
+	      __xuiDockWidgetIsDescendantOf(pWidget, pClient) ||
+	      __xuiDockClientConflicts(pData, -1, pClient)) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; i++ ) {
 		if ( !pData->arrWindows[i].bUsed ) break;
 	}
@@ -6740,7 +6762,8 @@ XUI_API int xuiDockPanelSetWindowClient(xui_widget pWidget, int iWindow, xui_wid
 	     (!xuiInternalWidgetIsValid(pClient) ||
 	      xuiWidgetGetContext(pClient) != xuiWidgetGetContext(pWidget) ||
 	      pClient == w->pHostWidget ||
-	      __xuiDockWidgetIsDescendantOf(w->pHostWidget, pClient)) ) {
+	      __xuiDockWidgetIsDescendantOf(w->pHostWidget, pClient) ||
+	      __xuiDockClientConflicts(pData, iWindow, pClient)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pOldClient = w->pClientWidget;
@@ -6964,6 +6987,7 @@ XUI_API int xuiDockPanelSetFont(xui_widget pWidget, xui_font pFont)
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	xui_font pOldFont;
 	xui_font pNewFont;
+	int i;
 	int ret;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pOldFont = pData->pFont;
@@ -6976,6 +7000,9 @@ XUI_API int xuiDockPanelSetFont(xui_widget pWidget, xui_font pFont)
 	}
 	if ( ret != XUI_OK ) return ret;
 	pData->pFont = pNewFont;
+	for ( i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; i++ ) {
+		if ( pData->arrWindows[i].bUsed ) pData->arrWindows[i].bAutoHideLabelDirty = 1;
+	}
 	__xuiDockInvalidate(pWidget, 1);
 	return XUI_OK;
 }

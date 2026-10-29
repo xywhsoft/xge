@@ -9701,8 +9701,9 @@ XUI_API int xuiDockPanelCreate(xui_context pContext, xui_widget* ppWidget, const
 /* 清空全部停靠窗口与布局。 */
 XUI_API int xuiDockPanelClear(xui_widget pWidget);
 /* 添加停靠窗口；返回窗口句柄。标题会被复制，内容控件会重设父级到内部宿主，
- * 附着期间不得由调用方销毁。替换内容或 Clear 会分离旧内容而不销毁；销毁
- * DockPanel 会随控件树销毁仍附着的内容。失败时输出 -1。 */
+ * 且同一内容控件不能同时附着到多个停靠窗口。附着期间不得由调用方销毁。
+ * 替换内容或 Clear 会分离旧内容而不销毁；销毁 DockPanel 会随控件树销毁仍
+ * 附着的内容。DockPanel 内部宿主和按钮不能作为内容控件。失败时输出 -1。 */
 XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_widget pClient, int* pWindow);
 /* 设置停靠窗口的内容控件；所有权规则同 AddWindow。 */
 XUI_API int xuiDockPanelSetWindowClient(xui_widget pWidget, int iWindow, xui_widget pClient);

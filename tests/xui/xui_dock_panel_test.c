@@ -34,6 +34,19 @@ typedef struct dock_replace_close_test_data_t {
 	int iCount;
 } dock_replace_close_test_data_t;
 
+static xui_text_draw_proc gDockTextDraw;
+static xui_font gDockTrackedFont;
+static int gDockTrackedFontDrawCount;
+
+static int __xuiDockTestTextDraw(xui_proxy pProxy, xui_surface pTarget,
+	const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+{
+	if ( pTextItem != NULL && pTextItem->pFont == gDockTrackedFont ) {
+		gDockTrackedFontDrawCount++;
+	}
+	return gDockTextDraw(pProxy, pTarget, pTextItem, tRect, iColor, iFlags);
+}
+
 static void __xuiDockTestDestroyWidget(xui_widget pWidget, dock_destroy_test_data_t* pData)
 {
 	if ( pData == NULL || pData->ppWidget == NULL || *pData->ppWidget != pWidget ) return;
@@ -444,6 +457,7 @@ int main(void)
 	xui_surface pCache;
 	xui_surface pIndicatorCache;
 	xui_font pFont;
+	xui_font pFont2;
 	xui_dock_panel_desc_t tDesc;
 	xui_dock_panel_desc_t tBadDesc;
 	xui_dock_window_info_t tWinInfo;
@@ -548,6 +562,7 @@ int main(void)
 	pIndicatorCache = NULL;
 	pDragOverlay = NULL;
 	pFont = NULL;
+	pFont2 = NULL;
 	pState = NULL;
 	pRegions = NULL;
 	pRegionState = NULL;
@@ -576,6 +591,10 @@ int main(void)
 	memset(&tDestroyData, 0, sizeof(tDestroyData));
 	memset(&tReplaceCloseData, 0, sizeof(tReplaceCloseData));
 	xuiTestProxyInit(&tState);
+	gDockTextDraw = tState.tProxy.textDraw;
+	gDockTrackedFont = NULL;
+	gDockTrackedFontDrawCount = 0;
+	tState.tProxy.textDraw = __xuiDockTestTextDraw;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -585,6 +604,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport");
 	iRet = tState.tProxy.fontLoadMemory(&tState.tProxy, &pFont, "dock", 4, 13.0f, XUI_FONT_FORMAT_TTF);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFont != NULL, "font create");
+	iRet = tState.tProxy.fontLoadMemory(&tState.tProxy, &pFont2, "dock2", 5, 13.0f, XUI_FONT_FORMAT_TTF);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFont2 != NULL, "second font create");
 	iRet = xuiSetDefaultFont(pContext, pFont);
 	XUI_TEST_CHECK(iRet == XUI_OK, "default font");
 
@@ -653,6 +674,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "nested client add");
 	iRet = xuiDockPanelAddWindow(pDock, "Document.c", arrClient[0], &doc1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "doc1 add");
+	iTempWindow = 123;
+	iRet = xuiDockPanelAddWindow(pDock, "Duplicate client", arrClient[0], &iTempWindow);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && iTempWindow == -1 &&
+		xuiDockPanelGetWindowCount(pDock) == 1 &&
+		xuiDockPanelGetWindowClient(pDock, doc1) == arrClient[0],
+		"add window rejects client already owned by another window");
 	memset(sLongTitle, 't', XUI_DOCK_PANEL_TITLE_CAPACITY - 2);
 	memcpy(sLongTitle + XUI_DOCK_PANEL_TITLE_CAPACITY - 2, "\xe4\xb8\xad", 4);
 	iRet = xuiDockPanelSetWindowTitle(pDock, doc1, sLongTitle);
@@ -981,6 +1008,22 @@ int main(void)
 		xuiDockPanelGetWindowClient(pDock, props) == arrClient[6] &&
 		xuiWidgetGetParent(arrClient[6]) == tWinInfo.pHostWidget,
 		"invalid client replacement has no side effects");
+	iRet = xuiDockPanelGetWindowInfo(pDock, doc1, &tToolboxInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK, "duplicate client replacement source info");
+	iRet = xuiDockPanelSetWindowClient(pDock, props, arrClient[0]);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiDockPanelGetWindowClient(pDock, props) == arrClient[6] &&
+		xuiDockPanelGetWindowClient(pDock, doc1) == arrClient[0] &&
+		xuiWidgetGetParent(arrClient[6]) == tWinInfo.pHostWidget &&
+		xuiWidgetGetParent(arrClient[0]) == tToolboxInfo.pHostWidget,
+		"client replacement rejects client owned by another window");
+	pTempButton = xuiDockPanelGetWindowCloseButtonWidget(pDock, doc1);
+	iRet = xuiDockPanelSetWindowClient(pDock, props, pTempButton);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiDockPanelGetWindowClient(pDock, props) == arrClient[6] &&
+		xuiWidgetGetParent(pTempButton) == tToolboxInfo.pHostWidget,
+		"client replacement rejects internal window chrome");
+	pTempButton = NULL;
 	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.tTabStripRect.fW > 0.0f && tPaneInfo.iVisibleTabCount > 1, "multi window pane shows tabs");
 	iRet = xuiDockPanelGetPaneInfo(pDock, toolboxPane, &tPaneInfo);
@@ -1257,6 +1300,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout auto hide");
+	gDockTrackedFont = pFont2;
+	gDockTrackedFontDrawCount = 0;
+	iRet = xuiDockPanelSetFont(pDock, pFont2);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetFont(pDock) == pFont2 &&
+		gDockTrackedFontDrawCount > 0,
+		"font change redraws cached vertical auto hide labels");
+	gDockTrackedFont = NULL;
+	iRet = xuiDockPanelSetFont(pDock, pFont);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore dock font after auto hide cache test");
 	iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_AUTO_HIDE, "auto hide state");
 	XUI_TEST_CHECK(tWinInfo.iLastRegion == XUI_DOCK_PANEL_REGION_DOCUMENT && tWinInfo.iLastSide == XUI_DOCK_PANEL_SIDE_LEFT, "auto hide keeps dock target");
@@ -2109,6 +2163,7 @@ cleanup:
 	if ( pTempDock != NULL ) xuiWidgetDestroy(pTempDock);
 	if ( pState != NULL ) xuiDockPanelStateFree(pState);
 	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
+	if ( pFont2 != NULL ) tState.tProxy.fontDestroy(&tState.tProxy, pFont2);
 	if ( pFont != NULL ) tState.tProxy.fontDestroy(&tState.tProxy, pFont);
 	if ( pContext != NULL ) xuiDestroy(pContext);
 	if ( iFailed ) return 1;
