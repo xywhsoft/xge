@@ -541,6 +541,14 @@ int main(void)
 	iRet = xuiListViewSetSelectionBuffer(pList, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewIsItemSelected(pList, 5),
 		"detaching external selection preserves current state");
+	iOldChangeCount = xuiListViewGetChangeCount(pList);
+	fScroll = xuiListViewGetScroll(pList);
+	iRet = xuiListViewSetItems(pList, arrItems, 16);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiListViewIsItemEnabled(pList, 2) &&
+		xuiListViewIsItemSelected(pList, 5) && xuiListViewIsItemSelected(pList, 6) &&
+		xuiListViewGetChangeCount(pList) == iOldChangeCount &&
+		__xuiListViewNear(xuiListViewGetScroll(pList), fScroll),
+		"repeated owned items preserve enabled, selection, and scroll state");
 	memset(arrSelected, 0, sizeof(arrSelected));
 	XUI_TEST_CHECK(xuiListViewIsItemSelected(pList, 5),
 		"detached selection no longer aliases external buffer");

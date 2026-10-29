@@ -2,6 +2,7 @@
 #if XUI_ENABLE_LIST_VIEW
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -144,6 +145,24 @@ static float __xuiListViewMaxFloat(float fA, float fB)
 static const char* __xuiListViewText(const char* sText)
 {
 	return (sText != NULL) ? sText : "";
+}
+
+static void __xuiListViewIncrement(int* pValue)
+{
+	if ( pValue != NULL && *pValue < INT_MAX ) (*pValue)++;
+}
+
+static int __xuiListViewItemsEqual(const xui_list_view_data_t* pData,
+	const char** arrItems, int iCount)
+{
+	int i;
+
+	if ( pData == NULL || pData->bVirtualItems || pData->iItemCount != iCount ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( strcmp(__xuiListViewText(pData->arrItems[i]),
+		           __xuiListViewText(arrItems[i])) != 0 ) return 0;
+	}
+	return 1;
 }
 
 static const char* __xuiListViewItemText(xui_widget pWidget, xui_list_view_data_t* pData, int iIndex)
@@ -676,7 +695,7 @@ static void __xuiListViewNotifySelect(xui_widget pWidget, xui_list_view_data_t* 
 	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) ) {
 		return;
 	}
-	pData->iSelectCount++;
+	__xuiListViewIncrement(&pData->iSelectCount);
 	onSelect = pData->onSelect;
 	pSelectUser = pData->pSelectUser;
 	if ( onSelect != NULL ) onSelect(pWidget, iIndex, pSelectUser);
@@ -728,7 +747,7 @@ static int __xuiListViewSetSelectedInternal(xui_widget pWidget, xui_list_view_da
 		__xuiListViewSetSelectionFlag(pData, iIndex, 1);
 	}
 	if ( iOld != iIndex ) {
-		pData->iChangeCount++;
+		__xuiListViewIncrement(&pData->iChangeCount);
 	}
 	if ( iOld != iIndex ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
@@ -776,7 +795,7 @@ static int __xuiListViewSelectRange(xui_widget pWidget, xui_list_view_data_t* pD
 	}
 	pData->iSelected = iTo;
 	pData->iFocus = iTo;
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	if ( bNotify ) {
@@ -829,7 +848,7 @@ static int __xuiListViewSelectIndex(xui_widget pWidget, xui_list_view_data_t* pD
 		pData->iFocus = iIndex;
 		pData->iAnchor = iIndex;
 	}
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	if ( bNotify ) {
@@ -889,7 +908,7 @@ static int __xuiListViewSelectAll(xui_widget pWidget, xui_list_view_data_t* pDat
 	pData->iSelected = iNotifyIndex;
 	pData->iFocus = iNotifyIndex;
 	if ( pData->iAnchor < 0 ) pData->iAnchor = iNotifyIndex;
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	if ( bNotify && iNotifyIndex >= 0 ) __xuiListViewNotifySelect(pWidget, pData, iNotifyIndex);
@@ -1276,7 +1295,7 @@ static void __xuiListViewFrameChanged(xui_widget pFrame, float fOffsetX, float f
 		return;
 	}
 	pData->iHover = -1;
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	if ( __xuiListViewInvalidateRows(pWidget, pData) == XUI_OK &&
 	     __xuiListViewWidgetAlive(pWidget, pData) ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
@@ -2060,6 +2079,7 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 	     (pData->iExternalSelectedCount < iCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xuiListViewItemsEqual(pData, arrItems, iCount) ) return XUI_OK;
 	arrNewItems = NULL;
 	arrNewSelected = NULL;
 	if ( iCount > 0 ) {
@@ -2123,7 +2143,7 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 	} else {
 		pData->iSelected = __xuiListViewFirstSelected(pData);
 	}
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	__xuiListViewFreeItems(tOldData.arrItems, tOldData.iItemCount);
 	if ( tOldData.arrEnabled != NULL ) xrtFree(tOldData.arrEnabled);
 	if ( tOldData.arrSelected != NULL ) xrtFree(tOldData.arrSelected);
@@ -2174,7 +2194,7 @@ static int __xuiListViewSetVirtualItems(xui_widget pWidget, int iCount,
 	if (pData->iSelectionMode == XUI_SELECTION_SINGLE) __xuiListViewSyncSingleSelection(pData);
 	else if (pData->iSelected >= 0) __xuiListViewSetSelectionFlag(pData, pData->iSelected, 1);
 	else pData->iSelected = __xuiListViewFirstSelected(pData);
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	__xuiListViewFreeItems(tOldData.arrItems, tOldData.iItemCount);
 	if ( tOldData.arrEnabled != NULL ) xrtFree(tOldData.arrEnabled);
 	if ( tOldData.arrSelected != NULL ) xrtFree(tOldData.arrSelected);
@@ -2255,7 +2275,7 @@ XUI_API int xuiListViewSetEnabledItems(xui_widget pWidget, const int* arrEnabled
 	}
 	pData->iFocus = pData->iSelected;
 	pData->iAnchor = pData->iSelected;
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	if ( arrOldEnabled != NULL ) xrtFree(arrOldEnabled);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
@@ -2440,7 +2460,7 @@ XUI_API int xuiListViewSetSelectionMode(xui_widget pWidget, int iMode)
 	} else if ( __xuiListViewItemEnabledData(pData, pData->iSelected) ) {
 		__xuiListViewSetSelectionFlag(pData, pData->iSelected, 1);
 	}
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	return XUI_OK;
@@ -2504,7 +2524,7 @@ XUI_API int xuiListViewSetSelectionBuffer(xui_widget pWidget, int* arrSelected, 
 	} else {
 		pData->iSelected = __xuiListViewFirstSelected(pData);
 	}
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	return XUI_OK;
@@ -2529,7 +2549,7 @@ XUI_API int xuiListViewClearSelection(xui_widget pWidget)
 	pData->iSelected = -1;
 	pData->iFocus = -1;
 	pData->iAnchor = -1;
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	return XUI_OK;
@@ -2552,7 +2572,7 @@ XUI_API int xuiListViewSetItemSelected(xui_widget pWidget, int iIndex, int bSele
 	pData->iSelected = bSelected ? iIndex : __xuiListViewFirstSelected(pData);
 	pData->iFocus = pData->iSelected;
 	pData->iAnchor = pData->iSelected;
-	pData->iChangeCount++;
+	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
 	return XUI_OK;
