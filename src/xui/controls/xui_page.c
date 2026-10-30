@@ -900,7 +900,6 @@ static int __xuiPageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, x
 	xui_page_style_t tResolved;
 	xui_rect_t tMeasure;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiPageGetData(pWidget);
@@ -909,6 +908,10 @@ static int __xuiPageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, x
 	tMeasure = (xui_rect_t){0.0f, 0.0f, 0.0f, tResolved.fItemHeight};
 	pSize->fX = __xuiPageBuildItems(pData, &tResolved, tMeasure);
 	pSize->fY = tResolved.fItemHeight;
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 

@@ -256,6 +256,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fItemHeight == 30.0f && fPageWidth == 40.0f && fTextWidth == 58.0f && fNavWidth == 48.0f && fEllipsisWidth == 30.0f, "invalid metrics preserve state");
 	iRet = xuiWidgetMeasureContent(pPage, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fY == 30.0f && tMeasured.fX > 300.0f, "measure");
+	iRet = xuiWidgetMeasureContent(pPage, (xui_vec2_t){160.0f, 18.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 160.0f && tMeasured.fY == 18.0f,
+		"content measure respects tight constraints");
 	xuiWidgetClearDirty(pPage, XUI_WIDGET_DIRTY_ALL);
 	iRet = xuiPageSetText(pPage, "First", "Last", "Prev", "Next");
 	XUI_TEST_CHECK(iRet == XUI_OK &&
