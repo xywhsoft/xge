@@ -442,14 +442,18 @@ static int __xuiRangeSliderGrabInfo(xui_widget pWidget,
 static int __xuiRangeSliderSetActiveThumb(xui_widget pWidget,
 	xui_range_slider_data_t* pData, int iThumb)
 {
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) ||
 	     (iThumb != XUI_RANGE_SLIDER_THUMB_START && iThumb != XUI_RANGE_SLIDER_THUMB_END) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pData->iActiveThumb == iThumb ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iActiveThumb = iThumb;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static void __xuiRangeSliderNormalizeValues(float* pStart, float* pEnd, float fMin, float fMax, float fMinInterval, float fMaxInterval)
@@ -516,13 +520,13 @@ static int __xuiRangeSliderSetValuesInternal(xui_widget pWidget, xui_range_slide
 	if ( (pData->fStart == fStart) && (pData->fEnd == fEnd) ) {
 		return XUI_OK;
 	}
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fStart = fStart;
 	pData->fEnd = fEnd;
 	__xuiRangeSliderIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
 	onChange = pData->onChange;
 	pChangeUser = pData->pChangeUser;
 	if ( bNotify && (onChange != NULL) ) {
@@ -1491,21 +1495,33 @@ XUI_API int xuiRangeSliderSetChange(xui_widget pWidget, xui_range_slider_change_
 XUI_API int xuiRangeSliderSetRange(xui_widget pWidget, float fMin, float fMax)
 {
 	xui_range_slider_data_t* pData;
+	float fStart;
+	float fEnd;
+	int bValuesChanged;
 	int iRet;
 
 	pData = __xuiRangeSliderGetData(pWidget);
 	if ( pData == NULL || !isfinite(fMin) || !isfinite(fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiRangeSliderNormalizeRange(&fMin, &fMax);
 	if ( pData->fMin == fMin && pData->fMax == fMax ) return XUI_OK;
+	fStart = pData->fStart;
+	fEnd = pData->fEnd;
+	__xuiRangeSliderNormalizeValues(&fStart, &fEnd, fMin, fMax,
+		pData->fMinInterval, pData->fMaxInterval);
+	bValuesChanged = pData->fStart != fStart || pData->fEnd != fEnd;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiRangeSliderCancelDrag(pWidget, pData);
 	pData->fMin = fMin;
 	pData->fMax = fMax;
+	pData->fStart = fStart;
+	pData->fEnd = fEnd;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-	iRet = __xuiRangeSliderSetValuesInternal(pWidget, pData, pData->fStart, pData->fEnd, 0);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( bValuesChanged ) {
+		__xuiRangeSliderIncrementCounter(&pData->iChangeCount);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+	}
 	return XUI_OK;
 }
 
@@ -1582,6 +1598,9 @@ XUI_API int xuiRangeSliderGetStep(xui_widget pWidget, float* pStep, float* pPage
 XUI_API int xuiRangeSliderSetIntervalLimits(xui_widget pWidget, float fMinInterval, float fMaxInterval)
 {
 	xui_range_slider_data_t* pData;
+	float fStart;
+	float fEnd;
+	int bValuesChanged;
 	int iRet;
 
 	pData = __xuiRangeSliderGetData(pWidget);
@@ -1593,14 +1612,24 @@ XUI_API int xuiRangeSliderSetIntervalLimits(xui_widget pWidget, float fMinInterv
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pData->fMinInterval == fMinInterval && pData->fMaxInterval == fMaxInterval ) return XUI_OK;
+	fStart = pData->fStart;
+	fEnd = pData->fEnd;
+	__xuiRangeSliderNormalizeValues(&fStart, &fEnd, pData->fMin, pData->fMax,
+		fMinInterval, fMaxInterval);
+	bValuesChanged = pData->fStart != fStart || pData->fEnd != fEnd;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiRangeSliderCancelDrag(pWidget, pData);
 	pData->fMinInterval = fMinInterval;
 	pData->fMaxInterval = fMaxInterval;
+	pData->fStart = fStart;
+	pData->fEnd = fEnd;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	iRet = __xuiRangeSliderSetValuesInternal(pWidget, pData, pData->fStart, pData->fEnd, 0);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( bValuesChanged ) {
+		__xuiRangeSliderIncrementCounter(&pData->iChangeCount);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	}
 	return XUI_OK;
 }
 
@@ -1669,10 +1698,13 @@ XUI_API int xuiRangeSliderGetMetrics(xui_widget pWidget, float* pTrackSize, floa
 XUI_API int xuiRangeSliderSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iFill, uint32_t iKnob, uint32_t iFocus, uint32_t iDisabled)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iTrackColor == iTrack && pData->iFillColor == iFill &&
 	     pData->iKnobColor == iKnob && pData->iFocusColor == iFocus &&
 	     pData->iDisabledColor == iDisabled ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iTrackColor = iTrack;
 	pData->iFillColor = iFill;
 	pData->iFillHoverColor = __xuiRangeSliderLighten(iFill, 12);
@@ -1680,7 +1712,7 @@ XUI_API int xuiRangeSliderSetColors(xui_widget pWidget, uint32_t iTrack, uint32_
 	pData->iKnobColor = iKnob;
 	pData->iFocusColor = iFocus;
 	pData->iDisabledColor = iDisabled;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiRangeSliderGetColors(xui_widget pWidget, uint32_t* pTrack, uint32_t* pFill, uint32_t* pKnob, uint32_t* pFocus, uint32_t* pDisabled)
@@ -1698,10 +1730,13 @@ XUI_API int xuiRangeSliderGetColors(xui_widget pWidget, uint32_t* pTrack, uint32
 XUI_API int xuiRangeSliderSetKnobBorderColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iKnobBorderColor == iColor ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iKnobBorderColor = iColor;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API uint32_t xuiRangeSliderGetKnobBorderColor(xui_widget pWidget)

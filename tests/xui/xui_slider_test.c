@@ -449,6 +449,19 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clamp value");
 	iRet = xuiSliderGetRange(pSlider, &fMin, &fMax);
 	XUI_TEST_CHECK(iRet == XUI_OK && fMin == 0.0f && fMax == 100.0f && xuiSliderGetValue(pSlider) == 100.0f, "range clamp");
+	iChangeCount = xuiSliderGetChangeCount(pSlider);
+	iRet = xuiSliderSetRange(pSlider, 0.0f, 60.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetValue(pSlider) == 60.0f &&
+		xuiSliderGetChangeCount(pSlider) == iChangeCount + 1,
+		"range clamp commits one value change");
+	xuiWidgetClearDirty(pSlider, XUI_WIDGET_DIRTY_ALL);
+	iChangeCount = xuiSliderGetChangeCount(pSlider);
+	iRet = xuiSliderSetRange(pSlider, 0.0f, 60.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetChangeCount(pSlider) == iChangeCount &&
+		xuiWidgetGetDirtyFlags(pSlider) == 0u,
+		"unchanged range does not dirty slider");
+	iRet = xuiSliderSetRange(pSlider, 0.0f, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore range after clamp transaction");
 	iRet = xuiSliderSetRange(pSlider, -FLT_MAX, FLT_MAX);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set wide finite range");
 	iRet = xuiSliderSetValue(pSlider, 0.0f);

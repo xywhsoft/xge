@@ -388,10 +388,21 @@ int main(void)
 	iRet = xuiWidgetSetInlineStyle(pSlider, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear invalid inline style");
 
+	iChangeCount = xuiRangeSliderGetChangeCount(pSlider);
 	iRet = xuiRangeSliderSetIntervalLimits(pSlider, 10.0f, 40.0f);
-	XUI_TEST_CHECK(iRet == XUI_OK, "set interval limits");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 30.0f) &&
+		__xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider), 70.0f) &&
+		xuiRangeSliderGetChangeCount(pSlider) == iChangeCount + 1,
+		"interval limits clamp values in one change");
 	iRet = xuiRangeSliderGetIntervalLimits(pSlider, &fMinInterval, &fMaxInterval);
 	XUI_TEST_CHECK(iRet == XUI_OK && fMinInterval == 10.0f && fMaxInterval == 40.0f, "get interval limits");
+	xuiWidgetClearDirty(pSlider, XUI_WIDGET_DIRTY_ALL);
+	iChangeCount = xuiRangeSliderGetChangeCount(pSlider);
+	iRet = xuiRangeSliderSetIntervalLimits(pSlider, 10.0f, 40.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetChangeCount(pSlider) == iChangeCount &&
+		xuiWidgetGetDirtyFlags(pSlider) == 0u,
+		"unchanged interval limits do not dirty range slider");
 	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 25.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider) - xuiRangeSliderGetStart(pSlider), 10.0f), "minimum interval applied");
 	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 80.0f);
@@ -638,6 +649,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fMin == 0.0f && fMax == 100.0f, "range normalized");
 	iRet = xuiRangeSliderGetValues(pSlider, &fStart, &fEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && fStart == 0.0f && fEnd == 100.0f, "values normalized");
+	iChangeCount = xuiRangeSliderGetChangeCount(pSlider);
+	iRet = xuiRangeSliderSetRange(pSlider, 20.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == 20.0f &&
+		xuiRangeSliderGetEnd(pSlider) == 80.0f &&
+		xuiRangeSliderGetChangeCount(pSlider) == iChangeCount + 1,
+		"range clamp commits one values change");
+	xuiWidgetClearDirty(pSlider, XUI_WIDGET_DIRTY_ALL);
+	iChangeCount = xuiRangeSliderGetChangeCount(pSlider);
+	iRet = xuiRangeSliderSetRange(pSlider, 20.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetChangeCount(pSlider) == iChangeCount &&
+		xuiWidgetGetDirtyFlags(pSlider) == 0u,
+		"unchanged range does not dirty range slider");
+	iRet = xuiRangeSliderSetRange(pSlider, 0.0f, 100.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore range after clamp transaction");
 	iRet = xuiRangeSliderSetRange(pSlider, -FLT_MAX, FLT_MAX);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set wide finite range");
 	iRet = xuiRangeSliderSetValues(pSlider, -FLT_MAX, FLT_MAX);
