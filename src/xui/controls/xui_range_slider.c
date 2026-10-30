@@ -1067,7 +1067,6 @@ static int __xuiRangeSliderContentMeasure(xui_widget pWidget, xui_vec2_t tConstr
 	float fCross;
 	float fLong;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1087,6 +1086,12 @@ static int __xuiRangeSliderContentMeasure(xui_widget pWidget, xui_vec2_t tConstr
 	} else {
 		*pSize = (xui_vec2_t){fCross, fLong};
 	}
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
