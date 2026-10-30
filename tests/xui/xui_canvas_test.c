@@ -157,6 +157,10 @@ int main(void)
 		XUI_SCROLLBAR_MODE_FULL, "canvas delegates full scrollbar mode to scroll frame");
 	iRet = xuiWidgetMeasure(pCanvas, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(tMeasured.fX, 180.0f) && __xuiCanvasNear(tMeasured.fY, 140.0f), "canvas extent does not define viewport");
+	iRet = xuiWidgetMeasure(pCanvas, (xui_vec2_t){100.0f, 80.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiCanvasNear(tMeasured.fX, 100.0f) &&
+		__xuiCanvasNear(tMeasured.fY, 80.0f),
+		"canvas viewport hint honors finite constraints");
 	iRet = xuiWidgetAddChild(pRoot, pCanvas);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add canvas");
 	xuiWidgetSetRect(pCanvas, (xui_rect_t){12.0f, 16.0f, 180.0f, 140.0f});

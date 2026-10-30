@@ -649,11 +649,19 @@ static void __xuiCanvasDefaultLayout(xui_layout_t* pLayout)
 static int __xuiCanvasContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_canvas_data_t* pData = (xui_canvas_data_t*)pUser;
+	int iRet;
 	(void)pWidget;
-	(void)tConstraint;
 	if ( pData == NULL || pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFrame == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	return xuiScrollFrameGetViewportHint(pData->pFrame, &pSize->fX, &pSize->fY);
+	iRet = xuiScrollFrameGetViewportHint(pData->pFrame, &pSize->fX, &pSize->fY);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
+	return XUI_OK;
 }
 
 static void __xuiCanvasDefaultCachePolicy(xui_cache_policy_t* pPolicy)
