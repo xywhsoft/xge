@@ -4,6 +4,7 @@
 #include "xui_native_accessibility_internal.h"
 
 #include <limits.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -6213,7 +6214,7 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fDelta != fDelta ) {
+	if ( !isfinite(fDelta) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( fDelta < 0.0f ) {
@@ -6302,7 +6303,7 @@ static int __xuiUpdateOperation(xui_context pContext, float fDelta)
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fDelta != fDelta ) {
+	if ( !isfinite(fDelta) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( fDelta < 0.0f ) {

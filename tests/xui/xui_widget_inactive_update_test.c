@@ -1,4 +1,5 @@
 #include "xui.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -38,6 +39,10 @@ int main(void)
     CHECK(xuiWidgetAddChild(root, parent) == XUI_OK, "attach parent");
     CHECK(xuiWidgetAddChild(parent, child) == XUI_OK, "attach child");
     CHECK(xuiWidgetIsAttachedToContext(child), "attached");
+    CHECK(xuiUpdate(context, NAN) == XUI_ERROR_INVALID_ARGUMENT && updates == 0,
+        "reject nan delta");
+    CHECK(xuiUpdate(context, INFINITY) == XUI_ERROR_INVALID_ARGUMENT && updates == 0,
+        "reject infinite delta");
     CHECK(xuiUpdate(context, .016f) == XUI_OK && updates == 1 && !inactive_updates,
         "visible update");
     CHECK(xuiWidgetSetVisible(parent, 0) == XUI_OK &&
