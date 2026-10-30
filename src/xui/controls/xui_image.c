@@ -358,7 +358,6 @@ static int __xuiImageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	xui_image_data_t* pData;
 	xui_image_rect_t tSrc;
 
-	(void)tConstraint;
 	if ( (pWidget == NULL) || (pSize == NULL) || (pUser == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -366,6 +365,10 @@ static int __xuiImageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	tSrc = __xuiImageSourceRect(pWidget, pData);
 	pSize->fX = tSrc.fW;
 	pSize->fY = tSrc.fH;
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
