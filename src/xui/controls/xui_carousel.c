@@ -1012,11 +1012,14 @@ static int __xuiCarouselEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 static int __xuiCarouselContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	(void)pWidget;
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSize->fX = 460.0f;
 	pSize->fY = 290.0f;
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 

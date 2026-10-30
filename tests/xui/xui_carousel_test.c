@@ -90,6 +90,7 @@ int main(void)
 	xui_style_property_t tStyle;
 	xui_rect_t tWorld;
 	xui_rect_i_t tFullRect;
+	xui_vec2_t tMeasured;
 	int bAuto;
 	float fInterval;
 	int iChangeBefore;
@@ -164,6 +165,13 @@ int main(void)
 	tDesc.bShowIndicators = 1;
 	iRet = xuiCarouselCreate(pContext, &pCarousel, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCarousel != NULL, "carousel create");
+	iRet = xuiWidgetMeasureContent(pCarousel,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 460.0f && tMeasured.fY == 290.0f,
+		"carousel intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pCarousel, (xui_vec2_t){180.0f, 120.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 180.0f && tMeasured.fY == 120.0f,
+		"carousel content measure respects tight constraints");
 	(void)xuiWidgetSetRect(pCarousel, (xui_rect_t){20.0f, 20.0f, 460.0f, 260.0f});
 	iRet = xuiCarouselSetChange(pCarousel, __xuiCarouselTestChanged, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "change callback");
