@@ -346,6 +346,8 @@ int main(void)
 	xui_rect_t tContent;
 	xui_rect_t tWorld;
 	xui_thickness_t tWidgetPadding;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	uint32_t iStyledForeground;
 	uint32_t iStyledPaletteRed;
 	char sBuffer[2048];
@@ -438,6 +440,18 @@ int main(void)
 		"terminal rejects non-finite metrics");
 	iRet = xuiTerminalCreate(pContext, &pTerminal, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTerminal != NULL, "terminal create");
+	iRet = xuiWidgetMeasure(pTerminal,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 60.0f && tNatural.fY > 40.0f,
+		"terminal intrinsic grid exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pTerminal, (xui_vec2_t){60.0f, 40.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 60.0f && tMeasured.fY == 40.0f &&
+		xuiTerminalGetColumns(pTerminal) == 10 && xuiTerminalGetRows(pTerminal) == 4,
+		"terminal finite measure constraint preserves grid");
+	iRet = xuiWidgetMeasure(pTerminal,
+		(xui_vec2_t){60.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 60.0f &&
+		tMeasured.fY == tNatural.fY, "terminal single-axis measure constraint");
 	pBadTerminal = pTerminal;
 	iRet = xuiTerminalCreate(NULL, &pBadTerminal, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pBadTerminal == NULL,

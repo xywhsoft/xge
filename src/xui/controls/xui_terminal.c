@@ -982,9 +982,9 @@ static void __xuiTerminalHistoryViewClear(xui_terminal_data_t* pData)
 {
 	int i;
 	if ( pData == NULL ) return;
-	for ( i = 0; i < pData->iScrollbackCount; ++i ) {
-		xrtFree(pData->pHistoryView != NULL ? pData->pHistoryView[i].sTextCache : NULL);
-		if ( pData->pHistoryView != NULL ) {
+	if ( pData->pHistoryView != NULL ) {
+		for ( i = 0; i < pData->iScrollbackCount; ++i ) {
+			xrtFree(pData->pHistoryView[i].sTextCache);
 			pData->pHistoryView[i].sTextCache = NULL;
 			pData->pHistoryView[i].iTextCapacity = 0;
 		}
@@ -1386,7 +1386,8 @@ static int __xuiTerminalHistoryViewReserve(xui_terminal_data_t* pData, int iNeed
 	xui_terminal_history_view_row_t* pNew;
 	int iCapacity;
 	if ( pData == NULL || iNeeded < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iNeeded <= pData->iHistoryViewCapacity ) return XUI_OK;
+	if ( pData->pHistoryView != NULL && iNeeded <= pData->iHistoryViewCapacity ) return XUI_OK;
+	if ( pData->pHistoryView == NULL ) pData->iHistoryViewCapacity = 0;
 	iCapacity = pData->iHistoryViewCapacity > 0 ? pData->iHistoryViewCapacity : XUI_TERMINAL_HISTORY_INITIAL_VIEW;
 	while ( iCapacity < iNeeded ) {
 		if ( iCapacity > INT_MAX / 2 ) {
@@ -5637,7 +5638,6 @@ static int __xuiTerminalContentMeasure(xui_widget pWidget, xui_vec2_t tConstrain
 {
 	xui_terminal_data_t* pData;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = (xui_terminal_data_t*)xuiWidgetGetTypeData(pWidget);
@@ -5645,6 +5645,16 @@ static int __xuiTerminalContentMeasure(xui_widget pWidget, xui_vec2_t tConstrain
 	__xuiTerminalResolveStyle(pWidget, pData);
 	pSize->fX = pData->fPadding * 2.0f + (float)pData->iColumns * pData->fCellWidth;
 	pSize->fY = pData->fPadding * 2.0f + (float)pData->iRows * pData->fCellHeight;
+	if ( (tConstraint.fX >= 0.0f) &&
+		(tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fX > tConstraint.fX) ) {
+		pSize->fX = tConstraint.fX;
+	}
+	if ( (tConstraint.fY >= 0.0f) &&
+		(tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fY > tConstraint.fY) ) {
+		pSize->fY = tConstraint.fY;
+	}
 	return XUI_OK;
 }
 
