@@ -194,6 +194,12 @@ int main(void)
 	               strcmp(tAccessible.sDescription, "Controls the optional feature") == 0,
 	               "toggle accessibility metadata");
 
+	iRet = xuiWidgetMeasureContent(pToggle, (xui_vec2_t){300.0f, 100.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 158.0f && tMeasured.fY == 24.0f,
+		"toggle intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pToggle, (xui_vec2_t){30.0f, 10.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 30.0f && tMeasured.fY == 10.0f,
+		"toggle content measure respects finite constraints");
 	xuiWidgetMeasure(pToggle, (xui_vec2_t){300.0f, 100.0f}, &tMeasured);
 	XUI_TEST_CHECK(tMeasured.fX > 40.0f && tMeasured.fY >= 24.0f, "measure includes text");
 	XUI_TEST_CHECK((tState.iLastTextMeasureFlags & XUI_TEXT_SHAPE_RTL) == 0,
