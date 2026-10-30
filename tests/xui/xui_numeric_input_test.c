@@ -35,6 +35,20 @@ typedef struct xui_numeric_input_edit_t {
 	int bLastValid;
 } xui_numeric_input_edit_t;
 
+static xui_style_property_t __xuiNumericInputStyleColor(const char* sName,
+	uint32_t iColor)
+{
+	xui_style_property_t tProperty;
+
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	tProperty.sName = sName;
+	tProperty.tValue.iSize = sizeof(tProperty.tValue);
+	tProperty.tValue.iType = XUI_STYLE_VALUE_COLOR;
+	tProperty.tValue.iColor = iColor;
+	return tProperty;
+}
+
 static int __xuiNumericInputNear(float fA, float fB)
 {
 	float fD;
@@ -215,6 +229,7 @@ int main(void)
 	xui_numeric_input_desc_t tDefaultDesc;
 	xui_accessible_node_t tAccessible;
 	xui_accessible_value_t tAccessibleValue;
+	xui_style_property_t arrStyle[2];
 	const xui_menu_item_t* pItem;
 	const char* sCurrentLocale;
 	const char* sCommaLocale;
@@ -226,6 +241,12 @@ int main(void)
 	float fMin;
 	float fMax;
 	float fBefore;
+	uint32_t iChildText;
+	uint32_t iChildSelection;
+	uint32_t arrBaseColors[4];
+	uint32_t arrExtendedColors[9];
+	uint32_t arrSpinnerColors[6];
+	uint32_t iDirty;
 	int iStartChange;
 	int iSelStart;
 	int iSelEnd;
@@ -330,6 +351,44 @@ int main(void)
 	XUI_TEST_CHECK(xuiInputGetFont(pDefaultInput) == pFont, "default font propagated to input child");
 	pDefaultMenu = xuiNumericInputGetMenuWidget(pNumericDefaultFont);
 	XUI_TEST_CHECK(pDefaultMenu != NULL && xuiMenuGetFont(pDefaultMenu) == pFont, "default font propagated to input menu");
+	arrStyle[0] = __xuiNumericInputStyleColor("numeric_input.text.color",
+		XUI_COLOR_RGBA(17, 89, 141, 255));
+	arrStyle[1] = __xuiNumericInputStyleColor("numeric_input.selection.color",
+		XUI_COLOR_RGBA(31, 111, 211, 255));
+	iRet = xuiWidgetSetInlineStyle(pNumeric, arrStyle, 2);
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputRender(pContext, pTarget);
+	iChildText = 0u;
+	iChildSelection = 0u;
+	if ( iRet == XUI_OK ) iRet = xuiInputGetColors(pInput, NULL, &iChildText, NULL, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInputGetExtendedColors(pInput, NULL, NULL,
+		NULL, NULL, NULL, &iChildSelection, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && iChildText == XUI_COLOR_RGBA(17, 89, 141, 255) &&
+		iChildSelection == XUI_COLOR_RGBA(31, 111, 211, 255),
+		"numeric style synchronizes text and selection colors to input child");
+	iRet = xuiWidgetSetInlineStyle(pNumeric, NULL, 0);
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear numeric child style override");
+	iRet = xuiNumericInputGetColors(pNumeric, &arrBaseColors[0], &arrBaseColors[1],
+		&arrBaseColors[2], &arrBaseColors[3]);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputGetExtendedColors(pNumeric,
+		&arrExtendedColors[0], &arrExtendedColors[1], &arrExtendedColors[2],
+		&arrExtendedColors[3], &arrExtendedColors[4], &arrExtendedColors[5],
+		&arrExtendedColors[6], &arrExtendedColors[7], &arrExtendedColors[8]);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputGetSpinnerColors(pNumeric,
+		&arrSpinnerColors[0], &arrSpinnerColors[1], &arrSpinnerColors[2],
+		&arrSpinnerColors[3], &arrSpinnerColors[4], &arrSpinnerColors[5]);
+	if ( iRet == XUI_OK ) xuiWidgetClearDirty(pNumeric, XUI_WIDGET_DIRTY_ALL);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetColors(pNumeric,
+		arrBaseColors[0], arrBaseColors[1], arrBaseColors[2], arrBaseColors[3]);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetExtendedColors(pNumeric,
+		arrExtendedColors[0], arrExtendedColors[1], arrExtendedColors[2],
+		arrExtendedColors[3], arrExtendedColors[4], arrExtendedColors[5],
+		arrExtendedColors[6], arrExtendedColors[7], arrExtendedColors[8]);
+	if ( iRet == XUI_OK ) iRet = xuiNumericInputSetSpinnerColors(pNumeric,
+		arrSpinnerColors[0], arrSpinnerColors[1], arrSpinnerColors[2],
+		arrSpinnerColors[3], arrSpinnerColors[4], arrSpinnerColors[5]);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pNumeric) == 0u,
+		"unchanged numeric colors are clean no-ops");
 	XUI_TEST_CHECK(strcmp(xuiNumericInputGetText(pNumeric), "1.50") == 0, "initial text");
 	XUI_TEST_CHECK(__xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f), "initial value");
 	XUI_TEST_CHECK(xuiNumericInputGetStep(pNumeric) == 0.5f, "step");
@@ -421,6 +480,47 @@ int main(void)
 	               __xuiNumericInputNear(tWorld.fY, 0.0f) &&
 	               __xuiNumericInputNear(tWorld.fW + tSpinner.fW, 150.0f) &&
 	               __xuiNumericInputNear(tWorld.fH, 30.0f), "input child declarative slot");
+	iRet = __xuiNumericInputRender(pContext, pTarget);
+	if ( iRet == XUI_OK ) xuiWidgetClearDirty(pNumeric, XUI_WIDGET_DIRTY_ALL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pInput, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pNumeric) == 0u,
+		"descendant enabled event does not invalidate numeric model");
+	iRet = xuiWidgetSetEnabled(pInput, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore numeric input child enabled state");
+	xuiWidgetClearDirty(pNumeric, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiNumericInputSetValue(pNumeric, 1.75f);
+	iDirty = xuiWidgetGetDirtyFlags(pNumeric);
+	XUI_TEST_CHECK(iRet == XUI_OK && (iDirty & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(iDirty & (XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) != 0u,
+		"value update invalidates visuals without parent layout");
+	iRet = xuiNumericInputSetValue(pNumeric, 1.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore numeric after dirty scope check");
+	iRet = xuiInputPointerMove(pContext, 300.0f, 200.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputRender(pContext, pTarget);
+	if ( iRet == XUI_OK ) xuiWidgetClearDirty(pNumeric, XUI_WIDGET_DIRTY_ALL);
+	tWorld = xuiWidgetGetWorldRect(pInput);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + 4.0f, tWorld.fY + tWorld.fH * 0.5f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	iDirty = xuiWidgetGetDirtyFlags(pNumeric);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiNumericInputGetState(pNumeric) & XUI_WIDGET_STATE_HOVER) != 0u &&
+		(iDirty & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(iDirty & (XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) != 0u,
+		"input text area hover invalidates numeric visuals");
+	iRet = xuiInputPointerMove(pContext, 300.0f, 200.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiNumericInputGetState(pNumeric) & XUI_WIDGET_STATE_HOVER) == 0u,
+		"leaving numeric input clears parent hover");
+	if ( iRet == XUI_OK ) iRet = __xuiNumericInputRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render after numeric hover regression");
 
 	iRet = xuiNumericInputStep(pNumeric, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.0f), "step up");

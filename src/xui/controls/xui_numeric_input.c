@@ -4,6 +4,7 @@
 
 #include <ctype.h>
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -175,12 +176,25 @@ static int __xuiNumericInputPrecision(int iPrecision)
 	return iPrecision;
 }
 
+static void __xuiNumericInputChange(xui_numeric_input_data_t* pData)
+{
+	if ( pData != NULL && pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
+}
+
 static int __xuiNumericInputRectContains(xui_rect_t tRect, float fX, float fY)
 {
 	return (fX >= tRect.fX) &&
 	       (fY >= tRect.fY) &&
 	       (fX < tRect.fX + tRect.fW) &&
 	       (fY < tRect.fY + tRect.fH);
+}
+
+static int __xuiNumericInputContainsWidget(xui_widget pNumeric, xui_widget pWidget)
+{
+	for ( ; pWidget != NULL; pWidget = xuiWidgetGetParent(pWidget) ) {
+		if ( pWidget == pNumeric ) return 1;
+	}
+	return 0;
 }
 
 static xui_numeric_input_data_t* __xuiNumericInputGetData(xui_widget pWidget)
@@ -270,6 +284,11 @@ static void __xuiNumericInputResolve(xui_widget pWidget, const xui_numeric_input
 {
 	*pResolved = *pData;
 	pResolved->pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.text.color", &pResolved->iTextColor);
+	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.text.disabled_color", &pResolved->iDisabledTextColor);
+	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.placeholder.color", &pResolved->iPlaceholderColor);
+	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.selection.color", &pResolved->iSelectionColor);
+	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.cursor.color", &pResolved->iCursorColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.background.hover_color", &pResolved->iHoverBackgroundColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.background.disabled_color", &pResolved->iDisabledBackgroundColor);
@@ -499,11 +518,11 @@ static int __xuiNumericInputSetValueInternal(xui_widget pWidget, xui_numeric_inp
 	}
 	if ( !__xuiNumericInputAlive(pContext, pWidget, pData) ) return XUI_OK;
 	if ( bChanged ) {
-		pData->iChangeCount++;
+		__xuiNumericInputChange(pData);
 	}
 	onChange = pData->onChange;
 	pChangeUser = pData->pChangeUser;
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	if ( bChanged && bNotify && onChange != NULL ) onChange(pWidget, fValue, pChangeUser);
@@ -792,6 +811,7 @@ static int __xuiNumericInputPointerDown(xui_widget pWidget, xui_numeric_input_da
 static int __xuiNumericInputPointerMove(xui_widget pWidget, xui_numeric_input_data_t* pData, const xui_event_t* pEvent)
 {
 	int iButton;
+	int bOldInside;
 
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) {
 		return XUI_OK;
@@ -799,8 +819,9 @@ static int __xuiNumericInputPointerMove(xui_widget pWidget, xui_numeric_input_da
 	if ( pData->bPointerActive && !__xuiNumericInputPointerMatches(pData, pEvent) ) {
 		return XUI_OK;
 	}
+	bOldInside = pData->bPointerInside;
 	iButton = __xuiNumericInputEventButton(pWidget, pData, pEvent);
-	if ( pData->iHoverButton != iButton ) {
+	if ( pData->iHoverButton != iButton || bOldInside != pData->bPointerInside ) {
 		pData->iHoverButton = iButton;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
@@ -1001,8 +1022,10 @@ static int __xuiNumericInputEvent(xui_widget pWidget, const xui_event_t* pEvent,
 	case XUI_EVENT_POINTER_MOVE:
 		return __xuiNumericInputPointerMove(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_LEAVE:
-		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
+		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE &&
+		     !__xuiNumericInputContainsWidget(pWidget, pEvent->pRelated) ) {
 			if ( pData->bPointerActive && !__xuiNumericInputPointerMatches(pData, pEvent) ) return XUI_OK;
+			if ( !pData->bPointerInside && pData->iHoverButton == XUI_NUMERIC_INPUT_BUTTON_NONE ) return XUI_OK;
 			pData->bPointerInside = 0;
 			pData->iHoverButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1023,18 +1046,22 @@ static int __xuiNumericInputEvent(xui_widget pWidget, const xui_event_t* pEvent,
 		if ( !__xuiNumericInputPointerMatches(pData, pEvent) ) return XUI_OK;
 		return __xuiNumericInputCancelPointer(pWidget, pData, 1);
 	case XUI_EVENT_FOCUS:
-		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
+		if ( (pEvent->pTarget == pWidget || pEvent->pTarget == pData->pInput) &&
+		     pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 		break;
 	case XUI_EVENT_BLUR:
-		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
+		if ( (pEvent->pTarget == pWidget || pEvent->pTarget == pData->pInput) &&
+		     pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 		break;
 	case XUI_EVENT_KEY_DOWN:
+		if ( pEvent->pTarget != pWidget && pEvent->pTarget != pData->pInput ) return XUI_OK;
 		return __xuiNumericInputKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_ENABLED_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !xuiWidgetGetEnabled(pWidget) ) {
@@ -1043,6 +1070,7 @@ static int __xuiNumericInputEvent(xui_widget pWidget, const xui_event_t* pEvent,
 		}
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		if ( !xuiWidgetGetVisible(pWidget) ) {
 			iRet = __xuiNumericInputCancelPointer(pWidget, pData, 0);
 			if ( iRet != XUI_OK ) return iRet;
@@ -1256,7 +1284,7 @@ static int __xuiNumericInputPreparePaint(xui_widget pWidget)
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pInput != NULL && pData->iChildStyleHash != iHash ) {
-		iRet = xuiWidgetInvalidate(pData->pInput, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		pData->iChildStyleHash = iHash;
 	}
@@ -1753,13 +1781,17 @@ XUI_API int xuiNumericInputSetFont(xui_widget pWidget, xui_font pFont)
 	pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pFont ) return XUI_OK;
 	pOldFont = pData->pFont;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->pFont = pFont;
 	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		pData->pFont = pOldFont;
+		(void)__xuiNumericInputSyncInputStyle(pWidget, pData);
 		return iRet;
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API xui_font xuiNumericInputGetFont(xui_widget pWidget)
@@ -1777,18 +1809,21 @@ XUI_API int xuiNumericInputSetReadonly(xui_widget pWidget, int bReadonly)
 	bReadonly = bReadonly ? 1 : 0;
 	if ( pData->bReadonly == bReadonly ) return XUI_OK;
 	bOldReadonly = pData->bReadonly;
-	pData->bReadonly = bReadonly;
-	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
-	if ( iRet != XUI_OK ) {
-		pData->bReadonly = bOldReadonly;
-		return iRet;
-	}
 	if ( bReadonly ) {
 		iRet = __xuiNumericInputCancelPointer(pWidget, pData, 0);
 		if ( iRet != XUI_OK ) return iRet;
 	}
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->bReadonly = bReadonly;
+	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		pData->bReadonly = bOldReadonly;
+		(void)__xuiNumericInputSyncInputStyle(pWidget, pData);
+		return iRet;
+	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiNumericInputIsReadonly(xui_widget pWidget)
@@ -1808,9 +1843,12 @@ XUI_API int xuiNumericInputSetSpinnerVisible(xui_widget pWidget, int bVisible)
 		iRet = __xuiNumericInputCancelPointer(pWidget, pData, 0);
 		if ( iRet != XUI_OK ) return iRet;
 	}
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->bSpinnerVisible = bVisible;
 	pData->iHoverButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiNumericInputGetSpinnerVisible(xui_widget pWidget)
@@ -1822,11 +1860,15 @@ XUI_API int xuiNumericInputGetSpinnerVisible(xui_widget pWidget)
 XUI_API int xuiNumericInputSetSpinnerWidth(xui_widget pWidget, float fWidth)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	int iRet;
 	if ( (pData == NULL) || !__xuiNumericInputMetricValid(fWidth) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fWidth = (fWidth > 0.0f) ? fWidth : 22.0f;
 	if ( pData->fSpinnerWidth == fWidth ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fSpinnerWidth = fWidth;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API float xuiNumericInputGetSpinnerWidth(xui_widget pWidget)
@@ -1838,16 +1880,28 @@ XUI_API float xuiNumericInputGetSpinnerWidth(xui_widget pWidget)
 XUI_API int xuiNumericInputSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iText, uint32_t iBorder, uint32_t iFocus)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	xui_numeric_input_data_t tOld;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iBackground && pData->iTextColor == iText &&
+	     pData->iBorderColor == iBorder && pData->iFocusBorderColor == iFocus ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	tOld = *pData;
 	pData->iBackgroundColor = iBackground;
 	pData->iTextColor = iText;
 	pData->iBorderColor = iBorder;
 	pData->iFocusBorderColor = iFocus;
 	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->iBackgroundColor = tOld.iBackgroundColor;
+		pData->iTextColor = tOld.iTextColor;
+		pData->iBorderColor = tOld.iBorderColor;
+		pData->iFocusBorderColor = tOld.iFocusBorderColor;
+		(void)__xuiNumericInputSyncInputStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiNumericInputGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pText, uint32_t* pBorder, uint32_t* pFocus)
@@ -1864,9 +1918,21 @@ XUI_API int xuiNumericInputGetColors(xui_widget pWidget, uint32_t* pBackground, 
 XUI_API int xuiNumericInputSetExtendedColors(xui_widget pWidget, uint32_t iPlaceholder, uint32_t iDisabledText, uint32_t iHoverBackground, uint32_t iDisabledBackground, uint32_t iHoverBorder, uint32_t iErrorBackground, uint32_t iErrorBorder, uint32_t iSelection, uint32_t iCursor)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	xui_numeric_input_data_t tOld;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPlaceholderColor == iPlaceholder &&
+	     pData->iDisabledTextColor == iDisabledText &&
+	     pData->iHoverBackgroundColor == iHoverBackground &&
+	     pData->iDisabledBackgroundColor == iDisabledBackground &&
+	     pData->iHoverBorderColor == iHoverBorder &&
+	     pData->iErrorBackgroundColor == iErrorBackground &&
+	     pData->iErrorBorderColor == iErrorBorder &&
+	     pData->iSelectionColor == iSelection && pData->iCursorColor == iCursor ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	tOld = *pData;
 	pData->iPlaceholderColor = iPlaceholder;
 	pData->iDisabledTextColor = iDisabledText;
 	pData->iHoverBackgroundColor = iHoverBackground;
@@ -1877,8 +1943,19 @@ XUI_API int xuiNumericInputSetExtendedColors(xui_widget pWidget, uint32_t iPlace
 	pData->iSelectionColor = iSelection;
 	pData->iCursorColor = iCursor;
 	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) {
+		pData->iPlaceholderColor = tOld.iPlaceholderColor;
+		pData->iDisabledTextColor = tOld.iDisabledTextColor;
+		pData->iHoverBackgroundColor = tOld.iHoverBackgroundColor;
+		pData->iDisabledBackgroundColor = tOld.iDisabledBackgroundColor;
+		pData->iHoverBorderColor = tOld.iHoverBorderColor;
+		pData->iErrorBackgroundColor = tOld.iErrorBackgroundColor;
+		pData->iErrorBorderColor = tOld.iErrorBorderColor;
+		pData->iSelectionColor = tOld.iSelectionColor;
+		pData->iCursorColor = tOld.iCursorColor;
+		(void)__xuiNumericInputSyncInputStyle(pWidget, pData);
+	}
+	return iRet;
 }
 
 XUI_API int xuiNumericInputGetExtendedColors(xui_widget pWidget, uint32_t* pPlaceholder, uint32_t* pDisabledText, uint32_t* pHoverBackground, uint32_t* pDisabledBackground, uint32_t* pHoverBorder, uint32_t* pErrorBackground, uint32_t* pErrorBorder, uint32_t* pSelection, uint32_t* pCursor)
@@ -1900,11 +1977,14 @@ XUI_API int xuiNumericInputGetExtendedColors(xui_widget pWidget, uint32_t* pPlac
 XUI_API int xuiNumericInputSetBorderWidth(xui_widget pWidget, float fBorderWidth)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	int iRet;
 
 	if ( (pData == NULL) || !__xuiNumericInputMetricValid(fBorderWidth) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fBorderWidth == fBorderWidth ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fBorderWidth = fBorderWidth;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API float xuiNumericInputGetBorderWidth(xui_widget pWidget)
@@ -1916,14 +1996,21 @@ XUI_API float xuiNumericInputGetBorderWidth(xui_widget pWidget)
 XUI_API int xuiNumericInputSetSpinnerColors(xui_widget pWidget, uint32_t iColor, uint32_t iHover, uint32_t iActive, uint32_t iBorder, uint32_t iIcon, uint32_t iDisabledIcon)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iSpinnerColor == iColor && pData->iSpinnerHoverColor == iHover &&
+	     pData->iSpinnerActiveColor == iActive && pData->iSpinnerBorderColor == iBorder &&
+	     pData->iSpinnerIconColor == iIcon &&
+	     pData->iSpinnerDisabledIconColor == iDisabledIcon ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iSpinnerColor = iColor;
 	pData->iSpinnerHoverColor = iHover;
 	pData->iSpinnerActiveColor = iActive;
 	pData->iSpinnerBorderColor = iBorder;
 	pData->iSpinnerIconColor = iIcon;
 	pData->iSpinnerDisabledIconColor = iDisabledIcon;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiNumericInputGetSpinnerColors(xui_widget pWidget, uint32_t* pColor, uint32_t* pHover, uint32_t* pActive, uint32_t* pBorder, uint32_t* pIcon, uint32_t* pDisabledIcon)
