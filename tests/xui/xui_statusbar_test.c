@@ -172,6 +172,7 @@ int main(void)
 	xui_rect_t tCenter;
 	xui_rect_t tRight;
 	xui_rect_t tWorld;
+	xui_vec2_t tMeasured;
 	int iFailed;
 	int iRet;
 	int iBefore;
@@ -239,6 +240,13 @@ int main(void)
 	tDesc.pFont = pFont;
 	iRet = xuiStatusBarCreate(pContext, &pStatusBar, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pStatusBar != NULL, "statusbar create");
+	iRet = xuiWidgetMeasureContent(pStatusBar,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX > 100.0f && tMeasured.fY == 28.0f,
+		"statusbar reports intrinsic content size");
+	iRet = xuiWidgetMeasureContent(pStatusBar, (xui_vec2_t){100.0f, 12.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 100.0f && tMeasured.fY == 12.0f,
+		"statusbar content measure respects finite constraints");
 	iRet = xuiWidgetAddChild(pRoot, pStatusBar);
 	XUI_TEST_CHECK(iRet == XUI_OK, "statusbar add");
 	(void)xuiWidgetSetRect(pStatusBar, (xui_rect_t){20.0f, 260.0f, 460.0f, 28.0f});

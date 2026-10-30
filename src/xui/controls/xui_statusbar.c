@@ -1012,7 +1012,6 @@ static int __xuiStatusBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	int iSectionCount;
 	int iRet;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiStatusBarGetData(pWidget);
@@ -1035,6 +1034,12 @@ static int __xuiStatusBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	if ( fWidth > (double)XUI_LAYOUT_UNBOUNDED ) fWidth = (double)XUI_LAYOUT_UNBOUNDED;
 	pSize->fX = xuiInternalSnapSize((float)fWidth);
 	pSize->fY = xuiInternalSnapSize(tResolved.tMetrics.fHeight);
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
