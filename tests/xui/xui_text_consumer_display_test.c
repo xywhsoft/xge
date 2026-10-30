@@ -8,7 +8,7 @@
 #define ZWSP "\xe2\x80\x8b"
 #define WJ "\xe2\x81\xa0"
 #define FEFF "\xef\xbb\xbf"
-static int checks, failures, ownedAllocs, liveLayouts, displayFail = -1;
+static int checks, failures, ownedAllocs, liveLayouts;
 static int scaleRuns, scaleAllocations;
 static const char *phase = "setup";
 #define CHECK(e) do { ++checks; if (!(e)) { if (failures < 24) { printf("FAIL %s:%d: %s\n", phase, __LINE__, #e); } ++failures; } } while (0)
@@ -51,17 +51,11 @@ static void layout_destroy(xui_text_layout layout)
     }
     xuiTextLayoutDestroy(layout);
 }
-static int display_line(xui_text_layout layout, int index, const char **text, int *size)
-{
-    if (displayFail >= 0 && displayFail-- == 0) return XUI_ERROR_OUT_OF_MEMORY;
-    return xuiInternalTextLayoutGetDisplayLine(layout, index, text, size);
-}
 /* Count these consumers' allocations, not the separately compiled shared layout. */
 #define xrtMalloc owned_malloc
 #define xrtRealloc owned_realloc
 #define xuiTextLayoutCreate layout_create
 #define xuiTextLayoutDestroy layout_destroy
-#define xuiInternalTextLayoutGetDisplayLine display_line
 #include "../src/xui/controls/xui_label.c"
 #include "../src/xui/controls/xui_hyperlink.c"
 #include "../src/xui/controls/xui_msgbox.c"
@@ -71,7 +65,6 @@ static int display_line(xui_text_layout layout, int index, const char **text, in
 #undef xrtRealloc
 #undef xuiTextLayoutCreate
 #undef xuiTextLayoutDestroy
-#undef xuiInternalTextLayoutGetDisplayLine
 
 typedef struct test_case_t {
     const char *name, *raw;
@@ -93,13 +86,14 @@ static const test_case_t cases[] = {
     {"CHAR SHY fits", "ab" SHY "cd", 100, XUI_TEXT_WRAP_CHAR, 1, {"abcd"}}
 };
 static struct { char text[128]; xui_rect_t rect; uint32_t color, flags; } draws[128];
-static int drawCount, injectedDrawError;
+static int drawCount, injectedDrawError, drawFail = -1;
 static int capture(xui_proxy p, xui_draw_context draw, const xui_text_item_t* pTextItem, xui_rect_t rect, uint32_t color, uint32_t flags)
 {
     xui_font font = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
     const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
 
     (void)p; (void)draw; (void)font;
+    if (drawFail >= 0 && drawFail-- == 0) return XUI_ERROR_OUT_OF_MEMORY;
     CHECK(drawCount < 128 && strlen(text) < 128);
     if (drawCount < 128) {
         snprintf(draws[drawCount].text, sizeof(draws[drawCount].text), "%s", text);
@@ -113,6 +107,8 @@ static void verify(const test_case_t *tc, uint32_t flags, uint32_t color, int mi
     int i, y = 7;
     if (middle) y += (60 - (tc->count * 20 + (tc->count - 1) * 2)) / 2;
     if (bottom) y += 60 - (tc->count * 20 + (tc->count - 1) * 2);
+    if (drawCount != tc->count && failures < 24)
+        printf("DETAIL %s: drawCount=%d expected=%d\n", phase, drawCount, tc->count);
     CHECK(drawCount == tc->count);
     for (i = 0; i < tc->count && i < drawCount; ++i) {
         CHECK(strcmp(draws[i].text, tc->expected[i]) == 0);
@@ -166,9 +162,9 @@ static void widget_cases(xui_context c, xui_draw_context draw, xui_font font, in
     CHECK(xuiWidgetSetEnabled(w, 1) == XUI_OK);
     CHECK((link ? xuiHyperlinkSetText(w, "ab" SHY "cd") : xuiLabelSetText(w, "ab" SHY "cd")) == XUI_OK);
     CHECK(xuiWidgetSetRect(w, (xui_rect_t){0, 0, 108, 71}) == XUI_OK);
-    phase = "display failure"; drawCount = ownedAllocs = 0; displayFail = 0;
+    phase = "layout draw failure"; drawCount = ownedAllocs = 0; drawFail = 0;
     CHECK(render_widget(w, draw, link, 0) == XUI_ERROR_OUT_OF_MEMORY);
-    CHECK(drawCount == 0 && liveLayouts == 0); displayFail = -1;
+    CHECK(drawCount == 0 && liveLayouts == 0); drawFail = -1;
     phase = "draw failure"; injectedDrawError = 1;
     CHECK(render_widget(w, draw, link, 0) == XUI_ERROR_BACKEND_FAILED);
     CHECK(liveLayouts == 0); injectedDrawError = 0;
@@ -209,10 +205,10 @@ static void widget_cases(xui_context c, xui_draw_context draw, xui_font font, in
             CHECK(draws[1].rect.fY == 29 && draws[1].rect.fH == 20);
         }
     }
-    phase = "second display failure"; displayFail = 1; drawCount = ownedAllocs = 0;
+    phase = "second layout draw failure"; drawFail = 1; drawCount = ownedAllocs = 0;
     CHECK(render_widget(w, draw, link, 0) == XUI_ERROR_OUT_OF_MEMORY);
     CHECK(drawCount == 1 && strcmp(draws[0].text, "ab-") == 0 && liveLayouts == 0);
-    displayFail = -1; drawCount = ownedAllocs = 0;
+    drawFail = -1; drawCount = ownedAllocs = 0;
     CHECK(render_widget(w, draw, link, 0) == XUI_OK);
     CHECK(drawCount == 2 && strcmp(draws[1].text, "cd") == 0 && liveLayouts == 0 && ownedAllocs == 0);
     xuiWidgetDestroy(w);
@@ -231,6 +227,7 @@ static void message_cases(xui_context c, xui_draw_context draw, xui_font font, i
     tip.tColors.iTextColor = color;
     memset(&toast, 0, sizeof(toast)); toast.iMagic = XUI_TOAST_MAGIC; toast.pContext = c; toast.pFont = font;
     toast.tColors.iTextColor = toast.tColors.iMutedTextColor = color; toast.iActiveCount = 1;
+    toast.arrActive[0].tRect = (xui_rect_t){0, 0, 160, 80};
     view.pToast = &toast; view.iSlot = 0;
     for (i = 0; i < (int)(sizeof(cases) / sizeof(cases[0])); ++i) {
         const test_case_t *tc = &cases[i];
@@ -254,7 +251,7 @@ static void message_cases(xui_context c, xui_draw_context draw, xui_font font, i
             toast.arrActive[0].tTitleRect = (xui_rect_t){5, 7, tc->width, 60};
             drawCount = ownedAllocs = 0;
             CHECK(__xuiToastRender(NULL, draw, 0, &view) == XUI_OK);
-            verify(tc, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP, color, 1, 0);
+            verify(tc, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP, color, 1, 0);
             CHECK(strcmp(toast.arrActive[0].sTitle, tc->raw) == 0);
         }
     }
@@ -262,13 +259,13 @@ static void message_cases(xui_context c, xui_draw_context draw, xui_font font, i
     box.tMessageRect = tip.tTextRect = toast.arrActive[0].tMessageRect = (xui_rect_t){5, 7, consumer == 1 ? 20 : 30, 60};
     toast.arrActive[0].sTitle = NULL;
     for (i = 0; i < 2; ++i) {
-        phase = "message display failure"; displayFail = i; drawCount = ownedAllocs = 0;
+        phase = "message layout draw failure"; drawFail = i; drawCount = ownedAllocs = 0;
         ret = consumer == 0 ? __xuiMsgBoxDrawTextLayout(&box, draw) : consumer == 1 ?
             __xuiMsgTipDrawTextLayout(&tip, draw) : __xuiToastRender(NULL, draw, 0, &view);
         CHECK(ret == XUI_ERROR_OUT_OF_MEMORY);
         CHECK(drawCount == i && liveLayouts == 0 && ownedAllocs == 0);
         if (i) CHECK(strcmp(draws[0].text, consumer == 1 ? "ab" : "ab-") == 0);
-        displayFail = -1;
+        drawFail = -1;
     }
     phase = "message recovery"; drawCount = ownedAllocs = 0;
     ret = consumer == 0 ? __xuiMsgBoxDrawTextLayout(&box, draw) : consumer == 1 ?
@@ -276,14 +273,14 @@ static void message_cases(xui_context c, xui_draw_context draw, xui_font font, i
     CHECK(ret == XUI_OK);
     verify(&cases[consumer == 1 ? 7 : 0], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP, color, 0, 0);
     if (consumer == 2) {
-        phase = "title display failure"; displayFail = 1; drawCount = ownedAllocs = 0;
+        phase = "title layout draw failure"; drawFail = 1; drawCount = ownedAllocs = 0;
         toast.arrActive[0].sTitle = "ab" SHY "cd"; toast.arrActive[0].sMessage = NULL;
         toast.arrActive[0].tTitleRect = (xui_rect_t){5, 7, 30, 60};
         CHECK(__xuiToastRender(NULL, draw, 0, &view) == XUI_ERROR_OUT_OF_MEMORY);
         CHECK(drawCount == 1 && strcmp(draws[0].text, "ab-") == 0 && liveLayouts == 0 && ownedAllocs == 0);
-        displayFail = -1; drawCount = ownedAllocs = 0;
+        drawFail = -1; drawCount = ownedAllocs = 0;
         CHECK(__xuiToastRender(NULL, draw, 0, &view) == XUI_OK);
-        verify(&cases[0], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP, color, 1, 0);
+        verify(&cases[0], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP, color, 1, 0);
     }
 }
 static void scale_case(xui_context c, xui_draw_context draw, xui_font font, int consumer)
@@ -299,7 +296,7 @@ static void scale_case(xui_context c, xui_draw_context draw, xui_font font, int 
     xui_toast_item_view_t view;
     xui_rect_t rect = {5, 7, consumer == 3 ? 20 : 30, 1500};
     uint32_t color = XUI_COLOR_RGBA(23, 47, 91, 255);
-    uint32_t flags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_CLIP | (consumer == 5 ? XUI_TEXT_ALIGN_MIDDLE : XUI_TEXT_ALIGN_TOP);
+    uint32_t flags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
     int i, ret;
     for (i = 0; i < 32; ++i) {
         memcpy(raw + n, "ab" SHY "cd", 6); n += 6;
@@ -326,6 +323,7 @@ static void scale_case(xui_context c, xui_draw_context draw, xui_font font, int 
     tip.pFont = font; tip.sText = raw; tip.tTextRect = rect; tip.tColors.iTextColor = color;
     memset(&toast, 0, sizeof(toast)); toast.iMagic = XUI_TOAST_MAGIC; toast.pContext = c;
     toast.pFont = font; toast.iActiveCount = 1; toast.tColors.iTextColor = toast.tColors.iMutedTextColor = color;
+    toast.arrActive[0].tRect = (xui_rect_t){0, 0, 100, 1500};
     if (consumer == 5) { toast.arrActive[0].sTitle = raw; toast.arrActive[0].tTitleRect = rect; }
     else { toast.arrActive[0].sMessage = raw; toast.arrActive[0].tMessageRect = rect; }
     view.pToast = &toast; view.iSlot = 0;

@@ -26,12 +26,37 @@ if not exist "%OUT_DIR%\xge.lib" (
 	if errorlevel 1 ( popd & exit /b 1 )
 )
 
+REM WebView2 is an optional backend. Build its shared test profile before the
+REM alphabetically earlier document tests, or report those tests as skipped.
+set "WEBVIEW_SDK=%WEBVIEW2_SDK_DIR%"
+if not defined WEBVIEW_SDK set "WEBVIEW_SDK=artifacts\xui-webview-probe\sdk"
+set "WEBVIEW_AVAILABLE=0"
+if exist "%WEBVIEW_SDK%\build\native\include\WebView2.h" set "WEBVIEW_AVAILABLE=1"
+if "!WEBVIEW_AVAILABLE!"=="1" (
+	echo [SETUP] Building WebView2 test profile...
+	call tests\xui\build_webview_widget_test.bat >nul 2>&1
+	if errorlevel 1 (
+		echo [FAIL] WebView2 test profile setup
+		popd
+		exit /b 1
+	)
+)
+
 REM Build and run each test
 for %%F in (tests\xui\build_*_test.bat) do (
 	set "TNAME=%%~nF"
 	set "TNAME=!TNAME:build_=!"
-	if "!QUICK!"=="1" if /I "!TNAME!"=="document_cst_test" (
-		echo   [SKIP] !TNAME! ^(extended^)
+	set "SKIP_REASON="
+	if "!QUICK!"=="1" if /I "!TNAME!"=="document_cst_test" set "SKIP_REASON=extended"
+	if "!WEBVIEW_AVAILABLE!"=="0" (
+		for %%W in (
+			document_html_interaction_test document_web_provider_test document_web_render_test
+			webview_basic_test webview_capture_test webview_exports_test webview_local_test
+			webview_script_test webview_scroll_test webview_widget_test
+		) do if /I "!TNAME!"=="%%W" set "SKIP_REASON=WebView2 SDK unavailable"
+	)
+	if defined SKIP_REASON (
+		echo   [SKIP] !TNAME! ^(!SKIP_REASON!^)
 		set /a SKIP_COUNT+=1
 	) else (
 		echo   [RUN] !TNAME!...
