@@ -452,10 +452,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag move input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollBarNear(xuiScrollBarGetValue(pBar), 50.0f), "drag value");
-	iRet = xuiInputPointerUp(pContext, fStartX, fStartY + 40.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	iRet = xuiInputPointerMove(pContext, 200.0f, fStartY + 40.0f,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiScrollBarGetHoverPart(pBar) == XUI_SCROLLBAR_PART_NONE &&
+		xuiScrollBarGetActivePart(pBar) == XUI_SCROLLBAR_PART_THUMB,
+		"drag outside clears hover but keeps thumb active");
+	iRet = xuiInputPointerMove(pContext, fStartX, fStartY + 40.0f,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiScrollBarGetHoverPart(pBar) == XUI_SCROLLBAR_PART_THUMB,
+		"drag back over thumb restores hover part");
+	iRet = xuiInputPointerUp(pContext, 200.0f, fStartY + 40.0f, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag up input");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiScrollBarGetActivePart(pBar) == XUI_SCROLLBAR_PART_NONE, "drag release");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		xuiScrollBarGetActivePart(pBar) == XUI_SCROLLBAR_PART_NONE &&
+		xuiScrollBarGetHoverPart(pBar) == XUI_SCROLLBAR_PART_NONE,
+		"drag release outside clears active and hover parts");
 
 	iRet = xuiScrollBarSetValue(pBar, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set pointer-up sample value");

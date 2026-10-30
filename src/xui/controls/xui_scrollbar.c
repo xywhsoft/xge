@@ -1046,7 +1046,13 @@ static int __xuiScrollBarPointerMove(xui_widget pWidget, xui_scrollbar_data_t* p
 		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
 		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
 			__xuiScrollBarCancelDrag(pWidget, pData);
+			return XUI_EVENT_DISPATCH_STOP;
 		}
+		__xuiScrollBarResolve(pWidget, pData, &tResolved);
+		iPart = __xuiScrollBarHitPart(pWidget, pData, &tResolved,
+			pEvent->fX, pEvent->fY);
+		iRet = __xuiScrollBarSetParts(pWidget, pData, iPart, pData->iActivePart);
+		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( (pData->iRepeatPart == XUI_SCROLLBAR_PART_TRACK) &&
@@ -1060,8 +1066,10 @@ static int __xuiScrollBarPointerMove(xui_widget pWidget, xui_scrollbar_data_t* p
 
 static int __xuiScrollBarPointerUp(xui_widget pWidget, xui_scrollbar_data_t* pData, const xui_event_t* pEvent)
 {
+	xui_scrollbar_data_t tResolved;
 	xui_context pContext;
 	int bWasActive;
+	int iHoverPart;
 	int iRet;
 
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
@@ -1080,6 +1088,19 @@ static int __xuiScrollBarPointerUp(xui_widget pWidget, xui_scrollbar_data_t* pDa
 		iRet = __xuiScrollBarDragValue(pWidget, pData, pEvent);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiScrollBarDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+	}
+	iHoverPart = XUI_SCROLLBAR_PART_NONE;
+	if ( xuiWidgetGetEffectiveEnabled(pWidget) &&
+	     xuiWidgetGetEffectiveVisible(pWidget) ) {
+		__xuiScrollBarResolve(pWidget, pData, &tResolved);
+		iHoverPart = __xuiScrollBarHitPart(pWidget, pData, &tResolved,
+			pEvent->fX, pEvent->fY);
+	}
+	iRet = __xuiScrollBarSetParts(pWidget, pData, iHoverPart,
+		pData->iActivePart);
+	if ( iRet != XUI_OK ) {
+		__xuiScrollBarCancelDrag(pWidget, pData);
+		return iRet;
 	}
 	__xuiScrollBarCancelDrag(pWidget, pData);
 	return bWasActive ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -1180,10 +1201,8 @@ static int __xuiScrollBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		return __xuiScrollBarPointerMove(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_LEAVE:
 		if ( (pEvent->pTarget != pWidget) && !pData->bPointerActive ) return XUI_OK;
-		if ( !pData->bDraggingThumb ) {
-			return __xuiScrollBarSetParts(pWidget, pData, XUI_SCROLLBAR_PART_NONE, pData->iActivePart);
-		}
-		break;
+		return __xuiScrollBarSetParts(pWidget, pData,
+			XUI_SCROLLBAR_PART_NONE, pData->iActivePart);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		return __xuiScrollBarPointerDown(pWidget, pData, pEvent);
