@@ -91,6 +91,7 @@ int main(void)
 	xui_widget pChild;
 	xui_widget pDestroyPage;
 	xui_surface pTarget;
+	xui_font pFont;
 	xui_page_desc_t tDesc;
 	xui_page_desc_t tInvalidDesc;
 	xui_page_item_info_t tInfo;
@@ -112,6 +113,8 @@ int main(void)
 	const char* sNextText;
 	const char* sUtf8Label;
 	const char* sUtf8Expected;
+	const char* sGraphemeLabel;
+	const char* sGraphemeExpected;
 	int i;
 	int iNextIndex;
 	int iAccessibleIndex;
@@ -128,6 +131,7 @@ int main(void)
 	pChild = NULL;
 	pDestroyPage = NULL;
 	pTarget = NULL;
+	pFont = NULL;
 	iFailed = 0;
 	iNextIndex = -1;
 	iAccessibleIndex = -1;
@@ -140,6 +144,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
+	iRet = tState.tProxy.fontLoadMemory(&tState.tProxy, &pFont,
+		"page", 4, 14.0f, XUI_FONT_FORMAT_TTF);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFont != NULL, "font create");
 	iRet = xuiInputViewport(pContext, 760.0f, 160.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport");
 
@@ -249,8 +256,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fItemHeight == 30.0f && fPageWidth == 40.0f && fTextWidth == 58.0f && fNavWidth == 48.0f && fEllipsisWidth == 30.0f, "invalid metrics preserve state");
 	iRet = xuiWidgetMeasureContent(pPage, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fY == 30.0f && tMeasured.fX > 300.0f, "measure");
+	xuiWidgetClearDirty(pPage, XUI_WIDGET_DIRTY_ALL);
 	iRet = xuiPageSetText(pPage, "First", "Last", "Prev", "Next");
-	XUI_TEST_CHECK(iRet == XUI_OK, "set text");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pPage) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pPage) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"text update invalidates paint without relayout");
 	sUtf8Label = "A" "\xE4\xB8\xAD" "\xE4\xB8\xAD" "\xE4\xB8\xAD" "\xE4\xB8\xAD" "\xE4\xB8\xAD" "\xE4\xB8\xAD";
 	sUtf8Expected = "A" "\xE4\xB8\xAD" "\xE4\xB8\xAD" "\xE4\xB8\xAD" "\xE4\xB8\xAD";
 	iRet = xuiPageSetText(pPage, sUtf8Label, "Last", "Prev", "Next");
@@ -258,8 +269,23 @@ int main(void)
 	iRet = xuiPageGetText(pPage, &sFirstText, &sLastText, &sPrevText, &sNextText);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(sFirstText, sUtf8Expected) == 0 && strlen(sFirstText) == 13u, "utf8 truncation keeps whole codepoints");
 	XUI_TEST_CHECK(strcmp(sLastText, "Last") == 0 && strcmp(sPrevText, "Prev") == 0 && strcmp(sNextText, "Next") == 0, "other page labels preserved");
+	sGraphemeLabel = "1234567890123e" "\xCC\x81";
+	sGraphemeExpected = "1234567890123";
+	iRet = xuiPageSetText(pPage, sGraphemeLabel, "Last", "Prev", "Next");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set combining label");
+	iRet = xuiPageGetText(pPage, &sFirstText, NULL, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(sFirstText, sGraphemeExpected) == 0,
+		"text truncation preserves grapheme boundaries");
 	iRet = xuiPageSetText(pPage, "First", "Last", "Prev", "Next");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore text");
+	xuiWidgetClearDirty(pPage, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiPageSetFont(pPage, pFont);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPageGetFont(pPage) == pFont &&
+		(xuiWidgetGetDirtyFlags(pPage) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pPage) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"font update invalidates paint without relayout");
+	iRet = xuiPageSetFont(pPage, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore font");
 	iRet = xuiPageSetColors(pPage, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(20, 40, 60, 255), XUI_COLOR_RGBA(30, 44, 64, 255), XUI_COLOR_RGBA(230, 240, 250, 255), XUI_COLOR_RGBA(210, 226, 244, 255), XUI_COLOR_RGBA(24, 150, 136, 255), XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(150, 160, 170, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 	iRet = xuiPageSetFocusColor(pPage, XUI_COLOR_RGBA(24, 150, 136, 180));
@@ -551,6 +577,9 @@ cleanup:
 	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
+	}
+	if ( pFont != NULL ) {
+		tState.tProxy.fontDestroy(&tState.tProxy, pFont);
 	}
 	if ( iFailed ) {
 		return 1;

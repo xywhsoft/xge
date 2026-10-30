@@ -175,9 +175,8 @@ static void __xuiPageCopyText(char* sDst, int iCapacity, const char* sText, cons
 		return;
 	}
 	sValue = (sText != NULL) ? sText : sFallback;
-	snprintf(sDst, (size_t)iCapacity, "%s", (sValue != NULL) ? sValue : "");
-	sDst[iCapacity - 1] = 0;
-	xuiInternalUtf8TrimIncomplete(sDst);
+	(void)xuiInternalUtf8CopyGraphemes(sDst, (size_t)iCapacity,
+		(sValue != NULL) ? sValue : "");
 }
 
 static xui_page_data_t* __xuiPageGetData(xui_widget pWidget)
@@ -1423,7 +1422,7 @@ XUI_API int xuiPageSetText(xui_widget pWidget, const char* sFirst, const char* s
 	memcpy(pData->sPrevText, sNewPrev, sizeof(sNewPrev));
 	memcpy(pData->sNextText, sNewNext, sizeof(sNewNext));
 	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		memcpy(pData->sFirstText, sOldFirst, sizeof(sOldFirst));
 		memcpy(pData->sLastText, sOldLast, sizeof(sOldLast));
@@ -1457,7 +1456,7 @@ XUI_API int xuiPageSetFont(xui_widget pWidget, xui_font pFont)
 	pOldFont = pData->pFont;
 	pData->pFont = pFont;
 	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) pData->pFont = pOldFont;
 	return iRet;
 }
