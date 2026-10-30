@@ -4,7 +4,6 @@
 #include "xui_pointer_press_internal.h"
 
 #include <limits.h>
-#include <stdio.h>
 #include <string.h>
 
 #define XUI_CASCADER_DEFAULT_ITEM_H	32.0f
@@ -146,10 +145,24 @@ static void __xuiCascaderChange(xui_cascader_data_t* pData)
 static void __xuiCascaderCopyText(char* sDst, int iCapacity, const char* sSrc)
 {
 	if ( (sDst == NULL) || (iCapacity <= 0) ) return;
-	if ( sSrc == NULL ) sSrc = "";
-	snprintf(sDst, (size_t)iCapacity, "%s", sSrc);
-	sDst[iCapacity - 1] = '\0';
-	xuiInternalUtf8TrimIncomplete(sDst);
+	(void)xuiInternalUtf8CopyGraphemes(sDst, (size_t)iCapacity,
+		(sSrc != NULL) ? sSrc : "");
+}
+
+static int __xuiCascaderAppendText(char* sDst, size_t iCapacity, int* pOffset,
+	const char* sSrc)
+{
+	size_t iCopied;
+	size_t iLength;
+
+	if ( (sDst == NULL) || (pOffset == NULL) || (*pOffset < 0) ||
+	     ((size_t)*pOffset >= iCapacity) ) return 0;
+	sSrc = __xuiCascaderText(sSrc);
+	iLength = strlen(sSrc);
+	iCopied = xuiInternalUtf8CopyGraphemes(sDst + *pOffset,
+		iCapacity - (size_t)*pOffset, sSrc);
+	*pOffset += (int)iCopied;
+	return iCopied == iLength;
 }
 
 static char* __xuiCascaderDuplicateText(const char* sText)
@@ -207,6 +220,23 @@ static int __xuiCascaderItemsValid(const xui_cascader_item_t* pItems, int iCount
 			if ( iDepth > XUI_CASCADER_PATH_CAPACITY ) return 0;
 			iItem = pItems[iItem].iParent;
 		}
+	}
+	return 1;
+}
+
+static int __xuiCascaderItemsEqual(const xui_cascader_data_t* pData,
+	const xui_cascader_item_t* pItems, int iCount)
+{
+	int i;
+
+	if ( (pData == NULL) || (pData->iItemCount != iCount) ) return 0;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( pData->arrItems[i].iValue != pItems[i].iValue ||
+		     pData->arrItems[i].iParent != pItems[i].iParent ||
+		     pData->arrItems[i].iFlags != pItems[i].iFlags ||
+		     pData->arrItems[i].pUser != pItems[i].pUser ||
+		     strcmp(__xuiCascaderText(pData->arrItems[i].sText),
+		            __xuiCascaderText(pItems[i].sText)) != 0 ) return 0;
 	}
 	return 1;
 }
@@ -710,7 +740,6 @@ static void __xuiCascaderSyncDisplay(xui_cascader_data_t* pData)
 {
 	int i;
 	int offset;
-	const char* sText;
 	const char* sSep;
 
 	if ( pData == NULL ) return;
@@ -724,16 +753,11 @@ static void __xuiCascaderSyncDisplay(xui_cascader_data_t* pData)
 	sSep = __xuiCascaderText(pData->sSeparator);
 	for ( i = 0; i < pData->iSelectedDepth; i++ ) {
 		if ( (pData->arrSelected[i] < 0) || (pData->arrSelected[i] >= pData->iItemCount) ) break;
-		if ( i > 0 ) {
-			offset += snprintf(pData->sDisplay + offset, sizeof(pData->sDisplay) - (size_t)offset, "%s", sSep);
-			if ( offset >= (int)sizeof(pData->sDisplay) - 1 ) break;
-		}
-		sText = __xuiCascaderText(pData->arrItems[pData->arrSelected[i]].sText);
-		offset += snprintf(pData->sDisplay + offset, sizeof(pData->sDisplay) - (size_t)offset, "%s", sText);
-		if ( offset >= (int)sizeof(pData->sDisplay) - 1 ) break;
+		if ( i > 0 && !__xuiCascaderAppendText(pData->sDisplay,
+		     sizeof(pData->sDisplay), &offset, sSep) ) break;
+		if ( !__xuiCascaderAppendText(pData->sDisplay, sizeof(pData->sDisplay),
+		     &offset, pData->arrItems[pData->arrSelected[i]].sText) ) break;
 	}
-	pData->sDisplay[sizeof(pData->sDisplay) - 1] = '\0';
-	xuiInternalUtf8TrimIncomplete(pData->sDisplay);
 }
 
 static void __xuiCascaderSetActivePath(xui_cascader_data_t* pData, const int* arrPath, int iDepth)
@@ -809,8 +833,23 @@ static int __xuiCascaderNotifyChange(xui_widget pWidget, xui_cascader_data_t* pD
 	return XUI_OK;
 }
 
+static int __xuiCascaderInvalidateModelWidgets(xui_widget pWidget,
+	xui_cascader_data_t* pData)
+{
+	int iRet;
+
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( (iRet == XUI_OK) && (pData->pPanel != NULL) ) {
+		iRet = xuiWidgetInvalidate(pData->pPanel,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return iRet;
+}
+
 static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t* pData, int iItem, int bNotify)
 {
+	xui_cascader_data_t tOld;
 	xui_context pContext;
 	int arrPath[XUI_CASCADER_PATH_CAPACITY];
 	int depth;
@@ -835,6 +874,9 @@ static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t*
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
+	iRet = __xuiCascaderInvalidateModelWidgets(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	tOld = *pData;
 	for ( i = 0; i < XUI_CASCADER_PATH_CAPACITY; i++ ) {
 		pData->arrSelected[i] = (i < depth) ? arrPath[i] : -1;
 	}
@@ -844,20 +886,26 @@ static int __xuiCascaderSetSelectedItem(xui_widget pWidget, xui_cascader_data_t*
 	__xuiCascaderSetActivePath(pData, arrPath, depth);
 	pData->iHoverColumn = depth - 1;
 	pData->iHoverItem = iItem;
+	if ( (pData->pPopup != NULL) && xuiPopupIsOpen(pData->pPopup) ) {
+		iRet = __xuiCascaderApplyPopupStyle(pWidget, pData);
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return iRet;
+		if ( iRet != XUI_OK ) {
+			*pData = tOld;
+			(void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+			return iRet;
+		}
+	}
 	__xuiCascaderChange(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( (iRet == XUI_OK) && (pData->pPanel != NULL) ) {
-		iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
-	if ( (iRet == XUI_OK) && bNotify ) iRet = __xuiCascaderNotifyChange(pWidget, pData);
-	return iRet;
+	return bNotify ? __xuiCascaderNotifyChange(pWidget, pData) : XUI_OK;
 }
 
 static int __xuiCascaderClearInternal(xui_widget pWidget, xui_cascader_data_t* pData, int bNotify)
 {
+	xui_cascader_data_t tOld;
 	xui_context pContext;
+	int bOpen;
 	int i;
 	int iRet;
 
@@ -869,20 +917,30 @@ static int __xuiCascaderClearInternal(xui_widget pWidget, xui_cascader_data_t* p
 		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	if ( pData->iSelectedDepth <= 0 && pData->iSelectedLeaf < 0 ) return XUI_OK;
+	iRet = __xuiCascaderInvalidateModelWidgets(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	tOld = *pData;
+	bOpen = (pData->pPopup != NULL) && xuiPopupIsOpen(pData->pPopup);
 	for ( i = 0; i < XUI_CASCADER_PATH_CAPACITY; i++ ) pData->arrSelected[i] = -1;
 	pData->iSelectedDepth = 0;
 	pData->iSelectedLeaf = -1;
 	pData->sDisplay[0] = '\0';
 	__xuiCascaderSetActivePath(pData, NULL, 0);
+	pData->iHoverColumn = bOpen ? 0 : -1;
+	pData->iHoverItem = bOpen ? __xuiCascaderFirstEnabledChild(pData, -1) : -1;
+	if ( bOpen ) {
+		iRet = __xuiCascaderApplyPopupStyle(pWidget, pData);
+		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return iRet;
+		if ( iRet != XUI_OK ) {
+			*pData = tOld;
+			(void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+			return iRet;
+		}
+	}
 	__xuiCascaderChange(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( (iRet == XUI_OK) && (pData->pPanel != NULL) ) {
-		iRet = xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
-	if ( (iRet == XUI_OK) && bNotify ) iRet = __xuiCascaderNotifyChange(pWidget, pData);
-	return iRet;
+	return bNotify ? __xuiCascaderNotifyChange(pWidget, pData) : XUI_OK;
 }
 
 static int __xuiCascaderSetSelectedPathInternal(xui_widget pWidget, xui_cascader_data_t* pData, const int* arrValues, int iDepth, int bNotify)
@@ -2104,6 +2162,7 @@ static int __xuiCascaderSetItemsInternal(xui_widget pWidget, xui_cascader_data_t
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiCascaderItemsValid(pItems, iCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( __xuiCascaderItemsEqual(pData, pItems, iCount) ) return XUI_OK;
 	memset(arrNewItems, 0, sizeof(arrNewItems));
 	memset(arrNewTexts, 0, sizeof(arrNewTexts));
 	for ( i = 0; i < iCount; i++ ) {
@@ -2126,6 +2185,11 @@ static int __xuiCascaderSetItemsInternal(xui_widget pWidget, xui_cascader_data_t
 			__xuiCascaderFreeTextArray(arrNewTexts);
 			return XUI_OK;
 		}
+	}
+	iRet = __xuiCascaderInvalidateModelWidgets(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		__xuiCascaderFreeTextArray(arrNewTexts);
+		return iRet;
 	}
 	tOld = *pData;
 	bHadSelection = (pData->iSelectedDepth > 0) || (pData->iSelectedLeaf >= 0);
@@ -2161,7 +2225,7 @@ static int __xuiCascaderSetItemsInternal(xui_widget pWidget, xui_cascader_data_t
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static int __xuiCascaderInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
@@ -2647,13 +2711,14 @@ XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float f
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
+	iRet = __xuiCascaderInvalidateModelWidgets(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	fOldItemHeight = pData->fItemHeight;
 	fOldBorderWidth = pData->fBorderWidth;
 	pData->fItemHeight = fItemHeight;
 	pData->fBorderWidth = fBorderWidth;
 	iRet = (pData->pPopup != NULL) ? __xuiCascaderApplyPopupStyle(pWidget, pData) : XUI_OK;
 	if ( !__xuiCascaderAlive(pContext, pWidget, pData) ) return iRet;
-	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->fItemHeight = fOldItemHeight;
 		pData->fBorderWidth = fOldBorderWidth;

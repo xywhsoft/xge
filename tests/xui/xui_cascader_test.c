@@ -220,6 +220,7 @@ int main(void)
 	int arrSelected[3];
 	int arrPath[3];
 	char sLongUtf8[132];
+	char sLongDisplay[520];
 	char sOwnedText[32];
 	char sSetText[32];
 	xui_rect_t tButton;
@@ -348,6 +349,15 @@ int main(void)
 	sLongUtf8[129] = '\0';
 	XUI_TEST_CHECK(xuiCascaderSetPlaceholder(pCascader, sLongUtf8) == XUI_OK, "set long utf8 placeholder");
 	XUI_TEST_CHECK(strlen(xuiCascaderGetPlaceholder(pCascader)) == 126u, "placeholder truncation keeps whole utf8 codepoints");
+	memset(sLongUtf8, 'a', 126);
+	sLongUtf8[126] = 'e';
+	sLongUtf8[127] = (char)0xcc;
+	sLongUtf8[128] = (char)0x81;
+	sLongUtf8[129] = '\0';
+	XUI_TEST_CHECK(xuiCascaderSetPlaceholder(pCascader, sLongUtf8) == XUI_OK,
+	               "set placeholder ending with combining grapheme");
+	XUI_TEST_CHECK(strlen(xuiCascaderGetPlaceholder(pCascader)) == 126u,
+	               "placeholder truncation preserves grapheme boundaries");
 	XUI_TEST_CHECK(xuiCascaderSetPlaceholder(pCascader, "Select") == XUI_OK, "restore placeholder");
 	XUI_TEST_CHECK(strcmp(xuiCascaderGetSelectedText(pCascader), "Guide / Navigation / Side nav") == 0, "full display");
 	XUI_TEST_CHECK(xuiCascaderGetSelectedPath(pCascader, arrPath, 3) == 3 && arrPath[0] == 1 && arrPath[1] == 12 && arrPath[2] == 121, "selected values");
@@ -398,12 +408,37 @@ int main(void)
 	strcpy(sSetText, "Mutated");
 	XUI_TEST_CHECK(strcmp(xuiCascaderGetItem(pCascader, 0)->sText, "Temporary") == 0,
 	               "set items deep copies text");
+	memset(sLongDisplay, 'a', 507);
+	sLongDisplay[507] = '\0';
+	arrInvalid[0] = (xui_cascader_item_t){sLongDisplay, 900, -1, 0u, NULL};
+	arrInvalid[1] = (xui_cascader_item_t){"e\xcc\x81", 901, 0, XUI_CASCADER_ITEM_LEAF, NULL};
+	arrPath[0] = 900;
+	arrPath[1] = 901;
+	XUI_TEST_CHECK(xuiCascaderSetItems(pCascader, arrInvalid, 2) == XUI_OK &&
+	               xuiCascaderSetSelectedPath(pCascader, arrPath, 2) == XUI_OK &&
+	               strlen(xuiCascaderGetSelectedText(pCascader)) == 510u &&
+	               xuiCascaderGetSelectedText(pCascader)[509] == ' ',
+	               "multi-level display truncation preserves grapheme boundaries");
 	strcpy(sOwnedText, "Guide");
 	XUI_TEST_CHECK(xuiCascaderSetItems(pCascader, arrItems, 11) == XUI_OK &&
 	               xuiCascaderSetSelectedPath(pCascader, arrSelected, 3) == XUI_OK,
 	               "restore items and selection");
 	XUI_TEST_CHECK(__xuiCascaderSetItemsOomPreserves(pCascader),
 	               "item replacement allocation failure preserves data and selection");
+	pPanel = xuiCascaderGetPanelWidget(pCascader);
+	pPopup = xuiCascaderGetPopupWidget(pCascader);
+	xuiWidgetClearDirty(pCascader, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPanel, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
+	iChangeBefore = xuiCascaderGetChangeCount(pCascader);
+	XUI_TEST_CHECK(xuiCascaderSetItems(pCascader, xuiCascaderGetItem(pCascader, 0),
+	               xuiCascaderGetItemCount(pCascader)) == XUI_OK &&
+	               xuiCascaderGetSelectedLeaf(pCascader) == 5 &&
+	               xuiCascaderGetChangeCount(pCascader) == iChangeBefore &&
+	               xuiWidgetGetDirtyFlags(pCascader) == 0u &&
+	               xuiWidgetGetDirtyFlags(pPanel) == 0u &&
+	               xuiWidgetGetDirtyFlags(pPopup) == 0u,
+	               "identical items preserve selection and stay clean");
 	XUI_TEST_CHECK(xuiCascaderSetPopupSize(pCascader, NAN, 0.0f, 160.0f) == XUI_ERROR_INVALID_ARGUMENT, "reject NaN popup size");
 	XUI_TEST_CHECK(xuiCascaderSetMetrics(pCascader, 32.0f, INFINITY) == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metric");
 	XUI_TEST_CHECK(xuiCascaderGetPopupSize(pCascader, &fColumnBefore, &fHeightBefore, &fMaxBefore) == XUI_OK &&
@@ -416,6 +451,17 @@ int main(void)
 	               xuiCascaderGetMetrics(pCascader, &tMeasured.fX, &tMeasured.fY) == XUI_OK &&
 	               tMeasured.fX == fItemBefore && tMeasured.fY == fBorderBefore,
 	               "oversized metrics are rejected transactionally");
+	xuiWidgetClearDirty(pCascader, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPanel, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiCascaderSetMetrics(pCascader, fItemBefore + 1.0f, fBorderBefore) == XUI_OK &&
+	               (xuiWidgetGetDirtyFlags(pCascader) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+	               (xuiWidgetGetDirtyFlags(pCascader) &
+	                (XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) != 0u &&
+	               (xuiWidgetGetDirtyFlags(pPanel) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+	               "popup metrics do not invalidate owner layout");
+	XUI_TEST_CHECK(xuiCascaderSetMetrics(pCascader, fItemBefore, fBorderBefore) == XUI_OK,
+	               "restore popup metrics");
 	iRet = xuiCascaderSetShowAllLevels(pCascader, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCascaderGetSelectedText(pCascader), "Side nav") == 0, "leaf display");
 	iRet = xuiCascaderSetShowAllLevels(pCascader, 1);
@@ -472,6 +518,14 @@ int main(void)
 	XUI_TEST_CHECK((iState & XUI_CASCADER_STATE_OPEN) != 0u, "open state");
 	tPopupRect = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(tPopupRect.fY >= 60.0f && tPopupRect.fW >= 380.0f, "popup rect");
+	XUI_TEST_CHECK(xuiCascaderClear(pCascader) == XUI_OK && xuiCascaderIsOpen(pCascader) &&
+	               xuiCascaderGetColumnCount(pCascader) == 1 &&
+	               xuiWidgetGetRect(pPanel).fW == 128.0f,
+	               "programmatic clear resizes an open popup to one column");
+	XUI_TEST_CHECK(xuiCascaderSetSelectedPath(pCascader, arrSelected, 3) == XUI_OK &&
+	               xuiCascaderIsOpen(pCascader) && xuiCascaderGetColumnCount(pCascader) == 3 &&
+	               xuiWidgetGetRect(pPanel).fW == 384.0f,
+	               "programmatic selection resizes an open popup to its active path");
 	XUI_TEST_CHECK(xuiInputKeyDown(pContext, XUI_KEY_TAB, 0) == XUI_OK &&
 	               xuiDispatchPendingEvents(pContext) == XUI_OK && !xuiCascaderIsOpen(pCascader),
 	               "Tab closes popup without trapping focus");
@@ -552,9 +606,28 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCascaderIsOpen(pCascader), "disabled does not open");
 	iState = xuiCascaderGetState(pCascader);
 	XUI_TEST_CHECK((iState & XUI_WIDGET_STATE_DISABLED) != 0u, "disabled state");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	memset(&tAccessibleValue, 0, sizeof(tAccessibleValue));
+	tAccessibleValue.iSize = sizeof(tAccessibleValue);
+	tAccessibleValue.iType = XUI_ACCESSIBLE_VALUE_NUMBER;
+	tAccessibleValue.fNumber = 5.0;
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pCascader, 0, &tAccessible) == XUI_OK &&
+	               tAccessible.iActions == 0u &&
+	               xuiWidgetPerformAccessibleAction(pCascader, tAccessible.iId,
+	               XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue) == XUI_ERROR_INVALID_ARGUMENT &&
+	               xuiCascaderGetSelectedDepth(pCascader) == 0,
+	               "disabled cascader exposes no mutating accessibility actions");
 	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCascader, 1) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK, "reenable cascader");
 	XUI_TEST_CHECK(xuiWidgetSetVisible(pCascader, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
 	               "hide cascader");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pCascader, 0, &tAccessible) == XUI_OK &&
+	               tAccessible.iActions == 0u &&
+	               xuiWidgetPerformAccessibleAction(pCascader, tAccessible.iId,
+	               XUI_ACCESSIBLE_ACTION_EXPAND, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+	               "hidden cascader exposes no accessibility actions");
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iType = XUI_EVENT_KEY_DOWN;
