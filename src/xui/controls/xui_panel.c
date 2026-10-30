@@ -443,7 +443,6 @@ static int __xuiPanelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	xui_panel_data_t* pData;
 	xui_panel_resolved_t tResolved;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiPanelGetData(pWidget);
@@ -451,6 +450,10 @@ static int __xuiPanelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	__xuiPanelResolve(pWidget, pData, &tResolved);
 	pSize->fX = 180.0f;
 	pSize->fY = tResolved.fHeaderHeight + 64.0f;
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 

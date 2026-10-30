@@ -105,6 +105,7 @@ int main(void)
 	xui_style_property_t arrStyle[8];
 	xui_accessible_node_t tNode;
 	xui_rect_t tRect;
+	xui_vec2_t tContentSize;
 	uint32_t iAccessibilityRevision;
 	uint32_t iDirtyFlags;
 	float fBorderWidth;
@@ -169,6 +170,13 @@ int main(void)
 	tDesc.fIconSize = 18.0f;
 	iRet = xuiPanelCreate(pContext, &pPanel, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pPanel != NULL, "panel create");
+	iRet = xuiWidgetMeasureContent(pPanel,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tContentSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && tContentSize.fX == 180.0f && tContentSize.fY == 94.0f,
+		"panel intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pPanel, (xui_vec2_t){72.0f, 40.0f}, &tContentSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && tContentSize.fX == 72.0f && tContentSize.fY == 40.0f,
+		"panel content measure respects tight constraints");
 	iRet = xuiWidgetSetRect(pPanel, (xui_rect_t){12.0f, 16.0f, 220.0f, 150.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "panel rect");
 	iRet = xuiWidgetAddChild(pRoot, pPanel);
