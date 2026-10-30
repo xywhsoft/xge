@@ -1940,6 +1940,21 @@ static int __xuiWorkflowXsonOptionalNumber(xvalue* pValue)
 	return iType == XVALUE_NULL || iType == XVALUE_INT || iType == XVALUE_FLOAT;
 }
 
+static int __xuiWorkflowXsonInt(xvalue* pValue, int* pResult)
+{
+	int64 iValue;
+
+	if ( pResult == NULL || xuiXrtValueType(pValue) != XVALUE_INT ) {
+		return 0;
+	}
+	iValue = xuiXrtValueGetInt(pValue);
+	if ( iValue < INT_MIN || iValue > INT_MAX ) {
+		return 0;
+	}
+	*pResult = (int)iValue;
+	return 1;
+}
+
 static int __xuiWorkflowXsonHeaderValid(xvalue* pRoot)
 {
 	xvalue* pKind;
@@ -2261,6 +2276,8 @@ static int __xuiWorkflowLoadPortXValue(xui_flow_graph pGraph, int iNode, xvalue*
 	xui_flow_port_desc_t tPort;
 	xvalue* pDirection;
 	xvalue* pKind;
+	int iDirection;
+	int iKind;
 
 	if ( pObj == NULL || xuiXrtValueType(pObj) != XVALUE_OBJECT ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2268,7 +2285,7 @@ static int __xuiWorkflowLoadPortXValue(xui_flow_graph pGraph, int iNode, xvalue*
 	pDirection = xuiXrtValueObjectGet(pObj, "direction", 0);
 	pKind = xuiXrtValueObjectGet(pObj, "kind", 0);
 	if ( xuiXrtValueType(xuiXrtValueObjectGet(pObj, "id", 0)) != XVALUE_STRING ||
-	     xuiXrtValueType(pDirection) != XVALUE_INT || xuiXrtValueType(pKind) != XVALUE_INT ||
+	     !__xuiWorkflowXsonInt(pDirection, &iDirection) || !__xuiWorkflowXsonInt(pKind, &iKind) ||
 	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "title", 0), XVALUE_STRING) ||
 	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "dataType", 0), XVALUE_STRING) ||
 	     !__xuiWorkflowXsonOptionalType(xuiXrtValueObjectGet(pObj, "required", 0), XVALUE_BOOL) ||
@@ -2281,8 +2298,8 @@ static int __xuiWorkflowLoadPortXValue(xui_flow_graph pGraph, int iNode, xvalue*
 	tPort.sId = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "id", 0));
 	tPort.sTitle = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "title", 0));
 	tPort.sDataType = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "dataType", 0));
-	tPort.iDirection = (int)xuiXrtValueGetInt(pDirection);
-	tPort.iKind = (int)xuiXrtValueGetInt(pKind);
+	tPort.iDirection = iDirection;
+	tPort.iKind = iKind;
 	tPort.bRequired = xuiXrtValueGetBool(xuiXrtValueObjectGet(pObj, "required", 0)) ? 1 : 0;
 	tPort.bMulti = xuiXrtValueGetBool(xuiXrtValueObjectGet(pObj, "multi", 0)) ? 1 : 0;
 	tPort.bDynamic = xuiXrtValueGetBool(xuiXrtValueObjectGet(pObj, "dynamic", 0)) ? 1 : 0;
@@ -2298,6 +2315,7 @@ static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	xvalue* pRunState;
 	uint32_t i;
 	int iNode;
+	int iRunState;
 	int iRet;
 
 	if ( pObj == NULL || xuiXrtValueType(pObj) != XVALUE_OBJECT ) {
@@ -2315,7 +2333,8 @@ static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	}
 	pRunState = xuiXrtValueObjectGet(pObj, "runState", 0);
 	pRunPreview = xuiXrtValueObjectGet(pObj, "runPreview", 0);
-	if ( !__xuiWorkflowXsonOptionalType(pRunState, XVALUE_INT) ||
+	iRunState = XUI_WORKFLOW_NODE_RUN_IDLE;
+	if ( (xuiXrtValueType(pRunState) != XVALUE_NULL && !__xuiWorkflowXsonInt(pRunState, &iRunState)) ||
 	     !__xuiWorkflowXsonOptionalType(pRunPreview, XVALUE_STRING) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -2354,7 +2373,7 @@ static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	}
 	if ( iRet == XUI_OK ) {
 		if ( pRunState != NULL && xuiXrtValueType(pRunState) != XVALUE_NULL ) {
-			iRet = xuiFlowGraphSetNodeRunState(pGraph, tNode.sId, (int)xuiXrtValueGetInt(pRunState), __xuiWorkflowXsonText(pRunPreview));
+			iRet = xuiFlowGraphSetNodeRunState(pGraph, tNode.sId, iRunState, __xuiWorkflowXsonText(pRunPreview));
 		}
 	}
 	return iRet;
@@ -2370,12 +2389,15 @@ static int __xuiWorkflowLoadEdgeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	xvalue* pRouteTargetOffset;
 	xvalue* pRunPreview;
 	xvalue* pRunState;
+	int iKind;
+	int iRouteStyle;
+	int iRunState;
 
 	if ( pObj == NULL || xuiXrtValueType(pObj) != XVALUE_OBJECT ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( xuiXrtValueType(xuiXrtValueObjectGet(pObj, "id", 0)) != XVALUE_STRING ||
-	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "kind", 0)) != XVALUE_INT ||
+	     !__xuiWorkflowXsonInt(xuiXrtValueObjectGet(pObj, "kind", 0), &iKind) ||
 	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "fromNode", 0)) != XVALUE_STRING ||
 	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "fromPort", 0)) != XVALUE_STRING ||
 	     xuiXrtValueType(xuiXrtValueObjectGet(pObj, "toNode", 0)) != XVALUE_STRING ||
@@ -2384,14 +2406,15 @@ static int __xuiWorkflowLoadEdgeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	}
 	pRunState = xuiXrtValueObjectGet(pObj, "runState", 0);
 	pRunPreview = xuiXrtValueObjectGet(pObj, "runPreview", 0);
-	if ( !__xuiWorkflowXsonOptionalType(pRunState, XVALUE_INT) ||
+	iRunState = XUI_WORKFLOW_EDGE_RUN_IDLE;
+	if ( (xuiXrtValueType(pRunState) != XVALUE_NULL && !__xuiWorkflowXsonInt(pRunState, &iRunState)) ||
 	     !__xuiWorkflowXsonOptionalType(pRunPreview, XVALUE_STRING) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	memset(&tEdge, 0, sizeof(tEdge));
 	tEdge.iSize = sizeof(tEdge);
 	tEdge.sId = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "id", 0));
-	tEdge.iKind = (int)xuiXrtValueGetInt(xuiXrtValueObjectGet(pObj, "kind", 0));
+	tEdge.iKind = iKind;
 	tEdge.sFromNode = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "fromNode", 0));
 	tEdge.sFromPort = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "fromPort", 0));
 	tEdge.sToNode = __xuiWorkflowXsonText(xuiXrtValueObjectGet(pObj, "toNode", 0));
@@ -2405,13 +2428,14 @@ static int __xuiWorkflowLoadEdgeXValue(xui_flow_graph pGraph, xvalue* pObj)
 		pRouteBias = xuiXrtValueObjectGet(pRoute, "bias", 0);
 		pRouteSourceOffset = xuiXrtValueObjectGet(pRoute, "sourceOffset", 0);
 		pRouteTargetOffset = xuiXrtValueObjectGet(pRoute, "targetOffset", 0);
-		if ( !__xuiWorkflowXsonOptionalType(pRouteStyle, XVALUE_INT) ||
+		iRouteStyle = XUI_FLOW_ROUTE_AUTO;
+		if ( (xuiXrtValueType(pRouteStyle) != XVALUE_NULL && !__xuiWorkflowXsonInt(pRouteStyle, &iRouteStyle)) ||
 		     !__xuiWorkflowXsonOptionalNumber(pRouteBias) ||
 		     !__xuiWorkflowXsonOptionalNumber(pRouteSourceOffset) ||
 		     !__xuiWorkflowXsonOptionalNumber(pRouteTargetOffset) ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
-		tEdge.iRouteStyle = (int)xuiXrtValueGetInt(pRouteStyle);
+		if ( xuiXrtValueType(pRouteStyle) != XVALUE_NULL ) tEdge.iRouteStyle = iRouteStyle;
 		tEdge.fRouteBias = (float)xuiXrtValueGetFloat(pRouteBias);
 		tEdge.fRouteSourceOffset = (float)xuiXrtValueGetFloat(pRouteSourceOffset);
 		tEdge.fRouteTargetOffset = (float)xuiXrtValueGetFloat(pRouteTargetOffset);
@@ -2419,7 +2443,7 @@ static int __xuiWorkflowLoadEdgeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	{
 		int iRet = xuiFlowGraphAddEdgePreserveInvalid(pGraph, &tEdge, NULL);
 		if ( iRet == XUI_OK && pRunState != NULL && xuiXrtValueType(pRunState) != XVALUE_NULL ) {
-			iRet = xuiFlowGraphSetEdgeRunState(pGraph, tEdge.sId, (int)xuiXrtValueGetInt(pRunState), __xuiWorkflowXsonText(pRunPreview));
+			iRet = xuiFlowGraphSetEdgeRunState(pGraph, tEdge.sId, iRunState, __xuiWorkflowXsonText(pRunPreview));
 		}
 		return iRet;
 	}

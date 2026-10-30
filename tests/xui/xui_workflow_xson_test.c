@@ -283,6 +283,36 @@ int main(void)
 	xrtValueRelease(pBadDocument);
 	pBadDocument = NULL;
 	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create overflowing port document");
+	{
+		xvalue* pNodes = xuiXrtValueObjectGet(pBadDocument, "nodes", 0);
+		xvalue* pNode = (pNodes != NULL) ? xuiXrtValueArrayGet(pNodes, 0) : NULL;
+		xvalue* pPorts = (pNode != NULL) ? xuiXrtValueObjectGet(pNode, "ports", 0) : NULL;
+		xvalue* pPort = (pPorts != NULL) ? xuiXrtValueArrayGet(pPorts, 0) : NULL;
+		XUI_TEST_CHECK(pPort != NULL && xuiXrtValueObjectSetInt(pPort, "direction", 0, 4294967296LL),
+			"set overflowing port direction");
+	}
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject overflowing port enum");
+	XUI_TEST_CHECK(xuiFlowGraphFindNode(xuiWorkflowGetGraph(pLoaded), "n_keep") >= 0 && xuiWorkflowFindVariable(pLoaded, "var_keep") >= 0,
+	               "port enum load failure preserves workflow");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create overflowing run state document");
+	{
+		xvalue* pNodes = xuiXrtValueObjectGet(pBadDocument, "nodes", 0);
+		xvalue* pNode = (pNodes != NULL) ? xuiXrtValueArrayGet(pNodes, 1) : NULL;
+		XUI_TEST_CHECK(pNode != NULL && xuiXrtValueObjectSetInt(pNode, "runState", 0, 4294967296LL),
+			"set overflowing node run state");
+	}
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject overflowing node run state");
+	XUI_TEST_CHECK(xuiFlowGraphFindNode(xuiWorkflowGetGraph(pLoaded), "n_keep") >= 0 && xuiWorkflowFindVariable(pLoaded, "var_keep") >= 0,
+	               "overflowing run state preserves workflow");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
 	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create invalid route document");
 	{
 		xvalue* pEdges = xuiXrtValueObjectGet(pBadDocument, "edges", 0);
@@ -294,6 +324,21 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject malformed route style type");
 	XUI_TEST_CHECK(xuiFlowGraphFindNode(xuiWorkflowGetGraph(pLoaded), "n_keep") >= 0 && xuiWorkflowFindVariable(pLoaded, "var_keep") >= 0,
 	               "route load failure preserves workflow");
+	xrtValueRelease(pBadDocument);
+	pBadDocument = NULL;
+	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBadDocument != NULL, "create overflowing route document");
+	{
+		xvalue* pEdges = xuiXrtValueObjectGet(pBadDocument, "edges", 0);
+		xvalue* pEdge = (pEdges != NULL) ? xuiXrtValueArrayGet(pEdges, 2) : NULL;
+		xvalue* pRoute = (pEdge != NULL) ? xuiXrtValueObjectGet(pEdge, "route", 0) : NULL;
+		XUI_TEST_CHECK(pRoute != NULL && xuiXrtValueObjectSetInt(pRoute, "style", 0, 4294967296LL),
+			"set overflowing route style");
+	}
+	iRet = xuiWorkflowLoadXValue(pLoaded, pBadDocument);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject overflowing route enum");
+	XUI_TEST_CHECK(xuiFlowGraphFindNode(xuiWorkflowGetGraph(pLoaded), "n_keep") >= 0 && xuiWorkflowFindVariable(pLoaded, "var_keep") >= 0,
+	               "route enum load failure preserves workflow");
 	xrtValueRelease(pBadDocument);
 	pBadDocument = NULL;
 	iRet = xuiWorkflowToXValue(pWorkflow, &pBadDocument);
