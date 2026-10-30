@@ -177,6 +177,13 @@ int main(void)
 	iRet = xuiTagInputSetTags(pProbe, arrLongTags, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTagInputGetTag(pProbe, 0), "A") == 0,
 		"tag truncation preserves utf8 boundary");
+	arrLongTags[0] = "e\xCC\x81X";
+	iRet = xuiTagInputSetTags(pProbe, arrLongTags, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTagInputGetTag(pProbe, 0), "e\xCC\x81") == 0,
+		"tag truncation preserves combining grapheme at exact limit");
+	iRet = xuiTagInputSetMaxLength(pProbe, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTagInputGetTagCount(pProbe) == 0,
+		"tag truncation removes grapheme that cannot fit byte limit");
 	xuiWidgetDestroy(pProbe);
 	pProbe = NULL;
 

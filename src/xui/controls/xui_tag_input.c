@@ -375,12 +375,20 @@ static int __xuiTagInputPointerMatches(const xui_tag_input_data_t* pData,
 static int __xuiTagInputCancelPointer(xui_widget pWidget,
 	xui_tag_input_data_t* pData, int bInvalidate);
 
-static void __xuiTagInputClampTag(const xui_tag_input_data_t* pData, char* sTag)
+static int __xuiTagInputClampTag(const xui_tag_input_data_t* pData, char* sTag)
 {
-	if ( pData == NULL || sTag == NULL || pData->iMaxLength <= 0 ) return;
-	if ( strlen(sTag) <= (size_t)pData->iMaxLength ) return;
-	sTag[pData->iMaxLength] = '\0';
-	xuiInternalUtf8TrimIncomplete(sTag);
+	size_t iLength;
+	int iClamped;
+
+	if ( pData == NULL || sTag == NULL ) return 0;
+	iLength = strlen(sTag);
+	if ( iLength > (size_t)INT_MAX ) return 0;
+	if ( pData->iMaxLength <= 0 || iLength <= (size_t)pData->iMaxLength ) {
+		return (int)iLength;
+	}
+	iClamped = xuiInternalTextGraphemeClamp(sTag, (int)iLength, pData->iMaxLength);
+	sTag[iClamped] = '\0';
+	return iClamped;
 }
 
 static int __xuiTagInputAddPrepared(xui_widget pWidget, xui_tag_input_data_t* pData, char* sTag, int bNotify)
@@ -390,7 +398,7 @@ static int __xuiTagInputAddPrepared(xui_widget pWidget, xui_tag_input_data_t* pD
 	if ( (pWidget == NULL) || (pData == NULL) || (sTag == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	__xuiTagInputClampTag(pData, sTag);
+	(void)__xuiTagInputClampTag(pData, sTag);
 	if ( sTag[0] == '\0' ) {
 		xrtFree(sTag);
 		return XUI_OK;
@@ -1711,7 +1719,7 @@ XUI_API int xuiTagInputSetTags(xui_widget pWidget, const char* const* ppTags, in
 			xrtFree(sTag);
 			continue;
 		}
-		__xuiTagInputClampTag(pData, sTag);
+		(void)__xuiTagInputClampTag(pData, sTag);
 		if ( sTag[0] == '\0' ) {
 			xrtFree(sTag);
 			continue;
@@ -1924,13 +1932,12 @@ XUI_API int xuiTagInputSetMaxLength(xui_widget pWidget, int iMaxLength)
 	for ( i = 0; i < iOldTagCount; i++ ) {
 		sTag = pData->arrTags[i];
 		iOldLength = strlen(sTag);
-		__xuiTagInputClampTag(pData, sTag);
+		if ( (size_t)__xuiTagInputClampTag(pData, sTag) != iOldLength ) bTagsChanged = 1;
 		if ( sTag[0] == '\0' ) {
 			xrtFree(sTag);
 			bTagsChanged = 1;
 			continue;
 		}
-		if ( strlen(sTag) != iOldLength ) bTagsChanged = 1;
 		pData->arrTags[iNewTagCount++] = sTag;
 	}
 	for ( i = iNewTagCount; i < iOldTagCount; i++ ) pData->arrTags[i] = NULL;
