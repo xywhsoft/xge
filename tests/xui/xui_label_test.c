@@ -1048,6 +1048,12 @@ int main(void)
 
 	iRet = xuiWidgetMeasureContent(pLabel, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasure);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (tMeasure.fX > 0.0f) && (tMeasure.fY == 16.0f), "label measure failed");
+	iRet = xuiWidgetMeasureContent(pLabel, (xui_vec2_t){30.0f, 20.0f}, &tMeasure);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (tMeasure.fX == 30.0f) && (tMeasure.fY == 16.0f),
+		"label measure respects finite constraints");
+	iRet = xuiWidgetMeasureContent(pLabel, (xui_vec2_t){0.0f, 0.0f}, &tMeasure);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (tMeasure.fX == 0.0f) && (tMeasure.fY == 0.0f),
+		"label measure respects zero constraints");
 	iRet = xuiLabelSetText(pLabel, "Label migration wraps words");
 	XUI_TEST_CHECK(iRet == XUI_OK, "label text set failed");
 	iRet = xuiLabelSetWrapMode(pLabel, XUI_TEXT_WRAP_WORD);

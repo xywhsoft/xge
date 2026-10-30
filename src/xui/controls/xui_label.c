@@ -218,6 +218,7 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	xui_label_data_t* pData;
 	xui_text_layout_desc_t tDesc;
 	uint32_t iTextColor;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) {
@@ -241,7 +242,15 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	if ( (tDesc.fMaxHeight <= 0.0f) || (tDesc.fMaxHeight > XUI_LAYOUT_UNBOUNDED) ) {
 		tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	}
-	return xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
+	iRet = xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
+	return XUI_OK;
 }
 
 static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
