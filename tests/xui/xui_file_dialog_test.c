@@ -7,6 +7,7 @@
 
 int xuiFileDialogTestPathRootLen(const char* sPath);
 int xuiFileDialogTestParentDir(const char* sPath, char* sBuffer, size_t iCapacity);
+int xuiFileDialogTestPathTipOpen(xui_file_dialog pDialog);
 
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
@@ -669,6 +670,32 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "path input missing set");
 	iRet = __xuiFileDialogSendKey(pContext, XUI_KEY_ENTER);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0 && xuiInputGetError(xuiFileDialogGetPathInputWidget(pDialog)), "missing path shows error");
+	XUI_TEST_CHECK(xuiFileDialogTestPathTipOpen(pDialog),
+		"missing path opens error tip");
+	XUI_TEST_CHECK(xuiInputSetError(xuiFileDialogGetNameInputWidget(pDialog), 1) == XUI_OK,
+		"set transient name error before close");
+	iRet = xuiFileDialogSetOpen(pDialog, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiFileDialogIsOpen(pDialog) &&
+		!xuiWidgetGetVisible(xuiFileDialogGetPathInputWidget(pDialog)) &&
+		xuiWidgetGetVisible(xuiFileDialogGetPathBreadcrumbWidget(pDialog)) &&
+		!xuiInputGetError(xuiFileDialogGetPathInputWidget(pDialog)) &&
+		!xuiInputGetError(xuiFileDialogGetNameInputWidget(pDialog)) &&
+		!xuiFileDialogTestPathTipOpen(pDialog),
+		"close clears transient path session state");
+	iRet = xuiFileDialogSetOpen(pDialog, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiFileDialogIsOpen(pDialog) &&
+		!xuiWidgetGetVisible(xuiFileDialogGetPathInputWidget(pDialog)) &&
+		xuiWidgetGetVisible(xuiFileDialogGetPathBreadcrumbWidget(pDialog)),
+		"reopen starts in breadcrumb mode");
+	pBreadcrumb = xuiFileDialogGetPathBreadcrumbWidget(pDialog);
+	tWorld = xuiWidgetGetWorldRect(pBreadcrumb);
+	iRet = __xuiFileDialogClick(pContext,
+		tWorld.fX + tWorld.fW - 4.0f, tWorld.fY + tWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiWidgetGetVisible(xuiFileDialogGetPathInputWidget(pDialog)) &&
+		strcmp(xuiInputGetText(xuiFileDialogGetPathInputWidget(pDialog)),
+			xuiFileDialogGetDirectory(pDialog)) == 0,
+		"reopened path edit restores current directory");
 	iRet = xuiSetFocusWidget(pContext, xuiFileDialogGetPathInputWidget(pDialog));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == xuiFileDialogGetPathInputWidget(pDialog), "path focus before blur");
 	iRet = xuiInputSetText(xuiFileDialogGetPathInputWidget(pDialog), (const char*)sSub);

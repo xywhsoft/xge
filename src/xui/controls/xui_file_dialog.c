@@ -1616,6 +1616,24 @@ static int __xuiFileDialogSetPathEditMode(xui_file_dialog pDialog, int bEdit)
 	return iRet;
 }
 
+static int __xuiFileDialogResetTransientState(xui_file_dialog pDialog)
+{
+	int iRet;
+
+	if ( !__xuiFileDialogValid(pDialog) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiFileDialogSetPathEditMode(pDialog, 0);
+	if ( iRet == XUI_OK && pDialog->pPathInput != NULL ) {
+		iRet = xuiInputSetError(pDialog->pPathInput, 0);
+	}
+	if ( iRet == XUI_OK && pDialog->pNameInput != NULL ) {
+		iRet = xuiInputSetError(pDialog->pNameInput, 0);
+	}
+	if ( iRet == XUI_OK && pDialog->pPathTip != NULL ) {
+		iRet = xuiMsgTipClose(pDialog->pPathTip);
+	}
+	return iRet;
+}
+
 static int __xuiFileDialogShowPathError(xui_file_dialog pDialog, const char* sPath)
 {
 	char sMessage[512];
@@ -2786,6 +2804,12 @@ int xuiFileDialogTestParentDir(const char* sPath, char* sBuffer, size_t iCapacit
 	xrtFree(sParent);
 	return XUI_OK;
 }
+
+int xuiFileDialogTestPathTipOpen(xui_file_dialog pDialog)
+{
+	return __xuiFileDialogValid(pDialog) && pDialog->pPathTip != NULL &&
+		xuiMsgTipIsOpen(pDialog->pPathTip);
+}
 #endif
 
 XUI_API int xuiOpenFileDialog(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc)
@@ -2872,6 +2896,8 @@ XUI_API int xuiFileDialogSetOpen(xui_file_dialog pDialog, int bOpen)
 		}
 		return XUI_OK;
 	}
+	iRet = __xuiFileDialogResetTransientState(pDialog);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( !bNewOpen && pDialog->pOverwriteBox != NULL && xuiMsgBoxIsOpen(pDialog->pOverwriteBox) ) {
 		iRet = xuiMsgBoxSetOpen(pDialog->pOverwriteBox, 0);
 		if ( iRet != XUI_OK ) return iRet;
