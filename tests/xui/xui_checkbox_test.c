@@ -163,6 +163,13 @@ int main(void)
 	xuiWidgetSetRect(pCheck, (xui_rect_t){0.0f, 0.0f, 160.0f, 32.0f});
 	xuiWidgetMeasure(pCheck, (xui_vec2_t){300.0f, 100.0f}, &tMeasured);
 	XUI_TEST_CHECK(tMeasured.fX > 18.0f && tMeasured.fY >= 24.0f, "measure includes text");
+	iRet = xuiWidgetMeasureContent(pCheck,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 74.0f && tMeasured.fY == 24.0f,
+		"checkbox intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pCheck, (xui_vec2_t){30.0f, 10.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 30.0f && tMeasured.fY == 10.0f,
+		"checkbox content measure respects tight constraints");
 	xuiWidgetClearDirty(pCheck, XUI_WIDGET_DIRTY_ALL);
 	iRet = xuiCheckBoxSetTextFlags(pCheck,
 		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL);
