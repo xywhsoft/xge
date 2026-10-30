@@ -813,6 +813,34 @@ int main(void)
 	XUI_TEST_CHECK(tRect.fY >= 60.0f, "popup below owner");
 	tRect = xuiDatePickerGetFooterRect(pPicker, XUI_DATE_PICKER_FOOTER_OK);
 	tWorld = xuiWidgetGetWorldRect(pPanel);
+	iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + tRect.fX + tRect.fW * 0.5f,
+		tWorld.fY + tRect.fY + tRect.fH * 0.5f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerGetHoverPart(pPicker) == XUI_DATE_PICKER_PART_OK,
+		"date picker footer hover is tracked");
+	iRet = xuiDatePickerClose(pPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker) &&
+		xuiDatePickerGetHoverPart(pPicker) == XUI_DATE_PICKER_PART_NONE,
+		"closing date picker clears panel hover state");
+	iRet = xuiDatePickerOpen(pPicker);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiDatePickerRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker),
+		"reopen after panel hover close");
+	pPanel = xuiDatePickerGetPanelWidget(pPicker);
+	tRect = xuiDatePickerGetFooterRect(pPicker, XUI_DATE_PICKER_FOOTER_OK);
+	tWorld = xuiWidgetGetWorldRect(pPanel);
+	iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + tRect.fX + tRect.fW * 0.5f,
+		tWorld.fY + tRect.fY + tRect.fH * 0.5f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerGetHoverPart(pPicker) == XUI_DATE_PICKER_PART_OK,
+		"date picker footer hover is restored after reopen");
+	iRet = xuiInputPointerMove(pContext, 1.0f, 1.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerGetHoverPart(pPicker) == XUI_DATE_PICKER_PART_NONE,
+		"date picker panel leave clears hover state");
 	iRet = xuiInputPointerDownEx(pContext, 801u, XUI_POINTER_TYPE_TOUCH,
 		(int)(tWorld.fX + tRect.fX + tRect.fW * 0.5f),
 		(int)(tWorld.fY + tRect.fY + tRect.fH * 0.5f),

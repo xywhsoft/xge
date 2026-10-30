@@ -2518,10 +2518,15 @@ static int __xuiDatePickerPanelCancelPointer(xui_widget pPanel, xui_date_picker_
 	pContext = xuiWidgetGetContext(pPanel);
 	bChanged = (pData->iActivePart != XUI_DATE_PICKER_PART_NONE) ||
 		(pData->iPressedPanel >= 0) || (pData->iActiveIndex >= 0) ||
+		(pData->iHoverPart != XUI_DATE_PICKER_PART_NONE) ||
+		(pData->iHoverPanel >= 0) || (pData->iHoverIndex >= 0) ||
 		pData->tPointerOwner.bActive;
 	pData->iActivePart = XUI_DATE_PICKER_PART_NONE;
 	pData->iPressedPanel = -1;
 	pData->iActiveIndex = -1;
+	pData->iHoverPart = XUI_DATE_PICKER_PART_NONE;
+	pData->iHoverPanel = -1;
+	pData->iHoverIndex = -1;
 	iRet = xuiInternalPointerOwnerCancel(pContext, pPanel, &pData->tPointerOwner);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !xuiInternalContextIsValid(pContext) || xuiInternalContextDestroyPending(pContext) ||
@@ -2557,6 +2562,26 @@ static int __xuiDatePickerPanelPointerMove(xui_widget pPanel, xui_widget pOwner,
 		return xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_OK;
+}
+
+static int __xuiDatePickerPanelPointerLeave(xui_widget pPanel, xui_date_picker_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	int bChanged;
+
+	if ( (pPanel == NULL) || (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) return XUI_OK;
+	if ( pData->tPointerOwner.bActive &&
+	     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
+		return XUI_OK;
+	}
+	bChanged = (pData->iHoverPart != XUI_DATE_PICKER_PART_NONE) ||
+		(pData->iHoverPanel >= 0) || (pData->iHoverIndex >= 0);
+	pData->iHoverPart = XUI_DATE_PICKER_PART_NONE;
+	pData->iHoverPanel = -1;
+	pData->iHoverIndex = -1;
+	return bChanged ? xuiWidgetInvalidate(pPanel,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
 }
 
 static int __xuiDatePickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_date_picker_data_t* pData, const xui_event_t* pEvent)
@@ -2724,6 +2749,8 @@ static int __xuiDatePickerPanelEvent(xui_widget pPanel, const xui_event_t* pEven
 		return __xuiDatePickerPanelPointerDown(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_POINTER_MOVE:
 		return __xuiDatePickerPanelPointerMove(pPanel, pOwner, pData, pEvent);
+	case XUI_EVENT_POINTER_LEAVE:
+		return __xuiDatePickerPanelPointerLeave(pPanel, pData, pEvent);
 	case XUI_EVENT_POINTER_WHEEL:
 		return __xuiDatePickerPanelWheel(pPanel, pOwner, pData, pEvent);
 	case XUI_EVENT_POINTER_UP:
@@ -2940,6 +2967,7 @@ static int __xuiDatePickerInitPanelEvents(xui_widget pPanel, xui_widget pOwner)
 
 	iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_DOWN, __xuiDatePickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_MOVE, __xuiDatePickerPanelEvent, pOwner);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_LEAVE, __xuiDatePickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_UP, __xuiDatePickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiDatePickerPanelEvent, pOwner);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pPanel, XUI_EVENT_POINTER_WHEEL, __xuiDatePickerPanelEvent, pOwner);
