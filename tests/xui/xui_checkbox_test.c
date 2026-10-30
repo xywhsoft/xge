@@ -97,6 +97,7 @@ int main(void)
 	xui_rect_t tInvalidSrc;
 	xui_rect_t tLastSrc;
 	xui_rect_i_t tFullRect;
+	char sLongText[192];
 	int iChanged;
 	int iDestroyChanged;
 	int iFailed;
@@ -222,11 +223,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetIndicatorSize(pCheck) == 20.0f, "set size");
 	iRet = xuiCheckBoxSetGap(pCheck, 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckBoxGetGap(pCheck) == 10.0f, "set gap");
+	memset(sLongText, 'C', sizeof(sLongText) - 1u);
+	sLongText[sizeof(sLongText) - 1u] = '\0';
+	xuiWidgetClearDirty(pCheck, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiCheckBoxSetText(pCheck, sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCheckBoxGetText(pCheck), sLongText) == 0 &&
+		(xuiWidgetGetDirtyFlags(pCheck) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+		"long checkbox text grows shared buffer");
+	xuiWidgetClearDirty(pCheck, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiCheckBoxSetText(pCheck, sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pCheck) == 0u,
+		"idempotent checkbox text stays clean");
+	iRet = xuiCheckBoxSetText(pCheck, xuiCheckBoxGetText(pCheck) + 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiCheckBoxGetText(pCheck)) == sizeof(sLongText) - 2u,
+		"grown self-aliased text update");
 	iRet = xuiCheckBoxSetText(pCheck, "Use builtin atlas");
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCheckBoxGetText(pCheck), "Use builtin atlas") == 0, "set text");
-	iRet = xuiCheckBoxSetText(pCheck, xuiCheckBoxGetText(pCheck) + 4);
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCheckBoxGetText(pCheck), "builtin atlas") == 0,
-	               "self-aliased text update");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCheckBoxGetText(pCheck), "Use builtin atlas") == 0,
+		"restore checkbox text");
 	iRet = xuiCheckBoxSetChange(pCheck, __xuiCheckBoxChanged, &iChanged);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set change callback");
 	iRet = xuiInputPointerMove(pContext, 20.0f, 16.0f, 0);

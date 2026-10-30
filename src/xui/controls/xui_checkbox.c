@@ -2,7 +2,9 @@
 #if XUI_ENABLE_CHECKBOX
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
+#include "xui_text_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -112,32 +114,39 @@ static int __xuiCheckBoxDescValid(const xui_checkbox_desc_t* pDesc)
 		 __xuiCheckBoxNonNegativeFloatValid(pDesc->fGap));
 }
 
-static int __xuiCheckBoxTextSet(xui_checkbox_data_t* pData, const char* sText)
+static int __xuiCheckBoxTextRequired(const char* sText, int* pRequired)
 {
-	char* sOld;
-	char* sNew;
-	int iNeed;
+	size_t iLength;
 
-	if ( pData == NULL ) {
+	if ( pRequired == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iNeed = (int)strlen(sText) + 1;
-	if ( iNeed > pData->iTextCapacity ) {
-		sNew = (char*)xrtMalloc((size_t)iNeed);
-		if ( sNew == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		memcpy(sNew, sText, (size_t)iNeed);
-		sOld = pData->sText;
-		pData->sText = sNew;
-		pData->iTextCapacity = iNeed;
-		if ( sOld != NULL ) xrtFree(sOld);
-		return XUI_OK;
+	iLength = strlen(sText);
+	if ( iLength >= (size_t)INT_MAX ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memmove(pData->sText, sText, (size_t)iNeed);
+	*pRequired = (int)iLength + 1;
+	return XUI_OK;
+}
+
+static int __xuiCheckBoxTextSet(xui_checkbox_data_t* pData, const char* sText)
+{
+	int iRequired;
+	int iRet;
+
+	if ( pData == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiCheckBoxTextRequired(sText, &iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( sText == NULL ) sText = "";
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	memmove(pData->sText, sText, (size_t)iRequired);
 	return XUI_OK;
 }
 
@@ -1090,6 +1099,7 @@ XUI_API int xuiCheckBoxSetChange(xui_widget pWidget, xui_checkbox_change_proc on
 XUI_API int xuiCheckBoxSetText(xui_widget pWidget, const char* sText)
 {
 	xui_checkbox_data_t* pData;
+	int iRequired;
 	int iRet;
 
 	pData = __xuiCheckBoxGetData(pWidget);
@@ -1098,12 +1108,14 @@ XUI_API int xuiCheckBoxSetText(xui_widget pWidget, const char* sText)
 	}
 	if ( sText == NULL ) sText = "";
 	if ( pData->sText != NULL && strcmp(pData->sText, sText) == 0 ) return XUI_OK;
+	iRet = __xuiCheckBoxTextRequired(sText, &iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iRequired);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCheckBoxTextSet(pData, sText);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
+	memmove(pData->sText, sText, (size_t)iRequired);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
