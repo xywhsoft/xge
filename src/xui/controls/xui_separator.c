@@ -5,6 +5,8 @@
 #include <math.h>
 #include <string.h>
 
+#define XUI_SEPARATOR_MAX_PATTERN_SEGMENTS 16384
+
 typedef struct xui_separator_data_t {
 	uint32_t iColor;
 	float fThickness;
@@ -286,6 +288,8 @@ static int __xuiSeparatorDrawPattern(xui_proxy pProxy, xui_draw_context pDraw, c
 	int64_t iDash;
 	int64_t iDot;
 	int64_t iGap;
+	int64_t iPatternSpan;
+	int64_t iSegmentCount;
 	int bVertical;
 	int iRet;
 
@@ -299,6 +303,19 @@ static int __xuiSeparatorDrawPattern(xui_proxy pProxy, xui_draw_context pDraw, c
 	iDot = iThickness;
 	iDash = iThickness * 4;
 	iGap = iThickness * 2;
+	if ( pData->iLineStyle == XUI_SEPARATOR_DOT ) {
+		iPatternSpan = iDot + iThickness;
+		iSegmentCount = (iMain + iPatternSpan - 1) / iPatternSpan;
+	} else if ( pData->iLineStyle == XUI_SEPARATOR_DASH ) {
+		iPatternSpan = iDash + iGap;
+		iSegmentCount = (iMain + iPatternSpan - 1) / iPatternSpan;
+	} else {
+		iPatternSpan = iDash + iGap + iDot + iGap;
+		iSegmentCount = ((iMain + iPatternSpan - 1) / iPatternSpan) * 2;
+	}
+	if ( iSegmentCount > XUI_SEPARATOR_MAX_PATTERN_SEGMENTS ) {
+		return pProxy->drawRectFill(pProxy, pDraw, tLine, pData->iColor);
+	}
 	iCursor = 0;
 	while ( iCursor < iMain ) {
 		if ( pData->iLineStyle == XUI_SEPARATOR_DOT ) {

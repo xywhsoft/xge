@@ -257,6 +257,20 @@ int main(void)
 	pCache = xuiWidgetGetCacheSurface(pSeparator, xuiWidgetGetStateId(pSeparator));
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) == 2, "dash-dot segments clipped to line");
 
+	iRet = xuiWidgetSetRect(pSeparator, (xui_rect_t){20, 20, 40000, 8});
+	XUI_TEST_CHECK(iRet == XUI_OK, "oversized pattern rect");
+	iRet = xuiSeparatorSetThickness(pSeparator, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "oversized pattern thickness");
+	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_DOT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "oversized dot style");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render oversized pattern");
+	pCache = xuiWidgetGetCacheSurface(pSeparator, xuiWidgetGetStateId(pSeparator));
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) == 1,
+		"oversized pattern falls back to bounded draw work");
+	iRet = xuiWidgetSetRect(pSeparator, (xui_rect_t){20, 20, 14, 8});
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore short pattern rect");
+
 	iRet = xuiSeparatorSetThickness(pSeparator, XUI_LAYOUT_UNBOUNDED);
 	XUI_TEST_CHECK(iRet == XUI_OK, "maximum thickness");
 	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_DASH);
