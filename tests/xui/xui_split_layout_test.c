@@ -180,6 +180,11 @@ int main(void)
 	int iFailed;
 	int iRet;
 	uint32_t iPointerModifiers;
+	uint32_t iDividerPaint;
+	uint32_t iHoverPaint;
+	uint32_t iActivePaint;
+	uint32_t iShadowPaint;
+	uint32_t iDisabledPaint;
 	xui_split_destroy_state_t tDestroyState;
 	xui_split_destroy_context_state_t tDestroyContextState;
 	const char* arrTabItems[1];
@@ -409,6 +414,23 @@ int main(void)
 	pDividerCache = xuiWidgetGetCacheSurface(pDividerWidget, xuiWidgetGetStateId(pDividerWidget));
 	XUI_TEST_CHECK(pDividerCache != NULL && xuiTestSurfaceGetRectFillCount(pDividerCache) > 0,
 	               "focused hover divider remains visible after drag");
+	iRet = xuiSplitLayoutGetColors(pSplit, &iDividerPaint, &iHoverPaint,
+		&iActivePaint, &iShadowPaint);
+	XUI_TEST_CHECK(iRet == XUI_OK && iShadowPaint != 0u,
+		"read divider paint colors");
+	pDividerCache = xuiWidgetGetCacheSurface(pDividerWidget, XUI_WIDGET_STATE_HOVER);
+	XUI_TEST_CHECK(pDividerCache != NULL &&
+		xuiTestSurfaceGetLastColor(pDividerCache) == iHoverPaint,
+		"hover cache uses hover-state paint");
+	pDividerCache = xuiWidgetGetCacheSurface(pDividerWidget, XUI_WIDGET_STATE_ACTIVE);
+	XUI_TEST_CHECK(pDividerCache != NULL &&
+		xuiTestSurfaceGetLastColor(pDividerCache) == iActivePaint,
+		"active cache uses active-state paint");
+	iDisabledPaint = (iDividerPaint & 0xffffff00u) | ((iDividerPaint & 0xffu) / 2u);
+	pDividerCache = xuiWidgetGetCacheSurface(pDividerWidget, XUI_WIDGET_STATE_DISABLED);
+	XUI_TEST_CHECK(pDividerCache != NULL &&
+		xuiTestSurfaceGetLastColor(pDividerCache) == iDisabledPaint,
+		"disabled cache uses inherited disabled-state paint");
 
 	tHit = xuiSplitLayoutGetDividerHitRect(pSplit, 1);
 	tWorld = xuiWidgetGetWorldRect(pSplit);
@@ -760,6 +782,12 @@ int main(void)
 		"accessibility set value reuses constrained divider commit path");
 	iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "accessibility set value layout");
+	xuiWidgetClearDirty(pMultiSplit, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiWidgetPerformAccessibleAction(pDividerWidget, 1,
+		XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMultiChanged == 4 &&
+		xuiWidgetGetDirtyFlags(pMultiSplit) == 0u,
+		"unchanged accessible divider value does not dirty layout");
 	tAccessibleValue.fNumber = NAN;
 	iRet = xuiWidgetPerformAccessibleAction(pDividerWidget, 1,
 		XUI_ACCESSIBLE_ACTION_SET_VALUE, &tAccessibleValue);
