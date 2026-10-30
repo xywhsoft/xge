@@ -164,6 +164,8 @@ int main(void)
 	xui_rect_t tHit;
 	xui_rect_t tShadow;
 	xui_rect_t tWorld;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	float fLayoutSize;
 	float fVisualSize;
 	float fHitSize;
@@ -245,6 +247,17 @@ int main(void)
 	tDesc.fDividerHitSize = 14.0f;
 	iRet = xuiSplitLayoutCreate(pContext, &pSplit, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pSplit != NULL, "split create");
+	iRet = xuiWidgetMeasure(pSplit,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 100.0f && tNatural.fY > 80.0f,
+		"split intrinsic measure exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pSplit, (xui_vec2_t){100.0f, 80.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiSplitNear(tMeasured.fX, 100.0f) &&
+		__xuiSplitNear(tMeasured.fY, 80.0f), "split finite measure constraint");
+	iRet = xuiWidgetMeasure(pSplit,
+		(xui_vec2_t){100.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiSplitNear(tMeasured.fX, 100.0f) &&
+		__xuiSplitNear(tMeasured.fY, tNatural.fY), "split single-axis measure constraint");
 	iRet = xuiWidgetAddChild(pRoot, pSplit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add split");
 	xuiWidgetSetRect(pSplit, (xui_rect_t){20.0f, 20.0f, 460.0f, 180.0f});

@@ -640,11 +640,20 @@ static int __xuiSplitLayoutPrepare(xui_widget pWidget, void* pUser)
 static int __xuiSplitLayoutContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	(void)pWidget;
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pSize->fX = 240.0f;
 	pSize->fY = 160.0f;
+	if ( (tConstraint.fX >= 0.0f) &&
+		(tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fX > tConstraint.fX) ) {
+		pSize->fX = tConstraint.fX;
+	}
+	if ( (tConstraint.fY >= 0.0f) &&
+		(tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fY > tConstraint.fY) ) {
+		pSize->fY = tConstraint.fY;
+	}
 	return XUI_OK;
 }
 
