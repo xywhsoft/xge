@@ -117,6 +117,19 @@ static int __xuiDockTestClientEvent(xui_widget pWidget, const xui_event_t* pEven
 	return XUI_OK;
 }
 
+static xvalue* __xuiDockTestFindPaneState(xvalue* pNode)
+{
+	xstrview tType;
+	xvalue* pPane;
+	if ( pNode == NULL || !xrtValueIs(pNode, XVALUE_OBJECT) ) return NULL;
+	if ( !xrtValueGetString(xrtValueObjectGet(pNode, (xstrview){ "type", 4 }), &tType) ) return NULL;
+	if ( tType.Size == 4u && memcmp(tType.Data, "pane", 4u) == 0 ) return pNode;
+	if ( tType.Size != 5u || memcmp(tType.Data, "split", 5u) != 0 ) return NULL;
+	pPane = __xuiDockTestFindPaneState(xrtValueObjectGet(pNode, (xstrview){ "first", 5 }));
+	return (pPane != NULL) ? pPane :
+		__xuiDockTestFindPaneState(xrtValueObjectGet(pNode, (xstrview){ "second", 6 }));
+}
+
 static void __xuiDockTestState(xui_widget pWidget, int iWindow, int iOldState, int iNewState, void* pUser)
 {
 	dock_test_data_t* pData = (dock_test_data_t*)pUser;
@@ -474,6 +487,7 @@ int main(void)
 	xvalue* pState;
 	xvalue* pRegions;
 	xvalue* pRegionState;
+	xvalue* pPaneState;
 	dock_test_data_t tData;
 	dock_destroy_test_data_t tDestroyData;
 	dock_replace_close_test_data_t tReplaceCloseData;
@@ -545,6 +559,8 @@ int main(void)
 	int iTempWindow;
 	int iTempWindow2;
 	int iCloseBefore;
+	int iWidthMode;
+	int iHeightMode;
 	int i;
 	char sLongTitle[XUI_DOCK_PANEL_TITLE_CAPACITY + 4];
 
@@ -566,6 +582,7 @@ int main(void)
 	pState = NULL;
 	pRegions = NULL;
 	pRegionState = NULL;
+	pPaneState = NULL;
 	iFailed = 0;
 	iRegionCount = iWindowCount = iFloatingCount = 0;
 	iLayerProps = iLayerToolbox = iZProps = iZToolbox = 0;
@@ -579,6 +596,7 @@ int main(void)
 	iTempWindow = -1;
 	iTempWindow2 = -1;
 	iCloseBefore = 0;
+	iWidthMode = iHeightMode = -1;
 	fRegionBefore = fRegionAfter = 0.0f;
 	fAutoHidePaneW = 0.0f;
 	fNoDropX = fNoDropY = 0.0f;
@@ -1635,6 +1653,29 @@ int main(void)
 	pRegions = NULL;
 	pRegionState = NULL;
 	iRet = xuiDockPanelSaveState(pDock, &pState);
+	if ( iRet == XUI_OK ) {
+		pRegions = xrtValueObjectGet(pState, (xstrview){ "regions", 7 });
+		pPaneState = NULL;
+		for ( i = 0; pRegions != NULL && i < (int)xrtValueCount(pRegions) && pPaneState == NULL; i++ ) {
+			pRegionState = xrtValueArrayGet(pRegions, (uint32_t)i);
+			pPaneState = __xuiDockTestFindPaneState(
+				xrtValueObjectGet(pRegionState, (xstrview){ "root", 4 }));
+		}
+	}
+	iActiveBefore = xuiDockPanelGetPaneActiveWindow(pDock, docPane);
+	XUI_TEST_CHECK(iRet == XUI_OK && pPaneState != NULL &&
+		xrtValueObjectSetNew(pPaneState, (xstrview){ "active", 6 }, xrtValueInt(999)),
+		"corrupt saved pane active index");
+	iRet = xuiDockPanelLoadState(pDock, pState);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiDockPanelGetPaneActiveWindow(pDock, docPane) == iActiveBefore,
+		"reject out-of-range pane active index without changing layout");
+	xuiDockPanelStateFree(pState);
+	pState = NULL;
+	pRegions = NULL;
+	pRegionState = NULL;
+	pPaneState = NULL;
+	iRet = xuiDockPanelSaveState(pDock, &pState);
 	XUI_TEST_CHECK(iRet == XUI_OK && pState != NULL, "resave valid state");
 	iRet = xuiDockPanelDockWindow(pDock, props, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "mutate props docked");
@@ -1970,6 +2011,55 @@ int main(void)
 	pTempDock = NULL;
 	pTempClient = NULL;
 	pTempButton = NULL;
+
+	pTempDock = NULL;
+	pTempClient = NULL;
+	pTempClient2 = NULL;
+	iTempWindow = -1;
+	iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTempDock, (xui_rect_t){24.0f, 24.0f, 360.0f, 260.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pTempClient, XUI_FLOW_INLINE_BLOCK);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pTempClient, XUI_SIZE_FIXED, XUI_SIZE_CONTENT);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pTempClient, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Client state A", pTempClient, &iTempWindow);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetSizeMode(pTempClient, &iWidthMode, &iHeightMode);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetFlowMode(pTempClient) == XUI_FLOW_INLINE_BLOCK &&
+		iWidthMode == XUI_SIZE_FIXED && iHeightMode == XUI_SIZE_CONTENT && !xuiWidgetGetVisible(pTempClient),
+		"attaching client preserves explicit layout and visibility");
+	iRet = xuiDockPanelDockWindow(pTempDock, iTempWindow,
+		XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWidgetGetVisible(pTempClient) &&
+		!xuiWidgetGetEffectiveVisible(pTempClient),
+		"dock layout respects an explicitly hidden client");
+	iRet = xuiWidgetCreate(pContext, &pTempClient2);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pTempClient2, XUI_FLOW_BLOCK);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pTempClient2, XUI_SIZE_CONTENT, XUI_SIZE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelSetWindowClient(pTempDock, iTempWindow, pTempClient2);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetSizeMode(pTempClient2, &iWidthMode, &iHeightMode);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetParent(pTempClient) == NULL &&
+		xuiWidgetGetFlowMode(pTempClient) == XUI_FLOW_INLINE_BLOCK && !xuiWidgetGetVisible(pTempClient) &&
+		xuiWidgetGetFlowMode(pTempClient2) == XUI_FLOW_BLOCK &&
+		iWidthMode == XUI_SIZE_CONTENT && iHeightMode == XUI_SIZE_FIXED,
+		"replacing client preserves detached and incoming presentation state");
+	iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) tClientWorld = xuiWidgetGetWorldRect(pTempClient2);
+	XUI_TEST_CHECK(iRet == XUI_OK && tClientWorld.fW > 0.0f && tClientWorld.fH > 0.0f,
+		"custom client layout modes still receive dock host geometry");
+	iRet = xuiDockPanelClear(pTempDock);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetSizeMode(pTempClient2, &iWidthMode, &iHeightMode);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetParent(pTempClient2) == NULL &&
+		xuiWidgetGetFlowMode(pTempClient2) == XUI_FLOW_BLOCK &&
+		iWidthMode == XUI_SIZE_CONTENT && iHeightMode == XUI_SIZE_FIXED && xuiWidgetGetVisible(pTempClient2),
+		"clear detaches client without changing presentation state");
+	xuiWidgetDestroy(pTempClient);
+	xuiWidgetDestroy(pTempClient2);
+	xuiWidgetDestroy(pTempDock);
+	pTempClient = NULL;
+	pTempClient2 = NULL;
+	pTempDock = NULL;
 
 	memset(&tDestroyData, 0, sizeof(tDestroyData));
 	pTempDock = NULL;

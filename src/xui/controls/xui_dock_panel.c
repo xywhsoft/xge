@@ -2784,7 +2784,10 @@ static int __xuiDockLoadValidateNode(xui_dock_panel_data_t* pData, xvalue* pNode
 	const char* sType;
 	xvalue* pValue;
 	xvalue* pTabs;
+	uint32_t iTabCount;
 	uint32_t i;
+	int iActive;
+	int bHasActive;
 	int w;
 	(void)pData;
 	if ( (pNodeState == NULL) || (xuiXrtValueType(pNodeState) == XVALUE_NULL) ) return XUI_OK;
@@ -2818,14 +2821,19 @@ static int __xuiDockLoadValidateNode(xui_dock_panel_data_t* pData, xvalue* pNode
 	if ( strcmp(sType, "pane") != 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	(*pPaneCount)++;
 	if ( *pPaneCount > XUI_DOCK_PANEL_PANE_CAPACITY ) return XUI_ERROR_OUT_OF_MEMORY;
+	iActive = -1;
+	bHasActive = 0;
 	pValue = __xuiDockStateGet(pNodeState, "active");
 	if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL ) {
-		int active;
-		if ( !__xuiDockStateValueToInt(pValue, &active) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( !__xuiDockStateValueToInt(pValue, &iActive) ) return XUI_ERROR_INVALID_ARGUMENT;
+		bHasActive = 1;
 	}
 	pTabs = __xuiDockStateGet(pNodeState, "tabs");
 	if ( (pTabs == NULL) || (xuiXrtValueType(pTabs) != XVALUE_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0u; i < xrtValueCount(pTabs); i++ ) {
+	iTabCount = xrtValueCount(pTabs);
+	if ( iTabCount == 0u || iTabCount > XUI_DOCK_PANEL_PANE_WINDOW_CAPACITY ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( bHasActive && (iActive < 0 || (uint32_t)iActive >= iTabCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0u; i < iTabCount; i++ ) {
 		if ( !__xuiDockStateFindWindow(pData, xuiXrtValueArrayGet(pTabs, i), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( !arrInfo[w].bInState || arrInfo[w].iState != XUI_DOCK_PANEL_WINDOW_DOCKED || arrInfo[w].bInTree || arrInfo[w].bInFloating ) return XUI_ERROR_INVALID_ARGUMENT;
 		arrInfo[w].bInTree = 1;
@@ -3155,7 +3163,7 @@ static int __xuiDockHostLayoutChildren(xui_widget pHost, xui_rect_t tContentRect
 		buttonRect = xuiInternalWindowFrameTrailingButton(&layout, &metrics, buttonIndex++);
 		if ( xuiLayoutArrangeChild(pHost, pWin->pPinButtonWidget, buttonRect) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pWin->pClientWidget == NULL ) return XUI_OK;
+	if ( pWin->pClientWidget == NULL || !xuiWidgetGetVisible(pWin->pClientWidget) ) return XUI_OK;
 	local = __xuiDockHostClientLocal(pWin, &pWin->pOwner->tMetrics);
 	pWin->tClientRect = local;
 	return xuiLayoutArrangeChild(pHost, pWin->pClientWidget, local);
@@ -3898,7 +3906,6 @@ static int __xuiDockPanelPrepare(xui_widget pWidget, void* pUser)
 		if ( !pWin->bUsed || pWin->pHostWidget == NULL ) continue;
 		bVisible = __xuiDockWindowLogicallyVisible(pData, pWin);
 		(void)xuiWidgetSetVisible(pWin->pHostWidget, bVisible);
-		if ( pWin->pClientWidget != NULL ) (void)xuiWidgetSetVisible(pWin->pClientWidget, bVisible);
 		if ( pWin->pCloseButtonWidget != NULL ) {
 			(void)xuiWidgetSetVisible(pWin->pCloseButtonWidget, bVisible && pWin->bClosable &&
 				(pWin->iState == XUI_DOCK_PANEL_WINDOW_FLOATING ||
@@ -6784,8 +6791,6 @@ XUI_API int xuiDockPanelSetWindowClient(xui_widget pWidget, int iWindow, xui_wid
 		}
 	}
 	if ( pClient != NULL ) {
-		(void)xuiWidgetSetFlowMode(pClient, XUI_FLOW_ABSOLUTE);
-		(void)xuiWidgetSetSizeMode(pClient, XUI_SIZE_FILL, XUI_SIZE_FILL);
 		ret = xuiWidgetAddChild(w->pHostWidget, pClient);
 		if ( ret != XUI_OK ) {
 			if ( bOldAttached ) {
