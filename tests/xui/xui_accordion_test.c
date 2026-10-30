@@ -18,6 +18,7 @@ typedef struct xui_accordion_test_events_t {
 	int iSelectCount;
 	int iLastIndex;
 	int iLastId;
+	int iEscapeCount;
 } xui_accordion_test_events_t;
 
 typedef struct xui_accordion_destroy_events_t {
@@ -73,6 +74,20 @@ static void __xuiAccordionSelected(xui_widget pWidget, int iIndex, int iId, void
 		pEvents->iLastIndex = iIndex;
 		pEvents->iLastId = iId;
 	}
+}
+
+static int __xuiAccordionRootEvent(xui_widget pWidget, const xui_event_t* pEvent,
+	void* pUser)
+{
+	xui_accordion_test_events_t* pEvents =
+		(xui_accordion_test_events_t*)pUser;
+
+	(void)pWidget;
+	if ( pEvents != NULL && pEvent != NULL &&
+	     pEvent->iType == XUI_EVENT_KEY_DOWN && pEvent->iKey == XUI_KEY_ESCAPE ) {
+		pEvents->iEscapeCount++;
+	}
+	return XUI_OK;
 }
 
 static void __xuiAccordionDestroySelected(xui_widget pWidget, int iIndex, int iId, void* pUser)
@@ -206,6 +221,7 @@ int main(void)
 	xui_rect_t tClient0;
 	xui_rect_t tClient1;
 	xui_rect_t tArrow;
+	xui_vec2_t tMeasured;
 	uint32_t iBg;
 	uint32_t iHeader;
 	float fHeaderHeight;
@@ -261,6 +277,9 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 640.0f, 360.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
+	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_KEY_DOWN,
+		__xuiAccordionRootEvent, &tEvents);
+	XUI_TEST_CHECK(iRet == XUI_OK, "root key handler");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -279,6 +298,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject missing descriptor sections");
 	iRet = xuiAccordionCreate(pContext, &pAccordion, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pAccordion != NULL, "accordion create");
+	iRet = xuiWidgetMeasureContent(pAccordion,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 320.0f && tMeasured.fY == 0.0f,
+		"accordion intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pAccordion, (xui_vec2_t){120.0f, 0.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 120.0f && tMeasured.fY == 0.0f,
+		"accordion content measure respects tight constraints");
 	iRet = xuiWidgetAddChild(pRoot, pAccordion);
 	XUI_TEST_CHECK(iRet == XUI_OK, "accordion add");
 	xuiWidgetSetRect(pAccordion, (xui_rect_t){20.0f, 20.0f, 320.0f, 260.0f});
@@ -446,6 +472,12 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pFocusChild,
 		"focus section descendant");
+	iBefore = xuiAccordionGetSelected(pAccordion);
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSelected(pAccordion) == iBefore &&
+		xuiGetFocusWidget(pContext) == pFocusChild,
+		"descendant arrow key does not navigate accordion");
 	tWorld = xuiWidgetGetWorldRect(pAccordion);
 	tHeader = xuiAccordionGetHeaderRect(pAccordion, 0);
 	iBefore = tEvents.iSelectCount;
@@ -462,6 +494,16 @@ int main(void)
 		xuiWidgetClearDirty(xuiAccordionGetHeaderWidget(pAccordion, i), XUI_WIDGET_DIRTY_ALL);
 		xuiWidgetClearDirty(xuiAccordionGetClientWidget(pAccordion, i), XUI_WIDGET_DIRTY_ALL);
 	}
+	iBefore = xuiAccordionGetSelected(pAccordion);
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, XUI_MOD_CTRL);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSelected(pAccordion) == iBefore,
+		"modified arrow key does not navigate accordion");
+	iBefore = tEvents.iEscapeCount;
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tEvents.iEscapeCount == iBefore + 1,
+		"idle escape bubbles to parent");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSelected(pAccordion) == 1 &&
@@ -569,10 +611,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render before capture tests");
 	iRet = __xuiAccordionDispatchPress(pContext, pAccordion, 0, &fPressX, &fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == xuiAccordionGetHeaderWidget(pAccordion, 0) && xuiAccordionGetActiveIndex(pAccordion) == 0, "header press captures header");
+	iBefore = tEvents.iEscapeCount;
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiAccordionGetActiveIndex(pAccordion) == -1, "escape cancels header capture");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		xuiAccordionGetActiveIndex(pAccordion) == -1 &&
+		tEvents.iEscapeCount == iBefore, "escape cancels header capture");
 	iRet = __xuiAccordionDispatchRelease(pContext, fPressX, fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK, "release after escape");
 

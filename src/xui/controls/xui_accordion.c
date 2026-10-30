@@ -844,7 +844,22 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	}
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_KEY_DOWN:
-		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
+		if ( pEvent->pTarget != pWidget ||
+		     pEvent->iPhase != XUI_EVENT_PHASE_TARGET ) {
+			return XUI_OK;
+		}
+		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
+		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			return XUI_OK;
+		}
+		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
+			if ( !pData->tPointerOwner.bActive && pData->iActiveIndex < 0 ) {
+				return XUI_OK;
+			}
+			iRet = __xuiAccordionCancelPress(pWidget, pData);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
+		if ( (pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) != 0u ) {
 			return XUI_OK;
 		}
 		if ( pEvent->iKey == XUI_KEY_DOWN ) {
@@ -900,10 +915,6 @@ static int __xuiAccordionEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				if ( iRet != XUI_OK ) return iRet;
 				return XUI_EVENT_DISPATCH_STOP;
 			}
-		} else if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-			iRet = __xuiAccordionCancelPress(pWidget, pData);
-			if ( iRet != XUI_OK ) return iRet;
-			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_FOCUS:
@@ -1117,13 +1128,16 @@ static int __xuiAccordionUpdateClientPadding(xui_accordion_data_t* pData, float 
 static int __xuiAccordionContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	(void)pWidget;
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pSize->fX = 320.0f;
 	pSize->fY = 0.0f;
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
