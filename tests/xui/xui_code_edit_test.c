@@ -466,6 +466,8 @@ int main(void)
 	xui_scroll_model_t* pScrollModel;
 	xui_layout_t tLayout;
 	xui_cache_policy_t tCachePolicy;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	char sLongText[2048];
 	const char* arrTabItems[2];
 	int iMarginCount;
@@ -584,6 +586,17 @@ int main(void)
 	tDesc.iIndentColumns = 4;
 	iRet = xuiCodeEditCreate(pContext, &pCodeEdit, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCodeEdit != NULL, "create");
+	iRet = xuiWidgetMeasure(pCodeEdit,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 140.0f && tNatural.fY > 90.0f,
+		"codeedit intrinsic viewport exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pCodeEdit, (xui_vec2_t){140.0f, 90.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 140.0f && tMeasured.fY == 90.0f,
+		"codeedit finite measure constraint");
+	iRet = xuiWidgetMeasure(pCodeEdit,
+		(xui_vec2_t){140.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 140.0f &&
+		tMeasured.fY == tNatural.fY, "codeedit single-axis measure constraint");
 	tLayout = xuiWidgetGetLayout(pCodeEdit);
 	XUI_TEST_CHECK(tLayout.iOverflow == XUI_OVERFLOW_HIDDEN && tLayout.iWidthMode == XUI_SIZE_CONTENT && tLayout.iHeightMode == XUI_SIZE_CONTENT, "default layout applied");
 	tCachePolicy = xuiWidgetGetCachePolicy(pCodeEdit);
