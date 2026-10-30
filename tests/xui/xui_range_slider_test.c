@@ -152,6 +152,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pSlider;
+	xui_widget pChild;
 	xui_widget pInvalid;
 	xui_widget pDestroySlider;
 	xui_surface pTarget;
@@ -190,6 +191,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pSlider = NULL;
+	pChild = NULL;
 	pInvalid = NULL;
 	pDestroySlider = NULL;
 	pTarget = NULL;
@@ -291,6 +293,49 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetActiveThumb(pSlider) == XUI_RANGE_SLIDER_THUMB_START,
 		"shift tab returns to start thumb");
+
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pSlider, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "range slider child create");
+	fOwnedStart = xuiRangeSliderGetStart(pSlider);
+	fOwnedEnd = xuiRangeSliderGetEnd(pSlider);
+	iChangeCount = xuiRangeSliderGetChangeCount(pSlider);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == fOwnedStart &&
+		xuiRangeSliderGetEnd(pSlider) == fOwnedEnd &&
+		xuiRangeSliderGetChangeCount(pSlider) == iChangeCount &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"descendant pointer does not activate range slider");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_WHEEL;
+	tEvent.pTarget = pChild;
+	tEvent.fWheelY = 1.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == fOwnedStart &&
+		xuiRangeSliderGetEnd(pSlider) == fOwnedEnd &&
+		xuiRangeSliderGetChangeCount(pSlider) == iChangeCount,
+		"descendant wheel does not move range slider");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRangeSliderGetStart(pSlider) == fOwnedStart &&
+		xuiRangeSliderGetEnd(pSlider) == fOwnedEnd &&
+		xuiRangeSliderGetChangeCount(pSlider) == iChangeCount,
+		"descendant key does not move range slider");
+	xuiWidgetDestroy(pChild);
+	pChild = NULL;
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 280, 260, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");

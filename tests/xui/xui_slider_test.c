@@ -88,6 +88,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pSlider;
+	xui_widget pChild;
 	xui_widget pInvalid;
 	xui_widget pDestroySlider;
 	xui_surface pTarget;
@@ -119,6 +120,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pSlider = NULL;
+	pChild = NULL;
 	pInvalid = NULL;
 	pDestroySlider = NULL;
 	pTarget = NULL;
@@ -189,6 +191,45 @@ int main(void)
 		"slider accessibility set value");
 	iRet = xuiSliderSetValue(pSlider, 25.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore value after accessibility action");
+
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pSlider, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "slider child create");
+	fOwnedValue = xuiSliderGetValue(pSlider);
+	iChangeCount = xuiSliderGetChangeCount(pSlider);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetValue(pSlider) == fOwnedValue &&
+		xuiSliderGetChangeCount(pSlider) == iChangeCount &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"descendant pointer does not activate slider");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_WHEEL;
+	tEvent.pTarget = pChild;
+	tEvent.fWheelY = 1.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetValue(pSlider) == fOwnedValue &&
+		xuiSliderGetChangeCount(pSlider) == iChangeCount,
+		"descendant wheel does not move slider");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetValue(pSlider) == fOwnedValue &&
+		xuiSliderGetChangeCount(pSlider) == iChangeCount,
+		"descendant key does not move slider");
+	xuiWidgetDestroy(pChild);
+	pChild = NULL;
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 260, 240, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");

@@ -688,22 +688,26 @@ static int __xuiSliderEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
 	case XUI_EVENT_POINTER_MOVE:
+		if ( (pEvent->pTarget != pWidget) && !pData->bPointerActive ) return XUI_OK;
 		return __xuiSliderPointerMove(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_LEAVE:
+		if ( (pEvent->pTarget != pWidget) && !pData->bPointerActive ) return XUI_OK;
 		if ( pData->bDragging == 0 ) {
 			return __xuiSliderSyncState(pWidget, pData);
 		}
 		break;
 	case XUI_EVENT_POINTER_DOWN:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		return __xuiSliderPointerDown(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_UP:
 		return __xuiSliderPointerUp(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_CLICK:
-		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT ) {
+		if ( (pEvent->pTarget == pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_WHEEL:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		return __xuiSliderWheel(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		if ( __xuiSliderPointerMatches(pData, pEvent) ) {
@@ -721,6 +725,7 @@ static int __xuiSliderEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		__xuiSliderCancelDrag(pWidget, pData);
 		return __xuiSliderSyncState(pWidget, pData);
 	case XUI_EVENT_KEY_DOWN:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		return __xuiSliderKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
