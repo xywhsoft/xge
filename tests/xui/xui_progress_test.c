@@ -130,6 +130,9 @@ int main(void)
 
 	iRet = xuiWidgetMeasureContent(pProgress, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 120.0f && tMeasured.fY == 12.0f, "default measure");
+	iRet = xuiWidgetMeasureContent(pProgress, (xui_vec2_t){73.0f, 7.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 73.0f && tMeasured.fY == 7.0f,
+		"horizontal measure respects finite constraints");
 	XUI_TEST_CHECK(xuiProgressGetValue(pProgress) == 25.0f, "default value");
 	XUI_TEST_CHECK(xuiProgressGetRate(pProgress) == 0.25f, "default rate");
 	XUI_TEST_CHECK(strcmp(xuiProgressGetDisplayText(pProgress), "25%") == 0, "dynamic display text");
@@ -247,6 +250,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "vertical rect");
 	iRet = xuiWidgetMeasureContent(pProgress, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 12.0f && tMeasured.fY == 120.0f, "vertical measure");
+	iRet = xuiWidgetMeasureContent(pProgress, (xui_vec2_t){7.0f, 73.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 7.0f && tMeasured.fY == 73.0f,
+		"vertical measure respects finite constraints");
 	tRect = xuiProgressGetFillRect(pProgress);
 	XUI_TEST_CHECK(__xuiProgressRectEq(tRect, 0.0f, 60.0f, 20.0f, 40.0f), "bottom-to-top fill rect");
 	iRet = xuiProgressSetFillDirection(pProgress, XUI_PROGRESS_TOP_TO_BOTTOM);
