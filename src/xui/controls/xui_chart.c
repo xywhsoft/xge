@@ -676,11 +676,15 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 		}
 		return;
 	}
-	if ( pData->iYAxisType == XUI_CHART_AXIS_VALUE && fMinY > 0.0 ) {
+	if ( bVerticalBar ) {
+		if ( fMinY > 0.0 ) fMinY = 0.0;
+		if ( fMaxY < 0.0 ) fMaxY = 0.0;
+	} else if ( pData->iYAxisType == XUI_CHART_AXIS_VALUE && fMinY > 0.0 ) {
 		fMinY = 0.0;
 	}
-	if ( bHorizontalBar && fMinX > 0.0 ) {
-		fMinX = 0.0;
+	if ( bHorizontalBar ) {
+		if ( fMinX > 0.0 ) fMinX = 0.0;
+		if ( fMaxX < 0.0 ) fMaxX = 0.0;
 	}
 	__xuiChartExpandEqualRange(&fMinX, &fMaxX);
 	__xuiChartExpandEqualRange(&fMinY, &fMaxY);
@@ -2078,6 +2082,7 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 			strncpy(sText, sDefault, sizeof(sText) - 1u);
 			sText[sizeof(sText) - 1u] = 0;
 		}
+		xuiInternalUtf8TrimIncomplete(sText);
 		tTip = xuiInternalSnapRect(tTip);
 		if ( (tTip.fW <= 0) || (tTip.fH <= 0) ) {
 			return XUI_OK;

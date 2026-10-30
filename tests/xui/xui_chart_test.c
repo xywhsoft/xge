@@ -191,6 +191,7 @@ int main(void)
 	float arrDashPattern[2];
 	float arrChartDash[2];
 	char sMutableLabel[32];
+	char sLongUtf8Label[130];
 	xui_chart_point_t arrLine[4];
 	xui_chart_point_t arrExtreme[2];
 	xui_chart_point_t arrLineLarge[32];
@@ -278,6 +279,12 @@ int main(void)
 	memset(arrMeshVertices, 0, sizeof(arrMeshVertices));
 	memset(arrMeshIndices, 0, sizeof(arrMeshIndices));
 	memset(arrStyle, 0, sizeof(arrStyle));
+	for ( i = 0; i < 43; i++ ) {
+		sLongUtf8Label[i * 3] = (char)0xE4;
+		sLongUtf8Label[i * 3 + 1] = (char)0xB8;
+		sLongUtf8Label[i * 3 + 2] = (char)0xAD;
+	}
+	sLongUtf8Label[129] = '\0';
 	arrDashPattern[0] = 8.0f;
 	arrDashPattern[1] = 6.0f;
 	arrChartDash[0] = 10.0f;
@@ -628,6 +635,14 @@ int main(void)
 	               "plot clip applied and restored");
 	iRet = xuiChartSetTooltipCallback(pChart, NULL, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "default tooltip callback");
+	arrLine[1].label = sLongUtf8Label;
+	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
+	pCache = xuiWidgetGetCacheSurface(pChart, xuiWidgetGetStateId(pChart));
+	if ( iRet == XUI_OK ) xuiTestSurfaceReset(pCache);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetLastText(pCache) != NULL &&
+		strlen(xuiTestSurfaceGetLastText(pCache)) == 126u,
+		"default tooltip truncation preserves utf-8 boundary");
 	arrLine[1].label = sMutableLabel;
 	iRet = xuiChartSetSeriesData(pChart, iLine, arrLine, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK, "mutable label data");
@@ -865,6 +880,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "bar b add");
 	iRet = xuiChartSetSeriesData(pChart, iBarB, arrBarB, 3);
 	XUI_TEST_CHECK(iRet == XUI_OK, "bar b data");
+	arrBarA[0].y = -10.0; arrBarA[1].y = -30.0; arrBarA[2].y = -20.0;
+	arrBarB[0].y = -8.0; arrBarB[1].y = -18.0; arrBarB[2].y = -12.0;
+	iRet = xuiChartSetSeriesData(pChart, iBarA, arrBarA, 3);
+	if ( iRet == XUI_OK ) iRet = xuiChartSetSeriesData(pChart, iBarB, arrBarB, 3);
+	if ( iRet == XUI_OK ) iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
+	XUI_TEST_CHECK(iRet == 0 && fMaxY == 0.0,
+		"negative vertical bars keep zero baseline in auto range");
+	iRet = xuiChartSetBarDirection(pChart, XUI_CHART_BAR_HORIZONTAL);
+	if ( iRet == XUI_OK ) iRet = xuiChartGetViewRange(pChart, &fMinX, &fMaxX, &fMinY, &fMaxY);
+	XUI_TEST_CHECK(iRet == 0 && fMaxX == 0.0,
+		"negative horizontal bars keep zero baseline in auto range");
+	arrBarA[0].y = 10.0; arrBarA[1].y = 30.0; arrBarA[2].y = 20.0;
+	arrBarB[0].y = 8.0; arrBarB[1].y = 18.0; arrBarB[2].y = 12.0;
+	iRet = xuiChartSetBarDirection(pChart, XUI_CHART_BAR_VERTICAL);
+	if ( iRet == XUI_OK ) iRet = xuiChartSetSeriesData(pChart, iBarA, arrBarA, 3);
+	if ( iRet == XUI_OK ) iRet = xuiChartSetSeriesData(pChart, iBarB, arrBarB, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore positive grouped bars");
 	tPlot = xuiChartGetPlotRect(pChart);
 	iRet = xuiChartDataToPixel(pChart, 1.0, 15.0, &tPixel);
 	XUI_TEST_CHECK(iRet == XUI_OK, "bar data to pixel");
