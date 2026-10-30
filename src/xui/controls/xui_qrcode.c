@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_QRCODE
 #include "xui_internal.h"
+#include "xui_text_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +64,12 @@ static int __xuiQrCodeRectValid(xui_rect_t tRect)
 	       (tRect.fY >= -XUI_LAYOUT_UNBOUNDED) && (tRect.fY <= XUI_LAYOUT_UNBOUNDED);
 }
 
+static int __xuiQrCodeSourceRectValid(xui_rect_t tRect)
+{
+	return __xuiQrCodeRectValid(tRect) &&
+	       ((tRect.fW == 0.0f) == (tRect.fH == 0.0f));
+}
+
 static int __xuiQrCodeRectEqual(xui_rect_t tA, xui_rect_t tB)
 {
 	return (tA.fX == tB.fX) && (tA.fY == tB.fY) &&
@@ -80,7 +87,7 @@ static int __xuiQrCodeDescValid(const xui_qrcode_desc_t* pDesc)
 	if ( !__xuiQrCodeFloatValid(pDesc->fPadding) || !__xuiQrCodeFloatValid(pDesc->fIconSize) ) {
 		return 0;
 	}
-	if ( !__xuiQrCodeRectValid(pDesc->tIconSrc) ) {
+	if ( !__xuiQrCodeSourceRectValid(pDesc->tIconSrc) ) {
 		return 0;
 	}
 	if ( pDesc->iMinVersion != 0 && !__xuiQrCodeVersionValid(pDesc->iMinVersion) ) {
@@ -97,8 +104,8 @@ static int __xuiQrCodeDescValid(const xui_qrcode_desc_t* pDesc)
 
 static int __xuiQrCodeStringSet(char** psText, int* pCapacity, const char* sText, int iLength)
 {
-	char* sNew;
 	int iNeed;
+	int iRet;
 
 	if ( (psText == NULL) || (pCapacity == NULL) || (iLength < 0) || ((sText == NULL) && (iLength != 0)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -107,14 +114,8 @@ static int __xuiQrCodeStringSet(char** psText, int* pCapacity, const char* sText
 		sText = "";
 	}
 	iNeed = iLength + 1;
-	if ( iNeed > *pCapacity ) {
-		sNew = (char*)xrtRealloc(*psText, (size_t)iNeed);
-		if ( sNew == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		*psText = sNew;
-		*pCapacity = iNeed;
-	}
+	iRet = xuiInternalTextBufferReserve(psText, pCapacity, iNeed);
+	if ( iRet != XUI_OK ) return iRet;
 	memmove(*psText, sText, (size_t)iLength);
 	(*psText)[iLength] = '\0';
 	return XUI_OK;
@@ -851,10 +852,10 @@ static int __xuiQrCodeContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint,
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	fSize = XUI_QRCODE_DEFAULT_SIZE;
-	if ( (tConstraint.fX > 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
-	     (tConstraint.fY > 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) ) {
-		fSize = (tConstraint.fX < tConstraint.fY) ? tConstraint.fX : tConstraint.fY;
-	}
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (tConstraint.fX < fSize) ) fSize = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (tConstraint.fY < fSize) ) fSize = tConstraint.fY;
 	pSize->fX = fSize;
 	pSize->fY = fSize;
 	return XUI_OK;
@@ -1253,7 +1254,7 @@ XUI_API int xuiQrCodeSetValue(xui_widget pWidget, const char* sValue)
 	__xuiQrCodeApplyMatrix(pData, &tMatrix);
 	pData->iChangeCount++;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API const char* xuiQrCodeGetValue(xui_widget pWidget)
@@ -1339,7 +1340,7 @@ XUI_API int xuiQrCodeSetIcon(xui_widget pWidget, xui_surface pIconSurface, xui_r
 	xui_qrcode_data_t* pData;
 
 	pData = __xuiQrCodeGetData(pWidget);
-	if ( pData == NULL || !__xuiQrCodeRectValid(tIconSrc) || !__xuiQrCodeFloatValid(fIconSize) ) {
+	if ( pData == NULL || !__xuiQrCodeSourceRectValid(tIconSrc) || !__xuiQrCodeFloatValid(fIconSize) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (pData->pIconSurface == pIconSurface) && __xuiQrCodeRectEqual(pData->tIconSrc, tIconSrc) &&
@@ -1397,7 +1398,7 @@ XUI_API int xuiQrCodeSetVersionRange(xui_widget pWidget, int iMinVersion, int iM
 	pData->iMaxVersion = iMaxVersion;
 	__xuiQrCodeApplyMatrix(pData, &tMatrix);
 	pData->iChangeCount++;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiQrCodeGetVersion(xui_widget pWidget)

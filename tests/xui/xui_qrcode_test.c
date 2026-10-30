@@ -96,6 +96,7 @@ int main(void)
 	xui_accessible_node_t tNode;
 	xui_rect_i_t tFullRect;
 	xui_rect_t tContentRect;
+	xui_vec2_t tMeasured;
 	xallocationbudget* pBudget;
 	xallocationscope tScope;
 	char sLongValue[512];
@@ -149,6 +150,13 @@ int main(void)
 	pInvalid = pRoot;
 	iRet = xuiQrCodeCreate(pContext, &pInvalid, &tInvalidDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL, "reject out-of-range icon source");
+	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
+	tInvalidDesc.iSize = sizeof(tInvalidDesc);
+	tInvalidDesc.tIconSrc.fW = 16.0f;
+	pInvalid = pRoot;
+	iRet = xuiQrCodeCreate(pContext, &pInvalid, &tInvalidDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject incomplete icon source descriptor");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -161,6 +169,40 @@ int main(void)
 	xuiWidgetSetRect(pQrCode, (xui_rect_t){20.0f, 20.0f, 180.0f, 180.0f});
 	iRet = xuiWidgetAddChild(pRoot, pQrCode);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add qrcode");
+	iRet = xuiWidgetMeasureContent(pQrCode,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 160.0f && tMeasured.fY == 160.0f,
+		"default content measure");
+	iRet = xuiWidgetMeasureContent(pQrCode, (xui_vec2_t){240.0f, 200.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 160.0f && tMeasured.fY == 160.0f,
+		"larger constraint preserves intrinsic measure");
+	iRet = xuiWidgetMeasureContent(pQrCode,
+		(xui_vec2_t){90.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 90.0f && tMeasured.fY == 90.0f,
+		"finite width clamps square measure");
+	iRet = xuiWidgetMeasureContent(pQrCode,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, 70.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 70.0f && tMeasured.fY == 70.0f,
+		"finite height clamps square measure");
+	iRet = xuiWidgetMeasureContent(pQrCode, (xui_vec2_t){0.0f, 70.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 0.0f && tMeasured.fY == 0.0f,
+		"zero constraint collapses square measure");
+
+	memset(&tScope, 0, sizeof(tScope));
+	XUI_TEST_CHECK(xrtAllocationBudgetCreate(1u, &pBudget),
+		"create capacity reuse allocation budget");
+	XUI_TEST_CHECK(xrtAllocationBudgetEnter(pBudget, &tScope),
+		"enter capacity reuse allocation budget");
+	iRet = xuiQrCodeSetValue(pQrCode, "https://example.com/xui2/a");
+	XUI_TEST_CHECK(xrtAllocationBudgetLeave(&tScope),
+		"leave capacity reuse allocation budget");
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiQrCodeGetValue(pQrCode), "https://example.com/xui2/a") == 0,
+		"value growth reuses geometric capacity");
+	iRet = xuiQrCodeSetValue(pQrCode, "https://example.com/xui2");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore initial value after capacity reuse");
 
 	iVersion = xuiQrCodeGetVersion(pQrCode);
 	iModuleCount = xuiQrCodeGetModuleCount(pQrCode);
@@ -239,6 +281,11 @@ int main(void)
 		(xui_rect_t){(int)XUI_LAYOUT_UNBOUNDED + 1024, 0, 16, 16}, 16.0f) == XUI_ERROR_INVALID_ARGUMENT,
 		"reject out-of-range icon source");
 	XUI_TEST_CHECK(xuiQrCodeSetIcon(pQrCode, pIcon,
+		(xui_rect_t){0.0f, 0.0f, 16.0f, 0.0f}, 16.0f) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiQrCodeGetIconSource(pQrCode).fW == 16.0f &&
+		xuiQrCodeGetIconSource(pQrCode).fH == 16.0f,
+		"reject incomplete icon source without mutation");
+	XUI_TEST_CHECK(xuiQrCodeSetIcon(pQrCode, pIcon,
 		(xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f}, INFINITY) == XUI_ERROR_INVALID_ARGUMENT,
 		"reject infinite icon size");
 
@@ -256,7 +303,7 @@ int main(void)
 
 	iRet = xuiQrCodeSetVersionRange(pQrCode, 1, XUI_QRCODE_MAX_VERSION);
 	XUI_TEST_CHECK(iRet == XUI_OK, "expand version range");
-	sLongValue[30] = '\0';
+	sLongValue[64] = '\0';
 	iChangeCount = xuiQrCodeGetChangeCount(pQrCode);
 	iVersion = xuiQrCodeGetVersion(pQrCode);
 	sPreviousValue = xuiQrCodeGetValue(pQrCode);
@@ -366,6 +413,26 @@ int main(void)
 		xuiQrCodeGetBackgroundColor(pQrCode));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pQrCode) == iDirtyFlags,
 		"same colors are idempotent");
+	iRet = xuiQrCodeSetValue(pQrCode, "world");
+	iDirtyFlags = xuiWidgetGetDirtyFlags(pQrCode);
+	XUI_TEST_CHECK(iRet == XUI_OK && (iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(iDirtyFlags & XUI_WIDGET_DIRTY_CACHE) != 0u &&
+		(iDirtyFlags & XUI_WIDGET_DIRTY_RENDER) != 0u,
+		"value change invalidates paint without layout");
+	iRet = xuiQrCodeSetValue(pQrCode, "hello");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore value after dirty flag check");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render after value dirty flag check");
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 2, 2);
+	iDirtyFlags = xuiWidgetGetDirtyFlags(pQrCode);
+	XUI_TEST_CHECK(iRet == XUI_OK && (iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(iDirtyFlags & XUI_WIDGET_DIRTY_CACHE) != 0u &&
+		(iDirtyFlags & XUI_WIDGET_DIRTY_RENDER) != 0u,
+		"version change invalidates paint without layout");
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore version after dirty flag check");
+	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render after version dirty flag check");
 	xuiTestSurfaceReset(pCache);
 	iRet = tState.tProxy.surfaceUpdateRGBA(&tState.tProxy, pIcon,
 		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
