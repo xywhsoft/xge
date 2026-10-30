@@ -152,6 +152,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pStatusBar;
+	xui_widget pChild;
 	xui_widget pDestroyStatusBar;
 	xui_surface pTarget;
 	xui_font pFont;
@@ -163,6 +164,7 @@ int main(void)
 	xui_statusbar_item_t arrInvalid[2];
 	xui_accessible_node_t tNode;
 	xui_event_t tContextEvent;
+	xui_event_t tEvent;
 	const xui_statusbar_item_t* pFirstItem;
 	xui_rect_t tItem0;
 	xui_rect_t tItem1;
@@ -179,6 +181,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pStatusBar = NULL;
+	pChild = NULL;
 	pDestroyStatusBar = NULL;
 	pTarget = NULL;
 	pFont = NULL;
@@ -282,6 +285,51 @@ int main(void)
 		tNode.iRole == XUI_ACCESSIBLE_ROLE_BUTTON &&
 		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u && tNode.iActions == 0u,
 		"disabled clickable item preserves button role without actions");
+
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pStatusBar, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "statusbar child create");
+	tWorld = xuiWidgetGetWorldRect(pStatusBar);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_MOVE;
+	tEvent.pTarget = pChild;
+	tEvent.fX = tWorld.fX + tItem0.fX + 2.0f;
+	tEvent.fY = tWorld.fY + tItem0.fY + 2.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetHoverIndex(pStatusBar) == -1,
+		"descendant pointer move does not hover status item");
+	XUI_TEST_CHECK(xuiStatusBarSetHoverIndex(pStatusBar, 0) == XUI_OK,
+		"set hover before descendant leave");
+	tEvent.iType = XUI_EVENT_POINTER_LEAVE;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetHoverIndex(pStatusBar) == 0,
+		"descendant pointer leave does not clear status hover");
+	XUI_TEST_CHECK(xuiStatusBarSetHoverIndex(pStatusBar, -1) == XUI_OK &&
+		xuiSetFocusWidget(pContext, pStatusBar) == XUI_OK,
+		"prepare descendant key isolation");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetHoverIndex(pStatusBar) == -1,
+		"descendant key does not navigate status items");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.fX = tWorld.fX + tItem0.fX + 2.0f;
+	tEvent.fY = tWorld.fY + tItem0.fY + 2.0f;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == -1 &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"descendant pointer down does not activate status item");
+	xuiWidgetDestroy(pChild);
+	pChild = NULL;
 
 	memset(&tContextEvent, 0, sizeof(tContextEvent));
 	tWorld = xuiWidgetGetWorldRect(pStatusBar);
@@ -464,6 +512,21 @@ int main(void)
 		!xuiWidgetGetEffectiveEnabled(pStatusBar) &&
 		(xuiStatusBarGetState(pStatusBar) & XUI_WIDGET_STATE_DISABLED) != 0u,
 		"state reflects inherited disable");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pStatusBar, 0, &tNode) == XUI_OK &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u && tNode.iActions == 0u,
+		"inherited disable removes statusbar accessibility actions");
+	memset(&tNode, 0, sizeof(tNode));
+	tNode.iSize = sizeof(tNode);
+	iBefore = tEvents.iSelectCount;
+	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pStatusBar, 1, &tNode) == XUI_OK &&
+		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u && tNode.iActions == 0u,
+		"inherited disable removes status item accessibility actions");
+	iRet = xuiWidgetPerformAccessibleAction(pStatusBar, 2u,
+		XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && tEvents.iSelectCount == iBefore,
+		"inherited disable rejects status item accessibility activation");
 	iRet = xuiWidgetSetEnabled(pRoot, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		(xuiStatusBarGetState(pStatusBar) & XUI_WIDGET_STATE_DISABLED) == 0u,
@@ -509,6 +572,20 @@ int main(void)
 	tItem0 = xuiStatusBarGetItemRect(pStatusBar, 0);
 	iRet = __xuiStatusBarDispatchDown(pContext, 20.0f + tItem0.fX + 2.0f, 260.0f + tItem0.fY + 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == 0 && xuiGetPointerCapture(pContext) == pStatusBar, "pointer press captured");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable statusbar ancestor during press");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == -1 &&
+		xuiStatusBarGetHoverIndex(pStatusBar) == -1 &&
+		xuiGetPointerCapture(pContext) != pStatusBar,
+		"ancestor disable cancels statusbar press and hover");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reenable statusbar ancestor");
+	iRet = __xuiStatusBarDispatchDown(pContext, 20.0f + tItem0.fX + 2.0f, 260.0f + tItem0.fY + 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiStatusBarGetActiveIndex(pStatusBar) == 0 &&
+		xuiGetPointerCapture(pContext) == pStatusBar,
+		"pointer press recaptured after ancestor reenable");
 	iRet = xuiWidgetSetEnabled(pStatusBar, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable during press");
 	iRet = xuiDispatchPendingEvents(pContext);

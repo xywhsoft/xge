@@ -1038,6 +1038,12 @@ static int __xuiStatusBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	return XUI_OK;
 }
 
+static int __xuiStatusBarCanInteract(xui_widget pWidget)
+{
+	return (pWidget != NULL) && xuiWidgetGetEffectiveEnabled(pWidget) &&
+		xuiWidgetGetEffectiveVisible(pWidget);
+}
+
 static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_statusbar_data_t* pData;
@@ -1067,6 +1073,10 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	bLeftButton = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_MOVE:
+		if ( (pEvent->pTarget != pWidget) && !pData->tPointerOwner.bActive ) return XUI_OK;
+		if ( !__xuiStatusBarCanInteract(pWidget) ) {
+			return __xuiStatusBarCancelPress(pWidget, pData, 1);
+		}
 		if ( pData->tPointerOwner.bActive &&
 		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
 			return XUI_OK;
@@ -1078,6 +1088,7 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( iRet != XUI_OK ) return iRet;
 		return (pData->iActive >= 0) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_LEAVE:
+		if ( (pEvent->pTarget != pWidget) && !pData->tPointerOwner.bActive ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive &&
 		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
 			return XUI_OK;
@@ -1086,7 +1097,8 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( iRet != XUI_OK ) return iRet;
 		return pData->iActive >= 0 ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
-		if ( !xuiWidgetGetEnabled(pWidget) || !bLeftButton || (iIndex < 0) ) return XUI_OK;
+		if ( pEvent->pTarget != pWidget || !__xuiStatusBarCanInteract(pWidget) ||
+		     !bLeftButton || (iIndex < 0) ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive ) {
 			return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
 				XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -1166,7 +1178,8 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		return onContext(pWidget, iContextIndex, iValue, fX, fY, pContextUser);
 	}
 	case XUI_EVENT_KEY_DOWN:
-		if ( xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
+		if ( pEvent->pTarget != pWidget || !__xuiStatusBarCanInteract(pWidget) ||
+		     xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
 		if ( pEvent->iKey == XUI_KEY_LEFT || pEvent->iKey == XUI_KEY_RIGHT ) {
 			iNext = __xuiStatusBarNextInteractive(pData, pData->iHover,
 				pEvent->iKey == XUI_KEY_RIGHT ? 1 : -1);
@@ -1198,17 +1211,19 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		}
 		break;
 	case XUI_EVENT_BLUR:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		iRet = __xuiStatusBarCancelPress(pWidget, pData, 0);
 		if ( iRet == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 		return iRet;
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
-		if ( (pEvent->iType == XUI_EVENT_ENABLED_CHANGED && !xuiWidgetGetEnabled(pWidget)) ||
-		     (pEvent->iType == XUI_EVENT_VISIBLE_CHANGED && !xuiWidgetGetVisible(pWidget)) ) {
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
+		if ( !__xuiStatusBarCanInteract(pWidget) ) {
 			return __xuiStatusBarCancelPress(pWidget, pData, 1);
 		}
 		return XUI_OK;
 	case XUI_EVENT_FOCUS:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	default:
