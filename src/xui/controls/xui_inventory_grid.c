@@ -2941,7 +2941,6 @@ static int __xuiInventoryContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	int iColumns;
 	int iRows;
 
-	(void)tConstraint;
 	if ( (pWidget == NULL) || (pSize == NULL) || (pUser == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -2958,6 +2957,16 @@ static int __xuiInventoryContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	pSize->fY = tResolved.tLayout.fPadding * 2.0f + (float)iRows * tResolved.tLayout.fSlotSize + (float)(iRows - 1) * tResolved.tLayout.fSlotGap;
 	pSize->fX = xuiInternalSnapSize(pSize->fX);
 	pSize->fY = xuiInternalSnapSize(pSize->fY);
+	if ( (tConstraint.fX >= 0.0f) &&
+		(tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fX > tConstraint.fX) ) {
+		pSize->fX = tConstraint.fX;
+	}
+	if ( (tConstraint.fY >= 0.0f) &&
+		(tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fY > tConstraint.fY) ) {
+		pSize->fY = tConstraint.fY;
+	}
 	return XUI_OK;
 }
 

@@ -334,6 +334,8 @@ int main(void)
 	xui_rect_t tWorld;
 	xui_rect_t tTooltipRect;
 	xui_rect_i_t tFullRect;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	xui_scroll_model_t* pScroll;
 	xui_widget pSplitInput;
 	xui_widget pSplitPopup;
@@ -466,6 +468,17 @@ int main(void)
 	tDesc.bHasColors = 1;
 	iRet = xuiInventoryGridCreate(pContext, &pGrid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pGrid != NULL, "inventory create");
+	iRet = xuiWidgetMeasure(pGrid,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 100.0f && tNatural.fY > 80.0f,
+		"inventory intrinsic viewport exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pGrid, (xui_vec2_t){100.0f, 80.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 100.0f && tMeasured.fY == 80.0f,
+		"inventory finite measure constraint");
+	iRet = xuiWidgetMeasure(pGrid,
+		(xui_vec2_t){100.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 100.0f &&
+		tMeasured.fY == tNatural.fY, "inventory single-axis measure constraint");
 	XUI_TEST_CHECK(xuiInventoryGridGetType(pContext) != NULL, "inventory type");
 	{
 		const char* arrPaintOnlyProperties[] = {
