@@ -306,6 +306,23 @@ int main(void)
 		iClickCount == 2 &&
 		xuiGetPointerCaptureEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH) == NULL,
 		"owning touch completes one hyperlink click");
+	iRet = xuiInputPointerDown(pContext, 30.0f, 30.0f,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pLink,
+		"mouse press captures hyperlink");
+	iRet = xuiWidgetSetEnabled(pLink, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		(xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) == 0,
+		"disable cancels captured pointer press");
+	iRet = xuiWidgetSetEnabled(pLink, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, 30.0f, 30.0f,
+		XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 2 &&
+		iClickCount == 2, "released cancelled pointer press does not click");
 
 	iRet = xuiSetFocusWidget(pContext, pLink);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus");
@@ -339,6 +356,38 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 4 && iClickCount == 4,
 	               "blurred keyboard press does not click");
+	iRet = xuiSetFocusWidget(pContext, pLink);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) != 0,
+		"active before disable");
+	iRet = xuiWidgetSetEnabled(pLink, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) == 0,
+		"disable cancels keyboard active");
+	iRet = xuiWidgetSetEnabled(pLink, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pLink);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 4 &&
+		iClickCount == 4, "reenabled hyperlink does not complete cancelled key press");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pLink, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) == 0,
+		"hide cancels keyboard active");
+	iRet = xuiWidgetSetVisible(pLink, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pLink);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 4 &&
+		iClickCount == 4, "reshown hyperlink does not complete cancelled key press");
 	iRet = xuiWidgetPerformAccessibleAction(pLink, 1u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiHyperlinkGetClickCount(pLink) == 5 && iClickCount == 5,
 		"accessible activate click");

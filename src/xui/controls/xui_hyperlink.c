@@ -486,6 +486,14 @@ static int __xuiHyperlinkEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	case XUI_EVENT_BLUR:
 		pData->bKeyboardActive = 0;
 		return __xuiHyperlinkSyncState(pWidget, pData);
+	case XUI_EVENT_ENABLED_CHANGED:
+	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
+		pData->bKeyboardActive = 0;
+		iRet = xuiInternalPointerPressCancel(pContext, pWidget,
+			&pData->tPointerPress);
+		if ( iRet != XUI_OK ) return iRet;
+		return __xuiHyperlinkSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( bLeftButton ) {
 			if ( pData->tPointerPress.tOwner.bActive ) {
@@ -621,6 +629,8 @@ static int __xuiHyperlinkInitEvents(xui_widget pWidget)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiHyperlinkEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiHyperlinkEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiHyperlinkEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiHyperlinkEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiHyperlinkEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiHyperlinkEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_UP, __xuiHyperlinkEvent, NULL);
 	return iRet;
