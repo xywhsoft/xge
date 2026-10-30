@@ -2066,15 +2066,20 @@ static int __xuiColorPickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_
 	float fY;
 	int i;
 	int iCount;
+	int iDirection;
 	int iValue;
 	int iRet;
 
+	if ( pEvent->fWheelY == 0.0f ) return XUI_OK;
+	iDirection = (pEvent->fWheelY > 0.0f) ? 1 : -1;
 	tWorld = xuiWidgetGetWorldRect(pPanel);
 	fX = pEvent->fX - tWorld.fX;
 	fY = pEvent->fY - tWorld.fY;
 	__xuiColorPickerUpdatePanelRects(pData);
 	if ( __xuiColorPickerRectContains(pData->tHueRect, fX, fY) ) {
-		iRet = __xuiColorPickerSetHsvInternal(pOwner, pData, pData->fHue - pEvent->fWheelY * 0.01f, pData->fSaturation, pData->fValue, 1);
+		iRet = __xuiColorPickerSetHsvInternal(pOwner, pData,
+			pData->fHue - (float)iDirection * 0.01f,
+			pData->fSaturation, pData->fValue, 1);
 		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 	}
 	iCount = pData->bAlphaEnabled ? 4 : 3;
@@ -2084,7 +2089,7 @@ static int __xuiColorPickerPanelWheel(xui_widget pPanel, xui_widget pOwner, xui_
 			iValue = (i == 0) ? __xuiColorPickerR(pData->iColor) :
 				((i == 1) ? __xuiColorPickerG(pData->iColor) :
 				((i == 2) ? __xuiColorPickerB(pData->iColor) : __xuiColorPickerA(pData->iColor)));
-			iValue = __xuiColorPickerClampByte(iValue + (int)pEvent->fWheelY);
+			iValue = __xuiColorPickerClampByte(iValue + iDirection);
 			iRet = __xuiColorPickerSetChannelInternal(pOwner, pData, i, iValue, 1);
 			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}

@@ -456,6 +456,28 @@ int main(void)
 			(xuiWidgetGetDirtyFlags(pPanel) & XUI_WIDGET_DIRTY_CACHE) != 0u,
 			"hue-only edit invalidates panel cache");
 
+		iRet = xuiColorPickerSetColor(pPicker, XUI_COLOR_RGBA(0x11, 0x22, 0x33, 0x80));
+		XUI_TEST_CHECK(iRet == XUI_OK, "set color before precision wheel test");
+		tRect = xuiColorPickerGetAlphaRect(pPicker);
+		iRet = xuiInputPointerWheel(pContext,
+			(int)(tPanelWorld.fX + tRect.fX + tRect.fW * 0.5f),
+			(int)(tPanelWorld.fY + tRect.fY + tRect.fH * 0.5f),
+			0.0f, 0.25f, 0);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+		if ( iRet == XUI_OK ) iRet = xuiColorPickerGetRGBA(pPicker, &iR, &iG, &iB, &iA);
+		XUI_TEST_CHECK(iRet == XUI_OK && iR == 0x11 && iG == 0x22 &&
+			iB == 0x33 && iA == 0x81,
+			"fractional positive wheel increments channel by one");
+		iRet = xuiInputPointerWheel(pContext,
+			(int)(tPanelWorld.fX + tRect.fX + tRect.fW * 0.5f),
+			(int)(tPanelWorld.fY + tRect.fY + tRect.fH * 0.5f),
+			0.0f, -0.25f, 0);
+		if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+		if ( iRet == XUI_OK ) iRet = xuiColorPickerGetRGBA(pPicker, &iR, &iG, &iB, &iA);
+		XUI_TEST_CHECK(iRet == XUI_OK && iR == 0x11 && iG == 0x22 &&
+			iB == 0x33 && iA == 0x80,
+			"fractional negative wheel decrements channel by one");
+
 		iRet = xuiColorPickerSetColor(pPicker, XUI_COLOR_RGBA(0, 255, 0, 255));
 		XUI_TEST_CHECK(iRet == XUI_OK, "set green before keyboard navigation");
 		iRet = __xuiColorPickerDispatchKey(pContext, XUI_KEY_TAB);
