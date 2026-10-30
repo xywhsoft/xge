@@ -97,6 +97,7 @@ int main(void)
 	xui_rect_t tFill;
 	xui_rect_t tKnob;
 	xui_rect_t tWorld;
+	xui_vec2_t tMeasured;
 	xui_accessible_node_t tAccessible;
 	xui_accessible_value_t tAccessibleValue;
 	xui_event_t tEvent;
@@ -171,6 +172,13 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetFocusable(pSlider) == 1, "focusable");
 	XUI_TEST_CHECK(xuiWidgetGetOverflow(pSlider) == XUI_OVERFLOW_CLIP, "overflow clip");
 	XUI_TEST_CHECK(xuiSliderGetOrientation(pSlider) == XUI_ORIENTATION_HORIZONTAL, "horizontal orientation");
+	iRet = xuiWidgetMeasureContent(pSlider,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 144.0f && tMeasured.fY == 18.0f,
+		"horizontal content measure");
+	iRet = xuiWidgetMeasureContent(pSlider, (xui_vec2_t){90.0f, 10.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 90.0f && tMeasured.fY == 10.0f,
+		"horizontal content measure respects finite constraints");
 	XUI_TEST_CHECK(__xuiSliderNear(xuiSliderGetValue(pSlider), 25.0f), "initial value");
 	XUI_TEST_CHECK(__xuiSliderNear(xuiSliderGetRate(pSlider), 0.25f), "initial rate");
 	memset(&tAccessible, 0, sizeof(tAccessible));
@@ -451,6 +459,13 @@ int main(void)
 
 	iRet = xuiSliderSetOrientation(pSlider, XUI_ORIENTATION_VERTICAL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiSliderGetOrientation(pSlider) == XUI_ORIENTATION_VERTICAL, "set vertical");
+	iRet = xuiWidgetMeasureContent(pSlider,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 18.0f && tMeasured.fY == 144.0f,
+		"vertical content measure");
+	iRet = xuiWidgetMeasureContent(pSlider, (xui_vec2_t){10.0f, 90.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 10.0f && tMeasured.fY == 90.0f,
+		"vertical content measure respects finite constraints");
 	xuiWidgetSetRect(pSlider, (xui_rect_t){30.0f, 70.0f, 30.0f, 140.0f});
 	iRet = xuiSliderSetValue(pSlider, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "vertical reset");
