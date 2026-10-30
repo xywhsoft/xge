@@ -108,6 +108,7 @@ int main(void)
 	xui_rect_t tInvalidSrc;
 	xui_rect_t tLastSrc;
 	xui_rect_t tLastCheckedSrc;
+	char sLongText[192];
 	int iRadioChanged;
 	int iGroupChanged;
 	int iDestroyChanged;
@@ -206,9 +207,20 @@ int main(void)
 		"radio rtl reaches text measurement");
 
 	XUI_TEST_CHECK(strcmp(xuiRadioGetText(pRadio[1]), "Medium") == 0, "text from desc");
+	memset(sLongText, 'R', sizeof(sLongText) - 1u);
+	sLongText[sizeof(sLongText) - 1u] = '\0';
+	xuiWidgetClearDirty(pRadio[1], XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiRadioSetText(pRadio[1], sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiRadioGetText(pRadio[1]), sLongText) == 0 &&
+		(xuiWidgetGetDirtyFlags(pRadio[1]) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+		"long radio text grows shared buffer");
+	xuiWidgetClearDirty(pRadio[1], XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiRadioSetText(pRadio[1], sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pRadio[1]) == 0u,
+		"idempotent radio text stays clean");
 	iRet = xuiRadioSetText(pRadio[1], xuiRadioGetText(pRadio[1]) + 1);
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiRadioGetText(pRadio[1]), "edium") == 0,
-		"self-aliased text update");
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiRadioGetText(pRadio[1])) == sizeof(sLongText) - 2u,
+		"grown self-aliased text update");
 	iRet = xuiRadioSetText(pRadio[1], "Medium");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore aliased text");
 	XUI_TEST_CHECK(xuiRadioGroupGetSelectedIndex(pGroup) == 1, "selected index from desc");
@@ -342,6 +354,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGroupGetSelectedRadio(pGroup) == pRadio[1], "set selected index");
 	XUI_TEST_CHECK(xuiWidgetGetTabStop(pRadio[0]) == 0 && xuiWidgetGetTabStop(pRadio[1]) == 1 &&
 		xuiWidgetGetTabStop(pRadio[2]) == 0, "programmatic selection moves the group tab stop");
+	iGroupChanged = 0;
+	iRadioChanged = 0;
+	xuiWidgetClearDirty(pRadio[0], XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pRadio[1], XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pRadio[2], XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiRadioGroupSetSelectedIndex(pGroup, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && iGroupChanged == 0 && iRadioChanged == 0 &&
+		xuiWidgetGetDirtyFlags(pRadio[0]) == 0u &&
+		xuiWidgetGetDirtyFlags(pRadio[1]) == 0u &&
+		xuiWidgetGetDirtyFlags(pRadio[2]) == 0u,
+		"idempotent group selection stays clean and silent");
 	iRet = xuiRadioGroupSetSelectedIndex(pGroup, -2);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
 		xuiRadioGroupGetSelectedRadio(pGroup) == pRadio[1],
