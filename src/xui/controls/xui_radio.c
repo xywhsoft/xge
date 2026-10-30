@@ -431,7 +431,6 @@ static int __xuiRadioContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	xui_vec2_t tTextSize;
 	float fSize;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -451,6 +450,10 @@ static int __xuiRadioContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 		if ( tTextSize.fY > pSize->fY ) pSize->fY = tTextSize.fY;
 	}
 	if ( pSize->fY < 24.0f ) pSize->fY = 24.0f;
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
@@ -654,12 +657,8 @@ static xui_widget __xuiRadioFindGroup(xui_widget pWidget)
 {
 	xui_widget pParent;
 
-	for ( pParent = xuiWidgetGetParent(pWidget); pParent != NULL; pParent = xuiWidgetGetParent(pParent) ) {
-		if ( __xuiRadioGroupGetData(pParent) != NULL ) {
-			return pParent;
-		}
-	}
-	return NULL;
+	pParent = xuiWidgetGetParent(pWidget);
+	return (__xuiRadioGroupGetData(pParent) != NULL) ? pParent : NULL;
 }
 
 int xuiInternalRadioGroupMoveSelection(xui_widget pWidget, int iDirection)

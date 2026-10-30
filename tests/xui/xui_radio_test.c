@@ -89,6 +89,7 @@ int main(void)
 	xui_widget pDestroyGroup;
 	xui_widget pInvalidWidget;
 	xui_widget pNonOption;
+	xui_widget pNestedRadio;
 	xui_widget pRadio[3];
 	xui_widget pDestroyRadio[2];
 	xui_surface pTarget;
@@ -121,6 +122,7 @@ int main(void)
 	pDestroyGroup = NULL;
 	pInvalidWidget = NULL;
 	pNonOption = NULL;
+	pNestedRadio = NULL;
 	pTarget = NULL;
 	pAtlas = NULL;
 	pCache = NULL;
@@ -202,9 +204,23 @@ int main(void)
 		(xuiWidgetGetDirtyFlags(pRadio[0]) & XUI_WIDGET_DIRTY_LAYOUT) != 0,
 		"radio rtl change invalidates layout");
 	iRet = xuiWidgetMeasureContent(pRadio[0], (xui_vec2_t){220.0f, 40.0f}, &tMeasured);
-	XUI_TEST_CHECK(iRet == XUI_OK &&
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 66.0f && tMeasured.fY == 24.0f &&
 		(tState.iLastTextMeasureFlags & XUI_TEXT_SHAPE_RTL) != 0,
-		"radio rtl reaches text measurement");
+		"radio intrinsic measure and rtl text flags");
+	iRet = xuiWidgetMeasureContent(pRadio[0], (xui_vec2_t){30.0f, 10.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 30.0f && tMeasured.fY == 10.0f,
+		"radio content measure respects finite constraints");
+
+	tDesc.sText = "Nested";
+	iRet = xuiRadioCreate(pContext, &pNestedRadio, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pNestedRadio != NULL, "create nested standalone radio");
+	iRet = xuiWidgetAddChild(pNonOption, pNestedRadio);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add nested standalone radio");
+	iRet = xuiRadioSetChecked(pNestedRadio, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiRadioGetChecked(pNestedRadio) == 1 &&
+		xuiRadioGroupGetSelectedWidget(pGroup) == pRadio[1] &&
+		xuiWidgetGetTabStop(pNestedRadio) == 1,
+		"radio nested below group remains standalone");
 
 	XUI_TEST_CHECK(strcmp(xuiRadioGetText(pRadio[1]), "Medium") == 0, "text from desc");
 	memset(sLongText, 'R', sizeof(sLongText) - 1u);

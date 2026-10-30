@@ -8556,13 +8556,13 @@ XUI_API uint32_t xuiRadioGetState(xui_widget pWidget);
 /* 取单选组控件类型。 */
 #if XUI_ENABLE_RADIO_GROUP
 XUI_API xui_widget_type xuiRadioGroupGetType(xui_context pContext);
-/* 创建单选组（组内互斥 + 布局排列）。 */
+/* 创建单选组（直接子选项互斥 + 布局排列）。 */
 XUI_API int xuiRadioGroupCreate(xui_context pContext, xui_widget* ppWidget, const xui_radio_group_desc_t* pDesc);
 /* 注册选中变更回调。 */
 XUI_API int xuiRadioGroupSetChange(xui_widget pGroup, xui_radio_group_change_proc onChange, void* pUser);
-/* 添加已有单选框到组。 */
+/* 添加已有单选框到组，并将其重设为组的直接子项。 */
 XUI_API int xuiRadioGroupAddRadio(xui_widget pGroup, xui_widget pRadio);
-/* 添加勾选卡片到组（卡片式单选）。 */
+/* 添加勾选卡片到组（卡片式单选），并将其重设为组的直接子项。 */
 XUI_API int xuiRadioGroupAddCheckCard(xui_widget pGroup, xui_widget pCard);
 /* 按描述创建并添加单选框；*ppRadio 可空输出句柄。 */
 XUI_API int xuiRadioGroupAddOption(xui_widget pGroup, xui_widget* ppRadio, const xui_radio_desc_t* pDesc);
