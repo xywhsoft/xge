@@ -175,6 +175,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pToolbar;
+	xui_widget pChild;
 	xui_widget pOwnedToolbar;
 	xui_widget pDestroyToolbar;
 	xui_widget pOverflowDestroyToolbar;
@@ -206,6 +207,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pToolbar = NULL;
+	pChild = NULL;
 	pOwnedToolbar = NULL;
 	pDestroyToolbar = NULL;
 	pOverflowDestroyToolbar = NULL;
@@ -324,6 +326,101 @@ int main(void)
 		(tNode.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u &&
 		(tNode.iState & XUI_ACCESSIBLE_STATE_FOCUSABLE) == 0u && tNode.iActions == 0u,
 		"disabled item exposes no accessibility action");
+
+	tWorld = xuiWidgetGetWorldRect(pToolbar);
+	iRet = xuiWidgetCreate(pContext, &pChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pToolbar, pChild);
+	XUI_TEST_CHECK(iRet == XUI_OK && pChild != NULL, "toolbar child create");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_MOVE;
+	tEvent.pTarget = pChild;
+	tEvent.fX = tWorld.fX + tItem0.fX + 2.0f;
+	tEvent.fY = tWorld.fY + tItem0.fY + 2.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == -1,
+		"descendant pointer move does not hover toolbar item");
+	XUI_TEST_CHECK(xuiToolbarSetHoverIndex(pToolbar, 0) == XUI_OK,
+		"set toolbar hover before descendant leave");
+	tEvent.iType = XUI_EVENT_POINTER_LEAVE;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == 0,
+		"descendant pointer leave does not clear toolbar hover");
+	XUI_TEST_CHECK(xuiToolbarSetHoverIndex(pToolbar, -1) == XUI_OK &&
+		xuiSetFocusWidget(pContext, pToolbar) == XUI_OK,
+		"prepare toolbar descendant key isolation");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.iKey = XUI_KEY_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == -1,
+		"descendant key does not navigate toolbar items");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOWN;
+	tEvent.pTarget = pChild;
+	tEvent.fX = tWorld.fX + tItem0.fX + 2.0f;
+	tEvent.fY = tWorld.fY + tItem0.fY + 2.0f;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iButtons = XUI_POINTER_BUTTON_LEFT;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetActiveIndex(pToolbar) == -1 &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"descendant pointer down does not activate toolbar item");
+	xuiWidgetDestroy(pChild);
+	pChild = NULL;
+	XUI_TEST_CHECK(xuiHitTest(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f,
+		XUI_WIDGET_HIT_DEFAULT) == pToolbar,
+		"toolbar item remains direct hit target after child destroy");
+	iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == 0,
+		"toolbar item hover prepares tooltip");
+	XUI_TEST_CHECK(xuiWidgetTooltipGetOwner(pContext) == pToolbar,
+		"toolbar item hover binds tooltip owner");
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetTooltipIsOpen(pContext) &&
+		xuiWidgetTooltipGetOwner(pContext) == pToolbar,
+		"toolbar item tooltip opens from hover");
+	iRet = xuiToolbarSetItemEnabled(pToolbar, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetHoverIndex(pToolbar) == -1 &&
+		!xuiWidgetTooltipIsOpen(pContext),
+		"disabling hovered toolbar item closes tooltip");
+	XUI_TEST_CHECK(xuiToolbarSetItemEnabled(pToolbar, 0, 1) == XUI_OK,
+		"restore tooltip test item");
+	iRet = xuiInputPointerMove(pContext, 2, 2, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetTooltipIsOpen(pContext) &&
+		xuiWidgetTooltipGetOwner(pContext) == pToolbar,
+		"toolbar tooltip resolver survives item disable and re-enable");
+	iRet = xuiToolbarSetItemTooltip(pToolbar, 0, "Create scene updated");
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWidgetTooltipIsOpen(pContext) &&
+		strcmp(xuiToolbarGetItemTooltip(pToolbar, 0), "Create scene updated") == 0,
+		"changing toolbar item tooltip closes stale content");
+	iRet = xuiInputPointerMove(pContext, 2, 2, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext,
+		tWorld.fX + tItem0.fX + tItem0.fW * 0.5f,
+		tWorld.fY + tItem0.fY + tItem0.fH * 0.5f, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetTooltipIsOpen(pContext) &&
+		xuiWidgetTooltipGetOwner(pContext) == pToolbar,
+		"toolbar tooltip resolver survives tooltip text update");
+	XUI_TEST_CHECK(xuiToolbarSetItemTooltip(pToolbar, 0, "Create scene") == XUI_OK &&
+		!xuiWidgetTooltipIsOpen(pContext),
+		"restore toolbar tooltip metadata");
 
 	iRet = __xuiToolbarClickItem(pContext, pToolbar, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToolbarGetItemChecked(pToolbar, 1) && tEvents.iSelectCount == 1 && tEvents.iLastValue == 11, "toggle click");

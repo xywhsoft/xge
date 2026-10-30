@@ -214,6 +214,12 @@ static int __xuiToolbarCanInteract(xui_widget pWidget)
 	       xuiWidgetGetEffectiveVisible(pWidget);
 }
 
+static void __xuiToolbarDismissTooltip(xui_widget pWidget)
+{
+	if ( pWidget == NULL ) return;
+	xuiInternalTooltipDetachWidget(xuiWidgetGetContext(pWidget), pWidget);
+}
+
 static int __xuiToolbarRectContains(xui_rect_t tRect, float fX, float fY)
 {
 	return (fX >= tRect.fX) && (fY >= tRect.fY) && (fX < tRect.fX + tRect.fW) && (fY < tRect.fY + tRect.fH);
@@ -1219,7 +1225,7 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		iRet = __xuiToolbarCancelPress(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( __xuiToolbarGetData(pWidget) != pData ) return XUI_OK;
-		(void)xuiWidgetClearTooltip(pWidget);
+		__xuiToolbarDismissTooltip(pWidget);
 		return bChanged ? xuiWidgetInvalidate(pWidget,
 			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
 	}
@@ -1234,6 +1240,7 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 	bLeftButton = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_MOVE:
+		if ( (pEvent->pTarget != pWidget) && !pData->tPointerOwner.bActive ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive &&
 		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
 			return XUI_OK;
@@ -1253,6 +1260,7 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_OK;
 	case XUI_EVENT_POINTER_LEAVE:
+		if ( (pEvent->pTarget != pWidget) && !pData->tPointerOwner.bActive ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive &&
 		     !xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ) {
 			return XUI_OK;
@@ -1262,7 +1270,7 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		return (pData->iActive >= 0 || pData->bOverflowActive) ?
 			XUI_EVENT_DISPATCH_STOP : XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
-		if ( !bLeftButton ) return XUI_OK;
+		if ( pEvent->pTarget != pWidget || !bLeftButton ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive ) {
 			return xuiInternalPointerOwnerMatches(&pData->tPointerOwner, pEvent) ?
 				XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -1368,7 +1376,7 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			fX, fY, pData->pContextUser);
 	}
 	case XUI_EVENT_KEY_DOWN:
-		if ( xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
+		if ( pEvent->pTarget != pWidget || xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
 		if ( ((tResolved.tMetrics.iOrientation == XUI_ORIENTATION_HORIZONTAL) && (pEvent->iKey == XUI_KEY_LEFT || pEvent->iKey == XUI_KEY_RIGHT)) ||
 		     ((tResolved.tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL) && (pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN)) ) {
 			int iStep = (pEvent->iKey == XUI_KEY_RIGHT || pEvent->iKey == XUI_KEY_DOWN) ? 1 : -1;
@@ -1419,6 +1427,7 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 	case XUI_EVENT_BLUR:
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
+		if ( pEvent->pTarget != pWidget ) return XUI_OK;
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	default:
@@ -1959,8 +1968,7 @@ XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pIt
 		arrNew[i].sText = arrTexts[i] != NULL ? arrTexts[i] : "";
 		arrNew[i].sTooltip = arrTooltips[i] != NULL ? arrTooltips[i] : "";
 	}
-	iRet = xuiWidgetClearTooltip(pWidget);
-	if ( iRet != XUI_OK ) goto failed_new;
+	__xuiToolbarDismissTooltip(pWidget);
 	iRet = __xuiToolbarCancelPress(pWidget, pData);
 	if ( iRet != XUI_OK ) goto failed_new;
 	if ( __xuiToolbarGetData(pWidget) != pData ) goto abandoned_new;
@@ -2149,16 +2157,11 @@ XUI_API int xuiToolbarSetItemTooltip(xui_widget pWidget, int iIndex, const char*
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
 	const char* sValue = (sText != NULL) ? sText : "";
 	char* sCopy;
-	int iRet;
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->arrItems[iIndex].sTooltip != NULL && strcmp(pData->arrItems[iIndex].sTooltip, sValue) == 0 ) return XUI_OK;
 	sCopy = __xuiToolbarCopyString(sValue);
 	if ( sValue[0] != '\0' && sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	iRet = xuiWidgetClearTooltip(pWidget);
-	if ( iRet != XUI_OK ) {
-		xrtFree(sCopy);
-		return iRet;
-	}
+	__xuiToolbarDismissTooltip(pWidget);
 	xrtFree(pData->arrOwnedTooltips[iIndex]);
 	pData->arrOwnedTooltips[iIndex] = sCopy;
 	pData->arrItems[iIndex].sTooltip = sCopy != NULL ? sCopy : "";
@@ -2202,6 +2205,9 @@ XUI_API int xuiToolbarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnable
 		iRet = __xuiToolbarCancelPress(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( __xuiToolbarGetData(pWidget) != pData ) return XUI_OK;
+	}
+	if ( !bEnabled && pData->iHover == iIndex ) {
+		__xuiToolbarDismissTooltip(pWidget);
 	}
 	iOldState = pData->arrItems[iIndex].iState;
 	iOldHover = pData->iHover;
