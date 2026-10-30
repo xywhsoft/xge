@@ -267,6 +267,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "enable panel");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "enabled render");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetEnabled(pPanel) &&
+		!xuiWidgetGetEffectiveEnabled(pPanel) &&
+		(xuiPanelGetState(pPanel) & XUI_WIDGET_STATE_DISABLED) != 0,
+		"panel state reflects inherited disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiPanelGetState(pPanel) & XUI_WIDGET_STATE_DISABLED) == 0,
+		"panel state clears inherited disable");
 	iDirtyFlags = xuiWidgetGetDirtyFlags(pPanel);
 	iRet = xuiPanelSetFont(pPanel, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPanelGetFont(pPanel) == NULL &&

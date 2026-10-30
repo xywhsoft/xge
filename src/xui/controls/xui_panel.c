@@ -1238,7 +1238,8 @@ XUI_API uint32_t xuiPanelGetState(xui_widget pWidget)
 	if ( !xuiInternalWidgetIsValid(pWidget) ) {
 		return 0u;
 	}
-	return xuiWidgetGetInputState(pWidget) | (xuiWidgetGetEnabled(pWidget) ? 0u : XUI_WIDGET_STATE_DISABLED);
+	return xuiWidgetGetInputState(pWidget) |
+		(xuiWidgetGetEffectiveEnabled(pWidget) ? 0u : XUI_WIDGET_STATE_DISABLED);
 }
 
 #endif
