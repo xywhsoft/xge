@@ -136,6 +136,54 @@ static int __xuiMsgTipTestFractionalMeasure(xui_proxy pProxy, const xui_text_ite
 	return XUI_OK;
 }
 
+static int __xuiMsgTipRectSame(xui_rect_t tA, xui_rect_t tB)
+{
+	return tA.fX == tB.fX && tA.fY == tB.fY && tA.fW == tB.fW && tA.fH == tB.fH;
+}
+
+static int __xuiMsgTipLayoutOomPreserves(xui_msgtip pTip)
+{
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xui_rect_t tTip;
+	xui_rect_t tIcon;
+	xui_rect_t tText;
+	xui_rect_t tWidget;
+	int iType;
+	int iWrapLineCount;
+	int iChangeCount;
+	int iRet;
+	int bResult;
+
+	if ( pTip == NULL ) return 0;
+	pBudget = NULL;
+	memset(&tScope, 0, sizeof(tScope));
+	tTip = xuiMsgTipGetTipRect(pTip);
+	tIcon = xuiMsgTipGetIconRect(pTip);
+	tText = xuiMsgTipGetTextRect(pTip);
+	tWidget = xuiWidgetGetRect(xuiMsgTipGetWidget(pTip));
+	iType = xuiMsgTipGetType(pTip);
+	iWrapLineCount = xuiMsgTipGetWrapLineCount(pTip);
+	iChangeCount = xuiMsgTipGetChangeCount(pTip);
+	if ( iWrapLineCount <= 0 || !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiMsgTipSetType(pTip,
+		iType == XUI_MSGTIP_ICON_ERROR ? XUI_MSGTIP_ICON_INFO : XUI_MSGTIP_ICON_ERROR);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	xrtAllocationBudgetFree(pBudget);
+	bResult = iRet == XUI_ERROR_OUT_OF_MEMORY && xuiMsgTipGetType(pTip) == iType &&
+		xuiMsgTipGetWrapLineCount(pTip) == iWrapLineCount &&
+		xuiMsgTipGetChangeCount(pTip) == iChangeCount &&
+		__xuiMsgTipRectSame(xuiMsgTipGetTipRect(pTip), tTip) &&
+		__xuiMsgTipRectSame(xuiMsgTipGetIconRect(pTip), tIcon) &&
+		__xuiMsgTipRectSame(xuiMsgTipGetTextRect(pTip), tText) &&
+		__xuiMsgTipRectSame(xuiWidgetGetRect(xuiMsgTipGetWidget(pTip)), tWidget);
+	return bResult;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -243,6 +291,8 @@ int main(void)
 	iChangeBefore = xuiMsgTipGetChangeCount(pTip);
 	iRet = xuiMsgTipSetText(pTip, xuiMsgTipGetText(pTip));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipGetChangeCount(pTip) == iChangeBefore, "same text is no-op");
+	XUI_TEST_CHECK(__xuiMsgTipLayoutOomPreserves(pTip),
+	               "layout allocation failure preserves geometry and counters");
 
 	iRet = xuiMsgTipShow(pTip, XUI_MSGTIP_ICON_INFO, tDesc.sText, 0.1f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMsgTipIsOpen(pTip), "show");
