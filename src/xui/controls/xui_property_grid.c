@@ -841,51 +841,65 @@ static int __xuiPropertyGridApplyStyle(xui_property_grid_data_t* pData)
 	return iRet;
 }
 
-static void __xuiPropertyGridRebuildVisible(xui_property_grid_data_t* pData)
+static int __xuiPropertyGridRebuildVisible(xui_property_grid_data_t* pData)
 {
+	xui_table_view_row_t arrRows[XUI_PROPERTY_GRID_VISIBLE_CAPACITY];
+	int arrVisibleKind[XUI_PROPERTY_GRID_VISIBLE_CAPACITY];
+	int arrVisibleIndex[XUI_PROPERTY_GRID_VISIBLE_CAPACITY];
+	int iVisibleCount;
 	int i;
 	int iCategory;
+	int iRet;
 
 	if ( pData == NULL ) {
-		return;
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pData->iVisibleCount = 0;
-	memset(pData->arrRows, 0, sizeof(pData->arrRows));
-	for ( iCategory = 0; (iCategory < pData->iCategoryCount) && (pData->iVisibleCount < XUI_PROPERTY_GRID_VISIBLE_CAPACITY); iCategory++ ) {
-		pData->arrVisibleKind[pData->iVisibleCount] = XUI_PROPERTY_GRID_VISIBLE_CATEGORY;
-		pData->arrVisibleIndex[pData->iVisibleCount] = iCategory;
-		pData->arrRows[pData->iVisibleCount].fHeight = pData->fCategoryHeight;
-		pData->arrRows[pData->iVisibleCount].bSelected = 0;
-		pData->arrRows[pData->iVisibleCount].bDisabled = 0;
+	iVisibleCount = 0;
+	memset(arrRows, 0, sizeof(arrRows));
+	memset(arrVisibleKind, 0, sizeof(arrVisibleKind));
+	memset(arrVisibleIndex, 0, sizeof(arrVisibleIndex));
+	for ( iCategory = 0; (iCategory < pData->iCategoryCount) && (iVisibleCount < XUI_PROPERTY_GRID_VISIBLE_CAPACITY); iCategory++ ) {
+		arrVisibleKind[iVisibleCount] = XUI_PROPERTY_GRID_VISIBLE_CATEGORY;
+		arrVisibleIndex[iVisibleCount] = iCategory;
+		arrRows[iVisibleCount].fHeight = pData->fCategoryHeight;
+		arrRows[iVisibleCount].bSelected = 0;
+		arrRows[iVisibleCount].bDisabled = 0;
 		/* Category colors are resolved by the cell adapter, not cached in row data. */
-		pData->arrRows[pData->iVisibleCount].bHasStyle = 0;
-		pData->iVisibleCount++;
+		arrRows[iVisibleCount].bHasStyle = 0;
+		iVisibleCount++;
 		if ( pData->arrCategories[iCategory].bExpanded == 0 ) {
 			continue;
 		}
-		for ( i = 0; (i < pData->iPropertyCount) && (pData->iVisibleCount < XUI_PROPERTY_GRID_VISIBLE_CAPACITY); i++ ) {
+		for ( i = 0; (i < pData->iPropertyCount) && (iVisibleCount < XUI_PROPERTY_GRID_VISIBLE_CAPACITY); i++ ) {
 			if ( pData->arrProperties[i].iCategory != iCategory ) {
 				continue;
 			}
 			if ( (pData->arrProperties[i].iFlags & XUI_PROPERTY_FLAG_HIDDEN) != 0 ) {
 				continue;
 			}
-			pData->arrVisibleKind[pData->iVisibleCount] = XUI_PROPERTY_GRID_VISIBLE_PROPERTY;
-			pData->arrVisibleIndex[pData->iVisibleCount] = i;
-			pData->arrRows[pData->iVisibleCount].fHeight = pData->fRowHeight;
-			pData->arrRows[pData->iVisibleCount].bSelected = (i == pData->iSelectedProperty);
-			pData->iVisibleCount++;
+			arrVisibleKind[iVisibleCount] = XUI_PROPERTY_GRID_VISIBLE_PROPERTY;
+			arrVisibleIndex[iVisibleCount] = i;
+			arrRows[iVisibleCount].fHeight = pData->fRowHeight;
+			arrRows[iVisibleCount].bSelected = (i == pData->iSelectedProperty);
+			iVisibleCount++;
 		}
 	}
 	if ( pData->pTableGrid != NULL ) {
-		(void)xuiTableGridSetRows(pData->pTableGrid, pData->arrRows, pData->iVisibleCount);
+		/* Keep the adapter count committed until row storage has been prepared. */
+		iRet = xuiTableGridSetRows(pData->pTableGrid, arrRows, iVisibleCount);
+		if ( iRet != XUI_OK ) return iRet;
 	}
+	memcpy(pData->arrRows, arrRows, sizeof(arrRows));
+	memcpy(pData->arrVisibleKind, arrVisibleKind, sizeof(arrVisibleKind));
+	memcpy(pData->arrVisibleIndex, arrVisibleIndex, sizeof(arrVisibleIndex));
+	pData->iVisibleCount = iVisibleCount;
 	if ( pData->pTableView != NULL ) {
 		(void)xuiTableViewRefresh(pData->pTableView);
 	}
 	if ( pData->pWidget != NULL ) {
 		(void)xuiWidgetInvalidate(pData->pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
+	return XUI_OK;
 }
 
 static int __xuiPropertyGridFinishEditForMutation(xui_widget pWidget,
@@ -1958,6 +1972,9 @@ XUI_API int xuiPropertyGridClear(xui_widget pWidget)
 {
 	xui_context pContext;
 	xui_property_grid_data_t* pData;
+	int iOldCategoryCount;
+	int iOldPropertyCount;
+	int iOldSelectedProperty;
 	int iRet;
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1973,15 +1990,23 @@ XUI_API int xuiPropertyGridClear(xui_widget pWidget)
 		xuiInternalOperationLeave(pContext);
 		return iRet;
 	}
-	__xuiPropertyGridFreeAllOwnedEditors(pData);
-	memset(pData->arrCategories, 0, sizeof(pData->arrCategories));
-	memset(pData->arrProperties, 0, sizeof(pData->arrProperties));
-	memset(pData->arrVisibleKind, 0, sizeof(pData->arrVisibleKind));
-	memset(pData->arrVisibleIndex, 0, sizeof(pData->arrVisibleIndex));
+	iOldCategoryCount = pData->iCategoryCount;
+	iOldPropertyCount = pData->iPropertyCount;
+	iOldSelectedProperty = pData->iSelectedProperty;
 	pData->iCategoryCount = 0;
 	pData->iPropertyCount = 0;
 	pData->iSelectedProperty = -1;
-	__xuiPropertyGridRebuildVisible(pData);
+	iRet = __xuiPropertyGridRebuildVisible(pData);
+	if ( iRet != XUI_OK ) {
+		pData->iCategoryCount = iOldCategoryCount;
+		pData->iPropertyCount = iOldPropertyCount;
+		pData->iSelectedProperty = iOldSelectedProperty;
+		xuiInternalOperationLeave(pContext);
+		return iRet;
+	}
+	__xuiPropertyGridFreeAllOwnedEditors(pData);
+	memset(pData->arrCategories, 0, sizeof(pData->arrCategories));
+	memset(pData->arrProperties, 0, sizeof(pData->arrProperties));
 	xuiInternalOperationLeave(pContext);
 	return XUI_OK;
 }
@@ -2025,7 +2050,13 @@ XUI_API int xuiPropertyGridAddCategory(xui_widget pWidget, const char* sId, cons
 	__xuiPropertyGridCopy(pCategory->sId, sizeof(pCategory->sId), ((sId != NULL) && (sId[0] != '\0')) ? sId : sName);
 	__xuiPropertyGridCopy(pCategory->sName, sizeof(pCategory->sName), ((sName != NULL) && (sName[0] != '\0')) ? sName : pCategory->sId);
 	pCategory->bExpanded = bExpanded != 0;
-	__xuiPropertyGridRebuildVisible(pData);
+	iRet = __xuiPropertyGridRebuildVisible(pData);
+	if ( iRet != XUI_OK ) {
+		pData->iCategoryCount--;
+		memset(pCategory, 0, sizeof(*pCategory));
+		xuiInternalOperationLeave(pContext);
+		return -1;
+	}
 	xuiInternalOperationLeave(pContext);
 	return iIndex;
 }
@@ -2076,7 +2107,15 @@ XUI_API int xuiPropertyGridAddProperty(xui_widget pWidget, int iCategory, const 
 	pProp->iFlags = pDesc->iFlags;
 	pProp->bAutoDirty = (pProp->sDefaultValue[0] != '\0');
 	pData->arrCategories[iCategory].iPropertyCount++;
-	__xuiPropertyGridRebuildVisible(pData);
+	iRet = __xuiPropertyGridRebuildVisible(pData);
+	if ( iRet != XUI_OK ) {
+		pData->arrCategories[iCategory].iPropertyCount--;
+		pData->iPropertyCount--;
+		memset(pProp, 0, sizeof(*pProp));
+		memset(&pData->arrEditorOwned[iIndex], 0, sizeof(pData->arrEditorOwned[iIndex]));
+		xuiInternalOperationLeave(pContext);
+		return -1;
+	}
 	xuiInternalOperationLeave(pContext);
 	return iIndex;
 }
@@ -2119,6 +2158,8 @@ XUI_API int xuiPropertyGridSetCategoryExpanded(xui_widget pWidget, int iCategory
 {
 	xui_context pContext;
 	xui_property_grid_data_t* pData;
+	int iOldToggleCount;
+	int bOldExpanded;
 	int iRet;
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2139,9 +2180,17 @@ XUI_API int xuiPropertyGridSetCategoryExpanded(xui_widget pWidget, int iCategory
 		xuiInternalOperationLeave(pContext);
 		return iRet;
 	}
+	bOldExpanded = pData->arrCategories[iCategory].bExpanded;
+	iOldToggleCount = pData->iToggleCount;
 	pData->arrCategories[iCategory].bExpanded = bExpanded;
 	if ( pData->iToggleCount < INT_MAX ) pData->iToggleCount++;
-	__xuiPropertyGridRebuildVisible(pData);
+	iRet = __xuiPropertyGridRebuildVisible(pData);
+	if ( iRet != XUI_OK ) {
+		pData->arrCategories[iCategory].bExpanded = bOldExpanded;
+		pData->iToggleCount = iOldToggleCount;
+		xuiInternalOperationLeave(pContext);
+		return iRet;
+	}
 	xuiInternalOperationLeave(pContext);
 	return XUI_OK;
 }
@@ -2300,6 +2349,8 @@ XUI_API int xuiPropertyGridSetPropertyFlags(xui_widget pWidget, int iProperty, i
 {
 	xui_context pContext;
 	xui_property_grid_data_t* pData;
+	int iOldFlags;
+	int iOldSelectedProperty;
 	int iChanged;
 	int iRet;
 
@@ -2324,11 +2375,19 @@ XUI_API int xuiPropertyGridSetPropertyFlags(xui_widget pWidget, int iProperty, i
 		}
 	}
 	if ( (iChanged & XUI_PROPERTY_FLAG_HIDDEN) != 0 ) {
+		iOldFlags = pData->arrProperties[iProperty].iFlags;
+		iOldSelectedProperty = pData->iSelectedProperty;
 		pData->arrProperties[iProperty].iFlags = iFlags;
 		if ( (iFlags & XUI_PROPERTY_FLAG_HIDDEN) != 0 && pData->iSelectedProperty == iProperty ) {
 			pData->iSelectedProperty = -1;
 		}
-		__xuiPropertyGridRebuildVisible(pData);
+		iRet = __xuiPropertyGridRebuildVisible(pData);
+		if ( iRet != XUI_OK ) {
+			pData->arrProperties[iProperty].iFlags = iOldFlags;
+			pData->iSelectedProperty = iOldSelectedProperty;
+			xuiInternalOperationLeave(pContext);
+			return iRet;
+		}
 	} else {
 		iRet = __xuiPropertyGridInvalidateCells(pData);
 		if ( iRet != XUI_OK ) {
@@ -2614,7 +2673,18 @@ XUI_API int xuiPropertyGridSetMetrics(xui_widget pWidget, float fNameWidth, floa
 		xuiInternalOperationLeave(pContext);
 		return iRet;
 	}
-	__xuiPropertyGridRebuildVisible(pData);
+	iRet = __xuiPropertyGridRebuildVisible(pData);
+	if ( iRet != XUI_OK ) {
+		pData->fNameWidth = fOldNameWidth;
+		pData->fRowHeight = fOldRowHeight;
+		pData->fCategoryHeight = fOldCategoryHeight;
+		if ( pData->pTableGrid != NULL ) {
+			(void)xuiTableGridSetDefaultMetrics(pData->pTableGrid, 120.0f, fOldRowHeight, 0.0f);
+			(void)__xuiPropertyGridSyncColumns(pData);
+		}
+		xuiInternalOperationLeave(pContext);
+		return iRet;
+	}
 	xuiInternalOperationLeave(pContext);
 	return XUI_OK;
 }

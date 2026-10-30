@@ -410,6 +410,132 @@ static int __xuiPropertyGridCreateLifecycleGrid(xui_context pContext, xui_font p
 	return XUI_OK;
 }
 
+static int __xuiPropertyGridRebuildOomPreserves(xui_context pContext, xui_font pFont)
+{
+	xui_property_grid_desc_t tDesc;
+	xui_property_desc_t tProp;
+	xui_widget pGrid;
+	xui_widget pTableView;
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	int iCategory;
+	int iProperty;
+	int iRet;
+	int bResult;
+	int bBudgetEntered;
+
+	pGrid = NULL;
+	pBudget = NULL;
+	bResult = 0;
+	bBudgetEntered = 0;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = pFont;
+	tDesc.iDescriptionMode = XUI_PROPERTY_GRID_DESCRIPTION_NONE;
+	tDesc.iEditMode = XUI_TABLE_GRID_EDIT_QUICK;
+	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	if ( xuiPropertyGridCreate(pContext, &pGrid, &tDesc) != XUI_OK || pGrid == NULL ) goto cleanup;
+	iCategory = xuiPropertyGridAddCategory(pGrid, "oom", "OOM", 0);
+	memset(&tProp, 0, sizeof(tProp));
+	tProp.sId = "value";
+	tProp.sName = "Value";
+	tProp.sValue = "initial";
+	tProp.iType = XUI_TABLE_CELL_TYPE_TEXT;
+	iProperty = xuiPropertyGridAddProperty(pGrid, iCategory, &tProp);
+	pTableView = xuiPropertyGridGetTableView(pGrid);
+	if ( iCategory < 0 || iProperty < 0 || pTableView == NULL ||
+	     xuiPropertyGridGetVisibleCount(pGrid) != 1 || xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) || !xrtAllocationBudgetEnter(pBudget, &tScope) ) goto cleanup;
+	bBudgetEntered = 1;
+	iRet = xuiPropertyGridSetCategoryExpanded(pGrid, iCategory, 1);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	bBudgetEntered = 0;
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	if ( iRet != XUI_ERROR_OUT_OF_MEMORY ||
+	     xuiPropertyGridGetCategoryExpanded(pGrid, iCategory) != 0 ||
+	     xuiPropertyGridGetToggleCount(pGrid) != 0 ||
+	     xuiPropertyGridGetVisibleCount(pGrid) != 1 ||
+	     xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	if ( xuiPropertyGridSetCategoryExpanded(pGrid, iCategory, 1) != XUI_OK ||
+	     xuiPropertyGridGetVisibleCount(pGrid) != 2 || xuiTableViewGetRowCount(pTableView) != 2 ) goto cleanup;
+	xuiWidgetDestroy(pGrid);
+	pGrid = NULL;
+
+	if ( xuiPropertyGridCreate(pContext, &pGrid, &tDesc) != XUI_OK || pGrid == NULL ) goto cleanup;
+	iCategory = xuiPropertyGridAddCategory(pGrid, "oom", "OOM", 1);
+	pTableView = xuiPropertyGridGetTableView(pGrid);
+	if ( iCategory < 0 || pTableView == NULL || xuiPropertyGridGetVisibleCount(pGrid) != 1 ||
+	     xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) || !xrtAllocationBudgetEnter(pBudget, &tScope) ) goto cleanup;
+	bBudgetEntered = 1;
+	iProperty = xuiPropertyGridAddProperty(pGrid, iCategory, &tProp);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	bBudgetEntered = 0;
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	if ( iProperty != -1 || xuiPropertyGridGetPropertyCount(pGrid) != 0 ||
+	     xuiPropertyGridFindProperty(pGrid, "value") != -1 ||
+	     xuiPropertyGridGetVisibleCount(pGrid) != 1 || xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	iProperty = xuiPropertyGridAddProperty(pGrid, iCategory, &tProp);
+	if ( iProperty != 0 || xuiPropertyGridGetPropertyCount(pGrid) != 1 ||
+	     xuiPropertyGridGetVisibleCount(pGrid) != 2 || xuiTableViewGetRowCount(pTableView) != 2 ) goto cleanup;
+	xuiWidgetDestroy(pGrid);
+	pGrid = NULL;
+
+	if ( xuiPropertyGridCreate(pContext, &pGrid, &tDesc) != XUI_OK || pGrid == NULL ) goto cleanup;
+	pTableView = xuiPropertyGridGetTableView(pGrid);
+	if ( pTableView == NULL ) goto cleanup;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) || !xrtAllocationBudgetEnter(pBudget, &tScope) ) goto cleanup;
+	bBudgetEntered = 1;
+	iCategory = xuiPropertyGridAddCategory(pGrid, "oom", "OOM", 1);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	bBudgetEntered = 0;
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	if ( iCategory != -1 || xuiPropertyGridGetCategoryCount(pGrid) != 0 ||
+	     xuiPropertyGridFindCategory(pGrid, "oom") != -1 ||
+	     xuiPropertyGridGetVisibleCount(pGrid) != 0 || xuiTableViewGetRowCount(pTableView) != 0 ) goto cleanup;
+	iCategory = xuiPropertyGridAddCategory(pGrid, "oom", "OOM", 1);
+	if ( iCategory != 0 || xuiPropertyGridGetCategoryCount(pGrid) != 1 ||
+	     xuiPropertyGridGetVisibleCount(pGrid) != 1 || xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	xuiWidgetDestroy(pGrid);
+	pGrid = NULL;
+
+	if ( xuiPropertyGridCreate(pContext, &pGrid, &tDesc) != XUI_OK || pGrid == NULL ) goto cleanup;
+	iCategory = xuiPropertyGridAddCategory(pGrid, "oom", "OOM", 1);
+	iProperty = xuiPropertyGridAddProperty(pGrid, iCategory, &tProp);
+	pTableView = xuiPropertyGridGetTableView(pGrid);
+	if ( iCategory < 0 || iProperty < 0 || pTableView == NULL ||
+	     xuiPropertyGridSetSelected(pGrid, iProperty) != XUI_OK ) goto cleanup;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) || !xrtAllocationBudgetEnter(pBudget, &tScope) ) goto cleanup;
+	bBudgetEntered = 1;
+	iRet = xuiPropertyGridSetPropertyFlags(pGrid, iProperty, XUI_PROPERTY_FLAG_HIDDEN);
+	(void)xrtAllocationBudgetLeave(&tScope);
+	bBudgetEntered = 0;
+	xrtAllocationBudgetFree(pBudget);
+	pBudget = NULL;
+	if ( iRet != XUI_ERROR_OUT_OF_MEMORY || xuiPropertyGridGetPropertyFlags(pGrid, iProperty) != 0 ||
+	     xuiPropertyGridGetSelected(pGrid) != iProperty || xuiPropertyGridGetVisibleCount(pGrid) != 2 ||
+	     xuiTableViewGetRowCount(pTableView) != 2 ) goto cleanup;
+	if ( xuiPropertyGridSetPropertyFlags(pGrid, iProperty, XUI_PROPERTY_FLAG_HIDDEN) != XUI_OK ||
+	     xuiPropertyGridGetSelected(pGrid) != -1 || xuiPropertyGridGetVisibleCount(pGrid) != 1 ||
+	     xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	bResult = 1;
+
+cleanup:
+	if ( pBudget != NULL ) {
+		if ( bBudgetEntered ) (void)xrtAllocationBudgetLeave(&tScope);
+		xrtAllocationBudgetFree(pBudget);
+	}
+	if ( pGrid != NULL ) xuiWidgetDestroy(pGrid);
+	return bResult;
+}
+
 int main(void)
 {
 	static const char* arrThemes[] = {"Light", "Dark", "High contrast"};
@@ -506,6 +632,8 @@ int main(void)
 	xuiWidgetSetRect(pRoot, (xui_rect_t){0.0f, 0.0f, 640.0f, 420.0f});
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root");
+	XUI_TEST_CHECK(__xuiPropertyGridRebuildOomPreserves(pContext, pFont),
+	               "visible-row rebuild failures preserve model and table state");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
