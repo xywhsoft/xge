@@ -253,6 +253,7 @@ int main(void)
 	xui_rect_t tMenuWorld;
 	xui_rect_t tMenuItem;
 	xui_rect_t tBadIconSrc[5];
+	xui_vec2_t tMeasured;
 	float fTabWidth;
 	float fTabHeight;
 	float fCheckWidth;
@@ -325,6 +326,13 @@ int main(void)
 	tDesc.fTabHeight = 30.0f;
 	iRet = xuiTabsCreate(pContext, &pTabs, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTabs != NULL, "tabs create");
+	iRet = xuiWidgetMeasure(pTabs,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX > 120.0f && tMeasured.fY > 90.0f,
+		"top tabs intrinsic measure exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pTabs, (xui_vec2_t){120.0f, 90.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTabsNear(tMeasured.fX, 120.0f) &&
+		__xuiTabsNear(tMeasured.fY, 90.0f), "top tabs finite measure constraint");
 	iRet = xuiWidgetAddChild(pRoot, pTabs);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tabs add");
 	xuiWidgetSetRect(pTabs, (xui_rect_t){20.0f, 20.0f, 330.0f, 190.0f});
@@ -561,6 +569,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 0, "select first before left placement");
 	iRet = xuiTabsSetPlacement(pTabs, XUI_TABS_PLACEMENT_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetPlacement(pTabs) == XUI_TABS_PLACEMENT_LEFT, "left placement");
+	iRet = xuiWidgetMeasure(pTabs,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX > 100.0f && tMeasured.fY > 80.0f,
+		"left tabs intrinsic measure exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pTabs, (xui_vec2_t){100.0f, 80.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiTabsNear(tMeasured.fX, 100.0f) &&
+		__xuiTabsNear(tMeasured.fY, 80.0f), "left tabs finite measure constraint");
 	iRet = xuiTabsSetScroll(pTabs, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset scroll");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);

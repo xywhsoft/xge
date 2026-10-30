@@ -1716,7 +1716,6 @@ static int __xuiTabsContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, x
 {
 	xui_tabs_data_t* pData;
 
-	(void)tConstraint;
 	(void)pUser;
 	pData = __xuiTabsGetData(pWidget);
 	if ( (pData == NULL) || (pSize == NULL) ) {
@@ -1729,6 +1728,16 @@ static int __xuiTabsContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, x
 	} else {
 		pSize->fX = 320.0f;
 		pSize->fY = 180.0f + pData->fResolvedTabHeight;
+	}
+	if ( (tConstraint.fX >= 0.0f) &&
+		(tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fX > tConstraint.fX) ) {
+		pSize->fX = tConstraint.fX;
+	}
+	if ( (tConstraint.fY >= 0.0f) &&
+		(tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fY > tConstraint.fY) ) {
+		pSize->fY = tConstraint.fY;
 	}
 	return XUI_OK;
 }
