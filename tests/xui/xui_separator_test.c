@@ -137,6 +137,36 @@ int main(void)
 	XUI_TEST_CHECK(__xuiSeparatorRectEq(xuiTestSurfaceGetLastRect(pCache), 0.0f, 6.0f, 100.0f, 2.0f), "solid draw rect");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pCache) == XUI_COLOR_RGBA(80, 102, 130, 190), "solid color");
 
+	xuiWidgetClearDirty(pSeparator, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiSeparatorSetColor(pSeparator, XUI_COLOR_RGBA(80, 102, 130, 190));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pSeparator) == 0u,
+		"idempotent color stays clean");
+	iRet = xuiSeparatorSetAlign(pSeparator, XUI_ALIGN_CENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pSeparator) == 0u,
+		"idempotent align stays clean");
+	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_SOLID);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pSeparator) == 0u,
+		"idempotent line style stays clean");
+	iRet = xuiSeparatorSetThickness(pSeparator, 2.25f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSeparatorGetThickness(pSeparator) == 2.25f &&
+		xuiWidgetGetDirtyFlags(pSeparator) == 0u,
+		"same-pixel thickness updates without invalidation");
+	iRet = xuiSeparatorSetColor(pSeparator, XUI_COLOR_RGBA(70, 90, 120, 200));
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pSeparator) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pSeparator) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"color invalidates paint only");
+	xuiWidgetClearDirty(pSeparator, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiSeparatorSetThickness(pSeparator, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pSeparator) & XUI_WIDGET_DIRTY_LAYOUT) != 0u &&
+		(xuiWidgetGetDirtyFlags(pSeparator) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"pixel thickness invalidates layout and paint");
+	iRet = xuiSeparatorSetThickness(pSeparator, 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore thickness after dirty checks");
+	iRet = xuiSeparatorSetColor(pSeparator, XUI_COLOR_RGBA(80, 102, 130, 190));
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore color after dirty checks");
+
 	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_DOT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dot style");
 	xuiTestSurfaceReset(pCache);
@@ -153,6 +183,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		(tAccessible.iState & XUI_ACCESSIBLE_STATE_VERTICAL) != 0u,
 		"vertical accessibility");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "disable separator parent");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pSeparator, 0, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_DISABLED) != 0u,
+		"separator inherits disabled accessibility state");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enable separator parent");
 	iRet = xuiSeparatorSetAlign(pSeparator, XUI_ALIGN_END);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set align end");
 	iRet = xuiSeparatorSetLineStyle(pSeparator, XUI_SEPARATOR_SOLID);

@@ -164,6 +164,48 @@ static void __xuiSeparatorResolve(xui_widget pWidget, const xui_separator_data_t
 	}
 }
 
+static int __xuiSeparatorApplyData(xui_widget pWidget, xui_separator_data_t* pData,
+	const xui_separator_data_t* pNext)
+{
+	xui_separator_data_t tOldResolved;
+	xui_separator_data_t tNextResolved;
+	uint32_t iDirtyFlags;
+	int iOldThickness;
+	int iNextThickness;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pNext == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	__xuiSeparatorResolve(pWidget, pData, &tOldResolved);
+	__xuiSeparatorResolve(pWidget, pNext, &tNextResolved);
+	iOldThickness = xuiInternalSnapSize(tOldResolved.fThickness);
+	iNextThickness = xuiInternalSnapSize(tNextResolved.fThickness);
+	iDirtyFlags = 0u;
+	if ( (tOldResolved.iOrientation != tNextResolved.iOrientation) ||
+	     (iOldThickness != iNextThickness) ) {
+		iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
+	}
+	if ( (tOldResolved.iColor != tNextResolved.iColor) ||
+	     (iOldThickness != iNextThickness) ||
+	     (tOldResolved.iOrientation != tNextResolved.iOrientation) ||
+	     (tOldResolved.iAlign != tNextResolved.iAlign) ||
+	     (tOldResolved.iLineStyle != tNextResolved.iLineStyle) ) {
+		iDirtyFlags |= XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	}
+	if ( iDirtyFlags != 0u ) {
+		iRet = xuiWidgetInvalidate(pWidget, iDirtyFlags);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+	}
+	*pData = *pNext;
+	if ( tOldResolved.iOrientation != tNextResolved.iOrientation ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
+	}
+	return XUI_OK;
+}
+
 static xui_rect_t __xuiSeparatorLineRectFromData(xui_widget pWidget, const xui_separator_data_t* pData)
 {
 	xui_rect_t tRect;
@@ -508,7 +550,7 @@ XUI_API int xuiSeparatorCreate(xui_context pContext, xui_widget* ppWidget, const
 XUI_API int xuiSeparatorSetColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_separator_data_t* pData;
-	int iRet;
+	xui_separator_data_t tNext;
 
 	pData = __xuiSeparatorGetData(pWidget);
 	if ( pData == NULL ) {
@@ -517,11 +559,9 @@ XUI_API int xuiSeparatorSetColor(xui_widget pWidget, uint32_t iColor)
 	if ( pData->iColor == iColor ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet == XUI_OK ) {
-		pData->iColor = iColor;
-	}
-	return iRet;
+	tNext = *pData;
+	tNext.iColor = iColor;
+	return __xuiSeparatorApplyData(pWidget, pData, &tNext);
 }
 
 XUI_API uint32_t xuiSeparatorGetColor(xui_widget pWidget)
@@ -535,7 +575,7 @@ XUI_API uint32_t xuiSeparatorGetColor(xui_widget pWidget)
 XUI_API int xuiSeparatorSetThickness(xui_widget pWidget, float fThickness)
 {
 	xui_separator_data_t* pData;
-	int iRet;
+	xui_separator_data_t tNext;
 
 	if ( !__xuiSeparatorThicknessValid(fThickness) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -547,12 +587,9 @@ XUI_API int xuiSeparatorSetThickness(xui_widget pWidget, float fThickness)
 	if ( pData->fThickness == fThickness ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet == XUI_OK ) {
-		pData->fThickness = fThickness;
-	}
-	return iRet;
+	tNext = *pData;
+	tNext.fThickness = fThickness;
+	return __xuiSeparatorApplyData(pWidget, pData, &tNext);
 }
 
 XUI_API float xuiSeparatorGetThickness(xui_widget pWidget)
@@ -566,7 +603,7 @@ XUI_API float xuiSeparatorGetThickness(xui_widget pWidget)
 XUI_API int xuiSeparatorSetOrientation(xui_widget pWidget, int iOrientation)
 {
 	xui_separator_data_t* pData;
-	int iRet;
+	xui_separator_data_t tNext;
 
 	if ( !__xuiSeparatorOrientationValid(iOrientation) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -578,13 +615,9 @@ XUI_API int xuiSeparatorSetOrientation(xui_widget pWidget, int iOrientation)
 	if ( pData->iOrientation == iOrientation ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet == XUI_OK ) {
-		pData->iOrientation = iOrientation;
-		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-	}
-	return iRet;
+	tNext = *pData;
+	tNext.iOrientation = iOrientation;
+	return __xuiSeparatorApplyData(pWidget, pData, &tNext);
 }
 
 XUI_API int xuiSeparatorGetOrientation(xui_widget pWidget)
@@ -598,7 +631,7 @@ XUI_API int xuiSeparatorGetOrientation(xui_widget pWidget)
 XUI_API int xuiSeparatorSetAlign(xui_widget pWidget, int iAlign)
 {
 	xui_separator_data_t* pData;
-	int iRet;
+	xui_separator_data_t tNext;
 
 	if ( !__xuiSeparatorAlignValid(iAlign) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -610,11 +643,9 @@ XUI_API int xuiSeparatorSetAlign(xui_widget pWidget, int iAlign)
 	if ( pData->iAlign == iAlign ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet == XUI_OK ) {
-		pData->iAlign = iAlign;
-	}
-	return iRet;
+	tNext = *pData;
+	tNext.iAlign = iAlign;
+	return __xuiSeparatorApplyData(pWidget, pData, &tNext);
 }
 
 XUI_API int xuiSeparatorGetAlign(xui_widget pWidget)
@@ -628,7 +659,7 @@ XUI_API int xuiSeparatorGetAlign(xui_widget pWidget)
 XUI_API int xuiSeparatorSetLineStyle(xui_widget pWidget, int iLineStyle)
 {
 	xui_separator_data_t* pData;
-	int iRet;
+	xui_separator_data_t tNext;
 
 	if ( !__xuiSeparatorLineStyleValid(iLineStyle) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -640,11 +671,9 @@ XUI_API int xuiSeparatorSetLineStyle(xui_widget pWidget, int iLineStyle)
 	if ( pData->iLineStyle == iLineStyle ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet == XUI_OK ) {
-		pData->iLineStyle = iLineStyle;
-	}
-	return iRet;
+	tNext = *pData;
+	tNext.iLineStyle = iLineStyle;
+	return __xuiSeparatorApplyData(pWidget, pData, &tNext);
 }
 
 XUI_API int xuiSeparatorGetLineStyle(xui_widget pWidget)
