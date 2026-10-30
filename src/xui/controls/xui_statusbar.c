@@ -2173,7 +2173,7 @@ XUI_API uint32_t xuiStatusBarGetState(xui_widget pWidget)
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
 	uint32_t iState = 0u;
 	if ( pData == NULL ) return XUI_WIDGET_STATE_DISABLED;
-	if ( !xuiWidgetGetEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
+	if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) iState |= XUI_WIDGET_STATE_DISABLED;
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget ) iState |= XUI_WIDGET_STATE_FOCUS;
 	if ( pData->iHover >= 0 ) iState |= XUI_WIDGET_STATE_HOVER;
 	if ( pData->iActive >= 0 ) iState |= XUI_WIDGET_STATE_ACTIVE;

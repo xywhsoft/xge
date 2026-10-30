@@ -459,6 +459,15 @@ int main(void)
 	iRet = xuiStatusBarGetColors(pStatusBar, &tColors);
 	XUI_TEST_CHECK(iRet == XUI_OK && tColors.iTextColor != 0u, "colors get");
 	XUI_TEST_CHECK((xuiStatusBarGetState(pStatusBar) & XUI_WIDGET_STATE_FOCUS) != 0u, "state focus");
+	iRet = xuiWidgetSetEnabled(pRoot, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetEnabled(pStatusBar) &&
+		!xuiWidgetGetEffectiveEnabled(pStatusBar) &&
+		(xuiStatusBarGetState(pStatusBar) & XUI_WIDGET_STATE_DISABLED) != 0u,
+		"state reflects inherited disable");
+	iRet = xuiWidgetSetEnabled(pRoot, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiStatusBarGetState(pStatusBar) & XUI_WIDGET_STATE_DISABLED) == 0u,
+		"state clears inherited disable");
 	XUI_TEST_CHECK(xuiStatusBarGetSelectCount(pStatusBar) == tEvents.iSelectCount, "select count");
 	XUI_TEST_CHECK(xuiStatusBarGetChangeCount(pStatusBar) > 0, "change count");
 
