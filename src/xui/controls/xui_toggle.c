@@ -2,8 +2,11 @@
 #if XUI_ENABLE_TOGGLE
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
+#include "xui_text_internal.h"
 
+#include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 #define XUI_TOGGLE_VISUAL_NORMAL	0
@@ -128,77 +131,107 @@ static int __xuiToggleDescValid(const xui_toggle_desc_t* pDesc)
 		 __xuiToggleNonNegativeFloatValid(pDesc->fInnerTextGap));
 }
 
-static int __xuiToggleStringSet(char** ppText, int* pCapacity, const char* sText)
+static int __xuiToggleTextRequired(const char* sText, int* pRequired)
 {
-	char* sNew;
-	char* sOld;
-	int iNeed;
+	size_t iLength;
 
-	if ( (ppText == NULL) || (pCapacity == NULL) ) {
+	if ( pRequired == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iNeed = (int)strlen(sText) + 1;
-	if ( (iNeed > *pCapacity) || (*ppText == NULL) ) {
-		sNew = (char*)xrtMalloc((size_t)iNeed);
-		if ( sNew == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		memcpy(sNew, sText, (size_t)iNeed);
-		sOld = *ppText;
-		*ppText = sNew;
-		*pCapacity = iNeed;
-		if ( sOld != NULL ) xrtFree(sOld);
-		return XUI_OK;
+	iLength = strlen(sText);
+	if ( iLength >= (size_t)INT_MAX ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memmove(*ppText, sText, (size_t)iNeed);
+	*pRequired = (int)iLength + 1;
 	return XUI_OK;
 }
 
 static int __xuiToggleTextSet(xui_toggle_data_t* pData, const char* sText)
 {
+	int iRequired;
+	int iRet;
+
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	return __xuiToggleStringSet(&pData->sText, &pData->iTextCapacity, sText);
+	iRet = __xuiToggleTextRequired(sText, &iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( sText == NULL ) sText = "";
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	memmove(pData->sText, sText, (size_t)iRequired);
+	return XUI_OK;
 }
 
-static int __xuiToggleInnerTextSet(xui_toggle_data_t* pData, const char* sUncheckedText, const char* sCheckedText)
+static int __xuiToggleTextInBuffer(const char* sText, const char* sBuffer, int iCapacity)
 {
-	char* sNewUnchecked;
-	char* sNewChecked;
-	char* sOldUnchecked;
-	char* sOldChecked;
-	int iUncheckedNeed;
-	int iCheckedNeed;
+	uintptr_t iTextAddress;
+	uintptr_t iBufferAddress;
 
-	if ( pData == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	if ( sText == NULL || sBuffer == NULL || iCapacity <= 0 ) return 0;
+	iTextAddress = (uintptr_t)(const void*)sText;
+	iBufferAddress = (uintptr_t)(const void*)sBuffer;
+	return iTextAddress >= iBufferAddress &&
+		iTextAddress - iBufferAddress < (uintptr_t)iCapacity;
+}
+
+static int __xuiToggleInnerTextSet(xui_widget pWidget, xui_toggle_data_t* pData,
+	const char* sUncheckedText, const char* sCheckedText)
+{
+	char* sUncheckedCopy;
+	char* sCheckedCopy;
+	int iUncheckedRequired;
+	int iCheckedRequired;
+	int iRet;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( sUncheckedText == NULL ) sUncheckedText = "";
 	if ( sCheckedText == NULL ) sCheckedText = "";
-	iUncheckedNeed = (int)strlen(sUncheckedText) + 1;
-	iCheckedNeed = (int)strlen(sCheckedText) + 1;
-	sNewUnchecked = (char*)xrtMalloc((size_t)iUncheckedNeed);
-	if ( sNewUnchecked == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	sNewChecked = (char*)xrtMalloc((size_t)iCheckedNeed);
-	if ( sNewChecked == NULL ) {
-		xrtFree(sNewUnchecked);
-		return XUI_ERROR_OUT_OF_MEMORY;
+	iRet = __xuiToggleTextRequired(sUncheckedText, &iUncheckedRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiToggleTextRequired(sCheckedText, &iCheckedRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	sUncheckedCopy = NULL;
+	sCheckedCopy = NULL;
+	if ( __xuiToggleTextInBuffer(sUncheckedText, pData->sCheckedText,
+	     pData->iCheckedTextCapacity) ) {
+		sUncheckedCopy = (char*)xrtMalloc((size_t)iUncheckedRequired);
+		if ( sUncheckedCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		memcpy(sUncheckedCopy, sUncheckedText, (size_t)iUncheckedRequired);
+		sUncheckedText = sUncheckedCopy;
 	}
-	memcpy(sNewUnchecked, sUncheckedText, (size_t)iUncheckedNeed);
-	memcpy(sNewChecked, sCheckedText, (size_t)iCheckedNeed);
-	sOldUnchecked = pData->sUncheckedText;
-	sOldChecked = pData->sCheckedText;
-	pData->sUncheckedText = sNewUnchecked;
-	pData->iUncheckedTextCapacity = iUncheckedNeed;
-	pData->sCheckedText = sNewChecked;
-	pData->iCheckedTextCapacity = iCheckedNeed;
-	if ( sOldUnchecked != NULL ) xrtFree(sOldUnchecked);
-	if ( sOldChecked != NULL ) xrtFree(sOldChecked);
-	return XUI_OK;
+	if ( __xuiToggleTextInBuffer(sCheckedText, pData->sUncheckedText,
+	     pData->iUncheckedTextCapacity) ) {
+		sCheckedCopy = (char*)xrtMalloc((size_t)iCheckedRequired);
+		if ( sCheckedCopy == NULL ) {
+			iRet = XUI_ERROR_OUT_OF_MEMORY;
+			goto cleanup;
+		}
+		memcpy(sCheckedCopy, sCheckedText, (size_t)iCheckedRequired);
+		sCheckedText = sCheckedCopy;
+	}
+	iRet = xuiInternalTextBufferReserve(&pData->sUncheckedText,
+		&pData->iUncheckedTextCapacity, iUncheckedRequired);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiInternalTextBufferReserve(&pData->sCheckedText,
+			&pData->iCheckedTextCapacity, iCheckedRequired);
+	}
+	if ( iRet == XUI_OK && pWidget != NULL ) {
+		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT |
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	if ( iRet == XUI_OK ) {
+		memmove(pData->sUncheckedText, sUncheckedText, (size_t)iUncheckedRequired);
+		memmove(pData->sCheckedText, sCheckedText, (size_t)iCheckedRequired);
+	}
+cleanup:
+	if ( sUncheckedCopy != NULL ) xrtFree(sUncheckedCopy);
+	if ( sCheckedCopy != NULL ) xrtFree(sCheckedCopy);
+	return iRet;
 }
 
 static xui_toggle_data_t* __xuiToggleGetData(xui_widget pWidget)
@@ -1102,7 +1135,9 @@ static int __xuiToggleInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	pData->bUseBuiltinAtlas = (pDesc != NULL) ? (pDesc->bUseBuiltinAtlas != 0) : 0;
 	iRet = __xuiToggleTextSet(pData, (pDesc != NULL) ? pDesc->sText : "");
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiToggleInnerTextSet(pData, (pDesc != NULL) ? pDesc->sUncheckedText : "", (pDesc != NULL) ? pDesc->sCheckedText : "");
+	iRet = __xuiToggleInnerTextSet(NULL, pData,
+		(pDesc != NULL) ? pDesc->sUncheckedText : "",
+		(pDesc != NULL) ? pDesc->sCheckedText : "");
 	if ( iRet != XUI_OK ) return iRet;
 	tPadding = (xui_thickness_t){4.0f, 3.0f, 4.0f, 3.0f};
 	iRet = xuiWidgetSetPadding(pWidget, tPadding);
@@ -1293,16 +1328,21 @@ XUI_API int xuiToggleSetChange(xui_widget pWidget, xui_toggle_change_proc onChan
 XUI_API int xuiToggleSetText(xui_widget pWidget, const char* sText)
 {
 	xui_toggle_data_t* pData;
+	int iRequired;
 	int iRet;
 
 	pData = __xuiToggleGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( sText == NULL ) sText = "";
 	if ( pData->sText != NULL && strcmp(pData->sText, sText) == 0 ) return XUI_OK;
+	iRet = __xuiToggleTextRequired(sText, &iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iRequired);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiToggleTextSet(pData, sText);
-	if ( iRet != XUI_OK ) return iRet;
+	memmove(pData->sText, sText, (size_t)iRequired);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	return XUI_OK;
 }
@@ -1316,7 +1356,6 @@ XUI_API const char* xuiToggleGetText(xui_widget pWidget)
 XUI_API int xuiToggleSetInnerText(xui_widget pWidget, const char* sUncheckedText, const char* sCheckedText)
 {
 	xui_toggle_data_t* pData;
-	int iRet;
 
 	pData = __xuiToggleGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1325,11 +1364,7 @@ XUI_API int xuiToggleSetInnerText(xui_widget pWidget, const char* sUncheckedText
 	if ( pData->sUncheckedText != NULL && pData->sCheckedText != NULL &&
 	     strcmp(pData->sUncheckedText, sUncheckedText) == 0 &&
 	     strcmp(pData->sCheckedText, sCheckedText) == 0 ) return XUI_OK;
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiToggleInnerTextSet(pData, sUncheckedText, sCheckedText);
-	if ( iRet != XUI_OK ) return iRet;
-	return XUI_OK;
+	return __xuiToggleInnerTextSet(pWidget, pData, sUncheckedText, sCheckedText);
 }
 
 XUI_API const char* xuiToggleGetUncheckedText(xui_widget pWidget)

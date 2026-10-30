@@ -107,6 +107,9 @@ int main(void)
 	xui_rect_i_t tFullRect;
 	xui_accessible_node_t tAccessible;
 	xui_event_t tEvent;
+	char sLongText[192];
+	char sLongUncheckedText[160];
+	char sLongCheckedText[176];
 	int iChanged;
 	int iDestroyChanged;
 	int iFailed;
@@ -266,11 +269,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set inner text");
 	XUI_TEST_CHECK(strcmp(xuiToggleGetUncheckedText(pToggle), "OFF") == 0, "get unchecked text");
 	XUI_TEST_CHECK(strcmp(xuiToggleGetCheckedText(pToggle), "ON") == 0, "get checked text");
+	iRet = xuiToggleSetInnerText(pToggle, xuiToggleGetCheckedText(pToggle),
+	                            xuiToggleGetUncheckedText(pToggle));
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetUncheckedText(pToggle), "ON") == 0 &&
+	               strcmp(xuiToggleGetCheckedText(pToggle), "OFF") == 0,
+	               "cross-aliased inner text swap");
+	iRet = xuiToggleSetInnerText(pToggle, "OFF", "ON");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore swapped inner text");
 	iRet = xuiToggleSetInnerText(pToggle, xuiToggleGetUncheckedText(pToggle) + 1,
 	                            xuiToggleGetCheckedText(pToggle) + 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetUncheckedText(pToggle), "FF") == 0 &&
 	               strcmp(xuiToggleGetCheckedText(pToggle), "N") == 0,
 	               "self-aliased inner text update");
+	memset(sLongUncheckedText, 'U', sizeof(sLongUncheckedText) - 1u);
+	sLongUncheckedText[sizeof(sLongUncheckedText) - 1u] = '\0';
+	memset(sLongCheckedText, 'K', sizeof(sLongCheckedText) - 1u);
+	sLongCheckedText[sizeof(sLongCheckedText) - 1u] = '\0';
+	xuiWidgetClearDirty(pToggle, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiToggleSetInnerText(pToggle, sLongUncheckedText, sLongCheckedText);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+	               strcmp(xuiToggleGetUncheckedText(pToggle), sLongUncheckedText) == 0 &&
+	               strcmp(xuiToggleGetCheckedText(pToggle), sLongCheckedText) == 0 &&
+	               (xuiWidgetGetDirtyFlags(pToggle) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+	               "long inner text grows shared buffers");
+	xuiWidgetClearDirty(pToggle, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiToggleSetInnerText(pToggle, sLongUncheckedText, sLongCheckedText);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pToggle) == 0u,
+	               "idempotent inner text stays clean");
 	iRet = xuiToggleSetInnerText(pToggle, "OFF", "ON");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore inner text");
 	iRet = xuiToggleSetInnerTextColor(pToggle, XUI_COLOR_RGBA(90, 108, 125, 255), XUI_COLOR_RGBA(255, 255, 255, 255));
@@ -310,11 +335,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetThumbSize(pToggle) == 15.0f, "set thumb size");
 	iRet = xuiToggleSetGap(pToggle, 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiToggleGetGap(pToggle) == 10.0f, "set gap");
+	memset(sLongText, 'T', sizeof(sLongText) - 1u);
+	sLongText[sizeof(sLongText) - 1u] = '\0';
+	xuiWidgetClearDirty(pToggle, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiToggleSetText(pToggle, sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetText(pToggle), sLongText) == 0 &&
+	               (xuiWidgetGetDirtyFlags(pToggle) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+	               "long outer text grows shared buffer");
+	xuiWidgetClearDirty(pToggle, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiToggleSetText(pToggle, sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pToggle) == 0u,
+	               "idempotent outer text stays clean");
+	iRet = xuiToggleSetText(pToggle, xuiToggleGetText(pToggle) + 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiToggleGetText(pToggle)) == sizeof(sLongText) - 2u,
+	               "grown self-aliased outer text update");
 	iRet = xuiToggleSetText(pToggle, "Use custom atlas");
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetText(pToggle), "Use custom atlas") == 0, "set text");
-	iRet = xuiToggleSetText(pToggle, xuiToggleGetText(pToggle) + 4);
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetText(pToggle), "custom atlas") == 0,
-	               "self-aliased outer text update");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiToggleGetText(pToggle), "Use custom atlas") == 0,
+	               "restore outer text");
 	iRet = xuiToggleSetChange(pToggle, __xuiToggleChanged, &iChanged);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set change callback");
 
