@@ -2769,6 +2769,13 @@ static int __xuiLayoutOperation(xui_context pContext)
 			iRet = xuiInternalLayoutArrange(pOverlayRoot, tRootRect);
 			if ( iRet != XUI_OK ) return iRet;
 		}
+		if ( pContext->onPopupLayoutChanged != NULL ) {
+			iRet = pContext->onPopupLayoutChanged(pContext);
+			if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
+			if ( iRet != XUI_OK ) return iRet;
+			pRoot = pContext->pRoot;
+			pOverlayRoot = pContext->pOverlayRoot;
+		}
 	}
 	bStable = ((pRoot == NULL) || ((pRoot->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0)) &&
 		((pOverlayRoot == NULL) || ((pOverlayRoot->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0));

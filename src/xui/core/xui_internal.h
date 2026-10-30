@@ -183,6 +183,7 @@ struct xui_context_t {
 	struct xui_menu_data_t* pMenuList;
 	struct xui_menubar_data_t* pMenuBarList;
 	void (*onPopupSubtreeUnavailable)(xui_context pContext, xui_widget pWidget);
+	int (*onPopupLayoutChanged)(xui_context pContext);
 	void (*onMenuUnavailable)(xui_context pContext, xui_widget pMenu);
 	xui_widget pPointerCaptureWidget;
 	xui_widget pDragWidget;

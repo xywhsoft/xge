@@ -227,6 +227,51 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollFrameIsVScrollBarVisible(pFrame), "vertical bar visible");
 	XUI_TEST_CHECK(!xuiScrollFrameIsHScrollBarVisible(pFrame), "horizontal bar not chained");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pPopup, "popup focused");
+	xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPanel, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pScrollView, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiPopupSetContentSize(pPopup, 120.0f, 260.0f) == XUI_OK &&
+	               xuiWidgetGetDirtyFlags(pPopup) == 0u &&
+	               xuiWidgetGetDirtyFlags(pPanel) == 0u &&
+	               xuiWidgetGetDirtyFlags(pScrollView) == 0u,
+	               "same content size stays clean");
+	xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pPanel, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pScrollView, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiPopupSetScrollbarStyle(pPopup, XUI_SCROLLBAR_MODE_COMPACT, 8.0f) == XUI_OK &&
+	               xuiWidgetGetDirtyFlags(pPopup) == 0u &&
+	               xuiWidgetGetDirtyFlags(pPanel) == 0u &&
+	               xuiWidgetGetDirtyFlags(pScrollView) == 0u,
+	               "same scrollbar style stays clean");
+	XUI_TEST_CHECK(xuiInputViewport(pContext, 240, 180) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               xuiLayout(pContext) == XUI_OK,
+	               "shrink viewport while popup is open");
+	tPopupChanged = xuiPopupGetPopupRect(pPopup);
+	XUI_TEST_CHECK(tPopupChanged.fX >= 0.0f && tPopupChanged.fY >= 0.0f &&
+	               tPopupChanged.fX + tPopupChanged.fW <= 240.0f &&
+	               tPopupChanged.fY + tPopupChanged.fH <= 180.0f &&
+	               __xuiPopupNear(xuiWidgetGetRect(pPopup).fW, 240.0f) &&
+	               __xuiPopupNear(xuiWidgetGetRect(pPopup).fH, 180.0f),
+	               "open popup follows the resized viewport");
+	XUI_TEST_CHECK(xuiInputViewport(pContext, 360, 260) == XUI_OK &&
+	               xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               xuiLayout(pContext) == XUI_OK,
+	               "restore viewport while popup is open");
+	tPopup = xuiPopupGetPopupRect(pPopup);
+	XUI_TEST_CHECK(xuiWidgetSetRect(pOwner, (xui_rect_t){72.0f, 46.0f, 92.0f, 28.0f}) == XUI_OK &&
+	               xuiLayout(pContext) == XUI_OK,
+	               "move popup owner while open");
+	tOwner = xuiWidgetGetWorldRect(pOwner);
+	tPopupChanged = xuiPopupGetPopupRect(pPopup);
+	XUI_TEST_CHECK(__xuiPopupNear(tPopupChanged.fX, tOwner.fX) &&
+	               __xuiPopupNear(tPopupChanged.fY, tOwner.fY + tOwner.fH + 5.0f),
+	               "open popup follows owner layout");
+	XUI_TEST_CHECK(xuiWidgetSetRect(pOwner, (xui_rect_t){40.0f, 30.0f, 92.0f, 28.0f}) == XUI_OK &&
+	               xuiLayout(pContext) == XUI_OK,
+	               "restore popup owner geometry");
+	tOwner = xuiWidgetGetWorldRect(pOwner);
+	tPopup = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(xuiPopupSetAnchorRect(pPopup, (xui_rect_t){0, 0, -1, 20}) == XUI_ERROR_INVALID_ARGUMENT,
 		"reject negative anchor width");
 	XUI_TEST_CHECK(xuiPopupSetScrollbarStyle(pPopup, XUI_SCROLLBAR_MODE_COMPACT, 9.0f) == XUI_ERROR_INVALID_ARGUMENT,

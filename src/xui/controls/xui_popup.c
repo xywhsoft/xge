@@ -21,6 +21,7 @@ typedef struct xui_popup_data_t {
 	xui_rect_t tAnchorRect;
 	xui_rect_t tPopupRect;
 	xui_rect_t tPanelLocalRect;
+	xui_rect_t tAppliedAnchorRect;
 	int bAnchorRectSet;
 	int bOpen;
 	int bModal;
@@ -30,6 +31,9 @@ typedef struct xui_popup_data_t {
 	int bFocusRestoreExplicit;
 	int bFocusRestorePending;
 	int bCloseOnDetach;
+	int bPlacementValid;
+	int iAppliedViewportWidth;
+	int iAppliedViewportHeight;
 	int iAnchor;
 	int iDirection;
 	int iOutsidePolicy;
@@ -71,6 +75,7 @@ typedef struct xui_popup_data_t {
 
 static int __xuiPopupSetOpenInternal(xui_widget pWidget, xui_popup_data_t* pData, int bOpen, int bNotify);
 static void __xuiPopupSubtreeUnavailable(xui_context pContext, xui_widget pWidget);
+static int __xuiPopupLayoutChanged(xui_context pContext);
 static int __xuiPopupOperationCurrent(xui_context pContext, xui_widget pWidget,
 	xui_popup_data_t* pData, uint64_t iRevision);
 static int __xuiPopupFloatValid(float fValue);
@@ -683,6 +688,7 @@ static int __xuiPopupApplyPlacementData(xui_widget pWidget, xui_popup_data_t* pD
 	pContext = xuiWidgetGetContext(pWidget);
 	tWindow = xuiGetViewportSize(pContext);
 	iRevision = pData->iOpenRevision;
+	pData->bPlacementValid = 0;
 	if ( tWindow.iW <= 0 ) tWindow.iW = 1;
 	if ( tWindow.iH <= 0 ) tWindow.iH = 1;
 	tAnchor = __xuiPopupResolveAnchor(pWidget, pData);
@@ -720,7 +726,49 @@ static int __xuiPopupApplyPlacementData(xui_widget pWidget, xui_popup_data_t* pD
 	tRect.fW = fOuterW;
 	tRect.fH = fOuterH;
 	pData->tPopupRect = xuiInternalSnapRect(tRect);
-	return __xuiPopupArrange(pWidget, pData, (float)tWindow.iW, (float)tWindow.iH);
+	iRet = __xuiPopupArrange(pWidget, pData, (float)tWindow.iW, (float)tWindow.iH);
+	if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
+	pData->tAppliedAnchorRect = tAnchor;
+	pData->iAppliedViewportWidth = tWindow.iW;
+	pData->iAppliedViewportHeight = tWindow.iH;
+	pData->bPlacementValid = 1;
+	return XUI_OK;
+}
+
+static int __xuiPopupPlacementNeedsUpdate(xui_context pContext, xui_popup_data_t* pData)
+{
+	xui_size_t tWindow;
+	xui_rect_t tAnchor;
+
+	if ( pData == NULL || !pData->bOpen || !xuiInternalWidgetIsValid(pData->pWidget) ) return 0;
+	if ( !pData->bPlacementValid || !__xuiPopupOwnerAvailable(pData) ) return 1;
+	tWindow = xuiGetViewportSize(pContext);
+	if ( tWindow.iW <= 0 ) tWindow.iW = 1;
+	if ( tWindow.iH <= 0 ) tWindow.iH = 1;
+	if ( pData->iAppliedViewportWidth != tWindow.iW ||
+	     pData->iAppliedViewportHeight != tWindow.iH ) return 1;
+	tAnchor = __xuiPopupResolveAnchor(pData->pWidget, pData);
+	return !__xuiPopupRectSame(tAnchor, pData->tAppliedAnchorRect);
+}
+
+static int __xuiPopupLayoutChanged(xui_context pContext)
+{
+	xui_popup_data_t* pData;
+	int iRet;
+
+	if ( !xuiInternalContextIsValid(pContext) || pContext->bDestroying || pContext->bDestroyPending ) {
+		return XUI_OK;
+	}
+	for ( ;; ) {
+		pData = pContext->pPopupList;
+		while ( pData != NULL && !__xuiPopupPlacementNeedsUpdate(pContext, pData) ) {
+			pData = pData->pNext;
+		}
+		if ( pData == NULL ) return XUI_OK;
+		iRet = __xuiPopupApplyPlacementData(pData->pWidget, pData);
+		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
+		if ( iRet != XUI_OK ) return iRet;
+	}
 }
 
 static xui_widget __xuiPopupFindFirstFocusable(xui_widget pWidget)
@@ -1000,6 +1048,7 @@ static int __xuiPopupSetOpenOperation(xui_widget pWidget, xui_popup_data_t* pDat
 		if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) goto open_failed;
 	} else {
 		pData->bOpen = 0;
+		pData->bPlacementValid = 0;
 		pWidget->bModalFocus = 0;
 		iRet = xuiWidgetSetVisible(pWidget, 0);
 		if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
@@ -1018,6 +1067,7 @@ static int __xuiPopupSetOpenOperation(xui_widget pWidget, xui_popup_data_t* pDat
 open_failed:
 	if ( !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
 	pData->bOpen = 0;
+	pData->bPlacementValid = 0;
 	pData->bFocusRestorePending = 0;
 	pWidget->bModalFocus = 0;
 	(void)xuiWidgetSetVisible(pWidget, 0);
@@ -1468,6 +1518,7 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->pNext = pWidget->pContext->pPopupList;
 	pWidget->pContext->pPopupList = pData;
 	pWidget->pContext->onPopupSubtreeUnavailable = __xuiPopupSubtreeUnavailable;
+	pWidget->pContext->onPopupLayoutChanged = __xuiPopupLayoutChanged;
 	if ( bOpen ) {
 		iRet = __xuiPopupSetOpenInternal(pWidget, pData, 1, 0);
 		if ( iRet != XUI_OK ) {
@@ -1873,6 +1924,7 @@ XUI_API int xuiPopupSetContentSize(xui_widget pWidget, float fWidth, float fHeig
 	if ( pData == NULL || !__xuiPopupFloatValid(fWidth) || !__xuiPopupFloatValid(fHeight) || fWidth < 0.0f || fHeight < 0.0f ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->fContentWidth == fWidth && pData->fContentHeight == fHeight ) return XUI_OK;
 	pContext = pWidget->pContext;
 	iRevision = pData->iOpenRevision;
 	fOldWidth = pData->fContentWidth;
@@ -2190,6 +2242,7 @@ XUI_API int xuiPopupSetScrollbarStyle(xui_widget pWidget, int iMode, float fScro
 	     fScrollbarSize <= 0.0f || (iMode == XUI_SCROLLBAR_MODE_COMPACT && fScrollbarSize > 8.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->iScrollbarMode == iMode && pData->fScrollbarSize == fScrollbarSize ) return XUI_OK;
 	pContext = pWidget->pContext;
 	iRevision = pData->iOpenRevision;
 	iOldMode = pData->iScrollbarMode;
