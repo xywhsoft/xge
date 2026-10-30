@@ -1,5 +1,6 @@
 #include "xui.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -716,6 +717,12 @@ int main(void)
 	iRet = xuiImageCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
 		"out-of-range destination descriptor clears output");
+	tDesc.tDst.fW = 0;
+	tDesc.tSrc.fH = 12;
+	pInvalid = pRoot;
+	iRet = xuiImageCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"mismatched source dimensions clear output");
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pSurface = pSource;
@@ -846,9 +853,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
 		__xuiImageRectEq(xuiImageGetSource(pImage), tRect.fX, tRect.fY, tRect.fW, tRect.fH),
 		"source setter rejects out-of-range coordinates without mutation");
+	iRet = xuiImageSetSource(pImage, (xui_rect_t){0, 0, 0, 10});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		__xuiImageRectEq(xuiImageGetSource(pImage), tRect.fX, tRect.fY, tRect.fW, tRect.fH),
+		"source setter rejects mismatched dimensions without mutation");
 	iRet = xuiImageSetCustomRect(pImage, 0.0f, 0.0f, INFINITY, 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiImageGetMode(pImage) == XUI_IMAGE_CUSTOM,
 	               "reject non-finite custom rect");
+	iRet = xuiImageSetCustomRect(pImage, XUI_LAYOUT_UNBOUNDED, 0.0f,
+		XUI_LAYOUT_UNBOUNDED + 1024.0f, 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiImageGetMode(pImage) == XUI_IMAGE_CUSTOM,
+		"reject custom rect whose edge exceeds geometry range");
+	iRet = xuiImageSetSourceRect(pImage, 0.0f, 0.0f, FLT_MIN, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "accept finite extreme fractional source");
+	iRet = xuiImageSetMode(pImage, XUI_IMAGE_COVER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cover extreme fractional source");
+	tRect = xuiImageGetDrawRect(pImage);
+	XUI_TEST_CHECK(__xuiImageRectEq(tRect, 0.0f, 0.0f, 0.0f, 0.0f),
+		"overflowing fractional source has safe empty draw geometry");
 	iRet = xuiImageSetSurface(pImage, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiImageGetSurface(pImage) == NULL, "surface clear");
 

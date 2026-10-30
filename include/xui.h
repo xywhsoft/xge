@@ -6743,9 +6743,9 @@ XUI_API int xuiImageCreate(xui_context pContext, xui_widget* ppWidget, const xui
 XUI_API int xuiImageSetSurface(xui_widget pWidget, xui_surface pSurface);
 /* 读取借用 surface；未设置返回 NULL。 */
 XUI_API xui_surface xuiImageGetSurface(xui_widget pWidget);
-/* 设置源区域（精灵图子区域）。 */
+/* 设置源区域（精灵图子区域）；宽高必须同时为 0（整图）或同时为正。 */
 XUI_API int xuiImageSetSource(xui_widget pWidget, xui_rect_t tSrc);
-/* 以两点坐标设置源区域。 */
+/* 以两点坐标设置源区域；两点重合表示整图。 */
 XUI_API int xuiImageSetSourceRect(xui_widget pWidget, float fX1, float fY1, float fX2, float fY2);
 /* 清除源区域（整图）。 */
 XUI_API int xuiImageClearSource(xui_widget pWidget);
