@@ -195,6 +195,27 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "install cache renderer probe");
 	XUI_TEST_CHECK(xuiWidgetGetFocusable(pJoystick) == 1, "focusable");
 	XUI_TEST_CHECK(xuiVirtualJoystickGetUseBuiltinAtlas(pJoystick) == 1, "builtin atlas enabled");
+	{
+		xui_style_property_info_t tPropertyInfo;
+		uint32_t iPropertyId;
+
+		iPropertyId = xuiStyleFindProperty(pContext, "virtual_joystick.knob_size");
+		memset(&tPropertyInfo, 0, sizeof(tPropertyInfo));
+		tPropertyInfo.iSize = sizeof(tPropertyInfo);
+		iRet = xuiStyleGetPropertyInfo(pContext, iPropertyId, &tPropertyInfo);
+		XUI_TEST_CHECK(iPropertyId != 0u && iRet == XUI_OK &&
+			(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+			(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_CACHE) != 0u,
+			"knob size style invalidates paint without relayout");
+
+		iPropertyId = xuiStyleFindProperty(pContext, "virtual_joystick.radius");
+		memset(&tPropertyInfo, 0, sizeof(tPropertyInfo));
+		tPropertyInfo.iSize = sizeof(tPropertyInfo);
+		iRet = xuiStyleGetPropertyInfo(pContext, iPropertyId, &tPropertyInfo);
+		XUI_TEST_CHECK(iPropertyId != 0u && iRet == XUI_OK &&
+			(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+			"radius style still invalidates layout");
+	}
 
 	iRet = xuiVirtualJoystickGetMetrics(pJoystick, &fRadius, &fKnob, &fDeadZone);
 	XUI_TEST_CHECK(iRet == XUI_OK && fRadius == 70.0f && fKnob == 46.0f && fDeadZone == 0.05f, "metrics");
@@ -298,6 +319,13 @@ int main(void)
 		xuiVirtualJoystickGetState(pJoystick, &tJoyState) == XUI_OK &&
 		!tJoyState.bActive && __xuiVirtualJoystickNear(tJoyState.fMagnitude, 0.0f),
 		"deadzone metric update immediately normalizes current value");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 70.0f, 46.0f, 0.04f) == XUI_OK &&
+		xuiVirtualJoystickGetState(pJoystick, &tJoyState) == XUI_OK &&
+		tJoyState.bActive && tJoyState.iSource == XUI_VIRTUAL_JOYSTICK_SOURCE_PROGRAM &&
+		__xuiVirtualJoystickNear(tJoyState.fX, 0.05f),
+		"lower deadzone restores the current raw program value");
+	XUI_TEST_CHECK(xuiVirtualJoystickReset(pJoystick, 0) == XUI_OK,
+		"reset restored deadzone state");
 	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 70.0f, 46.0f, 0.05f) == XUI_OK,
 		"restore pointer test metrics");
 
@@ -421,6 +449,22 @@ int main(void)
 
 	iRet = xuiVirtualJoystickSetMetrics(pJoystick, 64.0f, 44.0f, 0.10f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
+	xuiWidgetClearDirty(pJoystick, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiVirtualJoystickSetMetrics(pJoystick, 64.0f, 45.0f, 0.11f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pJoystick) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pJoystick) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"knob and deadzone metrics invalidate paint without relayout");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 64.0f, 44.0f, 0.10f) == XUI_OK,
+		"restore paint-only metrics");
+	xuiWidgetClearDirty(pJoystick, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 65.0f, 44.0f, 0.10f) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pJoystick) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+		"radius metric still invalidates layout");
+	XUI_TEST_CHECK(xuiVirtualJoystickSetMetrics(pJoystick, 64.0f, 44.0f, 0.10f) == XUI_OK,
+		"restore layout metric");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "prepare before idempotence");
 	iDirtyFlags = xuiWidgetGetDirtyFlags(pJoystick);
