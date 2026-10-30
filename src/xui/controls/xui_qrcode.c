@@ -436,7 +436,7 @@ static void __xuiQrCodeSet(uint8_t* pModules, uint8_t* pFunction, int iSize, int
 	}
 	iIndex = __xuiQrCodeIndex(iSize, iX, iY);
 	pModules[iIndex] = (uint8_t)(bDark ? 1 : 0);
-	if ( bFunction ) {
+	if ( bFunction && pFunction != NULL ) {
 		pFunction[iIndex] = 1;
 	}
 }
@@ -584,9 +584,12 @@ static void __xuiQrCodeDrawFunctionPatterns(uint8_t* pModules, uint8_t* pFunctio
 	iNumAlign = __xuiQrCodeAlignmentPositions(iVersion, arrAlign);
 	for ( i = 0; i < iNumAlign; i++ ) {
 		for ( j = 0; j < iNumAlign; j++ ) {
-			if ( pFunction[__xuiQrCodeIndex(iSize, arrAlign[j], arrAlign[i])] == 0 ) {
-				__xuiQrCodeDrawAlignment(pModules, pFunction, iSize, arrAlign[j], arrAlign[i]);
+			if ( (i == 0 && j == 0) ||
+			     (i == 0 && j == iNumAlign - 1) ||
+			     (i == iNumAlign - 1 && j == 0) ) {
+				continue;
 			}
+			__xuiQrCodeDrawAlignment(pModules, pFunction, iSize, arrAlign[j], arrAlign[i]);
 		}
 	}
 	__xuiQrCodeDrawFormatBits(pModules, pFunction, iSize, 0);
@@ -661,11 +664,33 @@ static void __xuiQrCodeApplyMask(const uint8_t* pBase, const uint8_t* pFunction,
 			}
 		}
 	}
-	__xuiQrCodeDrawFormatBits(pOut, (uint8_t*)pFunction, iSize, iMask);
+	__xuiQrCodeDrawFormatBits(pOut, NULL, iSize, iMask);
 }
 
-static int __xuiQrCodePenaltyRuns(const uint8_t* pModules, int iSize, int bVertical)
+static void __xuiQrCodePenaltyRunPush(int iRunLength, int* pHistory, int iSize)
 {
+	if ( pHistory[0] == 0 ) {
+		iRunLength += iSize;
+	}
+	memmove(pHistory + 1, pHistory, 6 * sizeof(*pHistory));
+	pHistory[0] = iRunLength;
+}
+
+static int __xuiQrCodePenaltyFinderCount(const int* pHistory)
+{
+	int iUnit;
+	int bCore;
+
+	iUnit = pHistory[1];
+	bCore = iUnit > 0 && pHistory[2] == iUnit && pHistory[3] == iUnit * 3 &&
+		pHistory[4] == iUnit && pHistory[5] == iUnit;
+	return (bCore && pHistory[0] >= iUnit * 4 && pHistory[6] >= iUnit ? 1 : 0) +
+	       (bCore && pHistory[6] >= iUnit * 4 && pHistory[0] >= iUnit ? 1 : 0);
+}
+
+static int __xuiQrCodePenaltyLines(const uint8_t* pModules, int iSize, int bVertical)
+{
+	int arrHistory[7];
 	int iPenalty;
 	int iOuter;
 	int iInner;
@@ -675,7 +700,8 @@ static int __xuiQrCodePenaltyRuns(const uint8_t* pModules, int iSize, int bVerti
 
 	iPenalty = 0;
 	for ( iOuter = 0; iOuter < iSize; iOuter++ ) {
-		iRunColor = -1;
+		memset(arrHistory, 0, sizeof(arrHistory));
+		iRunColor = 0;
 		iRunLen = 0;
 		for ( iInner = 0; iInner < iSize; iInner++ ) {
 			iColor = bVertical ? pModules[__xuiQrCodeIndex(iSize, iOuter, iInner)] :
@@ -688,33 +714,21 @@ static int __xuiQrCodePenaltyRuns(const uint8_t* pModules, int iSize, int bVerti
 					iPenalty++;
 				}
 			} else {
+				__xuiQrCodePenaltyRunPush(iRunLen, arrHistory, iSize);
+				if ( iRunColor == 0 ) {
+					iPenalty += __xuiQrCodePenaltyFinderCount(arrHistory) * 40;
+				}
 				iRunColor = iColor;
 				iRunLen = 1;
 			}
 		}
-	}
-	return iPenalty;
-}
-
-static int __xuiQrCodePenaltyFinder(const uint8_t* pModules, int iSize, int bVertical)
-{
-	int iPenalty;
-	int iOuter;
-	int iInner;
-	int iBits;
-	int iColor;
-
-	iPenalty = 0;
-	for ( iOuter = 0; iOuter < iSize; iOuter++ ) {
-		iBits = 0;
-		for ( iInner = 0; iInner < iSize; iInner++ ) {
-			iColor = bVertical ? pModules[__xuiQrCodeIndex(iSize, iOuter, iInner)] :
-			                     pModules[__xuiQrCodeIndex(iSize, iInner, iOuter)];
-			iBits = ((iBits << 1) & 0x7ff) | (iColor ? 1 : 0);
-			if ( iInner >= 10 && (iBits == 0x5d0 || iBits == 0x05d) ) {
-				iPenalty += 40;
-			}
+		if ( iRunColor != 0 ) {
+			__xuiQrCodePenaltyRunPush(iRunLen, arrHistory, iSize);
+			iRunLen = 0;
 		}
+		iRunLen += iSize;
+		__xuiQrCodePenaltyRunPush(iRunLen, arrHistory, iSize);
+		iPenalty += __xuiQrCodePenaltyFinderCount(arrHistory) * 40;
 	}
 	return iPenalty;
 }
@@ -728,7 +742,7 @@ static int __xuiQrCodePenalty(const uint8_t* pModules, int iSize)
 	int iTotal;
 	int iK;
 
-	iPenalty = __xuiQrCodePenaltyRuns(pModules, iSize, 0) + __xuiQrCodePenaltyRuns(pModules, iSize, 1);
+	iPenalty = __xuiQrCodePenaltyLines(pModules, iSize, 0) + __xuiQrCodePenaltyLines(pModules, iSize, 1);
 	for ( iY = 0; iY < iSize - 1; iY++ ) {
 		for ( iX = 0; iX < iSize - 1; iX++ ) {
 			iK = pModules[__xuiQrCodeIndex(iSize, iX, iY)];
@@ -739,8 +753,6 @@ static int __xuiQrCodePenalty(const uint8_t* pModules, int iSize)
 			}
 		}
 	}
-	iPenalty += __xuiQrCodePenaltyFinder(pModules, iSize, 0);
-	iPenalty += __xuiQrCodePenaltyFinder(pModules, iSize, 1);
 	iDark = 0;
 	iTotal = iSize * iSize;
 	for ( iK = 0; iK < iTotal; iK++ ) {
@@ -748,7 +760,7 @@ static int __xuiQrCodePenalty(const uint8_t* pModules, int iSize)
 			iDark++;
 		}
 	}
-	iK = abs(iDark * 20 - iTotal * 10) / iTotal;
+	iK = (abs(iDark * 20 - iTotal * 10) + iTotal - 1) / iTotal - 1;
 	iPenalty += iK * 10;
 	return iPenalty;
 }

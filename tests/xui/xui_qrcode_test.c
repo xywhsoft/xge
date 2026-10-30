@@ -35,6 +35,24 @@ static int __xuiQrCodeNearInteger(float fValue)
 	return fabsf(fValue - floorf(fValue + 0.5f)) < 0.001f;
 }
 
+static uint32_t __xuiQrCodeMatrixHash(xui_widget pQrCode)
+{
+	uint32_t iHash;
+	int iSize;
+	int iX;
+	int iY;
+
+	iHash = 2166136261u;
+	iSize = xuiQrCodeGetModuleCount(pQrCode);
+	for ( iY = 0; iY < iSize; iY++ ) {
+		for ( iX = 0; iX < iSize; iX++ ) {
+			iHash ^= (uint32_t)xuiQrCodeGetModule(pQrCode, iX, iY);
+			iHash *= 16777619u;
+		}
+	}
+	return iHash;
+}
+
 static int __xuiQrCodeTraceRectFill(xui_proxy pProxy, xui_draw_context pDraw,
 	xui_rect_t tRect, uint32_t iColor)
 {
@@ -187,6 +205,24 @@ int main(void)
 		"UTF-8 payload is preserved as byte-mode data");
 	iRet = xuiQrCodeSetValue(pQrCode, "hello");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore value after payload boundaries");
+	/* Byte-mode ECC-M matrices independently matched against qrcodegen. */
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 6, 6);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) == 6 &&
+		__xuiQrCodeMatrixHash(pQrCode) == 0x31864ee6u,
+		"version 6 mask penalty matrix");
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 7, 7);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) == 7 &&
+		xuiQrCodeGetModule(pQrCode, 6, 22) == 1 &&
+		xuiQrCodeGetModule(pQrCode, 7, 22) == 0 &&
+		xuiQrCodeGetModule(pQrCode, 8, 22) == 1 &&
+		xuiQrCodeGetModule(pQrCode, 22, 6) == 1 &&
+		xuiQrCodeGetModule(pQrCode, 22, 7) == 0 &&
+		xuiQrCodeGetModule(pQrCode, 22, 8) == 1 &&
+		__xuiQrCodeMatrixHash(pQrCode) == 0x1b1f9643u,
+		"version 7 intermediate alignment patterns and matrix");
+	iRet = xuiQrCodeSetVersionRange(pQrCode, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQrCodeGetVersion(pQrCode) == 1,
+		"restore version after conformance matrices");
 	memset(&tNode, 0, sizeof(tNode));
 	tNode.iSize = sizeof(tNode);
 	iRet = xuiWidgetGetAccessibleNode(pQrCode, 0, &tNode);
