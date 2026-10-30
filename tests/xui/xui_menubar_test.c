@@ -142,6 +142,7 @@ int main(void)
 	xui_rect_t tFileRect;
 	xui_rect_t tViewRect;
 	xui_rect_t tBarWorld;
+	xui_rect_t tMenuAnchor;
 	xui_menubar_metrics_t tMetrics;
 	xui_menubar_metrics_t tBadMetrics;
 	xui_menubar_colors_t tColors;
@@ -354,6 +355,22 @@ int main(void)
 		xuiMenuIsOpen(pFileMenu) && xuiMenuBarGetChangeCount(pMenuBar) == iChangeCount &&
 		xuiTestProxyGetTextMeasureCount(&tState) == iMeasureCount && tFileRect.fW >= 20.0f,
 		"repeated items preserve the open menu session and layout cache");
+	tBarWorld = xuiWidgetGetWorldRect(pMenuBar);
+	tMenuAnchor = xuiPopupGetAnchorRect(xuiMenuGetPopupWidget(pFileMenu));
+	XUI_TEST_CHECK(tMenuAnchor.fX == tBarWorld.fX + tFileRect.fX &&
+		tMenuAnchor.fY == tBarWorld.fY + tFileRect.fY + tFileRect.fH,
+		"open menu anchor matches menu bar item");
+	iRet = xuiWidgetSetRect(pMenuBar, (xui_rect_t){84.0f, 42.0f, 360.0f, 28.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiLayout(pContext) == XUI_OK, "move menu bar with open menu");
+	tBarWorld = xuiWidgetGetWorldRect(pMenuBar);
+	tFileRect = xuiMenuBarGetItemRect(pMenuBar, 0);
+	tMenuAnchor = xuiPopupGetAnchorRect(xuiMenuGetPopupWidget(pFileMenu));
+	XUI_TEST_CHECK(tMenuAnchor.fX == tBarWorld.fX + tFileRect.fX &&
+		tMenuAnchor.fY == tBarWorld.fY + tFileRect.fY + tFileRect.fH,
+		"open menu follows moved menu bar item");
+	iRet = xuiWidgetSetRect(pMenuBar, (xui_rect_t){20.0f, 18.0f, 360.0f, 28.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiLayout(pContext) == XUI_OK, "restore menu bar position");
+	tFileRect = xuiMenuBarGetItemRect(pMenuBar, 0);
 
 	iRet = __xuiMenuBarMoveToItem(pContext, pMenuBar, 1);
 	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);

@@ -731,6 +731,50 @@ static int __xuiMenuBarSyncOpen(xui_widget pWidget, xui_menubar_data_t* pData)
 	return XUI_OK;
 }
 
+static xui_rect_t __xuiMenuBarItemAnchorRect(xui_widget pWidget,
+	const xui_menubar_data_t* pData, int iIndex)
+{
+	xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+	xui_rect_t tItem = pData->arrItems[iIndex].tRect;
+
+	return (xui_rect_t){
+		tWorld.fX + tItem.fX,
+		tWorld.fY + tItem.fY + tItem.fH,
+		0.0f,
+		0.0f
+	};
+}
+
+static int __xuiMenuBarSyncOpenPlacement(xui_widget pWidget, xui_menubar_data_t* pData)
+{
+	xui_menubar_resolved_t tResolved;
+	xui_widget pMenu;
+	xui_widget pPopup;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iOpen < 0 || pData->iOpen >= pData->iItemCount ) return XUI_OK;
+	pMenu = pData->arrItems[pData->iOpen].pMenu;
+	if ( !__xuiMenuBarMenuValid(pWidget, pMenu) || !xuiMenuIsOpen(pMenu) ) return XUI_OK;
+	__xuiMenuBarResolve(pWidget, pData, &tResolved);
+	iRet = __xuiMenuBarLayoutItems(pWidget, pData, &tResolved, NULL);
+	if ( iRet != XUI_OK ) return iRet;
+	pPopup = xuiMenuGetPopupWidget(pMenu);
+	if ( pPopup == NULL ) return XUI_OK;
+	return xuiPopupSetAnchorRect(pPopup,
+		__xuiMenuBarItemAnchorRect(pWidget, pData, pData->iOpen));
+}
+
+static int __xuiMenuBarLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+{
+	xui_menubar_data_t* pData;
+
+	(void)tContentRect;
+	(void)pUser;
+	pData = __xuiMenuBarGetData(pWidget);
+	return (pData != NULL) ? __xuiMenuBarSyncOpenPlacement(pWidget, pData) : XUI_OK;
+}
+
 static int __xuiMenuBarInvalidateItem(xui_widget pWidget, xui_menubar_data_t* pData, int iIndex)
 {
 	xui_rect_t tRect;
@@ -919,8 +963,7 @@ static int __xuiMenuBarCloseOpen(xui_widget pWidget, xui_menubar_data_t* pData)
 static int __xuiMenuBarOpenItemInternal(xui_widget pWidget, xui_menubar_data_t* pData, int iIndex)
 {
 	xui_menubar_resolved_t tResolved;
-	xui_rect_t tWorld;
-	xui_rect_t tItem;
+	xui_rect_t tAnchor;
 	xui_context pContext;
 	xui_widget pMenu;
 	xui_widget pOldMenu;
@@ -983,9 +1026,8 @@ static int __xuiMenuBarOpenItemInternal(xui_widget pWidget, xui_menubar_data_t* 
 			iRet = __xuiMenuBarReleaseSelectBinding(pWidget, pData, iIndex);
 			if ( iRet != XUI_OK ) goto open_failed;
 		}
-		tWorld = xuiWidgetGetWorldRect(pWidget);
-		tItem = pData->arrItems[iIndex].tRect;
-		iRet = xuiMenuOpenAt(pMenu, pWidget, tWorld.fX + tItem.fX, tWorld.fY + tItem.fY + tItem.fH);
+		tAnchor = __xuiMenuBarItemAnchorRect(pWidget, pData, iIndex);
+		iRet = xuiMenuOpenAt(pMenu, pWidget, tAnchor.fX, tAnchor.fY);
 		if ( iRet != XUI_OK ) goto open_failed;
 		if ( __xuiMenuBarGetData(pWidget) != pData || xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
 		pPopup = xuiMenuGetPopupWidget(pMenu);
@@ -1873,6 +1915,7 @@ XUI_API xui_widget_type xuiMenuBarGetType(xui_context pContext)
 	tDesc.onInit = __xuiMenuBarInit;
 	tDesc.onDestroy = __xuiMenuBarDestroy;
 	tDesc.onContentMeasure = __xuiMenuBarContentMeasure;
+	tDesc.onLayoutComplete = __xuiMenuBarLayoutComplete;
 	tDesc.onCacheRender = __xuiMenuBarCacheRender;
 	tDesc.onUpdate = __xuiMenuBarUpdate;
 	__xuiMenuBarDefaultLayout(&tDesc.tLayout);
