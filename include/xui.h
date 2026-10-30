@@ -8936,7 +8936,8 @@ XUI_API int xuiCarouselGetCurrent(xui_widget pWidget);
 XUI_API int xuiCarouselNext(xui_widget pWidget, int bNotify);
 /* 翻到上一页。 */
 XUI_API int xuiCarouselPrev(xui_widget pWidget, int bNotify);
-/* 设置自动轮播（间隔秒）。 */
+/* 设置自动轮播（间隔秒）。悬停、主动按压、禁用或不可见期间暂停，
+ * 恢复后从完整间隔重新计时。 */
 XUI_API int xuiCarouselSetAutoPlay(xui_widget pWidget, int bEnabled, float fInterval);
 /* 输出自动轮播开关与间隔。 */
 XUI_API int xuiCarouselGetAutoPlay(xui_widget pWidget, int* pEnabled, float* pInterval);

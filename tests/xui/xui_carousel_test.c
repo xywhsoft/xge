@@ -83,6 +83,7 @@ int main(void)
 	xui_widget pChild;
 	xui_surface pTarget;
 	xui_font pFont;
+	xui_font pFontAlt;
 	xui_carousel_desc_t tDesc;
 	xui_carousel_desc_t tInvalidDesc;
 	xui_accessible_node_t tAccessible;
@@ -105,6 +106,7 @@ int main(void)
 	pChild = NULL;
 	pTarget = NULL;
 	pFont = NULL;
+	pFontAlt = NULL;
 	iFailed = 0;
 	memset(&tState, 0, sizeof(tState));
 	xuiTestProxyInit(&tProxyState);
@@ -115,6 +117,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
 	iRet = tProxyState.tProxy.fontLoadMemory(&tProxyState.tProxy, &pFont, "carousel", 8, 14.0f, XUI_FONT_FORMAT_TTF);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFont != NULL, "font create");
+	iRet = tProxyState.tProxy.fontLoadMemory(&tProxyState.tProxy, &pFontAlt,
+		"carousel-alt", 12, 16.0f, XUI_FONT_FORMAT_TTF);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFontAlt != NULL, "alternate font create");
 	iRet = xuiSetDefaultFont(pContext, pFont);
 	XUI_TEST_CHECK(iRet == XUI_OK, "default font");
 	iRet = xuiInputViewport(pContext, 520.0f, 320.0f);
@@ -172,6 +177,31 @@ int main(void)
 	XUI_TEST_CHECK(xuiCarouselGetPageWidget(pCarousel, 3) != NULL, "page widget 3");
 	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiCarouselGetPageWidget(pCarousel, 2)) != 0, "current page visible");
 	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiCarouselGetPageWidget(pCarousel, 0)) == 0, "inactive page hidden");
+	{
+		const char* arrPaintOnlyProperties[] = {
+			"carousel.arrow.size",
+			"carousel.indicator.size",
+			"carousel.indicator.gap",
+			"carousel.indicator.bottom",
+			"carousel.indicator.visible",
+			"carousel.arrow.hover_only"
+		};
+		xui_style_property_info_t tPropertyInfo;
+		uint32_t iPropertyId;
+		int i;
+
+		for ( i = 0; i < (int)(sizeof(arrPaintOnlyProperties) /
+			sizeof(arrPaintOnlyProperties[0])); i++ ) {
+			iPropertyId = xuiStyleFindProperty(pContext, arrPaintOnlyProperties[i]);
+			memset(&tPropertyInfo, 0, sizeof(tPropertyInfo));
+			tPropertyInfo.iSize = sizeof(tPropertyInfo);
+			iRet = xuiStyleGetPropertyInfo(pContext, iPropertyId, &tPropertyInfo);
+			XUI_TEST_CHECK(iPropertyId != 0u && iRet == XUI_OK &&
+				(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+				(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_CACHE) != 0u,
+				"carousel chrome style invalidates paint without relayout");
+		}
+	}
 	memset(&tAccessible, 0, sizeof(tAccessible));
 	tAccessible.iSize = sizeof(tAccessible);
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pCarousel) == 5 &&
@@ -287,11 +317,58 @@ int main(void)
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pCarousel, 0) != NULL, "carousel cache");
+	xuiWidgetClearDirty(pCarousel, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiCarouselSetIndicatorsVisible(pCarousel, 0) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"indicator visibility invalidates paint without relayout");
+	XUI_TEST_CHECK(xuiCarouselSetIndicatorsVisible(pCarousel, 1) == XUI_OK,
+		"restore indicator visibility");
+	xuiWidgetClearDirty(pCarousel, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiCarouselSetArrowsOnHover(pCarousel, 1) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"arrow visibility mode invalidates paint without relayout");
+	XUI_TEST_CHECK(xuiCarouselSetArrowsOnHover(pCarousel, 0) == XUI_OK,
+		"restore arrow visibility mode");
+	xuiWidgetClearDirty(pCarousel, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiCarouselSetMetrics(pCarousel, 35.0f, 9.0f, 7.0f, 19.0f) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"chrome metrics invalidate paint without relayout");
+	XUI_TEST_CHECK(xuiCarouselSetMetrics(pCarousel, 34.0f, 8.0f, 6.0f, 18.0f) == XUI_OK,
+		"restore chrome metrics");
+	xuiWidgetClearDirty(pCarousel, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiCarouselSetFont(pCarousel, pFontAlt) == XUI_OK &&
+		xuiCarouselGetFont(pCarousel) == pFontAlt &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pCarousel) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"compatibility font invalidates paint without relayout");
+	XUI_TEST_CHECK(xuiCarouselSetFont(pCarousel, pFont) == XUI_OK,
+		"restore compatibility font");
 
 	iRet = xuiCarouselSetCurrent(pCarousel, 0, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset before autoplay state tests");
 	iRet = xuiCarouselSetAutoPlay(pCarousel, 1, 0.1f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "enable autoplay state tests");
+	tWorld = xuiWidgetGetWorldRect(pCarousel);
+	XUI_TEST_CHECK(xuiInputPointerMove(pContext,
+		tWorld.fX + tWorld.fW * 0.5f, tWorld.fY + tWorld.fH * 0.5f, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiUpdate(pContext, 0.11f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0,
+		"hover pauses autoplay");
+	XUI_TEST_CHECK(xuiInputPointerMove(pContext, 2, 2, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK &&
+		xuiUpdate(pContext, 0.05f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0 &&
+		xuiUpdate(pContext, 0.06f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 1,
+		"autoplay restarts a full interval after hover");
+	XUI_TEST_CHECK(xuiCarouselSetCurrent(pCarousel, 0, 0) == XUI_OK &&
+		xuiUpdate(pContext, 0.09f) == XUI_OK &&
+		xuiCarouselSetPageCount(pCarousel, 3) == XUI_OK &&
+		xuiUpdate(pContext, 0.02f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0,
+		"page-count changes reset autoplay timing");
+	XUI_TEST_CHECK(xuiCarouselSetPageCount(pCarousel, 4) == XUI_OK,
+		"restore page count after autoplay timing test");
 	XUI_TEST_CHECK(xuiWidgetSetEnabled(pCarousel, 0) == XUI_OK, "disable carousel");
 	XUI_TEST_CHECK(xuiDispatchPendingEvents(pContext) == XUI_OK, "dispatch disabled carousel");
 	XUI_TEST_CHECK(xuiUpdate(pContext, 0.11f) == XUI_OK && xuiCarouselGetCurrent(pCarousel) == 0, "disabled carousel pauses autoplay");
@@ -428,6 +505,9 @@ cleanup:
 	}
 	if ( pFont != NULL ) {
 		tProxyState.tProxy.fontDestroy(&tProxyState.tProxy, pFont);
+	}
+	if ( pFontAlt != NULL ) {
+		tProxyState.tProxy.fontDestroy(&tProxyState.tProxy, pFontAlt);
 	}
 	if ( iFailed ) {
 		return 1;

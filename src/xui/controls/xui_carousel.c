@@ -625,6 +625,7 @@ static int __xuiCarouselSetPageCountInternal(xui_widget pCarousel, xui_carousel_
 	int iOldHoverIndicator;
 	int iOldHoverArrow;
 	int iOldActiveIndicator;
+	float fOldAutoElapsed;
 	int iNewCurrent;
 
 	if ( (pCarousel == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -637,6 +638,7 @@ static int __xuiCarouselSetPageCountInternal(xui_widget pCarousel, xui_carousel_
 	iOldHoverIndicator = pData->iHoverIndicator;
 	iOldHoverArrow = pData->iHoverArrow;
 	iOldActiveIndicator = pData->iActiveIndicator;
+	fOldAutoElapsed = pData->fAutoElapsed;
 	for ( i = 0; i < iPageCount; i++ ) {
 		iRet = __xuiCarouselEnsurePage(pCarousel, pData, i);
 		if ( iRet != XUI_OK ) goto rollback;
@@ -647,6 +649,7 @@ static int __xuiCarouselSetPageCountInternal(xui_widget pCarousel, xui_carousel_
 	pData->iHoverIndicator = -1;
 	pData->iHoverArrow = XUI_CAROUSEL_ARROW_NONE;
 	if ( pData->iActiveIndicator >= iPageCount ) pData->iActiveIndicator = -1;
+	pData->fAutoElapsed = 0.0f;
 	iRet = __xuiCarouselSyncPages(pCarousel, pData);
 	if ( iRet != XUI_OK ) goto rollback;
 	if ( iOldCurrent != iNewCurrent ) {
@@ -669,6 +672,7 @@ rollback:
 	pData->iHoverIndicator = iOldHoverIndicator;
 	pData->iHoverArrow = iOldHoverArrow;
 	pData->iActiveIndicator = iOldActiveIndicator;
+	pData->fAutoElapsed = fOldAutoElapsed;
 	/* Preserve the original failure; restoring widget state is best-effort. */
 	(void)__xuiCarouselSyncPages(pCarousel, pData);
 	return iRet;
@@ -1040,7 +1044,9 @@ static int __xuiCarouselUpdate(xui_widget pWidget, float fDelta, void* pUser)
 		pData->fAutoElapsed = 0.0f;
 		return XUI_OK;
 	}
-	if ( pData->iActiveArrow != XUI_CAROUSEL_ARROW_NONE || pData->iActiveIndicator >= 0 ) {
+	if ( pData->bHover || pData->iActiveArrow != XUI_CAROUSEL_ARROW_NONE ||
+	     pData->iActiveIndicator >= 0 ) {
+		pData->fAutoElapsed = 0.0f;
 		return XUI_OK;
 	}
 	pData->fAutoElapsed += fDelta;
@@ -1325,11 +1331,9 @@ static void __xuiCarouselRegisterStyleProperty(xui_context pContext, xui_widget_
 static void __xuiCarouselRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	uint32_t iPaintDirty;
-	uint32_t iLayoutDirty;
 
 	pType->onPreparePaint = __xuiCarouselPreparePaint;
 	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
-	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -1339,14 +1343,14 @@ static void __xuiCarouselRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.gap", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.bottom", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
+	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.size", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
+	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.size", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
+	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.gap", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
+	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.bottom", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.auto.enabled", XUI_STYLE_VALUE_BOOL, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.auto.interval", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
-	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.visible", XUI_STYLE_VALUE_BOOL, iLayoutDirty, 0);
-	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.hover_only", XUI_STYLE_VALUE_BOOL, iLayoutDirty, 0);
+	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.indicator.visible", XUI_STYLE_VALUE_BOOL, iPaintDirty, 0);
+	__xuiCarouselRegisterStyleProperty(pContext, pType, "carousel.arrow.hover_only", XUI_STYLE_VALUE_BOOL, iPaintDirty, 0);
 	__xuiCarouselRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
@@ -1564,7 +1568,7 @@ XUI_API int xuiCarouselSetIndicatorsVisible(xui_widget pWidget, int bVisible)
 	pData->iHoverIndicator = -1;
 	pData->iActiveIndicator = -1;
 	iRet = __xuiCarouselInvalidate(pWidget, pData,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->bShowIndicators = bOldVisible;
 		pData->iHoverIndicator = iOldHoverIndicator;
@@ -1591,7 +1595,7 @@ XUI_API int xuiCarouselSetFont(xui_widget pWidget, xui_font pFont)
 	pOldFont = pData->pFont;
 	pData->pFont = pNewFont;
 	iRet = __xuiCarouselInvalidate(pWidget, pData,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) pData->pFont = pOldFont;
 	return iRet;
 }
@@ -1620,7 +1624,7 @@ XUI_API int xuiCarouselSetArrowsOnHover(xui_widget pWidget, int bEnabled)
 	pData->iHoverArrow = XUI_CAROUSEL_ARROW_NONE;
 	pData->iActiveArrow = XUI_CAROUSEL_ARROW_NONE;
 	iRet = __xuiCarouselInvalidate(pWidget, pData,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->bShowArrowsOnHover = bOldEnabled;
 		pData->iHoverArrow = iOldHoverArrow;
@@ -1678,7 +1682,7 @@ XUI_API int xuiCarouselSetMetrics(xui_widget pWidget, float fArrowSize, float fI
 	pData->iHoverIndicator = -1;
 	pData->iHoverArrow = XUI_CAROUSEL_ARROW_NONE;
 	iRet = __xuiCarouselInvalidate(pWidget, pData,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->fArrowSize = fOldArrowSize;
 		pData->fIndicatorSize = fOldIndicatorSize;
