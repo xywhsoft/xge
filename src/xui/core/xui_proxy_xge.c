@@ -33,6 +33,7 @@
 #define XUI_PROXY_XGE_PI		3.14159265358979323846f
 #define XUI_PROXY_XGE_PI_HALF		1.57079632679489661923f
 #define XUI_PROXY_XGE_PI_TWO		6.28318530717958647692f
+#define XUI_PROXY_XGE_MESH_STACK_VERTICES	160
 
 #define XUI_PROXY_XGE_KEY_LEFT_SHIFT	340
 #define XUI_PROXY_XGE_KEY_LEFT_CONTROL	341
@@ -1771,7 +1772,9 @@ static int __xuiProxyXgeDrawSurfaceQuad(xui_proxy pProxy, xui_draw_context pDraw
 
 static int __xuiProxyXgeDrawMeshTriangles(xui_proxy pProxy, xui_draw_context pDraw, const xui_mesh_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iFlags)
 {
+	xge_shape_vertex_t arrStackVertices[XUI_PROXY_XGE_MESH_STACK_VERTICES];
 	xge_shape_vertex_t* pXgeVertices;
+	int bHeapVertices;
 	int iRet;
 	int i;
 
@@ -1791,9 +1794,14 @@ static int __xuiProxyXgeDrawMeshTriangles(xui_proxy pProxy, xui_draw_context pDr
 	if ( i == iVertexCount ) {
 		return XGE_OK;
 	}
-	pXgeVertices = (xge_shape_vertex_t*)xrtMalloc((size_t)iVertexCount * sizeof(*pXgeVertices));
-	if ( pXgeVertices == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+	bHeapVertices = iVertexCount > XUI_PROXY_XGE_MESH_STACK_VERTICES;
+	if ( bHeapVertices ) {
+		pXgeVertices = (xge_shape_vertex_t*)xrtMalloc((size_t)iVertexCount * sizeof(*pXgeVertices));
+		if ( pXgeVertices == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+	} else {
+		pXgeVertices = arrStackVertices;
 	}
 	for ( i = 0; i < iVertexCount; i++ ) {
 		pXgeVertices[i].fX = pVertices[i].fX;
@@ -1801,7 +1809,9 @@ static int __xuiProxyXgeDrawMeshTriangles(xui_proxy pProxy, xui_draw_context pDr
 		pXgeVertices[i].iColor = pVertices[i].iColor;
 	}
 	iRet = xgeShapeMeshFillPx(pXgeVertices, iVertexCount, pIndices, iIndexCount);
-	xrtFree(pXgeVertices);
+	if ( bHeapVertices ) {
+		xrtFree(pXgeVertices);
+	}
 	if ( iRet == XGE_OK ) {
 		__xuiProxyXgeDrawMarkDirty(pDraw);
 	}

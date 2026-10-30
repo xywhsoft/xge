@@ -182,6 +182,71 @@ static int __xuiTestTextSpansClip(xui_proxy pProxy, xui_font pFont)
     return 0;
 }
 
+#define XUI_TEST_MESH_LARGE_VERTEX_COUNT 161
+
+static int __xuiTestMeshVertexScratch(xui_proxy pProxy, xui_surface pTarget)
+{
+	xui_mesh_vertex_t arrVertices[XUI_TEST_MESH_LARGE_VERTEX_COUNT];
+	uint32_t arrIndices[3] = {0u, 1u, 2u};
+	xui_draw_context pDraw;
+	uint32_t iGenerationBefore;
+	uint32_t iGenerationAfter;
+	const char* sStage;
+	int iEndRet;
+	int iRet;
+	int i;
+
+	if ( (pProxy == NULL) || (pTarget == NULL) || (pProxy->drawMeshTriangles == NULL) ) {
+		return 1;
+	}
+	for ( i = 0; i < XUI_TEST_MESH_LARGE_VERTEX_COUNT; i++ ) {
+		arrVertices[i] = (xui_mesh_vertex_t){1.0f, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 255)};
+	}
+	arrVertices[0].fX = 0.0f;
+	arrVertices[0].fY = 0.0f;
+	arrVertices[1].fX = 4.0f;
+	arrVertices[1].fY = 0.0f;
+	arrVertices[2].fX = 0.0f;
+	arrVertices[2].fY = 4.0f;
+	sStage = "generation before";
+	iRet = pProxy->surfaceGetGeneration(pProxy, pTarget, &iGenerationBefore);
+	pDraw = NULL;
+	if ( iRet == XGE_OK ) {
+		sStage = "begin";
+		iRet = pProxy->drawBegin(pProxy, &pDraw, pTarget);
+	}
+	if ( iRet == XGE_OK ) {
+		sStage = "small mesh";
+		iRet = pProxy->drawMeshTriangles(pProxy, pDraw, arrVertices, 3, arrIndices, 3, 0);
+	}
+	if ( iRet == XGE_OK ) {
+		sStage = "large mesh";
+		iRet = pProxy->drawMeshTriangles(pProxy, pDraw, arrVertices,
+			XUI_TEST_MESH_LARGE_VERTEX_COUNT, arrIndices, 3, 0);
+	}
+	if ( pDraw != NULL ) {
+		if ( iRet == XGE_OK ) sStage = "end";
+		iEndRet = pProxy->drawEnd(pProxy, pDraw);
+		if ( iRet == XGE_OK ) iRet = iEndRet;
+	}
+	if ( (iRet == XGE_ERROR_NOT_INITIALIZED) || (iRet == XGE_ERROR_UNSUPPORTED) ) {
+		printf("xui_proxy_xge_test: mesh scratch unavailable at %s without a draw backend\n", sStage);
+		return 0;
+	}
+	if ( iRet == XGE_OK ) {
+		sStage = "generation after";
+		iRet = pProxy->surfaceGetGeneration(pProxy, pTarget, &iGenerationAfter);
+		if ( (iRet == XGE_OK) && (iGenerationAfter == iGenerationBefore) ) {
+			iRet = XGE_ERROR_RESOURCE_FAILED;
+		}
+	}
+	if ( iRet != XGE_OK ) {
+		printf("xui_proxy_xge_test failed: mesh scratch stage=%s ret=%d\n", sStage, iRet);
+		return 1;
+	}
+	return 0;
+}
+
 static int __xuiTestSurface(xui_proxy pProxy)
 {
 	xge_desc_t tXgeDesc;
@@ -236,7 +301,7 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	     (pProxy->textMeasure == NULL) || (pProxy->textDraw == NULL) ||
 	     (pProxy->drawBegin == NULL) || (pProxy->drawEnd == NULL) ||
 	     (pProxy->drawClearRect == NULL) || (pProxy->drawSurface == NULL) ||
-	     (pProxy->drawSurfaceQuad == NULL) || (pProxy->drawPath == NULL) ||
+	     (pProxy->drawSurfaceQuad == NULL) || (pProxy->drawMeshTriangles == NULL) || (pProxy->drawPath == NULL) ||
 	     (pProxy->drawSvgPath == NULL) || (pProxy->drawRectFill == NULL) ||
 	     (pProxy->drawRectStroke == NULL) ||
 	     (pProxy->drawRectFill == NULL) || (pProxy->drawRectStroke == NULL) ||
@@ -558,6 +623,12 @@ static int __xuiTestSurface(xui_proxy pProxy)
 		xgeUnit();
 		return 1;
 	}
+	if ( __xuiTestMeshVertexScratch(pProxy, pCopySurface) != 0 ) {
+		pProxy->surfaceDestroy(pProxy, pCopySurface);
+		pProxy->surfaceDestroy(pProxy, pSurface);
+		xgeUnit();
+		return 1;
+	}
 	iRet = pProxy->surfaceGetGeneration(pProxy, pCopySurface, &iGeneration0);
 	if ( iRet == XGE_OK ) {
 		iRet = pProxy->shapeRectFill(pProxy, pCopySurface, tSrc, XUI_COLOR_RGBA(255, 255, 255, 0));
@@ -795,7 +866,7 @@ int main(void)
 	     (tProxy.fontGetMetrics == NULL) || (tProxy.fontDestroy == NULL) ||
 	     (tProxy.textMeasure == NULL) || (tProxy.textDraw == NULL) ||
 	     (tProxy.drawBegin == NULL) || (tProxy.drawEnd == NULL) ||
-	     (tProxy.drawClearRect == NULL) || (tProxy.drawPath == NULL) ||
+	     (tProxy.drawClearRect == NULL) || (tProxy.drawMeshTriangles == NULL) || (tProxy.drawPath == NULL) ||
 	     (tProxy.drawSvgPath == NULL) || (tProxy.drawRectFill == NULL) ||
 	     (tProxy.drawText == NULL) ) {
 		printf("xui_proxy_xge_test failed: missing callbacks\n");
