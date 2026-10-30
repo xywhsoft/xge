@@ -45,27 +45,43 @@ static void __xuiCheckCardGroupChanged(xui_widget pGroup, xui_widget pSelected, 
 	if ( pIndex != NULL ) *pIndex = iSelectedIndex;
 }
 
-static int __xuiCheckCardClick(xui_context pContext, xui_widget pWidget)
+static int __xuiCheckCardConsumePointer(xui_widget pWidget,
+	const xui_event_t* pEvent, void* pUser)
 {
-	xui_rect_t tWorld;
-	float fX;
-	float fY;
+	(void)pWidget;
+	(void)pEvent;
+	(void)pUser;
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiCheckCardClickAt(xui_context pContext, float fX, float fY)
+{
 	int iRet;
 
-	tWorld = xuiWidgetGetWorldRect(pWidget);
-	fX = tWorld.fX + tWorld.fW * 0.5f;
-	fY = tWorld.fY + tWorld.fH * 0.5f;
 	iRet = xuiInputPointerMove(pContext, fX, fY, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pContext);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	iRet = xuiInputPointerDown(pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiCheckCardClick(xui_context pContext, xui_widget pWidget)
+{
+	xui_rect_t tWorld;
+	float fX;
+	float fY;
+
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	fX = tWorld.fX + tWorld.fW * 0.5f;
+	fY = tWorld.fY + tWorld.fH * 0.5f;
+	return __xuiCheckCardClickAt(pContext, fX, fY);
 }
 
 static int __xuiCheckCardRender(xui_context pContext, xui_surface pTarget)
@@ -97,6 +113,7 @@ int main(void)
 	xui_accessible_node_t tAccessible;
 	xui_rect_t tCorner;
 	xui_rect_t tCardRect;
+	xui_rect_t tChildWorld;
 	xui_rect_t tLabelWorld;
 	float fBorder;
 	float fCheckedBorder;
@@ -250,6 +267,33 @@ int main(void)
 	tLabelWorld = xuiWidgetGetWorldRect(pLabel);
 	XUI_TEST_CHECK(xuiWidgetGetHitTestVisible(pLabel) == 0, "label hit transparent by default");
 	XUI_TEST_CHECK(xuiHitTest(pContext, tLabelWorld.fX + 4.0f, tLabelWorld.fY + 4.0f, XUI_WIDGET_HIT_DEFAULT) == pStandalone, "label passes hit to parent");
+	tChildWorld = xuiWidgetGetWorldRect(pChild);
+	XUI_TEST_CHECK(xuiHitTest(pContext, tChildWorld.fX + tChildWorld.fW * 0.5f,
+		tChildWorld.fY + tChildWorld.fH * 0.5f, XUI_WIDGET_HIT_DEFAULT) == pChild,
+		"plain content child receives pointer target");
+	iRet = __xuiCheckCardClickAt(pContext,
+		tChildWorld.fX + tChildWorld.fW * 0.5f,
+		tChildWorld.fY + tChildWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckCardGetChecked(pStandalone) && iChanged == 1,
+		"plain content child click bubbles to check card");
+	iRet = __xuiCheckCardClickAt(pContext,
+		tChildWorld.fX + tChildWorld.fW * 0.5f,
+		tChildWorld.fY + tChildWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 2,
+		"second content child click toggles check card off");
+	iChanged = 0;
+	iRet = xuiWidgetSetEventHandler(pChild, XUI_EVENT_POINTER_DOWN,
+		__xuiCheckCardConsumePointer, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pChild, XUI_EVENT_POINTER_UP,
+		__xuiCheckCardConsumePointer, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pChild, XUI_EVENT_POINTER_CLICK,
+		__xuiCheckCardConsumePointer, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "interactive content child handlers");
+	iRet = __xuiCheckCardClickAt(pContext,
+		tChildWorld.fX + tChildWorld.fW * 0.5f,
+		tChildWorld.fY + tChildWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCheckCardGetChecked(pStandalone) && iChanged == 0,
+		"interactive content child suppresses check card activation");
 	tCorner = xuiCheckCardGetCornerRect(pCard[1]);
 	XUI_TEST_CHECK(tCorner.fW > 0.0f && tCorner.fH > 0.0f, "corner rect");
 	tCardRect = xuiWidgetGetContentRect(pCard[1]);

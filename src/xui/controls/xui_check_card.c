@@ -240,6 +240,19 @@ static int __xuiCheckCardActivate(xui_widget pWidget, xui_check_card_data_t* pDa
 		__xuiCheckCardResolveRadioGroup(pWidget, pData) != NULL ? 1 : !pData->bChecked, 1, 0);
 }
 
+static int __xuiCheckCardAcceptPointerTarget(xui_widget pWidget,
+	const xui_event_t* pEvent)
+{
+	xui_widget pScan;
+
+	if ( pEvent->pTarget == pWidget ) return 1;
+	if ( pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE ) return 0;
+	for ( pScan = pEvent->pTarget; pScan != NULL; pScan = xuiWidgetGetParent(pScan) ) {
+		if ( pScan == pWidget ) return 1;
+	}
+	return 0;
+}
+
 static void __xuiCheckCardDefaultAction(xui_widget pWidget, void* pUser)
 {
 	xui_check_card_data_t* pData;
@@ -296,7 +309,8 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 #endif
 		return iRet;
 	case XUI_EVENT_POINTER_DOWN:
-		if ( (pEvent->pTarget == pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
+		if ( __xuiCheckCardAcceptPointerTarget(pWidget, pEvent) &&
+		     (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
 			if ( pData->tPointerPress.tOwner.bActive ) {
 				return xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ?
 					XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -312,7 +326,8 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
-		if ( (pEvent->pTarget == pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) &&
+		if ( __xuiCheckCardAcceptPointerTarget(pWidget, pEvent) &&
+		     (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) &&
 		     xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ) {
 			iRet = xuiInternalPointerPressEnd(pContext, pWidget, pEvent,
 				&pData->tPointerPress);
@@ -324,7 +339,8 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		}
 		break;
 	case XUI_EVENT_POINTER_CLICK:
-		if ( (pEvent->pTarget == pWidget) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
+		if ( __xuiCheckCardAcceptPointerTarget(pWidget, pEvent) &&
+		     (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
 			if ( !xuiInternalPointerPressAcceptClick(&pData->tPointerPress, pEvent) ) {
 				return XUI_EVENT_DISPATCH_STOP;
 			}
