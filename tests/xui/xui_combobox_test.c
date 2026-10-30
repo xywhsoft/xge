@@ -483,14 +483,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus editable input for F4");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_F4, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK && xuiComboBoxIsOpen(pEditCombo), "editable input F4 opens dropdown");
-	iRet = xuiComboBoxClose(pEditCombo);
-	XUI_TEST_CHECK(iRet == XUI_OK, "close editable F4 dropdown");
-	iRet = xuiSetFocusWidget(pContext, pEditInput);
-	XUI_TEST_CHECK(iRet == XUI_OK, "refocus editable input for alt down");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK &&
+	               !xuiComboBoxIsOpen(pEditCombo) && xuiGetFocusWidget(pContext) == pEditInput,
+	               "escape closes editable dropdown and restores input focus");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, XUI_MOD_ALT);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK && xuiComboBoxIsOpen(pEditCombo), "editable input alt down opens dropdown");
 	iRet = xuiComboBoxClose(pEditCombo);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiSetFocusWidget(pContext, pEditInput) == XUI_OK, "close editable alt dropdown and restore input focus");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pEditInput,
+	               "close editable alt dropdown restores input focus");
 	iRet = xuiComboBoxSetText(pEditCombo, "Custom");
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxGetSelected(pEditCombo) == -1 && strcmp(xuiComboBoxGetText(pEditCombo), "Custom") == 0, "editable custom text clears selection");
 	iRet = xuiSetFocusWidget(pContext, pEditInput);

@@ -1021,6 +1021,14 @@ static int __xuiComboBoxOpenWithHover(xui_widget pWidget, xui_combobox_data_t* p
 	iRet = xuiMenuOpenForOwner(pData->pMenu, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiComboBoxAlive(pContext, pWidget, pData) ) return XUI_OK;
+	if ( (pPopup != NULL) && (pData->iMode == XUI_COMBOBOX_MODE_EDIT) &&
+	     (pData->pInput != NULL) ) {
+		iRet = xuiPopupSetFocusRestore(pPopup, pData->pInput);
+		if ( iRet != XUI_OK ) {
+			(void)xuiMenuClose(pData->pMenu);
+			return iRet;
+		}
+	}
 	iRet = __xuiComboBoxApplyPlacement(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		(void)xuiMenuClose(pData->pMenu);
