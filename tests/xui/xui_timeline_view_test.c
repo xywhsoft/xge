@@ -360,6 +360,8 @@ int main(void)
 	xui_timeline_selection_t tSelection;
 	xui_timeline_hit_t tHit;
 	xui_event_t tEvent;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	timeline_test_data_t tData;
 	timeline_destroy_data_t tDestroyChanging;
 	timeline_destroy_data_t tDestroyRender;
@@ -442,6 +444,17 @@ int main(void)
 		"invalid descriptor clears output");
 	iRet = xuiTimeLineViewCreate(pContext, &pTimeline, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTimeline != NULL, "timeline create");
+	iRet = xuiWidgetMeasure(pTimeline,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 140.0f && tNatural.fY > 90.0f,
+		"timeline intrinsic measure exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pTimeline, (xui_vec2_t){140.0f, 90.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 140.0f && tMeasured.fY == 90.0f,
+		"timeline finite measure constraint");
+	iRet = xuiWidgetMeasure(pTimeline,
+		(xui_vec2_t){140.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 140.0f &&
+		tMeasured.fY == tNatural.fY, "timeline single-axis measure constraint");
 	xuiWidgetSetRect(pTimeline, (xui_rect_t){20.0f, 20.0f, 700.0f, 260.0f});
 	iRet = xuiWidgetAddChild(pRoot, pTimeline);
 	XUI_TEST_CHECK(iRet == XUI_OK, "timeline add");

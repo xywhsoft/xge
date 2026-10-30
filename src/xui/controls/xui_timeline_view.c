@@ -2416,13 +2416,22 @@ static int __xuiTimeLineContentMeasure(xui_widget pWidget, xui_vec2_t tConstrain
 	xui_timeline_view_data_t* pData;
 	float fRows;
 	(void)pWidget;
-	(void)tConstraint;
 	pData = (xui_timeline_view_data_t*)pUser;
 	if ( (pData == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fRows = (float)((pData->iLayerCount > 0 && pData->iLayerCount < 8) ? pData->iLayerCount : 8);
 	if ( fRows < 3.0f ) fRows = 3.0f;
 	pSize->fX = xuiInternalSnapSize(pData->fLayerHeaderWidth + 360.0f);
 	pSize->fY = xuiInternalSnapSize(pData->fRulerHeight + pData->fRowHeight * fRows + 12.0f);
+	if ( (tConstraint.fX >= 0.0f) &&
+		(tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fX > tConstraint.fX) ) {
+		pSize->fX = tConstraint.fX;
+	}
+	if ( (tConstraint.fY >= 0.0f) &&
+		(tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fY > tConstraint.fY) ) {
+		pSize->fY = tConstraint.fY;
+	}
 	return XUI_OK;
 }
 
