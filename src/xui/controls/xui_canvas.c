@@ -1373,20 +1373,28 @@ XUI_API int xuiCanvasGetColors(xui_widget pWidget, uint32_t* pBackground, uint32
 XUI_API int xuiCanvasSetScrollbarPolicy(xui_widget pWidget, int iPolicyX, int iPolicyY)
 {
 	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
+	int iOldPolicyX;
+	int iOldPolicyY;
 	int iRet;
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiScrollFrameGetScrollbarPolicy(pData->pFrame, &iOldPolicyX, &iOldPolicyY);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiScrollFrameSetScrollbarPolicy(pData->pFrame, iPolicyX, iPolicyY);
-	if ( iRet == XUI_OK ) __xuiCanvasCancelPen(pWidget, pData);
+	if ( iRet == XUI_OK && (iOldPolicyX != iPolicyX || iOldPolicyY != iPolicyY) ) {
+		__xuiCanvasCancelPen(pWidget, pData);
+	}
 	return iRet;
 }
 
 XUI_API int xuiCanvasSetScrollbarMode(xui_widget pWidget, int iMode)
 {
 	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
+	int iOldMode;
 	int iRet;
 	if ( (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldMode = xuiScrollFrameGetScrollbarMode(pData->pFrame);
 	iRet = xuiScrollFrameSetScrollbarMode(pData->pFrame, iMode);
-	if ( iRet == XUI_OK ) __xuiCanvasCancelPen(pWidget, pData);
+	if ( iRet == XUI_OK && iOldMode != iMode ) __xuiCanvasCancelPen(pWidget, pData);
 	return iRet;
 }
 

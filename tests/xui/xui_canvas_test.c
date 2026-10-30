@@ -329,6 +329,32 @@ int main(void)
 		tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT,
 		XUI_POINTER_BUTTON_LEFT);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCanvasSetScrollbarPolicy(pCanvas,
+		XUI_SCROLLBAR_POLICY_AUTO, XUI_SCROLLBAR_POLICY_AUTO);
+	if ( iRet == XUI_OK ) iRet = xuiCanvasSetScrollbarMode(pCanvas,
+		XUI_SCROLLBAR_MODE_FULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport,
+		"idempotent scrollbar configuration preserves active pen stroke");
+	iRet = xuiCanvasSetScrollbarPolicy(pCanvas, XUI_SCROLLBAR_POLICY_ALWAYS,
+		XUI_SCROLLBAR_POLICY_AUTO);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"changed scrollbar policy cancels active pen stroke");
+	XUI_TEST_CHECK(xuiCanvasSetScrollbarPolicy(pCanvas, XUI_SCROLLBAR_POLICY_AUTO,
+		XUI_SCROLLBAR_POLICY_AUTO) == XUI_OK, "restore canvas scrollbar policy");
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f,
+		tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiCanvasSetScrollbarMode(pCanvas,
+		XUI_SCROLLBAR_MODE_COMPACT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL,
+		"changed scrollbar mode cancels active pen stroke");
+	XUI_TEST_CHECK(xuiCanvasSetScrollbarMode(pCanvas, XUI_SCROLLBAR_MODE_FULL) ==
+		XUI_OK, "restore canvas scrollbar mode");
+	iRet = xuiInputPointerDown(pContext, tViewportWorld.fX + 20.0f,
+		tViewportWorld.fY + 20.0f, XUI_POINTER_BUTTON_LEFT,
+		XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pViewport,
 		"programmatic scroll starts with pen capture");
 	iRet = xuiCanvasSetOffset(pCanvas, 0.0f, 0.0f);
