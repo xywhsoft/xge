@@ -296,6 +296,22 @@ static int __xuiPropertyGridCustomRender(xui_widget pWidget, int iProperty, int 
 	return 0;
 }
 
+static int __xuiPropertyGridCountRender(xui_widget pWidget, int iProperty, int iColumn,
+	const xui_table_view_cell_t* pCell, xui_draw_context pDraw, xui_rect_t tRect,
+	int iState, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	(void)pWidget;
+	(void)iProperty;
+	(void)iColumn;
+	(void)pCell;
+	(void)pDraw;
+	(void)tRect;
+	(void)iState;
+	if ( pCount != NULL ) (*pCount)++;
+	return 0;
+}
+
 static void __xuiPropertyGridDestroySelect(xui_widget pWidget, int iProperty, const char* sId, void* pUser)
 {
 	int* pCount = (int*)pUser;
@@ -407,6 +423,7 @@ int main(void)
 	xui_widget pGrid;
 	xui_widget pTableGrid;
 	xui_widget pTableView;
+	xui_widget pViewport;
 	xui_widget pPopupOwner;
 	xui_widget pProbe;
 	xui_surface pTarget;
@@ -457,12 +474,15 @@ int main(void)
 	int i;
 	int iProbeProperty;
 	int iCallbackCount;
+	int iTableChangeCount;
+	int iRenderCount;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pGrid = NULL;
 	pTableGrid = NULL;
 	pTableView = NULL;
+	pViewport = NULL;
 	pPopupOwner = NULL;
 	pProbe = NULL;
 	pTarget = NULL;
@@ -779,6 +799,90 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pTarget) > 0, "initial render");
 	XUI_TEST_CHECK(tData.iRenderCount > 0, "custom renderer used");
 	XUI_TEST_CHECK(strcmp(xuiPropertyGridGetValue(pGrid, pLayoutDirection), "1") == 0, "value enum stores raw value");
+	pViewport = xuiTableViewGetViewportWidget(pTableView);
+	XUI_TEST_CHECK(pViewport != NULL, "propertygrid table viewport");
+	iTableChangeCount = xuiTableViewGetChangeCount(pTableView);
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiPropertyGridSetGlobalRenderer(pGrid, __xuiPropertyGridCustomRender, &tData);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetChangeCount(pTableView) == iTableChangeCount &&
+	               xuiWidgetGetDirtyFlags(pGrid) == 0u &&
+	               xuiWidgetGetDirtyFlags(pTableView) == 0u &&
+	               xuiWidgetGetDirtyFlags(pViewport) == 0u,
+	               "idempotent global renderer avoids refresh");
+	iRenderCount = 0;
+	iRet = xuiPropertyGridSetRenderer(pGrid, pLayoutDirection,
+		__xuiPropertyGridCountRender, &iRenderCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetChangeCount(pTableView) == iTableChangeCount &&
+	               (xuiWidgetGetDirtyFlags(pTableView) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+	               (xuiWidgetGetDirtyFlags(pTableView) & XUI_WIDGET_DIRTY_CACHE) != 0u &&
+	               (xuiWidgetGetDirtyFlags(pViewport) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+	               "property renderer invalidates cells without data refresh");
+	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && iRenderCount > 0,
+	               "replacement property renderer used");
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiPropertyGridSetRenderer(pGrid, pLayoutDirection,
+		__xuiPropertyGridCountRender, &iRenderCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pTableView) == 0u &&
+	               xuiWidgetGetDirtyFlags(pViewport) == 0u,
+	               "idempotent property renderer avoids repaint");
+	iRet = xuiPropertyGridSetRenderer(pGrid, pLayoutDirection, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetChangeCount(pTableView) == iTableChangeCount &&
+	               (xuiWidgetGetDirtyFlags(pViewport) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+	               "clearing property renderer invalidates cells only");
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iTableChangeCount = xuiTableViewGetChangeCount(pTableView);
+	iRet = xuiPropertyGridSetValue(pGrid, pLayoutDirection, "0");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetChangeCount(pTableView) == iTableChangeCount &&
+	               (xuiWidgetGetDirtyFlags(pTableView) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+	               (xuiWidgetGetDirtyFlags(pViewport) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+	               "value update invalidates cells without data refresh");
+	XUI_TEST_CHECK(xuiPropertyGridSetValue(pGrid, pLayoutDirection, "1") == XUI_OK,
+	               "restore value after invalidation check");
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.fMin = 1.0f;
+	tConfig.fMax = 64.0f;
+	tConfig.fStep = 1.0f;
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iTableChangeCount = xuiTableViewGetChangeCount(pTableView);
+	iRet = xuiPropertyGridSetEditorConfig(pGrid, pMaxPlayers, &tConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetChangeCount(pTableView) == iTableChangeCount &&
+	               (xuiWidgetGetDirtyFlags(pTableView) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+	               (xuiWidgetGetDirtyFlags(pViewport) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+	               "editor config invalidates cells without data refresh");
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiPropertyGridSetEditorConfig(pGrid, pTitle, NULL) == XUI_OK &&
+	               xuiWidgetGetDirtyFlags(pTableView) == 0u &&
+	               xuiWidgetGetDirtyFlags(pViewport) == 0u,
+	               "clearing absent editor config is idempotent");
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iTableChangeCount = xuiTableViewGetChangeCount(pTableView);
+	iRet = xuiPropertyGridSetSelected(pGrid, pMaxPlayers);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridGetSelected(pGrid) == pMaxPlayers &&
+	               xuiTableViewGetChangeCount(pTableView) == iTableChangeCount + 1 &&
+	               (xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+	               (xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+	               "programmatic selection refreshes description without table refresh");
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iTableChangeCount = xuiTableViewGetChangeCount(pTableView);
+	iRet = xuiPropertyGridSetSelected(pGrid, pMaxPlayers);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetChangeCount(pTableView) == iTableChangeCount &&
+	               xuiWidgetGetDirtyFlags(pGrid) == 0u &&
+	               xuiWidgetGetDirtyFlags(pTableView) == 0u &&
+	               xuiWidgetGetDirtyFlags(pViewport) == 0u,
+	               "idempotent programmatic selection avoids refresh");
+	XUI_TEST_CHECK(xuiPropertyGridSetSelected(pGrid, -1) == XUI_OK,
+	               "clear programmatic selection");
 
 	XUI_TEST_CHECK(xuiTableViewGetCellRect(pTableView, 0, 0, &tCell) == XUI_OK && tCell.fW > 100.0f, "category cell rect");
 	tWorld = xuiWidgetGetWorldRect(pTableView);
@@ -970,6 +1074,24 @@ int main(void)
 		XUI_PROPERTY_FLAG_DIRTY | XUI_PROPERTY_FLAG_INVALID);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid),
 	               "visual flags preserve edit");
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pTableView, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(pViewport, XUI_WIDGET_DIRTY_ALL);
+	iTableChangeCount = xuiTableViewGetChangeCount(pTableView);
+	iRet = xuiPropertyGridSetDescriptionMode(pGrid,
+		XUI_PROPERTY_GRID_DESCRIPTION_PANEL, 48.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid) &&
+	               xuiPropertyGridGetDescriptionMode(pGrid) == XUI_PROPERTY_GRID_DESCRIPTION_PANEL &&
+	               xuiTableViewGetChangeCount(pTableView) == iTableChangeCount &&
+	               (xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+	               (xuiWidgetGetDirtyFlags(pViewport) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+	               "tooltip-only description change preserves invalid edit");
+	iRet = xuiPropertyGridSetDescriptionMode(pGrid,
+		XUI_PROPERTY_GRID_DESCRIPTION_BOTH, 48.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid) &&
+	               xuiPropertyGridGetDescriptionMode(pGrid) == XUI_PROPERTY_GRID_DESCRIPTION_BOTH &&
+	               (xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_LAYOUT) == 0u,
+	               "restoring tooltip preserves invalid edit");
 	iRet = xuiPropertyGridSetPropertyFlags(pGrid, pMaxPlayers,
 		XUI_PROPERTY_FLAG_DIRTY | XUI_PROPERTY_FLAG_INVALID | XUI_PROPERTY_FLAG_READONLY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && xuiPropertyGridIsEditing(pGrid) &&
