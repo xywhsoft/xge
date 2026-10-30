@@ -25,6 +25,13 @@ static int __xuiScrollFrameNear(float fA, float fB)
 	return fD < 0.01f;
 }
 
+static int __xuiScrollFrameRectContained(xui_rect_t tOuter, xui_rect_t tInner)
+{
+	return tInner.fX >= tOuter.fX && tInner.fY >= tOuter.fY &&
+	       tInner.fX + tInner.fW <= tOuter.fX + tOuter.fW &&
+	       tInner.fY + tInner.fH <= tOuter.fY + tOuter.fH;
+}
+
 static void __xuiScrollFrameChanged(xui_widget pWidget, float fOffsetX, float fOffsetY, void* pUser)
 {
 	int* pCount;
@@ -116,6 +123,7 @@ int main(void)
 	xui_rect_t tHBar;
 	xui_rect_t tVBar;
 	xui_rect_t tCorner;
+	xui_rect_t tFrameContent;
 	xui_rect_t tViewportWorld;
 	xui_rect_t tFooterBefore;
 	xui_rect_t tFooterAfter;
@@ -207,6 +215,10 @@ int main(void)
 		"invalid frame metrics preserve state");
 	iRet = xuiWidgetMeasure(pFrame, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(tMeasured.fX, 120.0f) && __xuiScrollFrameNear(tMeasured.fY, 100.0f), "content extent does not define desired viewport");
+	iRet = xuiWidgetMeasure(pFrame, (xui_vec2_t){80.0f, 60.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(tMeasured.fX, 80.0f) &&
+		__xuiScrollFrameNear(tMeasured.fY, 60.0f),
+		"frame desired viewport honors finite constraints");
 	iRet = xuiScrollFrameGetViewportHint(pFrame, &fHintWidth, &fHintHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fHintWidth, 120.0f) && __xuiScrollFrameNear(fHintHeight, 100.0f), "viewport hint get");
 	iRet = xuiScrollFrameSetContentSize(pFrame, 2400.0f, 2200.0f);
@@ -240,6 +252,24 @@ int main(void)
 	XUI_TEST_CHECK(__xuiScrollFrameNear(tViewport.fW, 104.0f) && __xuiScrollFrameNear(tViewport.fH, 84.0f), "viewport reserve");
 	XUI_TEST_CHECK(__xuiScrollFrameNear(tHBar.fH, 16.0f) && __xuiScrollFrameNear(tVBar.fW, 16.0f), "bar thickness");
 	XUI_TEST_CHECK(__xuiScrollFrameNear(tCorner.fW, 16.0f) && __xuiScrollFrameNear(tCorner.fH, 16.0f), "corner size");
+	iRet = xuiScrollFrameSetMetrics(pFrame, XUI_LAYOUT_UNBOUNDED, fMetricB, fMetricC);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tFrameContent = xuiWidgetGetContentRect(pFrame);
+	tViewport = xuiScrollFrameGetViewportRect(pFrame);
+	tHBar = xuiScrollFrameGetHScrollBarRect(pFrame);
+	tVBar = xuiScrollFrameGetVScrollBarRect(pFrame);
+	tCorner = xuiScrollFrameGetCornerRect(pFrame);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiScrollFrameRectContained(tFrameContent, tViewport) &&
+		__xuiScrollFrameRectContained(tFrameContent, tHBar) &&
+		__xuiScrollFrameRectContained(tFrameContent, tVBar) &&
+		__xuiScrollFrameRectContained(tFrameContent, tCorner),
+		"maximum legal scrollbar thickness stays inside frame geometry");
+	iRet = xuiScrollFrameSetMetrics(pFrame, fMetricA, fMetricB, fMetricC);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tViewport = xuiScrollFrameGetViewportRect(pFrame);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(tViewport.fW, 104.0f) &&
+		__xuiScrollFrameNear(tViewport.fH, 84.0f), "restore ordinary frame metrics");
 	iRet = xuiScrollModelGetMaxOffset(xuiScrollFrameGetModel(pFrame), &fMaxX, &fMaxY);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fMaxX, 136.0f) && __xuiScrollFrameNear(fMaxY, 136.0f), "model max offset");
 	iRet = xuiScrollFrameSetContentSize(pFrame, XUI_LAYOUT_UNBOUNDED,

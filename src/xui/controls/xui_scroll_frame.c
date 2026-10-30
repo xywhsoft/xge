@@ -143,6 +143,16 @@ static float __xuiScrollFrameReserveSize(const xui_scroll_frame_data_t* pData)
 	return fSize;
 }
 
+static float __xuiScrollFrameLayoutReserveSize(const xui_scroll_frame_data_t* pData,
+	float fWidth, float fHeight)
+{
+	float fLimit;
+
+	fLimit = __xuiScrollFrameMinFloat(__xuiScrollFrameMaxFloat(0.0f, fWidth),
+		__xuiScrollFrameMaxFloat(0.0f, fHeight));
+	return __xuiScrollFrameMinFloat(__xuiScrollFrameReserveSize(pData), fLimit);
+}
+
 static int __xuiScrollFrameNeedBar(int iPolicy, float fContent, float fViewport)
 {
 	if ( iPolicy == XUI_SCROLLBAR_POLICY_ALWAYS ) {
@@ -268,7 +278,7 @@ static void __xuiScrollFrameComputeShow(const xui_scroll_frame_data_t* pData, fl
 	int bNextV;
 	int i;
 
-	fReserve = __xuiScrollFrameReserveSize(pData);
+	fReserve = __xuiScrollFrameLayoutReserveSize(pData, fWidth, fHeight);
 	bShowH = (pData->iPolicyX == XUI_SCROLLBAR_POLICY_ALWAYS);
 	bShowV = (pData->iPolicyY == XUI_SCROLLBAR_POLICY_ALWAYS);
 	for ( i = 0; i < 4; i++ ) {
@@ -302,7 +312,7 @@ static void __xuiScrollFrameComputeRects(const xui_scroll_frame_data_t* pData, x
 	memset(&tHBar, 0, sizeof(tHBar));
 	memset(&tVBar, 0, sizeof(tVBar));
 	memset(&tCorner, 0, sizeof(tCorner));
-	fReserve = __xuiScrollFrameReserveSize(pData);
+	fReserve = __xuiScrollFrameLayoutReserveSize(pData, tContent.fW, tContent.fH);
 	__xuiScrollFrameComputeShow(pData, tContent.fW, tContent.fH, &bShowH, &bShowV);
 	fViewportW = __xuiScrollFrameMaxFloat(0.0f, tContent.fW - (bShowV ? fReserve : 0.0f));
 	fViewportH = __xuiScrollFrameMaxFloat(0.0f, tContent.fH - (bShowH ? fReserve : 0.0f));
@@ -579,13 +589,18 @@ static int __xuiScrollFrameContentMeasure(xui_widget pWidget, xui_vec2_t tConstr
 	xui_scroll_frame_data_t* pData;
 
 	(void)pWidget;
-	(void)tConstraint;
 	pData = (xui_scroll_frame_data_t*)pUser;
 	if ( (pData == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pSize->fX = pData->fViewportWidth;
 	pSize->fY = pData->fViewportHeight;
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
