@@ -110,7 +110,8 @@ static int __xuiProgressSourceRectValid(xui_rect_t tRect)
 	}
 	iRight = (int64_t)tRect.fX + (int64_t)tRect.fW;
 	iBottom = (int64_t)tRect.fY + (int64_t)tRect.fH;
-	return iRight >= -iBound && iRight <= iBound &&
+	return ((tRect.fW == 0) == (tRect.fH == 0)) &&
+	       iRight >= -iBound && iRight <= iBound &&
 	       iBottom >= -iBound && iBottom <= iBound;
 }
 
@@ -771,11 +772,14 @@ static xui_rect_t __xuiProgressSurfaceSrc(xui_proxy pProxy, xui_surface pSurface
 {
 	xui_surface_desc_t tDesc;
 
-	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) ) {
+	if ( (tSrc.fW == 0) && (tSrc.fH == 0) ) {
 		memset(&tDesc, 0, sizeof(tDesc));
 		if ( (pProxy != NULL) &&
 		     (pProxy->surfaceGetDesc != NULL) &&
-		     (pProxy->surfaceGetDesc(pProxy, pSurface, &tDesc) == XUI_OK) ) {
+		     (pProxy->surfaceGetDesc(pProxy, pSurface, &tDesc) == XUI_OK) &&
+		     (tDesc.iWidth > 0) && (tDesc.iHeight > 0) &&
+		     (tDesc.iWidth <= (int)XUI_LAYOUT_UNBOUNDED) &&
+		     (tDesc.iHeight <= (int)XUI_LAYOUT_UNBOUNDED) ) {
 			tSrc.fX = 0.0f;
 			tSrc.fY = 0.0f;
 			tSrc.fW = (float)tDesc.iWidth;

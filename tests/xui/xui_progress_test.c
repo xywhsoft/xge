@@ -492,10 +492,22 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative patch source rejected");
 	XUI_TEST_CHECK(xuiProgressHasTrackPatch(pProgress), "invalid track patch preserves prior state");
 	tInvalidPatch = tPatch;
+	tInvalidPatch.tSrc = (xui_rect_t){0, 0, 0, 8};
+	iRet = xuiProgressSetTrackPatch(pProgress, &tInvalidPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiProgressHasTrackPatch(pProgress),
+		"mismatched track patch source rejected without mutation");
+	tInvalidPatch = tPatch;
 	tInvalidPatch.tSlice.fLeft = -1;
 	iRet = xuiProgressSetFillPatch(pProgress, &tInvalidPatch);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "negative patch slice rejected");
 	XUI_TEST_CHECK(xuiProgressHasFillPatch(pProgress), "invalid fill patch preserves prior state");
+	tInvalidPatch = tPatch;
+	tInvalidPatch.tSrc = (xui_rect_t){0, 0, 8, 0};
+	iRet = xuiProgressSetFillPatch(pProgress, &tInvalidPatch);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiProgressHasFillPatch(pProgress),
+		"mismatched fill patch source rejected without mutation");
 	tInvalidPatch = tPatch;
 	tInvalidPatch.tSrc = (xui_rect_t){(int)XUI_LAYOUT_UNBOUNDED, 0, 1, 1};
 	iRet = xuiProgressSetTrackPatch(pProgress, &tInvalidPatch);
@@ -506,6 +518,14 @@ int main(void)
 	iRet = xuiProgressSetFillPatch(pProgress, &tInvalidPatch);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
 		"combined patch slice beyond geometry bound rejected");
+	tDesc.bHasTrackPatch = 1;
+	tDesc.tTrackPatch = tPatch;
+	tDesc.tTrackPatch.tSrc = (xui_rect_t){0, 0, 0, 8};
+	pInvalid = pRoot;
+	iRet = xuiProgressCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"mismatched descriptor patch source rejected");
+	tDesc.bHasTrackPatch = 0;
 	tDesc.fMin = NAN;
 	pInvalid = pRoot;
 	iRet = xuiProgressCreate(pContext, &pInvalid, &tDesc);

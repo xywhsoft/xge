@@ -2452,8 +2452,8 @@ typedef struct xui_nine_patch_t {
 
 /* 进度条创建描述。sText 会被复制；pFont 与 nine-patch surface 为借用资源，
  * 调用方须保证其生命周期覆盖 Progress 对它们的使用期。nine-patch 的源矩形
- * 与切片均使用整数像素；尺寸及切片不得为负，组合几何不得超过
- * XUI_LAYOUT_UNBOUNDED。 */
+ * 与切片均使用整数像素；源区域宽高必须同时为 0（整图）或同时为正，
+ * 尺寸及切片不得为负，组合几何不得超过 XUI_LAYOUT_UNBOUNDED。 */
 typedef struct xui_progress_desc_t {
 	uint32_t iSize;
 	struct xui_font_t* pFont;
