@@ -232,6 +232,7 @@ int main(void)
 	xui_icon_id arrIds[15];
 	xui_icon_id iMutationA;
 	xui_icon_id iMutationB;
+	xui_icon_id iMutationC;
 	xui_icon_id iSelectedBefore;
 	xui_accessible_value_t tAccessibleValue;
 	xui_vec2_t tMeasured;
@@ -263,6 +264,7 @@ int main(void)
 	memset(arrIds, 0, sizeof(arrIds));
 	iMutationA = XUI_ICON_ID_INVALID;
 	iMutationB = XUI_ICON_ID_INVALID;
+	iMutationC = XUI_ICON_ID_INVALID;
 	pContext = NULL;
 	pOtherContext = NULL;
 	pRoot = NULL;
@@ -446,8 +448,25 @@ int main(void)
 
 	XUI_TEST_CHECK(xuiIconPickerOpen(pPicker) == XUI_OK, "reopen");
 	XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK, "reopen layout");
+	XUI_TEST_CHECK(xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f) == XUI_OK,
+		"reset icon picker offset before tooltip scroll test");
 	tRect = xuiIconPickerGetItemRect(pPicker, 0);
 	tWorld = xuiWidgetGetWorldRect(pViewport);
+	XUI_TEST_CHECK(xuiInputPointerMove(pContext,
+		tWorld.fX + tRect.fX + tRect.fW * 0.5f,
+		tWorld.fY + tRect.fY + tRect.fH * 0.5f, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK,
+		"hover icon picker item for tooltip");
+	XUI_TEST_CHECK(xuiIconPickerGetHoverIndex(pPicker) == 0,
+		"icon picker item hover tracks tooltip target");
+	XUI_TEST_CHECK(xuiUpdate(pContext, 0.46f) == XUI_OK &&
+		xuiWidgetTooltipIsOpen(pContext) && xuiWidgetTooltipGetOwner(pContext) == pViewport,
+		"icon picker item tooltip opens without an extra pointer move");
+	XUI_TEST_CHECK(xuiIconPickerEnsureVisible(pPicker, arrIds[14]) == XUI_OK &&
+		xuiIconPickerGetHoverIndex(pPicker) == -1 && !xuiWidgetTooltipIsOpen(pContext),
+		"programmatic icon picker scroll clears stale hover tooltip");
+	XUI_TEST_CHECK(xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f) == XUI_OK,
+		"restore icon picker offset after tooltip scroll test");
 	XUI_TEST_CHECK(xuiInputPointerDownEx(pContext, 901u, XUI_POINTER_TYPE_TOUCH,
 		(int)(tWorld.fX + tRect.fX + tRect.fW * 0.5f),
 		(int)(tWorld.fY + tRect.fY + tRect.fH * 0.5f),
@@ -514,10 +533,29 @@ int main(void)
 			(xui_rect_t){0.0f, 0.0f, 24.0f, 24.0f}, NULL, &tIconDesc, &pMutationIcon) == XUI_OK,
 			"add second mutation icon");
 		iMutationB = xuiIconGetId(pMutationIcon);
+		tIconDesc.sDisplayName = "mutation-c";
+		XUI_TEST_CHECK(xuiIconAddSvgPath(pCategory, "mutation-c", "M2 2 H22 V22 H2 Z",
+			(xui_rect_t){0.0f, 0.0f, 24.0f, 24.0f}, NULL, &tIconDesc, &pMutationIcon) == XUI_OK,
+			"add third mutation icon");
+		iMutationC = xuiIconGetId(pMutationIcon);
 	}
 	XUI_TEST_CHECK(xuiUpdate(pContext, 0.016f) == XUI_OK && xuiIconPickerOpen(pPicker) == XUI_OK &&
-		xuiLayout(pContext) == XUI_OK && xuiIconPickerEnsureVisible(pPicker, iMutationA) == XUI_OK,
+		xuiLayout(pContext) == XUI_OK && xuiIconPickerEnsureVisible(pPicker, iMutationC) == XUI_OK,
 		"open after category growth");
+	tRect = xuiIconPickerGetItemRect(pPicker, 17);
+	tWorld = xuiWidgetGetWorldRect(pViewport);
+	XUI_TEST_CHECK(xuiInputPointerMove(pContext,
+		tWorld.fX + tRect.fX + tRect.fW * 0.5f,
+		tWorld.fY + tRect.fY + tRect.fH * 0.5f, 0) == XUI_OK &&
+		xuiDispatchPendingEvents(pContext) == XUI_OK && xuiUpdate(pContext, 0.46f) == XUI_OK &&
+		xuiIconPickerGetHoverIndex(pPicker) == 17 && xuiWidgetTooltipIsOpen(pContext),
+		"category mutation tooltip opens on trailing icon");
+	XUI_TEST_CHECK(xuiIconRemoveById(pCategory, iMutationB) == XUI_OK &&
+		xuiUpdate(pContext, 0.016f) == XUI_OK && xuiIconPickerGetHoverIndex(pPicker) == -1 &&
+		!xuiWidgetTooltipIsOpen(pContext),
+		"category mutation clears hover and tooltip instead of following shifted icon");
+	XUI_TEST_CHECK(xuiIconPickerEnsureVisible(pPicker, iMutationA) == XUI_OK,
+		"ensure first mutation icon after category shift");
 	tRect = xuiIconPickerGetItemRect(pPicker, 15);
 	tWorld = xuiWidgetGetWorldRect(pViewport);
 	iSelectedBefore = xuiIconPickerGetSelectedId(pPicker);
@@ -539,7 +577,7 @@ int main(void)
 		xuiIconPickerGetSelectedId(pPicker) == iSelectedBefore && tChange.iCount == iChangeBefore &&
 		xuiIconPickerIsOpen(pPicker),
 		"release after category mutation cannot commit replacement icon");
-	XUI_TEST_CHECK(xuiIconRemoveById(pCategory, iMutationB) == XUI_OK &&
+	XUI_TEST_CHECK(xuiIconRemoveById(pCategory, iMutationC) == XUI_OK &&
 		xuiUpdate(pContext, 0.016f) == XUI_OK, "remove remaining mutation icon");
 
 	XUI_TEST_CHECK(xuiIconPickerOpen(pPicker) == XUI_OK, "open for ensure");
