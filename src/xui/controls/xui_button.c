@@ -2,6 +2,7 @@
 #if XUI_ENABLE_BUTTON
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
+#include "xui_text_internal.h"
 
 #include <limits.h>
 #include <math.h>
@@ -208,13 +209,11 @@ static int __xuiButtonPatchValid(const xui_nine_patch_t* pPatch)
 	return 1;
 }
 
-static int __xuiButtonTextSet(xui_button_data_t* pData, const char* sText)
+static int __xuiButtonTextRequired(const char* sText, int* pRequired)
 {
-	char* sNew;
 	size_t iLength;
-	int iNeed;
 
-	if ( pData == NULL ) {
+	if ( pRequired == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( sText == NULL ) {
@@ -222,16 +221,23 @@ static int __xuiButtonTextSet(xui_button_data_t* pData, const char* sText)
 	}
 	iLength = strlen(sText);
 	if ( iLength >= (size_t)INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
-	iNeed = (int)iLength + 1;
-	if ( iNeed > pData->iTextCapacity ) {
-		sNew = (char*)xrtRealloc(pData->sText, (size_t)iNeed);
-		if ( sNew == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		pData->sText = sNew;
-		pData->iTextCapacity = iNeed;
-	}
-	memmove(pData->sText, sText, (size_t)iNeed);
+	*pRequired = (int)iLength + 1;
+	return XUI_OK;
+}
+
+static int __xuiButtonTextSet(xui_button_data_t* pData, const char* sText)
+{
+	int iRequired;
+	int iRet;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiButtonTextRequired(sText, &iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( sText == NULL ) sText = "";
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	memmove(pData->sText, sText, (size_t)iRequired);
 	pData->bTextMeasureDirty = 1;
 	return XUI_OK;
 }
@@ -1510,6 +1516,7 @@ XUI_API int xuiButtonSetClick(xui_widget pWidget, xui_button_click_proc onClick,
 XUI_API int xuiButtonSetText(xui_widget pWidget, const char* sText)
 {
 	xui_button_data_t* pData;
+	int iRequired;
 	int iRet;
 
 	pData = __xuiButtonGetData(pWidget);
@@ -1522,12 +1529,18 @@ XUI_API int xuiButtonSetText(xui_widget pWidget, const char* sText)
 	if ( (pData->sText != NULL) && (strcmp(pData->sText, sText) == 0) ) {
 		return XUI_OK;
 	}
-	iRet = __xuiButtonTextSet(pData, sText);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
+	iRet = __xuiButtonTextRequired(sText, &iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iRequired);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	memmove(pData->sText, sText, (size_t)iRequired);
+	pData->bTextMeasureDirty = 1;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API const char* xuiButtonGetText(xui_widget pWidget)

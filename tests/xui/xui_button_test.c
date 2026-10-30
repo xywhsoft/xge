@@ -787,6 +787,7 @@ int main(void)
 	xui_rect_t tRect;
 	uint32_t iPropertyId;
 	struct xui_font_t tFont;
+	char sLongText[192];
 	int iFailed;
 	int iRet;
 	int iClickCount;
@@ -864,6 +865,23 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && tState.iTextMeasureCount == iMeasureCount,
 		"cache rebuild reuses button text measurement");
+	memset(sLongText, 'B', sizeof(sLongText) - 1u);
+	sLongText[sizeof(sLongText) - 1u] = '\0';
+	xuiWidgetClearDirty(pButton, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiButtonSetText(pButton, sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiButtonGetText(pButton), sLongText) == 0 &&
+		(xuiWidgetGetDirtyFlags(pButton) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+		"long button text grows shared buffer");
+	xuiWidgetClearDirty(pButton, XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiButtonSetText(pButton, sLongText);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pButton) == 0u,
+		"idempotent button text stays clean");
+	iRet = xuiButtonSetText(pButton, xuiButtonGetText(pButton) + 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiButtonGetText(pButton)) == sizeof(sLongText) - 2u,
+		"grown self-aliased button text update");
+	iRet = xuiButtonSetText(pButton, "Press");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiButtonGetText(pButton), "Press") == 0,
+		"restore button text");
 	xuiWidgetClearDirty(pButton, XUI_WIDGET_DIRTY_ALL);
 	iRet = xuiButtonSetTextFlags(pButton, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_RTL);
 	XUI_TEST_CHECK(iRet == XUI_OK &&
