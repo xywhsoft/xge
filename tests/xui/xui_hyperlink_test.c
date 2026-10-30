@@ -110,6 +110,8 @@ int main(void)
 	xui_surface pHoverCache;
 	xui_surface pActiveCache;
 	xui_surface pFocusCache;
+	xui_surface pHoverFocusCache;
+	xui_surface pActiveFocusCache;
 	xui_accessible_node_t tAccessible;
 	xui_theme_t tTheme;
 	xui_hyperlink_destroy_state_t tDestroyState;
@@ -174,11 +176,15 @@ int main(void)
 	XUI_TEST_CHECK(strcmp(xuiHyperlinkGetText(pLink), "Open document") == 0, "text getter");
 	XUI_TEST_CHECK(xuiHyperlinkGetTextColor(pLink) == XUI_COLOR_RGBA(20, 92, 210, 255), "text color getter");
 	XUI_TEST_CHECK(xuiHyperlinkGetHoverUnderline(pLink) == 1 && xuiHyperlinkGetActiveUnderline(pLink) == 1, "underline defaults");
-	XUI_TEST_CHECK(xuiWidgetGetCacheStateCount(pLink) == 4, "four cache states");
+	XUI_TEST_CHECK(xuiWidgetGetCacheStateCount(pLink) == 6, "six cache states");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 0) == 0, "normal cache id");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 1) == XUI_WIDGET_STATE_HOVER, "hover cache id");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 2) == XUI_WIDGET_STATE_ACTIVE, "active cache id");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 3) == XUI_WIDGET_STATE_FOCUS, "focus cache id");
+	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 4) ==
+		(XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_FOCUS), "hover focus cache id");
+	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 5) ==
+		(XUI_WIDGET_STATE_ACTIVE | XUI_WIDGET_STATE_FOCUS), "active focus cache id");
 	XUI_TEST_CHECK(__xuiHyperlinkSetTextOomPreserves(pLink), "text OOM preserves value");
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pLink) == 1, "accessible node count");
 	memset(&tAccessible, 0, sizeof(tAccessible));
@@ -213,13 +219,26 @@ int main(void)
 	pHoverCache = xuiWidgetGetCacheSurface(pLink, XUI_WIDGET_STATE_HOVER);
 	pActiveCache = xuiWidgetGetCacheSurface(pLink, XUI_WIDGET_STATE_ACTIVE);
 	pFocusCache = xuiWidgetGetCacheSurface(pLink, XUI_WIDGET_STATE_FOCUS);
+	pHoverFocusCache = xuiWidgetGetCacheSurface(pLink,
+		XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_FOCUS);
+	pActiveFocusCache = xuiWidgetGetCacheSurface(pLink,
+		XUI_WIDGET_STATE_ACTIVE | XUI_WIDGET_STATE_FOCUS);
 	XUI_TEST_CHECK(pNormalCache != NULL && pHoverCache != NULL && pActiveCache != NULL &&
-		pFocusCache != NULL, "cache surfaces");
+		pFocusCache != NULL && pHoverFocusCache != NULL && pActiveFocusCache != NULL,
+		"cache surfaces");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pNormalCache) == XUI_COLOR_RGBA(20, 92, 210, 255), "normal color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pHoverCache) == XUI_COLOR_RGBA(8, 128, 230, 255), "hover color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pActiveCache) == XUI_COLOR_RGBA(6, 60, 160, 255), "active color cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pFocusCache) == tTheme.iStateFocusColor,
 		"focus cache outline");
+	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pHoverFocusCache) ==
+		XUI_COLOR_RGBA(8, 128, 230, 255) &&
+		xuiTestSurfaceGetLastColor(pHoverFocusCache) == tTheme.iStateFocusColor,
+		"hover focus cache keeps text state and outline");
+	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pActiveFocusCache) ==
+		XUI_COLOR_RGBA(6, 60, 160, 255) &&
+		xuiTestSurfaceGetLastColor(pActiveFocusCache) == tTheme.iStateFocusColor,
+		"active focus cache keeps text state and outline");
 	tTextRect = xuiTestSurfaceGetLastRect(pFocusCache);
 	XUI_TEST_CHECK(tTextRect.fX == 0 && tTextRect.fY == 0 &&
 		tTextRect.fW == 160 && tTextRect.fH == 25,
@@ -252,12 +271,17 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch down");
 	XUI_TEST_CHECK((xuiHyperlinkGetState(pLink) & XUI_WIDGET_STATE_ACTIVE) != 0, "active state");
-	XUI_TEST_CHECK(xuiWidgetGetStateId(pLink) == XUI_WIDGET_STATE_ACTIVE, "active visual state");
+	XUI_TEST_CHECK(xuiWidgetGetStateId(pLink) ==
+		(XUI_WIDGET_STATE_ACTIVE | XUI_WIDGET_STATE_FOCUS),
+		"focused active visual state");
 	iRet = xuiInputPointerUp(pContext, 30.0f, 30.0f, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer up");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch up");
 	XUI_TEST_CHECK(xuiHyperlinkGetClickCount(pLink) == 1 && iClickCount == 1, "pointer click");
+	XUI_TEST_CHECK(xuiWidgetGetStateId(pLink) ==
+		(XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_FOCUS),
+		"focused hover visual state");
 	iRet = xuiInputPointerDownEx(pContext, 501u, XUI_POINTER_TYPE_TOUCH,
 		30, 30, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);

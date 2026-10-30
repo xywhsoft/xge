@@ -12,7 +12,7 @@
 #define XUI_HYPERLINK_VISUAL_HOVER	1
 #define XUI_HYPERLINK_VISUAL_ACTIVE	2
 #define XUI_HYPERLINK_VISUAL_FOCUS	3
-#define XUI_HYPERLINK_VISUAL_COUNT	4
+#define XUI_HYPERLINK_VISUAL_COUNT	6
 
 typedef struct xui_hyperlink_data_t {
 	char* sText;
@@ -215,19 +215,20 @@ static uint32_t __xuiHyperlinkComputeState(xui_widget pWidget, xui_hyperlink_dat
 
 static uint32_t __xuiHyperlinkVisualStateId(uint32_t iState)
 {
+	uint32_t iVisual = 0;
+
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) {
 		return 0;
 	}
 	if ( (iState & XUI_WIDGET_STATE_ACTIVE) != 0 ) {
-		return XUI_WIDGET_STATE_ACTIVE;
-	}
-	if ( (iState & XUI_WIDGET_STATE_HOVER) != 0 ) {
-		return XUI_WIDGET_STATE_HOVER;
+		iVisual = XUI_WIDGET_STATE_ACTIVE;
+	} else if ( (iState & XUI_WIDGET_STATE_HOVER) != 0 ) {
+		iVisual = XUI_WIDGET_STATE_HOVER;
 	}
 	if ( (iState & XUI_WIDGET_STATE_FOCUS) != 0 ) {
-		return XUI_WIDGET_STATE_FOCUS;
+		iVisual |= XUI_WIDGET_STATE_FOCUS;
 	}
-	return 0;
+	return iVisual;
 }
 
 static int __xuiHyperlinkSyncState(xui_widget pWidget, xui_hyperlink_data_t* pData)
@@ -586,7 +587,9 @@ static int __xuiHyperlinkInitCacheStates(xui_widget pWidget)
 		0,
 		XUI_WIDGET_STATE_HOVER,
 		XUI_WIDGET_STATE_ACTIVE,
-		XUI_WIDGET_STATE_FOCUS
+		XUI_WIDGET_STATE_FOCUS,
+		XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_FOCUS,
+		XUI_WIDGET_STATE_ACTIVE | XUI_WIDGET_STATE_FOCUS
 	};
 	int i;
 	int iRet;
@@ -595,7 +598,7 @@ static int __xuiHyperlinkInitCacheStates(xui_widget pWidget)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	for ( i = 0; i < XUI_HYPERLINK_VISUAL_COUNT; i++ ) {
+	for ( i = XUI_HYPERLINK_VISUAL_COUNT - 1; i >= 0; i-- ) {
 		iRet = xuiWidgetSetCacheStateId(pWidget, i, arrState[i]);
 		if ( iRet != XUI_OK ) {
 			return iRet;
