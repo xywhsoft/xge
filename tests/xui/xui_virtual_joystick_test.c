@@ -102,6 +102,8 @@ int main(void)
 	xui_rect_t tKnob;
 	xui_rect_t tWorld;
 	xui_rect_t tLastSrc;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	float fRadius;
 	float fKnob;
 	float fDeadZone;
@@ -179,6 +181,17 @@ int main(void)
 	tDesc.pChangeUser = &iChanged;
 	iRet = xuiVirtualJoystickCreate(pContext, &pJoystick, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pJoystick != NULL, "joystick create");
+	iRet = xuiWidgetMeasure(pJoystick,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 90.0f && tNatural.fY > 80.0f,
+		"joystick intrinsic measure exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pJoystick, (xui_vec2_t){90.0f, 80.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 90.0f && tMeasured.fY == 80.0f,
+		"joystick finite measure constraint");
+	iRet = xuiWidgetMeasure(pJoystick,
+		(xui_vec2_t){90.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 90.0f &&
+		tMeasured.fY == tNatural.fY, "joystick single-axis measure constraint");
 	iRet = xuiWidgetAddChild(pRoot, pJoystick);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add joystick");
 	iRet = xuiWidgetCreate(pContext, &pChild);

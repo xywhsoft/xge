@@ -1108,7 +1108,6 @@ static int __xuiVirtualJoystickContentMeasure(xui_widget pWidget, xui_vec2_t tCo
 	xui_virtual_joystick_style_t tResolved;
 	float fSize;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1120,6 +1119,16 @@ static int __xuiVirtualJoystickContentMeasure(xui_widget pWidget, xui_vec2_t tCo
 	__xuiVirtualJoystickResolve(pWidget, pData, &tResolved);
 	fSize = tResolved.fRadius * 2.0f + 12.0f;
 	*pSize = (xui_vec2_t){fSize, fSize};
+	if ( (tConstraint.fX >= 0.0f) &&
+		(tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fX > tConstraint.fX) ) {
+		pSize->fX = tConstraint.fX;
+	}
+	if ( (tConstraint.fY >= 0.0f) &&
+		(tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fY > tConstraint.fY) ) {
+		pSize->fY = tConstraint.fY;
+	}
 	return XUI_OK;
 }
 
