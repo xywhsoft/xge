@@ -191,6 +191,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore scrollview wheel step");
 	iRet = xuiWidgetMeasure(pView, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(tMeasured.fX, 140.0f) && __xuiScrollViewNear(tMeasured.fY, 110.0f), "scrollview desired viewport");
+	iRet = xuiWidgetMeasure(pView, (xui_vec2_t){90.0f, 70.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollViewNear(tMeasured.fX, 90.0f) &&
+		__xuiScrollViewNear(tMeasured.fY, 70.0f),
+		"scrollview desired viewport honors finite constraints");
 	iRet = xuiScrollViewSetViewportHint(pView, 150.0f, 115.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollViewGetViewportHint(pView, &fHintWidth, &fHintHeight);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameGetViewportHint(xuiScrollViewGetFrameWidget(pView),

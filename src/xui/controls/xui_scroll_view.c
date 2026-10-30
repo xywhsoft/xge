@@ -224,10 +224,18 @@ static int __xuiScrollViewLayoutComplete(xui_widget pWidget, xui_rect_t tContent
 static int __xuiScrollViewContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_scroll_view_data_t* pData = (xui_scroll_view_data_t*)pUser;
+	int iRet;
 	(void)pWidget;
-	(void)tConstraint;
 	if ( pData == NULL || pData->pFrame == NULL || pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xuiScrollFrameGetViewportHint(pData->pFrame, &pSize->fX, &pSize->fY);
+	iRet = xuiScrollFrameGetViewportHint(pData->pFrame, &pSize->fX, &pSize->fY);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
+	return XUI_OK;
 }
 
 static void __xuiScrollViewDefaultLayout(xui_layout_t* pLayout)
