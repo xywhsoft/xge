@@ -117,6 +117,168 @@ static void __xuiToastDestroyOnClose(xui_toast pToast, int iToastId, int iReason
 	}
 }
 
+static int __xuiToastShowOomPreserves(xui_context pContext,
+	const xui_toast_desc_t* pDesc)
+{
+	static const size_t arrBudgets[] = {
+		1u, 64u, 128u, 256u, 512u, 1024u, 2048u, 4096u,
+		8192u, 16384u, 32768u, 65536u, 131072u, 262144u, 1048576u
+	};
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xui_toast pProbe;
+	int iBudget;
+	int iId;
+	int bSawFailure;
+	int bSawLateFailure;
+	int bSawSuccess;
+
+	if ( pContext == NULL || pDesc == NULL ) return 0;
+	bSawFailure = 0;
+	bSawLateFailure = 0;
+	bSawSuccess = 0;
+	for ( iBudget = 0; iBudget < (int)(sizeof(arrBudgets) / sizeof(arrBudgets[0])); iBudget++ ) {
+		pProbe = NULL;
+		if ( xuiToastCreate(pContext, &pProbe, pDesc) != XUI_OK || pProbe == NULL ) return 0;
+		pBudget = NULL;
+		memset(&tScope, 0, sizeof(tScope));
+		if ( !xrtAllocationBudgetCreate(arrBudgets[iBudget], &pBudget) ) {
+			xuiToastDestroy(pProbe);
+			return 0;
+		}
+		if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+			xrtAllocationBudgetFree(pBudget);
+			xuiToastDestroy(pProbe);
+			return 0;
+		}
+		iId = xuiToastShow(pProbe, XUI_TOAST_TYPE_INFO,
+			"Allocation failure transaction",
+			"The notification model must remain unchanged when text layout cannot be allocated.",
+			5.0f, NULL, NULL);
+		(void)xrtAllocationBudgetLeave(&tScope);
+		xrtAllocationBudgetFree(pBudget);
+		if ( iId < 0 ) {
+			bSawFailure = 1;
+			if ( arrBudgets[iBudget] >= 512u ) bSawLateFailure = 1;
+			if ( xuiToastGetActiveCount(pProbe) != 0 ||
+			     xuiToastGetPendingCount(pProbe) != 0 ||
+			     xuiToastGetShowCount(pProbe) != 0 ||
+			     xuiToastGetDropCount(pProbe) != 0 ||
+			     xuiToastGetChangeCount(pProbe) != 0 ) {
+				xuiToastDestroy(pProbe);
+				return 0;
+			}
+			iId = xuiToastShow(pProbe, XUI_TOAST_TYPE_INFO,
+				"Retry", "The first committed notification keeps id one.",
+				5.0f, NULL, NULL);
+			if ( iId != 1 ) {
+				xuiToastDestroy(pProbe);
+				return 0;
+			}
+		} else {
+			bSawSuccess = 1;
+			if ( iId != 1 || xuiToastGetActiveCount(pProbe) != 1 ||
+			     xuiToastGetPendingCount(pProbe) != 0 ||
+			     xuiToastGetShowCount(pProbe) != 1 ) {
+				xuiToastDestroy(pProbe);
+				return 0;
+			}
+		}
+		xuiToastDestroy(pProbe);
+		if ( bSawFailure && bSawLateFailure && bSawSuccess ) break;
+	}
+	return bSawFailure && bSawLateFailure && bSawSuccess;
+}
+
+static int __xuiToastMetricsOomPreserves(xui_context pContext,
+	const xui_toast_desc_t* pDesc)
+{
+	static const size_t arrBudgets[] = {
+		1u, 64u, 128u, 256u, 512u, 1024u, 2048u, 4096u,
+		8192u, 16384u, 32768u, 65536u, 131072u, 262144u, 1048576u
+	};
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xui_toast_desc_t tProbeDesc;
+	xui_toast_metrics_t tBefore;
+	xui_toast_metrics_t tAfter;
+	xui_toast_metrics_t tRequested;
+	xui_toast pProbe;
+	xui_rect_t tRectBefore;
+	xui_rect_t tRectAfter;
+	int iChangeBefore;
+	int iBudget;
+	int iRet;
+	int bSawFailure;
+	int bSawSuccess;
+
+	if ( pContext == NULL || pDesc == NULL ) return 0;
+	tProbeDesc = *pDesc;
+	tProbeDesc.tMetrics.iMaxVisible = 1;
+	bSawFailure = 0;
+	bSawSuccess = 0;
+	for ( iBudget = 0; iBudget < (int)(sizeof(arrBudgets) / sizeof(arrBudgets[0])); iBudget++ ) {
+		pProbe = NULL;
+		if ( xuiToastCreate(pContext, &pProbe, &tProbeDesc) != XUI_OK || pProbe == NULL ) return 0;
+		if ( xuiToastShow(pProbe, XUI_TOAST_TYPE_INFO,
+			"Visible", "The first notification remains visible.", 0.0f, NULL, NULL) <= 0 ||
+		     xuiToastShow(pProbe, XUI_TOAST_TYPE_INFO,
+			"Pending", "The second notification remains queued.", 0.0f, NULL, NULL) <= 0 ||
+		     xuiToastGetMetrics(pProbe, &tBefore) != XUI_OK ) {
+			xuiToastDestroy(pProbe);
+			return 0;
+		}
+		tRequested = tBefore;
+		tRequested.iMaxVisible = 2;
+		tRectBefore = xuiToastGetItemRect(pProbe, 0);
+		iChangeBefore = xuiToastGetChangeCount(pProbe);
+		pBudget = NULL;
+		memset(&tScope, 0, sizeof(tScope));
+		if ( !xrtAllocationBudgetCreate(arrBudgets[iBudget], &pBudget) ) {
+			xuiToastDestroy(pProbe);
+			return 0;
+		}
+		if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+			xrtAllocationBudgetFree(pBudget);
+			xuiToastDestroy(pProbe);
+			return 0;
+		}
+		iRet = xuiToastSetMetrics(pProbe, &tRequested);
+		(void)xrtAllocationBudgetLeave(&tScope);
+		xrtAllocationBudgetFree(pBudget);
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) {
+			bSawFailure = 1;
+			tAfter = (xui_toast_metrics_t){0};
+			tRectAfter = xuiToastGetItemRect(pProbe, 0);
+			if ( xuiToastGetMetrics(pProbe, &tAfter) != XUI_OK ||
+			     memcmp(&tBefore, &tAfter, sizeof(tBefore)) != 0 ||
+			     xuiToastGetActiveCount(pProbe) != 1 ||
+			     xuiToastGetPendingCount(pProbe) != 1 ||
+			     xuiToastGetChangeCount(pProbe) != iChangeBefore ||
+			     memcmp(&tRectBefore, &tRectAfter, sizeof(tRectBefore)) != 0 ) {
+				xuiToastDestroy(pProbe);
+				return 0;
+			}
+		} else if ( iRet == XUI_OK ) {
+			bSawSuccess = 1;
+			if ( xuiToastGetMetrics(pProbe, &tAfter) != XUI_OK ||
+			     tAfter.iMaxVisible != 2 ||
+			     xuiToastGetActiveCount(pProbe) != 2 ||
+			     xuiToastGetPendingCount(pProbe) != 0 ||
+			     xuiToastGetChangeCount(pProbe) != iChangeBefore + 1 ) {
+				xuiToastDestroy(pProbe);
+				return 0;
+			}
+		} else {
+			xuiToastDestroy(pProbe);
+			return 0;
+		}
+		xuiToastDestroy(pProbe);
+		if ( bSawFailure && bSawSuccess ) break;
+	}
+	return bSawFailure && bSawSuccess;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tProxyState;
@@ -189,6 +351,10 @@ int main(void)
 	tDesc.tMetrics.fCloseSize = 16.0f;
 	tDesc.tMetrics.fProgressHeight = 2.0f;
 	tDesc.tMetrics.iMaxVisible = 2;
+	XUI_TEST_CHECK(__xuiToastShowOomPreserves(pContext, &tDesc),
+		"show allocation failures preserve queue, counters, and id sequence");
+	XUI_TEST_CHECK(__xuiToastMetricsOomPreserves(pContext, &tDesc),
+		"metrics allocation failures preserve queue, metrics, and geometry");
 	pInvalidToast = (xui_toast)(uintptr_t)1;
 	tDesc.iPlacement = -1;
 	iRet = xuiToastCreate(pContext, &pInvalidToast, &tDesc);

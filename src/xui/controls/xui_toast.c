@@ -242,6 +242,24 @@ static void __xuiToastItemMove(xui_toast_item_t* pDst, xui_toast_item_t* pSrc)
 	memset(pSrc, 0, sizeof(*pSrc));
 }
 
+static int __xuiToastItemTake(xui_toast_item_t* arrItems, int* pCount,
+	int iIndex, xui_toast_item_t* pItem)
+{
+	int i;
+
+	if ( arrItems == NULL || pCount == NULL || pItem == NULL ||
+	     iIndex < 0 || iIndex >= *pCount ) {
+		return 0;
+	}
+	memset(pItem, 0, sizeof(*pItem));
+	__xuiToastItemMove(pItem, &arrItems[iIndex]);
+	for ( i = iIndex; i + 1 < *pCount; i++ ) {
+		__xuiToastItemMove(&arrItems[i], &arrItems[i + 1]);
+	}
+	(*pCount)--;
+	return 1;
+}
+
 static void __xuiToastDefaultMetrics(xui_toast_metrics_t* pMetrics)
 {
 	memset(pMetrics, 0, sizeof(*pMetrics));
@@ -697,6 +715,20 @@ static int __xuiToastLayout(xui_toast pToast)
 	return iRet;
 }
 
+static int __xuiToastCommitLayoutCandidate(xui_toast pToast,
+	xui_toast pCandidate)
+{
+	int iRet;
+
+	if ( !__xuiToastValid(pToast) || !__xuiToastValid(pCandidate) ||
+	     pToast == pCandidate ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiToastLayout(pCandidate);
+	if ( iRet == XUI_OK ) *pToast = *pCandidate;
+	return iRet;
+}
+
 static int __xuiToastCallbackLeave(xui_toast pToast)
 {
 	if ( pToast == NULL ) return 0;
@@ -774,23 +806,6 @@ static int __xuiToastAllocateId(xui_toast pToast)
 	return 0;
 }
 
-static int __xuiToastDropPendingAt(xui_toast pToast, int iIndex)
-{
-	int iToastId;
-	int i;
-
-	if ( !__xuiToastValid(pToast) || (iIndex < 0) || (iIndex >= pToast->iPendingCount) ) return 0;
-	iToastId = pToast->arrPending[iIndex].iId;
-	__xuiToastItemFree(&pToast->arrPending[iIndex]);
-	for ( i = iIndex; i + 1 < pToast->iPendingCount; i++ ) {
-		__xuiToastItemMove(&pToast->arrPending[i], &pToast->arrPending[i + 1]);
-	}
-	pToast->iPendingCount--;
-	__xuiToastCountAdd(&pToast->iDropCount, 1);
-	__xuiToastCountAdd(&pToast->iChangeCount, 1);
-	return iToastId;
-}
-
 static int __xuiToastPromotePending(xui_toast pToast)
 {
 	int iLimit;
@@ -817,13 +832,15 @@ static int __xuiToastPromotePending(xui_toast pToast)
 
 static int __xuiToastSyncLayout(xui_toast pToast)
 {
+	struct xui_toast_t tCandidate;
 	xui_rect_t tRoot;
 
 	if ( !__xuiToastValid(pToast) ) return XUI_ERROR_INVALID_ARGUMENT;
 	tRoot = __xuiToastRootRect(pToast);
 	if ( __xuiToastRectSame(tRoot, pToast->tLayoutRootRect) ) return XUI_OK;
-	if ( __xuiToastPromotePending(pToast) < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiToastLayout(pToast);
+	tCandidate = *pToast;
+	if ( __xuiToastPromotePending(&tCandidate) < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiToastCommitLayoutCandidate(pToast, &tCandidate);
 }
 
 static int __xuiToastRemoveActiveAt(xui_toast pToast, int iIndex, int iReason, int* pAlive)
@@ -1431,6 +1448,8 @@ XUI_API void xuiToastDestroy(xui_toast pToast)
 
 XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const char* sMessage, float fDuration, xui_toast_click_proc onClick, void* pUser)
 {
+	struct xui_toast_t tCandidate;
+	xui_toast_item_t tDropped;
 	xui_toast_item_t tItem;
 	int iId;
 	int iDroppedId;
@@ -1448,7 +1467,9 @@ XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const 
 		__xuiToastItemFree(&tItem);
 		return -1;
 	}
-	iId = __xuiToastAllocateId(pToast);
+	tCandidate = *pToast;
+	memset(&tDropped, 0, sizeof(tDropped));
+	iId = __xuiToastAllocateId(&tCandidate);
 	if ( iId <= 0 ) {
 		__xuiToastItemFree(&tItem);
 		return -1;
@@ -1459,19 +1480,41 @@ XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const 
 	tItem.onClick = onClick;
 	tItem.pUser = pUser;
 	iDroppedId = 0;
-	if ( pToast->iPendingCount >= XUI_TOAST_QUEUE_CAPACITY ) {
-		iDroppedId = __xuiToastDropPendingAt(pToast, 0);
+	if ( tCandidate.iPendingCount >= XUI_TOAST_QUEUE_CAPACITY ) {
+		if ( !__xuiToastItemTake(tCandidate.arrPending,
+			&tCandidate.iPendingCount, 0, &tDropped) ) {
+			__xuiToastItemFree(&tItem);
+			return -1;
+		}
+		iDroppedId = tDropped.iId;
+		__xuiToastCountAdd(&tCandidate.iDropCount, 1);
+		__xuiToastCountAdd(&tCandidate.iChangeCount, 1);
 	}
-	__xuiToastItemMove(&pToast->arrPending[pToast->iPendingCount], &tItem);
-	pToast->iPendingCount++;
-	__xuiToastCountAdd(&pToast->iShowCount, 1);
-	__xuiToastCountAdd(&pToast->iChangeCount, 1);
-	iPromoted = __xuiToastPromotePending(pToast);
-	iRet = (iPromoted > 0) ? __xuiToastLayout(pToast) : XUI_OK;
+	tCandidate.arrPending[tCandidate.iPendingCount] = tItem;
+	tCandidate.iPendingCount++;
+	__xuiToastCountAdd(&tCandidate.iShowCount, 1);
+	__xuiToastCountAdd(&tCandidate.iChangeCount, 1);
+	iPromoted = __xuiToastPromotePending(&tCandidate);
+	if ( iPromoted < 0 ) {
+		__xuiToastItemFree(&tItem);
+		return -1;
+	}
+	if ( iPromoted > 0 ) {
+		iRet = __xuiToastCommitLayoutCandidate(pToast, &tCandidate);
+	} else {
+		*pToast = tCandidate;
+		iRet = XUI_OK;
+	}
+	if ( iRet != XUI_OK ) {
+		__xuiToastItemFree(&tItem);
+		return -1;
+	}
+	memset(&tItem, 0, sizeof(tItem));
 	if ( iDroppedId > 0 ) {
+		__xuiToastItemFree(&tDropped);
 		(void)__xuiToastNotifyClose(pToast, iDroppedId, XUI_TOAST_CLOSE_CAPACITY_DROP);
 	}
-	return (iRet == XUI_OK) ? iId : -1;
+	return iId;
 }
 
 XUI_API int xuiToastClose(xui_toast pToast, int iToastId)
@@ -1536,23 +1579,18 @@ XUI_API int xuiToastGetPendingCount(xui_toast pToast)
 
 XUI_API int xuiToastSetPlacement(xui_toast pToast, int iPlacement)
 {
-	int iOldPlacement;
+	struct xui_toast_t tCandidate;
 	int iRet;
 
 	if ( !__xuiToastValid(pToast) || !__xuiToastPlacementValid(iPlacement) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pToast->iPlacement == iPlacement ) return XUI_OK;
-	iOldPlacement = pToast->iPlacement;
-	pToast->iPlacement = iPlacement;
-	iRet = __xuiToastLayout(pToast);
-	if ( iRet != XUI_OK ) {
-		pToast->iPlacement = iOldPlacement;
-		(void)__xuiToastLayout(pToast);
-		return iRet;
-	}
-	__xuiToastCountAdd(&pToast->iChangeCount, 1);
-	return XUI_OK;
+	tCandidate = *pToast;
+	tCandidate.iPlacement = iPlacement;
+	__xuiToastCountAdd(&tCandidate.iChangeCount, 1);
+	iRet = __xuiToastCommitLayoutCandidate(pToast, &tCandidate);
+	return iRet;
 }
 
 XUI_API int xuiToastGetPlacement(xui_toast pToast)
@@ -1562,23 +1600,18 @@ XUI_API int xuiToastGetPlacement(xui_toast pToast)
 
 XUI_API int xuiToastSetDirection(xui_toast pToast, int iDirection)
 {
-	int iOldDirection;
+	struct xui_toast_t tCandidate;
 	int iRet;
 
 	if ( !__xuiToastValid(pToast) || !__xuiToastDirectionValid(iDirection) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pToast->iDirection == iDirection ) return XUI_OK;
-	iOldDirection = pToast->iDirection;
-	pToast->iDirection = iDirection;
-	iRet = __xuiToastLayout(pToast);
-	if ( iRet != XUI_OK ) {
-		pToast->iDirection = iOldDirection;
-		(void)__xuiToastLayout(pToast);
-		return iRet;
-	}
-	__xuiToastCountAdd(&pToast->iChangeCount, 1);
-	return XUI_OK;
+	tCandidate = *pToast;
+	tCandidate.iDirection = iDirection;
+	__xuiToastCountAdd(&tCandidate.iChangeCount, 1);
+	iRet = __xuiToastCommitLayoutCandidate(pToast, &tCandidate);
+	return iRet;
 }
 
 XUI_API int xuiToastGetDirection(xui_toast pToast)
@@ -1588,8 +1621,8 @@ XUI_API int xuiToastGetDirection(xui_toast pToast)
 
 XUI_API int xuiToastSetMetrics(xui_toast pToast, const xui_toast_metrics_t* pMetrics)
 {
+	struct xui_toast_t tCandidate;
 	xui_toast_metrics_t tNewMetrics;
-	xui_toast_metrics_t tOldMetrics;
 	int iRet;
 
 	if ( !__xuiToastValid(pToast) || !__xuiToastMetricsValid(pMetrics) ) {
@@ -1598,17 +1631,14 @@ XUI_API int xuiToastSetMetrics(xui_toast pToast, const xui_toast_metrics_t* pMet
 	tNewMetrics = *pMetrics;
 	tNewMetrics.iSize = sizeof(tNewMetrics);
 	if ( memcmp(&pToast->tMetrics, &tNewMetrics, sizeof(tNewMetrics)) == 0 ) return XUI_OK;
-	tOldMetrics = pToast->tMetrics;
-	pToast->tMetrics = tNewMetrics;
-	(void)__xuiToastPromotePending(pToast);
-	iRet = __xuiToastLayout(pToast);
-	if ( iRet != XUI_OK ) {
-		pToast->tMetrics = tOldMetrics;
-		(void)__xuiToastLayout(pToast);
-		return iRet;
+	tCandidate = *pToast;
+	tCandidate.tMetrics = tNewMetrics;
+	if ( __xuiToastPromotePending(&tCandidate) < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	__xuiToastCountAdd(&pToast->iChangeCount, 1);
-	return XUI_OK;
+	__xuiToastCountAdd(&tCandidate.iChangeCount, 1);
+	iRet = __xuiToastCommitLayoutCandidate(pToast, &tCandidate);
+	return iRet;
 }
 
 XUI_API int xuiToastGetMetrics(xui_toast pToast, xui_toast_metrics_t* pMetrics)
@@ -1657,23 +1687,18 @@ XUI_API int xuiToastGetColors(xui_toast pToast, xui_toast_colors_t* pColors)
 
 XUI_API int xuiToastSetFont(xui_toast pToast, xui_font pFont)
 {
-	xui_font pOldFont;
+	struct xui_toast_t tCandidate;
 	int iRet;
 
 	if ( !__xuiToastValid(pToast) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pToast->pFont == pFont ) return XUI_OK;
-	pOldFont = pToast->pFont;
-	pToast->pFont = pFont;
-	iRet = __xuiToastLayout(pToast);
-	if ( iRet != XUI_OK ) {
-		pToast->pFont = pOldFont;
-		(void)__xuiToastLayout(pToast);
-		return iRet;
-	}
-	__xuiToastCountAdd(&pToast->iChangeCount, 1);
-	return XUI_OK;
+	tCandidate = *pToast;
+	tCandidate.pFont = pFont;
+	__xuiToastCountAdd(&tCandidate.iChangeCount, 1);
+	iRet = __xuiToastCommitLayoutCandidate(pToast, &tCandidate);
+	return iRet;
 }
 
 XUI_API xui_font xuiToastGetFont(xui_toast pToast)
