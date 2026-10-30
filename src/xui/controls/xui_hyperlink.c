@@ -70,9 +70,9 @@ static int __xuiHyperlinkDescValid(const xui_hyperlink_desc_t* pDesc)
 
 static int __xuiHyperlinkTextSet(xui_hyperlink_data_t* pData, const char* sText)
 {
-	char* sNew;
 	size_t iLength;
 	int iNeed;
+	int iRet;
 
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -83,14 +83,9 @@ static int __xuiHyperlinkTextSet(xui_hyperlink_data_t* pData, const char* sText)
 	iLength = strlen(sText);
 	if ( iLength >= (size_t)INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
 	iNeed = (int)iLength + 1;
-	if ( iNeed > pData->iTextCapacity ) {
-		sNew = (char*)xrtRealloc(pData->sText, (size_t)iNeed);
-		if ( sNew == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		pData->sText = sNew;
-		pData->iTextCapacity = iNeed;
-	}
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iNeed);
+	if ( iRet != XUI_OK ) return iRet;
 	memmove(pData->sText, sText, (size_t)iNeed);
 	return XUI_OK;
 }
@@ -335,6 +330,7 @@ static int __xuiHyperlinkContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	xui_hyperlink_data_t* pData;
 	xui_text_layout_desc_t tDesc;
 	uint32_t iTextColor;
+	int iRet;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) {
@@ -358,7 +354,15 @@ static int __xuiHyperlinkContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	if ( (tDesc.fMaxHeight <= 0.0f) || (tDesc.fMaxHeight > XUI_LAYOUT_UNBOUNDED) ) {
 		tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	}
-	return xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
+	iRet = xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
+	return XUI_OK;
 }
 
 static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)

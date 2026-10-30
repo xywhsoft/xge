@@ -61,6 +61,28 @@ static int __xuiHyperlinkSetTextOomPreserves(xui_widget pLink)
 		strcmp(xuiHyperlinkGetText(pLink), "Open document") == 0;
 }
 
+static int __xuiHyperlinkSetTextReusesCapacity(xui_widget pLink)
+{
+	xallocationbudget* pBudget = NULL;
+	xallocationscope tScope;
+	int iRet;
+	int bResult;
+
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiHyperlinkSetText(pLink, "Open document extended");
+	bResult = iRet == XUI_OK &&
+		strcmp(xuiHyperlinkGetText(pLink), "Open document extended") == 0;
+	if ( !xrtAllocationBudgetLeave(&tScope) ) bResult = 0;
+	xrtAllocationBudgetFree(pBudget);
+	if ( xuiHyperlinkSetText(pLink, "Open document") != XUI_OK ) return 0;
+	return bResult;
+}
+
 static xui_style_value_t __xuiHyperlinkTestColor(uint32_t iColor)
 {
 	xui_style_value_t tValue;
@@ -185,6 +207,8 @@ int main(void)
 		(XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_FOCUS), "hover focus cache id");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateId(pLink, 5) ==
 		(XUI_WIDGET_STATE_ACTIVE | XUI_WIDGET_STATE_FOCUS), "active focus cache id");
+	XUI_TEST_CHECK(__xuiHyperlinkSetTextReusesCapacity(pLink),
+		"hyperlink text reuses geometric capacity");
 	XUI_TEST_CHECK(__xuiHyperlinkSetTextOomPreserves(pLink), "text OOM preserves value");
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pLink) == 1, "accessible node count");
 	memset(&tAccessible, 0, sizeof(tAccessible));
@@ -211,6 +235,12 @@ int main(void)
 
 	iRet = xuiWidgetMeasureContent(pLink, (xui_vec2_t){300.0f, 100.0f}, &tMeasure);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasure.fX > 20.0f && tMeasure.fY == 16.0f, "measure content");
+	iRet = xuiWidgetMeasureContent(pLink, (xui_vec2_t){30.0f, 20.0f}, &tMeasure);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasure.fX == 30.0f && tMeasure.fY == 16.0f,
+		"hyperlink measure respects finite constraints");
+	iRet = xuiWidgetMeasureContent(pLink, (xui_vec2_t){0.0f, 0.0f}, &tMeasure);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasure.fX == 0.0f && tMeasure.fY == 0.0f,
+		"hyperlink measure respects zero constraints");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
 	iRet = xuiRenderPrepare(pContext);
