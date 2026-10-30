@@ -238,6 +238,7 @@ int main(void)
 	xui_rect_t tButton;
 	xui_rect_t tSpinner;
 	xui_rect_t tTextRect;
+	xui_vec2_t tMeasured;
 	float fMin;
 	float fMax;
 	float fBefore;
@@ -314,6 +315,9 @@ int main(void)
 	tDesc.iPrecision = 2;
 	iRet = xuiNumericInputCreate(pContext, &pNumeric, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pNumeric != NULL, "numeric create");
+	iRet = xuiWidgetMeasureContent(pNumeric, (xui_vec2_t){60.0f, 12.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 60.0f && tMeasured.fY == 12.0f,
+		"numeric content measure respects finite constraints");
 	xuiWidgetSetRect(pNumeric, (xui_rect_t){24.0f, 24.0f, 150.0f, 30.0f});
 	iRet = xuiWidgetAddChild(pRoot, pNumeric);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add numeric");

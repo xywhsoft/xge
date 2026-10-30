@@ -1089,7 +1089,6 @@ static int __xuiNumericInputContentMeasure(xui_widget pWidget, xui_vec2_t tConst
 	xui_font_metrics_t tMetrics;
 	xui_proxy pProxy;
 
-	(void)tConstraint;
 	pData = (xui_numeric_input_data_t*)pUser;
 	if ( (pWidget == NULL) || (pData == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1109,6 +1108,12 @@ static int __xuiNumericInputContentMeasure(xui_widget pWidget, xui_vec2_t tConst
 	}
 	pSize->fX = xuiInternalSnapSize(pSize->fX);
 	pSize->fY = xuiInternalSnapSize(pSize->fY);
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
