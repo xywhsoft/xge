@@ -1036,6 +1036,56 @@ static int __xuiMenuSubmenuWouldCycle(xui_widget pWidget, xui_widget pSubmenu)
 	return pScan != NULL;
 }
 
+static xui_rect_t __xuiMenuSubmenuAnchorRect(xui_widget pWidget,
+	const xui_menu_data_t* pData, int iIndex)
+{
+	xui_rect_t tItem = pData->arrItemRect[iIndex];
+	xui_rect_t tWorld = xuiWidgetGetWorldRect(pWidget);
+
+	return (xui_rect_t){
+		tWorld.fX + tItem.fX + tItem.fW - 1.0f,
+		tWorld.fY + tItem.fY,
+		0.0f,
+		0.0f
+	};
+}
+
+static int __xuiMenuSyncOpenSubmenuPlacement(xui_widget pWidget, xui_menu_data_t* pData)
+{
+	xui_menu_data_t* pSubData;
+	xui_widget pSubmenu;
+	int iIndex;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pSubmenu = pData->pOpenSubmenu;
+	pSubData = __xuiMenuFindData(xuiWidgetGetContext(pWidget), pSubmenu);
+	if ( pSubData == NULL || pSubData->pPopup == NULL || !xuiPopupIsOpen(pSubData->pPopup) ||
+	     pSubData->pParentMenu != pWidget ) {
+		return XUI_OK;
+	}
+	iIndex = pSubData->iParentItem;
+	if ( iIndex < 0 || iIndex >= pData->iItemCount ||
+	     pData->arrItems[iIndex].iType != XUI_MENU_ITEM_SUBMENU ||
+	     pData->arrItems[iIndex].pSubmenu != pSubmenu ) {
+		return XUI_OK;
+	}
+	iRet = __xuiMenuMeasureData(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiPopupSetAnchorRect(pSubData->pPopup,
+		__xuiMenuSubmenuAnchorRect(pWidget, pData, iIndex));
+}
+
+static int __xuiMenuLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+{
+	xui_menu_data_t* pData;
+
+	(void)tContentRect;
+	(void)pUser;
+	pData = __xuiMenuGetData(pWidget);
+	return (pData != NULL) ? __xuiMenuSyncOpenSubmenuPlacement(pWidget, pData) : XUI_OK;
+}
+
 static void __xuiMenuResolveSelect(xui_widget pWidget, xui_menu_select_proc* pOnSelect, void** ppUser)
 {
 	xui_menu_data_t* pData;
@@ -1062,8 +1112,7 @@ static int __xuiMenuOpenSubmenu(xui_widget pWidget, xui_menu_data_t* pData, int 
 {
 	xui_menu_data_t* pSubData;
 	xui_widget pSubmenu;
-	xui_rect_t tItem;
-	xui_rect_t tWorld;
+	xui_rect_t tAnchor;
 	xui_widget pOwner;
 	int iRet;
 
@@ -1088,10 +1137,9 @@ static int __xuiMenuOpenSubmenu(xui_widget pWidget, xui_menu_data_t* pData, int 
 	pData->iDeferredHover = -1;
 	pData->fDeferredHoverTime = 0.0f;
 	pData->bAimActive = 0;
-	tItem = pData->arrItemRect[iIndex];
-	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tAnchor = __xuiMenuSubmenuAnchorRect(pWidget, pData, iIndex);
 	pOwner = pWidget;
-	iRet = xuiMenuOpenAt(pSubmenu, pOwner, tWorld.fX + tItem.fX + tItem.fW - 1.0f, tWorld.fY + tItem.fY);
+	iRet = xuiMenuOpenAt(pSubmenu, pOwner, tAnchor.fX, tAnchor.fY);
 	if ( iRet != XUI_OK ) {
 		if ( __xuiMenuGetData(pWidget) == pData && pData->pOpenSubmenu == pSubmenu ) pData->pOpenSubmenu = NULL;
 		pSubData = __xuiMenuGetData(pSubmenu);
@@ -2018,6 +2066,7 @@ XUI_API xui_widget_type xuiMenuGetType(xui_context pContext)
 	tDesc.iTypeDataSize = sizeof(xui_menu_data_t);
 	tDesc.onInit = __xuiMenuInit;
 	tDesc.onDestroy = __xuiMenuDestroy;
+	tDesc.onLayoutComplete = __xuiMenuLayoutComplete;
 	tDesc.onCacheRender = __xuiMenuCacheRender;
 	__xuiMenuDefaultLayout(&tLayout);
 	__xuiMenuDefaultCachePolicy(&tPolicy);

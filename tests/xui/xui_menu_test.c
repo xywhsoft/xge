@@ -155,6 +155,7 @@ int main(void)
 	xui_rect_t tOwnerRect;
 	xui_rect_t tItemRect;
 	xui_rect_t tMenuWorld;
+	xui_rect_t tSubAnchor;
 	xui_accessible_node_t tAccessible;
 	const char* sWideText;
 	const char* sWideShortcut;
@@ -421,6 +422,28 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "submenu layout");
 	XUI_TEST_CHECK(xuiMenuIsOpen(pSubmenu), "submenu opened on hover");
+	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
+	tItemRect = xuiMenuGetItemRect(pMenu, 5);
+	tSubAnchor = xuiPopupGetAnchorRect(xuiMenuGetPopupWidget(pSubmenu));
+	XUI_TEST_CHECK(__xuiMenuNear(tSubAnchor.fX, tMenuWorld.fX + tItemRect.fX + tItemRect.fW - 1.0f) &&
+		__xuiMenuNear(tSubAnchor.fY, tMenuWorld.fY + tItemRect.fY),
+		"submenu anchor matches parent item");
+	iRet = xuiWidgetSetRect(pOwner, (xui_rect_t){176.0f, 42.0f, 120.0f, 28.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiLayout(pContext) == XUI_OK, "move submenu owner");
+	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
+	tItemRect = xuiMenuGetItemRect(pMenu, 5);
+	tSubAnchor = xuiPopupGetAnchorRect(xuiMenuGetPopupWidget(pSubmenu));
+	XUI_TEST_CHECK(__xuiMenuNear(tSubAnchor.fX, tMenuWorld.fX + tItemRect.fX + tItemRect.fW - 1.0f) &&
+		__xuiMenuNear(tSubAnchor.fY, tMenuWorld.fY + tItemRect.fY),
+		"submenu follows moved parent menu");
+	iRet = xuiWidgetSetRect(pOwner, (xui_rect_t){36.0f, 30.0f, 120.0f, 28.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiLayout(pContext) == XUI_OK, "restore submenu owner");
+	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
+	tItemRect = xuiMenuGetItemRect(pMenu, 5);
+	tSubAnchor = xuiPopupGetAnchorRect(xuiMenuGetPopupWidget(pSubmenu));
+	XUI_TEST_CHECK(__xuiMenuNear(tSubAnchor.fX, tMenuWorld.fX + tItemRect.fX + tItemRect.fW - 1.0f) &&
+		__xuiMenuNear(tSubAnchor.fY, tMenuWorld.fY + tItemRect.fY),
+		"submenu follows restored parent menu");
 	for ( i = 0; i < 7; i++ ) arrEquivalent[i] = *xuiMenuGetItem(pMenu, i);
 	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
 	iRet = xuiMenuSetItems(pMenu, arrEquivalent, 7);
