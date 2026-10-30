@@ -126,6 +126,19 @@ int main(void)
 	XUI_TEST_CHECK(xuiStepBarGetStepCount(pArrow) == 3, "step count");
 	XUI_TEST_CHECK(strcmp(xuiStepBarGetTitle(pArrow, 1), "Second") == 0, "title copy");
 	XUI_TEST_CHECK(xuiStepBarGetCurrent(pArrow) == 1, "current");
+	{
+		xui_style_property_info_t tPropertyInfo;
+		uint32_t iPropertyId;
+
+		iPropertyId = xuiStyleFindProperty(pContext, "stepbar.dot_radius");
+		memset(&tPropertyInfo, 0, sizeof(tPropertyInfo));
+		tPropertyInfo.iSize = sizeof(tPropertyInfo);
+		iRet = xuiStyleGetPropertyInfo(pContext, iPropertyId, &tPropertyInfo);
+		XUI_TEST_CHECK(iPropertyId != 0u && iRet == XUI_OK &&
+			(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+			(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_CACHE) != 0u,
+			"dot radius style invalidates paint without relayout");
+	}
 	memset(&tAccessible, 0, sizeof(tAccessible));
 	tAccessible.iSize = sizeof(tAccessible);
 	iRet = xuiWidgetGetAccessibleNode(pArrow, 0, &tAccessible);
@@ -181,10 +194,59 @@ int main(void)
 		XUI_TEST_CHECK(iRet == XUI_OK && xuiStepBarGetChangeCount(pArrow) == iChangeCount,
 			"same title is idempotent");
 	}
+	xuiWidgetClearDirty(pArrow, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiStepBarSetTitle(pArrow, 0, "Start updated");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"title update invalidates paint without relayout");
+	iRet = xuiStepBarSetTitle(pArrow, 0, "Start");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore first title");
+	{
+		const char* arrRetitled[3] = {"Start", "Second updated", "Third"};
+		const char* arrRestored[3] = {"Start", "Second", "Third"};
+
+		xuiWidgetClearDirty(pArrow, XUI_WIDGET_DIRTY_LAYOUT |
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = xuiStepBarSetSteps(pArrow, arrRetitled, 3);
+		XUI_TEST_CHECK(iRet == XUI_OK &&
+			(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+			(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+			"same-count step replacement avoids relayout");
+		iRet = xuiStepBarSetSteps(pArrow, arrRestored, 3);
+		XUI_TEST_CHECK(iRet == XUI_OK, "restore step titles");
+	}
+	xuiWidgetClearDirty(pArrow, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiStepBarSetFont(pArrow, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"font update invalidates paint without relayout");
+	iRet = xuiStepBarSetFont(pArrow, pFont);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore step font");
 	iRet = xuiStepBarSetColors(pArrow, XUI_COLOR_RGBA(100, 190, 120, 255), XUI_COLOR_RGBA(50, 160, 90, 255), XUI_COLOR_RGBA(220, 220, 220, 255), XUI_COLOR_RGBA(200, 200, 200, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 	iRet = xuiStepBarSetMetrics(pArrow, 32.0f, 10.0f, 2.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
+	xuiWidgetClearDirty(pArrow, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiStepBarSetMetrics(pArrow, 0.0f, 11.0f, 3.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"dot and line metrics avoid relayout");
+	iRet = xuiStepBarSetMetrics(pArrow, 0.0f, 10.0f, 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore paint-only metrics");
+	xuiWidgetClearDirty(pArrow, XUI_WIDGET_DIRTY_LAYOUT |
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiStepBarSetMetrics(pArrow, 33.0f, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pArrow) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+		"bar height update still requests relayout");
+	iRet = xuiStepBarSetMetrics(pArrow, 32.0f, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore bar height");
 	iRet = xuiStepBarGetMetrics(pArrow, &fBarHeight, &fDotRadius, &fLineWidth);
 	XUI_TEST_CHECK(iRet == XUI_OK && fBarHeight == 32.0f && fDotRadius == 10.0f && fLineWidth == 2.0f, "get metrics");
 	iRet = xuiStepBarSetMetrics(pArrow, NAN, 11.0f, 3.0f);

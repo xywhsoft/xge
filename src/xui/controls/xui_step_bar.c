@@ -936,7 +936,7 @@ static void __xuiStepBarRegisterStyleProperties(xui_context pContext, xui_widget
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.check.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.bar_height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.dot_radius", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
+	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.dot_radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "stepbar.line_width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiStepBarRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -1034,6 +1034,7 @@ XUI_API int xuiStepBarSetSteps(xui_widget pWidget, const char* const* ppTitles, 
 	xui_step_bar_data_t* pData;
 	char* arrLabels[XUI_STEP_BAR_MAX_STEPS];
 	unsigned char arrTitleOffsets[XUI_STEP_BAR_MAX_STEPS];
+	uint32_t iDirtyFlags;
 	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
@@ -1043,8 +1044,11 @@ XUI_API int xuiStepBarSetSteps(xui_widget pWidget, const char* const* ppTitles, 
 	iRet = __xuiStepBarPrepareLabels(ppTitles, iStepCount,
 		arrLabels, arrTitleOffsets);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	if ( pData->iStepCount != iStepCount ) {
+		iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
+	}
+	iRet = xuiWidgetInvalidate(pWidget, iDirtyFlags);
 	if ( iRet != XUI_OK ) {
 		__xuiStepBarClearPreparedLabels(arrLabels, iStepCount);
 		return iRet;
@@ -1070,7 +1074,7 @@ XUI_API int xuiStepBarSetTitle(xui_widget pWidget, int iIndex, const char* sTitl
 	iRet = __xuiStepBarLabelCreate(iIndex, sTitle, &sNewLabel, &iTitleOffset);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		if ( sNewLabel != NULL ) xrtFree(sNewLabel);
 		return iRet;
@@ -1162,7 +1166,7 @@ XUI_API int xuiStepBarSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
 	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pFont = pFont;
 	return XUI_OK;
@@ -1261,6 +1265,7 @@ XUI_API uint32_t xuiStepBarGetBackgroundColor(xui_widget pWidget)
 XUI_API int xuiStepBarSetMetrics(xui_widget pWidget, float fBarHeight, float fDotRadius, float fLineWidth)
 {
 	xui_step_bar_data_t* pData;
+	uint32_t iDirtyFlags;
 	int iRet;
 
 	pData = __xuiStepBarGetData(pWidget);
@@ -1271,8 +1276,11 @@ XUI_API int xuiStepBarSetMetrics(xui_widget pWidget, float fBarHeight, float fDo
 	if ( (fBarHeight == 0.0f || pData->fBarHeight == fBarHeight) &&
 	     (fDotRadius == 0.0f || pData->fDotRadius == fDotRadius) &&
 	     (fLineWidth == 0.0f || pData->fLineWidth == fLineWidth) ) return XUI_OK;
-	iRet = xuiWidgetInvalidate(pWidget,
-		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	if ( fBarHeight > 0.0f && pData->fBarHeight != fBarHeight ) {
+		iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
+	}
+	iRet = xuiWidgetInvalidate(pWidget, iDirtyFlags);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( fBarHeight > 0.0f ) pData->fBarHeight = fBarHeight;
 	if ( fDotRadius > 0.0f ) pData->fDotRadius = fDotRadius;
