@@ -244,6 +244,22 @@ int main(void)
 	iRet = xuiBreadcrumbCreate(pContext, &pInvalid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
 		"reject negative descriptor source size");
+	tDesc.tSeparatorIconSrc = (xui_rect_t){NAN, 0.0f, 0.0f, 0.0f};
+	pInvalid = pRoot;
+	iRet = xuiBreadcrumbCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject non-finite descriptor source coordinate");
+	tDesc.tSeparatorIconSrc = (xui_rect_t){0.0f, 0.0f, 0.0f, 12.0f};
+	pInvalid = pRoot;
+	iRet = xuiBreadcrumbCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject mismatched descriptor source dimensions");
+	tDesc.tSeparatorIconSrc = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	tDesc.fGap = 1.0e20f;
+	pInvalid = pRoot;
+	iRet = xuiBreadcrumbCreate(pContext, &pInvalid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && pInvalid == NULL,
+		"reject oversized descriptor metric");
 
 	arrItems[0].sText = "Workspace";
 	arrItems[0].bClickable = 1;
@@ -361,6 +377,10 @@ int main(void)
 	iRet = __xuiBreadcrumbTestPressAt(pContext, fPressX, fPressY);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pBreadcrumb &&
 		xuiBreadcrumbGetActiveIndex(pBreadcrumb) == 0, "press captures breadcrumb");
+	iRet = xuiBreadcrumbSetItems(pBreadcrumb, arrItems, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pBreadcrumb &&
+		xuiBreadcrumbGetActiveIndex(pBreadcrumb) == 0,
+		"identical item refresh preserves active pointer press");
 	iRet = xuiSetFocusWidget(pContext, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear breadcrumb focus");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -429,6 +449,21 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
 		xuiBreadcrumbGetSeparatorIcon(pBreadcrumb) == NULL,
 		"reject non-finite icon size");
+	iRet = xuiBreadcrumbSetSeparatorIcon(pBreadcrumb, pIcon,
+		(xui_rect_t){NAN, 0.0f, 12.0f, 12.0f}, 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiBreadcrumbGetSeparatorIcon(pBreadcrumb) == NULL,
+		"reject non-finite icon source coordinate");
+	iRet = xuiBreadcrumbSetSeparatorIcon(pBreadcrumb, pIcon,
+		(xui_rect_t){0.0f, 0.0f, 0.0f, 12.0f}, 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiBreadcrumbGetSeparatorIcon(pBreadcrumb) == NULL,
+		"reject mismatched icon source dimensions");
+	iRet = xuiBreadcrumbSetSeparatorIcon(pBreadcrumb, pIcon,
+		(xui_rect_t){0.0f, 0.0f, 12.0f, 12.0f}, 1.0e20f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiBreadcrumbGetSeparatorIcon(pBreadcrumb) == NULL,
+		"reject oversized icon size");
 	iRet = xuiBreadcrumbSetSeparatorIcon(pBreadcrumb, pIcon, (xui_rect_t){0.0f, 0.0f, 12.0f, 12.0f}, 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiBreadcrumbGetSeparatorIcon(pBreadcrumb) == pIcon, "set separator icon");
 	XUI_TEST_CHECK(xuiBreadcrumbGetSeparatorIconSize(pBreadcrumb) == 10.0f, "icon size");
@@ -447,6 +482,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject nan metric");
 	iRet = xuiBreadcrumbSetMetrics(pBreadcrumb, 10.0f, INFINITY, 5.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject infinite metric");
+	iRet = xuiBreadcrumbSetMetrics(pBreadcrumb, 10.0f, 2.0f, 1.0e20f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject oversized metric");
 	iRet = xuiBreadcrumbGetMetrics(pBreadcrumb, &fGap, &fPaddingX, &fPaddingY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fGap == 10.0f && fPaddingX == 2.0f && fPaddingY == 5.0f,
 		"invalid metrics preserve state");
