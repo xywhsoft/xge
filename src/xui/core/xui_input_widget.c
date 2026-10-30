@@ -2214,7 +2214,6 @@ static int __xuiInputContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	xui_font_metrics_t tMetrics;
 	xui_proxy pProxy;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2234,6 +2233,16 @@ static int __xuiInputContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	}
 	if ( pSize->fY < 22.0f ) {
 		pSize->fY = 22.0f;
+	}
+	if ( (tConstraint.fX >= 0.0f) &&
+		(tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fX > tConstraint.fX) ) {
+		pSize->fX = tConstraint.fX;
+	}
+	if ( (tConstraint.fY >= 0.0f) &&
+		(tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+		(pSize->fY > tConstraint.fY) ) {
+		pSize->fY = tConstraint.fY;
 	}
 	return XUI_OK;
 }

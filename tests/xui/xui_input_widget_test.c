@@ -274,6 +274,8 @@ int main(void)
 	xui_rect_t tSearchRect;
 	xui_rect_t tClearRect;
 	xui_rect_t tGoRect;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	char sLongPaste[12001];
 	int iStart;
 	int iEnd;
@@ -340,6 +342,17 @@ int main(void)
 	tDesc.iTextAlign = XUI_INPUT_ALIGN_LEFT;
 	iRet = xuiInputCreate(pContext, &pInput, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pInput != NULL, "input create");
+	iRet = xuiWidgetMeasure(pInput,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 100.0f && tNatural.fY > 12.0f,
+		"input intrinsic viewport exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pInput, (xui_vec2_t){100.0f, 12.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 100.0f && tMeasured.fY == 12.0f,
+		"input finite measure constraint");
+	iRet = xuiWidgetMeasure(pInput,
+		(xui_vec2_t){100.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 100.0f &&
+		tMeasured.fY == tNatural.fY, "input single-axis measure constraint");
 	xuiWidgetSetRect(pInput, (xui_rect_t){24.0f, 28.0f, 220.0f, 30.0f});
 	iRet = xuiWidgetAddChild(pRoot, pInput);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add input");
