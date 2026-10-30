@@ -90,6 +90,7 @@ static uint32_t __xuiMsgBoxColor(xui_msgbox pBox, const char* sName, uint32_t iB
 static int __xuiMsgBoxPreparePaint(xui_widget pWidget);
 static int __xuiMsgBoxBackdropPreparePaint(xui_widget pWidget);
 static int __xuiMsgBoxApplyButtonVisual(xui_msgbox pBox);
+static int __xuiMsgBoxLayout(xui_msgbox pBox);
 
 static xui_widget_type __xuiMsgBoxEnsureType(xui_context pContext)
 {
@@ -280,11 +281,46 @@ static int __xuiMsgBoxButtonModelSame(xui_msgbox pBox, int iButtons,
 	return 1;
 }
 
+static int __xuiMsgBoxApplyButtonWidgets(xui_msgbox pBox,
+	char* const* arrText, const int* arrSemantic, int iCount)
+{
+	int i;
+	int iRet;
+
+	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
+		if ( pBox->arrButtons[i] == NULL ) continue;
+		iRet = xuiButtonSetText(pBox->arrButtons[i],
+			(i < iCount && arrText[i] != NULL) ? arrText[i] : "");
+		if ( iRet == XUI_OK ) iRet = xuiButtonSetSemantic(pBox->arrButtons[i],
+			(i < iCount) ? arrSemantic[i] : XUI_BUTTON_SEMANTIC_DEFAULT);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pBox->arrButtons[i], i < iCount);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pBox->arrButtons[i], i < iCount);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
 static int __xuiMsgBoxApplyButtonModel(xui_msgbox pBox, int iButtons,
 	const xui_msgbox_button_t* pButtons, int iCount)
 {
 	char* arrText[XUI_MSGBOX_BUTTON_CAPACITY] = {NULL};
+	char* arrOldText[XUI_MSGBOX_BUTTON_CAPACITY];
+	int arrOldResult[XUI_MSGBOX_BUTTON_CAPACITY];
+	int arrOldSemantic[XUI_MSGBOX_BUTTON_CAPACITY];
 	int arrSemantic[XUI_MSGBOX_BUTTON_CAPACITY];
+	xui_rect_t arrOldButtonRect[XUI_MSGBOX_BUTTON_CAPACITY];
+	xui_rect_t arrOldButtonWidgetRect[XUI_MSGBOX_BUTTON_CAPACITY];
+	xui_rect_t tOldWindowRect;
+	xui_rect_t tOldContentRect;
+	xui_rect_t tOldBackdropWidgetRect;
+	xui_rect_t tOldIconRect;
+	xui_rect_t tOldMessageRect;
+	xui_rect_t tOldBackdropRect;
+	float fOldMinWidth;
+	float fOldMinHeight;
+	int iOldButtons;
+	int iOldButtonCount;
+	int iOldWrapLineCount;
 	int i;
 	int iRet;
 
@@ -306,35 +342,67 @@ static int __xuiMsgBoxApplyButtonModel(xui_msgbox pBox, int iButtons,
 			arrSemantic[i] = pButtons[i].iSemantic;
 		}
 	}
+	iOldButtons = pBox->iButtons;
+	iOldButtonCount = pBox->iButtonCount;
+	iOldWrapLineCount = pBox->iWrapLineCount;
+	tOldWindowRect = xuiWidgetGetRect(pBox->pWindow);
+	tOldContentRect = xuiWidgetGetRect(pBox->pContent);
+	tOldBackdropWidgetRect = xuiWidgetGetRect(pBox->pBackdrop);
+	tOldIconRect = pBox->tIconRect;
+	tOldMessageRect = pBox->tMessageRect;
+	tOldBackdropRect = pBox->tBackdropRect;
+	fOldMinWidth = 0.0f;
+	fOldMinHeight = 0.0f;
+	(void)xuiWindowGetMinSize(pBox->pWindow, &fOldMinWidth, &fOldMinHeight);
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
-		if ( pBox->arrButtons[i] == NULL ) continue;
-		iRet = xuiButtonSetText(pBox->arrButtons[i], (i < iCount) ? arrText[i] : "");
-		if ( iRet == XUI_OK ) iRet = xuiButtonSetSemantic(pBox->arrButtons[i], arrSemantic[i]);
-		if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pBox->arrButtons[i], i < iCount);
-		if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pBox->arrButtons[i], i < iCount);
-		if ( iRet != XUI_OK ) goto restore;
+		arrOldText[i] = pBox->arrButtonText[i];
+		arrOldResult[i] = pBox->arrButtonResult[i];
+		arrOldSemantic[i] = pBox->arrButtonSemantic[i];
+		arrOldButtonRect[i] = pBox->arrButtonRect[i];
+		arrOldButtonWidgetRect[i] = (pBox->arrButtons[i] != NULL) ?
+			xuiWidgetGetRect(pBox->arrButtons[i]) : (xui_rect_t){0, 0, 0, 0};
 	}
+	iRet = __xuiMsgBoxApplyButtonWidgets(pBox, arrText, arrSemantic, iCount);
+	if ( iRet != XUI_OK ) goto restore;
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
-		if ( pBox->arrButtonText[i] != NULL ) xrtFree(pBox->arrButtonText[i]);
 		pBox->arrButtonText[i] = arrText[i];
-		arrText[i] = NULL;
 		pBox->arrButtonResult[i] = (i < iCount) ? pButtons[i].iResult : XUI_MSGBOX_RESULT_CLOSE;
 		pBox->arrButtonSemantic[i] = arrSemantic[i];
 	}
 	pBox->iButtons = iButtons;
 	pBox->iButtonCount = iCount;
+	iRet = __xuiMsgBoxApplyButtonVisual(pBox);
+	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxLayout(pBox);
+	if ( iRet != XUI_OK ) goto restore;
+	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
+		if ( arrOldText[i] != NULL ) xrtFree(arrOldText[i]);
+	}
 	return XUI_OK;
 
 restore:
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
-		if ( pBox->arrButtons[i] == NULL ) continue;
-		(void)xuiButtonSetText(pBox->arrButtons[i],
-			(i < pBox->iButtonCount && pBox->arrButtonText[i] != NULL) ? pBox->arrButtonText[i] : "");
-		(void)xuiButtonSetSemantic(pBox->arrButtons[i],
-			(i < pBox->iButtonCount) ? pBox->arrButtonSemantic[i] : XUI_BUTTON_SEMANTIC_DEFAULT);
-		(void)xuiWidgetSetVisible(pBox->arrButtons[i], i < pBox->iButtonCount);
-		(void)xuiWidgetSetEnabled(pBox->arrButtons[i], i < pBox->iButtonCount);
+		pBox->arrButtonText[i] = arrOldText[i];
+		pBox->arrButtonResult[i] = arrOldResult[i];
+		pBox->arrButtonSemantic[i] = arrOldSemantic[i];
+		pBox->arrButtonRect[i] = arrOldButtonRect[i];
 	}
+	pBox->iButtons = iOldButtons;
+	pBox->iButtonCount = iOldButtonCount;
+	pBox->iWrapLineCount = iOldWrapLineCount;
+	(void)__xuiMsgBoxApplyButtonWidgets(pBox, arrOldText, arrOldSemantic, iOldButtonCount);
+	(void)__xuiMsgBoxApplyButtonVisual(pBox);
+	(void)xuiWindowSetMinSize(pBox->pWindow, fOldMinWidth, fOldMinHeight);
+	(void)xuiWidgetSetRect(pBox->pWindow, tOldWindowRect);
+	(void)xuiWidgetSetRect(pBox->pContent, tOldContentRect);
+	(void)xuiWidgetSetRect(pBox->pBackdrop, tOldBackdropWidgetRect);
+	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
+		if ( pBox->arrButtons[i] != NULL ) {
+			(void)xuiWidgetSetRect(pBox->arrButtons[i], arrOldButtonWidgetRect[i]);
+		}
+	}
+	pBox->tIconRect = tOldIconRect;
+	pBox->tMessageRect = tOldMessageRect;
+	pBox->tBackdropRect = tOldBackdropRect;
 failed:
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
 		if ( arrText[i] != NULL ) xrtFree(arrText[i]);
@@ -1218,9 +1286,10 @@ static void __xuiMsgBoxCloseResult(xui_msgbox pBox, int iResult)
 	if ( !__xuiMsgBoxValid(pBox) ) {
 		return;
 	}
+	if ( xuiMsgBoxSetOpen(pBox, 0) != XUI_OK ) return;
+	if ( !__xuiMsgBoxValid(pBox) ) return;
 	pBox->iResult = iResult;
 	if ( pBox->iResultCount < INT_MAX ) pBox->iResultCount++;
-	(void)xuiMsgBoxSetOpen(pBox, 0);
 	if ( pBox->onResult != NULL ) {
 		pBox->onResult(pBox, iResult, pBox->pResultUser);
 	}
@@ -1776,10 +1845,8 @@ XUI_API int xuiMsgBoxSetButtons(xui_msgbox pBox, int iButtons)
 	}
 	iRet = __xuiMsgBoxApplyPresetButtons(pBox, iButtons);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiMsgBoxApplyButtonVisual(pBox);
-	if ( iRet != XUI_OK ) return iRet;
 	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
-	return __xuiMsgBoxLayout(pBox);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgBoxSetCustomButtons(xui_msgbox pBox, const xui_msgbox_button_t* pButtons, int iCount)
@@ -1793,10 +1860,8 @@ XUI_API int xuiMsgBoxSetCustomButtons(xui_msgbox pBox, const xui_msgbox_button_t
 	if ( __xuiMsgBoxButtonModelSame(pBox, XUI_MSGBOX_BUTTON_CUSTOM, pButtons, iCount) ) return XUI_OK;
 	iRet = __xuiMsgBoxApplyButtonModel(pBox, XUI_MSGBOX_BUTTON_CUSTOM, pButtons, iCount);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiMsgBoxApplyButtonVisual(pBox);
-	if ( iRet != XUI_OK ) return iRet;
 	if ( pBox->iChangeCount < INT_MAX ) pBox->iChangeCount++;
-	return __xuiMsgBoxLayout(pBox);
+	return XUI_OK;
 }
 
 XUI_API int xuiMsgBoxSetPresetButtonTitle(xui_msgbox pBox, int iTitle, const char* sText)
@@ -1823,13 +1888,8 @@ XUI_API int xuiMsgBoxSetPresetButtonTitle(xui_msgbox pBox, int iTitle, const cha
 	pBox->arrPresetButtonTitle[iIndex] = sNewText;
 	if ( pBox->iButtons != XUI_MSGBOX_BUTTON_CUSTOM ) {
 		iRet = __xuiMsgBoxApplyPresetButtons(pBox, pBox->iButtons);
-		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxApplyButtonVisual(pBox);
-		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxLayout(pBox);
 		if ( iRet != XUI_OK ) {
 			pBox->arrPresetButtonTitle[iIndex] = sOldText;
-			(void)__xuiMsgBoxApplyPresetButtons(pBox, pBox->iButtons);
-			(void)__xuiMsgBoxApplyButtonVisual(pBox);
-			(void)__xuiMsgBoxLayout(pBox);
 			if ( sNewText != NULL ) xrtFree(sNewText);
 			return iRet;
 		}

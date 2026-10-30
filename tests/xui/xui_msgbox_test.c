@@ -33,6 +33,14 @@ static int __xuiMsgBoxNear(float fA, float fB)
 	return fD < 0.05f;
 }
 
+static int __xuiMsgBoxRectNear(xui_rect_t tA, xui_rect_t tB)
+{
+	return __xuiMsgBoxNear(tA.fX, tB.fX) &&
+		__xuiMsgBoxNear(tA.fY, tB.fY) &&
+		__xuiMsgBoxNear(tA.fW, tB.fW) &&
+		__xuiMsgBoxNear(tA.fH, tB.fH);
+}
+
 static int __xuiMsgBoxDispatchMove(xui_context pContext, float fX, float fY, uint32_t iButtons)
 {
 	int iRet;
@@ -69,6 +77,76 @@ static int __xuiMsgBoxDispatchClick(xui_context pContext, float fX, float fY)
 	iRet = __xuiMsgBoxDispatchDown(pContext, fX, fY);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiMsgBoxDispatchUp(pContext, fX, fY);
+}
+
+static int __xuiMsgBoxButtonUpdateOomPreserves(xui_msgbox pBox)
+{
+	xui_msgbox_button_t arrReplacement[2];
+	static const size_t arrBudgets[] = {
+		1u, 64u, 128u, 256u, 512u, 1024u, 2048u, 4096u,
+		8192u, 16384u, 32768u, 65536u, 131072u, 262144u, 1048576u
+	};
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xui_rect_t tWindowBefore;
+	xui_rect_t tButtonBefore[2];
+	xui_widget pButton0;
+	xui_widget pButton1;
+	int iChangeBefore;
+	int iBudget;
+	int iRet;
+	int bSawFailure;
+	int bSawSuccess;
+
+	if ( pBox == NULL ) return 0;
+	arrReplacement[0] = (xui_msgbox_button_t){
+		"Reconnect after refreshing the account credentials", 101,
+		XUI_BUTTON_SEMANTIC_PRIMARY};
+	arrReplacement[1] = (xui_msgbox_button_t){
+		"Discard", 102, XUI_BUTTON_SEMANTIC_DANGER};
+	bSawFailure = 0;
+	bSawSuccess = 0;
+	for ( iBudget = 0; iBudget < (int)(sizeof(arrBudgets) / sizeof(arrBudgets[0])); iBudget++ ) {
+		if ( xuiMsgBoxSetButtons(pBox, XUI_MSGBOX_BUTTON_OK_CANCEL) != XUI_OK ) return 0;
+		pButton0 = xuiMsgBoxGetButtonWidget(pBox, 0);
+		pButton1 = xuiMsgBoxGetButtonWidget(pBox, 1);
+		if ( pButton0 == NULL || pButton1 == NULL ) return 0;
+		tWindowBefore = xuiWidgetGetRect(xuiMsgBoxGetWindowWidget(pBox));
+		tButtonBefore[0] = xuiMsgBoxGetButtonRect(pBox, 0);
+		tButtonBefore[1] = xuiMsgBoxGetButtonRect(pBox, 1);
+		iChangeBefore = xuiMsgBoxGetChangeCount(pBox);
+		pBudget = NULL;
+		memset(&tScope, 0, sizeof(tScope));
+		if ( !xrtAllocationBudgetCreate(arrBudgets[iBudget], &pBudget) ) return 0;
+		if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+			xrtAllocationBudgetFree(pBudget);
+			return 0;
+		}
+		iRet = xuiMsgBoxSetCustomButtons(pBox, arrReplacement, 2);
+		(void)xrtAllocationBudgetLeave(&tScope);
+		xrtAllocationBudgetFree(pBudget);
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) {
+			bSawFailure = 1;
+			if ( xuiMsgBoxGetButtonCount(pBox) != 2 ||
+			     strcmp(xuiButtonGetText(pButton0), "OK") != 0 ||
+			     strcmp(xuiButtonGetText(pButton1), "Cancel") != 0 ||
+			     xuiButtonGetSemantic(pButton0) != XUI_BUTTON_SEMANTIC_PRIMARY ||
+			     xuiButtonGetSemantic(pButton1) != XUI_BUTTON_SEMANTIC_DEFAULT ||
+			     xuiMsgBoxGetChangeCount(pBox) != iChangeBefore ||
+			     !__xuiMsgBoxRectNear(
+				     xuiWidgetGetRect(xuiMsgBoxGetWindowWidget(pBox)), tWindowBefore) ||
+			     !__xuiMsgBoxRectNear(xuiMsgBoxGetButtonRect(pBox, 0), tButtonBefore[0]) ||
+			     !__xuiMsgBoxRectNear(xuiMsgBoxGetButtonRect(pBox, 1), tButtonBefore[1]) ) {
+				return 0;
+			}
+			continue;
+		}
+		if ( iRet != XUI_OK ) return 0;
+		bSawSuccess = 1;
+		if ( xuiMsgBoxSetButtons(pBox, XUI_MSGBOX_BUTTON_OK_CANCEL) != XUI_OK ) return 0;
+		break;
+	}
+	return bSawFailure && bSawSuccess;
 }
 
 static void __xuiMsgBoxResult(xui_msgbox pBox, int iResult, void* pUser)
@@ -347,6 +425,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "cancel button click");
 	XUI_TEST_CHECK(!xuiMsgBoxIsOpen(pBox) && xuiMsgBoxGetResult(pBox) == XUI_MSGBOX_RESULT_CANCEL, "cancel closes");
 	XUI_TEST_CHECK(tResult.iCount == 3 && tResult.iLastResult == XUI_MSGBOX_RESULT_CANCEL, "cancel result callback");
+	XUI_TEST_CHECK(__xuiMsgBoxButtonUpdateOomPreserves(pBox),
+		"button update allocation failures preserve the complete model and geometry");
 
 	arrCustom[0].sText = "Retry after reconnecting to the service";
 	arrCustom[0].iResult = 10;
