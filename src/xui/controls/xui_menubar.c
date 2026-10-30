@@ -1274,14 +1274,22 @@ static int __xuiMenuBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint
 {
 	xui_menubar_data_t* pData;
 	xui_menubar_resolved_t tResolved;
+	int iRet;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiMenuBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiMenuBarResolve(pWidget, pData, &tResolved);
-	return __xuiMenuBarLayoutItems(pWidget, pData, &tResolved, pSize);
+	iRet = __xuiMenuBarLayoutItems(pWidget, pData, &tResolved, pSize);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
+	return XUI_OK;
 }
 
 static int __xuiMenuBarUpdate(xui_widget pWidget, float fDelta, void* pUser)

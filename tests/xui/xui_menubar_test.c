@@ -148,6 +148,7 @@ int main(void)
 	xui_menubar_colors_t tColors;
 	xui_menubar_desc_t tBadDesc;
 	xui_accessible_node_t tAccessible;
+	xui_vec2_t tMeasured;
 	char sOwnedText[220];
 	int iChangeCount;
 	int iMeasureCount;
@@ -289,6 +290,14 @@ int main(void)
 	iRet = xuiMenuBarSetItems(pMenuBar, arrBarItems, 3);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuBarGetItemCount(pMenuBar) == 3, "menubar items");
 	XUI_TEST_CHECK(!xuiMenuBarIsItemEnabled(pMenuBar, 2), "disabled item");
+	iRet = xuiWidgetMeasureContent(pMenuBar,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX > 60.0f && tMeasured.fY > 12.0f,
+		"menubar reports intrinsic content size");
+	iRet = xuiWidgetMeasureContent(pMenuBar, (xui_vec2_t){60.0f, 12.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 60.0f && tMeasured.fY == 12.0f &&
+		xuiMenuBarGetItemRect(pMenuBar, 0).fW >= 20.0f,
+		"menubar content measure respects finite constraints without truncating item geometry");
 	XUI_TEST_CHECK(xuiMenuBarSetItemMenu(pMenuBar, 0, pRoot) == XUI_ERROR_INVALID_ARGUMENT,
 		"non-menu binding rejected");
 
