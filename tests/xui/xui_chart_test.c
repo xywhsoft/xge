@@ -20,6 +20,9 @@ static int (*g_pChartCircleFill)(xui_proxy, xui_draw_context, float, float, floa
 static uint32_t g_iChartLodColor = 0;
 static float g_fChartLodMinY = FLT_MAX;
 static int g_iChartLodCircles = 0;
+static xui_draw_path_proc g_pChartDrawPath = NULL;
+static int g_iChartDashedLineCommands = 0;
+static int g_iChartDashedCubicCommands = 0;
 
 static int __xuiChartRecordCircle(xui_proxy pProxy, xui_draw_context pDraw,
 	float fX, float fY, float fRadius, uint32_t iColor)
@@ -30,6 +33,53 @@ static int __xuiChartRecordCircle(xui_proxy pProxy, xui_draw_context pDraw,
 	}
 	return g_pChartCircleFill != NULL ?
 		g_pChartCircleFill(pProxy, pDraw, fX, fY, fRadius, iColor) : XUI_OK;
+}
+
+static int __xuiChartRecordPath(xui_proxy pProxy, xui_draw_context pDraw,
+	const xui_path_command_t* pCommands, int iCommandCount,
+	const xui_path_style_t* pStyle, float fTolerance)
+{
+	int i;
+
+	if ( pStyle != NULL && pStyle->iDashCount > 0 ) {
+		for ( i = 0; i < iCommandCount; i++ ) {
+			if ( pCommands[i].iCommand == XUI_PATH_CMD_LINE ) g_iChartDashedLineCommands++;
+			if ( pCommands[i].iCommand == XUI_PATH_CMD_CUBIC ) g_iChartDashedCubicCommands++;
+		}
+	}
+	return g_pChartDrawPath != NULL ?
+		g_pChartDrawPath(pProxy, pDraw, pCommands, iCommandCount, pStyle, fTolerance) : XUI_OK;
+}
+
+static int __xuiChartMeasureRenderAllocations(xui_context pContext, size_t* pPeakBytes)
+{
+	xallocationbudget* pBudget;
+	xallocationscope tScope;
+	xallocationbudgetinfo tInfo;
+	uint64_t iRejections;
+	int iRenderRet;
+	int iLeaveRet;
+	int iInfoRet;
+
+	if ( pContext == NULL || pPeakBytes == NULL ) return 0;
+	pBudget = NULL;
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1024u * 1024u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRenderRet = xuiRenderPrepare(pContext);
+	iRejections = tScope.Rejections;
+	iLeaveRet = xrtAllocationBudgetLeave(&tScope);
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.Size = sizeof(tInfo);
+	iInfoRet = xrtAllocationBudgetInfo(pBudget, &tInfo);
+	xrtAllocationBudgetFree(pBudget);
+	if ( iRenderRet != XUI_OK || !iLeaveRet || !iInfoRet || iRejections != 0u ||
+	     tInfo.LiveBytes != 0u || tInfo.LiveCount != 0u ) return 0;
+	*pPeakBytes = tInfo.PeakBytes;
+	return 1;
 }
 
 static int __xuiChartTooltip(xui_widget pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser)
@@ -189,6 +239,8 @@ int main(void)
 	int bAnimEnabled;
 	int iMeshBase;
 	int iPathBase;
+	size_t iBaselineRenderPeak;
+	size_t iPathRenderPeak;
 	int i;
 	int iFailed;
 	int iRet;
@@ -200,6 +252,8 @@ int main(void)
 	pFont = NULL;
 	pPainter = NULL;
 	pPath = NULL;
+	iBaselineRenderPeak = 0;
+	iPathRenderPeak = 0;
 	fMinX = 0.0;
 	fMaxX = 0.0;
 	fMinY = 0.0;
@@ -239,6 +293,8 @@ int main(void)
 	xuiTestProxyInit(&tNoVectorState);
 	g_pChartCircleFill = tState.tProxy.drawCircleFill;
 	tState.tProxy.drawCircleFill = __xuiChartRecordCircle;
+	g_pChartDrawPath = tState.tProxy.drawPath;
+	tState.tProxy.drawPath = __xuiChartRecordPath;
 	tNoVectorState.tProxy.drawPath = NULL;
 
 	iRet = xuiCreate(&pContext);
@@ -410,6 +466,26 @@ int main(void)
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
 	XUI_TEST_CHECK(xuiChartGetDirtyFlags(pChart) == 0, "dirty cleared after render");
+	iRet = xuiChartSetSeriesAreaFill(pChart, iLine, 0, iAreaColor);
+	if ( iRet == XUI_OK ) iRet = xuiChartClearSeriesDash(pChart, iLine);
+	if ( iRet == XUI_OK ) iRet = xuiChartSetSeriesSmooth(pChart, iLine, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "prepare plain line redraw allocation baseline");
+	XUI_TEST_CHECK(__xuiChartMeasureRenderAllocations(pContext, &iBaselineRenderPeak),
+		"measure plain line redraw allocation baseline");
+	g_iChartDashedLineCommands = 0;
+	g_iChartDashedCubicCommands = 0;
+	iRet = xuiChartSetSeriesAreaFill(pChart, iLine, 1, iAreaColor);
+	if ( iRet == XUI_OK ) iRet = xuiChartSetSeriesDash(pChart, iLine, arrChartDash, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK, "prepare cached area and straight dashed line redraw");
+	XUI_TEST_CHECK(__xuiChartMeasureRenderAllocations(pContext, &iPathRenderPeak) &&
+		iPathRenderPeak == iBaselineRenderPeak,
+		"warmed chart paths add no heap allocation to cache redraw");
+	XUI_TEST_CHECK(g_iChartDashedLineCommands == 3 && g_iChartDashedCubicCommands == 0,
+		"non-smooth dashed series retains straight line segments");
+	iRet = xuiChartSetSeriesSmooth(pChart, iLine, 1);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiChartGetDirtyFlags(pChart) == 0u,
+		"restore smooth series after redraw budget test");
 	XUI_TEST_CHECK(__xuiChartSameValueSettersStayClean(pChart, pFont, iLine, iPie,
 		arrLine, (int)(sizeof(arrLine) / sizeof(arrLine[0]))),
 		"same-value chart setters keep the render cache clean");

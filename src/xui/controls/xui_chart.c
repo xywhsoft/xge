@@ -118,6 +118,9 @@ typedef struct xui_chart_data_t {
 	float fBrushStartY;
 	float fBrushCurrentX;
 	float fBrushCurrentY;
+	xui_path pScratchPath;
+	xui_vec2_t* pScratchPoints;
+	int iScratchPointCapacity;
 	xui_pointer_owner_t tPointerOwner;
 } xui_chart_data_t;
 
@@ -1092,6 +1095,40 @@ static int __xuiChartSeriesSampleIndex(const xui_chart_series_t* pSeries, int iS
 	return pSeries->pLodIndices != NULL ? pSeries->pLodIndices[iSample] : iSample;
 }
 
+static int __xuiChartEnsureRenderScratch(xui_chart_data_t* pData)
+{
+	xui_vec2_t* pPoints;
+	int iPointCapacity;
+	int bNeedPath;
+	int i;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iPointCapacity = 0;
+	bNeedPath = 0;
+	for ( i = 0; i < pData->iSeriesCount; i++ ) {
+		xui_chart_series_t* pSeries = &pData->arrSeries[i];
+		int iSampleCount;
+
+		if ( !pSeries->bVisible || pSeries->iType != XUI_CHART_SERIES_LINE ) continue;
+		iSampleCount = __xuiChartSeriesSampleCount(pSeries);
+		if ( iSampleCount < 2 ) continue;
+		if ( pSeries->bAreaFill || pSeries->bSmooth || pSeries->iDashCount > 0 ) bNeedPath = 1;
+		if ( pSeries->bSmooth && iSampleCount > iPointCapacity ) iPointCapacity = iSampleCount;
+	}
+	if ( bNeedPath && pData->pScratchPath == NULL ) {
+		int iRet = xuiPathCreate(&pData->pScratchPath);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( iPointCapacity <= pData->iScratchPointCapacity ) return XUI_OK;
+	if ( (size_t)iPointCapacity > (size_t)-1 / sizeof(*pPoints) ) return XUI_ERROR_OUT_OF_MEMORY;
+	pPoints = (xui_vec2_t*)xrtRealloc(pData->pScratchPoints,
+		sizeof(*pPoints) * (size_t)iPointCapacity);
+	if ( pPoints == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->pScratchPoints = pPoints;
+	pData->iScratchPointCapacity = iPointCapacity;
+	return XUI_OK;
+}
+
 static int __xuiChartDrawText(xui_proxy pProxy, xui_draw_context pDraw, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
     xui_font pFont = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->pFont : NULL;
@@ -1243,62 +1280,64 @@ static int __xuiChartDrawLineSeries(xui_proxy pProxy, xui_draw_context pDraw, xu
 	int iRet;
 	int iSampleCount;
 	int iDrawn;
-	int bSmoothDrawn;
+	int bPathDrawn;
 	float fPrevX;
 	float fPrevY;
 
 	iRet = __xuiChartEnsureSeriesLod(pData, pSeries);
 	if ( iRet != XUI_OK ) return iRet;
 	iSampleCount = __xuiChartSeriesSampleCount(pSeries);
-	bSmoothDrawn = 0;
+	bPathDrawn = 0;
 	if ( (pSeries->bSmooth || (pSeries->iDashCount > 0)) && (iSampleCount >= 2) ) {
-		xui_path pPath;
-		xui_vec2_t* pPoints;
+		xui_path pPath = pData->pScratchPath;
 		xui_path_style_t tStyle;
-		int iPointCount;
-		iRet = xuiPathCreate(&pPath);
+		if ( pPath == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		iRet = xuiPathClear(pPath);
 		if ( iRet != XUI_OK ) return iRet;
-		pPoints = (xui_vec2_t*)xrtMalloc(sizeof(*pPoints) * (size_t)iSampleCount);
-		if ( pPoints == NULL ) {
-			xuiPathDestroy(pPath);
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		iPointCount = 0;
-		for ( i = 0; i < iSampleCount; i++ ) {
-			int iPoint = __xuiChartSeriesSampleIndex(pSeries, i);
-			double x;
-			x = (pData->iXAxisType == XUI_CHART_AXIS_CATEGORY) ? (double)iPoint : pSeries->pPoints[iPoint].x;
-			pPoints[iPointCount++] = (xui_vec2_t){__xuiChartMapX(pData, x), __xuiChartMapY(pData, pSeries->pPoints[iPoint].y)};
-		}
-		if ( iPointCount >= 2 ) {
+		if ( pSeries->bSmooth ) {
+			xui_vec2_t* pPoints = pData->pScratchPoints;
+			if ( pPoints == NULL || pData->iScratchPointCapacity < iSampleCount ) {
+				return XUI_ERROR_OUT_OF_MEMORY;
+			}
+			for ( i = 0; i < iSampleCount; i++ ) {
+				int iPoint = __xuiChartSeriesSampleIndex(pSeries, i);
+				double x = (pData->iXAxisType == XUI_CHART_AXIS_CATEGORY) ?
+					(double)iPoint : pSeries->pPoints[iPoint].x;
+				pPoints[i] = (xui_vec2_t){__xuiChartMapX(pData, x),
+					__xuiChartMapY(pData, pSeries->pPoints[iPoint].y)};
+			}
 			iRet = xuiPathMoveTo(pPath, pPoints[0].fX, pPoints[0].fY);
-			for ( i = 1; (iRet == XUI_OK) && (i < iPointCount); i++ ) {
+			for ( i = 1; (iRet == XUI_OK) && (i < iSampleCount); i++ ) {
 				xui_vec2_t p0 = pPoints[(i > 1) ? (i - 2) : (i - 1)];
 				xui_vec2_t p1 = pPoints[i - 1];
 				xui_vec2_t p2 = pPoints[i];
-				xui_vec2_t p3 = pPoints[(i + 1 < iPointCount) ? (i + 1) : i];
+				xui_vec2_t p3 = pPoints[(i + 1 < iSampleCount) ? (i + 1) : i];
 				xui_vec2_t c1 = {p1.fX + (p2.fX - p0.fX) / 6.0f, p1.fY + (p2.fY - p0.fY) / 6.0f};
 				xui_vec2_t c2 = {p2.fX - (p3.fX - p1.fX) / 6.0f, p2.fY - (p3.fY - p1.fY) / 6.0f};
 				iRet = xuiPathCubicTo(pPath, c1.fX, c1.fY, c2.fX, c2.fY, p2.fX, p2.fY);
 			}
-			if ( iRet == XUI_OK ) {
-				memset(&tStyle, 0, sizeof(tStyle));
-				tStyle.iSize = (uint32_t)sizeof(tStyle);
-				tStyle.iStrokeColor = __xuiChartAnimatedColor(pData, pSeries->iColor);
-				tStyle.fStrokeWidth = 2.0f;
-				tStyle.iLineJoin = XUI_PATH_JOIN_MITER;
-				tStyle.iLineCap = XUI_PATH_CAP_BUTT;
-				tStyle.pDashPattern = pSeries->iDashCount > 0 ? pSeries->arrDash : NULL;
-				tStyle.iDashCount = pSeries->iDashCount;
-				iRet = xuiInternalDrawPath(pProxy, pDraw, pPath, &tStyle, 1.0f);
-				if ( iRet == XUI_OK ) bSmoothDrawn = 1;
+		} else {
+			for ( i = 0; (iRet == XUI_OK) && (i < iSampleCount); i++ ) {
+				int iPoint = __xuiChartSeriesSampleIndex(pSeries, i);
+				double x = (pData->iXAxisType == XUI_CHART_AXIS_CATEGORY) ?
+					(double)iPoint : pSeries->pPoints[iPoint].x;
+				float fX = __xuiChartMapX(pData, x);
+				float fY = __xuiChartMapY(pData, pSeries->pPoints[iPoint].y);
+				iRet = i == 0 ? xuiPathMoveTo(pPath, fX, fY) : xuiPathLineTo(pPath, fX, fY);
 			}
 		}
-		xrtFree(pPoints);
-		xuiPathDestroy(pPath);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
+		if ( iRet != XUI_OK ) return iRet;
+		memset(&tStyle, 0, sizeof(tStyle));
+		tStyle.iSize = (uint32_t)sizeof(tStyle);
+		tStyle.iStrokeColor = __xuiChartAnimatedColor(pData, pSeries->iColor);
+		tStyle.fStrokeWidth = 2.0f;
+		tStyle.iLineJoin = XUI_PATH_JOIN_MITER;
+		tStyle.iLineCap = XUI_PATH_CAP_BUTT;
+		tStyle.pDashPattern = pSeries->iDashCount > 0 ? pSeries->arrDash : NULL;
+		tStyle.iDashCount = pSeries->iDashCount;
+		iRet = xuiInternalDrawPath(pProxy, pDraw, pPath, &tStyle, 1.0f);
+		if ( iRet != XUI_OK ) return iRet;
+		bPathDrawn = 1;
 	}
 	fPrevX = 0.0f;
 	fPrevY = 0.0f;
@@ -1308,7 +1347,7 @@ static int __xuiChartDrawLineSeries(xui_proxy pProxy, xui_draw_context pDraw, xu
 		double x = (pData->iXAxisType == XUI_CHART_AXIS_CATEGORY) ? (double)iPoint : pSeries->pPoints[iPoint].x;
 		float fX = __xuiChartMapX(pData, x);
 		float fY = __xuiChartMapY(pData, pSeries->pPoints[iPoint].y);
-		if ( (iDrawn > 0) && !bSmoothDrawn ) {
+		if ( (iDrawn > 0) && !bPathDrawn ) {
 			iRet = pProxy->drawLine(pProxy, pDraw, fPrevX, fPrevY, fX, fY, 2.0f, __xuiChartAnimatedColor(pData, pSeries->iColor));
 			if ( iRet != XUI_OK ) return iRet;
 		}
@@ -1335,15 +1374,12 @@ static int __xuiChartDrawLineArea(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	     !pSeries->bAreaFill || (pSeries->iCount < 2) ) {
 		return XUI_OK;
 	}
-	iRet = xuiPathCreate(&pPath);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
 	iRet = __xuiChartEnsureSeriesLod(pData, pSeries);
-	if ( iRet != XUI_OK ) {
-		xuiPathDestroy(pPath);
-		return iRet;
-	}
+	if ( iRet != XUI_OK ) return iRet;
+	pPath = pData->pScratchPath;
+	if ( pPath == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	iRet = xuiPathClear(pPath);
+	if ( iRet != XUI_OK ) return iRet;
 	iSampleCount = __xuiChartSeriesSampleCount(pSeries);
 	iDrawn = 0;
 	for ( i = 0; i < iSampleCount; i++ ) {
@@ -1360,30 +1396,19 @@ static int __xuiChartDrawLineArea(xui_proxy pProxy, xui_draw_context pDraw, xui_
 		} else {
 			iRet = xuiPathLineTo(pPath, fX, fY);
 		}
-		if ( iRet != XUI_OK ) {
-			xuiPathDestroy(pPath);
-			return iRet;
-		}
+		if ( iRet != XUI_OK ) return iRet;
 		iDrawn++;
 	}
-	if ( iDrawn < 2 ) {
-		xuiPathDestroy(pPath);
-		return XUI_OK;
-	}
+	if ( iDrawn < 2 ) return XUI_OK;
 	iRet = xuiPathLineTo(pPath, __xuiChartMapX(pData, (pData->iXAxisType == XUI_CHART_AXIS_CATEGORY) ? (double)(pSeries->iCount - 1) : pSeries->pPoints[pSeries->iCount - 1].x), __xuiChartMapY(pData, 0.0));
 	if ( iRet == XUI_OK ) iRet = xuiPathClose(pPath);
-	if ( iRet != XUI_OK ) {
-		xuiPathDestroy(pPath);
-		return iRet;
-	}
+	if ( iRet != XUI_OK ) return iRet;
 	iColor = __xuiChartAnimatedColor(pData, pSeries->iAreaColor);
 	memset(&tStyle, 0, sizeof(tStyle));
 	tStyle.iSize = (uint32_t)sizeof(tStyle);
 	tStyle.iFillColor = iColor;
 	tStyle.iFillRule = XUI_PATH_FILL_NON_ZERO;
-	iRet = xuiInternalDrawPath(pProxy, pDraw, pPath, &tStyle, 1.0f);
-	xuiPathDestroy(pPath);
-	return iRet;
+	return xuiInternalDrawPath(pProxy, pDraw, pPath, &tStyle, 1.0f);
 }
 
 static int __xuiChartVisibleBarSeries(const xui_chart_data_t* pData)
@@ -2094,6 +2119,8 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
+	iRet = __xuiChartEnsureRenderScratch(pOwnerData);
+	if ( iRet != XUI_OK ) return iRet;
 	iRenderVersion = pOwnerData->iVersion;
 	tRenderData = *pOwnerData;
 	pData = &tRenderData;
@@ -3133,6 +3160,8 @@ static void __xuiChartDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		__xuiChartFreeSeries(&pData->arrSeries[i]);
 	}
+	xuiPathDestroy(pData->pScratchPath);
+	xrtFree(pData->pScratchPoints);
 	if ( pData->sTitle != NULL ) {
 		xrtFree(pData->sTitle);
 	}
