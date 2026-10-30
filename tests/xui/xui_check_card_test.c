@@ -106,6 +106,7 @@ int main(void)
 	xui_widget pChild;
 	xui_widget pLabel;
 	xui_surface pTarget;
+	xui_surface pCache;
 	xui_check_card_desc_t tDesc;
 	xui_check_card_desc_t tInvalidDesc;
 	xui_label_desc_t tLabelDesc;
@@ -134,6 +135,7 @@ int main(void)
 	pGroup = NULL;
 	pLabel = NULL;
 	pTarget = NULL;
+	pCache = NULL;
 	memset(pCard, 0, sizeof(pCard));
 	iChanged = 0;
 	iDestroyedChanges = 0;
@@ -264,6 +266,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiCheckCardRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
+	pCache = xuiWidgetGetCacheSurface(pStandalone, 0);
+	XUI_TEST_CHECK(pCache != NULL, "standalone cache surface");
+	tCardRect = xuiTestSurfaceGetLastRect(pCache);
+	XUI_TEST_CHECK(tCardRect.fX == 1 && tCardRect.fY == 1 &&
+		tCardRect.fW == 178 && tCardRect.fH == 54,
+		"check card border covers full bounds independent of content padding");
 	tLabelWorld = xuiWidgetGetWorldRect(pLabel);
 	XUI_TEST_CHECK(xuiWidgetGetHitTestVisible(pLabel) == 0, "label hit transparent by default");
 	XUI_TEST_CHECK(xuiHitTest(pContext, tLabelWorld.fX + 4.0f, tLabelWorld.fY + 4.0f, XUI_WIDGET_HIT_DEFAULT) == pStandalone, "label passes hit to parent");
@@ -296,7 +304,9 @@ int main(void)
 		"interactive content child suppresses check card activation");
 	tCorner = xuiCheckCardGetCornerRect(pCard[1]);
 	XUI_TEST_CHECK(tCorner.fW > 0.0f && tCorner.fH > 0.0f, "corner rect");
-	tCardRect = xuiWidgetGetContentRect(pCard[1]);
+	tCardRect = xuiWidgetGetRect(pCard[1]);
+	tCardRect.fX = 0.0f;
+	tCardRect.fY = 0.0f;
 	XUI_TEST_CHECK(tCorner.fY >= tCardRect.fY + 1.0f && tCorner.fX + tCorner.fW <= tCardRect.fX + tCardRect.fW - 1.0f, "corner inside border");
 
 	iRet = __xuiCheckCardClick(pContext, pStandalone);
@@ -416,7 +426,9 @@ int main(void)
 	iRet = __xuiCheckCardRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render oversized corner metric");
 	tCorner = xuiCheckCardGetCornerRect(pStandalone);
-	tCardRect = xuiWidgetGetContentRect(pStandalone);
+	tCardRect = xuiWidgetGetRect(pStandalone);
+	tCardRect.fX = 0;
+	tCardRect.fY = 0;
 	XUI_TEST_CHECK(tCorner.fX >= tCardRect.fX && tCorner.fY >= tCardRect.fY &&
 		tCorner.fX + tCorner.fW <= tCardRect.fX + tCardRect.fW &&
 		tCorner.fY + tCorner.fH <= tCardRect.fY + tCardRect.fH,

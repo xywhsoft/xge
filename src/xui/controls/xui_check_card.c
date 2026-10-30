@@ -435,7 +435,14 @@ static int __xuiCheckCardCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
 	__xuiCheckCardResolve(pWidget, pData, &tResolved);
-	tRect = xuiWidgetGetContentRect(pWidget);
+	tRect = xuiWidgetGetRect(pWidget);
+	tRect.fX = 0.0f;
+	tRect.fY = 0.0f;
+	tRect = xuiInternalSnapRect(tRect);
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		memset(&pData->tCornerRect, 0, sizeof(pData->tCornerRect));
+		return XUI_OK;
+	}
 	bChecked = ((iStateId & XUI_CHECKCARD_STATE_CHECKED) != 0);
 	iBg = bChecked ? tResolved.iCheckedBackgroundColor : tResolved.iBackgroundColor;
 	if ( (iStateId & XUI_WIDGET_STATE_ACTIVE) != 0 ) iBg = tResolved.iActiveBackgroundColor;
