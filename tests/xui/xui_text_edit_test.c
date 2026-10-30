@@ -218,6 +218,8 @@ int main(void)
 	xui_rect_t tScrollBarThumb;
 	xui_rect_t tIncrementalCursor;
 	xui_rect_t tRebuiltCursor;
+	xui_vec2_t tNatural;
+	xui_vec2_t tMeasured;
 	char sLongPaste[12001];
 	float fScrollX;
 	float fScrollY;
@@ -307,6 +309,17 @@ int main(void)
 	tDesc.fLineNumberWidth = 44.0f;
 	iRet = xuiTextEditCreate(pContext, &pTextEdit, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTextEdit != NULL, "textedit create");
+	iRet = xuiWidgetMeasure(pTextEdit,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tNatural);
+	XUI_TEST_CHECK(iRet == XUI_OK && tNatural.fX > 140.0f && tNatural.fY > 60.0f,
+		"textedit intrinsic viewport exceeds finite constraint");
+	iRet = xuiWidgetMeasure(pTextEdit, (xui_vec2_t){140.0f, 60.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 140.0f && tMeasured.fY == 60.0f,
+		"textedit finite measure constraint");
+	iRet = xuiWidgetMeasure(pTextEdit,
+		(xui_vec2_t){140.0f, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 140.0f &&
+		tMeasured.fY == tNatural.fY, "textedit single-axis measure constraint");
 	xuiWidgetSetRect(pTextEdit, (xui_rect_t){24.0f, 24.0f, 320.0f, 150.0f});
 	iRet = xuiWidgetAddChild(pRoot, pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add textedit");
