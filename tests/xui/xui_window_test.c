@@ -401,6 +401,109 @@ int main(void)
 	XUI_TEST_CHECK(xuiWindowIsTopMost(pTop) && xuiWindowGetActive(pContext) == pFrameless, "active latest");
 	XUI_TEST_CHECK(xuiWindowIsCollapsed(pCollapsed) && !xuiWidgetGetVisible(xuiWindowGetClientWidget(pCollapsed)), "collapsed hides client");
 	XUI_TEST_CHECK(xuiWindowGetState(pTop) & XUI_WINDOW_STATE_TOPMOST, "state topmost");
+	{
+		xui_widget pMainClient = xuiWindowGetClientWidget(pMain);
+		xui_widget pMainCollapse = xuiWindowGetCollapseButtonWidget(pMain);
+		xui_widget pMainMaximize = xuiWindowGetMaximizeButtonWidget(pMain);
+		xui_widget pMainClose = xuiWindowGetCloseButtonWidget(pMain);
+		xui_widget pOldActiveClose = xuiWindowGetCloseButtonWidget(pFrameless);
+		const uint32_t iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+		uint32_t iBackground;
+		uint32_t iClient;
+		uint32_t iTitleBar;
+		uint32_t iTitleText;
+		uint32_t iBorder;
+		uint32_t iButtonNormal;
+		uint32_t iButtonHover;
+		uint32_t iButtonActive;
+		uint32_t iInactiveTitleBar;
+		uint32_t iInactiveTitleText;
+		uint32_t iActiveBorder;
+		uint32_t iCloseHover;
+		uint32_t iCloseActive;
+
+		xuiWidgetClearDirty(pMainClose, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pOldActiveClose, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiWindowBringToFront(pMain);
+		XUI_TEST_CHECK(iRet == XUI_OK &&
+			(xuiWidgetGetDirtyFlags(pMainClose) & iPaintDirty) == iPaintDirty &&
+			(xuiWidgetGetDirtyFlags(pOldActiveClose) & iPaintDirty) == iPaintDirty,
+			"activation refreshes new and previous caption button caches");
+		xuiWidgetClearDirty(pMainClose, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiWindowBringToFront(pMain);
+		XUI_TEST_CHECK(iRet == XUI_OK &&
+			(xuiWidgetGetDirtyFlags(pMainClose) & iPaintDirty) == 0u,
+			"repeated activation keeps caption button cache clean");
+
+		iRet = xuiWindowGetColors(pMain, &iBackground, &iClient, &iTitleBar,
+			&iTitleText, &iBorder, &iButtonNormal, &iButtonHover, &iButtonActive);
+		if ( iRet == XUI_OK ) iRet = xuiWindowGetStateColors(pMain,
+			&iInactiveTitleBar, &iInactiveTitleText, &iActiveBorder,
+			&iCloseHover, &iCloseActive);
+		XUI_TEST_CHECK(iRet == XUI_OK, "window colors snapshot");
+		xuiWidgetClearDirty(pMain, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClient, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainCollapse, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainMaximize, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClose, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiWindowSetColors(pMain, iBackground ^ 0x00000100u, iClient,
+			iTitleBar, iTitleText, iBorder, iButtonNormal, iButtonHover, iButtonActive);
+		XUI_TEST_CHECK(iRet == XUI_OK &&
+			(xuiWidgetGetDirtyFlags(pMain) & iPaintDirty) == iPaintDirty &&
+			(xuiWidgetGetDirtyFlags(pMainClient) & iPaintDirty) == iPaintDirty &&
+			(xuiWidgetGetDirtyFlags(pMainCollapse) & iPaintDirty) == iPaintDirty &&
+			(xuiWidgetGetDirtyFlags(pMainMaximize) & iPaintDirty) == iPaintDirty &&
+			(xuiWidgetGetDirtyFlags(pMainClose) & iPaintDirty) == iPaintDirty,
+			"base colors refresh frame, client, and caption button caches");
+		xuiWidgetClearDirty(pMain, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClient, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainCollapse, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainMaximize, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClose, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiWindowSetColors(pMain, iBackground ^ 0x00000100u, iClient,
+			iTitleBar, iTitleText, iBorder, iButtonNormal, iButtonHover, iButtonActive);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pMain) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainClient) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainCollapse) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainMaximize) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainClose) == 0u,
+			"repeated base colors keep independent caches clean");
+		iRet = xuiWindowSetColors(pMain, iBackground, iClient, iTitleBar,
+			iTitleText, iBorder, iButtonNormal, iButtonHover, iButtonActive);
+		XUI_TEST_CHECK(iRet == XUI_OK, "restore window base colors");
+		xuiWidgetClearDirty(pMain, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClient, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainCollapse, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainMaximize, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClose, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiWindowSetStateColors(pMain, iInactiveTitleBar,
+			iInactiveTitleText, iActiveBorder, iCloseHover ^ 0x00000100u,
+			iCloseActive);
+		XUI_TEST_CHECK(iRet == XUI_OK &&
+			(xuiWidgetGetDirtyFlags(pMain) & iPaintDirty) == iPaintDirty &&
+			xuiWidgetGetDirtyFlags(pMainClient) == 0u &&
+			(xuiWidgetGetDirtyFlags(pMainCollapse) & iPaintDirty) == iPaintDirty &&
+			(xuiWidgetGetDirtyFlags(pMainMaximize) & iPaintDirty) == iPaintDirty &&
+			(xuiWidgetGetDirtyFlags(pMainClose) & iPaintDirty) == iPaintDirty,
+			"state colors refresh frame and caption button caches only");
+		xuiWidgetClearDirty(pMain, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClient, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainCollapse, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainMaximize, XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(pMainClose, XUI_WIDGET_DIRTY_ALL);
+		iRet = xuiWindowSetStateColors(pMain, iInactiveTitleBar,
+			iInactiveTitleText, iActiveBorder, iCloseHover ^ 0x00000100u,
+			iCloseActive);
+		XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pMain) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainClient) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainCollapse) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainMaximize) == 0u &&
+			xuiWidgetGetDirtyFlags(pMainClose) == 0u,
+			"repeated state colors keep independent caches clean");
+		iRet = xuiWindowSetStateColors(pMain, iInactiveTitleBar,
+			iInactiveTitleText, iActiveBorder, iCloseHover, iCloseActive);
+		XUI_TEST_CHECK(iRet == XUI_OK, "restore window state colors");
+	}
 	tRect = xuiWidgetGetRect(pMain);
 	iRet = xuiWindowSetMaximized(pMain, 1);
 	if ( iRet == XUI_OK ) iRet = xuiInputViewport(pContext, 700, 460);

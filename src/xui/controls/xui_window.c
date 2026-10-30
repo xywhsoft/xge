@@ -2,6 +2,7 @@
 #if XUI_ENABLE_WINDOW
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 typedef struct xui_window_data_t {
@@ -103,8 +104,16 @@ typedef struct xui_window_resolved_t {
 
 static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pData, int bOpen, int bRaise);
 static int __xuiWindowApplyLayerAndZ(xui_widget pWidget, xui_window_data_t* pData);
+static xui_widget __xuiWindowButtonForPart(const xui_window_data_t* pData, int iPart);
 static float __xuiWindowMinWidth(const xui_window_data_t* pData, const xui_window_resolved_t* pResolved);
 static float __xuiWindowMinHeight(const xui_window_data_t* pData, const xui_window_resolved_t* pResolved);
+
+static void __xuiWindowIncrementCounter(int* pCounter)
+{
+	if ( (pCounter != NULL) && (*pCounter < INT_MAX) ) {
+		(*pCounter)++;
+	}
+}
 
 static uint32_t __xuiWindowAlpha(uint32_t iColor)
 {
@@ -223,6 +232,50 @@ static int __xuiWindowDataAlive(xui_widget pWidget, const xui_window_data_t* pEx
 	pContext = xuiWidgetGetContext(pWidget);
 	return xuiInternalContextIsValid(pContext) && !xuiInternalContextDestroyPending(pContext) &&
 		__xuiWindowGetData(pWidget) == pExpected;
+}
+
+static int __xuiWindowInvalidateCaptionButtons(xui_window_data_t* pData)
+{
+	const uint32_t iFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	int iRet;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pCollapseButton != NULL ) {
+		iRet = xuiWidgetInvalidate(pData->pCollapseButton, iFlags);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pMaximizeButton != NULL ) {
+		iRet = xuiWidgetInvalidate(pData->pMaximizeButton, iFlags);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->pCloseButton != NULL ) {
+		iRet = xuiWidgetInvalidate(pData->pCloseButton, iFlags);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __xuiWindowInvalidateChrome(xui_widget pWidget, xui_window_data_t* pData,
+	uint32_t iWindowFlags)
+{
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiWidgetInvalidate(pWidget, iWindowFlags);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiWindowInvalidateCaptionButtons(pData);
+}
+
+static int __xuiWindowInvalidateVisualTree(xui_widget pWidget, xui_window_data_t* pData,
+	uint32_t iWindowFlags)
+{
+	int iRet;
+
+	iRet = __xuiWindowInvalidateChrome(pWidget, pData, iWindowFlags);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->pClient == NULL ) return XUI_OK;
+	return xuiWidgetInvalidate(pData->pClient,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static int __xuiWindowRectEqual(xui_rect_t tA, xui_rect_t tB)
@@ -562,7 +615,8 @@ static int __xuiWindowDeactivateInTree(xui_widget pRoot, xui_widget pExcept)
 	if ( (pData != NULL) && (pRoot != pExcept) && pData->bActive ) {
 		pData->bActive = 0;
 		(void)__xuiWindowApplyLayerAndZ(pRoot, pData);
-		iRet = xuiWidgetInvalidate(pRoot, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		iRet = __xuiWindowInvalidateChrome(pRoot, pData,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	for ( pChild = pRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
@@ -576,6 +630,7 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 {
 	xui_context pContext;
 	xui_widget pOverlayRoot;
+	int bWasActive;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || !pData->bOpen ) {
@@ -584,6 +639,7 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 	if ( !xuiWidgetGetEffectiveVisible(pWidget) || !xuiWidgetGetEffectiveEnabled(pWidget) ) {
 		return XUI_ERROR_INVALID_STATE;
 	}
+	bWasActive = pData->bActive;
 	pContext = xuiWidgetGetContext(pWidget);
 	iRet = __xuiWindowDeactivateInTree(xuiGetRootWidget(pContext), pWidget);
 	if ( iRet != XUI_OK ) return iRet;
@@ -608,7 +664,9 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( !__xuiWindowDataAlive(pWidget, pData) ) return XUI_OK;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( bWasActive ) return XUI_OK;
+	return __xuiWindowInvalidateChrome(pWidget, pData,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 static xui_widget __xuiWindowFindActiveInTree(xui_widget pRoot)
@@ -735,22 +793,54 @@ static int __xuiWindowUpdateInteractionAdorner(xui_widget pWidget, xui_window_da
 	return xuiInternalDragAdornerSet(xuiWidgetGetContext(pWidget), pWidget, &tPrimitive, 1);
 }
 
+static int __xuiWindowInvalidatePartButton(const xui_window_data_t* pData, int iPart)
+{
+	xui_widget pButton;
+
+	pButton = __xuiWindowButtonForPart(pData, iPart);
+	if ( pButton == NULL ) return XUI_OK;
+	return xuiWidgetInvalidate(pButton,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiWindowSetHoverPart(xui_widget pWidget, xui_window_data_t* pData, int iPart)
 {
+	int iOldPart;
+	int iRet;
+
+	(void)pWidget;
 	if ( pData->iHoverPart == iPart ) {
 		return XUI_OK;
 	}
+	iOldPart = pData->iHoverPart;
+	iRet = __xuiWindowInvalidatePartButton(pData, iOldPart);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iPart != iOldPart ) {
+		iRet = __xuiWindowInvalidatePartButton(pData, iPart);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pData->iHoverPart = iPart;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static int __xuiWindowSetActivePart(xui_widget pWidget, xui_window_data_t* pData, int iPart)
 {
+	int iOldPart;
+	int iRet;
+
+	(void)pWidget;
 	if ( pData->iActivePart == iPart ) {
 		return XUI_OK;
 	}
+	iOldPart = pData->iActivePart;
+	iRet = __xuiWindowInvalidatePartButton(pData, iOldPart);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iPart != iOldPart ) {
+		iRet = __xuiWindowInvalidatePartButton(pData, iPart);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pData->iActivePart = iPart;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static int __xuiWindowButtonPart(xui_widget pButton, const xui_window_data_t* pData)
@@ -845,7 +935,7 @@ static int __xuiWindowRequestClose(xui_widget pWidget, xui_window_data_t* pData)
 	pCloseUser = pData->pCloseUser;
 	iRet = xuiWindowSetOpen(pWidget, 0);
 	if ( iRet != XUI_OK || !__xuiWindowDataAlive(pWidget, pData) ) return iRet;
-	pData->iCloseCount++;
+	__xuiWindowIncrementCounter(&pData->iCloseCount);
 	if ( onClose != NULL ) onClose(pWidget, pCloseUser);
 	return XUI_OK;
 }
@@ -1305,7 +1395,10 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		     xuiGetPointerCaptureEx(pContext, pEvent->iPointerId, pEvent->iPointerType) == pWidget ) {
 			tRect = __xuiWindowBuildInteractionRect(pWidget, pData, pEvent->fX, pEvent->fY);
 			iRet = __xuiWindowUpdateInteractionAdorner(pWidget, pData, tRect);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) {
+				__xuiWindowCancelInteraction(pWidget, pData, 1);
+				return iRet;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iEdges = __xuiWindowResizeEdgesAtData(pWidget, pData, &tResolved, pEvent->fX, pEvent->fY);
@@ -1329,7 +1422,7 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 			iRet = bMoving ? xuiWidgetSetRect(pWidget, tRect) :
 				__xuiWindowApplyRect(pWidget, pData, tRect);
 			if ( iRet == XUI_OK && !__xuiWindowRectEqual(tOldRect, xuiWidgetGetRect(pWidget)) ) {
-				pData->iChangeCount++;
+				__xuiWindowIncrementCounter(&pData->iChangeCount);
 			}
 			__xuiWindowCancelInteraction(pWidget, pData, 1);
 			if ( iRet != XUI_OK ) return iRet;
@@ -1396,7 +1489,8 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 			__xuiWindowCancelButtonPress(pWidget, pData, 1);
 			pData->bActive = 0;
 		}
-		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)__xuiWindowInvalidateChrome(pWidget, pData,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	default:
 		break;
@@ -1714,11 +1808,13 @@ static int __xuiWindowPreparePaint(xui_widget pWidget)
 		(void)xuiInternalDragAdornerSetColor(pContext, pWidget, 0, iColor);
 	}
 	if ( pData->iChromeStyleVersion == pWidget->iStyleVersion ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pData->pClient,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiWindowInvalidateCaptionButtons(pData);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iChromeStyleVersion = pWidget->iStyleVersion;
-	(void)xuiWidgetInvalidate(pData->pClient, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	(void)xuiWidgetInvalidate(pData->pCollapseButton, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	(void)xuiWidgetInvalidate(pData->pMaximizeButton, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	return xuiWidgetInvalidate(pData->pCloseButton, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 static void __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
@@ -1920,12 +2016,16 @@ XUI_API int xuiWindowSetTitle(xui_widget pWidget, const char* sTitle)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
 	char sCopy[XUI_WINDOW_TITLE_CAPACITY];
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiWindowCopyTitle(sCopy, sizeof(sCopy), sTitle);
 	if ( strcmp(pData->sTitle, sCopy) == 0 ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	memcpy(pData->sTitle, sCopy, sizeof(pData->sTitle));
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API const char* xuiWindowGetTitle(xui_widget pWidget)
@@ -1937,11 +2037,15 @@ XUI_API const char* xuiWindowGetTitle(xui_widget pWidget)
 XUI_API int xuiWindowSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pFont ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->pFont = pFont;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API xui_font xuiWindowGetFont(xui_widget pWidget)
@@ -1953,12 +2057,16 @@ XUI_API xui_font xuiWindowGetFont(xui_widget pWidget)
 XUI_API int xuiWindowSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	int iRet;
 	if ( pData == NULL || !__xuiWindowSourceRectValid(tSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pIconSurface == pSurface && memcmp(&pData->tIconSrc, &tSrc, sizeof(tSrc)) == 0 ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->pIconSurface = pSurface;
 	pData->tIconSrc = tSrc;
 	pData->bHasIcon = (pSurface != NULL) ? 1 : 0;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API xui_surface xuiWindowGetIconSurface(xui_widget pWidget)
@@ -2017,7 +2125,7 @@ static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pDa
 		} else {
 			pData->bActive = 0;
 		}
-		pData->iChangeCount++;
+		__xuiWindowIncrementCounter(&pData->iChangeCount);
 		return XUI_OK;
 	open_failed:
 		pData->bOpen = 0;
@@ -2031,7 +2139,7 @@ static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pDa
 	if ( iRet != XUI_OK ) return iRet;
 	pData->bOpen = 0;
 	pData->bActive = 0;
-	pData->iChangeCount++;
+	__xuiWindowIncrementCounter(&pData->iChangeCount);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -2058,7 +2166,7 @@ XUI_API int xuiWindowSetShowTitleBar(xui_widget pWidget, int bShow)
 	__xuiWindowCancelButtonPress(pWidget, pData, 1);
 	pData->bShowTitleBar = bShow;
 	__xuiWindowApplyDefaultResizeEdges(pData);
-	pData->iChangeCount++;
+	__xuiWindowIncrementCounter(&pData->iChangeCount);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -2228,8 +2336,9 @@ XUI_API int xuiWindowSetCollapsed(xui_widget pWidget, int bCollapsed)
 		return iRet;
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-	pData->iChangeCount++;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	__xuiWindowIncrementCounter(&pData->iChangeCount);
+	return __xuiWindowInvalidateChrome(pWidget, pData,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiWindowIsCollapsed(xui_widget pWidget)
@@ -2269,9 +2378,10 @@ XUI_API int xuiWindowSetMaximized(xui_widget pWidget, int bMaximized)
 				(void)__xuiWindowApplyRect(pWidget, pData, tOldRect);
 				return iRet;
 			}
-			pData->iChangeCount++;
+			__xuiWindowIncrementCounter(&pData->iChangeCount);
 			xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return __xuiWindowInvalidateChrome(pWidget, pData,
+				XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 		return XUI_OK;
 	}
@@ -2295,9 +2405,10 @@ XUI_API int xuiWindowSetMaximized(xui_widget pWidget, int bMaximized)
 		(void)__xuiWindowApplyRect(pWidget, pData, tOldRect);
 		return iRet;
 	}
-	pData->iChangeCount++;
+	__xuiWindowIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiWindowInvalidateChrome(pWidget, pData,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiWindowIsMaximized(xui_widget pWidget)
@@ -2332,7 +2443,7 @@ XUI_API int xuiWindowSetTopMost(xui_widget pWidget, int bTopMost)
 		(void)__xuiWindowApplyLayerAndZ(pWidget, pData);
 		return iRet;
 	}
-	pData->iChangeCount++;
+	__xuiWindowIncrementCounter(&pData->iChangeCount);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -2360,19 +2471,23 @@ XUI_API xui_widget xuiWindowGetActive(xui_context pContext)
 XUI_API int xuiWindowSetChrome(xui_widget pWidget, float fTitleBarHeight, float fBorderWidth, float fResizeGrip, float fButtonSize)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	int iRet;
 	if ( pData == NULL || !__xuiWindowFloatValid(fTitleBarHeight) ||
 	     !__xuiWindowFloatValid(fBorderWidth) || !__xuiWindowFloatValid(fResizeGrip) ||
 	     !__xuiWindowFloatValid(fButtonSize) || fTitleBarHeight < 20.0f ||
 	     fResizeGrip < 2.0f || fButtonSize < 12.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fTitleBarHeight == fTitleBarHeight && pData->fBorderWidth == fBorderWidth &&
 	     pData->fResizeGrip == fResizeGrip && pData->fButtonSize == fButtonSize ) return XUI_OK;
+	iRet = __xuiWindowInvalidateChrome(pWidget, pData,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	__xuiWindowCancelInteraction(pWidget, pData, 1);
 	__xuiWindowCancelButtonPress(pWidget, pData, 1);
 	pData->fTitleBarHeight = fTitleBarHeight;
 	pData->fBorderWidth = fBorderWidth;
 	pData->fResizeGrip = fResizeGrip;
 	pData->fButtonSize = fButtonSize;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiWindowGetChrome(xui_widget pWidget, float* pTitleBarHeight, float* pBorderWidth, float* pResizeGrip, float* pButtonSize)
@@ -2389,10 +2504,14 @@ XUI_API int xuiWindowGetChrome(xui_widget pWidget, float* pTitleBarHeight, float
 XUI_API int xuiWindowSetIconSize(xui_widget pWidget, float fIconSize)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	int iRet;
 	if ( pData == NULL || !__xuiWindowFloatValid(fIconSize) || fIconSize < 1.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fIconSize == fIconSize ) return XUI_OK;
+	iRet = xuiWidgetInvalidate(pWidget,
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->fIconSize = fIconSize;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API float xuiWindowGetIconSize(xui_widget pWidget)
@@ -2427,7 +2546,16 @@ XUI_API int xuiWindowGetMinSize(xui_widget pWidget, float* pWidth, float* pHeigh
 XUI_API int xuiWindowSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iClient, uint32_t iTitleBar, uint32_t iTitleText, uint32_t iBorder, uint32_t iButtonNormal, uint32_t iButtonHover, uint32_t iButtonActive)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iBackgroundColor == iBackground && pData->iClientColor == iClient &&
+	     pData->iTitleBarColor == iTitleBar && pData->iTitleTextColor == iTitleText &&
+	     pData->iBorderColor == iBorder && pData->iActiveBorderColor == iBorder &&
+	     pData->iButtonColor == iButtonNormal && pData->iButtonHoverColor == iButtonHover &&
+	     pData->iButtonActiveColor == iButtonActive ) return XUI_OK;
+	iRet = __xuiWindowInvalidateVisualTree(pWidget, pData,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iBackgroundColor = iBackground;
 	pData->iClientColor = iClient;
 	pData->iTitleBarColor = iTitleBar;
@@ -2437,7 +2565,7 @@ XUI_API int xuiWindowSetColors(xui_widget pWidget, uint32_t iBackground, uint32_
 	pData->iButtonColor = iButtonNormal;
 	pData->iButtonHoverColor = iButtonHover;
 	pData->iButtonActiveColor = iButtonActive;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiWindowGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pClient, uint32_t* pTitleBar, uint32_t* pTitleText, uint32_t* pBorder, uint32_t* pButtonNormal, uint32_t* pButtonHover, uint32_t* pButtonActive)
@@ -2458,13 +2586,22 @@ XUI_API int xuiWindowGetColors(xui_widget pWidget, uint32_t* pBackground, uint32
 XUI_API int xuiWindowSetStateColors(xui_widget pWidget, uint32_t iInactiveTitleBar, uint32_t iInactiveTitleText, uint32_t iActiveBorder, uint32_t iCloseHover, uint32_t iCloseActive)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iInactiveTitleBarColor == iInactiveTitleBar &&
+	     pData->iInactiveTitleTextColor == iInactiveTitleText &&
+	     pData->iActiveBorderColor == iActiveBorder &&
+	     pData->iCloseHoverColor == iCloseHover &&
+	     pData->iCloseActiveColor == iCloseActive ) return XUI_OK;
+	iRet = __xuiWindowInvalidateChrome(pWidget, pData,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
 	pData->iInactiveTitleBarColor = iInactiveTitleBar;
 	pData->iInactiveTitleTextColor = iInactiveTitleText;
 	pData->iActiveBorderColor = iActiveBorder;
 	pData->iCloseHoverColor = iCloseHover;
 	pData->iCloseActiveColor = iCloseActive;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
 }
 
 XUI_API int xuiWindowGetStateColors(xui_widget pWidget, uint32_t* pInactiveTitleBar, uint32_t* pInactiveTitleText, uint32_t* pActiveBorder, uint32_t* pCloseHover, uint32_t* pCloseActive)
