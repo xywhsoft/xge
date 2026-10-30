@@ -1406,7 +1406,6 @@ static int __xuiScrollBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	float fThickness;
 	float fLong;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( pSize == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1421,11 +1420,19 @@ static int __xuiScrollBarContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	if ( fLong < 96.0f ) {
 		fLong = 96.0f;
 	}
+	if ( fThickness > XUI_LAYOUT_UNBOUNDED ) fThickness = XUI_LAYOUT_UNBOUNDED;
+	if ( fLong > XUI_LAYOUT_UNBOUNDED ) fLong = XUI_LAYOUT_UNBOUNDED;
 	if ( tResolved.iOrientation == XUI_ORIENTATION_HORIZONTAL ) {
 		*pSize = (xui_vec2_t){fLong, fThickness};
 	} else {
 		*pSize = (xui_vec2_t){fThickness, fLong};
 	}
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 

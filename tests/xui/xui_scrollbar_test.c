@@ -132,6 +132,7 @@ int main(void)
 	xui_rect_t tThumb;
 	xui_rect_t tDecrease;
 	xui_rect_t tIncrease;
+	xui_vec2_t tMeasured;
 	float fMin;
 	float fMax;
 	float fPage;
@@ -210,6 +211,13 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollBarGetMode(pBar) == XUI_SCROLLBAR_MODE_FULL, "full mode");
 	XUI_TEST_CHECK(xuiScrollBarGetButtonMode(pBar) == XUI_SCROLLBAR_BUTTONS_ON, "button mode");
 	XUI_TEST_CHECK(xuiScrollBarGetOrientation(pBar) == XUI_ORIENTATION_VERTICAL, "vertical orientation");
+	iRet = xuiWidgetMeasureContent(pBar,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 18.0f && tMeasured.fY == 108.0f,
+		"vertical content measure");
+	iRet = xuiWidgetMeasureContent(pBar, (xui_vec2_t){10.0f, 70.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 10.0f && tMeasured.fY == 70.0f,
+		"vertical content measure respects finite constraints");
 	iRet = xuiScrollBarGetMetrics(pBar, &fThickness, &fMinThumbSize, &fButtonSize);
 	XUI_TEST_CHECK(iRet == XUI_OK && fThickness == 0.0f && fMinThumbSize == 18.0f && fButtonSize == 0.0f, "default metrics");
 	iRet = xuiScrollBarSetValue(pBar, NAN);
@@ -225,6 +233,16 @@ int main(void)
 	iRet = xuiScrollBarSetMetrics(pBar, 0.0f, FLT_MAX, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT,
 		"reject out-of-layout-range metrics");
+	iRet = xuiScrollBarSetMetrics(pBar, XUI_LAYOUT_UNBOUNDED, 18.0f, 0.0f);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiWidgetMeasureContent(pBar,
+			(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX <= XUI_LAYOUT_UNBOUNDED &&
+		tMeasured.fY <= XUI_LAYOUT_UNBOUNDED,
+		"maximum legal thickness keeps measured geometry bounded");
+	iRet = xuiScrollBarSetMetrics(pBar, 0.0f, 18.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore default scrollbar metrics");
 	iRet = xuiWidgetSetAccessibleName(pBar, "Document scrollbar");
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAccessibleDescription(pBar, "Moves through the document");
 	memset(&tAccessible, 0, sizeof(tAccessible));
@@ -583,6 +601,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set horizontal");
 	iRet = xuiScrollBarSetMetrics(pBar, 6.0f, 20.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set compact metrics");
+	iRet = xuiWidgetMeasureContent(pBar,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 96.0f && tMeasured.fY == 6.0f,
+		"horizontal compact content measure");
+	iRet = xuiWidgetMeasureContent(pBar, (xui_vec2_t){50.0f, 4.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 50.0f && tMeasured.fY == 4.0f,
+		"horizontal content measure respects finite constraints");
 	xuiWidgetSetRect(pBar, (xui_rect_t){10.0f, 166.0f, 180.0f, 12.0f});
 	iRet = xuiScrollBarSetValue(pBar, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset compact value");
