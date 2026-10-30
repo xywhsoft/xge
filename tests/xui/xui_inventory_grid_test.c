@@ -467,6 +467,29 @@ int main(void)
 	iRet = xuiInventoryGridCreate(pContext, &pGrid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pGrid != NULL, "inventory create");
 	XUI_TEST_CHECK(xuiInventoryGridGetType(pContext) != NULL, "inventory type");
+	{
+		const char* arrPaintOnlyProperties[] = {
+			"inventory.icon.padding",
+			"inventory.border.width",
+			"inventory.wheel.step",
+			"inventory.drag.threshold",
+			"font.name"
+		};
+		xui_style_property_info_t tPropertyInfo;
+		uint32_t iPropertyId;
+
+		for ( i = 0; i < (int)(sizeof(arrPaintOnlyProperties) /
+			sizeof(arrPaintOnlyProperties[0])); i++ ) {
+			iPropertyId = xuiStyleFindProperty(pContext, arrPaintOnlyProperties[i]);
+			memset(&tPropertyInfo, 0, sizeof(tPropertyInfo));
+			tPropertyInfo.iSize = sizeof(tPropertyInfo);
+			iRet = xuiStyleGetPropertyInfo(pContext, iPropertyId, &tPropertyInfo);
+			XUI_TEST_CHECK(iPropertyId != 0u && iRet == XUI_OK &&
+				(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+				(tPropertyInfo.iDirtyFlags & XUI_WIDGET_DIRTY_CACHE) != 0u,
+				"inventory paint-only style avoids relayout");
+		}
+	}
 	XUI_TEST_CHECK(xuiInventoryGridGetFont(pGrid) == pFont, "inventory font from descriptor");
 	XUI_TEST_CHECK(xuiInventoryGridSetFont(pGrid, NULL) == XUI_OK && xuiInventoryGridGetFont(pGrid) == pFont, "inventory default font");
 	XUI_TEST_CHECK(xuiInventoryGridSetFont(pGrid, pFont) == XUI_OK && xuiInventoryGridGetFont(pGrid) == pFont, "inventory explicit font");
@@ -565,6 +588,38 @@ int main(void)
 
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiInventoryGridSetFont(pGrid, pAltFont) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"inventory font change invalidates paint without relayout");
+	XUI_TEST_CHECK(xuiInventoryGridSetFont(pGrid, pFont) == XUI_OK,
+		"restore inventory font");
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiInventoryGridSetMetrics(pGrid, 36.0f, 4.0f, 6.0f, 8.0f, 2.0f) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_CACHE) != 0u,
+		"icon and border metrics invalidate paint without relayout");
+	XUI_TEST_CHECK(xuiInventoryGridSetMetrics(pGrid, 36.0f, 4.0f, 6.0f, 7.0f, 1.0f) == XUI_OK,
+		"restore paint-only inventory metrics");
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiInventoryGridSetMetrics(pGrid, 37.0f, 4.0f, 6.0f, 7.0f, 1.0f) == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_LAYOUT) != 0u,
+		"slot geometry metric still invalidates layout");
+	XUI_TEST_CHECK(xuiInventoryGridSetMetrics(pGrid, 36.0f, 4.0f, 6.0f, 7.0f, 1.0f) == XUI_OK,
+		"restore inventory geometry metrics");
+	XUI_TEST_CHECK(xuiInventoryGridGetLayout(pGrid, &tLayout) == XUI_OK,
+		"get layout before interaction-only update");
+	tLayout.fWheelStep = 41.0f;
+	tLayout.fDragThreshold = 5.0f;
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
+	XUI_TEST_CHECK(xuiInventoryGridSetLayout(pGrid, &tLayout) == XUI_OK &&
+		xuiWidgetGetDirtyFlags(pGrid) == 0u,
+		"interaction-only layout update avoids visual invalidation");
+	tLayout.fWheelStep = 40.0f;
+	tLayout.fDragThreshold = 4.0f;
+	XUI_TEST_CHECK(xuiInventoryGridSetLayout(pGrid, &tLayout) == XUI_OK,
+		"restore interaction metrics");
 	XUI_TEST_CHECK(xuiInventoryGridGetLayout(pGrid, &tCompactLayout) == XUI_OK,
 		"get compact inventory layout");
 	tCompactLayout.iColumns = 8;
@@ -819,8 +874,13 @@ int main(void)
 	iRet = xuiInventoryGridGetLayout(pGrid, &tLayout);
 	XUI_TEST_CHECK(iRet == XUI_OK, "get layout before single selection");
 	tLayout.iSelectionMode = XUI_INVENTORY_SELECTION_SINGLE;
+	xuiWidgetClearDirty(pGrid, XUI_WIDGET_DIRTY_ALL);
 	iRet = xuiInventoryGridSetLayout(pGrid, &tLayout);
-	XUI_TEST_CHECK(iRet == XUI_OK && !xuiInventoryGridGetSelected(pGrid, 0) && xuiInventoryGridGetSelected(pGrid, 2), "single mode collapses prior multi selection");
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_LAYOUT) == 0u &&
+		(xuiWidgetGetDirtyFlags(pGrid) & XUI_WIDGET_DIRTY_CACHE) != 0u &&
+		!xuiInventoryGridGetSelected(pGrid, 0) && xuiInventoryGridGetSelected(pGrid, 2),
+		"single mode collapses prior multi selection without relayout");
 	tLayout.iSelectionMode = XUI_INVENTORY_SELECTION_MULTI;
 	XUI_TEST_CHECK(xuiInventoryGridSetLayout(pGrid, &tLayout) == XUI_OK, "restore multi selection mode");
 	XUI_TEST_CHECK(xuiInventoryGridSetSelected(pGrid, 0, 1, 1) == XUI_OK && xuiInventoryGridGetSelected(pGrid, 0), "programmatic selection");

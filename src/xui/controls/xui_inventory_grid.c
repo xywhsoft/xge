@@ -196,6 +196,16 @@ static int __xuiInventoryLayoutEqual(const xui_inventory_grid_layout_t* pA, cons
 	       (pA->fDragThreshold == pB->fDragThreshold);
 }
 
+static int __xuiInventoryLayoutGeometryEqual(const xui_inventory_grid_layout_t* pA,
+	const xui_inventory_grid_layout_t* pB)
+{
+	return (pA != NULL) && (pB != NULL) &&
+	       (pA->iColumns == pB->iColumns) &&
+	       (pA->fSlotSize == pB->fSlotSize) &&
+	       (pA->fSlotGap == pB->fSlotGap) &&
+	       (pA->fPadding == pB->fPadding);
+}
+
 static int __xuiInventoryColorsEqual(const xui_inventory_grid_colors_t* pA, const xui_inventory_grid_colors_t* pB)
 {
 	return (pA != NULL) && (pB != NULL) &&
@@ -3774,8 +3784,8 @@ static void __xuiInventoryRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.slot.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.slot.gap", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.icon.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
+	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.icon.padding", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
+	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.wheel.step", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.drag.threshold", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.columns", XUI_STYLE_VALUE_INT, iLayoutDirty, 0);
@@ -4190,6 +4200,10 @@ XUI_API int xuiInventoryGridSetLayout(xui_widget pWidget, const xui_inventory_gr
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	xui_inventory_grid_layout_t tLayout;
+	uint32_t iDirtyFlags;
+	int bGeometryChanged;
+	int bPaintChanged;
+	int bSelectionModeChanged;
 	int iKeepSelected;
 	int i;
 	int iRet;
@@ -4197,8 +4211,21 @@ XUI_API int xuiInventoryGridSetLayout(xui_widget pWidget, const xui_inventory_gr
 	__xuiInventoryDefaultLayoutValues(&tLayout);
 	__xuiInventoryApplyLayout(&tLayout, pLayout);
 	if ( __xuiInventoryLayoutEqual(&pData->tLayout, &tLayout) ) return XUI_OK;
-	iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
+	bGeometryChanged = !__xuiInventoryLayoutGeometryEqual(&pData->tLayout, &tLayout);
+	bSelectionModeChanged = pData->tLayout.iSelectionMode != tLayout.iSelectionMode;
+	bPaintChanged = bSelectionModeChanged ||
+		(pData->tLayout.fIconPadding != tLayout.fIconPadding) ||
+		(pData->tLayout.fBorderWidth != tLayout.fBorderWidth);
+	iDirtyFlags = 0u;
+	if ( bGeometryChanged ) {
+		iDirtyFlags = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	} else if ( bPaintChanged ) {
+		iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	}
+	if ( iDirtyFlags != 0u ) {
+		iRet = __xuiInventoryInvalidate(pWidget, iDirtyFlags);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	pData->tLayout = tLayout;
 	if ( pData->tLayout.iSelectionMode == XUI_INVENTORY_SELECTION_NONE ) {
 		(void)__xuiInventoryClearSelectionData(pData);
@@ -4217,8 +4244,12 @@ XUI_API int xuiInventoryGridSetLayout(xui_widget pWidget, const xui_inventory_gr
 		}
 	}
 	__xuiInventoryIncrementCounter(&pData->iChangeCount);
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	if ( bGeometryChanged ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	}
+	if ( bSelectionModeChanged ) {
+		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
+	}
 	return XUI_OK;
 }
 
@@ -4240,7 +4271,7 @@ XUI_API int xuiInventoryGridSetFont(xui_widget pWidget, xui_font pFont)
 	pResolvedFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pResolvedFont ) return XUI_OK;
 	pOldFont = pData->pFont;
-	iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = (pData->pSplitTitle != NULL) ? xuiLabelSetFont(pData->pSplitTitle, pResolvedFont) : XUI_OK;
 	if ( iRet == XUI_OK && pData->pSplitInput != NULL ) iRet = xuiNumericInputSetFont(pData->pSplitInput, pResolvedFont);
@@ -4266,6 +4297,7 @@ XUI_API xui_font xuiInventoryGridGetFont(xui_widget pWidget)
 XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, float fSlotGap, float fPadding, float fIconPadding, float fBorderWidth)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	uint32_t iDirtyFlags;
 	int iRet;
 	if ( (pData == NULL) || !__xuiInventoryFloatValid(fSlotSize) || (fSlotSize <= 0.0f) ||
 	     !__xuiInventoryFloatValid(fSlotGap) || !__xuiInventoryFloatValid(fPadding) ||
@@ -4273,7 +4305,13 @@ XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, floa
 	if ( (pData->tLayout.fSlotSize == fSlotSize) && (pData->tLayout.fSlotGap == fSlotGap) &&
 	     (pData->tLayout.fPadding == fPadding) && (pData->tLayout.fIconPadding == fIconPadding) &&
 	     (pData->tLayout.fBorderWidth == fBorderWidth) ) return XUI_OK;
-	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	if ( (pData->tLayout.fSlotSize != fSlotSize) ||
+	     (pData->tLayout.fSlotGap != fSlotGap) ||
+	     (pData->tLayout.fPadding != fPadding) ) {
+		iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
+	}
+	iRet = xuiWidgetInvalidate(pWidget, iDirtyFlags);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->tLayout.fSlotSize = fSlotSize;
 	pData->tLayout.fSlotGap = fSlotGap;
