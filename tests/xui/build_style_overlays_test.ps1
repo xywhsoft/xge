@@ -36,10 +36,22 @@ try {
     $cc = (Get-Command $Compiler -ErrorAction Stop).Source
     $out = Join-Path $root 'build/style_overlays'
     $null = New-Item -ItemType Directory -Path $out -Force
-    $headers = @(
-        Get-ChildItem -LiteralPath $root, (Join-Path $root 'src'), $PSScriptRoot, (Join-Path $root 'modules/xlayout') -Filter '*.h' -File
+    $dependencyRoots = @(
+        (Join-Path $root 'include'),
+        (Join-Path $root 'extlibs/xrt'),
+        (Join-Path $root 'src/xge'),
+        (Join-Path $root 'src/xui'),
+        $PSScriptRoot,
+        (Join-Path $root 'modules/xlayout')
+    )
+    $dependencyFiles = @(
+        Get-ChildItem -LiteralPath $dependencyRoots -Recurse -File |
+            Where-Object { $_.Extension -in @('.h', '.inc') }
+        Get-Item -LiteralPath (Join-Path $root 'config/includes.rsp')
     ) | Sort-Object FullName
-    $headerHash = ($headers | ForEach-Object { Get-SourceHash $_.FullName }) -join ':'
+    $headerHash = ($dependencyFiles | ForEach-Object {
+        "$(($_.FullName))=$(Get-SourceHash $_.FullName)"
+    }) -join ':'
     $compilerVersion = (& $cc --version | Select-Object -First 1)
     $objects = @()
     foreach ($source in $sources) {
