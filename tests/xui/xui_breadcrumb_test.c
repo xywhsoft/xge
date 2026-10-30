@@ -439,6 +439,36 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiBreadcrumbGetSeparator(pBreadcrumb), ">") == 0, "set separator");
 	iRet = xuiTestSurfaceCreate(&tState, &pIcon, 12, 12, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && pIcon != NULL, "icon surface create");
+	{
+		xui_widget pIconBreadcrumb = NULL;
+		xui_breadcrumb_item_t arrIconItems[2] = {
+			{"Root", 1, 1}, {"Leaf", 0, 2}
+		};
+		xui_breadcrumb_desc_t tIconDesc;
+		int iBefore;
+
+		iRet = xuiLayout(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK, "settle separator text measurement");
+		iBefore = xuiTestProxyGetTextMeasureCount(&tState);
+		memset(&tIconDesc, 0, sizeof(tIconDesc));
+		tIconDesc.iSize = sizeof(tIconDesc);
+		tIconDesc.pItems = arrIconItems;
+		tIconDesc.iItemCount = 2;
+		tIconDesc.sSeparator = "unused";
+		tIconDesc.pSeparatorIcon = pIcon;
+		tIconDesc.fSeparatorIconSize = 10.0f;
+		tIconDesc.pFont = pFont;
+		iRet = xuiBreadcrumbCreate(pContext, &pIconBreadcrumb, &tIconDesc);
+		XUI_TEST_CHECK(iRet == XUI_OK && pIconBreadcrumb != NULL,
+			"icon breadcrumb create");
+		(void)xuiWidgetSetRect(pIconBreadcrumb, (xui_rect_t){260.0f, 125.0f, 200.0f, 36.0f});
+		iRet = xuiWidgetAddChild(pRoot, pIconBreadcrumb);
+		if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+		XUI_TEST_CHECK(iRet == XUI_OK &&
+			xuiTestProxyGetTextMeasureCount(&tState) == iBefore + 2,
+			"icon breadcrumb skips unused separator text measurement");
+		xuiWidgetDestroy(pIconBreadcrumb);
+	}
 	iRet = xuiBreadcrumbSetSeparatorIcon(pBreadcrumb, pIcon,
 		(xui_rect_t){0.0f, 0.0f, -1.0f, 12.0f}, 10.0f);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
@@ -585,6 +615,50 @@ int main(void)
 	iRet = xuiWidgetPerformAccessibleAction(pBreadcrumb, 4u, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE,
 		"non-clickable breadcrumb item rejects accessibility activation");
+	(void)xuiWidgetSetRect(pBreadcrumb, (xui_rect_t){20.0f, 20.0f, 50.0f, 36.0f});
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout clipped breadcrumb");
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	iRet = xuiWidgetGetAccessibleNode(pBreadcrumb, 4, &tAccessible);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_OFFSCREEN) != 0u &&
+		tAccessible.iActions == 0u,
+		"clipped breadcrumb item is offscreen and exposes no actions");
+	iRet = xuiWidgetPerformAccessibleAction(pBreadcrumb, 5u,
+		XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE,
+		"clipped breadcrumb item rejects accessibility activation");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_LEAVE;
+	tEvent.pTarget = pBreadcrumb;
+	(void)xuiDispatchEvent(pContext, &tEvent);
+	tRect = xuiBreadcrumbGetItemRect(pBreadcrumb, 3);
+	tWorld = xuiWidgetGetWorldRect(pBreadcrumb);
+	tEvent.iType = XUI_EVENT_POINTER_MOVE;
+	tEvent.fX = tWorld.fX + tRect.fX + tRect.fW * 0.5f;
+	tEvent.fY = tWorld.fY + tRect.fY + tRect.fH * 0.5f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiBreadcrumbGetHoverIndex(pBreadcrumb) == -1,
+		"direct pointer event cannot hit clipped breadcrumb item");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_KEY_DOWN;
+	tEvent.pTarget = pBreadcrumb;
+	tEvent.iKey = XUI_KEY_END;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	memset(&tAccessible, 0, sizeof(tAccessible));
+	tAccessible.iSize = sizeof(tAccessible);
+	if ( iRet == XUI_EVENT_DISPATCH_STOP ) {
+		iRet = xuiWidgetGetAccessibleNode(pBreadcrumb, 4, &tAccessible);
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		(tAccessible.iState & XUI_ACCESSIBLE_STATE_FOCUSED) == 0u,
+		"keyboard end skips clipped breadcrumb item");
+	(void)xuiWidgetSetRect(pBreadcrumb, (xui_rect_t){20.0f, 20.0f, 420.0f, 36.0f});
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore breadcrumb after clipping test");
 	tRect = xuiBreadcrumbGetItemRect(pBreadcrumb, 0);
 	tWorld = xuiWidgetGetWorldRect(pBreadcrumb);
 	fPressX = tWorld.fX + tRect.fX + tRect.fW * 0.5f;
