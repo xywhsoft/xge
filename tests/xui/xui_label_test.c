@@ -879,6 +879,28 @@ static int __xuiLabelTestSetTextOomPreserves(xui_widget pLabel)
 	return iRet == XUI_ERROR_OUT_OF_MEMORY && strcmp(xuiLabelGetText(pLabel), "Label migration") == 0;
 }
 
+static int __xuiLabelTestSetTextReusesCapacity(xui_widget pLabel)
+{
+	xallocationbudget* pBudget = NULL;
+	xallocationscope tScope;
+	int iRet;
+	int bResult;
+
+	memset(&tScope, 0, sizeof(tScope));
+	if ( !xrtAllocationBudgetCreate(1u, &pBudget) ) return 0;
+	if ( !xrtAllocationBudgetEnter(pBudget, &tScope) ) {
+		xrtAllocationBudgetFree(pBudget);
+		return 0;
+	}
+	iRet = xuiLabelSetText(pLabel, "Label migration extended");
+	bResult = iRet == XUI_OK &&
+		strcmp(xuiLabelGetText(pLabel), "Label migration extended") == 0;
+	if ( !xrtAllocationBudgetLeave(&tScope) ) bResult = 0;
+	xrtAllocationBudgetFree(pBudget);
+	if ( xuiLabelSetText(pLabel, "Label migration") != XUI_OK ) return 0;
+	return bResult;
+}
+
 int main(void)
 {
 	xui_label_test_state_t tState;
@@ -1004,6 +1026,7 @@ int main(void)
 		strcmp(xuiLabelGetText(pLabel), "label") == 0, "label overlapping text update failed");
 	XUI_TEST_CHECK(xuiLabelSetText(pLabel, NULL) == XUI_OK && strcmp(xuiLabelGetText(pLabel), "") == 0, "label null text clears failed");
 	XUI_TEST_CHECK(xuiLabelSetText(pLabel, "Label migration") == XUI_OK, "label text restore failed");
+	XUI_TEST_CHECK(__xuiLabelTestSetTextReusesCapacity(pLabel), "label text reuses geometric capacity");
 	XUI_TEST_CHECK(__xuiLabelTestSetTextOomPreserves(pLabel), "label text OOM preserves old value");
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pLabel) == 1, "label accessible node count failed");
 	memset(&tAccessible, 0, sizeof(tAccessible));

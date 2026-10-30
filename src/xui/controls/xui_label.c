@@ -48,9 +48,9 @@ static int __xuiLabelDescValid(const xui_label_desc_t* pDesc)
 
 static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 {
-	char* sNew;
 	size_t iLength;
 	int iNeed;
+	int iRet;
 
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -63,14 +63,9 @@ static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iNeed = (int)iLength + 1;
-	if ( iNeed > pData->iTextCapacity ) {
-		sNew = (char*)xrtRealloc(pData->sText, (size_t)iNeed);
-		if ( sNew == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		pData->sText = sNew;
-		pData->iTextCapacity = iNeed;
-	}
+	iRet = xuiInternalTextBufferReserve(&pData->sText,
+		&pData->iTextCapacity, iNeed);
+	if ( iRet != XUI_OK ) return iRet;
 	memmove(pData->sText, sText, (size_t)iNeed);
 	return XUI_OK;
 }
