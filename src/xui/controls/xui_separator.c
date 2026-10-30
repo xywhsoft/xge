@@ -347,7 +347,6 @@ static int __xuiSeparatorContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	xui_separator_data_t tResolved;
 	float fThickness;
 
-	(void)tConstraint;
 	if ( (pWidget == NULL) || (pSize == NULL) || (pUser == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -355,6 +354,12 @@ static int __xuiSeparatorContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	fThickness = xuiInternalSnapSize(tResolved.fThickness);
 	pSize->fX = (tResolved.iOrientation == XUI_SEPARATOR_VERTICAL) ? fThickness : 0.0f;
 	pSize->fY = (tResolved.iOrientation == XUI_SEPARATOR_VERTICAL) ? 0.0f : fThickness;
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 

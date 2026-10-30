@@ -112,6 +112,9 @@ int main(void)
 
 	iRet = xuiWidgetMeasureContent(pSeparator, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 0.0f && tMeasured.fY == 1.0f, "default measure");
+	iRet = xuiWidgetMeasureContent(pSeparator, (xui_vec2_t){100.0f, 0.5f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 0.0f && tMeasured.fY == 0.5f,
+		"horizontal measure respects finite cross-axis constraint");
 	XUI_TEST_CHECK(xuiSeparatorGetOrientation(pSeparator) == XUI_SEPARATOR_HORIZONTAL, "default orientation");
 	XUI_TEST_CHECK(xuiSeparatorGetAlign(pSeparator) == XUI_ALIGN_CENTER, "default align");
 	XUI_TEST_CHECK(xuiSeparatorGetLineStyle(pSeparator) == XUI_SEPARATOR_SOLID, "default line style");
@@ -203,6 +206,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "vertical rect");
 	iRet = xuiWidgetMeasureContent(pSeparator, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 3.0f && tMeasured.fY == 0.0f, "vertical measure");
+	iRet = xuiWidgetMeasureContent(pSeparator, (xui_vec2_t){1.5f, 100.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 1.5f && tMeasured.fY == 0.0f,
+		"vertical measure respects finite cross-axis constraint");
 	tRect = xuiSeparatorGetLineRect(pSeparator);
 	XUI_TEST_CHECK(__xuiSeparatorRectEq(tRect, 11.0f, 0.0f, 3.0f, 80.0f), "vertical line rect");
 	xuiTestSurfaceReset(pCache);
