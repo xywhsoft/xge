@@ -195,6 +195,7 @@ int main(void)
 	xui_rect_t tItem4;
 	xui_rect_t tOverflow;
 	xui_rect_t tWorld;
+	xui_vec2_t tMeasured;
 	int iFailed;
 	int iRet;
 	int iFirst;
@@ -268,6 +269,13 @@ int main(void)
 	tDesc.bHasMetrics = 1;
 	iRet = xuiToolbarCreate(pContext, &pToolbar, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pToolbar != NULL, "toolbar create");
+	iRet = xuiWidgetMeasureContent(pToolbar,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX > 90.0f && tMeasured.fY > 12.0f,
+		"toolbar reports intrinsic content size");
+	iRet = xuiWidgetMeasureContent(pToolbar, (xui_vec2_t){90.0f, 12.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 90.0f && tMeasured.fY == 12.0f,
+		"toolbar content measure respects finite constraints");
 	iRet = xuiWidgetAddChild(pRoot, pToolbar);
 	XUI_TEST_CHECK(iRet == XUI_OK, "toolbar add");
 	(void)xuiWidgetSetRect(pToolbar, (xui_rect_t){20.0f, 20.0f, 390.0f, 34.0f});

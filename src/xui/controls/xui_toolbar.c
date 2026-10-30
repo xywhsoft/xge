@@ -1156,14 +1156,22 @@ static int __xuiToolbarContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint
 {
 	xui_toolbar_data_t* pData;
 	xui_toolbar_resolved_t tResolved;
+	int iRet;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiToolbarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiToolbarResolve(pWidget, pData, &tResolved);
-	return __xuiToolbarMeasureItems(pWidget, pData, &tResolved, pSize);
+	iRet = __xuiToolbarMeasureItems(pWidget, pData, &tResolved, pSize);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (tConstraint.fX >= 0.0f) &&
+	     (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) &&
+	     (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
+	return XUI_OK;
 }
 
 static int __xuiToolbarTooltipResolve(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser)
