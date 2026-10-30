@@ -42,6 +42,7 @@ typedef struct xui_button_test_state_t {
 	int iTextMeasureCount;
 	uint32_t iLastTextMeasureFlags;
 	int iDrawSurfaceCount;
+	int iOutOfBoundsSurfaceCount;
 	int iFillCount;
 	int iStrokeCount;
 	int iCircleCount;
@@ -214,7 +215,6 @@ static int __xuiButtonTestSurfaceDraw(xui_proxy pProxy, xui_surface pSurface, xu
 {
 	xui_button_test_state_t* pState;
 
-	(void)tSrc;
 	(void)tDst;
 	(void)iColor;
 	(void)iFlags;
@@ -224,6 +224,11 @@ static int __xuiButtonTestSurfaceDraw(xui_proxy pProxy, xui_surface pSurface, xu
 	pState = __xuiButtonTestState(pProxy);
 	if ( pState != NULL ) {
 		pState->iDrawSurfaceCount++;
+		if ( (tSrc.fX < 0.0f) || (tSrc.fY < 0.0f) ||
+		     (tSrc.fX + tSrc.fW > (float)pSurface->tDesc.iWidth) ||
+		     (tSrc.fY + tSrc.fH > (float)pSurface->tDesc.iHeight) ) {
+			pState->iOutOfBoundsSurfaceCount++;
+		}
 	}
 	return XUI_OK;
 }
@@ -768,12 +773,41 @@ static void __xuiButtonTestDestroyClick(xui_widget pWidget, void* pUser)
 	xuiWidgetDestroy(pWidget);
 }
 
+static int __xuiButtonTestConsumePointer(xui_widget pWidget,
+	const xui_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pEvent;
+	(void)pUser;
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
+static int __xuiButtonTestClickAt(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerMove(pContext, fX, fY, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerDown(pContext, fX, fY,
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 int main(void)
 {
 	xui_button_test_state_t tState;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pButton;
+	xui_widget pContentButton;
+	xui_widget pContentChild;
 	xui_widget pDestroyButton;
 	xui_widget pInvalidButton;
 	xui_surface pIcon;
@@ -782,27 +816,33 @@ int main(void)
 	xui_button_desc_t tBadDesc;
 	xui_surface_desc_t tSurfaceDesc;
 	xui_nine_patch_t tPatch;
+	xui_nine_patch_t tOversizedPatch;
 	xui_style_property_info_t tPropertyInfo;
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
+	xui_rect_t tContentChildWorld;
 	uint32_t iPropertyId;
 	struct xui_font_t tFont;
 	char sLongText[192];
 	int iFailed;
 	int iRet;
 	int iClickCount;
+	int iContentClickCount;
 	int iDestroyClickCount;
 	int iMeasureCount;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pButton = NULL;
+	pContentButton = NULL;
+	pContentChild = NULL;
 	pDestroyButton = NULL;
 	pInvalidButton = NULL;
 	pIcon = NULL;
 	pFocusSurface = NULL;
 	iFailed = 0;
 	iClickCount = 0;
+	iContentClickCount = 0;
 	iDestroyClickCount = 0;
 	__xuiButtonTestInitProxy(&tState);
 	tFont.iMagic = XUI_TEST_FONT_MAGIC;
@@ -851,6 +891,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "button add");
 	iRet = xuiButtonSetClick(pButton, __xuiButtonTestClick, &iClickCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "click set");
+	iRet = xuiWidgetMeasureContent(pButton,
+		(xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 40.0f && tMeasured.fY == 16.0f,
+		"button intrinsic content measure");
+	iRet = xuiWidgetMeasureContent(pButton, (xui_vec2_t){24.0f, 10.0f}, &tMeasured);
+	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 24.0f && tMeasured.fY == 10.0f,
+		"button content measure respects tight constraints");
 	XUI_TEST_CHECK(strcmp(xuiButtonGetText(pButton), "Press") == 0, "text get");
 	XUI_TEST_CHECK(xuiWidgetGetCacheStateCount(pButton) >= 6, "cache state count");
 
@@ -934,6 +981,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "patched render prepare");
 	XUI_TEST_CHECK(tState.iDrawSurfaceCount > 0, "surface pieces rendered");
 	XUI_TEST_CHECK(tState.iCircleCount > 0, "badge rendered");
+	tOversizedPatch = tPatch;
+	tOversizedPatch.tSlice = (xui_thickness_t){40.0f, 40.0f, 8.0f, 8.0f};
+	iRet = xuiButtonSetPatch(pButton, 0, &tOversizedPatch);
+	tState.iOutOfBoundsSurfaceCount = 0;
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iOutOfBoundsSurfaceCount == 0,
+		"oversized nine-patch slices stay inside source surface");
+	iRet = xuiButtonSetPatch(pButton, 0, &tPatch);
+	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore regular patch");
 	tState.iDrawSurfaceCount = 0;
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && tState.iDrawSurfaceCount == 0,
@@ -943,6 +1000,55 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && tState.iDrawSurfaceCount > 0,
 		"borrowed surface generation rebuilds button caches");
+
+	iRet = xuiButtonCreate(pContext, &pContentButton, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pContentButton != NULL, "content button create");
+	iRet = xuiWidgetSetRect(pContentButton, (xui_rect_t){150.0f, 72.0f, 70.0f, 38.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pContentButton);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(pContentButton,
+		__xuiButtonTestClick, &iContentClickCount);
+	XUI_TEST_CHECK(iRet == XUI_OK, "content button attach");
+	iRet = xuiWidgetCreate(pContext, &pContentChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pContentChild,
+		(xui_rect_t){4.0f, 4.0f, 32.0f, 20.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pContentChild, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pContentButton, pContentChild);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "content child attach");
+	tContentChildWorld = xuiWidgetGetWorldRect(pContentChild);
+	XUI_TEST_CHECK(xuiHitTest(pContext,
+		tContentChildWorld.fX + tContentChildWorld.fW * 0.5f,
+		tContentChildWorld.fY + tContentChildWorld.fH * 0.5f,
+		XUI_WIDGET_HIT_DEFAULT) == pContentChild,
+		"plain button content child receives pointer target");
+	iRet = __xuiButtonTestClickAt(pContext,
+		tContentChildWorld.fX + tContentChildWorld.fW * 0.5f,
+		tContentChildWorld.fY + tContentChildWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iContentClickCount == 1,
+		"plain content child click bubbles to button");
+	iRet = xuiWidgetSetEventHandler(pContentChild, XUI_EVENT_POINTER_DOWN,
+		__xuiButtonTestConsumePointer, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pContentChild,
+		XUI_EVENT_POINTER_UP, __xuiButtonTestConsumePointer, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pContentChild,
+		XUI_EVENT_POINTER_CLICK, __xuiButtonTestConsumePointer, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "interactive content child handlers");
+	iRet = __xuiButtonTestClickAt(pContext,
+		tContentChildWorld.fX + tContentChildWorld.fW * 0.5f,
+		tContentChildWorld.fY + tContentChildWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && iContentClickCount == 1 &&
+		xuiGetPointerCapture(pContext) == NULL,
+		"interactive content child suppresses button activation");
+	iRet = xuiSetFocusWidget(pContext, pContentChild);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyDown(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputKeyUp(pContext, XUI_KEY_SPACE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && iContentClickCount == 1,
+		"focused content child space does not activate button");
+	xuiWidgetDestroy(pContentButton);
+	pContentButton = NULL;
+	pContentChild = NULL;
 
 	iRet = xuiInputPointerMove(pContext, 40.0f, 35.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer move");

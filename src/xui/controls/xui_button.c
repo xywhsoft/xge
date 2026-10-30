@@ -573,7 +573,6 @@ static int __xuiButtonContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint,
 	int bHasIcon;
 	int bVertical;
 
-	(void)tConstraint;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -610,6 +609,10 @@ static int __xuiButtonContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint,
 			}
 		}
 	}
+	if ( (tConstraint.fX >= 0.0f) && (tConstraint.fX < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
+	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
+	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
 
@@ -712,6 +715,10 @@ static int __xuiButtonDrawNinePatch(xui_proxy pProxy, xui_draw_context pDraw, co
 	float arrSrcY[4];
 	float arrDstX[4];
 	float arrDstY[4];
+	float fSrcLeft;
+	float fSrcTop;
+	float fSrcRight;
+	float fSrcBottom;
 	float fLeft;
 	float fTop;
 	float fRight;
@@ -732,33 +739,37 @@ static int __xuiButtonDrawNinePatch(xui_proxy pProxy, xui_draw_context pDraw, co
 	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	fLeft = pPatch->tSlice.fLeft;
-	fTop = pPatch->tSlice.fTop;
-	fRight = pPatch->tSlice.fRight;
-	fBottom = pPatch->tSlice.fBottom;
-	if ( fLeft + fRight > tSrc.fW ) {
-		fRight = tSrc.fW - fLeft;
-		if ( fRight < 0.0f ) {
-			fRight = 0.0f;
-			fLeft = tSrc.fW;
+	fSrcLeft = pPatch->tSlice.fLeft;
+	fSrcTop = pPatch->tSlice.fTop;
+	fSrcRight = pPatch->tSlice.fRight;
+	fSrcBottom = pPatch->tSlice.fBottom;
+	if ( fSrcLeft + fSrcRight > tSrc.fW ) {
+		fSrcRight = tSrc.fW - fSrcLeft;
+		if ( fSrcRight < 0.0f ) {
+			fSrcRight = 0.0f;
+			fSrcLeft = tSrc.fW;
 		}
 	}
-	if ( fTop + fBottom > tSrc.fH ) {
-		fBottom = tSrc.fH - fTop;
-		if ( fBottom < 0.0f ) {
-			fBottom = 0.0f;
-			fTop = tSrc.fH;
+	if ( fSrcTop + fSrcBottom > tSrc.fH ) {
+		fSrcBottom = tSrc.fH - fSrcTop;
+		if ( fSrcBottom < 0.0f ) {
+			fSrcBottom = 0.0f;
+			fSrcTop = tSrc.fH;
 		}
 	}
+	fLeft = fSrcLeft;
+	fTop = fSrcTop;
+	fRight = fSrcRight;
+	fBottom = fSrcBottom;
 	__xuiButtonScaleFixed(tDst.fW, &fLeft, &fRight, &fMidW);
 	__xuiButtonScaleFixed(tDst.fH, &fTop, &fBottom, &fMidH);
 	arrSrcX[0] = tSrc.fX;
-	arrSrcX[1] = tSrc.fX + pPatch->tSlice.fLeft;
-	arrSrcX[2] = tSrc.fX + tSrc.fW - pPatch->tSlice.fRight;
+	arrSrcX[1] = tSrc.fX + fSrcLeft;
+	arrSrcX[2] = tSrc.fX + tSrc.fW - fSrcRight;
 	arrSrcX[3] = tSrc.fX + tSrc.fW;
 	arrSrcY[0] = tSrc.fY;
-	arrSrcY[1] = tSrc.fY + pPatch->tSlice.fTop;
-	arrSrcY[2] = tSrc.fY + tSrc.fH - pPatch->tSlice.fBottom;
+	arrSrcY[1] = tSrc.fY + fSrcTop;
+	arrSrcY[2] = tSrc.fY + tSrc.fH - fSrcBottom;
 	arrSrcY[3] = tSrc.fY + tSrc.fH;
 	arrDstX[0] = tDst.fX;
 	arrDstX[1] = tDst.fX + fLeft;
@@ -1098,6 +1109,19 @@ static void __xuiButtonDefaultAction(xui_widget pWidget, void* pUser)
 	__xuiButtonDoClick(pWidget, pData);
 }
 
+static int __xuiButtonAcceptPointerTarget(xui_widget pWidget,
+	const xui_event_t* pEvent)
+{
+	xui_widget pScan;
+
+	if ( pEvent->pTarget == pWidget ) return 1;
+	if ( pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE ) return 0;
+	for ( pScan = pEvent->pTarget; pScan != NULL; pScan = xuiWidgetGetParent(pScan) ) {
+		if ( pScan == pWidget ) return 1;
+	}
+	return 0;
+}
+
 static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_button_data_t* pData;
@@ -1136,7 +1160,7 @@ static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		(void)__xuiButtonSyncState(pWidget, pData);
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
-		if ( bLeftButton ) {
+		if ( __xuiButtonAcceptPointerTarget(pWidget, pEvent) && bLeftButton ) {
 			if ( pData->tPointerPress.tOwner.bActive ) {
 				return xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ?
 					XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -1152,7 +1176,8 @@ static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		}
 		break;
 	case XUI_EVENT_POINTER_UP:
-		if ( bLeftButton && xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ) {
+		if ( __xuiButtonAcceptPointerTarget(pWidget, pEvent) && bLeftButton &&
+		     xuiInternalPointerPressMatches(&pData->tPointerPress, pEvent) ) {
 			iRet = xuiInternalPointerPressEnd(pContext, pWidget, pEvent,
 				&pData->tPointerPress);
 			if ( iRet != XUI_OK ) return iRet;
@@ -1165,7 +1190,7 @@ static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		if ( !xuiInternalPointerPressCaptureLost(&pData->tPointerPress, pEvent) ) return XUI_OK;
 		return __xuiButtonSyncState(pWidget, pData);
 	case XUI_EVENT_POINTER_CLICK:
-		if ( bLeftButton ) {
+		if ( __xuiButtonAcceptPointerTarget(pWidget, pEvent) && bLeftButton ) {
 			if ( !xuiInternalPointerPressAcceptClick(&pData->tPointerPress, pEvent) ) {
 				return XUI_EVENT_DISPATCH_STOP;
 			}
@@ -1174,14 +1199,14 @@ static int __xuiButtonEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		}
 		break;
 	case XUI_EVENT_KEY_DOWN:
-		if ( pEvent->iKey == XUI_KEY_SPACE ) {
+		if ( (pEvent->pTarget == pWidget) && (pEvent->iKey == XUI_KEY_SPACE) ) {
 			pData->bKeyboardActive = 1;
 			(void)__xuiButtonSyncState(pWidget, pData);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_UP:
-		if ( pEvent->iKey == XUI_KEY_SPACE ) {
+		if ( (pEvent->pTarget == pWidget) && (pEvent->iKey == XUI_KEY_SPACE) ) {
 			if ( pData->bKeyboardActive ) {
 				pData->bKeyboardActive = 0;
 				__xuiButtonDoClick(pWidget, pData);
