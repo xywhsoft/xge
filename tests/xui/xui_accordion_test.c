@@ -190,6 +190,7 @@ int main(void)
 	xui_widget pDestroyAccordion;
 	xui_widget pInvalid;
 	xui_widget pClient;
+	xui_widget pFocusChild;
 	xui_widget pReentrantChild;
 	xui_widget arrMutationClients[3];
 	xui_widget_type pReentrantType;
@@ -225,6 +226,7 @@ int main(void)
 	pMutationAccordion = NULL;
 	pDestroyAccordion = NULL;
 	pInvalid = NULL;
+	pFocusChild = NULL;
 	pReentrantChild = NULL;
 	pReentrantType = NULL;
 	pTarget = NULL;
@@ -326,6 +328,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "child 1");
 	iRet = __xuiAccordionAddFixedChild(pContext, pAccordion, 2, 26.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "child 2");
+	iRet = xuiWidgetCreate(pContext, &pFocusChild);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pFocusChild,
+		XUI_SIZE_FILL, XUI_SIZE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetPreferredSize(pFocusChild,
+		(xui_vec2_t){0.0f, 20.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pFocusChild, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pClient, pFocusChild);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focusable section child");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 640, 360, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -356,6 +366,35 @@ int main(void)
 	XUI_TEST_CHECK(__xuiAccordionNear(tClient1.fH, 0.0f), "collapsed client height");
 	XUI_TEST_CHECK(tArrow.fW > 0.0f && tArrow.fH > 0.0f, "arrow rect");
 	XUI_TEST_CHECK(xuiAccordionGetContentHeight(pAccordion) > 90.0f, "content height");
+	xuiWidgetClearDirty(pAccordion, XUI_WIDGET_DIRTY_ALL);
+	for ( i = 0; i < 3; i++ ) {
+		xuiWidgetClearDirty(xuiAccordionGetSectionWidget(pAccordion, i), XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(xuiAccordionGetHeaderWidget(pAccordion, i), XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(xuiAccordionGetClientWidget(pAccordion, i), XUI_WIDGET_DIRTY_ALL);
+	}
+	iBefore = xuiAccordionGetChangeCount(pAccordion);
+	iRet = xuiAccordionSetSectionTitle(pAccordion, 1, "Advanced review");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetChangeCount(pAccordion) == iBefore + 1 &&
+		(xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 1)) &
+			(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) != 0u &&
+		xuiWidgetGetDirtyFlags(pAccordion) == 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetSectionWidget(pAccordion, 1)) == 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetClientWidget(pAccordion, 1)) == 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 0)) == 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 2)) == 0u,
+		"title change invalidates only its header cache");
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	if ( iRet == XUI_OK ) xuiWidgetClearDirty(xuiAccordionGetHeaderWidget(pAccordion, 1),
+		XUI_WIDGET_DIRTY_ALL);
+	iBefore = xuiAccordionGetChangeCount(pAccordion);
+	if ( iRet == XUI_OK ) iRet = xuiAccordionSetSectionTitle(pAccordion, 1,
+		xuiAccordionGetSectionTitle(pAccordion, 1));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetChangeCount(pAccordion) == iBefore &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 1)) == 0u,
+		"same borrowed title is a clean no-op");
+	iRet = xuiAccordionSetSectionTitle(pAccordion, 1, "Advanced");
+	if ( iRet == XUI_OK ) iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore title after invalidation scope test");
 	memset(&tNode, 0, sizeof(tNode));
 	tNode.iSize = sizeof(tNode);
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNodeCount(pAccordion) == 4 &&
@@ -389,6 +428,63 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		(xuiAccordionGetState(pAccordion) & XUI_WIDGET_STATE_DISABLED) == 0,
 		"ancestor enable restores accordion state");
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render before descendant event isolation");
+	xuiWidgetClearDirty(pAccordion, XUI_WIDGET_DIRTY_ALL);
+	xuiWidgetClearDirty(xuiAccordionGetHeaderWidget(pAccordion, 0),
+		XUI_WIDGET_DIRTY_ALL);
+	iRet = xuiWidgetSetEnabled(pFocusChild, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetDirtyFlags(pAccordion) == 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 0)) == 0u,
+		"descendant enabled event does not invalidate accordion model");
+	iRet = xuiWidgetSetEnabled(pFocusChild, 1);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore focusable section child");
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	if ( iRet == XUI_OK ) iRet = xuiSetFocusWidget(pContext, pFocusChild);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pFocusChild,
+		"focus section descendant");
+	tWorld = xuiWidgetGetWorldRect(pAccordion);
+	tHeader = xuiAccordionGetHeaderRect(pAccordion, 0);
+	iBefore = tEvents.iSelectCount;
+	iRet = __xuiAccordionDispatchClick(pContext,
+		tWorld.fX + tHeader.fX + tHeader.fW * 0.5f,
+		tWorld.fY + tHeader.fY + tHeader.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionIsExpanded(pAccordion, 0) == 0 &&
+		tEvents.iSelectCount == iBefore + 1,
+		"descendant blur does not cancel header click");
+	iRet = xuiAccordionSetExpanded(pAccordion, 0, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore section after descendant focus click");
+	for ( i = 0; i < 3; i++ ) {
+		xuiWidgetClearDirty(xuiAccordionGetHeaderWidget(pAccordion, i), XUI_WIDGET_DIRTY_ALL);
+		xuiWidgetClearDirty(xuiAccordionGetClientWidget(pAccordion, i), XUI_WIDGET_DIRTY_ALL);
+	}
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSelected(pAccordion) == 1 &&
+		(xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 0)) &
+			(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) != 0u &&
+		(xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 1)) &
+			(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER)) != 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetHeaderWidget(pAccordion, 2)) == 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetClientWidget(pAccordion, 0)) == 0u &&
+		xuiWidgetGetDirtyFlags(xuiAccordionGetClientWidget(pAccordion, 1)) == 0u,
+		"keyboard selection invalidates only old and new headers");
+	iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	pHeaderCache = xuiWidgetGetCacheSurface(xuiAccordionGetHeaderWidget(pAccordion, 1),
+		xuiWidgetGetStateId(xuiAccordionGetHeaderWidget(pAccordion, 1)));
+	XUI_TEST_CHECK(iRet == XUI_OK && pHeaderCache != NULL &&
+		xuiTestSurfaceGetRectFillColorCount(pHeaderCache,
+			XUI_COLOR_RGBA(47, 125, 215, 255)) >= 4,
+		"focused keyboard selection draws a visible header focus ring");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_UP, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = __xuiAccordionLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiAccordionGetSelected(pAccordion) == 0,
+		"restore keyboard selection after focus ring test");
 
 	tWorld = xuiWidgetGetWorldRect(pAccordion);
 	tHeader = xuiAccordionGetHeaderRect(pAccordion, 1);
