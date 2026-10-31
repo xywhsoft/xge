@@ -28,15 +28,7 @@ struct xui_code_language_registry_t {
 
 static char* __xuiCodeLanguageStrDup(const char* sText)
 {
-	char* sCopy;
-	size_t iLength;
-
-	if ( sText == NULL ) return NULL;
-	iLength = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLength + 1u);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, iLength + 1u);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static int __xuiCodeLanguageEquals(const char* a, const char* b)

@@ -138,18 +138,7 @@ static int __xuiIconStringEqual(const char* sA, const char* sB)
 
 static char* __xuiIconStringDuplicate(const char* sText)
 {
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iSize = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iSize);
-	if ( sCopy != NULL ) {
-		memcpy(sCopy, sText, iSize);
-	}
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static void* __xuiIconMemoryDuplicate(const void* pData, int iSize)

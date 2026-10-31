@@ -83,13 +83,7 @@ static int __xuiToolbarCancelPress(xui_widget pWidget, xui_toolbar_data_t* pData
 
 static char* __xuiToolbarCopyString(const char* sText)
 {
-	size_t iLength;
-	char* sCopy;
-	if ( sText == NULL || sText[0] == '\0' ) return NULL;
-	iLength = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLength + 1u);
-	if ( sCopy != NULL ) memcpy(sCopy, sText, iLength + 1u);
-	return sCopy;
+	return sText != NULL && sText[0] != '\0' ? xrtStrDup(sText) : NULL;
 }
 
 static void __xuiToolbarReleaseStrings(xui_toolbar_data_t* pData)

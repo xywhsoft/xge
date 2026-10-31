@@ -229,19 +229,7 @@ static int __xuiResourceValid(xui_resource pResource)
 
 static char* __xuiCoreStringDuplicate(const char* sText)
 {
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iSize = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iSize);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iSize);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static int __xuiLanguageValid(xui_language pLanguage)

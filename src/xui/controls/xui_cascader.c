@@ -167,14 +167,7 @@ static int __xuiCascaderAppendText(char* sDst, size_t iCapacity, int* pOffset,
 
 static char* __xuiCascaderDuplicateText(const char* sText)
 {
-	char* sCopy;
-	size_t iLength;
-
-	if ( sText == NULL ) return NULL;
-	iLength = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iLength);
-	if ( sCopy != NULL ) memcpy(sCopy, sText, iLength);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static void __xuiCascaderFreeTextArray(char** arrTexts)

@@ -30,15 +30,7 @@ struct xui_code_annotation_store_t {
 
 static char* __xuiCodeAnnotationStrDup(const char* sText)
 {
-	char* sCopy;
-	size_t iLength;
-
-	if ( sText == NULL ) return NULL;
-	iLength = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLength + 1u);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, iLength + 1u);
-	return sCopy;
+	return sText != NULL ? xrtStrDup(sText) : NULL;
 }
 
 static void __xuiCodeAnnotationFreeMarker(xui_code_marker_t* pMarker)

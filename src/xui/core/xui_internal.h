@@ -685,6 +685,11 @@ int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
 int xuiInternalWidgetSetTreeLayer(xui_widget pWidget, int iLayer, int iZIndex);
 int xuiInternalOverlayNextZ(xui_context pContext, int iLayer);
 
+static char* xuiInternalStringDuplicateNullable(const char* sText)
+{
+	return sText != NULL ? xrtStrDup(sText) : NULL;
+}
+
 static int xuiInternalPixelFloor(float fValue)
 {
 	int iValue;

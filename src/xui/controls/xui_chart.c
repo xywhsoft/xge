@@ -390,13 +390,7 @@ static double __xuiChartLerp(double fMin, double fMax, double fRate)
 
 static char* __xuiChartCopyString(const char* sText)
 {
-	char* sCopy;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	sCopy = xrtStrDup(sText);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static void __xuiChartSetFixedString(char* sDst, int iCapacity, const char* sText)

@@ -594,19 +594,7 @@ static int __xuiTooltipDescStructValid(const xui_tooltip_desc_t* pDesc)
 
 static char* __xuiStringDuplicate(const char* sText)
 {
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iSize = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iSize);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iSize);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static int __xuiStringEqual(const char* sA, const char* sB)

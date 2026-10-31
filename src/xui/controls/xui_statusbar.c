@@ -50,14 +50,7 @@ static void __xuiStatusBarIncrementCount(int* pCount)
 
 static char* __xuiStatusBarCopyString(const char* sText)
 {
-	size_t iLength;
-	char* sCopy;
-
-	if ( sText == NULL || sText[0] == '\0' ) return NULL;
-	iLength = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLength + 1u);
-	if ( sCopy != NULL ) memcpy(sCopy, sText, iLength + 1u);
-	return sCopy;
+	return sText != NULL && sText[0] != '\0' ? xrtStrDup(sText) : NULL;
 }
 
 static void __xuiStatusBarFreeStrings(char** arrTexts, int iCount)

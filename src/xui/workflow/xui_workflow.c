@@ -46,19 +46,7 @@ static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_work
 
 static char* __xuiWorkflowCopyString(const char* sText)
 {
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iSize = strlen(sText);
-	sCopy = (char*)xrtMalloc(iSize + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iSize + 1u);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static void __xuiWorkflowFreePortDesc(xui_flow_port_desc_t* pPort)

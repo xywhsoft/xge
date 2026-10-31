@@ -339,19 +339,7 @@ static uint32_t __xuiFlowGraphWidgetEdgeRunColor(const xui_flow_graph_widget_dat
 
 static char* __xuiFlowGraphWidgetCopyString(const char* sText)
 {
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iSize = strlen(sText);
-	sCopy = (char*)xrtMalloc(iSize + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iSize + 1u);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 static int __xuiFlowGraphWidgetRectNear(xui_rect_t tA, xui_rect_t tB)

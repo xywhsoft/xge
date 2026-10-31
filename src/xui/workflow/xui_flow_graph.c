@@ -170,19 +170,7 @@ void xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSec
 
 static char* __xuiFlowCopyString(const char* sText)
 {
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iSize = strlen(sText);
-	sCopy = (char*)xrtMalloc(iSize + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iSize + 1u);
-	return sCopy;
+	return sText != NULL ? xrtStrDup(sText) : NULL;
 }
 
 static int __xuiFlowStringEqual(const char* sA, const char* sB)

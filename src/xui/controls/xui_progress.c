@@ -330,19 +330,7 @@ static int __xuiProgressTemplateNeedsFormatting(const char* sTextTemplate)
 
 static char* __xuiProgressCopyText(const char* sText)
 {
-	char* sCopy;
-	size_t iNeed;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iNeed = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iNeed);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iNeed);
-	return sCopy;
+	return xuiInternalStringDuplicateNullable(sText);
 }
 
 typedef struct xui_progress_text_writer_t {
