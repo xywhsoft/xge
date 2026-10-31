@@ -3524,6 +3524,35 @@ XGE_API int xgeParticleRender(xge_particle_renderer pRenderer, xge_particle_worl
 
 
 
+#if XGE_ENABLE_INPUT_ACTIONS
+#define XGE_ACTION_KEY 0
+#define XGE_ACTION_MOUSE_BUTTON 1
+#define XGE_ACTION_GAMEPAD_BUTTON 2
+#define XGE_ACTION_GAMEPAD_AXIS 3
+typedef struct xge_actions xge_actions;
+typedef struct xge_action_binding_t {
+    int type, device; /* Gamepad 0..3, or -1 for strongest connected device. */
+    uint32_t code; /* Key code, mouse/button bit, or axis index. */
+    float scale;
+} xge_action_binding_t;
+typedef struct xge_action_state_t { float value;int down,pressed,released; } xge_action_state_t;
+typedef float (*xge_action_read_proc)(const xge_action_binding_t *binding,void *user);
+/* Fixed capacities; actions are application-defined indices. CPU-only. */
+XGE_API int xgeActionsCreate(uint32_t action_count,uint32_t binding_capacity,xge_actions **out);
+XGE_API void xgeActionsFree(xge_actions *actions);
+XGE_API int xgeActionsBind(xge_actions *actions,uint32_t action,const xge_action_binding_t *binding);
+XGE_API int xgeActionsClearBindings(xge_actions *actions,uint32_t action);
+XGE_API int xgeActionsSetDeadzone(xge_actions *actions,uint32_t action,float deadzone);
+XGE_API int xgeActionsSetEnabled(xge_actions *actions,uint32_t action,int enabled);
+/* Once per input frame, before querying. NULL read polls XGE and honors consumed
+ * keys. Custom read returns finite [-1,1]; invalid input preserves all states.
+ * Opposing bindings sum, clamp, then apply a rescaled deadzone. No allocations. */
+XGE_API int xgeActionsUpdate(xge_actions *actions,xge_action_read_proc read,void *user);
+XGE_API int xgeActionsGet(const xge_actions *actions,uint32_t action,xge_action_state_t *out);
+/* Focus loss: clears values/edges without generating synthetic release events. */
+XGE_API void xgeActionsReset(xge_actions *actions);
+#endif
+
 #if XGE_ENABLE_3D
 /* Right-handed, Y up, metres and radians; column-major matrices. Scene mutation
  * and GPU calls are serialized by the caller. Nodes belong to their scene;
@@ -3864,6 +3893,59 @@ XGE_API int xge3dRender(xge3d_renderer *renderer, xge3d_scene *scene,
 /* Default NONE. FXAA filters the final 3D image only, before later 2D/UI draws.
  * Geometry draw statistics exclude the compositor's fullscreen passes. */
 XGE_API int xge3dRendererSetAntialiasing(xge3d_renderer *renderer, int mode);
+#endif
+#if XGE3D_ENABLE_TONEMAP || XGE3D_ENABLE_COLOR_GRADING
+#define XGE3D_TONEMAP_NONE 0
+#if XGE3D_ENABLE_TONEMAP
+#define XGE3D_TONEMAP_REINHARD 1
+#define XGE3D_TONEMAP_ACES 2
+#endif
+typedef struct xge3d_color_settings_t {
+    uint32_t size;
+    int tone_mapping;
+    float saturation, contrast; /* [0,4], identity 1; linear contrast pivot .18. */
+    xge3d_vec3_t gain; /* Linear RGB multipliers [0,16], identity (1,1,1). */
+} xge3d_color_settings_t;
+/* Useful opt-in preset: ACES if compiled, identity grading. Renderer defaults
+ * to all effects off. Existing render_desc.exposure remains the exposure. */
+XGE_API xge3d_color_settings_t xge3dColorDefault(void);
+/* Copies settings; NULL resets. Grading precedes tone mapping and sRGB output,
+ * in the existing final pass. Trimmed features require identity values or
+ * return UNSUPPORTED. Enabled color/bloom requires CLEAR_COLOR per Render to
+ * avoid reprocessing an already display-mapped image. Draw UI afterwards.
+ * Call setters on the renderer's context thread. */
+XGE_API int xge3dRendererSetColor(xge3d_renderer *renderer,const xge3d_color_settings_t *settings);
+#endif
+#if XGE3D_ENABLE_BLOOM
+typedef struct xge3d_bloom_settings_t {
+    uint32_t size;
+    float strength, threshold, knee; /* [0,4], [0,64], [0,64]; zero strength disables. */
+    int levels; /* 1..6, starting at half resolution, truncated at 1x1. */
+} xge3d_bloom_settings_t;
+typedef struct xge3d_bloom_info_t {
+    uint32_t size, levels, passes; /* Allocated levels; passes in the last Render attempt. */
+    uint64_t storage_bytes; /* RGBA16F textures only; excludes driver/program overhead. */
+} xge3d_bloom_info_t;
+XGE_API xge3d_bloom_settings_t xge3dBloomDefault(void);
+/* Copies settings. Default off; textures and shader are lazy. NULL/strength=0
+ * skips bloom passes and immediately releases its textures (program is cached).
+ * Bloom is added before grading/tone mapping; transparent glow extends alpha
+ * coverage while preserving the display-premultiplied public output contract. */
+XGE_API int xge3dRendererSetBloom(xge3d_renderer *renderer,const xge3d_bloom_settings_t *settings);
+XGE_API int xge3dRendererBloomInfo(const xge3d_renderer *renderer,xge3d_bloom_info_t *out);
+#endif
+#if XGE3D_ENABLE_HEIGHT_FOG
+typedef struct xge3d_height_fog_settings_t {
+    uint32_t size;
+    xge3d_vec3_t color; /* Nonnegative finite linear RGB, before exposure. */
+    double height; /* Global Y in metres, independent of SceneSetOrigin. */
+    float density, falloff, max_opacity; /* [0,1000] per metre, [0,1000], [0,1]. */
+} xge3d_height_fog_settings_t;
+XGE_API xge3d_height_fog_settings_t xge3dHeightFogDefault(void);
+/* Copies settings; NULL/density=0/max_opacity=0 disables. Integrates exponential
+ * height density along the view ray without ray marching or auxiliary buffers.
+ * Applies to geometry after distance fog, before exposure; sky is unchanged. */
+XGE_API int xge3dRendererSetHeightFog(xge3d_renderer *renderer,const xge3d_height_fog_settings_t *settings);
 #endif
 #if XGE3D_ENABLE_MODEL
 typedef struct xge3d_model_info_t {
@@ -4397,6 +4479,116 @@ XGE_API xge3d_scene_node_desc_t xge3dSceneNodeDefault(void);
  * chosen file format. Failure removes the staged hierarchy and releases assets. */
 XGE_API int xge3dSceneLoad(xge3d_scene *scene,xge3d_node_t parent,const xge3d_scene_desc_t *desc,xge3d_node_t *out_root);
 #endif
+#if XGE3D_ENABLE_DYNAMIC
+/* Shared materials affect every user. Validation/ref acquisition is transactional;
+ * old descriptors and parameters remain intact on failure. Owner thread. */
+XGE_API int xge3dMaterialSetDesc(xge3d_material *material,const xge3d_material_desc_t *desc);
+/* Straight RGBA8 rows, top-to-bottom like TextureCreate. Uploaded objects require
+ * their context thread. Target views are read-only. No new persistent allocation. */
+XGE_API int xge3dTextureUpdate(xge3d_texture *texture,int x,int y,int width,int height,
+    const void *pixels,int stride);
+/* Retains target, follows resize, and decodes its display-premultiplied colors
+ * when sampled. Color/emissive slots only. Rendering into the sampled target is
+ * rejected. Release view and target before destroying their GL context. */
+XGE_API int xge3dTextureFromTarget(xge3d_target *target,xge3d_texture **out);
+#endif
+
+#if XGE3D_ENABLE_DEBUG_DRAW
+/* Renderer-owned persistent queue. Clear explicitly each frame if rebuilding.
+ * Colors are straight linear RGBA, geometry is relative to the scene origin.
+ * Lazy GPU allocation; drawn before postprocessing, no depth writes. */
+XGE_API void xge3dDebugClear(xge3d_renderer *renderer);
+XGE_API int xge3dDebugLine(xge3d_renderer *renderer,xge3d_vec3_t a,xge3d_vec3_t b,const float color[4],int depth_test);
+XGE_API int xge3dDebugBox(xge3d_renderer *renderer,const xge3d_aabb_t *box,const xge3d_mat4_t *world,const float color[4],int depth_test);
+XGE_API int xge3dDebugAxes(xge3d_renderer *renderer,const xge3d_mat4_t *world,float length,int depth_test);
+#if XGE3D_ENABLE_COLLISION
+XGE_API int xge3dDebugShape(xge3d_renderer *renderer,const xge3d_shape_t *shape,const xge3d_mat4_t *world,const float color[4],int depth_test);
+#endif
+#if XGE3D_ENABLE_ANIMATION
+XGE_API int xge3dDebugSkeleton(xge3d_renderer *renderer,xge3d_scene *scene,xge3d_node_t skinned_node,const float color[4],int depth_test);
+#endif
+#endif
+
+#if XGE3D_ENABLE_MOTION
+typedef struct xge3d_contact_t { xge3d_collision_hit_t hit;float depth; } xge3d_contact_t;
+typedef struct xge3d_motion_settings_t {
+    uint32_t size;int iterations;float margin,max_recovery;
+} xge3d_motion_settings_t;
+#define XGE3D_MOTION_BLOCKED 1u
+#define XGE3D_MOTION_RECOVERED 2u
+#define XGE3D_MOTION_LIMITED 4u
+typedef struct xge3d_motion_result_t {
+    uint32_t size,flags;int iterations,contact_count;
+    xge3d_vec3_t displacement,recovery,remainder,normals[8];
+} xge3d_motion_result_t;
+/* Deepest contact per collider. Normals point toward the query shape; depth is
+ * metres along that normal. Touching has depth 0. Same capacity rules as overlap.
+ * Zero-volume query shapes may report UNSUPPORTED for penetration resolution. */
+XGE_API int xge3dSceneContactShape(xge3d_scene *scene,const xge3d_shape_t *shape,const xge3d_mat4_t *world,
+    const xge3d_collision_filter_t *filter,xge3d_contact_t *contacts,size_t capacity,size_t *count);
+XGE_API xge3d_motion_settings_t xge3dMotionDefault(void);
+/* Pure query: never moves a node. Recovers overlaps then sweeps/slides a convex
+ * shape, with finite iteration/distance limits. LIMITED exposes unresolved work.
+ * No gravity, stairs, slope policy or rigid-body simulation. */
+XGE_API int xge3dSceneMoveShape(xge3d_scene *scene,const xge3d_shape_t *shape,const xge3d_mat4_t *world,
+    xge3d_vec3_t movement,const xge3d_collision_filter_t *filter,const xge3d_motion_settings_t *settings,
+    xge3d_motion_result_t *out);
+#endif
+
+#if XGE3D_ENABLE_SHADER
+typedef struct xge3d_shader xge3d_shader;
+typedef struct xge3d_shader_desc_t {
+    uint32_t size;
+    const char *vertex,*surface; /* NULL = identity. Function contracts in guide. */
+    float bounds_margin; /* Nonnegative local displacement bound, incl shadows. */
+} xge3d_shader_desc_t;
+/* Compile on context thread. The same hooks feed normal/skinned/instanced and
+ * shadow programs. Four vec4 xge3dParams uniforms are copied per material. */
+XGE_API int xge3dShaderCreate(const xge3d_shader_desc_t *desc,xge3d_shader **out);
+XGE_API void xge3dShaderFree(xge3d_shader *shader);
+XGE_API int xge3dMaterialSetShader(xge3d_material *material,xge3d_shader *shader,const float parameters[16]);
+#endif
+
+#if XGE3D_ENABLE_BILLBOARD
+#define XGE3D_BILLBOARD_ALPHA 0
+#define XGE3D_BILLBOARD_ADD 1
+typedef struct xge3d_billboard_t {
+    xge3d_vec3_t position;
+    float width,height,rotation,color[4],uv[4]; /* uv: u,v,width,height; radians. */
+    xge3d_texture *texture; /* Retained by renderer queue. NULL = white. */
+    int blend,depth_test;
+} xge3d_billboard_t;
+/* Persistent queue, sorted back-to-front with automatic adjacent batching.
+ * Camera-facing quads, straight linear color; no depth writes or shadow casting. */
+XGE_API xge3d_billboard_t xge3dBillboardDefault(void);
+XGE_API int xge3dBillboardsSet(xge3d_renderer *renderer,const xge3d_billboard_t *items,size_t count);
+#endif
+
+#if XGE3D_ENABLE_PARTICLES
+typedef struct xge3d_particles xge3d_particles;
+typedef struct xge3d_particle_desc_t {
+    uint32_t size,capacity,seed;
+    float rate,life_min,life_max,speed_min,speed_max,size_start,size_end,spread,drag;
+    xge3d_vec3_t position,direction,gravity;
+    float color_start[4],color_end[4];
+    int columns,rows;float fps; /* Grid sequence; 1x1 disables animation. */
+} xge3d_particle_desc_t;
+typedef struct xge3d_particle_info_t { uint32_t size,alive;uint64_t emitted,dropped; } xge3d_particle_info_t;
+XGE_API xge3d_particle_desc_t xge3dParticlesDefault(void);
+/* CPU-only bounded storage. Deterministic for the same seed and update steps. */
+XGE_API int xge3dParticlesCreate(const xge3d_particle_desc_t *desc,xge3d_particles **out);
+XGE_API void xge3dParticlesFree(xge3d_particles *particles);
+XGE_API int xge3dParticlesSetPosition(xge3d_particles *particles,xge3d_vec3_t position);
+XGE_API int xge3dParticlesEmit(xge3d_particles *particles,uint32_t count);
+/* emit=0 drains existing particles. dt in [0,1]; integration substeps <=1/60 s. */
+XGE_API int xge3dParticlesUpdate(xge3d_particles *particles,float dt,int emit);
+XGE_API int xge3dParticlesInfo(const xge3d_particles *particles,xge3d_particle_info_t *out);
+/* Writes caller-owned billboard descriptions, borrowing texture. Short capacity
+ * returns required count and BUFFER_TOO_SMALL. Submit to BillboardsSet to retain. */
+XGE_API int xge3dParticlesBillboards(const xge3d_particles *particles,xge3d_texture *texture,int blend,
+    xge3d_billboard_t *items,size_t capacity,size_t *count);
+#endif
+
 /* 将 TRS 变换转换为 4x4 仿射矩阵。 */
 XGE_API int xge3dTransformMatrix(const xge3d_transform_t *transform, xge3d_mat4_t *out);
 /* 按视野角、宽高比和裁剪面构造透视相机。 */

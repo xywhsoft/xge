@@ -11,7 +11,7 @@ def run(args):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('subset',choices=['playback','render-quality','core-next','foundation','cpu','spatial','terrain','async','culling','instancing','fog','gpu','import','material','sky','light','shadow','ibl','skin','animation','motion','retarget','all'],nargs='?',default='cpu')
+    p.add_argument('subset',choices=['game-foundation','light-effects','playback','render-quality','core-next','foundation','cpu','spatial','terrain','async','culling','instancing','fog','gpu','import','material','sky','light','shadow','ibl','skin','animation','motion','retarget','all'],nargs='?',default='cpu')
     p.add_argument('profile',choices=['3d','full-dev','ui-min'],nargs='?',default='3d')
     a=p.parse_args()
     if a.subset in ('motion','retarget'):
@@ -21,6 +21,13 @@ def main():
     out=Path('build')/a.profile
     tests=['cpu','spatial','terrain','import','animation','async','gpu','import_gpu','material_gpu','sky_gpu','light_gpu','shadow_gpu','ibl_gpu','skin_gpu','culling_gpu','instancing_gpu','terrain_gpu','async_gpu','fog_gpu'] if a.subset=='all' else ['gpu','import_gpu','material_gpu','sky_gpu','light_gpu','shadow_gpu','ibl_gpu','skin_gpu','culling_gpu','instancing_gpu','terrain_gpu','async_gpu','fog_gpu'] if a.subset=='gpu' else ['terrain','terrain_gpu'] if a.subset=='terrain' else ['async','async_gpu'] if a.subset=='async' else [a.subset+'_gpu'] if a.subset in ('material','sky','light','shadow','ibl','skin','culling','instancing','fog') else [a.subset]
     config=(ROOT/out/'xge_build_config.h').read_text()
+    if a.subset in ('game-foundation','all','gpu'):
+        if a.subset=='game-foundation':tests=[]
+        tests+=['game_foundation','game_foundation_gpu','shader_shadow_gpu']
+    if a.subset in ('light-effects','all','gpu'):
+        if a.subset=='light-effects':tests=[]
+        tests+=['light_effects_gpu','height_fog_gpu']
+        (ROOT/'artifacts/xge-light-effects').mkdir(parents=True,exist_ok=True)
     if a.subset in ('playback','all','gpu'):
         if a.subset=='playback':tests=[]
         tests+=['playback_gpu'] if a.subset=='gpu' else ['playback','playback_gpu']

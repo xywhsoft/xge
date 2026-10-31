@@ -15,6 +15,7 @@
 | [`examples/xge/xge_3d_core`](../../examples/xge/xge_3d_core/README.md) | 模型缓存复用、胶囊碰撞扫掠、场景描述表、名称查找和子树克隆。 |
 | [`examples/xge/xge_3d_render_quality`](../../examples/xge/xge_3d_render_quality/README.md) | 线性透明合成、FXAA 对照与节点阴影投射/接收开关。 |
 | [`examples/xge/xge_3d_playback`](../../examples/xge/xge_3d_playback/README.md) | 自动动画过渡、连续打断、手臂加法叠加、整体/分层暂停及播放完成状态。 |
+| [`examples/xge/xge_3d_light_effects`](../../examples/xge/xge_3d_light_effects/README.md) | 色调映射、基础调色、Bloom、高度雾独立开关，以及同场景 all/none 对照。 |
 | [`examples/xge/xge_particles`](../../examples/xge/xge_particles/README.md) | 七个独立粒子程序：火花、火烟、爆炸、雨雪、尾尘、光环、彩纸。 |
 | `examples/xge/xge_shape_ex`、`xge_shape_ex_*` | 路径、混合、特效、渐变、裁剪和绘制顺序。 |
 | `examples/xge/xge_svg` | SVG 加载与绘制。 |
@@ -46,3 +47,7 @@ build\audit_shape_basic.exe --capture build\audit_shape_basic.png
 ```
 
 指定 `--capture` 后，程序在成功保存离屏渲染结果后自动退出；截图内容与窗口预览使用同一个渲染目标。
+
+## 通用游戏基础六项机制
+
+[xge_game_foundation](../../examples/xge/xge_game_foundation/README.md)：公开 C API 演示动作映射、独立碰撞体与滑动、调试线框、动态纹理、渲染纹理屏幕、顶点/表面着色扩展和 CPU 3D 粒子。WASD/手柄移动，F1 开关调试绘制，支持固定帧数和截图。

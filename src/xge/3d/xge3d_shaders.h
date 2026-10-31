@@ -34,10 +34,14 @@ static const char d3_vertex_shader[] =
     " if(skinEnabled!=0) skin=joint(int(joints.x))*weights.x+joint(int(joints.y))*weights.y+joint(int(joints.z))*weights.z+joint(int(joints.w))*weights.w;\n"
 #endif
     " mat4 w=world; if(instanceEnabled!=0){int i=instanceOffset+gl_InstanceID;w=mat4(instanceColumn(i,0),instanceColumn(i,1),instanceColumn(i,2),instanceColumn(i,3));}\n"
-    " vec4 local=skin*vec4(position,1.0);mat3 basis=mat3(w*skin);\n"
+    " vec3 p=position,n=normal;\n"
+#if XGE3D_ENABLE_SHADER
+    "#ifdef D3_CUSTOM_VERTEX\n xge3dVertex(p,n,uv0);\n#endif\n"
+#endif
+    " vec4 local=skin*vec4(p,1.0);mat3 basis=mat3(w*skin);\n"
     " gl_Position=instanceEnabled!=0?viewProjection*w*local:mvp*local; vUV0=uv0; vUV1=uv1;\n"
     " vPosition=(w*local).xyz;\n"
-    " vNormal=transpose(inverse(basis))*normal;\n"
+    " vNormal=transpose(inverse(basis))*n;\n"
     " vTangent=vec4(basis*tangent.xyz,tangent.w*sign(determinant(basis)));\n"
     "}\n";
 
@@ -46,9 +50,29 @@ static const char d3_fragment_shader[] =
     "in vec2 vUV0, vUV1; in vec3 vPosition, vNormal; in vec4 vTangent;\n"
     "uniform vec4 color; uniform vec3 emissive; uniform int alphaMode, mapMask;\n"
     "uniform float alphaCutoff; uniform sampler2D maps[5];\n"
+#if XGE3D_ENABLE_DYNAMIC
+    "uniform int targetMask;\n"
+    "vec4 readMap(sampler2D image,int i,vec2 tc){bool target=(targetMask&(1<<i))!=0;if(target)tc.y=1.0-tc.y;vec4 c=texture(image,tc);\n"
+    "if(target){vec3 s=c.a>0.0?c.rgb/c.a:vec3(0.0);c.rgb=mix(s/12.92,pow((s+0.055)/1.055,vec3(2.4)),step(vec3(0.04045),s));}return c;}\n"
+#endif
+#if !XGE3D_ENABLE_DYNAMIC
+    "#define readMap(image,i,tc) texture(image,tc)\n"
+#endif
     "uniform float exposure;\n"
 #if XGE3D_ENABLE_FOG
     "uniform vec4 fogColor,fogDepth;uniform vec2 fogRange;\n"
+#endif
+#if XGE3D_ENABLE_HEIGHT_FOG
+    "uniform vec4 heightColor,heightParams,heightEye;uniform vec3 heightForward;\n"
+    "vec3 heightFog(vec3 lit){\n"
+    " if(heightColor.w==0.0)return lit;\n"
+    " vec3 ray=vPosition-heightEye.xyz;if(heightEye.w>0.5)ray=heightForward*dot(ray,heightForward);\n"
+    " float a=clamp(-heightParams.y*(vPosition.y-ray.y-heightParams.z),-80.0,80.0);\n"
+    " float b=clamp(-heightParams.y*(vPosition.y-heightParams.z),-80.0,80.0);\n"
+    " float integral=abs(b-a)<0.001?exp((a+b)*0.5):(exp(b)-exp(a))/(b-a);\n"
+    " float amount=min(heightParams.w,1.0-exp(-min(80.0,heightParams.x*length(ray)*integral)));\n"
+    " return mix(lit,heightColor.rgb,amount);\n"
+    "}\n"
 #endif
 #if XGE3D_ENABLE_LIGHTING
     "uniform vec4 cameraPosition; uniform int lightCount, unlit; uniform vec4 materialParams;\n"
@@ -101,13 +125,13 @@ static const char d3_fragment_shader[] =
     " if(abs(det)<1e-12) return N;\n"
     " vec3 T=normalize((dp1*b.y-dp2*a.y)/det); T=normalize(T-N*dot(T,N));\n"
     " vec3 B=normalize((-dp1*b.x+dp2*a.x)/det);\n"
-    " vec3 m=texture(maps[2],tc).xyz*2.0-1.0; m.xy*=materialParams.z;\n"
+    " vec3 m=readMap(maps[2],2,tc).xyz*2.0-1.0; m.xy*=materialParams.z;\n"
     " return normalize(T*m.x+B*m.y+N*m.z);\n"
     "}\n"
     "vec3 shade(vec3 base){\n"
     " if(unlit!=0) return base;\n"
     " float metal=materialParams.x,rough=materialParams.y;\n"
-    " if((mapMask&2)!=0){vec4 mr=texture(maps[1],uv(1));metal*=mr.b;rough*=mr.g;}\n"
+    " if((mapMask&2)!=0){vec4 mr=readMap(maps[1],1,uv(1));metal*=mr.b;rough*=mr.g;}\n"
     " rough=max(rough,0.045); float a=rough*rough,a2=a*a;\n"
     " vec3 N=surfaceNormal(),V=normalize(cameraPosition.w>0.5?cameraPosition.xyz:cameraPosition.xyz-vPosition);\n"
     " float nv=max(dot(N,V),0.0001); vec3 f0=mix(vec3(0.04),base,metal),result=vec3(0.0);\n"
@@ -133,7 +157,7 @@ static const char d3_fragment_shader[] =
     "  vec3 diffuse=(1.0-F)*(1.0-metal)*base*texture(irradianceMap,N).rgb;\n"
     "  vec2 lut=texture(brdfMap,vec2(nv,rough)).rg;\n"
     "  vec3 specular=textureLod(prefilteredMap,reflect(-V,N),rough*iblMaxLod).rgb*(f0*lut.x+lut.y);\n"
-    "  float ao=(mapMask&8)!=0 ? mix(1.0,texture(maps[3],uv(3)).r,materialParams.w) : 1.0;\n"
+    "  float ao=(mapMask&8)!=0 ? mix(1.0,readMap(maps[3],3,uv(3)).r,materialParams.w) : 1.0;\n"
     "  result+=(diffuse+specular)*iblIntensity*ao;\n"
     " }\n"
 #endif
@@ -143,12 +167,19 @@ static const char d3_fragment_shader[] =
     "vec3 shade(vec3 base){return base;}\n"
 #endif
     "void main(){\n"
-    " vec4 base=color; if((mapMask&1)!=0) base*=texture(maps[0],uv(0));\n"
+    " vec4 base=color; if((mapMask&1)!=0) base*=readMap(maps[0],0,uv(0));\n"
+    " vec3 emission=emissive;\n"
+#if XGE3D_ENABLE_SHADER
+    "#ifdef D3_CUSTOM_SURFACE\n xge3dSurface(base,emission,vUV0);\n#endif\n"
+#endif
     " if(alphaMode==1 && base.a<alphaCutoff) discard;\n"
-    " vec3 emission=emissive; if((mapMask&16)!=0) emission*=texture(maps[4],uv(4)).rgb;\n"
+    " if((mapMask&16)!=0) emission*=readMap(maps[4],4,uv(4)).rgb;\n"
     " vec3 lit=shade(base.rgb)+emission;\n"
 #if XGE3D_ENABLE_FOG
     " if(fogColor.w>0.5) lit=mix(lit,fogColor.rgb,clamp((dot(fogDepth,vec4(vPosition,1.0))-fogRange.x)/(fogRange.y-fogRange.x),0.0,1.0));\n"
+#endif
+#if XGE3D_ENABLE_HEIGHT_FOG
+    " lit=heightFog(lit);\n"
 #endif
     " frag=vec4(lit*exposure,alphaMode==2?base.a:1.0);\n"
     "}\n";
@@ -161,9 +192,38 @@ static const char d3_composite_fragment_shader[] =
 #if XGE3D_ENABLE_FXAA
     "uniform int antialiasing;\n"
 #endif
+#if XGE3D_ENABLE_TONEMAP || XGE3D_ENABLE_COLOR_GRADING
+    "uniform int colorEnabled;\n"
+#endif
+#if XGE3D_ENABLE_TONEMAP
+    "uniform int colorTone;\n"
+    /* Narkowicz's fitted ACES curve, CC0 option: https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/ */
+    "vec3 filmicCurve(vec3 x){return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0);}\n"
+#endif
+#if XGE3D_ENABLE_COLOR_GRADING
+    "uniform vec3 colorGain;uniform vec2 colorGrade;\n"
+#endif
+#if XGE3D_ENABLE_BLOOM
+    "uniform sampler2D bloomImage;uniform float bloomStrength;\n"
+#endif
     "vec3 encode(vec3 x){x=clamp(x,0.0,1.0);return mix(12.92*x,1.055*pow(x,vec3(1.0/2.4))-0.055,step(vec3(0.0031308),x));}\n"
     "vec3 decode(vec3 x){return mix(x/12.92,pow((x+0.055)/1.055,vec3(2.4)),step(vec3(0.04045),x));}\n"
-    "vec4 display(vec2 uv){vec4 c=texture(image,uv);return vec4(c.a>0.0?encode(c.rgb/c.a)*c.a:vec3(0.0),c.a);}\n"
+    "vec4 display(vec2 uv){vec4 c=texture(image,uv);\n"
+#if XGE3D_ENABLE_BLOOM
+    " if(bloomStrength>0.0){vec4 b=texture(bloomImage,uv)*bloomStrength;c.rgb+=b.rgb;c.a+=(1.0-c.a)*clamp(b.a,0.0,1.0);}\n"
+#endif
+    " vec3 v=c.a>0.0?c.rgb/c.a:vec3(0.0);\n"
+#if XGE3D_ENABLE_TONEMAP || XGE3D_ENABLE_COLOR_GRADING
+    " if(colorEnabled!=0){\n"
+#if XGE3D_ENABLE_COLOR_GRADING
+    " v*=colorGain;v=mix(vec3(dot(v,vec3(0.2126,0.7152,0.0722))),v,colorGrade.x);v=max(vec3(0.0),(v-0.18)*colorGrade.y+0.18);\n"
+#endif
+#if XGE3D_ENABLE_TONEMAP
+    " if(colorTone==1)v=v/(1.0+v);else if(colorTone==2)v=filmicCurve(v);\n"
+#endif
+    " }\n"
+#endif
+    " return vec4(encode(v)*c.a,c.a);}\n"
 #if XGE3D_ENABLE_FXAA
     "float luma(vec4 c){return dot(c.rgb,vec3(0.299,0.587,0.114))+c.a*0.25;}\n"
     "vec4 fxaa(vec2 uv,vec4 m){\n"
@@ -194,10 +254,27 @@ static const char d3_depth_fragment_shader[] =
     "#ifdef GL_ES\nprecision highp float;\n#endif\n"
     "in vec2 vUV0,vUV1; uniform vec4 color; uniform int alphaMode,hasMap,texcoord;\n"
     "uniform float alphaCutoff,uvRotation; uniform vec4 uvTransform; uniform sampler2D baseMap;\n"
+#if XGE3D_ENABLE_DYNAMIC
+    "uniform int baseTarget;\n"
+#endif
+#if XGE3D_ENABLE_SHADER
+    "#ifdef D3_CUSTOM_SURFACE\nuniform vec3 emissive;\n#endif\n"
+#endif
     "void main(){\n"
-    " float alpha=color.a;if(hasMap!=0){\n"
+    " vec4 base=color;if(hasMap!=0){\n"
     "  vec2 p=(texcoord==0?vUV0:vUV1)*uvTransform.zw;float c=cos(uvRotation),s=sin(uvRotation);\n"
-    "  alpha*=texture(baseMap,vec2(c*p.x-s*p.y,s*p.x+c*p.y)+uvTransform.xy).a;\n"
-    " } if(alphaMode==1 && alpha<alphaCutoff) discard;\n"
+    "  vec2 uv=vec2(c*p.x-s*p.y,s*p.x+c*p.y)+uvTransform.xy;\n"
+#if XGE3D_ENABLE_DYNAMIC
+    "  if(baseTarget!=0)uv.y=1.0-uv.y;\n"
+#endif
+    "  vec4 t=texture(baseMap,uv);\n"
+#if XGE3D_ENABLE_DYNAMIC
+    "  if(baseTarget!=0){vec3 s=t.a>0.0?t.rgb/t.a:vec3(0.0);t.rgb=mix(s/12.92,pow((s+0.055)/1.055,vec3(2.4)),step(vec3(0.04045),s));}\n"
+#endif
+    "  base*=t;}\n"
+#if XGE3D_ENABLE_SHADER
+    "#ifdef D3_CUSTOM_SURFACE\n vec3 emission=emissive;xge3dSurface(base,emission,vUV0);\n#endif\n"
+#endif
+    " if(alphaMode==1 && base.a<alphaCutoff) discard;\n"
     "}\n";
 #endif

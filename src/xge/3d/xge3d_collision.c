@@ -52,12 +52,12 @@ static int simplex_reduce(support_point *points,int *count,cv *a,cv *b,cv *close
     for(int i=0;i<*count;++i)if(chosen[i]>0){*a=cvadd(*a,cvscale(points[i].a,chosen[i]));*b=cvadd(*b,cvscale(points[i].b,chosen[i]));if(chosen[i]>1e-12){kept[n++]=points[i];}}
     *closest=cvsub(*a,*b);memcpy(points,kept,(size_t)n*sizeof(*points));*count=n;return n>0;
 }
-static int convex_distance(const convex *a,const convex *b,cv *normal,cv *point,double *upper,double *lower)
+static int convex_distance_seed(const convex *a,const convex *b,cv *normal,cv *point,double *upper,double *lower,support_point *seed,int *seed_count)
 {
-    support_point points[4];int count=1;points[0]=minkowski(a,b,(cv){1,0,0});cv pa,pb,closest;
+    support_point points[4];int count=1;points[0]=minkowski(a,b,(cv){1,0,0});cv pa,pb,closest;*normal=(cv){1,0,0};
     for(int iteration=0;iteration<160;++iteration){if(!simplex_reduce(points,&count,&pa,&pb,&closest)){return XGE_ERROR_INVALID_STATE;}
         *upper=sqrt(cvdot(closest,closest));*point=pb;
-        if(*upper<1e-9){*lower=0;*normal=(cv){0,1,0};return XGE_OK;}
+        if(*upper<1e-9){*lower=0;if(!seed)*normal=(cv){0,1,0};if(seed){memcpy(seed,points,(size_t)count*sizeof(*seed));*seed_count=count;}return XGE_OK;}
         *normal=cvscale(closest,1/ *upper);support_point next=minkowski(a,b,cvscale(*normal,-1));
         *lower=fmax(0,cvdot(next.p,*normal));
         if(*upper-*lower<=1e-7*fmax(1,*upper)){return XGE_OK;}
@@ -67,6 +67,8 @@ static int convex_distance(const convex *a,const convex *b,cv *normal,cv *point,
     }
     return XGE_ERROR_INVALID_STATE;
 }
+static int convex_distance(const convex *a,const convex *b,cv *normal,cv *point,double *upper,double *lower)
+{return convex_distance_seed(a,b,normal,point,upper,lower,NULL,NULL);}
 static int shape_valid(const xge3d_shape_t *s,int mesh)
 {
     if(!s||!d3_finite3(s->center)){return 0;}
@@ -146,11 +148,18 @@ static int prepare_triangles(xge3d_mesh *m)
     {int next=0;build_tree(&b->tree,&items,0,count,-1,&next,NULL);}b->version=m->version;d3_triangle_bvh_free(m->collision_bvh);m->collision_bvh=b;b=NULL;result=XGE_OK;
 done:xrtArrayUnit(&items);d3_triangle_bvh_free(b);return result;
 }
+#include "xge3d_penetration.inc"
 static int test_convex(convex query,const convex *target,cv motion,int sweep,xge3d_collision_hit_t *hit)
 {
     double time=0;cv start=query.offset,normal={0},point={0};
     for(int i=0;i<128;++i){query.offset=cvadd(start,cvscale(motion,time));double upper,lower;int result=convex_distance(&query,target,&normal,&point,&upper,&lower);if(result){return result;}
         if(upper<=1e-5){hit->fraction=(float)time;hit->distance=(float)(time*sqrt(cvdot(motion,motion)));hit->position=cvout(point);
+#if XGE3D_ENABLE_MOTION
+            if(time==0&&sweep==2){
+                if(upper<1e-8){double depth;result=convex_penetration(&query,target,&normal,&point,&depth);if(result)return result;}
+                if(cvdot(motion,normal)>=-1e-10)return XGE_ERROR_NOT_FOUND;
+            }else
+#endif
             if(time==0&&upper<1e-9){cv backwards=cvscale(motion,-1);double length=sqrt(cvdot(backwards,backwards));if(length>0){normal=cvscale(backwards,1/length);}}
             hit->normal=cvout(normal);hit->started_overlapping=time==0;return XGE_OK;}
         if(!sweep){return XGE_ERROR_NOT_FOUND;}
@@ -216,4 +225,5 @@ int xge3dSceneCollisionStats(xge3d_scene *s,xge3d_collision_stats_t *out)
         out->triangle_bvh_bytes+=sizeof(*m->collision_bvh)+m->collision_bvh->tree.Count*sizeof(d3_spatial_branch);}
     xrtMapUnit(&seen);return XGE_OK;
 }
+#include "xge3d_motion.inc"
 #endif

@@ -22,7 +22,7 @@ python tools/build/build.py ui-min --define XUI_ENABLE_IMAGE=0
 
 库和消费者必须使用相同配置。构建产物包含完整的 `xge_build_config.h`，编译应用时强制包含它，使用该目录的导入库并从同一目录运行，以避免加载其他配置的 DLL：
 
-3D 子模块可用 `XGE3D_ENABLE_MODEL/LIGHTING/SHADOW/IBL/ANIMATION/TERRAIN/ASYNC/FOG/SCENE/COLLISION/CACHE/FXAA` 单独关闭。异步、动画与 CACHE 依赖 MODEL，阴影与 IBL 依赖 LIGHTING；FOG、SCENE、COLLISION、FXAA 仅依赖 3D。SCENE 关闭的是附加节点接口，基础场景仍保留；CACHE 不依赖 ASYNC，同步使用时不创建线程。FXAA 裁剪移除抗锯齿设置和对应着色器，基础线性合成仍保留，见 [渲染完整性](3D_RENDER_QUALITY.md)。其余见 [通用 3D 指南](3D_CORE.md)。显式冲突会报错。配置位掩码表示顶层模块，子模块列表与源码裁剪结果见 build-report.json。
+3D 子模块可用 `XGE3D_ENABLE_MODEL/LIGHTING/SHADOW/IBL/ANIMATION/TERRAIN/ASYNC/FOG/SCENE/COLLISION/CACHE/FXAA/TONEMAP/COLOR_GRADING/BLOOM/HEIGHT_FOG` 单独关闭。异步、动画与 CACHE 依赖 MODEL，阴影与 IBL 依赖 LIGHTING；其余仅依赖 3D。HEIGHT_FOG 不依赖旧 FOG；TONEMAP/COLOR_GRADING 共享 Color 设置接口，均关闭才移除该接口。画质效果默认运行时关闭，见[轻量画质增强](3D_LIGHT_EFFECTS.md)。SCENE 关闭的是附加节点接口，基础场景仍保留；CACHE 不依赖 ASYNC，同步使用时不创建线程。FXAA 裁剪移除抗锯齿设置和对应着色器，基础线性合成仍保留，见 [渲染完整性](3D_RENDER_QUALITY.md)。其余见 [通用 3D 指南](3D_CORE.md)。显式冲突会报错。配置位掩码表示顶层模块，子模块列表与源码裁剪结果见 build-report.json。
 
 ```bat
 gcc -O2 -DXGE_DLL -include build/3d/xge_build_config.h application.c build/3d/xge.lib -lm -o build/3d/application.exe
@@ -40,3 +40,7 @@ python tests/xge/check_control_trimming.py
 ```
 
 第二条使用当前 `full-dev` 对象，逐项关闭控件及其依赖后实际链接 DLL，检查声明与导出。修改对应源码后应先重新构建 `full-dev`；已有矩阵产物的快速复核可用 `--verify-existing`，它拒绝比输入对象更旧的 DLL。
+
+## 通用游戏基础裁剪
+
+新增 `XGE3D_ENABLE_DEBUG_DRAW`、`XGE3D_ENABLE_MOTION`、`XGE3D_ENABLE_DYNAMIC`、`XGE3D_ENABLE_SHADER`、`XGE3D_ENABLE_BILLBOARD`、`XGE3D_ENABLE_PARTICLES` 和 `XGE_ENABLE_INPUT_ACTIONS` 数字开关。依赖与运行成本见[通用游戏基础](GAME_FOUNDATION.md#编译与运行成本)。

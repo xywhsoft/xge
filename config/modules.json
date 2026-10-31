@@ -368,6 +368,7 @@
     "src/xge/3d/xge3d_skin.c": "XGE3D_ENABLE_ANIMATION",
     "src/xge/3d/xge3d_animation.c": "XGE3D_ENABLE_ANIMATION",
     "src/xge/3d/xge3d_terrain.c": "XGE3D_ENABLE_TERRAIN",
-    "src/xge/3d/xge3d_async.c": "XGE3D_ENABLE_ASYNC"
+    "src/xge/3d/xge3d_async.c": "XGE3D_ENABLE_ASYNC",
+    "src/xge/3d/xge3d_particles.c": "XGE3D_ENABLE_PARTICLES"
   }
 }

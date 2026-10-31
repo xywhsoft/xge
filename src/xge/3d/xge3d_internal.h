@@ -183,6 +183,9 @@ uint64_t __xge3dContext(void);
 int d3_mesh_retain(xge3d_mesh *mesh);
 
 struct xge3d_texture {
+#if XGE3D_ENABLE_DYNAMIC
+    xge3d_target *target;
+#endif
     xarray pixels;
     int width, height, srgb;
     xge3d_sampler_t sampler;
@@ -191,9 +194,18 @@ struct xge3d_texture {
     size_t prepare_offset;int prepare_partial;
 };
 struct xge3d_material {
+#if XGE3D_ENABLE_SHADER
+    xge3d_shader *shader;float parameters[16];
+#endif
     uint32_t refs;
     xge3d_material_desc_t desc;
 };
+#if XGE3D_ENABLE_DYNAMIC
+struct xge3d_target {
+    xge_texture_t texture;uint32_t fbo,depth;uint64_t context;uint32_t refs;
+};
+int d3_target_retain(xge3d_target *target);
+#endif
 int d3_texture_retain(xge3d_texture *texture);
 int d3_texture_upload(xge3d_texture *texture, uint64_t *bytes);
 int d3_material_retain(xge3d_material *material);

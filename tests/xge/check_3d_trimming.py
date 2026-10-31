@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 ROOT=Path(__file__).resolve().parents[2]
-MODULES=['MODEL','LIGHTING','SHADOW','IBL','ANIMATION','TERRAIN','ASYNC','FOG','SCENE','COLLISION','CACHE','FXAA']
+MODULES=['MODEL','LIGHTING','SHADOW','IBL','ANIMATION','TERRAIN','ASYNC','FOG','SCENE','COLLISION','CACHE','FXAA','TONEMAP','COLOR_GRADING','BLOOM','HEIGHT_FOG','DEBUG_DRAW','MOTION','DYNAMIC','SHADER','BILLBOARD','PARTICLES']
 def run(args,**kwargs):return subprocess.run([str(a) for a in args],cwd=ROOT,check=True,**kwargs)
 def audit(name,evidence_prefix,output_root,evidence_root):
     out=ROOT/output_root/f'p6-3d-{name.lower()}-off'
@@ -27,11 +27,17 @@ def audit(name,evidence_prefix,output_root,evidence_root):
     assert (b'fogColor' in (out/'xge.dll').read_bytes())==('XGE3D_ENABLE_FOG' in features)
     representatives={'MODEL':'xge3dModelLoad','LIGHTING':'xge3dNodeSetLight','SHADOW':'xge3dShadowDefault','IBL':'xge3dEnvironmentSetIBL',
                      'ANIMATION':'xge3dAnimatorCreate','TERRAIN':'xge3dTerrainCreate','ASYNC':'xge3dLoaderCreate','FOG':'xge3dFogDefault',
-                     'SCENE':'xge3dNodeClone','COLLISION':'xge3dSceneSweepShape','CACHE':'xge3dCacheCreate','FXAA':'xge3dRendererSetAntialiasing'}
+                     'SCENE':'xge3dNodeClone','COLLISION':'xge3dSceneSweepShape','CACHE':'xge3dCacheCreate','FXAA':'xge3dRendererSetAntialiasing',
+                     'BLOOM':'xge3dRendererSetBloom','HEIGHT_FOG':'xge3dRendererSetHeightFog',
+                     'DEBUG_DRAW':'xge3dDebugLine','MOTION':'xge3dSceneMoveShape','DYNAMIC':'xge3dTextureFromTarget',
+                     'SHADER':'xge3dShaderCreate','BILLBOARD':'xge3dBillboardsSet','PARTICLES':'xge3dParticlesCreate'}
     for module,symbol in representatives.items():assert (symbol in exports)==('XGE3D_ENABLE_'+module in features),(name,symbol)
     imports=re.findall(r'DLL Name: (.+)',text);assert not any('stdc++' in s.lower() or 'harfbuzz' in s.lower() for s in imports)
     assert (b'vec4 fxaa' in (out/'xge.dll').read_bytes())==('XGE3D_ENABLE_FXAA' in features)
-    tests=['cpu','gpu','fog_gpu','render_quality_gpu']
+    assert ('xge3dRendererSetColor' in exports)==any('XGE3D_ENABLE_'+n in features for n in ['TONEMAP','COLOR_GRADING'])
+    for marker,flag in [(b'filmicCurve','TONEMAP'),(b'colorGrade','COLOR_GRADING'),(b'filterParams','BLOOM'),(b'heightParams','HEIGHT_FOG')]:
+        assert (marker in (out/'xge.dll').read_bytes())==('XGE3D_ENABLE_'+flag in features),(name,marker)
+    tests=['cpu','gpu','fog_gpu','render_quality_gpu','light_effects_gpu','height_fog_gpu','game_foundation','game_foundation_gpu','shader_shadow_gpu']
     if 'XGE3D_ENABLE_MODEL' in features:tests+=['import','import_gpu']
     if 'XGE3D_ENABLE_ANIMATION' in features:tests+=['animation','playback','playback_gpu']
     if 'XGE3D_ENABLE_ASYNC' in features:tests+=['async','async_gpu']
@@ -53,6 +59,7 @@ def main():
     p.add_argument('--evidence-root',type=Path,default=Path('artifacts/xge-3d'));a=p.parse_args()
     (ROOT/a.evidence_root).mkdir(parents=True,exist_ok=True)
     (ROOT/'artifacts/xge-animation-playback').mkdir(parents=True,exist_ok=True)
+    (ROOT/'artifacts/xge-light-effects').mkdir(parents=True,exist_ok=True)
     if not re.fullmatch(r'[A-Za-z0-9_-]+',a.evidence_prefix):p.error('invalid evidence prefix')
     if any(name not in [*MODULES,'BARE'] for name in a.modules):p.error('modules must be '+', '.join([*MODULES,'BARE']))
     # Generate once before tests, rather than rewriting shared fixtures between

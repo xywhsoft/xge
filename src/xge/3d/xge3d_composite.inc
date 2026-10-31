@@ -48,6 +48,20 @@ static void d3_composite_draw(xge3d_renderer *r,GLuint texture,int importing)
     d3_compositor *c=&r->composite;xge_glDisable(GL_DEPTH_TEST);xge_glDisable(GL_CULL_FACE);xge_glDisable(GL_BLEND);
     xge_glDepthMask(GL_FALSE);xge_glUseProgram(c->shader.iProgram);xge_glBindVertexArray(r->sky_vao);
     xge_glActiveTexture(GL_TEXTURE0);xge_glBindTexture(GL_TEXTURE_2D,texture);xge_glUniform1i(c->image,0);xge_glUniform1i(c->importing,importing);
+#if XGE3D_ENABLE_TONEMAP || XGE3D_ENABLE_COLOR_GRADING
+    xge_glUniform1i(c->color_enabled,!importing&&c->color_active);
+#endif
+#if XGE3D_ENABLE_TONEMAP
+    xge_glUniform1i(c->color_tone,c->color_settings.tone_mapping);
+#endif
+#if XGE3D_ENABLE_COLOR_GRADING
+    xge_glUniform3f(c->color_gain,c->color_settings.gain.x,c->color_settings.gain.y,c->color_settings.gain.z);
+    xge_glUniform2f(c->color_grade,c->color_settings.saturation,c->color_settings.contrast);
+#endif
+#if XGE3D_ENABLE_BLOOM
+    xge_glActiveTexture(GL_TEXTURE0+1);xge_glBindTexture(GL_TEXTURE_2D,!importing&&c->bloom.count?c->bloom.textures[0]:texture);
+    xge_glUniform1i(c->bloom_image,1);xge_glUniform1f(c->bloom_strength,importing?0:c->bloom.settings.strength);xge_glActiveTexture(GL_TEXTURE0);
+#endif
 #if XGE3D_ENABLE_FXAA
     xge_glUniform1i(c->antialiasing,c->mode);
 #endif
@@ -98,6 +112,9 @@ static int d3_composite_begin(xge3d_renderer *r,const xge3d_render_desc_t *d,d3_
 static int d3_composite_end(xge3d_renderer *r,const d3_output *out)
 {
     d3_compositor *c=&r->composite;
+#if XGE3D_ENABLE_BLOOM
+    int result=d3_bloom_render(r);if(result)return result;
+#endif
     xge_glBindFramebuffer(D3_DRAW_FRAMEBUFFER,out->fbo);xge_glViewport(out->viewport[0],out->viewport[1],c->width,c->height);
     if(out->srgb){xge_graphics_mapping_t mapping;
         if(xgeGraphicsMappingGet(XGE_GPU_BACKEND_NONE,&mapping)!=XGE_OK||!mapping.bOpenGLCore)return XGE_ERROR_UNSUPPORTED;

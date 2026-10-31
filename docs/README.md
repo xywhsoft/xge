@@ -8,6 +8,7 @@
 - [可裁剪构建与增量编译](guide/BUILD_PROFILES.md)
 - [XGE 使用指南](guide/XGE.md)
 - [3D C API](guide/3D.md)
+- [通用游戏基础六项机制](guide/GAME_FOUNDATION.md)
 - [低成本纹理存储优化](guide/TEXTURE_STORAGE.md)
 - [2D 粒子系统](guide/PARTICLES.md)
 - [XUI 使用指南](guide/XUI.md)
