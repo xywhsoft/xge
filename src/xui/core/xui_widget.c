@@ -1357,6 +1357,7 @@ static void __xuiWidgetInvalidateMeasureTree(xui_widget pWidget)
 {
 	xui_widget pParent;
 
+	if ( ++pWidget->iContentMeasureGeneration == 0u ) pWidget->iContentMeasureGeneration = 1u;
 	pWidget->bMeasureValid = 0;
 	pWidget->bArrangeValid = 0;
 	xuiInternalLayoutInvalidate(pWidget, 1);

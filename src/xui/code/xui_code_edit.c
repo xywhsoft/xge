@@ -256,6 +256,7 @@ struct xui_code_find_scope_t {
 
 static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t* pData, int iCommand, const void* pCommandData, int* pHandled);
 static int __xuiCodeEditUpdateScrollModel(xui_widget pWidget, xui_code_edit_data_t* pData);
+static int __xuiCodeEditInvalidateView(xui_widget pWidget);
 static void __xuiCodeEditFindWindowApplyLanguage(xui_widget pCodeEdit, xui_code_edit_data_t* pData);
 static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser);
 static uint32_t __xuiCodeEditColor(xui_widget pWidget, const char* sName, uint32_t iDefaultColor);
@@ -3170,7 +3171,8 @@ static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t*
 	__xuiCodeEditSetError(pData, (iRet == XUI_OK) ? "" : "CodeEdit command failed");
 	if ( iRet == XUI_OK && (pHandled == NULL || *pHandled) ) {
 		(void)xuiCodeEditEnsureCaretVisible(pWidget);
-		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		/* Document edits and scrollbar geometry already invalidate layout. */
+		(void)__xuiCodeEditInvalidateView(pWidget);
 	}
 	return iRet;
 }
@@ -9368,7 +9370,12 @@ XUI_API int xuiCodeEditEnsureCaretVisible(xui_widget pWidget)
 	(void)xuiScrollModelGetOffset(&pData->tScrollModel, &fScrollX, &fScrollY);
 	pData->fScrollX = fScrollX;
 	pData->fScrollY = fScrollY;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiCodeEditInvalidateView(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	/* Caret/selection updates move the IME anchor without changing the
+	 * editor's intrinsic size. Real geometry changes are tracked by the
+	 * scroll model and its child widgets. */
+	return xuiInternalInputRefreshIme(pContext);
 }
 
 XUI_API int xuiCodeEditSetDisplayOptions(xui_widget pWidget, uint32_t iOptions)

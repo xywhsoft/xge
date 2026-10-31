@@ -439,6 +439,7 @@ struct xui_widget_t {
 	uint32_t iStateId;
 	uint32_t iGeneration;
 	uint32_t iLayoutVersion;
+	uint32_t iContentMeasureGeneration;
 	uint32_t iLayoutSyncedVersion;
 	uint32_t iLayoutSyncedParentVersion;
 	uint32_t iDpiGeneration;

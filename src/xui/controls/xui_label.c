@@ -7,9 +7,29 @@
 #include <math.h>
 #include <string.h>
 
+#define XUI_LABEL_MEASURE_CACHE_CAPACITY 4
+
+typedef struct xui_label_measure_key_t {
+	xui_font pFont;
+	uint32_t iTextVersion;
+	uint32_t iContentGeneration;
+	uint32_t iDpiGeneration;
+	uint32_t iTextFlags;
+	int iWrapMode;
+	float fLineGap;
+	float fParagraphGap;
+} xui_label_measure_key_t;
+
+typedef struct xui_label_measure_entry_t {
+	xui_vec2_t tConstraint;
+	xui_vec2_t tSize;
+} xui_label_measure_entry_t;
+
 typedef struct xui_label_data_t {
 	char* sText;
 	int iTextCapacity;
+	int iTextSize;
+	uint32_t iTextVersion;
 	xui_font pFont;
 	uint32_t iTextColor;
 	uint32_t iDisabledTextColor;
@@ -18,6 +38,11 @@ typedef struct xui_label_data_t {
 	int bUnderline;
 	float fLineGap;
 	float fParagraphGap;
+	xui_label_measure_key_t tMeasureKey;
+	xui_label_measure_entry_t tMeasureCache[XUI_LABEL_MEASURE_CACHE_CAPACITY];
+	int iMeasureCacheCount;
+	int bMeasureKeyValid;
+	int bMeasuring;
 } xui_label_data_t;
 
 static int __xuiLabelWrapModeValid(int iWrapMode)
@@ -67,6 +92,10 @@ static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 		&pData->iTextCapacity, iNeed);
 	if ( iRet != XUI_OK ) return iRet;
 	memmove(pData->sText, sText, (size_t)iNeed);
+	pData->iTextSize = (int)iLength;
+	if ( ++pData->iTextVersion == 0u ) pData->iTextVersion = 1u;
+	pData->iMeasureCacheCount = 0;
+	pData->bMeasureKeyValid = 0;
 	return XUI_OK;
 }
 
@@ -204,7 +233,7 @@ static void __xuiLabelResolve(xui_widget pWidget, xui_label_data_t* pData, xui_t
 	memset(pDesc, 0, sizeof(*pDesc));
 	pDesc->iSize = sizeof(*pDesc);
 	pDesc->sText = (pData->sText != NULL) ? pData->sText : "";
-	pDesc->iTextSize = -1;
+	pDesc->iTextSize = pData->iTextSize;
 	pDesc->pFont = pFont;
 	pDesc->iWrapMode = iWrapMode;
 	pDesc->iFlags = iTextFlags | XUI_TEXT_CLIP;
@@ -213,12 +242,38 @@ static void __xuiLabelResolve(xui_widget pWidget, xui_label_data_t* pData, xui_t
 	*pTextColor = xuiWidgetGetEffectiveEnabled(pWidget) ? iTextColor : iDisabledTextColor;
 }
 
+static xui_label_measure_key_t __xuiLabelMeasureKey(xui_widget pWidget,
+	xui_label_data_t* pData, const xui_text_layout_desc_t* pDesc)
+{
+	xui_label_measure_key_t tKey = {0};
+	tKey.pFont = pDesc->pFont;
+	tKey.iTextVersion = pData->iTextVersion;
+	tKey.iContentGeneration = pWidget->iContentMeasureGeneration;
+	tKey.iDpiGeneration = pWidget->pContext->iDpiGeneration;
+	tKey.iTextFlags = pDesc->iFlags;
+	tKey.iWrapMode = pDesc->iWrapMode;
+	tKey.fLineGap = pDesc->fLineGap;
+	tKey.fParagraphGap = pDesc->fParagraphGap;
+	return tKey;
+}
+
+static int __xuiLabelMeasureKeyEqual(const xui_label_measure_key_t* a,
+	const xui_label_measure_key_t* b)
+{
+	return a->pFont == b->pFont && a->iTextVersion == b->iTextVersion &&
+		a->iContentGeneration == b->iContentGeneration && a->iDpiGeneration == b->iDpiGeneration &&
+		a->iTextFlags == b->iTextFlags && a->iWrapMode == b->iWrapMode &&
+		a->fLineGap == b->fLineGap && a->fParagraphGap == b->fParagraphGap;
+}
+
 static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_label_data_t* pData;
 	xui_text_layout_desc_t tDesc;
+	xui_label_measure_key_t tKey, tCurrentKey;
+	xui_label_measure_entry_t tEntry;
 	uint32_t iTextColor;
-	int iRet;
+	int iRet, i;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) {
@@ -230,9 +285,26 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->bMeasuring ) return XUI_ERROR_INVALID_STATE;
 	__xuiLabelResolve(pWidget, pData, &tDesc, &iTextColor);
 	if ( tDesc.pFont == NULL ) {
 		return XUI_OK;
+	}
+	tKey = __xuiLabelMeasureKey(pWidget, pData, &tDesc);
+	if ( !pData->bMeasureKeyValid || !__xuiLabelMeasureKeyEqual(&pData->tMeasureKey, &tKey) ) {
+		pData->tMeasureKey = tKey;
+		pData->bMeasureKeyValid = 1;
+		pData->iMeasureCacheCount = 0;
+	}
+	for ( i = 0; i < pData->iMeasureCacheCount; i++ ) {
+		if ( pData->tMeasureCache[i].tConstraint.fX == tConstraint.fX &&
+		     pData->tMeasureCache[i].tConstraint.fY == tConstraint.fY ) {
+			tEntry = pData->tMeasureCache[i];
+			if ( i > 0 ) memmove(pData->tMeasureCache + 1, pData->tMeasureCache, (size_t)i * sizeof(tEntry));
+			pData->tMeasureCache[0] = tEntry;
+			*pSize = tEntry.tSize;
+			return XUI_OK;
+		}
 	}
 	tDesc.fMaxWidth = (tDesc.iWrapMode == XUI_TEXT_WRAP_NONE) ? XUI_LAYOUT_UNBOUNDED : tConstraint.fX;
 	tDesc.fMaxHeight = tConstraint.fY;
@@ -242,7 +314,13 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	if ( (tDesc.fMaxHeight <= 0.0f) || (tDesc.fMaxHeight > XUI_LAYOUT_UNBOUNDED) ) {
 		tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	}
+	pData->bMeasuring = 1;
 	iRet = xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
+	/* Proxy callbacks may change or retire the label while shaping text. */
+	if ( !xuiInternalWidgetIsValid(pWidget) || pWidget->bDestroyPending || pWidget->pTypeData != pData ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	pData->bMeasuring = 0;
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -250,6 +328,18 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	     (pSize->fX > tConstraint.fX) ) pSize->fX = tConstraint.fX;
 	if ( (tConstraint.fY >= 0.0f) && (tConstraint.fY < XUI_LAYOUT_UNBOUNDED) &&
 	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
+	__xuiLabelResolve(pWidget, pData, &tDesc, &iTextColor);
+	tCurrentKey = __xuiLabelMeasureKey(pWidget, pData, &tDesc);
+	if ( pData->bMeasureKeyValid && __xuiLabelMeasureKeyEqual(&tKey, &tCurrentKey) ) {
+		/* Four numeric results cover alternating parent/arranged constraints.
+		 * No retained text, glyph arrays or surfaces are added to the label. */
+		i = pData->iMeasureCacheCount;
+		if ( i < XUI_LABEL_MEASURE_CACHE_CAPACITY ) pData->iMeasureCacheCount++;
+		else i = XUI_LABEL_MEASURE_CACHE_CAPACITY - 1;
+		if ( i > 0 ) memmove(pData->tMeasureCache + 1, pData->tMeasureCache, (size_t)i * sizeof(tEntry));
+		pData->tMeasureCache[0].tConstraint = tConstraint;
+		pData->tMeasureCache[0].tSize = *pSize;
+	}
 	return XUI_OK;
 }
 

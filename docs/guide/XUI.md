@@ -38,6 +38,14 @@ Terminal 的缓冲区、VT/TUI 输入、ConPTY、查找和性能约定见 [XUI T
 - Window、Popup、Menu、Toast 等需要浮层语义的组件应通过其专用创建 API 使用，而不是作为普通 child 模拟。
 - 自绘、proxy 和 surface 接口适合接入现有图形资源；调用者仍负责遵守 `xui.h` 中的资源所有权约定。
 
+### 测量缓存与交互失效
+
+Label 在控件内保留最近四组约束的尺寸结果，避免父布局和实际排版宽度交替时重复整形。缓存只保存尺寸，不持有额外的文本布局或绘制表面；文本、字体、换行、行段间距、DPI 或显式测量失效都会重新测量，失败结果不会进入缓存。颜色变化只需要重绘。若自定义字体后端在句柄不变时修改字体度量，应调用 `xuiWidgetInvalidate(label, XUI_WIDGET_DIRTY_LAYOUT)`。
+
+CodeEdit 的光标和选择更新刷新绘制及 IME 锚点；文本编辑和实际几何变化仍通过原有路径触发布局。拥有布局回调的容器平移等尺寸子控件时，不把排版位置重新当作测量输入，滚动仍更新世界坐标、命中测试和损伤区域。
+
+`tests/xui/build_help_interaction_test.bat` 验证多约束缓存、字体与 DPI 失效、失败重试、回调重入、滚动、光标、IME 和宽度重排；应与 Label、CodeEdit、ScrollView 及布局测试一并运行。
+
 ## 建议的入门顺序
 
 1. `examples/xui/xui_proxy_surface`：最小 XGE/XUI 图形桥接。

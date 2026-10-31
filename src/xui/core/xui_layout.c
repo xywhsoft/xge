@@ -587,12 +587,19 @@ int xuiInternalLayoutArrangeChild(xui_widget parent, xui_widget child, xui_rect_
 	xlayout_rect_t global_rect;
 	int result;
 	if ( !xuiInternalWidgetIsValid(parent) || !xuiInternalWidgetIsValid(child)
-		|| child->pParent != parent || parent->pContext != child->pContext ) return XUI_ERROR_INVALID_ARGUMENT;
-	result = xuiWidgetSetRect(child, rect);
-	if ( result != XUI_OK ) return result;
+		|| child->pParent != parent || parent->pContext != child->pContext
+		|| !__xuiLayoutRectValid(rect) ) return XUI_ERROR_INVALID_ARGUMENT;
+	rect = xuiInternalSnapRect(rect);
+	/* An owner's layout callback supplies the arranged position. Translating
+	 * an unchanged span must not feed that position back into its intrinsic
+	 * measurement/style inputs. Size changes retain the normal invalidation. */
+	if ( parent->onLayoutChildren == NULL || child->tRect.fW != rect.fW || child->tRect.fH != rect.fH ) {
+		result = xuiWidgetSetRect(child, rect);
+		if ( result != XUI_OK ) return result;
+	}
 	result = __xuiLayoutSyncNode(child, parent, __xuiLayoutVisibleIndex(child));
 	if ( result != XUI_OK ) return result;
-	/* SetRect may have moved the parent before its xLayout result is refreshed. */
+	/* The parent may have moved before its xLayout result is refreshed. */
 	parent_world = xuiWidgetGetWorldRect(parent);
 	global_rect = (xlayout_rect_t){parent_world.fX + rect.fX, parent_world.fY + rect.fY, rect.fW, rect.fH};
 	if ( !xLayoutArrange(child->pContext->pLayoutContext, child->iLayoutNode, global_rect) ) return XUI_ERROR_OUT_OF_MEMORY;
