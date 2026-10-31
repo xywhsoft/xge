@@ -974,7 +974,10 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	if ( (xuiWidgetGetInputState(pWidget) & XUI_WIDGET_STATE_FOCUS) != 0u )
+	/* The popup owns the menu's frame. Keyboard focus belongs to the menu
+	 * for navigation, but must not add another frame inside that popup. */
+	if ( (xuiWidgetGetInputState(pWidget) & XUI_WIDGET_STATE_FOCUS) != 0u &&
+	     (pData->pPopup == NULL || !xuiPopupIsOpen(pData->pPopup)) )
 		return __xuiMenuDrawRectStroke(pProxy, pDraw, tRect, 1.0f, tColors.iFocusColor);
 	return XUI_OK;
 }

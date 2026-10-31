@@ -25,6 +25,17 @@ typedef struct xui_menu_test_destroy_t {
 	int iCount;
 } xui_menu_test_destroy_t;
 
+static int (*originalStroke)(xui_proxy, xui_draw_context, xui_rect_t, float, uint32_t);
+static int popupBorders, innerFocusBorders;
+#define TEST_POPUP_BORDER XUI_COLOR_RGBA(17, 83, 211, 255)
+#define TEST_MENU_FOCUS XUI_COLOR_RGBA(211, 17, 83, 255)
+static int countStroke(xui_proxy proxy, xui_draw_context draw, xui_rect_t rect, float width, uint32_t color)
+{
+	if ( color == TEST_POPUP_BORDER ) popupBorders++;
+	if ( color == TEST_MENU_FOCUS ) innerFocusBorders++;
+	return originalStroke(proxy, draw, rect, width, color);
+}
+
 static int __xuiMenuNear(float fA, float fB)
 {
 	float fD = fA - fB;
@@ -149,6 +160,7 @@ int main(void)
 	xui_menu_item_t arrShortcutItems[3];
 	xui_menu_item_t arrScrollItems[13];
 	xui_menu_metrics_t tMetrics;
+	xui_menu_colors_t tFrameColors;
 	xui_menu_metrics_t tBadMetrics;
 	xui_menu_desc_t tBadDesc;
 	xui_rect_t tPopupRect;
@@ -195,6 +207,8 @@ int main(void)
 	memset(&tShortcutSelect, 0, sizeof(tShortcutSelect));
 	memset(&tDestroy, 0, sizeof(tDestroy));
 	xuiTestProxyInit(&tState);
+	originalStroke = tState.tProxy.drawRectStroke;
+	tState.tProxy.drawRectStroke = countStroke;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -292,6 +306,10 @@ int main(void)
 	arrItems[6].iValue = 60;
 	iRet = xuiMenuSetItems(pMenu, arrItems, 7);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuGetItemCount(pMenu) == 7, "set items");
+	XUI_TEST_CHECK(xuiMenuGetColors(pMenu, &tFrameColors) == XUI_OK, "read menu frame colors");
+	tFrameColors.iBorderColor = TEST_POPUP_BORDER;
+	tFrameColors.iFocusColor = TEST_MENU_FOCUS;
+	XUI_TEST_CHECK(xuiMenuSetColors(pMenu, &tFrameColors) == XUI_OK, "set distinct outer/focus frames");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 420, 320, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -308,6 +326,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiMenuRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
+	XUI_TEST_CHECK(popupBorders == 1 && innerFocusBorders == 0,
+		"focused popup menu draws one outer border without an inner focus frame");
 	iRet = xuiMenuMeasure(pMenu, &fWidth, &fHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && fWidth >= 112.0f && fHeight > 120.0f, "menu measure");
 	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);
