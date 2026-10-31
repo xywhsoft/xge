@@ -30,7 +30,8 @@
 #define XUI_TERMINAL_DEFAULT_ROWS 24
 #define XUI_TERMINAL_DEFAULT_SCROLLBACK 1000
 #define XUI_TERMINAL_DEFAULT_PARSE_BUDGET 4096
-#define XUI_TERMINAL_MAX_CSI_PARAMS 16
+#define XUI_TERMINAL_CSI_INLINE_CAPACITY 16
+#define XUI_TERMINAL_MAX_CSI_PARAMS 256
 #define XUI_TERMINAL_OSC_INLINE_CAPACITY 256
 #define XUI_TERMINAL_MAX_OSC_BYTES (64 * 1024)
 #define XUI_TERMINAL_MAX_LINK_ID 65535u
@@ -79,10 +80,13 @@ typedef struct xui_terminal_parser_t {
 	int iUtfExpected;
 	int iUtfSeen;
 	uint32_t iUtfCodepoint;
-	int arrParams[XUI_TERMINAL_MAX_CSI_PARAMS];
+	int arrParams[XUI_TERMINAL_CSI_INLINE_CAPACITY];
+	int* pParams;
+	int iParamCapacity;
 	int iParamCount;
 	int iCurrentParam;
 	int bParamActive;
+	int bCsiDiscard;
 	char cPrivate;
 	char arrIntermediates[2];
 	int iIntermediateCount;
@@ -2503,23 +2507,56 @@ static void __xuiTerminalDeleteLines(xui_terminal_data_t* pData, int iCount)
 
 static int __xuiTerminalParam(const xui_terminal_parser_t* pParser, int iIndex, int iDefault)
 {
-	if ( (pParser == NULL) || (iIndex < 0) || (iIndex >= pParser->iParamCount) || (pParser->arrParams[iIndex] < 0) ) {
+	const int* pParams;
+
+	if ( (pParser == NULL) || (iIndex < 0) || (iIndex >= pParser->iParamCount) ) {
 		return iDefault;
 	}
-	return pParser->arrParams[iIndex];
+	pParams = pParser->pParams != NULL ? pParser->pParams : pParser->arrParams;
+	return pParams[iIndex] >= 0 ? pParams[iIndex] : iDefault;
+}
+
+static int* __xuiTerminalCsiParams(xui_terminal_parser_t* pParser)
+{
+	if ( pParser == NULL ) return NULL;
+	return pParser->pParams != NULL ? pParser->pParams : pParser->arrParams;
+}
+
+static int __xuiTerminalCsiEnsureCapacity(xui_terminal_parser_t* pParser, int iRequired)
+{
+	int* pNew;
+	int iCapacity;
+
+	if ( pParser == NULL || iRequired < 0 || iRequired > XUI_TERMINAL_MAX_CSI_PARAMS ) {
+		return 0;
+	}
+	iCapacity = pParser->pParams != NULL ? pParser->iParamCapacity :
+		(int)(sizeof(pParser->arrParams) / sizeof(pParser->arrParams[0]));
+	if ( iRequired <= iCapacity ) return 1;
+	while ( iCapacity < iRequired ) {
+		iCapacity *= 2;
+		if ( iCapacity > XUI_TERMINAL_MAX_CSI_PARAMS ) {
+			iCapacity = XUI_TERMINAL_MAX_CSI_PARAMS;
+		}
+	}
+	pNew = (int*)xrtRealloc(pParser->pParams, sizeof(*pNew) * (size_t)iCapacity);
+	if ( pNew == NULL ) return 0;
+	if ( pParser->pParams == NULL && pParser->iParamCount > 0 ) {
+		memcpy(pNew, pParser->arrParams,
+			sizeof(*pNew) * (size_t)pParser->iParamCount);
+	}
+	pParser->pParams = pNew;
+	pParser->iParamCapacity = iCapacity;
+	return 1;
 }
 
 static void __xuiTerminalCsiReset(xui_terminal_parser_t* pParser)
 {
-	int i;
-
 	if ( pParser == NULL ) return;
-	for ( i = 0; i < XUI_TERMINAL_MAX_CSI_PARAMS; i++ ) {
-		pParser->arrParams[i] = -1;
-	}
 	pParser->iParamCount = 0;
 	pParser->iCurrentParam = -1;
 	pParser->bParamActive = 0;
+	pParser->bCsiDiscard = 0;
 	pParser->cPrivate = 0;
 	pParser->iIntermediateCount = 0;
 	memset(pParser->arrIntermediates, 0, sizeof(pParser->arrIntermediates));
@@ -2527,35 +2564,49 @@ static void __xuiTerminalCsiReset(xui_terminal_parser_t* pParser)
 
 static void __xuiTerminalCsiAppendDigit(xui_terminal_parser_t* pParser, int iDigit)
 {
-	if ( pParser == NULL ) return;
+	int* pParams;
+
+	if ( pParser == NULL || pParser->bCsiDiscard ) return;
 	if ( pParser->iParamCount <= 0 ) {
 		pParser->iParamCount = 1;
 		pParser->iCurrentParam = 0;
-		pParser->arrParams[0] = 0;
+		__xuiTerminalCsiParams(pParser)[0] = 0;
 	}
-	if ( !pParser->bParamActive || pParser->arrParams[pParser->iCurrentParam] < 0 ) {
-		pParser->arrParams[pParser->iCurrentParam] = 0;
+	pParams = __xuiTerminalCsiParams(pParser);
+	if ( !pParser->bParamActive || pParams[pParser->iCurrentParam] < 0 ) {
+		pParams[pParser->iCurrentParam] = 0;
 	}
-	if ( pParser->arrParams[pParser->iCurrentParam] > (INT_MAX - iDigit) / 10 ) {
-		pParser->arrParams[pParser->iCurrentParam] = INT_MAX;
+	if ( pParams[pParser->iCurrentParam] > (INT_MAX - iDigit) / 10 ) {
+		pParams[pParser->iCurrentParam] = INT_MAX;
 	} else {
-		pParser->arrParams[pParser->iCurrentParam] = pParser->arrParams[pParser->iCurrentParam] * 10 + iDigit;
+		pParams[pParser->iCurrentParam] =
+			pParams[pParser->iCurrentParam] * 10 + iDigit;
 	}
 	pParser->bParamActive = 1;
 }
 
 static void __xuiTerminalCsiNextParam(xui_terminal_parser_t* pParser)
 {
-	if ( pParser == NULL ) return;
+	int* pParams;
+
+	if ( pParser == NULL || pParser->bCsiDiscard ) return;
 	if ( pParser->iParamCount <= 0 ) {
 		pParser->iParamCount = 1;
 		pParser->iCurrentParam = 0;
+		__xuiTerminalCsiParams(pParser)[0] = -1;
 	}
-	if ( pParser->iParamCount < XUI_TERMINAL_MAX_CSI_PARAMS ) {
-		pParser->iCurrentParam = pParser->iParamCount;
-		pParser->arrParams[pParser->iCurrentParam] = -1;
-		pParser->iParamCount++;
+	if ( pParser->iParamCount >= XUI_TERMINAL_MAX_CSI_PARAMS ||
+	     !__xuiTerminalCsiEnsureCapacity(pParser, pParser->iParamCount + 1) ) {
+		pParser->iParamCount = 0;
+		pParser->iCurrentParam = -1;
+		pParser->bParamActive = 0;
+		pParser->bCsiDiscard = 1;
+		return;
 	}
+	pParser->iCurrentParam = pParser->iParamCount;
+	pParams = __xuiTerminalCsiParams(pParser);
+	pParams[pParser->iCurrentParam] = -1;
+	pParser->iParamCount++;
 	pParser->bParamActive = 0;
 }
 
@@ -3153,7 +3204,9 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 				pData->tParser.arrIntermediates[pData->tParser.iIntermediateCount++] = (char)b;
 			}
 		} else if ( b >= 0x40u && b <= 0x7eu ) {
-			__xuiTerminalDispatchCsi(pWidget, pData, b);
+			if ( !pData->tParser.bCsiDiscard ) {
+				__xuiTerminalDispatchCsi(pWidget, pData, b);
+			}
 			pData->tParser.iState = 0;
 		}
 		break;
@@ -6427,6 +6480,7 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData->sSearchText != NULL ) xrtFree(pData->sSearchText);
 	if ( pData->sHoverLink != NULL ) xrtFree(pData->sHoverLink);
 	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
+	if ( pData->tParser.pParams != NULL ) xrtFree(pData->tParser.pParams);
 	if ( pData->tParser.pOsc != NULL ) xrtFree(pData->tParser.pOsc);
 	for ( i = 0; i < XUI_TERMINAL_MENU_TITLE_COUNT; ++i ) {
 		xrtFree(pData->arrMenuTitle[i]);

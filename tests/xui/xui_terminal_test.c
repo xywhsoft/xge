@@ -845,6 +845,56 @@ int main(void)
 	iRet = xuiTerminalGetCell(pTerminal, 0, 0, &tCell);
 	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'X' && tCell.iFgColor == xuiTerminalGetPalette(pTerminal, 196), "256 color cell");
 
+	iOscSize = 0;
+	memcpy(sLongOsc + iOscSize, "\x1b[", 2u);
+	iOscSize += 2;
+	for ( i = 0; i < 15; ++i ) {
+		memcpy(sLongOsc + iOscSize, "0;", 2u);
+		iOscSize += 2;
+	}
+	memcpy(sLongOsc + iOscSize, "31;1mX", 6u);
+	iOscSize += 6;
+	sLongOsc[iOscSize] = '\0';
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear long csi screen");
+	iRet = xuiTerminalWriteText(pTerminal, sLongOsc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "write long csi sgr");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush long csi sgr");
+	iRet = xuiTerminalGetCell(pTerminal, 0, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'X' &&
+		tCell.iFgColor == xuiTerminalGetPalette(pTerminal, 1) &&
+		(tCell.iFlags & XUI_TERMINAL_CELL_BOLD) != 0u,
+		"long csi preserves parameters after inline capacity");
+
+	iOscSize = 0;
+	memcpy(sLongOsc + iOscSize, "\x1b[0m\x1b[", 6u);
+	iOscSize += 6;
+	for ( i = 0; i < 300; ++i ) {
+		memcpy(sLongOsc + iOscSize, "1;", 2u);
+		iOscSize += 2;
+	}
+	memcpy(sLongOsc + iOscSize, "31mX\x1b[32mY\x1b[0m", 14u);
+	iOscSize += 14;
+	sLongOsc[iOscSize] = '\0';
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear oversized csi screen");
+	iRet = xuiTerminalWriteText(pTerminal, sLongOsc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "write oversized csi sgr");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush oversized csi sgr");
+	iRet = xuiTerminalGetCell(pTerminal, 0, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'X' &&
+		(tCell.iFlags & XUI_TERMINAL_CELL_BOLD) == 0u,
+		"oversized csi is discarded");
+	iRet = xuiTerminalGetCell(pTerminal, 1, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'Y' &&
+		tCell.iFgColor == xuiTerminalGetPalette(pTerminal, 2),
+		"terminal recovers after oversized csi");
+	iRet = xuiTerminalWriteText(pTerminal, "\x1b[0m");
+	if ( iRet == XUI_OK ) iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset style after csi capacity tests");
+
 	iRet = xuiTerminalWriteText(pTerminal, "\x1b]0;XUI title\a");
 	XUI_TEST_CHECK(iRet == XUI_OK, "write title");
 	iRet = xuiTerminalFlush(pTerminal);
