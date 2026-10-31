@@ -795,14 +795,18 @@ static int __xuiInternalTextChunkCacheDraw(xui_proxy pProxy,
 	float fOriginX, float fY, float fHeight, uint32_t iColor, uint32_t iFlags,
 	const xui_text_paint_span_t* pSpans, int iSpanCount)
 {
-	xui_text_paint_span_t arrLocal[16];
-	xui_text_paint_span_t* pLocal = arrLocal;
+	xui_text_paint_span_t arrLocal[128];
+	xui_text_paint_span_t* pDynamic = NULL;
+	xui_text_paint_span_t* pLocal;
 	xui_rect_t tOldClip;
 	xui_rect_t tClip;
 	int bOldClip = 0;
+	int iDynamicCapacity = 0;
 	int iRet;
 	int iRestore;
 	int iFirst;
+	int iSpanFirst;
+	int iSpanEnd;
 	int iSpan;
 	int i;
 	if ( pProxy == NULL || pDraw == NULL || pCache == NULL || !pCache->bValid ||
@@ -820,11 +824,6 @@ static int __xuiInternalTextChunkCacheDraw(xui_proxy pProxy,
 		}
 	}
 	if ( tViewport.fW <= 0.0f || tViewport.fH <= 0.0f ) return XUI_OK;
-	if ( iSpanCount > (int)(sizeof(arrLocal) / sizeof(arrLocal[0])) ) {
-		pLocal = (xui_text_paint_span_t*)xrtMalloc(
-			(size_t)iSpanCount * sizeof(*pLocal));
-		if ( pLocal == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	}
 	iRet = pProxy->drawClipGet(pProxy, pDraw, &tOldClip, &bOldClip);
 	if ( iRet != XUI_OK ) goto cleanup;
 	tClip = tViewport;
@@ -854,6 +853,7 @@ static int __xuiInternalTextChunkCacheDraw(xui_proxy pProxy,
 		}
 		iFirst = iLo;
 	}
+	iSpanFirst = 0;
 	for ( i = iFirst; i < pCache->iChunkCount; i++ ) {
 		const xui_internal_text_chunk_t* pChunk = &pCache->pChunks[i];
 		float fChunkX = fOriginX + (float)pCache->pChunkAdvances[i];
@@ -869,11 +869,41 @@ static int __xuiInternalTextChunkCacheDraw(xui_proxy pProxy,
 		tRect = (xui_rect_t){fChunkX, fY,
 			pChunk->fWidth > 0.0f ? pChunk->fWidth : 1.0f, fHeight};
 		if ( iSpanCount > 0 ) {
-			for ( iSpan = 0; iSpan < iSpanCount; iSpan++ ) {
+			while ( iSpanFirst < iSpanCount &&
+			        pSpans[iSpanFirst].iEnd <= pChunk->iStart ) {
+				iSpanFirst++;
+			}
+			iSpanEnd = iSpanFirst;
+			while ( iSpanEnd < iSpanCount &&
+			        pSpans[iSpanEnd].iStart < pChunk->iEnd ) {
+				iSpanEnd++;
+			}
+			if ( iSpanEnd - iSpanFirst >
+			     (int)(sizeof(arrLocal) / sizeof(arrLocal[0])) ) {
+				int iNeed = iSpanEnd - iSpanFirst;
+				xui_text_paint_span_t* pNew;
+
+				if ( (size_t)iNeed > SIZE_MAX / sizeof(*pNew) ) {
+					iRet = XUI_ERROR_LIMIT_EXCEEDED;
+					break;
+				}
+				if ( iNeed > iDynamicCapacity ) {
+					pNew = (xui_text_paint_span_t*)xrtRealloc(pDynamic,
+						(size_t)iNeed * sizeof(*pNew));
+					if ( pNew == NULL ) {
+						iRet = XUI_ERROR_OUT_OF_MEMORY;
+						break;
+					}
+					pDynamic = pNew;
+					iDynamicCapacity = iNeed;
+				}
+				pLocal = pDynamic;
+			} else {
+				pLocal = arrLocal;
+			}
+			for ( iSpan = iSpanFirst; iSpan < iSpanEnd; iSpan++ ) {
 				int iStart = pSpans[iSpan].iStart;
 				int iEnd = pSpans[iSpan].iEnd;
-				if ( iEnd <= pChunk->iStart ) continue;
-				if ( iStart >= pChunk->iEnd ) break;
 				if ( iStart < pChunk->iStart ) iStart = pChunk->iStart;
 				if ( iEnd > pChunk->iEnd ) iEnd = pChunk->iEnd;
 				if ( iEnd <= iStart ) continue;
@@ -898,7 +928,7 @@ static int __xuiInternalTextChunkCacheDraw(xui_proxy pProxy,
 	if ( iRet == XUI_OK ) iRet = iRestore;
 
 cleanup:
-	if ( pLocal != arrLocal ) xrtFree(pLocal);
+	xrtFree(pDynamic);
 	return iRet;
 }
 
