@@ -87,7 +87,7 @@ static int __xuiProxyXgeRangeDrawAcquired(xui_proxy proxy,xui_draw_context draw,
     const xui_text_item_t* item,const xui_text_shape_t* shape,xui_vec2_t size,
     xui_rect_t rect,uint32_t color,uint32_t flags,const xui_text_paint_span_t* spans,int count)
 {
-    xui_text_paint_span_t small[16],*mapped=small;xui_rect_t placed=rect;
+    xui_text_paint_span_t small[XUI_PROXY_XGE_PAINT_SPAN_STACK_CAPACITY],*mapped=small;xui_rect_t placed=rect;
     int i,result,width,height;
     if(count<0 || (count && !spans))return XUI_ERROR_INVALID_ARGUMENT;
     if(item->iPaintSpanCount){

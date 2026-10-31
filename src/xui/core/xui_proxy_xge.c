@@ -34,6 +34,7 @@
 #define XUI_PROXY_XGE_PI_HALF		1.57079632679489661923f
 #define XUI_PROXY_XGE_PI_TWO		6.28318530717958647692f
 #define XUI_PROXY_XGE_MESH_STACK_VERTICES	160
+#define XUI_PROXY_XGE_PAINT_SPAN_STACK_CAPACITY	128
 
 #define XUI_PROXY_XGE_KEY_LEFT_SHIFT	340
 #define XUI_PROXY_XGE_KEY_LEFT_CONTROL	341
@@ -2076,7 +2077,7 @@ static int __xuiProxyXgeDrawTextSpans(xui_proxy pProxy, xui_draw_context pDraw, 
 
 	xge_text_shape_desc_t tDesc;
 	xge_glyph_run_t tRun;
-	xge_text_paint_span_t sSmall[16];
+	xge_text_paint_span_t sSmall[XUI_PROXY_XGE_PAINT_SPAN_STACK_CAPACITY];
 	xge_text_paint_span_t* pXgeSpans;
 	xge_rect_t tOldClip;
 	xge_rect_t tClip;

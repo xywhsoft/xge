@@ -68,58 +68,60 @@ static void context_storage(xui_proxy p,xui_font font)
 }
 static int paint_failure_frame(void* ignored)
 {
-    enum{W=120,H=80};
+    enum{W=120,H=80,SPAN_COUNT=129};
     xui_proxy_t p=xuiProxyXge();xui_font font;xui_text_shape_t shape={0};
     xui_surface targets[2];xui_surface_desc_t desc={0};xui_draw_context draw;
-    xui_text_paint_span_t spans[20];xmemdebugsnapshot before;
+    xui_text_paint_span_t spans[SPAN_COUNT];xmemdebugsnapshot before;
+    char text[SPAN_COUNT+1];
     unsigned char actual[W*H*4],expected[W*H*4];xge_rect_t saved,after;int result;
     (void)ignored;
     CHECK(p.fontLoadFile(&p,&font,"tests/xge/data/xge_ascii_context_fixture.ttf",20,0)==XUI_OK);
+    memset(text,'a',SPAN_COUNT);text[SPAN_COUNT]=0;
     CHECK(p.textShape(&p,&(xui_text_item_t){.iSize=sizeof(xui_text_item_t),.pFont=font,
-        .sText="aaaaaaaaaaaaaaaaaaaa",.iTextSize=20,.iFlags=XUI_TEXT_SHAPE_DEFAULT|XUI_TEXT_SHAPE_RETAIN_PAINT},&shape)==XUI_OK);
-    for(int i=0;i<20;i++)spans[i]=(xui_text_paint_span_t){sizeof(*spans),i,i+1,i%2?UINT32_C(0xff2040c8):UINT32_C(0xffc82040)};
+        .sText=text,.iTextSize=SPAN_COUNT,.iFlags=XUI_TEXT_SHAPE_DEFAULT|XUI_TEXT_SHAPE_RETAIN_PAINT},&shape)==XUI_OK);
+    for(int i=0;i<SPAN_COUNT;i++)spans[i]=(xui_text_paint_span_t){sizeof(*spans),i,i+1,i%2?UINT32_C(0xff2040c8):UINT32_C(0xffc82040)};
     desc.iWidth=W;desc.iHeight=H;desc.iFlags=XUI_SURFACE_USAGE_TARGET|XUI_SURFACE_ALPHA_PREMULTIPLIED;
     CHECK(p.surfaceCreate(&p,&targets[0],&desc)==XUI_OK && p.surfaceCreate(&p,&targets[1],&desc)==XUI_OK);
     /* Warm atlas/GPU storage before taking a live-allocation baseline. */
     CHECK(p.surfaceClear(&p,targets[1],0)==XUI_OK && p.drawBegin(&p,&draw,targets[1])==XUI_OK &&
         p.drawClipSet(&p,draw,(xui_rect_t){7,6,70,50})==XUI_OK &&
-        p.drawTextShapeRangeSpans(&p,draw,&shape,0,20,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,20)==XUI_OK &&
+        p.drawTextShapeRangeSpans(&p,draw,&shape,0,SPAN_COUNT,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,SPAN_COUNT)==XUI_OK &&
         p.drawEnd(&p,draw)==XUI_OK && p.surfaceReadRGBA(&p,targets[1],expected,W*4)==XUI_OK);
     {unsigned ink=0;for(size_t i=3;i<sizeof(expected);i+=4)ink+=expected[i]!=0;CHECK(ink>20);}
     CHECK(p.surfaceClear(&p,targets[0],0)==XUI_OK && p.drawBegin(&p,&draw,targets[0])==XUI_OK &&
         p.drawClipSet(&p,draw,(xui_rect_t){7,6,70,50})==XUI_OK);
     saved=xgeClipGet();xrtClearError();xrtMemDebugSnapshot(&before);CHECK(xrtMemDebugFailAfter(0));
-    result=p.drawTextShapeRangeSpans(&p,draw,&shape,0,20,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,20);
+    result=p.drawTextShapeRangeSpans(&p,draw,&shape,0,SPAN_COUNT,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,SPAN_COUNT);
     CHECK(xrtMemDebugFailTriggered());xrtMemDebugFailClear();xrtClearError();after=xgeClipGet();
     CHECK(result==XUI_ERROR_OUT_OF_MEMORY && saved.fX==after.fX && saved.fY==after.fY &&
         saved.fW==after.fW && saved.fH==after.fH);same_live(&before);
     spans[1].iStart=0;
-    CHECK(p.drawTextShapeRangeSpans(&p,draw,&shape,0,20,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,20)==XUI_ERROR_INVALID_ARGUMENT);
+    CHECK(p.drawTextShapeRangeSpans(&p,draw,&shape,0,SPAN_COUNT,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,SPAN_COUNT)==XUI_ERROR_INVALID_ARGUMENT);
     CHECK(p.drawEnd(&p,draw)==XUI_OK && p.surfaceReadRGBA(&p,targets[0],actual,W*4)==XUI_OK);
     for(size_t i=0;i<sizeof(actual);i++)CHECK(actual[i]==0);
     spans[1].iStart=1;
     CHECK(p.drawBegin(&p,&draw,targets[0])==XUI_OK && p.drawClipSet(&p,draw,(xui_rect_t){7,6,70,50})==XUI_OK &&
-        p.drawTextShapeRangeSpans(&p,draw,&shape,0,20,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,20)==XUI_OK &&
+        p.drawTextShapeRangeSpans(&p,draw,&shape,0,SPAN_COUNT,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,.25f,spans,SPAN_COUNT)==XUI_OK &&
         p.drawEnd(&p,draw)==XUI_OK && p.surfaceReadRGBA(&p,targets[0],actual,W*4)==XUI_OK &&
         !memcmp(actual,expected,sizeof(actual)));
     {
-        xui_text_item_t range={.iSize=sizeof(range),.pFont=font,.sText="aaaaaaaaaaaaaaaaaaaa",.iTextSize=20,
-            .iFlags=XUI_TEXT_SHAPE_DEFAULT|XUI_TEXT_SHAPE_RANGE,.iRangeEnd=20,.pShape=&shape,.fDrawOffsetX=.25f};
+        xui_text_item_t range={.iSize=sizeof(range),.pFont=font,.sText=text,.iTextSize=SPAN_COUNT,
+            .iFlags=XUI_TEXT_SHAPE_DEFAULT|XUI_TEXT_SHAPE_RANGE,.iRangeEnd=SPAN_COUNT,.pShape=&shape,.fDrawOffsetX=.25f};
         CHECK(p.surfaceClear(&p,targets[0],0)==XUI_OK && p.drawBegin(&p,&draw,targets[0])==XUI_OK &&
             p.drawClipSet(&p,draw,(xui_rect_t){7,6,70,50})==XUI_OK);
         for(unsigned attempt=0;attempt<2;attempt++){
             saved=xgeClipGet();xrtClearError();xrtMemDebugSnapshot(&before);CHECK(xrtMemDebugFailAfter(attempt));
-            result=p.drawTextSpans(&p,draw,&range,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,spans,20);
+            result=p.drawTextSpans(&p,draw,&range,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,spans,SPAN_COUNT);
             CHECK(xrtMemDebugFailTriggered());xrtMemDebugFailClear();xrtClearError();after=xgeClipGet();
             CHECK(result==XUI_ERROR_OUT_OF_MEMORY && !memcmp(&saved,&after,sizeof(saved)));same_live(&before);
         }
         spans[1].iStart=0;
-        CHECK(p.drawTextSpans(&p,draw,&range,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,spans,20)==XUI_ERROR_INVALID_ARGUMENT);
+        CHECK(p.drawTextSpans(&p,draw,&range,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,spans,SPAN_COUNT)==XUI_ERROR_INVALID_ARGUMENT);
         CHECK(p.drawEnd(&p,draw)==XUI_OK && p.surfaceReadRGBA(&p,targets[0],actual,W*4)==XUI_OK);
         for(size_t i=0;i<sizeof(actual);i++)CHECK(actual[i]==0);
         spans[1].iStart=1;
         CHECK(p.drawBegin(&p,&draw,targets[0])==XUI_OK && p.drawClipSet(&p,draw,(xui_rect_t){7,6,70,50})==XUI_OK &&
-            p.drawTextSpans(&p,draw,&range,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,spans,20)==XUI_OK &&
+            p.drawTextSpans(&p,draw,&range,(xui_rect_t){0,0,W,H},~0u,XUI_TEXT_CLIP,spans,SPAN_COUNT)==XUI_OK &&
             p.drawEnd(&p,draw)==XUI_OK && p.surfaceReadRGBA(&p,targets[0],actual,W*4)==XUI_OK && !memcmp(actual,expected,sizeof(actual)));
         puts("Native basic RANGE paint: both colour-map OOM points and invalid spans leave pixels/clip/live storage unchanged, retry exact RGBA passed");
     }

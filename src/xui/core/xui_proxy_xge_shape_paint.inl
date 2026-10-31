@@ -83,7 +83,7 @@ static int __xuiProxyXgeDrawTextShapeRangeSpansClip(xui_proxy proxy,xui_draw_con
     uint32_t color,uint32_t flags,float offset,const xui_text_paint_span_t* spans,int count,xui_rect_t clip_rect)
 {
     const xui_xge_shape_paint* paint;xge_glyph_run_t view;
-    xge_text_paint_span_t small[16],*native=small;
+    xge_text_paint_span_t small[XUI_PROXY_XGE_PAINT_SPAN_STACK_CAPACITY],*native=small;
     xge_rect_t saved={0},clip;
     int first,last,i,had_clip=0,clipped=0,result;
     float origin;
