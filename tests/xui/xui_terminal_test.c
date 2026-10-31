@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -33,8 +34,8 @@ typedef struct xui_terminal_test_state_t {
 	int iSessionLastCols;
 	int iSessionLastRows;
 	int iLinkCount;
-	char sTitle[128];
-	char sLink[256];
+	char sTitle[1024];
+	char sLink[1024];
 } xui_terminal_test_state_t;
 
 typedef struct xui_terminal_destroy_test_state_t {
@@ -352,6 +353,10 @@ int main(void)
 	uint32_t iStyledPaletteRed;
 	char sBuffer[2048];
 	char sSmallBuffer[8];
+	char sLongTitle[512];
+	char sLongUrl[512];
+	char sLongOsc[1152];
+	char* sOversizedOsc;
 	int iFailed;
 	int iRet;
 	int iLine;
@@ -367,6 +372,8 @@ int main(void)
 	int iInputBytesBefore;
 	int iPoll;
 	int iPollBytes;
+	int i;
+	int iOscSize;
 	float fScrollY;
 	float fMaxY;
 	float fCellWidth;
@@ -378,6 +385,7 @@ int main(void)
 	memset(&tDesc, 0, sizeof(tDesc));
 	memset(&tBadDesc, 0, sizeof(tBadDesc));
 	memset(&tStats, 0, sizeof(tStats));
+	sOversizedOsc = NULL;
 	memset(&tProcessDesc, 0, sizeof(tProcessDesc));
 	memset(&tSshDesc, 0, sizeof(tSshDesc));
 	pContext = NULL;
@@ -842,12 +850,48 @@ int main(void)
 	iRet = xuiTerminalFlush(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tState.sTitle, "XUI title") == 0, "osc title");
 
+	memcpy(sLongTitle, "long-title-", 11u);
+	for ( i = 11; i < 411; ++i ) sLongTitle[i] = (char)('a' + (i % 26));
+	sLongTitle[411] = '\0';
+	iOscSize = snprintf(sLongOsc, sizeof(sLongOsc), "\x1b]0;%s\a", sLongTitle);
+	XUI_TEST_CHECK(iOscSize > 255 && iOscSize < (int)sizeof(sLongOsc), "build long osc title");
+	iRet = xuiTerminalWriteText(pTerminal, sLongOsc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "write long osc title");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tState.sTitle, sLongTitle) == 0,
+		"long osc title is not truncated");
+
 	iRet = xuiTerminalWriteText(pTerminal, "\x1b[?1049hALT\x1b[?1049l");
 	XUI_TEST_CHECK(iRet == XUI_OK, "write alt");
 	iRet = xuiTerminalFlush(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "flush alt");
 	iRet = xuiTerminalGetCell(pTerminal, 0, 0, &tCell);
 	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'X', "main screen restored");
+
+	sOversizedOsc = (char*)malloc(70016u);
+	XUI_TEST_CHECK(sOversizedOsc != NULL, "allocate oversized osc test");
+	memcpy(sOversizedOsc, "\x1b]0;", 4u);
+	memset(sOversizedOsc + 4, 'Q', 70000u);
+	sOversizedOsc[70004] = '\a';
+	sOversizedOsc[70005] = 'R';
+	sOversizedOsc[70006] = '\0';
+	strcpy(tState.sTitle, "unchanged");
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear before oversized osc");
+	iRet = xuiTerminalWriteText(pTerminal, sOversizedOsc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "write oversized osc");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tState.sTitle, "unchanged") == 0,
+		"oversized osc is discarded");
+	iRet = xuiTerminalGetCell(pTerminal, 0, 0, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'R',
+		"terminal recovers after oversized osc");
+	free(sOversizedOsc);
+	sOversizedOsc = NULL;
+	iRet = xuiTerminalClear(pTerminal);
+	if ( iRet == XUI_OK ) iRet = xuiTerminalWriteText(pTerminal, "X");
+	if ( iRet == XUI_OK ) iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore screen after oversized osc test");
 
 	iRet = xuiTerminalInputText(pTerminal, "go");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tState.sInput, "go") == 0, "input callback");
@@ -1088,6 +1132,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "flush osc8 st link");
 	iRet = xuiTerminalGetLinkAt(pTerminal, 0, 2, sBuffer, (int)sizeof(sBuffer), &iStartColumn, &iLength);
 	XUI_TEST_CHECK(iRet == 23 && strcmp(sBuffer, "mailto:test@example.com") == 0 && iStartColumn == 0 && iLength == 4, "terminal osc8 st link hit");
+
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear long osc8 link screen");
+	memcpy(sLongUrl, "https://example.com/", 20u);
+	for ( i = 20; i < 420; ++i ) sLongUrl[i] = (char)('a' + (i % 26));
+	sLongUrl[420] = '\0';
+	iOscSize = snprintf(sLongOsc, sizeof(sLongOsc),
+		"\x1b]8;;%s\aL\x1b]8;;\a", sLongUrl);
+	XUI_TEST_CHECK(iOscSize > 255 && iOscSize < (int)sizeof(sLongOsc), "build long osc8 link");
+	iRet = xuiTerminalWriteText(pTerminal, sLongOsc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "write long osc8 link");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "flush long osc8 link");
+	iRet = xuiTerminalGetLinkAt(pTerminal, 0, 0, sBuffer, (int)sizeof(sBuffer),
+		&iStartColumn, &iLength);
+	XUI_TEST_CHECK(iRet == 420 && strcmp(sBuffer, sLongUrl) == 0 &&
+		iStartColumn == 0 && iLength == 1, "long osc8 link is not truncated");
 
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear osc scrollback link screen");
@@ -1634,6 +1695,7 @@ int main(void)
 		"terminal menu title clipboard callback may destroy widget");
 
 cleanup:
+	free(sOversizedOsc);
 	tProxyState.onClipboardGetText = NULL;
 	g_pTerminalClipboardDestroyState = NULL;
 	if ( pSession != NULL ) xuiTerminalSessionDestroy(pSession);

@@ -31,7 +31,8 @@
 #define XUI_TERMINAL_DEFAULT_SCROLLBACK 1000
 #define XUI_TERMINAL_DEFAULT_PARSE_BUDGET 4096
 #define XUI_TERMINAL_MAX_CSI_PARAMS 16
-#define XUI_TERMINAL_MAX_OSC 256
+#define XUI_TERMINAL_OSC_INLINE_CAPACITY 256
+#define XUI_TERMINAL_MAX_OSC_BYTES (64 * 1024)
 #define XUI_TERMINAL_MAX_LINK_ID 65535u
 #define XUI_TERMINAL_MAX_WHEEL_STEPS 32
 #define XUI_TERMINAL_SESSION_FAKE 1
@@ -86,8 +87,11 @@ typedef struct xui_terminal_parser_t {
 	char arrIntermediates[2];
 	int iIntermediateCount;
 	char cCharsetTarget;
-	char sOsc[XUI_TERMINAL_MAX_OSC];
+	char sOsc[XUI_TERMINAL_OSC_INLINE_CAPACITY];
+	char* pOsc;
+	int iOscCapacity;
 	int iOscSize;
+	int bOscDiscard;
 } xui_terminal_parser_t;
 
 typedef struct xui_terminal_history_run_t {
@@ -899,6 +903,62 @@ static void __xuiTerminalResetParser(xui_terminal_parser_t* pParser)
 		return;
 	}
 	memset(pParser, 0, sizeof(*pParser));
+}
+
+static char* __xuiTerminalOscBuffer(xui_terminal_parser_t* pParser)
+{
+	if ( pParser == NULL ) return NULL;
+	return pParser->pOsc != NULL ? pParser->pOsc : pParser->sOsc;
+}
+
+static void __xuiTerminalOscStart(xui_terminal_parser_t* pParser)
+{
+	if ( pParser == NULL ) return;
+	pParser->iOscSize = 0;
+	pParser->bOscDiscard = 0;
+}
+
+static void __xuiTerminalOscAppend(xui_terminal_parser_t* pParser, uint8_t b)
+{
+	char* pNew;
+	int iCapacity;
+	int iRequired;
+
+	if ( pParser == NULL || pParser->bOscDiscard ) return;
+	if ( pParser->iOscSize >= XUI_TERMINAL_MAX_OSC_BYTES ) {
+		pParser->iOscSize = 0;
+		pParser->bOscDiscard = 1;
+		return;
+	}
+	iRequired = pParser->iOscSize + 2;
+	iCapacity = pParser->pOsc != NULL ? pParser->iOscCapacity :
+		(int)sizeof(pParser->sOsc);
+	if ( iRequired > iCapacity ) {
+		while ( iCapacity < iRequired ) {
+			if ( iCapacity >= XUI_TERMINAL_MAX_OSC_BYTES + 1 ) break;
+			iCapacity *= 2;
+			if ( iCapacity > XUI_TERMINAL_MAX_OSC_BYTES + 1 ) {
+				iCapacity = XUI_TERMINAL_MAX_OSC_BYTES + 1;
+			}
+		}
+		if ( iCapacity < iRequired ) {
+			pParser->iOscSize = 0;
+			pParser->bOscDiscard = 1;
+			return;
+		}
+		pNew = (char*)xrtRealloc(pParser->pOsc, (size_t)iCapacity);
+		if ( pNew == NULL ) {
+			pParser->iOscSize = 0;
+			pParser->bOscDiscard = 1;
+			return;
+		}
+		if ( pParser->pOsc == NULL && pParser->iOscSize > 0 ) {
+			memcpy(pNew, pParser->sOsc, (size_t)pParser->iOscSize);
+		}
+		pParser->pOsc = pNew;
+		pParser->iOscCapacity = iCapacity;
+	}
+	__xuiTerminalOscBuffer(pParser)[pParser->iOscSize++] = (char)b;
 }
 
 static void __xuiTerminalDefaultPalette(xui_terminal_data_t* pData)
@@ -2884,16 +2944,19 @@ static void __xuiTerminalDispatchOsc8(xui_terminal_data_t* pData, const char* sP
 
 static void __xuiTerminalDispatchOsc(xui_widget pWidget, xui_terminal_data_t* pData)
 {
+	char* sOsc;
 	char* sSemi;
 
-	if ( (pWidget == NULL) || (pData == NULL) || (pData->tParser.iOscSize <= 0) ) {
+	if ( (pWidget == NULL) || (pData == NULL) || pData->tParser.bOscDiscard ||
+	     (pData->tParser.iOscSize <= 0) ) {
 		return;
 	}
-	pData->tParser.sOsc[pData->tParser.iOscSize] = '\0';
-	__xuiTerminalDispatchOsc8(pData, pData->tParser.sOsc);
-	sSemi = strchr(pData->tParser.sOsc, ';');
+	sOsc = __xuiTerminalOscBuffer(&pData->tParser);
+	sOsc[pData->tParser.iOscSize] = '\0';
+	__xuiTerminalDispatchOsc8(pData, sOsc);
+	sSemi = strchr(sOsc, ';');
 	if ( (sSemi != NULL) && (pData->onTitle != NULL) &&
-	     ((pData->tParser.sOsc[0] == '0') || (pData->tParser.sOsc[0] == '2')) ) {
+	     ((sOsc[0] == '0') || (sOsc[0] == '2')) ) {
 		pData->onTitle(pWidget, sSemi + 1, pData->pTitleUser);
 	}
 }
@@ -2962,7 +3025,7 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			__xuiTerminalCsiReset(&pData->tParser);
 			pData->tParser.iState = 2;
 		} else if ( b == 0x9du ) {
-			pData->tParser.iOscSize = 0;
+			__xuiTerminalOscStart(&pData->tParser);
 			pData->tParser.iState = 3;
 		} else if ( b == 0x90u || b == 0x98u || b == 0x9eu || b == 0x9fu ) {
 			pData->tParser.iState = 5;
@@ -3010,7 +3073,7 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			__xuiTerminalCsiReset(&pData->tParser);
 			pData->tParser.iState = 2;
 		} else if ( b == ']' ) {
-			pData->tParser.iOscSize = 0;
+			__xuiTerminalOscStart(&pData->tParser);
 			pData->tParser.iState = 3;
 		} else if ( b == 'P' || b == 'X' || b == '^' || b == '_' ) {
 			pData->tParser.iState = 5;
@@ -3100,8 +3163,8 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			__xuiTerminalDispatchOsc(pWidget, pData);
 		} else if ( b == 0x1bu ) {
 			pData->tParser.iState = 4;
-		} else if ( pData->tParser.iOscSize < XUI_TERMINAL_MAX_OSC - 1 ) {
-			pData->tParser.sOsc[pData->tParser.iOscSize++] = (char)b;
+		} else {
+			__xuiTerminalOscAppend(&pData->tParser, b);
 		}
 		break;
 	case 4:
@@ -6364,6 +6427,7 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData->sSearchText != NULL ) xrtFree(pData->sSearchText);
 	if ( pData->sHoverLink != NULL ) xrtFree(pData->sHoverLink);
 	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
+	if ( pData->tParser.pOsc != NULL ) xrtFree(pData->tParser.pOsc);
 	for ( i = 0; i < XUI_TERMINAL_MENU_TITLE_COUNT; ++i ) {
 		xrtFree(pData->arrMenuTitle[i]);
 		pData->arrMenuTitle[i] = NULL;
