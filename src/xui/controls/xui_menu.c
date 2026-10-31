@@ -326,14 +326,7 @@ static void __xuiMenuFreeItemStrings(xui_menu_item_t* pItems, int iCount)
 
 static char* __xuiMenuDuplicateString(const char* sText)
 {
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) return NULL;
-	iSize = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iSize);
-	if ( sCopy != NULL ) memcpy(sCopy, sText, iSize);
-	return sCopy;
+	return sText != NULL ? xrtStrDup(sText) : NULL;
 }
 
 static int __xuiMenuCopyItems(xui_menu_item_t* pTarget, const xui_menu_item_t* pItems, int iCount)

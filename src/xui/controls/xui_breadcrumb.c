@@ -121,14 +121,11 @@ static int __xuiBreadcrumbDescValid(const xui_breadcrumb_desc_t* pDesc)
 static int __xuiBreadcrumbStringSet(char** psText, const char* sText)
 {
 	char* sNew;
-	size_t iNeed;
 
 	if ( psText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( sText == NULL ) sText = "";
-	iNeed = strlen(sText) + 1u;
-	sNew = (char*)xrtMalloc(iNeed);
+	sNew = xrtStrDup(sText);
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memcpy(sNew, sText, iNeed);
 	if ( *psText != NULL ) xrtFree(*psText);
 	*psText = sNew;
 	return XUI_OK;
@@ -222,13 +219,11 @@ static int __xuiBreadcrumbSetItemsData(xui_breadcrumb_data_t* pData, const xui_b
 	memset(arrNew, 0, sizeof(arrNew));
 	for ( i = 0; i < iItemCount; i++ ) {
 		const char* sText = (pItems != NULL && pItems[i].sText != NULL) ? pItems[i].sText : "";
-		size_t iNeed = strlen(sText) + 1u;
-		arrNew[i] = (char*)xrtMalloc(iNeed);
+		arrNew[i] = xrtStrDup(sText);
 		if ( arrNew[i] == NULL ) {
 			for ( j = 0; j < i; j++ ) xrtFree(arrNew[j]);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
-		memcpy(arrNew[i], sText, iNeed);
 	}
 	__xuiBreadcrumbClearItemsData(pData);
 	for ( i = 0; i < iItemCount; i++ ) {

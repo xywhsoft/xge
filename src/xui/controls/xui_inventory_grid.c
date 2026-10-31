@@ -4499,10 +4499,8 @@ XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_s
 		tQuery = *pQuery;
 		tQuery.iSize = sizeof(tQuery);
 		if ( pQuery->sTextContains != NULL ) {
-			size_t iNeed = strlen(pQuery->sTextContains) + 1u;
-			sNeedleCopy = (char*)xrtMalloc(iNeed);
+			sNeedleCopy = xrtStrDup(pQuery->sTextContains);
 			if ( sNeedleCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-			memcpy(sNeedleCopy, pQuery->sTextContains, iNeed);
 			tQuery.sTextContains = sNeedleCopy;
 		}
 		pEffectiveQuery = &tQuery;
