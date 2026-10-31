@@ -73,6 +73,9 @@ typedef struct xui_code_edit_data_t {
 	xui_code_token_buffer pTokenBuffer;
 	xui_code_token_t* pTokenScratch;
 	int iTokenScratchCapacity;
+	xui_code_diagnostic_t* pDiagnosticScratch;
+	int* pDiagnosticIndexScratch;
+	int iDiagnosticScratchCapacity;
 	xui_code_provider_set pProviders;
 	xui_code_margin_model pMargins;
 	xui_code_margin_info_t* pMarginLayout;
@@ -2377,6 +2380,8 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	xrtFree(pData->sAssistDocumentation);
 	xrtFree(pData->pPlaceholders);
 	xrtFree(pData->pTokenScratch);
+	xrtFree(pData->pDiagnosticScratch);
+	xrtFree(pData->pDiagnosticIndexScratch);
 	xrtFree(pData->pMarginLayout);
 	pData->sInlineCompletion = NULL;
 	pData->sReadBuffer = NULL;
@@ -2386,9 +2391,12 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	pData->sAssistDocumentation = NULL;
 	pData->pPlaceholders = NULL;
 	pData->pTokenScratch = NULL;
+	pData->pDiagnosticScratch = NULL;
+	pData->pDiagnosticIndexScratch = NULL;
 	pData->pMarginLayout = NULL;
 	pData->iMarginLayoutCapacity = 0;
 	pData->iTokenScratchCapacity = 0;
+	pData->iDiagnosticScratchCapacity = 0;
 	pData->iInlineCompletionCapacity = 0;
 	pData->iReadBufferCapacity = 0;
 	pData->iImeCompositionCapacity = 0;
@@ -3672,16 +3680,49 @@ static int __xuiCodeEditHitOffset(xui_widget pWidget, xui_code_edit_data_t* pDat
 	return __xuiCodeEditHitOffsetEx(pWidget, pData, fX, fY, 0, pOffset);
 }
 
+static int __xuiCodeEditReserveDiagnosticScratch(
+	xui_code_edit_data_t* pData, int iCapacity)
+{
+	xui_code_diagnostic_t* pDiagnostics;
+	int* pIndices;
+	int iNewCapacity;
+
+	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iCapacity <= pData->iDiagnosticScratchCapacity ) return XUI_OK;
+	iNewCapacity = pData->iDiagnosticScratchCapacity > 0 ?
+		pData->iDiagnosticScratchCapacity : 64;
+	while ( iNewCapacity < iCapacity ) {
+		if ( iNewCapacity > INT_MAX / 2 ) {
+			iNewCapacity = iCapacity;
+			break;
+		}
+		iNewCapacity *= 2;
+	}
+	if ( (size_t)iNewCapacity > SIZE_MAX / sizeof(*pDiagnostics) ||
+	     (size_t)iNewCapacity > SIZE_MAX / sizeof(*pIndices) ) {
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
+	pDiagnostics = (xui_code_diagnostic_t*)xrtRealloc(
+		pData->pDiagnosticScratch,
+		sizeof(*pDiagnostics) * (size_t)iNewCapacity);
+	if ( pDiagnostics == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->pDiagnosticScratch = pDiagnostics;
+	pIndices = (int*)xrtRealloc(pData->pDiagnosticIndexScratch,
+		sizeof(*pIndices) * (size_t)iNewCapacity);
+	if ( pIndices == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->pDiagnosticIndexScratch = pIndices;
+	pData->iDiagnosticScratchCapacity = iNewCapacity;
+	return XUI_OK;
+}
+
 static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_edit_data_t* pData, float fX, float fY, xui_code_diagnostic_hit_t* pHit)
 {
 	xui_code_diagnostic_t arrLocal[32];
 	xui_code_diagnostic_t* pDiagnostics;
-	xui_code_diagnostic_t* pAllocated;
 	xui_code_diagnostic_t* pDiagnostic;
 	xui_code_diagnostic_t tBest;
 	int arrLocalIndices[32];
 	int* pIndices;
-	int* pAllocatedIndices;
 	xui_rect_t tWorld;
 	xui_rect_t tRect;
 	xui_rect_t tBestRect;
@@ -3744,8 +3785,6 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 	if ( __xuiCodeEditReadRange(pData, iLineStart, iLineEnd, &sText) != XUI_OK ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	pAllocated = NULL;
-	pAllocatedIndices = NULL;
 	pDiagnostics = arrLocal;
 	pIndices = arrLocalIndices;
 	if ( xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iLineStart,
@@ -3754,20 +3793,15 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 		return XUI_ERROR_UNSUPPORTED;
 	}
 	if ( iCount > (int)(sizeof(arrLocal) / sizeof(arrLocal[0])) ) {
-		pAllocated = (xui_code_diagnostic_t*)xrtMalloc(sizeof(*pAllocated) * (size_t)iCount);
-		pAllocatedIndices = (int*)xrtMalloc(sizeof(*pAllocatedIndices) * (size_t)iCount);
-		if ( pAllocated == NULL || pAllocatedIndices == NULL ) {
-			xrtFree(pAllocated);
-			xrtFree(pAllocatedIndices);
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		pDiagnostics = pAllocated;
-		pIndices = pAllocatedIndices;
+		i = __xuiCodeEditReserveDiagnosticScratch(pData, iCount);
+		if ( i != XUI_OK ) return i;
+		pDiagnostics = pData->pDiagnosticScratch;
+		pIndices = pData->pDiagnosticIndexScratch;
 		if ( xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iLineStart,
 			(iLineEnd > iLineStart) ? iLineEnd : iLineStart + 1,
-			pDiagnostics, pIndices, iCount, &iCount) != XUI_OK ) {
-			xrtFree(pAllocated);
-			xrtFree(pAllocatedIndices);
+			pDiagnostics, pIndices, pData->iDiagnosticScratchCapacity,
+			&iCount) != XUI_OK ||
+		     iCount > pData->iDiagnosticScratchCapacity ) {
 			return XUI_ERROR_UNSUPPORTED;
 		}
 	}
@@ -3815,8 +3849,6 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 			tBestRect = tRect;
 		}
 	}
-	xrtFree(pAllocated);
-	xrtFree(pAllocatedIndices);
 	if ( iBest < 0 ) return XUI_ERROR_UNSUPPORTED;
 	pHit->iSize = sizeof(*pHit);
 	pHit->iIndex = iBest;
@@ -5972,7 +6004,6 @@ static int __xuiCodeEditRenderDiagnostics(xui_widget pWidget, xui_proxy pProxy, 
 {
 	xui_code_diagnostic_t arrLocal[32];
 	xui_code_diagnostic_t* pDiagnostics;
-	xui_code_diagnostic_t* pAllocated;
 	xui_code_diagnostic_t* pDiagnostic;
 	xui_rect_t tRect;
 	const char* sText;
@@ -5986,29 +6017,23 @@ static int __xuiCodeEditRenderDiagnostics(xui_widget pWidget, xui_proxy pProxy, 
 	int iRet;
 
 	if ( pData == NULL || pData->pAnnotations == NULL ) return XUI_OK;
-	pAllocated = NULL;
 	pDiagnostics = arrLocal;
 	iRet = xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iLineStart,
 		(iLineEnd > iLineStart) ? iLineEnd : iLineStart + 1,
 		arrLocal, NULL, (int)(sizeof(arrLocal) / sizeof(arrLocal[0])), &iCount);
 	if ( iRet != XUI_OK || iCount <= 0 ) return iRet;
 	if ( iCount > (int)(sizeof(arrLocal) / sizeof(arrLocal[0])) ) {
-		pAllocated = (xui_code_diagnostic_t*)xrtMalloc(sizeof(*pAllocated) * (size_t)iCount);
-		if ( pAllocated == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		pDiagnostics = pAllocated;
+		iRet = __xuiCodeEditReserveDiagnosticScratch(pData, iCount);
+		if ( iRet != XUI_OK ) return iRet;
+		pDiagnostics = pData->pDiagnosticScratch;
 		iRet = xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iLineStart,
 			(iLineEnd > iLineStart) ? iLineEnd : iLineStart + 1,
-			pDiagnostics, NULL, iCount, &iCount);
-		if ( iRet != XUI_OK ) {
-			xrtFree(pAllocated);
-			return iRet;
-		}
+			pDiagnostics, NULL, pData->iDiagnosticScratchCapacity, &iCount);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iCount > pData->iDiagnosticScratchCapacity ) return XUI_ERROR_LIMIT_EXCEEDED;
 	}
 	iRet = __xuiCodeEditReadRange(pData, iLineStart, iLineEnd, &sText);
-	if ( iRet != XUI_OK ) {
-		xrtFree(pAllocated);
-		return iRet;
-	}
+	if ( iRet != XUI_OK ) return iRet;
 	/* Draw less severe diagnostics first so errors remain visible when ranges overlap. */
 	for ( iSeverity = XUI_CODE_DIAGNOSTIC_HINT; iSeverity >= XUI_CODE_DIAGNOSTIC_ERROR; iSeverity-- ) {
 		for ( i = 0; i < iCount; i++ ) {
@@ -6036,13 +6061,9 @@ static int __xuiCodeEditRenderDiagnostics(xui_widget pWidget, xui_proxy pProxy, 
 			if ( tRect.fX + tRect.fW > tContent.fX + tContent.fW ) tRect.fW = tContent.fX + tContent.fW - tRect.fX;
 			if ( tRect.fW <= 0.0f ) continue;
 			iRet = __xuiCodeEditDrawDiagnosticWave(pProxy, pDraw, tRect, __xuiCodeEditDiagnosticColor(pWidget, iSeverity));
-			if ( iRet != XUI_OK ) {
-				xrtFree(pAllocated);
-				return iRet;
-			}
+			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	xrtFree(pAllocated);
 	return XUI_OK;
 }
 

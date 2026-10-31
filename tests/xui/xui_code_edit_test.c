@@ -442,6 +442,7 @@ int main(void)
 	xui_code_range_t tRange;
 	xui_code_fold_range_t tFoldRange;
 	xui_code_diagnostic_t tDiagnostic;
+	xui_code_diagnostic_t arrDiagnostics[40];
 	xui_code_diagnostic_hit_t tDiagnosticHit;
 	xui_code_virtual_text_t tVirtualText;
 	xui_code_edit_completion_test_t tCompletionState;
@@ -681,6 +682,26 @@ int main(void)
 	iRet = xuiInputPointerMove(pContext, fDiagnosticX + 120.0f, fDiagnosticY, 0u);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnosticHover.iLeaveCount == 1 && tDiagnosticHover.iLastIndex == -1, "diagnostic hover leave notification");
+	for ( iLine = 0; iLine < (int)(sizeof(arrDiagnostics) / sizeof(arrDiagnostics[0])); iLine++ ) {
+		memset(&arrDiagnostics[iLine], 0, sizeof(arrDiagnostics[iLine]));
+		arrDiagnostics[iLine].iSize = sizeof(arrDiagnostics[iLine]);
+		arrDiagnostics[iLine].tRange.iStart = 18;
+		arrDiagnostics[iLine].tRange.iEnd = 24;
+		arrDiagnostics[iLine].iSeverity = XUI_CODE_DIAGNOSTIC_ERROR;
+		arrDiagnostics[iLine].sMessage = "bulk diagnostic";
+	}
+	iRet = xuiCodeAnnotationSetDiagnostics(xuiCodeEditGetAnnotations(pCodeEdit),
+		arrDiagnostics, (int)(sizeof(arrDiagnostics) / sizeof(arrDiagnostics[0])));
+	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pCodeEdit,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "bulk diagnostics render with reusable scratch");
+	memset(&tDiagnosticHit, 0, sizeof(tDiagnosticHit));
+	iRet = xuiCodeEditHitTestDiagnostic(pCodeEdit, fDiagnosticX, fDiagnosticY,
+		&tDiagnosticHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnosticHit.iIndex == 0 &&
+		strcmp(tDiagnosticHit.tDiagnostic.sMessage, "bulk diagnostic") == 0,
+		"bulk diagnostics hit test with reusable scratch");
 	iTokenCount = xuiCodeTokenBufferGetCount(xuiCodeEditGetTokenBuffer(pCodeEdit));
 	XUI_TEST_CHECK(iTokenCount > 0, "render populates token buffer");
 	arrStyleProperties[0] = __xuiCodeEditStyleColorProp("codeedit.current_line.color", iCurrentLineColor);
