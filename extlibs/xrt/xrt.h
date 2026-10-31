@@ -331057,7 +331057,10 @@ static int bbre_exec_match(
         exec, (bbre_byte *)s, n, pos, NULL,
         BBRE_DFA_MATCH_FLAG_EXIT_EARLY | BBRE_DFA_MATCH_FLAG_PRI);
     goto error;
-  } else if (max_span == 1) {
+  /* The reverse DFA reconstructs the begin offset by scanning toward byte 0,
+   * so it cannot preserve a non-zero search floor. Use the NFA path below
+   * when pos is non-zero; it tracks captures without crossing that floor. */
+  } else if (max_span == 1 && pos == 0) {
     err = bbre_dfa_match(
         exec, (bbre_byte *)s, n, pos, &out_span[0].end,
         BBRE_DFA_MATCH_FLAG_PRI);
