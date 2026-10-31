@@ -184,23 +184,6 @@ static const char* __xuiListViewItemText(xui_widget pWidget, xui_list_view_data_
 	return __xuiListViewText(pData->arrItems[iIndex]);
 }
 
-static char* __xuiListViewDupText(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) {
-		sText = "";
-	}
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static void __xuiListViewFreeItems(char** arrItems, int iCount)
 {
 	int i;
@@ -2100,7 +2083,7 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 			memset(arrNewSelected, 0, (size_t)iCount * sizeof(int));
 		}
 		for ( i = 0; i < iCount; i++ ) {
-			arrNewItems[i] = __xuiListViewDupText(arrItems[i]);
+			arrNewItems[i] = xrtStrDup(arrItems[i]);
 			if ( arrNewItems[i] == NULL ) {
 				__xuiListViewFreeItems(arrNewItems, iCount);
 				if ( arrNewSelected != NULL ) xrtFree(arrNewSelected);

@@ -428,23 +428,6 @@ static int __xuiTerminalDescValid(const xui_terminal_desc_t* pDesc)
 	       isfinite(pDesc->fPadding) && pDesc->fPadding >= 0.0f;
 }
 
-static char* __xuiTerminalStrDup(const char* sText)
-{
-	size_t iLen;
-	char* sCopy;
-
-	if ( sText == NULL ) {
-		sText = "";
-	}
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static int __xuiTerminalTextSize(const char* sText, int* pSize)
 {
 	size_t iSize;
@@ -646,7 +629,7 @@ static uint16_t __xuiTerminalGetOrAddLink(xui_terminal_data_t* pData, const char
 		pData->ppLinks = ppNew;
 		pData->iLinkCapacity = iNewCapacity;
 	}
-	sCopy = __xuiTerminalStrDup(sUrl);
+	sCopy = xrtStrDup(sUrl);
 	if ( sCopy == NULL ) {
 		return 0;
 	}
@@ -1044,7 +1027,7 @@ static char* __xuiTerminalSerializeRow(const xui_terminal_data_t* pData, const x
 	int n;
 
 	if ( (pData == NULL) || (pRow == NULL) || (pData->iColumns <= 0) ) {
-		return __xuiTerminalStrDup("");
+		return xrtStrDup("");
 	}
 	iLast = pData->iColumns - 1;
 	while ( (iLast >= 0) &&
@@ -3351,12 +3334,12 @@ static const char* __xuiTerminalLogicalLineText(xui_terminal_data_t* pData,
 	}
 	pCells = __xuiTerminalScreenConst(pData);
 	if ( pCells == NULL ) {
-		*ppOwned = __xuiTerminalStrDup("");
+		*ppOwned = xrtStrDup("");
 		return *ppOwned;
 	}
 	iLine -= pData->iScrollbackCount;
 	if ( iLine < 0 || iLine >= pData->iRows ) {
-		*ppOwned = __xuiTerminalStrDup("");
+		*ppOwned = xrtStrDup("");
 		return *ppOwned;
 	}
 	*ppOwned = __xuiTerminalSerializeRow(pData,
@@ -3664,7 +3647,7 @@ static int __xuiTerminalOscLinkAt(xui_terminal_data_t* pData, int iLine, int iCo
 	if ( pStartColumn != NULL ) *pStartColumn = iStart;
 	if ( pLength != NULL ) *pLength = iEnd - iStart;
 	if ( ppUrl != NULL ) {
-		*ppUrl = __xuiTerminalStrDup(sUrl);
+		*ppUrl = xrtStrDup(sUrl);
 		if ( *ppUrl == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	return iUrlLength;
@@ -3720,7 +3703,7 @@ static int __xuiTerminalSetHoverLink(xui_widget pWidget, xui_terminal_data_t* pD
 	           (pData->iHoverLinkColumn != iColumn) ||
 	           (pData->iHoverLinkLength != iLength);
 	if ( !bChanged ) return XUI_OK;
-	sCopy = __xuiTerminalStrDup(sUrl);
+	sCopy = xrtStrDup(sUrl);
 	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	__xuiTerminalClearHoverLinkData(pData);
 	pData->sHoverLink = sCopy;
@@ -3765,7 +3748,7 @@ static int __xuiTerminalSetSearchText(xui_terminal_data_t* pData, const char* sT
 	if ( (pData->sSearchText != NULL) && (strcmp(pData->sSearchText, sText) == 0) && (pData->iSearchFlags == iFlags) ) {
 		return XUI_OK;
 	}
-	sCopy = __xuiTerminalStrDup(sText);
+	sCopy = xrtStrDup(sText);
 	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( pData->sSearchText != NULL ) xrtFree(pData->sSearchText);
 	pData->sSearchText = sCopy;
@@ -7276,7 +7259,7 @@ XUI_API int xuiTerminalSetMenuTitle(xui_widget pWidget, int iCommand, const char
 		return XUI_OK;
 	}
 	if ( sOld != NULL && strcmp(sOld, sTitle) == 0 ) return XUI_OK;
-	sNew = __xuiTerminalStrDup(sTitle);
+	sNew = xrtStrDup(sTitle);
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	xuiInternalOperationEnter(pContext);
 	pData->arrMenuTitle[iIndex] = sNew;
@@ -7446,7 +7429,7 @@ XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_
 		pSession->onResize = pDesc->onResize;
 		pSession->pResizeUser = pDesc->pResizeUser;
 	}
-	pSession->sPrompt = __xuiTerminalStrDup((pDesc != NULL && pDesc->sPrompt != NULL) ? pDesc->sPrompt : "");
+	pSession->sPrompt = xrtStrDup((pDesc != NULL && pDesc->sPrompt != NULL) ? pDesc->sPrompt : "");
 	if ( pSession->sPrompt == NULL ) {
 		xrtFree(pSession);
 		return NULL;
@@ -7620,7 +7603,7 @@ XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_termin
 	     (pDesc->iRows < 0 || pDesc->iRows > 32767) ) return NULL;
 	pSession = (xui_terminal_session_t*)xrtCalloc(1, sizeof(*pSession));
 	if ( pSession == NULL ) return NULL;
-	sCommandLine = __xuiTerminalStrDup(pDesc->sCommandLine);
+	sCommandLine = xrtStrDup(pDesc->sCommandLine);
 	if ( sCommandLine == NULL ) {
 		xrtFree(pSession);
 		return NULL;
@@ -7633,7 +7616,7 @@ XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_termin
 	pSession->iLastRows = __xuiTerminalProcessDescRows(pDesc);
 	pSession->onResize = pDesc->onResize;
 	pSession->pResizeUser = pDesc->pResizeUser;
-	pSession->sPrompt = __xuiTerminalStrDup("");
+	pSession->sPrompt = xrtStrDup("");
 	if ( pSession->sPrompt == NULL ) {
 		xrtFree(sCommandLine);
 		xrtFree(pSession);

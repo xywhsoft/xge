@@ -314,23 +314,6 @@ static int __xuiFileDialogWindowPreparePaint(xui_widget pWidget)
 	return XUI_OK;
 }
 
-static char* __xuiFileDialogDup(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) {
-		sText = "";
-	}
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static int __xuiFileDialogSetString(char** psDst, const char* sText)
 {
 	char* sNew;
@@ -338,7 +321,7 @@ static int __xuiFileDialogSetString(char** psDst, const char* sText)
 	if ( psDst == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sNew = __xuiFileDialogDup(sText);
+	sNew = xrtStrDup(sText);
 	if ( sNew == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
@@ -375,7 +358,7 @@ static char* __xuiFileDialogDupRange(const char* sText, size_t iLen)
 	char* sCopy;
 
 	if ( sText == NULL ) {
-		return __xuiFileDialogDup("");
+		return xrtStrDup("");
 	}
 	sCopy = (char*)xrtMalloc(iLen + 1u);
 	if ( sCopy == NULL ) {
@@ -1007,8 +990,8 @@ static int __xuiFileDialogAddEntry(xui_file_dialog pDialog, const char* sName, c
 		return iRet;
 	}
 	pEntry = &pDialog->arrEntries[pDialog->iEntryCount];
-	pEntry->sName = __xuiFileDialogDup(sName);
-	pEntry->sPath = __xuiFileDialogDup(sPath);
+	pEntry->sName = xrtStrDup(sName);
+	pEntry->sPath = xrtStrDup(sPath);
 	pEntry->bDir = bDir ? 1 : 0;
 	if ( pEntry->sName == NULL || pEntry->sPath == NULL ) {
 		__xuiFileDialogEntryFree(pEntry);
@@ -1201,8 +1184,8 @@ static int __xuiFileDialogAddRoot(xui_file_dialog pDialog, int iNodeId, int iPar
 	if ( iRet != XUI_OK ) return iRet;
 	pRoot = &pDialog->arrRoots[pDialog->iRootCount];
 	memset(pRoot, 0, sizeof(*pRoot));
-	pRoot->sName = __xuiFileDialogDup(sName);
-	pRoot->sPath = __xuiFileDialogDup(sPath);
+	pRoot->sName = xrtStrDup(sName);
+	pRoot->sPath = xrtStrDup(sPath);
 	if ( pRoot->sName == NULL || pRoot->sPath == NULL ) {
 		if ( pRoot->sName != NULL ) xrtFree(pRoot->sName);
 		if ( pRoot->sPath != NULL ) xrtFree(pRoot->sPath);
@@ -1726,7 +1709,7 @@ static int __xuiFileDialogBuildCurrentPath(xui_file_dialog pDialog, const char* 
 	}
 	*psPath = NULL;
 	if ( xrtPathIsAbs(sNameOrPath) || pDialog->sCurrentDir == NULL || pDialog->sCurrentDir[0] == 0 ) {
-		*psPath = __xuiFileDialogDup(sNameOrPath);
+		*psPath = xrtStrDup(sNameOrPath);
 	} else {
 		*psPath = xrtPathJoin(pDialog->sCurrentDir, sNameOrPath);
 	}
@@ -1830,7 +1813,7 @@ static char* __xuiFileDialogParentDir(const char* sDir)
 	char* sParent;
 
 	if ( sDir == NULL || sDir[0] == 0 ) {
-		return __xuiFileDialogDup("");
+		return xrtStrDup("");
 	}
 	iLen = strlen(sDir);
 	iEnd = iLen;
@@ -1838,18 +1821,18 @@ static char* __xuiFileDialogParentDir(const char* sDir)
 		iEnd--;
 	}
 	if ( iEnd == 0u ) {
-		return __xuiFileDialogDup("");
+		return xrtStrDup("");
 	}
 	iRootLen = (size_t)__xuiFileDialogPathRootLen(sDir);
 	if ( iEnd <= iRootLen ) {
-		return __xuiFileDialogDup("");
+		return xrtStrDup("");
 	}
 	iPos = iEnd;
 	while ( iPos > 0u && sDir[iPos - 1u] != '/' && sDir[iPos - 1u] != '\\' ) {
 		iPos--;
 	}
 	if ( iPos == 0u ) {
-		return __xuiFileDialogDup("");
+		return xrtStrDup("");
 	}
 	if ( iPos <= iRootLen ) {
 		iPos = iRootLen;
@@ -1883,7 +1866,7 @@ static int __xuiFileDialogFinishWithPath(xui_file_dialog pDialog, const char* sP
 	if ( !__xuiFileDialogValid(pDialog) || sPath == NULL || sPath[0] == 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sNewPath = __xuiFileDialogDup(sPath);
+	sNewPath = xrtStrDup(sPath);
 	if ( sNewPath == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	sOldPath = pDialog->sResultPath;
 	pDialog->sResultPath = sNewPath;
@@ -1922,7 +1905,7 @@ static int __xuiFileDialogShowOverwriteConfirm(xui_file_dialog pDialog, const ch
 	if ( !__xuiFileDialogValid(pDialog) || sPath == NULL || sPath[0] == 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sNewPath = __xuiFileDialogDup(sPath);
+	sNewPath = xrtStrDup(sPath);
 	if ( sNewPath == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	snprintf(sMessage, sizeof(sMessage), xuiTranslate(pDialog->pContext, XUI_TR_FILE_OVERWRITE_MESSAGE_FMT), sPath);
 	xuiInternalUtf8TrimIncomplete(sMessage);
@@ -2179,7 +2162,7 @@ static void __xuiFileDialogFilterSelect(xui_widget pWidget, int iIndex, int iVal
 		return;
 	}
 	if ( iIndex == pDialog->iSelectedFilter ) return;
-	sNewFilter = __xuiFileDialogDup(pDialog->arrFilterPatterns[iIndex]);
+	sNewFilter = xrtStrDup(pDialog->arrFilterPatterns[iIndex]);
 	if ( sNewFilter == NULL ) {
 		(void)xuiComboBoxSetSelected(pDialog->pFilterCombo, pDialog->iSelectedFilter);
 		return;
@@ -3078,7 +3061,7 @@ XUI_API int xuiFileDialogSetDirectory(xui_file_dialog pDialog, const char* sDir)
 	}
 	iRet = __xuiFileDialogBuildEntries(pDialog, sDir, &tEntries);
 	if ( iRet != XUI_OK ) return iRet;
-	sNewDir = __xuiFileDialogDup(sDir);
+	sNewDir = xrtStrDup(sDir);
 	if ( sNewDir == NULL ) {
 		__xuiFileDialogReleaseEntryStorage(&tEntries);
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -3086,7 +3069,7 @@ XUI_API int xuiFileDialogSetDirectory(xui_file_dialog pDialog, const char* sDir)
 	bChanged = pDialog->sCurrentDir == NULL || strcmp(pDialog->sCurrentDir, sDir) != 0;
 	sOldName = NULL;
 	if ( bChanged && pDialog->iMode != XUI_FILE_DIALOG_MODE_SAVE_FILE ) {
-		sOldName = __xuiFileDialogDup(xuiInputGetText(pDialog->pNameInput));
+		sOldName = xrtStrDup(xuiInputGetText(pDialog->pNameInput));
 		if ( sOldName == NULL ) {
 			xrtFree(sNewDir);
 			__xuiFileDialogReleaseEntryStorage(&tEntries);

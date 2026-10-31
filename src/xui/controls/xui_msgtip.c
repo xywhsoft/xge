@@ -135,23 +135,6 @@ static int __xuiMsgTipNormalizeType(int iType)
 	return iType;
 }
 
-static char* __xuiMsgTipDupText(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) {
-		sText = "";
-	}
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static int __xuiMsgTipReplaceText(char** ppText, const char* sText)
 {
 	char* sCopy;
@@ -159,7 +142,7 @@ static int __xuiMsgTipReplaceText(char** ppText, const char* sText)
 	if ( ppText == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sCopy = __xuiMsgTipDupText(sText);
+	sCopy = xrtStrDup(sText);
 	if ( sCopy == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
@@ -954,7 +937,7 @@ XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float f
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipTypeValid(iType) || !__xuiMsgTipFloatValid(fDuration) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sNewText = __xuiMsgTipDupText(sText);
+	sNewText = xrtStrDup(sText);
 	if ( sNewText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	sOldText = pTip->sText;
 	iOldType = pTip->iType;
@@ -1032,7 +1015,7 @@ XUI_API int xuiMsgTipSetText(xui_msgtip pTip, const char* sText)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xuiMsgTipTextSame(pTip->sText, sText) ) return XUI_OK;
-	sNewText = __xuiMsgTipDupText(sText);
+	sNewText = xrtStrDup(sText);
 	if ( sNewText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	sOldText = pTip->sText;
 	pTip->sText = sNewText;

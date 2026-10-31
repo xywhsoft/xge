@@ -263,18 +263,6 @@ static int __xuiMenuBarTextToDisplay(const char* sText, char* sBuffer, int iBuff
 	return j;
 }
 
-static char* __xuiMenuBarDuplicateString(const char* sText)
-{
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) sText = "";
-	iSize = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iSize);
-	if ( sCopy != NULL ) memcpy(sCopy, sText, iSize);
-	return sCopy;
-}
-
 static char* __xuiMenuBarCreateDisplayText(const char* sText)
 {
 	char* sDisplay;
@@ -414,7 +402,7 @@ static int __xuiMenuBarCopyItems(xui_menubar_item_t* pTarget, char** arrDisplay,
 	for ( i = 0; i < iCount; i++ ) {
 		pTarget[i] = pItems[i];
 		memset(&pTarget[i].tRect, 0, sizeof(pTarget[i].tRect));
-		pTarget[i].sText = __xuiMenuBarDuplicateString(pItems[i].sText);
+		pTarget[i].sText = xrtStrDup(pItems[i].sText);
 		if ( pTarget[i].sText == NULL ) goto failed;
 		arrDisplay[i] = __xuiMenuBarCreateDisplayText(pItems[i].sText);
 		if ( arrDisplay[i] == NULL ) goto failed;

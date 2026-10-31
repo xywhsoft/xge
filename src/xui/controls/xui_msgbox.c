@@ -219,23 +219,6 @@ static int __xuiMsgBoxButtonModelValid(const xui_msgbox_button_t* pButtons,
 	return 1;
 }
 
-static char* __xuiMsgBoxDupText(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) {
-		sText = "";
-	}
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static int __xuiMsgBoxReplaceText(char** ppText, const char* sText)
 {
 	char* sCopy;
@@ -243,7 +226,7 @@ static int __xuiMsgBoxReplaceText(char** ppText, const char* sText)
 	if ( ppText == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	sCopy = __xuiMsgBoxDupText(sText);
+	sCopy = xrtStrDup(sText);
 	if ( sCopy == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
@@ -334,7 +317,7 @@ static int __xuiMsgBoxApplyButtonModel(xui_msgbox pBox, int iButtons,
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {
 		arrSemantic[i] = XUI_BUTTON_SEMANTIC_DEFAULT;
 		if ( i < iCount ) {
-			arrText[i] = __xuiMsgBoxDupText(pButtons[i].sText);
+			arrText[i] = xrtStrDup(pButtons[i].sText);
 			if ( arrText[i] == NULL ) {
 				iRet = XUI_ERROR_OUT_OF_MEMORY;
 				goto failed;
@@ -1635,9 +1618,9 @@ XUI_API int xuiMsgBoxSetText(xui_msgbox pBox, const char* sTitle, const char* sM
 	if ( __xuiMsgBoxTextSame(pBox->sTitle, sTitle) && __xuiMsgBoxTextSame(pBox->sMessage, sMessage) ) {
 		return XUI_OK;
 	}
-	sNewTitle = __xuiMsgBoxDupText(sTitle);
+	sNewTitle = xrtStrDup(sTitle);
 	if ( sNewTitle == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	sNewMessage = __xuiMsgBoxDupText(sMessage);
+	sNewMessage = xrtStrDup(sMessage);
 	if ( sNewMessage == NULL ) {
 		xrtFree(sNewTitle);
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1672,7 +1655,7 @@ XUI_API int xuiMsgBoxSetTitle(xui_msgbox pBox, const char* sTitle)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xuiMsgBoxTextSame(pBox->sTitle, sTitle) ) return XUI_OK;
-	sNewTitle = __xuiMsgBoxDupText(sTitle);
+	sNewTitle = xrtStrDup(sTitle);
 	if ( sNewTitle == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	iRet = xuiWindowSetTitle(pBox->pWindow, sNewTitle);
 	if ( iRet != XUI_OK ) {
@@ -1700,7 +1683,7 @@ XUI_API int xuiMsgBoxSetMessage(xui_msgbox pBox, const char* sMessage)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xuiMsgBoxTextSame(pBox->sMessage, sMessage) ) return XUI_OK;
-	sNewMessage = __xuiMsgBoxDupText(sMessage);
+	sNewMessage = xrtStrDup(sMessage);
 	if ( sNewMessage == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	sOldMessage = pBox->sMessage;
 	pBox->sMessage = sNewMessage;
@@ -1882,7 +1865,7 @@ XUI_API int xuiMsgBoxSetPresetButtonTitle(xui_msgbox pBox, int iTitle, const cha
 	if ( (sText == NULL && pBox->arrPresetButtonTitle[iIndex] == NULL) ||
 	     (sText != NULL && pBox->arrPresetButtonTitle[iIndex] != NULL &&
 	      strcmp(sText, pBox->arrPresetButtonTitle[iIndex]) == 0) ) return XUI_OK;
-	sNewText = (sText != NULL) ? __xuiMsgBoxDupText(sText) : NULL;
+	sNewText = (sText != NULL) ? xrtStrDup(sText) : NULL;
 	if ( sText != NULL && sNewText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	sOldText = pBox->arrPresetButtonTitle[iIndex];
 	pBox->arrPresetButtonTitle[iIndex] = sNewText;

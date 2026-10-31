@@ -399,19 +399,6 @@ static int __xuiDockAlpha(uint32_t c)
 	return (int)(c & 0xffu);
 }
 
-static char* __xuiDockStringDup(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) sText = "";
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static int __xuiDockRectRenderable(xui_rect_t r)
 {
 	return (r.fW > 0.0f) && (r.fH > 0.0f);
@@ -7476,7 +7463,7 @@ XUI_API int xuiDockPanelSetMenuTitle(xui_widget pWidget, int iCommand, const cha
 		xrtFree(pData->arrMenuTitle[iIndex]);
 		pData->arrMenuTitle[iIndex] = NULL;
 	} else {
-		sNew = __xuiDockStringDup(sTitle);
+		sNew = xrtStrDup(sTitle);
 		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		xrtFree(pData->arrMenuTitle[iIndex]);
 		pData->arrMenuTitle[iIndex] = sNew;
@@ -7510,7 +7497,7 @@ XUI_API int xuiDockPanelSetTooltipText(xui_widget pWidget, int iTooltip, const c
 		pData->arrTooltipText[iIndex] = NULL;
 		return XUI_OK;
 	}
-	sNew = __xuiDockStringDup(sText);
+	sNew = xrtStrDup(sText);
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	xrtFree(pData->arrTooltipText[iIndex]);
 	pData->arrTooltipText[iIndex] = sNew;

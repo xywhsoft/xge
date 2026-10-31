@@ -266,20 +266,6 @@ static int __xuiTimeLineHeightExtentValid(const xui_timeline_view_data_t* pData,
 	return 1;
 }
 
-static char* __xuiTimeLineStringDup(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) sText = "";
-	iLen = strlen(sText);
-	if ( iLen == SIZE_MAX ) return NULL;
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static int __xuiTimeLineFrameTypeNormalize(int iType)
 {
 	if ( (iType < XUI_TIMELINE_FRAME_EMPTY) || (iType > XUI_TIMELINE_FRAME_BLANK_KEY) ) return XUI_TIMELINE_FRAME_EMPTY;
@@ -3886,7 +3872,7 @@ XUI_API int xuiTimeLineViewSetMenuTitle(xui_widget pWidget, int iCommand, const 
 		xrtFree(pData->arrMenuTitle[iIndex]);
 		pData->arrMenuTitle[iIndex] = NULL;
 	} else {
-		sNew = __xuiTimeLineStringDup(sTitle);
+		sNew = xrtStrDup(sTitle);
 		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		xrtFree(pData->arrMenuTitle[iIndex]);
 		pData->arrMenuTitle[iIndex] = sNew;

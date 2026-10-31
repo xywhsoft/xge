@@ -212,19 +212,6 @@ static int __xuiIconPickerDescValid(const xui_icon_picker_desc_t* pDesc)
 	return 1;
 }
 
-static char* __xuiIconPickerDup(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) sText = "";
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static void __xuiIconPickerDefaults(xui_icon_picker_data_t* pData)
 {
 	memset(pData, 0, sizeof(*pData));
@@ -373,7 +360,7 @@ static int __xuiIconPickerSetPlaceholderData(xui_icon_picker_data_t* pData, cons
 	char* sNew;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	sNew = __xuiIconPickerDup(sText);
+	sNew = xrtStrDup(sText);
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( pData->sPlaceholder != NULL ) xrtFree(pData->sPlaceholder);
 	pData->sPlaceholder = sNew;
@@ -2150,7 +2137,7 @@ XUI_API int xuiIconPickerSetPlaceholder(xui_widget pWidget, const char* sText)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	sValue = (sText != NULL) ? sText : "";
 	if ( strcmp((pData->sPlaceholder != NULL) ? pData->sPlaceholder : "", sValue) == 0 ) return XUI_OK;
-	sNew = __xuiIconPickerDup(sValue);
+	sNew = xrtStrDup(sValue);
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	sOld = pData->sPlaceholder;
 	pData->sPlaceholder = sNew;

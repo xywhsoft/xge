@@ -202,23 +202,6 @@ static int __xuiToastDirection(xui_toast pToast)
 	return XUI_TOAST_DIRECTION_DOWN;
 }
 
-static char* __xuiToastDupText(const char* sText)
-{
-	char* sCopy;
-	size_t iLen;
-
-	if ( sText == NULL ) {
-		sText = "";
-	}
-	iLen = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iLen + 1u);
-	return sCopy;
-}
-
 static void __xuiToastItemFree(xui_toast_item_t* pItem)
 {
 	if ( pItem == NULL ) {
@@ -1461,8 +1444,8 @@ XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const 
 		return -1;
 	}
 	memset(&tItem, 0, sizeof(tItem));
-	tItem.sTitle = __xuiToastDupText(sTitle);
-	tItem.sMessage = __xuiToastDupText(sMessage);
+	tItem.sTitle = xrtStrDup(sTitle);
+	tItem.sMessage = xrtStrDup(sMessage);
 	if ( (tItem.sTitle == NULL) || (tItem.sMessage == NULL) ) {
 		__xuiToastItemFree(&tItem);
 		return -1;
