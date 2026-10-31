@@ -274,15 +274,12 @@ static int __xuiPropertyGridFloatSame(float fA, float fB)
 static int __xuiPropertyGridCopyOwnedText(char** ppText, const char* sText)
 {
 	char* sCopy;
-	size_t iLength;
 
 	if ( ppText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppText = NULL;
 	if ( sText == NULL ) return XUI_OK;
-	iLength = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iLength);
+	sCopy = xrtStrDup(sText);
 	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memcpy(sCopy, sText, iLength);
 	*ppText = sCopy;
 	return XUI_OK;
 }

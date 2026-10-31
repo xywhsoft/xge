@@ -355,18 +355,10 @@ static int __xuiFileDialogGrowCapacity(int iCurrent, int iNeed, int iGrow,
 
 static char* __xuiFileDialogDupRange(const char* sText, size_t iLen)
 {
-	char* sCopy;
-
 	if ( sText == NULL ) {
 		return xrtStrDup("");
 	}
-	sCopy = (char*)xrtMalloc(iLen + 1u);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iLen);
-	sCopy[iLen] = 0;
-	return sCopy;
+	return xrtStrDupN(sText, iLen);
 }
 
 static int __xuiFileDialogIsSlash(char c)

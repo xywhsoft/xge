@@ -108,7 +108,6 @@ static float __xuiTagInputMax(float fA, float fB)
 
 static char* __xuiTagInputDuplicateRange(const char* sText, int iSize)
 {
-	char* sNew;
 	size_t iLength;
 
 	if ( sText == NULL ) {
@@ -121,15 +120,7 @@ static char* __xuiTagInputDuplicateRange(const char* sText, int iSize)
 		iSize = (int)iLength;
 	}
 	if ( iSize > INT_MAX - 1 ) return NULL;
-	sNew = (char*)xrtMalloc((size_t)iSize + 1u);
-	if ( sNew == NULL ) {
-		return NULL;
-	}
-	if ( iSize > 0 ) {
-		memcpy(sNew, sText, (size_t)iSize);
-	}
-	sNew[iSize] = '\0';
-	return sNew;
+	return xrtStrDupN(sText, (size_t)iSize);
 }
 
 static int __xuiTagInputIsTrimChar(unsigned char c)

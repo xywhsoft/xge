@@ -316,12 +316,11 @@ static int __xuiFindDupMaybeEscaped(const char* sText, uint32_t iFlags, char** p
 		__xuiFindSetError(sError, iErrorCapacity, "text is too large");
 		return XUI_ERROR_LIMIT_EXCEEDED;
 	}
-	sCopy = (char*)xrtMalloc(iLength + 1u);
+	sCopy = xrtStrDupN(sText, iLength);
 	if ( sCopy == NULL ) {
 		__xuiFindSetError(sError, iErrorCapacity, "out of memory");
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	memcpy(sCopy, sText, iLength + 1u);
 	*psOutput = sCopy;
 	__xuiFindSetError(sError, iErrorCapacity, "");
 	return XUI_OK;
@@ -338,12 +337,11 @@ static int __xuiFindDupRaw(const char* sText, char** psOutput, char* sError, int
 		__xuiFindSetError(sError, iErrorCapacity, "text is too large");
 		return XUI_ERROR_LIMIT_EXCEEDED;
 	}
-	sCopy = (char*)xrtMalloc(iLength + 1u);
+	sCopy = xrtStrDupN(sText, iLength);
 	if ( sCopy == NULL ) {
 		__xuiFindSetError(sError, iErrorCapacity, "out of memory");
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	memcpy(sCopy, sText, iLength + 1u);
 	*psOutput = sCopy;
 	return XUI_OK;
 }
