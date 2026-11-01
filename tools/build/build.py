@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import sys
 import time
+import host_xrt
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE_CONFIG = json.loads((ROOT / "config/profiles.json").read_text(encoding="utf-8"))
@@ -53,6 +54,7 @@ def main():
     parser.add_argument("--sources-only", action="store_true", help="print selected XUI sources without building")
     parser.add_argument("--source-group", help="print a named source group from config/modules.json")
     parser.add_argument("--debug", action="store_true", help="build the xgedbg library with debug APIs enabled")
+    parser.add_argument("--host-xrt", action="store_true", help="omit XRT implementation and bind the host's pinned runtime before use")
     args = parser.parse_args()
     os.chdir(ROOT)
     manifest = json.loads((ROOT / "config/modules.json").read_text(encoding="utf-8"))
@@ -79,6 +81,13 @@ def main():
              f"-DXGE_BUILD_PROFILE={PROFILES[args.profile]}"]
     flags += INCLUDE_FLAGS
     flags += ["-D" + d for d in args.define]
+    host_metadata = None
+    host_generated = out / "host-xrt"
+    if args.host_xrt:
+        host_metadata = host_xrt.generate(ROOT / "extlibs/xrt/xrt.h", host_generated)
+        flags += ["-DXGE_XRT_HOST=1", "-I"+host_generated.resolve().as_posix(),
+                  "-include", "extlibs/xrt/xrt_config.h", "-include",
+                  (host_generated.resolve()/"xge_host_xrt_imports.h").as_posix()]
     if args.profile == "ide":
         flags += ["-DXGE_XRT_PROFILE_IDE"]
         flags += ["-include", "extlibs/xrt/xrt_config.h", "-Iextlibs/xrt", "-Iextlibs/xrt/include"]
@@ -114,8 +123,10 @@ def main():
     config += "".join(f"#define {name} {int(name in features)}\n" for name in sorted(names))
     if args.profile == "ide":
         config += "#define XGE_XRT_PROFILE_IDE\n"
+    if args.host_xrt:
+        config += "#define XGE_XRT_HOST 1\n"
     abi_inputs = config + "".join((ROOT / path).read_text(encoding="utf-8") for path in
-        ("include/xge.h", "include/xui.h", "include/xge_config.h", "include/xui_config.h", "extlibs/xrt/xrt.h"))
+        ("include/xge.h", "include/xui.h", "include/xge_host_xrt.h", "include/xge_config.h", "include/xui_config.h", "extlibs/xrt/xrt.h"))
     abi_value = hashlib.sha256((abi_inputs + version + str(int(args.debug))).encode()).hexdigest()[:16]
     config += f"#define XGE_BUILD_ABI_FINGERPRINT UINT64_C(0x{abi_value})\n"
     flags += [f"-DXGE_BUILD_ABI_FINGERPRINT=0x{abi_value}ULL"]
@@ -194,6 +205,16 @@ def main():
             run([windres, "-O", "coff", "-i", "platform/windows/xge.rc", "-o", resource])
             resource_record.write_text(resource_key)
         link_objects.append(resource)
+    host_imports = []
+    if args.host_xrt:
+        nm = shutil.which("nm")
+        if not nm:
+            raise RuntimeError("nm is required to inventory hosted XRT imports")
+        undefined = run([nm, "-u", *link_objects], capture_output=True, text=True).stdout
+        host_imports = host_xrt.required_symbols(undefined, host_metadata)
+        host_xrt.write_slots(host_generated, host_imports)
+        compile_object("src/xge/core/xge_host_xrt.c", cc, flags)
+        sources.append("src/xge/core/xge_host_xrt.c")
     library = out / ("xgedbg.dll" if args.debug and windows else
                      "libxgedbg.so" if args.debug else
                      "xge.dll" if windows else "libxge.so")
@@ -214,6 +235,11 @@ def main():
         if link_record.exists():
             link_record.unlink()
         run(link_args)
+        if args.host_xrt:
+            defined = run([nm, "-g", "--defined-only", library], capture_output=True, text=True).stdout
+            if re.search(r"\b(?:__)?xrt[A-Z]\w*\s*$", defined, re.M):
+                library.unlink()
+                raise RuntimeError("Hosted XGE unexpectedly defines XRT implementation symbols")
         shutil.copy2(library, unstripped)
         strip = shutil.which("strip")
         if not strip:
@@ -232,6 +258,8 @@ def main():
         packaged_runtime.append({"source": str(dependency.resolve()), "path": str(target.resolve()),
                                  "sha256": expected, "bytes": target.stat().st_size})
     report = {"api_major": api_major, "profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
+              "xrt_mode": "host" if args.host_xrt else "embedded", "xrt_host_imports": host_imports,
+              "xrt_host_header_sha256": host_metadata["headerSha256"] if host_metadata else None,
               "features": sorted(features), "sources": sources, "compiled": compiled, "reused": reused,
               "linked": linked, "runtime_dependencies": packaged_runtime, "seconds": time.perf_counter() - started,
               "runtime_bytes": library.stat().st_size, "unstripped_bytes": unstripped.stat().st_size}
