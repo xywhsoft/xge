@@ -1,6 +1,7 @@
 #include "src/xui/core/xui_internal.h"
 #include <assert.h>
 #include <stdio.h>
+#include <limits.h>
 
 xui_widget xuiInternalPopupPointerPassthroughOwner(xui_context context,
     xui_widget hit, float x, float y)
@@ -95,6 +96,50 @@ static void pending_scope(void)
     xuiLifetimeUnwatch(&owner.link); xuiLifetimeUnwatch(&c.link);
 }
 
+static void scope_destroy(xui_widget widget, void* instance, void* user)
+{ (void)widget; (void)instance; (void)user; ++destructors; }
+
+static void public_call_scopes(void)
+{
+    xui_context context = NULL; xui_widget_type type = NULL; xui_widget a = NULL, b = NULL;
+    xui_call_scope_t outer = {0}, inner = {0}, rejected = {0};
+    assert(xuiCallScopeBegin(NULL, &outer) == XUI_ERROR_INVALID_ARGUMENT);
+    assert(xuiCallScopeEnd(NULL) == XUI_ERROR_INVALID_ARGUMENT);
+    assert(xuiCallScopeEnd(&outer) == XUI_OK);
+    assert(xuiCreate(&context) == XUI_OK);
+    context->iOperationDepth = INT_MAX;
+    assert(xuiCallScopeBegin(context, &rejected) == XUI_ERROR_INVALID_STATE);
+    assert(!rejected.pSelf && !rejected.pContext); context->iOperationDepth = 0;
+    xmemdebugsnapshot before, after; xrtMemDebugSnapshot(&before);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xuiCallScopeBegin(context, &outer) == XUI_OK);
+    assert(xuiCallScopeEnd(&outer) == XUI_OK);
+    assert(xrtMemDebugFailAfter(-1)); xrtMemDebugSnapshot(&after);
+    assert(before.AllocCount == after.AllocCount && before.FreeCount == after.FreeCount && before.ReallocCount == after.ReallocCount);
+    xui_widget_type_desc_t description = {0};
+    description.iSize = sizeof(description); description.sName = "test.call-scope";
+    description.pParent = xuiWidgetGetBaseType(); description.onDestroy = scope_destroy;
+    assert(xuiWidgetRegisterType(context, &type, &description) == XUI_OK);
+    assert(xuiWidgetCreateTyped(context, type, &a, NULL) == XUI_OK);
+    assert(xuiWidgetCreateTyped(context, type, &b, NULL) == XUI_OK);
+    observer watched = watch_widget(context, a);
+    assert(xuiWidgetLifetimeWatch(a, &watched.link, invalidated, &watched) == XUI_OK);
+    assert(xuiCallScopeBegin(context, &outer) == XUI_OK);
+    assert(xuiCallScopeBegin(context, &outer) == XUI_ERROR_INVALID_STATE);
+    assert(xuiCallScopeBegin(context, &inner) == XUI_OK);
+    xui_call_scope_t copied = outer;
+    assert(xuiCallScopeEnd(&copied) == XUI_ERROR_INVALID_STATE);
+    unsigned before_destroy = destructors;
+    xuiDestroy(context);
+    assert(!watched.value && watched.calls == 1 && destructors == before_destroy);
+    assert(xuiCallScopeBegin(context, &rejected) == XUI_ERROR_INVALID_STATE);
+    assert(xuiCallScopeEnd(&outer) == XUI_OK && destructors == before_destroy);
+    assert(xuiCallScopeEnd(&inner) == XUI_OK && destructors == before_destroy+2);
+    assert(!outer.pContext && !outer.pSelf && !inner.pContext && !inner.pSelf);
+    assert(xuiCallScopeEnd(&inner) == XUI_OK);
+    xuiLifetimeUnwatch(&watched.link);
+}
+
 static void recursive_close(void)
 {
     xui_context context = NULL; xui_widget parent = NULL, child = NULL;
@@ -173,7 +218,7 @@ int main(void)
 {
     assert(xrtMemDebugEnable(true));
     xmemdebugsnapshot before, after; xrtMemDebugSnapshot(&before);
-    attach_and_detach(); pending_scope(); recursive_close();
+    attach_and_detach(); pending_scope(); public_call_scopes(); recursive_close();
     detached_storage_can_disappear(); init_shutdown();
     xrtClearError(); xrtMemDebugSnapshot(&after);
     assert(before.LiveCount == after.LiveCount && before.LiveBytes == after.LiveBytes);

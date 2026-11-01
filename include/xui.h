@@ -5480,6 +5480,12 @@ typedef struct xui_lifetime_link_t {
 	xui_lifetime_invalidate_proc onInvalidate;
 	void* pUser;
 } xui_lifetime_link_t;
+/* Caller-owned, zero-initialized, address-stable native call protection.
+ * Fields are private; never copy/move a live scope. */
+typedef struct xui_call_scope_t {
+	xui_context pContext;
+	struct xui_call_scope_t* pSelf;
+} xui_call_scope_t;
 typedef xui_language_t* xui_language;
 typedef xui_widget_t* xui_widget;
 typedef xui_widget_type_t* xui_widget_type;
@@ -6059,6 +6065,14 @@ XUI_API int xuiWidgetLifetimeWatch(xui_widget pWidget, xui_lifetime_link_t* pLin
 	xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* O(1), idempotent; NULL is allowed. Never reads a destroyed native object. */
 XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink);
+/* Nestable UI-thread scopes. Begin refuses a closing context and allocates
+ * nothing. Logical invalidation remains immediate; physical widget/context
+ * destruction waits until the last enclosing native operation/callback ends.
+ * End clears the token BEFORE running deferred callbacks/destructors and may
+ * physically destroy the context. End on an empty token is a no-op. Balance
+ * every successful Begin on all exits; End can execute user code. */
+XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope);
+XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope);
 /* 注册错误回调（全部框架错误的统一出口）。 */
 XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser);
 /* 注册无障碍事件回调（平台桥接消费）。 */

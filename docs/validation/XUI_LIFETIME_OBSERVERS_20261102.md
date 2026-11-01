@@ -29,3 +29,7 @@ context 开始关闭时，先通知 context 及全部登记控件（包含未挂
 - 覆盖零分配登记／注销、非法与重复登记、显式关闭立即失效、回调重入销毁、回调释放自身和其他监听、构造期间关闭及失败回滚；无无效／重复释放，活动分配回到起点。
 
 证据：`F:/xlang-validation/xge-lifetime-20261102/observer-win-r2/results.json` 和 `/home/ubuntu/xlang-validation/xge-lifetime-20261102-observer-r1/observer-asan-r1/results.json`。入口为 `tools/test/check_xui_lifetime.py`；Linux 追加 `--sanitize`。
+
+后续补入 `xuiCallScopeBegin`／`xuiCallScopeEnd`。调用方提供两个指针大小的清零、稳定存储；作用域可嵌套，进入／无延迟任务的退出不分配。关闭 context 或销毁控件仍立即通知弱视图，但物理销毁推迟到最后原生操作／回调退出。End 在执行延迟用户代码前清空令牌，因此重复清理空令牌安全；复制的活动令牌会拒绝，不会错误减少操作深度。End 可能执行用户回调和析构，不能给它套用纯读取／无清理效果合同。
+
+作用域专项覆盖嵌套、非后进先出退出仍由最后作用域保活、复制／重复进入、关闭后拒绝进入、操作深度边界、失效先于物理析构，以及零分配进入／退出。Windows O0/O2 和 Linux O0/O2 + ASan/UBSan/泄漏检查均通过；同批运行生命周期和既有拖放测试。证据为 `F:/xlang-validation/xge-lifetime-20261102/public-scope-win-r1/results.json` 与 `/home/ubuntu/xlang-validation/xge-lifetime-20261102-scope-r1/scope-asan-r1/results.json`。它保护原生调用的物理存储，线程准入、语言代码驻留及 checked 回调错误仍由语言受管边界负责。

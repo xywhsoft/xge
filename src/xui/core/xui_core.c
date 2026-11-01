@@ -954,6 +954,31 @@ void xuiInternalOperationEnter(xui_context pContext)
 	}
 }
 
+XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope)
+{
+	if ( pScope == NULL || !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pScope->pContext != NULL || pScope->pSelf != NULL || pContext->bDestroying ||
+		pContext->bDestroyPending || pContext->iOperationDepth == INT_MAX ) return XUI_ERROR_INVALID_STATE;
+	pScope->pContext = pContext;
+	pScope->pSelf = pScope;
+	xuiInternalOperationEnter(pContext);
+	return XUI_OK;
+}
+
+XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope)
+{
+	xui_context pContext;
+	if ( pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pScope->pContext == NULL && pScope->pSelf == NULL ) return XUI_OK;
+	if ( pScope->pSelf != pScope || pScope->pContext == NULL ) return XUI_ERROR_INVALID_STATE;
+	pContext = pScope->pContext;
+	pScope->pContext = NULL;
+	pScope->pSelf = NULL;
+	xuiInternalOperationLeave(pContext);
+	/* Leave may run arbitrary UI callbacks and free pContext. */
+	return XUI_OK;
+}
+
 void xuiInternalOperationLeave(xui_context pContext)
 {
 	if ( !__xuiContextValid(pContext) || (pContext->iOperationDepth <= 0) ) {
