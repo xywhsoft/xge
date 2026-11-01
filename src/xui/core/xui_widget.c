@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_RENDER_CACHE_DIRTY_FLAGS \
@@ -16,6 +17,32 @@
 	(XUI_RENDER_CACHE_DIRTY_FLAGS | XUI_WIDGET_DIRTY_RENDER)
 
 static void __xuiWidgetSyncInactiveTree(xui_widget pWidget);
+
+static int __xuiCallbackOwnerValid(const xui_callback_owner_t* pOwner)
+{
+	return pOwner == NULL ||
+		((pOwner->tReference.Data == NULL && pOwner->tReference.Ops == NULL &&
+		  pOwner->onHold == NULL && pOwner->onDrop == NULL) ||
+		 (pOwner->tReference.Data != NULL && pOwner->tReference.Ops != NULL &&
+		  pOwner->onHold != NULL && pOwner->onDrop != NULL));
+}
+
+int xuiInternalCallbackOwnerHold(const xui_callback_owner_t* pOwner)
+{
+	if ( !__xuiCallbackOwnerValid(pOwner) ) return XUI_ERROR_INVALID_ARGUMENT;
+	return pOwner == NULL || pOwner->onHold == NULL || pOwner->onHold(pOwner->tReference.Data)
+		? XUI_OK : XUI_ERROR_CALLBACK_FAILED;
+}
+
+int xuiInternalCallbackOwnerDrop(xui_context pContext, const xui_callback_owner_t* pOwner)
+{
+	if ( pOwner == NULL || pOwner->onDrop == NULL || pOwner->onDrop(pOwner->tReference.Data) ) return XUI_OK;
+	/* A consuming callback may fail without an allocated diagnostic. Keep the
+	 * status in every enclosing checked native call, through final destruction. */
+	for ( xui_call_scope_t* pScope = pContext->pCallScopes; pScope != NULL; pScope = pScope->pNext )
+		if ( pScope->iResult == XUI_OK ) pScope->iResult = XUI_ERROR_CALLBACK_FAILED;
+	return XUI_ERROR_CALLBACK_FAILED;
+}
 
 static int __xuiWidgetMemoryValid(xui_widget pWidget)
 {
@@ -3803,6 +3830,18 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	}
 	__xuiWidgetEndActiveUpdate(pWidget);
 	if ( pWidget->bTypeInitialized ) __xuiWidgetTypeDestroyChain(pWidget, pWidget->pType);
+	/* Empty the physical slots before arbitrary consuming cleanup reenters. */
+	xui_event_owners_t* pOwners = pWidget->pEventOwners;
+	pWidget->pEventOwners = NULL;
+	pWidget->onEvent = NULL; pWidget->pEventUser = NULL;
+	memset(pWidget->arrEventHandlers, 0, sizeof(pWidget->arrEventHandlers));
+	memset(pWidget->arrEventUsers, 0, sizeof(pWidget->arrEventUsers));
+	if ( pOwners != NULL ) {
+		(void)xuiInternalCallbackOwnerDrop(pContext, &pOwners->tPrimary);
+		for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
+			(void)xuiInternalCallbackOwnerDrop(pContext, &pOwners->arrHandlers[i]);
+		xrtFree(pOwners);
+	}
 	__xuiWidgetDestroyAllCaches(pWidget);
 	__xuiWidgetDestroyTableTracks(pWidget);
 	__xuiWidgetDestroyStyleData(pWidget);
@@ -5400,9 +5439,85 @@ XUI_API int xuiWidgetSetEventCallback(xui_widget pWidget, xui_widget_event_proc 
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pWidget->pEventOwners != NULL ) return xuiWidgetSetEventCallbackOwned(pWidget, onEvent, pUser, NULL);
 	pWidget->onEvent = onEvent;
 	pWidget->pEventUser = pUser;
 	return XUI_OK;
+}
+
+/* One sparse allocation per widget that actually registers an owned event.
+ * Ordinary borrowed C registration keeps its existing two-store fast path. */
+static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
+	xui_widget_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	if ( !__xuiWidgetValid(pWidget) || iEventType < -1 || iEventType >= XUI_WIDGET_EVENT_SLOT_COUNT ||
+		!__xuiCallbackOwnerValid(pOwner) || (onEvent == NULL && pOwner != NULL && pOwner->onHold != NULL) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext = pWidget->pContext;
+	xui_call_scope_t tScope = {0};
+	int iResult = xuiCallScopeBegin(pContext, &tScope);
+	if ( iResult != XUI_OK ) return iResult;
+	xui_event_owners_t* pNew = NULL;
+	if ( pWidget->pEventOwners == NULL && pOwner != NULL && pOwner->onHold != NULL ) {
+		pNew = xrtCalloc(1, sizeof(*pNew));
+		if ( pNew == NULL ) { (void)xuiCallScopeEnd(&tScope); return XUI_ERROR_OUT_OF_MEMORY; }
+	}
+	iResult = xuiInternalCallbackOwnerHold(pOwner);
+	if ( iResult != XUI_OK ) { xrtFree(pNew); (void)xuiCallScopeEnd(&tScope); return iResult; }
+	xrtownershipscope tMutation = {0};
+	if ( !xrtOwnershipMutationBegin(&tMutation) ) {
+		xrtFree(pNew); (void)xuiInternalCallbackOwnerDrop(pContext, pOwner);
+		(void)xuiCallScopeEnd(&tScope); return XUI_ERROR_INVALID_STATE;
+	}
+	if ( pNew != NULL ) pWidget->pEventOwners = pNew;
+	xui_callback_owner_t tOld = {0};
+	xui_callback_owner_t* pSlot = pWidget->pEventOwners == NULL ? NULL :
+		(iEventType == -1 ? &pWidget->pEventOwners->tPrimary : &pWidget->pEventOwners->arrHandlers[iEventType]);
+	if ( pSlot != NULL ) { tOld = *pSlot; *pSlot = pOwner == NULL ? (xui_callback_owner_t){0} : *pOwner; }
+	if ( iEventType == -1 ) { pWidget->onEvent = onEvent; pWidget->pEventUser = pUser; }
+	else {
+		pWidget->arrEventHandlers[iEventType] = onEvent;
+		pWidget->arrEventUsers[iEventType] = pUser;
+		uint64_t iMask = __xuiWidgetEventTypeMask(iEventType);
+		if ( onEvent != NULL ) pWidget->iEventHandlerMask |= iMask;
+		else pWidget->iEventHandlerMask &= ~iMask;
+		__xuiWidgetUpdateEventMasksToRoot(pWidget);
+	}
+	if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+	iResult = xuiInternalCallbackOwnerDrop(pContext, &tOld);
+	int iCleanup = xuiCallScopeEnd(&tScope);
+	return iResult != XUI_OK ? iResult : iCleanup;
+}
+
+XUI_API int xuiWidgetSetEventCallbackOwned(xui_widget pWidget, xui_widget_event_proc onEvent, void* pUser,
+	const xui_callback_owner_t* pOwner)
+{ return __xuiWidgetSetOwnedEvent(pWidget, -1, onEvent, pUser, pOwner); }
+
+XUI_API int xuiWidgetSetEventHandlerOwned(xui_widget pWidget, int iEventType, xui_widget_event_proc onEvent, void* pUser,
+	const xui_callback_owner_t* pOwner)
+{
+	if ( iEventType < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiWidgetSetOwnedEvent(pWidget, iEventType, onEvent, pUser, pOwner);
+}
+
+XUI_API bool xuiContextOwnershipBusy(xui_context pContext)
+{
+	return !xuiInternalContextIsValid(pContext) || pContext->iOperationDepth != 0 ||
+		pContext->iWidgetCallbackDepth != 0 || pContext->iDestroyFlushDepth != 0 ||
+		pContext->bDestroyPending || pContext->bDestroying;
+}
+
+XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisitor onVisit, void* pUser)
+{
+	if ( onVisit == NULL || xuiContextOwnershipBusy(pContext) ) return false;
+	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {
+		const xui_event_owners_t* pOwners = pWidget->pEventOwners;
+		if ( pOwners == NULL ) continue;
+		if ( pOwners->tPrimary.tReference.Data != NULL && !onVisit(pOwners->tPrimary.tReference, pUser) ) return false;
+		for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
+			if ( pOwners->arrHandlers[i].tReference.Data != NULL && !onVisit(pOwners->arrHandlers[i].tReference, pUser) ) return false;
+	}
+	return true;
 }
 
 XUI_API int xuiWidgetGetEventCallback(xui_widget pWidget, xui_widget_event_proc* pEvent, void** ppUser)
@@ -5484,6 +5599,7 @@ XUI_API int xuiWidgetSetEventHandler(xui_widget pWidget, int iEventType, xui_wid
 	     (iEventType >= XUI_WIDGET_EVENT_SLOT_COUNT) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pWidget->pEventOwners != NULL ) return xuiWidgetSetEventHandlerOwned(pWidget, iEventType, onEvent, pUser, NULL);
 	pWidget->arrEventHandlers[iEventType] = onEvent;
 	pWidget->arrEventUsers[iEventType] = pUser;
 	iMask = __xuiWidgetEventTypeMask(iEventType);

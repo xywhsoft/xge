@@ -32,6 +32,10 @@ typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
 struct xui_menu_data_t;
+typedef struct xui_event_owners_t {
+	xui_callback_owner_t tPrimary;
+	xui_callback_owner_t arrHandlers[XUI_WIDGET_EVENT_SLOT_COUNT];
+} xui_event_owners_t;
 
 enum {
 	XUI_DRAG_ADORNER_RECT_FILL = 1,
@@ -251,6 +255,7 @@ struct xui_context_t {
 	int iDestroyFlushDepth;
 	int iWidgetCallbackDepth;
 	int iOperationDepth;
+	xui_call_scope_t* pCallScopes;
 	int bDestroyPending;
 	int bDestroying;
 	xui_rect_i_t arrInlineDamage[XUI_CONTEXT_DAMAGE_INLINE];
@@ -483,6 +488,7 @@ struct xui_widget_t {
 	void* pLayoutCompleteUser;
 	xui_widget_event_proc onEvent;
 	void* pEventUser;
+	xui_event_owners_t* pEventOwners;
 	xui_widget_event_proc arrEventHandlers[XUI_WIDGET_EVENT_SLOT_COUNT];
 	void* arrEventUsers[XUI_WIDGET_EVENT_SLOT_COUNT];
 	xui_tooltip_desc_t tTooltip;
@@ -542,6 +548,8 @@ struct xui_painter_t {
 int xuiInternalContextIsValid(xui_context pContext);
 void xuiInternalOperationEnter(xui_context pContext);
 void xuiInternalOperationLeave(xui_context pContext);
+int xuiInternalCallbackOwnerHold(const xui_callback_owner_t* pOwner);
+int xuiInternalCallbackOwnerDrop(xui_context pContext, const xui_callback_owner_t* pOwner);
 int xuiInternalContextDestroyPending(xui_context pContext);
 void xuiInternalStateRecordBoundsTree(xui_widget pWidget);
 void xuiInternalStateDamageFlush(xui_context pContext);

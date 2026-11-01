@@ -720,16 +720,24 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 	int iRet;
 	xui_widget_event_proc onHandler;
 	void* pHandlerUser;
+	xui_callback_owner_t tOwner = {0};
+	xui_context pContext;
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) {
 		return XUI_OK;
 	}
+	pContext = pWidget->pContext;
 	pEvent->pCurrentTarget = pWidget;
 	if ( (pEvent->iType >= 0) && (pEvent->iType < XUI_WIDGET_EVENT_SLOT_COUNT) ) {
 		onHandler = pWidget->arrEventHandlers[pEvent->iType];
 		pHandlerUser = pWidget->arrEventUsers[pEvent->iType];
+		if ( pWidget->pEventOwners != NULL ) tOwner = pWidget->pEventOwners->arrHandlers[pEvent->iType];
 		if ( onHandler != NULL ) {
+			iRet = tOwner.onHold == NULL ? XUI_OK : xuiInternalCallbackOwnerHold(&tOwner);
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = onHandler(pWidget, pEvent, pHandlerUser);
+			int iDrop = tOwner.onDrop == NULL ? XUI_OK : xuiInternalCallbackOwnerDrop(pContext, &tOwner);
+			if ( iRet >= 0 && iDrop != XUI_OK ) iRet = iDrop;
 			if ( iRet < 0 ) {
 				return iRet;
 			}
@@ -743,7 +751,14 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 		}
 	}
 	if ( pWidget->onEvent != NULL ) {
-		iRet = pWidget->onEvent(pWidget, pEvent, pWidget->pEventUser);
+		onHandler = pWidget->onEvent;
+		pHandlerUser = pWidget->pEventUser;
+		tOwner = pWidget->pEventOwners == NULL ? (xui_callback_owner_t){0} : pWidget->pEventOwners->tPrimary;
+		iRet = tOwner.onHold == NULL ? XUI_OK : xuiInternalCallbackOwnerHold(&tOwner);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = onHandler(pWidget, pEvent, pHandlerUser);
+		int iDrop = tOwner.onDrop == NULL ? XUI_OK : xuiInternalCallbackOwnerDrop(pContext, &tOwner);
+		if ( iRet >= 0 && iDrop != XUI_OK ) iRet = iDrop;
 		if ( iRet < 0 ) {
 			return iRet;
 		}

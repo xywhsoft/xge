@@ -56,7 +56,9 @@ typedef enum xui_result_t {
 /* 当前状态不允许该操作。 */
 	XUI_ERROR_INVALID_STATE = -14,
 	/* 有界异步操作队列已满。 */
-	XUI_ERROR_LIMIT_EXCEEDED = -15
+	XUI_ERROR_LIMIT_EXCEEDED = -15,
+/* An admitted owned callback or its consuming cleanup returned false. */
+	XUI_ERROR_CALLBACK_FAILED = -16
 } xui_result_t;
 
 /* 错误发生阶段（错误信息定位用）。 */
@@ -5485,7 +5487,26 @@ typedef struct xui_lifetime_link_t {
 typedef struct xui_call_scope_t {
 	xui_context pContext;
 	struct xui_call_scope_t* pSelf;
+	struct xui_call_scope_t* pPrevious;
+	struct xui_call_scope_t* pNext;
+	int iResult;
+	int bEnding;
 } xui_call_scope_t;
+
+/* An actual owned userdata slot, not a trace-only annotation. The immutable
+ * reference and resident Hold/Drop code remain valid through the last Drop.
+ * Hold borrows and owns one reference on true, retains nothing on false;
+ * Drop always consumes, including false without a diagnostic. Neither hook
+ * unwinds across C. All-zero explicitly denotes borrowed userdata.
+ * Owned setters borrow this descriptor and retain its reference. Replacement
+ * is committed before old cleanup, so cleanup failure does not undo it.
+ * Invocation retains an independent snapshot until the typed callback has
+ * completely returned, including its native adapter's return instructions. */
+typedef struct xui_callback_owner_t {
+	xrtownershipref tReference;
+	bool (*onHold)(const void*);
+	bool (*onDrop)(const void*);
+} xui_callback_owner_t;
 typedef xui_language_t* xui_language;
 typedef xui_widget_t* xui_widget;
 typedef xui_widget_type_t* xui_widget_type;
@@ -6068,9 +6089,12 @@ XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink);
 /* Nestable UI-thread scopes. Begin refuses a closing context and allocates
  * nothing. Logical invalidation remains immediate; physical widget/context
  * destruction waits until the last enclosing native operation/callback ends.
- * End clears the token BEFORE running deferred callbacks/destructors and may
- * physically destroy the context. End on an empty token is a no-op. Balance
- * every successful Begin on all exits; End can execute user code. */
+ * End marks the token as ending before deferred callbacks/destructors, retains
+ * its checked cleanup receipt until they return, and then zeros the token.
+ * It may physically destroy the context. Owned cleanup failures return
+ * XUI_ERROR_CALLBACK_FAILED even without a diagnostic. End on an empty token
+ * is a no-op. Balance every successful Begin on all exits; End executes user
+ * code and rejects reentry on the same ending token. */
 XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope);
 XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope);
 /* 注册错误回调（全部框架错误的统一出口）。 */
@@ -12546,10 +12570,19 @@ XUI_API xui_rect_t xuiGetImeCandidateRect(xui_context pContext);
 /* 注册全类型事件回调（CAPTURE/TARGET/BUBBLE 三阶段都会收到；
  * 回调返回 XUI_EVENT_DISPATCH_STOP 可中断传播）。 */
 XUI_API int xuiWidgetSetEventCallback(xui_widget pWidget, xui_widget_event_proc onEvent, void* pUser);
+XUI_API int xuiWidgetSetEventCallbackOwned(xui_widget pWidget, xui_widget_event_proc onEvent, void* pUser,
+	const xui_callback_owner_t* pOwner);
 /* 输出全类型事件回调与用户指针。 */
 XUI_API int xuiWidgetGetEventCallback(xui_widget pWidget, xui_widget_event_proc* pEvent, void** ppUser);
 /* 按事件类型注册回调（替换该类型原有回调）。 */
 XUI_API int xuiWidgetSetEventHandler(xui_widget pWidget, int iEventType, xui_widget_event_proc onEvent, void* pUser);
+XUI_API int xuiWidgetSetEventHandlerOwned(xui_widget pWidget, int iEventType, xui_widget_event_proc onEvent, void* pUser,
+	const xui_callback_owner_t* pOwner);
+/* Frozen, creator-thread read of these event slots ONLY. This is not a
+ * complete ownership policy for all XUI resources, controls or value models.
+ * Refuses native operation/destruction, and never calls unknown graph ops. */
+XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisitor onVisit, void* pUser);
+XUI_API bool xuiContextOwnershipBusy(xui_context pContext);
 /* 按事件类型输出回调与用户指针。 */
 XUI_API int xuiWidgetGetEventHandler(xui_widget pWidget, int iEventType, xui_widget_event_proc* pEvent, void** ppUser);
 /* 按事件掩码开关兴趣标记（优化无接收者子树的派发跳过）。 */

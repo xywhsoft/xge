@@ -957,10 +957,14 @@ void xuiInternalOperationEnter(xui_context pContext)
 XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope)
 {
 	if ( pScope == NULL || !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pScope->pContext != NULL || pScope->pSelf != NULL || pContext->bDestroying ||
+	if ( pScope->pContext != NULL || pScope->pSelf != NULL || pScope->pPrevious != NULL ||
+		pScope->pNext != NULL || pScope->iResult != XUI_OK || pScope->bEnding || pContext->bDestroying ||
 		pContext->bDestroyPending || pContext->iOperationDepth == INT_MAX ) return XUI_ERROR_INVALID_STATE;
 	pScope->pContext = pContext;
 	pScope->pSelf = pScope;
+	pScope->pNext = pContext->pCallScopes;
+	if ( pScope->pNext != NULL ) pScope->pNext->pPrevious = pScope;
+	pContext->pCallScopes = pScope;
 	xuiInternalOperationEnter(pContext);
 	return XUI_OK;
 }
@@ -969,14 +973,22 @@ XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope)
 {
 	xui_context pContext;
 	if ( pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pScope->pContext == NULL && pScope->pSelf == NULL ) return XUI_OK;
-	if ( pScope->pSelf != pScope || pScope->pContext == NULL ) return XUI_ERROR_INVALID_STATE;
+	if ( pScope->pContext == NULL && pScope->pSelf == NULL && pScope->pPrevious == NULL &&
+		pScope->pNext == NULL && pScope->iResult == XUI_OK && !pScope->bEnding ) return XUI_OK;
+	if ( pScope->pSelf != pScope || pScope->pContext == NULL || pScope->bEnding ) return XUI_ERROR_INVALID_STATE;
 	pContext = pScope->pContext;
-	pScope->pContext = NULL;
-	pScope->pSelf = NULL;
+	pScope->bEnding = 1;
 	xuiInternalOperationLeave(pContext);
-	/* Leave may run arbitrary UI callbacks and free pContext. */
-	return XUI_OK;
+	/* Destruction clears pContext in every still-linked receipt before free.
+	 * Keep this receipt linked during Leave, including final native cleanup. */
+	if ( pScope->pContext != NULL ) {
+		if ( pScope->pPrevious != NULL ) pScope->pPrevious->pNext = pScope->pNext;
+		else pContext->pCallScopes = pScope->pNext;
+		if ( pScope->pNext != NULL ) pScope->pNext->pPrevious = pScope->pPrevious;
+	}
+	int iResult = pScope->iResult;
+	memset(pScope, 0, sizeof(*pScope));
+	return iResult;
 }
 
 void xuiInternalOperationLeave(xui_context pContext)
@@ -1810,6 +1822,8 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	xLayoutContextDestroy(pContext->pLayoutContext);
 	pContext->pLayoutContext = NULL;
 	pContext->iMagic = 0;
+	for ( xui_call_scope_t* pScope = pContext->pCallScopes; pScope != NULL; pScope = pScope->pNext )
+		pScope->pContext = NULL;
 	xrtFree(pContext);
 }
 
