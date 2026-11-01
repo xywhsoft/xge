@@ -147,6 +147,7 @@ struct xui_font_entry_t {
 
 struct xui_context_t {
 	uint32_t iMagic;
+	xui_lifetime_link_t* pLifetimeLinks;
 	xlayout_context_t* pLayoutContext;
 	xlayout_track_t* pLayoutTrackScratch;
 	uint32_t iLayoutTrackScratchCapacity;
@@ -393,6 +394,7 @@ typedef int (*xui_internal_edit_prepare_proc)(xui_widget pHost, xui_widget pSour
 
 struct xui_widget_t {
 	uint32_t iMagic;
+	xui_lifetime_link_t* pLifetimeLinks;
 	xlayout_node_t iLayoutNode;
 	xui_context pContext;
 	xui_widget_type pType;
@@ -600,6 +602,9 @@ int xuiInternalMenuIsLive(xui_context pContext, xui_widget pWidget);
 #endif
 void xuiInternalWidgetDestroyFlush(xui_context pContext);
 void xuiInternalContextDestroyWidgets(xui_context pContext);
+/* Caller holds an operation/physical-destruction scope across callbacks. */
+void xuiInternalLifetimeInvalidateAll(xui_lifetime_link_t** ppHead);
+void xuiInternalContextInvalidateLifetimes(xui_context pContext);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);
 void xuiInternalContextDestroyResources(xui_context pContext);

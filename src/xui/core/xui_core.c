@@ -1738,6 +1738,9 @@ static void __xuiContextDestroyNow(xui_context pContext)
 		return;
 	}
 	pContext->bDestroying = 1;
+	xuiInternalOperationEnter(pContext);
+	xuiInternalContextInvalidateLifetimes(pContext);
+	xuiInternalOperationLeave(pContext);
 	xuiInternalNativeAccessibilityDetach(pContext);
 	pContext->bDestroyPending = 0;
 	pContext->pStateChangeHead = NULL;
@@ -1787,15 +1790,13 @@ static void __xuiContextDestroyNow(xui_context pContext)
 
 XUI_API void xuiDestroy(xui_context pContext)
 {
-	if ( !__xuiContextValid(pContext) || pContext->bDestroying ) {
+	if ( !__xuiContextValid(pContext) || pContext->bDestroying || pContext->bDestroyPending ) {
 		return;
 	}
-	if ( (pContext->iOperationDepth > 0) || (pContext->iWidgetCallbackDepth > 0) ||
-	     (pContext->iDestroyFlushDepth > 0) ) {
-		pContext->bDestroyPending = 1;
-		return;
-	}
-	__xuiContextDestroyNow(pContext);
+	xuiInternalOperationEnter(pContext);
+	pContext->bDestroyPending = 1;
+	xuiInternalContextInvalidateLifetimes(pContext);
+	xuiInternalOperationLeave(pContext);
 }
 
 XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext))

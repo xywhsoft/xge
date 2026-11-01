@@ -27,6 +27,68 @@ static int __xuiWidgetValid(xui_widget pWidget)
 	return __xuiWidgetMemoryValid(pWidget) && !pWidget->bDestroyPending;
 }
 
+XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink)
+{
+	if ( pLink == NULL ) return;
+	if ( pLink->ppPrevious != NULL ) {
+		*pLink->ppPrevious = pLink->pNext;
+		if ( pLink->pNext != NULL ) pLink->pNext->ppPrevious = pLink->ppPrevious;
+	}
+	pLink->pNext = NULL; pLink->ppPrevious = NULL;
+	pLink->onInvalidate = NULL; pLink->pUser = NULL;
+}
+
+static int __xuiLifetimeWatch(xui_lifetime_link_t** ppHead, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser)
+{
+	if ( pLink == NULL || onInvalidate == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pLink->ppPrevious != NULL || pLink->pNext != NULL || pLink->onInvalidate != NULL || pLink->pUser != NULL )
+		return XUI_ERROR_INVALID_STATE;
+	pLink->pNext = *ppHead; pLink->ppPrevious = ppHead;
+	pLink->onInvalidate = onInvalidate; pLink->pUser = pUser;
+	if ( *ppHead != NULL ) (*ppHead)->ppPrevious = &pLink->pNext;
+	*ppHead = pLink;
+	return XUI_OK;
+}
+
+XUI_API int xuiContextLifetimeWatch(xui_context pContext, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser)
+{
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pContext->bDestroying || pContext->bDestroyPending ) return XUI_ERROR_INVALID_STATE;
+	return __xuiLifetimeWatch(&pContext->pLifetimeLinks, pLink, onInvalidate, pUser);
+}
+
+XUI_API int xuiWidgetLifetimeWatch(xui_widget pWidget, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser)
+{
+	if ( !__xuiWidgetMemoryValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext = pWidget->pContext;
+	if ( pWidget->bDestroyPending || !xuiInternalContextIsValid(pContext) ||
+		pContext->bDestroying || pContext->bDestroyPending ) return XUI_ERROR_INVALID_STATE;
+	return __xuiLifetimeWatch(&pWidget->pLifetimeLinks, pLink, onInvalidate, pUser);
+}
+
+void xuiInternalLifetimeInvalidateAll(xui_lifetime_link_t** ppHead)
+{
+	/* Read the live head after each callback: a callback may detach/free its
+	 * own registration or a pending peer. Never touch the detached node again. */
+	while ( *ppHead != NULL ) {
+		xui_lifetime_link_t* pLink = *ppHead;
+		xui_lifetime_invalidate_proc onInvalidate = pLink->onInvalidate;
+		void* pUser = pLink->pUser;
+		xuiLifetimeUnwatch(pLink);
+		if ( onInvalidate != NULL ) onInvalidate(pUser);
+	}
+}
+
+void xuiInternalContextInvalidateLifetimes(xui_context pContext)
+{
+	xuiInternalLifetimeInvalidateAll(&pContext->pLifetimeLinks);
+	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext )
+		xuiInternalLifetimeInvalidateAll(&pWidget->pLifetimeLinks);
+}
+
 static int __xuiWidgetEffectiveVisible(xui_widget pWidget)
 {
 	xui_widget pScan;
@@ -3668,6 +3730,13 @@ static void __xuiWidgetMarkDestroyPending(xui_widget pWidget)
 	return;
 }
 
+static void __xuiWidgetInvalidateLifetimes(xui_widget pWidget)
+{
+	xuiInternalLifetimeInvalidateAll(&pWidget->pLifetimeLinks);
+	for ( xui_widget pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling )
+		__xuiWidgetInvalidateLifetimes(pChild);
+}
+
 static void __xuiWidgetDestroyQueue(xui_context pContext, xui_widget pWidget)
 {
 	pWidget->pDeferredDestroyNext = pContext->pDeferredDestroyHead;
@@ -3700,6 +3769,10 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	xui_widget pChild;
 
 	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
+	if ( !pWidget->bDestroyPending ) {
+		__xuiWidgetMarkDestroyPending(pWidget);
+		__xuiWidgetInvalidateLifetimes(pWidget);
+	}
 	/* Detach before user destructors can request more context cleanup. */
 	xui_context pContext = pWidget->pContext;
 	if ( pWidget->pContextPrev != NULL ) pWidget->pContextPrev->pContextNext = pWidget->pContextNext;
@@ -3785,7 +3858,7 @@ void xuiInternalWidgetDestroyFlush(xui_context pContext)
 XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 {
 	xui_context pContext;
-	int bOperation;
+	int bDestroying;
 
 	if ( !__xuiWidgetValid(pWidget) ) return;
 	pContext = pWidget->pContext;
@@ -3793,8 +3866,7 @@ XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 		__xuiWidgetDestroyNow(pWidget);
 		return;
 	}
-	bOperation = !pContext->bDestroying;
-	if ( bOperation ) xuiInternalOperationEnter(pContext);
+	xuiInternalOperationEnter(pContext);
 	if ( pWidget->pParent != NULL ) {
 		(void)xuiWidgetRemoveFromParent(pWidget);
 	} else if ( pContext->pRoot == pWidget ) {
@@ -3810,13 +3882,14 @@ XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 	}
 	if ( __xuiWidgetValid(pWidget) ) {
 		__xuiWidgetMarkDestroyPending(pWidget);
+		__xuiWidgetInvalidateLifetimes(pWidget);
 		__xuiWidgetDestroyQueue(pContext, pWidget);
 	}
-	if ( pContext->bDestroying ) {
-		xuiInternalWidgetDestroyFlush(pContext);
-		return;
-	}
-	if ( bOperation ) xuiInternalOperationLeave(pContext);
+	bDestroying = pContext->bDestroying;
+	xuiInternalOperationLeave(pContext);
+	/* When already destroying, Leave never frees the context. In the normal
+	 * case it may do so; no access to pContext follows that path. */
+	if ( bDestroying ) xuiInternalWidgetDestroyFlush(pContext);
 }
 
 XUI_API xui_context xuiWidgetGetContext(xui_widget pWidget)

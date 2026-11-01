@@ -5468,6 +5468,18 @@ typedef struct xui_path_t xui_path_t;
 typedef struct xui_data_object_t xui_data_object_t;
 
 typedef xui_context_t* xui_context;
+/* Intrusive weak-lifetime registration. Zero-initialize before first use;
+ * do not copy/move or edit these fields while attached. The caller owns its
+ * storage until Unwatch returns or the invalidator is entered. The callback
+ * runs after detachment, may release the link itself or unwatch peers, and
+ * must return normally. All operations use the context's UI thread. */
+typedef void (*xui_lifetime_invalidate_proc)(void* pUser);
+typedef struct xui_lifetime_link_t {
+	struct xui_lifetime_link_t* pNext;
+	struct xui_lifetime_link_t** ppPrevious;
+	xui_lifetime_invalidate_proc onInvalidate;
+	void* pUser;
+} xui_lifetime_link_t;
 typedef xui_language_t* xui_language;
 typedef xui_widget_t* xui_widget;
 typedef xui_widget_type_t* xui_widget_type;
@@ -6036,6 +6048,17 @@ struct xui_proxy_t {
 XUI_API int xuiCreate(xui_context* ppContext);
 /* 销毁上下文及全部控件树。 */
 XUI_API void xuiDestroy(xui_context pContext);
+/* Watch logical destruction, before user destructors and physical free.
+ * Context close also invalidates all widget links, including unattached
+ * instances. No allocation; failure leaves the zeroed link untouched.
+ * A watch is weak: it neither owns the native object nor retains pUser/code.
+ * The caller must keep callback code/data resident until detach/notification. */
+XUI_API int xuiContextLifetimeWatch(xui_context pContext, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+XUI_API int xuiWidgetLifetimeWatch(xui_widget pWidget, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+/* O(1), idempotent; NULL is allowed. Never reads a destroyed native object. */
+XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink);
 /* 注册错误回调（全部框架错误的统一出口）。 */
 XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser);
 /* 注册无障碍事件回调（平台桥接消费）。 */
