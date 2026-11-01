@@ -1759,6 +1759,7 @@ static void __xuiContextDestroyNow(xui_context pContext)
 		pContext->pOverlayRoot = NULL;
 	}
 	xuiInternalWidgetDestroyFlush(pContext);
+	xuiInternalContextDestroyWidgets(pContext);
 	if ( pContext->pDamage != pContext->arrInlineDamage ) {
 		xrtFree(pContext->pDamage);
 	}

@@ -3394,6 +3394,8 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	if ( !xuiInternalContextIsValid(pContext) || (ppWidget == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	*ppWidget = NULL;
+	if ( pContext->bDestroying || pContext->bDestroyPending ) return XUI_ERROR_INVALID_STATE;
 	if ( pType == NULL ) {
 		pType = &g_xuiWidgetBaseType;
 	}
@@ -3469,17 +3471,22 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 		xrtFree(pWidget);
 		return iRet;
 	}
+	/* Hold the type and context registration throughout arbitrary init hooks.
+	 * A hook may request widget/context destruction; the outer operation owns
+	 * the physical lifetime until it returns. */
+	pType->iWidgetCount++;
+	pWidget->pContextNext = pContext->pAllWidgets;
+	if ( pContext->pAllWidgets != NULL ) pContext->pAllWidgets->pContextPrev = pWidget;
+	pContext->pAllWidgets = pWidget;
 	iRet = __xuiWidgetTypeInitChain(pWidget, pType, pCreateData);
 	if ( iRet != XUI_OK ) {
-		xuiInternalLayoutDestroyWidget(pWidget);
-		if ( pWidget->pTypeData != NULL ) {
-			xrtFree(pWidget->pTypeData);
-		}
-		pWidget->iMagic = 0;
-		xrtFree(pWidget);
+		/* InitChain already unwound successfully initialized parent stages.
+		 * Keep queued/tree-owned instances alive until operation cleanup, and
+		 * do not invoke the failed leaf's destructor or repeat parent cleanup. */
+		xuiWidgetDestroy(pWidget);
 		return iRet;
 	}
-	pType->iWidgetCount++;
+	pWidget->bTypeInitialized = 1;
 	*ppWidget = pWidget;
 	return XUI_OK;
 }
@@ -3489,7 +3496,8 @@ XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget)
 	int iRet;
 	xuiInternalOperationEnter(pContext);
 	iRet = __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, ppWidget, NULL);
-	if ( (iRet == XUI_OK) && (ppWidget != NULL) && !__xuiWidgetValid(*ppWidget) ) {
+	if ( (iRet == XUI_OK) && (ppWidget != NULL) &&
+		(!__xuiWidgetValid(*ppWidget) || pContext->bDestroyPending || pContext->bDestroying) ) {
 		*ppWidget = NULL;
 		iRet = XUI_ERROR;
 	}
@@ -3502,7 +3510,8 @@ XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xu
 	int iRet;
 	xuiInternalOperationEnter(pContext);
 	iRet = __xuiWidgetCreateInternal(pContext, pType, ppWidget, pCreateData);
-	if ( (iRet == XUI_OK) && (ppWidget != NULL) && !__xuiWidgetValid(*ppWidget) ) {
+	if ( (iRet == XUI_OK) && (ppWidget != NULL) &&
+		(!__xuiWidgetValid(*ppWidget) || pContext->bDestroyPending || pContext->bDestroying) ) {
 		*ppWidget = NULL;
 		iRet = XUI_ERROR;
 	}
@@ -3691,6 +3700,12 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	xui_widget pChild;
 
 	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
+	/* Detach before user destructors can request more context cleanup. */
+	xui_context pContext = pWidget->pContext;
+	if ( pWidget->pContextPrev != NULL ) pWidget->pContextPrev->pContextNext = pWidget->pContextNext;
+	else if ( pContext != NULL && pContext->pAllWidgets == pWidget ) pContext->pAllWidgets = pWidget->pContextNext;
+	if ( pWidget->pContextNext != NULL ) pWidget->pContextNext->pContextPrev = pWidget->pContextPrev;
+	pWidget->pContextPrev = pWidget->pContextNext = NULL;
 	xuiInternalNativeAccessibilityResetWidget(pWidget);
 	__xuiWidgetStateUnqueue(pWidget);
 	if ( __xuiWidgetMemoryValid(pWidget->pEditDelegate) &&
@@ -3714,7 +3729,7 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 		__xuiWidgetDestroyNow(pChild);
 	}
 	__xuiWidgetEndActiveUpdate(pWidget);
-	__xuiWidgetTypeDestroyChain(pWidget, pWidget->pType);
+	if ( pWidget->bTypeInitialized ) __xuiWidgetTypeDestroyChain(pWidget, pWidget->pType);
 	__xuiWidgetDestroyAllCaches(pWidget);
 	__xuiWidgetDestroyTableTracks(pWidget);
 	__xuiWidgetDestroyStyleData(pWidget);
@@ -3730,6 +3745,13 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	xuiInternalLayoutDestroyWidget(pWidget);
 	pWidget->iMagic = 0;
 	xrtFree(pWidget);
+}
+
+void xuiInternalContextDestroyWidgets(xui_context pContext)
+{
+	/* Roots have already been destroyed. Destroying a remaining instance also
+	 * removes any descendants from this registry; no parallel tree is built. */
+	while ( pContext->pAllWidgets != NULL ) xuiWidgetDestroy(pContext->pAllWidgets);
 }
 
 void xuiInternalWidgetDestroyFlush(xui_context pContext)

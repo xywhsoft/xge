@@ -12255,7 +12255,10 @@ XUI_API xui_widget_type xuiWidgetTypeGetParent(xui_widget_type pType);
 XUI_API void* xuiWidgetTypeGetUserData(xui_widget_type pType);
 
 /* 创建基类型控件实例（未挂父级）；无 widget 级引用计数，
- * 生命周期由 context/父级持有，销毁用 xuiWidgetDestroy。 */
+ * 生命周期由 context 持有，包括尚未挂树、已移出父级的实例。
+ * xuiDestroy 回收 context 内全部实例；销毁父级仍递归销毁子级。
+ * 单独销毁用 xuiWidgetDestroy，之后已有原生指针均失效。
+ * context 开始销毁后禁止创建新实例。 */
 XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget);
 /* 按注册类型创建实例；pCreateData 为该类型私有描述（可为 NULL）。 */
 XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData);

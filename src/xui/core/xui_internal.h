@@ -167,6 +167,9 @@ struct xui_context_t {
 	uint32_t iGeneration;
 	xui_widget pRoot;
 	xui_widget pOverlayRoot;
+	/* Actual context ownership, including unattached widgets. Tree membership
+	 * never determines whether the context must reclaim an instance. */
+	xui_widget pAllWidgets;
 	xui_widget pDragAdornerWidget;
 	xui_widget pDragAdornerOwner;
 	xui_rect_t tDragAdornerBounds;
@@ -393,6 +396,8 @@ struct xui_widget_t {
 	xlayout_node_t iLayoutNode;
 	xui_context pContext;
 	xui_widget_type pType;
+	xui_widget pContextPrev;
+	xui_widget pContextNext;
 	xui_widget pParent;
 	xui_widget pFirstChild;
 	xui_widget pLastChild;
@@ -424,6 +429,7 @@ struct xui_widget_t {
 	int bArrangeValid;
 	int bDestroyPending;
 	int bInteractionCancelling;
+	int bTypeInitialized;
 	uint32_t iPendingStateChanges;
 	xui_rect_t tPendingStateOldWorldRect;
 	xui_rect_t tPendingDamageWorldRect;
@@ -593,6 +599,7 @@ int xuiInternalPopupSetSizing(xui_widget pWidget, float fContentWidth,
 int xuiInternalMenuIsLive(xui_context pContext, xui_widget pWidget);
 #endif
 void xuiInternalWidgetDestroyFlush(xui_context pContext);
+void xuiInternalContextDestroyWidgets(xui_context pContext);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);
 void xuiInternalContextDestroyResources(xui_context pContext);
