@@ -79,7 +79,11 @@ typedef struct xallocationscope {
 	uint64 Rejections;
 } xallocationscope;
 typedef struct xallocationbudgetinfo {
-	size_t Size, Limit, LiveBytes, PeakBytes, LiveCount;
+	size_t Size;
+	size_t Limit;
+	size_t LiveBytes;
+	size_t PeakBytes;
+	size_t LiveCount;
 	uint64 Rejections;
 } xallocationbudgetinfo;
 XRT_API bool xrtAllocationBudgetCreate(size_t iLimit, xallocationbudget** ppBudget);

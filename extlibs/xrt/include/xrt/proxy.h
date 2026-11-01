@@ -7,6 +7,13 @@
 	#include <xrt/tcp.h>
 #endif
 
+#if defined(XRT_FEATURE_NET_PROXY_DIAL_FUTURE)
+	#include <xrt/future.h>
+	#if !defined(XRT_FEATURE_NET_PROXY_DIAL) || !defined(XRT_FEATURE_NET_DIAL_FUTURE_COMMON)
+		#error "Proxy Dial Future requires Proxy Dial and the shared Dial Future producer"
+	#endif
+#endif
+
 
 
 #if defined(XRT_FEATURE_NET_PROXY) && !defined(XRT_FEATURE_NET)
@@ -193,6 +200,15 @@ typedef void (*xnetproxydialproc)(
 	ptr pData
 );
 
+/* Success consumes one actual callback-data reference. Done borrows it;
+ * Drop follows its real callback tail. Failed submission consumes none. */
+typedef struct xnetproxydialownershipv1 {
+	size_t size;
+	xnetproxydialproc Done;
+	void (*Drop)(const void* pData);
+	const xrtownershipops* Ops;
+} xnetproxydialownershipv1;
+
 #endif
 
 
@@ -220,6 +236,14 @@ XRT_API xnetproxy* xrtNetProxyRetain(const xnetproxy* pProxy);
 
 /* 释放代理对象引用；最后一个引用会清零整块配置存储。 */
 XRT_API void xrtNetProxyRelease(xnetproxy* pProxy);
+
+/* Physical immutable configuration owner. Count is the real native RC;
+ * copied host/credential storage has no outgoing strong references. Inspect
+ * and resolve the adapter only at a whole-graph ownership freeze. */
+XRT_API xrtownershipref xrtNetProxyOwnership(const xnetproxy* pProxy);
+XRT_API const xrtownershipadapterv1* xrtNetProxyOwnershipAdapterV1(
+	xrtownershipref Reference
+);
 
 
 
@@ -251,6 +275,12 @@ XRT_API xnetproxyhandshake* xrtNetProxyHandshakeCreate(
 
 /* 销毁握手，并清零尚未发送的认证报文和内部目标信息。 */
 XRT_API void xrtNetProxyHandshakeDestroy(xnetproxyhandshake* pHandshake);
+
+/* Read-only owning edges of a standalone handshake: its retained immutable
+ * proxy and output-chain owners. Caller excludes all handshake mutations
+ * and stabilizes visited owners, normally under ownership Freeze. */
+XRT_API bool xrtNetProxyHandshakeOwnershipTrace(const xnetproxyhandshake* pHandshake,
+    xrtownershipvisitor pVisit, ptr pContext);
 
 
 
@@ -337,6 +367,19 @@ XRT_API xnetproxydial* xrtNetProxyDial(
 	ptr pDoneData
 );
 
+XRT_API xnetproxydial* xrtNetProxyDialOwnedV1(xnetengine* pEngine, xnetresolver* pResolver,
+	const xnetproxy* pProxy, cstr sTargetHost, uint16 iTargetPort,
+	const xnetproxydialconfig* pConfig, const xnetstreamevents* pStreamEvents,
+	ptr pStreamData, ptr pDoneData, const xnetproxydialownershipv1* pPolicy);
+XRT_API xrtownershipref xrtNetProxyDialOwnership(const xnetproxydial* pDial);
+XRT_API const xrtownershipquiescencev1* xrtNetProxyDialOwnershipQuiescenceV1Get(void);
+XRT_API const xnetruntimeownershipv1* xrtNetProxyDialRuntimeOwnershipV1Get(void);
+XRT_API const xnetdialownershipv1* xrtNetProxyDialTransportOwnershipV1Get(void);
+XRT_API const xnetstreameventsownershipv1* xrtNetProxyDialStreamOwnershipV1Get(void);
+XRT_API const xrtownershipadapterv1* xrtNetProxyDialOwnershipAdapterV1(xrtownershipref Reference,
+	const xnetproxydialownershipv1* const* pPolicies, size_t iPolicyCount,
+	const xrtownershippreparationv1** ppPreparation);
+
 
 
 /* 增加 Proxy Dial 引用并返回原指针。 */
@@ -377,6 +420,22 @@ XRT_API bool xrtNetProxyDialStats(
 #endif
 
 
+
+#if defined(XRT_FEATURE_NET_PROXY_DIAL_FUTURE)
+/* Success holds one Stream; Value borrows it, Ref acquires another owner.
+ * Cancel requests the real native operation and waits for its actual terminal
+ * callback. No per-wait thread, coroutine stack or synthetic terminal state. */
+XRT_API xfuture* xrtNetProxyDialAsync(xnetengine* pEngine, xnetresolver* pResolver,
+	const xnetproxy* pProxy, cstr sTargetHost, uint16 iTargetPort,
+	const xnetproxydialconfig* pConfig, const xnetstreamevents* pStreamEvents, ptr pStreamData);
+XRT_API const xfutureproducerownershipv1* xrtNetProxyDialFutureProducerPolicyV1Get(void);
+XRT_API const xcancelwatchownershipv1* xrtNetProxyDialFutureCancelPolicyV1Get(void);
+XRT_API const xnetproxydialownershipv1* xrtNetProxyDialFutureDialPolicyV1Get(void);
+XRT_API const xfuturepayloadownershipv1* xrtNetProxyDialFuturePayloadPolicyV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtNetProxyDialFutureOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipadapterv1* xrtNetProxyDialFutureOwnershipAdapterV1(
+	xrtownershipref Reference, const xrtownershippreparationv1** ppPreparation);
+#endif
 
 XRT_EXTERN_C_END
 

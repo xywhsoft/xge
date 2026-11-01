@@ -40,9 +40,9 @@
 
 #if defined(XRT_FEATURE_NET_TCP_DIAL_FUTURE) && \
 	(!defined(XRT_FEATURE_NET_TCP_DIAL) || \
-	 !defined(XRT_FEATURE_FUTURE) || \
-	 !defined(XRT_FEATURE_FUTURE_BRIDGE))
-	#error "XRT TCP Dial Future support requires TCP Dial, Future and Future bridge support"
+	 !defined(XRT_FEATURE_NET_DIAL_FUTURE_COMMON) || \
+	 !defined(XRT_FEATURE_FUTURE))
+	#error "XRT TCP Dial Future support requires TCP Dial, Future and Dial Future common"
 #endif
 
 #if defined(XRT_FEATURE_NET_TCP_SYNC) && \
@@ -134,6 +134,17 @@ typedef struct xnetstreamevents {
 		const xerror* pError, ptr pData);
 } xnetstreamevents;
 
+/* One explicit event-data owner. A successful SetEventsOwned consumes ONE
+ * actual Data reference; failure consumes none. Callbacks borrow that owner.
+ * Replacement/close drops it on the same Worker AFTER the current task's
+ * callback stack has returned. Descriptor and code must remain resident. */
+typedef struct xnetstreameventsownershipv1 {
+	size_t size;
+	xnetstreamevents Events;
+	void (*Drop)(const void* pData);
+	const xrtownershipops* Ops;
+} xnetstreameventsownershipv1;
+
 
 
 /* Accept 成功返回 true 并接管一个 Stream 引用，返回 false 会立即拒绝连接。 */
@@ -144,6 +155,19 @@ typedef struct xnetlistenerevents {
 		const xerror* pError, ptr pData);
 	void (*Close)(xnetlistener* pListener, ptr pData);
 } xnetlistenerevents;
+
+/* Immutable creation-time Listener event owner. Success consumes exactly one
+ * Data reference, failure consumes none. Accept may run concurrently on the
+ * selected stream Workers; Error/Close and Drop run on the Listener Worker.
+ * Drop is deferred until ALL callback/dispatch stacks have returned, even if
+ * Close is called reentrantly. Descriptor and code must remain resident.
+ * Accepted streams do not inherit this Data or any raw stream callbacks. */
+typedef struct xnetlistenereventsownershipv1 {
+	size_t size;
+	xnetlistenerevents Events;
+	void (*Drop)(const void* pData);
+	const xrtownershipops* Ops;
+} xnetlistenereventsownershipv1;
 
 
 
@@ -246,6 +270,15 @@ typedef void (*xnetdialproc)(
 	const xerror* pError,
 	ptr pData
 );
+/* Successful owned submission consumes ONE callback-context reference. Done
+ * borrows it; Drop runs after Done (including its physical callback tail).
+ * Failure consumes none. The policy and all callbacks must remain resident. */
+typedef struct xnetdialownershipv1 {
+	size_t size;
+	xnetdialproc Done;
+	void (*Drop)(const void* pData);
+	const xrtownershipops* Ops;
+} xnetdialownershipv1;
 #endif
 
 
@@ -271,11 +304,15 @@ XRT_EXTERN_C_BEGIN
 
 /* 初始化 Stream 的自适应读取、背压和连接超时默认值。 */
 XRT_API void xrtNetStreamConfigInit(xnetstreamconfig* pConfig);
+/* 验证完整 Stream 配置，不创建 Engine、Socket 或连接；不修改输入。 */
+XRT_API bool xrtNetStreamConfigValid(const xnetstreamconfig* pConfig);
 
 
 
 /* 初始化 IPv4 动态端口 Listener 及其默认 Stream 配置。 */
 XRT_API void xrtNetListenConfigInit(xnetlistenconfig* pConfig);
+/* 验证完整 Listener 及嵌套 Stream 配置，不绑定地址；不修改输入。 */
+XRT_API bool xrtNetListenConfigValid(const xnetlistenconfig* pConfig);
 
 
 
@@ -301,6 +338,16 @@ XRT_API xnetstream* xrtNetStreamConnect(
 	ptr pData
 );
 
+/* Creation-time event ownership: installs the permanent descriptor BEFORE
+ * posting connect/start work, so even an immediate Open/Close sees its owner.
+ * Success consumes exactly one Data reference; failure consumes none. Event
+ * callbacks borrow it; Drop is deferred until the Worker callback stacks have
+ * returned, with the same replacement/close rules as SetEventsOwnedV1.
+ * Descriptor and callback code must remain resident. */
+XRT_API xnetstream* xrtNetStreamConnectOwnedV1(xnetengine* pEngine,
+	const xnetaddr* pRemote, uint64 iAffinity, const xnetstreamconfig* pConfig,
+	ptr pData, const xnetstreameventsownershipv1* pPolicy);
+
 
 
 #if defined(XRT_FEATURE_NET_TCP_DIAL)
@@ -319,6 +366,33 @@ XRT_API xnetdial* xrtNetDial(
 	xnetdialproc pDone,
 	ptr pDoneData
 );
+XRT_API xnetdial* xrtNetDialOwnedV1(xnetengine* pEngine, xnetresolver* pResolver,
+	cstr sHost, uint16 iPort, const xnetdialconfig* pConfig,
+	const xnetstreamevents* pStreamEvents, ptr pStreamData,
+	ptr pDoneData, const xnetdialownershipv1* pPolicy);
+/* Race already-resolved immutable endpoints using the SAME Dial algorithm.
+ * No Resolver is created or consulted. Eligible endpoints must have nonzero
+ * ports; each port is preserved. Config.Family filters candidates explicitly.
+ * The list is borrowed for this call and retained for asynchronous setup. */
+XRT_API xnetdial* xrtNetDialAddresses(xnetengine* pEngine, const xnetaddrlist* pAddresses,
+	const xnetdialconfig* pConfig, const xnetstreamevents* pStreamEvents, ptr pStreamData,
+	xnetdialproc pDone, ptr pDoneData);
+XRT_API xnetdial* xrtNetDialAddressesOwnedV1(xnetengine* pEngine, const xnetaddrlist* pAddresses,
+	const xnetdialconfig* pConfig, const xnetstreamevents* pStreamEvents, ptr pStreamData,
+	ptr pDoneData, const xnetdialownershipv1* pPolicy);
+
+/* Query adapters under whole-domain Freeze, with exact Done-policy identities
+ * admitted before following context metadata. Real runtime, Resolver callback,
+ * candidate and timer references are preserved; unknown callback/data remains
+ * opaque. Prepare is nonwaiting and requires the actual terminal callback and
+ * runtime-slot removal before READY. Diagnostics remain immutable owned DAGs. */
+XRT_API xrtownershipref xrtNetDialOwnership(const xnetdial* pDial);
+XRT_API const xnetruntimeownershipv1* xrtNetDialRuntimeOwnershipV1Get(void);
+XRT_API const xnetresolveownershipv1* xrtNetDialResolverPolicyV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtNetDialOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipadapterv1* xrtNetDialOwnershipAdapterV1(xrtownershipref Reference,
+	const xnetdialownershipv1* const* pPolicies, size_t iPolicyCount,
+	const xrtownershippreparationv1** ppPreparation);
 
 
 
@@ -365,6 +439,14 @@ XRT_API xnetlistener* xrtNetListen(
 	ptr pData
 );
 
+/* Same synchronous bind/listen and asynchronous accept as xrtNetListen.
+ * Transfers one explicit event-context owner only on success; no inherited
+ * Stream callbacks/data. Configure accepted Stream events explicitly on its
+ * Worker (e.g. xrtNetStreamSetEventsOwnedV1) when push mode is needed. */
+XRT_API xnetlistener* xrtNetListenOwnedV1(xnetengine* pEngine,
+	const xnetlistenconfig* pConfig, ptr pData,
+	const xnetlistenereventsownershipv1* pPolicy);
+
 
 
 /* 线程安全地增加 Stream 引用；无效计数或溢出时返回空。 */
@@ -384,6 +466,36 @@ XRT_API xnetlistener* xrtNetListenerRef(xnetlistener* pListener);
 
 /* 释放 Listener 引用；关闭操作必须另行请求。 */
 XRT_API void xrtNetListenerDestroy(xnetlistener* pListener);
+
+/* Whole-domain frozen views. Engine V3 must admit these exact runtime-family
+ * descriptors. Real caller/runtime/timer/accept-queue references are counted;
+ * opaque callbacks, live external buffers and unmodelled Future contexts are
+ * refused, never flattened into a leaf. Preparation aborts/closes without
+ * waiting and becomes READY only after the runtime owner has physically left. */
+XRT_API xrtownershipref xrtNetStreamOwnership(const xnetstream* pStream);
+XRT_API xrtownershipref xrtNetListenerOwnership(const xnetlistener* pListener);
+XRT_API const xnetruntimeownershipv1* xrtNetStreamRuntimeOwnershipV1Get(void);
+XRT_API const xnetruntimeownershipv1* xrtNetListenerRuntimeOwnershipV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtNetStreamOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtNetListenerOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipadapterv1* xrtNetStreamOwnershipAdapterV1(
+	xrtownershipref Reference, const xrtownershippreparationv1** ppPreparation);
+/* V1 refuses owned event data. V2 additionally admits exact, separately
+ * supplied event-policy identities before inspecting any context metadata.
+ * Retired callback tails remain BUSY until real Worker drain, never a fake
+ * zero count or a hidden context reference. Failure leaves output untouched. */
+XRT_API const xrtownershipadapterv1* xrtNetStreamOwnershipAdapterV2(
+	xrtownershipref Reference, const xnetstreameventsownershipv1* const* pPolicies,
+	size_t iPolicyCount, const xrtownershippreparationv1** ppPreparation);
+XRT_API const xrtownershipadapterv1* xrtNetListenerOwnershipAdapterV1(
+	xrtownershipref Reference, const xrtownershippreparationv1** ppPreparation);
+/* V1 refuses owned Listener events. V2 admits exact independently supplied
+ * policy identities BEFORE inspecting context metadata. Callback-drop tails
+ * remain BUSY until their real Worker task returns. Failure leaves output
+ * and ambient diagnostic untouched, including unknown/forged policies. */
+XRT_API const xrtownershipadapterv1* xrtNetListenerOwnershipAdapterV2(
+	xrtownershipref Reference, const xnetlistenereventsownershipv1* const* pPolicies,
+	size_t iPolicyCount, const xrtownershippreparationv1** ppPreparation);
 
 
 
@@ -431,6 +543,16 @@ XRT_API xnetresult xrtNetStreamSendRefs(
 
 
 /* 有界接管非空数据；NULL,0 是无操作，非空指针配零长度是参数错误。 */
+XRT_API xnetresult xrtNetStreamSendBytes(xnetstream* pStream, xnetbytes* pBytes,
+	size_t iOffset, size_t iSize);
+
+/* All-or-none bounded acceptance, no payload copy and no user releaser.
+ * Failure/AGAIN/CLOSED leaves every caller reference unchanged. Thread-safe
+ * like SendBytes; the owning graph includes each actual retained NetBytes.
+ * Uses shared xnetbytesref from net.h; only nonempty slices retain owners. */
+XRT_API xnetresult xrtNetStreamSendBytesVec(xnetstream* pStream,
+	const xnetbytesref* pRefs, size_t iCount);
+
 XRT_API xnetresult xrtNetStreamSendTake(
 	xnetstream* pStream,
 	ptr pData,
@@ -439,7 +561,12 @@ XRT_API xnetresult xrtNetStreamSendTake(
 
 
 
-/* 在所属 Worker 上零复制接管缓冲链；失败时源缓冲保持不变。 */
+/* Any-thread bounded chain take, without copying payloads. Success empties
+ * the source; failure/AGAIN/CLOSED preserves its exact chain. The caller must
+ * serialize source-buffer access. Off-Worker sources may contain heap blocks
+ * or blocks from this Stream's Worker pool, not a foreign thread-affine pool.
+ * All fallible view preparation precedes
+ * acceptance; a pending write reservation is rejected. */
 XRT_API xnetresult xrtNetStreamSendBuffer(
 	xnetstream* pStream,
 	xnetbuf* pBuffer
@@ -586,6 +713,12 @@ XRT_API bool xrtNetStreamSetEvents(
 	ptr pData
 );
 
+/* Worker-only, open Stream. Allocates one uniquely owned binding, not one
+ * allocation per event/packet. SetData cannot overwrite an owned binding.
+ * Legacy SetEvents may replace it, but does not retain its borrowed new Data. */
+XRT_API bool xrtNetStreamSetEventsOwnedV1(xnetstream* pStream, ptr pData,
+	const xnetstreameventsownershipv1* pPolicy);
+
 
 
 /* 只在 Stream Worker 回调内替换用户数据。 */
@@ -598,7 +731,8 @@ XRT_API ptr xrtNetStreamData(const xnetstream* pStream);
 
 
 
-/* 返回创建时保存的 Listener 用户数据，不延长目标生命周期。 */
+/* 返回 Listener 用户数据的原子快照，不延长目标生命周期。
+ * Owned 绑定在关闭回调尾部退役后返回空；跨线程使用须自行同步目标生命周期。 */
 XRT_API ptr xrtNetListenerData(const xnetlistener* pListener);
 
 
@@ -625,6 +759,17 @@ XRT_API bool xrtNetListenerStats(
 
 
 #if defined(XRT_FEATURE_NET_TCP_FUTURE)
+/* Exact resident waiter/producer/cancel and terminal payload capabilities.
+ * Frozen queries; the collector must independently admit every child. The
+ * waiter preparation waits for its actual source's normal close/notification,
+ * never turns Drop into cancellation or a synthetic Future completion. */
+XRT_API const xfutureproducerownershipv1* xrtNetTcpFutureProducerPolicyV1Get(void);
+XRT_API const xcancelwatchownershipv1* xrtNetTcpFutureCancelPolicyV1Get(void);
+XRT_API const xfuturepayloadownershipv1* xrtNetTcpFutureBytesPayloadPolicyV1Get(void);
+XRT_API const xfuturepayloadownershipv1* xrtNetTcpFutureStreamPayloadPolicyV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtNetTcpFutureOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipadapterv1* xrtNetTcpFutureOwnershipAdapterV1(xrtownershipref Reference,
+	const xrtownershippreparationv1** ppPreparation);
 /* 拉取模式下异步接受一个连接；成功值由 Future 持有一个 Stream 引用。 */
 XRT_API xfuture* xrtNetListenerAcceptAsync(xnetlistener* pListener);
 
@@ -713,6 +858,15 @@ XRT_API xfuture* xrtNetDialAsync(
 	const xnetstreamevents* pStreamEvents,
 	ptr pStreamData
 );
+XRT_API xfuture* xrtNetDialAddressesAsync(xnetengine* pEngine, const xnetaddrlist* pAddresses,
+	const xnetdialconfig* pConfig, const xnetstreamevents* pStreamEvents, ptr pStreamData);
+XRT_API const xfutureproducerownershipv1* xrtNetDialFutureProducerPolicyV1Get(void);
+XRT_API const xcancelwatchownershipv1* xrtNetDialFutureCancelPolicyV1Get(void);
+XRT_API const xnetdialownershipv1* xrtNetDialFutureDialPolicyV1Get(void);
+XRT_API const xfuturepayloadownershipv1* xrtNetDialFuturePayloadPolicyV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtNetDialFutureOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipadapterv1* xrtNetDialFutureOwnershipAdapterV1(xrtownershipref Reference,
+	const xrtownershippreparationv1** ppPreparation);
 #endif
 
 

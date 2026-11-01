@@ -14,6 +14,12 @@ import tempfile
 import zipfile
 
 EXTENSIONS = ("xllm", "xllm-session", "xwork")
+LF_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".inl", ".inc", ".py", ".sh", ".json", ".md", ".yml", ".yaml"}
+
+
+def canonical_bytes(path: Path) -> bytes:
+    data = path.read_bytes()
+    return data.replace(b"\r\n", b"\n") if path.suffix.lower() in LF_SUFFIXES else data
 
 
 def main() -> int:
@@ -77,8 +83,17 @@ def main() -> int:
             manifest = f"extlibs/{product}/config/modules.json"
             subprocess.run([sys.executable, "tools/amalgamate.py", "--manifest", manifest], cwd=snapshot, check=True)
             subprocess.run([sys.executable, "tools/amalgamate.py", "--manifest", manifest, "--check"], cwd=snapshot, check=True)
-        content = (snapshot / "single" / "xrt.h").read_bytes()
-        declarations = (snapshot / "single" / "xrt_decl.h").read_bytes()
+        # Match this repository's text eol=lf attributes before hashing. A
+        # checkout must not invalidate the dependency's recorded identity.
+        content = canonical_bytes(snapshot / "single" / "xrt.h")
+        declarations = canonical_bytes(snapshot / "single" / "xrt_decl.h")
+        copied = {}
+        trees = [(snapshot / "include", target / "include")]
+        trees += [(snapshot / "extlibs" / product / name, target / "extlibs" / product / name)
+                  for product in EXTENSIONS for name in ("include", "src", "config")]
+        for origin, destination in trees:
+            for path in sorted(p for p in origin.rglob("*") if p.is_file()):
+                copied[destination / path.relative_to(origin)] = canonical_bytes(path)
         dirty = subprocess.check_output(["git", "status", "--porcelain", "--", "include", "src", "tools", "config", "LICENSE",
                                          *[f"extlibs/{p}" for p in EXTENSIONS]], cwd=source, text=True)
         branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=source, text=True).strip()
@@ -88,29 +103,35 @@ def main() -> int:
                   "header_sha256": hashlib.sha256(content).hexdigest(),
                   "declaration_header_sha256": hashlib.sha256(declarations).hexdigest(),
                   "generation": "tools/amalgamate.py in isolated source snapshot"}
+        record["text_eol"] = "lf"
         if args.base_ref:
             record["snapshot_mode"] = "immutable_base_with_explicit_overlays"
             record["overlay_files"] = overlays
         record["extensions"] = list(EXTENSIONS)
         if args.check:
-            if content.decode("utf-8").splitlines() != (target / "xrt.h").read_text(encoding="utf-8").splitlines() or declarations.decode("utf-8").splitlines() != (target / "xrt_decl.h").read_text(encoding="utf-8").splitlines():
+            if content != (target / "xrt.h").read_bytes() or declarations != (target / "xrt_decl.h").read_bytes():
                 import difflib
                 diff = difflib.unified_diff((target / "xrt.h").read_text(encoding="utf-8").splitlines(), content.decode("utf-8").splitlines(), n=2)
                 lines = list(diff)
                 print(f"Generated header SHA256 {record['header_sha256']}; declarations {record['declaration_header_sha256']}; diff lines {len(lines)}")
                 print("\n".join(lines[:60]))
                 raise RuntimeError("Generated headers differ from the vendored snapshot")
+            for path, expected in copied.items():
+                if not path.is_file() or path.read_bytes() != expected:
+                    raise RuntimeError(f"Vendored source differs from the snapshot: {path}")
+            installed = json.loads((target / "upstream.json").read_text(encoding="utf-8"))
+            for key in ("source_commit", "source_snapshot_sha256", "header_sha256", "declaration_header_sha256", "extensions", "text_eol"):
+                if installed.get(key) != record[key]:
+                    raise RuntimeError(f"Vendored provenance differs from the snapshot: {key}")
             print(f"Verified vendored baseline {commit}; no files replaced")
             return 0
         target.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(snapshot / "include", target / "include", dirs_exist_ok=True)
-        for product in EXTENSIONS:
-            for name in ("include", "src", "config"):
-                shutil.copytree(snapshot / "extlibs" / product / name,
-                                target / "extlibs" / product / name, dirs_exist_ok=True)
+        for path, data in copied.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
         (target / "xrt.h").write_bytes(content)
         (target / "xrt_decl.h").write_bytes(declarations)
-        (target / "upstream.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        (target / "upstream.json").write_bytes((json.dumps(record, indent=2) + "\n").encode("utf-8"))
         print(f"Synced {len(content)} bytes; SHA256 {record['header_sha256']}")
     return 0
 

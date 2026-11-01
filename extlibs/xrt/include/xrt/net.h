@@ -692,6 +692,14 @@ typedef struct xnetportevent {
 typedef struct xnetbufpoolconfig xnetbufpoolconfig;
 typedef struct xnetbufpool xnetbufpool;
 typedef struct xnetbytes xnetbytes;
+
+/* Borrowed immutable slice metadata, shared by TCP and UDP. Acceptance may
+ * retain the owner; neither the descriptor nor its caller reference moves. */
+typedef struct xnetbytesref {
+	xnetbytes* Bytes;
+	size_t Offset;
+	size_t Size;
+} xnetbytesref;
 #endif
 
 
@@ -754,6 +762,19 @@ typedef struct xnettimerownershipv1 {
 	void (*Drop)(ptr pData);
 	const xrtownershipops* Ops;
 } xnettimerownershipv1;
+
+/* Resident native-runtime family. Engine slots own ONE already-transferred
+ * reference; Release consumes that slot outside locks/mutation. Listed native
+ * timer callbacks already consume their own context reference: the descriptor
+ * certifies its physical graph edge, never adds a second Drop/retain. It does
+ * not certify arbitrary user callbacks or borrowed task data. */
+typedef struct xnetruntimeownershipv1 {
+	size_t size;
+	const xrtownershipops* Ops;
+	void (*Release)(ptr pData);
+	const xnettimerproc* OwnedTimers;
+	size_t OwnedTimerCount;
+} xnetruntimeownershipv1;
 
 
 
@@ -1099,6 +1120,13 @@ XRT_API const xrtownershipadapterv1* xrtNetResolveOpOwnershipAdapterV1(xrtowners
 	const xnetresolveownershipv1* const* pPolicies, size_t iPolicyCount,
 	const xrtownershippreparationv1** ppPreparation);
 
+/* Read-only under ownership Freeze. BUSY describes executing native bodies,
+ * publication or thread/TLS exit tails, not unsupported callback policies.
+ * A false Busy result is not admission: Count/Trace and exact policy adapters
+ * must still certify the node. Neither query closes/cancels/joins the service. */
+XRT_API const xrtownershipquiescencev1* xrtNetResolverOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipquiescencev1* xrtNetResolveOpOwnershipQuiescenceV1Get(void);
+
 
 
 /* 清空成功和失败缓存；已经运行或排队的查询不受影响。 */
@@ -1175,6 +1203,7 @@ XRT_API const xnetresolveownershipv1* xrtNetResolverFutureRequestPolicyV1Get(voi
 XRT_API const xfuturepayloadownershipv1* xrtNetResolverFuturePayloadPolicyV1Get(void);
 XRT_API const xrtownershipadapterv1* xrtNetResolverFutureOwnershipAdapterV1(xrtownershipref Reference,
 	const xrtownershippreparationv1** ppPreparation);
+XRT_API const xrtownershipquiescencev1* xrtNetResolverFutureOwnershipQuiescenceV1Get(void);
 
 #endif
 
@@ -1723,6 +1752,16 @@ XRT_API const xrtownershipadapterv1* xrtNetEngineOwnershipAdapterV2(
 	const xnettimerownershipv1* const* pTimerPolicies, size_t iTimerPolicyCount,
 	const xnetengineworkerexitownershipv1* const* pExitPolicies, size_t iExitPolicyCount,
 	const xrtownershippreparationv1** ppPreparation);
+/* V1/V2 continue to refuse runtime-family slots/timers. V3 additionally admits
+ * their exact resident descriptors before following any native context edge.
+ * Pending native transition commands remain BUSY, not invented references. */
+XRT_API const xrtownershipadapterv1* xrtNetEngineOwnershipAdapterV3(
+	xrtownershipref Reference,
+	const xnettaskownershipv1* const* pTaskPolicies, size_t iTaskPolicyCount,
+	const xnettimerownershipv1* const* pTimerPolicies, size_t iTimerPolicyCount,
+	const xnetengineworkerexitownershipv1* const* pExitPolicies, size_t iExitPolicyCount,
+	const xnetruntimeownershipv1* const* pRuntimePolicies, size_t iRuntimePolicyCount,
+	const xrtownershippreparationv1** ppPreparation);
 XRT_API bool xrtNetEnginePostOwnedV1(xnetengine* pEngine, uint64 iAffinity,
 	ptr pData, const xnettaskownershipv1* pPolicy);
 XRT_API uint64 xrtNetEngineScheduleOwnedV1(xnetengine* pEngine, uint64 iAffinity,
@@ -1993,6 +2032,7 @@ XRT_EXTERN_C_BEGIN
 
 
 /* 增加拥有型网络字节结果的引用并返回原指针。 */
+XRT_API xnetbytes* xrtNetBytesCopy(const void* pData, size_t iSize);
 XRT_API xnetbytes* xrtNetBytesRef(xnetbytes* pBytes);
 
 
@@ -2004,6 +2044,10 @@ XRT_API void xrtNetBytesDestroy(xnetbytes* pBytes);
 
 /* 返回拥有型网络字节结果的借用视图。 */
 XRT_API xbytesview xrtNetBytesView(const xnetbytes* pBytes);
+
+/* Immutable owned bytes: actual physical references, no callbacks/children. */
+XRT_API xrtownershipref xrtNetBytesOwnership(const xnetbytes* pBytes);
+XRT_API const xrtownershipadapterv1* xrtNetBytesOwnershipAdapterV1(xrtownershipref Reference);
 
 
 
@@ -2019,6 +2063,14 @@ XRT_API xnetbufpool* xrtNetBufPoolCreate(const xnetbufpoolconfig* pConfig);
 
 /* 销毁没有实时块的缓冲池；仍有块时失败且保持池有效。 */
 XRT_API bool xrtNetBufPoolDestroy(xnetbufpool* pPool);
+
+/* Pool creator/block leases and the active native Engine owner are actual
+ * graph edges. Views are borrowed and require whole-domain freeze. Prepare
+ * never waits and is ready only after every real block lease has ended. */
+XRT_API xrtownershipref xrtNetBufPoolOwnership(const xnetbufpool* pPool);
+XRT_API const xrtownershipquiescencev1* xrtNetBufPoolOwnershipQuiescenceV1Get(void);
+XRT_API const xrtownershipadapterv1* xrtNetBufPoolOwnershipAdapterV1(
+	xrtownershipref Reference, const xrtownershippreparationv1** ppPreparation);
 
 
 
@@ -2039,6 +2091,14 @@ XRT_API bool xrtNetBufInit(xnetbuf* pBuffer, xnetbufpool* pPool);
 
 /* 释放全部块并取消尚未提交的写入预留。 */
 XRT_API void xrtNetBufClear(xnetbuf* pBuffer);
+
+/* Enumerate actual pool/immutable-payload owning edges of a standalone chain.
+ * Caller must exclude mutation and keep all visited owners stable (normally
+ * under ownership Freeze). No allocation, hold/release or release callback.
+ * Opaque borrowed/external refs and Stream-private views are not certified:
+ * return false instead of treating unknown ownership as a leaf. */
+XRT_API bool xrtNetBufOwnershipTrace(const xnetbuf* pBuffer,
+    xrtownershipvisitor pVisit, ptr pContext);
 
 
 
@@ -2069,6 +2129,11 @@ XRT_API bool xrtNetBufFront(const xnetbuf* pBuffer, xnetspan* pSpan);
 
 /* 原子追加一份数据副本，失败时缓冲内容保持不变。 */
 XRT_API bool xrtNetBufAppend(xnetbuf* pBuffer, const void* pData, size_t iSize);
+
+/* Retain an immutable byte owner without copying. The exact subrange must fit;
+ * failure consumes no reference. Empty input does not retain a byte owner. */
+XRT_API bool xrtNetBufAppendBytes(xnetbuf* pBuffer, xnetbytes* pBytes,
+	size_t iOffset, size_t iSize);
 
 
 
