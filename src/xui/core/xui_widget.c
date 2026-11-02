@@ -3838,8 +3838,11 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	memset(pWidget->arrEventUsers, 0, sizeof(pWidget->arrEventUsers));
 	if ( pOwners != NULL ) {
 		(void)xuiInternalCallbackOwnerDrop(pContext, &pOwners->tPrimary);
-		for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
-			(void)xuiInternalCallbackOwnerDrop(pContext, &pOwners->arrHandlers[i]);
+		if ( pOwners->pHandlers != NULL ) {
+			for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
+				(void)xuiInternalCallbackOwnerDrop(pContext, &pOwners->pHandlers[i]);
+			xrtFree(pOwners->pHandlers);
+		}
 		xrtFree(pOwners);
 	}
 	__xuiWidgetDestroyAllCaches(pWidget);
@@ -5445,7 +5448,7 @@ XUI_API int xuiWidgetSetEventCallback(xui_widget pWidget, xui_widget_event_proc 
 	return XUI_OK;
 }
 
-/* One sparse allocation per widget that actually registers an owned event.
+	/* One sparse allocation per widget that actually registers an owned event.
  * Ordinary borrowed C registration keeps its existing two-store fast path. */
 static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	xui_widget_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner)
@@ -5458,21 +5461,29 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	int iResult = xuiCallScopeBegin(pContext, &tScope);
 	if ( iResult != XUI_OK ) return iResult;
 	xui_event_owners_t* pNew = NULL;
+	xui_callback_owner_t* pNewHandlers = NULL;
 	if ( pWidget->pEventOwners == NULL && pOwner != NULL && pOwner->onHold != NULL ) {
 		pNew = xrtCalloc(1, sizeof(*pNew));
 		if ( pNew == NULL ) { (void)xuiCallScopeEnd(&tScope); return XUI_ERROR_OUT_OF_MEMORY; }
 	}
+	if ( iEventType != -1 && pOwner != NULL && pOwner->onHold != NULL &&
+		(pWidget->pEventOwners == NULL || pWidget->pEventOwners->pHandlers == NULL) ) {
+		pNewHandlers = xrtCalloc(XUI_WIDGET_EVENT_SLOT_COUNT, sizeof(*pNewHandlers));
+		if ( pNewHandlers == NULL ) { xrtFree(pNew); (void)xuiCallScopeEnd(&tScope); return XUI_ERROR_OUT_OF_MEMORY; }
+	}
 	iResult = xuiInternalCallbackOwnerHold(pOwner);
-	if ( iResult != XUI_OK ) { xrtFree(pNew); (void)xuiCallScopeEnd(&tScope); return iResult; }
+	if ( iResult != XUI_OK ) { xrtFree(pNewHandlers); xrtFree(pNew); (void)xuiCallScopeEnd(&tScope); return iResult; }
 	xrtownershipscope tMutation = {0};
 	if ( !xrtOwnershipMutationBegin(&tMutation) ) {
-		xrtFree(pNew); (void)xuiInternalCallbackOwnerDrop(pContext, pOwner);
+		xrtFree(pNewHandlers); xrtFree(pNew); (void)xuiInternalCallbackOwnerDrop(pContext, pOwner);
 		(void)xuiCallScopeEnd(&tScope); return XUI_ERROR_INVALID_STATE;
 	}
 	if ( pNew != NULL ) pWidget->pEventOwners = pNew;
+	if ( pNewHandlers != NULL ) pWidget->pEventOwners->pHandlers = pNewHandlers;
 	xui_callback_owner_t tOld = {0};
 	xui_callback_owner_t* pSlot = pWidget->pEventOwners == NULL ? NULL :
-		(iEventType == -1 ? &pWidget->pEventOwners->tPrimary : &pWidget->pEventOwners->arrHandlers[iEventType]);
+		(iEventType == -1 ? &pWidget->pEventOwners->tPrimary :
+		 pWidget->pEventOwners->pHandlers == NULL ? NULL : &pWidget->pEventOwners->pHandlers[iEventType]);
 	if ( pSlot != NULL ) { tOld = *pSlot; *pSlot = pOwner == NULL ? (xui_callback_owner_t){0} : *pOwner; }
 	if ( iEventType == -1 ) { pWidget->onEvent = onEvent; pWidget->pEventUser = pUser; }
 	else {
@@ -5514,8 +5525,9 @@ XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisito
 		const xui_event_owners_t* pOwners = pWidget->pEventOwners;
 		if ( pOwners == NULL ) continue;
 		if ( pOwners->tPrimary.tReference.Data != NULL && !onVisit(pOwners->tPrimary.tReference, pUser) ) return false;
-		for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
-			if ( pOwners->arrHandlers[i].tReference.Data != NULL && !onVisit(pOwners->arrHandlers[i].tReference, pUser) ) return false;
+		if ( pOwners->pHandlers != NULL )
+			for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
+				if ( pOwners->pHandlers[i].tReference.Data != NULL && !onVisit(pOwners->pHandlers[i].tReference, pUser) ) return false;
 	}
 	return true;
 }

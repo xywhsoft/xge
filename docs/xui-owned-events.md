@@ -15,8 +15,10 @@ Hold is a reference transition only. Drop always consumes, even on false.
 
 Ordinary C setters keep borrowed userdata. When replacing an owned slot they
 perform its checked cleanup; previously borrowed-only widgets allocate no owner
-storage. Owned event storage uses one lazy allocation per widget and one extra
-pointer in the private widget record. Stable event invocation allocates nothing,
+storage. Owned primary events use one lazy 40-byte allocation on 64-bit targets
+and one extra pointer in the private widget record. The separate 48-entry owner
+table is allocated only for an owned per-event handler, and reused thereafter.
+Stable event invocation allocates nothing,
 but performs the required snapshot RC transitions. These are explicit lifetime
 costs, not a claim of universally zero-cost language binding.
 

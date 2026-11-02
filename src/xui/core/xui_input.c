@@ -731,7 +731,8 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 	if ( (pEvent->iType >= 0) && (pEvent->iType < XUI_WIDGET_EVENT_SLOT_COUNT) ) {
 		onHandler = pWidget->arrEventHandlers[pEvent->iType];
 		pHandlerUser = pWidget->arrEventUsers[pEvent->iType];
-		if ( pWidget->pEventOwners != NULL ) tOwner = pWidget->pEventOwners->arrHandlers[pEvent->iType];
+		if ( pWidget->pEventOwners != NULL && pWidget->pEventOwners->pHandlers != NULL )
+			tOwner = pWidget->pEventOwners->pHandlers[pEvent->iType];
 		if ( onHandler != NULL ) {
 			iRet = tOwner.onHold == NULL ? XUI_OK : xuiInternalCallbackOwnerHold(&tOwner);
 			if ( iRet != XUI_OK ) return iRet;

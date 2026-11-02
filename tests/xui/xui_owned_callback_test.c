@@ -52,8 +52,13 @@ static void replacement_and_nested(void)
         xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
         Owner owner={.refs=1,.action=handler?REMOVE_HANDLER:REMOVE_PRIMARY,.context=context};
         xui_callback_owner_t ref=descriptor(&owner);
+        xmemdebugsnapshot coldBefore,coldAfter;xrtMemDebugSnapshot(&coldBefore);
         assert((handler?xuiWidgetSetEventHandlerOwned(widget,XUI_EVENT_COMMAND,callback,&owner,&ref):
             xuiWidgetSetEventCallbackOwned(widget,callback,&owner,&ref))==XUI_OK);
+        xrtMemDebugSnapshot(&coldAfter);
+        assert(coldAfter.LiveBytes-coldBefore.LiveBytes==sizeof(xui_event_owners_t)+
+            (handler?XUI_WIDGET_EVENT_SLOT_COUNT*sizeof(xui_callback_owner_t):0));
+        assert(coldAfter.AllocCount-coldBefore.AllocCount==(handler?2u:1u));
         assert(drop(&owner) && owner.refs==1);
         assert(dispatch(context,widget)==XUI_OK && owner.calls==1 && owner.released==1 && !owner.refs);
         assert(dispatch(context,widget)==XUI_OK && owner.calls==1);
@@ -91,6 +96,12 @@ static void failures(void)
     assert(xrtMemDebugFailAfter(-1));xrtClearError();assert(owner.refs==1 && !widget->onEvent && !widget->pEventOwners);
     owner.failHold=true;assert(xuiWidgetSetEventCallbackOwned(widget,callback,&owner,&ref)==XUI_ERROR_CALLBACK_FAILED);
     assert(owner.refs==1 && !widget->onEvent && !widget->pEventOwners);owner.failHold=false;
+    for(int64_t point=0;point<2;++point){
+        assert(xrtMemDebugFailAfter(point));
+        assert(xuiWidgetSetEventHandlerOwned(widget,XUI_EVENT_COMMAND,callback,&owner,&ref)==XUI_ERROR_OUT_OF_MEMORY);
+        assert(xrtMemDebugFailAfter(-1));xrtClearError();
+        assert(owner.refs==1 && !widget->pEventOwners && !widget->arrEventHandlers[XUI_EVENT_COMMAND]);
+    }
     xui_callback_owner_t bad=ref;bad.onDrop=NULL;
     assert(xuiWidgetSetEventCallbackOwned(widget,callback,&owner,&bad)==XUI_ERROR_INVALID_ARGUMENT);
     assert(xuiWidgetSetEventCallbackOwned(widget,NULL,&owner,&ref)==XUI_ERROR_INVALID_ARGUMENT);

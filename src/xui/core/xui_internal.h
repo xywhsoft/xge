@@ -34,7 +34,7 @@ typedef struct xui_pointer_state_t xui_pointer_state_t;
 struct xui_menu_data_t;
 typedef struct xui_event_owners_t {
 	xui_callback_owner_t tPrimary;
-	xui_callback_owner_t arrHandlers[XUI_WIDGET_EVENT_SLOT_COUNT];
+	xui_callback_owner_t* pHandlers;
 } xui_event_owners_t;
 
 enum {
