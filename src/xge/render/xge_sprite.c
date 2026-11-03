@@ -14,10 +14,12 @@ int xgeSpriteBatchInit(xge_sprite_batch pBatch, xge_texture pTexture, int iCapac
 	if ( pBatch->pVertices == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
+    if(xgeTextureAddRef(pTexture)<=0){
+        xrtFree(pBatch->pVertices);memset(pBatch,0,sizeof(*pBatch));return XGE_ERROR_INVALID_STATE;
+    }
 	pBatch->pTexture = pTexture;
 	pBatch->iCapacity = iCapacity;
 	pBatch->iFlags = iFlags;
-	xgeTextureAddRef(pTexture);
 	return XGE_OK;
 }
 

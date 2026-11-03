@@ -133,8 +133,10 @@ int xgeParticleRendererBind(xge_particle_renderer r, xge_particle_definition d, 
 		binding.material.pShader = material->pShader;
 		binding.material.iColor = material->iColor;
 		binding.material.tPipeline = material->tPipeline;
-		xgeMaterialSetTexture2(&binding.material, material->pTexture2);
-		xgeMaterialSetTexture3(&binding.material, material->pTexture3);
+        if(xgeMaterialSetTexture2Checked(&binding.material,material->pTexture2)!=XGE_OK ||
+           xgeMaterialSetTexture3Checked(&binding.material,material->pTexture3)!=XGE_OK){
+            xp_binding_free(&binding);return XGE_ERROR_INVALID_STATE;
+        }
 	}
 	old = xp_binding_find(r, d, emitter);
 	if (old)

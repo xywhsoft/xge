@@ -1,0 +1,43 @@
+"""CPU-only adopted native record storage against an explicit host runtime.
+
+GCC O0/O2 clients link the same O2 native engine. This does not certify GPU,
+shipping xlang bindings, or sanitizer coverage of the engine/runtime.
+"""
+from pathlib import Path
+import argparse,hashlib,json,os,shutil,subprocess,time
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
+    a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
+    sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    metadata=json.loads((engine/'build-report.json').read_text())
+    assert metadata['linked'] and metadata['xrt_mode']=='host'
+    assert metadata['xrt_host_header_sha256']==hashlib.sha256(header.read_bytes().replace(b'\r\n',b'\n')).hexdigest()
+    cc=shutil.which('gcc');assert cc
+    font=root/'tests/xge/data/xge_opentype_fixture.ttf';source=root/'tests/xge/xge_storage_adoption_test.c';regression=root/'tests/xge/test_font_fallback_shaping.c'
+    library=engine/('xge.lib' if os.name=='nt' else 'libxge.so');native=engine/('xge.dll' if os.name=='nt' else 'libxge.so')
+    pins={Path(__file__).resolve(),Path(cc),font,source,regression,header,library,native,runtime,engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',root/'include/xge_host_xrt.h',root/'extlibs/xrt/xrt.h'}
+    pins.update(x for x in (engine/'host-xrt').iterdir() if x.is_file());inputs={str(x):sha(x) for x in pins}
+    out.mkdir(parents=True,exist_ok=False);(out/'tmp').mkdir()
+    env=dict(os.environ,TEMP=str(out/'tmp'),TMP=str(out/'tmp'),TMPDIR=str(out/'tmp'))
+    if os.name=='nt':shutil.copy2(runtime,out/runtime.name);shutil.copy2(native,out/native.name)
+    else:env['LD_LIBRARY_PATH']=str(runtime.parent)+':'+str(engine)+':'+env.get('LD_LIBRARY_PATH','')
+    report=dict(complete=False,passed=False,scope=__doc__,networkTests=False,inputs=inputs,rows=[])
+    def save():(out/'results.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf8')
+    def run(name,command):
+        start=time.monotonic();q=subprocess.run(list(map(str,command)),cwd=root,env=env,capture_output=True,timeout=240)
+        log=out/(name+'.log');log.write_bytes(q.stdout+q.stderr);report['rows'].append(dict(name=name,command=list(map(str,command)),exitCode=q.returncode,seconds=round(time.monotonic()-start,3),logSha256=sha(log)));save();print(name,q.returncode,flush=True);assert not q.returncode,log
+    flags=['-std=c11','-Wall','-Wextra','-Werror','-Wno-cast-function-type','-DXGE_XRT_HOST=1','-include',str(engine/'xge_build_config.h')]
+    flags+=['-I'+str(x) for x in (root,root/'include',engine/'host-xrt')]
+    if os.name=='nt':flags+=['-DXGE_DLL','-DXUI_DLL']
+    systems=['-Wl,-rpath,'+str(runtime.parent),'-Wl,-rpath,'+str(engine),'-pthread','-ldl','-lm'] if os.name!='nt' else []
+    for opt in ('O0','O2'):
+        exe=out/('storage-'+opt+('.exe' if os.name=='nt' else ''))
+        run(opt+'-build',[cc,*flags,'-'+opt,source,library,runtime,*systems,'-o',exe]);run(opt+'-run',[exe,font])
+    wrapper=out/'legacy-fallback.c'
+    wrapper.write_text('#define main storage_contract_main\n#include "'+source.as_posix()+'"\n#undef main\n#define main regression_main\n#include "'+regression.as_posix()+'"\n#undef main\nint main(void) { const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT; assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK); return regression_main(); }\n',encoding='utf8')
+    exe=out/('legacy-fallback'+('.exe' if os.name=='nt' else ''))
+    run('legacy-fallback-build',[cc,*flags,'-O2',wrapper,library,runtime,*systems,'-o',exe]);run('legacy-fallback-run',[exe])
+    report['inputsUnchanged']=all(sha(k)==v for k,v in inputs.items());assert report['inputsUnchanged'];report.update(complete=True,passed=True);save()
+if __name__=='__main__':main()

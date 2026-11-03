@@ -53,6 +53,7 @@ typedef struct xge_texture_shadow_t {
 	int iStorage;
 	int iSwizzle;
 	int bPackingDisabled;
+    int bOwnsRecord;
 } xge_texture_shadow_t;
 
 typedef struct xge_texture_yuv420p_t {
@@ -63,6 +64,7 @@ typedef struct xge_texture_yuv420p_t {
 	int iPlaneStride[3];
 	unsigned char* pPlane[3];
 	GLuint iPlaneTexture[3];
+    int bOwnsRecord;
 } xge_texture_yuv420p_t;
 
 static uint64_t __xgeTextureMemoryBytes(xge_texture pTexture)
@@ -843,10 +845,8 @@ int xgeTextureAddRef(xge_texture pTexture)
 	if ( pTexture == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pTexture->iRefCount < INT32_MAX ) {
-		pTexture->iRefCount++;
-	}
-	return pTexture->iRefCount;
+	if(pTexture->iRefCount<=0 || pTexture->iRefCount==INT32_MAX)return XGE_ERROR_INVALID_STATE;
+	return ++pTexture->iRefCount;
 }
 
 int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride)
@@ -1261,9 +1261,25 @@ int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride)
 	return XGE_OK;
 }
 
+static int* __xgeTextureRecordOwner(xge_texture pTexture)
+{
+    if(!pTexture || !pTexture->pBackend)return NULL;
+    return pTexture->iFormat==XGE_PIXEL_YUV420P ?
+        &((xge_texture_yuv420p_t*)pTexture->pBackend)->bOwnsRecord :
+        &((xge_texture_shadow_t*)pTexture->pBackend)->bOwnsRecord;
+}
+int xgeTextureAdoptStorage(xge_texture pTexture)
+{
+    if(!pTexture || pTexture->iRefCount!=1)return XGE_ERROR_INVALID_STATE;
+    int* owner=__xgeTextureRecordOwner(pTexture);
+    if(!owner || *owner)return XGE_ERROR_INVALID_STATE;
+    *owner=1;
+    return XGE_OK;
+}
 void xgeTextureFree(xge_texture pTexture)
 {
 	GLuint iTexture;
+    int bOwnsRecord;
 	uint64_t iBytes;
 
 	if ( pTexture == NULL ) {
@@ -1273,6 +1289,8 @@ void xgeTextureFree(xge_texture pTexture)
 		pTexture->iRefCount--;
 		return;
 	}
+    int* storageOwner=__xgeTextureRecordOwner(pTexture);
+    bOwnsRecord=storageOwner && *storageOwner;
 	iBytes = __xgeTextureMemoryBytes(pTexture);
 	if ( iBytes > 0 ) {
 		if ( g_xge.iTextureMemoryBytes >= iBytes ) {
@@ -1296,4 +1314,5 @@ void xgeTextureFree(xge_texture pTexture)
 	}
 	pTexture->iFlags &= ~XGE_TEXTURE_UPLOAD_QUEUED;
 	memset(pTexture, 0, sizeof(*pTexture));
+    if(bOwnsRecord)xrtFree(pTexture);
 }

@@ -2213,8 +2213,17 @@ XGE_API int xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* 
 XGE_API int xgeFontAddRef(xge_font pFont);
 /* 字体实例引用计数减一，归零时释放。 */
 XGE_API void xgeFontFree(xge_font pFont);
+/* Transfer the RECORD storage to its native reference count. pFont must be an
+ * individually xrt-allocated, successfully initialized record with exactly one
+ * native reference. No allocation/copy occurs here. On success, the final
+ * xgeFontFree also frees the record itself; never free/reuse/copy that storage.
+ * On failure storage ownership is unchanged. Stack/embedded records must not
+ * use this API. The font payload and ordinary draw APIs are unchanged. */
+XGE_API int xgeFontAdoptStorage(xge_font pFont);
 /* 设置当前字体实例的后备字体。 */
 XGE_API void xgeFontSetFallback(xge_font pFont, xge_font pFallback);
+/* Checked form; failure preserves the previous owning fallback reference. */
+XGE_API int xgeFontSetFallbackChecked(xge_font pFont, xge_font pFallback);
 /* 设置全局后备字体（缺字形时兜底）。 */
 XGE_API int xgeFontFallbackSet(const char* sPath, float fSize);
 /* 从内存设置全局后备字体。 */
@@ -2382,6 +2391,10 @@ XGE_API xge_vec2_t xgeTextureMapUV(const xge_texture_t* pTexture, xge_vec2_t tUV
 XGE_API int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride);
 /* 纹理引用计数减一，归零时释放。 */
 XGE_API void xgeTextureFree(xge_texture pTexture);
+/* Same record-storage transfer contract as xgeFontAdoptStorage. Sharing via
+ * xgeTextureAddRef keeps BOTH the resource and the adopted record alive until
+ * the final xgeTextureFree. No public record layout or drawing ABI changes. */
+XGE_API int xgeTextureAdoptStorage(xge_texture pTexture);
 /* 绑定窗口帧缓冲为渲染目标。 */
 XGE_API int xgeRenderTargetWindow(xge_render_target pTarget);
 /* 创建 FBO 离屏渲染目标。 */
@@ -2441,10 +2454,16 @@ XGE_API void xgeMaterialFree(xge_material pMaterial);
 XGE_API void xgeMaterialSetShader(xge_material pMaterial, xge_shader pShader);
 /* 设置主纹理槽。 */
 XGE_API void xgeMaterialSetTexture(xge_material pMaterial, xge_texture pTexture);
+/* Checked retain-before-publish; failure preserves the prior texture slot. */
+XGE_API int xgeMaterialSetTextureChecked(xge_material pMaterial, xge_texture pTexture);
 /* 设置第二纹理槽。 */
 XGE_API void xgeMaterialSetTexture2(xge_material pMaterial, xge_texture pTexture);
+/* Checked retain-before-publish; failure preserves the prior texture slot. */
+XGE_API int xgeMaterialSetTexture2Checked(xge_material pMaterial, xge_texture pTexture);
 /* 设置第三纹理槽。 */
 XGE_API void xgeMaterialSetTexture3(xge_material pMaterial, xge_texture pTexture);
+/* Checked retain-before-publish; failure preserves the prior texture slot. */
+XGE_API int xgeMaterialSetTexture3Checked(xge_material pMaterial, xge_texture pTexture);
 /* 设置材质着色（乘色）。 */
 XGE_API void xgeMaterialSetColor(xge_material pMaterial, uint32_t iColor);
 /* 设置材质混合模式。 */

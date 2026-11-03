@@ -403,55 +403,43 @@ void xgeMaterialSetShader(xge_material pMaterial, xge_shader pShader)
 	}
 }
 
-void xgeMaterialSetTexture(xge_material pMaterial, xge_texture pTexture)
+int xgeMaterialSetTextureChecked(xge_material pMaterial,xge_texture pTexture)
 {
-	if ( pMaterial == NULL ) {
-		return;
-	}
-	if ( pMaterial->pTexture == pTexture ) {
-		return;
-	}
-	if ( pMaterial->pTexture != NULL ) {
-		xgeTextureFree(pMaterial->pTexture);
-	}
-	pMaterial->pTexture = pTexture;
-	if ( pTexture != NULL ) {
-		xgeTextureAddRef(pTexture);
-	}
+    if(!pMaterial)return XGE_ERROR_INVALID_ARGUMENT;
+    if(pMaterial->pTexture==pTexture)return XGE_OK;
+    if(pTexture && xgeTextureAddRef(pTexture)<=0)return XGE_ERROR_INVALID_STATE;
+    xge_texture previous=pMaterial->pTexture;pMaterial->pTexture=pTexture;
+    xgeTextureFree(previous);return XGE_OK;
+}
+void xgeMaterialSetTexture(xge_material pMaterial,xge_texture pTexture)
+{
+    (void)xgeMaterialSetTextureChecked(pMaterial,pTexture);
 }
 
-void xgeMaterialSetTexture2(xge_material pMaterial, xge_texture pTexture)
+int xgeMaterialSetTexture2Checked(xge_material pMaterial,xge_texture pTexture)
 {
-	if ( pMaterial == NULL ) {
-		return;
-	}
-	if ( pMaterial->pTexture2 == pTexture ) {
-		return;
-	}
-	if ( pMaterial->pTexture2 != NULL ) {
-		xgeTextureFree(pMaterial->pTexture2);
-	}
-	pMaterial->pTexture2 = pTexture;
-	if ( pTexture != NULL ) {
-		xgeTextureAddRef(pTexture);
-	}
+    if(!pMaterial)return XGE_ERROR_INVALID_ARGUMENT;
+    if(pMaterial->pTexture2==pTexture)return XGE_OK;
+    if(pTexture && xgeTextureAddRef(pTexture)<=0)return XGE_ERROR_INVALID_STATE;
+    xge_texture previous=pMaterial->pTexture2;pMaterial->pTexture2=pTexture;
+    xgeTextureFree(previous);return XGE_OK;
+}
+void xgeMaterialSetTexture2(xge_material pMaterial,xge_texture pTexture)
+{
+    (void)xgeMaterialSetTexture2Checked(pMaterial,pTexture);
 }
 
-void xgeMaterialSetTexture3(xge_material pMaterial, xge_texture pTexture)
+int xgeMaterialSetTexture3Checked(xge_material pMaterial,xge_texture pTexture)
 {
-	if ( pMaterial == NULL ) {
-		return;
-	}
-	if ( pMaterial->pTexture3 == pTexture ) {
-		return;
-	}
-	if ( pMaterial->pTexture3 != NULL ) {
-		xgeTextureFree(pMaterial->pTexture3);
-	}
-	pMaterial->pTexture3 = pTexture;
-	if ( pTexture != NULL ) {
-		xgeTextureAddRef(pTexture);
-	}
+    if(!pMaterial)return XGE_ERROR_INVALID_ARGUMENT;
+    if(pMaterial->pTexture3==pTexture)return XGE_OK;
+    if(pTexture && xgeTextureAddRef(pTexture)<=0)return XGE_ERROR_INVALID_STATE;
+    xge_texture previous=pMaterial->pTexture3;pMaterial->pTexture3=pTexture;
+    xgeTextureFree(previous);return XGE_OK;
+}
+void xgeMaterialSetTexture3(xge_material pMaterial,xge_texture pTexture)
+{
+    (void)xgeMaterialSetTexture3Checked(pMaterial,pTexture);
 }
 
 void xgeMaterialSetColor(xge_material pMaterial, uint32_t iColor)

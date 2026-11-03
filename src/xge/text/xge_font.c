@@ -56,6 +56,7 @@ struct xge_font_face_t {
 
 typedef struct xge_font_instance_backend_t {
 	xge_font_face pFace;
+	int bOwnsRecord; /* Cold native storage ownership; never copied as a value. */
 	uint64_t iSourceHash;
 	int iFaceIndex;
 	int iWeight;
@@ -915,8 +916,8 @@ int xgeFontFaceLoad(xge_font_face* ppFace, const char* sPath, const xge_font_fac
 int xgeFontFaceAddRef(xge_font_face pFace)
 {
 	if ( pFace == NULL ) return 0;
-	if ( pFace->iRefCount < INT32_MAX ) pFace->iRefCount++;
-	return pFace->iRefCount;
+    if(pFace->iRefCount<=0 || pFace->iRefCount==INT32_MAX)return 0;
+    return ++pFace->iRefCount;
 }
 
 void xgeFontFaceFree(xge_font_face pFace)
@@ -1004,7 +1005,7 @@ int xgeFontFamilyAddFace(xge_font_family pFamily, xge_font_face pFace)
 		pFamily->ppFaces = ppFaces;
 		pFamily->iFaceCapacity = iCapacity;
 	}
-	xgeFontFaceAddRef(pFace);
+    if(xgeFontFaceAddRef(pFace)<=0)return XGE_ERROR_INVALID_STATE;
 	pFamily->ppFaces[pFamily->iFaceCount++] = pFace;
 	return XGE_OK;
 }
@@ -1032,7 +1033,7 @@ int xgeFontFamilyResolveEx(xge_font_family pFamily, int iWeight, int iStretch, i
 		}
 	}
 	if ( pBest == NULL ) return XGE_ERROR_RESOURCE_FAILED;
-	xgeFontFaceAddRef(pBest);
+    if(xgeFontFaceAddRef(pBest)<=0)return XGE_ERROR_INVALID_STATE;
 	*ppFace = pBest;
 	return XGE_OK;
 }
@@ -1059,7 +1060,7 @@ int xgeFontCreate(xge_font pFont, xge_font_face pFace, const xge_font_instance_d
 	memset(pFont, 0, sizeof(*pFont));
 	pBackend = (xge_font_instance_backend_t*)xrtCalloc(1, sizeof(*pBackend));
 	if ( pBackend == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-	xgeFontFaceAddRef(pFace);
+    if(xgeFontFaceAddRef(pFace)<=0){xrtFree(pBackend);return XGE_ERROR_INVALID_STATE;}
 	pBackend->pFace = pFace;
 	stbtt_GetFontVMetrics(&pFace->tInfo, &iAscent, &iDescent, &iLineGap);
 	pFont->iRefCount = 1;
@@ -1512,7 +1513,9 @@ int xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* sXRFPath
 			bCompatible = bCompatible && (pCachedBackend->iSourceHash == pDynamicFace->iSourceHash) && (pCachedBackend->iFaceIndex == pDynamicFace->iFaceIndex);
 		}
 		if ( bCompatible && (pCachedBackend != NULL) && (pDynamicFace != NULL) ) {
-			xgeFontFaceAddRef(pDynamicFace);
+            if(xgeFontFaceAddRef(pDynamicFace)<=0){
+                xgeFontFree(&tDynamicFont);xgeFontFree(pFont);return XGE_ERROR_INVALID_STATE;
+            }
 			pCachedBackend->pFace = pDynamicFace;
 			pFont->pData = pDynamicFace->pData;
 			pFont->iDataSize = pDynamicFace->iDataSize;
@@ -1536,15 +1539,24 @@ int xgeFontAddRef(xge_font pFont)
 	if ( pFont == NULL ) {
 		return 0;
 	}
-	if ( pFont->iRefCount < INT32_MAX ) {
-		pFont->iRefCount++;
-	}
-	return pFont->iRefCount;
+	/* An overflow must not report a retained reference that was not acquired. */
+	if ( pFont->iRefCount <= 0 || pFont->iRefCount == INT32_MAX ) return 0;
+	return ++pFont->iRefCount;
+}
+
+int xgeFontAdoptStorage(xge_font pFont)
+{
+    if(!pFont || pFont->iRefCount!=1 || !pFont->pBackend)return XGE_ERROR_INVALID_STATE;
+    xge_font_instance_backend_t* backend=(xge_font_instance_backend_t*)pFont->pBackend;
+    if(backend->bOwnsRecord)return XGE_ERROR_INVALID_STATE;
+    backend->bOwnsRecord=1;
+    return XGE_OK;
 }
 
 void xgeFontFree(xge_font pFont)
 {
 	xge_font_instance_backend_t* pBackend;
+    int bOwnsRecord;
 
 	if ( pFont == NULL ) {
 		return;
@@ -1561,6 +1573,7 @@ void xgeFontFree(xge_font pFont)
 		pFont->pFallback = NULL;
 	}
 	pBackend = (xge_font_instance_backend_t*)pFont->pBackend;
+    bOwnsRecord=pBackend && pBackend->bOwnsRecord;
 	if ( pBackend != NULL ) {
 #if XGE_ENABLE_HARFBUZZ
 		hb_font_destroy(pBackend->pShapeFont);
@@ -1570,24 +1583,25 @@ void xgeFontFree(xge_font pFont)
 	}
 	__xgeFontAtlasFree(pFont);
 	memset(pFont, 0, sizeof(*pFont));
+    if(bOwnsRecord)xrtFree(pFont);
 }
 
-void xgeFontSetFallback(xge_font pFont, xge_font pFallback)
+int xgeFontSetFallbackChecked(xge_font pFont,xge_font pFallback)
 {
-	xge_font pScan;
-	int iDepth;
-
-	if ( (pFont == NULL) || (pFallback == pFont) || (pFont->pFallback == pFallback) ) return;
-	if ( pFallback != NULL && pFallback->iRefCount <= 0 ) return;
-	pScan = pFallback;
-	for ( iDepth = 0; pScan != NULL && iDepth < 64; iDepth++ ) {
-		if ( pScan == pFont ) return;
-		pScan = pScan->pFallback;
-	}
-	if ( pScan != NULL ) return;
-	if ( pFallback != NULL ) xgeFontAddRef(pFallback);
-	if ( pFont->pFallback != NULL ) xgeFontFree(pFont->pFallback);
-	pFont->pFallback = pFallback;
+    if(!pFont || pFont->iRefCount<=0 || pFallback==pFont || (pFallback && pFallback->iRefCount<=0))return XGE_ERROR_INVALID_ARGUMENT;
+    if(pFont->pFallback==pFallback)return XGE_OK;
+    xge_font scan=pFallback;int depth=0;
+    while(scan && depth++<64){if(scan==pFont)return XGE_ERROR_INVALID_ARGUMENT;scan=scan->pFallback;}
+    if(scan)return XGE_ERROR_INVALID_STATE;
+    if(pFallback && xgeFontAddRef(pFallback)<=0)return XGE_ERROR_INVALID_STATE;
+    xge_font previous=pFont->pFallback;pFont->pFallback=pFallback;
+    xgeFontFree(previous);return XGE_OK;
+}
+void xgeFontSetFallback(xge_font pFont,xge_font pFallback)
+{
+    /* Legacy void API preserves its no-diagnostic behavior. New bindings use
+     * the checked form so failure is a first-class result. */
+    (void)xgeFontSetFallbackChecked(pFont,pFallback);
 }
 
 int xgeFontFallbackSet(const char* sPath, float fSize)
@@ -2373,7 +2387,9 @@ int xgeFontLoadXRF(xge_font pFont, const char* sPath) { (void)pFont; (void)sPath
 int xgeFontLoadXRFMemory(xge_font pFont, const void* pData, int iSize) { (void)pFont; (void)pData; (void)iSize; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontAddRef(xge_font pFont) { (void)pFont; return 0; }
 void xgeFontFree(xge_font pFont) { (void)pFont; }
+int xgeFontAdoptStorage(xge_font pFont) { (void)pFont; return XGE_ERROR_UNSUPPORTED; }
 void xgeFontSetFallback(xge_font pFont, xge_font pFallback) { (void)pFont; (void)pFallback; }
+int xgeFontSetFallbackChecked(xge_font pFont,xge_font pFallback) { (void)pFont; (void)pFallback; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontFallbackSet(const char* sPath, float fSize) { (void)sPath; (void)fSize; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontFallbackSetMemory(const void* pData, int iSize, float fSize) { (void)pData; (void)iSize; (void)fSize; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontFallbackGet(xge_font pFont, float fSize) { (void)pFont; (void)fSize; return XGE_ERROR_UNSUPPORTED; }
