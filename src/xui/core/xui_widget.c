@@ -5468,6 +5468,10 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	if ( !__xuiWidgetValid(pWidget) || iEventType < -1 || iEventType >= XUI_WIDGET_EVENT_SLOT_COUNT ||
 		!__xuiCallbackOwnerValid(pOwner) || (onEvent == NULL && pOwner != NULL && pOwner->onHold != NULL) )
 		return XUI_ERROR_INVALID_ARGUMENT;
+	/* Hold is user code: snapshot the incoming descriptor before it can
+	 * reenter, replace the same slot or invalidate the context/widget. */
+	xui_callback_owner_t tCandidate = pOwner == NULL ? (xui_callback_owner_t){0} : *pOwner;
+	pOwner = &tCandidate;
 	xui_context pContext = pWidget->pContext;
 	xui_call_scope_t tScope = {0};
 	int iResult = xuiCallScopeBegin(pContext, &tScope);
@@ -5485,6 +5489,21 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	}
 	iResult = xuiInternalCallbackOwnerHold(pOwner);
 	if ( iResult != XUI_OK ) { xrtFree(pNewHandlers); xrtFree(pNew); (void)xuiCallScopeEnd(&tScope); return iResult; }
+	if ( !__xuiWidgetValid(pWidget) || pContext->bDestroyPending || pContext->bDestroying ) {
+		xrtFree(pNewHandlers); xrtFree(pNew);
+		(void)xuiInternalCallbackOwnerDrop(pContext, pOwner);
+		(void)xuiCallScopeEnd(&tScope);
+		return XUI_ERROR_INVALID_STATE;
+	}
+	/* A nested registration may have installed either allocation. Never
+	 * overwrite it with a stale pre-Hold candidate; replace its actual slot
+	 * and release the nested owner after the commit, exactly once. */
+	if ( pWidget->pEventOwners != NULL ) {
+		xrtFree(pNew); pNew = NULL;
+		if ( pWidget->pEventOwners->pHandlers != NULL ) {
+			xrtFree(pNewHandlers); pNewHandlers = NULL;
+		}
+	}
 	xrtownershipscope tMutation = {0};
 	if ( !xrtOwnershipMutationBegin(&tMutation) ) {
 		xrtFree(pNewHandlers); xrtFree(pNew); (void)xuiInternalCallbackOwnerDrop(pContext, pOwner);

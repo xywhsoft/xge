@@ -14,9 +14,24 @@ typedef struct Owner {
     bool inCall,failHold,failDrop;
     int action;
     xui_context context;
+    xui_widget widget;
+    struct Owner* nested;
+    int holdAction;
 } Owner;
+static xui_callback_owner_t descriptor(Owner*);
+static int callback(xui_widget,const xui_event_t*,void*);
 static bool hold(const void* raw)
-{Owner* owner=(Owner*)raw;if(owner->failHold)return false;assert(owner->refs);++owner->refs;return true;}
+{
+    Owner* owner=(Owner*)raw;if(owner->failHold)return false;assert(owner->refs);++owner->refs;
+    int action=owner->holdAction;owner->holdAction=0;
+    if(action==1 || action==2){
+        xui_callback_owner_t nested=descriptor(owner->nested);
+        assert((action==1 ? xuiWidgetSetEventCallbackOwned(owner->widget,callback,owner->nested,&nested) :
+            xuiWidgetSetEventHandlerOwned(owner->widget,XUI_EVENT_COMMAND,callback,owner->nested,&nested))==XUI_OK);
+    }else if(action==3)xuiWidgetDestroy(owner->widget);
+    else if(action==4)xuiDestroy(owner->context);
+    return true;
+}
 static bool drop(const void* raw)
 {
     Owner* owner=(Owner*)raw;assert(owner->refs);++owner->drops;
@@ -133,10 +148,36 @@ static void graph(void)
     assert(xrtOwnershipScopeEnd(&freeze) && xuiCallScopeEnd(&call)==XUI_OK);
     xuiDestroy(context);assert(owner.refs==1 && drop(&owner) && owner.released==1);
 }
+static void registration_reentry(void)
+{
+    for(unsigned outerHandler=0;outerHandler<2;++outerHandler)for(unsigned innerHandler=0;innerHandler<2;++innerHandler){
+        xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
+        Owner nested={.refs=1,.context=context};
+        Owner outer={.refs=1,.context=context,.widget=widget,.nested=&nested,.holdAction=innerHandler ? 2 : 1};
+        xui_callback_owner_t ref=descriptor(&outer);
+        assert((outerHandler ? xuiWidgetSetEventHandlerOwned(widget,XUI_EVENT_COMMAND,callback,&outer,&ref) :
+            xuiWidgetSetEventCallbackOwned(widget,callback,&outer,&ref))==XUI_OK);
+        unsigned expected=outerHandler==innerHandler ? 1u : 2u,edges=0;
+        xrtownershipscope freeze={0};assert(xrtOwnershipFreezeTryBegin(&freeze));
+        assert(xuiContextTraceEventOwners(context,visit,&edges) && edges==expected);
+        assert(xrtOwnershipScopeEnd(&freeze));
+        assert(outer.refs==2 && nested.refs==(expected==2 ? 2u : 1u));
+        assert(dispatch(context,widget)==XUI_OK && outer.calls==1 && nested.calls==(expected==2 ? 1u : 0u));
+        xuiDestroy(context);assert(outer.refs==1 && nested.refs==1 && drop(&outer) && drop(&nested));
+    }
+    for(unsigned action=3;action<=4;++action){
+        xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
+        Owner owner={.refs=1,.context=context,.widget=widget,.holdAction=(int)action};
+        xui_callback_owner_t ref=descriptor(&owner);
+        assert(xuiWidgetSetEventCallbackOwned(widget,callback,&owner,&ref)==XUI_ERROR_INVALID_STATE);
+        assert(owner.refs==1 && drop(&owner));
+        if(action==3)xuiDestroy(context);
+    }
+}
 int main(void)
 {
     assert(xrtMemDebugEnable(true));xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    replacement_and_nested();closing();failures();graph();xrtClearError();xrtMemDebugSnapshot(&after);
+    replacement_and_nested();closing();failures();graph();registration_reentry();xrtClearError();xrtMemDebugSnapshot(&after);
     assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes &&
         before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
     puts("owned XUI events: native return-tail pins, replacement, nesting, close, checked failures, OOM, graph and zero steady-state allocations passed");
