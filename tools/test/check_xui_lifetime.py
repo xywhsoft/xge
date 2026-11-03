@@ -69,7 +69,7 @@ def main():
             print(opt, source, 'reuse' if reused else 'compile', flush=True)
             return obj
         objects = [compile_source(source) for source in SOURCES]
-        for test in ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout'):
+        for test in ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout', 'owned_widget'):
             obj = compile_source('tests/xui/xui_'+test+'_test.c')
             executable = out/(test+'-'+opt+('.exe' if os.name == 'nt' else '.out'))
             run(test+'-'+opt+'-link', [cc, *flags, *(['-no-pie'] if args.sanitize else []),

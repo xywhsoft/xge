@@ -12530,8 +12530,10 @@ XUI_API int xuiWidgetSetFocusScope(xui_widget pWidget, int bFocusScope);
 XUI_API int xuiWidgetGetFocusScope(xui_widget pWidget);
 /* 注册默认动作回调（域内回车触发，如默认按钮）。 */
 XUI_API int xuiWidgetSetDefaultAction(xui_widget pWidget, xui_widget_action_proc onAction, void* pUser);
+XUI_API int xuiWidgetSetDefaultActionOwned(xui_widget pWidget,xui_widget_action_proc onAction,void* pUser,const xui_callback_owner_t* pOwner);
 /* 注册取消动作回调（域内 Esc 触发）。 */
 XUI_API int xuiWidgetSetCancelAction(xui_widget pWidget, xui_widget_action_proc onAction, void* pUser);
+XUI_API int xuiWidgetSetCancelActionOwned(xui_widget pWidget,xui_widget_action_proc onAction,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置允许作为拖拽源。 */
 XUI_API int xuiWidgetSetDragEnabled(xui_widget pWidget, int bEnabled);
 /* 读取拖拽源标志。 */
@@ -12546,6 +12548,7 @@ XUI_API int xuiWidgetSetImeMode(xui_widget pWidget, int iImeMode);
 XUI_API int xuiWidgetGetImeMode(xui_widget pWidget);
 /* 注册候选框锚点矩形回调（聚焦时询问位置）。 */
 XUI_API int xuiWidgetSetImeCandidateRect(xui_widget pWidget, xui_widget_ime_rect_proc onRect, void* pUser);
+XUI_API int xuiWidgetSetImeCandidateRectOwned(xui_widget pWidget,xui_widget_ime_rect_proc onRect,void* pUser,const xui_callback_owner_t* pOwner);
 /* 输出候选框锚点回调与用户指针。 */
 XUI_API int xuiWidgetGetImeCandidateRect(xui_widget pWidget, xui_widget_ime_rect_proc* pRect, void** ppUser);
 /* 注册无障碍节点提供回调（count/get/action 三件套）。 */
@@ -12610,6 +12613,7 @@ XUI_API uint64_t xuiWidgetGetEventMask(xui_widget pWidget);
 XUI_API uint64_t xuiWidgetGetSubtreeEventMask(xui_widget pWidget);
 /* 注册光标查询回调（悬停时决定光标形状）。 */
 XUI_API int xuiWidgetSetCursorQueryCallback(xui_widget pWidget, xui_widget_cursor_proc onQueryCursor, void* pUser);
+XUI_API int xuiWidgetSetCursorQueryCallbackOwned(xui_widget pWidget,xui_widget_cursor_proc onQueryCursor,void* pUser,const xui_callback_owner_t* pOwner);
 /* 输出光标查询回调与用户指针。 */
 XUI_API int xuiWidgetGetCursorQueryCallback(xui_widget pWidget, xui_widget_cursor_proc* pQueryCursor, void** ppUser);
 /* 查询坐标处应显示的光标（经光标回调链）。 */
@@ -12695,7 +12699,11 @@ XUI_API int xuiWidgetSetCachePolicy(xui_widget pWidget, const xui_cache_policy_t
 /* 读取缓存策略。 */
 XUI_API xui_cache_policy_t xuiWidgetGetCachePolicy(xui_widget pWidget);
 /* 注册缓存位图绘制回调（策略生效时以此绘制）。 */
+XUI_API int xuiWidgetSetUpdateCallback(xui_widget pWidget, xui_widget_update_proc onUpdate, void* pUser);
+XUI_API int xuiWidgetSetUpdateCallbackOwned(xui_widget pWidget,xui_widget_update_proc onUpdate,void* pUser,const xui_callback_owner_t* pOwner);
+
 XUI_API int xuiWidgetSetCacheRenderCallback(xui_widget pWidget, xui_widget_cache_render_proc onRender, void* pUser);
+XUI_API int xuiWidgetSetCacheRenderCallbackOwned(xui_widget pWidget,xui_widget_cache_render_proc onRender,void* pUser,const xui_callback_owner_t* pOwner);
 /* 输出缓存绘制回调与用户指针。 */
 XUI_API int xuiWidgetGetCacheRenderCallback(xui_widget pWidget, xui_widget_cache_render_proc* pRender, void** ppUser);
 /* 设置缓存状态槽数量（每状态一张位图）。 */

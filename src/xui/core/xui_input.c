@@ -2004,12 +2004,12 @@ static int __xuiInputInvokeAction(xui_widget pWidget, int bDefault)
 	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
 		if ( bDefault ) {
 			if ( pScan->onDefaultAction != NULL ) {
-				pScan->onDefaultAction(pScan, pScan->pDefaultActionUser);
-				return 1;
+				int result=xuiInternalInvokeDefaultAction(pScan);
+				return result==XUI_OK ? 1 : result;
 			}
 		} else if ( pScan->onCancelAction != NULL ) {
-			pScan->onCancelAction(pScan, pScan->pCancelActionUser);
-			return 1;
+			int result=xuiInternalInvokeCancelAction(pScan);
+			return result==XUI_OK ? 1 : result;
 		}
 	}
 	return 0;
@@ -2200,14 +2200,18 @@ static int __xuiInputKeyDownExOperation(xui_context pContext, int iKey, uint32_t
 		}
 		return XUI_OK;
 	} else if ( iKey == XUI_KEY_ENTER ) {
-		if ( __xuiInputInvokeAction(pContext->pFocusWidget, 1) ) {
+		iRet=__xuiInputInvokeAction(pContext->pFocusWidget,1);
+		if(iRet<0)return iRet;
+		if ( iRet ) {
 			if ( pResult != NULL ) {
 				*pResult |= XUI_INPUT_RESULT_CONSUMED;
 			}
 			return XUI_OK;
 		}
 	} else if ( iKey == XUI_KEY_ESCAPE ) {
-		if ( __xuiInputInvokeAction(pContext->pFocusWidget, 0) ) {
+		iRet=__xuiInputInvokeAction(pContext->pFocusWidget,0);
+		if(iRet<0)return iRet;
+		if ( iRet ) {
 			if ( pResult != NULL ) {
 				*pResult |= XUI_INPUT_RESULT_CONSUMED;
 			}

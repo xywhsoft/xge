@@ -628,6 +628,73 @@ static inline int xuiInternalInvokeLayoutComplete(xui_widget widget,xui_rect_t c
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
 }
 
+static inline int xuiInternalInvokeDefaultAction(xui_widget widget)
+{
+    xui_widget_action_proc callback=widget->onDefaultAction;void* user=widget->pDefaultActionUser;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,user);return XUI_OK;}
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onDefaultAction,&user,&snapshot);
+    if(result!=XUI_OK)return XUI_ERROR_INVALID_STATE;
+    callback(widget,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+static inline int xuiInternalInvokeCancelAction(xui_widget widget)
+{
+    xui_widget_action_proc callback=widget->onCancelAction;void* user=widget->pCancelActionUser;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,user);return XUI_OK;}
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onCancelAction,&user,&snapshot);
+    if(result!=XUI_OK)return XUI_ERROR_INVALID_STATE;
+    callback(widget,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+static inline xui_rect_t xuiInternalInvokeImeCandidateRect(xui_widget widget)
+{
+    xui_widget_ime_rect_proc callback=widget->onImeCandidateRect;void* user=widget->pImeCandidateRectUser;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,user);}
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onImeCandidateRect,&user,&snapshot);
+    if(result!=XUI_OK)return (xui_rect_t){0};
+    xui_rect_t rect=callback(widget,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);return rect;
+}
+
+static inline int xuiInternalInvokeCursorQueryCallback(xui_widget widget,int x,int y)
+{
+    xui_widget_cursor_proc callback=widget->onQueryCursor;void* user=widget->pQueryCursorUser;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,x,y,user);}
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onQueryCursor,&user,&snapshot);
+    if(result!=XUI_OK)return -1;
+    int cursor=callback(widget,x,y,user);
+    if(xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK)!=XUI_OK)return -1;
+    return cursor;
+}
+
+static inline int xuiInternalInvokeCacheRenderCallback(xui_widget widget,xui_draw_context draw,uint32_t state)
+{
+    xui_widget_cache_render_proc callback=widget->onCacheRender;void* user=widget->pCacheRenderUser;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,draw,state,user);}
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onCacheRender,&user,&snapshot);
+    if(result!=XUI_OK)return result;
+    result=callback(widget,draw,state,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,result);
+}
+
+static inline int xuiInternalInvokeUpdateCallback(xui_widget widget,float delta)
+{
+    xui_widget_update_proc callback=widget->onUpdate;void* user=widget->pUpdateUser;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,delta,user);}
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onUpdate,&user,&snapshot);
+    if(result!=XUI_OK)return result;
+    result=callback(widget,delta,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,result);
+}
+
 int xuiInternalContextDestroyPending(xui_context pContext);
 void xuiInternalStateRecordBoundsTree(xui_widget pWidget);
 void xuiInternalStateDamageFlush(xui_context pContext);

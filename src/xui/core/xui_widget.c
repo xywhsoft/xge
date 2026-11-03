@@ -5275,14 +5275,40 @@ XUI_API int xuiWidgetGetFocusScope(xui_widget pWidget)
 	return __xuiWidgetValid(pWidget) ? pWidget->bFocusScope : 0;
 }
 
+XUI_API int xuiWidgetSetDefaultActionOwned(xui_widget pWidget,xui_widget_action_proc onAction,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onDefaultAction,onAction!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onDefaultAction=onAction;pWidget->pDefaultActionUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=XUI_OK;
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetDefaultAction(xui_widget pWidget, xui_widget_action_proc onAction, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onDefaultAction))return xuiWidgetSetDefaultActionOwned(pWidget,onAction,pUser,NULL);
 	pWidget->onDefaultAction = onAction;
 	pWidget->pDefaultActionUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiWidgetSetCancelActionOwned(xui_widget pWidget,xui_widget_action_proc onAction,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onCancelAction,onAction!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onCancelAction=onAction;pWidget->pCancelActionUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=XUI_OK;
+    return xuiInternalCallbackUpdateEnd(&update,result);
 }
 
 XUI_API int xuiWidgetSetCancelAction(xui_widget pWidget, xui_widget_action_proc onAction, void* pUser)
@@ -5290,6 +5316,8 @@ XUI_API int xuiWidgetSetCancelAction(xui_widget pWidget, xui_widget_action_proc 
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onCancelAction))return xuiWidgetSetCancelActionOwned(pWidget,onAction,pUser,NULL);
 	pWidget->onCancelAction = onAction;
 	pWidget->pCancelActionUser = pUser;
 	return XUI_OK;
@@ -5366,7 +5394,7 @@ void xuiInternalInputInvalidateImeOwner(xui_context pContext)
 	if ( pContext->onImeFocusChanged != NULL ) pContext->onImeFocusChanged(pContext);
 }
 
-static int __xuiInputSyncIme(xui_context pContext, int bForceEnabled, int bForceRect)
+static int __xuiInputSyncImeOperation(xui_context pContext, int bForceEnabled, int bForceRect)
 {
 	xui_widget pFocus;
 	xui_proxy pProxy;
@@ -5395,10 +5423,11 @@ static int __xuiInputSyncIme(xui_context pContext, int bForceEnabled, int bForce
 	pContext->bHasImeCandidateRect = 0;
 	if ( bEnabled ) {
 		if ( pFocus->onImeCandidateRect != NULL ) {
-			tRect = pFocus->onImeCandidateRect(pFocus, pFocus->pImeCandidateRectUser);
+			tRect = xuiInternalInvokeImeCandidateRect(pFocus);
 		} else {
 			tRect = xuiWidgetGetWorldRect(pFocus);
 		}
+		if(!__xuiWidgetValid(pFocus) || xuiInternalContextDestroyPending(pContext))return XUI_OK;
 		pContext->tImeCandidateRect = tRect;
 		pContext->bHasImeCandidateRect = 1;
 	}
@@ -5423,6 +5452,14 @@ static int __xuiInputSyncIme(xui_context pContext, int bForceEnabled, int bForce
 		return iRet;
 	}
 	return XUI_OK;
+}
+
+static int __xuiInputSyncIme(xui_context pContext,int bForceEnabled,int bForceRect)
+{
+    if(!xuiInternalContextIsValid(pContext))return XUI_ERROR_INVALID_ARGUMENT;
+    xuiInternalOperationEnter(pContext);
+    int result=__xuiInputSyncImeOperation(pContext,bForceEnabled,bForceRect);
+    xuiInternalOperationLeave(pContext);return result;
 }
 
 int xuiInternalInputSyncIme(xui_context pContext)
@@ -5464,11 +5501,25 @@ XUI_API int xuiWidgetGetImeMode(xui_widget pWidget)
 	return __xuiWidgetValid(pWidget) ? pWidget->iImeMode : XUI_IME_DISABLED;
 }
 
+XUI_API int xuiWidgetSetImeCandidateRectOwned(xui_widget pWidget,xui_widget_ime_rect_proc onRect,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onImeCandidateRect,onRect!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onImeCandidateRect=onRect;pWidget->pImeCandidateRectUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=(pWidget->pContext->pFocusWidget==pWidget) ? xuiInternalInputSyncIme(pWidget->pContext) : XUI_OK;
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetImeCandidateRect(xui_widget pWidget, xui_widget_ime_rect_proc onRect, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onImeCandidateRect))return xuiWidgetSetImeCandidateRectOwned(pWidget,onRect,pUser,NULL);
 	pWidget->onImeCandidateRect = onRect;
 	pWidget->pImeCandidateRectUser = pUser;
 	if ( (pWidget->pContext != NULL) && (pWidget->pContext->pFocusWidget == pWidget) ) {
@@ -5651,11 +5702,25 @@ XUI_API int xuiWidgetGetEventCallback(xui_widget pWidget, xui_widget_event_proc*
 	return XUI_OK;
 }
 
+XUI_API int xuiWidgetSetCursorQueryCallbackOwned(xui_widget pWidget,xui_widget_cursor_proc onQueryCursor,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onQueryCursor,onQueryCursor!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onQueryCursor=onQueryCursor;pWidget->pQueryCursorUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=XUI_OK;
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetCursorQueryCallback(xui_widget pWidget, xui_widget_cursor_proc onQueryCursor, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onQueryCursor))return xuiWidgetSetCursorQueryCallbackOwned(pWidget,onQueryCursor,pUser,NULL);
 	pWidget->onQueryCursor = onQueryCursor;
 	pWidget->pQueryCursorUser = pUser;
 	return XUI_OK;
@@ -5690,7 +5755,8 @@ static int __xuiQueryCursorOperation(xui_context pContext, int iX, int iY)
 		if ( pWidget->onQueryCursor == NULL ) {
 			continue;
 		}
-		iCursor = pWidget->onQueryCursor(pWidget, iX, iY, pWidget->pQueryCursorUser);
+		iCursor = xuiInternalInvokeCursorQueryCallback(pWidget,iX,iY);
+		if(!__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pContext))return XUI_CURSOR_ARROW;
 		if ( (iCursor >= XUI_CURSOR_ARROW) && (iCursor <= XUI_CURSOR_NOT_ALLOWED) ) {
 			return iCursor;
 		}
@@ -6577,7 +6643,7 @@ static void __xuiWidgetSyncInactiveTree(xui_widget pWidget)
 	if ( pWidget->onUpdate != NULL &&
 		(pWidget->pType->iFlags & XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE) != 0 ) {
 		pWidget->pContext->iWidgetCallbackDepth++;
-		iRet = pWidget->onUpdate(pWidget, 0.0f, pWidget->pUpdateUser);
+		iRet = xuiInternalInvokeUpdateCallback(pWidget,0.0f);
 		pWidget->pContext->iWidgetCallbackDepth--;
 		if ( iRet != XUI_OK ) {
 			xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_UPDATE, 1,
@@ -6599,7 +6665,7 @@ static void __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
 	if ( !__xuiWidgetValid(pWidget) || !pWidget->bVisible ) return;
 	if ( pWidget->onUpdate != NULL ) {
 		pWidget->pContext->iWidgetCallbackDepth++;
-		iRet = pWidget->onUpdate(pWidget, fDelta, pWidget->pUpdateUser);
+		iRet = xuiInternalInvokeUpdateCallback(pWidget,fDelta);
 		pWidget->pContext->iWidgetCallbackDepth--;
 		if ( iRet != XUI_OK ) {
 			xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_UPDATE, 1,
@@ -7155,11 +7221,45 @@ XUI_API xui_cache_policy_t xuiWidgetGetCachePolicy(xui_widget pWidget)
 	return tPolicy;
 }
 
+XUI_API int xuiWidgetSetUpdateCallbackOwned(xui_widget pWidget,xui_widget_update_proc onUpdate,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onUpdate,onUpdate!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onUpdate=onUpdate;pWidget->pUpdateUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=XUI_OK;
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
+XUI_API int xuiWidgetSetUpdateCallback(xui_widget pWidget, xui_widget_update_proc onUpdate, void* pUser)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onUpdate))return xuiWidgetSetUpdateCallbackOwned(pWidget,onUpdate,pUser,NULL);
+    pWidget->onUpdate=onUpdate;pWidget->pUpdateUser=pUser;
+    return XUI_OK;
+}
+
+XUI_API int xuiWidgetSetCacheRenderCallbackOwned(xui_widget pWidget,xui_widget_cache_render_proc onRender,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onCacheRender,onRender!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onCacheRender=onRender;pWidget->pCacheRenderUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetCacheRenderCallback(xui_widget pWidget, xui_widget_cache_render_proc onRender, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onCacheRender))return xuiWidgetSetCacheRenderCallbackOwned(pWidget,onRender,pUser,NULL);
 	if ( (pWidget->onCacheRender == onRender) && (pWidget->pCacheRenderUser == pUser) ) {
 		return XUI_OK;
 	}
@@ -7535,7 +7635,7 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 		return iRet;
 	}
 	if ( pWidget->onCacheRender != NULL ) {
-		iRet = pWidget->onCacheRender(pWidget, pDraw, iStateId, pWidget->pCacheRenderUser);
+		iRet = xuiInternalInvokeCacheRenderCallback(pWidget,pDraw,iStateId);
 	}
 	/* Destruction is deferred by RenderPrepare's operation, but the cache must
 	 * stop now and close its draw before any surface can be purged. */

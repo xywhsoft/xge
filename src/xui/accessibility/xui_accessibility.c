@@ -305,8 +305,7 @@ XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeI
 			(tNode.iActions & XUI_ACCESSIBLE_ACTION_MASK(iAction)) != 0 ) {
 			if ( (iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE || iAction == XUI_ACCESSIBLE_ACTION_TOGGLE) &&
 				pWidget->onDefaultAction != NULL ) {
-				pWidget->onDefaultAction(pWidget, pWidget->pDefaultActionUser);
-				iRet = XUI_OK;
+				iRet=xuiInternalInvokeDefaultAction(pWidget);
 			} else if ( pAdapter != NULL && pAdapter->performAction != NULL ) {
 				iRet = pAdapter->performAction(pWidget, iAction, pData);
 			}
