@@ -1152,6 +1152,43 @@ XUI_API void xuiFlowGraphDestroy(xui_flow_graph pGraph)
 	xrtFree(pGraph);
 }
 
+static bool __xuiFlowTraceCommandValues(const xui_flow_command_model_t* pCommand,
+	xrtownershipvisitor onVisit, void* pUser)
+{
+	return (pCommand->pOldConfig == NULL || onVisit(xrtValueOwnership(pCommand->pOldConfig), pUser)) &&
+		(pCommand->pNewConfig == NULL || onVisit(xrtValueOwnership(pCommand->pNewConfig), pUser));
+}
+
+static bool __xuiFlowTraceHistory(const xarray* pHistory, xrtownershipvisitor onVisit, void* pUser)
+{
+	for ( size_t i = 0; i < pHistory->Count; ++i ) {
+		const xui_flow_command_model_t* pCommand = xrtArrayGet((xarray*)pHistory, i);
+		if ( !__xuiFlowTraceCommandValues(pCommand, onVisit, pUser) ) return false;
+		/* The native command schema has one group level: delete-selection
+		 * snapshots contain remove-node/remove-edge children. Reject unknown
+		 * deeper payload instead of using an unbounded recursive C stack. */
+		if ( pCommand->arrCommands.Count != 0u && pCommand->iType != XUI_FLOW_COMMAND_DELETE_SELECTION ) return false;
+		for ( size_t j = 0; j < pCommand->arrCommands.Count; ++j ) {
+			const xui_flow_command_model_t* pChild = xrtArrayGet((xarray*)&pCommand->arrCommands, j);
+			if ( pChild->arrCommands.Count != 0u ||
+			     (pChild->iType != XUI_FLOW_COMMAND_REMOVE_NODE && pChild->iType != XUI_FLOW_COMMAND_REMOVE_EDGE) ||
+			     !__xuiFlowTraceCommandValues(pChild, onVisit, pUser) ) return false;
+		}
+	}
+	return true;
+}
+
+XUI_API bool xuiFlowGraphTraceOwnedValues(xui_flow_graph pGraph, xrtownershipvisitor onVisit, void* pUser)
+{
+	if ( pGraph == NULL || onVisit == NULL ) return false;
+	for ( size_t i = 0; i < pGraph->arrNodes.Count; ++i ) {
+		const xui_flow_node_model_t* pNode = xrtArrayGet(&pGraph->arrNodes, i);
+		if ( pNode->pConfig != NULL && !onVisit(xrtValueOwnership(pNode->pConfig), pUser) ) return false;
+	}
+	return __xuiFlowTraceHistory(&pGraph->arrUndo, onVisit, pUser) &&
+		__xuiFlowTraceHistory(&pGraph->arrRedo, onVisit, pUser);
+}
+
 XUI_API int xuiFlowGraphAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex)
 {
 	xui_flow_node_model_t* pNode;

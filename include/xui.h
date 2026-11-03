@@ -5864,6 +5864,12 @@ typedef struct xui_debug_widget_info_t {
 
 typedef int (*xui_widget_type_init_proc)(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser);
 typedef void (*xui_widget_type_destroy_proc)(xui_widget pWidget, void* pTypeData, void* pUser);
+/* Frozen, creator-thread read of the actual owning slots introduced by this
+ * type. Parent tracers are invoked separately. Do not visit borrowed pointers
+ * or recursively flatten independently shared owners. No allocation, mutation,
+ * hold/drop, locking or language callback is allowed in a tracer. */
+typedef bool (*xui_widget_type_ownership_trace_proc)(xui_widget pWidget,
+    const void* pTypeData, xrtownershipvisitor onVisit, void* pUser);
 
 /* 控件类型注册描述（名称/父类型/虚函数表/实例尺寸）。 */
 typedef struct xui_widget_type_desc_t {
@@ -12304,6 +12310,9 @@ XUI_API xui_widget xuiGetRootWidget(xui_context pContext);
 XUI_API xui_widget_type xuiWidgetGetBaseType(void);
 /* 注册控件类型（pDesc 声明父类型与虚函数表）；*ppType 输出类型句柄。 */
 XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType, const xui_widget_type_desc_t* pDesc);
+/* Configure before the first live instance; the tracer's native code must
+ * remain resident with the context. This does not itself own any userdata. */
+XUI_API int xuiWidgetTypeSetOwnershipTrace(xui_widget_type pType, xui_widget_type_ownership_trace_proc onTrace);
 /* 注销控件类型（类型未被实例引用时方可成功）。 */
 XUI_API int xuiWidgetUnregisterType(xui_widget_type pType);
 /* 按类型名查找已注册类型；未注册返回 NULL。 */
@@ -12582,6 +12591,10 @@ XUI_API int xuiWidgetSetEventHandlerOwned(xui_widget pWidget, int iEventType, xu
  * complete ownership policy for all XUI resources, controls or value models.
  * Refuses native operation/destruction, and never calls unknown graph ops. */
 XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisitor onVisit, void* pUser);
+/* All actual owned event slots plus each native type's unique payload slots,
+ * including unattached widgets. Caller holds whole-domain Freeze and keeps
+ * the context on its creator thread, quiescent for the entire enumeration. */
+XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor onVisit, void* pUser);
 XUI_API bool xuiContextOwnershipBusy(xui_context pContext);
 /* 按事件类型输出回调与用户指针。 */
 XUI_API int xuiWidgetGetEventHandler(xui_widget pWidget, int iEventType, xui_widget_event_proc* pEvent, void** ppUser);
@@ -12717,6 +12730,12 @@ XUI_API int xuiDebugEventTrace(xui_context pContext, const xui_event_t* pEvent, 
 XUI_API int xuiFlowGraphCreate(xui_flow_graph* ppGraph);
 /* 释放流程图模型。 */
 XUI_API void xuiFlowGraphDestroy(xui_flow_graph pGraph);
+/* Frozen, read-only owning slots in the uniquely owned native model: current
+ * node configs and all undo/redo snapshots, including delete-selection groups.
+ * The visitor receives each actual xvalue reference once; repeated targets are
+ * separate edges. Caller guarantees creator-thread quiescence. No copies,
+ * refcount transitions or visitor dispatch on borrowed callback userdata. */
+XUI_API bool xuiFlowGraphTraceOwnedValues(xui_flow_graph pGraph, xrtownershipvisitor onVisit, void* pUser);
 /* 添加节点；*pIndex 可空，输出索引。 */
 XUI_API int xuiFlowGraphAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex);
 /* 为节点添加端口（输入/输出）。 */
@@ -12877,6 +12896,9 @@ XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget);
 XUI_API int xuiWorkflowCreate(xui_workflow* ppWorkflow);
 /* 释放工作流模型。 */
 XUI_API void xuiWorkflowDestroy(xui_workflow pWorkflow);
+/* Includes the workflow's uniquely owned graph, registered config schemas and
+ * variable defaults. Same frozen/quiescent contract as the graph tracer. */
+XUI_API bool xuiWorkflowTraceOwnedValues(xui_workflow pWorkflow, xrtownershipvisitor onVisit, void* pUser);
 /* 取底层流程图模型。 */
 XUI_API xui_flow_graph xuiWorkflowGetGraph(xui_workflow pWorkflow);
 /* 创建节点配置 schema（xvalue 树）；调用方持有。 */

@@ -1937,6 +1937,15 @@ static void __xuiFlowGraphWidgetDestroy(xui_widget pWidget, void* pTypeData, voi
 	}
 }
 
+static bool __xuiFlowGraphWidgetTraceOwnership(xui_widget pWidget, const void* pTypeData,
+	xrtownershipvisitor onVisit, void* pUser)
+{
+	(void)pWidget;
+	const xui_flow_graph_widget_data_t* pData = pTypeData;
+	return !pData || !pData->bOwnGraph || !pData->pGraph ||
+		xuiFlowGraphTraceOwnedValues(pData->pGraph, onVisit, pUser);
+}
+
 static void __xuiFlowGraphWidgetDefaultLayout(xui_layout_t* pLayout)
 {
 	memset(pLayout, 0, sizeof(*pLayout));
@@ -2028,6 +2037,7 @@ XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext)
 	__xuiFlowGraphWidgetDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet == XUI_OK ) {
+		pType->onTraceOwnership = __xuiFlowGraphWidgetTraceOwnership;
 		__xuiFlowGraphWidgetRegisterStyleProperties(pContext, pType);
 	}
 	return (iRet == XUI_OK) ? pType : NULL;

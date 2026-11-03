@@ -2989,6 +2989,18 @@ XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 	return XUI_OK;
 }
 
+XUI_API int xuiWidgetTypeSetOwnershipTrace(xui_widget_type pType, xui_widget_type_ownership_trace_proc onTrace)
+{
+	if ( !__xuiWidgetTypeValid(pType) || pType->bBuiltin ||
+	     !xuiInternalContextIsValid(pType->pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	/* iWidgetCount covers only exact instances, not live descendants. */
+	for ( xui_widget pWidget = pType->pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext )
+		for ( xui_widget_type pScan = pWidget->pType; pScan != NULL; pScan = pScan->pParent )
+			if ( pScan == pType ) return XUI_ERROR_ALREADY_INITIALIZED;
+	pType->onTraceOwnership = onTrace;
+	return XUI_OK;
+}
+
 XUI_API int xuiWidgetUnregisterType(xui_widget_type pType)
 {
 	xui_context pContext;
@@ -5529,6 +5541,16 @@ XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisito
 			for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
 				if ( pOwners->pHandlers[i].tReference.Data != NULL && !onVisit(pOwners->pHandlers[i].tReference, pUser) ) return false;
 	}
+	return true;
+}
+
+XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor onVisit, void* pUser)
+{
+	if ( !xuiContextTraceEventOwners(pContext, onVisit, pUser) ) return false;
+	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext )
+		for ( xui_widget_type pType = pWidget->pType; pType != NULL; pType = pType->pParent )
+			if ( pType->onTraceOwnership != NULL &&
+			     !pType->onTraceOwnership(pWidget, pWidget->pTypeData, onVisit, pUser) ) return false;
 	return true;
 }
 

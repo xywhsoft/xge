@@ -498,6 +498,20 @@ XUI_API xui_flow_graph xuiWorkflowGetGraph(xui_workflow pWorkflow)
 	return (pWorkflow != NULL) ? pWorkflow->pGraph : NULL;
 }
 
+XUI_API bool xuiWorkflowTraceOwnedValues(xui_workflow pWorkflow, xrtownershipvisitor onVisit, void* pUser)
+{
+	if ( pWorkflow == NULL || !xuiFlowGraphTraceOwnedValues(pWorkflow->pGraph, onVisit, pUser) ) return false;
+	for ( size_t i = 0; i < pWorkflow->arrTypes.Count; ++i ) {
+		const xui_workflow_type_model_t* pType = xrtArrayGet(&pWorkflow->arrTypes, i);
+		if ( pType->pConfigSchema != NULL && !onVisit(xrtValueOwnership(pType->pConfigSchema), pUser) ) return false;
+	}
+	for ( size_t i = 0; i < pWorkflow->arrVariables.Count; ++i ) {
+		const xui_workflow_variable_model_t* pVariable = xrtArrayGet(&pWorkflow->arrVariables, i);
+		if ( pVariable->pDefaultValue != NULL && !onVisit(xrtValueOwnership(pVariable->pDefaultValue), pUser) ) return false;
+	}
+	return true;
+}
+
 XUI_API int xuiWorkflowConfigSchemaCreate(xvalue** ppSchema)
 {
 	xvalue* pSchema;

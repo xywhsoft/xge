@@ -354,6 +354,7 @@ struct xui_widget_type_t {
 	void* pUser;
 	xui_widget_type_init_proc onInit;
 	xui_widget_type_destroy_proc onDestroy;
+	xui_widget_type_ownership_trace_proc onTraceOwnership;
 	xui_widget_content_measure_proc onContentMeasure;
 	xui_widget_layout_prepare_proc onLayoutPrepare;
 	xui_widget_layout_children_proc onLayoutChildren;

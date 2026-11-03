@@ -144,6 +144,17 @@ static void __xuiWorkflowWidgetDestroy(xui_widget pWidget, void* pTypeData, void
 	}
 }
 
+static bool __xuiWorkflowWidgetTraceOwnership(xui_widget pWidget, const void* pTypeData,
+	xrtownershipvisitor onVisit, void* pUser)
+{
+	(void)pWidget;
+	const xui_workflow_widget_data_t* pData = pTypeData;
+	/* The canvas borrows this workflow's graph. Only its unique workflow
+	 * owner visits the graph, avoiding two graph edges for the same slots. */
+	return !pData || !pData->bOwnWorkflow || !pData->pWorkflow ||
+		xuiWorkflowTraceOwnedValues(pData->pWorkflow, onVisit, pUser);
+}
+
 XUI_API xui_widget_type xuiWorkflowGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -167,6 +178,7 @@ XUI_API xui_widget_type xuiWorkflowGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiWorkflowWidgetDestroy;
 	__xuiWorkflowWidgetDefaultLayout(&tDesc.tLayout);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
+	if ( iRet == XUI_OK ) pType->onTraceOwnership = __xuiWorkflowWidgetTraceOwnership;
 	return (iRet == XUI_OK) ? pType : NULL;
 }
 
