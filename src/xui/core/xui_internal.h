@@ -32,10 +32,32 @@ typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
 struct xui_menu_data_t;
+/* Sparse ownership only: callback functions and userdata remain in their
+ * original, exactly typed native slots. Keys identify widget-lifetime slots. */
+typedef struct xui_callback_binding_t {
+    struct xui_callback_binding_t* pNext;
+    const void* pSlot;
+    void* pUser; /* Independent of the ownership reference's Data. */
+    xui_callback_owner_t tOwner;
+} xui_callback_binding_t;
 typedef struct xui_event_owners_t {
 	xui_callback_owner_t tPrimary;
 	xui_callback_owner_t* pHandlers;
+    xui_callback_binding_t* pBindings;
 } xui_event_owners_t;
+typedef struct xui_callback_update_t {
+    xui_widget pWidget;
+    xui_context pContext;
+    xui_call_scope_t tScope;
+    xrtownershipscope tMutation;
+    xui_callback_owner_t tOld;
+    xui_callback_binding_t* pRetired;
+    bool bPublished;
+} xui_callback_update_t;
+typedef struct xui_callback_snapshot_t {
+    xui_context pContext;
+    xui_callback_owner_t tOwner;
+} xui_callback_snapshot_t;
 
 enum {
 	XUI_DRAG_ADORNER_RECT_FILL = 1,
@@ -549,8 +571,63 @@ struct xui_painter_t {
 int xuiInternalContextIsValid(xui_context pContext);
 void xuiInternalOperationEnter(xui_context pContext);
 void xuiInternalOperationLeave(xui_context pContext);
+int xuiInternalCallbackOwnerValid(const xui_callback_owner_t*);
+int xuiInternalCallbackUpdateBegin(xui_widget,const void*,bool,void*,const xui_callback_owner_t*,xui_callback_update_t*);
+void xuiInternalCallbackUpdatePublish(xui_callback_update_t*);
+int xuiInternalCallbackUpdateEnd(xui_callback_update_t*,int);
+int xuiInternalCallbackSnapshotBegin(xui_widget,const void*,void**,xui_callback_snapshot_t*);
+int xuiInternalCallbackSnapshotEnd(xui_callback_snapshot_t*,int);
+bool xuiInternalCallbackSlotOwned(xui_widget,const void*);
 int xuiInternalCallbackOwnerHold(const xui_callback_owner_t* pOwner);
 int xuiInternalCallbackOwnerDrop(xui_context pContext, const xui_callback_owner_t* pOwner);
+static inline int xuiInternalInvokeContentMeasure(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* output)
+{
+    xui_widget_content_measure_proc callback=widget->onContentMeasure;void* user=widget->pContentMeasureUser;
+    if(!callback)return XUI_OK;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,constraint,output,user);
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onContentMeasure,&user,&snapshot);
+    if(result!=XUI_OK)return result;
+    result=callback(widget,constraint,output,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,result);
+}
+
+static inline int xuiInternalInvokeLayoutPrepare(xui_widget widget)
+{
+    xui_widget_layout_prepare_proc callback=widget->onLayoutPrepare;void* user=widget->pLayoutPrepareUser;
+    if(!callback)return XUI_OK;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,user);
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onLayoutPrepare,&user,&snapshot);
+    if(result!=XUI_OK)return result;
+    result=callback(widget,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,result);
+}
+
+static inline int xuiInternalInvokeLayoutChildren(xui_widget widget,xui_rect_t content)
+{
+    xui_widget_layout_children_proc callback=widget->onLayoutChildren;void* user=widget->pLayoutChildrenUser;
+    if(!callback)return XUI_OK;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,content,user);
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onLayoutChildren,&user,&snapshot);
+    if(result!=XUI_OK)return result;
+    result=callback(widget,content,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,result);
+}
+
+static inline int xuiInternalInvokeLayoutComplete(xui_widget widget,xui_rect_t content)
+{
+    xui_widget_layout_complete_proc callback=widget->onLayoutComplete;void* user=widget->pLayoutCompleteUser;
+    if(!callback)return XUI_OK;
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,content,user);
+    xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onLayoutComplete,&user,&snapshot);
+    if(result!=XUI_OK)return result;
+    result=callback(widget,content,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,result);
+}
+
 int xuiInternalContextDestroyPending(xui_context pContext);
 void xuiInternalStateRecordBoundsTree(xui_widget pWidget);
 void xuiInternalStateDamageFlush(xui_context pContext);

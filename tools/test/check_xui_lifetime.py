@@ -4,7 +4,7 @@ import argparse, hashlib, json, os, shutil, subprocess, time
 
 SOURCES = ['tests/xui/xui_test_xrt_impl.c', 'modules/xlayout/xlayout.c',
     'src/xui/core/xui_core.c', 'src/xui/accessibility/xui_native_accessibility.c',
-    'src/xui/core/xui_widget.c', 'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c',
+    'src/xui/core/xui_widget.c', 'src/xui/core/xui_callback_owned.c', 'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c',
     'src/xui/core/xui_edit.c', 'src/xui/core/xui_drag_drop.c', 'src/xui/accessibility/xui_accessibility.c',
     'src/xui/core/xui_text.c', 'src/xui/core/xui_assets.c', 'src/xui/core/xui_builtin_atlas.c',
     'src/xui/core/xui_unicode.c', 'src/xui/workflow/xui_flow_graph.c', 'src/xui/workflow/xui_workflow.c']
@@ -69,7 +69,7 @@ def main():
             print(opt, source, 'reuse' if reused else 'compile', flush=True)
             return obj
         objects = [compile_source(source) for source in SOURCES]
-        for test in ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload'):
+        for test in ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout'):
             obj = compile_source('tests/xui/xui_'+test+'_test.c')
             executable = out/(test+'-'+opt+('.exe' if os.name == 'nt' else '.out'))
             run(test+'-'+opt+'-link', [cc, *flags, *(['-no-pie'] if args.sanitize else []),

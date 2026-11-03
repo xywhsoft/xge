@@ -78,7 +78,7 @@ static bool __xuiLayoutMeasureCallback(
 	constraint.fX = constraints->max_width < XLAYOUT_UNBOUNDED ? constraints->max_width : XUI_LAYOUT_UNBOUNDED;
 	constraint.fY = constraints->max_height < XLAYOUT_UNBOUNDED ? constraints->max_height : XUI_LAYOUT_UNBOUNDED;
 	if ( widget->onContentMeasure != NULL ) {
-		result = widget->onContentMeasure(widget, constraint, &content, widget->pContentMeasureUser);
+		result = xuiInternalInvokeContentMeasure(widget,constraint,&content);
 		if ( result != XUI_OK ) {
 			xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
 				"layout.measure", "Content measurement failed; zero content size was used.");
@@ -121,7 +121,7 @@ static bool __xuiLayoutArrangeChildrenCallback(
 	local_content.fY = content_pixels.fY - parent_pixels.fY;
 	local_content.fW = content_pixels.fW;
 	local_content.fH = content_pixels.fH;
-	result = widget->onLayoutChildren(widget, local_content, widget->pLayoutChildrenUser);
+	result = xuiInternalInvokeLayoutChildren(widget,local_content);
 	if ( result != XUI_OK ) {
 		xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
 			"layout.children", "Custom child arrangement failed; existing child results were preserved.");
@@ -355,7 +355,7 @@ static int __xuiLayoutSyncNode(xui_widget widget, xui_widget parent, uint32_t vi
 	if ( !xuiInternalWidgetIsValid(widget) ) return XUI_ERROR_INVALID_ARGUMENT;
 	xuiInternalWidgetSyncDpi(widget);
 	if ( widget->onLayoutPrepare != NULL ) {
-		result = widget->onLayoutPrepare(widget, widget->pLayoutPrepareUser);
+		result = xuiInternalInvokeLayoutPrepare(widget);
 		if ( result != XUI_OK ) {
 			xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
 				"layout.prepare", "Layout preparation failed; the current widget properties were used.");
@@ -476,7 +476,7 @@ static int __xuiLayoutApply(xui_widget widget, const xui_rect_t* local_root_rect
 		if ( result != XUI_OK ) return result;
 	}
 	if ( widget->onLayoutComplete != NULL ) {
-		result = widget->onLayoutComplete(widget, content, widget->pLayoutCompleteUser);
+		result = xuiInternalInvokeLayoutComplete(widget,content);
 		if ( result != XUI_OK ) {
 			xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
 				"layout.complete", "Layout completion failed; the computed layout was preserved.");

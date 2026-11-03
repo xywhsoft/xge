@@ -36,6 +36,7 @@
     "src/xui/core/xui_core.c": "XGE_ENABLE_XUI",
     "src/xui/accessibility/xui_native_accessibility.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_widget.c": "XGE_ENABLE_XUI",
+    "src/xui/core/xui_callback_owned.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_layout.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_input.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_icon.c": "XGE_ENABLE_XUI",

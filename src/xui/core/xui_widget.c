@@ -18,7 +18,7 @@
 
 static void __xuiWidgetSyncInactiveTree(xui_widget pWidget);
 
-static int __xuiCallbackOwnerValid(const xui_callback_owner_t* pOwner)
+int xuiInternalCallbackOwnerValid(const xui_callback_owner_t* pOwner)
 {
 	return pOwner == NULL ||
 		((pOwner->tReference.Data == NULL && pOwner->tReference.Ops == NULL &&
@@ -29,7 +29,7 @@ static int __xuiCallbackOwnerValid(const xui_callback_owner_t* pOwner)
 
 int xuiInternalCallbackOwnerHold(const xui_callback_owner_t* pOwner)
 {
-	if ( !__xuiCallbackOwnerValid(pOwner) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !xuiInternalCallbackOwnerValid(pOwner) ) return XUI_ERROR_INVALID_ARGUMENT;
 	return pOwner == NULL || pOwner->onHold == NULL || pOwner->onHold(pOwner->tReference.Data)
 		? XUI_OK : XUI_ERROR_CALLBACK_FAILED;
 }
@@ -2138,7 +2138,7 @@ static xui_vec2_t __xuiWidgetMeasureOwnContent(xui_widget pWidget, xui_vec2_t tC
 	}
 	tConstraint.fX = __xuiFiniteConstraint(tConstraint.fX);
 	tConstraint.fY = __xuiFiniteConstraint(tConstraint.fY);
-	iRet = pWidget->onContentMeasure(pWidget, tConstraint, &tSize, pWidget->pContentMeasureUser);
+	iRet = xuiInternalInvokeContentMeasure(pWidget,tConstraint,&tSize);
 	if ( (iRet != XUI_OK) || !__xuiWidgetSizeValid(tSize) ) {
 		return __xuiVec2(0.0f, 0.0f);
 	}
@@ -3849,6 +3849,12 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 	memset(pWidget->arrEventHandlers, 0, sizeof(pWidget->arrEventHandlers));
 	memset(pWidget->arrEventUsers, 0, sizeof(pWidget->arrEventUsers));
 	if ( pOwners != NULL ) {
+        while(pOwners->pBindings){
+            xui_callback_binding_t* binding=pOwners->pBindings;
+            pOwners->pBindings=binding->pNext;
+            xui_callback_owner_t owner=binding->tOwner;xrtFree(binding);
+            (void)xuiInternalCallbackOwnerDrop(pContext,&owner);
+        }
 		(void)xuiInternalCallbackOwnerDrop(pContext, &pOwners->tPrimary);
 		if ( pOwners->pHandlers != NULL ) {
 			for ( int i = 0; i < XUI_WIDGET_EVENT_SLOT_COUNT; ++i )
@@ -4255,11 +4261,24 @@ XUI_API xui_layout_t xuiWidgetGetLayout(xui_widget pWidget)
 	return tLayout;
 }
 
+XUI_API int xuiWidgetSetContentMeasureCallbackOwned(xui_widget pWidget,xui_widget_content_measure_proc onMeasure,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onContentMeasure,onMeasure!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onContentMeasure=onMeasure;pWidget->pContentMeasureUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=__xuiWidgetLayoutChanged(pWidget);
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetContentMeasureCallback(xui_widget pWidget, xui_widget_content_measure_proc onMeasure, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onContentMeasure))return xuiWidgetSetContentMeasureCallbackOwned(pWidget,onMeasure,pUser,NULL);
 	if ( (pWidget->onContentMeasure == onMeasure) && (pWidget->pContentMeasureUser == pUser) ) {
 		return XUI_OK;
 	}
@@ -4282,11 +4301,24 @@ XUI_API int xuiWidgetGetContentMeasureCallback(xui_widget pWidget, xui_widget_co
 	return XUI_OK;
 }
 
+XUI_API int xuiWidgetSetLayoutPrepareCallbackOwned(xui_widget pWidget,xui_widget_layout_prepare_proc onPrepare,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onLayoutPrepare,onPrepare!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onLayoutPrepare=onPrepare;pWidget->pLayoutPrepareUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=__xuiWidgetLayoutChanged(pWidget);
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetLayoutPrepareCallback(xui_widget pWidget, xui_widget_layout_prepare_proc onPrepare, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onLayoutPrepare))return xuiWidgetSetLayoutPrepareCallbackOwned(pWidget,onPrepare,pUser,NULL);
 	if ( pWidget->onLayoutPrepare == onPrepare && pWidget->pLayoutPrepareUser == pUser ) {
 		return XUI_OK;
 	}
@@ -4321,11 +4353,24 @@ XUI_API int xuiWidgetRemoveFromParent(xui_widget pWidget)
 	return iRet;
 }
 
+XUI_API int xuiWidgetSetLayoutChildrenCallbackOwned(xui_widget pWidget,xui_widget_layout_children_proc onChildren,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onLayoutChildren,onChildren!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onLayoutChildren=onChildren;pWidget->pLayoutChildrenUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=__xuiWidgetLayoutChanged(pWidget);
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetLayoutChildrenCallback(xui_widget pWidget, xui_widget_layout_children_proc onChildren, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onLayoutChildren))return xuiWidgetSetLayoutChildrenCallbackOwned(pWidget,onChildren,pUser,NULL);
 	if ( pWidget->onLayoutChildren == onChildren && pWidget->pLayoutChildrenUser == pUser ) {
 		return XUI_OK;
 	}
@@ -4348,11 +4393,24 @@ XUI_API int xuiWidgetGetLayoutChildrenCallback(xui_widget pWidget, xui_widget_la
 	return XUI_OK;
 }
 
+XUI_API int xuiWidgetSetLayoutCompleteCallbackOwned(xui_widget pWidget,xui_widget_layout_complete_proc onComplete,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onLayoutComplete,onComplete!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pWidget->onLayoutComplete=onComplete;pWidget->pLayoutCompleteUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=__xuiWidgetLayoutChanged(pWidget);
+    return xuiInternalCallbackUpdateEnd(&update,result);
+}
+
 XUI_API int xuiWidgetSetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc onComplete, void* pUser)
 {
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onLayoutComplete))return xuiWidgetSetLayoutCompleteCallbackOwned(pWidget,onComplete,pUser,NULL);
 	if ( pWidget->onLayoutComplete == onComplete && pWidget->pLayoutCompleteUser == pUser ) {
 		return XUI_OK;
 	}
@@ -5466,7 +5524,7 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	xui_widget_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner)
 {
 	if ( !__xuiWidgetValid(pWidget) || iEventType < -1 || iEventType >= XUI_WIDGET_EVENT_SLOT_COUNT ||
-		!__xuiCallbackOwnerValid(pOwner) || (onEvent == NULL && pOwner != NULL && pOwner->onHold != NULL) )
+		!xuiInternalCallbackOwnerValid(pOwner) || (onEvent == NULL && pOwner != NULL && pOwner->onHold != NULL) )
 		return XUI_ERROR_INVALID_ARGUMENT;
 	/* Hold is user code: snapshot the incoming descriptor before it can
 	 * reenter, replace the same slot or invalidate the context/widget. */
@@ -5566,10 +5624,16 @@ XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisito
 XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor onVisit, void* pUser)
 {
 	if ( !xuiContextTraceEventOwners(pContext, onVisit, pUser) ) return false;
-	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext )
+	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {
+        if(pWidget->pEventOwners) {
+            for(const xui_callback_binding_t* binding=pWidget->pEventOwners->pBindings;binding;binding=binding->pNext) {
+                if(!onVisit(binding->tOwner.tReference,pUser))return false;
+            }
+        }
 		for ( xui_widget_type pType = pWidget->pType; pType != NULL; pType = pType->pParent )
 			if ( pType->onTraceOwnership != NULL &&
 			     !pType->onTraceOwnership(pWidget, pWidget->pTypeData, onVisit, pUser) ) return false;
+    }
 	return true;
 }
 

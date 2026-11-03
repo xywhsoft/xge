@@ -12382,20 +12382,24 @@ XUI_API int xuiWidgetSetLayout(xui_widget pWidget, const xui_layout_t* pLayout);
 XUI_API xui_layout_t xuiWidgetGetLayout(xui_widget pWidget);
 /* 注册内容测量回调（子布局外的自定义内容尺寸）。 */
 XUI_API int xuiWidgetSetContentMeasureCallback(xui_widget pWidget, xui_widget_content_measure_proc onMeasure, void* pUser);
+XUI_API int xuiWidgetSetContentMeasureCallbackOwned(xui_widget pWidget, xui_widget_content_measure_proc onMeasure, void* pUser, const xui_callback_owner_t* pOwner);
 /* 输出内容测量回调与用户指针。 */
 XUI_API int xuiWidgetGetContentMeasureCallback(xui_widget pWidget, xui_widget_content_measure_proc* pMeasure, void** ppUser);
 /* 注册布局准备回调（子控件布局前调用）。 */
 XUI_API int xuiWidgetSetLayoutPrepareCallback(xui_widget pWidget, xui_widget_layout_prepare_proc onPrepare, void* pUser);
+XUI_API int xuiWidgetSetLayoutPrepareCallbackOwned(xui_widget pWidget, xui_widget_layout_prepare_proc onPrepare, void* pUser, const xui_callback_owner_t* pOwner);
 /* 输出布局准备回调与用户指针。 */
 XUI_API int xuiWidgetGetLayoutPrepareCallback(xui_widget pWidget, xui_widget_layout_prepare_proc* pPrepare, void** ppUser);
 /* 注册子控件排布回调（自定义容器布局）。 */
 XUI_API int xuiWidgetSetLayoutChildrenCallback(xui_widget pWidget, xui_widget_layout_children_proc onChildren, void* pUser);
+XUI_API int xuiWidgetSetLayoutChildrenCallbackOwned(xui_widget pWidget, xui_widget_layout_children_proc onChildren, void* pUser, const xui_callback_owner_t* pOwner);
 /* 输出子控件排布回调与用户指针。 */
 XUI_API int xuiWidgetGetLayoutChildrenCallback(xui_widget pWidget, xui_widget_layout_children_proc* pChildren, void** ppUser);
 /* Only from pParent's layout-children callback; tRect is parent-local. */
 XUI_API int xuiLayoutArrangeChild(xui_widget pParent, xui_widget pChild, xui_rect_t tRect);
 /* 注册布局完成回调（布局结果就绪后调用）。 */
 XUI_API int xuiWidgetSetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc onComplete, void* pUser);
+XUI_API int xuiWidgetSetLayoutCompleteCallbackOwned(xui_widget pWidget, xui_widget_layout_complete_proc onComplete, void* pUser, const xui_callback_owner_t* pOwner);
 /* 输出布局完成回调与用户指针。 */
 XUI_API int xuiWidgetGetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc* pComplete, void** ppUser);
 /* 以约束尺寸测量内容（触发内容测量回调）。 */
