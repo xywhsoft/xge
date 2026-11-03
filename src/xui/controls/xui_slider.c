@@ -44,6 +44,18 @@ typedef struct xui_slider_data_t {
 	int iChangeCount;
 } xui_slider_data_t;
 
+/* The enclosing native input/accessibility operation protects all control
+ * storage through the full callback return tail. The typed slot is unchanged. */
+static void __xuiSliderInvokeOwnedChange(xui_widget widget,xui_slider_data_t* data,xui_slider_change_proc callback,void* user,float value)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,value,user);return;}
+    xui_callback_snapshot_t snapshot={0};
+    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,value,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static int __xuiSliderOrientationValid(int iOrientation);
 
 static int __xuiSliderMetricValid(float fValue, float fMin)
@@ -398,7 +410,7 @@ static int __xuiSliderSetValueInternal(xui_widget pWidget, xui_slider_data_t* pD
 	onChange = pData->onChange;
 	pChangeUser = pData->pChangeUser;
 	if ( bNotify && (onChange != NULL) ) {
-		onChange(pWidget, fValue, pChangeUser);
+		__xuiSliderInvokeOwnedChange(pWidget,pData,onChange,pChangeUser,fValue);
 	}
 	return XUI_OK;
 }
@@ -1216,10 +1228,23 @@ XUI_API int xuiSliderCreate(xui_context pContext, xui_widget* ppWidget, const xu
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiSliderSetChangeOwned(xui_widget pWidget,xui_slider_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_slider_data_t* pData=__xuiSliderGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiSliderSetChange(xui_widget pWidget, xui_slider_change_proc onChange, void* pUser)
 {
 	xui_slider_data_t* pData = __xuiSliderGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiSliderSetChangeOwned(pWidget,onChange,pUser,NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

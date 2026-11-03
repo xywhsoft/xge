@@ -7,7 +7,15 @@ SOURCES = ['tests/xui/xui_test_xrt_impl.c', 'modules/xlayout/xlayout.c',
     'src/xui/core/xui_widget.c', 'src/xui/core/xui_callback_owned.c', 'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c',
     'src/xui/core/xui_edit.c', 'src/xui/core/xui_drag_drop.c', 'src/xui/accessibility/xui_accessibility.c',
     'src/xui/core/xui_text.c', 'src/xui/core/xui_assets.c', 'src/xui/core/xui_builtin_atlas.c',
-    'src/xui/core/xui_unicode.c', 'src/xui/workflow/xui_flow_graph.c', 'src/xui/workflow/xui_workflow.c']
+    'src/xui/core/xui_unicode.c', 'src/xui/workflow/xui_flow_graph.c', 'src/xui/workflow/xui_workflow.c',
+    'src/xui/controls/xui_button.c',
+    'src/xui/controls/xui_checkbox.c',
+    'src/xui/controls/xui_check_card.c',
+    'src/xui/controls/xui_radio.c',
+    'src/xui/controls/xui_toggle.c',
+    'src/xui/controls/xui_slider.c',
+    'src/xui/controls/xui_range_slider.c',
+    'src/xui/controls/xui_scrollbar.c']
 
 
 def main():
@@ -69,12 +77,14 @@ def main():
             print(opt, source, 'reuse' if reused else 'compile', flush=True)
             return obj
         objects = [compile_source(source) for source in SOURCES]
-        for test in ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout', 'owned_widget'):
+        for test in ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout', 'owned_widget', 'owned_choice'):
             obj = compile_source('tests/xui/xui_'+test+'_test.c')
             executable = out/(test+'-'+opt+('.exe' if os.name == 'nt' else '.out'))
             run(test+'-'+opt+'-link', [cc, *flags, *(['-no-pie'] if args.sanitize else []),
                 obj, *objects, *libraries, '-o', executable])
-            run(test+'-'+opt+'-run', [executable], required=False)
+            if test=='owned_choice':
+                for kind in range(8):run(test+'-'+opt+'-'+str(kind)+'-run',[executable,str(kind)],required=False)
+            else:run(test+'-'+opt+'-run', [executable], required=False)
     report['inputsUnchanged'] = all(hashlib.sha256(subprocess.check_output(
         [cc, *flags, '-E', source], cwd=root, env=env)).hexdigest() == expected for source, flags, expected in snapshots)
     report['inputsUnchanged'] &= hashlib.sha256(Path(__file__).read_bytes()).hexdigest() == tool_hash

@@ -65,6 +65,18 @@ typedef struct xui_button_data_t {
 	xui_surface_dependency_t arrSurfaceDependencies[XUI_BUTTON_SURFACE_DEPENDENCY_COUNT];
 } xui_button_data_t;
 
+/* The enclosing native input/accessibility operation protects all control
+ * storage through the full callback return tail. The typed slot is unchanged. */
+static void __xuiButtonInvokeOwnedClick(xui_widget widget,xui_button_data_t* data,xui_button_click_proc callback,void* user)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,user);return;}
+    xui_callback_snapshot_t snapshot={0};
+    if(xuiInternalCallbackSnapshotBegin(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 typedef struct xui_button_resolved_t {
 	xui_font pFont;
 	uint32_t iTextColor;
@@ -1093,7 +1105,7 @@ static void __xuiButtonDoClick(xui_widget pWidget, xui_button_data_t* pData)
 	pData->iClickCount++;
 	(void)__xuiButtonSyncState(pWidget, pData);
 	if ( pData->onClick != NULL ) {
-		pData->onClick(pWidget, pData->pClickUser);
+		__xuiButtonInvokeOwnedClick(pWidget,pData,pData->onClick,pData->pClickUser);
 	}
 }
 
@@ -1525,6 +1537,18 @@ XUI_API int xuiButtonCreate(xui_context pContext, xui_widget* ppWidget, const xu
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiButtonSetClickOwned(xui_widget pWidget,xui_button_click_proc onClick,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_button_data_t* pData=__xuiButtonGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onClick,onClick!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onClick=onClick;pData->pClickUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiButtonSetClick(xui_widget pWidget, xui_button_click_proc onClick, void* pUser)
 {
 	xui_button_data_t* pData;
@@ -1533,6 +1557,7 @@ XUI_API int xuiButtonSetClick(xui_widget pWidget, xui_button_click_proc onClick,
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onClick))return xuiButtonSetClickOwned(pWidget,onClick,pUser,NULL);
 	pData->onClick = onClick;
 	pData->pClickUser = pUser;
 	return XUI_OK;

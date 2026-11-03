@@ -48,6 +48,18 @@ typedef struct xui_range_slider_data_t {
 	int iChangeCount;
 } xui_range_slider_data_t;
 
+/* The enclosing native input/accessibility operation protects all control
+ * storage through the full callback return tail. The typed slot is unchanged. */
+static void __xuiRangeSliderInvokeOwnedChange(xui_widget widget,xui_range_slider_data_t* data,xui_range_slider_change_proc callback,void* user,float start,float end)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,start,end,user);return;}
+    xui_callback_snapshot_t snapshot={0};
+    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,start,end,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static int __xuiRangeSliderOrientationValid(int iOrientation);
 
 static int __xuiRangeSliderDescValid(const xui_range_slider_desc_t* pDesc)
@@ -530,7 +542,7 @@ static int __xuiRangeSliderSetValuesInternal(xui_widget pWidget, xui_range_slide
 	onChange = pData->onChange;
 	pChangeUser = pData->pChangeUser;
 	if ( bNotify && (onChange != NULL) ) {
-		onChange(pWidget, fStart, fEnd, pChangeUser);
+		__xuiRangeSliderInvokeOwnedChange(pWidget,pData,onChange,pChangeUser,fStart,fEnd);
 	}
 	return XUI_OK;
 }
@@ -1493,10 +1505,23 @@ XUI_API int xuiRangeSliderCreate(xui_context pContext, xui_widget* ppWidget, con
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiRangeSliderSetChangeOwned(xui_widget pWidget,xui_range_slider_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_range_slider_data_t* pData=__xuiRangeSliderGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiRangeSliderSetChange(xui_widget pWidget, xui_range_slider_change_proc onChange, void* pUser)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiRangeSliderSetChangeOwned(pWidget,onChange,pUser,NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

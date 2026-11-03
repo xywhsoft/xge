@@ -58,6 +58,18 @@ typedef struct xui_scrollbar_data_t {
 	xui_rect_t tIncreaseRect;
 } xui_scrollbar_data_t;
 
+/* The enclosing native input/accessibility operation protects all control
+ * storage through the full callback return tail. The typed slot is unchanged. */
+static void __xuiScrollBarInvokeOwnedChange(xui_widget widget,xui_scrollbar_data_t* data,xui_scrollbar_change_proc callback,void* user,float value)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,value,user);return;}
+    xui_callback_snapshot_t snapshot={0};
+    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,value,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static int __xuiScrollBarOrientationValid(int iOrientation);
 static int __xuiScrollBarModeValid(int iMode);
 static int __xuiScrollBarButtonModeValid(int iButtonMode);
@@ -694,7 +706,7 @@ static int __xuiScrollBarSetValueInternal(xui_widget pWidget, xui_scrollbar_data
 	pData->iChangeCount++;
 	onChange = pData->onChange;
 	pChangeUser = pData->pChangeUser;
-	if ( bNotify && onChange != NULL ) onChange(pWidget, fValue, pChangeUser);
+	if ( bNotify && onChange != NULL ) __xuiScrollBarInvokeOwnedChange(pWidget,pData,onChange,pChangeUser,fValue);
 	return XUI_OK;
 }
 
@@ -1725,10 +1737,23 @@ XUI_API int xuiScrollBarCreate(xui_context pContext, xui_widget* ppWidget, const
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiScrollBarSetChangeOwned(xui_widget pWidget,xui_scrollbar_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_scrollbar_data_t* pData=__xuiScrollBarGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiScrollBarSetChange(xui_widget pWidget, xui_scrollbar_change_proc onChange, void* pUser)
 {
 	xui_scrollbar_data_t* pData = __xuiScrollBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiScrollBarSetChangeOwned(pWidget,onChange,pUser,NULL);
 	if ( pData->onChange == onChange && pData->pChangeUser == pUser ) return XUI_OK;
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;

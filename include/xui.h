@@ -8366,6 +8366,7 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext);
 XUI_API int xuiButtonCreate(xui_context pContext, xui_widget* ppWidget, const xui_button_desc_t* pDesc);
 /* 注册点击回调。 */
 XUI_API int xuiButtonSetClick(xui_widget pWidget, xui_button_click_proc onClick, void* pUser);
+XUI_API int xuiButtonSetClickOwned(xui_widget pWidget,xui_button_click_proc onClick,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置按钮文本。 */
 XUI_API int xuiButtonSetText(xui_widget pWidget, const char* sText);
 /* 读取按钮文本（借用指针，修改文本或销毁按钮后失效）。 */
@@ -8461,6 +8462,7 @@ XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext);
 XUI_API int xuiCheckBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_checkbox_desc_t* pDesc);
 /* 注册勾选变更回调。 */
 XUI_API int xuiCheckBoxSetChange(xui_widget pWidget, xui_checkbox_change_proc onChange, void* pUser);
+XUI_API int xuiCheckBoxSetChangeOwned(xui_widget pWidget,xui_checkbox_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置标签文本。 */
 XUI_API int xuiCheckBoxSetText(xui_widget pWidget, const char* sText);
 /* 读取标签文本。 */
@@ -8532,6 +8534,7 @@ XUI_API xui_widget_type xuiCheckCardGetType(xui_context pContext);
 XUI_API int xuiCheckCardCreate(xui_context pContext, xui_widget* ppWidget, const xui_check_card_desc_t* pDesc);
 /* 注册选中变更回调。 */
 XUI_API int xuiCheckCardSetChange(xui_widget pWidget, xui_check_card_change_proc onChange, void* pUser);
+XUI_API int xuiCheckCardSetChangeOwned(xui_widget pWidget,xui_check_card_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置选中态。 */
 XUI_API int xuiCheckCardSetChecked(xui_widget pWidget, int bChecked);
 /* 组内设置选中（单选组联动，可控制通知）。 */
@@ -8570,6 +8573,7 @@ XUI_API xui_widget_type xuiRadioGetType(xui_context pContext);
 XUI_API int xuiRadioCreate(xui_context pContext, xui_widget* ppWidget, const xui_radio_desc_t* pDesc);
 /* 注册选中变更回调。 */
 XUI_API int xuiRadioSetChange(xui_widget pWidget, xui_radio_change_proc onChange, void* pUser);
+XUI_API int xuiRadioSetChangeOwned(xui_widget pWidget,xui_radio_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置标签文本。 */
 XUI_API int xuiRadioSetText(xui_widget pWidget, const char* sText);
 /* 读取文本。 */
@@ -8662,6 +8666,7 @@ XUI_API xui_widget_type xuiToggleGetType(xui_context pContext);
 XUI_API int xuiToggleCreate(xui_context pContext, xui_widget* ppWidget, const xui_toggle_desc_t* pDesc);
 /* 注册开关变更回调。 */
 XUI_API int xuiToggleSetChange(xui_widget pWidget, xui_toggle_change_proc onChange, void* pUser);
+XUI_API int xuiToggleSetChangeOwned(xui_widget pWidget,xui_toggle_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置外部标签文本。 */
 XUI_API int xuiToggleSetText(xui_widget pWidget, const char* sText);
 /* 读取标签文本。 */
@@ -8745,6 +8750,7 @@ XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext);
 XUI_API int xuiScrollBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_scrollbar_desc_t* pDesc);
 /* 注册值变更回调；回调可销毁控件或上下文，返回后不得继续使用原控件。 */
 XUI_API int xuiScrollBarSetChange(xui_widget pWidget, xui_scrollbar_change_proc onChange, void* pUser);
+XUI_API int xuiScrollBarSetChangeOwned(xui_widget pWidget,xui_scrollbar_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置值域与页大小（决定滑块比例）。 */
 XUI_API int xuiScrollBarSetRange(xui_widget pWidget, float fMin, float fMax, float fPage);
 /* 输出值域与页大小。 */
@@ -8810,6 +8816,7 @@ XUI_API xui_widget_type xuiSliderGetType(xui_context pContext);
 XUI_API int xuiSliderCreate(xui_context pContext, xui_widget* ppWidget, const xui_slider_desc_t* pDesc);
 /* 注册用户交互值变更回调；程序调用 SetValue 不触发回调。 */
 XUI_API int xuiSliderSetChange(xui_widget pWidget, xui_slider_change_proc onChange, void* pUser);
+XUI_API int xuiSliderSetChangeOwned(xui_widget pWidget,xui_slider_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置值范围。 */
 XUI_API int xuiSliderSetRange(xui_widget pWidget, float fMin, float fMax);
 /* 输出值范围。 */
@@ -8863,6 +8870,7 @@ XUI_API xui_widget_type xuiRangeSliderGetType(xui_context pContext);
 XUI_API int xuiRangeSliderCreate(xui_context pContext, xui_widget* ppWidget, const xui_range_slider_desc_t* pDesc);
 /* 注册用户交互区间变更回调；程序调用 SetValues 不触发回调。 */
 XUI_API int xuiRangeSliderSetChange(xui_widget pWidget, xui_range_slider_change_proc onChange, void* pUser);
+XUI_API int xuiRangeSliderSetChangeOwned(xui_widget pWidget,xui_range_slider_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置值范围。 */
 XUI_API int xuiRangeSliderSetRange(xui_widget pWidget, float fMin, float fMax);
 /* 输出值范围。 */

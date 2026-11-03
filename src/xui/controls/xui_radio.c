@@ -70,6 +70,18 @@ typedef struct xui_radio_data_t {
 	xui_surface_dependency_t arrSurfaceDependencies[XUI_RADIO_SURFACE_DEPENDENCY_COUNT];
 } xui_radio_data_t;
 
+/* The enclosing native input/accessibility operation protects all control
+ * storage through the full callback return tail. The typed slot is unchanged. */
+static void __xuiRadioInvokeOwnedChange(xui_widget widget,xui_radio_data_t* data,xui_radio_change_proc callback,void* user,int value)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,value,user);return;}
+    xui_callback_snapshot_t snapshot={0};
+    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,value,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 typedef struct xui_radio_group_data_t {
 	xui_radio_group_change_proc onChange;
 	void* pChangeUser;
@@ -649,7 +661,7 @@ static void __xuiRadioNotify(xui_widget pWidget, xui_radio_data_t* pData)
 	pChangeUser = pData->pChangeUser;
 	bChecked = pData->bChecked;
 	pData->iChangeCount++;
-	if ( onChange != NULL ) onChange(pWidget, bChecked, pChangeUser);
+	if ( onChange != NULL ) __xuiRadioInvokeOwnedChange(pWidget,pData,onChange,pChangeUser,bChecked);
 }
 
 #if XUI_ENABLE_RADIO_GROUP
@@ -1191,10 +1203,23 @@ XUI_API int xuiRadioCreate(xui_context pContext, xui_widget* ppWidget, const xui
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiRadioSetChangeOwned(xui_widget pWidget,xui_radio_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_radio_data_t* pData=__xuiRadioGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiRadioSetChange(xui_widget pWidget, xui_radio_change_proc onChange, void* pUser)
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiRadioSetChangeOwned(pWidget,onChange,pUser,NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

@@ -88,6 +88,18 @@ typedef struct xui_toggle_data_t {
 	xui_surface_dependency_t arrSurfaceDependencies[XUI_TOGGLE_SURFACE_DEPENDENCY_COUNT];
 } xui_toggle_data_t;
 
+/* The enclosing native input/accessibility operation protects all control
+ * storage through the full callback return tail. The typed slot is unchanged. */
+static void __xuiToggleInvokeOwnedChange(xui_widget widget,xui_toggle_data_t* data,xui_toggle_change_proc callback,void* user,int value)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,value,user);return;}
+    xui_callback_snapshot_t snapshot={0};
+    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,value,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static uint32_t __xuiToggleColorAlpha(uint32_t iColor)
 {
 	return iColor & 0xffu;
@@ -865,7 +877,7 @@ static void __xuiToggleNotify(xui_widget pWidget, xui_toggle_data_t* pData)
 	onChange = pData->onChange;
 	pUser = pData->pChangeUser;
 	bChecked = pData->bChecked;
-	if ( onChange != NULL ) onChange(pWidget, bChecked, pUser);
+	if ( onChange != NULL ) __xuiToggleInvokeOwnedChange(pWidget,pData,onChange,pUser,bChecked);
 }
 
 static int __xuiToggleSetCheckedInternal(xui_widget pWidget, xui_toggle_data_t* pData, int bChecked, int bNotify)
@@ -1319,10 +1331,23 @@ XUI_API int xuiToggleCreate(xui_context pContext, xui_widget* ppWidget, const xu
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiToggleSetChangeOwned(xui_widget pWidget,xui_toggle_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_toggle_data_t* pData=__xuiToggleGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiToggleSetChange(xui_widget pWidget, xui_toggle_change_proc onChange, void* pUser)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiToggleSetChangeOwned(pWidget,onChange,pUser,NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

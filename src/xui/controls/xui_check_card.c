@@ -33,6 +33,18 @@ typedef struct xui_check_card_data_t {
 	xui_rect_t tCornerRect;
 } xui_check_card_data_t;
 
+/* The enclosing native input/accessibility operation protects all control
+ * storage through the full callback return tail. The typed slot is unchanged. */
+static void __xuiCheckCardInvokeOwnedChange(xui_widget widget,xui_check_card_data_t* data,xui_check_card_change_proc callback,void* user,int value)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,value,user);return;}
+    xui_callback_snapshot_t snapshot={0};
+    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,value,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static int __xuiCheckCardNonNegativeFloatValid(float fValue)
 {
 	return isfinite(fValue) && fValue >= 0.0f &&
@@ -195,7 +207,7 @@ static void __xuiCheckCardNotify(xui_widget pWidget, xui_check_card_data_t* pDat
 	pChangeUser = pData->pChangeUser;
 	bChecked = pData->bChecked;
 	pData->iChangeCount++;
-	if ( onChange != NULL ) onChange(pWidget, bChecked, pChangeUser);
+	if ( onChange != NULL ) __xuiCheckCardInvokeOwnedChange(pWidget,pData,onChange,pChangeUser,bChecked);
 }
 
 static int __xuiCheckCardSetCheckedInternal(xui_widget pWidget, xui_check_card_data_t* pData, int bChecked, int bNotify, int bFromGroup)
@@ -728,10 +740,23 @@ XUI_API int xuiCheckCardCreate(xui_context pContext, xui_widget* ppWidget, const
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiCheckCardSetChangeOwned(xui_widget pWidget,xui_check_card_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_check_card_data_t* pData=__xuiCheckCardGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiCheckCardSetChange(xui_widget pWidget, xui_check_card_change_proc onChange, void* pUser)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiCheckCardSetChangeOwned(pWidget,onChange,pUser,NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;
