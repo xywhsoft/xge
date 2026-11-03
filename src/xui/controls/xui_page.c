@@ -77,6 +77,17 @@ typedef struct xui_page_data_t {
 	uint32_t iFocusColor;
 } xui_page_data_t;
 
+/* The full native operation keeps widget/item storage alive after the thunk. */
+static void __xuiPageInvokeOwnedChange(xui_widget widget,xui_page_data_t* data,xui_page_change_proc callback,void* user,int oldPage,int page)
+{
+    xui_callback_snapshot_t snapshot={0};
+    if(widget->pEventOwners && widget->pEventOwners->pBindings &&
+       xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,oldPage,page,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static int __xuiPageMetricValid(float fValue, float fMax)
 {
 	return isfinite(fValue) && (fValue >= 0.0f) && (fValue <= fMax);
@@ -535,7 +546,7 @@ static int __xuiPageSetCurrentInternal(xui_widget pWidget, xui_page_data_t* pDat
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onChange = pData->onChange;
 	pChangeUser = pData->pChangeUser;
-	if ( bNotify && (onChange != NULL) ) onChange(pWidget, iOldPage, iPage, pChangeUser);
+	if ( bNotify && (onChange != NULL) ) __xuiPageInvokeOwnedChange(pWidget,pData,onChange,pChangeUser,iOldPage,iPage);
 	return XUI_OK;
 }
 
@@ -1284,10 +1295,23 @@ XUI_API int xuiPageCreate(xui_context pContext, xui_widget* ppWidget, const xui_
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiPageSetChangeOwned(xui_widget pWidget,xui_page_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_page_data_t* pData=__xuiPageGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiPageSetChange(xui_widget pWidget, xui_page_change_proc onChange, void* pUser)
 {
 	xui_page_data_t* pData = __xuiPageGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiPageSetChangeOwned(pWidget,onChange,pUser,NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;
@@ -1338,9 +1362,18 @@ XUI_API int xuiPageGetPageCount(xui_widget pWidget)
 
 XUI_API int xuiPageSetCurrent(xui_widget pWidget, int iPage, int bNotify)
 {
+    if(!xuiInternalWidgetIsValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t operation={0};
+    int operationResult=xuiCallScopeBegin(pWidget->pContext,&operation);
+    if(operationResult!=XUI_OK)return operationResult;
+
 	xui_page_data_t* pData = __xuiPageGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiPageSetCurrentInternal(pWidget, pData, iPage, bNotify);
+	if ( pData == NULL ) { operationResult=(XUI_ERROR_INVALID_ARGUMENT); goto operationEnd; }
+	{ operationResult=(__xuiPageSetCurrentInternal(pWidget, pData, iPage, bNotify)); goto operationEnd; }
+
+operationEnd:;
+    int cleanupResult=xuiCallScopeEnd(&operation);
+    return operationResult!=XUI_OK ? operationResult : cleanupResult;
 }
 
 XUI_API int xuiPageGetCurrent(xui_widget pWidget)

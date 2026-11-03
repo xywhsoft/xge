@@ -38,6 +38,17 @@ typedef struct xui_hyperlink_data_t {
 	float fFocusWidth;
 } xui_hyperlink_data_t;
 
+/* The full native operation keeps widget/item storage alive after the thunk. */
+static void __xuiHyperlinkInvokeOwnedClick(xui_widget widget,xui_hyperlink_data_t* data,xui_hyperlink_click_proc callback,void* user)
+{
+    xui_callback_snapshot_t snapshot={0};
+    if(widget->pEventOwners && widget->pEventOwners->pBindings &&
+       xuiInternalCallbackSnapshotBegin(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static int __xuiHyperlinkNonNegativeFloatValid(float fValue)
 {
 	return isfinite(fValue) && fValue >= 0.0f && fValue <= XUI_LAYOUT_UNBOUNDED;
@@ -442,7 +453,7 @@ static int __xuiHyperlinkDoClick(xui_widget pWidget, xui_hyperlink_data_t* pData
 	if ( iRet != XUI_OK ) return iRet;
 	onClick = pData->onClick;
 	pClickUser = pData->pClickUser;
-	if ( onClick != NULL ) onClick(pWidget, pClickUser);
+	if ( onClick != NULL ) __xuiHyperlinkInvokeOwnedClick(pWidget,pData,onClick,pClickUser);
 	return XUI_OK;
 }
 
@@ -816,6 +827,18 @@ XUI_API int xuiHyperlinkCreate(xui_context pContext, xui_widget* ppWidget, const
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiHyperlinkSetClickOwned(xui_widget pWidget,xui_hyperlink_click_proc onClick,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_hyperlink_data_t* pData=__xuiHyperlinkGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onClick,onClick!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onClick=onClick;pData->pClickUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiHyperlinkSetClick(xui_widget pWidget, xui_hyperlink_click_proc onClick, void* pUser)
 {
 	xui_hyperlink_data_t* pData;
@@ -824,6 +847,7 @@ XUI_API int xuiHyperlinkSetClick(xui_widget pWidget, xui_hyperlink_click_proc on
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onClick))return xuiHyperlinkSetClickOwned(pWidget,onClick,pUser,NULL);
 	pData->onClick = onClick;
 	pData->pClickUser = pUser;
 	return XUI_OK;

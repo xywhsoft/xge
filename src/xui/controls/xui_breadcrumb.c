@@ -59,6 +59,28 @@ typedef struct xui_breadcrumb_data_t {
 	int bSeparatorIconGenerationValid;
 } xui_breadcrumb_data_t;
 
+static int __xuiBreadcrumbInvokeOwnedContextMenu(xui_widget widget,xui_breadcrumb_data_t* data,
+    xui_breadcrumb_context_proc callback,void* user,int index,int value,float x,float y)
+{
+    xui_callback_snapshot_t snapshot={0};
+    if(widget->pEventOwners && widget->pEventOwners->pBindings &&
+       xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot)!=XUI_OK)return XUI_ERROR_CALLBACK_FAILED;
+    int result=callback(widget,index,value,x,y,user);
+    return xuiInternalCallbackSnapshotEnd(&snapshot,result);
+}
+
+
+/* The full native operation keeps widget/item storage alive after the thunk. */
+static void __xuiBreadcrumbInvokeOwnedClick(xui_widget widget,xui_breadcrumb_data_t* data,xui_breadcrumb_click_proc callback,void* user,int index,int value)
+{
+    xui_callback_snapshot_t snapshot={0};
+    if(widget->pEventOwners && widget->pEventOwners->pBindings &&
+       xuiInternalCallbackSnapshotBegin(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,index,value,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 static int __xuiBreadcrumbAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
@@ -719,7 +741,7 @@ static void __xuiBreadcrumbDoClick(xui_widget pWidget, xui_breadcrumb_data_t* pD
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) || !pData->arrItems[iIndex].bClickable ) return;
 	if ( pData->iClickCount < INT_MAX ) pData->iClickCount++;
 	if ( pData->onClick != NULL ) {
-		pData->onClick(pWidget, iIndex, pData->arrItems[iIndex].iValue, pData->pClickUser);
+		__xuiBreadcrumbInvokeOwnedClick(pWidget,pData,pData->onClick,pData->pClickUser,iIndex,pData->arrItems[iIndex].iValue);
 	}
 }
 
@@ -887,9 +909,8 @@ static int __xuiBreadcrumbEvent(xui_widget pWidget, const xui_event_t* pEvent, v
 			iHit = __xuiBreadcrumbHitContextItem(pWidget, pEvent->fX, pEvent->fY);
 		}
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
-		return pData->onContext(pWidget, iHit,
-			(iHit >= 0) ? pData->arrItems[iHit].iValue : 0,
-			fX, fY, pData->pContextUser);
+		return __xuiBreadcrumbInvokeOwnedContextMenu(pWidget,pData,pData->onContext,pData->pContextUser,iHit,
+            (iHit>=0) ? pData->arrItems[iHit].iValue : 0,fX,fY);
 	}
 	default:
 		break;
@@ -1251,21 +1272,48 @@ XUI_API int xuiBreadcrumbCreate(xui_context pContext, xui_widget* ppWidget, cons
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiBreadcrumbSetClickOwned(xui_widget pWidget,xui_breadcrumb_click_proc onClick,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_breadcrumb_data_t* pData=__xuiBreadcrumbGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onClick,onClick!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onClick=onClick;pData->pClickUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiBreadcrumbSetClick(xui_widget pWidget, xui_breadcrumb_click_proc onClick, void* pUser)
 {
 	xui_breadcrumb_data_t* pData;
 
 	pData = __xuiBreadcrumbGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onClick))return xuiBreadcrumbSetClickOwned(pWidget,onClick,pUser,NULL);
 	pData->onClick = onClick;
 	pData->pClickUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiBreadcrumbSetContextMenuOwned(xui_widget pWidget,xui_breadcrumb_context_proc onContext,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_breadcrumb_data_t* pData=__xuiBreadcrumbGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onContext=onContext;pData->pContextUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=__xuiBreadcrumbSyncFocus(pWidget,pData,XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);
+    return xuiInternalCallbackUpdateEnd(&update,result);
 }
 
 XUI_API int xuiBreadcrumbSetContextMenu(xui_widget pWidget, xui_breadcrumb_context_proc onContext, void* pUser)
 {
 	xui_breadcrumb_data_t* pData = __xuiBreadcrumbGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiBreadcrumbSetContextMenuOwned(pWidget,onContext,pUser,NULL);
 	if ( pData->onContext == onContext && pData->pContextUser == pUser ) return XUI_OK;
 	pData->onContext = onContext;
 	pData->pContextUser = pUser;

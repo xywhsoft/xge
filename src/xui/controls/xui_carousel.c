@@ -55,6 +55,17 @@ typedef struct xui_carousel_data_t {
 	char arrAccessiblePageNames[XUI_CAROUSEL_MAX_PAGES][24];
 } xui_carousel_data_t;
 
+/* The full native operation keeps widget/item storage alive after the thunk. */
+static void __xuiCarouselInvokeOwnedChange(xui_widget widget,xui_carousel_data_t* data,xui_carousel_change_proc callback,void* user,int oldPage,int page)
+{
+    xui_callback_snapshot_t snapshot={0};
+    if(widget->pEventOwners && widget->pEventOwners->pBindings &&
+       xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    callback(widget,oldPage,page,user);
+    (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+
 typedef struct xui_carousel_style_t {
 	int bAutoPlay;
 	int bShowIndicators;
@@ -709,7 +720,7 @@ static int __xuiCarouselSetCurrentInternal(xui_widget pCarousel, xui_carousel_da
 	if ( pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 	xuiInternalAccessibilityQueue(pCarousel, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( bNotify && (pData->onChange != NULL) ) {
-		pData->onChange(pCarousel, iOld, iIndex, pData->pChangeUser);
+		__xuiCarouselInvokeOwnedChange(pCarousel,pData,pData->onChange,pData->pChangeUser,iOld,iIndex);
 	}
 	return XUI_OK;
 }
@@ -1403,10 +1414,23 @@ XUI_API int xuiCarouselCreate(xui_context pContext, xui_widget* ppWidget, const 
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiCarouselSetChangeOwned(xui_widget pWidget,xui_carousel_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
+{
+    xui_carousel_data_t* pData=__xuiCarouselGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onChange,onChange!=NULL,pUser,pOwner,&update);
+    if(result!=XUI_OK)return result;
+    pData->onChange=onChange;pData->pChangeUser=pUser;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiCarouselSetChange(xui_widget pWidget, xui_carousel_change_proc onChange, void* pUser)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onChange))return xuiCarouselSetChangeOwned(pWidget,onChange,pUser,NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;
@@ -1450,12 +1474,21 @@ XUI_API int xuiCarouselAddPageChild(xui_widget pWidget, int iIndex, xui_widget p
 
 XUI_API int xuiCarouselSetCurrent(xui_widget pWidget, int iIndex, int bNotify)
 {
+    if(!xuiInternalWidgetIsValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t operation={0};
+    int operationResult=xuiCallScopeBegin(pWidget->pContext,&operation);
+    if(operationResult!=XUI_OK)return operationResult;
+
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	int iRet;
-	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iPageCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iPageCount) ) { operationResult=(XUI_ERROR_INVALID_ARGUMENT); goto operationEnd; }
 	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
-	if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) return iRet;
-	return __xuiCarouselSetCurrentInternal(pWidget, pData, iIndex, bNotify);
+	if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) { operationResult=(iRet); goto operationEnd; }
+	{ operationResult=(__xuiCarouselSetCurrentInternal(pWidget, pData, iIndex, bNotify)); goto operationEnd; }
+
+operationEnd:;
+    int cleanupResult=xuiCallScopeEnd(&operation);
+    return operationResult!=XUI_OK ? operationResult : cleanupResult;
 }
 
 XUI_API int xuiCarouselGetCurrent(xui_widget pWidget)
@@ -1466,22 +1499,40 @@ XUI_API int xuiCarouselGetCurrent(xui_widget pWidget)
 
 XUI_API int xuiCarouselNext(xui_widget pWidget, int bNotify)
 {
+    if(!xuiInternalWidgetIsValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t operation={0};
+    int operationResult=xuiCallScopeBegin(pWidget->pContext,&operation);
+    if(operationResult!=XUI_OK)return operationResult;
+
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	int iRet;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL ) { operationResult=(XUI_ERROR_INVALID_ARGUMENT); goto operationEnd; }
 	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
-	if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) return iRet;
-	return __xuiCarouselMove(pWidget, pData, 1, bNotify);
+	if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) { operationResult=(iRet); goto operationEnd; }
+	{ operationResult=(__xuiCarouselMove(pWidget, pData, 1, bNotify)); goto operationEnd; }
+
+operationEnd:;
+    int cleanupResult=xuiCallScopeEnd(&operation);
+    return operationResult!=XUI_OK ? operationResult : cleanupResult;
 }
 
 XUI_API int xuiCarouselPrev(xui_widget pWidget, int bNotify)
 {
+    if(!xuiInternalWidgetIsValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t operation={0};
+    int operationResult=xuiCallScopeBegin(pWidget->pContext,&operation);
+    if(operationResult!=XUI_OK)return operationResult;
+
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	int iRet;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData == NULL ) { operationResult=(XUI_ERROR_INVALID_ARGUMENT); goto operationEnd; }
 	iRet = __xuiCarouselCancelPress(pWidget, pData, 0);
-	if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) return iRet;
-	return __xuiCarouselMove(pWidget, pData, -1, bNotify);
+	if ( iRet != XUI_OK || !__xuiCarouselWidgetAlive(pWidget, pData) ) { operationResult=(iRet); goto operationEnd; }
+	{ operationResult=(__xuiCarouselMove(pWidget, pData, -1, bNotify)); goto operationEnd; }
+
+operationEnd:;
+    int cleanupResult=xuiCallScopeEnd(&operation);
+    return operationResult!=XUI_OK ? operationResult : cleanupResult;
 }
 
 XUI_API int xuiCarouselSetAutoPlay(xui_widget pWidget, int bEnabled, float fInterval)

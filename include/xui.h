@@ -6675,6 +6675,7 @@ XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext);
 XUI_API int xuiHyperlinkCreate(xui_context pContext, xui_widget* ppWidget, const xui_hyperlink_desc_t* pDesc);
 /* 注册同步点击回调；回调可销毁控件、父控件或上下文。 */
 XUI_API int xuiHyperlinkSetClick(xui_widget pWidget, xui_hyperlink_click_proc onClick, void* pUser);
+XUI_API int xuiHyperlinkSetClickOwned(xui_widget pWidget,xui_hyperlink_click_proc onClick,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置并复制链接文本；NULL 清空。 */
 XUI_API int xuiHyperlinkSetText(xui_widget pWidget, const char* sText);
 /* 读取文本。 */
@@ -6739,8 +6740,10 @@ XUI_API xui_widget_type xuiBreadcrumbGetType(xui_context pContext);
 XUI_API int xuiBreadcrumbCreate(xui_context pContext, xui_widget* ppWidget, const xui_breadcrumb_desc_t* pDesc);
 /* 注册节点点击回调。 */
 XUI_API int xuiBreadcrumbSetClick(xui_widget pWidget, xui_breadcrumb_click_proc onClick, void* pUser);
+XUI_API int xuiBreadcrumbSetClickOwned(xui_widget pWidget,xui_breadcrumb_click_proc onClick,void* pUser,const xui_callback_owner_t* pOwner);
 /* 注册节点右键回调。 */
 XUI_API int xuiBreadcrumbSetContextMenu(xui_widget pWidget, xui_breadcrumb_context_proc onContext, void* pUser);
+XUI_API int xuiBreadcrumbSetContextMenuOwned(xui_widget pWidget,xui_breadcrumb_context_proc onContext,void* pUser,const xui_callback_owner_t* pOwner);
 /* 批量设置节点（替换现有）。 */
 XUI_API int xuiBreadcrumbSetItems(xui_widget pWidget, const xui_breadcrumb_item_t* pItems, int iItemCount);
 /* 清空全部节点。 */
@@ -8941,6 +8944,7 @@ XUI_API xui_widget_type xuiPageGetType(xui_context pContext);
 XUI_API int xuiPageCreate(xui_context pContext, xui_widget* ppWidget, const xui_page_desc_t* pDesc);
 /* 注册翻页回调。 */
 XUI_API int xuiPageSetChange(xui_widget pWidget, xui_page_change_proc onChange, void* pUser);
+XUI_API int xuiPageSetChangeOwned(xui_widget pWidget,xui_page_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置总页数。当前页超界时会被钳制并计为一次变更，但不调用用户回调。 */
 XUI_API int xuiPageSetPageCount(xui_widget pWidget, int iPageCount);
 /* 读取总页数。 */
@@ -8996,6 +9000,7 @@ XUI_API xui_widget_type xuiCarouselGetType(xui_context pContext);
 XUI_API int xuiCarouselCreate(xui_context pContext, xui_widget* ppWidget, const xui_carousel_desc_t* pDesc);
 /* 注册翻页回调。 */
 XUI_API int xuiCarouselSetChange(xui_widget pWidget, xui_carousel_change_proc onChange, void* pUser);
+XUI_API int xuiCarouselSetChangeOwned(xui_widget pWidget,xui_carousel_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner);
 /* 设置页数。已有页面容器会保留并按索引复用；缩页导致当前索引越界时会
  * 钳制到末页并递增变更计数，但不会触发用户回调。 */
 XUI_API int xuiCarouselSetPageCount(xui_widget pWidget, int iPageCount);
