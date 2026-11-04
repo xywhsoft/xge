@@ -38,11 +38,38 @@ int xuiInternalCheckBoxCreatePart(xui_widget pOwner,xui_widget* ppWidget,const x
 
 int xuiInternalListViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_list_view_desc_t* pDesc);
 
+void xuiInternalTableGridConfigProject(const xui_table_grid_editor_config_output_t* pOutput,xui_table_grid_editor_config_t* pConfig);
+
 /* Native Cell output read protection; last consumer ends it. */
 int xuiInternalTableCellMove(xui_table_view_cell_output_t* pTarget, xui_table_view_cell_output_t* pSource);
 int xuiInternalTableCellReadBegin(xui_table_view_cell_output_t* pCell);
 int xuiInternalTableCellReadEnd(xui_table_view_cell_output_t* pCell);
 const xui_table_view_cell_output_t* xuiInternalTableCellSource(const xui_table_view_cell_output_t* pCell);
+
+/* Caller holds a Cell read pin; only scalar/owned text projections escape. */
+static inline void xuiInternalTableCellProject(xui_table_view_cell_t* raw,const xui_table_view_cell_output_t* cell)
+{
+    const xui_table_view_cell_output_t* source=cell->_pSource ? cell->_pSource:cell;
+    raw->sText=source->_tText.Data;
+    raw->sTooltip=source->_tTooltip.Data;
+    raw->iType=cell->iType;raw->iRowSpan=cell->iRowSpan;raw->iColSpan=cell->iColSpan;
+    raw->bDisabled=cell->bDisabled;raw->bEditing=cell->bEditing;raw->bInvalid=cell->bInvalid;
+    raw->bDirty=cell->bDirty;raw->bHasStyle=cell->bHasStyle;raw->bReadOnly=cell->bReadOnly;
+    raw->iBackgroundColor=cell->iBackgroundColor;raw->iTextColor=cell->iTextColor;raw->iGridColor=cell->iGridColor;
+    /* A raw pValue cannot carry a language xvalue or its ownership contract. */
+    raw->pValue=NULL;raw->onFormat=NULL;raw->pFormatUser=NULL;raw->onRender=NULL;raw->pRenderUser=NULL;
+}
+
+/* Format a read-pinned Cell under an existing full native Context operation.
+ * End follows the last text consumer and frees owned output before owner Drop. */
+typedef struct xui_table_cell_format_t {
+    xstrview text;
+    xui_callback_owner_t owner;
+    xui_context context;
+    bool held,owned;
+} xui_table_cell_format_t;
+int xuiInternalTableCellFormatBegin(xui_widget pWidget,int iRow,int iColumn,const xui_table_view_cell_output_t* pCell,xui_table_cell_format_t* pFormat);
+int xuiInternalTableCellFormatEnd(xui_table_cell_format_t* pFormat,int iResult);
 
 #define XUI_CONTEXT_MAGIC 0x58554943u
 #define XUI_CONTEXT_DAMAGE_INLINE 8
@@ -490,8 +517,8 @@ struct xui_widget_t {
 	xui_widget pContextPrev;
 	xui_widget pContextNext;
 	xui_widget pParent;
-    const void* pInternalOwner; /* Exact Native composite construction identity. */
-    xui_widget* ppInternalOwnerSlot; /* Fixed TypeData slot, never stack/relocatable storage. */
+    const void* pInternalOwner; /* Native construction identity; never a public bypass flag. */
+    xui_widget* ppInternalOwnerSlot; /* Exact fixed TypeData slot; never a stack/relocatable slot. */
 	xui_widget pFirstChild;
 	xui_widget pLastChild;
 	xui_widget pPrevSibling;
@@ -635,6 +662,11 @@ int xuiInternalContextIsValid(xui_context pContext);
 void xuiInternalOperationEnter(xui_context pContext);
 void xuiInternalOperationLeave(xui_context pContext);
 int xuiInternalCallbackOwnerValid(const xui_callback_owner_t*);
+/* Pure native preflight runs after reentrant Hold, before allocation/mutation.
+ * Widget publishers use the existing serialized UI-thread contract. */
+typedef int (*xui_callback_preflight_proc)(xui_widget pWidget,void* pData);
+int xuiInternalCallbackUpdateBeginValidated(xui_widget pWidget,const void* pSlot,bool bHasCallback,void* pUser,
+    const xui_callback_owner_t* pOwner,xui_callback_preflight_proc onPreflight,void* pPreflightData,xui_callback_update_t* pUpdate);
 int xuiInternalCallbackUpdateBegin(xui_widget,const void*,bool,void*,const xui_callback_owner_t*,xui_callback_update_t*);
 void xuiInternalCallbackUpdatePublish(xui_callback_update_t*);
 int xuiInternalCallbackUpdateEnd(xui_callback_update_t*,int);

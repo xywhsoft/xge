@@ -38,6 +38,15 @@ typedef struct xui_table_grid_data_t {
 	xui_table_grid_set_proc onSet;
 	void* pAdapterUser;
 	void* pSetUser;
+    xui_table_view_count_proc onCountOwned;
+    xui_table_view_cell_owned_proc onCellOwned;
+    xui_table_grid_set_proc onSetOwned;
+    void* pCountOwnedUser;
+    void* pCellOwnedUser;
+    void* pSetOwnedUser;
+    bool bAdapterOwned;
+    xui_table_grid_editor_owned_proc onEditorOwned;
+    void* pEditorOwnedUser;
 	xui_table_grid_validate_proc onValidate;
 	void* pValidateUser;
 	xui_table_grid_change_proc onChange;
@@ -46,6 +55,9 @@ typedef struct xui_table_grid_data_t {
 	void* pEditorUser;
 	xui_table_grid_editor_config_proc onEditorConfig;
 	void* pEditorConfigUser;
+    xui_table_grid_editor_config_owned_proc onEditorConfigOwned;
+    void* pEditorConfigOwnedUser;
+    xui_table_grid_editor_config_output_t tOwnedEditorConfig;
 	xui_table_grid_context_proc onContext;
 	void* pContextUser;
 	xui_table_grid_editor_config_t tEditorConfig;
@@ -85,6 +97,7 @@ static int __xuiOwnedInvoke_xuiTableGridSetContextMenu(xui_widget widget,xui_tab
 }
 
 
+static void __xuiTableGridRecordFailure(xui_context context,int status);
 static xui_table_grid_data_t* __xuiTableGridGetData(xui_widget pWidget);
 static int __xuiTableGridEditModeValid(int iMode);
 static int __xuiTableGridEndEditOperation(xui_widget pWidget, int bCommit);
@@ -597,7 +610,32 @@ static void __xuiTableGridDefaultCell(xui_table_grid_data_t* pData, int iColumn,
 	}
 }
 
-static int __xuiTableGridGetCell(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell)
+typedef struct xui_table_grid_cell_lease_t {
+    xui_table_view_cell_output_t output;
+    xui_table_cell_format_t format;
+    xui_context context;
+    uint64_t generation;
+    bool owned,reading;
+} xui_table_grid_cell_lease_t;
+static void __xuiTableGridRecordFailure(xui_context context,int status);
+static void __xuiTableGridOutcome(int next,int* status,xerror** first)
+{
+    xerror* error=xrtTakeError();
+    if(next==XUI_OK && !error)return;
+    if(*status==XUI_OK){*status=next!=XUI_OK ? next:XUI_ERROR_CALLBACK_FAILED;*first=error;}
+    else xrtErrorFree(error);
+}
+static int __xuiTableGridCellEnd(xui_table_grid_cell_lease_t* lease,int status)
+{
+    xerror* first=xrtTakeError();
+    if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    if(lease->format.context)__xuiTableGridOutcome(xuiInternalTableCellFormatEnd(&lease->format,XUI_OK),&status,&first);
+    if(lease->reading){lease->reading=false;__xuiTableGridOutcome(xuiInternalTableCellReadEnd(&lease->output),&status,&first);}
+    if(lease->owned){lease->owned=false;__xuiTableGridOutcome(xuiTableViewCellOutputDisposeChecked(&lease->output),&status,&first);}
+    if(status!=XUI_OK && lease->context)__xuiTableGridRecordFailure(lease->context,status);
+    memset(lease,0,sizeof(*lease));xrtSetErrorTake(first);return status;
+}
+static int __xuiTableGridGetCell(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell, xui_table_grid_cell_lease_t* lease)
 {
 	xui_table_view_cell_proc onCell;
 	void* pUser;
@@ -606,6 +644,15 @@ static int __xuiTableGridGetCell(xui_widget pWidget, xui_table_grid_data_t* pDat
 	if ( (pData == NULL) || (pCell == NULL) || (iRow < 0) || (iColumn < 0) ) {
 		return 0;
 	}
+    if(pData->bAdapterOwned || pData->onEditorOwned){
+        lease->owned=true;lease->context=xuiWidgetGetContext(pWidget);lease->generation=pData->iAdapterGeneration;
+        xuiTableViewCellOutputInit(&lease->output);
+        int status=xuiTableViewGetCellOwned(pData->pTable,iRow,iColumn,&lease->output);
+        if(status==XUI_OK && (!__xuiTableGridWidgetAlive(pWidget,pData) || pData->iAdapterGeneration!=lease->generation))status=XUI_ERROR_INVALID_STATE;
+        if(status==XUI_OK)status=xuiInternalTableCellReadBegin(&lease->output);
+        if(status!=XUI_OK){(void)__xuiTableGridCellEnd(lease,status);return 0;}
+        lease->reading=true;xuiInternalTableCellProject(pCell,&lease->output);return 1;
+    }
 	onCell = pData->onCell;
 	pUser = pData->pAdapterUser;
 	if ( onCell != NULL ) {
@@ -617,7 +664,7 @@ static int __xuiTableGridGetCell(xui_widget pWidget, xui_table_grid_data_t* pDat
 	return 1;
 }
 
-static const char* __xuiTableGridCellText(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, const xui_table_view_cell_t* pCell, char* sBuffer, int iCapacity)
+static const char* __xuiTableGridCellText(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_table_grid_cell_lease_t* lease, char* sBuffer, int iCapacity)
 {
 	xui_table_view_format_proc onFormat;
 	void* pUser;
@@ -627,11 +674,36 @@ static const char* __xuiTableGridCellText(xui_widget pWidget, xui_table_grid_dat
 	if ( (sBuffer == NULL) || (iCapacity <= 0) ) return "";
 	sBuffer[0] = '\0';
 	if ( pCell == NULL ) return sBuffer;
-	if ( pCell->sText != NULL ) {
+	if ( !lease->owned && pCell->sText != NULL ) {
 		snprintf(sBuffer, (size_t)iCapacity, "%s", pCell->sText);
 		sBuffer[iCapacity - 1] = '\0';
 		return sBuffer;
 	}
+    if(lease->owned){
+        int status=xuiInternalTableCellFormatBegin(pWidget,iRow,iColumn,&lease->output,&lease->format);
+        if(status==XUI_OK && (!__xuiTableGridWidgetAlive(pWidget,pData) || pData->iAdapterGeneration!=lease->generation))status=XUI_ERROR_INVALID_STATE;
+        xstrview text=lease->format.text;
+        if(status==XUI_OK && !text.Size){
+            const xvalue* value=xuiTableViewCellOutputGetValue(&lease->output);
+            if(value){
+                switch(xrtValueType(value)){
+                case XVALUE_BOOL:{bool valueBool=false;if(!xrtValueGetBool(value,&valueBool))status=XUI_ERROR_INVALID_STATE;else snprintf(sBuffer,(size_t)iCapacity,"%s",valueBool ? "true":"false");break;}
+                case XVALUE_INT:{int64 valueInt=0;if(!xrtValueGetInt(value,&valueInt))status=XUI_ERROR_INVALID_STATE;else snprintf(sBuffer,(size_t)iCapacity,"%lld",(long long)valueInt);break;}
+                case XVALUE_UINT:{uint64 valueUInt=0;if(!xrtValueGetUInt(value,&valueUInt))status=XUI_ERROR_INVALID_STATE;else snprintf(sBuffer,(size_t)iCapacity,"%llu",(unsigned long long)valueUInt);break;}
+                case XVALUE_FLOAT:{double valueFloat=0;if(!xrtValueGetFloat(value,&valueFloat))status=XUI_ERROR_INVALID_STATE;else snprintf(sBuffer,(size_t)iCapacity,"%.17g",valueFloat);break;}
+                case XVALUE_STRING:if(!xrtValueGetString(value,&text))status=XUI_ERROR_INVALID_STATE;break;
+                case XVALUE_NULL:break;
+                default:status=XUI_ERROR_UNSUPPORTED;break;
+                }
+            }
+        }
+        if(status==XUI_OK && text.Size){
+            if(!text.Data || text.Size>=(size_t)iCapacity || memchr(text.Data,0,text.Size))status=XUI_ERROR_LIMIT_EXCEEDED;
+            else{memcpy(sBuffer,text.Data,text.Size);sBuffer[text.Size]=0;}
+        }
+        if(status!=XUI_OK){__xuiTableGridRecordFailure(lease->context,status);return NULL;}
+        return sBuffer;
+    }
 	onFormat = pCell->onFormat;
 	pUser = pCell->pFormatUser;
 	if ( onFormat == NULL && pData != NULL && pData->pTable != NULL ) {
@@ -668,18 +740,34 @@ static void __xuiTableGridDefaultEditorConfig(xui_table_grid_editor_config_t* pC
 	pConfig->sRangeSeparator = " - ";
 }
 
-static int __xuiTableGridLoadEditorConfig(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, int iType)
+static int __xuiTableGridLoadEditorConfig(xui_widget widget,xui_table_grid_data_t* data,int row,int column,int type)
 {
-	int iRet;
-
-	if ( pData == NULL ) return 0;
-	__xuiTableGridDefaultEditorConfig(&pData->tEditorConfig, iType);
-	if ( pData->onEditorConfig != NULL ) {
-		iRet = pData->onEditorConfig(pWidget, iRow, iColumn, iType,
-			&pData->tEditorConfig, pData->pEditorConfigUser);
-		if ( iRet < 0 || !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
-	}
-	return __xuiTableGridEditorConfigValid(&pData->tEditorConfig);
+    if(!data)return 0;
+    xui_context context=xuiWidgetGetContext(widget);
+    __xuiTableGridDefaultEditorConfig(&data->tEditorConfig,type);
+    if(data->onEditorConfigOwned || data->onEditorOwned){
+        xuiTableGridEditorConfigOutputDispose(&data->tOwnedEditorConfig);
+        data->tOwnedEditorConfig.iDateMode=__xuiTableGridDateModeForType(type);
+        xui_table_grid_editor_config_owned_proc selected=data->onEditorConfigOwned;
+        if(selected){
+            void* user=data->pEditorConfigOwnedUser;xui_callback_snapshot_t snapshot={0};
+            int status=xuiInternalCallbackSnapshotBegin(widget,&data->onEditorConfigOwned,&user,&snapshot);
+            if(status==XUI_OK){int result=selected(widget,row,column,type,&data->tOwnedEditorConfig,user);if(result!=XUI_OK)status=result<0 ? result:XUI_ERROR_INVALID_ARGUMENT;}
+            status=xuiInternalCallbackSnapshotEnd(&snapshot,status);
+            if(status!=XUI_OK){__xuiTableGridRecordFailure(context,status);return 0;}
+            if(!__xuiTableGridWidgetAlive(widget,data))return 0;
+        }
+        xuiInternalTableGridConfigProject(&data->tOwnedEditorConfig,&data->tEditorConfig);
+        if(!__xuiTableGridEditorConfigValid(&data->tEditorConfig)){
+            __xuiTableGridRecordFailure(context,XUI_ERROR_INVALID_ARGUMENT);return 0;
+        }
+        return 1;
+    }
+    if(data->onEditorConfig){
+        int result=data->onEditorConfig(widget,row,column,type,&data->tEditorConfig,data->pEditorConfigUser);
+        if(result<0 || !__xuiTableGridWidgetAlive(widget,data))return 0;
+    }
+    return __xuiTableGridEditorConfigValid(&data->tEditorConfig);
 }
 
 static xtime __xuiTableGridParseDateValue(const char* sText, int iType, const char* sFormat)
@@ -787,6 +875,7 @@ static int __xuiTableGridCommitValue(xui_widget pWidget, xui_table_grid_data_t* 
 	int iActiveEditor;
 	int bAccepted;
 	int bChanged;
+    uint64_t adapterGeneration;bool ownedAdapter;
 
 	if ( pData == NULL || pData->bCommitting ) return 0;
 	snprintf(sStable, sizeof(sStable), "%s", (sValue != NULL) ? sValue : "");
@@ -795,6 +884,7 @@ static int __xuiTableGridCommitValue(xui_widget pWidget, xui_table_grid_data_t* 
 	iColumn = pData->iEditingColumn;
 	iType = pData->iEditingType;
 	iActiveEditor = pData->iActiveEditor;
+    ownedAdapter=pData->bAdapterOwned;adapterGeneration=pData->iAdapterGeneration;
 	onValidate = pData->onValidate;
 	pValidateUser = pData->pValidateUser;
 	onSet = pData->onSet;
@@ -803,7 +893,13 @@ static int __xuiTableGridCommitValue(xui_widget pWidget, xui_table_grid_data_t* 
 	bChanged = strcmp(pData->sOriginalValue, sStable) != 0;
 	pData->bCommitting = 1;
 	if ( onValidate != NULL ) {
-		bAccepted = onValidate(pWidget, iRow, iColumn, sStable, iType, pValidateUser);
+        xui_callback_snapshot_t validateSnapshot={0};
+        int status=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onValidate,&pValidateUser,&validateSnapshot);
+        bool ownedValidate=validateSnapshot.pContext!=NULL;
+        bAccepted=status==XUI_OK ? onValidate(pWidget,iRow,iColumn,sStable,iType,pValidateUser):0;
+        if(ownedValidate && bAccepted<0){status=bAccepted;bAccepted=0;}
+        status=xuiInternalCallbackSnapshotEnd(&validateSnapshot,status);
+        if(status!=XUI_OK){__xuiTableGridRecordFailure(xuiWidgetGetContext(pWidget),status);bAccepted=0;}
 		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 1;
 		if ( bAccepted == 0 ) {
 			pData->bCommitting = 0;
@@ -817,8 +913,15 @@ static int __xuiTableGridCommitValue(xui_widget pWidget, xui_table_grid_data_t* 
 			return 0;
 		}
 	}
+    if(ownedAdapter && (!pData->bAdapterOwned || pData->iAdapterGeneration!=adapterGeneration)){
+        pData->bCommitting=0;return 0;
+    }
 	if ( bChanged ) {
-		if ( onSet != NULL ) {
+        if(ownedAdapter && pData->onSetOwned){
+            XUI_INTERNAL_CALLBACK_VOID(pWidget,pData->onSetOwned,xui_table_grid_set_proc,pData->pSetOwnedUser,pWidget,iRow,iColumn,sStable,iType);
+            if(!__xuiTableGridWidgetAlive(pWidget,pData))return 1;
+        }
+		if ( !ownedAdapter && onSet != NULL ) {
 			onSet(pWidget, iRow, iColumn, sStable, iType, pSetUser);
 			if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return 1;
 		}
@@ -859,6 +962,44 @@ static int __xuiTableGridSyncActiveEditorRect(xui_widget pWidget, xui_table_grid
 	return 1;
 }
 
+static void __xuiTableGridRecordFailure(xui_context context,int status)
+{
+    if(status==XUI_OK || !xuiInternalContextIsValid(context))return;
+    for(xui_call_scope_t* scope=context->pCallScopes;scope;scope=scope->pNext)
+        if(scope->iResult==XUI_OK)scope->iResult=status;
+}
+static int __xuiTableGridOwnedCount(xui_widget table,void* user)
+{
+    xui_table_grid_data_t* data=user;xui_widget widget=xuiWidgetGetParent(table);
+    if(!__xuiTableGridWidgetAlive(widget,data))return XUI_ERROR_INVALID_STATE;
+    xui_table_view_count_proc selected=data->onCountOwned;void* selectedUser=data->pCountOwnedUser;
+    if(!selected)return 0;
+    uint64_t generation=data->iAdapterGeneration;xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onCountOwned,&selectedUser,&snapshot);
+    int count=0;
+    if(status==XUI_OK && (!__xuiTableGridWidgetAlive(widget,data) || data->iAdapterGeneration!=generation))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK){count=selected(widget,selectedUser);if(count<0)status=count;}
+    if(status==XUI_OK && (!__xuiTableGridWidgetAlive(widget,data) || data->iAdapterGeneration!=generation))status=XUI_ERROR_INVALID_STATE;
+    status=xuiInternalCallbackSnapshotEnd(&snapshot,status);
+    return status!=XUI_OK ? status:count;
+}
+static int __xuiTableGridOwnedCell(xui_widget table,int row,int column,xui_table_view_cell_output_t* output,void* user)
+{
+    xui_table_grid_data_t* data=user;xui_widget widget=xuiWidgetGetParent(table);
+    if(!__xuiTableGridWidgetAlive(widget,data))return XUI_ERROR_INVALID_STATE;
+    xui_table_view_cell_owned_proc selected=data->onCellOwned;void* selectedUser=data->pCellOwnedUser;
+    uint64_t generation=data->iAdapterGeneration;xui_callback_snapshot_t snapshot={0};int status=XUI_OK;
+    if(selected){
+        status=xuiInternalCallbackSnapshotBegin(widget,&data->onCellOwned,&selectedUser,&snapshot);
+        if(status==XUI_OK && (!__xuiTableGridWidgetAlive(widget,data) || data->iAdapterGeneration!=generation))status=XUI_ERROR_INVALID_STATE;
+        if(status==XUI_OK){int result=selected(widget,row,column,output,selectedUser);if(result<0)status=result;}
+    }
+    if(status==XUI_OK && (!__xuiTableGridWidgetAlive(widget,data) || data->iAdapterGeneration!=generation))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK && data->iEditingRow==row && data->iEditingColumn==column)output->bEditing=1;
+    /* Output now owns every nontrivial field. The language thunk has physically
+     * returned; no pointer into its temporary strings is forwarded to Table. */
+    return xuiInternalCallbackSnapshotEnd(&snapshot,status);
+}
 static int __xuiTableGridCountProc(xui_widget pTable, void* pUser)
 {
 	xui_table_grid_data_t* pData;
@@ -1035,14 +1176,14 @@ static int __xuiTableGridOpenTextArea(xui_widget pWidget, xui_table_grid_data_t*
 	return 1;
 }
 
-static int __xuiTableGridOpenPicker(xui_widget pWidget, xui_table_grid_data_t* pData, xui_table_view_cell_t* pCell)
+static int __xuiTableGridOpenPicker(xui_widget pWidget, xui_table_grid_data_t* pData, xui_table_view_cell_t* pCell, xui_table_grid_cell_lease_t* lease)
 {
 	xui_table_grid_editor_proc onEditor;
 	void* pUser;
 	xui_rect_t tRect;
 	int bHandled;
 
-	if ( (pWidget == NULL) || (pData == NULL) || (pData->onEditor == NULL) || (pCell == NULL) ) {
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->onEditor == NULL && pData->onEditorOwned == NULL) || (pCell == NULL) ) {
 		return 0;
 	}
 	if ( !__xuiTableGridCellRectWorld(pWidget, pData, pData->iEditingRow, pData->iEditingColumn, &tRect) ) {
@@ -1050,7 +1191,16 @@ static int __xuiTableGridOpenPicker(xui_widget pWidget, xui_table_grid_data_t* p
 	}
 	onEditor = pData->onEditor;
 	pUser = pData->pEditorUser;
-	bHandled = onEditor(pWidget, pData->iEditingRow, pData->iEditingColumn, pCell, tRect, pUser) != 0;
+    if(pData->onEditorOwned){
+        if(!lease->owned)return 0;
+        xui_table_grid_editor_owned_proc selected=pData->onEditorOwned;void* user=pData->pEditorOwnedUser;
+        xui_callback_snapshot_t snapshot={0};int status=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onEditorOwned,&user,&snapshot);
+        int result=0;if(status==XUI_OK)result=selected(pWidget,pData->iEditingRow,pData->iEditingColumn,&lease->output,&pData->tOwnedEditorConfig,tRect,user);
+        if(result<0)status=result;
+        status=xuiInternalCallbackSnapshotEnd(&snapshot,status);
+        if(status!=XUI_OK){__xuiTableGridRecordFailure(xuiWidgetGetContext(pWidget),status);return 0;}
+        bHandled=result!=0;
+    }else bHandled = onEditor(pWidget, pData->iEditingRow, pData->iEditingColumn, pCell, tRect, pUser) != 0;
 	if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bHandled;
 	if ( bHandled ) {
 		pData->iPickerCount++;
@@ -1080,9 +1230,10 @@ static int __xuiTableGridBeginComboEdit(xui_widget pWidget, xui_table_grid_data_
 	} else {
 		return 0;
 	}
-	iRet = xuiComboBoxSetEnabledItems(pData->pCombo, pData->tEditorConfig.arrEnumEnabled,
-		pData->tEditorConfig.iEnumItemCount);
-	if ( iRet != XUI_OK ) return 0;
+	if(pData->tEditorConfig.arrEnumEnabled!=NULL){
+        iRet = xuiComboBoxSetEnabledItems(pData->pCombo,pData->tEditorConfig.arrEnumEnabled,pData->tEditorConfig.iEnumItemCount);
+        if(iRet!=XUI_OK)return 0;
+    }
 	if ( pData->tEditorConfig.bEnumUseValue && pData->tEditorConfig.arrEnumItemData != NULL ) {
 		iSelected = xuiComboBoxGetSelected(pData->pCombo);
 	} else {
@@ -1846,6 +1997,7 @@ static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* p
 	pData->pChangeUser = (pDesc != NULL) ? pDesc->pChangeUser : NULL;
 	pData->onEditor = (pDesc != NULL) ? pDesc->onEditor : NULL;
 	pData->pEditorUser = (pDesc != NULL) ? pDesc->pEditorUser : NULL;
+	xuiTableGridEditorConfigOutputInit(&pData->tOwnedEditorConfig);
 	pData->onEditorConfig = (pDesc != NULL) ? pDesc->onEditorConfig : NULL;
 	pData->pEditorConfigUser = (pDesc != NULL) ? pDesc->pEditorConfigUser : NULL;
 
@@ -1913,6 +2065,7 @@ static void __xuiTableGridDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 		if ( pData->pTextPopup != NULL ) {
 			(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTextPopup);
 		}
+		xuiTableGridEditorConfigOutputDispose(&pData->tOwnedEditorConfig);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -2050,6 +2203,45 @@ XUI_API int xuiTableGridSetRows(xui_widget pWidget, const xui_table_view_row_t* 
 	return iRet;
 }
 
+static int __xuiTableGridBindAdapter(xui_table_grid_data_t* data)
+{
+    if(data->bAdapterOwned)return xuiTableViewSetAdapterOwned(data->pTable,
+        data->onCountOwned ? __xuiTableGridOwnedCount:NULL,data,NULL,
+        data->onCellOwned ? __xuiTableGridOwnedCell:NULL,data,NULL);
+    return xuiTableViewSetAdapter(data->pTable,
+        data->onCount ? __xuiTableGridCountProc:NULL,data->onCell ? __xuiTableGridCellProc:NULL,data);
+}
+XUI_API int xuiTableGridSetAdapterOwned(xui_widget widget,
+    xui_table_view_count_proc count,void* countUser,const xui_callback_owner_t* countOwner,
+    xui_table_view_cell_owned_proc cell,void* cellUser,const xui_callback_owner_t* cellOwner,
+    xui_table_grid_set_proc set,void* setUser,const xui_callback_owner_t* setOwner)
+{
+    xui_table_grid_data_t* data=__xuiTableGridGetData(widget);if(!data || !data->pTable)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->bStartingEdit || data->bCommitting)return XUI_ERROR_BUSY;
+    xui_callback_group_entry_t entries[3]={
+        {.pSlot=&data->onCountOwned,.bHasCallback=count!=NULL,.pUser=countUser,.pOwner=countOwner},
+        {.pSlot=&data->onCellOwned,.bHasCallback=cell!=NULL,.pUser=cellUser,.pOwner=cellOwner},
+        {.pSlot=&data->onSetOwned,.bHasCallback=set!=NULL,.pUser=setUser,.pOwner=setOwner}
+    };
+    xui_callback_group_update_t update={0};int status=xuiInternalCallbackGroupUpdateBegin(widget,entries,3,&update);
+    if(status!=XUI_OK)return status;
+    data->onCountOwned=count;data->pCountOwnedUser=countUser;data->onCellOwned=cell;data->pCellOwnedUser=cellUser;
+    data->onSetOwned=set;data->pSetOwnedUser=setUser;data->bAdapterOwned=count || cell || set;
+    data->onCount=NULL;data->onCell=NULL;data->onSet=NULL;data->pAdapterUser=NULL;data->pSetUser=NULL;++data->iAdapterGeneration;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    if(data->iEditingRow>=0 && !xuiTableGridEndEdit(widget,0))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK && !__xuiTableGridWidgetAlive(widget,data))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK)status=__xuiTableGridBindAdapter(data);
+    return xuiInternalCallbackGroupUpdateEnd(&update,status);
+}
+static int __xuiTableGridClearOwnedAdapter(xui_widget widget,xui_table_grid_data_t* data)
+{
+    xui_callback_group_entry_t entries[3]={{.pSlot=&data->onCountOwned},{.pSlot=&data->onCellOwned},{.pSlot=&data->onSetOwned}};
+    xui_callback_group_update_t update={0};int status=xuiInternalCallbackGroupUpdateBegin(widget,entries,3,&update);
+    if(status!=XUI_OK)return status;
+    data->onCountOwned=NULL;data->pCountOwnedUser=NULL;data->onCellOwned=NULL;data->pCellOwnedUser=NULL;data->onSetOwned=NULL;data->pSetOwnedUser=NULL;data->bAdapterOwned=false;
+    xuiInternalCallbackGroupUpdatePublish(&update);return xuiInternalCallbackGroupUpdateEnd(&update,XUI_OK);
+}
 XUI_API int xuiTableGridSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, xui_table_grid_set_proc onSet, void* pUser)
 {
 	xui_context pContext;
@@ -2061,6 +2253,7 @@ XUI_API int xuiTableGridSetAdapter(xui_widget pWidget, xui_table_view_count_proc
 	void* pOldSetUser;
 	uint64_t iGeneration;
 	int iRet;
+    bool oldOwned;
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
@@ -2079,26 +2272,25 @@ XUI_API int xuiTableGridSetAdapter(xui_widget pWidget, xui_table_view_count_proc
 		xuiInternalOperationLeave(pContext);
 		return XUI_ERROR_INVALID_STATE;
 	}
+    oldOwned=pData->bAdapterOwned;
 	onOldCount = pData->onCount;
 	onOldCell = pData->onCell;
 	onOldSet = pData->onSet;
 	pOldAdapterUser = pData->pAdapterUser;
 	pOldSetUser = pData->pSetUser;
+    pData->bAdapterOwned=false;
 	pData->onCount = onCount;
 	pData->onCell = onCell;
 	pData->onSet = onSet;
 	pData->pAdapterUser = pUser;
 	pData->pSetUser = pUser;
 	iGeneration = ++pData->iAdapterGeneration;
-	iRet = xuiTableViewSetAdapter(pData->pTable,
-		onCount != NULL ? __xuiTableGridCountProc : NULL,
-		onCell != NULL ? __xuiTableGridCellProc : NULL, pData);
+	iRet = __xuiTableGridBindAdapter(pData);
 	if ( __xuiTableGridWidgetAlive(pWidget, pData) ) {
 		if ( pData->iAdapterGeneration != iGeneration ) {
-			iRet = xuiTableViewSetAdapter(pData->pTable,
-				pData->onCount != NULL ? __xuiTableGridCountProc : NULL,
-				pData->onCell != NULL ? __xuiTableGridCellProc : NULL, pData);
+			iRet = __xuiTableGridBindAdapter(pData);
 		} else if ( iRet != XUI_OK ) {
+            pData->bAdapterOwned=oldOwned;
 			pData->onCount = onOldCount;
 			pData->onCell = onOldCell;
 			pData->onSet = onOldSet;
@@ -2107,14 +2299,26 @@ XUI_API int xuiTableGridSetAdapter(xui_widget pWidget, xui_table_view_count_proc
 			pData->iAdapterGeneration++;
 		}
 	}
+    if(iRet==XUI_OK && __xuiTableGridWidgetAlive(pWidget,pData) && oldOwned && pData->iAdapterGeneration==iGeneration){
+        iRet=__xuiTableGridClearOwnedAdapter(pWidget,pData);
+    }
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
 
+XUI_API int xuiTableGridSetValidateOwned(xui_widget widget,xui_table_grid_validate_proc validate,void* user,const xui_callback_owner_t* owner)
+{
+    xui_table_grid_data_t* data=__xuiTableGridGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};int status=xuiInternalCallbackUpdateBegin(widget,&data->onValidate,validate!=NULL,user,owner,&update);
+    if(status!=XUI_OK)return status;
+    data->onValidate=validate;data->pValidateUser=user;xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
 XUI_API int xuiTableGridSetValidate(xui_widget pWidget, xui_table_grid_validate_proc onValidate, void* pUser)
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onValidate))return xuiTableGridSetValidateOwned(pWidget,onValidate,pUser,NULL);
 	pData->onValidate = onValidate;
 	pData->pValidateUser = pUser;
 	return XUI_OK;
@@ -2144,23 +2348,61 @@ XUI_API int xuiTableGridSetChange(xui_widget pWidget, xui_table_grid_change_proc
 	return XUI_OK;
 }
 
+static int __xuiTableGridNoRawConfig(xui_widget widget,void* raw)
+{
+    xui_table_grid_data_t* data=raw;
+    if(__xuiTableGridGetData(widget)!=data)return XUI_ERROR_INVALID_STATE;
+    return data->onEditorConfig ? XUI_ERROR_UNSUPPORTED:XUI_OK;
+}
+static int __xuiTableGridNoOwnedEditor(xui_widget widget,void* raw)
+{
+    xui_table_grid_data_t* data=raw;
+    if(__xuiTableGridGetData(widget)!=data)return XUI_ERROR_INVALID_STATE;
+    return data->onEditorOwned ? XUI_ERROR_UNSUPPORTED:XUI_OK;
+}
+static int __xuiTableGridSetEditorCallbacks(xui_widget widget,xui_table_grid_editor_proc raw,
+    xui_table_grid_editor_owned_proc owned,void* user,const xui_callback_owner_t* owner)
+{
+    xui_table_grid_data_t* data=__xuiTableGridGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(owned && data->onEditorConfig)return XUI_ERROR_UNSUPPORTED;
+    if(!owned && !owner && !xuiInternalCallbackSlotOwned(widget,&data->onEditorOwned)){
+        data->onEditor=raw;data->pEditorUser=raw ? user:NULL;data->onEditorOwned=NULL;data->pEditorOwnedUser=NULL;return XUI_OK;
+    }
+    xui_callback_update_t update={0};int status=xuiInternalCallbackUpdateBeginValidated(widget,&data->onEditorOwned,owned!=NULL,user,owner,owned ? __xuiTableGridNoRawConfig:NULL,data,&update);
+    if(status!=XUI_OK)return status;
+    data->onEditor=raw;data->pEditorUser=raw ? user:NULL;data->onEditorOwned=owned;data->pEditorOwnedUser=owned ? user:NULL;
+    xuiInternalCallbackUpdatePublish(&update);return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+XUI_API int xuiTableGridSetEditorOwned(xui_widget widget,xui_table_grid_editor_owned_proc editor,void* user,const xui_callback_owner_t* owner)
+{return __xuiTableGridSetEditorCallbacks(widget,NULL,editor,user,owner);}
 XUI_API int xuiTableGridSetEditor(xui_widget pWidget, xui_table_grid_editor_proc onEditor, void* pUser)
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(pData->onEditorOwned || xuiInternalCallbackSlotOwned(pWidget,&pData->onEditorOwned))return __xuiTableGridSetEditorCallbacks(pWidget,onEditor,NULL,pUser,NULL);
 	pData->onEditor = onEditor;
 	pData->pEditorUser = pUser;
 	return XUI_OK;
 }
 
-XUI_API int xuiTableGridSetEditorConfig(xui_widget pWidget, xui_table_grid_editor_config_proc onConfig, void* pUser)
+static int __xuiTableGridSetConfigCallbacks(xui_widget widget,xui_table_grid_editor_config_proc raw,
+    xui_table_grid_editor_config_owned_proc owned,void* user,const xui_callback_owner_t* owner)
 {
-	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onEditorConfig = onConfig;
-	pData->pEditorConfigUser = pUser;
-	return XUI_OK;
+    xui_table_grid_data_t* data=__xuiTableGridGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(raw && data->onEditorOwned)return XUI_ERROR_UNSUPPORTED;
+    if(!owned && !owner && !xuiInternalCallbackSlotOwned(widget,&data->onEditorConfigOwned)){
+        data->onEditorConfig=raw;data->pEditorConfigUser=raw ? user:NULL;data->onEditorConfigOwned=NULL;data->pEditorConfigOwnedUser=NULL;return XUI_OK;
+    }
+    xui_callback_update_t update={0};int status=xuiInternalCallbackUpdateBeginValidated(widget,&data->onEditorConfigOwned,owned!=NULL,user,owner,raw ? __xuiTableGridNoOwnedEditor:NULL,data,&update);
+    if(status!=XUI_OK)return status;
+    data->onEditorConfig=raw;data->pEditorConfigUser=raw ? user:NULL;
+    data->onEditorConfigOwned=owned;data->pEditorConfigOwnedUser=owned ? user:NULL;
+    xuiInternalCallbackUpdatePublish(&update);return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
 }
+XUI_API int xuiTableGridSetEditorConfig(xui_widget widget,xui_table_grid_editor_config_proc config,void* user)
+{return __xuiTableGridSetConfigCallbacks(widget,config,NULL,user,NULL);}
+XUI_API int xuiTableGridSetEditorConfigOwned(xui_widget widget,xui_table_grid_editor_config_owned_proc config,void* user,const xui_callback_owner_t* owner)
+{return __xuiTableGridSetConfigCallbacks(widget,NULL,config,user,owner);}
 
 XUI_API int xuiTableGridSetContextMenuOwned(xui_widget pWidget, xui_table_grid_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
 {
@@ -2284,7 +2526,7 @@ XUI_API int xuiTableGridSetColorStyle(xui_widget pWidget, const xui_table_view_c
 	return __xuiTableGridApplyEditorColors(pData, pColors);
 }
 
-static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iColumn)
+static int __xuiTableGridBeginEditBody(xui_widget pWidget, int iRow, int iColumn, xui_table_grid_cell_lease_t* lease)
 {
 	xui_table_grid_data_t* pData;
 	xui_table_view_cell_t tCell;
@@ -2311,12 +2553,12 @@ static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iC
 		return 0;
 	}
 	pData = __xuiTableGridGetData(pWidget);
-	if ( pData == NULL || !__xuiTableGridGetCell(pWidget, pData, iRow, iColumn, &tCell) ) return 0;
+	if ( pData == NULL || !__xuiTableGridGetCell(pWidget, pData, iRow, iColumn, &tCell,lease) ) return 0;
 	if ( tCell.bDisabled || tCell.bReadOnly ) {
 		return 0;
 	}
 	iType = tCell.iType;
-	sText = __xuiTableGridCellText(pWidget, pData, iRow, iColumn, &tCell, sValue, (int)sizeof(sValue));
+	sText = __xuiTableGridCellText(pWidget, pData, iRow, iColumn, &tCell, lease, sValue, (int)sizeof(sValue));
 	if ( sText == NULL || !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
 	if ( xuiTableViewGetSelectionMode(pData->pTable) == XUI_TABLE_VIEW_SELECTION_ROW ) {
 		iRet = xuiTableViewSetSelectedRow(pData->pTable, iRow);
@@ -2325,11 +2567,14 @@ static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iC
 	}
 	if ( iRet != XUI_OK || !__xuiTableGridWidgetAlive(pWidget, pData) ) return 0;
 	if ( iType == XUI_TABLE_CELL_TYPE_BOOL ) {
+        bool oldBool=__xuiTableGridBoolValue(sText,tCell.pValue);
+        if(lease->owned && __xuiTableGridCellEnd(lease,XUI_OK)!=XUI_OK)return 0;
+        if(!__xuiTableGridWidgetAlive(pWidget,pData))return 0;
 		pData->iEditingRow = iRow;
 		pData->iEditingColumn = iColumn;
 		pData->iEditingType = iType;
-		snprintf(pData->sOriginalValue, sizeof(pData->sOriginalValue), "%s", __xuiTableGridBoolValue(sText, tCell.pValue) ? "true" : "false");
-		bOK = __xuiTableGridCommitValue(pWidget, pData, __xuiTableGridBoolValue(sText, tCell.pValue) ? "false" : "true");
+		snprintf(pData->sOriginalValue, sizeof(pData->sOriginalValue), "%s", oldBool ? "true" : "false");
+		bOK = __xuiTableGridCommitValue(pWidget, pData, oldBool ? "false" : "true");
 		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
 		__xuiTableGridClearEditState(pData);
 		(void)xuiTableViewRefresh(pData->pTable);
@@ -2363,7 +2608,7 @@ static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iC
 	}
 	if ( __xuiTableGridIsPickerType(iType) ) {
 		(void)xuiTableViewRefresh(pData->pTable);
-		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell);
+		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell,lease);
 		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
 		__xuiTableGridClearEditState(pData);
 		(void)xuiTableViewRefresh(pData->pTable);
@@ -2379,7 +2624,7 @@ static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iC
 			}
 			return 1;
 		}
-		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell);
+		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell,lease);
 		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
 		if ( bOK ) {
 			__xuiTableGridClearEditState(pData);
@@ -2406,7 +2651,7 @@ static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iC
 		}
 	}
 	if ( iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
-		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell);
+		bOK = __xuiTableGridOpenPicker(pWidget, pData, &tCell,lease);
 		if ( !__xuiTableGridWidgetAlive(pWidget, pData) ) return bOK;
 		if ( bOK ) {
 			__xuiTableGridClearEditState(pData);
@@ -2431,6 +2676,13 @@ static int __xuiTableGridBeginEditOperation(xui_widget pWidget, int iRow, int iC
 	__xuiTableGridHideEditors(pData);
 	(void)xuiTableViewRefresh(pData->pTable);
 	return 0;
+}
+
+static int __xuiTableGridBeginEditOperation(xui_widget widget,int row,int column)
+{
+    xui_table_grid_cell_lease_t lease={0};lease.context=xuiWidgetGetContext(widget);
+    int accepted=__xuiTableGridBeginEditBody(widget,row,column,&lease);
+    return __xuiTableGridCellEnd(&lease,XUI_OK)==XUI_OK ? accepted:0;
 }
 
 XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn)

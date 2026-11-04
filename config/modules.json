@@ -79,6 +79,7 @@
     "src/xui/controls/xui_list_view.c": "XUI_ENABLE_LIST_VIEW",
     "src/xui/controls/xui_table_cell_output.c": "XUI_ENABLE_TABLE_VIEW",
     "src/xui/controls/xui_table_view.c": "XUI_ENABLE_TABLE_VIEW",
+    "src/xui/controls/xui_table_grid_config_output.c": "XUI_ENABLE_TABLE_GRID",
     "src/xui/controls/xui_table_grid.c": "XUI_ENABLE_TABLE_GRID",
     "src/xui/controls/xui_tree_view.c": "XUI_ENABLE_TREE_VIEW",
     "src/xui/controls/xui_tabs.c": "XUI_ENABLE_TABS",

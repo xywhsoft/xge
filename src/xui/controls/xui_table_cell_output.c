@@ -420,6 +420,37 @@ XUI_API const xrtownershipadapterv1* xuiTableViewCellOutputOwnershipAdapterV1(xr
 XUI_API const xrtownershipquiescencev1* xuiTableViewCellOutputOwnershipQuiescenceV1(xrtownershipref ref)
 {return ref.Ops==&__xuiCellOps && __xuiCellValid(ref.Data) ? &__xuiCellQuiescence:NULL;}
 
+int xuiInternalTableCellFormatBegin(xui_widget widget,int row,int column,
+    const xui_table_view_cell_output_t* cell,xui_table_cell_format_t* format)
+{
+    if(!format || format->context || format->held || format->owned || format->text.Data ||
+       !__xuiCellValid(cell) || !cell->_iReadPins || !xuiInternalWidgetIsValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=widget->pContext;
+    if(context->iOperationDepth<=0 || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    const xui_table_view_cell_output_t* source=__xuiCellSource(cell);
+    format->context=context;
+    if(source->_tText.Size || !source->_onText){format->text=source->_tText;return XUI_OK;}
+    xui_table_view_cell_text_owned_proc selected=source->_onText;void* user=source->_pTextUser;
+    format->owner=source->_tTextOwner;
+    int result=xuiInternalCallbackOwnerHold(&format->owner);
+    if(result!=XUI_OK)return result;
+    format->held=true;
+    if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    format->text=selected(widget,row,column,cell,user);format->owned=true;
+    if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    if(format->text.Size>(size_t)INT_MAX || (!format->text.Data && format->text.Size) ||
+       (format->text.Data && (memchr(format->text.Data,0,format->text.Size) || format->text.Data[format->text.Size]!=0)))return XUI_ERROR_INVALID_ARGUMENT;
+    return XUI_OK;
+}
+int xuiInternalTableCellFormatEnd(xui_table_cell_format_t* format,int result)
+{
+    xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    if(format->owned){format->owned=false;xrtFree((void*)format->text.Data);format->text=(xstrview){0};}
+    __xuiCellOutcome(XUI_OK,&result,&first);
+    if(format->held){format->held=false;__xuiCellOutcome(xuiInternalCallbackOwnerDrop(format->context,&format->owner),&result,&first);}
+    memset(format,0,sizeof(*format));xrtSetErrorTake(first);return result;
+}
+
 /* Internal read lease covers the actual native formatter/draw consumer, not
  * just provider return. It is also valid for automatic provider output. */
 int xuiInternalTableCellReadBegin(xui_table_view_cell_output_t* cell)

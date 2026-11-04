@@ -57,10 +57,10 @@ typedef struct xui_table_view_count_read_t {
 typedef struct xui_table_view_cell_lease_t {
     xui_table_view_cell_output_t output;
     xui_callback_snapshot_t provider;
-    xui_callback_owner_t textOwner;
-    xstrview formatted;
+    xui_table_cell_format_t format;
+    int failure;
     xui_context context;
-    bool owned,reading,textHeld,textReady;
+    bool owned,reading,textReady;
 } xui_table_view_cell_lease_t;
 
 typedef struct xui_table_view_data_t {
@@ -998,28 +998,12 @@ static void __xuiTableViewRecordFailure(xui_context context,int result)
 static int __xuiTableViewLeaseEnd(xui_table_view_cell_lease_t* lease,int result)
 {
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    xrtFree((void*)lease->formatted.Data);lease->formatted=(xstrview){0};
-    __xuiTableViewLeaseOutcome(XUI_OK,&result,&first);
-    if(lease->textHeld){
-        xui_callback_owner_t owner=lease->textOwner;lease->textHeld=false;
-        __xuiTableViewLeaseOutcome(!owner.onDrop || owner.onDrop(owner.tReference.Data) ? XUI_OK:XUI_ERROR_CALLBACK_FAILED,&result,&first);
-    }
+    if(lease->format.context)__xuiTableViewLeaseOutcome(xuiInternalTableCellFormatEnd(&lease->format,XUI_OK),&result,&first);
     if(lease->reading){lease->reading=false;__xuiTableViewLeaseOutcome(xuiInternalTableCellReadEnd(&lease->output),&result,&first);}
     if(lease->owned){lease->owned=false;__xuiTableViewLeaseOutcome(xuiTableViewCellOutputDisposeChecked(&lease->output),&result,&first);}
     __xuiTableViewLeaseOutcome(xuiInternalCallbackSnapshotEnd(&lease->provider,XUI_OK),&result,&first);
     memset(lease,0,sizeof(*lease));
     xrtSetErrorTake(first);return result;
-}
-static void __xuiTableViewProjectCell(xui_table_view_cell_t* raw,const xui_table_view_cell_output_t* cell)
-{
-    raw->sText=xuiTableViewCellOutputGetText(cell).Data;
-    raw->sTooltip=xuiTableViewCellOutputGetTooltip(cell).Data;
-    raw->iType=cell->iType;raw->iRowSpan=cell->iRowSpan;raw->iColSpan=cell->iColSpan;
-    raw->bDisabled=cell->bDisabled;raw->bEditing=cell->bEditing;raw->bInvalid=cell->bInvalid;
-    raw->bDirty=cell->bDirty;raw->bHasStyle=cell->bHasStyle;raw->bReadOnly=cell->bReadOnly;
-    raw->iBackgroundColor=cell->iBackgroundColor;raw->iTextColor=cell->iTextColor;raw->iGridColor=cell->iGridColor;
-    /* A raw pValue cannot carry a language xvalue or its ownership contract. */
-    raw->pValue=NULL;raw->onFormat=NULL;raw->pFormatUser=NULL;raw->onRender=NULL;raw->pRenderUser=NULL;
 }
 static int __xuiTableViewGetCell(xui_widget pWidget,xui_table_view_data_t* pData,int iRow,int iColumn,
     xui_table_view_cell_t* pCell,xui_table_view_cell_lease_t* lease)
@@ -1048,7 +1032,7 @@ static int __xuiTableViewGetCell(xui_widget pWidget,xui_table_view_data_t* pData
         }
         if(!__xuiTableViewCallbackCurrent(pWidget,pData,generation)){result=XUI_ERROR_INVALID_STATE;goto failed;}
         result=xuiInternalTableCellReadBegin(&lease->output);if(result!=XUI_OK)goto failed;
-        lease->reading=true;__xuiTableViewProjectCell(pCell,&lease->output);
+        lease->reading=true;xuiInternalTableCellProject(pCell,&lease->output);
     }else if(pData->onCell){
         (void)pData->onCell(pWidget,iRow,iColumn,pCell,pData->pAdapterUser);
         if(!__xuiTableViewCallbackCurrent(pWidget,pData,generation)){result=XUI_ERROR_INVALID_STATE;goto failed;}
@@ -1350,22 +1334,12 @@ static void __xuiTableViewMakeTextSummary(const char* sText, char* sBuffer, int 
 
 static const char* __xuiTableViewOwnedText(xui_widget widget,xui_table_view_data_t* data,int row,int column,xui_table_view_cell_lease_t* lease)
 {
-    if(lease->textReady)return lease->formatted.Data ? lease->formatted.Data:"";
-    const xui_table_view_cell_output_t* source=xuiInternalTableCellSource(&lease->output);
-    if(!source || !source->_onText)return NULL;
-    xui_table_view_cell_text_owned_proc selected=source->_onText;void* user=source->_pTextUser;
-    xui_callback_owner_t owner=source->_tTextOwner;uint64_t generation=data->iCallbackGeneration;
-    int result=xuiInternalCallbackOwnerHold(&owner);
-    if(result!=XUI_OK){__xuiTableViewRecordFailure(lease->context,result);return NULL;}
-    lease->textOwner=owner;lease->textHeld=true;
-    if(!__xuiTableViewCallbackCurrent(widget,data,generation)){__xuiTableViewRecordFailure(lease->context,XUI_ERROR_INVALID_STATE);return NULL;}
-    lease->formatted=selected(widget,row,column,&lease->output,user);lease->textReady=true;
-    xstrview text=lease->formatted;
-    if(!__xuiTableViewCallbackCurrent(widget,data,generation) || text.Size>(size_t)INT_MAX ||
-       (!text.Data && text.Size) || (text.Data && (memchr(text.Data,0,text.Size) || text.Data[text.Size]!=0))){
-        __xuiTableViewRecordFailure(lease->context,XUI_ERROR_INVALID_STATE);return NULL;
-    }
-    return text.Data ? text.Data:"";
+    if(lease->textReady)return lease->format.text.Data ? lease->format.text.Data:"";
+    uint64_t generation=data->iCallbackGeneration;
+    lease->failure=xuiInternalTableCellFormatBegin(widget,row,column,&lease->output,&lease->format);
+    if(lease->failure==XUI_OK && !__xuiTableViewCallbackCurrent(widget,data,generation))lease->failure=XUI_ERROR_INVALID_STATE;
+    if(lease->failure!=XUI_OK){__xuiTableViewRecordFailure(lease->context,lease->failure);return NULL;}
+    lease->textReady=true;return lease->format.text.Data ? lease->format.text.Data:"";
 }
 static int __xuiTableViewOwnedRender(xui_widget widget,xui_table_view_data_t* data,int row,int column,
     xui_table_view_cell_lease_t* lease,xui_draw_context draw,xui_rect_t rect,int state)
@@ -1634,7 +1608,7 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 		}
 	}
 	sText = __xuiTableViewCellText(pWidget, pData, iRow, iColumn, pCell, pLease, sBuffer, (int)sizeof(sBuffer));
-	if ( sText == NULL ) return XUI_ERROR_INVALID_STATE;
+	if ( sText == NULL ) return pLease && pLease->failure!=XUI_OK ? pLease->failure:XUI_ERROR_INVALID_STATE;
 	tText = (xui_rect_t){tCell.fX + 8.0f, tCell.fY + 1.0f, __xuiTableViewMaxFloat(1.0f, tCell.fW - 16.0f), __xuiTableViewMaxFloat(1.0f, tCell.fH - 2.0f)};
 	if ( pCell->iType == XUI_TABLE_CELL_TYPE_BOOL ) {
 		tBox = xuiInternalSnapRect((xui_rect_t){tCell.fX + 8.0f, tCell.fY + (tCell.fH - 12.0f) * 0.5f, 12.0f, 12.0f});
@@ -3058,7 +3032,7 @@ static int __xuiTableViewAccessibleGetBody(xui_widget pWidget, int iIndex,
 	}
 	sText = __xuiTableViewCellText(pWidget, pData, iRow, iColumn, &tCell, pLease,
 		sBuffer, (int)sizeof(sBuffer));
-	if ( sText == NULL ) return XUI_ERROR_INVALID_STATE;
+	if ( sText == NULL ) return pLease && pLease->failure!=XUI_OK ? pLease->failure:XUI_ERROR_INVALID_STATE;
 	__xuiTableViewMakeTextSummary(sText, pData->sAccessibleName,
 		(int)sizeof(pData->sAccessibleName));
 	xuiInternalUtf8TrimIncomplete(pData->sAccessibleName);
@@ -3729,6 +3703,8 @@ XUI_API int xuiTableViewSetAdapterOwned(xui_widget widget,
     xui_callback_group_update_t update={0};int result=xuiInternalCallbackGroupUpdateBegin(widget,entries,2,&update);
     if(result!=XUI_OK)return result;
     data->onCountOwned=count;data->pCountOwnedUser=countUser;data->onCellOwned=cell;data->pCellOwnedUser=cellUser;
+    /* Replacement ends the old raw registration's lifetime. Clearing Owned
+     * must not resurrect a borrowed raw userdata pointer from an older mode. */
     data->onCount=NULL;data->onCell=NULL;data->pAdapterUser=NULL;
     data->bAdapterOwned=count!=NULL || cell!=NULL;++data->iAdapterPublication;
     xuiInternalCallbackGroupUpdatePublish(&update);

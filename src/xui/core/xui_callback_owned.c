@@ -30,8 +30,17 @@ static void __xuiCallbackOutcome(int next,int* result,xerror** first)
     if(*result==XUI_OK){*result=next!=XUI_OK ? next:XUI_ERROR_CALLBACK_FAILED;*first=error;}
     else xrtErrorFree(error);
 }
-int xuiInternalCallbackUpdateBegin(xui_widget widget,const void* slot,bool hasCallback,void* user,
-    const xui_callback_owner_t* incoming,xui_callback_update_t* update)
+/* Owned endpoints peek before arbitrary consuming cleanup. A diagnostic from
+ * a void callback is still a primary failure; Drop must not replace it. */
+static xerror* __xuiCallbackFirstOutcome(xui_context context,int* result)
+{
+    if(*result==XUI_OK && xrtGetError()!=NULL)*result=XUI_ERROR_CALLBACK_FAILED;
+    xerror* first=*result!=XUI_OK ? xrtTakeError():NULL;
+    if(*result!=XUI_OK)__xuiCallbackRecordFailure(context,*result);
+    return first;
+}
+int xuiInternalCallbackUpdateBeginValidated(xui_widget widget,const void* slot,bool hasCallback,void* user,
+    const xui_callback_owner_t* incoming,xui_callback_preflight_proc preflight,void* preflightData,xui_callback_update_t* update)
 {
     if(!update || update->pContext || !slot || !xuiInternalWidgetIsValid(widget) ||
         !xuiInternalCallbackOwnerValid(incoming) || (!hasCallback && incoming && incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
@@ -43,6 +52,7 @@ int xuiInternalCallbackUpdateBegin(xui_widget widget,const void* slot,bool hasCa
     if(result!=XUI_OK){(void)xuiCallScopeEnd(&update->tScope);return result;}
     xui_event_owners_t* header=NULL;xui_callback_binding_t* binding=NULL;
     if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
+    if(preflight){result=preflight(widget,preflightData);if(result!=XUI_OK)goto fail;}
     /* Hold may reenter and replace or remove this exact slot. Allocate against
      * the resulting live directory, outside the ownership mutation gate. */
     xui_callback_binding_t** current=__xuiCallbackFind(widget,slot);
@@ -66,12 +76,16 @@ int xuiInternalCallbackUpdateBegin(xui_widget widget,const void* slot,bool hasCa
     return XUI_OK;
 fail: {
     xerror* first=xrtTakeError();
+    __xuiCallbackRecordFailure(context,result);
     xrtFree(binding);xrtFree(header);
     __xuiCallbackOutcome(xuiInternalCallbackOwnerDrop(context,&candidate),&result,&first);
     __xuiCallbackOutcome(xuiCallScopeEnd(&update->tScope),&result,&first);
     xrtSetErrorTake(first);return result;
 }
 }
+int xuiInternalCallbackUpdateBegin(xui_widget widget,const void* slot,bool hasCallback,void* user,
+    const xui_callback_owner_t* incoming,xui_callback_update_t* update)
+{return xuiInternalCallbackUpdateBeginValidated(widget,slot,hasCallback,user,incoming,NULL,NULL,update);}
 void xuiInternalCallbackUpdatePublish(xui_callback_update_t* update)
 {
     if(!update || !update->pContext || update->bPublished || !xrtOwnershipScopeEnd(&update->tMutation))abort();
@@ -83,7 +97,7 @@ int xuiInternalCallbackUpdateEnd(xui_callback_update_t* update,int result)
     xui_context context=update->pContext;
     xui_callback_owner_t old=update->tOld;
     xrtFree(update->pRetired);update->pRetired=NULL;
-    xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    xerror* first=__xuiCallbackFirstOutcome(context,&result);
     __xuiCallbackOutcome(xuiInternalCallbackOwnerDrop(context,&old),&result,&first);
     __xuiCallbackOutcome(xuiCallScopeEnd(&update->tScope),&result,&first);
     memset(update,0,sizeof(*update));
@@ -165,7 +179,7 @@ void xuiInternalCallbackGroupUpdatePublish(xui_callback_group_update_t* update)
 int xuiInternalCallbackGroupUpdateEnd(xui_callback_group_update_t* update,int result)
 {
     if(!update || !update->pContext || !update->bPublished)abort();
-    xui_context context=update->pContext;xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    xui_context context=update->pContext;xerror* first=__xuiCallbackFirstOutcome(context,&result);
     for(size_t i=0;i<update->iCount;++i){
         xui_callback_group_entry_t* entry=&update->pEntries[i];
         xrtFree(entry->pRetired);entry->pRetired=NULL;entry->bHeld=false;
@@ -190,6 +204,7 @@ int xuiInternalCallbackSnapshotBegin(xui_widget widget,const void* slot,void** u
     if(result!=XUI_OK){__xuiCallbackRecordFailure(context,result);return result;}
     if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying){
         result=XUI_ERROR_INVALID_STATE;xerror* first=xrtTakeError();
+        __xuiCallbackRecordFailure(context,result);
         __xuiCallbackOutcome(xuiInternalCallbackOwnerDrop(context,&owner),&result,&first);
         __xuiCallbackRecordFailure(context,result);xrtSetErrorTake(first);return result;
     }
@@ -200,7 +215,7 @@ int xuiInternalCallbackSnapshotEnd(xui_callback_snapshot_t* snapshot,int result)
     if(!snapshot || !snapshot->pContext)return result;
     xui_context context=snapshot->pContext;xui_callback_owner_t owner=snapshot->tOwner;
     memset(snapshot,0,sizeof(*snapshot));
-    xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    xerror* first=__xuiCallbackFirstOutcome(context,&result);
     __xuiCallbackOutcome(xuiInternalCallbackOwnerDrop(context,&owner),&result,&first);
     xrtSetErrorTake(first);return result;
 }

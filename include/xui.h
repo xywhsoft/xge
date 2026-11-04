@@ -2082,6 +2082,7 @@ typedef struct xui_cascader_item_t xui_cascader_item_t;
 typedef struct xui_icon_category_t xui_icon_category_t;
 typedef struct xui_icon_t xui_icon_t;
 typedef struct xui_table_grid_editor_config_t xui_table_grid_editor_config_t;
+typedef struct xui_table_grid_editor_config_output_t xui_table_grid_editor_config_output_t;
 typedef struct xui_timeline_frame_t xui_timeline_frame_t;
 typedef struct xui_timeline_span_t xui_timeline_span_t;
 typedef struct xui_timeline_layer_t xui_timeline_layer_t;
@@ -3031,8 +3032,11 @@ typedef int (*xui_table_view_context_proc)(xui_widget_t* pWidget, int iPart, int
 typedef void (*xui_table_grid_set_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
 typedef int (*xui_table_grid_validate_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
 typedef void (*xui_table_grid_change_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+typedef int (*xui_table_grid_editor_owned_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_output_t* pCell, const xui_table_grid_editor_config_output_t* pConfig, xui_rect_t tWorldRect, void* pUser);
 typedef int (*xui_table_grid_editor_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_rect_t tWorldRect, void* pUser);
 typedef int (*xui_table_grid_editor_config_proc)(xui_widget_t* pWidget, int iRow, int iColumn, int iType, xui_table_grid_editor_config_t* pConfig, void* pUser);
+/* Zero succeeds; any other result is a checked failure. The output owns data. */
+typedef int (*xui_table_grid_editor_config_owned_proc)(xui_widget_t* pWidget,int iRow,int iColumn,int iType,xui_table_grid_editor_config_output_t* pConfig,void* pUser);
 typedef int (*xui_table_grid_context_proc)(xui_widget_t* pWidget, int iPart, int iRow, int iColumn, float fX, float fY, void* pUser);
 /* TimelineView callbacks run synchronously on the UI thread and may mutate or
  * destroy the control or its context. A reentrant changing callback supersedes
@@ -4708,6 +4712,35 @@ struct xui_table_grid_editor_config_t {
 	const char* sRangeSeparator;
 	void* pUser;
 };
+
+/* Owning callback output. Init fresh storage; Dispose releases every owned
+ * text/enum/palette. Public fields are scalars; private payload is never copied
+ * as a raw language value. Views expire with their callback epoch. */
+struct xui_table_grid_editor_config_output_t {
+    int iEnumSelected;
+    int bEnumUseValue;
+    int iEnumSelectedValue;
+    float fMin;
+    float fMax;
+    float fStep;
+    int iPrecision;
+    int bNullable;
+    int iDateMode;
+    int bDateModeSet;
+    int bShowSecond;
+    xtime tDateMin;
+    xtime tDateMax;
+    int bDateHasMin;
+    int bDateHasMax;
+    xtime tDefaultRangeSpan;
+    int bAlphaEnabled;
+    int _iEnumCount;
+    xui_combobox_item_t* _pEnumItems;
+    int _iPaletteCount;
+    uint32_t* _pPalette;
+    xstrview _tDateFormat,_tActionText,_tFileFilter,_tRangeSeparator;
+};
+
 
 /* 数据网格创建描述。 */
 typedef struct xui_table_grid_desc_t {
@@ -11119,6 +11152,14 @@ XUI_API int xuiTableGridSetColumns(xui_widget pWidget, const xui_table_view_colu
 /* 批量设置行数据。 */
 XUI_API int xuiTableGridSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount);
 /* 设置虚拟化适配器（行数 + 单元格取值 + 写回）。 */
+/* Independent typed owned callbacks; registration stays committed if refresh
+ * fails. Values remain in CellOutput, never an unowned raw pValue. */
+XUI_API int xuiTableGridSetAdapterOwned(xui_widget pWidget,
+    xui_table_view_count_proc onCount, void* pCountUser, const xui_callback_owner_t* pCountOwner,
+    xui_table_view_cell_owned_proc onCell, void* pCellUser, const xui_callback_owner_t* pCellOwner,
+    xui_table_grid_set_proc onSet, void* pSetUser, const xui_callback_owner_t* pSetOwner);
+XUI_API int xuiTableGridSetValidateOwned(xui_widget pWidget, xui_table_grid_validate_proc onValidate, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API int xuiTableGridSetEditorOwned(xui_widget pWidget, xui_table_grid_editor_owned_proc onEditor, void* pUser, const xui_callback_owner_t* pOwner);
 XUI_API int xuiTableGridSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, xui_table_grid_set_proc onSet, void* pUser);
 /* 注册单元格写回校验回调（拒绝非法值）。 */
 XUI_API int xuiTableGridSetValidate(xui_widget pWidget, xui_table_grid_validate_proc onValidate, void* pUser);
@@ -11129,6 +11170,29 @@ XUI_API int xuiTableGridSetChangeOwned(xui_widget pWidget, xui_table_grid_change
 XUI_API int xuiTableGridSetEditor(xui_widget pWidget, xui_table_grid_editor_proc onEditor, void* pUser);
 /* 注册编辑器配置回调（编辑前初始化控件）；配置期间对同一网格的编辑/模型修改重入会被拒绝。 */
 XUI_API int xuiTableGridSetEditorConfig(xui_widget pWidget, xui_table_grid_editor_config_proc onConfig, void* pUser);
+/* Owned config is zero-success, negative-checked; raw config cannot be mixed
+ * with OwnedEditor. OwnedEditor returns >0 handled / 0 fallback / <0 checked. */
+XUI_API int xuiTableGridSetEditorConfigOwned(xui_widget pWidget,xui_table_grid_editor_config_owned_proc onConfig,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API void xuiTableGridEditorConfigOutputInit(xui_table_grid_editor_config_output_t* pOutput);
+XUI_API void xuiTableGridEditorConfigOutputDispose(xui_table_grid_editor_config_output_t* pOutput);
+XUI_API int xuiTableGridEditorConfigOutputSetEnumCount(xui_table_grid_editor_config_output_t* pOutput,int iCount);
+XUI_API int xuiTableGridEditorConfigOutputGetEnumCount(const xui_table_grid_editor_config_output_t* pOutput);
+XUI_API int xuiTableGridEditorConfigOutputGetEnumItem(const xui_table_grid_editor_config_output_t* pOutput,int iIndex,xstrview* pText,int* pValue,int* pEnabled,int* pSeparator,int* pIcon);
+XUI_API int xuiTableGridEditorConfigOutputSetEnumItem(xui_table_grid_editor_config_output_t* pOutput,int iIndex,xstrview Text,int iValue,int bEnabled,int bSeparator,int iIcon);
+XUI_API int xuiTableGridEditorConfigOutputSetPalette(xui_table_grid_editor_config_output_t* pOutput,const uint32_t* pColors,int iCount);
+XUI_API int xuiTableGridEditorConfigOutputSetPaletteCount(xui_table_grid_editor_config_output_t* pOutput,int iCount);
+XUI_API int xuiTableGridEditorConfigOutputSetPaletteItem(xui_table_grid_editor_config_output_t* pOutput,int iIndex,uint32_t iColor);
+XUI_API int xuiTableGridEditorConfigOutputGetPaletteCount(const xui_table_grid_editor_config_output_t* pOutput);
+XUI_API int xuiTableGridEditorConfigOutputGetPaletteItem(const xui_table_grid_editor_config_output_t* pOutput,int iIndex,uint32_t* pColor);
+XUI_API int xuiTableGridEditorConfigOutputSetDateFormat(xui_table_grid_editor_config_output_t* pOutput,xstrview Text);
+XUI_API xstrview xuiTableGridEditorConfigOutputGetDateFormat(const xui_table_grid_editor_config_output_t* pOutput);
+XUI_API int xuiTableGridEditorConfigOutputSetActionText(xui_table_grid_editor_config_output_t* pOutput,xstrview Text);
+XUI_API xstrview xuiTableGridEditorConfigOutputGetActionText(const xui_table_grid_editor_config_output_t* pOutput);
+XUI_API int xuiTableGridEditorConfigOutputSetFileFilter(xui_table_grid_editor_config_output_t* pOutput,xstrview Text);
+XUI_API xstrview xuiTableGridEditorConfigOutputGetFileFilter(const xui_table_grid_editor_config_output_t* pOutput);
+XUI_API int xuiTableGridEditorConfigOutputSetRangeSeparator(xui_table_grid_editor_config_output_t* pOutput,xstrview Text);
+XUI_API xstrview xuiTableGridEditorConfigOutputGetRangeSeparator(const xui_table_grid_editor_config_output_t* pOutput);
+
 /* 注册右键回调。 */
 XUI_API int xuiTableGridSetContextMenu(xui_widget pWidget, xui_table_grid_context_proc onContext, void* pUser);
 XUI_API int xuiTableGridSetContextMenuOwned(xui_widget pWidget, xui_table_grid_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
@@ -12543,7 +12607,9 @@ XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget);
 /* 按注册类型创建实例；pCreateData 为该类型私有描述（可为 NULL）。 */
 XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData);
 /* 销毁控件及其子树；延迟到当前调度周期后执行，帧回调内调用安全。 */
-/* Internal composite parts are borrowed and reject independent destruction. */
+/* Checked destruction rejects borrowed internal parts without changing their
+ * native state or hierarchy. Ordinary application widgets retain their existing
+ * lifecycle. A rejected close leaves the borrowed widget usable. */
 XUI_API int xuiWidgetDestroyChecked(xui_widget pWidget);
 XUI_API void xuiWidgetDestroy(xui_widget pWidget);
 /* 取所属上下文。 */
