@@ -211,8 +211,6 @@ typedef struct xge_context_t {
 	int iSurfaceDirtyGeneration;
 	xge_frame_stats_t tFrameStats;
 	xge_desc_t objDesc;
-	xge_scene_proc procFrame;
-	void* pFrameUser;
 	int bRenderRequested;
 	int iOnDemandRenderBurst;
 	double fOnDemandRenderDeadline;
@@ -646,6 +644,8 @@ static void __xgeLogError(const char* sTag, const char* sMessage)
 }
 
 #include "xge_callback_owned.h"
+static int __xgeFrameCallbackInvoke(int*,bool*);
+static void __xgeFrameRunFailure(int);
 static xspinlock g_xgeErrorSpin = XRT_SPIN_INIT;
 static xge_error_proc g_xgeErrorCallback;
 static void* g_xgeErrorUser;
@@ -1648,12 +1648,15 @@ static void __xgeSokolFrame(void)
 	g_xge.iSurfaceDirtyGeneration++;
 	xgeTextureUploadFlush();
 
-	if ( g_xge.procFrame != NULL ) {
-		if ( g_xge.procFrame(g_xge.pFrameUser) != 0 ) {
-			xgeQuit();
-		}
-	} else {
-		if ( __xgeSceneFrame() != 0 ) {
+	int frameResult=0;bool configured=false;
+	int frameStatus=__xgeFrameCallbackInvoke(&frameResult,&configured);
+	if(frameStatus!=XGE_OK || (configured && frameResult!=0)){
+		__xgeFrameRunFailure(frameStatus);
+		xgeQuit();
+	} else if(!configured) {
+		int sceneResult=__xgeSceneFrame();
+		if ( sceneResult != 0 ) {
+			__xgeFrameRunFailure(sceneResult);
 			xgeQuit();
 		}
 	}

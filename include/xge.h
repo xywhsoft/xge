@@ -595,7 +595,9 @@ typedef enum xge_result_t {
 /* 目标条目不存在。 */
 	XGE_ERROR_NOT_FOUND = -14,
 /* 当前状态不允许该操作。 */
-	XGE_ERROR_INVALID_STATE = -15
+	XGE_ERROR_INVALID_STATE = -15,
+/* A retained callback reported failure, including unavailable diagnostics. */
+	XGE_ERROR_CALLBACK_FAILED = -16
 } xge_result_t;
 
 typedef struct xge_error_info_t {
@@ -1778,7 +1780,7 @@ XGE_API int xgeGetBuildInfo(xge_build_info_t *out);
 XGE_API int xgeCheckBuildCompatibility(uint64_t fingerprint, uint32_t features);
 /* 关闭引擎并释放全局资源（主循环结束后调用）。 */
 XGE_API void xgeUnit(void);
-/* Retires quit/drag registrations and engine resources. Reports cleanup
+/* Retires frame/quit/drag registrations and engine resources. Reports cleanup
  * failure independently of a diagnostic allocation, and rejects reentry. The
  * error callback remains available for shutdown logging until explicitly cleared.
  * Owned callbacks/owner admission in progress return INVALID_STATE for retry. */
@@ -1787,6 +1789,24 @@ XGE_API int xgeUnitChecked(void);
 XGE_API void xgeMemoryFree(void* pData);
 /* 创建窗口并进入主循环；每帧回调 onProc，直到退出。 */
 XGE_API int xgeRun(xge_scene_proc procFrame, void* pUser);
+/* Retained frame registration. Registration holds one real owner until
+ * replacement, explicit clear or Unit. Replacement commits before old-owner
+ * cleanup; that cleanup can fail while the new registration remains active.
+ * Raw xgeRun remains caller-managed; no implicit owner is invented. */
+XGE_API int xgeSetFrameCallbackOwned(xge_scene_proc procFrame, void* pUser, const xge_callback_owner_t* pOwner);
+/* CPU-only publisher entry, independent of renderer/engine initialization.
+ * 0 means continue; positive callback values mean a normal stop request.
+ * A negative callback or ownership-cleanup failure is returned as status and
+ * leaves pFrameResult unchanged. Retained snapshots cover the physical return
+ * tail. Concurrent/recursive dispatch is rejected. During Run, only its
+ * thread may dispatch. This function does not itself render or stop a loop. */
+XGE_API int xgeFrameCallbackDispatchChecked(int* pFrameResult);
+/* Manual/mobile Run retains registration after returning. Blocking Run
+ * returns its first negative callback/cleanup status, retaining the first
+ * diagnostic independently of later TLS changes (including a NULL first
+ * diagnostic). Positive callback stop values are successful completion.
+ * Quit is allowed in a callback; Unit rejects an active owned snapshot. */
+XGE_API int xgeRunOwned(xge_scene_proc procFrame, void* pUser, const xge_callback_owner_t* pOwner);
 /* 立即退出主循环。 */
 XGE_API void xgeQuit(void);
 /* Native close and xgeRequestQuit call this on the UI thread. Return zero to

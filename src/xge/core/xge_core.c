@@ -11,6 +11,13 @@ static xge_quit_request_proc g_xgeQuitProc;
 static void* g_xgeQuitUser;
 static xge_callback_node_t* g_xgeQuitOwner;
 static bool g_xgeQuitDispatching;
+static xspinlock g_xgeFrameSpin=XRT_SPIN_INIT;
+static xge_scene_proc g_xgeFrameProc;
+static void* g_xgeFrameUser;
+static xge_callback_node_t* g_xgeFrameOwner;
+static bool g_xgeFrameDispatching;
+static xge_callback_run_outcome_t* g_xgeFrameRun;
+static uint64 g_xgeFrameRunThread;
 
 int xgeInit(const xge_desc_t* pDesc)
 {
@@ -101,7 +108,11 @@ int xgeUnitChecked(void)
 {
 	int i;
 	uint32 expected=0;
-	if(!xrtAtomic32CompareExchange(&g_xgeCallbackShutdown,&expected,1,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	(void)xrtSpinLock(&g_xgeFrameSpin);
+	bool busyFrame=g_xgeFrameDispatching || (g_xgeFrameRun && g_xgeFrameRunThread!=xrtThreadCurrentId());
+	bool shutdown=!busyFrame && xrtAtomic32CompareExchange(&g_xgeCallbackShutdown,&expected,1,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE);
+	(void)xrtSpinUnlock(&g_xgeFrameSpin);
+	if(!shutdown)return XGE_ERROR_INVALID_STATE;
 	if(xrtAtomic64Load(&g_xgeCallbackActivity,XMEMORY_ACQUIRE)){
 		xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);return XGE_ERROR_INVALID_STATE;
 	}
@@ -112,6 +123,7 @@ int xgeUnitChecked(void)
 	 * Ending admission prevents arbitrary owner Drop from reinitializing the
 	 * engine or republishing quit/drag callbacks halfway through teardown. */
 	g_xge.bInitialized=0;
+	__xgeCallbackOutcome(xgeSetFrameCallbackOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(xgeSetQuitRequestCallbackOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(xgeDragEventCallbackSetOwned(NULL,NULL,NULL),&result,&first);
 	if(!initialized)goto finish;
@@ -175,6 +187,7 @@ finish:
 	xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
 	if(result!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}
 	else xrtSetErrorTake(previous);
+	__xgeFrameRunFailure(result);
 	#undef XGE_UNIT_STEP
 	return result;
 }
@@ -186,7 +199,60 @@ void xgeMemoryFree(void* pData)
 	}
 }
 
-int xgeRun(xge_scene_proc procFrame, void* pUser)
+int xgeSetFrameCallbackOwned(xge_scene_proc proc,void* user,const xge_callback_owner_t* owner)
+{
+	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	xge_callback_node_t* next=NULL;int result=__xgeCallbackNodePrepare(proc!=NULL,false,owner,&next);
+	if(result!=XGE_OK)return result;
+	(void)xrtSpinLock(&g_xgeFrameSpin);
+	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
+		(void)xrtSpinUnlock(&g_xgeFrameSpin);(void)__xgeCallbackNodeRelease(next);return XGE_ERROR_INVALID_STATE;
+	}
+	xge_callback_node_t* old=g_xgeFrameOwner;g_xgeFrameOwner=next;
+	g_xgeFrameProc=proc;g_xgeFrameUser=proc ? user:NULL;
+	(void)xrtSpinUnlock(&g_xgeFrameSpin);return __xgeCallbackNodeRelease(old);
+}
+static int __xgeFrameCallbackInvoke(int* output,bool* configured)
+{
+	if(!output || !configured)return XGE_ERROR_INVALID_ARGUMENT;
+	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	(void)xrtSpinLock(&g_xgeFrameSpin);
+	if(g_xgeFrameDispatching || xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE) ||
+		(g_xgeFrameRun && g_xgeFrameRunThread!=xrtThreadCurrentId())){
+		(void)xrtSpinUnlock(&g_xgeFrameSpin);return XGE_ERROR_INVALID_STATE;
+	}
+	xge_scene_proc proc=g_xgeFrameProc;void* user=g_xgeFrameUser;xge_callback_node_t* node=g_xgeFrameOwner;
+	if(!__xgeCallbackNodePin(node)){(void)xrtSpinUnlock(&g_xgeFrameSpin);return XGE_ERROR_INVALID_STATE;}
+	g_xgeFrameDispatching=true;
+	(void)xrtSpinUnlock(&g_xgeFrameSpin);
+	xge_callback_snapshot_t snapshot={0};int status=__xgeCallbackSnapshotBegin(node,false,&snapshot);int frame=0;
+	if(status==XGE_OK){
+		if(proc)frame=proc(user);
+		int outcome=frame<0 ? frame:XGE_OK;xerror* first=outcome!=XGE_OK ? xrtTakeError():NULL;
+		__xgeCallbackOutcome(XGE_OK,&outcome,&first);
+		__xgeCallbackOutcome(__xgeCallbackSnapshotEnd(&snapshot),&outcome,&first);
+		xrtSetErrorTake(first);status=outcome;
+	}
+	(void)xrtSpinLock(&g_xgeFrameSpin);g_xgeFrameDispatching=false;(void)xrtSpinUnlock(&g_xgeFrameSpin);
+	if(status==XGE_OK){*output=frame;*configured=proc!=NULL;}
+	return status;
+}
+static void __xgeFrameRunFailure(int status)
+{
+	if(status>=0)return;
+	(void)xrtSpinLock(&g_xgeFrameSpin);
+	xge_callback_run_outcome_t* outcome=g_xgeFrameRunThread==xrtThreadCurrentId() ? g_xgeFrameRun:NULL;
+	(void)xrtSpinUnlock(&g_xgeFrameSpin);
+	/* The owning Run thread is still executing its synchronous event-loop
+	 * callback/cleanup, so its stack record cannot disappear before return.
+	 * Arbitrary public dispatch errors caught by a callback are not recorded. */
+	__xgeCallbackRunRemember(outcome,status);
+}
+int xgeFrameCallbackDispatchChecked(int* output)
+{bool configured=false;return __xgeFrameCallbackInvoke(output,&configured);}
+int xgeRun(xge_scene_proc procFrame,void* user)
+{return xgeRunOwned(procFrame,user,NULL);}
+int xgeRunOwned(xge_scene_proc procFrame, void* pUser,const xge_callback_owner_t* owner)
 {
 #if !defined(__ANDROID__) && !(defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
 	sapp_desc objDesc;
@@ -198,14 +264,20 @@ int xgeRun(xge_scene_proc procFrame, void* pUser)
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-
-	g_xge.procFrame = procFrame;
-	g_xge.pFrameUser = pUser;
+	xge_callback_run_outcome_t outcome={0};
+	(void)xrtSpinLock(&g_xgeFrameSpin);
+	if(g_xgeFrameRun || g_xgeFrameDispatching || xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
+		(void)xrtSpinUnlock(&g_xgeFrameSpin);return XGE_ERROR_INVALID_STATE;
+	}
+	g_xgeFrameRun=&outcome;g_xgeFrameRunThread=xrtThreadCurrentId();(void)xrtSpinUnlock(&g_xgeFrameSpin);
+	int result=xgeSetFrameCallbackOwned(procFrame,pUser,owner);
+	if(result!=XGE_OK)goto finish;
+	if(!g_xge.bInitialized){result=XGE_ERROR_INVALID_STATE;goto finish;}
 	if ( g_xge.objDesc.iRunMode == XGE_RUN_MANUAL ) {
-		return XGE_OK;
+		goto finish;
 	}
 #if defined(__ANDROID__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
-	return XGE_OK;
+	goto finish;
 #else
 	objDesc = __xgeMakeSokolDesc();
 #if defined(_WIN32) || defined(_WIN64)
@@ -216,8 +288,11 @@ int xgeRun(xge_scene_proc procFrame, void* pUser)
 #if defined(_WIN32) || defined(_WIN64)
 	SetErrorMode(iOldErrorMode);
 #endif
-	return XGE_OK;
 #endif
+finish:
+	__xgeCallbackRunRemember(&outcome,result);
+	(void)xrtSpinLock(&g_xgeFrameSpin);g_xgeFrameRun=NULL;g_xgeFrameRunThread=0;(void)xrtSpinUnlock(&g_xgeFrameSpin);
+	return outcome.iFirstStatus ? __xgeCallbackRunTake(&outcome):result;
 }
 
 void xgeSetQuitRequestCallback(xge_quit_request_proc proc, void* pUser)
@@ -332,8 +407,10 @@ static int __xgeFrameWithDelta(float fDelta)
 		g_xge.iFPS = 0;
 	}
 	xgeTextureUploadFlush();
-	if ( g_xge.procFrame != NULL ) {
-		iRet = g_xge.procFrame(g_xge.pFrameUser);
+	bool configured=false;
+	int frameStatus=__xgeFrameCallbackInvoke(&iRet,&configured);
+	if(frameStatus!=XGE_OK){__xgeFrameRunFailure(frameStatus);xgeQuit();return frameStatus;}
+	if(configured){
 		if ( iRet != 0 ) {
 			xgeQuit();
 			return iRet;
@@ -341,6 +418,7 @@ static int __xgeFrameWithDelta(float fDelta)
 	} else {
 		iRet = __xgeSceneFrame();
 		if ( iRet != 0 ) {
+			__xgeFrameRunFailure(iRet);
 			xgeQuit();
 			return iRet;
 		}

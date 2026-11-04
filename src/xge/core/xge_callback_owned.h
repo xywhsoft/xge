@@ -14,6 +14,26 @@ typedef struct xge_callback_snapshot_t {
     bool bHeld;
     bool bActive;
 } xge_callback_snapshot_t;
+/* A blocking event loop may clear or replace TLS diagnostics while stopping.
+ * The negative status itself is the failed bit; NULL never permits a later
+ * diagnostic to replace the original outcome. Resident xerror data owns no
+ * callback/code pointers. These helpers run only outside publisher locks. */
+typedef struct xge_callback_run_outcome_t {
+    int iFirstStatus;
+    xerror* pFirstError;
+} xge_callback_run_outcome_t;
+static void __xgeCallbackRunRemember(xge_callback_run_outcome_t* outcome,int status)
+{
+    if(outcome && status<0 && !outcome->iFirstStatus){
+        outcome->iFirstStatus=status;outcome->pFirstError=xrtErrorRef(xrtGetError());
+    }
+}
+static int __xgeCallbackRunTake(xge_callback_run_outcome_t* outcome)
+{
+    int status=outcome->iFirstStatus;
+    if(status<0){xerror* first=outcome->pFirstError;outcome->pFirstError=NULL;outcome->iFirstStatus=0;xrtSetErrorTake(first);}
+    return status;
+}
 static xatomic32 g_xgeCallbackShutdown;
 static xatomic64 g_xgeCallbackActivity;
 static bool __xgeCallbackActivityEnter(bool allowShutdown)
