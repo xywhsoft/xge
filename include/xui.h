@@ -2049,6 +2049,7 @@ typedef struct xui_file_dialog_t xui_file_dialog_t;
 typedef struct xui_msgtip_t xui_msgtip_t;
 typedef struct xui_toast_t xui_toast_t;
 typedef struct xui_tree_view_node_t xui_tree_view_node_t;
+typedef struct xui_tree_view_node_output_t xui_tree_view_node_output_t;
 typedef struct xui_table_view_column_t xui_table_view_column_t;
 typedef struct xui_table_view_row_t xui_table_view_row_t;
 typedef struct xui_table_view_cell_t xui_table_view_cell_t;
@@ -2981,6 +2982,11 @@ typedef int (*xui_tree_view_context_proc)(xui_widget_t* pWidget, int iNodeId, in
  * only for the duration of the node callback. */
 typedef int (*xui_tree_view_count_proc)(xui_widget_t* pWidget, void* pUser);
 typedef int (*xui_tree_view_node_proc)(xui_widget_t* pWidget, int iIndex, xui_tree_view_node_t* pNode, void* pUser);
+/* The native caller initializes this owning output before entry. Set text
+ * through NodeOutputSetText; ordinary scalar fields may be assigned directly.
+ * Neither output storage nor a view of it may escape this callback. */
+typedef int (*xui_tree_view_node_owned_proc)(xui_widget_t* pWidget, int iIndex,
+    xui_tree_view_node_output_t* pOutput, void* pUser);
 /* pNode is a read-only snapshot. Mutating or destroying the TreeView aborts
  * the current render batch safely. */
 typedef int (*xui_tree_view_item_proc)(xui_widget_t* pWidget, int iNodeId, int iVisible, const xui_tree_view_node_t* pNode, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
@@ -4456,6 +4462,23 @@ struct xui_tree_view_node_t {
 	int bCheckReserved;
 	int bChecked;
 	void* pUser;
+};
+
+/* Owning adapter output. Initialize once, never bit-copy a live record, and
+ * Dispose after use. _tText is PRIVATE owned XRT storage; bindings must hide
+ * it. Text access goes through SetText/GetText, not writable pointer fields. */
+struct xui_tree_view_node_output_t {
+    int iId;
+    int iParent;
+    int iDepth;
+    int bExpanded;
+    int bEnabled;
+    int bHasChildren;
+    int bIconReserved;
+    int bCheckReserved;
+    int bChecked;
+    void* pUser; /* Explicit opaque C value, never a language object. */
+    xstrview _tText;
 };
 
 /* 树视图创建描述。节点记录与文本会被复制；pUser 仅作为不透明值复制。
@@ -10744,6 +10767,22 @@ XUI_API int xuiTreeViewSetItemRenderer(xui_widget pWidget, xui_tree_view_item_pr
 /* 设置数据适配器（总节点数 + 按索引读取节点描述）。回调绑定成功后立即刷新；
  * 刷新失败时保留绑定，调用方可修正数据后重试 xuiTreeViewRefreshAdapter。 */
 XUI_API int xuiTreeViewSetAdapter(xui_widget pWidget, xui_tree_view_count_proc onCount, xui_tree_view_node_proc onNode, void* pUser);
+/* Init requires fresh storage. Dispose is idempotent on initialized storage.
+ * SetText clones exactly Size bytes, rejects embedded NUL (TreeView's native
+ * display text is C text), and preserves the old value on allocation failure.
+ * GetText borrows until the next SetText/Dispose; the callback output itself
+ * remains valid only for the current callback. */
+XUI_API void xuiTreeViewNodeOutputInit(xui_tree_view_node_output_t* pOutput);
+XUI_API int xuiTreeViewNodeOutputSetText(xui_tree_view_node_output_t* pOutput, xstrview Text);
+XUI_API xstrview xuiTreeViewNodeOutputGetText(const xui_tree_view_node_output_t* pOutput);
+XUI_API void xuiTreeViewNodeOutputDispose(xui_tree_view_node_output_t* pOutput);
+/* Each callback owns its own userdata. The pair publishes atomically. A node
+ * output is consumed and disposed BEFORE its callback owner snapshot drops.
+ * Registration remains committed if refresh fails; visible nodes are atomic.
+ * Reentrant SetAdapter during refresh is checked-rejected, as for raw adapters. */
+XUI_API int xuiTreeViewSetAdapterOwned(xui_widget pWidget,
+    xui_tree_view_count_proc onCount, void* pCountUser, const xui_callback_owner_t* pCountOwner,
+    xui_tree_view_node_owned_proc onNode, void* pNodeUser, const xui_callback_owner_t* pNodeOwner);
 /* Adapter reads observe the old tree until commit. Reentrant refresh/rebind or
  * a callback invalidating the tree aborts with XUI_ERROR_INVALID_STATE. */
 XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget);
