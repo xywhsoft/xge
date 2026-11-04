@@ -2991,7 +2991,7 @@ static int __xuiDatePickerCreatePopup(xui_widget pWidget, xui_date_picker_data_t
 	tDesc.iBorderColor = pData->iPopupBorderColor;
 	tDesc.iShadowColor = pData->iPopupShadowColor;
 	tDesc.iBackdropColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pPopup, &tDesc);
+	iRet = xuiInternalPopupCreatePart(pWidget,&pData->pPopup,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pPanel = xuiPopupGetContentWidget(pData->pPopup);
 	if ( pData->pPanel == NULL ) {
@@ -3014,7 +3014,7 @@ static int __xuiDatePickerCreatePopup(xui_widget pWidget, xui_date_picker_data_t
 	if ( iRet == XUI_OK ) return XUI_OK;
 
 fail:
-	xuiWidgetDestroy(pData->pPopup);
+	(void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 	pData->pPopup = NULL;
 	pData->pPanel = NULL;
 	return iRet;
@@ -3119,7 +3119,7 @@ static void __xuiDatePickerDestroy(xui_widget pWidget, void* pTypeData, void* pU
 		if ( pData->pPanel != NULL ) {
 			(void)__xuiDatePickerPanelCancelPointer(pData->pPanel, pData);
 		}
-		if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
+		if ( pData->pPopup != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -3257,7 +3257,7 @@ XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiDatePickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_date_picker_desc_t* pDesc)
+static int __xuiDatePickerCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_date_picker_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -3266,8 +3266,22 @@ XUI_API int xuiDatePickerCreate(xui_context pContext, xui_widget* ppWidget, cons
 	if ( !__xuiDatePickerDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiDatePickerGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiDatePickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_date_picker_desc_t* pDesc)
+{return __xuiDatePickerCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalDatePickerCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_date_picker_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiDatePickerCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiDatePickerSetChangingOwned(xui_widget pWidget, xui_date_picker_proc onChanging, void* pUser, const xui_callback_owner_t* pOwner)
 {

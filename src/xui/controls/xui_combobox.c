@@ -1528,15 +1528,15 @@ static int __xuiComboBoxCreateInputChild(xui_widget pWidget, xui_combobox_data_t
 	tDesc.iHoverBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.iFocusBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.fBorderWidth = 0.0f;
-	iRet = xuiInputCreate(xuiWidgetGetContext(pWidget), &pData->pInput, &tDesc);
+	iRet = xuiInternalInputCreatePart(pWidget,&pData->pInput,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiInputSetChange(pData->pInput, __xuiComboBoxInputChanged, pWidget);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pInput);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pInput,NULL);
 	if ( iRet == XUI_OK && pData->iMode == XUI_COMBOBOX_MODE_EDIT ) {
 		iRet = xuiInternalEditDelegate(pWidget, pData->pInput);
 	}
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pInput);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pInput);
 		pData->pInput = NULL;
 		return iRet;
 	}
@@ -1581,7 +1581,7 @@ static int __xuiComboBoxCreateMenu(xui_widget pWidget, xui_combobox_data_t* pDat
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pOwner = pWidget;
 	tDesc.pFont = pData->pFont;
-	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pMenu, &tDesc);
+	iRet = xuiInternalMenuCreatePart(pWidget,&pData->pMenu,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiMenuSetSelect(pData->pMenu, __xuiComboBoxMenuSelected, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1590,7 +1590,7 @@ static int __xuiComboBoxCreateMenu(xui_widget pWidget, xui_combobox_data_t* pDat
 	return __xuiComboBoxRefreshMenu(pWidget, pData);
 }
 
-static void __xuiComboBoxDestroyMenu(xui_combobox_data_t* pData)
+static void __xuiComboBoxDestroyMenu(xui_widget pWidget,xui_combobox_data_t* pData)
 {
 	xui_widget pMenu;
 	xui_widget pPopup;
@@ -1600,8 +1600,8 @@ static void __xuiComboBoxDestroyMenu(xui_combobox_data_t* pData)
 	pData->pMenu = NULL;
 	if ( !xuiInternalWidgetIsValid(pMenu) ) return;
 	pPopup = xuiMenuGetPopupWidget(pMenu);
-	if ( xuiInternalWidgetIsValid(pPopup) ) xuiWidgetDestroy(pPopup);
-	else xuiWidgetDestroy(pMenu);
+	if ( xuiInternalWidgetIsValid(pPopup) ) (void)xuiInternalWidgetDestroyPart(pMenu,pPopup);
+	else (void)xuiInternalWidgetDestroyPart(pWidget,pMenu);
 }
 
 static int __xuiComboBoxInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
@@ -1666,7 +1666,7 @@ static void __xuiComboBoxDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	(void)pUser;
 	pData = (xui_combobox_data_t*)pTypeData;
 	if ( pData != NULL ) {
-		__xuiComboBoxDestroyMenu(pData);
+		__xuiComboBoxDestroyMenu(pWidget,pData);
 		__xuiComboBoxClearItemTexts(pData);
 		memset(pData, 0, sizeof(*pData));
 	}
@@ -1823,7 +1823,7 @@ XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiComboBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_combobox_desc_t* pDesc)
+static int __xuiComboBoxCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_combobox_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -1838,8 +1838,22 @@ XUI_API int xuiComboBoxCreate(xui_context pContext, xui_widget* ppWidget, const 
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiComboBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_combobox_desc_t* pDesc)
+{return __xuiComboBoxCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalComboBoxCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_combobox_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiComboBoxCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiComboBoxSetSelectOwned(xui_widget pWidget, xui_combobox_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
 {

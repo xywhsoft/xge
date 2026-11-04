@@ -12543,6 +12543,8 @@ XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget);
 /* 按注册类型创建实例；pCreateData 为该类型私有描述（可为 NULL）。 */
 XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData);
 /* 销毁控件及其子树；延迟到当前调度周期后执行，帧回调内调用安全。 */
+/* Internal composite parts are borrowed and reject independent destruction. */
+XUI_API int xuiWidgetDestroyChecked(xui_widget pWidget);
 XUI_API void xuiWidgetDestroy(xui_widget pWidget);
 /* 取所属上下文。 */
 XUI_API xui_context xuiWidgetGetContext(xui_widget pWidget);

@@ -883,14 +883,11 @@ static int __xuiScrollFrameInitDefaults(xui_scroll_frame_data_t* pData, const xu
 
 static int __xuiScrollFrameCreateChildren(xui_widget pWidget, xui_scroll_frame_data_t* pData)
 {
-	xui_context pContext;
 	xui_scrollbar_desc_t tBarDesc;
 	int iRet;
-
-	pContext = xuiWidgetGetContext(pWidget);
-	iRet = xuiWidgetCreate(pContext, &pData->pViewport);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pViewport,NULL);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pViewport);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pViewport,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetLayoutType(pData->pViewport, XUI_LAYOUT_MANUAL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pViewport, XUI_FLOW_ABSOLUTE);
@@ -919,18 +916,18 @@ static int __xuiScrollFrameCreateChildren(xui_widget pWidget, xui_scroll_frame_d
 	tBarDesc.iDisabledColor = pData->iDisabledColor;
 	tBarDesc.iButtonColor = pData->iButtonColor;
 	tBarDesc.iButtonIconColor = pData->iButtonIconColor;
-	iRet = xuiScrollBarCreate(pContext, &pData->pHBar, &tBarDesc);
+	iRet = xuiInternalScrollBarCreatePart(pWidget,&pData->pHBar,&tBarDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pHBar);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pHBar,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	tBarDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
-	iRet = xuiScrollBarCreate(pContext, &pData->pVBar, &tBarDesc);
+	iRet = xuiInternalScrollBarCreatePart(pWidget,&pData->pVBar,&tBarDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pVBar);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pVBar,NULL);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetCreate(pContext, &pData->pCorner);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pCorner,NULL);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pCorner);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pCorner,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetHitTestVisible(pData->pCorner, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayoutType(pData->pCorner, XUI_LAYOUT_MANUAL);
@@ -958,10 +955,10 @@ static int __xuiScrollFrameInit(xui_widget pWidget, void* pTypeData, const void*
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = __xuiScrollFrameCreateChildren(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		if ( pData->pViewport != NULL ) xuiWidgetDestroy(pData->pViewport);
-		if ( pData->pHBar != NULL ) xuiWidgetDestroy(pData->pHBar);
-		if ( pData->pVBar != NULL ) xuiWidgetDestroy(pData->pVBar);
-		if ( pData->pCorner != NULL ) xuiWidgetDestroy(pData->pCorner);
+		if ( pData->pViewport != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pViewport);
+		if ( pData->pHBar != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pHBar);
+		if ( pData->pVBar != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pVBar);
+		if ( pData->pCorner != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pCorner);
 		return iRet;
 	}
 	return __xuiScrollFrameInitEvents(pWidget);
@@ -1016,7 +1013,7 @@ XUI_API xui_widget_type xuiScrollFrameGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiScrollFrameCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_frame_desc_t* pDesc)
+static int __xuiScrollFrameCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_scroll_frame_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -1028,8 +1025,22 @@ XUI_API int xuiScrollFrameCreate(xui_context pContext, xui_widget* ppWidget, con
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiScrollFrameCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_frame_desc_t* pDesc)
+{return __xuiScrollFrameCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalScrollFrameCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_scroll_frame_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiScrollFrameCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiScrollFrameSetChangeOwned(xui_widget pWidget, xui_scroll_frame_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
 {

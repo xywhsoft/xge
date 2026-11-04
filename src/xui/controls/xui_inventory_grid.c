@@ -3167,16 +3167,17 @@ static int __xuiInventoryCreateSplitLabel(xui_widget pGrid, xui_inventory_grid_d
 	tDesc.pFont = pData->pFont;
 	tDesc.iTextColor = XUI_COLOR_RGBA(45, 58, 78, 255);
 	tDesc.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-	iRet = xuiLabelCreate(xuiWidgetGetContext(pGrid), &pLabel, &tDesc);
+	iRet = xuiInternalLabelCreatePart(pGrid,&pLabel,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetRect(pLabel, (xui_rect_t){10.0f, 8.0f, 200.0f, 18.0f});
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pLabel, 0);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pContent, pLabel);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pGrid,pContent,pLabel,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pLabel);
+		(void)xuiInternalWidgetDestroyPart(pGrid,pLabel);
 		return iRet;
 	}
 	pData->pSplitTitle = pLabel;
+	(void)xuiInternalWidgetBindPartSlot(pGrid,pLabel,&pData->pSplitTitle);
 	return XUI_OK;
 }
 
@@ -3200,15 +3201,16 @@ static int __xuiInventoryCreateSplitInput(xui_widget pGrid, xui_inventory_grid_d
 	tDesc.iBorderColor = XUI_COLOR_RGBA(158, 188, 218, 255);
 	tDesc.iFocusBorderColor = XUI_COLOR_RGBA(47, 128, 237, 255);
 	tDesc.iTextColor = XUI_COLOR_RGBA(31, 50, 73, 255);
-	iRet = xuiNumericInputCreate(xuiWidgetGetContext(pGrid), &pInput, &tDesc);
+	iRet = xuiInternalNumericInputCreatePart(pGrid,&pInput,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetRect(pInput, (xui_rect_t){10.0f, 32.0f, 200.0f, 28.0f});
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pContent, pInput);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pGrid,pContent,pInput,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pInput);
+		(void)xuiInternalWidgetDestroyPart(pGrid,pInput);
 		return iRet;
 	}
 	pData->pSplitInput = pInput;
+	(void)xuiInternalWidgetBindPartSlot(pGrid,pInput,&pData->pSplitInput);
 	return XUI_OK;
 }
 
@@ -3241,13 +3243,13 @@ static int __xuiInventoryCreateSplitButton(xui_widget pGrid, xui_widget pContent
 		tDesc.iFocusColor = XUI_COLOR_RGBA(235, 245, 255, 255);
 		tDesc.iBorderColor = XUI_COLOR_RGBA(158, 188, 218, 255);
 	}
-	iRet = xuiButtonCreate(xuiWidgetGetContext(pGrid), &pButton, &tDesc);
+	iRet = xuiInternalButtonCreatePart(pGrid,&pButton,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetRect(pButton, tRect);
 	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(pButton, onClick, pGrid);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pContent, pButton);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pGrid,pContent,pButton,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pButton);
+		(void)xuiInternalWidgetDestroyPart(pGrid,pButton);
 		return iRet;
 	}
 	if ( ppButton != NULL ) *ppButton = pButton;
@@ -3283,7 +3285,7 @@ static int __xuiInventoryCreateSplitPopup(xui_widget pWidget, xui_inventory_grid
 	tPopupDesc.iBorderColor = XUI_COLOR_RGBA(47, 128, 237, 255);
 	tPopupDesc.iShadowColor = XUI_COLOR_RGBA(88, 121, 156, 72);
 	tPopupDesc.iBackdropColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pSplitPopup, &tPopupDesc);
+	iRet = xuiInternalPopupCreatePart(pWidget,&pData->pSplitPopup,&tPopupDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiPopupSetChange(pData->pSplitPopup, __xuiInventorySplitPopupChanged, pWidget);
 	if ( iRet != XUI_OK ) goto fail;
@@ -3313,7 +3315,7 @@ static int __xuiInventoryCreateSplitPopup(xui_widget pWidget, xui_inventory_grid
 
 fail:
 	if ( pData->pSplitPopup != NULL ) {
-		xuiWidgetDestroy(pData->pSplitPopup);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pSplitPopup);
 	}
 	pData->pSplitPopup = NULL;
 	pData->pSplitTitle = NULL;
@@ -3589,7 +3591,7 @@ static void __xuiInventoryReleaseOwned(xui_widget pWidget, xui_inventory_grid_da
 	}
 	if ( pData->pSplitPopup != NULL ) {
 		(void)xuiPopupSetOpen(pData->pSplitPopup, 0);
-		xuiWidgetDestroy(pData->pSplitPopup);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pSplitPopup);
 		pData->pSplitPopup = NULL;
 	}
 	pData->pSplitTitle = NULL;

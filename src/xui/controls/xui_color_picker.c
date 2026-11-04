@@ -2487,7 +2487,7 @@ static int __xuiColorPickerCreatePopup(xui_widget pWidget, xui_color_picker_data
 	tDesc.iBorderColor = pData->iPopupBorderColor;
 	tDesc.iShadowColor = pData->iPopupShadowColor;
 	tDesc.iBackdropColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pPopup, &tDesc);
+	iRet = xuiInternalPopupCreatePart(pWidget,&pData->pPopup,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pPanel = xuiPopupGetContentWidget(pData->pPopup);
 	if ( pData->pPanel == NULL ) {
@@ -2510,7 +2510,7 @@ static int __xuiColorPickerCreatePopup(xui_widget pWidget, xui_color_picker_data
 	if ( iRet == XUI_OK ) return XUI_OK;
 
 fail:
-	xuiWidgetDestroy(pData->pPopup);
+	(void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 	pData->pPopup = NULL;
 	pData->pPanel = NULL;
 	return iRet;
@@ -2608,7 +2608,7 @@ static int __xuiColorPickerInit(xui_widget pWidget, void* pTypeData, const void*
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiColorPickerSyncState(pWidget, pData);
 	if ( iRet == XUI_OK ) return XUI_OK;
-	xuiWidgetDestroy(pData->pPopup);
+	(void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 	pData->pPopup = NULL;
 	pData->pPanel = NULL;
 	return iRet;
@@ -2625,7 +2625,7 @@ static void __xuiColorPickerDestroy(xui_widget pWidget, void* pTypeData, void* p
 			(void)__xuiColorPickerCancelPointer(pData->pPanel, pData);
 		}
 		if ( pData->pPopup != NULL ) {
-			xuiWidgetDestroy(pData->pPopup);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 		}
 		memset(pData, 0, sizeof(*pData));
 	}
@@ -2783,7 +2783,7 @@ XUI_API xui_widget_type xuiColorPickerGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiColorPickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_color_picker_desc_t* pDesc)
+static int __xuiColorPickerCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_color_picker_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -2794,8 +2794,22 @@ XUI_API int xuiColorPickerCreate(xui_context pContext, xui_widget* ppWidget, con
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiColorPickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_color_picker_desc_t* pDesc)
+{return __xuiColorPickerCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalColorPickerCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_color_picker_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiColorPickerCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiColorPickerSetChangeOwned(xui_widget pWidget, xui_color_picker_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
 {

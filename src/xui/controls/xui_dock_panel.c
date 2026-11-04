@@ -1417,8 +1417,8 @@ static void __xuiDockBringHostToSiblingFront(xui_dock_window_slot_t* pWin)
 	iLayer = 0;
 	iZIndex = 0;
 	(void)xuiWidgetGetLayer(pWin->pHostWidget, &iLayer, &iZIndex);
-	if ( xuiWidgetRemoveFromParent(pWin->pHostWidget) != XUI_OK ) return;
-	if ( xuiWidgetAddChild(pParent, pWin->pHostWidget) != XUI_OK ) return;
+	if ( xuiInternalWidgetDetachPart(pWin->pPanelWidget,pWin->pHostWidget) != XUI_OK ) return;
+	if ( xuiInternalWidgetInsertPart(pWin->pPanelWidget,pParent,pWin->pHostWidget,NULL) != XUI_OK ) return;
 	(void)xuiWidgetSetLayer(pWin->pHostWidget, iLayer, iZIndex);
 }
 
@@ -6300,14 +6300,14 @@ static int __xuiDockPanelInitMenus(xui_widget pWidget, xui_dock_panel_data_t* pD
 	desc.iSize = sizeof(desc);
 	desc.pOwner = pWidget;
 	desc.pFont = pData->pFont;
-	ret = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pOptionMenu, &desc);
+	ret = xuiInternalMenuCreatePart(pWidget,&pData->pOptionMenu,&desc);
 	if ( ret != XUI_OK ) return ret;
 	ret = xuiMenuSetSelect(pData->pOptionMenu, __xuiDockMenuSelect, pWidget);
-	if ( ret == XUI_OK ) ret = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pOverflowMenu, &desc);
+	if ( ret == XUI_OK ) ret = xuiInternalMenuCreatePart(pWidget,&pData->pOverflowMenu,&desc);
 	if ( ret == XUI_OK ) ret = xuiMenuSetSelect(pData->pOverflowMenu, __xuiDockMenuSelect, pWidget);
 	if ( ret != XUI_OK ) {
-		xuiWidgetDestroy(pData->pOptionMenu);
-		xuiWidgetDestroy(pData->pOverflowMenu);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pOptionMenu);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pOverflowMenu);
 		pData->pOptionMenu = NULL;
 		pData->pOverflowMenu = NULL;
 		return ret;
@@ -6323,7 +6323,7 @@ static int __xuiDockPanelInitDragOverlay(xui_widget pWidget, xui_dock_panel_data
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pDragOverlayWidget != NULL ) return XUI_OK;
 	pOverlay = NULL;
-	ret = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pOverlay);
+	ret = xuiInternalWidgetCreatePart(pWidget,NULL,&pOverlay,NULL);
 	if ( ret != XUI_OK ) return ret;
 	__xuiDockDefaultCachePolicy(&policy);
 	(void)xuiWidgetSetLayoutType(pOverlay, XUI_LAYOUT_MANUAL);
@@ -6337,13 +6337,14 @@ static int __xuiDockPanelInitDragOverlay(xui_widget pWidget, xui_dock_panel_data
 	(void)xuiWidgetSetCachePolicy(pOverlay, &policy);
 	(void)xuiWidgetSetCacheRenderCallback(pOverlay, __xuiDockDragOverlayRender, pWidget);
 	(void)xuiWidgetSetVisible(pOverlay, 0);
-	ret = xuiOverlayAttach(xuiWidgetGetContext(pWidget), pWidget, pOverlay,
+	ret = xuiInternalWidgetOverlayAttachPart(pWidget,pWidget,pOverlay,
 		XUI_LAYER_DRAG, XUI_WINDOW_Z_TOPMOST + 200);
 	if ( ret != XUI_OK ) {
-		xuiWidgetDestroy(pOverlay);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pOverlay);
 		return ret;
 	}
 	pData->pDragOverlayWidget = pOverlay;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pOverlay,&pData->pDragOverlayWidget);
 	return XUI_OK;
 }
 
@@ -6382,9 +6383,9 @@ static void __xuiDockPanelDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	(void)pUser;
 	if ( pData != NULL ) {
 		(void)__xuiDockCancelPointerInteraction(pWidget, pData);
-		xuiWidgetDestroy(pData->pOptionMenu);
-		xuiWidgetDestroy(pData->pOverflowMenu);
-		xuiWidgetDestroy(pData->pDragOverlayWidget);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pOptionMenu);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pOverflowMenu);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pDragOverlayWidget);
 		pData->pDragOverlayWidget = NULL;
 		for ( i = 0; i < XUI_DOCK_PANEL_MENU_TITLE_COUNT; ++i ) {
 			xrtFree(pData->arrMenuTitle[i]);
@@ -6580,7 +6581,7 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 				__xuiDockSetWidgetTreeLayer(pData->arrWindows[i].pClientWidget, XUI_LAYER_NORMAL, 0);
 				(void)xuiWidgetRemoveFromParent(pData->arrWindows[i].pClientWidget);
 			}
-			xuiWidgetDestroy(pData->arrWindows[i].pHostWidget);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pData->arrWindows[i].pHostWidget);
 		}
 	}
 	if ( xLayoutNodeIsValid(pData->pLayoutContext, pData->iRegionLayoutRoot) ) {
@@ -6639,13 +6640,13 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 		if ( !pData->arrWindows[i].bUsed ) break;
 	}
 	if ( i >= XUI_DOCK_PANEL_WINDOW_CAPACITY ) return XUI_ERROR_OUT_OF_MEMORY;
-	ret = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &host);
-	if ( ret == XUI_OK ) ret = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &closeButton);
-	if ( ret == XUI_OK ) ret = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pinButton);
+	ret = xuiInternalWidgetCreatePart(pWidget,NULL,&host,NULL);
+	if ( ret == XUI_OK ) ret = xuiInternalWidgetCreatePart(pWidget,NULL,&closeButton,NULL);
+	if ( ret == XUI_OK ) ret = xuiInternalWidgetCreatePart(pWidget,NULL,&pinButton,NULL);
 	if ( ret != XUI_OK ) {
-		xuiWidgetDestroy(host);
-		xuiWidgetDestroy(closeButton);
-		xuiWidgetDestroy(pinButton);
+		(void)xuiInternalWidgetDestroyPart(pWidget,host);
+		(void)xuiInternalWidgetDestroyPart(pWidget,closeButton);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pinButton);
 		return ret;
 	}
 	__xuiDockDefaultCachePolicy(&policy);
@@ -6665,9 +6666,9 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 	if ( ret == XUI_OK ) ret = xuiWidgetSetTabStop(pinButton, 0);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetCachePolicy(closeButton, &policy);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetCachePolicy(pinButton, &policy);
-	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(host, closeButton);
-	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(host, pinButton);
-	if ( ret == XUI_OK ) ret = xuiWidgetAddChild(pWidget, host);
+	if ( ret == XUI_OK ) ret = xuiInternalWidgetInsertPart(pWidget,host,closeButton,NULL);
+	if ( ret == XUI_OK ) ret = xuiInternalWidgetInsertPart(pWidget,host,pinButton,NULL);
+	if ( ret == XUI_OK ) ret = xuiInternalWidgetInsertPart(pWidget,pWidget,host,NULL);
 	if ( ret != XUI_OK ) goto failed;
 	w = &pData->arrWindows[i];
 	memset(w, 0, sizeof(*w));
@@ -6691,8 +6692,11 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 	w->bAutoHideLabelDirty = 1;
 	w->pPanelWidget = pWidget;
 	w->pHostWidget = host;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,host,&w->pHostWidget);
 	w->pCloseButtonWidget = closeButton;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,closeButton,&w->pCloseButtonWidget);
 	w->pPinButtonWidget = pinButton;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pinButton,&w->pPinButtonWidget);
 	w->pOwner = pData;
 	w->tFloatRect = __xuiDockRect(80.0f + (float)(i % 8) * 18.0f, 70.0f + (float)(i % 6) * 18.0f, 300.0f, 220.0f);
 	__xuiDockCopy(w->sTitle, XUI_DOCK_PANEL_TITLE_CAPACITY, sTitle);
@@ -6746,9 +6750,9 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 failed:
 	if ( bWindowCounted ) pData->iWindowCount--;
 	if ( bWindowSlotInitialized ) memset(&pData->arrWindows[i], 0, sizeof(pData->arrWindows[i]));
-	if ( closeButton != NULL && xuiWidgetGetParent(closeButton) != host ) xuiWidgetDestroy(closeButton);
-	if ( pinButton != NULL && xuiWidgetGetParent(pinButton) != host ) xuiWidgetDestroy(pinButton);
-	xuiWidgetDestroy(host);
+	if ( closeButton != NULL && xuiWidgetGetParent(closeButton) != host ) (void)xuiInternalWidgetDestroyPart(pWidget,closeButton);
+	if ( pinButton != NULL && xuiWidgetGetParent(pinButton) != host ) (void)xuiInternalWidgetDestroyPart(pWidget,pinButton);
+	(void)xuiInternalWidgetDestroyPart(pWidget,host);
 	__xuiDockInvalidate(pWidget, 1);
 	return ret;
 }

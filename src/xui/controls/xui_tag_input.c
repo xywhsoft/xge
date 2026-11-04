@@ -1340,16 +1340,16 @@ static int __xuiTagInputCreateInputChild(xui_widget pWidget, xui_tag_input_data_
 	tDesc.iErrorBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.iErrorBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.fBorderWidth = 0.0f;
-	iRet = xuiInputCreate(xuiWidgetGetContext(pWidget), &pData->pInput, &tDesc);
+	iRet = xuiInternalInputCreatePart(pWidget,&pData->pInput,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiInputSetChange(pData->pInput, __xuiTagInputInputChanged, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetGetEventHandler(pData->pInput, XUI_EVENT_KEY_DOWN, &pData->onInputKeyDown, &pData->pInputKeyDownUser);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pInput, XUI_EVENT_KEY_DOWN, __xuiTagInputChildKeyDown, pWidget);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pInput);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pInput,NULL);
 	if ( iRet == XUI_OK ) iRet = xuiInternalEditDelegate(pWidget, pData->pInput);
 	if ( iRet == XUI_OK ) iRet = xuiInternalEditSetPrepare(pWidget, __xuiTagInputPrepareEdit, pData);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pInput);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pInput);
 		pData->pInput = NULL;
 		return iRet;
 	}

@@ -2428,11 +2428,11 @@ static int __xuiTreeViewCreateFrame(xui_widget pWidget, xui_tree_view_data_t* pD
 	tFrameDesc.iActiveColor = pData->iScrollbarActiveColor;
 	tFrameDesc.iFocusColor = pData->iScrollbarFocusColor;
 	tFrameDesc.iDisabledColor = pData->iScrollbarDisabledColor;
-	iRet = xuiScrollFrameCreate(xuiWidgetGetContext(pWidget), &pData->pFrame, &tFrameDesc);
+	iRet = xuiInternalScrollFrameCreatePart(pWidget,&pData->pFrame,&tFrameDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pFrame);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pFrame,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
@@ -2440,13 +2440,13 @@ static int __xuiTreeViewCreateFrame(xui_widget pWidget, xui_tree_view_data_t* pD
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pFrame, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pFrame, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
 	pData->pViewport = xuiScrollFrameGetViewportWidget(pData->pFrame);
 	if ( pData->pViewport == NULL ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
@@ -2454,7 +2454,7 @@ static int __xuiTreeViewCreateFrame(xui_widget pWidget, xui_tree_view_data_t* pD
 	if ( iRet == XUI_OK ) iRet = __xuiTreeViewInitViewport(pWidget, pData);
 	if ( iRet == XUI_OK ) iRet = __xuiTreeViewApplyFrameStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		pData->pViewport = NULL;
 		return iRet;

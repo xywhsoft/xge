@@ -4931,7 +4931,7 @@ static int __xuiTerminalCreateFindButton(xui_context pContext, xui_widget* ppBut
 	tDesc.pFont = pFont;
 	tDesc.sText = sText;
 	tDesc.fBorderWidth = 1.0f;
-	iRet = xuiButtonCreate(pContext, ppButton, &tDesc);
+	iRet = xuiInternalButtonCreatePart(pTerminal,ppButton,&tDesc);
 	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(*ppButton, __xuiTerminalFindButtonClick, pTerminal);
 	return iRet;
 }
@@ -4947,7 +4947,7 @@ static int __xuiTerminalCreateFindCheck(xui_context pContext, xui_widget* ppChec
 	tDesc.sText = sText;
 	tDesc.fIndicatorSize = 14.0f;
 	tDesc.fGap = 4.0f;
-	iRet = xuiCheckBoxCreate(pContext, ppCheck, &tDesc);
+	iRet = xuiInternalCheckBoxCreatePart(pTerminal,ppCheck,&tDesc);
 	if ( iRet == XUI_OK ) iRet = xuiCheckBoxSetChange(*ppCheck, __xuiTerminalFindCheckChange, pTerminal);
 	return iRet;
 }
@@ -4999,7 +4999,7 @@ static int __xuiTerminalCreateFindWindow(xui_widget pTerminal, xui_terminal_data
 	tWindow.fTitleBarHeight = 28.0f;
 	tWindow.fBorderWidth = 1.0f;
 	tWindow.fButtonSize = 18.0f;
-	iRet = xuiWindowCreate(pContext, &pFindWindow, &tWindow);
+	iRet = xuiInternalWindowCreatePart(pTerminal,&pFindWindow,&tWindow);
 	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = xuiWindowSetClose(pFindWindow, __xuiTerminalFindWindowClose, pTerminal);
 	if ( iRet != XUI_OK ) goto cleanup;
@@ -5018,7 +5018,7 @@ static int __xuiTerminalCreateFindWindow(xui_widget pTerminal, xui_terminal_data
 	tInput.pFont = pFont;
 	tInput.sPlaceholder = xuiTranslate(pContext, XUI_TR_FIND_PLACEHOLDER);
 	tInput.fBorderWidth = 1.0f;
-	iRet = xuiInputCreate(pContext, &pFindInput, &tInput);
+	iRet = xuiInternalInputCreatePart(pTerminal,&pFindInput,&tInput);
 	if ( iRet == XUI_OK ) iRet = __xuiTerminalCreateFindButton(pContext, &pFindPrevButton,
 		pFont, xuiTranslate(pContext, XUI_TR_FIND_PREVIOUS), pTerminal);
 	if ( iRet == XUI_OK ) iRet = __xuiTerminalCreateFindButton(pContext, &pFindNextButton,
@@ -5035,7 +5035,7 @@ static int __xuiTerminalCreateFindWindow(xui_widget pTerminal, xui_terminal_data
 	tLabel.sText = "";
 	tLabel.iTextColor = XUI_COLOR_RGBA(90, 105, 124, 255);
 	tLabel.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pContext, &pFindStatus, &tLabel);
+	if ( iRet == XUI_OK ) iRet = xuiInternalLabelCreatePart(pTerminal,&pFindStatus,&tLabel);
 	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = xuiInputSetChange(pFindInput, __xuiTerminalFindInputChange, pTerminal);
 	if ( iRet != XUI_OK ) goto cleanup;
@@ -5047,9 +5047,9 @@ static int __xuiTerminalCreateFindWindow(xui_widget pTerminal, xui_terminal_data
 	arrChildren[5] = pFindRegexCheck;
 	arrChildren[6] = pFindStatus;
 	for ( i = 0; i < 7 && iRet == XUI_OK; ++i ) {
-		iRet = xuiWindowAddChild(pFindWindow, arrChildren[i]);
+		iRet = xuiInternalWidgetInsertPart(pTerminal,xuiWindowGetClientWidget(pFindWindow),arrChildren[i],NULL);
 	}
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pFindWindow);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTerminal,pRoot,pFindWindow,NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pFindWindow,
 		(xui_rect_t){32.0f, 32.0f, 548.0f, 132.0f});
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pFindInput,
@@ -5068,13 +5068,16 @@ static int __xuiTerminalCreateFindWindow(xui_widget pTerminal, xui_terminal_data
 		(xui_rect_t){12.0f, 78.0f, 500.0f, 22.0f});
 	if ( iRet != XUI_OK ) goto cleanup;
 	pData->pFindWindow = pFindWindow;
+	(void)xuiInternalWidgetBindPartSlot(pTerminal,pFindWindow,&pData->pFindWindow);
 	pData->pFindInput = pFindInput;
+	(void)xuiInternalWidgetBindPartSlot(pTerminal,pFindInput,&pData->pFindInput);
 	pData->pFindPrevButton = pFindPrevButton;
 	pData->pFindNextButton = pFindNextButton;
 	pData->pFindCaseCheck = pFindCaseCheck;
 	pData->pFindWordCheck = pFindWordCheck;
 	pData->pFindRegexCheck = pFindRegexCheck;
 	pData->pFindStatus = pFindStatus;
+	(void)xuiInternalWidgetBindPartSlot(pTerminal,pFindStatus,&pData->pFindStatus);
 	return XUI_OK;
 
 cleanup:
@@ -5088,13 +5091,13 @@ cleanup:
 	for ( i = 0; i < 7; ++i ) {
 		if ( arrChildren[i] == NULL || !xuiInternalWidgetIsValid(arrChildren[i]) ) continue;
 		if ( xuiWidgetGetParent(arrChildren[i]) != NULL ) {
-			(void)xuiWidgetRemoveFromParent(arrChildren[i]);
+			(void)xuiInternalWidgetDetachPart(pTerminal,arrChildren[i]);
 		}
-		xuiWidgetDestroy(arrChildren[i]);
+		(void)xuiInternalWidgetDestroyPart(pTerminal,arrChildren[i]);
 	}
 	if ( pFindWindow != NULL && xuiInternalWidgetIsValid(pFindWindow) ) {
-		if ( xuiWidgetGetParent(pFindWindow) != NULL ) (void)xuiWidgetRemoveFromParent(pFindWindow);
-		xuiWidgetDestroy(pFindWindow);
+		if ( xuiWidgetGetParent(pFindWindow) != NULL ) (void)xuiInternalWidgetDetachPart(pTerminal,pFindWindow);
+		(void)xuiInternalWidgetDestroyPart(pTerminal,pFindWindow);
 	}
 	return iRet;
 }
@@ -5543,7 +5546,7 @@ static int __xuiTerminalInitMenu(xui_widget pWidget, xui_terminal_data_t* pData)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pOwner = pWidget;
 	tDesc.pFont = pData->pFont;
-	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pMenu, &tDesc);
+	iRet = xuiInternalMenuCreatePart(pWidget,&pData->pMenu,&tDesc);
 	if ( iRet != XUI_OK ) {
 		pData->pMenu = NULL;
 		return iRet;
@@ -6461,15 +6464,15 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData == NULL ) return;
 	if ( xuiInternalWidgetIsValid(pWidget) ) (void)__xuiTerminalCancelPointer(pWidget, pData, 1);
 	if ( pData->pFindWindow != NULL ) {
-		xuiWidgetDestroy(pData->pFindWindow);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFindWindow);
 		pData->pFindWindow = NULL;
 	}
 	if ( pData->pMenu != NULL ) {
 		pPopup = xuiMenuGetPopupWidget(pData->pMenu);
 		if ( pPopup != NULL ) {
-			xuiWidgetDestroy(pPopup);
+			(void)xuiInternalWidgetDestroyPart(pData->pMenu,pPopup);
 		} else {
-			xuiWidgetDestroy(pData->pMenu);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pData->pMenu);
 		}
 		pData->pMenu = NULL;
 	}

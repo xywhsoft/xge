@@ -286,11 +286,11 @@ static int __xuiScrollViewInit(xui_widget pWidget, void* pTypeData, const void* 
 	iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameCreate(xuiWidgetGetContext(pWidget), &pData->pFrame, &tFrameDesc);
+	if ( iRet == XUI_OK ) iRet = xuiInternalScrollFrameCreatePart(pWidget,&pData->pFrame,&tFrameDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pFrame);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pFrame,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
@@ -299,35 +299,35 @@ static int __xuiScrollViewInit(xui_widget pWidget, void* pTypeData, const void* 
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pFrame, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetChange(pData->pFrame, __xuiScrollViewFrameChanged, pWidget);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
 	pViewport = xuiScrollFrameGetViewportWidget(pData->pFrame);
 	if ( pViewport == NULL ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pContent);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pContent,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
-	iRet = xuiWidgetAddChild(pViewport, pData->pContent);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pViewport,pData->pContent,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pContent);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pContent);
 		pData->pContent = NULL;
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
 	iRet = xuiWidgetSetLayoutChildrenCallback(pViewport, __xuiScrollViewLayoutContent, pData);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pContent);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pContent);
 		pData->pContent = NULL;
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
@@ -337,7 +337,7 @@ static int __xuiScrollViewInit(xui_widget pWidget, void* pTypeData, const void* 
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pData->pContent, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pData->pContent, 0);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		pData->pContent = NULL;
 	}
@@ -392,7 +392,7 @@ XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiScrollViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_view_desc_t* pDesc)
+static int __xuiScrollViewCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_scroll_view_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -404,8 +404,22 @@ XUI_API int xuiScrollViewCreate(xui_context pContext, xui_widget* ppWidget, cons
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiScrollViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_view_desc_t* pDesc)
+{return __xuiScrollViewCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalScrollViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_scroll_view_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiScrollViewCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiScrollViewSetChangeOwned(xui_widget pWidget, xui_scroll_view_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
 {

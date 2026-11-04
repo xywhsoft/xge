@@ -740,11 +740,11 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_ENABLED_CHANGED, __xuiCanvasEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_VISIBLE_CHANGED, __xuiCanvasEvent, NULL);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiScrollFrameCreate(xuiWidgetGetContext(pWidget), &pData->pFrame, &tFrameDesc);
+	iRet = xuiInternalScrollFrameCreatePart(pWidget,&pData->pFrame,&tFrameDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pFrame);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pFrame,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
@@ -770,7 +770,7 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 cleanup_frame:
 	pData->pViewport = NULL;
 	if ( pData->pFrame != NULL ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 	}
 	return iRet;

@@ -3187,7 +3187,7 @@ static int __xuiInputInitMenu(xui_widget pWidget, xui_input_data_t* pData)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pOwner = pWidget;
 	tDesc.pFont = pData->pFont;
-	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pMenu, &tDesc);
+	iRet = xuiInternalMenuCreatePart(pWidget,&pData->pMenu,&tDesc);
 	if ( iRet != XUI_OK ) {
 		pData->pMenu = NULL;
 		return iRet;
@@ -3299,9 +3299,9 @@ static void __xuiInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	if ( pData->pMenu != NULL ) {
 		pPopup = xuiMenuGetPopupWidget(pData->pMenu);
 		if ( pPopup != NULL ) {
-			xuiWidgetDestroy(pPopup);
+			(void)xuiInternalWidgetDestroyPart(pData->pMenu,pPopup);
 		} else {
-			xuiWidgetDestroy(pData->pMenu);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pData->pMenu);
 		}
 		pData->pMenu = NULL;
 	}
@@ -3430,7 +3430,7 @@ XUI_API xui_widget_type xuiInputGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_input_desc_t* pDesc)
+static int __xuiInputCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_input_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -3443,8 +3443,22 @@ XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_input_desc_t* pDesc)
+{return __xuiInputCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalInputCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_input_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiInputCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiInputSetChangeOwned(xui_widget pWidget, xui_input_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
 {

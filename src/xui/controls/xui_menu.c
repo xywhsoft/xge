@@ -1956,7 +1956,7 @@ static void __xuiMenuDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 			pParentData->pOpenSubmenu = NULL;
 		}
 		__xuiMenuFreeItemStrings(pData->arrItems, pData->iItemCount);
-		if ( xuiInternalWidgetIsValid(pPopup) ) xuiWidgetDestroy(pPopup);
+		if ( xuiInternalWidgetIsValid(pPopup) ) (void)xuiInternalWidgetDestroyPart(pWidget,pPopup);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -2010,9 +2010,10 @@ static int __xuiMenuCreatePopup(xui_widget pWidget, xui_menu_data_t* pData, cons
 	tPopupDesc.iShadowColor = pData->tColors.iShadowColor;
 	tPopupDesc.iBackdropColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	pPopup = NULL;
-	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pPopup, &tPopupDesc);
+	iRet = xuiInternalPopupCreatePart(pWidget,&pPopup,&tPopupDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pPopup = pPopup;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pPopup,&pData->pPopup);
 	iRet = xuiPopupSetChange(pPopup, __xuiMenuPopupChanged, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pPopup, XUI_POPUP_FOCUS_CUSTOM, pWidget);
 	if ( iRet == XUI_OK ) {
@@ -2020,15 +2021,15 @@ static int __xuiMenuCreatePopup(xui_widget pWidget, xui_menu_data_t* pData, cons
 		if ( pContent == NULL ) {
 			iRet = XUI_ERROR_NOT_INITIALIZED;
 		} else {
-			iRet = xuiWidgetAddChild(pContent, pWidget);
+			iRet = (pWidget->pInternalOwner ? xuiInternalWidgetInsertPart((xui_widget)pWidget->pInternalOwner,pContent,pWidget,NULL) : xuiWidgetAddChild(pContent,pWidget));
 		}
 	}
 	if ( iRet == XUI_OK ) {
 		iRet = __xuiMenuApplyPopupSize(pWidget, pData);
 	}
 	if ( iRet != XUI_OK ) {
-		(void)xuiWidgetRemoveFromParent(pWidget);
-		xuiWidgetDestroy(pData->pPopup);
+		(void)(pWidget->pInternalOwner ? xuiInternalWidgetDetachPart((xui_widget)pWidget->pInternalOwner,pWidget) : xuiWidgetRemoveFromParent(pWidget));
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 		pData->pPopup = NULL;
 		return iRet;
 	}
@@ -2096,7 +2097,7 @@ XUI_API xui_widget_type xuiMenuGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiMenuCreate(xui_context pContext, xui_widget* ppWidget, const xui_menu_desc_t* pDesc)
+static int __xuiMenuCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_menu_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 	xui_menu_data_t* pData;
@@ -2112,19 +2113,33 @@ XUI_API int xuiMenuCreate(xui_context pContext, xui_widget* ppWidget, const xui_
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	iRet = xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	iRet = (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
 	pData = __xuiMenuGetData(*ppWidget);
 	iRet = __xuiMenuCreatePopup(*ppWidget, pData, pDesc);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(*ppWidget);
+		if(pNativeOwner)(void)xuiInternalWidgetDestroyPart(pNativeOwner,*ppWidget);else xuiWidgetDestroy(*ppWidget);
 		*ppWidget = NULL;
 		return iRet;
 	}
 	return XUI_OK;
 }
+
+XUI_API int xuiMenuCreate(xui_context pContext, xui_widget* ppWidget, const xui_menu_desc_t* pDesc)
+{return __xuiMenuCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalMenuCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_menu_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiMenuCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiMenuSetItems(xui_widget pWidget, const xui_menu_item_t* pItems, int iCount)
 {

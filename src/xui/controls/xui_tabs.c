@@ -935,14 +935,15 @@ static int __xuiTabsEnsureOverflowMenu(xui_widget pTabs, xui_tabs_data_t* pData)
 	tMenuDesc.pOwner = NULL;
 	tMenuDesc.pFont = pData->pFont;
 	pMenu = NULL;
-	iRet = xuiMenuCreate(xuiWidgetGetContext(pTabs), &pMenu, &tMenuDesc);
+	iRet = xuiInternalMenuCreatePart(pTabs,&pMenu,&tMenuDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiMenuSetSelect(pMenu, __xuiTabsOverflowMenuSelect, pTabs);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pMenu);
+		(void)xuiInternalWidgetDestroyPart(pTabs,pMenu);
 		return iRet;
 	}
 	pData->pOverflowMenu = pMenu;
+	(void)xuiInternalWidgetBindPartSlot(pTabs,pMenu,&pData->pOverflowMenu);
 	return XUI_OK;
 }
 
@@ -1318,20 +1319,20 @@ static int __xuiTabsCreatePage(xui_widget pTabs, xui_tabs_data_t* pData, int iIn
 	if ( pData->arrPages[iIndex].pButton != NULL ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pTabs), &pButton);
+	iRet = xuiInternalWidgetCreatePart(pTabs,NULL,&pButton,NULL);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pTabs), &pPage);
+	iRet = xuiInternalWidgetCreatePart(pTabs,NULL,&pPage,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pButton);
+		(void)xuiInternalWidgetDestroyPart(pTabs,pButton);
 		return iRet;
 	}
 	iRet = __xuiTabsConfigureButton(pTabs, pButton);
 	if ( iRet == XUI_OK ) iRet = __xuiTabsConfigurePage(pPage);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pData->pTabBar, pButton);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pData->pClient, pPage);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTabs,pData->pTabBar,pButton,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTabs,pData->pClient,pPage,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pButton);
-		xuiWidgetDestroy(pPage);
+		(void)xuiInternalWidgetDestroyPart(pTabs,pButton);
+		(void)xuiInternalWidgetDestroyPart(pTabs,pPage);
 		return iRet;
 	}
 	pData->arrPages[iIndex].pButton = pButton;
@@ -1342,8 +1343,8 @@ static int __xuiTabsCreatePage(xui_widget pTabs, xui_tabs_data_t* pData, int iIn
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pPage, 0);
 	if ( iRet != XUI_OK ) {
 		memset(&pData->arrPages[iIndex], 0, sizeof(pData->arrPages[iIndex]));
-		xuiWidgetDestroy(pButton);
-		xuiWidgetDestroy(pPage);
+		(void)xuiInternalWidgetDestroyPart(pTabs,pButton);
+		(void)xuiInternalWidgetDestroyPart(pTabs,pPage);
 		return iRet;
 	}
 	return XUI_OK;
@@ -1428,8 +1429,8 @@ static int __xuiTabsApplyItems(xui_widget pTabs, xui_tabs_data_t* pData, const c
 rollback:
 	for ( i = 0; i < XUI_TABS_PAGE_CAPACITY; i++ ) {
 		if ( arrOldPages[i].pButton == NULL && pData->arrPages[i].pButton != NULL ) {
-			xuiWidgetDestroy(pData->arrPages[i].pButton);
-			xuiWidgetDestroy(pData->arrPages[i].pPage);
+			(void)xuiInternalWidgetDestroyPart(pTabs,pData->arrPages[i].pButton);
+			(void)xuiInternalWidgetDestroyPart(pTabs,pData->arrPages[i].pPage);
 		}
 	}
 	memcpy(pData->arrPages, arrOldPages, sizeof(arrOldPages));
@@ -2184,11 +2185,11 @@ static int __xuiTabsCreateChrome(xui_widget pWidget, xui_tabs_data_t* pData)
 {
 	int iRet;
 
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pTabBar);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pTabBar,NULL);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pClient);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pClient,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pTabBar);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTabBar);
 		pData->pTabBar = NULL;
 		return iRet;
 	}
@@ -2211,11 +2212,11 @@ static int __xuiTabsCreateChrome(xui_widget pWidget, xui_tabs_data_t* pData)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pData->pClient, XUI_OVERFLOW_CLIP);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pData->pClient, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pData->pClient, 0);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pTabBar);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pClient);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pTabBar,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pClient,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pTabBar);
-		xuiWidgetDestroy(pData->pClient);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTabBar);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pClient);
 		pData->pTabBar = NULL;
 		pData->pClient = NULL;
 		return iRet;
@@ -2292,7 +2293,7 @@ static void __xuiTabsDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	pData = (xui_tabs_data_t*)pTypeData;
 	if ( pData != NULL ) {
 		(void)__xuiTabsClearAllInteraction(pWidget, pData);
-		xuiWidgetDestroy(pData->pOverflowMenu);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pOverflowMenu);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -2510,8 +2511,8 @@ XUI_API int xuiTabsAddPage(xui_widget pWidget, const char* sTitle, xui_widget* p
 		pData->iSelected = iOldSelected;
 		pData->iChangeCount = iOldChangeCount;
 		if ( bCreated ) {
-			xuiWidgetDestroy(pNewButton);
-			xuiWidgetDestroy(pNewPage);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pNewButton);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pNewPage);
 		}
 		/* Preserve the original failure; restoring widget state is best-effort. */
 		(void)__xuiTabsSyncPages(pWidget, pData);
@@ -2630,8 +2631,8 @@ XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex)
 		(void)__xuiTabsSyncPages(pWidget, pData);
 		goto done;
 	}
-	xuiWidgetDestroy(tRemoved.pButton);
-	xuiWidgetDestroy(tRemoved.pPage);
+	(void)xuiInternalWidgetDestroyPart(pWidget,tRemoved.pButton);
+	(void)xuiInternalWidgetDestroyPart(pWidget,tRemoved.pPage);
 	memset(&pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1], 0,
 		sizeof(pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1]));
 	pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1].bEnabled = 1;

@@ -543,7 +543,7 @@ XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiLabelCreate(xui_context pContext, xui_widget* ppWidget, const xui_label_desc_t* pDesc)
+static int __xuiLabelCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_label_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -558,8 +558,22 @@ XUI_API int xuiLabelCreate(xui_context pContext, xui_widget* ppWidget, const xui
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiLabelCreate(xui_context pContext, xui_widget* ppWidget, const xui_label_desc_t* pDesc)
+{return __xuiLabelCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalLabelCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_label_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiLabelCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiLabelSetText(xui_widget pWidget, const char* sText)
 {

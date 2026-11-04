@@ -1576,7 +1576,7 @@ static int __xuiIconPickerCreatePopup(xui_widget pWidget, xui_icon_picker_data_t
 	tPopupDesc.iPanelColor = pData->iPopupPanelColor;
 	tPopupDesc.iBorderColor = pData->iPopupBorderColor;
 	tPopupDesc.iShadowColor = pData->iPopupShadowColor;
-	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pPopup, &tPopupDesc);
+	iRet = xuiInternalPopupCreatePart(pWidget,&pData->pPopup,&tPopupDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pPanel = xuiPopupGetContentWidget(pData->pPopup);
 	if ( pData->pPanel == NULL ) return XUI_ERROR_NOT_INITIALIZED;
@@ -1598,9 +1598,9 @@ static int __xuiIconPickerCreatePopup(xui_widget pWidget, xui_icon_picker_data_t
 	tFrameDesc.fScrollbarSize = pData->fScrollbarSize;
 	tFrameDesc.fWheelStep = pData->fCellHeight + pData->fGapY;
 	tFrameDesc.iBackgroundColor = pData->iPopupPanelColor;
-	iRet = xuiScrollFrameCreate(xuiWidgetGetContext(pWidget), &pData->pFrame, &tFrameDesc);
+	iRet = xuiInternalScrollFrameCreatePart(pWidget,&pData->pFrame,&tFrameDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pData->pPanel, pData->pFrame);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pData->pPanel,pData->pFrame,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pViewport = xuiScrollFrameGetViewportWidget(pData->pFrame);
 	if ( pData->pViewport == NULL ) return XUI_ERROR_NOT_INITIALIZED;
@@ -1787,7 +1787,7 @@ static void __xuiIconPickerDestroy(xui_widget pWidget, void* pTypeData, void* pU
 	pData->pViewport = NULL;
 	if ( xuiInternalWidgetIsValid(pPopup) ) {
 		(void)xuiPopupSetChange(pPopup, NULL, NULL);
-		xuiWidgetDestroy(pPopup);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pPopup);
 	}
 	if ( pData->pCategory != NULL ) (void)xuiIconCategoryRelease(pData->pCategory);
 	if ( pData->arrIds != NULL ) xrtFree(pData->arrIds);

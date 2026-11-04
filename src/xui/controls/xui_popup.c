@@ -1013,7 +1013,7 @@ static int __xuiPopupSetOpenOperation(xui_widget pWidget, xui_popup_data_t* pDat
 	if ( pData->bOpen == bOpen ) {
 		if ( bOpen ) {
 			if ( pContext->pOverlayRoot == NULL || pWidget->pParent != pContext->pOverlayRoot ) {
-				iRet = xuiOverlayAttach(pContext, pData->pOwner, pWidget, XUI_LAYER_POPUP, 0);
+				iRet = (pWidget->pInternalOwner ? xuiInternalWidgetOverlayAttachPart((xui_widget)pWidget->pInternalOwner,pData->pOwner,pWidget,XUI_LAYER_POPUP, 0) : xuiOverlayAttach(pContext,pData->pOwner,pWidget,XUI_LAYER_POPUP, 0));
 				if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
 			}
 			iRet = xuiOverlayBringToFront(pWidget);
@@ -1027,7 +1027,7 @@ static int __xuiPopupSetOpenOperation(xui_widget pWidget, xui_popup_data_t* pDat
 			return XUI_OK;
 		}
 		if ( pContext->pOverlayRoot == NULL || pWidget->pParent != pContext->pOverlayRoot ) {
-			iRet = xuiOverlayAttach(pContext, pData->pOwner, pWidget, XUI_LAYER_POPUP, 0);
+			iRet = (pWidget->pInternalOwner ? xuiInternalWidgetOverlayAttachPart((xui_widget)pWidget->pInternalOwner,pData->pOwner,pWidget,XUI_LAYER_POPUP, 0) : xuiOverlayAttach(pContext,pData->pOwner,pWidget,XUI_LAYER_POPUP, 0));
 			if ( iRet != XUI_OK || !__xuiPopupOperationCurrent(pContext, pWidget, pData, iRevision) ) return iRet;
 		}
 		iRet = xuiOverlayBringToFront(pWidget);
@@ -1405,14 +1405,14 @@ static void __xuiPopupApplyDesc(xui_popup_data_t* pData, const xui_popup_desc_t*
 	if ( pDesc->iDisabledColor != 0u ) pData->iDisabledColor = pDesc->iDisabledColor;
 }
 
-static void __xuiPopupInitChildrenDestroy(xui_popup_data_t* pData)
+static void __xuiPopupInitChildrenDestroy(xui_widget pWidget,xui_popup_data_t* pData)
 {
 	if ( pData == NULL ) return;
-	if ( pData->pBackdropVisual != NULL ) xuiWidgetDestroy(pData->pBackdropVisual);
+	if ( pData->pBackdropVisual != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pBackdropVisual);
 	if ( pData->pPanel != NULL ) {
-		xuiWidgetDestroy(pData->pPanel);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pPanel);
 	} else if ( pData->pScrollView != NULL ) {
-		xuiWidgetDestroy(pData->pScrollView);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pScrollView);
 	}
 	pData->pBackdropVisual = NULL;
 	pData->pScrollView = NULL;
@@ -1465,17 +1465,17 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	tScrollDesc.iDisabledColor = pData->iDisabledColor;
 	tScrollDesc.iCornerColor = XUI_COLOR_RGBA(229, 238, 248, 255);
 	tScrollDesc.iGripColor = XUI_COLOR_RGBA(128, 153, 180, 180);
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pPanel);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pPanel,NULL);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiScrollViewCreate(xuiWidgetGetContext(pWidget), &pData->pScrollView, &tScrollDesc);
+	iRet = xuiInternalScrollViewCreatePart(pWidget,&pData->pScrollView,&tScrollDesc);
 	if ( iRet != XUI_OK ) {
-		__xuiPopupInitChildrenDestroy(pData);
+		__xuiPopupInitChildrenDestroy(pWidget,pData);
 		return iRet;
 	}
 	pData->pContent = xuiScrollViewGetContentWidget(pData->pScrollView);
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pBackdropVisual);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pBackdropVisual,NULL);
 	if ( iRet != XUI_OK ) {
-		__xuiPopupInitChildrenDestroy(pData);
+		__xuiPopupInitChildrenDestroy(pWidget,pData);
 		return iRet;
 	}
 	iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
@@ -1509,9 +1509,9 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCacheRenderCallback(pData->pPanel, __xuiPopupPanelCacheRender, pData);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pData->pScrollView, XUI_OVERFLOW_CLIP);
 	if ( iRet != XUI_OK ) goto init_failed;
-	iRet = xuiWidgetAddChild(pWidget, pData->pBackdropVisual);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pPanel);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pData->pPanel, pData->pScrollView);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pBackdropVisual,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pPanel,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pData->pPanel,pData->pScrollView,NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pWidget, 1);
 	if ( iRet != XUI_OK ) goto init_failed;
@@ -1536,7 +1536,7 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	return XUI_OK;
 
 init_failed:
-	__xuiPopupInitChildrenDestroy(pData);
+	__xuiPopupInitChildrenDestroy(pWidget,pData);
 	return iRet;
 }
 
@@ -1619,7 +1619,7 @@ XUI_API xui_widget_type xuiPopupGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiPopupCreate(xui_context pContext, xui_widget* ppWidget, const xui_popup_desc_t* pDesc)
+static int __xuiPopupCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_popup_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -1634,8 +1634,22 @@ XUI_API int xuiPopupCreate(xui_context pContext, xui_widget* ppWidget, const xui
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiPopupCreate(xui_context pContext, xui_widget* ppWidget, const xui_popup_desc_t* pDesc)
+{return __xuiPopupCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalPopupCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_popup_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiPopupCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiPopupSetChangeOwned(xui_widget pWidget, xui_popup_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
 {

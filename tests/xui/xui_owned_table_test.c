@@ -140,6 +140,17 @@ static int paint(TableState* s)
     drawing=NULL;(void)s->proxy.tProxy.drawEnd(&s->proxy.tProxy,draw);
     return result;
 }
+typedef struct RetiredRaw {bool retired;unsigned calls;} RetiredRaw;
+static int retired_raw_count(xui_widget widget,void* user)
+{(void)widget;RetiredRaw* raw=user;assert(!raw->retired);++raw->calls;return 2;}
+static void raw_owned_clear(void)
+{
+    TableState s;make_table(&s,true,false);RetiredRaw raw={0};
+    assert(xuiTableViewSetAdapter(s.table,retired_raw_count,raw_cell,&raw)==XUI_OK);
+    assert(install(&s)==XUI_OK);raw.retired=true;unsigned calls=raw.calls;
+    assert(xuiTableViewSetAdapterOwned(s.table,NULL,NULL,NULL,NULL,NULL,NULL)==XUI_OK);
+    assert(xuiTableViewGetRowCount(s.table)==2 && raw.calls==calls);drop_table(&s);
+}
 static void output_and_cache(void)
 {
     for(int cached=0;cached<2;++cached){
@@ -194,6 +205,6 @@ static void actual_consumers(void)
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);assert(xrtMemDebugEnable(true));xmemdebugsnapshot a,b;xrtMemDebugSnapshot(&a);
-    output_and_cache();provider_reentry();publication_failures();actual_consumers();xrtClearError();xrtMemDebugSnapshot(&b);assert(a.LiveCount==b.LiveCount && a.LiveBytes==b.LiveBytes && a.InvalidFreeCount==b.InvalidFreeCount && a.DoubleFreeCount==b.DoubleFreeCount);
+    raw_owned_clear();output_and_cache();provider_reentry();publication_failures();actual_consumers();xrtClearError();xrtMemDebugSnapshot(&b);assert(a.LiveCount==b.LiveCount && a.LiveBytes==b.LiveBytes && a.InvalidFreeCount==b.InvalidFreeCount && a.DoubleFreeCount==b.DoubleFreeCount);
     puts("owned Table actual consumers: provider/result ownership, exact cached zero-alloc Use, OOM/reentry/close, formatter free-before-Drop and native rendering/accessibility passed");return 0;
 }

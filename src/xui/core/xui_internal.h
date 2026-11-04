@@ -6,6 +6,38 @@
 #include "xui_unicode_core.h"
 #include "../modules/xlayout/xlayout.h"
 
+/* Private composite ownership. A live child retains its identity across
+ * internal moves, including parent-change callbacks. No thread/global bypass. */
+int xuiInternalWidgetCreatePart(xui_widget pOwner,xui_widget_type pType,xui_widget* ppPart,const void* pCreateData);
+int xuiInternalWidgetOverlayAttachPart(xui_widget pOwner,xui_widget pOverlayOwner,xui_widget pPart,int iLayer,int iZIndex);
+int xuiInternalWidgetBindPartSlot(xui_widget pOwner,xui_widget pPart,xui_widget* ppStableDataSlot);
+int xuiInternalWidgetClaimPart(xui_widget pOwner,xui_widget pPart);
+int xuiInternalWidgetDestroyPart(xui_widget pOwner,xui_widget pPart);
+int xuiInternalWidgetDetachPart(xui_widget pOwner,xui_widget pPart);
+int xuiInternalWidgetInsertPart(xui_widget pOwner,xui_widget pParent,xui_widget pPart,xui_widget pBefore);
+
+/* Private factories preserve each control validation and post-construction. */
+int xuiInternalScrollBarCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_scrollbar_desc_t* pDesc);
+int xuiInternalScrollFrameCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_scroll_frame_desc_t* pDesc);
+int xuiInternalScrollViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_scroll_view_desc_t* pDesc);
+int xuiInternalInputCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_input_desc_t* pDesc);
+int xuiInternalNumericInputCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_numeric_input_desc_t* pDesc);
+int xuiInternalComboBoxCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_combobox_desc_t* pDesc);
+int xuiInternalColorPickerCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_color_picker_desc_t* pDesc);
+int xuiInternalDatePickerCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_date_picker_desc_t* pDesc);
+int xuiInternalPopupCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_popup_desc_t* pDesc);
+int xuiInternalTextEditCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_text_edit_desc_t* pDesc);
+int xuiInternalButtonCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_button_desc_t* pDesc);
+int xuiInternalTableViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_table_view_desc_t* pDesc);
+int xuiInternalTableGridCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_table_grid_desc_t* pDesc);
+int xuiInternalLabelCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_label_desc_t* pDesc);
+int xuiInternalImageCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_image_desc_t* pDesc);
+int xuiInternalMenuCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_menu_desc_t* pDesc);
+int xuiInternalWindowCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_window_desc_t* pDesc);
+int xuiInternalCheckBoxCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_checkbox_desc_t* pDesc);
+
+int xuiInternalListViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_list_view_desc_t* pDesc);
+
 /* Native Cell output read protection; last consumer ends it. */
 int xuiInternalTableCellMove(xui_table_view_cell_output_t* pTarget, xui_table_view_cell_output_t* pSource);
 int xuiInternalTableCellReadBegin(xui_table_view_cell_output_t* pCell);
@@ -458,6 +490,8 @@ struct xui_widget_t {
 	xui_widget pContextPrev;
 	xui_widget pContextNext;
 	xui_widget pParent;
+    const void* pInternalOwner; /* Exact Native composite construction identity. */
+    xui_widget* ppInternalOwnerSlot; /* Fixed TypeData slot, never stack/relocatable storage. */
 	xui_widget pFirstChild;
 	xui_widget pLastChild;
 	xui_widget pPrevSibling;

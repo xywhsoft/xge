@@ -1422,7 +1422,6 @@ static int __xuiAccordionConfigureClientWidget(xui_widget pAccordion, xui_widget
 
 static int __xuiAccordionCreateSectionWidgets(xui_widget pAccordion, xui_accordion_data_t* pData, int iIndex)
 {
-	xui_context pContext;
 	xui_widget pSection;
 	xui_widget pHeader;
 	xui_widget pClient;
@@ -1433,27 +1432,26 @@ static int __xuiAccordionCreateSectionWidgets(xui_widget pAccordion, xui_accordi
 	if ( (pAccordion == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= XUI_ACCORDION_SECTION_CAPACITY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pContext = xuiWidgetGetContext(pAccordion);
 	pSection = NULL;
 	pHeader = NULL;
 	pClient = NULL;
 	bHeaderAdded = 0;
 	bClientAdded = 0;
-	iRet = xuiWidgetCreate(pContext, &pSection);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pHeader);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pClient);
+	iRet = xuiInternalWidgetCreatePart(pAccordion,NULL,&pSection,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetCreatePart(pAccordion,NULL,&pHeader,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetCreatePart(pAccordion,NULL,&pClient,NULL);
 	if ( iRet == XUI_OK ) iRet = __xuiAccordionConfigureSectionWidget(pSection);
 	if ( iRet == XUI_OK ) iRet = __xuiAccordionConfigureHeaderWidget(pAccordion, pHeader);
 	if ( iRet == XUI_OK ) iRet = __xuiAccordionConfigureClientWidget(pAccordion, pClient, pData->fContentPadding);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pSection, pHeader);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pAccordion,pSection,pHeader,NULL);
 	if ( iRet == XUI_OK ) bHeaderAdded = 1;
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pSection, pClient);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pAccordion,pSection,pClient,NULL);
 	if ( iRet == XUI_OK ) bClientAdded = 1;
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pAccordion, pSection);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pAccordion,pAccordion,pSection,NULL);
 	if ( iRet != XUI_OK ) {
-		if ( pSection != NULL ) xuiWidgetDestroy(pSection);
-		if ( !bHeaderAdded && (pHeader != NULL) ) xuiWidgetDestroy(pHeader);
-		if ( !bClientAdded && (pClient != NULL) ) xuiWidgetDestroy(pClient);
+		if ( pSection != NULL ) (void)xuiInternalWidgetDestroyPart(pAccordion,pSection);
+		if ( !bHeaderAdded && (pHeader != NULL) ) (void)xuiInternalWidgetDestroyPart(pAccordion,pHeader);
+		if ( !bClientAdded && (pClient != NULL) ) (void)xuiInternalWidgetDestroyPart(pAccordion,pClient);
 		return iRet;
 	}
 	pData->arrSections[iIndex].pSection = pSection;
@@ -1684,7 +1682,7 @@ XUI_API int xuiAccordionClear(xui_widget pWidget)
 	if ( iRet != XUI_OK ) goto done;
 	for ( i = 0; i < pData->iSectionCount; i++ ) {
 		if ( pData->arrSections[i].pSection != NULL ) {
-			xuiWidgetDestroy(pData->arrSections[i].pSection);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pData->arrSections[i].pSection);
 		}
 	}
 	memset(pData->arrSections, 0, sizeof(pData->arrSections));
@@ -1745,7 +1743,7 @@ XUI_API int xuiAccordionAddSection(xui_widget pWidget, const char* sTitle, int i
 		for ( i = 0; i < pData->iSectionCount; i++ ) pData->arrSections[i].bExpanded = arrOldExpanded[i];
 		pData->iSelected = iOldSelected;
 		pData->iChangeCount = iOldChangeCount;
-		if ( pSection->pSection != NULL ) xuiWidgetDestroy(pSection->pSection);
+		if ( pSection->pSection != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pSection->pSection);
 		memset(pSection, 0, sizeof(*pSection));
 		pSection->bEnabled = 1;
 		(void)__xuiAccordionSyncSections(pWidget, pData);
@@ -1831,7 +1829,7 @@ XUI_API int xuiAccordionRemoveSection(xui_widget pWidget, int iIndex)
 	if ( bSelectionChanged ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	}
-	xuiWidgetDestroy(tRemoved.pSection);
+	(void)xuiInternalWidgetDestroyPart(pWidget,tRemoved.pSection);
 
 done:
 	xuiInternalOperationLeave(pContext);

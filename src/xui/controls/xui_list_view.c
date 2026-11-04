@@ -1799,11 +1799,11 @@ static int __xuiListViewCreateFrame(xui_widget pWidget, xui_list_view_data_t* pD
 	tFrameDesc.iActiveColor = pData->iScrollbarActiveColor;
 	tFrameDesc.iFocusColor = pData->iScrollbarFocusColor;
 	tFrameDesc.iDisabledColor = pData->iScrollbarDisabledColor;
-	iRet = xuiScrollFrameCreate(xuiWidgetGetContext(pWidget), &pData->pFrame, &tFrameDesc);
+	iRet = xuiInternalScrollFrameCreatePart(pWidget,&pData->pFrame,&tFrameDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pFrame);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pFrame,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
@@ -1811,13 +1811,13 @@ static int __xuiListViewCreateFrame(xui_widget pWidget, xui_list_view_data_t* pD
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pFrame, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pFrame, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
 	pData->pViewport = xuiScrollFrameGetViewportWidget(pData->pFrame);
 	if ( pData->pViewport == NULL ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
@@ -1825,7 +1825,7 @@ static int __xuiListViewCreateFrame(xui_widget pWidget, xui_list_view_data_t* pD
 	if ( iRet == XUI_OK ) iRet = __xuiListViewInitViewport(pWidget, pData);
 	if ( iRet == XUI_OK ) iRet = __xuiListViewApplyFrameStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		pData->pViewport = NULL;
 		return iRet;
@@ -2000,7 +2000,7 @@ XUI_API xui_widget_type xuiListViewGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiListViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_list_view_desc_t* pDesc)
+static int __xuiListViewCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_list_view_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -2012,8 +2012,19 @@ XUI_API int xuiListViewCreate(xui_context pContext, xui_widget* ppWidget, const 
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+XUI_API int xuiListViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_list_view_desc_t* pDesc)
+{return __xuiListViewCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalListViewCreatePart(xui_widget owner,xui_widget* output,const xui_list_view_desc_t* desc)
+{
+ if(output)*output=NULL;
+ if(!xuiInternalWidgetIsValid(owner)||!output)return XUI_ERROR_INVALID_ARGUMENT;
+ xui_context context=xuiWidgetGetContext(owner);xuiInternalOperationEnter(context);
+ int status=__xuiListViewCreateWithOwner(context,output,desc,owner);
+ xuiInternalOperationLeave(context);return status;
+}
+
 
 XUI_API int xuiListViewSetSelectOwned(xui_widget pWidget, xui_list_view_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
 {

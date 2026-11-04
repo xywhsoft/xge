@@ -3988,7 +3988,7 @@ static int __xuiTextEditInitMenu(xui_widget pWidget, xui_text_edit_data_t* pData
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pOwner = pWidget;
 	tDesc.pFont = pData->pFont;
-	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pMenu, &tDesc);
+	iRet = xuiInternalMenuCreatePart(pWidget,&pData->pMenu,&tDesc);
 	if ( iRet != XUI_OK ) {
 		pData->pMenu = NULL;
 		return iRet;
@@ -4026,12 +4026,10 @@ static void __xuiTextEditVScrollBarChanged(xui_widget pBar, float fValue, void* 
 
 static int __xuiTextEditInitScrollBars(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
-	xui_context pContext;
 	xui_scrollbar_desc_t tDesc;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pContext = xuiWidgetGetContext(pWidget);
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.fMin = 0.0f;
@@ -4048,14 +4046,14 @@ static int __xuiTextEditInitScrollBars(xui_widget pWidget, xui_text_edit_data_t*
 	tDesc.iActiveColor = XUI_COLOR_RGBA(71, 85, 105, 255);
 	tDesc.iFocusColor = XUI_COLOR_RGBA(59, 130, 246, 255);
 	tDesc.iDisabledColor = XUI_COLOR_RGBA(203, 213, 225, 255);
-	iRet = xuiScrollBarCreate(pContext, &pData->pHScrollBar, &tDesc);
+	iRet = xuiInternalScrollBarCreatePart(pWidget,&pData->pHScrollBar,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pHScrollBar);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pHScrollBar,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
-	iRet = xuiScrollBarCreate(pContext, &pData->pVScrollBar, &tDesc);
+	iRet = xuiInternalScrollBarCreatePart(pWidget,&pData->pVScrollBar,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pVScrollBar);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pVScrollBar,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetSetVisible(pData->pHScrollBar, 0);
 	(void)xuiWidgetSetVisible(pData->pVScrollBar, 0);
@@ -4156,14 +4154,14 @@ static void __xuiTextEditDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData->pMenu != NULL ) {
 		pPopup = xuiMenuGetPopupWidget(pData->pMenu);
 		if ( pPopup != NULL ) {
-			xuiWidgetDestroy(pPopup);
+			(void)xuiInternalWidgetDestroyPart(pData->pMenu,pPopup);
 		} else {
-			xuiWidgetDestroy(pData->pMenu);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pData->pMenu);
 		}
 		pData->pMenu = NULL;
 	}
 	if ( pData->pFindWindow != NULL ) {
-		xuiWidgetDestroy(pData->pFindWindow);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFindWindow);
 		pData->pFindWindow = NULL;
 	}
 	if ( pData->sText != NULL ) xrtFree(pData->sText);
@@ -4284,7 +4282,7 @@ XUI_API xui_widget_type xuiTextEditGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiTextEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_text_edit_desc_t* pDesc)
+static int __xuiTextEditCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_text_edit_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -4299,8 +4297,22 @@ XUI_API int xuiTextEditCreate(xui_context pContext, xui_widget* ppWidget, const 
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiTextEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_text_edit_desc_t* pDesc)
+{return __xuiTextEditCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalTextEditCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_text_edit_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiTextEditCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiTextEditSetChangeOwned(xui_widget pWidget, xui_text_edit_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
 {
@@ -5062,7 +5074,7 @@ static int __xuiTextEditCreateFindButton(xui_context pContext, xui_widget* ppBut
 	tButton.pFont = pFont;
 	tButton.sText = sText;
 	tButton.fBorderWidth = 1.0f;
-	iRet = xuiButtonCreate(pContext, ppButton, &tButton);
+	iRet = xuiInternalButtonCreatePart(pTextEdit,ppButton,&tButton);
 	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(*ppButton, __xuiTextEditFindButtonClick, pTextEdit);
 	return iRet;
 }
@@ -5079,7 +5091,7 @@ static int __xuiTextEditCreateFindCheck(xui_context pContext, xui_widget* ppChec
 	tCheck.bChecked = bChecked;
 	tCheck.fIndicatorSize = 14.0f;
 	tCheck.fGap = 4.0f;
-	iRet = xuiCheckBoxCreate(pContext, ppCheck, &tCheck);
+	iRet = xuiInternalCheckBoxCreatePart(pTextEdit,ppCheck,&tCheck);
 	if ( iRet == XUI_OK ) iRet = xuiCheckBoxSetChange(*ppCheck, __xuiTextEditFindCheckChange, pTextEdit);
 	return iRet;
 }
@@ -5112,7 +5124,7 @@ static int __xuiTextEditCreateFindWindow(xui_widget pTextEdit, xui_text_edit_dat
 	tWindow.fTitleBarHeight = 28.0f;
 	tWindow.fBorderWidth = 1.0f;
 	tWindow.fButtonSize = 18.0f;
-	iRet = xuiWindowCreate(pContext, &pData->pFindWindow, &tWindow);
+	iRet = xuiInternalWindowCreatePart(pTextEdit,&pData->pFindWindow,&tWindow);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWindowSetClose(pData->pFindWindow, __xuiTextEditFindWindowClose, pTextEdit);
 	pClient = xuiWindowGetClientWidget(pData->pFindWindow);
@@ -5126,9 +5138,9 @@ static int __xuiTextEditCreateFindWindow(xui_widget pTextEdit, xui_text_edit_dat
 	tInput.pFont = pFont;
 	tInput.sPlaceholder = xuiTranslate(pContext, XUI_TR_FIND_PLACEHOLDER);
 	tInput.fBorderWidth = 1.0f;
-	iRet = xuiInputCreate(pContext, &pData->pFindInput, &tInput);
+	iRet = xuiInternalInputCreatePart(pTextEdit,&pData->pFindInput,&tInput);
 	tInput.sPlaceholder = xuiTranslate(pContext, XUI_TR_REPLACE_PLACEHOLDER);
-	if ( iRet == XUI_OK ) iRet = xuiInputCreate(pContext, &pData->pReplaceInput, &tInput);
+	if ( iRet == XUI_OK ) iRet = xuiInternalInputCreatePart(pTextEdit,&pData->pReplaceInput,&tInput);
 	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindButton(pContext, &pData->pFindPrevButton, pFont, xuiTranslate(pContext, XUI_TR_FIND_PREVIOUS), pTextEdit);
 	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindButton(pContext, &pData->pFindNextButton, pFont, xuiTranslate(pContext, XUI_TR_FIND_NEXT), pTextEdit);
 	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindButton(pContext, &pData->pReplaceButton, pFont, xuiTranslate(pContext, XUI_TR_REPLACE_CURRENT), pTextEdit);
@@ -5144,23 +5156,23 @@ static int __xuiTextEditCreateFindWindow(xui_widget pTextEdit, xui_text_edit_dat
 	tLabel.sText = "";
 	tLabel.iTextColor = XUI_COLOR_RGBA(90, 105, 124, 255);
 	tLabel.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pContext, &pData->pFindStatus, &tLabel);
+	if ( iRet == XUI_OK ) iRet = xuiInternalLabelCreatePart(pTextEdit,&pData->pFindStatus,&tLabel);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiInputSetChange(pData->pFindInput, __xuiTextEditFindInputChange, pTextEdit);
 	(void)xuiInputSetChange(pData->pReplaceInput, __xuiTextEditFindInputChange, pTextEdit);
-	iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindInput);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pReplaceInput);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindPrevButton);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindNextButton);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pReplaceButton);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pReplaceAllButton);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pCaseCheck);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pWordCheck);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pRegexCheck);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pEscapeCheck);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pSelectionCheck);
-	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindStatus);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pData->pFindWindow);
+	iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindInput,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pReplaceInput,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindPrevButton,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindNextButton,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pReplaceButton,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pReplaceAllButton,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pCaseCheck,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pWordCheck,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pRegexCheck,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pEscapeCheck,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pSelectionCheck,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindStatus,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pTextEdit,pRoot,pData->pFindWindow,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetSetRect(pData->pFindWindow, (xui_rect_t){32.0f, 32.0f, 560.0f, 150.0f});
 	__xuiTextEditFindWindowApplyLanguage(pTextEdit, pData);

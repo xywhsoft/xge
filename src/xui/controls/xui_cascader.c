@@ -2114,7 +2114,7 @@ static int __xuiCascaderCreatePopup(xui_widget pWidget, xui_cascader_data_t* pDa
 	tDesc.iBorderColor = pData->iPopupBorderColor;
 	tDesc.iShadowColor = pData->iPopupShadowColor;
 	tDesc.iBackdropColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pPopup, &tDesc);
+	iRet = xuiInternalPopupCreatePart(pWidget,&pData->pPopup,&tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->pPanel = xuiPopupGetContentWidget(pData->pPopup);
 	if ( pData->pPanel == NULL ) {
@@ -2134,7 +2134,7 @@ static int __xuiCascaderCreatePopup(xui_widget pWidget, xui_cascader_data_t* pDa
 	if ( iRet == XUI_OK ) return XUI_OK;
 
 fail:
-	xuiWidgetDestroy(pData->pPopup);
+	(void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 	pData->pPopup = NULL;
 	pData->pPanel = NULL;
 	return iRet;
@@ -2251,7 +2251,7 @@ static int __xuiCascaderInit(xui_widget pWidget, void* pTypeData, const void* pC
 	if ( iRet == XUI_OK ) return XUI_OK;
 
 fail:
-	if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
+	if ( pData->pPopup != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 	pData->pPopup = NULL;
 	pData->pPanel = NULL;
 	__xuiCascaderClearItemTexts(pData);
@@ -2267,7 +2267,7 @@ static void __xuiCascaderDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	pData = (xui_cascader_data_t*)pTypeData;
 	if ( pData != NULL ) {
 		(void)__xuiCascaderCancelPanelPress(pWidget, pData);
-		if ( pData->pPopup != NULL ) xuiWidgetDestroy(pData->pPopup);
+		if ( pData->pPopup != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pPopup);
 		__xuiCascaderClearItemTexts(pData);
 		memset(pData, 0, sizeof(*pData));
 	}

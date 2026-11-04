@@ -3999,7 +3999,7 @@ static int __xuiMessageInitContextMenu(xui_widget pWidget, xui_message_list_data
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pOwner = pWidget;
 	tDesc.pFont = __xuiMessageFont(pWidget, pData);
-	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pContextMenu, &tDesc);
+	iRet = xuiInternalMenuCreatePart(pWidget,&pData->pContextMenu,&tDesc);
 	if ( iRet != XUI_OK ) {
 		pData->pContextMenu = NULL;
 		return iRet;
@@ -4061,8 +4061,8 @@ static void __xuiMessageDestroy(xui_widget pWidget, void* pTypeData, void* pUser
 	if ( pWidget != NULL ) (void)__xuiMessageCancelPointer(pWidget, pData);
 	if ( pData->pContextMenu != NULL ) {
 		xui_widget pPopup = xuiMenuGetPopupWidget(pData->pContextMenu);
-		if ( pPopup != NULL ) xuiWidgetDestroy(pPopup);
-		else xuiWidgetDestroy(pData->pContextMenu);
+		if ( pPopup != NULL ) (void)xuiInternalWidgetDestroyPart(pData->pContextMenu,pPopup);
+		else (void)xuiInternalWidgetDestroyPart(pWidget,pData->pContextMenu);
 		pData->pContextMenu = NULL;
 	}
 	__xuiMessageClearData(pData);

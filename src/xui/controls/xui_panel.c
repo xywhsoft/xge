@@ -487,25 +487,25 @@ static void __xuiPanelDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 	pPolicy->iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
 
-static void __xuiPanelDestroyInitChildren(xui_panel_data_t* pData)
+static void __xuiPanelDestroyInitChildren(xui_widget pWidget,xui_panel_data_t* pData)
 {
 	if ( pData == NULL ) {
 		return;
 	}
 	if ( pData->pTitle != NULL ) {
-		xuiWidgetDestroy(pData->pTitle);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTitle);
 		pData->pTitle = NULL;
 	}
 	if ( pData->pIcon != NULL ) {
-		xuiWidgetDestroy(pData->pIcon);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pIcon);
 		pData->pIcon = NULL;
 	}
 	if ( pData->pHeader != NULL ) {
-		xuiWidgetDestroy(pData->pHeader);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pHeader);
 		pData->pHeader = NULL;
 	}
 	if ( pData->pClient != NULL ) {
-		xuiWidgetDestroy(pData->pClient);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pClient);
 		pData->pClient = NULL;
 	}
 }
@@ -524,15 +524,15 @@ static int __xuiPanelInitChildren(xui_widget pWidget, xui_panel_data_t* pData)
 	pIcon = NULL;
 	pTitle = NULL;
 	pClient = NULL;
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pHeader);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pClient);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pHeader,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pClient,NULL);
 	memset(&tImageDesc, 0, sizeof(tImageDesc));
 	tImageDesc.iSize = sizeof(tImageDesc);
 	tImageDesc.iColor = XUI_COLOR_WHITE;
 	tImageDesc.iMode = XUI_IMAGE_CONTAIN;
 	tImageDesc.iAlignX = XUI_ALIGN_CENTER;
 	tImageDesc.iAlignY = XUI_ALIGN_CENTER;
-	if ( iRet == XUI_OK ) iRet = xuiImageCreate(xuiWidgetGetContext(pWidget), &pIcon, &tImageDesc);
+	if ( iRet == XUI_OK ) iRet = xuiInternalImageCreatePart(pWidget,&pIcon,&tImageDesc);
 	memset(&tLabelDesc, 0, sizeof(tLabelDesc));
 	tLabelDesc.iSize = sizeof(tLabelDesc);
 	tLabelDesc.pFont = pData->pFont;
@@ -540,18 +540,22 @@ static int __xuiPanelInitChildren(xui_widget pWidget, xui_panel_data_t* pData)
 	tLabelDesc.iTextColor = pData->iTitleColor;
 	tLabelDesc.iDisabledTextColor = pData->iDisabledTitleColor;
 	tLabelDesc.iTextFlags = pData->iTitleFlags | XUI_TEXT_CLIP;
-	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(xuiWidgetGetContext(pWidget), &pTitle, &tLabelDesc);
+	if ( iRet == XUI_OK ) iRet = xuiInternalLabelCreatePart(pWidget,&pTitle,&tLabelDesc);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pHeader);
-		xuiWidgetDestroy(pClient);
-		xuiWidgetDestroy(pIcon);
-		xuiWidgetDestroy(pTitle);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pHeader);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pClient);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pIcon);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pTitle);
 		return iRet;
 	}
 	pData->pHeader = pHeader;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pHeader,&pData->pHeader);
 	pData->pIcon = pIcon;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pIcon,&pData->pIcon);
 	pData->pTitle = pTitle;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pTitle,&pData->pTitle);
 	pData->pClient = pClient;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pClient,&pData->pClient);
 
 	iRet = xuiWidgetSetLayoutType(pHeader, XUI_LAYOUT_ROW);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pHeader, XUI_SIZE_FILL, XUI_SIZE_FIXED);
@@ -577,16 +581,16 @@ static int __xuiPanelInitChildren(xui_widget pWidget, xui_panel_data_t* pData)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pClient, pData->bClipClient ? XUI_OVERFLOW_CLIP : XUI_OVERFLOW_VISIBLE);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pClient, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	if ( iRet != XUI_OK ) {
-		__xuiPanelDestroyInitChildren(pData);
+		__xuiPanelDestroyInitChildren(pWidget,pData);
 		return iRet;
 	}
 
-	iRet = xuiWidgetAddChild(pWidget, pHeader);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pHeader, pIcon);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pHeader, pTitle);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pClient);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pHeader,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pHeader,pIcon,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pHeader,pTitle,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pClient,NULL);
 	if ( iRet != XUI_OK ) {
-		__xuiPanelDestroyInitChildren(pData);
+		__xuiPanelDestroyInitChildren(pWidget,pData);
 		return iRet;
 	}
 	return XUI_OK;

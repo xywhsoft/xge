@@ -1082,7 +1082,7 @@ XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiCheckBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_checkbox_desc_t* pDesc)
+static int __xuiCheckBoxCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_checkbox_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -1095,8 +1095,22 @@ XUI_API int xuiCheckBoxCreate(xui_context pContext, xui_widget* ppWidget, const 
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiCheckBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_checkbox_desc_t* pDesc)
+{return __xuiCheckBoxCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalCheckBoxCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_checkbox_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiCheckBoxCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiCheckBoxSetChangeOwned(xui_widget pWidget,xui_checkbox_change_proc onChange,void* pUser,const xui_callback_owner_t* pOwner)
 {

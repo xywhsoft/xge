@@ -1769,13 +1769,13 @@ static int __xuiPropertyGridInitEvents(xui_widget pWidget)
 	return iRet;
 }
 
-static void __xuiPropertyGridCleanupInit(xui_property_grid_data_t* pData)
+static void __xuiPropertyGridCleanupInit(xui_widget pWidget,xui_property_grid_data_t* pData)
 {
 	if ( pData == NULL || pData->pTableGrid == NULL ) return;
 	if ( xuiWidgetGetParent(pData->pTableGrid) != NULL ) {
-		(void)xuiWidgetRemoveFromParent(pData->pTableGrid);
+		(void)xuiInternalWidgetDetachPart(pWidget,pData->pTableGrid);
 	}
-	xuiWidgetDestroy(pData->pTableGrid);
+	(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTableGrid);
 	pData->pTableGrid = NULL;
 	pData->pTableView = NULL;
 	pData->onTableKey = NULL;
@@ -1841,10 +1841,10 @@ static int __xuiPropertyGridInit(xui_widget pWidget, void* pTypeData, const void
 	tGridDesc.iEditMode = (pDesc != NULL && __xuiPropertyGridEditModeValid(pDesc->iEditMode)) ? pDesc->iEditMode : XUI_TABLE_GRID_EDIT_QUICK;
 	tGridDesc.iScrollbarMode = (pDesc != NULL && __xuiPropertyGridScrollbarModeValid(pDesc->iScrollbarMode)) ?
 		pDesc->iScrollbarMode : XUI_SCROLLBAR_MODE_COMPACT;
-	iRet = xuiTableGridCreate(xuiWidgetGetContext(pWidget), &pData->pTableGrid, &tGridDesc);
+	iRet = xuiInternalTableGridCreatePart(pWidget,&pData->pTableGrid,&tGridDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetRect(pData->pTableGrid, (xui_rect_t){0.0f, 0.0f, 360.0f, 240.0f});
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pTableGrid);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pTableGrid,NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pData->pTableGrid, XUI_FLOW_BLOCK);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pTableGrid, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pTableGrid, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
@@ -1880,7 +1880,7 @@ static int __xuiPropertyGridInit(xui_widget pWidget, void* pTypeData, const void
 	if ( iRet == XUI_OK ) return XUI_OK;
 
 cleanup:
-	__xuiPropertyGridCleanupInit(pData);
+	__xuiPropertyGridCleanupInit(pWidget,pData);
 	return iRet;
 }
 

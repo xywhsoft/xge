@@ -16,6 +16,8 @@
 #define XUI_RENDER_SUBTREE_DIRTY_FLAGS \
 	(XUI_RENDER_CACHE_DIRTY_FLAGS | XUI_WIDGET_DIRTY_RENDER)
 
+static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget,const void* pAuthority);
+static int __xuiWidgetRequestDestroy(xui_widget pWidget,const void* pAuthority);
 static void __xuiWidgetSyncInactiveTree(xui_widget pWidget);
 
 int xuiInternalCallbackOwnerValid(const xui_callback_owner_t* pOwner)
@@ -497,7 +499,7 @@ static int __xuiWidgetTypeValid(xui_widget_type pType)
 	return (pType != NULL) && (pType->iMagic == XUI_WIDGET_TYPE_MAGIC);
 }
 
-static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData);
+static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData, const void* pNativeOwner);
 
 static int __xuiFloatValid(float fValue)
 {
@@ -2079,7 +2081,7 @@ static int __xuiWidgetEnsureCacheSurface(xui_widget pWidget, xui_widget_cache_sl
 	return XUI_OK;
 }
 
-static int __xuiWidgetCanAttachChild(xui_widget pParent, xui_widget pChild)
+static int __xuiWidgetCanAttachChild(xui_widget pParent, xui_widget pChild, const void* pAuthority)
 {
 	xui_widget pScan;
 
@@ -2089,6 +2091,7 @@ static int __xuiWidgetCanAttachChild(xui_widget pParent, xui_widget pChild)
 	if ( pParent->pContext != pChild->pContext ) {
 		return 0;
 	}
+    if(pChild->pInternalOwner && (pChild->pInternalOwner!=pAuthority || !__xuiWidgetValid((xui_widget)pAuthority)))return 0;
 	if ( (pChild->pParent != NULL) || (pChild->pPrevSibling != NULL) || (pChild->pNextSibling != NULL) ) {
 		return 0;
 	}
@@ -2920,6 +2923,7 @@ static int __xuiSetRootWidgetOperation(xui_context pContext, xui_widget pWidget)
 
 XUI_API int xuiSetRootWidget(xui_context pContext, xui_widget pWidget)
 {
+    if(__xuiWidgetValid(pWidget) && pWidget->pInternalOwner)return XUI_ERROR_INVALID_STATE;
 	int iRet;
 
 	xuiInternalOperationEnter(pContext);
@@ -3486,7 +3490,29 @@ XUI_API uint32_t xuiStyleGetTokenGeneration(xui_context pContext)
 	return xuiInternalContextIsValid(pContext) ? pContext->iTokenGeneration : 0;
 }
 
-static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData)
+static int __xuiWidgetStablePartSlot(xui_widget owner,xui_widget* slot)
+{
+    if(!owner || !owner->pTypeData || !owner->pType || !slot)return 0;
+    size_t size=owner->pType->iTypeDataSize;
+    uintptr_t first=(uintptr_t)owner->pTypeData,address=(uintptr_t)slot;
+    return size>=sizeof(*slot) && address>=first && address-first<=size-sizeof(*slot) &&
+        address%_Alignof(xui_widget)==0;
+}
+static void __xuiWidgetClearPartSlot(xui_widget part)
+{
+    xui_widget* slot=part->ppInternalOwnerSlot;
+    part->ppInternalOwnerSlot=NULL;
+    if(slot && *slot==part)*slot=NULL;
+}
+int xuiInternalWidgetBindPartSlot(xui_widget owner,xui_widget part,xui_widget* slot)
+{
+    if(!__xuiWidgetValid(owner) || !__xuiWidgetValid(part) || part->pInternalOwner!=owner ||
+       !__xuiWidgetStablePartSlot(owner,slot) || *slot!=part)return XUI_ERROR_INVALID_ARGUMENT;
+    if(part->ppInternalOwnerSlot && part->ppInternalOwnerSlot!=slot)return XUI_ERROR_INVALID_STATE;
+    part->ppInternalOwnerSlot=slot;return XUI_OK;
+}
+
+static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData, const void* pNativeOwner)
 {
 	xui_widget pWidget;
 	xui_widget_type pOwner;
@@ -3512,6 +3538,8 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->iMagic = XUI_WIDGET_MAGIC;
 	pWidget->pContext = pContext;
 	pWidget->pType = pType;
+	pWidget->pInternalOwner = pNativeOwner;
+    if(pNativeOwner && __xuiWidgetStablePartSlot((xui_widget)pNativeOwner,ppWidget))pWidget->ppInternalOwnerSlot=ppWidget;
 	__xuiWidgetInitStackingChildren(pWidget);
 	__xuiWidgetInitLayout(pWidget);
 	pWidget->bVisible = 1;
@@ -3584,7 +3612,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 		/* InitChain already unwound successfully initialized parent stages.
 		 * Keep queued/tree-owned instances alive until operation cleanup, and
 		 * do not invoke the failed leaf's destructor or repeat parent cleanup. */
-		xuiWidgetDestroy(pWidget);
+		(void)__xuiWidgetRequestDestroy(pWidget,pNativeOwner);
 		return iRet;
 	}
 	pWidget->bTypeInitialized = 1;
@@ -3596,7 +3624,7 @@ XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget)
 {
 	int iRet;
 	xuiInternalOperationEnter(pContext);
-	iRet = __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, ppWidget, NULL);
+	iRet = __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, ppWidget, NULL, NULL);
 	if ( (iRet == XUI_OK) && (ppWidget != NULL) &&
 		(!__xuiWidgetValid(*ppWidget) || pContext->bDestroyPending || pContext->bDestroying) ) {
 		*ppWidget = NULL;
@@ -3610,7 +3638,7 @@ XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xu
 {
 	int iRet;
 	xuiInternalOperationEnter(pContext);
-	iRet = __xuiWidgetCreateInternal(pContext, pType, ppWidget, pCreateData);
+	iRet = __xuiWidgetCreateInternal(pContext, pType, ppWidget, pCreateData, NULL);
 	if ( (iRet == XUI_OK) && (ppWidget != NULL) &&
 		(!__xuiWidgetValid(*ppWidget) || pContext->bDestroyPending || pContext->bDestroying) ) {
 		*ppWidget = NULL;
@@ -3618,6 +3646,22 @@ XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xu
 	}
 	xuiInternalOperationLeave(pContext);
 	return iRet;
+}
+
+/* Construction identity is installed before any native/type init callback. */
+int xuiInternalWidgetCreatePart(xui_widget owner,xui_widget_type type,xui_widget* output,const void* data)
+{
+    if(output)*output=NULL;
+    if(!__xuiWidgetValid(owner) || !output)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=owner->pContext;
+    xuiInternalOperationEnter(context);
+    int status=__xuiWidgetCreateInternal(context,type,output,data,owner);
+    if(status==XUI_OK && (!__xuiWidgetValid(owner) || !__xuiWidgetValid(*output) || context->bDestroyPending || context->bDestroying)) {
+        if(__xuiWidgetMemoryValid(*output))(void)__xuiWidgetRequestDestroy(*output,owner);
+        *output=NULL;status=XUI_ERROR_INVALID_STATE;
+    }
+    xuiInternalOperationLeave(context);
+    return status;
 }
 
 static int __xuiDragAdornerRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -3762,6 +3806,7 @@ static void __xuiWidgetMarkDestroyPending(xui_widget pWidget)
 	xui_widget pChild;
 
 	if ( !__xuiWidgetMemoryValid(pWidget) || pWidget->bDestroyPending ) return;
+    __xuiWidgetClearPartSlot(pWidget);
 	pWidget->bDestroyPending = 1;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xuiWidgetMarkDestroyPending(pChild);
@@ -3812,6 +3857,8 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 		__xuiWidgetMarkDestroyPending(pWidget);
 		__xuiWidgetInvalidateLifetimes(pWidget);
 	}
+	/* Disarm the exact owner slot before parent TypeData can be released. */
+    __xuiWidgetClearPartSlot(pWidget);
 	/* Detach before user destructors can request more context cleanup. */
 	xui_context pContext = pWidget->pContext;
 	if ( pWidget->pContextPrev != NULL ) pWidget->pContextPrev->pContextNext = pWidget->pContextNext;
@@ -3884,7 +3931,7 @@ void xuiInternalContextDestroyWidgets(xui_context pContext)
 {
 	/* Roots have already been destroyed. Destroying a remaining instance also
 	 * removes any descendants from this registry; no parallel tree is built. */
-	while ( pContext->pAllWidgets != NULL ) xuiWidgetDestroy(pContext->pAllWidgets);
+	while(pContext->pAllWidgets!=NULL){xui_widget widget=pContext->pAllWidgets;(void)__xuiWidgetRequestDestroy(widget,widget->pInternalOwner);}
 }
 
 void xuiInternalWidgetDestroyFlush(xui_context pContext)
@@ -3915,20 +3962,22 @@ void xuiInternalWidgetDestroyFlush(xui_context pContext)
 	pContext->iDestroyFlushDepth--;
 }
 
-XUI_API void xuiWidgetDestroy(xui_widget pWidget)
+static int __xuiWidgetRequestDestroy(xui_widget pWidget,const void* pAuthority)
 {
 	xui_context pContext;
 	int bDestroying;
 
-	if ( !__xuiWidgetValid(pWidget) ) return;
+	if ( !__xuiWidgetValid(pWidget) ) return XUI_OK;
+    if(pWidget->pInternalOwner && pWidget->pInternalOwner!=pAuthority)return XUI_ERROR_INVALID_STATE;
 	pContext = pWidget->pContext;
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		__xuiWidgetDestroyNow(pWidget);
-		return;
+		return XUI_OK;
 	}
 	xuiInternalOperationEnter(pContext);
+    __xuiWidgetClearPartSlot(pWidget);
 	if ( pWidget->pParent != NULL ) {
-		(void)xuiWidgetRemoveFromParent(pWidget);
+		(void)__xuiWidgetRemoveFromParentOperation(pWidget,pAuthority);
 	} else if ( pContext->pRoot == pWidget ) {
 		xuiInternalContextDetachWidget(pContext, pWidget);
 		pContext->pRoot = NULL;
@@ -3950,6 +3999,38 @@ XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 	/* When already destroying, Leave never frees the context. In the normal
 	 * case it may do so; no access to pContext follows that path. */
 	if ( bDestroying ) xuiInternalWidgetDestroyFlush(pContext);
+    return XUI_OK;
+}
+XUI_API int xuiWidgetDestroyChecked(xui_widget widget)
+{
+    if(!__xuiWidgetValid(widget))return XUI_OK;
+    if(widget->pInternalOwner)return XUI_ERROR_INVALID_STATE;
+    xui_context context=widget->pContext;
+    if(!xuiInternalContextIsValid(context) || context->bDestroying)return __xuiWidgetRequestDestroy(widget,NULL);
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
+    result=__xuiWidgetRequestDestroy(widget,NULL);
+    xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiCallScopeEnd(&scope);
+    if(result!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return result;}
+    return ended;
+}
+XUI_API void xuiWidgetDestroy(xui_widget widget)
+{
+    int result=xuiWidgetDestroyChecked(widget);
+    if(result!=XUI_OK && !xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui",result,"internal widget is owned by its composite");
+}
+int xuiInternalWidgetClaimPart(xui_widget owner,xui_widget part)
+{
+    if(!__xuiWidgetValid(owner) || !__xuiWidgetValid(part) || owner==part || owner->pContext!=part->pContext)return XUI_ERROR_INVALID_ARGUMENT;
+    if(part->pInternalOwner && part->pInternalOwner!=owner)return XUI_ERROR_INVALID_STATE;
+    part->pInternalOwner=owner;return XUI_OK;
+}
+int xuiInternalWidgetDestroyPart(xui_widget owner,xui_widget part)
+{
+    if(!part)return XUI_OK;
+    if(!__xuiWidgetMemoryValid(owner) || !__xuiWidgetMemoryValid(part) ||
+       owner->pContext!=part->pContext || part->pInternalOwner!=owner)return XUI_ERROR_INVALID_STATE;
+    return __xuiWidgetRequestDestroy(part,owner);
 }
 
 XUI_API xui_context xuiWidgetGetContext(xui_widget pWidget)
@@ -4011,11 +4092,11 @@ XUI_API int xuiWidgetAddChild(xui_widget pParent, xui_widget pChild)
 	return xuiWidgetInsertBefore(pParent, pChild, NULL);
 }
 
-static int __xuiWidgetInsertBeforeOperation(xui_widget pParent, xui_widget pChild, xui_widget pBefore)
+static int __xuiWidgetInsertBeforeOperation(xui_widget pParent, xui_widget pChild, xui_widget pBefore, const void* pAuthority)
 {
 	int iRet;
 
-	if ( !__xuiWidgetCanAttachChild(pParent, pChild) ) {
+	if ( !__xuiWidgetCanAttachChild(pParent, pChild,pAuthority) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pBefore != NULL ) {
@@ -4058,14 +4139,30 @@ static int __xuiWidgetInsertBeforeOperation(xui_widget pParent, xui_widget pChil
 
 XUI_API int xuiWidgetInsertBefore(xui_widget pParent, xui_widget pChild, xui_widget pBefore)
 {
+    if(__xuiWidgetValid(pChild) && pChild->pInternalOwner)return XUI_ERROR_INVALID_STATE;
 	xui_context pContext = __xuiWidgetValid(pParent) ? pParent->pContext : NULL;
 	int iRet;
 	xuiInternalOperationEnter(pContext);
-	iRet = __xuiWidgetInsertBeforeOperation(pParent, pChild, pBefore);
+	iRet = __xuiWidgetInsertBeforeOperation(pParent, pChild, pBefore,NULL);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
 
+int xuiInternalWidgetInsertPart(xui_widget owner,xui_widget parent,xui_widget part,xui_widget before)
+{
+    if(!__xuiWidgetValid(owner) || !__xuiWidgetValid(parent) || !__xuiWidgetValid(part) ||
+       part->pInternalOwner!=owner || owner->pContext!=part->pContext || parent->pContext!=part->pContext)return XUI_ERROR_INVALID_STATE;
+    xui_context context=part->pContext;xuiInternalOperationEnter(context);
+    int result=__xuiWidgetInsertBeforeOperation(parent,part,before,owner);
+    xuiInternalOperationLeave(context);return result;
+}
+int xuiInternalWidgetDetachPart(xui_widget owner,xui_widget part)
+{
+    if(!__xuiWidgetMemoryValid(owner) || !__xuiWidgetValid(part) || part->pInternalOwner!=owner || owner->pContext!=part->pContext)return XUI_ERROR_INVALID_STATE;
+    xui_context context=part->pContext;xuiInternalOperationEnter(context);
+    int result=__xuiWidgetRemoveFromParentOperation(part,owner);
+    xuiInternalOperationLeave(context);return result;
+}
 int xuiInternalEnsureLayout(xui_context context)
 {
 	xui_size_t viewport;
@@ -4080,7 +4177,7 @@ int xuiInternalEnsureLayout(xui_context context)
 	return xuiLayout(context);
 }
 
-static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
+static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget,const void* pAuthority)
 {
 	xui_widget pParent;
 	xui_rect_t tWorldRect;
@@ -4088,6 +4185,7 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(pWidget->pInternalOwner && pWidget->pInternalOwner!=pAuthority)return XUI_ERROR_INVALID_STATE;
 	pParent = pWidget->pParent;
 	if ( pParent == NULL ) {
 		return XUI_OK;
@@ -4095,6 +4193,7 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget)
 	xuiInternalStateRecordBoundsTree(pWidget);
 	xuiInternalContextDetachWidget(pWidget->pContext, pWidget);
 	if ( !__xuiWidgetValid(pWidget) || pWidget->pParent != pParent ) return XUI_OK;
+    if(pWidget->pInternalOwner && pWidget->pInternalOwner!=pAuthority)return XUI_ERROR_INVALID_STATE;
 	tWorldRect = xuiWidgetGetWorldRect(pWidget);
 	xuiInternalLayoutDetach(pWidget);
 	if ( pWidget->pPrevSibling != NULL ) {
@@ -4348,7 +4447,7 @@ XUI_API int xuiWidgetRemoveFromParent(xui_widget pWidget)
 
 	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
 	xuiInternalOperationEnter(pContext);
-	iRet = __xuiWidgetRemoveFromParentOperation(pWidget);
+	iRet = __xuiWidgetRemoveFromParentOperation(pWidget,NULL);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
@@ -5848,7 +5947,7 @@ XUI_API xui_widget xuiOverlayRoot(xui_context pContext)
 	if ( pContext->pOverlayRoot != NULL ) {
 		return pContext->pOverlayRoot;
 	}
-	if ( __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, &pRoot, NULL) != XUI_OK ) {
+	if ( __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, &pRoot, NULL, NULL) != XUI_OK ) {
 		return NULL;
 	}
 	tLayout = pRoot->tLayout;
@@ -5902,8 +6001,9 @@ int xuiInternalOverlayNextZ(xui_context pContext, int iLayer)
 	return iNextZ;
 }
 
-XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget pOverlay, int iLayer, int iZIndex)
+static int __xuiOverlayAttachPart(xui_context pContext, xui_widget pOwner, xui_widget pOverlay, int iLayer, int iZIndex,const void* authority)
 {
+    if(__xuiWidgetValid(pOverlay) && pOverlay->pInternalOwner && pOverlay->pInternalOwner!=authority)return XUI_ERROR_INVALID_STATE;
 	xui_widget pRoot;
 	int iRet;
 
@@ -5920,7 +6020,7 @@ XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	if ( pOverlay->pParent != NULL ) {
-		iRet = xuiWidgetRemoveFromParent(pOverlay);
+		iRet = __xuiWidgetRemoveFromParentOperation(pOverlay,authority);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -5933,11 +6033,20 @@ XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	return xuiWidgetAddChild(pRoot, pOverlay);
+	return __xuiWidgetInsertBeforeOperation(pRoot,pOverlay,NULL,authority);
+}
+
+XUI_API int xuiOverlayAttach(xui_context context,xui_widget owner,xui_widget overlay,int layer,int z)
+{return __xuiOverlayAttachPart(context,owner,overlay,layer,z,NULL);}
+int xuiInternalWidgetOverlayAttachPart(xui_widget owner,xui_widget overlayOwner,xui_widget part,int layer,int z)
+{
+    if(!__xuiWidgetValid(owner) || !__xuiWidgetValid(part) || part->pInternalOwner!=owner)return XUI_ERROR_INVALID_STATE;
+    return __xuiOverlayAttachPart(owner->pContext,overlayOwner,part,layer,z,owner);
 }
 
 XUI_API int xuiOverlayDetach(xui_widget pOverlay)
 {
+    if(__xuiWidgetValid(pOverlay) && pOverlay->pInternalOwner)return XUI_ERROR_INVALID_STATE;
 	if ( !__xuiWidgetValid(pOverlay) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}

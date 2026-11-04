@@ -668,7 +668,7 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 	if ( bRaise ) {
 		pOverlayRoot = xuiOverlayRoot(pContext);
 		if ( pWidget->pParent != pOverlayRoot ) {
-			iRet = xuiOverlayAttach(pContext, NULL, pWidget, XUI_LAYER_FLOATING, pData->bTopMost ? XUI_WINDOW_Z_TOPMOST : XUI_WINDOW_Z_NORMAL);
+			iRet = (pWidget->pInternalOwner ? xuiInternalWidgetOverlayAttachPart((xui_widget)pWidget->pInternalOwner,NULL,pWidget,XUI_LAYER_FLOATING, pData->bTopMost ? XUI_WINDOW_Z_TOPMOST : XUI_WINDOW_Z_NORMAL) : xuiOverlayAttach(pContext,NULL,pWidget,XUI_LAYER_FLOATING, pData->bTopMost ? XUI_WINDOW_Z_TOPMOST : XUI_WINDOW_Z_NORMAL));
 			if ( iRet != XUI_OK ) return iRet;
 			(void)__xuiWindowApplyLayerAndZ(pWidget, pData);
 		} else {
@@ -1591,22 +1591,26 @@ static int __xuiWindowInitChildren(xui_widget pWidget, xui_window_data_t* pData)
 	pCollapse = NULL;
 	pMaximize = NULL;
 	pClose = NULL;
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pClient);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pCollapse);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pMaximize);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pClose);
+	iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pClient,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pCollapse,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pMaximize,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pClose,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pClient);
-		xuiWidgetDestroy(pCollapse);
-		xuiWidgetDestroy(pMaximize);
-		xuiWidgetDestroy(pClose);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pClient);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pCollapse);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pMaximize);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pClose);
 		return iRet;
 	}
 	__xuiWindowDefaultCachePolicy(&tPolicy);
 	pData->pClient = pClient;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pClient,&pData->pClient);
 	pData->pCollapseButton = pCollapse;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pCollapse,&pData->pCollapseButton);
 	pData->pMaximizeButton = pMaximize;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pMaximize,&pData->pMaximizeButton);
 	pData->pCloseButton = pClose;
+	(void)xuiInternalWidgetBindPartSlot(pWidget,pClose,&pData->pCloseButton);
 
 	iRet = xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_COLUMN);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pClient, XUI_SIZE_FILL, XUI_SIZE_FILL);
@@ -1619,15 +1623,15 @@ static int __xuiWindowInitChildren(xui_widget pWidget, xui_window_data_t* pData)
 	if ( iRet == XUI_OK ) iRet = __xuiWindowConfigureButton(pWidget, pCollapse, &tPolicy);
 	if ( iRet == XUI_OK ) iRet = __xuiWindowConfigureButton(pWidget, pMaximize, &tPolicy);
 	if ( iRet == XUI_OK ) iRet = __xuiWindowConfigureButton(pWidget, pClose, &tPolicy);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pClient);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pCollapse);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pMaximize);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pClose);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pClient,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pCollapse,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pMaximize,NULL);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pClose,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pClient);
-		xuiWidgetDestroy(pCollapse);
-		xuiWidgetDestroy(pMaximize);
-		xuiWidgetDestroy(pClose);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pClient);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pCollapse);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pMaximize);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pClose);
 		pData->pClient = NULL;
 		pData->pCollapseButton = NULL;
 		pData->pMaximizeButton = NULL;
@@ -1926,7 +1930,7 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiWindowCreate(xui_context pContext, xui_widget* ppWidget, const xui_window_desc_t* pDesc)
+static int __xuiWindowCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_window_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -1937,8 +1941,22 @@ XUI_API int xuiWindowCreate(xui_context pContext, xui_widget* ppWidget, const xu
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiWindowCreate(xui_context pContext, xui_widget* ppWidget, const xui_window_desc_t* pDesc)
+{return __xuiWindowCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalWindowCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_window_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiWindowCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiWindowSetCloseOwned(xui_widget pWidget, xui_window_close_proc onClose, void* pUser, const xui_callback_owner_t* pOwner)
 {
@@ -2159,7 +2177,7 @@ static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pDa
 		pData->bOpen = 1;
 		iRet = xuiWidgetSetVisible(pWidget, 1);
 		if ( iRet != XUI_OK ) goto open_failed;
-		iRet = xuiOverlayAttach(xuiWidgetGetContext(pWidget), NULL, pWidget, iOpenLayer, iOpenZ);
+		iRet = (pWidget->pInternalOwner ? xuiInternalWidgetOverlayAttachPart((xui_widget)pWidget->pInternalOwner,NULL,pWidget,iOpenLayer, iOpenZ) : xuiOverlayAttach(xuiWidgetGetContext(pWidget),NULL,pWidget,iOpenLayer, iOpenZ));
 		if ( iRet != XUI_OK ) goto open_failed;
 		if ( xuiWidgetGetEffectiveEnabled(pWidget) ) {
 			iRet = __xuiWindowActivate(pWidget, pData, bRaise);

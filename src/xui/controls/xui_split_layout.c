@@ -665,17 +665,18 @@ static int __xuiSplitLayoutCreatePane(xui_widget pSplit, xui_split_layout_data_t
 	if ( pData->arrPanes[iIndex].pWidget != NULL ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pSplit), &pPane);
+	iRet = xuiInternalWidgetCreatePart(pSplit,NULL,&pPane,NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
 	iRet = __xuiSplitLayoutConfigurePane(pPane);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pSplit, pPane);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pSplit,pSplit,pPane,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pPane);
+		(void)xuiInternalWidgetDestroyPart(pSplit,pPane);
 		return iRet;
 	}
 	pData->arrPanes[iIndex].pWidget = pPane;
+	(void)xuiInternalWidgetBindPartSlot(pSplit,pPane,&pData->arrPanes[iIndex].pWidget);
 	return XUI_OK;
 }
 
@@ -687,18 +688,19 @@ static int __xuiSplitLayoutCreateDivider(xui_widget pSplit, xui_split_layout_dat
 	if ( pData->arrDividers[iIndex].pWidget != NULL ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pSplit), &pDivider);
+	iRet = xuiInternalWidgetCreatePart(pSplit,NULL,&pDivider,NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
 	iRet = __xuiSplitLayoutConfigureDivider(pSplit, pDivider);
 	if ( iRet == XUI_OK ) iRet = __xuiSplitLayoutInitDividerEvents(pDivider, pSplit);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pSplit, pDivider);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pSplit,pSplit,pDivider,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pDivider);
+		(void)xuiInternalWidgetDestroyPart(pSplit,pDivider);
 		return iRet;
 	}
 	pData->arrDividers[iIndex].pWidget = pDivider;
+	(void)xuiInternalWidgetBindPartSlot(pSplit,pDivider,&pData->arrDividers[iIndex].pWidget);
 	return XUI_OK;
 }
 
@@ -736,14 +738,14 @@ static int __xuiSplitLayoutSetPaneCountInternal(xui_widget pWidget, xui_split_la
 	if ( iPaneCount < pData->iPaneCount ) {
 		for ( i = iPaneCount; i < pData->iPaneCount; i++ ) {
 			if ( pData->arrPanes[i].pWidget != NULL ) {
-				xuiWidgetDestroy(pData->arrPanes[i].pWidget);
+				(void)xuiInternalWidgetDestroyPart(pWidget,pData->arrPanes[i].pWidget);
 				pData->arrPanes[i].pWidget = NULL;
 			}
 			__xuiSplitLayoutDefaultPane(&pData->arrPanes[i]);
 		}
 		for ( i = iPaneCount - 1; i < pData->iPaneCount - 1; i++ ) {
 			if ( (i >= 0) && (pData->arrDividers[i].pWidget != NULL) ) {
-				xuiWidgetDestroy(pData->arrDividers[i].pWidget);
+				(void)xuiInternalWidgetDestroyPart(pWidget,pData->arrDividers[i].pWidget);
 				pData->arrDividers[i].pWidget = NULL;
 			}
 			if ( i >= 0 ) memset(&pData->arrDividers[i], 0, sizeof(pData->arrDividers[i]));
@@ -770,7 +772,7 @@ rollback_growth:
 	if ( iPaneCount > iOldPaneCount ) {
 		for ( i = iOldPaneCount; i < iPaneCount; i++ ) {
 			if ( pData->arrPanes[i].pWidget != NULL ) {
-				xuiWidgetDestroy(pData->arrPanes[i].pWidget);
+				(void)xuiInternalWidgetDestroyPart(pWidget,pData->arrPanes[i].pWidget);
 				pData->arrPanes[i].pWidget = NULL;
 			}
 			__xuiSplitLayoutDefaultPane(&pData->arrPanes[i]);
@@ -778,7 +780,7 @@ rollback_growth:
 		iFirstNewDivider = (iOldPaneCount > 0) ? iOldPaneCount - 1 : 0;
 		for ( i = iFirstNewDivider; i < iPaneCount - 1; i++ ) {
 			if ( pData->arrDividers[i].pWidget != NULL ) {
-				xuiWidgetDestroy(pData->arrDividers[i].pWidget);
+				(void)xuiInternalWidgetDestroyPart(pWidget,pData->arrDividers[i].pWidget);
 				pData->arrDividers[i].pWidget = NULL;
 			}
 			memset(&pData->arrDividers[i], 0, sizeof(pData->arrDividers[i]));

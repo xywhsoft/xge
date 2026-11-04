@@ -9,7 +9,7 @@ import argparse,hashlib,json,os,shutil,subprocess,time
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context','port'),default='remaining')
+    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context','parts','port'),default='remaining')
     a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
     metadata=json.loads((engine/'build-report.json').read_text())
@@ -17,12 +17,12 @@ def main():
     assert metadata['xrt_host_header_sha256']==hashlib.sha256(header.read_bytes().replace(b'\r\n',b'\n')).hexdigest()
     cc=shutil.which('gcc');assert cc
     source=root/('tests/xui/xui_owned_'+a.case+'_test.c')
-    regression_names={'tree':('xui_tree_view_test.c','xui_tree_adapter_lifetime_test.c'),'table':('xui_table_view_test.c','xui_table_provider_lifetime_test.c')}
+    regression_names={'tree':('xui_tree_view_test.c','xui_tree_adapter_lifetime_test.c'),'table':('xui_table_view_test.c','xui_table_provider_lifetime_test.c'),'parts':tuple('xui_'+name+'_test.c' for name in ('widget','widget_type','panel','popup','menu','scroll_frame','scroll_view','tabs','split_layout','carousel','accordion','table_grid','window','combobox','numeric_input'))}
     regressions=[root/'tests/xui'/name for name in regression_names.get(a.case,())]
     library=engine/('xge.lib' if os.name=='nt' else 'libxge.so');native=engine/('xge.dll' if os.name=='nt' else 'libxge.so')
     pins={Path(__file__).resolve(),Path(cc),source,header,library,native,runtime,engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',root/'include/xui.h',root/'include/xge_host_xrt.h',root/'extlibs/xrt/xrt.h'}
     pins.update(regressions);
-    if regressions or a.case=='table':pins.update(root/'tests/xui'/name for name in ('xui_test_proxy.h','xui_test_proxy.c'))
+    if regressions or a.case in ('table','parts'):pins.update(root/'tests/xui'/name for name in ('xui_test_proxy.h','xui_test_proxy.c'))
     pins.update(root/x for x in metadata['sources']);pins.add(root/'src/xui/core/xui_internal.h');pins.add(root/'src/xui/core/xui_xrt_port.h');pins.add(root/'include/xui_config.h');pins.update(x for x in (engine/'host-xrt').iterdir() if x.is_file());inputs={str(x):sha(x) for x in pins}
     out.mkdir(parents=True,exist_ok=False);(out/'tmp').mkdir()
     env=dict(os.environ,TEMP=str(out/'tmp'),TMP=str(out/'tmp'),TMPDIR=str(out/'tmp'))
@@ -39,7 +39,8 @@ def main():
     systems=['-Wl,-rpath,'+str(runtime.parent),'-Wl,-rpath,'+str(engine),'-pthread','-ldl','-lm'] if os.name!='nt' else []
     for opt in ('O0','O2'):
         exe=out/('owned-'+opt+('.exe' if os.name=='nt' else ''))
-        test_extra=['-I'+str(root/'tests/xui'),root/'tests/xui/xui_test_proxy.c'] if a.case=='table' else []
+        test_extra=['-I'+str(root/'tests/xui'),root/'tests/xui/xui_test_proxy.c'] if a.case in ('table','parts') else []
+        if a.case=='parts':test_extra+=['-Wno-unused-function']
         run(opt+'-build',[cc,*flags,'-'+opt,source,*test_extra,library,runtime,*systems,'-o',exe]);run(opt+'-run',[exe])
     if regressions:
         prefix=source.read_text(encoding='utf8').split('typedef struct TreeState' if a.case=='tree' else '#include "xui_test_proxy.h"')[0]

@@ -3260,11 +3260,11 @@ static int __xuiTableViewCreateFrame(xui_widget pWidget, xui_table_view_data_t* 
 	tFrameDesc.iActiveColor = pData->iScrollbarActiveColor;
 	tFrameDesc.iFocusColor = pData->iScrollbarFocusColor;
 	tFrameDesc.iDisabledColor = pData->iScrollbarDisabledColor;
-	iRet = xuiScrollFrameCreate(xuiWidgetGetContext(pWidget), &pData->pFrame, &tFrameDesc);
+	iRet = xuiInternalScrollFrameCreatePart(pWidget,&pData->pFrame,&tFrameDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pFrame);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pFrame,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
@@ -3272,13 +3272,13 @@ static int __xuiTableViewCreateFrame(xui_widget pWidget, xui_table_view_data_t* 
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pFrame, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pFrame, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
 	pData->pViewport = xuiScrollFrameGetViewportWidget(pData->pFrame);
 	if ( pData->pViewport == NULL ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
@@ -3286,7 +3286,7 @@ static int __xuiTableViewCreateFrame(xui_widget pWidget, xui_table_view_data_t* 
 	if ( iRet == XUI_OK ) iRet = __xuiTableViewInitViewport(pWidget, pData);
 	if ( iRet == XUI_OK ) iRet = __xuiTableViewApplyFrameStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		pData->pViewport = NULL;
 		return iRet;
@@ -3488,7 +3488,7 @@ XUI_API xui_widget_type xuiTableViewGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiTableViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_view_desc_t* pDesc)
+static int __xuiTableViewCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_table_view_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -3501,8 +3501,22 @@ XUI_API int xuiTableViewCreate(xui_context pContext, xui_widget* ppWidget, const
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiTableViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_view_desc_t* pDesc)
+{return __xuiTableViewCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalTableViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_table_view_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiTableViewCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount)
 {
@@ -3715,6 +3729,7 @@ XUI_API int xuiTableViewSetAdapterOwned(xui_widget widget,
     xui_callback_group_update_t update={0};int result=xuiInternalCallbackGroupUpdateBegin(widget,entries,2,&update);
     if(result!=XUI_OK)return result;
     data->onCountOwned=count;data->pCountOwnedUser=countUser;data->onCellOwned=cell;data->pCellOwnedUser=cellUser;
+    data->onCount=NULL;data->onCell=NULL;data->pAdapterUser=NULL;
     data->bAdapterOwned=count!=NULL || cell!=NULL;++data->iAdapterPublication;
     xuiInternalCallbackGroupUpdatePublish(&update);
     __xuiTableViewInvalidateMerges(data);

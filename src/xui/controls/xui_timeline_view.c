@@ -2499,11 +2499,11 @@ static int __xuiTimeLineCreateFrame(xui_widget pWidget, xui_timeline_view_data_t
 	tFrameDesc.iActiveColor = pData->tColors.iScrollbarActiveColor;
 	tFrameDesc.iFocusColor = pData->tColors.iScrollbarFocusColor;
 	tFrameDesc.iDisabledColor = pData->tColors.iScrollbarDisabledColor;
-	iRet = xuiScrollFrameCreate(xuiWidgetGetContext(pWidget), &pData->pFrame, &tFrameDesc);
+	iRet = xuiInternalScrollFrameCreatePart(pWidget,&pData->pFrame,&tFrameDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pFrame);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pFrame,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return iRet;
 	}
@@ -2512,7 +2512,7 @@ static int __xuiTimeLineCreateFrame(xui_widget pWidget, xui_timeline_view_data_t
 	(void)xuiWidgetSetAlign(pData->pFrame, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	pData->pViewport = xuiScrollFrameGetViewportWidget(pData->pFrame);
 	if ( pData->pViewport == NULL ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
@@ -2520,23 +2520,23 @@ static int __xuiTimeLineCreateFrame(xui_widget pWidget, xui_timeline_view_data_t
 	if ( iRet == XUI_OK ) iRet = __xuiTimeLineInitViewport(pWidget, pData);
 	if ( iRet == XUI_OK ) iRet = __xuiTimeLineApplyFrameStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pFrame);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		pData->pViewport = NULL;
 	}
 	return iRet;
 }
 
-static void __xuiTimeLineDestroyMenu(xui_widget* ppMenu)
+static void __xuiTimeLineDestroyMenu(xui_widget pWidget,xui_widget* ppMenu)
 {
 	xui_widget pPopup;
 
 	if ( (ppMenu == NULL) || (*ppMenu == NULL) ) return;
 	pPopup = xuiMenuGetPopupWidget(*ppMenu);
 	if ( pPopup != NULL ) {
-		xuiWidgetDestroy(pPopup);
+		(void)xuiInternalWidgetDestroyPart(*ppMenu,pPopup);
 	} else {
-		xuiWidgetDestroy(*ppMenu);
+		(void)xuiInternalWidgetDestroyPart(pWidget,*ppMenu);
 	}
 	*ppMenu = NULL;
 }
@@ -2551,13 +2551,13 @@ static int __xuiTimeLineInitMenus(xui_widget pWidget, xui_timeline_view_data_t* 
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pOwner = pWidget;
 	tDesc.pFont = pData->pFont;
-	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pLayerMenu, &tDesc);
+	iRet = xuiInternalMenuCreatePart(pWidget,&pData->pLayerMenu,&tDesc);
 	if ( iRet == XUI_OK ) iRet = xuiMenuSetSelect(pData->pLayerMenu, __xuiTimeLineMenuSelect, pWidget);
-	if ( iRet == XUI_OK ) iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pFrameMenu, &tDesc);
+	if ( iRet == XUI_OK ) iRet = xuiInternalMenuCreatePart(pWidget,&pData->pFrameMenu,&tDesc);
 	if ( iRet == XUI_OK ) iRet = xuiMenuSetSelect(pData->pFrameMenu, __xuiTimeLineMenuSelect, pWidget);
 	if ( iRet != XUI_OK ) {
-		__xuiTimeLineDestroyMenu(&pData->pLayerMenu);
-		__xuiTimeLineDestroyMenu(&pData->pFrameMenu);
+		__xuiTimeLineDestroyMenu(pWidget,&pData->pLayerMenu);
+		__xuiTimeLineDestroyMenu(pWidget,&pData->pFrameMenu);
 	}
 	return iRet;
 }
@@ -2604,16 +2604,16 @@ static int __xuiTimeLineInit(xui_widget pWidget, void* pTypeData, const void* pC
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTimeLineInitMenus(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		if ( pData->pFrame != NULL ) xuiWidgetDestroy(pData->pFrame);
+		if ( pData->pFrame != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		pData->pViewport = NULL;
 		return iRet;
 	}
 	iRet = __xuiTimeLineInitEvents(pWidget);
 	if ( iRet != XUI_OK ) {
-		__xuiTimeLineDestroyMenu(&pData->pLayerMenu);
-		__xuiTimeLineDestroyMenu(&pData->pFrameMenu);
-		if ( pData->pFrame != NULL ) xuiWidgetDestroy(pData->pFrame);
+		__xuiTimeLineDestroyMenu(pWidget,&pData->pLayerMenu);
+		__xuiTimeLineDestroyMenu(pWidget,&pData->pFrameMenu);
+		if ( pData->pFrame != NULL ) (void)xuiInternalWidgetDestroyPart(pWidget,pData->pFrame);
 		pData->pFrame = NULL;
 		pData->pViewport = NULL;
 		return iRet;
@@ -2630,8 +2630,8 @@ static void __xuiTimeLineDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData != NULL ) {
 		(void)xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget), pWidget,
 			&pData->tPointerOwner);
-		__xuiTimeLineDestroyMenu(&pData->pLayerMenu);
-		__xuiTimeLineDestroyMenu(&pData->pFrameMenu);
+		__xuiTimeLineDestroyMenu(pWidget,&pData->pLayerMenu);
+		__xuiTimeLineDestroyMenu(pWidget,&pData->pFrameMenu);
 		for ( i = 0; i < XUI_TIMELINE_MENU_TITLE_COUNT; ++i ) {
 			xrtFree(pData->arrMenuTitle[i]);
 			pData->arrMenuTitle[i] = NULL;

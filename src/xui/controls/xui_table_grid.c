@@ -1601,7 +1601,6 @@ static int __xuiTableGridApplyEditorColors(xui_table_grid_data_t* pData,
 
 static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t* pData, const xui_table_grid_desc_t* pDesc)
 {
-	xui_context pContext;
 	xui_input_desc_t tInput;
 	xui_numeric_input_desc_t tNumeric;
 	xui_combobox_desc_t tCombo;
@@ -1616,17 +1615,16 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	int iRet;
 
 	(void)pDesc;
-	pContext = xuiWidgetGetContext(pWidget);
 	memset(&tInput, 0, sizeof(tInput));
 	tInput.iSize = sizeof(tInput);
 	tInput.pFont = pData->pFont;
 	tInput.iMaxLength = XUI_TABLE_GRID_VALUE_CAPACITY - 1;
 	tInput.iTextAlign = XUI_INPUT_ALIGN_LEFT;
-	iRet = xuiInputCreate(pContext, &pData->pInput, &tInput);
+	iRet = xuiInternalInputCreatePart(pWidget,&pData->pInput,&tInput);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pInput);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pInput,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pInput);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pInput);
 		pData->pInput = NULL;
 		return iRet;
 	}
@@ -1638,11 +1636,11 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tNumeric.fStep = 1.0f;
 	tNumeric.iPrecision = 3;
 	tNumeric.bSpinnerVisible = 1;
-	iRet = xuiNumericInputCreate(pContext, &pData->pNumeric, &tNumeric);
+	iRet = xuiInternalNumericInputCreatePart(pWidget,&pData->pNumeric,&tNumeric);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pNumeric);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pNumeric,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pNumeric);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pNumeric);
 		pData->pNumeric = NULL;
 		return iRet;
 	}
@@ -1651,11 +1649,11 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tCombo.iSize = sizeof(tCombo);
 	tCombo.pFont = pData->pFont;
 	tCombo.fPopupMaxHeight = 180.0f;
-	iRet = xuiComboBoxCreate(pContext, &pData->pCombo, &tCombo);
+	iRet = xuiInternalComboBoxCreatePart(pWidget,&pData->pCombo,&tCombo);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pCombo);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pCombo,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pCombo);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pCombo);
 		pData->pCombo = NULL;
 		return iRet;
 	}
@@ -1668,11 +1666,11 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tColor.iSize = sizeof(tColor);
 	tColor.pFont = pData->pFont;
 	tColor.iColor = XUI_COLOR_RGBA(67, 167, 124, 255);
-	iRet = xuiColorPickerCreate(pContext, &pData->pColor, &tColor);
+	iRet = xuiInternalColorPickerCreatePart(pWidget,&pData->pColor,&tColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pColor);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pColor,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pColor);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pColor);
 		pData->pColor = NULL;
 		return iRet;
 	}
@@ -1688,11 +1686,11 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tDate.pFont = pData->pFont;
 	tDate.iMode = XUI_DATE_PICKER_MODE_DATE;
 	tDate.tValue = xrtNow();
-	iRet = xuiDatePickerCreate(pContext, &pData->pDate, &tDate);
+	iRet = xuiInternalDatePickerCreatePart(pWidget,&pData->pDate,&tDate);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pWidget, pData->pDate);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pDate,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pDate);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pDate);
 		pData->pDate = NULL;
 		return iRet;
 	}
@@ -1708,7 +1706,7 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tPopup.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;
 	tPopup.iEscapePolicy = XUI_POPUP_ESCAPE_IGNORE;
 	tPopup.iFocusPolicy = XUI_POPUP_FOCUS_CUSTOM;
-	iRet = xuiPopupCreate(pContext, &pData->pTextPopup, &tPopup);
+	iRet = xuiInternalPopupCreatePart(pWidget,&pData->pTextPopup,&tPopup);
 	if ( iRet != XUI_OK ) return iRet;
 	pContent = xuiPopupGetContentWidget(pData->pTextPopup);
 	if ( pContent == NULL ) return XUI_ERROR_INVALID_STATE;
@@ -1719,11 +1717,11 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tTextEdit.pFont = pData->pFont;
 	tTextEdit.bWordWrap = 1;
 	tTextEdit.iMaxLength = XUI_TABLE_GRID_VALUE_CAPACITY - 1;
-	iRet = xuiTextEditCreate(pContext, &pData->pTextEdit, &tTextEdit);
+	iRet = xuiInternalTextEditCreatePart(pWidget,&pData->pTextEdit,&tTextEdit);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pContent, pData->pTextEdit);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pContent,pData->pTextEdit,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pTextEdit);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTextEdit);
 		pData->pTextEdit = NULL;
 		return iRet;
 	}
@@ -1732,20 +1730,20 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tButton.iSize = sizeof(tButton);
 	tButton.pFont = pData->pFont;
 	tButton.sText = "OK";
-	iRet = xuiButtonCreate(pContext, &pData->pTextOk, &tButton);
+	iRet = xuiInternalButtonCreatePart(pWidget,&pData->pTextOk,&tButton);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pContent, pData->pTextOk);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pContent,pData->pTextOk,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pTextOk);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTextOk);
 		pData->pTextOk = NULL;
 		return iRet;
 	}
 	tButton.sText = "Cancel";
-	iRet = xuiButtonCreate(pContext, &pData->pTextCancel, &tButton);
+	iRet = xuiInternalButtonCreatePart(pWidget,&pData->pTextCancel,&tButton);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiWidgetAddChild(pContent, pData->pTextCancel);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pContent,pData->pTextCancel,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pTextCancel);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTextCancel);
 		pData->pTextCancel = NULL;
 		return iRet;
 	}
@@ -1783,7 +1781,7 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	return iRet;
 }
 
-static void __xuiTableGridCleanupInit(xui_table_grid_data_t* pData)
+static void __xuiTableGridCleanupInit(xui_widget pWidget,xui_table_grid_data_t* pData)
 {
 	xui_widget arrChildren[6];
 	int i;
@@ -1791,7 +1789,7 @@ static void __xuiTableGridCleanupInit(xui_table_grid_data_t* pData)
 	if ( pData == NULL ) return;
 	if ( pData->pTextPopup != NULL ) {
 		(void)xuiPopupSetOwner(pData->pTextPopup, NULL);
-		xuiWidgetDestroy(pData->pTextPopup);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTextPopup);
 		pData->pTextPopup = NULL;
 		pData->pTextContent = NULL;
 		pData->pTextEdit = NULL;
@@ -1806,8 +1804,8 @@ static void __xuiTableGridCleanupInit(xui_table_grid_data_t* pData)
 	arrChildren[5] = pData->pTable;
 	for ( i = 0; i < (int)(sizeof(arrChildren) / sizeof(arrChildren[0])); i++ ) {
 		if ( arrChildren[i] == NULL ) continue;
-		if ( xuiWidgetGetParent(arrChildren[i]) != NULL ) (void)xuiWidgetRemoveFromParent(arrChildren[i]);
-		xuiWidgetDestroy(arrChildren[i]);
+		if ( xuiWidgetGetParent(arrChildren[i]) != NULL ) (void)xuiInternalWidgetDetachPart(pWidget,arrChildren[i]);
+		(void)xuiInternalWidgetDestroyPart(pWidget,arrChildren[i]);
 	}
 	pData->pDate = NULL;
 	pData->pColor = NULL;
@@ -1875,7 +1873,7 @@ static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* p
 	tTableDesc.onCount = (pData->onCount != NULL) ? __xuiTableGridCountProc : NULL;
 	tTableDesc.onCell = (pData->onCell != NULL) ? __xuiTableGridCellProc : NULL;
 	tTableDesc.pAdapterUser = pData;
-	iRet = xuiTableViewCreate(xuiWidgetGetContext(pWidget), &pData->pTable, &tTableDesc);
+	iRet = xuiInternalTableViewCreatePart(pWidget,&pData->pTable,&tTableDesc);
 	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = xuiTableViewSetContextMenu(pData->pTable, __xuiTableGridTableContext, pData);
 	if ( iRet != XUI_OK ) goto cleanup;
@@ -1883,7 +1881,7 @@ static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* p
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetSizeMode(pData->pTable, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pTable, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	if ( iRet != XUI_OK ) goto cleanup;
-	iRet = xuiWidgetAddChild(pWidget, pData->pTable);
+	iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pTable,NULL);
 	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiTableGridCreateEditors(pWidget, pData, pDesc);
 	if ( iRet != XUI_OK ) goto cleanup;
@@ -1900,7 +1898,7 @@ static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* p
 	return XUI_OK;
 
 cleanup:
-	__xuiTableGridCleanupInit(pData);
+	__xuiTableGridCleanupInit(pWidget,pData);
 	return iRet;
 }
 
@@ -1913,7 +1911,7 @@ static void __xuiTableGridDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	pData = (xui_table_grid_data_t*)pTypeData;
 	if ( pData != NULL ) {
 		if ( pData->pTextPopup != NULL ) {
-			xuiWidgetDestroy(pData->pTextPopup);
+			(void)xuiInternalWidgetDestroyPart(pWidget,pData->pTextPopup);
 		}
 		memset(pData, 0, sizeof(*pData));
 	}
@@ -1968,7 +1966,7 @@ XUI_API xui_widget_type xuiTableGridGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiTableGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_grid_desc_t* pDesc)
+static int __xuiTableGridCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_table_grid_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -1979,8 +1977,22 @@ XUI_API int xuiTableGridCreate(xui_context pContext, xui_widget* ppWidget, const
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiTableGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_grid_desc_t* pDesc)
+{return __xuiTableGridCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalTableGridCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_table_grid_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiTableGridCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API xui_widget xuiTableGridGetTableView(xui_widget pWidget)
 {

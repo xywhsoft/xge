@@ -1340,13 +1340,13 @@ static int __xuiNumericInputCreateInputChild(xui_widget pWidget, xui_numeric_inp
 	tInputDesc.iDisabledTextColor = pData->iDisabledTextColor;
 	tInputDesc.iSelectionColor = pData->iSelectionColor;
 	tInputDesc.iCursorColor = pData->iCursorColor;
-	iRet = xuiInputCreate(xuiWidgetGetContext(pWidget), &pData->pInput, &tInputDesc);
+	iRet = xuiInternalInputCreatePart(pWidget,&pData->pInput,&tInputDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetTabStop(pData->pInput, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pData->pInput, 1);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pInput);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pInput,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pInput);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pInput);
 		pData->pInput = NULL;
 		return iRet;
 	}
@@ -1370,7 +1370,7 @@ static int __xuiNumericInputCreateInputChild(xui_widget pWidget, xui_numeric_inp
 		iRet = __xuiNumericInputSetInputTextFromValue(pWidget, pData);
 	}
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pInput);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pInput);
 		pData->pInput = NULL;
 	}
 	return iRet;
@@ -1616,7 +1616,7 @@ XUI_API xui_widget_type xuiNumericInputGetType(xui_context pContext)
 	return pType;
 }
 
-XUI_API int xuiNumericInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_numeric_input_desc_t* pDesc)
+static int __xuiNumericInputCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_numeric_input_desc_t* pDesc,xui_widget pNativeOwner)
 {
 	xui_widget_type pType;
 
@@ -1627,8 +1627,22 @@ XUI_API int xuiNumericInputCreate(xui_context pContext, xui_widget* ppWidget, co
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return (pNativeOwner ? xuiInternalWidgetCreatePart(pNativeOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc));
 }
+
+XUI_API int xuiNumericInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_numeric_input_desc_t* pDesc)
+{return __xuiNumericInputCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalNumericInputCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_numeric_input_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    if(!xuiInternalWidgetIsValid(pOwner) || !ppWidget)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    xuiInternalOperationEnter(context);
+    int status=__xuiNumericInputCreateWithOwner(context,ppWidget,pDesc,pOwner);
+    xuiInternalOperationLeave(context);
+    return status;
+}
+
 
 XUI_API int xuiNumericInputSetChangeOwned(xui_widget pWidget, xui_numeric_input_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
 {

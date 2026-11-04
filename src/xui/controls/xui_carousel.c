@@ -587,20 +587,21 @@ static int __xuiCarouselEnsurePage(xui_widget pCarousel, xui_carousel_data_t* pD
 	if ( pData->arrPages[iIndex] != NULL ) {
 		return XUI_OK;
 	}
-	iRet = xuiWidgetCreate(xuiWidgetGetContext(pCarousel), &pPage);
+	iRet = xuiInternalWidgetCreatePart(pCarousel,NULL,&pPage,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCarouselConfigurePage(pPage);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pCarousel, pPage);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCarousel,pCarousel,pPage,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pPage);
+		(void)xuiInternalWidgetDestroyPart(pCarousel,pPage);
 		return iRet;
 	}
 	iRet = xuiWidgetSetVisible(pPage, 0);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pPage);
+		(void)xuiInternalWidgetDestroyPart(pCarousel,pPage);
 		return iRet;
 	}
 	pData->arrPages[iIndex] = pPage;
+	(void)xuiInternalWidgetBindPartSlot(pCarousel,pPage,&pData->arrPages[iIndex]);
 	return XUI_OK;
 }
 
@@ -673,7 +674,7 @@ static int __xuiCarouselSetPageCountInternal(xui_widget pCarousel, xui_carousel_
 rollback:
 	for ( i = 0; i < XUI_CAROUSEL_MAX_PAGES; i++ ) {
 		if ( arrOldPages[i] == NULL && pData->arrPages[i] != NULL ) {
-			xuiWidgetDestroy(pData->arrPages[i]);
+			(void)xuiInternalWidgetDestroyPart(pCarousel,pData->arrPages[i]);
 		}
 	}
 	memcpy(pData->arrPages, arrOldPages, sizeof(arrOldPages));
@@ -1289,12 +1290,12 @@ static int __xuiCarouselInit(xui_widget pWidget, void* pTypeData, const void* pC
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
-	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pData->pOverlay);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetCreatePart(pWidget,NULL,&pData->pOverlay,NULL);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCarouselConfigureOverlay(pData->pOverlay, pWidget);
 	if ( iRet == XUI_OK ) iRet = __xuiCarouselInitEvents(pWidget);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pOverlay);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pOverlay);
 		pData->pOverlay = NULL;
 		return iRet;
 	}
@@ -1305,9 +1306,9 @@ static int __xuiCarouselInit(xui_widget pWidget, void* pTypeData, const void* pC
 		pData->iCurrent = __xuiCarouselClampInt((pDesc != NULL) ? pDesc->iCurrent : 0, 0, pData->iPageCount - 1);
 		iRet = __xuiCarouselSyncPages(pWidget, pData);
 	}
-	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pOverlay);
+	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pOverlay,NULL);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pData->pOverlay);
+		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pOverlay);
 		pData->pOverlay = NULL;
 		return iRet;
 	}
