@@ -4,8 +4,8 @@
   "source_commit": "93347eb5ae6beba8cf7ee3558708cc4f628fdd07",
   "source_worktree_dirty": false,
   "source_snapshot_sha256": "637ec2268d16418eaae78a600e210667e7dd67dd957a8e715f5bea95ee851f3d",
-  "header_sha256": "1125d38fe544d6b4ddfd25b8a9c5a638bb6409a811997ab7239ffb1e0c1ef80b",
-  "declaration_header_sha256": "daa2184b9ada9a56a240625d050ffadc7f89aa9dbe8ce1122ff6e32e086dca4a",
+  "header_sha256": "2c0dd0c2fdd15deb34aedd78fea9a9128760257febdaf3d886c88a1df76d1983",
+  "declaration_header_sha256": "a8b671ff77d9423b8d3d6d74b1842902457b5806d0d3ce963b0a754ae746368f",
   "generation": "tools/amalgamate.py in isolated source snapshot",
   "text_eol": "lf",
   "snapshot_mode": "immutable_base_with_explicit_overlays",
@@ -25,6 +25,15 @@
         "include/xrt/websocket_upgrade.h"
       ],
       "abiChanged": false
+    },
+    {
+      "commit": "c6d40f00fff9cf6ec7b818e610a2bdf1c1343964",
+      "kind": "Versioned ownership completion checked-drop declaration only",
+      "modules": [
+        "include/xrt/core.h"
+      ],
+      "abiChanged": false,
+      "protocolExtension": "xrtownershipfinishv2"
     }
   ]
 }
